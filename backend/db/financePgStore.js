@@ -147,7 +147,8 @@ function createFinancePgStore(repo) {
            JOIN schools s ON s.id = p.school_id
            JOIN students st ON st.id = p.student_id
            WHERE p.school_id = $1
-             AND ($2::uuid IS NULL OR p.student_id = $2)`,
+             AND ($2::uuid IS NULL OR p.student_id = $2)
+           ORDER BY p.id`,
           [schoolId, studentDbId || null],
         );
         return rows.map((row) => ({
@@ -155,6 +156,15 @@ function createFinancePgStore(repo) {
           studentDbId: row.student_id,
           schoolId: row.school_id,
         }));
+      },
+      async lockPayment(paymentId) {
+        const key = asTrimmed(paymentId);
+        if (!key) return null;
+        const row = await one(
+          `SELECT id FROM payments WHERE id::text = $1 FOR UPDATE`,
+          [key],
+        );
+        return row ? { id: row.id } : null;
       },
       async insertPayment(payment) {
         try {

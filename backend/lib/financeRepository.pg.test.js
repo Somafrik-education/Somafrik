@@ -80,6 +80,16 @@ function createRepo(pool) {
 }
 
 async function main() {
+  const pgStoreSrc = fs.readFileSync(path.join(__dirname, "../db/financePgStore.js"), "utf8");
+  assert.match(pgStoreSrc, /async lockPayment/);
+  assert.match(pgStoreSrc, /FOR UPDATE/);
+  const serviceSrc = fs.readFileSync(path.join(__dirname, "financeService.js"), "utf8");
+  const reconFn = serviceSrc.slice(serviceSrc.indexOf("async function reconcileUnallocatedPaymentsInTx"));
+  assert.ok(
+    reconFn.indexOf("lockPayment") < reconFn.indexOf("listAllocations"),
+    "lockPayment avant listAllocations",
+  );
+
   if (!DATABASE_URL) {
     console.log("financeRepository.pg.test.js: SKIP (DATABASE_URL absent)");
     return;
@@ -564,6 +574,64 @@ async function main() {
       `SELECT * FROM audit_logs WHERE action = 'reconcile_payment_allocation' AND entity_id = 'CD-2026-0001-2026-PAY-HIST'`,
     );
     assert.ok(reconAudit.rowCount >= 1);
+
+    const concStudent = await pool.query(
+      `INSERT INTO students (school_id, student_code, first_name, last_name)
+       VALUES ($1, 'CD-2026-0001-STU-CONC', 'Awa', 'Conc') RETURNING id`,
+      [schoolA.rows[0].id],
+    );
+    await pool.query(
+      `INSERT INTO enrollments (school_id, student_id, class_id, academic_year_id, status)
+       VALUES ($1, $2, $3, $4, 'active')`,
+      [schoolA.rows[0].id, concStudent.rows[0].id, klass.rows[0].id, year.rows[0].id],
+    );
+    const concGrid = await store.upsertFinanceFeeGrid(
+      {
+        className: "6ème A",
+        academicYear: "2025-2026",
+        currency: "CDF",
+        status: "Active",
+        periodName: "Concurrence",
+        items: [{ feeType: "Mensualité", label: "Mensualité", amount: 2100, dueDate: "2026-01-01", status: "Actif" }],
+      },
+      admin,
+    );
+    await store.setFinanceFeeGridStatus(concGrid.id, "Active", admin);
+    await store.applyFinanceFeeGrid(concGrid.id, admin, { studentIds: ["CD-2026-0001-STU-CONC"] });
+    const concPay = await pool.query(
+      `INSERT INTO payments (
+         school_id, student_id, payment_code, amount, currency, payment_method, payment_status,
+         payment_date, fee_type, profile_payload
+       ) VALUES ($1,$2,'CD-2026-0001-2026-PAY-CONC',200,'CDF','cash','paid','2026-08-01','Minerval',$3::jsonb)
+       RETURNING id`,
+      [
+        schoolA.rows[0].id,
+        concStudent.rows[0].id,
+        JSON.stringify({
+          studentId: "CD-2026-0001-STU-CONC",
+          status: "Payé",
+          feeType: "Minerval",
+          schoolCode: "CD-2026-0001",
+        }),
+      ],
+    );
+    const storeB = createFinancePgStore(repo);
+    await Promise.all([
+      store.reconcileFinancePaymentAllocations(admin),
+      storeB.reconcileFinancePaymentAllocations(admin),
+    ]);
+    const concAllocs = await pool.query(
+      `SELECT COALESCE(SUM(amount),0)::numeric AS total, COUNT(*)::int AS n
+       FROM payment_allocations
+       WHERE payment_id = $1 AND reversed_at IS NULL`,
+      [concPay.rows[0].id],
+    );
+    assert.equal(Number(concAllocs.rows[0].n), 1, "deux réconciliations concurrentes → une seule allocation");
+    assert.equal(Number(concAllocs.rows[0].total), 200, "reçu 200 → allocations actives = 200, pas 400");
+    const concFee = (await store.listFinanceStudentFees(admin)).find(
+      (row) => row.studentId === "CD-2026-0001-STU-CONC" || row.studentId === concStudent.rows[0].id,
+    );
+    assert.equal(Number(concFee.amountPaid), 200, "amount_paid = 200 sous concurrence");
 
     const payOver = await store.createSchoolPayment(
       {

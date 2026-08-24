@@ -106,6 +106,20 @@ function run() {
   ];
   assert.equal(formatPaymentRateKpi(withExemption).value, "20 %", "16 / (100 − 20) → 20 %");
 
+  const capture200On2100 = getPaymentRateKpi([
+    obligation("s1", { amountDue: 2100, amountPaid: 200, status: "Partiellement payé" }),
+  ]);
+  assert.equal(capture200On2100.collectedAmount, 200, "Montant encaissé = 200 FC");
+  assert.equal(capture200On2100.expectedAmount, 2100);
+  assert.equal(capture200On2100.rate, 10, "200 / 2100 → 10 %");
+  assert.equal(capture200On2100.value, "10 %");
+
+  const cancelledReceiptDoesNotInflate = getPaymentRateKpi([
+    obligation("s1", { amountDue: 2100, amountPaid: 0, status: "À payer" }),
+  ]);
+  assert.equal(cancelledReceiptDoesNotInflate.collectedAmount, 0, "paiement annulé → 0 FC encaissé");
+  assert.equal(cancelledReceiptDoesNotInflate.rate, 0);
+
   console.log("OK: paymentRateKpi assiette obligations 20/0/100/—");
 }
 

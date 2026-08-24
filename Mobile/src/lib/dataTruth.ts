@@ -281,11 +281,15 @@ export function isPaidStatus(status?: string): boolean {
   return value === "PAYE" || value === "PAID" || value === "PAYÉ";
 }
 
+export function isCancelledStatus(status?: string): boolean {
+  return /cancel|annul/i.test(String(status ?? "").trim());
+}
+
 export function paymentStatusLabel(status?: string): string {
   if (isPaidStatus(status)) return "Payé";
   const value = String(status ?? "").trim();
   if (/attente|pending/i.test(value)) return "En attente";
-  if (/cancel|annul/i.test(value)) return "Annulé";
+  if (isCancelledStatus(value)) return "Annulé";
   return value || "—";
 }
 

@@ -685,6 +685,13 @@ export function getStudentFees() {
   );
 }
 
+export function reconcilePaymentAllocations() {
+  return request<{ created?: number; leftoverTotal?: number }>("/finance/reconcile-payment-allocations", {
+    method: "POST",
+    body: JSON.stringify({}),
+  });
+}
+
 export type CanonicalReportCard = {
   id: string;
   studentId: string;

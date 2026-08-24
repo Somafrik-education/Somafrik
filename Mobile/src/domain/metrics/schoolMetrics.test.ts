@@ -1,5 +1,6 @@
 /**
  * Contrat de scope métriques — [] n'est pas un dataset global.
+ * Cartes Payés / Impayés : un reçu Annulé n'est ni l'un ni l'autre.
  *   npx tsx Mobile/src/domain/metrics/schoolMetrics.test.ts
  */
 import assert from "node:assert/strict";
@@ -11,6 +12,7 @@ import {
   getPresenceStats,
   scopeRowsByStudentIds,
 } from "./schoolMetrics";
+import type { PaymentItem } from "../../data/catalog";
 
 const SOURCE = fs.readFileSync(path.join("src", "domain", "metrics", "schoolMetrics.ts"), "utf8");
 
@@ -25,14 +27,20 @@ function presence(id: string, studentId: string, status: string) {
   };
 }
 
-function payment(id: string, studentId: string, status = "PAYE") {
-  return { id, studentId, amount: 1000, status };
+function payment(id: string, studentId: string, status = "PAYE", amount = 1000): PaymentItem {
+  return { id, studentId, amount, status };
 }
 
 function run() {
   assert.match(SOURCE, /studentIds === undefined/);
   assert.doesNotMatch(SOURCE, /studentIds\?\.length/);
   assert.match(SOURCE, /scopeRowsByStudentIds/);
+  assert.match(SOURCE, /isCancelledPayment/);
+  assert.doesNotMatch(
+    SOURCE,
+    /pendingRows = scopedRows\.filter\(\(payment\) => !isPaidPayment\(payment\)\)/,
+    "Impayés ne doit plus être !isPaidStatus",
+  );
 
   const globalPresences = [
     presence("p1", "s1", "Présent"),
@@ -83,7 +91,34 @@ function run() {
   );
   assert.equal(getPaymentStats(globalPayments, ["s1", "s3"]).rate, 50);
 
+  const paidOnly = getPaymentStats([payment("p1", "stu-1", "Payé", 200)]);
+  assert.equal(paidOnly.paid, 1);
+  assert.equal(paidOnly.pending, 0);
+  assert.equal(paidOnly.paidAmount, 200);
+
+  const cancelled = getPaymentStats([payment("p-cancel", "stu-1", "Annulé", 200)]);
+  assert.equal(cancelled.paid, 0, "Annulé exclu de Payés");
+  assert.equal(cancelled.pending, 0, "Annulé exclu de Impayés");
+  assert.equal(cancelled.pendingAmount, 0);
+  assert.equal(cancelled.paidAmount, 0);
+  assert.equal(cancelled.total, 0);
+
+  const cancelledEnglish = getPaymentStats([payment("p-cancel-en", "stu-1", "cancelled", 200)]);
+  assert.equal(cancelledEnglish.pending, 0);
+  assert.equal(cancelledEnglish.paid, 0);
+
+  const mix = getPaymentStats([
+    payment("p-paid", "stu-1", "Payé", 200),
+    payment("p-cancel", "stu-1", "Annulé", 200),
+    payment("p-wait", "stu-1", "En attente", 150),
+  ]);
+  assert.equal(mix.paid, 1);
+  assert.equal(mix.pending, 1, "seul En attente reste impayé");
+  assert.equal(mix.pendingAmount, 150);
+  assert.equal(mix.total, 2);
+
   console.log("OK: schoolMetrics empty scoped ids MUST NOT fallback to global dataset");
+  console.log("OK: getPaymentStats Annulé hors Payés et Impayés");
 }
 
 run();

@@ -138,6 +138,8 @@ function assertSourceGuards() {
   assert.match(pgStore, /listFinanceStudentFees: async \(principal\)/);
   assert.match(pgStore, /sqlSchoolPredicate/);
   assert.match(pgStore, /reconcileFinancePaymentAllocations/);
+  assert.match(pgStore, /lockPayment/);
+  assert.match(pgStore, /FOR UPDATE/);
   assert.doesNotMatch(
     pgStore.slice(pgStore.indexOf("listFinanceStudentFees")),
     /FROM payments p/,
@@ -146,6 +148,23 @@ function assertSourceGuards() {
   const memoryStore = fs.readFileSync(path.join(ROOT, "backend/db/financeMemoryStore.js"), "utf8");
   assert.match(memoryStore, /projectObligationPaidAmounts/);
   assert.match(memoryStore, /listFinanceStudentFees: async \(principal\)/);
+  assert.match(memoryStore, /lockPayment/);
+  const api = fs.readFileSync(path.join(ROOT, "Mobile/src/services/api.ts"), "utf8");
+  assert.match(api, /function reconcilePaymentAllocations/);
+  assert.match(api, /\/finance\/reconcile-payment-allocations/);
+  const reconcileClient = fs.readFileSync(
+    path.join(ROOT, "Mobile/src/lib/financeAllocationReconcile.ts"),
+    "utf8",
+  );
+  assert.match(reconcileClient, /isSoftPaymentAllocationReconcileFailure/);
+  assert.match(reconcileClient, /throw error/);
+  assert.doesNotMatch(reconcileClient, /catch\s*\{/);
+  assert.doesNotMatch(reconcileClient, /paymentsData/);
+  assert.doesNotMatch(reconcileClient, /from ["']\.\.\/services\/api["']/);
+  const adminCtx = fs.readFileSync(path.join(ROOT, "Mobile/src/context/AdminDataContext.tsx"), "utf8");
+  assert.match(adminCtx, /withCanonicalPaymentAllocations/);
+  assert.match(adminCtx, /reconcilePaymentAllocations/);
+  assert.match(adminCtx, /loadStudentFees/);
   const obligationPaid = fs.readFileSync(path.join(ROOT, "backend/lib/financeObligationPaid.js"), "utf8");
   assert.doesNotMatch(obligationPaid, /allocateOntoMatchingOpen/);
   assert.doesNotMatch(obligationPaid, /isPaymentCounted/);
@@ -153,6 +172,10 @@ function assertSourceGuards() {
   assert.match(service, /obligationMatchesPaymentFeeType/);
   assert.match(service, /reconcileHistoricalPaymentAllocations/);
   assert.match(service, /reconcile_payment_allocation/);
+  const reconFn = service.slice(service.indexOf("async function reconcileUnallocatedPaymentsInTx"));
+  const lockIdx = reconFn.indexOf("lockPayment");
+  const allocIdx = reconFn.indexOf("listAllocations");
+  assert.ok(lockIdx >= 0 && allocIdx > lockIdx, "lockPayment avant listAllocations");
   assert.doesNotMatch(
     service,
     /normalizeKey\(fee\.feeType\) === normalizeKey\(item\.feeType\)/,
@@ -173,11 +196,16 @@ function assertSourceGuards() {
   assert.match(paymentsScreen, /loadStudentFees/);
   assert.doesNotMatch(paymentsScreen, /paymentStats\.rate/);
   assert.doesNotMatch(paymentsScreen, /des paiements réglés/);
+  assert.doesNotMatch(paymentsScreen, /paymentStats\.paidAmount/);
+  assert.doesNotMatch(paymentsScreen, /paymentsData\.reduce/);
 
   const studentsScreen = fs.readFileSync(path.join(ROOT, "Mobile/src/screens/StudentsScreen.tsx"), "utf8");
   assert.match(studentsScreen, /formatPaymentRateKpi|getPaymentRateKpi/);
   assert.match(studentsScreen, /loadStudentFees/);
   assert.doesNotMatch(studentsScreen, /paymentStats\.rate/);
+
+  const homeScreen = fs.readFileSync(path.join(ROOT, "Mobile/src/screens/HomeScreen.tsx"), "utf8");
+  assert.match(homeScreen, /loadStudentFees/);
 
   const studentPayments = fs.readFileSync(path.join(ROOT, "Mobile/src/screens/StudentPaymentsScreen.tsx"), "utf8");
   assert.match(studentPayments, /getPaymentRateKpi|formatPaymentRateKpi/);
@@ -532,6 +560,102 @@ async function main() {
   const transportFee = annexFees.find((fee) => /transport/i.test(fee.label));
   assert.equal(Number(cantineFee.amountPaid), 40);
   assert.equal(Number(transportFee.amountPaid), 0, "Cantine n'impute pas Transport");
+
+  const postMinerval = createStore();
+  await seedMensualites(postMinerval, { studentIds: ["CD-2026-0001-STU-0001"], months: 1, amount: 2100 });
+  const postPay = await postMinerval.createSchoolPayment(
+    {
+      studentId: "CD-2026-0001-STU-0001",
+      items: [{ feeType: "Minerval", amount: 200 }],
+      method: "Espèces",
+      date: "2026-08-24",
+    },
+    admin,
+  );
+  assert.equal(postPay.overpaymentAmount, 0, "POST Minerval après matcher → Mensualité, pas un trop-perçu");
+  const postFees = scopedCd(await postMinerval.listFinanceStudentFees(admin));
+  assert.equal(
+    postFees.reduce((sum, fee) => sum + Number(fee.amountPaid), 0),
+    200,
+    "paiement confirmé 200 / assiette 2100 → amountPaid = 200",
+  );
+  assert.equal(canonicalRate(postFees), 10, "200 / 2100 → 10 %");
+
+  const cancel200 = createStore();
+  await seedMensualites(cancel200, { studentIds: ["CD-2026-0001-STU-0001"], months: 1, amount: 2100 });
+  const cancelReceipt = await cancel200.createSchoolPayment(
+    {
+      studentId: "CD-2026-0001-STU-0001",
+      items: [{ feeType: "Minerval", amount: 200 }],
+      method: "Espèces",
+      date: "2026-08-24",
+    },
+    admin,
+  );
+  await cancel200.cancelSchoolPayment(cancelReceipt.reference, "Saisie erronée", admin);
+  const cancelFees = scopedCd(await cancel200.listFinanceStudentFees(admin));
+  assert.equal(
+    cancelFees.reduce((sum, fee) => sum + Number(fee.amountPaid), 0),
+    0,
+    "paiement annulé 200 → 0 FC encaissé",
+  );
+  assert.equal(canonicalRate(cancelFees), 0);
+
+  const hist200 = createStore();
+  await seedMensualites(hist200, { studentIds: ["CD-2026-0001-STU-0001"], months: 1, amount: 2100 });
+  hist200.tables.payments.push({
+    id: randomUUID(),
+    school_id: "school-a",
+    school_code: "CD-2026-0001",
+    student_id: "stu-1",
+    student_code: "CD-2026-0001-STU-0001",
+    payment_code: "CD-2026-0001-2026-PAY-MINERVAL-200",
+    amount: 200,
+    currency: "CDF",
+    payment_method: "Espèces",
+    payment_status: "paid",
+    payment_date: "2026-08-01",
+    fee_type: "Minerval",
+    profile_payload: { studentId: "CD-2026-0001-STU-0001", status: "Payé", feeType: "Minerval" },
+    created_at: new Date().toISOString(),
+    cancelled_at: null,
+  });
+  assert.equal(
+    hist200.tables.studentFees.reduce((sum, row) => sum + Number(row.amount_paid), 0),
+    0,
+    "historique non alloué : colonne amount_paid = 0",
+  );
+  assert.equal(
+    canonicalRate(scopedCd(await hist200.listFinanceStudentFees(admin))),
+    0,
+    "GET ne projette pas le reçu 200 tant que la réconciliation n'a pas persisté",
+  );
+  const recon200 = await hist200.reconcileFinancePaymentAllocations(admin);
+  assert.equal(recon200.created, 1);
+  assert.equal(
+    hist200.tables.allocations.filter((row) => !row.reversed_at).reduce((sum, row) => sum + Number(row.amount), 0),
+    200,
+    "payment_allocations contient 200 FC actifs",
+  );
+  assert.equal(
+    hist200.tables.studentFees.reduce((sum, row) => sum + Number(row.amount_paid), 0),
+    200,
+    "student_fee_obligations.amount_paid = 200",
+  );
+  const histFees = scopedCd(await hist200.listFinanceStudentFees(admin));
+  assert.equal(
+    histFees.reduce((sum, fee) => sum + Number(fee.amountPaid), 0),
+    200,
+    "GET /finance/student-fees renvoie 200",
+  );
+  assert.equal(canonicalRate(histFees), 10, "200 / 2100 → 10 %");
+  const recon200Again = await hist200.reconcileFinancePaymentAllocations(admin);
+  assert.equal(recon200Again.created, 0, "deuxième réconciliation = no-op");
+  assert.equal(
+    hist200.tables.allocations.filter((row) => !row.reversed_at).length,
+    1,
+    "réconciliation idempotente : pas de doublon",
+  );
 
   console.log("financePaymentRateConsistency.test.js: OK");
 }
