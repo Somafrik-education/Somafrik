@@ -140,12 +140,11 @@ class PostgresRepository {
   }
 
   /**
-   * D3.6b — Ordre : schéma déjà appliqué → inventaire/migration JSON → dédup → UNIQUE.
+   * D3.6b — Ordre : schéma déjà appliqué → dédup PG → UNIQUE → normalisation → contraintes.
+   * J2A : plus aucun import evaluations/notes depuis backoffice_state au boot.
+   * PostgreSQL canonique est la seule source de vérité runtime.
    */
   async ensureNotesCanonicalPersistence() {
-    // Ordre D3.6b : inventaire/rattachement → anomalies → dédup → UNIQUE → normalisation → contraintes.
-    await this.migrateEvaluationsFromBackOffice();
-    await this.migrateNotesFromBackOffice();
     await this.ensureGradeCanonicalUniqueness();
     await this.normalizeLegacyGradeContractRows();
     await this.ensureGradeContractConstraints();
@@ -385,92 +384,28 @@ class PostgresRepository {
     await this.query(CREATE_GRADE_UNIQUE_INDEX_SQL);
   }
 
+  /**
+   * Tombstone J2A — plus de lecture/écriture depuis backoffice_state.
+   * Les données historiques restent en table pour audit ; aucun backfill, aucune purge.
+   */
   async migrateEvaluationsFromBackOffice() {
-    const {
-      toEvaluationStatus,
-      validateEvaluationContract,
-    } = require("../lib/gradesCanonical");
-    const row = await this.one("SELECT state_payload FROM backoffice_state WHERE state_key = 'default'");
-    const state = row?.state_payload ?? {};
-    const evaluations = Array.isArray(state.evaluations) ? state.evaluations : [];
-    for (const evaluation of evaluations) {
-      try {
-        await this.upsertEvaluationFromLegacy(evaluation, { skipCacheClear: true });
-      } catch (error) {
-        const contractError = validateEvaluationContract({
-          maxScore: evaluation.scale ?? evaluation.max_score ?? 20,
-          coefficient: evaluation.coefficient ?? 1,
-          status: toEvaluationStatus(evaluation.status, "draft"),
-        });
-        console.warn(
-          `[D3.6b] Évaluation legacy non migrée (${evaluation.id ?? "?"}): ${error.message || contractError || "erreur"}`,
-        );
-      }
-    }
+    const error = new Error(
+      "LEGACY_BACKOFFICE_RUNTIME_MIGRATION_REMOVED: evaluations ne sont plus importées depuis backoffice_state. PostgreSQL canonique est la seule source.",
+    );
+    error.code = "LEGACY_BACKOFFICE_RUNTIME_MIGRATION_REMOVED";
+    throw error;
   }
 
+  /**
+   * Tombstone J2A — plus de lecture/écriture depuis backoffice_state.
+   * Les données historiques restent en table pour audit ; aucun backfill, aucune purge.
+   */
   async migrateNotesFromBackOffice() {
-    const { toGradeStatus } = require("../lib/gradesCanonical");
-    const row = await this.one("SELECT state_payload FROM backoffice_state WHERE state_key = 'default'");
-    const state = row?.state_payload ?? {};
-    const notes = Array.isArray(state.notes) ? state.notes : [];
-    let anomalyCount = 0;
-    for (const note of notes) {
-      const evaluationId = String(note.evaluationId ?? "").trim();
-      if (!evaluationId) {
-        anomalyCount += 1;
-        console.warn(`[D3.6b] Anomalie note sans evaluation_id: ${note.id ?? note.studentId ?? "?"}`);
-        continue;
-      }
-      const evaluation = await this.resolveEvaluationRow(evaluationId, note.schoolCode, {
-        allowGlobalLegacyFallback: true,
-      });
-      if (!evaluation) {
-        anomalyCount += 1;
-        console.warn(
-          `[D3.6b] Anomalie note evaluation_id non résoluble: ${note.id ?? "?"} → ${evaluationId}`,
-        );
-        continue;
-      }
-      const student = await this.one(
-        `SELECT st.id FROM students st
-         WHERE st.school_id = $1 AND (st.student_code = $2 OR st.id::text = $2)
-         LIMIT 1`,
-        [evaluation.school_id, String(note.studentId ?? "")],
-      );
-      if (!student) {
-        anomalyCount += 1;
-        console.warn(`[D3.6b] Anomalie note élève introuvable: ${note.studentId ?? "?"}`);
-        continue;
-      }
-      const already = await this.one(
-        `SELECT id FROM grades
-         WHERE school_id = $1 AND evaluation_id = $2 AND student_id = $3
-         LIMIT 1`,
-        [evaluation.school_id, evaluation.id, student.id],
-      );
-      // Idempotent : ne pas re-upsert (évite bump version à chaque démarrage).
-      if (already) continue;
-      try {
-        await this.upsertGrade(
-          {
-            ...note,
-            evaluationId: evaluation.legacy_json_id || evaluation.id,
-            gradeStatus: toGradeStatus(note.gradeStatus ?? note.status, note.value != null),
-            scale: note.scale ?? evaluation.max_score,
-            evaluationCoefficient: note.evaluationCoefficient ?? evaluation.coefficient,
-          },
-          { role: "Admin School", sub: note.authorId },
-          { allowMissingTeacher: true, skipCacheClear: true, allowUnvalidatedEvaluation: true },
-        );
-      } catch (error) {
-        anomalyCount += 1;
-        console.warn(`[D3.6b] Anomalie migration note ${note.id ?? "?"}: ${error.message}`);
-      }
-    }
-    if (anomalyCount > 0) {
-      console.warn(`[D3.6b] Migration notes: ${anomalyCount} anomalie(s) explicite(s)`);
-    }
+    const error = new Error(
+      "LEGACY_BACKOFFICE_RUNTIME_MIGRATION_REMOVED: notes ne sont plus importées depuis backoffice_state. PostgreSQL canonique est la seule source.",
+    );
+    error.code = "LEGACY_BACKOFFICE_RUNTIME_MIGRATION_REMOVED";
+    throw error;
   }
 
   /**
