@@ -36,7 +36,7 @@ import {
   buildPlatformNotificationReadPatch,
   isUnreadNotification,
 } from "../lib/platformNotificationSync";
-import { getAcademicConfig, getAssignments, getClasses, getCourses, getPlanningWeekly, getPlanningCourseOptions, getSchoolRooms, getCourseScheduleReplacements, getEvaluations, getNotes, getPayments, getPresences, getReportCards, getStudents, getSubjects, createPlatformNotification, updatePlatformNotification, createClientsAnnouncement, updateClientsAnnouncement, sendClientsMessage, createClientsUser, updateClientsUser, BackOfficeStatePayload, type CanonicalReportCard } from "../services/api";
+import { getAcademicConfig, getAssignments, getClasses, getCourses, getPlanningWeekly, getPlanningCourseOptions, getSchoolRooms, getCourseScheduleReplacements, getEvaluations, getNotes, getPayments, getStudentFees, getPresences, getReportCards, getStudents, getSubjects, createPlatformNotification, updatePlatformNotification, createClientsAnnouncement, updateClientsAnnouncement, sendClientsMessage, createClientsUser, updateClientsUser, BackOfficeStatePayload, type CanonicalReportCard, type CanonicalStudentFee } from "../services/api";
 import {
   getCanonicalAnnouncements,
   getCanonicalCountries,
@@ -103,6 +103,8 @@ type AdminDataContextValue = {
   courseSchedulesData: CanonicalWeeklySlot[];
   paymentsData: PaymentItem[];
   paymentsSnapshot: ResourceSnapshot<PaymentItem>;
+  studentFeesData: CanonicalStudentFee[];
+  studentFeesSnapshot: ResourceSnapshot<CanonicalStudentFee>;
   usersSnapshot: ResourceSnapshot<CanonicalUserAccount>;
   teachersSnapshot: ResourceSnapshot<CanonicalTeacher>;
   studentsSnapshot: ResourceSnapshot<Student>;
@@ -117,6 +119,7 @@ type AdminDataContextValue = {
   replacementsSnapshot: ResourceSnapshot<CanonicalReplacement>;
   reportCardsSnapshot: ResourceSnapshot<CanonicalReportCard>;
   loadPayments: () => Promise<void>;
+  loadStudentFees: () => Promise<void>;
   loadUsers: () => Promise<void>;
   loadTeachers: () => Promise<void>;
   loadStudents: () => Promise<void>;
@@ -224,6 +227,11 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
   const [syncStatus, setSyncStatus] = useState<"idle" | "syncing" | "synced" | "offline">("idle");
   const [activeSchoolCode, setActiveSchoolCodeState] = useState("");
   const [paymentsSnapshot, setPaymentsSnapshot] = useState<ResourceSnapshot<PaymentItem>>({
+    status: "idle",
+    data: [],
+  });
+  const [studentFeesData, setStudentFeesData] = useState<CanonicalStudentFee[]>([]);
+  const [studentFeesSnapshot, setStudentFeesSnapshot] = useState<ResourceSnapshot<CanonicalStudentFee>>({
     status: "idle",
     data: [],
   });
@@ -335,6 +343,7 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
     setCoursesData([]);
     setAssignmentsData([]);
     setPaymentsData([]);
+    setStudentFeesData([]);
     setPaymentStatusesData([]);
     setPresencesData([]);
     setNotesData([]);
@@ -344,6 +353,7 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
     setAcademicConfigData(emptyAcademicConfig);
     setSyncStatus("idle");
     setPaymentsSnapshot(emptyResourceSnapshot());
+    setStudentFeesSnapshot(emptyResourceSnapshot());
     setCourseSchedulesSnapshot(emptyResourceSnapshot());
     setPlanningCourseOptionsSnapshot(emptyResourceSnapshot());
     setRoomsSnapshot(emptyResourceSnapshot());
@@ -582,6 +592,21 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
     } catch (error) {
       if (resourceScopeKeyRef.current !== scope) return;
       setPaymentsSnapshot((current) => snapshotFromFailure(error, current.data));
+    }
+  }, [session]);
+
+  const loadStudentFees = useCallback(async () => {
+    if (!session) return;
+    const scope = resourceScopeKeyRef.current;
+    setStudentFeesSnapshot((current) => ({ ...current, status: "loading" }));
+    try {
+      const rows = await getStudentFees();
+      if (resourceScopeKeyRef.current !== scope) return;
+      setStudentFeesData(rows);
+      setStudentFeesSnapshot(snapshotFromSuccess(rows));
+    } catch (error) {
+      if (resourceScopeKeyRef.current !== scope) return;
+      setStudentFeesSnapshot((current) => snapshotFromFailure(error, current.data));
     }
   }, [session]);
 
@@ -912,6 +937,7 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
     loadUsers,
     loadTeachers,
     loadPayments,
+    loadStudentFees,
     loadAnnouncements,
     loadMessages,
     loadSchools,
@@ -924,6 +950,7 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
     loadUsers,
     loadTeachers,
     loadPayments,
+    loadStudentFees,
     loadAnnouncements,
     loadMessages,
     loadSchools,
@@ -970,6 +997,7 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
       void loaders.loadUsers();
       void loaders.loadTeachers();
       void loaders.loadPayments();
+      void loaders.loadStudentFees();
       void loaders.loadAnnouncements();
       void loaders.loadMessages();
     }
@@ -1106,6 +1134,8 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
       courseSchedulesData: courseSchedulesSnapshot.data,
       paymentsData: presentedPaymentsSnapshot.data as PaymentItem[],
       paymentsSnapshot: presentedPaymentsSnapshot,
+      studentFeesData,
+      studentFeesSnapshot,
       usersSnapshot: presentedUsersSnapshot,
       teachersSnapshot: presentedTeachersSnapshot,
       studentsSnapshot: presentedStudentsSnapshot,
@@ -1122,6 +1152,7 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
       evaluationsSnapshot,
       notesSnapshot,
       loadPayments,
+      loadStudentFees,
       loadUsers,
       loadTeachers,
       loadStudents,
@@ -1354,6 +1385,8 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
     syncStatus,
     refreshBackOfficeState,
     paymentsSnapshot,
+    studentFeesData,
+    studentFeesSnapshot,
     courseSchedulesSnapshot,
     planningCourseOptionsSnapshot,
     roomsSnapshot,
@@ -1370,6 +1403,7 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
     messagesSnapshot,
     schoolsSnapshot,
     loadPayments,
+    loadStudentFees,
     loadUsers,
     loadTeachers,
     loadStudents,

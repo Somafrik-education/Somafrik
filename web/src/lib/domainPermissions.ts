@@ -50,6 +50,10 @@ export function canLoadDomain(ctx: PermissionContext, domain: DomainKey): boolea
     return canReadView(ctx, "chartSettings");
   }
 
+  if (domain === "studentFees") {
+    return canReadView(ctx, "fees") || canReadView(ctx, "payments");
+  }
+
   const view = DOMAIN_VIEW_MAP[domain];
   if (!view) return true;
   return canReadView(ctx, view);

@@ -650,6 +650,41 @@ export function getPayments() {
   return request<unknown>("/payments").then((payload) => unwrapList(payload).map(normalizePaymentRow));
 }
 
+export type CanonicalStudentFee = {
+  id: string;
+  studentId: string;
+  studentName?: string;
+  schoolCode?: string;
+  amountDue: number;
+  amountPaid: number;
+  exemption: number;
+  balance: number;
+  status: string;
+  archivedAt?: string | null;
+};
+
+function normalizeStudentFeeRow(raw: unknown): CanonicalStudentFee {
+  const row = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
+  return {
+    id: String(row.id ?? row.publicId ?? ""),
+    studentId: String(row.studentId ?? row.student_id ?? ""),
+    studentName: row.studentName ? String(row.studentName) : undefined,
+    schoolCode: row.schoolCode ? String(row.schoolCode) : undefined,
+    amountDue: Number(row.amountDue ?? row.amount_due ?? 0),
+    amountPaid: Number(row.amountPaid ?? row.amount_paid ?? 0),
+    exemption: Number(row.exemption ?? 0),
+    balance: Number(row.balance ?? 0),
+    status: String(row.status ?? ""),
+    archivedAt: row.archivedAt ? String(row.archivedAt) : row.archived_at ? String(row.archived_at) : null,
+  };
+}
+
+export function getStudentFees() {
+  return request<unknown>("/finance/student-fees").then((payload) =>
+    unwrapList(payload).map(normalizeStudentFeeRow),
+  );
+}
+
 export type CanonicalReportCard = {
   id: string;
   studentId: string;

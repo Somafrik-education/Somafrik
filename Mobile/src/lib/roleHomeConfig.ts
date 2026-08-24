@@ -14,6 +14,7 @@ export type RoleHomeKpiKey =
   | "students"
   | "presence"
   | "payments"
+  | "paymentRate"
   | "teachers"
   | "courses"
   | "notes"
@@ -65,7 +66,7 @@ const SCHOOL_ADMIN: RoleHomeShell = {
   accent: "#1D4ED8",
   identityIcon: "briefcase-outline",
   bannerIcon: "business-outline",
-  kpiKeys: ["users", "classes", "students", "payments"],
+  kpiKeys: ["users", "presence", "students", "paymentRate"],
   actionKeys: ["users", "classes", "teachers", "payments", "announcements"],
   showSecurityMatrix: true,
 };

@@ -128,6 +128,7 @@ export const TENANT_RESOURCE_LOADERS = [
   "loadUsers",
   "loadTeachers",
   "loadPayments",
+  "loadStudentFees",
   "loadAnnouncements",
   "loadMessages",
 ] as const;
