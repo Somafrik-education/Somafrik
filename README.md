@@ -2,6 +2,14 @@
 
 Somafrik unifie la gestion éducative, du pays à la classe. Stack Docker : PostgreSQL, API backend, plateforme web (Vite) et Expo mobile.
 
+## Guides utilisateurs
+
+Les procédures officielles (V1, PR #311, pas encore sur `develop`) sont ici :
+
+- [Index des guides](docs/user-guides/README.md)
+- [Guide utilisateur Web](docs/user-guides/GUIDE-UTILISATEUR-WEB.md)
+- [Guide utilisateur Mobile](docs/user-guides/GUIDE-UTILISATEUR-MOBILE.md)
+
 ## Prérequis
 
 - [Docker Desktop](https://www.docker.com/products/docker-desktop/) (Windows)
