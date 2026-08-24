@@ -17,7 +17,11 @@ export function canShowHomeNotesKpi(session: any) {
 }
 
 export function canShowHomePresenceKpi(session: any) {
-  return canReadRoute(session, "TeacherAttendance") || canReadRoute(session, "StudentPresences");
+  return (
+    canReadRoute(session, "TeacherAttendance") ||
+    canReadRoute(session, "StudentPresences") ||
+    canReadRoute(session, "Presences")
+  );
 }
 
 export function homePresenceRoute(session: any, isParentLike: boolean) {

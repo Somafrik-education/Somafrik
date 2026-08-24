@@ -14,9 +14,16 @@ import { getPaymentStats, getPresenceStats } from "../domain/metrics/schoolMetri
 import { canReadEntity, canReadRoute, canReadView } from "../domain/security/permissions";
 import { canAccessMessagesRoute } from "../lib/mobileCtaRbacAlignment";
 import { buildOverflowQuickActionItems } from "../navigation/roleTabPreferences";
-import { DATA_TRUTH_TEST_IDS, metricLabelFromSnapshot, parentAverageDisplay } from "../lib/dataTruth";
-import { ACTIVE_USERS_KPI_LABEL, PAYMENTS_KPI_LABEL, formatHomePaymentsKpi } from "../lib/homeDashboardKpis";
+import { DATA_TRUTH_TEST_IDS, METRIC_PENDING_LABEL, metricLabelFromSnapshot, parentAverageDisplay } from "../lib/dataTruth";
+import {
+  ACTIVE_USERS_KPI_LABEL,
+  PAYMENT_RATE_KPI_LABEL,
+  PAYMENTS_KPI_LABEL,
+  formatHomePaymentRateKpi,
+  formatHomePaymentsKpi,
+} from "../lib/homeDashboardKpis";
 import { countActiveUserAccounts } from "../lib/format";
+import { TODAY_PRESENCE_KPI_LABEL, getTodayEstablishmentPresenceKpi } from "../lib/todayPresenceKpi";
 import { canonicalWeightedAverage, notesForStudent } from "../lib/evaluationsV2";
 import { useFloatingTabBarLayout } from "../lib/screenLayout";
 import { useResponsiveLayout } from "../hooks/useResponsiveLayout";
@@ -85,9 +92,6 @@ export default function HomeScreen({ navigation }: any) {
     schoolsData[0] ??
     { name: "École", timezone: undefined, code: "" };
 
-  const studentIds = studentsData.map((student) => student.id);
-  const todayPresenceRows = presencesData.filter((presence) => isTodayPresence(presence.date));
-  const presenceStats = getPresenceStats(todayPresenceRows, studentIds);
   const canonicalPayments =
     paymentsSnapshot.status === "success" || paymentsSnapshot.status === "empty" ? paymentsData : [];
   const paymentStats = getPaymentStats(canonicalPayments);
@@ -101,7 +105,27 @@ export default function HomeScreen({ navigation }: any) {
   const classesValue = metricLabelFromSnapshot(classesSnapshot, (rows) =>
     String(rows.length || new Set(studentsData.map((student) => student.className)).size),
   );
-  const presenceValue = metricLabelFromSnapshot(presencesSnapshot, () => `${presenceStats.rate}%`, "0%");
+  const studentsReady =
+    studentsSnapshot.status === "success" ||
+    studentsSnapshot.status === "empty" ||
+    (studentsSnapshot.status === "offline" && studentsSnapshot.data.length > 0);
+  const presencesReady =
+    presencesSnapshot.status === "success" ||
+    presencesSnapshot.status === "empty" ||
+    (presencesSnapshot.status === "offline" && presencesSnapshot.data.length > 0);
+  const todayPresenceKpi = getTodayEstablishmentPresenceKpi({
+    students: studentsData,
+    presences: presencesData,
+    schoolCode: currentSchool.code || session?.school?.code || session?.user?.schoolCode,
+    timeZone: currentSchool.timezone,
+  });
+  const establishmentPresenceValue =
+    studentsReady && presencesReady ? todayPresenceKpi.value : METRIC_PENDING_LABEL;
+  const paymentRateValue = metricLabelFromSnapshot(
+    paymentsSnapshot,
+    (rows) => formatHomePaymentRateKpi(rows).value,
+    "0 %",
+  );
   const paymentsValue = metricLabelFromSnapshot(
     paymentsSnapshot,
     (rows) => formatHomePaymentsKpi(rows).value,
@@ -220,8 +244,12 @@ export default function HomeScreen({ navigation }: any) {
       ? kpi(
           "presence",
           "checkmark-circle-outline",
-          isParentLike ? `${studentPresenceStats.attended}/${studentPresenceStats.total}` : isTeacher ? `${teacherPresenceStats.rate}%` : presenceValue,
-          isParentLike ? "Présence" : "Présence",
+          isParentLike
+            ? `${studentPresenceStats.attended}/${studentPresenceStats.total}`
+            : isTeacher
+              ? `${teacherPresenceStats.rate}%`
+              : establishmentPresenceValue,
+          isParentLike || isTeacher ? "Présence" : TODAY_PRESENCE_KPI_LABEL,
           "#16A34A",
           "#ECFDF5",
           () =>
@@ -250,6 +278,17 @@ export default function HomeScreen({ navigation }: any) {
               paymentsRoute === "StudentPayments" ? { studentId: selectedStudentId } : undefined,
             ),
           DATA_TRUTH_TEST_IDS.homePaymentsValue,
+        )
+      : null,
+    paymentRate: canReadEntity(session, "payments")
+      ? kpi(
+          "paymentRate",
+          "card-outline",
+          paymentsReady ? paymentRateValue : METRIC_PENDING_LABEL,
+          PAYMENT_RATE_KPI_LABEL,
+          "#EA580C",
+          "#FFF7ED",
+          () => navigation.navigate("Payments"),
         )
       : null,
     teachers: canReadEntity(session, "teachers")

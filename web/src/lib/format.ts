@@ -109,6 +109,8 @@ export type UserAccountActivityFields = {
 /** Libellé KPI : comptes utilisables actuellement, jamais les archivés. */
 export const ACTIVE_USERS_KPI_LABEL = "Utilisateurs actifs";
 
+export const PAYMENT_RATE_KPI_LABEL = "Taux de paiement";
+
 /**
  * Statuts non utilisables (API FR + codes DB). `normalize()` retire les accents :
  * Archivé → archive, Désactivé → desactive, Supprimé → supprime.

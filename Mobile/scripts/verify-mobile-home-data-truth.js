@@ -26,6 +26,7 @@ function main() {
   for (const rel of [
     path.join("src", "lib", "format.activeUser.test.ts"),
     path.join("src", "lib", "homeDashboardKpis.test.ts"),
+    path.join("src", "lib", "todayPresenceKpi.test.ts"),
   ]) {
     const extra = spawnSync("npx", ["--yes", "tsx", rel], {
       cwd: MOBILE,
@@ -105,7 +106,11 @@ function main() {
   assert.doesNotMatch(home, /value=\{String\(activeUsersCount\)\}/);
   assert.doesNotMatch(home, /function isActiveUserAccount/);
   assert.match(home, /ACTIVE_USERS_KPI_LABEL/);
+  assert.match(home, /TODAY_PRESENCE_KPI_LABEL/);
+  assert.match(home, /PAYMENT_RATE_KPI_LABEL/);
+  assert.match(home, /getTodayEstablishmentPresenceKpi/);
   assert.match(home, /formatHomePaymentsKpi/);
+  assert.match(home, /formatHomePaymentRateKpi/);
   assert.match(home, /countActiveUserAccounts/);
   assert.doesNotMatch(home, /paymentStats\.rate/);
   assert.doesNotMatch(home, /\$\{paymentStats\.rate\}%/);
@@ -114,7 +119,11 @@ function main() {
   assert.match(formatLib, /"archived"/);
   assert.match(formatLib, /ACTIVE_USERS_KPI_LABEL = "Utilisateurs actifs"/);
   assert.match(homeKpis, /PAYMENTS_KPI_LABEL = "Paiements"/);
+  assert.match(homeKpis, /PAYMENT_RATE_KPI_LABEL = "Taux de paiement"/);
   assert.match(homeKpis, /String\(payments\.length\)/);
+  const roleHome = read(path.join("lib", "roleHomeConfig.ts"));
+  assert.match(roleHome, /kpiKeys: \["users", "presence", "students", "paymentRate"\]/);
+  assert.doesNotMatch(roleHome, /kpiKeys: \["users", "classes", "students"/);
   assert.doesNotMatch(home, /navigate\("AdminCrud", \{ entity: "users" \}/);
   assert.doesNotMatch(home, /navigate\("AdminCrud", \{ entity: "payments" \}/);
   assert.doesNotMatch(home, /announcementsData\.length\} communication/);

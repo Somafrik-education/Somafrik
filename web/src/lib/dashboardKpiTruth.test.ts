@@ -82,7 +82,9 @@ describe("KPI Web Utilisateurs actifs", () => {
     const dashboardCharts = readFileSync(join(here, "dashboardCharts.ts"), "utf8");
     expect(dashboardCharts).toContain("label: ACTIVE_USERS_KPI_LABEL, value: formatMetric(metrics.activeUsers)");
     expect(dashboardCharts).not.toMatch(/label: "Utilisateurs", value: formatMetric\(metrics\.activeUsers\)/);
-    expect(dashboardCharts).toContain("name: ACTIVE_USERS_KPI_LABEL, value: metrics.activeUsers");
+    expect(dashboardCharts).toContain("label: TODAY_PRESENCE_KPI_LABEL, value: extras.todayPresenceValue");
+    expect(dashboardCharts).toContain("label: PAYMENT_RATE_KPI_LABEL, value: extras.paymentRateValue");
+    expect(dashboardCharts).not.toMatch(/label: "Présences", value: formatMetric\(metrics\.presences\)/);
 
     const overview = readFileSync(
       join(here, "../pages/etablissement/EtablissementOverviewPage.tsx"),

@@ -8,12 +8,13 @@ import {
 } from "./chartTypes";
 import {
   getEstablishmentMetrics,
+  getCurrentSchool,
   scopedNotes,
   scopedPayments,
   scopedPresences,
   scopedStudents,
 } from "./establishment";
-import { formatMetric, isActiveUserAccount, normalize, getEstablishmentChartProfile, type EstablishmentChartProfile, ACTIVE_USERS_KPI_LABEL } from "./format";
+import { formatMetric, isActiveUserAccount, normalize, getEstablishmentChartProfile, type EstablishmentChartProfile, ACTIVE_USERS_KPI_LABEL, PAYMENT_RATE_KPI_LABEL } from "./format";
 import { COUNTRY_ADMIN_ROLE } from "./orgHierarchy";
 import {
   getLiveKpis,
@@ -32,7 +33,7 @@ type ScopeState = {
   subscriptions: Subscription[];
   notifications: PlatformNotification[];
 };
-import { getPresenceStats } from "./presenceMetrics";
+import { getPresenceStats, getTodayEstablishmentPresenceKpi, TODAY_PRESENCE_KPI_LABEL, type ExpectedStudent } from "./presenceMetrics";
 
 type Row = Record<string, unknown>;
 
@@ -330,7 +331,15 @@ export function buildEstablishmentDashboardCharts(
     }
   }
 
-  const kpiItems = buildEstablishmentKpiItems(metrics, profile);
+  const kpiItems = buildEstablishmentKpiItems(metrics, profile, {
+    todayPresenceValue: getTodayEstablishmentPresenceKpi({
+      students: students as ExpectedStudent[],
+      presences: presences as Array<{ studentId?: string; date?: string; present?: boolean; status?: string }>,
+      schoolCode: getCurrentSchool(user, state)?.code ?? user?.schoolCode,
+      timeZone: getCurrentSchool(user, state)?.timezone,
+    }).value,
+    paymentRateValue: formatPaymentRate(payments as Row[]),
+  });
   return {
     metrics,
     profile,
@@ -339,9 +348,19 @@ export function buildEstablishmentDashboardCharts(
   };
 }
 
+function formatPaymentRate(payments: Row[]): string {
+  const paid = payments.filter((row) => {
+    const value = String(row.status ?? "").trim().toUpperCase();
+    return value === "PAYE" || value === "PAID" || value === "PAYÉ";
+  }).length;
+  const rate = payments.length ? Math.round((paid / payments.length) * 100) : 0;
+  return `${rate} %`;
+}
+
 function buildEstablishmentKpiItems(
   metrics: ReturnType<typeof getEstablishmentMetrics>,
   profile: EstablishmentChartProfile,
+  extras: { todayPresenceValue: string; paymentRateValue: string },
 ) {
   if (profile === "academic") {
     return [
@@ -362,17 +381,16 @@ function buildEstablishmentKpiItems(
   if (profile === "operations") {
     return [
       { label: ACTIVE_USERS_KPI_LABEL, value: formatMetric(metrics.activeUsers) },
+      { label: TODAY_PRESENCE_KPI_LABEL, value: extras.todayPresenceValue },
       { label: "Documents", value: formatMetric(metrics.documents) },
-      { label: "Présences", value: formatMetric(metrics.presences) },
       { label: "Messages", value: formatMetric(metrics.unreadMessages) },
     ];
   }
   return [
     { label: ACTIVE_USERS_KPI_LABEL, value: formatMetric(metrics.activeUsers) },
+    { label: TODAY_PRESENCE_KPI_LABEL, value: extras.todayPresenceValue },
     { label: "Élèves", value: formatMetric(metrics.students) },
-    { label: "Enseignants", value: formatMetric(metrics.teachers) },
-    { label: "Paiements", value: formatMetric(metrics.payments) },
-    { label: "Présences", value: formatMetric(metrics.presences) },
+    { label: PAYMENT_RATE_KPI_LABEL, value: extras.paymentRateValue },
   ];
 }
 

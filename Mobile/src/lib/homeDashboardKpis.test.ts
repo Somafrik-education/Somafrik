@@ -8,8 +8,10 @@ import path from "node:path";
 import { getPaymentStats } from "../domain/metrics/schoolMetrics";
 import {
   ACTIVE_USERS_KPI_LABEL,
+  PAYMENT_RATE_KPI_LABEL,
   PAYMENTS_KPI_LABEL,
   formatHomeActiveUsersKpi,
+  formatHomePaymentRateKpi,
   formatHomePaymentsKpi,
 } from "./homeDashboardKpis";
 
@@ -75,14 +77,38 @@ function run() {
   assert.notEqual(homeCount.value, `${canonicalStats.rate}%`);
   assert.doesNotMatch(homeCount.value, /%/);
 
+  const rateEmpty = formatHomePaymentRateKpi([]);
+  assert.equal(rateEmpty.label, PAYMENT_RATE_KPI_LABEL);
+  assert.equal(rateEmpty.value, "0 %");
+
+  const rateOnePaid = formatHomePaymentRateKpi([payment("p1", "stu-1", "PAYE")]);
+  assert.equal(rateOnePaid.value, "100 %");
+
+  const rateTwenty = formatHomePaymentRateKpi([
+    payment("p1", "stu-1", "PAYE"),
+    payment("p2", "stu-2", "EN_ATTENTE"),
+    payment("p3", "stu-3", "EN_ATTENTE"),
+    payment("p4", "stu-4", "EN_ATTENTE"),
+    payment("p5", "stu-5", "EN_ATTENTE"),
+  ]);
+  assert.equal(rateTwenty.label, "Taux de paiement");
+  assert.equal(rateTwenty.value, "20 %");
+
   const homeSrc = fs.readFileSync(path.join(process.cwd(), "src", "screens", "HomeScreen.tsx"), "utf8");
   assert.match(homeSrc, /ACTIVE_USERS_KPI_LABEL/);
   assert.match(homeSrc, /PAYMENTS_KPI_LABEL/);
+  assert.match(homeSrc, /PAYMENT_RATE_KPI_LABEL/);
+  assert.match(homeSrc, /TODAY_PRESENCE_KPI_LABEL/);
   assert.match(homeSrc, /formatHomePaymentsKpi/);
+  assert.match(homeSrc, /getTodayEstablishmentPresenceKpi/);
   assert.doesNotMatch(homeSrc, /usersValue, "Utilisateurs"/);
   assert.doesNotMatch(homeSrc, /paymentStats\.rate/);
   assert.doesNotMatch(homeSrc, /function isActiveUserAccount/);
   assert.doesNotMatch(homeSrc, /getPaymentStats\([^)]*studentIds/);
+
+  const roleHome = fs.readFileSync(path.join(process.cwd(), "src", "lib", "roleHomeConfig.ts"), "utf8");
+  assert.match(roleHome, /kpiKeys: \["users", "presence", "students", "paymentRate"\]/);
+  assert.doesNotMatch(roleHome, /kpiKeys: \["users", "classes", "students"/);
 
   console.log("OK: homeDashboardKpis valeur+libellé utilisateurs actifs / paiements");
 }

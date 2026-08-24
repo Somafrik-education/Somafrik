@@ -28,6 +28,8 @@ const KPI_LABEL_FEATURES: Record<string, string | null> = {
   "Élèves suivis": "Élèves",
   Enseignants: "Enseignants",
   "Alertes à traiter": "Notifications",
+  "Présence du jour": "Présences",
+  "Taux de paiement": "Paiements",
 };
 
 const ESTABLISHMENT_CHART_FEATURES: Record<string, string | string[]> = {
