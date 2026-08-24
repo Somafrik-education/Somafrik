@@ -24,8 +24,12 @@ function main() {
   const classes = fs.readFileSync(path.join(SCREENS, "ClassesScreen.tsx"), "utf8");
   assert.doesNotMatch(classes, /getPresenceRate/);
   assert.doesNotMatch(classes, /from ["']\.\.\/data\/catalog["']/);
-  assert.match(classes, /getPresenceStats/);
+  assert.match(classes, /resolveClassTodayPresenceBadge/);
+  assert.match(classes, /filterStudentsByClassIdentity/);
   assert.match(classes, /presencesSnapshot/);
+  assert.doesNotMatch(classes, /getPresenceStats/);
+  assert.doesNotMatch(classes, /classNameMatches\(student\.className/);
+  assert.doesNotMatch(classes, /"0%"/);
   console.log("OK: ClassesScreen n'utilise plus catalog.getPresenceRate");
 
   const hits = [];

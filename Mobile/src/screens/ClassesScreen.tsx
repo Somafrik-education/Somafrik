@@ -11,13 +11,16 @@ import { useFocusEffect } from "@react-navigation/native";
 import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "../context/AuthContext";
 import { useAdminData } from "../context/AdminDataContext";
-import { getPresenceStats } from "../domain/metrics/schoolMetrics";
 import { canReadRoute } from "../domain/security/permissions";
 import {
-  classNameMatches,
   scopedClassesForSession,
   scopedStudentsForSession,
 } from "../lib/establishment";
+import { filterStudentsByClassIdentity } from "../lib/attendanceClassIdentity";
+import {
+  classPresenceBadgeTestId,
+  resolveClassTodayPresenceBadge,
+} from "../lib/classTodayPresenceBadge";
 import { useFloatingTabBarLayout } from "../lib/screenLayout";
 import {
   CLASS_CARD_TEST_ID,
@@ -51,7 +54,7 @@ export default function ClassesScreen({ navigation }: any) {
     },
   ];
   const { session } = useAuth();
-  const { classesData, studentsData, teachersData, assignmentsData, presencesSnapshot, loadClasses, loadStudents, loadPresences, loadTeachers, loadAssignments, classesSnapshot, studentsSnapshot, resourceScopeKey } = useAdminData();
+  const { classesData, studentsData, teachersData, assignmentsData, schoolsData, presencesSnapshot, loadClasses, loadStudents, loadPresences, loadTeachers, loadAssignments, classesSnapshot, studentsSnapshot, resourceScopeKey } = useAdminData();
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [offlineActionMessage, setOfflineActionMessage] = useState<string | null>(null);
@@ -63,6 +66,11 @@ export default function ClassesScreen({ navigation }: any) {
   const visibleClasses = scopedClassesForSession(session, classesData, studentsData, teacherScopeState);
   const totalStudents = visibleStudents.length;
   const canOpenStudents = canReadRoute(session, session?.role === "teacher" ? "TeacherStudents" : "Students");
+  const schoolCode = String(session?.school?.code ?? session?.user?.schoolCode ?? "");
+  const currentSchool =
+    schoolsData.find((item) => item.code === schoolCode) ??
+    session?.school ??
+    schoolsData[0];
 
   useFocusEffect(
     useCallback(() => {
@@ -213,13 +221,25 @@ export default function ClassesScreen({ navigation }: any) {
           )
         }
         renderItem={({ item }) => {
-          const classStudents = visibleStudents.filter((student) => classNameMatches(student.className, item.name));
-          const teacher = teachersData.find((teacherItem) => teacherItem.id === item.teacherId);
-          const presenceRateLabel = metricLabelFromSnapshot(
-            presencesSnapshot,
-            (rows) => `${getPresenceStats(rows, classStudents.map((student) => student.id)).rate}%`,
-            "0%",
+          const classStudents = filterStudentsByClassIdentity(
+            visibleStudents,
+            {
+              classId: String(item.id ?? ""),
+              classCode: String(item.classCode || item.publicId || ""),
+              className: item.name,
+            },
+            classesData,
           );
+          const teacher = teachersData.find((teacherItem) => teacherItem.id === item.teacherId);
+          const presenceBadge = resolveClassTodayPresenceBadge({
+            studentsSnapshot,
+            presencesSnapshot,
+            students: visibleStudents,
+            classes: classesData,
+            schoolClass: item,
+            schoolCode,
+            timeZone: (currentSchool as { timezone?: string } | undefined)?.timezone,
+          });
 
           return (
             <View style={styles.classCard}>
@@ -245,7 +265,12 @@ export default function ClassesScreen({ navigation }: any) {
                     {item.name}
                   </Text>
                   <View style={styles.badge}>
-                    <Text style={styles.badgeText}>Présence {presenceRateLabel}</Text>
+                    <Text
+                      style={styles.badgeText}
+                      testID={classPresenceBadgeTestId(item)}
+                    >
+                      {presenceBadge.badgeText}
+                    </Text>
                   </View>
                 </View>
 

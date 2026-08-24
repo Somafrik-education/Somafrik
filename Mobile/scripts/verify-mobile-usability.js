@@ -55,8 +55,42 @@ function main() {
   assert.match(classes, /USABILITY_TEST_IDS\.classesSearch/);
   assert.match(classes, /classes-empty-search|USABILITY_TEST_IDS\.classesEmptySearch/);
   assert.match(classes, /FlatList/);
-  assert.match(classes, /Présence \{presenceRateLabel\}/);
-  console.log("OK: Classes — recherche réelle nom/code + empty state + FlatList");
+  assert.match(classes, /resolveClassTodayPresenceBadge/);
+  assert.match(classes, /presenceBadge\.badgeText/);
+  assert.match(classes, /classPresenceBadgeTestId/);
+  assert.doesNotMatch(
+    classes,
+    /Présence \{presenceRateLabel\}/,
+    "ClassesScreen ne doit plus interpoler l'ancien Présence {presenceRateLabel}",
+  );
+  assert.doesNotMatch(
+    classes,
+    /presenceRateLabel/,
+    "le badge Classes n'utilise plus presenceRateLabel",
+  );
+  assert.doesNotMatch(
+    classes,
+    /getPresenceStats/,
+    "le badge Classes n'agrège plus getPresenceStats",
+  );
+  const classBadge = source(path.join("lib", "classTodayPresenceBadge.ts"));
+  assert.match(classBadge, /CLASS_EMPTY_PRESENCE_BADGE/);
+  assert.match(classBadge, /CLASS_UNSET_PRESENCE_LABEL = "Non saisi"/);
+  assert.match(classBadge, /badgeText: `Présence \$\{rate\} %`/);
+  assert.match(classBadge, /studentBelongsToSchool/);
+  assert.match(classBadge, /presenceBelongsToClass/);
+  assert.match(classBadge, /presenceBelongsToSchool/);
+  assert.doesNotMatch(
+    classBadge,
+    /if \(expected && rowSchool\)[\s\S]{0,120}return true;/,
+    "scope tenant fail-closed : schoolCode manquant ≠ match",
+  );
+  assert.doesNotMatch(
+    classBadge,
+    /if \(classCode && rowClassCode\) return rowClassCode === classCode;\s*return true;/,
+    "scope classId fail-closed : ligne sans identité de classe ≠ match",
+  );
+  console.log("OK: Classes — recherche réelle nom/code + empty state + FlatList + badge présence du jour");
 
   const planning = source(path.join("screens", "TimetableScreen.tsx"));
   assert.match(planning, /accessibilityState=\{\{\s*selected:/);
