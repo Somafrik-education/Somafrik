@@ -78,8 +78,8 @@ Pour chaque ligne retenue :
 
 | Champ | Règle |
 | ----- | ----- |
-| `schoolId` / `schoolCode` | isolation tenant ; autre établissement ignoré |
-| `classId` / `classCode` | doit matcher la classe affichée si présent sur la ligne API |
+| `schoolId` / `schoolCode` | isolation tenant **fail-closed** : schoolCode manquant sur la ligne ou l’élève → hors scope |
+| `classId` / `classCode` | doit matcher la classe affichée ; ligne sans `classId`/`classCode` → hors scope |
 | `studentId` | roster d'inscription active de **cette** classe |
 | `date` | jour civil courant uniquement |
 | `status` | `present`/`late` = assisté ; `absent`/`excused` = non assisté |

@@ -77,6 +77,19 @@ function main() {
   assert.match(classBadge, /CLASS_EMPTY_PRESENCE_BADGE/);
   assert.match(classBadge, /CLASS_UNSET_PRESENCE_LABEL = "Non saisi"/);
   assert.match(classBadge, /badgeText: `Présence \$\{rate\} %`/);
+  assert.match(classBadge, /studentBelongsToSchool/);
+  assert.match(classBadge, /presenceBelongsToClass/);
+  assert.match(classBadge, /presenceBelongsToSchool/);
+  assert.doesNotMatch(
+    classBadge,
+    /if \(expected && rowSchool\)[\s\S]{0,120}return true;/,
+    "scope tenant fail-closed : schoolCode manquant ≠ match",
+  );
+  assert.doesNotMatch(
+    classBadge,
+    /if \(classCode && rowClassCode\) return rowClassCode === classCode;\s*return true;/,
+    "scope classId fail-closed : ligne sans identité de classe ≠ match",
+  );
   console.log("OK: Classes — recherche réelle nom/code + empty state + FlatList + badge présence du jour");
 
   const planning = source(path.join("screens", "TimetableScreen.tsx"));
