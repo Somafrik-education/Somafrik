@@ -23,6 +23,7 @@ import {
 } from "../../lib/establishment";
 import { countUniqueParentsInRelations } from "../../lib/relations";
 import { scopedUsers } from "../../lib/scope";
+import { ACTIVE_USERS_KPI_LABEL } from "../../lib/format";
 
 type Row = Record<string, unknown>;
 
@@ -53,7 +54,7 @@ export function EtablissementOverviewPage() {
     const allTiles: OverviewTile[] = [
       {
         key: "users",
-        label: "Comptes utilisateurs",
+        label: ACTIVE_USERS_KPI_LABEL,
         to: "/etablissement/comptes-utilisateurs",
         view: "users",
         icon: UserRound,

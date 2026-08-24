@@ -21,7 +21,7 @@ import {
   scopedStudents,
   scopedTeachers,
 } from "./establishment";
-import { isActiveUserAccount, normalize } from "./format";
+import { isActiveUserAccount, normalize, ACTIVE_USERS_KPI_LABEL } from "./format";
 import { getPresenceStats } from "./presenceMetrics";
 import { COUNTRY_ADMIN_ROLE } from "./orgHierarchy";
 import {
@@ -143,7 +143,7 @@ function applyPlatformChartPeriod(
             { name: "Pays", value: allCountries.length, fill: CHART_COLORS.brand },
             { name: "Établissements", value: schools.length, fill: CHART_COLORS.teal },
             {
-              name: "Utilisateurs",
+              name: ACTIVE_USERS_KPI_LABEL,
               value: users.length,
               fill: CHART_COLORS.violet,
             },
@@ -166,14 +166,14 @@ function applyPlatformChartPeriod(
         user.role === COUNTRY_ADMIN_ROLE
           ? [
               { name: "Établissements", value: schools.length },
-              { name: "Utilisateurs actifs", value: activeUsers },
+              { name: ACTIVE_USERS_KPI_LABEL, value: activeUsers },
               { name: "Abonnements", value: subscriptions.length },
               { name: "Notifications", value: notifications.length },
             ]
           : [
               { name: "Pays", value: allCountries.length },
               { name: "Établissements", value: schools.length },
-              { name: "Utilisateurs actifs", value: activeUsers },
+              { name: ACTIVE_USERS_KPI_LABEL, value: activeUsers },
               { name: "Revenus mensuels", value: monthlyRevenue },
               { name: "Alertes plateforme", value: suspendedSchools + expiredSubscriptions },
             ];
@@ -334,7 +334,7 @@ function applyEstablishmentChartPeriod(
   ];
 
   const operationsBar: ChartDatum[] = [
-    { name: "Utilisateurs", value: activeUsers.length, fill: CHART_COLORS.brand },
+    { name: ACTIVE_USERS_KPI_LABEL, value: activeUsers.length, fill: CHART_COLORS.brand },
     { name: "Documents", value: documents.length, fill: CHART_COLORS.teal },
     { name: "Présences", value: presences.length, fill: CHART_COLORS.emerald },
     { name: "Messages", value: unreadMessages, fill: CHART_COLORS.amber },

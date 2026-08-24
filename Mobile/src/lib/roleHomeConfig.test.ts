@@ -11,7 +11,7 @@ assert.equal(MAX_HOME_KPIS, 4);
 const admin = getRoleHomeShell({ role: "school_admin" });
 assert.equal(admin.spaceLabel, "Espace administrateur");
 assert.equal(admin.kpiKeys.length, 4);
-assert.deepEqual(admin.kpiKeys, ["users", "classes", "students", "payments"]);
+assert.deepEqual(admin.kpiKeys, ["users", "presence", "students", "paymentRate"]);
 assert.ok(admin.actionKeys.includes("users"));
 assert.ok(admin.actionKeys.includes("classes"));
 assert.ok(admin.actionKeys.includes("teachers"));

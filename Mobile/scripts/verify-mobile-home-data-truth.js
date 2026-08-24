@@ -23,6 +23,22 @@ function main() {
   }
   process.stdout.write(unit.stdout || "");
 
+  for (const rel of [
+    path.join("src", "lib", "format.activeUser.test.ts"),
+    path.join("src", "lib", "homeDashboardKpis.test.ts"),
+    path.join("src", "lib", "paymentRateKpi.test.ts"),
+    path.join("src", "lib", "todayPresenceKpi.test.ts"),
+  ]) {
+    const extra = spawnSync("npx", ["--yes", "tsx", rel], {
+      cwd: MOBILE,
+      encoding: "utf8",
+    });
+    if (extra.status !== 0) {
+      throw new Error(extra.stderr || extra.stdout || `${rel} failed`);
+    }
+    process.stdout.write(extra.stdout || "");
+  }
+
   const scopeUnit = spawnSync("npx", ["--yes", "tsx", path.join("src", "lib", "scope.test.ts")], {
     cwd: MOBILE,
     encoding: "utf8",
@@ -33,6 +49,9 @@ function main() {
   process.stdout.write(scopeUnit.stdout || "");
 
   const home = read(path.join("screens", "HomeScreen.tsx"));
+  const formatLib = read(path.join("lib", "format.ts"));
+  const homeKpis = read(path.join("lib", "homeDashboardKpis.ts"));
+  const paymentRate = read(path.join("lib", "paymentRateKpi.ts"));
   const context = read(path.join("context", "AdminDataContext.tsx"));
 
   assert.match(context, /usersSnapshot/);
@@ -87,12 +106,44 @@ function main() {
   assert.match(home, /DATA_TRUTH_TEST_IDS\.homePresenceValue/);
   assert.match(home, /DATA_TRUTH_TEST_IDS\.homePaymentsValue/);
   assert.doesNotMatch(home, /value=\{String\(activeUsersCount\)\}/);
+  assert.doesNotMatch(home, /function isActiveUserAccount/);
+  assert.match(home, /ACTIVE_USERS_KPI_LABEL/);
+  assert.match(home, /TODAY_PRESENCE_KPI_LABEL/);
+  assert.match(home, /PAYMENT_RATE_KPI_LABEL/);
+  assert.match(home, /getTodayEstablishmentPresenceKpi/);
+  assert.match(home, /formatHomePaymentsKpi/);
+  assert.match(home, /formatHomePaymentRateKpi/);
+  assert.match(home, /studentFeesSnapshot/);
+  assert.match(home, /loadStudentFees/);
+  assert.match(context, /loadStudentFees/);
+  assert.match(context, /getStudentFees/);
+  assert.match(home, /countActiveUserAccounts/);
+  assert.doesNotMatch(home, /paymentStats\.rate/);
+  assert.doesNotMatch(home, /\$\{paymentStats\.rate\}%/);
+  assert.doesNotMatch(home, /getPaymentStats\(\s*[^,]+,\s*studentIds/);
+  assert.match(formatLib, /INACTIVE_USER_ACCOUNT_STATUSES/);
+  assert.match(formatLib, /"archived"/);
+  assert.match(formatLib, /ACTIVE_USERS_KPI_LABEL = "Utilisateurs actifs"/);
+  assert.match(homeKpis, /PAYMENTS_KPI_LABEL = "Paiements"/);
+  assert.match(homeKpis, /PAYMENT_RATE_KPI_LABEL/);
+  assert.match(homeKpis, /formatPaymentRateKpi/);
+  assert.match(homeKpis, /String\(payments\.length\)/);
+  assert.match(paymentRate, /PAYMENT_RATE_KPI_LABEL = "Taux de paiement"/);
+  assert.match(paymentRate, /student_fee_obligations/);
+  assert.doesNotMatch(paymentRate, /paid \/ payments\.length/);
+  assert.doesNotMatch(paymentRate, /Math\.round\(\(paid \/ payments\.length\)/);
+  const roleHome = read(path.join("lib", "roleHomeConfig.ts"));
+  assert.match(roleHome, /kpiKeys: \["users", "presence", "students", "paymentRate"\]/);
+  assert.doesNotMatch(roleHome, /kpiKeys: \["users", "classes", "students"/);
   assert.doesNotMatch(home, /navigate\("AdminCrud", \{ entity: "users" \}/);
   assert.doesNotMatch(home, /navigate\("AdminCrud", \{ entity: "payments" \}/);
   assert.doesNotMatch(home, /announcementsData\.length\} communication/);
   assert.doesNotMatch(home, /messagesData\.length\} échange/);
 
   const students = read(path.join("screens", "StudentsScreen.tsx"));
+  const adminCrud = read(path.join("screens", "AdminCrudScreen.tsx"));
+  assert.match(adminCrud, /import \{ isActiveUserAccount \} from "\.\.\/lib\/format"/);
+  assert.doesNotMatch(adminCrud, /function isActiveUserAccount/);
   const studentDetail = read(path.join("screens", "StudentDetailScreen.tsx"));
   const studentPresences = read(path.join("screens", "StudentPresencesScreen.tsx"));
   const classes = read(path.join("screens", "ClassesScreen.tsx"));
@@ -131,7 +182,7 @@ function main() {
   assert.doesNotMatch(selector, /loginCode/);
   assert.doesNotMatch(selector, /legacySchoolCode/);
 
-  console.log("OK: Accueil hydrate users/presences/payments/annonces/messages ; isolation de scope ; pas de faux 0");
+  console.log("OK: Accueil hydrate users/presences/payments ; KPI actifs/paiements canoniques ; isolation de scope");
 }
 
 main();

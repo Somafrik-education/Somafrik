@@ -53,6 +53,8 @@ export interface School {
   principalName?: string;
   principalEmail?: string;
   principalPhone?: string;
+  /** Fuseau civil de l'établissement (profil PostgreSQL). */
+  timezone?: string;
   createdAt?: string;
   updatedAt?: string;
   deletedAt?: string;

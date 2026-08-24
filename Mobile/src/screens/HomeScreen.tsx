@@ -14,7 +14,16 @@ import { getPaymentStats, getPresenceStats } from "../domain/metrics/schoolMetri
 import { canReadEntity, canReadRoute, canReadView } from "../domain/security/permissions";
 import { canAccessMessagesRoute } from "../lib/mobileCtaRbacAlignment";
 import { buildOverflowQuickActionItems } from "../navigation/roleTabPreferences";
-import { DATA_TRUTH_TEST_IDS, metricLabelFromSnapshot, parentAverageDisplay } from "../lib/dataTruth";
+import { DATA_TRUTH_TEST_IDS, METRIC_PENDING_LABEL, metricLabelFromSnapshot, parentAverageDisplay } from "../lib/dataTruth";
+import {
+  ACTIVE_USERS_KPI_LABEL,
+  PAYMENT_RATE_KPI_LABEL,
+  PAYMENTS_KPI_LABEL,
+  formatHomePaymentRateKpi,
+  formatHomePaymentsKpi,
+} from "../lib/homeDashboardKpis";
+import { countActiveUserAccounts } from "../lib/format";
+import { TODAY_PRESENCE_KPI_LABEL, getTodayEstablishmentPresenceKpi } from "../lib/todayPresenceKpi";
 import { canonicalWeightedAverage, notesForStudent } from "../lib/evaluationsV2";
 import { useFloatingTabBarLayout } from "../lib/screenLayout";
 import { useResponsiveLayout } from "../hooks/useResponsiveLayout";
@@ -50,6 +59,8 @@ export default function HomeScreen({ navigation }: any) {
     paymentsData,
     paymentsSnapshot,
     loadPayments,
+    studentFeesSnapshot,
+    loadStudentFees,
     notesSnapshot,
     loadNotes,
     presencesData,
@@ -83,25 +94,49 @@ export default function HomeScreen({ navigation }: any) {
     schoolsData[0] ??
     { name: "École", timezone: undefined, code: "" };
 
-  const studentIds = studentsData.map((student) => student.id);
-  const todayPresenceRows = presencesData.filter((presence) => isTodayPresence(presence.date));
-  const presenceStats = getPresenceStats(todayPresenceRows, studentIds);
-  const paymentStats = getPaymentStats(
-    paymentsSnapshot.status === "success" || paymentsSnapshot.status === "empty" ? paymentsData : [],
-    studentIds,
-  );
+  const canonicalPayments =
+    paymentsSnapshot.status === "success" || paymentsSnapshot.status === "empty" ? paymentsData : [];
+  const paymentStats = getPaymentStats(canonicalPayments);
   const paymentsReady =
     paymentsSnapshot.status === "success" ||
     paymentsSnapshot.status === "empty" ||
     (paymentsSnapshot.status === "offline" && paymentsSnapshot.data.length > 0);
 
-  const usersValue = metricLabelFromSnapshot(usersSnapshot, (rows) => String(rows.filter(isActiveUserAccount).length));
+  const usersValue = metricLabelFromSnapshot(usersSnapshot, (rows) => String(countActiveUserAccounts(rows)));
   const studentsValue = metricLabelFromSnapshot(studentsSnapshot, (rows) => String(rows.length));
   const classesValue = metricLabelFromSnapshot(classesSnapshot, (rows) =>
     String(rows.length || new Set(studentsData.map((student) => student.className)).size),
   );
-  const presenceValue = metricLabelFromSnapshot(presencesSnapshot, () => `${presenceStats.rate}%`, "0%");
-  const paymentsValue = metricLabelFromSnapshot(paymentsSnapshot, () => `${paymentStats.rate}%`, "0%");
+  const studentsReady =
+    studentsSnapshot.status === "success" ||
+    studentsSnapshot.status === "empty" ||
+    (studentsSnapshot.status === "offline" && studentsSnapshot.data.length > 0);
+  const presencesReady =
+    presencesSnapshot.status === "success" ||
+    presencesSnapshot.status === "empty" ||
+    (presencesSnapshot.status === "offline" && presencesSnapshot.data.length > 0);
+  const todayPresenceKpi = getTodayEstablishmentPresenceKpi({
+    students: studentsData,
+    presences: presencesData,
+    schoolCode: currentSchool.code || session?.school?.code || session?.user?.schoolCode,
+    timeZone: currentSchool.timezone,
+  });
+  const establishmentPresenceValue =
+    studentsReady && presencesReady ? todayPresenceKpi.value : METRIC_PENDING_LABEL;
+  const studentFeesReady =
+    studentFeesSnapshot.status === "success" ||
+    studentFeesSnapshot.status === "empty" ||
+    (studentFeesSnapshot.status === "offline" && studentFeesSnapshot.data.length > 0);
+  const paymentRateValue = metricLabelFromSnapshot(
+    studentFeesSnapshot,
+    (rows) => formatHomePaymentRateKpi(rows).value,
+    METRIC_PENDING_LABEL,
+  );
+  const paymentsValue = metricLabelFromSnapshot(
+    paymentsSnapshot,
+    (rows) => formatHomePaymentsKpi(rows).value,
+    "0",
+  );
   const announcementsValue = metricLabelFromSnapshot(announcementsSnapshot, (rows) => String(rows.length));
   const unreadMessagesCount = getUnreadMessagesCount(session, messagesSnapshot.data, studentsData, teacherScopeState);
   const unreadMessagesValue = metricLabelFromSnapshot(messagesSnapshot, () => String(unreadMessagesCount));
@@ -146,7 +181,10 @@ export default function HomeScreen({ navigation }: any) {
         void loadTeachers();
         void loadClasses();
       }
-      if (canReadEntity(session, "payments")) void loadPayments();
+      if (canReadEntity(session, "payments")) {
+        void loadPayments();
+        void loadStudentFees();
+      }
       if (canReadEntity(session, "announcements")) void loadAnnouncements();
       if (canReadEntity(session, "messages")) void loadMessages();
       if (session?.role === "super_admin" || session?.role === "country_admin") void loadSchools();
@@ -160,6 +198,7 @@ export default function HomeScreen({ navigation }: any) {
       loadTeachers,
       loadClasses,
       loadPayments,
+      loadStudentFees,
       loadAnnouncements,
       loadMessages,
       loadSchools,
@@ -194,7 +233,7 @@ export default function HomeScreen({ navigation }: any) {
 
   const kpiCatalog: Record<RoleHomeKpiKey, RoleDashboardKpi | null> = {
     users: canReadEntity(session, "users")
-      ? kpi("users", "person-outline", usersValue, "Utilisateurs", "#2563EB", "#EFF6FF", () => navigation.navigate(usersRoute), DATA_TRUTH_TEST_IDS.homeUsersValue)
+      ? kpi("users", "person-outline", usersValue, ACTIVE_USERS_KPI_LABEL, "#2563EB", "#EFF6FF", () => navigation.navigate(usersRoute), DATA_TRUTH_TEST_IDS.homeUsersValue)
       : null,
     classes: canReadEntity(session, "classes") || canReadRoute(session, "Classes")
       ? kpi("classes", "grid-outline", isTeacher ? String(assignedClasses.length) : classesValue, "Classes", "#2563EB", "#EFF6FF", () => navigation.navigate("Classes"))
@@ -215,8 +254,12 @@ export default function HomeScreen({ navigation }: any) {
       ? kpi(
           "presence",
           "checkmark-circle-outline",
-          isParentLike ? `${studentPresenceStats.attended}/${studentPresenceStats.total}` : isTeacher ? `${teacherPresenceStats.rate}%` : presenceValue,
-          isParentLike ? "Présence" : "Présence",
+          isParentLike
+            ? `${studentPresenceStats.attended}/${studentPresenceStats.total}`
+            : isTeacher
+              ? `${teacherPresenceStats.rate}%`
+              : establishmentPresenceValue,
+          isParentLike || isTeacher ? "Présence" : TODAY_PRESENCE_KPI_LABEL,
           "#16A34A",
           "#ECFDF5",
           () =>
@@ -236,7 +279,7 @@ export default function HomeScreen({ navigation }: any) {
               ? `${studentPaymentStats.paid}/${studentPaymentStats.total}`
               : "—"
             : paymentsValue,
-          "Paiements",
+          PAYMENTS_KPI_LABEL,
           "#EA580C",
           "#FFF7ED",
           () =>
@@ -245,6 +288,17 @@ export default function HomeScreen({ navigation }: any) {
               paymentsRoute === "StudentPayments" ? { studentId: selectedStudentId } : undefined,
             ),
           DATA_TRUTH_TEST_IDS.homePaymentsValue,
+        )
+      : null,
+    paymentRate: canReadEntity(session, "payments")
+      ? kpi(
+          "paymentRate",
+          "card-outline",
+          studentFeesReady ? paymentRateValue : METRIC_PENDING_LABEL,
+          PAYMENT_RATE_KPI_LABEL,
+          "#EA580C",
+          "#FFF7ED",
+          () => navigation.navigate("Payments"),
         )
       : null,
     teachers: canReadEntity(session, "teachers")
@@ -294,7 +348,7 @@ export default function HomeScreen({ navigation }: any) {
       ? kpi("unpaidPayments", "alert-circle-outline", paymentsReady ? String(paymentStats.pending) : "—", "Impayés", "#DC2626", "#FEF2F2", () => navigation.navigate("Payments"))
       : null,
     paymentCount: canReadEntity(session, "payments")
-      ? kpi("paymentCount", "card-outline", paymentsValue, "Paiements", "#EA580C", "#FFF7ED", () => navigation.navigate("Payments"), DATA_TRUTH_TEST_IDS.homePaymentsValue)
+      ? kpi("paymentCount", "card-outline", paymentsValue, PAYMENTS_KPI_LABEL, "#EA580C", "#FFF7ED", () => navigation.navigate("Payments"), DATA_TRUTH_TEST_IDS.homePaymentsValue)
       : null,
     documents: canReadRoute(session, "Documents")
       ? kpi("documents", "folder-open-outline", "—", "Documents", "#2563EB", "#EFF6FF", () => navigation.navigate("Documents"))
@@ -456,15 +510,6 @@ function action(
 
 function formatAmount(value: number) {
   return `${Math.round(value).toLocaleString("fr-FR")} F`;
-}
-
-function isActiveUserAccount(user: any) {
-  const status = String(user?.status ?? "Actif")
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .trim()
-    .toLowerCase();
-  return !["suspendu", "desactive", "désactivé", "disabled", "inactive", "inactif"].includes(status);
 }
 
 function isTodayPresence(dateValue?: string) {
