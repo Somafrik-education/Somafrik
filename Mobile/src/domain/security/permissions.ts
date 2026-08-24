@@ -1,6 +1,5 @@
 import { normalize, isSchoolAdminRole } from "../../lib/format";
 import { getInternalRoleDefaults } from "../../lib/internalRoleDefaults";
-import { canSchoolAdminMutateTeachers } from "../../lib/pedagogyGovernance";
 import { attachCanonicalRoleIdentity, resolveCanonicalRoleIdentity } from "../../lib/canonicalRoleIdentity";
 import {
   isSuperAdminRole,
@@ -297,14 +296,6 @@ export function hasSecurityPermission(session: any, feature: string | undefined,
     return false;
   }
 
-  if (
-    (identity.sessionRole === "school_admin" || isSchoolAdminRole(platformRole)) &&
-    feature === "Enseignants" &&
-    !canSchoolAdminMutateTeachers(action)
-  ) {
-    return false;
-  }
-
   const permissions = new Set<string>(getEffectivePermissionsForSession(session));
 
   if (feature === "Pays") {
@@ -408,14 +399,6 @@ export function canReadEntity(session: any, entity?: string) {
 
 export function canMutateEntity(session: any, entity: string, action: Exclude<SecurityAction, "READ">) {
   const feature = entityFeatureMap[entity];
-  const identity = resolveCanonicalRoleIdentity(session);
-  if (
-    (identity.sessionRole === "school_admin" || isSchoolAdminRole(identity.roleLabel)) &&
-    entity === "teachers" &&
-    action !== "CREATE"
-  ) {
-    return false;
-  }
   return Boolean(feature) && hasSecurityPermission(session, feature, action);
 }
 
