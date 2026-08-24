@@ -87,6 +87,8 @@ describe("domainsForPath — tableau de bord hydrate l'assiette de paiement", ()
     expect(domains).toContain("payments");
   });
 });
+
+describe("domainsForPath — comptes utilisateurs", () => {
   it("charge schools avec users sur la route Superadmin pour le formulaire, pas pour le code public", () => {
     const domains = domainsForPath("/administration/utilisateurs", superAdminContext);
 

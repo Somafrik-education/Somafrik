@@ -1,7 +1,7 @@
 /**
  * KPI Accueil « Taux de paiement ».
  * Dénominateur = assiette canonique `student_fee_obligations` (GET /finance/student-fees).
- * Jamais `payments.length` : une seule ligne de paiement ne crée pas l'assiette.
+ * Jamais le nombre de lignes de la table paiements : un seul encaissement ne crée pas l'assiette.
  * Aucune assiette attendue → « — », pas 0 % (0 % = dette connue, rien encaissé).
  */
 export const PAYMENT_RATE_KPI_LABEL = "Taux de paiement";

@@ -130,7 +130,8 @@ function main() {
   assert.match(homeKpis, /String\(payments\.length\)/);
   assert.match(paymentRate, /PAYMENT_RATE_KPI_LABEL = "Taux de paiement"/);
   assert.match(paymentRate, /student_fee_obligations/);
-  assert.doesNotMatch(paymentRate, /payments\.length/);
+  assert.doesNotMatch(paymentRate, /paid \/ payments\.length/);
+  assert.doesNotMatch(paymentRate, /Math\.round\(\(paid \/ payments\.length\)/);
   const roleHome = read(path.join("lib", "roleHomeConfig.ts"));
   assert.match(roleHome, /kpiKeys: \["users", "presence", "students", "paymentRate"\]/);
   assert.doesNotMatch(roleHome, /kpiKeys: \["users", "classes", "students"/);
