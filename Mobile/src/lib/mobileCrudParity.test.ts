@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { attachCanonicalRoleIdentity } from "./canonicalRoleIdentity";
-import { canMutateEntity, canReadEntity, entityFeatureMap } from "../domain/security/permissions";
+import { canManagePresences, canMutateEntity, canReadEntity, entityFeatureMap, hasSecurityPermission } from "../domain/security/permissions";
 import {
   CANONICAL_CRUD_ENTITIES,
   canCancelSchoolPayment,
@@ -62,8 +62,26 @@ assert.equal(canMutateEntity(adminSchool, "students", "CREATE"), true);
 assert.equal(canMutateEntity(adminSchool, "students", "UPDATE"), true);
 assert.equal(canMutateEntity(adminSchool, "students", "DELETE"), true);
 assert.equal(canMutateEntity(adminSchool, "teachers", "CREATE"), true, "Admin School peut CREATE enseignant");
-assert.equal(canMutateEntity(adminSchool, "teachers", "UPDATE"), false, "Admin School n'UPDATE pas les enseignants");
+assert.equal(
+  canMutateEntity(adminSchool, "teachers", "UPDATE"),
+  false,
+  "sans Enseignants:UPDATE, Admin School n'UPDATE pas — pas de fallback Admin=tout",
+);
 assert.equal(canMutateEntity(adminSchool, "teachers", "DELETE"), false);
+
+const adminSchoolTeachersUpdate = liveSession({
+  sessionRole: "school_admin",
+  roleLabel: "Admin School",
+  roleKeys: ["SCHOOL_ADMIN"],
+  permissions: ["Enseignants:READ", "Enseignants:CREATE", "Enseignants:UPDATE"],
+});
+assert.equal(
+  canMutateEntity(adminSchoolTeachersUpdate, "teachers", "UPDATE"),
+  true,
+  "jeton live Enseignants:UPDATE → CTA Modifier (plus de hard-deny school_admin)",
+);
+assert.equal(canMutateEntity(adminSchoolTeachersUpdate, "teachers", "DELETE"), false);
+assert.equal(canMutateEntity(adminSchoolTeachersUpdate, "teachers", "CREATE"), true);
 assert.equal(canGrantUserRole(adminSchool), true, "GRANT rôle utilisateur ≠ matrice RBAC");
 assert.equal(
   canCreateTeacherIdentity(adminSchool),
@@ -122,6 +140,8 @@ assert.equal(canMutateEntity(prefetTeachers, "teachers", "DELETE"), true);
 assert.equal(canMutateEntity(prefetTeachers, "teachers", "CREATE"), false);
 assert.equal(canCreateTeacherIdentity(prefetTeachers), false);
 assert.equal(canMutateEntity(prefetTeachers, "assignments", "CREATE"), true);
+assert.equal(canGrantUserRole(adminSchool), true, "GRANT/REVOKE rôle utilisateur = Utilisateurs:UPDATE");
+assert.equal(canGrantUserRole(prefetTeachers), false, "Préfet sans Utilisateurs:UPDATE ne révoque pas");
 
 const paymentCreateOnly = liveSession({
   sessionRole: "secretary",
@@ -184,5 +204,107 @@ for (const entity of CANONICAL_CRUD_ENTITIES) {
     }
   }
 }
+
+/** J3 — jetons live (forme PostgreSQL) → CTA. Aucun fallback Admin=tout. */
+const teacherLive = liveSession({
+  sessionRole: "teacher",
+  roleLabel: "Enseignant",
+  roleKeys: ["TEACHER"],
+  permissions: [
+    "Classes:READ",
+    "Élèves:READ",
+    "Présences:READ",
+    "Présences:CREATE",
+    "Présences:UPDATE",
+    "Notes:READ",
+    "Notes:CREATE",
+    "Notes:UPDATE",
+  ],
+});
+assert.equal(canMutateEntity(teacherLive, "classes", "CREATE"), false, "Teacher ne crée pas de classe");
+assert.equal(canMutateEntity(teacherLive, "users", "UPDATE"), false, "Teacher n'a pas GRANT rôle");
+assert.equal(hasSecurityPermission(teacherLive, "Notes", "UPDATE"), true);
+assert.equal(canManagePresences(teacherLive), true);
+
+const accountantLive = liveSession({
+  sessionRole: "accountant",
+  roleLabel: "Comptable",
+  roleKeys: ["ACCOUNTANT"],
+  permissions: ["Paiements:READ", "Paiements:CREATE", "Paiements:UPDATE", "Paiements:DELETE", "Rapports:READ"],
+});
+assert.equal(hasSecurityPermission(accountantLive, "Notes", "UPDATE"), false, "Accountant ne modifie pas les notes");
+assert.equal(canMutateEntity(accountantLive, "classes", "CREATE"), false);
+assert.equal(canMutateEntity(accountantLive, "payments", "CREATE"), true);
+assert.equal(canMutateEntity(accountantLive, "payments", "UPDATE"), true, "annuler paiement = Paiements:UPDATE");
+
+const secretaryLive = liveSession({
+  sessionRole: "secretary",
+  roleLabel: "Secrétaire",
+  roleKeys: ["SECRETARY"],
+  permissions: [
+    "Élèves:READ",
+    "Élèves:CREATE",
+    "Élèves:UPDATE",
+    "Paiements:READ",
+    "Paiements:CREATE",
+    "Paiements:UPDATE",
+    "Présences:READ",
+    "Présences:CREATE",
+    "Présences:UPDATE",
+  ],
+});
+assert.equal(canMutateEntity(secretaryLive, "students", "CREATE"), true);
+assert.equal(canMutateEntity(secretaryLive, "payments", "CREATE"), true);
+assert.equal(hasSecurityPermission(secretaryLive, "Notes", "UPDATE"), false);
+
+const supervisorLive = liveSession({
+  sessionRole: "supervisor",
+  roleLabel: "Surveillant",
+  roleKeys: ["SUPERVISOR"],
+  permissions: ["Élèves:READ", "Présences:READ", "Présences:CREATE", "Présences:UPDATE", "Présences:DELETE"],
+});
+assert.equal(canManagePresences(supervisorLive), true);
+assert.equal(canMutateEntity(supervisorLive, "classes", "CREATE"), false);
+assert.equal(hasSecurityPermission(supervisorLive, "Notes", "CREATE"), false);
+
+const parentLive = liveSession({
+  sessionRole: "parent_student",
+  roleLabel: "Parent",
+  roleKeys: ["PARENT"],
+  permissions: ["Élèves:READ", "Notes:READ", "Présences:READ", "Paiements:READ", "Classes:READ"],
+});
+assert.equal(canMutateEntity(parentLive, "classes", "CREATE"), false, "Parent ne crée pas de classe");
+assert.equal(canMutateEntity(parentLive, "payments", "CREATE"), false);
+assert.equal(hasSecurityPermission(parentLive, "Notes", "READ"), true);
+
+const studentLive = liveSession({
+  sessionRole: "student",
+  roleLabel: "Élève / Étudiant",
+  roleKeys: ["STUDENT"],
+  permissions: ["Notes:READ", "Présences:READ", "Paiements:READ", "Classes:READ"],
+});
+assert.equal(canMutateEntity(studentLive, "classes", "CREATE"), false);
+assert.equal(canMutateEntity(studentLive, "users", "UPDATE"), false);
+assert.equal(canMutateEntity(studentLive, "students", "DELETE"), false);
+
+const prefetLive = liveSession({
+  sessionRole: "prefet",
+  roleLabel: "Préfet des études",
+  roleKeys: ["PREFET_ETUDES"],
+  permissions: [
+    "Classes:READ",
+    "Classes:CREATE",
+    "Classes:UPDATE",
+    "Enseignants:READ",
+    "Enseignants:UPDATE",
+    "Enseignants:DELETE",
+    "Notes:READ",
+    "Notes:CREATE",
+    "Notes:UPDATE",
+  ],
+});
+assert.equal(canMutateEntity(prefetLive, "classes", "CREATE"), true);
+assert.equal(canMutateEntity(prefetLive, "teachers", "UPDATE"), true);
+assert.equal(canCreateTeacherIdentity(prefetLive), false, "Préfet sans Utilisateurs:CREATE");
 
 console.log("mobileCrudParity.test.ts OK");
