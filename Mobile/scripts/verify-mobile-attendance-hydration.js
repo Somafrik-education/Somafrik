@@ -34,6 +34,7 @@ function main() {
   assert.match(attendance, /useFocusEffect/);
   assert.match(attendance, /loadPresences/);
   assert.match(attendance, /loadStudents/);
+  assert.match(attendance, /loadAssignments/);
   assert.match(attendance, /setAttendance\(\(current\) =>/);
   assert.match(attendance, /clearConfirmedAttendanceDirty/);
   assert.match(attendance, /shouldPreserveLocalAttendanceDraft/);

@@ -54,7 +54,7 @@ export default function ClassesScreen({ navigation }: any) {
     },
   ];
   const { session } = useAuth();
-  const { classesData, studentsData, teachersData, assignmentsData, schoolsData, presencesSnapshot, loadClasses, loadStudents, loadPresences, loadTeachers, classesSnapshot, studentsSnapshot, resourceScopeKey } = useAdminData();
+  const { classesData, studentsData, teachersData, assignmentsData, schoolsData, presencesSnapshot, loadClasses, loadStudents, loadPresences, loadTeachers, loadAssignments, classesSnapshot, studentsSnapshot, resourceScopeKey } = useAdminData();
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [offlineActionMessage, setOfflineActionMessage] = useState<string | null>(null);
@@ -80,7 +80,7 @@ export default function ClassesScreen({ navigation }: any) {
         setIsLoading(true);
       }
 
-      Promise.all([loadClasses(), loadStudents(), loadPresences(), loadTeachers()])
+      Promise.all([loadClasses(), loadStudents(), loadPresences(), loadTeachers(), loadAssignments()])
         .catch(() => null)
         .finally(() => {
           if (!cancelled) {
@@ -91,7 +91,7 @@ export default function ClassesScreen({ navigation }: any) {
       return () => {
         cancelled = true;
       };
-    }, [loadClasses, loadStudents, loadPresences, loadTeachers, isOffline, resourceScopeKey]),
+    }, [loadClasses, loadStudents, loadPresences, loadTeachers, loadAssignments, isOffline, resourceScopeKey]),
   );
 
   const handleBlockedNetworkAction = () => {

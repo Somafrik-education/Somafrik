@@ -151,7 +151,7 @@ export default function MenuScreen() {
           {[
             ...new Set([
               ...(session?.user.courses ?? []),
-              ...resolveTeacherAssignmentsForSession(session, assignmentsData)
+              ...resolveTeacherAssignmentsForSession(session, teacherScopeState)
                 .map((assignment) => String(assignment.course ?? "").trim())
                 .filter(Boolean),
             ]),

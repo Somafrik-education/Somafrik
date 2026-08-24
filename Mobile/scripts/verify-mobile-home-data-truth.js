@@ -48,6 +48,15 @@ function main() {
   }
   process.stdout.write(scopeUnit.stdout || "");
 
+  const teacherScopeUnit = spawnSync("npx", ["--yes", "tsx", path.join("src", "lib", "establishment.teacherScope.test.ts")], {
+    cwd: MOBILE,
+    encoding: "utf8",
+  });
+  if (teacherScopeUnit.status !== 0) {
+    throw new Error(teacherScopeUnit.stderr || teacherScopeUnit.stdout || "establishment.teacherScope.test.ts failed");
+  }
+  process.stdout.write(teacherScopeUnit.stdout || "");
+
   const home = read(path.join("screens", "HomeScreen.tsx"));
   const formatLib = read(path.join("lib", "format.ts"));
   const homeKpis = read(path.join("lib", "homeDashboardKpis.ts"));
@@ -141,12 +150,20 @@ function main() {
   assert.doesNotMatch(home, /messagesData\.length\} échange/);
 
   const students = read(path.join("screens", "StudentsScreen.tsx"));
+  const teacherAttendance = read(path.join("screens", "TeacherAttendanceScreen.tsx"));
+  const teacherGrades = read(path.join("screens", "TeacherGradesScreen.tsx"));
+  const classes = read(path.join("screens", "ClassesScreen.tsx"));
+  assert.match(home, /loadAssignments/, "Accueil Enseignant doit recharger GET /assignments");
+  assert.match(classes, /loadAssignments/, "Classes doit recharger GET /assignments");
+  assert.match(students, /loadAssignments/, "Élèves doit recharger GET /assignments");
+  assert.match(teacherAttendance, /loadAssignments/, "Appel doit recharger GET /assignments");
+  assert.match(teacherGrades, /loadAssignments/, "Notes doit recharger GET /assignments");
+  assert.match(teacherGrades, /resolveTeacherAssignmentsForSession/, "Notes doit filtrer les affectations de l'enseignant");
   const adminCrud = read(path.join("screens", "AdminCrudScreen.tsx"));
   assert.match(adminCrud, /import \{ isActiveUserAccount \} from "\.\.\/lib\/format"/);
   assert.doesNotMatch(adminCrud, /function isActiveUserAccount/);
   const studentDetail = read(path.join("screens", "StudentDetailScreen.tsx"));
   const studentPresences = read(path.join("screens", "StudentPresencesScreen.tsx"));
-  const classes = read(path.join("screens", "ClassesScreen.tsx"));
   for (const [label, source] of [
     ["StudentsScreen", students],
     ["StudentDetailScreen", studentDetail],
