@@ -31,6 +31,9 @@ function main() {
   run("npx", ["--yes", "tsx", path.join("src", "lib", "networkResilience.test.ts")], MOBILE);
   run("npx", ["--yes", "tsx", path.join("src", "lib", "mutationGuard.test.ts")], MOBILE);
   run("npx", ["--yes", "tsx", path.join("src", "lib", "outbox.test.ts")], MOBILE);
+  run("npx", ["--yes", "tsx", path.join("src", "lib", "connectivity.test.ts")], MOBILE);
+  run("npx", ["--yes", "tsx", path.join("src", "lib", "attendanceClassIdentity.test.ts")], MOBILE);
+  run("npx", ["--yes", "tsx", path.join("src", "lib", "attendanceOffline.test.ts")], MOBILE);
   run("node", ["--test", path.join("lib", "idempotencyService.test.js")], BACKEND);
   run("node", ["--test", path.join("lib", "idempotency.pg.test.js")], BACKEND);
 
@@ -40,7 +43,19 @@ function main() {
   assert.match(attendance, /submitProtectedMutation/);
   assert.match(attendance, /idempotencyKey/);
   assert.match(attendance, /tryBegin/);
-  console.log("OK: présences — pas de refreshBackOfficeState, outbox + clé + inFlight");
+  assert.match(attendance, /classId: identity\.classId/);
+  assert.match(attendance, /classCode: identity\.classCode/);
+  assert.match(attendance, /knownOffline/);
+  assert.match(attendance, /replacePendingPayload/);
+  assert.match(attendance, /ROLL_CALL_COPY\.queuedAlertTitle/);
+  assert.match(attendance, /ROLL_CALL_COPY\.syncedAlertTitle/);
+  assert.match(attendance, /ROLL_CALL_COPY\.persistFailedBody/);
+  assert.match(attendance, /ROLL_CALL_COPY\.outboxUnavailable/);
+  assert.match(attendance, /blocked_sending/);
+  assert.match(attendance, /replaySending/);
+  assert.doesNotMatch(attendance, /\.catch\(\s*\(\)\s*=>\s*\[\s*\]\s*\)/);
+  assert.doesNotMatch(attendance, /Alert\.alert\(\s*"Appel enregistré"/);
+  console.log("OK: présences — classId/classCode, outbox immédiate, pas de faux succès");
 
   const grades = read(path.join(SRC, "screens", "TeacherGradesScreen.tsx"));
   assert.doesNotMatch(grades, /refreshBackOfficeState/);
@@ -62,12 +77,24 @@ function main() {
 
   const outbox = read(path.join(SRC, "lib", "outbox.ts"));
   assert.match(outbox, /OUTBOX_ALLOWED_DOMAINS/);
+  assert.match(outbox, /OUTBOX_PERSIST_FAILED/);
+  assert.match(outbox, /OUTBOX_READ_FAILED/);
+  assert.match(outbox, /OUTBOX_INTENTION_SENDING/);
+  assert.match(outbox, /blocked_sending/);
+  assert.match(outbox, /subscribeOutbox/);
+  assert.match(outbox, /intentionId/);
+  assert.match(outbox, /replacePendingPayload/);
+  assert.match(outbox, /knownOffline/);
   assert.doesNotMatch(outbox, /course-schedules/);
   assert.match(outbox, /blocked_scope_mismatch/);
   assert.match(outbox, /blocked_logout/);
   assert.match(outbox, /OUTBOX_SECRET_FORBIDDEN/);
   assert.match(outbox, /accessToken\|refreshToken\|password\|pin\|secret/);
-  console.log("OK: allowlist stricte + binding tenant/user + interdiction secrets");
+  assert.doesNotMatch(outbox, /catch \{\s*return \[\];\s*\}/);
+  const writeFn = outbox.slice(outbox.indexOf("async write(entries)"));
+  const fileWrite = writeFn.slice(0, writeFn.indexOf("let storage"));
+  assert.doesNotMatch(fileWrite, /memoryStorage\.write/, "FileSystem fail-closed : pas de fallback RAM");
+  console.log("OK: allowlist stricte + binding tenant/user + persist disque fail-closed");
 
   const resilience = read(path.join(SRC, "lib", "networkResilience.ts"));
   assert.match(resilience, /function classifyMutationFailure/);
@@ -145,12 +172,22 @@ function main() {
   assert.match(auth, /blockOutboxOnLogout/);
   console.log("OK: logout bloque l'outbox sans replay cross-compte");
 
+  const runtime = read(path.join(SRC, "components", "OutboxRuntime.tsx"));
+  assert.match(runtime, /subscribeConnectivity/);
+  assert.match(runtime, /probeConnectivity/);
+  assert.match(runtime, /CONNECTIVITY_POLL_MS/);
+  assert.match(runtime, /applyConfirmedPresences/);
+  console.log("OK: replay avant-plan sur connectivité réelle");
+
   const banner = read(path.join(SRC, "components", "OfflineBanner.tsx"));
   assert.doesNotMatch(banner, /Vos données seront automatiquement synchronisées/);
+  assert.match(banner, /subscribeOutbox/);
+  assert.doesNotMatch(banner, /catch\s*\(\s*\(\)\s*=>\s*setPending\(0\)\s*\)/);
+  assert.match(banner, /setPending\(null\)/);
   const spec = read(path.join(SRC, "lib", "offlineModeSpec.ts"));
   assert.doesNotMatch(spec, /Vos données seront automatiquement synchronisées/);
   assert.doesNotMatch(spec, /Les modifications reprendront dès le retour du réseau/);
-  console.log("OK: banner sans fausse promesse de sync globale");
+  console.log("OK: banner sans fausse promesse de sync globale + compteur live");
 
   const inventory = read(path.join(SRC, "lib", "mobileMutationInventory.ts"));
   assert.match(inventory, /savePresences/);

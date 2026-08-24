@@ -292,10 +292,11 @@ export default function MessagesScreen() {
         request: () => sendClientsMessage(payload, { idempotencyKey }),
       });
       if (submitted.outcome !== "confirmed") {
-        setSendHint(submitted.outcome === "queued" ? NETWORK_COPY.queued : NETWORK_COPY.failed);
+        const queuedLike = submitted.outcome === "queued" || submitted.outcome === "in_flight";
+        setSendHint(queuedLike ? NETWORK_COPY.queued : NETWORK_COPY.failed);
         Alert.alert(
-          submitted.outcome === "queued" ? NETWORK_COPY.queued : NETWORK_COPY.failed,
-          submitted.outcome === "queued"
+          queuedLike ? NETWORK_COPY.queued : NETWORK_COPY.failed,
+          queuedLike
             ? "Le message est conservé en file d'attente. Il ne sera marqué envoyé qu'après confirmation serveur."
             : submitted.error instanceof Error
               ? submitted.error.message

@@ -14,6 +14,8 @@ function main() {
     "src/lib/attendanceDraft.test.ts",
     "src/lib/attendanceTruth.test.ts",
     "src/lib/attendanceStatusTheme.test.ts",
+    "src/lib/attendanceClassIdentity.test.ts",
+    "src/lib/attendanceOffline.test.ts",
   ]) {
     const unit = spawnSync("npx", ["--yes", "tsx", file], {
       cwd: MOBILE,
@@ -43,6 +45,9 @@ function main() {
   assert.match(attendance, /USABILITY_TEST_IDS\.attendanceMarkAllPresent/);
   assert.match(attendance, /USABILITY_TEST_IDS\.attendanceCurrentStatus/);
   assert.match(attendance, /USABILITY_TEST_IDS\.attendanceCurrentStatusValue/);
+  assert.match(attendance, /overlayPresenceOutboxOnAttendance/);
+  assert.match(attendance, /classId: identity\.classId/);
+  assert.match(attendance, /filterStudentsByClassIdentity/);
   assert.doesNotMatch(attendance, /rollCallInitialStatus/);
   assert.doesNotMatch(attendance, /statusActionActive/);
   assert.doesNotMatch(attendance, /attendance\[student\.id\] \?\? \{ status: "Présent"/);

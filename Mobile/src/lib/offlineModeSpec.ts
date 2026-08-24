@@ -8,7 +8,8 @@ export const OFFLINE_COPY = {
     "Les listes déjà chargées restent consultables. Un envoi n'est rejoué que s'il figure réellement dans la file d'attente.",
   actionBlocked: "Action impossible sans connexion internet.",
   reconnected: "Connexion rétablie",
-  pendingOutbox: "Envoi en attente — confirmation serveur requise.",
+  pendingOutbox: "envoi(s) en attente — confirmation serveur requise.",
+  outboxUnread: "File d'attente illisible — confirmation serveur non déterminée.",
 } as const;
 
 export const OFFLINE_TEST_IDS = {
@@ -16,6 +17,8 @@ export const OFFLINE_TEST_IDS = {
   bannerTitle: "offline-banner-title",
   bannerHint: "offline-banner-hint",
   actionMessage: "offline-action-message",
+  pendingCount: "offline-banner-pending",
+  outboxUnread: "offline-banner-outbox-unread",
   reconnectedBanner: "offline-reconnected-banner",
 } as const;
 

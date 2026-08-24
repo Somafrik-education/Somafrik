@@ -31,6 +31,10 @@ async function run() {
   assert.equal(classifyMutationFailure(apiError("timeout", 504)), "retryable");
   assert.equal(classifyMutationFailure(apiError("too many", 429)), "retryable");
   assert.equal(classifyMutationFailure(apiError("validation", 400)), "non_retryable");
+  assert.equal(
+    classifyMutationFailure(Object.assign(new Error("OUTBOX_PERSIST_FAILED: disk"), { code: "OUTBOX_PERSIST_FAILED" })),
+    "non_retryable",
+  );
   assert.equal(classifyMutationFailure(apiError("interdit", 403)), "non_retryable");
   assert.equal(classifyMutationFailure(apiError("absent", 404)), "non_retryable");
   assert.equal(classifyMutationFailure(apiError("unprocessable", 422)), "non_retryable");

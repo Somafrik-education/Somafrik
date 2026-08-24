@@ -70,6 +70,9 @@ export function classifyMutationFailure(error: unknown): MutationFailureKind {
   if (status === 401 || code === "AUTH_REQUIRED") {
     return "auth_required";
   }
+  if (code === "OUTBOX_PERSIST_FAILED" || /OUTBOX_PERSIST_FAILED/.test(message)) {
+    return "non_retryable";
+  }
   if (
     status === 409 ||
     code === "IDEMPOTENCY_KEY_REUSED" ||

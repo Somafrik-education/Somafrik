@@ -114,7 +114,11 @@ assert.ok(!("className" in payload), "className n'est pas une identité métier"
 assert.equal(hasFieldErrors(validatePaymentDraft({ studentId: "", amount: "abc" })), true);
 assert.match(validatePaymentDraft({ studentId: awa.id, amount: "0", classId: awa.classId, classOptions: [{ classId: String(awa.classId) }] }).amount, /montant positif/);
 
-assert.equal(paymentSubmitErrorMessage("queued"), "Paiement conservé en file. Pas de succès local.");
+assert.equal(paymentSubmitErrorMessage("in_flight"), "Paiement conservé en file. Pas de succès local.");
+assert.match(
+  paymentSubmitErrorMessage("blocked_sending", new Error("Cet envoi est déjà en cours de synchronisation.")),
+  /déjà en cours de synchronisation/,
+);
 assert.equal(
   paymentSubmitErrorMessage("failed", Object.assign(new Error("Cet élève n'a aucune inscription active."), { status: 400 })),
   "Cet élève n'a aucune inscription active.",

@@ -13,11 +13,14 @@ import {
   isAttendedStatus,
   isJustifiedAbsence,
   lastDraftStatus,
+  markRollCallSyncState,
   markRosterPresent,
   presentFlagForStatus,
   resolveClassCourseLabel,
   rollCallEntryFromPresence,
+  rollCallSourceLabel,
   shouldPreserveLocalAttendanceDraft,
+  ROLL_CALL_COPY,
 } from "./attendanceTruth";
 import { rollCallInitialStatus } from "../domain/metrics/schoolMetrics";
 
@@ -129,6 +132,15 @@ function run() {
   assert.equal(confirmedAll.a.source, "postgres");
   assert.equal(confirmedAll.a.modifiedAt, undefined);
   assert.equal(shouldPreserveLocalAttendanceDraft(confirmedAll.a), false);
+
+  const queued = markRollCallSyncState(afterOneAbsent, roster, "queued");
+  assert.equal(queued.a.source, "queued");
+  assert.equal(shouldPreserveLocalAttendanceDraft(queued.a), true);
+  assert.equal(rollCallSourceLabel("queued"), "En attente de synchronisation");
+  assert.equal(rollCallSourceLabel("failed"), "Erreur de synchronisation");
+  assert.equal(ROLL_CALL_COPY.syncedAlertTitle, "Appel synchronisé");
+  assert.equal(ROLL_CALL_COPY.outboxUnavailable, "Synchronisation indisponible");
+  assert.notEqual(rollCallSourceLabel("postgres"), ROLL_CALL_COPY.outboxUnavailable);
 
   assert.equal(resolveClassCourseLabel([]), "Cours non renseignés");
   assert.equal(resolveClassCourseLabel(["Maths", ""]), "Maths");
