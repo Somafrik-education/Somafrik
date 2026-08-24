@@ -1,7 +1,45 @@
 /**
  * LOT 5 — résilience réseau Mobile : Idempotency-Key, classification, retry borné.
  * Une intention utilisateur conserve la même clé à chaque retry technique.
+ *
+ * UUID : `expo-crypto` Crypto.randomUUID() (Android / iOS / Web / Expo Go).
+ * `globalThis.crypto.randomUUID` est absent sur certains runtimes Android Expo Go ;
+ * l'échec se produisait avant POST /presences et bloquait toute mutation protégée.
+ *
+ * Consommateurs : createIntentionStore, resolveOutboxIntentionKey,
+ * TeacherAttendanceScreen, TeacherGradesScreen, MessagesScreen,
+ * PaymentMutationControls, TimetableScreen, AdminDataContext (messages).
  */
+
+const UUID_V4 =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function asUuidV4(value: unknown): string | null {
+  const key = String(value ?? "").trim();
+  return UUID_V4.test(key) ? key : null;
+}
+
+function expoCryptoRandomUUID(): string | null {
+  try {
+    // Lazy require : Metro/Expo Go charge le module natif ; les tests Node
+    // (tsx) n'ont pas le runtime React Native et tombent sur le repli WebCrypto.
+    const Crypto = require("expo-crypto") as typeof import("expo-crypto");
+    if (typeof Crypto.randomUUID !== "function") return null;
+    return asUuidV4(Crypto.randomUUID());
+  } catch {
+    return null;
+  }
+}
+
+function webCryptoRandomUUID(): string | null {
+  const cryptoObj = globalThis.crypto as { randomUUID?: () => string } | undefined;
+  if (typeof cryptoObj?.randomUUID !== "function") return null;
+  try {
+    return asUuidV4(cryptoObj.randomUUID());
+  } catch {
+    return null;
+  }
+}
 
 export const MAX_MUTATION_ATTEMPTS = 3;
 export const RETRY_BACKOFF_MS = [1000, 3000, 8000] as const;
@@ -36,10 +74,8 @@ export function setMutationDelayForTests(fn: ((ms: number) => Promise<void>) | n
 }
 
 export function createIdempotencyKey(): string {
-  const cryptoObj = globalThis.crypto as { randomUUID?: () => string } | undefined;
-  if (typeof cryptoObj?.randomUUID === "function") {
-    return cryptoObj.randomUUID();
-  }
+  const key = expoCryptoRandomUUID() ?? webCryptoRandomUUID();
+  if (key) return key;
   throw new Error("Impossible de générer une Idempotency-Key UUID.");
 }
 

@@ -3,6 +3,8 @@
  *   npx tsx Mobile/src/lib/networkResilience.test.ts
  */
 import assert from "node:assert/strict";
+import { randomUUID as nodeRandomUUID } from "node:crypto";
+import Module from "node:module";
 import {
   classifyMutationFailure,
   createIdempotencyKey,
@@ -11,15 +13,65 @@ import {
   setMutationDelayForTests,
 } from "./networkResilience";
 
+const UUID_V4 =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
 function apiError(message: string, status?: number, code?: string) {
   return Object.assign(new Error(message), { status, code });
+}
+
+function withExpoCryptoMock<T>(run: () => T): T {
+  const loader = Module as unknown as { _load: (...args: unknown[]) => unknown };
+  const originalLoad = loader._load;
+  loader._load = function loadMocked(request: unknown, parent: unknown, isMain: unknown) {
+    if (request === "expo-crypto") {
+      return { randomUUID: nodeRandomUUID };
+    }
+    return originalLoad.call(this, request, parent, isMain);
+  };
+  try {
+    return run();
+  } finally {
+    loader._load = originalLoad;
+  }
+}
+
+function withoutWebCryptoRandomUUID<T>(run: () => T): T {
+  const cryptoObj = globalThis.crypto as Crypto & { randomUUID?: () => string };
+  const original = cryptoObj.randomUUID;
+  Object.defineProperty(cryptoObj, "randomUUID", {
+    configurable: true,
+    writable: true,
+    value: undefined,
+  });
+  try {
+    return run();
+  } finally {
+    Object.defineProperty(cryptoObj, "randomUUID", {
+      configurable: true,
+      writable: true,
+      value: original,
+    });
+  }
 }
 
 async function run() {
   const keyA = createIdempotencyKey();
   const keyB = createIdempotencyKey();
-  assert.match(keyA, /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i);
-  assert.notEqual(keyA, keyB);
+  assert.match(keyA, UUID_V4);
+  assert.match(keyB, UUID_V4);
+  assert.notEqual(keyA, keyB, "deux intentions distinctes → deux UUID");
+
+  withoutWebCryptoRandomUUID(() => {
+    withExpoCryptoMock(() => {
+      const expoKey = createIdempotencyKey();
+      const expoKeyB = createIdempotencyKey();
+      assert.match(expoKey, UUID_V4, "expo-crypto produit un UUID v4 sans globalThis.crypto.randomUUID");
+      assert.match(expoKeyB, UUID_V4);
+      assert.notEqual(expoKey, expoKeyB);
+      assert.equal(typeof globalThis.crypto.randomUUID, "undefined");
+    });
+  });
 
   assert.equal(classifyMutationFailure(apiError("Délai de requête dépassé. Vérifiez votre réseau.")), "retryable");
   assert.equal(
