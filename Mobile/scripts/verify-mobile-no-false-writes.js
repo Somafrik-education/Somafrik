@@ -117,6 +117,16 @@ function main() {
   assert.doesNotMatch(payments, /writePaymentsWebOnly/);
   const paymentControls = read(path.join("components", "PaymentMutationControls.tsx"));
   assert.match(paymentControls, /createSchoolPayment\(payload, \{ idempotencyKey \}\)/);
+  const paymentCancel = read(path.join("components", "PaymentCancelControls.tsx"));
+  assert.match(paymentCancel, /cancelSchoolPayment/);
+  assert.match(paymentCancel, /canCancelSchoolPayment/);
+  assert.match(paymentCancel, /Le motif d'annulation est obligatoire/);
+  assert.match(payments, /PaymentCancelControls/);
+  const studentPayments = read(path.join("screens", "StudentPaymentsScreen.tsx"));
+  assert.match(studentPayments, /PaymentMutationControls/);
+  assert.match(studentPayments, /PaymentCancelControls/);
+  assert.match(studentPayments, /initialStudentId/);
+  assert.match(paymentControls, /createSchoolPayment\(payload, \{ idempotencyKey \}\)/);
   assert.match(paymentControls, /createIntentionStore/);
   assert.match(paymentControls, /getOrCreate\(PAYMENT_DRAFT_INTENTION\)/);
   assert.match(paymentControls, /label="Élève"/);
@@ -128,10 +138,6 @@ function main() {
   const classeAt = paymentControls.indexOf('label="Classe"');
   const montantAt = paymentControls.indexOf('label="Montant"');
   assert.ok(eleveAt >= 0 && eleveAt < classeAt && classeAt < montantAt, "ordre Élève → Classe → Montant");
-
-  const studentPayments = read(path.join("screens", "StudentPaymentsScreen.tsx"));
-  assert.match(studentPayments, /PaymentMutationControls/);
-  assert.match(studentPayments, /initialStudentId/);
 
   assert.match(announcements, /AnnouncementMutationControls/);
   assert.doesNotMatch(announcements, /AdminCrud/);

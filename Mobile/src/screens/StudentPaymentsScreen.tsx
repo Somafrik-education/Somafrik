@@ -9,6 +9,7 @@ import StudentSwitcher from "../components/StudentSwitcher";
 import QueryStateView from "../components/QueryStateView";
 import PaymentReceiptCard from "../components/PaymentReceiptCard";
 import PaymentMutationControls from "../components/PaymentMutationControls";
+import PaymentCancelControls from "../components/PaymentCancelControls";
 import { getPaymentStats } from "../domain/metrics/schoolMetrics";
 import { useAdminData } from "../context/AdminDataContext";
 import { DATA_TRUTH_COPY, DATA_TRUTH_TEST_IDS, paymentPaidAt } from "../lib/dataTruth";
@@ -122,6 +123,7 @@ export default function StudentPaymentsScreen({ route, navigation }: Partial<Pro
           contentContainerStyle={listContentStyle}
           renderItem={({ item }) => (
             <PaymentReceiptCard payment={item} studentName={student?.name} showItems />
+            <PaymentCancelControls payment={item} onChanged={() => loadPayments()} />
           )}
         />
       )}
