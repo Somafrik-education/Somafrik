@@ -3,7 +3,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "../context/AuthContext";
 import { resolveCanonicalRoleIdentity } from "../lib/canonicalRoleIdentity";
-import { getAllowedRoleDrawerItems, type RoleDrawerItem } from "../navigation/roleDrawerPreferences";
+import { getAllowedRoleDrawerSections, type RoleDrawerItem } from "../navigation/roleDrawerPreferences";
 import { MIN_TOUCH_TARGET_DP } from "../lib/mobileUsability";
 
 const ROLE_LABELS: Record<string, string> = {
@@ -32,7 +32,7 @@ export default function RoleNavigationDrawer({
   navigation: any;
 }) {
   const { session, logout } = useAuth();
-  const items = getAllowedRoleDrawerItems(session);
+  const sections = getAllowedRoleDrawerSections(session);
   const schoolName = session?.school?.name ?? session?.user?.schoolCode ?? "Somafrik";
   const userName = session?.user?.name ?? "Utilisateur";
   const identity = resolveCanonicalRoleIdentity(session);
@@ -88,14 +88,18 @@ export default function RoleNavigationDrawer({
               }}
             />
 
-            <Text style={styles.sectionTitle}>Navigation</Text>
-            {items.map((item) => (
-              <DrawerButton
-                key={`${item.label}-${item.route ?? item.entity ?? "item"}`}
-                label={item.label}
-                icon={item.icon}
-                onPress={() => openItem(item)}
-              />
+            {sections.map((section) => (
+              <View key={section.id}>
+                <Text style={styles.sectionTitle}>{section.title}</Text>
+                {section.items.map((item) => (
+                  <DrawerButton
+                    key={`${item.label}-${item.route ?? item.entity ?? "item"}`}
+                    label={item.label}
+                    icon={item.icon}
+                    onPress={() => openItem(item)}
+                  />
+                ))}
+              </View>
             ))}
           </ScrollView>
 

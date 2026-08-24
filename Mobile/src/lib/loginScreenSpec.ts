@@ -140,9 +140,14 @@ export const MENU_TEST_IDS = {
 export const TAB_TEST_IDS = {
   accueil: "tab-accueil",
   classes: "tab-classes",
+  students: "tab-eleves",
+  attendance: "tab-presences",
   teachers: "tab-enseignants",
   frais: "tab-frais",
   comptes: "tab-comptes",
+  schools: "tab-ecoles",
+  subscriptions: "tab-offres",
+  notifications: "tab-notifs",
   tabBar: "mobile-tab-bar",
 } as const;
 

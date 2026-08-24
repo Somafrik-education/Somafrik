@@ -26,6 +26,7 @@ function main() {
   const spec = read("docs/mobile/UX_UI_MOBILE_V1.md");
   const tabs = read("Mobile/src/navigation/BottomTabsNavigator.tsx");
   const roleTabs = read("Mobile/src/navigation/roleTabPreferences.ts");
+  const roleTabCatalog = read("Mobile/src/navigation/roleTabCatalog.ts");
   const header = read("Mobile/src/components/MobileAppHeader.tsx");
   const home = read("Mobile/src/screens/HomeScreen.tsx");
   const dashboard = read("Mobile/src/components/RoleDashboardLayout.tsx");
@@ -43,7 +44,7 @@ function main() {
   assert.match(spec, /aucun onglet « Menu »/i);
   assert.match(spec, /Accueil \+ 4 onglets métier maximum/i);
   assert.match(spec, /Header compact/i);
-  assert.match(spec, /Accueil \/ Classes \/ Frais \/ Comptes \/ Profs/);
+  assert.match(spec, /Accueil \/ Élèves \/ Appel \/ Frais \/ Classes/);
   assert.match(spec, /Espace administrateur/);
   assert.match(spec, /Vue métier/);
 
@@ -64,6 +65,7 @@ function main() {
   runTsx("mobileUxV1Layout.test.ts");
   runTsx("roleHomeConfig.test.ts");
   runTsx("homeShellPermissions.test.ts");
+  runTsx("roleNavigationPreferences.test.ts");
 
   assert.match(tabs, /MobileAppHeader/);
   assert.match(tabs, /headerStatusBarHeight:\s*0/);
@@ -75,11 +77,22 @@ function main() {
   assert.doesNotMatch(tabs, /minimumFontScale/);
   assert.doesNotMatch(tabs, /name="Menu"/);
   assert.doesNotMatch(tabs, /import MenuScreen/);
-  assert.match(roleTabs, /MAX_FLOATING_ROLE_TABS = 4/);
-  assert.match(roleTabs, /label: "Comptes"/);
-  assert.match(roleTabs, /label: "Profs"/);
-  assert.doesNotMatch(roleTabs, /^\s*label: "Utilisateurs"/m);
-  assert.doesNotMatch(roleTabs, /^\s*label: "Enseignants"/m);
+  assert.match(roleTabs, /MAX_FLOATING_ROLE_TABS/);
+  assert.match(roleTabCatalog, /MAX_FLOATING_ROLE_TABS = 4/);
+  assert.match(roleTabCatalog, /label: "Élèves"/);
+  assert.match(roleTabCatalog, /label: "Appel"/);
+  assert.match(roleTabCatalog, /label: "Frais"/);
+  assert.match(roleTabCatalog, /schoolAdminTabs/);
+  assert.match(roleTabCatalog, /accountantTabs/);
+  assert.match(roleTabCatalog, /platformTabs/);
+  assert.doesNotMatch(roleTabCatalog, /globalAdminTabs/);
+  assert.doesNotMatch(roleTabCatalog, /label: "Écoles"/);
+  assert.doesNotMatch(roleTabCatalog, /label: "Offres"/);
+  assert.doesNotMatch(roleTabs, /SafeAdminCrudScreen/);
+  assert.match(drawerPrefs, /outils:\s*"Outils"/);
+  assert.doesNotMatch(roleTabCatalog, /ClassesScreen|PaymentsScreen/);
+  assert.doesNotMatch(roleTabCatalog, /^\s*label: "Utilisateurs"/m);
+  assert.doesNotMatch(roleTabCatalog, /^\s*label: "Enseignants"/m);
 
   assert.match(screenLayout, /TAB_BAR_CONTENT_HEIGHT/);
   assert.match(screenLayout, /borderTopLeftRadius/);
@@ -129,13 +142,19 @@ function main() {
   assert.doesNotMatch(navSpec, /tabMenu/);
   assert.doesNotMatch(navSpec, /tab-menu/);
   assert.doesNotMatch(loginSpec, /tab-menu/);
+  assert.match(navSpec, /tab-eleves/);
+  assert.match(navSpec, /tab-presences/);
   assert.match(navSpec, /tab-frais/);
   assert.match(navSpec, /tab-comptes/);
 
   assert.match(drawer, /Modal/);
   assert.match(drawer, /mobile-role-drawer/);
   assert.match(drawer, /mobile-role-drawer-logout/);
-  assert.match(drawer, /getAllowedRoleDrawerItems/);
+  assert.match(drawer, /getAllowedRoleDrawerSections/);
+  assert.match(drawerPrefs, /schoolAdminItems|getRoleDrawerCatalog/);
+  assert.match(drawerPrefs, /Quotidien|quotidien/);
+  assert.match(drawerPrefs, /Structure pédagogique/);
+  assert.match(drawerPrefs, /Paramètres/);
   assert.match(drawer, /Déconnexion/);
   assert.match(drawerPrefs, /canReadRoute/);
   assert.match(drawerPrefs, /canReadView/);
@@ -145,6 +164,7 @@ function main() {
     ["header", header],
     ["drawer", drawer],
     ["drawer preferences", drawerPrefs],
+    ["tab catalog", roleTabCatalog],
     ["bottom tabs", tabs],
     ["home", home],
     ["role dashboard", dashboard],

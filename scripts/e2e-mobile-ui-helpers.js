@@ -256,6 +256,8 @@ const NAVIGATION_TEST_IDS = {
 const TAB_TEST_IDS = {
   accueil: "tab-accueil",
   classes: "tab-classes",
+  students: "tab-eleves",
+  attendance: "tab-presences",
   teachers: "tab-enseignants",
   frais: "tab-frais",
   comptes: "tab-comptes",
@@ -595,7 +597,7 @@ async function waitForSchoolAdminHome(page) {
 }
 
 async function assertTabBarVisible(page, results, stepLabel) {
-  const tabs = [TAB_TEST_IDS.accueil, TAB_TEST_IDS.classes, TAB_TEST_IDS.teachers, TAB_TEST_IDS.frais, TAB_TEST_IDS.comptes];
+  const tabs = [TAB_TEST_IDS.accueil, TAB_TEST_IDS.students, TAB_TEST_IDS.attendance, TAB_TEST_IDS.frais, TAB_TEST_IDS.classes];
   let visibleCount = 0;
   for (const tabId of tabs) {
     const locator = page.locator(testIdSelector(tabId));

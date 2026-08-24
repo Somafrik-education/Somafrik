@@ -23,8 +23,8 @@ Exemple `school_admin` :
 
 - identité : `KIBWIJA TATA` / `INSTITUT NURU` / `Espace administrateur`
 - bannière : *Gestion de l'établissement, utilisateurs, finances et organisation scolaire.*
-- KPI : Utilisateurs · Classes · Élèves · Paiements
-- actions : Comptes · Classes · Enseignants · Frais · Annonces (si droit)
+- KPI : Élèves · Classes · Présence · Paiements
+- actions : Élèves · Présences · Paiements · Classes · Enseignants (si droit)
 
 Viewport de validation : **~360×800 dp**, plus **320 / 360 / 390 / 412 dp** et **fontScale 1.0 / 1.3**.
 
@@ -39,7 +39,7 @@ Interdits V2 :
 - capsule flottante pour la bottom nav ;
 - modification des permissions métier pour « faire tenir » un KPI.
 
-`school_admin` — libellés courts : `Accueil / Classes / Frais / Comptes / Profs`.
+`school_admin` — modules quotidiens : Élèves / Présences / Paiements / Classes. Libellés courts barre : `Accueil / Élèves / Appel / Frais / Classes` (contrainte 8 caractères / 320 dp).
 
 Les overlays Expo Go / système (`↻`, `...`) ne sont **pas** des composants Somafrik.
 
@@ -238,7 +238,7 @@ La V2 est **CODE READY** lorsque :
 - les permissions métier ne sont pas élargies pour peupler l’Accueil ;
 - un KPI ou une action Accueil disparaît si la route de destination n’est pas lisible (`courses` élève → `Timetable`, `studentPayments` → `StudentPayments`, `profile`/`notes`/`presences` idem) ;
 - TypeScript et les vérifications Mobile existantes restent vertes ;
-- les parcours Maestro critiques restent possibles (`home-admin-dashboard`, onglets Accueil / Classes / Frais / Comptes / Profs).
+- les parcours Maestro critiques restent possibles (`home-admin-dashboard`, onglets Accueil / Élèves / Appel / Frais / Classes).
 
 La V2 est **GO visuel** uniquement avec une capture device du HEAD (badge `V2.0`) montrant la coque Préfet sur `school_admin`.
 

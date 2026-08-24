@@ -38,6 +38,8 @@ assert.equal(HEADER_BADGE_BAND_DP, 18);
 assert.equal(shortBottomTabLabel("Utilisateurs"), "Comptes");
 assert.equal(shortBottomTabLabel("Enseignants"), "Profs");
 assert.equal(shortBottomTabLabel("Paiements"), "Frais");
+assert.equal(shortBottomTabLabel("TeacherAttendance"), "Appel");
+assert.equal(shortBottomTabLabel("TeacherStudents"), "Élèves");
 assert.equal(IDENTITY_CARD_MIN_DP, 88);
 assert.equal(MISSION_BANNER_MIN_DP, 72);
 assert.equal(HOME_SCROLL_TOP_DP, 4);
@@ -47,7 +49,7 @@ assert.equal(TAB_BAR_SIDE_INSET_DP, 0);
 assert.equal(TAB_LABEL_FONT_SIZE, 10);
 assert.ok(MIN_TOUCH_TARGET_DP >= 44);
 
-assert.deepEqual([...SCHOOL_ADMIN_BOTTOM_LABELS], ["Accueil", "Classes", "Frais", "Comptes", "Profs"]);
+assert.deepEqual([...SCHOOL_ADMIN_BOTTOM_LABELS], ["Accueil", "Élèves", "Appel", "Frais", "Classes"]);
 assert.ok(SCHOOL_ADMIN_BOTTOM_LABELS.every((label) => label.length <= MAX_TAB_LABEL_CHARS));
 assert.equal(
   SCHOOL_ADMIN_BOTTOM_LABELS.some((label) => /Utilisateurs|Enseignants/.test(label)),

@@ -6,8 +6,11 @@
 export const NAVIGATION_COPY = {
   tabAccueil: "Accueil",
   tabClasses: "Classes",
+  tabStudents: "Élèves",
+  tabAttendance: "Présence",
+  tabPayments: "Paiement",
   tabTeachers: "Profs",
-  tabFrais: "Frais",
+  tabFrais: "Paiement",
   tabComptes: "Comptes",
   homeOverview: "Vue d'ensemble",
   teachersTitle: "Enseignants",
@@ -36,12 +39,30 @@ export function tabTestIdForTabName(tabName: string): string | undefined {
     case "Enseignants":
     case "Profs":
       return "tab-enseignants";
+    case "TeacherStudents":
+    case "Students":
+    case "Élèves":
+      return "tab-eleves";
+    case "TeacherAttendance":
+    case "Présence":
+    case "Présences":
+      return "tab-presences";
     case "Paiements":
+    case "Paiement":
     case "Frais":
       return "tab-frais";
     case "Utilisateurs":
     case "Comptes":
       return "tab-comptes";
+    case "Schools":
+    case "Écoles":
+      return "tab-ecoles";
+    case "Subscriptions":
+    case "Offres":
+      return "tab-offres";
+    case "PlatformNotifications":
+    case "Notifs":
+      return "tab-notifs";
     default:
       return undefined;
   }

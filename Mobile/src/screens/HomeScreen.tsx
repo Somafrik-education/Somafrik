@@ -87,7 +87,6 @@ export default function HomeScreen({ navigation }: any) {
   const { isTablet, horizontalPadding, contentMaxWidth } = useResponsiveLayout();
   const teacherScopeState = { teachers: teachersData, assignments: assignmentsData, classes: classesData };
   const isPlatformAdmin = session?.role === "super_admin" || session?.role === "country_admin";
-  const isSchoolAdmin = session?.role === "school_admin";
   const currentSchool =
     schoolsData.find((item) => item.code === session?.school?.code || item.code === session?.user.schoolCode) ??
     session?.school ??
@@ -223,7 +222,7 @@ export default function HomeScreen({ navigation }: any) {
     : canReadRoute(session, "Students")
       ? "Students"
       : "Classes";
-  const usersRoute = isSchoolAdmin ? "Utilisateurs" : "Users";
+  const usersRoute = "Users";
   const presenceRoute = homePresenceRoute(session, isParentLike);
   const canReadStudentPayments = canReadRoute(session, "StudentPayments");
   const paymentsRoute = isParentLike && canReadStudentPayments ? "StudentPayments" : "Payments";
@@ -372,10 +371,13 @@ export default function HomeScreen({ navigation }: any) {
   );
 
   const actionCatalog: Record<RoleHomeActionKey, RoleDashboardAction | null> = {
-    users: canReadEntity(session, "users") ? action("users", "person-circle-outline", isSchoolAdmin ? "Comptes" : "Utilisateurs", () => navigation.navigate(usersRoute)) : null,
+    users: canReadEntity(session, "users") ? action("users", "person-circle-outline", "Utilisateurs", () => navigation.navigate("Users")) : null,
     classes: canReadRoute(session, "Classes") ? action("classes", "grid-outline", "Classes", () => navigation.navigate("Classes")) : null,
     teachers: canReadEntity(session, "teachers") ? action("teachers", "person-add-outline", "Enseignants", () => navigation.navigate("Teachers")) : null,
-    payments: canReadEntity(session, "payments") ? action("payments", "card-outline", "Frais", () => navigation.navigate("Payments")) : null,
+    payments: canReadEntity(session, "payments") ? action("payments", "card-outline", "Paiements", () => navigation.navigate("Payments")) : null,
+    platformNotifications: canReadView(session, "PlatformNotifications")
+      ? action("platformNotifications", "notifications-outline", "Notifications", () => navigation.navigate("PlatformNotifications"))
+      : null,
     announcements: canReadEntity(session, "announcements") ? action("announcements", "megaphone-outline", "Annonces", () => navigation.navigate("Announcements")) : null,
     students: canReadEntity(session, "students") ? action("students", "people-outline", "Élèves", () => navigation.navigate(studentsRoute)) : null,
     attendance: canReadRoute(session, "TeacherAttendance") ? action("attendance", "checkbox-outline", "Présences", () => navigation.navigate("TeacherAttendance")) : null,
@@ -395,7 +397,7 @@ export default function HomeScreen({ navigation }: any) {
       ? action("presences", "calendar-outline", "Présences", () => navigation.navigate("StudentPresences", { studentId: selectedStudentId }))
       : null,
     studentPayments: canShowHomeStudentAction(session, "studentPayments", selectedStudentId)
-      ? action("studentPayments", "card-outline", "Frais", () => navigation.navigate("StudentPayments", { studentId: selectedStudentId }))
+      ? action("studentPayments", "card-outline", "Paiements", () => navigation.navigate("StudentPayments", { studentId: selectedStudentId }))
       : null,
     documents: canReadRoute(session, "Documents") ? action("documents", "folder-open-outline", "Documents", () => navigation.navigate("Documents")) : null,
   };
