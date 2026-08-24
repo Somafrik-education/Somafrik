@@ -148,6 +148,7 @@ async function main() {
       firstName: "Admin",
       lastName: "A",
       sub: user.rows[0].id,
+      permissions: ["Paiements:UPDATE"],
     };
 
     function failAuditWrites() {

@@ -4,6 +4,7 @@ import { useFocusEffect } from "@react-navigation/native";
 import QueryStateView from "../components/QueryStateView";
 import PaymentReceiptCard from "../components/PaymentReceiptCard";
 import PaymentMutationControls from "../components/PaymentMutationControls";
+import PaymentCancelControls from "../components/PaymentCancelControls";
 import { useAdminData } from "../context/AdminDataContext";
 import { getPaymentStats } from "../domain/metrics/schoolMetrics";
 import { DATA_TRUTH_COPY, DATA_TRUTH_TEST_IDS } from "../lib/dataTruth";
@@ -84,12 +85,15 @@ export default function PaymentsScreen({ navigation }: any) {
       renderItem={({ item: payment }) => {
         const student = studentsData.find((row) => row.id === payment.studentId);
         return (
-          <PaymentReceiptCard
-            payment={payment}
-            studentName={student?.name}
-            onPress={() => navigation.navigate("StudentPayments", { studentId: payment.studentId })}
-            showItems={false}
-          />
+          <>
+            <PaymentReceiptCard
+              payment={payment}
+              studentName={student?.name}
+              onPress={() => navigation.navigate("StudentPayments", { studentId: payment.studentId })}
+              showItems={false}
+            />
+            <PaymentCancelControls payment={payment} onChanged={() => loadPayments()} />
+          </>
         );
       }}
       ListFooterComponent={null}
