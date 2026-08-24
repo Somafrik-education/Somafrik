@@ -9,6 +9,7 @@ const { createFunctionalRbacMemoryStore } = require("../db/functionalRbacMemoryS
 const { RbacService } = require("../services/rbacService");
 const {
   CANONICAL_CRITICAL_PARITY_GRANTS,
+  CRITICAL_PARITY_EXCLUDED_ROLE_KEYS,
   reconcileCanonicalCriticalParityGrants,
 } = require("./criticalParityRbacCanonical");
 
@@ -78,7 +79,7 @@ async function seedStaleGrants(store) {
   });
 }
 
-test("bootstrap J3 UNION Élèves:READ comptable, Affectations:READ enseignant, Affectations CRUD préfet", async () => {
+test("bootstrap J3 ajoute Affectations:READ enseignant et Affectations CRUD préfet sans ouvrir Élèves au comptable", async () => {
   const store = createFunctionalRbacMemoryStore();
   await seedStaleGrants(store);
   const repo = emptyCatalogRepo(store);
@@ -102,15 +103,22 @@ test("bootstrap J3 UNION Élèves:READ comptable, Affectations:READ enseignant, 
     role: "Comptable",
     roleKeys: ["ACCOUNTANT"],
   });
-  assert.ok(accountant.permissions.includes("Élèves:READ"));
-  assert.equal(accountant.permissions.includes("Élèves:CREATE"), false, "pas d'élargissement CUD élèves");
+  assert.equal(accountant.permissions.includes("Élèves:READ"), false, "le Comptable ne reçoit pas l'annuaire Élèves");
   assert.equal(
     rbac.canAccess({ role: "Comptable", permissions: accountant.permissions }, "GET /api/students"),
-    true,
-  );
-  assert.equal(
-    rbac.canAccess({ role: "Comptable", permissions: accountant.permissions }, "POST /api/classes/:classCode/students"),
     false,
+  );
+
+  const accountantStudentGrants = await store.listGrantsForScope({
+    roleKey: "ACCOUNTANT",
+    scopeType: "global",
+    countryId: null,
+    schoolId: null,
+  });
+  assert.equal(
+    accountantStudentGrants.some((row) => row.moduleKey === "students"),
+    false,
+    "la réconciliation ne crée aucun grant students pour ACCOUNTANT",
   );
 
   const teacher = await resolveEffectivePermissionsForPrincipal(repo, {
@@ -119,6 +127,8 @@ test("bootstrap J3 UNION Élèves:READ comptable, Affectations:READ enseignant, 
   });
   assert.ok(teacher.permissions.includes("Affectations:READ"));
   assert.equal(teacher.permissions.includes("Affectations:CREATE"), false);
+  assert.equal(teacher.permissions.includes("Affectations:UPDATE"), false);
+  assert.equal(teacher.permissions.includes("Affectations:DELETE"), false);
   assert.equal(
     rbac.canAccess({ role: "Enseignant", permissions: teacher.permissions }, "GET /api/assignments"),
     true,
@@ -133,7 +143,9 @@ test("bootstrap J3 UNION Élèves:READ comptable, Affectations:READ enseignant, 
     roleKeys: ["PREFET_ETUDES"],
   });
   assert.ok(prefet.permissions.includes("Affectations:CREATE"));
+  assert.ok(prefet.permissions.includes("Affectations:READ"));
   assert.ok(prefet.permissions.includes("Affectations:UPDATE"));
+  assert.ok(prefet.permissions.includes("Affectations:DELETE"));
   assert.equal(
     rbac.canAccess({ role: "Préfet des études", permissions: prefet.permissions }, "POST /api/assignments"),
     true,
@@ -145,35 +157,49 @@ test("bootstrap J3 UNION Élèves:READ comptable, Affectations:READ enseignant, 
   });
   assert.equal(parent.permissions.includes("Affectations:READ"), false);
   assert.equal(parent.permissions.includes("Élèves:CREATE"), false);
+
+  const student = await resolveEffectivePermissionsForPrincipal(repo, {
+    role: "Élève / Étudiant",
+    roleKeys: ["STUDENT"],
+  });
+  assert.equal(student.permissions.includes("Affectations:READ"), false);
 });
 
-test("UNION ne retire pas un CUD élèves déjà accordé au comptable", async () => {
+test("réconciliation J3 ne touche pas un grant students préexistant du comptable", async () => {
   const store = createFunctionalRbacMemoryStore();
   await store.upsertGrant({
     roleKey: "ACCOUNTANT",
     scopeType: "global",
     moduleKey: "students",
-    canCreate: true,
-    canRead: true,
-    canUpdate: true,
+    canCreate: false,
+    canRead: false,
+    canUpdate: false,
     canDelete: false,
     updatedBy: "custom",
   });
   const changed = await reconcileCanonicalCriticalParityGrants(store);
-  assert.equal(changed, 2, "teacher + prefet inserted ; accountant already covers READ");
+  assert.equal(changed, 2, "seuls teacher + prefet sont réconciliés");
   const accountant = (await store.listGrantsForScope({
     roleKey: "ACCOUNTANT",
     scopeType: "global",
     countryId: null,
     schoolId: null,
   })).find((row) => row.moduleKey === "students");
-  assert.equal(accountant.canCreate, true);
-  assert.equal(accountant.canRead, true);
-  assert.equal(accountant.canUpdate, true);
+  assert.equal(accountant.canCreate, false);
+  assert.equal(accountant.canRead, false);
+  assert.equal(accountant.canUpdate, false);
+  assert.equal(accountant.canDelete, false);
 });
 
-test("ensureFunctionalRbacBootstrap appelle la réconciliation J3", () => {
+test("ensureFunctionalRbacBootstrap appelle la réconciliation J3 fail-closed", () => {
   const source = fs.readFileSync(path.join(__dirname, "functionalRbacService.js"), "utf8");
   assert.match(source, /reconcileCanonicalCriticalParityGrants/);
-  assert.equal(CANONICAL_CRITICAL_PARITY_GRANTS.length, 3);
+  assert.equal(CANONICAL_CRITICAL_PARITY_GRANTS.length, 2);
+  assert.deepEqual(
+    CANONICAL_CRITICAL_PARITY_GRANTS.map((grant) => [grant.roleKey, grant.moduleKey]),
+    [["TEACHER", "assignments"], ["PREFET_ETUDES", "assignments"]],
+  );
+  assert.ok(CRITICAL_PARITY_EXCLUDED_ROLE_KEYS.includes("ACCOUNTANT"));
+  assert.ok(CRITICAL_PARITY_EXCLUDED_ROLE_KEYS.includes("PARENT"));
+  assert.ok(CRITICAL_PARITY_EXCLUDED_ROLE_KEYS.includes("STUDENT"));
 });
