@@ -6,7 +6,7 @@ import { useFocusEffect } from "@react-navigation/native";
 import { useAuth } from "../context/AuthContext";
 import { useAdminData } from "../context/AdminDataContext";
 import { hasSecurityPermission } from "../domain/security/permissions";
-import { isTeacherSession } from "../lib/establishment";
+import { isTeacherSession, resolveTeacherAssignmentsForSession } from "../lib/establishment";
 import { sessionRoleToPlatformRole } from "../lib/orgHierarchy";
 import {
   createEvaluation,
@@ -70,12 +70,15 @@ export default function TeacherGradesScreen() {
   const { session } = useAuth();
   const {
     assignmentsData,
+    teachersData,
     academicConfigData,
     evaluationsSnapshot,
     notesSnapshot,
     loadEvaluations,
     loadEvaluation,
     loadEvaluationGrades,
+    loadAssignments,
+    loadTeachers,
   } = useAdminData();
 
   const teacher = isTeacherSession(session as { role?: string; user?: { role?: string } } | null);
@@ -116,11 +119,11 @@ export default function TeacherGradesScreen() {
 
   const scopedAssignments = useMemo(
     () =>
-      (assignmentsData ?? []).filter((row) => {
-        if (String(row.status ?? "active").toLowerCase() === "archived") return false;
-        return Boolean(row.classId);
-      }),
-    [assignmentsData],
+      resolveTeacherAssignmentsForSession(session, {
+        assignments: assignmentsData,
+        teachers: teachersData,
+      }).filter((row) => Boolean(row.classId)),
+    [assignmentsData, session, teachersData],
   );
 
   const selectedAssignment = scopedAssignments.find(
@@ -132,7 +135,9 @@ export default function TeacherGradesScreen() {
   useFocusEffect(
     useCallback(() => {
       void loadEvaluations();
-    }, [loadEvaluations]),
+      void loadAssignments();
+      void loadTeachers();
+    }, [loadEvaluations, loadAssignments, loadTeachers]),
   );
 
   useEffect(() => {

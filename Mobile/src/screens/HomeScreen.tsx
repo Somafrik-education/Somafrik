@@ -77,6 +77,7 @@ export default function HomeScreen({ navigation }: any) {
     loadStudents,
     loadTeachers,
     loadClasses,
+    loadAssignments,
     resourceScopeKey,
     countriesData,
     teachersData,
@@ -149,7 +150,7 @@ export default function HomeScreen({ navigation }: any) {
   );
   const assignedClasses = teacherScopedClassLabels(session, teacherStudents, teacherScopeState);
   const sessionCourses = session?.user?.courses ?? [];
-  const assignmentCourses = resolveTeacherAssignmentsForSession(session, assignmentsData)
+  const assignmentCourses = resolveTeacherAssignmentsForSession(session, teacherScopeState)
     .map((assignment) => String(assignment.course ?? "").trim())
     .filter(Boolean);
   const courses = [...new Set([...sessionCourses, ...assignmentCourses])];
@@ -180,6 +181,7 @@ export default function HomeScreen({ navigation }: any) {
         void loadTeachers();
         void loadClasses();
       }
+      if (session?.role === "teacher") void loadAssignments();
       if (canReadEntity(session, "payments")) {
         void loadPayments();
         void loadStudentFees();
@@ -196,6 +198,7 @@ export default function HomeScreen({ navigation }: any) {
       loadPresences,
       loadTeachers,
       loadClasses,
+      loadAssignments,
       loadPayments,
       loadStudentFees,
       loadAnnouncements,

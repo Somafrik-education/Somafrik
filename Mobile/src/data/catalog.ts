@@ -39,6 +39,7 @@ export type Teacher = {
 export type TeacherAssignment = {
   id?: string;
   teacherId?: string;
+  teacherCode?: string;
   teacherName?: string;
   classId?: string | null;
   classCode?: string;
