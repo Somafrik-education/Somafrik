@@ -50,6 +50,10 @@ function main() {
   assert.match(attendance, /ROLL_CALL_COPY\.queuedAlertTitle/);
   assert.match(attendance, /ROLL_CALL_COPY\.syncedAlertTitle/);
   assert.match(attendance, /ROLL_CALL_COPY\.persistFailedBody/);
+  assert.match(attendance, /ROLL_CALL_COPY\.outboxUnavailable/);
+  assert.match(attendance, /blocked_sending/);
+  assert.match(attendance, /replaySending/);
+  assert.doesNotMatch(attendance, /\.catch\(\s*\(\)\s*=>\s*\[\s*\]\s*\)/);
   assert.doesNotMatch(attendance, /Alert\.alert\(\s*"Appel enregistré"/);
   console.log("OK: présences — classId/classCode, outbox immédiate, pas de faux succès");
 
@@ -74,6 +78,9 @@ function main() {
   const outbox = read(path.join(SRC, "lib", "outbox.ts"));
   assert.match(outbox, /OUTBOX_ALLOWED_DOMAINS/);
   assert.match(outbox, /OUTBOX_PERSIST_FAILED/);
+  assert.match(outbox, /OUTBOX_READ_FAILED/);
+  assert.match(outbox, /OUTBOX_INTENTION_SENDING/);
+  assert.match(outbox, /blocked_sending/);
   assert.match(outbox, /subscribeOutbox/);
   assert.match(outbox, /intentionId/);
   assert.match(outbox, /replacePendingPayload/);
@@ -83,6 +90,7 @@ function main() {
   assert.match(outbox, /blocked_logout/);
   assert.match(outbox, /OUTBOX_SECRET_FORBIDDEN/);
   assert.match(outbox, /accessToken\|refreshToken\|password\|pin\|secret/);
+  assert.doesNotMatch(outbox, /catch \{\s*return \[\];\s*\}/);
   const writeFn = outbox.slice(outbox.indexOf("async write(entries)"));
   const fileWrite = writeFn.slice(0, writeFn.indexOf("let storage"));
   assert.doesNotMatch(fileWrite, /memoryStorage\.write/, "FileSystem fail-closed : pas de fallback RAM");
@@ -174,6 +182,8 @@ function main() {
   const banner = read(path.join(SRC, "components", "OfflineBanner.tsx"));
   assert.doesNotMatch(banner, /Vos données seront automatiquement synchronisées/);
   assert.match(banner, /subscribeOutbox/);
+  assert.doesNotMatch(banner, /catch\s*\(\s*\(\)\s*=>\s*setPending\(0\)\s*\)/);
+  assert.match(banner, /setPending\(null\)/);
   const spec = read(path.join(SRC, "lib", "offlineModeSpec.ts"));
   assert.doesNotMatch(spec, /Vos données seront automatiquement synchronisées/);
   assert.doesNotMatch(spec, /Les modifications reprendront dès le retour du réseau/);

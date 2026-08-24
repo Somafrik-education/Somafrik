@@ -344,7 +344,7 @@ export default function TeacherGradesScreen() {
           noteIntentionRef.current.rotate(intentionId);
           continue;
         }
-        if (submitted.outcome === "queued") {
+        if (submitted.outcome === "queued" || submitted.outcome === "in_flight") {
           queued += 1;
           continue;
         }

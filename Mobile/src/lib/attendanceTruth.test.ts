@@ -139,6 +139,8 @@ function run() {
   assert.equal(rollCallSourceLabel("queued"), "En attente de synchronisation");
   assert.equal(rollCallSourceLabel("failed"), "Erreur de synchronisation");
   assert.equal(ROLL_CALL_COPY.syncedAlertTitle, "Appel synchronisé");
+  assert.equal(ROLL_CALL_COPY.outboxUnavailable, "Synchronisation indisponible");
+  assert.notEqual(rollCallSourceLabel("postgres"), ROLL_CALL_COPY.outboxUnavailable);
 
   assert.equal(resolveClassCourseLabel([]), "Cours non renseignés");
   assert.equal(resolveClassCourseLabel(["Maths", ""]), "Maths");

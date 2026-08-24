@@ -253,4 +253,10 @@ export const ROLL_CALL_COPY = {
     "Chaque élève doit avoir un statut explicite avant enregistrement. Utilisez « Tout présent » ou saisissez élève par élève. Aucune présence n'a été envoyée.",
   missingClassIdentity:
     "Identité de classe incomplète (classId et classCode requis). L'appel n'a pas été envoyé.",
+  outboxUnavailable: "Synchronisation indisponible",
+  outboxUnavailableBody:
+    "File d'attente illisible — confirmation serveur non déterminée. L'appel n'est pas considéré comme vide ni comme enregistré.",
+  sendingLockTitle: "Synchronisation en cours",
+  sendingLockBody:
+    "Cet appel est en cours d'envoi. Attendez la confirmation avant d'enregistrer une nouvelle modification.",
 } as const;

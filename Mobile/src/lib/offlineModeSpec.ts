@@ -9,6 +9,7 @@ export const OFFLINE_COPY = {
   actionBlocked: "Action impossible sans connexion internet.",
   reconnected: "Connexion rétablie",
   pendingOutbox: "envoi(s) en attente — confirmation serveur requise.",
+  outboxUnread: "File d'attente illisible — confirmation serveur non déterminée.",
 } as const;
 
 export const OFFLINE_TEST_IDS = {
@@ -17,6 +18,7 @@ export const OFFLINE_TEST_IDS = {
   bannerHint: "offline-banner-hint",
   actionMessage: "offline-action-message",
   pendingCount: "offline-banner-pending",
+  outboxUnread: "offline-banner-outbox-unread",
   reconnectedBanner: "offline-reconnected-banner",
 } as const;
 

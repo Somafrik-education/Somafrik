@@ -2,7 +2,7 @@
  *   npx tsx Mobile/src/lib/attendanceOffline.test.ts
  */
 import assert from "node:assert/strict";
-import { overlayPresenceOutboxOnAttendance } from "./attendanceOffline";
+import { overlayPresenceOutboxOnAttendance, applyOutboxReadToRollCall } from "./attendanceOffline";
 import { applyRollCallStatus, ROLL_CALL_COPY, type RollCallEntry } from "./attendanceTruth";
 import type { OutboxEntry } from "./outbox";
 
@@ -113,6 +113,63 @@ function run() {
   assert.equal(failed.s1?.source, "failed");
   assert.equal(ROLL_CALL_COPY.syncError, "Erreur de synchronisation");
   assert.match(ROLL_CALL_COPY.persistFailedBody, /Impossible de conserver cet appel hors connexion/);
+
+  const postgresHydrated: Record<string, RollCallEntry> = {
+    s1: { status: "Présent", source: "postgres" },
+  };
+  const unread = applyOutboxReadToRollCall({
+    attendance: postgresHydrated,
+    students,
+    identity: { classId: "uuid-a", classCode: "CLS-A" },
+    todayLabel: "23-08-2026",
+    read: { ok: false },
+  });
+  assert.equal(unread.outboxUnavailable, true, "lecture KO → synchronisation indisponible");
+  assert.equal(unread.attendance, postgresHydrated, "aucune fausse file vide overlayée");
+  assert.equal(unread.attendance.s1?.source, "postgres");
+  assert.equal(ROLL_CALL_COPY.outboxUnavailable, "Synchronisation indisponible");
+  assert.match(ROLL_CALL_COPY.outboxUnavailableBody, /File d'attente illisible/);
+  assert.notEqual(ROLL_CALL_COPY.outboxUnavailable, ROLL_CALL_COPY.postgres);
+
+  const pendingHiddenByUnread = applyOutboxReadToRollCall({
+    attendance: postgresHydrated,
+    students,
+    identity: { classId: "uuid-a", classCode: "CLS-A" },
+    todayLabel: "23-08-2026",
+    read: { ok: false },
+  });
+  const wouldHaveQueued = overlayPresenceOutboxOnAttendance({
+    attendance: postgresHydrated,
+    students,
+    entries: [
+      entry({
+        status: "pending",
+        payload: {
+          classId: "uuid-a",
+          classCode: "CLS-A",
+          date: "23-08-2026",
+          items: [{ studentId: "s1", status: "Absent" }],
+        },
+      }),
+    ],
+    identity: { classId: "uuid-a", classCode: "CLS-A" },
+    todayLabel: "23-08-2026",
+  });
+  assert.equal(wouldHaveQueued.s1?.source, "queued");
+  assert.equal(
+    pendingHiddenByUnread.attendance.s1?.source,
+    "postgres",
+    "lecture KO : ne pas overlay une file inconnue, ne pas affirmer Enregistré côté UI (flag outboxUnavailable)",
+  );
+
+  const emptyOk = applyOutboxReadToRollCall({
+    attendance: postgresHydrated,
+    students,
+    identity: { classId: "uuid-a", classCode: "CLS-A" },
+    todayLabel: "23-08-2026",
+    read: { ok: true, entries: [] },
+  });
+  assert.equal(emptyOk.outboxUnavailable, false, "file lue vide ≠ lecture KO");
 
   console.log("attendanceOffline.test.ts OK");
 }

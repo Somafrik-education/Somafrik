@@ -9,7 +9,7 @@ import { countPendingIn, listOutbox, subscribeOutbox, type OutboxEntry } from ".
 export default function OfflineBanner() {
   const { syncStatus } = useAdminData();
   const { session } = useAuth();
-  const [pending, setPending] = useState(0);
+  const [pending, setPending] = useState<number | null>(0);
 
   useEffect(() => {
     if (!session) {
@@ -23,7 +23,11 @@ export default function OfflineBanner() {
     const apply = (entries: OutboxEntry[]) => {
       setPending(countPendingIn(entries, fingerprint));
     };
-    void listOutbox().then(apply).catch(() => setPending(0));
+    void listOutbox()
+      .then(apply)
+      .catch(() => {
+        setPending(null);
+      });
     const unsubscribe = subscribeOutbox(apply);
     return unsubscribe;
   }, [session, session?.user?.id, session?.school?.code]);
@@ -43,7 +47,11 @@ export default function OfflineBanner() {
           <Text style={styles.hint} testID={OFFLINE_TEST_IDS.bannerHint}>
             {OFFLINE_COPY.bannerHint}
           </Text>
-          {pending > 0 ? (
+          {pending === null ? (
+            <Text style={styles.hint} testID={OFFLINE_TEST_IDS.outboxUnread}>
+              {OFFLINE_COPY.outboxUnread}
+            </Text>
+          ) : pending > 0 ? (
             <Text style={styles.hint} testID={OFFLINE_TEST_IDS.pendingCount}>
               {pending} {OFFLINE_COPY.pendingOutbox}
             </Text>

@@ -18,7 +18,7 @@ import {
   presenceIntentionId,
   type AttendanceClassIdentity,
 } from "../lib/attendanceClassIdentity";
-import { overlayPresenceOutboxOnAttendance } from "../lib/attendanceOffline";
+import { overlayPresenceOutboxOnAttendance, applyOutboxReadToRollCall, outboxMatchesAttendanceClass } from "../lib/attendanceOffline";
 import { savePresences } from "../services/api";
 import { clearConfirmedAttendanceDirty } from "../lib/attendanceDraft";
 import {
@@ -51,6 +51,8 @@ import {
   resolveOutboxIntentionKey,
   subscribeOutbox,
   submitProtectedMutation,
+  isOutboxReadFailure,
+  isOutboxSendingLock,
 } from "../lib/outbox";
 import {
   ATTENDANCE_ACTIONS,
@@ -123,6 +125,9 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
   const [savedCalls, setSavedCalls] = useState<SavedCall[]>([]);
   const [auditLog, setAuditLog] = useState<string[]>([]);
   const [attendance, setAttendance] = useState<Record<string, RollCallEntry>>({});
+  const [outboxUnavailable, setOutboxUnavailable] = useState(false);
+  const [replaySending, setReplaySending] = useState(false);
+  const replaySendingRef = useRef(false);
 
   const todayLabel = formatAttendanceDate(new Date());
   const currentHour = formatAttendanceHour(new Date());
@@ -143,8 +148,40 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
   useEffect(() => {
     let cancelled = false;
     const hydrate = async () => {
-      const entries = selectedClass ? await listOutbox().catch(() => []) : [];
+      if (!selectedClass) {
+        if (cancelled) return;
+        setOutboxUnavailable(false);
+        setReplaySending(false);
+        replaySendingRef.current = false;
+        setAttendance((current) => {
+          const next = { ...current };
+          for (const student of classStudents) {
+            if (shouldPreserveLocalAttendanceDraft(next[student.id])) continue;
+            const latest = findTodayPresenceForStudent(presencesData, student, todayLabel);
+            next[student.id] = rollCallEntryFromPresence(latest);
+          }
+          return next;
+        });
+        return;
+      }
+
+      let read: { ok: true; entries: Awaited<ReturnType<typeof listOutbox>> } | { ok: false };
+      try {
+        read = { ok: true, entries: await listOutbox() };
+      } catch {
+        read = { ok: false };
+      }
       if (cancelled) return;
+      setOutboxUnavailable(!read.ok);
+      const sending = read.ok
+        ? read.entries.some(
+            (entry) =>
+              entry.status === "sending" &&
+              outboxMatchesAttendanceClass(entry, selectedClass, todayLabel),
+          )
+        : false;
+      replaySendingRef.current = sending;
+      setReplaySending(sending);
       setAttendance((current) => {
         const next = { ...current };
         for (const student of classStudents) {
@@ -152,14 +189,13 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
           const latest = findTodayPresenceForStudent(presencesData, student, todayLabel);
           next[student.id] = rollCallEntryFromPresence(latest);
         }
-        if (!selectedClass) return next;
-        return overlayPresenceOutboxOnAttendance({
+        return applyOutboxReadToRollCall({
           attendance: next,
           students: classStudents,
-          entries,
           identity: selectedClass,
           todayLabel,
-        });
+          read,
+        }).attendance;
       });
     };
     void hydrate();
@@ -171,7 +207,17 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
   useEffect(() => {
     if (!selectedClass) return undefined;
     const identity = selectedClass;
+    const intentionId = presenceIntentionId(identity.classId, todayLabel);
     return subscribeOutbox((entries) => {
+      setOutboxUnavailable(false);
+      const sending = entries.some(
+        (entry) => entry.status === "sending" && outboxMatchesAttendanceClass(entry, identity, todayLabel),
+      );
+      if (replaySendingRef.current && !sending) {
+        intentionRef.current.rotate(intentionId);
+      }
+      replaySendingRef.current = sending;
+      setReplaySending(sending);
       setAttendance((current) =>
         overlayPresenceOutboxOnAttendance({
           attendance: current,
@@ -201,6 +247,10 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
       Alert.alert("Accès refusé", "Votre rôle ne permet pas de modifier les présences.");
       return;
     }
+    if (replaySending) {
+      Alert.alert(ROLL_CALL_COPY.sendingLockTitle, ROLL_CALL_COPY.sendingLockBody);
+      return;
+    }
 
     setAttendance((current) => {
       const currentEntry = current[studentId];
@@ -221,6 +271,10 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
       Alert.alert("Accès refusé", "Votre rôle ne permet pas de modifier les présences.");
       return;
     }
+    if (replaySending) {
+      Alert.alert(ROLL_CALL_COPY.sendingLockTitle, ROLL_CALL_COPY.sendingLockBody);
+      return;
+    }
 
     const rows = filterStudentsByClassIdentity(classStudents, identity, classesData);
     setAttendance((current) => markRosterPresent(
@@ -235,6 +289,16 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
     if (!canUpdatePresences) {
       saveLockRef.current.end();
       Alert.alert("Accès refusé", "Votre rôle ne permet pas d'enregistrer l'appel.");
+      return;
+    }
+    if (replaySending) {
+      saveLockRef.current.end();
+      Alert.alert(ROLL_CALL_COPY.sendingLockTitle, ROLL_CALL_COPY.sendingLockBody);
+      return;
+    }
+    if (outboxUnavailable) {
+      saveLockRef.current.end();
+      Alert.alert(ROLL_CALL_COPY.outboxUnavailable, ROLL_CALL_COPY.outboxUnavailableBody);
       return;
     }
     if (!assertAttendanceClassIdentity(identity)) {
@@ -325,6 +389,22 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
         Alert.alert(ROLL_CALL_COPY.queuedAlertTitle, ROLL_CALL_COPY.queuedAlertBody);
         return;
       }
+      if (submitted.outcome === "in_flight") {
+        const studentIds = rows.map((student) => student.id);
+        setAttendance((current) => markRollCallSyncState(current, studentIds, "queued"));
+        setReplaySending(true);
+        replaySendingRef.current = true;
+        setSaveHint(ROLL_CALL_COPY.sendingLockTitle);
+        Alert.alert(ROLL_CALL_COPY.sendingLockTitle, ROLL_CALL_COPY.sendingLockBody);
+        return;
+      }
+      if (submitted.outcome === "blocked_sending") {
+        setReplaySending(true);
+        replaySendingRef.current = true;
+        setSaveHint(ROLL_CALL_COPY.sendingLockTitle);
+        Alert.alert(ROLL_CALL_COPY.sendingLockTitle, ROLL_CALL_COPY.sendingLockBody);
+        return;
+      }
       if (submitted.outcome !== "confirmed") {
         const studentIds = rows.map((student) => student.id);
         if (submitted.persistFailed) {
@@ -374,6 +454,19 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
         `${identity.className} • ${rows.length} élève(s)\n${absentCount} absent(s), ${lateCount} retard(s), ${justifiedCount} absence(s) justifiée(s).\n${ROLL_CALL_COPY.postgres}.`
       );
     } catch (error) {
+      if (isOutboxSendingLock(error)) {
+        setReplaySending(true);
+        replaySendingRef.current = true;
+        setSaveHint(ROLL_CALL_COPY.sendingLockTitle);
+        Alert.alert(ROLL_CALL_COPY.sendingLockTitle, ROLL_CALL_COPY.sendingLockBody);
+        return;
+      }
+      if (isOutboxReadFailure(error)) {
+        setOutboxUnavailable(true);
+        setSaveHint(ROLL_CALL_COPY.outboxUnavailable);
+        Alert.alert(ROLL_CALL_COPY.outboxUnavailable, ROLL_CALL_COPY.outboxUnavailableBody);
+        return;
+      }
       setSaveHint(NETWORK_COPY.failed);
       Alert.alert(
         NETWORK_COPY.failed,
@@ -397,6 +490,7 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
     : [];
   const selectedCourseLabel = resolveClassCourseLabel(selectedClassCourses);
   const selectedClassStats = selectedClass ? dailyStats : null;
+  const actionsLocked = saving || replaySending;
   const todayCallGroups = groupAttendanceCalls(
     presencesData.filter((presence) => sameAttendanceDay(presence.date, todayLabel)),
     studentsData,
@@ -528,10 +622,10 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
                   testID={USABILITY_TEST_IDS.attendanceMarkAllPresent}
                   style={styles.secondaryButton}
                   onPress={() => markClassPresent(selectedClass)}
-                  disabled={saving}
+                  disabled={actionsLocked}
                   accessibilityRole="button"
                   accessibilityLabel={`Marquer toute la classe ${selectedClass.className} présente`}
-                  accessibilityState={{ disabled: saving }}
+                  accessibilityState={{ disabled: actionsLocked }}
                 >
                   <Text style={styles.secondaryText}>Tout présent</Text>
                 </TouchableOpacity>
@@ -539,15 +633,23 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
                   testID={USABILITY_TEST_IDS.attendanceSave}
                   style={styles.saveButton}
                   onPress={() => saveCall(selectedClass)}
-                  disabled={saving}
+                  disabled={actionsLocked}
                   accessibilityRole="button"
                   accessibilityLabel={`Enregistrer l'appel de ${selectedClass.className}`}
-                  accessibilityState={{ busy: saving, disabled: saving }}
+                  accessibilityState={{ busy: saving, disabled: actionsLocked }}
                 >
                   {saving ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.saveText}>Enregistrer l'appel</Text>}
                 </TouchableOpacity>
               </View>
             )}
+            {outboxUnavailable ? (
+              <Text testID="attendance-outbox-unavailable" style={styles.unavailable}>
+                {ROLL_CALL_COPY.outboxUnavailable} — {ROLL_CALL_COPY.outboxUnavailableBody}
+              </Text>
+            ) : null}
+            {replaySending && !outboxUnavailable ? (
+              <Text style={styles.unavailable}>{ROLL_CALL_COPY.sendingLockTitle}</Text>
+            ) : null}
             {saveHint ? <Text style={styles.meta}>{saveHint}</Text> : null}
           </View>
         </>
@@ -555,6 +657,9 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
       renderItem={({ item: student }) => {
         const entry = attendance[student.id] ?? rollCallEntryFromPresence(undefined);
         const status = entry.status;
+        const sourceLabel = outboxUnavailable
+          ? ROLL_CALL_COPY.outboxUnavailable
+          : rollCallSourceLabel(entry.source);
         return (
           <View testID={USABILITY_TEST_IDS.attendanceStudent(student.id)} style={styles.studentRow}>
             <TouchableOpacity
@@ -580,7 +685,7 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
                   style={styles.statusLabel}
                 >
                   Statut : {status ?? ROLL_CALL_COPY.unset}
-                  {rollCallSourceLabel(entry.source) ? ` • ${rollCallSourceLabel(entry.source)}` : ""}
+                  {sourceLabel ? ` • ${sourceLabel}` : ""}
                 </Text>
                 {status ? (
                   <View
@@ -596,7 +701,7 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
                 const spec = attendanceActionForStudent(student.id, action);
                 const visual = attendanceStatusTheme(action, {
                   selected,
-                  disabled: !canUpdatePresences || saving,
+                  disabled: !canUpdatePresences || actionsLocked,
                 });
                 return (
                   <TouchableOpacity
@@ -604,8 +709,8 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
                     testID={spec.testID}
                     accessibilityRole="button"
                     accessibilityLabel={`${action} pour ${student.name}`}
-                    accessibilityState={{ selected, disabled: !canUpdatePresences || saving }}
-                    disabled={!canUpdatePresences || saving}
+                    accessibilityState={{ selected, disabled: !canUpdatePresences || actionsLocked }}
+                    disabled={!canUpdatePresences || actionsLocked}
                     onPress={() => setAttendanceStatus(student.id, action)}
                     style={[
                       styles.statusAction,
@@ -784,6 +889,7 @@ const styles = StyleSheet.create({
   },
   className: { fontSize: 20, fontWeight: "900", color: "#0F172A" },
   meta: { marginTop: 4, color: "#64748B", fontWeight: "700" },
+  unavailable: { marginTop: 8, color: "#B45309", fontWeight: "800" },
   classActions: { flexDirection: "row", gap: 10, marginBottom: 8 },
   secondaryButton: {
     flex: 1,

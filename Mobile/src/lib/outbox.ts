@@ -10,6 +10,8 @@ export const OUTBOX_ALLOWED_DOMAINS = ["messages", "presences", "notes", "paymen
 export type OutboxDomain = (typeof OUTBOX_ALLOWED_DOMAINS)[number];
 
 export const OUTBOX_PERSIST_FAILED = "OUTBOX_PERSIST_FAILED";
+export const OUTBOX_READ_FAILED = "OUTBOX_READ_FAILED";
+export const OUTBOX_INTENTION_SENDING = "OUTBOX_INTENTION_SENDING";
 
 export type OutboxStatus =
   | "pending"
@@ -53,13 +55,46 @@ const OUTBOX_FILE = "somafrik-mutation-outbox.json";
 const memoryStore: { entries: OutboxEntry[] } = { entries: [] };
 const listeners = new Set<OutboxListener>();
 
-function persistFailedError(cause?: unknown) {
-  const error = new Error(OUTBOX_PERSIST_FAILED);
-  (error as Error & { code?: string }).code = OUTBOX_PERSIST_FAILED;
-  if (cause instanceof Error && cause.message) {
-    error.message = `${OUTBOX_PERSIST_FAILED}: ${cause.message}`;
+function codedError(code: string, cause?: unknown, message?: string) {
+  const error = new Error(message ?? code);
+  (error as Error & { code?: string }).code = code;
+  if (!message && cause instanceof Error && cause.message) {
+    error.message = `${code}: ${cause.message}`;
   }
   return error;
+}
+
+function persistFailedError(cause?: unknown) {
+  return codedError(OUTBOX_PERSIST_FAILED, cause);
+}
+
+function readFailedError(cause?: unknown) {
+  return codedError(OUTBOX_READ_FAILED, cause);
+}
+
+function sendingLockError() {
+  return codedError(
+    OUTBOX_INTENTION_SENDING,
+    undefined,
+    "Cet envoi est déjà en cours de synchronisation. Attendez la confirmation avant d'enregistrer une nouvelle modification.",
+  );
+}
+
+function hasErrorCode(error: unknown, code: string) {
+  if (!error || typeof error !== "object") {
+    return error instanceof Error && error.message.includes(code);
+  }
+  const tagged = String((error as { code?: string }).code ?? "");
+  const message = error instanceof Error ? error.message : String(error);
+  return tagged === code || message.includes(code);
+}
+
+export function isOutboxReadFailure(error: unknown) {
+  return hasErrorCode(error, OUTBOX_READ_FAILED);
+}
+
+export function isOutboxSendingLock(error: unknown) {
+  return hasErrorCode(error, OUTBOX_INTENTION_SENDING);
 }
 
 const memoryStorage: OutboxStorage = {
@@ -73,15 +108,21 @@ const memoryStorage: OutboxStorage = {
 
 const fileStorage: OutboxStorage = {
   async read() {
-    const FileSystem = require("expo-file-system/legacy") as typeof import("expo-file-system/legacy");
-    const directory = FileSystem.documentDirectory;
-    if (!directory) return [];
-    const path = `${directory}${OUTBOX_FILE}`;
-    const info = await FileSystem.getInfoAsync(path);
-    if (!info.exists) return [];
-    const raw = await FileSystem.readAsStringAsync(path);
-    const parsed = JSON.parse(raw || "[]");
-    return Array.isArray(parsed) ? (parsed as OutboxEntry[]) : [];
+    try {
+      const FileSystem = require("expo-file-system/legacy") as typeof import("expo-file-system/legacy");
+      const directory = FileSystem.documentDirectory;
+      if (!directory) throw readFailedError();
+      const path = `${directory}${OUTBOX_FILE}`;
+      const info = await FileSystem.getInfoAsync(path);
+      if (!info.exists) return [];
+      const raw = await FileSystem.readAsStringAsync(path);
+      const parsed = JSON.parse(raw);
+      if (!Array.isArray(parsed)) throw readFailedError();
+      return parsed as OutboxEntry[];
+    } catch (error) {
+      if (isOutboxReadFailure(error)) throw error;
+      throw readFailedError(error);
+    }
   },
   async write(entries) {
     try {
@@ -108,6 +149,14 @@ export function setOutboxStorageForTests(next: OutboxStorage | null) {
 
 export function subscribeOutbox(listener: OutboxListener): () => void {
   listeners.add(listener);
+  void loadEntries()
+    .then((entries) => {
+      if (!listeners.has(listener)) return;
+      listener(entries.map((entry) => ({ ...entry })));
+    })
+    .catch(() => {
+      /* fail-closed : une lecture KO n'est jamais une file vide */
+    });
   return () => {
     listeners.delete(listener);
   };
@@ -124,6 +173,10 @@ export function isOutboxDomain(value: string): value is OutboxDomain {
 
 export function freezePayload(payload: unknown): unknown {
   return JSON.parse(JSON.stringify(payload ?? null));
+}
+
+export function payloadsEquivalent(left: unknown, right: unknown) {
+  return JSON.stringify(freezePayload(left)) === JSON.stringify(freezePayload(right));
 }
 
 function assertNoSecrets(payload: unknown, path = "payload") {
@@ -143,8 +196,9 @@ function assertNoSecrets(payload: unknown, path = "payload") {
 async function loadEntries(): Promise<OutboxEntry[]> {
   try {
     return await storage.read();
-  } catch {
-    return [];
+  } catch (error) {
+    if (isOutboxReadFailure(error)) throw error;
+    throw readFailedError(error);
   }
 }
 
@@ -185,12 +239,18 @@ function findReusableEntry(entries: OutboxEntry[], input: { idempotencyKey: stri
 export async function resolveOutboxIntentionKey(intentionId: string): Promise<string> {
   const id = String(intentionId ?? "").trim();
   if (!id) return createIdempotencyKey();
+  const existing = await findActiveOutboxIntention(id);
+  return existing?.idempotencyKey ?? createIdempotencyKey();
+}
+
+export async function findActiveOutboxIntention(intentionId: string): Promise<OutboxEntry | undefined> {
+  const id = String(intentionId ?? "").trim();
+  if (!id) return undefined;
   const entries = await loadEntries();
-  const existing = entries.find(
+  return entries.find(
     (entry) =>
       entry.intentionId === id && (entry.status === "pending" || entry.status === "sending"),
   );
-  return existing?.idempotencyKey ?? createIdempotencyKey();
 }
 
 export async function enqueueOutbox(input: {
@@ -212,7 +272,10 @@ export async function enqueueOutbox(input: {
   const entries = await loadEntries();
   const existing = findReusableEntry(entries, input);
   if (existing) {
-    if (existing.status === "sending") return existing;
+    if (existing.status === "sending") {
+      if (payloadsEquivalent(existing.payload, payload)) return existing;
+      throw sendingLockError();
+    }
     if (
       input.replacePendingPayload &&
       (existing.status === "pending" || existing.status === "blocked_logout")
@@ -296,15 +359,12 @@ export async function bindOutboxToSession(session: OutboxSession): Promise<void>
 export type ProtectedMutationOutcome<T> =
   | { outcome: "confirmed"; result: T }
   | { outcome: "queued"; error: unknown }
+  | { outcome: "in_flight"; entry: OutboxEntry; error?: unknown }
+  | { outcome: "blocked_sending"; error: unknown }
   | { outcome: "failed"; error: unknown; persistFailed?: boolean };
 
 function isPersistFailure(error: unknown) {
-  if (!error || typeof error !== "object") {
-    return error instanceof Error && error.message.includes(OUTBOX_PERSIST_FAILED);
-  }
-  const code = String((error as { code?: string }).code ?? "");
-  const message = error instanceof Error ? error.message : String(error);
-  return code === OUTBOX_PERSIST_FAILED || message.includes(OUTBOX_PERSIST_FAILED);
+  return hasErrorCode(error, OUTBOX_PERSIST_FAILED);
 }
 
 async function resolveOfflineFlag(knownOffline?: boolean): Promise<boolean> {
@@ -331,10 +391,11 @@ export async function submitProtectedMutation<T>(input: {
 }): Promise<ProtectedMutationOutcome<T>> {
   const offline = await resolveOfflineFlag(input.knownOffline);
   let queued = false;
+  let enqueued: OutboxEntry | null = null;
 
   if (input.persistOutbox) {
     try {
-      await enqueueOutbox({
+      enqueued = await enqueueOutbox({
         idempotencyKey: input.idempotencyKey,
         intentionId: input.intentionId,
         domain: input.domain,
@@ -347,10 +408,17 @@ export async function submitProtectedMutation<T>(input: {
       });
       queued = true;
     } catch (error) {
-      if (offline || isPersistFailure(error)) {
-        return { outcome: "failed", error, persistFailed: true };
+      if (isOutboxSendingLock(error)) {
+        return { outcome: "blocked_sending", error };
+      }
+      if (offline || isPersistFailure(error) || isOutboxReadFailure(error)) {
+        return { outcome: "failed", error, persistFailed: isPersistFailure(error) || isOutboxReadFailure(error) };
       }
     }
+  }
+
+  if (enqueued?.status === "sending") {
+    return { outcome: "in_flight", entry: enqueued, error: null };
   }
 
   if (offline) {

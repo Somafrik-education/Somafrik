@@ -95,7 +95,11 @@ export function buildSchoolPaymentPayload(input: {
 }
 
 export function paymentSubmitErrorMessage(outcome: "queued" | "failed" | string, error?: unknown): string {
-  if (outcome === "queued") return "Paiement conservé en file. Pas de succès local.";
+  if (outcome === "queued" || outcome === "in_flight") return "Paiement conservé en file. Pas de succès local.";
+  if (outcome === "blocked_sending") {
+    if (error instanceof Error && error.message.trim()) return error.message;
+    return "Cet envoi est déjà en cours de synchronisation. Attendez la confirmation avant un nouvel enregistrement.";
+  }
   if (error instanceof Error && error.message.trim()) return error.message;
   return "Enregistrement refusé.";
 }

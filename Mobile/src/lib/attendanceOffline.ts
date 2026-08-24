@@ -95,6 +95,36 @@ export function overlayPresenceOutboxOnAttendance(input: {
   return next;
 }
 
+export type OutboxReadResult =
+  | { ok: true; entries: OutboxEntry[] }
+  | { ok: false };
+
+/**
+ * Lecture outbox fail-closed : une erreur n'est jamais une file vide.
+ * Pas d'overlay queued/failed, pas d'ACK local déguisé en PostgreSQL.
+ */
+export function applyOutboxReadToRollCall(input: {
+  attendance: Record<string, RollCallEntry>;
+  students: Array<Pick<Student, "id" | "matricule" | "publicId">>;
+  identity: Pick<AttendanceClassIdentity, "classId" | "classCode">;
+  todayLabel: string;
+  read: OutboxReadResult;
+}): { attendance: Record<string, RollCallEntry>; outboxUnavailable: boolean } {
+  if (!input.read.ok) {
+    return { attendance: input.attendance, outboxUnavailable: true };
+  }
+  return {
+    attendance: overlayPresenceOutboxOnAttendance({
+      attendance: input.attendance,
+      students: input.students,
+      entries: input.read.entries,
+      identity: input.identity,
+      todayLabel: input.todayLabel,
+    }),
+    outboxUnavailable: false,
+  };
+}
+
 export function markAttendanceFromOutboxStatus(
   attendance: Record<string, RollCallEntry>,
   studentIds: string[],

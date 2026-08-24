@@ -79,6 +79,8 @@ export default function OutboxRuntime() {
         });
         if (cancelled || !result.sent) return;
         await Promise.all([loadPresences(), loadNotes(), loadPayments()]);
+      } catch {
+        /* lecture outbox KO : ne pas traiter comme une file vide */
       } finally {
         inFlight = false;
       }
@@ -90,7 +92,12 @@ export default function OutboxRuntime() {
     });
     const timer = setInterval(() => {
       void (async () => {
-        const pending = await countPendingOutbox(fingerprint);
+        let pending: number;
+        try {
+          pending = await countPendingOutbox(fingerprint);
+        } catch {
+          return;
+        }
         if (cancelled || pending <= 0) return;
         const online = await probeConnectivity();
         if (online && !cancelled) void run();
