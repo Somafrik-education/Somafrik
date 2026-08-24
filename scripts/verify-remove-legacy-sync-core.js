@@ -62,6 +62,35 @@ if (!notificationsScreenSource.includes("await refreshBackOfficeState()")) {
   throw new Error("MOBILE_NOTIFICATION_CANONICAL_REFRESH_REQUIRED");
 }
 
+const postgresRepositorySource = fs.readFileSync(
+  path.join(root, "backend", "db", "postgresRepository.js"),
+  "utf8",
+);
+function extractAsyncMethod(source, methodName) {
+  const start = source.indexOf(`async ${methodName}(`);
+  if (start < 0) {
+    throw new Error(`LEGACY_BOOT_METHOD_MISSING: ${methodName}`);
+  }
+  const next = source.slice(start + 1).search(/\n  async [A-Za-z0-9_]+\(/);
+  return next >= 0 ? source.slice(start, start + 1 + next) : source.slice(start);
+}
+const initSource = extractAsyncMethod(postgresRepositorySource, "init");
+const ensureNotesSource = extractAsyncMethod(postgresRepositorySource, "ensureNotesCanonicalPersistence");
+for (const forbidden of ["migrateEvaluationsFromBackOffice", "migrateNotesFromBackOffice"]) {
+  if (initSource.includes(forbidden) || ensureNotesSource.includes(forbidden)) {
+    throw new Error(`LEGACY_BOOT_STILL_CALLS_${forbidden}`);
+  }
+}
+for (const methodName of ["migrateEvaluationsFromBackOffice", "migrateNotesFromBackOffice"]) {
+  const body = extractAsyncMethod(postgresRepositorySource, methodName);
+  if (/SELECT\s+state_payload/i.test(body) || /upsertEvaluationFromLegacy|upsertGrade/.test(body)) {
+    throw new Error(`LEGACY_BOOT_MIGRATION_STILL_READS_BACKOFFICE_STATE: ${methodName}`);
+  }
+  if (!body.includes("LEGACY_BACKOFFICE_RUNTIME_MIGRATION_REMOVED")) {
+    throw new Error(`LEGACY_BOOT_TOMBSTONE_REQUIRED: ${methodName}`);
+  }
+}
+
 let evaluationMigrationCalls = 0;
 let noteMigrationCalls = 0;
 const postgresProbe = {
@@ -98,7 +127,7 @@ Promise.resolve()
     }
 
     console.log(
-      "OK verify:remove-legacy-sync-core — BackOffice supprimé, migrations runtime legacy neutralisées, notifications Mobile server-first",
+      "OK verify:remove-legacy-sync-core — BackOffice supprimé, boot sans import evaluations/notes, notifications Mobile server-first",
     );
   })
   .catch((error) => {

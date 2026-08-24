@@ -33,12 +33,13 @@ function hasResolvableDatabaseConfig(env = process.env) {
 }
 
 /**
- * P1 REMOVE-LEGACY-SYNC-CORE — neutralise les anciennes migrations runtime qui
- * relisaient `backoffice_state.state_payload` pour réinjecter evaluations/notes.
+ * P1 REMOVE-LEGACY-SYNC-CORE + J2A — ce patch reste un filet d'instance.
+ * La coupure réelle est dans PostgresRepository : init() n'appelle plus
+ * migrateEvaluationsFromBackOffice / migrateNotesFromBackOffice, et ces
+ * méthodes sont des tombstones fail-closed (plus de SELECT state_payload).
  *
  * Les données historiques restent en base pour audit/cleanup explicite : on ne
- * les efface pas ici. La seule règle est qu'elles ne peuvent plus redevenir une
- * source d'écriture vers les tables PostgreSQL canoniques au démarrage.
+ * les efface pas ici. PostgreSQL canonique est la seule source runtime.
  */
 function disableLegacyBackOfficeRuntimeMigrations(repository) {
   if (!repository || (repository.engine ?? "postgresql") !== "postgresql") {
