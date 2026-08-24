@@ -122,8 +122,10 @@ export default function StudentPaymentsScreen({ route, navigation }: Partial<Pro
           testID={STUDENT_SUB_SCREENS_TEST_IDS.paymentsList}
           contentContainerStyle={listContentStyle}
           renderItem={({ item }) => (
-            <PaymentReceiptCard payment={item} studentName={student?.name} showItems />
-            <PaymentCancelControls payment={item} onChanged={() => loadPayments()} />
+            <>
+              <PaymentReceiptCard payment={item} studentName={student?.name} showItems />
+              <PaymentCancelControls payment={item} onChanged={() => loadPayments()} />
+            </>
           )}
         />
       )}
