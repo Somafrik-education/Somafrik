@@ -138,6 +138,8 @@ assert.equal(canMutateEntity(prefetTeachers, "teachers", "DELETE"), true);
 assert.equal(canMutateEntity(prefetTeachers, "teachers", "CREATE"), false);
 assert.equal(canCreateTeacherIdentity(prefetTeachers), false);
 assert.equal(canMutateEntity(prefetTeachers, "assignments", "CREATE"), true);
+assert.equal(canGrantUserRole(adminSchool), true, "GRANT/REVOKE rôle utilisateur = Utilisateurs:UPDATE");
+assert.equal(canGrantUserRole(prefetTeachers), false, "Préfet sans Utilisateurs:UPDATE ne révoque pas");
 
 assert.equal(MOBILE_GENERIC_ADMIN_CRUD_IN_RC1, false, "ne pas réactiver AdminCrud générique");
 assert.equal(MOBILE_ROLE_PERMISSION_MUTATION_ENABLED, false, "GRANT/REVOKE Mobile reste interdit");

@@ -12,7 +12,7 @@ import {
 } from "../lib/formFieldValidation";
 import { canGrantUserRole, resolveEntityCrudAccess } from "../lib/mobileCrudParity";
 import { MIN_TOUCH_TARGET_DP } from "../lib/mobileUsability";
-import { createClientsUser, grantClientsUserRole, updateClientsUser } from "../services/api";
+import { createClientsUser, grantClientsUserRole, revokeClientsUserRole, updateClientsUser } from "../services/api";
 
 type UserRow = {
   id: string;
@@ -55,6 +55,7 @@ export default function UserMutationControls({
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [granting, setGranting] = useState(false);
+  const [revoking, setRevoking] = useState(false);
   const [error, setError] = useState("");
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [firstName, setFirstName] = useState("");
@@ -178,6 +179,32 @@ export default function UserMutationControls({
     ]);
   };
 
+  const revokeTeacher = () => {
+    if (!row || !canGrant || !hasTeacherRole(row) || revoking) return;
+    Alert.alert(
+      "Retirer le rôle Enseignant",
+      "Le rôle sera retiré côté serveur. Aucun succès local si l'API refuse (403/409).",
+      [
+        { text: "Annuler", style: "cancel" },
+        {
+          text: "Retirer",
+          style: "destructive",
+          onPress: async () => {
+            setRevoking(true);
+            try {
+              await revokeClientsUserRole(row.id, "Enseignant");
+              await onChanged();
+            } catch (err) {
+              Alert.alert("Retrait impossible", err instanceof Error ? err.message : "Échec serveur.");
+            } finally {
+              setRevoking(false);
+            }
+          },
+        },
+      ],
+    );
+  };
+
   const fields = (
     <CanonicalMutationModal
       visible={open}
@@ -295,6 +322,18 @@ export default function UserMutationControls({
             <Text style={styles.smallText}>{granting ? "Attribution…" : "Attribuer Enseignant"}</Text>
           </TouchableOpacity>
         ) : null}
+        {canGrant && hasTeacherRole(row) ? (
+          <TouchableOpacity
+            style={styles.smallDanger}
+            onPress={revokeTeacher}
+            disabled={revoking}
+            accessibilityRole="button"
+            accessibilityLabel="Retirer le rôle Enseignant"
+            testID="users-revoke-teacher"
+          >
+            <Text style={styles.smallDangerText}>{revoking ? "Retrait…" : "Retirer Enseignant"}</Text>
+          </TouchableOpacity>
+        ) : null}
         {fields}
         {issuedModal}
       </View>
@@ -318,5 +357,7 @@ const styles = StyleSheet.create({
   row: { flexDirection: "row", gap: 8, marginTop: 8, flexWrap: "wrap" },
   small: { minHeight: MIN_TOUCH_TARGET_DP, paddingHorizontal: 12, borderRadius: 12, backgroundColor: "#E2E8F0", justifyContent: "center", alignSelf: "flex-start" },
   smallText: { color: "#0F172A", fontWeight: "800" },
+  smallDanger: { minHeight: MIN_TOUCH_TARGET_DP, paddingHorizontal: 12, borderRadius: 12, backgroundColor: "#FEE2E2", justifyContent: "center", alignSelf: "flex-start" },
+  smallDangerText: { color: "#B91C1C", fontWeight: "800" },
   hint: { color: "#64748B", fontWeight: "700" },
 });

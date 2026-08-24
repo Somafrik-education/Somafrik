@@ -778,6 +778,13 @@ export function grantClientsUserRole(userId: string, role: string) {
   });
 }
 
+export function revokeClientsUserRole(userId: string, role: string) {
+  return request<Record<string, unknown>>(`/backoffice/users/${encodeURIComponent(userId)}/roles/revoke`, {
+    method: "POST",
+    body: JSON.stringify({ role }),
+  });
+}
+
 export function createTeacherIdentityFromUsers(payload: {
   firstName: string;
   lastName: string;
