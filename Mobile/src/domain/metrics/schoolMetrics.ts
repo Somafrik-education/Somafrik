@@ -51,10 +51,24 @@ export function isAttendedPresence(presence: Pick<PresenceItem, "present" | "sta
   return status === "Présent" || status === "Retard";
 }
 
+/**
+ * Scope élève : `undefined` = dataset global autorisé ;
+ * `[]` = zéro ligne (jamais un fallback global) ;
+ * `[...]` = uniquement ces élèves.
+ */
+export const EMPTY_SCOPED_IDS_MUST_NOT_FALLBACK_TO_GLOBAL =
+  "empty scoped ids MUST NOT fallback to global dataset";
+
+export function scopeRowsByStudentIds<T extends { studentId: string }>(
+  rows: T[],
+  studentIds?: string[],
+): T[] {
+  if (studentIds === undefined) return rows;
+  return rows.filter((row) => studentIds.includes(row.studentId));
+}
+
 export function getPresenceStats(presences: PresenceItem[], studentIds?: string[]): PresenceStats {
-  const scopedRows = studentIds?.length
-    ? presences.filter((presence) => studentIds.includes(presence.studentId))
-    : presences;
+  const scopedRows = scopeRowsByStudentIds(presences, studentIds);
   const present = scopedRows.filter((presence) => normalizePresenceStatus(presence) === "Présent").length;
   const absent = scopedRows.filter((presence) => normalizePresenceStatus(presence) === "Absent").length;
   const late = scopedRows.filter((presence) => normalizePresenceStatus(presence) === "Retard").length;
@@ -77,9 +91,7 @@ export function isPaidPayment(payment: Pick<PaymentItem, "status">) {
 }
 
 export function getPaymentStats(payments: PaymentItem[], studentIds?: string[]): PaymentStats {
-  const scopedRows = studentIds?.length
-    ? payments.filter((payment) => studentIds.includes(payment.studentId))
-    : payments;
+  const scopedRows = scopeRowsByStudentIds(payments, studentIds);
   const paidRows = scopedRows.filter(isPaidPayment);
   const pendingRows = scopedRows.filter((payment) => !isPaidPayment(payment));
 

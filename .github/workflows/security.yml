@@ -107,6 +107,8 @@ jobs:
         run: npm run verify:mobile-cta-rbac-alignment
       - name: verify:mobile-attendance-hydration
         run: npm run verify:mobile-attendance-hydration
+      - name: verify:mobile-class-attendance-rate
+        run: npm run verify:mobile-class-attendance-rate
       - name: verify:mobile-ui-e2e-scaffold
         run: npm run verify:mobile-ui-e2e-scaffold
       - name: test:mobile-ui-e2e-runtime
@@ -235,6 +237,7 @@ jobs:
           npm run verify:mobile-live-permissions-refresh
           npm run verify:mobile-cta-rbac-alignment
           npm run verify:mobile-attendance-hydration
+          npm run verify:mobile-class-attendance-rate
           npm run verify:mobile-ui-e2e-scaffold
           npm run test:mobile-ui-e2e-runtime
           npm run verify:mobile-release-readiness

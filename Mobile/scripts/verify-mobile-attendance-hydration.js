@@ -16,6 +16,9 @@ function main() {
     "src/lib/attendanceStatusTheme.test.ts",
     "src/lib/attendanceClassIdentity.test.ts",
     "src/lib/attendanceOffline.test.ts",
+    "src/domain/metrics/schoolMetrics.test.ts",
+    "src/lib/classTodayPresenceBadge.test.ts",
+    "src/lib/classesScreenPresenceContract.test.ts",
   ]) {
     const unit = spawnSync("npx", ["--yes", "tsx", file], {
       cwd: MOBILE,
@@ -65,6 +68,14 @@ function main() {
   assert.match(students, /useFocusEffect/);
   assert.match(students, /metricLabelFromSnapshot/);
   console.log("OK: StudentsScreen hydrate le roster au focus");
+
+  const classes = fs.readFileSync(path.join(SRC, "screens", "ClassesScreen.tsx"), "utf8");
+  assert.match(classes, /filterStudentsByClassIdentity/);
+  assert.match(classes, /resolveClassTodayPresenceBadge/);
+  assert.match(classes, /classPresenceBadgeTestId/);
+  assert.doesNotMatch(classes, /getPresenceStats/);
+  assert.doesNotMatch(classes, /classNameMatches\(student\.className/);
+  console.log("OK: ClassesScreen badge = présence du jour, scope classId");
 }
 
 main();

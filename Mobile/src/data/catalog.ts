@@ -115,6 +115,10 @@ export type PresenceItem = {
   id: string;
   publicId: string;
   studentId: string;
+  schoolId?: string;
+  schoolCode?: string;
+  classId?: string | null;
+  classCode?: string;
   className?: string;
   date: string;
   savedAt?: string;
