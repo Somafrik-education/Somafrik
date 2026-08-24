@@ -2780,8 +2780,12 @@ class FallbackRepository {
     return this.getFinanceStore().applyFinanceFeeGrid(id, principal, options);
   }
 
-  listFinanceStudentFees() {
-    return this.getFinanceStore().listFinanceStudentFees();
+  listFinanceStudentFees(principal) {
+    return this.getFinanceStore().listFinanceStudentFees(principal);
+  }
+
+  reconcileFinancePaymentAllocations(principal, options, auditMeta) {
+    return this.getFinanceStore().reconcileFinancePaymentAllocations(principal, options, auditMeta);
   }
 
   getFinanceStudentFee(id, principal) {

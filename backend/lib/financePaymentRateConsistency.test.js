@@ -133,18 +133,40 @@ function scopedCd(fees) {
 }
 
 function assertSourceGuards() {
+  const pgStore = fs.readFileSync(path.join(ROOT, "backend/db/financePgStore.js"), "utf8");
+  assert.match(pgStore, /projectObligationPaidAmounts/);
+  assert.match(pgStore, /listFinanceStudentFees: async \(principal\)/);
+  assert.match(pgStore, /sqlSchoolPredicate/);
+  assert.match(pgStore, /reconcileFinancePaymentAllocations/);
+  assert.doesNotMatch(
+    pgStore.slice(pgStore.indexOf("listFinanceStudentFees")),
+    /FROM payments p/,
+    "GET student-fees ne charge plus tous les paiements avant scope",
+  );
+  const memoryStore = fs.readFileSync(path.join(ROOT, "backend/db/financeMemoryStore.js"), "utf8");
+  assert.match(memoryStore, /projectObligationPaidAmounts/);
+  assert.match(memoryStore, /listFinanceStudentFees: async \(principal\)/);
+  const obligationPaid = fs.readFileSync(path.join(ROOT, "backend/lib/financeObligationPaid.js"), "utf8");
+  assert.doesNotMatch(obligationPaid, /allocateOntoMatchingOpen/);
+  assert.doesNotMatch(obligationPaid, /isPaymentCounted/);
   const service = fs.readFileSync(path.join(ROOT, "backend/lib/financeService.js"), "utf8");
   assert.match(service, /obligationMatchesPaymentFeeType/);
+  assert.match(service, /reconcileHistoricalPaymentAllocations/);
+  assert.match(service, /reconcile_payment_allocation/);
   assert.doesNotMatch(
     service,
     /normalizeKey\(fee\.feeType\) === normalizeKey\(item\.feeType\)/,
     "createPayment ne doit plus exiger une égalité stricte de libellé",
   );
-  const pgStore = fs.readFileSync(path.join(ROOT, "backend/db/financePgStore.js"), "utf8");
-  assert.match(pgStore, /projectObligationPaidAmounts/);
-  assert.match(pgStore, /allocated_paid/);
-  const memoryStore = fs.readFileSync(path.join(ROOT, "backend/db/financeMemoryStore.js"), "utf8");
-  assert.match(memoryStore, /projectObligationPaidAmounts/);
+  const matcher = fs.readFileSync(path.join(ROOT, "backend/lib/financeFeeTypeMatch.js"), "utf8");
+  assert.doesNotMatch(matcher, /autre frais/);
+  assert.doesNotMatch(matcher, /reinscription/);
+  assert.doesNotMatch(matcher, /examen/);
+  assert.doesNotMatch(matcher, /bulletin/);
+  assert.doesNotMatch(matcher, /transport/);
+  const server = fs.readFileSync(path.join(ROOT, "backend/server.js"), "utf8");
+  assert.match(server, /listFinanceStudentFees\(req\.principal\)/);
+  assert.match(server, /reconcileFinancePaymentAllocations/);
 
   const paymentsScreen = fs.readFileSync(path.join(ROOT, "Mobile/src/screens/PaymentsScreen.tsx"), "utf8");
   assert.match(paymentsScreen, /getPaymentRateKpi|formatPaymentRateKpi/);
@@ -318,10 +340,126 @@ async function main() {
     "colonne amount_paid encore à 0 (paiement historique non alloué)",
   );
   assert.equal(
-    canonicalRate(scopedCd(await stale.listFinanceStudentFees())),
-    20,
-    "GET projette le paiement Scolarité non alloué sur les Mensualités",
+    canonicalRate(scopedCd(await stale.listFinanceStudentFees(admin))),
+    0,
+    "GET ne masque pas une file non allouée : 0 % tant que la réconciliation n'a pas persisté",
   );
+
+  const reconA = await stale.reconcileFinancePaymentAllocations(admin);
+  assert.equal(reconA.created, 1);
+  assert.equal(stale.tables.allocations.filter((row) => !row.reversed_at).length, 1, "A. allocation canonique 100");
+  assert.equal(
+    stale.tables.studentFees.reduce((sum, row) => sum + Number(row.amount_paid), 0),
+    100,
+    "A. amount_paid PostgreSQL/mémoire = 100",
+  );
+  assert.equal(canonicalRate(scopedCd(await stale.listFinanceStudentFees(admin))), 20, "A. taux 20 %");
+  assert.equal(
+    stale.tables.auditLogs.some((row) => row.action === "reconcile_payment_allocation"),
+    true,
+    "A. audit de la réparation",
+  );
+
+  const reconAgain = await stale.reconcileFinancePaymentAllocations(admin);
+  assert.equal(reconAgain.created, 0, "E. deuxième exécution = aucun changement");
+  assert.equal(stale.tables.allocations.filter((row) => !row.reversed_at).length, 1, "E. aucune allocation dupliquée");
+
+  const payB = await stale.createSchoolPayment(
+    {
+      studentId: "CD-2026-0001-STU-0001",
+      items: [{ feeType: "Scolarité", amount: 400 }],
+      method: "Espèces",
+      date: "2026-08-24",
+    },
+    admin,
+  );
+  assert.equal(payB.overpaymentAmount, 0);
+  assert.equal(
+    scopedCd(await stale.listFinanceStudentFees(admin)).reduce((sum, fee) => sum + Number(fee.amountPaid), 0),
+    500,
+    "B. total encaissé 500",
+  );
+  assert.equal(canonicalRate(scopedCd(await stale.listFinanceStudentFees(admin))), 100, "B. taux 100 %");
+  assert.equal(
+    stale.tables.allocations.filter((row) => !row.reversed_at).reduce((sum, row) => sum + Number(row.amount), 0),
+    500,
+    "B. aucune allocation au-delà de 500",
+  );
+
+  const over = createStore();
+  await seedMensualites(over, { studentIds: ["CD-2026-0001-STU-0001"] });
+  over.tables.payments.push({
+    id: randomUUID(),
+    school_id: "school-a",
+    school_code: "CD-2026-0001",
+    student_id: "stu-1",
+    student_code: "CD-2026-0001-STU-0001",
+    payment_code: "CD-2026-0001-2026-PAY-HIST",
+    amount: 100,
+    currency: "CDF",
+    payment_method: "Espèces",
+    payment_status: "paid",
+    payment_date: "2026-08-01",
+    fee_type: "Scolarité",
+    profile_payload: { studentId: "CD-2026-0001-STU-0001", status: "Payé", feeType: "Scolarité" },
+    created_at: new Date().toISOString(),
+    cancelled_at: null,
+  });
+  await over.reconcileFinancePaymentAllocations(admin);
+  const payC = await over.createSchoolPayment(
+    {
+      studentId: "CD-2026-0001-STU-0001",
+      items: [{ feeType: "Scolarité", amount: 500 }],
+      method: "Espèces",
+      date: "2026-08-24",
+      overpaymentAction: "À confirmer",
+    },
+    admin,
+  );
+  assert.equal(payC.overpaymentAmount, 100, "C. 100 trop-perçu selon contrat");
+  assert.equal(
+    over.tables.allocations.filter((row) => !row.reversed_at).reduce((sum, row) => sum + Number(row.amount), 0),
+    500,
+    "C. jamais 600 imputés sur une dette 500",
+  );
+  assert.equal(
+    scopedCd(await over.listFinanceStudentFees(admin)).reduce((sum, fee) => sum + Number(fee.amountPaid), 0),
+    500,
+  );
+
+  const cancelHist = createStore();
+  await seedMensualites(cancelHist, { studentIds: ["CD-2026-0001-STU-0001"] });
+  const histId = randomUUID();
+  cancelHist.tables.payments.push({
+    id: histId,
+    school_id: "school-a",
+    school_code: "CD-2026-0001",
+    student_id: "stu-1",
+    student_code: "CD-2026-0001-STU-0001",
+    payment_code: "CD-2026-0001-2026-PAY-CANCEL",
+    amount: 100,
+    currency: "CDF",
+    payment_method: "Espèces",
+    payment_status: "paid",
+    payment_date: "2026-08-01",
+    fee_type: "Scolarité",
+    profile_payload: { studentId: "CD-2026-0001-STU-0001", status: "Payé", feeType: "Scolarité" },
+    created_at: new Date().toISOString(),
+    cancelled_at: null,
+  });
+  await cancelHist.reconcileFinancePaymentAllocations(admin);
+  assert.equal(canonicalRate(scopedCd(await cancelHist.listFinanceStudentFees(admin))), 20);
+  await cancelHist.cancelSchoolPayment("CD-2026-0001-2026-PAY-CANCEL", "Saisie erronée", admin);
+  assert.equal(
+    cancelHist.tables.allocations.filter((row) => !row.reversed_at).length,
+    0,
+    "D. allocation historique reversée",
+  );
+  assert.equal(
+    scopedCd(await cancelHist.listFinanceStudentFees(admin)).reduce((sum, fee) => sum + Number(fee.amountPaid), 0),
+    0,
+  );
+  assert.equal(canonicalRate(scopedCd(await cancelHist.listFinanceStudentFees(admin))), 0, "D. taux recalculé");
 
   const isolated = createStore();
   await seedMensualites(isolated, { studentIds: ["CD-2026-0001-STU-0001"], months: 1, amount: 100 });
@@ -353,10 +491,16 @@ async function main() {
     },
     admin,
   );
-  const allFees = await isolated.listFinanceStudentFees();
+  const allFees = await isolated.listFinanceStudentFees({
+    role: "Super Administrateur Somafrik",
+    schoolCode: "*",
+  });
   const biFee = allFees.find((fee) => fee.schoolCode === "BI-2026-0001");
   assert.equal(Number(biFee.amountPaid), 0, "paiement CD n'alimente pas l'assiette BI");
   assert.equal(canonicalRate(scopedCd(allFees)), 100);
+  const scopedOnly = await isolated.listFinanceStudentFees(admin);
+  assert.equal(scopedOnly.every((fee) => fee.schoolCode === "CD-2026-0001"), true);
+  assert.equal(scopedOnly.some((fee) => fee.schoolCode === "BI-2026-0001"), false);
 
   const cantine = createStore();
   const annexGrid = await cantine.upsertFinanceFeeGrid(

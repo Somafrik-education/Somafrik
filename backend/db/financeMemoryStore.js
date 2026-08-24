@@ -19,6 +19,7 @@ const {
 } = require("../lib/financeManagement");
 const { decoratePaymentWithItems } = require("../lib/financePaymentItems");
 const { projectObligationPaidAmounts } = require("../lib/financeObligationPaid");
+const { resolveFinanceSchoolScope, schoolCodeInScope } = require("../lib/financeSchoolScope");
 const financeService = require("../lib/financeService");
 
 function clone(value) {
@@ -114,6 +115,19 @@ function createFinanceMemoryStore({ getSchoolByCode, findStudent, listStudentsIn
       },
       async listPaymentCodes(schoolId) {
         return tables.payments.filter((row) => row.school_id === schoolId).map((row) => row.payment_code);
+      },
+      async listCountedPayments(schoolId, { studentDbId } = {}) {
+        return tables.payments
+          .filter((row) => {
+            if (String(row.school_id) !== String(schoolId)) return false;
+            if (studentDbId && String(row.student_id) !== String(studentDbId)) return false;
+            return true;
+          })
+          .map((row) => ({
+            ...mapPaymentRow(row),
+            studentDbId: row.student_id,
+            schoolId: row.school_id,
+          }));
       },
       async insertPayment(payment) {
         if (tables.payments.some((row) => row.payment_code === payment.reference)) {
@@ -476,6 +490,8 @@ function createFinanceMemoryStore({ getSchoolByCode, findStudent, listStudentsIn
       };
     },
     createSchoolPayment: (payload, principal, auditMeta) => financeService.createPayment(api, payload, principal, auditMeta),
+    reconcileFinancePaymentAllocations: (principal, options, auditMeta) =>
+      financeService.reconcileHistoricalPaymentAllocations(api, principal, auditMeta, options),
     getSchoolPayment: async (id, principal) => txApi().getPaymentByCode(id, principal),
     cancelSchoolPayment: (id, reason, principal, auditMeta) => financeService.cancelPayment(api, id, reason, principal, auditMeta),
     upsertFinanceFeeGrid: (payload, principal) => financeService.upsertFeeGrid(api, payload, principal),
@@ -487,22 +503,25 @@ function createFinanceMemoryStore({ getSchoolByCode, findStudent, listStudentsIn
     setFinanceFeeGridStatus: (id, status, principal) => financeService.setFeeGridStatus(api, id, status, principal),
     applyFinanceFeeGrid: (id, principal, options) => financeService.applyFeeGrid(api, id, principal, options),
     listFinanceFeeGrids: async () => tables.feeGrids.map(mapGridRow),
-    listFinanceStudentFees: async () =>
-      projectObligationPaidAmounts({
-        fees: tables.studentFees.map(mapObligationRow),
-        payments: tables.payments.map(mapPaymentRow),
-        allocations: tables.allocations.map((row) => ({
-          obligationId: row.obligation_id,
-          paymentId: row.payment_id,
-          amount: row.amount,
-          reversedAt: row.reversed_at,
-        })),
-        paymentItems: tables.paymentItems.map((row) => ({
-          paymentId: row.payment_id,
-          feeType: row.fee_type,
-          amount: row.amount,
-        })),
-      }),
+    listFinanceStudentFees: async (principal) => {
+      const scope = resolveFinanceSchoolScope(principal);
+      if (scope.mode === "none") return [];
+      const fees = tables.studentFees
+        .map(mapObligationRow)
+        .filter((fee) => schoolCodeInScope(fee.schoolCode, scope));
+      const feeIds = new Set(fees.map((fee) => String(fee.dbId || fee.id)));
+      return projectObligationPaidAmounts({
+        fees,
+        allocations: tables.allocations
+          .filter((row) => feeIds.has(String(row.obligation_id)))
+          .map((row) => ({
+            obligationId: row.obligation_id,
+            paymentId: row.payment_id,
+            amount: row.amount,
+            reversedAt: row.reversed_at,
+          })),
+      });
+    },
     getFinanceStudentFee: (id, principal) => txApi().getObligationByPublicId(id, principal),
     adjustFinanceStudentFee: (id, patch, principal) => financeService.adjustStudentFee(api, id, patch, principal),
     createFinanceReminder: (studentId, payload, principal, options) =>

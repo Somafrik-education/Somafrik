@@ -192,6 +192,98 @@ async function resolveCatalogFeeItem(tx, schoolId, feeTypeId) {
   throw createFinanceError(404, "Type de frais introuvable.", FINANCE_ERROR.FEE_ITEM_NOT_FOUND);
 }
 
+async function reconcileUnallocatedPaymentsInTx(tx, { schoolId, schoolCode, studentDbId, principal, auditMeta }) {
+  if (typeof tx.listCountedPayments !== "function") return { created: 0, leftoverTotal: 0 };
+  const payments = await tx.listCountedPayments(schoolId, { studentDbId });
+  let created = 0;
+  let leftoverTotal = 0;
+  for (const payment of payments) {
+    if (!isPaymentCounted(payment)) continue;
+    if (asTrimmed(payment.schoolCode).toUpperCase() !== asTrimmed(schoolCode).toUpperCase()) continue;
+    const paymentDbId = payment.dbId || payment.id;
+    const existing = await tx.listAllocations(paymentDbId);
+    if (existing.some((row) => !row.reversedAt)) continue;
+    const payStudentDbId = payment.studentDbId || studentDbId;
+    if (studentDbId && String(payStudentDbId) !== String(studentDbId)) continue;
+    let obligations = await tx.listObligationsByStudent(schoolId, payStudentDbId, { lock: true });
+    const items = typeof tx.listPaymentItems === "function" ? await tx.listPaymentItems(paymentDbId) : payment.items || [];
+    const chunks = items?.length
+      ? items.map((item) => ({
+          feeType: item.feeType || item.fee_type,
+          amount: money(item.amount),
+        }))
+      : [{ feeType: payment.feeType || payment.label, amount: money(payment.amount) }];
+    const allocations = [];
+    let leftover = 0;
+    for (const chunk of chunks) {
+      const open = openObligationsMatchingFeeType(obligations, chunk.feeType);
+      const { updated, allocations: itemAllocations, leftover: itemLeftover } = allocateAmount(open, chunk.amount);
+      leftover = money(leftover + itemLeftover);
+      allocations.push(...itemAllocations);
+      const byId = new Map(updated.map((fee) => [String(fee.dbId || fee.id), fee]));
+      obligations = obligations.map((fee) => byId.get(String(fee.dbId || fee.id)) || fee);
+    }
+    leftoverTotal = money(leftoverTotal + leftover);
+    if (!allocations.length) continue;
+    for (const allocation of allocations) {
+      await tx.insertAllocation({
+        schoolId,
+        paymentId: paymentDbId,
+        obligationId: allocation.obligationId,
+        amount: allocation.amount,
+      });
+    }
+    for (const fee of obligations) {
+      if (allocations.some((row) => String(row.obligationId) === String(fee.dbId || fee.id))) {
+        await tx.updateObligation(fee);
+      }
+    }
+    await writeFinanceAudit(tx, principal, auditMeta, {
+      action: "reconcile_payment_allocation",
+      entityType: "payment",
+      entityId: payment.reference || payment.id,
+      schoolCode,
+      newValue: {
+        paymentId: payment.reference || payment.id,
+        allocations,
+        leftover,
+      },
+    });
+    created += allocations.length;
+  }
+  return { created, leftoverTotal };
+}
+
+async function reconcileHistoricalPaymentAllocations(store, principal, auditMeta, options = {}) {
+  if (!principal) {
+    throw createFinanceError(400, "Établissement requis.", FINANCE_ERROR.TENANT_MISMATCH);
+  }
+  return store.withTransaction(async (tx) => {
+    let schoolCode = asTrimmed(principal?.schoolCode);
+    if (!schoolCode || schoolCode === "*") {
+      if (!isSuperAdminPrincipal(principal)) {
+        throw createFinanceError(400, "Établissement requis.", FINANCE_ERROR.TENANT_MISMATCH);
+      }
+      schoolCode = asTrimmed(options.schoolCode);
+      if (!schoolCode) {
+        throw createFinanceError(400, "Établissement requis.", FINANCE_ERROR.TENANT_MISMATCH);
+      }
+    }
+    assertTenant(principal, schoolCode);
+    const school = await tx.getSchoolByCode(schoolCode);
+    if (!school) {
+      throw createFinanceError(404, "Établissement introuvable", FINANCE_ERROR.TENANT_MISMATCH);
+    }
+    return reconcileUnallocatedPaymentsInTx(tx, {
+      schoolId: school.id,
+      schoolCode,
+      studentDbId: options.studentDbId || null,
+      principal,
+      auditMeta,
+    });
+  });
+}
+
 async function createPayment(store, rawPayload, principal, auditMeta) {
   const payload = ignoreClientScope(rawPayload);
   const writeItems = normalizeWriteItems(payload);
@@ -213,6 +305,13 @@ async function createPayment(store, rawPayload, principal, auditMeta) {
       throw createFinanceError(404, "Établissement introuvable", FINANCE_ERROR.TENANT_MISMATCH);
     }
     const enrollment = await resolvePaymentEnrollment(tx, student, payload, school);
+    await reconcileUnallocatedPaymentsInTx(tx, {
+      schoolId: school.id,
+      schoolCode: student.schoolCode,
+      studentDbId: student.dbId || student.id,
+      principal,
+      auditMeta,
+    });
 
     const resolvedItems = [];
     for (const item of writeItems) {
@@ -578,6 +677,7 @@ module.exports = {
   assertCanCancelPayment,
   createPayment,
   cancelPayment,
+  reconcileHistoricalPaymentAllocations,
   upsertFeeGrid,
   setFeeGridStatus,
   applyFeeGrid,

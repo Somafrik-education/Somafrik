@@ -20,6 +20,7 @@ const {
 } = require("../lib/financeManagement");
 const { decoratePaymentWithItems } = require("../lib/financePaymentItems");
 const { projectObligationPaidAmounts } = require("../lib/financeObligationPaid");
+const { resolveFinanceSchoolScope, sqlSchoolPredicate } = require("../lib/financeSchoolScope");
 const financeService = require("../lib/financeService");
 
 function createFinancePgStore(repo) {
@@ -138,6 +139,22 @@ function createFinancePgStore(repo) {
       async listPaymentCodes(schoolId) {
         const rows = await all("SELECT payment_code FROM payments WHERE school_id = $1", [schoolId]);
         return rows.map((row) => row.payment_code);
+      },
+      async listCountedPayments(schoolId, { studentDbId } = {}) {
+        const rows = await all(
+          `SELECT p.*, s.school_code, st.student_code
+           FROM payments p
+           JOIN schools s ON s.id = p.school_id
+           JOIN students st ON st.id = p.student_id
+           WHERE p.school_id = $1
+             AND ($2::uuid IS NULL OR p.student_id = $2)`,
+          [schoolId, studentDbId || null],
+        );
+        return rows.map((row) => ({
+          ...mapPaymentRow(row),
+          studentDbId: row.student_id,
+          schoolId: row.school_id,
+        }));
       },
       async insertPayment(payment) {
         try {
@@ -604,6 +621,8 @@ function createFinancePgStore(repo) {
       };
     },
     createSchoolPayment: (payload, principal, auditMeta) => financeService.createPayment(api, payload, principal, auditMeta),
+    reconcileFinancePaymentAllocations: (principal, options, auditMeta) =>
+      financeService.reconcileHistoricalPaymentAllocations(api, principal, auditMeta, options),
     getSchoolPayment: (id, principal) => bind(repo).getPaymentByCode(id, principal),
     cancelSchoolPayment: (id, reason, principal, auditMeta) => financeService.cancelPayment(api, id, reason, principal, auditMeta),
     upsertFinanceFeeGrid: (payload, principal) => financeService.upsertFeeGrid(api, payload, principal),
@@ -620,30 +639,36 @@ function createFinancePgStore(repo) {
       );
       return rows.map(mapGridRow);
     },
-    listFinanceStudentFees: async () => {
-      const [rows, payments, items, allocations] = await Promise.all([
+    listFinanceStudentFees: async (principal) => {
+      const scope = resolveFinanceSchoolScope(principal);
+      if (scope.mode === "none") return [];
+      const feeParams = [];
+      const feePred = sqlSchoolPredicate("s", scope, feeParams);
+      const allocParams = [];
+      const allocPred = sqlSchoolPredicate("s", scope, allocParams);
+      const [rows, allocations] = await Promise.all([
         repo.all(
           `SELECT o.*, s.school_code, st.student_code,
                   COALESCE(pa.allocated, 0) AS allocated_paid
            FROM student_fee_obligations o
            JOIN schools s ON s.id = o.school_id
            JOIN students st ON st.id = o.student_id
-           LEFT JOIN (
-             SELECT obligation_id, SUM(amount)::numeric AS allocated
+           LEFT JOIN LATERAL (
+             SELECT SUM(amount)::numeric AS allocated
              FROM payment_allocations
              WHERE reversed_at IS NULL
-             GROUP BY obligation_id
-           ) pa ON pa.obligation_id = o.id`,
+               AND obligation_id = o.id
+               AND school_id = o.school_id
+           ) pa ON TRUE
+           WHERE ${feePred}`,
+          feeParams,
         ),
         repo.all(
-          `SELECT p.*, s.school_code, st.student_code
-           FROM payments p
-           JOIN schools s ON s.id = p.school_id
-           JOIN students st ON st.id = p.student_id`,
-        ),
-        repo.all(`SELECT payment_id, fee_type, amount FROM payment_items`),
-        repo.all(
-          `SELECT obligation_id, payment_id, amount, reversed_at FROM payment_allocations`,
+          `SELECT pa.obligation_id, pa.payment_id, pa.amount, pa.reversed_at
+           FROM payment_allocations pa
+           JOIN schools s ON s.id = pa.school_id
+           WHERE ${allocPred}`,
+          allocParams,
         ),
       ]);
       const fees = rows.map((row) =>
@@ -654,12 +679,6 @@ function createFinancePgStore(repo) {
       );
       return projectObligationPaidAmounts({
         fees,
-        payments: payments.map(mapPaymentRow),
-        paymentItems: items.map((row) => ({
-          paymentId: row.payment_id,
-          feeType: row.fee_type,
-          amount: row.amount,
-        })),
         allocations: allocations.map((row) => ({
           obligationId: row.obligation_id,
           paymentId: row.payment_id,
