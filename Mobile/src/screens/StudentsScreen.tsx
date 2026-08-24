@@ -49,6 +49,7 @@ import {
 } from "../lib/classesStudentJourneySpec";
 
 import { isMetricReady, metricLabelFromSnapshot } from "../lib/dataTruth";
+import { ensureCanonicalPaymentAllocations } from "../lib/financeAllocationReconcile";
 import { formatPaymentRateKpi } from "../lib/paymentRateKpi";
 
 import { studentDisplayName } from "../lib/studentDisplayName";
@@ -95,7 +96,10 @@ export default function StudentsScreen({ route, navigation }: any) {
       void loadStudents();
       void loadPresences();
       void loadPayments();
-      void loadStudentFees();
+      void (async () => {
+        await ensureCanonicalPaymentAllocations();
+        await loadStudentFees();
+      })();
       void loadTeachers();
       void loadClasses();
       void loadAssignments();

@@ -28,6 +28,8 @@ import {
   paymentReference,
   paymentStatusLabel,
   paymentTotal,
+  isCancelledStatus,
+  isPaidStatus,
   shouldRenderEmpty,
   shouldRenderError,
   snapshotFromFailure,
@@ -92,6 +94,10 @@ function run() {
   assert.equal(paymentTotal(receipt), 541);
   assert.equal(paymentMethodLabel(receipt), "Espèces");
   assert.equal(paymentStatusLabel(receipt.status), "Payé");
+  assert.equal(isPaidStatus("Annulé"), false);
+  assert.equal(isCancelledStatus("Annulé"), true);
+  assert.equal(isCancelledStatus("cancelled"), true);
+  assert.equal(isCancelledStatus("En attente"), false);
 
   const paymentsError = snapshotFromFailure({ status: 500, message: "Erreur paiements" }, []);
   assert.equal(paymentsError.status, "error");

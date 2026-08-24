@@ -1,5 +1,5 @@
 import type { Course, NoteItem, PaymentItem, PresenceItem, Student } from "../../data/catalog";
-import { isPaidStatus, paymentTotal } from "../../lib/dataTruth";
+import { isCancelledStatus, isPaidStatus, paymentTotal } from "../../lib/dataTruth";
 import { GradeBookService } from "../academics/GradeBookService";
 
 export type PresenceStatus = "Présent" | "Absent" | "Retard" | "Justifié";
@@ -90,18 +90,27 @@ export function isPaidPayment(payment: Pick<PaymentItem, "status">) {
   return isPaidStatus(payment.status);
 }
 
+export function isCancelledPayment(payment: Pick<PaymentItem, "status">) {
+  return isCancelledStatus(payment.status);
+}
+
+/**
+ * Cartes Payés / Impayés = reçus encore dans le cycle d'encaissement.
+ * Un reçu Annulé n'est ni payé ni impayé — ce n'est plus une créance.
+ */
 export function getPaymentStats(payments: PaymentItem[], studentIds?: string[]): PaymentStats {
   const scopedRows = scopeRowsByStudentIds(payments, studentIds);
-  const paidRows = scopedRows.filter(isPaidPayment);
-  const pendingRows = scopedRows.filter((payment) => !isPaidPayment(payment));
+  const countableRows = scopedRows.filter((payment) => !isCancelledPayment(payment));
+  const paidRows = countableRows.filter(isPaidPayment);
+  const pendingRows = countableRows.filter((payment) => !isPaidPayment(payment));
 
   return {
-    total: scopedRows.length,
+    total: countableRows.length,
     paid: paidRows.length,
     pending: pendingRows.length,
     paidAmount: paidRows.reduce((sum, payment) => sum + paymentTotal(payment), 0),
     pendingAmount: pendingRows.reduce((sum, payment) => sum + paymentTotal(payment), 0),
-    rate: scopedRows.length ? Math.round((paidRows.length / scopedRows.length) * 100) : 0,
+    rate: countableRows.length ? Math.round((paidRows.length / countableRows.length) * 100) : 0,
   };
 }
 

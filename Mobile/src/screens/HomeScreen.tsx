@@ -15,6 +15,7 @@ import { canReadEntity, canReadRoute, canReadView } from "../domain/security/per
 import { canAccessMessagesRoute } from "../lib/mobileCtaRbacAlignment";
 import { buildOverflowQuickActionItems } from "../navigation/roleTabPreferences";
 import { DATA_TRUTH_TEST_IDS, METRIC_PENDING_LABEL, metricLabelFromSnapshot, parentAverageDisplay } from "../lib/dataTruth";
+import { ensureCanonicalPaymentAllocations } from "../lib/financeAllocationReconcile";
 import {
   ACTIVE_USERS_KPI_LABEL,
   PAYMENT_RATE_KPI_LABEL,
@@ -184,7 +185,10 @@ export default function HomeScreen({ navigation }: any) {
       if (session?.role === "teacher") void loadAssignments();
       if (canReadEntity(session, "payments")) {
         void loadPayments();
-        void loadStudentFees();
+        void (async () => {
+          await ensureCanonicalPaymentAllocations();
+          await loadStudentFees();
+        })();
       }
       if (canReadEntity(session, "announcements")) void loadAnnouncements();
       if (canReadEntity(session, "messages")) void loadMessages();

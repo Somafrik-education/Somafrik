@@ -8,6 +8,7 @@ import PaymentCancelControls from "../components/PaymentCancelControls";
 import { useAdminData } from "../context/AdminDataContext";
 import { getPaymentStats } from "../domain/metrics/schoolMetrics";
 import { DATA_TRUTH_COPY, DATA_TRUTH_TEST_IDS } from "../lib/dataTruth";
+import { ensureCanonicalPaymentAllocations } from "../lib/financeAllocationReconcile";
 import { getPaymentRateKpi } from "../lib/paymentRateKpi";
 import { useFloatingTabBarLayout } from "../lib/screenLayout";
 
@@ -30,6 +31,7 @@ export default function PaymentsScreen({ navigation }: any) {
     studentFeesSnapshot.status === "success" || studentFeesSnapshot.status === "empty";
 
   const refreshFinance = useCallback(async () => {
+    await ensureCanonicalPaymentAllocations();
     await Promise.all([loadPayments(), loadStudentFees(), loadStudents()]);
   }, [loadPayments, loadStudentFees, loadStudents]);
 

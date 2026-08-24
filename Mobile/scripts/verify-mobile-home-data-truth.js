@@ -28,6 +28,7 @@ function main() {
     path.join("src", "lib", "homeDashboardKpis.test.ts"),
     path.join("src", "lib", "paymentRateKpi.test.ts"),
     path.join("src", "lib", "todayPresenceKpi.test.ts"),
+    path.join("src", "domain", "metrics", "schoolMetrics.test.ts"),
   ]) {
     const extra = spawnSync("npx", ["--yes", "tsx", rel], {
       cwd: MOBILE,
@@ -184,8 +185,11 @@ function main() {
   const paymentsScreen = read(path.join("screens", "PaymentsScreen.tsx"));
   assert.match(paymentsScreen, /getPaymentRateKpi/);
   assert.match(paymentsScreen, /loadStudentFees/);
+  assert.match(paymentsScreen, /ensureCanonicalPaymentAllocations/);
   assert.doesNotMatch(paymentsScreen, /paymentStats\.rate/);
   assert.doesNotMatch(paymentsScreen, /des paiements réglés/);
+  assert.doesNotMatch(paymentsScreen, /paymentStats\.paidAmount/);
+  assert.doesNotMatch(paymentsScreen, /paymentsData\.reduce/);
   const outbox = read(path.join("components", "OutboxRuntime.tsx"));
   assert.match(outbox, /loadStudentFees/);
   assert.doesNotMatch(studentDetail, /: studentNotes\.length/);

@@ -184,10 +184,12 @@ async function main() {
   assert.match(api, /["']\/payments["']/);
   assert.match(paymentsScreen, /loadPayments/);
   assert.match(paymentsScreen, /loadStudentFees/);
+  assert.match(paymentsScreen, /ensureCanonicalPaymentAllocations/);
   assert.match(paymentsScreen, /getPaymentRateKpi/);
   assert.match(paymentsScreen, /PaymentReceiptCard/);
   assert.match(studentPayments, /showItems/);
   assert.match(studentPayments, /loadStudentFees/);
+  assert.match(studentPayments, /ensureCanonicalPaymentAllocations/);
   assert.match(studentPayments, /getPaymentRateKpi/);
   assert.match(paymentsScreen, /PaymentMutationControls/);
   assert.doesNotMatch(paymentsScreen, /writePaymentsWebOnly/);

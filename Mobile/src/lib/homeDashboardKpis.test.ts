@@ -133,6 +133,7 @@ function run() {
   assert.match(homeSrc, /formatHomePaymentRateKpi/);
   assert.match(homeSrc, /studentFeesSnapshot/);
   assert.match(homeSrc, /loadStudentFees/);
+  assert.match(homeSrc, /ensureCanonicalPaymentAllocations/);
   assert.match(homeSrc, /getTodayEstablishmentPresenceKpi/);
   assert.doesNotMatch(homeSrc, /usersValue, "Utilisateurs"/);
   assert.doesNotMatch(homeSrc, /paymentStats\.rate/);
