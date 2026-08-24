@@ -2,10 +2,11 @@
 
 /**
  * J3 — trous live role_module_permissions qui cassent une action métier
- * pourtant prévue par le contrat (paiement comptable, notes enseignant,
- * affectation préfet).
+ * pourtant prévue par le contrat (notes enseignant, affectation préfet).
  *
- * UNION idempotente des flags globaux. N'élargit jamais Parent / Élève.
+ * UNION idempotente des flags globaux. Le Comptable n'obtient jamais
+ * Élèves:READ ici : le picker Finance doit utiliser une projection minimale
+ * dédiée plutôt que l'annuaire élèves général.
  * Après bootstrap, PostgreSQL reste l'autorité.
  */
 
@@ -14,16 +15,6 @@ const { orCrud, crudEquals } = require("./planningRbacCanonical");
 const CRITICAL_PARITY_UPDATED_BY = "bootstrap-j3-critical-parity";
 
 const CANONICAL_CRITICAL_PARITY_GRANTS = Object.freeze([
-  Object.freeze({
-    roleKey: "ACCOUNTANT",
-    moduleKey: "students",
-    crud: Object.freeze({
-      canCreate: false,
-      canRead: true,
-      canUpdate: false,
-      canDelete: false,
-    }),
-  }),
   Object.freeze({
     roleKey: "TEACHER",
     moduleKey: "assignments",
@@ -46,7 +37,7 @@ const CANONICAL_CRITICAL_PARITY_GRANTS = Object.freeze([
   }),
 ]);
 
-const CRITICAL_PARITY_EXCLUDED_ROLE_KEYS = Object.freeze(["PARENT", "STUDENT"]);
+const CRITICAL_PARITY_EXCLUDED_ROLE_KEYS = Object.freeze(["ACCOUNTANT", "PARENT", "STUDENT"]);
 
 async function reconcileCanonicalCriticalParityGrants(store) {
   let changed = 0;
