@@ -2,7 +2,13 @@
  * Identité de classe pour l'appel Mobile : classId + classCode, jamais className comme clé.
  */
 import type { SchoolClass, Student } from "../data/catalog";
-import { classNameMatches, filterStudentsByClassName } from "./establishment";
+import {
+  classNameMatches,
+  filterStudentsByClassName,
+  listCanonicalTeacherAssignments,
+  teacherScopedClassNames,
+  type TeacherScopeState,
+} from "./establishment";
 
 export type AttendanceClassIdentity = {
   classId: string;
@@ -67,25 +73,56 @@ export function resolveStudentClassIdentity(
   return lookupClassCatalogIdentity(classes, student);
 }
 
+function rememberAttendanceClass(
+  byKey: Map<string, AttendanceClassIdentity>,
+  identity: AttendanceClassIdentity,
+) {
+  const key = identity.classId || identity.classCode
+    ? classIdentityKey(identity)
+    : `name:${identity.className.toLowerCase()}`;
+  if (!byKey.has(key)) byKey.set(key, identity);
+}
+
 export function listScopedAttendanceClasses(
   students: Student[],
   classes: SchoolClass[] = [],
+  session?: { role?: string; user?: Record<string, unknown> } | null,
+  state?: TeacherScopeState,
 ): AttendanceClassIdentity[] {
   const byKey = new Map<string, AttendanceClassIdentity>();
   for (const student of students) {
     const identity = resolveStudentClassIdentity(student, classes);
     if (identity) {
-      const key = classIdentityKey(identity);
-      if (!byKey.has(key)) byKey.set(key, identity);
+      rememberAttendanceClass(byKey, identity);
       continue;
     }
     const className = asRef(student.className);
     if (!className) continue;
-    const fallbackKey = `name:${className.toLowerCase()}`;
-    if (!byKey.has(fallbackKey)) {
-      byKey.set(fallbackKey, { classId: "", classCode: "", className });
+    rememberAttendanceClass(byKey, { classId: "", classCode: "", className });
+  }
+
+  const scopedKeys = session ? teacherScopedClassNames(session, state) : null;
+  if (scopedKeys) {
+    for (const assignment of listCanonicalTeacherAssignments(session ?? null, state)) {
+      const identity = lookupClassCatalogIdentity(classes, {
+        classId: assignment.classId,
+        classCode: assignment.classCode,
+        className: assignment.className,
+      });
+      if (identity) {
+        rememberAttendanceClass(byKey, identity);
+        continue;
+      }
+      const className = asRef(assignment.className);
+      if (!className) continue;
+      rememberAttendanceClass(byKey, {
+        classId: asRef(assignment.classId),
+        classCode: asRef(assignment.classCode),
+        className,
+      });
     }
   }
+
   return [...byKey.values()].sort((left, right) =>
     left.className.localeCompare(right.className, "fr"),
   );

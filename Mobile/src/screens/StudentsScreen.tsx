@@ -84,7 +84,7 @@ export default function StudentsScreen({ route, navigation }: any) {
 
   const { session } = useAuth();
 
-  const { studentsData, presencesData, teachersData, assignmentsData, classesData, loadStudents, loadPresences, loadPayments, loadStudentFees, loadTeachers, loadClasses, studentsSnapshot, presencesSnapshot, studentFeesSnapshot, resourceScopeKey } = useAdminData();
+  const { studentsData, presencesData, teachersData, assignmentsData, classesData, loadStudents, loadPresences, loadPayments, loadStudentFees, loadTeachers, loadClasses, loadAssignments, studentsSnapshot, presencesSnapshot, studentFeesSnapshot, resourceScopeKey } = useAdminData();
 
   const className = route?.params?.className ?? "Toutes les classes";
 
@@ -98,7 +98,8 @@ export default function StudentsScreen({ route, navigation }: any) {
       void loadStudentFees();
       void loadTeachers();
       void loadClasses();
-    }, [loadStudents, loadPresences, loadPayments, loadStudentFees, loadTeachers, loadClasses, resourceScopeKey]),
+      void loadAssignments();
+    }, [loadStudents, loadPresences, loadPayments, loadStudentFees, loadTeachers, loadClasses, loadAssignments, resourceScopeKey]),
   );
 
   const teacherScopeState = { teachers: teachersData, assignments: assignmentsData, classes: classesData };

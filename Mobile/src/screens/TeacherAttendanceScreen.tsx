@@ -96,6 +96,7 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
     loadStudents,
     loadTeachers,
     loadClasses,
+    loadAssignments,
     studentsSnapshot,
     presencesSnapshot,
     resourceScopeKey,
@@ -114,12 +115,12 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
     [session, studentsData, scopeState],
   );
   const assignedClasses = useMemo(
-    () => listScopedAttendanceClasses(classStudents, classesData),
-    [classStudents, classesData],
+    () => listScopedAttendanceClasses(classStudents, classesData, session, scopeState),
+    [classStudents, classesData, session, scopeState],
   );
   const assignments = useMemo(
-    () => resolveTeacherAssignmentsForSession(session, assignmentsData),
-    [session, assignmentsData],
+    () => resolveTeacherAssignmentsForSession(session, scopeState),
+    [session, scopeState],
   );
   const [selectedClass, setSelectedClass] = useState<AttendanceClassIdentity | null>(null);
   const [savedCalls, setSavedCalls] = useState<SavedCall[]>([]);
@@ -138,7 +139,8 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
       void loadPresences();
       void loadTeachers();
       void loadClasses();
-    }, [loadStudents, loadPresences, loadTeachers, loadClasses, resourceScopeKey]),
+      void loadAssignments();
+    }, [loadStudents, loadPresences, loadTeachers, loadClasses, loadAssignments, resourceScopeKey]),
   );
 
   useEffect(() => {
