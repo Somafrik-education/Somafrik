@@ -33,26 +33,12 @@ function hasResolvableDatabaseConfig(env = process.env) {
 }
 
 /**
- * P1 REMOVE-LEGACY-SYNC-CORE + J2A — ce patch reste un filet d'instance.
- * La coupure réelle est dans PostgresRepository : init() n'appelle plus
- * migrateEvaluationsFromBackOffice / migrateNotesFromBackOffice, et ces
- * méthodes sont des tombstones fail-closed (plus de SELECT state_payload).
- *
- * Les données historiques restent en base pour audit/cleanup explicite : on ne
- * les efface pas ici. PostgreSQL canonique est la seule source runtime.
+ * J2B — plus de monkey-patch silencieux.
+ * Les tombstones PostgresRepository (LEGACY_BACKOFFICE_RUNTIME_MIGRATION_REMOVED)
+ * restent fail-closed y compris après initializeRepository().
+ * Conservé comme no-op exporté pour ne pas casser les appelants historiques.
  */
 function disableLegacyBackOfficeRuntimeMigrations(repository) {
-  if (!repository || (repository.engine ?? "postgresql") !== "postgresql") {
-    return repository;
-  }
-
-  if (typeof repository.migrateEvaluationsFromBackOffice === "function") {
-    repository.migrateEvaluationsFromBackOffice = async () => undefined;
-  }
-  if (typeof repository.migrateNotesFromBackOffice === "function") {
-    repository.migrateNotesFromBackOffice = async () => undefined;
-  }
-
   return repository;
 }
 

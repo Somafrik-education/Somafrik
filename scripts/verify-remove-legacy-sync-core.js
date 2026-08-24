@@ -91,24 +91,29 @@ for (const methodName of ["migrateEvaluationsFromBackOffice", "migrateNotesFromB
   }
 }
 
-let evaluationMigrationCalls = 0;
-let noteMigrationCalls = 0;
+const factorySource = fs.readFileSync(
+  path.join(root, "backend", "db", "repositoryFactory.js"),
+  "utf8",
+);
+if (/async\s*\(\)\s*=>\s*undefined/.test(factorySource)) {
+  throw new Error("LEGACY_BOOT_FACTORY_SILENT_NOOP_FORBIDDEN");
+}
+
+const evalFn = async () => "original-eval";
+const notesFn = async () => "original-notes";
 const postgresProbe = {
   engine: "postgresql",
-  migrateEvaluationsFromBackOffice: async () => {
-    evaluationMigrationCalls += 1;
-  },
-  migrateNotesFromBackOffice: async () => {
-    noteMigrationCalls += 1;
-  },
+  migrateEvaluationsFromBackOffice: evalFn,
+  migrateNotesFromBackOffice: notesFn,
 };
 disableLegacyBackOfficeRuntimeMigrations(postgresProbe);
 Promise.resolve()
-  .then(() => postgresProbe.migrateEvaluationsFromBackOffice())
-  .then(() => postgresProbe.migrateNotesFromBackOffice())
   .then(() => {
-    if (evaluationMigrationCalls !== 0 || noteMigrationCalls !== 0) {
-      throw new Error("LEGACY_BACKOFFICE_RUNTIME_MIGRATION_STILL_ACTIVE");
+    if (
+      postgresProbe.migrateEvaluationsFromBackOffice !== evalFn ||
+      postgresProbe.migrateNotesFromBackOffice !== notesFn
+    ) {
+      throw new Error("LEGACY_BOOT_FACTORY_MUST_NOT_REPLACE_TOMBSTONES");
     }
 
     const memoryEvaluation = async () => "memory-eval";
