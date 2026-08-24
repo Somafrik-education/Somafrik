@@ -86,6 +86,12 @@ function run() {
   assert.equal(noCall.value, "—");
   assert.equal(noCall.rate, null);
 
+  const partialCall = kpi(five, [presence("s1", "Présent")]);
+  assert.equal(partialCall.value, "—", "une seule ligne d'appel ne transforme pas les non-appelés en absents");
+  assert.equal(partialCall.rate, null);
+  assert.equal(partialCall.recorded, 1);
+  assert.equal(partialCall.expected, 5);
+
   const yesterdayOnly = kpi(
     five,
     five.map((row) => presence(row.id, "Présent", "2026-08-23")),

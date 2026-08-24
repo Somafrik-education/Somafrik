@@ -34,6 +34,8 @@ type ScopeState = {
   notifications: PlatformNotification[];
 };
 import { getPresenceStats, getTodayEstablishmentPresenceKpi, TODAY_PRESENCE_KPI_LABEL, type ExpectedStudent } from "./presenceMetrics";
+import { formatPaymentRateKpi } from "./paymentRateKpi";
+import { scopedStudentFees } from "./fees";
 
 type Row = Record<string, unknown>;
 
@@ -338,7 +340,7 @@ export function buildEstablishmentDashboardCharts(
       schoolCode: getCurrentSchool(user, state)?.code ?? user?.schoolCode,
       timeZone: getCurrentSchool(user, state)?.timezone,
     }).value,
-    paymentRateValue: formatPaymentRate(payments as Row[]),
+    paymentRateValue: formatPaymentRateKpi(scopedStudentFees(user, state)).value,
   });
   return {
     metrics,
@@ -346,15 +348,6 @@ export function buildEstablishmentDashboardCharts(
     charts: applyChartTypeOverrides(charts, state.dashboardChartConfig, "establishment"),
     kpiItems,
   };
-}
-
-function formatPaymentRate(payments: Row[]): string {
-  const paid = payments.filter((row) => {
-    const value = String(row.status ?? "").trim().toUpperCase();
-    return value === "PAYE" || value === "PAID" || value === "PAYÉ";
-  }).length;
-  const rate = payments.length ? Math.round((paid / payments.length) * 100) : 0;
-  return `${rate} %`;
 }
 
 function buildEstablishmentKpiItems(

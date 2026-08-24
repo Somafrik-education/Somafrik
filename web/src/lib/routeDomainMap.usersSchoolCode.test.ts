@@ -64,7 +64,29 @@ describe("domainsForPath — /notes n'hydrate pas les domaines globaux d'affecta
   });
 });
 
-describe("domainsForPath — comptes utilisateurs", () => {
+describe("domainsForPath — tableau de bord hydrate l'assiette de paiement", () => {
+  it("charge studentFees et presences pour un Admin établissement avec Paiements:READ", () => {
+    const ctx: PermissionContext = {
+      user: {
+        role: "Admin School",
+        schoolCode: "CD-IN-26-001",
+        permissions: [
+          "Paiements:READ",
+          "Élèves:READ",
+          "Présences:READ",
+          "Utilisateurs:READ",
+          "Classes:READ",
+          "Enseignants:READ",
+        ],
+      },
+      rolePermissions: {},
+    };
+    const domains = domainsForPath("/tableau-de-bord", ctx);
+    expect(domains).toContain("studentFees");
+    expect(domains).toContain("presences");
+    expect(domains).toContain("payments");
+  });
+});
   it("charge schools avec users sur la route Superadmin pour le formulaire, pas pour le code public", () => {
     const domains = domainsForPath("/administration/utilisateurs", superAdminContext);
 

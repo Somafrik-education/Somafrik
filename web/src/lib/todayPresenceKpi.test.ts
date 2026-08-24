@@ -81,6 +81,15 @@ describe("Présence du jour (Web, équivalent Mobile)", () => {
     expect(kpi(five, []).rate).toBeNull();
   });
 
+  it("appel partiel (1 ligne / 5 attendus) → —", () => {
+    const five = ["s1", "s2", "s3", "s4", "s5"].map((id) => student(id));
+    const result = kpi(five, [presence("s1", "Présent")]);
+    expect(result.value).toBe("—");
+    expect(result.rate).toBeNull();
+    expect(result.recorded).toBe(1);
+    expect(result.expected).toBe(5);
+  });
+
   it("présence d'hier uniquement → —", () => {
     const five = ["s1", "s2", "s3", "s4", "s5"].map((id) => student(id));
     expect(kpi(five, five.map((row) => presence(row.id, "Présent", "2026-08-23"))).value).toBe("—");

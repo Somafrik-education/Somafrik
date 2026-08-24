@@ -26,6 +26,7 @@ function main() {
   for (const rel of [
     path.join("src", "lib", "format.activeUser.test.ts"),
     path.join("src", "lib", "homeDashboardKpis.test.ts"),
+    path.join("src", "lib", "paymentRateKpi.test.ts"),
     path.join("src", "lib", "todayPresenceKpi.test.ts"),
   ]) {
     const extra = spawnSync("npx", ["--yes", "tsx", rel], {
@@ -50,6 +51,7 @@ function main() {
   const home = read(path.join("screens", "HomeScreen.tsx"));
   const formatLib = read(path.join("lib", "format.ts"));
   const homeKpis = read(path.join("lib", "homeDashboardKpis.ts"));
+  const paymentRate = read(path.join("lib", "paymentRateKpi.ts"));
   const context = read(path.join("context", "AdminDataContext.tsx"));
 
   assert.match(context, /usersSnapshot/);
@@ -111,6 +113,10 @@ function main() {
   assert.match(home, /getTodayEstablishmentPresenceKpi/);
   assert.match(home, /formatHomePaymentsKpi/);
   assert.match(home, /formatHomePaymentRateKpi/);
+  assert.match(home, /studentFeesSnapshot/);
+  assert.match(home, /loadStudentFees/);
+  assert.match(context, /loadStudentFees/);
+  assert.match(context, /getStudentFees/);
   assert.match(home, /countActiveUserAccounts/);
   assert.doesNotMatch(home, /paymentStats\.rate/);
   assert.doesNotMatch(home, /\$\{paymentStats\.rate\}%/);
@@ -119,8 +125,12 @@ function main() {
   assert.match(formatLib, /"archived"/);
   assert.match(formatLib, /ACTIVE_USERS_KPI_LABEL = "Utilisateurs actifs"/);
   assert.match(homeKpis, /PAYMENTS_KPI_LABEL = "Paiements"/);
-  assert.match(homeKpis, /PAYMENT_RATE_KPI_LABEL = "Taux de paiement"/);
+  assert.match(homeKpis, /PAYMENT_RATE_KPI_LABEL/);
+  assert.match(homeKpis, /formatPaymentRateKpi/);
   assert.match(homeKpis, /String\(payments\.length\)/);
+  assert.match(paymentRate, /PAYMENT_RATE_KPI_LABEL = "Taux de paiement"/);
+  assert.match(paymentRate, /student_fee_obligations/);
+  assert.doesNotMatch(paymentRate, /payments\.length/);
   const roleHome = read(path.join("lib", "roleHomeConfig.ts"));
   assert.match(roleHome, /kpiKeys: \["users", "presence", "students", "paymentRate"\]/);
   assert.doesNotMatch(roleHome, /kpiKeys: \["users", "classes", "students"/);

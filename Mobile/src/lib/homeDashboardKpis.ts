@@ -4,16 +4,19 @@ import {
   isActiveUserAccount,
   type UserAccountActivityFields,
 } from "./format";
-import { isPaidStatus } from "./dataTruth";
+import {
+  PAYMENT_RATE_KPI_LABEL,
+  formatPaymentRateKpi,
+  type StudentFeeObligation,
+} from "./paymentRateKpi";
 
 export { ACTIVE_USERS_KPI_LABEL, countActiveUserAccounts, isActiveUserAccount };
 export type { UserAccountActivityFields };
+export { PAYMENT_RATE_KPI_LABEL };
+export type { StudentFeeObligation };
 
 /** Libellé KPI Accueil : nombre de paiements canoniques du périmètre, jamais un taux. */
 export const PAYMENTS_KPI_LABEL = "Paiements";
-
-/** Libellé KPI Accueil Admin : taux de paiements réglés, jamais confondu avec le compteur Paiements. */
-export const PAYMENT_RATE_KPI_LABEL = "Taux de paiement";
 
 export function formatHomeActiveUsersKpi(users: readonly UserAccountActivityFields[]): {
   label: string;
@@ -35,14 +38,9 @@ export function formatHomePaymentsKpi(payments: readonly unknown[]): {
   };
 }
 
-export function formatHomePaymentRateKpi(payments: ReadonlyArray<{ status?: string }>): {
+export function formatHomePaymentRateKpi(fees: readonly StudentFeeObligation[]): {
   label: string;
   value: string;
 } {
-  const paid = payments.filter((payment) => isPaidStatus(payment.status)).length;
-  const rate = payments.length ? Math.round((paid / payments.length) * 100) : 0;
-  return {
-    label: PAYMENT_RATE_KPI_LABEL,
-    value: `${rate} %`,
-  };
+  return formatPaymentRateKpi(fees);
 }

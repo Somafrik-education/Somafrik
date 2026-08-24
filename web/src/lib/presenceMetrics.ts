@@ -200,6 +200,7 @@ export function isExpectedStudentForToday(
   return Boolean(enrolled);
 }
 
+/** Appel partiel : une ligne manquante n'est pas une absence. % seulement si recorded === expected. */
 export function getTodayEstablishmentPresenceKpi(input: {
   students: readonly ExpectedStudent[];
   presences: readonly PresenceRow[];
@@ -220,14 +221,14 @@ export function getTodayEstablishmentPresenceKpi(input: {
     if (presenceIsAttended(normalizePresenceStatus(row))) attended += 1;
   }
 
-  if (!expected.length || recorded === 0) {
+  if (!expected.length || recorded !== expected.length) {
     return {
       label: TODAY_PRESENCE_KPI_LABEL,
       value: "—",
       rate: null,
       expected: expected.length,
-      attended: 0,
-      recorded: 0,
+      attended,
+      recorded,
     };
   }
 

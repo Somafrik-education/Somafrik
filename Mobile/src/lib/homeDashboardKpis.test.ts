@@ -14,6 +14,7 @@ import {
   formatHomePaymentRateKpi,
   formatHomePaymentsKpi,
 } from "./homeDashboardKpis";
+import { formatPaymentRateKpi, type StudentFeeObligation } from "./paymentRateKpi";
 
 function users(statuses: string[]) {
   return statuses.map((status, index) => ({ id: `u-${index}`, status }));
@@ -21,6 +22,20 @@ function users(statuses: string[]) {
 
 function payment(id: string, studentId: string, status = "Payé") {
   return { id, studentId, amount: 1000, status };
+}
+
+function fee(
+  studentId: string,
+  extras: Partial<StudentFeeObligation> = {},
+): StudentFeeObligation {
+  return {
+    studentId,
+    amountDue: 1000,
+    amountPaid: 0,
+    exemption: 0,
+    status: "À payer",
+    ...extras,
+  };
 }
 
 function run() {
@@ -79,20 +94,35 @@ function run() {
 
   const rateEmpty = formatHomePaymentRateKpi([]);
   assert.equal(rateEmpty.label, PAYMENT_RATE_KPI_LABEL);
-  assert.equal(rateEmpty.value, "0 %");
+  assert.equal(rateEmpty.value, "—");
+  assert.equal(formatPaymentRateKpi([]).value, "—");
 
-  const rateOnePaid = formatHomePaymentRateKpi([payment("p1", "stu-1", "PAYE")]);
-  assert.equal(rateOnePaid.value, "100 %");
-
-  const rateTwenty = formatHomePaymentRateKpi([
-    payment("p1", "stu-1", "PAYE"),
-    payment("p2", "stu-2", "EN_ATTENTE"),
-    payment("p3", "stu-3", "EN_ATTENTE"),
-    payment("p4", "stu-4", "EN_ATTENTE"),
-    payment("p5", "stu-5", "EN_ATTENTE"),
-  ]);
+  const fiveFeesOnePaid = [
+    fee("s1", { amountPaid: 1000, status: "Payé" }),
+    fee("s2"),
+    fee("s3"),
+    fee("s4"),
+    fee("s5"),
+  ];
+  const rateTwenty = formatHomePaymentRateKpi(fiveFeesOnePaid);
   assert.equal(rateTwenty.label, "Taux de paiement");
   assert.equal(rateTwenty.value, "20 %");
+
+  const rateNonePaid = formatHomePaymentRateKpi(["s1", "s2", "s3", "s4", "s5"].map((id) => fee(id)));
+  assert.equal(rateNonePaid.value, "0 %");
+
+  const rateAllPaid = formatHomePaymentRateKpi(
+    ["s1", "s2", "s3", "s4", "s5"].map((id) => fee(id, { amountPaid: 1000, status: "Payé" })),
+  );
+  assert.equal(rateAllPaid.value, "100 %");
+
+  const singlePaymentRow = [payment("p1", "stu-1", "PAYE")];
+  assert.equal(formatHomePaymentsKpi(singlePaymentRow).value, "1");
+  assert.notEqual(
+    rateTwenty.value,
+    "100 %",
+    "1 paiement en base parmi 5 obligations ne peut pas afficher 100 %",
+  );
 
   const homeSrc = fs.readFileSync(path.join(process.cwd(), "src", "screens", "HomeScreen.tsx"), "utf8");
   assert.match(homeSrc, /ACTIVE_USERS_KPI_LABEL/);
@@ -100,6 +130,9 @@ function run() {
   assert.match(homeSrc, /PAYMENT_RATE_KPI_LABEL/);
   assert.match(homeSrc, /TODAY_PRESENCE_KPI_LABEL/);
   assert.match(homeSrc, /formatHomePaymentsKpi/);
+  assert.match(homeSrc, /formatHomePaymentRateKpi/);
+  assert.match(homeSrc, /studentFeesSnapshot/);
+  assert.match(homeSrc, /loadStudentFees/);
   assert.match(homeSrc, /getTodayEstablishmentPresenceKpi/);
   assert.doesNotMatch(homeSrc, /usersValue, "Utilisateurs"/);
   assert.doesNotMatch(homeSrc, /paymentStats\.rate/);

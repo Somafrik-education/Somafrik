@@ -84,6 +84,9 @@ describe("KPI Web Utilisateurs actifs", () => {
     expect(dashboardCharts).not.toMatch(/label: "Utilisateurs", value: formatMetric\(metrics\.activeUsers\)/);
     expect(dashboardCharts).toContain("label: TODAY_PRESENCE_KPI_LABEL, value: extras.todayPresenceValue");
     expect(dashboardCharts).toContain("label: PAYMENT_RATE_KPI_LABEL, value: extras.paymentRateValue");
+    expect(dashboardCharts).toContain("formatPaymentRateKpi(scopedStudentFees(user, state))");
+    expect(dashboardCharts).not.toMatch(/paid \/ payments\.length/);
+    expect(dashboardCharts).not.toMatch(/function formatPaymentRate\(payments/);
     expect(dashboardCharts).not.toMatch(/label: "Présences", value: formatMetric\(metrics\.presences\)/);
 
     const overview = readFileSync(

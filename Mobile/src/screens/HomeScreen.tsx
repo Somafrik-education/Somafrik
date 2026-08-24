@@ -59,6 +59,8 @@ export default function HomeScreen({ navigation }: any) {
     paymentsData,
     paymentsSnapshot,
     loadPayments,
+    studentFeesSnapshot,
+    loadStudentFees,
     notesSnapshot,
     loadNotes,
     presencesData,
@@ -121,10 +123,14 @@ export default function HomeScreen({ navigation }: any) {
   });
   const establishmentPresenceValue =
     studentsReady && presencesReady ? todayPresenceKpi.value : METRIC_PENDING_LABEL;
+  const studentFeesReady =
+    studentFeesSnapshot.status === "success" ||
+    studentFeesSnapshot.status === "empty" ||
+    (studentFeesSnapshot.status === "offline" && studentFeesSnapshot.data.length > 0);
   const paymentRateValue = metricLabelFromSnapshot(
-    paymentsSnapshot,
+    studentFeesSnapshot,
     (rows) => formatHomePaymentRateKpi(rows).value,
-    "0 %",
+    METRIC_PENDING_LABEL,
   );
   const paymentsValue = metricLabelFromSnapshot(
     paymentsSnapshot,
@@ -175,7 +181,10 @@ export default function HomeScreen({ navigation }: any) {
         void loadTeachers();
         void loadClasses();
       }
-      if (canReadEntity(session, "payments")) void loadPayments();
+      if (canReadEntity(session, "payments")) {
+        void loadPayments();
+        void loadStudentFees();
+      }
       if (canReadEntity(session, "announcements")) void loadAnnouncements();
       if (canReadEntity(session, "messages")) void loadMessages();
       if (session?.role === "super_admin" || session?.role === "country_admin") void loadSchools();
@@ -189,6 +198,7 @@ export default function HomeScreen({ navigation }: any) {
       loadTeachers,
       loadClasses,
       loadPayments,
+      loadStudentFees,
       loadAnnouncements,
       loadMessages,
       loadSchools,
@@ -284,7 +294,7 @@ export default function HomeScreen({ navigation }: any) {
       ? kpi(
           "paymentRate",
           "card-outline",
-          paymentsReady ? paymentRateValue : METRIC_PENDING_LABEL,
+          studentFeesReady ? paymentRateValue : METRIC_PENDING_LABEL,
           PAYMENT_RATE_KPI_LABEL,
           "#EA580C",
           "#FFF7ED",

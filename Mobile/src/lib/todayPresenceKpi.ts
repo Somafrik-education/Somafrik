@@ -2,7 +2,8 @@
  * KPI établissement « Présence du jour ».
  * Numérateur = Présent + Retard (convention D3.5 / attendanceTruth).
  * Dénominateur = élèves attendus (inscription active, non archivés, établissement courant).
- * Aucune ligne du jour ≠ présent inventé : appel absent → « — », pas 0 %.
+ * Une absence de ligne n'est pas une absence : appel absent ou partiel → « — ».
+ * Pourcentage uniquement si recorded === expected. Appel complet 0 présent → 0 %.
  */
 import {
   findTodayPresenceForStudent,
@@ -138,14 +139,14 @@ export function getTodayEstablishmentPresenceKpi(input: {
     if (isAttendedStatus(normalizePresenceStatus(row))) attended += 1;
   }
 
-  if (!expected.length || recorded === 0) {
+  if (!expected.length || recorded !== expected.length) {
     return {
       label: TODAY_PRESENCE_KPI_LABEL,
       value: METRIC_PENDING_LABEL,
       rate: null,
       expected: expected.length,
-      attended: 0,
-      recorded: 0,
+      attended,
+      recorded,
     };
   }
 
