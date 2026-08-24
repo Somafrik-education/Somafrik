@@ -100,8 +100,22 @@ function main() {
   assert.match(resilience, /function classifyMutationFailure/);
   assert.match(resilience, /MAX_MUTATION_ATTEMPTS = 3/);
   assert.doesNotMatch(resilience, /Date\.now\(\)/);
-  assert.match(resilience, /randomUUID/);
-  console.log("OK: classification + retry borné + UUID");
+  assert.match(resilience, /require\(["']expo-crypto["']\)/);
+  assert.match(resilience, /Crypto\.randomUUID/);
+  const keyFn = resilience.slice(
+    resilience.indexOf("function expoCryptoRandomUUID"),
+    resilience.indexOf("function webCryptoRandomUUID"),
+  );
+  assert.match(keyFn, /Crypto\.randomUUID/);
+  assert.doesNotMatch(keyFn, /Math\.random/);
+  assert.doesNotMatch(keyFn, /Date\.now/);
+  const createFn = resilience.slice(
+    resilience.indexOf("export function createIdempotencyKey"),
+    resilience.indexOf("function errorStatus"),
+  );
+  assert.doesNotMatch(createFn, /Math\.random/);
+  assert.doesNotMatch(createFn, /Date\.now/);
+  console.log("OK: classification + retry borné + UUID expo-crypto");
 
   const httpClient = read(path.join(SRC, "services", "httpClient.ts"));
   assert.match(httpClient, /Idempotency-Key/);
