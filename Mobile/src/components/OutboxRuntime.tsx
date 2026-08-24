@@ -1,13 +1,32 @@
 import { useEffect } from "react";
 import { useAuth } from "../context/AuthContext";
 import { useAdminData } from "../context/AdminDataContext";
-import { bindOutboxToSession, processOutbox, type OutboxEntry } from "../lib/outbox";
+import {
+  CONNECTIVITY_POLL_MS,
+  CONNECTIVITY_PROBE_TIMEOUT_MS,
+  isOfflineContext,
+  probeConnectivity,
+  setConnectivityProbe,
+  subscribeConnectivity,
+} from "../lib/connectivity";
+import {
+  bindOutboxToSession,
+  countPendingOutbox,
+  processOutbox,
+  type OutboxEntry,
+} from "../lib/outbox";
 import {
   createSchoolPayment,
   saveNote,
   savePresences,
   sendClientsMessage,
 } from "../services/api";
+import { httpRequest } from "../services/httpClient";
+
+setConnectivityProbe(async () => {
+  await httpRequest("/health", { skipAuth: true, timeoutMs: CONNECTIVITY_PROBE_TIMEOUT_MS });
+  return true;
+});
 
 async function dispatchOutboxEntry(entry: OutboxEntry) {
   const options = { idempotencyKey: entry.idempotencyKey };
@@ -28,12 +47,10 @@ async function dispatchOutboxEntry(entry: OutboxEntry) {
 
 export default function OutboxRuntime() {
   const { session, permissionsBootstrap } = useAuth();
-  const { loadPresences, loadNotes, loadPayments } = useAdminData();
+  const { loadPresences, loadNotes, loadPayments, applyConfirmedPresences } = useAdminData();
 
   useEffect(() => {
-    // L8 : aucun write outbox tant que les permissions live ne sont pas ready.
-    // Le retour foreground passe par AuthContext (bootstrap loading → ready) ;
-    // cet effet relance processOutbox uniquement après la revalidation.
+    // L8 : aucun replay outbox tant que les permissions live ne sont pas ready.
     if (!session || permissionsBootstrap !== "ready") return undefined;
     const fingerprint = {
       userId: String(session.user?.id ?? ""),
@@ -42,19 +59,59 @@ export default function OutboxRuntime() {
     if (!fingerprint.userId || !fingerprint.schoolScope) return undefined;
 
     let cancelled = false;
+    let inFlight = false;
     const run = async () => {
-      await bindOutboxToSession(fingerprint);
-      if (cancelled) return;
-      const result = await processOutbox(fingerprint, dispatchOutboxEntry);
-      if (cancelled || !result.sent) return;
-      await Promise.all([loadPresences(), loadNotes(), loadPayments()]);
+      if (cancelled || inFlight) return;
+      if (isOfflineContext()) {
+        const online = await probeConnectivity();
+        if (!online || cancelled) return;
+      }
+      inFlight = true;
+      try {
+        await bindOutboxToSession(fingerprint);
+        if (cancelled) return;
+        const result = await processOutbox(fingerprint, async (entry) => {
+          const saved = await dispatchOutboxEntry(entry);
+          if (entry.domain === "presences" && Array.isArray(saved) && saved.length) {
+            applyConfirmedPresences(saved);
+          }
+          return saved;
+        });
+        if (cancelled || !result.sent) return;
+        await Promise.all([loadPresences(), loadNotes(), loadPayments()]);
+      } finally {
+        inFlight = false;
+      }
     };
 
     void run();
+    const unsubscribe = subscribeConnectivity((state) => {
+      if (state === "online") void run();
+    });
+    const timer = setInterval(() => {
+      void (async () => {
+        const pending = await countPendingOutbox(fingerprint);
+        if (cancelled || pending <= 0) return;
+        const online = await probeConnectivity();
+        if (online && !cancelled) void run();
+      })();
+    }, CONNECTIVITY_POLL_MS);
+
     return () => {
       cancelled = true;
+      unsubscribe();
+      clearInterval(timer);
     };
-  }, [loadNotes, loadPayments, loadPresences, permissionsBootstrap, session?.school?.code, session?.user?.id, session?.user?.schoolCode]);
+  }, [
+    applyConfirmedPresences,
+    loadNotes,
+    loadPayments,
+    loadPresences,
+    permissionsBootstrap,
+    session?.school?.code,
+    session?.user?.id,
+    session?.user?.schoolCode,
+  ]);
 
   return null;
 }

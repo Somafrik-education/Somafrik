@@ -7,7 +7,7 @@ import { getPresenceStats, normalizePresenceStatus, type PresenceStats } from ".
 import type { PresenceItem } from "../data/catalog";
 
 export type AttendanceStatus = "Présent" | "Absent" | "Retard" | "Justifié";
-export type RollCallSource = "unset" | "postgres" | "draft";
+export type RollCallSource = "unset" | "postgres" | "draft" | "queued" | "failed";
 
 export type RollCallEntry = {
   status: AttendanceStatus | null;
@@ -97,6 +97,7 @@ export function rollCallEntryFromPresence(
 }
 
 export function shouldPreserveLocalAttendanceDraft(entry?: Pick<RollCallEntry, "source" | "modifiedAt"> | null) {
+  if (entry?.source === "queued" || entry?.source === "failed") return true;
   return entry?.source === "draft" && Boolean(entry.modifiedAt);
 }
 
@@ -212,11 +213,44 @@ export function confirmRollCallEntries(
   return next;
 }
 
+export function markRollCallSyncState(
+  attendance: Record<string, RollCallEntry>,
+  studentIds: string[],
+  source: Extract<RollCallSource, "queued" | "failed">,
+): Record<string, RollCallEntry> {
+  const next = { ...attendance };
+  for (const studentId of studentIds) {
+    const entry = next[studentId];
+    if (!entry?.status) continue;
+    next[studentId] = { ...entry, source };
+  }
+  return next;
+}
+
+export function rollCallSourceLabel(source: RollCallSource | undefined) {
+  if (source === "queued") return ROLL_CALL_COPY.queued;
+  if (source === "failed") return ROLL_CALL_COPY.syncError;
+  if (source === "postgres") return ROLL_CALL_COPY.postgres;
+  if (source === "draft") return ROLL_CALL_COPY.draft;
+  return "";
+}
+
 export const ROLL_CALL_COPY = {
   unset: "Non saisi",
   draft: "Brouillon — non enregistré",
+  queued: "En attente de synchronisation",
+  syncError: "Erreur de synchronisation",
   postgres: "Enregistré",
+  queuedAlertTitle: "Appel enregistré sur cet appareil — en attente de synchronisation",
+  queuedAlertBody:
+    "Les présences seront envoyées au serveur dès le retour du réseau. Ceci n'est pas une confirmation PostgreSQL.",
+  syncedAlertTitle: "Appel synchronisé",
+  persistFailedTitle: "Impossible de conserver cet appel hors connexion",
+  persistFailedBody:
+    "Impossible de conserver cet appel hors connexion. Réessayez lorsque la connexion est disponible.",
   incompleteSave: "Saisie incomplète",
   incompleteSaveBody:
     "Chaque élève doit avoir un statut explicite avant enregistrement. Utilisez « Tout présent » ou saisissez élève par élève. Aucune présence n'a été envoyée.",
+  missingClassIdentity:
+    "Identité de classe incomplète (classId et classCode requis). L'appel n'a pas été envoyé.",
 } as const;

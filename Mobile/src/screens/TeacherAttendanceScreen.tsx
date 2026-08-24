@@ -7,12 +7,18 @@ import { useAdminData } from "../context/AdminDataContext";
 import { canManagePresences, canReadRoute } from "../domain/security/permissions";
 import {
   classNameMatches,
-  filterStudentsByClassName,
   resolveStudentApiId,
   resolveTeacherAssignmentsForSession,
   scopedStudentsForSession,
-  teacherScopedClassLabels,
 } from "../lib/establishment";
+import {
+  assertAttendanceClassIdentity,
+  filterStudentsByClassIdentity,
+  listScopedAttendanceClasses,
+  presenceIntentionId,
+  type AttendanceClassIdentity,
+} from "../lib/attendanceClassIdentity";
+import { overlayPresenceOutboxOnAttendance } from "../lib/attendanceOffline";
 import { savePresences } from "../services/api";
 import { clearConfirmedAttendanceDirty } from "../lib/attendanceDraft";
 import {
@@ -23,10 +29,12 @@ import {
   formatAttendanceDate,
   formatAttendanceHour,
   getRollCallDraftStats,
+  markRollCallSyncState,
   markRosterPresent,
   presentFlagForStatus,
   resolveClassCourseLabel,
   rollCallEntryFromPresence,
+  rollCallSourceLabel,
   shouldPreserveLocalAttendanceDraft,
   type AttendanceStatus,
   type RollCallEntry,
@@ -37,7 +45,13 @@ import { useFloatingTabBarLayout } from "../lib/screenLayout";
 import { useResponsiveLayout } from "../hooks/useResponsiveLayout";
 import { createInFlightLock, createIntentionStore } from "../lib/mutationGuard";
 import { NETWORK_COPY } from "../lib/networkResilience";
-import { submitProtectedMutation } from "../lib/outbox";
+import { isOfflineContext } from "../lib/connectivity";
+import {
+  listOutbox,
+  resolveOutboxIntentionKey,
+  subscribeOutbox,
+  submitProtectedMutation,
+} from "../lib/outbox";
 import {
   ATTENDANCE_ACTIONS,
   attendanceActionForStudent,
@@ -83,6 +97,7 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
     studentsSnapshot,
     presencesSnapshot,
     resourceScopeKey,
+    syncStatus,
   } = useAdminData();
   const saveLockRef = useRef(createInFlightLock());
   const intentionRef = useRef(createIntentionStore());
@@ -97,14 +112,14 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
     [session, studentsData, scopeState],
   );
   const assignedClasses = useMemo(
-    () => teacherScopedClassLabels(session, classStudents, scopeState),
-    [session, classStudents, scopeState],
+    () => listScopedAttendanceClasses(classStudents, classesData),
+    [classStudents, classesData],
   );
   const assignments = useMemo(
     () => resolveTeacherAssignmentsForSession(session, assignmentsData),
     [session, assignmentsData],
   );
-  const [selectedClass, setSelectedClass] = useState<string | null>(null);
+  const [selectedClass, setSelectedClass] = useState<AttendanceClassIdentity | null>(null);
   const [savedCalls, setSavedCalls] = useState<SavedCall[]>([]);
   const [auditLog, setAuditLog] = useState<string[]>([]);
   const [attendance, setAttendance] = useState<Record<string, RollCallEntry>>({});
@@ -126,18 +141,52 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
   }, [resourceScopeKey]);
 
   useEffect(() => {
-    setAttendance((current) => {
-      const next = { ...current };
-      for (const student of classStudents) {
-        if (shouldPreserveLocalAttendanceDraft(next[student.id])) continue;
-        const latest = findTodayPresenceForStudent(presencesData, student, todayLabel);
-        next[student.id] = rollCallEntryFromPresence(latest);
-      }
-      return next;
-    });
-  }, [classStudents, presencesData, studentsSnapshot.status, presencesSnapshot.status, todayLabel]);
+    let cancelled = false;
+    const hydrate = async () => {
+      const entries = selectedClass ? await listOutbox().catch(() => []) : [];
+      if (cancelled) return;
+      setAttendance((current) => {
+        const next = { ...current };
+        for (const student of classStudents) {
+          if (shouldPreserveLocalAttendanceDraft(next[student.id])) continue;
+          const latest = findTodayPresenceForStudent(presencesData, student, todayLabel);
+          next[student.id] = rollCallEntryFromPresence(latest);
+        }
+        if (!selectedClass) return next;
+        return overlayPresenceOutboxOnAttendance({
+          attendance: next,
+          students: classStudents,
+          entries,
+          identity: selectedClass,
+          todayLabel,
+        });
+      });
+    };
+    void hydrate();
+    return () => {
+      cancelled = true;
+    };
+  }, [classStudents, presencesData, studentsSnapshot.status, presencesSnapshot.status, selectedClass, todayLabel]);
 
-  const selectedRows = selectedClass ? filterStudentsByClassName(classStudents, selectedClass) : [];
+  useEffect(() => {
+    if (!selectedClass) return undefined;
+    const identity = selectedClass;
+    return subscribeOutbox((entries) => {
+      setAttendance((current) =>
+        overlayPresenceOutboxOnAttendance({
+          attendance: current,
+          students: classStudents,
+          entries,
+          identity,
+          todayLabel,
+        }),
+      );
+    });
+  }, [classStudents, selectedClass, todayLabel]);
+
+  const selectedRows = selectedClass
+    ? filterStudentsByClassIdentity(classStudents, selectedClass, classesData)
+    : [];
   const selectedIds = selectedRows.map((student) => student.id);
   const canUpdatePresences = canManagePresences(session);
   const canOpenStudentDetail = canReadRoute(session, "StudentDetail");
@@ -167,13 +216,13 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
     });
   };
 
-  const markClassPresent = (className: string) => {
+  const markClassPresent = (identity: AttendanceClassIdentity) => {
     if (!canUpdatePresences) {
       Alert.alert("Accès refusé", "Votre rôle ne permet pas de modifier les présences.");
       return;
     }
 
-    const rows = filterStudentsByClassName(classStudents, className);
+    const rows = filterStudentsByClassIdentity(classStudents, identity, classesData);
     setAttendance((current) => markRosterPresent(
       rows.map((student) => student.id),
       current,
@@ -181,15 +230,20 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
     ));
   };
 
-  const saveCall = async (className: string) => {
+  const saveCall = async (identity: AttendanceClassIdentity) => {
     if (!saveLockRef.current.tryBegin()) return;
     if (!canUpdatePresences) {
       saveLockRef.current.end();
       Alert.alert("Accès refusé", "Votre rôle ne permet pas d'enregistrer l'appel.");
       return;
     }
+    if (!assertAttendanceClassIdentity(identity)) {
+      saveLockRef.current.end();
+      Alert.alert("Classe incomplète", ROLL_CALL_COPY.missingClassIdentity);
+      return;
+    }
 
-    const rows = filterStudentsByClassName(classStudents, className);
+    const rows = filterStudentsByClassIdentity(classStudents, identity, classesData);
     if (!rows.length) {
       saveLockRef.current.end();
       Alert.alert(
@@ -206,7 +260,12 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
       return;
     }
 
-    const classAssignments = assignments.filter((assignment) => classNameMatches(assignment.className, className));
+    const classAssignments = assignments.filter(
+      (assignment) =>
+        String(assignment.classId ?? "").trim() === identity.classId ||
+        String(assignment.classCode ?? "").trim() === identity.classCode ||
+        classNameMatches(assignment.className, identity.className),
+    );
     const entries = Object.fromEntries(rows.map((student) => [student.id, attendance[student.id]]));
     const absentCount = Object.values(entries).filter((entry) => entry.status === "Absent").length;
     const lateCount = Object.values(entries).filter((entry) => entry.status === "Retard").length;
@@ -219,9 +278,10 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
       return {
         id: `PRE-${todayLabel}-${studentApiId}`,
         publicId: `PRE-${todayLabel}-${studentApiId}`,
-        schoolCode: student.schoolCode,
         studentId: studentApiId,
-        className: student.className ?? className,
+        classId: identity.classId,
+        classCode: identity.classCode,
+        className: identity.className,
         date: todayLabel,
         present: presentFlagForStatus(status),
         status,
@@ -230,36 +290,55 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
     });
 
     const payload = {
-      className,
+      classId: identity.classId,
+      classCode: identity.classCode,
+      className: identity.className,
       date: todayLabel,
       hour: currentHour,
       items: presencePayload,
     };
-    const intentionId = `presence:${className}:${todayLabel}`;
-    const idempotencyKey = intentionRef.current.getOrCreate(intentionId);
+    const intentionId = presenceIntentionId(identity.classId, todayLabel);
+    const knownOffline = syncStatus === "offline" || isOfflineContext();
     setSaving(true);
     setSaveHint(NETWORK_COPY.recording);
     try {
+      const persistedKey = await resolveOutboxIntentionKey(intentionId);
+      const key = intentionRef.current.seed(intentionId, persistedKey);
       const submitted = await submitProtectedMutation({
         domain: "presences",
         method: "POST",
         path: "/presences",
         payload,
-        idempotencyKey,
+        idempotencyKey: key,
+        intentionId,
+        replacePendingPayload: true,
         userId: String(session?.user.id ?? ""),
         schoolScope: String(session?.school?.code ?? session?.user.schoolCode ?? ""),
         persistOutbox: true,
-        request: () => savePresences(payload, { idempotencyKey }),
+        knownOffline,
+        request: () => savePresences(payload, { idempotencyKey: key }),
       });
+      if (submitted.outcome === "queued") {
+        const studentIds = rows.map((student) => student.id);
+        setAttendance((current) => markRollCallSyncState(current, studentIds, "queued"));
+        setSaveHint(ROLL_CALL_COPY.queued);
+        Alert.alert(ROLL_CALL_COPY.queuedAlertTitle, ROLL_CALL_COPY.queuedAlertBody);
+        return;
+      }
       if (submitted.outcome !== "confirmed") {
-        setSaveHint(submitted.outcome === "queued" ? NETWORK_COPY.queued : NETWORK_COPY.failed);
+        const studentIds = rows.map((student) => student.id);
+        if (submitted.persistFailed) {
+          setSaveHint(ROLL_CALL_COPY.persistFailedTitle);
+          Alert.alert(ROLL_CALL_COPY.persistFailedTitle, ROLL_CALL_COPY.persistFailedBody);
+          return;
+        }
+        setAttendance((current) => markRollCallSyncState(current, studentIds, "failed"));
+        setSaveHint(NETWORK_COPY.failed);
         Alert.alert(
-          submitted.outcome === "queued" ? NETWORK_COPY.queued : NETWORK_COPY.failed,
-          submitted.outcome === "queued"
-            ? "L'appel est conservé en file d'attente avec la même intention. Aucune confirmation locale."
-            : submitted.error instanceof Error
-              ? submitted.error.message
-              : "Impossible d'enregistrer l'appel dans la base.",
+          NETWORK_COPY.failed,
+          submitted.error instanceof Error
+            ? submitted.error.message
+            : "Impossible d'enregistrer l'appel dans la base.",
         );
         return;
       }
@@ -270,8 +349,8 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
 
       setSavedCalls((current) => [
         {
-          id: `CALL-${todayLabel}-${className}`,
-          className,
+          id: `CALL-${todayLabel}-${identity.classId}`,
+          className: identity.className,
           course: resolveClassCourseLabel(classAssignments.map((assignment) => String(assignment.course ?? ""))),
           teacherId: session?.user.id ?? "",
           date: todayLabel,
@@ -281,16 +360,18 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
         ...current,
       ]);
       applyConfirmedPresences(savedPresences);
-      await loadPresences();
+      const refreshed = await loadPresences();
+      const studentIds = rows.map((student) => student.id);
       setAttendance((current) => {
-        const studentIds = rows.map((student) => student.id);
-        return confirmRollCallEntries(clearConfirmedAttendanceDirty(current, studentIds), studentIds);
+        const confirmed = confirmRollCallEntries(clearConfirmedAttendanceDirty(current, studentIds), studentIds);
+        if (refreshed === false) return confirmed;
+        return confirmed;
       });
       intentionRef.current.rotate(intentionId);
       setSaveHint("");
       Alert.alert(
-        "Appel enregistré",
-        `${className} • ${rows.length} élève(s)\n${absentCount} absent(s), ${lateCount} retard(s), ${justifiedCount} absence(s) justifiée(s).\nAppel enregistré.`
+        ROLL_CALL_COPY.syncedAlertTitle,
+        `${identity.className} • ${rows.length} élève(s)\n${absentCount} absent(s), ${lateCount} retard(s), ${justifiedCount} absence(s) justifiée(s).\n${ROLL_CALL_COPY.postgres}.`
       );
     } catch (error) {
       setSaveHint(NETWORK_COPY.failed);
@@ -306,7 +387,12 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
 
   const selectedClassCourses = selectedClass
     ? assignments
-        .filter((assignment) => classNameMatches(assignment.className, selectedClass))
+        .filter(
+          (assignment) =>
+            String(assignment.classId ?? "").trim() === selectedClass.classId ||
+            String(assignment.classCode ?? "").trim() === selectedClass.classCode ||
+            classNameMatches(assignment.className, selectedClass.className),
+        )
         .map((assignment) => String(assignment.course ?? ""))
     : [];
   const selectedCourseLabel = resolveClassCourseLabel(selectedClassCourses);
@@ -323,28 +409,33 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
         <Text style={styles.subtitle}>Sélectionnez une classe • {todayLabel} à {currentHour}</Text>
         <Text style={styles.sectionTitle}>Mes classes</Text>
         <View testID="attendance-class-list" style={isTablet ? styles.classGridTablet : undefined}>
-          {assignedClasses.map((className, index) => {
-            const rows = filterStudentsByClassName(classStudents, className);
+          {assignedClasses.map((classRef) => {
+            const rows = filterStudentsByClassIdentity(classStudents, classRef, classesData);
             const classCourses = assignments
-              .filter((assignment) => classNameMatches(assignment.className, className))
+              .filter(
+                (assignment) =>
+                  String(assignment.classId ?? "").trim() === classRef.classId ||
+                  String(assignment.classCode ?? "").trim() === classRef.classCode ||
+                  classNameMatches(assignment.className, classRef.className),
+              )
               .map((assignment) => String(assignment.course ?? ""));
             const courseLabel = resolveClassCourseLabel(classCourses);
-            const savedCount = todayCallGroups.filter((call) => classNameMatches(call.className, className)).length;
+            const savedCount = todayCallGroups.filter((call) => classNameMatches(call.className, classRef.className)).length;
             return (
               <TouchableOpacity
-                key={`${className}-${index}`}
-                testID={USABILITY_TEST_IDS.attendanceClass(className)}
+                key={classRef.classId}
+                testID={USABILITY_TEST_IDS.attendanceClass(classRef.className)}
                 activeOpacity={0.85}
                 style={[styles.selectClassCard, isTablet && styles.selectClassCardTablet]}
-                onPress={() => setSelectedClass(className)}
+                onPress={() => setSelectedClass(classRef)}
                 accessibilityRole="button"
-                accessibilityLabel={`Ouvrir l'appel de ${className}`}
+                accessibilityLabel={`Ouvrir l'appel de ${classRef.className}`}
               >
                 <View style={styles.selectClassIcon}>
                   <Ionicons name="grid-outline" size={24} color="#2563EB" />
                 </View>
                 <View style={styles.selectClassText}>
-                  <Text style={styles.className}>{className}</Text>
+                  <Text style={styles.className}>{classRef.className}</Text>
                   <Text
                     testID={classCourses.filter(Boolean).length ? "attendance-courses" : "attendance-courses-fallback"}
                     style={styles.meta}
@@ -372,7 +463,7 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
       ListHeaderComponent={
         <>
           <Text style={styles.title}>Présences</Text>
-          <Text style={styles.subtitle}>Appel de {selectedClass} • {todayLabel} à {currentHour}</Text>
+          <Text style={styles.subtitle}>Appel de {selectedClass.className} • {todayLabel} à {currentHour}</Text>
           <TouchableOpacity
             activeOpacity={0.85}
             style={styles.backToClasses}
@@ -413,12 +504,12 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
             <TouchableOpacity
               activeOpacity={0.85}
               style={styles.classHeader}
-              onPress={() => navigation.navigate("Students", { className: selectedClass })}
+              onPress={() => navigation.navigate("Students", { className: selectedClass.className })}
               accessibilityRole="button"
-              accessibilityLabel={`Voir les élèves de ${selectedClass}`}
+              accessibilityLabel={`Voir les élèves de ${selectedClass.className}`}
             >
               <View>
-                <Text style={styles.className}>{selectedClass}</Text>
+                <Text style={styles.className}>{selectedClass.className}</Text>
                 <Text
                   testID={selectedClassCourses.filter(Boolean).length ? "attendance-courses" : "attendance-courses-fallback"}
                   style={styles.meta}
@@ -439,7 +530,7 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
                   onPress={() => markClassPresent(selectedClass)}
                   disabled={saving}
                   accessibilityRole="button"
-                  accessibilityLabel={`Marquer toute la classe ${selectedClass} présente`}
+                  accessibilityLabel={`Marquer toute la classe ${selectedClass.className} présente`}
                   accessibilityState={{ disabled: saving }}
                 >
                   <Text style={styles.secondaryText}>Tout présent</Text>
@@ -450,7 +541,7 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
                   onPress={() => saveCall(selectedClass)}
                   disabled={saving}
                   accessibilityRole="button"
-                  accessibilityLabel={`Enregistrer l'appel de ${selectedClass}`}
+                  accessibilityLabel={`Enregistrer l'appel de ${selectedClass.className}`}
                   accessibilityState={{ busy: saving, disabled: saving }}
                 >
                   {saving ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.saveText}>Enregistrer l'appel</Text>}
@@ -489,8 +580,7 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
                   style={styles.statusLabel}
                 >
                   Statut : {status ?? ROLL_CALL_COPY.unset}
-                  {entry.source === "draft" ? ` • ${ROLL_CALL_COPY.draft}` : ""}
-                  {entry.source === "postgres" ? ` • ${ROLL_CALL_COPY.postgres}` : ""}
+                  {rollCallSourceLabel(entry.source) ? ` • ${rollCallSourceLabel(entry.source)}` : ""}
                 </Text>
                 {status ? (
                   <View
@@ -543,10 +633,10 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
         <View style={styles.reportCard}>
           <Text style={styles.reportTitle}>Historique synchronisé</Text>
           <Text style={styles.meta}>
-            {todayCallGroups.filter((call) => classNameMatches(call.className, selectedClass)).length} appel(s) enregistré(s) pour {selectedClass}
+            {todayCallGroups.filter((call) => classNameMatches(call.className, selectedClass.className)).length} appel(s) enregistré(s) pour {selectedClass.className}
           </Text>
           {todayCallGroups
-            .filter((call) => classNameMatches(call.className, selectedClass))
+            .filter((call) => classNameMatches(call.className, selectedClass.className))
             .slice(0, 3)
             .map((call) => (
               <Text key={call.id} style={styles.auditRow}>

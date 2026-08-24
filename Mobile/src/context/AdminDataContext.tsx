@@ -24,6 +24,7 @@ import {
   userRequiresSchoolSelection,
   writeStoredSchoolCode,
 } from "../lib/activeSchool";
+import { noteConnectivityFailure, noteConnectivitySuccess } from "../lib/connectivity";
 import { clearRequestSchoolScope, setRequestSchoolScope } from "../lib/requestSchoolScope";
 import { normalize } from "../lib/format";
 import { hasPlatformBackofficePrivilege } from "../domain/security/permissions";
@@ -368,6 +369,13 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
     setNotificationsData([]);
     setRolePermissionsData({});
   }, [resetTenantResourceCaches]);
+
+  useEffect(() => {
+    if (syncStatus === "synced") noteConnectivitySuccess();
+    if (syncStatus === "offline") {
+      noteConnectivityFailure(new Error("Connexion Internet indisponible."));
+    }
+  }, [syncStatus]);
 
   const resetResourceCaches = resetPrincipalResourceCaches;
 

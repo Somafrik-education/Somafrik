@@ -31,6 +31,12 @@ export function createIntentionStore() {
       keys.set(intentionId, key);
       return key;
     },
+    seed(intentionId: string, key: string): string {
+      const existing = keys.get(intentionId);
+      if (existing) return existing;
+      keys.set(intentionId, key);
+      return key;
+    },
     peek(intentionId: string): string | undefined {
       return keys.get(intentionId);
     },

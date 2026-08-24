@@ -38,7 +38,7 @@ appId: com.somafrik.app
 - tapOn:
     id: "attendance-save"
 - extendedWaitUntil:
-    visible: "Appel enregistré"
+    visible: "Appel synchronisé"
     timeout: 30000
 - tapOn: "OK"
 - tapOn: "Changer de classe"

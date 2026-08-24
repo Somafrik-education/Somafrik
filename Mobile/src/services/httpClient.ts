@@ -24,6 +24,7 @@ import {
   resolveApiRootUrl,
   validateApiRootUrl,
 } from "../config/env";
+import { noteConnectivityFailure, noteConnectivitySuccess } from "../lib/connectivity";
 import {
   assertSecureUploadFile,
   DEFAULT_ALLOWED_UPLOAD_MIME_TYPES,
@@ -96,17 +97,23 @@ async function fetchWithTimeout(
     });
   } catch (error) {
     if (error instanceof Error && error.name === "AbortError") {
-      throw new ApiClientError("Délai de requête dépassé. Vérifiez votre réseau.");
+      const timeoutError = new ApiClientError("Délai de requête dépassé. Vérifiez votre réseau.");
+      noteConnectivityFailure(timeoutError);
+      throw timeoutError;
     }
     const message = error instanceof Error ? error.message : String(error);
     if (/network request failed|failed to fetch|offline|internet/i.test(message)) {
-      throw new ApiClientError(
+      const offlineError = new ApiClientError(
         "Connexion Internet indisponible. Réessayez lorsque le réseau sera rétabli.",
       );
+      noteConnectivityFailure(offlineError);
+      throw offlineError;
     }
-    throw new ApiClientError(
+    const unreachable = new ApiClientError(
       sanitizeUserFacingError(error, "Impossible de joindre le serveur Somafrik."),
     );
+    noteConnectivityFailure(unreachable);
+    throw unreachable;
   } finally {
     clearTimeout(timer);
   }
@@ -219,6 +226,11 @@ export async function httpRequest<T = Json>(
     },
     timeoutMs,
   );
+  if (response.ok) {
+    noteConnectivitySuccess();
+  } else if (response.status >= 500) {
+    noteConnectivityFailure({ status: response.status, message: "backend_5xx" });
+  }
 
   if (response.status === 401 && !skipAuth && !isAuthPublicPath(path) && !_retried) {
     const nextToken = await refreshAccessTokenOnce();
