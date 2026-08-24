@@ -15,6 +15,7 @@ import {
   normalize,
   schoolMatchesCountryScope,
   countryScopeMatches,
+  ACTIVE_USERS_KPI_LABEL,
 } from "./format";
 import {
   COUNTRY_ADMIN_ROLE,
@@ -149,7 +150,7 @@ export function getLiveKpis(user: SessionUser | null, state: ScopeState): Kpi[] 
 
   if (isInternalSchoolRole(user.role)) {
     return [
-      { label: "Utilisateurs actifs", value: activeUsers.length },
+      { label: ACTIVE_USERS_KPI_LABEL, value: activeUsers.length },
       {
         label: "Élèves suivis",
         value: countUsersByRole(users, ["Élève / Étudiant", "Élève", "Étudiant"]),
@@ -167,7 +168,7 @@ export function getLiveKpis(user: SessionUser | null, state: ScopeState): Kpi[] 
   return [
     { label: "Pays", value: countries.length },
     { label: "Établissements", value: schools.length },
-    { label: "Utilisateurs actifs", value: activeUsers.length },
+    { label: ACTIVE_USERS_KPI_LABEL, value: activeUsers.length },
     { label: "Revenus mensuels", value: monthlyRevenue, suffix: "USD" },
     { label: "Alertes plateforme", value: suspendedSchools + expiredSubscriptions },
   ];

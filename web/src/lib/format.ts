@@ -95,8 +95,55 @@ export function isPastDate(value?: string): boolean {
   return date.getTime() < Date.now();
 }
 
-export function isActiveUserAccount(user: { status?: string }): boolean {
-  return normalize(user.status) !== "suspendu";
+/** Champs d'activité d'un compte. SoT PostgreSQL = `users.status`. */
+export type UserAccountActivityFields = {
+  status?: string | null;
+  deletedAt?: string | null;
+  archived?: boolean | null;
+  archivedAt?: string | null;
+  archived_at?: string | null;
+  disabled?: boolean | null;
+  revoked?: boolean | null;
+};
+
+/** Libellé KPI : comptes utilisables actuellement, jamais les archivés. */
+export const ACTIVE_USERS_KPI_LABEL = "Utilisateurs actifs";
+
+/**
+ * Statuts non utilisables (API FR + codes DB). `normalize()` retire les accents :
+ * Archivé → archive, Désactivé → desactive, Supprimé → supprime.
+ * Aligné login PG : COALESCE(status, 'active') NOT IN ('deleted', 'archived'),
+ * plus suspendu / désactivé / inactif.
+ */
+const INACTIVE_USER_ACCOUNT_STATUSES = new Set([
+  "archived",
+  "archive",
+  "archivee",
+  "suspendu",
+  "suspended",
+  "desactive",
+  "disabled",
+  "inactive",
+  "inactif",
+  "deleted",
+  "supprime",
+]);
+
+function hasInactiveUserAccountFlag(user: UserAccountActivityFields): boolean {
+  if (user.archived === true || user.disabled === true || user.revoked === true) return true;
+  if (user.deletedAt || user.archivedAt || user.archived_at) return true;
+  return false;
+}
+
+export function isActiveUserAccount(user: UserAccountActivityFields): boolean {
+  if (hasInactiveUserAccountFlag(user)) return false;
+  const status = normalize(user.status);
+  if (!status) return true;
+  return !INACTIVE_USER_ACCOUNT_STATUSES.has(status);
+}
+
+export function countActiveUserAccounts(users: readonly UserAccountActivityFields[]): number {
+  return users.filter(isActiveUserAccount).length;
 }
 
 const COUNTRY_CODES: Record<string, string> = {

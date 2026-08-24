@@ -42,6 +42,7 @@ import { PENDING_VALIDATION_STATUS } from "../lib/orgHierarchy";
 import { CONTACT_PROVISIONING_HINT, entityCreateViaContactsOnly } from "../lib/contactProvisioning";
 import { useFloatingTabBarLayout } from "../lib/screenLayout";
 import { createTeacherRecordId, isTeacherUserRole } from "../lib/userTeacherSync";
+import { isActiveUserAccount } from "../lib/format";
 
 type Props = NativeStackScreenProps<RootStackParamList, "AdminCrud">;
 
@@ -2308,13 +2309,6 @@ function getDelegablePermissionsForFeature(session: any, feature: string) {
   return rolePilotageActions
     .filter((action) => hasSecurityPermission(session, feature, action.key))
     .map((action) => `${feature}:${action.key}`);
-}
-
-function isActiveUserAccount(item: any) {
-  const status = normalize(item?.status)
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "");
-  return !["suspendu", "desactive", "disabled", "inactive", "inactif"].includes(status);
 }
 
 function getUserInitials(item: any) {

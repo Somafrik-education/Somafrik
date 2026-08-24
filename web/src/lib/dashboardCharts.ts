@@ -13,7 +13,7 @@ import {
   scopedPresences,
   scopedStudents,
 } from "./establishment";
-import { formatMetric, isActiveUserAccount, normalize, getEstablishmentChartProfile, type EstablishmentChartProfile } from "./format";
+import { formatMetric, isActiveUserAccount, normalize, getEstablishmentChartProfile, type EstablishmentChartProfile, ACTIVE_USERS_KPI_LABEL } from "./format";
 import { COUNTRY_ADMIN_ROLE } from "./orgHierarchy";
 import {
   getLiveKpis,
@@ -103,7 +103,7 @@ export function buildPlatformDashboardCharts(
     { name: "Pays", value: scopedCountries(user, state).length, fill: CHART_COLORS.brand },
     { name: "Établissements", value: schools.length, fill: CHART_COLORS.teal },
     {
-      name: "Utilisateurs",
+      name: ACTIVE_USERS_KPI_LABEL,
       value: scopedUsers(user, state).filter(isActiveUserAccount).length,
       fill: CHART_COLORS.violet,
     },
@@ -234,7 +234,7 @@ export function buildEstablishmentDashboardCharts(
   ];
 
   const operationsBar: ChartDatum[] = [
-    { name: "Utilisateurs", value: metrics.activeUsers, fill: CHART_COLORS.brand },
+    { name: ACTIVE_USERS_KPI_LABEL, value: metrics.activeUsers, fill: CHART_COLORS.brand },
     { name: "Documents", value: metrics.documents, fill: CHART_COLORS.teal },
     { name: "Présences", value: metrics.presences, fill: CHART_COLORS.emerald },
     { name: "Messages", value: metrics.unreadMessages, fill: CHART_COLORS.amber },
@@ -361,14 +361,14 @@ function buildEstablishmentKpiItems(
   }
   if (profile === "operations") {
     return [
-      { label: "Utilisateurs", value: formatMetric(metrics.activeUsers) },
+      { label: ACTIVE_USERS_KPI_LABEL, value: formatMetric(metrics.activeUsers) },
       { label: "Documents", value: formatMetric(metrics.documents) },
       { label: "Présences", value: formatMetric(metrics.presences) },
       { label: "Messages", value: formatMetric(metrics.unreadMessages) },
     ];
   }
   return [
-    { label: "Utilisateurs", value: formatMetric(metrics.activeUsers) },
+    { label: ACTIVE_USERS_KPI_LABEL, value: formatMetric(metrics.activeUsers) },
     { label: "Élèves", value: formatMetric(metrics.students) },
     { label: "Enseignants", value: formatMetric(metrics.teachers) },
     { label: "Paiements", value: formatMetric(metrics.payments) },

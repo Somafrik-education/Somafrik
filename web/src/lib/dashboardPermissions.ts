@@ -16,6 +16,7 @@ const STRUCTURE_SEGMENT_FEATURES: Record<string, string> = {
   Pays: "Pays",
   Établissements: "Établissements",
   Utilisateurs: "Utilisateurs",
+  "Utilisateurs actifs": "Utilisateurs",
 };
 
 const KPI_LABEL_FEATURES: Record<string, string | null> = {
