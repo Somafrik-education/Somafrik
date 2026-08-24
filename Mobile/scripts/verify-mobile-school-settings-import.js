@@ -32,11 +32,14 @@ function main() {
   const drawer = readMobile(path.join("navigation", "roleDrawerPreferences.ts"));
   assert.match(drawer, /label:\s*"Paramètres"[\s\S]*route:\s*"Configuration"/);
   assert.match(drawer, /label:\s*"Structure pédagogique"[\s\S]*route:\s*"SchoolPedagogicalStructure"/);
-  const schoolStaff = drawer.slice(drawer.indexOf("const schoolStaffItems"), drawer.indexOf("const teacherItems"));
-  assert.match(schoolStaff, /Structure pédagogique/);
+  assert.match(drawer, /structure:\s*\{[\s\S]*label:\s*"Structure pédagogique"/);
+  assert.match(drawer, /settings:\s*\{[\s\S]*label:\s*"Paramètres"/);
+  const schoolAdmin = drawer.slice(drawer.indexOf("const schoolAdminItems"), drawer.indexOf("const prefetItems"));
+  assert.match(schoolAdmin, /I\.structure/);
+  assert.match(schoolAdmin, /I\.settings/);
   const teacherItems = drawer.slice(drawer.indexOf("const teacherItems"), drawer.indexOf("const parentItems"));
-  assert.doesNotMatch(teacherItems, /Structure pédagogique/);
-  assert.doesNotMatch(teacherItems, /label:\s*"Paramètres"/);
+  assert.doesNotMatch(teacherItems, /I\.structure/);
+  assert.doesNotMatch(teacherItems, /I\.settings/);
 
   const configuration = readMobile(path.join("screens", "ConfigurationScreen.tsx"));
   assert.match(configuration, /route:\s*"Users"/);

@@ -133,6 +133,7 @@ export default function BottomTabsNavigator() {
             key={tab.tabName}
             name={tab.tabName}
             component={tab.component}
+            initialParams={tab.initialParams}
             options={
               tabTestId
                 ? {
@@ -150,6 +151,7 @@ export default function BottomTabsNavigator() {
           key={`hidden-${tab.tabName}`}
           name={tab.tabName}
           component={tab.component}
+          initialParams={tab.initialParams}
           options={hiddenTabOptions}
         />
       ))}

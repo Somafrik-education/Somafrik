@@ -45,7 +45,8 @@ export type RoleHomeActionKey =
   | "notes"
   | "presences"
   | "studentPayments"
-  | "documents";
+  | "documents"
+  | "platformNotifications";
 
 export type RoleHomeShell = {
   role: string;
@@ -67,7 +68,7 @@ const SCHOOL_ADMIN: RoleHomeShell = {
   identityIcon: "briefcase-outline",
   bannerIcon: "business-outline",
   kpiKeys: ["users", "presence", "students", "paymentRate"],
-  actionKeys: ["users", "classes", "teachers", "payments", "announcements"],
+  actionKeys: ["students", "attendance", "payments", "classes", "teachers", "grades", "announcements"],
   showSecurityMatrix: true,
 };
 
@@ -199,7 +200,7 @@ const PLATFORM: RoleHomeShell = {
   identityIcon: "globe-outline",
   bannerIcon: "grid-outline",
   kpiKeys: ["countries", "schools", "users", "payments"],
-  actionKeys: ["users", "classes", "teachers", "payments"],
+  actionKeys: ["users", "platformNotifications"],
   showSecurityMatrix: true,
 };
 

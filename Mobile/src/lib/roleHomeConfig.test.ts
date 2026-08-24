@@ -12,10 +12,9 @@ const admin = getRoleHomeShell({ role: "school_admin" });
 assert.equal(admin.spaceLabel, "Espace administrateur");
 assert.equal(admin.kpiKeys.length, 4);
 assert.deepEqual(admin.kpiKeys, ["users", "presence", "students", "paymentRate"]);
-assert.ok(admin.actionKeys.includes("users"));
-assert.ok(admin.actionKeys.includes("classes"));
+assert.deepEqual(admin.actionKeys.slice(0, 4), ["students", "attendance", "payments", "classes"]);
 assert.ok(admin.actionKeys.includes("teachers"));
-assert.ok(admin.actionKeys.includes("payments"));
+assert.ok(!admin.actionKeys.includes("users"));
 
 const prefet = getRoleHomeShell({ role: "prefet" });
 assert.equal(prefet.spaceLabel, "Espace préfet des études");

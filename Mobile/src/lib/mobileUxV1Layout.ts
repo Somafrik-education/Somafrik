@@ -37,18 +37,29 @@ export const MAX_FONT_SCALE = 1.3;
 /** Alias conservé pour screenLayout. */
 export const FLOATING_TAB_BAR_HEIGHT_V11 = TAB_BAR_CONTENT_HEIGHT;
 
-export const SCHOOL_ADMIN_BOTTOM_LABELS = ["Accueil", "Classes", "Frais", "Comptes", "Profs"] as const;
+export const SCHOOL_ADMIN_BOTTOM_LABELS = ["Accueil", "Élèves", "Appel", "Frais", "Classes"] as const;
 
-/** Libellés courts imposés — jamais le tabName long (`Utilisateurs`, `Enseignants`). */
+/** Libellés courts imposés — jamais le tabName long (`Utilisateurs`, `Enseignants`, `Présences`). */
 export const BOTTOM_TAB_SHORT_LABELS: Record<string, string> = {
   Accueil: "Accueil",
   Classes: "Classes",
+  TeacherStudents: "Élèves",
+  Students: "Élèves",
+  Élèves: "Élèves",
   Paiements: "Frais",
   Payments: "Frais",
+  FraisEleve: "Frais",
+  TeacherAttendance: "Appel",
+  Présences: "Appel",
+  Presences: "Présence",
+  Appel: "Appel",
   Utilisateurs: "Comptes",
   Users: "Comptes",
   Enseignants: "Profs",
   Teachers: "Profs",
+  Schools: "Écoles",
+  Subscriptions: "Offres",
+  PlatformNotifications: "Notifs",
 };
 
 export function shortBottomTabLabel(tabName: string, fallback?: string): string {

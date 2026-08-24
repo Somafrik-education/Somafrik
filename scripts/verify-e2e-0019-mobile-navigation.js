@@ -3,7 +3,7 @@
  *
  * Scénarios :
  *   - Admin établissement connecté
- *   - Navigation Accueil → Classes → Profs + drawer header
+ *   - Navigation Accueil → Classes → Élèves + drawer header
  *   - Barre toujours visible, transitions fluides, retour fonctionnel
  *
  * Prérequis : backend + mobile web (voir verify:e2e-0017)
@@ -130,14 +130,19 @@ async function runNavigationUiTests(fixtures, results) {
 
     await navigateToTabScreen(
       page,
-      TAB_TEST_IDS.teachers,
-      "Profs",
-      NAVIGATION_TEST_IDS.teachersScreen,
+      TAB_TEST_IDS.students,
+      "Élèves",
+      CLASSES_STUDENT_TEST_IDS.studentsScreen,
       results,
-      'Onglet "Profs"',
+      'Onglet "Élèves"',
     );
-    const teachersTitle = (await page.locator(testIdSelector(NAVIGATION_TEST_IDS.teachersTitle)).innerText()).trim();
-    pushUiResult(results, 'Enseignants — Titre écran', "Enseignants", teachersTitle, teachersTitle === "Enseignants");
+    pushUiResult(
+      results,
+      "Élèves — écran liste",
+      CLASSES_STUDENT_TEST_IDS.studentsScreen,
+      "visible",
+      await page.locator(testIdSelector(CLASSES_STUDENT_TEST_IDS.studentsScreen)).isVisible(),
+    );
 
     await page.locator(testIdSelector(NAVIGATION_TEST_IDS.headerMenu)).click();
     await page.waitForSelector(testIdSelector(NAVIGATION_TEST_IDS.roleDrawer), {
