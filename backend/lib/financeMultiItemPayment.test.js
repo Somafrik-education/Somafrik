@@ -47,6 +47,7 @@ const admin = {
   firstName: "Admin",
   lastName: "School",
   sub: "USR-MEM-ADMIN",
+  permissions: ["Paiements:UPDATE"],
 };
 
 const ESTHER_ITEMS = [

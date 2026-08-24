@@ -54,6 +54,20 @@ function actorName(principal) {
   return `${principal?.firstName ?? ""} ${principal?.lastName ?? ""}`.trim() || principal?.identifier || principal?.role;
 }
 
+function canCancelPayment(principal) {
+  const permissions = new Set(principal?.permissions ?? []);
+  return (
+    permissions.has("Paiements:UPDATE") ||
+    permissions.has("Gérer paiements") ||
+    permissions.has("ALL_PRIVILEGES")
+  );
+}
+
+function assertCanCancelPayment(principal) {
+  if (canCancelPayment(principal)) return;
+  throw createFinanceError(403, "Permission Paiements:UPDATE requise pour annuler un paiement.");
+}
+
 async function resolvePaymentEnrollment(tx, student, payload, school) {
   const requestedClassId = asTrimmed(payload.classId);
   const enrollments =
@@ -315,6 +329,7 @@ async function createPayment(store, rawPayload, principal, auditMeta) {
 }
 
 async function cancelPayment(store, paymentId, reason, principal, auditMeta) {
+  assertCanCancelPayment(principal);
   const motif = asTrimmed(reason);
   if (!motif) {
     throw createFinanceError(400, "Le motif d'annulation est obligatoire.", FINANCE_ERROR.CANCEL_REASON_REQUIRED);
@@ -555,6 +570,8 @@ async function createReminder(store, studentId, payload, principal, { force = fa
 module.exports = {
   REMINDER_COOLDOWN_DAYS,
   ignoreClientScope,
+  canCancelPayment,
+  assertCanCancelPayment,
   createPayment,
   cancelPayment,
   upsertFeeGrid,

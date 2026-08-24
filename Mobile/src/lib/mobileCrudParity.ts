@@ -36,6 +36,11 @@ export function canCreateTeacherIdentity(session: any): boolean {
   return canMutateEntity(session, "users", "CREATE") && canGrantUserRole(session);
 }
 
+/** Annulation canonique = POST /payments/:id/cancel, gated on Paiements:UPDATE (pas CREATE seul). */
+export function canCancelSchoolPayment(session: any): boolean {
+  return canMutateEntity(session, "payments", "UPDATE");
+}
+
 export function resolveEntityCrudAccess(session: any, entity: CanonicalCrudEntity): EntityCrudAccess {
   return {
     canRead: canReadEntity(session, entity),

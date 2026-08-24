@@ -3,6 +3,7 @@ import { attachCanonicalRoleIdentity } from "./canonicalRoleIdentity";
 import { canManagePresences, canMutateEntity, canReadEntity, entityFeatureMap, hasSecurityPermission } from "../domain/security/permissions";
 import {
   CANONICAL_CRUD_ENTITIES,
+  canCancelSchoolPayment,
   canCreateTeacherIdentity,
   canGrantUserRole,
   resolveEntityCrudAccess,
@@ -101,6 +102,7 @@ assert.equal(
   "Enseignants:CREATE seul ne suffit pas : POST /teachers est 403",
 );
 assert.equal(canMutateEntity(adminSchool, "payments", "CREATE"), true);
+assert.equal(canCancelSchoolPayment(adminSchool), true, "Gérer paiements / UPDATE → CTA annuler");
 assert.equal(canMutateEntity(adminSchool, "assignments", "CREATE"), true);
 assert.equal(canMutateEntity(adminSchool, "announcements", "CREATE"), true);
 
@@ -140,6 +142,28 @@ assert.equal(canCreateTeacherIdentity(prefetTeachers), false);
 assert.equal(canMutateEntity(prefetTeachers, "assignments", "CREATE"), true);
 assert.equal(canGrantUserRole(adminSchool), true, "GRANT/REVOKE rôle utilisateur = Utilisateurs:UPDATE");
 assert.equal(canGrantUserRole(prefetTeachers), false, "Préfet sans Utilisateurs:UPDATE ne révoque pas");
+
+const paymentCreateOnly = liveSession({
+  sessionRole: "secretary",
+  roleLabel: "Secrétaire",
+  roleKeys: ["SECRETARY"],
+  permissions: ["Paiements:READ", "Paiements:CREATE"],
+});
+assert.equal(canMutateEntity(paymentCreateOnly, "payments", "CREATE"), true);
+assert.equal(
+  canCancelSchoolPayment(paymentCreateOnly),
+  false,
+  "CREATE seul n'ouvre pas l'annulation (Paiements:UPDATE requis)",
+);
+
+const accountantCancel = liveSession({
+  sessionRole: "accountant",
+  roleLabel: "Comptable",
+  roleKeys: ["ACCOUNTANT"],
+  permissions: ["Paiements:READ", "Paiements:CREATE", "Paiements:UPDATE"],
+});
+assert.equal(canCancelSchoolPayment(accountantCancel), true);
+assert.equal(canMutateEntity(accountantCancel, "classes", "CREATE"), false);
 
 assert.equal(MOBILE_GENERIC_ADMIN_CRUD_IN_RC1, false, "ne pas réactiver AdminCrud générique");
 assert.equal(MOBILE_ROLE_PERMISSION_MUTATION_ENABLED, false, "GRANT/REVOKE Mobile reste interdit");
