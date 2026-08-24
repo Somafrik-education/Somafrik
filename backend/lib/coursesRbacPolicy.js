@@ -11,9 +11,11 @@
  * - `Gérer cours` : composite historique (équivalent « gérer le catalogue »),
  *   déjà utilisé par `/api/v2/subjects`. Ce n'est PAS un jeton granulaire
  *   CREATE qui ouvrirait UPDATE/DELETE.
- * - `Affectations:READ` / `Voir classes` : lecture du catalogue déjà utilisée
- *   par GET `/api/v2/subjects`. L'enseignant sans `Matières:READ` lit le
- *   planning via `GET /api/course-schedules?projection=course-options`.
+ * - `Voir classes` : lecture du catalogue pour les rôles qui la possèdent.
+ *
+ * `Affectations:READ` n'ouvre PAS le catalogue `/api/courses` : un enseignant
+ * qui doit consulter ses cours utilise la projection métier dédiée
+ * `GET /api/course-schedules?projection=course-options`.
  *
  * Aucun fallback BackOffice legacy. Aucune permission locale inventée.
  */
@@ -25,7 +27,6 @@ const COURSE_DELETE_ROUTE_KEY = "DELETE /api/courses/:courseId";
 
 const COURSE_READ_PERMISSIONS = Object.freeze([
   "Matières:READ",
-  "Affectations:READ",
   "Gérer cours",
   "Voir classes",
   "ALL_PRIVILEGES",
