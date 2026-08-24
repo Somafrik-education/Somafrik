@@ -82,6 +82,20 @@ function run() {
   ];
   assert.equal(formatPaymentRateKpi(unequal).value, "80 %");
 
+  const noDue = [
+    { studentId: "s1", status: "Payé", amountPaid: 1000 },
+    { studentId: "s2", status: "À payer" },
+  ];
+  assert.equal(formatPaymentRateKpi(noDue).value, "—", "obligations sans amountDue calculable → —");
+  assert.equal(getPaymentRateKpi(noDue).rate, null);
+
+  const mixedInvalid = [
+    obligation("s1", { amountPaid: 1000, status: "Payé" }),
+    { studentId: "s2", amountDue: "n/a", amountPaid: 0, status: "À payer" },
+  ];
+  assert.equal(formatPaymentRateKpi(mixedInvalid).value, "—", "mélange valide + amountDue invalide → —");
+  assert.equal(getPaymentRateKpi(mixedInvalid).rate, null);
+
   console.log("OK: paymentRateKpi assiette obligations 20/0/100/—");
 }
 

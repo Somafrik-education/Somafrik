@@ -76,4 +76,22 @@ describe("Taux de paiement (assiette obligations, pas payments.length)", () => {
     ];
     expect(formatPaymentRateKpi(fees).value).toBe("80 %");
   });
+
+  it("obligations sans amountDue calculable → —", () => {
+    const fees = [
+      { studentId: "s1", status: "Payé", amountPaid: 1000 },
+      { studentId: "s2", status: "À payer" },
+    ];
+    expect(formatPaymentRateKpi(fees).value).toBe("—");
+    expect(getPaymentRateKpi(fees).rate).toBeNull();
+  });
+
+  it("mélange obligation valide + obligation invalide → —", () => {
+    const fees = [
+      obligation("s1", { amountPaid: 1000, status: "Payé" }),
+      { studentId: "s2", amountDue: "n/a", amountPaid: 0, status: "À payer" },
+    ];
+    expect(formatPaymentRateKpi(fees).value).toBe("—");
+    expect(getPaymentRateKpi(fees).rate).toBeNull();
+  });
 });
