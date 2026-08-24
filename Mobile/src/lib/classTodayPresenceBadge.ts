@@ -109,9 +109,10 @@ function unavailableBadge(periodKey: string): ClassTodayPresenceBadge {
 
 function presenceBelongsToSchool(row: ClassPresenceRow, schoolCode?: string | null) {
   const expected = asRef(schoolCode);
+  if (!expected) return false;
   const rowSchool = asRef(row.schoolCode);
-  if (expected && rowSchool) return normalizeKey(rowSchool) === normalizeKey(expected);
-  return true;
+  if (!rowSchool) return false;
+  return normalizeKey(rowSchool) === normalizeKey(expected);
 }
 
 function presenceBelongsToClass(
@@ -124,7 +125,15 @@ function presenceBelongsToClass(
   const classCode = asRef(schoolClass.classCode || schoolClass.publicId);
   const rowClassCode = asRef(row.classCode);
   if (classCode && rowClassCode) return rowClassCode === classCode;
-  return true;
+  return false;
+}
+
+function studentBelongsToSchool(student: ExpectedStudent, schoolCode?: string | null) {
+  const expected = asRef(schoolCode);
+  if (!expected) return false;
+  const studentSchool = asRef(student.schoolCode);
+  if (!studentSchool) return false;
+  return normalizeKey(studentSchool) === normalizeKey(expected);
 }
 
 export function classPresenceBadgeTestId(classRef: { id?: string; name?: string }) {
@@ -161,8 +170,10 @@ export function resolveClassTodayPresenceBadge(input: {
     },
     input.classes ?? [],
   );
-  const expectedStudents = identityStudents.filter((student) =>
-    isExpectedStudentForToday(student, input.schoolCode),
+  const expectedStudents = identityStudents.filter(
+    (student) =>
+      studentBelongsToSchool(student, input.schoolCode) &&
+      isExpectedStudentForToday(student, input.schoolCode),
   );
   const studentIds = expectedStudents.map((student) => asRef(student.id)).filter(Boolean);
 

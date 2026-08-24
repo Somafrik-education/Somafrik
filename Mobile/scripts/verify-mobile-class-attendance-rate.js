@@ -47,6 +47,11 @@ function main() {
   const helper = fs.readFileSync(path.join(SRC, "lib", "classTodayPresenceBadge.ts"), "utf8");
   assert.match(helper, /CLASS_TODAY_PRESENCE_PERIOD = "today"/);
   assert.match(helper, /Non saisi/);
+  assert.match(helper, /studentBelongsToSchool/);
+  assert.doesNotMatch(
+    helper,
+    /if \(classCode && rowClassCode\) return rowClassCode === classCode;\s*return true;/,
+  );
   console.log("OK: verify-mobile-class-attendance-rate");
 }
 

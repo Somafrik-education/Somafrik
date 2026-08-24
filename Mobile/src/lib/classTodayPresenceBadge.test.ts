@@ -266,6 +266,34 @@ function run() {
   assert.equal(tenant.rate, 100);
   assert.equal(tenant.studentIds.includes("ext"), false);
 
+  // H2. Ligne présence sans schoolCode / classId → fail-closed, jamais un taux inventé
+  const missingSchool = badge({
+    students: four,
+    presences: four.map((row) => presence(row.id, "Présent", { schoolCode: "" })),
+  });
+  assert.equal(missingSchool.kind, "unset");
+  assert.equal(missingSchool.recorded, 0);
+  assert.equal(missingSchool.rate, null);
+
+  const missingClass = badge({
+    students: four,
+    presences: four.map((row) => presence(row.id, "Présent", { classId: "", classCode: "" })),
+  });
+  assert.equal(missingClass.kind, "unset");
+  assert.equal(missingClass.recorded, 0);
+  assert.equal(missingClass.rate, null);
+
+  const unscopedStudent = badge({
+    students: [...four, student({ id: "ghost", schoolCode: "" })],
+    presences: [
+      ...four.map((row) => presence(row.id, "Présent")),
+      presence("ghost", "Présent", { schoolCode: "" }),
+    ],
+  });
+  assert.equal(unscopedStudent.expected, 4);
+  assert.equal(unscopedStudent.studentIds.includes("ghost"), false);
+  assert.equal(unscopedStudent.rate, 100);
+
   // I. snapshot loading / offline / error => jamais inventer un pourcentage
   for (const status of ["idle", "loading"] as const) {
     const pending = badge({

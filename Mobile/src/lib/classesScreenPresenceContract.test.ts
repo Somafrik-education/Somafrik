@@ -28,6 +28,8 @@ function run() {
   );
   assert.doesNotMatch(classesScreen, /"0%"/);
   assert.doesNotMatch(classesScreen, /`\$\{getPresenceStats/);
+  assert.doesNotMatch(classesScreen, /presenceRateLabel/);
+  assert.match(classesScreen, /presenceBadge\.badgeText/);
 
   assert.match(helper, /CLASS_TODAY_PRESENCE_PERIOD = "today"/);
   assert.match(helper, /Non saisi/);
@@ -35,6 +37,17 @@ function run() {
   assert.match(helper, /sameAttendanceDay/);
   assert.match(helper, /presenceBelongsToClass/);
   assert.match(helper, /presenceBelongsToSchool/);
+  assert.match(helper, /studentBelongsToSchool/);
+  assert.doesNotMatch(
+    helper,
+    /if \(expected && rowSchool\)[\s\S]{0,120}return true;/,
+    "presenceBelongsToSchool ne doit plus être fail-open si l'un des schoolCode manque",
+  );
+  assert.doesNotMatch(
+    helper,
+    /if \(classCode && rowClassCode\) return rowClassCode === classCode;\s*return true;/,
+    "presenceBelongsToClass ne doit plus accepter une ligne sans identité de classe",
+  );
 
   assert.match(metrics, /studentIds === undefined/);
   assert.doesNotMatch(metrics, /studentIds\?\.length/);

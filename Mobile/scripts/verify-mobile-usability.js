@@ -55,8 +55,29 @@ function main() {
   assert.match(classes, /USABILITY_TEST_IDS\.classesSearch/);
   assert.match(classes, /classes-empty-search|USABILITY_TEST_IDS\.classesEmptySearch/);
   assert.match(classes, /FlatList/);
-  assert.match(classes, /Présence \{presenceRateLabel\}/);
-  console.log("OK: Classes — recherche réelle nom/code + empty state + FlatList");
+  assert.match(classes, /resolveClassTodayPresenceBadge/);
+  assert.match(classes, /presenceBadge\.badgeText/);
+  assert.match(classes, /classPresenceBadgeTestId/);
+  assert.doesNotMatch(
+    classes,
+    /Présence \{presenceRateLabel\}/,
+    "ClassesScreen ne doit plus interpoler l'ancien Présence {presenceRateLabel}",
+  );
+  assert.doesNotMatch(
+    classes,
+    /presenceRateLabel/,
+    "le badge Classes n'utilise plus presenceRateLabel",
+  );
+  assert.doesNotMatch(
+    classes,
+    /getPresenceStats/,
+    "le badge Classes n'agrège plus getPresenceStats",
+  );
+  const classBadge = source(path.join("lib", "classTodayPresenceBadge.ts"));
+  assert.match(classBadge, /CLASS_EMPTY_PRESENCE_BADGE/);
+  assert.match(classBadge, /CLASS_UNSET_PRESENCE_LABEL = "Non saisi"/);
+  assert.match(classBadge, /badgeText: `Présence \$\{rate\} %`/);
+  console.log("OK: Classes — recherche réelle nom/code + empty state + FlatList + badge présence du jour");
 
   const planning = source(path.join("screens", "TimetableScreen.tsx"));
   assert.match(planning, /accessibilityState=\{\{\s*selected:/);
