@@ -25,6 +25,7 @@ export const MOBILE_MUTATION_INVENTORY = [
   { name: "createClientsUser", method: "POST", path: "/backoffice/users", class: "D", outbox: false, domain: "users" },
   { name: "createTeacherIdentityFromUsers", method: "POST", path: "/backoffice/users/create-teacher", class: "D", outbox: false, domain: "users" },
   { name: "grantClientsUserRole", method: "POST", path: "/backoffice/users/:id/roles/grant", class: "D", outbox: false, domain: "users" },
+  { name: "revokeClientsUserRole", method: "POST", path: "/backoffice/users/:id/roles/revoke", class: "D", outbox: false, domain: "users" },
   { name: "updateClientsUser", method: "PATCH", path: "/backoffice/users/:id", class: "D", outbox: false, domain: "users" },
   { name: "createSchoolClass", method: "POST", path: "/classes", class: "D", outbox: false, domain: "classes" },
   { name: "updateSchoolClass", method: "PATCH", path: "/classes/:classCode", class: "A", outbox: false, domain: "classes" },
