@@ -54,6 +54,10 @@ export function validateCourseTeacherRule(
   return null;
 }
 
+/**
+ * Seed Admin School (aligné Web / pedagogyGovernanceService) : READ, CREATE, UPDATE.
+ * Ce n'est pas un hard-deny client. Les CTA suivent les jetons live PostgreSQL.
+ */
 export function canSchoolAdminMutateTeachers(action: string): boolean {
-  return action === "READ" || action === "CREATE";
+  return action === "READ" || action === "CREATE" || action === "UPDATE";
 }
