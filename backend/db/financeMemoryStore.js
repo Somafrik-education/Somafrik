@@ -18,6 +18,7 @@ const {
   mapBoStatusToDb,
 } = require("../lib/financeManagement");
 const { decoratePaymentWithItems } = require("../lib/financePaymentItems");
+const { projectObligationPaidAmounts } = require("../lib/financeObligationPaid");
 const financeService = require("../lib/financeService");
 
 function clone(value) {
@@ -486,7 +487,22 @@ function createFinanceMemoryStore({ getSchoolByCode, findStudent, listStudentsIn
     setFinanceFeeGridStatus: (id, status, principal) => financeService.setFeeGridStatus(api, id, status, principal),
     applyFinanceFeeGrid: (id, principal, options) => financeService.applyFeeGrid(api, id, principal, options),
     listFinanceFeeGrids: async () => tables.feeGrids.map(mapGridRow),
-    listFinanceStudentFees: async () => tables.studentFees.map(mapObligationRow),
+    listFinanceStudentFees: async () =>
+      projectObligationPaidAmounts({
+        fees: tables.studentFees.map(mapObligationRow),
+        payments: tables.payments.map(mapPaymentRow),
+        allocations: tables.allocations.map((row) => ({
+          obligationId: row.obligation_id,
+          paymentId: row.payment_id,
+          amount: row.amount,
+          reversedAt: row.reversed_at,
+        })),
+        paymentItems: tables.paymentItems.map((row) => ({
+          paymentId: row.payment_id,
+          feeType: row.fee_type,
+          amount: row.amount,
+        })),
+      }),
     getFinanceStudentFee: (id, principal) => txApi().getObligationByPublicId(id, principal),
     adjustFinanceStudentFee: (id, patch, principal) => financeService.adjustStudentFee(api, id, patch, principal),
     createFinanceReminder: (studentId, payload, principal, options) =>

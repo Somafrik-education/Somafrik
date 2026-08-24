@@ -1,5 +1,5 @@
 /**
- * KPI Accueil « Taux de paiement ».
+ * KPI « Taux de paiement » — Accueil et Finance Mobile.
  * Dénominateur = assiette canonique `student_fee_obligations` (GET /finance/student-fees).
  * Jamais le nombre de lignes de la table paiements : un seul encaissement ne crée pas l'assiette.
  * Contrat unique : Σ amountPaid / Σ (amountDue − exemption). Assiette non calculable → « — ».

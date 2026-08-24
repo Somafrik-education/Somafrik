@@ -19,6 +19,7 @@ const {
   parsePayload,
 } = require("../lib/financeManagement");
 const { decoratePaymentWithItems } = require("../lib/financePaymentItems");
+const { projectObligationPaidAmounts } = require("../lib/financeObligationPaid");
 const financeService = require("../lib/financeService");
 
 function createFinancePgStore(repo) {
@@ -620,13 +621,52 @@ function createFinancePgStore(repo) {
       return rows.map(mapGridRow);
     },
     listFinanceStudentFees: async () => {
-      const rows = await repo.all(
-        `SELECT o.*, s.school_code, st.student_code
-         FROM student_fee_obligations o
-         JOIN schools s ON s.id = o.school_id
-         JOIN students st ON st.id = o.student_id`,
+      const [rows, payments, items, allocations] = await Promise.all([
+        repo.all(
+          `SELECT o.*, s.school_code, st.student_code,
+                  COALESCE(pa.allocated, 0) AS allocated_paid
+           FROM student_fee_obligations o
+           JOIN schools s ON s.id = o.school_id
+           JOIN students st ON st.id = o.student_id
+           LEFT JOIN (
+             SELECT obligation_id, SUM(amount)::numeric AS allocated
+             FROM payment_allocations
+             WHERE reversed_at IS NULL
+             GROUP BY obligation_id
+           ) pa ON pa.obligation_id = o.id`,
+        ),
+        repo.all(
+          `SELECT p.*, s.school_code, st.student_code
+           FROM payments p
+           JOIN schools s ON s.id = p.school_id
+           JOIN students st ON st.id = p.student_id`,
+        ),
+        repo.all(`SELECT payment_id, fee_type, amount FROM payment_items`),
+        repo.all(
+          `SELECT obligation_id, payment_id, amount, reversed_at FROM payment_allocations`,
+        ),
+      ]);
+      const fees = rows.map((row) =>
+        mapObligationRow({
+          ...row,
+          amount_paid: Math.max(Number(row.amount_paid || 0), Number(row.allocated_paid || 0)),
+        }),
       );
-      return rows.map(mapObligationRow);
+      return projectObligationPaidAmounts({
+        fees,
+        payments: payments.map(mapPaymentRow),
+        paymentItems: items.map((row) => ({
+          paymentId: row.payment_id,
+          feeType: row.fee_type,
+          amount: row.amount,
+        })),
+        allocations: allocations.map((row) => ({
+          obligationId: row.obligation_id,
+          paymentId: row.payment_id,
+          amount: row.amount,
+          reversedAt: row.reversed_at,
+        })),
+      });
     },
     getFinanceStudentFee: (id, principal) => bind(repo).getObligationByPublicId(id, principal),
     adjustFinanceStudentFee: (id, patch, principal) => financeService.adjustStudentFee(api, id, patch, principal),

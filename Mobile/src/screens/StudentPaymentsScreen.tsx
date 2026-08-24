@@ -10,9 +10,9 @@ import QueryStateView from "../components/QueryStateView";
 import PaymentReceiptCard from "../components/PaymentReceiptCard";
 import PaymentMutationControls from "../components/PaymentMutationControls";
 import PaymentCancelControls from "../components/PaymentCancelControls";
-import { getPaymentStats } from "../domain/metrics/schoolMetrics";
 import { useAdminData } from "../context/AdminDataContext";
 import { DATA_TRUTH_COPY, DATA_TRUTH_TEST_IDS, paymentPaidAt } from "../lib/dataTruth";
+import { getPaymentRateKpi } from "../lib/paymentRateKpi";
 import { useFloatingTabBarLayout } from "../lib/screenLayout";
 import {
   STUDENT_SUB_SCREENS_COPY,
@@ -26,14 +26,28 @@ export default function StudentPaymentsScreen({ route, navigation }: Partial<Pro
   const { scrollContentPaddingBottom } = useFloatingTabBarLayout();
   const listContentStyle = [styles.listContent, { paddingBottom: scrollContentPaddingBottom }];
   const { selectedStudentId } = useAuth();
-  const { paymentsData, paymentsSnapshot, loadPayments, loadStudents, studentsData } = useAdminData();
+  const {
+    paymentsData,
+    paymentsSnapshot,
+    studentFeesData,
+    studentFeesSnapshot,
+    loadPayments,
+    loadStudentFees,
+    loadStudents,
+    studentsData,
+  } = useAdminData();
   const studentId = route?.params?.studentId ?? selectedStudentId;
   const student = studentId ? studentsData.find((item) => item.id === studentId) : undefined;
 
+  const refreshFinance = useCallback(
+    () => Promise.all([loadPayments(), loadStudentFees(), loadStudents()]),
+    [loadPayments, loadStudentFees, loadStudents],
+  );
+
   useFocusEffect(
     useCallback(() => {
-      void Promise.all([loadPayments(), loadStudents()]);
-    }, [loadPayments, loadStudents]),
+      void refreshFinance();
+    }, [refreshFinance]),
   );
 
   const paiementsEleve = useMemo(
@@ -46,8 +60,23 @@ export default function StudentPaymentsScreen({ route, navigation }: Partial<Pro
   const sortedPayments = [...paiementsEleve].sort(
     (left, right) => parsePaymentDate(paymentPaidAt(right) || right.date) - parsePaymentDate(paymentPaidAt(left) || left.date),
   );
-  const paymentStats = getPaymentStats(paiementsEleve);
-  const expectedTuition = paymentStats.paidAmount + paymentStats.pendingAmount;
+  const studentFees = studentFeesData.filter(
+    (fee) => normalizeId(fee.studentId) === normalizeId(studentId),
+  );
+  const paymentRateKpi = getPaymentRateKpi(studentFees);
+  const feesReady =
+    studentFeesSnapshot.status === "success" || studentFeesSnapshot.status === "empty";
+  const expectedLabel =
+    feesReady && paymentRateKpi.expectedAmount > 0
+      ? `${paymentRateKpi.expectedAmount.toLocaleString()} FC`
+      : "—";
+  const collectedLabel =
+    feesReady && paymentRateKpi.expectedAmount > 0
+      ? `${paymentRateKpi.collectedAmount.toLocaleString()} FC`
+      : "—";
+  const remaining = Math.max(0, paymentRateKpi.expectedAmount - paymentRateKpi.collectedAmount);
+  const remainingLabel =
+    feesReady && paymentRateKpi.expectedAmount > 0 ? `${remaining.toLocaleString()} FC` : "—";
   const showQueryState = paymentsSnapshot.status !== "success" || sortedPayments.length === 0;
 
   return (
@@ -72,27 +101,25 @@ export default function StudentPaymentsScreen({ route, navigation }: Partial<Pro
       <PaymentMutationControls
         students={studentsData}
         initialStudentId={studentId ? String(studentId) : ""}
-        onChanged={() => loadPayments()}
+        onChanged={() => refreshFinance()}
       />
 
-      {paymentsSnapshot.status === "success" ? (
+      {feesReady ? (
         <>
           <View style={[styles.summaryCard, { backgroundColor: "#2563EB" }]}>
             <Text style={[styles.summaryLabel, { color: "#DBEAFE" }]}>Frais scolaires attendus</Text>
-            <Text style={[styles.summaryValue, { color: "#FFFFFF" }]}>
-              {expectedTuition.toLocaleString()} FC
-            </Text>
+            <Text style={[styles.summaryValue, { color: "#FFFFFF" }]}>{expectedLabel}</Text>
           </View>
 
           <View style={localStyles.balanceRow}>
             <View style={localStyles.balanceCard}>
               <Text style={localStyles.balanceLabel}>Payé</Text>
-              <Text style={localStyles.balanceValue}>{paymentStats.paidAmount.toLocaleString()} FC</Text>
+              <Text style={localStyles.balanceValue}>{collectedLabel}</Text>
             </View>
             <View style={[localStyles.balanceCard, localStyles.pendingCard]}>
               <Text style={localStyles.balanceLabel}>Reste à payer</Text>
               <Text style={[localStyles.balanceValue, localStyles.pendingValue]}>
-                {paymentStats.pendingAmount.toLocaleString()} FC
+                {remainingLabel}
               </Text>
             </View>
           </View>
@@ -113,7 +140,7 @@ export default function StudentPaymentsScreen({ route, navigation }: Partial<Pro
           offlineMessage={DATA_TRUTH_COPY.offlinePayments}
           emptyTestId={DATA_TRUTH_TEST_IDS.paymentsEmpty}
           errorTestId={DATA_TRUTH_TEST_IDS.paymentsError}
-          onRetry={() => void loadPayments()}
+          onRetry={() => void refreshFinance()}
         />
       ) : (
         <FlatList
@@ -124,7 +151,7 @@ export default function StudentPaymentsScreen({ route, navigation }: Partial<Pro
           renderItem={({ item }) => (
             <>
               <PaymentReceiptCard payment={item} studentName={student?.name} showItems />
-              <PaymentCancelControls payment={item} onChanged={() => loadPayments()} />
+              <PaymentCancelControls payment={item} onChanged={() => refreshFinance()} />
             </>
           )}
         />

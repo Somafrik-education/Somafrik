@@ -10,7 +10,6 @@ const {
   FINANCE_ERROR,
   createFinanceError,
   asTrimmed,
-  normalizeKey,
   money,
   isPaymentCancelled,
   isPaymentCounted,
@@ -29,6 +28,7 @@ const {
   normalizeWriteItems,
   assertItemAmount,
 } = require("./financePaymentItems");
+const { obligationMatchesPaymentFeeType } = require("./financeFeeTypeMatch");
 
 const REMINDER_COOLDOWN_DAYS = 3;
 
@@ -106,6 +106,14 @@ async function resolvePaymentEnrollment(tx, student, payload, school) {
     );
   }
   return enrollments[0];
+}
+
+function openObligationsMatchingFeeType(obligations, feeType) {
+  return obligations.filter(
+    (fee) =>
+      !["Annulé", "Payé", "Exonéré"].includes(fee.status) &&
+      obligationMatchesPaymentFeeType(fee, feeType),
+  );
 }
 
 function allocateAmount(obligations, amount) {
@@ -240,11 +248,7 @@ async function createPayment(store, rawPayload, principal, auditMeta) {
     let leftoverTotal = 0;
     let remainingBefore = 0;
     for (const item of resolvedItems) {
-      const open = obligations.filter(
-        (fee) =>
-          !["Annulé", "Payé", "Exonéré"].includes(fee.status) &&
-          normalizeKey(fee.feeType) === normalizeKey(item.feeType),
-      );
+      const open = openObligationsMatchingFeeType(obligations, item.feeType);
       remainingBefore += open.reduce((sum, fee) => sum + money(fee.balance), 0);
       const { updated, allocations: itemAllocations, leftover } = allocateAmount(open, item.amount);
       leftoverTotal += leftover;

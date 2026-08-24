@@ -162,6 +162,15 @@ function main() {
   assert.match(studentPresences, /presenceMetaLabel/);
   assert.doesNotMatch(students, /summaryValue\}>\{presenceStats\.rate\}%/);
   assert.doesNotMatch(students, /summaryValue\}>\{paymentStats\.rate\}%/);
+  assert.match(students, /formatPaymentRateKpi/);
+  assert.match(students, /loadStudentFees/);
+  const paymentsScreen = read(path.join("screens", "PaymentsScreen.tsx"));
+  assert.match(paymentsScreen, /getPaymentRateKpi/);
+  assert.match(paymentsScreen, /loadStudentFees/);
+  assert.doesNotMatch(paymentsScreen, /paymentStats\.rate/);
+  assert.doesNotMatch(paymentsScreen, /des paiements réglés/);
+  const outbox = read(path.join("components", "OutboxRuntime.tsx"));
+  assert.match(outbox, /loadStudentFees/);
   assert.doesNotMatch(studentDetail, /: studentNotes\.length/);
   assert.doesNotMatch(studentDetail, /: presentCount/);
 
