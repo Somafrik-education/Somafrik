@@ -11,8 +11,8 @@ Référence d’architecture : [`PEDAGOGICAL-MODEL-V2.md`](./PEDAGOGICAL-MODEL-V
 
 ## Pourquoi avant PR-1
 
-L’index `uq_classes_structural_offering` ne protège pas deux classes identiques avec `group_id IS NULL`.  
-Avant d’autoriser le groupe facultatif, il faut savoir :
+**PR-1A** durcit l’index (`NULLS NOT DISTINCT`) après inventaire live.  
+L’API exige toujours `groupId`. Avant tout groupe facultatif, il faut encore savoir :
 
 - ce qui est réellement en base (`Bio-chimie`, `Générale`, `Confession catholique`, …) ;
 - combien de classes ont déjà `group_id IS NULL` ;

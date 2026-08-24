@@ -133,6 +133,7 @@ function optionalStreamId(value) {
  * @returns {string}
  */
 function requireGroupId(value) {
+  // PR-1A : l'unicité NULL-safe n'autorise pas un groupId facultatif à l'API.
   return requireId(value, "groupId");
 }
 

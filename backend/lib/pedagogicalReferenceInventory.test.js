@@ -179,7 +179,7 @@ test("rapport : STOP si une valeur signalée, unicité NULL documentée", () => 
   assert.equal(report.autoMutation, false);
   assert.equal(report.uniqueness.classesWithNullGroup, 3);
   assert.equal(report.uniqueness.nullGroupStructuralDuplicateGroups, 1);
-  assert.match(report.uniqueness.note, /WHERE group_id IS NOT NULL/);
+  assert.match(report.uniqueness.note, /NULLS NOT DISTINCT/);
 });
 
 test("markdown contient la matrice et le mot STOP", () => {

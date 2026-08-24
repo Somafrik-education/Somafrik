@@ -543,8 +543,8 @@ function buildInventoryReport(parts) {
       classesWithNullGroup: summary.classesWithNullGroup,
       nullGroupStructuralDuplicateGroups: summary.nullGroupStructuralDuplicateGroups,
       note:
-        "L'index uq_classes_structural_offering ignore group_id NULL (WHERE group_id IS NOT NULL). " +
-        "Ces doublons existent déjà hors contrainte. PR-1 doit corriger l'unicité AVANT d'autoriser les créations sans groupe.",
+        "PR-1A : unicité NULL-safe (NULLS NOT DISTINCT) après préflight fail-closed. " +
+        "L'API exige toujours groupId. Groupe facultatif / taxonomie V2 hors scope.",
     },
     summary,
     matrix,

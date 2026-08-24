@@ -54,6 +54,17 @@ test("validateCreateClassInput accepte le contrat structurel", () => {
   });
 });
 
+test("validateCreateClassInput exige toujours groupId (PR-1A ne le rend pas facultatif)", () => {
+  assert.throws(
+    () => validateCreateClassInput({ academicYearId: "ay-1", levelId: "level-1" }, "SCH-001"),
+    (error) => error.statusCode === 400 && /groupId/.test(error.message),
+  );
+  assert.throws(
+    () => validateCreateClassInput({ academicYearId: "ay-1", levelId: "level-1", groupId: null }, "SCH-001"),
+    (error) => error.statusCode === 400 && /groupId/.test(error.message),
+  );
+});
+
 test("validateCreateClassInput permet une filière absente", () => {
   const input = validateCreateClassInput(
     { academicYearId: "ay-1", levelId: "level-1", groupId: "group-b" },

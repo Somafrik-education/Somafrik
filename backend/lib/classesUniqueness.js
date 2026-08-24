@@ -6,13 +6,16 @@
  * Le nom est une projection d'affichage (niveau + filière) et n'est PAS une clé
  * métier : plusieurs groupes distincts peuvent donc porter le même nom affiché.
  * L'unicité canonique est structurelle : établissement + année + niveau +
- * filière + groupe.
+ * filière + groupe. PR-1A : NULLS NOT DISTINCT (PG16) — group_id/stream_id NULL
+ * sont des valeurs d'unicité. L'API continue d'exiger groupId.
  */
 
 const CLASSES_NAME_UNIQUE_INDEX = "uq_classes_school_year_normalized_name";
 const CLASSES_STRUCTURAL_UNIQUE_INDEX = "uq_classes_structural_offering";
 const CLASSES_STATUS_CHECK = "classes_status_check";
 const CLASSES_CLASS_CODE_UNIQUE = "classes_class_code_key";
+const CLASSES_STRUCTURAL_DUPLICATE_ERROR = "CLASSES_STRUCTURAL_NULL_DUPLICATES";
+/** Conservé pour diagnostics d'anciens indexes COALESCE. Plus utilisé par CREATE. */
 const STRUCTURAL_NULL_STREAM_SENTINEL = "00000000-0000-0000-0000-000000000000";
 
 /**
@@ -53,17 +56,86 @@ const DROP_CLASSES_STRUCTURAL_UNIQUE_INDEX_SQL = `
 DROP INDEX IF EXISTS ${CLASSES_STRUCTURAL_UNIQUE_INDEX}
 `;
 
+/** Bloque INSERT/UPDATE/DELETE, laisse SELECT. */
+const LOCK_CLASSES_FOR_STRUCTURAL_INDEX_SQL = `
+LOCK TABLE classes IN SHARE ROW EXCLUSIVE MODE
+`;
+
 const CREATE_CLASSES_STRUCTURAL_UNIQUE_INDEX_SQL = `
 CREATE UNIQUE INDEX IF NOT EXISTS ${CLASSES_STRUCTURAL_UNIQUE_INDEX}
-  ON classes (
-    school_id,
-    academic_year_id,
-    level_id,
-    COALESCE(stream_id, '${STRUCTURAL_NULL_STREAM_SENTINEL}'::uuid),
-    COALESCE(group_id, '${STRUCTURAL_NULL_STREAM_SENTINEL}'::uuid)
-  )
-  WHERE level_id IS NOT NULL AND group_id IS NOT NULL
+  ON classes (school_id, academic_year_id, level_id, stream_id, group_id)
+  NULLS NOT DISTINCT
+  WHERE level_id IS NOT NULL
 `;
+
+/** GROUP BY traite déjà NULL comme égal — aligne le préflight sur NULLS NOT DISTINCT. */
+const COUNT_CLASSES_STRUCTURAL_DUPLICATE_GROUPS_SQL = `
+  SELECT COUNT(*)::int AS duplicate_groups
+  FROM (
+    SELECT school_id, academic_year_id, level_id, stream_id, group_id
+    FROM classes
+    WHERE level_id IS NOT NULL
+    GROUP BY school_id, academic_year_id, level_id, stream_id, group_id
+    HAVING COUNT(*) > 1
+  ) d
+`;
+
+const LIST_CLASSES_STRUCTURAL_DUPLICATE_GROUPS_SQL = `
+  SELECT
+    school_id::text AS school_id,
+    academic_year_id::text AS academic_year_id,
+    level_id::text AS level_id,
+    stream_id::text AS stream_id,
+    group_id::text AS group_id,
+    COUNT(*)::int AS duplicate_count,
+    array_agg(class_code ORDER BY class_code) AS class_codes
+  FROM classes
+  WHERE level_id IS NOT NULL
+  GROUP BY school_id, academic_year_id, level_id, stream_id, group_id
+  HAVING COUNT(*) > 1
+  LIMIT 20
+`;
+
+function formatClassesStructuralDuplicateDiagnostic(groups = [], duplicateGroups = 0) {
+  const samples = (Array.isArray(groups) ? groups : [])
+    .slice(0, 10)
+    .map((row) => {
+      const codes = Array.isArray(row.class_codes)
+        ? row.class_codes.join(",")
+        : String(row.class_codes ?? "");
+      return `${row.level_id}/${row.stream_id ?? "∅"}/${row.group_id ?? "∅"}×${row.duplicate_count}[${codes}]`;
+    })
+    .join("; ");
+  return (
+    `Classes : ${duplicateGroups} groupe(s) structurel(s) en doublon ` +
+    `(school + année + niveau + stream + groupe, NULL = NULL). ` +
+    `Aucune correction automatique. STOP avant remplacement de l'index. ` +
+    (samples ? `Exemples: ${samples}` : "")
+  );
+}
+
+async function assertClassesStructuralUniquenessPreflight(db) {
+  const before = await db.one(COUNT_CLASSES_STRUCTURAL_DUPLICATE_GROUPS_SQL);
+  const duplicateGroups = Number(before?.duplicate_groups ?? 0);
+  if (duplicateGroups <= 0) return;
+  const groups = await db.all(LIST_CLASSES_STRUCTURAL_DUPLICATE_GROUPS_SQL);
+  const error = new Error(formatClassesStructuralDuplicateDiagnostic(groups, duplicateGroups));
+  error.code = CLASSES_STRUCTURAL_DUPLICATE_ERROR;
+  throw error;
+}
+
+/**
+ * Remplacement atomique de l'index : LOCK + préflight + DROP + CREATE.
+ * Doit s'exécuter dans withTransaction() (une connexion, BEGIN/COMMIT).
+ * CREATE INDEX (pas CONCURRENTLY) pour rester transactionnel :
+ * un échec du CREATE rollback le DROP et restaure l'ancien index.
+ */
+async function replaceClassesStructuralUniqueIndex(tx) {
+  await tx.query(LOCK_CLASSES_FOR_STRUCTURAL_INDEX_SQL);
+  await assertClassesStructuralUniquenessPreflight(tx);
+  await tx.query(DROP_CLASSES_STRUCTURAL_UNIQUE_INDEX_SQL);
+  await tx.query(CREATE_CLASSES_STRUCTURAL_UNIQUE_INDEX_SQL);
+}
 
 const ENSURE_CLASSES_STATUS_CHECK_SQL = `
 DO $$ BEGIN
@@ -153,16 +225,23 @@ module.exports = {
   CLASSES_STRUCTURAL_UNIQUE_INDEX,
   CLASSES_STATUS_CHECK,
   CLASSES_CLASS_CODE_UNIQUE,
+  CLASSES_STRUCTURAL_DUPLICATE_ERROR,
   STRUCTURAL_NULL_STREAM_SENTINEL,
   COUNT_CLASSES_NAME_DUPLICATE_GROUPS_SQL,
   LIST_CLASSES_NAME_DUPLICATE_GROUPS_SQL,
+  COUNT_CLASSES_STRUCTURAL_DUPLICATE_GROUPS_SQL,
+  LIST_CLASSES_STRUCTURAL_DUPLICATE_GROUPS_SQL,
   CREATE_CLASSES_NAME_UNIQUE_INDEX_SQL,
   ADD_CLASSES_STRUCTURAL_COLUMNS_SQL,
   DROP_CLASSES_STRUCTURAL_UNIQUE_INDEX_SQL,
+  LOCK_CLASSES_FOR_STRUCTURAL_INDEX_SQL,
   CREATE_CLASSES_STRUCTURAL_UNIQUE_INDEX_SQL,
   ENSURE_CLASSES_STATUS_CHECK_SQL,
   NORMALIZE_CLASSES_STATUS_SQL,
   formatClassesNameDuplicateDiagnostic,
+  formatClassesStructuralDuplicateDiagnostic,
+  assertClassesStructuralUniquenessPreflight,
+  replaceClassesStructuralUniqueIndex,
   isClassNameUniquenessViolation,
   isClassStructuralUniquenessViolation,
   isClassCodeUniquenessViolation,

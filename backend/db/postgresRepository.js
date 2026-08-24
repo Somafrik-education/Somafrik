@@ -538,12 +538,10 @@ class PostgresRepository {
   async ensureClassesStructuralOffering() {
     const {
       ADD_CLASSES_STRUCTURAL_COLUMNS_SQL,
-      DROP_CLASSES_STRUCTURAL_UNIQUE_INDEX_SQL,
-      CREATE_CLASSES_STRUCTURAL_UNIQUE_INDEX_SQL,
+      replaceClassesStructuralUniqueIndex,
     } = require("../lib/classesUniqueness");
     await this.query(ADD_CLASSES_STRUCTURAL_COLUMNS_SQL);
-    await this.query(DROP_CLASSES_STRUCTURAL_UNIQUE_INDEX_SQL);
-    await this.query(CREATE_CLASSES_STRUCTURAL_UNIQUE_INDEX_SQL);
+    await this.withTransaction((tx) => replaceClassesStructuralUniqueIndex(tx));
   }
 
   /**
