@@ -75,6 +75,16 @@ function run() {
   const offline = classifyLoadFailure({ status: 0, message: "Connexion Internet indisponible." });
   assert.equal(offline.status, "offline");
 
+  const timeoutLoad = classifyLoadFailure(
+    Object.assign(new Error("Délai de requête dépassé. Vérifiez votre réseau."), { code: "TIMEOUT" }),
+  );
+  assert.equal(timeoutLoad.status, "error", "timeout GET n'est pas hors connexion");
+  assert.equal(classifyLoadFailure({ status: 400, message: "validation" }).status, "error");
+  assert.equal(classifyLoadFailure({ status: 403, message: "interdit" }).status, "error");
+  assert.equal(classifyLoadFailure({ status: 409, message: "conflit" }).status, "error");
+  assert.equal(classifyLoadFailure({ status: 500, message: "indisponible" }).status, "error");
+  assert.equal(classifyLoadFailure({ status: 408, message: "timeout" }).status, "error");
+
   const receipt = normalizePaymentRow({
     id: "pay-1",
     reference: "PAY-0004",

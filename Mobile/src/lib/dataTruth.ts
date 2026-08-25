@@ -2,6 +2,7 @@
  * LOT 1 — vérité des données Mobile.
  * PostgreSQL/API = autorité. Jamais [] pour masquer une erreur. Jamais catalog.ts en SoT métier.
  */
+import { isRecognizedTransportFailure } from "./connectivity";
 
 export type ResourceStatus = "idle" | "loading" | "success" | "empty" | "error" | "offline";
 
@@ -34,11 +35,11 @@ export function classifyLoadFailure(error: unknown): {
   const message =
     error instanceof Error && error.message.trim()
       ? error.message.trim()
-      : "Impossible de charger les données.";
+      : error && typeof error === "object" && "message" in error
+        ? String((error as { message?: unknown }).message ?? "").trim() || "Impossible de charger les données."
+        : "Impossible de charger les données.";
   const offline =
-    statusCode === 0 ||
-    statusCode === 408 ||
-    /indisponible|délai|timeout|offline|réseau|network|abort/i.test(message);
+    (statusCode == null || statusCode === 0) && isRecognizedTransportFailure(error);
   return {
     status: offline ? "offline" : "error",
     message,

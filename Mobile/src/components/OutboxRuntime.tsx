@@ -4,7 +4,7 @@ import { useAdminData } from "../context/AdminDataContext";
 import {
   CONNECTIVITY_POLL_MS,
   CONNECTIVITY_PROBE_TIMEOUT_MS,
-  isOfflineContext,
+  canReplayOutboxNow,
   probeConnectivity,
   setConnectivityProbe,
   subscribeConnectivity,
@@ -62,10 +62,7 @@ export default function OutboxRuntime() {
     let inFlight = false;
     const run = async () => {
       if (cancelled || inFlight) return;
-      if (isOfflineContext()) {
-        const online = await probeConnectivity();
-        if (!online || cancelled) return;
-      }
+      if (!(await canReplayOutboxNow()) || cancelled) return;
       inFlight = true;
       try {
         await bindOutboxToSession(fingerprint);

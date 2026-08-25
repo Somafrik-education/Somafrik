@@ -8,6 +8,7 @@ import Module from "node:module";
 import {
   classifyMutationFailure,
   createIdempotencyKey,
+  describeConnectivity,
   executeMutation,
   retryDelayMs,
   setMutationDelayForTests,
@@ -99,6 +100,9 @@ async function run() {
     classifyMutationFailure(apiError("clé réutilisée", 409, "IDEMPOTENCY_KEY_REUSED")),
     "conflict",
   );
+  assert.equal(describeConnectivity(apiError("internal", 500)), "backend_5xx");
+  assert.equal(describeConnectivity(apiError("Délai de requête dépassé. Vérifiez votre réseau.", undefined, "TIMEOUT")), "timeout");
+  assert.equal(describeConnectivity(apiError("validation", 400)), "ok");
 
   assert.equal(retryDelayMs(1, false), 1000);
   assert.equal(retryDelayMs(2, false), 3000);

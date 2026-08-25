@@ -96,23 +96,67 @@ async function fetchWithTimeout(
       signal: controller.signal,
     });
   } catch (error) {
+    const thrownName = error instanceof Error ? error.name : "";
+    const thrownCode =
+      error && typeof error === "object" && "code" in error
+        ? String((error as { code?: string }).code ?? "")
+        : "";
     if (error instanceof Error && error.name === "AbortError") {
-      const timeoutError = new ApiClientError("Délai de requête dépassé. Vérifiez votre réseau.");
-      noteConnectivityFailure(timeoutError);
+      const timeoutError = new ApiClientError(
+        "Délai de requête dépassé. Vérifiez votre réseau.",
+        undefined,
+        "TIMEOUT",
+      );
+      safeLogger.info("http_audit", {
+        endpoint: url.replace(/\?.*$/, ""),
+        method: String(init.method ?? "GET").toUpperCase(),
+        status: null,
+        errorCode: "TIMEOUT",
+        errorName: thrownName || "AbortError",
+        classification: "timeout",
+        outbox: null,
+        idempotencyKeyPresent: null,
+        retry: false,
+      });
       throw timeoutError;
     }
     const message = error instanceof Error ? error.message : String(error);
     if (/network request failed|failed to fetch|offline|internet/i.test(message)) {
       const offlineError = new ApiClientError(
         "Connexion Internet indisponible. Réessayez lorsque le réseau sera rétabli.",
+        0,
+        "NETWORK_UNAVAILABLE",
       );
       noteConnectivityFailure(offlineError);
+      safeLogger.info("http_audit", {
+        endpoint: url.replace(/\?.*$/, ""),
+        method: String(init.method ?? "GET").toUpperCase(),
+        status: 0,
+        errorCode: "NETWORK_UNAVAILABLE",
+        errorName: thrownName || thrownCode || "NetworkError",
+        classification: "device_offline",
+        outbox: null,
+        idempotencyKeyPresent: null,
+        retry: false,
+      });
       throw offlineError;
     }
     const unreachable = new ApiClientError(
       sanitizeUserFacingError(error, "Impossible de joindre le serveur Somafrik."),
+      undefined,
+      "BACKEND_UNREACHABLE",
     );
-    noteConnectivityFailure(unreachable);
+    safeLogger.info("http_audit", {
+      endpoint: url.replace(/\?.*$/, ""),
+      method: String(init.method ?? "GET").toUpperCase(),
+      status: null,
+      errorCode: "BACKEND_UNREACHABLE",
+      errorName: thrownName || "Error",
+      classification: "backend_unreachable",
+      outbox: null,
+      idempotencyKeyPresent: null,
+      retry: false,
+    });
     throw unreachable;
   } finally {
     clearTimeout(timer);
@@ -228,8 +272,6 @@ export async function httpRequest<T = Json>(
   );
   if (response.ok) {
     noteConnectivitySuccess();
-  } else if (response.status >= 500) {
-    noteConnectivityFailure({ status: response.status, message: "backend_5xx" });
   }
 
   if (response.status === 401 && !skipAuth && !isAuthPublicPath(path) && !_retried) {
@@ -267,6 +309,17 @@ export async function httpRequest<T = Json>(
     const message =
       payload && "message" in payload ? String(payload.message) : "La requête a échoué.";
     const code = payload.code ? String(payload.code) : undefined;
+    safeLogger.info("http_audit", {
+      endpoint: (path.split("?")[0] ?? path).trim(),
+      method,
+      status: response.status,
+      errorCode: code ?? null,
+      errorName: "ApiClientError",
+      classification: response.status >= 500 ? "backend_5xx" : "http_error",
+      outbox: null,
+      idempotencyKeyPresent: Boolean(idempotencyKey),
+      retry: false,
+    });
     throw new ApiClientError(
       sanitizeUserFacingError(message, "La requête a échoué."),
       response.status,

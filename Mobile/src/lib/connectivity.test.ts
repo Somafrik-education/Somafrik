@@ -10,6 +10,7 @@ import {
   probeConnectivity,
   resetConnectivityForTests,
   setConnectivityProbeForTests,
+  setConnectivityStateForTests,
   subscribeConnectivity,
 } from "./connectivity";
 
@@ -40,6 +41,51 @@ async function run() {
   assert.equal(getConnectivityState(), "offline");
   assert.equal(await probeConnectivity(), true);
   assert.equal(getConnectivityState(), "online");
+
+  resetConnectivityForTests();
+  noteConnectivityFailure(Object.assign(new Error("Délai de requête dépassé. Vérifiez votre réseau."), { code: "TIMEOUT" }));
+  assert.notEqual(getConnectivityState(), "offline", "timeout ne marque pas offline");
+  noteConnectivityFailure(Object.assign(new Error("backend_5xx"), { status: 500 }));
+  assert.notEqual(getConnectivityState(), "offline", "5xx ne marque pas offline");
+  setConnectivityProbeForTests(async () => {
+    throw Object.assign(new Error("health"), { status: 503 });
+  });
+  assert.equal(await probeConnectivity(), false);
+  assert.notEqual(getConnectivityState(), "offline", "sonde HTTP 5xx ne force pas offline");
+
+  function transportError(code: string, message: string, status?: number) {
+    return Object.assign(new Error(message), { code, status, name: "ApiClientError" });
+  }
+
+  resetConnectivityForTests();
+  setConnectivityStateForTests("offline");
+  setConnectivityProbeForTests(async () => {
+    throw transportError("NETWORK_UNAVAILABLE", "Connexion Internet indisponible.", 0);
+  });
+  assert.equal(await probeConnectivity(), false, "offline + NETWORK_UNAVAILABLE → false");
+  assert.equal(getConnectivityState(), "offline", "state reste offline");
+
+  resetConnectivityForTests();
+  setConnectivityStateForTests("offline");
+  setConnectivityProbeForTests(async () => {
+    throw transportError("TIMEOUT", "Délai de requête dépassé. Vérifiez votre réseau.");
+  });
+  assert.equal(await probeConnectivity(), false, "offline + TIMEOUT → false");
+  assert.equal(getConnectivityState(), "offline", "timeout ne sort pas de offline");
+
+  resetConnectivityForTests();
+  setConnectivityStateForTests("offline");
+  setConnectivityProbeForTests(async () => {
+    throw transportError("backend_5xx", "health down", 500);
+  });
+  assert.equal(await probeConnectivity(), false, "offline + /health 500 → false");
+  assert.equal(getConnectivityState(), "offline", "5xx ne sort pas de offline");
+
+  resetConnectivityForTests();
+  setConnectivityStateForTests("offline");
+  setConnectivityProbeForTests(async () => true);
+  assert.equal(await probeConnectivity(), true, "offline + /health 2xx → true");
+  assert.equal(getConnectivityState(), "online", "2xx rétablit online");
 
   resetConnectivityForTests();
   console.log("connectivity.test.ts OK");
