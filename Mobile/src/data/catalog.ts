@@ -16,6 +16,8 @@ export type Student = {
   parentEmail: string;
   archived?: boolean;
   status?: string;
+  /** Jeton de conflit PATCH (`expectedUpdatedAt`). Source PostgreSQL `updated_at`. */
+  updatedAt?: string;
 };
 
 export type Teacher = {

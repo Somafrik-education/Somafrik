@@ -154,7 +154,9 @@ function createMemoryDb() {
       if (text.startsWith("UPDATE STUDENTS")) {
         const student = students.find((row) => row.id === params[7] && row.school_id === params[8]);
         if (!student) return null;
-        if (String(student.updated_at) !== String(params[9])) return null;
+        const storedMs = Date.parse(student.updated_at instanceof Date ? student.updated_at.toISOString() : String(student.updated_at));
+        const expectedMs = Date.parse(params[9] instanceof Date ? params[9].toISOString() : String(params[9]));
+        if (!Number.isFinite(storedMs) || storedMs !== expectedMs) return null;
         student.first_name = params[0];
         student.last_name = params[1];
         student.gender = params[2];
@@ -162,7 +164,7 @@ function createMemoryDb() {
         student.birth_place = params[4];
         student.parent_phone = params[5];
         student.parent_email = params[6];
-        student.updated_at = new Date(Date.now() + 1).toISOString();
+        student.updated_at = new Date(Math.max(Date.now(), storedMs + 1)).toISOString();
         return { id: student.id };
       }
 
@@ -366,7 +368,10 @@ async function main() {
     expectedUpdatedAt: fetched.updatedAt,
   });
   assert.equal(updated.parentPhone, "+243800000001");
-  assert.notEqual(updated.updatedAt, fetched.updatedAt);
+  assert.ok(
+    new Date(updated.updatedAt).getTime() > new Date(fetched.updatedAt).getTime(),
+    "updated_at mémoire avance d'au moins 1 ms",
+  );
 
   await assert.rejects(
     () =>
@@ -509,6 +514,17 @@ async function main() {
   );
   assert.doesNotMatch(productionSrc, /ON CONFLICT \(user_code\) DO NOTHING/);
   assert.doesNotMatch(productionSrc, /hashSecret\(["']1234["']\)/);
+  assert.match(
+    productionSrc,
+    /date_trunc\('milliseconds', updated_at\)/,
+    "OCC PATCH : JSON ms vs PG µs ne doit pas 409",
+  );
+  assert.match(
+    productionSrc,
+    /date_trunc\('milliseconds', updated_at\) \+ INTERVAL '1 millisecond'/,
+    "OCC PATCH : le jeton JSON doit avancer d'au moins 1 ms",
+  );
+  assert.match(productionSrc, /occupancyTimestampsMatch/);
 
   console.log("classStudentsRepository.test.js: OK");
 }

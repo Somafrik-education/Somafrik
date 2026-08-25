@@ -982,6 +982,94 @@ async function main() {
     );
     assert.equal(linkedStudent.rowCount, 0, "aucun élève lié implicitement au compte préexistant");
 
+    const micro = await studentsRepo.enroll(activeClass.classCode, "CD-2026-0001", {
+      firstName: "Micro",
+      lastName: "Stamp",
+    });
+    await pool.query(
+      `UPDATE students SET updated_at = TIMESTAMPTZ '2026-08-25 16:21:38.644244+00' WHERE student_code = $1`,
+      [micro.student.studentCode],
+    );
+    const microFetched = await studentsRepo.getByStudentCode(micro.student.studentCode, "CD-2026-0001");
+    const jsonToken =
+      microFetched.updatedAt instanceof Date
+        ? microFetched.updatedAt.toISOString()
+        : new Date(microFetched.updatedAt).toISOString();
+    assert.equal(jsonToken, "2026-08-25T16:21:38.644Z");
+    const microUpdated = await studentsRepo.updateByStudentCode(micro.student.studentCode, "CD-2026-0001", {
+      firstName: "Micro",
+      lastName: "Stamp",
+      expectedUpdatedAt: jsonToken,
+    });
+    assert.equal(microUpdated.firstName, "Micro");
+    assert.ok(
+      new Date(microUpdated.updatedAt).getTime() > new Date(jsonToken).getTime(),
+      "updated_at est strictement supérieur à la milliseconde JSON du token",
+    );
+
+    const occRace = await studentsRepo.enroll(activeClass.classCode, "CD-2026-0001", {
+      firstName: "Occ",
+      lastName: "Race",
+    });
+    await pool.query(
+      `UPDATE students SET updated_at = TIMESTAMPTZ '2026-08-25 16:21:38.644244+00' WHERE student_code = $1`,
+      [occRace.student.studentCode],
+    );
+    const occFetched = await studentsRepo.getByStudentCode(occRace.student.studentCode, "CD-2026-0001");
+    const occToken =
+      occFetched.updatedAt instanceof Date
+        ? occFetched.updatedAt.toISOString()
+        : new Date(occFetched.updatedAt).toISOString();
+    assert.equal(occToken, "2026-08-25T16:21:38.644Z");
+
+    let arrived = 0;
+    let releaseBarrier;
+    const bothReady = new Promise((resolve) => {
+      releaseBarrier = resolve;
+    });
+    function createBarrierDb(sharedPool) {
+      const base = createDbAdapter(sharedPool);
+      return {
+        ...base,
+        async one(sql, params = []) {
+          if (/\bUPDATE\s+students\b/i.test(String(sql))) {
+            arrived += 1;
+            if (arrived >= 2) releaseBarrier();
+            await bothReady;
+          }
+          return base.one(sql, params);
+        },
+      };
+    }
+    const repoA = createClassStudentsRepository(createBarrierDb(pool));
+    const repoB = createClassStudentsRepository(createBarrierDb(pool));
+    const raced = await Promise.allSettled([
+      repoA.updateByStudentCode(occRace.student.studentCode, "CD-2026-0001", {
+        firstName: "OccAlpha",
+        lastName: "Race",
+        expectedUpdatedAt: occToken,
+      }),
+      repoB.updateByStudentCode(occRace.student.studentCode, "CD-2026-0001", {
+        parentPhone: "+243800009991",
+        expectedUpdatedAt: occToken,
+      }),
+    ]);
+    const accepted = raced.filter((row) => row.status === "fulfilled");
+    const rejected = raced.filter(
+      (row) => row.status === "rejected" && row.reason?.statusCode === 409,
+    );
+    assert.equal(accepted.length, 1, "OCC concurrent : un seul PATCH réussit");
+    assert.equal(rejected.length, 1, "OCC concurrent : l'autre PATCH reçoit 409");
+    const winner = accepted[0].value;
+    const finalRow = await studentsRepo.getByStudentCode(occRace.student.studentCode, "CD-2026-0001");
+    if (winner.firstName === "OccAlpha") {
+      assert.equal(finalRow.firstName, "OccAlpha");
+      assert.notEqual(finalRow.parentPhone, "+243800009991");
+    } else {
+      assert.equal(finalRow.parentPhone, "+243800009991");
+      assert.notEqual(finalRow.firstName, "OccAlpha");
+    }
+
     console.log("classStudentsRepository.pg.test.js: OK");
   } finally {
     await pool.end();
