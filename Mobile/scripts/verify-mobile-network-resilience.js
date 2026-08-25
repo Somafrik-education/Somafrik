@@ -194,6 +194,7 @@ function main() {
   const runtime = read(path.join(SRC, "components", "OutboxRuntime.tsx"));
   assert.match(runtime, /subscribeConnectivity/);
   assert.match(runtime, /probeConnectivity/);
+  assert.match(runtime, /canReplayOutboxNow/);
   assert.match(runtime, /CONNECTIVITY_POLL_MS/);
   assert.match(runtime, /applyConfirmedPresences/);
   console.log("OK: replay avant-plan sur connectivité réelle");
@@ -217,6 +218,8 @@ function main() {
   const probeFn = connectivity.slice(connectivity.indexOf("export async function probeConnectivity"));
   const probeCatch = probeFn.slice(probeFn.indexOf("} catch"));
   assert.doesNotMatch(probeCatch, /setConnectivityState\("offline"\)/);
+  assert.match(probeCatch, /return false;/);
+  assert.doesNotMatch(probeCatch, /getConnectivityState\(\)\s*===\s*["']offline["']/);
   assert.match(httpClient, /"TIMEOUT"/);
   assert.match(httpClient, /NETWORK_UNAVAILABLE/);
   assert.match(httpClient, /BACKEND_UNREACHABLE/);

@@ -144,8 +144,21 @@ export async function probeConnectivity(): Promise<boolean> {
     return false;
   } catch (error) {
     noteConnectivityFailure(error);
-    return getConnectivityState() === "offline";
+    // Contrat historique : true = sonde OK / online, false = sonde KO.
+    // OutboxRuntime interprète true comme « replay autorisé ». Un échec
+    // (transport, timeout, 5xx) ne doit jamais renvoyer true.
+    return false;
   }
+}
+
+/**
+ * Garde-fou OutboxRuntime : si l'appareil est déjà online, replay immédiat.
+ * S'il est offline, la sonde doit réussir avant processOutbox.
+ * false = ne pas dispatcher.
+ */
+export async function canReplayOutboxNow(): Promise<boolean> {
+  if (!isOfflineContext()) return true;
+  return probeConnectivity();
 }
 
 export function resetConnectivityForTests() {

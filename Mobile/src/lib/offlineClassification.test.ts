@@ -4,6 +4,7 @@
  */
 import assert from "node:assert/strict";
 import {
+  canReplayOutboxNow,
   getConnectivityState,
   isOfflineContext,
   isRecognizedTransportFailure,
@@ -22,6 +23,7 @@ import {
   setMutationDelayForTests,
 } from "./networkResilience";
 import {
+  enqueueOutbox,
   listOutbox,
   processOutbox,
   setOutboxStorageForTests,
@@ -371,6 +373,74 @@ async function run() {
     },
   });
   assert.deepEqual(seen, [reused, reused, reused]);
+
+  // P1 résiduel : probe catch ne doit jamais renvoyer true (OutboxRuntime = replay).
+  async function replayLikeOutboxRuntime(
+    fingerprint: { userId: string; schoolScope: string },
+    dispatch: () => Promise<unknown>,
+  ) {
+    if (!(await canReplayOutboxNow())) return { replayed: false };
+    await processOutbox(fingerprint, dispatch);
+    return { replayed: true };
+  }
+
+  memoryOutbox();
+  await enqueueOutbox({
+    idempotencyKey: "pre-probe-gate",
+    domain: "presences",
+    method: "POST",
+    path: "/presences",
+    payload: { classId: "cls-1", items: [{ studentId: "s1" }] },
+    userId: session.userId,
+    schoolScope: session.schoolScope,
+  });
+
+  resetConnectivityForTests();
+  setConnectivityStateForTests("offline");
+  setConnectivityProbeForTests(async () => {
+    throw httpError("Connexion Internet indisponible.", 0, "NETWORK_UNAVAILABLE");
+  });
+  let dispatched = 0;
+  const noReplayNetwork = await replayLikeOutboxRuntime(session, async () => {
+    dispatched += 1;
+    return [{ id: "PRE-1" }];
+  });
+  assert.equal(await probeConnectivity(), false);
+  assert.equal(getConnectivityState(), "offline");
+  assert.equal(noReplayNetwork.replayed, false);
+  assert.equal(dispatched, 0, "NETWORK_UNAVAILABLE : dispatcher non appelé");
+
+  setConnectivityProbeForTests(async () => {
+    throw httpError("Délai de requête dépassé. Vérifiez votre réseau.", undefined, "TIMEOUT");
+  });
+  const noReplayTimeout = await replayLikeOutboxRuntime(session, async () => {
+    dispatched += 1;
+    return [{ id: "PRE-1" }];
+  });
+  assert.equal(await probeConnectivity(), false, "offline + TIMEOUT → false");
+  assert.equal(noReplayTimeout.replayed, false);
+  assert.equal(dispatched, 0, "TIMEOUT : aucun replay outbox");
+
+  setConnectivityProbeForTests(async () => {
+    throw httpError("health down", 500);
+  });
+  const noReplay500 = await replayLikeOutboxRuntime(session, async () => {
+    dispatched += 1;
+    return [{ id: "PRE-1" }];
+  });
+  assert.equal(await probeConnectivity(), false, "offline + /health 500 → false");
+  assert.equal(noReplay500.replayed, false);
+  assert.equal(dispatched, 0, "500 : aucun replay outbox");
+
+  setConnectivityProbeForTests(async () => true);
+  const replayOk = await replayLikeOutboxRuntime(session, async () => {
+    dispatched += 1;
+    return [{ id: "PRE-1" }];
+  });
+  assert.equal(replayOk.replayed, true);
+  assert.equal(getConnectivityState(), "online");
+  assert.equal(dispatched, 1, "2xx : replay autorisé, dispatcher appelé une fois");
+  assert.equal((await listOutbox())[0]?.status, "sent");
 
   setMutationDelayForTests(null);
   resetConnectivityForTests();
