@@ -137,6 +137,40 @@ async function main() {
   assert.equal(cash.status, "Non imputé");
   assert.equal(Number(cash.unallocatedAmount), 150);
 
+  const partialAlloc = createStore();
+  await seedMensualite(partialAlloc, 100);
+  const partialPay = await partialAlloc.createSchoolPayment(
+    {
+      studentId: MAEVA,
+      classId: CLASS_ID,
+      items: [{ feeType: "Scolarité", amount: 150 }],
+      method: "Espèces",
+      date: "2026-08-24",
+    },
+    admin,
+  );
+  assert.equal(Number(partialPay.amount), 150);
+  assert.equal(Number(partialPay.allocatedAmount), 100);
+  assert.equal(Number(partialPay.unallocatedAmount), 50);
+  assert.equal(partialPay.status, "Partiel");
+  assert.notEqual(partialPay.status, "Payé");
+
+  const covered = createStore();
+  await seedMensualite(covered, 150);
+  const coveredPay = await covered.createSchoolPayment(
+    {
+      studentId: MAEVA,
+      classId: CLASS_ID,
+      items: [{ feeType: "Scolarité", amount: 150 }],
+      method: "Espèces",
+      date: "2026-08-24",
+    },
+    admin,
+  );
+  assert.equal(Number(coveredPay.allocatedAmount), 150);
+  assert.equal(Number(coveredPay.unallocatedAmount), 0);
+  assert.equal(coveredPay.status, "Payé");
+
   const cancelled = createStore();
   await seedMensualite(cancelled, 1000);
   const first = (await cancelled.listFinanceStudentFees(admin)).find((row) => row.studentId === MAEVA);

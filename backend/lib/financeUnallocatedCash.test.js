@@ -6,6 +6,7 @@ const { createFinanceMemoryStore } = require("../db/financeMemoryStore");
 const { FINANCE_ERROR, studentMatchesClassScope } = require("./financeManagement");
 const {
   UNALLOCATED_STATUS,
+  PARTIAL_STATUS,
   resolvePaymentStatus,
   projectPaymentCash,
   projectPaymentsWithAllocations,
@@ -102,9 +103,19 @@ describe("financeUnallocatedCash", () => {
   it("leftover === amount is Non imputé, never Payé", () => {
     assert.equal(resolvePaymentStatus(150, 0, "Espèces", 150), UNALLOCATED_STATUS);
     assert.equal(resolvePaymentStatus(150, 0, "Espèces"), UNALLOCATED_STATUS);
-    assert.equal(resolvePaymentStatus(150, 1000, "Espèces", 0), "Partiel");
+    assert.equal(resolvePaymentStatus(150, 1000, "Espèces", 0), PARTIAL_STATUS);
     assert.equal(resolvePaymentStatus(150, 150, "Espèces", 0), "Payé");
-    assert.equal(resolvePaymentStatus(150, 100, "Espèces", 50), "Payé");
+  });
+
+  it("0 < allocated < amount is Partiel, never Payé", () => {
+    assert.equal(resolvePaymentStatus(150, 100, "Espèces", 50), PARTIAL_STATUS);
+    assert.notEqual(resolvePaymentStatus(150, 100, "Espèces", 50), "Payé");
+    assert.equal(resolvePaymentStatus(150, 1000, "Espèces", 50), PARTIAL_STATUS);
+  });
+
+  it("leftover === 0 follows remaining debt", () => {
+    assert.equal(resolvePaymentStatus(150, 150, "Espèces", 0), "Payé");
+    assert.equal(resolvePaymentStatus(150, 1000, "Espèces", 0), PARTIAL_STATUS);
   });
 
   it("GET presentation overrides stored Payé when nothing is allocated", () => {
@@ -115,6 +126,17 @@ describe("financeUnallocatedCash", () => {
     assert.equal(projected.status, UNALLOCATED_STATUS);
     assert.equal(projected.allocatedAmount, 0);
     assert.equal(projected.unallocatedAmount, 150);
+  });
+
+  it("projects Partiel when a receipt is only partially allocated", () => {
+    const projected = projectPaymentCash(
+      { dbId: "pay-partial", amount: 150, status: "Payé" },
+      [{ paymentId: "pay-partial", amount: 100, reversedAt: null }],
+    );
+    assert.equal(projected.status, PARTIAL_STATUS);
+    assert.notEqual(projected.status, "Payé");
+    assert.equal(projected.allocatedAmount, 100);
+    assert.equal(projected.unallocatedAmount, 50);
   });
 
   it("keeps Payé when allocations cover the receipt", () => {

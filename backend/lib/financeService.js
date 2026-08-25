@@ -108,6 +108,60 @@ async function resolvePaymentEnrollment(tx, student, payload, school) {
   return enrollments[0];
 }
 
+function identityKeys(...values) {
+  return [...new Set(values.map((value) => asTrimmed(value)).filter(Boolean))];
+}
+
+function catalogKeysForItem(item) {
+  return new Set(identityKeys(item.feeTypeId, item.catalogItemId, item.schoolFeeItemId));
+}
+
+function findObligationInList(obligations, obligationId) {
+  const key = asTrimmed(obligationId);
+  return (
+    obligations.find((fee) => identityKeys(fee.dbId, fee.id).includes(key)) || null
+  );
+}
+
+function obligationBelongsToSchool(obligation, school) {
+  if (obligation.schoolId && String(obligation.schoolId) !== String(school.id)) return false;
+  const code = asTrimmed(obligation.schoolCode).toUpperCase();
+  const expected = asTrimmed(school.code).toUpperCase();
+  if (code && expected && code !== expected) return false;
+  return true;
+}
+
+function obligationBelongsToStudent(obligation, student) {
+  const studentKeys = new Set(identityKeys(student.dbId, student.id, student.publicId, student.studentCode));
+  const obligationKeys = identityKeys(obligation.studentDbId, obligation.studentId);
+  if (!obligationKeys.length || !studentKeys.size) return false;
+  return obligationKeys.some((key) => studentKeys.has(key));
+}
+
+function obligationMatchesResolvedCatalog(obligation, item) {
+  const keys = catalogKeysForItem(item);
+  if (!keys.size) return true;
+  const oblKey = asTrimmed(obligation.schoolFeeItemId);
+  if (!oblKey) return obligationMatchesPaymentFeeType(obligation, item.feeType);
+  return keys.has(oblKey);
+}
+
+function throwObligationConflict(message, code) {
+  throw createFinanceError(409, message, code);
+}
+
+async function lookupObligation(tx, obligationId) {
+  if (typeof tx.getObligationByPublicId === "function") {
+    const byPublic = await tx.getObligationByPublicId(obligationId);
+    if (byPublic) return byPublic;
+  }
+  if (typeof tx.getObligation === "function") {
+    const byId = await tx.getObligation(obligationId);
+    if (byId) return byId;
+  }
+  return null;
+}
+
 function openObligationsMatchingFeeType(obligations, feeType) {
   return obligations.filter(
     (fee) =>
@@ -116,23 +170,50 @@ function openObligationsMatchingFeeType(obligations, feeType) {
   );
 }
 
-function openObligationsForItem(obligations, item) {
+async function openObligationsForItem(tx, obligations, item, student, school) {
   const obligationId = asTrimmed(item.obligationId);
-  if (obligationId) {
-    const target = obligations.find(
-      (fee) => String(fee.dbId) === obligationId || String(fee.id) === obligationId,
-    );
-    if (!target) {
-      throw createFinanceError(404, "Frais introuvable pour cet élève.", FINANCE_ERROR.OBLIGATION_NOT_FOUND);
-    }
-    if (["Annulé", "Payé", "Exonéré"].includes(target.status)) return [];
-    return [target];
+  if (!obligationId) {
+    const matched = openObligationsMatchingFeeType(obligations, item.feeType);
+    const keys = catalogKeysForItem(item);
+    if (!keys.size) return matched;
+    const byCatalog = matched.filter((fee) => keys.has(asTrimmed(fee.schoolFeeItemId)));
+    return byCatalog.length ? byCatalog : matched;
   }
-  const matched = openObligationsMatchingFeeType(obligations, item.feeType);
-  const catalogId = asTrimmed(item.feeTypeId);
-  if (!catalogId) return matched;
-  const byCatalog = matched.filter((fee) => String(fee.schoolFeeItemId || "") === catalogId);
-  return byCatalog.length ? byCatalog : matched;
+
+  let target = findObligationInList(obligations, obligationId);
+  if (!target) {
+    target = await lookupObligation(tx, obligationId);
+  }
+  if (!target) {
+    throw createFinanceError(404, "Frais introuvable pour cet élève.", FINANCE_ERROR.OBLIGATION_NOT_FOUND);
+  }
+  if (!obligationBelongsToSchool(target, school)) {
+    throwObligationConflict(
+      "Cette obligation n'appartient pas à l'établissement courant.",
+      FINANCE_ERROR.OBLIGATION_TENANT_MISMATCH,
+    );
+  }
+  if (!obligationBelongsToStudent(target, student)) {
+    throwObligationConflict(
+      "Cette obligation n'appartient pas à l'élève courant.",
+      FINANCE_ERROR.OBLIGATION_STUDENT_MISMATCH,
+    );
+  }
+  if (asTrimmed(item.feeTypeId) || asTrimmed(item.catalogItemId)) {
+    if (!obligationMatchesResolvedCatalog(target, item)) {
+      throwObligationConflict(
+        "Cette obligation ne correspond pas au type de frais indiqué.",
+        FINANCE_ERROR.OBLIGATION_FEE_TYPE_MISMATCH,
+      );
+    }
+  } else if (!obligationMatchesPaymentFeeType(target, item.feeType)) {
+    throwObligationConflict(
+      "Cette obligation ne correspond pas au type de frais indiqué.",
+      FINANCE_ERROR.OBLIGATION_FEE_TYPE_MISMATCH,
+    );
+  }
+  if (["Annulé", "Payé", "Exonéré"].includes(target.status)) return [];
+  return [target];
 }
 
 function allocateAmount(obligations, amount) {
@@ -344,17 +425,20 @@ async function createPayment(store, rawPayload, principal, auditMeta) {
       let feeType = asTrimmed(item.feeType || item.feeLabel || item.label);
       let feeLabel = asTrimmed(item.feeLabel || item.feeType || item.label);
       let catalogId = null;
+      let catalogItemId = null;
       if (feeTypeId) {
         const catalog = await resolveCatalogFeeItem(tx, school.id, feeTypeId);
         feeType = catalog.feeType || catalog.label;
         feeLabel = catalog.label || catalog.feeType;
         catalogId = catalog.dbId || null;
+        catalogItemId = catalog.id || null;
       }
       if (!feeType) {
         throw createFinanceError(400, "Chaque libellé doit indiquer un type de frais.", FINANCE_ERROR.PAYMENT_FEE_TYPE_REQUIRED);
       }
       resolvedItems.push({
         feeTypeId: catalogId,
+        catalogItemId,
         feeType,
         feeLabel: feeLabel || feeType,
         amount: money(item.amount),
@@ -372,7 +456,7 @@ async function createPayment(store, rawPayload, principal, auditMeta) {
     let leftoverTotal = 0;
     let remainingBefore = 0;
     for (const item of resolvedItems) {
-      const open = openObligationsForItem(obligations, item);
+      const open = await openObligationsForItem(tx, obligations, item, student, school);
       remainingBefore += open.reduce((sum, fee) => sum + money(fee.balance), 0);
       const { updated, allocations: itemAllocations, leftover } = allocateAmount(open, item.amount);
       leftoverTotal += leftover;

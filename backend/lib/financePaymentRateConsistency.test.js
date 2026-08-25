@@ -173,6 +173,9 @@ function assertSourceGuards() {
   assert.doesNotMatch(obligationPaid, /isPaymentCounted/);
   const service = fs.readFileSync(path.join(ROOT, "backend/lib/financeService.js"), "utf8");
   assert.match(service, /obligationMatchesPaymentFeeType/);
+  assert.match(service, /OBLIGATION_FEE_TYPE_MISMATCH/);
+  assert.match(service, /OBLIGATION_STUDENT_MISMATCH/);
+  assert.match(service, /OBLIGATION_TENANT_MISMATCH/);
   assert.match(service, /reconcileHistoricalPaymentAllocations/);
   assert.match(service, /reconcile_payment_allocation/);
   const reconFn = service.slice(service.indexOf("async function reconcileUnallocatedPaymentsInTx"));

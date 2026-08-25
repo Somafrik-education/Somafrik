@@ -6,11 +6,14 @@
  * Imputé    = money affecté via payment_allocations
  * Non imputé = encaissé − imputé
  * leftover === amount → statut « Non imputé », jamais « Payé ».
+ * 0 < imputé < encaissé → « Partiel », jamais « Payé ».
+ * leftover === 0 → « Payé » ou « Partiel » selon la dette couverte.
  */
 
 const { money, normalizeKey, isPaymentCancelled, isPaymentCounted } = require("./financeManagement");
 
 const UNALLOCATED_STATUS = "Non imputé";
+const PARTIAL_STATUS = "Partiel";
 
 function allocatedAmountFrom(allocations = []) {
   return money(
@@ -38,19 +41,21 @@ function resolvePaymentStatus(amount, remainingBefore, method, leftover = 0) {
   if (normalizeKey(method) === "mobile money") return "En attente de confirmation";
   const total = money(amount);
   const rest = money(leftover);
-  if (total > 0 && rest === total) return UNALLOCATED_STATUS;
+  const allocated = money(total - rest);
+  if (total > 0 && allocated === 0) return UNALLOCATED_STATUS;
+  if (allocated > 0 && rest > 0) return PARTIAL_STATUS;
   if (money(remainingBefore) <= 0) return UNALLOCATED_STATUS;
   if (total >= money(remainingBefore)) return "Payé";
-  return "Partiel";
+  return PARTIAL_STATUS;
 }
 
 function presentPaymentStatus(payment, allocated) {
   if (isPaymentCancelled(payment)) return "Annulé";
   if (isPendingCashStatus(payment?.status)) return payment.status;
   const leftover = unallocatedAmount(payment?.amount, allocated);
-  if (money(payment?.amount) > 0 && leftover === money(payment?.amount)) {
-    return UNALLOCATED_STATUS;
-  }
+  const total = money(payment?.amount);
+  if (total > 0 && leftover === total) return UNALLOCATED_STATUS;
+  if (total > 0 && leftover > 0) return PARTIAL_STATUS;
   return payment?.status;
 }
 
@@ -113,6 +118,7 @@ function cashBucketsFromPayments(payments = []) {
 
 module.exports = {
   UNALLOCATED_STATUS,
+  PARTIAL_STATUS,
   allocatedAmountFrom,
   unallocatedAmount,
   isUnallocatedStatus,

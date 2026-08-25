@@ -331,8 +331,12 @@ export function resolvePaymentStatus(
   if (method === "Mobile money") {
     return "En attente de confirmation";
   }
-  if (amount > 0 && leftover === amount) {
+  const allocated = Math.max(0, amount - leftover);
+  if (amount > 0 && allocated === 0) {
     return "Non imputé";
+  }
+  if (allocated > 0 && leftover > 0) {
+    return "Partiel";
   }
   if (remainingBeforePayment <= 0) {
     return "Non imputé";
