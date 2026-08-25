@@ -22,6 +22,16 @@ const GENERIC_EMAILS = new Set([
 ]);
 
 const GENERIC_PHONES = new Set(["9090909", "0000000", "1111111", "1234567", "0123456789"]);
+const INACTIVE_STUDENT_STATUSES = new Set([
+  "inactive",
+  "inactif",
+  "archived",
+  "archive",
+  "archivé",
+  "deleted",
+  "supprime",
+  "supprimé",
+]);
 
 function normalize(value) {
   return String(value ?? "")
@@ -29,6 +39,61 @@ function normalize(value) {
     .toLowerCase()
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "");
+}
+
+function normalizeSchoolLookup(value) {
+  return String(value ?? "").trim().toUpperCase();
+}
+
+function schoolLookupKeys(school = {}) {
+  return [
+    school.id,
+    school.code,
+    school.schoolCode,
+    school.school_code,
+    school.publicId,
+    school.loginCode,
+    school.login_code,
+    school.legacySchoolCode,
+    school.legacy_school_code,
+  ]
+    .map(normalizeSchoolLookup)
+    .filter(Boolean);
+}
+
+/**
+ * Agrège les effectifs actifs sans exposer les fiches élèves au client plateforme.
+ * Complexité O(établissements + élèves) : un seul index d'alias puis un seul passage
+ * sur la projection PostgreSQL canonique des élèves.
+ */
+function withActiveStudentCounts(schools = [], students = []) {
+  const rows = Array.isArray(schools) ? schools : [];
+  const counts = new Array(rows.length).fill(0);
+  const schoolIndexByLookup = new Map();
+
+  rows.forEach((school, index) => {
+    for (const key of schoolLookupKeys(school)) {
+      schoolIndexByLookup.set(key, index);
+    }
+  });
+
+  for (const student of Array.isArray(students) ? students : []) {
+    if (student?.archived === true || INACTIVE_STUDENT_STATUSES.has(normalize(student?.status))) continue;
+    const studentSchoolKeys = [
+      student?.schoolId,
+      student?.school_id,
+      student?.schoolCode,
+      student?.school_code,
+    ]
+      .map(normalizeSchoolLookup)
+      .filter(Boolean);
+    const index = studentSchoolKeys
+      .map((key) => schoolIndexByLookup.get(key))
+      .find((value) => value !== undefined);
+    if (index !== undefined) counts[index] += 1;
+  }
+
+  return rows.map((school, index) => ({ ...school, studentCount: counts[index] }));
 }
 
 /**
@@ -197,6 +262,7 @@ module.exports = {
   generateSchoolCode,
   isSchoolDeleted,
   filterActiveSchools,
+  withActiveStudentCounts,
   validateSchoolPayload,
   isGenericSchoolEmail,
   isGenericSchoolPhone,

@@ -188,10 +188,17 @@ export function findPotentialDuplicates(school: School, schools: School[]): Scho
 
 export function countSchoolStudents(state: BackOfficeState, schoolCode: string): number {
   const code = normalize(schoolCode);
+  const school = (state.schools as Array<School & { studentCount?: number }>).find(
+    (row) => normalize(row.code) === code || normalize(row.publicId) === code,
+  );
+  if (school && Number.isFinite(Number(school.studentCount))) {
+    return Math.max(0, Math.trunc(Number(school.studentCount)));
+  }
+
   return (state.students as { schoolCode?: string; status?: string }[]).filter((row) => {
     if (normalize(String(row.schoolCode ?? "")) !== code) return false;
     const status = normalize(row.status);
-    return !["inactif", "archive", "archivé"].includes(status);
+    return !["inactive", "inactif", "archived", "archive", "archivé", "deleted", "supprime", "supprimé"].includes(status);
   }).length;
 }
 
