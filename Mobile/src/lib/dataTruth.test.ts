@@ -75,6 +75,16 @@ function run() {
   const offline = classifyLoadFailure({ status: 0, message: "Connexion Internet indisponible." });
   assert.equal(offline.status, "offline");
 
+  const timeoutLoad = classifyLoadFailure(
+    Object.assign(new Error("Délai de requête dépassé. Vérifiez votre réseau."), { code: "TIMEOUT" }),
+  );
+  assert.equal(timeoutLoad.status, "error", "timeout GET n'est pas hors connexion");
+  assert.equal(classifyLoadFailure({ status: 400, message: "validation" }).status, "error");
+  assert.equal(classifyLoadFailure({ status: 403, message: "interdit" }).status, "error");
+  assert.equal(classifyLoadFailure({ status: 409, message: "conflit" }).status, "error");
+  assert.equal(classifyLoadFailure({ status: 500, message: "indisponible" }).status, "error");
+  assert.equal(classifyLoadFailure({ status: 408, message: "timeout" }).status, "error");
+
   const receipt = normalizePaymentRow({
     id: "pay-1",
     reference: "PAY-0004",
@@ -98,17 +108,6 @@ function run() {
   assert.equal(isCancelledStatus("Annulé"), true);
   assert.equal(isCancelledStatus("cancelled"), true);
   assert.equal(isCancelledStatus("En attente"), false);
-  assert.equal(paymentStatusLabel("Non imputé"), "Non imputé");
-  assert.equal(isPaidStatus("Non imputé"), false);
-  const leftoverReceipt = normalizePaymentRow({
-    id: "CD-2026-0001-2026-PAY-0007",
-    amount: 150,
-    status: "Non imputé",
-    allocatedAmount: 0,
-    unallocatedAmount: 150,
-  });
-  assert.equal(leftoverReceipt.unallocatedAmount, 150);
-  assert.equal(paymentStatusLabel(leftoverReceipt.status), "Non imputé");
 
   const paymentsError = snapshotFromFailure({ status: 500, message: "Erreur paiements" }, []);
   assert.equal(paymentsError.status, "error");

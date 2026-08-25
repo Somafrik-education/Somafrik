@@ -139,6 +139,10 @@ function run() {
   assert.equal(rollCallSourceLabel("queued"), "En attente de synchronisation");
   assert.equal(rollCallSourceLabel("failed"), "Erreur de synchronisation");
   assert.equal(ROLL_CALL_COPY.syncedAlertTitle, "Appel synchronisé");
+  assert.doesNotMatch(ROLL_CALL_COPY.queuedAlertBody, /retour du réseau/);
+  assert.match(ROLL_CALL_COPY.queuedAlertBodyOffline, /retour du réseau/);
+  assert.doesNotMatch(ROLL_CALL_COPY.queuedAlertBody, /retour du réseau/);
+  assert.match(ROLL_CALL_COPY.queuedAlertBodyOffline, /retour du réseau/);
   assert.equal(ROLL_CALL_COPY.outboxUnavailable, "Synchronisation indisponible");
   assert.notEqual(rollCallSourceLabel("postgres"), ROLL_CALL_COPY.outboxUnavailable);
 

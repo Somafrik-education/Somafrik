@@ -2,6 +2,7 @@
  * LOT 1 — vérité des données Mobile.
  * PostgreSQL/API = autorité. Jamais [] pour masquer une erreur. Jamais catalog.ts en SoT métier.
  */
+import { isRecognizedTransportFailure } from "./connectivity";
 
 export type ResourceStatus = "idle" | "loading" | "success" | "empty" | "error" | "offline";
 
@@ -34,11 +35,11 @@ export function classifyLoadFailure(error: unknown): {
   const message =
     error instanceof Error && error.message.trim()
       ? error.message.trim()
-      : "Impossible de charger les données.";
+      : error && typeof error === "object" && "message" in error
+        ? String((error as { message?: unknown }).message ?? "").trim() || "Impossible de charger les données."
+        : "Impossible de charger les données.";
   const offline =
-    statusCode === 0 ||
-    statusCode === 408 ||
-    /indisponible|délai|timeout|offline|réseau|network|abort/i.test(message);
+    (statusCode == null || statusCode === 0) && isRecognizedTransportFailure(error);
   return {
     status: offline ? "offline" : "error",
     message,
@@ -231,11 +232,6 @@ export type CanonicalPayment = {
   itemCount?: number;
   itemsDetail?: string;
   feeType?: string;
-  allocatedAmount?: number;
-  unallocatedAmount?: number;
-  overpaymentAmount?: number;
-  obligationId?: string;
-  schoolFeeItemId?: string;
 };
 
 export function paymentReference(payment: CanonicalPayment): string {
@@ -281,17 +277,7 @@ export function paymentItemsDetail(payment: CanonicalPayment): string {
   return `${count} libellés`;
 }
 
-export function isUnallocatedStatus(status?: string): boolean {
-  const value = String(status ?? "")
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .trim()
-    .toLowerCase();
-  return value.includes("non imput") || value.includes("a imputer");
-}
-
 export function isPaidStatus(status?: string): boolean {
-  if (isUnallocatedStatus(status)) return false;
   const value = String(status ?? "").trim().toUpperCase();
   return value === "PAYE" || value === "PAID" || value === "PAYÉ";
 }
@@ -301,12 +287,10 @@ export function isCancelledStatus(status?: string): boolean {
 }
 
 export function paymentStatusLabel(status?: string): string {
-  if (isUnallocatedStatus(status)) return "Non imputé";
   if (isPaidStatus(status)) return "Payé";
   const value = String(status ?? "").trim();
   if (/attente|pending/i.test(value)) return "En attente";
   if (isCancelledStatus(value)) return "Annulé";
-  if (/partiel/i.test(value)) return "Partiel";
   return value || "—";
 }
 
@@ -350,14 +334,6 @@ export function normalizePaymentRow(raw: unknown): CanonicalPayment {
     itemCount: Number(row.itemCount ?? items.length) || items.length,
     itemsDetail: row.itemsDetail ? String(row.itemsDetail) : undefined,
     feeType: row.feeType ? String(row.feeType) : undefined,
-    allocatedAmount: Number(row.allocatedAmount ?? 0),
-    unallocatedAmount: Number(
-      row.unallocatedAmount ??
-        Math.max(0, Number(row.amount ?? row.totalAmount ?? 0) - Number(row.allocatedAmount ?? 0)),
-    ),
-    overpaymentAmount: Number(row.overpaymentAmount ?? row.unallocatedAmount ?? 0),
-    obligationId: row.obligationId ? String(row.obligationId) : undefined,
-    schoolFeeItemId: row.schoolFeeItemId ? String(row.schoolFeeItemId) : undefined,
   };
 }
 

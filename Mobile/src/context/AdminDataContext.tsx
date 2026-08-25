@@ -36,7 +36,8 @@ import {
   buildPlatformNotificationReadPatch,
   isUnreadNotification,
 } from "../lib/platformNotificationSync";
-import { getAcademicConfig, getAssignments, getClasses, getCourses, getPlanningWeekly, getPlanningCourseOptions, getSchoolRooms, getCourseScheduleReplacements, getEvaluations, getNotes, getPayments, getStudentFees, getPresences, getReportCards, getStudents, getSubjects, createPlatformNotification, updatePlatformNotification, createClientsAnnouncement, updateClientsAnnouncement, sendClientsMessage, createClientsUser, updateClientsUser, BackOfficeStatePayload, type CanonicalReportCard, type CanonicalStudentFee } from "../services/api";
+import { getAcademicConfig, getAssignments, getClasses, getCourses, getPlanningWeekly, getPlanningCourseOptions, getSchoolRooms, getCourseScheduleReplacements, getEvaluations, getNotes, getPayments, getStudentFees, reconcilePaymentAllocations, getPresences, getReportCards, getStudents, getSubjects, createPlatformNotification, updatePlatformNotification, createClientsAnnouncement, updateClientsAnnouncement, sendClientsMessage, createClientsUser, updateClientsUser, BackOfficeStatePayload, type CanonicalReportCard, type CanonicalStudentFee } from "../services/api";
+import { withCanonicalPaymentAllocations } from "../lib/financeAllocationReconcile";
 import {
   getCanonicalAnnouncements,
   getCanonicalCountries,
@@ -54,6 +55,7 @@ import {
 import {
   buildPrincipalScopeKey,
   buildResourceScopeKey,
+  classifyLoadFailure,
   emptyResourceSnapshot,
   scopeHydrationPlan,
   snapshotFromFailure,
@@ -382,9 +384,6 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (syncStatus === "synced") noteConnectivitySuccess();
-    if (syncStatus === "offline") {
-      noteConnectivityFailure(new Error("Connexion Internet indisponible."));
-    }
   }, [syncStatus]);
 
   const resetResourceCaches = resetPrincipalResourceCaches;
@@ -573,9 +572,12 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
         subjects: subjectNames,
       });
       setSyncStatus("synced");
-    } catch {
+    } catch (error) {
       if (resourceScopeKeyRef.current !== scope) return;
-      setSyncStatus("offline");
+      if (classifyLoadFailure(error).status === "offline") {
+        setSyncStatus("offline");
+        noteConnectivityFailure(error);
+      }
       throw new Error("Synchronisation impossible");
     }
   }, [session]);
@@ -600,7 +602,7 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
     const scope = resourceScopeKeyRef.current;
     setStudentFeesSnapshot((current) => ({ ...current, status: "loading" }));
     try {
-      const rows = await getStudentFees();
+      const rows = await withCanonicalPaymentAllocations(getStudentFees, reconcilePaymentAllocations);
       if (resourceScopeKeyRef.current !== scope) return;
       setStudentFeesData(rows);
       setStudentFeesSnapshot(snapshotFromSuccess(rows));
@@ -1213,7 +1215,9 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
               setAnnouncementsData((current) => [row, ...current]);
               setAnnouncementsSnapshot((current) => snapshotFromSuccess([row, ...current.data]));
             })
-            .catch(() => setSyncStatus("offline"));
+            .catch((error) => {
+              if (classifyLoadFailure(error).status === "offline") setSyncStatus("offline");
+            });
           return;
         }
         if (entity === "messages") {
@@ -1223,7 +1227,9 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
               setMessagesData((current) => [row, ...current]);
               setMessagesSnapshot((current) => snapshotFromSuccess([row, ...current.data]));
             })
-            .catch(() => setSyncStatus("offline"));
+            .catch((error) => {
+              if (classifyLoadFailure(error).status === "offline") setSyncStatus("offline");
+            });
           return;
         }
         if (entity === "users") {
@@ -1233,7 +1239,9 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
               setUsersData((current) => [row, ...current]);
               setUsersSnapshot((current) => snapshotFromSuccess([row, ...current.data]));
             })
-            .catch(() => setSyncStatus("offline"));
+            .catch((error) => {
+              if (classifyLoadFailure(error).status === "offline") setSyncStatus("offline");
+            });
           return;
         }
         commitEntity(entity, (items) => [applyItemScope(entity, item, session, state), ...items]);
@@ -1247,7 +1255,9 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
                 current.map((row) => (row.id === item.id ? (updated as Announcement) : row)),
               ),
             )
-            .catch(() => setSyncStatus("offline"));
+            .catch((error) => {
+              if (classifyLoadFailure(error).status === "offline") setSyncStatus("offline");
+            });
           return;
         }
         if (entity === "users") {
@@ -1257,7 +1267,9 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
                 current.map((row) => (row.id === item.id ? (updated as UserAccount) : row)),
               ),
             )
-            .catch(() => setSyncStatus("offline"));
+            .catch((error) => {
+              if (classifyLoadFailure(error).status === "offline") setSyncStatus("offline");
+            });
           return;
         }
         commitEntity(entity, (items) => items.map((row) => (row.id === item.id ? applyItemScope(entity, item, session, state) : row)));
@@ -1303,14 +1315,15 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
             );
             setSyncStatus("synced");
           })
-          .catch(() => setSyncStatus("offline"));
+          .catch((error) => {
+              if (classifyLoadFailure(error).status === "offline") setSyncStatus("offline");
+            });
       },
       updateNotification: (item) => {
         let patchTarget: { id: string; patch: Record<string, unknown> };
         try {
           patchTarget = buildPlatformNotificationReadPatch(item);
         } catch {
-          setSyncStatus("offline");
           return;
         }
         setNotificationsData((current) =>
@@ -1323,7 +1336,9 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
             );
             setSyncStatus("synced");
           })
-          .catch(() => setSyncStatus("offline"));
+          .catch((error) => {
+              if (classifyLoadFailure(error).status === "offline") setSyncStatus("offline");
+            });
       },
       markNotificationsRead: (items) => {
         const targets = items.filter((item) => item.id && isUnreadNotification(item));
@@ -1351,7 +1366,9 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
             );
             setSyncStatus("synced");
           })
-          .catch(() => setSyncStatus("offline"));
+          .catch((error) => {
+              if (classifyLoadFailure(error).status === "offline") setSyncStatus("offline");
+            });
       },
     };
   }, [

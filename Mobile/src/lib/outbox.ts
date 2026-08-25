@@ -4,7 +4,8 @@
  * Persist disque fail-closed : jamais de queue RAM silencieusement « queued ».
  */
 import { getConnectivityState, isOfflineContext } from "./connectivity";
-import { classifyMutationFailure, createIdempotencyKey, executeMutation } from "./networkResilience";
+import { classifyMutationFailure, createIdempotencyKey, executeMutation, type MutationFailureKind } from "./networkResilience";
+import { safeLogger } from "../services/safeLogger";
 
 export const OUTBOX_ALLOWED_DOMAINS = ["messages", "presences", "notes", "payments"] as const;
 export type OutboxDomain = (typeof OUTBOX_ALLOWED_DOMAINS)[number];
@@ -358,13 +359,55 @@ export async function bindOutboxToSession(session: OutboxSession): Promise<void>
 
 export type ProtectedMutationOutcome<T> =
   | { outcome: "confirmed"; result: T }
-  | { outcome: "queued"; error: unknown }
+  | {
+      outcome: "queued";
+      error: unknown;
+      failureKind?: MutationFailureKind;
+      queuedReason: "offline_skip" | "retryable" | "unknown";
+    }
   | { outcome: "in_flight"; entry: OutboxEntry; error?: unknown }
   | { outcome: "blocked_sending"; error: unknown }
-  | { outcome: "failed"; error: unknown; persistFailed?: boolean };
+  | { outcome: "failed"; error: unknown; persistFailed?: boolean; failureKind?: MutationFailureKind };
 
 function isPersistFailure(error: unknown) {
   return hasErrorCode(error, OUTBOX_PERSIST_FAILED);
+}
+
+function auditProtectedMutation(input: {
+  path: string;
+  method: string;
+  outcome: string;
+  error?: unknown;
+  failureKind?: MutationFailureKind | null;
+  connectivity: string;
+  outbox: boolean;
+  idempotencyKeyPresent: boolean;
+  retry: boolean;
+  queuedReason?: string;
+}) {
+  const status =
+    input.error && typeof input.error === "object" && "status" in input.error
+      ? Number((input.error as { status?: number }).status)
+      : null;
+  const errorCode =
+    input.error && typeof input.error === "object" && "code" in input.error
+      ? String((input.error as { code?: string }).code ?? "") || null
+      : null;
+  const errorName = input.error instanceof Error ? input.error.name : null;
+  safeLogger.info("mutation_audit", {
+    endpoint: (input.path.split("?")[0] ?? input.path).trim(),
+    method: input.method,
+    status: Number.isFinite(status as number) ? status : null,
+    errorCode,
+    errorName,
+    failureKind: input.failureKind ?? null,
+    classification: input.connectivity,
+    outbox: input.outbox,
+    idempotencyKeyPresent: input.idempotencyKeyPresent,
+    retry: input.retry,
+    outcome: input.outcome,
+    queuedReason: input.queuedReason ?? null,
+  });
 }
 
 async function resolveOfflineFlag(knownOffline?: boolean): Promise<boolean> {
@@ -392,6 +435,13 @@ export async function submitProtectedMutation<T>(input: {
   const offline = await resolveOfflineFlag(input.knownOffline);
   let queued = false;
   let enqueued: OutboxEntry | null = null;
+  const connectivity = getConnectivityState();
+  const auditBase = {
+    path: input.path,
+    method: input.method,
+    connectivity,
+    idempotencyKeyPresent: Boolean(String(input.idempotencyKey ?? "").trim()),
+  };
 
   if (input.persistOutbox) {
     try {
@@ -409,24 +459,62 @@ export async function submitProtectedMutation<T>(input: {
       queued = true;
     } catch (error) {
       if (isOutboxSendingLock(error)) {
+        auditProtectedMutation({
+          ...auditBase,
+          outcome: "blocked_sending",
+          error,
+          outbox: false,
+          retry: false,
+        });
         return { outcome: "blocked_sending", error };
       }
       if (offline || isPersistFailure(error) || isOutboxReadFailure(error)) {
+        auditProtectedMutation({
+          ...auditBase,
+          outcome: "failed",
+          error,
+          failureKind: "non_retryable",
+          outbox: false,
+          retry: false,
+        });
         return { outcome: "failed", error, persistFailed: isPersistFailure(error) || isOutboxReadFailure(error) };
       }
     }
   }
 
   if (enqueued?.status === "sending") {
+    auditProtectedMutation({
+      ...auditBase,
+      outcome: "in_flight",
+      outbox: true,
+      retry: false,
+    });
     return { outcome: "in_flight", entry: enqueued, error: null };
   }
 
   if (offline) {
-    if (queued) return { outcome: "queued", error: null };
+    if (queued) {
+      auditProtectedMutation({
+        ...auditBase,
+        outcome: "queued",
+        outbox: true,
+        retry: false,
+        queuedReason: "offline_skip",
+      });
+      return { outcome: "queued", error: null, queuedReason: "offline_skip" };
+    }
+    auditProtectedMutation({
+      ...auditBase,
+      outcome: "failed",
+      failureKind: "non_retryable",
+      outbox: false,
+      retry: false,
+    });
     return {
       outcome: "failed",
       error: persistFailedError(),
       persistFailed: true,
+      failureKind: "non_retryable",
     };
   }
 
@@ -435,18 +523,43 @@ export async function submitProtectedMutation<T>(input: {
     if (queued) {
       await patchOutbox(input.idempotencyKey, { status: "sent", lastError: null });
     }
+    auditProtectedMutation({
+      ...auditBase,
+      outcome: "confirmed",
+      outbox: false,
+      retry: false,
+    });
     return { outcome: "confirmed", result };
   } catch (error) {
     const kind = classifyMutationFailure(error);
     const message = error instanceof Error ? error.message : String(error ?? "échec");
-    if (queued && (kind === "retryable" || kind === "unknown" || kind === "auth_required")) {
+    const retryableQueued = kind === "retryable" || kind === "unknown";
+    if (queued && retryableQueued) {
       await patchOutbox(input.idempotencyKey, { status: "pending", lastError: message });
-      return { outcome: "queued", error };
+      const queuedReason = kind === "unknown" ? "unknown" : "retryable";
+      auditProtectedMutation({
+        ...auditBase,
+        outcome: "queued",
+        error,
+        failureKind: kind,
+        outbox: true,
+        retry: kind === "retryable",
+        queuedReason,
+      });
+      return { outcome: "queued", error, failureKind: kind, queuedReason };
     }
     if (queued) {
       await patchOutbox(input.idempotencyKey, { status: "failed", lastError: message });
     }
-    return { outcome: "failed", error };
+    auditProtectedMutation({
+      ...auditBase,
+      outcome: "failed",
+      error,
+      failureKind: kind,
+      outbox: false,
+      retry: false,
+    });
+    return { outcome: "failed", error, failureKind: kind };
   }
 }
 
