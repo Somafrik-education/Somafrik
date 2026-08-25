@@ -512,24 +512,31 @@ async function cancelPayment(store, paymentId, reason, principal, auditMeta) {
 
 async function resolveGridClass(tx, school, payload) {
   const classId = asTrimmed(payload.classId);
-  if (classId && typeof tx.getClassById === "function") {
-    const klass = await tx.getClassById(classId);
-    if (!klass) {
-      throw createFinanceError(404, "Classe introuvable.", FINANCE_ERROR.CLASS_NOT_FOUND);
-    }
-    if (String(klass.schoolId) !== String(school.id)) {
-      throw createFinanceError(403, "Classe hors établissement.", FINANCE_ERROR.CLASS_TENANT_MISMATCH);
-    }
-    return klass;
-  }
   const classCode = asTrimmed(payload.classCode);
-  if (classCode && typeof tx.getClassByCode === "function") {
-    const klass = await tx.getClassByCode(classCode, school.id);
-    if (!klass) {
-      throw createFinanceError(404, "Classe introuvable.", FINANCE_ERROR.CLASS_NOT_FOUND);
+  let canonicalLookupAttempted = false;
+
+  if (classId && typeof tx.getClassById === "function") {
+    canonicalLookupAttempted = true;
+    const klass = await tx.getClassById(classId);
+    if (klass) {
+      if (klass.schoolId && String(klass.schoolId) !== String(school.id)) {
+        throw createFinanceError(403, "Classe hors établissement.", FINANCE_ERROR.CLASS_TENANT_MISMATCH);
+      }
+      return klass;
     }
-    return klass;
   }
+
+  if (classCode && typeof tx.getClassByCode === "function") {
+    canonicalLookupAttempted = true;
+    const klass = await tx.getClassByCode(classCode, school.id);
+    if (klass) {
+      if (klass.schoolId && String(klass.schoolId) !== String(school.id)) {
+        throw createFinanceError(403, "Classe hors établissement.", FINANCE_ERROR.CLASS_TENANT_MISMATCH);
+      }
+      return klass;
+    }
+  }
+
   const className = asTrimmed(payload.className);
   if (className && typeof tx.findUniqueClassBySchoolYearName === "function") {
     const klass = await tx.findUniqueClassBySchoolYearName(
@@ -538,7 +545,16 @@ async function resolveGridClass(tx, school, payload) {
       className,
       school.code || school.school_code,
     );
-    if (klass) return klass;
+    if (klass) {
+      if (klass.schoolId && String(klass.schoolId) !== String(school.id)) {
+        throw createFinanceError(403, "Classe hors établissement.", FINANCE_ERROR.CLASS_TENANT_MISMATCH);
+      }
+      return klass;
+    }
+  }
+
+  if (canonicalLookupAttempted) {
+    throw createFinanceError(404, "Classe introuvable.", FINANCE_ERROR.CLASS_NOT_FOUND);
   }
   throw createFinanceError(
     400,
@@ -633,18 +649,38 @@ async function applyFeeGrid(store, gridId, principal, options = {}) {
     if (grid.status !== "Active") {
       throw createFinanceError(409, "Seule une grille active peut être appliquée aux élèves.", FINANCE_ERROR.FEE_GRID_NOT_ACTIVE);
     }
-    if (!asTrimmed(grid.classId) && !asTrimmed(grid.classCode)) {
-      throw createFinanceError(
-        400,
-        "Identifiant de classe canonique requis (classId ou classCode).",
-        FINANCE_ERROR.CLASS_REQUIRED,
-      );
+
+    const school = await tx.getSchoolByCode(grid.schoolCode);
+    if (!school) {
+      throw createFinanceError(404, "Établissement introuvable", FINANCE_ERROR.TENANT_MISMATCH);
     }
+
+    let resolvedClass = {
+      classId: asTrimmed(grid.classId),
+      classCode: asTrimmed(grid.classCode),
+      className: asTrimmed(grid.className),
+      schoolId: grid.schoolId || school.id,
+      schoolCode: grid.schoolCode,
+    };
+    if (!resolvedClass.classId && !resolvedClass.classCode) {
+      resolvedClass = await resolveGridClass(tx, school, {
+        className: grid.className,
+        academicYear: grid.academicYear,
+      });
+    }
+
+    const gridForApply = {
+      ...grid,
+      classId: resolvedClass.classId || "",
+      classCode: resolvedClass.classCode || "",
+      className: resolvedClass.className || grid.className,
+      schoolId: grid.schoolId || school.id,
+    };
     const items = await tx.listItemsByGrid(grid.dbId);
     const activeItems = items.filter((item) => item.status === "Actif");
     const students = await tx.listStudentsInClass(grid.schoolCode, {
-      classId: grid.classId,
-      classCode: grid.classCode,
+      classId: gridForApply.classId,
+      classCode: gridForApply.classCode,
     });
     const targetIds = Array.isArray(options.studentIds) ? options.studentIds.map(String) : null;
     const scopedStudents = students.filter((student) => {
@@ -660,10 +696,10 @@ async function applyFeeGrid(store, gridId, principal, options = {}) {
           : [item.periodLabel || null];
         for (const periodLabel of periods) {
           const inserted = await tx.insertObligationIfAbsent({
-            schoolId: grid.schoolId || (await tx.getSchoolByCode(grid.schoolCode)).id,
+            schoolId: gridForApply.schoolId,
             schoolCode: grid.schoolCode,
             student,
-            grid,
+            grid: gridForApply,
             item,
             periodLabel,
           });
@@ -673,13 +709,18 @@ async function applyFeeGrid(store, gridId, principal, options = {}) {
       }
     }
     await tx.insertTariffHistory({
-      schoolId: (await tx.getSchoolByCode(grid.schoolCode)).id,
+      schoolId: school.id,
       feeGridId: grid.dbId,
       action: "apply",
       actorId: principal?.sub || principal?.identifier,
-      payload: { created, skipped },
+      payload: {
+        created,
+        skipped,
+        resolvedClassId: gridForApply.classId || null,
+        resolvedClassCode: gridForApply.classCode || null,
+      },
     });
-    return { created, skipped, grid };
+    return { created, skipped, grid: gridForApply };
   });
 }
 
