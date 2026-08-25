@@ -3,7 +3,7 @@
  *   npx tsx Mobile/src/lib/paymentCashKpi.test.ts
  */
 import assert from "node:assert/strict";
-import { getPaymentCashKpi } from "./paymentCashKpi";
+import { getPaymentCashKpi, isCountedMobileCashPayment } from "./paymentCashKpi";
 import { normalizePaymentRow, paymentStatusLabel, isPaidStatus } from "./dataTruth";
 
 function run() {
@@ -35,12 +35,16 @@ function run() {
   assert.equal(mix.allocatedAmount, 150);
   assert.equal(mix.unallocatedAmount, 150);
 
-  const cancelled = getPaymentCashKpi([
-    normalizePaymentRow({ id: "c", amount: 150, status: "Annulé", unallocatedAmount: 150 }),
-  ]);
-  assert.equal(cancelled.collectedAmount, 0);
+  for (const status of ["Annulé", "En attente de confirmation", "pending", "Refusé", "Échoué", "failed"]) {
+    const row = normalizePaymentRow({ id: `skip-${status}`, amount: 150, status, unallocatedAmount: 150 });
+    assert.equal(isCountedMobileCashPayment(row), false, `${status} ne doit pas entrer dans Encaissé`);
+    const ignored = getPaymentCashKpi([row]);
+    assert.equal(ignored.collectedAmount, 0, `${status} → encaissé = 0`);
+    assert.equal(ignored.allocatedAmount, 0, `${status} → imputé = 0`);
+    assert.equal(ignored.unallocatedAmount, 0, `${status} → non imputé = 0`);
+  }
 
-  console.log("OK: paymentCashKpi Maeva 150 FC encaissés, 0 imputés, 150 non imputés");
+  console.log("OK: paymentCashKpi exclut pending/refusé/échoué et sépare Maeva 150 FC non imputés");
 }
 
 run();
