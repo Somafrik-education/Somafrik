@@ -31,7 +31,7 @@ function inferTone(label: string): keyof typeof TONES {
   if (["payé", "paye", "présent", "present", "validée", "validee"].some((item) => normalized.includes(item))) {
     return "success";
   }
-  if (["impay", "retard", "warning", "hors ligne", "file"].some((item) => normalized.includes(item))) {
+  if (["impay", "retard", "warning", "hors ligne", "file", "non imput"].some((item) => normalized.includes(item))) {
     return "warning";
   }
   if (["absent", "annul", "erreur", "échec", "echec"].some((item) => normalized.includes(item))) {

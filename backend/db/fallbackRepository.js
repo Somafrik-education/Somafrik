@@ -2700,7 +2700,7 @@ class FallbackRepository {
   getFinanceStore() {
     if (!this._financeStore) {
       const { createFinanceMemoryStore } = require("./financeMemoryStore");
-      const { studentMatches } = require("../lib/financeManagement");
+      const { studentMatches, studentMatchesClassScope } = require("../lib/financeManagement");
       this._financeStore = createFinanceMemoryStore({
         getSchoolByCode: async (code) => {
           const normalized = String(code ?? "").trim().toUpperCase();
@@ -2722,13 +2722,12 @@ class FallbackRepository {
             }) || null
           );
         },
-        listStudentsInClass: async (schoolCode, className) => {
+        listStudentsInClass: async (schoolCode, classRef) => {
           const dataset = await this.getDataset();
-          const { normalizeKey } = require("../lib/financeManagement");
           return (dataset.students ?? []).filter(
             (student) =>
               String(student.schoolCode ?? "").toUpperCase() === String(schoolCode).toUpperCase() &&
-              normalizeKey(student.className) === normalizeKey(className),
+              studentMatchesClassScope(student, classRef),
           );
         },
       });

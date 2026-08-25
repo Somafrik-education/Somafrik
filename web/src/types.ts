@@ -391,6 +391,8 @@ export interface FeeGrid {
   id: string;
   schoolCode: string;
   academicYear: string;
+  classId?: string;
+  classCode?: string;
   className: string;
   currency: string;
   status: FeeGridStatus;

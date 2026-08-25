@@ -1,5 +1,8 @@
 /**
- * Fail-soft réconciliation : 403 / offline seulement.
+ * Réconciliation Finance :
+ * - le wrapper de chargement GET est strictement read-only ;
+ * - l'action explicite conserve son fail-soft 403 / vraie coupure seulement.
+ *
  *   npx tsx Mobile/src/lib/financeAllocationReconcile.test.ts
  */
 import assert from "node:assert/strict";
@@ -21,7 +24,12 @@ function run() {
   const source = fs.readFileSync(path.join(__dirname, "financeAllocationReconcile.ts"), "utf8");
   assert.match(source, /isSoftPaymentAllocationReconcileFailure/);
   assert.match(source, /throw error/);
-  assert.doesNotMatch(source, /catch\s*\{/);
+  assert.match(source, /return load\(\);/);
+  assert.doesNotMatch(
+    source,
+    /withCanonicalPaymentAllocations[\s\S]*?await ensureCanonicalPaymentAllocations/,
+    "un GET ne doit jamais réconcilier implicitement",
+  );
 
   assert.equal(isSoftPaymentAllocationReconcileFailure(httpError(403)), true);
   assert.equal(isSoftPaymentAllocationReconcileFailure(httpError(0, "Connexion Internet indisponible.")), true);
@@ -34,48 +42,47 @@ function run() {
     assert.equal(
       isSoftPaymentAllocationReconcileFailure(httpError(status, "indisponible")),
       false,
-      `${status} ne doit pas être absorbé`,
+      `${status} ne doit pas être absorbé par l'action explicite`,
     );
   }
 
-  async function scenario(status: number | "offline") {
-    let loaded = false;
-    const reconcile = async () => {
-      if (status === "offline") {
-        throw Object.assign(new Error("Connexion Internet indisponible."), { status: 0 });
-      }
-      throw httpError(status);
-    };
-    const load = async () => {
-      loaded = true;
-      return [{ amountPaid: 0 }];
-    };
-    return { loaded: () => loaded, run: () => withCanonicalPaymentAllocations(load, reconcile) };
-  }
-
   return (async () => {
-    const forbidden = await scenario(403);
-    await forbidden.run();
-    assert.equal(forbidden.loaded(), true, "403 → GET student-fees continue");
-
-    const offline = await scenario("offline");
-    await offline.run();
-    assert.equal(offline.loaded(), true, "offline → GET continue");
-
-    for (const status of [400, 401, 404, 409, 500] as const) {
-      const blocked = await scenario(status);
-      await assert.rejects(blocked.run, (error: unknown) => {
-        assert.equal((error as { status?: number }).status, status);
-        return true;
-      });
-      assert.equal(blocked.loaded(), false, `${status} → GET non appelé, pas de faux 0`);
+    for (const status of [400, 401, 403, 404, 409, 500] as const) {
+      let reconcileCalls = 0;
+      let loadCalls = 0;
+      const result = await withCanonicalPaymentAllocations(
+        async () => {
+          loadCalls += 1;
+          return [{ amountPaid: 0 }];
+        },
+        async () => {
+          reconcileCalls += 1;
+          throw httpError(status);
+        },
+      );
+      assert.deepEqual(result, [{ amountPaid: 0 }]);
+      assert.equal(loadCalls, 1, `${status} → GET appelé une fois`);
+      assert.equal(reconcileCalls, 0, `${status} → aucune réconciliation implicite`);
     }
 
+    let explicit403Calls = 0;
     await ensureCanonicalPaymentAllocations(async () => {
+      explicit403Calls += 1;
       throw httpError(403);
     });
+    assert.equal(explicit403Calls, 1, "action explicite 403 exécutée puis fail-soft");
 
-    console.log("OK: financeAllocationReconcile 403/offline fail-soft ; 400/401/404/409/5xx visibles");
+    await assert.rejects(
+      ensureCanonicalPaymentAllocations(async () => {
+        throw httpError(500);
+      }),
+      (error: unknown) => {
+        assert.equal((error as { status?: number }).status, 500);
+        return true;
+      },
+    );
+
+    console.log("OK: GET frais read-only ; reconcile explicite 403/offline fail-soft ; 5xx visible");
   })();
 }
 

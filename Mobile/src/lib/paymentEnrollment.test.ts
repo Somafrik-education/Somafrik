@@ -17,9 +17,11 @@ import assert from "node:assert/strict";
 import {
   buildSchoolPaymentPayload,
   collectActivePaymentClasses,
+  collectOpenPaymentFees,
   paymentClassBelongsToStudent,
   paymentSubmitErrorMessage,
   preselectPaymentClassId,
+  preselectPaymentObligationId,
   type PaymentStudent,
 } from "./paymentEnrollment";
 import { hasFieldErrors, validatePaymentDraft } from "./formFieldValidation";
@@ -110,6 +112,40 @@ assert.deepEqual(payload, {
   items: [{ feeType: "Scolarité", amount: 25000 }],
 });
 assert.ok(!("className" in payload), "className n'est pas une identité métier");
+
+const identified = buildSchoolPaymentPayload({
+  studentId: awa.id,
+  classId: String(awa.classId),
+  amount: 150,
+  feeType: "Mensualité",
+  method: "Espèces",
+  date: "2026-08-24",
+  obligationId: "obl-maeva-mens",
+  schoolFeeItemId: "fee-item-1",
+});
+assert.deepEqual(identified.items, [
+  { feeType: "Mensualité", amount: 150, obligationId: "obl-maeva-mens", feeTypeId: "fee-item-1" },
+]);
+
+const openFees = collectOpenPaymentFees(awa.id, [
+  { id: "obl-1", studentId: awa.id, feeType: "Mensualité", label: "Mensualité", balance: 1000, status: "À payer" },
+  { id: "obl-paid", studentId: awa.id, feeType: "Inscription", label: "Inscription", balance: 0, status: "Payé" },
+]);
+assert.equal(openFees.length, 1);
+assert.equal(openFees[0].obligationId, "obl-1");
+assert.equal(preselectPaymentObligationId(awa.id, [
+  { id: "obl-1", studentId: awa.id, balance: 1000, status: "À payer" },
+]), "obl-1");
+assert.equal(
+  validatePaymentDraft({
+    studentId: awa.id,
+    amount: "150",
+    classId: awa.classId,
+    classOptions: [{ classId: String(awa.classId) }],
+    obligationOptions: [{ obligationId: "obl-1" }],
+  }).obligationId,
+  "Frais est obligatoire.",
+);
 
 assert.equal(hasFieldErrors(validatePaymentDraft({ studentId: "", amount: "abc" })), true);
 assert.match(validatePaymentDraft({ studentId: awa.id, amount: "0", classId: awa.classId, classOptions: [{ classId: String(awa.classId) }] }).amount, /montant positif/);

@@ -99,6 +99,14 @@ export function PaymentReceipt({ payment, school }: PaymentReceiptProps) {
           <dt className="text-muted">Statut</dt>
           <dd className="font-semibold">{String(payment.status ?? "—")}</dd>
         </div>
+        {Number(payment.unallocatedAmount ?? payment.overpaymentAmount ?? 0) > 0 ? (
+          <div className="flex justify-between gap-4">
+            <dt className="text-muted">Non imputé</dt>
+            <dd className="font-semibold">
+              {formatMetric(Number(payment.unallocatedAmount ?? payment.overpaymentAmount ?? 0), currency)}
+            </dd>
+          </div>
+        ) : null}
         <div className="flex justify-between gap-4">
           <dt className="text-muted">Saisi par</dt>
           <dd>{String(payment.createdByName ?? payment.createdBy ?? "—")}</dd>

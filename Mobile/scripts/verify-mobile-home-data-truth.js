@@ -27,6 +27,7 @@ function main() {
     path.join("src", "lib", "format.activeUser.test.ts"),
     path.join("src", "lib", "homeDashboardKpis.test.ts"),
     path.join("src", "lib", "paymentRateKpi.test.ts"),
+    path.join("src", "lib", "paymentCashKpi.test.ts"),
     path.join("src", "lib", "financeAllocationReconcile.test.ts"),
     path.join("src", "lib", "todayPresenceKpi.test.ts"),
     path.join("src", "domain", "metrics", "schoolMetrics.test.ts"),
@@ -64,6 +65,7 @@ function main() {
   const homeKpis = read(path.join("lib", "homeDashboardKpis.ts"));
   const paymentRate = read(path.join("lib", "paymentRateKpi.ts"));
   const context = read(path.join("context", "AdminDataContext.tsx"));
+  const financeAllocationReconcile = read(path.join("lib", "financeAllocationReconcile.ts"));
 
   assert.match(context, /usersSnapshot/);
   assert.match(context, /loadUsers/);
@@ -128,8 +130,17 @@ function main() {
   assert.match(home, /loadStudentFees/);
   assert.match(context, /loadStudentFees/);
   assert.match(context, /getStudentFees/);
-  assert.match(context, /withCanonicalPaymentAllocations/);
-  assert.match(context, /reconcilePaymentAllocations/);
+  assert.doesNotMatch(
+    context,
+    /withCanonicalPaymentAllocations/,
+    "GET student-fees ne doit plus muter via reconcile",
+  );
+  assert.match(financeAllocationReconcile, /return load\(\);/);
+  assert.doesNotMatch(
+    financeAllocationReconcile,
+    /withCanonicalPaymentAllocations[\s\S]*?await ensureCanonicalPaymentAllocations/,
+    "un chargement GET ne doit jamais déclencher une réconciliation implicite",
+  );
   assert.match(home, /countActiveUserAccounts/);
   assert.doesNotMatch(home, /paymentStats\.rate/);
   assert.doesNotMatch(home, /\$\{paymentStats\.rate\}%/);
@@ -187,7 +198,9 @@ function main() {
   assert.match(students, /loadStudentFees/);
   const paymentsScreen = read(path.join("screens", "PaymentsScreen.tsx"));
   assert.match(paymentsScreen, /getPaymentRateKpi/);
+  assert.match(paymentsScreen, /getPaymentCashKpi/);
   assert.match(paymentsScreen, /loadStudentFees/);
+  assert.match(paymentsScreen, /Non imputé/);
   assert.doesNotMatch(paymentsScreen, /paymentStats\.rate/);
   assert.doesNotMatch(paymentsScreen, /des paiements réglés/);
   assert.doesNotMatch(paymentsScreen, /paymentStats\.paidAmount/);

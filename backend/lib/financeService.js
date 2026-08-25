@@ -15,7 +15,6 @@ const {
   isPaymentCounted,
   obligationStatus,
   generatePaymentReference,
-  resolvePaymentStatus,
   toIsoDate,
   studentMatches,
   canForceReminder,
@@ -29,6 +28,7 @@ const {
   assertItemAmount,
 } = require("./financePaymentItems");
 const { obligationMatchesPaymentFeeType } = require("./financeFeeTypeMatch");
+const { projectPaymentCash, resolvePaymentStatus: resolveUnallocatedPaymentStatus } = require("./financeUnallocatedCash");
 
 const REMINDER_COOLDOWN_DAYS = 3;
 
@@ -108,12 +108,112 @@ async function resolvePaymentEnrollment(tx, student, payload, school) {
   return enrollments[0];
 }
 
+function identityKeys(...values) {
+  return [...new Set(values.map((value) => asTrimmed(value)).filter(Boolean))];
+}
+
+function catalogKeysForItem(item) {
+  return new Set(identityKeys(item.feeTypeId, item.catalogItemId, item.schoolFeeItemId));
+}
+
+function findObligationInList(obligations, obligationId) {
+  const key = asTrimmed(obligationId);
+  return (
+    obligations.find((fee) => identityKeys(fee.dbId, fee.id).includes(key)) || null
+  );
+}
+
+function obligationBelongsToSchool(obligation, school) {
+  if (obligation.schoolId && String(obligation.schoolId) !== String(school.id)) return false;
+  const code = asTrimmed(obligation.schoolCode).toUpperCase();
+  const expected = asTrimmed(school.code).toUpperCase();
+  if (code && expected && code !== expected) return false;
+  return true;
+}
+
+function obligationBelongsToStudent(obligation, student) {
+  const studentKeys = new Set(identityKeys(student.dbId, student.id, student.publicId, student.studentCode));
+  const obligationKeys = identityKeys(obligation.studentDbId, obligation.studentId);
+  if (!obligationKeys.length || !studentKeys.size) return false;
+  return obligationKeys.some((key) => studentKeys.has(key));
+}
+
+function obligationMatchesResolvedCatalog(obligation, item) {
+  const keys = catalogKeysForItem(item);
+  if (!keys.size) return true;
+  const oblKey = asTrimmed(obligation.schoolFeeItemId);
+  if (!oblKey) return obligationMatchesPaymentFeeType(obligation, item.feeType);
+  return keys.has(oblKey);
+}
+
+function throwObligationConflict(message, code) {
+  throw createFinanceError(409, message, code);
+}
+
+async function lookupObligation(tx, obligationId) {
+  if (typeof tx.getObligationByPublicId === "function") {
+    const byPublic = await tx.getObligationByPublicId(obligationId);
+    if (byPublic) return byPublic;
+  }
+  if (typeof tx.getObligation === "function") {
+    const byId = await tx.getObligation(obligationId);
+    if (byId) return byId;
+  }
+  return null;
+}
+
 function openObligationsMatchingFeeType(obligations, feeType) {
   return obligations.filter(
     (fee) =>
       !["Annulé", "Payé", "Exonéré"].includes(fee.status) &&
       obligationMatchesPaymentFeeType(fee, feeType),
   );
+}
+
+async function openObligationsForItem(tx, obligations, item, student, school) {
+  const obligationId = asTrimmed(item.obligationId);
+  if (!obligationId) {
+    const matched = openObligationsMatchingFeeType(obligations, item.feeType);
+    const keys = catalogKeysForItem(item);
+    if (!keys.size) return matched;
+    const byCatalog = matched.filter((fee) => keys.has(asTrimmed(fee.schoolFeeItemId)));
+    return byCatalog.length ? byCatalog : matched;
+  }
+
+  let target = findObligationInList(obligations, obligationId);
+  if (!target) {
+    target = await lookupObligation(tx, obligationId);
+  }
+  if (!target) {
+    throw createFinanceError(404, "Frais introuvable pour cet élève.", FINANCE_ERROR.OBLIGATION_NOT_FOUND);
+  }
+  if (!obligationBelongsToSchool(target, school)) {
+    throwObligationConflict(
+      "Cette obligation n'appartient pas à l'établissement courant.",
+      FINANCE_ERROR.OBLIGATION_TENANT_MISMATCH,
+    );
+  }
+  if (!obligationBelongsToStudent(target, student)) {
+    throwObligationConflict(
+      "Cette obligation n'appartient pas à l'élève courant.",
+      FINANCE_ERROR.OBLIGATION_STUDENT_MISMATCH,
+    );
+  }
+  if (asTrimmed(item.feeTypeId) || asTrimmed(item.catalogItemId)) {
+    if (!obligationMatchesResolvedCatalog(target, item)) {
+      throwObligationConflict(
+        "Cette obligation ne correspond pas au type de frais indiqué.",
+        FINANCE_ERROR.OBLIGATION_FEE_TYPE_MISMATCH,
+      );
+    }
+  } else if (!obligationMatchesPaymentFeeType(target, item.feeType)) {
+    throwObligationConflict(
+      "Cette obligation ne correspond pas au type de frais indiqué.",
+      FINANCE_ERROR.OBLIGATION_FEE_TYPE_MISMATCH,
+    );
+  }
+  if (["Annulé", "Payé", "Exonéré"].includes(target.status)) return [];
+  return [target];
 }
 
 function allocateAmount(obligations, amount) {
@@ -325,20 +425,24 @@ async function createPayment(store, rawPayload, principal, auditMeta) {
       let feeType = asTrimmed(item.feeType || item.feeLabel || item.label);
       let feeLabel = asTrimmed(item.feeLabel || item.feeType || item.label);
       let catalogId = null;
+      let catalogItemId = null;
       if (feeTypeId) {
         const catalog = await resolveCatalogFeeItem(tx, school.id, feeTypeId);
         feeType = catalog.feeType || catalog.label;
         feeLabel = catalog.label || catalog.feeType;
         catalogId = catalog.dbId || null;
+        catalogItemId = catalog.id || null;
       }
       if (!feeType) {
         throw createFinanceError(400, "Chaque libellé doit indiquer un type de frais.", FINANCE_ERROR.PAYMENT_FEE_TYPE_REQUIRED);
       }
       resolvedItems.push({
         feeTypeId: catalogId,
+        catalogItemId,
         feeType,
         feeLabel: feeLabel || feeType,
         amount: money(item.amount),
+        obligationId: asTrimmed(item.obligationId),
       });
     }
 
@@ -352,7 +456,7 @@ async function createPayment(store, rawPayload, principal, auditMeta) {
     let leftoverTotal = 0;
     let remainingBefore = 0;
     for (const item of resolvedItems) {
-      const open = openObligationsMatchingFeeType(obligations, item.feeType);
+      const open = await openObligationsForItem(tx, obligations, item, student, school);
       remainingBefore += open.reduce((sum, fee) => sum + money(fee.balance), 0);
       const { updated, allocations: itemAllocations, leftover } = allocateAmount(open, item.amount);
       leftoverTotal += leftover;
@@ -367,7 +471,7 @@ async function createPayment(store, rawPayload, principal, auditMeta) {
     const existingCodes = await tx.listPaymentCodes(school.id);
     const reference = generatePaymentReference(student.schoolCode, existingCodes);
     const now = new Date().toISOString();
-    const status = resolvePaymentStatus(totalAmount, remainingBefore, method);
+    const status = resolveUnallocatedPaymentStatus(totalAmount, remainingBefore, method, leftoverTotal);
     const payment = {
       reference,
       schoolId: school.id,
@@ -390,6 +494,8 @@ async function createPayment(store, rawPayload, principal, auditMeta) {
       amountDue: remainingBefore + obligations.reduce((sum, fee) => sum + money(fee.amountPaid), 0),
       remainingAfter: Math.max(0, remainingBefore - totalAmount),
       overpaymentAmount: leftoverTotal,
+      allocatedAmount: money(totalAmount - leftoverTotal),
+      unallocatedAmount: leftoverTotal,
       overpaymentAction: leftoverTotal > 0 ? payload.overpaymentAction || "À confirmer" : "",
       createdAt: now,
       createdByName: actorName(principal),
@@ -424,7 +530,10 @@ async function createPayment(store, rawPayload, principal, auditMeta) {
         await tx.updateObligation(fee);
       }
     }
-    const result = decoratePaymentWithItems(saved, insertedItems);
+    const result = decoratePaymentWithItems(
+      projectPaymentCash(saved, allocations),
+      insertedItems,
+    );
     await writeFinanceAudit(tx, principal, auditMeta, {
       action: "create_payment",
       entityType: "payment",
@@ -485,6 +594,59 @@ async function cancelPayment(store, paymentId, reason, principal, auditMeta) {
   });
 }
 
+async function resolveGridClass(tx, school, payload) {
+  const classId = asTrimmed(payload.classId);
+  const classCode = asTrimmed(payload.classCode);
+  let canonicalLookupAttempted = false;
+
+  if (classId && typeof tx.getClassById === "function") {
+    canonicalLookupAttempted = true;
+    const klass = await tx.getClassById(classId);
+    if (klass) {
+      if (klass.schoolId && String(klass.schoolId) !== String(school.id)) {
+        throw createFinanceError(403, "Classe hors établissement.", FINANCE_ERROR.CLASS_TENANT_MISMATCH);
+      }
+      return klass;
+    }
+  }
+
+  if (classCode && typeof tx.getClassByCode === "function") {
+    canonicalLookupAttempted = true;
+    const klass = await tx.getClassByCode(classCode, school.id);
+    if (klass) {
+      if (klass.schoolId && String(klass.schoolId) !== String(school.id)) {
+        throw createFinanceError(403, "Classe hors établissement.", FINANCE_ERROR.CLASS_TENANT_MISMATCH);
+      }
+      return klass;
+    }
+  }
+
+  const className = asTrimmed(payload.className);
+  if (className && typeof tx.findUniqueClassBySchoolYearName === "function") {
+    const klass = await tx.findUniqueClassBySchoolYearName(
+      school.id,
+      asTrimmed(payload.academicYear),
+      className,
+      school.code || school.school_code,
+    );
+    if (klass) {
+      if (klass.schoolId && String(klass.schoolId) !== String(school.id)) {
+        throw createFinanceError(403, "Classe hors établissement.", FINANCE_ERROR.CLASS_TENANT_MISMATCH);
+      }
+      return klass;
+    }
+  }
+
+  if (canonicalLookupAttempted) {
+    throw createFinanceError(404, "Classe introuvable.", FINANCE_ERROR.CLASS_NOT_FOUND);
+  }
+  throw createFinanceError(
+    400,
+    "Identifiant de classe canonique requis (classId ou classCode).",
+    FINANCE_ERROR.CLASS_REQUIRED,
+  );
+}
+
 async function upsertFeeGrid(store, rawPayload, principal) {
   const payload = ignoreClientScope(rawPayload);
   let schoolCode = asTrimmed(principal?.schoolCode);
@@ -502,7 +664,10 @@ async function upsertFeeGrid(store, rawPayload, principal) {
   const academicYear = asTrimmed(payload.academicYear);
   const currency = asTrimmed(payload.currency);
   const items = Array.isArray(payload.items) ? payload.items : [];
-  if (!className || !academicYear || !currency) {
+  if (!academicYear || !currency) {
+    throw createFinanceError(400, "Classe, année scolaire et devise sont obligatoires.");
+  }
+  if (!asTrimmed(payload.classId) && !asTrimmed(payload.classCode) && !className) {
     throw createFinanceError(400, "Classe, année scolaire et devise sont obligatoires.");
   }
   const activeItems = items.filter((item) => item.status !== "Désactivé");
@@ -518,16 +683,19 @@ async function upsertFeeGrid(store, rawPayload, principal) {
   return store.withTransaction(async (tx) => {
     const school = await tx.getSchoolByCode(schoolCode);
     if (!school) throw createFinanceError(404, "Établissement introuvable", FINANCE_ERROR.TENANT_MISMATCH);
+    const klass = await resolveGridClass(tx, school, payload);
     const grid = await tx.upsertGrid({
       id: payload.id,
       schoolId: school.id,
       schoolCode,
-      className,
+      classId: klass.classId,
+      classCode: klass.classCode || "",
+      className: klass.className || className,
       academicYear,
       periodName: asTrimmed(payload.periodName),
       currency,
       status: payload.status || "Brouillon",
-      name: payload.name || className,
+      name: payload.name || klass.className || className,
       createdBy: actorName(principal),
       periodStart: payload.periodStart || "",
       periodEnd: payload.periodEnd || "",
@@ -565,9 +733,39 @@ async function applyFeeGrid(store, gridId, principal, options = {}) {
     if (grid.status !== "Active") {
       throw createFinanceError(409, "Seule une grille active peut être appliquée aux élèves.", FINANCE_ERROR.FEE_GRID_NOT_ACTIVE);
     }
+
+    const school = await tx.getSchoolByCode(grid.schoolCode);
+    if (!school) {
+      throw createFinanceError(404, "Établissement introuvable", FINANCE_ERROR.TENANT_MISMATCH);
+    }
+
+    let resolvedClass = {
+      classId: asTrimmed(grid.classId),
+      classCode: asTrimmed(grid.classCode),
+      className: asTrimmed(grid.className),
+      schoolId: grid.schoolId || school.id,
+      schoolCode: grid.schoolCode,
+    };
+    if (!resolvedClass.classId && !resolvedClass.classCode) {
+      resolvedClass = await resolveGridClass(tx, school, {
+        className: grid.className,
+        academicYear: grid.academicYear,
+      });
+    }
+
+    const gridForApply = {
+      ...grid,
+      classId: resolvedClass.classId || "",
+      classCode: resolvedClass.classCode || "",
+      className: resolvedClass.className || grid.className,
+      schoolId: grid.schoolId || school.id,
+    };
     const items = await tx.listItemsByGrid(grid.dbId);
     const activeItems = items.filter((item) => item.status === "Actif");
-    const students = await tx.listStudentsInClass(grid.schoolCode, grid.className);
+    const students = await tx.listStudentsInClass(grid.schoolCode, {
+      classId: gridForApply.classId,
+      classCode: gridForApply.classCode,
+    });
     const targetIds = Array.isArray(options.studentIds) ? options.studentIds.map(String) : null;
     const scopedStudents = students.filter((student) => {
       if (targetIds && !targetIds.some((id) => studentMatches(student, id))) return false;
@@ -582,10 +780,10 @@ async function applyFeeGrid(store, gridId, principal, options = {}) {
           : [item.periodLabel || null];
         for (const periodLabel of periods) {
           const inserted = await tx.insertObligationIfAbsent({
-            schoolId: grid.schoolId || (await tx.getSchoolByCode(grid.schoolCode)).id,
+            schoolId: gridForApply.schoolId,
             schoolCode: grid.schoolCode,
             student,
-            grid,
+            grid: gridForApply,
             item,
             periodLabel,
           });
@@ -595,13 +793,18 @@ async function applyFeeGrid(store, gridId, principal, options = {}) {
       }
     }
     await tx.insertTariffHistory({
-      schoolId: (await tx.getSchoolByCode(grid.schoolCode)).id,
+      schoolId: school.id,
       feeGridId: grid.dbId,
       action: "apply",
       actorId: principal?.sub || principal?.identifier,
-      payload: { created, skipped },
+      payload: {
+        created,
+        skipped,
+        resolvedClassId: gridForApply.classId || null,
+        resolvedClassCode: gridForApply.classCode || null,
+      },
     });
-    return { created, skipped, grid };
+    return { created, skipped, grid: gridForApply };
   });
 }
 

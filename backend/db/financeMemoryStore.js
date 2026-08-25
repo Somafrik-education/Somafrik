@@ -1,6 +1,7 @@
 "use strict";
 
 const { randomUUID } = require("node:crypto");
+const seedData = require("../data");
 const {
   createFinanceError,
   FINANCE_ERROR,
@@ -13,12 +14,15 @@ const {
   mapReminderRow,
   mapStatusRow,
   studentMatches,
+  studentMatchesClassScope,
+  classScopeSpec,
   obligationStatus,
   toIsoDate,
   mapBoStatusToDb,
 } = require("../lib/financeManagement");
 const { decoratePaymentWithItems } = require("../lib/financePaymentItems");
 const { projectObligationPaidAmounts } = require("../lib/financeObligationPaid");
+const { projectPaymentsWithAllocations, projectPaymentCash } = require("../lib/financeUnallocatedCash");
 const { resolveFinanceSchoolScope, schoolCodeInScope } = require("../lib/financeSchoolScope");
 const financeService = require("../lib/financeService");
 
@@ -39,6 +43,79 @@ function createFinanceMemoryStore({ getSchoolByCode, findStudent, listStudentsIn
     paymentItems: [],
     auditLogs: [],
   };
+
+  async function classFromSeedCatalogById(classId) {
+    const key = asTrimmed(classId);
+    if (!key) return null;
+    const row = (seedData.classes ?? []).find(
+      (item) => asTrimmed(item.classId) === key,
+    );
+    if (!row) return null;
+    const school = await getSchoolByCode?.(row.schoolCode);
+    return {
+      classId: asTrimmed(row.classId),
+      schoolId: school?.id || row.schoolId,
+      classCode: asTrimmed(row.classCode || row.publicId || row.id),
+      className: asTrimmed(row.className || row.name),
+      schoolCode: row.schoolCode,
+    };
+  }
+
+  async function classFromSeedCatalogByCode(classCode, expectedSchoolId) {
+    const key = asTrimmed(classCode).toUpperCase();
+    if (!key) return null;
+    const candidates = (seedData.classes ?? []).filter((item) =>
+      [item.classCode, item.publicId, item.id]
+        .map((value) => asTrimmed(value).toUpperCase())
+        .filter(Boolean)
+        .includes(key),
+    );
+    for (const row of candidates) {
+      const school = await getSchoolByCode?.(row.schoolCode);
+      const resolvedSchoolId = school?.id || row.schoolId;
+      if (expectedSchoolId && resolvedSchoolId && String(resolvedSchoolId) !== String(expectedSchoolId)) {
+        continue;
+      }
+      return {
+        classId: asTrimmed(row.classId),
+        schoolId: resolvedSchoolId || expectedSchoolId,
+        classCode: asTrimmed(row.classCode || row.publicId || row.id),
+        className: asTrimmed(row.className || row.name),
+        schoolCode: row.schoolCode || school?.code || school?.schoolCode,
+      };
+    }
+    return null;
+  }
+
+  async function uniqueClassFromSeedCatalog(schoolId, academicYear, className, schoolCode) {
+    const name = asTrimmed(className).toLowerCase();
+    const year = asTrimmed(academicYear).toLowerCase();
+    const code = asTrimmed(schoolCode).toUpperCase();
+    if (!name) return null;
+    const candidates = [];
+    for (const row of seedData.classes ?? []) {
+      if (asTrimmed(row.className || row.name).toLowerCase() !== name) continue;
+      if (code && asTrimmed(row.schoolCode).toUpperCase() !== code) continue;
+      const rowYear = asTrimmed(row.academicYearName || row.schoolYear).toLowerCase();
+      if (year && rowYear && rowYear !== year) continue;
+      const school = await getSchoolByCode?.(row.schoolCode);
+      const resolvedSchoolId = school?.id || row.schoolId || schoolId;
+      if (schoolId && resolvedSchoolId && String(resolvedSchoolId) !== String(schoolId)) continue;
+      candidates.push({
+        classId: asTrimmed(row.classId),
+        schoolId: resolvedSchoolId,
+        classCode: asTrimmed(row.classCode || row.publicId || row.id),
+        className: asTrimmed(row.className || row.name),
+        schoolCode: row.schoolCode || code,
+      });
+    }
+    const dedup = new Map();
+    for (const row of candidates) {
+      const key = row.classId || row.classCode;
+      if (key) dedup.set(key, row);
+    }
+    return dedup.size === 1 ? [...dedup.values()][0] : null;
+  }
 
   function txApi() {
     return {
@@ -93,7 +170,8 @@ function createFinanceMemoryStore({ getSchoolByCode, findStudent, listStudentsIn
       },
       async getClassById(classId) {
         if (typeof lookupClassById === "function") {
-          return lookupClassById(classId);
+          const resolved = await lookupClassById(classId);
+          if (resolved) return resolved;
         }
         const key = asTrimmed(classId);
         if (!key) return null;
@@ -107,11 +185,74 @@ function createFinanceMemoryStore({ getSchoolByCode, findStudent, listStudentsIn
             schoolCode: student.schoolCode,
           };
         }
-        return null;
+        return classFromSeedCatalogById(key);
       },
-      async listStudentsInClass(schoolCode, className) {
-        const rows = (await listStudentsInClass?.(schoolCode, className)) || [];
-        return rows;
+      async getClassByCode(classCode, schoolId) {
+        const key = asTrimmed(classCode).toUpperCase();
+        if (!key) return null;
+        const student =
+          (await findStudent?.(key, { schoolCode: "*" })) ||
+          null;
+        if (student && asTrimmed(student.classCode).toUpperCase() === key) {
+          return {
+            classId: String(student.classId),
+            schoolId: student.schoolId || schoolId,
+            classCode: asTrimmed(student.classCode),
+            className: asTrimmed(student.className),
+            schoolCode: student.schoolCode,
+          };
+        }
+        const rows = (await listStudentsInClass?.("*", { classCode: key })) || [];
+        const match = rows.find((row) => asTrimmed(row.classCode).toUpperCase() === key);
+        if (match) {
+          return {
+            classId: asTrimmed(match.classId),
+            schoolId: match.schoolId || schoolId,
+            classCode: asTrimmed(match.classCode),
+            className: asTrimmed(match.className),
+            schoolCode: match.schoolCode,
+          };
+        }
+        return classFromSeedCatalogByCode(key, schoolId);
+      },
+      async findUniqueClassBySchoolYearName(schoolId, academicYear, className, schoolCode) {
+        const name = asTrimmed(className);
+        if (!name) return null;
+        const catalogMatch = await uniqueClassFromSeedCatalog(schoolId, academicYear, name, schoolCode);
+        if (catalogMatch) return catalogMatch;
+        const code = asTrimmed(schoolCode);
+        const fromNamed = code ? (await listStudentsInClass?.(code, name)) || [] : [];
+        const fromSpec = code ? (await listStudentsInClass?.(code, { className: name })) || [] : [];
+        const rows = [...fromNamed, ...fromSpec];
+        const uniqueIds = [...new Set(rows.map((row) => String(row.classId || "")).filter(Boolean))];
+        if (uniqueIds.length !== 1) return null;
+        const student = rows.find((row) => String(row.classId) === uniqueIds[0]);
+        return {
+          classId: uniqueIds[0],
+          schoolId: student.schoolId || schoolId,
+          classCode: asTrimmed(student.classCode),
+          className: asTrimmed(student.className) || name,
+          schoolCode: student.schoolCode || code,
+        };
+      },
+      async listStudentsInClass(schoolCode, classRef) {
+        const spec = classScopeSpec(classRef);
+        const raw =
+          (await listStudentsInClass?.(schoolCode, spec)) ||
+          (spec.className ? await listStudentsInClass?.(schoolCode, spec.className) : null) ||
+          [];
+        return raw.filter((student) => {
+          if (spec.classId && [student.classId, student.class_id].some((value) => String(value ?? "") === spec.classId)) {
+            return true;
+          }
+          if (spec.classCode && asTrimmed(student.classCode || student.class_code).toUpperCase() === spec.classCode.toUpperCase()) {
+            return true;
+          }
+          if (!spec.classId && !spec.classCode && spec.className) {
+            return studentMatchesClassScope(student, { className: spec.className });
+          }
+          return false;
+        });
       },
       async listPaymentCodes(schoolId) {
         return tables.payments.filter((row) => row.school_id === schoolId).map((row) => row.payment_code);
@@ -205,7 +346,8 @@ function createFinanceMemoryStore({ getSchoolByCode, findStudent, listStudentsIn
           return null;
         }
         const items = await this.listPaymentItems(row.id);
-        return decoratePaymentWithItems(mapped, items);
+        const allocations = await this.listAllocations(row.id);
+        return projectPaymentCash(decoratePaymentWithItems(mapped, items), allocations);
       },
       async cancelPayment(dbId, reason, principal) {
         const row = tables.payments.find((item) => item.id === dbId);
@@ -312,6 +454,8 @@ function createFinanceMemoryStore({ getSchoolByCode, findStudent, listStudentsIn
         if (existing) {
           Object.assign(existing, {
             class_name: input.className,
+            class_id: input.classId || existing.class_id || null,
+            class_code: input.classCode || existing.class_code || "",
             academic_year: input.academicYear,
             period_name: input.periodName || "",
             currency: input.currency,
@@ -329,6 +473,8 @@ function createFinanceMemoryStore({ getSchoolByCode, findStudent, listStudentsIn
           grid_code: input.id || `FEEGRID-${randomUUID()}`,
           name: input.name,
           class_name: input.className,
+          class_id: input.classId || null,
+          class_code: input.classCode || "",
           academic_year: input.academicYear,
           period_name: input.periodName || "",
           currency: input.currency,
@@ -475,11 +621,14 @@ function createFinanceMemoryStore({ getSchoolByCode, findStudent, listStudentsIn
     },
     async listProjection() {
       return {
-        payments: tables.payments.map((row) =>
-          decoratePaymentWithItems(
-            mapPaymentRow(row),
-            tables.paymentItems.filter((item) => String(item.payment_id) === String(row.id)),
+        payments: projectPaymentsWithAllocations(
+          tables.payments.map((row) =>
+            decoratePaymentWithItems(
+              mapPaymentRow(row),
+              tables.paymentItems.filter((item) => String(item.payment_id) === String(row.id)),
+            ),
           ),
+          tables.allocations,
         ),
         paymentStatuses: tables.paymentStatuses.map(mapStatusRow),
         feeGrids: tables.feeGrids.map(mapGridRow),

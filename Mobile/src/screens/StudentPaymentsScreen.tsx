@@ -12,6 +12,7 @@ import PaymentMutationControls from "../components/PaymentMutationControls";
 import PaymentCancelControls from "../components/PaymentCancelControls";
 import { useAdminData } from "../context/AdminDataContext";
 import { DATA_TRUTH_COPY, DATA_TRUTH_TEST_IDS, paymentPaidAt } from "../lib/dataTruth";
+import { getPaymentCashKpi } from "../lib/paymentCashKpi";
 import { getPaymentRateKpi } from "../lib/paymentRateKpi";
 import { useFloatingTabBarLayout } from "../lib/screenLayout";
 import {
@@ -63,19 +64,23 @@ export default function StudentPaymentsScreen({ route, navigation }: Partial<Pro
     (fee) => normalizeId(fee.studentId) === normalizeId(studentId),
   );
   const paymentRateKpi = getPaymentRateKpi(studentFees);
+  const cashKpi = getPaymentCashKpi(paiementsEleve);
   const feesReady =
     studentFeesSnapshot.status === "success" || studentFeesSnapshot.status === "empty";
+  const paymentsReady = paymentsSnapshot.status === "success" || paymentsSnapshot.status === "empty";
   const expectedLabel =
     feesReady && paymentRateKpi.expectedAmount > 0
       ? `${paymentRateKpi.expectedAmount.toLocaleString()} FC`
       : "—";
-  const collectedLabel =
+  const imputedLabel =
     feesReady && paymentRateKpi.expectedAmount > 0
       ? `${paymentRateKpi.collectedAmount.toLocaleString()} FC`
       : "—";
   const remaining = Math.max(0, paymentRateKpi.expectedAmount - paymentRateKpi.collectedAmount);
   const remainingLabel =
     feesReady && paymentRateKpi.expectedAmount > 0 ? `${remaining.toLocaleString()} FC` : "—";
+  const collectedLabel = paymentsReady ? `${cashKpi.collectedAmount.toLocaleString()} FC` : "—";
+  const unallocatedLabel = paymentsReady ? `${cashKpi.unallocatedAmount.toLocaleString()} FC` : "—";
   const showQueryState = paymentsSnapshot.status !== "success" || sortedPayments.length === 0;
 
   return (
@@ -99,6 +104,7 @@ export default function StudentPaymentsScreen({ route, navigation }: Partial<Pro
       ) : null}
       <PaymentMutationControls
         students={studentsData}
+        studentFees={studentFeesData}
         initialStudentId={studentId ? String(studentId) : ""}
         onChanged={() => refreshFinance()}
       />
@@ -112,13 +118,25 @@ export default function StudentPaymentsScreen({ route, navigation }: Partial<Pro
 
           <View style={localStyles.balanceRow}>
             <View style={localStyles.balanceCard}>
-              <Text style={localStyles.balanceLabel}>Payé</Text>
-              <Text style={localStyles.balanceValue}>{collectedLabel}</Text>
+              <Text style={localStyles.balanceLabel}>Imputé</Text>
+              <Text style={localStyles.balanceValue}>{imputedLabel}</Text>
             </View>
             <View style={[localStyles.balanceCard, localStyles.pendingCard]}>
               <Text style={localStyles.balanceLabel}>Reste à payer</Text>
               <Text style={[localStyles.balanceValue, localStyles.pendingValue]}>
                 {remainingLabel}
+              </Text>
+            </View>
+          </View>
+          <View style={localStyles.balanceRow}>
+            <View style={localStyles.balanceCard}>
+              <Text style={localStyles.balanceLabel}>Encaissé</Text>
+              <Text style={localStyles.balanceValue}>{collectedLabel}</Text>
+            </View>
+            <View style={[localStyles.balanceCard, localStyles.unallocatedCard]}>
+              <Text style={localStyles.balanceLabel}>Non imputé</Text>
+              <Text style={[localStyles.balanceValue, localStyles.unallocatedValue]}>
+                {unallocatedLabel}
               </Text>
             </View>
           </View>
@@ -193,6 +211,7 @@ const localStyles = {
     padding: 16,
   },
   pendingCard: { backgroundColor: "#FFF7ED" },
+  unallocatedCard: { backgroundColor: "#EFF6FF" },
   balanceLabel: { color: "#64748B", fontWeight: "800" as const },
   balanceValue: {
     marginTop: 6,
@@ -201,4 +220,5 @@ const localStyles = {
     fontSize: 18,
   },
   pendingValue: { color: "#EA580C" },
+  unallocatedValue: { color: "#1D4ED8" },
 };

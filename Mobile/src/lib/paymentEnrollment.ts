@@ -77,6 +77,76 @@ export function paymentClassBelongsToStudent(
   return collectActivePaymentClasses(studentId, students).some((row) => row.classId === wanted);
 }
 
+export type PaymentFeeOption = {
+  obligationId: string;
+  schoolFeeItemId: string;
+  feeType: string;
+  label: string;
+  balance: number;
+};
+
+export type PaymentFeeRow = {
+  id?: string;
+  studentId?: string;
+  status?: string;
+  archivedAt?: string | null;
+  archived_at?: string | null;
+  balance?: number;
+  amountDue?: number;
+  amountPaid?: number;
+  exemption?: number;
+  feeType?: string;
+  label?: string;
+  schoolFeeItemId?: string;
+};
+
+function isOpenObligation(fee: PaymentFeeRow): boolean {
+  if (fee.archivedAt || fee.archived_at) return false;
+  const status = trim(fee.status)
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+  if (status === "annule" || status === "cancelled" || status === "paye" || status === "exonere") {
+    return false;
+  }
+  const due = Number(fee.amountDue ?? 0);
+  const paid = Number(fee.amountPaid ?? 0);
+  const exempt = Number(fee.exemption ?? 0);
+  const balance = Number(fee.balance ?? Math.max(0, due - paid - exempt));
+  return balance > 0;
+}
+
+/** Dettes ouvertes de l'élève : l'identité métier est obligationId, jamais le libellé seul. */
+export function collectOpenPaymentFees(studentId: string, fees: PaymentFeeRow[]): PaymentFeeOption[] {
+  const wanted = trim(studentId).toUpperCase();
+  if (!wanted) return [];
+  return fees.flatMap((fee) => {
+    if (trim(fee.studentId).toUpperCase() !== wanted) return [];
+    if (!isOpenObligation(fee)) return [];
+    const obligationId = trim(fee.id);
+    if (!obligationId) return [];
+    const due = Number(fee.amountDue ?? 0);
+    const paid = Number(fee.amountPaid ?? 0);
+    const exempt = Number(fee.exemption ?? 0);
+    const balance = Number(fee.balance ?? Math.max(0, due - paid - exempt));
+    const label = trim(fee.label) || trim(fee.feeType) || "Frais";
+    return [
+      {
+        obligationId,
+        schoolFeeItemId: trim(fee.schoolFeeItemId),
+        feeType: trim(fee.feeType) || label,
+        label,
+        balance,
+      },
+    ];
+  });
+}
+
+export function preselectPaymentObligationId(studentId: string, fees: PaymentFeeRow[]): string {
+  const options = collectOpenPaymentFees(studentId, fees);
+  return options.length === 1 ? options[0].obligationId : "";
+}
+
 export function buildSchoolPaymentPayload(input: {
   studentId: string;
   classId: string;
@@ -84,13 +154,23 @@ export function buildSchoolPaymentPayload(input: {
   feeType: string;
   method: string;
   date: string;
+  obligationId?: string;
+  schoolFeeItemId?: string;
 }): Record<string, unknown> {
+  const item: Record<string, unknown> = {
+    feeType: trim(input.feeType) || "Acompte",
+    amount: input.amount,
+  };
+  const obligationId = trim(input.obligationId);
+  const schoolFeeItemId = trim(input.schoolFeeItemId);
+  if (obligationId) item.obligationId = obligationId;
+  if (schoolFeeItemId) item.feeTypeId = schoolFeeItemId;
   return {
     studentId: trim(input.studentId),
     classId: trim(input.classId),
     method: trim(input.method),
     date: trim(input.date),
-    items: [{ feeType: trim(input.feeType), amount: input.amount }],
+    items: [item],
   };
 }
 

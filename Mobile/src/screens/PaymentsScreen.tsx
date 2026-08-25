@@ -8,8 +8,13 @@ import PaymentCancelControls from "../components/PaymentCancelControls";
 import { useAdminData } from "../context/AdminDataContext";
 import { getPaymentStats } from "../domain/metrics/schoolMetrics";
 import { DATA_TRUTH_COPY, DATA_TRUTH_TEST_IDS } from "../lib/dataTruth";
+import { getPaymentCashKpi } from "../lib/paymentCashKpi";
 import { getPaymentRateKpi } from "../lib/paymentRateKpi";
 import { useFloatingTabBarLayout } from "../lib/screenLayout";
+
+function moneyLabel(amount: number, ready: boolean) {
+  return ready ? `${amount.toLocaleString("fr-FR")} FC` : "—";
+}
 
 export default function PaymentsScreen({ navigation }: any) {
   const { scrollContentPaddingBottom } = useFloatingTabBarLayout();
@@ -26,8 +31,10 @@ export default function PaymentsScreen({ navigation }: any) {
   } = useAdminData();
   const paymentStats = getPaymentStats(paymentsData);
   const paymentRateKpi = getPaymentRateKpi(studentFeesData);
+  const cashKpi = getPaymentCashKpi(paymentsData);
   const feesReady =
     studentFeesSnapshot.status === "success" || studentFeesSnapshot.status === "empty";
+  const paymentsReady = paymentsSnapshot.status === "success" || paymentsSnapshot.status === "empty";
 
   const refreshFinance = useCallback(async () => {
     await Promise.all([loadPayments(), loadStudentFees(), loadStudents()]);
@@ -43,10 +50,6 @@ export default function PaymentsScreen({ navigation }: any) {
   const expectedLabel =
     feesReady && paymentRateKpi.expectedAmount > 0
       ? `${paymentRateKpi.expectedAmount.toLocaleString("fr-FR")} FC`
-      : "—";
-  const collectedLabel =
-    feesReady && paymentRateKpi.expectedAmount > 0
-      ? `${paymentRateKpi.collectedAmount.toLocaleString("fr-FR")} FC`
       : "—";
   const remaining = Math.max(0, paymentRateKpi.expectedAmount - paymentRateKpi.collectedAmount);
   const remainingLabel =
@@ -77,23 +80,36 @@ export default function PaymentsScreen({ navigation }: any) {
             />
           ) : (
             <View testID={DATA_TRUTH_TEST_IDS.paymentsList}>
-              <PaymentMutationControls students={studentsData} onChanged={() => refreshFinance()} />
+              <PaymentMutationControls
+                students={studentsData}
+                studentFees={studentFeesData}
+                onChanged={() => refreshFinance()}
+              />
               <View style={styles.summaryCard}>
                 <Text style={styles.summaryLabel}>Frais de scolarité estimés</Text>
                 <Text style={styles.summaryAmount}>{expectedLabel}</Text>
                 <Text style={styles.summarySub}>Reste estimé : {remainingLabel}</Text>
+                <Text style={styles.summarySub}>{rateLabel}</Text>
               </View>
 
               <View style={styles.summaryCardSecondary}>
-                <Text style={styles.summaryLabelDark}>Montant encaissé</Text>
-                <Text style={styles.summaryAmountDark}>{collectedLabel}</Text>
-                <Text style={styles.summarySubDark}>{rateLabel}</Text>
+                <Text style={styles.summaryLabelDark}>Encaissé</Text>
+                <Text style={styles.summaryAmountDark}>{moneyLabel(cashKpi.collectedAmount, paymentsReady)}</Text>
+                <Text style={styles.summarySubDark}>
+                  Imputé {moneyLabel(cashKpi.allocatedAmount, paymentsReady)} · Non imputé{" "}
+                  {moneyLabel(cashKpi.unallocatedAmount, paymentsReady)}
+                </Text>
               </View>
 
               <View style={styles.row}>
                 <View style={styles.smallCard}>
                   <Text style={styles.smallNumber}>{paymentStats.paid}</Text>
                   <Text style={styles.smallLabel}>Payés</Text>
+                </View>
+
+                <View style={styles.smallCard}>
+                  <Text style={styles.smallNumber}>{paymentStats.unallocated}</Text>
+                  <Text style={styles.smallLabel}>Non imputés</Text>
                 </View>
 
                 <View style={styles.smallCard}>

@@ -10,6 +10,7 @@ import RoleDashboardLayout, {
   type RoleDashboardKpi,
 } from "../components/RoleDashboardLayout";
 import { useAdminData } from "../context/AdminDataContext";
+import { getPaymentCashKpi } from "../lib/paymentCashKpi";
 import { getPaymentStats, getPresenceStats } from "../domain/metrics/schoolMetrics";
 import { canReadEntity, canReadRoute, canReadView } from "../domain/security/permissions";
 import { canAccessMessagesRoute } from "../lib/mobileCtaRbacAlignment";
@@ -97,6 +98,7 @@ export default function HomeScreen({ navigation }: any) {
   const canonicalPayments =
     paymentsSnapshot.status === "success" || paymentsSnapshot.status === "empty" ? paymentsData : [];
   const paymentStats = getPaymentStats(canonicalPayments);
+  const cashKpi = getPaymentCashKpi(canonicalPayments);
   const paymentsReady =
     paymentsSnapshot.status === "success" ||
     paymentsSnapshot.status === "empty" ||
@@ -344,7 +346,7 @@ export default function HomeScreen({ navigation }: any) {
       ? kpi("pendingPayments", "time-outline", paymentsReady ? formatAmount(paymentStats.pendingAmount) : "—", "À percevoir", "#EA580C", "#FFF7ED", () => navigation.navigate("Payments"))
       : null,
     paidPayments: canReadEntity(session, "payments")
-      ? kpi("paidPayments", "checkmark-circle-outline", paymentsReady ? formatAmount(paymentStats.paidAmount) : "—", "Encaissé", "#16A34A", "#ECFDF5", () => navigation.navigate("Payments"))
+      ? kpi("paidPayments", "checkmark-circle-outline", paymentsReady ? formatAmount(cashKpi.collectedAmount) : "—", "Encaissé", "#16A34A", "#ECFDF5", () => navigation.navigate("Payments"))
       : null,
     unpaidPayments: canReadEntity(session, "payments")
       ? kpi("unpaidPayments", "alert-circle-outline", paymentsReady ? String(paymentStats.pending) : "—", "Impayés", "#DC2626", "#FEF2F2", () => navigation.navigate("Payments"))

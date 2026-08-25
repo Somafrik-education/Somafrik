@@ -7,6 +7,7 @@ import { Field, Input } from "../ui/Field";
 import { Button } from "../ui/Button";
 import { useToast } from "../ui/Toast";
 import {
+  classChoicesForSchool,
   classOptionsForSchool,
 } from "../../lib/fees";
 import {
@@ -41,21 +42,29 @@ export function QuickFeeGridModal({ open, onClose, schoolCode, onSaved }: QuickF
     () => classOptionsForSchool(state, schoolCode),
     [state, schoolCode],
   );
+  const classChoices = useMemo(
+    () => classChoicesForSchool(state, schoolCode),
+    [state, schoolCode],
+  );
 
   const classStats = useMemo(
     () =>
-      classOptions.map((className) => ({
-        className,
-        students: countStudentsInClass(state, schoolCode, className),
-        selected: form.classNames.some((name) => normalize(name) === normalize(className)),
+      (classChoices.length
+        ? classChoices
+        : classOptions.map((className) => ({ classId: className, classCode: "", className }))
+      ).map((choice) => ({
+        ...choice,
+        students: countStudentsInClass(state, schoolCode, choice.className),
+        selected: (form.selectedClasses ?? []).some((row) => row.classId === choice.classId)
+          || form.classNames.some((name) => normalize(name) === normalize(choice.className)),
         hasGrid: (state.feeGrids ?? []).some(
           (grid) =>
             normalize(grid.schoolCode) === normalize(schoolCode) &&
-            normalize(grid.className) === normalize(className) &&
+            (grid.classId ? grid.classId === choice.classId : normalize(grid.className) === normalize(choice.className)) &&
             grid.academicYear === form.academicYear,
         ),
       })),
-    [classOptions, state, schoolCode, form.classNames, form.academicYear],
+    [classChoices, classOptions, state, schoolCode, form.selectedClasses, form.classNames, form.academicYear],
   );
 
   useEffect(() => {
@@ -63,24 +72,35 @@ export function QuickFeeGridModal({ open, onClose, schoolCode, onSaved }: QuickF
     setForm(defaultQuickFeeGridInput(state, schoolCode));
   }, [open, schoolCode, state]);
 
-  function toggleClass(className: string) {
+  function toggleClass(choice: { classId: string; classCode: string; className: string }) {
     setForm((current) => {
-      const exists = current.classNames.some((name) => normalize(name) === normalize(className));
+      const selected = current.selectedClasses ?? [];
+      const exists = selected.some((row) => row.classId === choice.classId);
+      const nextSelected = exists
+        ? selected.filter((row) => row.classId !== choice.classId)
+        : [...selected, choice];
       return {
         ...current,
-        classNames: exists
-          ? current.classNames.filter((name) => normalize(name) !== normalize(className))
-          : [...current.classNames, className],
+        selectedClasses: nextSelected,
+        classNames: nextSelected.map((row) => row.className),
       };
     });
   }
 
   function selectAllClasses() {
-    setForm((current) => ({ ...current, classNames: [...classOptions] }));
+    setForm((current) => ({
+      ...current,
+      selectedClasses: classStats.map((row) => ({
+        classId: row.classId,
+        classCode: row.classCode,
+        className: row.className,
+      })),
+      classNames: classStats.map((row) => row.className),
+    }));
   }
 
   function clearClasses() {
-    setForm((current) => ({ ...current, classNames: [] }));
+    setForm((current) => ({ ...current, classNames: [], selectedClasses: [] }));
   }
 
   async function handleSubmit(event: FormEvent) {
@@ -104,6 +124,8 @@ export function QuickFeeGridModal({ open, onClose, schoolCode, onSaved }: QuickF
       for (const grid of built.grids) {
         const items = built.items.filter((item) => item.feeGridId === grid.id);
         const created = await financeApi.createFeeGrid({
+          classId: grid.classId,
+          classCode: grid.classCode,
           className: grid.className,
           academicYear: grid.academicYear,
           periodName: grid.periodName,
@@ -179,25 +201,30 @@ export function QuickFeeGridModal({ open, onClose, schoolCode, onSaved }: QuickF
               </Button>
             </div>
           </div>
-          {!classOptions.length ? (
+          {!classStats.length ? (
             <p className="text-sm text-muted">Aucune classe disponible pour cet établissement.</p>
           ) : (
             <div className="grid gap-2 sm:grid-cols-2">
-              {classStats.map(({ className, students, selected, hasGrid }) => (
+              {classStats.map((choice) => (
                 <button
-                  key={className}
+                  key={choice.classId}
                   type="button"
-                  onClick={() => toggleClass(className)}
+                  onClick={() =>
+                    toggleClass({
+                      classId: choice.classId,
+                      classCode: choice.classCode,
+                      className: choice.className,
+                    })
+                  }
                   className={`rounded-xl border px-3 py-2 text-left text-sm transition ${
-                    selected
+                    choice.selected
                       ? "border-brand bg-brand-50 text-brand"
                       : "border-line bg-white hover:border-brand/30"
                   }`}
                 >
-                  <span className="font-semibold">{className}</span>
+                  <span className="font-semibold">{choice.className}</span>
                   <span className="mt-0.5 block text-xs opacity-80">
-                    {students} élève(s)
-                    {hasGrid ? " · grille existante" : ""}
+                    {choice.students} élève(s){choice.hasGrid ? " · grille existante" : ""}
                   </span>
                 </button>
               ))}

@@ -181,6 +181,8 @@ export function validatePaymentDraft(input: {
   amount: unknown;
   classId?: unknown;
   classOptions?: Array<{ classId: string }>;
+  obligationId?: unknown;
+  obligationOptions?: Array<{ obligationId: string }>;
 }): Record<string, string> {
   const errors: Record<string, string> = {};
   if (!trimField(input.studentId)) errors.studentId = requiredError("Élève");
@@ -194,6 +196,15 @@ export function validatePaymentDraft(input: {
       errors.classId = requiredError("Classe");
     } else if (!options.some((row) => trimField(row.classId) === trimField(input.classId))) {
       errors.classId = "Classe invalide pour cet élève.";
+    }
+    const fees = Array.isArray(input.obligationOptions) ? input.obligationOptions : [];
+    if (fees.length && !trimField(input.obligationId)) {
+      errors.obligationId = requiredError("Frais");
+    } else if (
+      fees.length &&
+      !fees.some((row) => trimField(row.obligationId) === trimField(input.obligationId))
+    ) {
+      errors.obligationId = "Frais invalide pour cet élève.";
     }
   }
   return errors;
