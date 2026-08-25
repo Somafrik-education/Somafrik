@@ -3,6 +3,7 @@
 const { randomUUID } = require("node:crypto");
 const { listFunctionalModules } = require("../lib/functionalModulesCatalog");
 const { asTrimmed } = require("../lib/establishmentRolesManagement");
+const { nextMonotonicUpdatedAt } = require("../lib/functionalRbacManagement");
 const { mapGrantRow } = require("./functionalRbacPgStore");
 
 function createFunctionalRbacMemoryStore(seed = {}) {
@@ -69,7 +70,7 @@ function createFunctionalRbacMemoryStore(seed = {}) {
           }) &&
           row.module_key === input.moduleKey,
       );
-      const now = new Date().toISOString();
+      const now = nextMonotonicUpdatedAt(index >= 0 ? grants[index].updated_at : null);
       if (index >= 0) {
         grants[index] = {
           ...grants[index],

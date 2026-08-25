@@ -123,7 +123,11 @@ function createFunctionalRbacPgStore(repo) {
       ? await one(
           `UPDATE role_module_permissions
            SET can_create = $2, can_read = $3, can_update = $4, can_delete = $5,
-               version = version + 1, updated_by = $6, updated_at = NOW()
+               version = version + 1, updated_by = $6,
+               updated_at = GREATEST(
+                 date_trunc('milliseconds', clock_timestamp()),
+                 date_trunc('milliseconds', updated_at) + INTERVAL '1 millisecond'
+               )
            WHERE id = $1
            RETURNING *`,
           [

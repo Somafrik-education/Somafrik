@@ -11,6 +11,7 @@ const {
   throwLegacyRolePermissionsWrite,
   assertSuperAdminInvariantPatch,
   assertNotProtectedArchive,
+  nextMonotonicUpdatedAt,
 } = require("./functionalRbacManagement");
 const {
   patchConfiguredPermissions,
@@ -215,6 +216,102 @@ test("409 expectedUpdatedAt et audit rollback mémoire si audit échoue", async 
       ),
     (error) => error.statusCode === 409 && error.code === FUNCTIONAL_RBAC_ERROR.CONFLICT,
   );
+});
+
+test("OCC 409 si deux PATCH RBAC dans la même milliseconde (lost update)", async () => {
+  assert.equal(nextMonotonicUpdatedAt("2026-08-25T18:14:47.000Z", "2026-08-25T18:14:47.000Z"), "2026-08-25T18:14:47.001Z");
+  const frozen = "2026-08-25T18:14:47.000Z";
+  const RealDate = Date;
+  const frozenMs = new RealDate(frozen).getTime();
+  class FrozenDate extends RealDate {
+    constructor(...args) {
+      if (args.length === 0) super(frozenMs);
+      else super(...args);
+    }
+    static now() {
+      return frozenMs;
+    }
+  }
+  global.Date = FrozenDate;
+  try {
+    const rbac = createFunctionalRbacMemoryStore({
+      resolveCountryAndSchool: async () => ({
+        country: { id: "cd", code: "CD" },
+        school: { id: "nuru", school_code: "CD-2026-0001", country_id: "cd", country_code: "CD" },
+      }),
+    });
+    await rbac.upsertGrant({
+      roleKey: "PREFET_ETUDES",
+      scopeType: "school",
+      countryId: "cd",
+      schoolId: "nuru",
+      moduleKey: "students",
+      canRead: true,
+      canUpdate: true,
+      canDelete: true,
+      updatedBy: "bootstrap",
+    });
+    const first = await rbac.maxUpdatedAtForScope({
+      roleKey: "PREFET_ETUDES",
+      scopeType: "school",
+      countryId: "cd",
+      schoolId: "nuru",
+    });
+    const repo = {
+      getFunctionalRbacStore: () => rbac,
+      createTxScope: () => repo,
+      withTransaction: async (fn) => fn(repo),
+      recordAudit: async () => {},
+    };
+    const superAdmin = { role: "Super Administrateur Somafrik", identifier: "superadmin" };
+    await patchConfiguredPermissions(
+      repo,
+      {
+        roleKey: "PREFET_ETUDES",
+        schoolCode: "CD-2026-0001",
+        expectedUpdatedAt: first,
+        grants: [{ moduleKey: "students", canCreate: false, canRead: true, canUpdate: true, canDelete: false }],
+      },
+      superAdmin,
+      {},
+    );
+    await assert.rejects(
+      () =>
+        patchConfiguredPermissions(
+          repo,
+          {
+            roleKey: "PREFET_ETUDES",
+            schoolCode: "CD-2026-0001",
+            expectedUpdatedAt: first,
+            grants: [{ moduleKey: "students", canCreate: false, canRead: true, canUpdate: true, canDelete: true }],
+          },
+          superAdmin,
+          {},
+        ),
+      (error) => error.statusCode === 409 && error.code === FUNCTIONAL_RBAC_ERROR.CONFLICT,
+    );
+    const after = await rbac.listGrantsForScope({
+      roleKey: "PREFET_ETUDES",
+      scopeType: "school",
+      countryId: "cd",
+      schoolId: "nuru",
+    });
+    const students = after.find((row) => row.moduleKey === "students");
+    assert.equal(students.canDelete, false, "le 2e PATCH périmé n'accorde pas students.delete");
+    const accountant = await rbac.listGrantsForScope({
+      roleKey: "ACCOUNTANT",
+      scopeType: "school",
+      countryId: "cd",
+      schoolId: "nuru",
+    });
+    assert.equal(
+      accountant.some((row) => row.moduleKey === "students" && row.canRead),
+      false,
+      "ACCOUNTANT n'obtient pas Élèves:READ",
+    );
+  } finally {
+    global.Date = RealDate;
+  }
 });
 
 test("PATCH schoolCode n'est pas traité comme un UUID", async () => {

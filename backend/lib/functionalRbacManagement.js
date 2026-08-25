@@ -85,6 +85,20 @@ function timestampsEqual(left, right) {
   return new Date(left).getTime() === new Date(right).getTime();
 }
 
+/**
+ * Jeton OCC aligné sur Date.getTime() (milliseconde JSON).
+ * Deux écritures dans la même ms doivent quand même avancer le jeton,
+ * sinon un expectedUpdatedAt périmé est accepté (lost update).
+ */
+function nextMonotonicUpdatedAt(previous, now = new Date()) {
+  const nowMs = new Date(now).getTime();
+  const prevMs = previous ? new Date(previous).getTime() : Number.NaN;
+  if (Number.isFinite(prevMs) && nowMs <= prevMs) {
+    return new Date(prevMs + 1).toISOString();
+  }
+  return new Date(nowMs).toISOString();
+}
+
 function looksLikeUuid(value) {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(value ?? "").trim());
 }
@@ -101,5 +115,6 @@ module.exports = {
   assertNotProtectedArchive,
   assertSuperAdminInvariantPatch,
   timestampsEqual,
+  nextMonotonicUpdatedAt,
   looksLikeUuid,
 };
