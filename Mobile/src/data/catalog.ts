@@ -192,6 +192,9 @@ export type PaymentItem = {
   itemCount?: number;
   itemsDetail?: string;
   feeType?: string;
+  allocatedAmount?: number;
+  unallocatedAmount?: number;
+  overpaymentAmount?: number;
 };
 
 export type PaymentStatus = {

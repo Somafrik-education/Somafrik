@@ -98,6 +98,17 @@ function run() {
   assert.equal(isCancelledStatus("Annulé"), true);
   assert.equal(isCancelledStatus("cancelled"), true);
   assert.equal(isCancelledStatus("En attente"), false);
+  assert.equal(paymentStatusLabel("Non imputé"), "Non imputé");
+  assert.equal(isPaidStatus("Non imputé"), false);
+  const leftoverReceipt = normalizePaymentRow({
+    id: "CD-2026-0001-2026-PAY-0007",
+    amount: 150,
+    status: "Non imputé",
+    allocatedAmount: 0,
+    unallocatedAmount: 150,
+  });
+  assert.equal(leftoverReceipt.unallocatedAmount, 150);
+  assert.equal(paymentStatusLabel(leftoverReceipt.status), "Non imputé");
 
   const paymentsError = snapshotFromFailure({ status: 500, message: "Erreur paiements" }, []);
   assert.equal(paymentsError.status, "error");

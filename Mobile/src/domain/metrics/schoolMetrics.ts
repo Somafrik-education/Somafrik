@@ -1,5 +1,5 @@
 import type { Course, NoteItem, PaymentItem, PresenceItem, Student } from "../../data/catalog";
-import { isCancelledStatus, isPaidStatus, paymentTotal } from "../../lib/dataTruth";
+import { isCancelledStatus, isPaidStatus, isUnallocatedStatus, paymentTotal } from "../../lib/dataTruth";
 import { GradeBookService } from "../academics/GradeBookService";
 
 export type PresenceStatus = "Présent" | "Absent" | "Retard" | "Justifié";
@@ -18,8 +18,10 @@ export type PaymentStats = {
   total: number;
   paid: number;
   pending: number;
+  unallocated: number;
   paidAmount: number;
   pendingAmount: number;
+  unallocatedAmount: number;
   rate: number;
 };
 
@@ -94,22 +96,32 @@ export function isCancelledPayment(payment: Pick<PaymentItem, "status">) {
   return isCancelledStatus(payment.status);
 }
 
+export function isUnallocatedPayment(payment: Pick<PaymentItem, "status">) {
+  return isUnallocatedStatus(payment.status);
+}
+
 /**
  * Cartes Payés / Impayés = reçus encore dans le cycle d'encaissement.
  * Un reçu Annulé n'est ni payé ni impayé — ce n'est plus une créance.
+ * Un reçu Non imputé n'est pas Payé : l'argent est en caisse sans dette affectée.
  */
 export function getPaymentStats(payments: PaymentItem[], studentIds?: string[]): PaymentStats {
   const scopedRows = scopeRowsByStudentIds(payments, studentIds);
   const countableRows = scopedRows.filter((payment) => !isCancelledPayment(payment));
   const paidRows = countableRows.filter(isPaidPayment);
-  const pendingRows = countableRows.filter((payment) => !isPaidPayment(payment));
+  const unallocatedRows = countableRows.filter(isUnallocatedPayment);
+  const pendingRows = countableRows.filter(
+    (payment) => !isPaidPayment(payment) && !isUnallocatedPayment(payment),
+  );
 
   return {
     total: countableRows.length,
     paid: paidRows.length,
     pending: pendingRows.length,
+    unallocated: unallocatedRows.length,
     paidAmount: paidRows.reduce((sum, payment) => sum + paymentTotal(payment), 0),
     pendingAmount: pendingRows.reduce((sum, payment) => sum + paymentTotal(payment), 0),
+    unallocatedAmount: unallocatedRows.reduce((sum, payment) => sum + paymentTotal(payment), 0),
     rate: countableRows.length ? Math.round((paidRows.length / countableRows.length) * 100) : 0,
   };
 }

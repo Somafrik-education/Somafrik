@@ -15,6 +15,7 @@ import type { FeeGrid, SchoolFeeItem, SchoolFeeType, StudentFee } from "../../ty
 import {
   canViewFeeGrids,
   classOptionsForSchool,
+  classChoicesForSchool,
   DEFAULT_MONTHLY_MONTHS,
   isGridEditable,
   itemsForGrid,
@@ -103,6 +104,7 @@ export function FinanceFeesPage() {
   const allItems = scopedSchoolFeeItems(session?.user ?? null, state);
   const studentFees = refreshStudentFeeStatuses(scopedStudentFees(session?.user ?? null, state));
   const classOptions = useMemo(() => classOptionsForSchool(state, schoolCode), [state, schoolCode]);
+  const classChoices = useMemo(() => classChoicesForSchool(state, schoolCode), [state, schoolCode]);
   const years = useMemo(
     () => [...new Set(grids.map((g) => g.academicYear))].sort().reverse(),
     [grids],
@@ -137,7 +139,9 @@ export function FinanceFeesPage() {
       id: newFeeId("FEEGRID"),
       schoolCode,
       academicYear: resolveAcademicYear(state, schoolCode),
-      className: classOptions[0] ?? "",
+      classId: classChoices[0]?.classId ?? "",
+      classCode: classChoices[0]?.classCode ?? "",
+      className: classChoices[0]?.className ?? classOptions[0] ?? "",
       currency: resolveSchoolCurrency(state, schoolCode),
       status: "Brouillon",
       periodName: "",
@@ -207,6 +211,8 @@ export function FinanceFeesPage() {
     }
 
     const payload = {
+      classId: editing.classId,
+      classCode: editing.classCode,
       className: editing.className,
       academicYear: editing.academicYear,
       periodName: editing.periodName,
@@ -414,9 +420,22 @@ export function FinanceFeesPage() {
             <div className="grid gap-4 sm:grid-cols-2">
               <Field label="Classe" hint="Obligatoire" required>
                 <Select
-                  value={editing.className}
-                  onChange={(e) => setEditing({ ...editing, className: e.target.value })}
-                  options={classOptions.map((name) => ({ value: name, label: name }))}
+                  value={editing.classId || editing.className}
+                  onChange={(e) => {
+                    const next = e.target.value;
+                    const choice = classChoices.find((row) => row.classId === next);
+                    setEditing({
+                      ...editing,
+                      classId: choice?.classId ?? "",
+                      classCode: choice?.classCode ?? "",
+                      className: choice?.className ?? next,
+                    });
+                  }}
+                  options={
+                    classChoices.length
+                      ? classChoices.map((row) => ({ value: row.classId, label: row.className }))
+                      : classOptions.map((name) => ({ value: name, label: name }))
+                  }
                   required
                 />
               </Field>

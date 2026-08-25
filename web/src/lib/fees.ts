@@ -420,6 +420,35 @@ export function classOptionsForSchool(state: BackOfficeState, schoolCode: string
   return [...new Set([...classNames, ...fromStudents])].sort((a, b) => a.localeCompare(b, "fr"));
 }
 
+export type SchoolClassChoice = {
+  classId: string;
+  classCode: string;
+  className: string;
+};
+
+/** Identité canonique de classe pour une grille tarifaire. className n'est qu'un libellé. */
+export function classChoicesForSchool(state: BackOfficeState, schoolCode: string): SchoolClassChoice[] {
+  const rows = ((state.classes ?? []) as Record<string, unknown>[]).filter((row) => {
+    const code = String(row.schoolCode ?? "").trim();
+    if (schoolCode && code && normalize(code) !== normalize(schoolCode)) return false;
+    const status = normalize(String(row.status ?? ""));
+    return status !== "archivee" && status !== "inactive" && status !== "inactivee";
+  });
+  const choices: SchoolClassChoice[] = [];
+  const seen = new Set<string>();
+  for (const row of rows) {
+    const classId = String(row.id ?? row.classId ?? "").trim();
+    if (!classId || seen.has(classId)) continue;
+    seen.add(classId);
+    choices.push({
+      classId,
+      classCode: String(row.classCode ?? row.code ?? "").trim(),
+      className: String(row.name ?? row.className ?? "").trim() || classId,
+    });
+  }
+  return choices.sort((a, b) => a.className.localeCompare(b.className, "fr"));
+}
+
 export function isGridEditable(grid: FeeGrid): boolean {
   return grid.status === "Brouillon" || grid.status === "Active";
 }

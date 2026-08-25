@@ -13,12 +13,15 @@ const {
   mapReminderRow,
   mapStatusRow,
   studentMatches,
+  studentMatchesClassScope,
+  classScopeSpec,
   obligationStatus,
   toIsoDate,
   mapBoStatusToDb,
 } = require("../lib/financeManagement");
 const { decoratePaymentWithItems } = require("../lib/financePaymentItems");
 const { projectObligationPaidAmounts } = require("../lib/financeObligationPaid");
+const { projectPaymentsWithAllocations, projectPaymentCash } = require("../lib/financeUnallocatedCash");
 const { resolveFinanceSchoolScope, schoolCodeInScope } = require("../lib/financeSchoolScope");
 const financeService = require("../lib/financeService");
 
@@ -109,9 +112,57 @@ function createFinanceMemoryStore({ getSchoolByCode, findStudent, listStudentsIn
         }
         return null;
       },
-      async listStudentsInClass(schoolCode, className) {
-        const rows = (await listStudentsInClass?.(schoolCode, className)) || [];
-        return rows;
+      async getClassByCode(classCode, schoolId) {
+        const key = asTrimmed(classCode).toUpperCase();
+        if (!key) return null;
+        const student =
+          (await findStudent?.(key, { schoolCode: "*" })) ||
+          null;
+        if (student && asTrimmed(student.classCode).toUpperCase() === key) {
+          return {
+            classId: String(student.classId),
+            schoolId: student.schoolId || schoolId,
+            classCode: asTrimmed(student.classCode),
+            className: asTrimmed(student.className),
+            schoolCode: student.schoolCode,
+          };
+        }
+        const rows = (await listStudentsInClass?.("*", { classCode: key })) || [];
+        const match = rows.find((row) => asTrimmed(row.classCode).toUpperCase() === key);
+        if (!match) return null;
+        return {
+          classId: String(match.classId),
+          schoolId: match.schoolId || schoolId,
+          classCode: asTrimmed(match.classCode),
+          className: asTrimmed(match.className),
+          schoolCode: match.schoolCode,
+        };
+      },
+      async findUniqueClassBySchoolYearName(schoolId, academicYear, className, schoolCode) {
+        const name = asTrimmed(className);
+        if (!name) return null;
+        const code = asTrimmed(schoolCode);
+        const fromNamed = code ? (await listStudentsInClass?.(code, name)) || [] : [];
+        const fromSpec = code ? (await listStudentsInClass?.(code, { className: name })) || [] : [];
+        const rows = [...fromNamed, ...fromSpec];
+        const uniqueIds = [...new Set(rows.map((row) => String(row.classId || "")).filter(Boolean))];
+        if (uniqueIds.length !== 1) return null;
+        const student = rows.find((row) => String(row.classId) === uniqueIds[0]);
+        return {
+          classId: uniqueIds[0],
+          schoolId: student.schoolId || schoolId,
+          classCode: asTrimmed(student.classCode),
+          className: asTrimmed(student.className) || name,
+          schoolCode: student.schoolCode || code,
+        };
+      },
+      async listStudentsInClass(schoolCode, classRef) {
+        const spec = classScopeSpec(classRef);
+        const raw =
+          (await listStudentsInClass?.(schoolCode, spec)) ||
+          (spec.className ? await listStudentsInClass?.(schoolCode, spec.className) : null) ||
+          [];
+        return raw.filter((student) => studentMatchesClassScope(student, spec) || (!spec.classId && !spec.classCode));
       },
       async listPaymentCodes(schoolId) {
         return tables.payments.filter((row) => row.school_id === schoolId).map((row) => row.payment_code);
@@ -205,7 +256,8 @@ function createFinanceMemoryStore({ getSchoolByCode, findStudent, listStudentsIn
           return null;
         }
         const items = await this.listPaymentItems(row.id);
-        return decoratePaymentWithItems(mapped, items);
+        const allocations = await this.listAllocations(row.id);
+        return projectPaymentCash(decoratePaymentWithItems(mapped, items), allocations);
       },
       async cancelPayment(dbId, reason, principal) {
         const row = tables.payments.find((item) => item.id === dbId);
@@ -312,6 +364,8 @@ function createFinanceMemoryStore({ getSchoolByCode, findStudent, listStudentsIn
         if (existing) {
           Object.assign(existing, {
             class_name: input.className,
+            class_id: input.classId || existing.class_id || null,
+            class_code: input.classCode || existing.class_code || "",
             academic_year: input.academicYear,
             period_name: input.periodName || "",
             currency: input.currency,
@@ -329,6 +383,8 @@ function createFinanceMemoryStore({ getSchoolByCode, findStudent, listStudentsIn
           grid_code: input.id || `FEEGRID-${randomUUID()}`,
           name: input.name,
           class_name: input.className,
+          class_id: input.classId || null,
+          class_code: input.classCode || "",
           academic_year: input.academicYear,
           period_name: input.periodName || "",
           currency: input.currency,
@@ -475,11 +531,14 @@ function createFinanceMemoryStore({ getSchoolByCode, findStudent, listStudentsIn
     },
     async listProjection() {
       return {
-        payments: tables.payments.map((row) =>
-          decoratePaymentWithItems(
-            mapPaymentRow(row),
-            tables.paymentItems.filter((item) => String(item.payment_id) === String(row.id)),
+        payments: projectPaymentsWithAllocations(
+          tables.payments.map((row) =>
+            decoratePaymentWithItems(
+              mapPaymentRow(row),
+              tables.paymentItems.filter((item) => String(item.payment_id) === String(row.id)),
+            ),
           ),
+          tables.allocations,
         ),
         paymentStatuses: tables.paymentStatuses.map(mapStatusRow),
         feeGrids: tables.feeGrids.map(mapGridRow),

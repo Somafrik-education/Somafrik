@@ -13,6 +13,7 @@ const {
   mapReminderRow,
   mapStatusRow,
   studentMatches,
+  classScopeSpec,
   obligationStatus,
   toIsoDate,
   mapBoStatusToDb,
@@ -20,6 +21,7 @@ const {
 } = require("../lib/financeManagement");
 const { decoratePaymentWithItems } = require("../lib/financePaymentItems");
 const { projectObligationPaidAmounts } = require("../lib/financeObligationPaid");
+const { projectPaymentsWithAllocations, projectPaymentCash } = require("../lib/financeUnallocatedCash");
 const { resolveFinanceSchoolScope, sqlSchoolPredicate } = require("../lib/financeSchoolScope");
 const financeService = require("../lib/financeService");
 
@@ -111,15 +113,67 @@ function createFinancePgStore(repo) {
           schoolCode: row.school_code,
         };
       },
-      async listStudentsInClass(schoolCode, className) {
+      async getClassByCode(classCode, schoolId) {
+        const key = asTrimmed(classCode);
+        if (!key) return null;
+        const row = await one(
+          `SELECT cl.id, cl.school_id, cl.class_code, cl.name, s.school_code
+           FROM classes cl
+           JOIN schools s ON s.id = cl.school_id
+           WHERE cl.school_id = $1 AND upper(btrim(cl.class_code)) = upper(btrim($2))
+           LIMIT 1`,
+          [schoolId, key],
+        );
+        if (!row) return null;
+        return {
+          classId: row.id,
+          schoolId: row.school_id,
+          classCode: row.class_code || "",
+          className: row.name || "",
+          schoolCode: row.school_code,
+        };
+      },
+      async findUniqueClassBySchoolYearName(schoolId, academicYear, className) {
+        const name = asTrimmed(className);
+        if (!name) return null;
+        const year = asTrimmed(academicYear);
         const rows = await all(
-          `SELECT st.*, s.school_code, cl.name AS class_name
+          `SELECT cl.id, cl.school_id, cl.class_code, cl.name, s.school_code
+           FROM classes cl
+           JOIN schools s ON s.id = cl.school_id
+           JOIN academic_years ay ON ay.id = cl.academic_year_id
+           WHERE cl.school_id = $1
+             AND lower(btrim(cl.name)) = lower(btrim($2))
+             AND ($3::text = '' OR lower(btrim(ay.name)) = lower(btrim($3)))`,
+          [schoolId, name, year],
+        );
+        if (rows.length !== 1) return null;
+        const row = rows[0];
+        return {
+          classId: row.id,
+          schoolId: row.school_id,
+          classCode: row.class_code || "",
+          className: row.name || "",
+          schoolCode: row.school_code,
+        };
+      },
+      async listStudentsInClass(schoolCode, classRef) {
+        const spec = classScopeSpec(classRef);
+        if (!spec.classId && !spec.classCode) {
+          throw createFinanceError(400, "Identifiant de classe canonique requis (classId ou classCode).", FINANCE_ERROR.CLASS_REQUIRED);
+        }
+        const rows = await all(
+          `SELECT st.*, s.school_code, cl.id AS class_id, cl.class_code, cl.name AS class_name
            FROM students st
            JOIN schools s ON s.id = st.school_id
            JOIN enrollments e ON e.student_id = st.id AND e.status = 'active'
            JOIN classes cl ON cl.id = e.class_id
-           WHERE s.school_code = $1 AND lower(btrim(cl.name)) = lower(btrim($2))`,
-          [asTrimmed(schoolCode).toUpperCase(), className],
+           WHERE s.school_code = $1
+             AND (
+               ($2::text <> '' AND e.class_id::text = $2)
+               OR ($2::text = '' AND $3::text <> '' AND upper(btrim(cl.class_code)) = upper(btrim($3)))
+             )`,
+          [asTrimmed(schoolCode).toUpperCase(), spec.classId, spec.classCode],
         );
         return rows.map((row) => {
           const profile = parsePayload(row.profile_payload);
@@ -132,6 +186,8 @@ function createFinancePgStore(repo) {
             lastName: row.last_name,
             name: `${row.first_name ?? ""} ${row.last_name ?? ""}`.trim(),
             schoolCode: row.school_code,
+            classId: row.class_id,
+            classCode: row.class_code || "",
             className: row.class_name,
           };
         });
@@ -265,7 +321,8 @@ function createFinancePgStore(repo) {
         const row = await one(sql, params);
         if (!row) return null;
         const items = await this.listPaymentItems(row.id);
-        return decoratePaymentWithItems(mapPaymentRow(row), items);
+        const allocations = await this.listAllocations(row.id);
+        return projectPaymentCash(decoratePaymentWithItems(mapPaymentRow(row), items), allocations);
       },
       async resolveActorUserId(principal) {
         const normalized = asTrimmed(principal?.sub || principal?.id);
@@ -405,8 +462,8 @@ function createFinancePgStore(repo) {
         const gridCode = input.id || `FEEGRID-${randomUUID()}`;
         const row = await one(
           `INSERT INTO fee_grids (
-             school_id, grid_code, name, class_name, academic_year, period_name, currency, status, profile_payload
-           ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb)
+             school_id, grid_code, name, class_name, academic_year, period_name, currency, status, class_id, profile_payload
+           ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::uuid,$10::jsonb)
            ON CONFLICT (school_id, grid_code) DO UPDATE SET
              name = EXCLUDED.name,
              class_name = EXCLUDED.class_name,
@@ -414,10 +471,22 @@ function createFinancePgStore(repo) {
              period_name = EXCLUDED.period_name,
              currency = EXCLUDED.currency,
              status = EXCLUDED.status,
+             class_id = COALESCE(EXCLUDED.class_id, fee_grids.class_id),
              profile_payload = EXCLUDED.profile_payload,
              updated_at = NOW()
            RETURNING *`,
-          [input.schoolId, gridCode, input.name, input.className, input.academicYear, input.periodName || "", input.currency, input.status, JSON.stringify(input)],
+          [
+            input.schoolId,
+            gridCode,
+            input.name,
+            input.className,
+            input.academicYear,
+            input.periodName || "",
+            input.currency,
+            input.status,
+            input.classId || null,
+            JSON.stringify(input),
+          ],
         );
         return mapGridRow({ ...row, school_code: input.schoolCode });
       },
@@ -571,7 +640,7 @@ function createFinancePgStore(repo) {
       });
     },
     async listProjection() {
-      const [payments, statuses, grids, items, fees, history, reminders, paymentItems] = await Promise.all([
+      const [payments, statuses, grids, items, fees, history, reminders, paymentItems, allocations] = await Promise.all([
         repo.all(
           `SELECT p.*, s.school_code, st.student_code
            FROM payments p
@@ -583,7 +652,11 @@ function createFinancePgStore(repo) {
           `SELECT ps.*, s.school_code FROM payment_statuses ps LEFT JOIN schools s ON s.id = ps.school_id`,
         ),
         repo.all(
-          `SELECT g.*, s.school_code FROM fee_grids g JOIN schools s ON s.id = g.school_id ORDER BY g.created_at`,
+          `SELECT g.*, s.school_code, cl.class_code
+           FROM fee_grids g
+           JOIN schools s ON s.id = g.school_id
+           LEFT JOIN classes cl ON cl.id = g.class_id
+           ORDER BY g.created_at`,
         ),
         repo.all(
           `SELECT i.*, g.grid_code, s.school_code
@@ -607,6 +680,7 @@ function createFinancePgStore(repo) {
            ORDER BY r.sent_at DESC`,
         ),
         repo.all(`SELECT * FROM payment_items ORDER BY sort_order ASC, created_at ASC`),
+        repo.all(`SELECT * FROM payment_allocations`),
       ]);
       const itemsByPayment = new Map();
       for (const item of paymentItems) {
@@ -614,8 +688,11 @@ function createFinancePgStore(repo) {
         list.push(item);
         itemsByPayment.set(item.payment_id, list);
       }
+      const mappedPayments = payments.map((row) =>
+        decoratePaymentWithItems(mapPaymentRow(row), itemsByPayment.get(row.id) || []),
+      );
       return {
-        payments: payments.map((row) => decoratePaymentWithItems(mapPaymentRow(row), itemsByPayment.get(row.id) || [])),
+        payments: projectPaymentsWithAllocations(mappedPayments, allocations),
         paymentStatuses: statuses.map(mapStatusRow),
         feeGrids: grids.map(mapGridRow),
         schoolFeeItems: items.map(mapItemRow),

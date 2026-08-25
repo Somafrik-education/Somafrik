@@ -12,8 +12,11 @@ import { submitProtectedMutation } from "../lib/outbox";
 import {
   buildSchoolPaymentPayload,
   collectActivePaymentClasses,
+  collectOpenPaymentFees,
   paymentSubmitErrorMessage,
   preselectPaymentClassId,
+  preselectPaymentObligationId,
+  type PaymentFeeRow,
   type PaymentStudent,
 } from "../lib/paymentEnrollment";
 import { createSchoolPayment } from "../services/api";
@@ -26,10 +29,12 @@ function todayIsoDate() {
 
 export default function PaymentMutationControls({
   students,
+  studentFees = [],
   onChanged,
   initialStudentId = "",
 }: {
   students: PaymentStudent[];
+  studentFees?: PaymentFeeRow[];
   onChanged: () => Promise<void> | void;
   initialStudentId?: string;
 }) {
@@ -42,9 +47,9 @@ export default function PaymentMutationControls({
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [studentId, setStudentId] = useState("");
   const [classId, setClassId] = useState("");
+  const [obligationId, setObligationId] = useState("");
   const [amount, setAmount] = useState("");
   const amountRef = useRef<TextInput>(null);
-  const [feeType, setFeeType] = useState("Scolarité");
   const [method, setMethod] = useState("Espèces");
   const [draftDate, setDraftDate] = useState(todayIsoDate);
 
@@ -58,14 +63,18 @@ export default function PaymentMutationControls({
   }, [students]);
 
   const classOptions = useMemo(() => collectActivePaymentClasses(studentId, students), [studentId, students]);
+  const feeOptions = useMemo(() => collectOpenPaymentFees(studentId, studentFees), [studentId, studentFees]);
+  const selectedFee = feeOptions.find((row) => row.obligationId === obligationId);
 
   const applyStudent = (nextStudentId: string) => {
     setStudentId(nextStudentId);
     setClassId(preselectPaymentClassId(nextStudentId, students));
+    setObligationId(preselectPaymentObligationId(nextStudentId, studentFees));
     setFieldErrors((current) => {
       const next = { ...current };
       delete next.studentId;
       delete next.classId;
+      delete next.obligationId;
       return next;
     });
   };
@@ -77,8 +86,8 @@ export default function PaymentMutationControls({
     const nextStudentId = trimField(initialStudentId);
     setStudentId(nextStudentId);
     setClassId(preselectPaymentClassId(nextStudentId, students));
+    setObligationId(preselectPaymentObligationId(nextStudentId, studentFees));
     setAmount("");
-    setFeeType("Scolarité");
     setMethod("Espèces");
     setDraftDate(todayIsoDate());
     setOpen(true);
@@ -86,7 +95,14 @@ export default function PaymentMutationControls({
 
   const submit = async () => {
     if (saving) return;
-    const nextErrors = validatePaymentDraft({ studentId, amount, classId, classOptions });
+    const nextErrors = validatePaymentDraft({
+      studentId,
+      amount,
+      classId,
+      classOptions,
+      obligationId,
+      obligationOptions: feeOptions,
+    });
     if (hasFieldErrors(nextErrors)) {
       setFieldErrors(nextErrors);
       setError("");
@@ -101,7 +117,9 @@ export default function PaymentMutationControls({
       studentId,
       classId,
       amount: parsed,
-      feeType,
+      feeType: selectedFee?.feeType || "Acompte",
+      obligationId: selectedFee?.obligationId,
+      schoolFeeItemId: selectedFee?.schoolFeeItemId,
       method,
       date: draftDate,
     });
@@ -191,13 +209,30 @@ export default function PaymentMutationControls({
           error={fieldErrors.amount}
           editable={!saving}
         />
-        <ChoiceChips
-          label="Type de frais"
-          options={["Scolarité", "Inscription", "Cantine"].map((item) => ({ id: item, label: item }))}
-          selectedId={feeType}
-          onSelect={setFeeType}
-          disabled={saving}
-        />
+        {feeOptions.length ? (
+          <ChoiceChips
+            label="Frais"
+            required
+            options={feeOptions.map((item) => ({
+              id: item.obligationId,
+              label: `${item.label} · ${item.balance.toLocaleString("fr-FR")} FC`,
+            }))}
+            selectedId={obligationId}
+            onSelect={(id) => {
+              setObligationId(id);
+              setFieldErrors((current) => {
+                if (!current.obligationId) return current;
+                const next = { ...current };
+                delete next.obligationId;
+                return next;
+              });
+            }}
+            disabled={saving || !studentId}
+            error={fieldErrors.obligationId}
+          />
+        ) : (
+          <Text style={styles.hint}>Aucune dette ouverte — le reçu sera non imputé.</Text>
+        )}
         <ChoiceChips
           label="Moyen"
           options={["Espèces", "Mobile Money", "Virement"].map((item) => ({ id: item, label: item }))}
@@ -213,4 +248,5 @@ export default function PaymentMutationControls({
 const styles = StyleSheet.create({
   create: { minHeight: MIN_TOUCH_TARGET_DP, borderRadius: 14, backgroundColor: "#2563EB", alignItems: "center", justifyContent: "center", marginBottom: 14 },
   createText: { color: "#FFFFFF", fontWeight: "900" },
+  hint: { color: "#64748B", fontWeight: "700", marginBottom: 12 },
 });

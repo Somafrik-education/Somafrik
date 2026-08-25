@@ -55,6 +55,11 @@ export default function PaymentReceiptCard({ payment, studentName, onPress, show
         {paymentPaidAt(payment) ? ` • ${paymentPaidAt(payment)}` : ""}
       </Text>
       <Text style={styles.count}>{paymentItemCount(payment)} libellé(s)</Text>
+      {Number(payment.unallocatedAmount ?? 0) > 0 ? (
+        <Text style={styles.unallocated}>
+          Non imputé : {Number(payment.unallocatedAmount).toLocaleString("fr-FR")} FC
+        </Text>
+      ) : null}
 
       {showItems ? (
         <View style={styles.items}>
@@ -93,6 +98,7 @@ const styles = StyleSheet.create({
   student: { color: "#334155", fontSize: 15, fontWeight: "800", marginTop: 4 },
   meta: { color: "#64748B", fontSize: 13, fontWeight: "700", marginTop: 4 },
   count: { color: "#64748B", fontSize: 12, fontWeight: "800", marginTop: 2 },
+  unallocated: { color: "#1D4ED8", fontSize: 13, fontWeight: "800", marginTop: 6 },
   total: { color: "#0F172A", fontSize: 22, fontWeight: "900", marginTop: 10 },
   items: {
     marginTop: 14,

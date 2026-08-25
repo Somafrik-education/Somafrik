@@ -185,10 +185,12 @@ async function main() {
   assert.match(paymentsScreen, /loadPayments/);
   assert.match(paymentsScreen, /loadStudentFees/);
   assert.match(paymentsScreen, /getPaymentRateKpi/);
+  assert.match(paymentsScreen, /getPaymentCashKpi/);
   assert.match(paymentsScreen, /PaymentReceiptCard/);
   assert.match(studentPayments, /showItems/);
   assert.match(studentPayments, /loadStudentFees/);
   assert.match(studentPayments, /getPaymentRateKpi/);
+  assert.match(studentPayments, /getPaymentCashKpi/);
   assert.match(paymentsScreen, /PaymentMutationControls/);
   assert.doesNotMatch(paymentsScreen, /writePaymentsWebOnly/);
   assert.doesNotMatch(paymentsScreen, /AdminCrud/);

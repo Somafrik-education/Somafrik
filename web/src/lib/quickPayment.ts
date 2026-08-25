@@ -326,12 +326,16 @@ export function resolvePaymentStatus(
   amount: number,
   remainingBeforePayment: number,
   method: PaymentMethod,
+  leftover = Math.max(0, amount - remainingBeforePayment),
 ): string {
   if (method === "Mobile money") {
     return "En attente de confirmation";
   }
+  if (amount > 0 && leftover === amount) {
+    return "Non imputé";
+  }
   if (remainingBeforePayment <= 0) {
-    return "Payé";
+    return "Non imputé";
   }
   if (amount >= remainingBeforePayment) {
     return "Payé";
@@ -362,7 +366,7 @@ export function buildQuickPaymentRecord(
   const now = new Date().toISOString();
   const remainingBefore = balance.remaining;
   const overpayment = Math.max(0, input.amount - remainingBefore);
-  const status = resolvePaymentStatus(input.amount, remainingBefore, input.method);
+  const status = resolvePaymentStatus(input.amount, remainingBefore, input.method, overpayment);
 
   return {
     id: reference,

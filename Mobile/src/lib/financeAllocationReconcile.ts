@@ -1,8 +1,8 @@
 /**
  * Réparation persistante des allocations historiques.
- * GET /finance/student-fees ne masque plus un reçu non alloué : le client
- * déclenche POST /finance/reconcile-payment-allocations, puis relit les obligations.
- * Jamais de somme des reçus pour « Montant encaissé ».
+ * POST /finance/reconcile-payment-allocations reste explicite et idempotent.
+ * Jamais depuis GET /payments ou GET /finance/student-fees.
+ * Jamais de somme des reçus pour le taux / le reste à payer.
  *
  * Fail-soft uniquement : 403 et vraie coupure réseau.
  * 400/401/404/409/5xx doivent remonter — jamais un faux 0 FC silencieux.

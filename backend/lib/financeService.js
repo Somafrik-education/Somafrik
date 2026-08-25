@@ -15,7 +15,6 @@ const {
   isPaymentCounted,
   obligationStatus,
   generatePaymentReference,
-  resolvePaymentStatus,
   toIsoDate,
   studentMatches,
   canForceReminder,
@@ -29,6 +28,7 @@ const {
   assertItemAmount,
 } = require("./financePaymentItems");
 const { obligationMatchesPaymentFeeType } = require("./financeFeeTypeMatch");
+const { projectPaymentCash, resolvePaymentStatus: resolveUnallocatedPaymentStatus } = require("./financeUnallocatedCash");
 
 const REMINDER_COOLDOWN_DAYS = 3;
 
@@ -114,6 +114,25 @@ function openObligationsMatchingFeeType(obligations, feeType) {
       !["Annulé", "Payé", "Exonéré"].includes(fee.status) &&
       obligationMatchesPaymentFeeType(fee, feeType),
   );
+}
+
+function openObligationsForItem(obligations, item) {
+  const obligationId = asTrimmed(item.obligationId);
+  if (obligationId) {
+    const target = obligations.find(
+      (fee) => String(fee.dbId) === obligationId || String(fee.id) === obligationId,
+    );
+    if (!target) {
+      throw createFinanceError(404, "Frais introuvable pour cet élève.", FINANCE_ERROR.OBLIGATION_NOT_FOUND);
+    }
+    if (["Annulé", "Payé", "Exonéré"].includes(target.status)) return [];
+    return [target];
+  }
+  const matched = openObligationsMatchingFeeType(obligations, item.feeType);
+  const catalogId = asTrimmed(item.feeTypeId);
+  if (!catalogId) return matched;
+  const byCatalog = matched.filter((fee) => String(fee.schoolFeeItemId || "") === catalogId);
+  return byCatalog.length ? byCatalog : matched;
 }
 
 function allocateAmount(obligations, amount) {
@@ -339,6 +358,7 @@ async function createPayment(store, rawPayload, principal, auditMeta) {
         feeType,
         feeLabel: feeLabel || feeType,
         amount: money(item.amount),
+        obligationId: asTrimmed(item.obligationId),
       });
     }
 
@@ -352,7 +372,7 @@ async function createPayment(store, rawPayload, principal, auditMeta) {
     let leftoverTotal = 0;
     let remainingBefore = 0;
     for (const item of resolvedItems) {
-      const open = openObligationsMatchingFeeType(obligations, item.feeType);
+      const open = openObligationsForItem(obligations, item);
       remainingBefore += open.reduce((sum, fee) => sum + money(fee.balance), 0);
       const { updated, allocations: itemAllocations, leftover } = allocateAmount(open, item.amount);
       leftoverTotal += leftover;
@@ -367,7 +387,7 @@ async function createPayment(store, rawPayload, principal, auditMeta) {
     const existingCodes = await tx.listPaymentCodes(school.id);
     const reference = generatePaymentReference(student.schoolCode, existingCodes);
     const now = new Date().toISOString();
-    const status = resolvePaymentStatus(totalAmount, remainingBefore, method);
+    const status = resolveUnallocatedPaymentStatus(totalAmount, remainingBefore, method, leftoverTotal);
     const payment = {
       reference,
       schoolId: school.id,
@@ -390,6 +410,8 @@ async function createPayment(store, rawPayload, principal, auditMeta) {
       amountDue: remainingBefore + obligations.reduce((sum, fee) => sum + money(fee.amountPaid), 0),
       remainingAfter: Math.max(0, remainingBefore - totalAmount),
       overpaymentAmount: leftoverTotal,
+      allocatedAmount: money(totalAmount - leftoverTotal),
+      unallocatedAmount: leftoverTotal,
       overpaymentAction: leftoverTotal > 0 ? payload.overpaymentAction || "À confirmer" : "",
       createdAt: now,
       createdByName: actorName(principal),
@@ -424,7 +446,10 @@ async function createPayment(store, rawPayload, principal, auditMeta) {
         await tx.updateObligation(fee);
       }
     }
-    const result = decoratePaymentWithItems(saved, insertedItems);
+    const result = decoratePaymentWithItems(
+      projectPaymentCash(saved, allocations),
+      insertedItems,
+    );
     await writeFinanceAudit(tx, principal, auditMeta, {
       action: "create_payment",
       entityType: "payment",
@@ -485,6 +510,43 @@ async function cancelPayment(store, paymentId, reason, principal, auditMeta) {
   });
 }
 
+async function resolveGridClass(tx, school, payload) {
+  const classId = asTrimmed(payload.classId);
+  if (classId && typeof tx.getClassById === "function") {
+    const klass = await tx.getClassById(classId);
+    if (!klass) {
+      throw createFinanceError(404, "Classe introuvable.", FINANCE_ERROR.CLASS_NOT_FOUND);
+    }
+    if (String(klass.schoolId) !== String(school.id)) {
+      throw createFinanceError(403, "Classe hors établissement.", FINANCE_ERROR.CLASS_TENANT_MISMATCH);
+    }
+    return klass;
+  }
+  const classCode = asTrimmed(payload.classCode);
+  if (classCode && typeof tx.getClassByCode === "function") {
+    const klass = await tx.getClassByCode(classCode, school.id);
+    if (!klass) {
+      throw createFinanceError(404, "Classe introuvable.", FINANCE_ERROR.CLASS_NOT_FOUND);
+    }
+    return klass;
+  }
+  const className = asTrimmed(payload.className);
+  if (className && typeof tx.findUniqueClassBySchoolYearName === "function") {
+    const klass = await tx.findUniqueClassBySchoolYearName(
+      school.id,
+      asTrimmed(payload.academicYear),
+      className,
+      school.code || school.school_code,
+    );
+    if (klass) return klass;
+  }
+  throw createFinanceError(
+    400,
+    "Identifiant de classe canonique requis (classId ou classCode).",
+    FINANCE_ERROR.CLASS_REQUIRED,
+  );
+}
+
 async function upsertFeeGrid(store, rawPayload, principal) {
   const payload = ignoreClientScope(rawPayload);
   let schoolCode = asTrimmed(principal?.schoolCode);
@@ -502,7 +564,10 @@ async function upsertFeeGrid(store, rawPayload, principal) {
   const academicYear = asTrimmed(payload.academicYear);
   const currency = asTrimmed(payload.currency);
   const items = Array.isArray(payload.items) ? payload.items : [];
-  if (!className || !academicYear || !currency) {
+  if (!academicYear || !currency) {
+    throw createFinanceError(400, "Classe, année scolaire et devise sont obligatoires.");
+  }
+  if (!asTrimmed(payload.classId) && !asTrimmed(payload.classCode) && !className) {
     throw createFinanceError(400, "Classe, année scolaire et devise sont obligatoires.");
   }
   const activeItems = items.filter((item) => item.status !== "Désactivé");
@@ -518,16 +583,19 @@ async function upsertFeeGrid(store, rawPayload, principal) {
   return store.withTransaction(async (tx) => {
     const school = await tx.getSchoolByCode(schoolCode);
     if (!school) throw createFinanceError(404, "Établissement introuvable", FINANCE_ERROR.TENANT_MISMATCH);
+    const klass = await resolveGridClass(tx, school, payload);
     const grid = await tx.upsertGrid({
       id: payload.id,
       schoolId: school.id,
       schoolCode,
-      className,
+      classId: klass.classId,
+      classCode: klass.classCode || "",
+      className: klass.className || className,
       academicYear,
       periodName: asTrimmed(payload.periodName),
       currency,
       status: payload.status || "Brouillon",
-      name: payload.name || className,
+      name: payload.name || klass.className || className,
       createdBy: actorName(principal),
       periodStart: payload.periodStart || "",
       periodEnd: payload.periodEnd || "",
@@ -565,9 +633,19 @@ async function applyFeeGrid(store, gridId, principal, options = {}) {
     if (grid.status !== "Active") {
       throw createFinanceError(409, "Seule une grille active peut être appliquée aux élèves.", FINANCE_ERROR.FEE_GRID_NOT_ACTIVE);
     }
+    if (!asTrimmed(grid.classId) && !asTrimmed(grid.classCode)) {
+      throw createFinanceError(
+        400,
+        "Identifiant de classe canonique requis (classId ou classCode).",
+        FINANCE_ERROR.CLASS_REQUIRED,
+      );
+    }
     const items = await tx.listItemsByGrid(grid.dbId);
     const activeItems = items.filter((item) => item.status === "Actif");
-    const students = await tx.listStudentsInClass(grid.schoolCode, grid.className);
+    const students = await tx.listStudentsInClass(grid.schoolCode, {
+      classId: grid.classId,
+      classCode: grid.classCode,
+    });
     const targetIds = Array.isArray(options.studentIds) ? options.studentIds.map(String) : null;
     const scopedStudents = students.filter((student) => {
       if (targetIds && !targetIds.some((id) => studentMatches(student, id))) return false;

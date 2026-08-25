@@ -10,6 +10,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { randomUUID } = require("node:crypto");
 const { createFinanceMemoryStore } = require("../db/financeMemoryStore");
+const { studentMatchesClassScope } = require("./financeManagement");
 
 const ROOT = path.resolve(__dirname, "../..");
 
@@ -68,11 +69,9 @@ function createStore(extraStudents = []) {
         }) ?? null
       );
     },
-    listStudentsInClass: async (schoolCode, className) =>
+    listStudentsInClass: async (schoolCode, classRef) =>
       students.filter(
-        (student) =>
-          student.schoolCode === schoolCode &&
-          student.className.toLowerCase() === String(className).toLowerCase(),
+        (student) => student.schoolCode === schoolCode && studentMatchesClassScope(student, classRef),
       ),
   });
 }
@@ -162,9 +161,13 @@ function assertSourceGuards() {
   assert.doesNotMatch(reconcileClient, /paymentsData/);
   assert.doesNotMatch(reconcileClient, /from ["']\.\.\/services\/api["']/);
   const adminCtx = fs.readFileSync(path.join(ROOT, "Mobile/src/context/AdminDataContext.tsx"), "utf8");
-  assert.match(adminCtx, /withCanonicalPaymentAllocations/);
-  assert.match(adminCtx, /reconcilePaymentAllocations/);
+  assert.match(adminCtx, /getStudentFees/);
   assert.match(adminCtx, /loadStudentFees/);
+  assert.doesNotMatch(
+    adminCtx,
+    /withCanonicalPaymentAllocations/,
+    "GET student-fees ne doit plus muter via reconcile",
+  );
   const obligationPaid = fs.readFileSync(path.join(ROOT, "backend/lib/financeObligationPaid.js"), "utf8");
   assert.doesNotMatch(obligationPaid, /allocateOntoMatchingOpen/);
   assert.doesNotMatch(obligationPaid, /isPaymentCounted/);
@@ -193,6 +196,7 @@ function assertSourceGuards() {
 
   const paymentsScreen = fs.readFileSync(path.join(ROOT, "Mobile/src/screens/PaymentsScreen.tsx"), "utf8");
   assert.match(paymentsScreen, /getPaymentRateKpi|formatPaymentRateKpi/);
+  assert.match(paymentsScreen, /getPaymentCashKpi/);
   assert.match(paymentsScreen, /loadStudentFees/);
   assert.doesNotMatch(paymentsScreen, /paymentStats\.rate/);
   assert.doesNotMatch(paymentsScreen, /des paiements réglés/);

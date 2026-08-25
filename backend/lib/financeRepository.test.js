@@ -5,7 +5,7 @@
  */
 const assert = require("node:assert/strict");
 const { createFinanceMemoryStore } = require("../db/financeMemoryStore");
-const { FINANCE_ERROR } = require("./financeManagement");
+const { FINANCE_ERROR, studentMatchesClassScope } = require("./financeManagement");
 
 function createStore() {
   const schools = [{ id: "school-a", code: "CD-2026-0001", currency: "CDF" }];
@@ -47,11 +47,9 @@ function createStore() {
         }) ?? null
       );
     },
-    listStudentsInClass: async (schoolCode, className) =>
+    listStudentsInClass: async (schoolCode, classRef) =>
       students.filter(
-        (student) =>
-          student.schoolCode === schoolCode &&
-          student.className.toLowerCase() === String(className).toLowerCase(),
+        (student) => student.schoolCode === schoolCode && studentMatchesClassScope(student, classRef),
       ),
   });
 }

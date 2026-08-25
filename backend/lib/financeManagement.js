@@ -91,11 +91,13 @@ function generatePaymentReference(schoolCode, existingCodes = []) {
   return `${prefix}${String(max + 1).padStart(4, "0")}`;
 }
 
-function resolvePaymentStatus(amount, remainingBefore, method) {
-  if (normalizeKey(method) === "mobile money") return "En attente de confirmation";
-  if (remainingBefore <= 0) return "Payé";
-  if (amount >= remainingBefore) return "Payé";
-  return "Partiel";
+function resolvePaymentStatus(amount, remainingBefore, method, leftover = 0) {
+  return require("./financeUnallocatedCash").resolvePaymentStatus(
+    amount,
+    remainingBefore,
+    method,
+    leftover,
+  );
 }
 
 function mapDbStatusToBo(status) {
@@ -108,7 +110,9 @@ function mapDbStatusToBo(status) {
 
 function mapBoStatusToDb(status) {
   const key = normalizeKey(status);
-  if (key === "paye" || key === "payé" || key === "partiel") return "paid";
+  if (key === "paye" || key === "payé" || key === "partiel" || key === "non impute" || key === "a imputer") {
+    return "paid";
+  }
   if (key === "annule" || key === "annulé") return "cancelled";
   if (key.includes("attente")) return "pending";
   return "pending";
@@ -163,6 +167,8 @@ function mapPaymentRow(row) {
     amountDue: profile.amountDue,
     remainingAfter: profile.remainingAfter,
     overpaymentAmount: profile.overpaymentAmount || 0,
+    allocatedAmount: money(profile.allocatedAmount || 0),
+    unallocatedAmount: money(profile.unallocatedAmount || profile.overpaymentAmount || 0),
     overpaymentAction: profile.overpaymentAction || "",
     receiptId: profile.receiptId || `REC-${code}`,
     createdAt: row.created_at,
@@ -219,6 +225,8 @@ function mapGridRow(row) {
     schoolCode: row.school_code || profile.schoolCode,
     name: row.name || profile.name || row.class_name,
     className: row.class_name,
+    classId: row.class_id || profile.classId || "",
+    classCode: row.class_code || profile.classCode || "",
     academicYear: row.academic_year,
     periodName: row.period_name,
     periodStart: profile.periodStart || "",
@@ -334,6 +342,31 @@ function canForceReminder(principal) {
   );
 }
 
+function classScopeSpec(classRef) {
+  if (classRef && typeof classRef === "object") {
+    return {
+      classId: asTrimmed(classRef.classId || classRef.class_id),
+      classCode: asTrimmed(classRef.classCode || classRef.class_code),
+      className: asTrimmed(classRef.className || classRef.class_name),
+    };
+  }
+  return { classId: "", classCode: "", className: asTrimmed(classRef) };
+}
+
+function studentMatchesClassScope(student, classRef) {
+  const spec = classScopeSpec(classRef);
+  if (spec.classId) {
+    return [student.classId, student.class_id].some((value) => String(value ?? "") === spec.classId);
+  }
+  if (spec.classCode) {
+    return normalizeKey(student.classCode || student.class_code) === normalizeKey(spec.classCode);
+  }
+  if (spec.className) {
+    return normalizeKey(student.className || student.class_name) === normalizeKey(spec.className);
+  }
+  return false;
+}
+
 function financeAuditMetaFromRequest(req) {
   return {
     ipAddress: req?.ip ?? "",
@@ -362,6 +395,8 @@ module.exports = {
   mapReminderRow,
   mapStatusRow,
   studentMatches,
+  studentMatchesClassScope,
+  classScopeSpec,
   isSuperAdminPrincipal,
   canManageFeeGrids,
   canAdjustStudentFee,

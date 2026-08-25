@@ -130,6 +130,9 @@ function main() {
   assert.match(paymentControls, /label="Classe"/);
   assert.match(paymentControls, /buildSchoolPaymentPayload/);
   assert.match(paymentControls, /preselectPaymentClassId/);
+  assert.match(paymentControls, /collectOpenPaymentFees/);
+  assert.match(paymentControls, /obligationId/);
+  assert.doesNotMatch(paymentControls, /\["Scolarité", "Inscription", "Cantine"\]/);
   assert.doesNotMatch(paymentControls, /createIdempotencyKey\(\)/);
   const eleveAt = paymentControls.indexOf('label="Élève"');
   const classeAt = paymentControls.indexOf('label="Classe"');

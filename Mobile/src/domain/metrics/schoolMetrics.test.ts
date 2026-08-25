@@ -117,8 +117,15 @@ function run() {
   assert.equal(mix.pendingAmount, 150);
   assert.equal(mix.total, 2);
 
+  const leftover = getPaymentStats([payment("p-left", "stu-1", "Non imputé", 150)]);
+  assert.equal(leftover.paid, 0, "Non imputé n'est pas Payé");
+  assert.equal(leftover.pending, 0, "Non imputé n'est pas Impayé");
+  assert.equal(leftover.unallocated, 1);
+  assert.equal(leftover.unallocatedAmount, 150);
+
   console.log("OK: schoolMetrics empty scoped ids MUST NOT fallback to global dataset");
   console.log("OK: getPaymentStats Annulé hors Payés et Impayés");
+  console.log("OK: getPaymentStats Non imputé hors Payés et Impayés");
 }
 
 run();

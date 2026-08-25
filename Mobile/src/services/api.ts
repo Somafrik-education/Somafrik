@@ -661,21 +661,30 @@ export type CanonicalStudentFee = {
   balance: number;
   status: string;
   archivedAt?: string | null;
+  feeType?: string;
+  label?: string;
+  schoolFeeItemId?: string;
 };
 
 function normalizeStudentFeeRow(raw: unknown): CanonicalStudentFee {
   const row = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
+  const amountDue = Number(row.amountDue ?? row.amount_due ?? 0);
+  const amountPaid = Number(row.amountPaid ?? row.amount_paid ?? 0);
+  const exemption = Number(row.exemption ?? 0);
   return {
     id: String(row.id ?? row.publicId ?? ""),
     studentId: String(row.studentId ?? row.student_id ?? ""),
     studentName: row.studentName ? String(row.studentName) : undefined,
     schoolCode: row.schoolCode ? String(row.schoolCode) : undefined,
-    amountDue: Number(row.amountDue ?? row.amount_due ?? 0),
-    amountPaid: Number(row.amountPaid ?? row.amount_paid ?? 0),
-    exemption: Number(row.exemption ?? 0),
-    balance: Number(row.balance ?? 0),
+    amountDue,
+    amountPaid,
+    exemption,
+    balance: Number(row.balance ?? Math.max(0, amountDue - amountPaid - exemption)),
     status: String(row.status ?? ""),
     archivedAt: row.archivedAt ? String(row.archivedAt) : row.archived_at ? String(row.archived_at) : null,
+    feeType: row.feeType ? String(row.feeType) : undefined,
+    label: String(row.label ?? row.feeType ?? "").trim() || undefined,
+    schoolFeeItemId: row.schoolFeeItemId ? String(row.schoolFeeItemId) : row.school_fee_item_id ? String(row.school_fee_item_id) : undefined,
   };
 }
 

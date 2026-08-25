@@ -40,11 +40,14 @@ CREATE TABLE IF NOT EXISTS fee_grids (
   period_name TEXT NOT NULL DEFAULT '',
   currency VARCHAR(16) NOT NULL DEFAULT 'CDF',
   status TEXT NOT NULL DEFAULT 'Brouillon',
+  class_id UUID REFERENCES classes(id),
   profile_payload JSONB NOT NULL DEFAULT '{}'::jsonb,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   UNIQUE (school_id, grid_code)
 );
+
+ALTER TABLE fee_grids ADD COLUMN IF NOT EXISTS class_id UUID REFERENCES classes(id);
 
 CREATE UNIQUE INDEX IF NOT EXISTS fee_grids_school_class_year_period_uniq
   ON fee_grids (

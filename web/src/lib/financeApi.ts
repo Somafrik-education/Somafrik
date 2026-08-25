@@ -23,12 +23,16 @@ export interface FinancePayment {
   status: string;
   cancelReason?: string;
   overpaymentAmount?: number;
+  allocatedAmount?: number;
+  unallocatedAmount?: number;
   verificationCode?: string;
   receiptId?: string;
 }
 
 export interface FinanceFeeGrid {
   id: string;
+  classId?: string;
+  classCode?: string;
   className: string;
   academicYear: string;
   periodName?: string;

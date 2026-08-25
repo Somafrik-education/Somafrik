@@ -248,6 +248,9 @@ export function statusPresentation(status: string): { label: string; icon: strin
   if (["payé", "paye", "paid", "réglé", "regle"].includes(normalized)) {
     return { label: value || "Payé", icon: "checkmark-circle" };
   }
+  if (normalized.includes("non imput") || normalized.includes("à imputer") || normalized.includes("a imputer")) {
+    return { label: value || "Non imputé", icon: "alert-circle" };
+  }
   if (["impayé", "impaye", "pending", "à payer", "a payer"].includes(normalized)) {
     return { label: value || "Impayé", icon: "time" };
   }
