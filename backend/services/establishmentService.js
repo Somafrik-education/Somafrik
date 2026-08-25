@@ -14,6 +14,7 @@ const {
 } = require("../lib/schoolCodeV2");
 const {
   filterActiveSchools,
+  withActiveStudentCounts,
   validateSchoolPayload,
   findPotentialDuplicates,
   classifySchoolDuplicates,
@@ -191,7 +192,8 @@ function hydrateSchoolPayload(payload, state, { isNew = false } = {}) {
 
 class EstablishmentService {
   list(state, principal) {
-    return scopeEstablishments(state, principal);
+    const visibleSchools = scopeEstablishments(state, principal);
+    return withActiveStudentCounts(visibleSchools, state.students ?? []);
   }
 
   get(code, state, principal) {

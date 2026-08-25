@@ -15,6 +15,7 @@ const { showToast, refresh, update, create, patch, school } = vi.hoisted(() => {
     status: "Actif",
     validationStatus: "Validé",
     principalName: "Awa Kabila",
+    studentCount: 37,
   } as School;
 
   return {
@@ -121,6 +122,16 @@ describe("SchoolsPage (LOT 1 — API establishments)", () => {
 
     expect(screen.getByText("CD-IK-26-001")).toBeInTheDocument();
     expect(screen.queryByText("CD-2026-0001")).not.toBeInTheDocument();
+  });
+
+  it("affiche l'effectif agrégé par le backend même sans hydrater globalement les élèves", () => {
+    render(
+      <MemoryRouter>
+        <SchoolsPage />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByText("37")).toBeInTheDocument();
   });
 
   it("n'impose pas countries[0] / RDC à l'ouverture du formulaire Superadmin", () => {

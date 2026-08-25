@@ -5,13 +5,16 @@ const {
   classifySchoolDuplicates,
   findPotentialDuplicates,
   generateSchoolCode,
+  withActiveStudentCounts,
   DUPLICATE_STRONG,
   DUPLICATE_CONTACT,
   CROSS_COUNTRY_CONTACT_MATCH,
 } = require("./schoolModule");
 
 const kanyosha = {
-  code: "BI-2026-0001",
+  id: "school-bi",
+  code: "SCH-BI-KANYOSHA",
+  loginCode: "BI-EK-26-001",
   publicId: "BI-EK-26-001",
   name: "Ecole Kanyosha",
   city: "Muha",
@@ -67,5 +70,27 @@ assert.equal(
   "",
   "generateSchoolCode n'alloue plus CD-YYYY-NNNN — PostgreSQL seul produit login_code V2",
 );
+
+const nuru = {
+  id: "school-cd-nuru",
+  code: "SCH-CD-NURU",
+  loginCode: "CD-IN-26-001",
+  publicId: "CD-IN-26-001",
+  name: "Institut Nuru",
+};
+const counted = withActiveStudentCounts(
+  [nuru, kanyosha],
+  [
+    { id: "stu-1", schoolId: "school-cd-nuru", status: "active" },
+    { id: "stu-2", schoolCode: "SCH-CD-NURU", status: "Actif" },
+    { id: "stu-3", schoolCode: "CD-IN-26-001", status: "active" },
+    { id: "stu-4", schoolCode: "CD-IN-26-001", status: "archived" },
+    { id: "stu-5", schoolCode: "BI-EK-26-001", status: "active" },
+    { id: "stu-6", schoolId: "school-bi", status: "deleted" },
+  ],
+);
+assert.equal(counted[0].studentCount, 3, "NURU compte les élèves actifs via UUID, code interne et code public");
+assert.equal(counted[1].studentCount, 1, "Kanyosha exclut les élèves supprimés");
+assert.equal(nuru.studentCount, undefined, "l'agrégation ne mute pas la source établissement");
 
 console.log("schoolModule.test.js OK");
