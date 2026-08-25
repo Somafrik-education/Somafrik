@@ -3,12 +3,15 @@
 const { randomUUID } = require("node:crypto");
 const { listFunctionalModules } = require("../lib/functionalModulesCatalog");
 const { asTrimmed } = require("../lib/establishmentRolesManagement");
+const { nextMonotonicUpdatedAt, functionalRbacScopeLockKey } = require("../lib/functionalRbacManagement");
 const { mapGrantRow } = require("./functionalRbacPgStore");
 
 function createFunctionalRbacMemoryStore(seed = {}) {
   const modules = listFunctionalModules().map((row) => ({ ...row, status: "active" }));
   const grants = [];
   const rolesUsage = [...(seed.roles ?? [])];
+  const scopeLockTails = new Map();
+  const heldReleases = [];
 
   function matchesScope(row, { roleKey, scopeType, countryId, schoolId }) {
     if (String(row.role_key).toUpperCase() !== String(roleKey).toUpperCase()) return false;
@@ -52,6 +55,24 @@ function createFunctionalRbacMemoryStore(seed = {}) {
       if (!scoped.length) return null;
       return scoped.reduce((max, row) => (row.updated_at > max ? row.updated_at : max), scoped[0].updated_at);
     },
+    async lockFunctionalRbacScope(scope) {
+      const key = functionalRbacScopeLockKey(scope);
+      let release;
+      const ticket = new Promise((resolve) => {
+        release = resolve;
+      });
+      const previous = scopeLockTails.get(key) || Promise.resolve();
+      scopeLockTails.set(key, previous.then(() => ticket));
+      await previous;
+      heldReleases.push({ key, release });
+    },
+    async unlockFunctionalRbacScope(scope) {
+      const key = functionalRbacScopeLockKey(scope);
+      const index = heldReleases.findLastIndex((row) => row.key === key);
+      if (index < 0) return;
+      const [held] = heldReleases.splice(index, 1);
+      held.release();
+    },
     async countActiveGrants() {
       return grants.filter((row) => row.status === "active").length;
     },
@@ -69,7 +90,8 @@ function createFunctionalRbacMemoryStore(seed = {}) {
           }) &&
           row.module_key === input.moduleKey,
       );
-      const now = new Date().toISOString();
+      const previous = index >= 0 ? grants[index].updated_at : null;
+      const now = input.updatedAt ? new Date(input.updatedAt).toISOString() : nextMonotonicUpdatedAt(previous);
       if (index >= 0) {
         grants[index] = {
           ...grants[index],

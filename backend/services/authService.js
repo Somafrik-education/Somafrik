@@ -25,6 +25,7 @@ const managedMobileRoles = {
   Directeur: { role: "principal", roleLabel: "Proviseur" },
   "Préfet des études": { role: "prefet", roleLabel: "Préfet des études" },
   Secrétaire: { role: "secretary", roleLabel: "Secrétaire" },
+  Comptable: { role: "accountant", roleLabel: "Comptable" },
   Enseignant: { role: "teacher", roleLabel: "Enseignant" },
   Parent: { role: "parent_student", roleLabel: "Parent" },
   "Élève / Étudiant": { role: "student", roleLabel: "Élève" },

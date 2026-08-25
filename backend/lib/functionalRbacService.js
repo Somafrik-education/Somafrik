@@ -8,6 +8,7 @@ const {
   normalizeScope,
   assertNotProtectedArchive,
   timestampsEqual,
+  nextMonotonicUpdatedAt,
   looksLikeUuid,
   PROTECTED_SYSTEM_ROLE_KEYS,
 } = require("./functionalRbacManagement");
@@ -481,88 +482,91 @@ async function patchConfiguredPermissions(repo, rawPayload, principal, auditMeta
     const scopeRepo = repo.createTxScope(tx);
     const scopedStore = rbacStore(scopeRepo);
     const scope = await resolveScopeIds(scopedStore, payload);
-    const currentUpdatedAt = await scopedStore.maxUpdatedAtForScope({
+    const scopeLock = {
       roleKey,
       scopeType: scope.scopeType,
       countryId: scope.countryId,
       schoolId: scope.schoolId,
-    });
-    const expected = payload.expectedUpdatedAt;
-    if (currentUpdatedAt && expected && !timestampsEqual(currentUpdatedAt, expected)) {
-      throw createFunctionalRbacError(
-        409,
-        "Conflit de concurrence : la matrice a été modifiée. Rechargez avant d'enregistrer.",
-        FUNCTIONAL_RBAC_ERROR.CONFLICT,
-        { expectedUpdatedAt: expected, actualUpdatedAt: currentUpdatedAt },
-      );
-    }
-    if (currentUpdatedAt && !expected) {
-      throw createFunctionalRbacError(
-        409,
-        "expectedUpdatedAt obligatoire pour éviter un last-write-wins.",
-        FUNCTIONAL_RBAC_ERROR.CONFLICT,
-        { actualUpdatedAt: currentUpdatedAt },
-      );
-    }
+    };
+    try {
+      if (typeof scopedStore.lockFunctionalRbacScope === "function") {
+        await scopedStore.lockFunctionalRbacScope(scopeLock);
+      }
+      const currentUpdatedAt = await scopedStore.maxUpdatedAtForScope(scopeLock);
+      const expected = payload.expectedUpdatedAt;
+      if (currentUpdatedAt && expected && !timestampsEqual(currentUpdatedAt, expected)) {
+        throw createFunctionalRbacError(
+          409,
+          "Conflit de concurrence : la matrice a été modifiée. Rechargez avant d'enregistrer.",
+          FUNCTIONAL_RBAC_ERROR.CONFLICT,
+          { expectedUpdatedAt: expected, actualUpdatedAt: currentUpdatedAt },
+        );
+      }
+      if (currentUpdatedAt && !expected) {
+        throw createFunctionalRbacError(
+          409,
+          "expectedUpdatedAt obligatoire pour éviter un last-write-wins.",
+          FUNCTIONAL_RBAC_ERROR.CONFLICT,
+          { actualUpdatedAt: currentUpdatedAt },
+        );
+      }
 
-    const beforeRows = await scopedStore.listGrantsForScope({
-      roleKey,
-      scopeType: scope.scopeType,
-      countryId: scope.countryId,
-      schoolId: scope.schoolId,
-    });
-    const beforeByModule = Object.fromEntries(beforeRows.map((row) => [row.moduleKey, row]));
-    const saved = [];
-    const auditEvents = [];
-    for (const grant of grants) {
-      const before = beforeByModule[grant.moduleKey] || emptyCrud();
-      const after = await scopedStore.upsertGrant({
+      const nextScopeUpdatedAt = nextMonotonicUpdatedAt(currentUpdatedAt);
+
+      const beforeRows = await scopedStore.listGrantsForScope(scopeLock);
+      const beforeByModule = Object.fromEntries(beforeRows.map((row) => [row.moduleKey, row]));
+      const saved = [];
+      const auditEvents = [];
+      for (const grant of grants) {
+        const before = beforeByModule[grant.moduleKey] || emptyCrud();
+        const after = await scopedStore.upsertGrant({
+          roleKey,
+          scopeType: scope.scopeType,
+          countryId: scope.countryId,
+          schoolId: scope.schoolId,
+          ...grant,
+          updatedAt: nextScopeUpdatedAt,
+          updatedBy: actorId(principal),
+        });
+        saved.push(after);
+        for (const event of diffGrant(before, grant)) {
+          auditEvents.push(event);
+        }
+      }
+
+      await writeRbacAudit(scopeRepo, principal, auditMeta, {
+        action: "ROLE_PERMISSION_MATRIX_UPDATED",
+        entityType: "role_module_permissions",
+        entityId: `${roleKey}:${scope.scopeType}:${scope.schoolCode || scope.countryCode || "global"}`,
+        schoolCode: scope.schoolCode,
+        oldValue: { grants: beforeRows, scope },
+        newValue: { grants: saved, scope },
+      });
+      for (const event of auditEvents) {
+        await writeRbacAudit(scopeRepo, principal, auditMeta, {
+          action: event.action,
+          entityType: "role_module_permissions",
+          entityId: `${roleKey}:${event.moduleKey}`,
+          schoolCode: scope.schoolCode,
+          oldValue: { moduleKey: event.moduleKey, field: event.field },
+          newValue: { moduleKey: event.moduleKey, field: event.field, after: grants.find((g) => g.moduleKey === event.moduleKey) },
+        });
+      }
+
+      const updatedAt = await scopedStore.maxUpdatedAtForScope(scopeLock);
+      return {
         roleKey,
         scopeType: scope.scopeType,
-        countryId: scope.countryId,
-        schoolId: scope.schoolId,
-        ...grant,
-        updatedBy: actorId(principal),
-      });
-      saved.push(after);
-      for (const event of diffGrant(before, grant)) {
-        auditEvents.push(event);
+        countryCode: scope.countryCode,
+        schoolCode: scope.schoolCode,
+        updatedAt,
+        grants: saved,
+      };
+    } finally {
+      if (typeof scopedStore.unlockFunctionalRbacScope === "function") {
+        await scopedStore.unlockFunctionalRbacScope(scopeLock);
       }
     }
-
-    await writeRbacAudit(scopeRepo, principal, auditMeta, {
-      action: "ROLE_PERMISSION_MATRIX_UPDATED",
-      entityType: "role_module_permissions",
-      entityId: `${roleKey}:${scope.scopeType}:${scope.schoolCode || scope.countryCode || "global"}`,
-      schoolCode: scope.schoolCode,
-      oldValue: { grants: beforeRows, scope },
-      newValue: { grants: saved, scope },
-    });
-    for (const event of auditEvents) {
-      await writeRbacAudit(scopeRepo, principal, auditMeta, {
-        action: event.action,
-        entityType: "role_module_permissions",
-        entityId: `${roleKey}:${event.moduleKey}`,
-        schoolCode: scope.schoolCode,
-        oldValue: { moduleKey: event.moduleKey, field: event.field },
-        newValue: { moduleKey: event.moduleKey, field: event.field, after: grants.find((g) => g.moduleKey === event.moduleKey) },
-      });
-    }
-
-    const updatedAt = await scopedStore.maxUpdatedAtForScope({
-      roleKey,
-      scopeType: scope.scopeType,
-      countryId: scope.countryId,
-      schoolId: scope.schoolId,
-    });
-    return {
-      roleKey,
-      scopeType: scope.scopeType,
-      countryCode: scope.countryCode,
-      schoolCode: scope.schoolCode,
-      updatedAt,
-      grants: saved,
-    };
   });
 }
 
