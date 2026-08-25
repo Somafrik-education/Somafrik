@@ -589,7 +589,10 @@ function createClassStudentsRepository(db) {
              birth_place = $5,
              parent_phone = $6,
              parent_email = $7,
-             updated_at = NOW()
+             updated_at = GREATEST(
+               date_trunc('milliseconds', clock_timestamp()),
+               date_trunc('milliseconds', updated_at) + INTERVAL '1 millisecond'
+             )
          WHERE id = $8
            AND school_id = $9
            AND date_trunc('milliseconds', updated_at) = date_trunc('milliseconds', $10::timestamptz)
@@ -604,7 +607,7 @@ function createClassStudentsRepository(db) {
           nextParentEmail,
           current.id,
           school.id,
-          current.updated_at,
+          expected,
         ],
       );
 
