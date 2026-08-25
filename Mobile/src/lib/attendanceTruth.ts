@@ -235,6 +235,21 @@ export function rollCallSourceLabel(source: RollCallSource | undefined) {
   return "";
 }
 
+export type RollCallQueuedCause =
+  | "device_offline"
+  | "backend_unreachable"
+  | "timeout"
+  | "backend_5xx"
+  | "unconfirmed";
+
+export function rollCallQueuedAlertBody(cause: RollCallQueuedCause) {
+  if (cause === "device_offline") return ROLL_CALL_COPY.queuedAlertBodyOffline;
+  if (cause === "timeout") return ROLL_CALL_COPY.queuedAlertBodyTimeout;
+  if (cause === "backend_5xx") return ROLL_CALL_COPY.queuedAlertBodyServer;
+  if (cause === "backend_unreachable") return ROLL_CALL_COPY.queuedAlertBodyUnreachable;
+  return ROLL_CALL_COPY.queuedAlertBody;
+}
+
 export const ROLL_CALL_COPY = {
   unset: "Non saisi",
   draft: "Brouillon — non enregistré",
@@ -243,7 +258,15 @@ export const ROLL_CALL_COPY = {
   postgres: "Enregistré",
   queuedAlertTitle: "Appel enregistré sur cet appareil — en attente de synchronisation",
   queuedAlertBody:
+    "Les présences sont conservées en file d'attente. La confirmation PostgreSQL n'est pas encore disponible. Ceci n'est pas une preuve d'absence de réseau.",
+  queuedAlertBodyOffline:
     "Les présences seront envoyées au serveur dès le retour du réseau. Ceci n'est pas une confirmation PostgreSQL.",
+  queuedAlertBodyTimeout:
+    "Le délai d'attente a expiré. Les présences seront renvoyées avec la même clé d'idempotence. Ceci n'est pas une confirmation PostgreSQL, ni une preuve d'absence de réseau.",
+  queuedAlertBodyServer:
+    "Le serveur est indisponible. Les présences sont conservées en file d'attente. Ceci n'est pas une preuve d'absence de réseau.",
+  queuedAlertBodyUnreachable:
+    "Le serveur n'a pas pu être joint. Les présences sont conservées en file d'attente. Ceci n'est pas une confirmation PostgreSQL.",
   syncedAlertTitle: "Appel synchronisé",
   persistFailedTitle: "Impossible de conserver cet appel hors connexion",
   persistFailedBody:

@@ -27,7 +27,8 @@ function run() {
   assert.equal(isSoftPaymentAllocationReconcileFailure(httpError(0, "Connexion Internet indisponible.")), true);
   assert.equal(
     isSoftPaymentAllocationReconcileFailure(new Error("Délai de requête dépassé. Vérifiez votre réseau.")),
-    true,
+    false,
+    "timeout n'est pas une coupure réseau",
   );
   for (const status of [400, 401, 404, 409, 500]) {
     assert.equal(

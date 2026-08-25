@@ -123,9 +123,12 @@ export function classifyMutationFailure(error: unknown): MutationFailureKind {
   if (status === 429 || status === 408 || status === 502 || status === 503 || status === 504) {
     return "retryable";
   }
+  if (code === "TIMEOUT" || code === "BACKEND_UNREACHABLE" || code === "NETWORK_UNAVAILABLE") {
+    return "retryable";
+  }
   if (
     (status == null || status === 0) &&
-    /délai|timeout|indisponible|network request failed|failed to fetch|offline|abort|reset/i.test(message)
+    /délai|timeout|indisponible|network request failed|failed to fetch|offline|abort|reset|joindre/i.test(message)
   ) {
     return "retryable";
   }
@@ -177,17 +180,24 @@ export type ConnectivityKind =
 
 export function describeConnectivity(error: unknown): ConnectivityKind {
   const status = errorStatus(error);
+  const code = errorCode(error).toUpperCase();
   const message = errorMessage(error);
+  if (status && status >= 400 && status < 500 && status !== 408) {
+    return "ok";
+  }
   if (status === 502 || status === 503 || status === 504 || (status && status >= 500)) {
     return "backend_5xx";
   }
-  if (/délai|timeout|abort/i.test(message) || status === 408) {
+  if (code === "TIMEOUT" || /délai|timeout|abort/i.test(message) || status === 408) {
     return "timeout";
   }
-  if (/connexion internet indisponible|offline/i.test(message)) {
+  if (code === "NETWORK_UNAVAILABLE" || /connexion internet indisponible|\boffline\b/i.test(message)) {
     return "device_offline";
   }
-  if (/impossible de joindre|failed to fetch|network request failed|enotfound/i.test(message)) {
+  if (
+    code === "BACKEND_UNREACHABLE" ||
+    /impossible de joindre|failed to fetch|network request failed|enotfound/i.test(message)
+  ) {
     return "backend_unreachable";
   }
   return "backend_unreachable";

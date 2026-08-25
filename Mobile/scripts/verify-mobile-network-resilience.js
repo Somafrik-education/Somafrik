@@ -34,6 +34,7 @@ function main() {
   run("npx", ["--yes", "tsx", path.join("src", "lib", "connectivity.test.ts")], MOBILE);
   run("npx", ["--yes", "tsx", path.join("src", "lib", "attendanceClassIdentity.test.ts")], MOBILE);
   run("npx", ["--yes", "tsx", path.join("src", "lib", "attendanceOffline.test.ts")], MOBILE);
+  run("npx", ["--yes", "tsx", path.join("src", "lib", "offlineClassification.test.ts")], MOBILE);
   run("node", ["--test", path.join("lib", "idempotencyService.test.js")], BACKEND);
   run("node", ["--test", path.join("lib", "idempotency.pg.test.js")], BACKEND);
 
@@ -48,6 +49,10 @@ function main() {
   assert.match(attendance, /knownOffline/);
   assert.match(attendance, /replacePendingPayload/);
   assert.match(attendance, /ROLL_CALL_COPY\.queuedAlertTitle/);
+  assert.match(attendance, /rollCallQueuedAlertBody/);
+  assert.match(attendance, /describeConnectivity/);
+  assert.doesNotMatch(attendance, /syncStatus === ["']offline["']/);
+  assert.doesNotMatch(attendance, /createIdempotencyKey\(/);
   assert.match(attendance, /ROLL_CALL_COPY\.syncedAlertTitle/);
   assert.match(attendance, /ROLL_CALL_COPY\.persistFailedBody/);
   assert.match(attendance, /ROLL_CALL_COPY\.outboxUnavailable/);
@@ -202,6 +207,30 @@ function main() {
   assert.doesNotMatch(spec, /Vos données seront automatiquement synchronisées/);
   assert.doesNotMatch(spec, /Les modifications reprendront dès le retour du réseau/);
   console.log("OK: banner sans fausse promesse de sync globale + compteur live");
+
+  const connectivity = read(path.join(SRC, "lib", "connectivity.ts"));
+  assert.match(connectivity, /function isRecognizedTransportFailure/);
+  assert.doesNotMatch(
+    connectivity.slice(connectivity.indexOf("export async function probeConnectivity")),
+    /setConnectivityState\("offline"\);\s*}\s*return false;/,
+  );
+  const probeFn = connectivity.slice(connectivity.indexOf("export async function probeConnectivity"));
+  const probeCatch = probeFn.slice(probeFn.indexOf("} catch"));
+  assert.doesNotMatch(probeCatch, /setConnectivityState\("offline"\)/);
+  assert.match(httpClient, /"TIMEOUT"/);
+  assert.match(httpClient, /NETWORK_UNAVAILABLE/);
+  assert.match(httpClient, /BACKEND_UNREACHABLE/);
+  console.log("OK: sonde /health HTTP ne force plus offline");
+
+  const attendanceTruth = read(path.join(SRC, "lib", "attendanceTruth.ts"));
+  const defaultQueuedBody = attendanceTruth.slice(
+    attendanceTruth.indexOf("queuedAlertBody:"),
+    attendanceTruth.indexOf("queuedAlertBodyOffline:"),
+  );
+  assert.doesNotMatch(defaultQueuedBody, /retour du réseau/);
+  assert.match(attendanceTruth, /queuedAlertBodyOffline:/);
+  assert.match(attendanceTruth, /queuedAlertBodyServer:/);
+  console.log("OK: copie appel — « retour du réseau » seulement si vrai offline");
 
   const inventory = read(path.join(SRC, "lib", "mobileMutationInventory.ts"));
   assert.match(inventory, /savePresences/);

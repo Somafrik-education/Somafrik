@@ -34,6 +34,7 @@ import {
   presentFlagForStatus,
   resolveClassCourseLabel,
   rollCallEntryFromPresence,
+  rollCallQueuedAlertBody,
   rollCallSourceLabel,
   shouldPreserveLocalAttendanceDraft,
   type AttendanceStatus,
@@ -44,7 +45,7 @@ import { attendanceStatusTheme } from "../lib/attendanceStatusTheme";
 import { useFloatingTabBarLayout } from "../lib/screenLayout";
 import { useResponsiveLayout } from "../hooks/useResponsiveLayout";
 import { createInFlightLock, createIntentionStore } from "../lib/mutationGuard";
-import { NETWORK_COPY } from "../lib/networkResilience";
+import { NETWORK_COPY, describeConnectivity } from "../lib/networkResilience";
 import { isOfflineContext } from "../lib/connectivity";
 import {
   listOutbox,
@@ -100,7 +101,6 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
     studentsSnapshot,
     presencesSnapshot,
     resourceScopeKey,
-    syncStatus,
   } = useAdminData();
   const saveLockRef = useRef(createInFlightLock());
   const intentionRef = useRef(createIntentionStore());
@@ -364,7 +364,7 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
       items: presencePayload,
     };
     const intentionId = presenceIntentionId(identity.classId, todayLabel);
-    const knownOffline = syncStatus === "offline" || isOfflineContext();
+    const knownOffline = isOfflineContext();
     setSaving(true);
     setSaveHint(NETWORK_COPY.recording);
     try {
@@ -388,7 +388,16 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
         const studentIds = rows.map((student) => student.id);
         setAttendance((current) => markRollCallSyncState(current, studentIds, "queued"));
         setSaveHint(ROLL_CALL_COPY.queued);
-        Alert.alert(ROLL_CALL_COPY.queuedAlertTitle, ROLL_CALL_COPY.queuedAlertBody);
+        const connectivityKind = submitted.error
+          ? describeConnectivity(submitted.error)
+          : knownOffline
+            ? "device_offline"
+            : "unconfirmed";
+        const queuedCause =
+          connectivityKind === "ok" || connectivityKind === "unconfirmed"
+            ? "unconfirmed"
+            : connectivityKind;
+        Alert.alert(ROLL_CALL_COPY.queuedAlertTitle, rollCallQueuedAlertBody(queuedCause));
         return;
       }
       if (submitted.outcome === "in_flight") {
