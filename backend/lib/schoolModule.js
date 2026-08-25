@@ -78,7 +78,7 @@ function withActiveStudentCounts(schools = [], students = []) {
   });
 
   for (const student of Array.isArray(students) ? students : []) {
-    if (INACTIVE_STUDENT_STATUSES.has(normalize(student?.status))) continue;
+    if (student?.archived === true || INACTIVE_STUDENT_STATUSES.has(normalize(student?.status))) continue;
     const studentSchoolKeys = [
       student?.schoolId,
       student?.school_id,
