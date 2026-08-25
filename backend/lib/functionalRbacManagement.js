@@ -87,8 +87,7 @@ function timestampsEqual(left, right) {
 
 /**
  * Jeton OCC aligné sur Date.getTime() (milliseconde JSON).
- * Deux écritures dans la même ms doivent quand même avancer le jeton,
- * sinon un expectedUpdatedAt périmé est accepté (lost update).
+ * Le previous DOIT être le MAX(updated_at) du scope, pas la ligne patchée.
  */
 function nextMonotonicUpdatedAt(previous, now = new Date()) {
   const nowMs = new Date(now).getTime();
@@ -97,6 +96,15 @@ function nextMonotonicUpdatedAt(previous, now = new Date()) {
     return new Date(prevMs + 1).toISOString();
   }
   return new Date(nowMs).toISOString();
+}
+
+function functionalRbacScopeLockKey({ roleKey, scopeType, countryId, schoolId } = {}) {
+  return [
+    String(roleKey || "").toUpperCase(),
+    String(scopeType || ""),
+    String(countryId || ""),
+    String(schoolId || ""),
+  ].join("|");
 }
 
 function looksLikeUuid(value) {
@@ -116,5 +124,6 @@ module.exports = {
   assertSuperAdminInvariantPatch,
   timestampsEqual,
   nextMonotonicUpdatedAt,
+  functionalRbacScopeLockKey,
   looksLikeUuid,
 };

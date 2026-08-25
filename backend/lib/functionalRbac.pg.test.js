@@ -492,6 +492,159 @@ async function main() {
     });
     assert.equal(revokedTeacher.modules.grades.canCreate, false, "rôle TEACHER révoqué ignoré");
 
+    const newer = "2026-08-25T18:14:47.020Z";
+    const older = "2026-08-25T18:14:47.010Z";
+    await store.upsertGrant({
+      roleKey: "SECRETARY",
+      scopeType: "school",
+      countryId: country.rows[0].id,
+      schoolId: schoolA.rows[0].id,
+      moduleKey: "grades",
+      canCreate: false,
+      canRead: true,
+      canUpdate: false,
+      canDelete: false,
+      updatedAt: newer,
+      updatedBy: "test-a",
+    });
+    await store.upsertGrant({
+      roleKey: "SECRETARY",
+      scopeType: "school",
+      countryId: country.rows[0].id,
+      schoolId: schoolA.rows[0].id,
+      moduleKey: "students",
+      canCreate: false,
+      canRead: true,
+      canUpdate: false,
+      canDelete: true,
+      updatedAt: older,
+      updatedBy: "test-a",
+    });
+    const secretaryMax = await store.maxUpdatedAtForScope({
+      roleKey: "SECRETARY",
+      scopeType: "school",
+      countryId: country.rows[0].id,
+      schoolId: schoolA.rows[0].id,
+    });
+    assert.equal(new Date(secretaryMax).getTime(), new Date(newer).getTime());
+    const patchedOlderRow = await patchConfiguredPermissions(
+      repo,
+      {
+        roleKey: "SECRETARY",
+        schoolCode: "CD-2026-0001",
+        expectedUpdatedAt: secretaryMax,
+        grants: [{ moduleKey: "students", canCreate: false, canRead: true, canUpdate: false, canDelete: false }],
+      },
+      superAdmin,
+      {},
+    );
+    assert.ok(
+      new Date(patchedOlderRow.updatedAt).getTime() > new Date(newer).getTime(),
+      "TEST A PG : jeton scope > ancien MAX",
+    );
+    await assert.rejects(
+      () =>
+        patchConfiguredPermissions(
+          repo,
+          {
+            roleKey: "SECRETARY",
+            schoolCode: "CD-2026-0001",
+            expectedUpdatedAt: secretaryMax,
+            grants: [{ moduleKey: "students", canCreate: false, canRead: true, canUpdate: false, canDelete: true }],
+          },
+          superAdmin,
+          {},
+        ),
+      (error) => error.statusCode === 409 && error.code === FUNCTIONAL_RBAC_ERROR.CONFLICT,
+    );
+
+    const concurrentToken = await store.maxUpdatedAtForScope({
+      roleKey: "SECRETARY",
+      scopeType: "school",
+      countryId: country.rows[0].id,
+      schoolId: schoolA.rows[0].id,
+    });
+    const studentsBefore = (await store.listGrantsForScope({
+      roleKey: "SECRETARY",
+      scopeType: "school",
+      countryId: country.rows[0].id,
+      schoolId: schoolA.rows[0].id,
+    })).find((row) => row.moduleKey === "students");
+    const gradesBefore = (await store.listGrantsForScope({
+      roleKey: "SECRETARY",
+      scopeType: "school",
+      countryId: country.rows[0].id,
+      schoolId: schoolA.rows[0].id,
+    })).find((row) => row.moduleKey === "grades");
+
+    let arrived = 0;
+    let releaseBarrier;
+    const bothBegun = new Promise((resolve) => {
+      releaseBarrier = resolve;
+    });
+    function withBeginBarrier(baseRepo) {
+      const original = baseRepo.withTransaction.bind(baseRepo);
+      baseRepo.withTransaction = async (fn) =>
+        original(async (tx) => {
+          arrived += 1;
+          if (arrived >= 2) releaseBarrier();
+          await bothBegun;
+          return fn(tx);
+        });
+      return baseRepo;
+    }
+    const repoA = withBeginBarrier(createRepo(pool));
+    const repoB = withBeginBarrier(createRepo(pool));
+    const concurrent = await Promise.allSettled([
+      patchConfiguredPermissions(
+        repoA,
+        {
+          roleKey: "SECRETARY",
+          schoolCode: "CD-2026-0001",
+          expectedUpdatedAt: concurrentToken,
+          grants: [{ moduleKey: "students", canCreate: false, canRead: true, canUpdate: false, canDelete: true }],
+        },
+        superAdmin,
+        {},
+      ),
+      patchConfiguredPermissions(
+        repoB,
+        {
+          roleKey: "SECRETARY",
+          schoolCode: "CD-2026-0001",
+          expectedUpdatedAt: concurrentToken,
+          grants: [{ moduleKey: "grades", canCreate: true, canRead: true, canUpdate: false, canDelete: false }],
+        },
+        superAdmin,
+        {},
+      ),
+    ]);
+    const accepted = concurrent.filter((row) => row.status === "fulfilled");
+    const rejected = concurrent.filter(
+      (row) =>
+        row.status === "rejected" &&
+        row.reason?.statusCode === 409 &&
+        row.reason?.code === FUNCTIONAL_RBAC_ERROR.CONFLICT,
+    );
+    assert.equal(accepted.length, 1, "TEST B : une seule transaction réussit");
+    assert.equal(rejected.length, 1, "TEST B : l'autre reçoit 409 CONFLICT");
+    const afterConcurrent = await store.listGrantsForScope({
+      roleKey: "SECRETARY",
+      scopeType: "school",
+      countryId: country.rows[0].id,
+      schoolId: schoolA.rows[0].id,
+    });
+    const studentsAfter = afterConcurrent.find((row) => row.moduleKey === "students");
+    const gradesAfter = afterConcurrent.find((row) => row.moduleKey === "grades");
+    const studentsChanged = Boolean(studentsAfter.canDelete) !== Boolean(studentsBefore.canDelete);
+    const gradesChanged = Boolean(gradesAfter.canCreate) !== Boolean(gradesBefore.canCreate);
+    assert.equal(
+      studentsChanged && gradesChanged,
+      false,
+      "TEST B : pas de lost update — un seul delta appliqué",
+    );
+    assert.equal(studentsChanged || gradesChanged, true, "TEST B : le gagnant a bien écrit");
+
     console.log("functionalRbac.pg.test.js OK");
   } finally {
     await pool.end();

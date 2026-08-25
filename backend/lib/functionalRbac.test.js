@@ -12,6 +12,7 @@ const {
   assertSuperAdminInvariantPatch,
   assertNotProtectedArchive,
   nextMonotonicUpdatedAt,
+  functionalRbacScopeLockKey,
 } = require("./functionalRbacManagement");
 const {
   patchConfiguredPermissions,
@@ -20,6 +21,7 @@ const {
   mergeRolePermissionMaps,
 } = require("./functionalRbacService");
 const { createFunctionalRbacMemoryStore } = require("../db/functionalRbacMemoryStore");
+const { CANONICAL_CRITICAL_PARITY_GRANTS } = require("./criticalParityRbacCanonical");
 
 test("cascade établissement > pays > global > DENY", () => {
   const grants = [
@@ -312,6 +314,167 @@ test("OCC 409 si deux PATCH RBAC dans la même milliseconde (lost update)", asyn
   } finally {
     global.Date = RealDate;
   }
+});
+
+test("OCC TEST A : PATCH d'une ligne plus ancienne avance le MAX du scope", async () => {
+  const newer = "2026-08-25T18:14:47.020Z";
+  const older = "2026-08-25T18:14:47.010Z";
+  const RealDate = Date;
+  const frozenMs = new RealDate(newer).getTime();
+  class FrozenDate extends RealDate {
+    constructor(...args) {
+      if (args.length === 0) super(frozenMs);
+      else super(...args);
+    }
+    static now() {
+      return frozenMs;
+    }
+  }
+  global.Date = FrozenDate;
+  try {
+    const rbac = createFunctionalRbacMemoryStore({
+      resolveCountryAndSchool: async () => ({
+        country: { id: "cd", code: "CD" },
+        school: { id: "nuru", school_code: "CD-2026-0001", country_id: "cd", country_code: "CD" },
+      }),
+    });
+    await rbac.upsertGrant({
+      roleKey: "PREFET_ETUDES",
+      scopeType: "school",
+      countryId: "cd",
+      schoolId: "nuru",
+      moduleKey: "grades",
+      canRead: true,
+      canUpdate: true,
+      updatedAt: newer,
+      updatedBy: "seed-a",
+    });
+    await rbac.upsertGrant({
+      roleKey: "PREFET_ETUDES",
+      scopeType: "school",
+      countryId: "cd",
+      schoolId: "nuru",
+      moduleKey: "students",
+      canRead: true,
+      canUpdate: true,
+      canDelete: true,
+      updatedAt: older,
+      updatedBy: "seed-b",
+    });
+    const scopeMax = await rbac.maxUpdatedAtForScope({
+      roleKey: "PREFET_ETUDES",
+      scopeType: "school",
+      countryId: "cd",
+      schoolId: "nuru",
+    });
+    assert.equal(new Date(scopeMax).getTime(), new Date(newer).getTime());
+    const repo = {
+      getFunctionalRbacStore: () => rbac,
+      createTxScope: () => repo,
+      withTransaction: async (fn) => fn(repo),
+      recordAudit: async () => {},
+    };
+    const superAdmin = { role: "Super Administrateur Somafrik", identifier: "superadmin" };
+    const patched = await patchConfiguredPermissions(
+      repo,
+      {
+        roleKey: "PREFET_ETUDES",
+        schoolCode: "CD-2026-0001",
+        expectedUpdatedAt: scopeMax,
+        grants: [{ moduleKey: "students", canCreate: false, canRead: true, canUpdate: true, canDelete: false }],
+      },
+      superAdmin,
+      {},
+    );
+    assert.ok(
+      new Date(patched.updatedAt).getTime() > new Date(newer).getTime(),
+      "le jeton du scope doit dépasser l'ancien MAX, pas seulement l'updated_at de students",
+    );
+    await assert.rejects(
+      () =>
+        patchConfiguredPermissions(
+          repo,
+          {
+            roleKey: "PREFET_ETUDES",
+            schoolCode: "CD-2026-0001",
+            expectedUpdatedAt: scopeMax,
+            grants: [{ moduleKey: "students", canCreate: false, canRead: true, canUpdate: true, canDelete: true }],
+          },
+          superAdmin,
+          {},
+        ),
+      (error) => error.statusCode === 409 && error.code === FUNCTIONAL_RBAC_ERROR.CONFLICT,
+    );
+    const after = await rbac.listGrantsForScope({
+      roleKey: "PREFET_ETUDES",
+      scopeType: "school",
+      countryId: "cd",
+      schoolId: "nuru",
+    });
+    assert.equal(after.find((row) => row.moduleKey === "students").canDelete, false);
+    assert.equal(after.find((row) => row.moduleKey === "grades").canRead, true);
+  } finally {
+    global.Date = RealDate;
+  }
+});
+
+test("OCC TEST C : aucun élargissement RBAC (ACCOUNTANT / PREFET / TEACHER)", async () => {
+  assert.equal(functionalRbacScopeLockKey({
+    roleKey: "PREFET_ETUDES",
+    scopeType: "school",
+    countryId: "cd",
+    schoolId: "nuru",
+  }), "PREFET_ETUDES|school|cd|nuru");
+  const store = createFunctionalRbacMemoryStore();
+  const repo = {
+    getFunctionalRbacStore: () => store,
+    getEstablishmentRolesStore: () => ({
+      getPermissionsMap: async () => ({
+        ACCOUNTANT: ["Paiements:READ", "Paiements:CREATE", "Paiements:UPDATE"],
+        TEACHER: ["Notes:READ", "Notes:CREATE", "Présences:READ"],
+        PREFET_ETUDES: ["Voir notes", "Voir présences"],
+      }),
+      getRoleByNameOrCode: async () => ({ id: "existing" }),
+      insertRole: async () => {},
+      markSystemProtected: async () => true,
+    }),
+    listActiveUserRoleKeys: async () => null,
+  };
+  await ensureFunctionalRbacBootstrap(repo);
+  const accountant = await resolveEffectivePermissionsForPrincipal(repo, {
+    role: "Comptable",
+    roleKeys: ["ACCOUNTANT"],
+  });
+  assert.equal(accountant.permissions.includes("Élèves:READ"), false);
+  const accountantGrants = await store.listGrantsForScope({
+    roleKey: "ACCOUNTANT",
+    scopeType: "global",
+    countryId: null,
+    schoolId: null,
+  });
+  assert.equal(accountantGrants.some((row) => row.moduleKey === "students" && row.canRead), false);
+  const prefetAssignments = CANONICAL_CRITICAL_PARITY_GRANTS.find(
+    (row) => row.roleKey === "PREFET_ETUDES" && row.moduleKey === "assignments",
+  );
+  const teacherAssignments = CANONICAL_CRITICAL_PARITY_GRANTS.find(
+    (row) => row.roleKey === "TEACHER" && row.moduleKey === "assignments",
+  );
+  const prefet = await resolveEffectivePermissionsForPrincipal(repo, {
+    role: "Préfet des études",
+    roleKeys: ["PREFET_ETUDES"],
+  });
+  assert.equal(prefet.permissions.includes("Affectations:CREATE"), prefetAssignments.crud.canCreate);
+  assert.equal(prefet.permissions.includes("Affectations:READ"), prefetAssignments.crud.canRead);
+  assert.equal(prefet.permissions.includes("Affectations:UPDATE"), prefetAssignments.crud.canUpdate);
+  assert.equal(prefet.permissions.includes("Affectations:DELETE"), prefetAssignments.crud.canDelete);
+  const teacher = await resolveEffectivePermissionsForPrincipal(repo, {
+    role: "Enseignant",
+    roleKeys: ["TEACHER"],
+  });
+  assert.equal(teacher.permissions.includes("Affectations:READ"), teacherAssignments.crud.canRead);
+  assert.equal(teacher.permissions.includes("Affectations:CREATE"), false);
+  assert.equal(teacher.permissions.includes("Affectations:UPDATE"), false);
+  assert.equal(teacher.permissions.includes("Affectations:DELETE"), false);
 });
 
 test("PATCH schoolCode n'est pas traité comme un UUID", async () => {

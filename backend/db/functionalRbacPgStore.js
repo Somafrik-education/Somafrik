@@ -2,7 +2,7 @@
 
 const { listFunctionalModules } = require("../lib/functionalModulesCatalog");
 const { asTrimmed } = require("../lib/establishmentRolesManagement");
-const { looksLikeUuid } = require("../lib/functionalRbacManagement");
+const { looksLikeUuid, functionalRbacScopeLockKey } = require("../lib/functionalRbacManagement");
 
 function mapGrantRow(row) {
   if (!row) return null;
@@ -100,6 +100,15 @@ function createFunctionalRbacPgStore(repo) {
     return row?.updated_at || null;
   }
 
+  async function lockFunctionalRbacScope({ roleKey, scopeType, countryId, schoolId }) {
+    const key = functionalRbacScopeLockKey({ roleKey, scopeType, countryId, schoolId });
+    await one("SELECT pg_advisory_xact_lock(hashtextextended($1, 88224601)) AS locked", [key]);
+  }
+
+  async function unlockFunctionalRbacScope() {
+    return undefined;
+  }
+
   async function countActiveGrants() {
     const row = await one(`SELECT COUNT(*)::int AS count FROM role_module_permissions WHERE status = 'active'`);
     return Number(row?.count ?? 0);
@@ -119,14 +128,18 @@ function createFunctionalRbacPgStore(repo) {
        LIMIT 1`,
       [roleKey, input.scopeType, input.moduleKey, input.countryId, input.schoolId],
     );
+    const writeAt = input.updatedAt ? new Date(input.updatedAt).toISOString() : null;
     const row = existing
       ? await one(
           `UPDATE role_module_permissions
            SET can_create = $2, can_read = $3, can_update = $4, can_delete = $5,
                version = version + 1, updated_by = $6,
-               updated_at = GREATEST(
-                 date_trunc('milliseconds', clock_timestamp()),
-                 date_trunc('milliseconds', updated_at) + INTERVAL '1 millisecond'
+               updated_at = COALESCE(
+                 $7::timestamptz,
+                 GREATEST(
+                   date_trunc('milliseconds', clock_timestamp()),
+                   date_trunc('milliseconds', updated_at) + INTERVAL '1 millisecond'
+                 )
                )
            WHERE id = $1
            RETURNING *`,
@@ -137,6 +150,7 @@ function createFunctionalRbacPgStore(repo) {
             Boolean(input.canUpdate),
             Boolean(input.canDelete),
             actor,
+            writeAt,
           ],
         )
       : await one(
@@ -145,7 +159,11 @@ function createFunctionalRbacPgStore(repo) {
              can_create, can_read, can_update, can_delete, status, version,
              created_by, updated_by, created_at, updated_at
            )
-           VALUES ($1, $2, $3::uuid, $4::uuid, $5, $6, $7, $8, $9, 'active', 1, $10, $10, NOW(), NOW())
+           VALUES (
+             $1, $2, $3::uuid, $4::uuid, $5, $6, $7, $8, $9, 'active', 1, $10, $10,
+             COALESCE($11::timestamptz, NOW()),
+             COALESCE($11::timestamptz, NOW())
+           )
            RETURNING *`,
           [
             roleKey,
@@ -158,6 +176,7 @@ function createFunctionalRbacPgStore(repo) {
             Boolean(input.canUpdate),
             Boolean(input.canDelete),
             actor,
+            writeAt,
           ],
         );
     return mapGrantRow(row);
@@ -256,6 +275,8 @@ function createFunctionalRbacPgStore(repo) {
     listGrantsForRoles,
     listGrantsForScope,
     maxUpdatedAtForScope,
+    lockFunctionalRbacScope,
+    unlockFunctionalRbacScope,
     countActiveGrants,
     upsertGrant,
     resolveCountryAndSchool,
