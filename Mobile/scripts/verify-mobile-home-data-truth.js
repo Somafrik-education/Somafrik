@@ -65,6 +65,7 @@ function main() {
   const homeKpis = read(path.join("lib", "homeDashboardKpis.ts"));
   const paymentRate = read(path.join("lib", "paymentRateKpi.ts"));
   const context = read(path.join("context", "AdminDataContext.tsx"));
+  const financeAllocationReconcile = read(path.join("lib", "financeAllocationReconcile.ts"));
 
   assert.match(context, /usersSnapshot/);
   assert.match(context, /loadUsers/);
@@ -129,7 +130,13 @@ function main() {
   assert.match(home, /loadStudentFees/);
   assert.match(context, /loadStudentFees/);
   assert.match(context, /getStudentFees/);
-  assert.doesNotMatch(context, /withCanonicalPaymentAllocations/);
+  assert.match(context, /withCanonicalPaymentAllocations/);
+  assert.match(financeAllocationReconcile, /return load\(\);/);
+  assert.doesNotMatch(
+    financeAllocationReconcile,
+    /withCanonicalPaymentAllocations[\s\S]*?await ensureCanonicalPaymentAllocations/,
+    "un chargement GET ne doit jamais déclencher une réconciliation implicite",
+  );
   assert.match(home, /countActiveUserAccounts/);
   assert.doesNotMatch(home, /paymentStats\.rate/);
   assert.doesNotMatch(home, /\$\{paymentStats\.rate\}%/);
