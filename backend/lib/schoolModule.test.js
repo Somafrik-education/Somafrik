@@ -84,9 +84,10 @@ const counted = withActiveStudentCounts(
     { id: "stu-1", schoolId: "school-cd-nuru", status: "active" },
     { id: "stu-2", schoolCode: "SCH-CD-NURU", status: "Actif" },
     { id: "stu-3", schoolCode: "CD-IN-26-001", status: "active" },
-    { id: "stu-4", schoolCode: "CD-IN-26-001", status: "archived" },
+    { id: "stu-4", schoolCode: "CD-IN-26-001", archived: true },
     { id: "stu-5", schoolCode: "BI-EK-26-001", status: "active" },
     { id: "stu-6", schoolId: "school-bi", status: "deleted" },
+    { id: "stu-7", schoolId: "school-cd-nuru", status: "archived" },
   ],
 );
 assert.equal(counted[0].studentCount, 3, "NURU compte les élèves actifs via UUID, code interne et code public");
