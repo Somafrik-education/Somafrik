@@ -36,8 +36,7 @@ import {
   buildPlatformNotificationReadPatch,
   isUnreadNotification,
 } from "../lib/platformNotificationSync";
-import { getAcademicConfig, getAssignments, getClasses, getCourses, getPlanningWeekly, getPlanningCourseOptions, getSchoolRooms, getCourseScheduleReplacements, getEvaluations, getNotes, getPayments, getStudentFees, reconcilePaymentAllocations, getPresences, getReportCards, getStudents, getSubjects, createPlatformNotification, updatePlatformNotification, createClientsAnnouncement, updateClientsAnnouncement, sendClientsMessage, createClientsUser, updateClientsUser, BackOfficeStatePayload, type CanonicalReportCard, type CanonicalStudentFee } from "../services/api";
-import { withCanonicalPaymentAllocations } from "../lib/financeAllocationReconcile";
+import { getAcademicConfig, getAssignments, getClasses, getCourses, getPlanningWeekly, getPlanningCourseOptions, getSchoolRooms, getCourseScheduleReplacements, getEvaluations, getNotes, getPayments, getStudentFees, getPresences, getReportCards, getStudents, getSubjects, createPlatformNotification, updatePlatformNotification, createClientsAnnouncement, updateClientsAnnouncement, sendClientsMessage, createClientsUser, updateClientsUser, BackOfficeStatePayload, type CanonicalReportCard, type CanonicalStudentFee } from "../services/api";
 import {
   getCanonicalAnnouncements,
   getCanonicalCountries,
@@ -602,7 +601,7 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
     const scope = resourceScopeKeyRef.current;
     setStudentFeesSnapshot((current) => ({ ...current, status: "loading" }));
     try {
-      const rows = await withCanonicalPaymentAllocations(getStudentFees, reconcilePaymentAllocations);
+      const rows = await getStudentFees();
       if (resourceScopeKeyRef.current !== scope) return;
       setStudentFeesData(rows);
       setStudentFeesSnapshot(snapshotFromSuccess(rows));

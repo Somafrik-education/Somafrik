@@ -130,7 +130,11 @@ function main() {
   assert.match(home, /loadStudentFees/);
   assert.match(context, /loadStudentFees/);
   assert.match(context, /getStudentFees/);
-  assert.match(context, /withCanonicalPaymentAllocations/);
+  assert.doesNotMatch(
+    context,
+    /withCanonicalPaymentAllocations/,
+    "GET student-fees ne doit plus muter via reconcile",
+  );
   assert.match(financeAllocationReconcile, /return load\(\);/);
   assert.doesNotMatch(
     financeAllocationReconcile,
