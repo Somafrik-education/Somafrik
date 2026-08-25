@@ -982,6 +982,28 @@ async function main() {
     );
     assert.equal(linkedStudent.rowCount, 0, "aucun élève lié implicitement au compte préexistant");
 
+    const micro = await studentsRepo.enroll(activeClass.classCode, "CD-2026-0001", {
+      firstName: "Micro",
+      lastName: "Stamp",
+    });
+    await pool.query(
+      `UPDATE students SET updated_at = TIMESTAMPTZ '2026-08-25 16:21:38.644244+00' WHERE student_code = $1`,
+      [micro.student.studentCode],
+    );
+    const microFetched = await studentsRepo.getByStudentCode(micro.student.studentCode, "CD-2026-0001");
+    const jsonToken =
+      microFetched.updatedAt instanceof Date
+        ? microFetched.updatedAt.toISOString()
+        : new Date(microFetched.updatedAt).toISOString();
+    assert.equal(jsonToken, "2026-08-25T16:21:38.644Z");
+    const microUpdated = await studentsRepo.updateByStudentCode(micro.student.studentCode, "CD-2026-0001", {
+      firstName: "Micro",
+      lastName: "Stamp",
+      expectedUpdatedAt: jsonToken,
+    });
+    assert.equal(microUpdated.firstName, "Micro");
+    assert.notEqual(String(microUpdated.updatedAt), jsonToken, "updated_at avance après PATCH");
+
     console.log("classStudentsRepository.pg.test.js: OK");
   } finally {
     await pool.end();

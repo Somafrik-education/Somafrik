@@ -239,6 +239,13 @@ function createClassStudentsRepository(db) {
     return String(value);
   }
 
+  /** JSON Date n'a que la milliseconde ; PG TIMESTAMPTZ garde les microsecondes. */
+  function occupancyTimestampsMatch(stored, expected) {
+    const left = Date.parse(stored instanceof Date ? stored.toISOString() : String(stored ?? ""));
+    const right = Date.parse(expected instanceof Date ? expected.toISOString() : String(expected ?? ""));
+    return Number.isFinite(left) && Number.isFinite(right) && left === right;
+  }
+
   /**
    * Absence explicite de la table (schéma partiel) uniquement — les autres erreurs remontent.
    * @param {unknown} error
@@ -552,9 +559,8 @@ function createClassStudentsRepository(db) {
         throw createHttpError(404, "Élève introuvable.");
       }
 
-      const currentUpdatedAt = normalizeTimestamp(current.updated_at);
       const expected = normalizeTimestamp(patch.expectedUpdatedAt);
-      if (currentUpdatedAt !== expected) {
+      if (!occupancyTimestampsMatch(current.updated_at, expected)) {
         throw createHttpError(
           409,
           "Conflit de modification : la fiche élève a été mise à jour par un autre utilisateur.",
@@ -586,7 +592,7 @@ function createClassStudentsRepository(db) {
              updated_at = NOW()
          WHERE id = $8
            AND school_id = $9
-           AND updated_at = $10::timestamptz
+           AND date_trunc('milliseconds', updated_at) = date_trunc('milliseconds', $10::timestamptz)
          RETURNING id`,
         [
           nextFirstName,

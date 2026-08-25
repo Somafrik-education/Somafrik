@@ -509,6 +509,12 @@ async function main() {
   );
   assert.doesNotMatch(productionSrc, /ON CONFLICT \(user_code\) DO NOTHING/);
   assert.doesNotMatch(productionSrc, /hashSecret\(["']1234["']\)/);
+  assert.match(
+    productionSrc,
+    /date_trunc\('milliseconds', updated_at\)/,
+    "OCC PATCH : JSON ms vs PG µs ne doit pas 409",
+  );
+  assert.match(productionSrc, /occupancyTimestampsMatch/);
 
   console.log("classStudentsRepository.test.js: OK");
 }
