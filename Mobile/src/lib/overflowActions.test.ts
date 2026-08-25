@@ -67,6 +67,8 @@ assert.match(controls, /OverflowActions/);
 assert.match(controls, /studentRowOverflowActions/);
 assert.match(controls, /STUDENT_OVERFLOW_A11Y_LABEL/);
 assert.match(controls, /updateSchoolStudent/);
+assert.match(controls, /expectedUpdatedAt/);
+assert.match(controls, /row\.updatedAt/);
 assert.match(controls, /deleteSchoolStudent/);
 assert.match(controls, /enrollClassStudent/);
 assert.match(controls, /Alert\.alert\("Supprimer l'élève"/);

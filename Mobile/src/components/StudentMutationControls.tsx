@@ -30,6 +30,7 @@ type StudentRow = {
   parentEmail?: string;
   classCode?: string;
   className?: string;
+  updatedAt?: string;
 };
 
 function classCodeOf(row: ClassOption): string {
@@ -118,10 +119,15 @@ export default function StudentMutationControls({
       const last = trimField(lastName);
       const phone = trimField(parentPhone);
       if (editing && row) {
+        const expectedUpdatedAt = String(row.updatedAt ?? "").trim();
+        if (!expectedUpdatedAt) {
+          throw new Error("Jeton de conflit manquant (updatedAt). Rechargez la fiche puis réessayez.");
+        }
         await updateSchoolStudent(row.id, {
           firstName: first,
           lastName: last,
           parentPhone: phone,
+          expectedUpdatedAt,
         });
       } else {
         const enrolled = await enrollClassStudent(classCode, {

@@ -78,6 +78,7 @@ export type StudentSummary = {
   parentEmail?: string;
   archived?: boolean;
   status?: string;
+  updatedAt?: string;
 };
 
 export type TeacherAssignment = {
