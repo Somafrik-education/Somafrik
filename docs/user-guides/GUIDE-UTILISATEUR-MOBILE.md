@@ -1,7 +1,7 @@
 # Guide utilisateur Somafrik — Mobile
 
 > Référence fonctionnelle : `develop@3be39cfee2718157cfd54993b2745b4aa2dd1fb1`  
-> Interface : application Expo/React Native + API canonique + PostgreSQL.  
+> Captures Mobile : runtime `50d6dcaac4f5b6d0ab3040a2ab5410ba3240eb34`, Expo/React Native web + API canonique + PostgreSQL.  
 > Les menus sont filtrés par rôle et permissions.
 
 ## 1. Se connecter
@@ -18,6 +18,10 @@ Pour un compte d'établissement :
 
 Les comptes Parent/Élève utilisent le champ PIN lorsque ce mode est associé au rôle. Les autres profils utilisent le mot de passe prévu par leur compte.
 
+![Connexion mobile Somafrik](./assets/mobile/01-connexion-etablissement.png)
+
+*Écran de connexion établissement **Institut Nouvelle Espérance** (`CD-UK-26-001`). Identifiant `admin`, rôle détecté **Admin Établissement**, mot de passe non saisi.*
+
 ### Première connexion
 
 Si un secret temporaire a été utilisé, la fenêtre **Nouveau mot de passe** apparaît :
@@ -27,8 +31,6 @@ Si un secret temporaire a été utilisé, la fenêtre **Nouveau mot de passe** a
 3. appuyez sur **Valider**.
 
 Le nouveau mot de passe doit contenir au moins 6 caractères et les deux valeurs doivent correspondre.
-
-**Capture à intégrer :** `assets/mobile/01-connexion-etablissement.png`.
 
 ## 2. Navigation Mobile
 
@@ -71,6 +73,10 @@ Pour les rôles d'établissement internes, le catalogue Mobile actuel peut propo
 
 Cette liste est un catalogue : les éléments sans droit de lecture sont retirés avant affichage.
 
+![Menu admin établissement](./assets/mobile/22-menu-admin-etablissement.png)
+
+*Menu latéral d'un **Admin établissement** : Élèves, Classes, Enseignants, Utilisateurs, Paramètres, Structure pédagogique, Paiements, Présences, Notes, et les autres modules autorisés.*
+
 ## 4. Classes
 
 Ouvrez **Classes**.
@@ -101,11 +107,17 @@ Si aucune année scolaire n'est chargeable, l'application indique de la configur
 
 > Vérifiez les valeurs présélectionnées avant validation. Elles proviennent du catalogue pédagogique actif de l'établissement.
 
+![Liste des classes](./assets/mobile/02-classes-liste.png)
+
+*Liste **Classes** filtrée sur `6ème`. L'instance seed affiche plusieurs cartes **6ème A** (codes distincts). L'effectif de `CLS-2026-000001` reflète les élèves réellement inscrits.*
+
+![Création de classe](./assets/mobile/03-classe-creation.png)
+
+*Modal **Créer une classe**. Vérifiez Année / Niveau / Groupe avant d'enregistrer : les présélections viennent du catalogue, pas d'une recommandation métier.*
+
 ### Modifier ou désactiver
 
 Si votre rôle le permet, une classe propose **Modifier** et **Désactiver**. La désactivation demande confirmation avant l'écriture serveur.
-
-**Captures à intégrer :** `02-classes-liste.png`, `03-classe-creation.png`.
 
 ## 5. Élèves
 
@@ -130,11 +142,21 @@ Après une inscription réussie, Somafrik ouvre **Remettre les identifiants él�
 
 Le même numéro de parent peut être utilisé pour plusieurs frères et sœurs lorsque le workflow le permet.
 
+![Liste des élèves](./assets/mobile/04-eleves-liste.png)
+
+*Annuaire **Élèves**, classe **6ème A** : Amina Ilunga, Grace Mbala, Jean Mukendi, Esther Okito.*
+
+![Inscription d'un élève](./assets/mobile/05-eleve-inscription.png)
+
+*Modal **Inscrire un élève** : Esther Okito, classe **6ème A**, téléphone parent fictif.*
+
+![Remise des identifiants élève](./assets/mobile/06-eleve-identifiants.png)
+
+*Fenêtre **Remettre les identifiants élève** après inscription réussie. Le secret temporaire est masqué dans le guide.*
+
 ### Modifier ou retirer
 
 Les actions de ligne sont regroupées dans le menu d'actions de l'élève lorsque votre rôle possède UPDATE/DELETE. Une suppression demande confirmation avant l'appel serveur.
-
-**Captures à intégrer :** `04-eleves-liste.png`, `05-eleve-inscription.png`, `06-eleve-identifiants.png`.
 
 ## 6. Enseignants
 
@@ -172,7 +194,13 @@ Si votre rôle le permet :
 - **Modifier** met à jour les données autorisées ;
 - **Archiver** désactive l'accès de l'enseignant côté serveur après confirmation.
 
-**Captures à intégrer :** `07-enseignants.png`, `08-enseignant-creation.png`.
+![Liste enseignants](./assets/mobile/07-enseignants.png)
+
+*Liste **Enseignants**. Le seed local peut répéter le même nom (plusieurs cartes Patrick Ilunga) : ce n'est pas une affectation manuelle.*
+
+![Création enseignant](./assets/mobile/08-enseignant-creation.png)
+
+*Modal **Créer un enseignant** (Jeanine Lumumba). Le mot de passe temporaire est masqué par le champ.*
 
 ## 7. Utilisateurs
 
@@ -201,7 +229,17 @@ Pour un compte qui ne possède pas déjà ce rôle, l'action **Attribuer Enseign
 
 La gestion complète des rôles et de la matrice de permissions reste disponible sur le Web.
 
-**Captures à intégrer :** `09-utilisateurs.png`, `10-utilisateur-creation.png`, `11-utilisateur-role-enseignant.png`.
+![Liste des utilisateurs](./assets/mobile/09-utilisateurs.png)
+
+*Cartes **Utilisateurs** avec rôles actifs. L'action **Attribuer Enseignant** apparaît lorsqu'elle est autorisée.*
+
+![Création utilisateur](./assets/mobile/10-utilisateur-creation.png)
+
+*Modal **Créer un utilisateur**. Remettez ensuite les identifiants depuis la fenêtre one-shot.*
+
+![Attribuer le rôle Enseignant](./assets/mobile/11-utilisateur-role-enseignant.png)
+
+*Bouton **Attribuer Enseignant** sur une carte sans ce rôle. La confirmation runtime est une alerte native, pas un modal screenshotable — voir `KNOWN-ISSUES.md`.*
 
 ## 8. Paiements
 
@@ -217,7 +255,9 @@ L'écran affiche notamment :
 
 ### Saisir un paiement
 
-Si **Saisir un paiement** est visible :
+Si **Saisir un paiement** n'est pas visible alors que votre rôle a le droit de création, rechargez l'écran. Sur le runtime actuel, le bouton n'est affiché que lorsque la liste des paiements a déjà au moins un reçu chargé (`success`), pas dans l'état vide.
+
+Lorsque le bouton est visible :
 
 1. appuyez sur **Saisir un paiement** ;
 2. choisissez l'**Élève** ;
@@ -231,7 +271,17 @@ Si **Saisir un paiement** est visible :
 
 Une mutation placée en file d'attente réseau n'est pas présentée comme un paiement confirmé. Ne percevez pas une deuxième fois le même montant simplement parce que la connexion est lente.
 
-**Captures à intégrer :** `12-paiements.png`, `13-paiement-saisie.png`, `14-paiement-recu.png`.
+![Synthèse des paiements](./assets/mobile/12-paiements.png)
+
+*Écran **Paiements** : synthèse, bouton **Saisir un paiement**, reçus récents chargés depuis PostgreSQL.*
+
+![Saisie d'un paiement](./assets/mobile/13-paiement-saisie.png)
+
+*Modal **Saisir un paiement** : élève Esther Okito, classe **6ème A**, montant, type de frais **Scolarité**, moyen **Espèces**.*
+
+![Reçus de paiement](./assets/mobile/14-paiement-recu.png)
+
+*Reçus récents après confirmation serveur (Esther Okito, statuts **Payé**).*
 
 ## 9. Présences / Appel
 
@@ -253,7 +303,13 @@ Somafrik refuse l'écriture si votre rôle ne possède pas le droit de modifier 
 
 Si l'appel est conservé en file d'attente, l'application indique qu'il n'est pas encore confirmé. Après retour du réseau, vérifiez la synchronisation et l'état serveur avant de considérer l'appel comme enregistré.
 
-**Captures à intégrer :** `15-presences-classes.png`, `16-presences-appel.png`.
+![Mes classes / présences](./assets/mobile/15-presences-classes.png)
+
+***Mes classes** d'un enseignant (Patrick Ilunga). Seules les classes de son périmètre réel sont listées, avec l'effectif réellement chargé.*
+
+![Appel](./assets/mobile/16-presences-appel.png)
+
+*Appel de **6ème A** / Sciences : roster, statuts **Présent / Absent / Retard / Justifié**, actions **Tout présent** et **Enregistrer l'appel**.*
 
 ## 10. Notes et évaluations
 
@@ -283,7 +339,15 @@ Un enseignant ne choisit pas librement un `teacherId` et ne peut pas forcer une 
 
 Une note placée en file d'attente n'est pas affichée comme définitivement confirmée. La validation d'une évaluation est réservée aux utilisateurs habilités ; un enseignant ne peut pas valider lui-même une évaluation si la politique courante l'interdit.
 
-**Captures à intégrer :** `17-evaluations.png`, `18-evaluation-creation.png`, `19-notes-saisie.png`.
+Sur le runtime de capture, **Saisir les notes** n'a pas pu être ouvert : aucune évaluation validée n'était disponible (création bloquée, voir `KNOWN-ISSUES.md`). Ne décrivez pas une saisie de notes tant que ce parcours n'est pas revalidé.
+
+![Liste des évaluations](./assets/mobile/17-evaluations.png)
+
+*Écran **Évaluations** enseignant : bouton **Créer une évaluation** visible, liste vide (« Aucune évaluation. »).*
+
+![Création d'une évaluation](./assets/mobile/18-evaluation-creation.png)
+
+*Formulaire **Nouvelle évaluation**. Classe/cours et période ne s'affichent que s'ils sont réellement chargés pour la session. Ici : aucun cours autorisé et aucune période canonique chargée.*
 
 # Parcours Enseignant
 
@@ -354,6 +418,10 @@ Le menu complémentaire peut proposer **Bulletins**, **Messages**, **Annonces**,
 
 Le parent ne doit voir que les données des enfants liés à son identité. Si une donnée d'un autre élève apparaît, ne poursuivez pas la consultation et signalez immédiatement l'anomalie au support.
 
+![Accueil parent](./assets/mobile/20-parent-accueil.png)
+
+*Accueil **Espace parent** : onglets Profil / Notes / Présence / Frais. Sur cette instance le compte parent seed n'a pas d'enfant lié : l'identité affichée reste « Élève » et les KPI sont à 0.*
+
 # Parcours Élève
 
 ## 16. Élève
@@ -366,6 +434,10 @@ Les onglets élève permettent principalement de consulter :
 - **Frais**.
 
 Le menu complémentaire peut proposer **Emploi du temps**, **Bulletins**, **Messages**, **Annonces**, **Mode hors ligne** et **Support** selon les permissions.
+
+![Accueil élève](./assets/mobile/21-eleve-accueil.png)
+
+*Accueil **Espace élève** : onglets Notes / Présence / Frais et actions rapides. L'identité compacte affiche « Élève » tant qu'aucun dossier élève n'est sélectionné dans le switcher.*
 
 # Paramètres et structure
 
@@ -388,6 +460,10 @@ Somafrik distingue au minimum trois situations importantes :
 - **échec** : la mutation n'a pas été confirmée.
 
 Une action en file d'attente n'est **pas** un succès serveur.
+
+![Mutation en attente](./assets/mobile/23-synchronisation-attente.png)
+
+*Saisie d'un paiement dont l'envoi n'a pas été confirmé : **« Paiement conservé en file. Pas de succès local. »** Le reçu n'est pas créé tant que le serveur n'a pas accepté la mutation.*
 
 ### Si Internet disparaît
 

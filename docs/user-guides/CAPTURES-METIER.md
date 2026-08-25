@@ -9,6 +9,7 @@ Statuts :
 - `À CAPTURER` : composant réel vérifié, image runtime non encore produite ;
 - `À REVALIDER` : image disponible mais version/état à vérifier ;
 - `VALIDÉE` : image runtime vérifiée et intégrable ;
+- `BLOQUÉE` : le runtime réel empêche la capture de l'état métier demandé, sans correctif produit dans cette PR ;
 - `RETIRÉE` : écran obsolète ou non canonique.
 
 ## Web
@@ -36,29 +37,29 @@ Statuts :
 
 | # | Capture cible | Écran / état métier | Rôle de référence | Source réelle `develop` | Statut |
 |---|---|---|---|---|---|
-| M01 | `assets/mobile/01-connexion-etablissement.png` | Identifiant + rôle détecté + secret | Utilisateur établissement | `Mobile/src/screens/LoginScreen.tsx` | À CAPTURER |
-| M02 | `assets/mobile/02-classes-liste.png` | Classes actives, élèves inscrits, cartes | Admin établissement | `Mobile/src/screens/ClassesScreen.tsx` | À CAPTURER |
-| M03 | `assets/mobile/03-classe-creation.png` | Modal Créer une classe | Admin établissement | `Mobile/src/components/ClassMutationControls.tsx` | À CAPTURER |
-| M04 | `assets/mobile/04-eleves-liste.png` | Liste compacte avec recherche | Admin/Secrétaire | `Mobile/src/screens/StudentsScreen.tsx` | À CAPTURER |
-| M05 | `assets/mobile/05-eleve-inscription.png` | Modal Inscrire un élève | Admin/Secrétaire habilité | `Mobile/src/components/StudentMutationControls.tsx` | À CAPTURER |
-| M06 | `assets/mobile/06-eleve-identifiants.png` | Remettre les identifiants élève | Même session que M05 | `StudentMutationControls.tsx` + `SecretHandoffModal` | À CAPTURER |
-| M07 | `assets/mobile/07-enseignants.png` | Liste enseignants | Admin établissement | `Mobile/src/screens/TeachersScreen.tsx` | À CAPTURER |
-| M08 | `assets/mobile/08-enseignant-creation.png` | Créer un enseignant | Admin habilité | `Mobile/src/components/TeacherMutationControls.tsx` | À CAPTURER |
-| M09 | `assets/mobile/09-utilisateurs.png` | Cartes comptes, rôles actifs | Admin établissement | `Mobile/src/screens/UsersScreen.tsx` | À CAPTURER |
-| M10 | `assets/mobile/10-utilisateur-creation.png` | Créer un utilisateur | Admin habilité | `Mobile/src/components/UserMutationControls.tsx` | À CAPTURER |
-| M11 | `assets/mobile/11-utilisateur-role-enseignant.png` | Confirmation Attribuer Enseignant | Admin habilité | `UserMutationControls.tsx` | À CAPTURER |
-| M12 | `assets/mobile/12-paiements.png` | Synthèse + reçus récents | Comptable/Admin | `Mobile/src/screens/PaymentsScreen.tsx` | À CAPTURER |
-| M13 | `assets/mobile/13-paiement-saisie.png` | Élève + Classe + Montant + Type de frais + Moyen | Comptable/Admin | `Mobile/src/components/PaymentMutationControls.tsx` | À CAPTURER |
-| M14 | `assets/mobile/14-paiement-recu.png` | Reçu après confirmation et refresh | Comptable/Admin | `PaymentsScreen.tsx` + `PaymentReceiptCard` | À CAPTURER |
-| M15 | `assets/mobile/15-presences-classes.png` | Mes classes | Enseignant | `Mobile/src/screens/TeacherAttendanceScreen.tsx` | À CAPTURER |
-| M16 | `assets/mobile/16-presences-appel.png` | Appel complet | Enseignant | `TeacherAttendanceScreen.tsx` | À CAPTURER |
-| M17 | `assets/mobile/17-evaluations.png` | Liste évaluations | Enseignant | `Mobile/src/screens/TeacherGradesScreen.tsx` | À CAPTURER |
-| M18 | `assets/mobile/18-evaluation-creation.png` | Nouvelle évaluation | Enseignant habilité | `TeacherGradesScreen.tsx` | À CAPTURER |
-| M19 | `assets/mobile/19-notes-saisie.png` | Roster + saisie notes | Enseignant | `TeacherGradesScreen.tsx` | À CAPTURER |
-| M20 | `assets/mobile/20-parent-accueil.png` | Onglets Profil/Notes/Présence/Frais | Parent | `Mobile/src/navigation/roleTabPreferences.ts` + écrans Student* | À CAPTURER |
-| M21 | `assets/mobile/21-eleve-accueil.png` | Onglets Profil/Notes/Présence/Frais | Élève | `roleTabPreferences.ts` + écrans Student* | À CAPTURER |
-| M22 | `assets/mobile/22-menu-admin-etablissement.png` | Menu filtré avec Paramètres/Structure selon droits | Admin établissement | `Mobile/src/navigation/roleDrawerPreferences.ts` | À CAPTURER |
-| M23 | `assets/mobile/23-synchronisation-attente.png` | Mutation en attente, sans faux succès | Rôle autorisé | `Mobile/src/lib/outbox.ts` + écrans métier | À CAPTURER |
+| M01 | `assets/mobile/01-connexion-etablissement.png` | Identifiant + rôle détecté + secret | Utilisateur établissement | `Mobile/src/screens/LoginScreen.tsx` | VALIDÉE |
+| M02 | `assets/mobile/02-classes-liste.png` | Classes actives, élèves inscrits, cartes | Admin établissement | `Mobile/src/screens/ClassesScreen.tsx` | VALIDÉE |
+| M03 | `assets/mobile/03-classe-creation.png` | Modal Créer une classe | Admin établissement | `Mobile/src/components/ClassMutationControls.tsx` | VALIDÉE |
+| M04 | `assets/mobile/04-eleves-liste.png` | Liste compacte avec recherche | Admin/Secrétaire | `Mobile/src/screens/StudentsScreen.tsx` | VALIDÉE |
+| M05 | `assets/mobile/05-eleve-inscription.png` | Modal Inscrire un élève | Admin/Secrétaire habilité | `Mobile/src/components/StudentMutationControls.tsx` | VALIDÉE |
+| M06 | `assets/mobile/06-eleve-identifiants.png` | Remettre les identifiants élève | Même session que M05 | `StudentMutationControls.tsx` + `SecretHandoffModal` | VALIDÉE |
+| M07 | `assets/mobile/07-enseignants.png` | Liste enseignants | Admin établissement | `Mobile/src/screens/TeachersScreen.tsx` | VALIDÉE |
+| M08 | `assets/mobile/08-enseignant-creation.png` | Créer un enseignant | Admin habilité | `Mobile/src/components/TeacherMutationControls.tsx` | VALIDÉE |
+| M09 | `assets/mobile/09-utilisateurs.png` | Cartes comptes, rôles actifs | Admin établissement | `Mobile/src/screens/UsersScreen.tsx` | VALIDÉE |
+| M10 | `assets/mobile/10-utilisateur-creation.png` | Créer un utilisateur | Admin habilité | `Mobile/src/components/UserMutationControls.tsx` | VALIDÉE |
+| M11 | `assets/mobile/11-utilisateur-role-enseignant.png` | Confirmation Attribuer Enseignant | Admin habilité | `UserMutationControls.tsx` | À REVALIDER |
+| M12 | `assets/mobile/12-paiements.png` | Synthèse + reçus récents | Comptable/Admin | `Mobile/src/screens/PaymentsScreen.tsx` | VALIDÉE |
+| M13 | `assets/mobile/13-paiement-saisie.png` | Élève + Classe + Montant + Type de frais + Moyen | Comptable/Admin | `Mobile/src/components/PaymentMutationControls.tsx` | VALIDÉE |
+| M14 | `assets/mobile/14-paiement-recu.png` | Reçu après confirmation et refresh | Comptable/Admin | `PaymentsScreen.tsx` + `PaymentReceiptCard` | VALIDÉE |
+| M15 | `assets/mobile/15-presences-classes.png` | Mes classes | Enseignant | `Mobile/src/screens/TeacherAttendanceScreen.tsx` | VALIDÉE |
+| M16 | `assets/mobile/16-presences-appel.png` | Appel complet | Enseignant | `TeacherAttendanceScreen.tsx` | VALIDÉE |
+| M17 | `assets/mobile/17-evaluations.png` | Liste évaluations | Enseignant | `Mobile/src/screens/TeacherGradesScreen.tsx` | VALIDÉE |
+| M18 | `assets/mobile/18-evaluation-creation.png` | Nouvelle évaluation | Enseignant habilité | `TeacherGradesScreen.tsx` | VALIDÉE |
+| M19 | `assets/mobile/19-notes-saisie.png` | Roster + saisie notes | Enseignant | `TeacherGradesScreen.tsx` | BLOQUÉE |
+| M20 | `assets/mobile/20-parent-accueil.png` | Onglets Profil/Notes/Présence/Frais | Parent | `Mobile/src/navigation/roleTabPreferences.ts` + écrans Student* | VALIDÉE |
+| M21 | `assets/mobile/21-eleve-accueil.png` | Onglets Profil/Notes/Présence/Frais | Élève | `roleTabPreferences.ts` + écrans Student* | VALIDÉE |
+| M22 | `assets/mobile/22-menu-admin-etablissement.png` | Menu filtré avec Paramètres/Structure selon droits | Admin établissement | `Mobile/src/navigation/roleDrawerPreferences.ts` | VALIDÉE |
+| M23 | `assets/mobile/23-synchronisation-attente.png` | Mutation en attente, sans faux succès | Rôle autorisé | `Mobile/src/lib/outbox.ts` + écrans métier | VALIDÉE |
 
 ## Jeu de données fictif recommandé
 
@@ -73,6 +74,12 @@ Pour maintenir la cohérence entre les images :
 - e-mails : domaines de démonstration/non routables.
 
 Le nom d'une classe doit toujours provenir du référentiel réellement chargé dans l'instance utilisée pour la capture. Ne pas forcer un libellé pour obtenir une image plus esthétique.
+
+Lot Mobile (runtime `50d6dcaac4f5b6d0ab3040a2ab5410ba3240eb34`, Expo web + API + PostgreSQL) :
+
+- le référentiel a fourni **6ème A** / **5ème B**, pas « 6e A » ni « 1ère Scientifique » ;
+- **M11** reste `À REVALIDER` : l'action **Attribuer Enseignant** est réelle, mais la confirmation est un `Alert.alert` natif, non screenshotable ;
+- **M19** est `BLOQUÉE` : aucune évaluation validée n'est saisissable (voir `KNOWN-ISSUES.md`).
 
 ## Contrôles avant validation d'une capture
 
