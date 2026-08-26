@@ -218,16 +218,24 @@ function main() {
     );
   }
 
+  // Le gate CTA est obligatoire sur les PR Mobile (PR Gates) et rejoué en profondeur
+  // dans la régression nightly. Il n'a plus besoin d'un step dédié dans chaque workflow.
+  const prGates = fs.readFileSync(path.join(ROOT, ".github", "workflows", "pr-gates.yml"), "utf8");
   const ci = fs.readFileSync(path.join(ROOT, ".github", "workflows", "ci.yml"), "utf8");
-  const security = fs.readFileSync(path.join(ROOT, ".github", "workflows", "security.yml"), "utf8");
   const rootPkg = JSON.parse(fs.readFileSync(path.join(ROOT, "package.json"), "utf8"));
   const mobilePkg = JSON.parse(fs.readFileSync(path.join(MOBILE, "package.json"), "utf8"));
   assert.equal(mobilePkg.scripts["verify:mobile-cta-rbac-alignment"], "node scripts/verify-mobile-cta-rbac-alignment.js");
   assert.equal(rootPkg.scripts["verify:mobile-cta-rbac-alignment"], "npm --prefix Mobile run verify:mobile-cta-rbac-alignment");
-  assert.match(ci, /name: verify:mobile-cta-rbac-alignment/);
-  assert.match(ci, /npm run verify:mobile-cta-rbac-alignment/);
-  assert.match(security, /name: verify:mobile-cta-rbac-alignment/);
-  assert.match(security, /npm run verify:mobile-cta-rbac-alignment/);
+  assert.match(
+    prGates,
+    /- name: Mobile safety[\s\S]*?npm run verify:mobile-cta-rbac-alignment/,
+    "PR Gates doit exécuter le verifier CTA dans le gate Mobile safety",
+  );
+  assert.match(
+    ci,
+    /- name: Full domain regression[\s\S]*?npm run verify:mobile-cta-rbac-alignment/,
+    "la régression nightly doit rejouer le verifier CTA",
+  );
 
   console.log("OK: CTA Messages/Archive/Plateforme/SafeAdminCrud alignés sur le contrat RBAC live");
 }
