@@ -22,6 +22,7 @@ export const USABILITY_TEST_IDS = {
     `attendance-current-status-${studentId}-${attendanceStatusSlug(status)}`,
   attendanceMarkAllPresent: "attendance-mark-all-present",
   attendanceSave: "attendance-save",
+  attendanceAuthorPicker: "attendance-author-picker",
   attendancePresentCount: "attendance-present-count",
   attendanceAbsentCount: "attendance-absent-count",
   attendanceLateCount: "attendance-late-count",
