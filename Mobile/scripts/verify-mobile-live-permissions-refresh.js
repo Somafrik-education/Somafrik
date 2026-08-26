@@ -29,6 +29,15 @@ function main() {
   }
   process.stdout.write(unit.stdout || "");
 
+  const snapshotUnit = spawnSync("npx", ["--yes", "tsx", path.join("src", "lib", "offlinePermissionsSnapshot.test.ts")], {
+    cwd: MOBILE,
+    encoding: "utf8",
+  });
+  if (snapshotUnit.status !== 0) {
+    throw new Error(snapshotUnit.stderr || snapshotUnit.stdout || "offlinePermissionsSnapshot.test.ts failed");
+  }
+  process.stdout.write(snapshotUnit.stdout || "");
+
   const auth = readSrc(path.join("context", "AuthContext.tsx"));
   const navigator = readSrc(path.join("navigation", "AppNavigator.tsx"));
   const adminCtx = stripComments(readSrc(path.join("context", "AdminDataContext.tsx")));
@@ -62,7 +71,12 @@ function main() {
 
   assert.match(navigator, /permissionsBootstrap === "idle" \|\| permissionsBootstrap === "loading"/);
   assert.match(navigator, /permissionsBootstrap === "error"/);
-  assert.match(navigator, /permissionsBootstrap !== "ready"/);
+  assert.match(navigator, /isMetierRenderable/);
+  assert.doesNotMatch(
+    stripComments(navigator),
+    /permissionsBootstrap !== "ready"/,
+    "HomeTabs doit autoriser ready_offline via isMetierRenderable",
+  );
 
   assert.doesNotMatch(
     adminCtx,
@@ -81,7 +95,12 @@ function main() {
     "un tableau live ne doit pas retomber sur la matrice locale",
   );
 
-  assert.match(outbox, /permissionsBootstrap !== "ready"/);
+  assert.match(outbox, /isMetierRenderable/);
+  assert.doesNotMatch(
+    outbox,
+    /permissionsBootstrap !== "ready"/,
+    "outbox replay autorisé en ready_offline, pas seulement ready live",
+  );
   assert.match(permissionsScreen, /L’attribution et le retrait des droits ne sont plus simulés localement/);
 
   assert.match(identity, /hasAuthoritativeRoleKeys/);
@@ -94,13 +113,41 @@ function main() {
     "roleKeys: [] ne doit plus être traité comme une absence d'information",
   );
   assert.match(refresh, /Array\.isArray\(payload\.roleKeys\)/);
+  assert.match(refresh, /ready_offline/);
+  assert.match(refresh, /decidePermissionsRefreshFailure/);
   assert.match(tests, /roleKeys: \[\]/);
   assert.match(tests, /permissions: \[\]/);
   assert.match(tests, /super_admin/);
   assert.match(tests, /Sans affectation/);
   assert.match(tests, /unassigned/);
 
-  console.log("OK: permissions live revalidées au foreground, fail-closed, AuthContext unique");
+  const authCtx = stripComments(auth);
+  assert.match(auth, /getEffectivePermissionsSnapshotRaw/);
+  assert.match(auth, /exactPermissions/);
+  assert.match(auth, /snapshotFromPersistedProfile/);
+  assert.doesNotMatch(authCtx, /setInterval/);
+
+  const storage = readSrc(path.join("services", "secureStorage.ts"));
+  assert.match(storage, /somafrik\.effectivePermissionsSnapshotV1/);
+  assert.match(storage, /EFFECTIVE_PERMISSIONS_SNAPSHOT_KEY/);
+  assert.match(stripComments(storage), /deleteItemAsync\(EFFECTIVE_PERMISSIONS_SNAPSHOT_KEY\)/);
+
+  const snapshotLib = stripComments(readSrc(path.join("lib", "offlinePermissionsSnapshot.ts")));
+  assert.doesNotMatch(snapshotLib, /getInternalRoleDefaults/);
+  assert.doesNotMatch(snapshotLib, /ALL_PRIVILEGES/);
+  assert.doesNotMatch(snapshotLib, /roleDefaults/);
+  assert.match(snapshotLib, /isRecognizedTransportFailure/);
+  assert.match(snapshotLib, /OFFLINE_PERMISSIONS_EXPANSION_FORBIDDEN/);
+
+  const banner = readSrc(path.join("components", "OfflineBanner.tsx"));
+  assert.match(banner, /permissionsUnrevalidated/);
+  assert.match(banner, /ready_offline/);
+
+  const snapshotTests = readSrc(path.join("lib", "offlinePermissionsSnapshot.test.ts"));
+  assert.match(snapshotTests, /CAS 1/);
+  assert.match(snapshotTests, /CAS 12/);
+
+  console.log("OK: permissions live revalidées au foreground, fail-closed, boot offline snapshot-only");
 }
 
 main();

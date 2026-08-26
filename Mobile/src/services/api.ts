@@ -14,10 +14,12 @@ import {
   clearSecureSession,
   getAccessToken,
   getRefreshToken,
+  saveEffectivePermissionsSnapshot,
   saveSessionProfile,
   saveTokens,
 } from "./secureStorage";
 import { canPersistFullSession, normalizePaymentRow, unwrapList } from "../lib/dataTruth";
+import { buildEffectivePermissionsSnapshotV1 } from "../lib/offlinePermissionsSnapshot";
 import {
   normalizeEvaluation,
   normalizeGrade,
@@ -231,12 +233,23 @@ export async function persistAuthenticatedSession(session: LoginResponse): Promi
   };
   await saveSessionProfile({
     role: safeSession.role,
+    roleKeys: safeSession.roleKeys,
     permissions: safeSession.permissions,
     user: safeSession.user as unknown as Record<string, unknown>,
     ...(safeSession.school
       ? { school: safeSession.school as unknown as Record<string, unknown> }
       : {}),
   });
+  const snapshot = Array.isArray(safeSession.permissions)
+    ? buildEffectivePermissionsSnapshotV1({
+        session: safeSession,
+        permissions: safeSession.permissions,
+        roleKeys: Array.isArray(safeSession.roleKeys) ? safeSession.roleKeys : safeSession.user?.roleKeys,
+      })
+    : null;
+  if (snapshot) {
+    await saveEffectivePermissionsSnapshot(JSON.stringify(snapshot));
+  }
   return safeSession;
 }
 

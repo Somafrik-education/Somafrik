@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { useAuth } from "../context/AuthContext";
 import { useAdminData } from "../context/AdminDataContext";
+import { isMetierRenderable } from "../lib/livePermissionsRefresh";
 import {
   CONNECTIVITY_POLL_MS,
   CONNECTIVITY_PROBE_TIMEOUT_MS,
@@ -50,8 +51,9 @@ export default function OutboxRuntime() {
   const { loadPresences, loadNotes, loadPayments, loadStudentFees, applyConfirmedPresences } = useAdminData();
 
   useEffect(() => {
-    // L8 : aucun replay outbox tant que les permissions live ne sont pas ready.
-    if (!session || permissionsBootstrap !== "ready") return undefined;
+    // L8 : replay HTTP seulement si métier rendable (ready live ou ready_offline).
+    // processOutbox reste gardé par canReplayOutboxNow (réseau réel).
+    if (!isMetierRenderable(session, permissionsBootstrap)) return undefined;
     const fingerprint = {
       userId: String(session.user?.id ?? ""),
       schoolScope: String(session.school?.code ?? session.user?.schoolCode ?? "").toUpperCase(),
