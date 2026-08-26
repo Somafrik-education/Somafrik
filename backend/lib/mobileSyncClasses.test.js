@@ -40,16 +40,26 @@ function createFakeRepo(rowsBySchool, live = {}) {
     async getSchoolByCode(code) {
       return { id: `sid-${code}`, school_code: code };
     },
-    async listActiveUserRoleKeys(userId) {
+    async listActiveUserRoleKeys() {
+      throw new Error("listActiveUserRoleKeys unscoped ne doit pas être appelé par mobile-sync");
+    },
+    async listActiveUserRoleKeysForSchool(userId, schoolId) {
       if (live.failRoleKeys) {
         throw new Error("pg roles unavailable");
       }
+      if (!schoolId) return [];
+      const keyed = live.roleKeysByUserSchool?.[`${userId}::${schoolId}`];
+      if (Array.isArray(keyed)) return keyed;
       const keys = live.roleKeysByUser?.[userId];
       return Array.isArray(keys) ? keys : [];
     },
     async resolveEffectivePermissions(principal) {
       if (live.failPermissions) {
         throw new Error("pg permissions unavailable");
+      }
+      live.lastPermissionsPrincipal = principal;
+      if (typeof live.resolvePermissions === "function") {
+        return live.resolvePermissions(principal);
       }
       const keys = new Set(principal.roleKeys ?? []);
       if (keys.has("SCHOOL_ADMIN") || keys.has("SUPER_ADMIN")) {
@@ -115,7 +125,7 @@ function defaultLiveRoleKeys(principal) {
   return [];
 }
 
-async function sync(principal, { cursor, limit, rows, liveAssignments, liveRoleKeys, failRoleKeys } = {}) {
+async function sync(principal, { cursor, limit, rows, liveAssignments, liveRoleKeys, liveRoleKeysBySchool, failRoleKeys, resolvePermissions } = {}) {
   const defaultRows = {
     "SCH-A": [classRow(ID_A, "CLS-A"), classRow(ID_B, "CLS-B"), classRow(ID_C, "CLS-C")],
   };
@@ -131,7 +141,9 @@ async function sync(principal, { cursor, limit, rows, liveAssignments, liveRoleK
       roleKeysByUser: {
         [principal.sub]: liveRoleKeys !== undefined ? liveRoleKeys : defaultLiveRoleKeys(principal),
       },
+      roleKeysByUserSchool: liveRoleKeysBySchool,
       failRoleKeys: Boolean(failRoleKeys),
+      resolvePermissions,
     }),
     tenantScopeService,
   });
@@ -419,4 +431,54 @@ test("erreur lecture rôles live → zéro donnée", async () => {
   assert.equal(result.httpStatus, 503);
   assert.equal(result.body.code, MOBILE_SYNC_ERROR.LIVE_SCOPE_UNAVAILABLE);
   assert.equal(result.body.items, undefined);
+});
+
+test("TEACHER School A + SCHOOL_ADMIN School B → sync A assigned, jamais school-wide", async () => {
+  const dual = adminPrincipal({
+    sub: "user-x",
+    role: "Admin School",
+    roleKeys: ["SCHOOL_ADMIN"],
+    schoolCode: "SCH-A",
+    permissions: ["Voir classes", "Gérer classes"],
+  });
+  const result = await sync(dual, {
+    liveRoleKeys: [],
+    liveRoleKeysBySchool: {
+      "user-x::sid-SCH-A": ["TEACHER"],
+      "user-x::sid-SCH-B": ["SCHOOL_ADMIN"],
+    },
+    liveAssignments: [{ classId: ID_A, classCode: "CLS-A", status: "active" }],
+    rows: {
+      "SCH-A": [classRow(ID_A, "CLS-A"), classRow(ID_B, "CLS-B"), classRow(ID_C, "CLS-C")],
+      "SCH-B": [classRow("00000000-0000-4000-8000-0000000000bb", "CLS-B-ONLY")],
+    },
+  });
+  assert.equal(result.httpStatus, 200);
+  assert.deepEqual(
+    result.body.items.map((item) => item.classCode),
+    ["CLS-A"],
+  );
+  assert.ok(!result.body.items.some((item) => item.classCode === "CLS-B"));
+  assert.ok(!result.body.items.some((item) => item.classCode === "CLS-B-ONLY"));
+});
+
+test("DENY Classes school-scopé : schoolCode transmis, pas un READ global sans tenant", async () => {
+  const stale = teacherPrincipal([{ classId: ID_A, classCode: "CLS-A", status: "active" }]);
+  const result = await sync(stale, {
+    liveAssignments: [{ classId: ID_A, classCode: "CLS-A", status: "active" }],
+    resolvePermissions: (principal) => {
+      assert.equal(principal.schoolCode, "SCH-A");
+      assert.equal(principal.effectiveSchoolId, "sid-SCH-A");
+      assert.equal(principal.sub, undefined);
+      if (!principal.schoolCode) {
+        return { permissions: ["Voir classes", "Classes:READ"] };
+      }
+      return { permissions: [] };
+    },
+  });
+  assert.equal(result.httpStatus, 200);
+  assert.deepEqual(
+    result.body.items.map((item) => item.classCode),
+    ["CLS-A"],
+  );
 });

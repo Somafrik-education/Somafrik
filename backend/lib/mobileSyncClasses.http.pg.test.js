@@ -28,10 +28,15 @@ const ID_C = "33333333-3333-4333-8333-333333333333";
 const ADMIN_USER_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1";
 const TEACHER_USER_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa2";
 const ACCOUNTANT_USER_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa3";
+const DUAL_USER_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa4";
 const TEACHER_ID = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+const DUAL_TEACHER_ID = "cccccccc-cccc-4ccc-8ccc-cccccccccc10";
 const SUBJECT_ID = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+const DUAL_SUBJECT_ID = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbb10";
 const ASSIGN_A = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
 const ASSIGN_C = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee";
+const DUAL_ASSIGN_A = "dddddddd-dddd-4ddd-8ddd-dddddddddd10";
+const ID_B_ONLY = "55555555-5555-4555-8555-555555555555";
 const SAME_TS = "2026-08-26T08:00:00.000Z";
 
 function withDatabaseName(databaseUrl, databaseName) {
@@ -157,6 +162,11 @@ async function seedHttpFixture(pool) {
       `SELECT ay.id FROM academic_years ay JOIN schools s ON s.id = ay.school_id WHERE s.school_code = 'SCH-A' LIMIT 1`,
     )
   ).rows[0];
+  const yearB = (
+    await pool.query(
+      `SELECT ay.id FROM academic_years ay JOIN schools s ON s.id = ay.school_id WHERE s.school_code = 'SCH-B' LIMIT 1`,
+    )
+  ).rows[0];
 
   await pool.query(
     `INSERT INTO classes (id, school_id, academic_year_id, class_code, name, status, updated_at)
@@ -166,42 +176,55 @@ async function seedHttpFixture(pool) {
        ($3, $4, $5, 'MS-CLS-C', '6ème C', 'active', $6::timestamptz)`,
     [ID_A, ID_B, ID_C, schoolA.id, yearA.id, SAME_TS],
   );
+  await pool.query(
+    `INSERT INTO classes (id, school_id, academic_year_id, class_code, name, status, updated_at)
+     VALUES ($1, $2, $3, 'MS-CLS-B-ONLY', '5ème B', 'active', $4::timestamptz)`,
+    [ID_B_ONLY, schoolB.id, yearB.id, SAME_TS],
+  );
 
   await pool.query(
     `INSERT INTO users (id, school_id, user_code, first_name, last_name, email, role, status, must_change_password)
      VALUES
        ($1, $4, 'ADM-MSYNC-1', 'Aline', 'Moke', 'admin-msync@test.local', 'Admin School', 'active', FALSE),
        ($2, $4, 'TCH-MSYNC-1', 'Tana', 'Kabila', 'teacher-msync@test.local', 'Enseignant', 'active', FALSE),
-       ($3, $4, 'ACC-MSYNC-1', 'Carla', 'Ngo', 'accountant-msync@test.local', 'Comptable', 'active', FALSE)`,
-    [ADMIN_USER_ID, TEACHER_USER_ID, ACCOUNTANT_USER_ID, schoolA.id],
+       ($3, $4, 'ACC-MSYNC-1', 'Carla', 'Ngo', 'accountant-msync@test.local', 'Comptable', 'active', FALSE),
+       ($5, $4, 'DUAL-MSYNC-1', 'Dina', 'Mwamba', 'dual-msync@test.local', 'Enseignant', 'active', FALSE)`,
+    [ADMIN_USER_ID, TEACHER_USER_ID, ACCOUNTANT_USER_ID, schoolA.id, DUAL_USER_ID],
   );
   await pool.query(
     `INSERT INTO user_roles (user_id, school_id, role_key, status)
      VALUES
        ($1, $4, 'SCHOOL_ADMIN', 'active'),
        ($2, $4, 'TEACHER', 'active'),
-       ($3, $4, 'ACCOUNTANT', 'active')`,
-    [ADMIN_USER_ID, TEACHER_USER_ID, ACCOUNTANT_USER_ID, schoolA.id],
+       ($3, $4, 'ACCOUNTANT', 'active'),
+       ($5, $4, 'TEACHER', 'active'),
+       ($5, $6, 'SCHOOL_ADMIN', 'active')`,
+    [ADMIN_USER_ID, TEACHER_USER_ID, ACCOUNTANT_USER_ID, schoolA.id, DUAL_USER_ID, schoolB.id],
   );
 
   await pool.query(
     `INSERT INTO teachers (id, school_id, user_id, teacher_code, status)
-     VALUES ($1, $2, $3, 'TCH-MSYNC-1', 'active')`,
-    [TEACHER_ID, schoolA.id, TEACHER_USER_ID],
+     VALUES
+       ($1, $3, $4, 'TCH-MSYNC-1', 'active'),
+       ($2, $3, $5, 'TCH-DUAL-1', 'active')`,
+    [TEACHER_ID, DUAL_TEACHER_ID, schoolA.id, TEACHER_USER_ID, DUAL_USER_ID],
   );
   await pool.query(
     `INSERT INTO subjects (id, school_id, subject_code, name, status)
-     VALUES ($1, $2, 'SUB-MSYNC-1', 'Maths', 'active')`,
-    [SUBJECT_ID, schoolA.id],
+     VALUES
+       ($1, $3, 'SUB-MSYNC-1', 'Maths', 'active'),
+       ($2, $3, 'SUB-DUAL-1', 'Physique', 'active')`,
+    [SUBJECT_ID, DUAL_SUBJECT_ID, schoolA.id],
   );
   await pool.query(
     `INSERT INTO teacher_assignments (
        id, school_id, teacher_id, class_id, subject_id, academic_year_id, status
      )
      VALUES
-       ($1, $3, $4, $5, $7, $8, 'active'),
-       ($2, $3, $4, $6, $7, $8, 'active')`,
-    [ASSIGN_A, ASSIGN_C, schoolA.id, TEACHER_ID, ID_A, ID_C, SUBJECT_ID, yearA.id],
+       ($1, $4, $5, $6, $8, $10, 'active'),
+       ($2, $4, $5, $7, $8, $10, 'active'),
+       ($3, $4, $11, $6, $9, $10, 'active')`,
+    [ASSIGN_A, ASSIGN_C, DUAL_ASSIGN_A, schoolA.id, TEACHER_ID, ID_A, ID_C, SUBJECT_ID, DUAL_SUBJECT_ID, yearA.id, DUAL_TEACHER_ID],
   );
 
   await grantTeacherClassesRead(pool);
@@ -323,6 +346,23 @@ async function main() {
     assert.equal(tenant.status, 403, `tenant 403: ${JSON.stringify(tenant.data)}`);
     assert.equal(tenant.data?.code, MOBILE_SYNC_ERROR.CURSOR_INVALID);
 
+    const dualToken = mintAccess(tokens, {
+      sub: DUAL_USER_ID,
+      role: "Admin School",
+      roleKeys: ["SCHOOL_ADMIN"],
+      schoolCode: "SCH-A",
+      permissions: ["Voir classes", "Gérer classes"],
+    });
+    const dual = await request("/mobile-sync/l1/classes", { token: dualToken });
+    assert.equal(dual.status, 200, `Dual tenant A assigned: ${JSON.stringify(dual.data)}`);
+    assert.deepEqual(
+      (dual.data.items ?? []).map((item) => item.classCode),
+      ["MS-CLS-A"],
+    );
+    assert.ok(!(dual.data.items ?? []).some((item) => item.classCode === "MS-CLS-B"));
+    assert.ok(!(dual.data.items ?? []).some((item) => item.classCode === "MS-CLS-C"));
+    assert.ok(!(dual.data.items ?? []).some((item) => item.classCode === "MS-CLS-B-ONLY"));
+
     await repo.pool.query(
       `UPDATE teacher_assignments SET status = 'inactive', updated_at = NOW() WHERE id = $1`,
       [ASSIGN_C],
@@ -365,7 +405,7 @@ async function main() {
     assert.equal(adminRoleRevoked.status, 200, `Admin rôles live []: ${JSON.stringify(adminRoleRevoked.data)}`);
     assert.deepEqual(adminRoleRevoked.data.items ?? [], []);
 
-    console.log("mobileSyncClasses.http.pg.test.js: OK Admin/Teacher/Comptable/tamper/scope/tenant/roles-live");
+    console.log("mobileSyncClasses.http.pg.test.js: OK Admin/Teacher/Comptable/tamper/scope/tenant/roles-live/dual-school");
   } catch (error) {
     if (stderr) {
       console.error(stderr.slice(-4000));

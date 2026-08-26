@@ -111,6 +111,12 @@ test("Préfet = school-wide comme GET /api/classes", () => {
   assert.equal(scope.scopeKind, "school-wide");
 });
 
+function trapUnscopedRoleKeys() {
+  return async function listActiveUserRoleKeys() {
+    throw new Error("listActiveUserRoleKeys unscoped ne doit pas être appelé par mobile-sync");
+  };
+}
+
 test("scopeHash live ignore principal.assignments JWT", async () => {
   const { resolveLiveClassesSyncSnapshot } = require("./mobileSyncScope");
   const stale = teacherPrincipal([
@@ -119,7 +125,8 @@ test("scopeHash live ignore principal.assignments JWT", async () => {
   ]);
   const school = { schoolCode: "SCH-A", schoolId: "id-a" };
   const liveOnlyA = {
-    async listActiveUserRoleKeys() {
+    listActiveUserRoleKeys: trapUnscopedRoleKeys(),
+    async listActiveUserRoleKeysForSchool() {
       return ["TEACHER"];
     },
     async listLiveTeacherClassAssignmentsForSync() {
@@ -159,7 +166,8 @@ test("sans dépôt d'affectations live → assigned vide (pas de fuite JWT)", as
   ]);
   const hashed = await resolveLiveClassesSyncSnapshot(
     {
-      async listActiveUserRoleKeys() {
+      listActiveUserRoleKeys: trapUnscopedRoleKeys(),
+      async listActiveUserRoleKeysForSchool() {
         return ["TEACHER"];
       },
     },
@@ -177,7 +185,8 @@ test("JWT Admin stale + rôles live [] → aucun scope", async () => {
   const { resolveLiveClassesSyncSnapshot } = require("./mobileSyncScope");
   const hashed = await resolveLiveClassesSyncSnapshot(
     {
-      async listActiveUserRoleKeys() {
+      listActiveUserRoleKeys: trapUnscopedRoleKeys(),
+      async listActiveUserRoleKeysForSchool() {
         return [];
       },
     },
@@ -196,7 +205,8 @@ test("JWT Teacher stale + rôle live révoqué → aucun scope", async () => {
   ]);
   const hashed = await resolveLiveClassesSyncSnapshot(
     {
-      async listActiveUserRoleKeys() {
+      listActiveUserRoleKeys: trapUnscopedRoleKeys(),
+      async listActiveUserRoleKeysForSchool() {
         return [];
       },
       async listLiveTeacherClassAssignmentsForSync() {
@@ -219,7 +229,8 @@ test("erreur lecture rôles live → fail-closed, pas de fallback JWT", async ()
     () =>
       resolveLiveClassesSyncSnapshot(
         {
-          async listActiveUserRoleKeys() {
+          listActiveUserRoleKeys: trapUnscopedRoleKeys(),
+          async listActiveUserRoleKeysForSchool() {
             throw new Error("pg roles unavailable");
           },
         },
@@ -228,4 +239,93 @@ test("erreur lecture rôles live → fail-closed, pas de fallback JWT", async ()
       ),
     (error) => error.code === "MOBILE_SYNC_LIVE_SCOPE_UNAVAILABLE" && error.statusCode === 503,
   );
+});
+
+test("TEACHER tenant A + SCHOOL_ADMIN tenant B → sync A reste assigned", async () => {
+  const { resolveLiveClassesSyncSnapshot } = require("./mobileSyncScope");
+  const staleAdminJwt = adminPrincipal({
+    sub: "user-x",
+    role: "Admin School",
+    roleKeys: ["SCHOOL_ADMIN"],
+    schoolCode: "SCH-A",
+  });
+  const rolesBySchool = {
+    "id-a": ["TEACHER"],
+    "id-b": ["SCHOOL_ADMIN"],
+  };
+  const hashedA = await resolveLiveClassesSyncSnapshot(
+    {
+      listActiveUserRoleKeys: trapUnscopedRoleKeys(),
+      async listActiveUserRoleKeysForSchool(_userId, schoolId) {
+        return rolesBySchool[String(schoolId)] ?? [];
+      },
+      async listLiveTeacherClassAssignmentsForSync() {
+        return [{ classId: "class-a", classCode: "CLS-A", status: "active" }];
+      },
+    },
+    staleAdminJwt,
+    { schoolCode: "SCH-A", schoolId: "id-a" },
+  );
+  assert.equal(hashedA.scope.scopeKind, "assigned");
+  assert.deepEqual(hashedA.scope.classIds, ["class-a"]);
+  assert.deepEqual(hashedA.input.roleKeys, ["Enseignant"]);
+  assert.ok(!hashedA.input.roleKeys.includes("Admin School"));
+  assert.ok(!hashedA.input.roleKeys.includes("SCHOOL_ADMIN"));
+  const hashedB = await resolveLiveClassesSyncSnapshot(
+    {
+      listActiveUserRoleKeys: trapUnscopedRoleKeys(),
+      async listActiveUserRoleKeysForSchool(_userId, schoolId) {
+        return rolesBySchool[String(schoolId)] ?? [];
+      },
+    },
+    adminPrincipal({ sub: "user-x", schoolCode: "SCH-B" }),
+    { schoolCode: "SCH-B", schoolId: "id-b" },
+  );
+  assert.equal(hashedB.scope.scopeKind, "school-wide");
+});
+
+test("sans schoolId tenant → aucun rôle live", async () => {
+  const { resolveLiveClassesSyncSnapshot } = require("./mobileSyncScope");
+  const hashed = await resolveLiveClassesSyncSnapshot(
+    {
+      listActiveUserRoleKeys: trapUnscopedRoleKeys(),
+      async listActiveUserRoleKeysForSchool() {
+        return ["SCHOOL_ADMIN"];
+      },
+    },
+    adminPrincipal(),
+    { schoolCode: "SCH-A", schoolId: "" },
+  );
+  assert.equal(hashed.scope.scopeKind, "none");
+});
+
+test("permissions live reçoivent schoolCode — DENY school vs READ global", async () => {
+  const { resolveLiveClassesSyncSnapshot } = require("./mobileSyncScope");
+  let seen = null;
+  const hashed = await resolveLiveClassesSyncSnapshot(
+    {
+      listActiveUserRoleKeys: trapUnscopedRoleKeys(),
+      async listActiveUserRoleKeysForSchool() {
+        return ["TEACHER"];
+      },
+      async resolveEffectivePermissions(principal) {
+        seen = principal;
+        assert.equal(principal.schoolCode, "SCH-A");
+        assert.equal(principal.effectiveSchoolId, "id-a");
+        assert.equal(principal.sub, undefined);
+        if (!principal.schoolCode) {
+          return { permissions: ["Voir classes", "Classes:READ"] };
+        }
+        return { permissions: [] };
+      },
+      async listLiveTeacherClassAssignmentsForSync() {
+        return [{ classId: "class-a", classCode: "CLS-A", status: "active" }];
+      },
+    },
+    teacherPrincipal([{ classId: "class-a", classCode: "CLS-A", status: "active" }]),
+    { schoolCode: "SCH-A", schoolId: "id-a" },
+  );
+  assert.equal(seen.schoolCode, "SCH-A");
+  assert.deepEqual(hashed.input.permissionKeys, []);
+  assert.equal(hashed.scope.scopeKind, "assigned");
 });

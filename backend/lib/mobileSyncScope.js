@@ -134,17 +134,18 @@ function rethrowLiveScope(error, message) {
   throw liveScopeError(message);
 }
 
-async function loadLiveRoleKeys(repository, principal) {
+async function loadLiveRoleKeys(repository, principal, schoolRef = {}) {
   const userId = asRef(principal?.sub ?? principal?.userId ?? principal?.id);
-  if (!userId) {
+  const schoolId = asRef(schoolRef.schoolId);
+  if (!userId || !schoolId) {
     return [];
   }
-  if (typeof repository?.listActiveUserRoleKeys !== "function") {
+  if (typeof repository?.listActiveUserRoleKeysForSchool !== "function") {
     return [];
   }
   let loaded;
   try {
-    loaded = await repository.listActiveUserRoleKeys(userId);
+    loaded = await repository.listActiveUserRoleKeysForSchool(userId, schoolId);
   } catch (error) {
     rethrowLiveScope(error, "Impossible de résoudre les rôles live.");
   }
@@ -154,20 +155,25 @@ async function loadLiveRoleKeys(repository, principal) {
   return sortedUnique(loaded.map((value) => toRoleKey(value)).filter(Boolean));
 }
 
-async function loadLivePermissions(repository, roleKeys) {
+async function loadLivePermissions(repository, roleKeys, schoolRef = {}) {
   if (!roleKeys.length) {
     return [];
   }
   if (typeof repository?.resolveEffectivePermissions !== "function") {
     return [];
   }
+  const labels = roleKeys.map((key) => toRoleLabel(key)).filter(Boolean);
   let live;
   try {
     live = await repository.resolveEffectivePermissions({
       roleKeys,
-      roles: roleKeys.map((key) => toRoleLabel(key)).filter(Boolean),
-      role: toRoleLabel(roleKeys[0]),
+      roles: labels,
+      role: labels[0] || "",
+      schoolCode: asRef(schoolRef.schoolCode),
+      effectiveSchoolId: asRef(schoolRef.schoolId),
     });
+    // sub/userId volontairement omis : collectPrincipalRoleKeys rechargerait
+    // sinon user_roles sans school_id (contamination inter-établissements).
   } catch (error) {
     rethrowLiveScope(error, "Impossible de résoudre les permissions live.");
   }
@@ -202,17 +208,19 @@ async function loadLiveTeacherAssignments(repository, userId, schoolId) {
 }
 
 /**
- * Snapshot canonique live : rôles user_roles + permissions effectives +
- * teacher_assignments PostgreSQL. scopeHash et filtre SQL partagent ce snapshot.
+ * Snapshot canonique live : userId + schoolId → rôles du tenant →
+ * permissions du tenant (schoolCode) → affectations du tenant.
+ * scopeHash et filtre SQL partagent ce snapshot.
  * Aucun fallback JWT : live [] = aucun scope ; erreur PG = fail-closed.
+ * listActiveUserRoleKeys (global, tous établissements) n'est jamais utilisé.
  *
  * @param {object} repository
  * @param {object} principal
  * @param {{ schoolCode?: string, schoolId?: string }} schoolRef
  */
 async function resolveLiveClassesSyncSnapshot(repository, principal, schoolRef = {}) {
-  const roleKeys = await loadLiveRoleKeys(repository, principal);
-  const permissions = await loadLivePermissions(repository, roleKeys);
+  const roleKeys = await loadLiveRoleKeys(repository, principal, schoolRef);
+  const permissions = await loadLivePermissions(repository, roleKeys, schoolRef);
   const labels = roleKeys.map((key) => toRoleLabel(key)).filter(Boolean);
   const livePrincipal = {
     sub: principal?.sub,

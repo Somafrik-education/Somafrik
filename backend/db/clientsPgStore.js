@@ -155,6 +155,22 @@ function createClientsPgStore(repo) {
         );
         return rows.map((row) => row.role_key);
       },
+      async listActiveUserRoleKeysForSchool(userId, schoolId) {
+        const uid = String(userId ?? "").trim();
+        const sid = String(schoolId ?? "").trim();
+        if (!uid || !sid) return [];
+        const rows = await all(
+          `SELECT role_key
+           FROM user_roles
+           WHERE user_id::text = $1
+             AND school_id::text = $2
+             AND status = 'active'
+             AND revoked_at IS NULL
+           ORDER BY granted_at ASC`,
+          [uid, sid],
+        );
+        return rows.map((row) => row.role_key);
+      },
       async listActiveUserRolesByUserIds(userIds = []) {
         if (!userIds.length) return [];
         return all(

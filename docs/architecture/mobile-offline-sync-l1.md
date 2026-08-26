@@ -75,16 +75,22 @@ Un curseur modifié, d'une autre ressource, d'un autre tenant ou d'un autre prin
 Construit à chaque requête depuis un **snapshot canonique live PostgreSQL**, pas depuis le JWT :
 
 ```
-rôles effectifs live (user_roles)
-+ permissions effectives live (role_module_permissions)
-+ teacher_assignments actives PostgreSQL
+userId + schoolId / schoolCode canonique
+        ↓
+rôles live du tenant (user_roles WHERE user_id AND school_id)
+        ↓
+permissions live du tenant (role_module_permissions + schoolCode)
+        ↓
+affectations live du tenant (teacher_assignments)
         ↓
 scope réel (school-wide | assigned | none)
         ↓
 scopeHash  +  filtre SQL
 ```
 
-`principal.assignments` **et les rôles / permissions JWT** sont ignorés. Aucun fallback JWT : `user_roles` live `[]` → `scopeKind=none` (zéro classe) ; erreur PostgreSQL live → `503 MOBILE_SYNC_LIVE_SCOPE_UNAVAILABLE` (zéro donnée).
+`principal.assignments` **et les rôles / permissions JWT** sont ignorés. La lecture mobile-sync n'utilise **pas** `listActiveUserRoleKeys` (tous établissements) : uniquement `listActiveUserRoleKeysForSchool(userId, schoolId)`. Une ligne `SCHOOL_ADMIN` active d'un autre établissement ne contamine pas le tenant courant.
+
+Aucun fallback JWT : `user_roles` live du tenant `[]` → `scopeKind=none` (zéro classe) ; erreur PostgreSQL live → `503 MOBILE_SYNC_LIVE_SCOPE_UNAVAILABLE` (zéro donnée). Les permissions sont résolues avec `schoolCode` pour la cascade établissement → pays → global (`pickGrant`) ; un DENY Classes au scope school du tenant courant gagne sur un READ global.
 
 SHA-256 déterministe de :
 
@@ -100,7 +106,7 @@ SHA-256 déterministe de :
 
 **Assigned** (Enseignant) : grant / revoke d'affectation **dans PostgreSQL** (JWT inchangé) → hash change → `409 MOBILE_SYNC_SCOPE_CHANGED`, puis full sync du nouveau périmètre. Pas un warm incomplet, pas de fuite de la classe révoquée.
 
-**None** : rôles live vides (révocation canonique) → aucune ligne, même si le JWT porte encore Admin / Enseignant.
+**None** : aucun rôle actif pour le **tenant courant** (révocation, ou rôle seulement dans un autre établissement) → aucune ligne, même si le JWT porte encore Admin / Enseignant.
 
 ## Tombstones
 

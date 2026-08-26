@@ -3312,6 +3312,18 @@ class FallbackRepository {
     return Promise.resolve([]);
   }
 
+  listActiveUserRoleKeysForSchool(userId, schoolId) {
+    const uid = String(userId ?? "").trim();
+    const sid = String(schoolId ?? "").trim();
+    if (!uid || !sid) return Promise.resolve([]);
+    const store = this.getClientsStore();
+    const bound = store?.bind ? store.bind() : store;
+    if (typeof bound?.listActiveUserRoleKeysForSchool !== "function") {
+      return Promise.resolve([]);
+    }
+    return bound.listActiveUserRoleKeysForSchool(uid, sid);
+  }
+
   createClientsContact(payload, principal, auditMeta) {
     return this.getClientsStore().createContact(payload, principal, auditMeta);
   }

@@ -25,10 +25,13 @@ const ID_B = "22222222-2222-4222-8222-222222222222";
 const ID_C = "33333333-3333-4333-8333-333333333333";
 const ID_D = "44444444-4444-4444-8444-444444444444";
 const TEACHER_USER_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+const DUAL_USER_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa10";
 const SUBJECT_ID = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
 const TEACHER_ID = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+const DUAL_TEACHER_ID = "cccccccc-cccc-4ccc-8ccc-cccccccccc10";
 const ASSIGN_A = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
 const ASSIGN_C = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee";
+const DUAL_ASSIGN_A = "dddddddd-dddd-4ddd-8ddd-dddddddddd10";
 const SAME_TS = "2026-08-26T08:00:00.000Z";
 const LATER_TS = "2026-08-26T09:00:00.000Z";
 
@@ -120,6 +123,15 @@ async function setupFixture(pool) {
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
+    CREATE TABLE IF NOT EXISTS user_roles (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      user_id UUID NOT NULL REFERENCES users(id),
+      school_id UUID REFERENCES schools(id),
+      role_key TEXT NOT NULL,
+      granted_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      revoked_at TIMESTAMPTZ,
+      status TEXT NOT NULL DEFAULT 'active'
+    );
   `);
   await pool.query(`
     ALTER TABLE classes ADD COLUMN IF NOT EXISTS level_id UUID;
@@ -132,7 +144,7 @@ async function setupFixture(pool) {
     CREATE INDEX IF NOT EXISTS idx_classes_school_updated_at_id
       ON classes (school_id, updated_at, id);
   `);
-  await pool.query("TRUNCATE teacher_assignments, teachers, users, subjects, classes, academic_years, schools, countries CASCADE");
+  await pool.query("TRUNCATE teacher_assignments, teachers, user_roles, users, subjects, classes, academic_years, schools, countries CASCADE");
 
   const country = await pool.query(
     `INSERT INTO countries (name, iso_code) VALUES ('Testland', 'TT') RETURNING id`,
@@ -234,6 +246,33 @@ async function seedTeacherFixture(pool, ids) {
   );
 }
 
+async function seedDualSchoolUser(pool, ids) {
+  await pool.query(
+    `INSERT INTO users (id, school_id, user_code, first_name, last_name, role, status)
+     VALUES ($1, $2, 'DUAL-SYNC-1', 'Dina', 'Mwamba', 'Enseignant', 'active')`,
+    [DUAL_USER_ID, ids.schoolA],
+  );
+  await pool.query(
+    `INSERT INTO user_roles (user_id, school_id, role_key, status)
+     VALUES
+       ($1, $2, 'TEACHER', 'active'),
+       ($1, $3, 'SCHOOL_ADMIN', 'active')`,
+    [DUAL_USER_ID, ids.schoolA, ids.schoolB],
+  );
+  await pool.query(
+    `INSERT INTO teachers (id, school_id, user_id, teacher_code, status)
+     VALUES ($1, $2, $3, 'TCH-DUAL-1', 'active')`,
+    [DUAL_TEACHER_ID, ids.schoolA, DUAL_USER_ID],
+  );
+  await pool.query(
+    `INSERT INTO teacher_assignments (
+       id, school_id, teacher_id, class_id, subject_id, academic_year_id, status
+     )
+     VALUES ($1, $2, $3, $4, $5, $6, 'active')`,
+    [DUAL_ASSIGN_A, ids.schoolA, DUAL_TEACHER_ID, ID_A, SUBJECT_ID, ids.yearA],
+  );
+}
+
 async function upsertTeacherAssignment(pool, { id, schoolId, yearId, classId, status = "active" }) {
   await pool.query(
     `INSERT INTO teacher_assignments (
@@ -270,9 +309,28 @@ async function main() {
       listSchoolClassesForMobileSync: (code, options) => classesRepo.listForMobileSync(code, options),
       listLiveTeacherClassAssignmentsForSync: (userId, schoolId) =>
         classesRepo.listLiveTeacherClassAssignmentsForSync(userId, schoolId),
-      async listActiveUserRoleKeys(userId) {
+      async listActiveUserRoleKeys() {
+        throw new Error("listActiveUserRoleKeys unscoped ne doit pas être appelé par mobile-sync");
+      },
+      async listActiveUserRoleKeysForSchool(userId, schoolId) {
         if (failLiveRoles) throw new Error("pg roles unavailable");
-        return liveRoleKeysByUser.get(String(userId)) ?? [];
+        const uid = String(userId ?? "").trim();
+        const sid = String(schoolId ?? "").trim();
+        if (!uid || !sid) return [];
+        if (liveRoleKeysByUser.has(uid)) {
+          return liveRoleKeysByUser.get(uid) ?? [];
+        }
+        const rows = await pool.query(
+          `SELECT role_key
+           FROM user_roles
+           WHERE user_id::text = $1
+             AND school_id::text = $2
+             AND status = 'active'
+             AND revoked_at IS NULL
+           ORDER BY granted_at ASC`,
+          [uid, sid],
+        );
+        return rows.rows.map((row) => row.role_key);
       },
       async resolveEffectivePermissions(principal) {
         const keys = new Set(principal.roleKeys ?? []);
@@ -331,6 +389,7 @@ async function main() {
     });
 
     await seedTeacherFixture(pool, ids);
+    await seedDualSchoolUser(pool, ids);
     await upsertTeacherAssignment(pool, {
       id: ASSIGN_A,
       schoolId: ids.schoolA,
@@ -503,6 +562,25 @@ async function main() {
     assert.deepEqual(teacherRevokedRole.body.items, []);
     liveRoleKeysByUser.set(TEACHER_USER_ID, ["TEACHER"]);
 
+    // P0 — même user TEACHER@A + SCHOOL_ADMIN@B ; sync A reste assigned
+    const dualJwt = adminPrincipal({
+      sub: DUAL_USER_ID,
+      role: "Admin School",
+      roleKeys: ["SCHOOL_ADMIN"],
+      schoolCode: "SCH-A",
+      permissions: ["Voir classes", "Gérer classes"],
+      effectiveSchoolId: ids.schoolA,
+    });
+    const dualSync = await sync(dualJwt);
+    assert.equal(dualSync.httpStatus, 200, "dual-school status");
+    assert.deepEqual(
+      dualSync.body.items.map((item) => item.classCode),
+      ["CLS-A"],
+    );
+    assert.ok(!dualSync.body.items.some((item) => item.classCode === "CLS-B"));
+    assert.ok(!dualSync.body.items.some((item) => item.classCode === "CLS-C"));
+    assert.ok(!dualSync.body.items.some((item) => item.classCode === "CLS-B-ONLY"));
+
     // Erreur lecture rôles live → 503, zéro donnée
     failLiveRoles = true;
     const rolesError = await sync(adminPrincipal({ effectiveSchoolId: ids.schoolA }));
@@ -518,7 +596,7 @@ async function main() {
       (error) => String(error.code) === "23514",
     );
 
-    console.log("mobileSyncClasses.pg.test.js: OK CAS 1-10");
+    console.log("mobileSyncClasses.pg.test.js: OK CAS 1-10 + tenant-scoped roles");
   } finally {
     await pool.end();
   }
