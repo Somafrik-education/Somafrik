@@ -5,8 +5,7 @@
 export const ROLE_SELECTION_COPY = {
   eyebrow: "Connexion établissement",
   title: "Entrez le code de votre école",
-  description:
-    "Utilisez le code fourni par l'administration pour ouvrir les espaces élève, parent, enseignant et direction.",
+  description: "Utilisez le code fourni par votre établissement pour accéder à votre espace.",
   codeLabel: "Code établissement",
   placeholderExample: "CD-IN-26-001",
   verifyButton: "Vérifier le code",

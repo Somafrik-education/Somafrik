@@ -135,7 +135,7 @@
     "verify:mobile-ui-e2e-runtime": "npm --prefix Mobile run verify:mobile-ui-e2e-runtime",
     "test:mobile-ui-e2e-runtime": "npm --prefix Mobile run test:mobile-ui-e2e-runtime",
     "verify:mobile-release-readiness": "npm --prefix Mobile run verify:mobile-release-readiness",
-    "verify:school-code-v2": "node backend/lib/schoolCodeV2.test.js && node backend/lib/publicSchool.test.js && node --test backend/lib/authPlatformLogin.test.js && npx --yes tsx Mobile/src/lib/roleSelectionSchoolCode.test.ts && npx --yes tsx Mobile/src/lib/platformLogin.test.ts && node backend/scripts/verify-school-code-v2.js",
+    "verify:school-code-v2": "node backend/lib/schoolCodeV2.test.js && node backend/lib/publicSchool.test.js && node --test backend/lib/authPlatformLogin.test.js && npx --yes tsx Mobile/src/lib/roleSelectionSchoolCode.test.ts && npx --yes tsx Mobile/src/lib/roleSelectionLayout.test.ts && npx --yes tsx Mobile/src/lib/platformLogin.test.ts && node backend/scripts/verify-school-code-v2.js",
     "verify:mobile-preview-apk": "npm --prefix Mobile run verify:mobile-preview-apk",
     "verify:mobile-native-aab": "npm --prefix Mobile run verify:mobile-native-aab",
     "audit:integrity": "node scripts/audit-data-integrity.js",
