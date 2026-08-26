@@ -108,6 +108,8 @@ SHA-256 déterministe de :
 
 **None** : aucun rôle actif pour le **tenant courant** (révocation, ou rôle seulement dans un autre établissement) → aucune ligne, même si le JWT porte encore Admin / Enseignant.
 
+**Permission Classes live** : après le snapshot tenant-scopé et **avant toute requête SQL classes**, le handler exige une permission réelle parmi `Classes:READ` | `Voir classes` | `Gérer classes` | `COUNTRY_PRIVILEGES` | `ALL_PRIVILEGES`. Sinon **403 `PERMISSION_DENIED`**, zéro donnée — y compris si `requirePermission()` a été contaminé par un `SCHOOL_ADMIN` d'un autre établissement (ex. ACCOUNTANT@A + SCHOOL_ADMIN@B + JWT Admin stale@A). Un Comptable n'est pas élargi en school-wide lisible.
+
 ## Tombstones
 
 Statuts SQL réels : `active` | `inactive` uniquement (`classes_status_check`).
@@ -130,7 +132,7 @@ Projection item :
 | Dépôt mémoire (non PG) | 503 | `MOBILE_SYNC_POSTGRES_REQUIRED` | — |
 | Rôles/permissions/affectations live illisibles | 503 | `MOBILE_SYNC_LIVE_SCOPE_UNAVAILABLE` | `invalid` |
 | Sans JWT | 401 | existant | — |
-| Sans Classes:READ | 403 | `PERMISSION_DENIED` | — |
+| Sans Classes:READ **live du tenant** (y compris Comptable@A + Admin@B) | 403 | `PERMISSION_DENIED` | `invalid` |
 | TTL env invalide à l'émission | 500 | `MOBILE_SYNC_CURSOR_TTL_INVALID` | — |
 
 409 `expired` et `scope_changed` imposent `mode=full_required`. Le client **ne continue pas** avec l'ancien curseur : cold sans `cursor`.

@@ -29,6 +29,7 @@ const ADMIN_USER_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1";
 const TEACHER_USER_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa2";
 const ACCOUNTANT_USER_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa3";
 const DUAL_USER_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa4";
+const ACC_DUAL_USER_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa5";
 const TEACHER_ID = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
 const DUAL_TEACHER_ID = "cccccccc-cccc-4ccc-8ccc-cccccccccc10";
 const SUBJECT_ID = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
@@ -188,8 +189,9 @@ async function seedHttpFixture(pool) {
        ($1, $4, 'ADM-MSYNC-1', 'Aline', 'Moke', 'admin-msync@test.local', 'Admin School', 'active', FALSE),
        ($2, $4, 'TCH-MSYNC-1', 'Tana', 'Kabila', 'teacher-msync@test.local', 'Enseignant', 'active', FALSE),
        ($3, $4, 'ACC-MSYNC-1', 'Carla', 'Ngo', 'accountant-msync@test.local', 'Comptable', 'active', FALSE),
-       ($5, $4, 'DUAL-MSYNC-1', 'Dina', 'Mwamba', 'dual-msync@test.local', 'Enseignant', 'active', FALSE)`,
-    [ADMIN_USER_ID, TEACHER_USER_ID, ACCOUNTANT_USER_ID, schoolA.id, DUAL_USER_ID],
+       ($5, $4, 'DUAL-MSYNC-1', 'Dina', 'Mwamba', 'dual-msync@test.local', 'Enseignant', 'active', FALSE),
+       ($6, $4, 'ACC-DUAL-1', 'Carla', 'Diallo', 'acc-dual-msync@test.local', 'Comptable', 'active', FALSE)`,
+    [ADMIN_USER_ID, TEACHER_USER_ID, ACCOUNTANT_USER_ID, schoolA.id, DUAL_USER_ID, ACC_DUAL_USER_ID],
   );
   await pool.query(
     `INSERT INTO user_roles (user_id, school_id, role_key, status)
@@ -198,8 +200,10 @@ async function seedHttpFixture(pool) {
        ($2, $4, 'TEACHER', 'active'),
        ($3, $4, 'ACCOUNTANT', 'active'),
        ($5, $4, 'TEACHER', 'active'),
-       ($5, $6, 'SCHOOL_ADMIN', 'active')`,
-    [ADMIN_USER_ID, TEACHER_USER_ID, ACCOUNTANT_USER_ID, schoolA.id, DUAL_USER_ID, schoolB.id],
+       ($5, $6, 'SCHOOL_ADMIN', 'active'),
+       ($7, $4, 'ACCOUNTANT', 'active'),
+       ($7, $6, 'SCHOOL_ADMIN', 'active')`,
+    [ADMIN_USER_ID, TEACHER_USER_ID, ACCOUNTANT_USER_ID, schoolA.id, DUAL_USER_ID, schoolB.id, ACC_DUAL_USER_ID],
   );
 
   await pool.query(
@@ -363,6 +367,19 @@ async function main() {
     assert.ok(!(dual.data.items ?? []).some((item) => item.classCode === "MS-CLS-C"));
     assert.ok(!(dual.data.items ?? []).some((item) => item.classCode === "MS-CLS-B-ONLY"));
 
+    const accountantDualToken = mintAccess(tokens, {
+      sub: ACC_DUAL_USER_ID,
+      role: "Admin School",
+      roleKeys: ["SCHOOL_ADMIN"],
+      schoolCode: "SCH-A",
+      permissions: ["Voir classes", "Gérer classes"],
+    });
+    const accountantDual = await request("/mobile-sync/l1/classes", { token: accountantDualToken });
+    assert.equal(accountantDual.status, 403, `ACCOUNTANT@A dual 403: ${JSON.stringify(accountantDual.data)}`);
+    assert.equal(accountantDual.data?.code, PERMISSION_DENIED);
+    assert.equal(accountantDual.data?.items, undefined);
+    assert.ok(!(accountantDual.data?.items ?? []).length);
+
     await repo.pool.query(
       `UPDATE teacher_assignments SET status = 'inactive', updated_at = NOW() WHERE id = $1`,
       [ASSIGN_C],
@@ -405,7 +422,7 @@ async function main() {
     assert.equal(adminRoleRevoked.status, 200, `Admin rôles live []: ${JSON.stringify(adminRoleRevoked.data)}`);
     assert.deepEqual(adminRoleRevoked.data.items ?? [], []);
 
-    console.log("mobileSyncClasses.http.pg.test.js: OK Admin/Teacher/Comptable/tamper/scope/tenant/roles-live/dual-school");
+    console.log("mobileSyncClasses.http.pg.test.js: OK Admin/Teacher/Comptable/tamper/scope/tenant/roles-live/dual-school/accountant-dual");
   } catch (error) {
     if (stderr) {
       console.error(stderr.slice(-4000));

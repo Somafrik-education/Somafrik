@@ -300,7 +300,7 @@ test("sans schoolId tenant → aucun rôle live", async () => {
 });
 
 test("permissions live reçoivent schoolCode — DENY school vs READ global", async () => {
-  const { resolveLiveClassesSyncSnapshot } = require("./mobileSyncScope");
+  const { resolveLiveClassesSyncSnapshot, liveSnapshotHasClassesRead } = require("./mobileSyncScope");
   let seen = null;
   const hashed = await resolveLiveClassesSyncSnapshot(
     {
@@ -327,5 +327,22 @@ test("permissions live reçoivent schoolCode — DENY school vs READ global", as
   );
   assert.equal(seen.schoolCode, "SCH-A");
   assert.deepEqual(hashed.input.permissionKeys, []);
+  assert.equal(liveSnapshotHasClassesRead(hashed.input), false);
   assert.equal(hashed.scope.scopeKind, "assigned");
+});
+
+test("ACCOUNTANT live du tenant : school-wide sans permission Classes", async () => {
+  const { resolveLiveClassesSyncSnapshot, liveSnapshotHasClassesRead } = require("./mobileSyncScope");
+  const hashed = await resolveLiveClassesSyncSnapshot(
+    {
+      listActiveUserRoleKeys: trapUnscopedRoleKeys(),
+      async listActiveUserRoleKeysForSchool(_userId, schoolId) {
+        return schoolId === "id-a" ? ["ACCOUNTANT"] : ["SCHOOL_ADMIN"];
+      },
+    },
+    adminPrincipal({ sub: "user-acc" }),
+    { schoolCode: "SCH-A", schoolId: "id-a" },
+  );
+  assert.equal(hashed.scope.scopeKind, "school-wide");
+  assert.equal(liveSnapshotHasClassesRead(hashed.input), false);
 });

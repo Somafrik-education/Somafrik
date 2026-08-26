@@ -13,6 +13,7 @@ const { handleMobileSyncL1Classes } = require("./mobileSyncClasses");
 const { encodeMobileSyncCursor } = require("./mobileSyncCursor");
 const { computeClassesScopeHash } = require("./mobileSyncScope");
 const { MOBILE_SYNC_ERROR, SENTINEL_UPDATED_AT, SENTINEL_ID } = require("./mobileSyncErrors");
+const { PERMISSION_DENIED } = require("../services/rbacService");
 const { ENSURE_CLASSES_STATUS_CHECK_SQL } = require("./classesUniqueness");
 
 const DATABASE_URL = String(process.env.DATABASE_URL ?? "").trim();
@@ -26,6 +27,7 @@ const ID_C = "33333333-3333-4333-8333-333333333333";
 const ID_D = "44444444-4444-4444-8444-444444444444";
 const TEACHER_USER_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const DUAL_USER_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa10";
+const ACC_DUAL_USER_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa20";
 const SUBJECT_ID = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
 const TEACHER_ID = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
 const DUAL_TEACHER_ID = "cccccccc-cccc-4ccc-8ccc-cccccccccc10";
@@ -273,6 +275,21 @@ async function seedDualSchoolUser(pool, ids) {
   );
 }
 
+async function seedAccountantDualSchoolUser(pool, ids) {
+  await pool.query(
+    `INSERT INTO users (id, school_id, user_code, first_name, last_name, role, status)
+     VALUES ($1, $2, 'ACC-DUAL-1', 'Carla', 'Diallo', 'Comptable', 'active')`,
+    [ACC_DUAL_USER_ID, ids.schoolA],
+  );
+  await pool.query(
+    `INSERT INTO user_roles (user_id, school_id, role_key, status)
+     VALUES
+       ($1, $2, 'ACCOUNTANT', 'active'),
+       ($1, $3, 'SCHOOL_ADMIN', 'active')`,
+    [ACC_DUAL_USER_ID, ids.schoolA, ids.schoolB],
+  );
+}
+
 async function upsertTeacherAssignment(pool, { id, schoolId, yearId, classId, status = "active" }) {
   await pool.query(
     `INSERT INTO teacher_assignments (
@@ -304,9 +321,13 @@ async function main() {
       [TEACHER_USER_ID, ["TEACHER"]],
     ]);
     let failLiveRoles = false;
+    let classSqlCalls = 0;
     const repository = {
       getSchoolByCode: (code) => adapter.getSchoolByCode(code),
-      listSchoolClassesForMobileSync: (code, options) => classesRepo.listForMobileSync(code, options),
+      listSchoolClassesForMobileSync: (code, options) => {
+        classSqlCalls += 1;
+        return classesRepo.listForMobileSync(code, options);
+      },
       listLiveTeacherClassAssignmentsForSync: (userId, schoolId) =>
         classesRepo.listLiveTeacherClassAssignmentsForSync(userId, schoolId),
       async listActiveUserRoleKeys() {
@@ -390,6 +411,7 @@ async function main() {
 
     await seedTeacherFixture(pool, ids);
     await seedDualSchoolUser(pool, ids);
+    await seedAccountantDualSchoolUser(pool, ids);
     await upsertTeacherAssignment(pool, {
       id: ASSIGN_A,
       schoolId: ids.schoolA,
@@ -581,6 +603,22 @@ async function main() {
     assert.ok(!dualSync.body.items.some((item) => item.classCode === "CLS-C"));
     assert.ok(!dualSync.body.items.some((item) => item.classCode === "CLS-B-ONLY"));
 
+    // P0 — ACCOUNTANT@A + SCHOOL_ADMIN@B + JWT Admin stale@A → 403, aucune classe
+    const sqlBeforeAccountant = classSqlCalls;
+    const accountantDualJwt = adminPrincipal({
+      sub: ACC_DUAL_USER_ID,
+      role: "Admin School",
+      roleKeys: ["SCHOOL_ADMIN"],
+      schoolCode: "SCH-A",
+      permissions: ["Voir classes", "Gérer classes"],
+      effectiveSchoolId: ids.schoolA,
+    });
+    const accountantDenied = await sync(accountantDualJwt);
+    assert.equal(accountantDenied.httpStatus, 403, "accountant dual 403");
+    assert.equal(accountantDenied.body.code, PERMISSION_DENIED);
+    assert.equal(accountantDenied.body.items, undefined);
+    assert.equal(classSqlCalls, sqlBeforeAccountant, "403 n'interroge pas classes");
+
     // Erreur lecture rôles live → 503, zéro donnée
     failLiveRoles = true;
     const rolesError = await sync(adminPrincipal({ effectiveSchoolId: ids.schoolA }));
@@ -596,7 +634,7 @@ async function main() {
       (error) => String(error.code) === "23514",
     );
 
-    console.log("mobileSyncClasses.pg.test.js: OK CAS 1-10 + tenant-scoped roles");
+    console.log("mobileSyncClasses.pg.test.js: OK CAS 1-10 + tenant-scoped roles + accountant dual 403");
   } finally {
     await pool.end();
   }

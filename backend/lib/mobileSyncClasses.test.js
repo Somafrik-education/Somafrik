@@ -9,6 +9,7 @@ const { MOBILE_SYNC_ERROR } = require("./mobileSyncErrors");
 const { handleMobileSyncL1Classes, clampLimit } = require("./mobileSyncClasses");
 const { encodeMobileSyncCursor } = require("./mobileSyncCursor");
 const { computeClassesScopeHash } = require("./mobileSyncScope");
+const { PERMISSION_DENIED } = require("../services/rbacService");
 
 const tokens = new TokenService({ secret: "ci-test-secret-with-enough-length-for-production-checks" });
 const tenantScopeService = new TenantScopeService();
@@ -74,6 +75,7 @@ function createFakeRepo(rowsBySchool, live = {}) {
       return live.assignmentsByUser?.[userId] ?? [];
     },
     async listSchoolClassesForMobileSync(schoolCode, options = {}) {
+      live.sqlCalls = (live.sqlCalls ?? 0) + 1;
       let rows = [...(rowsBySchool[schoolCode] ?? [])];
       if (Array.isArray(options.classIds) || Array.isArray(options.classCodes)) {
         const ids = new Set(options.classIds ?? []);
@@ -476,9 +478,38 @@ test("DENY Classes school-scopé : schoolCode transmis, pas un READ global sans 
       return { permissions: [] };
     },
   });
-  assert.equal(result.httpStatus, 200);
-  assert.deepEqual(
-    result.body.items.map((item) => item.classCode),
-    ["CLS-A"],
-  );
+  assert.equal(result.httpStatus, 403);
+  assert.equal(result.body.code, PERMISSION_DENIED);
+  assert.equal(result.body.items, undefined);
+});
+
+test("ACCOUNTANT@A + SCHOOL_ADMIN@B + JWT Admin@A → 403, aucune classe, pas de SQL", async () => {
+  const live = {
+    roleKeysByUserSchool: {
+      "user-acc::sid-SCH-A": ["ACCOUNTANT"],
+      "user-acc::sid-SCH-B": ["SCHOOL_ADMIN"],
+    },
+    sqlCalls: 0,
+  };
+  const result = await handleMobileSyncL1Classes({
+    principal: adminPrincipal({
+      sub: "user-acc",
+      role: "Admin School",
+      roleKeys: ["SCHOOL_ADMIN"],
+      schoolCode: "SCH-A",
+      permissions: ["Voir classes", "Gérer classes"],
+    }),
+    tokenService: tokens,
+    repository: createFakeRepo(
+      {
+        "SCH-A": [classRow(ID_A, "CLS-A"), classRow(ID_B, "CLS-B"), classRow(ID_C, "CLS-C")],
+      },
+      live,
+    ),
+    tenantScopeService,
+  });
+  assert.equal(result.httpStatus, 403);
+  assert.equal(result.body.code, PERMISSION_DENIED);
+  assert.equal(result.body.items, undefined);
+  assert.equal(live.sqlCalls, 0);
 });

@@ -43,6 +43,17 @@ function classesPermissionKeys(principal = {}) {
 }
 
 /**
+ * Lecture Classes autorisée uniquement si le snapshot live du tenant
+ * détient réellement une permission de lecture (pas le JWT, pas un rôle
+ * d'un autre établissement).
+ * @param {{ permissionKeys?: string[] }} [input]
+ */
+function liveSnapshotHasClassesRead(input = {}) {
+  const held = new Set(input.permissionKeys ?? []);
+  return CLASSES_SYNC_PERMISSIONS.some((permission) => held.has(permission));
+}
+
+/**
  * Périmètre réel Classes : school-wide (rôles établissement), assigned (enseignant)
  * ou none (aucun rôle live).
  * Aligné sur `scopeSchoolClassesForPrincipal` — jamais « Teacher = school entier ».
@@ -254,6 +265,7 @@ module.exports = {
   computeClassesScopeHash,
   hashScopeInput,
   classesPermissionKeys,
+  liveSnapshotHasClassesRead,
   resolveLiveClassesSyncSnapshot,
   loadLiveTeacherAssignments,
 };

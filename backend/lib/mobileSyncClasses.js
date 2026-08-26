@@ -1,6 +1,7 @@
 "use strict";
 
 const { BusinessError } = require("../services/authService");
+const { PERMISSION_DENIED } = require("../services/rbacService");
 const {
   MOBILE_SYNC_ERROR,
   MOBILE_SYNC_RESOURCE_CLASSES,
@@ -15,7 +16,7 @@ const {
   assertCursorBindings,
   principalSyncId,
 } = require("./mobileSyncCursor");
-const { resolveLiveClassesSyncSnapshot } = require("./mobileSyncScope");
+const { resolveLiveClassesSyncSnapshot, liveSnapshotHasClassesRead } = require("./mobileSyncScope");
 
 function asTrimmed(value) {
   return String(value ?? "").trim();
@@ -118,8 +119,9 @@ async function handleMobileSyncL1Classes(args) {
 
   let scopeHash;
   let scope;
+  let input;
   try {
-    ({ scopeHash, scope } = await resolveLiveClassesSyncSnapshot(repository, principal, schoolRef));
+    ({ scopeHash, scope, input } = await resolveLiveClassesSyncSnapshot(repository, principal, schoolRef));
   } catch (error) {
     if (error?.code === MOBILE_SYNC_ERROR.LIVE_SCOPE_UNAVAILABLE) {
       const result = protocolErrorBody(
@@ -138,6 +140,23 @@ async function handleMobileSyncL1Classes(args) {
       return result;
     }
     throw error;
+  }
+
+  if (scope.scopeKind !== "none" && !liveSnapshotHasClassesRead(input)) {
+    const result = protocolErrorBody(
+      403,
+      PERMISSION_DENIED,
+      "Permission insuffisante pour cette fonctionnalité.",
+      { mode: "unavailable", cursorStatus: "invalid" },
+    );
+    logMobileSync({
+      mode: "unavailable",
+      cursorStatus: "invalid",
+      itemCount: 0,
+      schoolId,
+      durationMs: Date.now() - started,
+    });
+    return result;
   }
 
   const principalId = principalSyncId(principal);
