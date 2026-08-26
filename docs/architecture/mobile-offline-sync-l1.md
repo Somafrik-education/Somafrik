@@ -340,7 +340,7 @@ Filtre SQL par UUID `teachers.id`. Jamais `teacherCode` JWT.
 | scopeKind | Qui | Filtre SQL | Roster dans scopeHash |
 | --- | --- | --- | --- |
 | `school-wide` | Super Admin + `SCHOOL_WIDE_STUDENT_READ_ROLES` allowlistés et autorisés | toutes les affectations du tenant | **non** (création / update / delete = deltas) |
-| `assigned` | Enseignant live | `teacher_assignments.teacher_id` = UUID live, statuts explicitement actifs | **oui** — IDs des affectations actives actuellement visibles |
+| `assigned` | Enseignant live | `teacher_assignments.teacher_id` = UUID live, `status = 'active'` | **oui** — IDs des affectations actives actuellement visibles |
 | `none` | aucun rôle live du tenant, **ou rôle live hors allowlist** (ex. `CUSTOM_ROLE` même avec `Affectations:READ`) | zéro ligne | — |
 
 **Aucun fallback school-wide.** Permission live absente (scope ≠ none) →
@@ -354,10 +354,9 @@ Grant / revoke / réaffectation Teacher, ou changement de rôle → ancien curse
 ### Tombstones
 
 `DELETE /api/assignments/:id` pose déjà `status='deleted'` et `updated_at=NOW()`.
-Pas de hard delete. Statut actif canonique (API historique, roster assigned, L1,
-tombstone) : `active` | `actif` | `open` | `ouverte` (`isExplicitlyActiveAssignmentStatus`).
-`tombstone=true` ⇔ statut **non** explicitement actif. Une ligne `actif` n'est
-jamais à la fois « active » et tombstone. Assigned n'émet pas de tombstone de
+Pas de hard delete. Pour `teacher_assignments`, le statut est canonique :
+`active` ⇔ `status = 'active'` ; tombstone ⇔ `status != 'active'`.
+Le CRUD n'écrit que `active` / `deleted`. Assigned n'émet pas de tombstone de
 visibilité : le roster dans le `scopeHash` force une full sync.
 
 ### Pagination keyset

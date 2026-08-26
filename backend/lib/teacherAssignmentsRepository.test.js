@@ -284,10 +284,10 @@ test("DELETE n'alias pas ta.status (UPDATE sans FROM ta)", () => {
   const match = src.match(/UPDATE teacher_assignments SET status = 'deleted'[\s\S]*?RETURNING id/);
   assert.ok(match);
   assert.equal(match[0].includes("ta.status"), false);
-  assert.match(match[0], /sqlActiveAssignmentStatus\("status"\)/);
+  assert.match(match[0], /AND status = 'active' RETURNING id/);
 });
 
-test("L1 teacherUserId = users.id ; tombstone aligné sur le statut actif canonique", () => {
+test("L1 teacherUserId = users.id ; tombstone ⇔ status != 'active'", () => {
   const src = require("node:fs").readFileSync(
     require("node:path").join(__dirname, "../db/teacherAssignmentsRepository.js"),
     "utf8",
@@ -306,7 +306,7 @@ test("L1 teacherUserId = users.id ; tombstone aligné sur le statut actif canoni
       subject_code: "S",
       academic_year_id: "y",
       assignment_role: "primary",
-      status: "actif",
+      status: "active",
       updated_at: "2026-08-26T08:00:00.000Z",
     }).tombstone,
     false,

@@ -7,14 +7,6 @@ const {
 const { assignmentAuditScope, writeTransactionalAudit } = require("../lib/teacherTransactionalAudit");
 const { isTeacherAssignmentsActiveUniquenessViolation } = require("../lib/teacherAssignmentsUniqueness");
 const { sqlTeacherIdentityEquals } = require("../lib/teacherCodeAllocation");
-const { isExplicitlyActiveAssignmentStatus } = require("../lib/classStudentsAuthz");
-
-/** Même ensemble que le roster Classes / L1 assigned — jamais `= 'active'` seul. */
-function sqlActiveAssignmentStatus(column = "ta.status") {
-  return `lower(btrim(${column})) IN ('active', 'actif', 'open', 'ouverte')`;
-}
-
-const SQL_ACTIVE_ASSIGNMENT_STATUS = sqlActiveAssignmentStatus("ta.status");
 
 function mapAssignment(row) {
   return {
@@ -65,7 +57,7 @@ function mapMobileSyncAssignmentRow(row) {
     assignmentRole: row.assignment_role ?? "primary",
     status,
     updatedAt: asIsoTimestamp(row.updated_at),
-    tombstone: !isExplicitlyActiveAssignmentStatus(status),
+    tombstone: status !== "active",
   };
 }
 
@@ -105,7 +97,7 @@ function createTeacherAssignmentsRepository(db) {
       `${SELECT_ASSIGNMENT} WHERE ta.id::text = $1 AND ta.school_id = $2 LIMIT 1`,
       [String(rowId ?? "").trim(), schoolId],
     );
-    if (!row || !isExplicitlyActiveAssignmentStatus(row.status)) {
+    if (!row || row.status !== "active") {
       throw assignmentError(404, "Affectation introuvable.", "ASSIGNMENT_NOT_FOUND");
     }
     return row;
@@ -164,7 +156,7 @@ function createTeacherAssignmentsRepository(db) {
        JOIN teachers t ON t.id = ta.teacher_id
          AND t.school_id = ta.school_id
        WHERE ta.school_id = $1 AND ta.class_id = $2 AND ta.subject_id = $3
-         AND ta.academic_year_id = $4 AND ${SQL_ACTIVE_ASSIGNMENT_STATUS}
+         AND ta.academic_year_id = $4 AND ta.status = 'active'
          AND ($5::text IS NULL OR ta.id::text <> $5)
        LIMIT 1`,
       [schoolId, refs.schoolClass.id, refs.subject.id, refs.schoolClass.academic_year_id, excludeId],
@@ -189,7 +181,7 @@ function createTeacherAssignmentsRepository(db) {
         return [];
       }
       const params = [school.id];
-      const conditions = ["ta.school_id = $1", SQL_ACTIVE_ASSIGNMENT_STATUS];
+      const conditions = ["ta.school_id = $1", "ta.status = 'active'"];
       const teacherId = String(options.teacherId ?? "").trim();
       if (teacherId) {
         params.push(teacherId);
@@ -255,7 +247,7 @@ function createTeacherAssignmentsRepository(db) {
          WHERE ta.school_id::text = $1
            AND ta.teacher_id::text = $2
            AND t.school_id::text = $1
-           AND ${SQL_ACTIVE_ASSIGNMENT_STATUS}
+           AND ta.status = 'active'
          ORDER BY ta.id ASC`,
         [sid, tid],
       );
@@ -264,8 +256,8 @@ function createTeacherAssignmentsRepository(db) {
 
     /**
      * Keyset L1 : ORDER BY updated_at ASC, id ASC — pas d'OFFSET.
-     * School-wide : toutes les lignes (tombstones = statut non explicitement actif).
-     * Assigned : teacher UUID + statuts explicitement actifs.
+     * School-wide : toutes les lignes (tombstones = status != 'active').
+     * Assigned : teacher UUID + status = 'active'.
      * JOIN tenant-strict : teacher_assignments / teachers / users / classes /
      * subjects / academic_years confirment school_id. Une FK seule ne suffit pas.
      *
@@ -294,7 +286,7 @@ function createTeacherAssignmentsRepository(db) {
       }
 
       if (options.activeOnly) {
-        conditions.push(SQL_ACTIVE_ASSIGNMENT_STATUS);
+        conditions.push("ta.status = 'active'");
       }
 
       const afterUpdatedAt = options.afterUpdatedAt ?? null;
@@ -468,7 +460,7 @@ function createTeacherAssignmentsRepository(db) {
         await requireCurrent(assignmentId, school.id, scope);
         const row = await scope.one(
           `UPDATE teacher_assignments SET status = 'deleted', updated_at = NOW()
-           WHERE id::text = $1 AND school_id = $2 AND ${sqlActiveAssignmentStatus("status")} RETURNING id`,
+           WHERE id::text = $1 AND school_id = $2 AND status = 'active' RETURNING id`,
           [String(assignmentId), school.id],
         );
         if (!row) throw assignmentError(404, "Affectation introuvable.", "ASSIGNMENT_NOT_FOUND");
@@ -500,6 +492,4 @@ module.exports = {
   mapAssignment,
   mapMobileSyncAssignmentRow,
   SELECT_ASSIGNMENT,
-  SQL_ACTIVE_ASSIGNMENT_STATUS,
-  sqlActiveAssignmentStatus,
 };

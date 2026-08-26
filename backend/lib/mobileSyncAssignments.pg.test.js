@@ -40,7 +40,6 @@ const ASSIGN_CROSS_TEACHER = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeee02";
 const ASSIGN_CROSS_SUBJECT = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeee03";
 const ASSIGN_CROSS_YEAR = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeee04";
 const ASSIGN_CROSS_USER = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeee05";
-const ASSIGN_ACTIF = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeee06";
 const TEACHER_ORPHAN_ID = "cccccccc-cccc-4ccc-8ccc-cccccccccc0d";
 const SAME_TS = "2026-08-26T08:00:00.000Z";
 const LATER_TS = "2026-08-26T09:00:00.000Z";
@@ -556,21 +555,6 @@ async function main() {
     const historicalOrphan = historicalLeaks.find((row) => row.id === ASSIGN_CROSS_USER);
     assert.ok(historicalOrphan);
     assert.equal(String(historicalOrphan.teacherName ?? "").trim(), "");
-
-    // statut actif canonique : `actif` visible et non-tombstone
-    await pool.query(
-      `INSERT INTO teacher_assignments (
-         id, school_id, teacher_id, class_id, subject_id, academic_year_id, status, updated_at
-       ) VALUES ($1, $2, $3, $4, $5, $6, 'actif', NOW())`,
-      [ASSIGN_ACTIF, ids.schoolA, TEACHER_ID, CLASS_A, SUBJECT_A, ids.yearA],
-    );
-    const actifL1 = await sync(adminPrincipal());
-    const actifItem = actifL1.body.items.find((item) => item.id === ASSIGN_ACTIF);
-    assert.ok(actifItem);
-    assert.equal(actifItem.status, "actif");
-    assert.equal(actifItem.tombstone, false);
-    const actifHist = await assignmentsRepo.listBySchoolCode("SCH-A");
-    assert.ok(actifHist.some((row) => row.id === ASSIGN_ACTIF && row.status === "actif"));
 
     failLiveRoles = true;
     const liveFail = await sync(adminPrincipal());

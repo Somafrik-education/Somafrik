@@ -52,7 +52,7 @@ const ASSIGN_CROSS_TEACHER = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeee02";
 const ASSIGN_CROSS_SUBJECT = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeee03";
 const ASSIGN_CROSS_YEAR = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeee04";
 const ASSIGN_CROSS_USER = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeee05";
-const ASSIGN_ACTIF = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeee06";
+const ASSIGN_HTTP_DELETE = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeee07";
 const SAME_TS = "2026-08-26T08:00:00.000Z";
 
 function withDatabaseName(databaseUrl, databaseName) {
@@ -536,19 +536,17 @@ async function main() {
       `INSERT INTO teacher_assignments (
          id, school_id, teacher_id, class_id, subject_id, academic_year_id, assignment_role, status, updated_at
        ) VALUES
-         ($1, $7, $8, $9, $10, $11, 'cross-class', 'active', NOW()),
-         ($2, $7, $12, $13, $10, $11, 'cross-teacher', 'active', NOW()),
-         ($3, $7, $8, $13, $14, $11, 'cross-subject', 'active', NOW()),
-         ($4, $7, $8, $13, $10, $15, 'cross-year', 'active', NOW()),
-         ($5, $7, $16, $17, $18, $11, 'cross-user', 'active', NOW()),
-         ($6, $7, $8, $17, $18, $11, 'actif-row', 'actif', NOW())`,
+         ($1, $6, $7, $8, $9, $10, 'cross-class', 'active', NOW()),
+         ($2, $6, $11, $12, $9, $10, 'cross-teacher', 'active', NOW()),
+         ($3, $6, $7, $12, $13, $10, 'cross-subject', 'active', NOW()),
+         ($4, $6, $7, $12, $9, $14, 'cross-year', 'active', NOW()),
+         ($5, $6, $15, $16, $17, $10, 'cross-user', 'active', NOW())`,
       [
         ASSIGN_CROSS_CLASS,
         ASSIGN_CROSS_TEACHER,
         ASSIGN_CROSS_SUBJECT,
         ASSIGN_CROSS_YEAR,
         ASSIGN_CROSS_USER,
-        ASSIGN_ACTIF,
         fixture.schoolA,
         TEACHER_ID,
         CLASS_B_ONLY,
@@ -579,10 +577,6 @@ async function main() {
     const orphanL1 = leakItems.find((item) => item.id === ASSIGN_CROSS_USER);
     assert.ok(orphanL1);
     assert.equal(orphanL1.teacherUserId, null);
-    const actifL1 = leakItems.find((item) => item.id === ASSIGN_ACTIF);
-    assert.ok(actifL1);
-    assert.equal(actifL1.status, "actif");
-    assert.equal(actifL1.tombstone, false);
 
     const leakGet = await request("/assignments", { token: adminToken });
     assert.equal(leakGet.status, 200, `leak GET: ${JSON.stringify(leakGet.data)}`);
@@ -599,7 +593,38 @@ async function main() {
     const orphanGet = leakHist.find((row) => row.id === ASSIGN_CROSS_USER);
     assert.ok(orphanGet);
     assert.equal(String(orphanGet.teacherName ?? "").trim(), "");
-    assert.ok(leakHist.some((row) => row.id === ASSIGN_ACTIF && row.status === "actif"));
+
+    await repo.pool.query(
+      `INSERT INTO teacher_assignments (
+         id, school_id, teacher_id, class_id, subject_id, academic_year_id, assignment_role, status, updated_at
+       ) VALUES ($1, $2, $3, $4, $5, $6, 'http-delete', 'active', NOW())`,
+      [ASSIGN_HTTP_DELETE, fixture.schoolA, TEACHER_ID, CLASS_C, DUAL_SUBJECT_ID, yearA],
+    );
+    const beforeHttpDeleteGet = await request("/assignments", { token: adminToken });
+    assert.ok(
+      (Array.isArray(beforeHttpDeleteGet.data) ? beforeHttpDeleteGet.data : []).some(
+        (row) => row.id === ASSIGN_HTTP_DELETE,
+      ),
+      "GET historique doit lister l'affectation active avant DELETE HTTP",
+    );
+    const httpDelete = await request(`/assignments/${ASSIGN_HTTP_DELETE}`, {
+      method: "DELETE",
+      token: adminToken,
+    });
+    assert.equal(httpDelete.status, 200, `DELETE HTTP 200: ${JSON.stringify(httpDelete.data)}`);
+    const pgDeleted = await repo.pool.query(
+      `SELECT status FROM teacher_assignments WHERE id = $1`,
+      [ASSIGN_HTTP_DELETE],
+    );
+    assert.equal(pgDeleted.rows[0]?.status, "deleted");
+    const l1AfterDelete = await request("/mobile-sync/l1/assignments", { token: adminToken });
+    const l1Deleted = (l1AfterDelete.data.items ?? []).find((item) => item.id === ASSIGN_HTTP_DELETE);
+    assert.ok(l1Deleted, "L1 school-wide doit émettre le tombstone");
+    assert.equal(l1Deleted.tombstone, true);
+    assert.equal(l1Deleted.status, "deleted");
+    const getAfterDelete = await request("/assignments", { token: adminToken });
+    const histAfterDelete = Array.isArray(getAfterDelete.data) ? getAfterDelete.data : [];
+    assert.ok(!histAfterDelete.some((row) => row.id === ASSIGN_HTTP_DELETE));
 
     await repo.pool.query(
       `UPDATE role_module_permissions

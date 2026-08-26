@@ -2482,7 +2482,6 @@ class FallbackRepository {
   }
 
   async listSchoolTeacherAssignments(schoolCode, options = {}) {
-    const { isExplicitlyActiveAssignmentStatus } = require("../lib/classStudentsAuthz");
     const code = String(schoolCode ?? "").trim().toUpperCase();
     if (!code || code === "*") {
       const { assignmentError } = require("../lib/teacherAssignmentsManagement");
@@ -2503,7 +2502,7 @@ class FallbackRepository {
         ...(this._managedTeacherAssignments ?? []),
       ].filter((row) => {
         const sameSchool = String(row.schoolCode ?? "").trim().toUpperCase() === code;
-        if (!sameSchool || !isExplicitlyActiveAssignmentStatus(row.status ?? "active")) return false;
+        if (!sameSchool || String(row.status ?? "active").trim() !== "active") return false;
         if (!teacherId) return true;
         const liveUuid = String(row.teacherUuid ?? row.teacher_id ?? row.internalTeacherId ?? "").trim();
         return Boolean(liveUuid) && liveUuid === teacherId;
