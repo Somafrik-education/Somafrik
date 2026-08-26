@@ -57,9 +57,11 @@ function liveSnapshotHasClassesRead(input = {}) {
 
 /**
  * Périmètre réel Classes : school-wide (rôles établissement), assigned (enseignant)
- * ou none (aucun rôle live).
+ * ou none (aucun rôle live, ou rôle live hors allowlist).
  * Aligné sur `scopeSchoolClassesForPrincipal` — jamais « Teacher = school entier ».
  * Un principal sans rôle live n'hérite pas du JWT : aucun scope.
+ * School-wide = allowlist explicite uniquement. `Classes:READ` seul n'élargit
+ * jamais un rôle inconnu.
  *
  * @param {object} principal
  * @returns {{
@@ -90,7 +92,7 @@ function resolveClassesSyncScope(principal) {
       classCodes: sortedUnique([...classCodes]),
     };
   }
-  return { scopeKind: "school-wide", classIds: [], classCodes: [] };
+  return emptyScope();
 }
 
 /**

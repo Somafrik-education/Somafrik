@@ -30,6 +30,7 @@ const TEACHER_USER_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa2";
 const ACCOUNTANT_USER_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa3";
 const DUAL_USER_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa4";
 const ACC_DUAL_USER_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa5";
+const CUSTOM_USER_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa6";
 const TEACHER_ID = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
 const DUAL_TEACHER_ID = "cccccccc-cccc-4ccc-8ccc-cccccccccc10";
 const SUBJECT_ID = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
@@ -141,6 +142,32 @@ async function grantTeacherClassesRead(pool) {
   );
 }
 
+async function grantCustomRoleClassesRead(pool) {
+  const existing = await pool.query(
+    `SELECT id FROM role_module_permissions
+     WHERE upper(role_key) = 'CUSTOM_ROLE'
+       AND module_key = 'classes'
+       AND scope_type = 'global'
+       AND status = 'active'
+     LIMIT 1`,
+  );
+  if (existing.rowCount) {
+    await pool.query(
+      `UPDATE role_module_permissions
+       SET can_read = TRUE, updated_by = 'mobile-sync-http-it', updated_at = NOW()
+       WHERE id = $1`,
+      [existing.rows[0].id],
+    );
+    return;
+  }
+  await pool.query(
+    `INSERT INTO role_module_permissions (
+       role_key, scope_type, module_key, can_create, can_read, can_update, can_delete, updated_by
+     )
+     VALUES ('CUSTOM_ROLE', 'global', 'classes', FALSE, TRUE, FALSE, FALSE, 'mobile-sync-http-it')`,
+  );
+}
+
 async function seedHttpFixture(pool) {
   const country = await pool.query(
     `INSERT INTO countries (name, iso_code, phone_code, currency)
@@ -232,6 +259,7 @@ async function seedHttpFixture(pool) {
   );
 
   await grantTeacherClassesRead(pool);
+  await grantCustomRoleClassesRead(pool);
   return { schoolA: schoolA.id, schoolB: schoolB.id };
 }
 
@@ -258,7 +286,7 @@ async function main() {
 
   try {
     await repo.init();
-    await seedHttpFixture(repo.pool);
+    const fixture = await seedHttpFixture(repo.pool);
 
     child = spawn(process.execPath, ["backend/server.js"], {
       cwd: ROOT,
@@ -421,6 +449,27 @@ async function main() {
     const adminRoleRevoked = await request("/mobile-sync/l1/classes", { token: adminToken });
     assert.equal(adminRoleRevoked.status, 200, `Admin rôles live []: ${JSON.stringify(adminRoleRevoked.data)}`);
     assert.deepEqual(adminRoleRevoked.data.items ?? [], []);
+
+    await repo.pool.query(
+      `INSERT INTO users (id, school_id, user_code, first_name, last_name, email, role, status, must_change_password)
+       VALUES ($1, $2, 'CUS-MSYNC-1', 'Cyrus', 'Ndala', 'custom-msync@test.local', NULL, 'active', FALSE)`,
+      [CUSTOM_USER_ID, fixture.schoolA],
+    );
+    await repo.pool.query(
+      `INSERT INTO user_roles (user_id, school_id, role_key, status)
+       VALUES ($1, $2, 'CUSTOM_ROLE', 'active')`,
+      [CUSTOM_USER_ID, fixture.schoolA],
+    );
+    const customToken = mintAccess(tokens, {
+      sub: CUSTOM_USER_ID,
+      role: "Admin School",
+      roleKeys: ["SCHOOL_ADMIN"],
+      schoolCode: "SCH-A",
+      permissions: ["Voir classes", "Gérer classes", "Classes:READ"],
+    });
+    const customRole = await request("/mobile-sync/l1/classes", { token: customToken });
+    assert.equal(customRole.status, 200, `CUSTOM_ROLE 200 vide: ${JSON.stringify(customRole.data)}`);
+    assert.deepEqual(customRole.data.items ?? [], []);
 
     console.log("mobileSyncClasses.http.pg.test.js: OK Admin/Teacher/Comptable/tamper/scope/tenant/roles-live/dual-school/accountant-dual");
   } catch (error) {
