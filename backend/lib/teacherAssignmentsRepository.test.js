@@ -2,7 +2,7 @@
 
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { createTeacherAssignmentsRepository } = require("../db/teacherAssignmentsRepository");
+const { createTeacherAssignmentsRepository, mapMobileSyncAssignmentRow, SELECT_ASSIGNMENT } = require("../db/teacherAssignmentsRepository");
 
 function createMemoryAdapter() {
   const schools = new Map([
@@ -262,6 +262,60 @@ test("CRUD affectation, conflit et isolation établissement", async () => {
         "CD-2026-0001",
       ),
     (error) => error.statusCode === 404 && error.code === "ASSIGNMENT_CLASS_NOT_FOUND",
+  );
+});
+
+test("SELECT_ASSIGNMENT exige school_id sur tous les JOIN métier", () => {
+  assert.match(SELECT_ASSIGNMENT, /JOIN teachers t ON t\.id = ta\.teacher_id\s+AND t\.school_id = ta\.school_id/);
+  assert.match(SELECT_ASSIGNMENT, /LEFT JOIN users u ON u\.id = t\.user_id\s+AND u\.school_id = ta\.school_id/);
+  assert.match(SELECT_ASSIGNMENT, /JOIN classes cl ON cl\.id = ta\.class_id\s+AND cl\.school_id = ta\.school_id/);
+  assert.match(SELECT_ASSIGNMENT, /JOIN subjects sub ON sub\.id = ta\.subject_id\s+AND sub\.school_id = ta\.school_id/);
+  assert.match(
+    SELECT_ASSIGNMENT,
+    /JOIN academic_years ay ON ay\.id = ta\.academic_year_id\s+AND ay\.school_id = ta\.school_id/,
+  );
+});
+
+test("L1 teacherUserId = users.id ; tombstone aligné sur le statut actif canonique", () => {
+  const src = require("node:fs").readFileSync(
+    require("node:path").join(__dirname, "../db/teacherAssignmentsRepository.js"),
+    "utf8",
+  );
+  assert.match(src, /u\.id AS teacher_user_id/);
+  assert.equal(src.includes("t.user_id AS teacher_user_id"), false);
+  assert.equal(
+    mapMobileSyncAssignmentRow({
+      id: "a",
+      teacher_id: "t",
+      teacher_code: "T",
+      teacher_user_id: "u",
+      class_id: "c",
+      class_code: "C",
+      subject_id: "s",
+      subject_code: "S",
+      academic_year_id: "y",
+      assignment_role: "primary",
+      status: "actif",
+      updated_at: "2026-08-26T08:00:00.000Z",
+    }).tombstone,
+    false,
+  );
+  assert.equal(
+    mapMobileSyncAssignmentRow({
+      id: "a",
+      teacher_id: "t",
+      teacher_code: "T",
+      teacher_user_id: null,
+      class_id: "c",
+      class_code: "C",
+      subject_id: "s",
+      subject_code: "S",
+      academic_year_id: "y",
+      assignment_role: "primary",
+      status: "deleted",
+      updated_at: "2026-08-26T08:00:00.000Z",
+    }).tombstone,
+    true,
   );
 });
 

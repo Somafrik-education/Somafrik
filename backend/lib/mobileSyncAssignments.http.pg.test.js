@@ -43,6 +43,16 @@ const ASSIGN_A = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
 const ASSIGN_B = "dddddddd-dddd-4ddd-8ddd-dddddddddd0b";
 const ASSIGN_C = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee";
 const DUAL_ASSIGN_A = "dddddddd-dddd-4ddd-8ddd-dddddddddd10";
+const TEACHER_B_USER_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa0b";
+const TEACHER_B_ID = "cccccccc-cccc-4ccc-8ccc-ccccccccccbb";
+const SUBJECT_B = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbb0b";
+const TEACHER_ORPHAN_ID = "cccccccc-cccc-4ccc-8ccc-cccccccccc0d";
+const ASSIGN_CROSS_CLASS = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeee01";
+const ASSIGN_CROSS_TEACHER = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeee02";
+const ASSIGN_CROSS_SUBJECT = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeee03";
+const ASSIGN_CROSS_YEAR = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeee04";
+const ASSIGN_CROSS_USER = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeee05";
+const ASSIGN_ACTIF = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeee06";
 const SAME_TS = "2026-08-26T08:00:00.000Z";
 
 function withDatabaseName(databaseUrl, databaseName) {
@@ -494,6 +504,102 @@ async function main() {
     const tombstoned = (adminTombstone.data.items ?? []).find((item) => item.id === ASSIGN_C);
     assert.equal(tombstoned?.tombstone, true);
     assert.equal(tombstoned?.status, "deleted");
+
+    const yearA = (
+      await repo.pool.query(
+        `SELECT ay.id FROM academic_years ay JOIN schools s ON s.id = ay.school_id WHERE s.school_code = 'SCH-A' LIMIT 1`,
+      )
+    ).rows[0].id;
+    const yearB = (
+      await repo.pool.query(
+        `SELECT ay.id FROM academic_years ay JOIN schools s ON s.id = ay.school_id WHERE s.school_code = 'SCH-B' LIMIT 1`,
+      )
+    ).rows[0].id;
+    await repo.pool.query(
+      `INSERT INTO users (id, school_id, user_code, first_name, last_name, email, role, status, must_change_password)
+       VALUES ($1, $2, 'TCH-ASG-B', 'Benoit', 'Kanza', 'teacher-b-asg@test.local', 'Enseignant', 'active', FALSE)`,
+      [TEACHER_B_USER_ID, fixture.schoolB],
+    );
+    await repo.pool.query(
+      `INSERT INTO teachers (id, school_id, user_id, teacher_code, status)
+       VALUES
+         ($1, $3, $4, 'TCH-ASG-B', 'active'),
+         ($2, $5, $4, 'TCH-ASG-ORPHAN', 'active')`,
+      [TEACHER_B_ID, TEACHER_ORPHAN_ID, fixture.schoolB, TEACHER_B_USER_ID, fixture.schoolA],
+    );
+    await repo.pool.query(
+      `INSERT INTO subjects (id, school_id, subject_code, name, status)
+       VALUES ($1, $2, 'SUB-ASG-B', 'Physique B', 'active')`,
+      [SUBJECT_B, fixture.schoolB],
+    );
+    await repo.pool.query(
+      `INSERT INTO teacher_assignments (
+         id, school_id, teacher_id, class_id, subject_id, academic_year_id, assignment_role, status, updated_at
+       ) VALUES
+         ($1, $7, $8, $9, $10, $11, 'cross-class', 'active', NOW()),
+         ($2, $7, $12, $13, $10, $11, 'cross-teacher', 'active', NOW()),
+         ($3, $7, $8, $13, $14, $11, 'cross-subject', 'active', NOW()),
+         ($4, $7, $8, $13, $10, $15, 'cross-year', 'active', NOW()),
+         ($5, $7, $16, $17, $18, $11, 'cross-user', 'active', NOW()),
+         ($6, $7, $8, $17, $18, $11, 'actif-row', 'actif', NOW())`,
+      [
+        ASSIGN_CROSS_CLASS,
+        ASSIGN_CROSS_TEACHER,
+        ASSIGN_CROSS_SUBJECT,
+        ASSIGN_CROSS_YEAR,
+        ASSIGN_CROSS_USER,
+        ASSIGN_ACTIF,
+        fixture.schoolA,
+        TEACHER_ID,
+        CLASS_B_ONLY,
+        SUBJECT_ID,
+        yearA,
+        TEACHER_B_ID,
+        CLASS_A,
+        SUBJECT_B,
+        yearB,
+        TEACHER_ORPHAN_ID,
+        CLASS_C,
+        DUAL_SUBJECT_ID,
+      ],
+    );
+
+    const leakL1 = await request("/mobile-sync/l1/assignments", { token: adminToken });
+    assert.equal(leakL1.status, 200, `leak L1: ${JSON.stringify(leakL1.data)}`);
+    const leakItems = leakL1.data.items ?? [];
+    assert.ok(!leakItems.some((item) => item.id === ASSIGN_CROSS_CLASS));
+    assert.ok(!leakItems.some((item) => item.id === ASSIGN_CROSS_TEACHER));
+    assert.ok(!leakItems.some((item) => item.id === ASSIGN_CROSS_SUBJECT));
+    assert.ok(!leakItems.some((item) => item.id === ASSIGN_CROSS_YEAR));
+    assert.ok(!leakItems.some((item) => item.classCode === "ASG-CLS-B-ONLY" || item.classId === CLASS_B_ONLY));
+    assert.ok(!leakItems.some((item) => item.teacherCode === "TCH-ASG-B" || item.teacherId === TEACHER_B_ID));
+    assert.ok(!leakItems.some((item) => item.subjectCode === "SUB-ASG-B" || item.subjectId === SUBJECT_B));
+    assert.ok(!leakItems.some((item) => item.academicYearId === yearB));
+    assert.ok(!JSON.stringify(leakItems).includes(TEACHER_B_USER_ID));
+    const orphanL1 = leakItems.find((item) => item.id === ASSIGN_CROSS_USER);
+    assert.ok(orphanL1);
+    assert.equal(orphanL1.teacherUserId, null);
+    const actifL1 = leakItems.find((item) => item.id === ASSIGN_ACTIF);
+    assert.ok(actifL1);
+    assert.equal(actifL1.status, "actif");
+    assert.equal(actifL1.tombstone, false);
+
+    const leakGet = await request("/assignments", { token: adminToken });
+    assert.equal(leakGet.status, 200, `leak GET: ${JSON.stringify(leakGet.data)}`);
+    const leakHist = Array.isArray(leakGet.data) ? leakGet.data : [];
+    assert.ok(!leakHist.some((row) => row.id === ASSIGN_CROSS_CLASS));
+    assert.ok(!leakHist.some((row) => row.id === ASSIGN_CROSS_TEACHER));
+    assert.ok(!leakHist.some((row) => row.id === ASSIGN_CROSS_SUBJECT));
+    assert.ok(!leakHist.some((row) => row.id === ASSIGN_CROSS_YEAR));
+    assert.ok(!leakHist.some((row) => row.classCode === "ASG-CLS-B-ONLY"));
+    assert.ok(!leakHist.some((row) => row.teacherCode === "TCH-ASG-B" || row.teacherId === "TCH-ASG-B"));
+    assert.ok(!leakHist.some((row) => row.subjectCode === "SUB-ASG-B"));
+    assert.ok(!JSON.stringify(leakHist).includes(TEACHER_B_USER_ID));
+    assert.ok(!JSON.stringify(leakHist).toLowerCase().includes("benoit"));
+    const orphanGet = leakHist.find((row) => row.id === ASSIGN_CROSS_USER);
+    assert.ok(orphanGet);
+    assert.equal(String(orphanGet.teacherName ?? "").trim(), "");
+    assert.ok(leakHist.some((row) => row.id === ASSIGN_ACTIF && row.status === "actif"));
 
     await repo.pool.query(
       `UPDATE role_module_permissions

@@ -38,6 +38,10 @@ const ASSIGN_C = "dddddddd-dddd-4ddd-8ddd-dddddddddd0c";
 const ASSIGN_CROSS_CLASS = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeee01";
 const ASSIGN_CROSS_TEACHER = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeee02";
 const ASSIGN_CROSS_SUBJECT = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeee03";
+const ASSIGN_CROSS_YEAR = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeee04";
+const ASSIGN_CROSS_USER = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeee05";
+const ASSIGN_ACTIF = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeee06";
+const TEACHER_ORPHAN_ID = "cccccccc-cccc-4ccc-8ccc-cccccccccc0d";
 const SAME_TS = "2026-08-26T08:00:00.000Z";
 const LATER_TS = "2026-08-26T09:00:00.000Z";
 
@@ -349,6 +353,7 @@ async function main() {
     for (const item of cold.body.items) {
       assert.equal(item.teacherId, TEACHER_ID);
       assert.notEqual(item.teacherId, item.teacherCode);
+      assert.equal(item.teacherUserId, TEACHER_USER_ID);
       assert.equal(item.tombstone, false);
     }
 
@@ -507,6 +512,65 @@ async function main() {
     assert.ok(!crossSubject.body.items.some((item) => item.id === ASSIGN_CROSS_SUBJECT));
     assert.ok(!crossSubject.body.items.some((item) => item.subjectCode === "SUB-ASG-B"));
     assert.ok(!crossSubject.body.items.some((item) => item.subjectId === SUBJECT_B));
+
+    // année B référencée par assignment A
+    await pool.query(
+      `INSERT INTO teacher_assignments (
+         id, school_id, teacher_id, class_id, subject_id, academic_year_id, assignment_role, status, updated_at
+       ) VALUES ($1, $2, $3, $4, $5, $6, 'cross-year', 'active', NOW())`,
+      [ASSIGN_CROSS_YEAR, ids.schoolA, TEACHER_ID, CLASS_A, SUBJECT_A, ids.yearB],
+    );
+    const crossYear = await sync(adminPrincipal());
+    assert.ok(!crossYear.body.items.some((item) => item.id === ASSIGN_CROSS_YEAR));
+    assert.ok(!crossYear.body.items.some((item) => item.academicYearId === ids.yearB));
+
+    // teacher A → user B : assignment visible, teacherUserId null, zéro UUID B
+    await pool.query(
+      `INSERT INTO teachers (id, school_id, user_id, teacher_code, status)
+       VALUES ($1, $2, $3, 'TCH-ASG-ORPHAN', 'active')`,
+      [TEACHER_ORPHAN_ID, ids.schoolA, TEACHER_B_USER_ID],
+    );
+    await pool.query(
+      `INSERT INTO teacher_assignments (
+         id, school_id, teacher_id, class_id, subject_id, academic_year_id, assignment_role, status, updated_at
+       ) VALUES ($1, $2, $3, $4, $5, $6, 'cross-user', 'active', NOW())`,
+      [ASSIGN_CROSS_USER, ids.schoolA, TEACHER_ORPHAN_ID, CLASS_A, SUBJECT_A, ids.yearA],
+    );
+    const crossUser = await sync(adminPrincipal());
+    const orphan = crossUser.body.items.find((item) => item.id === ASSIGN_CROSS_USER);
+    assert.ok(orphan, "assignment teacher A / user B reste listé");
+    assert.equal(orphan.teacherUserId, null);
+    assert.equal(orphan.teacherId, TEACHER_ORPHAN_ID);
+    assert.ok(!JSON.stringify(crossUser.body.items).includes(TEACHER_B_USER_ID));
+
+    const historicalLeaks = await assignmentsRepo.listBySchoolCode("SCH-A");
+    assert.ok(!historicalLeaks.some((row) => row.id === ASSIGN_CROSS_CLASS));
+    assert.ok(!historicalLeaks.some((row) => row.id === ASSIGN_CROSS_TEACHER));
+    assert.ok(!historicalLeaks.some((row) => row.id === ASSIGN_CROSS_SUBJECT));
+    assert.ok(!historicalLeaks.some((row) => row.id === ASSIGN_CROSS_YEAR));
+    assert.ok(!historicalLeaks.some((row) => row.classCode === "CLS-B-ONLY"));
+    assert.ok(!historicalLeaks.some((row) => row.teacherCode === "TCH-ASG-B" || row.teacherId === "TCH-ASG-B"));
+    assert.ok(!historicalLeaks.some((row) => row.subjectCode === "SUB-ASG-B"));
+    assert.ok(!JSON.stringify(historicalLeaks).includes(TEACHER_B_USER_ID));
+    assert.ok(!JSON.stringify(historicalLeaks).toLowerCase().includes("benoit"));
+    const historicalOrphan = historicalLeaks.find((row) => row.id === ASSIGN_CROSS_USER);
+    assert.ok(historicalOrphan);
+    assert.equal(String(historicalOrphan.teacherName ?? "").trim(), "");
+
+    // statut actif canonique : `actif` visible et non-tombstone
+    await pool.query(
+      `INSERT INTO teacher_assignments (
+         id, school_id, teacher_id, class_id, subject_id, academic_year_id, status, updated_at
+       ) VALUES ($1, $2, $3, $4, $5, $6, 'actif', NOW())`,
+      [ASSIGN_ACTIF, ids.schoolA, TEACHER_ID, CLASS_A, SUBJECT_A, ids.yearA],
+    );
+    const actifL1 = await sync(adminPrincipal());
+    const actifItem = actifL1.body.items.find((item) => item.id === ASSIGN_ACTIF);
+    assert.ok(actifItem);
+    assert.equal(actifItem.status, "actif");
+    assert.equal(actifItem.tombstone, false);
+    const actifHist = await assignmentsRepo.listBySchoolCode("SCH-A");
+    assert.ok(actifHist.some((row) => row.id === ASSIGN_ACTIF && row.status === "actif"));
 
     failLiveRoles = true;
     const liveFail = await sync(adminPrincipal());

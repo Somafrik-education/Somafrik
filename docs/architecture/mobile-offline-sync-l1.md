@@ -354,9 +354,11 @@ Grant / revoke / réaffectation Teacher, ou changement de rôle → ancien curse
 ### Tombstones
 
 `DELETE /api/assignments/:id` pose déjà `status='deleted'` et `updated_at=NOW()`.
-Pas de hard delete. Sync school-wide : `tombstone=true` ⇔ `status !== "active"`.
-Aucun statut inventé. Assigned n'émet pas de tombstone de visibilité : le roster
-dans le `scopeHash` force une full sync.
+Pas de hard delete. Statut actif canonique (API historique, roster assigned, L1,
+tombstone) : `active` | `actif` | `open` | `ouverte` (`isExplicitlyActiveAssignmentStatus`).
+`tombstone=true` ⇔ statut **non** explicitement actif. Une ligne `actif` n'est
+jamais à la fois « active » et tombstone. Assigned n'émet pas de tombstone de
+visibilité : le roster dans le `scopeHash` force une full sync.
 
 ### Pagination keyset
 
@@ -372,7 +374,10 @@ Tout JOIN confirme explicitement le tenant :
 `classes.school_id`, `subjects.school_id`, `academic_years.school_id`.
 
 Une FK valide n'est pas une preuve d'isolation. Un assignment `school_id=A`
-pointant vers une classe / un enseignant / une matière B n'expose aucune donnée B.
+pointant vers une classe / un enseignant / une matière / une année B n'expose
+aucune donnée B. `GET /api/assignments` utilise le même `SELECT_ASSIGNMENT`
+tenant-strict. `teacherUserId` est `u.id` (LEFT JOIN `users` du tenant) : un
+`teachers.user_id` cross-tenant → `teacherUserId=null`, jamais l'UUID B.
 
 ### Index
 
