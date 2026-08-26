@@ -6292,6 +6292,23 @@ class PostgresRepository {
     return this.getSchoolCoursesRepository().listForMobileSync(schoolCode, options);
   }
 
+  getCourseSchedulesRepository() {
+    if (!this._courseSchedulesRepository) {
+      const { createCourseSchedulesRepository } = require("./courseSchedulesRepository");
+      this._courseSchedulesRepository = createCourseSchedulesRepository({
+        one: (sql, params) => this.one(sql, params),
+        all: (sql, params) => this.all(sql, params),
+        query: (sql, params) => this.query(sql, params),
+        getSchoolByCode: (code) => this.getSchoolByCode(code),
+      });
+    }
+    return this._courseSchedulesRepository;
+  }
+
+  listCourseSchedulesForMobileSync(schoolCode, options) {
+    return this.getCourseSchedulesRepository().listForMobileSync(schoolCode, options);
+  }
+
   async getGradeById(id) {
     const grade = await this.one(
       `SELECT g.*, st.student_code, s.school_code, cl.class_code, cl.name AS class_name, sub.name AS subject_name,

@@ -76,6 +76,7 @@ assert.equal(routePermissions["POST /api/backoffice/education-class-groups"]?.in
 assert.ok(routePermissions["PATCH /api/backoffice/education-reference/labels"]?.includes("Référentiels pédagogiques:UPDATE"));
 
 assert.deepEqual(routePermissions["GET /api/course-schedules"], ["Planning de cours:READ", "ALL_PRIVILEGES"]);
+assert.deepEqual(routePermissions["GET /api/mobile-sync/l1/course-schedules"], ["Planning de cours:READ", "ALL_PRIVILEGES"]);
 assert.deepEqual(routePermissions["POST /api/course-schedules"], ["Planning de cours:CREATE", "ALL_PRIVILEGES"]);
 assert.deepEqual(routePermissions["PATCH /api/course-schedules/:scheduleId"], ["Planning de cours:UPDATE", "ALL_PRIVILEGES"]);
 assert.deepEqual(routePermissions["DELETE /api/course-schedules/:scheduleId"], ["Planning de cours:DELETE", "ALL_PRIVILEGES"]);

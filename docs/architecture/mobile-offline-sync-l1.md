@@ -164,8 +164,8 @@ Jamais : curseur complet, JWT, données élèves, secrets.
 
 Réutiliser les mêmes modules (`mobileSyncCursor`, `mobileSyncScope`, erreurs, pagination).
 `mobileSyncCursor` est **resource-aware** : `resource=classes`, `resource=students`,
-`resource=assignments` et `resource=school-courses` sont inéchangeables (decode fail-closed 400).
-Prochaine ressource, **une PR dédiée** : CourseSchedules.
+`resource=assignments` et `resource=school-courses` et `resource=course-schedules` sont inéchangeables (decode fail-closed 400).
+Prochaines ressources offline, **hors cette PR** : remplacements ponctuels si besoin.
 Chaque ressource a son `resource` dans le curseur (non réutilisable) et son `scopeHash` (filtre autoritatif serveur).
 SQLite/SQLCipher Mobile seulement après validation de ce protocole.
 
@@ -456,4 +456,56 @@ Justifié par le keyset `ORDER BY updated_at, id` (les uniques existants ne
 couvrent pas `updated_at`) :
 
 - `idx_school_courses_school_updated_at_id`
+
+## CourseSchedules
+
+```
+GET /api/mobile-sync/l1/course-schedules
+GET /api/mobile-sync/l1/course-schedules?cursor=<opaque>
+```
+
+Additif. Autorité exclusive : `course_schedule_weekly_slots` (définition
+`dayOfWeek` + `TIME`). **Interdit** : `course_schedule_slots`, occurrences
+datées, remplacements, `backoffice_state`. `GET /api/course-schedules` reste
+la lecture historique (JOINs désormais tenant-stricts).
+
+RBAC identique à `GET /api/course-schedules` :
+
+`Planning de cours:READ` | `ALL_PRIVILEGES`
+
+### Statuts réels
+
+`CHECK (status IN ('active', 'cancelled', 'archived'))`.
+`DELETE /api/course-schedules/:id` → `cancelWeeklyScheduleSlot()` →
+`status='cancelled'`, `updated_at=NOW()`. Pas de DELETE physique.
+`tombstone=true` ⇔ `status != 'active'`.
+
+### Projection minimale
+
+`id`, `schoolCourseId`, `courseCode`, `academicYearId`, `classId`, `classCode`,
+`subjectId`, `subjectCode`, `teacherId` (`teachers.id` du tenant), `teacherCode`,
+`roomId` (`school_rooms.id` du tenant, sinon null), `roomCode`, `dayOfWeek`,
+`startTime`, `endTime`, `status`, `updatedAt`, `tombstone`.
+
+Pas de `className` / `subjectName` / `teacherName` / `roomName` : un changement
+de nom sans `w.updated_at` ne serait pas visible en delta.
+
+### Scope live
+
+Teacher : UUID enseignant PostgreSQL **et** paires `(classId, subjectId)` des
+affectations actives. Un vieux créneau `teacher_id=T` sur Classe A / Français
+n'est pas visible si l'affectation active est A / Maths.
+
+Remplacements **hors** cette ressource (un remplacement ne bump pas
+`weekly_slots.updated_at`).
+
+### Isolation tenant SQL
+
+JOINs `school_id` sur `school_courses`, `classes`, `academic_years`, `teachers`,
+`subjects` ; `LEFT JOIN school_rooms` tenant-strict (`roomId` jamais `w.room_id`
+cross-tenant). Une référence obligatoire B exclut la ligne.
+
+### Index
+
+- `idx_course_schedule_weekly_school_updated_at_id` — keyset school-wide
 

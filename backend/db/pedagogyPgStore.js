@@ -16,29 +16,44 @@ const {
 } = require("../lib/teacherCodeAllocation");
 
 const WEEKLY_SLOT_SELECT = `
-          SELECT w.id, w.school_id, w.academic_year_id, w.school_course_id, w.class_id, w.teacher_id,
-                 w.day_of_week, w.start_time, w.end_time, w.status, w.room, w.room_id, w.created_at, w.updated_at,
-                 s.school_code, c.name AS class_name, c.class_code, sc.subject_id, sc.status AS school_course_status,
+          SELECT w.id, w.school_id,
+                 ay.id AS academic_year_id,
+                 sc.id AS school_course_id,
+                 c.id AS class_id,
+                 t.id AS teacher_id,
+                 w.day_of_week, w.start_time, w.end_time, w.status, w.room,
+                 r.id AS room_id,
+                 w.created_at, w.updated_at,
+                 s.school_code, c.name AS class_name, c.class_code,
+                 sub.id AS subject_id, sc.status AS school_course_status,
                  sub.name AS subject_name, t.teacher_code,
                  NULLIF(TRIM(CONCAT(COALESCE(u.first_name, ''), ' ', COALESCE(u.last_name, ''))), '') AS teacher_name,
                  ay.name AS academic_year_name, ay.status AS academic_year_status,
                  COALESCE(r.name, w.room) AS room_name, r.room_code, r.capacity AS room_capacity, r.status AS room_status
           FROM course_schedule_weekly_slots w
           JOIN schools s ON s.id = w.school_id
-          JOIN classes c ON c.id = w.class_id
           JOIN school_courses sc ON sc.id = w.school_course_id
-          JOIN subjects sub ON sub.id = sc.subject_id
+            AND sc.school_id = w.school_id
+          JOIN classes c ON c.id = w.class_id
+            AND c.school_id = w.school_id
+          JOIN academic_years ay ON ay.id = w.academic_year_id
+            AND ay.school_id = w.school_id
           JOIN teachers t ON t.id = w.teacher_id
+            AND t.school_id = w.school_id
+          JOIN subjects sub ON sub.id = sc.subject_id
+            AND sub.school_id = w.school_id
           LEFT JOIN users u ON u.id = t.user_id
-          LEFT JOIN academic_years ay ON ay.id = w.academic_year_id
+            AND u.school_id = w.school_id
           LEFT JOIN school_rooms r ON r.id = w.room_id
+            AND r.school_id = w.school_id
 `;
 
 const REPLACEMENT_SELECT = `
-          SELECT r.id, r.school_id, r.weekly_slot_id, r.occurrence_date, r.original_teacher_id,
-                 r.substitute_teacher_id, r.reason, r.note, r.status, r.created_by, r.cancelled_by,
-                 r.academic_year_id, r.start_time, r.end_time, r.created_at, r.updated_at,
-                 s.school_code, w.class_id, w.day_of_week, w.room_id,
+          SELECT r.id, r.school_id, r.weekly_slot_id, r.occurrence_date,
+                 orig.id AS original_teacher_id,
+                 subste.id AS substitute_teacher_id, r.reason, r.note, r.status, r.created_by, r.cancelled_by,
+                 ay.id AS academic_year_id, r.start_time, r.end_time, r.created_at, r.updated_at,
+                 s.school_code, c.id AS class_id, w.day_of_week, room.id AS room_id,
                  c.name AS class_name, sub.name AS subject_name,
                  orig.teacher_code AS original_teacher_code,
                  subste.teacher_code AS substitute_teacher_code,
@@ -48,14 +63,25 @@ const REPLACEMENT_SELECT = `
           FROM course_schedule_replacements r
           JOIN schools s ON s.id = r.school_id
           JOIN course_schedule_weekly_slots w ON w.id = r.weekly_slot_id
-          JOIN classes c ON c.id = w.class_id
+            AND w.school_id = r.school_id
           JOIN school_courses sc ON sc.id = w.school_course_id
+            AND sc.school_id = r.school_id
+          JOIN classes c ON c.id = w.class_id
+            AND c.school_id = r.school_id
+          JOIN academic_years ay ON ay.id = r.academic_year_id
+            AND ay.school_id = r.school_id
           JOIN subjects sub ON sub.id = sc.subject_id
+            AND sub.school_id = r.school_id
           JOIN teachers orig ON orig.id = r.original_teacher_id
+            AND orig.school_id = r.school_id
           JOIN teachers subste ON subste.id = r.substitute_teacher_id
+            AND subste.school_id = r.school_id
           LEFT JOIN users ou ON ou.id = orig.user_id
+            AND ou.school_id = r.school_id
           LEFT JOIN users su ON su.id = subste.user_id
+            AND su.school_id = r.school_id
           LEFT JOIN school_rooms room ON room.id = w.room_id
+            AND room.school_id = r.school_id
 `;
 
 function isoWeekdayToday() {
@@ -417,6 +443,7 @@ function createPedagogyPgStore(repo) {
             OR EXISTS (
               SELECT 1 FROM course_schedule_replacements rpl
                WHERE rpl.weekly_slot_id = w.id
+                 AND rpl.school_id = w.school_id
                  AND rpl.substitute_teacher_id::text = $${teacherIdx}
                  AND rpl.status IN ('planned', 'completed')
                  AND rpl.occurrence_date BETWEEN $${fromIdx}::date AND $${toIdx}::date
@@ -777,9 +804,13 @@ function createPedagogyPgStore(repo) {
             AND a.room_id IS NOT NULL
             AND a.slot_minutes && b.slot_minutes
            JOIN classes ca ON ca.id = a.class_id
+             AND ca.school_id = a.school_id
            JOIN school_courses sca ON sca.id = a.school_course_id
+             AND sca.school_id = a.school_id
            JOIN subjects suba ON suba.id = sca.subject_id
+             AND suba.school_id = a.school_id
            JOIN school_rooms ra ON ra.id = a.room_id
+             AND ra.school_id = a.school_id
            WHERE a.school_id = $1`,
           [schoolId],
         );
@@ -798,8 +829,11 @@ function createPedagogyPgStore(repo) {
             AND a.status = 'active' AND b.status = 'active'
             AND a.slot_minutes && b.slot_minutes
            JOIN classes ca ON ca.id = a.class_id
+             AND ca.school_id = a.school_id
            JOIN school_courses sca ON sca.id = a.school_course_id
+             AND sca.school_id = a.school_id
            JOIN subjects suba ON suba.id = sca.subject_id
+             AND suba.school_id = a.school_id
            WHERE a.school_id = $1`,
           [schoolId],
         );
@@ -818,8 +852,11 @@ function createPedagogyPgStore(repo) {
             AND a.status = 'active' AND b.status = 'active'
             AND a.slot_minutes && b.slot_minutes
            JOIN classes ca ON ca.id = a.class_id
+             AND ca.school_id = a.school_id
            JOIN school_courses sca ON sca.id = a.school_course_id
+             AND sca.school_id = a.school_id
            JOIN subjects suba ON suba.id = sca.subject_id
+             AND suba.school_id = a.school_id
            WHERE a.school_id = $1`,
           [schoolId],
         );
@@ -830,9 +867,13 @@ function createPedagogyPgStore(repo) {
                   'Conflit remplaçant : enseignant déjà occupé.' AS message
            FROM course_schedule_replacements r
            JOIN course_schedule_weekly_slots w ON w.id = r.weekly_slot_id
+             AND w.school_id = r.school_id
            JOIN classes c ON c.id = w.class_id
+             AND c.school_id = r.school_id
            JOIN school_courses sc ON sc.id = w.school_course_id
+             AND sc.school_id = r.school_id
            JOIN subjects sub ON sub.id = sc.subject_id
+             AND sub.school_id = r.school_id
            WHERE r.school_id = $1
              AND r.status IN ('planned', 'completed')
              AND (
@@ -866,9 +907,13 @@ function createPedagogyPgStore(repo) {
                   'Capacité salle inférieure à l''effectif de la classe.' AS message
            FROM course_schedule_weekly_slots w
            JOIN school_rooms r ON r.id = w.room_id
+             AND r.school_id = w.school_id
            JOIN classes c ON c.id = w.class_id
+             AND c.school_id = w.school_id
            JOIN school_courses sc ON sc.id = w.school_course_id
+             AND sc.school_id = w.school_id
            JOIN subjects sub ON sub.id = sc.subject_id
+             AND sub.school_id = w.school_id
            WHERE w.school_id = $1
              AND w.status = 'active'
              AND r.capacity IS NOT NULL
@@ -1404,4 +1449,4 @@ function mapReplacementRow(row) {
   };
 }
 
-module.exports = { createPedagogyPgStore };
+module.exports = { createPedagogyPgStore, WEEKLY_SLOT_SELECT, REPLACEMENT_SELECT };

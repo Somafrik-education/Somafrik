@@ -100,6 +100,10 @@ test("routePermissions Planning de cours : CRUD canonique, sans alias legacy", (
     "Planning de cours:READ",
     "ALL_PRIVILEGES",
   ]);
+  assert.deepEqual(routePermissions["GET /api/mobile-sync/l1/course-schedules"], [
+    "Planning de cours:READ",
+    "ALL_PRIVILEGES",
+  ]);
   assert.deepEqual(routePermissions["POST /api/course-schedules"], [
     "Planning de cours:CREATE",
     "ALL_PRIVILEGES",

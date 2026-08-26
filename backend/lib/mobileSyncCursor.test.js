@@ -187,6 +187,33 @@ test("curseur classes / students / assignments inutilisable sur school-courses",
   );
 });
 
+test("curseur course-schedules round-trip avec resource attendu", () => {
+  const tokens = tokenService();
+  const encoded = encodeMobileSyncCursor(sampleInput({ resource: "course-schedules" }), tokens);
+  const decoded = decodeMobileSyncCursor(encoded, tokens, { resource: "course-schedules" });
+  assert.equal(decoded.resource, "course-schedules");
+  assert.equal(decoded.lastId, "00000000-0000-4000-8000-00000000000a");
+});
+
+test("curseur school-courses inutilisable sur course-schedules et inversement", () => {
+  const tokens = tokenService();
+  const coursesCursor = encodeMobileSyncCursor(sampleInput({ resource: "school-courses" }), tokens);
+  const schedulesCursor = encodeMobileSyncCursor(sampleInput({ resource: "course-schedules" }), tokens);
+  const classesCursor = encodeMobileSyncCursor(sampleInput({ resource: "classes" }), tokens);
+  assert.throws(
+    () => decodeMobileSyncCursor(coursesCursor, tokens, { resource: "course-schedules" }),
+    (error) => error.statusCode === 400 && error.code === MOBILE_SYNC_ERROR.CURSOR_INVALID,
+  );
+  assert.throws(
+    () => decodeMobileSyncCursor(schedulesCursor, tokens, { resource: "school-courses" }),
+    (error) => error.statusCode === 400 && error.code === MOBILE_SYNC_ERROR.CURSOR_INVALID,
+  );
+  assert.throws(
+    () => decodeMobileSyncCursor(classesCursor, tokens, { resource: "course-schedules" }),
+    (error) => error.statusCode === 400 && error.code === MOBILE_SYNC_ERROR.CURSOR_INVALID,
+  );
+});
+
 test("schemaVersion non supporté → expired / full_required", () => {
   const tokens = tokenService();
   const encoded = tokens.sign(

@@ -44,6 +44,9 @@ CREATE INDEX IF NOT EXISTS idx_course_schedule_weekly_class_day
 CREATE INDEX IF NOT EXISTS idx_course_schedule_weekly_teacher_day
   ON course_schedule_weekly_slots (school_id, academic_year_id, teacher_id, day_of_week);
 
+CREATE INDEX IF NOT EXISTS idx_course_schedule_weekly_school_updated_at_id
+  ON course_schedule_weekly_slots (school_id, updated_at, id);
+
 DO $$
 BEGIN
   IF NOT EXISTS (
