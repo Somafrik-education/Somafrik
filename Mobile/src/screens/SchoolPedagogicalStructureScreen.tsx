@@ -174,7 +174,7 @@ export default function SchoolPedagogicalStructureScreen() {
 
   async function addCourseToClass() {
     if (!canCreateClassCourses) {
-      Alert.alert("Lecture seule", "Le droit Matières:CREATE est requis pour ajouter un cours à une classe.");
+      Alert.alert("Lecture seule", "Vous n’avez pas le droit d’ajouter un cours à une classe.");
       return;
     }
     if (!selectedClassName || !selectedSubjectName || courseSaving) return;
@@ -202,7 +202,7 @@ export default function SchoolPedagogicalStructureScreen() {
     const name = newSubjectName.trim();
     const code = newSubjectCode.trim().toUpperCase();
     if (!canCreateClassCourses) {
-      Alert.alert("Lecture seule", "Le droit Matières:CREATE est requis pour créer un cours.");
+      Alert.alert("Lecture seule", "Vous n’avez pas le droit de créer un cours.");
       return;
     }
     if (!name || !code || courseSaving) return;
@@ -337,7 +337,7 @@ export default function SchoolPedagogicalStructureScreen() {
       <View style={[styles.card, styles.coursePanel]} testID="school-class-courses-panel">
         <Text style={styles.cardTitle}>Cours des classes</Text>
         <Text style={styles.sectionDescription}>
-          Même vérité que le Web : catalogue établissement (/api/v2/subjects) puis rattachement PostgreSQL à la classe (/api/courses → school_courses).
+          Les cours créés ici sont les mêmes que sur le Web et sont enregistrés pour la classe sélectionnée.
         </Text>
 
         {!canReadClassCourses ? (
@@ -469,7 +469,7 @@ export default function SchoolPedagogicalStructureScreen() {
                   </>
                 ) : (
                   <Text style={styles.readOnly}>
-                    Lecture seule — le droit Matières:CREATE est requis pour créer ou rattacher un cours.
+                    Lecture seule — vous n’avez pas le droit de créer ou rattacher un cours.
                   </Text>
                 )}
               </>
