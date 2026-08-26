@@ -4,7 +4,7 @@ const { BusinessError } = require("../services/authService");
 const { PERMISSION_DENIED } = require("../services/rbacService");
 const {
   MOBILE_SYNC_ERROR,
-  MOBILE_SYNC_RESOURCE_CLASSES,
+  MOBILE_SYNC_RESOURCE_STUDENTS,
   MOBILE_SYNC_DEFAULT_LIMIT,
   MOBILE_SYNC_MAX_LIMIT,
   SENTINEL_UPDATED_AT,
@@ -16,7 +16,7 @@ const {
   assertCursorBindings,
   principalSyncId,
 } = require("./mobileSyncCursor");
-const { resolveLiveClassesSyncSnapshot, liveSnapshotHasClassesRead } = require("./mobileSyncScope");
+const { resolveLiveStudentsSyncSnapshot, liveSnapshotHasStudentsRead } = require("./mobileSyncScope");
 
 function asTrimmed(value) {
   return String(value ?? "").trim();
@@ -51,7 +51,7 @@ function protocolErrorBody(httpStatus, code, message, extra = {}) {
   return {
     httpStatus,
     body: {
-      resource: MOBILE_SYNC_RESOURCE_CLASSES,
+      resource: MOBILE_SYNC_RESOURCE_STUDENTS,
       mode: extra.mode ?? "full_required",
       cursorStatus: extra.cursorStatus,
       scopeHash: extra.scopeHash,
@@ -65,7 +65,7 @@ function logMobileSync(payload) {
   console.info(
     JSON.stringify({
       event: "mobile_sync_l1",
-      resource: MOBILE_SYNC_RESOURCE_CLASSES,
+      resource: MOBILE_SYNC_RESOURCE_STUDENTS,
       mode: payload.mode ?? null,
       cursorStatus: payload.cursorStatus ?? null,
       itemCount: payload.itemCount ?? 0,
@@ -76,7 +76,8 @@ function logMobileSync(payload) {
 }
 
 /**
- * Snapshot L1 Classes : PostgreSQL canonique, curseur opaque, scopeHash, keyset.
+ * Snapshot L1 Students : PostgreSQL canonique, curseur opaque, scopeHash, keyset.
+ * syncUpdatedAt = max(students.updated_at, MAX(enrollments.updated_at)).
  *
  * @param {{
  *   principal: object,
@@ -85,10 +86,9 @@ function logMobileSync(payload) {
  *   tokenService: object,
  *   repository: object,
  *   tenantScopeService: { assertSchoolAccess: Function },
- *   nowMs?: number,
  * }} args
  */
-async function handleMobileSyncL1Classes(args) {
+async function handleMobileSyncL1Students(args) {
   const started = Date.now();
   const principal = args.principal;
   const tokenService = args.tokenService;
@@ -101,7 +101,7 @@ async function handleMobileSyncL1Classes(args) {
   }
   tenantScopeService.assertSchoolAccess(principal, schoolCode);
 
-  if (typeof repository.listSchoolClassesForMobileSync !== "function") {
+  if (typeof repository.listSchoolStudentsForMobileSync !== "function") {
     return protocolErrorBody(
       503,
       MOBILE_SYNC_ERROR.POSTGRES_REQUIRED,
@@ -121,7 +121,7 @@ async function handleMobileSyncL1Classes(args) {
   let scope;
   let input;
   try {
-    ({ scopeHash, scope, input } = await resolveLiveClassesSyncSnapshot(repository, principal, schoolRef));
+    ({ scopeHash, scope, input } = await resolveLiveStudentsSyncSnapshot(repository, principal, schoolRef));
   } catch (error) {
     if (error?.code === MOBILE_SYNC_ERROR.LIVE_SCOPE_UNAVAILABLE) {
       const result = protocolErrorBody(
@@ -142,7 +142,7 @@ async function handleMobileSyncL1Classes(args) {
     throw error;
   }
 
-  if (scope.scopeKind !== "none" && !liveSnapshotHasClassesRead(input)) {
+  if (scope.scopeKind !== "none" && !liveSnapshotHasStudentsRead(input)) {
     const result = protocolErrorBody(
       403,
       PERMISSION_DENIED,
@@ -175,7 +175,7 @@ async function handleMobileSyncL1Classes(args) {
     let decoded;
     try {
       decoded = decodeMobileSyncCursor(rawCursor, tokenService, {
-        resource: MOBILE_SYNC_RESOURCE_CLASSES,
+        resource: MOBILE_SYNC_RESOURCE_STUDENTS,
       });
       assertCursorBindings(decoded, principal, school);
     } catch (error) {
@@ -226,25 +226,28 @@ async function handleMobileSyncL1Classes(args) {
     afterId,
   };
   if (scope.scopeKind === "none") {
-    queryOptions.classIds = [];
-    queryOptions.classCodes = [];
+    queryOptions.studentIds = [];
   } else if (scope.scopeKind === "assigned") {
     queryOptions.classIds = scope.classIds;
     queryOptions.classCodes = scope.classCodes;
+  } else if (scope.scopeKind === "linked" || scope.scopeKind === "self") {
+    queryOptions.studentIds = scope.studentIds;
   }
 
-  const rows = await repository.listSchoolClassesForMobileSync(schoolCode, queryOptions);
+  const rows = await repository.listSchoolStudentsForMobileSync(schoolCode, queryOptions);
   const hasMore = rows.length > pageLimit;
   const items = hasMore ? rows.slice(0, pageLimit) : rows;
   const lastItem = items[items.length - 1];
   const nextCursor = encodeMobileSyncCursor(
     {
-      resource: MOBILE_SYNC_RESOURCE_CLASSES,
+      resource: MOBILE_SYNC_RESOURCE_STUDENTS,
       schoolCode,
       schoolId,
       principalId,
       scopeHash,
-      lastUpdatedAt: lastItem ? toIsoTimestamp(lastItem.updatedAt) : afterUpdatedAt || SENTINEL_UPDATED_AT,
+      lastUpdatedAt: lastItem
+        ? toIsoTimestamp(lastItem.syncUpdatedAt)
+        : afterUpdatedAt || SENTINEL_UPDATED_AT,
       lastId: lastItem ? String(lastItem.id) : afterId || SENTINEL_ID,
     },
     tokenService,
@@ -261,7 +264,7 @@ async function handleMobileSyncL1Classes(args) {
   return {
     httpStatus: 200,
     body: {
-      resource: MOBILE_SYNC_RESOURCE_CLASSES,
+      resource: MOBILE_SYNC_RESOURCE_STUDENTS,
       mode,
       cursorStatus,
       scopeHash,
@@ -273,7 +276,7 @@ async function handleMobileSyncL1Classes(args) {
 }
 
 module.exports = {
-  handleMobileSyncL1Classes,
+  handleMobileSyncL1Students,
   clampLimit,
   toIsoTimestamp,
 };

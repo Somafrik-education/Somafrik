@@ -109,6 +109,8 @@ CREATE TABLE IF NOT EXISTS school_message_reads (
 CREATE INDEX IF NOT EXISTS idx_contacts_school ON contacts (school_id);
 CREATE INDEX IF NOT EXISTS idx_contact_relations_contact ON contact_relations (contact_id);
 CREATE INDEX IF NOT EXISTS idx_contact_relations_student ON contact_relations (student_id);
+CREATE INDEX IF NOT EXISTS idx_contact_relations_school_contact_status_student
+  ON contact_relations (school_id, contact_id, status, student_id);
 CREATE INDEX IF NOT EXISTS idx_school_messages_conversation ON school_messages (conversation_id);
 CREATE INDEX IF NOT EXISTS idx_school_messages_school ON school_messages (school_id);
 `;

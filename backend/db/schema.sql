@@ -808,6 +808,15 @@ CREATE INDEX IF NOT EXISTS idx_schools_country_id ON schools(country_id);
 CREATE INDEX IF NOT EXISTS idx_users_school_id ON users(school_id);
 CREATE INDEX IF NOT EXISTS idx_students_school_id ON students(school_id);
 CREATE INDEX IF NOT EXISTS idx_students_school_search ON students(school_id, student_code, first_name, last_name);
+-- Mobile-sync L1 Students : horloge inscriptions pour
+-- GREATEST(students.updated_at, MAX(enrollments.updated_at)).
+-- Un index students(school_id, updated_at, id) ne couvre pas cette expression.
+-- idx_students_school_id filtre déjà le tenant. Les index enrollments évitent
+-- un seq scan non maîtrisé de toutes les inscriptions à chaque sync.
+CREATE INDEX IF NOT EXISTS idx_enrollments_school_student_updated_at
+  ON enrollments (school_id, student_id, updated_at);
+CREATE INDEX IF NOT EXISTS idx_enrollments_school_class_status_student
+  ON enrollments (school_id, class_id, status, student_id);
 CREATE INDEX IF NOT EXISTS idx_grades_student_id ON grades(student_id);
 CREATE INDEX IF NOT EXISTS idx_grades_school_id ON grades(school_id);
 CREATE INDEX IF NOT EXISTS idx_grades_evaluation_id ON grades(evaluation_id);

@@ -410,9 +410,11 @@ function createClassesRepository(db) {
          FROM teacher_assignments ta
          JOIN teachers t ON t.id = ta.teacher_id
          JOIN classes cl ON cl.id = ta.class_id
+          AND cl.school_id = ta.school_id
          WHERE t.user_id::text = $1
            AND ta.school_id::text = $2
            AND t.school_id::text = $2
+           AND cl.school_id::text = $2
            AND lower(btrim(ta.status)) IN ('active', 'actif', 'open', 'ouverte')
            AND COALESCE(lower(btrim(t.status)), 'active') NOT IN ('deleted', 'archived', 'inactive')`,
         [uid, sid],

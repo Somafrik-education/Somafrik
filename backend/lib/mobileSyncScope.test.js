@@ -346,3 +346,121 @@ test("ACCOUNTANT live du tenant : school-wide sans permission Classes", async ()
   assert.equal(hashed.scope.scopeKind, "school-wide");
   assert.equal(liveSnapshotHasClassesRead(hashed.input), false);
 });
+
+test("Students CUSTOM_ROLE + Élèves:READ → scopeKind=none, jamais school-wide", () => {
+  const { computeStudentsScopeHash, resolveStudentsSyncScope } = require("./mobileSyncScope");
+  const custom = {
+    sub: "custom-1",
+    role: "CUSTOM_ROLE",
+    roles: ["CUSTOM_ROLE"],
+    roleKeys: ["CUSTOM_ROLE"],
+    schoolCode: "SCH-A",
+    permissions: ["Élèves:READ"],
+    authorizedStudentIds: ["stu-1"],
+  };
+  const scope = resolveStudentsSyncScope(custom);
+  assert.equal(scope.scopeKind, "none");
+  assert.deepEqual(scope.studentIds, []);
+  assert.deepEqual(scope.classIds, []);
+  const hashed = computeStudentsScopeHash(custom, { schoolCode: "SCH-A", schoolId: "id-a" });
+  assert.equal(hashed.scope.scopeKind, "none");
+  assert.deepEqual(hashed.input.studentIds, []);
+});
+
+test("Students school-wide : pas de roster IDs dans le scopeHash", () => {
+  const { computeStudentsScopeHash, resolveStudentsSyncScope } = require("./mobileSyncScope");
+  const scope = resolveStudentsSyncScope(adminPrincipal({ permissions: ["Élèves:READ"] }));
+  assert.equal(scope.scopeKind, "school-wide");
+  const hashed = computeStudentsScopeHash(
+    adminPrincipal({
+      permissions: ["Élèves:READ"],
+      authorizedStudentIds: ["stu-1", "stu-2"],
+    }),
+    { schoolCode: "SCH-A", schoolId: "id-a" },
+  );
+  assert.deepEqual(hashed.input.studentIds, []);
+  assert.equal(hashed.input.resource, "students");
+});
+
+test("Students assigned : roster IDs dans le scopeHash, grant/revoke change le hash", () => {
+  const { computeStudentsScopeHash, resolveStudentsSyncScope } = require("./mobileSyncScope");
+  const school = { schoolCode: "SCH-A", schoolId: "id-a" };
+  const teacherA = teacherPrincipal([{ classId: "class-a", classCode: "CLS-A", status: "active" }], {
+    permissions: ["Élèves:READ"],
+    authorizedStudentIds: ["stu-1"],
+  });
+  const scope = resolveStudentsSyncScope(teacherA);
+  assert.equal(scope.scopeKind, "assigned");
+  assert.deepEqual(scope.studentIds, ["stu-1"]);
+  const before = computeStudentsScopeHash(teacherA, school);
+  const afterAdd = computeStudentsScopeHash(
+    teacherPrincipal([{ classId: "class-a", classCode: "CLS-A", status: "active" }], {
+      permissions: ["Élèves:READ"],
+      authorizedStudentIds: ["stu-1", "stu-2"],
+    }),
+    school,
+  );
+  assert.notEqual(before.scopeHash, afterAdd.scopeHash);
+  const afterTransferOut = computeStudentsScopeHash(
+    teacherPrincipal([{ classId: "class-a", classCode: "CLS-A", status: "active" }], {
+      permissions: ["Élèves:READ"],
+      authorizedStudentIds: [],
+    }),
+    school,
+  );
+  assert.notEqual(before.scopeHash, afterTransferOut.scopeHash);
+});
+
+test("Students linked / self : roster live, jamais JWT studentIds", async () => {
+  const { resolveLiveStudentsSyncSnapshot } = require("./mobileSyncScope");
+  const parentJwt = {
+    sub: "parent-1",
+    role: "Parent",
+    schoolCode: "SCH-A",
+    permissions: ["Élèves:READ"],
+    studentIds: ["jwt-stu"],
+  };
+  const hashed = await resolveLiveStudentsSyncSnapshot(
+    {
+      listActiveUserRoleKeys: trapUnscopedRoleKeys(),
+      async listActiveUserRoleKeysForSchool() {
+        return ["PARENT"];
+      },
+      async resolveEffectivePermissions() {
+        return { permissions: ["Élèves:READ"] };
+      },
+      async listLiveParentLinkedStudentIdsForSync() {
+        return [{ studentId: "live-stu" }];
+      },
+    },
+    parentJwt,
+    { schoolCode: "SCH-A", schoolId: "id-a" },
+  );
+  assert.equal(hashed.scope.scopeKind, "linked");
+  assert.deepEqual(hashed.scope.studentIds, ["live-stu"]);
+  assert.ok(!hashed.input.studentIds.includes("jwt-stu"));
+});
+
+test("Students live PG error liens parent → 503, pas de fallback JWT", async () => {
+  const { resolveLiveStudentsSyncSnapshot } = require("./mobileSyncScope");
+  await assert.rejects(
+    () =>
+      resolveLiveStudentsSyncSnapshot(
+        {
+          listActiveUserRoleKeys: trapUnscopedRoleKeys(),
+          async listActiveUserRoleKeysForSchool() {
+            return ["PARENT"];
+          },
+          async resolveEffectivePermissions() {
+            return { permissions: ["Élèves:READ"] };
+          },
+          async listLiveParentLinkedStudentIdsForSync() {
+            throw new Error("pg links unavailable");
+          },
+        },
+        { sub: "parent-1", role: "Parent", schoolCode: "SCH-A" },
+        { schoolCode: "SCH-A", schoolId: "id-a" },
+      ),
+    (error) => error.code === "MOBILE_SYNC_LIVE_SCOPE_UNAVAILABLE" && error.statusCode === 503,
+  );
+});

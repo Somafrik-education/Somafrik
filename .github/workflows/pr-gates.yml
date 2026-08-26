@@ -270,6 +270,7 @@ jobs:
           npm run verify:class-student-enrollment
           npm run verify:students-fiche-consolidation
           npm run verify:presences-roster
+          npm run verify:mobile-sync-l1-students
 
       - name: Teachers
         if: needs.scope.outputs.teachers == 'true'

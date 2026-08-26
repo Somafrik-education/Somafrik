@@ -6080,6 +6080,22 @@ class PostgresRepository {
     return this.getClassesRepository().listLiveTeacherClassAssignmentsForSync(userId, schoolId);
   }
 
+  listSchoolStudentsForMobileSync(schoolCode, options) {
+    return this.getClassStudentsRepository().listForMobileSync(schoolCode, options);
+  }
+
+  listLiveAssignedStudentIdsForSync(schoolId, refs) {
+    return this.getClassStudentsRepository().listLiveAssignedStudentIdsForSync(schoolId, refs);
+  }
+
+  listLiveParentLinkedStudentIdsForSync(userId, schoolId) {
+    return this.getClassStudentsRepository().listLiveParentLinkedStudentIdsForSync(userId, schoolId);
+  }
+
+  listLiveSelfStudentIdForSync(userId, schoolId) {
+    return this.getClassStudentsRepository().listLiveSelfStudentIdForSync(userId, schoolId);
+  }
+
   async createSchoolClass(body, schoolCode, principal, auditMeta) {
     const created = await this.getClassesRepository().create(body, schoolCode, principal, auditMeta);
     this.cachedDataset = null;

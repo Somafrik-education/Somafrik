@@ -1,9 +1,9 @@
-# Mobile offline sync L1 — protocole Classes
+# Mobile offline sync L1 — protocole Classes + Students
 
 Vertical slice serveur. **PostgreSQL est la seule source de vérité canonique.**
-Cette PR valide le protocole (curseur opaque, scopeHash, tombstones, keyset)
-sur **Classes uniquement**. Students, Assignments, SchoolCourses, CourseSchedules,
-SQLite Mobile, outbox et L2 sont hors scope.
+Le protocole (curseur opaque, scopeHash, tombstones, keyset) a été validé sur
+**Classes** (#343) puis étendu à **Students** sans deuxième protocole.
+Assignments, SchoolCourses, CourseSchedules, SQLite Mobile, outbox et L2 restent hors scope.
 
 ## Endpoint
 
@@ -163,6 +163,108 @@ Jamais : curseur complet, JWT, données élèves, secrets.
 ## Extension L1
 
 Réutiliser les mêmes modules (`mobileSyncCursor`, `mobileSyncScope`, erreurs, pagination).
-Prochaines ressources, **une PR chacune** : Students → Assignments → SchoolCourses → CourseSchedules.
+`mobileSyncCursor` est **resource-aware** : `resource=classes` et `resource=students`
+sont inéchangeables (decode fail-closed 400).
+Prochaines ressources, **une PR chacune** : Assignments → SchoolCourses → CourseSchedules.
 Chaque ressource a son `resource` dans le curseur (non réutilisable) et son `scopeHash` (filtre autoritatif serveur).
 SQLite/SQLCipher Mobile seulement après validation de ce protocole.
+
+## Students — `GET /api/mobile-sync/l1/students`
+
+Additif. `GET /api/students` est inchangé (contrat, RBAC, projection).
+
+```
+GET /api/mobile-sync/l1/students
+GET /api/mobile-sync/l1/students?cursor=<opaque>
+```
+
+RBAC identique à `GET /api/students` :
+
+`Élèves:READ` | `Gérer élèves` | `COUNTRY_PRIVILEGES` | `ALL_PRIVILEGES`
+
+Aucun nouveau privilège. Après `requirePermission()`, le handler reconstruit le scope
+depuis PostgreSQL live **avant** toute lecture élèves. JWT `role` / `permissions` /
+`assignments` / `studentIds` ignorés.
+
+### Projection minimale
+
+`id` (UUID PostgreSQL stable), `studentCode`, `firstName`, `lastName`, `classId`,
+`classCode`, `enrollmentId`, `enrollmentStatus`, `academicYearId`, `status`,
+`syncUpdatedAt`, `tombstone`
+
+Interdit : parentPhone, parentEmail, adresse, profil médical, documents, secrets,
+credentials, photo binaire, payload legacy.
+
+`classId` / `classCode` / `enrollmentId` viennent de l'**inscription active courante**.
+Un élève actif sans inscription active : `classId=null`, `classCode=null`, `tombstone=false`.
+
+### syncUpdatedAt (P0 inscriptions)
+
+Ne pas cursorer uniquement sur `students.updated_at` : un transfert / inactivation
+d'inscription sans toucher l'identité serait perdu.
+
+```
+syncUpdatedAt = GREATEST(students.updated_at, MAX(enrollments.updated_at))
+```
+
+L'horloge observe **toutes** les inscriptions (y compris `status=inactive`).
+La projection de classe reste l'inscription **active** courante (DISTINCT ON updated_at DESC).
+
+### Pagination keyset
+
+`ORDER BY sync_updated_at ASC, student UUID ASC`
+Cursor opaque : `lastUpdatedAt` = lastSyncUpdatedAt, `lastId` = lastStudentId.
+Pas d'OFFSET. Défaut 200, max 500, fetch `limit+1` pour `hasMore`.
+
+### Scopes
+
+| scopeKind | Qui | Filtre SQL | Roster dans scopeHash |
+| --- | --- | --- | --- |
+| `school-wide` | Admin School, Préfet, Super Admin, autres `SCHOOL_WIDE_STUDENT_READ_ROLES` qui passent le RBAC live | tous les élèves du tenant | **non** (créations/transferts = deltas) |
+| `assigned` | Enseignant | inscriptions actives des classes d'affectations PG (`classId`/`classCode`, jamais `className`) | **oui** — IDs élèves actuellement autorisés |
+| `linked` | Parent, uniquement s'il passe le RBAC Élèves | `contacts.user_id` → `contact_relations` (`status=active`, tenant) | **oui** |
+| `self` | Compte élève | `users.user_code = students.student_code` du tenant. Jamais un `studentId` client. | **oui** |
+| `none` | aucun rôle live du tenant, **ou rôle live hors allowlist** (ex. `CUSTOM_ROLE` même avec `Élèves:READ`) | zéro ligne | — |
+
+**P0 visibilité enseignant / parent** : un élève qui quitte une classe affectée
+changerait le SQL « actuellement visible » sans jamais informer le client.
+Pour cette version sûre, le roster des IDs autorisés entre dans le `scopeHash`
+(`assigned` / `linked` / `self`) → `409 MOBILE_SYNC_SCOPE_CHANGED` / `full_required`,
+puis une full sync du nouveau périmètre. Pas de tombstones de visibilité (plus tard).
+
+### Tombstones
+
+`tombstone=true` ⇔ `students.status !== "active"`. Pas de statut `deleted` inventé.
+Élève actif sans inscription active : **pas** un tombstone.
+
+### Erreurs (Students)
+
+Mêmes codes que Classes. En plus : curseur `resource=classes` présenté sur Students
+→ `400 MOBILE_SYNC_CURSOR_INVALID`. Permission Élèves live absente du tenant
+(y compris ACCOUNTANT@A + SCHOOL_ADMIN@B + JWT Admin stale@A) → `403 PERMISSION_DENIED`
+**avant** toute requête élèves.
+
+Erreur rôles / permissions / affectations / liens parent / identité self PG →
+`503 MOBILE_SYNC_LIVE_SCOPE_UNAVAILABLE`, zéro donnée. Pas de fallback JWT.
+
+### PostgreSQL Students
+
+Index additifs, justifiés par le plan (pas `students(school_id, updated_at, id)` :
+cette expression n'est pas le keyset) :
+
+- `idx_students_school_id` (existant) — filtre tenant
+- `idx_enrollments_school_student_updated_at` — horloge `MAX(enrollments.updated_at)`
+- `idx_enrollments_school_class_status_student` — roster assigned
+- `idx_contact_relations_school_contact_status_student` — liens parent
+
+Le verifier PG force `enable_seqscan=off` et exige l'un des index tenant/horloge
+dans `EXPLAIN`. Lecture **uniquement** `students` + `enrollments` + `classes` +
+`contact_relations` / `contacts`. Interdit : `backoffice_state`, overlay legacy.
+
+**Fail-closed scope** : seuls les rôles explicitement allowlistés (`SCHOOL_WIDE_STUDENT_READ_ROLES`,
+Super Admin, Enseignant, Parent, Élève) reçoivent un périmètre. Un rôle live
+inconnu (ex. `CUSTOM_ROLE`) même détenteur de `Élèves:READ` → `scopeKind=none`, `items=[]`.
+
+**Isolation tenant SQL** : tout JOIN `enrollments`/`classes`/`students`/`contacts`/
+`contact_relations` exige `school_id` des deux côtés. Une inscription `school_id=A`
+pointant vers une classe B n'expose ni `classId` B ni `classCode` B.

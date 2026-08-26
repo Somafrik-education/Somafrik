@@ -186,6 +186,26 @@ function createClassStudentsRepository(db) {
     };
   }
 
+  function mapMobileSyncStudentRow(row) {
+    const status = row.status ?? "active";
+    const syncUpdatedAt =
+      row.sync_updated_at instanceof Date ? row.sync_updated_at.toISOString() : row.sync_updated_at;
+    return {
+      id: row.id,
+      studentCode: row.student_code,
+      firstName: row.first_name,
+      lastName: row.last_name,
+      classId: row.class_id ?? null,
+      classCode: row.class_code ?? null,
+      enrollmentId: row.enrollment_id ?? null,
+      enrollmentStatus: row.enrollment_status ?? null,
+      academicYearId: row.academic_year_id ?? null,
+      status,
+      syncUpdatedAt,
+      tombstone: status !== "active",
+    };
+  }
+
   /**
    * @param {any} row
    */
@@ -422,6 +442,208 @@ function createClassStudentsRepository(db) {
         [school.id],
       );
       return rows.map(mapStudentRow);
+    },
+
+    /**
+     * Keyset L1 Students : ORDER BY sync_updated_at ASC, student id ASC — pas d'OFFSET.
+     * sync_updated_at = GREATEST(students.updated_at, MAX(enrollments.updated_at))
+     * pour ne pas perdre un transfert / inactivation d'inscription.
+     * Projection de classe = inscription active courante uniquement.
+     * JOIN classes : `cl.school_id = st.school_id` obligatoire — une inscription
+     * school A pointant vers une classe B n'expose ni classId ni classCode B.
+     *
+     * @param {string} schoolCode
+     * @param {{
+     *   limit: number,
+     *   afterUpdatedAt?: string | Date | null,
+     *   afterId?: string | null,
+     *   classIds?: string[] | null,
+     *   classCodes?: string[] | null,
+     *   studentIds?: string[] | null,
+     * }} options
+     */
+    async listForMobileSync(schoolCode, options = {}) {
+      const school = await requireSchool(schoolCode);
+      const limit = Math.max(1, Number(options.limit) || 1);
+
+      if (Array.isArray(options.studentIds)) {
+        const ids = options.studentIds.map((value) => String(value ?? "").trim()).filter(Boolean);
+        if (!ids.length) return [];
+      }
+      if (Array.isArray(options.classIds) || Array.isArray(options.classCodes)) {
+        const ids = (options.classIds ?? []).map((value) => String(value ?? "").trim()).filter(Boolean);
+        const codes = (options.classCodes ?? []).map((value) => String(value ?? "").trim()).filter(Boolean);
+        if (!ids.length && !codes.length) return [];
+      }
+
+      const params = [school.id];
+      const conditions = ["st.school_id = $1"];
+
+      if (Array.isArray(options.studentIds)) {
+        const ids = options.studentIds.map((value) => String(value ?? "").trim()).filter(Boolean);
+        params.push(ids);
+        conditions.push(`st.id = ANY($${params.length}::uuid[])`);
+      }
+
+      if (Array.isArray(options.classIds) || Array.isArray(options.classCodes)) {
+        const ids = (options.classIds ?? []).map((value) => String(value ?? "").trim()).filter(Boolean);
+        const codes = (options.classCodes ?? []).map((value) => String(value ?? "").trim()).filter(Boolean);
+        params.push(ids);
+        const idsIdx = params.length;
+        params.push(codes);
+        const codesIdx = params.length;
+        conditions.push(
+          `(cl.id = ANY($${idsIdx}::uuid[]) OR cl.class_code = ANY($${codesIdx}::text[]))`,
+        );
+      }
+
+      const afterUpdatedAt = options.afterUpdatedAt ?? null;
+      const afterId = options.afterId ? String(options.afterId).trim() : "";
+      const keysetSql =
+        afterUpdatedAt && afterId
+          ? (() => {
+              params.push(afterUpdatedAt);
+              const tsIdx = params.length;
+              params.push(afterId);
+              const idIdx = params.length;
+              return `AND (sync_rows.sync_updated_at > $${tsIdx}::timestamptz
+                       OR (sync_rows.sync_updated_at = $${tsIdx}::timestamptz
+                           AND sync_rows.id > $${idIdx}::uuid))`;
+            })()
+          : "";
+
+      params.push(limit);
+      const rows = await db.all(
+        `SELECT sync_rows.*
+         FROM (
+           SELECT st.id,
+                  st.student_code,
+                  st.first_name,
+                  st.last_name,
+                  st.status,
+                  GREATEST(
+                    st.updated_at,
+                    COALESCE(clk.max_updated_at, st.updated_at)
+                  ) AS sync_updated_at,
+                  ae.id AS enrollment_id,
+                  ae.status AS enrollment_status,
+                  cl.id AS class_id,
+                  cl.academic_year_id,
+                  cl.class_code
+           FROM students st
+           LEFT JOIN (
+             SELECT e.student_id, MAX(e.updated_at) AS max_updated_at
+             FROM enrollments e
+             JOIN students st_clk ON st_clk.id = e.student_id
+              AND st_clk.school_id = e.school_id
+             WHERE e.school_id = $1
+             GROUP BY e.student_id
+           ) clk ON clk.student_id = st.id
+           LEFT JOIN (
+             SELECT DISTINCT ON (e.student_id)
+                    e.student_id, e.id, e.class_id, e.status, e.academic_year_id
+             FROM enrollments e
+             JOIN students st_enr ON st_enr.id = e.student_id
+              AND st_enr.school_id = e.school_id
+             WHERE e.school_id = $1
+               AND lower(btrim(e.status)) = 'active'
+             ORDER BY e.student_id, e.updated_at DESC NULLS LAST, e.id DESC
+           ) ae ON ae.student_id = st.id
+           LEFT JOIN classes cl ON cl.id = ae.class_id
+            AND cl.school_id = st.school_id
+           WHERE ${conditions.join(" AND ")}
+         ) sync_rows
+         WHERE TRUE
+           ${keysetSql}
+         ORDER BY sync_rows.sync_updated_at ASC, sync_rows.id ASC
+         LIMIT $${params.length}`,
+        params,
+      );
+      return rows.map(mapMobileSyncStudentRow);
+    },
+
+    /**
+     * Roster actuellement visible pour un enseignant (inscriptions actives
+     * dans ses classes affectées). Sert au scopeHash assigned, pas au JWT.
+     *
+     * @param {string} schoolId
+     * @param {{ classIds?: string[], classCodes?: string[] }} refs
+     */
+    async listLiveAssignedStudentIdsForSync(schoolId, refs = {}) {
+      const sid = String(schoolId ?? "").trim();
+      const ids = (refs.classIds ?? []).map((value) => String(value ?? "").trim()).filter(Boolean);
+      const codes = (refs.classCodes ?? []).map((value) => String(value ?? "").trim()).filter(Boolean);
+      if (!sid || (!ids.length && !codes.length)) return [];
+      const rows = await db.all(
+        `SELECT DISTINCT e.student_id::text AS student_id
+         FROM enrollments e
+         JOIN students st ON st.id = e.student_id
+          AND st.school_id = e.school_id
+         JOIN classes cl ON cl.id = e.class_id
+          AND cl.school_id = e.school_id
+         WHERE e.school_id::text = $1
+           AND st.school_id::text = $1
+           AND cl.school_id::text = $1
+           AND lower(btrim(e.status)) = 'active'
+           AND (cl.id = ANY($2::uuid[]) OR cl.class_code = ANY($3::text[]))`,
+        [sid, ids, codes],
+      );
+      return rows.map((row) => ({ studentId: row.student_id }));
+    },
+
+    /**
+     * Liens parent live : contacts.user_id → contact_relations.student_id.
+     * Tenant-scopé, status=active. Jamais principal.studentIds JWT.
+     *
+     * @param {string} userId
+     * @param {string} schoolId
+     */
+    async listLiveParentLinkedStudentIdsForSync(userId, schoolId) {
+      const uid = String(userId ?? "").trim();
+      const sid = String(schoolId ?? "").trim();
+      if (!uid || !sid) return [];
+      const rows = await db.all(
+        `SELECT DISTINCT st.id::text AS student_id
+         FROM contacts c
+         JOIN contact_relations cr ON cr.contact_id = c.id
+          AND cr.school_id = c.school_id
+         JOIN students st ON st.id = cr.student_id
+          AND st.school_id = c.school_id
+          AND st.school_id = cr.school_id
+         WHERE c.user_id::text = $1
+           AND c.school_id::text = $2
+           AND cr.school_id::text = $2
+           AND st.school_id::text = $2
+           AND lower(btrim(cr.status)) = 'active'
+           AND COALESCE(lower(btrim(c.status)), 'active') NOT IN ('deleted', 'archived', 'inactive')`,
+        [uid, sid],
+      );
+      return rows.map((row) => ({ studentId: row.student_id }));
+    },
+
+    /**
+     * Identité élève self : users.id → users.user_code = students.student_code
+     * du même établissement. Jamais un studentId client.
+     *
+     * @param {string} userId
+     * @param {string} schoolId
+     */
+    async listLiveSelfStudentIdForSync(userId, schoolId) {
+      const uid = String(userId ?? "").trim();
+      const sid = String(schoolId ?? "").trim();
+      if (!uid || !sid) return null;
+      const row = await db.one(
+        `SELECT st.id::text AS student_id
+         FROM students st
+         JOIN users u ON u.school_id = st.school_id
+          AND u.user_code = st.student_code
+         WHERE u.id::text = $1
+           AND st.school_id::text = $2
+           AND u.school_id::text = $2
+         LIMIT 1`,
+        [uid, sid],
+      );
+      return row ? { studentId: row.student_id } : null;
     },
 
     /**
