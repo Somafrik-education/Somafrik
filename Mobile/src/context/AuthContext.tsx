@@ -11,6 +11,7 @@ import { enrichSessionPermissions } from "../domain/security/permissions";
 import { attachCanonicalRoleIdentity } from "../lib/canonicalRoleIdentity";
 import { canRestorePersistedSession } from "../lib/dataTruth";
 import { blockOutboxOnLogout } from "../lib/outbox";
+import { invalidateL1CacheSession } from "../offline/l1/lifecycle";
 import {
   parseEffectivePermissionsSnapshotV1,
   persistOfflineSnapshotIfCurrent,
@@ -153,6 +154,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       onAuthFailure: async () => {
         persistEpochRef.current += 1;
         snapshotRef.current = null;
+        invalidateL1CacheSession();
         await clearSecureSession().catch(() => undefined);
         saveSession(null);
         setPermissionsBootstrap("idle");
@@ -169,6 +171,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     persistEpochRef.current += 1;
     refresherRef.current.invalidate();
     snapshotRef.current = null;
+    invalidateL1CacheSession();
     saveSession(null);
     setPermissionsBootstrap("idle");
     setPermissionsBootstrapError(null);

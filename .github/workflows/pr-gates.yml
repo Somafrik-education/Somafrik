@@ -337,6 +337,7 @@ jobs:
           npm run verify:mobile-live-permissions-refresh
           npm run verify:mobile-cta-rbac-alignment
           npm run verify:mobile-network-resilience
+          npm run verify:mobile-l1-sqlite-cache
           npx --yes tsx Mobile/src/lib/roleSelectionLayout.test.ts
 
       - name: Canonical sync

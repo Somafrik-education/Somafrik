@@ -94,6 +94,12 @@ module.exports = ({ config }) => {
       ...(config.plugins ?? []),
       "expo-secure-store",
       [
+        "expo-sqlite",
+        {
+          useSQLCipher: true,
+        },
+      ],
+      [
         "expo-build-properties",
         {
           android: {

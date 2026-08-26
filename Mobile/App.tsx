@@ -7,6 +7,7 @@ import AppNavigator from "./src/navigation/AppNavigator";
 import { AuthProvider } from "./src/context/AuthContext";
 import { AdminDataProvider } from "./src/context/AdminDataContext";
 import OutboxRuntime from "./src/components/OutboxRuntime";
+import L1CacheRuntime from "./src/offline/l1/L1CacheRuntime";
 import EnvironmentBadge from "./src/components/EnvironmentBadge";
 import ConfigurationErrorScreen from "./src/components/ConfigurationErrorScreen";
 import { resolveApiRootUrl } from "./src/config/env";
@@ -55,6 +56,7 @@ export default function App() {
           <AuthProvider>
             <AdminDataProvider>
               <OutboxRuntime />
+              <L1CacheRuntime />
               <AppNavigator />
               <EnvironmentBadge />
             </AdminDataProvider>
