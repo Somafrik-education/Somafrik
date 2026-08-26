@@ -31,7 +31,7 @@ const sections: SettingsCard[] = [
   },
   {
     title: "Structure pédagogique",
-    description: "Activation des niveaux, filières et groupes pour votre établissement.",
+    description: "Niveaux, filières, groupes et cours configurés par classe.",
     route: "SchoolPedagogicalStructure",
     view: "SchoolPedagogicalStructure",
   },

@@ -48,12 +48,63 @@ export type AssignableEstablishmentRole = {
   permissions: string[];
 };
 
+export type SchoolSubjectRecord = {
+  id?: string;
+  code: string;
+  subjectCode?: string;
+  name: string;
+  coefficient?: number;
+  status?: string;
+};
+
+export type SchoolClassCourseRecord = {
+  id: string;
+  publicId?: string;
+  className: string;
+  name: string;
+  coefficient?: number;
+  status?: string;
+};
+
 function scopedPath(schoolCode: string | undefined, suffix: string) {
   const scoped = String(schoolCode ?? "").trim();
   if (scoped && scoped !== "*") {
     return `/backoffice/establishments/${encodeURIComponent(scoped)}${suffix}`;
   }
   return suffix;
+}
+
+function normalizeSubject(row: unknown): SchoolSubjectRecord | null {
+  const item = row && typeof row === "object" ? (row as Record<string, unknown>) : {};
+  const code = String(item.code ?? item.subjectCode ?? item.publicId ?? "").trim().toUpperCase();
+  const name = String(item.name ?? item.subject ?? "").trim();
+  if (!code || !name) return null;
+  const coefficient = Number(item.coefficient);
+  return {
+    id: item.id != null ? String(item.id) : undefined,
+    code,
+    subjectCode: code,
+    name,
+    coefficient: Number.isFinite(coefficient) ? coefficient : undefined,
+    status: String(item.status ?? "active"),
+  };
+}
+
+function normalizeClassCourse(row: unknown): SchoolClassCourseRecord | null {
+  const item = row && typeof row === "object" ? (row as Record<string, unknown>) : {};
+  const id = String(item.id ?? item.publicId ?? item.courseCode ?? "").trim();
+  const className = String(item.className ?? item.class ?? "").trim();
+  const name = String(item.name ?? item.subject ?? item.course ?? "").trim();
+  if (!id || !className || !name) return null;
+  const coefficient = Number(item.coefficient);
+  return {
+    id,
+    publicId: item.publicId != null ? String(item.publicId) : undefined,
+    className,
+    name,
+    coefficient: Number.isFinite(coefficient) ? coefficient : undefined,
+    status: String(item.status ?? "active"),
+  };
 }
 
 export function getSchoolSettings(schoolCode?: string) {
@@ -153,4 +204,47 @@ export function patchEstablishmentProfile(code: string, payload: Record<string, 
 
 export function listAssignableEstablishmentRoles() {
   return httpRequest<{ roles: AssignableEstablishmentRole[] }>("/establishment-roles/assignable");
+}
+
+/** Catalogue établissement canonique utilisé aussi par le Web (SchoolSubjectsPanel). */
+export function listSchoolSubjects() {
+  return httpRequest<unknown>("/v2/subjects").then((payload) =>
+    unwrapList(payload)
+      .map(normalizeSubject)
+      .filter((row): row is SchoolSubjectRecord => Boolean(row)),
+  );
+}
+
+export function createSchoolSubject(payload: { name: string; code: string }) {
+  return httpRequest<unknown>("/v2/subjects", {
+    method: "POST",
+    body: JSON.stringify({
+      name: payload.name.trim(),
+      code: payload.code.trim().toUpperCase(),
+      coefficient: 1,
+      status: "active",
+    }),
+  });
+}
+
+/**
+ * Rattachement canonique cours ↔ classe : table PostgreSQL school_courses via /api/courses.
+ * Aucun catalogue local et aucun write BackOffice State.
+ */
+export function listSchoolClassCourses() {
+  return httpRequest<unknown>("/courses").then((payload) =>
+    unwrapList(payload)
+      .map(normalizeClassCourse)
+      .filter((row): row is SchoolClassCourseRecord => Boolean(row)),
+  );
+}
+
+export function createSchoolClassCourse(payload: { className: string; subjectName: string }) {
+  return httpRequest<SchoolClassCourseRecord>("/courses", {
+    method: "POST",
+    body: JSON.stringify({
+      className: payload.className.trim(),
+      name: payload.subjectName.trim(),
+    }),
+  });
 }
