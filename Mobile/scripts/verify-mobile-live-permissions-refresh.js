@@ -138,6 +138,7 @@ function main() {
   assert.doesNotMatch(snapshotLib, /roleDefaults/);
   assert.match(snapshotLib, /isRecognizedTransportFailure/);
   assert.match(snapshotLib, /OFFLINE_PERMISSIONS_EXPANSION_FORBIDDEN/);
+  assert.match(snapshotLib, /persistOfflineSnapshotIfCurrent/);
 
   const banner = readSrc(path.join("components", "OfflineBanner.tsx"));
   assert.match(banner, /permissionsUnrevalidated/);
@@ -146,6 +147,9 @@ function main() {
   const snapshotTests = readSrc(path.join("lib", "offlinePermissionsSnapshot.test.ts"));
   assert.match(snapshotTests, /CAS 1/);
   assert.match(snapshotTests, /CAS 12/);
+  assert.match(snapshotTests, /CAS 13/);
+  assert.match(auth, /persistOfflineSnapshotIfCurrent/);
+  assert.match(auth, /persistEpochRef/);
 
   console.log("OK: permissions live revalidées au foreground, fail-closed, boot offline snapshot-only");
 }

@@ -13,6 +13,8 @@ import {
   decidePermissionsRefreshFailure,
   parseEffectivePermissionsSnapshotV1,
   permissionsListsEqual,
+  persistOfflineSnapshotIfCurrent,
+  sessionIdentity,
   snapshotFromPersistedProfile,
   snapshotMatchesSession,
 } from "./offlinePermissionsSnapshot";
@@ -340,6 +342,172 @@ async function run() {
     assert.equal(pending.length, 1);
     assert.equal(pending[0]?.domain, "presences");
     assert.equal(pending[0]?.status, "pending");
+  }
+
+  // CAS 13 — persist stale A after switch B must not pollute B (snapshot/profile/offline boot)
+  {
+    const permsA = ["Utilisateurs:UPDATE", "Élèves:READ"];
+    const permsB = ["Présences:READ"];
+    const sessionA = sessionOf({
+      id: "user-a",
+      permissions: permsA,
+      roleKeys: ["PRINCIPAL"],
+      schoolCode: "SA",
+      schoolId: "school-a",
+    });
+    const sessionB = sessionOf({
+      id: "user-b",
+      permissions: permsB,
+      roleKeys: ["TEACHER"],
+      schoolCode: "SB",
+      schoolId: "school-b",
+    });
+    const snapshotB = buildEffectivePermissionsSnapshotV1({
+      session: sessionB,
+      permissions: permsB,
+      roleKeys: ["TEACHER"],
+      resolvedAt: "2026-08-26T02:00:00.000Z",
+    });
+    assert.ok(snapshotB);
+
+    let persistEpoch = 0;
+    let session: RefreshableSession | null = sessionA;
+    let memorySnapshot = buildEffectivePermissionsSnapshotV1({
+      session: sessionA,
+      permissions: permsA,
+      roleKeys: ["PRINCIPAL"],
+      resolvedAt: "2026-08-26T00:00:00.000Z",
+    });
+    let storedSnapshot = memorySnapshot
+      ? {
+          ...memorySnapshot,
+          permissions: memorySnapshot.permissions.slice(),
+          roleKeys: memorySnapshot.roleKeys.slice(),
+        }
+      : null;
+    let storedProfile: {
+      userId: string;
+      schoolId: string;
+      schoolCode: string;
+      permissions: string[];
+      roleKeys: string[];
+    } | null = {
+      userId: "user-a",
+      schoolId: "school-a",
+      schoolCode: "SA",
+      permissions: permsA.slice(),
+      roleKeys: ["PRINCIPAL"],
+    };
+    let bootstrap: PermissionsBootstrapState = "loading";
+    let fetchImpl: () => Promise<{ permissions?: string[]; roleKeys?: string[] }> = async () => ({
+      permissions: [...permsA, "Utilisateurs:DELETE"],
+      roleKeys: ["PRINCIPAL"],
+    });
+    let persistEntered = false;
+    let releasePersist: () => void = () => undefined;
+
+    const persistDeps = {
+      getSession: () => session,
+      getMemorySnapshot: () => memorySnapshot,
+      setMemorySnapshot: (next: NonNullable<typeof memorySnapshot>) => {
+        memorySnapshot = next;
+      },
+      writeSnapshotStore: async (next: NonNullable<typeof memorySnapshot>) => {
+        storedSnapshot = {
+          ...next,
+          permissions: next.permissions.slice(),
+          roleKeys: next.roleKeys.slice(),
+        };
+      },
+      writeSessionProfile: async (sess: RefreshableSession, next: NonNullable<typeof memorySnapshot>) => {
+        const identity = sessionIdentity(sess);
+        storedProfile = {
+          userId: identity.userId,
+          schoolId: identity.schoolId,
+          schoolCode: identity.schoolCode,
+          permissions: next.permissions.slice(),
+          roleKeys: next.roleKeys.slice(),
+        };
+      },
+    };
+
+    const refresher = createEffectivePermissionsRefresher({
+      getSession: () => session,
+      applySession: (next) => {
+        session = next;
+      },
+      fetchEffectivePermissions: () => fetchImpl(),
+      getOfflineSnapshot: () => memorySnapshot,
+      persistOfflineSnapshot: async (snapshot) => {
+        persistEntered = true;
+        const epoch = persistEpoch;
+        await new Promise<void>((resolve) => {
+          releasePersist = resolve;
+        });
+        await persistOfflineSnapshotIfCurrent(snapshot, {
+          ...persistDeps,
+          isCurrent: () => epoch === persistEpoch,
+        });
+      },
+      onAuthFailure: () => {
+        persistEpoch += 1;
+        session = null;
+        memorySnapshot = null;
+        storedSnapshot = null;
+        storedProfile = null;
+        bootstrap = "idle";
+      },
+      onBootstrap: (state) => {
+        bootstrap = state;
+      },
+    });
+
+    const pendingA = refresher.refresh();
+    for (let i = 0; i < 50 && !persistEntered; i += 1) {
+      await Promise.resolve();
+    }
+    assert.equal(persistEntered, true, "A succès doit atteindre persistSnapshot");
+
+    persistEpoch += 1;
+    refresher.invalidate();
+    session = sessionB;
+    memorySnapshot = snapshotB;
+    storedSnapshot = {
+      ...snapshotB,
+      permissions: snapshotB.permissions.slice(),
+      roleKeys: snapshotB.roleKeys.slice(),
+    };
+    storedProfile = {
+      userId: "user-b",
+      schoolId: "school-b",
+      schoolCode: "SB",
+      permissions: permsB.slice(),
+      roleKeys: ["TEACHER"],
+    };
+
+    releasePersist();
+    await pendingA;
+
+    assert.equal(session?.user?.id, "user-b");
+    assert.equal(memorySnapshot?.userId, "user-b");
+    assert.deepEqual(memorySnapshot?.permissions, permsB);
+    assert.equal(storedSnapshot?.userId, "user-b");
+    assert.deepEqual(storedSnapshot?.permissions, permsB);
+    assert.equal(storedProfile?.userId, "user-b");
+    assert.deepEqual(storedProfile?.permissions, permsB);
+    assert.equal((storedProfile?.permissions ?? []).includes("Utilisateurs:UPDATE"), false);
+    assert.equal((storedProfile?.permissions ?? []).includes("Utilisateurs:DELETE"), false);
+    assert.equal((memorySnapshot?.permissions ?? []).includes("Utilisateurs:DELETE"), false);
+    assert.equal((storedSnapshot?.permissions ?? []).includes("Utilisateurs:DELETE"), false);
+
+    fetchImpl = async () => {
+      throw networkUnavailable();
+    };
+    await refresher.refresh();
+    assert.equal(bootstrap, "ready_offline");
+    assert.equal(isMetierRenderable(session, bootstrap), true);
+    assert.deepEqual(session?.permissions, permsB);
+    assertAuthoritativeOfflineSnapshot(memorySnapshot!, permsB);
   }
 
   // Garde-fou sécurité : pas de roleDefaults / ALL inventé dans le module snapshot

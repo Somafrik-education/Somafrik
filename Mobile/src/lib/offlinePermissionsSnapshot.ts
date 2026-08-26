@@ -136,6 +136,62 @@ export function snapshotMatchesSession(
   return true;
 }
 
+export type OfflineSnapshotPersistDeps = {
+  isCurrent: () => boolean;
+  getSession: () => SessionLike | null | undefined;
+  getMemorySnapshot: () => EffectivePermissionsSnapshotV1 | null;
+  setMemorySnapshot: (snapshot: EffectivePermissionsSnapshotV1) => void;
+  writeSnapshotStore: (snapshot: EffectivePermissionsSnapshotV1) => Promise<void> | void;
+  writeSessionProfile: (
+    session: SessionLike,
+    snapshot: EffectivePermissionsSnapshotV1,
+  ) => Promise<void> | void;
+};
+
+function restoreCurrentOfflineSnapshot(deps: OfflineSnapshotPersistDeps): EffectivePermissionsSnapshotV1 | null {
+  const session = deps.getSession();
+  const memory = deps.getMemorySnapshot();
+  if (!session || !memory || !snapshotMatchesSession(memory, session)) return null;
+  return memory;
+}
+
+/**
+ * Persist a live snapshot only if its generation/session is still current.
+ * A stale success must not touch memory, SecureStore snapshot, or the new user's profile.
+ */
+export async function persistOfflineSnapshotIfCurrent(
+  snapshot: EffectivePermissionsSnapshotV1,
+  deps: OfflineSnapshotPersistDeps,
+): Promise<boolean> {
+  const stillValid = () => deps.isCurrent() && snapshotMatchesSession(snapshot, deps.getSession());
+
+  if (!stillValid()) return false;
+
+  await deps.writeSnapshotStore(snapshot);
+  if (!stillValid()) {
+    const current = restoreCurrentOfflineSnapshot(deps);
+    if (current) await deps.writeSnapshotStore(current);
+    return false;
+  }
+
+  deps.setMemorySnapshot(snapshot);
+
+  const session = deps.getSession();
+  if (!session || !stillValid()) return false;
+
+  await deps.writeSessionProfile(session, snapshot);
+  if (!stillValid()) {
+    const current = restoreCurrentOfflineSnapshot(deps);
+    if (current) {
+      const latest = deps.getSession();
+      if (latest) await deps.writeSessionProfile(latest, current);
+    }
+    return false;
+  }
+
+  return true;
+}
+
 export function buildEffectivePermissionsSnapshotV1(input: {
   session: SessionLike | null | undefined;
   permissions: string[];

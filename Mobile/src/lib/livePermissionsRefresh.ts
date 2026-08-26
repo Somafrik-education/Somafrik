@@ -201,6 +201,9 @@ export function createEffectivePermissionsRefresher<T extends RefreshableSession
           resolvedAt: payload.resolvedAt,
         });
         if (snapshot && deps.persistOfflineSnapshot) {
+          if (!gate.isCurrent(generation, userId, sessionUserId(deps.getSession()))) {
+            return false;
+          }
           await deps.persistOfflineSnapshot(snapshot);
         }
         if (!gate.isCurrent(generation, userId, sessionUserId(deps.getSession()))) {
