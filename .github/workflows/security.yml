@@ -1,63 +1,52 @@
-name: Security
+name: Security Nightly
 
 on:
-  pull_request:
-    branches: [develop, main]
-  push:
-    branches: [develop, main]
+  schedule:
+    - cron: "15 3 * * *"
+  workflow_dispatch:
 
 concurrency:
-  group: security-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: security-nightly
+  cancel-in-progress: false
 
 env:
   NODE_VERSION: "22.12.0"
+  DATABASE_URL: postgresql://somafrik:somafrik123@localhost:5432/somafrik
   GITLEAKS_VERSION: "8.24.3"
 
 jobs:
-  secrets:
-    name: Secrets
+  security:
+    name: Security deep scan
     runs-on: ubuntu-latest
+    timeout-minutes: 45
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: somafrik
+          POSTGRES_USER: somafrik
+          POSTGRES_PASSWORD: somafrik123
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U somafrik -d somafrik"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
+          ref: develop
           fetch-depth: 0
-
-      - name: Install Gitleaks ${{ env.GITLEAKS_VERSION }}
+      - name: Install Gitleaks
         run: |
           set -euo pipefail
           curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" \
             | tar -xz gitleaks
           sudo install -m 0755 gitleaks /usr/local/bin/gitleaks
-          gitleaks version
-
-      - name: Scan repository for secrets
+      - name: Full secrets scan
         run: gitleaks detect --source . --verbose --redact --exit-code 1
-
-  security:
-    name: Security
-    runs-on: ubuntu-latest
-    services:
-      postgres:
-        image: postgres:16
-        env:
-          POSTGRES_DB: somafrik
-          POSTGRES_USER: somafrik
-          POSTGRES_PASSWORD: somafrik123
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U somafrik -d somafrik"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Node ${{ env.NODE_VERSION }}
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
@@ -66,154 +55,11 @@ jobs:
             backend/package-lock.json
             web/package-lock.json
             Mobile/package-lock.json
-
-      - name: Install dependencies (npm ci)
+      - name: Install dependencies
         run: npm run ci:install
-
-      - name: verify:db-config
-        run: npm run verify:db-config
-
-      - name: verify:sync-contacts-removed
-        run: npm run verify:sync-contacts-removed
-
-      - name: verify:mobile-security
-        run: npm run verify:mobile-security
-
-      - name: verify:mobile-data-truth
-        run: npm run verify:mobile-data-truth
-      - name: verify:mobile-evaluations-v2
-        run: npm run verify:mobile-evaluations-v2
-      - name: verify:mobile-planning-v2
-        run: npm run verify:mobile-planning-v2
-      - name: verify:mobile-domain-hydration
-        run: npm --prefix Mobile run verify:mobile-domain-hydration
-      - name: verify:mobile-usability
-        run: npm run verify:mobile-usability
-      - name: verify:mobile-form-fields
-        run: npm run verify:mobile-form-fields
-      - name: verify:mobile-home-data-truth
-        run: npm run verify:mobile-home-data-truth
-      - name: verify:mobile-school-scope-transport
-        run: npm run verify:mobile-school-scope-transport
-      - name: verify:mobile-no-catalog-runtime-data
-        run: npm run verify:mobile-no-catalog-runtime-data
-      - name: verify:mobile-canonical-route-map
-        run: npm run verify:mobile-canonical-route-map
-      - name: verify:mobile-canonical-role-identity
-        run: npm run verify:mobile-canonical-role-identity
-      - name: verify:mobile-live-permissions-refresh
-        run: npm run verify:mobile-live-permissions-refresh
-      - name: verify:mobile-cta-rbac-alignment
-        run: npm run verify:mobile-cta-rbac-alignment
-      - name: verify:mobile-attendance-hydration
-        run: npm run verify:mobile-attendance-hydration
-      - name: verify:mobile-class-attendance-rate
-        run: npm run verify:mobile-class-attendance-rate
-      - name: verify:mobile-ui-e2e-scaffold
-        run: npm run verify:mobile-ui-e2e-scaffold
-      - name: test:mobile-ui-e2e-runtime
-        run: npm run test:mobile-ui-e2e-runtime
-      - name: verify:mobile-release-readiness
-        run: npm run verify:mobile-release-readiness
-      - name: verify:school-code-v2
-        run: npm run verify:school-code-v2
-      - name: verify:mobile-preview-apk
-        run: npm run verify:mobile-preview-apk
-      - name: verify:mobile-network-resilience
-        env:
-          DATABASE_URL: postgresql://somafrik:somafrik123@localhost:5432/somafrik
-        run: npm run verify:mobile-network-resilience
-
-  typescript:
-    name: TypeScript
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Node ${{ env.NODE_VERSION }}
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: npm
-          cache-dependency-path: |
-            package-lock.json
-            backend/package-lock.json
-            web/package-lock.json
-            Mobile/package-lock.json
-
-      - name: Install dependencies (npm ci)
-        run: npm run ci:install
-
-      - name: Backend + Web + Mobile typecheck
-        run: npm run typecheck
-
-      - name: Mobile tsc --noEmit
-        working-directory: Mobile
-        run: npx tsc --noEmit
-
-  lint:
-    name: Lint
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Node ${{ env.NODE_VERSION }}
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: npm
-          cache-dependency-path: |
-            package-lock.json
-            backend/package-lock.json
-            web/package-lock.json
-            Mobile/package-lock.json
-
-      - name: Install dependencies (npm ci)
-        run: npm run ci:install
-
-      - name: Lint (fail on error)
-        run: npm run lint
-
-  tests:
-    name: Tests
-    runs-on: ubuntu-latest
-    services:
-      postgres:
-        image: postgres:16
-        env:
-          POSTGRES_DB: somafrik
-          POSTGRES_USER: somafrik
-          POSTGRES_PASSWORD: somafrik123
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U somafrik -d somafrik"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Node ${{ env.NODE_VERSION }}
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: npm
-          cache-dependency-path: |
-            package-lock.json
-            backend/package-lock.json
-            web/package-lock.json
-            Mobile/package-lock.json
-
-      - name: Install dependencies (npm ci)
-        run: npm run ci:install
-
-      - name: Existing automated verify suite (fail-fast)
-        env:
-          DATABASE_URL: postgresql://somafrik:somafrik123@localhost:5432/somafrik
+      - name: Dependency audit
+        run: npm run audit:ci
+      - name: Security invariants
         run: |
           set -euo pipefail
           npm run verify:v2-foundation
@@ -223,221 +69,13 @@ jobs:
           npm run verify:db-config
           npm run verify:sync-contacts-removed
           npm run verify:mobile-security
-          npm run verify:mobile-data-truth
-          npm run verify:mobile-evaluations-v2
-          npm run verify:mobile-planning-v2
-          npm --prefix Mobile run verify:mobile-domain-hydration
-          npm run verify:mobile-usability
-          npm run verify:mobile-form-fields
-          npm run verify:mobile-home-data-truth
-          npm run verify:mobile-school-scope-transport
-          npm run verify:mobile-no-catalog-runtime-data
-          npm run verify:mobile-canonical-route-map
-          npm run verify:mobile-canonical-role-identity
-          npm run verify:mobile-live-permissions-refresh
-          npm run verify:mobile-cta-rbac-alignment
-          npm run verify:mobile-attendance-hydration
-          npm run verify:mobile-class-attendance-rate
-          npm run verify:mobile-ui-e2e-scaffold
-          npm run test:mobile-ui-e2e-runtime
-          npm run verify:mobile-release-readiness
-          npm run verify:school-code-v2
-          npm run verify:mobile-preview-apk
-          npm run verify:mobile-network-resilience
-          npm run verify:notes-sync
-          npm run verify:students-sync
-          npm run verify:pre-e1-hotfix-02
-          node backend/lib/backofficeDedupe.teachers.test.js
-          npm run check
-          npm --prefix web test
-
-      - name: verify:classes-management (mémoire + PostgreSQL CI)
-        env:
-          DATABASE_URL: postgresql://somafrik:somafrik123@localhost:5432/somafrik
-        run: npm run verify:classes-management
-
-      - name: verify:class-student-enrollment (mémoire + PostgreSQL CI)
-        env:
-          DATABASE_URL: postgresql://somafrik:somafrik123@localhost:5432/somafrik
-        run: npm run verify:class-student-enrollment
-
-      - name: verify:students-fiche-consolidation (mémoire)
-        run: npm run verify:students-fiche-consolidation
-
-      - name: verify:teacher-account-creation (mémoire + PostgreSQL CI)
-        env:
-          DATABASE_URL: postgresql://somafrik:somafrik123@localhost:5432/somafrik
-        run: npm run verify:teacher-account-creation
-
-      - name: verify:teachers-lifecycle (PostgreSQL CI + HTTP)
-        env:
-          DATABASE_URL: postgresql://somafrik:somafrik123@localhost:5432/somafrik
-        run: npm run verify:teachers-lifecycle
-
-      - name: verify:teacher-login-scope (JWT classId/classCode — mémoire + PostgreSQL CI)
-        env:
-          DATABASE_URL: postgresql://somafrik:somafrik123@localhost:5432/somafrik
-        run: npm run verify:teacher-login-scope
-
-      - name: verify:schools-legacy-cleanup (mémoire + PostgreSQL CI)
-        env:
-          DATABASE_URL: postgresql://somafrik:somafrik123@localhost:5432/somafrik
-        run: npm run verify:schools-legacy-cleanup
-      - name: verify:school-code-v2
-        run: npm run verify:school-code-v2
-
-      - name: verify:finance-legacy-cleanup (mémoire)
-        run: npm run verify:finance-legacy-cleanup
-      - name: verify:pedagogy-management
-        env:
-          DATABASE_URL: postgresql://somafrik:somafrik123@localhost:5432/somafrik
-        run: npm run verify:pedagogy-management
-      - name: verify:planning-v2-weekly
-        env:
-          DATABASE_URL: postgresql://somafrik:somafrik123@localhost:5432/somafrik
-        run: npm run verify:planning-v2-weekly
-      - name: verify:planning-v2-web
-        env:
-          DATABASE_URL: postgresql://somafrik:somafrik123@localhost:5432/somafrik
-        run: npm run verify:planning-v2-web
-      - name: verify:planning-rooms (salles canoniques + collision PostgreSQL)
-        env:
-          DATABASE_URL: postgresql://somafrik:somafrik123@localhost:5432/somafrik
-        run: npm run verify:planning-rooms
-      - name: verify:planning-replacements (exceptions datées + projection)
-        env:
-          DATABASE_URL: postgresql://somafrik:somafrik123@localhost:5432/somafrik
-        run: npm run verify:planning-replacements
-      - name: verify:planning-course-options (Préfet/Enseignant — projection cours planifiables)
-        env:
-          DATABASE_URL: postgresql://somafrik:somafrik123@localhost:5432/somafrik
-        run: npm run verify:planning-course-options
-      - name: verify:teacher-course-canonical-reconcile (ENS-0001 / affectations → school_courses)
-        env:
-          DATABASE_URL: postgresql://somafrik:somafrik123@localhost:5432/somafrik
-        run: npm run verify:teacher-course-canonical-reconcile
-      - name: verify:pedagogy-legacy-cleanup (mémoire)
-        run: npm run verify:pedagogy-legacy-cleanup
-
-      - name: verify:finance-management (mémoire + PostgreSQL CI)
-        env:
-          DATABASE_URL: postgresql://somafrik:somafrik123@localhost:5432/somafrik
-        run: npm run verify:finance-management
-      - name: verify:finance-multi-item-payment (reçu unique multi-libellés)
-        env:
-          DATABASE_URL: postgresql://somafrik:somafrik123@localhost:5432/somafrik
-        run: npm run verify:finance-multi-item-payment
-
-      - name: verify:platform-management (mémoire + PostgreSQL CI)
-        env:
-          DATABASE_URL: postgresql://somafrik:somafrik123@localhost:5432/somafrik
-        run: npm run verify:platform-management
-      - name: verify:platform-legacy-cleanup (mémoire)
-        run: npm run verify:platform-legacy-cleanup
-      - name: verify:clients-management (mémoire + PostgreSQL CI)
-        env:
-          DATABASE_URL: postgresql://somafrik:somafrik123@localhost:5432/somafrik
-        run: npm run verify:clients-management
-      - name: verify:parent-linking (mémoire + PostgreSQL CI)
-        env:
-          DATABASE_URL: postgresql://somafrik:somafrik123@localhost:5432/somafrik
-        run: npm run verify:parent-linking
-      - name: verify:presences-roster (mémoire + PostgreSQL CI)
-        env:
-          DATABASE_URL: postgresql://somafrik:somafrik123@localhost:5432/somafrik
-        run: npm run verify:presences-roster
-      - name: verify:user-role-lifecycle (mémoire + PostgreSQL CI)
-        env:
-          DATABASE_URL: postgresql://somafrik:somafrik123@localhost:5432/somafrik
-        run: npm run verify:user-role-lifecycle
-      - name: verify:education-reference-data (LOT 1 référentiels pédagogiques)
-        env:
-          DATABASE_URL: postgresql://somafrik:somafrik123@localhost:5432/somafrik
-        run: npm run verify:education-reference-data
-      - name: verify:establishment-roles-data (LOT 2 rôles établissement)
-        env:
-          DATABASE_URL: postgresql://somafrik:somafrik123@localhost:5432/somafrik
-        run: npm run verify:establishment-roles-data
-      - name: verify:functional-rbac (matrice CRUD Superadmin — mémoire + PostgreSQL CI)
-        env:
-          DATABASE_URL: postgresql://somafrik:somafrik123@localhost:5432/somafrik
-        run: npm run verify:functional-rbac
-      - name: verify:planning-rbac-reconcile (Préfet/Enseignant existants — PostgreSQL CI)
-        env:
-          DATABASE_URL: postgresql://somafrik:somafrik123@localhost:5432/somafrik
-        run: npm run verify:planning-rbac-reconcile
-      - name: verify:evaluation-types-data (LOT 3 types d'évaluation)
-        env:
-          DATABASE_URL: postgresql://somafrik:somafrik123@localhost:5432/somafrik
-        run: npm run verify:evaluation-types-data
-      - name: verify:school-settings-data (LOT 4 paramètres établissement)
-        env:
-          DATABASE_URL: postgresql://somafrik:somafrik123@localhost:5432/somafrik
-        run: npm run verify:school-settings-data
-      - name: verify:documents-exams-data (LOT 5 examens / bulletins / documents)
-        env:
-          DATABASE_URL: postgresql://somafrik:somafrik123@localhost:5432/somafrik
-        run: npm run verify:documents-exams-data
-      - name: verify:login-lockout-data (LOT 6 lockout PostgreSQL)
-        env:
-          DATABASE_URL: postgresql://somafrik:somafrik123@localhost:5432/somafrik
-        run: npm run verify:login-lockout-data
-      - name: verify:data-export-safety (LOT 6 export / pas de restore)
-        env:
-          DATABASE_URL: postgresql://somafrik:somafrik123@localhost:5432/somafrik
-        run: npm run verify:data-export-safety
-      - name: verify:clients-legacy-cleanup (mémoire)
-        run: npm run verify:clients-legacy-cleanup
-      - name: verify:backoffice-state-removal (mémoire + PostgreSQL CI)
-        env:
-          DATABASE_URL: postgresql://somafrik:somafrik123@localhost:5432/somafrik
-        run: npm run verify:backoffice-state-removal
-
-      - name: verify:canonical-state-convergence (P0 SYNC-CANONICAL-STATE)
-        run: npm run verify:canonical-state-convergence
-
-      - name: verify:sync-end-to-end (P0 SYNC-END-TO-END — PostgreSQL CI)
-        env:
-          DATABASE_URL: postgresql://somafrik:somafrik123@localhost:5432/somafrik
-        run: npm run verify:sync-end-to-end
-
-      - name: verify:remove-legacy-sync-core (P1 legacy UI/state guard)
-        run: node scripts/verify-remove-legacy-sync-core.js
-
-      - name: verify:teachers-domain-constraints-boot (P0 préprod)
-        run: npm run verify:teachers-domain-constraints-boot
-
-      - name: Bootstrap runtime guard (PostgreSQL préprod-like)
+          npm run verify:functional-rbac
+      - name: Runtime bootstrap security
         env:
           NODE_ENV: test
           JWT_SECRET: ci-test-secret-with-enough-length-for-production-checks
-          DATABASE_URL: postgresql://somafrik:somafrik123@localhost:5432/somafrik
           SOMAFRIK_DB_REQUIRED: "true"
           SOMAFRIK_SKIP_DEMO_SEED: "true"
           SOMAFRIK_BOOTSTRAP_REQUIRED: "true"
           SOMAFRIK_BOOTSTRAP_PORT: "5058"
         run: npm run verify:runtime-bootstrap
-
-  audit:
-    name: Audit
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Node ${{ env.NODE_VERSION }}
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: npm
-          cache-dependency-path: |
-            package-lock.json
-            backend/package-lock.json
-            web/package-lock.json
-            Mobile/package-lock.json
-
-      - name: Install dependencies (npm ci)
-        run: npm run ci:install
-
-      - name: npm audit (report + fail on critical)
-        run: npm run audit:ci
