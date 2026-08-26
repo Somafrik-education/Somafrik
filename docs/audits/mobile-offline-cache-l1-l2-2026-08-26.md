@@ -2,9 +2,11 @@
 
 **Date :** 2026-08-26  
 **Type :** AUDIT UNIQUEMENT — aucune implémentation produit  
-**Base `develop` exact :** `bf9402ef78b4593ccbeff8f2d504fc0acbd97446` (merge #340)  
-**RC1 / #339 :** hors scope. Ce chantier n’est pas un prétexte pour déplacer la ligne d’arrivée RC1.  
-**#340 :** hors modification. `ready_offline` est un prérequis RBAC, pas un cache métier.
+**Base `develop` exact :** `7c6b90eabe280870229242d1cecd971d38a6e509`  
+(merge #339 ; inclut #342 `e7c5dbc095aa89f91c462b73e16aa3bd0fe61e51` et #340)  
+**RC1 / #339 :** hors scope produit. Le merge #339 n’ajoute que le rapport smoke RC1 ; aucun contrat L1/L2 modifié.  
+**#340 :** hors modification. `ready_offline` est un prérequis RBAC, pas un cache métier.  
+**#342 :** impact L1 noté ci-dessous (cours par classe / `school_courses`). Aucun endpoint delta créé.
 
 **Verdict :** **GO SOUS CONDITIONS**
 
@@ -84,6 +86,7 @@ Aucune de ces ressources n’est persistée localement aujourd’hui. Mobile **n
 | Students | `GET /students` (`getStudents`) | `studentsData` + `studentsSnapshot` | non | non | non |
 | Assignments | `GET /assignments` (`getAssignments`) | `assignmentsData` **sans** `ResourceSnapshot` | non | non | non |
 | Course schedules | `GET /course-schedules` (`getPlanningWeekly`) | `courseSchedulesSnapshot` | non | non | non |
+| **School courses** (L1, #342) | `GET /courses` (`getCourses` / `listSchoolClassCourses`) | `coursesData` (RAM) ; UI Paramètres `SchoolPedagogicalStructureScreen` | non | non | non (POST `/courses` online only) |
 | Presences | `GET /presences` (`getPresences`) | `presencesData` + `presencesSnapshot` | non (outbox = mutation) | non | **oui** domaine `presences` |
 | Evaluations | `GET /evaluations` (`getEvaluations`) | `evaluationsSnapshot` | non | non | non |
 | Grades/Notes | `GET /notes` (`getNotes`) | `notesSnapshot` + `notesData` legacy | non (outbox = mutation) | non | **oui** domaine `notes` |
@@ -93,6 +96,23 @@ Aucune de ces ressources n’est persistée localement aujourd’hui. Mobile **n
 **Overlay déjà présent (présences seulement) :** `overlayPresenceOutboxOnAttendance` (`attendanceOffline.ts`). Les notes n’ont pas d’équivalent snapshot+overlay.
 
 Planning : contrat réel **`/course-schedules`** (slots hebdomadaires canoniques). Pas de route legacy imaginaire. Mobile ignore aujourd’hui `updatedAt` du DTO (`planningV2.normalizeWeeklySlot`).
+
+### Impact #342 (cours par classe) — resync `develop`
+
+#342 n’ajoute **aucun** cache offline ni delta. Il rend **visible** un contrat déjà présent :
+
+- PostgreSQL `school_courses` via `POST /api/courses` (écriture canonique, `pedagogyService` / `createSchoolCourse`).
+- Lecture Mobile : `GET /api/courses` (`getCourses` dans `AdminDataContext.refreshBackOfficeState`, et `listSchoolClassCourses` dans Paramètres → Structure pédagogique).
+- Catalogue établissement : `GET/POST /api/v2/subjects` — **hors cache métier L1/L2** (paramétrage catalogue, pas le travail offline enseignant).
+- RBAC lecture `/courses` : `Matières:READ` ou alias serveur `Gérer cours` / `Voir classes` / `ALL_PRIVILEGES`. **`Classes:READ` seul n’ouvre pas `/api/courses`** (#342 a corrigé ce faux positif UI).
+- Classes/cours archivés ou inactifs exclus côté client (`schoolClassCourses.ts`). Un delta incrémental devra quand même émettre les status terminaux (même trou tombstone que assignments/schedules).
+- Planning V2 consomme `schoolCourseId` ; `className + subject` n’est pas une autorité Planning.
+
+**Conséquence cache L1 :** les rattachements **cours ↔ classe** (`school_courses`) sont des données **structurelles** nécessaires au planning/notes offline. Ils manquaient à l’inventaire L1 d’origine et **doivent y figurer**. Le catalogue `/v2/subjects` reste exclu (paramètres).
+
+**P1 lecture :** `GET /api/courses` passe encore par `getAuthoritativeBackOfficeState()` puis `state.courses` (`server.js`), alors que `POST /api/courses` écrit PostgreSQL. Ce n’est **pas** `GET /api/backoffice/state` (410) — l’overlay interne n’est pas un SoT cache. Avant un snapshot SQLite de cette ressource : **list PG scopée** (comme classes/élèves), `updated_at`, status terminal, curseur + `scopeHash`. Ne pas persister l’overlay JSON.
+
+Aucun `DEFAULT_SUBJECTS`, aucun `createItem("courses")`, aucun `backoffice/state` client (#342 conforme NO-GO).
 
 ---
 
@@ -122,6 +142,7 @@ Préfixe réel : `/api/...`. Mobile appelle sans le préfixe via `httpClient`.
 | Students | `GET /api/students` | idem + `scopeSchoolStudentsForPrincipal` | `Élèves:READ` | `students.updated_at` | archive `DELETE` → **omis du GET** | opt-in, Mobile full | non | **oui** |
 | Assignments | `GET /api/assignments` | school + enseignant auto-filtré | `Affectations:READ` | `teacher_assignments.updated_at` | `status=deleted` → **omis** | opt-in, Mobile full | non | **oui** |
 | Course schedules | `GET /api/course-schedules` | school ; enseignant → son `teacherId` | `Planning de cours:READ` | slot `updated_at` (Mobile drop) | `cancelled` → **omis** (filtre `active`) | non | non | **oui** |
+| School courses | `GET /api/courses` | overlay interne `state.courses` + tenant filter | `Matières:READ` / `Gérer cours` / `Voir classes` / `ALL_PRIVILEGES` | **à confirmer sur list PG** ; GET actuel ≠ table delta-ready | archivés exclus côté Mobile #342 | non | non | **oui** (list PG + cursor + tombstones) |
 | Presences | `GET /api/presences` | filtre **après** projection globale | `Présences:READ` | `attendance.updated_at` → `savedAt` | pas d’API delete ; upsert | non | non | **oui** |
 | Evaluations | `GET /api/evaluations` | `e.school_id` | `Notes:READ` | `evaluations.updated_at` | archived via PATCH ; staff les voit | opt-in, Mobile full | non | **oui** |
 | Notes | `GET /api/notes` | filtre **après** projection globale | `Notes:READ` | `grades.updated_at` + **`grades.version`** | pas d’API delete ; upsert | non | non | **oui** |
@@ -564,7 +585,7 @@ Chaque PR assez petite pour un diff CTO indépendant. **Aucune de ces PRs n’es
 | PR | Contenu | Dépend de |
 | --- | --- | --- |
 | **A** | Infra SQLite : schema/migrations, partition user/school, **expo-sqlite + `useSQLCipher: true`** (clé SecureStore, build natif), repos, pas de JWT | validation CTO de **ce** rapport |
-| **B** | L1 bootstrap + delta : Classes, Students, Assignments, `/course-schedules` ; curseur **lié à scopeHash** | A + **Backend delta L1** (cursor + scopeHash + expired) |
+| **B** | L1 bootstrap + delta : Classes, Students, Assignments, **school_courses**, `/course-schedules` ; curseur **lié à scopeHash** | A + **Backend delta L1** (cursor + scopeHash + expired ; **list PG `/courses`**) |
 | **C** | L1 purge / RBAC grant+revoke / tenant / tombstones / **mini-cold obligatoire** sur `scopeHash` | B |
 | **D** | L2 lecture offline : Presences, Evaluations, Notes (snapshot) | C + **Backend delta L2 school-scoped** |
 | **E** | Overlay notes + OCC `version` + 409 ; présences overlay ; **`blocked_authorization`** | D |
@@ -572,7 +593,7 @@ Chaque PR assez petite pour un diff CTO indépendant. **Aucune de ces PRs n’es
 
 **Backend (PRs séparées, avant ou en parallèle B/D) :**
 
-1. Delta keyset + status terminal sur L1 + **`scopeHash`/`scopeVersion` + `cursorStatus` (`ok` \| `scope_changed` \| `expired`)** + fenêtre de tombstones.
+1. Delta keyset + status terminal sur L1 (classes/students/assignments/**school_courses**/course-schedules) + **`scopeHash`/`scopeVersion` + `cursorStatus` (`ok` \| `scope_changed` \| `expired`)** + fenêtre de tombstones. Pour `/courses` : **sortir la lecture du overlay `state.courses`** vers une list PG.
 2. `GET /notes` et `GET /presences` **WHERE school_id** (+ teacher scope) + même cursor.
 3. Exposer `version` + `updatedAt` notes jusqu’au JSON Mobile (contrat GET/POST). **Sans changer le RBAC.**
 

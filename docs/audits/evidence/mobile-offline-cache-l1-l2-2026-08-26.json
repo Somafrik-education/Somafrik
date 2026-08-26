@@ -3,7 +3,8 @@
   "type": "architecture-audit-only",
   "productImplementation": false,
   "baseBranch": "develop",
-  "baseSha": "bf9402ef78b4593ccbeff8f2d504fc0acbd97446",
+  "baseSha": "7c6b90eabe280870229242d1cecd971d38a6e509",
+  "baseShaNote": "develop after #339 merge; includes #342 e7c5dbc095aa89f91c462b73e16aa3bd0fe61e51 and #340",
   "verdict": "GO_SOUS_CONDITIONS",
   "ctoAmendments341": [
     "expo-sqlite SDK54 useSQLCipher before op-sqlite",
@@ -14,6 +15,14 @@
   "rc1Separated": true,
   "pr339Untouched": true,
   "pr340Untouched": true,
+  "pr342Impact": {
+    "mergedAt": "e7c5dbc095aa89f91c462b73e16aa3bd0fe61e51",
+    "addsOfflineCache": false,
+    "l1AddsSchoolCourses": true,
+    "v2SubjectsInMetierCache": false,
+    "getCoursesStillInternalBackofficeProjection": true,
+    "postCoursesWritesPostgres": true
+  },
   "backofficeState": "NO-GO",
   "storageRecommendation": "expo-sqlite SDK 54 + useSQLCipher true (native build, not Expo Go); key in SecureStore/Keystore; evaluate before op-sqlite",
   "deltaStrategy": "opaque keyset cursor (updated_at, id) bound to mandatory scopeHash/scopeVersion; in-band terminal-status tombstones; expired cursor forces full resource reconciliation",
@@ -116,6 +125,24 @@
       "pagination": false,
       "deltaReady": false,
       "backendChangeNeeded": true
+    },
+    {
+      "resource": "SchoolCourses",
+      "layer": "L1",
+      "addedAfter": "#342",
+      "mobileFn": "getCourses / listSchoolClassCourses / createSchoolClassCourse",
+      "get": "GET /api/courses",
+      "post": "POST /api/courses (PG school_courses)",
+      "memory": true,
+      "persisted": false,
+      "offlineColdBoot": false,
+      "outbox": false,
+      "updatedAt": "GET currently via internal backoffice projection state.courses, not delta-ready",
+      "deleteSignalOnList": "archived/inactive excluded client-side (#342)",
+      "pagination": false,
+      "deltaReady": false,
+      "backendChangeNeeded": true,
+      "note": "Needed for planning schoolCourseId. /v2/subjects catalogue stays out of L1/L2 métier cache."
     },
     {
       "resource": "Presences",
