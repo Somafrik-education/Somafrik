@@ -1,0 +1,47 @@
+name: Mobile Android Release Build
+
+on:
+  workflow_dispatch:
+    inputs:
+      profile:
+        description: EAS/local verification profile
+        required: true
+        default: preproduction
+        type: choice
+        options:
+          - preproduction
+          - production
+
+env:
+  NODE_VERSION: "22.12.0"
+
+jobs:
+  android-aab:
+    name: Android AAB
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: develop
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            Mobile/package-lock.json
+      - name: Install workspace + Mobile
+        run: npm ci && npm ci --prefix Mobile
+      - name: Setup JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+      - name: Verify native AAB
+        env:
+          SOMAFRIK_REQUIRE_AAB: "1"
+          SOMAFRIK_AAB_PROFILES: ${{ inputs.profile }}
+        run: npm run verify:mobile-native-aab

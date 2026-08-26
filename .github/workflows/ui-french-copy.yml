@@ -3,32 +3,25 @@ name: UI French Copy
 on:
   pull_request:
     branches: [develop, main]
-  push:
-    branches: [develop, main]
+    paths:
+      - "web/src/**"
+      - "Mobile/src/**"
+      - "scripts/verify-ui-french-copy.js"
+      - ".github/workflows/ui-french-copy.yml"
+  workflow_dispatch:
 
 concurrency:
   group: ui-french-copy-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  ci-ui-french-copy:
-    name: CI / verify:ui-french-copy
+  ui-french-copy:
+    name: verify:ui-french-copy
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: "22.12.0"
-      - name: verify:ui-french-copy
-        run: node scripts/verify-ui-french-copy.js
-
-  security-ui-french-copy:
-    name: Security / verify:ui-french-copy
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "22.12.0"
-      - name: verify:ui-french-copy
+      - name: Verify visible UI copy
         run: node scripts/verify-ui-french-copy.js
