@@ -2,6 +2,7 @@ import { Alert, ActivityIndicator, FlatList, ScrollView, StyleSheet, Text, Touch
 import { Ionicons } from "@expo/vector-icons";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useFocusEffect } from "@react-navigation/native";
+import ChoiceChips from "../components/ChoiceChips";
 import { useAuth } from "../context/AuthContext";
 import { useAdminData } from "../context/AdminDataContext";
 import { canManagePresences, canReadRoute } from "../domain/security/permissions";
@@ -12,10 +13,17 @@ import {
   scopedStudentsForSession,
 } from "../lib/establishment";
 import {
+  ATTENDANCE_AUTHOR_COPY,
   assertAttendanceClassIdentity,
+  assignmentsForClassIdentity,
+  attachAttendanceAuthorToPayload,
+  authorTeacherIdFromOutboxPayload,
   filterStudentsByClassIdentity,
+  listActiveClassAuthorOptions,
   listScopedAttendanceClasses,
+  persistAttendanceAuthorSelection,
   presenceIntentionId,
+  resolveAttendanceAuthor,
   type AttendanceClassIdentity,
 } from "../lib/attendanceClassIdentity";
 import { overlayPresenceOutboxOnAttendance, applyOutboxReadToRollCall, outboxMatchesAttendanceClass } from "../lib/attendanceOffline";
@@ -106,6 +114,7 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
   const intentionRef = useRef(createIntentionStore());
   const [saving, setSaving] = useState(false);
   const [saveHint, setSaveHint] = useState("");
+  const [authorByIntention, setAuthorByIntention] = useState<Record<string, string>>({});
   const scopeState = useMemo(
     () => ({ teachers: teachersData, assignments: assignmentsData, classes: classesData }),
     [teachersData, assignmentsData, classesData],
@@ -184,6 +193,20 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
         : false;
       replaySendingRef.current = sending;
       setReplaySending(sending);
+      if (read.ok) {
+        const intentionId = presenceIntentionId(selectedClass.classId, todayLabel);
+        const queued = read.entries.find(
+          (entry) =>
+            (entry.status === "pending" || entry.status === "failed" || entry.status === "sending") &&
+            (entry.intentionId === intentionId || outboxMatchesAttendanceClass(entry, selectedClass, todayLabel)),
+        );
+        const restored = queued ? authorTeacherIdFromOutboxPayload(queued.payload) : "";
+        if (restored) {
+          setAuthorByIntention((current) =>
+            current[intentionId] ? current : persistAttendanceAuthorSelection(current, intentionId, restored),
+          );
+        }
+      }
       setAttendance((current) => {
         const next = { ...current };
         for (const student of classStudents) {
@@ -232,6 +255,28 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
     });
   }, [classStudents, selectedClass, todayLabel]);
 
+  const selectedClassAssignments = useMemo(() => {
+    if (!selectedClass) return [];
+    return assignmentsForClassIdentity(assignments, selectedClass);
+  }, [assignments, selectedClass]);
+
+  const attendanceIntentionId = selectedClass ? presenceIntentionId(selectedClass.classId, todayLabel) : "";
+  const authorDecision = useMemo(
+    () =>
+      resolveAttendanceAuthor({
+        session,
+        assignmentsForClass: selectedClassAssignments,
+        selectedTeacherId: authorByIntention[attendanceIntentionId],
+        sessionSchoolCode: String(session?.school?.code ?? session?.user?.schoolCode ?? ""),
+        teachers: teachersData,
+      }),
+    [session, selectedClassAssignments, authorByIntention, attendanceIntentionId, teachersData],
+  );
+  const authorOptions = useMemo(
+    () => listActiveClassAuthorOptions(selectedClassAssignments, teachersData),
+    [selectedClassAssignments, teachersData],
+  );
+  const showAuthorPicker = authorDecision.status !== "teacher_session" && authorOptions.length > 1;
   const selectedRows = selectedClass
     ? filterStudentsByClassIdentity(classStudents, selectedClass, classesData)
     : [];
@@ -326,12 +371,27 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
       return;
     }
 
-    const classAssignments = assignments.filter(
-      (assignment) =>
-        String(assignment.classId ?? "").trim() === identity.classId ||
-        String(assignment.classCode ?? "").trim() === identity.classCode ||
-        classNameMatches(assignment.className, identity.className),
-    );
+    const classAssignments = assignmentsForClassIdentity(assignments, identity);
+    const intentionId = presenceIntentionId(identity.classId, todayLabel);
+    const decision = resolveAttendanceAuthor({
+      session,
+      assignmentsForClass: classAssignments,
+      selectedTeacherId: authorByIntention[intentionId],
+      sessionSchoolCode: String(session?.school?.code ?? session?.user?.schoolCode ?? ""),
+      teachers: teachersData,
+    });
+    if (decision.status === "blocked" || decision.status === "need_selection") {
+      saveLockRef.current.end();
+      Alert.alert(
+        "Enseignant requis",
+        decision.status === "need_selection" ? ATTENDANCE_AUTHOR_COPY.needSelection : decision.message,
+      );
+      return;
+    }
+    const authorTeacherId = decision.status === "auto" || decision.status === "selected" ? decision.teacherId : undefined;
+    if (authorTeacherId) {
+      setAuthorByIntention((current) => persistAttendanceAuthorSelection(current, intentionId, authorTeacherId));
+    }
     const entries = Object.fromEntries(rows.map((student) => [student.id, attendance[student.id]]));
     const absentCount = Object.values(entries).filter((entry) => entry.status === "Absent").length;
     const lateCount = Object.values(entries).filter((entry) => entry.status === "Retard").length;
@@ -355,15 +415,17 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
       };
     });
 
-    const payload = {
-      classId: identity.classId,
-      classCode: identity.classCode,
-      className: identity.className,
-      date: todayLabel,
-      hour: currentHour,
-      items: presencePayload,
-    };
-    const intentionId = presenceIntentionId(identity.classId, todayLabel);
+    const payload = attachAttendanceAuthorToPayload(
+      {
+        classId: identity.classId,
+        classCode: identity.classCode,
+        className: identity.className,
+        date: todayLabel,
+        hour: currentHour,
+        items: presencePayload,
+      },
+      authorTeacherId,
+    );
     const knownOffline = isOfflineContext();
     setSaving(true);
     setSaveHint(NETWORK_COPY.recording);
@@ -443,7 +505,7 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
           id: `CALL-${todayLabel}-${identity.classId}`,
           className: identity.className,
           course: resolveClassCourseLabel(classAssignments.map((assignment) => String(assignment.course ?? ""))),
-          teacherId: session?.user.id ?? "",
+          teacherId: authorTeacherId ?? session?.user.id ?? "",
           date: todayLabel,
           hour: currentHour,
           entries,
@@ -489,16 +551,7 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
     }
   };
 
-  const selectedClassCourses = selectedClass
-    ? assignments
-        .filter(
-          (assignment) =>
-            String(assignment.classId ?? "").trim() === selectedClass.classId ||
-            String(assignment.classCode ?? "").trim() === selectedClass.classCode ||
-            classNameMatches(assignment.className, selectedClass.className),
-        )
-        .map((assignment) => String(assignment.course ?? ""))
-    : [];
+  const selectedClassCourses = selectedClassAssignments.map((assignment) => String(assignment.course ?? ""));
   const selectedCourseLabel = resolveClassCourseLabel(selectedClassCourses);
   const selectedClassStats = selectedClass ? dailyStats : null;
   const actionsLocked = saving || replaySending;
@@ -516,14 +569,9 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
         <View testID="attendance-class-list" style={isTablet ? styles.classGridTablet : undefined}>
           {assignedClasses.map((classRef) => {
             const rows = filterStudentsByClassIdentity(classStudents, classRef, classesData);
-            const classCourses = assignments
-              .filter(
-                (assignment) =>
-                  String(assignment.classId ?? "").trim() === classRef.classId ||
-                  String(assignment.classCode ?? "").trim() === classRef.classCode ||
-                  classNameMatches(assignment.className, classRef.className),
-              )
-              .map((assignment) => String(assignment.course ?? ""));
+            const classCourses = assignmentsForClassIdentity(assignments, classRef).map((assignment) =>
+              String(assignment.course ?? ""),
+            );
             const courseLabel = resolveClassCourseLabel(classCourses);
             const savedCount = todayCallGroups.filter((call) => classNameMatches(call.className, classRef.className)).length;
             return (
@@ -627,6 +675,27 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
               </View>
               <Ionicons name="checkbox-outline" size={24} color="#16A34A" />
             </TouchableOpacity>
+            {showAuthorPicker ? (
+              <View testID={USABILITY_TEST_IDS.attendanceAuthorPicker} style={styles.authorPicker}>
+                <ChoiceChips
+                  label="Enseignant (auteur de l'appel)"
+                  required
+                  options={authorOptions.map((option) => ({ id: option.teacherId, label: option.label }))}
+                  selectedId={authorByIntention[attendanceIntentionId] ?? ""}
+                  onSelect={(teacherId) => {
+                    setAuthorByIntention((current) =>
+                      persistAttendanceAuthorSelection(current, attendanceIntentionId, teacherId),
+                    );
+                  }}
+                  disabled={actionsLocked}
+                  error={
+                    authorDecision.status === "need_selection"
+                      ? ATTENDANCE_AUTHOR_COPY.needSelection
+                      : undefined
+                  }
+                />
+              </View>
+            ) : null}
             {canUpdatePresences && (
               <View style={styles.classActions}>
                 <TouchableOpacity
@@ -892,6 +961,7 @@ const styles = StyleSheet.create({
   statValue: { fontSize: 24, fontWeight: "900" },
   statLabel: { color: "#64748B", fontWeight: "800", marginTop: 4 },
   classCard: { backgroundColor: "#FFFFFF", borderRadius: 24, padding: 16, marginBottom: 16 },
+  authorPicker: { marginTop: 8, marginBottom: 4 },
   classHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
