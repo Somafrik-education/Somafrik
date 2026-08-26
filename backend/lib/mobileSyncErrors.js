@@ -19,10 +19,49 @@ const MOBILE_SYNC_CURSOR_TYP = "mobile-sync-cursor";
 const MOBILE_SYNC_DEFAULT_LIMIT = 200;
 const MOBILE_SYNC_MAX_LIMIT = 500;
 
-/** TTL curseur : 30 jours. Un mobile trop longtemps hors-ligne doit full-reconcile. */
-const MOBILE_SYNC_CURSOR_TTL_SECONDS = Number(
-  process.env.MOBILE_SYNC_CURSOR_TTL_SECONDS || 30 * 24 * 60 * 60,
-);
+const MOBILE_SYNC_CURSOR_TTL_DEFAULT_SECONDS = 30 * 24 * 60 * 60;
+const MOBILE_SYNC_CURSOR_TTL_MAX_SECONDS = 90 * 24 * 60 * 60;
+
+function ttlConfigError(message) {
+  const error = new Error(message);
+  error.statusCode = 500;
+  error.code = "MOBILE_SYNC_CURSOR_TTL_INVALID";
+  return error;
+}
+
+/**
+ * TTL curseur : nombre fini, strictement positif, borné à 90 jours.
+ * Env absent → 30 jours. `"abc"` / NaN / ≤0 / hors borne → fail-closed (pas de curseur émis).
+ * @param {unknown} [raw]
+ * @returns {number}
+ */
+function resolveMobileSyncCursorTtlSeconds(raw = process.env.MOBILE_SYNC_CURSOR_TTL_SECONDS) {
+  if (raw == null || String(raw).trim() === "") {
+    return MOBILE_SYNC_CURSOR_TTL_DEFAULT_SECONDS;
+  }
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || parsed <= 0 || parsed > MOBILE_SYNC_CURSOR_TTL_MAX_SECONDS) {
+    throw ttlConfigError(
+      "MOBILE_SYNC_CURSOR_TTL_SECONDS invalide: nombre fini, positif, au plus 90 jours.",
+    );
+  }
+  return Math.floor(parsed);
+}
+
+/**
+ * @param {{ ttlSeconds?: unknown }} [options]
+ * @returns {number}
+ */
+function resolveEncodeCursorTtlSeconds(options = {}) {
+  if (!Object.hasOwn(options, "ttlSeconds")) {
+    return resolveMobileSyncCursorTtlSeconds();
+  }
+  const parsed = Number(options.ttlSeconds);
+  if (!Number.isFinite(parsed)) {
+    throw ttlConfigError("ttlSeconds de curseur invalide.");
+  }
+  return Math.trunc(parsed);
+}
 
 const SENTINEL_UPDATED_AT = "1970-01-01T00:00:00.000Z";
 const SENTINEL_ID = "00000000-0000-0000-0000-000000000000";
@@ -43,7 +82,10 @@ module.exports = {
   MOBILE_SYNC_CURSOR_TYP,
   MOBILE_SYNC_DEFAULT_LIMIT,
   MOBILE_SYNC_MAX_LIMIT,
-  MOBILE_SYNC_CURSOR_TTL_SECONDS,
+  MOBILE_SYNC_CURSOR_TTL_DEFAULT_SECONDS,
+  MOBILE_SYNC_CURSOR_TTL_MAX_SECONDS,
+  resolveMobileSyncCursorTtlSeconds,
+  resolveEncodeCursorTtlSeconds,
   SENTINEL_UPDATED_AT,
   SENTINEL_ID,
   CLASSES_SYNC_PERMISSIONS,

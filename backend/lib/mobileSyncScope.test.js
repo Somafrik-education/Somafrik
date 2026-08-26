@@ -111,7 +111,25 @@ test("Préfet = school-wide comme GET /api/classes", () => {
   assert.equal(scope.scopeKind, "school-wide");
 });
 
-test("ordre des classIds n'affecte pas le hash", () => {
+test("scopeHash live ignore principal.assignments JWT", async () => {
+  const { resolveLiveClassesSyncSnapshot } = require("./mobileSyncScope");
+  const stale = teacherPrincipal([
+    { classId: "class-a", classCode: "CLS-A", status: "active" },
+    { classId: "class-b", classCode: "CLS-B", status: "active" },
+  ]);
+  const school = { schoolCode: "SCH-A", schoolId: "id-a" };
+  const liveOnlyA = {
+    async listLiveTeacherClassAssignmentsForSync() {
+      return [{ classId: "class-a", classCode: "CLS-A", status: "active" }];
+    },
+  };
+  const hashed = await resolveLiveClassesSyncSnapshot(liveOnlyA, stale, school);
+  assert.deepEqual(hashed.scope.classIds, ["class-a"]);
+  const jwtHashed = computeClassesScopeHash(stale, school);
+  assert.notEqual(hashed.scopeHash, jwtHashed.scopeHash);
+});
+
+test("ordre des affectations identiques → même scopeHash", () => {
   const school = { schoolCode: "SCH-A", schoolId: "id-a" };
   const a = computeClassesScopeHash(
     teacherPrincipal([
@@ -128,4 +146,18 @@ test("ordre des classIds n'affecte pas le hash", () => {
     school,
   );
   assert.equal(a.scopeHash, b.scopeHash);
+});
+
+test("sans dépôt d'affectations live → assigned vide (pas de fuite JWT)", async () => {
+  const { resolveLiveClassesSyncSnapshot } = require("./mobileSyncScope");
+  const stale = teacherPrincipal([
+    { classId: "class-a", classCode: "CLS-A", status: "active" },
+    { classId: "class-b", classCode: "CLS-B", status: "active" },
+  ]);
+  const hashed = await resolveLiveClassesSyncSnapshot({}, stale, {
+    schoolCode: "SCH-A",
+    schoolId: "id-a",
+  });
+  assert.equal(hashed.scope.scopeKind, "assigned");
+  assert.deepEqual(hashed.scope.classIds, []);
 });

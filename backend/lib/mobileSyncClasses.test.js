@@ -35,10 +35,17 @@ function classRow(id, classCode, overrides = {}) {
   };
 }
 
-function createFakeRepo(rowsBySchool) {
+function createFakeRepo(rowsBySchool, live = {}) {
   return {
     async getSchoolByCode(code) {
       return { id: `sid-${code}`, school_code: code };
+    },
+    async listActiveUserRoleKeys(userId) {
+      const keys = live.roleKeysByUser?.[userId];
+      return Array.isArray(keys) ? keys : [];
+    },
+    async listLiveTeacherClassAssignmentsForSync(userId) {
+      return live.assignmentsByUser?.[userId] ?? [];
     },
     async listSchoolClassesForMobileSync(schoolCode, options = {}) {
       let rows = [...(rowsBySchool[schoolCode] ?? [])];
@@ -86,18 +93,19 @@ function teacherPrincipal(assignments, overrides = {}) {
   };
 }
 
-async function sync(principal, { cursor, limit, rows } = {}) {
+async function sync(principal, { cursor, limit, rows, liveAssignments } = {}) {
+  const defaultRows = {
+    "SCH-A": [classRow(ID_A, "CLS-A"), classRow(ID_B, "CLS-B"), classRow(ID_C, "CLS-C")],
+  };
   return handleMobileSyncL1Classes({
     principal,
     cursor,
     limit,
     tokenService: tokens,
-    repository: createFakeRepo(rows ?? {
-      "SCH-A": [
-        classRow(ID_A, "CLS-A"),
-        classRow(ID_B, "CLS-B"),
-        classRow(ID_C, "CLS-C"),
-      ],
+    repository: createFakeRepo(rows ?? defaultRows, {
+      assignmentsByUser: {
+        [principal.sub]: liveAssignments ?? [],
+      },
     }),
     tenantScopeService,
   });
@@ -219,29 +227,42 @@ test("pagination : nextCursor pointe vers le dernier item envoyé", async () => 
   assert.equal(second.body.items[0].id, ID_B);
 });
 
-test("teacher : classe A visible, B invisible", async () => {
-  const result = await sync(
-    teacherPrincipal([{ classId: ID_A, classCode: "CLS-A", status: "active" }]),
-  );
+test("teacher : classe A visible, B invisible (filtre live PG, pas JWT)", async () => {
+  const staleJwt = teacherPrincipal([
+    { classId: ID_A, classCode: "CLS-A", status: "active" },
+    { classId: ID_B, classCode: "CLS-B", status: "active" },
+  ]);
+  const result = await sync(staleJwt, {
+    liveAssignments: [{ classId: ID_A, classCode: "CLS-A", status: "active" }],
+  });
   assert.deepEqual(
     result.body.items.map((item) => item.classCode),
     ["CLS-A"],
   );
 });
 
-test("grant → scope_changed / full_required", async () => {
-  const beforePrincipal = teacherPrincipal([{ classId: ID_A, classCode: "CLS-A", status: "active" }]);
-  const cold = await sync(beforePrincipal);
-  const afterPrincipal = teacherPrincipal([
-    { classId: ID_A, classCode: "CLS-A", status: "active" },
-    { classId: ID_B, classCode: "CLS-B", status: "active" },
-  ]);
-  const granted = await sync(afterPrincipal, { cursor: cold.body.nextCursor });
+test("grant PG live, JWT inchangé → scope_changed / full_required", async () => {
+  const staleJwt = teacherPrincipal([{ classId: ID_A, classCode: "CLS-A", status: "active" }]);
+  const cold = await sync(staleJwt, {
+    liveAssignments: [{ classId: ID_A, classCode: "CLS-A", status: "active" }],
+  });
+  const granted = await sync(staleJwt, {
+    cursor: cold.body.nextCursor,
+    liveAssignments: [
+      { classId: ID_A, classCode: "CLS-A", status: "active" },
+      { classId: ID_B, classCode: "CLS-B", status: "active" },
+    ],
+  });
   assert.equal(granted.httpStatus, 409);
   assert.equal(granted.body.code, MOBILE_SYNC_ERROR.SCOPE_CHANGED);
   assert.equal(granted.body.cursorStatus, "scope_changed");
   assert.equal(granted.body.mode, "full_required");
-  const resync = await sync(afterPrincipal);
+  const resync = await sync(staleJwt, {
+    liveAssignments: [
+      { classId: ID_A, classCode: "CLS-A", status: "active" },
+      { classId: ID_B, classCode: "CLS-B", status: "active" },
+    ],
+  });
   assert.equal(resync.httpStatus, 200);
   assert.equal(resync.body.mode, "full");
   assert.deepEqual(
@@ -250,16 +271,25 @@ test("grant → scope_changed / full_required", async () => {
   );
 });
 
-test("revoke → scope_changed puis full sans la classe révoquée", async () => {
-  const beforePrincipal = teacherPrincipal([
+test("revoke PG live, JWT stale A+B → scope_changed puis full sans B", async () => {
+  const staleJwt = teacherPrincipal([
     { classId: ID_A, classCode: "CLS-A", status: "active" },
     { classId: ID_B, classCode: "CLS-B", status: "active" },
   ]);
-  const cold = await sync(beforePrincipal);
-  const afterPrincipal = teacherPrincipal([{ classId: ID_A, classCode: "CLS-A", status: "active" }]);
-  const revoked = await sync(afterPrincipal, { cursor: cold.body.nextCursor });
+  const cold = await sync(staleJwt, {
+    liveAssignments: [
+      { classId: ID_A, classCode: "CLS-A", status: "active" },
+      { classId: ID_B, classCode: "CLS-B", status: "active" },
+    ],
+  });
+  const revoked = await sync(staleJwt, {
+    cursor: cold.body.nextCursor,
+    liveAssignments: [{ classId: ID_A, classCode: "CLS-A", status: "active" }],
+  });
   assert.equal(revoked.body.cursorStatus, "scope_changed");
-  const resync = await sync(afterPrincipal);
+  const resync = await sync(staleJwt, {
+    liveAssignments: [{ classId: ID_A, classCode: "CLS-A", status: "active" }],
+  });
   assert.deepEqual(
     resync.body.items.map((item) => item.classCode),
     ["CLS-A"],

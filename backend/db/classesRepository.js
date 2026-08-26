@@ -395,6 +395,36 @@ function createClassesRepository(db) {
     },
 
     /**
+     * Affectations enseignant actives (PostgreSQL) pour scopeHash + filtre SQL.
+     * Jamais le tableau JWT `principal.assignments`.
+     *
+     * @param {string} userId
+     * @param {string} schoolId
+     */
+    async listLiveTeacherClassAssignmentsForSync(userId, schoolId) {
+      const uid = String(userId ?? "").trim();
+      const sid = String(schoolId ?? "").trim();
+      if (!uid || !sid) return [];
+      const rows = await db.all(
+        `SELECT DISTINCT cl.id::text AS class_id, cl.class_code, ta.status
+         FROM teacher_assignments ta
+         JOIN teachers t ON t.id = ta.teacher_id
+         JOIN classes cl ON cl.id = ta.class_id
+         WHERE t.user_id::text = $1
+           AND ta.school_id::text = $2
+           AND t.school_id::text = $2
+           AND lower(btrim(ta.status)) IN ('active', 'actif', 'open', 'ouverte')
+           AND COALESCE(lower(btrim(t.status)), 'active') NOT IN ('deleted', 'archived', 'inactive')`,
+        [uid, sid],
+      );
+      return rows.map((row) => ({
+        classId: row.class_id,
+        classCode: row.class_code,
+        status: row.status,
+      }));
+    },
+
+    /**
      * @param {unknown} body
      * @param {string} schoolCode
      * @param {object} [principal]

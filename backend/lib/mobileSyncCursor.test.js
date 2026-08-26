@@ -192,3 +192,36 @@ test("curseur vide ou non JWT → invalid", () => {
     (error) => error.code === MOBILE_SYNC_ERROR.CURSOR_INVALID,
   );
 });
+
+const {
+  resolveMobileSyncCursorTtlSeconds,
+  MOBILE_SYNC_CURSOR_TTL_DEFAULT_SECONDS,
+  MOBILE_SYNC_CURSOR_TTL_MAX_SECONDS,
+} = require("./mobileSyncErrors");
+
+test("TTL env absent → 30 jours", () => {
+  assert.equal(resolveMobileSyncCursorTtlSeconds(""), MOBILE_SYNC_CURSOR_TTL_DEFAULT_SECONDS);
+  assert.equal(resolveMobileSyncCursorTtlSeconds(undefined), MOBILE_SYNC_CURSOR_TTL_DEFAULT_SECONDS);
+});
+
+test("TTL env invalide (abc, NaN, ≤0, hors borne) → fail-closed", () => {
+  for (const raw of ["abc", "NaN", "0", "-10", String(MOBILE_SYNC_CURSOR_TTL_MAX_SECONDS + 1), "Infinity"]) {
+    assert.throws(
+      () => resolveMobileSyncCursorTtlSeconds(raw),
+      (error) => error.code === "MOBILE_SYNC_CURSOR_TTL_INVALID" && error.statusCode === 500,
+    );
+  }
+});
+
+test("TTL env valide est borné et entier", () => {
+  assert.equal(resolveMobileSyncCursorTtlSeconds("3600"), 3600);
+  assert.equal(resolveMobileSyncCursorTtlSeconds("90.9"), 90);
+});
+
+test("encode refuse un ttlSeconds non fini", () => {
+  const tokens = tokenService();
+  assert.throws(
+    () => encodeMobileSyncCursor(sampleInput(), tokens, { ttlSeconds: Number.NaN }),
+    (error) => error.code === "MOBILE_SYNC_CURSOR_TTL_INVALID",
+  );
+});

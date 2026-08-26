@@ -7,9 +7,9 @@ const {
   MOBILE_SYNC_SCHEMA_VERSION,
   MOBILE_SYNC_GENERATION,
   MOBILE_SYNC_CURSOR_TYP,
-  MOBILE_SYNC_CURSOR_TTL_SECONDS,
   SENTINEL_UPDATED_AT,
   SENTINEL_ID,
+  resolveEncodeCursorTtlSeconds,
 } = require("./mobileSyncErrors");
 
 function invalidCursor(message = "Curseur de synchronisation invalide.") {
@@ -76,7 +76,7 @@ function encodeMobileSyncCursor(input, tokenService, options = {}) {
   if (!tokenService || typeof tokenService.sign !== "function") {
     throw new Error("TokenService requis pour encoder un curseur mobile-sync.");
   }
-  const ttlSeconds = Number(options.ttlSeconds ?? MOBILE_SYNC_CURSOR_TTL_SECONDS);
+  const ttlSeconds = resolveEncodeCursorTtlSeconds(options);
   const payload = {
     typ: MOBILE_SYNC_CURSOR_TYP,
     sv: Number(input.schemaVersion ?? MOBILE_SYNC_SCHEMA_VERSION),

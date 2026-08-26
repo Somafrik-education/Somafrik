@@ -24,6 +24,11 @@ const ID_A = "11111111-1111-4111-8111-111111111111";
 const ID_B = "22222222-2222-4222-8222-222222222222";
 const ID_C = "33333333-3333-4333-8333-333333333333";
 const ID_D = "44444444-4444-4444-8444-444444444444";
+const TEACHER_USER_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+const SUBJECT_ID = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+const TEACHER_ID = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+const ASSIGN_A = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
+const ASSIGN_C = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee";
 const SAME_TS = "2026-08-26T08:00:00.000Z";
 const LATER_TS = "2026-08-26T09:00:00.000Z";
 
@@ -80,6 +85,41 @@ async function setupFixture(pool) {
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
+    CREATE TABLE IF NOT EXISTS users (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      school_id UUID REFERENCES schools(id),
+      user_code VARCHAR(64) NOT NULL UNIQUE,
+      first_name TEXT NOT NULL,
+      last_name TEXT NOT NULL,
+      role TEXT,
+      status TEXT NOT NULL DEFAULT 'active'
+    );
+    CREATE TABLE IF NOT EXISTS teachers (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      school_id UUID NOT NULL REFERENCES schools(id),
+      user_id UUID REFERENCES users(id),
+      teacher_code VARCHAR(64) NOT NULL UNIQUE,
+      status TEXT NOT NULL DEFAULT 'active'
+    );
+    CREATE TABLE IF NOT EXISTS subjects (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      school_id UUID NOT NULL REFERENCES schools(id),
+      subject_code VARCHAR(64) NOT NULL UNIQUE,
+      name TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'active'
+    );
+    CREATE TABLE IF NOT EXISTS teacher_assignments (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      school_id UUID NOT NULL REFERENCES schools(id),
+      teacher_id UUID NOT NULL REFERENCES teachers(id),
+      class_id UUID NOT NULL REFERENCES classes(id),
+      subject_id UUID NOT NULL REFERENCES subjects(id),
+      academic_year_id UUID NOT NULL REFERENCES academic_years(id),
+      assignment_role TEXT NOT NULL DEFAULT 'primary',
+      status TEXT NOT NULL DEFAULT 'active',
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
   `);
   await pool.query(`
     ALTER TABLE classes ADD COLUMN IF NOT EXISTS level_id UUID;
@@ -92,7 +132,7 @@ async function setupFixture(pool) {
     CREATE INDEX IF NOT EXISTS idx_classes_school_updated_at_id
       ON classes (school_id, updated_at, id);
   `);
-  await pool.query("TRUNCATE classes, academic_years, schools, countries CASCADE");
+  await pool.query("TRUNCATE teacher_assignments, teachers, users, subjects, classes, academic_years, schools, countries CASCADE");
 
   const country = await pool.query(
     `INSERT INTO countries (name, iso_code) VALUES ('Testland', 'TT') RETURNING id`,
@@ -161,15 +201,48 @@ function adminPrincipal(overrides = {}) {
   };
 }
 
-function teacherPrincipal(assignments, overrides = {}) {
+function teacherPrincipal(overrides = {}) {
   return {
-    sub: "teacher-1",
+    sub: TEACHER_USER_ID,
     role: "Enseignant",
+    roleKeys: ["TEACHER"],
     schoolCode: "SCH-A",
     permissions: ["Voir classes"],
-    assignments,
+    assignments: [
+      { classId: ID_A, classCode: "CLS-A", status: "active" },
+      { classId: ID_C, classCode: "CLS-C", status: "active" },
+    ],
     ...overrides,
   };
+}
+
+async function seedTeacherFixture(pool, ids) {
+  await pool.query(
+    `INSERT INTO users (id, school_id, user_code, first_name, last_name, role, status)
+     VALUES ($1, $2, 'TEACH-SYNC-1', 'Tana', 'Kabila', 'Enseignant', 'active')`,
+    [TEACHER_USER_ID, ids.schoolA],
+  );
+  await pool.query(
+    `INSERT INTO teachers (id, school_id, user_id, teacher_code, status)
+     VALUES ($1, $2, $3, 'TCH-SYNC-1', 'active')`,
+    [TEACHER_ID, ids.schoolA, TEACHER_USER_ID],
+  );
+  await pool.query(
+    `INSERT INTO subjects (id, school_id, subject_code, name, status)
+     VALUES ($1, $2, 'SUB-SYNC-1', 'Maths', 'active')`,
+    [SUBJECT_ID, ids.schoolA],
+  );
+}
+
+async function upsertTeacherAssignment(pool, { id, schoolId, yearId, classId, status = "active" }) {
+  await pool.query(
+    `INSERT INTO teacher_assignments (
+       id, school_id, teacher_id, class_id, subject_id, academic_year_id, status
+     )
+     VALUES ($1, $2, $3, $4, $5, $6, $7)
+     ON CONFLICT (id) DO UPDATE SET status = EXCLUDED.status, updated_at = NOW()`,
+    [id, schoolId, TEACHER_ID, classId, SUBJECT_ID, yearId, status],
+  );
 }
 
 async function main() {
@@ -190,6 +263,8 @@ async function main() {
     const repository = {
       getSchoolByCode: (code) => adapter.getSchoolByCode(code),
       listSchoolClassesForMobileSync: (code, options) => classesRepo.listForMobileSync(code, options),
+      listLiveTeacherClassAssignmentsForSync: (userId, schoolId) =>
+        classesRepo.listLiveTeacherClassAssignmentsForSync(userId, schoolId),
     };
 
     async function sync(principal, { cursor, limit } = {}) {
@@ -235,6 +310,16 @@ async function main() {
       name: "5ème B",
       updatedAt: SAME_TS,
     });
+
+    await seedTeacherFixture(pool, ids);
+    await upsertTeacherAssignment(pool, {
+      id: ASSIGN_A,
+      schoolId: ids.schoolA,
+      yearId: ids.yearA,
+      classId: ID_A,
+    });
+
+    const staleTeacherJwt = teacherPrincipal();
 
     // CAS 1 — cold sync : 3 classes actives school A, zéro fuite school B
     const cold = await sync(adminPrincipal());
@@ -302,35 +387,43 @@ async function main() {
       "CAS4 tombstone inactive",
     );
 
-    // CAS 5 — teacher A uniquement
-    const teacherA = teacherPrincipal([{ classId: ID_A, classCode: "CLS-A", status: "active" }]);
-    const teacherCold = await sync(teacherA);
+    // CAS 5 — JWT stale A+C, live PG A uniquement → seulement A (pas de fuite JWT)
+    const teacherCold = await sync(staleTeacherJwt);
     assert.deepEqual(
       teacherCold.body.items.map((item) => item.classCode),
       ["CLS-A"],
     );
     assert.ok(!teacherCold.body.items.some((item) => item.id === ID_C));
 
-    // CAS 6 — grant B → ancien cursor => scope_changed
-    const teacherAB = teacherPrincipal([
-      { classId: ID_A, classCode: "CLS-A", status: "active" },
-      { classId: ID_C, classCode: "CLS-C", status: "active" },
-    ]);
-    const granted = await sync(teacherAB, { cursor: teacherCold.body.nextCursor });
+    // CAS 6 — grant C dans PostgreSQL, même JWT → 409 puis full A+C
+    await upsertTeacherAssignment(pool, {
+      id: ASSIGN_C,
+      schoolId: ids.schoolA,
+      yearId: ids.yearA,
+      classId: ID_C,
+    });
+    const granted = await sync(staleTeacherJwt, { cursor: teacherCold.body.nextCursor });
     assert.equal(granted.httpStatus, 409);
     assert.equal(granted.body.code, MOBILE_SYNC_ERROR.SCOPE_CHANGED);
     assert.equal(granted.body.cursorStatus, "scope_changed");
     assert.equal(granted.body.mode, "full_required");
-
-    // CAS 7 — revoke C → scope_changed puis full sans C
-    const teacherWithBoth = await sync(teacherAB);
+    const teacherWithBoth = await sync(staleTeacherJwt);
+    assert.equal(teacherWithBoth.httpStatus, 200);
+    assert.equal(teacherWithBoth.body.mode, "full");
     assert.deepEqual(
       teacherWithBoth.body.items.map((item) => item.classCode).sort(),
       ["CLS-A", "CLS-C"],
     );
-    const revoked = await sync(teacherA, { cursor: teacherWithBoth.body.nextCursor });
+
+    // CAS 7 — revoke C dans PostgreSQL, même JWT → 409 puis full sans C
+    await pool.query(`UPDATE teacher_assignments SET status = 'inactive', updated_at = NOW() WHERE id = $1`, [
+      ASSIGN_C,
+    ]);
+    const revoked = await sync(staleTeacherJwt, { cursor: teacherWithBoth.body.nextCursor });
+    assert.equal(revoked.httpStatus, 409);
+    assert.equal(revoked.body.code, MOBILE_SYNC_ERROR.SCOPE_CHANGED);
     assert.equal(revoked.body.cursorStatus, "scope_changed");
-    const resync = await sync(teacherA);
+    const resync = await sync(staleTeacherJwt);
     assert.deepEqual(
       resync.body.items.map((item) => item.classCode),
       ["CLS-A"],

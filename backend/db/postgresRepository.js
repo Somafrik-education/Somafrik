@@ -6064,6 +6064,10 @@ class PostgresRepository {
     return this.getClassesRepository().listForMobileSync(schoolCode, options);
   }
 
+  listLiveTeacherClassAssignmentsForSync(userId, schoolId) {
+    return this.getClassesRepository().listLiveTeacherClassAssignmentsForSync(userId, schoolId);
+  }
+
   async createSchoolClass(body, schoolCode, principal, auditMeta) {
     const created = await this.getClassesRepository().create(body, schoolCode, principal, auditMeta);
     this.cachedDataset = null;

@@ -15,7 +15,7 @@ const {
   assertCursorBindings,
   principalSyncId,
 } = require("./mobileSyncCursor");
-const { computeClassesScopeHash } = require("./mobileSyncScope");
+const { resolveLiveClassesSyncSnapshot } = require("./mobileSyncScope");
 
 function asTrimmed(value) {
   return String(value ?? "").trim();
@@ -116,7 +116,7 @@ async function handleMobileSyncL1Classes(args) {
   const schoolId = asTrimmed(principal.effectiveSchoolId ?? school?.id);
   const schoolRef = { schoolCode, schoolId };
 
-  const { scopeHash, scope } = computeClassesScopeHash(principal, schoolRef);
+  const { scopeHash, scope } = await resolveLiveClassesSyncSnapshot(repository, principal, schoolRef);
   const principalId = principalSyncId(principal);
   if (!principalId) {
     throw new BusinessError(400, "Identité principal requise.");
