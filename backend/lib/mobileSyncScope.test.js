@@ -119,6 +119,9 @@ test("scopeHash live ignore principal.assignments JWT", async () => {
   ]);
   const school = { schoolCode: "SCH-A", schoolId: "id-a" };
   const liveOnlyA = {
+    async listActiveUserRoleKeys() {
+      return ["TEACHER"];
+    },
     async listLiveTeacherClassAssignmentsForSync() {
       return [{ classId: "class-a", classCode: "CLS-A", status: "active" }];
     },
@@ -154,10 +157,75 @@ test("sans dépôt d'affectations live → assigned vide (pas de fuite JWT)", as
     { classId: "class-a", classCode: "CLS-A", status: "active" },
     { classId: "class-b", classCode: "CLS-B", status: "active" },
   ]);
-  const hashed = await resolveLiveClassesSyncSnapshot({}, stale, {
-    schoolCode: "SCH-A",
-    schoolId: "id-a",
-  });
+  const hashed = await resolveLiveClassesSyncSnapshot(
+    {
+      async listActiveUserRoleKeys() {
+        return ["TEACHER"];
+      },
+    },
+    stale,
+    {
+      schoolCode: "SCH-A",
+      schoolId: "id-a",
+    },
+  );
   assert.equal(hashed.scope.scopeKind, "assigned");
   assert.deepEqual(hashed.scope.classIds, []);
+});
+
+test("JWT Admin stale + rôles live [] → aucun scope", async () => {
+  const { resolveLiveClassesSyncSnapshot } = require("./mobileSyncScope");
+  const hashed = await resolveLiveClassesSyncSnapshot(
+    {
+      async listActiveUserRoleKeys() {
+        return [];
+      },
+    },
+    adminPrincipal(),
+    { schoolCode: "SCH-A", schoolId: "id-a" },
+  );
+  assert.equal(hashed.scope.scopeKind, "none");
+  assert.deepEqual(hashed.scope.classIds, []);
+});
+
+test("JWT Teacher stale + rôle live révoqué → aucun scope", async () => {
+  const { resolveLiveClassesSyncSnapshot } = require("./mobileSyncScope");
+  const stale = teacherPrincipal([
+    { classId: "class-a", classCode: "CLS-A", status: "active" },
+    { classId: "class-b", classCode: "CLS-B", status: "active" },
+  ]);
+  const hashed = await resolveLiveClassesSyncSnapshot(
+    {
+      async listActiveUserRoleKeys() {
+        return [];
+      },
+      async listLiveTeacherClassAssignmentsForSync() {
+        return [
+          { classId: "class-a", classCode: "CLS-A", status: "active" },
+          { classId: "class-b", classCode: "CLS-B", status: "active" },
+        ];
+      },
+    },
+    stale,
+    { schoolCode: "SCH-A", schoolId: "id-a" },
+  );
+  assert.equal(hashed.scope.scopeKind, "none");
+  assert.deepEqual(hashed.scope.classIds, []);
+});
+
+test("erreur lecture rôles live → fail-closed, pas de fallback JWT", async () => {
+  const { resolveLiveClassesSyncSnapshot } = require("./mobileSyncScope");
+  await assert.rejects(
+    () =>
+      resolveLiveClassesSyncSnapshot(
+        {
+          async listActiveUserRoleKeys() {
+            throw new Error("pg roles unavailable");
+          },
+        },
+        adminPrincipal(),
+        { schoolCode: "SCH-A", schoolId: "id-a" },
+      ),
+    (error) => error.code === "MOBILE_SYNC_LIVE_SCOPE_UNAVAILABLE" && error.statusCode === 503,
+  );
 });

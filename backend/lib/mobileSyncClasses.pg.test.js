@@ -260,11 +260,30 @@ async function main() {
     const ids = await setupFixture(pool);
     const adapter = createDbAdapter(pool);
     const classesRepo = createClassesRepository(adapter);
+    const liveRoleKeysByUser = new Map([
+      ["admin-1", ["SCHOOL_ADMIN"]],
+      [TEACHER_USER_ID, ["TEACHER"]],
+    ]);
+    let failLiveRoles = false;
     const repository = {
       getSchoolByCode: (code) => adapter.getSchoolByCode(code),
       listSchoolClassesForMobileSync: (code, options) => classesRepo.listForMobileSync(code, options),
       listLiveTeacherClassAssignmentsForSync: (userId, schoolId) =>
         classesRepo.listLiveTeacherClassAssignmentsForSync(userId, schoolId),
+      async listActiveUserRoleKeys(userId) {
+        if (failLiveRoles) throw new Error("pg roles unavailable");
+        return liveRoleKeysByUser.get(String(userId)) ?? [];
+      },
+      async resolveEffectivePermissions(principal) {
+        const keys = new Set(principal.roleKeys ?? []);
+        if (keys.has("SCHOOL_ADMIN")) {
+          return { permissions: ["Voir classes", "Gérer classes"] };
+        }
+        if (keys.has("TEACHER")) {
+          return { permissions: ["Voir classes"] };
+        }
+        return { permissions: [] };
+      },
     };
 
     async function sync(principal, { cursor, limit } = {}) {
@@ -469,6 +488,28 @@ async function main() {
     assert.equal(expiredResult.body.code, MOBILE_SYNC_ERROR.CURSOR_EXPIRED);
     assert.equal(expiredResult.body.cursorStatus, "expired");
     assert.equal(expiredResult.body.mode, "full_required");
+
+    // JWT Admin stale + rôles live [] → zéro classe (pas de fallback JWT)
+    liveRoleKeysByUser.set("admin-1", []);
+    const adminEmptyRoles = await sync(adminPrincipal({ effectiveSchoolId: ids.schoolA }));
+    assert.equal(adminEmptyRoles.httpStatus, 200);
+    assert.deepEqual(adminEmptyRoles.body.items, []);
+    liveRoleKeysByUser.set("admin-1", ["SCHOOL_ADMIN"]);
+
+    // JWT Teacher stale + rôle live révoqué → zéro classe
+    liveRoleKeysByUser.set(TEACHER_USER_ID, []);
+    const teacherRevokedRole = await sync(staleTeacherJwt);
+    assert.equal(teacherRevokedRole.httpStatus, 200);
+    assert.deepEqual(teacherRevokedRole.body.items, []);
+    liveRoleKeysByUser.set(TEACHER_USER_ID, ["TEACHER"]);
+
+    // Erreur lecture rôles live → 503, zéro donnée
+    failLiveRoles = true;
+    const rolesError = await sync(adminPrincipal({ effectiveSchoolId: ids.schoolA }));
+    assert.equal(rolesError.httpStatus, 503);
+    assert.equal(rolesError.body.code, MOBILE_SYNC_ERROR.LIVE_SCOPE_UNAVAILABLE);
+    assert.equal(rolesError.body.items, undefined);
+    failLiveRoles = false;
 
     // Pas de DELETE physique côté API classes : le CHECK refuse 'deleted'/'archived'
     await assert.rejects(

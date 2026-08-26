@@ -345,7 +345,27 @@ async function main() {
     );
     assert.ok(!(resync.data.items ?? []).some((item) => item.id === ID_C));
 
-    console.log("mobileSyncClasses.http.pg.test.js: OK Admin/Teacher/Comptable/tamper/scope/tenant");
+    await repo.pool.query(
+      `UPDATE user_roles
+       SET status = 'revoked', revoked_at = NOW()
+       WHERE user_id = $1 AND status = 'active'`,
+      [TEACHER_USER_ID],
+    );
+    const teacherRoleRevoked = await request("/mobile-sync/l1/classes", { token: teacherToken });
+    assert.equal(teacherRoleRevoked.status, 200, `Teacher rôle révoqué: ${JSON.stringify(teacherRoleRevoked.data)}`);
+    assert.deepEqual(teacherRoleRevoked.data.items ?? [], []);
+
+    await repo.pool.query(
+      `UPDATE user_roles
+       SET status = 'revoked', revoked_at = NOW()
+       WHERE user_id = $1 AND status = 'active'`,
+      [ADMIN_USER_ID],
+    );
+    const adminRoleRevoked = await request("/mobile-sync/l1/classes", { token: adminToken });
+    assert.equal(adminRoleRevoked.status, 200, `Admin rôles live []: ${JSON.stringify(adminRoleRevoked.data)}`);
+    assert.deepEqual(adminRoleRevoked.data.items ?? [], []);
+
+    console.log("mobileSyncClasses.http.pg.test.js: OK Admin/Teacher/Comptable/tamper/scope/tenant/roles-live");
   } catch (error) {
     if (stderr) {
       console.error(stderr.slice(-4000));

@@ -13,7 +13,12 @@ const {
   toRoleKey,
   toRoleLabel,
 } = require("./userRoleLifecycle");
-const { CLASSES_SYNC_PERMISSIONS, MOBILE_SYNC_RESOURCE_CLASSES } = require("./mobileSyncErrors");
+const {
+  CLASSES_SYNC_PERMISSIONS,
+  MOBILE_SYNC_RESOURCE_CLASSES,
+  MOBILE_SYNC_ERROR,
+  liveScopeError,
+} = require("./mobileSyncErrors");
 
 function asRef(value) {
   return String(value ?? "").trim();
@@ -21,6 +26,10 @@ function asRef(value) {
 
 function sortedUnique(values) {
   return [...new Set((values ?? []).map(asRef).filter(Boolean))].sort();
+}
+
+function emptyScope() {
+  return { scopeKind: "none", classIds: [], classCodes: [] };
 }
 
 /**
@@ -34,18 +43,27 @@ function classesPermissionKeys(principal = {}) {
 }
 
 /**
- * Périmètre réel Classes : school-wide (rôles établissement) ou assigned (enseignant).
+ * Périmètre réel Classes : school-wide (rôles établissement), assigned (enseignant)
+ * ou none (aucun rôle live).
  * Aligné sur `scopeSchoolClassesForPrincipal` — jamais « Teacher = school entier ».
+ * Un principal sans rôle live n'hérite pas du JWT : aucun scope.
  *
  * @param {object} principal
  * @returns {{
- *   scopeKind: "school-wide" | "assigned",
+ *   scopeKind: "school-wide" | "assigned" | "none",
  *   classIds: string[],
  *   classCodes: string[],
  * }}
  */
 function resolveClassesSyncScope(principal) {
-  if (!principal || SUPER_ADMIN_ROLES.has(principal.role)) {
+  if (!principal) {
+    return emptyScope();
+  }
+  const liveRoles = principalRoleList(principal);
+  if (!liveRoles.length) {
+    return emptyScope();
+  }
+  if (SUPER_ADMIN_ROLES.has(principal.role) || principalHasAnyRole(principal, SUPER_ADMIN_ROLES)) {
     return { scopeKind: "school-wide", classIds: [], classCodes: [] };
   }
   if (principalHasAnyRole(principal, SCHOOL_WIDE_STUDENT_READ_ROLES)) {
@@ -109,37 +127,51 @@ function computeClassesScopeHash(principal, schoolRef = {}) {
   };
 }
 
-async function loadLiveRoleKeys(repository, principal) {
-  const userId = asRef(principal?.sub ?? principal?.userId ?? principal?.id);
-  if (userId && typeof repository?.listActiveUserRoleKeys === "function") {
-    try {
-      const loaded = await repository.listActiveUserRoleKeys(userId);
-      if (Array.isArray(loaded) && loaded.length) {
-        return sortedUnique(loaded.map((value) => toRoleKey(value)).filter(Boolean));
-      }
-    } catch {
-      // fail-closed vers les rôles JWT ci-dessous
-    }
+function rethrowLiveScope(error, message) {
+  if (error?.code === MOBILE_SYNC_ERROR.LIVE_SCOPE_UNAVAILABLE) {
+    throw error;
   }
-  return sortedUnique(principalRoleList(principal).map((value) => toRoleKey(value)).filter(Boolean));
+  throw liveScopeError(message);
 }
 
-async function loadLivePermissions(repository, principal, roleKeys) {
-  if (typeof repository?.resolveEffectivePermissions === "function") {
-    try {
-      const live = await repository.resolveEffectivePermissions({
-        ...principal,
-        roleKeys,
-        roles: roleKeys.map((key) => toRoleLabel(key)).filter(Boolean),
-      });
-      if (Array.isArray(live?.permissions)) {
-        return live.permissions;
-      }
-    } catch {
-      // conserve les permissions déjà overlayées par requirePermission
-    }
+async function loadLiveRoleKeys(repository, principal) {
+  const userId = asRef(principal?.sub ?? principal?.userId ?? principal?.id);
+  if (!userId) {
+    return [];
   }
-  return Array.isArray(principal?.permissions) ? principal.permissions : [];
+  if (typeof repository?.listActiveUserRoleKeys !== "function") {
+    return [];
+  }
+  let loaded;
+  try {
+    loaded = await repository.listActiveUserRoleKeys(userId);
+  } catch (error) {
+    rethrowLiveScope(error, "Impossible de résoudre les rôles live.");
+  }
+  if (!Array.isArray(loaded)) {
+    return [];
+  }
+  return sortedUnique(loaded.map((value) => toRoleKey(value)).filter(Boolean));
+}
+
+async function loadLivePermissions(repository, roleKeys) {
+  if (!roleKeys.length) {
+    return [];
+  }
+  if (typeof repository?.resolveEffectivePermissions !== "function") {
+    return [];
+  }
+  let live;
+  try {
+    live = await repository.resolveEffectivePermissions({
+      roleKeys,
+      roles: roleKeys.map((key) => toRoleLabel(key)).filter(Boolean),
+      role: toRoleLabel(roleKeys[0]),
+    });
+  } catch (error) {
+    rethrowLiveScope(error, "Impossible de résoudre les permissions live.");
+  }
+  return Array.isArray(live?.permissions) ? live.permissions : [];
 }
 
 /**
@@ -156,7 +188,12 @@ async function loadLiveTeacherAssignments(repository, userId, schoolId) {
   if (!userId || !schoolId || typeof repository?.listLiveTeacherClassAssignmentsForSync !== "function") {
     return [];
   }
-  const rows = await repository.listLiveTeacherClassAssignmentsForSync(userId, schoolId);
+  let rows;
+  try {
+    rows = await repository.listLiveTeacherClassAssignmentsForSync(userId, schoolId);
+  } catch (error) {
+    rethrowLiveScope(error, "Impossible de résoudre les affectations live.");
+  }
   return (Array.isArray(rows) ? rows : []).map((row) => ({
     classId: asRef(row.classId ?? row.class_id),
     classCode: asRef(row.classCode ?? row.class_code),
@@ -167,6 +204,7 @@ async function loadLiveTeacherAssignments(repository, userId, schoolId) {
 /**
  * Snapshot canonique live : rôles user_roles + permissions effectives +
  * teacher_assignments PostgreSQL. scopeHash et filtre SQL partagent ce snapshot.
+ * Aucun fallback JWT : live [] = aucun scope ; erreur PG = fail-closed.
  *
  * @param {object} repository
  * @param {object} principal
@@ -174,13 +212,18 @@ async function loadLiveTeacherAssignments(repository, userId, schoolId) {
  */
 async function resolveLiveClassesSyncSnapshot(repository, principal, schoolRef = {}) {
   const roleKeys = await loadLiveRoleKeys(repository, principal);
-  const permissions = await loadLivePermissions(repository, principal, roleKeys);
+  const permissions = await loadLivePermissions(repository, roleKeys);
   const labels = roleKeys.map((key) => toRoleLabel(key)).filter(Boolean);
   const livePrincipal = {
-    ...principal,
-    role: labels[0] || principal?.role,
-    roles: labels.length ? labels : principal?.roles,
-    roleKeys: roleKeys.length ? roleKeys : principal?.roleKeys,
+    sub: principal?.sub,
+    userId: principal?.userId,
+    publicId: principal?.publicId,
+    identifier: principal?.identifier,
+    schoolCode: schoolRef.schoolCode ?? principal?.schoolCode,
+    effectiveSchoolId: schoolRef.schoolId ?? principal?.effectiveSchoolId,
+    role: labels[0] || "",
+    roles: labels,
+    roleKeys,
     permissions,
     assignments: [],
   };

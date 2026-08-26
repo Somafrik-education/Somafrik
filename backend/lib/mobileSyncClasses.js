@@ -116,7 +116,30 @@ async function handleMobileSyncL1Classes(args) {
   const schoolId = asTrimmed(principal.effectiveSchoolId ?? school?.id);
   const schoolRef = { schoolCode, schoolId };
 
-  const { scopeHash, scope } = await resolveLiveClassesSyncSnapshot(repository, principal, schoolRef);
+  let scopeHash;
+  let scope;
+  try {
+    ({ scopeHash, scope } = await resolveLiveClassesSyncSnapshot(repository, principal, schoolRef));
+  } catch (error) {
+    if (error?.code === MOBILE_SYNC_ERROR.LIVE_SCOPE_UNAVAILABLE) {
+      const result = protocolErrorBody(
+        503,
+        MOBILE_SYNC_ERROR.LIVE_SCOPE_UNAVAILABLE,
+        error.message,
+        { mode: "unavailable", cursorStatus: "invalid" },
+      );
+      logMobileSync({
+        mode: "unavailable",
+        cursorStatus: "invalid",
+        itemCount: 0,
+        schoolId,
+        durationMs: Date.now() - started,
+      });
+      return result;
+    }
+    throw error;
+  }
+
   const principalId = principalSyncId(principal);
   if (!principalId) {
     throw new BusinessError(400, "Identité principal requise.");
@@ -181,7 +204,10 @@ async function handleMobileSyncL1Classes(args) {
     afterUpdatedAt,
     afterId,
   };
-  if (scope.scopeKind === "assigned") {
+  if (scope.scopeKind === "none") {
+    queryOptions.classIds = [];
+    queryOptions.classCodes = [];
+  } else if (scope.scopeKind === "assigned") {
     queryOptions.classIds = scope.classIds;
     queryOptions.classCodes = scope.classCodes;
   }

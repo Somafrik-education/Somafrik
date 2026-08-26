@@ -79,12 +79,12 @@ rôles effectifs live (user_roles)
 + permissions effectives live (role_module_permissions)
 + teacher_assignments actives PostgreSQL
         ↓
-scope réel (school-wide | assigned)
+scope réel (school-wide | assigned | none)
         ↓
 scopeHash  +  filtre SQL
 ```
 
-`principal.assignments` du JWT est **ignoré**. `requirePermission()` rafraîchit les permissions, pas les affectations : une révocation serveur avec le même access token doit changer le hash.
+`principal.assignments` **et les rôles / permissions JWT** sont ignorés. Aucun fallback JWT : `user_roles` live `[]` → `scopeKind=none` (zéro classe) ; erreur PostgreSQL live → `503 MOBILE_SYNC_LIVE_SCOPE_UNAVAILABLE` (zéro donnée).
 
 SHA-256 déterministe de :
 
@@ -93,12 +93,14 @@ SHA-256 déterministe de :
 - `principalId`
 - rôles effectifs triés (live)
 - permissions Classes effectivement détenues (live, pas le label de rôle seul)
-- `scopeKind` : `school-wide` **ou** `assigned`
+- `scopeKind` : `school-wide` **ou** `assigned` **ou** `none`
 - si `assigned` : IDs et codes des affectations **actives PostgreSQL**, triés
 
 **School-wide** (Admin School, Préfet, Super Admin, autres rôles `SCHOOL_WIDE_STUDENT_READ_ROLES` qui passent le RBAC) : le hash **ne liste pas** les IDs de classes. Une classe créée reste un delta warm.
 
 **Assigned** (Enseignant) : grant / revoke d'affectation **dans PostgreSQL** (JWT inchangé) → hash change → `409 MOBILE_SYNC_SCOPE_CHANGED`, puis full sync du nouveau périmètre. Pas un warm incomplet, pas de fuite de la classe révoquée.
+
+**None** : rôles live vides (révocation canonique) → aucune ligne, même si le JWT porte encore Admin / Enseignant.
 
 ## Tombstones
 
@@ -120,6 +122,7 @@ Projection item :
 | TTL / schemaVersion / génération | 409 | `MOBILE_SYNC_CURSOR_EXPIRED` | `expired` |
 | scopeHash A vs B courant | 409 | `MOBILE_SYNC_SCOPE_CHANGED` | `scope_changed` |
 | Dépôt mémoire (non PG) | 503 | `MOBILE_SYNC_POSTGRES_REQUIRED` | — |
+| Rôles/permissions/affectations live illisibles | 503 | `MOBILE_SYNC_LIVE_SCOPE_UNAVAILABLE` | `invalid` |
 | Sans JWT | 401 | existant | — |
 | Sans Classes:READ | 403 | `PERMISSION_DENIED` | — |
 | TTL env invalide à l'émission | 500 | `MOBILE_SYNC_CURSOR_TTL_INVALID` | — |

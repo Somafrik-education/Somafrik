@@ -41,8 +41,24 @@ function createFakeRepo(rowsBySchool, live = {}) {
       return { id: `sid-${code}`, school_code: code };
     },
     async listActiveUserRoleKeys(userId) {
+      if (live.failRoleKeys) {
+        throw new Error("pg roles unavailable");
+      }
       const keys = live.roleKeysByUser?.[userId];
       return Array.isArray(keys) ? keys : [];
+    },
+    async resolveEffectivePermissions(principal) {
+      if (live.failPermissions) {
+        throw new Error("pg permissions unavailable");
+      }
+      const keys = new Set(principal.roleKeys ?? []);
+      if (keys.has("SCHOOL_ADMIN") || keys.has("SUPER_ADMIN")) {
+        return { permissions: ["Voir classes", "Gérer classes"] };
+      }
+      if (keys.has("TEACHER") || keys.has("PREFET_ETUDES")) {
+        return { permissions: ["Voir classes"] };
+      }
+      return { permissions: [] };
     },
     async listLiveTeacherClassAssignmentsForSync(userId) {
       return live.assignmentsByUser?.[userId] ?? [];
@@ -93,7 +109,13 @@ function teacherPrincipal(assignments, overrides = {}) {
   };
 }
 
-async function sync(principal, { cursor, limit, rows, liveAssignments } = {}) {
+function defaultLiveRoleKeys(principal) {
+  if (principal?.role === "Admin School") return ["SCHOOL_ADMIN"];
+  if (principal?.role === "Enseignant") return ["TEACHER"];
+  return [];
+}
+
+async function sync(principal, { cursor, limit, rows, liveAssignments, liveRoleKeys, failRoleKeys } = {}) {
   const defaultRows = {
     "SCH-A": [classRow(ID_A, "CLS-A"), classRow(ID_B, "CLS-B"), classRow(ID_C, "CLS-C")],
   };
@@ -106,6 +128,10 @@ async function sync(principal, { cursor, limit, rows, liveAssignments } = {}) {
       assignmentsByUser: {
         [principal.sub]: liveAssignments ?? [],
       },
+      roleKeysByUser: {
+        [principal.sub]: liveRoleKeys !== undefined ? liveRoleKeys : defaultLiveRoleKeys(principal),
+      },
+      failRoleKeys: Boolean(failRoleKeys),
     }),
     tenantScopeService,
   });
@@ -363,4 +389,34 @@ test("mémoire sans listSchoolClassesForMobileSync → 503 PostgreSQL requis", a
   });
   assert.equal(result.httpStatus, 503);
   assert.equal(result.body.code, MOBILE_SYNC_ERROR.POSTGRES_REQUIRED);
+});
+
+test("JWT Admin stale + rôles live [] → zéro classe", async () => {
+  const result = await sync(adminPrincipal(), { liveRoleKeys: [] });
+  assert.equal(result.httpStatus, 200);
+  assert.deepEqual(result.body.items, []);
+  assert.ok(!result.body.items.some((item) => item.classCode));
+});
+
+test("JWT Teacher stale + rôle live révoqué → zéro classe", async () => {
+  const staleJwt = teacherPrincipal([
+    { classId: ID_A, classCode: "CLS-A", status: "active" },
+    { classId: ID_B, classCode: "CLS-B", status: "active" },
+  ]);
+  const result = await sync(staleJwt, {
+    liveRoleKeys: [],
+    liveAssignments: [
+      { classId: ID_A, classCode: "CLS-A", status: "active" },
+      { classId: ID_B, classCode: "CLS-B", status: "active" },
+    ],
+  });
+  assert.equal(result.httpStatus, 200);
+  assert.deepEqual(result.body.items, []);
+});
+
+test("erreur lecture rôles live → zéro donnée", async () => {
+  const result = await sync(adminPrincipal(), { failRoleKeys: true });
+  assert.equal(result.httpStatus, 503);
+  assert.equal(result.body.code, MOBILE_SYNC_ERROR.LIVE_SCOPE_UNAVAILABLE);
+  assert.equal(result.body.items, undefined);
 });

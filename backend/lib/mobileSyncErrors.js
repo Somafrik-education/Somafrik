@@ -9,6 +9,7 @@ const MOBILE_SYNC_ERROR = Object.freeze({
   CURSOR_EXPIRED: "MOBILE_SYNC_CURSOR_EXPIRED",
   SCOPE_CHANGED: "MOBILE_SYNC_SCOPE_CHANGED",
   POSTGRES_REQUIRED: "MOBILE_SYNC_POSTGRES_REQUIRED",
+  LIVE_SCOPE_UNAVAILABLE: "MOBILE_SYNC_LIVE_SCOPE_UNAVAILABLE",
 });
 
 const MOBILE_SYNC_RESOURCE_CLASSES = "classes";
@@ -21,6 +22,13 @@ const MOBILE_SYNC_MAX_LIMIT = 500;
 
 const MOBILE_SYNC_CURSOR_TTL_DEFAULT_SECONDS = 30 * 24 * 60 * 60;
 const MOBILE_SYNC_CURSOR_TTL_MAX_SECONDS = 90 * 24 * 60 * 60;
+
+function liveScopeError(message) {
+  const error = new Error(message);
+  error.statusCode = 503;
+  error.code = MOBILE_SYNC_ERROR.LIVE_SCOPE_UNAVAILABLE;
+  return error;
+}
 
 function ttlConfigError(message) {
   const error = new Error(message);
@@ -84,6 +92,7 @@ module.exports = {
   MOBILE_SYNC_MAX_LIMIT,
   MOBILE_SYNC_CURSOR_TTL_DEFAULT_SECONDS,
   MOBILE_SYNC_CURSOR_TTL_MAX_SECONDS,
+  liveScopeError,
   resolveMobileSyncCursorTtlSeconds,
   resolveEncodeCursorTtlSeconds,
   SENTINEL_UPDATED_AT,
