@@ -15,7 +15,9 @@ const {
 } = require("./userRoleLifecycle");
 const {
   CLASSES_SYNC_PERMISSIONS,
+  STUDENTS_SYNC_PERMISSIONS,
   MOBILE_SYNC_RESOURCE_CLASSES,
+  MOBILE_SYNC_RESOURCE_STUDENTS,
   MOBILE_SYNC_ERROR,
   liveScopeError,
 } = require("./mobileSyncErrors");
@@ -259,6 +261,239 @@ async function resolveLiveClassesSyncSnapshot(repository, principal, schoolRef =
   return computeClassesScopeHash(livePrincipal, schoolRef);
 }
 
+function emptyStudentScope() {
+  return { scopeKind: "none", classIds: [], classCodes: [], studentIds: [] };
+}
+
+function studentsPermissionKeys(principal = {}) {
+  const held = new Set(principal.permissions ?? []);
+  return STUDENTS_SYNC_PERMISSIONS.filter((permission) => held.has(permission));
+}
+
+/**
+ * Lecture Élèves autorisée uniquement si le snapshot live du tenant
+ * détient réellement une permission de lecture (GET /api/students).
+ * @param {{ permissionKeys?: string[] }} [input]
+ */
+function liveSnapshotHasStudentsRead(input = {}) {
+  const held = new Set(input.permissionKeys ?? []);
+  return STUDENTS_SYNC_PERMISSIONS.some((permission) => held.has(permission));
+}
+
+function authorizedStudentIdsFromPrincipal(principal = {}) {
+  return sortedUnique(principal.authorizedStudentIds ?? []);
+}
+
+/**
+ * Périmètre réel Students : school-wide | assigned | linked | self | none.
+ * Aligné sur `scopeSchoolStudentsForPrincipal` + RBAC GET /api/students.
+ * Jamais `principal.studentIds` JWT : le snapshot live pose `authorizedStudentIds`.
+ *
+ * @param {object} principal
+ * @returns {{
+ *   scopeKind: "school-wide" | "assigned" | "linked" | "self" | "none",
+ *   classIds: string[],
+ *   classCodes: string[],
+ *   studentIds: string[],
+ * }}
+ */
+function resolveStudentsSyncScope(principal) {
+  if (!principal) {
+    return emptyStudentScope();
+  }
+  const liveRoles = principalRoleList(principal);
+  if (!liveRoles.length) {
+    return emptyStudentScope();
+  }
+  if (SUPER_ADMIN_ROLES.has(principal.role) || principalHasAnyRole(principal, SUPER_ADMIN_ROLES)) {
+    return { scopeKind: "school-wide", classIds: [], classCodes: [], studentIds: [] };
+  }
+  if (principalHasAnyRole(principal, SCHOOL_WIDE_STUDENT_READ_ROLES)) {
+    return { scopeKind: "school-wide", classIds: [], classCodes: [], studentIds: [] };
+  }
+  if (principalHasRole(principal, "Enseignant")) {
+    const { classCodes, classIds } = collectTeacherAssignmentRefs(principal);
+    return {
+      scopeKind: "assigned",
+      classIds: sortedUnique([...classIds]),
+      classCodes: sortedUnique([...classCodes]),
+      studentIds: authorizedStudentIdsFromPrincipal(principal),
+    };
+  }
+  if (principalHasRole(principal, "Parent")) {
+    return {
+      scopeKind: "linked",
+      classIds: [],
+      classCodes: [],
+      studentIds: authorizedStudentIdsFromPrincipal(principal),
+    };
+  }
+  if (principalHasRole(principal, "Élève / Étudiant")) {
+    return {
+      scopeKind: "self",
+      classIds: [],
+      classCodes: [],
+      studentIds: authorizedStudentIdsFromPrincipal(principal),
+    };
+  }
+  return { scopeKind: "school-wide", classIds: [], classCodes: [], studentIds: [] };
+}
+
+function rosterStudentIdsForHash(scope) {
+  if (scope.scopeKind === "assigned" || scope.scopeKind === "linked" || scope.scopeKind === "self") {
+    return scope.studentIds;
+  }
+  return [];
+}
+
+/**
+ * Entrées déterministes du scopeHash Students.
+ * School-wide : pas la liste des IDs élèves (création / transfert restent des deltas).
+ * Assigned / linked / self : roster des IDs actuellement autorisés (P0 visibilité).
+ *
+ * @param {object} principal
+ * @param {{ schoolCode?: string, schoolId?: string }} schoolRef
+ */
+function studentsScopeHashInput(principal, schoolRef = {}) {
+  const scope = resolveStudentsSyncScope(principal);
+  const schoolCode = asRef(schoolRef.schoolCode ?? principal?.schoolCode).toUpperCase();
+  return {
+    resource: MOBILE_SYNC_RESOURCE_STUDENTS,
+    schoolCode,
+    schoolId: asRef(schoolRef.schoolId ?? principal?.effectiveSchoolId),
+    principalId: asRef(principal?.sub ?? principal?.userId ?? principal?.publicId ?? principal?.identifier),
+    roleKeys: sortedUnique(principalRoleList(principal)),
+    permissionKeys: studentsPermissionKeys(principal),
+    scopeKind: scope.scopeKind,
+    classIds: scope.scopeKind === "assigned" ? scope.classIds : [],
+    classCodes: scope.scopeKind === "assigned" ? scope.classCodes : [],
+    studentIds: rosterStudentIdsForHash(scope),
+  };
+}
+
+function computeStudentsScopeHash(principal, schoolRef = {}) {
+  const scope = resolveStudentsSyncScope(principal);
+  const input = studentsScopeHashInput(principal, schoolRef);
+  return {
+    scopeHash: hashScopeInput(input),
+    scope,
+    input,
+  };
+}
+
+async function loadLiveAssignedStudentIds(repository, schoolId, classIds, classCodes) {
+  const sid = asRef(schoolId);
+  if (!sid || typeof repository?.listLiveAssignedStudentIdsForSync !== "function") {
+    return [];
+  }
+  if (!classIds.length && !classCodes.length) {
+    return [];
+  }
+  let rows;
+  try {
+    rows = await repository.listLiveAssignedStudentIdsForSync(sid, { classIds, classCodes });
+  } catch (error) {
+    rethrowLiveScope(error, "Impossible de résoudre le roster élèves live.");
+  }
+  return sortedUnique(
+    (Array.isArray(rows) ? rows : []).map((row) => asRef(row?.studentId ?? row?.student_id ?? row)),
+  );
+}
+
+async function loadLiveParentLinkedStudentIds(repository, userId, schoolId) {
+  const uid = asRef(userId);
+  const sid = asRef(schoolId);
+  if (!uid || !sid || typeof repository?.listLiveParentLinkedStudentIdsForSync !== "function") {
+    return [];
+  }
+  let rows;
+  try {
+    rows = await repository.listLiveParentLinkedStudentIdsForSync(uid, sid);
+  } catch (error) {
+    rethrowLiveScope(error, "Impossible de résoudre les liens parent live.");
+  }
+  return sortedUnique(
+    (Array.isArray(rows) ? rows : []).map((row) => asRef(row?.studentId ?? row?.student_id ?? row)),
+  );
+}
+
+async function loadLiveSelfStudentIds(repository, userId, schoolId) {
+  const uid = asRef(userId);
+  const sid = asRef(schoolId);
+  if (!uid || !sid || typeof repository?.listLiveSelfStudentIdForSync !== "function") {
+    return [];
+  }
+  let loaded;
+  try {
+    loaded = await repository.listLiveSelfStudentIdForSync(uid, sid);
+  } catch (error) {
+    rethrowLiveScope(error, "Impossible de résoudre l'identité élève live.");
+  }
+  if (loaded == null) {
+    return [];
+  }
+  if (Array.isArray(loaded)) {
+    return sortedUnique(loaded.map((row) => asRef(row?.studentId ?? row?.student_id ?? row)));
+  }
+  const id = asRef(loaded.studentId ?? loaded.student_id ?? loaded.id ?? loaded);
+  return id ? [id] : [];
+}
+
+/**
+ * Snapshot canonique live Students : userId + schoolId → rôles du tenant →
+ * permissions du tenant → affectations / liens parent / identité élève live.
+ * scopeHash et filtre SQL partagent ce snapshot.
+ * Assigned / linked / self : les IDs élèves actuellement autorisés entrent
+ * dans le hash (un transfert hors classe enseignant → scope_changed).
+ *
+ * @param {object} repository
+ * @param {object} principal
+ * @param {{ schoolCode?: string, schoolId?: string }} schoolRef
+ */
+async function resolveLiveStudentsSyncSnapshot(repository, principal, schoolRef = {}) {
+  const roleKeys = await loadLiveRoleKeys(repository, principal, schoolRef);
+  const permissions = await loadLivePermissions(repository, roleKeys, schoolRef);
+  const labels = roleKeys.map((key) => toRoleLabel(key)).filter(Boolean);
+  const userId = asRef(principal?.sub ?? principal?.userId ?? principal?.id);
+  const schoolId = asRef(schoolRef.schoolId);
+  const livePrincipal = {
+    sub: principal?.sub,
+    userId: principal?.userId,
+    publicId: principal?.publicId,
+    identifier: principal?.identifier,
+    schoolCode: schoolRef.schoolCode ?? principal?.schoolCode,
+    effectiveSchoolId: schoolRef.schoolId ?? principal?.effectiveSchoolId,
+    role: labels[0] || "",
+    roles: labels,
+    roleKeys,
+    permissions,
+    assignments: [],
+    authorizedStudentIds: [],
+  };
+
+  const preliminary = resolveStudentsSyncScope(livePrincipal);
+  if (preliminary.scopeKind === "assigned") {
+    livePrincipal.assignments = await loadLiveTeacherAssignments(repository, userId, schoolId);
+    const assigned = resolveStudentsSyncScope(livePrincipal);
+    livePrincipal.authorizedStudentIds = await loadLiveAssignedStudentIds(
+      repository,
+      schoolId,
+      assigned.classIds,
+      assigned.classCodes,
+    );
+  } else if (preliminary.scopeKind === "linked") {
+    livePrincipal.authorizedStudentIds = await loadLiveParentLinkedStudentIds(
+      repository,
+      userId,
+      schoolId,
+    );
+  } else if (preliminary.scopeKind === "self") {
+    livePrincipal.authorizedStudentIds = await loadLiveSelfStudentIds(repository, userId, schoolId);
+  }
+
+  return computeStudentsScopeHash(livePrincipal, schoolRef);
+}
+
 module.exports = {
   resolveClassesSyncScope,
   classesScopeHashInput,
@@ -268,4 +503,13 @@ module.exports = {
   liveSnapshotHasClassesRead,
   resolveLiveClassesSyncSnapshot,
   loadLiveTeacherAssignments,
+  resolveStudentsSyncScope,
+  studentsScopeHashInput,
+  computeStudentsScopeHash,
+  studentsPermissionKeys,
+  liveSnapshotHasStudentsRead,
+  resolveLiveStudentsSyncSnapshot,
+  loadLiveAssignedStudentIds,
+  loadLiveParentLinkedStudentIds,
+  loadLiveSelfStudentIds,
 };

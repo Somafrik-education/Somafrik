@@ -97,6 +97,29 @@ test("resource mismatch students → refus", () => {
   );
 });
 
+test("curseur students round-trip avec resource attendu", () => {
+  const tokens = tokenService();
+  const encoded = encodeMobileSyncCursor(sampleInput({ resource: "students" }), tokens);
+  const decoded = decodeMobileSyncCursor(encoded, tokens, { resource: "students" });
+  assert.equal(decoded.resource, "students");
+  assert.equal(decoded.schoolCode, "SCH-A");
+  assert.equal(decoded.lastId, "00000000-0000-4000-8000-00000000000a");
+});
+
+test("curseur classes inutilisable sur students et inversement", () => {
+  const tokens = tokenService();
+  const classesCursor = encodeMobileSyncCursor(sampleInput({ resource: "classes" }), tokens);
+  const studentsCursor = encodeMobileSyncCursor(sampleInput({ resource: "students" }), tokens);
+  assert.throws(
+    () => decodeMobileSyncCursor(classesCursor, tokens, { resource: "students" }),
+    (error) => error.statusCode === 400 && error.code === MOBILE_SYNC_ERROR.CURSOR_INVALID,
+  );
+  assert.throws(
+    () => decodeMobileSyncCursor(studentsCursor, tokens, { resource: "classes" }),
+    (error) => error.statusCode === 400 && error.code === MOBILE_SYNC_ERROR.CURSOR_INVALID,
+  );
+});
+
 test("schemaVersion non supporté → expired / full_required", () => {
   const tokens = tokenService();
   const encoded = tokens.sign(

@@ -4,6 +4,7 @@ const { BusinessError } = require("../services/authService");
 const {
   MOBILE_SYNC_ERROR,
   MOBILE_SYNC_RESOURCE_CLASSES,
+  MOBILE_SYNC_RESOURCE_STUDENTS,
   MOBILE_SYNC_SCHEMA_VERSION,
   MOBILE_SYNC_GENERATION,
   MOBILE_SYNC_CURSOR_TYP,
@@ -11,6 +12,10 @@ const {
   SENTINEL_ID,
   resolveEncodeCursorTtlSeconds,
 } = require("./mobileSyncErrors");
+
+const KNOWN_MOBILE_SYNC_RESOURCES = Object.freeze(
+  new Set([MOBILE_SYNC_RESOURCE_CLASSES, MOBILE_SYNC_RESOURCE_STUDENTS]),
+);
 
 function invalidCursor(message = "Curseur de synchronisation invalide.") {
   const error = new BusinessError(400, message);
@@ -89,6 +94,9 @@ function encodeMobileSyncCursor(input, tokenService, options = {}) {
     lastUpdatedAt: asTrimmed(input.lastUpdatedAt) || SENTINEL_UPDATED_AT,
     lastId: asTrimmed(input.lastId) || SENTINEL_ID,
   };
+  if (!KNOWN_MOBILE_SYNC_RESOURCES.has(payload.resource)) {
+    throw new Error("Curseur mobile-sync : ressource inconnue.");
+  }
   if (!payload.schoolCode || !payload.principalId || !payload.scopeHash) {
     throw new Error("Curseur mobile-sync incomplet (schoolCode, principalId, scopeHash).");
   }
@@ -98,18 +106,27 @@ function encodeMobileSyncCursor(input, tokenService, options = {}) {
 /**
  * Décodage fail-closed : signature, typ, schéma, génération, ressource.
  * Les mismatches tenant/principal sont validés ensuite avec le principal courant.
+ * `options.resource` attendu (défaut : classes) — un curseur Students est
+ * inutilisable sur Classes et inversement.
  *
  * @param {unknown} rawCursor
  * @param {import("../services/tokenService").TokenService} tokenService
+ * @param {{ resource?: string }} [options]
  * @returns {object}
  */
-function decodeMobileSyncCursor(rawCursor, tokenService) {
+function decodeMobileSyncCursor(rawCursor, tokenService, options = {}) {
   const token = asTrimmed(rawCursor);
   if (!token) {
     throw invalidCursor();
   }
   if (!tokenService || typeof tokenService.verify !== "function") {
     throw invalidCursor();
+  }
+
+  const expectedResource =
+    asTrimmed(options.resource) || MOBILE_SYNC_RESOURCE_CLASSES;
+  if (!KNOWN_MOBILE_SYNC_RESOURCES.has(expectedResource)) {
+    throw invalidCursor("Curseur émis pour une autre ressource.");
   }
 
   let payload;
@@ -132,7 +149,8 @@ function decodeMobileSyncCursor(rawCursor, tokenService) {
   if (Number(payload.gen) !== MOBILE_SYNC_GENERATION) {
     throw expiredCursor("Génération de synchronisation invalide. Réconciliation complète requise.");
   }
-  if (asTrimmed(payload.resource) !== MOBILE_SYNC_RESOURCE_CLASSES) {
+  const payloadResource = asTrimmed(payload.resource);
+  if (!payloadResource || payloadResource !== expectedResource) {
     throw invalidCursor("Curseur émis pour une autre ressource.");
   }
   if (!asTrimmed(payload.schoolCode) || !asTrimmed(payload.principalId) || !asTrimmed(payload.scopeHash)) {
