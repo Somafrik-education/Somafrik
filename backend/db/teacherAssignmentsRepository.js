@@ -10,7 +10,11 @@ const { sqlTeacherIdentityEquals } = require("../lib/teacherCodeAllocation");
 const { isExplicitlyActiveAssignmentStatus } = require("../lib/classStudentsAuthz");
 
 /** Même ensemble que le roster Classes / L1 assigned — jamais `= 'active'` seul. */
-const SQL_ACTIVE_ASSIGNMENT_STATUS = `lower(btrim(ta.status)) IN ('active', 'actif', 'open', 'ouverte')`;
+function sqlActiveAssignmentStatus(column = "ta.status") {
+  return `lower(btrim(${column})) IN ('active', 'actif', 'open', 'ouverte')`;
+}
+
+const SQL_ACTIVE_ASSIGNMENT_STATUS = sqlActiveAssignmentStatus("ta.status");
 
 function mapAssignment(row) {
   return {
@@ -464,7 +468,7 @@ function createTeacherAssignmentsRepository(db) {
         await requireCurrent(assignmentId, school.id, scope);
         const row = await scope.one(
           `UPDATE teacher_assignments SET status = 'deleted', updated_at = NOW()
-           WHERE id::text = $1 AND school_id = $2 AND ${SQL_ACTIVE_ASSIGNMENT_STATUS} RETURNING id`,
+           WHERE id::text = $1 AND school_id = $2 AND ${sqlActiveAssignmentStatus("status")} RETURNING id`,
           [String(assignmentId), school.id],
         );
         if (!row) throw assignmentError(404, "Affectation introuvable.", "ASSIGNMENT_NOT_FOUND");
@@ -497,4 +501,5 @@ module.exports = {
   mapMobileSyncAssignmentRow,
   SELECT_ASSIGNMENT,
   SQL_ACTIVE_ASSIGNMENT_STATUS,
+  sqlActiveAssignmentStatus,
 };

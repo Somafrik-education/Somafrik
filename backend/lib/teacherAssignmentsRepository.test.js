@@ -276,6 +276,17 @@ test("SELECT_ASSIGNMENT exige school_id sur tous les JOIN métier", () => {
   );
 });
 
+test("DELETE n'alias pas ta.status (UPDATE sans FROM ta)", () => {
+  const src = require("node:fs").readFileSync(
+    require("node:path").join(__dirname, "../db/teacherAssignmentsRepository.js"),
+    "utf8",
+  );
+  const match = src.match(/UPDATE teacher_assignments SET status = 'deleted'[\s\S]*?RETURNING id/);
+  assert.ok(match);
+  assert.equal(match[0].includes("ta.status"), false);
+  assert.match(match[0], /sqlActiveAssignmentStatus\("status"\)/);
+});
+
 test("L1 teacherUserId = users.id ; tombstone aligné sur le statut actif canonique", () => {
   const src = require("node:fs").readFileSync(
     require("node:path").join(__dirname, "../db/teacherAssignmentsRepository.js"),
