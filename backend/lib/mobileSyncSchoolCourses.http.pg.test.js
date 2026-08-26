@@ -123,6 +123,34 @@ function mintAccess(tokens, payload) {
   });
 }
 
+async function grantRoleSubjectsRead(pool, roleKey) {
+  const existing = await pool.query(
+    `SELECT id FROM role_module_permissions
+     WHERE upper(role_key) = $1
+       AND module_key = 'subjects'
+       AND scope_type = 'global'
+       AND status = 'active'
+     LIMIT 1`,
+    [String(roleKey).toUpperCase()],
+  );
+  if (existing.rowCount) {
+    await pool.query(
+      `UPDATE role_module_permissions
+       SET can_read = TRUE, updated_by = 'mobile-sync-http-it', updated_at = NOW()
+       WHERE id = $1`,
+      [existing.rows[0].id],
+    );
+    return;
+  }
+  await pool.query(
+    `INSERT INTO role_module_permissions (
+       role_key, scope_type, module_key, can_create, can_read, can_update, can_delete, updated_by
+     )
+     VALUES ($1, 'global', 'subjects', FALSE, TRUE, FALSE, FALSE, 'mobile-sync-http-it')`,
+    [String(roleKey).toUpperCase()],
+  );
+}
+
 function activeIds(payload) {
   return (payload?.items ?? [])
     .filter((item) => !item.tombstone)
@@ -250,6 +278,8 @@ async function main() {
 
   try {
     await repo.init();
+    await grantRoleSubjectsRead(repo.pool, "TEACHER");
+    await grantRoleSubjectsRead(repo.pool, "CUSTOM_ROLE");
     const fixture = await seedHttpFixture(repo.pool);
 
     child = spawn(process.execPath, ["backend/server.js"], {
@@ -438,12 +468,20 @@ async function main() {
       `UPDATE role_module_permissions
        SET can_read = FALSE, updated_at = NOW()
        WHERE upper(role_key) = 'TEACHER'
-         AND module_key IN ('subjects', 'classes')
+         AND module_key = 'subjects'
          AND status = 'active'`,
     );
     const permRevoked = await request("/mobile-sync/l1/school-courses", { token: teacherToken });
     assert.equal(permRevoked.status, 403, `permission live 403: ${JSON.stringify(permRevoked.data)}`);
     assert.equal(permRevoked.data?.code, PERMISSION_DENIED);
+
+    await repo.pool.query(
+      `UPDATE role_module_permissions
+       SET can_read = TRUE, updated_at = NOW()
+       WHERE upper(role_key) = 'TEACHER'
+         AND module_key = 'subjects'
+         AND status = 'active'`,
+    );
 
     await repo.pool.query(
       `UPDATE user_roles
