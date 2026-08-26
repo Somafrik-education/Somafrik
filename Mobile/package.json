@@ -24,6 +24,7 @@
     "test:mobile-crud-parity": "npx --yes tsx src/lib/mobileCrudParity.test.ts",
     "test:form-fields": "npx --yes tsx src/lib/formFieldValidation.test.ts",
     "test:payment-enrollment": "npx --yes tsx src/lib/paymentEnrollment.test.ts",
+    "test:payments-kpi-density": "npx --yes tsx src/lib/studentPaymentsKpiDensity.test.ts",
     "test:school-class-courses": "npx --yes tsx src/lib/schoolClassCourses.test.ts",
     "verify:mobile-form-fields": "node scripts/verify-mobile-form-fields.js",
     "test:scope": "npx --yes tsx src/lib/scope.test.ts",

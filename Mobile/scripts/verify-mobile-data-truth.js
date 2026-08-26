@@ -36,15 +36,20 @@ function stripComments(source) {
   return source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/.*$/gm, "$1");
 }
 
-function runUnitTests() {
-  const result = spawnSync("npx", ["--yes", "tsx", path.join("src", "lib", "dataTruth.test.ts")], {
+function runTsxTest(relPath) {
+  const result = spawnSync("npx", ["--yes", "tsx", relPath], {
     encoding: "utf8",
     cwd: MOBILE,
   });
   if (result.status !== 0) {
-    throw new Error(`dataTruth unit tests failed:\n${result.stderr || result.stdout || result.error}`);
+    throw new Error(`${relPath} failed:\n${result.stderr || result.stdout || result.error}`);
   }
   process.stdout.write(result.stdout);
+}
+
+function runUnitTests() {
+  runTsxTest(path.join("src", "lib", "dataTruth.test.ts"));
+  runTsxTest(path.join("src", "lib", "studentPaymentsKpiDensity.test.ts"));
 }
 
 function collectProductionImportGraph(entryFile) {
@@ -191,6 +196,19 @@ async function main() {
   assert.match(studentPayments, /loadStudentFees/);
   assert.match(studentPayments, /getPaymentRateKpi/);
   assert.match(studentPayments, /getPaymentCashKpi/);
+  assert.match(studentPayments, /ListHeaderComponent/);
+  assert.match(studentPayments, /Frais scolaires attendus/);
+  assert.match(studentPayments, /Imputé/);
+  assert.match(studentPayments, /Reste à payer/);
+  assert.match(studentPayments, /Encaissé/);
+  assert.match(studentPayments, /Non imputé/);
+  assert.match(studentPayments, /paymentsHistoryTitle|Historique détaillé/);
+  assert.doesNotMatch(studentPayments, /styles\.summaryCard/);
+  assert.doesNotMatch(studentPayments, /styles\.summaryValue/);
+  const mobilePkg = JSON.parse(read(path.join(MOBILE, "package.json")));
+  assert.match(String(mobilePkg.scripts["test:payments-kpi-density"] || ""), /studentPaymentsKpiDensity/);
+  const verifySelf = read(path.join(MOBILE, "scripts", "verify-mobile-data-truth.js"));
+  assert.match(verifySelf, /studentPaymentsKpiDensity\.test\.ts/);
   assert.match(paymentsScreen, /PaymentMutationControls/);
   assert.doesNotMatch(paymentsScreen, /writePaymentsWebOnly/);
   assert.doesNotMatch(paymentsScreen, /AdminCrud/);
