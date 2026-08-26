@@ -29,11 +29,13 @@ const STU_B = "55555555-5555-4555-8555-555555555552";
 const STU_C = "55555555-5555-4555-8555-555555555553";
 const STU_D = "55555555-5555-4555-8555-555555555554";
 const STU_B_ONLY = "55555555-5555-4555-8555-555555555559";
+const STU_CROSS = "55555555-5555-4555-8555-555555555570";
 const ENR_A = "66666666-6666-4666-8666-666666666661";
 const ENR_B = "66666666-6666-4666-8666-666666666662";
 const ENR_C = "66666666-6666-4666-8666-666666666663";
 const ENR_D = "66666666-6666-4666-8666-666666666664";
 const ENR_B_ONLY = "66666666-6666-4666-8666-666666666669";
+const ENR_CROSS = "66666666-6666-4666-8666-666666666670";
 const TEACHER_USER_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const PARENT_USER_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa30";
 const STUDENT_USER_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa40";
@@ -42,6 +44,7 @@ const SUBJECT_ID = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
 const TEACHER_ID = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
 const CONTACT_ID = "dddddddd-dddd-4ddd-8ddd-dddddddddd20";
 const RELATION_ID = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeee20";
+const RELATION_CROSS = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeee70";
 const ASSIGN_A = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
 const ASSIGN_B = "dddddddd-dddd-4ddd-8ddd-dddddddddd11";
 const SAME_TS = "2026-08-26T08:00:00.000Z";
@@ -373,7 +376,7 @@ async function main() {
         if (keys.has("SCHOOL_ADMIN")) {
           return { permissions: ["Élèves:READ", "Gérer élèves"] };
         }
-        if (keys.has("TEACHER") || keys.has("PARENT") || keys.has("STUDENT")) {
+        if (keys.has("TEACHER") || keys.has("PARENT") || keys.has("STUDENT") || keys.has("CUSTOM_ROLE")) {
           return { permissions: ["Élèves:READ"] };
         }
         return { permissions: [] };
@@ -749,6 +752,65 @@ async function main() {
       selfSync.body.items.map((item) => item.id),
       [STU_A],
     );
+
+    liveRoleKeysByUser.set("custom-1", ["CUSTOM_ROLE"]);
+    const customRole = await sync({
+      sub: "custom-1",
+      role: "CUSTOM_ROLE",
+      schoolCode: "SCH-A",
+      permissions: ["Élèves:READ"],
+    });
+    assert.equal(customRole.httpStatus, 200, "CUSTOM_ROLE + Élèves:READ → 200 vide");
+    assert.deepEqual(customRole.body.items, []);
+
+    await insertStudent(pool, {
+      id: STU_CROSS,
+      schoolId: ids.schoolA,
+      studentCode: "STU-CROSS",
+      firstName: "Cross",
+      updatedAt: SAME_TS,
+    });
+    await insertEnrollment(pool, {
+      id: ENR_CROSS,
+      schoolId: ids.schoolA,
+      studentId: STU_CROSS,
+      classId: CLASS_B_ONLY,
+      yearId: ids.yearB,
+      updatedAt: SAME_TS,
+    });
+    const crossTenant = await sync(adminPrincipal());
+    assert.equal(crossTenant.httpStatus, 200);
+    const crossItem = crossTenant.body.items.find((item) => item.id === STU_CROSS);
+    assert.ok(crossItem, "élève A avec inscription corrompue reste visible dans le tenant A");
+    assert.equal(crossItem.classId, null, "classId B ne doit pas fuiter");
+    assert.equal(crossItem.classCode, null, "classCode B ne doit pas fuiter");
+    assert.equal(crossItem.academicYearId, null, "academicYearId B ne doit pas fuiter");
+    assert.ok(!crossTenant.body.items.some((item) => item.classCode === "CLS-B-ONLY"));
+    assert.ok(!crossTenant.body.items.some((item) => item.classId === CLASS_B_ONLY));
+    assert.ok(!crossTenant.body.items.some((item) => item.id === STU_B_ONLY));
+    assert.ok(!crossTenant.body.items.some((item) => item.studentCode === "STU-B-ONLY"));
+
+    const assignedCross = await studentsRepo.listLiveAssignedStudentIdsForSync(ids.schoolA, {
+      classIds: [CLASS_A],
+      classCodes: ["CLS-A"],
+    });
+    assert.ok(!assignedCross.some((row) => row.studentId === STU_CROSS));
+    assert.ok(!assignedCross.some((row) => row.studentId === STU_B_ONLY));
+    const assignedByBCode = await studentsRepo.listLiveAssignedStudentIdsForSync(ids.schoolA, {
+      classIds: [],
+      classCodes: ["CLS-B-ONLY"],
+    });
+    assert.deepEqual(assignedByBCode, []);
+
+    await pool.query(
+      `INSERT INTO contact_relations (
+         id, school_id, country_id, contact_id, student_id, status
+       )
+       VALUES ($1, $2, $3, $4, $5, 'active')`,
+      [RELATION_CROSS, ids.schoolA, ids.countryId, CONTACT_ID, STU_B_ONLY],
+    );
+    const parentCross = await studentsRepo.listLiveParentLinkedStudentIdsForSync(PARENT_USER_ID, ids.schoolA);
+    assert.ok(!parentCross.some((row) => row.studentId === STU_B_ONLY));
 
     const classesCursor = encodeMobileSyncCursor(
       {

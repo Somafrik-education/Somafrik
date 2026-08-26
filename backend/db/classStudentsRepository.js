@@ -449,6 +449,8 @@ function createClassStudentsRepository(db) {
      * sync_updated_at = GREATEST(students.updated_at, MAX(enrollments.updated_at))
      * pour ne pas perdre un transfert / inactivation d'inscription.
      * Projection de classe = inscription active courante uniquement.
+     * JOIN classes : `cl.school_id = st.school_id` obligatoire — une inscription
+     * school A pointant vers une classe B n'expose ni classId ni classCode B.
      *
      * @param {string} schoolCode
      * @param {{
@@ -491,7 +493,7 @@ function createClassStudentsRepository(db) {
         params.push(codes);
         const codesIdx = params.length;
         conditions.push(
-          `(ae.class_id = ANY($${idsIdx}::uuid[]) OR cl.class_code = ANY($${codesIdx}::text[]))`,
+          `(cl.id = ANY($${idsIdx}::uuid[]) OR cl.class_code = ANY($${codesIdx}::text[]))`,
         );
       }
 
@@ -525,25 +527,30 @@ function createClassStudentsRepository(db) {
                   ) AS sync_updated_at,
                   ae.id AS enrollment_id,
                   ae.status AS enrollment_status,
-                  ae.class_id,
-                  ae.academic_year_id,
+                  cl.id AS class_id,
+                  cl.academic_year_id,
                   cl.class_code
            FROM students st
            LEFT JOIN (
-             SELECT student_id, MAX(updated_at) AS max_updated_at
-             FROM enrollments
-             WHERE school_id = $1
-             GROUP BY student_id
+             SELECT e.student_id, MAX(e.updated_at) AS max_updated_at
+             FROM enrollments e
+             JOIN students st_clk ON st_clk.id = e.student_id
+              AND st_clk.school_id = e.school_id
+             WHERE e.school_id = $1
+             GROUP BY e.student_id
            ) clk ON clk.student_id = st.id
            LEFT JOIN (
              SELECT DISTINCT ON (e.student_id)
                     e.student_id, e.id, e.class_id, e.status, e.academic_year_id
              FROM enrollments e
+             JOIN students st_enr ON st_enr.id = e.student_id
+              AND st_enr.school_id = e.school_id
              WHERE e.school_id = $1
                AND lower(btrim(e.status)) = 'active'
              ORDER BY e.student_id, e.updated_at DESC NULLS LAST, e.id DESC
            ) ae ON ae.student_id = st.id
            LEFT JOIN classes cl ON cl.id = ae.class_id
+            AND cl.school_id = st.school_id
            WHERE ${conditions.join(" AND ")}
          ) sync_rows
          WHERE TRUE
@@ -570,10 +577,15 @@ function createClassStudentsRepository(db) {
       const rows = await db.all(
         `SELECT DISTINCT e.student_id::text AS student_id
          FROM enrollments e
+         JOIN students st ON st.id = e.student_id
+          AND st.school_id = e.school_id
          JOIN classes cl ON cl.id = e.class_id
+          AND cl.school_id = e.school_id
          WHERE e.school_id::text = $1
+           AND st.school_id::text = $1
+           AND cl.school_id::text = $1
            AND lower(btrim(e.status)) = 'active'
-           AND (e.class_id = ANY($2::uuid[]) OR cl.class_code = ANY($3::text[]))`,
+           AND (cl.id = ANY($2::uuid[]) OR cl.class_code = ANY($3::text[]))`,
         [sid, ids, codes],
       );
       return rows.map((row) => ({ studentId: row.student_id }));
@@ -591,12 +603,17 @@ function createClassStudentsRepository(db) {
       const sid = String(schoolId ?? "").trim();
       if (!uid || !sid) return [];
       const rows = await db.all(
-        `SELECT DISTINCT cr.student_id::text AS student_id
+        `SELECT DISTINCT st.id::text AS student_id
          FROM contacts c
          JOIN contact_relations cr ON cr.contact_id = c.id
+          AND cr.school_id = c.school_id
+         JOIN students st ON st.id = cr.student_id
+          AND st.school_id = c.school_id
+          AND st.school_id = cr.school_id
          WHERE c.user_id::text = $1
            AND c.school_id::text = $2
            AND cr.school_id::text = $2
+           AND st.school_id::text = $2
            AND lower(btrim(cr.status)) = 'active'
            AND COALESCE(lower(btrim(c.status)), 'active') NOT IN ('deleted', 'archived', 'inactive')`,
         [uid, sid],
@@ -622,6 +639,7 @@ function createClassStudentsRepository(db) {
           AND u.user_code = st.student_code
          WHERE u.id::text = $1
            AND st.school_id::text = $2
+           AND u.school_id::text = $2
          LIMIT 1`,
         [uid, sid],
       );

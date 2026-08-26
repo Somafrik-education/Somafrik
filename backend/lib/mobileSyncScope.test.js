@@ -347,6 +347,26 @@ test("ACCOUNTANT live du tenant : school-wide sans permission Classes", async ()
   assert.equal(liveSnapshotHasClassesRead(hashed.input), false);
 });
 
+test("Students CUSTOM_ROLE + Élèves:READ → scopeKind=none, jamais school-wide", () => {
+  const { computeStudentsScopeHash, resolveStudentsSyncScope } = require("./mobileSyncScope");
+  const custom = {
+    sub: "custom-1",
+    role: "CUSTOM_ROLE",
+    roles: ["CUSTOM_ROLE"],
+    roleKeys: ["CUSTOM_ROLE"],
+    schoolCode: "SCH-A",
+    permissions: ["Élèves:READ"],
+    authorizedStudentIds: ["stu-1"],
+  };
+  const scope = resolveStudentsSyncScope(custom);
+  assert.equal(scope.scopeKind, "none");
+  assert.deepEqual(scope.studentIds, []);
+  assert.deepEqual(scope.classIds, []);
+  const hashed = computeStudentsScopeHash(custom, { schoolCode: "SCH-A", schoolId: "id-a" });
+  assert.equal(hashed.scope.scopeKind, "none");
+  assert.deepEqual(hashed.input.studentIds, []);
+});
+
 test("Students school-wide : pas de roster IDs dans le scopeHash", () => {
   const { computeStudentsScopeHash, resolveStudentsSyncScope } = require("./mobileSyncScope");
   const scope = resolveStudentsSyncScope(adminPrincipal({ permissions: ["Élèves:READ"] }));

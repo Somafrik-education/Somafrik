@@ -288,6 +288,8 @@ function authorizedStudentIdsFromPrincipal(principal = {}) {
  * Périmètre réel Students : school-wide | assigned | linked | self | none.
  * Aligné sur `scopeSchoolStudentsForPrincipal` + RBAC GET /api/students.
  * Jamais `principal.studentIds` JWT : le snapshot live pose `authorizedStudentIds`.
+ * School-wide = allowlist explicite uniquement. Tout rôle live non reconnu → none
+ * (fail-closed) : `Élèves:READ` seul n'élargit jamais l'annuaire.
  *
  * @param {object} principal
  * @returns {{
@@ -336,7 +338,7 @@ function resolveStudentsSyncScope(principal) {
       studentIds: authorizedStudentIdsFromPrincipal(principal),
     };
   }
-  return { scopeKind: "school-wide", classIds: [], classCodes: [], studentIds: [] };
+  return emptyStudentScope();
 }
 
 function rosterStudentIdsForHash(scope) {

@@ -281,6 +281,29 @@ test("clampLimit défaut 200, max 500", () => {
   assert.equal(clampLimit("999"), 500);
 });
 
+test("CUSTOM_ROLE + Élèves:READ live → scopeKind=none, items=[], zéro lecture élève", async () => {
+  const { resolveStudentsSyncScope } = require("./mobileSyncScope");
+  const principal = {
+    sub: "custom-1",
+    role: "CUSTOM_ROLE",
+    schoolCode: "SCH-A",
+    permissions: ["Élèves:READ"],
+  };
+  const result = await sync(principal, {
+    liveRoleKeys: ["CUSTOM_ROLE"],
+    resolvePermissions: () => ({ permissions: ["Élèves:READ"] }),
+  });
+  assert.equal(result.httpStatus, 200);
+  assert.deepEqual(result.body.items, []);
+  const liveScope = resolveStudentsSyncScope({
+    role: "CUSTOM_ROLE",
+    roles: ["CUSTOM_ROLE"],
+    roleKeys: ["CUSTOM_ROLE"],
+    permissions: ["Élèves:READ"],
+  });
+  assert.equal(liveScope.scopeKind, "none");
+});
+
 test("cold sync admin : mode full, projection minimale, pas de PII", async () => {
   const result = await sync(adminPrincipal());
   assert.equal(result.httpStatus, 200);

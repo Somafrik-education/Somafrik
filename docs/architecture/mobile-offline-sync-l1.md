@@ -224,7 +224,7 @@ Pas d'OFFSET. Défaut 200, max 500, fetch `limit+1` pour `hasMore`.
 | `assigned` | Enseignant | inscriptions actives des classes d'affectations PG (`classId`/`classCode`, jamais `className`) | **oui** — IDs élèves actuellement autorisés |
 | `linked` | Parent, uniquement s'il passe le RBAC Élèves | `contacts.user_id` → `contact_relations` (`status=active`, tenant) | **oui** |
 | `self` | Compte élève | `users.user_code = students.student_code` du tenant. Jamais un `studentId` client. | **oui** |
-| `none` | aucun rôle live du tenant | zéro ligne | — |
+| `none` | aucun rôle live du tenant, **ou rôle live hors allowlist** (ex. `CUSTOM_ROLE` même avec `Élèves:READ`) | zéro ligne | — |
 
 **P0 visibilité enseignant / parent** : un élève qui quitte une classe affectée
 changerait le SQL « actuellement visible » sans jamais informer le client.
@@ -260,3 +260,11 @@ cette expression n'est pas le keyset) :
 Le verifier PG force `enable_seqscan=off` et exige l'un des index tenant/horloge
 dans `EXPLAIN`. Lecture **uniquement** `students` + `enrollments` + `classes` +
 `contact_relations` / `contacts`. Interdit : `backoffice_state`, overlay legacy.
+
+**Fail-closed scope** : seuls les rôles explicitement allowlistés (`SCHOOL_WIDE_STUDENT_READ_ROLES`,
+Super Admin, Enseignant, Parent, Élève) reçoivent un périmètre. Un rôle live
+inconnu (ex. `CUSTOM_ROLE`) même détenteur de `Élèves:READ` → `scopeKind=none`, `items=[]`.
+
+**Isolation tenant SQL** : tout JOIN `enrollments`/`classes`/`students`/`contacts`/
+`contact_relations` exige `school_id` des deux côtés. Une inscription `school_id=A`
+pointant vers une classe B n'expose ni `classId` B ni `classCode` B.

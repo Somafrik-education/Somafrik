@@ -34,6 +34,7 @@ const ACCOUNTANT_USER_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa3";
 const DUAL_USER_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa4";
 const ACC_DUAL_USER_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa5";
 const PARENT_USER_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa6";
+const CUSTOM_USER_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa7";
 const TEACHER_ID = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
 const DUAL_TEACHER_ID = "cccccccc-cccc-4ccc-8ccc-cccccccccc10";
 const SUBJECT_ID = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
@@ -145,6 +146,32 @@ async function grantTeacherStudentsRead(pool) {
   );
 }
 
+async function grantCustomRoleStudentsRead(pool) {
+  const existing = await pool.query(
+    `SELECT id FROM role_module_permissions
+     WHERE upper(role_key) = 'CUSTOM_ROLE'
+       AND module_key = 'students'
+       AND scope_type = 'global'
+       AND status = 'active'
+     LIMIT 1`,
+  );
+  if (existing.rowCount) {
+    await pool.query(
+      `UPDATE role_module_permissions
+       SET can_read = TRUE, updated_by = 'mobile-sync-http-it', updated_at = NOW()
+       WHERE id = $1`,
+      [existing.rows[0].id],
+    );
+    return;
+  }
+  await pool.query(
+    `INSERT INTO role_module_permissions (
+       role_key, scope_type, module_key, can_create, can_read, can_update, can_delete, updated_by
+     )
+     VALUES ('CUSTOM_ROLE', 'global', 'students', FALSE, TRUE, FALSE, FALSE, 'mobile-sync-http-it')`,
+  );
+}
+
 async function grantParentStudentsRead(pool) {
   const existing = await pool.query(
     `SELECT id FROM role_module_permissions
@@ -221,8 +248,9 @@ async function seedHttpFixture(pool) {
        ($3, $4, 'ACC-MSYNC-S1', 'Carla', 'Ngo', 'accountant-msync-s@test.local', 'Comptable', 'active', FALSE),
        ($5, $4, 'DUAL-MSYNC-S1', 'Dina', 'Mwamba', 'dual-msync-s@test.local', 'Enseignant', 'active', FALSE),
        ($6, $4, 'ACC-DUAL-S1', 'Carla', 'Diallo', 'acc-dual-msync-s@test.local', 'Comptable', 'active', FALSE),
-       ($7, $4, 'PAR-MSYNC-S1', 'Paula', 'Ngo', 'parent-msync-s@test.local', 'Parent', 'active', FALSE)`,
-    [ADMIN_USER_ID, TEACHER_USER_ID, ACCOUNTANT_USER_ID, schoolA.id, DUAL_USER_ID, ACC_DUAL_USER_ID, PARENT_USER_ID],
+       ($7, $4, 'PAR-MSYNC-S1', 'Paula', 'Ngo', 'parent-msync-s@test.local', 'Parent', 'active', FALSE),
+       ($8, $4, 'CUS-MSYNC-S1', 'Cyrus', 'Ndala', 'custom-msync-s@test.local', 'CUSTOM_ROLE', 'active', FALSE)`,
+    [ADMIN_USER_ID, TEACHER_USER_ID, ACCOUNTANT_USER_ID, schoolA.id, DUAL_USER_ID, ACC_DUAL_USER_ID, PARENT_USER_ID, CUSTOM_USER_ID],
   );
   await pool.query(
     `INSERT INTO user_roles (user_id, school_id, role_key, status)
@@ -234,8 +262,9 @@ async function seedHttpFixture(pool) {
        ($5, $6, 'SCHOOL_ADMIN', 'active'),
        ($7, $4, 'ACCOUNTANT', 'active'),
        ($7, $6, 'SCHOOL_ADMIN', 'active'),
-       ($8, $4, 'PARENT', 'active')`,
-    [ADMIN_USER_ID, TEACHER_USER_ID, ACCOUNTANT_USER_ID, schoolA.id, DUAL_USER_ID, schoolB.id, ACC_DUAL_USER_ID, PARENT_USER_ID],
+       ($8, $4, 'PARENT', 'active'),
+       ($9, $4, 'CUSTOM_ROLE', 'active')`,
+    [ADMIN_USER_ID, TEACHER_USER_ID, ACCOUNTANT_USER_ID, schoolA.id, DUAL_USER_ID, schoolB.id, ACC_DUAL_USER_ID, PARENT_USER_ID, CUSTOM_USER_ID],
   );
 
   await pool.query(
@@ -326,6 +355,7 @@ async function seedHttpFixture(pool) {
 
   await grantTeacherStudentsRead(pool);
   await grantParentStudentsRead(pool);
+  await grantCustomRoleStudentsRead(pool);
   return {
     schoolA: schoolA.id,
     schoolB: schoolB.id,
@@ -524,6 +554,42 @@ async function main() {
     const teacherRoleRevoked = await request("/mobile-sync/l1/students", { token: teacherToken });
     assert.equal(teacherRoleRevoked.status, 200, `teacher role revoked: ${JSON.stringify(teacherRoleRevoked.data)}`);
     assert.deepEqual(teacherRoleRevoked.data.items, []);
+
+    const customToken = mintAccess(tokens, {
+      sub: CUSTOM_USER_ID,
+      role: "CUSTOM_ROLE",
+      roleKeys: ["CUSTOM_ROLE"],
+      schoolCode: "SCH-A",
+      permissions: ["Élèves:READ"],
+    });
+    const customRole = await request("/mobile-sync/l1/students", { token: customToken });
+    assert.equal(customRole.status, 200, `CUSTOM_ROLE 200 vide: ${JSON.stringify(customRole.data)}`);
+    assert.deepEqual(customRole.data.items, []);
+
+    const yearB = (
+      await repo.pool.query(
+        `SELECT ay.id FROM academic_years ay JOIN schools s ON s.id = ay.school_id WHERE s.school_code = 'SCH-B' LIMIT 1`,
+      )
+    ).rows[0];
+    const crossStudent = await repo.pool.query(
+      `INSERT INTO students (school_id, student_code, first_name, last_name, status, updated_at)
+       VALUES ($1, 'STU-CROSS', 'Cross', 'Tenant', 'active', NOW())
+       RETURNING id`,
+      [fixture.schoolA],
+    );
+    await repo.pool.query(
+      `INSERT INTO enrollments (school_id, student_id, class_id, academic_year_id, status, updated_at)
+       VALUES ($1, $2, $3, $4, 'active', NOW())`,
+      [fixture.schoolA, crossStudent.rows[0].id, ID_B_ONLY, yearB.id],
+    );
+    const crossAdmin = await request("/mobile-sync/l1/students", { token: adminToken });
+    assert.equal(crossAdmin.status, 200, `cross-tenant 200: ${JSON.stringify(crossAdmin.data)}`);
+    const crossItem = (crossAdmin.data.items ?? []).find((item) => item.id === crossStudent.rows[0].id);
+    assert.ok(crossItem, "élève A corrompu reste dans le tenant A");
+    assert.equal(crossItem.classId, null);
+    assert.equal(crossItem.classCode, null);
+    assert.ok(!(crossAdmin.data.items ?? []).some((item) => item.classCode === "MS-CLS-B-ONLY"));
+    assert.ok(!(crossAdmin.data.items ?? []).some((item) => item.classId === ID_B_ONLY));
 
     console.log("mobileSyncStudents.http.pg.test.js OK");
   } catch (error) {
