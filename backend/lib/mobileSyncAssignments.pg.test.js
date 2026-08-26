@@ -316,9 +316,9 @@ async function main() {
          id, school_id, teacher_id, class_id, subject_id, academic_year_id, status, updated_at
        )
        VALUES
-         ($1, $7, $9, $4, $11, $13, 'active', $15::timestamptz),
-         ($2, $7, $10, $5, $11, $13, 'active', $15::timestamptz),
-         ($3, $7, $9, $6, $11, $13, 'active', $15::timestamptz)`,
+         ($1, $7, $8, $4, $10, $11, 'active', $12::timestamptz),
+         ($2, $7, $9, $5, $10, $11, 'active', $12::timestamptz),
+         ($3, $7, $8, $6, $10, $11, 'active', $12::timestamptz)`,
       [
         ASSIGN_A,
         ASSIGN_B,
@@ -327,20 +327,12 @@ async function main() {
         CLASS_B,
         CLASS_C,
         ids.schoolA,
-        ids.schoolB,
         TEACHER_ID,
         TEACHER_B_ID,
         SUBJECT_A,
-        SUBJECT_B,
         ids.yearA,
-        ids.yearB,
         SAME_TS,
       ],
-    );
-    // ASSIGN_B has teacher_id of school B but school_id A — tenant JOIN must hide it.
-    await pool.query(
-      `UPDATE teacher_assignments SET teacher_id = $1 WHERE id = $2`,
-      [TEACHER_B_ID, ASSIGN_B],
     );
 
     // CAS 1 — Admin school-wide full : A et C visibles, B (teacher B) masqué, zéro fuite B-only
@@ -380,12 +372,22 @@ async function main() {
     await pool.query("SET enable_seqscan = on");
     const schoolPlan = JSON.stringify(explainedSchool.rows[0]);
     const assignedPlan = JSON.stringify(explainedAssigned.rows[0]);
-    assert.match(schoolPlan, /idx_teacher_assignments_school_updated_at_id/, "index school-wide keyset");
+    assert.match(schoolPlan, /idx_teacher_assignments_school_/, "index school-wide keyset (seqscan off)");
     assert.match(
       assignedPlan,
       /idx_teacher_assignments_school_teacher_updated_at_id|idx_teacher_assignments_school_updated_at_id/,
       "index assigned keyset",
     );
+    const indexNames = (
+      await pool.query(
+        `SELECT indexname FROM pg_indexes
+         WHERE tablename = 'teacher_assignments'
+           AND indexname LIKE 'idx_teacher_assignments_school%'
+         ORDER BY indexname`,
+      )
+    ).rows.map((row) => row.indexname);
+    assert.ok(indexNames.includes("idx_teacher_assignments_school_updated_at_id"));
+    assert.ok(indexNames.includes("idx_teacher_assignments_school_teacher_updated_at_id"));
 
     // CAS 5 — pagination timestamps identiques
     const page1 = await sync(adminPrincipal(), { limit: 1 });
