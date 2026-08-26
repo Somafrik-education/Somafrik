@@ -54,6 +54,14 @@ function run() {
 
   assert.match(screen, /Cours des classes/);
   assert.match(screen, /hasSecurityPermission\(session, "Matières", "CREATE"\)/);
+  assert.match(screen, /getEffectivePermissionsForSession\(session\)/);
+  assert.match(screen, /effectivePermissions\.includes\("Gérer cours"\)/);
+  assert.match(screen, /effectivePermissions\.includes\("Voir classes"\)/);
+  assert.doesNotMatch(
+    screen,
+    /hasSecurityPermission\(session, "Classes", "READ"\)/,
+    "Classes:READ seul n'ouvre pas GET /api/courses côté backend",
+  );
   assert.match(screen, /createSchoolClassCourse/);
   assert.match(screen, /createSchoolSubject/);
   assert.match(screen, /school-class-course-add/);

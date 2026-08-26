@@ -3,7 +3,7 @@ import { Alert, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View 
 import { SchoolSettingsDenied, useSchoolSettingsAccess } from "../components/SchoolSettingsGate";
 import { useAdminData } from "../context/AdminDataContext";
 import { useAuth } from "../context/AuthContext";
-import { hasSecurityPermission } from "../domain/security/permissions";
+import { getEffectivePermissionsForSession, hasSecurityPermission } from "../domain/security/permissions";
 import { useResponsiveLayout } from "../hooks/useResponsiveLayout";
 import {
   activeClassNames,
@@ -51,10 +51,13 @@ export default function SchoolPedagogicalStructureScreen() {
   const [newSubjectCode, setNewSubjectCode] = useState("");
   const [courseSaving, setCourseSaving] = useState<"subject" | "course" | null>(null);
 
+  const effectivePermissions = getEffectivePermissionsForSession(session);
   const canReadClassCourses =
     hasSecurityPermission(session, "Matières", "READ") ||
-    hasSecurityPermission(session, "Classes", "READ");
-  const canCreateClassCourses = hasSecurityPermission(session, "Matières", "CREATE");
+    effectivePermissions.includes("Gérer cours") ||
+    effectivePermissions.includes("Voir classes");
+  const canCreateClassCourses =
+    hasSecurityPermission(session, "Matières", "CREATE") || effectivePermissions.includes("Gérer cours");
 
   const load = useCallback(async () => {
     setLoading(true);
