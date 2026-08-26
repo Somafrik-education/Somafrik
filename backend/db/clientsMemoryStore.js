@@ -249,6 +249,20 @@ function createClientsMemoryStore(seed = {}) {
           .filter((row) => row.user_id === userId && row.status === "active" && !row.revoked_at)
           .map((row) => row.role_key);
       },
+      async listActiveUserRoleKeysForSchool(userId, schoolId) {
+        const uid = String(userId ?? "").trim();
+        const sid = String(schoolId ?? "").trim();
+        if (!uid || !sid) return [];
+        return tables.userRoles
+          .filter(
+            (row) =>
+              String(row.user_id ?? "") === uid &&
+              String(row.school_id ?? "") === sid &&
+              row.status === "active" &&
+              !row.revoked_at,
+          )
+          .map((row) => row.role_key);
+      },
       async listUserCodes() {
         return tables.users.map((row) => row.user_code);
       },

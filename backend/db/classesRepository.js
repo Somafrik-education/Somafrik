@@ -68,6 +68,29 @@ function createClassesRepository(db) {
     };
   }
 
+  /**
+   * Projection L1 mobile-sync : identifiants + statut + updatedAt.
+   * Tombstone = status terminal canonique `inactive` (pas de DELETE physique).
+   * @param {any} row
+   */
+  function mapMobileSyncClassRow(row) {
+    const status = row.status;
+    const updatedAt =
+      row.updated_at instanceof Date ? row.updated_at.toISOString() : row.updated_at;
+    return {
+      id: row.id,
+      classCode: row.class_code,
+      name: row.name,
+      academicYearId: row.academic_year_id ?? null,
+      levelId: row.level_id ?? null,
+      streamId: row.stream_id ?? null,
+      groupId: row.group_id ?? null,
+      status,
+      updatedAt,
+      tombstone: status !== "active",
+    };
+  }
+
   function nameConflictError(name) {
     return createHttpError(
       409,
@@ -305,6 +328,100 @@ function createClassesRepository(db) {
         [school.id],
       );
       return rows.map(mapClassRow);
+    },
+
+    /**
+     * Keyset L1 : ORDER BY updated_at ASC, id ASC — pas d'OFFSET.
+     * Inclut active et inactive (tombstones). Filtre enseignant en SQL si classIds/classCodes.
+     *
+     * @param {string} schoolCode
+     * @param {{
+     *   limit: number,
+     *   afterUpdatedAt?: string | Date | null,
+     *   afterId?: string | null,
+     *   classIds?: string[] | null,
+     *   classCodes?: string[] | null,
+     * }} options
+     */
+    async listForMobileSync(schoolCode, options = {}) {
+      const school = await requireSchool(schoolCode);
+      const limit = Math.max(1, Number(options.limit) || 1);
+      const params = [school.id];
+      const conditions = ["cl.school_id = $1"];
+
+      if (Array.isArray(options.classIds) || Array.isArray(options.classCodes)) {
+        const ids = (options.classIds ?? []).map((value) => String(value ?? "").trim()).filter(Boolean);
+        const codes = (options.classCodes ?? []).map((value) => String(value ?? "").trim()).filter(Boolean);
+        if (!ids.length && !codes.length) {
+          return [];
+        }
+        params.push(ids);
+        const idsIdx = params.length;
+        params.push(codes);
+        const codesIdx = params.length;
+        conditions.push(`(cl.id = ANY($${idsIdx}::uuid[]) OR cl.class_code = ANY($${codesIdx}::text[]))`);
+      }
+
+      const afterUpdatedAt = options.afterUpdatedAt ?? null;
+      const afterId = options.afterId ? String(options.afterId).trim() : "";
+      if (afterUpdatedAt && afterId) {
+        params.push(afterUpdatedAt);
+        const tsIdx = params.length;
+        params.push(afterId);
+        const idIdx = params.length;
+        conditions.push(
+          `(cl.updated_at > $${tsIdx}::timestamptz OR (cl.updated_at = $${tsIdx}::timestamptz AND cl.id > $${idIdx}::uuid))`,
+        );
+      }
+
+      params.push(limit);
+      const rows = await db.all(
+        `SELECT cl.id,
+                cl.class_code,
+                cl.name,
+                cl.status,
+                cl.academic_year_id,
+                cl.level_id,
+                cl.stream_id,
+                cl.group_id,
+                cl.updated_at
+         FROM classes cl
+         WHERE ${conditions.join(" AND ")}
+         ORDER BY cl.updated_at ASC, cl.id ASC
+         LIMIT $${params.length}`,
+        params,
+      );
+      return rows.map(mapMobileSyncClassRow);
+    },
+
+    /**
+     * Affectations enseignant actives (PostgreSQL) pour scopeHash + filtre SQL.
+     * Jamais le tableau JWT `principal.assignments`.
+     *
+     * @param {string} userId
+     * @param {string} schoolId
+     */
+    async listLiveTeacherClassAssignmentsForSync(userId, schoolId) {
+      const uid = String(userId ?? "").trim();
+      const sid = String(schoolId ?? "").trim();
+      if (!uid || !sid) return [];
+      const rows = await db.all(
+        `SELECT DISTINCT cl.id::text AS class_id, cl.class_code, ta.status
+         FROM teacher_assignments ta
+         JOIN teachers t ON t.id = ta.teacher_id
+         JOIN classes cl ON cl.id = ta.class_id
+         WHERE t.user_id::text = $1
+           AND ta.school_id::text = $2
+           AND t.school_id::text = $2
+           AND lower(btrim(ta.status)) IN ('active', 'actif', 'open', 'ouverte')
+           AND COALESCE(lower(btrim(t.status)), 'active') NOT IN ('deleted', 'archived', 'inactive')`,
+        [uid, sid],
+      );
+      return rows.map((row) => ({
+        classId: row.class_id,
+        classCode: row.class_code,
+        status: row.status,
+      }));
     },
 
     /**

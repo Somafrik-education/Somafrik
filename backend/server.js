@@ -559,6 +559,24 @@ app.get("/api/classes", requireAuth, requirePermission("GET /api/classes"), asyn
   res.json(scopeSchoolClassesForPrincipal(req.principal, rows));
 }));
 
+app.get(
+  "/api/mobile-sync/l1/classes",
+  requireAuth,
+  requirePermission("GET /api/mobile-sync/l1/classes"),
+  asyncHandler(async (req, res) => {
+    const { handleMobileSyncL1Classes } = require("./lib/mobileSyncClasses");
+    const result = await handleMobileSyncL1Classes({
+      principal: req.principal,
+      cursor: req.query?.cursor,
+      limit: req.query?.limit,
+      tokenService,
+      repository,
+      tenantScopeService,
+    });
+    res.status(result.httpStatus).json(result.body);
+  }),
+);
+
 app.post("/api/classes", requireAuth, requirePermission("POST /api/classes"), asyncHandler(async (req, res) => {
   const schoolCode = String(req.principal?.schoolCode ?? "").trim();
   if (!schoolCode || schoolCode === "*") {
