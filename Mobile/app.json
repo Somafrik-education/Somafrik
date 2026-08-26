@@ -11,6 +11,13 @@
       "resizeMode": "contain",
       "backgroundColor": "#FFFFFF"
     },
+    "web": {
+      "favicon": "./assets/somafrik-app-icon.png",
+      "name": "Somafrik",
+      "shortName": "Somafrik",
+      "backgroundColor": "#FFFFFF",
+      "themeColor": "#1D4ED8"
+    },
     "plugins": [
       "expo-font",
       [
