@@ -120,6 +120,37 @@ test("curseur classes inutilisable sur students et inversement", () => {
   );
 });
 
+test("curseur assignments round-trip avec resource attendu", () => {
+  const tokens = tokenService();
+  const encoded = encodeMobileSyncCursor(sampleInput({ resource: "assignments" }), tokens);
+  const decoded = decodeMobileSyncCursor(encoded, tokens, { resource: "assignments" });
+  assert.equal(decoded.resource, "assignments");
+  assert.equal(decoded.lastId, "00000000-0000-4000-8000-00000000000a");
+});
+
+test("curseur classes ou students inutilisable sur assignments", () => {
+  const tokens = tokenService();
+  const classesCursor = encodeMobileSyncCursor(sampleInput({ resource: "classes" }), tokens);
+  const studentsCursor = encodeMobileSyncCursor(sampleInput({ resource: "students" }), tokens);
+  const assignmentsCursor = encodeMobileSyncCursor(sampleInput({ resource: "assignments" }), tokens);
+  assert.throws(
+    () => decodeMobileSyncCursor(classesCursor, tokens, { resource: "assignments" }),
+    (error) => error.statusCode === 400 && error.code === MOBILE_SYNC_ERROR.CURSOR_INVALID,
+  );
+  assert.throws(
+    () => decodeMobileSyncCursor(studentsCursor, tokens, { resource: "assignments" }),
+    (error) => error.statusCode === 400 && error.code === MOBILE_SYNC_ERROR.CURSOR_INVALID,
+  );
+  assert.throws(
+    () => decodeMobileSyncCursor(assignmentsCursor, tokens, { resource: "classes" }),
+    (error) => error.statusCode === 400 && error.code === MOBILE_SYNC_ERROR.CURSOR_INVALID,
+  );
+  assert.throws(
+    () => decodeMobileSyncCursor(assignmentsCursor, tokens, { resource: "students" }),
+    (error) => error.statusCode === 400 && error.code === MOBILE_SYNC_ERROR.CURSOR_INVALID,
+  );
+});
+
 test("schemaVersion non supporté → expired / full_required", () => {
   const tokens = tokenService();
   const encoded = tokens.sign(

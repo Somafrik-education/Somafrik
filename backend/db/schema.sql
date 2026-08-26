@@ -833,6 +833,12 @@ CREATE INDEX IF NOT EXISTS idx_attendance_student_date ON attendance(student_id,
 -- Index existants (PK id, UNIQUE class_code, unicité nom/structure) ne couvrent pas ce chemin.
 CREATE INDEX IF NOT EXISTS idx_classes_school_updated_at_id
   ON classes (school_id, updated_at, id);
+-- Mobile-sync L1 Assignments : keyset school-wide (school_id, updated_at, id)
+-- et assigned (school_id, teacher_id, updated_at, id). Une FK n'est pas un index.
+CREATE INDEX IF NOT EXISTS idx_teacher_assignments_school_updated_at_id
+  ON teacher_assignments (school_id, updated_at, id);
+CREATE INDEX IF NOT EXISTS idx_teacher_assignments_school_teacher_updated_at_id
+  ON teacher_assignments (school_id, teacher_id, updated_at, id);
 CREATE INDEX IF NOT EXISTS idx_payments_student_id ON payments(student_id);
 CREATE INDEX IF NOT EXISTS idx_payments_school_id ON payments(school_id);
 CREATE INDEX IF NOT EXISTS idx_payment_items_payment ON payment_items(payment_id);

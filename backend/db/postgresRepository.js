@@ -6228,8 +6228,20 @@ class PostgresRepository {
     return this._teacherAssignmentsRepository;
   }
 
-  listSchoolTeacherAssignments(schoolCode) {
-    return this.getTeacherAssignmentsRepository().listBySchoolCode(schoolCode);
+  listSchoolTeacherAssignments(schoolCode, options) {
+    return this.getTeacherAssignmentsRepository().listBySchoolCode(schoolCode, options);
+  }
+
+  listSchoolTeacherAssignmentsForMobileSync(schoolCode, options) {
+    return this.getTeacherAssignmentsRepository().listForMobileSync(schoolCode, options);
+  }
+
+  getLiveTeacherIdentityForSchool(userId, schoolId) {
+    return this.getTeacherAssignmentsRepository().getLiveTeacherIdentityForSchool(userId, schoolId);
+  }
+
+  listLiveTeacherAssignmentIdsForSync(schoolId, teacherId) {
+    return this.getTeacherAssignmentsRepository().listLiveTeacherAssignmentIdsForSync(schoolId, teacherId);
   }
 
   createSchoolTeacherAssignment(body, schoolCode, principal, auditMeta) {

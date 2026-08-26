@@ -484,3 +484,134 @@ test("Students live PG error liens parent → 503, pas de fallback JWT", async (
     (error) => error.code === "MOBILE_SYNC_LIVE_SCOPE_UNAVAILABLE" && error.statusCode === 503,
   );
 });
+
+test("Assignments CUSTOM_ROLE + Affectations:READ → scopeKind=none, jamais school-wide", () => {
+  const { computeAssignmentsScopeHash, resolveAssignmentsSyncScope } = require("./mobileSyncScope");
+  const custom = {
+    sub: "custom-1",
+    role: "CUSTOM_ROLE",
+    roles: ["CUSTOM_ROLE"],
+    roleKeys: ["CUSTOM_ROLE"],
+    schoolCode: "SCH-A",
+    permissions: ["Affectations:READ", "Enseignants:READ"],
+    liveTeacherId: "teacher-uuid",
+    authorizedAssignmentIds: ["asg-1"],
+    teacherCode: "TCH-JWT",
+    teacherId: "TCH-JWT",
+    assignments: [{ id: "asg-1" }],
+  };
+  const scope = resolveAssignmentsSyncScope(custom);
+  assert.equal(scope.scopeKind, "none");
+  assert.deepEqual(scope.assignmentIds, []);
+  const hashed = computeAssignmentsScopeHash(custom, { schoolCode: "SCH-A", schoolId: "id-a" });
+  assert.equal(hashed.scope.scopeKind, "none");
+  assert.deepEqual(hashed.input.assignmentIds, []);
+});
+
+test("Assignments school-wide : pas de roster d'IDs dans le scopeHash", () => {
+  const { computeAssignmentsScopeHash, resolveAssignmentsSyncScope } = require("./mobileSyncScope");
+  const scope = resolveAssignmentsSyncScope(
+    adminPrincipal({ permissions: ["Affectations:READ"] }),
+  );
+  assert.equal(scope.scopeKind, "school-wide");
+  const hashed = computeAssignmentsScopeHash(
+    adminPrincipal({
+      permissions: ["Affectations:READ"],
+      authorizedAssignmentIds: ["asg-1", "asg-2"],
+    }),
+    { schoolCode: "SCH-A", schoolId: "id-a" },
+  );
+  assert.deepEqual(hashed.input.assignmentIds, []);
+  assert.equal(hashed.input.resource, "assignments");
+});
+
+test("Assignments assigned : roster IDs dans le scopeHash, grant/revoke change le hash", () => {
+  const { computeAssignmentsScopeHash, resolveAssignmentsSyncScope } = require("./mobileSyncScope");
+  const school = { schoolCode: "SCH-A", schoolId: "id-a" };
+  const teacherA = {
+    sub: "teacher-1",
+    role: "Enseignant",
+    roles: ["Enseignant"],
+    roleKeys: ["TEACHER"],
+    schoolCode: "SCH-A",
+    permissions: ["Affectations:READ"],
+    liveTeacherId: "teacher-uuid",
+    authorizedAssignmentIds: ["asg-1"],
+  };
+  const scope = resolveAssignmentsSyncScope(teacherA);
+  assert.equal(scope.scopeKind, "assigned");
+  assert.deepEqual(scope.assignmentIds, ["asg-1"]);
+  const before = computeAssignmentsScopeHash(teacherA, school);
+  const afterAdd = computeAssignmentsScopeHash(
+    { ...teacherA, authorizedAssignmentIds: ["asg-1", "asg-2"] },
+    school,
+  );
+  assert.notEqual(before.scopeHash, afterAdd.scopeHash);
+  const afterRevoke = computeAssignmentsScopeHash(
+    { ...teacherA, authorizedAssignmentIds: [] },
+    school,
+  );
+  assert.notEqual(before.scopeHash, afterRevoke.scopeHash);
+});
+
+test("Assignments live ignore teacherCode / teacherId / assignments JWT", async () => {
+  const { resolveLiveAssignmentsSyncSnapshot } = require("./mobileSyncScope");
+  const stale = {
+    sub: "teacher-1",
+    role: "Admin School",
+    roleKeys: ["SCHOOL_ADMIN"],
+    schoolCode: "SCH-A",
+    permissions: ["Affectations:READ", "ALL_PRIVILEGES"],
+    teacherCode: "JWT-CODE",
+    teacherId: "JWT-CODE",
+    assignments: [{ id: "jwt-asg" }],
+  };
+  const hashed = await resolveLiveAssignmentsSyncSnapshot(
+    {
+      listActiveUserRoleKeys: trapUnscopedRoleKeys(),
+      async listActiveUserRoleKeysForSchool() {
+        return ["TEACHER"];
+      },
+      async resolveEffectivePermissions() {
+        return { permissions: ["Affectations:READ"] };
+      },
+      async getLiveTeacherIdentityForSchool() {
+        return { teacherId: "live-teacher-uuid", teacherCode: "TCH-LIVE", teacherUserId: "teacher-1" };
+      },
+      async listLiveTeacherAssignmentIdsForSync() {
+        return [{ assignmentId: "live-asg" }];
+      },
+    },
+    stale,
+    { schoolCode: "SCH-A", schoolId: "id-a" },
+  );
+  assert.equal(hashed.scope.scopeKind, "assigned");
+  assert.equal(hashed.scope.teacherId, "live-teacher-uuid");
+  assert.deepEqual(hashed.scope.assignmentIds, ["live-asg"]);
+  assert.ok(!hashed.input.assignmentIds.includes("jwt-asg"));
+});
+
+test("Assignments erreur identité enseignant live → 503, pas de fallback JWT", async () => {
+  const { resolveLiveAssignmentsSyncSnapshot } = require("./mobileSyncScope");
+  await assert.rejects(
+    () =>
+      resolveLiveAssignmentsSyncSnapshot(
+        {
+          listActiveUserRoleKeys: trapUnscopedRoleKeys(),
+          async listActiveUserRoleKeysForSchool() {
+            return ["TEACHER"];
+          },
+          async resolveEffectivePermissions() {
+            return { permissions: ["Affectations:READ"] };
+          },
+          async getLiveTeacherIdentityForSchool() {
+            throw new Error("pg teacher identity unavailable");
+          },
+        },
+        { sub: "teacher-1", role: "Enseignant", schoolCode: "SCH-A" },
+        { schoolCode: "SCH-A", schoolId: "id-a" },
+      ),
+    (error) => error.code === "MOBILE_SYNC_LIVE_SCOPE_UNAVAILABLE" && error.statusCode === 503,
+  );
+});
+

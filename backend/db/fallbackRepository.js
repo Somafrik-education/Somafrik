@@ -2481,12 +2481,16 @@ class FallbackRepository {
     return result;
   }
 
-  async listSchoolTeacherAssignments(schoolCode) {
+  async listSchoolTeacherAssignments(schoolCode, options = {}) {
     const code = String(schoolCode ?? "").trim().toUpperCase();
     if (!code || code === "*") {
       const { assignmentError } = require("../lib/teacherAssignmentsManagement");
       throw assignmentError(400, "schoolCode établissement requis.", "ASSIGNMENT_SCHOOL_REQUIRED");
     }
+    if (Object.hasOwn(options, "teacherId") && !String(options.teacherId ?? "").trim()) {
+      return [];
+    }
+    const teacherId = String(options.teacherId ?? "").trim();
     return clone(
       [
         ...(shouldSeedDemoData() ? seedData.teacherAssignments ?? [] : []).filter(
@@ -2496,11 +2500,13 @@ class FallbackRepository {
             ),
         ),
         ...(this._managedTeacherAssignments ?? []),
-      ].filter(
-        (row) =>
-          String(row.schoolCode ?? "").trim().toUpperCase() === code &&
-          String(row.status ?? "active").toLowerCase() === "active",
-      ),
+      ].filter((row) => {
+        const sameSchool = String(row.schoolCode ?? "").trim().toUpperCase() === code;
+        if (!sameSchool || String(row.status ?? "active").trim() !== "active") return false;
+        if (!teacherId) return true;
+        const liveUuid = String(row.teacherUuid ?? row.teacher_id ?? row.internalTeacherId ?? "").trim();
+        return Boolean(liveUuid) && liveUuid === teacherId;
+      }),
     );
   }
 
@@ -3252,6 +3258,10 @@ class FallbackRepository {
         this.assertEstablishmentRoleAssignable(role, principal);
       store.listEstablishmentAssignableRoles = (principal) =>
         this.listEstablishmentRoles({ schoolAssignableOnly: true, principal });
+      if (shouldSeedDemoData()) {
+        const { backfillMemoryUserRolesFromSeedAccounts } = require("../lib/memoryUserRolesBackfill");
+        backfillMemoryUserRolesFromSeedAccounts(store._tables, seedData.userAccounts);
+      }
       this._clientsStore = store;
     }
     return this._clientsStore;

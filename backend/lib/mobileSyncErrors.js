@@ -1,7 +1,7 @@
 "use strict";
 
 /**
- * Codes métier stables — sync mobile L1 (Classes, Students).
+ * Codes métier stables — sync mobile L1 (Classes, Students, Assignments).
  * HTTP + code, jamais un 500 pour un curseur illisible.
  */
 const MOBILE_SYNC_ERROR = Object.freeze({
@@ -14,6 +14,7 @@ const MOBILE_SYNC_ERROR = Object.freeze({
 
 const MOBILE_SYNC_RESOURCE_CLASSES = "classes";
 const MOBILE_SYNC_RESOURCE_STUDENTS = "students";
+const MOBILE_SYNC_RESOURCE_ASSIGNMENTS = "assignments";
 const MOBILE_SYNC_SCHEMA_VERSION = 1;
 const MOBILE_SYNC_GENERATION = 1;
 const MOBILE_SYNC_CURSOR_TYP = "mobile-sync-cursor";
@@ -90,10 +91,18 @@ const STUDENTS_SYNC_PERMISSIONS = Object.freeze([
   "ALL_PRIVILEGES",
 ]);
 
+const ASSIGNMENTS_SYNC_PERMISSIONS = Object.freeze([
+  "Affectations:READ",
+  "Enseignants:READ",
+  "COUNTRY_PRIVILEGES",
+  "ALL_PRIVILEGES",
+]);
+
 module.exports = {
   MOBILE_SYNC_ERROR,
   MOBILE_SYNC_RESOURCE_CLASSES,
   MOBILE_SYNC_RESOURCE_STUDENTS,
+  MOBILE_SYNC_RESOURCE_ASSIGNMENTS,
   MOBILE_SYNC_SCHEMA_VERSION,
   MOBILE_SYNC_GENERATION,
   MOBILE_SYNC_CURSOR_TYP,
@@ -108,4 +117,5 @@ module.exports = {
   SENTINEL_ID,
   CLASSES_SYNC_PERMISSIONS,
   STUDENTS_SYNC_PERMISSIONS,
+  ASSIGNMENTS_SYNC_PERMISSIONS,
 };
