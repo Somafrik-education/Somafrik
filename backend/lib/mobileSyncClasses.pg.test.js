@@ -358,7 +358,7 @@ async function main() {
         if (keys.has("SCHOOL_ADMIN")) {
           return { permissions: ["Voir classes", "Gérer classes"] };
         }
-        if (keys.has("TEACHER")) {
+        if (keys.has("TEACHER") || keys.has("CUSTOM_ROLE")) {
           return { permissions: ["Voir classes"] };
         }
         return { permissions: [] };
@@ -618,6 +618,20 @@ async function main() {
     assert.equal(accountantDenied.body.code, PERMISSION_DENIED);
     assert.equal(accountantDenied.body.items, undefined);
     assert.equal(classSqlCalls, sqlBeforeAccountant, "403 n'interroge pas classes");
+
+    liveRoleKeysByUser.set("custom-1", ["CUSTOM_ROLE"]);
+    const sqlBeforeCustom = classSqlCalls;
+    const customRole = await sync({
+      sub: "custom-1",
+      role: "Admin School",
+      roleKeys: ["SCHOOL_ADMIN"],
+      schoolCode: "SCH-A",
+      permissions: ["Voir classes", "Gérer classes"],
+      effectiveSchoolId: ids.schoolA,
+    });
+    assert.equal(customRole.httpStatus, 200, "CUSTOM_ROLE + Classes:READ → 200 vide");
+    assert.deepEqual(customRole.body.items, []);
+    assert.ok(classSqlCalls >= sqlBeforeCustom);
 
     // Erreur lecture rôles live → 503, zéro donnée
     failLiveRoles = true;

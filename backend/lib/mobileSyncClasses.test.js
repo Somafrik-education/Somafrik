@@ -75,6 +75,7 @@ function createFakeRepo(rowsBySchool, live = {}) {
     },
     async listSchoolClassesForMobileSync(schoolCode, options = {}) {
       live.sqlCalls = (live.sqlCalls ?? 0) + 1;
+      live.lastClassQuery = { schoolCode, ...options };
       let rows = [...(rowsBySchool[schoolCode] ?? [])];
       if (Array.isArray(options.classIds) || Array.isArray(options.classCodes)) {
         const ids = new Set(options.classIds ?? []);
@@ -402,6 +403,43 @@ test("mémoire sans listSchoolClassesForMobileSync → 503 PostgreSQL requis", a
   });
   assert.equal(result.httpStatus, 503);
   assert.equal(result.body.code, MOBILE_SYNC_ERROR.POSTGRES_REQUIRED);
+});
+
+test("CUSTOM_ROLE + Classes:READ live, JWT Admin → scopeKind=none, items=[], zéro donnée Classes", async () => {
+  const { resolveClassesSyncScope } = require("./mobileSyncScope");
+  const live = {
+    roleKeysByUser: { "custom-1": ["CUSTOM_ROLE"] },
+    sqlCalls: 0,
+    resolvePermissions: () => ({ permissions: ["Classes:READ", "Voir classes"] }),
+  };
+  const result = await handleMobileSyncL1Classes({
+    principal: adminPrincipal({
+      sub: "custom-1",
+      role: "Admin School",
+      roleKeys: ["SCHOOL_ADMIN"],
+      schoolCode: "SCH-A",
+      permissions: ["Voir classes", "Gérer classes"],
+    }),
+    tokenService: tokens,
+    repository: createFakeRepo(
+      {
+        "SCH-A": [classRow(ID_A, "CLS-A"), classRow(ID_B, "CLS-B"), classRow(ID_C, "CLS-C")],
+      },
+      live,
+    ),
+    tenantScopeService,
+  });
+  assert.equal(result.httpStatus, 200);
+  assert.deepEqual(result.body.items, []);
+  assert.deepEqual(live.lastClassQuery.classIds, []);
+  assert.deepEqual(live.lastClassQuery.classCodes, []);
+  const liveScope = resolveClassesSyncScope({
+    role: "CUSTOM_ROLE",
+    roles: ["CUSTOM_ROLE"],
+    roleKeys: ["CUSTOM_ROLE"],
+    permissions: ["Classes:READ", "Voir classes"],
+  });
+  assert.equal(liveScope.scopeKind, "none");
 });
 
 test("JWT Admin stale + rôles live [] → zéro classe", async () => {

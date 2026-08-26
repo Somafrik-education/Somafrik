@@ -106,7 +106,7 @@ SHA-256 déterministe de :
 
 **Assigned** (Enseignant) : grant / revoke d'affectation **dans PostgreSQL** (JWT inchangé) → hash change → `409 MOBILE_SYNC_SCOPE_CHANGED`, puis full sync du nouveau périmètre. Pas un warm incomplet, pas de fuite de la classe révoquée.
 
-**None** : aucun rôle actif pour le **tenant courant** (révocation, ou rôle seulement dans un autre établissement) → aucune ligne, même si le JWT porte encore Admin / Enseignant.
+**None** : aucun rôle actif pour le **tenant courant** (révocation, ou rôle seulement dans un autre établissement), **ou rôle live hors allowlist** (ex. `CUSTOM_ROLE` même avec `Classes:READ`) → aucune ligne, même si le JWT porte encore Admin / Enseignant. School-wide n'est jamais un fallback.
 
 **Permission Classes live** : après le snapshot tenant-scopé et **avant toute requête SQL classes**, le handler exige une permission réelle parmi `Classes:READ` | `Voir classes` | `Gérer classes` | `COUNTRY_PRIVILEGES` | `ALL_PRIVILEGES`. Sinon **403 `PERMISSION_DENIED`**, zéro donnée — y compris si `requirePermission()` a été contaminé par un `SCHOOL_ADMIN` d'un autre établissement (ex. ACCOUNTANT@A + SCHOOL_ADMIN@B + JWT Admin stale@A). Un Comptable n'est pas élargi en school-wide lisible.
 

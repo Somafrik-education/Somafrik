@@ -111,6 +111,26 @@ test("Préfet = school-wide comme GET /api/classes", () => {
   assert.equal(scope.scopeKind, "school-wide");
 });
 
+test("Classes CUSTOM_ROLE + Classes:READ → scopeKind=none, jamais school-wide", () => {
+  const { computeClassesScopeHash } = require("./mobileSyncScope");
+  const custom = {
+    sub: "custom-1",
+    role: "CUSTOM_ROLE",
+    roles: ["CUSTOM_ROLE"],
+    roleKeys: ["CUSTOM_ROLE"],
+    schoolCode: "SCH-A",
+    permissions: ["Classes:READ", "Voir classes"],
+    assignments: [{ classId: "class-a", classCode: "CLS-A", status: "active" }],
+  };
+  const scope = resolveClassesSyncScope(custom);
+  assert.equal(scope.scopeKind, "none");
+  assert.deepEqual(scope.classIds, []);
+  assert.deepEqual(scope.classCodes, []);
+  const hashed = computeClassesScopeHash(custom, { schoolCode: "SCH-A", schoolId: "id-a" });
+  assert.equal(hashed.scope.scopeKind, "none");
+  assert.deepEqual(hashed.input.classIds, []);
+});
+
 function trapUnscopedRoleKeys() {
   return async function listActiveUserRoleKeys() {
     throw new Error("listActiveUserRoleKeys unscoped ne doit pas être appelé par mobile-sync");
