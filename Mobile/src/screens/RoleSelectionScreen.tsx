@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -8,6 +8,7 @@ import {
   StyleSheet,
   Text,
   TouchableOpacity,
+  useWindowDimensions,
   View,
 } from "react-native";
 import FormField from "../components/FormField";
@@ -24,18 +25,32 @@ import {
   mapSchoolCodeError,
 } from "../lib/loginScreenSpec";
 import { MOBILE_ACCESSIBILITY_COPY } from "../lib/mobileAccessibilitySpec";
+import {
+  formatRoleSelectionApiStatus,
+  getRoleSelectionLayout,
+} from "../lib/roleSelectionLayout";
 
 type Props = NativeStackScreenProps<RootStackParamList, "RoleSelection">;
 const somafrikLogo = require("../../assets/somafrik-logo.png");
 
 export default function RoleSelectionScreen({ navigation }: Props) {
+  const { width, height, fontScale } = useWindowDimensions();
+  const layout = getRoleSelectionLayout(width, height, fontScale);
   const stackPaddingBottom = useStackScreenBottomPadding();
-  const containerStyle = [styles.container, { paddingBottom: stackPaddingBottom }];
+  const scrollRef = useRef<ScrollView>(null);
   const [accessCode, setAccessCode] = useState("");
   const [school, setSchool] = useState<SchoolInfo | null>(null);
   const [isLoading, setIsLoading] = useState(false);
-  const [statusMessage, setStatusMessage] = useState(`API : ${getApiBaseUrl()}`);
+  const [statusMessage, setStatusMessage] = useState(formatRoleSelectionApiStatus(getApiBaseUrl()));
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!school) return;
+    const frame = requestAnimationFrame(() => {
+      scrollRef.current?.scrollToEnd({ animated: true });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [school]);
 
   const verifyAccess = async () => {
     const normalizedAccess = accessCode.trim().toUpperCase();
@@ -78,35 +93,89 @@ export default function RoleSelectionScreen({ navigation }: Props) {
     }
   };
 
+  const idleStatus = formatRoleSelectionApiStatus(getApiBaseUrl());
+  const showApiDiagnostic = !school && !errorMessage;
+  const showHelp = layout.showHelp && !school;
+
   return (
     <KeyboardAvoidingView
       style={styles.screen}
       behavior={Platform.OS === "ios" ? "padding" : "padding"}
+      keyboardVerticalOffset={Platform.OS === "android" ? 8 : 56}
       testID={ROLE_SELECTION_TEST_IDS.screen}
       accessibilityLabel={MOBILE_ACCESSIBILITY_COPY.roleSelectionScreenLabel}
     >
       <ScrollView
+        ref={scrollRef}
         keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={containerStyle}
+        contentContainerStyle={[
+          styles.container,
+          {
+            flexGrow: 1,
+            paddingHorizontal: layout.screenPaddingHorizontal,
+            paddingTop: layout.screenPaddingTop,
+            paddingBottom: Math.min(stackPaddingBottom, layout.screenPaddingBottom + 24),
+          },
+        ]}
       >
-        <View style={styles.header}>
-          <View style={styles.mark}>
-            <Image source={somafrikLogo} style={styles.markLogo} />
+        <View style={[styles.header, { marginBottom: layout.headerMarginBottom }]}>
+          <View
+            style={[
+              styles.mark,
+              { width: layout.brandLogo, height: layout.brandLogo, borderRadius: 10, marginRight: layout.brandGap },
+            ]}
+          >
+            <Image
+              source={somafrikLogo}
+              style={{ width: layout.brandLogo - 6, height: layout.brandLogo - 6, resizeMode: "contain" }}
+            />
           </View>
           <View style={styles.headerText}>
-            <Text style={styles.brand}>Somafrik</Text>
-            <Text style={styles.subtitle}>ERP scolaire par Somafrik</Text>
+            <Text style={[styles.brand, { fontSize: layout.brandTitle, lineHeight: Math.round(layout.brandTitle * 1.15) }]}>
+              Somafrik
+            </Text>
+            <Text style={[styles.subtitle, { fontSize: layout.brandSubtitle }]}>ERP scolaire par Somafrik</Text>
           </View>
         </View>
 
-        <View style={styles.hero}>
-          <Text style={styles.eyebrow}>{ROLE_SELECTION_COPY.eyebrow}</Text>
-          <Text style={styles.title}>{ROLE_SELECTION_COPY.title}</Text>
-          <Text style={styles.description}>{ROLE_SELECTION_COPY.description}</Text>
+        <View style={[styles.hero, { marginBottom: school ? 0 : layout.heroMarginBottom }]}>
+          {school ? null : (
+            <>
+              <Text
+                style={[
+                  styles.eyebrow,
+                  { fontSize: layout.eyebrow, marginBottom: layout.tight ? 4 : 6 },
+                ]}
+              >
+                {ROLE_SELECTION_COPY.eyebrow}
+              </Text>
+              <Text
+                style={[
+                  styles.title,
+                  { fontSize: layout.title, lineHeight: layout.titleLineHeight },
+                ]}
+              >
+                {ROLE_SELECTION_COPY.title}
+              </Text>
+              <Text
+                style={[
+                  styles.description,
+                  {
+                    fontSize: layout.description,
+                    lineHeight: layout.descriptionLineHeight,
+                    marginTop: layout.tight ? 4 : 6,
+                  },
+                ]}
+              >
+                {ROLE_SELECTION_COPY.description}
+              </Text>
+            </>
+          )}
         </View>
 
-        <View style={styles.formPanel}>
+        <View style={[styles.formPanel, { padding: layout.panelPadding }]}>
           <FormField
             label={ROLE_SELECTION_COPY.codeLabel}
             required
@@ -117,44 +186,23 @@ export default function RoleSelectionScreen({ navigation }: Props) {
               setAccessCode(value);
               setSchool(null);
               setErrorMessage(null);
-              setStatusMessage(`API : ${getApiBaseUrl()}`);
+              setStatusMessage(idleStatus);
             }}
             autoCapitalize="characters"
             autoCorrect={false}
-            leading={<Ionicons name="keypad-outline" size={20} color="#64748B" />}
+            leading={<Ionicons name="keypad-outline" size={18} color="#64748B" />}
             testID={ROLE_SELECTION_TEST_IDS.schoolCodeInput}
             accessibilityLabel={ROLE_SELECTION_COPY.codeLabel}
-            inputStyle={styles.codeInput}
+            inputStyle={[styles.codeInput, { fontSize: layout.code }]}
+            variant={layout.tight ? "compact" : "default"}
           />
 
-          <View style={[styles.statusBox, school && styles.statusBoxSuccess, errorMessage && styles.statusBoxError]}>
-            <Ionicons
-              name={errorMessage ? "alert-circle-outline" : school ? "checkmark-circle-outline" : "wifi-outline"}
-              size={18}
-              color={errorMessage ? "#B91C1C" : school ? "#047857" : "#475569"}
-            />
-            <Text
-              style={[
-                styles.statusText,
-                school && styles.statusTextSuccess,
-                errorMessage && styles.statusTextError,
-              ]}
-              testID={ROLE_SELECTION_TEST_IDS.statusMessage}
-            >
-              {errorMessage ?? statusMessage}
-            </Text>
-          </View>
-
-          {errorMessage ? (
-            <View style={styles.errorBanner} testID={ROLE_SELECTION_TEST_IDS.errorBanner} accessibilityRole="alert">
-              <Text style={styles.errorBannerText}>{errorMessage}</Text>
-            </View>
-          ) : null}
-
-          <TouchableOpacity
+          {school ? null : (
+            <TouchableOpacity
             activeOpacity={0.88}
             style={[
               styles.primaryButton,
+              { minHeight: layout.buttonMinHeight },
               (isLoading || !accessCode.trim()) && styles.disabledButton,
             ]}
             onPress={verifyAccess}
@@ -167,51 +215,93 @@ export default function RoleSelectionScreen({ navigation }: Props) {
               <ActivityIndicator color="#FFFFFF" />
             ) : (
               <>
-                <Text style={styles.primaryText}>{ROLE_SELECTION_COPY.verifyButton}</Text>
+                <Text style={[styles.primaryText, { fontSize: layout.button }]}>
+                  {ROLE_SELECTION_COPY.verifyButton}
+                </Text>
                 <Ionicons name="arrow-forward" size={18} color="#FFFFFF" />
               </>
             )}
           </TouchableOpacity>
-        </View>
+          )}
 
-        {school && (
-          <View style={styles.schoolCard} testID={ROLE_SELECTION_TEST_IDS.schoolCard}>
-          <View style={styles.logo} testID={ROLE_SELECTION_TEST_IDS.schoolLogo}>
-              {school.logoUrl ? (
-                <Image source={{ uri: school.logoUrl }} style={styles.schoolLogoImage} />
-              ) : (
-                <Image source={somafrikLogo} style={styles.schoolLogoImage} />
-              )}
+          {showApiDiagnostic ? (
+            <Text
+              style={[styles.diagnostic, { fontSize: layout.diagnosticFont }]}
+              numberOfLines={1}
+              ellipsizeMode="middle"
+              testID={ROLE_SELECTION_TEST_IDS.statusMessage}
+            >
+              {idleStatus}
+            </Text>
+          ) : (
+            <Text
+              style={styles.srStatus}
+              testID={ROLE_SELECTION_TEST_IDS.statusMessage}
+            >
+              {errorMessage ?? statusMessage}
+            </Text>
+          )}
+
+          {errorMessage ? (
+            <View style={styles.errorBanner} testID={ROLE_SELECTION_TEST_IDS.errorBanner} accessibilityRole="alert">
+              <Text style={styles.errorBannerText}>{errorMessage}</Text>
             </View>
-            <View style={styles.schoolCopy}>
-              <Text style={styles.schoolName} testID={ROLE_SELECTION_TEST_IDS.schoolName}>
-                {school.name}
-              </Text>
-              <Text style={styles.schoolCity}>{school.city} • {school.code}</Text>
+          ) : null}
+
+          {school && (
+            <View style={styles.schoolCard} testID={ROLE_SELECTION_TEST_IDS.schoolCard}>
+              <View style={styles.schoolHeader}>
+                <View
+                  style={[
+                    styles.logo,
+                    { width: layout.schoolLogo, height: layout.schoolLogo, marginRight: 10 },
+                  ]}
+                  testID={ROLE_SELECTION_TEST_IDS.schoolLogo}
+                >
+                  {school.logoUrl ? (
+                    <Image source={{ uri: school.logoUrl }} style={styles.schoolLogoImage} />
+                  ) : (
+                    <Image source={somafrikLogo} style={styles.schoolLogoImage} />
+                  )}
+                </View>
+                <View style={styles.schoolCopy}>
+                  <Text style={styles.foundLabel}>{ROLE_SELECTION_COPY.successMessage}</Text>
+                  <Text style={styles.schoolName} testID={ROLE_SELECTION_TEST_IDS.schoolName}>
+                    {school.name}
+                  </Text>
+                  <Text style={styles.schoolCity}>
+                    {school.city} • {school.code}
+                  </Text>
+                </View>
+              </View>
               <Text style={styles.nextStepHint} testID={ROLE_SELECTION_TEST_IDS.nextStepHint}>
                 {ROLE_SELECTION_COPY.nextStepHint}
               </Text>
+              <TouchableOpacity
+                activeOpacity={0.88}
+                style={[styles.loginButton, { minHeight: layout.buttonMinHeight }]}
+                onPress={() => navigation.navigate("Login", { school })}
+                testID={ROLE_SELECTION_TEST_IDS.openLoginButton}
+                accessibilityRole="button"
+                accessibilityLabel={ROLE_SELECTION_COPY.openLoginButton}
+              >
+                <Text style={[styles.loginText, { fontSize: layout.button }]}>
+                  {ROLE_SELECTION_COPY.openLoginButton}
+                </Text>
+                <Ionicons name="log-in-outline" size={18} color="#FFFFFF" />
+              </TouchableOpacity>
             </View>
-            <TouchableOpacity
-              activeOpacity={0.88}
-              style={styles.loginButton}
-              onPress={() => navigation.navigate("Login", { school })}
-              testID={ROLE_SELECTION_TEST_IDS.openLoginButton}
-              accessibilityRole="button"
-              accessibilityLabel={ROLE_SELECTION_COPY.openLoginButton}
-            >
-              <Text style={styles.loginText}>{ROLE_SELECTION_COPY.openLoginButton}</Text>
-              <Ionicons name="log-in-outline" size={18} color="#FFFFFF" />
-            </TouchableOpacity>
-          </View>
-        )}
-
-        <View style={styles.helpBox}>
-          <Ionicons name="information-circle-outline" size={18} color="#2563EB" />
-          <Text style={styles.helpText}>
-            Connexion obligatoire à l'API Somafrik. Vérifiez le backend si le réseau échoue.
-          </Text>
+          )}
         </View>
+
+        {showHelp ? (
+          <View style={styles.helpBox}>
+            <Ionicons name="information-circle-outline" size={16} color="#2563EB" />
+            <Text style={styles.helpText}>
+              Connexion obligatoire à l'API Somafrik. Vérifiez le backend si le réseau échoue.
+            </Text>
+          </View>
+        ) : null}
       </ScrollView>
     </KeyboardAvoidingView>
   );
@@ -224,106 +314,67 @@ const styles = StyleSheet.create({
   },
   container: {
     flexGrow: 1,
-    paddingHorizontal: 20,
-    paddingTop: 54,
   },
   header: {
     flexDirection: "row",
     alignItems: "center",
-    marginBottom: 32,
   },
   mark: {
-    width: 72,
-    height: 72,
-    borderRadius: 18,
     backgroundColor: "#FFFFFF",
     alignItems: "center",
     justifyContent: "center",
-    marginRight: 12,
     borderWidth: 1,
     borderColor: "#E2E8F0",
   },
-  markLogo: { width: 64, height: 64, resizeMode: "contain" },
   headerText: {
     flex: 1,
+    minWidth: 0,
   },
   brand: {
     color: "#0F172A",
-    fontSize: 32,
     fontWeight: "900",
   },
   subtitle: {
-    marginTop: 3,
+    marginTop: 1,
     color: "#64748B",
-    fontSize: 14,
-    fontWeight: "800",
+    fontWeight: "700",
   },
-  hero: {
-    marginBottom: 22,
-  },
+  hero: {},
   eyebrow: {
     color: "#0F766E",
-    fontSize: 13,
     fontWeight: "900",
     textTransform: "uppercase",
-    marginBottom: 8,
   },
   title: {
     color: "#0F172A",
-    fontSize: 30,
     fontWeight: "900",
-    lineHeight: 36,
   },
   description: {
     color: "#64748B",
-    fontSize: 15,
-    fontWeight: "700",
-    lineHeight: 22,
-    marginTop: 10,
+    fontWeight: "600",
   },
   formPanel: {
+    width: "100%",
     backgroundColor: "#FFFFFF",
     borderRadius: 8,
-    padding: 16,
     borderWidth: 1,
     borderColor: "#E2E8F0",
-    marginBottom: 16,
+    marginBottom: 12,
   },
   codeInput: {
-    fontSize: 20,
     fontWeight: "800",
   },
-  statusBox: {
-    minHeight: 48,
-    borderRadius: 8,
-    backgroundColor: "#F1F5F9",
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: 14,
+  diagnostic: {
+    color: "#64748B",
+    fontWeight: "700",
+    marginTop: 8,
   },
-  statusBoxSuccess: {
-    backgroundColor: "#ECFDF5",
-  },
-  statusBoxError: {
-    backgroundColor: "#FEF2F2",
-    borderWidth: 1,
-    borderColor: "#FECACA",
-  },
-  statusText: {
-    flex: 1,
-    color: "#475569",
-    fontSize: 13,
-    fontWeight: "800",
-    lineHeight: 18,
-    marginLeft: 8,
-  },
-  statusTextSuccess: {
-    color: "#047857",
-  },
-  statusTextError: {
-    color: "#B91C1C",
+  srStatus: {
+    position: "absolute",
+    width: 1,
+    height: 1,
+    overflow: "hidden",
+    opacity: 0,
   },
   errorBanner: {
     borderRadius: 8,
@@ -332,7 +383,7 @@ const styles = StyleSheet.create({
     borderColor: "#FECACA",
     paddingHorizontal: 12,
     paddingVertical: 10,
-    marginBottom: 14,
+    marginTop: 10,
   },
   errorBannerText: {
     color: "#B91C1C",
@@ -341,13 +392,13 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
   primaryButton: {
-    minHeight: 54,
     backgroundColor: "#0F172A",
     borderRadius: 8,
     alignItems: "center",
     justifyContent: "center",
     flexDirection: "row",
     gap: 8,
+    width: "100%",
   },
   disabledButton: {
     opacity: 0.75,
@@ -355,33 +406,39 @@ const styles = StyleSheet.create({
   primaryText: {
     color: "#FFFFFF",
     fontWeight: "900",
-    fontSize: 16,
   },
   schoolCard: {
-    backgroundColor: "#FFFFFF",
+    flexDirection: "column",
+    backgroundColor: "#F0FDF4",
     borderRadius: 8,
-    padding: 14,
+    padding: 12,
     borderWidth: 1,
     borderColor: "#BBF7D0",
+    marginTop: 12,
+    width: "100%",
+  },
+  schoolHeader: {
     flexDirection: "row",
     alignItems: "center",
-    marginBottom: 14,
   },
   logo: {
-    width: 72,
-    height: 72,
-    borderRadius: 12,
+    borderRadius: 10,
     backgroundColor: "#FFFFFF",
     alignItems: "center",
     justifyContent: "center",
-    marginRight: 12,
     borderWidth: 1,
     borderColor: "#D1FAE5",
   },
-  schoolLogoImage: { width: 64, height: 64, resizeMode: "contain" },
+  schoolLogoImage: { width: 28, height: 28, resizeMode: "contain" },
   schoolCopy: {
     flex: 1,
     minWidth: 0,
+  },
+  foundLabel: {
+    color: "#047857",
+    fontSize: 12,
+    fontWeight: "800",
+    marginBottom: 2,
   },
   schoolName: {
     color: "#0F172A",
@@ -390,44 +447,46 @@ const styles = StyleSheet.create({
   },
   schoolCity: {
     color: "#64748B",
-    fontWeight: "800",
-    marginTop: 4,
+    fontWeight: "700",
+    fontSize: 13,
+    marginTop: 2,
   },
   nextStepHint: {
     color: "#334155",
     fontSize: 12,
-    fontWeight: "700",
-    lineHeight: 17,
+    fontWeight: "600",
+    lineHeight: 16,
     marginTop: 8,
+    marginBottom: 10,
   },
   loginButton: {
     backgroundColor: "#0F766E",
     borderRadius: 8,
     paddingHorizontal: 12,
-    paddingVertical: 11,
     flexDirection: "row",
     alignItems: "center",
+    justifyContent: "center",
     gap: 8,
+    width: "100%",
   },
   loginText: {
     color: "#FFFFFF",
     fontWeight: "900",
-    fontSize: 12,
   },
   helpBox: {
     flexDirection: "row",
     backgroundColor: "#EFF6FF",
     borderRadius: 8,
-    padding: 12,
+    padding: 10,
     borderWidth: 1,
     borderColor: "#BFDBFE",
   },
   helpText: {
     flex: 1,
     color: "#1E40AF",
-    fontSize: 13,
-    fontWeight: "800",
-    lineHeight: 18,
+    fontSize: 12,
+    fontWeight: "700",
+    lineHeight: 16,
     marginLeft: 8,
   },
 });

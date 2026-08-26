@@ -35,6 +35,17 @@ function main() {
   run("npx", ["--yes", "tsx", path.join("src", "lib", "mobileUsability.test.ts")], MOBILE);
   console.log("OK: tests unitaires Login/Classes/Notes/Finance/Planning/Messages/a11y");
 
+  run("npx", ["--yes", "tsx", path.join("src", "lib", "roleSelectionLayout.test.ts")], MOBILE);
+  const roleSelection = source(path.join("screens", "RoleSelectionScreen.tsx"));
+  assert.match(roleSelection, /useWindowDimensions/);
+  assert.match(roleSelection, /getRoleSelectionLayout/);
+  assert.match(roleSelection, /ROLE_SELECTION_TEST_IDS\.verifyButton/);
+  assert.match(roleSelection, /ROLE_SELECTION_TEST_IDS\.schoolCard/);
+  assert.match(roleSelection, /ROLE_SELECTION_TEST_IDS\.openLoginButton/);
+  assert.doesNotMatch(roleSelection, /paddingTop:\s*54/);
+  assert.doesNotMatch(roleSelection, /allowFontScaling=\{false\}/);
+  console.log("OK: RoleSelection — layout responsive + résultat validé dans le flux");
+
   run("node", [path.join("scripts", "verify-mobile-ux-v1.js")], MOBILE);
   console.log("OK: contrat UX/UI Mobile V2 — coque Accueil unique (référence Préfet)");
 

@@ -1,4 +1,5 @@
 import { ActivityIndicator, Text, TouchableOpacity, View } from "react-native";
+import { ROLE_SELECTION_NAV_TITLE } from "../lib/roleSelectionLayout";
 import { NavigationContainer } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 
@@ -239,7 +240,15 @@ export default function AppNavigator() {
     <NavigationContainer key={session ? "authenticated" : "public"}>
       <Stack.Navigator initialRouteName={session ? "Home" : "Welcome"}>
         <Stack.Screen name="Welcome" component={WelcomeScreen} options={{ headerShown: false }} />
-        <Stack.Screen name="RoleSelection" component={RoleSelectionScreen} options={{ title: "Se connecter à l'établissement" }} />
+        <Stack.Screen
+          name="RoleSelection"
+          component={RoleSelectionScreen}
+          options={{
+            title: ROLE_SELECTION_NAV_TITLE,
+            headerTitleAlign: "center",
+            headerTitleStyle: { fontSize: 18, fontWeight: "700" },
+          }}
+        />
         <Stack.Screen name="Login" component={LoginScreen} options={{ headerShown: false }} />
         <Stack.Screen name="Home" component={HomeTabs} options={{ headerShown: false }} />
 
