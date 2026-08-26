@@ -1,5 +1,5 @@
 import { useCallback, useMemo } from "react";
-import { View, Text, FlatList, TouchableOpacity } from "react-native";
+import { View, Text, FlatList, ScrollView, TouchableOpacity } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect } from "@react-navigation/native";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
@@ -16,6 +16,7 @@ import { getPaymentCashKpi } from "../lib/paymentCashKpi";
 import { getPaymentRateKpi } from "../lib/paymentRateKpi";
 import { useFloatingTabBarLayout } from "../lib/screenLayout";
 import {
+  STUDENT_PAYMENTS_KPI_DENSITY as KPI,
   STUDENT_SUB_SCREENS_COPY,
   STUDENT_SUB_SCREENS_TEST_IDS,
 } from "../lib/studentSubScreensSpec";
@@ -83,22 +84,20 @@ export default function StudentPaymentsScreen({ route, navigation }: Partial<Pro
   const unallocatedLabel = paymentsReady ? `${cashKpi.unallocatedAmount.toLocaleString()} FC` : "—";
   const showQueryState = paymentsSnapshot.status !== "success" || sortedPayments.length === 0;
 
-  return (
-    <View style={styles.container} testID={STUDENT_SUB_SCREENS_TEST_IDS.paymentsScreen}>
-      <TouchableOpacity
-        activeOpacity={0.85}
-        style={styles.backButton}
-        testID={STUDENT_SUB_SCREENS_TEST_IDS.subScreenBackButton}
-        onPress={() => navigation?.goBack()}
-      >
-        <Ionicons name="arrow-back" size={24} color="#0F172A" />
-      </TouchableOpacity>
-
+  const financeHeader = (
+    <>
       <StudentSwitcher />
-      <Text style={styles.title} testID={STUDENT_SUB_SCREENS_TEST_IDS.paymentsTitle}>
+      <Text style={[styles.title, localStyles.title]} testID={STUDENT_SUB_SCREENS_TEST_IDS.paymentsTitle}>
         {STUDENT_SUB_SCREENS_COPY.paymentsTitle}
       </Text>
-      <Text style={styles.subtitle}>{student?.name ?? "Élève"}</Text>
+      <Text
+        style={[
+          styles.subtitle,
+          student?.className ? localStyles.subtitleWithClass : localStyles.subtitleSolo,
+        ]}
+      >
+        {student?.name ?? "Élève"}
+      </Text>
       {student?.className ? (
         <Text style={localStyles.classLabel}>Classe : {student.className}</Text>
       ) : null}
@@ -111,60 +110,93 @@ export default function StudentPaymentsScreen({ route, navigation }: Partial<Pro
 
       {feesReady ? (
         <>
-          <View style={[styles.summaryCard, { backgroundColor: "#2563EB" }]}>
-            <Text style={[styles.summaryLabel, { color: "#DBEAFE" }]}>Frais scolaires attendus</Text>
-            <Text style={[styles.summaryValue, { color: "#FFFFFF" }]}>{expectedLabel}</Text>
+          <View
+            style={localStyles.heroCard}
+            testID={STUDENT_SUB_SCREENS_TEST_IDS.paymentsKpiHero}
+            accessibilityRole="summary"
+            accessibilityLabel={`Frais scolaires attendus ${expectedLabel}`}
+          >
+            <Text style={localStyles.heroLabel}>Frais scolaires attendus</Text>
+            <Text style={localStyles.heroValue} selectable>
+              {expectedLabel}
+            </Text>
           </View>
 
-          <View style={localStyles.balanceRow}>
-            <View style={localStyles.balanceCard}>
-              <Text style={localStyles.balanceLabel}>Imputé</Text>
-              <Text style={localStyles.balanceValue}>{imputedLabel}</Text>
+          <View style={localStyles.kpiGrid} testID={STUDENT_SUB_SCREENS_TEST_IDS.paymentsKpiGrid}>
+            <View style={localStyles.kpiRow}>
+              <KpiMiniCard label="Imputé" value={imputedLabel} valueColor="#16A34A" />
+              <KpiMiniCard
+                label="Reste à payer"
+                value={remainingLabel}
+                valueColor="#EA580C"
+                backgroundColor="#FFF7ED"
+              />
             </View>
-            <View style={[localStyles.balanceCard, localStyles.pendingCard]}>
-              <Text style={localStyles.balanceLabel}>Reste à payer</Text>
-              <Text style={[localStyles.balanceValue, localStyles.pendingValue]}>
-                {remainingLabel}
-              </Text>
-            </View>
-          </View>
-          <View style={localStyles.balanceRow}>
-            <View style={localStyles.balanceCard}>
-              <Text style={localStyles.balanceLabel}>Encaissé</Text>
-              <Text style={localStyles.balanceValue}>{collectedLabel}</Text>
-            </View>
-            <View style={[localStyles.balanceCard, localStyles.unallocatedCard]}>
-              <Text style={localStyles.balanceLabel}>Non imputé</Text>
-              <Text style={[localStyles.balanceValue, localStyles.unallocatedValue]}>
-                {unallocatedLabel}
-              </Text>
+            <View style={localStyles.kpiRow}>
+              <KpiMiniCard label="Encaissé" value={collectedLabel} valueColor="#16A34A" />
+              <KpiMiniCard
+                label="Non imputé"
+                value={unallocatedLabel}
+                valueColor="#1D4ED8"
+                backgroundColor="#EFF6FF"
+              />
             </View>
           </View>
         </>
       ) : null}
 
-      <Text style={styles.sectionTitle}>{STUDENT_SUB_SCREENS_COPY.paymentsSectionTitle}</Text>
+      <Text
+        style={localStyles.historyTitle}
+        testID={STUDENT_SUB_SCREENS_TEST_IDS.paymentsHistoryTitle}
+      >
+        {STUDENT_SUB_SCREENS_COPY.paymentsSectionTitle}
+      </Text>
+    </>
+  );
+
+  return (
+    <View style={styles.container} testID={STUDENT_SUB_SCREENS_TEST_IDS.paymentsScreen}>
+      <TouchableOpacity
+        activeOpacity={0.85}
+        style={styles.backButton}
+        testID={STUDENT_SUB_SCREENS_TEST_IDS.subScreenBackButton}
+        onPress={() => navigation?.goBack()}
+        accessibilityRole="button"
+        accessibilityLabel="Retour"
+      >
+        <Ionicons name="arrow-back" size={24} color="#0F172A" />
+      </TouchableOpacity>
 
       {showQueryState ? (
-        <QueryStateView
-          snapshot={
-            paymentsSnapshot.status === "success" && sortedPayments.length === 0
-              ? { status: "empty", data: [] }
-              : paymentsSnapshot
-          }
-          emptyMessage={DATA_TRUTH_COPY.emptyPayments}
-          errorMessage={DATA_TRUTH_COPY.errorPayments}
-          offlineMessage={DATA_TRUTH_COPY.offlinePayments}
-          emptyTestId={DATA_TRUTH_TEST_IDS.paymentsEmpty}
-          errorTestId={DATA_TRUTH_TEST_IDS.paymentsError}
-          onRetry={() => void refreshFinance()}
-        />
+        <ScrollView
+          style={localStyles.flex}
+          contentContainerStyle={listContentStyle}
+          keyboardShouldPersistTaps="handled"
+        >
+          {financeHeader}
+          <QueryStateView
+            snapshot={
+              paymentsSnapshot.status === "success" && sortedPayments.length === 0
+                ? { status: "empty", data: [] }
+                : paymentsSnapshot
+            }
+            emptyMessage={DATA_TRUTH_COPY.emptyPayments}
+            errorMessage={DATA_TRUTH_COPY.errorPayments}
+            offlineMessage={DATA_TRUTH_COPY.offlinePayments}
+            emptyTestId={DATA_TRUTH_TEST_IDS.paymentsEmpty}
+            errorTestId={DATA_TRUTH_TEST_IDS.paymentsError}
+            onRetry={() => void refreshFinance()}
+          />
+        </ScrollView>
       ) : (
         <FlatList
+          style={localStyles.flex}
           data={sortedPayments}
           keyExtractor={(item) => item.id}
           testID={STUDENT_SUB_SCREENS_TEST_IDS.paymentsList}
           contentContainerStyle={listContentStyle}
+          keyboardShouldPersistTaps="handled"
+          ListHeaderComponent={financeHeader}
           renderItem={({ item }) => (
             <>
               <PaymentReceiptCard payment={item} studentName={student?.name} showItems />
@@ -173,6 +205,31 @@ export default function StudentPaymentsScreen({ route, navigation }: Partial<Pro
           )}
         />
       )}
+    </View>
+  );
+}
+
+function KpiMiniCard({
+  label,
+  value,
+  valueColor,
+  backgroundColor = "#FFFFFF",
+}: {
+  label: string;
+  value: string;
+  valueColor: string;
+  backgroundColor?: string;
+}) {
+  return (
+    <View
+      style={[localStyles.kpiCard, { backgroundColor }]}
+      accessibilityRole="text"
+      accessibilityLabel={`${label} ${value}`}
+    >
+      <Text style={localStyles.kpiLabel}>{label}</Text>
+      <Text style={[localStyles.kpiValue, { color: valueColor }]} selectable>
+        {value}
+      </Text>
     </View>
   );
 }
@@ -193,32 +250,65 @@ function parsePaymentDate(value?: string) {
 }
 
 const localStyles = {
+  flex: { flex: 1 },
+  title: { fontSize: 24 },
+  subtitleWithClass: { marginBottom: 2 },
+  subtitleSolo: { marginBottom: 8 },
   classLabel: {
-    marginTop: 4,
-    marginBottom: 20,
+    marginTop: 0,
+    marginBottom: 10,
     color: "#2563EB",
     fontWeight: "800" as const,
   },
-  balanceRow: {
-    flexDirection: "row" as const,
-    gap: 12,
-    marginBottom: 18,
+  heroCard: {
+    backgroundColor: "#2563EB",
+    borderRadius: 14,
+    paddingVertical: KPI.heroPaddingVertical,
+    paddingHorizontal: KPI.heroPaddingHorizontal,
+    marginBottom: KPI.heroMarginBottom,
   },
-  balanceCard: {
-    flex: 1,
-    backgroundColor: "#FFFFFF",
-    borderRadius: 18,
-    padding: 16,
+  heroLabel: {
+    color: "#DBEAFE",
+    fontSize: KPI.heroLabelFontSize,
+    fontWeight: "700" as const,
   },
-  pendingCard: { backgroundColor: "#FFF7ED" },
-  unallocatedCard: { backgroundColor: "#EFF6FF" },
-  balanceLabel: { color: "#64748B", fontWeight: "800" as const },
-  balanceValue: {
-    marginTop: 6,
-    color: "#16A34A",
+  heroValue: {
+    color: "#FFFFFF",
+    fontSize: KPI.heroValueFontSize,
     fontWeight: "900" as const,
-    fontSize: 18,
+    marginTop: KPI.heroValueMarginTop,
   },
-  pendingValue: { color: "#EA580C" },
-  unallocatedValue: { color: "#1D4ED8" },
+  kpiGrid: {
+    gap: KPI.kpiGap,
+    marginBottom: KPI.kpiBlockMarginBottom,
+  },
+  kpiRow: {
+    flexDirection: "row" as const,
+    gap: KPI.kpiGap,
+  },
+  kpiCard: {
+    flex: 1,
+    minWidth: 0,
+    borderRadius: 14,
+    paddingVertical: KPI.kpiPaddingVertical,
+    paddingHorizontal: KPI.kpiPaddingHorizontal,
+  },
+  kpiLabel: {
+    color: "#64748B",
+    fontSize: KPI.kpiLabelFontSize,
+    fontWeight: "800" as const,
+  },
+  kpiValue: {
+    marginTop: KPI.kpiValueMarginTop,
+    fontWeight: "900" as const,
+    fontSize: KPI.kpiValueFontSize,
+    flexShrink: 1,
+  },
+  historyTitle: {
+    fontSize: 18,
+    fontWeight: "900" as const,
+    color: "#0F172A",
+    marginTop: 2,
+    marginBottom: 8,
+  },
 };
