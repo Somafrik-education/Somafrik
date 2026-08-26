@@ -3,13 +3,12 @@
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
 const { TokenService } = require("../services/tokenService");
-const { RbacService, routePermissions } = require("../services/rbacService");
+const { RbacService, routePermissions, PERMISSION_DENIED } = require("../services/rbacService");
 const { TenantScopeService } = require("../services/tenantScopeService");
 const { MOBILE_SYNC_ERROR } = require("./mobileSyncErrors");
 const { handleMobileSyncL1Classes, clampLimit } = require("./mobileSyncClasses");
 const { encodeMobileSyncCursor } = require("./mobileSyncCursor");
 const { computeClassesScopeHash } = require("./mobileSyncScope");
-const { PERMISSION_DENIED } = require("../services/rbacService");
 
 const tokens = new TokenService({ secret: "ci-test-secret-with-enough-length-for-production-checks" });
 const tenantScopeService = new TenantScopeService();
