@@ -35,6 +35,7 @@ const ACCOUNTANT_USER_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa3";
 const DUAL_USER_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa4";
 const ACC_DUAL_USER_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa5";
 const CUSTOM_USER_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa6";
+const PREFET_USER_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa7";
 const TEACHER_ID = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
 const DUAL_TEACHER_ID = "cccccccc-cccc-4ccc-8ccc-cccccccccc10";
 const SUBJECT_ID = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
@@ -595,6 +596,23 @@ async function main() {
     assert.equal(String(orphanGet.teacherName ?? "").trim(), "");
 
     await repo.pool.query(
+      `INSERT INTO users (id, school_id, user_code, first_name, last_name, email, role, status, must_change_password)
+       VALUES ($1, $2, 'PRF-ASG-1', 'Paul', 'Prefet', 'prefet-asg@test.local', 'Préfet des études', 'active', FALSE)`,
+      [PREFET_USER_ID, fixture.schoolA],
+    );
+    await repo.pool.query(
+      `INSERT INTO user_roles (user_id, school_id, role_key, status)
+       VALUES ($1, $2, 'PREFET_ETUDES', 'active')`,
+      [PREFET_USER_ID, fixture.schoolA],
+    );
+    const prefetToken = mintAccess(tokens, {
+      sub: PREFET_USER_ID,
+      role: "Préfet des études",
+      roleKeys: ["PREFET_ETUDES"],
+      schoolCode: "SCH-A",
+      permissions: ["Affectations:DELETE", "Affectations:READ", "ALL_PRIVILEGES"],
+    });
+    await repo.pool.query(
       `INSERT INTO teacher_assignments (
          id, school_id, teacher_id, class_id, subject_id, academic_year_id, assignment_role, status, updated_at
        ) VALUES ($1, $2, $3, $4, $5, $6, 'http-delete', 'active', NOW())`,
@@ -609,7 +627,7 @@ async function main() {
     );
     const httpDelete = await request(`/assignments/${ASSIGN_HTTP_DELETE}`, {
       method: "DELETE",
-      token: adminToken,
+      token: prefetToken,
     });
     assert.equal(httpDelete.status, 200, `DELETE HTTP 200: ${JSON.stringify(httpDelete.data)}`);
     const pgDeleted = await repo.pool.query(
