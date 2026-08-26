@@ -2,11 +2,12 @@
 
 **Date :** 2026-08-26  
 **Type :** AUDIT UNIQUEMENT — aucune implémentation produit  
-**Base `develop` exact :** `7c6b90eabe280870229242d1cecd971d38a6e509`  
-(merge #339 ; inclut #342 `e7c5dbc095aa89f91c462b73e16aa3bd0fe61e51` et #340)  
+**Base `develop` exact :** `5a69383903e8e51ccd7f08ab793ec53adbd97126`  
+(merge #333 ; inclut #339, #342 `e7c5dbc095aa89f91c462b73e16aa3bd0fe61e51` et #340)  
 **RC1 / #339 :** hors scope produit. Le merge #339 n’ajoute que le rapport smoke RC1 ; aucun contrat L1/L2 modifié.  
 **#340 :** hors modification. `ready_offline` est un prérequis RBAC, pas un cache métier.  
-**#342 :** impact L1 noté ci-dessous (cours par classe / `school_courses`). Aucun endpoint delta créé.
+**#342 :** impact L1 noté ci-dessous (cours par classe / `school_courses`). Aucun endpoint delta créé.  
+**#333 :** UI Mobile Paiements / Finance uniquement. **Hors scope cache L1/L2.** Aucun impact architectural.
 
 **Verdict :** **GO SOUS CONDITIONS**
 
@@ -225,6 +226,10 @@ Pas de parentEmail / pièces / photos.
 
 **assignments**  
 `id, teacher_id, class_id, subject_id / course identifiers, status, updated_at`
+
+**school_courses** (L1, contrat #342)  
+`id, class_id / className canonique, school_course identifiers, subject/name, coefficient, status, updated_at`  
+Pas le catalogue `/v2/subjects`. Lecture future = list PG, pas `state.courses`.
 
 **course_schedule_slots**  
 `id, class_id, school_course_id, teacher_id, day_of_week, start_time, end_time, room_id, status, updated_at`

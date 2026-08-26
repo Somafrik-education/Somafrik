@@ -3,8 +3,8 @@
   "type": "architecture-audit-only",
   "productImplementation": false,
   "baseBranch": "develop",
-  "baseSha": "7c6b90eabe280870229242d1cecd971d38a6e509",
-  "baseShaNote": "develop after #339 merge; includes #342 e7c5dbc095aa89f91c462b73e16aa3bd0fe61e51 and #340",
+  "baseSha": "5a69383903e8e51ccd7f08ab793ec53adbd97126",
+  "baseShaNote": "develop after #333 merge (Mobile Payments UI). Includes #339, #342 e7c5dbc095aa89f91c462b73e16aa3bd0fe61e51 and #340",
   "verdict": "GO_SOUS_CONDITIONS",
   "ctoAmendments341": [
     "expo-sqlite SDK54 useSQLCipher before op-sqlite",
@@ -22,6 +22,12 @@
     "v2SubjectsInMetierCache": false,
     "getCoursesStillInternalBackofficeProjection": true,
     "postCoursesWritesPostgres": true
+  },
+  "pr333Impact": {
+    "mergedAt": "5a69383903e8e51ccd7f08ab793ec53adbd97126",
+    "domain": "Mobile Payments UI density",
+    "l1L2ArchitecturalImpact": false,
+    "inCacheScope": false
   },
   "backofficeState": "NO-GO",
   "storageRecommendation": "expo-sqlite SDK 54 + useSQLCipher true (native build, not Expo Go); key in SecureStore/Keystore; evaluate before op-sqlite",
