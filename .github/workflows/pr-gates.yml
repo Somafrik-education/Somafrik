@@ -306,6 +306,7 @@ jobs:
           npm run verify:planning-rooms
           npm run verify:planning-replacements
           npm run verify:planning-course-options
+          npm run verify:mobile-sync-l1-course-schedules
 
       - name: Users
         if: needs.scope.outputs.users == 'true'

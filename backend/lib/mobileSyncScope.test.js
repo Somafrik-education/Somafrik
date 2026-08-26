@@ -755,3 +755,85 @@ test("Assignments erreur identité enseignant live → 503, pas de fallback JWT"
   );
 });
 
+test("CourseSchedules CUSTOM_ROLE + Planning de cours:READ → scopeKind=none", () => {
+  const { computeCourseSchedulesScopeHash, resolveCourseSchedulesSyncScope } = require("./mobileSyncScope");
+  const custom = {
+    sub: "custom-1",
+    role: "CUSTOM_ROLE",
+    roles: ["CUSTOM_ROLE"],
+    roleKeys: ["CUSTOM_ROLE"],
+    schoolCode: "SCH-A",
+    permissions: ["Planning de cours:READ"],
+    liveTeacherId: "teacher-uuid",
+    authorizedCoursePairs: [{ classId: "class-a", subjectId: "sub-math" }],
+  };
+  const scope = resolveCourseSchedulesSyncScope(custom);
+  assert.equal(scope.scopeKind, "none");
+  const hashed = computeCourseSchedulesScopeHash(custom, { schoolCode: "SCH-A", schoolId: "id-a" });
+  assert.equal(hashed.input.resource, "course-schedules");
+  assert.deepEqual(hashed.input.coursePairs, []);
+});
+
+test("CourseSchedules assigned : paires + teacherId dans le hash, grant change le hash", () => {
+  const { computeCourseSchedulesScopeHash, resolveCourseSchedulesSyncScope } = require("./mobileSyncScope");
+  const school = { schoolCode: "SCH-A", schoolId: "id-a" };
+  const teacherA = {
+    sub: "teacher-1",
+    role: "Enseignant",
+    roles: ["Enseignant"],
+    roleKeys: ["TEACHER"],
+    schoolCode: "SCH-A",
+    permissions: ["Planning de cours:READ"],
+    liveTeacherId: "teacher-uuid",
+    authorizedAssignmentIds: ["asg-1"],
+    authorizedCoursePairs: [{ classId: "class-a", subjectId: "sub-math" }],
+  };
+  assert.equal(resolveCourseSchedulesSyncScope(teacherA).scopeKind, "assigned");
+  const before = computeCourseSchedulesScopeHash(teacherA, school);
+  const afterAdd = computeCourseSchedulesScopeHash(
+    {
+      ...teacherA,
+      authorizedAssignmentIds: ["asg-1", "asg-2"],
+      authorizedCoursePairs: [
+        { classId: "class-a", subjectId: "sub-math" },
+        { classId: "class-a", subjectId: "sub-fr" },
+      ],
+    },
+    school,
+  );
+  assert.notEqual(before.scopeHash, afterAdd.scopeHash);
+});
+
+test("CourseSchedules live ignore teacherCode JWT", async () => {
+  const { resolveLiveCourseSchedulesSyncSnapshot } = require("./mobileSyncScope");
+  const hashed = await resolveLiveCourseSchedulesSyncSnapshot(
+    {
+      listActiveUserRoleKeys: trapUnscopedRoleKeys(),
+      async listActiveUserRoleKeysForSchool() {
+        return ["TEACHER"];
+      },
+      async resolveEffectivePermissions() {
+        return { permissions: ["Planning de cours:READ"] };
+      },
+      async getLiveTeacherIdentityForSchool() {
+        return { teacherId: "live-teacher-uuid", teacherCode: "TCH-LIVE", teacherUserId: "teacher-1" };
+      },
+      async listLiveTeacherAssignmentPairsForSync() {
+        return [{ assignmentId: "live-asg", classId: "class-a", subjectId: "sub-math" }];
+      },
+    },
+    {
+      sub: "teacher-1",
+      role: "Admin School",
+      roleKeys: ["SCHOOL_ADMIN"],
+      schoolCode: "SCH-A",
+      permissions: ["Planning de cours:READ", "ALL_PRIVILEGES"],
+      teacherCode: "JWT-CODE",
+    },
+    { schoolCode: "SCH-A", schoolId: "id-a" },
+  );
+  assert.equal(hashed.scope.scopeKind, "assigned");
+  assert.equal(hashed.scope.teacherId, "live-teacher-uuid");
+  assert.deepEqual(hashed.scope.coursePairs, [{ classId: "class-a", subjectId: "sub-math" }]);
+});
+

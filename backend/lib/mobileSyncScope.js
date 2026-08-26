@@ -18,10 +18,12 @@ const {
   STUDENTS_SYNC_PERMISSIONS,
   ASSIGNMENTS_SYNC_PERMISSIONS,
   SCHOOL_COURSES_SYNC_PERMISSIONS,
+  COURSE_SCHEDULES_SYNC_PERMISSIONS,
   MOBILE_SYNC_RESOURCE_CLASSES,
   MOBILE_SYNC_RESOURCE_STUDENTS,
   MOBILE_SYNC_RESOURCE_ASSIGNMENTS,
   MOBILE_SYNC_RESOURCE_SCHOOL_COURSES,
+  MOBILE_SYNC_RESOURCE_COURSE_SCHEDULES,
   MOBILE_SYNC_ERROR,
   liveScopeError,
 } = require("./mobileSyncErrors");
@@ -895,6 +897,147 @@ async function resolveLiveSchoolCoursesSyncSnapshot(repository, principal, schoo
   return computeSchoolCoursesScopeHash(livePrincipal, schoolRef);
 }
 
+function emptyCourseScheduleScope() {
+  return { scopeKind: "none", teacherId: "", assignmentIds: [], coursePairs: [] };
+}
+
+function courseSchedulesPermissionKeys(principal = {}) {
+  const held = new Set(principal.permissions ?? []);
+  return COURSE_SCHEDULES_SYNC_PERMISSIONS.filter((permission) => held.has(permission));
+}
+
+/**
+ * Lecture CourseSchedules autorisée uniquement si le snapshot live du tenant
+ * détient réellement Planning de cours:READ (GET /api/course-schedules).
+ * @param {{ permissionKeys?: string[] }} [input]
+ */
+function liveSnapshotHasCourseSchedulesRead(input = {}) {
+  const held = new Set(input.permissionKeys ?? []);
+  return COURSE_SCHEDULES_SYNC_PERMISSIONS.some((permission) => held.has(permission));
+}
+
+/**
+ * Périmètre réel CourseSchedules : school-wide | assigned | none.
+ * Assigned = Enseignant live filtré par UUID teacher PostgreSQL ET paires
+ * d'affectations actives (classId + subjectId). w.teacher_id seul ne suffit pas.
+ *
+ * @param {object} principal
+ */
+function resolveCourseSchedulesSyncScope(principal) {
+  if (!principal) {
+    return emptyCourseScheduleScope();
+  }
+  const liveRoles = principalRoleList(principal);
+  if (!liveRoles.length) {
+    return emptyCourseScheduleScope();
+  }
+  if (SUPER_ADMIN_ROLES.has(principal.role) || principalHasAnyRole(principal, SUPER_ADMIN_ROLES)) {
+    return { scopeKind: "school-wide", teacherId: "", assignmentIds: [], coursePairs: [] };
+  }
+  if (principalHasAnyRole(principal, SCHOOL_WIDE_STUDENT_READ_ROLES)) {
+    return { scopeKind: "school-wide", teacherId: "", assignmentIds: [], coursePairs: [] };
+  }
+  if (principalHasRole(principal, "Enseignant")) {
+    return {
+      scopeKind: "assigned",
+      teacherId: liveTeacherIdFromPrincipal(principal),
+      assignmentIds: authorizedAssignmentIdsFromPrincipal(principal),
+      coursePairs: authorizedCoursePairsFromPrincipal(principal),
+    };
+  }
+  return emptyCourseScheduleScope();
+}
+
+function rosterCoursePairsForSchedulesHash(scope) {
+  if (scope.scopeKind === "assigned") {
+    return coursePairKeys(scope.coursePairs);
+  }
+  return [];
+}
+
+function rosterAssignmentIdsForSchedulesHash(scope) {
+  if (scope.scopeKind === "assigned") {
+    return scope.assignmentIds;
+  }
+  return [];
+}
+
+function courseSchedulesScopeHashInput(principal, schoolRef = {}) {
+  const scope = resolveCourseSchedulesSyncScope(principal);
+  const schoolCode = asRef(schoolRef.schoolCode ?? principal?.schoolCode).toUpperCase();
+  return {
+    resource: MOBILE_SYNC_RESOURCE_COURSE_SCHEDULES,
+    schoolCode,
+    schoolId: asRef(schoolRef.schoolId ?? principal?.effectiveSchoolId),
+    principalId: asRef(principal?.sub ?? principal?.userId ?? principal?.publicId ?? principal?.identifier),
+    roleKeys: sortedUnique(principalRoleList(principal)),
+    permissionKeys: courseSchedulesPermissionKeys(principal),
+    scopeKind: scope.scopeKind,
+    teacherId: scope.scopeKind === "assigned" ? scope.teacherId : "",
+    assignmentIds: rosterAssignmentIdsForSchedulesHash(scope),
+    coursePairs: rosterCoursePairsForSchedulesHash(scope),
+  };
+}
+
+function computeCourseSchedulesScopeHash(principal, schoolRef = {}) {
+  const scope = resolveCourseSchedulesSyncScope(principal);
+  const input = courseSchedulesScopeHashInput(principal, schoolRef);
+  return {
+    scopeHash: hashScopeInput(input),
+    scope,
+    input,
+  };
+}
+
+/**
+ * Snapshot canonique live CourseSchedules : rôles tenant → permissions Planning
+ * → identité Teacher PostgreSQL → paires d'affectations actives.
+ *
+ * @param {object} repository
+ * @param {object} principal
+ * @param {{ schoolCode?: string, schoolId?: string }} schoolRef
+ */
+async function resolveLiveCourseSchedulesSyncSnapshot(repository, principal, schoolRef = {}) {
+  const roleKeys = await loadLiveRoleKeys(repository, principal, schoolRef);
+  const permissions = await loadLivePermissions(repository, roleKeys, schoolRef);
+  const labels = roleKeys.map((key) => toRoleLabel(key)).filter(Boolean);
+  const userId = asRef(principal?.sub ?? principal?.userId ?? principal?.id);
+  const schoolId = asRef(schoolRef.schoolId);
+  const livePrincipal = {
+    sub: principal?.sub,
+    userId: principal?.userId,
+    publicId: principal?.publicId,
+    identifier: principal?.identifier,
+    schoolCode: schoolRef.schoolCode ?? principal?.schoolCode,
+    effectiveSchoolId: schoolRef.schoolId ?? principal?.effectiveSchoolId,
+    role: labels[0] || "",
+    roles: labels,
+    roleKeys,
+    permissions,
+    liveTeacherId: "",
+    authorizedAssignmentIds: [],
+    authorizedCoursePairs: [],
+  };
+
+  const preliminary = resolveCourseSchedulesSyncScope(livePrincipal);
+  if (preliminary.scopeKind === "assigned") {
+    const identity = await loadLiveTeacherIdentityForSchool(repository, userId, schoolId);
+    livePrincipal.liveTeacherId = identity?.teacherId ?? "";
+    const pairs = await loadLiveTeacherAssignmentPairsForSync(
+      repository,
+      schoolId,
+      livePrincipal.liveTeacherId,
+    );
+    livePrincipal.authorizedCoursePairs = pairs.map((pair) => ({
+      classId: pair.classId,
+      subjectId: pair.subjectId,
+    }));
+    livePrincipal.authorizedAssignmentIds = sortedUnique(pairs.map((pair) => pair.assignmentId));
+  }
+
+  return computeCourseSchedulesScopeHash(livePrincipal, schoolRef);
+}
+
 module.exports = {
   resolveClassesSyncScope,
   classesScopeHashInput,
@@ -928,4 +1071,10 @@ module.exports = {
   liveSnapshotHasSchoolCoursesRead,
   resolveLiveSchoolCoursesSyncSnapshot,
   loadLiveTeacherAssignmentPairsForSync,
+  resolveCourseSchedulesSyncScope,
+  courseSchedulesScopeHashInput,
+  computeCourseSchedulesScopeHash,
+  courseSchedulesPermissionKeys,
+  liveSnapshotHasCourseSchedulesRead,
+  resolveLiveCourseSchedulesSyncSnapshot,
 };
