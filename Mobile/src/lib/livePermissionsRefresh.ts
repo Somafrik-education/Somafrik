@@ -1,4 +1,9 @@
 import { attachCanonicalRoleIdentity } from "./canonicalRoleIdentity";
+import {
+  buildEffectivePermissionsSnapshotV1,
+  decidePermissionsRefreshFailure,
+  type EffectivePermissionsSnapshotV1,
+} from "./offlinePermissionsSnapshot";
 
 /**
  * L8 — revalidation des permissions live Mobile.
@@ -9,7 +14,7 @@ import { attachCanonicalRoleIdentity } from "./canonicalRoleIdentity";
  * retour foreground.
  */
 
-export type PermissionsBootstrapState = "idle" | "loading" | "ready" | "error";
+export type PermissionsBootstrapState = "idle" | "loading" | "ready" | "ready_offline" | "error";
 
 export type AppLifecycleState = "active" | "background" | "inactive" | "unknown" | "extension";
 
@@ -97,11 +102,11 @@ export function applyLivePermissionsToSession<T extends RefreshableSession>(
   return attachCanonicalRoleIdentity(next) as T;
 }
 
-export function isMetierRenderable(
-  session: { user?: unknown } | null | undefined,
+export function isMetierRenderable<T extends object>(
+  session: T | null | undefined,
   bootstrap: PermissionsBootstrapState,
-): boolean {
-  return Boolean(session) && bootstrap === "ready";
+): session is T {
+  return Boolean(session) && (bootstrap === "ready" || bootstrap === "ready_offline");
 }
 
 export function isUnauthorizedEffectivePermissionsError(error: unknown): boolean {
@@ -150,6 +155,8 @@ type RefresherDeps<T extends RefreshableSession> = {
   fetchEffectivePermissions: () => Promise<EffectivePermissionsPayload>;
   onAuthFailure: () => Promise<void> | void;
   onBootstrap: (state: PermissionsBootstrapState, error: string | null) => void;
+  getOfflineSnapshot?: () => EffectivePermissionsSnapshotV1 | null;
+  persistOfflineSnapshot?: (snapshot: EffectivePermissionsSnapshotV1) => Promise<void> | void;
 };
 
 function sessionUserId(session: RefreshableSession | null | undefined): string | null {
@@ -186,9 +193,27 @@ export function createEffectivePermissionsRefresher<T extends RefreshableSession
         if (!gate.isCurrent(generation, userId, sessionUserId(deps.getSession()))) {
           return false;
         }
+        const authoritative = deps.getSession();
+        const snapshot = buildEffectivePermissionsSnapshotV1({
+          session: authoritative,
+          permissions: payload.permissions ?? [],
+          roleKeys: Array.isArray(payload.roleKeys) ? payload.roleKeys : authoritative?.roleKeys,
+          resolvedAt: payload.resolvedAt,
+        });
+        if (snapshot && deps.persistOfflineSnapshot) {
+          if (!gate.isCurrent(generation, userId, sessionUserId(deps.getSession()))) {
+            return false;
+          }
+          await deps.persistOfflineSnapshot(snapshot);
+        }
+        if (!gate.isCurrent(generation, userId, sessionUserId(deps.getSession()))) {
+          return false;
+        }
         deps.onBootstrap("ready", null);
         return true;
       } catch (error) {
+        // Stale 401/403 from a previous generation/session must never purge the
+        // current session. Gate first; only the in-flight refresh may fail-closed.
         if (!gate.isCurrent(generation, userId, sessionUserId(deps.getSession()))) {
           return false;
         }
@@ -197,11 +222,21 @@ export function createEffectivePermissionsRefresher<T extends RefreshableSession
           gate.invalidate();
           return false;
         }
-        const message =
-          error instanceof Error && error.message.trim()
-            ? error.message.trim()
-            : "Impossible de charger les permissions effectives.";
-        deps.onBootstrap("error", message);
+        const decision = decidePermissionsRefreshFailure({
+          error,
+          session: deps.getSession(),
+          snapshot: deps.getOfflineSnapshot?.() ?? null,
+        });
+        if (decision.action === "purge_auth") {
+          await deps.onAuthFailure();
+          gate.invalidate();
+          return false;
+        }
+        if (decision.action === "ready_offline") {
+          deps.onBootstrap("ready_offline", null);
+          return false;
+        }
+        deps.onBootstrap("error", decision.reason);
         return false;
       }
     });

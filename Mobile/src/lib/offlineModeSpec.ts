@@ -6,6 +6,7 @@ export const OFFLINE_COPY = {
   bannerTitle: "Hors connexion",
   bannerHint:
     "Les listes déjà chargées restent consultables. Un envoi n'est rejoué que s'il figure réellement dans la file d'attente.",
+  permissionsUnrevalidated: "Mode hors ligne — droits non revalidés",
   actionBlocked: "Action impossible sans connexion internet.",
   reconnected: "Connexion rétablie",
   pendingOutbox: "envoi(s) en attente — confirmation serveur requise.",

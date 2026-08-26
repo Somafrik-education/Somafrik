@@ -8,10 +8,24 @@ import {
   persistAuthenticatedSession,
 } from "../services/api";
 import { enrichSessionPermissions } from "../domain/security/permissions";
+import { attachCanonicalRoleIdentity } from "../lib/canonicalRoleIdentity";
 import { canRestorePersistedSession } from "../lib/dataTruth";
 import { blockOutboxOnLogout } from "../lib/outbox";
+import {
+  parseEffectivePermissionsSnapshotV1,
+  persistOfflineSnapshotIfCurrent,
+  snapshotFromPersistedProfile,
+  snapshotMatchesSession,
+  type EffectivePermissionsSnapshotV1,
+} from "../lib/offlinePermissionsSnapshot";
 import { setSessionExpiredHandler } from "../services/httpClient";
-import { clearSecureSession, getSessionProfile } from "../services/secureStorage";
+import {
+  clearSecureSession,
+  getEffectivePermissionsSnapshotRaw,
+  getSessionProfile,
+  saveEffectivePermissionsSnapshot,
+  saveSessionProfile,
+} from "../services/secureStorage";
 import { safeLogger } from "../services/safeLogger";
 import { clearStoredSchoolCode } from "../lib/activeSchool";
 import { clearRequestSchoolScope } from "../lib/requestSchoolScope";
@@ -48,20 +62,83 @@ function permissionsBootstrapMessage(error: unknown) {
   return "Impossible de charger les permissions effectives.";
 }
 
+function asPersistedProfile(profile: Awaited<ReturnType<typeof getSessionProfile>>): LoginResponse | null {
+  if (!profile?.user) return null;
+  return {
+    role: profile.role as LoginResponse["role"],
+    roleKeys: profile.roleKeys,
+    permissions: profile.permissions,
+    user: profile.user as LoginResponse["user"],
+    school: profile.school as LoginResponse["school"],
+  };
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [session, setSessionState] = useState<LoginResponse | null>(null);
   const sessionRef = useRef<LoginResponse | null>(null);
+  const snapshotRef = useRef<EffectivePermissionsSnapshotV1 | null>(null);
+  const persistEpochRef = useRef(0);
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
   const [bootstrapping, setBootstrapping] = useState(true);
   const [permissionsBootstrap, setPermissionsBootstrap] = useState<PermissionsBootstrapState>("idle");
   const [permissionsBootstrapError, setPermissionsBootstrapError] = useState<string | null>(null);
 
-  const saveSession = useCallback((nextSession: LoginResponse | null) => {
-    const enriched = enrichSessionPermissions(stripSecrets(nextSession));
-    sessionRef.current = enriched;
-    setSessionState(enriched);
-    setSelectedStudentId(enriched?.user.children?.[0]?.id ?? enriched?.user.id ?? null);
-    return enriched;
+  const saveSession = useCallback((nextSession: LoginResponse | null, options?: { exactPermissions?: boolean }) => {
+    if (!nextSession) {
+      sessionRef.current = null;
+      setSessionState(null);
+      setSelectedStudentId(null);
+      return null;
+    }
+    const stripped = stripSecrets(nextSession);
+    const next = options?.exactPermissions
+      ? (attachCanonicalRoleIdentity({
+          ...stripped,
+          permissions: Array.isArray(stripped?.permissions) ? stripped.permissions.slice() : stripped?.permissions,
+          user: {
+            ...stripped?.user,
+            permissions: Array.isArray(stripped?.permissions)
+              ? stripped.permissions.slice()
+              : Array.isArray(stripped?.user?.permissions)
+                ? stripped.user.permissions.slice()
+                : stripped?.user?.permissions,
+          },
+        }) as LoginResponse)
+      : enrichSessionPermissions(stripped);
+    sessionRef.current = next;
+    setSessionState(next);
+    setSelectedStudentId(next?.user.children?.[0]?.id ?? next?.user.id ?? null);
+    return next;
+  }, []);
+
+  const persistSnapshot = useCallback(async (snapshot: EffectivePermissionsSnapshotV1) => {
+    const epoch = persistEpochRef.current;
+    await persistOfflineSnapshotIfCurrent(snapshot, {
+      isCurrent: () => epoch === persistEpochRef.current,
+      getSession: () => sessionRef.current,
+      getMemorySnapshot: () => snapshotRef.current,
+      setMemorySnapshot: (next) => {
+        snapshotRef.current = next;
+      },
+      writeSnapshotStore: async (next) => {
+        await saveEffectivePermissionsSnapshot(JSON.stringify(next));
+      },
+      writeSessionProfile: async (session, next) => {
+        const current = session as LoginResponse;
+        if (!current?.user) return;
+        await saveSessionProfile({
+          role: current.role,
+          roleKeys: next.roleKeys,
+          permissions: next.permissions,
+          user: {
+            ...(current.user as unknown as Record<string, unknown>),
+            permissions: next.permissions,
+            roleKeys: next.roleKeys,
+          },
+          ...(current.school ? { school: current.school as unknown as Record<string, unknown> } : {}),
+        });
+      },
+    });
   }, []);
 
   const refresherRef = useRef(
@@ -71,7 +148,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         saveSession(next);
       },
       fetchEffectivePermissions: getEffectivePermissions,
+      getOfflineSnapshot: () => snapshotRef.current,
+      persistOfflineSnapshot: persistSnapshot,
       onAuthFailure: async () => {
+        persistEpochRef.current += 1;
+        snapshotRef.current = null;
         await clearSecureSession().catch(() => undefined);
         saveSession(null);
         setPermissionsBootstrap("idle");
@@ -85,7 +166,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   );
 
   const clearAuthenticatedState = useCallback(() => {
+    persistEpochRef.current += 1;
     refresherRef.current.invalidate();
+    snapshotRef.current = null;
     saveSession(null);
     setPermissionsBootstrap("idle");
     setPermissionsBootstrapError(null);
@@ -110,12 +193,46 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
         if (!profile) return;
 
-        saveSession({
-          role: profile.role as LoginResponse["role"],
-          permissions: profile.permissions,
-          user: profile.user as LoginResponse["user"],
-          school: profile.school as LoginResponse["school"],
-        });
+        const restored = asPersistedProfile(profile);
+        if (!restored) return;
+
+        let snapshot: EffectivePermissionsSnapshotV1 | null = null;
+        try {
+          const raw = await getEffectivePermissionsSnapshotRaw();
+          snapshot = parseEffectivePermissionsSnapshotV1(raw ? JSON.parse(raw) : null);
+        } catch {
+          snapshot = null;
+        }
+        if (!snapshot) {
+          snapshot = snapshotFromPersistedProfile(restored);
+        }
+
+        if (snapshot && !snapshotMatchesSession(snapshot, restored)) {
+          await clearSecureSession();
+          return;
+        }
+
+        if (snapshot) {
+          snapshotRef.current = snapshot;
+          saveSession(
+            {
+              ...restored,
+              permissions: snapshot.permissions,
+              roleKeys: snapshot.roleKeys,
+              user: {
+                ...restored.user,
+                permissions: snapshot.permissions,
+                roleKeys: snapshot.roleKeys,
+              },
+            },
+            { exactPermissions: true },
+          );
+        } else if (Array.isArray(restored.permissions) || Array.isArray(restored.user?.permissions)) {
+          saveSession(restored, { exactPermissions: true });
+        } else {
+          saveSession(restored, { exactPermissions: true });
+        }
+
         await refreshEffectivePermissions();
       } catch (error) {
         safeLogger.warn("session restore failed", error);
@@ -168,6 +285,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return;
       }
 
+      persistEpochRef.current += 1;
+      refresherRef.current.invalidate();
       setPermissionsBootstrap("loading");
       setPermissionsBootstrapError(null);
 
@@ -184,6 +303,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           if (next.accessToken || next.refreshToken) {
             await persistAuthenticatedSession(next);
           }
+          const persisted = snapshotFromPersistedProfile(stripSecrets(next) ?? next);
+          if (persisted) snapshotRef.current = persisted;
           await refreshEffectivePermissions();
         } catch (error) {
           safeLogger.warn("session permission bootstrap failed", error);

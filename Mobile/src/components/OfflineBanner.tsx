@@ -8,8 +8,9 @@ import { countPendingIn, listOutbox, subscribeOutbox, type OutboxEntry } from ".
 
 export default function OfflineBanner() {
   const { syncStatus } = useAdminData();
-  const { session } = useAuth();
+  const { session, permissionsBootstrap } = useAuth();
   const [pending, setPending] = useState<number | null>(0);
+  const rightsUnrevalidated = permissionsBootstrap === "ready_offline";
 
   useEffect(() => {
     if (!session) {
@@ -36,13 +37,13 @@ export default function OfflineBanner() {
     return null;
   }
 
-  if (syncStatus === "offline") {
+  if (syncStatus === "offline" || rightsUnrevalidated) {
     return (
       <View style={styles.banner} testID={OFFLINE_TEST_IDS.banner} accessibilityRole="alert">
         <Ionicons name="cloud-offline-outline" size={18} color="#92400E" />
         <View style={styles.textWrap}>
           <Text style={styles.title} testID={OFFLINE_TEST_IDS.bannerTitle}>
-            {OFFLINE_COPY.bannerTitle}
+            {rightsUnrevalidated ? OFFLINE_COPY.permissionsUnrevalidated : OFFLINE_COPY.bannerTitle}
           </Text>
           <Text style={styles.hint} testID={OFFLINE_TEST_IDS.bannerHint}>
             {OFFLINE_COPY.bannerHint}

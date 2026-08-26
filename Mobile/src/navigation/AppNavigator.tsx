@@ -46,6 +46,7 @@ import { AdminEntity } from "../context/AdminDataContext";
 import { useAuth } from "../context/AuthContext";
 import { canReadRoute, canReadView } from "../domain/security/permissions";
 import { canAccessMessagesRoute } from "../lib/mobileCtaRbacAlignment";
+import { isMetierRenderable } from "../lib/livePermissionsRefresh";
 
 export type UserRole = string;
 
@@ -114,10 +115,9 @@ const Stack = createNativeStackNavigator<RootStackParamList>();
 function HomeTabs() {
   const { session, permissionsBootstrap } = useAuth();
 
-  // Défense en profondeur : même si une transition de navigation arrive dans
-  // le même tick que le login/logout, aucune coque métier ne se rend sans
-  // session authentifiée ET permissions live prêtes.
-  if (!session || permissionsBootstrap !== "ready") {
+  // Défense en profondeur : aucune coque métier sans session authentifiée
+  // et permissions live ready, ou snapshot offline validé (ready_offline).
+  if (!isMetierRenderable(session, permissionsBootstrap)) {
     return <View style={{ flex: 1, backgroundColor: "#F8FAFC" }} />;
   }
 

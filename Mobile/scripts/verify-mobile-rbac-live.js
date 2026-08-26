@@ -55,7 +55,7 @@ function main() {
   assert.match(navigator, /permissionsBootstrap === "error"/);
   assert.match(navigator, /Permissions indisponibles/);
   assert.match(navigator, /refreshEffectivePermissions/);
-  assert.match(navigator, /permissionsBootstrap !== "ready"/);
+  assert.match(navigator, /isMetierRenderable/);
   assert.match(navigator, /key=\{session \? "authenticated" : "public"\}/);
   assert.match(navigator, /initialRouteName=\{session \? "Home" : "Welcome"\}/);
 

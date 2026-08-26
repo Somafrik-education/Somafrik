@@ -315,6 +315,48 @@ async function main() {
   }
 
   {
+    let rejectA: (reason: { status: number }) => void = () => undefined;
+    const harness = makeHarness(sessionOf({ id: "user-a", permissions: ["Élèves:READ"] }));
+    harness.setFetch(
+      () =>
+        new Promise((_, reject) => {
+          rejectA = reject;
+        }),
+    );
+    const pendingA = harness.refresher.refresh();
+    harness.session = sessionOf({ id: "user-b", permissions: [] });
+    harness.refresher.invalidate();
+    harness.setFetch(async () => ({ permissions: ["Messages:READ"] }));
+    await harness.refresher.refresh();
+    rejectA({ status: 401 });
+    await pendingA;
+    assert.ok(harness.session, "A pending → switch B → A 401 must not purge user B");
+    assert.equal(harness.session?.user?.id, "user-b");
+    assert.deepEqual(harness.session?.permissions, ["Messages:READ"]);
+  }
+
+  {
+    let rejectA: (reason: { status: number }) => void = () => undefined;
+    const harness = makeHarness(sessionOf({ id: "user-a", permissions: ["Élèves:READ"] }));
+    harness.setFetch(
+      () =>
+        new Promise((_, reject) => {
+          rejectA = reject;
+        }),
+    );
+    const pendingA = harness.refresher.refresh();
+    harness.session = sessionOf({ id: "user-b", permissions: [] });
+    harness.refresher.invalidate();
+    harness.setFetch(async () => ({ permissions: ["Messages:READ"] }));
+    await harness.refresher.refresh();
+    rejectA({ status: 403 });
+    await pendingA;
+    assert.ok(harness.session, "A pending → switch B → A 403 must not purge user B");
+    assert.equal(harness.session?.user?.id, "user-b");
+    assert.deepEqual(harness.session?.permissions, ["Messages:READ"]);
+  }
+
+  {
     const harness = makeHarness(sessionOf({ id: "u-a", permissions: ["Élèves:READ"] }));
     let started = 0;
     let release: () => void = () => undefined;
