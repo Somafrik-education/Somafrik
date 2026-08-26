@@ -5,14 +5,45 @@
   "baseBranch": "develop",
   "baseSha": "bf9402ef78b4593ccbeff8f2d504fc0acbd97446",
   "verdict": "GO_SOUS_CONDITIONS",
+  "ctoAmendments341": [
+    "expo-sqlite SDK54 useSQLCipher before op-sqlite",
+    "scopeHash mandatory and bound to cursor; mini-cold on grant/revoke",
+    "blocked_authorization instead of silent outbox drop",
+    "expired cursor/tombstones force full resource reconciliation"
+  ],
   "rc1Separated": true,
   "pr339Untouched": true,
   "pr340Untouched": true,
   "backofficeState": "NO-GO",
-  "storageRecommendation": "expo-sqlite structured local DB + server snapshot + outbox overlay",
-  "deltaStrategy": "opaque keyset cursor (updated_at, id) + in-band terminal-status tombstones",
+  "storageRecommendation": "expo-sqlite SDK 54 + useSQLCipher true (native build, not Expo Go); key in SecureStore/Keystore; evaluate before op-sqlite",
+  "deltaStrategy": "opaque keyset cursor (updated_at, id) bound to mandatory scopeHash/scopeVersion; in-band terminal-status tombstones; expired cursor forces full resource reconciliation",
+  "scopeHash": {
+    "mandatory": true,
+    "boundToCursor": true,
+    "onGrantOrRevoke": "mini-cold sync of the resource (warm delta cannot fetch history with updated_at < old cursor)"
+  },
+  "cursorExpiry": {
+    "serverForcesFullReconciliation": true,
+    "cursorStatus": ["ok", "scope_changed", "expired"],
+    "ignoreExpiredWarmDelta": "P0 bug (local zombies)"
+  },
   "tenantPolicy": "partition userId+schoolId AND purge on logout",
-  "syncOrder": "auth/RBAC → drop unauthorized outbox → pull delta → replay outbox → pull delta final",
+  "syncOrder": "auth/RBAC → blocked_authorization (no silent drop) → pull delta or mini-cold or full resync → replay pending outbox → pull delta final",
+  "outboxRevocation": {
+    "status": "blocked_authorization",
+    "replay": false,
+    "silentDrop": false,
+    "notifyUser": true,
+    "purgeSensitivePayload": true,
+    "retainAuditMetadata": ["id", "domain", "path", "createdAt", "userId", "schoolScope", "intentionId", "blockedAt", "reason"]
+  },
+  "encryption": {
+    "expoSqliteInstalledToday": false,
+    "sdk54UseSQLCipher": true,
+    "expoGo": false,
+    "preferOverOpSqlite": true,
+    "keyStore": "SecureStore/Keystore/Keychain"
+  },
   "mobileDurableToday": {
     "secureStore": [
       "somafrik.accessToken",

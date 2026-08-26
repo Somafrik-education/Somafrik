@@ -8,6 +8,13 @@
 
 **Verdict :** **GO SOUS CONDITIONS**
 
+Amendements CTO #341 (obligatoires, intégrés ci-dessous) :
+
+1. **P1 chiffrement** — Expo SDK 54 supporte `expo-sqlite` + `useSQLCipher: true` (build natif, pas Expo Go). Évaluer **cela avant** `op-sqlite`. Clé en SecureStore/Keystore.
+2. **P0 scope + curseur** — `scopeHash` / `scopeVersion` est **lié au curseur** et **obligatoire**. Grant/revoke → **mini-cold sync** de la ressource. Un delta warm ne peut pas rattraper l’historique d’une classe nouvellement autorisée dont `updated_at` est antérieur au curseur.
+3. **P1 outbox révoquée** — jamais de drop silencieux. État `blocked_authorization`, notification, purge sécurisée du payload sensible, métadonnée d’audit minimale conservée.
+4. **Expiration curseur / tombstones** — curseur expiré ou tombstones plus disponibles → le backend **impose une réconciliation complète** de la ressource.
+
 ---
 
 ## 1. Executive summary
@@ -29,11 +36,12 @@ Les GET L1/L2 actuels sont des **listes complètes**. Aucun `updatedSince`, curs
 **Cible retenue (à valider CTO avant toute implémentation) :**
 
 ```text
-SQLite local structuré
+SQLite local structuré (expo-sqlite + SQLCipher, clé SecureStore)
   = snapshot serveur (autorisé, partitionné)
-  + overlay outbox pending
-  + delta keyset (curseur opaque updated_at,id)
+  + overlay outbox pending | blocked_authorization
+  + delta keyset (curseur opaque updated_at,id lié à scopeHash)
   + tombstones in-band (status terminal)
+  + mini-cold si scopeHash change ou curseur expiré
 ```
 
 Pas un gros JSON retéléchargé à chaque login.
@@ -96,7 +104,7 @@ Planning : contrat réel **`/course-schedules`** (slots hebdomadaires canoniques
 | JSON FileSystem | **Oui** — outbox uniquement | Mauvaise pour L2 (rewrite fichier entier, pas d’index) |
 | AsyncStorage | **Non** | Interdit tokens ; médiocre pour requêtes classId/date |
 | SecureStore | **Oui** — secrets + snapshot RBAC | Réservé secrets/session. Pas de cache métier |
-| expo-sqlite | **Non** (absent de `Mobile/package.json`) | **Candidat naturel** pour L1/L2 |
+| expo-sqlite | **Non** (absent de `Mobile/package.json`) | **Candidat naturel** pour L1/L2. SDK 54 : `useSQLCipher: true` sur Android/iOS/macOS, **build natif requis** (indisponible dans Expo Go) |
 
 Android : `allowBackup="false"` + règles d’exclusion déjà en place (`withSomafrikAndroidSecurity.js`).
 
@@ -139,6 +147,9 @@ La cible n’est **pas** `login → DELETE cache → GET tout`.
 5. Présences : **pas d’OCC** ; `ON CONFLICT (school_id, student_id, attendance_date) DO UPDATE` = LWW produit actuel.
 6. L2 GET notes/présences : full projection.
 7. Aucun persist L1/L2 → scénarios kill/relaunch offline impossibles hors outbox.
+8. Un curseur warm n’est **pas** un filtre d’autorisation : sans `scopeHash` lié, un grant de classe B dont les élèves ont `updated_at` antérieur au curseur C **n’apparaît jamais**.
+9. « Drop » d’outbox révoquée trop dangereux : une présence offline devenue interdite ne doit ni être rejouée ni disparaître sans trace.
+10. Tombstones/cursors ont une durée de vie : un mobile longtemps hors-ligne peut rater des suppressions si le warm continue.
 
 ---
 
@@ -180,7 +191,9 @@ Plus `updated_at` serveur, `sync_cursor_token` (opaque, par ressource), `row_sta
 ### Tables (champs utiles Mobile seulement)
 
 **meta_sync**  
-`user_id, school_id, resource, cursor, server_time, schema_version`
+`user_id, school_id, resource, cursor, scope_hash, scope_version, cursor_issued_at, server_time, schema_version`
+
+`scope_hash` / `scope_version` sont **obligatoires** et **liés au curseur** : un curseur n’est valide que pour le scope qui l’a émis. Changement de scope (grant **ou** revoke) → invalidation du curseur → **mini-cold** de la ressource, pas un delta warm.
 
 **classes**  
 `id, code, name, academic_year_id, status, updated_at`
@@ -238,7 +251,7 @@ Comparaison SQL : `(updated_at, id) > (cursor.t, cursor.id)`
 `limit` borné (ex. 200).
 
 **Bootstrap (COLD) :** pas de cursor → première page depuis l’origine, puis `nextCursor` jusqu’à `null`.  
-**Warm :** reprendre le cursor stocké.  
+**Warm :** reprendre le cursor stocké **seulement si** `scopeHash` client = `scopeHash` serveur **et** le serveur n’a pas marqué le curseur expiré.  
 **Jamais** d’horloge device.
 
 Réponse type (conceptuelle, **non implémentée**) :
@@ -247,11 +260,48 @@ Réponse type (conceptuelle, **non implémentée**) :
 {
   items: [ /* DTO actuel + status + updatedAt */ ],
   nextCursor: "…" | null,
+  scopeHash: "…",          // obligatoire, lié au curseur
+  scopeVersion: 12,        // monotone serveur pour ce principal+ressource
+  cursorStatus: "ok" | "scope_changed" | "expired",
   serverTime: ISO-8601
 }
 ```
 
 Lignes au status terminal (**tombstone in-band**) : le client **efface** la ligne locale. Pas besoin d’une table `sync_tombstones` au v1 si chaque ressource a déjà un status durable.
+
+### P0 — `scopeHash` lié au curseur (grant et revoke)
+
+Le curseur `(updated_at, id)` ne encode **pas** l’ensemble autorisé. Cas bloquant :
+
+```text
+Enseignant, curseur C sur Students (scope = classe A)
+→ obtient ensuite classe B
+→ les élèves de B ont updated_at < C
+→ un delta warm (updated_at, id) > C ne télécharge JAMAIS B
+```
+
+Donc :
+
+- chaque page delta porte `scopeHash` (empreinte stable des classIds / affectations / permissions de lecture de **cette** ressource) et `scopeVersion` ;
+- le client persiste `(cursor, scopeHash, scopeVersion)` ensemble dans `meta_sync` ;
+- si le serveur répond `cursorStatus=scope_changed` **ou** si le `scopeHash` reçu ≠ celui stocké : **mini-cold obligatoire** de la ressource (reset curseur, pagination depuis l’origine **sous le nouveau scope serveur**, puis remplacement des lignes locales hors nouveau scope) ;
+- grant et revoke sont le même événement protocole : le scope a changé. Le revoke doit aussi retirer immédiatement les lignes locales devenues non autorisées.
+
+Un delta warm **sans** mini-cold après grant est un trou P0 (données manquantes). Un delta warm **sans** purge après revoke est un trou P0 (données révoquées visibles).
+
+### Expiration curseur / fenêtre de tombstones
+
+Les status terminaux ne restent pas interrogeables éternellement (rétention, vacuum, `inactive` trop ancien). Un téléphone qui revient après une longue coupure avec un curseur C peut :
+
+- ne plus voir les tombstones des suppressions survenues pendant l’absence ;
+- conserver indéfiniment dans SQLite une ligne que le serveur a déjà oublié d’émettre.
+
+**Contrat obligatoire :**
+
+- le backend définit une **fenêtre de validité** du curseur (ex. alignée sur la rétention des tombstones in-band, à figer en implémentation, ordre de grandeur ≥ rétention L2 présences) ;
+- si `cursor.t` est hors fenêtre, curseur inconnu/corrompu, ou tombstones de cet intervalle plus disponibles : `cursorStatus=expired` (ou équivalent fail-closed) ;
+- le client **n’applique pas** ce warm. Il purge la ressource dans la partition courante puis fait une **réconciliation complète** (cold paginé du scope actuel) ;
+- le serveur **refuse** de servir un delta warm sur un curseur expiré (pas de « best effort » qui laisserait des zombies locaux).
 
 Agrégat `GET /api/mobile-sync/l1` : **non prioritaire**. 4 GET L1 parallèles suffisent si chacun est scopé/paginé. Un agrégat mélange RBAC différents et grossit les PRs. Revoir seulement si le nombre d’allers-retours devient un P1 terrain.
 
@@ -261,11 +311,17 @@ Agrégat `GET /api/mobile-sync/l1` : **non prioritaire**. 4 GET L1 parallèles s
 1. Refresh auth / effective-permissions
    - 401/403 → purge session + **purge cache partition**
    - ready_offline → UI cache si COLD/WARM présent ; sinon message explicite
-2. Recalcul du scope autorisé (classes enseignant, etc.)
-3. Outbox : fail-closed des intentions dont la ressource n’est plus autorisée
-   (ne pas rejouer une présence d’une classe révoquée)
-4. Pull delta L1 puis L2 (dépendances : classes/élèves/affectations avant présences/notes)
-5. Replay outbox restante (idempotency keys existantes)
+2. Recalcul du scope autorisé (classes enseignant, etc.) → scopeHash
+3. Outbox hors scope : NE PAS rejouer, NE PAS drop silencieux
+   → status blocked_authorization
+   → notification utilisateur
+   → purge sécurisée du payload sensible
+   → conservation d’une métadonnée d’audit minimale
+4. Pull L1 puis L2 :
+   - si scopeHash inchangé et curseur valide → delta warm
+   - si scopeHash changé → mini-cold ressource
+   - si curseur expiré / tombstones indisponibles → réconciliation complète
+5. Replay outbox restante (pending seulement, idempotency keys existantes)
 6. Pull delta final (ou appliquer le body POST confirmé dans le snapshot)
 ```
 
@@ -291,14 +347,16 @@ Compat #321 / #325 / #340 :
 
 Interdit : Admin=tout local, Teacher=toutes les classes, filtrer seulement dans l’UI après un download trop large, `getInternalRoleDefaults` pour peupler le cache.
 
-**Révocation online :** prochain refresh live permissions → drop des partitions / lignes hors scope (scénario F). Les GET enseignant filtrent déjà côté serveur (`classStudentsAuthz`, assignments, planning `teacherId`). Le delta doit **continuer** à le faire, y compris pour les tombstones des classes perdues (sinon stale local).
+**Révocation / grant online :** le prochain refresh live permissions + le `scopeHash` serveur sont la source. Les GET enseignant filtrent déjà côté serveur (`classStudentsAuthz`, assignments, planning `teacherId`). Le cache doit **suivre** ce filtre, pas le déduire d’un curseur d’horodatage.
 
-Mécanisme recommandé pour revoke classe enseignant :
+**`scopeHash` n’est pas optionnel.** Il est émis avec chaque curseur. Tout écart grant **ou** revoke déclenche un **mini-cold obligatoire** des ressources liées (students, assignments, schedules, puis L2 de ces classIds) :
 
-- soit le delta assignments envoie `status=deleted` pour l’affectation perdue, et le client cascade-delete élèves/présences de cette classe **s’ils n’appartiennent plus à aucune affectation restante** ;
-- soit un `scopeHash` dans meta_sync : si le hash des classIds autorisés change, **réconciliation L1 forcée** (warm → mini-cold des ressources liées).
+- revoke : retirer du snapshot local tout ce qui n’appartient plus au scope (cascade : plus aucune affectation restante pour cette classe) ;
+- grant : **repartir de l’origine** pour cette ressource, sinon l’historique B antérieur au curseur A n’arrive jamais.
 
-La réconciliation périodique (quotidienne / au login) reste une ceinture pour les ratés de tombstone.
+Les tombstones d’affectations `deleted` restent utiles **à l’intérieur** d’un même `scopeHash`. Ils ne remplacent pas le mini-cold de changement de scope.
+
+La réconciliation forcée sur curseur expiré (section 9) couvre l’absence prolongée ; elle ne dispense pas du `scopeHash`.
 
 ---
 
@@ -331,12 +389,12 @@ Mécanismes déjà là :
 
 **Ne pas inventer un AES maison.**
 
-Recommandation en deux couches :
+Recommandation (corrigée) :
 
-1. **Baseline (P0, dès PR A) :** DB hors backup Android, purge logout, pas de secrets dans SQLite, logs sans PII (`safeLogger`), pas de screenshot policy custom obligatoire au v1.
-2. **Condition P1 avant scale 1 000+ élèves :** SQLCipher (ex. `op-sqlite` SQLCipher) avec clé dans SecureStore/Keystore. `expo-sqlite` SDK 54 n’offre pas le chiffrement at-rest. Si SQLCipher n’est pas retenu, rester sur devices chiffrés + backup off et **documenter le risque appareil rooté**.
-
-Appareil compromis/rooté : Keystore extractable selon OEM — le cache pédagogique doit être traité comme **données au repos non classifiées secret défense**, d’où minimisation + rétention courte L2.
+1. **PR A — évaluer d’abord `expo-sqlite` SDK 54 + `useSQLCipher: true`.** Support officiel Android / iOS / macOS. Indisponible dans **Expo Go** : Somafrik est déjà en build natif (APK/AAB), donc ce mode est le chemin par défaut. Clé de base dans **SecureStore / Keystore Android / Keychain iOS**, jamais dans le fichier DB, jamais dans le repo, jamais dans les logs. `PRAGMA key` uniquement en mémoire après lecture SecureStore.
+2. **Ne pas introduire `op-sqlite`** tant que `expo-sqlite` + SQLCipher n’a pas été écarté sur un critère mesuré (API, migrations, crash recovery, taille APK, CI prebuild).
+3. Compléments déjà là : `allowBackup="false"`, purge logout, pas de JWT dans SQLite, logs sans PII (`safeLogger`).
+4. Pas d’AES maison sur le fichier SQLite. Appareil rooté : Keystore extractable selon OEM — minimisation + rétention L2 courte restent nécessaires même avec SQLCipher.
 
 ---
 
@@ -377,8 +435,17 @@ SQLite se justifie surtout à **500+ élèves** et dès que les requêtes `class
 | Évaluation | archived visible staff | upsert status |
 | Présence / note | pas de delete | upsert suffit |
 
-**Aucune donnée révoquée ne reste indéfiniment visible offline.**  
-Complément : réconciliation L1 complète si `scopeHash` change ou si le cursor a plus de N jours.
+**Aucune donnée révoquée ne reste indéfiniment visible offline.**
+
+Trois filets, tous obligatoires :
+
+| Événement | Action |
+| --- | --- |
+| `scopeHash` changé (grant/revoke) | mini-cold ressource + purge des lignes hors nouveau scope |
+| Tombstone in-band dans un delta **valide** | delete local de l’id |
+| Curseur expiré / tombstones hors fenêtre | **réconciliation complète** imposée par le backend ; interdit de continuer en warm |
+
+Le backend doit documenter la fenêtre (TTL curseur = fenêtre pendant laquelle un status terminal reste visible au delta). Au-delà, `cursorStatus=expired`. Un client qui ignore `expired` et continue le warm est un bug P0 (zombie local).
 
 Pas de `deletedRows` legacy / `backoffice_state`.
 
@@ -403,6 +470,9 @@ Deux concepts. Modèle UI :
 SERVER SNAPSHOT LOCAL  ∪  PENDING OUTBOX OVERLAY  =  UI OFFLINE
 ```
 
+Statuts outbox actuels : `pending | sending | sent | failed | blocked_scope_mismatch | blocked_logout`.  
+Ajouter **`blocked_authorization`** (révocation de permission / perte de classe après saisie offline).
+
 | Issue | Comportement |
 | --- | --- |
 | POST confirmé | entry `sent` → upsert snapshot depuis body/delta → overlay retiré |
@@ -410,9 +480,19 @@ SERVER SNAPSHOT LOCAL  ∪  PENDING OUTBOX OVERLAY  =  UI OFFLINE
 | 409 | conflict state |
 | vraie panne transport | reste `pending` |
 | 5xx / timeout | politique actuelle ; **pas** reclasse offline sans preuve |
+| Intention devenue hors RBAC / hors classe | **ne pas rejouer** ; **ne pas drop silencieux** |
 
-Présences : overlay déjà là. Notes : à créer sur le même contrat (PR E).  
-`bindOutboxToSession` / `blockOutboxOnLogout` restent la barrière tenant.
+Protocole `blocked_authorization` :
+
+1. Marquer l’entrée `blocked_authorization` (non retryable, comme un conflict).
+2. **Notifier** l’utilisateur (copie FR explicite : l’enregistrement n’a pas été envoyé car les droits ont changé).
+3. **Purger le payload sensible** (noms, présences, notes, identifiants élèves) du fichier outbox.
+4. **Conserver une métadonnée d’audit minimale** : `id`, `domain`, `path`, `createdAt`, `userId`, `schoolScope`, `intentionId`, `blockedAt`, `reason=authorization_revoked`. Pas de body métier.
+5. L’overlay UI retire la valeur pending ; le snapshot serveur (éventuellement déjà mini-cold) fait foi.
+
+`bindOutboxToSession` / `blockOutboxOnLogout` restent la barrière tenant. `blocked_authorization` est la barrière **RBAC intra-session / après reconnect**.
+
+Présences : overlay déjà là. Notes : à créer sur le même contrat (PR E), y compris ce statut.
 
 ---
 
@@ -443,9 +523,11 @@ Endpoints actuellement inefficaces pour sync : `GET /notes`, `GET /presences` (p
 | C | offline présence → outbox → kill → relaunch → overlay → reconnect → replay **once** | pas de doublon |
 | D | device version N → serveur N+1 → reconnect | seulement le delta |
 | E | élève/affectation supprimé serveur | disparition locale |
-| F | Teacher perd une classe → refresh permissions | données classe retirées |
+| F | Teacher **perd** une classe → refresh permissions | données classe retirées + outbox liée → `blocked_authorization` (pas de drop silencieux) |
+| F2 | Teacher **gagne** une classe B dont l’historique a `updated_at` &lt; curseur A | mini-cold : B visible, pas seulement le delta warm |
 | G | A logout → B login | aucune donnée A |
 | H | note modifiée serveur **et** offline → 409 | pas de perte silencieuse |
+| I | device absent &gt; fenêtre de tombstones, curseur expiré | backend impose réconciliation complète ; pas de zombies locaux |
 
 RC1 device UAT (#339) reste le canal smoke actuel ; ces scénarios sont le **futur** chantier cache, pas un GO RC1.
 
@@ -458,19 +540,20 @@ RC1 device UAT (#339) reste le canal smoke actuel ; ces scénarios sont le **fut
 | R1 | P0 | Fuite tenant A→B | RAM reset + outbox bind ; pas de cache disque métier | purge + partition | tests G ; bind session | oui |
 | R2 | P0 | Permission locale élargie | serveur filtre listes ; UI re-filtre | serveur filtre delta | pas de download extra | oui |
 | R3 | P0 | Cache autre user visible | n/a (pas de DB) | purge logout | fail-closed lecture | oui |
-| R4 | P0 | Données révoquées visibles offline | n/a | tombstones + scopeHash | scénario F | oui |
+| R4 | P0 | Données révoquées visibles offline **ou** historique d’un grant jamais tiré | n/a | `scopeHash` **obligatoire** lié au curseur + mini-cold | scénarios F et F2 | oui |
 | R5 | P0 | Corruption canonique / Mobile SoT | outbox ≠ réplique | snapshot≠overlay | ne jamais écrire snapshot depuis draft | oui |
 | R6 | P0 | Replay doublé | idempotency + intention | inchangé | garder keys | oui |
 | R7 | P0 | Réintroduire backoffice_state | 410 + reject Mobile | interdit | NO-GO | oui |
-| R8 | P1 | Delta incomplet / tombstone manquant | GET omet deleted | in-band status | tests E | oui avant warm |
+| R8 | P1 | Delta incomplet / tombstone manquant / curseur expiré ignoré | GET omet deleted | in-band status + `cursorStatus=expired` → full resync | tests E, I | oui avant warm |
 | R9 | P1 | Notes OCC contourné | version strippée | version dans cache/outbox | test H | oui avant PR E |
 | R10 | P1 | Présences LWW concurrent | LWW SQL | documenté | pas de faux 409 | non (contrat actuel) |
 | R11 | P1 | Cold boot lent / projection L2 | full table | SQL school + cursor | avant 1000+ élèves | oui perf |
 | R12 | P1 | Cache impossible à migrer | n/a | schema_migrations | PR A | non |
 | R13 | P1 | Listes vides prises pour vérité | `empty` vs `error`/`offline` | garder dataTruth | UX COLD | non |
-| R14 | P2 | SQLCipher absent Expo | backup déjà off | évaluer op-sqlite | condition scale | non v1 |
+| R14 | P1 | Chiffrement at-rest | `expo-sqlite` non installé ; SDK 54 **a** `useSQLCipher` | **expo-sqlite + SQLCipher** (natif, pas Expo Go), clé SecureStore ; `op-sqlite` seulement si écart mesuré | PR A | oui avant données élèves sur disque |
 | R15 | P2 | Assignments sans ResourceSnapshot | data only | aligner PR B | — | non |
 | R16 | P3 | Nom `refreshBackOfficeState` trompeur | misnomer | rename plus tard | — | non |
+| R17 | P1 | Outbox révoquée drop silencieux | pas d’état dédié | `blocked_authorization` + notif + purge payload + audit minimal | scénario F | oui avant PR E |
 
 ---
 
@@ -480,16 +563,16 @@ Chaque PR assez petite pour un diff CTO indépendant. **Aucune de ces PRs n’es
 
 | PR | Contenu | Dépend de |
 | --- | --- | --- |
-| **A** | Infra SQLite : schema/migrations, partition user/school, repos, pas de JWT, garde-fous lecture scopée | validation CTO de **ce** rapport |
-| **B** | L1 bootstrap + delta : Classes, Students, Assignments, `/course-schedules` | A + **Backend delta L1** |
-| **C** | L1 purge / RBAC revoke / tenant / tombstones / scopeHash | B |
+| **A** | Infra SQLite : schema/migrations, partition user/school, **expo-sqlite + `useSQLCipher: true`** (clé SecureStore, build natif), repos, pas de JWT | validation CTO de **ce** rapport |
+| **B** | L1 bootstrap + delta : Classes, Students, Assignments, `/course-schedules` ; curseur **lié à scopeHash** | A + **Backend delta L1** (cursor + scopeHash + expired) |
+| **C** | L1 purge / RBAC grant+revoke / tenant / tombstones / **mini-cold obligatoire** sur `scopeHash` | B |
 | **D** | L2 lecture offline : Presences, Evaluations, Notes (snapshot) | C + **Backend delta L2 school-scoped** |
-| **E** | Overlay notes + OCC `version` + conflits 409 ; présences overlay existant branché snapshot | D |
-| **F** | Device UAT A–H + hardening rétention/perf | E |
+| **E** | Overlay notes + OCC `version` + 409 ; présences overlay ; **`blocked_authorization`** | D |
+| **F** | Device UAT A–I + F2 + hardening rétention/perf / curseur expiré | E |
 
 **Backend (PRs séparées, avant ou en parallèle B/D) :**
 
-1. Delta keyset + status terminal sur L1 (classes/students/assignments/course-schedules).
+1. Delta keyset + status terminal sur L1 + **`scopeHash`/`scopeVersion` + `cursorStatus` (`ok` \| `scope_changed` \| `expired`)** + fenêtre de tombstones.
 2. `GET /notes` et `GET /presences` **WHERE school_id** (+ teacher scope) + même cursor.
 3. Exposer `version` + `updatedAt` notes jusqu’au JSON Mobile (contrat GET/POST). **Sans changer le RBAC.**
 
@@ -505,21 +588,21 @@ Le principe CTO est confirmé par l’inventaire réel : **SQLite structuré + s
 
 | Décision | Choix |
 | --- | --- |
-| Stockage | **expo-sqlite** (nouveau dep, PR A). JSON FileSystem reste l’outbox v1. SecureStore = secrets/RBAC seulement |
-| Delta | Curseur opaque `(updated_at, id)` + items au status terminal |
-| Tombstones | In-band via `status` (archived/deleted/cancelled/inactive) |
-| RBAC | Filtre **serveur** identique aux GET actuels ; revoke → tombstone ou réconciliation scopeHash |
+| Stockage | **expo-sqlite + SQLCipher** (`useSQLCipher: true`, SDK 54, build natif, pas Expo Go). Clé SecureStore/Keystore. Évaluer **avant** tout `op-sqlite`. Outbox v1 = JSON FileSystem. SecureStore secrets/RBAC. |
+| Delta | Curseur opaque `(updated_at, id)` **lié à `scopeHash`** + items au status terminal |
+| Tombstones | In-band via `status` ; **TTL** ; curseur expiré → réconciliation complète imposée par le backend |
+| RBAC | Filtre **serveur** ; grant/revoke → **mini-cold obligatoire** (pas un delta warm) |
 | Tenant | Purge logout **et** partition `userId+schoolId` |
-| Chiffrement | Baseline backup-off + purge ; SQLCipher = condition P1 scale |
+| Chiffrement | SQLCipher expo-sqlite dès PR A (données élèves). Backup déjà off |
 | Rétention | L1 année ; présences 8 semaines ; notes année |
 | OCC | Notes : transporter `version`. Présences : LWW documenté |
-| Outbox | Séparé du snapshot ; overlay ; ordre auth → prune outbox → delta → replay → delta |
-| Backend | **Oui, obligatoire** avant un warm cache utile |
+| Outbox | Séparé du snapshot ; overlay ; **`blocked_authorization`** (pas de drop silencieux) ; ordre auth → bloquer outbox hors droits → delta/mini-cold → replay pending → delta |
+| Backend | **Oui, obligatoire** : delta + scopeHash + cursor expired + L2 school-scoped |
 | Mobile | Nouvelle stack cache ; ne pas modifier #339/#340 |
 | Complexité | Haute (cross-stack), maîtrisable si PRs A–F tenues petites |
 
-**P0 à traiter avant implémentation produit :** R1–R7 (isolation, RBAC, no SoT, no backoffice_state, idempotency).  
-**P1 bloquants avant “warm delta” :** R8 tombstones, R9 version notes, R11 GET L2 scopé.
+**P0 à traiter avant implémentation produit :** R1–R7 (isolation, RBAC, `scopeHash` lié au curseur, no SoT, no backoffice_state, idempotency).  
+**P1 bloquants avant “warm delta” / données sur disque :** R8 tombstones+expiry, R9 version notes, R11 GET L2 scopé, R14 SQLCipher expo-sqlite, R17 outbox `blocked_authorization`.
 
 **Conditions de GO implémentation (après validation CTO de ce rapport) :**
 
@@ -527,7 +610,7 @@ Le principe CTO est confirmé par l’inventaire réel : **SQLite structuré + s
 2. Pas d’implémentation tant que ce diff n’a pas l’autorisation Ready/merge **audit**.
 3. RC1 reste sur #339. Cache L1/L2 = chantier suivant, pas un élargissement RC1.
 
-**NO-GO si :** réintroduction `backoffice_state`, cache = SoT, download unfiltered, `updatedAt` client-clock seul, last-write-wins silencieux sur notes, timeout traité comme offline.
+**NO-GO si :** réintroduction `backoffice_state`, cache = SoT, download unfiltered, `updatedAt` client-clock seul, last-write-wins silencieux sur notes, timeout traité comme offline, **delta warm après grant de scope**, **drop silencieux d’outbox révoquée**, **warm sur curseur expiré**.
 
 ---
 
