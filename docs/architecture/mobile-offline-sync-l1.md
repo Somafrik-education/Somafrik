@@ -1,9 +1,9 @@
-# Mobile offline sync L1 — protocole Classes + Students
+# Mobile offline sync L1 — protocole Classes + Students + Assignments
 
 Vertical slice serveur. **PostgreSQL est la seule source de vérité canonique.**
 Le protocole (curseur opaque, scopeHash, tombstones, keyset) a été validé sur
-**Classes** (#343) puis étendu à **Students** sans deuxième protocole.
-Assignments, SchoolCourses, CourseSchedules, SQLite Mobile, outbox et L2 restent hors scope.
+**Classes** (#343), **Students** (#344) et **Assignments**.
+SchoolCourses, CourseSchedules, SQLite Mobile, outbox et L2 restent hors scope.
 
 ## Endpoint
 
@@ -163,9 +163,9 @@ Jamais : curseur complet, JWT, données élèves, secrets.
 ## Extension L1
 
 Réutiliser les mêmes modules (`mobileSyncCursor`, `mobileSyncScope`, erreurs, pagination).
-`mobileSyncCursor` est **resource-aware** : `resource=classes` et `resource=students`
-sont inéchangeables (decode fail-closed 400).
-Prochaines ressources, **une PR chacune** : Assignments → SchoolCourses → CourseSchedules.
+`mobileSyncCursor` est **resource-aware** : `resource=classes`, `resource=students`
+et `resource=assignments` sont inéchangeables (decode fail-closed 400).
+Prochaines ressources, **une PR chacune** : SchoolCourses → CourseSchedules.
 Chaque ressource a son `resource` dans le curseur (non réutilisable) et son `scopeHash` (filtre autoritatif serveur).
 SQLite/SQLCipher Mobile seulement après validation de ce protocole.
 
@@ -268,3 +268,111 @@ inconnu (ex. `CUSTOM_ROLE`) même détenteur de `Élèves:READ` → `scopeKind=n
 **Isolation tenant SQL** : tout JOIN `enrollments`/`classes`/`students`/`contacts`/
 `contact_relations` exige `school_id` des deux côtés. Une inscription `school_id=A`
 pointant vers une classe B n'expose ni `classId` B ni `classCode` B.
+
+## Assignments — `GET /api/mobile-sync/l1/assignments`
+
+```
+GET /api/mobile-sync/l1/assignments
+GET /api/mobile-sync/l1/assignments?cursor=<opaque>
+```
+
+PostgreSQL uniquement. Même protocole que Classes / Students (`resource=assignments`).
+Un curseur Classes ou Students présenté ici → `400 MOBILE_SYNC_CURSOR_INVALID`.
+
+RBAC identique à `GET /api/assignments` :
+
+`Affectations:READ` | `Enseignants:READ` | `COUNTRY_PRIVILEGES` | `ALL_PRIVILEGES`
+
+Après `requirePermission()` (JWT), le handler reconstruit le scope depuis PostgreSQL
+live **avant** toute lecture métier. Aucun fallback vers `principal.role`,
+`principal.roleKeys`, `principal.permissions`, `principal.teacherCode`,
+`principal.teacherId` ou `principal.assignments`.
+
+**P0 — même resolver live sur l'API historique.** `GET /api/assignments` n'utilise
+plus `req.principal.role === "Enseignant"` ni les identifiants JWT. Les deux
+endpoints partagent `resolveLiveAssignmentsSyncSnapshot`. Un JWT `role=Admin School`
+dont le rôle PostgreSQL live du tenant est `TEACHER` ne voit **que** ses affectations
+sur les deux routes.
+
+### Projection minimale
+
+`id`, `teacherId` (**UUID PostgreSQL réel**, pas `teacher_code`), `teacherCode`,
+`teacherUserId`, `classId`, `classCode`, `subjectId`, `subjectCode`,
+`academicYearId`, `assignmentRole`, `status`, `updatedAt`, `tombstone`
+
+L'API historique `mapAssignment()` conserve `teacherId: teacher_code` pour
+compatibilité. Le protocole offline **ne recopie pas** cette ambiguïté.
+
+Interdit : credentials, email/téléphone, fiche utilisateur complète, payload
+legacy, photo, `backoffice_state`. Pas de `teacherDisplayName` dans cette version.
+
+### Scope live
+
+```
+userId + schoolId
+        ↓
+rôles PostgreSQL actifs du tenant (`listActiveUserRoleKeysForSchool`)
+        ↓
+permissions PostgreSQL effectives du tenant
+        ↓
+identité Teacher PostgreSQL live si rôle Enseignant
+        ↓
+affectations actives autorisées
+        ↓
+scopeHash + filtre SQL
+```
+
+Identité enseignant :
+
+```
+users.id = principal userId
+teachers.user_id = users.id
+teachers.school_id = school.id
+```
+
+Filtre SQL par UUID `teachers.id`. Jamais `teacherCode` JWT.
+
+| scopeKind | Qui | Filtre SQL | Roster dans scopeHash |
+| --- | --- | --- | --- |
+| `school-wide` | Super Admin + `SCHOOL_WIDE_STUDENT_READ_ROLES` allowlistés et autorisés | toutes les affectations du tenant | **non** (création / update / delete = deltas) |
+| `assigned` | Enseignant live | `teacher_assignments.teacher_id` = UUID live, statuts explicitement actifs | **oui** — IDs des affectations actives actuellement visibles |
+| `none` | aucun rôle live du tenant, **ou rôle live hors allowlist** (ex. `CUSTOM_ROLE` même avec `Affectations:READ`) | zéro ligne | — |
+
+**Aucun fallback school-wide.** Permission live absente (scope ≠ none) →
+`403 PERMISSION_DENIED` avant la requête métier. Erreur de résolution PG
+(rôles / permissions / identité Teacher) → `503 MOBILE_SYNC_LIVE_SCOPE_UNAVAILABLE`,
+zéro donnée. Dépôt mémoire / non-PG → `503 MOBILE_SYNC_POSTGRES_REQUIRED`.
+
+Grant / revoke / réaffectation Teacher, ou changement de rôle → ancien curseur
+`409 MOBILE_SYNC_SCOPE_CHANGED` / `mode=full_required`, puis full sync propre.
+
+### Tombstones
+
+`DELETE /api/assignments/:id` pose déjà `status='deleted'` et `updated_at=NOW()`.
+Pas de hard delete. Sync school-wide : `tombstone=true` ⇔ `status !== "active"`.
+Aucun statut inventé. Assigned n'émet pas de tombstone de visibilité : le roster
+dans le `scopeHash` force une full sync.
+
+### Pagination keyset
+
+`ORDER BY teacher_assignments.updated_at ASC, teacher_assignments.id ASC`
+Cursor opaque : `lastUpdatedAt`, `lastId` = lastAssignmentId.
+Pas d'OFFSET. Défaut 200, max 500, fetch `limit+1`.
+
+### Isolation tenant SQL
+
+Tout JOIN confirme explicitement le tenant :
+
+`teacher_assignments.school_id`, `teachers.school_id`, `users.school_id`,
+`classes.school_id`, `subjects.school_id`, `academic_years.school_id`.
+
+Une FK valide n'est pas une preuve d'isolation. Un assignment `school_id=A`
+pointant vers une classe / un enseignant / une matière B n'expose aucune donnée B.
+
+### Index
+
+Justifiés par `EXPLAIN` (`enable_seqscan=off`) :
+
+- `idx_teacher_assignments_school_updated_at_id` — keyset school-wide
+- `idx_teacher_assignments_school_teacher_updated_at_id` — keyset assigned
+

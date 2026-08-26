@@ -34,6 +34,12 @@ const routePermissions = {
   "GET /api/classes": ["Classes:READ", "Voir classes", "Gérer classes", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
   "GET /api/mobile-sync/l1/classes": ["Classes:READ", "Voir classes", "Gérer classes", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
   "GET /api/mobile-sync/l1/students": ["Élèves:READ", "Gérer élèves", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
+  "GET /api/mobile-sync/l1/assignments": [
+    "Affectations:READ",
+    "Enseignants:READ",
+    "COUNTRY_PRIVILEGES",
+    "ALL_PRIVILEGES",
+  ],
   "POST /api/classes": ["Classes:CREATE", "Gérer classes", "ALL_PRIVILEGES"],
   "PATCH /api/classes/:classCode": ["Classes:UPDATE", "Gérer classes", "ALL_PRIVILEGES"],
   "GET /api/classes/:classCode/students": ["Élèves:READ", "Gérer élèves", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],

@@ -231,6 +231,9 @@ app.get("/", asyncHandler(async (req, res) => {
       "/api/courses",
       "/api/academic-config",
       "/api/assignments",
+      "/api/mobile-sync/l1/classes",
+      "/api/mobile-sync/l1/students",
+      "/api/mobile-sync/l1/assignments",
       "/api/students",
       "/api/students/:id",
       "/api/teachers",
@@ -595,6 +598,24 @@ app.get(
   }),
 );
 
+app.get(
+  "/api/mobile-sync/l1/assignments",
+  requireAuth,
+  requirePermission("GET /api/mobile-sync/l1/assignments"),
+  asyncHandler(async (req, res) => {
+    const { handleMobileSyncL1Assignments } = require("./lib/mobileSyncAssignments");
+    const result = await handleMobileSyncL1Assignments({
+      principal: req.principal,
+      cursor: req.query?.cursor,
+      limit: req.query?.limit,
+      tokenService,
+      repository,
+      tenantScopeService,
+    });
+    res.status(result.httpStatus).json(result.body);
+  }),
+);
+
 app.post("/api/classes", requireAuth, requirePermission("POST /api/classes"), asyncHandler(async (req, res) => {
   const schoolCode = String(req.principal?.schoolCode ?? "").trim();
   if (!schoolCode || schoolCode === "*") {
@@ -910,18 +931,47 @@ app.get("/api/assignments", requireAuth, requirePermission("GET /api/assignments
     throw new BusinessError(400, "schoolCode établissement requis.");
   }
   tenantScopeService.assertSchoolAccess(req.principal, schoolCode);
-  let rows = await repository.listSchoolTeacherAssignments(schoolCode);
 
-  if (req.principal.role === "Enseignant") {
-    const identityKeys = new Set(
-      [req.principal.sub, req.principal.identifier, req.principal.teacherCode, req.principal.teacherId]
-        .map((value) => String(value ?? "").trim())
-        .filter(Boolean),
-    );
-    rows = rows.filter((assignment) =>
-      identityKeys.has(String(assignment.teacherCode ?? "").trim()) ||
-      identityKeys.has(String(assignment.teacherId ?? "").trim()),
-    );
+  const {
+    resolveLiveAssignmentsSyncSnapshot,
+    liveSnapshotHasAssignmentsRead,
+  } = require("./lib/mobileSyncScope");
+  const { MOBILE_SYNC_ERROR } = require("./lib/mobileSyncErrors");
+
+  let school = null;
+  if (typeof repository.getSchoolByCode === "function") {
+    school = await repository.getSchoolByCode(schoolCode);
+  }
+  const schoolId = String(req.principal.effectiveSchoolId ?? school?.id ?? "").trim();
+  let snapshot;
+  try {
+    snapshot = await resolveLiveAssignmentsSyncSnapshot(repository, req.principal, {
+      schoolCode,
+      schoolId,
+    });
+  } catch (error) {
+    if (error?.code === MOBILE_SYNC_ERROR.LIVE_SCOPE_UNAVAILABLE && error.statusCode) {
+      throw error;
+    }
+    const unavailable = new Error("Impossible de résoudre le périmètre live des affectations.");
+    unavailable.statusCode = 503;
+    unavailable.code = MOBILE_SYNC_ERROR.LIVE_SCOPE_UNAVAILABLE;
+    throw unavailable;
+  }
+
+  if (snapshot.scope.scopeKind !== "none" && !liveSnapshotHasAssignmentsRead(snapshot.input)) {
+    throw denyPermission();
+  }
+
+  let rows;
+  if (snapshot.scope.scopeKind === "none") {
+    rows = [];
+  } else if (snapshot.scope.scopeKind === "assigned") {
+    rows = await repository.listSchoolTeacherAssignments(schoolCode, {
+      teacherId: snapshot.scope.teacherId,
+    });
+  } else {
+    rows = await repository.listSchoolTeacherAssignments(schoolCode);
   }
 
   sendList(res, rows, req.query, ["className", "course", "teacherName", "teacherId"]);

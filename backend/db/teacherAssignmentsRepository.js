@@ -29,6 +29,38 @@ function mapAssignment(row) {
   };
 }
 
+function asIsoTimestamp(value) {
+  if (value instanceof Date) return value.toISOString();
+  const text = String(value ?? "").trim();
+  if (!text) return text;
+  const parsed = new Date(text);
+  if (Number.isNaN(parsed.getTime())) return text;
+  return parsed.toISOString();
+}
+
+/**
+ * Projection L1 Assignments : teacherId = UUID PostgreSQL réel.
+ * Ne pas recopier mapAssignment() où teacherId = teacher_code.
+ */
+function mapMobileSyncAssignmentRow(row) {
+  const status = String(row.status ?? "").trim();
+  return {
+    id: String(row.id),
+    teacherId: String(row.teacher_id),
+    teacherCode: row.teacher_code ?? null,
+    teacherUserId: row.teacher_user_id ? String(row.teacher_user_id) : null,
+    classId: String(row.class_id),
+    classCode: row.class_code ?? null,
+    subjectId: String(row.subject_id),
+    subjectCode: row.subject_code ?? null,
+    academicYearId: String(row.academic_year_id),
+    assignmentRole: row.assignment_role ?? "primary",
+    status,
+    updatedAt: asIsoTimestamp(row.updated_at),
+    tombstone: status.toLowerCase() !== "active",
+  };
+}
+
 const SELECT_ASSIGNMENT = `SELECT ta.id,
        ta.school_id, ta.teacher_id, ta.class_id, ta.subject_id, ta.academic_year_id,
        ta.assignment_role, ta.status, ta.created_at, ta.updated_at,
@@ -137,14 +169,163 @@ function createTeacherAssignmentsRepository(db) {
   }
 
   return {
-    async listBySchoolCode(schoolCode) {
+    async listBySchoolCode(schoolCode, options = {}) {
       const school = await requireSchool(schoolCode);
+      if (Object.hasOwn(options, "teacherId") && !String(options.teacherId ?? "").trim()) {
+        return [];
+      }
+      const params = [school.id];
+      const conditions = ["ta.school_id = $1", "ta.status = 'active'"];
+      const teacherId = String(options.teacherId ?? "").trim();
+      if (teacherId) {
+        params.push(teacherId);
+        conditions.push(`ta.teacher_id::text = $${params.length}`);
+      }
       const rows = await db.all(
-        `${SELECT_ASSIGNMENT} WHERE ta.school_id = $1 AND ta.status = 'active'
+        `${SELECT_ASSIGNMENT} WHERE ${conditions.join(" AND ")}
          ORDER BY cl.name, sub.name, t.teacher_code`,
-        [school.id],
+        params,
       );
       return rows.map(mapAssignment);
+    },
+
+    /**
+     * Identité enseignant live du tenant : users.id → teachers.user_id + school_id.
+     * Jamais teacherCode JWT.
+     *
+     * @param {string} userId
+     * @param {string} schoolId
+     */
+    async getLiveTeacherIdentityForSchool(userId, schoolId) {
+      const uid = String(userId ?? "").trim();
+      const sid = String(schoolId ?? "").trim();
+      if (!uid || !sid) return null;
+      const row = await db.one(
+        `SELECT t.id::text AS teacher_id,
+                t.teacher_code,
+                t.user_id::text AS teacher_user_id
+         FROM teachers t
+         JOIN users u ON u.id = t.user_id
+           AND u.school_id = t.school_id
+         WHERE t.user_id::text = $1
+           AND t.school_id::text = $2
+           AND u.id::text = $1
+           AND u.school_id::text = $2
+           AND COALESCE(lower(btrim(t.status)), 'active') NOT IN ('deleted', 'archived', 'inactive')
+         LIMIT 1`,
+        [uid, sid],
+      );
+      if (!row) return null;
+      return {
+        teacherId: row.teacher_id,
+        teacherCode: row.teacher_code,
+        teacherUserId: row.teacher_user_id,
+      };
+    },
+
+    /**
+     * IDs des affectations actives actuellement visibles pour un teacher UUID.
+     *
+     * @param {string} schoolId
+     * @param {string} teacherId
+     */
+    async listLiveTeacherAssignmentIdsForSync(schoolId, teacherId) {
+      const sid = String(schoolId ?? "").trim();
+      const tid = String(teacherId ?? "").trim();
+      if (!sid || !tid) return [];
+      const rows = await db.all(
+        `SELECT ta.id::text AS assignment_id
+         FROM teacher_assignments ta
+         JOIN teachers t ON t.id = ta.teacher_id
+           AND t.school_id = ta.school_id
+         WHERE ta.school_id::text = $1
+           AND ta.teacher_id::text = $2
+           AND t.school_id::text = $1
+           AND lower(btrim(ta.status)) IN ('active', 'actif', 'open', 'ouverte')
+         ORDER BY ta.id ASC`,
+        [sid, tid],
+      );
+      return rows.map((row) => ({ assignmentId: row.assignment_id }));
+    },
+
+    /**
+     * Keyset L1 : ORDER BY updated_at ASC, id ASC — pas d'OFFSET.
+     * School-wide : toutes les lignes (tombstones status !== active).
+     * Assigned : teacher UUID + statuts explicitement actifs.
+     * JOIN tenant-strict : teacher_assignments / teachers / users / classes /
+     * subjects / academic_years confirment school_id. Une FK seule ne suffit pas.
+     *
+     * @param {string} schoolCode
+     * @param {{
+     *   limit: number,
+     *   afterUpdatedAt?: string | Date | null,
+     *   afterId?: string | null,
+     *   teacherIds?: string[] | null,
+     *   activeOnly?: boolean,
+     * }} options
+     */
+    async listForMobileSync(schoolCode, options = {}) {
+      const school = await requireSchool(schoolCode);
+      const limit = Math.max(1, Number(options.limit) || 1);
+      const params = [school.id];
+      const conditions = ["ta.school_id = $1"];
+
+      if (Array.isArray(options.teacherIds)) {
+        const teacherIds = options.teacherIds.map((value) => String(value ?? "").trim()).filter(Boolean);
+        if (!teacherIds.length) {
+          return [];
+        }
+        params.push(teacherIds);
+        conditions.push(`ta.teacher_id = ANY($${params.length}::uuid[])`);
+      }
+
+      if (options.activeOnly) {
+        conditions.push(`lower(btrim(ta.status)) IN ('active', 'actif', 'open', 'ouverte')`);
+      }
+
+      const afterUpdatedAt = options.afterUpdatedAt ?? null;
+      const afterId = options.afterId ? String(options.afterId).trim() : "";
+      if (afterUpdatedAt && afterId) {
+        params.push(afterUpdatedAt);
+        const tsIdx = params.length;
+        params.push(afterId);
+        const idIdx = params.length;
+        conditions.push(
+          `(ta.updated_at > $${tsIdx}::timestamptz OR (ta.updated_at = $${tsIdx}::timestamptz AND ta.id > $${idIdx}::uuid))`,
+        );
+      }
+
+      params.push(limit);
+      const rows = await db.all(
+        `SELECT ta.id,
+                ta.teacher_id,
+                t.teacher_code,
+                t.user_id AS teacher_user_id,
+                ta.class_id,
+                cl.class_code,
+                ta.subject_id,
+                sub.subject_code,
+                ta.academic_year_id,
+                ta.assignment_role,
+                ta.status,
+                ta.updated_at
+         FROM teacher_assignments ta
+         JOIN teachers t ON t.id = ta.teacher_id
+           AND t.school_id = ta.school_id
+         JOIN classes cl ON cl.id = ta.class_id
+           AND cl.school_id = ta.school_id
+         JOIN subjects sub ON sub.id = ta.subject_id
+           AND sub.school_id = ta.school_id
+         JOIN academic_years ay ON ay.id = ta.academic_year_id
+           AND ay.school_id = ta.school_id
+         LEFT JOIN users u ON u.id = t.user_id
+           AND u.school_id = ta.school_id
+         WHERE ${conditions.join(" AND ")}
+         ORDER BY ta.updated_at ASC, ta.id ASC
+         LIMIT $${params.length}`,
+        params,
+      );
+      return rows.map(mapMobileSyncAssignmentRow);
     },
 
     async create(body, schoolCode, principal = null, auditMeta = null) {
@@ -300,4 +481,9 @@ function createTeacherAssignmentsRepository(db) {
   };
 }
 
-module.exports = { createTeacherAssignmentsRepository, mapAssignment, SELECT_ASSIGNMENT };
+module.exports = {
+  createTeacherAssignmentsRepository,
+  mapAssignment,
+  mapMobileSyncAssignmentRow,
+  SELECT_ASSIGNMENT,
+};
