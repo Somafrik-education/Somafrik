@@ -3,8 +3,26 @@ name: Admin User Creation E2E
 on:
   pull_request:
     branches: [develop]
-  push:
-    branches: [develop]
+    paths:
+      - "backend/server.js"
+      - "backend/db/**"
+      - "backend/lib/*user*"
+      - "backend/lib/*User*"
+      - "backend/lib/*client*"
+      - "backend/lib/*Client*"
+      - "backend/lib/*role*"
+      - "backend/lib/*Role*"
+      - "backend/lib/*identity*"
+      - "backend/lib/*Identity*"
+      - "backend/lib/*login*"
+      - "backend/lib/*Login*"
+      - "backend/scripts/verify-admin-user-creation.js"
+      - "package.json"
+      - "package-lock.json"
+      - "backend/package.json"
+      - "backend/package-lock.json"
+      - ".github/workflows/admin-user-creation.yml"
+  workflow_dispatch:
 
 env:
   NODE_VERSION: "22.12.0"
