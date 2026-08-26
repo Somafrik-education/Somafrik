@@ -6244,6 +6244,10 @@ class PostgresRepository {
     return this.getTeacherAssignmentsRepository().listLiveTeacherAssignmentIdsForSync(schoolId, teacherId);
   }
 
+  listLiveTeacherAssignmentPairsForSync(schoolId, teacherId) {
+    return this.getTeacherAssignmentsRepository().listLiveTeacherAssignmentPairsForSync(schoolId, teacherId);
+  }
+
   createSchoolTeacherAssignment(body, schoolCode, principal, auditMeta) {
     return this.getTeacherAssignmentsRepository()
       .create(body, schoolCode, principal, auditMeta)
@@ -6269,6 +6273,23 @@ class PostgresRepository {
         this.cachedDataset = null;
         return result;
       });
+  }
+
+  getSchoolCoursesRepository() {
+    if (!this._schoolCoursesRepository) {
+      const { createSchoolCoursesRepository } = require("./schoolCoursesRepository");
+      this._schoolCoursesRepository = createSchoolCoursesRepository({
+        one: (sql, params) => this.one(sql, params),
+        all: (sql, params) => this.all(sql, params),
+        query: (sql, params) => this.query(sql, params),
+        getSchoolByCode: (code) => this.getSchoolByCode(code),
+      });
+    }
+    return this._schoolCoursesRepository;
+  }
+
+  listSchoolCoursesForMobileSync(schoolCode, options) {
+    return this.getSchoolCoursesRepository().listForMobileSync(schoolCode, options);
   }
 
   async getGradeById(id) {

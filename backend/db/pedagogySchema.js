@@ -51,6 +51,9 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_school_courses_class_subject_active
   ON school_courses (school_id, class_id, subject_id)
   WHERE status = 'active';
 
+CREATE INDEX IF NOT EXISTS idx_school_courses_school_updated_at_id
+  ON school_courses (school_id, updated_at, id);
+
 CREATE TABLE IF NOT EXISTS course_schedule_slots (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   school_id UUID NOT NULL REFERENCES schools(id),

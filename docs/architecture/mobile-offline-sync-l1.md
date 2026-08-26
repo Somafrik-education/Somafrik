@@ -1,9 +1,9 @@
-# Mobile offline sync L1 — protocole Classes + Students + Assignments
+# Mobile offline sync L1 — protocole Classes + Students + Assignments + SchoolCourses
 
 Vertical slice serveur. **PostgreSQL est la seule source de vérité canonique.**
 Le protocole (curseur opaque, scopeHash, tombstones, keyset) a été validé sur
-**Classes** (#343), **Students** (#344) et **Assignments**.
-SchoolCourses, CourseSchedules, SQLite Mobile, outbox et L2 restent hors scope.
+**Classes** (#343), **Students** (#344), **Assignments** (#346) et **SchoolCourses**.
+CourseSchedules, SQLite Mobile, outbox et L2 restent hors scope.
 
 ## Endpoint
 
@@ -163,9 +163,9 @@ Jamais : curseur complet, JWT, données élèves, secrets.
 ## Extension L1
 
 Réutiliser les mêmes modules (`mobileSyncCursor`, `mobileSyncScope`, erreurs, pagination).
-`mobileSyncCursor` est **resource-aware** : `resource=classes`, `resource=students`
-et `resource=assignments` sont inéchangeables (decode fail-closed 400).
-Prochaines ressources, **une PR chacune** : SchoolCourses → CourseSchedules.
+`mobileSyncCursor` est **resource-aware** : `resource=classes`, `resource=students`,
+`resource=assignments` et `resource=school-courses` sont inéchangeables (decode fail-closed 400).
+Prochaine ressource, **une PR dédiée** : CourseSchedules.
 Chaque ressource a son `resource` dans le curseur (non réutilisable) et son `scopeHash` (filtre autoritatif serveur).
 SQLite/SQLCipher Mobile seulement après validation de ce protocole.
 
@@ -384,4 +384,76 @@ Justifiés par `EXPLAIN` (`enable_seqscan=off`) :
 
 - `idx_teacher_assignments_school_updated_at_id` — keyset school-wide
 - `idx_teacher_assignments_school_teacher_updated_at_id` — keyset assigned
+
+## SchoolCourses
+
+```
+GET /api/mobile-sync/l1/school-courses
+GET /api/mobile-sync/l1/school-courses?cursor=<opaque>
+```
+
+Additif. `GET /api/courses` est inchangé (overlay historique, RBAC inchangé).
+
+RBAC identique à `GET /api/courses` :
+
+`Matières:READ` | `Gérer cours` | `Voir classes` | `ALL_PRIVILEGES`
+
+Le Comptable n'a pas ces permissions → 403. Un `CUSTOM_ROLE` même avec
+`Matières:READ` → `scopeKind=none`.
+
+Lecture : table `school_courses` PostgreSQL. **Interdit** : `backoffice_state`,
+overlay `state.courses`, `className` / `subjectName` / `teacherName` comme
+autorité, `legacy_json_id`.
+
+### Statuts réels
+
+`CHECK (status IN ('active', 'archived'))`. Défaut `'active'`.
+`DELETE /api/courses/:id` appelle `archiveCourse()` → `status='archived'`,
+`updated_at=NOW()`. Pas de DELETE physique. Pas de statut `inactive` /
+`deleted` / `actif` / `open` inventé.
+
+`active` ⇔ `status = 'active'` ; `tombstone=true` ⇔ `status != 'active'`.
+
+### Projection minimale
+
+`id`, `courseCode`, `classId`, `classCode`, `subjectId`, `subjectCode`,
+`teacherId` (**UUID `teachers.id` du tenant**, jamais `school_courses.teacher_id`
+cross-tenant), `teacherCode`, `academicYearId` (`classes.academic_year_id`
+confirmé par `academic_years.school_id`), `coefficient`, `status`, `updatedAt`,
+`tombstone`.
+
+### Scope live
+
+Même resolver live que Classes / Students / Assignments
+(`listActiveUserRoleKeysForSchool` + permissions live + identité Teacher).
+Aucun fallback JWT.
+
+| scopeKind | Qui | Filtre SQL | Roster dans scopeHash |
+| --- | --- | --- | --- |
+| `school-wide` | Super Admin + allowlist | tous les `school_courses` du tenant | **non** |
+| `assigned` | Enseignant live | `(class_id, subject_id)` ∈ affectations actives live | **oui** — IDs d'affectations + paires `classId\|subjectId` |
+| `none` | hors allowlist / aucun rôle live | zéro ligne | — |
+
+Teacher : affectation `Classe A / Maths` → le cours A/Maths est visible ;
+A/Français et B/Maths ne le sont **pas**, même si `school_courses.teacher_id`
+pointe vers cet enseignant. Ce n'est **pas** « toutes les matières de la classe ».
+
+Archivage d'un cours dont la paire reste dans le roster Teacher : delta
+`tombstone=true` (le scopeHash ne change pas). Grant/revoke d'affectation →
+`409 SCOPE_CHANGED`.
+
+### Isolation tenant SQL
+
+`school_courses.school_id`, `classes.school_id`, `subjects.school_id`,
+`academic_years.school_id`, `teachers.school_id`. Un cours A pointant vers
+classe / matière / enseignant / année B n'expose aucune donnée B.
+`teacherId` est `t.id` (LEFT JOIN teachers du tenant) : un `teacher_id`
+cross-tenant → `teacherId=null`, jamais l'UUID B.
+
+### Index
+
+Justifié par le keyset `ORDER BY updated_at, id` (les uniques existants ne
+couvrent pas `updated_at`) :
+
+- `idx_school_courses_school_updated_at_id`
 

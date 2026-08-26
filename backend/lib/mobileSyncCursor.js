@@ -6,6 +6,7 @@ const {
   MOBILE_SYNC_RESOURCE_CLASSES,
   MOBILE_SYNC_RESOURCE_STUDENTS,
   MOBILE_SYNC_RESOURCE_ASSIGNMENTS,
+  MOBILE_SYNC_RESOURCE_SCHOOL_COURSES,
   MOBILE_SYNC_SCHEMA_VERSION,
   MOBILE_SYNC_GENERATION,
   MOBILE_SYNC_CURSOR_TYP,
@@ -19,6 +20,7 @@ const KNOWN_MOBILE_SYNC_RESOURCES = Object.freeze(
     MOBILE_SYNC_RESOURCE_CLASSES,
     MOBILE_SYNC_RESOURCE_STUDENTS,
     MOBILE_SYNC_RESOURCE_ASSIGNMENTS,
+    MOBILE_SYNC_RESOURCE_SCHOOL_COURSES,
   ]),
 );
 
@@ -112,7 +114,7 @@ function encodeMobileSyncCursor(input, tokenService, options = {}) {
  * Décodage fail-closed : signature, typ, schéma, génération, ressource.
  * Les mismatches tenant/principal sont validés ensuite avec le principal courant.
  * `options.resource` attendu (défaut : classes) — un curseur Classes,
- * Students ou Assignments est inutilisable sur une autre ressource.
+ * Students, Assignments ou SchoolCourses est inutilisable sur une autre ressource.
  *
  * @param {unknown} rawCursor
  * @param {import("../services/tokenService").TokenService} tokenService

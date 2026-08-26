@@ -616,6 +616,24 @@ app.get(
   }),
 );
 
+app.get(
+  "/api/mobile-sync/l1/school-courses",
+  requireAuth,
+  requirePermission("GET /api/mobile-sync/l1/school-courses"),
+  asyncHandler(async (req, res) => {
+    const { handleMobileSyncL1SchoolCourses } = require("./lib/mobileSyncSchoolCourses");
+    const result = await handleMobileSyncL1SchoolCourses({
+      principal: req.principal,
+      cursor: req.query?.cursor,
+      limit: req.query?.limit,
+      tokenService,
+      repository,
+      tenantScopeService,
+    });
+    res.status(result.httpStatus).json(result.body);
+  }),
+);
+
 app.post("/api/classes", requireAuth, requirePermission("POST /api/classes"), asyncHandler(async (req, res) => {
   const schoolCode = String(req.principal?.schoolCode ?? "").trim();
   if (!schoolCode || schoolCode === "*") {

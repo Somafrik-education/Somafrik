@@ -591,6 +591,146 @@ test("Assignments live ignore teacherCode / teacherId / assignments JWT", async 
   assert.ok(!hashed.input.assignmentIds.includes("jwt-asg"));
 });
 
+test("SchoolCourses CUSTOM_ROLE + Matières:READ → scopeKind=none, jamais school-wide", () => {
+  const { computeSchoolCoursesScopeHash, resolveSchoolCoursesSyncScope } = require("./mobileSyncScope");
+  const custom = {
+    sub: "custom-1",
+    role: "CUSTOM_ROLE",
+    roles: ["CUSTOM_ROLE"],
+    roleKeys: ["CUSTOM_ROLE"],
+    schoolCode: "SCH-A",
+    permissions: ["Matières:READ", "Voir classes"],
+    liveTeacherId: "teacher-uuid",
+    authorizedAssignmentIds: ["asg-1"],
+    authorizedCoursePairs: [{ classId: "class-a", subjectId: "sub-math" }],
+    teacherCode: "TCH-JWT",
+  };
+  const scope = resolveSchoolCoursesSyncScope(custom);
+  assert.equal(scope.scopeKind, "none");
+  assert.deepEqual(scope.coursePairs, []);
+  const hashed = computeSchoolCoursesScopeHash(custom, { schoolCode: "SCH-A", schoolId: "id-a" });
+  assert.equal(hashed.scope.scopeKind, "none");
+  assert.deepEqual(hashed.input.coursePairs, []);
+});
+
+test("SchoolCourses school-wide : pas de roster de paires dans le scopeHash", () => {
+  const { computeSchoolCoursesScopeHash, resolveSchoolCoursesSyncScope } = require("./mobileSyncScope");
+  const scope = resolveSchoolCoursesSyncScope(
+    adminPrincipal({ permissions: ["Matières:READ", "Voir classes"] }),
+  );
+  assert.equal(scope.scopeKind, "school-wide");
+  const hashed = computeSchoolCoursesScopeHash(
+    adminPrincipal({
+      permissions: ["Matières:READ"],
+      authorizedCoursePairs: [{ classId: "class-a", subjectId: "sub-math" }],
+    }),
+    { schoolCode: "SCH-A", schoolId: "id-a" },
+  );
+  assert.deepEqual(hashed.input.coursePairs, []);
+  assert.equal(hashed.input.resource, "school-courses");
+});
+
+test("SchoolCourses assigned : paires class|subject dans le scopeHash, grant/revoke change le hash", () => {
+  const { computeSchoolCoursesScopeHash, resolveSchoolCoursesSyncScope } = require("./mobileSyncScope");
+  const school = { schoolCode: "SCH-A", schoolId: "id-a" };
+  const teacherA = {
+    sub: "teacher-1",
+    role: "Enseignant",
+    roles: ["Enseignant"],
+    roleKeys: ["TEACHER"],
+    schoolCode: "SCH-A",
+    permissions: ["Matières:READ"],
+    liveTeacherId: "teacher-uuid",
+    authorizedAssignmentIds: ["asg-1"],
+    authorizedCoursePairs: [{ classId: "class-a", subjectId: "sub-math" }],
+  };
+  const scope = resolveSchoolCoursesSyncScope(teacherA);
+  assert.equal(scope.scopeKind, "assigned");
+  assert.deepEqual(scope.coursePairs, [{ classId: "class-a", subjectId: "sub-math" }]);
+  const before = computeSchoolCoursesScopeHash(teacherA, school);
+  const afterAdd = computeSchoolCoursesScopeHash(
+    {
+      ...teacherA,
+      authorizedAssignmentIds: ["asg-1", "asg-2"],
+      authorizedCoursePairs: [
+        { classId: "class-a", subjectId: "sub-math" },
+        { classId: "class-a", subjectId: "sub-fr" },
+      ],
+    },
+    school,
+  );
+  assert.notEqual(before.scopeHash, afterAdd.scopeHash);
+  const afterRevoke = computeSchoolCoursesScopeHash(
+    { ...teacherA, authorizedAssignmentIds: [], authorizedCoursePairs: [] },
+    school,
+  );
+  assert.notEqual(before.scopeHash, afterRevoke.scopeHash);
+});
+
+test("SchoolCourses live ignore teacherCode / teacherId / assignments JWT", async () => {
+  const { resolveLiveSchoolCoursesSyncSnapshot } = require("./mobileSyncScope");
+  const stale = {
+    sub: "teacher-1",
+    role: "Admin School",
+    roleKeys: ["SCHOOL_ADMIN"],
+    schoolCode: "SCH-A",
+    permissions: ["Matières:READ", "ALL_PRIVILEGES"],
+    teacherCode: "JWT-CODE",
+    teacherId: "JWT-CODE",
+    assignments: [{ classId: "jwt-class", subjectId: "jwt-subject" }],
+  };
+  const hashed = await resolveLiveSchoolCoursesSyncSnapshot(
+    {
+      listActiveUserRoleKeys: trapUnscopedRoleKeys(),
+      async listActiveUserRoleKeysForSchool() {
+        return ["TEACHER"];
+      },
+      async resolveEffectivePermissions() {
+        return { permissions: ["Matières:READ"] };
+      },
+      async getLiveTeacherIdentityForSchool() {
+        return { teacherId: "live-teacher-uuid", teacherCode: "TCH-LIVE", teacherUserId: "teacher-1" };
+      },
+      async listLiveTeacherAssignmentPairsForSync() {
+        return [{ assignmentId: "live-asg", classId: "class-a", subjectId: "sub-math" }];
+      },
+    },
+    stale,
+    { schoolCode: "SCH-A", schoolId: "id-a" },
+  );
+  assert.equal(hashed.scope.scopeKind, "assigned");
+  assert.equal(hashed.scope.teacherId, "live-teacher-uuid");
+  assert.deepEqual(hashed.scope.coursePairs, [{ classId: "class-a", subjectId: "sub-math" }]);
+  assert.ok(!hashed.input.coursePairs.some((key) => key.includes("jwt-class")));
+});
+
+test("SchoolCourses erreur paires d'affectations live → 503, pas de fallback JWT", async () => {
+  const { resolveLiveSchoolCoursesSyncSnapshot } = require("./mobileSyncScope");
+  await assert.rejects(
+    () =>
+      resolveLiveSchoolCoursesSyncSnapshot(
+        {
+          listActiveUserRoleKeys: trapUnscopedRoleKeys(),
+          async listActiveUserRoleKeysForSchool() {
+            return ["TEACHER"];
+          },
+          async resolveEffectivePermissions() {
+            return { permissions: ["Matières:READ"] };
+          },
+          async getLiveTeacherIdentityForSchool() {
+            return { teacherId: "live-teacher-uuid", teacherCode: "TCH-LIVE", teacherUserId: "teacher-1" };
+          },
+          async listLiveTeacherAssignmentPairsForSync() {
+            throw new Error("pg assignment pairs unavailable");
+          },
+        },
+        { sub: "teacher-1", role: "Enseignant", schoolCode: "SCH-A" },
+        { schoolCode: "SCH-A", schoolId: "id-a" },
+      ),
+    (error) => error.code === "MOBILE_SYNC_LIVE_SCOPE_UNAVAILABLE" && error.statusCode === 503,
+  );
+});
+
 test("Assignments erreur identité enseignant live → 503, pas de fallback JWT", async () => {
   const { resolveLiveAssignmentsSyncSnapshot } = require("./mobileSyncScope");
   await assert.rejects(
