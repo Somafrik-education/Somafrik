@@ -53,7 +53,12 @@ export default function OutboxRuntime() {
   useEffect(() => {
     // L8 : replay HTTP seulement si métier rendable (ready live ou ready_offline).
     // processOutbox reste gardé par canReplayOutboxNow (réseau réel).
-    if (!session || !isMetierRenderable(session, permissionsBootstrap)) return undefined;
+    if (!session) {
+      return undefined;
+    }
+    if (!isMetierRenderable(session, permissionsBootstrap)) {
+      return undefined;
+    }
     const fingerprint = {
       userId: String(session.user?.id ?? ""),
       schoolScope: String(session.school?.code ?? session.user?.schoolCode ?? "").toUpperCase(),

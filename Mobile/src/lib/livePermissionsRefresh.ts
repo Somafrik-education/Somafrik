@@ -102,7 +102,7 @@ export function applyLivePermissionsToSession<T extends RefreshableSession>(
   return attachCanonicalRoleIdentity(next) as T;
 }
 
-export function isMetierRenderable<T>(
+export function isMetierRenderable<T extends object>(
   session: T | null | undefined,
   bootstrap: PermissionsBootstrapState,
 ): session is T {
@@ -209,12 +209,14 @@ export function createEffectivePermissionsRefresher<T extends RefreshableSession
         deps.onBootstrap("ready", null);
         return true;
       } catch (error) {
+        // Stale 401/403 from a previous generation/session must never purge the
+        // current session. Gate first; only the in-flight refresh may fail-closed.
+        if (!gate.isCurrent(generation, userId, sessionUserId(deps.getSession()))) {
+          return false;
+        }
         if (isUnauthorizedEffectivePermissionsError(error)) {
           await deps.onAuthFailure();
           gate.invalidate();
-          return false;
-        }
-        if (!gate.isCurrent(generation, userId, sessionUserId(deps.getSession()))) {
           return false;
         }
         const decision = decidePermissionsRefreshFailure({
