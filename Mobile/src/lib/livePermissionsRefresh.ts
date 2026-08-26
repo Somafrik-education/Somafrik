@@ -102,10 +102,10 @@ export function applyLivePermissionsToSession<T extends RefreshableSession>(
   return attachCanonicalRoleIdentity(next) as T;
 }
 
-export function isMetierRenderable(
-  session: { user?: unknown } | null | undefined,
+export function isMetierRenderable<T>(
+  session: T | null | undefined,
   bootstrap: PermissionsBootstrapState,
-): boolean {
+): session is T {
   return Boolean(session) && (bootstrap === "ready" || bootstrap === "ready_offline");
 }
 
