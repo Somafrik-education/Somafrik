@@ -3260,6 +3260,10 @@ class FallbackRepository {
         this.assertEstablishmentRoleAssignable(role, principal);
       store.listEstablishmentAssignableRoles = (principal) =>
         this.listEstablishmentRoles({ schoolAssignableOnly: true, principal });
+      if (shouldSeedDemoData()) {
+        const { backfillMemoryUserRolesFromSeedAccounts } = require("../lib/memoryUserRolesBackfill");
+        backfillMemoryUserRolesFromSeedAccounts(store._tables, seedData.userAccounts);
+      }
       this._clientsStore = store;
     }
     return this._clientsStore;

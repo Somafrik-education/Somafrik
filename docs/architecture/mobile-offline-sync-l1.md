@@ -294,6 +294,11 @@ endpoints partagent `resolveLiveAssignmentsSyncSnapshot`. Un JWT `role=Admin Sch
 dont le rôle PostgreSQL live du tenant est `TEACHER` ne voit **que** ses affectations
 sur les deux routes.
 
+En mode mémoire (CI Teachers / seed `data.js`), `user_roles` est backfillé depuis
+`userAccounts.role` + `school_id` du tenant, miroir du backfill PostgreSQL. Le
+resolver live lit toujours `listActiveUserRoleKeysForSchool` — jamais
+`principal.role`. Un compte `schoolCode=*` n'obtient pas de rôle school-scoped.
+
 ### Projection minimale
 
 `id`, `teacherId` (**UUID PostgreSQL réel**, pas `teacher_code`), `teacherCode`,
