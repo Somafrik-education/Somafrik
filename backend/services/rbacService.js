@@ -40,6 +40,12 @@ const routePermissions = {
     "COUNTRY_PRIVILEGES",
     "ALL_PRIVILEGES",
   ],
+  "GET /api/mobile-sync/l1/school-courses": [
+    "Matières:READ",
+    "Gérer cours",
+    "Voir classes",
+    "ALL_PRIVILEGES",
+  ],
   "POST /api/classes": ["Classes:CREATE", "Gérer classes", "ALL_PRIVILEGES"],
   "PATCH /api/classes/:classCode": ["Classes:UPDATE", "Gérer classes", "ALL_PRIVILEGES"],
   "GET /api/classes/:classCode/students": ["Élèves:READ", "Gérer élèves", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],

@@ -151,6 +151,42 @@ test("curseur classes ou students inutilisable sur assignments", () => {
   );
 });
 
+test("curseur school-courses round-trip avec resource attendu", () => {
+  const tokens = tokenService();
+  const encoded = encodeMobileSyncCursor(sampleInput({ resource: "school-courses" }), tokens);
+  const decoded = decodeMobileSyncCursor(encoded, tokens, { resource: "school-courses" });
+  assert.equal(decoded.resource, "school-courses");
+  assert.equal(decoded.lastId, "00000000-0000-4000-8000-00000000000a");
+});
+
+test("curseur classes / students / assignments inutilisable sur school-courses", () => {
+  const tokens = tokenService();
+  const classesCursor = encodeMobileSyncCursor(sampleInput({ resource: "classes" }), tokens);
+  const studentsCursor = encodeMobileSyncCursor(sampleInput({ resource: "students" }), tokens);
+  const assignmentsCursor = encodeMobileSyncCursor(sampleInput({ resource: "assignments" }), tokens);
+  const coursesCursor = encodeMobileSyncCursor(sampleInput({ resource: "school-courses" }), tokens);
+  assert.throws(
+    () => decodeMobileSyncCursor(classesCursor, tokens, { resource: "school-courses" }),
+    (error) => error.statusCode === 400 && error.code === MOBILE_SYNC_ERROR.CURSOR_INVALID,
+  );
+  assert.throws(
+    () => decodeMobileSyncCursor(studentsCursor, tokens, { resource: "school-courses" }),
+    (error) => error.statusCode === 400 && error.code === MOBILE_SYNC_ERROR.CURSOR_INVALID,
+  );
+  assert.throws(
+    () => decodeMobileSyncCursor(assignmentsCursor, tokens, { resource: "school-courses" }),
+    (error) => error.statusCode === 400 && error.code === MOBILE_SYNC_ERROR.CURSOR_INVALID,
+  );
+  assert.throws(
+    () => decodeMobileSyncCursor(coursesCursor, tokens, { resource: "classes" }),
+    (error) => error.statusCode === 400 && error.code === MOBILE_SYNC_ERROR.CURSOR_INVALID,
+  );
+  assert.throws(
+    () => decodeMobileSyncCursor(coursesCursor, tokens, { resource: "assignments" }),
+    (error) => error.statusCode === 400 && error.code === MOBILE_SYNC_ERROR.CURSOR_INVALID,
+  );
+});
+
 test("schemaVersion non supporté → expired / full_required", () => {
   const tokens = tokenService();
   const encoded = tokens.sign(

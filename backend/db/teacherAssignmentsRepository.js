@@ -255,6 +255,42 @@ function createTeacherAssignmentsRepository(db) {
     },
 
     /**
+     * Paires (class_id, subject_id) des affectations actives d'un teacher UUID.
+     * Autorité du scope Teacher SchoolCourses — jamais school_courses.teacher_id.
+     *
+     * @param {string} schoolId
+     * @param {string} teacherId
+     */
+    async listLiveTeacherAssignmentPairsForSync(schoolId, teacherId) {
+      const sid = String(schoolId ?? "").trim();
+      const tid = String(teacherId ?? "").trim();
+      if (!sid || !tid) return [];
+      const rows = await db.all(
+        `SELECT ta.id::text AS assignment_id,
+                ta.class_id::text AS class_id,
+                ta.subject_id::text AS subject_id
+         FROM teacher_assignments ta
+         JOIN teachers t ON t.id = ta.teacher_id
+           AND t.school_id = ta.school_id
+         JOIN classes cl ON cl.id = ta.class_id
+           AND cl.school_id = ta.school_id
+         JOIN subjects sub ON sub.id = ta.subject_id
+           AND sub.school_id = ta.school_id
+         WHERE ta.school_id::text = $1
+           AND ta.teacher_id::text = $2
+           AND t.school_id::text = $1
+           AND ta.status = 'active'
+         ORDER BY ta.class_id ASC, ta.subject_id ASC, ta.id ASC`,
+        [sid, tid],
+      );
+      return rows.map((row) => ({
+        assignmentId: row.assignment_id,
+        classId: row.class_id,
+        subjectId: row.subject_id,
+      }));
+    },
+
+    /**
      * Keyset L1 : ORDER BY updated_at ASC, id ASC — pas d'OFFSET.
      * School-wide : toutes les lignes (tombstones = status != 'active').
      * Assigned : teacher UUID + status = 'active'.

@@ -17,9 +17,11 @@ const {
   CLASSES_SYNC_PERMISSIONS,
   STUDENTS_SYNC_PERMISSIONS,
   ASSIGNMENTS_SYNC_PERMISSIONS,
+  SCHOOL_COURSES_SYNC_PERMISSIONS,
   MOBILE_SYNC_RESOURCE_CLASSES,
   MOBILE_SYNC_RESOURCE_STUDENTS,
   MOBILE_SYNC_RESOURCE_ASSIGNMENTS,
+  MOBILE_SYNC_RESOURCE_SCHOOL_COURSES,
   MOBILE_SYNC_ERROR,
   liveScopeError,
 } = require("./mobileSyncErrors");
@@ -702,6 +704,197 @@ async function resolveLiveAssignmentsSyncSnapshot(repository, principal, schoolR
   return computeAssignmentsScopeHash(livePrincipal, schoolRef);
 }
 
+function emptySchoolCourseScope() {
+  return { scopeKind: "none", teacherId: "", assignmentIds: [], coursePairs: [] };
+}
+
+function schoolCoursesPermissionKeys(principal = {}) {
+  const held = new Set(principal.permissions ?? []);
+  return SCHOOL_COURSES_SYNC_PERMISSIONS.filter((permission) => held.has(permission));
+}
+
+/**
+ * Lecture SchoolCourses autorisée uniquement si le snapshot live du tenant
+ * détient réellement une permission de GET /api/courses.
+ * @param {{ permissionKeys?: string[] }} [input]
+ */
+function liveSnapshotHasSchoolCoursesRead(input = {}) {
+  const held = new Set(input.permissionKeys ?? []);
+  return SCHOOL_COURSES_SYNC_PERMISSIONS.some((permission) => held.has(permission));
+}
+
+function authorizedCoursePairsFromPrincipal(principal = {}) {
+  const pairs = Array.isArray(principal.authorizedCoursePairs) ? principal.authorizedCoursePairs : [];
+  return pairs
+    .map((pair) => ({
+      classId: asRef(pair?.classId ?? pair?.class_id),
+      subjectId: asRef(pair?.subjectId ?? pair?.subject_id),
+    }))
+    .filter((pair) => pair.classId && pair.subjectId)
+    .sort((left, right) => {
+      const classCmp = left.classId.localeCompare(right.classId);
+      if (classCmp !== 0) return classCmp;
+      return left.subjectId.localeCompare(right.subjectId);
+    });
+}
+
+function coursePairKeys(pairs) {
+  return sortedUnique((pairs ?? []).map((pair) => `${asRef(pair.classId)}|${asRef(pair.subjectId)}`));
+}
+
+/**
+ * Périmètre réel SchoolCourses : school-wide | assigned | none.
+ * School-wide = allowlist explicite. CUSTOM_ROLE même avec Matières:READ → none.
+ * Assigned = Enseignant live, filtré par paires d'affectations actives
+ * (classId + subjectId), jamais school_courses.teacher_id ni JWT.
+ *
+ * @param {object} principal
+ */
+function resolveSchoolCoursesSyncScope(principal) {
+  if (!principal) {
+    return emptySchoolCourseScope();
+  }
+  const liveRoles = principalRoleList(principal);
+  if (!liveRoles.length) {
+    return emptySchoolCourseScope();
+  }
+  if (SUPER_ADMIN_ROLES.has(principal.role) || principalHasAnyRole(principal, SUPER_ADMIN_ROLES)) {
+    return { scopeKind: "school-wide", teacherId: "", assignmentIds: [], coursePairs: [] };
+  }
+  if (principalHasAnyRole(principal, SCHOOL_WIDE_STUDENT_READ_ROLES)) {
+    return { scopeKind: "school-wide", teacherId: "", assignmentIds: [], coursePairs: [] };
+  }
+  if (principalHasRole(principal, "Enseignant")) {
+    return {
+      scopeKind: "assigned",
+      teacherId: liveTeacherIdFromPrincipal(principal),
+      assignmentIds: authorizedAssignmentIdsFromPrincipal(principal),
+      coursePairs: authorizedCoursePairsFromPrincipal(principal),
+    };
+  }
+  return emptySchoolCourseScope();
+}
+
+function rosterCoursePairsForHash(scope) {
+  if (scope.scopeKind === "assigned") {
+    return coursePairKeys(scope.coursePairs);
+  }
+  return [];
+}
+
+function rosterAssignmentIdsForSchoolCoursesHash(scope) {
+  if (scope.scopeKind === "assigned") {
+    return scope.assignmentIds;
+  }
+  return [];
+}
+
+/**
+ * Entrées déterministes du scopeHash SchoolCourses.
+ * School-wide : pas le roster (création / archive = deltas).
+ * Assigned : teacher UUID + IDs d'affectations + paires class|subject.
+ *
+ * @param {object} principal
+ * @param {{ schoolCode?: string, schoolId?: string }} schoolRef
+ */
+function schoolCoursesScopeHashInput(principal, schoolRef = {}) {
+  const scope = resolveSchoolCoursesSyncScope(principal);
+  const schoolCode = asRef(schoolRef.schoolCode ?? principal?.schoolCode).toUpperCase();
+  return {
+    resource: MOBILE_SYNC_RESOURCE_SCHOOL_COURSES,
+    schoolCode,
+    schoolId: asRef(schoolRef.schoolId ?? principal?.effectiveSchoolId),
+    principalId: asRef(principal?.sub ?? principal?.userId ?? principal?.publicId ?? principal?.identifier),
+    roleKeys: sortedUnique(principalRoleList(principal)),
+    permissionKeys: schoolCoursesPermissionKeys(principal),
+    scopeKind: scope.scopeKind,
+    teacherId: scope.scopeKind === "assigned" ? scope.teacherId : "",
+    assignmentIds: rosterAssignmentIdsForSchoolCoursesHash(scope),
+    coursePairs: rosterCoursePairsForHash(scope),
+  };
+}
+
+function computeSchoolCoursesScopeHash(principal, schoolRef = {}) {
+  const scope = resolveSchoolCoursesSyncScope(principal);
+  const input = schoolCoursesScopeHashInput(principal, schoolRef);
+  return {
+    scopeHash: hashScopeInput(input),
+    scope,
+    input,
+  };
+}
+
+async function loadLiveTeacherAssignmentPairsForSync(repository, schoolId, teacherId) {
+  const sid = asRef(schoolId);
+  const tid = asRef(teacherId);
+  if (!sid || !tid || typeof repository?.listLiveTeacherAssignmentPairsForSync !== "function") {
+    return [];
+  }
+  let rows;
+  try {
+    rows = await repository.listLiveTeacherAssignmentPairsForSync(sid, tid);
+  } catch (error) {
+    rethrowLiveScope(error, "Impossible de résoudre les affectations live.");
+  }
+  return (Array.isArray(rows) ? rows : [])
+    .map((row) => ({
+      assignmentId: asRef(row?.assignmentId ?? row?.assignment_id ?? row?.id),
+      classId: asRef(row?.classId ?? row?.class_id),
+      subjectId: asRef(row?.subjectId ?? row?.subject_id),
+    }))
+    .filter((row) => row.classId && row.subjectId);
+}
+
+/**
+ * Snapshot canonique live SchoolCourses : userId + schoolId → rôles du tenant →
+ * permissions du tenant → identité Teacher PostgreSQL si Enseignant →
+ * paires d'affectations actives. Aucun fallback JWT.
+ *
+ * @param {object} repository
+ * @param {object} principal
+ * @param {{ schoolCode?: string, schoolId?: string }} schoolRef
+ */
+async function resolveLiveSchoolCoursesSyncSnapshot(repository, principal, schoolRef = {}) {
+  const roleKeys = await loadLiveRoleKeys(repository, principal, schoolRef);
+  const permissions = await loadLivePermissions(repository, roleKeys, schoolRef);
+  const labels = roleKeys.map((key) => toRoleLabel(key)).filter(Boolean);
+  const userId = asRef(principal?.sub ?? principal?.userId ?? principal?.id);
+  const schoolId = asRef(schoolRef.schoolId);
+  const livePrincipal = {
+    sub: principal?.sub,
+    userId: principal?.userId,
+    publicId: principal?.publicId,
+    identifier: principal?.identifier,
+    schoolCode: schoolRef.schoolCode ?? principal?.schoolCode,
+    effectiveSchoolId: schoolRef.schoolId ?? principal?.effectiveSchoolId,
+    role: labels[0] || "",
+    roles: labels,
+    roleKeys,
+    permissions,
+    liveTeacherId: "",
+    authorizedAssignmentIds: [],
+    authorizedCoursePairs: [],
+  };
+
+  const preliminary = resolveSchoolCoursesSyncScope(livePrincipal);
+  if (preliminary.scopeKind === "assigned") {
+    const identity = await loadLiveTeacherIdentityForSchool(repository, userId, schoolId);
+    livePrincipal.liveTeacherId = identity?.teacherId ?? "";
+    const pairs = await loadLiveTeacherAssignmentPairsForSync(
+      repository,
+      schoolId,
+      livePrincipal.liveTeacherId,
+    );
+    livePrincipal.authorizedCoursePairs = pairs.map((pair) => ({
+      classId: pair.classId,
+      subjectId: pair.subjectId,
+    }));
+    livePrincipal.authorizedAssignmentIds = sortedUnique(pairs.map((pair) => pair.assignmentId));
+  }
+
+  return computeSchoolCoursesScopeHash(livePrincipal, schoolRef);
+}
+
 module.exports = {
   resolveClassesSyncScope,
   classesScopeHashInput,
@@ -728,4 +921,11 @@ module.exports = {
   resolveLiveAssignmentsSyncSnapshot,
   loadLiveTeacherIdentityForSchool,
   loadLiveTeacherAssignmentIdsForSync,
+  resolveSchoolCoursesSyncScope,
+  schoolCoursesScopeHashInput,
+  computeSchoolCoursesScopeHash,
+  schoolCoursesPermissionKeys,
+  liveSnapshotHasSchoolCoursesRead,
+  resolveLiveSchoolCoursesSyncSnapshot,
+  loadLiveTeacherAssignmentPairsForSync,
 };

@@ -295,6 +295,7 @@ jobs:
           npm run verify:pedagogy-management
           npm run verify:education-reference-data
           npm run verify:evaluation-types-data
+          npm run verify:mobile-sync-l1-school-courses
 
       - name: Planning
         if: needs.scope.outputs.planning == 'true'
