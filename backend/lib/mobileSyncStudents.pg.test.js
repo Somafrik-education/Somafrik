@@ -47,6 +47,7 @@ const ASSIGN_B = "dddddddd-dddd-4ddd-8ddd-dddddddddd11";
 const SAME_TS = "2026-08-26T08:00:00.000Z";
 const LATER_TS = "2026-08-26T09:00:00.000Z";
 const LATER2_TS = "2026-08-26T10:00:00.000Z";
+const LATER3_TS = "2026-08-26T11:00:00.000Z";
 
 function withDatabaseName(databaseUrl, databaseName) {
   const parsed = new URL(databaseUrl);
@@ -628,7 +629,7 @@ async function main() {
 
     await pool.query(
       `UPDATE enrollments SET class_id = $2, updated_at = $3::timestamptz WHERE id = $1`,
-      [ENR_B, CLASS_C, LATER2_TS],
+      [ENR_B, CLASS_C, LATER3_TS],
     );
     const transferred = await sync(adminPrincipal(), { cursor: created.body.nextCursor });
     const transferredB = transferred.body.items.find((item) => item.id === STU_B);

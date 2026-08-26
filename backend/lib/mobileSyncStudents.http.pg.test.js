@@ -517,7 +517,7 @@ async function main() {
     );
 
     await repo.pool.query(
-      `UPDATE user_roles SET status = 'inactive', revoked_at = NOW()
+      `UPDATE user_roles SET status = 'revoked', revoked_at = NOW()
        WHERE user_id = $1 AND school_id = $2 AND role_key = 'TEACHER'`,
       [TEACHER_USER_ID, fixture.schoolA],
     );
