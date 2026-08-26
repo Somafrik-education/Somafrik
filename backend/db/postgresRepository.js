@@ -6060,6 +6060,10 @@ class PostgresRepository {
     return this.getClassesRepository().listBySchoolCode(schoolCode);
   }
 
+  listSchoolClassesForMobileSync(schoolCode, options) {
+    return this.getClassesRepository().listForMobileSync(schoolCode, options);
+  }
+
   async createSchoolClass(body, schoolCode, principal, auditMeta) {
     const created = await this.getClassesRepository().create(body, schoolCode, principal, auditMeta);
     this.cachedDataset = null;

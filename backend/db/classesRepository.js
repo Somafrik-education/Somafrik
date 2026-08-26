@@ -68,6 +68,29 @@ function createClassesRepository(db) {
     };
   }
 
+  /**
+   * Projection L1 mobile-sync : identifiants + statut + updatedAt.
+   * Tombstone = status terminal canonique `inactive` (pas de DELETE physique).
+   * @param {any} row
+   */
+  function mapMobileSyncClassRow(row) {
+    const status = row.status;
+    const updatedAt =
+      row.updated_at instanceof Date ? row.updated_at.toISOString() : row.updated_at;
+    return {
+      id: row.id,
+      classCode: row.class_code,
+      name: row.name,
+      academicYearId: row.academic_year_id ?? null,
+      levelId: row.level_id ?? null,
+      streamId: row.stream_id ?? null,
+      groupId: row.group_id ?? null,
+      status,
+      updatedAt,
+      tombstone: status !== "active",
+    };
+  }
+
   function nameConflictError(name) {
     return createHttpError(
       409,
@@ -305,6 +328,70 @@ function createClassesRepository(db) {
         [school.id],
       );
       return rows.map(mapClassRow);
+    },
+
+    /**
+     * Keyset L1 : ORDER BY updated_at ASC, id ASC — pas d'OFFSET.
+     * Inclut active et inactive (tombstones). Filtre enseignant en SQL si classIds/classCodes.
+     *
+     * @param {string} schoolCode
+     * @param {{
+     *   limit: number,
+     *   afterUpdatedAt?: string | Date | null,
+     *   afterId?: string | null,
+     *   classIds?: string[] | null,
+     *   classCodes?: string[] | null,
+     * }} options
+     */
+    async listForMobileSync(schoolCode, options = {}) {
+      const school = await requireSchool(schoolCode);
+      const limit = Math.max(1, Number(options.limit) || 1);
+      const params = [school.id];
+      const conditions = ["cl.school_id = $1"];
+
+      if (Array.isArray(options.classIds) || Array.isArray(options.classCodes)) {
+        const ids = (options.classIds ?? []).map((value) => String(value ?? "").trim()).filter(Boolean);
+        const codes = (options.classCodes ?? []).map((value) => String(value ?? "").trim()).filter(Boolean);
+        if (!ids.length && !codes.length) {
+          return [];
+        }
+        params.push(ids);
+        const idsIdx = params.length;
+        params.push(codes);
+        const codesIdx = params.length;
+        conditions.push(`(cl.id = ANY($${idsIdx}::uuid[]) OR cl.class_code = ANY($${codesIdx}::text[]))`);
+      }
+
+      const afterUpdatedAt = options.afterUpdatedAt ?? null;
+      const afterId = options.afterId ? String(options.afterId).trim() : "";
+      if (afterUpdatedAt && afterId) {
+        params.push(afterUpdatedAt);
+        const tsIdx = params.length;
+        params.push(afterId);
+        const idIdx = params.length;
+        conditions.push(
+          `(cl.updated_at > $${tsIdx}::timestamptz OR (cl.updated_at = $${tsIdx}::timestamptz AND cl.id > $${idIdx}::uuid))`,
+        );
+      }
+
+      params.push(limit);
+      const rows = await db.all(
+        `SELECT cl.id,
+                cl.class_code,
+                cl.name,
+                cl.status,
+                cl.academic_year_id,
+                cl.level_id,
+                cl.stream_id,
+                cl.group_id,
+                cl.updated_at
+         FROM classes cl
+         WHERE ${conditions.join(" AND ")}
+         ORDER BY cl.updated_at ASC, cl.id ASC
+         LIMIT $${params.length}`,
+        params,
+      );
+      return rows.map(mapMobileSyncClassRow);
     },
 
     /**

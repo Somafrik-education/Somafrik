@@ -1,0 +1,50 @@
+"use strict";
+
+/**
+ * Codes métier stables — sync mobile L1 (Classes).
+ * HTTP + code, jamais un 500 pour un curseur illisible.
+ */
+const MOBILE_SYNC_ERROR = Object.freeze({
+  CURSOR_INVALID: "MOBILE_SYNC_CURSOR_INVALID",
+  CURSOR_EXPIRED: "MOBILE_SYNC_CURSOR_EXPIRED",
+  SCOPE_CHANGED: "MOBILE_SYNC_SCOPE_CHANGED",
+  POSTGRES_REQUIRED: "MOBILE_SYNC_POSTGRES_REQUIRED",
+});
+
+const MOBILE_SYNC_RESOURCE_CLASSES = "classes";
+const MOBILE_SYNC_SCHEMA_VERSION = 1;
+const MOBILE_SYNC_GENERATION = 1;
+const MOBILE_SYNC_CURSOR_TYP = "mobile-sync-cursor";
+
+const MOBILE_SYNC_DEFAULT_LIMIT = 200;
+const MOBILE_SYNC_MAX_LIMIT = 500;
+
+/** TTL curseur : 30 jours. Un mobile trop longtemps hors-ligne doit full-reconcile. */
+const MOBILE_SYNC_CURSOR_TTL_SECONDS = Number(
+  process.env.MOBILE_SYNC_CURSOR_TTL_SECONDS || 30 * 24 * 60 * 60,
+);
+
+const SENTINEL_UPDATED_AT = "1970-01-01T00:00:00.000Z";
+const SENTINEL_ID = "00000000-0000-0000-0000-000000000000";
+
+const CLASSES_SYNC_PERMISSIONS = Object.freeze([
+  "Classes:READ",
+  "Voir classes",
+  "Gérer classes",
+  "COUNTRY_PRIVILEGES",
+  "ALL_PRIVILEGES",
+]);
+
+module.exports = {
+  MOBILE_SYNC_ERROR,
+  MOBILE_SYNC_RESOURCE_CLASSES,
+  MOBILE_SYNC_SCHEMA_VERSION,
+  MOBILE_SYNC_GENERATION,
+  MOBILE_SYNC_CURSOR_TYP,
+  MOBILE_SYNC_DEFAULT_LIMIT,
+  MOBILE_SYNC_MAX_LIMIT,
+  MOBILE_SYNC_CURSOR_TTL_SECONDS,
+  SENTINEL_UPDATED_AT,
+  SENTINEL_ID,
+  CLASSES_SYNC_PERMISSIONS,
+};
