@@ -248,9 +248,8 @@ async function seedHttpFixture(pool) {
        ($3, $4, 'ACC-MSYNC-S1', 'Carla', 'Ngo', 'accountant-msync-s@test.local', 'Comptable', 'active', FALSE),
        ($5, $4, 'DUAL-MSYNC-S1', 'Dina', 'Mwamba', 'dual-msync-s@test.local', 'Enseignant', 'active', FALSE),
        ($6, $4, 'ACC-DUAL-S1', 'Carla', 'Diallo', 'acc-dual-msync-s@test.local', 'Comptable', 'active', FALSE),
-       ($7, $4, 'PAR-MSYNC-S1', 'Paula', 'Ngo', 'parent-msync-s@test.local', 'Parent', 'active', FALSE),
-       ($8, $4, 'CUS-MSYNC-S1', 'Cyrus', 'Ndala', 'custom-msync-s@test.local', 'CUSTOM_ROLE', 'active', FALSE)`,
-    [ADMIN_USER_ID, TEACHER_USER_ID, ACCOUNTANT_USER_ID, schoolA.id, DUAL_USER_ID, ACC_DUAL_USER_ID, PARENT_USER_ID, CUSTOM_USER_ID],
+       ($7, $4, 'PAR-MSYNC-S1', 'Paula', 'Ngo', 'parent-msync-s@test.local', 'Parent', 'active', FALSE)`,
+    [ADMIN_USER_ID, TEACHER_USER_ID, ACCOUNTANT_USER_ID, schoolA.id, DUAL_USER_ID, ACC_DUAL_USER_ID, PARENT_USER_ID],
   );
   await pool.query(
     `INSERT INTO user_roles (user_id, school_id, role_key, status)
@@ -262,9 +261,8 @@ async function seedHttpFixture(pool) {
        ($5, $6, 'SCHOOL_ADMIN', 'active'),
        ($7, $4, 'ACCOUNTANT', 'active'),
        ($7, $6, 'SCHOOL_ADMIN', 'active'),
-       ($8, $4, 'PARENT', 'active'),
-       ($9, $4, 'CUSTOM_ROLE', 'active')`,
-    [ADMIN_USER_ID, TEACHER_USER_ID, ACCOUNTANT_USER_ID, schoolA.id, DUAL_USER_ID, schoolB.id, ACC_DUAL_USER_ID, PARENT_USER_ID, CUSTOM_USER_ID],
+       ($8, $4, 'PARENT', 'active')`,
+    [ADMIN_USER_ID, TEACHER_USER_ID, ACCOUNTANT_USER_ID, schoolA.id, DUAL_USER_ID, schoolB.id, ACC_DUAL_USER_ID, PARENT_USER_ID],
   );
 
   await pool.query(
@@ -555,6 +553,17 @@ async function main() {
     assert.equal(teacherRoleRevoked.status, 200, `teacher role revoked: ${JSON.stringify(teacherRoleRevoked.data)}`);
     assert.deepEqual(teacherRoleRevoked.data.items, []);
 
+    await repo.pool.query(
+      `INSERT INTO users (id, school_id, user_code, first_name, last_name, email, role, status, must_change_password)
+       VALUES ($1, $2, 'CUS-MSYNC-S1', 'Cyrus', 'Ndala', 'custom-msync-s@test.local', NULL, 'active', FALSE)`,
+      [CUSTOM_USER_ID, fixture.schoolA],
+    );
+    await repo.pool.query(
+      `INSERT INTO user_roles (user_id, school_id, role_key, status)
+       VALUES ($1, $2, 'CUSTOM_ROLE', 'active')`,
+      [CUSTOM_USER_ID, fixture.schoolA],
+    );
+
     const customToken = mintAccess(tokens, {
       sub: CUSTOM_USER_ID,
       role: "CUSTOM_ROLE",
@@ -573,7 +582,7 @@ async function main() {
     ).rows[0];
     const crossStudent = await repo.pool.query(
       `INSERT INTO students (school_id, student_code, first_name, last_name, status, updated_at)
-       VALUES ($1, 'STU-CROSS', 'Cross', 'Tenant', 'active', NOW())
+       VALUES ($1, 'PENDING', 'Cross', 'Tenant', 'active', NOW())
        RETURNING id`,
       [fixture.schoolA],
     );
