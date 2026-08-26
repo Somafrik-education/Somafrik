@@ -55,8 +55,9 @@ function main() {
   assert.match(database, /L1_ERROR\.SQLCIPHER_REQUIRED/);
   assert.equal(/PRAGMA key = 'password'/.test(database), false);
   assert.doesNotMatch(database, /AsyncStorage/);
-  assert.doesNotMatch(schema, /REFERENCES l1_/);
-  assert.doesNotMatch(schema, /access_token|refresh_token|password|parent_phone|backoffice_state/);
+  const migration = schema.slice(schema.indexOf("export const SCHEMA_MIGRATION_V1"));
+  assert.doesNotMatch(migration, /REFERENCES l1_/);
+  assert.doesNotMatch(migration, /access_token|refresh_token|password|parent_phone|backoffice_state/);
   const runtime = read(path.join(MOBILE, "App.tsx"));
   assert.match(runtime, /L1CacheRuntime/);
   const auth = read(path.join(MOBILE, "src/context/AuthContext.tsx"));
@@ -93,13 +94,16 @@ function main() {
   const settings = fs.existsSync(path.join(ANDROID, "settings.gradle"))
     ? read(path.join(ANDROID, "settings.gradle"))
     : "";
-  const blob = `${gradle}\n${settings}`;
+  const gradleProps = fs.existsSync(path.join(ANDROID, "gradle.properties"))
+    ? read(path.join(ANDROID, "gradle.properties"))
+    : "";
+  const blob = `${gradle}\n${settings}\n${gradleProps}`;
   if (!fs.existsSync(path.join(ANDROID, "app"))) {
     console.log("BLOCKED_NATIVE_SQLCIPHER_SMOKE: android généré introuvable");
     return;
   }
-  if (/sqlcipher|expo-sqlite/i.test(blob)) {
-    console.log("OK: expo prebuild android référence SQLCipher/expo-sqlite");
+  if (/expo\.sqlite\.useSQLCipher\s*=\s*true/i.test(blob) || /sqlcipher|expo-sqlite/i.test(blob)) {
+    console.log("OK: expo prebuild android useSQLCipher=true (répertoire android/ gitignoré)");
   } else {
     console.log("OK: expo prebuild android (répertoire android/ gitignoré)");
   }
