@@ -25,7 +25,7 @@ export const L1_ERROR = {
   SQLCIPHER_REQUIRED: "L1_SQLCIPHER_REQUIRED",
   SCHOOL_ID_REQUIRED: "L1_SCHOOL_ID_REQUIRED",
   USER_ID_REQUIRED: "L1_USER_ID_REQUIRED",
-  CIPHER_KEY_INVALID: "L1_CIPHER_KEY_INVALID",
+  UNLOCK_FAILED: "L1_SQLCIPHER_UNLOCK_FAILED",
   PAYLOAD_INVALID: "L1_PAYLOAD_INVALID",
   CURSOR_INVALID_LOOP: "L1_CURSOR_INVALID_LOOP",
 } as const;
@@ -65,11 +65,8 @@ export type L1Item = Record<string, unknown> & {
 
 export type SqlValue = string | number | null;
 
-export type L1Store = {
-  kind: "sqlcipher" | "memory";
-  cipherVersion: string;
-  migrate(): Promise<void>;
-  withTransaction<T>(fn: () => Promise<T>): Promise<T>;
+/** Écritures d'une transaction exclusive — toujours le handle `txn`, jamais le DB global. */
+export type L1Txn = {
   upsertRow(resource: L1Resource, partition: L1Partition, row: Record<string, SqlValue>): Promise<void>;
   deleteRow(resource: L1Resource, partition: L1Partition, id: string): Promise<void>;
   purgeResource(partition: L1Partition, resource: L1Resource): Promise<void>;
@@ -82,6 +79,13 @@ export type L1Store = {
   listRows(resource: L1Resource, partition: L1Partition): Promise<Record<string, SqlValue>[]>;
   getMeta(partition: L1Partition, resource: L1Resource): Promise<L1SyncMeta | null>;
   putMeta(meta: L1SyncMeta): Promise<void>;
+};
+
+export type L1Store = L1Txn & {
+  kind: "sqlcipher" | "memory";
+  cipherVersion: string;
+  migrate(): Promise<void>;
+  withExclusiveTransaction<T>(fn: (txn: L1Txn) => Promise<T>): Promise<T>;
   close(): Promise<void>;
 };
 
@@ -91,7 +95,7 @@ export type L1Api = {
 
 export type L1OpenFailure = {
   ok: false;
-  code: typeof L1_ERROR.SQLCIPHER_REQUIRED | typeof L1_ERROR.CIPHER_KEY_INVALID;
+  code: typeof L1_ERROR.SQLCIPHER_REQUIRED | typeof L1_ERROR.UNLOCK_FAILED;
   message: string;
 };
 

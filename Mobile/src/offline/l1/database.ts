@@ -2,7 +2,7 @@
  * Ouverture SQLCipher exclusive. Aucun fallback SQLite en clair.
  * La clé vit uniquement dans SecureStore (`somafrik.l1DbKeyV1`).
  */
-import { L1_DB_FILENAME, L1_DB_KEY_SECURESTORE, L1_ERROR, type L1OpenResult, type L1Store } from "./types";
+import { L1_DB_FILENAME, L1_DB_KEY_SECURESTORE, L1_ERROR, type L1OpenResult, type L1Store, type L1Txn } from "./types";
 import { applyL1Migrations } from "./migrations";
 import { L1_RESOURCE_COLUMNS, L1_TABLE_BY_RESOURCE } from "./schema";
 import type { L1Partition, L1Resource, L1SyncMeta, SqlValue } from "./types";
@@ -17,7 +17,7 @@ export type L1SqliteLike = {
   runAsync(sql: string, params?: unknown[]): Promise<unknown>;
   getFirstAsync<T>(sql: string, params?: unknown[]): Promise<T | null>;
   getAllAsync<T>(sql: string, params?: unknown[]): Promise<T[]>;
-  withTransactionAsync<T>(fn: () => Promise<T>): Promise<T>;
+  withExclusiveTransactionAsync(task: (txn: L1SqliteLike) => Promise<void>): Promise<void>;
   closeAsync(): Promise<void>;
 };
 
@@ -27,6 +27,15 @@ function bytesToHex(bytes: Uint8Array): string {
 
 function escapeSqlLiteral(value: string): string {
   return value.replace(/'/g, "''");
+}
+
+function enqueueWrite<T>(tail: { current: Promise<void> }, fn: () => Promise<T>): Promise<T> {
+  const run = tail.current.then(fn, fn);
+  tail.current = run.then(
+    () => undefined,
+    () => undefined,
+  );
+  return run;
 }
 
 export async function generateL1DbKeyHex(getRandomBytes: (size: number) => Uint8Array | Promise<Uint8Array>): Promise<string> {
@@ -42,29 +51,18 @@ export async function loadOrCreateL1DbKey(keyStore: L1KeyStore, generateKey: () 
   return created;
 }
 
-function createSqliteStore(db: L1SqliteLike, cipherVersion: string): L1Store {
-  async function exec(sql: string) {
-    await db.execAsync(sql);
-  }
+function createSqliteOps(handle: L1SqliteLike): L1Txn {
   async function run(sql: string, params: unknown[] = []) {
-    await db.runAsync(sql, params);
+    await handle.runAsync(sql, params);
   }
   async function get<T>(sql: string, params: unknown[] = []) {
-    return (await db.getFirstAsync<T>(sql, params)) ?? undefined;
+    return (await handle.getFirstAsync<T>(sql, params)) ?? undefined;
   }
   async function all<T>(sql: string, params: unknown[] = []) {
-    return db.getAllAsync<T>(sql, params);
+    return handle.getAllAsync<T>(sql, params);
   }
 
-  return {
-    kind: "sqlcipher",
-    cipherVersion,
-    async migrate() {
-      await applyL1Migrations({ exec, get, run });
-    },
-    async withTransaction<T>(fn: () => Promise<T>): Promise<T> {
-      return db.withTransactionAsync(fn);
-    },
+  const ops: L1Txn = {
     async upsertRow(resource, partition, row) {
       const table = L1_TABLE_BY_RESOURCE[resource];
       const columns = ["user_id", "school_id", "school_code", ...L1_RESOURCE_COLUMNS[resource]];
@@ -106,7 +104,7 @@ function createSqliteStore(db: L1SqliteLike, cipherVersion: string): L1Store {
     },
     async purgePartition(partition) {
       for (const resource of Object.keys(L1_TABLE_BY_RESOURCE) as L1Resource[]) {
-        await this.purgeResource(partition, resource);
+        await ops.purgeResource(partition, resource);
       }
     },
     async getRow(resource, partition, id) {
@@ -177,6 +175,43 @@ function createSqliteStore(db: L1SqliteLike, cipherVersion: string): L1Store {
         ],
       );
     },
+  };
+  return ops;
+}
+
+function createSqliteStore(db: L1SqliteLike, cipherVersion: string): L1Store {
+  const writeTail = { current: Promise.resolve() };
+  const root = createSqliteOps(db);
+
+  return {
+    kind: "sqlcipher",
+    cipherVersion,
+    async migrate() {
+      await applyL1Migrations({
+        exec: (sql) => db.execAsync(sql),
+        get: async (sql) => (await db.getFirstAsync<{ version: number }>(sql)) ?? undefined,
+        run: async (sql, params) => {
+          await db.runAsync(sql, params);
+        },
+      });
+    },
+    async withExclusiveTransaction<T>(fn: (txn: L1Txn) => Promise<T>): Promise<T> {
+      return enqueueWrite(writeTail, async () => {
+        let result: T | undefined;
+        await db.withExclusiveTransactionAsync(async (txn) => {
+          result = await fn(createSqliteOps(txn));
+        });
+        return result as T;
+      });
+    },
+    upsertRow: (resource, partition, row) => enqueueWrite(writeTail, () => root.upsertRow(resource, partition, row)),
+    deleteRow: (resource, partition, id) => enqueueWrite(writeTail, () => root.deleteRow(resource, partition, id)),
+    purgeResource: (partition, resource) => enqueueWrite(writeTail, () => root.purgeResource(partition, resource)),
+    purgePartition: (partition) => enqueueWrite(writeTail, () => root.purgePartition(partition)),
+    putMeta: (meta) => enqueueWrite(writeTail, () => root.putMeta(meta)),
+    getRow: (resource, partition, id) => root.getRow(resource, partition, id),
+    listRows: (resource, partition) => root.listRows(resource, partition),
+    getMeta: (partition, resource) => root.getMeta(partition, resource),
     async close() {
       await db.closeAsync();
     },

@@ -1,9 +1,18 @@
-import { L1_ERROR, type L1Partition } from "./types";
-import type { L1Store } from "./types";
+import { L1_ERROR, type L1Partition, type L1Store } from "./types";
 
 let generation = 0;
 let lastPartition: L1Partition | null = null;
 let lastStore: L1Store | null = null;
+let lifecycleTail = Promise.resolve();
+
+function enqueueLifecycle<T>(fn: () => Promise<T>): Promise<T> {
+  const run = lifecycleTail.then(fn, fn);
+  lifecycleTail = run.then(
+    () => undefined,
+    () => undefined,
+  );
+  return run;
+}
 
 export function currentL1Generation(): number {
   return generation;
@@ -23,15 +32,26 @@ function samePartition(a: L1Partition | null, b: L1Partition): boolean {
   return Boolean(a && a.userId === b.userId && a.schoolId === b.schoolId);
 }
 
-/** Purge la partition précédente si l'identité authentifiée a changé. */
-export async function adoptL1Runtime(store: L1Store, partition: L1Partition): Promise<void> {
-  const previousStore = lastStore;
-  const previousPartition = lastPartition;
-  lastStore = store;
-  lastPartition = partition;
-  if (previousStore && previousPartition && !samePartition(previousPartition, partition)) {
-    await previousStore.purgePartition(previousPartition);
-  }
+/**
+ * Purge la partition précédente si l'identité authentifiée a changé.
+ * Sérialisé derrière logout/purge : un ancien epoch ne peut pas adopter.
+ */
+export async function adoptL1Runtime(
+  store: L1Store,
+  partition: L1Partition,
+  expectedGeneration?: number,
+): Promise<boolean> {
+  return enqueueLifecycle(async () => {
+    if (expectedGeneration != null && expectedGeneration !== generation) return false;
+    const previousStore = lastStore;
+    const previousPartition = lastPartition;
+    if (previousStore && previousPartition && !samePartition(previousPartition, partition)) {
+      await previousStore.purgePartition(previousPartition);
+    }
+    lastStore = store;
+    lastPartition = partition;
+    return true;
+  });
 }
 
 export function resolveL1Partition(session: {
@@ -68,11 +88,28 @@ export async function purgeRememberedL1Partition(): Promise<void> {
 }
 
 /**
- * Invalide toute sync en vol. Appelé au logout / 401 avant qu'une réponse tardive
- * ne puisse réinsérer la partition A.
+ * Invalide toute sync en vol. generation++ puis purge TERMINÉE avant de rendre.
+ * Une reconnexion (même userId+schoolId) attend cette purge via la file lifecycle.
  */
-export function invalidateL1CacheSession(): number {
-  const next = bumpL1Generation();
-  void purgeRememberedL1Partition();
-  return next;
+export async function invalidateL1CacheSession(): Promise<number> {
+  return enqueueLifecycle(async () => {
+    generation += 1;
+    await purgeRememberedL1Partition();
+    return generation;
+  });
+}
+
+/** Nouvelle session de sync : attend que logout/purge de l'epoch précédent soit terminé. */
+export async function beginL1Session(): Promise<number> {
+  return enqueueLifecycle(async () => {
+    generation += 1;
+    return generation;
+  });
+}
+
+export function resetL1LifecycleForTests(): void {
+  generation = 0;
+  lastPartition = null;
+  lastStore = null;
+  lifecycleTail = Promise.resolve();
 }

@@ -7,6 +7,7 @@ import {
   type L1Resource,
   type L1Store,
   type L1SyncMeta,
+  type L1Txn,
   type SqlValue,
 } from "./types";
 
@@ -46,9 +47,18 @@ function metaKey(partition: L1Partition, resource: L1Resource): string {
   return `${partitionKey(partition)}\0${resource}`;
 }
 
+function enqueueWrite<T>(tail: { current: Promise<void> }, fn: () => Promise<T>): Promise<T> {
+  const run = tail.current.then(fn, fn);
+  tail.current = run.then(
+    () => undefined,
+    () => undefined,
+  );
+  return run;
+}
+
 /**
- * Adapter injectable pour la CI Node. Simule SQLCipher (cipherVersion fourni)
- * et le rollback transactionnel. Jamais un fallback plaintext natif.
+ * Adapter injectable pour la CI Node. Simule SQLCipher et une transaction
+ * exclusive (purge logout hors snapshot de sync). Jamais un fallback plaintext natif.
  */
 export function createMemoryL1Store(options?: {
   cipherVersion?: string;
@@ -59,8 +69,8 @@ export function createMemoryL1Store(options?: {
   const expectedKey = options?.cipherKey ?? "memory-test-key";
   const openKey = options?.openKey ?? expectedKey;
   if (openKey !== expectedKey) {
-    const error = new Error(L1_ERROR.CIPHER_KEY_INVALID);
-    (error as Error & { code: string }).code = L1_ERROR.CIPHER_KEY_INVALID;
+    const error = new Error(L1_ERROR.UNLOCK_FAILED);
+    (error as Error & { code: string }).code = L1_ERROR.UNLOCK_FAILED;
     throw error;
   }
   const cipherVersion = options?.cipherVersion ?? "4.5.0 community";
@@ -74,12 +84,7 @@ export function createMemoryL1Store(options?: {
   const tables = bucket.tables;
   const metas = bucket.metas;
   const migrations = bucket.migrations;
-  let txDepth = 0;
-  let snapshot: {
-    tables: Record<string, Map<string, TableRow>>;
-    metas: Map<string, L1SyncMeta>;
-    migrations: Map<number, string>;
-  } | null = null;
+  const writeTail = { current: Promise.resolve() };
 
   function takeSnapshot() {
     const nextTables: Record<string, Map<string, TableRow>> = {};
@@ -95,7 +100,7 @@ export function createMemoryL1Store(options?: {
     };
   }
 
-  function restoreSnapshot(saved: NonNullable<typeof snapshot>) {
+  function restoreSnapshot(saved: ReturnType<typeof takeSnapshot>) {
     for (const name of Object.keys(tables)) {
       tables[name].clear();
       for (const [key, row] of saved.tables[name] ?? []) {
@@ -129,35 +134,7 @@ export function createMemoryL1Store(options?: {
     },
   };
 
-  const store: L1Store = {
-    kind: "memory",
-    cipherVersion,
-    async migrate() {
-      await applyL1Migrations(executor);
-    },
-    async withTransaction<T>(fn: () => Promise<T>): Promise<T> {
-      if (txDepth > 0) {
-        txDepth += 1;
-        try {
-          return await fn();
-        } finally {
-          txDepth -= 1;
-        }
-      }
-      txDepth = 1;
-      snapshot = takeSnapshot();
-      try {
-        const result = await fn();
-        snapshot = null;
-        txDepth = 0;
-        return result;
-      } catch (error) {
-        if (snapshot) restoreSnapshot(snapshot);
-        snapshot = null;
-        txDepth = 0;
-        throw error;
-      }
-    },
+  const txn: L1Txn = {
     async upsertRow(resource, partition, row) {
       const table = L1_TABLE_BY_RESOURCE[resource];
       const id = String(row.id ?? "");
@@ -185,7 +162,7 @@ export function createMemoryL1Store(options?: {
     },
     async purgePartition(partition) {
       for (const resource of L1_RESOURCES) {
-        await store.purgeResource(partition, resource);
+        await txn.purgeResource(partition, resource);
       }
     },
     async getRow(resource, partition, id) {
@@ -202,6 +179,33 @@ export function createMemoryL1Store(options?: {
     async putMeta(meta) {
       metas.set(metaKey(meta, meta.resource), clone(meta));
     },
+  };
+
+  const store: L1Store = {
+    kind: "memory",
+    cipherVersion,
+    async migrate() {
+      await applyL1Migrations(executor);
+    },
+    async withExclusiveTransaction<T>(fn: (scoped: L1Txn) => Promise<T>): Promise<T> {
+      return enqueueWrite(writeTail, async () => {
+        const snapshot = takeSnapshot();
+        try {
+          return await fn(txn);
+        } catch (error) {
+          restoreSnapshot(snapshot);
+          throw error;
+        }
+      });
+    },
+    upsertRow: (resource, partition, row) => enqueueWrite(writeTail, () => txn.upsertRow(resource, partition, row)),
+    deleteRow: (resource, partition, id) => enqueueWrite(writeTail, () => txn.deleteRow(resource, partition, id)),
+    purgeResource: (partition, resource) => enqueueWrite(writeTail, () => txn.purgeResource(partition, resource)),
+    purgePartition: (partition) => enqueueWrite(writeTail, () => txn.purgePartition(partition)),
+    putMeta: (meta) => enqueueWrite(writeTail, () => txn.putMeta(meta)),
+    getRow: (resource, partition, id) => txn.getRow(resource, partition, id),
+    listRows: (resource, partition) => txn.listRows(resource, partition),
+    getMeta: (partition, resource) => txn.getMeta(partition, resource),
     async close() {
       return;
     },

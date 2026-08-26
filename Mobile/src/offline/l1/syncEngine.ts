@@ -1,4 +1,4 @@
-import { applyL1PageAtomically, markResourceState, purgeResourceAndReset } from "./repository";
+import { applyL1PageAtomically, isL1StaleTransaction, markResourceState, purgeResourceAndReset } from "./repository";
 import { L1PayloadError } from "./syncApi";
 import {
   L1_ERROR,
@@ -49,8 +49,19 @@ function errorCode(error: unknown): string {
   return String((error as { code?: string }).code ?? "");
 }
 
-async function beginFullReconcile(store: L1Store, partition: L1Partition, resource: L1Resource): Promise<void> {
-  await purgeResourceAndReset(store, partition, resource, "reconciling");
+async function beginFullReconcile(
+  store: L1Store,
+  partition: L1Partition,
+  resource: L1Resource,
+  isCurrent: () => boolean,
+): Promise<"ok" | "discarded"> {
+  try {
+    await purgeResourceAndReset(store, partition, resource, "reconciling", isCurrent);
+  } catch (error) {
+    if (isL1StaleTransaction(error) || !isCurrent()) return "discarded";
+    throw error;
+  }
+  return isCurrent() ? "ok" : "discarded";
 }
 
 async function syncOneResource(args: {
@@ -70,10 +81,15 @@ async function syncOneResource(args: {
   let protocolReconcileUsed = false;
 
   if (localFull && (meta.state === "empty" || !meta.cursor)) {
-    await markResourceState(store, partition, resource, {
-      state: "reconciling",
-      cursor: null,
-    });
+    try {
+      await markResourceState(store, partition, resource, {
+        state: "reconciling",
+        cursor: null,
+      }, isCurrent);
+    } catch (error) {
+      if (isL1StaleTransaction(error) || !isCurrent()) return { resource, outcome: "discarded" };
+      throw error;
+    }
     storedCursor = null;
   }
 
@@ -90,11 +106,17 @@ async function syncOneResource(args: {
       const code = errorCode(error);
 
       if (status === 401) {
-        await store.purgePartition(partition);
+        if (isCurrent()) await store.purgePartition(partition);
         return { resource, outcome: "error", code: "UNAUTHORIZED" };
       }
       if (status === 403) {
-        await purgeResourceAndReset(store, partition, resource, "blocked_authorization");
+        try {
+          await purgeResourceAndReset(store, partition, resource, "blocked_authorization", isCurrent);
+        } catch (error) {
+          if (isL1StaleTransaction(error) || !isCurrent()) return { resource, outcome: "discarded" };
+          throw error;
+        }
+        if (!isCurrent()) return { resource, outcome: "discarded" };
         return { resource, outcome: "blocked_authorization", code };
       }
       if (code === "MOBILE_SYNC_SCOPE_CHANGED" || code === "MOBILE_SYNC_CURSOR_EXPIRED") {
@@ -103,7 +125,9 @@ async function syncOneResource(args: {
           return { resource, outcome: "error", code };
         }
         protocolReconcileUsed = true;
-        await beginFullReconcile(store, partition, resource);
+        if ((await beginFullReconcile(store, partition, resource, isCurrent)) === "discarded") {
+          return { resource, outcome: "discarded" };
+        }
         storedCursor = null;
         localFull = true;
         invalidReconcileUsed = false;
@@ -115,7 +139,9 @@ async function syncOneResource(args: {
           return { resource, outcome: "error", code: L1_ERROR.CURSOR_INVALID_LOOP };
         }
         invalidReconcileUsed = true;
-        await beginFullReconcile(store, partition, resource);
+        if ((await beginFullReconcile(store, partition, resource, isCurrent)) === "discarded") {
+          return { resource, outcome: "discarded" };
+        }
         storedCursor = null;
         localFull = true;
         continue;
@@ -135,7 +161,9 @@ async function syncOneResource(args: {
     if (!isCurrent()) return { resource, outcome: "discarded" };
 
     if (page.mode === "full_required" || page.mode === "unavailable") {
-      await beginFullReconcile(store, partition, resource);
+      if ((await beginFullReconcile(store, partition, resource, isCurrent)) === "discarded") {
+        return { resource, outcome: "discarded" };
+      }
       storedCursor = null;
       localFull = true;
       continue;
@@ -146,7 +174,9 @@ async function syncOneResource(args: {
         return { resource, outcome: "error", code: "L1_SCOPE_HASH_MISMATCH" };
       }
       protocolReconcileUsed = true;
-      await beginFullReconcile(store, partition, resource);
+      if ((await beginFullReconcile(store, partition, resource, isCurrent)) === "discarded") {
+        return { resource, outcome: "discarded" };
+      }
       storedCursor = null;
       localFull = true;
       meta = (await store.getMeta(partition, resource)) ?? emptyMeta(partition, resource);
@@ -154,9 +184,13 @@ async function syncOneResource(args: {
     }
 
     const nextState = localFull && page.hasMore ? "reconciling" : "ready";
-    await applyL1PageAtomically(store, partition, resource, page, nextState);
+    try {
+      await applyL1PageAtomically(store, partition, resource, page, nextState, isCurrent);
+    } catch (error) {
+      if (isL1StaleTransaction(error) || !isCurrent()) return { resource, outcome: "discarded" };
+      throw error;
+    }
     if (!isCurrent()) {
-      await store.purgePartition(partition);
       return { resource, outcome: "discarded" };
     }
     meta = (await store.getMeta(partition, resource)) ?? meta;

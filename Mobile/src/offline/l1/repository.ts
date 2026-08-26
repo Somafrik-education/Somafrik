@@ -10,6 +10,8 @@ import {
   type SqlValue,
 } from "./types";
 
+export const L1_TX_STALE = "L1_TX_STALE";
+
 function asSqlValue(value: unknown): SqlValue {
   if (value == null) return null;
   if (typeof value === "number" && Number.isFinite(value)) return value;
@@ -34,18 +36,20 @@ export async function applyL1PageAtomically(
   resource: L1Resource,
   page: L1Page,
   state: L1SyncState,
+  isCurrent: () => boolean = () => true,
 ): Promise<void> {
-  await store.withTransaction(async () => {
+  await store.withExclusiveTransaction(async (txn) => {
+    if (!isCurrent()) return;
     for (const item of page.items) {
       const id = String(item.id ?? "").trim();
       if (!id) continue;
       if (item.tombstone === true) {
-        await store.deleteRow(resource, partition, id);
+        await txn.deleteRow(resource, partition, id);
         continue;
       }
-      await store.upsertRow(resource, partition, mapItemToRow(resource, item));
+      await txn.upsertRow(resource, partition, mapItemToRow(resource, item));
     }
-    await store.putMeta({
+    await txn.putMeta({
       userId: partition.userId,
       schoolId: partition.schoolId,
       schoolCode: partition.schoolCode,
@@ -56,6 +60,11 @@ export async function applyL1PageAtomically(
       schemaVersion: L1_LOCAL_SCHEMA_VERSION,
       lastSuccessAt: new Date().toISOString(),
     });
+    if (!isCurrent()) {
+      const error = new Error(L1_TX_STALE) as Error & { code: string };
+      error.code = L1_TX_STALE;
+      throw error;
+    }
   });
 }
 
@@ -69,18 +78,29 @@ export async function markResourceState(
     scopeHash: string | null;
     lastSuccessAt: string | null;
   }>,
+  isCurrent: () => boolean = () => true,
 ): Promise<void> {
+  if (!isCurrent()) return;
   const current = await store.getMeta(partition, resource);
-  await store.putMeta({
-    userId: partition.userId,
-    schoolId: partition.schoolId,
-    schoolCode: partition.schoolCode,
-    resource,
-    cursor: patch.cursor !== undefined ? patch.cursor : (current?.cursor ?? null),
-    scopeHash: patch.scopeHash !== undefined ? patch.scopeHash : (current?.scopeHash ?? null),
-    state: patch.state ?? current?.state ?? "empty",
-    schemaVersion: L1_LOCAL_SCHEMA_VERSION,
-    lastSuccessAt: patch.lastSuccessAt !== undefined ? patch.lastSuccessAt : (current?.lastSuccessAt ?? null),
+  if (!isCurrent()) return;
+  await store.withExclusiveTransaction(async (txn) => {
+    if (!isCurrent()) return;
+    await txn.putMeta({
+      userId: partition.userId,
+      schoolId: partition.schoolId,
+      schoolCode: partition.schoolCode,
+      resource,
+      cursor: patch.cursor !== undefined ? patch.cursor : (current?.cursor ?? null),
+      scopeHash: patch.scopeHash !== undefined ? patch.scopeHash : (current?.scopeHash ?? null),
+      state: patch.state ?? current?.state ?? "empty",
+      schemaVersion: L1_LOCAL_SCHEMA_VERSION,
+      lastSuccessAt: patch.lastSuccessAt !== undefined ? patch.lastSuccessAt : (current?.lastSuccessAt ?? null),
+    });
+    if (!isCurrent()) {
+      const error = new Error(L1_TX_STALE) as Error & { code: string };
+      error.code = L1_TX_STALE;
+      throw error;
+    }
   });
 }
 
@@ -89,10 +109,13 @@ export async function purgeResourceAndReset(
   partition: L1Partition,
   resource: L1Resource,
   state: L1SyncState,
+  isCurrent: () => boolean = () => true,
 ): Promise<void> {
-  await store.withTransaction(async () => {
-    await store.purgeResource(partition, resource);
-    await store.putMeta({
+  if (!isCurrent()) return;
+  await store.withExclusiveTransaction(async (txn) => {
+    if (!isCurrent()) return;
+    await txn.purgeResource(partition, resource);
+    await txn.putMeta({
       userId: partition.userId,
       schoolId: partition.schoolId,
       schoolCode: partition.schoolCode,
@@ -103,5 +126,14 @@ export async function purgeResourceAndReset(
       schemaVersion: L1_LOCAL_SCHEMA_VERSION,
       lastSuccessAt: null,
     });
+    if (!isCurrent()) {
+      const error = new Error(L1_TX_STALE) as Error & { code: string };
+      error.code = L1_TX_STALE;
+      throw error;
+    }
   });
+}
+
+export function isL1StaleTransaction(error: unknown): boolean {
+  return Boolean(error && typeof error === "object" && (error as { code?: string }).code === L1_TX_STALE);
 }

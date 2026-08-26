@@ -5,8 +5,16 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
-import { generateL1DbKeyHex, loadOrCreateL1DbKey, openEncryptedL1Database } from "./database";
-import { bumpL1Generation, currentL1Generation, resolveL1Partition } from "./lifecycle";
+import { generateL1DbKeyHex, loadOrCreateL1DbKey, openEncryptedL1Database, type L1SqliteLike } from "./database";
+import {
+  adoptL1Runtime,
+  beginL1Session,
+  bumpL1Generation,
+  currentL1Generation,
+  invalidateL1CacheSession,
+  resetL1LifecycleForTests,
+  resolveL1Partition,
+} from "./lifecycle";
 import { createMemoryL1Bucket, createMemoryL1Store } from "./memoryStore";
 import { applyL1PageAtomically } from "./repository";
 import { FORBIDDEN_L1_COLUMNS, SCHEMA_MIGRATION_V1 } from "./schema";
@@ -57,6 +65,7 @@ function httpError(status: number, code: string): Error {
 }
 
 async function run() {
+  resetL1LifecycleForTests();
   const src = fs.readFileSync(path.join(ROOT, "src/offline/l1/database.ts"), "utf8");
   const typesSrc = fs.readFileSync(path.join(ROOT, "src/offline/l1/types.ts"), "utf8");
   const appConfig = fs.readFileSync(path.join(ROOT, "app.config.js"), "utf8");
@@ -73,7 +82,8 @@ async function run() {
   assert.match(src, /PRAGMA cipher_version/);
   assert.match(typesSrc, /L1_SQLCIPHER_REQUIRED/);
   assert.match(src, /L1_ERROR\.SQLCIPHER_REQUIRED/);
-  assert.match(src, /platform === "web"/);
+  assert.match(src, /withExclusiveTransactionAsync/);
+  assert.doesNotMatch(src, /withTransactionAsync/);
   assert.doesNotMatch(SCHEMA_MIGRATION_V1, /REFERENCES l1_/);
   for (const forbidden of FORBIDDEN_L1_COLUMNS) {
     assert.equal(SCHEMA_MIGRATION_V1.includes(forbidden), false, forbidden);
@@ -107,7 +117,7 @@ async function run() {
   assert.throws(
     () => createMemoryL1Store({ cipherKey: "alpha", openKey: "beta" }),
     (error: unknown) =>
-      Boolean(error && typeof error === "object" && (error as { code?: string }).code === L1_ERROR.CIPHER_KEY_INVALID),
+      Boolean(error && typeof error === "object" && (error as { code?: string }).code === L1_ERROR.UNLOCK_FAILED),
   );
 
   const web = await openEncryptedL1Database({
@@ -126,26 +136,27 @@ async function run() {
 
   const missingCipher = await openEncryptedL1Database({
     platform: "android",
-    openDatabase: async () => ({
-      async execAsync() {
-        return;
-      },
-      async runAsync() {
-        return;
-      },
-      async getFirstAsync<T>(_sql?: string, _params?: unknown[]): Promise<T | null> {
-        return { cipher_version: "" } as T;
-      },
-      async getAllAsync() {
-        return [];
-      },
-      async withTransactionAsync<T>(fn: () => Promise<T>) {
-        return fn();
-      },
-      async closeAsync() {
-        return;
-      },
-    }),
+    openDatabase: async () =>
+      ({
+        async execAsync() {
+          return;
+        },
+        async runAsync() {
+          return;
+        },
+        async getFirstAsync<T>(_sql?: string, _params?: unknown[]): Promise<T | null> {
+          return { cipher_version: "" } as T;
+        },
+        async getAllAsync() {
+          return [];
+        },
+        async withExclusiveTransactionAsync(task: (txn: L1SqliteLike) => Promise<void>) {
+          await task(this as unknown as L1SqliteLike);
+        },
+        async closeAsync() {
+          return;
+        },
+      }) as L1SqliteLike,
     keyStore: {
       getItem: async () => "k",
       setItem: async () => undefined,
@@ -181,15 +192,19 @@ async function run() {
   assert.throws(
     () => createMemoryL1Store({ cipherKey: "alpha", openKey: "wrong", bucket: persist }),
     (error: unknown) =>
-      Boolean(error && typeof error === "object" && (error as { code?: string }).code === L1_ERROR.CIPHER_KEY_INVALID),
+      Boolean(error && typeof error === "object" && (error as { code?: string }).code === L1_ERROR.UNLOCK_FAILED),
   );
 
   const boom = createMemoryL1Store();
   await boom.migrate();
-  const originalPut = boom.putMeta.bind(boom);
-  boom.putMeta = async () => {
-    throw new Error("meta-fail");
-  };
+  const originalExclusive = boom.withExclusiveTransaction.bind(boom);
+  boom.withExclusiveTransaction = async (fn) =>
+    originalExclusive(async (txn) => {
+      txn.putMeta = async () => {
+        throw new Error("meta-fail");
+      };
+      return fn(txn);
+    });
   await assert.rejects(() =>
     applyL1PageAtomically(
       boom,
@@ -199,7 +214,7 @@ async function run() {
       "ready",
     ),
   );
-  boom.putMeta = originalPut;
+  boom.withExclusiveTransaction = originalExclusive;
   assert.equal(await boom.getRow("classes", partitionA, "cx"), null);
   assert.equal(await boom.getMeta(partitionA, "classes"), null);
 
@@ -595,6 +610,83 @@ async function run() {
   hangResolve?.(page("classes", [{ id: "late-a", name: "trop tard" }], { hasMore: false, nextCursor: "late" }));
   await hangPromise;
   assert.equal(await hangStore.getRow("classes", partitionA, "late-a"), null);
+
+  resetL1LifecycleForTests();
+  const exclusiveStore = createMemoryL1Store();
+  await exclusiveStore.migrate();
+  await exclusiveStore.upsertRow("classes", partitionA, { id: "old-row", name: "avant-sync" });
+  let releaseSync: (() => void) | undefined;
+  let exclusiveEntered!: () => void;
+  const syncEntered = new Promise<void>((resolve) => {
+    exclusiveEntered = resolve;
+  });
+  const originalExclusiveTx = exclusiveStore.withExclusiveTransaction.bind(exclusiveStore);
+  exclusiveStore.withExclusiveTransaction = async (fn) =>
+    originalExclusiveTx(async (txn) => {
+      exclusiveEntered();
+      await new Promise<void>((hold) => {
+        releaseSync = hold;
+      });
+      return fn(txn);
+    });
+  const syncTx = exclusiveStore.withExclusiveTransaction(async (txn) => {
+    await txn.upsertRow("classes", partitionA, { id: "page-a", name: "sync-a" });
+    throw new Error("sync-fail");
+  });
+  await syncEntered;
+  const purgeStarted = exclusiveStore.purgePartition(partitionA);
+  releaseSync?.();
+  await assert.rejects(syncTx);
+  await purgeStarted;
+  exclusiveStore.withExclusiveTransaction = originalExclusiveTx;
+  assert.equal(await exclusiveStore.getRow("classes", partitionA, "page-a"), null);
+  assert.equal(await exclusiveStore.getRow("classes", partitionA, "old-row"), null);
+
+  resetL1LifecycleForTests();
+  const reloginStore = createMemoryL1Store();
+  await reloginStore.migrate();
+  let oldResolve: ((page: L1Page) => void) | undefined;
+  let oldReady!: () => void;
+  const oldStarted = new Promise<void>((resolve) => {
+    oldReady = resolve;
+  });
+  const oldApi = apiFor({
+    default: async (resource) => {
+      if (resource !== "classes") {
+        return page(resource, [], { hasMore: false, nextCursor: "x", scopeHash: "h" });
+      }
+      return new Promise<L1Page>((resolve) => {
+        oldResolve = resolve;
+        oldReady();
+      });
+    },
+  });
+  const genOld = await beginL1Session();
+  await adoptL1Runtime(reloginStore, partitionA, genOld);
+  const oldSync = syncL1Cache({
+    store: reloginStore,
+    api: oldApi,
+    partition: partitionA,
+    isCurrent: () => currentL1Generation() === genOld,
+  });
+  await oldStarted;
+  await invalidateL1CacheSession();
+  const genNew = await beginL1Session();
+  await adoptL1Runtime(reloginStore, partitionA, genNew);
+  await applyL1PageAtomically(
+    reloginStore,
+    partitionA,
+    "classes",
+    page("classes", [{ id: "new-a", name: "apres-relogin" }], { nextCursor: "new-c", scopeHash: "new-h" }),
+    "ready",
+    () => currentL1Generation() === genNew,
+  );
+  oldResolve?.(page("classes", [{ id: "late-a", name: "trop tard" }], { hasMore: false, nextCursor: "late" }));
+  await oldSync;
+  assert.equal(await reloginStore.getRow("classes", partitionA, "late-a"), null);
+  assert.equal((await reloginStore.getRow("classes", partitionA, "new-a"))?.name, "apres-relogin");
+  assert.equal((await reloginStore.getMeta(partitionA, "classes"))?.cursor, "new-c");
+  assert.equal((await reloginStore.getMeta(partitionA, "classes"))?.state, "ready");
 
   console.log("l1SqliteCache.test.ts: OK key/sqlcipher/partition/atomic/tombstone/protocol/fail-closed");
 }
