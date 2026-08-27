@@ -229,6 +229,50 @@ function createTeacherAssignmentsRepository(db) {
     },
 
     /**
+     * users.id canonique du tenant pour un principal JWT.
+     * Rang 1 : principal.sub = users.id.
+     * Rang 2 : principal.sub = teachers.id (overlay login) → t.user_id.
+     * Jamais teacher_code, jamais matching par nom.
+     *
+     * @param {string} principalRef
+     * @param {string} schoolId
+     * @returns {Promise<string | null>}
+     */
+    async resolveCanonicalUserIdForSchool(principalRef, schoolId) {
+      const ref = String(principalRef ?? "").trim();
+      const sid = String(schoolId ?? "").trim();
+      if (!ref || !sid) return null;
+      const row = await db.one(
+        `SELECT resolved.user_id
+         FROM (
+           SELECT u.id::text AS user_id, 1 AS rank
+           FROM users u
+           WHERE u.id::text = $1
+             AND EXISTS (
+               SELECT 1 FROM user_roles ur
+               WHERE ur.user_id = u.id
+                 AND ur.school_id::text = $2
+                 AND ur.status = 'active'
+                 AND ur.revoked_at IS NULL
+             )
+           UNION ALL
+           SELECT t.user_id::text AS user_id, 2 AS rank
+           FROM teachers t
+           WHERE t.id::text = $1
+             AND t.school_id::text = $2
+             AND t.user_id IS NOT NULL
+             AND COALESCE(lower(btrim(t.status)), 'active') NOT IN ('deleted', 'archived', 'inactive')
+         ) resolved
+         WHERE resolved.user_id IS NOT NULL AND btrim(resolved.user_id) <> ''
+         ORDER BY resolved.rank ASC
+         LIMIT 1`,
+        [ref, sid],
+      );
+      const userId = String(row?.user_id ?? "").trim();
+      return userId || null;
+    },
+
+    /**
      * IDs des affectations actives actuellement visibles pour un teacher UUID.
      *
      * @param {string} schoolId
@@ -341,7 +385,7 @@ function createTeacherAssignmentsRepository(db) {
         `SELECT ta.id,
                 ta.teacher_id,
                 t.teacher_code,
-                u.id AS teacher_user_id,
+                t.user_id AS teacher_user_id,
                 ta.class_id,
                 cl.class_code,
                 ta.subject_id,
@@ -359,8 +403,6 @@ function createTeacherAssignmentsRepository(db) {
            AND sub.school_id = ta.school_id
          JOIN academic_years ay ON ay.id = ta.academic_year_id
            AND ay.school_id = ta.school_id
-         LEFT JOIN users u ON u.id = t.user_id
-           AND u.school_id = ta.school_id
          WHERE ${conditions.join(" AND ")}
          ORDER BY ta.updated_at ASC, ta.id ASC
          LIMIT $${params.length}`,

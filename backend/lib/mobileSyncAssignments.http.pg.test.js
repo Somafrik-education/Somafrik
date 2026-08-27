@@ -54,6 +54,14 @@ const ASSIGN_CROSS_SUBJECT = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeee03";
 const ASSIGN_CROSS_YEAR = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeee04";
 const ASSIGN_CROSS_USER = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeee05";
 const ASSIGN_HTTP_DELETE = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeee07";
+const KILOMBO_USER_ID = "c81b0ec1-b8dd-4f09-8357-6775586920ff";
+const KILOMBO_TEACHER_ID = "cd866ff1-92f5-4bf6-9086-dce64f903717";
+const KILOMBO_ASG_1 = "55ff35d6-c184-4bbb-895a-961eaed08847";
+const KILOMBO_ASG_2 = "c115f6c1-ad9a-44f4-bb59-670faddfd1a9";
+const KILOMBO_ASG_3 = "c6f6038a-36ab-4530-8888-e829e01163ec";
+const KILOMBO_ASG_4 = "eedf6a4c-b465-44a4-8892-d248212cbf97";
+const UNMATCHED_USER_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa99";
+const SUBJECT_GEO = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbb0e";
 const SAME_TS = "2026-08-26T08:00:00.000Z";
 
 function withDatabaseName(databaseUrl, databaseName) {
@@ -574,10 +582,9 @@ async function main() {
     assert.ok(!leakItems.some((item) => item.teacherCode === "TCH-ASG-B" || item.teacherId === TEACHER_B_ID));
     assert.ok(!leakItems.some((item) => item.subjectCode === "SUB-ASG-B" || item.subjectId === SUBJECT_B));
     assert.ok(!leakItems.some((item) => item.academicYearId === yearB));
-    assert.ok(!JSON.stringify(leakItems).includes(TEACHER_B_USER_ID));
     const orphanL1 = leakItems.find((item) => item.id === ASSIGN_CROSS_USER);
     assert.ok(orphanL1);
-    assert.equal(orphanL1.teacherUserId, null);
+    assert.equal(orphanL1.teacherUserId, TEACHER_B_USER_ID);
 
     const leakGet = await request("/assignments", { token: adminToken });
     assert.equal(leakGet.status, 200, `leak GET: ${JSON.stringify(leakGet.data)}`);
@@ -700,6 +707,102 @@ async function main() {
     assert.deepEqual(customRole.data.items ?? [], []);
     const customGet = await request("/assignments", { token: customToken });
     assert.deepEqual(customGet.data ?? [], []);
+
+    await repo.pool.query(
+      `INSERT INTO users (id, school_id, user_code, first_name, last_name, email, role, status, must_change_password)
+       VALUES
+         ($1, $3, 'USR-2026-00007', 'Kilombo', 'Seke', 'kilombo-asg@test.local', 'Enseignant', 'active', FALSE),
+         ($2, $3, 'USR-UNMATCHED', 'Sans', 'Fiche', 'unmatched-asg@test.local', 'Enseignant', 'active', FALSE)`,
+      [KILOMBO_USER_ID, UNMATCHED_USER_ID, fixture.schoolA],
+    );
+    await repo.pool.query(
+      `INSERT INTO user_roles (user_id, school_id, role_key, status)
+       VALUES
+         ($1, $3, 'TEACHER', 'active'),
+         ($2, $3, 'TEACHER', 'active')`,
+      [KILOMBO_USER_ID, UNMATCHED_USER_ID, fixture.schoolA],
+    );
+    await repo.pool.query(
+      `INSERT INTO teachers (id, school_id, user_id, teacher_code, status)
+       VALUES ($1, $2, $3, 'CD-2026-0001-ENS-0001', 'active')`,
+      [KILOMBO_TEACHER_ID, fixture.schoolA, KILOMBO_USER_ID],
+    );
+    await repo.pool.query(
+      `INSERT INTO subjects (id, school_id, subject_code, name, status)
+       VALUES ($1, $2, 'SUB-GEO-K', 'Géographie', 'active')`,
+      [SUBJECT_GEO, fixture.schoolA],
+    );
+    const kilomboYearA = (
+      await repo.pool.query(
+        `SELECT ay.id FROM academic_years ay JOIN schools s ON s.id = ay.school_id WHERE s.school_code = 'SCH-A' LIMIT 1`,
+      )
+    ).rows[0];
+    await repo.pool.query(
+      `INSERT INTO teacher_assignments (
+         id, school_id, teacher_id, class_id, subject_id, academic_year_id, status, updated_at
+       ) VALUES
+         ($1, $5, $9, $6, $10, $12, 'active', $13::timestamptz),
+         ($2, $5, $9, $7, $11, $12, 'active', $13::timestamptz),
+         ($3, $5, $9, $7, $10, $12, 'active', $13::timestamptz),
+         ($4, $5, $9, $8, $10, $12, 'active', $13::timestamptz)`,
+      [
+        KILOMBO_ASG_1,
+        KILOMBO_ASG_2,
+        KILOMBO_ASG_3,
+        KILOMBO_ASG_4,
+        fixture.schoolA,
+        CLASS_A,
+        CLASS_B,
+        CLASS_C,
+        KILOMBO_TEACHER_ID,
+        SUBJECT_ID,
+        SUBJECT_GEO,
+        kilomboYearA.id,
+        SAME_TS,
+      ],
+    );
+
+    const kilomboCanonical = mintAccess(tokens, {
+      sub: KILOMBO_USER_ID,
+      userId: KILOMBO_USER_ID,
+      role: "Enseignant",
+      roleKeys: ["TEACHER"],
+      schoolCode: "SCH-A",
+      permissions: ["Affectations:READ"],
+      teacherCode: "JWT-ENS-0001",
+    });
+    const kilomboGet = await request("/assignments", { token: kilomboCanonical });
+    assert.equal(kilomboGet.status, 200, `KILOMBO canonical GET: ${JSON.stringify(kilomboGet.data)}`);
+    assert.deepEqual(activeIds(kilomboGet.data), [KILOMBO_ASG_1, KILOMBO_ASG_2, KILOMBO_ASG_3, KILOMBO_ASG_4].sort());
+    assert.equal(activeIds(kilomboGet.data).length, 4);
+    assert.ok(!(Array.isArray(kilomboGet.data) ? kilomboGet.data : []).some((row) => row.id === ASSIGN_A));
+    assert.ok(!(Array.isArray(kilomboGet.data) ? kilomboGet.data : []).some((row) => row.id === DUAL_ASSIGN_A));
+
+    const kilomboOverlay = mintAccess(tokens, {
+      sub: KILOMBO_TEACHER_ID,
+      role: "Enseignant",
+      roleKeys: ["TEACHER"],
+      schoolCode: "SCH-A",
+      permissions: ["Affectations:READ"],
+      teacherCode: "JWT-ENS-0001",
+    });
+    const overlayGet = await request("/assignments", { token: kilomboOverlay });
+    assert.equal(overlayGet.status, 200, `KILOMBO overlay teachers.id GET: ${JSON.stringify(overlayGet.data)}`);
+    assert.deepEqual(activeIds(overlayGet.data), activeIds(kilomboGet.data));
+
+    const unmatchedToken = mintAccess(tokens, {
+      sub: UNMATCHED_USER_ID,
+      userId: UNMATCHED_USER_ID,
+      role: "Enseignant",
+      roleKeys: ["TEACHER"],
+      schoolCode: "SCH-A",
+      permissions: ["Affectations:READ"],
+    });
+    const unmatchedGet = await request("/assignments", { token: unmatchedToken });
+    assert.equal(unmatchedGet.status, 200, `unmatched GET: ${JSON.stringify(unmatchedGet.data)}`);
+    assert.deepEqual(activeIds(unmatchedGet.data), []);
+    assert.ok(!(Array.isArray(unmatchedGet.data) ? unmatchedGet.data : []).some((row) => row.id === KILOMBO_ASG_1));
+    assert.ok(!(Array.isArray(unmatchedGet.data) ? unmatchedGet.data : []).some((row) => row.id === ASSIGN_A));
 
     console.log("mobileSyncAssignments.http.pg.test.js: OK Express/JWT/RBAC/live/tenant/PG");
   } catch (error) {

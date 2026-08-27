@@ -731,6 +731,78 @@ test("SchoolCourses erreur paires d'affectations live → 503, pas de fallback J
   );
 });
 
+test("Assignments live : JWT sub = teachers.id récupère users.id, jamais teacherCode", async () => {
+  const { resolveLiveAssignmentsSyncSnapshot } = require("./mobileSyncScope");
+  const USER = "c81b0ec1-b8dd-4f09-8357-6775586920ff";
+  const TEACHER = "cd866ff1-92f5-4bf6-9086-dce64f903717";
+  const hashed = await resolveLiveAssignmentsSyncSnapshot(
+    {
+      listActiveUserRoleKeys: trapUnscopedRoleKeys(),
+      async resolveCanonicalUserIdForSchool(ref) {
+        if (ref === TEACHER || ref === USER) return USER;
+        return null;
+      },
+      async listActiveUserRoleKeysForSchool(userId) {
+        assert.equal(userId, USER);
+        return ["TEACHER"];
+      },
+      async resolveEffectivePermissions() {
+        return { permissions: ["Affectations:READ"] };
+      },
+      async getLiveTeacherIdentityForSchool(userId) {
+        assert.equal(userId, USER);
+        return { teacherId: TEACHER, teacherCode: "TCH-LIVE", teacherUserId: USER };
+      },
+      async listLiveTeacherAssignmentIdsForSync(_schoolId, teacherId) {
+        assert.equal(teacherId, TEACHER);
+        return [{ assignmentId: "a1" }, { assignmentId: "a2" }, { assignmentId: "a3" }, { assignmentId: "a4" }];
+      },
+    },
+    {
+      sub: TEACHER,
+      role: "Enseignant",
+      schoolCode: "SCH-A",
+      teacherCode: "JWT-CODE",
+      teacherId: "JWT-CODE",
+    },
+    { schoolCode: "SCH-A", schoolId: "id-a" },
+  );
+  assert.equal(hashed.scope.scopeKind, "assigned");
+  assert.equal(hashed.scope.teacherId, TEACHER);
+  assert.deepEqual(hashed.scope.assignmentIds, ["a1", "a2", "a3", "a4"]);
+  assert.equal(hashed.principalTrace.canonicalUserId, USER);
+  assert.equal(hashed.principalTrace.recoveredFromTeacherId, true);
+});
+
+test("Assignments live fail-closed : principal sans teachers.user_id → []", async () => {
+  const { resolveLiveAssignmentsSyncSnapshot } = require("./mobileSyncScope");
+  const hashed = await resolveLiveAssignmentsSyncSnapshot(
+    {
+      listActiveUserRoleKeys: trapUnscopedRoleKeys(),
+      async resolveCanonicalUserIdForSchool() {
+        return "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa99";
+      },
+      async listActiveUserRoleKeysForSchool() {
+        return ["TEACHER"];
+      },
+      async resolveEffectivePermissions() {
+        return { permissions: ["Affectations:READ"] };
+      },
+      async getLiveTeacherIdentityForSchool() {
+        return null;
+      },
+      async listLiveTeacherAssignmentIdsForSync() {
+        return [{ assignmentId: "foreign-asg" }];
+      },
+    },
+    { sub: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa99", role: "Enseignant", schoolCode: "SCH-A" },
+    { schoolCode: "SCH-A", schoolId: "id-a" },
+  );
+  assert.equal(hashed.scope.scopeKind, "assigned");
+  assert.equal(hashed.scope.teacherId, "");
+  assert.deepEqual(hashed.scope.assignmentIds, []);
+});
+
 test("Assignments erreur identité enseignant live → 503, pas de fallback JWT", async () => {
   const { resolveLiveAssignmentsSyncSnapshot } = require("./mobileSyncScope");
   await assert.rejects(

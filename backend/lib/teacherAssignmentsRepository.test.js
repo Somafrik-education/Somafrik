@@ -287,13 +287,16 @@ test("DELETE n'alias pas ta.status (UPDATE sans FROM ta)", () => {
   assert.match(match[0], /AND status = 'active' RETURNING id/);
 });
 
-test("L1 teacherUserId = users.id ; tombstone ⇔ status != 'active'", () => {
+test("L1 teacherUserId = t.user_id ; tombstone ⇔ status != 'active'", () => {
   const src = require("node:fs").readFileSync(
     require("node:path").join(__dirname, "../db/teacherAssignmentsRepository.js"),
     "utf8",
   );
-  assert.match(src, /u\.id AS teacher_user_id/);
-  assert.equal(src.includes("t.user_id AS teacher_user_id"), false);
+  const l1Start = src.indexOf("async listForMobileSync");
+  const l1 = src.slice(l1Start, src.indexOf("async create(body, schoolCode"));
+  assert.match(l1, /t\.user_id AS teacher_user_id/);
+  assert.equal(l1.includes("u.id AS teacher_user_id"), false);
+  assert.doesNotMatch(l1, /LEFT JOIN users u ON u\.id = t\.user_id/);
   assert.equal(
     mapMobileSyncAssignmentRow({
       id: "a",

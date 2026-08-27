@@ -42,10 +42,39 @@ function grantedByUserId(principal) {
   return uuidOrNull(principal?.sub || principal?.id || principal?.userId);
 }
 
+/**
+ * Référence d'identité utilisée par Assignments live.
+ * Jamais `teacherCode`, jamais le nom.
+ */
+function resolvePrincipalUserRef(principal = {}) {
+  return String(principal?.sub ?? principal?.userId ?? principal?.id ?? "").trim();
+}
+
+function classifyPrincipalUserRef(value) {
+  const raw = String(value ?? "").trim();
+  if (!raw) return "empty";
+  if (isUuid(raw)) return "uuid";
+  if (/^USR-\d{4}-\d+$/i.test(raw)) return "user_code";
+  if (/-ENS-\d+$/i.test(raw)) return "teacher_code";
+  return "other";
+}
+
+function classifySchoolCode(value) {
+  const { isV2SchoolLoginCode, isLegacySchoolCodeFormat } = require("./schoolCodeV2");
+  const raw = String(value ?? "").trim();
+  if (!raw) return "empty";
+  if (isV2SchoolLoginCode(raw)) return "v2";
+  if (isLegacySchoolCodeFormat(raw)) return "legacy";
+  return "other";
+}
+
 module.exports = {
   UUID_RE,
   isUuid,
   uuidOrNull,
   resolvePrincipalSub,
   grantedByUserId,
+  resolvePrincipalUserRef,
+  classifyPrincipalUserRef,
+  classifySchoolCode,
 };

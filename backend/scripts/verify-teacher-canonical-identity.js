@@ -26,8 +26,16 @@ function main() {
   const fnStart = identity.indexOf("async getLiveTeacherIdentityForSchool");
   const fn = identity.slice(fnStart, identity.indexOf("async listLiveTeacherAssignmentIdsForSync"));
   assert.match(fn, /t\.user_id::text = \$1/);
+  assert.match(fn, /async resolveCanonicalUserIdForSchool/);
+  assert.match(fn, /t\.id::text = \$1/);
   assert.doesNotMatch(fn, /first_name/);
+  assert.doesNotMatch(fn, /teacher_code = \$1/);
   assert.doesNotMatch(fn, /JOIN users u ON u\.id = t\.user_id\s+AND u\.school_id = t\.school_id/);
+  assert.match(identity, /t\.user_id AS teacher_user_id/);
+  const l1Start = identity.indexOf("async listForMobileSync");
+  const l1 = identity.slice(l1Start, identity.indexOf("async create(body, schoolCode"));
+  assert.doesNotMatch(l1, /u\.id AS teacher_user_id/);
+  assert.doesNotMatch(l1, /LEFT JOIN users u ON u\.id = t\.user_id/);
 
   const assignments = fs.readFileSync(path.join(ROOT, "backend/lib/mobileSyncAssignments.js"), "utf8");
   assert.match(assignments, /queryOptions\.teacherIds = scope\.teacherId \? \[scope\.teacherId\] : \[\]/);
@@ -38,7 +46,14 @@ function main() {
     rest.indexOf('app.post("/api/assignments"'),
   );
   assert.match(getBlock, /teacherId: snapshot\.scope\.teacherId/);
+  assert.match(getBlock, /logAssignmentsPrincipalIdentity/);
   assert.doesNotMatch(getBlock, /Teachers:READ/);
+
+  const scopeSrc = fs.readFileSync(path.join(ROOT, "backend/lib/mobileSyncScope.js"), "utf8");
+  assert.match(scopeSrc, /TEACHER_ASSIGNMENTS_PRINCIPAL_IDENTITY/);
+
+  const auth = fs.readFileSync(path.join(ROOT, "backend/services/authService.js"), "utf8");
+  assert.match(auth, /id:\s*base\.id/);
 
   const rbac = fs.readFileSync(path.join(ROOT, "backend/services/rbacService.js"), "utf8");
   assert.match(rbac, /"GET \/api\/assignments"/);
@@ -54,6 +69,8 @@ function main() {
 
   run(path.join(ROOT, "backend/lib/teacherCanonicalIdentityAudit.test.js"), ["--test"]);
   run(path.join(ROOT, "backend/lib/teacherCanonicalIdentityAudit.pg.test.js"));
+  run(path.join(ROOT, "backend/lib/principalIdentity.test.js"));
+  run(path.join(ROOT, "backend/lib/mobileSyncScope.test.js"), ["--test"]);
   console.log("OK: verify:teacher-canonical-identity");
 }
 

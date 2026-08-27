@@ -971,6 +971,8 @@ app.get("/api/assignments", requireAuth, requirePermission("GET /api/assignments
   const {
     resolveLiveAssignmentsSyncSnapshot,
     liveSnapshotHasAssignmentsRead,
+    logAssignmentsPrincipalIdentity,
+    buildAssignmentsPrincipalIdentityLog,
   } = require("./lib/mobileSyncScope");
   const { MOBILE_SYNC_ERROR } = require("./lib/mobileSyncErrors");
 
@@ -1009,6 +1011,17 @@ app.get("/api/assignments", requireAuth, requirePermission("GET /api/assignments
   } else {
     rows = await repository.listSchoolTeacherAssignments(schoolCode);
   }
+
+  logAssignmentsPrincipalIdentity(
+    buildAssignmentsPrincipalIdentityLog({
+      principal: req.principal,
+      schoolRef: { schoolCode, schoolId },
+      snapshot,
+      rawUserId: snapshot.principalTrace?.rawUserId,
+      canonicalUserId: snapshot.principalTrace?.canonicalUserId,
+      rowCount: Array.isArray(rows) ? rows.length : 0,
+    }),
+  );
 
   sendList(res, rows, req.query, ["className", "course", "teacherName", "teacherId"]);
 }));
@@ -5322,8 +5335,10 @@ function buildPrincipal(response, rolePermissionsMap = null) {
     Array.isArray(user.assignments) ? user.assignments : [],
   );
 
+  const principalSub = resolvePrincipalSub(user);
   return {
-    sub: resolvePrincipalSub(user),
+    sub: principalSub,
+    userId: principalSub,
     identifier: user.identifier,
     publicId: user.publicId,
     contactId: user.contactId,

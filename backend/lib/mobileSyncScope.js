@@ -27,6 +27,11 @@ const {
   MOBILE_SYNC_ERROR,
   liveScopeError,
 } = require("./mobileSyncErrors");
+const {
+  classifyPrincipalUserRef,
+  classifySchoolCode,
+  resolvePrincipalUserRef,
+} = require("./principalIdentity");
 
 function asRef(value) {
   return String(value ?? "").trim();
@@ -153,6 +158,87 @@ function rethrowLiveScope(error, message) {
     throw error;
   }
   throw liveScopeError(message);
+}
+
+async function loadCanonicalPrincipalUserId(repository, principalRef, schoolId) {
+  const ref = asRef(principalRef);
+  const sid = asRef(schoolId);
+  if (!ref || !sid || typeof repository?.resolveCanonicalUserIdForSchool !== "function") {
+    return "";
+  }
+  let loaded;
+  try {
+    loaded = await repository.resolveCanonicalUserIdForSchool(ref, sid);
+  } catch (error) {
+    rethrowLiveScope(error, "Impossible de résoudre l'identité principal live.");
+  }
+  return asRef(loaded?.userId ?? loaded?.user_id ?? loaded);
+}
+
+/**
+ * Trace non-PII de la chaîne GET /api/assignments.
+ * Pas de nom, pas de teacherCode, pas d'email.
+ */
+function logAssignmentsPrincipalIdentity(payload = {}) {
+  console.warn(
+    [
+      "TEACHER_ASSIGNMENTS_PRINCIPAL_IDENTITY",
+      `hasSub=${payload.hasSub ? 1 : 0}`,
+      `subKind=${payload.subKind || "empty"}`,
+      `hasUserId=${payload.hasUserId ? 1 : 0}`,
+      `hasId=${payload.hasId ? 1 : 0}`,
+      `schoolCode=${payload.schoolCode || "-"}`,
+      `schoolCodeKind=${payload.schoolCodeKind || "empty"}`,
+      `hasEffectiveSchoolId=${payload.hasEffectiveSchoolId ? 1 : 0}`,
+      `hasSchoolId=${payload.hasSchoolId ? 1 : 0}`,
+      `roleKeys=${Number(payload.roleKeysCount) || 0}`,
+      `roleKeyList=${(payload.roleKeyList ?? []).join(",") || "-"}`,
+      `hasTeacherRole=${payload.hasTeacherRole ? 1 : 0}`,
+      `scopeKind=${payload.scopeKind || "none"}`,
+      `hasTeacherId=${payload.hasTeacherId ? 1 : 0}`,
+      `assignmentIds=${Number(payload.assignmentIdCount) || 0}`,
+      `rows=${payload.rowCount == null ? "-" : Number(payload.rowCount) || 0}`,
+      `canonicalUser=${payload.hasCanonicalUser ? 1 : 0}`,
+      `recoveredFromTeacherId=${payload.recoveredFromTeacherId ? 1 : 0}`,
+    ].join(" "),
+  );
+}
+
+function buildAssignmentsPrincipalIdentityLog({
+  principal = {},
+  schoolRef = {},
+  snapshot = {},
+  rawUserId = "",
+  canonicalUserId = "",
+  rowCount = null,
+} = {}) {
+  const roleKeys = snapshot?.input?.roleKeys ?? [];
+  return {
+    hasSub: Boolean(asRef(principal?.sub)),
+    subKind: classifyPrincipalUserRef(principal?.sub),
+    hasUserId: Boolean(asRef(principal?.userId)),
+    hasId: Boolean(asRef(principal?.id)),
+    schoolCode: asRef(schoolRef.schoolCode ?? principal?.schoolCode).toUpperCase(),
+    schoolCodeKind: classifySchoolCode(schoolRef.schoolCode ?? principal?.schoolCode),
+    hasEffectiveSchoolId: Boolean(asRef(principal?.effectiveSchoolId)),
+    hasSchoolId: Boolean(asRef(schoolRef.schoolId)),
+    roleKeysCount: Array.isArray(roleKeys) ? roleKeys.length : 0,
+    roleKeyList: Array.isArray(roleKeys) ? roleKeys : [],
+    hasTeacherRole:
+      (Array.isArray(roleKeys) &&
+        roleKeys.some((key) => String(key).toUpperCase() === "TEACHER" || key === "Enseignant")) ||
+      snapshot?.scope?.scopeKind === "assigned",
+    scopeKind: snapshot?.scope?.scopeKind || "none",
+    hasTeacherId: Boolean(asRef(snapshot?.scope?.teacherId)),
+    assignmentIdCount: Array.isArray(snapshot?.scope?.assignmentIds)
+      ? snapshot.scope.assignmentIds.length
+      : 0,
+    rowCount,
+    hasCanonicalUser: Boolean(asRef(canonicalUserId)),
+    recoveredFromTeacherId: Boolean(
+      asRef(rawUserId) && asRef(canonicalUserId) && asRef(rawUserId) !== asRef(canonicalUserId),
+    ),
+  };
 }
 
 async function loadLiveRoleKeys(repository, principal, schoolRef = {}) {
@@ -672,14 +758,20 @@ async function loadLiveTeacherAssignmentIdsForSync(repository, schoolId, teacher
  * @param {{ schoolCode?: string, schoolId?: string }} schoolRef
  */
 async function resolveLiveAssignmentsSyncSnapshot(repository, principal, schoolRef = {}) {
-  const roleKeys = await loadLiveRoleKeys(repository, principal, schoolRef);
+  const rawUserId = resolvePrincipalUserRef(principal);
+  const schoolId = asRef(schoolRef.schoolId);
+  const canonicalUserId = (await loadCanonicalPrincipalUserId(repository, rawUserId, schoolId)) || rawUserId;
+  const scopedPrincipal = {
+    ...principal,
+    sub: canonicalUserId || principal?.sub,
+    userId: canonicalUserId || principal?.userId,
+  };
+  const roleKeys = await loadLiveRoleKeys(repository, scopedPrincipal, schoolRef);
   const permissions = await loadLivePermissions(repository, roleKeys, schoolRef);
   const labels = roleKeys.map((key) => toRoleLabel(key)).filter(Boolean);
-  const userId = asRef(principal?.sub ?? principal?.userId ?? principal?.id);
-  const schoolId = asRef(schoolRef.schoolId);
   const livePrincipal = {
-    sub: principal?.sub,
-    userId: principal?.userId,
+    sub: scopedPrincipal?.sub,
+    userId: scopedPrincipal?.userId,
     publicId: principal?.publicId,
     identifier: principal?.identifier,
     schoolCode: schoolRef.schoolCode ?? principal?.schoolCode,
@@ -694,7 +786,7 @@ async function resolveLiveAssignmentsSyncSnapshot(repository, principal, schoolR
 
   const preliminary = resolveAssignmentsSyncScope(livePrincipal);
   if (preliminary.scopeKind === "assigned") {
-    const identity = await loadLiveTeacherIdentityForSchool(repository, userId, schoolId);
+    const identity = await loadLiveTeacherIdentityForSchool(repository, canonicalUserId, schoolId);
     livePrincipal.liveTeacherId = identity?.teacherId ?? "";
     livePrincipal.authorizedAssignmentIds = await loadLiveTeacherAssignmentIdsForSync(
       repository,
@@ -706,7 +798,13 @@ async function resolveLiveAssignmentsSyncSnapshot(repository, principal, schoolR
     }
   }
 
-  return computeAssignmentsScopeHash(livePrincipal, schoolRef);
+  const hashed = computeAssignmentsScopeHash(livePrincipal, schoolRef);
+  hashed.principalTrace = {
+    rawUserId,
+    canonicalUserId,
+    recoveredFromTeacherId: Boolean(rawUserId && canonicalUserId && rawUserId !== canonicalUserId),
+  };
+  return hashed;
 }
 
 function emptySchoolCourseScope() {
@@ -1067,6 +1165,9 @@ module.exports = {
   resolveLiveAssignmentsSyncSnapshot,
   loadLiveTeacherIdentityForSchool,
   loadLiveTeacherAssignmentIdsForSync,
+  loadCanonicalPrincipalUserId,
+  logAssignmentsPrincipalIdentity,
+  buildAssignmentsPrincipalIdentityLog,
   resolveSchoolCoursesSyncScope,
   schoolCoursesScopeHashInput,
   computeSchoolCoursesScopeHash,
