@@ -214,18 +214,27 @@ async function main() {
   assert.equal(beforeRecon.status, "Non imputé");
   assert.equal(Number(beforeRecon.unallocatedAmount), 150);
 
-  const firstRecon = await recon.reconcileFinancePaymentAllocations(admin);
-  assert.equal(firstRecon.created, 0, "F4 interdit toute réconciliation automatique par feeType/libellé");
+  await assert.rejects(
+    () => recon.reconcileFinancePaymentAllocations(admin),
+    (error) => error.code === "FINANCE_LEGACY_RECONCILE_DISABLED" && error.statusCode === 409,
+    "F4 doit refuser toute réconciliation automatique par feeType/libellé",
+  );
   const afterReconFee = (await recon.listFinanceStudentFees(admin)).find((row) => row.studentId === MAEVA);
   assert.equal(Number(afterReconFee.amountPaid), 0, "historique non imputé ne solde aucune dette sans obligationId explicite");
-  const secondRecon = await recon.reconcileFinancePaymentAllocations(admin);
-  assert.equal(secondRecon.created, 0);
+  assert.equal(recon.tables.allocations.length, 0, "rejet fail-closed : aucune allocation créée");
+
+  await assert.rejects(
+    () => recon.reconcileFinancePaymentAllocations(admin),
+    (error) => error.code === "FINANCE_LEGACY_RECONCILE_DISABLED" && error.statusCode === 409,
+    "le rejet doit rester déterministe au retry",
+  );
   const afterReconPay = (await recon.listProjection()).payments.find((row) => row.reference === "CD-2026-0001-2026-PAY-0007");
   assert.equal(afterReconPay.status, "Non imputé");
   assert.equal(Number(afterReconPay.unallocatedAmount), 150);
   assert.equal(Number(afterReconPay.allocatedAmount), 0);
+  assert.equal(recon.tables.allocations.length, 0, "retry fail-closed : toujours aucune allocation");
 
-  console.log("OK: Maeva F4 — obligationId explicite ; sans cible/historique = Non imputé");
+  console.log("OK: Maeva F4 — obligationId explicite ; legacy reconcile = 409 fail-closed");
 }
 
 main().catch((error) => {
