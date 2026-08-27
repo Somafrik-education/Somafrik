@@ -155,7 +155,7 @@ export function createMemoryOutboxStore(options?: {
     async migrate() {
       return;
     },
-    async withExclusiveTransaction<T>(fn) {
+    async withExclusiveTransaction<T>(fn: (txn: OutboxTxn) => Promise<T>): Promise<T> {
       return enqueueWrite(writeTail, async () => {
         const snapshot = new Map([...live.entries()].map(([key, row]) => [key, clone(row)]));
         try {

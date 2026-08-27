@@ -196,7 +196,7 @@ export function createSqliteOutboxStore(deps: {
     async migrate() {
       return;
     },
-    async withExclusiveTransaction<T>(fn) {
+    async withExclusiveTransaction<T>(fn: (txn: OutboxTxn) => Promise<T>): Promise<T> {
       return deps.withExclusive(async (sql) => fn(createTxn(sql)));
     },
     getById: (outboxId) => txnApi.getById(outboxId),
