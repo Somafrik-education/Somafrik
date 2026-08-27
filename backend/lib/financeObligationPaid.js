@@ -1,9 +1,9 @@
 "use strict";
 
 /**
- * Lecture des montants encaissés depuis la vérité canonique :
- * colonnes obligation + payment_allocations actives.
- * GET ne persiste rien et n'attribue plus virtuellement un paiement non alloué.
+ * F4 — lecture canonique des montants payés.
+ * payment_allocations actives = seule autorité de l'imputation.
+ * student_fee_obligations.amount_paid reste une projection matérialisée DB, jamais un fallback métier.
  */
 
 const { money, obligationStatus } = require("./financeManagement");
@@ -20,9 +20,6 @@ function isCancelledObligation(fee) {
 
 function withPaidAmount(fee, amountPaid) {
   const paid = money(amountPaid);
-  if (paid === money(fee.amountPaid) && fee.balance != null) {
-    return fee;
-  }
   const next = obligationStatus({
     amountDue: fee.amountDue,
     amountPaid: paid,
@@ -51,7 +48,7 @@ function projectObligationPaidAmounts({ fees, allocations = [] } = {}) {
 
   return (fees || []).map((fee) => {
     const fromAlloc = allocatedByObligation.get(String(fee.dbId || fee.id)) || 0;
-    return withPaidAmount(fee, Math.max(money(fee.amountPaid), fromAlloc));
+    return withPaidAmount(fee, fromAlloc);
   });
 }
 
