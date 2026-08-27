@@ -1,7 +1,7 @@
 # RC3-1 — SQLite Outbox + replay exactly-once — 2026-08-27
 
 **Type :** moteur d’écriture offline durable (outbox SQLCipher) + replay crash-safe  
-**PR :** Draft dédiée, non Ready, non merge  
+**PR :** [#354](https://github.com/Somafrik-education/Somafrik/pull/354) (Draft, non Ready, non merge)  
 **Base exacte :** `develop@fc259bf3590c0b7a30da92a6d519a83503c5f4fc`  
 **Branche :** `cursor/rc3-sqlite-outbox-exactly-once-9855`  
 **Écriture offline branchée aux écrans / smoke physique :** hors scope — **RC3-2**
@@ -10,7 +10,7 @@
 
 ```text
 Base develop : fc259bf3590c0b7a30da92a6d519a83503c5f4fc
-Moteur HEAD  : 57ccf147feat(mobile): RC3 SQLite Outbox + replay exactly-once
+HEAD moteur  : 57ccf147
 ```
 
 ## Verdict
