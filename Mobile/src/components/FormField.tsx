@@ -14,13 +14,13 @@ import {
   FORM_BORDER_ERROR_COLOR,
   FORM_ERROR_COLOR,
   FORM_HELPER_COLOR,
-  FORM_LABEL_COLOR,
   FORM_PLACEHOLDER_COLOR,
   FORM_SURFACE_COLOR,
   FORM_VALUE_COLOR,
   formatFieldLabel,
   type FormFieldType,
 } from "../lib/formFieldTokens";
+import { FieldLabel } from "./FieldLabel";
 
 export type FormFieldProps = Omit<TextInputProps, "placeholderTextColor" | "style"> & {
   label: string;
@@ -82,13 +82,13 @@ const FormField = forwardRef<TextInput, FormFieldProps>(function FormField(
   },
   ref,
 ) {
-  const visibleLabel = formatFieldLabel(label, { required, optional });
+  const accessibleLabel = formatFieldLabel(label, { required, optional });
   const defaults = TYPE_DEFAULTS[type];
   const invalid = Boolean(error && String(error).trim());
 
   return (
     <View style={[styles.block, variant === "compact" && styles.compactBlock, containerStyle]}>
-      {hideVisibleLabel ? null : <Text style={styles.label}>{visibleLabel}</Text>}
+      {hideVisibleLabel ? null : <FieldLabel label={label} required={required} optional={optional} />}
       <View
         style={[
           styles.shell,
@@ -104,7 +104,7 @@ const FormField = forwardRef<TextInput, FormFieldProps>(function FormField(
           {...inputProps}
           editable={editable}
           placeholderTextColor={FORM_PLACEHOLDER_COLOR}
-          accessibilityLabel={accessibilityLabel ?? visibleLabel}
+          accessibilityLabel={accessibilityLabel ?? accessibleLabel}
           style={[
             styles.input,
             type === "multiline" && styles.multiline,
@@ -129,7 +129,6 @@ export default FormField;
 const styles = StyleSheet.create({
   block: { marginBottom: 10 },
   compactBlock: { marginBottom: 0 },
-  label: { color: FORM_LABEL_COLOR, fontSize: 12, fontWeight: "900", marginBottom: 6 },
   shell: {
     flexDirection: "row",
     alignItems: "center",

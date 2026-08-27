@@ -334,11 +334,12 @@ export function PermissionsPage() {
         <div className="mt-6 space-y-6">
           {canManage ? (
             <form className="grid gap-4 md:grid-cols-3" onSubmit={(event) => void onCreateRole(event)}>
-              <Field label="Libellé du rôle métier">
+              <Field label="Libellé du rôle métier" required>
                 <Input
                   value={roleForm.roleName}
                   onChange={(event) => setRoleForm((current) => ({ ...current, roleName: event.target.value }))}
                   placeholder="Préfet des études"
+                  required
                 />
               </Field>
               <Field label="Code technique du rôle (role_key)">

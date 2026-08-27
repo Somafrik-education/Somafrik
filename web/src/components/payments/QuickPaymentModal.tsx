@@ -233,7 +233,7 @@ export function QuickPaymentModal({ open, onClose, onSaved }: QuickPaymentModalP
       }
     >
       <form className="space-y-5" onSubmit={(event) => void handleSubmit(event, false)}>
-        <Field label="Élève *">
+        <Field label="Élève" required>
           <Input
             value={search}
             onChange={(event) => {
@@ -298,14 +298,14 @@ export function QuickPaymentModal({ open, onClose, onSaved }: QuickPaymentModalP
               className="grid gap-3 rounded-xl border border-line bg-slate-50 p-3 sm:grid-cols-[1fr_8rem_auto]"
               data-testid={`payment-line-${index}`}
             >
-              <Field label="Type de frais / libellé">
+              <Field label="Type de frais / libellé" required>
                 <Select
                   value={line.feeType}
                   onChange={(event) => updateLine(line.id, { feeType: event.target.value as FeeType })}
                   options={FEE_TYPES.map((value) => ({ value, label: value }))}
                 />
               </Field>
-              <Field label="Montant">
+              <Field label="Montant" required>
                 <Input
                   type="number"
                   min={1}
@@ -347,14 +347,14 @@ export function QuickPaymentModal({ open, onClose, onSaved }: QuickPaymentModalP
         </div>
 
         <div className="grid gap-4 sm:grid-cols-2">
-          <Field label="Mode de paiement *">
+          <Field label="Mode de paiement" required>
             <Select
               value={method}
               onChange={(event) => setMethod(event.target.value as PaymentMethod)}
               options={PAYMENT_METHODS.map((value) => ({ value, label: value }))}
             />
           </Field>
-          <Field label="Date *">
+          <Field label="Date" required>
             <Input type="date" value={dateInput} onChange={(event) => setDateInput(event.target.value)} />
           </Field>
         </div>

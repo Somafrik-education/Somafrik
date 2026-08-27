@@ -114,8 +114,14 @@ export function EvaluationTypesPanel({ schoolCode, canConfigure, userRole }: Pro
       )}
       {canConfigure ? (
         <form onSubmit={handleCreate} className="flex flex-col gap-3 sm:flex-row sm:items-end">
-          <FormField label="Nouveau type" className="flex-1">
-            <Input value={name} onChange={(event) => setName(event.target.value)} placeholder="Ex. Devoir blanc" />
+          <FormField label="Nouveau type" htmlFor="eval-type-name" className="flex-1" required>
+            <Input
+              id="eval-type-name"
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+              placeholder="Ex. Devoir blanc"
+              required
+            />
           </FormField>
           <Button type="submit" disabled={saving || !name.trim()}>
             Ajouter

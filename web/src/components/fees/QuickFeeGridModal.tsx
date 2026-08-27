@@ -4,6 +4,7 @@ import { useAuth } from "../../context/AuthContext";
 import { useData } from "../../context/DataContext";
 import { Modal } from "../ui/Modal";
 import { Field, Input } from "../ui/Field";
+import { RequiredMark } from "../../design-system/forms/RequiredMark";
 import { Button } from "../ui/Button";
 import { useToast } from "../ui/Toast";
 import {
@@ -191,7 +192,10 @@ export function QuickFeeGridModal({ open, onClose, schoolCode, onSaved }: QuickF
 
         <div>
           <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-            <p className="text-sm font-semibold text-ink">Classes</p>
+            <p className="text-sm font-semibold text-ink">
+              Classes
+              <RequiredMark />
+            </p>
             <div className="flex gap-2">
               <Button type="button" variant="secondary" size="sm" onClick={selectAllClasses}>
                 Tout sélectionner

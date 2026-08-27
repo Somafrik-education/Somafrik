@@ -207,10 +207,7 @@ export function LoginPage() {
                   name="schoolCode"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>
-                        Code établissement
-                        <span className="text-danger"> *</span>
-                      </FormLabel>
+                      <FormLabel required>Code établissement</FormLabel>
                       <FormControl>
                         <Input
                           placeholder="ex. CD-IN-26-001"
@@ -230,10 +227,7 @@ export function LoginPage() {
                 name="identifier"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>
-                      Identifiant
-                      <span className="text-danger"> *</span>
-                    </FormLabel>
+                    <FormLabel required>Identifiant</FormLabel>
                     <FormControl>
                       <Input
                         placeholder="ex. identifiant administrateur"
@@ -252,10 +246,7 @@ export function LoginPage() {
                 name="password"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>
-                      Mot de passe
-                      <span className="text-danger"> *</span>
-                    </FormLabel>
+                    <FormLabel required>Mot de passe</FormLabel>
                     <FormControl>
                       <Input
                         type="password"
@@ -345,10 +336,7 @@ export function LoginPage() {
               name="newPassword"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>
-                    Nouveau mot de passe
-                    <span className="text-danger"> *</span>
-                  </FormLabel>
+                  <FormLabel required>Nouveau mot de passe</FormLabel>
                   <FormControl>
                     <Input type="password" autoFocus {...field} />
                   </FormControl>
@@ -361,10 +349,7 @@ export function LoginPage() {
               name="confirmPassword"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>
-                    Confirmation
-                    <span className="text-danger"> *</span>
-                  </FormLabel>
+                  <FormLabel required>Confirmation</FormLabel>
                   <FormControl>
                     <Input type="password" {...field} />
                   </FormControl>

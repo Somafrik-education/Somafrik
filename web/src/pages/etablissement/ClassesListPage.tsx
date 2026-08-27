@@ -338,7 +338,7 @@ export function ClassesListPage() {
         title={editing ? "Modifier la classe" : "Ajouter une classe"}
       >
         <form className="space-y-3" onSubmit={(event) => void onSubmit(event)}>
-          <Field label="Année scolaire" htmlFor="class-year">
+          <Field label="Année scolaire" htmlFor="class-year" required>
             <Select
               id="class-year"
               value={form.academicYearId}
@@ -395,7 +395,7 @@ export function ClassesListPage() {
               </p>
             </div>
           ) : null}
-          <Field label={labels.levelLabel} htmlFor="class-level">
+          <Field label={labels.levelLabel} htmlFor="class-level" required={!editing}>
             <Select
               id="class-level"
               value={form.levelId}
@@ -421,7 +421,7 @@ export function ClassesListPage() {
               ]}
             />
           </Field>
-          <Field label={labels.groupLabel} htmlFor="class-group">
+          <Field label={labels.groupLabel} htmlFor="class-group" required>
             <Select
               id="class-group"
               value={form.groupId}

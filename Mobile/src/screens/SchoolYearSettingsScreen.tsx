@@ -351,7 +351,7 @@ export default function SchoolYearSettingsScreen() {
         )}
         {canEdit ? (
           <>
-            <FormField label="Nouveau type" value={typeName} onChangeText={setTypeName} />
+            <FormField label="Nouveau type" required value={typeName} onChangeText={setTypeName} />
             <TouchableOpacity style={styles.secondary} onPress={() => void createType()} disabled={saving === "types"}>
               <Text style={styles.secondaryText}>Ajouter le type</Text>
             </TouchableOpacity>

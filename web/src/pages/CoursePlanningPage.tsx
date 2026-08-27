@@ -682,7 +682,7 @@ export function CoursePlanningPage() {
             <Field label="Classe">
               <Input value={selectedClassName} readOnly />
             </Field>
-            <Field label="Cours" hint="Identifiant school_courses, pas le libellé seul.">
+            <Field label="Cours" hint="Identifiant school_courses, pas le libellé seul." required>
               <Select
                 data-testid="planning-course-select"
                 value={form.schoolCourseId}
@@ -703,7 +703,7 @@ export function CoursePlanningPage() {
                 }))}
               />
             </Field>
-            <Field label="Heure de début">
+            <Field label="Heure de début" required>
               <Input
                 type="time"
                 data-testid="planning-start-time"
@@ -711,7 +711,7 @@ export function CoursePlanningPage() {
                 onChange={(event) => setForm({ ...form, startTime: event.target.value })}
               />
             </Field>
-            <Field label="Heure de fin">
+            <Field label="Heure de fin" required>
               <Input
                 type="time"
                 data-testid="planning-end-time"

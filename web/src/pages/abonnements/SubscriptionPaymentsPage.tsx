@@ -123,19 +123,21 @@ export function SubscriptionPaymentsPage() {
             description="Mobile Money, virement, espèces chez un partenaire — validation administrateur requise."
           />
           <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            <Field label="Établissement">
+            <Field label="Établissement" required>
               <Select
                 value={form.schoolCode}
                 options={[{ value: "", label: "Choisir…" }, ...schoolOptions]}
                 onChange={(e) => setForm({ ...form, schoolCode: e.target.value })}
+                required
               />
             </Field>
-            <Field label="Montant">
+            <Field label="Montant" required>
               <Input
                 type="number"
                 min={0}
                 value={form.amount}
                 onChange={(e) => setForm({ ...form, amount: e.target.value })}
+                required
               />
             </Field>
             <Field label="Devise">

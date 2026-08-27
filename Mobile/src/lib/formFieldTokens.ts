@@ -5,6 +5,7 @@ export const FORM_VALUE_COLOR = "#0F172A";
 export const FORM_BORDER_COLOR = "#E2E8F0";
 export const FORM_BORDER_ERROR_COLOR = "#DC2626";
 export const FORM_LABEL_COLOR = "#334155";
+export const FORM_REQUIRED_MARK_COLOR = "#DC2626";
 export const FORM_ERROR_COLOR = "#B91C1C";
 export const FORM_HELPER_COLOR = "#64748B";
 export const FORM_SURFACE_COLOR = "#F8FAFC";

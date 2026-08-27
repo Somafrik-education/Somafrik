@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Alert, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
+import { Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import FormField from "../components/FormField";
 import { SchoolSettingsDenied, useSchoolSettingsAccess } from "../components/SchoolSettingsGate";
 import { useAdminData } from "../context/AdminDataContext";
 import { useAuth } from "../context/AuthContext";
@@ -439,19 +440,21 @@ export default function SchoolPedagogicalStructureScreen() {
                     <Text style={styles.hint}>
                       Comme sur le Web, cette étape crée d’abord le cours établissement. Vous pourrez ensuite l’ajouter à la classe ci-dessus.
                     </Text>
-                    <TextInput
-                      style={styles.input}
+                    <FormField
+                      label="Nom du cours"
+                      required
                       value={newSubjectName}
                       onChangeText={setNewSubjectName}
-                      placeholder="Nom du cours"
+                      placeholder="Ex. Mathématiques"
                       autoCapitalize="sentences"
                       testID="school-subject-name-input"
                     />
-                    <TextInput
-                      style={styles.input}
+                    <FormField
+                      label="Code"
+                      required
                       value={newSubjectCode}
                       onChangeText={(value) => setNewSubjectCode(value.toUpperCase())}
-                      placeholder="Code (ex. MATH)"
+                      placeholder="Ex. MATH"
                       autoCapitalize="characters"
                       testID="school-subject-code-input"
                     />
@@ -566,16 +569,6 @@ const styles = StyleSheet.create({
   courseMeta: { color: "#64748B", fontWeight: "700" },
   divider: { height: 1, backgroundColor: "#E2E8F0", marginVertical: 14 },
   hint: { color: "#64748B", lineHeight: 19, marginBottom: 10 },
-  input: {
-    minHeight: 48,
-    borderWidth: 1,
-    borderColor: "#CBD5E1",
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    backgroundColor: "#FFFFFF",
-    color: "#111827",
-    marginBottom: 10,
-  },
   secondary: {
     minHeight: 48,
     borderRadius: 14,
