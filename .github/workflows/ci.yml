@@ -74,6 +74,7 @@ jobs:
           npm run verify:planning-course-options
           npm run verify:teacher-course-canonical-reconcile
           npm run verify:pedagogy-legacy-cleanup
+          npm run verify:finance-domain-invariants
           npm run verify:finance-management
           npm run verify:finance-multi-item-payment
           npm run verify:mobile-data-truth

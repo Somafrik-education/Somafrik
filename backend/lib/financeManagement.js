@@ -1,5 +1,11 @@
 "use strict";
 
+const {
+  isPaymentFinanciallyActive,
+  obligationStatusFromBalance,
+  toMoney,
+} = require("./financeDomainInvariants");
+
 const FINANCE_ERROR = Object.freeze({
   PAYMENT_NOT_FOUND: "PAYMENT_NOT_FOUND",
   PAYMENT_ALREADY_CANCELLED: "PAYMENT_ALREADY_CANCELLED",
@@ -50,14 +56,11 @@ function normalizeKey(value) {
 }
 
 function money(value) {
-  const amount = Number(value ?? 0);
-  if (!Number.isFinite(amount)) return 0;
-  return Math.round(amount * 100) / 100;
+  return toMoney(value);
 }
 
 function isPaymentCancelled(payment) {
-  const status = normalizeKey(payment?.status ?? payment?.payment_status);
-  return status === "annule" || status === "annulé" || Boolean(payment?.cancelledAt || payment?.cancelled_at);
+  return !isPaymentFinanciallyActive(payment);
 }
 
 function isPaymentCounted(payment) {
@@ -67,18 +70,13 @@ function isPaymentCounted(payment) {
 }
 
 function obligationStatus({ amountDue, amountPaid, exemption, dueDate, now = new Date() }) {
-  const due = money(amountDue);
-  const paid = money(amountPaid);
-  const exempt = money(exemption);
-  const balance = Math.max(0, due - paid - exempt);
-  if (exempt >= due && due > 0) return { balance, status: "Exonéré" };
-  if (balance <= 0) return { balance: 0, status: "Payé" };
-  if (paid > 0) return { balance, status: "Partiellement payé" };
-  if (dueDate) {
-    const dueMs = Date.parse(String(dueDate).includes("T") ? dueDate : `${dueDate}T00:00:00`);
-    if (Number.isFinite(dueMs) && dueMs < now.getTime()) return { balance, status: "En retard" };
-  }
-  return { balance, status: "À payer" };
+  return obligationStatusFromBalance({
+    amountDue,
+    paidAmount: amountPaid,
+    exemptionAmount: exemption,
+    dueDate,
+    now,
+  });
 }
 
 function generatePaymentReference(schoolCode, existingCodes = []) {

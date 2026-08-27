@@ -11,20 +11,20 @@
  */
 
 const { money, normalizeKey, isPaymentCancelled, isPaymentCounted } = require("./financeManagement");
+const {
+  computeAllocatedAmount,
+  computeUnallocatedAmount,
+} = require("./financeDomainInvariants");
 
 const UNALLOCATED_STATUS = "Non imputé";
 const PARTIAL_STATUS = "Partiel";
 
 function allocatedAmountFrom(allocations = []) {
-  return money(
-    allocations
-      .filter((row) => !row.reversedAt && !row.reversed_at)
-      .reduce((sum, row) => sum + money(row.amount), 0),
-  );
+  return computeAllocatedAmount(allocations);
 }
 
 function unallocatedAmount(amount, allocated) {
-  return Math.max(0, money(amount) - money(allocated));
+  return computeUnallocatedAmount(amount, allocated);
 }
 
 function isUnallocatedStatus(status) {
