@@ -7,7 +7,7 @@
 
 ```text
 FINANCE BUSINESS MODEL = NO-GO   (inchangé)
-FINANCE F1 INVARIANTS            = (gate ci-dessous)
+FINANCE F1 INVARIANTS            = GO (Gates #363)
 ```
 
 Module : `backend/lib/financeDomainInvariants.js`  
@@ -137,9 +137,13 @@ Vocabulaires de types F2 · naissance obligation / classe / tarif F3 · clients 
 
 ## Verdict F1
 
-À remplir après `verify:finance-domain-invariants` + Gates PR.
+```text
+FINANCE F1 INVARIANTS  = GO
+FINANCE BUSINESS MODEL = NO-GO
+```
 
-Local (`verify:finance-domain-invariants`) : **GO**.
+Local `verify:finance-domain-invariants` : **GO**  
+PR #363 HEAD `deec075d` : **8/8 SUCCESS** (Scope, Secrets, Quality, Core tests, Risk-targeted incl. `verify:finance-domain-invariants`, Required, architecture-audit, Admin User Creation).
 
 ```text
 Domain vocabulary          UNIQUE (contrat ; 3 listes UI encore présentes → F2)
@@ -151,3 +155,11 @@ Academic history invariant DOCUMENTÉ
 Cross-tenant invariant     PROUVÉ (assertAllocationTenant)
 Nouvelle duplication       0
 ```
+
+```text
+PR     DRAFT
+Ready  NON
+Merge  NON sans ordre CTO
+```
+
+F1 GO ≠ Finance business GO. Suite : F2 référentiels.
