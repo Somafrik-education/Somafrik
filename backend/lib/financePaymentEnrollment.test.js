@@ -9,6 +9,9 @@
  * Un élève sans classe active produisait un 201 avec className vide,
  * ou un 404 STUDENT_NOT_FOUND si l'identité ne matchait pas.
  * Mobile affichait alors « Enregistrement refusé. » sans le message API.
+ *
+ * F4 : ce test porte sur le scope inscription/classe, pas sur l'imputation.
+ * Son paiement valide est donc explicitement Non imputé.
  */
 const assert = require("node:assert/strict");
 const { createFinanceMemoryStore } = require("../db/financeMemoryStore");
@@ -107,7 +110,7 @@ function paymentBody(overrides = {}) {
     studentId: "CD-2026-0001-STU-SOLO",
     method: "Espèces",
     date: "2026-08-22",
-    items: [{ feeType: "Scolarité", amount: 25000 }],
+    items: [{ feeType: "Non imputé", amount: 25000 }],
     ...overrides,
   };
 }
@@ -128,6 +131,9 @@ async function main() {
   const solo = await store.createSchoolPayment(paymentBody(), admin);
   assert.equal(solo.classId, CLASS_JEAN);
   assert.equal(solo.className, "4ème C");
+  assert.equal(solo.status, "Non imputé");
+  assert.equal(solo.unallocatedAmount, 25000);
+  assert.equal(store.tables.allocations.length, 0);
   assert.equal(store.tables.payments.length, 1);
 
   const chosen = await store.createSchoolPayment(
@@ -140,6 +146,9 @@ async function main() {
   );
   assert.equal(chosen.classId, CLASS_AWA_B);
   assert.equal(chosen.className, "5ème B");
+  assert.equal(chosen.status, "Non imputé");
+  assert.equal(chosen.unallocatedAmount, 25000);
+  assert.equal(store.tables.allocations.length, 0);
 
   await assert.rejects(
     () =>
@@ -187,6 +196,7 @@ async function main() {
   );
 
   assert.equal(store.tables.payments.length, 2, "seuls les paiements valides sont persistés");
+  assert.equal(store.tables.allocations.length, 0, "test enrollment : aucune imputation implicite");
 
   console.log("financePaymentEnrollment.test.js: OK");
 }
