@@ -92,4 +92,14 @@ test("buildFinanceCatalog diffère réductions/pénalités", () => {
   assert.equal(catalog.currency, "CDF");
   assert.equal(catalog.discountsDeferred, true);
   assert.equal(catalog.penaltiesDeferred, true);
+  assert.ok(catalog.feeTypeCatalog?.length);
+  assert.equal(catalog.feeTypeCatalog.some((row) => row.code === "TUITION" && row.feeType === "Scolarité"), true);
+  assert.equal(catalog.feeTypeCatalog.some((row) => row.feeType === "Acompte"), false);
+  assert.equal(catalog.canonicalFeeTypes[0].code, catalog.feeTypeCatalog[0].code);
+});
+
+test("catalogue types identique pour tout établissement (système, pas par tenant)", () => {
+  const catalogA = buildFinanceCatalog({ currency: "CDF", currencySource: "country", paymentMethods: [], feeTypes: [] });
+  const catalogB = buildFinanceCatalog({ currency: "USD", currencySource: "school", paymentMethods: [], feeTypes: [] });
+  assert.deepEqual(catalogA.feeTypeCatalog, catalogB.feeTypeCatalog);
 });

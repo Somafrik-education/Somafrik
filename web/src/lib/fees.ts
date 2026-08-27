@@ -5,7 +5,6 @@ import type {
   FeeGridStatus,
   FeeTariffHistory,
   SchoolFeeItem,
-  SchoolFeeType,
   SessionUser,
   StudentFee,
   StudentFeeStatus,
@@ -17,7 +16,6 @@ import { isSchoolAdminRole } from "./format";
 import { COUNTRY_ADMIN_ROLE, isSuperAdminRole } from "./orgHierarchy";
 
 export const FEE_GRID_STATUSES: FeeGridStatus[] = ["Brouillon", "Active", "Désactivée", "Clôturée"];
-export const SCHOOL_FEE_TYPES: SchoolFeeType[] = ["Inscription", "Mensualité", "Annexe"];
 export const STUDENT_FEE_STATUSES: StudentFeeStatus[] = [
   "À payer",
   "Partiellement payé",
@@ -171,7 +169,7 @@ export function validateFeeGridInput(
   }
   const activeItems = items.filter((item) => item.status !== "Désactivé");
   if (!activeItems.length) {
-    return { ok: false, error: "Ajoutez au moins un frais (inscription, mensualité ou annexe)." };
+    return { ok: false, error: "Ajoutez au moins un frais canonique (inscription, scolarité, …)." };
   }
   for (const item of activeItems) {
     const amount = Number(item.amount ?? 0);
@@ -180,12 +178,6 @@ export function validateFeeGridInput(
     }
     if (!String(item.label ?? "").trim()) {
       return { ok: false, error: "Chaque frais doit avoir un libellé." };
-    }
-    if (item.feeType === "Mensualité") {
-      const months = item.monthlyMonths ?? [];
-      if (!months.length) {
-        return { ok: false, error: "Sélectionnez au moins un mois pour la mensualité." };
-      }
     }
   }
   return { ok: true };
@@ -298,8 +290,8 @@ export function applyFeeGridToStudents(
 
   for (const student of students) {
     for (const item of items) {
-      if (item.feeType === "Mensualité") {
-        const months = item.monthlyMonths?.length ? item.monthlyMonths : DEFAULT_MONTHLY_MONTHS;
+      if (Array.isArray(item.monthlyMonths) && item.monthlyMonths.length) {
+        const months = item.monthlyMonths;
         for (const month of months) {
           const key = studentFeeDedupeKey(String(student.id ?? ""), item.id, month);
           if (existingKeys.has(key)) {

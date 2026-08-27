@@ -129,7 +129,7 @@ export default function PaymentMutationControls({
       studentId,
       classId,
       amount: parsed,
-      feeType: selectedFee?.feeType || "Acompte",
+      feeType: selectedFee?.feeType || "",
       obligationId: selectedFee?.obligationId,
       schoolFeeItemId: selectedFee?.schoolFeeItemId,
       method: resolvedMethod,

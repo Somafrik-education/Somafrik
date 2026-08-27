@@ -128,6 +128,18 @@ assert.deepEqual(identified.items, [
   { feeType: "Mensualité", amount: 150, obligationId: "obl-maeva-mens", feeTypeId: "fee-item-1" },
 ]);
 
+const unallocatedPayload = buildSchoolPaymentPayload({
+  studentId: awa.id,
+  classId: String(awa.classId),
+  amount: 1000,
+  feeType: "",
+  method: "Espèces",
+  date: "2026-08-24",
+});
+const unallocatedItem = (unallocatedPayload.items as Array<{ feeType: string }>)[0];
+assert.equal(unallocatedItem.feeType, "");
+assert.notEqual(unallocatedItem.feeType, "Acompte");
+
 const openFees = collectOpenPaymentFees(awa.id, [
   { id: "obl-1", studentId: awa.id, feeType: "Mensualité", label: "Mensualité", balance: 1000, status: "À payer" },
   { id: "obl-paid", studentId: awa.id, feeType: "Inscription", label: "Inscription", balance: 0, status: "Payé" },

@@ -374,8 +374,8 @@ export interface Relation {
 /** Statut d'une grille tarifaire (EXG-FRAIS-001). */
 export type FeeGridStatus = "Brouillon" | "Active" | "Désactivée" | "Clôturée";
 
-/** Type de frais scolaire dans la grille (EXG-FRAIS-004 à 006). */
-export type SchoolFeeType = "Inscription" | "Mensualité" | "Annexe";
+/** Type de frais : identité catalogue (Inscription, Scolarité, …). Mensualité/Annexe = legacy. */
+export type SchoolFeeType = string;
 
 /** Statut d'un frais généré pour un élève (EXG-FRAIS-017). */
 export type StudentFeeStatus =

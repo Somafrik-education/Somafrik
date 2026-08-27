@@ -545,8 +545,8 @@ async function main() {
       currency: "CDF",
       status: "Active",
       items: [
-        { feeType: "Annexe", label: "Cantine", amount: 40, dueDate: "2026-01-01", status: "Actif" },
-        { feeType: "Annexe", label: "Transport", amount: 60, dueDate: "2026-01-01", status: "Actif" },
+        { feeType: "Cantine", label: "Cantine", amount: 40, dueDate: "2026-01-01", status: "Actif" },
+        { feeType: "Transport", label: "Transport", amount: 60, dueDate: "2026-01-01", status: "Actif" },
       ],
     },
     admin,

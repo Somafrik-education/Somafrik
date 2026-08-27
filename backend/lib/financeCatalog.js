@@ -7,6 +7,7 @@
 
 const { asTrimmed, normalizeKey, money } = require("./financeManagement");
 const { resolveFinanceSchoolScope, schoolCodeInScope } = require("./financeSchoolScope");
+const { activeFeeTypeCatalog } = require("./financeFeeTypes");
 
 const INACTIVE_STUDENT_STATUSES = new Set(["deleted", "archived", "inactive", "transferred", "sorti"]);
 
@@ -19,16 +20,7 @@ const CANONICAL_PAYMENT_METHODS = Object.freeze([
   { methodCode: "other", label: "Autre", sortOrder: 60 },
 ]);
 
-const CANONICAL_FEE_TYPES = Object.freeze([
-  { feeType: "Inscription", label: "Inscription" },
-  { feeType: "Réinscription", label: "Réinscription" },
-  { feeType: "Scolarité", label: "Scolarité / mensualité" },
-  { feeType: "Examen", label: "Examen" },
-  { feeType: "Uniforme", label: "Uniforme" },
-  { feeType: "Transport", label: "Transport" },
-  { feeType: "Cantine", label: "Cantine" },
-  { feeType: "Autre", label: "Autres frais établissement" },
-]);
+const CANONICAL_FEE_TYPES = activeFeeTypeCatalog();
 
 function isActiveStudentStatus(status) {
   const key = normalizeKey(status || "active");
@@ -155,6 +147,7 @@ function buildFinanceCatalog({ currency, currencySource, paymentMethods, feeType
     currencySource: currencySource || "country",
     paymentMethods: resolveCatalogPaymentMethods(paymentMethods),
     feeTypes: (feeTypes || []).map(mapCatalogFeeType).filter((item) => item.feeType && item.active),
+    feeTypeCatalog: CANONICAL_FEE_TYPES.map((item) => ({ ...item })),
     canonicalFeeTypes: CANONICAL_FEE_TYPES.map((item) => ({ ...item })),
     discountsDeferred: true,
     penaltiesDeferred: true,

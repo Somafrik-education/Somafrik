@@ -95,7 +95,7 @@ async function seedGrid(store) {
       status: "Active",
       items: [
         { feeType: "Inscription", label: "Inscription", amount: 50_000, dueDate: "2026-01-01", status: "Actif" },
-        { feeType: "Annexe", label: "Transport", amount: 20_000, periodLabel: "Janvier", dueDate: "2026-01-01", status: "Actif" },
+        { feeType: "Transport", label: "Transport", amount: 20_000, periodLabel: "Janvier", dueDate: "2026-01-01", status: "Actif" },
       ],
     },
     admin,
@@ -139,7 +139,7 @@ async function main() {
   const overpay = await store.createSchoolPayment(
     {
       studentId: "CD-2026-0001-STU-0001",
-      feeType: "Annexe",
+      feeType: "Transport",
       amount: 30_000,
       method: "Espèces",
       date: "2026-08-13",
@@ -147,7 +147,7 @@ async function main() {
     accountant,
   );
   assert.equal(overpay.overpaymentAmount, 10_000);
-  const annex = (await store.listFinanceStudentFees()).find((row) => row.feeType === "Annexe");
+  const annex = (await store.listFinanceStudentFees()).find((row) => row.feeType === "Transport");
   assert.equal(annex.balance, 0);
 
   await assert.rejects(

@@ -1,4 +1,4 @@
-import { useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { useAuth } from "../../context/AuthContext";
 import { useData } from "../../context/DataContext";
 import { useActiveSchool } from "../../context/ActiveSchoolContext";
@@ -11,7 +11,7 @@ import { Modal } from "../../components/ui/Modal";
 import { Field, Input, Select } from "../../components/ui/Field";
 import { useToast } from "../../components/ui/Toast";
 import { useConfirm } from "../../components/ui/ConfirmDialog";
-import type { FeeGrid, SchoolFeeItem, SchoolFeeType, StudentFee } from "../../types";
+import type { FeeGrid, SchoolFeeItem, StudentFee } from "../../types";
 import {
   canViewFeeGrids,
   classOptionsForSchool,
@@ -26,7 +26,6 @@ import {
   scopedFeeGrids,
   scopedSchoolFeeItems,
   scopedStudentFees,
-  SCHOOL_FEE_TYPES,
   studentFeeSummary,
   validateFeeGridInput,
 } from "../../lib/fees";
@@ -44,7 +43,7 @@ import { financeApi } from "../../lib/financeApi";
 
 interface DraftItem {
   id?: string;
-  feeType: SchoolFeeType;
+  feeType: string;
   label: string;
   amount: string;
   mandatory: boolean;
@@ -93,6 +92,21 @@ export function FinanceFeesPage() {
   const [filterClass, setFilterClass] = useState("");
   const [filterYear, setFilterYear] = useState("");
   const [quickOpen, setQuickOpen] = useState(false);
+  const [feeTypeCatalog, setFeeTypeCatalog] = useState<Array<{ feeType: string; label: string }>>([
+    { feeType: "Inscription", label: "Inscription" },
+  ]);
+
+  useEffect(() => {
+    void financeApi
+      .getFinanceCatalog()
+      .then((catalog) => {
+        const rows = catalog.feeTypeCatalog ?? catalog.canonicalFeeTypes ?? [];
+        if (rows.length) setFeeTypeCatalog(rows);
+      })
+      .catch(() => {
+        /* le sélecteur reste sur le repli Inscription jusqu'au catalogue */
+      });
+  }, []);
 
   const grids = useMemo(() => {
     let rows = scopedFeeGrids(session?.user ?? null, state);
@@ -200,7 +214,7 @@ export function FinanceFeesPage() {
         amount: Number(item.amount),
         mandatory: item.mandatory,
         dueDate: item.dueDate ? normalizePeriodDate(item.dueDate) : undefined,
-        monthlyMonths: item.feeType === "Mensualité" ? item.monthlyMonths : undefined,
+        monthlyMonths: item.monthlyMonths?.length ? item.monthlyMonths : undefined,
         status: item.status,
       }));
 
@@ -305,7 +319,7 @@ export function FinanceFeesPage() {
           description={
             activeSchool?.name
               ? `${activeSchool.name} (${schoolCode}) — règles par classe et période, distinctes des dettes élève.`
-              : "Définissez inscription, mensualités et frais annexes par classe."
+              : "Définissez les frais canoniques par classe (inscription, scolarité, examen…)."
           }
           actions={
             <>
@@ -479,7 +493,7 @@ export function FinanceFeesPage() {
             <div className="border-t border-line pt-4">
               <p className="text-sm font-semibold text-ink">Lignes de frais</p>
               <p className="mt-1 text-xs text-muted">
-                Inscription, mensualités (avec mois) et frais annexes. Montants strictement positifs.
+                Inscription, scolarité (échéancier optionnel) et autres types du catalogue. Montants strictement positifs.
               </p>
               <div className="mt-3 space-y-3">
                 {draftItems.map((item, index) => (
@@ -489,16 +503,16 @@ export function FinanceFeesPage() {
                         <Select
                           value={item.feeType}
                           onChange={(e) => {
-                            const feeType = e.target.value as SchoolFeeType;
+                            const feeType = e.target.value;
                             const next = [...draftItems];
                             next[index] = {
                               ...item,
                               feeType,
-                              monthlyMonths: feeType === "Mensualité" ? DEFAULT_MONTHLY_MONTHS : [],
+                              monthlyMonths: feeType === "Scolarité" ? DEFAULT_MONTHLY_MONTHS : [],
                             };
                             setDraftItems(next);
                           }}
-                          options={SCHOOL_FEE_TYPES.map((t) => ({ value: t, label: t }))}
+                          options={feeTypeCatalog.map((t) => ({ value: t.feeType, label: t.label }))}
                         />
                       </Field>
                       <Field label="Libellé" required>
@@ -536,7 +550,7 @@ export function FinanceFeesPage() {
                         />
                       </Field>
                     </div>
-                    {item.feeType === "Mensualité" ? (
+                    {item.feeType === "Scolarité" || item.feeType === "Mensualité" || item.monthlyMonths.length > 0 ? (
                       <div className="mt-3">
                         <Field label="Mois concernés">
                         <Input
@@ -574,7 +588,7 @@ export function FinanceFeesPage() {
                 variant="secondary"
                 size="sm"
                 className="mt-3"
-                onClick={() => setDraftItems([...draftItems, { ...EMPTY_ITEM, label: "Frais annexe" }])}
+                onClick={() => setDraftItems([...draftItems, { ...EMPTY_ITEM, feeType: "Autre", label: "Autre" }])}
               >
                 Ajouter une ligne
               </Button>

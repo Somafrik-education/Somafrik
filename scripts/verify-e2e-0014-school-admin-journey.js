@@ -85,7 +85,7 @@ function buildFeeItems(gridId, schoolCode, className) {
       feeGridId: gridId,
       schoolCode,
       className,
-      feeType: "Annexe",
+      feeType: "Transport",
       label: "Transport",
       amount: 30_000,
       mandatory: true,

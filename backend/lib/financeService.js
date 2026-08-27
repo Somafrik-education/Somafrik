@@ -28,6 +28,7 @@ const {
   assertItemAmount,
 } = require("./financePaymentItems");
 const { obligationMatchesPaymentFeeType } = require("./financeFeeTypeMatch");
+const { persistableFeeType, isUnallocatedFeeTypeInput } = require("./financeFeeTypes");
 const { projectPaymentCash, resolvePaymentStatus: resolveUnallocatedPaymentStatus } = require("./financeUnallocatedCash");
 
 const REMINDER_COOLDOWN_DAYS = 3;
@@ -206,11 +207,18 @@ async function openObligationsForItem(tx, obligations, item, student, school) {
         FINANCE_ERROR.OBLIGATION_FEE_TYPE_MISMATCH,
       );
     }
-  } else if (!obligationMatchesPaymentFeeType(target, item.feeType)) {
+  } else if (item.feeType && !isUnallocatedFeeTypeInput(item.feeType) && !obligationMatchesPaymentFeeType(target, item.feeType)) {
     throwObligationConflict(
       "Cette obligation ne correspond pas au type de frais indiqué.",
       FINANCE_ERROR.OBLIGATION_FEE_TYPE_MISMATCH,
     );
+  }
+  if (!item.feeType && target.feeType) {
+    // Nouvelle écriture : canonicaliser ou fail-closed. Jamais recopier le snapshot legacy.
+    item.feeType = persistableFeeType(target.feeType);
+    if (!item.feeLabel || isUnallocatedFeeTypeInput(item.feeLabel) || item.feeLabel === "Non imputé") {
+      item.feeLabel = target.label || item.feeType;
+    }
   }
   if (["Annulé", "Payé", "Exonéré"].includes(target.status)) return [];
   return [target];
@@ -422,27 +430,40 @@ async function createPayment(store, rawPayload, principal, auditMeta) {
     for (const item of writeItems) {
       assertItemAmount(item.amount);
       const feeTypeId = asTrimmed(item.feeTypeId || item.schoolFeeItemId);
+      const obligationId = asTrimmed(item.obligationId);
       let feeType = asTrimmed(item.feeType || item.feeLabel || item.label);
       let feeLabel = asTrimmed(item.feeLabel || item.feeType || item.label);
       let catalogId = null;
       let catalogItemId = null;
       if (feeTypeId) {
         const catalog = await resolveCatalogFeeItem(tx, school.id, feeTypeId);
-        feeType = catalog.feeType || catalog.label;
+        // Écriture canonique : alias connu (Mensualité/Minerval) → Scolarité ;
+        // Annexe / Bulletin / inconnu → fail closed. Pas de fallback brut.
+        feeType = persistableFeeType(catalog.feeType || catalog.label);
         feeLabel = catalog.label || catalog.feeType;
         catalogId = catalog.dbId || null;
         catalogItemId = catalog.id || null;
+      } else if (isUnallocatedFeeTypeInput(feeType)) {
+        feeType = "";
+        feeLabel = feeLabel && !isUnallocatedFeeTypeInput(feeLabel) ? feeLabel : "Non imputé";
+      } else {
+        feeType = persistableFeeType(feeType);
+        feeLabel = feeLabel || feeType;
       }
-      if (!feeType) {
+      if (!feeType && !obligationId) {
+        feeType = "";
+        feeLabel = feeLabel || "Non imputé";
+      }
+      if (!feeType && !obligationId && !feeLabel) {
         throw createFinanceError(400, "Chaque libellé doit indiquer un type de frais.", FINANCE_ERROR.PAYMENT_FEE_TYPE_REQUIRED);
       }
       resolvedItems.push({
         feeTypeId: catalogId,
         catalogItemId,
         feeType,
-        feeLabel: feeLabel || feeType,
+        feeLabel: feeLabel || feeType || "Non imputé",
         amount: money(item.amount),
-        obligationId: asTrimmed(item.obligationId),
+        obligationId,
       });
     }
 
@@ -702,6 +723,7 @@ async function upsertFeeGrid(store, rawPayload, principal) {
     });
     await tx.replaceGridItems(grid, activeItems.map((item) => ({
       ...item,
+      feeType: persistableFeeType(item.feeType || item.fee_type),
       schoolId: school.id,
       schoolCode,
     })));
@@ -775,7 +797,7 @@ async function applyFeeGrid(store, gridId, principal, options = {}) {
     let skipped = 0;
     for (const student of scopedStudents) {
       for (const item of activeItems) {
-        const periods = item.feeType === "Mensualité" && Array.isArray(item.monthlyMonths) && item.monthlyMonths.length
+        const periods = Array.isArray(item.monthlyMonths) && item.monthlyMonths.length
           ? item.monthlyMonths
           : [item.periodLabel || null];
         for (const periodLabel of periods) {

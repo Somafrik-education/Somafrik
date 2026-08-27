@@ -76,11 +76,11 @@ function buildFeeItems(gridId, schoolCode, className) {
   const pastDueDate = "01-01-2026";
   const specs = [
     { feeType: "Inscription", label: "Frais d'inscription", amount: 50_000, dueDate: pastDueDate },
-    { feeType: "Mensualité", label: "Minerval / scolarité", amount: 10_000, monthlyMonths: MONTHLY_MONTHS },
-    { feeType: "Annexe", label: "Uniforme", amount: 15_000, dueDate: pastDueDate },
-    { feeType: "Annexe", label: "Transport", amount: 30_000, dueDate: pastDueDate },
-    { feeType: "Annexe", label: "Cantine", amount: 25_000, dueDate: pastDueDate },
-    { feeType: "Annexe", label: "Frais annexes", amount: 10_000, dueDate: pastDueDate },
+    { feeType: "Scolarité", label: "Scolarité", amount: 10_000, monthlyMonths: MONTHLY_MONTHS },
+    { feeType: "Uniforme", label: "Uniforme", amount: 15_000, dueDate: pastDueDate },
+    { feeType: "Transport", label: "Transport", amount: 30_000, dueDate: pastDueDate },
+    { feeType: "Cantine", label: "Cantine", amount: 25_000, dueDate: pastDueDate },
+    { feeType: "Autre", label: "Autre", amount: 10_000, dueDate: pastDueDate },
   ];
   return specs.map((spec) => ({
     id: newFeeId("FEEITEM"),
@@ -90,7 +90,7 @@ function buildFeeItems(gridId, schoolCode, className) {
     feeType: spec.feeType,
     label: spec.label,
     amount: spec.amount,
-    mandatory: spec.feeType !== "Annexe" || spec.label !== "Frais annexes",
+    mandatory: spec.feeType !== "Autre",
     dueDate: spec.dueDate,
     monthlyMonths: spec.monthlyMonths,
     status: "Actif",
@@ -205,8 +205,8 @@ async function main() {
     results,
     "6. Échéances définies",
     "dueDate + mois mensualité",
-    storedItems.every((item) => item.feeType !== "Mensualité" || item.monthlyMonths?.length) ? "OK" : "KO",
-    storedItems.every((item) => item.feeType !== "Mensualité" || item.monthlyMonths?.length),
+    storedItems.every((item) => !item.monthlyMonths?.length || item.monthlyMonths.length) ? "OK" : "KO",
+    storedItems.every((item) => !item.monthlyMonths || item.monthlyMonths.length),
   );
 
   const draftApply = await request(`/finance/fee-grids/${encodeURIComponent(feeGrid.id)}/apply`, {

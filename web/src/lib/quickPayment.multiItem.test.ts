@@ -26,7 +26,7 @@ describe("paiement multi-libellés", () => {
         classOptions: [{ classId: "class-6a" }],
         method: "Espèces",
         date: "2026-08-19",
-        lines: [createPaymentLine("Minerval / scolarité")],
+        lines: [createPaymentLine("Scolarité")],
       }),
     ).toMatch(/montant/);
   });
@@ -39,7 +39,7 @@ describe("paiement multi-libellés", () => {
         classOptions: [],
         method: "Espèces",
         date: "2026-08-19",
-        lines: [{ ...createPaymentLine("Minerval / scolarité"), amount: "500" }],
+        lines: [{ ...createPaymentLine("Scolarité"), amount: "500" }],
       }),
     ).toMatch(/inscription active/);
   });

@@ -7,13 +7,13 @@ const { isPaymentCounted, normalize } = require("../lib/dataIntegrityRules");
 
 const DEFAULT_FEE_AMOUNTS = {
   Inscription: 50_000,
-  "Réinscription": 40_000,
-  "Minerval / scolarité": 100_000,
-  "Frais d'examen": 15_000,
-  "Frais de bulletin": 10_000,
-  "Frais de transport": 30_000,
-  "Frais de cantine": 25_000,
-  "Autre frais": 20_000,
+  Réinscription: 40_000,
+  Scolarité: 100_000,
+  Examen: 15_000,
+  Uniforme: 20_000,
+  Transport: 30_000,
+  Cantine: 25_000,
+  Autre: 20_000,
 };
 
 function findStudent(students, studentId) {
