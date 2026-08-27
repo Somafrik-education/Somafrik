@@ -1,0 +1,306 @@
+/**
+ * Marqueurs RC2 Offline Read Smoke — format logcat, pas de PII, OK seulement après boot + 5 L1.
+ *   npx --yes tsx src/offline/l1/rc2OfflineReadSmoke.test.ts
+ */
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
+import { snapshotFromL1Cache, snapshotFromSuccess, snapshotL1Unavailable, metricLabelFromSnapshot, METRIC_UNAVAILABLE_LABEL } from "../../lib/dataTruth";
+import {
+  filterL1AssignmentsForTeacherSession,
+  l1AssignmentBelongsToTeacherSession,
+} from "../../lib/establishment";
+import { createMemoryL1Store } from "./memoryStore";
+import {
+  loadL1BackedSnapshot,
+  setL1ReadDepsForTests,
+  shouldBlockUnsupportedMutations,
+} from "./readModel";
+import { applyL1PageAtomically } from "./repository";
+import { resetL1LifecycleForTests } from "./lifecycle";
+import {
+  logRc2L1Read,
+  logRc2L1ReadFromSnapshot,
+  logRc2OfflineBoot,
+  RC2_L1_READ_TAG,
+  RC2_L1_RESOURCES,
+  RC2_OFFLINE_BOOT_TAG,
+  RC2_OFFLINE_READ_SMOKE_TAG,
+  resetRc2OfflineReadSmokeForTests,
+} from "./rc2OfflineReadSmoke";
+import type { L1Page, L1Partition, L1Resource } from "./types";
+
+const ROOT = path.resolve(__dirname, "../../..");
+const L1_READ_LINE = /^RC2_L1_READ resource=[a-z-]+ source=[a-z0-9-]+ status=[a-z]+ rows=\d+$/;
+const BOOT_LINE = /^RC2_OFFLINE_BOOT permissions=ready_offline(?: status=[a-z_]+)?$/;
+const OK_LINE = /^RC2_OFFLINE_READ_SMOKE OK$/;
+const FORBIDDEN = /jwt|eyJ|sqlcipher|password|email|phone|téléphone|userId|user_id|matricule|@|bearer/i;
+
+const partitionA: L1Partition = { userId: "user-a", schoolId: "school-1", schoolCode: "SCH-1" };
+const sessionA = {
+  user: { id: "user-a", schoolId: "school-1", schoolCode: "SCH-1" },
+  school: { id: "school-1", code: "SCH-1" },
+};
+
+function page(resource: L1Resource, items: L1Page["items"]): L1Page {
+  return {
+    resource,
+    mode: "full",
+    cursorStatus: "ok",
+    scopeHash: "scope-a",
+    items,
+    nextCursor: "cursor-1",
+    hasMore: false,
+  };
+}
+
+async function run() {
+  const lines: string[] = [];
+  resetRc2OfflineReadSmokeForTests({
+    logger: { warn: (message) => lines.push(message) },
+  });
+
+  logRc2L1Read({
+    resource: "classes",
+    source: "l1-cache",
+    status: "success",
+    rows: 4,
+  });
+  assert.equal(lines.at(-1), "RC2_L1_READ resource=classes source=l1-cache status=success rows=4");
+  assert.match(lines.at(-1) ?? "", L1_READ_LINE);
+  assert.doesNotMatch(lines.at(-1) ?? "", FORBIDDEN);
+
+  logRc2L1Read({
+    resource: "classes",
+    source: "l1-cache",
+    status: "success",
+    rows: Number.NaN,
+  });
+  assert.equal(lines.at(-1), "RC2_L1_READ resource=classes source=l1-cache status=success rows=0");
+
+  logRc2L1Read({
+    resource: "not-a-resource",
+    source: "l1-cache",
+    status: "success",
+    rows: 9,
+  });
+  assert.equal(lines.filter((line) => line.includes("not-a-resource")).length, 0);
+
+  logRc2L1Read({
+    resource: "students",
+    source: "jwt-leak" as never,
+    status: "success",
+    rows: 87,
+  });
+  assert.equal(lines.at(-1), "RC2_L1_READ resource=students source=none status=success rows=87");
+
+  logRc2OfflineBoot({ permissions: "ready" });
+  assert.equal(lines.some((line) => line.startsWith(RC2_OFFLINE_BOOT_TAG) && line.includes("ready") && !line.includes("ready_offline")), false);
+
+  logRc2OfflineBoot({ permissions: "ready_offline", status: "sqlcipher_unavailable" });
+  assert.equal(lines.at(-1), "RC2_OFFLINE_BOOT permissions=ready_offline status=sqlcipher_unavailable");
+  assert.match(lines.at(-1) ?? "", BOOT_LINE);
+  assert.equal(lines.includes(`${RC2_OFFLINE_READ_SMOKE_TAG} OK`), false, "échec boot ≠ OK");
+
+  resetRc2OfflineReadSmokeForTests({
+    logger: { warn: (message) => lines.push(message) },
+  });
+  lines.length = 0;
+
+  logRc2OfflineBoot({ permissions: "ready_offline" });
+  assert.equal(lines.at(-1), "RC2_OFFLINE_BOOT permissions=ready_offline");
+  assert.equal(lines.includes(`${RC2_OFFLINE_READ_SMOKE_TAG} OK`), false, "boot seul ≠ OK");
+
+  const counts = [4, 87, 12, 18, 24];
+  RC2_L1_RESOURCES.forEach((resource, index) => {
+    logRc2L1Read({
+      resource,
+      source: "l1-cache",
+      status: "success",
+      rows: counts[index],
+    });
+  });
+  assert.equal(lines.at(-1), `${RC2_OFFLINE_READ_SMOKE_TAG} OK`);
+  assert.match(lines.at(-1) ?? "", OK_LINE);
+  const okCount = lines.filter((line) => line === `${RC2_OFFLINE_READ_SMOKE_TAG} OK`).length;
+  logRc2L1Read({ resource: "classes", source: "l1-cache", status: "success", rows: 4 });
+  assert.equal(
+    lines.filter((line) => line === `${RC2_OFFLINE_READ_SMOKE_TAG} OK`).length,
+    okCount,
+    "OK émis une seule fois",
+  );
+
+  resetRc2OfflineReadSmokeForTests({
+    logger: { warn: (message) => lines.push(message) },
+  });
+  lines.length = 0;
+  logRc2OfflineBoot({ permissions: "ready_offline" });
+  logRc2L1Read({ resource: "classes", source: "network", status: "success", rows: 4 });
+  for (const resource of RC2_L1_RESOURCES.slice(1)) {
+    logRc2L1Read({ resource, source: "l1-cache", status: "success", rows: 1 });
+  }
+  assert.equal(lines.includes(`${RC2_OFFLINE_READ_SMOKE_TAG} OK`), false, "source=network ne compte pas");
+
+  resetRc2OfflineReadSmokeForTests({
+    logger: { warn: (message) => lines.push(message) },
+  });
+  lines.length = 0;
+  logRc2OfflineBoot({ permissions: "ready_offline" });
+  for (const resource of RC2_L1_RESOURCES) {
+    logRc2L1ReadFromSnapshot(resource, snapshotL1Unavailable());
+  }
+  assert.equal(lines.includes(`${RC2_OFFLINE_READ_SMOKE_TAG} OK`), false, "offline/unavailable ne compte pas");
+  assert.ok(lines.some((line) => line === "RC2_L1_READ resource=classes source=none status=offline rows=0"));
+
+  resetRc2OfflineReadSmokeForTests({
+    logger: { warn: (message) => lines.push(message) },
+  });
+  lines.length = 0;
+  logRc2OfflineBoot({ permissions: "ready_offline" });
+  for (const resource of RC2_L1_RESOURCES) {
+    logRc2L1Read({ resource, source: "l1-cache", status: "empty", rows: 0 });
+  }
+  assert.equal(lines.at(-1), `${RC2_OFFLINE_READ_SMOKE_TAG} OK`, "ready + 0 rows = vide confirmé, OK");
+
+  resetL1LifecycleForTests();
+  setL1ReadDepsForTests(null);
+  const store = createMemoryL1Store();
+  await store.migrate();
+  setL1ReadDepsForTests({
+    openStore: async () => ({ ok: true, store }),
+  });
+  await applyL1PageAtomically(
+    store,
+    partitionA,
+    "classes",
+    page("classes", [{ id: "cls-6a", classCode: "CLS-6A", name: "6ème A", status: "active" }]),
+    "ready",
+  );
+
+  resetRc2OfflineReadSmokeForTests({
+    logger: { warn: (message) => lines.push(message) },
+  });
+  lines.length = 0;
+  logRc2OfflineBoot({ permissions: "ready_offline" });
+  const loaded = await loadL1BackedSnapshot({
+    session: sessionA,
+    permissionsBootstrap: "ready_offline",
+    resource: "classes",
+    fetchNetwork: async () => {
+      throw new Error("GET interdit en ready_offline");
+    },
+    project: (read) => read.rows.map((row) => ({ id: String(row.id) })),
+  });
+  assert.equal(loaded.source, "l1-cache");
+  assert.equal(loaded.status, "success");
+  assert.equal(lines.at(-1), "RC2_L1_READ resource=classes source=l1-cache status=success rows=1");
+
+  await applyL1PageAtomically(
+    store,
+    partitionA,
+    "students",
+    page("students", []),
+    "ready",
+  );
+  const emptyStudents = await loadL1BackedSnapshot({
+    session: sessionA,
+    permissionsBootstrap: "ready_offline",
+    resource: "students",
+    fetchNetwork: async () => {
+      throw new Error("GET interdit en ready_offline");
+    },
+    project: () => [],
+  });
+  assert.equal(emptyStudents.source, "l1-cache");
+  assert.equal(emptyStudents.status, "empty");
+  assert.equal(lines.at(-1), "RC2_L1_READ resource=students source=l1-cache status=empty rows=0");
+
+  const teacher = {
+    role: "teacher",
+    user: { id: "user-a", schoolId: "school-1" },
+  };
+  assert.equal(
+    l1AssignmentBelongsToTeacherSession(
+      { teacherUserId: null, teacherCode: "ENS-A", teacherId: "tch-a" },
+      teacher,
+    ),
+    false,
+  );
+  assert.equal(
+    l1AssignmentBelongsToTeacherSession(
+      { teacherUserId: "user-other", teacherCode: "ENS-A", teacherId: "tch-a" },
+      teacher,
+    ),
+    false,
+  );
+  assert.equal(
+    filterL1AssignmentsForTeacherSession(
+      [
+        { id: "1", teacherUserId: "user-a", classId: "c1", subjectCode: "MATH", status: "active" } as never,
+        { id: "2", teacherUserId: "user-b", teacherCode: "ENS-A", classId: "c1", subjectCode: "FR", status: "active" } as never,
+      ],
+      teacher,
+    ).length,
+    1,
+  );
+
+  assert.equal(
+    metricLabelFromSnapshot({ status: "error", data: [] }, () => "0%", "0%"),
+    METRIC_UNAVAILABLE_LABEL,
+  );
+  assert.equal(
+    metricLabelFromSnapshot({ status: "offline", data: [] }, () => "0%", "0%"),
+    METRIC_UNAVAILABLE_LABEL,
+  );
+  assert.equal(shouldBlockUnsupportedMutations({ source: "l1-cache" }), true);
+  assert.equal(shouldBlockUnsupportedMutations({ permissionsBootstrap: "ready_offline" }), true);
+
+  const screens = [
+    "src/screens/ClassesScreen.tsx",
+    "src/screens/StudentsScreen.tsx",
+    "src/screens/TimetableScreen.tsx",
+    "src/screens/SchoolPedagogicalStructureScreen.tsx",
+    "src/screens/StudentDetailScreen.tsx",
+  ];
+  for (const rel of screens) {
+    const source = fs.readFileSync(path.join(ROOT, rel), "utf8");
+    assert.doesNotMatch(source, /expo-sqlite/);
+    assert.doesNotMatch(source, /from ["'].*offline\/l1\/database/);
+    assert.doesNotMatch(source, /listRows\(/);
+    assert.doesNotMatch(source, /readL1Resource/);
+  }
+
+  const studentsSrc = fs.readFileSync(path.join(ROOT, "src/screens/StudentsScreen.tsx"), "utf8");
+  assert.match(studentsSrc, /metricLabelFromSnapshot\(presencesSnapshot/);
+  assert.match(studentsSrc, /metricLabelFromSnapshot\(\s*studentFeesSnapshot/);
+  assert.doesNotMatch(studentsSrc, /presenceStats\.rate\s*\?\? 0/);
+
+  const timetableSrc = fs.readFileSync(path.join(ROOT, "src/screens/TimetableScreen.tsx"), "utf8");
+  assert.match(timetableSrc, /l1ReadOnly/);
+  assert.match(timetableSrc, /unverified:\s*true/);
+  assert.match(timetableSrc, /confirmedEmpty:\s*false/);
+
+  const runtimeSrc = fs.readFileSync(path.join(ROOT, "src/offline/l1/L1CacheRuntime.tsx"), "utf8");
+  assert.match(runtimeSrc, /logRc2OfflineBoot/);
+  const readModelSrc = fs.readFileSync(path.join(ROOT, "src/offline/l1/readModel.ts"), "utf8");
+  assert.match(readModelSrc, /logRc2L1ReadFromSnapshot/);
+
+  const markerSrc = fs.readFileSync(path.join(ROOT, "src/offline/l1/rc2OfflineReadSmoke.ts"), "utf8");
+  assert.match(markerSrc, new RegExp(RC2_L1_READ_TAG));
+  assert.match(markerSrc, new RegExp(RC2_OFFLINE_BOOT_TAG));
+  assert.match(markerSrc, new RegExp(RC2_OFFLINE_READ_SMOKE_TAG));
+  assert.doesNotMatch(markerSrc, /accessToken|refreshToken|l1DbKey/);
+
+  logRc2L1ReadFromSnapshot("assignments", snapshotFromL1Cache([{ id: "a" }, { id: "b" }], "2026-08-27"));
+  logRc2L1ReadFromSnapshot("school-courses", snapshotFromSuccess([], { source: "network" }));
+
+  setL1ReadDepsForTests(null);
+  resetL1LifecycleForTests();
+  resetRc2OfflineReadSmokeForTests();
+  console.log("OK: rc2 offline read smoke markers");
+}
+
+run().catch((error) => {
+  console.error(error);
+  process.exit(1);
+});

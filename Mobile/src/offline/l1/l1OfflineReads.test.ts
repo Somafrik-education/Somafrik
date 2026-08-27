@@ -124,6 +124,11 @@ async function run() {
   assert.match(dataTruthSrc, /source\?:/);
   assert.match(dataTruthSrc, /l1-cache/);
 
+  const readModelSrc = fs.readFileSync(path.join(ROOT, "src/offline/l1/readModel.ts"), "utf8");
+  assert.match(readModelSrc, /logRc2L1ReadFromSnapshot/);
+  const runtimeSrc = fs.readFileSync(path.join(ROOT, "src/offline/l1/L1CacheRuntime.tsx"), "utf8");
+  assert.match(runtimeSrc, /logRc2OfflineBoot/);
+
   const bucket = createMemoryL1Bucket();
   const store = createMemoryL1Store({ bucket });
   await store.migrate();

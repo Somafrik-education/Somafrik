@@ -11,6 +11,7 @@ import {
 } from "../../lib/dataTruth";
 import { openNativeL1Database } from "./database";
 import { getRememberedL1Runtime, rememberL1Runtime, resolveL1Partition } from "./lifecycle";
+import { logRc2L1ReadFromSnapshot } from "./rc2OfflineReadSmoke";
 import type { L1OpenResult, L1Partition, L1Resource, L1Store, L1SyncMeta, SqlValue } from "./types";
 
 export type L1SessionLike = {
@@ -193,17 +194,22 @@ export async function loadL1BackedSnapshot<T>(input: {
     return snapshotL1Unavailable();
   }
 
+  let snapshot: ResourceSnapshot<T>;
   if (shouldSkipMetierGet(input.permissionsBootstrap)) {
-    return readAndProject();
+    snapshot = await readAndProject();
+  } else {
+    try {
+      const rows = await input.fetchNetwork();
+      snapshot = snapshotFromSuccess(rows, { source: "network" });
+    } catch (error) {
+      if (isStrictNetworkUnavailable(error)) {
+        snapshot = await readAndProject();
+      } else {
+        snapshot = snapshotFromFailure(error, []);
+      }
+    }
   }
 
-  try {
-    const rows = await input.fetchNetwork();
-    return snapshotFromSuccess(rows, { source: "network" });
-  } catch (error) {
-    if (isStrictNetworkUnavailable(error)) {
-      return readAndProject();
-    }
-    return snapshotFromFailure(error, []);
-  }
+  logRc2L1ReadFromSnapshot(input.resource, snapshot);
+  return snapshot;
 }
