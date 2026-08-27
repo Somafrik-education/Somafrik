@@ -1,18 +1,17 @@
 # RC2 Offline Read Smoke — 2026-08-27
 
-**Type :** validation RC2 lectures L1 hors ligne (Android physique)  
-**PR :** [#353](https://github.com/Somafrik-education/Somafrik/pull/353) Draft dédiée — **aucun Ready / aucun merge sur CI seule**  
+**Type :** validation RC2 lectures L1 hors ligne sur Android physique  
+**PR :** #353  
+**Base exacte :** `develop@874f9415cda8c1e3df1339001b8f0f437149f38d`  
 **Outbox / écriture offline / RC3 :** hors scope
 
-## Identité
+## Appareil et build
 
 ```text
-Base develop exact : 874f9415cda8c1e3df1339001b8f0f437149f38d
-                     (merge #352 Native SQLCipher APK smoke)
-HEAD PR            : (pointe de #353 — correctif DB connexion exclusive SQLCipher)
-Appareil physique  : Xiaomi E6QCAIAIC6LJIBXG
-Package            : com.somafrik.app
-Version            : 1.2.1 (versionCode 13)
+Appareil physique : Xiaomi E6QCAIAIC6LJIBXG
+Package           : com.somafrik.app
+Version           : 1.2.1 (versionCode 13)
+SQLCipher         : 4.7.0 community
 ```
 
 ## Ressources L1 couvertes
@@ -25,191 +24,102 @@ SchoolCourses
 CourseSchedules
 ```
 
-Lecteur unique : `readL1Resource` / `loadL1BackedSnapshot`.  
-SQLite lu seulement si `meta.state === "ready"`, partition exacte `userId + schoolId`.  
-Fallback cache seulement pour `NETWORK_UNAVAILABLE`.  
-`ready_offline` : aucun GET métier avant affichage L1.
+PostgreSQL reste l'autorité. SQLite/SQLCipher n'est qu'une projection locale jetable, partitionnée par `userId + schoolId` et lisible uniquement lorsque la metadata de ressource est `ready`.
 
-## Instrumentation (logcat, non sensible)
+## Incident rencontré et correction
+
+La première tentative RC2 échouait au premier write transactionnel : Expo `withExclusiveTransactionAsync` ouvrait une nouvelle connexion native non keyée SQLCipher.
+
+Le correctif conserve le fail-closed :
+
+- nouvelle connexion `{ useNewConnection: true }` ;
+- application immédiate du même `PRAGMA key` ;
+- `PRAGMA cipher_version` obligatoire et non vide ;
+- `BEGIN EXCLUSIVE TRANSACTION` / `COMMIT` / `ROLLBACK` ;
+- fermeture en `finally` ;
+- aucun fallback plaintext ;
+- aucune clé ou donnée sensible journalisée.
+
+Un blocage indépendant côté préproduction Render a ensuite été identifié : les routes L1 retournaient 404 parce que les déploiements backend échouaient sur `CANONICAL_SCHOOL_COURSE_AMBIGUOUS`.
+
+L'inventaire PostgreSQL a isolé un unique `school_course` actif pour `2ème A / Technologie`, avec `teacher_id = NULL`, alors qu'une unique `teacher_assignment` active pointait vers l'enseignant actif `CD-2026-0001-ENS-0007`. La réparation préprod a renseigné uniquement ce `teacher_id`, sous transaction et garde-fous, sans suppression ni recréation.
+
+Après redéploiement de `develop`, les cinq routes L1 ont répondu `401` sans authentification au lieu de `404`, prouvant leur présence côté API.
+
+## Preuve physique — synchronisation Internet ON
+
+Les cinq ressources ont atteint une page valide puis `outcome=ready` :
 
 ```text
-RC2_L1_SYNC_START resource=classes
-RC2_L1_STAGE resource=classes stage=meta_start
-RC2_L1_STAGE resource=classes stage=meta_ok
-RC2_L1_STAGE resource=classes stage=reconcile_start
-RC2_L1_STAGE resource=classes stage=reconcile_ok
-RC2_L1_STAGE resource=classes stage=fetch_start
-RC2_L1_PAGE resource=classes mode=full hasMore=false page=1
-RC2_L1_STAGE resource=classes stage=apply_start
-RC2_L1_STAGE resource=classes stage=apply_ok
 RC2_L1_SYNC resource=classes outcome=ready
+RC2_L1_SYNC resource=students outcome=ready
+RC2_L1_SYNC resource=assignments outcome=ready
+RC2_L1_SYNC resource=school-courses outcome=ready
+RC2_L1_SYNC resource=course-schedules outcome=ready
 ```
 
-`stage` (marqueur) ∈ `meta_start` | `meta_ok` | `reconcile_start` | `reconcile_ok` | `fetch_start` | `apply_start` | `apply_ok`.  
-`mode` ∈ `full` | `delta` | `full_required` | `unavailable`.  
-`hasMore` ∈ `true` | `false`. `page` = entier.
-
-Exception inattendue (try/catch **par étape**, jamais le message brut) :
+Les traces montrent pour chaque ressource la séquence :
 
 ```text
-RC2_L1_SYNC_EXCEPTION resource=classes stage=reconcile reason=unexpected
+meta_start -> meta_ok
+reconcile_start -> reconcile_ok
+fetch_start
+RC2_L1_PAGE ... mode=full hasMore=false page=1
+apply_start -> apply_ok
+meta_start -> meta_ok
+outcome=ready
 ```
 
-`stage` (exception) ∈ `meta` | `reconcile` | `fetch` | `apply` uniquement.  
-Aucun `error.message`, SQL, cursor, scopeHash, userId, schoolId, token ou contenu métier.
+La réussite des cinq `reconcile_ok` valide également physiquement la correction des connexions transactionnelles SQLCipher keyées.
 
-Un HTTP classifié (`NETWORK_UNAVAILABLE`, 5xx, `SYNC_ERROR`, …) reste `RC2_L1_SYNC outcome=error` : ce n'est pas une `SYNC_EXCEPTION`.
+## Preuve physique — cold boot Internet OFF
 
-Chaque ressource est journalisée **dès sa fin**, pas après les cinq.
+Wi-Fi et données mobiles ont été coupés, puis l'application a subi `force-stop` + cold launch.
 
-Au refus de lecture (whitelist stricte) :
-
-```text
-RC2_L1_REFUSAL resource=students reason=metadata_absent
-```
-
-`reason` ∈ `empty` | `reconciling` | `blocked_authorization` | `metadata_absent` | `partition_mismatch` | `sqlcipher_unavailable` | `partition_unresolved`.
-
-`outcome` ∈ `ready` | `blocked_authorization` | `discarded` | `network_preserved` | `error`.  
-`code` optionnel, allowlist moteur uniquement (`UNAUTHORIZED`, `PERMISSION_DENIED`, `NETWORK_UNAVAILABLE`, …). Jamais de JWT, clé SQLCipher, nom d'élève, ID utilisateur.
-
-`RC2_OFFLINE_READ_SMOKE OK` n'est émis qu'après `RC2_OFFLINE_BOOT permissions=ready_offline` **et** les 5 ressources vues en `source=l1-cache` avec `status=success|empty`.
-
-## Cause racine (tentative 3 — confirmée)
+Boot autorisé depuis le snapshot local :
 
 ```text
-RC2_L1_STAGE resource=classes stage=meta_start
-RC2_L1_STAGE resource=classes stage=meta_ok
-RC2_L1_STAGE resource=classes stage=reconcile_start
-RC2_L1_SYNC_EXCEPTION resource=classes stage=reconcile reason=unexpected
-```
-
-`getMeta` sur la connexion principale keyée : OK. Premier write transactionnel (`markResourceState` reconciling) : KO.
-
-Expo `withExclusiveTransactionAsync` crée une **nouvelle connexion** (`useNewConnection: true`) qui n'exécute pas `PRAGMA key`. SQLCipher library présente (`cipher_version=4.7.0` persist=ok) ; la connexion exclusive n'est pas déverrouillée.
-
-## Correctif DB (cette révision)
-
-Sans affaiblir SQLCipher, **sans fallback plaintext** :
-
-- plus d'appel à `db.withExclusiveTransactionAsync` ni `withTransactionAsync`
-- nouvelle connexion `{ useNewConnection: true }`
-- **même `PRAGMA key`** immédiatement (clé en closure mémoire uniquement)
-- `PRAGMA cipher_version` non vide, sinon échec fermé
-- `BEGIN EXCLUSIVE TRANSACTION` / `COMMIT` / `ROLLBACK`
-- `closeAsync` dans `finally`
-- `writeTail`, `isCurrent()`, rollback `L1_TX_STALE` inchangés
-
-## Scénario physique — tentative 4 (correctif DB, Internet ON)
-
-```text
-RC2 tentative 4 : HOLD
-Internet : rester ON
-Offline kill/relaunch : NE PAS TESTER tant que 5× outcome=ready
-Ready/merge #353 : INTERDIT
-```
-
-Attendu :
-
-```text
-RC2_L1_SYNC_START resource=classes
-RC2_L1_STAGE resource=classes stage=meta_ok
-RC2_L1_STAGE resource=classes stage=reconcile_start
-RC2_L1_STAGE resource=classes stage=reconcile_ok
-RC2_L1_STAGE resource=classes stage=fetch_start
-RC2_L1_PAGE resource=classes ...
-RC2_L1_SYNC resource=classes outcome=ready
-```
-
-puis students / assignments / school-courses / course-schedules.
-
-```text
-adb logcat -d | findstr /I "RC2_L1_STAGE RC2_L1_SYNC_START RC2_L1_PAGE RC2_L1_SYNC RC2_L1_SYNC_EXCEPTION"
-```
-
-## Preuve Android physique — tentative 1
-
-Online, les écrans métier ont chargé depuis le réseau :
-
-```text
-RC2_L1_READ resource=course-schedules source=network status=success rows=1/2
-RC2_L1_READ resource=students source=network status=success rows=6
-RC2_L1_READ resource=classes source=network status=success rows=6
-RC2_L1_READ resource=assignments source=network status=success rows=9
-```
-
-Après Wi-Fi + data OFF, USB + `adb reverse tcp:8081 tcp:8081`, puis cold relaunch :
-
-```text
-L1_SQLCIPHER_SMOKE cipher_version=4.7.0 community
-L1_SQLCIPHER_SMOKE persist=ok
 RC2_OFFLINE_BOOT permissions=ready_offline
-RC2_L1_READ resource=students source=none status=offline rows=0
-RC2_L1_READ resource=classes source=none status=offline rows=0
-RC2_L1_READ resource=classes source=none status=offline rows=0
 ```
 
-Constats UI :
-- boot hors ligne : OK ;
-- SQLCipher persistant : OK ;
-- présence/paiement non inventés : OK ;
-- remplacements affichés non vérifiés : OK ;
-- Students L1 indisponible : NO-GO ;
-- CourseSchedules L1 indisponible : NO-GO ;
-- aucun `RC2_OFFLINE_READ_SMOKE OK`.
+Les cinq ressources ont ensuite été réellement relues depuis la projection L1 locale :
 
-Le transcript montre que le lecteur refuse le cache en offline, mais l'instrumentation de la tentative 1 ne révélait pas encore si la cause est `metadata_absent`, `reconciling`, `blocked_authorization`, `partition_mismatch` ou autre. Les marqueurs online `source=network` ne prouvent pas que `syncL1Cache` a atteint `outcome=ready`.
+```text
+RC2_L1_READ resource=classes source=l1-cache status=success rows=3
+RC2_L1_READ resource=students source=l1-cache status=success rows=6
+RC2_L1_READ resource=assignments source=l1-cache status=success rows=9
+RC2_L1_READ resource=school-courses source=l1-cache status=success rows=18
+RC2_L1_READ resource=course-schedules source=l1-cache status=success rows=2
+RC2_OFFLINE_READ_SMOKE OK
+```
 
-## Hors scope de ce correctif RC2
+Le marqueur `RC2_OFFLINE_READ_SMOKE OK` n'est émis qu'après `ready_offline` et après observation des cinq ressources avec `source=l1-cache` et `status=success|empty`.
 
-Warning observé : `Value being stored in SecureStore is larger than 2048 bytes`.  
-Ce n'est pas la clé SQLCipher (32 octets / 64 hex) : SQLCipher continue après ce warning. **Audit séparé**, pas dans le correctif RC2 principal.
+## Validation UI physique
 
-## Correctif diagnostique (révisions précédentes, conservé)
+Les écrans Classes / Élèves et Emploi du temps restent consultables hors ligne. L'emploi du temps affiche la dernière synchronisation et marque les remplacements comme non vérifiés lorsque la vérification réseau n'est pas possible.
 
-Sans changer la logique métier (boucle `full_required`/`unavailable` jusqu'à 500 pages **inchangée**) :
+Les métriques L2 non couvertes par RC2, notamment présence et paiements, restent `Indisponible` au lieu d'être inventées.
 
-- try/catch **par étape** (`meta` / `reconcile` / `fetch` / `apply`)
-- `RC2_L1_STAGE` + `RC2_L1_SYNC_EXCEPTION … stage=… reason=unexpected`
+Le bouton `Inscrire un élève` a été testé physiquement hors ligne : l'application affiche `Cette action nécessite une connexion.` et n'ouvre pas le formulaire. Aucune écriture offline implicite n'est donc introduite par RC2.
 
-## Checklist de preuve
+## Sécurité / invariants
 
-| Critère | Statut | Preuve |
-| --- | --- | --- |
-| HEAD exact | HOLD | pointe de #353 après ce correctif diagnostique |
-| Appareil physique | OK | Xiaomi `E6QCAIAIC6LJIBXG` |
-| Package / version | OK | `com.somafrik.app` 1.2.1 / versionCode 13 |
-| 5 ressources L1 | OK (code) | `L1_RESOURCES` + 5 loaders `AdminDataContext` |
-| Online écrans réseau | OK | transcript `source=network` |
-| Online sync SQLite ready | HOLD | 5× START + STAGE + PAGE + `outcome=ready` |
-| Sync L1 classes | P1 confirmée | `stage=reconcile` — connexion exclusive Expo non keyée |
-| Internet coupé | OK (t1) / ne pas retester | Wi-Fi + data off, USB + `adb reverse 8081` only |
-| Kill / relaunch | OK (t1) / ne pas retester | cold relaunch Android |
-| `ready_offline` | OK | `RC2_OFFLINE_BOOT permissions=ready_offline` |
-| SQLCipher / boot natif | OK | `cipher_version=4.7.0` persist=ok |
-| Classes | NO-GO | `source=none status=offline rows=0` |
-| Students | NO-GO | `source=none status=offline rows=0` |
-| Assignments teacher scope | HOLD | test device après cache ready |
-| SchoolCourses | HOLD | test device après cache ready |
-| CourseSchedules | NO-GO UI | planning indisponible offline |
-| Mutations bloquées | OK observé/code | mode hors ligne actif |
-| Aucune donnée L2 inventée | OK observé | `Indisponible` / `—` |
-| Aucune fuite cross-tenant | OK tests / HOLD device | à revalider après cache ready |
+```text
+PostgreSQL autoritaire                : OK
+SQLCipher requis / aucun plaintext    : OK
+Partition userId + schoolId           : OK
+Cold boot sans Internet               : OK
+Permissions ready_offline             : OK
+5 ressources L1 depuis SQLite         : OK
+Aucune donnée L2 inventée             : OK
+Mutations offline bloquées            : OK
+teacherUserId fail-closed L1          : OK
+Aucune fuite de secret dans logs RC2  : OK
+Outbox / replay                       : hors scope RC3
+```
 
-## NO-GO immédiat
-
-RC2 échoue si :
-
-- écran vide alors que cache `ready` ;
-- un écran ouvre SQLite directement ;
-- cache d'un autre user/school visible ;
-- mutation réseau possible offline ;
-- `teacherCode` / `teacherId` contourne `teacherUserId` ;
-- présence / paiement / note devient artificiellement `0` ;
-- l'app ne redémarre pas après kill sans Internet ;
-- une ressource `reconciling`, `blocked_authorization` ou sans metadata est quand même affichée.
-
-## Tests automatisés (CI — pas un GO terrain)
+## Tests automatisés
 
 ```text
 npm --prefix Mobile run test:l1-offline-reads
@@ -217,23 +127,23 @@ npm --prefix Mobile run verify:mobile-l1-sqlite-cache
 npm --prefix Mobile run verify:mobile-rc2-offline-read-smoke
 ```
 
-Le vérificateur RC2 sort `BLOCKED_NATIVE_RC2_OFFLINE_READ_SMOKE` (exit 0) sans appareil physique. **Ce n'est pas un GO.**
+Le vérificateur CI ne remplace pas le test terrain ; le GO ci-dessous repose sur le smoke Android physique décrit ci-dessus.
 
-## Verdict
+## Verdict final
 
 ```text
-#353 : DRAFT
-RC2 OFFLINE READ SMOKE: HOLD
-RC2 : HOLD
-Cause racine : connexion exclusive Expo non keyée SQLCipher
-P1 : CONFIRMÉE
-Correctif métier DB requis (cette révision)
-SQLCipher : OK (connexion principale)
-boot natif : OK
-Internet : rester ON
-offline relaunch : ne pas retester
-Ready : NON
-Merge : NON
+#353 : GO RC2 PHYSIQUE
+RC2 OFFLINE READ SMOKE : GO
+SQLCipher main             : OK
+SQLCipher transactions     : OK
+API L1 préprod             : OK
+Online sync L1 5/5         : OK
+Cold boot offline          : OK
+Offline reads L1 5/5       : OK
+RC2_OFFLINE_READ_SMOKE OK  : OBSERVÉ
+Mutations offline          : BLOQUÉES comme prévu
+P0 produit                 : 0 observé
+P1 produit RC2             : 0 restant
+Ready                      : AUTORISABLE après diff/CI indépendants
+Merge                      : AUTORISABLE après diff/CI indépendants
 ```
-
-Pas de Ready, pas de merge. Internet ON. Retester online jusqu'aux cinq `outcome=ready` avant toute coupure réseau.
