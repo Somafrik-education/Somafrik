@@ -10,6 +10,7 @@
 
 ```text
 Base moteur RC3-1 : e51a8da96fba3d564d8950190ff77c74c3716a51
+HEAD RC3-2        : c9fc676c4ab2de591fdcc13e88cacb671c65d621
 develop           : fc259bf3590c0b7a30da92a6d519a83503c5f4fc
 ```
 
