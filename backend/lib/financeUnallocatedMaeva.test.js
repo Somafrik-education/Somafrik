@@ -123,7 +123,7 @@ async function main() {
     {
       studentId: MAEVA,
       classId: CLASS_ID,
-      items: [{ feeType: "Scolarité", amount: 150 }],
+      items: [{ feeType: "Non imputé", amount: 150 }],
       method: "Espèces",
       date: "2026-08-24",
     },
@@ -140,11 +140,12 @@ async function main() {
 
   const partialAlloc = createStore();
   await seedMensualite(partialAlloc, 100);
+  const partialObligation = (await partialAlloc.listFinanceStudentFees(admin)).find((row) => row.studentId === MAEVA);
   const partialPay = await partialAlloc.createSchoolPayment(
     {
       studentId: MAEVA,
       classId: CLASS_ID,
-      items: [{ feeType: "Scolarité", amount: 150 }],
+      items: [{ obligationId: partialObligation.id, feeType: "Scolarité", amount: 150 }],
       method: "Espèces",
       date: "2026-08-24",
     },
@@ -158,11 +159,12 @@ async function main() {
 
   const covered = createStore();
   await seedMensualite(covered, 150);
+  const coveredObligation = (await covered.listFinanceStudentFees(admin)).find((row) => row.studentId === MAEVA);
   const coveredPay = await covered.createSchoolPayment(
     {
       studentId: MAEVA,
       classId: CLASS_ID,
-      items: [{ feeType: "Scolarité", amount: 150 }],
+      items: [{ obligationId: coveredObligation.id, feeType: "Scolarité", amount: 150 }],
       method: "Espèces",
       date: "2026-08-24",
     },
@@ -210,18 +212,29 @@ async function main() {
   });
   const beforeRecon = (await recon.listProjection()).payments.find((row) => row.reference === "CD-2026-0001-2026-PAY-0007");
   assert.equal(beforeRecon.status, "Non imputé");
-  const firstRecon = await recon.reconcileFinancePaymentAllocations(admin);
-  assert.ok(firstRecon.created >= 1);
-  const afterReconFee = (await recon.listFinanceStudentFees(admin)).find((row) => row.studentId === MAEVA);
-  assert.equal(Number(afterReconFee.amountPaid), 150);
-  const secondRecon = await recon.reconcileFinancePaymentAllocations(admin);
-  assert.equal(secondRecon.created, 0);
-  const afterReconPay = (await recon.listProjection()).payments.find((row) => row.reference === "CD-2026-0001-2026-PAY-0007");
-  assert.equal(afterReconPay.status, "Payé");
-  assert.notEqual(afterReconPay.status, "Non imputé");
-  assert.equal(Number(afterReconPay.unallocatedAmount), 0);
+  assert.equal(Number(beforeRecon.unallocatedAmount), 150);
 
-  console.log("OK: Maeva PAY-0007 P→P+150 ; sans obligation = Non imputé ; reconcil idempotente");
+  await assert.rejects(
+    () => recon.reconcileFinancePaymentAllocations(admin),
+    (error) => error.code === "FINANCE_LEGACY_RECONCILE_DISABLED" && error.statusCode === 409,
+    "F4 doit refuser toute réconciliation automatique par feeType/libellé",
+  );
+  const afterReconFee = (await recon.listFinanceStudentFees(admin)).find((row) => row.studentId === MAEVA);
+  assert.equal(Number(afterReconFee.amountPaid), 0, "historique non imputé ne solde aucune dette sans obligationId explicite");
+  assert.equal(recon.tables.allocations.length, 0, "rejet fail-closed : aucune allocation créée");
+
+  await assert.rejects(
+    () => recon.reconcileFinancePaymentAllocations(admin),
+    (error) => error.code === "FINANCE_LEGACY_RECONCILE_DISABLED" && error.statusCode === 409,
+    "le rejet doit rester déterministe au retry",
+  );
+  const afterReconPay = (await recon.listProjection()).payments.find((row) => row.reference === "CD-2026-0001-2026-PAY-0007");
+  assert.equal(afterReconPay.status, "Non imputé");
+  assert.equal(Number(afterReconPay.unallocatedAmount), 150);
+  assert.equal(Number(afterReconPay.allocatedAmount), 0);
+  assert.equal(recon.tables.allocations.length, 0, "retry fail-closed : toujours aucune allocation");
+
+  console.log("OK: Maeva F4 — obligationId explicite ; legacy reconcile = 409 fail-closed");
 }
 
 main().catch((error) => {

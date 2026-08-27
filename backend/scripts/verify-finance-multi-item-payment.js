@@ -160,9 +160,9 @@ async function runHttp() {
 
     const listBefore = asRows((await request("/payments", { token: adminToken })).data);
     const estherItems = [
-      { feeType: "Minerval / scolarité", amount: 500 },
-      { feeType: "Frais d'examen", amount: 1 },
-      { feeType: "Frais de cantine", amount: 40 },
+      { feeType: "Non imputé", feeLabel: "Minerval / scolarité", amount: 500 },
+      { feeType: "Non imputé", feeLabel: "Frais d'examen", amount: 1 },
+      { feeType: "Non imputé", feeLabel: "Frais de cantine", amount: 40 },
     ];
     const created = await request("/payments", {
       method: "POST",
@@ -179,6 +179,9 @@ async function runHttp() {
     assert.equal(created.status, 201, JSON.stringify(created.data));
     assert.equal(created.data.totalAmount, 541, "total serveur 541, total client ignoré");
     assert.equal(created.data.amount, 541);
+    assert.equal(Number(created.data.allocatedAmount || 0), 0);
+    assert.equal(Number(created.data.unallocatedAmount), 541);
+    assert.equal(created.data.status, "Non imputé");
     assert.equal(created.data.items?.length, 3);
     assert.equal(created.data.itemCount, 3);
     assert.equal(created.data.itemsDetail, "3 libellés");
@@ -211,7 +214,7 @@ async function runHttp() {
       token: adminToken,
       body: {
         studentId,
-        items: [{ feeType: "Minerval / scolarité", amount: 0 }],
+        items: [{ feeType: "Non imputé", amount: 0 }],
         paymentMethod: "Espèces",
         paidAt: "2026-08-19",
       },

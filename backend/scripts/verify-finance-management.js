@@ -350,13 +350,15 @@ async function main() {
       token: accountantToken,
       body: {
         studentId: studentCode,
-        feeType: "Inscription",
-        amount: 10_000,
+        items: [{ feeType: "Non imputé", amount: 10_000 }],
         method: "Espèces",
         date: "2026-08-13",
       },
     });
     assert.equal(pay.status, 201, JSON.stringify(pay.data));
+    assert.equal(Number(pay.data.allocatedAmount || 0), 0, "RBAC comptable : aucune allocation");
+    assert.equal(Number(pay.data.unallocatedAmount), 10_000);
+    assert.equal(pay.data.status, "Non imputé");
 
     const cancel = await request(`/payments/${encodeURIComponent(pay.data.reference)}/cancel`, {
       method: "POST",
@@ -419,18 +421,19 @@ async function main() {
       token: directorToken,
       body: {
         studentId: studentCode,
-        feeType: "Inscription",
-        amount: 1,
+        items: [{ feeType: "Non imputé", amount: 1 }],
         method: "Espèces",
         date: "2026-08-13",
       },
     });
     assert.equal(directorPay.status, 201, JSON.stringify(directorPay.data));
+    assert.equal(Number(directorPay.data.allocatedAmount || 0), 0);
+    assert.equal(Number(directorPay.data.unallocatedAmount), 1);
+    assert.equal(directorPay.data.status, "Non imputé");
 
     const paymentBody = {
       studentId: studentCode,
-      feeType: "Inscription",
-      amount: 1,
+      items: [{ feeType: "Non imputé", amount: 1 }],
       method: "Espèces",
       date: "2026-08-13",
     };
@@ -444,8 +447,7 @@ async function main() {
       token: accountantToken,
       body: {
         studentId: "BI-2026-0001-STU-0001",
-        feeType: "Inscription",
-        amount: 10,
+        items: [{ feeType: "Non imputé", amount: 10 }],
         method: "Espèces",
         date: "2026-08-13",
         schoolCode: "BI-2026-0001",
@@ -460,8 +462,7 @@ async function main() {
       token: secretaryToken,
       body: {
         studentId: studentCode,
-        feeType: "Inscription",
-        amount: 1,
+        items: [{ feeType: "Non imputé", amount: 1 }],
         method: "Espèces",
         date: "2026-08-13",
         schoolId: "other-school",
@@ -471,6 +472,9 @@ async function main() {
     });
     assert.equal(secretaryPay.status, 201, JSON.stringify(secretaryPay.data));
     assert.match(String(secretaryPay.data.reference), /^CD-2026-0001-\d{4}-PAY-/);
+    assert.equal(Number(secretaryPay.data.allocatedAmount || 0), 0);
+    assert.equal(Number(secretaryPay.data.unallocatedAmount), 1);
+    assert.equal(secretaryPay.data.status, "Non imputé");
 
     const rateStudent = await request(`/classes/${encodeURIComponent(createdClass.data.classCode)}/students`, {
       method: "POST",
@@ -510,18 +514,33 @@ async function main() {
       body: { studentIds: [rateStudentCode] },
     });
     assert.equal(applied.status, 200, JSON.stringify(applied.data));
+    const feesBeforePay = await request("/finance/student-fees", { token: adminToken });
+    assert.equal(feesBeforePay.status, 200);
+    const beforePayRows = Array.isArray(feesBeforePay.data)
+      ? feesBeforePay.data
+      : feesBeforePay.data?.items ?? [];
+    const rateTargets = beforePayRows.filter(
+      (row) =>
+        (row.studentId === rateStudentCode || row.studentId === rateStudent.data.student?.id) &&
+        String(row.status) !== "Annulé" &&
+        Number(row.balance || 0) > 0,
+    );
+    assert.ok(rateTargets.length >= 1, "obligation Scolarité absente avant imputation");
+    const targetObligation = rateTargets[0];
     const scolaritePay = await request("/payments", {
       method: "POST",
       token: accountantToken,
       body: {
         studentId: rateStudentCode,
-        items: [{ feeType: "Scolarité", amount: 100 }],
+        items: [{ obligationId: targetObligation.id, feeType: "Scolarité", amount: 100 }],
         method: "Espèces",
         date: "2026-08-24",
       },
     });
     assert.equal(scolaritePay.status, 201, JSON.stringify(scolaritePay.data));
     assert.equal(Number(scolaritePay.data.overpaymentAmount || 0), 0, "Scolarité doit allouer une Mensualité");
+    assert.equal(Number(scolaritePay.data.allocatedAmount), 100);
+    assert.equal(Number(scolaritePay.data.unallocatedAmount || 0), 0);
     const feesAfterScolarite = await request("/finance/student-fees", { token: adminToken });
     assert.equal(feesAfterScolarite.status, 200);
     const feeRows = Array.isArray(feesAfterScolarite.data)

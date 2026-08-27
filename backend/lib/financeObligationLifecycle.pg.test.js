@@ -379,10 +379,10 @@ async function main() {
     assert.equal(Number(sep.amountDue), 30_000, "snapshot tarif non réécrit");
 
     const beforePay = (await pool.query("SELECT count(*)::int AS n FROM student_fee_obligations")).rows[0].n;
-    await store.createSchoolPayment(
+    const unallocatedPayment = await store.createSchoolPayment(
       {
         studentId: "CD-2026-0001-STU-0001",
-        items: [{ feeType: "Uniforme", amount: 1_000 }],
+        items: [{ feeType: "Non imputé", amount: 1_000 }],
         method: "Espèces",
         date: "2026-09-02",
       },
@@ -390,6 +390,15 @@ async function main() {
     );
     const afterPay = (await pool.query("SELECT count(*)::int AS n FROM student_fee_obligations")).rows[0].n;
     assert.equal(afterPay, beforePay, "paiement ne crée pas d'obligation");
+    assert.equal(Number(unallocatedPayment.unallocatedAmount), 1_000);
+    assert.equal(unallocatedPayment.status, "Non imputé");
+    const unallocatedCount = await pool.query(
+      `SELECT count(*)::int AS n FROM payment_allocations pa
+       JOIN payments p ON p.id = pa.payment_id
+       WHERE p.payment_code = $1 AND pa.reversed_at IS NULL`,
+      [unallocatedPayment.reference],
+    );
+    assert.equal(unallocatedCount.rows[0].n, 0, "encaissement Non imputé sans allocation");
 
     const gridB = await store.upsertFinanceFeeGrid(
       {
@@ -414,7 +423,7 @@ async function main() {
     await store.createSchoolPayment(
       {
         studentId: "CD-2026-0001-STU-0001",
-        items: [{ feeType: "Scolarité", amount: 30_000 }],
+        items: [{ obligationId: sepRow.rows[0].id, feeType: "Scolarité", amount: 30_000 }],
         method: "Espèces",
         date: "2026-09-10",
       },

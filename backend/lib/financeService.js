@@ -31,12 +31,22 @@ const { obligationMatchesPaymentFeeType } = require("./financeFeeTypeMatch");
 const { persistableFeeType, isUnallocatedFeeTypeInput } = require("./financeFeeTypes");
 const { projectPaymentCash, resolvePaymentStatus: resolveUnallocatedPaymentStatus } = require("./financeUnallocatedCash");
 const {
+  assertPaymentConservation,
+  assertCompatibleCurrency,
+} = require("./financeDomainInvariants");
+const {
   OBLIGATION_LIFECYCLE_REASON,
   ensureEnrollmentFinanceObligations,
   ensureEnrollmentFinanceObligationsInTx,
 } = require("./financeObligationLifecycle");
 
 const REMINDER_COOLDOWN_DAYS = 3;
+
+const F4_ERROR = Object.freeze({
+  OBLIGATION_ID_REQUIRED: "FINANCE_OBLIGATION_ID_REQUIRED",
+  OBLIGATION_NOT_OPEN: "FINANCE_OBLIGATION_NOT_OPEN",
+  LEGACY_RECONCILE_DISABLED: "FINANCE_LEGACY_RECONCILE_DISABLED",
+});
 
 function ignoreClientScope(payload = {}) {
   const next = { ...payload };
@@ -168,22 +178,22 @@ async function lookupObligation(tx, obligationId) {
   return null;
 }
 
-function openObligationsMatchingFeeType(obligations, feeType) {
-  return obligations.filter(
-    (fee) =>
-      !["Annulé", "Payé", "Exonéré"].includes(fee.status) &&
-      obligationMatchesPaymentFeeType(fee, feeType),
-  );
+function isOpenObligation(fee) {
+  if (!fee) return false;
+  if (fee.archivedAt || fee.archived_at || fee.archived) return false;
+  if (["Annulé", "Payé", "Exonéré"].includes(fee.status)) return false;
+  return money(fee.balance) > 0;
 }
 
 async function openObligationsForItem(tx, obligations, item, student, school) {
   const obligationId = asTrimmed(item.obligationId);
   if (!obligationId) {
-    const matched = openObligationsMatchingFeeType(obligations, item.feeType);
-    const keys = catalogKeysForItem(item);
-    if (!keys.size) return matched;
-    const byCatalog = matched.filter((fee) => keys.has(asTrimmed(fee.schoolFeeItemId)));
-    return byCatalog.length ? byCatalog : matched;
+    if (!asTrimmed(item.feeType) || isUnallocatedFeeTypeInput(item.feeType)) return [];
+    throw createFinanceError(
+      400,
+      "obligationId est requis pour imputer un paiement à une dette. Sans obligationId, utilisez Non imputé.",
+      F4_ERROR.OBLIGATION_ID_REQUIRED,
+    );
   }
 
   let target = findObligationInList(obligations, obligationId);
@@ -205,6 +215,10 @@ async function openObligationsForItem(tx, obligations, item, student, school) {
       FINANCE_ERROR.OBLIGATION_STUDENT_MISMATCH,
     );
   }
+  assertCompatibleCurrency({
+    payment: { currency: school.currency || "CDF" },
+    obligation: target,
+  });
   if (asTrimmed(item.feeTypeId) || asTrimmed(item.catalogItemId)) {
     if (!obligationMatchesResolvedCatalog(target, item)) {
       throwObligationConflict(
@@ -219,13 +233,19 @@ async function openObligationsForItem(tx, obligations, item, student, school) {
     );
   }
   if (!item.feeType && target.feeType) {
-    // Nouvelle écriture : canonicaliser ou fail-closed. Jamais recopier le snapshot legacy.
     item.feeType = persistableFeeType(target.feeType);
     if (!item.feeLabel || isUnallocatedFeeTypeInput(item.feeLabel) || item.feeLabel === "Non imputé") {
       item.feeLabel = target.label || item.feeType;
     }
   }
-  if (["Annulé", "Payé", "Exonéré"].includes(target.status)) return [];
+  if (!isOpenObligation(target)) {
+    throw createFinanceError(
+      409,
+      "Cette obligation n'est plus ouverte et ne peut pas recevoir une nouvelle imputation.",
+      F4_ERROR.OBLIGATION_NOT_OPEN,
+      { obligationId },
+    );
+  }
   return [target];
 }
 
@@ -305,101 +325,12 @@ async function resolveCatalogFeeItem(tx, schoolId, feeTypeId) {
   throw createFinanceError(404, "Type de frais introuvable.", FINANCE_ERROR.FEE_ITEM_NOT_FOUND);
 }
 
-async function reconcileUnallocatedPaymentsInTx(tx, { schoolId, schoolCode, studentDbId, principal, auditMeta }) {
-  if (typeof tx.listCountedPayments !== "function") return { created: 0, leftoverTotal: 0 };
-  const payments = await tx.listCountedPayments(schoolId, { studentDbId });
-  let created = 0;
-  let leftoverTotal = 0;
-  for (const payment of payments) {
-    if (!isPaymentCounted(payment)) continue;
-    if (asTrimmed(payment.schoolCode).toUpperCase() !== asTrimmed(schoolCode).toUpperCase()) continue;
-    const paymentDbId = payment.dbId || payment.id;
-    if (typeof tx.lockPayment !== "function") {
-      throw createFinanceError(500, "Verrou paiement indisponible pour la réconciliation.");
-    }
-    const locked = await tx.lockPayment(paymentDbId);
-    if (!locked) continue;
-    const existing = await tx.listAllocations(paymentDbId);
-    if (existing.some((row) => !row.reversedAt)) continue;
-    const payStudentDbId = payment.studentDbId || studentDbId;
-    if (studentDbId && String(payStudentDbId) !== String(studentDbId)) continue;
-    let obligations = await tx.listObligationsByStudent(schoolId, payStudentDbId, { lock: true });
-    const items = typeof tx.listPaymentItems === "function" ? await tx.listPaymentItems(paymentDbId) : payment.items || [];
-    const chunks = items?.length
-      ? items.map((item) => ({
-          feeType: item.feeType || item.fee_type,
-          amount: money(item.amount),
-        }))
-      : [{ feeType: payment.feeType || payment.label, amount: money(payment.amount) }];
-    const allocations = [];
-    let leftover = 0;
-    for (const chunk of chunks) {
-      const open = openObligationsMatchingFeeType(obligations, chunk.feeType);
-      const { updated, allocations: itemAllocations, leftover: itemLeftover } = allocateAmount(open, chunk.amount);
-      leftover = money(leftover + itemLeftover);
-      allocations.push(...itemAllocations);
-      const byId = new Map(updated.map((fee) => [String(fee.dbId || fee.id), fee]));
-      obligations = obligations.map((fee) => byId.get(String(fee.dbId || fee.id)) || fee);
-    }
-    leftoverTotal = money(leftoverTotal + leftover);
-    if (!allocations.length) continue;
-    for (const allocation of allocations) {
-      await tx.insertAllocation({
-        schoolId,
-        paymentId: paymentDbId,
-        obligationId: allocation.obligationId,
-        amount: allocation.amount,
-      });
-    }
-    for (const fee of obligations) {
-      if (allocations.some((row) => String(row.obligationId) === String(fee.dbId || fee.id))) {
-        await tx.updateObligation(fee);
-      }
-    }
-    await writeFinanceAudit(tx, principal, auditMeta, {
-      action: "reconcile_payment_allocation",
-      entityType: "payment",
-      entityId: payment.reference || payment.id,
-      schoolCode,
-      newValue: {
-        paymentId: payment.reference || payment.id,
-        allocations,
-        leftover,
-      },
-    });
-    created += allocations.length;
-  }
-  return { created, leftoverTotal };
-}
-
-async function reconcileHistoricalPaymentAllocations(store, principal, auditMeta, options = {}) {
-  if (!principal) {
-    throw createFinanceError(400, "Établissement requis.", FINANCE_ERROR.TENANT_MISMATCH);
-  }
-  return store.withTransaction(async (tx) => {
-    let schoolCode = asTrimmed(principal?.schoolCode);
-    if (!schoolCode || schoolCode === "*") {
-      if (!isSuperAdminPrincipal(principal)) {
-        throw createFinanceError(400, "Établissement requis.", FINANCE_ERROR.TENANT_MISMATCH);
-      }
-      schoolCode = asTrimmed(options.schoolCode);
-      if (!schoolCode) {
-        throw createFinanceError(400, "Établissement requis.", FINANCE_ERROR.TENANT_MISMATCH);
-      }
-    }
-    assertTenant(principal, schoolCode);
-    const school = await tx.getSchoolByCode(schoolCode);
-    if (!school) {
-      throw createFinanceError(404, "Établissement introuvable", FINANCE_ERROR.TENANT_MISMATCH);
-    }
-    return reconcileUnallocatedPaymentsInTx(tx, {
-      schoolId: school.id,
-      schoolCode,
-      studentDbId: options.studentDbId || null,
-      principal,
-      auditMeta,
-    });
-  });
+async function reconcileHistoricalPaymentAllocations(_store, _principal, _auditMeta, _options = {}) {
+  throw createFinanceError(
+    409,
+    "La réconciliation automatique par type de frais est désactivée. Une imputation F4 exige une obligationId explicite.",
+    F4_ERROR.LEGACY_RECONCILE_DISABLED,
+  );
 }
 
 async function createPayment(store, rawPayload, principal, auditMeta) {
@@ -423,13 +354,6 @@ async function createPayment(store, rawPayload, principal, auditMeta) {
       throw createFinanceError(404, "Établissement introuvable", FINANCE_ERROR.TENANT_MISMATCH);
     }
     const enrollment = await resolvePaymentEnrollment(tx, student, payload, school);
-    await reconcileUnallocatedPaymentsInTx(tx, {
-      schoolId: school.id,
-      schoolCode: student.schoolCode,
-      studentDbId: student.dbId || student.id,
-      principal,
-      auditMeta,
-    });
 
     const resolvedItems = [];
     for (const item of writeItems) {
@@ -442,8 +366,6 @@ async function createPayment(store, rawPayload, principal, auditMeta) {
       let catalogItemId = null;
       if (feeTypeId) {
         const catalog = await resolveCatalogFeeItem(tx, school.id, feeTypeId);
-        // Écriture canonique : alias connu (Mensualité/Minerval) → Scolarité ;
-        // Annexe / Bulletin / inconnu → fail closed. Pas de fallback brut.
         feeType = persistableFeeType(catalog.feeType || catalog.label);
         feeLabel = catalog.label || catalog.feeType;
         catalogId = catalog.dbId || null;
@@ -451,17 +373,23 @@ async function createPayment(store, rawPayload, principal, auditMeta) {
       } else if (isUnallocatedFeeTypeInput(feeType)) {
         feeType = "";
         feeLabel = feeLabel && !isUnallocatedFeeTypeInput(feeLabel) ? feeLabel : "Non imputé";
-      } else {
+      } else if (feeType) {
         feeType = persistableFeeType(feeType);
         feeLabel = feeLabel || feeType;
       }
-      if (!feeType && !obligationId) {
+
+      if (!obligationId && feeType) {
+        throw createFinanceError(
+          400,
+          "obligationId est requis pour imputer un paiement. Utilisez Non imputé pour un encaissement sans dette cible.",
+          F4_ERROR.OBLIGATION_ID_REQUIRED,
+        );
+      }
+      if (!obligationId) {
         feeType = "";
-        feeLabel = feeLabel || "Non imputé";
+        feeLabel = "Non imputé";
       }
-      if (!feeType && !obligationId && !feeLabel) {
-        throw createFinanceError(400, "Chaque libellé doit indiquer un type de frais.", FINANCE_ERROR.PAYMENT_FEE_TYPE_REQUIRED);
-      }
+
       resolvedItems.push({
         feeTypeId: catalogId,
         catalogItemId,
@@ -479,25 +407,32 @@ async function createPayment(store, rawPayload, principal, auditMeta) {
 
     let obligations = await tx.listObligationsByStudent(school.id, student.dbId || student.id, { lock: true });
     const allocations = [];
+    const targetedBalances = new Map();
     let leftoverTotal = 0;
-    let remainingBefore = 0;
     for (const item of resolvedItems) {
       const open = await openObligationsForItem(tx, obligations, item, student, school);
-      remainingBefore += open.reduce((sum, fee) => sum + money(fee.balance), 0);
+      for (const fee of open) {
+        const key = String(fee.dbId || fee.id);
+        if (!targetedBalances.has(key)) targetedBalances.set(key, money(fee.balance));
+      }
       const { updated, allocations: itemAllocations, leftover } = allocateAmount(open, item.amount);
-      leftoverTotal += leftover;
+      leftoverTotal = money(leftoverTotal + leftover);
       allocations.push(...itemAllocations);
       const byId = new Map(updated.map((fee) => [String(fee.dbId || fee.id), fee]));
       obligations = obligations.map((fee) => byId.get(String(fee.dbId || fee.id)) || fee);
     }
-    if (leftoverTotal < 0) {
-      throw createFinanceError(400, "Solde négatif interdit.", FINANCE_ERROR.NEGATIVE_BALANCE_FORBIDDEN);
-    }
+
+    const remainingBefore = money([...targetedBalances.values()].reduce((sum, value) => sum + money(value), 0));
+    const conservation = assertPaymentConservation({
+      amount: totalAmount,
+      allocations,
+      unallocatedAmount: leftoverTotal,
+    });
 
     const existingCodes = await tx.listPaymentCodes(school.id);
     const reference = generatePaymentReference(student.schoolCode, existingCodes);
     const now = new Date().toISOString();
-    const status = resolveUnallocatedPaymentStatus(totalAmount, remainingBefore, method, leftoverTotal);
+    const status = resolveUnallocatedPaymentStatus(totalAmount, remainingBefore, method, conservation.unallocated);
     const payment = {
       reference,
       schoolId: school.id,
@@ -517,12 +452,12 @@ async function createPayment(store, rawPayload, principal, auditMeta) {
       status,
       comment: asTrimmed(payload.comment),
       verificationCode: `VF-${reference.replace(/[^A-Z0-9]/gi, "").slice(-12)}`,
-      amountDue: remainingBefore + obligations.reduce((sum, fee) => sum + money(fee.amountPaid), 0),
-      remainingAfter: Math.max(0, remainingBefore - totalAmount),
-      overpaymentAmount: leftoverTotal,
-      allocatedAmount: money(totalAmount - leftoverTotal),
-      unallocatedAmount: leftoverTotal,
-      overpaymentAction: leftoverTotal > 0 ? payload.overpaymentAction || "À confirmer" : "",
+      amountDue: remainingBefore,
+      remainingAfter: Math.max(0, money(remainingBefore - conservation.allocated)),
+      overpaymentAmount: conservation.unallocated,
+      allocatedAmount: conservation.allocated,
+      unallocatedAmount: conservation.unallocated,
+      overpaymentAction: conservation.unallocated > 0 ? payload.overpaymentAction || "À confirmer" : "",
       createdAt: now,
       createdByName: actorName(principal),
     };
@@ -909,6 +844,7 @@ async function createReminder(store, studentId, payload, principal, { force = fa
 
 module.exports = {
   REMINDER_COOLDOWN_DAYS,
+  F4_ERROR,
   ignoreClientScope,
   canCancelPayment,
   assertCanCancelPayment,

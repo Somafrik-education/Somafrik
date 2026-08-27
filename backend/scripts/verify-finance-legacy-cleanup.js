@@ -290,34 +290,41 @@ async function runHttpGuards() {
     assert.equal(applied.status, 200, JSON.stringify(applied.data));
     assert.ok(applied.data.created >= 1);
 
+    const feesBeforePay = await request("/finance/student-fees", { token });
+    assert.equal(feesBeforePay.status, 200, JSON.stringify(feesBeforePay.data));
+    const feeRows = Array.isArray(feesBeforePay.data) ? feesBeforePay.data : feesBeforePay.data?.items ?? [];
+    const inscription = feeRows.find(
+      (row) =>
+        (row.studentId === studentCode || row.studentId === enrolled.data.student?.id) &&
+        String(row.status) !== "Annulé" &&
+        Number(row.balance || 0) > 0,
+    );
+    assert.ok(inscription, "obligation Inscription absente avant imputation");
+    const paymentBody = {
+      studentId: studentCode,
+      items: [{ obligationId: inscription.id, feeType: "Inscription", amount: 25_000 }],
+      method: "Espèces",
+      date: "2026-08-13",
+      schoolCode: "BI-2026-0001",
+      createdBy: "forged",
+    };
+
     const payment = await request("/payments", {
       method: "POST",
       token,
       headers: { "Idempotency-Key": `lot4-pay-${stamp}` },
-      body: {
-        studentId: studentCode,
-        feeType: "Inscription",
-        amount: 25_000,
-        method: "Espèces",
-        date: "2026-08-13",
-        schoolCode: "BI-2026-0001",
-        createdBy: "forged",
-      },
+      body: paymentBody,
     });
     assert.equal(payment.status, 201, JSON.stringify(payment.data));
     assert.match(String(payment.data.reference), /PAY-/);
+    assert.equal(Number(payment.data.allocatedAmount), 25_000);
+    assert.equal(Number(payment.data.unallocatedAmount || 0), 0);
 
     const replay = await request("/payments", {
       method: "POST",
       token,
       headers: { "Idempotency-Key": `lot4-pay-${stamp}` },
-      body: {
-        studentId: studentCode,
-        feeType: "Inscription",
-        amount: 25_000,
-        method: "Espèces",
-        date: "2026-08-13",
-      },
+      body: paymentBody,
     });
     assert.equal(replay.status, 201, JSON.stringify(replay.data));
     assert.equal(replay.data.reference, payment.data.reference);

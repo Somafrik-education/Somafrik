@@ -2,6 +2,7 @@
 
 /**
  * Intégration PostgreSQL — paiements atomiques, rollback, isolation, concurrence grilles.
+ * F4 : toute imputation cible obligationId ; les scénarios sans dette sont Non imputé.
  */
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
@@ -83,12 +84,6 @@ async function main() {
   const pgStoreSrc = fs.readFileSync(path.join(__dirname, "../db/financePgStore.js"), "utf8");
   assert.match(pgStoreSrc, /async lockPayment/);
   assert.match(pgStoreSrc, /FOR UPDATE/);
-  const serviceSrc = fs.readFileSync(path.join(__dirname, "financeService.js"), "utf8");
-  const reconFn = serviceSrc.slice(serviceSrc.indexOf("async function reconcileUnallocatedPaymentsInTx"));
-  assert.ok(
-    reconFn.indexOf("lockPayment") < reconFn.indexOf("listAllocations"),
-    "lockPayment avant listAllocations",
-  );
 
   if (!DATABASE_URL) {
     console.log("financeRepository.pg.test.js: SKIP (DATABASE_URL absent)");
@@ -197,12 +192,12 @@ async function main() {
     assert.equal(skippedTotal, 1);
     const fees = await store.listFinanceStudentFees();
     assert.equal(fees.length, 1);
+    const inscription = fees[0];
 
     const payment = await store.createSchoolPayment(
       {
         studentId: "CD-2026-0001-STU-0001",
-        feeType: "Inscription",
-        amount: 40_000,
+        items: [{ obligationId: inscription.id, feeType: "Inscription", amount: 40_000 }],
         method: "Espèces",
         date: "2026-08-13",
         schoolCode: "BI-2026-0001",
@@ -229,8 +224,7 @@ async function main() {
         store.createSchoolPayment(
           {
             studentId: "CD-2026-0001-STU-0001",
-            feeType: "Inscription",
-            amount: 10,
+            items: [{ feeType: "Non imputé", amount: 10 }],
             method: "Espèces",
             date: "2026-08-13",
           },
@@ -245,8 +239,7 @@ async function main() {
         store.createSchoolPayment(
           {
             studentId: "CD-2026-0001-STU-0001",
-            feeType: "Inscription",
-            amount: 40_000,
+            items: [{ obligationId: restored.id, feeType: "Inscription", amount: 40_000 }],
             method: "Espèces",
             date: "2026-08-13",
           },
@@ -265,8 +258,7 @@ async function main() {
     const concurrentPayment = await store.createSchoolPayment(
       {
         studentId: "CD-2026-0001-STU-0001",
-        feeType: "Inscription",
-        amount: 40_000,
+        items: [{ obligationId: restored.id, feeType: "Inscription", amount: 40_000 }],
         method: "Espèces",
         date: "2026-08-13",
       },
@@ -326,9 +318,9 @@ async function main() {
       {
         studentId: "CD-2026-0001-STU-ESTHER",
         items: [
-          { feeType: "Minerval / scolarité", amount: 500 },
-          { feeType: "Frais d'examen", amount: 1 },
-          { feeType: "Frais de cantine", amount: 40 },
+          { feeType: "Non imputé", feeLabel: "Versement 1", amount: 500 },
+          { feeType: "Non imputé", feeLabel: "Versement 2", amount: 1 },
+          { feeType: "Non imputé", feeLabel: "Versement 3", amount: 40 },
         ],
         paymentMethod: "cash",
         paidAt: "2026-08-19",
@@ -338,6 +330,7 @@ async function main() {
     );
     assert.equal(multi.totalAmount, 541);
     assert.equal(multi.items.length, 3);
+    assert.equal(multi.unallocatedAmount, 541);
     assert.equal((await pool.query(`SELECT count(*)::int AS c FROM payments`)).rows[0].c, paymentsBefore + 1);
     assert.equal((await pool.query(`SELECT count(*)::int AS c FROM payment_items`)).rows[0].c, itemsBefore + 3);
     const refs = await pool.query(`SELECT DISTINCT payment_code FROM payments WHERE student_id = (SELECT id FROM students WHERE student_code = 'CD-2026-0001-STU-ESTHER')`);
@@ -356,7 +349,7 @@ async function main() {
         store.createSchoolPayment(
           {
             studentId: "CD-2026-0001-STU-ESTHER",
-            items: [{ feeType: "Minerval / scolarité", amount: -5 }],
+            items: [{ feeType: "Non imputé", amount: -5 }],
             paymentMethod: "Espèces",
             paidAt: "2026-08-19",
           },
@@ -396,8 +389,7 @@ async function main() {
     const sameDayA = await store.createSchoolPayment(
       {
         studentId: "CD-2026-0001-STU-0001",
-        feeType: "Frais de cantine",
-        amount: 10,
+        items: [{ feeType: "Non imputé", feeLabel: "Cantine", amount: 10 }],
         method: "Espèces",
         date: "2026-08-21",
       },
@@ -406,8 +398,7 @@ async function main() {
     const sameDayB = await store.createSchoolPayment(
       {
         studentId: "CD-2026-0001-STU-0001",
-        feeType: "Frais de transport",
-        amount: 11,
+        items: [{ feeType: "Non imputé", feeLabel: "Transport", amount: 11 }],
         method: "Espèces",
         date: "2026-08-21",
       },
@@ -431,8 +422,7 @@ async function main() {
         store.createSchoolPayment(
           {
             studentId: "CD-2026-0001-STU-ORPHAN",
-            feeType: "Inscription",
-            amount: 10,
+            items: [{ feeType: "Non imputé", amount: 10 }],
             method: "Espèces",
             date: "2026-08-28",
           },
@@ -462,8 +452,7 @@ async function main() {
         store.createSchoolPayment(
           {
             studentId: "CD-2026-0001-STU-0001",
-            feeType: "Inscription",
-            amount: 12,
+            items: [{ feeType: "Non imputé", amount: 12 }],
             method: "Espèces",
             date: "2026-08-29",
           },
@@ -475,8 +464,7 @@ async function main() {
       {
         studentId: "CD-2026-0001-STU-0001",
         classId: klassB.rows[0].id,
-        feeType: "Inscription",
-        amount: 13,
+        items: [{ feeType: "Non imputé", amount: 13 }],
         method: "Espèces",
         date: "2026-08-29",
       },
@@ -484,6 +472,7 @@ async function main() {
     );
     assert.equal(picked.className, "5ème B");
     assert.equal(String(picked.classId), String(klassB.rows[0].id));
+    assert.equal(picked.status, "Non imputé");
 
     const foreignClass = await pool.query(
       `INSERT INTO academic_years (school_id, name, status)
@@ -501,8 +490,7 @@ async function main() {
           {
             studentId: "CD-2026-0001-STU-0001",
             classId: foreignKlass.rows[0].id,
-            feeType: "Inscription",
-            amount: 14,
+            items: [{ feeType: "Non imputé", amount: 14 }],
             method: "Espèces",
             date: "2026-08-30",
           },
@@ -550,30 +538,33 @@ async function main() {
     const beforeRecon = (await store.listFinanceStudentFees(admin)).find(
       (row) => row.studentId === "CD-2026-0001-STU-RATE" || row.studentId === rateStudent.rows[0].id,
     );
-    assert.equal(Number(beforeRecon.amountPaid), 0, "GET sans réconciliation ne invente pas l'allocation");
-    const recon = await store.reconcileFinancePaymentAllocations(admin);
-    assert.ok(recon.created >= 1);
+    assert.equal(Number(beforeRecon.amountPaid), 0, "GET sans allocation explicite ne invente pas l'allocation");
+    await assert.rejects(
+      () => store.reconcileFinancePaymentAllocations(admin),
+      (error) => error.code === "FINANCE_LEGACY_RECONCILE_DISABLED" && error.statusCode === 409,
+    );
     const allocs = await pool.query(
       `SELECT * FROM payment_allocations WHERE payment_id = $1 AND reversed_at IS NULL`,
       [histPay.rows[0].id],
     );
-    assert.equal(allocs.rowCount, 1);
-    assert.equal(Number(allocs.rows[0].amount), 100);
+    assert.equal(allocs.rowCount, 0, "historique : aucune allocation implicite");
     const afterRecon = (await store.listFinanceStudentFees(admin)).find(
       (row) => String(row.dbId) === String(beforeRecon.dbId) || row.studentId === "CD-2026-0001-STU-RATE",
     );
-    assert.equal(Number(afterRecon.amountPaid), 100);
-    const recon2 = await store.reconcileFinancePaymentAllocations(admin);
-    assert.equal(recon2.created, 0);
+    assert.equal(Number(afterRecon.amountPaid), 0);
+    await assert.rejects(
+      () => store.reconcileFinancePaymentAllocations(admin),
+      (error) => error.code === "FINANCE_LEGACY_RECONCILE_DISABLED" && error.statusCode === 409,
+    );
     const allocs2 = await pool.query(
       `SELECT * FROM payment_allocations WHERE payment_id = $1 AND reversed_at IS NULL`,
       [histPay.rows[0].id],
     );
-    assert.equal(allocs2.rowCount, 1, "réconciliation idempotente");
+    assert.equal(allocs2.rowCount, 0, "retry fail-closed : toujours aucune allocation");
     const reconAudit = await pool.query(
       `SELECT * FROM audit_logs WHERE action = 'reconcile_payment_allocation' AND entity_id = 'CD-2026-0001-2026-PAY-HIST'`,
     );
-    assert.ok(reconAudit.rowCount >= 1);
+    assert.equal(reconAudit.rowCount, 0, "aucun audit de fausse allocation");
 
     const concStudent = await pool.query(
       `INSERT INTO students (school_id, student_code, first_name, last_name)
@@ -616,27 +607,32 @@ async function main() {
       ],
     );
     const storeB = createFinancePgStore(repo);
-    await Promise.all([
+    const reconRace = await Promise.allSettled([
       store.reconcileFinancePaymentAllocations(admin),
       storeB.reconcileFinancePaymentAllocations(admin),
     ]);
+    assert.equal(reconRace.every((row) => row.status === "rejected"), true);
+    assert.equal(
+      reconRace.every((row) => row.reason?.code === "FINANCE_LEGACY_RECONCILE_DISABLED" && row.reason?.statusCode === 409),
+      true,
+    );
     const concAllocs = await pool.query(
       `SELECT COALESCE(SUM(amount),0)::numeric AS total, COUNT(*)::int AS n
        FROM payment_allocations
        WHERE payment_id = $1 AND reversed_at IS NULL`,
       [concPay.rows[0].id],
     );
-    assert.equal(Number(concAllocs.rows[0].n), 1, "deux réconciliations concurrentes → une seule allocation");
-    assert.equal(Number(concAllocs.rows[0].total), 200, "reçu 200 → allocations actives = 200, pas 400");
+    assert.equal(Number(concAllocs.rows[0].n), 0, "réconciliation legacy concurrente : 0 allocation");
+    assert.equal(Number(concAllocs.rows[0].total), 0);
     const concFee = (await store.listFinanceStudentFees(admin)).find(
       (row) => row.studentId === "CD-2026-0001-STU-CONC" || row.studentId === concStudent.rows[0].id,
     );
-    assert.equal(Number(concFee.amountPaid), 200, "amount_paid = 200 sous concurrence");
+    assert.equal(Number(concFee.amountPaid), 0, "historique sans obligationId ne paie aucune dette");
 
     const payOver = await store.createSchoolPayment(
       {
         studentId: "CD-2026-0001-STU-RATE",
-        items: [{ feeType: "Scolarité", amount: 500 }],
+        items: [{ obligationId: afterRecon.id, feeType: "Scolarité", amount: 600 }],
         method: "Espèces",
         date: "2026-08-24",
       },
@@ -649,7 +645,7 @@ async function main() {
        WHERE reversed_at IS NULL AND school_id = $1 AND obligation_id = $2`,
       [schoolA.rows[0].id, afterRecon.dbId],
     );
-    assert.equal(Number(paidTotal.rows[0].total), 500, "jamais 600 sur une dette 500");
+    assert.equal(Number(paidTotal.rows[0].total), 500, "jamais plus de 500 sur une dette 500");
 
     const studentB = await pool.query(`SELECT id FROM students WHERE student_code = 'BI-2026-0001-STU-0001'`);
     const collide = await pool.query(
