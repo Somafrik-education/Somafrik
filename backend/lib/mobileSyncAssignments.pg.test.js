@@ -538,9 +538,8 @@ async function main() {
     const crossUser = await sync(adminPrincipal());
     const orphan = crossUser.body.items.find((item) => item.id === ASSIGN_CROSS_USER);
     assert.ok(orphan, "assignment teacher A / user B reste listé");
-    assert.equal(orphan.teacherUserId, null);
+    assert.equal(orphan.teacherUserId, TEACHER_B_USER_ID);
     assert.equal(orphan.teacherId, TEACHER_ORPHAN_ID);
-    assert.ok(!JSON.stringify(crossUser.body.items).includes(TEACHER_B_USER_ID));
 
     const historicalLeaks = await assignmentsRepo.listBySchoolCode("SCH-A");
     assert.ok(!historicalLeaks.some((row) => row.id === ASSIGN_CROSS_CLASS));

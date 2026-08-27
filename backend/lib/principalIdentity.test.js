@@ -8,6 +8,9 @@ const {
   uuidOrNull,
   resolvePrincipalSub,
   grantedByUserId,
+  resolvePrincipalUserRef,
+  classifyPrincipalUserRef,
+  classifySchoolCode,
 } = require("./principalIdentity");
 
 const PG_USER_ID = "550e8400-e29b-41d4-a716-446655440099";
@@ -31,9 +34,26 @@ assert.equal(grantedByUserId({ sub: "USER-T1" }), null);
 assert.equal(grantedByUserId({ sub: "anonymous" }), null);
 assert.equal(grantedByUserId({}), null);
 
+assert.equal(resolvePrincipalUserRef({ sub: PG_USER_ID, userId: "other" }), PG_USER_ID);
+assert.equal(classifyPrincipalUserRef(PG_USER_ID), "uuid");
+assert.equal(classifyPrincipalUserRef("USR-2026-00007"), "user_code");
+assert.equal(classifyPrincipalUserRef("CD-2026-0001-ENS-0001"), "teacher_code");
+assert.equal(classifyPrincipalUserRef(""), "empty");
+assert.equal(classifySchoolCode("CD-IN-26-001"), "v2");
+assert.equal(classifySchoolCode("CD-2026-0001"), "legacy");
+
+const authSrc = fs.readFileSync(path.join(__dirname, "../services/authService.js"), "utf8");
+const overlayStart = authSrc.indexOf("const safeTeacher = sanitizeUserForResponse(teacher);");
+const overlayFn = authSrc.slice(overlayStart, overlayStart + 900);
+assert.match(overlayFn, /id:\s*base\.id/);
+assert.match(overlayFn, /identifier:\s*base\.identifier/);
+assert.doesNotMatch(overlayFn, /teacherCode:\s*safeTeacher/);
+
 const serverSrc = fs.readFileSync(path.join(__dirname, "../server.js"), "utf8");
 assert.match(serverSrc, /resolvePrincipalSub/);
-assert.match(serverSrc, /sub:\s*resolvePrincipalSub\(user\)/);
+assert.match(serverSrc, /const principalSub = resolvePrincipalSub\(user\)/);
+assert.match(serverSrc, /sub:\s*principalSub/);
+assert.match(serverSrc, /userId:\s*principalSub/);
 
 const parentLinkingSrc = fs.readFileSync(path.join(__dirname, "./parentLinking.js"), "utf8");
 assert.match(parentLinkingSrc, /grantedByUserId/);
