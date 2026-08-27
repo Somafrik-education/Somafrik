@@ -1,7 +1,7 @@
 # RC3-2 — Physical offline write / Présences — 2026-08-27
 
 **Type :** branchement Appel / Présences sur l’outbox SQLCipher RC3-1  
-**PR :** Draft stackée sur #354  
+**PR :** [#355](https://github.com/Somafrik-education/Somafrik/pull/355) Draft stackée sur [#354](https://github.com/Somafrik-education/Somafrik/pull/354)  
 **Base technique :** `e51a8da96fba3d564d8950190ff77c74c3716a51`  
 **Branche :** `cursor/rc3-physical-offline-presence-9855`  
 **Base GitHub de la PR :** `cursor/rc3-sqlite-outbox-exactly-once-9855` (pas `develop`)
