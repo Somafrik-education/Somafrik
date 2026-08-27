@@ -41,8 +41,9 @@ function main() {
   assert.match(readModel, /ready_offline/);
   assert.match(
     readModel,
-    /try \{\s*rows = await storeResult\.store\.listRows\([\s\S]*?catch \{\s*return \{ ok: false, reason: "sqlcipher_unavailable" \}/,
+    /try \{\s*rows = await storeResult\.store\.listRows\([\s\S]*?catch \{\s*return refuse\(input\.resource, "sqlcipher_unavailable"\)/,
   );
+  assert.match(readModel, /function refuse\([\s\S]*logRc2L1Refusal/);
   assert.match(projection, /subject_code/);
   assert.match(projection, /teacherUserId/);
   assert.match(dataTruth, /source\?:/);

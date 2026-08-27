@@ -56,7 +56,9 @@ function main() {
   assert.match(types, /L1_SQLCIPHER_REQUIRED/);
   assert.match(database, /L1_ERROR\.SQLCIPHER_REQUIRED/);
   assert.equal(/PRAGMA key = 'password'/.test(database), false);
-  assert.match(database, /withExclusiveTransactionAsync/);
+  assert.match(database, /useNewConnection:\s*true/);
+  assert.match(database, /BEGIN EXCLUSIVE TRANSACTION/);
+  assert.doesNotMatch(database, /\.withExclusiveTransactionAsync\s*\(/);
   assert.doesNotMatch(database, /withTransactionAsync/);
   const migration = schema.slice(schema.indexOf("export const SCHEMA_MIGRATION_V1"));
   assert.doesNotMatch(migration, /REFERENCES l1_/);

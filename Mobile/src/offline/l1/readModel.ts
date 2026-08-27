@@ -11,6 +11,7 @@ import {
 } from "../../lib/dataTruth";
 import { openNativeL1Database } from "./database";
 import { getRememberedL1Runtime, rememberL1Runtime, resolveL1Partition } from "./lifecycle";
+import { logRc2L1ReadFromSnapshot, logRc2L1Refusal } from "./rc2OfflineReadSmoke";
 import type { L1OpenResult, L1Partition, L1Resource, L1Store, L1SyncMeta, SqlValue } from "./types";
 
 export type L1SessionLike = {
@@ -114,6 +115,11 @@ async function resolveStore(
   return { ok: true, store: opened.store };
 }
 
+function refuse(resource: L1Resource, reason: L1ReadRefusal): L1ReadResult {
+  logRc2L1Refusal({ resource, reason });
+  return { ok: false, reason };
+}
+
 /**
  * Lit une ressource L1 uniquement si meta.state === "ready" dans la partition
  * exacte userId+schoolId. ready + 0 rows = vide métier confirmé.
@@ -125,38 +131,38 @@ export async function readL1Resource(input: {
 }): Promise<L1ReadResult> {
   const resolved = resolveL1Partition(input.session);
   if (!resolved.ok) {
-    return { ok: false, reason: "partition_unresolved" };
+    return refuse(input.resource, "partition_unresolved");
   }
   const { partition } = resolved;
 
   const storeResult = await resolveStore(partition, input.deps);
-  if (!storeResult.ok) return storeResult;
+  if (!storeResult.ok) return refuse(input.resource, storeResult.reason);
 
   let meta: L1SyncMeta | null;
   try {
     meta = await storeResult.store.getMeta(partition, input.resource);
   } catch {
-    return { ok: false, reason: "sqlcipher_unavailable" };
+    return refuse(input.resource, "sqlcipher_unavailable");
   }
 
   if (!meta) {
-    return { ok: false, reason: "metadata_absent" };
+    return refuse(input.resource, "metadata_absent");
   }
   if (meta.userId !== partition.userId || meta.schoolId !== partition.schoolId) {
-    return { ok: false, reason: "partition_mismatch" };
+    return refuse(input.resource, "partition_mismatch");
   }
   if (meta.state === "empty" || meta.state === "reconciling" || meta.state === "blocked_authorization") {
-    return { ok: false, reason: meta.state };
+    return refuse(input.resource, meta.state);
   }
   if (meta.state !== "ready") {
-    return { ok: false, reason: "empty" };
+    return refuse(input.resource, "empty");
   }
 
   let rows: Record<string, SqlValue>[];
   try {
     rows = await storeResult.store.listRows(input.resource, partition);
   } catch {
-    return { ok: false, reason: "sqlcipher_unavailable" };
+    return refuse(input.resource, "sqlcipher_unavailable");
   }
   return { ok: true, partition, meta, rows };
 }
@@ -193,17 +199,22 @@ export async function loadL1BackedSnapshot<T>(input: {
     return snapshotL1Unavailable();
   }
 
+  let snapshot: ResourceSnapshot<T>;
   if (shouldSkipMetierGet(input.permissionsBootstrap)) {
-    return readAndProject();
+    snapshot = await readAndProject();
+  } else {
+    try {
+      const rows = await input.fetchNetwork();
+      snapshot = snapshotFromSuccess(rows, { source: "network" });
+    } catch (error) {
+      if (isStrictNetworkUnavailable(error)) {
+        snapshot = await readAndProject();
+      } else {
+        snapshot = snapshotFromFailure(error, []);
+      }
+    }
   }
 
-  try {
-    const rows = await input.fetchNetwork();
-    return snapshotFromSuccess(rows, { source: "network" });
-  } catch (error) {
-    if (isStrictNetworkUnavailable(error)) {
-      return readAndProject();
-    }
-    return snapshotFromFailure(error, []);
-  }
+  logRc2L1ReadFromSnapshot(input.resource, snapshot);
+  return snapshot;
 }

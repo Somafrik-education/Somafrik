@@ -11,6 +11,7 @@ import {
   resolveL1Partition,
 } from "./lifecycle";
 import { syncL1Cache } from "./syncEngine";
+import { logRc2OfflineBoot } from "./rc2OfflineReadSmoke";
 import { safeLogger } from "../../services/safeLogger";
 
 /**
@@ -30,10 +31,18 @@ export default function L1CacheRuntime() {
       }
       if (permissionsBootstrap === "ready_offline") {
         const resolved = resolveL1Partition(session);
-        if (!resolved.ok) return;
+        if (!resolved.ok) {
+          logRc2OfflineBoot({ permissions: "ready_offline", status: "partition_unresolved" });
+          return;
+        }
         const opened = await openNativeL1Database();
-        if (cancelled || !opened.ok) return;
+        if (cancelled) return;
+        if (!opened.ok) {
+          logRc2OfflineBoot({ permissions: "ready_offline", status: "sqlcipher_unavailable" });
+          return;
+        }
         await adoptL1Runtime(opened.store, resolved.partition);
+        logRc2OfflineBoot({ permissions: "ready_offline" });
         return;
       }
       if (permissionsBootstrap !== "ready") {

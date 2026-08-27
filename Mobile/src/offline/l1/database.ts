@@ -16,12 +16,20 @@ export type L1KeyStore = {
   setItem(key: string, value: string): Promise<void>;
 };
 
+export type L1SqliteOpenOptions = {
+  useNewConnection?: boolean;
+};
+
+export type L1OpenDatabase = (
+  name: string,
+  options?: L1SqliteOpenOptions,
+) => Promise<L1SqliteLike>;
+
 export type L1SqliteLike = {
   execAsync(sql: string): Promise<void>;
   runAsync(sql: string, params?: unknown[]): Promise<unknown>;
   getFirstAsync<T>(sql: string, params?: unknown[]): Promise<T | null>;
   getAllAsync<T>(sql: string, params?: unknown[]): Promise<T[]>;
-  withExclusiveTransactionAsync(task: (txn: L1SqliteLike) => Promise<void>): Promise<void>;
   closeAsync(): Promise<void>;
 };
 
@@ -31,6 +39,28 @@ function bytesToHex(bytes: Uint8Array): string {
 
 function escapeSqlLiteral(value: string): string {
   return value.replace(/'/g, "''");
+}
+
+function sqlcipherRequiredError(): Error & { code: string } {
+  const error = new Error("SQLCipher absent. Aucun cache métier plaintext n'est créé.") as Error & {
+    code: string;
+  };
+  error.code = L1_ERROR.SQLCIPHER_REQUIRED;
+  return error;
+}
+
+/**
+ * Applique la clé SQLCipher sur une connexion, puis exige `cipher_version` non vide.
+ * Jamais de fallback plaintext. La clé n'est pas loggée.
+ */
+async function applySqlCipherKey(db: L1SqliteLike, key: string): Promise<string> {
+  await db.execAsync(`PRAGMA key = '${escapeSqlLiteral(key)}'`);
+  const pragma = await db.getFirstAsync<{ cipher_version?: string }>("PRAGMA cipher_version");
+  const cipherVersion = String(pragma?.cipher_version ?? "").trim();
+  if (!cipherVersion) {
+    throw sqlcipherRequiredError();
+  }
+  return cipherVersion;
 }
 
 function enqueueWrite<T>(tail: { current: Promise<void> }, fn: () => Promise<T>): Promise<T> {
@@ -228,7 +258,17 @@ function createSqliteOps(handle: L1SqliteLike): L1Txn {
   return ops;
 }
 
-function createSqliteStore(db: L1SqliteLike, cipherVersion: string): L1Store {
+/**
+ * Store SQLCipher. `key` reste en closure mémoire, jamais loggée ni réextraite.
+ * Expo `withExclusiveTransactionAsync` ouvre une nouvelle connexion native
+ * (`useNewConnection: true`) sans `PRAGMA key` — on n'utilise pas cette API.
+ */
+function createSqliteStore(
+  db: L1SqliteLike,
+  cipherVersion: string,
+  key: string,
+  openDatabase: L1OpenDatabase,
+): L1Store {
   const writeTail = { current: Promise.resolve() };
   const root = createSqliteOps(db);
 
@@ -246,11 +286,21 @@ function createSqliteStore(db: L1SqliteLike, cipherVersion: string): L1Store {
     },
     async withExclusiveTransaction<T>(fn: (txn: L1Txn) => Promise<T>): Promise<T> {
       return enqueueWrite(writeTail, async () => {
-        let result: T | undefined;
-        await db.withExclusiveTransactionAsync(async (txn) => {
-          result = await fn(createSqliteOps(txn));
-        });
-        return result as T;
+        const txnDb = await openDatabase(L1_DB_FILENAME, { useNewConnection: true });
+        try {
+          await applySqlCipherKey(txnDb, key);
+          await txnDb.execAsync("BEGIN EXCLUSIVE TRANSACTION");
+          try {
+            const result = await fn(createSqliteOps(txnDb));
+            await txnDb.execAsync("COMMIT");
+            return result;
+          } catch (error) {
+            await txnDb.execAsync("ROLLBACK").catch(() => undefined);
+            throw error;
+          }
+        } finally {
+          await txnDb.closeAsync().catch(() => undefined);
+        }
       });
     },
     upsertRow: (resource, partition, row) => enqueueWrite(writeTail, () => root.upsertRow(resource, partition, row)),
@@ -269,7 +319,7 @@ function createSqliteStore(db: L1SqliteLike, cipherVersion: string): L1Store {
 
 export async function openEncryptedL1Database(deps: {
   platform: string;
-  openDatabase: (name: string) => Promise<L1SqliteLike>;
+  openDatabase: L1OpenDatabase;
   keyStore: L1KeyStore;
   generateKey: () => Promise<string>;
 }): Promise<L1OpenResult> {
@@ -283,27 +333,28 @@ export async function openEncryptedL1Database(deps: {
 
   const key = await loadOrCreateL1DbKey(deps.keyStore, deps.generateKey);
   const db = await deps.openDatabase(L1_DB_FILENAME);
-  await db.execAsync(`PRAGMA key = '${escapeSqlLiteral(key)}'`);
-  const pragma = await db.getFirstAsync<{ cipher_version?: string }>("PRAGMA cipher_version");
-  const cipherVersion = String(pragma?.cipher_version ?? "").trim();
-  if (!cipherVersion) {
-    await db.closeAsync().catch(() => undefined);
-    return {
-      ok: false,
-      code: L1_ERROR.SQLCIPHER_REQUIRED,
-      message: "SQLCipher absent. Aucun cache métier plaintext n'est créé.",
-    };
-  }
-
   try {
-    await runNativeSqlCipherBootProbe(db, cipherVersion);
-  } catch (error) {
-    safeLogger.warn("l1_sqlcipher_probe_failed", error);
-  }
+    const cipherVersion = await applySqlCipherKey(db, key);
+    try {
+      await runNativeSqlCipherBootProbe(db, cipherVersion);
+    } catch (error) {
+      safeLogger.warn("l1_sqlcipher_probe_failed", error);
+    }
 
-  const store = createSqliteStore(db, cipherVersion);
-  await store.migrate();
-  return { ok: true, store };
+    const store = createSqliteStore(db, cipherVersion, key, deps.openDatabase);
+    await store.migrate();
+    return { ok: true, store };
+  } catch (error) {
+    await db.closeAsync().catch(() => undefined);
+    if (error && typeof error === "object" && (error as { code?: string }).code === L1_ERROR.SQLCIPHER_REQUIRED) {
+      return {
+        ok: false,
+        code: L1_ERROR.SQLCIPHER_REQUIRED,
+        message: "SQLCipher absent. Aucun cache métier plaintext n'est créé.",
+      };
+    }
+    throw error;
+  }
 }
 
 let nativeOpenPromise: Promise<L1OpenResult> | null = null;
@@ -325,7 +376,10 @@ async function openNativeL1DatabaseUncached(): Promise<L1OpenResult> {
   }
 
   const SQLite = require("expo-sqlite") as {
-    openDatabaseAsync: (name: string) => Promise<L1SqliteLike>;
+    openDatabaseAsync: (
+      name: string,
+      options?: { useNewConnection?: boolean },
+    ) => Promise<L1SqliteLike>;
   };
   const SecureStore = require("expo-secure-store") as {
     getItemAsync: (key: string) => Promise<string | null>;
@@ -342,7 +396,7 @@ async function openNativeL1DatabaseUncached(): Promise<L1OpenResult> {
 
   return openEncryptedL1Database({
     platform,
-    openDatabase: (name) => SQLite.openDatabaseAsync(name),
+    openDatabase: (name, options) => SQLite.openDatabaseAsync(name, options),
     keyStore: {
       async getItem(key) {
         return SecureStore.getItemAsync(key);

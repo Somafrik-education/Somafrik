@@ -20,7 +20,7 @@ import { applyL1PageAtomically } from "./repository";
 import { FORBIDDEN_L1_COLUMNS, SCHEMA_MIGRATION_V1 } from "./schema";
 import { validateL1Page } from "./syncApi";
 import { syncL1Cache } from "./syncEngine";
-import { L1_ERROR, L1_RESOURCES, type L1Api, type L1Page, type L1Partition, type L1Resource } from "./types";
+import { L1_DB_FILENAME, L1_ERROR, L1_LOCAL_SCHEMA_VERSION, L1_RESOURCES, type L1Api, type L1Page, type L1Partition, type L1Resource } from "./types";
 
 const ROOT = path.resolve(__dirname, "../../..");
 const partitionA: L1Partition = { userId: "user-a", schoolId: "school-a", schoolCode: "SCH-A" };
@@ -64,6 +64,182 @@ function httpError(status: number, code: string): Error {
   return error;
 }
 
+type FakeSqlCipherOpen = {
+  openDatabase: (name: string, options?: { useNewConnection?: boolean }) => Promise<L1SqliteLike>;
+  opens: Array<{ name: string; useNewConnection: boolean }>;
+  connections: Array<{
+    id: number;
+    useNewConnection: boolean;
+    keyed: boolean;
+    closed: boolean;
+    sql: string[];
+  }>;
+};
+
+function createFakeSqlCipherOpen(cipherVersion = "4.7.0 community"): FakeSqlCipherOpen {
+  const file = {
+    expectedKey: null as string | null,
+    schemaVersion: null as number | null,
+    probe: null as { cipher_version: string; written_at: string } | null,
+    meta: new Map<
+      string,
+      {
+        user_id: string;
+        school_id: string;
+        school_code: string | null;
+        resource: string;
+        cursor: string | null;
+        scope_hash: string | null;
+        state: string;
+        schema_version: number;
+        last_success_at: string | null;
+      }
+    >(),
+  };
+  const opens: FakeSqlCipherOpen["opens"] = [];
+  const connections: FakeSqlCipherOpen["connections"] = [];
+  let nextId = 0;
+  let sharedMain: L1SqliteLike | null = null;
+
+  function parsePragmaKey(sql: string): string | null {
+    const match = sql.match(/^\s*PRAGMA key\s*=\s*'((?:''|[^'])*)'\s*;?\s*$/i);
+    return match ? match[1].replace(/''/g, "'") : null;
+  }
+
+  function createConnection(useNewConnection: boolean): L1SqliteLike {
+    const state = {
+      id: nextId += 1,
+      useNewConnection,
+      keyed: false,
+      appliedKey: null as string | null,
+      closed: false,
+      inTxn: false,
+      pendingMeta: null as typeof file.meta | null,
+      sql: [] as string[],
+    };
+    connections.push(state);
+
+    function metaStore() {
+      return state.inTxn && state.pendingMeta ? state.pendingMeta : file.meta;
+    }
+
+    function assertKeyed(sql: string) {
+      if (state.closed) {
+        throw new Error("connection closed");
+      }
+      if (parsePragmaKey(sql) != null || /PRAGMA cipher_version/i.test(sql)) {
+        return;
+      }
+      if (!state.keyed) {
+        const error = new Error("file is not a database") as Error & { code: string };
+        error.code = L1_ERROR.UNLOCK_FAILED;
+        throw error;
+      }
+      if (file.expectedKey && state.appliedKey !== file.expectedKey) {
+        const error = new Error("file is not a database") as Error & { code: string };
+        error.code = L1_ERROR.UNLOCK_FAILED;
+        throw error;
+      }
+    }
+
+    return {
+      async execAsync(sql: string) {
+        state.sql.push(sql);
+        const key = parsePragmaKey(sql);
+        if (key != null) {
+          state.keyed = true;
+          state.appliedKey = key;
+          if (!file.expectedKey) file.expectedKey = key;
+          return;
+        }
+        assertKeyed(sql);
+        if (/^BEGIN/i.test(sql)) {
+          state.inTxn = true;
+          state.pendingMeta = new Map(file.meta);
+          return;
+        }
+        if (/^COMMIT/i.test(sql)) {
+          if (state.pendingMeta) file.meta = state.pendingMeta;
+          state.pendingMeta = null;
+          state.inTxn = false;
+          return;
+        }
+        if (/^ROLLBACK/i.test(sql)) {
+          state.pendingMeta = null;
+          state.inTxn = false;
+        }
+      },
+      async runAsync(sql: string, params: unknown[] = []) {
+        state.sql.push(sql);
+        assertKeyed(sql);
+        if (/INSERT OR REPLACE INTO l1_native_sqlcipher_probe/.test(sql)) {
+          file.probe = {
+            cipher_version: String(params[1]),
+            written_at: String(params[2]),
+          };
+          return;
+        }
+        if (/INSERT OR REPLACE INTO schema_migrations/.test(sql)) {
+          file.schemaVersion = Number(params[0]);
+          return;
+        }
+        if (/INSERT INTO l1_sync_meta/.test(sql)) {
+          const row = {
+            user_id: String(params[0]),
+            school_id: String(params[1]),
+            school_code: params[2] == null ? null : String(params[2]),
+            resource: String(params[3]),
+            cursor: params[4] == null ? null : String(params[4]),
+            scope_hash: params[5] == null ? null : String(params[5]),
+            state: String(params[6]),
+            schema_version: Number(params[7]),
+            last_success_at: params[8] == null ? null : String(params[8]),
+          };
+          metaStore().set(`${row.user_id}\0${row.school_id}\0${row.resource}`, row);
+        }
+      },
+      async getFirstAsync<T>(sql: string, params: unknown[] = []): Promise<T | null> {
+        state.sql.push(sql);
+        if (/PRAGMA cipher_version/i.test(sql)) {
+          return { cipher_version: cipherVersion } as T;
+        }
+        assertKeyed(sql);
+        if (/l1_native_sqlcipher_probe/.test(sql)) {
+          return (file.probe ?? null) as T | null;
+        }
+        if (/schema_migrations/.test(sql)) {
+          return file.schemaVersion == null ? null : ({ version: file.schemaVersion } as T);
+        }
+        if (/FROM l1_sync_meta/.test(sql)) {
+          const row = metaStore().get(`${String(params[0])}\0${String(params[1])}\0${String(params[2])}`);
+          return (row ?? null) as T | null;
+        }
+        return null;
+      },
+      async getAllAsync<T>() {
+        return [] as T[];
+      },
+      async closeAsync() {
+        state.closed = true;
+      },
+    };
+  }
+
+  return {
+    opens,
+    connections,
+    async openDatabase(name, options) {
+      const useNewConnection = options?.useNewConnection === true;
+      opens.push({ name, useNewConnection });
+      if (!useNewConnection) {
+        if (!sharedMain) sharedMain = createConnection(false);
+        return sharedMain;
+      }
+      return createConnection(true);
+    },
+  };
+}
+
 async function run() {
   resetL1LifecycleForTests();
   const src = fs.readFileSync(path.join(ROOT, "src/offline/l1/database.ts"), "utf8");
@@ -84,7 +260,9 @@ async function run() {
   assert.match(src, /l1_native_sqlcipher_probe/);
   assert.match(typesSrc, /L1_SQLCIPHER_REQUIRED/);
   assert.match(src, /L1_ERROR\.SQLCIPHER_REQUIRED/);
-  assert.match(src, /withExclusiveTransactionAsync/);
+  assert.match(src, /useNewConnection:\s*true/);
+  assert.match(src, /BEGIN EXCLUSIVE TRANSACTION/);
+  assert.doesNotMatch(src, /\.withExclusiveTransactionAsync\s*\(/);
   assert.doesNotMatch(src, /withTransactionAsync/);
   assert.doesNotMatch(SCHEMA_MIGRATION_V1, /REFERENCES l1_/);
   for (const forbidden of FORBIDDEN_L1_COLUMNS) {
@@ -152,9 +330,6 @@ async function run() {
         async getAllAsync() {
           return [];
         },
-        async withExclusiveTransactionAsync(task: (txn: L1SqliteLike) => Promise<void>) {
-          await task(this as unknown as L1SqliteLike);
-        },
         async closeAsync() {
           return;
         },
@@ -190,9 +365,6 @@ async function run() {
     async getAllAsync() {
       return [];
     },
-    async withExclusiveTransactionAsync(task) {
-      await task(probeDb);
-    },
     async closeAsync() {
       return;
     },
@@ -202,6 +374,90 @@ async function run() {
   assert.equal(probeInit.cipherVersion, "4.6.1 community");
   const probeOk = await runNativeSqlCipherBootProbe(probeDb, "4.6.1 community");
   assert.equal(probeOk.persist, "ok", "kill/relaunch simulé : même DB chiffrée, lecture OK");
+
+  const keyedFile = createFakeSqlCipherOpen();
+  const keyedStoreKey = await generateL1DbKeyHex(() => Uint8Array.from({ length: 32 }, (_, i) => 32 - i));
+  const keyedOpen = await openEncryptedL1Database({
+    platform: "android",
+    openDatabase: (name, options) => keyedFile.openDatabase(name, options),
+    keyStore: {
+      getItem: async () => keyedStoreKey,
+      setItem: async () => undefined,
+    },
+    generateKey: async () => keyedStoreKey,
+  });
+  assert.equal(keyedOpen.ok, true);
+  if (!keyedOpen.ok) throw new Error("SQLCipher fake doit s'ouvrir");
+  assert.equal(await keyedOpen.store.getMeta(partitionA, "classes"), null, "main keyed : lecture OK");
+  await keyedOpen.store.withExclusiveTransaction(async (txn) => {
+    await txn.putMeta({
+      userId: partitionA.userId,
+      schoolId: partitionA.schoolId,
+      schoolCode: partitionA.schoolCode,
+      resource: "classes",
+      cursor: null,
+      scopeHash: null,
+      state: "reconciling",
+      schemaVersion: L1_LOCAL_SCHEMA_VERSION,
+      lastSuccessAt: null,
+    });
+  });
+  assert.equal((await keyedOpen.store.getMeta(partitionA, "classes"))?.state, "reconciling", "main relu après COMMIT");
+  assert.ok(
+    keyedFile.opens.some((open) => open.name === L1_DB_FILENAME && open.useNewConnection),
+    "transaction = nouvelle connexion",
+  );
+  const txnConn = keyedFile.connections.find((row) => row.useNewConnection);
+  assert.ok(txnConn, "connexion transactionnelle ouverte");
+  const txnKeyIdx = txnConn.sql.findIndex((sql) => /^\s*PRAGMA key\s*=/i.test(sql));
+  const txnBeginIdx = txnConn.sql.findIndex((sql) => /^BEGIN EXCLUSIVE TRANSACTION/i.test(sql));
+  const txnWriteIdx = txnConn.sql.findIndex((sql) => /INSERT INTO l1_sync_meta/i.test(sql));
+  const txnCommitIdx = txnConn.sql.findIndex((sql) => /^COMMIT/i.test(sql));
+  assert.ok(txnKeyIdx >= 0, "même PRAGMA key sur la connexion transactionnelle");
+  assert.ok(txnBeginIdx > txnKeyIdx, "BEGIN après PRAGMA key");
+  assert.ok(txnWriteIdx > txnBeginIdx, "write meta après BEGIN");
+  assert.ok(txnCommitIdx > txnWriteIdx, "COMMIT après write");
+  assert.equal(txnConn.closed, true, "connexion transactionnelle fermée");
+  assert.equal(
+    txnConn.sql.some((sql) => /INSERT INTO l1_sync_meta/i.test(sql)) && txnConn.keyed,
+    true,
+  );
+
+  const unkeyed = await keyedFile.openDatabase(L1_DB_FILENAME, { useNewConnection: true });
+  await assert.rejects(
+    () =>
+      unkeyed.runAsync(
+        `INSERT INTO l1_sync_meta (
+           user_id, school_id, school_code, resource, cursor, scope_hash, state, schema_version, last_success_at
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [partitionA.userId, partitionA.schoolId, partitionA.schoolCode, "classes", null, null, "ready", 1, null],
+      ),
+    (error: unknown) =>
+      Boolean(error && typeof error === "object" && (error as { code?: string }).code === L1_ERROR.UNLOCK_FAILED),
+    "connexion transactionnelle non keyée refusée — jamais un fallback plaintext",
+  );
+  await unkeyed.closeAsync();
+
+  await assert.rejects(
+    () =>
+      keyedOpen.store.withExclusiveTransaction(async (txn) => {
+        await txn.putMeta({
+          userId: partitionA.userId,
+          schoolId: partitionA.schoolId,
+          schoolCode: partitionA.schoolCode,
+          resource: "students",
+          cursor: null,
+          scopeHash: null,
+          state: "ready",
+          schemaVersion: L1_LOCAL_SCHEMA_VERSION,
+          lastSuccessAt: null,
+        });
+        throw new Error("force-rollback");
+      }),
+  );
+  assert.equal(await keyedOpen.store.getMeta(partitionA, "students"), null, "ROLLBACK : meta non visible sur main");
+
+  await keyedOpen.store.close();
 
   const persist = createMemoryL1Bucket();
   const store = createMemoryL1Store({ cipherKey: "alpha", openKey: "alpha", bucket: persist });
