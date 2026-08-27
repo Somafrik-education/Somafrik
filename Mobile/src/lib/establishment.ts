@@ -94,7 +94,14 @@ function collectSessionTeacherRefKeys(
 function assignmentBelongsToTeacher(assignment: TeacherAssignment | Row, refKeys: Set<string>): boolean {
   if (!refKeys.size) return false;
   const row = assignment as Row;
-  for (const value of [row.teacherId, row.teacherCode, row.teacher_id, row.teacher_code]) {
+  for (const value of [
+    row.teacherId,
+    row.teacherCode,
+    row.teacherUserId,
+    row.teacher_id,
+    row.teacher_code,
+    row.teacher_user_id,
+  ]) {
     const key = String(value ?? "").trim();
     if (key && refKeys.has(key)) return true;
   }

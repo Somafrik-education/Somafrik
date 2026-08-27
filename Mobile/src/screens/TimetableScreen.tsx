@@ -1,6 +1,7 @@
 import { useCallback, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   ScrollView,
   StyleSheet,
   Text,
@@ -15,6 +16,8 @@ import { useAdminData } from "../context/AdminDataContext";
 import QueryStateView from "../components/QueryStateView";
 import { hasSecurityPermission } from "../domain/security/permissions";
 import { DATA_TRUTH_TEST_IDS } from "../lib/dataTruth";
+import { OFFLINE_COPY } from "../lib/offlineModeSpec";
+import { shouldBlockUnsupportedMutations, shouldSkipMetierGet } from "../offline/l1/readModel";
 import { useResponsiveLayout } from "../hooks/useResponsiveLayout";
 import { useStackScreenBottomPadding } from "../lib/screenLayout";
 import {
@@ -33,6 +36,7 @@ import {
   PLANNING_WEEKDAY_CHIPS,
   resolveReplacementProjection,
   selectableRooms,
+  type CanonicalReplacement,
   type CanonicalWeeklySlot,
   type DisplayedOccurrence,
   type PlanningCourseOption,
@@ -61,7 +65,7 @@ export default function TimetableScreen() {
       width: "100%" as const,
     },
   ];
-  const { session } = useAuth();
+  const { session, permissionsBootstrap } = useAuth();
   const {
     courseSchedulesSnapshot,
     planningCourseOptionsSnapshot,
@@ -79,6 +83,11 @@ export default function TimetableScreen() {
   const canReplace = hasSecurityPermission(session, "Remplacements", "CREATE");
   const canReadRooms = hasSecurityPermission(session, "Salles", "READ");
   const canReadReplacements = hasSecurityPermission(session, "Remplacements", "READ");
+  const mutationsBlocked = shouldBlockUnsupportedMutations({
+    source: courseSchedulesSnapshot.source,
+    permissionsBootstrap,
+  });
+  const l1ReadOnly = mutationsBlocked || courseSchedulesSnapshot.source === "l1-cache";
 
   const [selectedDay, setSelectedDay] = useState(todayDayOfWeek() === 7 ? 1 : todayDayOfWeek());
   const [mode, setMode] = useState<Mode>("list");
@@ -99,6 +108,7 @@ export default function TimetableScreen() {
 
   const refreshPlanning = useCallback(async () => {
     await loadPlanningWeekly();
+    if (shouldSkipMetierGet(permissionsBootstrap) || l1ReadOnly) return;
     if (canReadReplacements) await loadReplacements();
     if (canWrite || canUpdate) await loadPlanningCourseOptions();
     if (canReadRooms && (canWrite || canUpdate)) await loadRooms();
@@ -107,10 +117,12 @@ export default function TimetableScreen() {
     canReadRooms,
     canUpdate,
     canWrite,
+    l1ReadOnly,
     loadPlanningCourseOptions,
     loadPlanningWeekly,
     loadReplacements,
     loadRooms,
+    permissionsBootstrap,
   ]);
 
   useFocusEffect(
@@ -120,7 +132,15 @@ export default function TimetableScreen() {
   );
 
   const occurrenceDateForDay = nearestOccurrenceDate(selectedDay);
-  const replacementProjection = resolveReplacementProjection(replacementsSnapshot, canReadReplacements);
+  const replacementProjection = l1ReadOnly
+    ? {
+        replacements: [] as CanonicalReplacement[],
+        overlay: false,
+        unverified: true,
+        confirmedEmpty: false,
+        showUnavailableWarning: true,
+      }
+    : resolveReplacementProjection(replacementsSnapshot, canReadReplacements);
   const occurrences = useMemo(
     () =>
       displayedOccurrencesForDay({
@@ -151,7 +171,15 @@ export default function TimetableScreen() {
     courseSchedulesSnapshot.status === "empty" ||
     (courseSchedulesSnapshot.status === "success" && occurrences.length === 0 && mode === "list");
 
+  const refuseMutation = () => {
+    Alert.alert("Hors ligne", OFFLINE_COPY.mutationRequiresConnection);
+  };
+
   const openCreate = () => {
+    if (mutationsBlocked) {
+      refuseMutation();
+      return;
+    }
     setMode("create");
     setEditing(null);
     setSchoolCourseId(courseOptions[0]?.schoolCourseId ?? "");
@@ -163,6 +191,10 @@ export default function TimetableScreen() {
   };
 
   const openEdit = (slot: CanonicalWeeklySlot) => {
+    if (mutationsBlocked) {
+      refuseMutation();
+      return;
+    }
     if (!canUpdate) return;
     setMode("edit");
     setEditing(slot);
@@ -175,6 +207,10 @@ export default function TimetableScreen() {
   };
 
   const openReplace = async (slot: CanonicalWeeklySlot) => {
+    if (mutationsBlocked) {
+      refuseMutation();
+      return;
+    }
     if (!canReplace) return;
     const date = nearestOccurrenceDate(slot.dayOfWeek);
     setMode("replace");
@@ -194,6 +230,10 @@ export default function TimetableScreen() {
   };
 
   const handleSaveSlot = async () => {
+    if (mutationsBlocked) {
+      refuseMutation();
+      return;
+    }
     if (!saveLockRef.current.tryBegin()) return;
     const option = selectedOption;
     if (!option && mode === "create") {
@@ -247,6 +287,10 @@ export default function TimetableScreen() {
   };
 
   const handleDelete = async () => {
+    if (mutationsBlocked) {
+      refuseMutation();
+      return;
+    }
     if (!editing || !canDelete || saving) return;
     setSaving(true);
     setSaveError("");
@@ -263,6 +307,10 @@ export default function TimetableScreen() {
   };
 
   const handleSaveReplacement = async () => {
+    if (mutationsBlocked) {
+      refuseMutation();
+      return;
+    }
     if (!saveLockRef.current.tryBegin() || !editing) return;
     if (!substituteTeacherId) {
       saveLockRef.current.end();
@@ -323,8 +371,8 @@ export default function TimetableScreen() {
     <TouchableOpacity
       key={item.id}
       style={styles.card}
-      onPress={() => (canUpdate ? openEdit(item) : undefined)}
-      disabled={!canUpdate}
+      onPress={() => (canUpdate && !mutationsBlocked ? openEdit(item) : undefined)}
+      disabled={!canUpdate || mutationsBlocked}
       testID={PLANNING_V2_TEST_IDS.slotCard}
     >
       <View style={styles.timeBox}>
@@ -346,7 +394,7 @@ export default function TimetableScreen() {
           </Text>
         ) : null}
       </View>
-      {canReplace && !compact ? (
+      {canReplace && !compact && !mutationsBlocked ? (
         <TouchableOpacity
           onPress={() => void openReplace(item)}
           accessibilityRole="button"
@@ -565,7 +613,16 @@ export default function TimetableScreen() {
           : "Planning établissement"}
       </Text>
 
-      {canWrite ? (
+      {l1ReadOnly ? (
+        <View style={styles.warningBanner} testID="l1-offline-banner">
+          <Text style={styles.warningTitle}>{OFFLINE_COPY.l1ModeTitle}</Text>
+          <Text style={styles.warningText}>
+            {OFFLINE_COPY.l1LastSyncPrefix} : {courseSchedulesSnapshot.cachedAt || "—"}
+          </Text>
+        </View>
+      ) : null}
+
+      {canWrite && !mutationsBlocked ? (
         <TouchableOpacity style={styles.primaryButton} onPress={openCreate} testID={PLANNING_V2_TEST_IDS.createButton}>
           <Text style={styles.primaryText}>Ajouter un créneau</Text>
         </TouchableOpacity>
@@ -577,15 +634,17 @@ export default function TimetableScreen() {
         <View style={styles.warningBanner} testID={PLANNING_V2_TEST_IDS.replacementsWarning} accessibilityRole="alert">
           <Text style={styles.warningTitle}>⚠ {PLANNING_V2_COPY.replacementsUnavailable}</Text>
           <Text style={styles.warningText}>{PLANNING_V2_COPY.replacementsUnverifiedHint}</Text>
-          <TouchableOpacity
-            style={styles.retry}
-            onPress={() => void loadReplacements()}
-            testID={PLANNING_V2_TEST_IDS.replacementsRetry}
-            accessibilityRole="button"
-            accessibilityLabel={PLANNING_V2_COPY.retry}
-          >
-            <Text style={styles.retryText}>{PLANNING_V2_COPY.retry}</Text>
-          </TouchableOpacity>
+          {!l1ReadOnly ? (
+            <TouchableOpacity
+              style={styles.retry}
+              onPress={() => void loadReplacements()}
+              testID={PLANNING_V2_TEST_IDS.replacementsRetry}
+              accessibilityRole="button"
+              accessibilityLabel={PLANNING_V2_COPY.retry}
+            >
+              <Text style={styles.retryText}>{PLANNING_V2_COPY.retry}</Text>
+            </TouchableOpacity>
+          ) : null}
         </View>
       ) : null}
 

@@ -50,6 +50,8 @@ import {
 
 import { isMetricReady, metricLabelFromSnapshot } from "../lib/dataTruth";
 import { formatPaymentRateKpi } from "../lib/paymentRateKpi";
+import { shouldBlockUnsupportedMutations } from "../offline/l1/readModel";
+import { OFFLINE_COPY } from "../lib/offlineModeSpec";
 
 import { studentDisplayName } from "../lib/studentDisplayName";
 
@@ -82,13 +84,17 @@ export default function StudentsScreen({ route, navigation }: any) {
 
   const scrollContentStyle = [styles.scrollContent, { paddingBottom: scrollContentPaddingBottom }];
 
-  const { session } = useAuth();
+  const { session, permissionsBootstrap } = useAuth();
 
   const { studentsData, presencesData, teachersData, assignmentsData, classesData, loadStudents, loadPresences, loadPayments, loadStudentFees, loadTeachers, loadClasses, loadAssignments, studentsSnapshot, presencesSnapshot, studentFeesSnapshot, resourceScopeKey } = useAdminData();
 
   const className = route?.params?.className ?? "Toutes les classes";
 
   const [query, setQuery] = useState("");
+  const mutationsBlocked = shouldBlockUnsupportedMutations({
+    source: studentsSnapshot.source,
+    permissionsBootstrap,
+  });
 
   useFocusEffect(
     useCallback(() => {
@@ -231,6 +237,7 @@ export default function StudentsScreen({ route, navigation }: any) {
       className={className}
       classes={classesData}
       createTestId={CLASSES_STUDENT_TEST_IDS.studentsAddButton}
+      networkRequired={mutationsBlocked}
       onChanged={() => loadStudents()}
     />
   );
@@ -374,6 +381,7 @@ export default function StudentsScreen({ route, navigation }: any) {
             row={student}
             className={className}
             classes={classesData}
+            networkRequired={mutationsBlocked}
             onChanged={() => loadStudents()}
           />
         </View>
@@ -382,7 +390,7 @@ export default function StudentsScreen({ route, navigation }: any) {
 
     },
 
-    [className, classesData, loadStudents, openStudentDetail, presenceByStudentId],
+    [className, classesData, loadStudents, mutationsBlocked, openStudentDetail, presenceByStudentId],
 
   );
 
@@ -459,6 +467,15 @@ export default function StudentsScreen({ route, navigation }: any) {
         </View>
 
           {renderStudentCreate()}
+
+        {mutationsBlocked ? (
+          <Text style={{ color: "#B91C1C", fontWeight: "700", marginBottom: 12 }} testID="l1-offline-banner">
+            {OFFLINE_COPY.l1ModeTitle}
+            {studentsSnapshot.cachedAt
+              ? ` — ${OFFLINE_COPY.l1LastSyncPrefix} : ${studentsSnapshot.cachedAt}`
+              : ""}
+          </Text>
+        ) : null}
 
         <FormField
           label="Recherche"

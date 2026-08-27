@@ -76,6 +76,16 @@ import {
   type PlanningCourseOption,
 } from "../lib/planningV2";
 import { useAuth } from "./AuthContext";
+import { loadL1BackedSnapshot } from "../offline/l1/readModel";
+import {
+  classRowsForJoin,
+  projectL1Assignments,
+  projectL1Classes,
+  projectL1CourseSchedules,
+  projectL1SchoolCourses,
+  projectL1Students,
+} from "../offline/l1/uiProjection";
+import { listSchoolClassCourses, type SchoolClassCourseRecord } from "../services/schoolSettingsApi";
 
 export type AdminEntity =
   | "students"
@@ -110,6 +120,8 @@ type AdminDataContextValue = {
   teachersSnapshot: ResourceSnapshot<CanonicalTeacher>;
   studentsSnapshot: ResourceSnapshot<Student>;
   classesSnapshot: ResourceSnapshot<SchoolClass>;
+  assignmentsSnapshot: ResourceSnapshot<TeacherAssignment>;
+  schoolCoursesSnapshot: ResourceSnapshot<SchoolClassCourseRecord>;
   presencesSnapshot: ResourceSnapshot<PresenceItem>;
   announcementsSnapshot: ResourceSnapshot<CanonicalAnnouncement>;
   messagesSnapshot: ResourceSnapshot<CanonicalSchoolMessage>;
@@ -126,6 +138,7 @@ type AdminDataContextValue = {
   loadStudents: () => Promise<void>;
   loadClasses: () => Promise<void>;
   loadAssignments: () => Promise<void>;
+  loadSchoolCourses: () => Promise<void>;
   loadAnnouncements: () => Promise<void>;
   loadMessages: () => Promise<void>;
   loadSchools: () => Promise<void>;
@@ -206,7 +219,7 @@ const emptyAcademicConfig: AcademicManagementConfig = {
 export function AdminDataProvider({ children }: { children: React.ReactNode }) {
   // L8 : AuthContext reste l'autorité unique du bootstrap et du refresh foreground.
   // AdminDataContext ne fetch pas effective-permissions et ne modifie pas session.permissions.
-  const { session } = useAuth();
+  const { session, permissionsBootstrap } = useAuth();
   const [studentsData, setStudentsData] = useState<Student[]>([]);
   const [teachersData, setTeachersData] = useState<Teacher[]>([]);
   const [classesData, setClassesData] = useState<SchoolClass[]>([]);
@@ -277,6 +290,14 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
     data: [],
   });
   const [classesSnapshot, setClassesSnapshot] = useState<ResourceSnapshot<SchoolClass>>({
+    status: "idle",
+    data: [],
+  });
+  const [assignmentsSnapshot, setAssignmentsSnapshot] = useState<ResourceSnapshot<TeacherAssignment>>({
+    status: "idle",
+    data: [],
+  });
+  const [schoolCoursesSnapshot, setSchoolCoursesSnapshot] = useState<ResourceSnapshot<SchoolClassCourseRecord>>({
     status: "idle",
     data: [],
   });
@@ -366,6 +387,8 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
     setTeachersSnapshot(emptyResourceSnapshot());
     setStudentsSnapshot(emptyResourceSnapshot());
     setClassesSnapshot(emptyResourceSnapshot());
+    setAssignmentsSnapshot(emptyResourceSnapshot());
+    setSchoolCoursesSnapshot(emptyResourceSnapshot());
     setPresencesSnapshot(emptyResourceSnapshot());
     setAnnouncementsSnapshot(emptyResourceSnapshot());
     setMessagesSnapshot(emptyResourceSnapshot());
@@ -550,14 +573,17 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
       const studentRows = Array.isArray(studentPayload) ? (studentPayload as Student[]) : [];
       const classRows = Array.isArray(classPayload) ? (classPayload as SchoolClass[]) : [];
       const presenceRows = Array.isArray(presencePayload) ? (presencePayload as PresenceItem[]) : [];
-      setStudentsSnapshot(snapshotFromSuccess(studentRows));
-      setClassesSnapshot(snapshotFromSuccess(classRows));
+      setStudentsSnapshot(snapshotFromSuccess(studentRows, { source: "network" }));
+      setClassesSnapshot(snapshotFromSuccess(classRows, { source: "network" }));
       const canonicalNotes = Array.isArray(notePayload) ? notePayload : [];
       setNotesSnapshot(snapshotFromSuccess(canonicalNotes));
       setNotesData(canonicalNotes.map(canonicalGradeToNoteItem));
       applyArray(presencePayload, setPresencesData);
       setPresencesSnapshot(snapshotFromSuccess(presenceRows));
       applyArray(assignmentPayload, setAssignmentsData);
+      setAssignmentsSnapshot(
+        snapshotFromSuccess(Array.isArray(assignmentPayload) ? assignmentPayload : [], { source: "network" }),
+      );
       const subjectRows = Array.isArray(subjectPayload)
         ? subjectPayload
         : subjectPayload && typeof subjectPayload === "object" && Array.isArray((subjectPayload as { items?: unknown[] }).items)
@@ -646,42 +672,83 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
     const scope = resourceScopeKeyRef.current;
     setStudentsSnapshot((current) => ({ ...current, status: "loading" }));
     try {
-      const rows = (await getStudents()) as Student[];
+      const snapshot = await loadL1BackedSnapshot({
+        session,
+        permissionsBootstrap,
+        resource: "students",
+        fetchNetwork: async () => (await getStudents()) as Student[],
+        project: async (read) => projectL1Students(read, await classRowsForJoin(session)),
+      });
       if (resourceScopeKeyRef.current !== scope) return;
-      setStudentsData(rows);
-      setStudentsSnapshot(snapshotFromSuccess(rows));
+      setStudentsData(snapshot.data);
+      setStudentsSnapshot(snapshot);
     } catch (error) {
       if (resourceScopeKeyRef.current !== scope) return;
       setStudentsSnapshot((current) => snapshotFromFailure(error, current.data));
     }
-  }, [session]);
+  }, [session, permissionsBootstrap]);
 
   const loadClasses = useCallback(async () => {
     if (!session) return;
     const scope = resourceScopeKeyRef.current;
     setClassesSnapshot((current) => ({ ...current, status: "loading" }));
     try {
-      const rows = (await getClasses()) as SchoolClass[];
+      const snapshot = await loadL1BackedSnapshot({
+        session,
+        permissionsBootstrap,
+        resource: "classes",
+        fetchNetwork: async () => (await getClasses()) as SchoolClass[],
+        project: (read) => projectL1Classes(read),
+      });
       if (resourceScopeKeyRef.current !== scope) return;
-      setClassesData(rows);
-      setClassesSnapshot(snapshotFromSuccess(rows));
+      setClassesData(snapshot.data);
+      setClassesSnapshot(snapshot);
     } catch (error) {
       if (resourceScopeKeyRef.current !== scope) return;
       setClassesSnapshot((current) => snapshotFromFailure(error, current.data));
     }
-  }, [session]);
+  }, [session, permissionsBootstrap]);
 
   const loadAssignments = useCallback(async () => {
     if (!session) return;
     const scope = resourceScopeKeyRef.current;
+    setAssignmentsSnapshot((current) => ({ ...current, status: "loading" }));
     try {
-      const rows = await getAssignments();
+      const snapshot = await loadL1BackedSnapshot({
+        session,
+        permissionsBootstrap,
+        resource: "assignments",
+        fetchNetwork: async () => getAssignments(),
+        project: async (read) => projectL1Assignments(read, await classRowsForJoin(session)),
+      });
       if (resourceScopeKeyRef.current !== scope) return;
-      setAssignmentsData(rows);
-    } catch {
+      setAssignmentsData(snapshot.data);
+      setAssignmentsSnapshot(snapshot);
+    } catch (error) {
       if (resourceScopeKeyRef.current !== scope) return;
+      setAssignmentsSnapshot((current) => snapshotFromFailure(error, current.data));
     }
-  }, [session]);
+  }, [session, permissionsBootstrap]);
+
+  const loadSchoolCourses = useCallback(async () => {
+    if (!session) return;
+    const scope = resourceScopeKeyRef.current;
+    setSchoolCoursesSnapshot((current) => ({ ...current, status: "loading" }));
+    try {
+      const snapshot = await loadL1BackedSnapshot({
+        session,
+        permissionsBootstrap,
+        resource: "school-courses",
+        fetchNetwork: async () => listSchoolClassCourses(),
+        project: async (read) => projectL1SchoolCourses(read, await classRowsForJoin(session)),
+      });
+      if (resourceScopeKeyRef.current !== scope) return;
+      setSchoolCoursesSnapshot(snapshot);
+    } catch (error) {
+      if (resourceScopeKeyRef.current !== scope) return;
+      setSchoolCoursesSnapshot((current) => snapshotFromFailure(error, current.data));
+    }
+  }, [session, permissionsBootstrap]);
 
   const loadAnnouncements = useCallback(async () => {
     if (!session) return;
@@ -770,14 +837,20 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
     const scope = resourceScopeKeyRef.current;
     setCourseSchedulesSnapshot((current) => ({ ...current, status: "loading" }));
     try {
-      const rows = await getPlanningWeekly();
+      const snapshot = await loadL1BackedSnapshot({
+        session,
+        permissionsBootstrap,
+        resource: "course-schedules",
+        fetchNetwork: async () => getPlanningWeekly(),
+        project: async (read) => projectL1CourseSchedules(read, await classRowsForJoin(session)),
+      });
       if (resourceScopeKeyRef.current !== scope) return;
-      setCourseSchedulesSnapshot(snapshotFromSuccess(rows));
+      setCourseSchedulesSnapshot(snapshot);
     } catch (error) {
       if (resourceScopeKeyRef.current !== scope) return;
       setCourseSchedulesSnapshot((current) => snapshotFromFailure(error, current.data));
     }
-  }, [session]);
+  }, [session, permissionsBootstrap]);
 
   const loadPlanningCourseOptions = useCallback(async () => {
     if (!session) return;
@@ -1141,6 +1214,8 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
       teachersSnapshot: presentedTeachersSnapshot,
       studentsSnapshot: presentedStudentsSnapshot,
       classesSnapshot: presentedClassesSnapshot,
+      assignmentsSnapshot,
+      schoolCoursesSnapshot,
       presencesSnapshot: presentedPresencesSnapshot,
       announcementsSnapshot: presentedAnnouncementsSnapshot,
       messagesSnapshot: presentedMessagesSnapshot,
@@ -1159,6 +1234,7 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
       loadStudents,
       loadClasses,
       loadAssignments,
+      loadSchoolCourses,
       loadAnnouncements,
       loadMessages,
       loadSchools,
@@ -1414,6 +1490,8 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
     teachersSnapshot,
     studentsSnapshot,
     classesSnapshot,
+    assignmentsSnapshot,
+    schoolCoursesSnapshot,
     presencesSnapshot,
     announcementsSnapshot,
     messagesSnapshot,
@@ -1425,6 +1503,7 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
     loadStudents,
     loadClasses,
     loadAssignments,
+    loadSchoolCourses,
     loadAnnouncements,
     loadMessages,
     loadSchools,

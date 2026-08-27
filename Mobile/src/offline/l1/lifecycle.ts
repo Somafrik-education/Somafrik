@@ -28,6 +28,11 @@ export function rememberL1Runtime(store: L1Store, partition: L1Partition): void 
   lastPartition = partition;
 }
 
+export function getRememberedL1Runtime(): { store: L1Store; partition: L1Partition } | null {
+  if (!lastStore || !lastPartition) return null;
+  return { store: lastStore, partition: lastPartition };
+}
+
 function samePartition(a: L1Partition | null, b: L1Partition): boolean {
   return Boolean(a && a.userId === b.userId && a.schoolId === b.schoolId);
 }

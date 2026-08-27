@@ -37,6 +37,7 @@ import { OFFLINE_COPY, OFFLINE_TEST_IDS } from "../lib/offlineModeSpec";
 import { useResponsiveLayout } from "../hooks/useResponsiveLayout";
 import { isMetricReady, metricLabelFromSnapshot } from "../lib/dataTruth";
 import { filterClassesByQuery, USABILITY_TEST_IDS } from "../lib/mobileUsability";
+import { shouldBlockUnsupportedMutations } from "../offline/l1/readModel";
 import ClassMutationControls from "../components/ClassMutationControls";
 import FormField from "../components/FormField";
 
@@ -53,14 +54,17 @@ export default function ClassesScreen({ navigation }: any) {
       width: "100%" as const,
     },
   ];
-  const { session } = useAuth();
+  const { session, permissionsBootstrap } = useAuth();
   const { classesData, studentsData, teachersData, assignmentsData, schoolsData, presencesSnapshot, loadClasses, loadStudents, loadPresences, loadTeachers, loadAssignments, classesSnapshot, studentsSnapshot, resourceScopeKey } = useAdminData();
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [offlineActionMessage, setOfflineActionMessage] = useState<string | null>(null);
-  const isOffline = classesSnapshot.status === "offline" || studentsSnapshot.status === "offline" || presencesSnapshot.status === "offline";
-  const showLoading = isLoading && !isOffline;
-  const blockNetworkActions = showLoading || isOffline;
+  const classesUnavailable = classesSnapshot.status === "offline" || classesSnapshot.status === "error";
+  const mutationsBlocked = shouldBlockUnsupportedMutations({
+    source: classesSnapshot.source,
+    permissionsBootstrap,
+  });
+  const showLoading = isLoading && classesSnapshot.status === "loading";
   const teacherScopeState = { teachers: teachersData, assignments: assignmentsData, classes: classesData };
   const visibleStudents = scopedStudentsForSession(session, studentsData, teacherScopeState);
   const visibleClasses = scopedClassesForSession(session, classesData, studentsData, teacherScopeState);
@@ -76,7 +80,7 @@ export default function ClassesScreen({ navigation }: any) {
     useCallback(() => {
       let cancelled = false;
       setOfflineActionMessage(null);
-      if (!isOffline) {
+      if (classesSnapshot.status !== "success" && classesSnapshot.status !== "empty") {
         setIsLoading(true);
       }
 
@@ -91,11 +95,11 @@ export default function ClassesScreen({ navigation }: any) {
       return () => {
         cancelled = true;
       };
-    }, [loadClasses, loadStudents, loadPresences, loadTeachers, loadAssignments, isOffline, resourceScopeKey]),
+    }, [loadClasses, loadStudents, loadPresences, loadTeachers, loadAssignments, resourceScopeKey]),
   );
 
   const handleBlockedNetworkAction = () => {
-    setOfflineActionMessage(OFFLINE_COPY.actionBlocked);
+    setOfflineActionMessage(OFFLINE_COPY.mutationRequiresConnection);
   };
 
   const filteredClasses = filterClassesByQuery(
@@ -118,22 +122,37 @@ export default function ClassesScreen({ navigation }: any) {
           </Text>
         </View>
       </View>
-      <ClassMutationControls onChanged={async () => { await Promise.all([loadClasses(), loadStudents()]); }} />
+      <ClassMutationControls
+        networkRequired={mutationsBlocked}
+        onBlockedMutation={handleBlockedNetworkAction}
+        onChanged={async () => { await Promise.all([loadClasses(), loadStudents()]); }}
+      />
 
-      <View style={blockNetworkActions ? styles.disabledControl : undefined} pointerEvents={blockNetworkActions ? "none" : "auto"}>
+      <View>
         <FormField
           label="Recherche"
           hideVisibleLabel
           type="search"
           leading={<Ionicons name="search-outline" size={22} color="#94A3B8" />}
           placeholder="Ex. 6e A ou CLS-6A"
-          editable={!blockNetworkActions}
+          editable={!showLoading}
           value={searchQuery}
           onChangeText={setSearchQuery}
           testID={USABILITY_TEST_IDS.classesSearch}
           accessibilityLabel="Rechercher une classe par nom ou code"
         />
       </View>
+
+      {mutationsBlocked ? (
+        <View style={styles.offlineActionBanner} testID="l1-offline-banner">
+          <Text style={styles.offlineActionText}>
+            {OFFLINE_COPY.l1ModeTitle}
+            {classesSnapshot.cachedAt
+              ? ` — ${OFFLINE_COPY.l1LastSyncPrefix} : ${classesSnapshot.cachedAt}`
+              : ""}
+          </Text>
+        </View>
+      ) : null}
 
       {offlineActionMessage ? (
         <View style={styles.offlineActionBanner} testID={OFFLINE_TEST_IDS.actionMessage}>
@@ -143,16 +162,14 @@ export default function ClassesScreen({ navigation }: any) {
 
       <TouchableOpacity
         activeOpacity={0.85}
-        style={[styles.summaryCard, blockNetworkActions && styles.disabledControl]}
-        disabled={blockNetworkActions}
+        style={styles.summaryCard}
+        disabled={showLoading || classesUnavailable || !canOpenStudents}
         testID={CLASSES_LOADING_TEST_IDS.summaryCard}
         accessibilityRole="button"
         accessibilityLabel="Voir tous les élèves"
         accessibilityState={{ disabled: isLoading }}
         onPress={() =>
-          blockNetworkActions
-            ? handleBlockedNetworkAction()
-            : canOpenStudents && navigation.navigate("Students", { className: "Toutes les classes" })
+          canOpenStudents && navigation.navigate("Students", { className: "Toutes les classes" })
         }
       >
         <View>
@@ -297,6 +314,8 @@ export default function ClassesScreen({ navigation }: any) {
               </TouchableOpacity>
               <ClassMutationControls
                 row={item}
+                networkRequired={mutationsBlocked}
+                onBlockedMutation={handleBlockedNetworkAction}
                 onChanged={async () => { await Promise.all([loadClasses(), loadStudents()]); }}
               />
             </View>

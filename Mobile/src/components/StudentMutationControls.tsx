@@ -8,6 +8,7 @@ import OverflowActions from "./OverflowActions";
 import { resolveEntityCrudAccess } from "../lib/mobileCrudParity";
 import { STUDENT_OVERFLOW_A11Y_LABEL, studentRowOverflowActions } from "../lib/overflowActions";
 import { MIN_TOUCH_TARGET_DP } from "../lib/mobileUsability";
+import { OFFLINE_COPY } from "../lib/offlineModeSpec";
 import {
   firstErrorKey,
   hasFieldErrors,
@@ -42,12 +43,16 @@ export default function StudentMutationControls({
   className,
   classes,
   createTestId = "students-create",
+  networkRequired = false,
+  onBlockedMutation,
   onChanged,
 }: {
   row?: StudentRow;
   className?: string;
   classes: ClassOption[];
   createTestId?: string;
+  networkRequired?: boolean;
+  onBlockedMutation?: () => void;
   onChanged: () => Promise<void> | void;
 }) {
   const { session } = useAuth();
@@ -83,7 +88,16 @@ export default function StudentMutationControls({
     });
   };
 
+  const refuseIfOffline = () => {
+    onBlockedMutation?.();
+    Alert.alert("Hors ligne", OFFLINE_COPY.mutationRequiresConnection);
+  };
+
   const openCreate = () => {
+    if (networkRequired) {
+      refuseIfOffline();
+      return;
+    }
     setError("");
     setFieldErrors({});
     setFirstName("");
@@ -155,6 +169,10 @@ export default function StudentMutationControls({
   };
 
   const remove = () => {
+    if (networkRequired) {
+      refuseIfOffline();
+      return;
+    }
     if (!row || !access.canDelete) return;
     Alert.alert("Supprimer l'élève", "L'élève sera retiré côté serveur.", [
       { text: "Annuler", style: "cancel" },
@@ -260,6 +278,10 @@ export default function StudentMutationControls({
             onPress:
               spec.key === "update"
                 ? () => {
+                    if (networkRequired) {
+                      refuseIfOffline();
+                      return;
+                    }
                     const parts = String(row.name ?? "").trim().split(/\s+/);
                     setFirstName(row.firstName || parts[0] || "");
                     setLastName(row.lastName || parts.slice(1).join(" "));

@@ -29,6 +29,11 @@ export default function L1CacheRuntime() {
         return;
       }
       if (permissionsBootstrap === "ready_offline") {
+        const resolved = resolveL1Partition(session);
+        if (!resolved.ok) return;
+        const opened = await openNativeL1Database();
+        if (cancelled || !opened.ok) return;
+        await adoptL1Runtime(opened.store, resolved.partition);
         return;
       }
       if (permissionsBootstrap !== "ready") {
