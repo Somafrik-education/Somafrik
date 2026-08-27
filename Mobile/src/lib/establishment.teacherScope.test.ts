@@ -179,6 +179,120 @@ function run() {
     false,
   );
 
+  // P0 KILOMBO : GET /assignments est déjà filtré par le principal live côté API.
+  // Le client ne doit pas éliminer les 4 lignes autorisées à cause d'une autre
+  // représentation de teacherId/teacherCode que celle de session.user.id.
+  const networkState = {
+    teachers: [] as Teacher[],
+    classes,
+    assignmentsSource: "network" as const,
+    assignments: [
+      {
+        id: "net-2a-math",
+        teacherId: "server-teacher-ref-a",
+        teacherCode: "server-teacher-code-a",
+        classId: "cls-2a",
+        classCode: "CLS-2A",
+        className: "2ème A",
+        course: "Mathématiques",
+        status: "active",
+      },
+      {
+        id: "net-2a-phys",
+        teacherId: "server-teacher-ref-a",
+        teacherCode: "server-teacher-code-a",
+        classId: "cls-2a",
+        classCode: "CLS-2A",
+        className: "2ème A",
+        course: "Physique",
+        status: "active",
+      },
+      {
+        id: "net-2c-fr",
+        teacherId: "server-teacher-ref-a",
+        teacherCode: "server-teacher-code-a",
+        classId: "cls-2c",
+        classCode: "CLS-2C",
+        className: "2ème C",
+        course: "Français",
+        status: "active",
+      },
+      {
+        id: "net-2c-hist",
+        teacherId: "server-teacher-ref-a",
+        teacherCode: "server-teacher-code-a",
+        classId: "cls-2c",
+        classCode: "CLS-2C",
+        className: "2ème C",
+        course: "Histoire",
+        status: "active",
+      },
+      {
+        id: "net-archived",
+        teacherId: "server-teacher-ref-a",
+        teacherCode: "server-teacher-code-a",
+        classId: "cls-1a",
+        classCode: "CLS-1A",
+        className: "1ère A",
+        course: "SVT",
+        status: "archived",
+      },
+    ] as TeacherAssignment[],
+  };
+  const networkAssignments = listCanonicalTeacherAssignments(session, networkState);
+  assert.equal(networkAssignments.length, 4);
+  assert.deepEqual(
+    networkAssignments.map((row) => row.id).sort(),
+    ["net-2a-math", "net-2a-phys", "net-2c-fr", "net-2c-hist"],
+  );
+  assert.deepEqual(teacherScopedClassLabels(session, students, networkState), ["2ème A", "2ème C"]);
+  assert.equal(scopedStudentsForSession(session, students, networkState).length, 5);
+  assert.deepEqual(classNamesOf(scopedClassesForSession(session, classes, students, networkState)), ["2ème A", "2ème C"]);
+
+  // L1 reste strict : teacherCode/teacherId ne suffisent jamais. Seul
+  // teacherUserId === session.user.id ouvre la ligne hors connexion.
+  const l1State = {
+    teachers: state.teachers,
+    classes,
+    assignmentsSource: "l1-cache" as const,
+    assignments: [
+      {
+        id: "l1-valid",
+        teacherId: TEACHER_CODE,
+        teacherCode: TEACHER_CODE,
+        teacherUserId: USER_ID,
+        classId: "cls-2a",
+        classCode: "CLS-2A",
+        className: "2ème A",
+        course: "Mathématiques",
+        status: "active",
+      },
+      {
+        id: "l1-mismatch",
+        teacherId: TEACHER_CODE,
+        teacherCode: TEACHER_CODE,
+        teacherUserId: "other-user",
+        classId: "cls-2c",
+        classCode: "CLS-2C",
+        className: "2ème C",
+        course: "Français",
+        status: "active",
+      },
+      {
+        id: "l1-missing-user",
+        teacherId: TEACHER_CODE,
+        teacherCode: TEACHER_CODE,
+        classId: "cls-1a",
+        classCode: "CLS-1A",
+        className: "1ère A",
+        course: "Histoire",
+        status: "active",
+      },
+    ] as TeacherAssignment[],
+  };
+  assert.deepEqual(listCanonicalTeacherAssignments(session, l1State).map((row) => row.id), ["l1-valid"]);
+  assert.deepEqual(teacherScopedClassLabels(session, students, l1State), ["2ème A"]);
+
   const emptyAssigned = {
     ...state,
     assignments: [
