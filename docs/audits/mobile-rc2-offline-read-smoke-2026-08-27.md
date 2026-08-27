@@ -1,7 +1,7 @@
 # RC2 Offline Read Smoke — 2026-08-27
 
 **Type :** validation RC2 lectures L1 hors ligne (Android physique)  
-**PR :** Draft dédiée — **aucun Ready / aucun merge sur CI seule**  
+**PR :** [#353](https://github.com/Somafrik-education/Somafrik/pull/353) Draft dédiée — **aucun Ready / aucun merge sur CI seule**  
 **Outbox / écriture offline / RC3 :** hors scope
 
 ## Identité
@@ -113,6 +113,17 @@ npm --prefix Mobile run verify:mobile-rc2-offline-read-smoke
 ```
 
 Le vérificateur RC2 sort `BLOCKED_NATIVE_RC2_OFFLINE_READ_SMOKE` (exit 0) sans appareil physique. **Ce n'est pas un GO.**
+
+Exécution locale de cette VM (2026-08-27) :
+
+```text
+npm --prefix Mobile run test:l1-offline-reads              → OK
+npm --prefix Mobile run verify:mobile-l1-sqlite-cache      → OK
+  (BLOCKED_NATIVE_SQLCIPHER_SMOKE : pas de device)
+npm --prefix Mobile run verify:mobile-rc2-offline-read-smoke → OK
+  (BLOCKED_NATIVE_RC2_OFFLINE_READ_SMOKE : pas de device)
+npm --prefix Mobile run typecheck                          → OK
+```
 
 ## Transcript Android physique
 
