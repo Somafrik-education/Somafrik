@@ -141,6 +141,56 @@ CREATE UNIQUE INDEX IF NOT EXISTS student_fee_obligations_identity_uniq
     AND period_key IS NOT NULL AND btrim(period_key) <> ''
     AND fee_type_code IS NOT NULL AND btrim(fee_type_code) <> '';
 
+-- P1 F3 : une écriture d'obligation class-scoped doit se sérialiser avec tout
+-- transfert de classe concurrent. Cette garde PostgreSQL est le dernier point
+-- d'autorité : elle verrouille l'inscription active juste avant l'INSERT.
+CREATE OR REPLACE FUNCTION student_fee_obligations_assert_active_enrollment_scope()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  enrollment_class UUID;
+BEGIN
+  IF NEW.archived_at IS NOT NULL
+     OR NEW.class_id IS NULL
+     OR COALESCE(btrim(NEW.academic_year), '') = '' THEN
+    RETURN NEW;
+  END IF;
+
+  SELECT e.class_id
+    INTO enrollment_class
+    FROM enrollments e
+    JOIN academic_years ay ON ay.id = e.academic_year_id
+   WHERE e.student_id = NEW.student_id
+     AND e.school_id = NEW.school_id
+     AND lower(btrim(e.status)) = 'active'
+     AND lower(btrim(ay.name)) = lower(btrim(NEW.academic_year))
+   ORDER BY e.enrollment_date DESC NULLS LAST, e.created_at DESC NULLS LAST
+   LIMIT 1
+   FOR UPDATE OF e;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'FINANCE_ENROLLMENT_NOT_FOUND'
+      USING ERRCODE = '23505',
+            CONSTRAINT = 'student_fee_obligations_active_enrollment_guard';
+  END IF;
+
+  IF enrollment_class IS DISTINCT FROM NEW.class_id THEN
+    RAISE EXCEPTION 'FINANCE_CLASS_ENROLLMENT_MISMATCH'
+      USING ERRCODE = '23505',
+            CONSTRAINT = 'student_fee_obligations_active_enrollment_guard';
+  END IF;
+
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_student_fee_obligations_active_enrollment_scope ON student_fee_obligations;
+CREATE TRIGGER trg_student_fee_obligations_active_enrollment_scope
+  BEFORE INSERT OR UPDATE OF school_id, student_id, class_id, academic_year, archived_at
+  ON student_fee_obligations
+  FOR EACH ROW
+  EXECUTE FUNCTION student_fee_obligations_assert_active_enrollment_scope();
 
 CREATE TABLE IF NOT EXISTS payment_items (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

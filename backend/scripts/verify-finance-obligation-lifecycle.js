@@ -58,11 +58,19 @@ function assertSourceGuards() {
   assert.match(schema, /student_fee_obligations_identity_uniq/);
   assert.match(schema, /period_key/);
   assert.match(schema, /fee_type_code/);
+  assert.match(schema, /student_fee_obligations_assert_active_enrollment_scope/);
+  assert.match(schema, /FOR UPDATE OF e/);
+  assert.match(schema, /FINANCE_CLASS_ENROLLMENT_MISMATCH/);
+  assert.match(schema, /trg_student_fee_obligations_active_enrollment_scope/);
   assert.doesNotMatch(schema, /CREATE TABLE student_debts/);
   assert.doesNotMatch(schema, /CREATE TABLE student_invoices/);
   assert.doesNotMatch(ddl, /CREATE TABLE IF NOT EXISTS student_debts/);
   assert.doesNotMatch(migration, /enrollment_date, CURRENT_DATE\)/);
   assert.match(migration, /SET class_effective_date = enrollment_date/);
+  assert.match(migration, /student_fee_obligations_assert_active_enrollment_scope/);
+  assert.match(migration, /FOR UPDATE OF e/);
+  assert.match(migration, /FINANCE_CLASS_ENROLLMENT_MISMATCH/);
+  assert.match(migration, /student_fee_obligations_active_enrollment_guard/);
 
   assert.match(pgStore, /period_key/);
   assert.match(pgStore, /23505/);
@@ -162,6 +170,11 @@ function main() {
     process.execPath,
     [path.join(ROOT, "backend/lib/financeObligationLifecycle.pg.test.js")],
     "tests F3 PostgreSQL ont échoué",
+  );
+  run(
+    process.execPath,
+    [path.join(ROOT, "backend/lib/financeObligationApplyTransferRace.pg.test.js")],
+    "course F3 apply grille ↔ transfert a échoué",
   );
   console.log("verify-finance-obligation-lifecycle: GO");
 }
