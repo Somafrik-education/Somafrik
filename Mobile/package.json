@@ -68,6 +68,8 @@
     "verify:mobile-l1-offline-reads": "node scripts/verify-mobile-l1-offline-reads.js",
     "verify:mobile-l1-native-sqlcipher-smoke": "node scripts/run-native-sqlcipher-smoke.js",
     "verify:mobile-rc2-offline-read-smoke": "node scripts/verify-mobile-rc2-offline-read-smoke.js",
+    "test:mobile-sqlite-outbox": "npx --yes tsx src/offline/outbox/sqliteOutbox.test.ts",
+    "verify:mobile-sqlite-outbox": "node scripts/verify-mobile-sqlite-outbox.js",
     "test:role-selection-layout": "npx --yes tsx src/lib/roleSelectionLayout.test.ts"
   },
   "dependencies": {

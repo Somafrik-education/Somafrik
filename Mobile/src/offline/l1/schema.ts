@@ -257,3 +257,34 @@ CREATE INDEX IF NOT EXISTS idx_l1_course_schedules_class ON l1_course_schedules 
 CREATE INDEX IF NOT EXISTS idx_l1_course_schedules_teacher ON l1_course_schedules (user_id, school_id, teacher_id);
 CREATE INDEX IF NOT EXISTS idx_l1_sync_meta_user_school ON l1_sync_meta (user_id, school_id);
 `;
+
+/** Outbox SQLCipher — même fichier chiffré, aucune URL ni secret de session. */
+export const SCHEMA_MIGRATION_V2 = `
+CREATE TABLE IF NOT EXISTS l1_outbox (
+  outbox_id TEXT PRIMARY KEY NOT NULL,
+  idempotency_key TEXT NOT NULL UNIQUE,
+  user_id TEXT NOT NULL,
+  school_id TEXT NOT NULL,
+  operation_type TEXT NOT NULL,
+  payload_json TEXT NOT NULL,
+  payload_hash TEXT NOT NULL,
+  state TEXT NOT NULL CHECK (state IN (
+    'pending',
+    'in_flight',
+    'blocked_authorization',
+    'failed_terminal',
+    'acked'
+  )),
+  attempt_count INTEGER NOT NULL DEFAULT 0,
+  next_attempt_at TEXT,
+  lease_owner TEXT,
+  lease_expires_at TEXT,
+  last_error_code TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  acked_at TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_l1_outbox_partition_state
+  ON l1_outbox (user_id, school_id, state, created_at, outbox_id);
+`;

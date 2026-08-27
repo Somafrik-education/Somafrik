@@ -124,6 +124,8 @@
     "verify:mobile-l1-offline-reads": "npm --prefix Mobile run verify:mobile-l1-offline-reads",
     "verify:mobile-l1-native-sqlcipher-smoke": "npm --prefix Mobile run verify:mobile-l1-native-sqlcipher-smoke",
     "verify:mobile-rc2-offline-read-smoke": "npm --prefix Mobile run verify:mobile-rc2-offline-read-smoke",
+    "verify:mobile-sqlite-outbox": "npm --prefix Mobile run verify:mobile-sqlite-outbox",
+    "test:mobile-sqlite-outbox": "npm --prefix Mobile run test:mobile-sqlite-outbox",
     "verify:mobile-usability": "npm --prefix Mobile run verify:mobile-usability",
     "verify:mobile-form-fields": "npm --prefix Mobile run verify:mobile-form-fields",
     "verify:mobile-ux-v1": "npm --prefix Mobile run verify:mobile-ux-v1",

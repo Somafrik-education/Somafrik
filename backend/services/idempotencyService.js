@@ -7,7 +7,10 @@ const { getIdempotencyTx } = require("../lib/idempotencyTxContext");
 
 const TTL_DEFAULT_MS = 24 * 60 * 60 * 1000;
 const TTL_PAYMENTS_MS = 7 * 24 * 60 * 60 * 1000;
+/** TTL ciblé des routes autorisées au replay outbox (présences). Ne pas appliquer au TTL global. */
+const TTL_OFFLINE_REPLAY_MS = 35 * 24 * 60 * 60 * 1000;
 const IDEMPOTENCY_KEY_REUSED = "IDEMPOTENCY_KEY_REUSED";
+const OFFLINE_REPLAY_ROUTE_KEYS = [/^POST \/api\/presences$/i];
 
 function normalizeKey(value) {
   return String(value ?? "").trim();
@@ -43,7 +46,10 @@ function setIdempotencyBeforeStoreHook(fn) {
 }
 
 function ttlForRoute(routeKey) {
-  return /\/payments(\/|$)/i.test(String(routeKey ?? "")) ? TTL_PAYMENTS_MS : TTL_DEFAULT_MS;
+  const key = String(routeKey ?? "");
+  if (/\/payments(\/|$)/i.test(key)) return TTL_PAYMENTS_MS;
+  if (OFFLINE_REPLAY_ROUTE_KEYS.some((pattern) => pattern.test(key))) return TTL_OFFLINE_REPLAY_MS;
+  return TTL_DEFAULT_MS;
 }
 
 function lockInt(cacheId) {
@@ -242,4 +248,7 @@ module.exports = {
   lockInt,
   ttlForRoute,
   setIdempotencyBeforeStoreHook,
+  TTL_DEFAULT_MS,
+  TTL_PAYMENTS_MS,
+  TTL_OFFLINE_REPLAY_MS,
 };

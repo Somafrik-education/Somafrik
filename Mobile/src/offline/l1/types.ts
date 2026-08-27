@@ -16,7 +16,7 @@ export type L1Resource = (typeof L1_RESOURCES)[number];
 export const L1_SYNC_STATES = ["empty", "reconciling", "ready", "blocked_authorization"] as const;
 export type L1SyncState = (typeof L1_SYNC_STATES)[number];
 
-export const L1_LOCAL_SCHEMA_VERSION = 1 as const;
+export const L1_LOCAL_SCHEMA_VERSION = 2 as const;
 
 export const L1_DB_KEY_SECURESTORE = "somafrik.l1DbKeyV1";
 export const L1_DB_FILENAME = "somafrik-l1-v1.db";
