@@ -114,7 +114,9 @@ async function main() {
   const fees = await store.listFinanceStudentFees();
   assert.equal(fees.length, 2);
   const inscription = fees.find((row) => row.feeType === "Inscription");
+  const transport = fees.find((row) => row.feeType === "Transport");
   assert.equal(inscription.balance, 50_000);
+  assert.equal(transport.balance, 20_000);
 
   const appliedAgain = await store.applyFinanceFeeGrid(grid.id, admin);
   assert.equal(appliedAgain.created, 0);
@@ -123,8 +125,7 @@ async function main() {
   const payment = await store.createSchoolPayment(
     {
       studentId: "CD-2026-0001-STU-0001",
-      feeType: "Inscription",
-      amount: 50_000,
+      items: [{ obligationId: inscription.id, feeType: "Inscription", amount: 50_000 }],
       method: "Espèces",
       date: "2026-08-13",
       schoolCode: "HACK",
@@ -141,8 +142,7 @@ async function main() {
   const overpay = await store.createSchoolPayment(
     {
       studentId: "CD-2026-0001-STU-0001",
-      feeType: "Transport",
-      amount: 30_000,
+      items: [{ obligationId: transport.id, feeType: "Transport", amount: 30_000 }],
       method: "Espèces",
       date: "2026-08-13",
     },
@@ -229,8 +229,7 @@ async function main() {
       rollbackStore.createSchoolPayment(
         {
           studentId: "CD-2026-0001-STU-0001",
-          feeType: "Inscription",
-          amount: 50_000,
+          items: [{ obligationId: inscriptionBefore.id, feeType: "Inscription", amount: 50_000 }],
           method: "Espèces",
           date: "2026-08-13",
         },
@@ -252,11 +251,13 @@ async function main() {
 
   const cancelRollbackStore = createStore();
   await seedGrid(cancelRollbackStore);
+  const cancelInscription = (await cancelRollbackStore.listFinanceStudentFees()).find(
+    (row) => row.feeType === "Inscription",
+  );
   const persisted = await cancelRollbackStore.createSchoolPayment(
     {
       studentId: "CD-2026-0001-STU-0001",
-      feeType: "Inscription",
-      amount: 50_000,
+      items: [{ obligationId: cancelInscription.id, feeType: "Inscription", amount: 50_000 }],
       method: "Espèces",
       date: "2026-08-13",
     },
