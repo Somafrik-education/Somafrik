@@ -1,7 +1,7 @@
 # P0 — Rollback contrôlé vers RC2 Offline Read stable — 2026-08-27
 
 **Type :** revert exclusif du merge #356  
-**PR :** Draft dédiée  
+**PR :** https://github.com/Somafrik-education/Somafrik/pull/358 — Draft dédiée  
 **Branche :** `cursor/p0-rollback-rc2-offline-read-9855`  
 **Revert :** `93ef4468`  
 **Base :** `develop@1c7b8dfc5f232a7198494bea6e30530aab592e0e`  
