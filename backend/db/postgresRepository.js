@@ -3221,23 +3221,7 @@ class PostgresRepository {
     if (!studentDbId || !classId) return;
     const academicYear = await this.getCurrentAcademicYear(schoolId);
     if (!academicYear) return;
-    const previous = await this.one(
-      `SELECT class_id, class_effective_date, enrollment_date
-       FROM enrollments
-       WHERE student_id = $1 AND academic_year_id = $2
-       LIMIT 1`,
-      [studentDbId, academicYear.id],
-    );
-    const classChanged = Boolean(previous?.class_id && String(previous.class_id) !== String(classId));
     const requestedEffectiveDate = String(options.effectiveDate ?? "").trim() || null;
-    if (classChanged && !requestedEffectiveDate) {
-      const { createFinanceError, FINANCE_ERROR } = require("../lib/financeManagement");
-      throw createFinanceError(
-        409,
-        "Date effective du changement de classe obligatoire : aucune obligation n'a été annulée.",
-        FINANCE_ERROR.NEEDS_EFFECTIVE_DATE,
-      );
-    }
     const school = await this.one("SELECT school_code FROM schools WHERE id = $1", [schoolId]);
     const student = await this.one(
       `SELECT st.student_code, st.first_name, st.last_name, st.id
@@ -3249,29 +3233,18 @@ class PostgresRepository {
       [classId],
     );
     if (!school || !student || !klass) return;
-    const previousClass = classChanged
-      ? await this.one(`SELECT id, class_code, name FROM classes WHERE id = $1`, [previous.class_id])
-      : null;
-    const enrollmentSql = `INSERT INTO enrollments (
-         school_id, student_id, class_id, academic_year_id, enrollment_date, class_effective_date, status
-       )
-       VALUES ($1, $2, $3, $4, CURRENT_DATE, COALESCE($5::date, CURRENT_DATE), 'active')
-       ON CONFLICT (student_id, academic_year_id) DO UPDATE SET
-         class_id = CASE
-           WHEN enrollments.class_id IS DISTINCT FROM EXCLUDED.class_id AND $5::date IS NULL
-             THEN enrollments.class_id
-           ELSE EXCLUDED.class_id
-         END,
-         status = 'active',
-         class_effective_date = CASE
-           WHEN enrollments.class_id IS DISTINCT FROM EXCLUDED.class_id
-             THEN COALESCE($5::date, enrollments.class_effective_date)
-           ELSE COALESCE(enrollments.class_effective_date, enrollments.enrollment_date)
-         END,
-         updated_at = NOW()`;
-    const enrollmentParams = [schoolId, studentDbId, classId, academicYear.id, requestedEffectiveDate];
-    const financeInput = {
-      reason: classChanged ? "class_transfer" : "enrollment_active",
+    const { createFinanceError, FINANCE_ERROR } = require("../lib/financeManagement");
+    const {
+      persistObligationSyncFailure,
+      FINANCE_OBLIGATION_SYNC_FAILED,
+    } = require("../lib/financeObligationLifecycle");
+    const actor = options.principal || {
+      role: "system",
+      schoolCode: school.school_code,
+      sub: "finance-obligation-lifecycle",
+    };
+    let financeInput = {
+      reason: "enrollment_active",
       schoolCode: school.school_code,
       studentKey: student.student_code,
       student: {
@@ -3289,47 +3262,84 @@ class PostgresRepository {
       },
       academicYear: academicYear.name,
       classId: klass.id,
-      previousClass: previousClass
-        ? { classId: previousClass.id, classCode: previousClass.class_code, className: previousClass.name }
-        : null,
+      previousClass: null,
       effectiveDate: requestedEffectiveDate,
     };
-    if (classChanged) {
-      const {
-        persistObligationSyncFailure,
-        FINANCE_OBLIGATION_SYNC_FAILED,
-      } = require("../lib/financeObligationLifecycle");
-      const actor = options.principal || {
-        role: "system",
-        schoolCode: school.school_code,
-        sub: "finance-obligation-lifecycle",
-      };
-      try {
-        return await this.withTransaction(async (tx) => {
-          const scoped = this.createTxScope(tx);
-          await scoped.query(enrollmentSql, enrollmentParams);
-          return this.getFinanceStore().ensureEnrollmentObligationsInTx(tx, financeInput, actor);
-        });
-      } catch (error) {
-        await persistObligationSyncFailure(this.getFinanceStore(), financeInput, actor, null, error);
-        error.financeSync = {
-          created: 0,
-          skipped: 0,
-          superseded: 0,
-          reason: FINANCE_OBLIGATION_SYNC_FAILED,
-          error: error?.code || error?.message,
-          previousClassId: previousClass?.id || null,
-          targetClassId: klass.id,
-          effectiveDate: requestedEffectiveDate,
-          academicYear: academicYear.name,
-          studentId: student.student_code,
-          retryStatus: "pending",
+    try {
+      const outcome = await this.withTransaction(async (tx) => {
+        const scoped = this.createTxScope(tx);
+        const lockSql = `SELECT class_id, class_effective_date, enrollment_date
+           FROM enrollments
+           WHERE student_id = $1 AND academic_year_id = $2
+           FOR UPDATE`;
+        let previous = await scoped.one(lockSql, [studentDbId, academicYear.id]);
+        if (!previous) {
+          await scoped.query(
+            `INSERT INTO enrollments (
+               school_id, student_id, class_id, academic_year_id, enrollment_date, class_effective_date, status
+             )
+             VALUES ($1, $2, $3, $4, CURRENT_DATE, COALESCE($5::date, CURRENT_DATE), 'active')
+             ON CONFLICT (student_id, academic_year_id) DO NOTHING`,
+            [schoolId, studentDbId, classId, academicYear.id, requestedEffectiveDate],
+          );
+          previous = await scoped.one(lockSql, [studentDbId, academicYear.id]);
+        }
+        if (!previous) return { classChanged: false };
+        const classChanged = Boolean(previous?.class_id && String(previous.class_id) !== String(classId));
+        if (classChanged && !requestedEffectiveDate) {
+          throw createFinanceError(
+            409,
+            "Date effective du changement de classe obligatoire : aucune obligation n'a été annulée.",
+            FINANCE_ERROR.NEEDS_EFFECTIVE_DATE,
+          );
+        }
+        const previousClass = classChanged
+          ? await scoped.one(`SELECT id, class_code, name FROM classes WHERE id = $1`, [previous.class_id])
+          : null;
+        await scoped.query(
+          `UPDATE enrollments SET
+             class_id = $3,
+             status = 'active',
+             class_effective_date = CASE
+               WHEN enrollments.class_id IS DISTINCT FROM $3
+                 THEN COALESCE($4::date, enrollments.class_effective_date)
+               ELSE COALESCE(enrollments.class_effective_date, enrollments.enrollment_date)
+             END,
+             updated_at = NOW()
+           WHERE student_id = $1 AND academic_year_id = $2`,
+          [studentDbId, academicYear.id, classId, requestedEffectiveDate],
+        );
+        financeInput = {
+          ...financeInput,
+          reason: classChanged ? "class_transfer" : "enrollment_active",
+          previousClass: previousClass
+            ? { classId: previousClass.id, classCode: previousClass.class_code, className: previousClass.name }
+            : null,
         };
-        throw error;
-      }
+        if (!classChanged) return { classChanged: false };
+        const financeSync = await this.getFinanceStore().ensureEnrollmentObligationsInTx(tx, financeInput, actor);
+        return { classChanged: true, financeSync, previousClass };
+      });
+      if (outcome.classChanged) return outcome.financeSync;
+      return this.syncEnrollmentFinanceObligations(financeInput, options.principal);
+    } catch (error) {
+      if (error?.code === FINANCE_ERROR.NEEDS_EFFECTIVE_DATE) throw error;
+      await persistObligationSyncFailure(this.getFinanceStore(), financeInput, actor, null, error);
+      error.financeSync = {
+        created: 0,
+        skipped: 0,
+        superseded: 0,
+        reason: FINANCE_OBLIGATION_SYNC_FAILED,
+        error: error?.code || error?.message,
+        previousClassId: financeInput.previousClass?.classId || null,
+        targetClassId: klass.id,
+        effectiveDate: requestedEffectiveDate,
+        academicYear: academicYear.name,
+        studentId: student.student_code,
+        retryStatus: "pending",
+      };
+      throw error;
     }
-    await this.query(enrollmentSql, enrollmentParams);
-    return this.syncEnrollmentFinanceObligations(financeInput, options.principal);
   }
 
   async ensureSchoolFromBackOfficeRecord(schoolCode, context = {}) {

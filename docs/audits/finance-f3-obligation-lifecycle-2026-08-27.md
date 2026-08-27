@@ -169,6 +169,7 @@ Date effective : `enrollments.class_effective_date` (colonne additive).
 - retry avec date : `class_id` devient la nouvelle classe, futures anciennes superseded `CLASS_TRANSFER`, nouvelles obligations créées
 - transfert daté + panne Finance : **même transaction** que la mutation `class_id` — rollback, enrollment reste 6A, `previousClass` conservé, audit durable (`previousClassId`, `targetClassId`, `effectiveDate`, `retryStatus=pending`)
 - catch-up : le même appel `ensureActiveEnrollment(6B, effectiveDate)` revoit `classChanged`, supersede 6A, crée 6B, pas de double débit
+- concurrence 6A→6B / 6A→6C : `SELECT … FOR UPDATE` **dans** la transaction **avant** `classChanged` / `previousClass` ; le second transfert voit la classe réellement verrouillée, pas un snapshot périmé
 - `NEEDS_EFFECTIVE_DATE`, `ENROLLMENT_NOT_FOUND`, `CLASS_ENROLLMENT_MISMATCH`, `GRID_ENROLLMENT_MISMATCH` ne sont pas avalés par le hook
 - pas de backfill historique avec `CURRENT_DATE`
 
@@ -225,9 +226,9 @@ Pas de DROP.
 ## Tests
 
 Mémoire : `financeObligationLifecycle.test.js` — scénarios A–E, G, H, I, J + P1-A/B/C.  
-PostgreSQL : `financeObligationLifecycle.pg.test.js` — UNIQUE, retry, concurrence, tenant, snapshot, transfert, rollback, paiement ≠ dette, scope fail-closed, date de transfert, sync failed, **intégration réelle `PostgresRepository.ensureActiveEnrollment()`** (refus sans date + retry daté + **recovery panne Finance après mutation**).
+PostgreSQL : `financeObligationLifecycle.pg.test.js` — UNIQUE, retry, concurrence, tenant, snapshot, transfert, rollback, paiement ≠ dette, scope fail-closed, date de transfert, sync failed, **intégration réelle `PostgresRepository.ensureActiveEnrollment()`** (refus sans date + retry daté + recovery panne Finance + **transferts 6B/6C concurrents**).
 
-Gate : `verify:finance-obligation-lifecycle` (F1 + F2 + F3 mémoire + F3 PG + source guards, dont `DEFAULT_FEE_AMOUNTS` hors autorité, **refus `NEEDS_EFFECTIVE_DATE` avant INSERT/UPDATE `enrollments.class_id`**, et **transfert + Finance atomiques**).
+Gate : `verify:finance-obligation-lifecycle` (F1 + F2 + F3 mémoire + F3 PG + source guards, dont `DEFAULT_FEE_AMOUNTS` hors autorité, **refus `NEEDS_EFFECTIVE_DATE` avant UPDATE `class_id`**, **transfert + Finance atomiques**, et **`SELECT … FOR UPDATE` avant `classChanged`/`previousClass`**).
 
 ---
 
@@ -237,8 +238,9 @@ Gate : `verify:finance-obligation-lifecycle` (F1 + F2 + F3 mémoire + F3 PG + so
 2. Deux lignes `Autre` / `ONCE` la même année collident (V1 acceptable).
 3. Transfert via `ensureActiveEnrollment` sans date explicite : **aucune** mutation de `class_id` (refus `FINANCE_NEEDS_EFFECTIVE_DATE` avant UPDATE). Catch-up ultérieur avec date conserve `previousClass` et supersede les futures.
 4. Transfert daté + panne Finance : rollback atomique de `class_id` ; l’audit durable porte `previousClassId` / `targetClassId` / `effectiveDate` pour un retry déterministe. L’inscription initiale (hors transfert) reste best-effort.
-5. Web `applyFeeGridToStudents` existe encore pour scripts E2E ; les pages production passent par l’API.
-6. Parité soldes / allocations = F4. UX = F7.
+5. Transferts concurrents : `previousClass` vient exclusivement de la ligne `enrollments` verrouillée (`FOR UPDATE`) dans la même transaction.
+6. Web `applyFeeGridToStudents` existe encore pour scripts E2E ; les pages production passent par l’API.
+7. Parité soldes / allocations = F4. UX = F7.
 
 ```text
 PR     DRAFT

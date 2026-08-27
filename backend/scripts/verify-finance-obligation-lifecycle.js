@@ -80,30 +80,24 @@ function assertSourceGuards() {
   assert.ok(ensureStart >= 0, "ensureActiveEnrollment absent");
   const ensureNext = pgRepo.indexOf("\n  async ", ensureStart + 1);
   const ensureFn = pgRepo.slice(ensureStart, ensureNext === -1 ? undefined : ensureNext);
-  assert.match(ensureFn, /classChanged/);
+  const txIdx = ensureFn.indexOf("withTransaction");
+  const lockIdx = ensureFn.indexOf("FOR UPDATE");
+  const changedIdx = ensureFn.search(/const classChanged/);
   const refuseIdx = ensureFn.search(/FINANCE_ERROR\.NEEDS_EFFECTIVE_DATE|FINANCE_NEEDS_EFFECTIVE_DATE/);
-  const mutateIdx = ensureFn.search(/INSERT INTO enrollments/);
-  assert.ok(refuseIdx >= 0, "refus FINANCE_NEEDS_EFFECTIVE_DATE absent de ensureActiveEnrollment");
-  assert.ok(mutateIdx >= 0, "INSERT enrollments absent de ensureActiveEnrollment");
-  assert.ok(
-    refuseIdx < mutateIdx,
-    "UPDATE enrollment avant validation effectiveDate : refus NEEDS_EFFECTIVE_DATE doit précéder INSERT/UPDATE class_id",
-  );
+  const updateIdx = ensureFn.search(/UPDATE enrollments/);
+  assert.ok(txIdx >= 0, "withTransaction absent de ensureActiveEnrollment");
+  assert.ok(lockIdx > txIdx, "FOR UPDATE hors withTransaction");
+  assert.ok(changedIdx > lockIdx, "classChanged/previousClass avant lock FOR UPDATE");
+  assert.ok(refuseIdx > changedIdx, "effectiveDate avant classChanged verrouillé");
+  assert.ok(updateIdx > refuseIdx, "UPDATE class_id avant validation effectiveDate sous lock");
+  const beforeTx = ensureFn.slice(0, txIdx);
+  assert.doesNotMatch(beforeTx, /FROM enrollments/);
+  assert.doesNotMatch(beforeTx, /classChanged/);
+  assert.match(ensureFn, /FOR UPDATE/);
 
-  const transferStart = ensureFn.indexOf("if (classChanged) {");
-  assert.ok(transferStart >= 0, "branche classChanged atomique absente");
-  const transferBlock = ensureFn.slice(transferStart);
-  const txIdx = transferBlock.indexOf("withTransaction");
-  const transferInsertIdx = transferBlock.search(/INSERT INTO enrollments|enrollmentSql/);
-  const inTxIdx = transferBlock.indexOf("ensureEnrollmentObligationsInTx");
-  assert.ok(txIdx >= 0, "transfert de classe hors withTransaction");
-  assert.ok(transferInsertIdx >= 0, "mutation enrollment absente de la branche transfert");
-  assert.ok(inTxIdx >= 0, "ensureEnrollmentObligationsInTx absent de la branche transfert");
-  assert.ok(
-    txIdx < transferInsertIdx && transferInsertIdx < inTxIdx,
-    "transfert : mutation enrollment et Finance doivent être atomiques (même withTransaction)",
-  );
-  assert.match(transferBlock, /persistObligationSyncFailure/);
+  const inTxIdx = ensureFn.indexOf("ensureEnrollmentObligationsInTx");
+  assert.ok(inTxIdx > updateIdx, "Finance InTx avant mutation enrollment sous lock");
+  assert.match(ensureFn, /persistObligationSyncFailure/);
   assert.ok(
     ensureFn.indexOf("ensureEnrollmentObligationsInTx") < ensureFn.lastIndexOf("syncEnrollmentFinanceObligations"),
     "class_transfer ne doit pas passer par syncEnrollmentFinanceObligations (avale les pannes)",

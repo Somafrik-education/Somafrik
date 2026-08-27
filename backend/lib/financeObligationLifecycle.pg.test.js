@@ -135,6 +135,11 @@ async function main() {
        VALUES ($1, $2, 'CLS-6B', '6ème B', 'active') RETURNING id`,
       [schoolA.rows[0].id, year.rows[0].id],
     );
+    const klassC = await pool.query(
+      `INSERT INTO classes (school_id, academic_year_id, class_code, name, status)
+       VALUES ($1, $2, 'CLS-6C', '6ème C', 'active') RETURNING id`,
+      [schoolA.rows[0].id, year.rows[0].id],
+    );
     const student = await pool.query(
       `INSERT INTO students (school_id, student_code, first_name, last_name)
        VALUES ($1, 'CD-2026-0001-STU-0001', 'Awa', 'Diop') RETURNING id`,
@@ -682,6 +687,128 @@ async function main() {
         [studentRecovery.rows[0].id],
       );
       assert.equal(recoveryActiveSameKey.rowCount, 0, "retry : double débit");
+
+      const studentRace = await pool.query(
+        `INSERT INTO students (school_id, student_code, first_name, last_name)
+         VALUES ($1, 'CD-2026-0001-STU-0004', 'Mariam', 'Sow') RETURNING id`,
+        [schoolA.rows[0].id],
+      );
+      await pool.query(
+        `INSERT INTO enrollments (school_id, student_id, class_id, academic_year_id, status, enrollment_date, class_effective_date)
+         VALUES ($1, $2, $3, $4, 'active', '2026-09-01', '2026-09-01')`,
+        [schoolA.rows[0].id, studentRace.rows[0].id, klassA.rows[0].id, year.rows[0].id],
+      );
+      const seededRace = await store.ensureEnrollmentObligations(
+        {
+          reason: "enrollment_active",
+          schoolCode: "CD-2026-0001",
+          studentKey: "CD-2026-0001-STU-0004",
+          academicYear: "2026-2027",
+          classId: klassA.rows[0].id,
+        },
+        admin,
+      );
+      assert.ok(seededRace.created >= 3, "obligations 6A de concurrence absentes");
+      const grid6c = await store.upsertFinanceFeeGrid(
+        {
+          classId: klassC.rows[0].id,
+          className: "6ème C",
+          academicYear: "2026-2027",
+          currency: "CDF",
+          status: "Active",
+          items: [
+            {
+              feeType: "Scolarité",
+              label: "Scolarité 6C",
+              amount: 33_000,
+              monthlyMonths: ["Septembre", "Octobre"],
+              status: "Actif",
+            },
+          ],
+        },
+        admin,
+      );
+      await store.setFinanceFeeGridStatus(grid6c.id, "Active", admin);
+
+      const [raceB, raceC] = await Promise.allSettled([
+        pgRepo.ensureActiveEnrollment(schoolA.rows[0].id, studentRace.rows[0].id, klassB.rows[0].id, {
+          effectiveDate: "2026-09-15",
+          principal: admin,
+        }),
+        pgRepo.ensureActiveEnrollment(schoolA.rows[0].id, studentRace.rows[0].id, klassC.rows[0].id, {
+          effectiveDate: "2026-09-15",
+          principal: admin,
+        }),
+      ]);
+      assert.equal(raceB.status, "fulfilled", raceB.reason?.message || "6A→6B concurrent a échoué");
+      assert.equal(raceC.status, "fulfilled", raceC.reason?.message || "6A→6C concurrent a échoué");
+
+      const raceEnrollment = await pool.query(
+        `SELECT class_id FROM enrollments WHERE student_id = $1`,
+        [studentRace.rows[0].id],
+      );
+      const winnerClassId = String(raceEnrollment.rows[0].class_id);
+      const targetIds = new Set([String(klassB.rows[0].id), String(klassC.rows[0].id)]);
+      assert.ok(targetIds.has(winnerClassId), "enrollment final doit être 6B ou 6C");
+      const loserClassId = winnerClassId === String(klassB.rows[0].id)
+        ? String(klassC.rows[0].id)
+        : String(klassB.rows[0].id);
+      const raceActive = await pool.query(
+        `SELECT class_id, period_key, fee_type_code
+         FROM student_fee_obligations
+         WHERE student_id = $1 AND archived_at IS NULL`,
+        [studentRace.rows[0].id],
+      );
+      const activeLoser = raceActive.rows.filter((row) => String(row.class_id) === loserClassId);
+      assert.equal(activeLoser.length, 0, "aucune obligation active de l'autre classe concurrente");
+      const activeOctA = raceActive.rows.filter(
+        (row) => String(row.class_id) === String(klassA.rows[0].id) && String(row.period_key) === "2026-10",
+      );
+      assert.equal(activeOctA.length, 0, "Octobre 6A encore actif après transferts concurrents");
+      const activeAUnexpected = raceActive.rows.filter(
+        (row) =>
+          String(row.class_id) === String(klassA.rows[0].id) &&
+          String(row.period_key) !== "2026-09" &&
+          String(row.period_key) !== "ONCE",
+      );
+      assert.equal(activeAUnexpected.length, 0, "obligation 6A future encore active (hors mois courant V1)");
+      const futureMonthly = raceActive.rows.filter((row) => /^\d{4}-\d{2}$/.test(String(row.period_key)) && String(row.period_key) > "2026-09");
+      for (const row of futureMonthly) {
+        assert.equal(
+          String(row.class_id),
+          winnerClassId,
+          `période future ${row.period_key} active hors classe d'enrollment`,
+        );
+      }
+      const activeTargets = new Set(
+        raceActive.rows
+          .filter((row) => targetIds.has(String(row.class_id)))
+          .map((row) => String(row.class_id)),
+      );
+      assert.ok(activeTargets.size <= 1, "mélange 6B/6C actif");
+      if (activeTargets.size === 1) {
+        assert.equal([...activeTargets][0], winnerClassId);
+      }
+      const winnerOct = raceActive.rows.filter(
+        (row) => String(row.class_id) === winnerClassId && String(row.period_key) === "2026-10",
+      );
+      assert.ok(winnerOct.length >= 1, "Octobre de la classe finale absent");
+      const raceDup = await pool.query(
+        `SELECT period_key, count(*)::int AS n
+         FROM student_fee_obligations
+         WHERE student_id = $1 AND archived_at IS NULL
+         GROUP BY period_key
+         HAVING count(*) > 1`,
+        [studentRace.rows[0].id],
+      );
+      assert.equal(raceDup.rowCount, 0, "double débit concurrent");
+      const raceSuperseded = await pool.query(
+        `SELECT class_id, period_key, cancel_reason
+         FROM student_fee_obligations
+         WHERE student_id = $1 AND archived_at IS NOT NULL AND cancel_reason = 'CLASS_TRANSFER'`,
+        [studentRace.rows[0].id],
+      );
+      assert.ok(raceSuperseded.rowCount >= 1, "historique CLASS_TRANSFER absent");
     } finally {
       await pgRepo.close();
     }
