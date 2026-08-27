@@ -122,6 +122,7 @@
     "verify:mobile-network-resilience": "npm --prefix Mobile run verify:mobile-network-resilience",
     "verify:mobile-l1-sqlite-cache": "npm --prefix Mobile run verify:mobile-l1-sqlite-cache",
     "verify:mobile-l1-offline-reads": "npm --prefix Mobile run verify:mobile-l1-offline-reads",
+    "verify:mobile-l1-native-sqlcipher-smoke": "npm --prefix Mobile run verify:mobile-l1-native-sqlcipher-smoke",
     "verify:mobile-usability": "npm --prefix Mobile run verify:mobile-usability",
     "verify:mobile-form-fields": "npm --prefix Mobile run verify:mobile-form-fields",
     "verify:mobile-ux-v1": "npm --prefix Mobile run verify:mobile-ux-v1",

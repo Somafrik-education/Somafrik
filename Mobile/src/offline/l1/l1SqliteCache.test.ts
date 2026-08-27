@@ -5,7 +5,7 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
-import { generateL1DbKeyHex, loadOrCreateL1DbKey, openEncryptedL1Database, type L1SqliteLike } from "./database";
+import { generateL1DbKeyHex, loadOrCreateL1DbKey, openEncryptedL1Database, runNativeSqlCipherBootProbe, type L1SqliteLike } from "./database";
 import {
   adoptL1Runtime,
   beginL1Session,
@@ -80,6 +80,8 @@ async function run() {
   assert.equal(/PRAGMA key = 'password'/.test(src), false);
   assert.equal(/hexdeadbeef|hardcoded-db-key/i.test(src), false);
   assert.match(src, /PRAGMA cipher_version/);
+  assert.match(src, /L1_SQLCIPHER_SMOKE/);
+  assert.match(src, /l1_native_sqlcipher_probe/);
   assert.match(typesSrc, /L1_SQLCIPHER_REQUIRED/);
   assert.match(src, /L1_ERROR\.SQLCIPHER_REQUIRED/);
   assert.match(src, /withExclusiveTransactionAsync/);
@@ -165,6 +167,41 @@ async function run() {
   });
   assert.equal(missingCipher.ok, false);
   if (!missingCipher.ok) assert.equal(missingCipher.code, L1_ERROR.SQLCIPHER_REQUIRED);
+
+  const probeRows = new Map<string, { cipher_version: string; written_at: string }>();
+  const probeDb: L1SqliteLike = {
+    async execAsync() {
+      return;
+    },
+    async runAsync(sql, params = []) {
+      if (/INSERT OR REPLACE INTO l1_native_sqlcipher_probe/.test(sql)) {
+        probeRows.set(String(params[0]), {
+          cipher_version: String(params[1]),
+          written_at: String(params[2]),
+        });
+      }
+    },
+    async getFirstAsync<T>(sql: string, params: unknown[] = []): Promise<T | null> {
+      if (/l1_native_sqlcipher_probe/.test(sql)) {
+        return (probeRows.get(String(params[0] ?? "boot")) ?? null) as T | null;
+      }
+      return null;
+    },
+    async getAllAsync() {
+      return [];
+    },
+    async withExclusiveTransactionAsync(task) {
+      await task(probeDb);
+    },
+    async closeAsync() {
+      return;
+    },
+  };
+  const probeInit = await runNativeSqlCipherBootProbe(probeDb, "4.6.1 community");
+  assert.equal(probeInit.persist, "init");
+  assert.equal(probeInit.cipherVersion, "4.6.1 community");
+  const probeOk = await runNativeSqlCipherBootProbe(probeDb, "4.6.1 community");
+  assert.equal(probeOk.persist, "ok", "kill/relaunch simulé : même DB chiffrée, lecture OK");
 
   const persist = createMemoryL1Bucket();
   const store = createMemoryL1Store({ cipherKey: "alpha", openKey: "alpha", bucket: persist });
