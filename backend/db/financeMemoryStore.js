@@ -169,6 +169,9 @@ function createFinanceMemoryStore({
               classId: String(row.classId),
               classCode: asTrimmed(row.classCode),
               className: asTrimmed(row.className),
+              academicYear: asTrimmed(row.academicYear),
+              enrollmentDate: row.enrollmentDate || row.enrollment_date || null,
+              classEffectiveDate: row.classEffectiveDate || row.class_effective_date || row.enrollmentDate || null,
             }));
         }
         if (asTrimmed(student.classId)) {
@@ -178,10 +181,26 @@ function createFinanceMemoryStore({
               classId: String(student.classId),
               classCode: asTrimmed(student.classCode),
               className: asTrimmed(student.className),
+              academicYear: asTrimmed(student.academicYear),
+              enrollmentDate: student.enrollmentDate || null,
+              classEffectiveDate: student.classEffectiveDate || student.enrollmentDate || null,
             },
           ];
         }
         return [];
+      },
+      async listApplicableFeeGrids({ schoolId, classId, className, academicYear }) {
+        const year = asTrimmed(academicYear).toLowerCase();
+        const name = asTrimmed(className).toLowerCase();
+        return tables.feeGrids
+          .filter((row) => {
+            if (String(row.school_id) !== String(schoolId)) return false;
+            if (row.status !== "Active") return false;
+            if (year && asTrimmed(row.academic_year).toLowerCase() !== year) return false;
+            if (classId && row.class_id && String(row.class_id) === String(classId)) return true;
+            return name && asTrimmed(row.class_name).toLowerCase() === name;
+          })
+          .map((row) => ({ ...mapGridRow(row), schoolId: row.school_id }));
       },
       async getClassById(classId) {
         if (typeof lookupClassById === "function") {
@@ -421,7 +440,12 @@ function createFinanceMemoryStore({
         row.amount_due = fee.amountDue;
         row.balance = fee.balance;
         row.status = fee.status;
-        row.archived_at = fee.archived ? new Date().toISOString() : row.archived_at;
+        if (fee.archived) {
+          row.archived_at = row.archived_at || new Date().toISOString();
+          row.cancel_reason = fee.cancelReason || row.cancel_reason || "";
+          row.cancelled_at = row.cancelled_at || new Date().toISOString();
+          row.cancelled_by = fee.cancelledBy || row.cancelled_by || "";
+        }
         row.updated_at = new Date().toISOString();
         return mapObligationRow(row);
       },
@@ -539,14 +563,25 @@ function createFinanceMemoryStore({
       },
       async insertObligationIfAbsent(input) {
         const period = input.periodLabel || "";
-        const exists = tables.studentFees.some(
-          (row) =>
-            String(row.student_id) === String(input.student.dbId || input.student.id) &&
+        const periodKey = asTrimmed(input.periodKey);
+        const academicYear = input.academicYear || input.grid.academicYear || "";
+        const studentId = String(input.student.dbId || input.student.id);
+        const exists = tables.studentFees.some((row) => {
+          if (row.archived_at) return false;
+          if (String(row.student_id) !== studentId) return false;
+          if (periodKey && input.feeTypeCode) {
+            return (
+              asTrimmed(row.academic_year) === asTrimmed(academicYear) &&
+              asTrimmed(row.fee_type_code) === asTrimmed(input.feeTypeCode) &&
+              asTrimmed(row.period_key) === periodKey
+            );
+          }
+          return (
             row.fee_grid_id === input.grid.id &&
             row.school_fee_item_id === input.item.id &&
-            (row.period_label || "") === period &&
-            !row.archived_at,
-        );
+            (row.period_label || "") === period
+          );
+        });
         if (exists) return false;
         const amount = money(input.item.amount);
         const amounts = obligationStatus({ amountDue: amount, amountPaid: 0, exemption: 0, dueDate: input.item.dueDate });
@@ -556,14 +591,18 @@ function createFinanceMemoryStore({
           school_code: input.schoolCode,
           student_id: input.student.dbId || input.student.id,
           student_code: input.student.publicId || input.student.studentCode || input.student.id,
-          class_id: null,
+          class_id: input.classId || input.grid.classId || null,
           fee_grid_id: input.grid.id,
           school_fee_item_id: input.item.id,
+          source_fee_item_uuid: input.sourceFeeItemId || input.item.dbId || null,
+          source_enrollment_id: input.sourceEnrollmentId || null,
           fee_type: input.item.feeType,
+          fee_type_code: input.feeTypeCode || null,
           label: period ? `${input.item.label} — ${period}` : input.item.label,
-          currency: input.grid.currency,
-          academic_year: input.grid.academicYear,
+          currency: input.currency || input.grid.currency,
+          academic_year: academicYear,
           period_label: period,
+          period_key: periodKey || null,
           initial_amount: amount,
           discount: 0,
           exemption: 0,
@@ -578,8 +617,14 @@ function createFinanceMemoryStore({
             publicId: `STUFEE-${randomUUID()}`,
             studentId: input.student.publicId || input.student.studentCode || input.student.id,
             studentName: `${input.student.firstName ?? ""} ${input.student.lastName ?? input.student.name ?? ""}`.trim(),
-            className: input.grid.className,
+            className: input.className || input.grid.className,
+            classId: input.classId || input.grid.classId || null,
             schoolCode: input.schoolCode,
+            feeTypeCode: input.feeTypeCode || null,
+            periodKey: periodKey || null,
+            sourceEnrollmentId: input.sourceEnrollmentId || null,
+            createdReason: input.reason || null,
+            createdBy: input.createdBy || null,
           },
         });
         return true;
@@ -673,6 +718,8 @@ function createFinanceMemoryStore({
     },
     setFinanceFeeGridStatus: (id, status, principal) => financeService.setFeeGridStatus(api, id, status, principal),
     applyFinanceFeeGrid: (id, principal, options) => financeService.applyFeeGrid(api, id, principal, options),
+    ensureEnrollmentObligations: (input, principal, auditMeta) =>
+      financeService.ensureEnrollmentFinanceObligations(api, input, principal, auditMeta),
     listFinanceFeeGrids: async (principal) => {
       const scope = resolveFinanceSchoolScope(principal);
       if (scope.mode === "none") return [];

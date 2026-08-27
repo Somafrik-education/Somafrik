@@ -93,11 +93,16 @@ function createFinancePgStore(repo) {
         const rows = await all(
           `SELECT e.id AS enrollment_id,
                   e.school_id,
+                  e.enrollment_date,
+                  e.class_effective_date,
                   cl.id AS class_id,
                   cl.class_code,
-                  cl.name AS class_name
+                  cl.name AS class_name,
+                  ay.id AS academic_year_id,
+                  ay.name AS academic_year
            FROM enrollments e
            JOIN classes cl ON cl.id = e.class_id
+           JOIN academic_years ay ON ay.id = e.academic_year_id
            WHERE e.student_id = $1
              AND e.school_id = $2
              AND e.status = 'active'
@@ -111,7 +116,28 @@ function createFinancePgStore(repo) {
           classId: row.class_id,
           classCode: row.class_code || "",
           className: row.class_name || "",
+          academicYearId: row.academic_year_id,
+          academicYear: row.academic_year || "",
+          enrollmentDate: row.enrollment_date,
+          classEffectiveDate: row.class_effective_date || row.enrollment_date,
         }));
+      },
+      async listApplicableFeeGrids({ schoolId, classId, className, academicYear }) {
+        const rows = await all(
+          `SELECT g.*, s.school_code, cl.class_code
+           FROM fee_grids g
+           JOIN schools s ON s.id = g.school_id
+           LEFT JOIN classes cl ON cl.id = g.class_id
+           WHERE g.school_id = $1
+             AND g.status = 'Active'
+             AND lower(btrim(g.academic_year)) = lower(btrim($2))
+             AND (
+               ($3::uuid IS NOT NULL AND g.class_id = $3)
+               OR lower(btrim(g.class_name)) = lower(btrim($4))
+             )`,
+          [schoolId, asTrimmed(academicYear), classId || null, asTrimmed(className)],
+        );
+        return rows.map((row) => ({ ...mapGridRow(row), schoolId: row.school_id }));
       },
       async getClassById(classId) {
         const key = asTrimmed(classId);
@@ -206,6 +232,7 @@ function createFinancePgStore(repo) {
             lastName: row.last_name,
             name: `${row.first_name ?? ""} ${row.last_name ?? ""}`.trim(),
             schoolCode: row.school_code,
+            schoolId: row.school_id,
             classId: row.class_id,
             classCode: row.class_code || "",
             className: row.class_name,
@@ -434,13 +461,40 @@ function createFinancePgStore(repo) {
         const row = await one(
           `UPDATE student_fee_obligations
            SET amount_paid = $2, discount = $3, exemption = $4, amount_due = $5, balance = $6, status = $7,
-               archived_at = CASE WHEN $8 THEN NOW() ELSE archived_at END,
+               archived_at = CASE WHEN $8 THEN COALESCE(archived_at, NOW()) ELSE archived_at END,
+               cancel_reason = CASE WHEN $8 THEN COALESCE($9, cancel_reason) ELSE cancel_reason END,
+               cancelled_at = CASE WHEN $8 THEN COALESCE(cancelled_at, NOW()) ELSE cancelled_at END,
+               cancelled_by = CASE WHEN $8 THEN COALESCE($10, cancelled_by) ELSE cancelled_by END,
                updated_at = NOW()
            WHERE id = $1
            RETURNING *`,
-          [fee.dbId || fee.id, fee.amountPaid, fee.discount || 0, fee.exemption || 0, fee.amountDue, fee.balance, fee.status, Boolean(fee.archived)],
+          [
+            fee.dbId || fee.id,
+            fee.amountPaid,
+            fee.discount || 0,
+            fee.exemption || 0,
+            fee.amountDue,
+            fee.balance,
+            fee.status,
+            Boolean(fee.archived),
+            fee.cancelReason || null,
+            fee.cancelledBy || null,
+          ],
         );
-        return mapObligationRow({ ...row, school_code: fee.schoolCode, student_code: fee.studentId, profile_payload: { publicId: fee.id, studentId: fee.studentId, studentName: fee.studentName, className: fee.className, schoolCode: fee.schoolCode } });
+        return mapObligationRow({
+          ...row,
+          school_code: fee.schoolCode,
+          student_code: fee.studentId,
+          profile_payload: {
+            publicId: fee.id,
+            studentId: fee.studentId,
+            studentName: fee.studentName,
+            className: fee.className,
+            schoolCode: fee.schoolCode,
+            cancelReason: fee.cancelReason,
+            cancelledBy: fee.cancelledBy,
+          },
+        });
       },
       async insertAllocation(row) {
         await query(
@@ -566,36 +620,51 @@ function createFinancePgStore(repo) {
       },
       async insertObligationIfAbsent(input) {
         const period = input.periodLabel || "";
+        const periodKey = asTrimmed(input.periodKey);
         const amount = money(input.item.amount);
         const amounts = obligationStatus({ amountDue: amount, amountPaid: 0, exemption: 0, dueDate: input.item.dueDate });
+        const academicYear = input.academicYear || input.grid.academicYear;
+        const currency = input.currency || input.grid.currency;
         try {
           await query("SAVEPOINT finance_obligation_insert");
           await query(
             `INSERT INTO student_fee_obligations (
-               school_id, student_id, fee_grid_id, school_fee_item_id, fee_type, label, currency,
-               academic_year, period_label, initial_amount, amount_due, amount_paid, balance, due_date, status,
+               school_id, student_id, class_id, fee_grid_id, school_fee_item_id, fee_type, fee_type_code,
+               label, currency, academic_year, period_label, period_key, initial_amount, amount_due,
+               amount_paid, balance, due_date, status, source_enrollment_id, source_fee_item_uuid,
                profile_payload
-             ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$10,0,$11,$12,$13,$14::jsonb)`,
+             ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$13,0,$14,$15,$16,$17,$18,$19::jsonb)`,
             [
               input.schoolId,
               input.student.dbId,
+              input.classId || input.grid.classId || null,
               input.grid.id,
               input.item.id,
               input.item.feeType,
+              input.feeTypeCode || null,
               period ? `${input.item.label} — ${period}` : input.item.label,
-              input.grid.currency,
-              input.grid.academicYear,
+              currency,
+              academicYear,
               period,
+              periodKey || null,
               amount,
               amounts.balance,
               toIsoDate(input.item.dueDate),
               amounts.status,
+              input.sourceEnrollmentId || null,
+              input.sourceFeeItemId || input.item.dbId || null,
               JSON.stringify({
                 publicId: `STUFEE-${randomUUID()}`,
                 studentId: input.student.publicId || input.student.studentCode,
                 studentName: `${input.student.firstName ?? ""} ${input.student.lastName ?? input.student.name ?? ""}`.trim(),
-                className: input.grid.className,
+                className: input.className || input.grid.className,
+                classId: input.classId || input.grid.classId || null,
                 schoolCode: input.schoolCode,
+                feeTypeCode: input.feeTypeCode || null,
+                periodKey: periodKey || null,
+                sourceEnrollmentId: input.sourceEnrollmentId || null,
+                createdReason: input.reason || null,
+                createdBy: input.createdBy || null,
               }),
             ],
           );
@@ -740,6 +809,8 @@ function createFinancePgStore(repo) {
     },
     setFinanceFeeGridStatus: (id, status, principal) => financeService.setFeeGridStatus(api, id, status, principal),
     applyFinanceFeeGrid: (id, principal, options) => financeService.applyFeeGrid(api, id, principal, options),
+    ensureEnrollmentObligations: (input, principal, auditMeta) =>
+      financeService.ensureEnrollmentFinanceObligations(api, input, principal, auditMeta),
     listFinanceFeeGrids: async (principal) => {
       const scope = resolveFinanceSchoolScope(principal);
       if (scope.mode === "none") return [];

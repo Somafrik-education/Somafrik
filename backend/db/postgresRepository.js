@@ -1525,6 +1525,23 @@ class PostgresRepository {
     return this.getFinanceStore().applyFinanceFeeGrid(id, principal, options);
   }
 
+  ensureEnrollmentObligations(input, principal, auditMeta) {
+    return this.getFinanceStore().ensureEnrollmentObligations(input, principal, auditMeta);
+  }
+
+  async syncEnrollmentFinanceObligations(input = {}, principal) {
+    try {
+      return await this.ensureEnrollmentObligations(input, principal || {
+        role: "system",
+        schoolCode: input.schoolCode || "*",
+        sub: "finance-obligation-lifecycle",
+      });
+    } catch (error) {
+      console.warn("finance F3 ensureEnrollmentObligations:", error?.code || error?.message);
+      return { created: 0, skipped: 0, superseded: 0, error: error?.code || error?.message };
+    }
+  }
+
   listFinanceStudentFees(principal) {
     return this.getFinanceStore().listFinanceStudentFees(principal);
   }
@@ -3184,17 +3201,75 @@ class PostgresRepository {
     return existing?.id ?? null;
   }
 
-  async ensureActiveEnrollment(schoolId, studentDbId, classId) {
+  async ensureActiveEnrollment(schoolId, studentDbId, classId, options = {}) {
     if (!studentDbId || !classId) return;
     const academicYear = await this.getCurrentAcademicYear(schoolId);
     if (!academicYear) return;
+    const previous = await this.one(
+      `SELECT class_id, class_effective_date, enrollment_date
+       FROM enrollments
+       WHERE student_id = $1 AND academic_year_id = $2
+       LIMIT 1`,
+      [studentDbId, academicYear.id],
+    );
+    const classChanged = Boolean(previous?.class_id && String(previous.class_id) !== String(classId));
+    const effectiveDate = options.effectiveDate || (classChanged ? new Date().toISOString().slice(0, 10) : null);
     await this.query(
-      `INSERT INTO enrollments (school_id, student_id, class_id, academic_year_id, enrollment_date, status)
-       VALUES ($1, $2, $3, $4, CURRENT_DATE, 'active')
+      `INSERT INTO enrollments (
+         school_id, student_id, class_id, academic_year_id, enrollment_date, class_effective_date, status
+       )
+       VALUES ($1, $2, $3, $4, CURRENT_DATE, COALESCE($5::date, CURRENT_DATE), 'active')
        ON CONFLICT (student_id, academic_year_id) DO UPDATE SET
          class_id = EXCLUDED.class_id,
-         status = 'active'`,
-      [schoolId, studentDbId, classId, academicYear.id],
+         status = 'active',
+         class_effective_date = CASE
+           WHEN enrollments.class_id IS DISTINCT FROM EXCLUDED.class_id
+             THEN COALESCE($5::date, CURRENT_DATE)
+           ELSE COALESCE(enrollments.class_effective_date, enrollments.enrollment_date, CURRENT_DATE)
+         END,
+         updated_at = NOW()`,
+      [schoolId, studentDbId, classId, academicYear.id, effectiveDate],
+    );
+    const school = await this.one("SELECT school_code FROM schools WHERE id = $1", [schoolId]);
+    const student = await this.one(
+      `SELECT st.student_code, st.first_name, st.last_name, st.id
+       FROM students st WHERE st.id = $1`,
+      [studentDbId],
+    );
+    const klass = await this.one(
+      `SELECT id, class_code, name FROM classes WHERE id = $1`,
+      [classId],
+    );
+    if (!school || !student || !klass) return;
+    const previousClass = classChanged
+      ? await this.one(`SELECT id, class_code, name FROM classes WHERE id = $1`, [previous.class_id])
+      : null;
+    await this.syncEnrollmentFinanceObligations(
+      {
+        reason: classChanged ? "class_transfer" : "enrollment_active",
+        schoolCode: school.school_code,
+        studentKey: student.student_code,
+        student: {
+          id: student.student_code,
+          dbId: student.id,
+          publicId: student.student_code,
+          studentCode: student.student_code,
+          firstName: student.first_name,
+          lastName: student.last_name,
+          schoolCode: school.school_code,
+          classId: klass.id,
+          classCode: klass.class_code,
+          className: klass.name,
+          academicYear: academicYear.name,
+        },
+        academicYear: academicYear.name,
+        classId: klass.id,
+        previousClass: previousClass
+          ? { classId: previousClass.id, classCode: previousClass.class_code, className: previousClass.name }
+          : null,
+        effectiveDate,
+      },
+      options.principal,
     );
   }
 
@@ -6153,6 +6228,19 @@ class PostgresRepository {
   async enrollStudentInClass(classCode, schoolCode, body) {
     const created = await this.getClassStudentsRepository().enroll(classCode, schoolCode, body);
     this.cachedDataset = null;
+    const student = created?.student;
+    if (student?.studentCode) {
+      await this.syncEnrollmentFinanceObligations(
+        {
+          reason: "enrollment_active",
+          schoolCode,
+          studentKey: student.studentCode,
+          academicYear: student.academicYearName || student.academicYear,
+          classId: student.classId,
+        },
+        { role: "system", schoolCode, sub: "finance-obligation-lifecycle" },
+      );
+    }
     return created;
   }
 

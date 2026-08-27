@@ -237,7 +237,11 @@ async function main() {
     (error) => String(error.message).includes("audit write failed"),
   );
   assert.equal(rollbackStore.tables.payments.length, 0);
-  assert.equal(rollbackStore.tables.auditLogs.length, 0);
+  assert.equal(
+    rollbackStore.tables.auditLogs.some((row) => row.action === "create_payment"),
+    false,
+    "rollback paiement : aucun audit create_payment",
+  );
   const inscriptionAfterFailedPay = (await rollbackStore.listFinanceStudentFees()).find(
     (row) => row.feeType === "Inscription",
   );

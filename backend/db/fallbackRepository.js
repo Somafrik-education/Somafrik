@@ -2793,6 +2793,10 @@ class FallbackRepository {
     return this.getFinanceStore().applyFinanceFeeGrid(id, principal, options);
   }
 
+  ensureEnrollmentObligations(input, principal, auditMeta) {
+    return this.getFinanceStore().ensureEnrollmentObligations(input, principal, auditMeta);
+  }
+
   listFinanceStudentFees(principal) {
     return this.getFinanceStore().listFinanceStudentFees(principal);
   }

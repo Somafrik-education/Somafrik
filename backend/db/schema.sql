@@ -257,6 +257,8 @@ CREATE TABLE IF NOT EXISTS enrollments (
   UNIQUE (student_id, academic_year_id)
 );
 
+ALTER TABLE enrollments ADD COLUMN IF NOT EXISTS class_effective_date DATE;
+
 CREATE TABLE IF NOT EXISTS teacher_assignments (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   school_id UUID NOT NULL REFERENCES schools(id),
