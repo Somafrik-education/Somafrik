@@ -19,6 +19,7 @@ DECLARE
   payment_student UUID;
   payment_amount NUMERIC(12,2);
   payment_currency TEXT;
+  payment_status TEXT;
   payment_cancelled_at TIMESTAMPTZ;
   obligation_school UUID;
   obligation_student UUID;
@@ -29,8 +30,8 @@ DECLARE
   already_payment_allocated NUMERIC(12,2);
   already_obligation_allocated NUMERIC(12,2);
 BEGIN
-  SELECT p.school_id, p.student_id, p.amount, p.currency, p.cancelled_at
-    INTO payment_school, payment_student, payment_amount, payment_currency, payment_cancelled_at
+  SELECT p.school_id, p.student_id, p.amount, p.currency, p.payment_status, p.cancelled_at
+    INTO payment_school, payment_student, payment_amount, payment_currency, payment_status, payment_cancelled_at
     FROM payments p
    WHERE p.id = NEW.payment_id
    FOR UPDATE;
@@ -74,8 +75,13 @@ BEGIN
     RETURN NEW;
   END IF;
 
-  IF payment_cancelled_at IS NOT NULL THEN
+  IF payment_cancelled_at IS NOT NULL OR lower(btrim(COALESCE(payment_status, ''))) = 'cancelled' THEN
     RAISE EXCEPTION 'FINANCE_PAYMENT_CANCELLED'
+      USING ERRCODE = 'check_violation';
+  END IF;
+
+  IF lower(btrim(COALESCE(payment_status, ''))) <> 'paid' THEN
+    RAISE EXCEPTION 'FINANCE_PAYMENT_NOT_SETTLED'
       USING ERRCODE = 'check_violation';
   END IF;
 
