@@ -88,6 +88,16 @@ function timeout(ms, label) {
   });
 }
 
+function isoDate(value) {
+  if (value instanceof Date) {
+    const year = value.getUTCFullYear();
+    const month = String(value.getUTCMonth() + 1).padStart(2, "0");
+    const day = String(value.getUTCDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+  }
+  return String(value ?? "").slice(0, 10);
+}
+
 async function main() {
   if (!DATABASE_URL) {
     console.log("financeObligationApplyTransferRace.pg.test.js: SKIP (DATABASE_URL absent)");
@@ -290,7 +300,7 @@ async function main() {
       [student.rows[0].id, year.rows[0].id],
     );
     assert.equal(String(enrollment.rows[0].class_id), String(classB.rows[0].id));
-    assert.equal(String(enrollment.rows[0].class_effective_date).slice(0, 10), "2026-09-15");
+    assert.equal(isoDate(enrollment.rows[0].class_effective_date), "2026-09-15");
 
     const active = await pool.query(
       `SELECT class_id, fee_type_code, period_key, due_date
