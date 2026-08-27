@@ -9,7 +9,7 @@
 ```text
 Base develop exact : 874f9415cda8c1e3df1339001b8f0f437149f38d
                      (merge #352 Native SQLCipher APK smoke)
-HEAD PR            : (pointe de #353 — correctif diagnostique SYNC/REFUSAL)
+HEAD PR            : (pointe de #353 — correctif diagnostique STAGE)
 Appareil physique  : Xiaomi E6QCAIAIC6LJIBXG
 Package            : com.somafrik.app
 Version            : 1.2.1 (versionCode 13)
@@ -34,15 +34,31 @@ Fallback cache seulement pour `NETWORK_UNAVAILABLE`.
 
 ```text
 RC2_L1_SYNC_START resource=classes
+RC2_L1_STAGE resource=classes stage=meta_start
+RC2_L1_STAGE resource=classes stage=meta_ok
+RC2_L1_STAGE resource=classes stage=reconcile_start
+RC2_L1_STAGE resource=classes stage=reconcile_ok
+RC2_L1_STAGE resource=classes stage=fetch_start
 RC2_L1_PAGE resource=classes mode=full hasMore=false page=1
+RC2_L1_STAGE resource=classes stage=apply_start
+RC2_L1_STAGE resource=classes stage=apply_ok
 RC2_L1_SYNC resource=classes outcome=ready
-RC2_L1_SYNC_START resource=students
-...
 ```
 
+`stage` (marqueur) ∈ `meta_start` | `meta_ok` | `reconcile_start` | `reconcile_ok` | `fetch_start` | `apply_start` | `apply_ok`.  
 `mode` ∈ `full` | `delta` | `full_required` | `unavailable`.  
-`hasMore` ∈ `true` | `false`. `page` = entier.  
-Exception inattendue : `RC2_L1_SYNC_EXCEPTION resource=classes reason=unexpected` (jamais le message brut).
+`hasMore` ∈ `true` | `false`. `page` = entier.
+
+Exception inattendue (try/catch **par étape**, jamais le message brut) :
+
+```text
+RC2_L1_SYNC_EXCEPTION resource=classes stage=reconcile reason=unexpected
+```
+
+`stage` (exception) ∈ `meta` | `reconcile` | `fetch` | `apply` uniquement.  
+Aucun `error.message`, SQL, cursor, scopeHash, userId, schoolId, token ou contenu métier.
+
+Un HTTP classifié (`NETWORK_UNAVAILABLE`, 5xx, `SYNC_ERROR`, …) reste `RC2_L1_SYNC outcome=error` : ce n'est pas une `SYNC_EXCEPTION`.
 
 Chaque ressource est journalisée **dès sa fin**, pas après les cinq.
 
@@ -55,28 +71,37 @@ RC2_L1_REFUSAL resource=students reason=metadata_absent
 `reason` ∈ `empty` | `reconciling` | `blocked_authorization` | `metadata_absent` | `partition_mismatch` | `sqlcipher_unavailable` | `partition_unresolved`.
 
 `outcome` ∈ `ready` | `blocked_authorization` | `discarded` | `network_preserved` | `error`.  
-`code` optionnel, allowlist moteur uniquement (`UNAUTHORIZED`, `PERMISSION_DENIED`, `NETWORK_UNAVAILABLE`, …). Jamais de JWT, clé SQLCipher, email, téléphone, nom d'élève, ID utilisateur.
+`code` optionnel, allowlist moteur uniquement (`UNAUTHORIZED`, `PERMISSION_DENIED`, `NETWORK_UNAVAILABLE`, …). Jamais de JWT, clé SQLCipher, nom d'élève, ID utilisateur.
 
 `RC2_OFFLINE_READ_SMOKE OK` n'est émis qu'après `RC2_OFFLINE_BOOT permissions=ready_offline` **et** les 5 ressources vues en `source=l1-cache` avec `status=success|empty`.
 
-## Scénario physique — tentative 2 (diagnostic START/PAGE, Internet ON)
+## Scénario physique — tentative 3 (STAGE par étape, Internet ON)
 
 ```text
-RC2 tentative 2 : HOLD
+RC2 tentative 3 : HOLD
 Internet : rester ON
 Offline kill/relaunch : NE PAS TESTER
 Ready/merge #353 : INTERDIT
 ```
 
-Les écrans online chargent, mais `RC2_L1_SYNC` n'apparaissait pas : le moteur est séquentiel et ne journalisait qu'après les cinq. Cette révision logue **immédiatement** START / PAGE / outcome par ressource.
+Tentative 2 : `RC2_L1_SYNC_START resource=classes` puis `RC2_L1_SYNC_EXCEPTION resource=classes reason=unexpected`, **sans** `RC2_L1_PAGE`. SQLCipher `cipher_version=4.7.0` persist=ok. Aucune `SQLiteException` / `database locked` / `no such table` / `constraint` / `transaction misuse`. Bruit système écarté (ENOENT, MIUI/Wi-Fi, ReactNoCrashSoftException, ThermalInfoUtils).
 
-**Ne pas couper Internet. Ne pas kill/relaunch.** Capturer :
+Le blocage est donc **avant une page L1 valide**. Trois zones possibles : `getMeta`, `markResourceState(reconciling)`, `fetchPage` avant retour. Le logcat ne nommait pas l'étape (`reason=unexpected` volontaire).
+
+Cette révision ajoute les marqueurs `RC2_L1_STAGE` et `stage=` sur l'exception, **sans changer le métier** (boucle `full_required`/`unavailable` jusqu'à 500 pages inchangée).
+
+**Ne pas couper Internet. Ne pas kill/relaunch.** Cold launch puis :
 
 ```text
-adb logcat -d | grep -E "RC2_L1_SYNC_START|RC2_L1_PAGE|RC2_L1_SYNC|RC2_L1_SYNC_EXCEPTION"
+adb logcat -d | findstr /I "RC2_L1_STAGE RC2_L1_SYNC_START RC2_L1_PAGE RC2_L1_SYNC RC2_L1_SYNC_EXCEPTION"
 ```
 
-Si `mode=unavailable` ou `mode=full_required` se répète, on aura identifié la boucle de réconciliation (toujours non corrigée à l'aveugle).
+Lecture :
+- `meta_start` sans `meta_ok` + `stage=meta` → `getMeta`
+- `reconcile_start` sans `reconcile_ok` + `stage=reconcile` → `markResourceState` / purge
+- `fetch_start` sans `RC2_L1_PAGE` + `outcome=error` → HTTP classifié (pas une exception JS)
+- `fetch_start` sans `RC2_L1_PAGE` + `stage=fetch` → throw store sur le chemin fetch (purge 401)
+- `RC2_L1_PAGE` puis `stage=apply` → `applyL1PageAtomically`
 
 ## Preuve Android physique — tentative 1
 
@@ -111,13 +136,19 @@ Constats UI :
 
 Le transcript montre que le lecteur refuse le cache en offline, mais l'instrumentation de la tentative 1 ne révélait pas encore si la cause est `metadata_absent`, `reconciling`, `blocked_authorization`, `partition_mismatch` ou autre. Les marqueurs online `source=network` ne prouvent pas que `syncL1Cache` a atteint `outcome=ready`.
 
+## Hors scope de ce correctif RC2
+
+Warning observé : `Value being stored in SecureStore is larger than 2048 bytes`.  
+Ce n'est pas la clé SQLCipher (32 octets / 64 hex) : SQLCipher continue après ce warning. **Audit séparé**, pas dans le correctif RC2 principal.
+
 ## Correctif diagnostique (cette révision)
 
 Sans changer la logique métier (boucle `full_required`/`unavailable` jusqu'à 500 pages **inchangée**) :
 
-- `syncL1Cache` émet `RC2_L1_SYNC_START` puis, dès la fin de **chaque** ressource, `RC2_L1_SYNC outcome=…`
-- chaque page reçue : `RC2_L1_PAGE resource=… mode=… hasMore=… page=N`
-- exception qui s'échappe : `RC2_L1_SYNC_EXCEPTION reason=unexpected` puis rethrow
+- try/catch **par étape** (`meta` / `reconcile` / `fetch` / `apply`), pas seulement autour de `syncOneResource()`
+- `RC2_L1_STAGE` avant/après chaque étape catégorielle
+- exception : `RC2_L1_SYNC_EXCEPTION … stage=… reason=unexpected` puis rethrow
+- HTTP classifié inchangé : `RC2_L1_SYNC outcome=error` (pas d'exception)
 - `L1CacheRuntime` n'attend plus le tableau complet pour journaliser
 
 ## Checklist de preuve
@@ -129,10 +160,12 @@ Sans changer la logique métier (boucle `full_required`/`unavailable` jusqu'à 5
 | Package / version | OK | `com.somafrik.app` 1.2.1 / versionCode 13 |
 | 5 ressources L1 | OK (code) | `L1_RESOURCES` + 5 loaders `AdminDataContext` |
 | Online écrans réseau | OK | transcript `source=network` |
-| Online sync SQLite ready | HOLD | 5× `RC2_L1_SYNC_START` + PAGE + `outcome=ready` |
-| Internet coupé | OK | Wi-Fi + data off, USB + `adb reverse 8081` only |
-| Kill / relaunch | OK | cold relaunch Android |
+| Online sync SQLite ready | HOLD | START + STAGE + PAGE + `outcome=ready` |
+| Sync L1 classes | P1 | START + EXCEPTION, aucune PAGE |
+| Internet coupé | OK (t1) / ne pas retester | Wi-Fi + data off, USB + `adb reverse 8081` only |
+| Kill / relaunch | OK (t1) / ne pas retester | cold relaunch Android |
 | `ready_offline` | OK | `RC2_OFFLINE_BOOT permissions=ready_offline` |
+| SQLCipher / boot natif | OK | `cipher_version=4.7.0` persist=ok |
 | Classes | NO-GO | `source=none status=offline rows=0` |
 | Students | NO-GO | `source=none status=offline rows=0` |
 | Assignments teacher scope | HOLD | test device après cache ready |
@@ -168,10 +201,16 @@ Le vérificateur RC2 sort `BLOCKED_NATIVE_RC2_OFFLINE_READ_SMOKE` (exit 0) sans 
 ## Verdict
 
 ```text
+#353 : DRAFT
 RC2 OFFLINE READ SMOKE: HOLD
-RC2 tentative 2 : HOLD
+RC2 : HOLD
+SQLCipher : OK
+boot natif : OK
+sync L1 classes : P1 bloquante
+Internet : rester ON
+offline relaunch : ne pas retester
+Ready : NON
+Merge : NON
 ```
 
-Pas de Ready, pas de merge. Internet ON. Pas de kill/relaunch tant que START/PAGE n'ont pas montré où la séquence se bloque.
-
-Prochain chantier **après GO RC2** : SQLite Outbox + exactly-once replay / **RC3 Offline Write**.
+Pas de Ready, pas de merge. Internet ON. Pas de kill/relaunch tant que STAGE n'a pas nommé l'étape qui casse.

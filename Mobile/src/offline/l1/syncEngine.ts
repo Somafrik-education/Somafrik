@@ -2,6 +2,7 @@ import { applyL1PageAtomically, isL1StaleTransaction, markResourceState, purgeRe
 import { L1PayloadError } from "./syncApi";
 import {
   logRc2L1Page,
+  logRc2L1Stage,
   logRc2L1Sync,
   logRc2L1SyncException,
   logRc2L1SyncStart,
@@ -30,6 +31,22 @@ export type L1SyncResult = {
   code?: string;
 };
 
+type Rc2ExceptionStage = "meta" | "reconcile" | "fetch" | "apply";
+
+const stagedUnexpected = new WeakSet<object>();
+
+function rethrowUnexpected(resource: L1Resource, stage: Rc2ExceptionStage, error: unknown): never {
+  logRc2L1SyncException({ resource, reason: "unexpected", stage });
+  if (error && typeof error === "object") {
+    stagedUnexpected.add(error);
+  }
+  throw error;
+}
+
+function isStagedUnexpected(error: unknown): boolean {
+  return Boolean(error && typeof error === "object" && stagedUnexpected.has(error));
+}
+
 function emptyMeta(partition: L1Partition, resource: L1Resource): L1SyncMeta {
   return {
     userId: partition.userId,
@@ -55,18 +72,36 @@ function errorCode(error: unknown): string {
   return String((error as { code?: string }).code ?? "");
 }
 
+async function loadMeta(
+  store: L1Store,
+  partition: L1Partition,
+  resource: L1Resource,
+  fallback: L1SyncMeta,
+): Promise<L1SyncMeta> {
+  logRc2L1Stage({ resource, stage: "meta_start" });
+  try {
+    const meta = (await store.getMeta(partition, resource)) ?? fallback;
+    logRc2L1Stage({ resource, stage: "meta_ok" });
+    return meta;
+  } catch (error) {
+    rethrowUnexpected(resource, "meta", error);
+  }
+}
+
 async function beginFullReconcile(
   store: L1Store,
   partition: L1Partition,
   resource: L1Resource,
   isCurrent: () => boolean,
 ): Promise<"ok" | "discarded"> {
+  logRc2L1Stage({ resource, stage: "reconcile_start" });
   try {
     await purgeResourceAndReset(store, partition, resource, "reconciling", isCurrent);
   } catch (error) {
     if (isL1StaleTransaction(error) || !isCurrent()) return "discarded";
-    throw error;
+    rethrowUnexpected(resource, "reconcile", error);
   }
+  logRc2L1Stage({ resource, stage: "reconcile_ok" });
   return isCurrent() ? "ok" : "discarded";
 }
 
@@ -80,13 +115,14 @@ async function syncOneResource(args: {
   const { store, api, partition, resource, isCurrent } = args;
   if (!isCurrent()) return { resource, outcome: "discarded" };
 
-  let meta = (await store.getMeta(partition, resource)) ?? emptyMeta(partition, resource);
+  let meta = await loadMeta(store, partition, resource, emptyMeta(partition, resource));
   let localFull = meta.state !== "ready" || !meta.cursor;
   let storedCursor = localFull && meta.state !== "reconciling" ? null : meta.cursor;
   let invalidReconcileUsed = false;
   let protocolReconcileUsed = false;
 
   if (localFull && (meta.state === "empty" || !meta.cursor)) {
+    logRc2L1Stage({ resource, stage: "reconcile_start" });
     try {
       await markResourceState(store, partition, resource, {
         state: "reconciling",
@@ -94,8 +130,9 @@ async function syncOneResource(args: {
       }, isCurrent);
     } catch (error) {
       if (isL1StaleTransaction(error) || !isCurrent()) return { resource, outcome: "discarded" };
-      throw error;
+      rethrowUnexpected(resource, "reconcile", error);
     }
+    logRc2L1Stage({ resource, stage: "reconcile_ok" });
     storedCursor = null;
   }
 
@@ -104,6 +141,7 @@ async function syncOneResource(args: {
     if (!isCurrent()) return { resource, outcome: "discarded" };
     pages += 1;
     let page;
+    logRc2L1Stage({ resource, stage: "fetch_start" });
     try {
       page = await api.fetchPage(resource, storedCursor);
     } catch (error) {
@@ -112,7 +150,11 @@ async function syncOneResource(args: {
       const code = errorCode(error);
 
       if (status === 401) {
-        if (isCurrent()) await store.purgePartition(partition);
+        try {
+          if (isCurrent()) await store.purgePartition(partition);
+        } catch (purgeError) {
+          rethrowUnexpected(resource, "fetch", purgeError);
+        }
         return { resource, outcome: "error", code: "UNAUTHORIZED" };
       }
       if (status === 403) {
@@ -120,7 +162,7 @@ async function syncOneResource(args: {
           await purgeResourceAndReset(store, partition, resource, "blocked_authorization", isCurrent);
         } catch (error) {
           if (isL1StaleTransaction(error) || !isCurrent()) return { resource, outcome: "discarded" };
-          throw error;
+          rethrowUnexpected(resource, "reconcile", error);
         }
         if (!isCurrent()) return { resource, outcome: "discarded" };
         return { resource, outcome: "blocked_authorization", code };
@@ -137,7 +179,7 @@ async function syncOneResource(args: {
         storedCursor = null;
         localFull = true;
         invalidReconcileUsed = false;
-        meta = (await store.getMeta(partition, resource)) ?? emptyMeta(partition, resource);
+        meta = await loadMeta(store, partition, resource, emptyMeta(partition, resource));
         continue;
       }
       if (code === "MOBILE_SYNC_CURSOR_INVALID") {
@@ -192,21 +234,23 @@ async function syncOneResource(args: {
       }
       storedCursor = null;
       localFull = true;
-      meta = (await store.getMeta(partition, resource)) ?? emptyMeta(partition, resource);
+      meta = await loadMeta(store, partition, resource, emptyMeta(partition, resource));
       continue;
     }
 
     const nextState = localFull && page.hasMore ? "reconciling" : "ready";
+    logRc2L1Stage({ resource, stage: "apply_start" });
     try {
       await applyL1PageAtomically(store, partition, resource, page, nextState, isCurrent);
     } catch (error) {
       if (isL1StaleTransaction(error) || !isCurrent()) return { resource, outcome: "discarded" };
-      throw error;
+      rethrowUnexpected(resource, "apply", error);
     }
+    logRc2L1Stage({ resource, stage: "apply_ok" });
     if (!isCurrent()) {
       return { resource, outcome: "discarded" };
     }
-    meta = (await store.getMeta(partition, resource)) ?? meta;
+    meta = await loadMeta(store, partition, resource, meta);
     if (!page.hasMore) {
       return { resource, outcome: "ready" };
     }
@@ -242,7 +286,9 @@ export async function syncL1Cache(args: {
       logRc2L1Sync(result);
       results.push(result);
     } catch (error) {
-      logRc2L1SyncException({ resource, reason: "unexpected" });
+      if (!isStagedUnexpected(error)) {
+        logRc2L1SyncException({ resource, reason: "unexpected" });
+      }
       throw error;
     }
   }

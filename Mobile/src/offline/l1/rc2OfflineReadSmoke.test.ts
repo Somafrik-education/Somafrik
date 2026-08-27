@@ -24,6 +24,7 @@ import {
   logRc2L1Read,
   logRc2L1ReadFromSnapshot,
   logRc2L1Refusal,
+  logRc2L1Stage,
   logRc2L1Sync,
   logRc2L1SyncException,
   logRc2L1SyncResults,
@@ -33,6 +34,7 @@ import {
   RC2_L1_READ_TAG,
   RC2_L1_REFUSAL_TAG,
   RC2_L1_RESOURCES,
+  RC2_L1_STAGE_TAG,
   RC2_L1_SYNC_EXCEPTION_TAG,
   RC2_L1_SYNC_START_TAG,
   RC2_L1_SYNC_TAG,
@@ -49,7 +51,8 @@ const L1_READ_LINE = /^RC2_L1_READ resource=[a-z-]+ source=[a-z0-9-]+ status=[a-
 const SYNC_LINE = /^RC2_L1_SYNC resource=[a-z-]+ outcome=[a-z_]+(?: code=[A-Z0-9_]+)?$/;
 const SYNC_START_LINE = /^RC2_L1_SYNC_START resource=[a-z-]+$/;
 const PAGE_LINE = /^RC2_L1_PAGE resource=[a-z-]+ mode=(full|delta|full_required|unavailable) hasMore=(true|false) page=\d+$/;
-const EXCEPTION_LINE = /^RC2_L1_SYNC_EXCEPTION resource=[a-z-]+ reason=unexpected$/;
+const STAGE_LINE = /^RC2_L1_STAGE resource=[a-z-]+ stage=(meta_start|meta_ok|reconcile_start|reconcile_ok|fetch_start|apply_start|apply_ok)$/;
+const EXCEPTION_LINE = /^RC2_L1_SYNC_EXCEPTION resource=[a-z-]+(?: stage=(meta|reconcile|fetch|apply))? reason=unexpected$/;
 const REFUSAL_LINE = /^RC2_L1_REFUSAL resource=[a-z-]+ reason=[a-z_]+$/;
 const BOOT_LINE = /^RC2_OFFLINE_BOOT permissions=ready_offline(?: status=[a-z_]+)?$/;
 const OK_LINE = /^RC2_OFFLINE_READ_SMOKE OK$/;
@@ -238,12 +241,42 @@ async function run() {
   assert.equal(lines.at(-1), "RC2_L1_PAGE resource=students mode=unavailable hasMore=true page=2");
   logRc2L1Page({ resource: "assignments", mode: "secret-mode", hasMore: false, page: 1 });
   assert.equal(lines.filter((line) => line.includes("secret-mode")).length, 0);
+  logRc2L1Stage({ resource: "classes", stage: "meta_start" });
+  assert.equal(lines.at(-1), "RC2_L1_STAGE resource=classes stage=meta_start");
+  assert.match(lines.at(-1) ?? "", STAGE_LINE);
+  logRc2L1Stage({ resource: "classes", stage: "meta_ok" });
+  logRc2L1Stage({ resource: "classes", stage: "reconcile_start" });
+  logRc2L1Stage({ resource: "classes", stage: "reconcile_ok" });
+  logRc2L1Stage({ resource: "classes", stage: "fetch_start" });
+  logRc2L1Stage({ resource: "classes", stage: "apply_start" });
+  logRc2L1Stage({ resource: "classes", stage: "apply_ok" });
+  assert.equal(lines.at(-1), "RC2_L1_STAGE resource=classes stage=apply_ok");
+  logRc2L1Stage({ resource: "classes", stage: "meta" });
+  assert.equal(lines.filter((line) => line === "RC2_L1_STAGE resource=classes stage=meta").length, 0);
+  logRc2L1Stage({ resource: "classes", stage: "jwt-leak" });
+  assert.equal(lines.filter((line) => line.includes("jwt-leak")).length, 0);
+  logRc2L1Stage({ resource: "not-a-resource", stage: "meta_start" });
+  assert.equal(lines.filter((line) => line.includes("not-a-resource")).length, 0);
+  for (const line of lines.filter((row) => row.startsWith(RC2_L1_STAGE_TAG))) {
+    assert.match(line, STAGE_LINE);
+    assert.doesNotMatch(line, FORBIDDEN);
+  }
+
   logRc2L1SyncException({ resource: "classes", reason: "unexpected" });
   assert.equal(lines.at(-1), "RC2_L1_SYNC_EXCEPTION resource=classes reason=unexpected");
   assert.match(lines.at(-1) ?? "", EXCEPTION_LINE);
+  logRc2L1SyncException({ resource: "classes", reason: "unexpected", stage: "reconcile" });
+  assert.equal(lines.at(-1), "RC2_L1_SYNC_EXCEPTION resource=classes stage=reconcile reason=unexpected");
+  assert.match(lines.at(-1) ?? "", EXCEPTION_LINE);
   logRc2L1SyncException({ resource: "students", reason: "Error: boom jwt" });
   assert.equal(lines.at(-1), "RC2_L1_SYNC_EXCEPTION resource=students reason=unexpected");
-  assert.equal(lines.filter((line) => /boom|jwt/i.test(line) && line.startsWith(RC2_L1_SYNC_EXCEPTION_TAG)).length, 0);
+  logRc2L1SyncException({
+    resource: "assignments",
+    reason: "Error: boom jwt",
+    stage: "cursor-sql-userId=",
+  });
+  assert.equal(lines.at(-1), "RC2_L1_SYNC_EXCEPTION resource=assignments reason=unexpected");
+  assert.equal(lines.filter((line) => /boom|jwt|cursor-sql|userId=/i.test(line) && line.startsWith(RC2_L1_SYNC_EXCEPTION_TAG)).length, 0);
 
   resetL1LifecycleForTests();
   setL1ReadDepsForTests(null);
@@ -366,19 +399,36 @@ async function run() {
     isCurrent: () => true,
   });
   const startIdx = lines.findIndex((line) => line === "RC2_L1_SYNC_START resource=classes");
+  const metaStartIdx = lines.findIndex((line) => line === "RC2_L1_STAGE resource=classes stage=meta_start");
+  const metaOkIdx = lines.findIndex((line) => line === "RC2_L1_STAGE resource=classes stage=meta_ok");
+  const reconcileStartIdx = lines.findIndex(
+    (line) => line === "RC2_L1_STAGE resource=classes stage=reconcile_start",
+  );
+  const reconcileOkIdx = lines.findIndex((line) => line === "RC2_L1_STAGE resource=classes stage=reconcile_ok");
+  const fetchStartIdx = lines.findIndex((line) => line === "RC2_L1_STAGE resource=classes stage=fetch_start");
   const pageUnavailableIdx = lines.findIndex(
     (line) => line === "RC2_L1_PAGE resource=classes mode=unavailable hasMore=false page=1",
   );
   const pageFullIdx = lines.findIndex(
     (line) => line === "RC2_L1_PAGE resource=classes mode=full hasMore=false page=2",
   );
+  const applyStartIdx = lines.findIndex((line) => line === "RC2_L1_STAGE resource=classes stage=apply_start");
+  const applyOkIdx = lines.findIndex((line) => line === "RC2_L1_STAGE resource=classes stage=apply_ok");
   const syncClassesIdx = lines.findIndex((line) => line === "RC2_L1_SYNC resource=classes outcome=ready");
   const startStudentsIdx = lines.findIndex((line) => line === "RC2_L1_SYNC_START resource=students");
   assert.ok(startIdx >= 0);
-  assert.ok(pageUnavailableIdx > startIdx, "PAGE unavailable avant outcome");
+  assert.ok(metaStartIdx > startIdx);
+  assert.ok(metaOkIdx > metaStartIdx);
+  assert.ok(reconcileStartIdx > metaOkIdx);
+  assert.ok(reconcileOkIdx > reconcileStartIdx);
+  assert.ok(fetchStartIdx > reconcileOkIdx);
+  assert.ok(pageUnavailableIdx > fetchStartIdx, "PAGE unavailable avant outcome");
   assert.ok(pageFullIdx > pageUnavailableIdx);
-  assert.ok(syncClassesIdx > pageFullIdx, "SYNC classes immédiat, pas après les 5");
+  assert.ok(applyStartIdx > pageFullIdx);
+  assert.ok(applyOkIdx > applyStartIdx);
+  assert.ok(syncClassesIdx > applyOkIdx, "SYNC classes immédiat, pas après les 5");
   assert.ok(startStudentsIdx > syncClassesIdx, "students démarre après outcome classes");
+  assert.equal(lines.filter((line) => line.startsWith(RC2_L1_SYNC_EXCEPTION_TAG)).length, 0);
   assert.deepEqual(
     syncResults.map((row) => row.outcome),
     L1_RESOURCES.map(() => "ready"),
@@ -387,6 +437,91 @@ async function run() {
     assert.ok(lines.includes(`RC2_L1_SYNC_START resource=${resource}`));
     assert.ok(lines.includes(`RC2_L1_SYNC resource=${resource} outcome=ready`));
   }
+
+  resetRc2OfflineReadSmokeForTests({
+    logger: { warn: (message) => lines.push(message) },
+  });
+  lines.length = 0;
+  const metaBoomStore = createMemoryL1Store();
+  await metaBoomStore.migrate();
+  metaBoomStore.getMeta = async () => {
+    throw new Error("sqlite meta boom jwt userId=secret");
+  };
+  await assert.rejects(() =>
+    syncL1Cache({
+      store: metaBoomStore,
+      api: sequentialApi,
+      partition: partitionA,
+      isCurrent: () => true,
+    }),
+  );
+  assert.ok(lines.includes("RC2_L1_SYNC_START resource=classes"));
+  assert.ok(lines.includes("RC2_L1_STAGE resource=classes stage=meta_start"));
+  assert.ok(lines.includes("RC2_L1_SYNC_EXCEPTION resource=classes stage=meta reason=unexpected"));
+  assert.equal(lines.includes("RC2_L1_STAGE resource=classes stage=meta_ok"), false);
+  assert.equal(lines.filter((line) => line.startsWith(RC2_L1_PAGE_TAG)).length, 0);
+  assert.equal(
+    lines.filter((line) => /boom|jwt|userId=|secret/i.test(line)).length,
+    0,
+    "aucun message d'exception brut",
+  );
+  assert.equal(lines.filter((line) => line === "RC2_L1_SYNC_EXCEPTION resource=classes reason=unexpected").length, 0);
+
+  resetRc2OfflineReadSmokeForTests({
+    logger: { warn: (message) => lines.push(message) },
+  });
+  lines.length = 0;
+  const reconcileBoomStore = createMemoryL1Store();
+  await reconcileBoomStore.migrate();
+  const originalExclusive = reconcileBoomStore.withExclusiveTransaction.bind(reconcileBoomStore);
+  reconcileBoomStore.withExclusiveTransaction = async (fn) =>
+    originalExclusive(async (txn) => {
+      txn.putMeta = async () => {
+        throw new Error("reconcile boom jwt scopeHash=secret");
+      };
+      return fn(txn);
+    });
+  await assert.rejects(() =>
+    syncL1Cache({
+      store: reconcileBoomStore,
+      api: sequentialApi,
+      partition: partitionA,
+      isCurrent: () => true,
+    }),
+  );
+  assert.ok(lines.includes("RC2_L1_STAGE resource=classes stage=meta_ok"));
+  assert.ok(lines.includes("RC2_L1_STAGE resource=classes stage=reconcile_start"));
+  assert.ok(lines.includes("RC2_L1_SYNC_EXCEPTION resource=classes stage=reconcile reason=unexpected"));
+  assert.equal(lines.includes("RC2_L1_STAGE resource=classes stage=reconcile_ok"), false);
+  assert.equal(lines.filter((line) => line.startsWith(RC2_L1_PAGE_TAG)).length, 0);
+  assert.equal(lines.filter((line) => /boom|jwt|scopeHash=/i.test(line)).length, 0);
+
+  resetRc2OfflineReadSmokeForTests({
+    logger: { warn: (message) => lines.push(message) },
+  });
+  lines.length = 0;
+  const classifiedStore = createMemoryL1Store();
+  await classifiedStore.migrate();
+  const classifiedApi: L1Api = {
+    async fetchPage() {
+      const error = new Error("timeout jwt") as Error & { code: string };
+      error.code = "NETWORK_UNAVAILABLE";
+      throw error;
+    },
+  };
+  const classifiedResults = await syncL1Cache({
+    store: classifiedStore,
+    api: classifiedApi,
+    partition: partitionA,
+    isCurrent: () => true,
+  });
+  assert.equal(classifiedResults[0]?.outcome, "error");
+  assert.equal(classifiedResults[0]?.code, "NETWORK_UNAVAILABLE");
+  assert.ok(lines.includes("RC2_L1_STAGE resource=classes stage=fetch_start"));
+  assert.ok(lines.includes("RC2_L1_SYNC resource=classes outcome=error code=NETWORK_UNAVAILABLE"));
+  assert.equal(lines.filter((line) => line.startsWith(RC2_L1_SYNC_EXCEPTION_TAG)).length, 0);
+  assert.equal(lines.filter((line) => line.startsWith(RC2_L1_PAGE_TAG)).length, 0);
+  assert.equal(lines.filter((line) => /timeout jwt/i.test(line)).length, 0);
 
   const teacher = {
     role: "teacher",
@@ -460,7 +595,13 @@ async function run() {
   const syncEngineSrc = fs.readFileSync(path.join(ROOT, "src/offline/l1/syncEngine.ts"), "utf8");
   assert.match(syncEngineSrc, /logRc2L1SyncStart/);
   assert.match(syncEngineSrc, /logRc2L1Page/);
+  assert.match(syncEngineSrc, /logRc2L1Stage/);
   assert.match(syncEngineSrc, /logRc2L1SyncException/);
+  assert.match(syncEngineSrc, /stage: "meta_start"/);
+  assert.match(syncEngineSrc, /stage: "reconcile_start"/);
+  assert.match(syncEngineSrc, /stage: "fetch_start"/);
+  assert.match(syncEngineSrc, /stage: "apply_start"/);
+  assert.doesNotMatch(syncEngineSrc, /error\.message/);
   const readModelSrc = fs.readFileSync(path.join(ROOT, "src/offline/l1/readModel.ts"), "utf8");
   assert.match(readModelSrc, /logRc2L1ReadFromSnapshot/);
   assert.match(readModelSrc, /logRc2L1Refusal/);
@@ -470,11 +611,14 @@ async function run() {
   assert.match(markerSrc, new RegExp(RC2_L1_SYNC_TAG));
   assert.match(markerSrc, new RegExp(RC2_L1_SYNC_START_TAG));
   assert.match(markerSrc, new RegExp(RC2_L1_PAGE_TAG));
+  assert.match(markerSrc, new RegExp(RC2_L1_STAGE_TAG));
   assert.match(markerSrc, new RegExp(RC2_L1_SYNC_EXCEPTION_TAG));
   assert.match(markerSrc, new RegExp(RC2_L1_REFUSAL_TAG));
   assert.match(markerSrc, new RegExp(RC2_OFFLINE_BOOT_TAG));
   assert.match(markerSrc, new RegExp(RC2_OFFLINE_READ_SMOKE_TAG));
+  assert.match(markerSrc, /ALLOWED_EXCEPTION_STAGE/);
   assert.doesNotMatch(markerSrc, /accessToken|refreshToken|l1DbKey/);
+  assert.doesNotMatch(markerSrc, /error\.message/);
 
   logRc2L1ReadFromSnapshot("assignments", snapshotFromL1Cache([{ id: "a" }, { id: "b" }], "2026-08-27"));
   logRc2L1ReadFromSnapshot("school-courses", snapshotFromSuccess([], { source: "network" }));

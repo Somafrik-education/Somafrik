@@ -12,6 +12,7 @@ export const RC2_L1_READ_TAG = "RC2_L1_READ";
 export const RC2_L1_SYNC_TAG = "RC2_L1_SYNC";
 export const RC2_L1_SYNC_START_TAG = "RC2_L1_SYNC_START";
 export const RC2_L1_PAGE_TAG = "RC2_L1_PAGE";
+export const RC2_L1_STAGE_TAG = "RC2_L1_STAGE";
 export const RC2_L1_SYNC_EXCEPTION_TAG = "RC2_L1_SYNC_EXCEPTION";
 export const RC2_L1_REFUSAL_TAG = "RC2_L1_REFUSAL";
 export const RC2_OFFLINE_BOOT_TAG = "RC2_OFFLINE_BOOT";
@@ -57,6 +58,16 @@ const ALLOWED_REFUSAL = new Set([
 const ALLOWED_PAGE_MODE = new Set(["full", "delta", "full_required", "unavailable"]);
 const ALLOWED_HAS_MORE = new Set(["true", "false"]);
 const ALLOWED_EXCEPTION_REASON = new Set(["unexpected"]);
+const ALLOWED_EXCEPTION_STAGE = new Set(["meta", "reconcile", "fetch", "apply"]);
+const ALLOWED_STAGE = new Set([
+  "meta_start",
+  "meta_ok",
+  "reconcile_start",
+  "reconcile_ok",
+  "fetch_start",
+  "apply_start",
+  "apply_ok",
+]);
 
 export type Rc2SmokeLogger = { warn: (message: string) => void };
 
@@ -200,13 +211,30 @@ export function logRc2L1Page(input: {
   emit(`${RC2_L1_PAGE_TAG} resource=${resource} mode=${mode} hasMore=${hasMore} page=${page}`);
 }
 
+export function logRc2L1Stage(input: {
+  resource: L1Resource | string;
+  stage?: string | null;
+}): void {
+  const resource = asL1Resource(input.resource);
+  if (!resource) return;
+  const stage = token(input.stage, ALLOWED_STAGE, "");
+  if (!stage) return;
+  emit(`${RC2_L1_STAGE_TAG} resource=${resource} stage=${stage}`);
+}
+
 export function logRc2L1SyncException(input: {
   resource: L1Resource | string;
   reason?: string | null;
+  stage?: string | null;
 }): void {
   const resource = asL1Resource(input.resource);
   if (!resource) return;
   const reason = token(input.reason, ALLOWED_EXCEPTION_REASON, "unexpected");
+  const stage = token(input.stage, ALLOWED_EXCEPTION_STAGE, "");
+  if (stage) {
+    emit(`${RC2_L1_SYNC_EXCEPTION_TAG} resource=${resource} stage=${stage} reason=${reason}`);
+    return;
+  }
   emit(`${RC2_L1_SYNC_EXCEPTION_TAG} resource=${resource} reason=${reason}`);
 }
 

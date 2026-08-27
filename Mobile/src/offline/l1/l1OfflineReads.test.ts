@@ -132,6 +132,7 @@ async function run() {
   const syncEngineSrc = fs.readFileSync(path.join(ROOT, "src/offline/l1/syncEngine.ts"), "utf8");
   assert.match(syncEngineSrc, /logRc2L1SyncStart/);
   assert.match(syncEngineSrc, /logRc2L1Page/);
+  assert.match(syncEngineSrc, /logRc2L1Stage/);
   assert.match(syncEngineSrc, /logRc2L1SyncException/);
 
   const bucket = createMemoryL1Bucket();
