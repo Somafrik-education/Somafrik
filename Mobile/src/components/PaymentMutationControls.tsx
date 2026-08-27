@@ -32,11 +32,13 @@ export default function PaymentMutationControls({
   studentFees = [],
   onChanged,
   initialStudentId = "",
+  paymentMethods,
 }: {
   students: PaymentStudent[];
   studentFees?: PaymentFeeRow[];
   onChanged: () => Promise<void> | void;
   initialStudentId?: string;
+  paymentMethods?: string[];
 }) {
   const { session } = useAuth();
   const access = resolveEntityCrudAccess(session, "payments");
@@ -235,7 +237,10 @@ export default function PaymentMutationControls({
         )}
         <ChoiceChips
           label="Moyen"
-          options={["Espèces", "Mobile Money", "Virement"].map((item) => ({ id: item, label: item }))}
+          options={(paymentMethods?.length ? paymentMethods : ["Espèces", "Mobile money", "Virement"]).map((item) => ({
+            id: item,
+            label: item,
+          }))}
           selectedId={method}
           onSelect={setMethod}
           disabled={saving}

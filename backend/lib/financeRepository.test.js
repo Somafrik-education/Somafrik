@@ -51,6 +51,13 @@ function createStore() {
       students.filter(
         (student) => student.schoolCode === schoolCode && studentMatchesClassScope(student, classRef),
       ),
+    listSchoolStudents: async (principal) => {
+      const scope = String(principal?.schoolCode ?? "").toUpperCase();
+      return students.filter((student) => {
+        if (!scope || scope === "*") return true;
+        return String(student.schoolCode).toUpperCase() === scope;
+      });
+    },
   });
 }
 
@@ -267,6 +274,24 @@ async function main() {
     cancelRollbackStore.tables.allocations.every((row) => !row.reversed_at),
     true,
   );
+
+  const optionsA = await store.listPaymentStudentOptions(accountant);
+  assert.equal(optionsA.length, 1);
+  assert.equal(optionsA[0].studentId, "stu-1");
+  assert.equal(optionsA[0].studentCode, "CD-2026-0001-STU-0001");
+  assert.equal(optionsA[0].classCode, "CLS-6A");
+  const optionsB = await store.listPaymentStudentOptions(otherSchool);
+  assert.equal(optionsB.length, 1);
+  assert.equal(optionsB[0].studentId, "stu-other");
+  assert.equal(optionsB.some((row) => row.studentId === "stu-1"), false);
+
+  const methods = await store.replaceSchoolPaymentMethods(
+    [{ methodCode: "cash", label: "Espèces", active: true }],
+    admin,
+  );
+  assert.equal(methods.length, 1);
+  const methodsB = await store.listSchoolPaymentMethods(otherSchool);
+  assert.equal(methodsB.every((row) => row.persisted === false), true);
 
   console.log("financeRepository.test.js: OK");
 }

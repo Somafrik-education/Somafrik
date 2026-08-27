@@ -91,18 +91,18 @@ export function scopedStudentFees(user: SessionUser | null, state: BackOfficeSta
   return rows.filter((row) => normalize(row.schoolCode) === normalize(code));
 }
 
-/** EXG-FRAIS-020 / EXG-FRAIS-021 — gestion des grilles tarifaires. */
+/** EXG-FRAIS-020 / EXG-FRAIS-021 — gestion des grilles tarifaires : Admin School uniquement (aligné backend). */
 export function canManageFeeGrids(user: SessionUser | null): boolean {
   if (!user) return false;
   if (isSuperAdminRole(user.role)) return true;
-  const role = normalize(user.role);
-  return isSchoolAdminRole(user.role) || role === "comptable";
+  return isSchoolAdminRole(user.role);
 }
 
 export function canViewFeeGrids(user: SessionUser | null): boolean {
   if (!user) return false;
   if (isSuperAdminRole(user.role) || user.role === COUNTRY_ADMIN_ROLE) return true;
-  return canManageFeeGrids(user) || normalize(user.role) === "secretaire";
+  const role = normalize(user.role);
+  return canManageFeeGrids(user) || role === "secretaire" || role === "comptable";
 }
 
 export function canViewStudentFees(user: SessionUser | null): boolean {

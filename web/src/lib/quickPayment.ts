@@ -186,10 +186,12 @@ export function searchStudentsForPayment(
         student.firstName,
         student.lastName,
         student.matricule,
+        student.studentCode,
         student.publicId,
         student.id,
-        student.parentPhone,
-        student.parentEmail,
+        student.studentId,
+        student.className,
+        student.classCode,
       ]
         .map((value) => normalize(value))
         .join(" ");
@@ -202,14 +204,14 @@ export function searchStudentsForPayment(
       return {
         id: String(student.id ?? ""),
         name: String(student.name ?? `${student.firstName ?? ""} ${student.lastName ?? ""}`.trim()),
-        matricule: String(student.matricule ?? student.publicId ?? student.id ?? ""),
+        matricule: String(student.matricule ?? student.studentCode ?? student.publicId ?? student.id ?? student.studentId ?? ""),
         classId: String(student.classId ?? "").trim() || undefined,
         classCode: String(student.classCode ?? "").trim() || undefined,
         className: String(student.className ?? ""),
         schoolCode: code,
         schoolName: String(school?.name ?? code),
-        parentPhone: String(student.parentPhone ?? ""),
-        parentEmail: String(student.parentEmail ?? ""),
+        parentPhone: "",
+        parentEmail: "",
       };
     });
 }

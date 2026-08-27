@@ -321,6 +321,10 @@ function canManageFeeGrids(principal) {
   return isSuperAdminPrincipal(principal) || asTrimmed(principal?.role) === "Admin School";
 }
 
+function canManagePaymentMethods(principal) {
+  return canManageFeeGrids(principal);
+}
+
 function canAdjustStudentFee(principal) {
   const role = asTrimmed(principal?.role);
   return isSuperAdminPrincipal(principal) || role === "Admin School" || role === "Comptable";
@@ -404,6 +408,7 @@ module.exports = {
   classScopeSpec,
   isSuperAdminPrincipal,
   canManageFeeGrids,
+  canManagePaymentMethods,
   canAdjustStudentFee,
   canManagePaymentStatuses,
   canForceReminder,

@@ -217,6 +217,48 @@ async function main() {
     const prefetToken = await login("prefet", "1234", "CD-2026-0001");
     const teacherToken = await login("ENS-0001", "1234", "CD-2026-0001");
 
+    const accountantStudents = await request("/students", { token: accountantToken });
+    assert.equal(accountantStudents.status, 403, "Comptable n'a pas GET /students");
+
+    const accountantOptions = await request("/finance/payment-student-options", { token: accountantToken });
+    assert.equal(accountantOptions.status, 200, JSON.stringify(accountantOptions.data));
+    const optionRows = Array.isArray(accountantOptions.data) ? accountantOptions.data : accountantOptions.data?.items ?? [];
+    assert.ok(optionRows.some((row) => row.studentCode === studentCode || row.studentId), "Comptable voit l'élève inscrit");
+    assert.equal(
+      optionRows.every((row) => !("parentPhone" in row) && !("parentEmail" in row)),
+      true,
+      "projection minimale sans parent",
+    );
+
+    const teacherOptions = await request("/finance/payment-student-options", { token: teacherToken });
+    assert.equal(teacherOptions.status, 403, "Enseignant n'a pas payment-student-options");
+
+    const catalog = await request("/finance/catalog", { token: accountantToken });
+    assert.equal(catalog.status, 200, JSON.stringify(catalog.data));
+    assert.equal(catalog.data.currency, "CDF");
+    assert.equal(Array.isArray(catalog.data.paymentMethods), true);
+    assert.equal(catalog.data.discountsDeferred, true);
+
+    const accountantPutMethods = await request("/finance/payment-methods", {
+      method: "PUT",
+      token: accountantToken,
+      body: { methods: [{ methodCode: "cash", label: "Espèces", active: true }] },
+    });
+    assert.equal(accountantPutMethods.status, 403, "Comptable ne configure pas les moyens");
+
+    const adminPutMethods = await request("/finance/payment-methods", {
+      method: "PUT",
+      token: adminToken,
+      body: {
+        methods: [
+          { methodCode: "cash", label: "Espèces", active: true },
+          { methodCode: "mobile_money", label: "Mobile money", active: true },
+        ],
+      },
+    });
+    assert.equal(adminPutMethods.status, 200, JSON.stringify(adminPutMethods.data));
+    assert.equal(adminPutMethods.data.some((row) => row.methodCode === "cash" && row.active), true);
+
     const accountantGrid = await request("/finance/fee-grids", {
       method: "POST",
       token: accountantToken,

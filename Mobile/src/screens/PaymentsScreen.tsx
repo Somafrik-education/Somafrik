@@ -1,4 +1,4 @@
-import { useCallback } from "react";
+import { useCallback, useState } from "react";
 import { FlatList, StyleSheet, Text, View } from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
 import QueryStateView from "../components/QueryStateView";
@@ -11,6 +11,8 @@ import { DATA_TRUTH_COPY, DATA_TRUTH_TEST_IDS } from "../lib/dataTruth";
 import { getPaymentCashKpi } from "../lib/paymentCashKpi";
 import { getPaymentRateKpi } from "../lib/paymentRateKpi";
 import { useFloatingTabBarLayout } from "../lib/screenLayout";
+import { getFinanceCatalog, getPaymentStudentOptions } from "../services/api";
+import type { PaymentStudent } from "../lib/paymentEnrollment";
 
 function moneyLabel(amount: number, ready: boolean) {
   return ready ? `${amount.toLocaleString("fr-FR")} FC` : "—";
@@ -26,9 +28,9 @@ export default function PaymentsScreen({ navigation }: any) {
     studentFeesSnapshot,
     loadPayments,
     loadStudentFees,
-    loadStudents,
-    studentsData,
   } = useAdminData();
+  const [paymentStudents, setPaymentStudents] = useState<PaymentStudent[]>([]);
+  const [paymentMethods, setPaymentMethods] = useState<string[]>([]);
   const paymentStats = getPaymentStats(paymentsData);
   const paymentRateKpi = getPaymentRateKpi(studentFeesData);
   const cashKpi = getPaymentCashKpi(paymentsData);
@@ -37,8 +39,39 @@ export default function PaymentsScreen({ navigation }: any) {
   const paymentsReady = paymentsSnapshot.status === "success" || paymentsSnapshot.status === "empty";
 
   const refreshFinance = useCallback(async () => {
-    await Promise.all([loadPayments(), loadStudentFees(), loadStudents()]);
-  }, [loadPayments, loadStudentFees, loadStudents]);
+    await Promise.all([
+      loadPayments(),
+      loadStudentFees(),
+      getPaymentStudentOptions()
+        .then((rows) => {
+          setPaymentStudents(
+            rows.map((row) => ({
+              id: row.studentId,
+              name: `${row.firstName} ${row.lastName}`.trim(),
+              classId: row.classId,
+              classCode: row.classCode,
+              className: row.className,
+              enrollments: (row.classes ?? []).map((klass) => ({
+                status: "active",
+                classId: klass.classId,
+                classCode: klass.classCode,
+                className: klass.className,
+              })),
+            })),
+          );
+        })
+        .catch(() => {
+          setPaymentStudents([]);
+        }),
+      getFinanceCatalog()
+        .then((catalog) => {
+          setPaymentMethods((catalog.paymentMethods ?? []).filter((row) => row.active).map((row) => row.label));
+        })
+        .catch(() => {
+          setPaymentMethods([]);
+        }),
+    ]);
+  }, [loadPayments, loadStudentFees]);
 
   useFocusEffect(
     useCallback(() => {
@@ -81,8 +114,9 @@ export default function PaymentsScreen({ navigation }: any) {
           ) : (
             <View testID={DATA_TRUTH_TEST_IDS.paymentsList}>
               <PaymentMutationControls
-                students={studentsData}
+                students={paymentStudents}
                 studentFees={studentFeesData}
+                paymentMethods={paymentMethods}
                 onChanged={() => refreshFinance()}
               />
               <View style={styles.summaryCard}>

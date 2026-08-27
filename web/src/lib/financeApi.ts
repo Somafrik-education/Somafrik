@@ -41,6 +41,55 @@ export interface FinanceFeeGrid {
   items?: unknown[];
 }
 
+export interface PaymentStudentOption {
+  studentId: string;
+  studentCode: string;
+  firstName: string;
+  lastName: string;
+  classId: string | null;
+  classCode: string;
+  className: string;
+  studentStatus?: string;
+  enrollmentStatus?: string;
+  classes?: Array<{ classId: string; classCode: string; className: string }>;
+}
+
+export interface FinancePaymentMethod {
+  id?: string | null;
+  methodCode: string;
+  label: string;
+  active: boolean;
+  sortOrder: number;
+  persisted?: boolean;
+}
+
+export interface FinanceCatalogFeeType {
+  itemId?: string | null;
+  gridId?: string | null;
+  feeType: string;
+  label: string;
+  amount: number;
+  currency: string;
+  classId?: string | null;
+  classCode?: string;
+  className?: string;
+  academicYear?: string;
+  dueDate?: string | null;
+  periodLabel?: string;
+  mandatory: boolean;
+  active: boolean;
+}
+
+export interface FinanceCatalog {
+  currency: string;
+  currencySource: string;
+  paymentMethods: FinancePaymentMethod[];
+  feeTypes: FinanceCatalogFeeType[];
+  canonicalFeeTypes: Array<{ feeType: string; label: string }>;
+  discountsDeferred: boolean;
+  penaltiesDeferred: boolean;
+}
+
 export const financeApi = {
   listPayments: () => api.get<FinancePayment[]>("/payments"),
   getPayment: (paymentId: string) =>
@@ -49,6 +98,13 @@ export const financeApi = {
     api.post<FinancePayment>("/payments", payload),
   cancelPayment: (paymentId: string, reason: string) =>
     api.post<FinancePayment>(`/payments/${encodeURIComponent(paymentId)}/cancel`, { reason }),
+
+  listPaymentStudentOptions: () =>
+    api.get<PaymentStudentOption[]>("/finance/payment-student-options"),
+  getFinanceCatalog: () => api.get<FinanceCatalog>("/finance/catalog"),
+  listPaymentMethods: () => api.get<FinancePaymentMethod[]>("/finance/payment-methods"),
+  replacePaymentMethods: (methods: FinancePaymentMethod[]) =>
+    api.put<FinancePaymentMethod[]>("/finance/payment-methods", { methods }),
 
   listPaymentStatuses: () => api.get<unknown[]>("/finance/payment-statuses"),
   createPaymentStatus: (payload: Record<string, unknown>) =>

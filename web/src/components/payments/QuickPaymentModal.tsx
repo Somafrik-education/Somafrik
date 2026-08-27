@@ -7,7 +7,7 @@ import { Modal } from "../ui/Modal";
 import { Field, Input, Select } from "../ui/Field";
 import { Button } from "../ui/Button";
 import { useToast } from "../ui/Toast";
-import { getCurrentSchool, scopedStudents } from "../../lib/establishment";
+import { getCurrentSchool } from "../../lib/establishment";
 import { formatMetric } from "../../lib/format";
 import {
   collectStudentPaymentClasses,
@@ -55,10 +55,15 @@ export function QuickPaymentModal({ open, onClose, onSaved }: QuickPaymentModalP
   const [busy, setBusy] = useState(false);
   const [savedPayment, setSavedPayment] = useState<PaymentRecord | null>(null);
   const [showReceipt, setShowReceipt] = useState(false);
+  const [optionStudents, setOptionStudents] = useState<PaymentRecord[]>([]);
+  const [catalogMethods, setCatalogMethods] = useState<string[]>([...PAYMENT_METHODS]);
+  const [catalogFeeTypes, setCatalogFeeTypes] = useState<string[]>([...FEE_TYPES]);
+  const [catalogCurrency, setCatalogCurrency] = useState("");
+  const [catalogError, setCatalogError] = useState("");
 
   const students = useMemo(
-    () => scopedStudents(scopeUser, state) as PaymentRecord[],
-    [scopeUser, state],
+    () => (optionStudents.length ? optionStudents : []),
+    [optionStudents],
   );
   const school = useMemo(
     () =>
@@ -85,7 +90,7 @@ export function QuickPaymentModal({ open, onClose, onSaved }: QuickPaymentModalP
     [selectedStudent, students],
   );
   const total = sumPaymentLines(lines);
-  const currency = resolveSchoolCurrency(school);
+  const currency = catalogCurrency || resolveSchoolCurrency(school);
 
   useEffect(() => {
     if (!open) return;
@@ -98,7 +103,53 @@ export function QuickPaymentModal({ open, onClose, onSaved }: QuickPaymentModalP
     setComment("");
     setSavedPayment(null);
     setShowReceipt(false);
-  }, [open]);
+    setCatalogError("");
+    void (async () => {
+      try {
+        const [options, catalog] = await Promise.all([
+          financeApi.listPaymentStudentOptions(),
+          financeApi.getFinanceCatalog(),
+        ]);
+        const rows = Array.isArray(options) ? options : [];
+        const flattened: PaymentRecord[] = [];
+        for (const option of rows) {
+          const classes = option.classes?.length
+            ? option.classes
+            : option.classId
+              ? [{ classId: option.classId, classCode: option.classCode, className: option.className }]
+              : [];
+          for (const klass of classes) {
+            flattened.push({
+              id: option.studentId,
+              studentId: option.studentId,
+              firstName: option.firstName,
+              lastName: option.lastName,
+              name: `${option.firstName} ${option.lastName}`.trim(),
+              matricule: option.studentCode,
+              studentCode: option.studentCode,
+              classId: klass.classId,
+              classCode: klass.classCode,
+              className: klass.className,
+              schoolCode: schoolCode && schoolCode !== "*" ? schoolCode : option.studentCode.slice(0, 11),
+            });
+          }
+        }
+        setOptionStudents(flattened);
+        const activeMethods = (catalog.paymentMethods ?? []).filter((row) => row.active).map((row) => row.label);
+        if (activeMethods.length) {
+          setCatalogMethods(activeMethods);
+          setMethod((activeMethods[0] as PaymentMethod) || "Espèces");
+        }
+        const types = (catalog.feeTypes ?? []).map((row) => row.feeType).filter(Boolean);
+        const uniqueTypes = [...new Set(types.length ? types : (catalog.canonicalFeeTypes ?? []).map((row) => row.feeType))];
+        if (uniqueTypes.length) setCatalogFeeTypes(uniqueTypes);
+        if (catalog.currency) setCatalogCurrency(catalog.currency);
+      } catch (cause) {
+        setCatalogError(cause instanceof Error ? cause.message : "Catalogue financier indisponible.");
+        setOptionStudents([]);
+      }
+    })();
+  }, [open, schoolCode]);
 
   function selectStudent(student: StudentSearchResult) {
     setSelectedStudent(student);
@@ -233,6 +284,11 @@ export function QuickPaymentModal({ open, onClose, onSaved }: QuickPaymentModalP
       }
     >
       <form className="space-y-5" onSubmit={(event) => void handleSubmit(event, false)}>
+        {catalogError ? (
+          <p className="rounded-xl border border-danger/30 bg-danger/10 px-4 py-3 text-sm text-danger" role="alert">
+            {catalogError}
+          </p>
+        ) : null}
         <Field label="Élève" required>
           <Input
             value={search}
@@ -302,7 +358,7 @@ export function QuickPaymentModal({ open, onClose, onSaved }: QuickPaymentModalP
                 <Select
                   value={line.feeType}
                   onChange={(event) => updateLine(line.id, { feeType: event.target.value as FeeType })}
-                  options={FEE_TYPES.map((value) => ({ value, label: value }))}
+                  options={catalogFeeTypes.map((value) => ({ value, label: value }))}
                 />
               </Field>
               <Field label="Montant" required>
@@ -351,7 +407,7 @@ export function QuickPaymentModal({ open, onClose, onSaved }: QuickPaymentModalP
             <Select
               value={method}
               onChange={(event) => setMethod(event.target.value as PaymentMethod)}
-              options={PAYMENT_METHODS.map((value) => ({ value, label: value }))}
+              options={catalogMethods.map((value) => ({ value, label: value }))}
             />
           </Field>
           <Field label="Date" required>

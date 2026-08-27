@@ -378,6 +378,32 @@ export function getStudents() {
   return request<unknown>("/students").then((payload) => unwrapList(payload) as StudentSummary[]);
 }
 
+export type PaymentStudentOption = {
+  studentId: string;
+  studentCode: string;
+  firstName: string;
+  lastName: string;
+  classId?: string | null;
+  classCode?: string;
+  className?: string;
+  classes?: Array<{ classId: string; classCode?: string; className?: string }>;
+};
+
+export type FinanceCatalog = {
+  currency?: string;
+  paymentMethods?: Array<{ methodCode: string; label: string; active: boolean }>;
+};
+
+export function getPaymentStudentOptions() {
+  return request<unknown>("/finance/payment-student-options").then(
+    (payload) => unwrapList(payload) as PaymentStudentOption[],
+  );
+}
+
+export function getFinanceCatalog() {
+  return request<FinanceCatalog>("/finance/catalog");
+}
+
 export function getClasses() {
   return request<unknown[]>("/classes");
 }
