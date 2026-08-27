@@ -13,15 +13,11 @@ import {
   collectStudentPaymentClasses,
   createPaymentLine,
   defaultPaymentDate,
-  FEE_TYPES,
-  PAYMENT_METHODS,
   paymentDateFromInput,
   paymentDateToInput,
   parseLineAmount,
   sumPaymentLines,
   validateMultiItemPaymentInput,
-  type FeeType,
-  type PaymentMethod,
   type PaymentRecord,
   type QuickPaymentLine,
   type StudentSearchResult,
@@ -49,15 +45,15 @@ export function QuickPaymentModal({ open, onClose, onSaved }: QuickPaymentModalP
   const [selectedStudent, setSelectedStudent] = useState<StudentSearchResult | null>(null);
   const [classId, setClassId] = useState("");
   const [lines, setLines] = useState<QuickPaymentLine[]>([createPaymentLine()]);
-  const [method, setMethod] = useState<PaymentMethod>("Espèces");
+  const [method, setMethod] = useState("");
   const [dateInput, setDateInput] = useState(paymentDateToInput(defaultPaymentDate()));
   const [comment, setComment] = useState("");
   const [busy, setBusy] = useState(false);
   const [savedPayment, setSavedPayment] = useState<PaymentRecord | null>(null);
   const [showReceipt, setShowReceipt] = useState(false);
   const [optionStudents, setOptionStudents] = useState<PaymentRecord[]>([]);
-  const [catalogMethods, setCatalogMethods] = useState<string[]>([...PAYMENT_METHODS]);
-  const [catalogFeeTypes, setCatalogFeeTypes] = useState<string[]>([...FEE_TYPES]);
+  const [catalogMethods, setCatalogMethods] = useState<string[]>([]);
+  const [catalogFeeTypes, setCatalogFeeTypes] = useState<string[]>([]);
   const [catalogCurrency, setCatalogCurrency] = useState("");
   const [catalogError, setCatalogError] = useState("");
 
@@ -98,7 +94,7 @@ export function QuickPaymentModal({ open, onClose, onSaved }: QuickPaymentModalP
     setSelectedStudent(null);
     setClassId("");
     setLines([createPaymentLine()]);
-    setMethod("Espèces");
+    setMethod("");
     setDateInput(paymentDateToInput(defaultPaymentDate()));
     setComment("");
     setSavedPayment(null);
@@ -136,17 +132,35 @@ export function QuickPaymentModal({ open, onClose, onSaved }: QuickPaymentModalP
         }
         setOptionStudents(flattened);
         const activeMethods = (catalog.paymentMethods ?? []).filter((row) => row.active).map((row) => row.label);
-        if (activeMethods.length) {
-          setCatalogMethods(activeMethods);
-          setMethod((activeMethods[0] as PaymentMethod) || "Espèces");
-        }
         const types = (catalog.feeTypes ?? []).map((row) => row.feeType).filter(Boolean);
-        const uniqueTypes = [...new Set(types.length ? types : (catalog.canonicalFeeTypes ?? []).map((row) => row.feeType))];
-        if (uniqueTypes.length) setCatalogFeeTypes(uniqueTypes);
+        const uniqueTypes = [
+          ...new Set(types.length ? types : (catalog.canonicalFeeTypes ?? []).map((row) => row.feeType)),
+        ].filter(Boolean);
+        if (!activeMethods.length) {
+          setCatalogMethods([]);
+          setCatalogFeeTypes(uniqueTypes);
+          setMethod("");
+          setCatalogError("Aucun moyen de paiement actif pour cet établissement.");
+          if (catalog.currency) setCatalogCurrency(catalog.currency);
+          return;
+        }
+        setCatalogMethods(activeMethods);
+        setMethod(activeMethods[0]);
+        setCatalogFeeTypes(uniqueTypes);
+        if (uniqueTypes.length) {
+          setLines((current) =>
+            current.map((line) =>
+              uniqueTypes.includes(line.feeType) ? line : { ...line, feeType: uniqueTypes[0] },
+            ),
+          );
+        }
         if (catalog.currency) setCatalogCurrency(catalog.currency);
       } catch (cause) {
         setCatalogError(cause instanceof Error ? cause.message : "Catalogue financier indisponible.");
         setOptionStudents([]);
+        setCatalogMethods([]);
+        setCatalogFeeTypes([]);
+        setCatalogCurrency("");
       }
     })();
   }, [open, schoolCode]);
@@ -201,6 +215,18 @@ export function QuickPaymentModal({ open, onClose, onSaved }: QuickPaymentModalP
 
   async function handleSubmit(event: FormEvent, printAfter = false) {
     event.preventDefault();
+    if (catalogError || !catalogMethods.length) {
+      showToast(catalogError || "Catalogue financier indisponible.", "error");
+      return;
+    }
+    if (!catalogMethods.includes(method)) {
+      showToast("Moyen de paiement non autorisé pour cet établissement.", "error");
+      return;
+    }
+    if (catalogFeeTypes.length && lines.some((line) => !catalogFeeTypes.includes(line.feeType))) {
+      showToast("Type de frais non autorisé pour cet établissement.", "error");
+      return;
+    }
     const validationError = validateMultiItemPaymentInput({
       student: selectedStudent,
       classId,
@@ -272,12 +298,15 @@ export function QuickPaymentModal({ open, onClose, onSaved }: QuickPaymentModalP
           </Button>
           <Button
             variant="secondary"
-            disabled={busy}
+            disabled={busy || Boolean(catalogError) || !catalogMethods.length}
             onClick={(event) => void handleSubmit(event, true)}
           >
             Enregistrer et imprimer
           </Button>
-          <Button disabled={busy} onClick={(event) => void handleSubmit(event, false)}>
+          <Button
+            disabled={busy || Boolean(catalogError) || !catalogMethods.length}
+            onClick={(event) => void handleSubmit(event, false)}
+          >
             Enregistrer le paiement
           </Button>
         </div>
@@ -357,7 +386,7 @@ export function QuickPaymentModal({ open, onClose, onSaved }: QuickPaymentModalP
               <Field label="Type de frais / libellé" required>
                 <Select
                   value={line.feeType}
-                  onChange={(event) => updateLine(line.id, { feeType: event.target.value as FeeType })}
+                  onChange={(event) => updateLine(line.id, { feeType: event.target.value })}
                   options={catalogFeeTypes.map((value) => ({ value, label: value }))}
                 />
               </Field>
@@ -388,7 +417,10 @@ export function QuickPaymentModal({ open, onClose, onSaved }: QuickPaymentModalP
             type="button"
             variant="secondary"
             data-testid="payment-add-line"
-            onClick={() => setLines((current) => [...current, createPaymentLine("Frais d'examen")])}
+            disabled={!catalogFeeTypes.length}
+            onClick={() =>
+              setLines((current) => [...current, createPaymentLine(catalogFeeTypes[0] || "")])
+            }
           >
             <Plus className="mr-1 h-4 w-4" />
             Ajouter un libellé
@@ -406,7 +438,7 @@ export function QuickPaymentModal({ open, onClose, onSaved }: QuickPaymentModalP
           <Field label="Mode de paiement" required>
             <Select
               value={method}
-              onChange={(event) => setMethod(event.target.value as PaymentMethod)}
+              onChange={(event) => setMethod(event.target.value)}
               options={catalogMethods.map((value) => ({ value, label: value }))}
             />
           </Field>

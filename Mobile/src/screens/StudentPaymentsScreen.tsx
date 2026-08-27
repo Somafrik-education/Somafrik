@@ -1,4 +1,4 @@
-import { useCallback, useMemo } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { View, Text, FlatList, ScrollView, TouchableOpacity } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect } from "@react-navigation/native";
@@ -14,7 +14,9 @@ import { useAdminData } from "../context/AdminDataContext";
 import { DATA_TRUTH_COPY, DATA_TRUTH_TEST_IDS, paymentPaidAt } from "../lib/dataTruth";
 import { getPaymentCashKpi } from "../lib/paymentCashKpi";
 import { getPaymentRateKpi } from "../lib/paymentRateKpi";
+import { paymentStudentsFromOptions, type PaymentStudent } from "../lib/paymentEnrollment";
 import { useFloatingTabBarLayout } from "../lib/screenLayout";
+import { getFinanceCatalog, getPaymentStudentOptions } from "../services/api";
 import {
   STUDENT_PAYMENTS_KPI_DENSITY as KPI,
   STUDENT_SUB_SCREENS_COPY,
@@ -38,11 +40,30 @@ export default function StudentPaymentsScreen({ route, navigation }: Partial<Pro
     loadStudents,
     studentsData,
   } = useAdminData();
+  const [paymentStudents, setPaymentStudents] = useState<PaymentStudent[]>([]);
+  const [paymentMethods, setPaymentMethods] = useState<string[]>([]);
   const studentId = route?.params?.studentId ?? selectedStudentId;
-  const student = studentId ? studentsData.find((item) => item.id === studentId) : undefined;
+  const pickerStudents: PaymentStudent[] = paymentStudents.length
+    ? paymentStudents
+    : (studentsData as PaymentStudent[]);
+  const student = studentId ? pickerStudents.find((item) => item.id === studentId) : undefined;
 
   const refreshFinance = useCallback(async () => {
-    await Promise.all([loadPayments(), loadStudentFees(), loadStudents()]);
+    await Promise.all([
+      loadPayments(),
+      loadStudentFees(),
+      loadStudents(),
+      getPaymentStudentOptions()
+        .then((rows) => setPaymentStudents(paymentStudentsFromOptions(rows)))
+        .catch(() => setPaymentStudents([])),
+      getFinanceCatalog()
+        .then((catalog) => {
+          setPaymentMethods(
+            (catalog.paymentMethods ?? []).filter((row) => row.active).map((row) => row.label),
+          );
+        })
+        .catch(() => setPaymentMethods([])),
+    ]);
   }, [loadPayments, loadStudentFees, loadStudents]);
 
   useFocusEffect(
@@ -102,8 +123,9 @@ export default function StudentPaymentsScreen({ route, navigation }: Partial<Pro
         <Text style={localStyles.classLabel}>Classe : {student.className}</Text>
       ) : null}
       <PaymentMutationControls
-        students={studentsData}
+        students={pickerStudents}
         studentFees={studentFeesData}
+        paymentMethods={paymentMethods}
         initialStudentId={studentId ? String(studentId) : ""}
         onChanged={() => refreshFinance()}
       />

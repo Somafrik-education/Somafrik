@@ -41,11 +41,14 @@ vi.mock("../../components/ui/Toast", () => ({
 import { canManageFeeGrids, canViewFeeGrids } from "../../lib/fees";
 import { SettingsFinancePage } from "./SettingsFinancePage";
 
+const mockedCanManageFeeGrids = vi.mocked(canManageFeeGrids);
+const mockedCanViewFeeGrids = vi.mocked(canViewFeeGrids);
+
 describe("SettingsFinancePage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    canManageFeeGrids.mockReturnValue(true);
-    canViewFeeGrids.mockReturnValue(true);
+    mockedCanManageFeeGrids.mockReturnValue(true);
+    mockedCanViewFeeGrids.mockReturnValue(true);
     getFinanceCatalog.mockResolvedValue({
       currency: "CDF",
       currencySource: "country",
@@ -88,8 +91,8 @@ describe("SettingsFinancePage", () => {
   });
 
   it("refuse l'accès sans permission de lecture", async () => {
-    canManageFeeGrids.mockReturnValue(false);
-    canViewFeeGrids.mockReturnValue(false);
+    mockedCanManageFeeGrids.mockReturnValue(false);
+    mockedCanViewFeeGrids.mockReturnValue(false);
     render(
       <MemoryRouter>
         <SettingsFinancePage />

@@ -12,7 +12,7 @@ import { getPaymentCashKpi } from "../lib/paymentCashKpi";
 import { getPaymentRateKpi } from "../lib/paymentRateKpi";
 import { useFloatingTabBarLayout } from "../lib/screenLayout";
 import { getFinanceCatalog, getPaymentStudentOptions } from "../services/api";
-import type { PaymentStudent } from "../lib/paymentEnrollment";
+import { paymentStudentsFromOptions, type PaymentStudent } from "../lib/paymentEnrollment";
 
 function moneyLabel(amount: number, ready: boolean) {
   return ready ? `${amount.toLocaleString("fr-FR")} FC` : "—";
@@ -44,21 +44,7 @@ export default function PaymentsScreen({ navigation }: any) {
       loadStudentFees(),
       getPaymentStudentOptions()
         .then((rows) => {
-          setPaymentStudents(
-            rows.map((row) => ({
-              id: row.studentId,
-              name: `${row.firstName} ${row.lastName}`.trim(),
-              classId: row.classId,
-              classCode: row.classCode,
-              className: row.className,
-              enrollments: (row.classes ?? []).map((klass) => ({
-                status: "active",
-                classId: klass.classId,
-                classCode: klass.classCode,
-                className: klass.className,
-              })),
-            })),
-          );
+          setPaymentStudents(paymentStudentsFromOptions(rows));
         })
         .catch(() => {
           setPaymentStudents([]);

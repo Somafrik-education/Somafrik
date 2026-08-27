@@ -20,6 +20,7 @@ import {
   collectOpenPaymentFees,
   paymentClassBelongsToStudent,
   paymentSubmitErrorMessage,
+  paymentStudentsFromOptions,
   preselectPaymentClassId,
   preselectPaymentObligationId,
   type PaymentStudent,
@@ -160,5 +161,30 @@ assert.equal(
   "Cet élève n'a aucune inscription active.",
 );
 assert.equal(paymentSubmitErrorMessage("failed"), "Enregistrement refusé.");
+
+const fromOptions = paymentStudentsFromOptions([
+  {
+    studentId: awa.id,
+    firstName: "Awa",
+    lastName: "Diop",
+    classId: awa.classId,
+    classCode: "CLS-6A",
+    className: "6ème A",
+    classes: [
+      { classId: String(awa.classId), classCode: "CLS-6A", className: "6ème A" },
+    ],
+  },
+  { firstName: "Ignoré", lastName: "SansId" },
+]);
+assert.equal(fromOptions.length, 1);
+assert.equal(fromOptions[0].id, awa.id);
+assert.equal(fromOptions[0].name, "Awa Diop");
+assert.deepEqual(fromOptions[0].enrollments, [
+  { status: "active", classId: String(awa.classId), classCode: "CLS-6A", className: "6ème A" },
+]);
+assert.deepEqual(collectActivePaymentClasses(awa.id, fromOptions), [
+  { classId: String(awa.classId), classCode: "CLS-6A", className: "6ème A" },
+]);
+assert.deepEqual(paymentStudentsFromOptions([]), []);
 
 console.log("OK paymentEnrollment: élève → classes actives, reset, payload classId, erreurs API visibles");

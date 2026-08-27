@@ -92,11 +92,11 @@ export interface FeeBalance {
 
 export interface QuickPaymentLine {
   id: string;
-  feeType: FeeType;
+  feeType: string;
   amount: string;
 }
 
-export function createPaymentLine(feeType: FeeType = "Minerval / scolarité"): QuickPaymentLine {
+export function createPaymentLine(feeType = "Minerval / scolarité"): QuickPaymentLine {
   const rand = globalThis.crypto?.randomUUID?.() ?? `line-${Date.now()}-${Math.random().toString(16).slice(2)}`;
   return { id: rand, feeType, amount: "" };
 }
@@ -473,7 +473,7 @@ export function validateMultiItemPaymentInput(input: {
   student?: StudentSearchResult | null;
   classId?: string;
   classOptions?: Array<{ classId: string }>;
-  method?: PaymentMethod | "";
+  method?: string;
   date?: string;
   lines?: QuickPaymentLine[];
 }): string | null {

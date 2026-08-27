@@ -109,14 +109,15 @@ Tests A/B : élève B, grille B, moyens A jamais visibles sous principal A. Él�
 
 ## 7. Web / Mobile
 
-- Web `QuickPaymentModal` : source `payment-student-options` + `catalog` (plus snapshot élèves / parentPhone dans la recherche).
-- Mobile `PaymentsScreen` : plus de `GET /students` obligatoire ; même catalogue métier.
+- Web `QuickPaymentModal` : source `payment-student-options` + `catalog` ; refuse l’enregistrement si catalogue indisponible / moyen hors catalogue. Aucun repli `Espèces`.
+- Mobile `PaymentsScreen` **et** `StudentPaymentsScreen` : `payment-student-options` + catalog. Comptable n’a plus besoin de `GET /students` pour encaisser. `StudentPayments` conserve `loadStudents` uniquement comme repli d’affichage Parent (options 403).
+- `PaymentMutationControls` : moyens = prop catalogue, fail-closed, plus de `["Espèces", "Mobile money", "Virement"]`.
 - Paramètres Finances : page opérationnelle (loading / vide / liste / ajout / désactivation / 403 / erreur). Enregistrer après succès API.
 - Mobile ne duplique pas le moteur de configuration V1.
 
 ## 8. Dette / hardcodes restants
 
-- `FEE_TYPES` / `PAYMENT_METHODS` / `DEFAULT_FEE_AMOUNTS` encore dans `quickPayment.ts` comme **valeurs de repli de type**, plus comme autorité d’établissement.
+- `FEE_TYPES` / `PAYMENT_METHODS` / `DEFAULT_FEE_AMOUNTS` encore dans `quickPayment.ts` comme **constantes de typage historique**, plus comme autorité d’établissement ni comme repli UI des opérations.
 - `/finances/frais` conserve l’UI opérationnelle historique (snapshot + API) — non réécrit pour ne pas casser le flux existant.
 - KPI Mobile affiche encore « FC » en libellé d’affichage (devise métier = catalog).
 - Réductions / pénalités établissement = P2.
@@ -160,10 +161,10 @@ Corrections post-implémentation (ce lot) :
 
 ## 13. Fichiers
 
-Backend : `financeCatalog.js`, `financePgStore.js`, `financeMemoryStore.js`, `financeSchema.js`, `schema.sql`, `server.js`, `rbacService.js`, repositories, `20260827_school_payment_methods.sql`.  
-Web : `SettingsFinancePage.tsx`, hub, `financeApi.ts`, `QuickPaymentModal.tsx`, `fees.ts`.  
-Mobile : `PaymentsScreen.tsx`, `PaymentMutationControls.tsx`, `api.ts`.  
-Tests : `financeCatalog.test.js`, `financeRepository*.js`, `verify-finance-management.js`, `SettingsFinancePage.test.tsx`.
+Backend : `financeCatalog.js`, `financePgStore.js`, `financeMemoryStore.js`, `financeSchema.js`, `schema.sql`, `server.js`, `rbacService.js`, repositories, `20260827_school_payment_methods.sql`.
+Web : `SettingsFinancePage.tsx`, hub, `financeApi.ts`, `QuickPaymentModal.tsx`, `fees.ts`, `quickPayment.ts`.
+Mobile : `PaymentsScreen.tsx`, `StudentPaymentsScreen.tsx`, `PaymentMutationControls.tsx`, `paymentEnrollment.ts`, `api.ts`.
+Tests : `financeCatalog.test.js`, `financeRepository*.js`, `verify-finance-management.js`, `SettingsFinancePage.test.tsx`, `paymentEnrollment.test.ts`.
 
 ## 14. Migrations
 
