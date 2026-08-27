@@ -9,8 +9,8 @@
 ```text
 Base develop exact : 874f9415cda8c1e3df1339001b8f0f437149f38d
                      (merge #352 Native SQLCipher APK smoke)
-HEAD PR            : 9ff0ae843f6f1fef62499708bd1e3a535c79f839 (instrumentation RC2)
-Appareil physique  : HOLD — transcript Android requis
+HEAD PR            : efb5ceb0315f967cad173c6ed1afa76f0a4ac772
+Appareil physique  : Xiaomi E6QCAIAIC6LJIBXG
 Package            : com.somafrik.app
 Version            : 1.2.1 (versionCode 13)
 ```
@@ -70,26 +70,71 @@ Capturer :
 adb logcat -d | grep -E "RC2_L1_READ|RC2_OFFLINE_BOOT|RC2_OFFLINE_READ_SMOKE"
 ```
 
+## Preuve Android physique — tentative 1
+
+Online, les écrans métier ont chargé depuis le réseau :
+
+```text
+RC2_L1_READ resource=course-schedules source=network status=success rows=1/2
+RC2_L1_READ resource=students source=network status=success rows=6
+RC2_L1_READ resource=classes source=network status=success rows=6
+RC2_L1_READ resource=assignments source=network status=success rows=9
+```
+
+Après Wi-Fi + data OFF, USB + `adb reverse tcp:8081 tcp:8081`, puis cold relaunch :
+
+```text
+L1_SQLCIPHER_SMOKE cipher_version=4.7.0 community
+L1_SQLCIPHER_SMOKE persist=ok
+RC2_OFFLINE_BOOT permissions=ready_offline
+RC2_L1_READ resource=students source=none status=offline rows=0
+RC2_L1_READ resource=classes source=none status=offline rows=0
+RC2_L1_READ resource=classes source=none status=offline rows=0
+```
+
+Constats UI :
+- boot hors ligne : OK ;
+- SQLCipher persistant : OK ;
+- présence/paiement non inventés : OK ;
+- remplacements affichés non vérifiés : OK ;
+- Students L1 indisponible : NO-GO ;
+- CourseSchedules L1 indisponible : NO-GO ;
+- aucun `RC2_OFFLINE_READ_SMOKE OK`.
+
+Le transcript montre que le lecteur refuse le cache en offline, mais l'instrumentation actuelle ne révèle pas encore si la cause est `metadata_absent`, `reconciling`, `blocked_authorization`, `partition_mismatch` ou autre. Les marqueurs online `source=network` ne prouvent pas que `syncL1Cache` a atteint `outcome=ready`.
+
+## Correctif diagnostique requis avant tentative 2
+
+Instrumenter sans donnée sensible :
+
+```text
+RC2_L1_SYNC resource=<resource> outcome=<ready|blocked_authorization|discarded|network_preserved|error> code=<allowlist|none>
+RC2_L1_REFUSAL resource=<resource> reason=<empty|reconciling|blocked_authorization|metadata_absent|partition_mismatch|sqlcipher_unavailable|partition_unresolved>
+```
+
+Puis confirmer online les cinq `outcome=ready` avant toute coupure réseau. Si un outcome n'est pas `ready`, corriger sa cause avant de refaire RC2.
+
 ## Checklist de preuve
 
 | Critère | Statut | Preuve |
 | --- | --- | --- |
-| HEAD exact | HOLD | SHA PR + base `874f9415` |
-| Appareil physique | HOLD | modèle / Android à coller |
-| Package / version | OK (repo) | `com.somafrik.app` 1.2.1 / versionCode 13 |
+| HEAD exact | OK | `efb5ceb0315f967cad173c6ed1afa76f0a4ac772` |
+| Appareil physique | OK | Xiaomi `E6QCAIAIC6LJIBXG` |
+| Package / version | OK | `com.somafrik.app` 1.2.1 / versionCode 13 |
 | 5 ressources L1 | OK (code) | `L1_RESOURCES` + 5 loaders `AdminDataContext` |
-| Online sync | HOLD | transcript |
-| Internet coupé | HOLD | Wi-Fi + data off, USB + `adb reverse 8081` only |
-| Kill / relaunch | HOLD | `am force-stop` + `am start -W` |
-| `ready_offline` | HOLD | `RC2_OFFLINE_BOOT permissions=ready_offline` |
-| Classes | HOLD | `RC2_L1_READ resource=classes source=l1-cache` + bannière + recherche |
-| Students | HOLD | L1 lisible ; L2 présence/paiement ≠ faux `0` |
-| Assignments teacher scope | HOLD | session enseignant, `teacherUserId` only |
-| SchoolCourses | HOLD | `RC2_L1_READ resource=school-courses source=l1-cache` |
-| CourseSchedules | HOLD | planning L1 ; remplacements `unverified` |
-| Mutations bloquées | OK (code) / HOLD (device) | `shouldBlockUnsupportedMutations` + `networkRequired` |
-| Aucune donnée L2 inventée | OK (code) / HOLD (device) | `metricLabelFromSnapshot` → `Indisponible` si error/offline vide |
-| Aucune fuite cross-tenant | OK (tests) / HOLD (device) | partition `userId+schoolId` ; `ready` only |
+| Online écrans réseau | OK | transcript `source=network` |
+| Online sync SQLite ready | HOLD | instrumentation `RC2_L1_SYNC` requise |
+| Internet coupé | OK | Wi-Fi + data off, USB + `adb reverse 8081` only |
+| Kill / relaunch | OK | cold relaunch Android |
+| `ready_offline` | OK | `RC2_OFFLINE_BOOT permissions=ready_offline` |
+| Classes | NO-GO | `source=none status=offline rows=0` |
+| Students | NO-GO | `source=none status=offline rows=0` |
+| Assignments teacher scope | HOLD | test device après cache ready |
+| SchoolCourses | HOLD | test device après cache ready |
+| CourseSchedules | NO-GO UI | planning indisponible offline |
+| Mutations bloquées | OK observé/code | mode hors ligne actif |
+| Aucune donnée L2 inventée | OK observé | `Indisponible` / `—` |
+| Aucune fuite cross-tenant | OK tests / HOLD device | à revalider après cache ready |
 
 ## NO-GO immédiat
 
@@ -114,37 +159,12 @@ npm --prefix Mobile run verify:mobile-rc2-offline-read-smoke
 
 Le vérificateur RC2 sort `BLOCKED_NATIVE_RC2_OFFLINE_READ_SMOKE` (exit 0) sans appareil physique. **Ce n'est pas un GO.**
 
-Exécution locale de cette VM (2026-08-27) :
-
-```text
-npm --prefix Mobile run test:l1-offline-reads              → OK
-npm --prefix Mobile run verify:mobile-l1-sqlite-cache      → OK
-  (BLOCKED_NATIVE_SQLCIPHER_SMOKE : pas de device)
-npm --prefix Mobile run verify:mobile-rc2-offline-read-smoke → OK
-  (BLOCKED_NATIVE_RC2_OFFLINE_READ_SMOKE : pas de device)
-npm --prefix Mobile run typecheck                          → OK
-```
-
-## Transcript Android physique
-
-```text
-(à coller — logcat RC2_* uniquement, zéro PII)
-
-RC2_OFFLINE_BOOT permissions=ready_offline
-RC2_L1_READ resource=classes source=l1-cache status=… rows=…
-RC2_L1_READ resource=students source=l1-cache status=… rows=…
-RC2_L1_READ resource=assignments source=l1-cache status=… rows=…
-RC2_L1_READ resource=school-courses source=l1-cache status=… rows=…
-RC2_L1_READ resource=course-schedules source=l1-cache status=… rows=…
-RC2_OFFLINE_READ_SMOKE OK
-```
-
 ## Verdict
 
 ```text
-RC2 OFFLINE READ SMOKE: HOLD
+RC2 OFFLINE READ SMOKE: HOLD / NO-GO PHYSIQUE
 ```
 
-Pas de Ready, pas de merge, tant que le transcript Android physique ci-dessus n'est pas collé sur cette PR Draft.
+Pas de Ready, pas de merge. Prochaine tentative seulement après instrumentation du résultat de sync et de la raison de refus, puis cinq `outcome=ready` online.
 
 Prochain chantier **après GO RC2** : SQLite Outbox + exactly-once replay / **RC3 Offline Write**.
