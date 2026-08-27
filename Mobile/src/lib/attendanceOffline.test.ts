@@ -2,7 +2,7 @@
  *   npx tsx Mobile/src/lib/attendanceOffline.test.ts
  */
 import assert from "node:assert/strict";
-import { overlayPresenceOutboxOnAttendance, applyOutboxReadToRollCall } from "./attendanceOffline";
+import { overlayPresenceOutboxOnAttendance, applyOutboxReadToRollCall, sqlPresenceViewsAsOutboxEntries } from "./attendanceOffline";
 import { applyRollCallStatus, ROLL_CALL_COPY, type RollCallEntry } from "./attendanceTruth";
 import type { OutboxEntry } from "./outbox";
 
@@ -170,6 +170,18 @@ function run() {
     read: { ok: true, entries: [] },
   });
   assert.equal(emptyOk.outboxUnavailable, false, "file lue vide ≠ lecture KO");
+
+  const mapped = sqlPresenceViewsAsOutboxEntries([
+    {
+      outboxId: "obx-1",
+      idempotencyKey: "idem-1",
+      state: "pending",
+      payload: { classId: "uuid-a", date: "23-08-2026", items: [{ studentId: "s1", status: "Absent" }] },
+    },
+  ]);
+  assert.equal(mapped[0]?.status, "pending");
+  assert.equal(mapped[0]?.intentionId, "presence:uuid-a:23-08-2026");
+  assert.equal(mapped[0]?.path, "/presences");
 
   console.log("attendanceOffline.test.ts OK");
 }

@@ -17,7 +17,6 @@ function asResult(error: unknown): OutboxTransportResult {
 
 /**
  * Transport HTTP : auth lue à l'envoi (SecureStore/session), jamais depuis l'outbox.
- * Non branché aux écrans dans RC3-1.
  */
 export function createHttpOutboxTransport(
   request: typeof httpRequest = httpRequest,

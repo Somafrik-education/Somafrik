@@ -117,17 +117,24 @@ function main() {
   assert.doesNotMatch(httpTransport, /Authorization/);
   assert.match(httpTransport, /idempotencyKey: input.idempotencyKey/);
   assert.match(index, /enqueueOutboxOperation/);
-  assert.doesNotMatch(attendance, /offline\/outbox/);
-  console.log("OK: logs non sensibles, transport live auth, écrans non branchés");
+  assert.match(attendance, /offline\/outbox\/presenceWrite/);
+  assert.doesNotMatch(attendance, /sqliteStore|l1_outbox|expo-sqlite/);
+  console.log("OK: logs non sensibles, transport live auth, Appel via façade");
 
   const screenFiles = walkTs(path.join(MOBILE, "src/screens"));
   for (const file of screenFiles) {
     const src = read(file);
     assert.doesNotMatch(src, /from ["']expo-sqlite["']/, file);
-    assert.doesNotMatch(src, /offline\/outbox/, file);
     assert.doesNotMatch(src, /l1_outbox/, file);
+    const isAttendance = /TeacherAttendanceScreen\.tsx$/.test(file);
+    if (isAttendance) {
+      assert.match(src, /offline\/outbox\/presenceWrite/);
+      assert.doesNotMatch(src, /offline\/outbox\/sqliteStore/);
+      continue;
+    }
+    assert.doesNotMatch(src, /offline\/outbox/, file);
   }
-  console.log("OK: aucun écran n'accède à expo-sqlite / outbox SQLCipher");
+  console.log("OK: aucun écran n'accède à expo-sqlite / SQLCipher direct");
 
   assert.match(backendIdem, /TTL_OFFLINE_REPLAY_MS = 35 \* 24 \* 60 \* 60 \* 1000/);
   assert.match(backendIdem, /TTL_DEFAULT_MS = 24 \* 60 \* 60 \* 1000/);

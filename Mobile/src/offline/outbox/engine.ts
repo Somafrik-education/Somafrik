@@ -76,12 +76,26 @@ export async function enqueueOutboxOperation(input: {
   await input.store.withExclusiveTransaction(async (txn) => {
     await txn.insert(row);
   });
-  logRc3Outbox({ operationType: row.operationType, state: "pending", attemptCount: 0 });
+  logRc3Outbox({
+    event: "enqueue",
+    operationType: row.operationType,
+    state: "pending",
+    attemptCount: 0,
+  });
   return { outboxId: row.outboxId, idempotencyKey, state: "pending" };
 }
 
 export async function reclaimExpiredLeases(store: OutboxStore, now = new Date()): Promise<number> {
-  return store.withExclusiveTransaction((txn) => txn.reclaimExpiredLeases(now.toISOString()));
+  const count = await store.withExclusiveTransaction((txn) => txn.reclaimExpiredLeases(now.toISOString()));
+  if (count > 0) {
+    logRc3Outbox({
+      event: "reclaim",
+      operationType: "presence.upsert",
+      state: "pending",
+      retry: true,
+    });
+  }
+  return count;
 }
 
 export async function claimNextOutboxOperation(input: {
@@ -95,7 +109,7 @@ export async function claimNextOutboxOperation(input: {
   requirePartition(input.partition);
   const leaseMs = input.leaseMs ?? OUTBOX_LEASE_MS;
   const workerId = input.workerId ?? `worker-${createIdempotencyKey()}`;
-  return input.store.withExclusiveTransaction((txn) =>
+  const claimed = await input.store.withExclusiveTransaction((txn) =>
     txn.claimNext({
       partition: input.partition,
       nowIso: now.toISOString(),
@@ -103,6 +117,15 @@ export async function claimNextOutboxOperation(input: {
       leaseExpiresAt: new Date(now.getTime() + leaseMs).toISOString(),
     }),
   );
+  if (claimed) {
+    logRc3Outbox({
+      event: "claim",
+      operationType: claimed.operationType,
+      state: "in_flight",
+      attemptCount: claimed.attemptCount,
+    });
+  }
+  return claimed;
 }
 
 export async function ackOutboxOperation(store: OutboxStore, outboxId: string, now = new Date()): Promise<void> {
@@ -201,7 +224,7 @@ export async function drainOutbox(input: {
   leaseMs?: number;
   afterSend?: (row: OutboxRow) => Promise<void>;
   horizonMs?: number;
-}): Promise<{ processed: number; acked: number }> {
+}): Promise<{ processed: number; acked: number; ackedBodies: unknown[] }> {
   if (!input.store.cipherVersion) {
     throw coded(OUTBOX_ERROR.SQLCIPHER_REQUIRED);
   }
@@ -211,10 +234,19 @@ export async function drainOutbox(input: {
   const workerId = input.workerId ?? `worker-${createIdempotencyKey()}`;
   let processed = 0;
   let acked = 0;
+  const ackedBodies: unknown[] = [];
 
   await input.store.withExclusiveTransaction(async (txn) => {
     const now = clock();
-    await txn.reclaimExpiredLeases(now.toISOString());
+    const reclaimed = await txn.reclaimExpiredLeases(now.toISOString());
+    if (reclaimed > 0) {
+      logRc3Outbox({
+        event: "reclaim",
+        operationType: "presence.upsert",
+        state: "pending",
+        retry: true,
+      });
+    }
     await txn.expireHorizon(
       input.partition,
       new Date(now.getTime() - horizonMs).toISOString(),
@@ -266,6 +298,12 @@ export async function drainOutbox(input: {
     }
 
     const spec = resolveOutboxOperation(claimed.operationType);
+    logRc3Outbox({
+      event: "send",
+      operationType: claimed.operationType,
+      state: "in_flight",
+      attemptCount: claimed.attemptCount,
+    });
     const result = await input.transport.send({
       operationType: claimed.operationType,
       method: spec.method,
@@ -281,7 +319,9 @@ export async function drainOutbox(input: {
     if (classification === "SUCCESS" || classification === "IDEMPOTENT_REPLAY") {
       await ackOutboxOperation(input.store, claimed.outboxId, clock());
       acked += 1;
+      ackedBodies.push(result.body);
       logRc3Outbox({
+        event: "ack",
         operationType: claimed.operationType,
         state: "acked",
         attemptCount: claimed.attemptCount,
@@ -298,6 +338,7 @@ export async function drainOutbox(input: {
     ) {
       await releaseForRetry(input.store, claimed, classification, clock());
       logRc3Outbox({
+        event: "retry",
         operationType: claimed.operationType,
         state: "pending",
         attemptCount: claimed.attemptCount,
@@ -327,5 +368,5 @@ export async function drainOutbox(input: {
     });
   }
 
-  return { processed, acked };
+  return { processed, acked, ackedBodies };
 }

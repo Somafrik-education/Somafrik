@@ -26,8 +26,7 @@ import {
   resolveAttendanceAuthor,
   type AttendanceClassIdentity,
 } from "../lib/attendanceClassIdentity";
-import { overlayPresenceOutboxOnAttendance, applyOutboxReadToRollCall, outboxMatchesAttendanceClass } from "../lib/attendanceOffline";
-import { savePresences } from "../services/api";
+import { overlayPresenceOutboxOnAttendance, applyOutboxReadToRollCall, outboxMatchesAttendanceClass, sqlPresenceViewsAsOutboxEntries } from "../lib/attendanceOffline";
 import { clearConfirmedAttendanceDirty } from "../lib/attendanceDraft";
 import {
   applyRollCallStatus,
@@ -53,16 +52,17 @@ import { attendanceStatusTheme } from "../lib/attendanceStatusTheme";
 import { useFloatingTabBarLayout } from "../lib/screenLayout";
 import { useResponsiveLayout } from "../hooks/useResponsiveLayout";
 import { createInFlightLock, createIntentionStore } from "../lib/mutationGuard";
-import { NETWORK_COPY, describeConnectivity } from "../lib/networkResilience";
+import { NETWORK_COPY } from "../lib/networkResilience";
 import { isOfflineContext } from "../lib/connectivity";
 import {
-  listOutbox,
-  resolveOutboxIntentionKey,
-  subscribeOutbox,
-  submitProtectedMutation,
   isOutboxReadFailure,
-  isOutboxSendingLock,
 } from "../lib/outbox";
+import {
+  flattenAckedPresenceBodies,
+  listPresenceOutboxFromSession,
+  submitPresenceUpsertFromSession,
+  subscribePresenceOutbox,
+} from "../offline/outbox/presenceWrite";
 import {
   ATTENDANCE_ACTIONS,
   attendanceActionForStudent,
@@ -182,9 +182,12 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
         return;
       }
 
-      let read: { ok: true; entries: Awaited<ReturnType<typeof listOutbox>> } | { ok: false };
+      let read: { ok: true; entries: ReturnType<typeof sqlPresenceViewsAsOutboxEntries> } | { ok: false };
       try {
-        read = { ok: true, entries: await listOutbox() };
+        const listed = await listPresenceOutboxFromSession(session);
+        read = listed.ok
+          ? { ok: true, entries: sqlPresenceViewsAsOutboxEntries(listed.views) }
+          : { ok: false };
       } catch {
         read = { ok: false };
       }
@@ -233,14 +236,15 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
     return () => {
       cancelled = true;
     };
-  }, [classStudents, presencesData, studentsSnapshot.status, presencesSnapshot.status, selectedClass, todayLabel]);
+  }, [classStudents, presencesData, studentsSnapshot.status, presencesSnapshot.status, selectedClass, session, todayLabel]);
 
   useEffect(() => {
     if (!selectedClass) return undefined;
     const identity = selectedClass;
     const intentionId = presenceIntentionId(identity.classId, todayLabel);
-    return subscribeOutbox((entries) => {
+    return subscribePresenceOutbox((views) => {
       setOutboxUnavailable(false);
+      const entries = sqlPresenceViewsAsOutboxEntries(views);
       const sending = entries.some(
         (entry) => entry.status === "sending" && outboxMatchesAttendanceClass(entry, identity, todayLabel),
       );
@@ -436,35 +440,17 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
     setSaving(true);
     setSaveHint(NETWORK_COPY.recording);
     try {
-      const persistedKey = await resolveOutboxIntentionKey(intentionId);
-      const key = intentionRef.current.seed(intentionId, persistedKey);
-      const submitted = await submitProtectedMutation({
-        domain: "presences",
-        method: "POST",
-        path: "/presences",
-        payload,
-        idempotencyKey: key,
-        intentionId,
-        replacePendingPayload: true,
-        userId: String(session?.user.id ?? ""),
-        schoolScope: String(session?.school?.code ?? session?.user.schoolCode ?? ""),
-        persistOutbox: true,
-        knownOffline,
-        request: () => savePresences(payload, { idempotencyKey: key }),
-      });
+      const submitted = await submitPresenceUpsertFromSession(session, payload);
+      if (submitted.outcome === "unavailable") {
+        setSaveHint(ROLL_CALL_COPY.persistFailedTitle);
+        Alert.alert(ROLL_CALL_COPY.persistFailedTitle, ROLL_CALL_COPY.persistFailedBody);
+        return;
+      }
       if (submitted.outcome === "queued") {
         const studentIds = rows.map((student) => student.id);
         setAttendance((current) => markRollCallSyncState(current, studentIds, "queued"));
         setSaveHint(ROLL_CALL_COPY.queued);
-        const connectivityKind = submitted.error
-          ? describeConnectivity(submitted.error)
-          : knownOffline
-            ? "device_offline"
-            : "unconfirmed";
-        const queuedCause =
-          connectivityKind === "ok" || connectivityKind === "unconfirmed"
-            ? "unconfirmed"
-            : connectivityKind;
+        const queuedCause = knownOffline ? "device_offline" : "unconfirmed";
         Alert.alert(ROLL_CALL_COPY.queuedAlertTitle, rollCallQueuedAlertBody(queuedCause));
         return;
       }
@@ -477,33 +463,27 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
         Alert.alert(ROLL_CALL_COPY.sendingLockTitle, ROLL_CALL_COPY.sendingLockBody);
         return;
       }
-      if (submitted.outcome === "blocked_sending") {
-        setReplaySending(true);
-        replaySendingRef.current = true;
-        setSaveHint(ROLL_CALL_COPY.sendingLockTitle);
-        Alert.alert(ROLL_CALL_COPY.sendingLockTitle, ROLL_CALL_COPY.sendingLockBody);
-        return;
-      }
-      if (submitted.outcome !== "confirmed") {
+      if (submitted.outcome === "blocked_authorization" || submitted.outcome === "failed_terminal") {
         const studentIds = rows.map((student) => student.id);
-        if (submitted.persistFailed) {
-          setSaveHint(ROLL_CALL_COPY.persistFailedTitle);
-          Alert.alert(ROLL_CALL_COPY.persistFailedTitle, ROLL_CALL_COPY.persistFailedBody);
-          return;
-        }
         setAttendance((current) => markRollCallSyncState(current, studentIds, "failed"));
         setSaveHint(NETWORK_COPY.failed);
-        Alert.alert(
-          NETWORK_COPY.failed,
-          submitted.error instanceof Error
-            ? submitted.error.message
-            : "Impossible d'enregistrer l'appel dans la base.",
-        );
+        Alert.alert(NETWORK_COPY.failed, "Impossible d'enregistrer l'appel dans la base.");
         return;
       }
-      const savedPresences = submitted.result;
-      if (!Array.isArray(savedPresences) || !savedPresences.length) {
-        throw new Error("Aucune présence n'a été enregistrée par le backend.");
+      if (submitted.outcome !== "acked") {
+        const studentIds = rows.map((student) => student.id);
+        setAttendance((current) => markRollCallSyncState(current, studentIds, "queued"));
+        setSaveHint(ROLL_CALL_COPY.queued);
+        Alert.alert(ROLL_CALL_COPY.queuedAlertTitle, rollCallQueuedAlertBody("unconfirmed"));
+        return;
+      }
+      const savedPresences = flattenAckedPresenceBodies(submitted.ackedBodies);
+      if (!savedPresences.length) {
+        const studentIds = rows.map((student) => student.id);
+        setAttendance((current) => markRollCallSyncState(current, studentIds, "queued"));
+        setSaveHint(ROLL_CALL_COPY.queued);
+        Alert.alert(ROLL_CALL_COPY.queuedAlertTitle, rollCallQueuedAlertBody("unconfirmed"));
+        return;
       }
 
       setSavedCalls((current) => [
@@ -533,13 +513,6 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
         `${identity.className} • ${rows.length} élève(s)\n${absentCount} absent(s), ${lateCount} retard(s), ${justifiedCount} absence(s) justifiée(s).\n${ROLL_CALL_COPY.postgres}.`
       );
     } catch (error) {
-      if (isOutboxSendingLock(error)) {
-        setReplaySending(true);
-        replaySendingRef.current = true;
-        setSaveHint(ROLL_CALL_COPY.sendingLockTitle);
-        Alert.alert(ROLL_CALL_COPY.sendingLockTitle, ROLL_CALL_COPY.sendingLockBody);
-        return;
-      }
       if (isOutboxReadFailure(error)) {
         setOutboxUnavailable(true);
         setSaveHint(ROLL_CALL_COPY.outboxUnavailable);
