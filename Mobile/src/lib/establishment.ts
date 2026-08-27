@@ -131,6 +131,48 @@ export function listCanonicalTeacherAssignments(
   return active.filter((assignment) => assignmentBelongsToTeacher(assignment, refKeys));
 }
 
+/** Identifiant utilisateur enseignant porté par une affectation L1. */
+export function l1TeacherUserIdOf(assignment: TeacherAssignment | Row | null | undefined): string {
+  if (!assignment || typeof assignment !== "object") return "";
+  const row = assignment as Row;
+  return String(row.teacherUserId ?? row.teacher_user_id ?? "").trim();
+}
+
+/**
+ * Consommation L1 enseignant : fail-closed sur `teacherUserId === session.user.id`.
+ * Absence, null ou mismatch ⇒ aucune affectation, même si `teacherCode` / `teacherId` collent.
+ * Ne pas utiliser pour le matching en ligne KILOMBO (`teacherCode`).
+ */
+export function l1AssignmentBelongsToTeacherSession(
+  assignment: TeacherAssignment | Row | null | undefined,
+  session: { user?: { id?: unknown } | null } | null,
+): boolean {
+  const userId = String(session?.user?.id ?? "").trim();
+  const teacherUserId = l1TeacherUserIdOf(assignment);
+  return Boolean(userId && teacherUserId && teacherUserId === userId);
+}
+
+export function filterL1AssignmentsForTeacherSession(
+  assignments: TeacherAssignment[],
+  session: { role?: string; user?: { id?: unknown; role?: string } } | null,
+): TeacherAssignment[] {
+  if (!isTeacherSession(session)) return [...assignments];
+  return assignments.filter((assignment) => l1AssignmentBelongsToTeacherSession(assignment, session));
+}
+
+/**
+ * Affectations L1 d'une session enseignant. Fail-closed sur teacherUserId.
+ * Les non-enseignants reçoivent les affectations actives sans filtre utilisateur.
+ */
+export function listL1TeacherAssignments(
+  session: { role?: string; user?: { id?: unknown; role?: string } } | null,
+  assignmentsOrState: TeacherAssignment[] | TeacherScopeState = {},
+): TeacherAssignment[] {
+  const state = asTeacherScopeState(assignmentsOrState);
+  const active = (state.assignments ?? []).filter((row) => isCanonicalActiveAssignment(row));
+  return filterL1AssignmentsForTeacherSession(active, session);
+}
+
 /**
  * Noms de classes affectées à l'enseignant (clés normalisées).
  * Retourne `null` si l'utilisateur n'est pas enseignant.

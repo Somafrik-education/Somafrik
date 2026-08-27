@@ -76,6 +76,7 @@ import {
   type PlanningCourseOption,
 } from "../lib/planningV2";
 import { useAuth } from "./AuthContext";
+import { filterL1AssignmentsForTeacherSession } from "../lib/establishment";
 import { loadL1BackedSnapshot } from "../offline/l1/readModel";
 import {
   classRowsForJoin,
@@ -719,7 +720,11 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
         permissionsBootstrap,
         resource: "assignments",
         fetchNetwork: async () => getAssignments(),
-        project: async (read) => projectL1Assignments(read, await classRowsForJoin(session)),
+        project: async (read) =>
+          filterL1AssignmentsForTeacherSession(
+            projectL1Assignments(read, await classRowsForJoin(session)),
+            session,
+          ),
       });
       if (resourceScopeKeyRef.current !== scope) return;
       setAssignmentsData(snapshot.data);

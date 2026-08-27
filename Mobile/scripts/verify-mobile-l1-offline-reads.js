@@ -39,14 +39,21 @@ function main() {
   assert.match(readModel, /meta\.state !== "ready"/);
   assert.match(readModel, /NETWORK_UNAVAILABLE/);
   assert.match(readModel, /ready_offline/);
+  assert.match(
+    readModel,
+    /try \{\s*rows = await storeResult\.store\.listRows\([\s\S]*?catch \{\s*return \{ ok: false, reason: "sqlcipher_unavailable" \}/,
+  );
   assert.match(projection, /subject_code/);
   assert.match(projection, /teacherUserId/);
   assert.match(dataTruth, /source\?:/);
   assert.match(dataTruth, /l1-cache/);
   assert.match(admin, /loadL1BackedSnapshot/);
   assert.match(admin, /resource: "school-courses"/);
+  assert.match(admin, /filterL1AssignmentsForTeacherSession/);
   assert.match(establishment, /teacherUserId/);
   assert.match(establishment, /teacher_user_id/);
+  assert.match(establishment, /export function l1AssignmentBelongsToTeacherSession/);
+  assert.match(establishment, /teacherUserId === userId/);
 
   for (const rel of [
     "src/screens/ClassesScreen.tsx",

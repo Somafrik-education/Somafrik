@@ -6,7 +6,11 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import {
+  filterL1AssignmentsForTeacherSession,
+  l1AssignmentBelongsToTeacherSession,
+  l1TeacherUserIdOf,
   listCanonicalTeacherAssignments,
+  listL1TeacherAssignments,
   scopedClassesForSession,
   scopedStudentsForSession,
 } from "../../lib/establishment";
@@ -26,6 +30,7 @@ import {
   setL1ReadDepsForTests,
   shouldBlockUnsupportedMutations,
   shouldSkipMetierGet,
+  snapshotFromL1Read,
 } from "./readModel";
 import { applyL1PageAtomically, markResourceState } from "./repository";
 import type { L1Page, L1Partition, L1Resource } from "./types";
@@ -280,6 +285,95 @@ async function run() {
   assert.deepEqual(scopedClassesForSession(teacherSession, classes, students, { assignments: [], classes }), []);
   assert.deepEqual(scopedStudentsForSession(teacherSession, students, { assignments: [], classes }), []);
 
+  const teacherWithLegacyRefs = {
+    role: "teacher",
+    user: {
+      id: "user-a",
+      schoolId: "school-1",
+      schoolCode: "SCH-1",
+      teacherId: "tch-a",
+      teacherCode: "ENS-A",
+    },
+    school: { id: "school-1", code: "SCH-1" },
+  };
+  const legacyAssignment = {
+    id: "asg-legacy",
+    teacherId: "tch-a",
+    teacherCode: "ENS-A",
+    className: "6ème A",
+    classCode: "CLS-6A",
+    course: "MATH",
+    status: "active",
+  };
+  assert.equal(
+    listCanonicalTeacherAssignments(teacherWithLegacyRefs, { assignments: [legacyAssignment] }).length,
+    1,
+    "matching en ligne KILOMBO : teacherCode/teacherId restent valides",
+  );
+  assert.equal(
+    listL1TeacherAssignments(teacherWithLegacyRefs, { assignments: [legacyAssignment] }).length,
+    0,
+    "teacherUserId absent ⇒ aucune affectation L1",
+  );
+  assert.equal(l1TeacherUserIdOf({ ...legacyAssignment, teacherUserId: null }), "");
+  assert.equal(l1TeacherUserIdOf({ teacher_user_id: null, teacherCode: "ENS-A" }), "");
+  assert.equal(
+    l1AssignmentBelongsToTeacherSession({ ...legacyAssignment, teacherUserId: null }, teacherWithLegacyRefs),
+    false,
+    "teacherUserId null ⇒ refus L1 même si teacherCode/teacherId collent",
+  );
+  assert.equal(
+    listL1TeacherAssignments(teacherWithLegacyRefs, {
+      assignments: [{ ...legacyAssignment, teacherUserId: "user-other" }],
+    }).length,
+    0,
+    "teacherUserId mismatch ⇒ aucune affectation L1",
+  );
+  assert.equal(
+    listL1TeacherAssignments(teacherWithLegacyRefs, {
+      assignments: [{ ...legacyAssignment, teacherUserId: "user-a" }],
+    }).length,
+    1,
+    "teacherUserId === session.user.id ⇒ affectation L1",
+  );
+  const l1ProjectedMissingUid = filterL1AssignmentsForTeacherSession(
+    projectL1Assignments(
+      {
+        ok: true,
+        partition: partitionA,
+        meta: assignmentsRead.meta,
+        rows: [
+          {
+            id: "asg-no-uid",
+            teacher_id: "tch-a",
+            teacher_code: "ENS-A",
+            class_id: "cls-6a",
+            class_code: "CLS-6A",
+            subject_code: "MATH",
+            status: "active",
+            teacher_user_id: null,
+          },
+        ],
+      },
+      classesRead.rows,
+    ),
+    teacherWithLegacyRefs,
+  );
+  assert.equal(l1ProjectedMissingUid.length, 0, "projection L1 sans teacher_user_id ⇒ vide enseignant");
+  const l1TeacherReady = await loadL1BackedSnapshot({
+    session: teacherWithLegacyRefs,
+    permissionsBootstrap: "ready_offline",
+    resource: "assignments",
+    fetchNetwork: async () => {
+      throw new Error("GET interdit en ready_offline");
+    },
+    project: (read) =>
+      filterL1AssignmentsForTeacherSession(projectL1Assignments(read, classesRead.rows), teacherWithLegacyRefs),
+  });
+  assert.equal(l1TeacherReady.status, "success");
+  assert.equal(l1TeacherReady.data.length, 1);
+  assert.equal(l1TeacherReady.data[0].teacherUserId, "user-a");
+
   const coursesRead = await readL1Resource({ session: sessionA, resource: "school-courses" });
   assert.equal(coursesRead.ok, true);
   if (!coursesRead.ok) throw new Error("school-courses ready");
@@ -493,6 +587,33 @@ async function run() {
   });
   const cipher = await readL1Resource({ session: sessionA, resource: "classes" });
   assert.deepEqual(cipher, { ok: false, reason: "sqlcipher_unavailable" });
+
+  const listRowsBoomStore = {
+    ...relaunchStore,
+    async listRows() {
+      throw Object.assign(new Error("database is locked"), { code: "SQLITE_ERROR" });
+    },
+  };
+  setL1ReadDepsForTests({
+    openStore: async () => ({ ok: true, store: listRowsBoomStore }),
+  });
+  const listRowsBoom = await readL1Resource({ session: sessionA, resource: "classes" });
+  assert.deepEqual(listRowsBoom, { ok: false, reason: "sqlcipher_unavailable" });
+  const listRowsBoomSnapshot = snapshotFromL1Read(listRowsBoom, projectL1Classes);
+  assert.equal(listRowsBoomSnapshot.status, "offline");
+  assert.deepEqual(listRowsBoomSnapshot.data, []);
+  assert.equal(listRowsBoomSnapshot.source, undefined);
+  const listRowsBoomLoad = await loadL1BackedSnapshot({
+    session: sessionA,
+    permissionsBootstrap: "ready_offline",
+    resource: "classes",
+    fetchNetwork: async () => {
+      throw new Error("GET interdit en ready_offline");
+    },
+    project: (read) => projectL1Classes(read),
+  });
+  assert.equal(listRowsBoomLoad.status, "offline", "listRows throws ⇒ offline, jamais données anciennes");
+  assert.deepEqual(listRowsBoomLoad.data, []);
 
   setL1ReadDepsForTests(null);
   resetL1LifecycleForTests();

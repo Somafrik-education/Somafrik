@@ -152,7 +152,12 @@ export async function readL1Resource(input: {
     return { ok: false, reason: "empty" };
   }
 
-  const rows = await storeResult.store.listRows(input.resource, partition);
+  let rows: Record<string, SqlValue>[];
+  try {
+    rows = await storeResult.store.listRows(input.resource, partition);
+  } catch {
+    return { ok: false, reason: "sqlcipher_unavailable" };
+  }
   return { ok: true, partition, meta, rows };
 }
 
