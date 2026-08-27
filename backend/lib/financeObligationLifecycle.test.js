@@ -13,6 +13,7 @@ const {
   NO_APPLICABLE_GRID,
   FINANCE_OBLIGATION_SYNC_FAILED,
   pickEnrollment,
+  isUnswallowableFinanceSyncError,
 } = require("./financeObligationLifecycle");
 
 const STUDENT_ID = "CD-2026-0001-STU-0001";
@@ -544,6 +545,18 @@ describe("F3 P1-B — date effective de transfert", () => {
     const after = store.tables.studentFees;
     assert.equal(after.length, before.length);
     assert.equal(after.every((row) => !row.archived_at && !row.cancel_reason), true);
+  });
+});
+
+describe("F3 P1 intégration — erreurs non avalables", () => {
+  it("NEEDS_EFFECTIVE_DATE et mismatches déterministes ne sont pas avalés", () => {
+    assert.equal(isUnswallowableFinanceSyncError({ code: FINANCE_ERROR.NEEDS_EFFECTIVE_DATE }), true);
+    assert.equal(isUnswallowableFinanceSyncError({ code: FINANCE_ERROR.ENROLLMENT_NOT_FOUND }), true);
+    assert.equal(isUnswallowableFinanceSyncError({ code: FINANCE_ERROR.CLASS_ENROLLMENT_MISMATCH }), true);
+    assert.equal(isUnswallowableFinanceSyncError({ code: FINANCE_ERROR.GRID_ENROLLMENT_MISMATCH }), true);
+    assert.equal(isUnswallowableFinanceSyncError({ code: FINANCE_ERROR.TENANT_MISMATCH }), true);
+    assert.equal(isUnswallowableFinanceSyncError({ code: "FORCED_ENGINE_FAILURE" }), false);
+    assert.equal(isUnswallowableFinanceSyncError({ code: FINANCE_OBLIGATION_SYNC_FAILED }), false);
   });
 });
 

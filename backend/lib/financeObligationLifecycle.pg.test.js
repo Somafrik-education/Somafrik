@@ -8,6 +8,7 @@ const fs = require("node:fs");
 const path = require("path");
 const { Pool } = require("pg");
 const { createFinancePgStore } = require("../db/financePgStore");
+const { PostgresRepository } = require("../db/postgresRepository");
 const { FINANCE_SCHEMA_SQL } = require("../db/financeSchema");
 const { FINANCE_ERROR } = require("./financeManagement");
 const { createTxAdapter } = require("../db/txAdapter");
@@ -22,6 +23,16 @@ function withDatabaseName(databaseUrl, databaseName) {
   const parsed = new URL(databaseUrl);
   parsed.pathname = `/${databaseName}`;
   return parsed.toString();
+}
+
+function isoDate(value) {
+  if (value instanceof Date) {
+    const year = value.getUTCFullYear();
+    const month = String(value.getUTCMonth() + 1).padStart(2, "0");
+    const day = String(value.getUTCDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+  }
+  return String(value ?? "").slice(0, 10);
 }
 
 async function ensureIsolatedDatabase(databaseUrl, databaseName) {
@@ -409,11 +420,28 @@ async function main() {
        WHERE period_key = '2026-10'`,
     );
 
-    await pool.query(
-      `UPDATE enrollments SET class_id = $1, class_effective_date = '2026-09-15' WHERE student_id = $2`,
-      [klassB.rows[0].id, student.rows[0].id],
+    const studentTransfer = await pool.query(
+      `INSERT INTO students (school_id, student_code, first_name, last_name)
+       VALUES ($1, 'CD-2026-0001-STU-0002', 'Binta', 'Fall') RETURNING id`,
+      [schoolA.rows[0].id],
     );
-    const grid6b = await store.upsertFinanceFeeGrid(
+    await pool.query(
+      `INSERT INTO enrollments (school_id, student_id, class_id, academic_year_id, status, enrollment_date, class_effective_date)
+       VALUES ($1, $2, $3, $4, 'active', '2026-09-01', '2026-09-01')`,
+      [schoolA.rows[0].id, studentTransfer.rows[0].id, klassA.rows[0].id, year.rows[0].id],
+    );
+    const seededTransfer = await store.ensureEnrollmentObligations(
+      {
+        reason: "enrollment_active",
+        schoolCode: "CD-2026-0001",
+        studentKey: "CD-2026-0001-STU-0002",
+        academicYear: "2026-2027",
+        classId: klassA.rows[0].id,
+      },
+      admin,
+    );
+    assert.ok(seededTransfer.created >= 3, "obligations 6A du second élève absentes");
+    const grid6bForRepo = await store.upsertFinanceFeeGrid(
       {
         classId: klassB.rows[0].id,
         className: "6ème B",
@@ -421,12 +449,107 @@ async function main() {
         currency: "CDF",
         status: "Active",
         items: [
-          { feeType: "Scolarité", label: "Scolarité 6B", amount: 32_000, monthlyMonths: ["Septembre", "Octobre"], status: "Actif" },
+          {
+            feeType: "Scolarité",
+            label: "Scolarité 6B",
+            amount: 32_000,
+            monthlyMonths: ["Septembre", "Octobre"],
+            status: "Actif",
+          },
         ],
       },
       admin,
     );
-    await store.setFinanceFeeGridStatus(grid6b.id, "Active", admin);
+    await store.setFinanceFeeGridStatus(grid6bForRepo.id, "Active", admin);
+
+    const pgRepo = new PostgresRepository(isolatedUrl);
+    pgRepo.ready = true;
+    try {
+      const beforeUndated = await pool.query(
+        `SELECT class_id, class_effective_date FROM enrollments WHERE student_id = $1`,
+        [studentTransfer.rows[0].id],
+      );
+      assert.equal(String(beforeUndated.rows[0].class_id), String(klassA.rows[0].id));
+      const obligationsBefore = await pool.query(
+        `SELECT id, class_id, period_key, archived_at, cancel_reason
+         FROM student_fee_obligations
+         WHERE student_id = $1
+         ORDER BY period_key`,
+        [studentTransfer.rows[0].id],
+      );
+      assert.equal(obligationsBefore.rowCount, 3);
+      assert.equal(
+        obligationsBefore.rows.every((row) => String(row.class_id) === String(klassA.rows[0].id) && !row.archived_at),
+        true,
+      );
+
+      await assert.rejects(
+        () => pgRepo.ensureActiveEnrollment(schoolA.rows[0].id, studentTransfer.rows[0].id, klassB.rows[0].id),
+        (error) => error.code === FINANCE_ERROR.NEEDS_EFFECTIVE_DATE,
+      );
+
+      const afterUndated = await pool.query(
+        `SELECT class_id, class_effective_date FROM enrollments WHERE student_id = $1`,
+        [studentTransfer.rows[0].id],
+      );
+      assert.equal(String(afterUndated.rows[0].class_id), String(klassA.rows[0].id), "enrollment ne doit pas passer en 6B");
+      assert.equal(isoDate(afterUndated.rows[0].class_effective_date), isoDate(beforeUndated.rows[0].class_effective_date));
+      assert.equal(isoDate(afterUndated.rows[0].class_effective_date), "2026-09-01");
+      const obligationsAfterRefuse = await pool.query(
+        `SELECT class_id, period_key, archived_at, cancel_reason
+         FROM student_fee_obligations
+         WHERE student_id = $1`,
+        [studentTransfer.rows[0].id],
+      );
+      assert.equal(obligationsAfterRefuse.rowCount, 3, "aucune obligation 6A ne doit bouger");
+      assert.equal(
+        obligationsAfterRefuse.rows.every((row) => String(row.class_id) === String(klassA.rows[0].id) && !row.archived_at),
+        true,
+      );
+      const sixBAfterRefuse = obligationsAfterRefuse.rows.filter(
+        (row) => String(row.class_id) === String(klassB.rows[0].id),
+      );
+      assert.equal(sixBAfterRefuse.length, 0, "aucune obligation 6B ne doit naître sans date");
+
+      const financeSync = await pgRepo.ensureActiveEnrollment(
+        schoolA.rows[0].id,
+        studentTransfer.rows[0].id,
+        klassB.rows[0].id,
+        { effectiveDate: "2026-09-15", principal: admin },
+      );
+      assert.ok(financeSync);
+      assert.ok(financeSync.superseded >= 1, "futures 6A non superseded");
+      assert.ok(financeSync.created >= 1, "obligations 6B non créées");
+
+      const afterDated = await pool.query(
+        `SELECT class_id, class_effective_date FROM enrollments WHERE student_id = $1`,
+        [studentTransfer.rows[0].id],
+      );
+      assert.equal(String(afterDated.rows[0].class_id), String(klassB.rows[0].id));
+      assert.equal(isoDate(afterDated.rows[0].class_effective_date), "2026-09-15");
+      const octOldTransfer = await pool.query(
+        `SELECT archived_at, cancel_reason FROM student_fee_obligations
+         WHERE student_id = $1 AND period_key = '2026-10' AND class_id = $2`,
+        [studentTransfer.rows[0].id, klassA.rows[0].id],
+      );
+      assert.equal(octOldTransfer.rowCount, 1);
+      assert.ok(octOldTransfer.rows[0].archived_at);
+      assert.equal(octOldTransfer.rows[0].cancel_reason, "CLASS_TRANSFER");
+      const sixBCreated = await pool.query(
+        `SELECT period_key, archived_at FROM student_fee_obligations
+         WHERE student_id = $1 AND class_id = $2 AND archived_at IS NULL`,
+        [studentTransfer.rows[0].id, klassB.rows[0].id],
+      );
+      assert.ok(sixBCreated.rowCount >= 1, "obligations 6B absentes après retry daté");
+    } finally {
+      await pgRepo.close();
+    }
+
+    await pool.query(
+      `UPDATE enrollments SET class_id = $1, class_effective_date = '2026-09-15' WHERE student_id = $2`,
+      [klassB.rows[0].id, student.rows[0].id],
+    );
+    const grid6b = grid6bForRepo;
     const transfer = await store.ensureEnrollmentObligations(
       {
         reason: "class_transfer",

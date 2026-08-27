@@ -3230,13 +3230,25 @@ class PostgresRepository {
     );
     const classChanged = Boolean(previous?.class_id && String(previous.class_id) !== String(classId));
     const requestedEffectiveDate = String(options.effectiveDate ?? "").trim() || null;
+    if (classChanged && !requestedEffectiveDate) {
+      const { createFinanceError, FINANCE_ERROR } = require("../lib/financeManagement");
+      throw createFinanceError(
+        409,
+        "Date effective du changement de classe obligatoire : aucune obligation n'a été annulée.",
+        FINANCE_ERROR.NEEDS_EFFECTIVE_DATE,
+      );
+    }
     await this.query(
       `INSERT INTO enrollments (
          school_id, student_id, class_id, academic_year_id, enrollment_date, class_effective_date, status
        )
        VALUES ($1, $2, $3, $4, CURRENT_DATE, COALESCE($5::date, CURRENT_DATE), 'active')
        ON CONFLICT (student_id, academic_year_id) DO UPDATE SET
-         class_id = EXCLUDED.class_id,
+         class_id = CASE
+           WHEN enrollments.class_id IS DISTINCT FROM EXCLUDED.class_id AND $5::date IS NULL
+             THEN enrollments.class_id
+           ELSE EXCLUDED.class_id
+         END,
          status = 'active',
          class_effective_date = CASE
            WHEN enrollments.class_id IS DISTINCT FROM EXCLUDED.class_id
@@ -3260,7 +3272,7 @@ class PostgresRepository {
     const previousClass = classChanged
       ? await this.one(`SELECT id, class_code, name FROM classes WHERE id = $1`, [previous.class_id])
       : null;
-    await this.syncEnrollmentFinanceObligations(
+    const financeSync = await this.syncEnrollmentFinanceObligations(
       {
         reason: classChanged ? "class_transfer" : "enrollment_active",
         schoolCode: school.school_code,
@@ -3287,6 +3299,7 @@ class PostgresRepository {
       },
       options.principal,
     );
+    return financeSync;
   }
 
   async ensureSchoolFromBackOfficeRecord(schoolCode, context = {}) {
@@ -3920,8 +3933,11 @@ class PostgresRepository {
     const className = String(record.className ?? "").trim();
     const classId = await this.ensureClassForSchool(school.id, className, context);
     let enrollment = false;
+    let financeSync = null;
     if (classId) {
-      await this.ensureActiveEnrollment(school.id, row.id, classId);
+      financeSync = await this.ensureActiveEnrollment(school.id, row.id, classId, {
+        principal: context.principal,
+      });
       enrollment = true;
     }
     return {
@@ -3929,6 +3945,7 @@ class PostgresRepository {
       schoolId: school.id,
       classId: classId ?? null,
       enrollment,
+      financeSync,
     };
   }
 
@@ -3992,7 +4009,7 @@ class PostgresRepository {
       if (targetClassName) {
         const classId = await this.ensureClassForSchool(student.school_id, targetClassName);
         if (classId) {
-          await this.ensureActiveEnrollment(student.school_id, student.id, classId);
+          await this.ensureActiveEnrollment(student.school_id, student.id, classId, { principal });
           student = { ...student, class_id: classId, class_name: targetClassName };
         }
       }

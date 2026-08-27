@@ -76,6 +76,34 @@ function assertSourceGuards() {
   assert.doesNotMatch(pgRepo, /THEN COALESCE\(\$5::date, CURRENT_DATE\)/);
   assert.doesNotMatch(pgRepo, /console\.warn\("finance F3 ensureEnrollmentObligations/);
 
+  const ensureStart = pgRepo.indexOf("async ensureActiveEnrollment");
+  assert.ok(ensureStart >= 0, "ensureActiveEnrollment absent");
+  const ensureNext = pgRepo.indexOf("\n  async ", ensureStart + 1);
+  const ensureFn = pgRepo.slice(ensureStart, ensureNext === -1 ? undefined : ensureNext);
+  assert.match(ensureFn, /classChanged/);
+  const refuseIdx = ensureFn.search(/FINANCE_ERROR\.NEEDS_EFFECTIVE_DATE|FINANCE_NEEDS_EFFECTIVE_DATE/);
+  const mutateIdx = ensureFn.search(/INSERT INTO enrollments/);
+  assert.ok(refuseIdx >= 0, "refus FINANCE_NEEDS_EFFECTIVE_DATE absent de ensureActiveEnrollment");
+  assert.ok(mutateIdx >= 0, "INSERT enrollments absent de ensureActiveEnrollment");
+  assert.ok(
+    refuseIdx < mutateIdx,
+    "UPDATE enrollment avant validation effectiveDate : refus NEEDS_EFFECTIVE_DATE doit précéder INSERT/UPDATE class_id",
+  );
+  assert.match(ensureFn, /const financeSync = await this\.syncEnrollmentFinanceObligations/);
+  assert.match(ensureFn, /return financeSync/);
+
+  const unswallowableStart = lifecycle.indexOf("function isUnswallowableFinanceSyncError");
+  assert.ok(unswallowableStart >= 0, "isUnswallowableFinanceSyncError absent");
+  const unswallowableNext = lifecycle.indexOf("\nfunction ", unswallowableStart + 1);
+  const unswallowableFn = lifecycle.slice(
+    unswallowableStart,
+    unswallowableNext === -1 ? undefined : unswallowableNext,
+  );
+  assert.match(unswallowableFn, /FINANCE_ERROR\.NEEDS_EFFECTIVE_DATE/);
+  assert.match(unswallowableFn, /FINANCE_ERROR\.ENROLLMENT_NOT_FOUND/);
+  assert.match(unswallowableFn, /FINANCE_ERROR\.CLASS_ENROLLMENT_MISMATCH/);
+  assert.match(unswallowableFn, /FINANCE_ERROR\.GRID_ENROLLMENT_MISMATCH/);
+
   assert.match(fees, /financeApi\.applyFeeGrid/);
   assert.doesNotMatch(fees, /applyFeeGridToStudents/);
   assert.doesNotMatch(quickModal, /applyFeeGridToStudents/);

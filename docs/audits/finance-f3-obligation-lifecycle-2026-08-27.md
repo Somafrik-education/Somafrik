@@ -164,8 +164,10 @@ Les lignes existantes (payées, partielles, impayées) restent le snapshot.
 Date effective : `enrollments.class_effective_date` (colonne additive).
 
 - création initiale : `enrollment_date` (éventuellement `CURRENT_DATE` du jour d’INSERT) peut servir
-- transfert : `effectiveDate` **explicite obligatoire**
-- absence → `FINANCE_NEEDS_EFFECTIVE_DATE`, **aucune** obligation ancienne annulée
+- transfert : `effectiveDate` **explicite obligatoire**, **avant** toute mutation de `enrollments.class_id`
+- absence → `FINANCE_NEEDS_EFFECTIVE_DATE`, enrollment **reste** sur l’ancienne classe, `class_effective_date` inchangée, **aucune** obligation ancienne annulée, **aucune** obligation nouvelle créée
+- retry avec date : `class_id` devient la nouvelle classe, futures anciennes superseded `CLASS_TRANSFER`, nouvelles obligations créées
+- `NEEDS_EFFECTIVE_DATE`, `ENROLLMENT_NOT_FOUND`, `CLASS_ENROLLMENT_MISMATCH`, `GRID_ENROLLMENT_MISMATCH` ne sont pas avalés par le hook
 - pas de backfill historique avec `CURRENT_DATE`
 
 V1, mois courant = déjà commencé (pas de prorata) :
@@ -221,9 +223,9 @@ Pas de DROP.
 ## Tests
 
 Mémoire : `financeObligationLifecycle.test.js` — scénarios A–E, G, H, I, J + P1-A/B/C.  
-PostgreSQL : `financeObligationLifecycle.pg.test.js` — UNIQUE, retry, concurrence, tenant, snapshot, transfert, rollback, paiement ≠ dette, scope fail-closed, date de transfert, sync failed.
+PostgreSQL : `financeObligationLifecycle.pg.test.js` — UNIQUE, retry, concurrence, tenant, snapshot, transfert, rollback, paiement ≠ dette, scope fail-closed, date de transfert, sync failed, **intégration réelle `PostgresRepository.ensureActiveEnrollment()`** (refus sans date + retry daté).
 
-Gate : `verify:finance-obligation-lifecycle` (F1 + F2 + F3 mémoire + F3 PG + source guards, dont `DEFAULT_FEE_AMOUNTS` hors autorité).
+Gate : `verify:finance-obligation-lifecycle` (F1 + F2 + F3 mémoire + F3 PG + source guards, dont `DEFAULT_FEE_AMOUNTS` hors autorité et **refus `NEEDS_EFFECTIVE_DATE` avant INSERT/UPDATE `enrollments.class_id`**).
 
 ---
 
@@ -231,7 +233,7 @@ Gate : `verify:finance-obligation-lifecycle` (F1 + F2 + F3 mémoire + F3 PG + so
 
 1. `replaceGridItems` recrée les UUID d’items — UNIQUE sur `feeTypeCode+periodKey` ; `source_fee_item_uuid` peut passer à NULL (lignée stable = `school_fee_item_id`).
 2. Deux lignes `Autre` / `ONCE` la même année collident (V1 acceptable).
-3. Transfert via `ensureActiveEnrollment` sans date explicite : classe scolaire peut être mise à jour, mais **aucune** dette n’est annulée (`FINANCE_NEEDS_EFFECTIVE_DATE` + audit). Catch-up ultérieur avec date.
+3. Transfert via `ensureActiveEnrollment` sans date explicite : **aucune** mutation de `class_id` (refus `FINANCE_NEEDS_EFFECTIVE_DATE` avant UPDATE). Catch-up ultérieur avec date conserve `previousClass` et supersede les futures.
 4. Web `applyFeeGridToStudents` existe encore pour scripts E2E ; les pages production passent par l’API.
 5. Parité soldes / allocations = F4. UX = F7.
 
