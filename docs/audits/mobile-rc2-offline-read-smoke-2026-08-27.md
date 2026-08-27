@@ -9,7 +9,7 @@
 ```text
 Base develop exact : 874f9415cda8c1e3df1339001b8f0f437149f38d
                      (merge #352 Native SQLCipher APK smoke)
-HEAD PR            : (pointe de #353 — correctif diagnostique STAGE)
+HEAD PR            : (pointe de #353 — correctif DB connexion exclusive SQLCipher)
 Appareil physique  : Xiaomi E6QCAIAIC6LJIBXG
 Package            : com.somafrik.app
 Version            : 1.2.1 (versionCode 13)
@@ -75,33 +75,57 @@ RC2_L1_REFUSAL resource=students reason=metadata_absent
 
 `RC2_OFFLINE_READ_SMOKE OK` n'est émis qu'après `RC2_OFFLINE_BOOT permissions=ready_offline` **et** les 5 ressources vues en `source=l1-cache` avec `status=success|empty`.
 
-## Scénario physique — tentative 3 (STAGE par étape, Internet ON)
+## Cause racine (tentative 3 — confirmée)
 
 ```text
-RC2 tentative 3 : HOLD
+RC2_L1_STAGE resource=classes stage=meta_start
+RC2_L1_STAGE resource=classes stage=meta_ok
+RC2_L1_STAGE resource=classes stage=reconcile_start
+RC2_L1_SYNC_EXCEPTION resource=classes stage=reconcile reason=unexpected
+```
+
+`getMeta` sur la connexion principale keyée : OK. Premier write transactionnel (`markResourceState` reconciling) : KO.
+
+Expo `withExclusiveTransactionAsync` crée une **nouvelle connexion** (`useNewConnection: true`) qui n'exécute pas `PRAGMA key`. SQLCipher library présente (`cipher_version=4.7.0` persist=ok) ; la connexion exclusive n'est pas déverrouillée.
+
+## Correctif DB (cette révision)
+
+Sans affaiblir SQLCipher, **sans fallback plaintext** :
+
+- plus d'appel à `db.withExclusiveTransactionAsync` ni `withTransactionAsync`
+- nouvelle connexion `{ useNewConnection: true }`
+- **même `PRAGMA key`** immédiatement (clé en closure mémoire uniquement)
+- `PRAGMA cipher_version` non vide, sinon échec fermé
+- `BEGIN EXCLUSIVE TRANSACTION` / `COMMIT` / `ROLLBACK`
+- `closeAsync` dans `finally`
+- `writeTail`, `isCurrent()`, rollback `L1_TX_STALE` inchangés
+
+## Scénario physique — tentative 4 (correctif DB, Internet ON)
+
+```text
+RC2 tentative 4 : HOLD
 Internet : rester ON
-Offline kill/relaunch : NE PAS TESTER
+Offline kill/relaunch : NE PAS TESTER tant que 5× outcome=ready
 Ready/merge #353 : INTERDIT
 ```
 
-Tentative 2 : `RC2_L1_SYNC_START resource=classes` puis `RC2_L1_SYNC_EXCEPTION resource=classes reason=unexpected`, **sans** `RC2_L1_PAGE`. SQLCipher `cipher_version=4.7.0` persist=ok. Aucune `SQLiteException` / `database locked` / `no such table` / `constraint` / `transaction misuse`. Bruit système écarté (ENOENT, MIUI/Wi-Fi, ReactNoCrashSoftException, ThermalInfoUtils).
+Attendu :
 
-Le blocage est donc **avant une page L1 valide**. Trois zones possibles : `getMeta`, `markResourceState(reconciling)`, `fetchPage` avant retour. Le logcat ne nommait pas l'étape (`reason=unexpected` volontaire).
+```text
+RC2_L1_SYNC_START resource=classes
+RC2_L1_STAGE resource=classes stage=meta_ok
+RC2_L1_STAGE resource=classes stage=reconcile_start
+RC2_L1_STAGE resource=classes stage=reconcile_ok
+RC2_L1_STAGE resource=classes stage=fetch_start
+RC2_L1_PAGE resource=classes ...
+RC2_L1_SYNC resource=classes outcome=ready
+```
 
-Cette révision ajoute les marqueurs `RC2_L1_STAGE` et `stage=` sur l'exception, **sans changer le métier** (boucle `full_required`/`unavailable` jusqu'à 500 pages inchangée).
-
-**Ne pas couper Internet. Ne pas kill/relaunch.** Cold launch puis :
+puis students / assignments / school-courses / course-schedules.
 
 ```text
 adb logcat -d | findstr /I "RC2_L1_STAGE RC2_L1_SYNC_START RC2_L1_PAGE RC2_L1_SYNC RC2_L1_SYNC_EXCEPTION"
 ```
-
-Lecture :
-- `meta_start` sans `meta_ok` + `stage=meta` → `getMeta`
-- `reconcile_start` sans `reconcile_ok` + `stage=reconcile` → `markResourceState` / purge
-- `fetch_start` sans `RC2_L1_PAGE` + `outcome=error` → HTTP classifié (pas une exception JS)
-- `fetch_start` sans `RC2_L1_PAGE` + `stage=fetch` → throw store sur le chemin fetch (purge 401)
-- `RC2_L1_PAGE` puis `stage=apply` → `applyL1PageAtomically`
 
 ## Preuve Android physique — tentative 1
 
@@ -141,15 +165,12 @@ Le transcript montre que le lecteur refuse le cache en offline, mais l'instrumen
 Warning observé : `Value being stored in SecureStore is larger than 2048 bytes`.  
 Ce n'est pas la clé SQLCipher (32 octets / 64 hex) : SQLCipher continue après ce warning. **Audit séparé**, pas dans le correctif RC2 principal.
 
-## Correctif diagnostique (cette révision)
+## Correctif diagnostique (révisions précédentes, conservé)
 
 Sans changer la logique métier (boucle `full_required`/`unavailable` jusqu'à 500 pages **inchangée**) :
 
-- try/catch **par étape** (`meta` / `reconcile` / `fetch` / `apply`), pas seulement autour de `syncOneResource()`
-- `RC2_L1_STAGE` avant/après chaque étape catégorielle
-- exception : `RC2_L1_SYNC_EXCEPTION … stage=… reason=unexpected` puis rethrow
-- HTTP classifié inchangé : `RC2_L1_SYNC outcome=error` (pas d'exception)
-- `L1CacheRuntime` n'attend plus le tableau complet pour journaliser
+- try/catch **par étape** (`meta` / `reconcile` / `fetch` / `apply`)
+- `RC2_L1_STAGE` + `RC2_L1_SYNC_EXCEPTION … stage=… reason=unexpected`
 
 ## Checklist de preuve
 
@@ -160,8 +181,8 @@ Sans changer la logique métier (boucle `full_required`/`unavailable` jusqu'à 5
 | Package / version | OK | `com.somafrik.app` 1.2.1 / versionCode 13 |
 | 5 ressources L1 | OK (code) | `L1_RESOURCES` + 5 loaders `AdminDataContext` |
 | Online écrans réseau | OK | transcript `source=network` |
-| Online sync SQLite ready | HOLD | START + STAGE + PAGE + `outcome=ready` |
-| Sync L1 classes | P1 | START + EXCEPTION, aucune PAGE |
+| Online sync SQLite ready | HOLD | 5× START + STAGE + PAGE + `outcome=ready` |
+| Sync L1 classes | P1 confirmée | `stage=reconcile` — connexion exclusive Expo non keyée |
 | Internet coupé | OK (t1) / ne pas retester | Wi-Fi + data off, USB + `adb reverse 8081` only |
 | Kill / relaunch | OK (t1) / ne pas retester | cold relaunch Android |
 | `ready_offline` | OK | `RC2_OFFLINE_BOOT permissions=ready_offline` |
@@ -204,13 +225,15 @@ Le vérificateur RC2 sort `BLOCKED_NATIVE_RC2_OFFLINE_READ_SMOKE` (exit 0) sans 
 #353 : DRAFT
 RC2 OFFLINE READ SMOKE: HOLD
 RC2 : HOLD
-SQLCipher : OK
+Cause racine : connexion exclusive Expo non keyée SQLCipher
+P1 : CONFIRMÉE
+Correctif métier DB requis (cette révision)
+SQLCipher : OK (connexion principale)
 boot natif : OK
-sync L1 classes : P1 bloquante
 Internet : rester ON
 offline relaunch : ne pas retester
 Ready : NON
 Merge : NON
 ```
 
-Pas de Ready, pas de merge. Internet ON. Pas de kill/relaunch tant que STAGE n'a pas nommé l'étape qui casse.
+Pas de Ready, pas de merge. Internet ON. Retester online jusqu'aux cinq `outcome=ready` avant toute coupure réseau.
