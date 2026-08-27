@@ -30,6 +30,7 @@ function createStore() {
       classId: CLASS_ID,
       classCode: "CLS-6A",
       className: "6ème A",
+      academicYear: "2025-2026",
     },
     {
       id: "stu-binta",
@@ -41,6 +42,7 @@ function createStore() {
       classId: CLASS_ID,
       classCode: "CLS-6A",
       className: "6ème A",
+      academicYear: "2025-2026",
     },
     {
       id: "stu-jean",
@@ -52,6 +54,7 @@ function createStore() {
       classId: CLASS_BI,
       classCode: "CLS-BI-6A",
       className: "6ème A",
+      academicYear: "2025-2026",
     },
   ];
   return createFinanceMemoryStore({
@@ -77,6 +80,7 @@ function createStore() {
           schoolId: "school-nuru",
           classCode: "CLS-6A",
           className: "6ème A",
+          academicYear: "2025-2026",
           schoolCode: "CD-2026-0001",
         };
       }
@@ -86,6 +90,7 @@ function createStore() {
           schoolId: "school-bi",
           classCode: "CLS-BI-6A",
           className: "6ème A",
+          academicYear: "2025-2026",
           schoolCode: "BI-2026-0001",
         };
       }

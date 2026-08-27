@@ -30,6 +30,11 @@ const {
 const { obligationMatchesPaymentFeeType } = require("./financeFeeTypeMatch");
 const { persistableFeeType, isUnallocatedFeeTypeInput } = require("./financeFeeTypes");
 const { projectPaymentCash, resolvePaymentStatus: resolveUnallocatedPaymentStatus } = require("./financeUnallocatedCash");
+const {
+  OBLIGATION_LIFECYCLE_REASON,
+  ensureEnrollmentFinanceObligations,
+  ensureEnrollmentFinanceObligationsInTx,
+} = require("./financeObligationLifecycle");
 
 const REMINDER_COOLDOWN_DAYS = 3;
 
@@ -793,40 +798,42 @@ async function applyFeeGrid(store, gridId, principal, options = {}) {
       if (targetIds && !targetIds.some((id) => studentMatches(student, id))) return false;
       return true;
     });
-    let created = 0;
-    let skipped = 0;
-    for (const student of scopedStudents) {
-      for (const item of activeItems) {
-        const periods = Array.isArray(item.monthlyMonths) && item.monthlyMonths.length
-          ? item.monthlyMonths
-          : [item.periodLabel || null];
-        for (const periodLabel of periods) {
-          const inserted = await tx.insertObligationIfAbsent({
-            schoolId: gridForApply.schoolId,
-            schoolCode: grid.schoolCode,
-            student,
-            grid: gridForApply,
-            item,
-            periodLabel,
-          });
-          if (inserted) created += 1;
-          else skipped += 1;
-        }
-      }
-    }
+    const result = await ensureEnrollmentFinanceObligationsInTx(
+      tx,
+      {
+        reason: OBLIGATION_LIFECYCLE_REASON.GRID_APPLY,
+        school,
+        grid: gridForApply,
+        items: activeItems,
+        students: scopedStudents,
+        studentIds: options.studentIds,
+        academicYear: grid.academicYear,
+        classId: gridForApply.classId,
+      },
+      principal,
+      options.auditMeta,
+    );
     await tx.insertTariffHistory({
       schoolId: school.id,
       feeGridId: grid.dbId,
       action: "apply",
       actorId: principal?.sub || principal?.identifier,
       payload: {
-        created,
-        skipped,
+        created: result.created,
+        skipped: result.skipped,
+        superseded: result.superseded || 0,
         resolvedClassId: gridForApply.classId || null,
         resolvedClassCode: gridForApply.classCode || null,
+        reason: result.reason,
       },
     });
-    return { created, skipped, grid: gridForApply };
+    return {
+      created: result.created,
+      skipped: result.skipped,
+      superseded: result.superseded || 0,
+      grid: gridForApply,
+      reason: result.reason,
+    };
   });
 }
 
@@ -911,6 +918,8 @@ module.exports = {
   upsertFeeGrid,
   setFeeGridStatus,
   applyFeeGrid,
+  ensureEnrollmentFinanceObligations,
+  ensureEnrollmentFinanceObligationsInTx,
   adjustStudentFee,
   createReminder,
   isPaymentCounted,

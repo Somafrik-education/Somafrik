@@ -2719,22 +2719,31 @@ class FallbackRepository {
         findStudent: async (studentKey, principal) => {
           const dataset = await this.getDataset();
           const schoolCode = String(principal?.schoolCode ?? "").trim().toUpperCase();
-          return (
-            (dataset.students ?? []).find((student) => {
-              if (schoolCode && schoolCode !== "*" && String(student.schoolCode ?? "").toUpperCase() !== schoolCode) {
+          const student =
+            (dataset.students ?? []).find((row) => {
+              if (schoolCode && schoolCode !== "*" && String(row.schoolCode ?? "").toUpperCase() !== schoolCode) {
                 return false;
               }
-              return studentMatches(student, studentKey);
-            }) || null
-          );
+              return studentMatches(row, studentKey);
+            }) || null;
+          if (!student) return null;
+          return {
+            ...student,
+            academicYear: student.academicYear || student.academicYearName || student.schoolYear || "",
+          };
         },
         listStudentsInClass: async (schoolCode, classRef) => {
           const dataset = await this.getDataset();
-          return (dataset.students ?? []).filter(
-            (student) =>
-              String(student.schoolCode ?? "").toUpperCase() === String(schoolCode).toUpperCase() &&
-              studentMatchesClassScope(student, classRef),
-          );
+          return (dataset.students ?? [])
+            .filter(
+              (student) =>
+                String(student.schoolCode ?? "").toUpperCase() === String(schoolCode).toUpperCase() &&
+                studentMatchesClassScope(student, classRef),
+            )
+            .map((student) => ({
+              ...student,
+              academicYear: student.academicYear || student.academicYearName || student.schoolYear || "",
+            }));
         },
         listSchoolStudents: async (principal) => {
           const dataset = await this.getDataset();
@@ -2791,6 +2800,10 @@ class FallbackRepository {
 
   applyFinanceFeeGrid(id, principal, options) {
     return this.getFinanceStore().applyFinanceFeeGrid(id, principal, options);
+  }
+
+  ensureEnrollmentObligations(input, principal, auditMeta) {
+    return this.getFinanceStore().ensureEnrollmentObligations(input, principal, auditMeta);
   }
 
   listFinanceStudentFees(principal) {

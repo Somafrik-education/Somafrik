@@ -1,0 +1,182 @@
+"use strict";
+
+/**
+ * F3 — Gate naissance des obligations financières.
+ * Pas de serveur HTTP. Pas de nouvelle table dette concurrente.
+ */
+
+const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const path = require("node:path");
+const { spawnSync } = require("node:child_process");
+
+const ROOT = path.resolve(__dirname, "../..");
+
+function readRepo(relativePath) {
+  return fs.readFileSync(path.join(ROOT, relativePath), "utf8");
+}
+
+function assertSourceGuards() {
+  const lifecycle = readRepo("backend/lib/financeObligationLifecycle.js");
+  const service = readRepo("backend/lib/financeService.js");
+  const schema = readRepo("backend/db/financeSchema.js");
+  const pgStore = readRepo("backend/db/financePgStore.js");
+  const memory = readRepo("backend/db/financeMemoryStore.js");
+  const pgRepo = readRepo("backend/db/postgresRepository.js");
+  const fees = readRepo("web/src/pages/finances/FinanceFeesPage.tsx");
+  const quickModal = readRepo("web/src/components/fees/QuickFeeGridModal.tsx");
+  const quick = readRepo("web/src/lib/quickPayment.ts");
+  const paymentTx = readRepo("backend/services/paymentTransactionService.js");
+  const errors = readRepo("backend/lib/financeManagement.js");
+  const ddl = readRepo("backend/db/schema.sql");
+  const migration = readRepo("backend/db/migrations/20260827_finance_f3_obligation_lifecycle.sql");
+  assert.match(errors, /ENROLLMENT_NOT_FOUND: "FINANCE_ENROLLMENT_NOT_FOUND"/);
+  assert.match(errors, /CLASS_ENROLLMENT_MISMATCH: "FINANCE_CLASS_ENROLLMENT_MISMATCH"/);
+  assert.match(errors, /NEEDS_EFFECTIVE_DATE: "FINANCE_NEEDS_EFFECTIVE_DATE"/);
+  assert.match(errors, /OBLIGATION_SYNC_FAILED: "FINANCE_OBLIGATION_SYNC_FAILED"/);
+
+  assert.match(lifecycle, /ensureEnrollmentFinanceObligations/);
+  assert.match(lifecycle, /NO_APPLICABLE_FINANCE_GRID/);
+  assert.match(lifecycle, /CLASS_TRANSFER/);
+  assert.match(lifecycle, /FINANCE_ERROR\.ENROLLMENT_NOT_FOUND/);
+  assert.match(lifecycle, /FINANCE_ERROR\.CLASS_ENROLLMENT_MISMATCH/);
+  assert.match(lifecycle, /FINANCE_ERROR\.NEEDS_EFFECTIVE_DATE/);
+  assert.match(lifecycle, /FINANCE_ERROR\.GRID_ENROLLMENT_MISMATCH/);
+  assert.match(lifecycle, /finance_obligation_sync_failed/);
+  assert.doesNotMatch(lifecycle, /gridMatchesEnrollment\(grid, enrollment\) \|\| input\.grid/);
+  assert.doesNotMatch(lifecycle, /DEFAULT_FEE_AMOUNTS/);
+  assert.doesNotMatch(lifecycle, /new Date\(\)\.getFullYear\(\)/);
+
+  assert.match(service, /ensureEnrollmentFinanceObligationsInTx/);
+  assert.match(service, /OBLIGATION_LIFECYCLE_REASON\.GRID_APPLY/);
+  assert.doesNotMatch(
+    service.slice(service.indexOf("async function createPayment"), service.indexOf("async function cancelPayment")),
+    /insertObligationIfAbsent/,
+    "createPayment ne doit pas insérer d'obligation",
+  );
+
+  assert.match(schema, /student_fee_obligations_identity_uniq/);
+  assert.match(schema, /period_key/);
+  assert.match(schema, /fee_type_code/);
+  assert.match(schema, /student_fee_obligations_assert_active_enrollment_scope/);
+  assert.match(schema, /FOR UPDATE OF e/);
+  assert.match(schema, /FINANCE_CLASS_ENROLLMENT_MISMATCH/);
+  assert.match(schema, /trg_student_fee_obligations_active_enrollment_scope/);
+  assert.doesNotMatch(schema, /CREATE TABLE student_debts/);
+  assert.doesNotMatch(schema, /CREATE TABLE student_invoices/);
+  assert.doesNotMatch(ddl, /CREATE TABLE IF NOT EXISTS student_debts/);
+  assert.doesNotMatch(migration, /enrollment_date, CURRENT_DATE\)/);
+  assert.match(migration, /SET class_effective_date = enrollment_date/);
+  assert.match(migration, /student_fee_obligations_assert_active_enrollment_scope/);
+  assert.match(migration, /FOR UPDATE OF e/);
+  assert.match(migration, /FINANCE_CLASS_ENROLLMENT_MISMATCH/);
+  assert.match(migration, /student_fee_obligations_active_enrollment_guard/);
+
+  assert.match(pgStore, /period_key/);
+  assert.match(pgStore, /23505/);
+  assert.match(memory, /period_key/);
+
+  assert.match(pgRepo, /syncEnrollmentFinanceObligations/);
+  assert.match(pgRepo, /enrollment_active/);
+  assert.match(pgRepo, /class_transfer/);
+  assert.match(pgRepo, /FINANCE_OBLIGATION_SYNC_FAILED/);
+  assert.doesNotMatch(pgRepo, /classChanged \? new Date\(\)/);
+  assert.doesNotMatch(pgRepo, /THEN COALESCE\(\$5::date, CURRENT_DATE\)/);
+  assert.doesNotMatch(pgRepo, /console\.warn\("finance F3 ensureEnrollmentObligations/);
+
+  const ensureStart = pgRepo.indexOf("async ensureActiveEnrollment");
+  assert.ok(ensureStart >= 0, "ensureActiveEnrollment absent");
+  const ensureNext = pgRepo.indexOf("\n  async ", ensureStart + 1);
+  const ensureFn = pgRepo.slice(ensureStart, ensureNext === -1 ? undefined : ensureNext);
+  const txIdx = ensureFn.indexOf("withTransaction");
+  const lockIdx = ensureFn.indexOf("FOR UPDATE");
+  const changedIdx = ensureFn.search(/const classChanged/);
+  const refuseIdx = ensureFn.search(/FINANCE_ERROR\.NEEDS_EFFECTIVE_DATE|FINANCE_NEEDS_EFFECTIVE_DATE/);
+  const updateIdx = ensureFn.search(/UPDATE enrollments/);
+  assert.ok(txIdx >= 0, "withTransaction absent de ensureActiveEnrollment");
+  assert.ok(lockIdx > txIdx, "FOR UPDATE hors withTransaction");
+  assert.ok(changedIdx > lockIdx, "classChanged/previousClass avant lock FOR UPDATE");
+  assert.ok(refuseIdx > changedIdx, "effectiveDate avant classChanged verrouillé");
+  assert.ok(updateIdx > refuseIdx, "UPDATE class_id avant validation effectiveDate sous lock");
+  const beforeTx = ensureFn.slice(0, txIdx);
+  assert.doesNotMatch(beforeTx, /FROM enrollments/);
+  assert.doesNotMatch(beforeTx, /classChanged/);
+  assert.match(ensureFn, /FOR UPDATE/);
+
+  const inTxIdx = ensureFn.indexOf("ensureEnrollmentObligationsInTx");
+  assert.ok(inTxIdx > updateIdx, "Finance InTx avant mutation enrollment sous lock");
+  assert.match(ensureFn, /persistObligationSyncFailure/);
+  assert.ok(
+    ensureFn.indexOf("ensureEnrollmentObligationsInTx") < ensureFn.lastIndexOf("syncEnrollmentFinanceObligations"),
+    "class_transfer ne doit pas passer par syncEnrollmentFinanceObligations (avale les pannes)",
+  );
+
+  const unswallowableStart = lifecycle.indexOf("function isUnswallowableFinanceSyncError");
+  assert.ok(unswallowableStart >= 0, "isUnswallowableFinanceSyncError absent");
+  const unswallowableNext = lifecycle.indexOf("\nfunction ", unswallowableStart + 1);
+  const unswallowableFn = lifecycle.slice(
+    unswallowableStart,
+    unswallowableNext === -1 ? undefined : unswallowableNext,
+  );
+  assert.match(unswallowableFn, /FINANCE_ERROR\.NEEDS_EFFECTIVE_DATE/);
+  assert.match(unswallowableFn, /FINANCE_ERROR\.ENROLLMENT_NOT_FOUND/);
+  assert.match(unswallowableFn, /FINANCE_ERROR\.CLASS_ENROLLMENT_MISMATCH/);
+  assert.match(unswallowableFn, /FINANCE_ERROR\.GRID_ENROLLMENT_MISMATCH/);
+  assert.match(lifecycle, /previousClassId/);
+  assert.match(lifecycle, /targetClassId/);
+  assert.match(lifecycle, /retryStatus: "pending"/);
+  assert.match(
+    lifecycle.slice(lifecycle.indexOf("function persistObligationSyncFailure")),
+    /effectiveDate: input\.effectiveDate/,
+  );
+
+  assert.match(fees, /financeApi\.applyFeeGrid/);
+  assert.doesNotMatch(fees, /applyFeeGridToStudents/);
+  assert.doesNotMatch(quickModal, /applyFeeGridToStudents/);
+
+  assert.match(quick, /DEFAULT_FEE_AMOUNTS/);
+  assert.doesNotMatch(
+    lifecycle,
+    /DEFAULT_FEE_AMOUNTS/,
+    "DEFAULT_FEE_AMOUNTS n'est pas une autorité d'obligation",
+  );
+  assert.doesNotMatch(paymentTx, /insertObligationIfAbsent/);
+  assert.doesNotMatch(paymentTx, /student_fee_obligations/);
+
+  console.log("verify-finance-obligation-lifecycle: source guards OK");
+}
+
+function run(cmd, args, failMessage) {
+  const result = spawnSync(cmd, args, { cwd: ROOT, encoding: "utf8" });
+  if (result.stdout) process.stdout.write(result.stdout);
+  if (result.stderr) process.stderr.write(result.stderr);
+  assert.equal(result.status, 0, failMessage);
+}
+
+function main() {
+  assertSourceGuards();
+  run(process.execPath, [path.join(ROOT, "backend/scripts/verify-finance-domain-invariants.js")], "F1 a échoué");
+  run(process.execPath, [path.join(ROOT, "backend/scripts/verify-finance-fee-type-canonical.js")], "F2 a échoué");
+  run(
+    process.execPath,
+    [
+      "--test",
+      path.join(ROOT, "backend/lib/financeObligationPeriod.test.js"),
+      path.join(ROOT, "backend/lib/financeObligationLifecycle.test.js"),
+    ],
+    "tests F3 mémoire ont échoué",
+  );
+  run(
+    process.execPath,
+    [path.join(ROOT, "backend/lib/financeObligationLifecycle.pg.test.js")],
+    "tests F3 PostgreSQL ont échoué",
+  );
+  run(
+    process.execPath,
+    [path.join(ROOT, "backend/lib/financeObligationApplyTransferRace.pg.test.js")],
+    "course F3 apply grille ↔ transfert a échoué",
+  );
+  console.log("verify-finance-obligation-lifecycle: GO");
+}
+
+main();

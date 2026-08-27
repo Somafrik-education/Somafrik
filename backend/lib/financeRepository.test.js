@@ -20,6 +20,7 @@ function createStore() {
       classId: "class-6a",
       classCode: "CLS-6A",
       className: "6ème A",
+      academicYear: "2025-2026",
     },
     {
       id: "stu-other",
@@ -31,6 +32,7 @@ function createStore() {
       classId: "class-bi-6a",
       classCode: "CLS-BI-6A",
       className: "6ème A",
+      academicYear: "2025-2026",
     },
   ];
   return createFinanceMemoryStore({
@@ -237,7 +239,11 @@ async function main() {
     (error) => String(error.message).includes("audit write failed"),
   );
   assert.equal(rollbackStore.tables.payments.length, 0);
-  assert.equal(rollbackStore.tables.auditLogs.length, 0);
+  assert.equal(
+    rollbackStore.tables.auditLogs.some((row) => row.action === "create_payment"),
+    false,
+    "rollback paiement : aucun audit create_payment",
+  );
   const inscriptionAfterFailedPay = (await rollbackStore.listFinanceStudentFees()).find(
     (row) => row.feeType === "Inscription",
   );

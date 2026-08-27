@@ -30,6 +30,7 @@ function createStore(extraStudents = []) {
       classId: "class-6a",
       classCode: "CLS-6A",
       className: "6ème A",
+      academicYear: "2025-2026",
     },
     {
       id: "stu-2",
@@ -41,6 +42,7 @@ function createStore(extraStudents = []) {
       classId: "class-6a",
       classCode: "CLS-6A",
       className: "6ème A",
+      academicYear: "2025-2026",
     },
     {
       id: "stu-other",
@@ -52,6 +54,7 @@ function createStore(extraStudents = []) {
       classId: "class-bi-6a",
       classCode: "CLS-BI-6A",
       className: "6ème A",
+      academicYear: "2025-2026",
     },
     ...extraStudents,
   ];

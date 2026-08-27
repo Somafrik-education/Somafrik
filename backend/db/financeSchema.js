@@ -113,6 +113,85 @@ CREATE UNIQUE INDEX IF NOT EXISTS student_fee_obligations_active_uniq
   )
   WHERE archived_at IS NULL;
 
+ALTER TABLE enrollments ADD COLUMN IF NOT EXISTS class_effective_date DATE;
+UPDATE enrollments
+   SET class_effective_date = enrollment_date
+ WHERE class_effective_date IS NULL
+   AND enrollment_date IS NOT NULL;
+
+ALTER TABLE student_fee_obligations ADD COLUMN IF NOT EXISTS fee_type_code TEXT;
+ALTER TABLE student_fee_obligations ADD COLUMN IF NOT EXISTS period_key TEXT;
+ALTER TABLE student_fee_obligations ADD COLUMN IF NOT EXISTS source_enrollment_id UUID REFERENCES enrollments(id) ON DELETE SET NULL;
+-- Lignée UUID best-effort : replaceGridItems DELETE les items, d'où ON DELETE SET NULL.
+-- Snapshot de lignée stable = school_fee_item_id (code item), pas cet UUID.
+ALTER TABLE student_fee_obligations ADD COLUMN IF NOT EXISTS source_fee_item_uuid UUID REFERENCES school_fee_items(id) ON DELETE SET NULL;
+ALTER TABLE student_fee_obligations ADD COLUMN IF NOT EXISTS cancel_reason TEXT;
+ALTER TABLE student_fee_obligations ADD COLUMN IF NOT EXISTS cancelled_at TIMESTAMPTZ;
+ALTER TABLE student_fee_obligations ADD COLUMN IF NOT EXISTS cancelled_by TEXT;
+
+CREATE UNIQUE INDEX IF NOT EXISTS student_fee_obligations_identity_uniq
+  ON student_fee_obligations (
+    school_id,
+    student_id,
+    (COALESCE(academic_year, '')),
+    (COALESCE(fee_type_code, '')),
+    (COALESCE(period_key, ''))
+  )
+  WHERE archived_at IS NULL
+    AND period_key IS NOT NULL AND btrim(period_key) <> ''
+    AND fee_type_code IS NOT NULL AND btrim(fee_type_code) <> '';
+
+-- P1 F3 : une écriture d'obligation class-scoped doit se sérialiser avec tout
+-- transfert de classe concurrent. Cette garde PostgreSQL est le dernier point
+-- d'autorité : elle verrouille l'inscription active juste avant l'INSERT.
+CREATE OR REPLACE FUNCTION student_fee_obligations_assert_active_enrollment_scope()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  enrollment_class UUID;
+BEGIN
+  IF NEW.archived_at IS NOT NULL
+     OR NEW.class_id IS NULL
+     OR COALESCE(btrim(NEW.academic_year), '') = '' THEN
+    RETURN NEW;
+  END IF;
+
+  SELECT e.class_id
+    INTO enrollment_class
+    FROM enrollments e
+    JOIN academic_years ay ON ay.id = e.academic_year_id
+   WHERE e.student_id = NEW.student_id
+     AND e.school_id = NEW.school_id
+     AND lower(btrim(e.status)) = 'active'
+     AND lower(btrim(ay.name)) = lower(btrim(NEW.academic_year))
+   ORDER BY e.enrollment_date DESC NULLS LAST, e.created_at DESC NULLS LAST
+   LIMIT 1
+   FOR UPDATE OF e;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'FINANCE_ENROLLMENT_NOT_FOUND'
+      USING ERRCODE = '23505',
+            CONSTRAINT = 'student_fee_obligations_active_enrollment_guard';
+  END IF;
+
+  IF enrollment_class IS DISTINCT FROM NEW.class_id THEN
+    RAISE EXCEPTION 'FINANCE_CLASS_ENROLLMENT_MISMATCH'
+      USING ERRCODE = '23505',
+            CONSTRAINT = 'student_fee_obligations_active_enrollment_guard';
+  END IF;
+
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_student_fee_obligations_active_enrollment_scope ON student_fee_obligations;
+CREATE TRIGGER trg_student_fee_obligations_active_enrollment_scope
+  BEFORE INSERT OR UPDATE OF school_id, student_id, class_id, academic_year, archived_at
+  ON student_fee_obligations
+  FOR EACH ROW
+  EXECUTE FUNCTION student_fee_obligations_assert_active_enrollment_scope();
+
 CREATE TABLE IF NOT EXISTS payment_items (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   school_id UUID NOT NULL REFERENCES schools(id),
