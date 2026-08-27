@@ -317,9 +317,9 @@ test("PG Finance : crash avant stockage idempotence rollback le paiement", async
     const payload = {
       studentId: "CD-2026-0001-STU-ESTHER",
       items: [
-        { feeType: "Minerval / scolarité", amount: 500 },
-        { feeType: "Frais d'examen", amount: 1 },
-        { feeType: "Frais de cantine", amount: 40 },
+        { feeType: "Non imputé", feeLabel: "Minerval / scolarité", amount: 500 },
+        { feeType: "Non imputé", feeLabel: "Frais d'examen", amount: 1 },
+        { feeType: "Non imputé", feeLabel: "Frais de cantine", amount: 40 },
       ],
       paymentMethod: "cash",
       paidAt: "2026-08-19",

@@ -51,9 +51,9 @@ const admin = {
 };
 
 const ESTHER_ITEMS = [
-  { feeType: "Minerval / scolarité", amount: 500 },
-  { feeType: "Frais d'examen", amount: 1 },
-  { feeType: "Frais de cantine", amount: 40 },
+  { feeType: "Non imputé", feeLabel: "Minerval / scolarité", amount: 500 },
+  { feeType: "Non imputé", feeLabel: "Frais d'examen", amount: 1 },
+  { feeType: "Non imputé", feeLabel: "Frais de cantine", amount: 40 },
 ];
 
 async function main() {
@@ -74,6 +74,10 @@ async function main() {
   assert.equal(created.totalAmount, 541);
   assert.equal(created.amount, 541);
   assert.equal(created.items.length, 3);
+  assert.equal(Number(created.allocatedAmount || 0), 0);
+  assert.equal(Number(created.unallocatedAmount), 541);
+  assert.equal(created.status, "Non imputé");
+  assert.equal(store.tables.allocations.length, 0, "reçu multi-libellés sans dette cible");
   assert.match(created.reference, /PAY-0001$/);
   const uniqueRefs = new Set(store.tables.payments.map((row) => row.payment_code));
   assert.equal(uniqueRefs.size, 1, "une seule référence");
@@ -93,7 +97,7 @@ async function main() {
       store.createSchoolPayment(
         {
           studentId: "CD-2026-0001-STU-ESTHER",
-          items: [{ feeType: "Minerval / scolarité", amount: 0 }],
+          items: [{ feeType: "Non imputé", amount: 0 }],
           paymentMethod: "Espèces",
           paidAt: "2026-08-19",
         },
