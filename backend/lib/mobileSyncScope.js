@@ -610,8 +610,8 @@ function computeAssignmentsScopeHash(principal, schoolRef = {}) {
 }
 
 /**
- * Identité enseignant live : session users.id → teachers.user_id + teachers.school_id.
- * Jamais `principal.teacherCode` JWT, jamais matching par nom.
+ * Identité enseignant live : users.id = principal → teachers.user_id + teachers.school_id.
+ * Jamais `principal.teacherCode` JWT.
  *
  * @param {object} repository
  * @param {string} userId
@@ -701,9 +701,6 @@ async function resolveLiveAssignmentsSyncSnapshot(repository, principal, schoolR
       schoolId,
       livePrincipal.liveTeacherId,
     );
-    if (!livePrincipal.liveTeacherId) {
-      console.warn("TEACHER_CANONICAL_IDENTITY unresolved resource=assignments scopeKind=assigned");
-    }
   }
 
   return computeAssignmentsScopeHash(livePrincipal, schoolRef);
