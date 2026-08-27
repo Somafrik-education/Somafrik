@@ -196,8 +196,11 @@ function createTeacherAssignmentsRepository(db) {
     },
 
     /**
-     * Identité enseignant live du tenant : users.id → teachers.user_id + school_id.
-     * Jamais teacherCode JWT.
+     * Identité enseignant live du tenant : session users.id → teachers.user_id + teachers.school_id.
+     * Aligné sur listLiveTeacherClassAssignmentsForSync (Classes / Élèves).
+     * Jamais teacherCode JWT, jamais matching par nom.
+     * Ne pas exiger users.school_id = teachers.school_id : un users.school_id NULL
+     * ferait échouer Assignments alors que Classes reste peuplé.
      *
      * @param {string} userId
      * @param {string} schoolId
@@ -209,14 +212,10 @@ function createTeacherAssignmentsRepository(db) {
       const row = await db.one(
         `SELECT t.id::text AS teacher_id,
                 t.teacher_code,
-                u.id::text AS teacher_user_id
+                t.user_id::text AS teacher_user_id
          FROM teachers t
-         JOIN users u ON u.id = t.user_id
-           AND u.school_id = t.school_id
          WHERE t.user_id::text = $1
            AND t.school_id::text = $2
-           AND u.id::text = $1
-           AND u.school_id::text = $2
            AND COALESCE(lower(btrim(t.status)), 'active') NOT IN ('deleted', 'archived', 'inactive')
          LIMIT 1`,
         [uid, sid],
