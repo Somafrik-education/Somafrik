@@ -25,6 +25,7 @@ function createStore(extraStudents = []) {
       classId: CLASS_ID,
       classCode: "CLS-6A",
       className: "6ème A",
+      academicYear: "2025-2026",
     },
     ...extraStudents,
   ];

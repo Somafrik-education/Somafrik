@@ -115,12 +115,15 @@ CREATE UNIQUE INDEX IF NOT EXISTS student_fee_obligations_active_uniq
 
 ALTER TABLE enrollments ADD COLUMN IF NOT EXISTS class_effective_date DATE;
 UPDATE enrollments
-   SET class_effective_date = COALESCE(class_effective_date, enrollment_date, CURRENT_DATE)
- WHERE class_effective_date IS NULL;
+   SET class_effective_date = enrollment_date
+ WHERE class_effective_date IS NULL
+   AND enrollment_date IS NOT NULL;
 
 ALTER TABLE student_fee_obligations ADD COLUMN IF NOT EXISTS fee_type_code TEXT;
 ALTER TABLE student_fee_obligations ADD COLUMN IF NOT EXISTS period_key TEXT;
 ALTER TABLE student_fee_obligations ADD COLUMN IF NOT EXISTS source_enrollment_id UUID REFERENCES enrollments(id) ON DELETE SET NULL;
+-- Lignée UUID best-effort : replaceGridItems DELETE les items, d'où ON DELETE SET NULL.
+-- Snapshot de lignée stable = school_fee_item_id (code item), pas cet UUID.
 ALTER TABLE student_fee_obligations ADD COLUMN IF NOT EXISTS source_fee_item_uuid UUID REFERENCES school_fee_items(id) ON DELETE SET NULL;
 ALTER TABLE student_fee_obligations ADD COLUMN IF NOT EXISTS cancel_reason TEXT;
 ALTER TABLE student_fee_obligations ADD COLUMN IF NOT EXISTS cancelled_at TIMESTAMPTZ;

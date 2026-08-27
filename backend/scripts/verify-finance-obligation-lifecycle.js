@@ -27,11 +27,23 @@ function assertSourceGuards() {
   const quickModal = readRepo("web/src/components/fees/QuickFeeGridModal.tsx");
   const quick = readRepo("web/src/lib/quickPayment.ts");
   const paymentTx = readRepo("backend/services/paymentTransactionService.js");
+  const errors = readRepo("backend/lib/financeManagement.js");
   const ddl = readRepo("backend/db/schema.sql");
+  const migration = readRepo("backend/db/migrations/20260827_finance_f3_obligation_lifecycle.sql");
+  assert.match(errors, /ENROLLMENT_NOT_FOUND: "FINANCE_ENROLLMENT_NOT_FOUND"/);
+  assert.match(errors, /CLASS_ENROLLMENT_MISMATCH: "FINANCE_CLASS_ENROLLMENT_MISMATCH"/);
+  assert.match(errors, /NEEDS_EFFECTIVE_DATE: "FINANCE_NEEDS_EFFECTIVE_DATE"/);
+  assert.match(errors, /OBLIGATION_SYNC_FAILED: "FINANCE_OBLIGATION_SYNC_FAILED"/);
 
   assert.match(lifecycle, /ensureEnrollmentFinanceObligations/);
   assert.match(lifecycle, /NO_APPLICABLE_FINANCE_GRID/);
   assert.match(lifecycle, /CLASS_TRANSFER/);
+  assert.match(lifecycle, /FINANCE_ERROR\.ENROLLMENT_NOT_FOUND/);
+  assert.match(lifecycle, /FINANCE_ERROR\.CLASS_ENROLLMENT_MISMATCH/);
+  assert.match(lifecycle, /FINANCE_ERROR\.NEEDS_EFFECTIVE_DATE/);
+  assert.match(lifecycle, /FINANCE_ERROR\.GRID_ENROLLMENT_MISMATCH/);
+  assert.match(lifecycle, /finance_obligation_sync_failed/);
+  assert.doesNotMatch(lifecycle, /gridMatchesEnrollment\(grid, enrollment\) \|\| input\.grid/);
   assert.doesNotMatch(lifecycle, /DEFAULT_FEE_AMOUNTS/);
   assert.doesNotMatch(lifecycle, /new Date\(\)\.getFullYear\(\)/);
 
@@ -49,6 +61,8 @@ function assertSourceGuards() {
   assert.doesNotMatch(schema, /CREATE TABLE student_debts/);
   assert.doesNotMatch(schema, /CREATE TABLE student_invoices/);
   assert.doesNotMatch(ddl, /CREATE TABLE IF NOT EXISTS student_debts/);
+  assert.doesNotMatch(migration, /enrollment_date, CURRENT_DATE\)/);
+  assert.match(migration, /SET class_effective_date = enrollment_date/);
 
   assert.match(pgStore, /period_key/);
   assert.match(pgStore, /23505/);
@@ -57,6 +71,10 @@ function assertSourceGuards() {
   assert.match(pgRepo, /syncEnrollmentFinanceObligations/);
   assert.match(pgRepo, /enrollment_active/);
   assert.match(pgRepo, /class_transfer/);
+  assert.match(pgRepo, /FINANCE_OBLIGATION_SYNC_FAILED/);
+  assert.doesNotMatch(pgRepo, /classChanged \? new Date\(\)/);
+  assert.doesNotMatch(pgRepo, /THEN COALESCE\(\$5::date, CURRENT_DATE\)/);
+  assert.doesNotMatch(pgRepo, /console\.warn\("finance F3 ensureEnrollmentObligations/);
 
   assert.match(fees, /financeApi\.applyFeeGrid/);
   assert.doesNotMatch(fees, /applyFeeGridToStudents/);

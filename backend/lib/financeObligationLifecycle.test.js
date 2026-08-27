@@ -7,10 +7,12 @@
 const { describe, it } = require("node:test");
 const assert = require("node:assert/strict");
 const { createFinanceMemoryStore } = require("../db/financeMemoryStore");
-const { studentMatchesClassScope } = require("./financeManagement");
+const { studentMatchesClassScope, FINANCE_ERROR } = require("./financeManagement");
 const {
   OBLIGATION_LIFECYCLE_REASON,
   NO_APPLICABLE_GRID,
+  FINANCE_OBLIGATION_SYNC_FAILED,
+  pickEnrollment,
 } = require("./financeObligationLifecycle");
 
 const STUDENT_ID = "CD-2026-0001-STU-0001";
@@ -375,6 +377,220 @@ describe("F3 scénario I — cross tenant", () => {
       (error) => error.code === "TENANT_MISMATCH" || error.code === "FINANCE_ALLOCATION_TENANT_MISMATCH",
     );
     assert.equal(activeFees(store).length, before);
+  });
+});
+
+describe("F3 P1-A — enrollment scope fail-closed", () => {
+  it("pickEnrollment refuse de retomber sur une autre inscription", () => {
+    const rows = [
+      { classId: "class-6a", academicYear: "2026-2027" },
+    ];
+    assert.throws(
+      () => pickEnrollment(rows, { academicYear: "2027-2028" }),
+      (error) => error.code === FINANCE_ERROR.ENROLLMENT_NOT_FOUND,
+    );
+    assert.throws(
+      () => pickEnrollment(rows, { classId: "class-6b" }),
+      (error) => error.code === FINANCE_ERROR.CLASS_ENROLLMENT_MISMATCH,
+    );
+    assert.equal(pickEnrollment(rows, { classId: "class-6a", academicYear: "2026-2027" }).classId, "class-6a");
+  });
+
+  it("6A enrollment + grid 6B => 0 obligation / erreur", async () => {
+    const store = createStore();
+    await seedGrid(store, [{ feeType: "Scolarité", label: "Scolarité", amount: 30_000, monthlyMonths: ["Septembre"], status: "Actif" }]);
+    const gridB = await seedGrid(
+      store,
+      [{ feeType: "Scolarité", label: "Scolarité 6B", amount: 32_000, monthlyMonths: ["Septembre"], status: "Actif" }],
+      { className: "6ème B", classId: "class-6b" },
+    );
+    const before = activeFees(store).length;
+    await assert.rejects(
+      () =>
+        store.ensureEnrollmentObligations(
+          {
+            reason: OBLIGATION_LIFECYCLE_REASON.GRID_APPLY,
+            school: { id: "school-a", code: "CD-2026-0001", currency: "CDF" },
+            studentKey: STUDENT_ID,
+            academicYear: "2026-2027",
+            classId: "class-6a",
+            grid: { ...gridB, schoolId: "school-a", status: "Active" },
+          },
+          admin,
+        ),
+      (error) => error.code === FINANCE_ERROR.GRID_ENROLLMENT_MISMATCH,
+    );
+    assert.equal(activeFees(store).length, before);
+  });
+
+  it("2026-2027 enrollment + grid 2027-2028 => 0 obligation / erreur", async () => {
+    const store = createStore();
+    const gridNext = await seedGrid(
+      store,
+      [{ feeType: "Inscription", label: "Inscription", amount: 20_000, status: "Actif" }],
+      { academicYear: "2027-2028" },
+    );
+    await assert.rejects(
+      () =>
+        store.ensureEnrollmentObligations(
+          {
+            reason: OBLIGATION_LIFECYCLE_REASON.GRID_APPLY,
+            school: { id: "school-a", code: "CD-2026-0001", currency: "CDF" },
+            studentKey: STUDENT_ID,
+            grid: { ...gridNext, schoolId: "school-a", status: "Active" },
+          },
+          admin,
+        ),
+      (error) =>
+        error.code === FINANCE_ERROR.ENROLLMENT_NOT_FOUND || error.code === FINANCE_ERROR.GRID_ENROLLMENT_MISMATCH,
+    );
+    assert.equal(activeFees(store).length, 0);
+  });
+
+  it("classId inconnu => 0 obligation", async () => {
+    const store = createStore();
+    await assert.rejects(
+      () =>
+        store.ensureEnrollmentObligations(
+          {
+            reason: OBLIGATION_LIFECYCLE_REASON.ENROLLMENT_ACTIVE,
+            schoolCode: "CD-2026-0001",
+            studentKey: STUDENT_ID,
+            academicYear: "2026-2027",
+            classId: "class-unknown",
+          },
+          admin,
+        ),
+      (error) => error.code === FINANCE_ERROR.CLASS_ENROLLMENT_MISMATCH,
+    );
+    assert.equal(activeFees(store).length, 0);
+  });
+
+  it("année inconnue => 0 obligation", async () => {
+    const store = createStore();
+    await assert.rejects(
+      () =>
+        store.ensureEnrollmentObligations(
+          {
+            reason: OBLIGATION_LIFECYCLE_REASON.ENROLLMENT_ACTIVE,
+            schoolCode: "CD-2026-0001",
+            studentKey: STUDENT_ID,
+            academicYear: "2099-2100",
+            classId: "class-6a",
+          },
+          admin,
+        ),
+      (error) => error.code === FINANCE_ERROR.ENROLLMENT_NOT_FOUND,
+    );
+    assert.equal(activeFees(store).length, 0);
+  });
+});
+
+describe("F3 P1-B — date effective de transfert", () => {
+  it("transfert sans effectiveDate n'annule aucune obligation", async () => {
+    const store = createStore();
+    const gridA = await seedGrid(store, [
+      {
+        feeType: "Scolarité",
+        label: "Scolarité 6A",
+        amount: 30_000,
+        monthlyMonths: ["Décembre", "Janvier", "Février"],
+        status: "Actif",
+      },
+    ]);
+    await store.applyFinanceFeeGrid(gridA.id, admin);
+    const before = store.tables.studentFees.map((row) => ({
+      id: row.id,
+      archived: row.archived_at || null,
+      cancel: row.cancel_reason || null,
+    }));
+    const student = {
+      id: "stu-1",
+      dbId: "stu-1",
+      publicId: STUDENT_ID,
+      studentCode: STUDENT_ID,
+      firstName: "Awa",
+      lastName: "Diop",
+      schoolCode: "CD-2026-0001",
+      classId: "class-6b",
+      classCode: "CLS-6B",
+      className: "6ème B",
+      academicYear: "2026-2027",
+      enrollments: [
+        {
+          id: "enr-1",
+          classId: "class-6b",
+          className: "6ème B",
+          academicYear: "2026-2027",
+          status: "active",
+        },
+      ],
+    };
+    await assert.rejects(
+      () =>
+        store.ensureEnrollmentObligations(
+          {
+            reason: OBLIGATION_LIFECYCLE_REASON.CLASS_TRANSFER,
+            school: { id: "school-a", code: "CD-2026-0001", currency: "CDF" },
+            student,
+            academicYear: "2026-2027",
+            classId: "class-6b",
+            previousClass: { classId: "class-6a", className: "6ème A" },
+          },
+          admin,
+        ),
+      (error) => error.code === FINANCE_ERROR.NEEDS_EFFECTIVE_DATE,
+    );
+    const after = store.tables.studentFees;
+    assert.equal(after.length, before.length);
+    assert.equal(after.every((row) => !row.archived_at && !row.cancel_reason), true);
+  });
+});
+
+describe("F3 P1-C — échec Finance durable", () => {
+  it("erreur moteur forcée après enrollment => 0 fausse dette + audit rattrapable", async () => {
+    const store = createStore();
+    const grid = await seedGrid(store, [
+      { feeType: "Inscription", label: "Inscription", amount: 20_000, status: "Actif" },
+    ]);
+    const original = store.withTransaction.bind(store);
+    let firstTx = true;
+    store.withTransaction = (fn) =>
+      original(async (tx) => {
+        if (firstTx) {
+          firstTx = false;
+          tx.insertObligationIfAbsent = async () => {
+            const error = new Error("forced engine failure");
+            error.code = "FORCED_ENGINE_FAILURE";
+            throw error;
+          };
+        }
+        return fn(tx);
+      });
+    await assert.rejects(
+      () =>
+        store.ensureEnrollmentObligations(
+          {
+            reason: OBLIGATION_LIFECYCLE_REASON.ENROLLMENT_ACTIVE,
+            schoolCode: "CD-2026-0001",
+            studentKey: STUDENT_ID,
+            academicYear: "2026-2027",
+            classId: "class-6a",
+            grid: { ...grid, schoolId: "school-a", status: "Active" },
+          },
+          admin,
+        ),
+      (error) => error.code === "FORCED_ENGINE_FAILURE",
+    );
+    store.withTransaction = original;
+    assert.equal(activeFees(store).length, 0);
+    assert.ok(
+      store.tables.auditLogs.some(
+        (row) =>
+          row.action === "finance_obligation_sync_failed" &&
+          row.newValue?.reason === FINANCE_OBLIGATION_SYNC_FAILED,
+      ),
+    );
   });
 });
 

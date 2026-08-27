@@ -1,12 +1,16 @@
 -- F3 — identité canonique des obligations (additif, non destructif).
 ALTER TABLE enrollments ADD COLUMN IF NOT EXISTS class_effective_date DATE;
+-- Copier uniquement enrollment_date connue. Jamais CURRENT_DATE : une date inventée
+-- ne doit pas décider d'une annulation CLASS_TRANSFER.
 UPDATE enrollments
-   SET class_effective_date = COALESCE(class_effective_date, enrollment_date, CURRENT_DATE)
- WHERE class_effective_date IS NULL;
+   SET class_effective_date = enrollment_date
+ WHERE class_effective_date IS NULL
+   AND enrollment_date IS NOT NULL;
 
 ALTER TABLE student_fee_obligations ADD COLUMN IF NOT EXISTS fee_type_code TEXT;
 ALTER TABLE student_fee_obligations ADD COLUMN IF NOT EXISTS period_key TEXT;
 ALTER TABLE student_fee_obligations ADD COLUMN IF NOT EXISTS source_enrollment_id UUID REFERENCES enrollments(id) ON DELETE SET NULL;
+-- Lignée UUID best-effort (NULL après replaceGridItems DELETE). Snapshot stable = school_fee_item_id.
 ALTER TABLE student_fee_obligations ADD COLUMN IF NOT EXISTS source_fee_item_uuid UUID REFERENCES school_fee_items(id) ON DELETE SET NULL;
 ALTER TABLE student_fee_obligations ADD COLUMN IF NOT EXISTS cancel_reason TEXT;
 ALTER TABLE student_fee_obligations ADD COLUMN IF NOT EXISTS cancelled_at TIMESTAMPTZ;

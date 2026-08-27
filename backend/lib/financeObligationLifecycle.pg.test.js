@@ -213,6 +213,135 @@ async function main() {
     assert.equal(retry.created, 0);
     assert.equal((await store.listFinanceStudentFees(admin)).length, 3);
 
+    await assert.rejects(
+      () =>
+        store.ensureEnrollmentObligations(
+          {
+            reason: "grid_apply",
+            schoolCode: "CD-2026-0001",
+            studentKey: "CD-2026-0001-STU-0001",
+            academicYear: "2026-2027",
+            classId: klassA.rows[0].id,
+            grid: {
+              id: "grid-6b-mismatch",
+              schoolId: schoolA.rows[0].id,
+              status: "Active",
+              classId: klassB.rows[0].id,
+              className: "6ème B",
+              academicYear: "2026-2027",
+            },
+          },
+          admin,
+        ),
+      (error) => error.code === FINANCE_ERROR.GRID_ENROLLMENT_MISMATCH,
+    );
+    await assert.rejects(
+      () =>
+        store.ensureEnrollmentObligations(
+          {
+            reason: "enrollment_active",
+            schoolCode: "CD-2026-0001",
+            studentKey: "CD-2026-0001-STU-0001",
+            academicYear: "2027-2028",
+            classId: klassA.rows[0].id,
+          },
+          admin,
+        ),
+      (error) => error.code === FINANCE_ERROR.ENROLLMENT_NOT_FOUND,
+    );
+    await assert.rejects(
+      () =>
+        store.ensureEnrollmentObligations(
+          {
+            reason: "enrollment_active",
+            schoolCode: "CD-2026-0001",
+            studentKey: "CD-2026-0001-STU-0001",
+            academicYear: "2026-2027",
+            classId: klassB.rows[0].id,
+          },
+          admin,
+        ),
+      (error) => error.code === FINANCE_ERROR.CLASS_ENROLLMENT_MISMATCH,
+    );
+    await assert.rejects(
+      () =>
+        store.ensureEnrollmentObligations(
+          {
+            reason: "enrollment_active",
+            schoolCode: "CD-2026-0001",
+            studentKey: "CD-2026-0001-STU-0001",
+            academicYear: "2099-2100",
+            classId: klassA.rows[0].id,
+          },
+          admin,
+        ),
+      (error) => error.code === FINANCE_ERROR.ENROLLMENT_NOT_FOUND,
+    );
+    assert.equal((await store.listFinanceStudentFees(admin)).length, 3);
+
+    await assert.rejects(
+      () =>
+        store.ensureEnrollmentObligations(
+          {
+            reason: "class_transfer",
+            schoolCode: "CD-2026-0001",
+            studentKey: "CD-2026-0001-STU-0001",
+            academicYear: "2026-2027",
+            classId: klassA.rows[0].id,
+            previousClass: { classId: klassA.rows[0].id, className: "6ème A" },
+          },
+          admin,
+        ),
+      (error) => error.code === FINANCE_ERROR.NEEDS_EFFECTIVE_DATE,
+    );
+    const octBeforeUndated = await pool.query(
+      `SELECT archived_at, cancel_reason FROM student_fee_obligations WHERE period_key = '2026-10'`,
+    );
+    assert.equal(octBeforeUndated.rows[0].archived_at, null);
+
+    let firstForcedTx = true;
+    const originalEnsureTx = store.withTransaction.bind(store);
+    store.withTransaction = (fn) =>
+      originalEnsureTx(async (tx) => {
+        if (firstForcedTx) {
+          firstForcedTx = false;
+          tx.insertObligationIfAbsent = async () => {
+            const error = new Error("forced engine failure");
+            error.code = "FORCED_ENGINE_FAILURE";
+            throw error;
+          };
+        }
+        return fn(tx);
+      });
+    const countBeforeForced = (await pool.query("SELECT count(*)::int AS n FROM student_fee_obligations")).rows[0].n;
+    await assert.rejects(
+      () =>
+        store.ensureEnrollmentObligations(
+          {
+            reason: "catch_up",
+            schoolCode: "CD-2026-0001",
+            studentKey: "CD-2026-0001-STU-0001",
+            academicYear: "2026-2027",
+            classId: klassA.rows[0].id,
+          },
+          admin,
+        ),
+      (error) => error.code === "FORCED_ENGINE_FAILURE",
+    );
+    store.withTransaction = originalEnsureTx;
+    const countAfterForced = (await pool.query("SELECT count(*)::int AS n FROM student_fee_obligations")).rows[0].n;
+    assert.equal(countAfterForced, countBeforeForced, "erreur moteur : 0 fausse obligation");
+    const enrollmentStill = await pool.query(
+      `SELECT status FROM enrollments WHERE student_id = $1`,
+      [student.rows[0].id],
+    );
+    assert.equal(enrollmentStill.rows[0].status, "active");
+    const failedAudit = await pool.query(
+      `SELECT action, new_value FROM audit_logs WHERE action = 'finance_obligation_sync_failed'`,
+    );
+    assert.ok(failedAudit.rowCount, "état d'échec Finance durable absent");
+    assert.equal(failedAudit.rows[0].new_value.reason, "FINANCE_OBLIGATION_SYNC_FAILED");
+
     await store.upsertFinanceFeeGrid(
       {
         id: grid.id,

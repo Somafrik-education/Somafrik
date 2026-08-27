@@ -66,7 +66,9 @@ Concept métier :
 schoolId + studentId + academicYear + feeTypeCode + periodKey
 ```
 
-`sourceFeeItemId` (`source_fee_item_uuid`) est une **lignée**, pas la clé : `replaceGridItems` recrée les UUID `school_fee_items` à chaque upsert. Utiliser l’UUID comme UNIQUE recréerait la dette après un simple changement de tarif.
+`school_fee_item_id` (code item) est le **snapshot de lignée stable**.
+
+`source_fee_item_uuid` est une lignée UUID **best-effort** : `replaceGridItems` DELETE les lignes `school_fee_items`, et la FK est `ON DELETE SET NULL`. Après upsert de grille, le pointeur UUID historique peut être NULL. Ce n’est pas l’identité UNIQUE. L’identité durable reste `feeTypeCode + periodKey`.
 
 Contrainte PostgreSQL :
 
@@ -114,6 +116,13 @@ Toute nouvelle obligation passe par `persistableFeeType`.
 
 ## Inscription / absence de grille
 
+`pickEnrollment` est **fail-closed** :
+
+- `academicYear` demandé sans match → `FINANCE_ENROLLMENT_NOT_FOUND`
+- `classId` demandé sans match → `FINANCE_CLASS_ENROLLMENT_MISMATCH`
+- jamais de repli sur une autre inscription
+- `input.grid` doit matcher school + academicYear + class, sinon `FINANCE_GRID_ENROLLMENT_MISMATCH`
+
 Enrollment ACTIVE sans grille applicable :
 
 - inscription scolaire **conservée**
@@ -122,7 +131,14 @@ Enrollment ACTIVE sans grille applicable :
 
 Catch-up : apply manuel ou ré-activation → même moteur, idempotent.
 
-Hook enrollment **ne rollback pas** l’inscription si la Finance échoue (`syncEnrollmentFinanceObligations` catch).
+Erreur Finance réelle (PG, type invalide, incohérence) :
+
+- audit durable `finance_obligation_sync_failed` (`FINANCE_OBLIGATION_SYNC_FAILED`)
+- enrollment conservé
+- 0 fausse obligation
+- cross-tenant / inscription ambiguë **rethrown** (jamais avalés)
+
+Hook enrollment : `NO_APPLICABLE_FINANCE_GRID` reste un succès métier ; les autres erreurs ne sont plus réduites à `console.warn`.
 
 ---
 
@@ -145,7 +161,12 @@ Les lignes existantes (payées, partielles, impayées) restent le snapshot.
 
 ## Changement de classe
 
-Date effective : `enrollments.class_effective_date` (colonne additive). À l’INSERT = `enrollment_date`. Au changement de `class_id` = date fournie ou `CURRENT_DATE`.
+Date effective : `enrollments.class_effective_date` (colonne additive).
+
+- création initiale : `enrollment_date` (éventuellement `CURRENT_DATE` du jour d’INSERT) peut servir
+- transfert : `effectiveDate` **explicite obligatoire**
+- absence → `FINANCE_NEEDS_EFFECTIVE_DATE`, **aucune** obligation ancienne annulée
+- pas de backfill historique avec `CURRENT_DATE`
 
 V1, mois courant = déjà commencé (pas de prorata) :
 
@@ -199,8 +220,8 @@ Pas de DROP.
 
 ## Tests
 
-Mémoire : `financeObligationLifecycle.test.js` — scénarios A–E, G, H, I, J.  
-PostgreSQL : `financeObligationLifecycle.pg.test.js` — UNIQUE, retry, concurrence, tenant, snapshot, transfert, rollback, paiement ≠ dette.
+Mémoire : `financeObligationLifecycle.test.js` — scénarios A–E, G, H, I, J + P1-A/B/C.  
+PostgreSQL : `financeObligationLifecycle.pg.test.js` — UNIQUE, retry, concurrence, tenant, snapshot, transfert, rollback, paiement ≠ dette, scope fail-closed, date de transfert, sync failed.
 
 Gate : `verify:finance-obligation-lifecycle` (F1 + F2 + F3 mémoire + F3 PG + source guards, dont `DEFAULT_FEE_AMOUNTS` hors autorité).
 
@@ -208,12 +229,11 @@ Gate : `verify:finance-obligation-lifecycle` (F1 + F2 + F3 mémoire + F3 PG + so
 
 ## Risques résiduels
 
-1. `replaceGridItems` recrée les UUID d’items — d’où UNIQUE sur `feeTypeCode+periodKey` plutôt que UUID item.
+1. `replaceGridItems` recrée les UUID d’items — UNIQUE sur `feeTypeCode+periodKey` ; `source_fee_item_uuid` peut passer à NULL (lignée stable = `school_fee_item_id`).
 2. Deux lignes `Autre` / `ONCE` la même année collident (V1 acceptable).
-3. Hook inscription est best-effort : une panne Finance n’annule pas l’élève (rattrapage apply).
-4. Transfert via `ensureActiveEnrollment` sans date explicite utilise `CURRENT_DATE`.
-5. Web `applyFeeGridToStudents` existe encore pour scripts E2E ; les pages production passent par l’API.
-6. Parité soldes / allocations = F4. UX = F7.
+3. Transfert via `ensureActiveEnrollment` sans date explicite : classe scolaire peut être mise à jour, mais **aucune** dette n’est annulée (`FINANCE_NEEDS_EFFECTIVE_DATE` + audit). Catch-up ultérieur avec date.
+4. Web `applyFeeGridToStudents` existe encore pour scripts E2E ; les pages production passent par l’API.
+5. Parité soldes / allocations = F4. UX = F7.
 
 ```text
 PR     DRAFT

@@ -37,6 +37,10 @@ function snapshotCurrency(school) {
   return PRESENTATION_CURRENCY_ALIASES[raw] || raw;
 }
 
+function enrollmentYearOf(row) {
+  return asTrimmed(row?.academicYear || row?.academicYearName || row?.schoolYear);
+}
+
 function sameId(left, right) {
   return asTrimmed(left) && asTrimmed(left) === asTrimmed(right);
 }
@@ -106,12 +110,22 @@ async function writeLifecycleAudit(tx, principal, auditMeta, entry) {
   });
 }
 
-function gridMatchesEnrollment(grid, enrollment) {
+function gridMatchesEnrollment(grid, enrollment, school) {
   if (!grid || grid.status !== "Active") return false;
+  const enrollmentSchoolId = enrollment.schoolId || school?.id;
+  if (grid.schoolId && enrollmentSchoolId && !sameId(grid.schoolId, enrollmentSchoolId)) return false;
+  if (grid.schoolCode && enrollment.schoolCode) {
+    if (asTrimmed(grid.schoolCode).toUpperCase() !== asTrimmed(enrollment.schoolCode).toUpperCase()) {
+      return false;
+    }
+  }
   const year = asTrimmed(grid.academicYear).toLowerCase();
   const expectedYear = asTrimmed(enrollment.academicYear).toLowerCase();
+  if (year && !expectedYear) return false;
   if (year && expectedYear && year !== expectedYear) return false;
-  if (grid.classId && enrollment.classId && sameId(grid.classId, enrollment.classId)) return true;
+  if (grid.classId) {
+    return sameId(grid.classId, enrollment.classId);
+  }
   const gridName = asTrimmed(grid.className).toLowerCase();
   const className = asTrimmed(enrollment.className).toLowerCase();
   return Boolean(gridName && className && gridName === className);
@@ -128,8 +142,8 @@ async function loadEnrollmentForStudent(tx, { student, school, classId, academic
           classId: String(row.classId),
           classCode: asTrimmed(row.classCode),
           className: asTrimmed(row.className),
-          academicYear: asTrimmed(row.academicYear) || academicYear || "",
-          classEffectiveDate: row.classEffectiveDate || row.enrollmentDate || null,
+          academicYear: enrollmentYearOf(row),
+          classEffectiveDate: row.classEffectiveDate || null,
         }))
     : [];
   if (fromStudent.length) return fromStudent;
@@ -139,10 +153,10 @@ async function loadEnrollmentForStudent(tx, { student, school, classId, academic
       {
         enrollmentId: student.enrollmentId || null,
         schoolId: school.id,
-        classId: classId || student.classId,
+        classId: student.classId,
         classCode: student.classCode || "",
         className: student.className || "",
-        academicYear: academicYear || "",
+        academicYear: enrollmentYearOf(student),
         classEffectiveDate: student.classEffectiveDate || student.enrollmentDate || null,
       },
     ];
@@ -151,7 +165,7 @@ async function loadEnrollmentForStudent(tx, { student, school, classId, academic
   return rows.map((row) => ({
     ...row,
     schoolId: row.schoolId || school.id,
-    academicYear: row.academicYear || academicYear || "",
+    academicYear: enrollmentYearOf(row),
   }));
 }
 
@@ -159,23 +173,83 @@ function pickEnrollment(enrollments, { classId, academicYear }) {
   const year = asTrimmed(academicYear).toLowerCase();
   let scoped = enrollments.filter((row) => asTrimmed(row.classId));
   if (year) {
-    const byYear = scoped.filter((row) => asTrimmed(row.academicYear).toLowerCase() === year);
-    if (byYear.length) scoped = byYear;
+    scoped = scoped.filter((row) => asTrimmed(row.academicYear).toLowerCase() === year);
+    if (!scoped.length) {
+      throw createFinanceError(
+        404,
+        "Aucune inscription active pour l'année académique demandée.",
+        FINANCE_ERROR.ENROLLMENT_NOT_FOUND,
+        { academicYear },
+      );
+    }
   }
   if (classId) {
-    const byClass = scoped.filter((row) => sameId(row.classId, classId));
-    if (byClass.length) scoped = byClass;
+    scoped = scoped.filter((row) => sameId(row.classId, classId));
+    if (!scoped.length) {
+      throw createFinanceError(
+        409,
+        "Aucune inscription active pour la classe demandée.",
+        FINANCE_ERROR.CLASS_ENROLLMENT_MISMATCH,
+        { classId },
+      );
+    }
   }
   const uniqueClasses = new Set(scoped.map((row) => asTrimmed(row.classId)));
   if (uniqueClasses.size > 1) {
     throw createFinanceError(
       409,
       "Plusieurs inscriptions actives incompatibles pour cet élève et cette année.",
-      "FINANCE_ENROLLMENT_AMBIGUOUS",
+      FINANCE_ERROR.ENROLLMENT_AMBIGUOUS,
       { classIds: [...uniqueClasses] },
     );
   }
   return scoped[0] || null;
+}
+
+function resolveClassTransferEffectiveDate(input) {
+  const requested = asTrimmed(input?.effectiveDate);
+  if (requested) return requested;
+  throw createFinanceError(
+    409,
+    "Date effective du changement de classe obligatoire : aucune obligation n'a été annulée.",
+    FINANCE_ERROR.NEEDS_EFFECTIVE_DATE,
+  );
+}
+
+function isUnswallowableFinanceSyncError(error) {
+  const code = error?.code;
+  return (
+    code === FINANCE_ERROR.TENANT_MISMATCH ||
+    code === FINANCE_ERROR.ENROLLMENT_AMBIGUOUS ||
+    code === FINANCE_ERROR.CLASS_TENANT_MISMATCH ||
+    code === FINANCE_ERROR.FEE_ITEM_TENANT_MISMATCH ||
+    code === FINANCE_ERROR.OBLIGATION_TENANT_MISMATCH
+  );
+}
+
+async function persistObligationSyncFailure(store, input, principal, auditMeta, error) {
+  if (typeof store?.withTransaction !== "function") return;
+  try {
+    await store.withTransaction(async (tx) => {
+      await writeLifecycleAudit(tx, principal, auditMeta, {
+        action: "finance_obligation_sync_failed",
+        entityType: "enrollment",
+        entityId: input.enrollmentId || input.classId || input.studentKey || input.student?.id || "",
+        schoolCode: input.schoolCode || input.school?.code || input.school?.schoolCode || principal?.schoolCode,
+        newValue: {
+          reason: FINANCE_ERROR.OBLIGATION_SYNC_FAILED,
+          errorCode: error?.code || error?.message || "UNKNOWN",
+          message: error?.message || String(error),
+          enrollmentId: input.enrollmentId || null,
+          studentId: input.studentKey || input.student?.studentCode || input.student?.publicId || null,
+          classId: input.classId || input.student?.classId || null,
+          academicYear: input.academicYear || null,
+        },
+      });
+    });
+  } catch {
+    /* l'échec d'audit ne doit pas masquer l'erreur métier d'origine */
+  }
 }
 
 async function supersedeOldClassObligations(tx, {
@@ -280,18 +354,20 @@ async function ensureEnrollmentFinanceObligationsInTx(tx, input, principal, audi
       classId: input.classId || student.classId,
       academicYear: input.academicYear,
     });
+    const requestedClassId = input.classId || student.classId;
+    const requestedYear = input.academicYear || input.grid?.academicYear;
     const enrollment = pickEnrollment(enrollments, {
-      classId: input.classId || student.classId,
-      academicYear: input.academicYear || input.grid?.academicYear,
+      classId: requestedClassId,
+      academicYear: requestedYear,
     });
     if (!enrollment || !asTrimmed(enrollment.classId)) {
       skipped += 1;
       continue;
     }
-    enrollment.academicYear = enrollment.academicYear || input.academicYear || input.grid?.academicYear || "";
-    enrollment.schoolCode = schoolCode;
+    enrollment.schoolCode = enrollment.schoolCode || schoolCode;
 
-    if (input.previousClass && (reason === OBLIGATION_LIFECYCLE_REASON.CLASS_TRANSFER || input.previousClass)) {
+    if (reason === OBLIGATION_LIFECYCLE_REASON.CLASS_TRANSFER || input.previousClass) {
+      const transferEffectiveDate = resolveClassTransferEffectiveDate(input);
       const obligations =
         typeof tx.listObligationsByStudent === "function"
           ? await tx.listObligationsByStudent(school.id, student.dbId || student.id, { lock: true })
@@ -304,7 +380,7 @@ async function ensureEnrollmentFinanceObligationsInTx(tx, input, principal, audi
       superseded += await supersedeOldClassObligations(tx, {
         obligations: yearObligations,
         previousClass: input.previousClass,
-        effectiveDate: input.effectiveDate || enrollment.classEffectiveDate || enrollment.enrollmentDate,
+        effectiveDate: transferEffectiveDate,
         principal,
         auditMeta,
         schoolCode,
@@ -324,17 +400,29 @@ async function ensureEnrollmentFinanceObligationsInTx(tx, input, principal, audi
         });
       }
     }
-    studentGrids = (studentGrids || []).filter((grid) => gridMatchesEnrollment(grid, enrollment) || input.grid);
     if (input.grid) {
-      studentGrids = studentGrids.length ? studentGrids : [input.grid];
-      for (const grid of studentGrids) {
-        if (grid.schoolId && String(grid.schoolId) !== String(school.id)) {
-          throw createFinanceError(403, "Grille hors établissement.", FINANCE_ERROR.TENANT_MISMATCH);
-        }
-        if (grid.schoolCode && asTrimmed(grid.schoolCode).toUpperCase() !== asTrimmed(schoolCode).toUpperCase()) {
-          throw createFinanceError(403, "Grille hors établissement.", FINANCE_ERROR.TENANT_MISMATCH);
-        }
+      if (input.grid.schoolId && String(input.grid.schoolId) !== String(school.id)) {
+        throw createFinanceError(403, "Grille hors établissement.", FINANCE_ERROR.TENANT_MISMATCH);
       }
+      if (input.grid.schoolCode && asTrimmed(input.grid.schoolCode).toUpperCase() !== asTrimmed(schoolCode).toUpperCase()) {
+        throw createFinanceError(403, "Grille hors établissement.", FINANCE_ERROR.TENANT_MISMATCH);
+      }
+      if (!gridMatchesEnrollment(input.grid, enrollment, school)) {
+        throw createFinanceError(
+          409,
+          "La grille tarifaire ne correspond pas à l'inscription (classe ou année).",
+          FINANCE_ERROR.GRID_ENROLLMENT_MISMATCH,
+          {
+            gridClassId: input.grid.classId,
+            enrollmentClassId: enrollment.classId,
+            gridYear: input.grid.academicYear,
+            enrollmentYear: enrollment.academicYear,
+          },
+        );
+      }
+      studentGrids = [input.grid];
+    } else {
+      studentGrids = (studentGrids || []).filter((grid) => gridMatchesEnrollment(grid, enrollment, school));
     }
 
     if (!studentGrids.length) {
@@ -412,32 +500,43 @@ async function ensureEnrollmentFinanceObligationsInTx(tx, input, principal, audi
 }
 
 async function ensureEnrollmentFinanceObligations(store, input, principal, auditMeta) {
-  return store.withTransaction(async (tx) => {
-    let school = input.school;
-    if (!school && input.schoolCode && typeof tx.getSchoolByCode === "function") {
-      school = await tx.getSchoolByCode(input.schoolCode);
-    }
-    let students = input.students;
-    if (!students && input.student) students = [input.student];
-    if (!students && input.studentKey && typeof tx.findStudent === "function") {
-      const student = await tx.findStudent(input.studentKey, principal);
-      students = student ? [student] : [];
-    }
-    return ensureEnrollmentFinanceObligationsInTx(
-      tx,
-      { ...input, school, students },
-      principal,
-      auditMeta,
-    );
-  });
+  try {
+    return await store.withTransaction(async (tx) => {
+      let school = input.school;
+      if (!school && input.schoolCode && typeof tx.getSchoolByCode === "function") {
+        school = await tx.getSchoolByCode(input.schoolCode);
+      }
+      let students = input.students;
+      if (!students && input.student) students = [input.student];
+      if (!students && input.studentKey && typeof tx.findStudent === "function") {
+        const student = await tx.findStudent(input.studentKey, principal);
+        students = student ? [student] : [];
+      }
+      return ensureEnrollmentFinanceObligationsInTx(
+        tx,
+        { ...input, school, students },
+        principal,
+        auditMeta,
+      );
+    });
+  } catch (error) {
+    await persistObligationSyncFailure(store, input, principal, auditMeta, error);
+    throw error;
+  }
 }
 
 module.exports = {
   OBLIGATION_LIFECYCLE_REASON,
   OBLIGATION_CANCEL_REASON,
   NO_APPLICABLE_GRID,
+  FINANCE_OBLIGATION_SYNC_FAILED: FINANCE_ERROR.OBLIGATION_SYNC_FAILED,
   snapshotCurrency,
   expandFeeItemPeriods,
+  pickEnrollment,
+  gridMatchesEnrollment,
+  resolveClassTransferEffectiveDate,
+  isUnswallowableFinanceSyncError,
+  persistObligationSyncFailure,
   ensureEnrollmentFinanceObligations,
   ensureEnrollmentFinanceObligationsInTx,
 };

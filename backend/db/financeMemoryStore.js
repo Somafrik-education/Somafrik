@@ -169,7 +169,7 @@ function createFinanceMemoryStore({
               classId: String(row.classId),
               classCode: asTrimmed(row.classCode),
               className: asTrimmed(row.className),
-              academicYear: asTrimmed(row.academicYear),
+              academicYear: asTrimmed(row.academicYear || row.academicYearName || row.schoolYear),
               enrollmentDate: row.enrollmentDate || row.enrollment_date || null,
               classEffectiveDate: row.classEffectiveDate || row.class_effective_date || row.enrollmentDate || null,
             }));
@@ -181,7 +181,7 @@ function createFinanceMemoryStore({
               classId: String(student.classId),
               classCode: asTrimmed(student.classCode),
               className: asTrimmed(student.className),
-              academicYear: asTrimmed(student.academicYear),
+              academicYear: asTrimmed(student.academicYear || student.academicYearName || student.schoolYear),
               enrollmentDate: student.enrollmentDate || null,
               classEffectiveDate: student.classEffectiveDate || student.enrollmentDate || null,
             },

@@ -1530,15 +1530,31 @@ class PostgresRepository {
   }
 
   async syncEnrollmentFinanceObligations(input = {}, principal) {
+    const {
+      isUnswallowableFinanceSyncError,
+      FINANCE_OBLIGATION_SYNC_FAILED,
+    } = require("../lib/financeObligationLifecycle");
+    const actor = principal || {
+      role: "system",
+      schoolCode: input.schoolCode || "*",
+      sub: "finance-obligation-lifecycle",
+    };
     try {
-      return await this.ensureEnrollmentObligations(input, principal || {
-        role: "system",
-        schoolCode: input.schoolCode || "*",
-        sub: "finance-obligation-lifecycle",
-      });
+      return await this.ensureEnrollmentObligations(input, actor);
     } catch (error) {
-      console.warn("finance F3 ensureEnrollmentObligations:", error?.code || error?.message);
-      return { created: 0, skipped: 0, superseded: 0, error: error?.code || error?.message };
+      const failure = {
+        created: 0,
+        skipped: 0,
+        superseded: 0,
+        reason: FINANCE_OBLIGATION_SYNC_FAILED,
+        error: error?.code || error?.message,
+        enrollmentId: input.enrollmentId || null,
+      };
+      if (isUnswallowableFinanceSyncError(error)) {
+        error.financeSync = failure;
+        throw error;
+      }
+      return failure;
     }
   }
 
@@ -3213,7 +3229,7 @@ class PostgresRepository {
       [studentDbId, academicYear.id],
     );
     const classChanged = Boolean(previous?.class_id && String(previous.class_id) !== String(classId));
-    const effectiveDate = options.effectiveDate || (classChanged ? new Date().toISOString().slice(0, 10) : null);
+    const requestedEffectiveDate = String(options.effectiveDate ?? "").trim() || null;
     await this.query(
       `INSERT INTO enrollments (
          school_id, student_id, class_id, academic_year_id, enrollment_date, class_effective_date, status
@@ -3224,11 +3240,11 @@ class PostgresRepository {
          status = 'active',
          class_effective_date = CASE
            WHEN enrollments.class_id IS DISTINCT FROM EXCLUDED.class_id
-             THEN COALESCE($5::date, CURRENT_DATE)
-           ELSE COALESCE(enrollments.class_effective_date, enrollments.enrollment_date, CURRENT_DATE)
+             THEN COALESCE($5::date, enrollments.class_effective_date)
+           ELSE COALESCE(enrollments.class_effective_date, enrollments.enrollment_date)
          END,
          updated_at = NOW()`,
-      [schoolId, studentDbId, classId, academicYear.id, effectiveDate],
+      [schoolId, studentDbId, classId, academicYear.id, requestedEffectiveDate],
     );
     const school = await this.one("SELECT school_code FROM schools WHERE id = $1", [schoolId]);
     const student = await this.one(
@@ -3267,7 +3283,7 @@ class PostgresRepository {
         previousClass: previousClass
           ? { classId: previousClass.id, classCode: previousClass.class_code, className: previousClass.name }
           : null,
-        effectiveDate,
+        effectiveDate: requestedEffectiveDate,
       },
       options.principal,
     );
@@ -6229,8 +6245,9 @@ class PostgresRepository {
     const created = await this.getClassStudentsRepository().enroll(classCode, schoolCode, body);
     this.cachedDataset = null;
     const student = created?.student;
+    let financeSync = null;
     if (student?.studentCode) {
-      await this.syncEnrollmentFinanceObligations(
+      financeSync = await this.syncEnrollmentFinanceObligations(
         {
           reason: "enrollment_active",
           schoolCode,
@@ -6241,7 +6258,7 @@ class PostgresRepository {
         { role: "system", schoolCode, sub: "finance-obligation-lifecycle" },
       );
     }
-    return created;
+    return { ...created, financeSync };
   }
 
   getSchoolStudentByCode(studentCode, schoolCode) {

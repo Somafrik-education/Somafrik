@@ -209,11 +209,13 @@ function createFinancePgStore(repo) {
           throw createFinanceError(400, "Identifiant de classe canonique requis (classId ou classCode).", FINANCE_ERROR.CLASS_REQUIRED);
         }
         const rows = await all(
-          `SELECT st.*, s.school_code, cl.id AS class_id, cl.class_code, cl.name AS class_name
+          `SELECT st.*, s.school_code, cl.id AS class_id, cl.class_code, cl.name AS class_name,
+                  ay.name AS academic_year
            FROM students st
            JOIN schools s ON s.id = st.school_id
            JOIN enrollments e ON e.student_id = st.id AND e.status = 'active'
            JOIN classes cl ON cl.id = e.class_id
+           LEFT JOIN academic_years ay ON ay.id = e.academic_year_id
            WHERE s.school_code = $1
              AND (
                ($2::text <> '' AND e.class_id::text = $2)
@@ -236,6 +238,7 @@ function createFinancePgStore(repo) {
             classId: row.class_id,
             classCode: row.class_code || "",
             className: row.class_name,
+            academicYear: row.academic_year || "",
           };
         });
       },

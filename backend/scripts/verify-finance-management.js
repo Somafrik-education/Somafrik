@@ -161,7 +161,7 @@ async function main() {
       token: adminToken,
       body: {
         className: createdClass.data.name,
-        academicYear: "2025-2026",
+        academicYear: offering.academicYear?.name || "2025-2026",
         currency: "CDF",
         items: [{ feeType: "Inscription", label: "Inscription", amount: 10_000, dueDate: "2026-01-01", status: "Actif" }],
       },
@@ -484,7 +484,8 @@ async function main() {
       token: adminToken,
       body: {
         className: createdClass.data.name,
-        academicYear: "2026-2027",
+        academicYear: offering.academicYear?.name || "2025-2026",
+        periodName: "Mensualités",
         currency: "CDF",
         items: [
           {

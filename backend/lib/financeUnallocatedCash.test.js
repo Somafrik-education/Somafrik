@@ -27,6 +27,7 @@ function createGridCompatibilityStore({ ambiguous = false } = {}) {
       classId: "class-compat-a",
       classCode: "CLS-COMPAT-A",
       className: "Compat Zeta",
+      academicYear: "2025-2026",
     },
     ...(ambiguous
       ? [
@@ -41,6 +42,7 @@ function createGridCompatibilityStore({ ambiguous = false } = {}) {
             classId: "class-compat-b",
             classCode: "CLS-COMPAT-B",
             className: "Compat Zeta",
+      academicYear: "2025-2026",
           },
         ]
       : []),
