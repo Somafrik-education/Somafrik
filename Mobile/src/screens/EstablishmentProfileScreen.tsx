@@ -162,6 +162,7 @@ export default function EstablishmentProfileScreen() {
       <FormField
         label="Téléphone"
         type="phone"
+        required
         value={draft.phone}
         onChangeText={(phone) => setDraft((current) => ({ ...current, phone }))}
         editable={canEdit}
@@ -169,6 +170,7 @@ export default function EstablishmentProfileScreen() {
       <FormField
         label="Courriel"
         type="email"
+        required
         value={draft.email}
         onChangeText={(email) => setDraft((current) => ({ ...current, email }))}
         editable={canEdit}
@@ -183,6 +185,7 @@ export default function EstablishmentProfileScreen() {
       <FormField
         label="Responsable légal"
         type="name"
+        required
         value={draft.principalName}
         onChangeText={(principalName) => setDraft((current) => ({ ...current, principalName }))}
         editable={canEdit}

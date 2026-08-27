@@ -1,4 +1,5 @@
 import { Button, Modal } from "../../../design-system";
+import { RequiredMark } from "../../../design-system/forms/RequiredMark";
 import {
   formatChangeValue,
   type StudentChangeSet,
@@ -96,7 +97,7 @@ export function StudentEditReviewDialog({
           htmlFor="edit-reason"
           className="block text-xs font-semibold uppercase tracking-wide text-muted"
         >
-          Raison{requiresReason ? " *" : ""}
+          Raison{requiresReason ? <RequiredMark /> : null}
         </label>
         <textarea
           id="edit-reason"

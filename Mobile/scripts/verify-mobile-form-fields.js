@@ -23,7 +23,7 @@ function walk(dir, acc = []) {
 }
 
 function runUnitTests() {
-  for (const file of ["formFieldValidation.test.ts", "paymentEnrollment.test.ts"]) {
+  for (const file of ["formFieldValidation.test.ts", "paymentEnrollment.test.ts", "fieldLabel.test.ts"]) {
     const result = spawnSync("npx", ["--yes", "tsx", path.join("src", "lib", file)], {
       cwd: MOBILE,
       encoding: "utf8",
@@ -55,12 +55,15 @@ function main() {
   const formField = fs.readFileSync(path.join(SRC, "components", "FormField.tsx"), "utf8");
   assert.match(formField, /placeholderTextColor=\{FORM_PLACEHOLDER_COLOR\}/);
   assert.match(formField, /color: FORM_VALUE_COLOR/);
-  assert.match(formField, /accessibilityLabel=\{accessibilityLabel \?\? visibleLabel\}/);
+  assert.match(formField, /accessibilityLabel=\{accessibilityLabel \?\? accessibleLabel\}/);
   assert.match(formField, /formatFieldLabel/);
+  assert.match(formField, /FieldLabel/);
+  assert.doesNotMatch(formField, /<Text style=\{styles\.label\}>\{visibleLabel\}<\/Text>/);
 
   const tokens = fs.readFileSync(path.join(SRC, "lib", "formFieldTokens.ts"), "utf8");
   assert.match(tokens, /FORM_PLACEHOLDER_COLOR = "#94A3B8"/);
   assert.match(tokens, /FORM_VALUE_COLOR = "#0F172A"/);
+  assert.match(tokens, /FORM_REQUIRED_MARK_COLOR = "#DC2626"/);
 
   const student = fs.readFileSync(path.join(SRC, "components", "StudentMutationControls.tsx"), "utf8");
   assert.match(student, /from "\.\/FormField"/);

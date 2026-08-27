@@ -115,11 +115,12 @@ export function SubscriptionDiscountsPage() {
             description="L'Admin Pays peut proposer ; le Super Admin valide l'application."
           />
           <div className="mt-4 grid gap-4 sm:grid-cols-3">
-            <Field label="Établissement">
+            <Field label="Établissement" required>
               <Select
                 value={form.schoolCode}
                 options={[{ value: "", label: "Choisir…" }, ...schoolOptions]}
                 onChange={(e) => setForm({ ...form, schoolCode: e.target.value })}
+                required
               />
             </Field>
             <Field label="Pourcentage">
@@ -131,8 +132,8 @@ export function SubscriptionDiscountsPage() {
                 onChange={(e) => setForm({ ...form, percent: e.target.value })}
               />
             </Field>
-            <Field label="Motif">
-              <Input value={form.reason} onChange={(e) => setForm({ ...form, reason: e.target.value })} />
+            <Field label="Motif" required>
+              <Input value={form.reason} onChange={(e) => setForm({ ...form, reason: e.target.value })} required />
             </Field>
           </div>
           <div className="mt-4">

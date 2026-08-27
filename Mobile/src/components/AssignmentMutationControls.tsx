@@ -90,9 +90,9 @@ export default function AssignmentMutationControls({
         onClose={() => setOpen(false)}
         onSubmit={() => void submit()}
       >
-        <ChoiceChips label="Enseignant" options={teacherOptions} selectedId={teacherCode} onSelect={setTeacherCode} disabled={saving} />
-        <ChoiceChips label="Classe" options={classOptions} selectedId={classCode} onSelect={setClassCode} disabled={saving} />
-        <ChoiceChips label="Cours" options={subjectOptions} selectedId={subjectCode} onSelect={setSubjectCode} disabled={saving} />
+        <ChoiceChips label="Enseignant" required options={teacherOptions} selectedId={teacherCode} onSelect={setTeacherCode} disabled={saving} />
+        <ChoiceChips label="Classe" required options={classOptions} selectedId={classCode} onSelect={setClassCode} disabled={saving} />
+        <ChoiceChips label="Cours" required options={subjectOptions} selectedId={subjectCode} onSelect={setSubjectCode} disabled={saving} />
       </CanonicalMutationModal>
     </>
   );

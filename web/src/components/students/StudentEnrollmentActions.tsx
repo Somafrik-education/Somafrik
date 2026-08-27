@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { Button } from "../../design-system";
+import { RequiredMark } from "../../design-system/forms/RequiredMark";
 import type { EditableEnrollment } from "../../lib/studentEditing";
 import type { StudentEditAuthorizationContext } from "../../lib/studentEditing";
 import type { StudentWorkspaceCommandRepository } from "../../lib/studentEditingRepository";
@@ -307,7 +308,10 @@ export function StudentEnrollmentActions({
         {canShowAssign ? (
           <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
             <label className="flex min-w-[12rem] flex-1 flex-col gap-1 text-sm">
-              <span className="font-semibold text-ink">Classe</span>
+              <span className="font-semibold text-ink">
+                Classe
+                <RequiredMark />
+              </span>
               <select
                 className="min-h-10 rounded-lg border border-line bg-white px-3 text-sm text-ink"
                 value={selectedClassId}

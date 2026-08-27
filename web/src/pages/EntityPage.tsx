@@ -552,6 +552,7 @@ function EntityPageContent({ entity, mode, classScope, disableCreate = false }: 
       placeholder: "Mot de passe (min. 6 caractères)",
       inputType: "password",
       confirmLabel: "Réinitialiser",
+      required: true,
       validate: (value) => validatePasswordPolicy(value),
     });
     if (!temporaryPassword) return;

@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { cn } from "../utils/cn";
+import { RequiredMark } from "./RequiredMark";
 
 export interface FormFieldProps {
   label: string;
@@ -32,13 +33,7 @@ export function FormField({
       <label htmlFor={htmlFor} className="block">
         <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-muted">
           {label}
-          {required ? (
-            <span className="text-danger" aria-hidden>
-              {" "}
-              *
-            </span>
-          ) : null}
-          {required ? <span className="sr-only"> (obligatoire)</span> : null}
+          {required ? <RequiredMark /> : null}
         </span>
         {children}
       </label>

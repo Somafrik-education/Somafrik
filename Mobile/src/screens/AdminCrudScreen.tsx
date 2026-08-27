@@ -12,7 +12,8 @@ import {
   View,
 } from "react-native";
 import FormField from "../components/FormField";
-import { formatFieldLabel, type FormFieldType } from "../lib/formFieldTokens";
+import { FieldLabel } from "../components/FieldLabel";
+import { type FormFieldType } from "../lib/formFieldTokens";
 import { hasFieldErrors, trimField, validateAmount, validateEmail, validatePhone } from "../lib/formFieldValidation";
 import { Ionicons } from "@expo/vector-icons";
 import * as Crypto from "expo-crypto";
@@ -1192,12 +1193,11 @@ export default function AdminCrudScreen({ route, navigation }: Props) {
                 shouldHideField(entity, form, field) ? null : (
                 <View key={field.key} style={styles.fieldGroup}>
                   {field.type === "select" || field.type === "date" || field.type === "photo" ? (
-                    <Text style={styles.fieldLabel}>
-                      {formatFieldLabel(field.label, {
-                        required: isRequiredAdminField(entity, field),
-                        optional: isOptionalAdminField(field) && !isRequiredAdminField(entity, field),
-                      })}
-                    </Text>
+                    <FieldLabel
+                      label={field.label}
+                      required={isRequiredAdminField(entity, field)}
+                      optional={isOptionalAdminField(field) && !isRequiredAdminField(entity, field)}
+                    />
                   ) : null}
                   {field.type === "select" ? (
                     entity === "students" && lockedClassName && field.key === "className" ? (

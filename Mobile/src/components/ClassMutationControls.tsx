@@ -223,6 +223,7 @@ export default function ClassMutationControls({
           />
           <ChoiceChips
             label={labels.groupLabel || "Groupe"}
+            required
             options={groups.map((item) => ({ id: item.id, label: item.name }))}
             selectedId={groupId}
             onSelect={setGroupId}
@@ -269,6 +270,7 @@ export default function ClassMutationControls({
         ) : (
           <ChoiceChips
             label="Année scolaire"
+            required
             options={years.map((item) => ({ id: item.id, label: item.name }))}
             selectedId={academicYearId}
             onSelect={setAcademicYearId}
@@ -277,6 +279,7 @@ export default function ClassMutationControls({
         )}
         <ChoiceChips
           label={labels.levelLabel || "Niveau"}
+          required
           options={levels.map((item) => ({ id: item.id, label: item.name }))}
           selectedId={levelId}
           onSelect={setLevelId}
@@ -291,6 +294,7 @@ export default function ClassMutationControls({
         />
         <ChoiceChips
           label={labels.groupLabel || "Groupe"}
+          required
           options={groups.map((item) => ({ id: item.id, label: item.name }))}
           selectedId={groupId}
           onSelect={setGroupId}

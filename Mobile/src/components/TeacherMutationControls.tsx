@@ -106,6 +106,9 @@ export default function TeacherMutationControls({
       temporaryPassword,
       editing,
     });
+    if (!editing && !trimField(birthDate)) {
+      nextErrors.birthDate = "Date de naissance est obligatoire.";
+    }
     if (hasFieldErrors(nextErrors)) {
       setFieldErrors(nextErrors);
       setError("");
@@ -253,7 +256,8 @@ export default function TeacherMutationControls({
       <FormField
         ref={birthDateRef}
         label="Date de naissance"
-        optional
+        required={!editing}
+        optional={editing}
         type="date"
         value={birthDate}
         onChangeText={(value) => {

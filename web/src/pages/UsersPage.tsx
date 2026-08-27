@@ -265,6 +265,7 @@ export function UsersPage() {
       placeholder: "Mot de passe (min. 6 caractères)",
       inputType: "password",
       confirmLabel: "Réinitialiser",
+      required: true,
       validate: (value) => validatePasswordPolicy(value),
     });
     if (!temporaryPassword) return;
@@ -839,6 +840,7 @@ export function UsersPage() {
             {fieldPolicy.schoolCode !== "hidden" ? (
               <Field
                 label="Établissement"
+                required={editing.role === SCHOOL_ADMIN_ROLE || (isCountryAdminView && !isEditingExisting)}
                 hint={
                   isEditingExisting
                     ? "Lecture seule. Utilisez « Réaffecter l'établissement » pour changer le tenant PostgreSQL."

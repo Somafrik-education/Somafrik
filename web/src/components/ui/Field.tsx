@@ -1,4 +1,5 @@
 import type { InputHTMLAttributes, SelectHTMLAttributes, ReactNode } from "react";
+import { RequiredMark } from "../../design-system/forms/RequiredMark";
 
 interface FieldWrapperProps {
   label: string;
@@ -13,7 +14,7 @@ export function Field({ label, htmlFor, hint, required, children }: FieldWrapper
     <label htmlFor={htmlFor} className="block">
       <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-muted">
         {label}
-        {required ? <span className="text-danger"> *</span> : null}
+        {required ? <RequiredMark /> : null}
       </span>
       {children}
       {hint ? <span className="mt-1 block text-xs text-muted">{hint}</span> : null}

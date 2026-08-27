@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 import { useAuth } from "../context/AuthContext";
 import { useData } from "../context/DataContext";
-import { Card, SectionHeader, useToast } from "../design-system";
+import { Card, FormField, Input, SectionHeader, Select, useToast } from "../design-system";
 import { useConfirm } from "../components/ui/ConfirmDialog";
 import {
   educationReferenceApi,
@@ -207,14 +207,13 @@ export function EducationReferencePage() {
       />
 
       <Card className="p-4">
-        <label className="text-sm font-medium" htmlFor="education-reference-country">
-          Pays
-          <select
+        <FormField label="Pays" htmlFor="education-reference-country" required>
+          <Select
             id="education-reference-country"
-            className="mt-1 block w-full rounded border border-border px-3 py-2"
             value={countryCode}
             disabled={isCountryAdmin && visibleCountries.length === 1}
             onChange={(event) => setCountryCode(event.target.value)}
+            required
           >
             <option value="">Choisir un pays…</option>
             {visibleCountries.map((country) => (
@@ -222,8 +221,8 @@ export function EducationReferencePage() {
                 {country.name} ({country.code})
               </option>
             ))}
-          </select>
-        </label>
+          </Select>
+        </FormField>
       </Card>
 
       {!countryCode ? (
@@ -236,28 +235,31 @@ export function EducationReferencePage() {
               <p className="text-sm text-muted">
                 Concepts canoniques : Niveau, Filière/Option, Groupe. L&apos;affichage peut varier selon le pays.
               </p>
-              <form onSubmit={handleSaveLabels} className="grid gap-3 md:grid-cols-4">
-                <input
-                  className="rounded border px-3 py-2"
-                  aria-label="Libellé niveau"
-                  value={labelDraft.levelLabel}
-                  onChange={(event) => setLabelDraft((current) => ({ ...current, levelLabel: event.target.value }))}
-                  required
-                />
-                <input
-                  className="rounded border px-3 py-2"
-                  aria-label="Libellé filière"
-                  value={labelDraft.trackLabel}
-                  onChange={(event) => setLabelDraft((current) => ({ ...current, trackLabel: event.target.value }))}
-                  required
-                />
-                <input
-                  className="rounded border px-3 py-2"
-                  aria-label="Libellé groupe"
-                  value={labelDraft.groupLabel}
-                  onChange={(event) => setLabelDraft((current) => ({ ...current, groupLabel: event.target.value }))}
-                  required
-                />
+              <form onSubmit={handleSaveLabels} className="grid gap-3 md:grid-cols-4 md:items-end">
+                <FormField label="Libellé niveau" htmlFor="edu-label-level" required>
+                  <Input
+                    id="edu-label-level"
+                    value={labelDraft.levelLabel}
+                    onChange={(event) => setLabelDraft((current) => ({ ...current, levelLabel: event.target.value }))}
+                    required
+                  />
+                </FormField>
+                <FormField label="Libellé filière" htmlFor="edu-label-track" required>
+                  <Input
+                    id="edu-label-track"
+                    value={labelDraft.trackLabel}
+                    onChange={(event) => setLabelDraft((current) => ({ ...current, trackLabel: event.target.value }))}
+                    required
+                  />
+                </FormField>
+                <FormField label="Libellé groupe" htmlFor="edu-label-group" required>
+                  <Input
+                    id="edu-label-group"
+                    value={labelDraft.groupLabel}
+                    onChange={(event) => setLabelDraft((current) => ({ ...current, groupLabel: event.target.value }))}
+                    required
+                  />
+                </FormField>
                 <button type="submit" className="rounded bg-primary px-4 py-2 text-white">
                   Enregistrer les libellés
                 </button>
@@ -268,9 +270,13 @@ export function EducationReferencePage() {
           <Card className="p-6 space-y-4">
             <h2 className="text-lg font-semibold">{labels.levelLabel}s</h2>
             {canCreate ? (
-              <form onSubmit={handleCreateLevel} className="grid gap-3 md:grid-cols-3">
-                <input className="rounded border px-3 py-2" placeholder="Nom" value={levelName} onChange={(e) => setLevelName(e.target.value)} required />
-                <input className="rounded border px-3 py-2" placeholder="Code" value={levelCode} onChange={(e) => setLevelCode(e.target.value)} required />
+              <form onSubmit={handleCreateLevel} className="grid gap-3 md:grid-cols-3 md:items-end">
+                <FormField label="Nom" htmlFor="edu-level-name" required>
+                  <Input id="edu-level-name" placeholder="Nom" value={levelName} onChange={(e) => setLevelName(e.target.value)} required />
+                </FormField>
+                <FormField label="Code" htmlFor="edu-level-code" required>
+                  <Input id="edu-level-code" placeholder="Code" value={levelCode} onChange={(e) => setLevelCode(e.target.value)} required />
+                </FormField>
                 <button type="submit" className="rounded bg-primary px-4 py-2 text-white">
                   Créer
                 </button>
@@ -299,14 +305,25 @@ export function EducationReferencePage() {
           <Card className="p-6 space-y-4">
             <h2 className="text-lg font-semibold">{labels.trackLabel}s</h2>
             {canCreate ? (
-              <form onSubmit={handleCreateStream} className="grid gap-3 md:grid-cols-4">
-                <input className="rounded border px-3 py-2" placeholder="Nom" value={streamName} onChange={(e) => setStreamName(e.target.value)} required />
-                <input className="rounded border px-3 py-2" placeholder="Code" value={streamCode} onChange={(e) => setStreamCode(e.target.value)} required />
-                <select className="rounded border px-3 py-2" value={streamType} onChange={(e) => setStreamType(e.target.value as typeof streamType)}>
-                  <option value="filiere">Filière</option>
-                  <option value="serie">Série</option>
-                  <option value="option">Option</option>
-                </select>
+              <form onSubmit={handleCreateStream} className="grid gap-3 md:grid-cols-4 md:items-end">
+                <FormField label="Nom" htmlFor="edu-stream-name" required>
+                  <Input id="edu-stream-name" placeholder="Nom" value={streamName} onChange={(e) => setStreamName(e.target.value)} required />
+                </FormField>
+                <FormField label="Code" htmlFor="edu-stream-code" required>
+                  <Input id="edu-stream-code" placeholder="Code" value={streamCode} onChange={(e) => setStreamCode(e.target.value)} required />
+                </FormField>
+                <FormField label="Type" htmlFor="edu-stream-type">
+                  <Select
+                    id="edu-stream-type"
+                    value={streamType}
+                    onChange={(e) => setStreamType(e.target.value as typeof streamType)}
+                    options={[
+                      { value: "filiere", label: "Filière" },
+                      { value: "serie", label: "Série" },
+                      { value: "option", label: "Option" },
+                    ]}
+                  />
+                </FormField>
                 <button type="submit" className="rounded bg-primary px-4 py-2 text-white">
                   Créer
                 </button>
@@ -331,9 +348,13 @@ export function EducationReferencePage() {
           <Card className="p-6 space-y-4">
             <h2 className="text-lg font-semibold">{labels.groupLabel}s</h2>
             {canCreate ? (
-              <form onSubmit={handleCreateGroup} className="grid gap-3 md:grid-cols-3">
-                <input className="rounded border px-3 py-2" placeholder="Code (ex. A)" value={groupCode} onChange={(e) => setGroupCode(e.target.value)} required />
-                <input className="rounded border px-3 py-2" placeholder="Nom" value={groupName} onChange={(e) => setGroupName(e.target.value)} />
+              <form onSubmit={handleCreateGroup} className="grid gap-3 md:grid-cols-3 md:items-end">
+                <FormField label="Code" htmlFor="edu-group-code" required>
+                  <Input id="edu-group-code" placeholder="Code (ex. A)" value={groupCode} onChange={(e) => setGroupCode(e.target.value)} required />
+                </FormField>
+                <FormField label="Nom" htmlFor="edu-group-name">
+                  <Input id="edu-group-name" placeholder="Nom" value={groupName} onChange={(e) => setGroupName(e.target.value)} />
+                </FormField>
                 <button type="submit" className="rounded bg-primary px-4 py-2 text-white">
                   Créer
                 </button>

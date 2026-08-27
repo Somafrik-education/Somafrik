@@ -570,7 +570,7 @@ export function ConfigurationPage({ section }: { section?: ConfigurationSection 
               <form onSubmit={(event) => void handleCreateAcademicYear(event)} className="mt-6 space-y-4">
                 <p className="text-sm font-bold text-ink">Créer une année</p>
                 <div className="grid gap-4 md:grid-cols-3">
-                  <FormField label="Nom de l'année" htmlFor="academic-year-name">
+                  <FormField label="Nom de l'année" htmlFor="academic-year-name" required>
                     <Input
                       id="academic-year-name"
                       value={yearDraft.name}
@@ -579,7 +579,7 @@ export function ConfigurationPage({ section }: { section?: ConfigurationSection 
                       required
                     />
                   </FormField>
-                  <FormField label="Début de l'année" htmlFor="academic-year-start">
+                  <FormField label="Début de l'année" htmlFor="academic-year-start" required>
                     <Input
                       id="academic-year-start"
                       type="date"
@@ -588,7 +588,7 @@ export function ConfigurationPage({ section }: { section?: ConfigurationSection 
                       required
                     />
                   </FormField>
-                  <FormField label="Fin de l'année" htmlFor="academic-year-end">
+                  <FormField label="Fin de l'année" htmlFor="academic-year-end" required>
                     <Input
                       id="academic-year-end"
                       type="date"
