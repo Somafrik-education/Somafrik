@@ -5,11 +5,13 @@ export type Student = {
   firstName: string;
   lastName?: string;
   matricule: string;
+  studentCode?: string;
   gender: "Masculin" | "Féminin" | string;
   birthDate: string;
   classId?: string | null;
   classCode?: string;
   className: string;
+  academicYearId?: string;
   schoolCode: string;
   parentName: string;
   parentPhone: string;
@@ -42,13 +44,17 @@ export type TeacherAssignment = {
   id?: string;
   teacherId?: string;
   teacherCode?: string;
+  teacherUserId?: string;
   teacherName?: string;
   classId?: string | null;
   classCode?: string;
   className: string;
   course: string;
   subject?: string;
+  subjectId?: string;
   subjectCode?: string;
+  academicYearId?: string;
+  assignmentRole?: string;
   status?: string;
 };
 
@@ -87,6 +93,12 @@ export type SchoolClass = {
   level: string;
   track: string;
   teacherId: string;
+  academicYearId?: string;
+  levelId?: string | null;
+  streamId?: string | null;
+  groupId?: string | null;
+  status?: string;
+  schoolCode?: string;
 };
 
 export type NoteItem = {

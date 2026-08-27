@@ -232,6 +232,8 @@ function run() {
 
   const here = path.dirname(fileURLToPath(import.meta.url));
   const establishmentSrc = fs.readFileSync(path.join(here, "establishment.ts"), "utf8");
+  assert.match(establishmentSrc, /teacherUserId/);
+  assert.match(establishmentSrc, /teacher_user_id/);
   const scopedFn = establishmentSrc.match(
     /export function teacherScopedClassNames\([\s\S]*?\nexport function teacherScopedClassLabels/,
   );

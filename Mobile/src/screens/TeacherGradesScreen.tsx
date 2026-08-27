@@ -79,6 +79,7 @@ export default function TeacherGradesScreen() {
     loadEvaluationGrades,
     loadAssignments,
     loadTeachers,
+    assignmentsSnapshot,
   } = useAdminData();
 
   const teacher = isTeacherSession(session as { role?: string; user?: { role?: string } } | null);
@@ -122,8 +123,9 @@ export default function TeacherGradesScreen() {
       resolveTeacherAssignmentsForSession(session, {
         assignments: assignmentsData,
         teachers: teachersData,
+        assignmentsSource: assignmentsSnapshot.source,
       }).filter((row) => Boolean(row.classId)),
-    [assignmentsData, session, teachersData],
+    [assignmentsData, assignmentsSnapshot.source, session, teachersData],
   );
 
   const selectedAssignment = scopedAssignments.find(

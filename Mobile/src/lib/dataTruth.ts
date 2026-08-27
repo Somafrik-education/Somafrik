@@ -6,10 +6,15 @@ import { isRecognizedTransportFailure } from "./connectivity";
 
 export type ResourceStatus = "idle" | "loading" | "success" | "empty" | "error" | "offline";
 
+export type ResourceSnapshotSource = "network" | "l1-cache";
+
 export type ResourceSnapshot<T> = {
   status: ResourceStatus;
   data: T[];
   errorMessage?: string;
+  /** Provenance. `l1-cache` + empty = vide métier confirmé ; `offline` = cache indisponible. */
+  source?: ResourceSnapshotSource;
+  cachedAt?: string | null;
 };
 
 export function unwrapList(payload: unknown): unknown[] {
@@ -46,10 +51,27 @@ export function classifyLoadFailure(error: unknown): {
   };
 }
 
-export function snapshotFromSuccess<T>(data: T[]): ResourceSnapshot<T> {
+export function snapshotFromSuccess<T>(
+  data: T[],
+  extra?: { source?: ResourceSnapshotSource; cachedAt?: string | null },
+): ResourceSnapshot<T> {
   return {
     status: data.length ? "success" : "empty",
     data,
+    ...(extra?.source ? { source: extra.source } : {}),
+    ...(extra && extra.cachedAt !== undefined ? { cachedAt: extra.cachedAt } : {}),
+  };
+}
+
+export function snapshotFromL1Cache<T>(data: T[], cachedAt: string | null): ResourceSnapshot<T> {
+  return snapshotFromSuccess(data, { source: "l1-cache", cachedAt });
+}
+
+export function snapshotL1Unavailable<T>(message = "Cache hors ligne indisponible."): ResourceSnapshot<T> {
+  return {
+    status: "offline",
+    data: [],
+    errorMessage: message,
   };
 }
 
@@ -167,7 +189,10 @@ export function withScopedSnapshotData<T>(
   scopedData: T[],
 ): ResourceSnapshot<T> {
   if (snapshot.status === "success" || snapshot.status === "empty") {
-    return snapshotFromSuccess(scopedData);
+    return snapshotFromSuccess(scopedData, {
+      ...(snapshot.source ? { source: snapshot.source } : {}),
+      ...(snapshot.cachedAt !== undefined ? { cachedAt: snapshot.cachedAt } : {}),
+    });
   }
   return { ...snapshot, data: scopedData };
 }

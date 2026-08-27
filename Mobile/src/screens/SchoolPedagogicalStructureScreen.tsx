@@ -10,15 +10,15 @@ import {
   activeCoursesForClass,
   assignableSubjectsForClass,
 } from "../lib/schoolClassCourses";
+import { OFFLINE_COPY } from "../lib/offlineModeSpec";
+import { shouldBlockUnsupportedMutations, shouldSkipMetierGet } from "../offline/l1/readModel";
 import { useStackScreenBottomPadding } from "../lib/screenLayout";
 import {
   createSchoolClassCourse,
   createSchoolSubject,
   getEducationSchoolCatalog,
-  listSchoolClassCourses,
   listSchoolSubjects,
   saveSchoolEducationActivation,
-  type SchoolClassCourseRecord,
   type SchoolSubjectRecord,
 } from "../services/schoolSettingsApi";
 import type { EducationSchoolCatalog } from "../services/api";
@@ -28,9 +28,9 @@ function toggleId(current: string[], id: string) {
 }
 
 export default function SchoolPedagogicalStructureScreen() {
-  const { session } = useAuth();
+  const { session, permissionsBootstrap } = useAuth();
   const { canOpen, canEdit } = useSchoolSettingsAccess("SchoolPedagogicalStructure");
-  const { classesData, loadClasses, refreshBackOfficeState } = useAdminData();
+  const { classesData, loadClasses, loadSchoolCourses, schoolCoursesSnapshot, classesSnapshot, refreshBackOfficeState } = useAdminData();
   const { horizontalPadding, contentMaxWidth } = useResponsiveLayout();
   const bottomPadding = useStackScreenBottomPadding();
   const [catalog, setCatalog] = useState<EducationSchoolCatalog | null>(null);
@@ -42,14 +42,21 @@ export default function SchoolPedagogicalStructureScreen() {
   const [error, setError] = useState("");
 
   const [subjects, setSubjects] = useState<SchoolSubjectRecord[]>([]);
-  const [classCourses, setClassCourses] = useState<SchoolClassCourseRecord[]>([]);
-  const [coursePanelLoading, setCoursePanelLoading] = useState(false);
-  const [coursePanelError, setCoursePanelError] = useState("");
+  const classCourses = schoolCoursesSnapshot.data;
+  const coursePanelLoading = schoolCoursesSnapshot.status === "loading";
+  const coursePanelError =
+    schoolCoursesSnapshot.status === "error" || schoolCoursesSnapshot.status === "offline"
+      ? schoolCoursesSnapshot.errorMessage || "Impossible de charger les cours des classes."
+      : "";
   const [selectedClassName, setSelectedClassName] = useState("");
   const [selectedSubjectName, setSelectedSubjectName] = useState("");
   const [newSubjectName, setNewSubjectName] = useState("");
   const [newSubjectCode, setNewSubjectCode] = useState("");
   const [courseSaving, setCourseSaving] = useState<"subject" | "course" | null>(null);
+  const mutationsBlocked = shouldBlockUnsupportedMutations({
+    source: schoolCoursesSnapshot.source ?? classesSnapshot.source,
+    permissionsBootstrap,
+  });
 
   const effectivePermissions = getEffectivePermissionsForSession(session);
   const canReadClassCourses =
@@ -60,6 +67,12 @@ export default function SchoolPedagogicalStructureScreen() {
     hasSecurityPermission(session, "Matières", "CREATE") || effectivePermissions.includes("Gérer cours");
 
   const load = useCallback(async () => {
+    if (shouldSkipMetierGet(permissionsBootstrap)) {
+      setCatalog(null);
+      setLoading(false);
+      setError("");
+      return;
+    }
     setLoading(true);
     setError("");
     try {
@@ -74,32 +87,25 @@ export default function SchoolPedagogicalStructureScreen() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [permissionsBootstrap]);
 
   const loadClassCourseData = useCallback(async () => {
     if (!canReadClassCourses) {
       setSubjects([]);
-      setClassCourses([]);
-      setCoursePanelError("");
       return;
     }
-    setCoursePanelLoading(true);
-    setCoursePanelError("");
-    try {
-      const [subjectRows, courseRows] = await Promise.all([
-        listSchoolSubjects(),
-        listSchoolClassCourses(),
-      ]);
-      setSubjects(subjectRows);
-      setClassCourses(courseRows);
-    } catch (err) {
+    await loadSchoolCourses();
+    if (shouldSkipMetierGet(permissionsBootstrap)) {
       setSubjects([]);
-      setClassCourses([]);
-      setCoursePanelError(err instanceof Error ? err.message : "Impossible de charger les cours des classes.");
-    } finally {
-      setCoursePanelLoading(false);
+      return;
     }
-  }, [canReadClassCourses]);
+    try {
+      const subjectRows = await listSchoolSubjects();
+      setSubjects(subjectRows);
+    } catch {
+      setSubjects([]);
+    }
+  }, [canReadClassCourses, loadSchoolCourses, permissionsBootstrap]);
 
   useEffect(() => {
     void load();
@@ -150,6 +156,10 @@ export default function SchoolPedagogicalStructureScreen() {
   }, [selectedClassName, availableSubjects.map((subject) => subject.name).join("\u0000")]);
 
   async function save() {
+    if (mutationsBlocked) {
+      Alert.alert("Hors ligne", OFFLINE_COPY.mutationRequiresConnection);
+      return;
+    }
     if (!canEdit) {
       Alert.alert("Lecture seule", "Vous n’avez pas le droit de modifier l’activation pédagogique.");
       return;
@@ -173,25 +183,26 @@ export default function SchoolPedagogicalStructureScreen() {
   }
 
   async function addCourseToClass() {
+    if (mutationsBlocked) {
+      Alert.alert("Hors ligne", OFFLINE_COPY.mutationRequiresConnection);
+      return;
+    }
     if (!canCreateClassCourses) {
       Alert.alert("Lecture seule", "Vous n’avez pas le droit d’ajouter un cours à une classe.");
       return;
     }
     if (!selectedClassName || !selectedSubjectName || courseSaving) return;
     setCourseSaving("course");
-    setCoursePanelError("");
     try {
       await createSchoolClassCourse({
         className: selectedClassName,
         subjectName: selectedSubjectName,
       });
-      const rows = await listSchoolClassCourses();
-      setClassCourses(rows);
+      await loadSchoolCourses();
       void refreshBackOfficeState().catch(() => null);
       Alert.alert("Cours ajouté", `${selectedSubjectName} est maintenant configuré pour ${selectedClassName}.`);
     } catch (err) {
       const message = err instanceof Error ? err.message : "Création du cours impossible.";
-      setCoursePanelError(message);
       Alert.alert("Création refusée", message);
     } finally {
       setCourseSaving(null);
@@ -199,6 +210,10 @@ export default function SchoolPedagogicalStructureScreen() {
   }
 
   async function createCatalogSubject() {
+    if (mutationsBlocked) {
+      Alert.alert("Hors ligne", OFFLINE_COPY.mutationRequiresConnection);
+      return;
+    }
     const name = newSubjectName.trim();
     const code = newSubjectCode.trim().toUpperCase();
     if (!canCreateClassCourses) {
@@ -207,7 +222,6 @@ export default function SchoolPedagogicalStructureScreen() {
     }
     if (!name || !code || courseSaving) return;
     setCourseSaving("subject");
-    setCoursePanelError("");
     try {
       await createSchoolSubject({ name, code });
       const rows = await listSchoolSubjects();
@@ -219,7 +233,6 @@ export default function SchoolPedagogicalStructureScreen() {
       Alert.alert("Cours créé", `${name} est disponible dans le catalogue de l’établissement.`);
     } catch (err) {
       const message = err instanceof Error ? err.message : "Création du cours impossible.";
-      setCoursePanelError(message);
       Alert.alert("Création refusée", message);
     } finally {
       setCourseSaving(null);
@@ -318,7 +331,7 @@ export default function SchoolPedagogicalStructureScreen() {
             )}
           </View>
 
-          {canEdit ? (
+          {canEdit && !mutationsBlocked ? (
             <TouchableOpacity
               style={styles.primary}
               onPress={() => void save()}
@@ -336,6 +349,12 @@ export default function SchoolPedagogicalStructureScreen() {
 
       <View style={[styles.card, styles.coursePanel]} testID="school-class-courses-panel">
         <Text style={styles.cardTitle}>Cours des classes</Text>
+        {mutationsBlocked ? (
+          <Text style={styles.meta} testID="l1-offline-banner">
+            {OFFLINE_COPY.l1SchoolCoursesHint}
+            {schoolCoursesSnapshot.cachedAt ? ` : ${schoolCoursesSnapshot.cachedAt}` : ""}
+          </Text>
+        ) : null}
         <Text style={styles.sectionDescription}>
           Les cours créés ici sont les mêmes que sur le Web et sont enregistrés pour la classe sélectionnée.
         </Text>
@@ -391,7 +410,9 @@ export default function SchoolPedagogicalStructureScreen() {
                   <Text style={styles.meta}>Aucun cours n’est encore rattaché à cette classe.</Text>
                 )}
 
-                {canCreateClassCourses ? (
+                {mutationsBlocked ? (
+                  <Text style={styles.readOnly}>{OFFLINE_COPY.mutationRequiresConnection}</Text>
+                ) : canCreateClassCourses ? (
                   <>
                     <View style={styles.divider} />
                     <Text style={styles.fieldLabel}>Ajouter un cours existant</Text>

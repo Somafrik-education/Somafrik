@@ -5,6 +5,7 @@ import CanonicalMutationModal from "./CanonicalMutationModal";
 import ChoiceChips from "./ChoiceChips";
 import { resolveEntityCrudAccess } from "../lib/mobileCrudParity";
 import { MIN_TOUCH_TARGET_DP } from "../lib/mobileUsability";
+import { OFFLINE_COPY } from "../lib/offlineModeSpec";
 import {
   createSchoolClass,
   getAcademicYears,
@@ -32,9 +33,13 @@ function asId(value: unknown): string {
 
 export default function ClassMutationControls({
   row,
+  networkRequired = false,
+  onBlockedMutation,
   onChanged,
 }: {
   row?: ClassRow;
+  networkRequired?: boolean;
+  onBlockedMutation?: () => void;
   onChanged: () => Promise<void> | void;
 }) {
   const { session } = useAuth();
@@ -61,7 +66,16 @@ export default function ClassMutationControls({
     return { yearRows, schoolCatalog };
   }, []);
 
+  const refuseIfOffline = () => {
+    onBlockedMutation?.();
+    Alert.alert("Hors ligne", OFFLINE_COPY.mutationRequiresConnection);
+  };
+
   const openCreate = async () => {
+    if (networkRequired) {
+      refuseIfOffline();
+      return;
+    }
     if (!access.canCreate) return;
     setError("");
     try {
@@ -84,6 +98,10 @@ export default function ClassMutationControls({
   };
 
   const openEdit = async () => {
+    if (networkRequired) {
+      refuseIfOffline();
+      return;
+    }
     if (!access.canUpdate || !row) return;
     setError("");
     try {
@@ -137,6 +155,10 @@ export default function ClassMutationControls({
   };
 
   const deactivate = () => {
+    if (networkRequired) {
+      refuseIfOffline();
+      return;
+    }
     if (!access.canUpdate || !row) return;
     const classCode = asId(row.classCode || row.publicId);
     Alert.alert("Désactiver la classe", `${row.name ?? classCode} passera inactive côté serveur.`, [

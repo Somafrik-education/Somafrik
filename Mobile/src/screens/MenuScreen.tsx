@@ -96,8 +96,13 @@ function filterMenuItemsByPermission(session: any, items: MenuItem[]) {
 export default function MenuScreen() {
   const navigation = useNavigation<any>();
   const { session, logout } = useAuth();
-  const { studentsData, teachersData, assignmentsData, classesData } = useAdminData();
-  const teacherScopeState = { teachers: teachersData, assignments: assignmentsData, classes: classesData };
+  const { studentsData, teachersData, assignmentsData, classesData, assignmentsSnapshot } = useAdminData();
+  const teacherScopeState = {
+    teachers: teachersData,
+    assignments: assignmentsData,
+    classes: classesData,
+    assignmentsSource: assignmentsSnapshot.source,
+  };
   const { scrollContentPaddingBottom } = useFloatingTabBarLayout();
   const { isTablet, horizontalPadding, contentMaxWidth, columns } = useResponsiveLayout();
   const isParentStudent = session?.role === "parent_student";

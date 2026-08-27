@@ -33,7 +33,9 @@ import {
   shouldRenderEmpty,
   shouldRenderError,
   snapshotFromFailure,
+  snapshotFromL1Cache,
   snapshotFromSuccess,
+  snapshotL1Unavailable,
   unwrapList,
 } from "./dataTruth";
 import {
@@ -58,6 +60,15 @@ function run() {
   assert.deepEqual(unwrapList({ items: [{ id: "1" }] }), [{ id: "1" }]);
   assert.deepEqual(unwrapList({ bulletins: [] }), []);
   assert.equal(snapshotFromSuccess([]).status, "empty");
+  const l1Empty = snapshotFromL1Cache([], "2026-08-26T10:00:00.000Z");
+  assert.equal(l1Empty.status, "empty");
+  assert.equal(l1Empty.source, "l1-cache");
+  const l1Ready = snapshotFromL1Cache([{ id: "1" }], "2026-08-26T10:00:00.000Z");
+  assert.equal(l1Ready.status, "success");
+  assert.equal(l1Ready.source, "l1-cache");
+  const l1Missing = snapshotL1Unavailable();
+  assert.equal(l1Missing.status, "offline");
+  assert.deepEqual(l1Missing.data, []);
   assert.equal(shouldRenderEmpty(snapshotFromSuccess([])), true);
   assert.equal(shouldRenderError(snapshotFromSuccess([])), false);
 

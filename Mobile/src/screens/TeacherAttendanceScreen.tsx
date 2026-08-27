@@ -108,6 +108,7 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
     loadAssignments,
     studentsSnapshot,
     presencesSnapshot,
+    assignmentsSnapshot,
     resourceScopeKey,
   } = useAdminData();
   const saveLockRef = useRef(createInFlightLock());
@@ -116,8 +117,13 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
   const [saveHint, setSaveHint] = useState("");
   const [authorByIntention, setAuthorByIntention] = useState<Record<string, string>>({});
   const scopeState = useMemo(
-    () => ({ teachers: teachersData, assignments: assignmentsData, classes: classesData }),
-    [teachersData, assignmentsData, classesData],
+    () => ({
+      teachers: teachersData,
+      assignments: assignmentsData,
+      classes: classesData,
+      assignmentsSource: assignmentsSnapshot.source,
+    }),
+    [teachersData, assignmentsData, classesData, assignmentsSnapshot.source],
   );
   const classStudents = useMemo(
     () => scopedStudentsForSession(session, studentsData, scopeState),

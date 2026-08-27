@@ -113,7 +113,7 @@ export default function StudentDetailScreen({
             {displayName}
           </Text>
           <Text style={styles.info}>Matricule : {student.matricule}</Text>
-          <Text style={styles.info}>Sexe : {student.gender ?? "Non renseigné"}</Text>
+          <Text style={styles.info}>Sexe : {String(student.gender ?? "").trim() || "Non renseigné"}</Text>
           <Text style={styles.info} testID={CLASSES_STUDENT_TEST_IDS.studentDetailClass}>
             Classe : {student.className}
           </Text>

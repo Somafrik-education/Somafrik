@@ -62,6 +62,9 @@ export type SchoolClassCourseRecord = {
   publicId?: string;
   className: string;
   name: string;
+  courseCode?: string;
+  subjectCode?: string;
+  teacherCode?: string;
   coefficient?: number;
   status?: string;
 };
