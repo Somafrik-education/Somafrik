@@ -151,6 +151,7 @@ Corrections post-implémentation (ce lot) :
 - `replaceSchoolPaymentMethods` : DELETE+INSERT atomique via `withTransaction` (`query`/`one` n’existent pas hors `bind`).
 - Tests PG isolation : réutiliser l’année B déjà créée ; `GRID-B-ISO` ; options A = inscrits A, jamais B / orphelins.
 - Harness HTTP mémoire : `SOMAFRIK_SKIP_DEMO_SEED=false` (Cloud Agent le force à `true`).
+- Mobile `PaymentsScreen` : plus de `studentsData` (GET /students 403) — libellés reçus via `paymentStudents`.
 
 1. Merger uniquement après Gates + rejeu Comptable Xiaomi : `GET /finance/payment-student-options` rows>0 puis paiement.
 2. Ne pas accorder `Élèves:READ` au Comptable.
