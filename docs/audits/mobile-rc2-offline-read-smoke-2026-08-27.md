@@ -9,7 +9,7 @@
 ```text
 Base develop exact : 874f9415cda8c1e3df1339001b8f0f437149f38d
                      (merge #352 Native SQLCipher APK smoke)
-HEAD PR            : (commit de cette branche — renseigné après push)
+HEAD PR            : 9ff0ae843f6f1fef62499708bd1e3a535c79f839 (instrumentation RC2)
 Appareil physique  : HOLD — transcript Android requis
 Package            : com.somafrik.app
 Version            : 1.2.1 (versionCode 13)
