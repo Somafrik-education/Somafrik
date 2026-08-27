@@ -3,6 +3,7 @@
 **Type :** audit PostgreSQL read-only + alignement identité live Assignments  
 **PR :** Draft dédiée, **indépendante de #354 / #355**  
 **Branche :** `cursor/p1-teacher-canonical-identity-9855`  
+**HEAD :** `3d52604f84fa3a58f61818a2acf57b4f7ec993df`  
 **Base :** `develop@fc259bf3590c0b7a30da92a6d519a83503c5f4fc`
 
 ## Contexte Mobile
