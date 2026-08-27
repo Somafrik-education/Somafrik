@@ -239,9 +239,16 @@ CREATE OR REPLACE FUNCTION payment_allocations_refresh_obligation()
 RETURNS trigger
 LANGUAGE plpgsql
 AS $$
+DECLARE
+  target_obligation UUID;
 BEGIN
-  UPDATE student_fee_obligations SET updated_at = NOW() WHERE id = COALESCE(NEW.obligation_id, OLD.obligation_id);
-  RETURN COALESCE(NEW, OLD);
+  IF TG_OP = 'INSERT' THEN
+    target_obligation := NEW.obligation_id;
+  ELSE
+    target_obligation := COALESCE(NEW.obligation_id, OLD.obligation_id);
+  END IF;
+  UPDATE student_fee_obligations SET updated_at = NOW() WHERE id = target_obligation;
+  RETURN NEW;
 END;
 $$;
 
