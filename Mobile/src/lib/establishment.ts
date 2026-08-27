@@ -9,6 +9,11 @@ export interface TeacherScopeState {
   teachers?: Teacher[];
   assignments?: TeacherAssignment[];
   classes?: SchoolClass[];
+  /**
+   * Provenance des affectations. En `l1-cache`, un enseignant n'est matché
+   * que par `teacherUserId === session.user.id` (fail-closed).
+   */
+  assignmentsSource?: "network" | "l1-cache";
 }
 
 export function isTeacherSession(session: { role?: string; user?: { role?: string } } | null): boolean {
@@ -127,6 +132,9 @@ export function listCanonicalTeacherAssignments(
 
   const teacher = resolveTeacherRecordForSession(session, state.teachers ?? []);
   const refKeys = collectSessionTeacherRefKeys(session, teacher);
+  if (state.assignmentsSource === "l1-cache") {
+    return active.filter((assignment) => l1AssignmentBelongsToTeacherSession(assignment, session));
+  }
   if (!refKeys.size) return [];
   return active.filter((assignment) => assignmentBelongsToTeacher(assignment, refKeys));
 }

@@ -336,6 +336,39 @@ async function run() {
     1,
     "teacherUserId === session.user.id ⇒ affectation L1",
   );
+  const l1CanonicalState = (row: Record<string, unknown>) => ({
+    assignments: [row as import("../../data/catalog").TeacherAssignment],
+    assignmentsSource: "l1-cache" as const,
+  });
+  assert.equal(
+    listCanonicalTeacherAssignments(teacherWithLegacyRefs, l1CanonicalState(legacyAssignment)).length,
+    0,
+    "listCanonical L1: teacherUserId absent ⇒ [] même si teacherCode/teacherId collent",
+  );
+  assert.equal(
+    listCanonicalTeacherAssignments(
+      teacherWithLegacyRefs,
+      l1CanonicalState({ ...legacyAssignment, teacherUserId: null }),
+    ).length,
+    0,
+    "listCanonical L1: teacherUserId null ⇒ []",
+  );
+  assert.equal(
+    listCanonicalTeacherAssignments(
+      teacherWithLegacyRefs,
+      l1CanonicalState({ ...legacyAssignment, teacherUserId: "user-other" }),
+    ).length,
+    0,
+    "listCanonical L1: teacherUserId mismatch ⇒ []",
+  );
+  assert.equal(
+    listCanonicalTeacherAssignments(
+      teacherWithLegacyRefs,
+      l1CanonicalState({ ...legacyAssignment, teacherUserId: "user-a" }),
+    ).length,
+    1,
+    "listCanonical L1: teacherUserId === session.user.id ⇒ 1",
+  );
   const l1ProjectedMissingUid = filterL1AssignmentsForTeacherSession(
     projectL1Assignments(
       {

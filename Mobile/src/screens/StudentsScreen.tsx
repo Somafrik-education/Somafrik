@@ -86,7 +86,7 @@ export default function StudentsScreen({ route, navigation }: any) {
 
   const { session, permissionsBootstrap } = useAuth();
 
-  const { studentsData, presencesData, teachersData, assignmentsData, classesData, loadStudents, loadPresences, loadPayments, loadStudentFees, loadTeachers, loadClasses, loadAssignments, studentsSnapshot, presencesSnapshot, studentFeesSnapshot, resourceScopeKey } = useAdminData();
+  const { studentsData, presencesData, teachersData, assignmentsData, classesData, loadStudents, loadPresences, loadPayments, loadStudentFees, loadTeachers, loadClasses, loadAssignments, studentsSnapshot, assignmentsSnapshot, presencesSnapshot, studentFeesSnapshot, resourceScopeKey } = useAdminData();
 
   const className = route?.params?.className ?? "Toutes les classes";
 
@@ -108,7 +108,12 @@ export default function StudentsScreen({ route, navigation }: any) {
     }, [loadStudents, loadPresences, loadPayments, loadStudentFees, loadTeachers, loadClasses, loadAssignments, resourceScopeKey]),
   );
 
-  const teacherScopeState = { teachers: teachersData, assignments: assignmentsData, classes: classesData };
+  const teacherScopeState = {
+    teachers: teachersData,
+    assignments: assignmentsData,
+    classes: classesData,
+    assignmentsSource: assignmentsSnapshot.source,
+  };
 
   const availableStudents = scopedStudentsForSession(session, studentsData, teacherScopeState);
 

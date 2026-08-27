@@ -85,9 +85,15 @@ export default function HomeScreen({ navigation }: any) {
     assignmentsData,
     classesData,
     classesSnapshot,
+    assignmentsSnapshot,
   } = useAdminData();
   const { isTablet, horizontalPadding, contentMaxWidth } = useResponsiveLayout();
-  const teacherScopeState = { teachers: teachersData, assignments: assignmentsData, classes: classesData };
+  const teacherScopeState = {
+    teachers: teachersData,
+    assignments: assignmentsData,
+    classes: classesData,
+    assignmentsSource: assignmentsSnapshot.source,
+  };
   const isPlatformAdmin = session?.role === "super_admin" || session?.role === "country_admin";
   const currentSchool =
     schoolsData.find((item) => item.code === session?.school?.code || item.code === session?.user.schoolCode) ??

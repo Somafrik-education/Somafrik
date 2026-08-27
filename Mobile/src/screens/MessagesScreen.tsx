@@ -64,6 +64,7 @@ export default function MessagesScreen() {
     loadMessages,
     teachersSnapshot,
     loadTeachers,
+    assignmentsSnapshot,
     resourceScopeKey,
     activeSchoolCode,
   } = useAdminData();
@@ -98,7 +99,12 @@ export default function MessagesScreen() {
   const parentPhone = session?.user.parentPhone ?? session?.user.children?.[0]?.parentPhone ?? "";
   const parentChildren = session?.user.children ?? [];
   const teachersData = teachersSnapshot.data;
-  const teacherScopeState = { teachers: teachersData, assignments: assignmentsData, classes: classesData };
+  const teacherScopeState = {
+    teachers: teachersData,
+    assignments: assignmentsData,
+    classes: classesData,
+    assignmentsSource: assignmentsSnapshot.source,
+  };
   const teacherStudents = scopedStudentsForSession(session, studentsData, teacherScopeState);
   const recipientSchoolCode =
     activeSchoolCode && activeSchoolCode !== ALL_SCHOOLS_CODE

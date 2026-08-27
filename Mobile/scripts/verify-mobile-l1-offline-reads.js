@@ -54,6 +54,7 @@ function main() {
   assert.match(establishment, /teacher_user_id/);
   assert.match(establishment, /export function l1AssignmentBelongsToTeacherSession/);
   assert.match(establishment, /teacherUserId === userId/);
+  assert.match(establishment, /assignmentsSource/);
 
   for (const rel of [
     "src/screens/ClassesScreen.tsx",
@@ -76,6 +77,23 @@ function main() {
   process.stdout.write(tests.stdout || "");
   process.stderr.write(tests.stderr || "");
   assert.equal(tests.status, 0, "l1OfflineReads.test.ts");
+
+  const adb = run("adb", ["devices"]);
+  const deviceLines = String(adb.stdout || "")
+    .trim()
+    .split("\n")
+    .slice(1)
+    .filter((line) => /\tdevice\s*$/.test(line));
+  if (!deviceLines.length) {
+    console.log(
+      "BLOCKED_NATIVE_L1_OFFLINE_SMOKE: aucun device/emulator Android (login → sync L1 → avion → kill → relaunch → Classes/Élèves/Cours/Planning)",
+    );
+  } else {
+    console.log(
+      "BLOCKED_NATIVE_L1_OFFLINE_SMOKE: device présent mais smoke login/kill/relaunch non branché dans cet agent",
+    );
+  }
+
   console.log("OK: verify:mobile-l1-offline-reads");
 }
 

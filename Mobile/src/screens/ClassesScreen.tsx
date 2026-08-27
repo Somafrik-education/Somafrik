@@ -55,7 +55,7 @@ export default function ClassesScreen({ navigation }: any) {
     },
   ];
   const { session, permissionsBootstrap } = useAuth();
-  const { classesData, studentsData, teachersData, assignmentsData, schoolsData, presencesSnapshot, loadClasses, loadStudents, loadPresences, loadTeachers, loadAssignments, classesSnapshot, studentsSnapshot, resourceScopeKey } = useAdminData();
+  const { classesData, studentsData, teachersData, assignmentsData, schoolsData, presencesSnapshot, loadClasses, loadStudents, loadPresences, loadTeachers, loadAssignments, classesSnapshot, studentsSnapshot, assignmentsSnapshot, resourceScopeKey } = useAdminData();
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [offlineActionMessage, setOfflineActionMessage] = useState<string | null>(null);
@@ -65,7 +65,12 @@ export default function ClassesScreen({ navigation }: any) {
     permissionsBootstrap,
   });
   const showLoading = isLoading && classesSnapshot.status === "loading";
-  const teacherScopeState = { teachers: teachersData, assignments: assignmentsData, classes: classesData };
+  const teacherScopeState = {
+    teachers: teachersData,
+    assignments: assignmentsData,
+    classes: classesData,
+    assignmentsSource: assignmentsSnapshot.source,
+  };
   const visibleStudents = scopedStudentsForSession(session, studentsData, teacherScopeState);
   const visibleClasses = scopedClassesForSession(session, classesData, studentsData, teacherScopeState);
   const totalStudents = visibleStudents.length;
