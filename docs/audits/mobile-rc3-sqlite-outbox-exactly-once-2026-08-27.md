@@ -10,7 +10,7 @@
 
 ```text
 Base develop : fc259bf3590c0b7a30da92a6d519a83503c5f4fc
-HEAD         : (commit de cette PR)
+Moteur HEAD  : 57ccf147feat(mobile): RC3 SQLite Outbox + replay exactly-once
 ```
 
 ## Verdict
