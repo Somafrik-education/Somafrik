@@ -85,7 +85,8 @@ export interface FinanceCatalog {
   currencySource: string;
   paymentMethods: FinancePaymentMethod[];
   feeTypes: FinanceCatalogFeeType[];
-  canonicalFeeTypes: Array<{ feeType: string; label: string }>;
+  canonicalFeeTypes: Array<{ feeType: string; label: string; code?: string; active?: boolean }>;
+  feeTypeCatalog?: Array<{ code: string; feeType: string; label: string; active: boolean }>;
   discountsDeferred: boolean;
   penaltiesDeferred: boolean;
 }

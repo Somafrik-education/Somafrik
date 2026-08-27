@@ -340,7 +340,7 @@ async function main() {
         className: createdClass.data.name,
         academicYear: "2024-2025",
         currency: "CDF",
-        items: [{ feeType: "Annexe", label: "Cantine", amount: 5_000, status: "Actif" }],
+        items: [{ feeType: "Cantine", label: "Cantine", amount: 5_000, status: "Actif" }],
       },
     });
     assert.equal(accountantGrid.status, 403, "Comptable ne gère pas les grilles");
@@ -409,7 +409,7 @@ async function main() {
         className: createdClass.data.name,
         academicYear: "2023-2024",
         currency: "CDF",
-        items: [{ feeType: "Annexe", label: "SuperAdmin", amount: 1_000, status: "Actif" }],
+        items: [{ feeType: "Autre", label: "SuperAdmin", amount: 1_000, status: "Actif" }],
       },
     });
     assert.equal(superGrid.status, 201, JSON.stringify(superGrid.data));

@@ -1,43 +1,39 @@
 "use strict";
 
 /**
- * Alignement libellé paiement (Mobile/Web) ↔ type d'obligation canonique.
- * Contrat validé uniquement :
- *   Scolarité → Mensualité
- *   Minerval / scolarité → Mensualité
- *   Inscription → Inscription
+ * Compatibilité de lecture paiement ↔ obligation.
+ * L'autorité est financeFeeTypes (codes). Les aliases ne sont plus une loi métier.
+ *
+ * Historique Annexe : uniquement le contrat déjà validé
  *   Cantine → Annexe dont le label est Cantine
- * Pas d'alias implicite hors de cette liste.
+ *   Annexe  → Annexe (type legacy, pas au catalogue)
  */
 
-const { normalizeKey } = require("./financeManagement");
-
-function feeTypeToken(value) {
-  return normalizeKey(value).replace(/[^a-z0-9]+/g, " ").trim();
-}
-
-function isTuitionPayment(token) {
-  return token === "scolarite" || token === "minerval" || token === "minerval scolarite" || token === "mensualite";
-}
+const { resolveFeeType, feeTypeToken, isUnallocatedFeeTypeInput } = require("./financeFeeTypes");
 
 function isCantineToken(token) {
   return token === "cantine" || token === "annexe cantine";
 }
 
 function obligationMatchesPaymentFeeType(obligation, paymentFeeType) {
-  const pay = feeTypeToken(paymentFeeType);
-  const type = feeTypeToken(obligation?.feeType);
-  const label = feeTypeToken(obligation?.label);
-  if (!pay) return false;
+  if (isUnallocatedFeeTypeInput(paymentFeeType)) return false;
 
-  if (type && type === pay) return true;
-  if (isTuitionPayment(pay) && type === "mensualite") return true;
-  if (isCantineToken(pay) && (type === "cantine" || (type === "annexe" && isCantineToken(label)))) return true;
+  const pay = resolveFeeType(paymentFeeType, { mode: "read" });
+  const obl = resolveFeeType(obligation?.feeType, { mode: "read" });
+  if (pay && obl) return pay.code === obl.code;
+
+  const payToken = feeTypeToken(paymentFeeType);
+  const typeToken = feeTypeToken(obligation?.feeType);
+  const labelToken = feeTypeToken(obligation?.label);
+  if (!payToken) return false;
+  if (typeToken && typeToken === payToken) return true;
+
+  if (pay?.code === "CANTEEN" && typeToken === "annexe" && isCantineToken(labelToken)) return true;
+  if (isCantineToken(payToken) && typeToken === "annexe" && isCantineToken(labelToken)) return true;
   return false;
 }
 
 module.exports = {
   feeTypeToken,
-  isTuitionPayment,
   obligationMatchesPaymentFeeType,
 };

@@ -5,19 +5,6 @@ import { normalize } from "./format";
 
 export type PaymentRecord = Record<string, unknown>;
 
-export const FEE_TYPES = [
-  "Inscription",
-  "Réinscription",
-  "Minerval / scolarité",
-  "Frais d'examen",
-  "Frais de bulletin",
-  "Frais de transport",
-  "Frais de cantine",
-  "Autre frais",
-] as const;
-
-export type FeeType = (typeof FEE_TYPES)[number];
-
 export const PAYMENT_METHODS = [
   "Espèces",
   "Mobile money",
@@ -29,6 +16,8 @@ export const PAYMENT_METHODS = [
 
 export type PaymentMethod = (typeof PAYMENT_METHODS)[number];
 
+export type FeeType = string;
+
 export const QUICK_AMOUNT_SHORTCUTS = [5000, 10000, 25000, 50000, 100000] as const;
 
 export const OVERPAYMENT_ACTIONS = [
@@ -38,16 +27,16 @@ export const OVERPAYMENT_ACTIONS = [
   "Affecté à un autre frais",
 ] as const;
 
-/** Montants dus par défaut (MVP — remplacés par Frais & tarifs ultérieurement). */
-export const DEFAULT_FEE_AMOUNTS: Record<FeeType, number> = {
+/** Montants dus par défaut (MVP — soldes canoniques F4). Clés = labels catalogue F2. */
+export const DEFAULT_FEE_AMOUNTS: Record<string, number> = {
   Inscription: 50_000,
-  "Réinscription": 40_000,
-  "Minerval / scolarité": 100_000,
-  "Frais d'examen": 15_000,
-  "Frais de bulletin": 10_000,
-  "Frais de transport": 30_000,
-  "Frais de cantine": 25_000,
-  "Autre frais": 20_000,
+  Réinscription: 40_000,
+  Scolarité: 100_000,
+  Examen: 15_000,
+  Uniforme: 20_000,
+  Transport: 30_000,
+  Cantine: 25_000,
+  Autre: 20_000,
 };
 
 export interface StudentSearchResult {
@@ -96,7 +85,7 @@ export interface QuickPaymentLine {
   amount: string;
 }
 
-export function createPaymentLine(feeType = "Minerval / scolarité"): QuickPaymentLine {
+export function createPaymentLine(feeType = "Scolarité"): QuickPaymentLine {
   const rand = globalThis.crypto?.randomUUID?.() ?? `line-${Date.now()}-${Math.random().toString(16).slice(2)}`;
   return { id: rand, feeType, amount: "" };
 }
@@ -216,29 +205,17 @@ export function searchStudentsForPayment(
     });
 }
 
-function matchesPaymentFeeType(studentFee: StudentFee, feeType: FeeType): boolean {
-  const label = normalize(String(studentFee.label ?? ""));
+function isTuitionToken(value: string): boolean {
+  const token = normalize(value);
+  return token === "scolarite" || token === "mensualite" || token.includes("minerval");
+}
+
+function matchesPaymentFeeType(studentFee: StudentFee, feeType: string): boolean {
   const type = normalize(String(studentFee.feeType ?? ""));
-  switch (feeType) {
-    case "Inscription":
-      return type === "inscription";
-    case "Réinscription":
-      return label.includes("reinscription") || type === "inscription";
-    case "Minerval / scolarité":
-      return type === "mensualite" || label.includes("minerval") || label.includes("scolarite");
-    case "Frais d'examen":
-      return label.includes("examen");
-    case "Frais de bulletin":
-      return label.includes("bulletin");
-    case "Frais de transport":
-      return label.includes("transport");
-    case "Frais de cantine":
-      return label.includes("cantine");
-    case "Autre frais":
-      return type === "annexe";
-    default:
-      return false;
-  }
+  const wanted = normalize(feeType);
+  if (!wanted) return false;
+  if (type === wanted) return true;
+  return isTuitionToken(wanted) && isTuitionToken(type);
 }
 
 export function computeFeeBalance(

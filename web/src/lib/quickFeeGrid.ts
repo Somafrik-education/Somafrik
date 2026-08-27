@@ -74,8 +74,8 @@ function buildItemsForGrid(
       feeGridId: grid.id,
       schoolCode: grid.schoolCode,
       className: grid.className,
-      feeType: "Mensualité",
-      label: "Minerval / scolarité",
+      feeType: "Scolarité",
+      label: "Scolarité",
       amount: monthly,
       mandatory: true,
       monthlyMonths: [...DEFAULT_MONTHLY_MONTHS],
@@ -89,8 +89,8 @@ function buildItemsForGrid(
       feeGridId: grid.id,
       schoolCode: grid.schoolCode,
       className: grid.className,
-      feeType: "Annexe",
-      label: String(input.annexLabel ?? "").trim() || "Frais annexe",
+      feeType: "Autre",
+      label: String(input.annexLabel ?? "").trim() || "Autre",
       amount: annex,
       mandatory: false,
       status: "Actif",
@@ -187,7 +187,7 @@ export function validateQuickFeeGridInput(input: QuickFeeGridInput): string | nu
     Number(input.inscriptionAmount ?? 0) > 0 ||
     Number(input.monthlyAmount ?? 0) > 0 ||
     Number(input.annexAmount ?? 0) > 0;
-  if (!hasAmount) return "Saisissez au moins un montant (inscription, mensualité ou annexe)";
+  if (!hasAmount) return "Saisissez au moins un montant (inscription, scolarité ou autre)";
 
   for (const key of ["inscriptionAmount", "monthlyAmount", "annexAmount"] as const) {
     const value = Number(input[key] ?? 0);

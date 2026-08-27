@@ -154,7 +154,7 @@ async function main() {
   await seedInscriptionAndMensualite(mismatch, { studentIds: [MAEVA] });
   const maevaFees = feesFor(mismatch, MAEVA);
   const inscription = maevaFees.find((row) => row.feeType === "Inscription");
-  const mensualiteCatalog = catalogItem(mismatch, "Mensualité");
+  const mensualiteCatalog = catalogItem(mismatch, "Scolarité");
   assert.ok(inscription);
   assert.ok(mensualiteCatalog);
 
@@ -211,7 +211,7 @@ async function main() {
     actor: biAdmin,
     classId: CLASS_BI,
   });
-  const jeanFee = feesFor(otherTenant, JEAN).find((row) => row.feeType === "Mensualité");
+  const jeanFee = feesFor(otherTenant, JEAN).find((row) => row.feeType === "Scolarité");
   assert.ok(jeanFee);
   const otherTenantPayments = otherTenant.tables.payments.length;
   await assert.rejects(
@@ -233,8 +233,8 @@ async function main() {
   const coherent = createStore();
   await seedInscriptionAndMensualite(coherent, { studentIds: [MAEVA] });
   const coherentFees = feesFor(coherent, MAEVA);
-  const mensualite = coherentFees.find((row) => row.feeType === "Mensualité");
-  const coherentCatalog = catalogItem(coherent, "Mensualité");
+  const mensualite = coherentFees.find((row) => row.feeType === "Scolarité");
+  const coherentCatalog = catalogItem(coherent, "Scolarité");
   assert.ok(mensualite);
   assert.ok(coherentCatalog);
   const paid = await coherent.createSchoolPayment(

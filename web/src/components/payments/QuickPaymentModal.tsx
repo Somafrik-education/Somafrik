@@ -132,9 +132,8 @@ export function QuickPaymentModal({ open, onClose, onSaved }: QuickPaymentModalP
         }
         setOptionStudents(flattened);
         const activeMethods = (catalog.paymentMethods ?? []).filter((row) => row.active).map((row) => row.label);
-        const types = (catalog.feeTypes ?? []).map((row) => row.feeType).filter(Boolean);
         const uniqueTypes = [
-          ...new Set(types.length ? types : (catalog.canonicalFeeTypes ?? []).map((row) => row.feeType)),
+          ...new Set((catalog.feeTypeCatalog ?? catalog.canonicalFeeTypes ?? []).map((row) => row.feeType)),
         ].filter(Boolean);
         if (!activeMethods.length) {
           setCatalogMethods([]);

@@ -129,7 +129,7 @@ async function main() {
     currency: "CDF",
     items: [
       { feeType: "Inscription", label: "Frais d'inscription", amount: 80_000, dueDate: "2026-01-01", status: "Actif" },
-      { feeType: "Annexe", label: "Transport", amount: 40_000, periodLabel: "Janvier", dueDate: "2026-01-01", status: "Actif" },
+      { feeType: "Transport", label: "Transport", amount: 40_000, periodLabel: "Janvier", dueDate: "2026-01-01", status: "Actif" },
     ],
   });
   await activateFeeGridViaApi(adminToken, overdueGrid.id);
@@ -144,7 +144,7 @@ async function main() {
   });
   await createPaymentViaApi(adminToken, {
     studentId: studentSettled.id,
-    feeType: "Annexe",
+    feeType: "Transport",
     amount: 40_000,
     method: "Espèces",
     date: "2026-08-13",
@@ -326,7 +326,7 @@ async function main() {
   });
   const annexePay = await createPaymentViaApi(comptableToken, {
     studentId: studentOverdue.id,
-    feeType: "Annexe",
+    feeType: "Transport",
     amount: 40_000,
     method: "Espèces",
     date: "2026-07-09",

@@ -158,7 +158,7 @@ export function buildSchoolPaymentPayload(input: {
   schoolFeeItemId?: string;
 }): Record<string, unknown> {
   const item: Record<string, unknown> = {
-    feeType: trim(input.feeType) || "Acompte",
+    feeType: trim(input.feeType),
     amount: input.amount,
   };
   const obligationId = trim(input.obligationId);

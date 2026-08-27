@@ -253,14 +253,14 @@ export function QuickFeeGridModal({ open, onClose, schoolCode, onSaved }: QuickF
             onChange={(value) => setForm({ ...form, inscriptionAmount: value })}
           />
           <AmountField
-            label="Mensualité (minerval)"
+            label="Scolarité (échéancier mensuel)"
             hint="Génère une ligne par mois scolaire"
             value={form.monthlyAmount ?? ""}
             currency={form.currency}
             onChange={(value) => setForm({ ...form, monthlyAmount: value })}
           />
           <div className="grid gap-3 sm:grid-cols-2">
-            <Field label="Frais annexe (libellé)">
+            <Field label="Autre frais (libellé)">
               <Input
                 value={form.annexLabel ?? ""}
                 onChange={(event) => setForm({ ...form, annexLabel: event.target.value })}
@@ -268,7 +268,7 @@ export function QuickFeeGridModal({ open, onClose, schoolCode, onSaved }: QuickF
               />
             </Field>
             <AmountField
-              label="Montant annexe"
+              label="Montant autre"
               value={form.annexAmount ?? ""}
               currency={form.currency}
               onChange={(value) => setForm({ ...form, annexAmount: value })}

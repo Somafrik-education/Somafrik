@@ -392,6 +392,8 @@ export type PaymentStudentOption = {
 export type FinanceCatalog = {
   currency?: string;
   paymentMethods?: Array<{ methodCode: string; label: string; active: boolean }>;
+  feeTypeCatalog?: Array<{ code: string; feeType: string; label: string; active: boolean }>;
+  canonicalFeeTypes?: Array<{ feeType: string; label: string; code?: string }>;
 };
 
 export function getPaymentStudentOptions() {

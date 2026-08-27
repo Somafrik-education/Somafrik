@@ -92,7 +92,7 @@ export function SettingsFinancePage() {
   }, [canRead, load]);
 
   const feeTypeChoices = useMemo(
-    () => catalog?.canonicalFeeTypes ?? [{ feeType: "Inscription", label: "Inscription" }],
+    () => catalog?.feeTypeCatalog ?? catalog?.canonicalFeeTypes ?? [],
     [catalog],
   );
 

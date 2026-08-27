@@ -76,12 +76,6 @@ function validateFeeGridInput(grid, items, state) {
     if (!String(item.label ?? "").trim()) {
       return { ok: false, error: "Chaque frais doit avoir un libellé." };
     }
-    if (item.feeType === "Mensualité") {
-      const months = item.monthlyMonths ?? [];
-      if (!months.length) {
-        return { ok: false, error: "Sélectionnez au moins un mois pour la mensualité." };
-      }
-    }
   }
   return { ok: true };
 }
@@ -170,8 +164,8 @@ function applyFeeGridToStudents(state, feeGridId, options = {}) {
 
   for (const student of students) {
     for (const item of items) {
-      if (item.feeType === "Mensualité") {
-        const months = item.monthlyMonths?.length ? item.monthlyMonths : DEFAULT_MONTHLY_MONTHS;
+      if (Array.isArray(item.monthlyMonths) && item.monthlyMonths.length) {
+        const months = item.monthlyMonths;
         for (const month of months) {
           const key = studentFeeDedupeKey(String(student.id ?? ""), item.id, month);
           if (existingKeys.has(key)) {
@@ -232,9 +226,8 @@ function applyActiveGridsToStudent(state, student) {
 
 function expectedStudentFeeTotal(items) {
   return items.reduce((sum, item) => {
-    if (item.feeType === "Mensualité") {
-      const months = item.monthlyMonths?.length ? item.monthlyMonths : DEFAULT_MONTHLY_MONTHS;
-      return sum + Number(item.amount) * months.length;
+    if (Array.isArray(item.monthlyMonths) && item.monthlyMonths.length) {
+      return sum + Number(item.amount) * item.monthlyMonths.length;
     }
     return sum + Number(item.amount);
   }, 0);
