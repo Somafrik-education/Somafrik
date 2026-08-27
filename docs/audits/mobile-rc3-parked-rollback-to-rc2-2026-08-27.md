@@ -78,13 +78,16 @@ Ces branches **ne sont pas** dans `develop`. Ce rollback ne les touche pas.
 
 ```text
 git diff fc259bf3590c0b7a30da92a6d519a83503c5f4fc HEAD
-  => uniquement ce fichier d’audit (après commit docs)
+  => uniquement ce fichier d’audit
 
 Aucun fichier RC2 supprimé
-verify:mobile-l1-sqlite-cache
-verify:mobile-l1-offline-reads
-verify:mobile-rc2-offline-read-smoke
-TypeScript / lint / tests ciblés
+verify:mobile-l1-sqlite-cache          OK (BLOCKED_NATIVE_SQLCIPHER_SMOKE : pas de device)
+verify:mobile-l1-offline-reads         OK (BLOCKED_NATIVE_L1_OFFLINE_SMOKE : pas de device)
+verify:mobile-rc2-offline-read-smoke   OK (BLOCKED_NATIVE_RC2_OFFLINE_READ_SMOKE : pas de device)
+verify:mobile-no-false-writes          OK
+typecheck:backend + Mobile tsc        OK
+mobileSyncScope + Assignments unit     60/60
+origin/develop                         1c7b8dfc  (intact, pas de reset)
 Aucun backoffice_state introduit
 Aucune mutation PostgreSQL
 Aucun reset de branche
