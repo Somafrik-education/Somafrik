@@ -7,7 +7,7 @@
 ```text
 FINANCE BUSINESS MODEL = NO-GO   (inchangé)
 FINANCE F1 INVARIANTS            = GO (mergé)
-FINANCE F2 RÉFÉRENTIELS          = (gate ci-dessous)
+FINANCE F2 RÉFÉRENTIELS          = GO (Gates #364)
 ```
 
 ---
@@ -122,7 +122,13 @@ F3 obligations/classe/tarif · F4 soldes/allocations · F5 parité · F6 RBAC ·
 
 ## Verdict F2
 
-À remplir après Gates PR.
+```text
+FINANCE F2 RÉFÉRENTIELS  = GO
+FINANCE BUSINESS MODEL   = NO-GO
+```
+
+Local `verify:finance-fee-type-canonical` + `verify:finance-domain-invariants` : **GO**  
+PR #364 HEAD `7e59b80a` : **9/9 SUCCESS** (Scope, Secrets, Quality, Core tests, Risk-targeted incl. finance-fee-type-canonical, Required, architecture-audit, Admin User Creation, verify:ui-french-copy).
 
 ```text
 Référentiel Type de frais       UNIQUE (financeFeeTypes.js)
@@ -136,3 +142,11 @@ Cross-tenant                    catalogue système identique
 Historique                      PRÉSERVÉ (TEXT snapshot)
 Nouvelle duplication            0
 ```
+
+```text
+PR     DRAFT
+Ready  NON
+Merge  NON sans ordre CTO
+```
+
+F2 GO ≠ Finance business GO. Suite : F3 obligations, seulement après merge F2.
