@@ -919,6 +919,7 @@ module.exports = {
   setFeeGridStatus,
   applyFeeGrid,
   ensureEnrollmentFinanceObligations,
+  ensureEnrollmentFinanceObligationsInTx,
   adjustStudentFee,
   createReminder,
   isPaymentCounted,

@@ -89,8 +89,25 @@ function assertSourceGuards() {
     refuseIdx < mutateIdx,
     "UPDATE enrollment avant validation effectiveDate : refus NEEDS_EFFECTIVE_DATE doit précéder INSERT/UPDATE class_id",
   );
-  assert.match(ensureFn, /const financeSync = await this\.syncEnrollmentFinanceObligations/);
-  assert.match(ensureFn, /return financeSync/);
+
+  const transferStart = ensureFn.indexOf("if (classChanged) {");
+  assert.ok(transferStart >= 0, "branche classChanged atomique absente");
+  const transferBlock = ensureFn.slice(transferStart);
+  const txIdx = transferBlock.indexOf("withTransaction");
+  const transferInsertIdx = transferBlock.search(/INSERT INTO enrollments|enrollmentSql/);
+  const inTxIdx = transferBlock.indexOf("ensureEnrollmentObligationsInTx");
+  assert.ok(txIdx >= 0, "transfert de classe hors withTransaction");
+  assert.ok(transferInsertIdx >= 0, "mutation enrollment absente de la branche transfert");
+  assert.ok(inTxIdx >= 0, "ensureEnrollmentObligationsInTx absent de la branche transfert");
+  assert.ok(
+    txIdx < transferInsertIdx && transferInsertIdx < inTxIdx,
+    "transfert : mutation enrollment et Finance doivent être atomiques (même withTransaction)",
+  );
+  assert.match(transferBlock, /persistObligationSyncFailure/);
+  assert.ok(
+    ensureFn.indexOf("ensureEnrollmentObligationsInTx") < ensureFn.lastIndexOf("syncEnrollmentFinanceObligations"),
+    "class_transfer ne doit pas passer par syncEnrollmentFinanceObligations (avale les pannes)",
+  );
 
   const unswallowableStart = lifecycle.indexOf("function isUnswallowableFinanceSyncError");
   assert.ok(unswallowableStart >= 0, "isUnswallowableFinanceSyncError absent");
@@ -103,6 +120,13 @@ function assertSourceGuards() {
   assert.match(unswallowableFn, /FINANCE_ERROR\.ENROLLMENT_NOT_FOUND/);
   assert.match(unswallowableFn, /FINANCE_ERROR\.CLASS_ENROLLMENT_MISMATCH/);
   assert.match(unswallowableFn, /FINANCE_ERROR\.GRID_ENROLLMENT_MISMATCH/);
+  assert.match(lifecycle, /previousClassId/);
+  assert.match(lifecycle, /targetClassId/);
+  assert.match(lifecycle, /retryStatus: "pending"/);
+  assert.match(
+    lifecycle.slice(lifecycle.indexOf("function persistObligationSyncFailure")),
+    /effectiveDate: input\.effectiveDate/,
+  );
 
   assert.match(fees, /financeApi\.applyFeeGrid/);
   assert.doesNotMatch(fees, /applyFeeGridToStudents/);

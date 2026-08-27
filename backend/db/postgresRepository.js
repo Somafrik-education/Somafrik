@@ -3238,8 +3238,21 @@ class PostgresRepository {
         FINANCE_ERROR.NEEDS_EFFECTIVE_DATE,
       );
     }
-    await this.query(
-      `INSERT INTO enrollments (
+    const school = await this.one("SELECT school_code FROM schools WHERE id = $1", [schoolId]);
+    const student = await this.one(
+      `SELECT st.student_code, st.first_name, st.last_name, st.id
+       FROM students st WHERE st.id = $1`,
+      [studentDbId],
+    );
+    const klass = await this.one(
+      `SELECT id, class_code, name FROM classes WHERE id = $1`,
+      [classId],
+    );
+    if (!school || !student || !klass) return;
+    const previousClass = classChanged
+      ? await this.one(`SELECT id, class_code, name FROM classes WHERE id = $1`, [previous.class_id])
+      : null;
+    const enrollmentSql = `INSERT INTO enrollments (
          school_id, student_id, class_id, academic_year_id, enrollment_date, class_effective_date, status
        )
        VALUES ($1, $2, $3, $4, CURRENT_DATE, COALESCE($5::date, CURRENT_DATE), 'active')
@@ -3255,51 +3268,68 @@ class PostgresRepository {
              THEN COALESCE($5::date, enrollments.class_effective_date)
            ELSE COALESCE(enrollments.class_effective_date, enrollments.enrollment_date)
          END,
-         updated_at = NOW()`,
-      [schoolId, studentDbId, classId, academicYear.id, requestedEffectiveDate],
-    );
-    const school = await this.one("SELECT school_code FROM schools WHERE id = $1", [schoolId]);
-    const student = await this.one(
-      `SELECT st.student_code, st.first_name, st.last_name, st.id
-       FROM students st WHERE st.id = $1`,
-      [studentDbId],
-    );
-    const klass = await this.one(
-      `SELECT id, class_code, name FROM classes WHERE id = $1`,
-      [classId],
-    );
-    if (!school || !student || !klass) return;
-    const previousClass = classChanged
-      ? await this.one(`SELECT id, class_code, name FROM classes WHERE id = $1`, [previous.class_id])
-      : null;
-    const financeSync = await this.syncEnrollmentFinanceObligations(
-      {
-        reason: classChanged ? "class_transfer" : "enrollment_active",
+         updated_at = NOW()`;
+    const enrollmentParams = [schoolId, studentDbId, classId, academicYear.id, requestedEffectiveDate];
+    const financeInput = {
+      reason: classChanged ? "class_transfer" : "enrollment_active",
+      schoolCode: school.school_code,
+      studentKey: student.student_code,
+      student: {
+        id: student.student_code,
+        dbId: student.id,
+        publicId: student.student_code,
+        studentCode: student.student_code,
+        firstName: student.first_name,
+        lastName: student.last_name,
         schoolCode: school.school_code,
-        studentKey: student.student_code,
-        student: {
-          id: student.student_code,
-          dbId: student.id,
-          publicId: student.student_code,
-          studentCode: student.student_code,
-          firstName: student.first_name,
-          lastName: student.last_name,
-          schoolCode: school.school_code,
-          classId: klass.id,
-          classCode: klass.class_code,
-          className: klass.name,
-          academicYear: academicYear.name,
-        },
-        academicYear: academicYear.name,
         classId: klass.id,
-        previousClass: previousClass
-          ? { classId: previousClass.id, classCode: previousClass.class_code, className: previousClass.name }
-          : null,
-        effectiveDate: requestedEffectiveDate,
+        classCode: klass.class_code,
+        className: klass.name,
+        academicYear: academicYear.name,
       },
-      options.principal,
-    );
-    return financeSync;
+      academicYear: academicYear.name,
+      classId: klass.id,
+      previousClass: previousClass
+        ? { classId: previousClass.id, classCode: previousClass.class_code, className: previousClass.name }
+        : null,
+      effectiveDate: requestedEffectiveDate,
+    };
+    if (classChanged) {
+      const {
+        persistObligationSyncFailure,
+        FINANCE_OBLIGATION_SYNC_FAILED,
+      } = require("../lib/financeObligationLifecycle");
+      const actor = options.principal || {
+        role: "system",
+        schoolCode: school.school_code,
+        sub: "finance-obligation-lifecycle",
+      };
+      try {
+        return await this.withTransaction(async (tx) => {
+          const scoped = this.createTxScope(tx);
+          await scoped.query(enrollmentSql, enrollmentParams);
+          return this.getFinanceStore().ensureEnrollmentObligationsInTx(tx, financeInput, actor);
+        });
+      } catch (error) {
+        await persistObligationSyncFailure(this.getFinanceStore(), financeInput, actor, null, error);
+        error.financeSync = {
+          created: 0,
+          skipped: 0,
+          superseded: 0,
+          reason: FINANCE_OBLIGATION_SYNC_FAILED,
+          error: error?.code || error?.message,
+          previousClassId: previousClass?.id || null,
+          targetClassId: klass.id,
+          effectiveDate: requestedEffectiveDate,
+          academicYear: academicYear.name,
+          studentId: student.student_code,
+          retryStatus: "pending",
+        };
+        throw error;
+      }
+    }
+    await this.query(enrollmentSql, enrollmentParams);
+    return this.syncEnrollmentFinanceObligations(financeInput, options.principal);
   }
 
   async ensureSchoolFromBackOfficeRecord(schoolCode, context = {}) {

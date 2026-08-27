@@ -541,6 +541,147 @@ async function main() {
         [studentTransfer.rows[0].id, klassB.rows[0].id],
       );
       assert.ok(sixBCreated.rowCount >= 1, "obligations 6B absentes après retry daté");
+
+      const studentRecovery = await pool.query(
+        `INSERT INTO students (school_id, student_code, first_name, last_name)
+         VALUES ($1, 'CD-2026-0001-STU-0003', 'Kadi', 'Traore') RETURNING id`,
+        [schoolA.rows[0].id],
+      );
+      await pool.query(
+        `INSERT INTO enrollments (school_id, student_id, class_id, academic_year_id, status, enrollment_date, class_effective_date)
+         VALUES ($1, $2, $3, $4, 'active', '2026-09-01', '2026-09-01')`,
+        [schoolA.rows[0].id, studentRecovery.rows[0].id, klassA.rows[0].id, year.rows[0].id],
+      );
+      const seededRecovery = await store.ensureEnrollmentObligations(
+        {
+          reason: "enrollment_active",
+          schoolCode: "CD-2026-0001",
+          studentKey: "CD-2026-0001-STU-0003",
+          academicYear: "2026-2027",
+          classId: klassA.rows[0].id,
+        },
+        admin,
+      );
+      assert.ok(seededRecovery.created >= 3, "obligations 6A de recovery absentes");
+      const recoveryBefore = await pool.query(
+        `SELECT class_id, class_effective_date FROM enrollments WHERE student_id = $1`,
+        [studentRecovery.rows[0].id],
+      );
+      const recoveryObligationsBefore = await pool.query(
+        `SELECT id, class_id, period_key, archived_at FROM student_fee_obligations WHERE student_id = $1`,
+        [studentRecovery.rows[0].id],
+      );
+
+      const originalWithTransaction = pgRepo.withTransaction.bind(pgRepo);
+      let failFinanceOnce = true;
+      pgRepo.withTransaction = (fn) =>
+        originalWithTransaction(async (tx) => {
+          if (failFinanceOnce) {
+            const originalQuery = tx.query.bind(tx);
+            tx.query = async (sql, params) => {
+              if (failFinanceOnce && /INSERT INTO student_fee_obligations/i.test(String(sql))) {
+                failFinanceOnce = false;
+                const error = new Error("forced engine failure");
+                error.code = "FORCED_ENGINE_FAILURE";
+                throw error;
+              }
+              return originalQuery(sql, params);
+            };
+          }
+          return fn(tx);
+        });
+      await assert.rejects(
+        () =>
+          pgRepo.ensureActiveEnrollment(schoolA.rows[0].id, studentRecovery.rows[0].id, klassB.rows[0].id, {
+            effectiveDate: "2026-09-15",
+            principal: admin,
+          }),
+        (error) =>
+          error.code === "FORCED_ENGINE_FAILURE" &&
+          error.financeSync?.reason === "FINANCE_OBLIGATION_SYNC_FAILED" &&
+          String(error.financeSync.previousClassId) === String(klassA.rows[0].id) &&
+          String(error.financeSync.targetClassId) === String(klassB.rows[0].id) &&
+          error.financeSync.effectiveDate === "2026-09-15" &&
+          error.financeSync.retryStatus === "pending",
+      );
+      pgRepo.withTransaction = originalWithTransaction;
+
+      const recoveryAfterFail = await pool.query(
+        `SELECT class_id, class_effective_date FROM enrollments WHERE student_id = $1`,
+        [studentRecovery.rows[0].id],
+      );
+      assert.equal(
+        String(recoveryAfterFail.rows[0].class_id),
+        String(klassA.rows[0].id),
+        "panne Finance : enrollment doit rester 6A",
+      );
+      assert.equal(isoDate(recoveryAfterFail.rows[0].class_effective_date), isoDate(recoveryBefore.rows[0].class_effective_date));
+      const recoveryObligationsAfterFail = await pool.query(
+        `SELECT class_id, period_key, archived_at, cancel_reason FROM student_fee_obligations WHERE student_id = $1`,
+        [studentRecovery.rows[0].id],
+      );
+      assert.equal(recoveryObligationsAfterFail.rowCount, recoveryObligationsBefore.rowCount);
+      assert.equal(
+        recoveryObligationsAfterFail.rows.every((row) => String(row.class_id) === String(klassA.rows[0].id) && !row.archived_at),
+        true,
+        "panne Finance : 0 dette corrompue",
+      );
+      const recoverySixBAfterFail = recoveryObligationsAfterFail.rows.filter(
+        (row) => String(row.class_id) === String(klassB.rows[0].id),
+      );
+      assert.equal(recoverySixBAfterFail.length, 0);
+      const recoveryAudit = await pool.query(
+        `SELECT new_value FROM audit_logs
+         WHERE action = 'finance_obligation_sync_failed'
+           AND new_value->>'studentId' = 'CD-2026-0001-STU-0003'
+         ORDER BY created_at DESC
+         LIMIT 1`,
+      );
+      assert.equal(recoveryAudit.rowCount, 1, "contexte de transfert durable absent");
+      assert.equal(String(recoveryAudit.rows[0].new_value.previousClassId), String(klassA.rows[0].id));
+      assert.equal(String(recoveryAudit.rows[0].new_value.targetClassId), String(klassB.rows[0].id));
+      assert.equal(recoveryAudit.rows[0].new_value.effectiveDate, "2026-09-15");
+      assert.equal(recoveryAudit.rows[0].new_value.academicYear, "2026-2027");
+      assert.equal(recoveryAudit.rows[0].new_value.retryStatus, "pending");
+      assert.equal(recoveryAudit.rows[0].new_value.lifecycleReason, "class_transfer");
+
+      const recoveryRetry = await pgRepo.ensureActiveEnrollment(
+        schoolA.rows[0].id,
+        studentRecovery.rows[0].id,
+        klassB.rows[0].id,
+        { effectiveDate: "2026-09-15", principal: admin },
+      );
+      assert.ok(recoveryRetry.superseded >= 1, "retry : futures 6A non superseded");
+      assert.ok(recoveryRetry.created >= 1, "retry : obligations 6B non créées");
+      const recoveryAfterRetry = await pool.query(
+        `SELECT class_id, class_effective_date FROM enrollments WHERE student_id = $1`,
+        [studentRecovery.rows[0].id],
+      );
+      assert.equal(String(recoveryAfterRetry.rows[0].class_id), String(klassB.rows[0].id));
+      assert.equal(isoDate(recoveryAfterRetry.rows[0].class_effective_date), "2026-09-15");
+      const recoveryOctOld = await pool.query(
+        `SELECT archived_at, cancel_reason FROM student_fee_obligations
+         WHERE student_id = $1 AND period_key = '2026-10' AND class_id = $2`,
+        [studentRecovery.rows[0].id, klassA.rows[0].id],
+      );
+      assert.equal(recoveryOctOld.rowCount, 1);
+      assert.ok(recoveryOctOld.rows[0].archived_at);
+      assert.equal(recoveryOctOld.rows[0].cancel_reason, "CLASS_TRANSFER");
+      const recoverySixB = await pool.query(
+        `SELECT period_key FROM student_fee_obligations
+         WHERE student_id = $1 AND class_id = $2 AND archived_at IS NULL`,
+        [studentRecovery.rows[0].id, klassB.rows[0].id],
+      );
+      assert.ok(recoverySixB.rowCount >= 1);
+      const recoveryActiveSameKey = await pool.query(
+        `SELECT period_key, count(*)::int AS n
+         FROM student_fee_obligations
+         WHERE student_id = $1 AND archived_at IS NULL
+         GROUP BY period_key
+         HAVING count(*) > 1`,
+        [studentRecovery.rows[0].id],
+      );
+      assert.equal(recoveryActiveSameKey.rowCount, 0, "retry : double débit");
     } finally {
       await pgRepo.close();
     }

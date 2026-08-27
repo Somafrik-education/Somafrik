@@ -814,6 +814,25 @@ function createFinancePgStore(repo) {
     applyFinanceFeeGrid: (id, principal, options) => financeService.applyFeeGrid(api, id, principal, options),
     ensureEnrollmentObligations: (input, principal, auditMeta) =>
       financeService.ensureEnrollmentFinanceObligations(api, input, principal, auditMeta),
+    ensureEnrollmentObligationsInTx: async (tx, input, principal, auditMeta) => {
+      const financeTx = bind(repo.createTxScope(tx));
+      let school = input.school;
+      if (!school && input.schoolCode && typeof financeTx.getSchoolByCode === "function") {
+        school = await financeTx.getSchoolByCode(input.schoolCode);
+      }
+      let students = input.students;
+      if (!students && input.student) students = [input.student];
+      if (!students && input.studentKey && typeof financeTx.findStudent === "function") {
+        const found = await financeTx.findStudent(input.studentKey, principal);
+        students = found ? [found] : [];
+      }
+      return financeService.ensureEnrollmentFinanceObligationsInTx(
+        financeTx,
+        { ...input, school, students },
+        principal,
+        auditMeta,
+      );
+    },
     listFinanceFeeGrids: async (principal) => {
       const scope = resolveFinanceSchoolScope(principal);
       if (scope.mode === "none") return [];

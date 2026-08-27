@@ -13,6 +13,7 @@ const {
   NO_APPLICABLE_GRID,
   FINANCE_OBLIGATION_SYNC_FAILED,
   pickEnrollment,
+  persistObligationSyncFailure,
   isUnswallowableFinanceSyncError,
 } = require("./financeObligationLifecycle");
 
@@ -557,6 +558,38 @@ describe("F3 P1 intégration — erreurs non avalables", () => {
     assert.equal(isUnswallowableFinanceSyncError({ code: FINANCE_ERROR.TENANT_MISMATCH }), true);
     assert.equal(isUnswallowableFinanceSyncError({ code: "FORCED_ENGINE_FAILURE" }), false);
     assert.equal(isUnswallowableFinanceSyncError({ code: FINANCE_OBLIGATION_SYNC_FAILED }), false);
+  });
+});
+
+describe("F3 P1 recovery — contexte de transfert durable", () => {
+  it("persistObligationSyncFailure conserve previousClass, targetClass et effectiveDate", async () => {
+    const store = createStore();
+    const error = new Error("forced engine failure");
+    error.code = "FORCED_ENGINE_FAILURE";
+    await persistObligationSyncFailure(
+      store,
+      {
+        reason: OBLIGATION_LIFECYCLE_REASON.CLASS_TRANSFER,
+        studentKey: STUDENT_ID,
+        classId: "class-6b",
+        academicYear: "2026-2027",
+        effectiveDate: "2026-09-15",
+        previousClass: { classId: "class-6a", classCode: "CLS-6A", className: "6ème A" },
+        student: { classCode: "CLS-6B", className: "6ème B", studentCode: STUDENT_ID },
+      },
+      admin,
+      null,
+      error,
+    );
+    const audit = store.tables.auditLogs.find((row) => row.action === "finance_obligation_sync_failed");
+    assert.ok(audit);
+    assert.equal(audit.newValue.previousClassId, "class-6a");
+    assert.equal(audit.newValue.targetClassId, "class-6b");
+    assert.equal(audit.newValue.effectiveDate, "2026-09-15");
+    assert.equal(audit.newValue.academicYear, "2026-2027");
+    assert.equal(audit.newValue.retryStatus, "pending");
+    assert.equal(audit.newValue.lifecycleReason, OBLIGATION_LIFECYCLE_REASON.CLASS_TRANSFER);
+    assert.equal(audit.newValue.errorCode, "FORCED_ENGINE_FAILURE");
   });
 });
 
