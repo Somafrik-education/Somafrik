@@ -81,13 +81,13 @@ export interface FeeBalance {
 
 export interface QuickPaymentLine {
   id: string;
-  feeType: string;
+  obligationId: string;
   amount: string;
 }
 
-export function createPaymentLine(feeType = "Scolarité"): QuickPaymentLine {
+export function createPaymentLine(obligationId = "__unallocated__"): QuickPaymentLine {
   const rand = globalThis.crypto?.randomUUID?.() ?? `line-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-  return { id: rand, feeType, amount: "" };
+  return { id: rand, obligationId, amount: "" };
 }
 
 export function parseLineAmount(value: string | number | undefined): number {
@@ -466,7 +466,7 @@ export function validateMultiItemPaymentInput(input: {
   const lines = input.lines ?? [];
   if (!lines.length) return "Ajoutez au moins un libellé";
   for (const line of lines) {
-    if (!line.feeType) return "Chaque ligne doit avoir un type de frais";
+    if (!String(line.obligationId ?? "").trim()) return "Chaque ligne doit cibler une obligation ou Non imputé";
     const amount = parseLineAmount(line.amount);
     if (!Number.isFinite(amount) || amount <= 0) return "Chaque libellé doit avoir un montant strictement positif";
   }

@@ -38,7 +38,7 @@ assert.match(api, /\/evaluation-types/);
 assert.doesNotMatch(api, /persistOutbox/);
 
 const outbox = read("lib/outbox.ts");
-assert.match(outbox, /export const OUTBOX_ALLOWED_DOMAINS = \["messages", "presences", "notes", "payments"\]/);
+assert.match(outbox, /export const OUTBOX_ALLOWED_DOMAINS = \["messages", "presences", "notes"\]/);
 
 const periods = read("lib/schoolAcademicPeriods.ts");
 assert.match(periods, /resolveAcademicYearBounds/);

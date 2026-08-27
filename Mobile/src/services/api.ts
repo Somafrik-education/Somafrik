@@ -721,7 +721,7 @@ function normalizeStudentFeeRow(raw: unknown): CanonicalStudentFee {
     amountDue,
     amountPaid,
     exemption,
-    balance: Number(row.balance ?? Math.max(0, amountDue - amountPaid - exemption)),
+    balance: Number(row.balance),
     status: String(row.status ?? ""),
     archivedAt: row.archivedAt ? String(row.archivedAt) : row.archived_at ? String(row.archived_at) : null,
     feeType: row.feeType ? String(row.feeType) : undefined,

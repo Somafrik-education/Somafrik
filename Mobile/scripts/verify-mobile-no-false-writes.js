@@ -122,6 +122,10 @@ function main() {
   assert.doesNotMatch(payments, /writePaymentsWebOnly/);
   const paymentControls = read(path.join("components", "PaymentMutationControls.tsx"));
   assert.match(paymentControls, /createSchoolPayment\(payload, \{ idempotencyKey \}\)/);
+  assert.match(paymentControls, /isOfflineContext/);
+  assert.match(paymentControls, /Aucune file Finance/);
+  assert.doesNotMatch(paymentControls, /persistOutbox:\s*true/);
+  assert.doesNotMatch(paymentControls, /submitProtectedMutation/);
   const paymentCancel = read(path.join("components", "PaymentCancelControls.tsx"));
   assert.match(paymentCancel, /cancelSchoolPayment/);
   assert.match(paymentCancel, /canCancelSchoolPayment/);
@@ -131,7 +135,7 @@ function main() {
   assert.match(paymentControls, /getOrCreate\(PAYMENT_DRAFT_INTENTION\)/);
   assert.match(paymentControls, /label="Élève"/);
   assert.match(paymentControls, /label="Classe"/);
-  assert.match(paymentControls, /buildSchoolPaymentPayload/);
+  assert.match(paymentControls, /buildFinancePaymentWritePayload/);
   assert.match(paymentControls, /preselectPaymentClassId/);
   assert.match(paymentControls, /collectOpenPaymentFees/);
   assert.match(paymentControls, /obligationId/);
@@ -153,6 +157,8 @@ function main() {
   assert.match(studentPayments, /getPaymentStudentOptions/);
   assert.match(studentPayments, /getFinanceCatalog/);
   assert.match(studentPayments, /paymentMethods=\{paymentMethods\}/);
+  assert.doesNotMatch(studentPayments, /loadStudents/);
+  assert.doesNotMatch(studentPayments, /studentsData as PaymentStudent/);
 
   assert.match(announcements, /AnnouncementMutationControls/);
   assert.doesNotMatch(announcements, /AdminCrud/);

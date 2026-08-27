@@ -7,7 +7,7 @@ import { getConnectivityState, isOfflineContext } from "./connectivity";
 import { classifyMutationFailure, createIdempotencyKey, executeMutation, type MutationFailureKind } from "./networkResilience";
 import { safeLogger } from "../services/safeLogger";
 
-export const OUTBOX_ALLOWED_DOMAINS = ["messages", "presences", "notes", "payments"] as const;
+export const OUTBOX_ALLOWED_DOMAINS = ["messages", "presences", "notes"] as const;
 export type OutboxDomain = (typeof OUTBOX_ALLOWED_DOMAINS)[number];
 
 export const OUTBOX_PERSIST_FAILED = "OUTBOX_PERSIST_FAILED";

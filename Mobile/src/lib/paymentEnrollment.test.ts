@@ -105,13 +105,11 @@ const payload = buildSchoolPaymentPayload({
   method: "Espèces",
   date: "2026-08-22",
 });
-assert.deepEqual(payload, {
-  studentId: awa.id,
-  classId: awa.classId,
-  method: "Espèces",
-  date: "2026-08-22",
-  items: [{ feeType: "Scolarité", amount: 25000 }],
-});
+assert.deepEqual(payload.items, [{ feeType: "Non imputé", amount: 25000 }]);
+assert.equal(payload.method, "Espèces");
+assert.equal(payload.paymentMethod, "Espèces");
+assert.equal(payload.date, "2026-08-22");
+assert.equal(payload.paidAt, "2026-08-22");
 assert.ok(!("className" in payload), "className n'est pas une identité métier");
 
 const identified = buildSchoolPaymentPayload({
@@ -125,7 +123,7 @@ const identified = buildSchoolPaymentPayload({
   schoolFeeItemId: "fee-item-1",
 });
 assert.deepEqual(identified.items, [
-  { feeType: "Mensualité", amount: 150, obligationId: "obl-maeva-mens", feeTypeId: "fee-item-1" },
+  { obligationId: "obl-maeva-mens", amount: 150, feeType: "Mensualité", feeLabel: "Mensualité" },
 ]);
 
 const unallocatedPayload = buildSchoolPaymentPayload({
@@ -136,15 +134,26 @@ const unallocatedPayload = buildSchoolPaymentPayload({
   method: "Espèces",
   date: "2026-08-24",
 });
-const unallocatedItem = (unallocatedPayload.items as Array<{ feeType: string }>)[0];
-assert.equal(unallocatedItem.feeType, "");
+const unallocatedItem = (unallocatedPayload.items as Array<{ feeType: string; obligationId?: string }>)[0];
+assert.equal(unallocatedItem.feeType, "Non imputé");
+assert.equal(unallocatedItem.obligationId, undefined);
 assert.notEqual(unallocatedItem.feeType, "Acompte");
 
 const openFees = collectOpenPaymentFees(awa.id, [
   { id: "obl-1", studentId: awa.id, feeType: "Mensualité", label: "Mensualité", balance: 1000, status: "À payer" },
   { id: "obl-paid", studentId: awa.id, feeType: "Inscription", label: "Inscription", balance: 0, status: "Payé" },
+  {
+    id: "obl-invented",
+    studentId: awa.id,
+    feeType: "Transport",
+    label: "Transport",
+    amountDue: 3000,
+    amountPaid: 0,
+    exemption: 0,
+    status: "À payer",
+  },
 ]);
-assert.equal(openFees.length, 1);
+assert.equal(openFees.length, 1, "sans balance serveur, la dette n'est pas ouverte");
 assert.equal(openFees[0].obligationId, "obl-1");
 assert.equal(preselectPaymentObligationId(awa.id, [
   { id: "obl-1", studentId: awa.id, balance: 1000, status: "À payer" },
@@ -157,13 +166,25 @@ assert.equal(
     classOptions: [{ classId: String(awa.classId) }],
     obligationOptions: [{ obligationId: "obl-1" }],
   }).obligationId,
-  "Frais est obligatoire.",
+  undefined,
+  "sans obligationId le reçu est explicitement Non imputé",
+);
+assert.equal(
+  validatePaymentDraft({
+    studentId: awa.id,
+    amount: "150",
+    classId: awa.classId,
+    classOptions: [{ classId: String(awa.classId) }],
+    obligationId: "foreign",
+    obligationOptions: [{ obligationId: "obl-1" }],
+  }).obligationId,
+  "Frais invalide pour cet élève.",
 );
 
 assert.equal(hasFieldErrors(validatePaymentDraft({ studentId: "", amount: "abc" })), true);
 assert.match(validatePaymentDraft({ studentId: awa.id, amount: "0", classId: awa.classId, classOptions: [{ classId: String(awa.classId) }] }).amount, /montant positif/);
 
-assert.equal(paymentSubmitErrorMessage("in_flight"), "Paiement conservé en file. Pas de succès local.");
+assert.equal(paymentSubmitErrorMessage("in_flight"), "Paiement hors connexion refusé. Aucune file Finance.");
 assert.match(
   paymentSubmitErrorMessage("blocked_sending", new Error("Cet envoi est déjà en cours de synchronisation.")),
   /déjà en cours de synchronisation/,
@@ -173,6 +194,10 @@ assert.equal(
   "Cet élève n'a aucune inscription active.",
 );
 assert.equal(paymentSubmitErrorMessage("failed"), "Enregistrement refusé.");
+assert.equal(
+  paymentSubmitErrorMessage("failed", new Error("OUTBOX_PERSIST_FAILED")),
+  "Paiement hors connexion refusé. Aucune file Finance.",
+);
 
 const fromOptions = paymentStudentsFromOptions([
   {

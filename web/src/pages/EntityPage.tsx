@@ -994,23 +994,7 @@ function EntityPageContent({ entity, mode, classScope, disableCreate = false }: 
         return;
       }
       try {
-        await persistFinanceMutation(
-          () =>
-            financeApi.createPayment({
-              studentId: preparedItem.studentId,
-              items: [
-                {
-                  feeType: preparedItem.feeType || preparedItem.label || "Inscription",
-                  amount: preparedItem.amount,
-                },
-              ],
-              paymentMethod: preparedItem.method,
-              paidAt: preparedItem.date,
-              comment: preparedItem.comment,
-            }),
-          entityMutationSuccessMessage(module.label, false),
-          () => setEditing(null),
-        );
+        showToast("Utilisez Enregistrer un paiement. L'imputation exige une obligationId ou Non imputé.", "error");
       } catch {
         /* toast */
       }

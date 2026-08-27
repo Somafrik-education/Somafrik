@@ -12,7 +12,7 @@ export const MOBILE_MUTATION_INVENTORY = [
   { name: "saveNote", method: "POST", path: "/notes", class: "B", outbox: true, domain: "notes" },
   { name: "createEvaluation", method: "POST", path: "/evaluations", class: "B", outbox: false, domain: "evaluations" },
   { name: "updateEvaluation", method: "PATCH", path: "/evaluations/:id", class: "A", outbox: false, domain: "evaluations" },
-  { name: "createSchoolPayment", method: "POST", path: "/payments", class: "B", outbox: true, domain: "payments" },
+  { name: "createSchoolPayment", method: "POST", path: "/payments", class: "B", outbox: false, domain: "payments" },
   { name: "cancelSchoolPayment", method: "POST", path: "/payments/:id/cancel", class: "B", outbox: false, domain: "payments" },
   {
     name: "reconcilePaymentAllocations",
