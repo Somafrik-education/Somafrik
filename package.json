@@ -120,6 +120,7 @@
     "verify:mobile-evaluations-v2": "npm --prefix Mobile run verify:mobile-evaluations-v2",
     "verify:mobile-planning-v2": "npm --prefix Mobile run verify:mobile-planning-v2",
     "verify:mobile-network-resilience": "npm --prefix Mobile run verify:mobile-network-resilience",
+    "verify:mobile-l1-sqlite-cache": "npm --prefix Mobile run verify:mobile-l1-sqlite-cache",
     "verify:mobile-usability": "npm --prefix Mobile run verify:mobile-usability",
     "verify:mobile-form-fields": "npm --prefix Mobile run verify:mobile-form-fields",
     "verify:mobile-ux-v1": "npm --prefix Mobile run verify:mobile-ux-v1",
