@@ -158,7 +158,7 @@ export default function PaymentsScreen({ navigation }: any) {
         </>
       }
       renderItem={({ item: payment }) => {
-        const student = studentsData.find((row) => row.id === payment.studentId);
+        const student = paymentStudents.find((row) => row.id === payment.studentId);
         return (
           <>
             <PaymentReceiptCard
