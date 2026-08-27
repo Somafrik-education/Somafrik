@@ -20,25 +20,36 @@ import {
 import { applyL1PageAtomically, markResourceState } from "./repository";
 import { resetL1LifecycleForTests } from "./lifecycle";
 import {
+  logRc2L1Page,
   logRc2L1Read,
   logRc2L1ReadFromSnapshot,
   logRc2L1Refusal,
   logRc2L1Sync,
+  logRc2L1SyncException,
   logRc2L1SyncResults,
+  logRc2L1SyncStart,
   logRc2OfflineBoot,
+  RC2_L1_PAGE_TAG,
   RC2_L1_READ_TAG,
   RC2_L1_REFUSAL_TAG,
   RC2_L1_RESOURCES,
+  RC2_L1_SYNC_EXCEPTION_TAG,
+  RC2_L1_SYNC_START_TAG,
   RC2_L1_SYNC_TAG,
   RC2_OFFLINE_BOOT_TAG,
   RC2_OFFLINE_READ_SMOKE_TAG,
   resetRc2OfflineReadSmokeForTests,
 } from "./rc2OfflineReadSmoke";
-import type { L1Page, L1Partition, L1Resource } from "./types";
+import { syncL1Cache } from "./syncEngine";
+import type { L1Api, L1Page, L1Partition, L1Resource } from "./types";
+import { L1_RESOURCES } from "./types";
 
 const ROOT = path.resolve(__dirname, "../../..");
 const L1_READ_LINE = /^RC2_L1_READ resource=[a-z-]+ source=[a-z0-9-]+ status=[a-z]+ rows=\d+$/;
 const SYNC_LINE = /^RC2_L1_SYNC resource=[a-z-]+ outcome=[a-z_]+(?: code=[A-Z0-9_]+)?$/;
+const SYNC_START_LINE = /^RC2_L1_SYNC_START resource=[a-z-]+$/;
+const PAGE_LINE = /^RC2_L1_PAGE resource=[a-z-]+ mode=(full|delta|full_required|unavailable) hasMore=(true|false) page=\d+$/;
+const EXCEPTION_LINE = /^RC2_L1_SYNC_EXCEPTION resource=[a-z-]+ reason=unexpected$/;
 const REFUSAL_LINE = /^RC2_L1_REFUSAL resource=[a-z-]+ reason=[a-z_]+$/;
 const BOOT_LINE = /^RC2_OFFLINE_BOOT permissions=ready_offline(?: status=[a-z_]+)?$/;
 const OK_LINE = /^RC2_OFFLINE_READ_SMOKE OK$/;
@@ -217,6 +228,23 @@ async function run() {
   logRc2L1Refusal({ resource: "not-a-resource", reason: "metadata_absent" });
   assert.equal(lines.filter((line) => line.includes("not-a-resource")).length, 0);
 
+  logRc2L1SyncStart({ resource: "classes" });
+  assert.equal(lines.at(-1), "RC2_L1_SYNC_START resource=classes");
+  assert.match(lines.at(-1) ?? "", SYNC_START_LINE);
+  logRc2L1Page({ resource: "classes", mode: "full", hasMore: false, page: 1 });
+  assert.equal(lines.at(-1), "RC2_L1_PAGE resource=classes mode=full hasMore=false page=1");
+  assert.match(lines.at(-1) ?? "", PAGE_LINE);
+  logRc2L1Page({ resource: "students", mode: "unavailable", hasMore: true, page: 2 });
+  assert.equal(lines.at(-1), "RC2_L1_PAGE resource=students mode=unavailable hasMore=true page=2");
+  logRc2L1Page({ resource: "assignments", mode: "secret-mode", hasMore: false, page: 1 });
+  assert.equal(lines.filter((line) => line.includes("secret-mode")).length, 0);
+  logRc2L1SyncException({ resource: "classes", reason: "unexpected" });
+  assert.equal(lines.at(-1), "RC2_L1_SYNC_EXCEPTION resource=classes reason=unexpected");
+  assert.match(lines.at(-1) ?? "", EXCEPTION_LINE);
+  logRc2L1SyncException({ resource: "students", reason: "Error: boom jwt" });
+  assert.equal(lines.at(-1), "RC2_L1_SYNC_EXCEPTION resource=students reason=unexpected");
+  assert.equal(lines.filter((line) => /boom|jwt/i.test(line) && line.startsWith(RC2_L1_SYNC_EXCEPTION_TAG)).length, 0);
+
   resetL1LifecycleForTests();
   setL1ReadDepsForTests(null);
   const store = createMemoryL1Store();
@@ -299,6 +327,67 @@ async function run() {
   assert.ok(lines.includes("RC2_L1_REFUSAL resource=school-courses reason=metadata_absent"));
   assert.equal(lines.at(-1), "RC2_L1_READ resource=school-courses source=none status=offline rows=0");
 
+  const hits: Record<string, number> = {};
+  const sequentialApi: L1Api = {
+    async fetchPage(resource) {
+      hits[resource] = (hits[resource] ?? 0) + 1;
+      if (resource === "classes" && hits[resource] === 1) {
+        return {
+          resource,
+          mode: "unavailable",
+          cursorStatus: "ok",
+          scopeHash: "h",
+          items: [],
+          nextCursor: "",
+          hasMore: false,
+        } satisfies L1Page;
+      }
+      return {
+        resource,
+        mode: "full",
+        cursorStatus: "ok",
+        scopeHash: "h",
+        items: [{ id: `${resource}-1` }],
+        nextCursor: "c",
+        hasMore: false,
+      } satisfies L1Page;
+    },
+  };
+  resetRc2OfflineReadSmokeForTests({
+    logger: { warn: (message) => lines.push(message) },
+  });
+  lines.length = 0;
+  const syncStore = createMemoryL1Store();
+  await syncStore.migrate();
+  const syncResults = await syncL1Cache({
+    store: syncStore,
+    api: sequentialApi,
+    partition: partitionA,
+    isCurrent: () => true,
+  });
+  const startIdx = lines.findIndex((line) => line === "RC2_L1_SYNC_START resource=classes");
+  const pageUnavailableIdx = lines.findIndex(
+    (line) => line === "RC2_L1_PAGE resource=classes mode=unavailable hasMore=false page=1",
+  );
+  const pageFullIdx = lines.findIndex(
+    (line) => line === "RC2_L1_PAGE resource=classes mode=full hasMore=false page=2",
+  );
+  const syncClassesIdx = lines.findIndex((line) => line === "RC2_L1_SYNC resource=classes outcome=ready");
+  const startStudentsIdx = lines.findIndex((line) => line === "RC2_L1_SYNC_START resource=students");
+  assert.ok(startIdx >= 0);
+  assert.ok(pageUnavailableIdx > startIdx, "PAGE unavailable avant outcome");
+  assert.ok(pageFullIdx > pageUnavailableIdx);
+  assert.ok(syncClassesIdx > pageFullIdx, "SYNC classes immédiat, pas après les 5");
+  assert.ok(startStudentsIdx > syncClassesIdx, "students démarre après outcome classes");
+  assert.deepEqual(
+    syncResults.map((row) => row.outcome),
+    L1_RESOURCES.map(() => "ready"),
+  );
+  for (const resource of L1_RESOURCES) {
+    assert.ok(lines.includes(`RC2_L1_SYNC_START resource=${resource}`));
+    assert.ok(lines.includes(`RC2_L1_SYNC resource=${resource} outcome=ready`));
+  }
+
   const teacher = {
     role: "teacher",
     user: { id: "user-a", schoolId: "school-1" },
@@ -366,7 +455,12 @@ async function run() {
 
   const runtimeSrc = fs.readFileSync(path.join(ROOT, "src/offline/l1/L1CacheRuntime.tsx"), "utf8");
   assert.match(runtimeSrc, /logRc2OfflineBoot/);
-  assert.match(runtimeSrc, /logRc2L1SyncResults/);
+  assert.doesNotMatch(runtimeSrc, /logRc2L1SyncResults/);
+  assert.match(runtimeSrc, /await syncL1Cache/);
+  const syncEngineSrc = fs.readFileSync(path.join(ROOT, "src/offline/l1/syncEngine.ts"), "utf8");
+  assert.match(syncEngineSrc, /logRc2L1SyncStart/);
+  assert.match(syncEngineSrc, /logRc2L1Page/);
+  assert.match(syncEngineSrc, /logRc2L1SyncException/);
   const readModelSrc = fs.readFileSync(path.join(ROOT, "src/offline/l1/readModel.ts"), "utf8");
   assert.match(readModelSrc, /logRc2L1ReadFromSnapshot/);
   assert.match(readModelSrc, /logRc2L1Refusal/);
@@ -374,6 +468,9 @@ async function run() {
   const markerSrc = fs.readFileSync(path.join(ROOT, "src/offline/l1/rc2OfflineReadSmoke.ts"), "utf8");
   assert.match(markerSrc, new RegExp(RC2_L1_READ_TAG));
   assert.match(markerSrc, new RegExp(RC2_L1_SYNC_TAG));
+  assert.match(markerSrc, new RegExp(RC2_L1_SYNC_START_TAG));
+  assert.match(markerSrc, new RegExp(RC2_L1_PAGE_TAG));
+  assert.match(markerSrc, new RegExp(RC2_L1_SYNC_EXCEPTION_TAG));
   assert.match(markerSrc, new RegExp(RC2_L1_REFUSAL_TAG));
   assert.match(markerSrc, new RegExp(RC2_OFFLINE_BOOT_TAG));
   assert.match(markerSrc, new RegExp(RC2_OFFLINE_READ_SMOKE_TAG));

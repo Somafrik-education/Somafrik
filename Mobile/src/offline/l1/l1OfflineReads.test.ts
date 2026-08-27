@@ -129,7 +129,10 @@ async function run() {
   assert.match(readModelSrc, /logRc2L1Refusal/);
   const runtimeSrc = fs.readFileSync(path.join(ROOT, "src/offline/l1/L1CacheRuntime.tsx"), "utf8");
   assert.match(runtimeSrc, /logRc2OfflineBoot/);
-  assert.match(runtimeSrc, /logRc2L1SyncResults/);
+  const syncEngineSrc = fs.readFileSync(path.join(ROOT, "src/offline/l1/syncEngine.ts"), "utf8");
+  assert.match(syncEngineSrc, /logRc2L1SyncStart/);
+  assert.match(syncEngineSrc, /logRc2L1Page/);
+  assert.match(syncEngineSrc, /logRc2L1SyncException/);
 
   const bucket = createMemoryL1Bucket();
   const store = createMemoryL1Store({ bucket });

@@ -33,19 +33,18 @@ Fallback cache seulement pour `NETWORK_UNAVAILABLE`.
 ## Instrumentation (logcat, non sensible)
 
 ```text
+RC2_L1_SYNC_START resource=classes
+RC2_L1_PAGE resource=classes mode=full hasMore=false page=1
 RC2_L1_SYNC resource=classes outcome=ready
-RC2_L1_SYNC resource=students outcome=ready
-RC2_L1_SYNC resource=assignments outcome=ready
-RC2_L1_SYNC resource=school-courses outcome=ready
-RC2_L1_SYNC resource=course-schedules outcome=ready
-RC2_L1_READ resource=classes source=l1-cache status=success rows=4
-RC2_L1_READ resource=students source=l1-cache status=success rows=87
-RC2_L1_READ resource=assignments source=l1-cache status=success rows=12
-RC2_L1_READ resource=school-courses source=l1-cache status=success rows=18
-RC2_L1_READ resource=course-schedules source=l1-cache status=success rows=24
-RC2_OFFLINE_BOOT permissions=ready_offline
-RC2_OFFLINE_READ_SMOKE OK
+RC2_L1_SYNC_START resource=students
+...
 ```
+
+`mode` ∈ `full` | `delta` | `full_required` | `unavailable`.  
+`hasMore` ∈ `true` | `false`. `page` = entier.  
+Exception inattendue : `RC2_L1_SYNC_EXCEPTION resource=classes reason=unexpected` (jamais le message brut).
+
+Chaque ressource est journalisée **dès sa fin**, pas après les cinq.
 
 Au refus de lecture (whitelist stricte) :
 
@@ -60,27 +59,24 @@ RC2_L1_REFUSAL resource=students reason=metadata_absent
 
 `RC2_OFFLINE_READ_SMOKE OK` n'est émis qu'après `RC2_OFFLINE_BOOT permissions=ready_offline` **et** les 5 ressources vues en `source=l1-cache` avec `status=success|empty`.
 
-## Scénario physique — tentative 2 (après ce correctif)
-
-**Ne pas couper Internet** tant que logcat n'a pas les cinq :
+## Scénario physique — tentative 2 (diagnostic START/PAGE, Internet ON)
 
 ```text
-RC2_L1_SYNC resource=classes outcome=ready
-RC2_L1_SYNC resource=students outcome=ready
-RC2_L1_SYNC resource=assignments outcome=ready
-RC2_L1_SYNC resource=school-courses outcome=ready
-RC2_L1_SYNC resource=course-schedules outcome=ready
+RC2 tentative 2 : HOLD
+Internet : rester ON
+Offline kill/relaunch : NE PAS TESTER
+Ready/merge #353 : INTERDIT
 ```
 
-Si l'un donne `error` ou `blocked_authorization`, corriger cette cause avant de refaire RC2.
+Les écrans online chargent, mais `RC2_L1_SYNC` n'apparaissait pas : le moteur est séquentiel et ne journalisait qu'après les cinq. Cette révision logue **immédiatement** START / PAGE / outcome par ressource.
 
-Ensuite seulement : Wi-Fi + data OFF, USB + `adb reverse 8081`, kill/relaunch, `ready_offline`, 5× `RC2_L1_READ source=l1-cache`.
-
-Capturer :
+**Ne pas couper Internet. Ne pas kill/relaunch.** Capturer :
 
 ```text
-adb logcat -d | grep -E "RC2_L1_SYNC|RC2_L1_REFUSAL|RC2_L1_READ|RC2_OFFLINE_BOOT|RC2_OFFLINE_READ_SMOKE"
+adb logcat -d | grep -E "RC2_L1_SYNC_START|RC2_L1_PAGE|RC2_L1_SYNC|RC2_L1_SYNC_EXCEPTION"
 ```
+
+Si `mode=unavailable` ou `mode=full_required` se répète, on aura identifié la boucle de réconciliation (toujours non corrigée à l'aveugle).
 
 ## Preuve Android physique — tentative 1
 
@@ -117,12 +113,12 @@ Le transcript montre que le lecteur refuse le cache en offline, mais l'instrumen
 
 ## Correctif diagnostique (cette révision)
 
-Sans changer la logique métier :
+Sans changer la logique métier (boucle `full_required`/`unavailable` jusqu'à 500 pages **inchangée**) :
 
-- `L1CacheRuntime` consomme le tableau `L1SyncResult[]` et émet `RC2_L1_SYNC resource=… outcome=…` (code allowlisté optionnel).
-- `readL1Resource` émet `RC2_L1_REFUSAL resource=… reason=…` sur chaque refus whitelisté.
-
-Tentative 2 : attendre les cinq `outcome=ready` **avant** toute coupure réseau. Si `error` ou `blocked_authorization`, corriger la cause d'abord.
+- `syncL1Cache` émet `RC2_L1_SYNC_START` puis, dès la fin de **chaque** ressource, `RC2_L1_SYNC outcome=…`
+- chaque page reçue : `RC2_L1_PAGE resource=… mode=… hasMore=… page=N`
+- exception qui s'échappe : `RC2_L1_SYNC_EXCEPTION reason=unexpected` puis rethrow
+- `L1CacheRuntime` n'attend plus le tableau complet pour journaliser
 
 ## Checklist de preuve
 
@@ -133,7 +129,7 @@ Tentative 2 : attendre les cinq `outcome=ready` **avant** toute coupure réseau.
 | Package / version | OK | `com.somafrik.app` 1.2.1 / versionCode 13 |
 | 5 ressources L1 | OK (code) | `L1_RESOURCES` + 5 loaders `AdminDataContext` |
 | Online écrans réseau | OK | transcript `source=network` |
-| Online sync SQLite ready | HOLD | attendre 5× `RC2_L1_SYNC outcome=ready` |
+| Online sync SQLite ready | HOLD | 5× `RC2_L1_SYNC_START` + PAGE + `outcome=ready` |
 | Internet coupé | OK | Wi-Fi + data off, USB + `adb reverse 8081` only |
 | Kill / relaunch | OK | cold relaunch Android |
 | `ready_offline` | OK | `RC2_OFFLINE_BOOT permissions=ready_offline` |
@@ -172,9 +168,10 @@ Le vérificateur RC2 sort `BLOCKED_NATIVE_RC2_OFFLINE_READ_SMOKE` (exit 0) sans 
 ## Verdict
 
 ```text
-RC2 OFFLINE READ SMOKE: HOLD / NO-GO PHYSIQUE
+RC2 OFFLINE READ SMOKE: HOLD
+RC2 tentative 2 : HOLD
 ```
 
-Pas de Ready, pas de merge. Prochaine tentative seulement après cinq `RC2_L1_SYNC outcome=ready` online, puis kill/relaunch hors ligne.
+Pas de Ready, pas de merge. Internet ON. Pas de kill/relaunch tant que START/PAGE n'ont pas montré où la séquence se bloque.
 
 Prochain chantier **après GO RC2** : SQLite Outbox + exactly-once replay / **RC3 Offline Write**.

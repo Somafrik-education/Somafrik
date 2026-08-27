@@ -10,6 +10,9 @@ import { L1_RESOURCES, type L1Resource } from "./types";
 
 export const RC2_L1_READ_TAG = "RC2_L1_READ";
 export const RC2_L1_SYNC_TAG = "RC2_L1_SYNC";
+export const RC2_L1_SYNC_START_TAG = "RC2_L1_SYNC_START";
+export const RC2_L1_PAGE_TAG = "RC2_L1_PAGE";
+export const RC2_L1_SYNC_EXCEPTION_TAG = "RC2_L1_SYNC_EXCEPTION";
 export const RC2_L1_REFUSAL_TAG = "RC2_L1_REFUSAL";
 export const RC2_OFFLINE_BOOT_TAG = "RC2_OFFLINE_BOOT";
 export const RC2_OFFLINE_READ_SMOKE_TAG = "RC2_OFFLINE_READ_SMOKE";
@@ -51,6 +54,9 @@ const ALLOWED_REFUSAL = new Set([
   "sqlcipher_unavailable",
   "partition_unresolved",
 ]);
+const ALLOWED_PAGE_MODE = new Set(["full", "delta", "full_required", "unavailable"]);
+const ALLOWED_HAS_MORE = new Set(["true", "false"]);
+const ALLOWED_EXCEPTION_REASON = new Set(["unexpected"]);
 
 export type Rc2SmokeLogger = { warn: (message: string) => void };
 
@@ -168,6 +174,40 @@ export function logRc2L1SyncResults(
   for (const row of results) {
     logRc2L1Sync(row);
   }
+}
+
+export function logRc2L1SyncStart(input: { resource: L1Resource | string }): void {
+  const resource = asL1Resource(input.resource);
+  if (!resource) return;
+  emit(`${RC2_L1_SYNC_START_TAG} resource=${resource}`);
+}
+
+export function logRc2L1Page(input: {
+  resource: L1Resource | string;
+  mode?: string | null;
+  hasMore?: boolean | string | null;
+  page?: number;
+}): void {
+  const resource = asL1Resource(input.resource);
+  if (!resource) return;
+  const mode = token(input.mode, ALLOWED_PAGE_MODE, "");
+  if (!mode) return;
+  const hasMoreRaw =
+    typeof input.hasMore === "boolean" ? (input.hasMore ? "true" : "false") : String(input.hasMore ?? "");
+  const hasMore = token(hasMoreRaw, ALLOWED_HAS_MORE, "");
+  if (!hasMore) return;
+  const page = rowCount(input.page);
+  emit(`${RC2_L1_PAGE_TAG} resource=${resource} mode=${mode} hasMore=${hasMore} page=${page}`);
+}
+
+export function logRc2L1SyncException(input: {
+  resource: L1Resource | string;
+  reason?: string | null;
+}): void {
+  const resource = asL1Resource(input.resource);
+  if (!resource) return;
+  const reason = token(input.reason, ALLOWED_EXCEPTION_REASON, "unexpected");
+  emit(`${RC2_L1_SYNC_EXCEPTION_TAG} resource=${resource} reason=${reason}`);
 }
 
 export function logRc2L1Refusal(input: {

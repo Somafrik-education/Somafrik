@@ -11,7 +11,7 @@ import {
   resolveL1Partition,
 } from "./lifecycle";
 import { syncL1Cache } from "./syncEngine";
-import { logRc2L1SyncResults, logRc2OfflineBoot } from "./rc2OfflineReadSmoke";
+import { logRc2OfflineBoot } from "./rc2OfflineReadSmoke";
 import { safeLogger } from "../../services/safeLogger";
 
 /**
@@ -65,13 +65,12 @@ export default function L1CacheRuntime() {
       }
       const adopted = await adoptL1Runtime(opened.store, resolved.partition, generation);
       if (!adopted || cancelled || currentL1Generation() !== generation) return;
-      const results = await syncL1Cache({
+      await syncL1Cache({
         store: opened.store,
         api: createL1Api(httpRequest),
         partition: resolved.partition,
         isCurrent: () => !cancelled && currentL1Generation() === generation,
       });
-      logRc2L1SyncResults(results);
     })();
 
     return () => {

@@ -31,6 +31,7 @@ function main() {
   const marker = read(path.join(MOBILE, "src/offline/l1/rc2OfflineReadSmoke.ts"));
   const readModel = read(path.join(MOBILE, "src/offline/l1/readModel.ts"));
   const runtime = read(path.join(MOBILE, "src/offline/l1/L1CacheRuntime.tsx"));
+  const syncEngine = read(path.join(MOBILE, "src/offline/l1/syncEngine.ts"));
   const establishment = read(path.join(MOBILE, "src/lib/establishment.ts"));
   const dataTruth = read(path.join(MOBILE, "src/lib/dataTruth.ts"));
   const students = read(path.join(MOBILE, "src/screens/StudentsScreen.tsx"));
@@ -45,6 +46,9 @@ function main() {
 
   assert.match(marker, /export const RC2_L1_READ_TAG = "RC2_L1_READ"/);
   assert.match(marker, /export const RC2_L1_SYNC_TAG = "RC2_L1_SYNC"/);
+  assert.match(marker, /export const RC2_L1_SYNC_START_TAG = "RC2_L1_SYNC_START"/);
+  assert.match(marker, /export const RC2_L1_PAGE_TAG = "RC2_L1_PAGE"/);
+  assert.match(marker, /export const RC2_L1_SYNC_EXCEPTION_TAG = "RC2_L1_SYNC_EXCEPTION"/);
   assert.match(marker, /export const RC2_L1_REFUSAL_TAG = "RC2_L1_REFUSAL"/);
   assert.match(marker, /export const RC2_OFFLINE_BOOT_TAG = "RC2_OFFLINE_BOOT"/);
   assert.match(marker, /export const RC2_OFFLINE_READ_SMOKE_TAG = "RC2_OFFLINE_READ_SMOKE"/);
@@ -52,12 +56,17 @@ function main() {
   assert.match(marker, /RC2_OFFLINE_READ_SMOKE_TAG\} OK/);
   assert.match(marker, /metadata_absent/);
   assert.match(marker, /network_preserved/);
+  assert.match(marker, /full_required/);
   assert.doesNotMatch(marker, /accessToken|refreshToken|l1DbKey|SecureStore/);
   assert.match(readModel, /logRc2L1ReadFromSnapshot/);
   assert.match(readModel, /logRc2L1Refusal/);
   assert.match(runtime, /logRc2OfflineBoot/);
-  assert.match(runtime, /logRc2L1SyncResults/);
-  assert.match(runtime, /const results = await syncL1Cache/);
+  assert.match(runtime, /await syncL1Cache/);
+  assert.doesNotMatch(runtime, /logRc2L1SyncResults/);
+  assert.match(syncEngine, /logRc2L1SyncStart/);
+  assert.match(syncEngine, /logRc2L1Page/);
+  assert.match(syncEngine, /logRc2L1SyncException/);
+  assert.match(syncEngine, /logRc2L1Sync\(result\)/);
   assert.match(runtime, /ready_offline/);
   assert.match(establishment, /export function l1AssignmentBelongsToTeacherSession/);
   assert.match(establishment, /teacherUserId === userId/);
@@ -128,7 +137,7 @@ function main() {
     .filter((line) => /\tdevice\s*$/.test(line));
   if (!deviceLines.length) {
     console.log(
-      "BLOCKED_NATIVE_RC2_OFFLINE_READ_SMOKE: aucun device Android physique (online 5× RC2_L1_SYNC outcome=ready → couper Wi-Fi+data → adb reverse 8081 → force-stop → relaunch → ready_offline + 5× RC2_L1_READ source=l1-cache → RC2_OFFLINE_READ_SMOKE OK)",
+      "BLOCKED_NATIVE_RC2_OFFLINE_READ_SMOKE: aucun device Android physique (online 5× RC2_L1_SYNC_START + RC2_L1_PAGE + outcome=ready — Internet ON, pas de kill/relaunch tant que HOLD)",
     );
   } else {
     console.log(

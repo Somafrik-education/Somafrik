@@ -1,6 +1,12 @@
 import { applyL1PageAtomically, isL1StaleTransaction, markResourceState, purgeResourceAndReset } from "./repository";
 import { L1PayloadError } from "./syncApi";
 import {
+  logRc2L1Page,
+  logRc2L1Sync,
+  logRc2L1SyncException,
+  logRc2L1SyncStart,
+} from "./rc2OfflineReadSmoke";
+import {
   L1_ERROR,
   L1_LOCAL_SCHEMA_VERSION,
   L1_RESOURCES,
@@ -160,6 +166,13 @@ async function syncOneResource(args: {
 
     if (!isCurrent()) return { resource, outcome: "discarded" };
 
+    logRc2L1Page({
+      resource,
+      mode: page.mode,
+      hasMore: page.hasMore,
+      page: pages,
+    });
+
     if (page.mode === "full_required" || page.mode === "unavailable") {
       if ((await beginFullReconcile(store, partition, resource, isCurrent)) === "discarded") {
         return { resource, outcome: "discarded" };
@@ -211,19 +224,27 @@ export async function syncL1Cache(args: {
 }): Promise<L1SyncResult[]> {
   const results: L1SyncResult[] = [];
   for (const resource of L1_RESOURCES) {
+    logRc2L1SyncStart({ resource });
     if (!args.isCurrent()) {
-      results.push({ resource, outcome: "discarded" });
+      const discarded: L1SyncResult = { resource, outcome: "discarded" };
+      logRc2L1Sync(discarded);
+      results.push(discarded);
       continue;
     }
-    results.push(
-      await syncOneResource({
+    try {
+      const result = await syncOneResource({
         store: args.store,
         api: args.api,
         partition: args.partition,
         resource,
         isCurrent: args.isCurrent,
-      }),
-    );
+      });
+      logRc2L1Sync(result);
+      results.push(result);
+    } catch (error) {
+      logRc2L1SyncException({ resource, reason: "unexpected" });
+      throw error;
+    }
   }
   return results;
 }
