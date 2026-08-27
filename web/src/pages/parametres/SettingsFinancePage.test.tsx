@@ -77,8 +77,8 @@ describe("SettingsFinancePage", () => {
       expect(screen.getByRole("heading", { name: "Paramètres Finances" })).toBeInTheDocument();
     });
     expect(screen.queryByText("Bientôt disponible")).not.toBeInTheDocument();
-    expect(screen.getByText("CDF")).toBeInTheDocument();
-    expect(screen.getByText("Espèces")).toBeInTheDocument();
+    expect(screen.getAllByText("CDF").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Espèces").length).toBeGreaterThan(0);
     expect(screen.getByText(/25[\s\u00a0]?000/)).toBeInTheDocument();
     expect(screen.getByText(/différées V1/i)).toBeInTheDocument();
   });

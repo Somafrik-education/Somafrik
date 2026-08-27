@@ -884,31 +884,34 @@ function createFinancePgStore(repo) {
       async replaceSchoolPaymentMethods(methods, principal) {
         const school = await bind(repo).getSchoolByCode(principal?.schoolCode);
         if (!school?.id) {
-          const { createFinanceError, FINANCE_ERROR } = require("../lib/financeManagement");
           throw createFinanceError(400, "Établissement requis.", FINANCE_ERROR.TENANT_MISMATCH);
         }
         const incoming = Array.isArray(methods) ? methods : [];
         const allowed = new Map(CANONICAL_PAYMENT_METHODS.map((item) => [item.methodCode, item]));
-        await query("DELETE FROM school_payment_methods WHERE school_id = $1", [school.id]);
-        const saved = [];
-        for (const item of incoming) {
-          const methodCode = String(item.methodCode || item.method_code || "").trim();
-          const canonical = allowed.get(methodCode);
-          if (!canonical) continue;
-          const row = await one(
-            `INSERT INTO school_payment_methods (school_id, method_code, label, is_active, sort_order)
-             VALUES ($1,$2,$3,$4,$5)
-             RETURNING *`,
-            [
-              school.id,
-              canonical.methodCode,
-              String(item.label || canonical.label).trim() || canonical.label,
-              item.active !== false && item.is_active !== false,
-              Number(item.sortOrder ?? item.sort_order ?? canonical.sortOrder),
-            ],
-          );
-          saved.push(row);
-        }
+        const saved = await repo.withTransaction(async (tx) => {
+          const scoped = repo.createTxScope(tx);
+          await scoped.query("DELETE FROM school_payment_methods WHERE school_id = $1", [school.id]);
+          const rows = [];
+          for (const item of incoming) {
+            const methodCode = String(item.methodCode || item.method_code || "").trim();
+            const canonical = allowed.get(methodCode);
+            if (!canonical) continue;
+            const row = await scoped.one(
+              `INSERT INTO school_payment_methods (school_id, method_code, label, is_active, sort_order)
+               VALUES ($1,$2,$3,$4,$5)
+               RETURNING *`,
+              [
+                school.id,
+                canonical.methodCode,
+                String(item.label || canonical.label).trim() || canonical.label,
+                item.active !== false && item.is_active !== false,
+                Number(item.sortOrder ?? item.sort_order ?? canonical.sortOrder),
+              ],
+            );
+            rows.push(row);
+          }
+          return rows;
+        });
         return resolveCatalogPaymentMethods(saved);
       },
       async listCatalogFeeTypes(principal) {

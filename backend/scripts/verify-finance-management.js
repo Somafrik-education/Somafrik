@@ -108,13 +108,31 @@ async function main() {
       PORT: String(PORT),
       NODE_ENV: "development",
       SOMAFRIK_DB_REQUIRED: "false",
+      SOMAFRIK_SKIP_DEMO_SEED: "false",
       DATABASE_URL: "",
+      DB_HOST: "",
+      DB_USER: "",
+      DB_PASSWORD: "",
+      DB_NAME: "",
+      POSTGRES_HOST: "",
+      POSTGRES_USER: "",
+      POSTGRES_PASSWORD: "",
+      POSTGRES_DB: "",
     },
     stdio: ["ignore", "pipe", "pipe"],
   });
+  const childLogs = [];
+  child.stdout.on("data", (chunk) => childLogs.push(String(chunk)));
+  child.stderr.on("data", (chunk) => childLogs.push(String(chunk)));
   try {
     await waitForHealth(child);
-    const adminToken = await login("admin", "1234", "CD-2026-0001");
+    let adminToken;
+    try {
+      adminToken = await login("admin", "1234", "CD-2026-0001");
+    } catch (error) {
+      error.message = `${error.message}\n--- backend ---\n${childLogs.join("")}`;
+      throw error;
+    }
     const stamp = Date.now();
 
     const { prepareCanonicalClassContext, postCanonicalClass } = require("../lib/canonicalClassHttp");

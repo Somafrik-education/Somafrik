@@ -1,7 +1,7 @@
 # GO Production — Finance Comptable + payment-student-options + Paramètres Finances — 2026-08-27
 
 **Type :** audit + correctifs P0/P1  
-**PR :** Draft dédiée  
+**PR :** Draft https://github.com/Somafrik-education/Somafrik/pull/361  
 **Branche :** `cursor/go-prod-finance-settings-9855`  
 **Base :** `origin/develop@d5c7d5c0fbb72d2c4832fa7c3425f2ee46bea756`
 
@@ -22,7 +22,7 @@ RBAC live                          OK
 Cross-tenant                       0 fuite (SQL + tests A/B)
 Legacy authority                   0 (pas de backoffice_state / localStorage)
 P0                                 0
-P1 bloquant production             0 (sous réserve Gates + rejeu HTTP)
+P1 bloquant production             0 (verify:finance-management + multi-item HTTP OK)
 ```
 
 Ready **NON**. Merge **NON**.
@@ -146,6 +146,11 @@ Tests A/B : élève B, grille B, moyens A jamais visibles sous principal A. Él�
 - Duplicate UI `/finances/frais` vs Paramètres (convergence progressive)
 
 ## 12. Recommandations
+
+Corrections post-implémentation (ce lot) :
+- `replaceSchoolPaymentMethods` : DELETE+INSERT atomique via `withTransaction` (`query`/`one` n’existent pas hors `bind`).
+- Tests PG isolation : réutiliser l’année B déjà créée ; `GRID-B-ISO` ; options A = inscrits A, jamais B / orphelins.
+- Harness HTTP mémoire : `SOMAFRIK_SKIP_DEMO_SEED=false` (Cloud Agent le force à `true`).
 
 1. Merger uniquement après Gates + rejeu Comptable Xiaomi : `GET /finance/payment-student-options` rows>0 puis paiement.
 2. Ne pas accorder `Élèves:READ` au Comptable.
