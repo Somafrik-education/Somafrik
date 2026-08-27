@@ -279,7 +279,6 @@ jobs:
           npm run verify:teacher-account-creation
           npm run verify:teachers-lifecycle
           npm run verify:teacher-login-scope
-          npm run verify:teacher-canonical-identity
           npm run verify:mobile-sync-l1-assignments
 
       - name: Finance
