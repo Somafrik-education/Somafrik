@@ -66,6 +66,7 @@
     "test:l1-offline-reads": "npx --yes tsx src/offline/l1/l1OfflineReads.test.ts",
     "verify:mobile-l1-sqlite-cache": "node scripts/verify-mobile-l1-sqlite-cache.js",
     "verify:mobile-l1-offline-reads": "node scripts/verify-mobile-l1-offline-reads.js",
+    "verify:mobile-l1-native-sqlcipher-smoke": "node scripts/run-native-sqlcipher-smoke.js",
     "test:role-selection-layout": "npx --yes tsx src/lib/roleSelectionLayout.test.ts"
   },
   "dependencies": {

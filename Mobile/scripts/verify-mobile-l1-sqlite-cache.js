@@ -51,6 +51,8 @@ function main() {
   assert.match(types, /somafrik\.l1DbKeyV1/);
   assert.match(database, /L1_DB_KEY_SECURESTORE/);
   assert.match(database, /PRAGMA cipher_version/);
+  assert.match(database, /L1_SQLCIPHER_SMOKE/);
+  assert.match(database, /l1_native_sqlcipher_probe/);
   assert.match(types, /L1_SQLCIPHER_REQUIRED/);
   assert.match(database, /L1_ERROR\.SQLCIPHER_REQUIRED/);
   assert.equal(/PRAGMA key = 'password'/.test(database), false);
@@ -61,6 +63,7 @@ function main() {
   assert.doesNotMatch(migration, /access_token|refresh_token|password|parent_phone|backoffice_state/);
   const runtime = read(path.join(MOBILE, "App.tsx"));
   assert.match(runtime, /L1CacheRuntime/);
+  assert.match(runtime, /NativeSqlCipherBootProbe/);
   const auth = read(path.join(MOBILE, "src/context/AuthContext.tsx"));
   assert.match(auth, /invalidateL1CacheSession/);
   console.log("OK: pas de fallback plaintext, clé SecureStore, pas de FK inter-ressources");
@@ -109,17 +112,13 @@ function main() {
     console.log("OK: expo prebuild android (répertoire android/ gitignoré)");
   }
 
-  const adb = run("adb", ["devices"]);
-  const deviceLines = String(adb.stdout || "")
-    .trim()
-    .split("\n")
-    .slice(1)
-    .filter((line) => /\tdevice\s*$/.test(line));
-  if (!deviceLines.length) {
-    console.log("BLOCKED_NATIVE_SQLCIPHER_SMOKE: aucun device/emulator Android pour PRAGMA cipher_version");
-    return;
-  }
-  console.log("BLOCKED_NATIVE_SQLCIPHER_SMOKE: device présent mais smoke open/PRAGMA non branché dans cet agent");
+  const smoke = run("node", ["scripts/run-native-sqlcipher-smoke.js"], {
+    cwd: MOBILE,
+    timeout: 120000,
+  });
+  process.stdout.write(smoke.stdout || "");
+  process.stderr.write(smoke.stderr || "");
+  assert.equal(smoke.status, 0, "run-native-sqlcipher-smoke.js");
 }
 
 main();

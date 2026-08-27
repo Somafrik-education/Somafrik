@@ -8,6 +8,7 @@ import { AuthProvider } from "./src/context/AuthContext";
 import { AdminDataProvider } from "./src/context/AdminDataContext";
 import OutboxRuntime from "./src/components/OutboxRuntime";
 import L1CacheRuntime from "./src/offline/l1/L1CacheRuntime";
+import NativeSqlCipherBootProbe from "./src/offline/l1/NativeSqlCipherBootProbe";
 import EnvironmentBadge from "./src/components/EnvironmentBadge";
 import ConfigurationErrorScreen from "./src/components/ConfigurationErrorScreen";
 import { resolveApiRootUrl } from "./src/config/env";
@@ -50,6 +51,7 @@ export default function App() {
   return (
     <SafeAreaProvider>
       <PaperProvider theme={paperTheme} settings={{ icon: paperIcon }}>
+        <NativeSqlCipherBootProbe />
         {configError ? (
           <ConfigurationErrorScreen message={configError} />
         ) : (

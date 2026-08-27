@@ -6,6 +6,10 @@ import { L1_DB_FILENAME, L1_DB_KEY_SECURESTORE, L1_ERROR, type L1OpenResult, typ
 import { applyL1Migrations } from "./migrations";
 import { L1_RESOURCE_COLUMNS, L1_TABLE_BY_RESOURCE } from "./schema";
 import type { L1Partition, L1Resource, L1SyncMeta, SqlValue } from "./types";
+import { safeLogger } from "../../services/safeLogger";
+
+/** Marqueur logcat — jamais la clé SQLCipher. */
+export const L1_SQLCIPHER_SMOKE_TAG = "L1_SQLCIPHER_SMOKE";
 
 export type L1KeyStore = {
   getItem(key: string): Promise<string | null>;
@@ -49,6 +53,51 @@ export async function loadOrCreateL1DbKey(keyStore: L1KeyStore, generateKey: () 
   const created = await generateKey();
   await keyStore.setItem(L1_DB_KEY_SECURESTORE, created);
   return created;
+}
+
+/**
+ * Preuve native : cipher_version non vide + write/read dans la même DB chiffrée.
+ * Table locale hors ressources métier L1. Aucun secret dans les logs.
+ */
+export async function runNativeSqlCipherBootProbe(
+  db: L1SqliteLike,
+  cipherVersion: string,
+): Promise<{ persist: "init" | "ok"; cipherVersion: string }> {
+  const version = String(cipherVersion ?? "").trim();
+  if (!version) {
+    throw new Error("SQLCipher cipher_version vide");
+  }
+  await db.execAsync(`
+CREATE TABLE IF NOT EXISTS l1_native_sqlcipher_probe (
+  id TEXT PRIMARY KEY NOT NULL,
+  cipher_version TEXT NOT NULL,
+  written_at TEXT NOT NULL
+);
+`);
+  const existing = await db.getFirstAsync<{ cipher_version?: string; written_at?: string }>(
+    "SELECT cipher_version, written_at FROM l1_native_sqlcipher_probe WHERE id = ?",
+    ["boot"],
+  );
+  if (String(existing?.written_at ?? "").trim()) {
+    safeLogger.warn(`${L1_SQLCIPHER_SMOKE_TAG} cipher_version=${version}`);
+    safeLogger.warn(`${L1_SQLCIPHER_SMOKE_TAG} persist=ok`);
+    return { persist: "ok", cipherVersion: version };
+  }
+  const writtenAt = new Date().toISOString();
+  await db.runAsync(
+    "INSERT OR REPLACE INTO l1_native_sqlcipher_probe (id, cipher_version, written_at) VALUES (?, ?, ?)",
+    ["boot", version, writtenAt],
+  );
+  const readBack = await db.getFirstAsync<{ cipher_version?: string }>(
+    "SELECT cipher_version FROM l1_native_sqlcipher_probe WHERE id = ?",
+    ["boot"],
+  );
+  if (String(readBack?.cipher_version ?? "").trim() !== version) {
+    throw new Error("SQLCipher write/read mismatch");
+  }
+  safeLogger.warn(`${L1_SQLCIPHER_SMOKE_TAG} cipher_version=${version}`);
+  safeLogger.warn(`${L1_SQLCIPHER_SMOKE_TAG} persist=init`);
+  return { persist: "init", cipherVersion: version };
 }
 
 function createSqliteOps(handle: L1SqliteLike): L1Txn {
@@ -244,6 +293,12 @@ export async function openEncryptedL1Database(deps: {
       code: L1_ERROR.SQLCIPHER_REQUIRED,
       message: "SQLCipher absent. Aucun cache métier plaintext n'est créé.",
     };
+  }
+
+  try {
+    await runNativeSqlCipherBootProbe(db, cipherVersion);
+  } catch (error) {
+    safeLogger.warn("l1_sqlcipher_probe_failed", error);
   }
 
   const store = createSqliteStore(db, cipherVersion);
