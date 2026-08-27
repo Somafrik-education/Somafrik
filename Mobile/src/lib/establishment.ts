@@ -10,7 +10,8 @@ export interface TeacherScopeState {
   assignments?: TeacherAssignment[];
   classes?: SchoolClass[];
   /**
-   * Provenance des affectations. En `l1-cache`, un enseignant n'est matché
+   * Provenance des affectations. En `network`, GET /assignments est déjà
+   * tenant/RBAC-filtré côté serveur. En `l1-cache`, un enseignant n'est matché
    * que par `teacherUserId === session.user.id` (fail-closed).
    */
   assignmentsSource?: "network" | "l1-cache";
@@ -121,6 +122,10 @@ function asTeacherScopeState(assignmentsOrState: TeacherAssignment[] | TeacherSc
  * Affectations pédagogiques canoniques actives de l'enseignant connecté.
  * Autorité unique : `state.assignments` (GET /assignments). Pas de listes
  * dénormalisées, pas de titulaire de classe, pas de matching nominatif.
+ *
+ * En ligne, l'API a déjà appliqué le scope principal live : ne pas refaire un
+ * matching client avec une représentation d'identité différente de celle du JWT.
+ * Hors ligne, le cache L1 reste fail-closed sur teacherUserId.
  */
 export function listCanonicalTeacherAssignments(
   session: { role?: string; user?: Row } | null,
@@ -130,11 +135,15 @@ export function listCanonicalTeacherAssignments(
   const active = (state.assignments ?? []).filter((row) => isCanonicalActiveAssignment(row));
   if (!isTeacherSession(session)) return active;
 
-  const teacher = resolveTeacherRecordForSession(session, state.teachers ?? []);
-  const refKeys = collectSessionTeacherRefKeys(session, teacher);
+  if (state.assignmentsSource === "network") {
+    return active;
+  }
   if (state.assignmentsSource === "l1-cache") {
     return active.filter((assignment) => l1AssignmentBelongsToTeacherSession(assignment, session));
   }
+
+  const teacher = resolveTeacherRecordForSession(session, state.teachers ?? []);
+  const refKeys = collectSessionTeacherRefKeys(session, teacher);
   if (!refKeys.size) return [];
   return active.filter((assignment) => assignmentBelongsToTeacher(assignment, refKeys));
 }
