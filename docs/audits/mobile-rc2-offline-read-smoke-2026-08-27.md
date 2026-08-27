@@ -9,7 +9,7 @@
 ```text
 Base develop exact : 874f9415cda8c1e3df1339001b8f0f437149f38d
                      (merge #352 Native SQLCipher APK smoke)
-HEAD PR            : efb5ceb0315f967cad173c6ed1afa76f0a4ac772
+HEAD PR            : 7456be977a3cae49e004b4e6748065a1e448a45d
 Appareil physique  : Xiaomi E6QCAIAIC6LJIBXG
 Package            : com.somafrik.app
 Version            : 1.2.1 (versionCode 13)
@@ -118,7 +118,7 @@ Puis confirmer online les cinq `outcome=ready` avant toute coupure réseau. Si u
 
 | Critère | Statut | Preuve |
 | --- | --- | --- |
-| HEAD exact | OK | `efb5ceb0315f967cad173c6ed1afa76f0a4ac772` |
+| HEAD exact | OK | `7456be977a3cae49e004b4e6748065a1e448a45d` |
 | Appareil physique | OK | Xiaomi `E6QCAIAIC6LJIBXG` |
 | Package / version | OK | `com.somafrik.app` 1.2.1 / versionCode 13 |
 | 5 ressources L1 | OK (code) | `L1_RESOURCES` + 5 loaders `AdminDataContext` |
