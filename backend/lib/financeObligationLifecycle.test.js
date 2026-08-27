@@ -641,13 +641,13 @@ describe("F3 P1-C — échec Finance durable", () => {
 });
 
 describe("F3 scénario J — paiement ne crée pas de dette", () => {
-  it("paiement seul sans obligation applicable → 0 obligation créée", async () => {
+  it("encaissement Non imputé sans obligation → 0 obligation créée", async () => {
     const store = createStore();
     const before = store.tables.studentFees.length;
-    await store.createSchoolPayment(
+    const payment = await store.createSchoolPayment(
       {
         studentId: STUDENT_ID,
-        items: [{ feeType: "Scolarité", amount: 5_000 }],
+        items: [{ feeType: "Non imputé", amount: 5_000 }],
         method: "Espèces",
         date: "2026-09-01",
       },
@@ -655,5 +655,8 @@ describe("F3 scénario J — paiement ne crée pas de dette", () => {
     );
     assert.equal(store.tables.studentFees.length, before);
     assert.equal(store.tables.payments.length, 1);
+    assert.equal(store.tables.allocations.length, 0);
+    assert.equal(payment.unallocatedAmount, 5_000);
+    assert.equal(payment.status, "Non imputé");
   });
 });
