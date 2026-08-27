@@ -74,7 +74,7 @@ Hors F5 (F7) : fiche élève Web « Coming soon », polish Impayés, redesign KP
 
 | Retrait | Où |
 |---|---|
-| POST feeType-only | `QuickPaymentModal`, `EntityPage` |
+| POST feeType-only | `QuickPaymentModal`, `EntityPage`, `verify-sync-end-to-end` (CI) |
 | Fallback `GET /students` | `StudentPaymentsScreen` |
 | Outbox `payments` | `OUTBOX_ALLOWED_DOMAINS`, `OutboxRuntime`, inventory |
 | `balance = due - paid - exemption` | `paymentEnrollment.isOpenObligation`, `normalizeStudentFeeRow` |
@@ -199,6 +199,7 @@ Mobile : `isOfflineContext()` → message « Paiement hors connexion refusé. Au
 - `web/src/lib/financePaymentWrite.test.ts`
 - `Mobile/src/lib/paymentEnrollment.test.ts`
 - Source guards : scénarios 9 (pas de fallback catalogue) et 12 (offline fail-closed)
+- `verify:sync-end-to-end` — POST `/payments` via `items[{ obligationId }]` après `GET /finance/student-fees` (plus de feeType-only)
 
 ---
 

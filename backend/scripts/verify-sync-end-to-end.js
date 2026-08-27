@@ -517,13 +517,32 @@ async function runSyncEndToEnd(databaseUrl) {
     });
     assert.equal(appliedGrid.status, 200, JSON.stringify(appliedGrid.data));
 
+    const feesBeforePay = await request("/finance/student-fees", { token: adminToken });
+    assert.equal(feesBeforePay.status, 200, JSON.stringify(feesBeforePay.data));
+    const feeRows = Array.isArray(feesBeforePay.data) ? feesBeforePay.data : feesBeforePay.data?.items ?? [];
+    const enrolledStudentId = String(enrolled.data.student?.id ?? enrolled.data.id ?? "");
+    const openObligations = feeRows.filter(
+      (row) =>
+        (row.studentId === studentCode || row.studentId === enrolledStudentId) &&
+        String(row.status) !== "Annulé" &&
+        Number(row.balance || 0) > 0,
+    );
+    const inscriptionObligation =
+      openObligations.find((row) => String(row.feeType) === "Inscription") ?? openObligations[0];
+    assert.ok(inscriptionObligation?.id, "obligation Inscription absente avant imputation");
+
     const paymentPost = await request("/payments", {
       method: "POST",
       token: adminToken,
       body: {
         studentId: studentCode,
-        feeType: "Inscription",
-        amount: 10_000,
+        items: [
+          {
+            obligationId: inscriptionObligation.id,
+            feeType: "Inscription",
+            amount: 10_000,
+          },
+        ],
         method: "Espèces",
         date: "2026-08-13",
       },
