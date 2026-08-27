@@ -5,6 +5,10 @@
  * sur les chemins feeTypeId et obligationId. POST /api/payments appelle
  * createSchoolPayment → createPayment ; ces tests couvrent ce service.
  *
+ * F4 : une imputation exige obligationId explicite. Les cas alias non ambigus
+ * conservent ici la preuve F2 de canonicalisation, mais ne sélectionnent plus
+ * une dette par feeType seul.
+ *
  *   node --test backend/lib/financeFeeTypeWriteBypass.test.js
  */
 const { describe, it } = require("node:test");
@@ -227,7 +231,7 @@ describe("P1 createPayment Bulletin fail-closed", () => {
 });
 
 describe("P1 createPayment alias non ambigus → Scolarité", () => {
-  it("4. Mensualité legacy feeTypeId → accepté, persisté Scolarité", async () => {
+  it("4. Mensualité legacy feeTypeId + obligationId → accepté, persisté Scolarité", async () => {
     const store = createStore();
     const catalogId = randomUUID();
     seedLegacyCatalogItem(store, {
@@ -246,7 +250,9 @@ describe("P1 createPayment alias non ambigus → Scolarité", () => {
       schoolFeeItemId: catalogId,
     });
 
-    const payment = await pay(store, [{ feeTypeId: catalogId, amount: 150 }]);
+    const payment = await pay(store, [
+      { feeTypeId: catalogId, obligationId: "STUFEE-MENSUALITE", amount: 150 },
+    ]);
     assert.equal(payment.items[0].feeType, "Scolarité");
     assert.deepEqual(persistedFeeTypes(store), ["Scolarité"]);
     assert.equal(store.tables.payments.length, 1);
@@ -269,7 +275,7 @@ describe("P1 createPayment alias non ambigus → Scolarité", () => {
     assert.equal(store.tables.allocations.length, 1);
   });
 
-  it("5. Minerval / scolarité feeTypeId → accepté, persisté Scolarité", async () => {
+  it("5. Minerval / scolarité feeTypeId + obligationId → accepté, persisté Scolarité", async () => {
     const store = createStore();
     const catalogId = randomUUID();
     seedLegacyCatalogItem(store, {
@@ -279,15 +285,34 @@ describe("P1 createPayment alias non ambigus → Scolarité", () => {
       label: "Minerval / scolarité",
       amount: 200,
     });
+    seedLegacyObligation(store, {
+      id: randomUUID(),
+      publicId: "STUFEE-MINERVAL",
+      feeType: "Minerval / scolarité",
+      label: "Minerval / scolarité",
+      amount: 200,
+      schoolFeeItemId: catalogId,
+    });
 
-    const payment = await pay(store, [{ feeTypeId: catalogId, amount: 200 }]);
+    const payment = await pay(store, [
+      { feeTypeId: catalogId, obligationId: "STUFEE-MINERVAL", amount: 200 },
+    ]);
     assert.equal(payment.items[0].feeType, "Scolarité");
     assert.deepEqual(persistedFeeTypes(store), ["Scolarité"]);
   });
 
-  it("5b. Minerval / scolarité en feeType libre → persisté Scolarité", async () => {
+  it("5b. Minerval / scolarité libre + obligationId → persisté Scolarité", async () => {
     const store = createStore();
-    const payment = await pay(store, [{ feeType: "Minerval / scolarité", amount: 80 }]);
+    seedLegacyObligation(store, {
+      id: randomUUID(),
+      publicId: "STUFEE-MINERVAL-FREE",
+      feeType: "Minerval / scolarité",
+      label: "Minerval / scolarité",
+      amount: 80,
+    });
+    const payment = await pay(store, [
+      { obligationId: "STUFEE-MINERVAL-FREE", feeType: "Minerval / scolarité", amount: 80 },
+    ]);
     assert.equal(payment.items[0].feeType, "Scolarité");
     assert.deepEqual(persistedFeeTypes(store), ["Scolarité"]);
   });
