@@ -138,3 +138,40 @@ export function markAttendanceFromOutboxStatus(
   }
   return attendance;
 }
+
+export function sqlPresenceViewsAsOutboxEntries(
+  views: Array<{
+    outboxId: string;
+    idempotencyKey: string;
+    state: string;
+    payload: unknown;
+  }>,
+): OutboxEntry[] {
+  return views.map((view) => {
+    let status: OutboxEntry["status"] = "failed";
+    if (view.state === "pending") status = "pending";
+    else if (view.state === "in_flight") status = "sending";
+    else if (view.state === "acked") status = "sent";
+    const body =
+      view.payload && typeof view.payload === "object" && !Array.isArray(view.payload)
+        ? (view.payload as { classId?: unknown; date?: unknown })
+        : null;
+    const classId = String(body?.classId ?? "").trim();
+    const date = String(body?.date ?? "").trim();
+    return {
+      id: view.outboxId,
+      idempotencyKey: view.idempotencyKey,
+      intentionId: classId && date ? presenceIntentionId(classId, date) : undefined,
+      domain: "presences",
+      method: "POST",
+      path: "/presences",
+      payload: view.payload,
+      createdAt: "",
+      attemptCount: 0,
+      status,
+      lastError: null,
+      userId: "",
+      schoolScope: "",
+    };
+  });
+}

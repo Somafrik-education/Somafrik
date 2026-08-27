@@ -8,6 +8,7 @@ import { AuthProvider } from "./src/context/AuthContext";
 import { AdminDataProvider } from "./src/context/AdminDataContext";
 import OutboxRuntime from "./src/components/OutboxRuntime";
 import L1CacheRuntime from "./src/offline/l1/L1CacheRuntime";
+import PresenceOutboxRuntime from "./src/offline/outbox/PresenceOutboxRuntime";
 import NativeSqlCipherBootProbe from "./src/offline/l1/NativeSqlCipherBootProbe";
 import EnvironmentBadge from "./src/components/EnvironmentBadge";
 import ConfigurationErrorScreen from "./src/components/ConfigurationErrorScreen";
@@ -59,6 +60,7 @@ export default function App() {
             <AdminDataProvider>
               <OutboxRuntime />
               <L1CacheRuntime />
+              <PresenceOutboxRuntime />
               <AppNavigator />
               <EnvironmentBadge />
             </AdminDataProvider>

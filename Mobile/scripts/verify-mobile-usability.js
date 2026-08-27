@@ -140,8 +140,8 @@ function main() {
   assert.match(attendance, /attendanceActionForStudent/);
   assert.match(attendance, /FlatList/);
   assert.match(attendance, /Présent pour \$\{student\.name\}|\$\{action\} pour \$\{student\.name\}/);
-  assert.match(attendance, /submitProtectedMutation/);
-  assert.match(attendance, /idempotencyKey/);
+  assert.match(attendance, /submitPresenceUpsertFromSession/);
+  assert.doesNotMatch(attendance, /savePresences\s*\(/);
   assert.match(attendance, /tryBegin/);
   assert.match(attendance, /loadPresences/);
   assert.doesNotMatch(attendance, /refreshBackOfficeState/);

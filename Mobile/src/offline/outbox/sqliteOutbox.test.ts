@@ -785,6 +785,11 @@ async function run() {
     if (!/\.(tsx|ts)$/.test(name)) continue;
     const src = fs.readFileSync(path.join(screensDir, name), "utf8");
     assert.doesNotMatch(src, /expo-sqlite/);
+    if (name === "TeacherAttendanceScreen.tsx") {
+      assert.match(src, /offline\/outbox\/presenceWrite/);
+      assert.doesNotMatch(src, /offline\/outbox\/sqliteStore/);
+      continue;
+    }
     assert.doesNotMatch(src, /offline\/outbox/);
   }
 

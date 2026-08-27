@@ -70,6 +70,8 @@
     "verify:mobile-rc2-offline-read-smoke": "node scripts/verify-mobile-rc2-offline-read-smoke.js",
     "test:mobile-sqlite-outbox": "npx --yes tsx src/offline/outbox/sqliteOutbox.test.ts",
     "verify:mobile-sqlite-outbox": "node scripts/verify-mobile-sqlite-outbox.js",
+    "test:mobile-rc3-physical-presence": "npx --yes tsx src/offline/outbox/presenceWrite.test.ts",
+    "verify:mobile-rc3-physical-presence": "node scripts/verify-mobile-rc3-physical-presence.js",
     "test:role-selection-layout": "npx --yes tsx src/lib/roleSelectionLayout.test.ts"
   },
   "dependencies": {
