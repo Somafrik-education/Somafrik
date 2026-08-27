@@ -44,13 +44,20 @@ function main() {
   const mobilePkg = JSON.parse(read(path.join(MOBILE, "package.json")));
 
   assert.match(marker, /export const RC2_L1_READ_TAG = "RC2_L1_READ"/);
+  assert.match(marker, /export const RC2_L1_SYNC_TAG = "RC2_L1_SYNC"/);
+  assert.match(marker, /export const RC2_L1_REFUSAL_TAG = "RC2_L1_REFUSAL"/);
   assert.match(marker, /export const RC2_OFFLINE_BOOT_TAG = "RC2_OFFLINE_BOOT"/);
   assert.match(marker, /export const RC2_OFFLINE_READ_SMOKE_TAG = "RC2_OFFLINE_READ_SMOKE"/);
   assert.match(marker, /permissions=ready_offline/);
   assert.match(marker, /RC2_OFFLINE_READ_SMOKE_TAG\} OK/);
+  assert.match(marker, /metadata_absent/);
+  assert.match(marker, /network_preserved/);
   assert.doesNotMatch(marker, /accessToken|refreshToken|l1DbKey|SecureStore/);
   assert.match(readModel, /logRc2L1ReadFromSnapshot/);
+  assert.match(readModel, /logRc2L1Refusal/);
   assert.match(runtime, /logRc2OfflineBoot/);
+  assert.match(runtime, /logRc2L1SyncResults/);
+  assert.match(runtime, /const results = await syncL1Cache/);
   assert.match(runtime, /ready_offline/);
   assert.match(establishment, /export function l1AssignmentBelongsToTeacherSession/);
   assert.match(establishment, /teacherUserId === userId/);
@@ -121,7 +128,7 @@ function main() {
     .filter((line) => /\tdevice\s*$/.test(line));
   if (!deviceLines.length) {
     console.log(
-      "BLOCKED_NATIVE_RC2_OFFLINE_READ_SMOKE: aucun device Android physique (online sync L1 → couper Wi-Fi+data → adb reverse 8081 → force-stop → relaunch → ready_offline + 5× RC2_L1_READ source=l1-cache → RC2_OFFLINE_READ_SMOKE OK)",
+      "BLOCKED_NATIVE_RC2_OFFLINE_READ_SMOKE: aucun device Android physique (online 5× RC2_L1_SYNC outcome=ready → couper Wi-Fi+data → adb reverse 8081 → force-stop → relaunch → ready_offline + 5× RC2_L1_READ source=l1-cache → RC2_OFFLINE_READ_SMOKE OK)",
     );
   } else {
     console.log(

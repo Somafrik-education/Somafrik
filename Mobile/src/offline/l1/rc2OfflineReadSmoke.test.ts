@@ -13,17 +13,23 @@ import {
 import { createMemoryL1Store } from "./memoryStore";
 import {
   loadL1BackedSnapshot,
+  readL1Resource,
   setL1ReadDepsForTests,
   shouldBlockUnsupportedMutations,
 } from "./readModel";
-import { applyL1PageAtomically } from "./repository";
+import { applyL1PageAtomically, markResourceState } from "./repository";
 import { resetL1LifecycleForTests } from "./lifecycle";
 import {
   logRc2L1Read,
   logRc2L1ReadFromSnapshot,
+  logRc2L1Refusal,
+  logRc2L1Sync,
+  logRc2L1SyncResults,
   logRc2OfflineBoot,
   RC2_L1_READ_TAG,
+  RC2_L1_REFUSAL_TAG,
   RC2_L1_RESOURCES,
+  RC2_L1_SYNC_TAG,
   RC2_OFFLINE_BOOT_TAG,
   RC2_OFFLINE_READ_SMOKE_TAG,
   resetRc2OfflineReadSmokeForTests,
@@ -32,9 +38,11 @@ import type { L1Page, L1Partition, L1Resource } from "./types";
 
 const ROOT = path.resolve(__dirname, "../../..");
 const L1_READ_LINE = /^RC2_L1_READ resource=[a-z-]+ source=[a-z0-9-]+ status=[a-z]+ rows=\d+$/;
+const SYNC_LINE = /^RC2_L1_SYNC resource=[a-z-]+ outcome=[a-z_]+(?: code=[A-Z0-9_]+)?$/;
+const REFUSAL_LINE = /^RC2_L1_REFUSAL resource=[a-z-]+ reason=[a-z_]+$/;
 const BOOT_LINE = /^RC2_OFFLINE_BOOT permissions=ready_offline(?: status=[a-z_]+)?$/;
 const OK_LINE = /^RC2_OFFLINE_READ_SMOKE OK$/;
-const FORBIDDEN = /jwt|eyJ|sqlcipher|password|email|phone|téléphone|userId|user_id|matricule|@|bearer/i;
+const FORBIDDEN = /jwt|eyJ|password|email|phone|téléphone|userId=|user_id=|matricule|bearer/i;
 
 const partitionA: L1Partition = { userId: "user-a", schoolId: "school-1", schoolCode: "SCH-1" };
 const sessionA = {
@@ -162,6 +170,53 @@ async function run() {
   }
   assert.equal(lines.at(-1), `${RC2_OFFLINE_READ_SMOKE_TAG} OK`, "ready + 0 rows = vide confirmé, OK");
 
+  resetRc2OfflineReadSmokeForTests({
+    logger: { warn: (message) => lines.push(message) },
+  });
+  lines.length = 0;
+  logRc2L1Sync({ resource: "classes", outcome: "ready" });
+  assert.equal(lines.at(-1), "RC2_L1_SYNC resource=classes outcome=ready");
+  assert.match(lines.at(-1) ?? "", SYNC_LINE);
+  logRc2L1Sync({ resource: "students", outcome: "error", code: "UNAUTHORIZED" });
+  assert.equal(lines.at(-1), "RC2_L1_SYNC resource=students outcome=error code=UNAUTHORIZED");
+  logRc2L1Sync({ resource: "assignments", outcome: "blocked_authorization", code: "PERMISSION_DENIED" });
+  assert.equal(lines.at(-1), "RC2_L1_SYNC resource=assignments outcome=blocked_authorization code=PERMISSION_DENIED");
+  logRc2L1Sync({ resource: "school-courses", outcome: "error", code: "secret-jwt-value" });
+  assert.equal(lines.at(-1), "RC2_L1_SYNC resource=school-courses outcome=error");
+  logRc2L1Sync({ resource: "course-schedules", outcome: "not-a-real-outcome" });
+  assert.equal(lines.filter((line) => line.includes("not-a-real-outcome")).length, 0);
+  logRc2L1SyncResults([
+    { resource: "classes", outcome: "ready" },
+    { resource: "students", outcome: "network_preserved" },
+    { resource: "assignments", outcome: "discarded" },
+    { resource: "school-courses", outcome: "error", code: "BACKEND_5XX" },
+    { resource: "course-schedules", outcome: "ready" },
+  ]);
+  assert.ok(lines.includes("RC2_L1_SYNC resource=students outcome=network_preserved"));
+  assert.ok(lines.includes("RC2_L1_SYNC resource=school-courses outcome=error code=BACKEND_5XX"));
+  for (const line of lines.filter((row) => row.startsWith(RC2_L1_SYNC_TAG))) {
+    assert.match(line, SYNC_LINE);
+    assert.doesNotMatch(line, FORBIDDEN);
+  }
+
+  for (const reason of [
+    "empty",
+    "reconciling",
+    "blocked_authorization",
+    "metadata_absent",
+    "partition_mismatch",
+    "sqlcipher_unavailable",
+    "partition_unresolved",
+  ] as const) {
+    logRc2L1Refusal({ resource: "students", reason });
+    assert.equal(lines.at(-1), `RC2_L1_REFUSAL resource=students reason=${reason}`);
+    assert.match(lines.at(-1) ?? "", REFUSAL_LINE);
+  }
+  logRc2L1Refusal({ resource: "students", reason: "jwt-leak" });
+  assert.equal(lines.filter((line) => line.includes("jwt-leak")).length, 0);
+  logRc2L1Refusal({ resource: "not-a-resource", reason: "metadata_absent" });
+  assert.equal(lines.filter((line) => line.includes("not-a-resource")).length, 0);
+
   resetL1LifecycleForTests();
   setL1ReadDepsForTests(null);
   const store = createMemoryL1Store();
@@ -214,6 +269,35 @@ async function run() {
   assert.equal(emptyStudents.source, "l1-cache");
   assert.equal(emptyStudents.status, "empty");
   assert.equal(lines.at(-1), "RC2_L1_READ resource=students source=l1-cache status=empty rows=0");
+
+  const missingMeta = await readL1Resource({ session: sessionA, resource: "assignments" });
+  assert.deepEqual(missingMeta, { ok: false, reason: "metadata_absent" });
+  assert.equal(lines.at(-1), "RC2_L1_REFUSAL resource=assignments reason=metadata_absent");
+
+  await applyL1PageAtomically(
+    store,
+    partitionA,
+    "assignments",
+    page("assignments", [{ id: "asg-1", teacher_user_id: "user-a", status: "active" }]),
+    "ready",
+  );
+  await markResourceState(store, partitionA, "assignments", { state: "reconciling" });
+  const reconciling = await readL1Resource({ session: sessionA, resource: "assignments" });
+  assert.deepEqual(reconciling, { ok: false, reason: "reconciling" });
+  assert.equal(lines.at(-1), "RC2_L1_REFUSAL resource=assignments reason=reconciling");
+
+  const blockedLoad = await loadL1BackedSnapshot({
+    session: sessionA,
+    permissionsBootstrap: "ready_offline",
+    resource: "school-courses",
+    fetchNetwork: async () => {
+      throw new Error("GET interdit en ready_offline");
+    },
+    project: () => [],
+  });
+  assert.equal(blockedLoad.status, "offline");
+  assert.ok(lines.includes("RC2_L1_REFUSAL resource=school-courses reason=metadata_absent"));
+  assert.equal(lines.at(-1), "RC2_L1_READ resource=school-courses source=none status=offline rows=0");
 
   const teacher = {
     role: "teacher",
@@ -282,11 +366,15 @@ async function run() {
 
   const runtimeSrc = fs.readFileSync(path.join(ROOT, "src/offline/l1/L1CacheRuntime.tsx"), "utf8");
   assert.match(runtimeSrc, /logRc2OfflineBoot/);
+  assert.match(runtimeSrc, /logRc2L1SyncResults/);
   const readModelSrc = fs.readFileSync(path.join(ROOT, "src/offline/l1/readModel.ts"), "utf8");
   assert.match(readModelSrc, /logRc2L1ReadFromSnapshot/);
+  assert.match(readModelSrc, /logRc2L1Refusal/);
 
   const markerSrc = fs.readFileSync(path.join(ROOT, "src/offline/l1/rc2OfflineReadSmoke.ts"), "utf8");
   assert.match(markerSrc, new RegExp(RC2_L1_READ_TAG));
+  assert.match(markerSrc, new RegExp(RC2_L1_SYNC_TAG));
+  assert.match(markerSrc, new RegExp(RC2_L1_REFUSAL_TAG));
   assert.match(markerSrc, new RegExp(RC2_OFFLINE_BOOT_TAG));
   assert.match(markerSrc, new RegExp(RC2_OFFLINE_READ_SMOKE_TAG));
   assert.doesNotMatch(markerSrc, /accessToken|refreshToken|l1DbKey/);

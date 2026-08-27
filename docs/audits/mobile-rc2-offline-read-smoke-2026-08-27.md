@@ -9,7 +9,7 @@
 ```text
 Base develop exact : 874f9415cda8c1e3df1339001b8f0f437149f38d
                      (merge #352 Native SQLCipher APK smoke)
-HEAD PR            : 7456be977a3cae49e004b4e6748065a1e448a45d
+HEAD PR            : (pointe de #353 — correctif diagnostique SYNC/REFUSAL)
 Appareil physique  : Xiaomi E6QCAIAIC6LJIBXG
 Package            : com.somafrik.app
 Version            : 1.2.1 (versionCode 13)
@@ -33,6 +33,11 @@ Fallback cache seulement pour `NETWORK_UNAVAILABLE`.
 ## Instrumentation (logcat, non sensible)
 
 ```text
+RC2_L1_SYNC resource=classes outcome=ready
+RC2_L1_SYNC resource=students outcome=ready
+RC2_L1_SYNC resource=assignments outcome=ready
+RC2_L1_SYNC resource=school-courses outcome=ready
+RC2_L1_SYNC resource=course-schedules outcome=ready
 RC2_L1_READ resource=classes source=l1-cache status=success rows=4
 RC2_L1_READ resource=students source=l1-cache status=success rows=87
 RC2_L1_READ resource=assignments source=l1-cache status=success rows=12
@@ -42,32 +47,39 @@ RC2_OFFLINE_BOOT permissions=ready_offline
 RC2_OFFLINE_READ_SMOKE OK
 ```
 
-Interdit dans ces lignes : JWT, clé SQLCipher, email, téléphone, nom d'élève, ID utilisateur.
+Au refus de lecture (whitelist stricte) :
+
+```text
+RC2_L1_REFUSAL resource=students reason=metadata_absent
+```
+
+`reason` ∈ `empty` | `reconciling` | `blocked_authorization` | `metadata_absent` | `partition_mismatch` | `sqlcipher_unavailable` | `partition_unresolved`.
+
+`outcome` ∈ `ready` | `blocked_authorization` | `discarded` | `network_preserved` | `error`.  
+`code` optionnel, allowlist moteur uniquement (`UNAUTHORIZED`, `PERMISSION_DENIED`, `NETWORK_UNAVAILABLE`, …). Jamais de JWT, clé SQLCipher, email, téléphone, nom d'élève, ID utilisateur.
 
 `RC2_OFFLINE_READ_SMOKE OK` n'est émis qu'après `RC2_OFFLINE_BOOT permissions=ready_offline` **et** les 5 ressources vues en `source=l1-cache` avec `status=success|empty`.
 
-## Scénario physique obligatoire
+## Scénario physique — tentative 2 (après ce correctif)
 
-1. **Online** — compte établissement autorisé ; charger Classes, Élèves, Affectations, Structure pédagogique/Cours, Planning ; attendre sync L1 ; relever quelques identités métier (code classe, matricule, cours, créneau) **hors logs RC2**.
-2. **Offline réel** — couper Wi-Fi + données mobiles ; conserver USB + `adb reverse 8081` pour Metro uniquement ; aucune API Somafrik accessible.
-3. **Kill / relaunch**
+**Ne pas couper Internet** tant que logcat n'a pas les cinq :
 
-   ```text
-   adb shell am force-stop com.somafrik.app
-   adb shell am start -W -n com.somafrik.app/.MainActivity
-   ```
+```text
+RC2_L1_SYNC resource=classes outcome=ready
+RC2_L1_SYNC resource=students outcome=ready
+RC2_L1_SYNC resource=assignments outcome=ready
+RC2_L1_SYNC resource=school-courses outcome=ready
+RC2_L1_SYNC resource=course-schedules outcome=ready
+```
 
-4. **Bootstrap offline** — session restaurée ; `permissionsBootstrap = ready_offline` ; aucun GET métier obligatoire avant L1.
-5. **Classes** — `source=l1-cache` ; bannière hors ligne ; recherche locale ; navigation élèves ; CREATE/UPDATE/DELETE bloqués.
-6. **Élèves** — liste L1 ; matricule / nom / classe corrects ; recherche locale ; fiche élève ; L2 présence/paiement en échec **ne détruit pas** Students L1 et **n'invente pas** `0` (`Indisponible`).
-7. **SchoolCourses** — cours synchronisés visibles ; cohérence classe/cours/discipline ; pas de mutation offline.
-8. **CourseSchedules** — planning SQLite ; jours/horaires/classes/cours ; création/édition/suppression/remplacement bloqués ; remplacements non L1 = **non vérifiés**, jamais absence confirmée.
-9. **Enseignant (sécurité)** — seulement `teacherUserId === session.user.id` ; absent / null / mismatch ⇒ zéro affectation ; **aucun** fallback `teacherCode` / `teacherId`.
+Si l'un donne `error` ou `blocked_authorization`, corriger cette cause avant de refaire RC2.
+
+Ensuite seulement : Wi-Fi + data OFF, USB + `adb reverse 8081`, kill/relaunch, `ready_offline`, 5× `RC2_L1_READ source=l1-cache`.
 
 Capturer :
 
 ```text
-adb logcat -d | grep -E "RC2_L1_READ|RC2_OFFLINE_BOOT|RC2_OFFLINE_READ_SMOKE"
+adb logcat -d | grep -E "RC2_L1_SYNC|RC2_L1_REFUSAL|RC2_L1_READ|RC2_OFFLINE_BOOT|RC2_OFFLINE_READ_SMOKE"
 ```
 
 ## Preuve Android physique — tentative 1
@@ -101,29 +113,27 @@ Constats UI :
 - CourseSchedules L1 indisponible : NO-GO ;
 - aucun `RC2_OFFLINE_READ_SMOKE OK`.
 
-Le transcript montre que le lecteur refuse le cache en offline, mais l'instrumentation actuelle ne révèle pas encore si la cause est `metadata_absent`, `reconciling`, `blocked_authorization`, `partition_mismatch` ou autre. Les marqueurs online `source=network` ne prouvent pas que `syncL1Cache` a atteint `outcome=ready`.
+Le transcript montre que le lecteur refuse le cache en offline, mais l'instrumentation de la tentative 1 ne révélait pas encore si la cause est `metadata_absent`, `reconciling`, `blocked_authorization`, `partition_mismatch` ou autre. Les marqueurs online `source=network` ne prouvent pas que `syncL1Cache` a atteint `outcome=ready`.
 
-## Correctif diagnostique requis avant tentative 2
+## Correctif diagnostique (cette révision)
 
-Instrumenter sans donnée sensible :
+Sans changer la logique métier :
 
-```text
-RC2_L1_SYNC resource=<resource> outcome=<ready|blocked_authorization|discarded|network_preserved|error> code=<allowlist|none>
-RC2_L1_REFUSAL resource=<resource> reason=<empty|reconciling|blocked_authorization|metadata_absent|partition_mismatch|sqlcipher_unavailable|partition_unresolved>
-```
+- `L1CacheRuntime` consomme le tableau `L1SyncResult[]` et émet `RC2_L1_SYNC resource=… outcome=…` (code allowlisté optionnel).
+- `readL1Resource` émet `RC2_L1_REFUSAL resource=… reason=…` sur chaque refus whitelisté.
 
-Puis confirmer online les cinq `outcome=ready` avant toute coupure réseau. Si un outcome n'est pas `ready`, corriger sa cause avant de refaire RC2.
+Tentative 2 : attendre les cinq `outcome=ready` **avant** toute coupure réseau. Si `error` ou `blocked_authorization`, corriger la cause d'abord.
 
 ## Checklist de preuve
 
 | Critère | Statut | Preuve |
 | --- | --- | --- |
-| HEAD exact | OK | `7456be977a3cae49e004b4e6748065a1e448a45d` |
+| HEAD exact | HOLD | pointe de #353 après ce correctif diagnostique |
 | Appareil physique | OK | Xiaomi `E6QCAIAIC6LJIBXG` |
 | Package / version | OK | `com.somafrik.app` 1.2.1 / versionCode 13 |
 | 5 ressources L1 | OK (code) | `L1_RESOURCES` + 5 loaders `AdminDataContext` |
 | Online écrans réseau | OK | transcript `source=network` |
-| Online sync SQLite ready | HOLD | instrumentation `RC2_L1_SYNC` requise |
+| Online sync SQLite ready | HOLD | attendre 5× `RC2_L1_SYNC outcome=ready` |
 | Internet coupé | OK | Wi-Fi + data off, USB + `adb reverse 8081` only |
 | Kill / relaunch | OK | cold relaunch Android |
 | `ready_offline` | OK | `RC2_OFFLINE_BOOT permissions=ready_offline` |
@@ -165,6 +175,6 @@ Le vérificateur RC2 sort `BLOCKED_NATIVE_RC2_OFFLINE_READ_SMOKE` (exit 0) sans 
 RC2 OFFLINE READ SMOKE: HOLD / NO-GO PHYSIQUE
 ```
 
-Pas de Ready, pas de merge. Prochaine tentative seulement après instrumentation du résultat de sync et de la raison de refus, puis cinq `outcome=ready` online.
+Pas de Ready, pas de merge. Prochaine tentative seulement après cinq `RC2_L1_SYNC outcome=ready` online, puis kill/relaunch hors ligne.
 
 Prochain chantier **après GO RC2** : SQLite Outbox + exactly-once replay / **RC3 Offline Write**.

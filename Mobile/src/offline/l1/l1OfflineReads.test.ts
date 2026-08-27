@@ -126,8 +126,10 @@ async function run() {
 
   const readModelSrc = fs.readFileSync(path.join(ROOT, "src/offline/l1/readModel.ts"), "utf8");
   assert.match(readModelSrc, /logRc2L1ReadFromSnapshot/);
+  assert.match(readModelSrc, /logRc2L1Refusal/);
   const runtimeSrc = fs.readFileSync(path.join(ROOT, "src/offline/l1/L1CacheRuntime.tsx"), "utf8");
   assert.match(runtimeSrc, /logRc2OfflineBoot/);
+  assert.match(runtimeSrc, /logRc2L1SyncResults/);
 
   const bucket = createMemoryL1Bucket();
   const store = createMemoryL1Store({ bucket });

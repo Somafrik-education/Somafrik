@@ -9,6 +9,8 @@ import type { ResourceSnapshot } from "../../lib/dataTruth";
 import { L1_RESOURCES, type L1Resource } from "./types";
 
 export const RC2_L1_READ_TAG = "RC2_L1_READ";
+export const RC2_L1_SYNC_TAG = "RC2_L1_SYNC";
+export const RC2_L1_REFUSAL_TAG = "RC2_L1_REFUSAL";
 export const RC2_OFFLINE_BOOT_TAG = "RC2_OFFLINE_BOOT";
 export const RC2_OFFLINE_READ_SMOKE_TAG = "RC2_OFFLINE_READ_SMOKE";
 
@@ -17,6 +19,38 @@ export const RC2_L1_RESOURCES = L1_RESOURCES;
 const ALLOWED_SOURCE = new Set(["l1-cache", "network", "none"]);
 const ALLOWED_STATUS = new Set(["success", "empty", "offline", "error", "idle", "loading"]);
 const ALLOWED_BOOT_STATUS = new Set(["partition_unresolved", "sqlcipher_unavailable"]);
+const ALLOWED_SYNC_OUTCOME = new Set([
+  "ready",
+  "blocked_authorization",
+  "discarded",
+  "network_preserved",
+  "error",
+]);
+const ALLOWED_SYNC_CODE = new Set([
+  "UNAUTHORIZED",
+  "PERMISSION_DENIED",
+  "FORBIDDEN",
+  "MOBILE_SYNC_SCOPE_CHANGED",
+  "MOBILE_SYNC_CURSOR_EXPIRED",
+  "MOBILE_SYNC_CURSOR_INVALID",
+  "L1_CURSOR_INVALID_LOOP",
+  "L1_SCOPE_HASH_MISMATCH",
+  "L1_PAYLOAD_INVALID",
+  "NETWORK_UNAVAILABLE",
+  "TIMEOUT",
+  "BACKEND_5XX",
+  "SYNC_ERROR",
+  "L1_PAGE_LIMIT",
+]);
+const ALLOWED_REFUSAL = new Set([
+  "empty",
+  "reconciling",
+  "blocked_authorization",
+  "metadata_absent",
+  "partition_mismatch",
+  "sqlcipher_unavailable",
+  "partition_unresolved",
+]);
 
 export type Rc2SmokeLogger = { warn: (message: string) => void };
 
@@ -109,4 +143,40 @@ export function logRc2L1ReadFromSnapshot(
     status: snapshot.status,
     rows: Array.isArray(snapshot.data) ? snapshot.data.length : 0,
   });
+}
+
+export function logRc2L1Sync(input: {
+  resource: L1Resource | string;
+  outcome?: string | null;
+  code?: string | null;
+}): void {
+  const resource = asL1Resource(input.resource);
+  if (!resource) return;
+  const outcome = token(input.outcome, ALLOWED_SYNC_OUTCOME, "");
+  if (!outcome) return;
+  const code = token(input.code, ALLOWED_SYNC_CODE, "");
+  if (code) {
+    emit(`${RC2_L1_SYNC_TAG} resource=${resource} outcome=${outcome} code=${code}`);
+    return;
+  }
+  emit(`${RC2_L1_SYNC_TAG} resource=${resource} outcome=${outcome}`);
+}
+
+export function logRc2L1SyncResults(
+  results: readonly { resource: string; outcome: string; code?: string }[],
+): void {
+  for (const row of results) {
+    logRc2L1Sync(row);
+  }
+}
+
+export function logRc2L1Refusal(input: {
+  resource: L1Resource | string;
+  reason?: string | null;
+}): void {
+  const resource = asL1Resource(input.resource);
+  if (!resource) return;
+  const reason = token(input.reason, ALLOWED_REFUSAL, "");
+  if (!reason) return;
+  emit(`${RC2_L1_REFUSAL_TAG} resource=${resource} reason=${reason}`);
 }
