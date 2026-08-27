@@ -1,8 +1,9 @@
 # P1 #357 — Teacher assignments principal identity — 2026-08-27
 
 **Type :** trace + correctif chaîne GET `/api/assignments`  
-**PR :** Draft dédiée, **indépendante de #354 / #355 / #356**  
+**PR :** https://github.com/Somafrik-education/Somafrik/pull/357 — Draft dédiée, **indépendante de #354 / #355 / #356**  
 **Branche :** `cursor/p1-teacher-assignments-principal-identity-9855`  
+**HEAD :** `259213e3f6df67aed5bdc23c74d07961dfe20df5`  
 **Base :** `develop@1c7b8dfc` (#356 mergée)
 
 ## Constat physique
