@@ -1497,16 +1497,16 @@ class PostgresRepository {
     return this.getFinanceStore().cancelSchoolPayment(id, reason, principal, auditMeta);
   }
 
-  listFinancePaymentStatuses() {
-    return this.getFinanceStore().listFinancePaymentStatuses();
+  listFinancePaymentStatuses(principal) {
+    return this.getFinanceStore().listFinancePaymentStatuses(principal);
   }
 
   upsertFinancePaymentStatus(payload, principal) {
     return this.getFinanceStore().upsertFinancePaymentStatus(payload, principal);
   }
 
-  listFinanceFeeGrids() {
-    return this.getFinanceStore().listFinanceFeeGrids();
+  listFinanceFeeGrids(principal) {
+    return this.getFinanceStore().listFinanceFeeGrids(principal);
   }
 
   getFinanceFeeGrid(id, principal) {
@@ -1543,6 +1543,26 @@ class PostgresRepository {
 
   createFinanceReminder(studentId, payload, principal, options) {
     return this.getFinanceStore().createFinanceReminder(studentId, payload, principal, options);
+  }
+
+  listPaymentStudentOptions(principal) {
+    return this.getFinanceStore().listPaymentStudentOptions(principal);
+  }
+
+  listSchoolPaymentMethods(principal) {
+    return this.getFinanceStore().listSchoolPaymentMethods(principal);
+  }
+
+  replaceSchoolPaymentMethods(methods, principal) {
+    return this.getFinanceStore().replaceSchoolPaymentMethods(methods, principal);
+  }
+
+  listCatalogFeeTypes(principal) {
+    return this.getFinanceStore().listCatalogFeeTypes(principal);
+  }
+
+  getFinanceCatalog(principal) {
+    return this.getFinanceStore().getFinanceCatalog(principal);
   }
 
   async ensureUsersLoginIdentityConstraints() {

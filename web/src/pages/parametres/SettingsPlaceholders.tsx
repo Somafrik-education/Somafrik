@@ -1,19 +1,10 @@
-import { BellRing, Palette, PlugZap, Wallet } from "lucide-react";
+import { BellRing, Palette, PlugZap } from "lucide-react";
 import { ComingSoonState } from "../../design-system";
 
 export { EstablishmentProfilePage as SettingsProfilePage } from "./EstablishmentProfilePage";
 export { SettingsSecurityPage } from "./SecuritySettingsPage";
 export { SettingsDataPage } from "./DataBackupSettingsPage";
-
-export function SettingsFinancePage() {
-  return (
-    <ComingSoonState
-      icon={<Wallet className="h-7 w-7" />}
-      title="Paramètres Finances"
-      description="Configuration des règles financières : types de frais (inscription, mensualités, examen), échéances, moyens de paiement, devises, pénalités et réductions. Les opérations restent dans le module Finances."
-    />
-  );
-}
+export { SettingsFinancePage } from "./SettingsFinancePage";
 
 export function SettingsNotificationsPage() {
   return (

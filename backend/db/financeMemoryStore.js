@@ -19,18 +19,32 @@ const {
   obligationStatus,
   toIsoDate,
   mapBoStatusToDb,
+  normalizeKey,
 } = require("../lib/financeManagement");
 const { decoratePaymentWithItems } = require("../lib/financePaymentItems");
 const { projectObligationPaidAmounts } = require("../lib/financeObligationPaid");
 const { projectPaymentsWithAllocations, projectPaymentCash } = require("../lib/financeUnallocatedCash");
 const { resolveFinanceSchoolScope, schoolCodeInScope } = require("../lib/financeSchoolScope");
+const {
+  foldPaymentStudentOptions,
+  resolveCatalogPaymentMethods,
+  mapCatalogFeeType,
+  buildFinanceCatalog,
+  CANONICAL_PAYMENT_METHODS,
+} = require("../lib/financeCatalog");
 const financeService = require("../lib/financeService");
 
 function clone(value) {
   return JSON.parse(JSON.stringify(value));
 }
 
-function createFinanceMemoryStore({ getSchoolByCode, findStudent, listStudentsInClass, getClassById: lookupClassById } = {}) {
+function createFinanceMemoryStore({
+  getSchoolByCode,
+  findStudent,
+  listStudentsInClass,
+  getClassById: lookupClassById,
+  listSchoolStudents,
+} = {}) {
   const tables = {
     payments: [],
     paymentStatuses: [],
@@ -41,6 +55,7 @@ function createFinanceMemoryStore({ getSchoolByCode, findStudent, listStudentsIn
     paymentReminders: [],
     allocations: [],
     paymentItems: [],
+    paymentMethods: [],
     auditLogs: [],
   };
 
@@ -615,6 +630,7 @@ function createFinanceMemoryStore({ getSchoolByCode, findStudent, listStudentsIn
         tables.paymentReminders = snapshot.paymentReminders;
         tables.allocations = snapshot.allocations;
         tables.paymentItems = snapshot.paymentItems;
+        tables.paymentMethods = snapshot.paymentMethods;
         tables.auditLogs = snapshot.auditLogs;
         throw error;
       }
@@ -657,7 +673,11 @@ function createFinanceMemoryStore({ getSchoolByCode, findStudent, listStudentsIn
     },
     setFinanceFeeGridStatus: (id, status, principal) => financeService.setFeeGridStatus(api, id, status, principal),
     applyFinanceFeeGrid: (id, principal, options) => financeService.applyFeeGrid(api, id, principal, options),
-    listFinanceFeeGrids: async () => tables.feeGrids.map(mapGridRow),
+    listFinanceFeeGrids: async (principal) => {
+      const scope = resolveFinanceSchoolScope(principal);
+      if (scope.mode === "none") return [];
+      return tables.feeGrids.map(mapGridRow).filter((row) => schoolCodeInScope(row.schoolCode, scope));
+    },
     listFinanceStudentFees: async (principal) => {
       const scope = resolveFinanceSchoolScope(principal);
       if (scope.mode === "none") return [];
@@ -681,7 +701,13 @@ function createFinanceMemoryStore({ getSchoolByCode, findStudent, listStudentsIn
     adjustFinanceStudentFee: (id, patch, principal) => financeService.adjustStudentFee(api, id, patch, principal),
     createFinanceReminder: (studentId, payload, principal, options) =>
       financeService.createReminder(api, studentId, payload, principal, options),
-    listFinancePaymentStatuses: async () => tables.paymentStatuses.map(mapStatusRow),
+    listFinancePaymentStatuses: async (principal) => {
+      const scope = resolveFinanceSchoolScope(principal);
+      if (scope.mode === "none") return [];
+      return tables.paymentStatuses
+        .map(mapStatusRow)
+        .filter((row) => !row.schoolCode || schoolCodeInScope(row.schoolCode, scope));
+    },
     upsertFinancePaymentStatus: async (payload, principal) => {
       const code = asTrimmed(payload.code || payload.id);
       const existing = tables.paymentStatuses.find((row) => row.status_code === code);
@@ -698,6 +724,107 @@ function createFinanceMemoryStore({ getSchoolByCode, findStudent, listStudentsIn
       row.updated_at = new Date().toISOString();
       if (!existing) tables.paymentStatuses.push(row);
       return mapStatusRow(row);
+    },
+    async listPaymentStudentOptions(principal) {
+      const scope = resolveFinanceSchoolScope(principal);
+      if (scope.mode === "none") return [];
+      const students = typeof listSchoolStudents === "function" ? await listSchoolStudents(principal) : [];
+      const rows = [];
+      for (const student of students) {
+        const schoolCode = String(student.schoolCode || "").trim();
+        if (!schoolCodeInScope(schoolCode, scope)) continue;
+        const enrollments = Array.isArray(student.enrollments) && student.enrollments.length
+          ? student.enrollments
+          : [
+              {
+                classId: student.classId,
+                classCode: student.classCode,
+                className: student.className,
+                status: "active",
+              },
+            ];
+        for (const enrollment of enrollments) {
+          rows.push({
+            student_id: student.id || student.studentId || student.dbId,
+            student_code: student.studentCode || student.student_code || student.publicId || student.matricule,
+            first_name: student.firstName || student.first_name,
+            last_name: student.lastName || student.last_name,
+            student_status: student.status || "active",
+            enrollment_status: enrollment.status || "active",
+            class_id: enrollment.classId || enrollment.class_id,
+            class_code: enrollment.classCode || enrollment.class_code,
+            class_name: enrollment.className || enrollment.class_name,
+            school_code: schoolCode,
+          });
+        }
+      }
+      return foldPaymentStudentOptions(rows);
+    },
+    async listSchoolPaymentMethods(principal) {
+      const scope = resolveFinanceSchoolScope(principal);
+      if (scope.mode === "none") return resolveCatalogPaymentMethods([]);
+      const rows = tables.paymentMethods.filter((row) => schoolCodeInScope(row.school_code, scope));
+      return resolveCatalogPaymentMethods(rows);
+    },
+    async replaceSchoolPaymentMethods(methods, principal) {
+      const school = await getSchoolByCode?.(principal?.schoolCode);
+      const schoolCode = String(school?.code || principal?.schoolCode || "").trim().toUpperCase();
+      tables.paymentMethods = tables.paymentMethods.filter((row) => String(row.school_code).toUpperCase() !== schoolCode);
+      const allowed = new Map(CANONICAL_PAYMENT_METHODS.map((item) => [item.methodCode, item]));
+      const saved = [];
+      for (const item of Array.isArray(methods) ? methods : []) {
+        const methodCode = String(item.methodCode || item.method_code || "").trim();
+        const canonical = allowed.get(methodCode);
+        if (!canonical) continue;
+        const row = {
+          id: randomUUID(),
+          school_id: school?.id || schoolCode,
+          school_code: schoolCode,
+          method_code: canonical.methodCode,
+          label: String(item.label || canonical.label).trim() || canonical.label,
+          is_active: item.active !== false && item.is_active !== false,
+          sort_order: Number(item.sortOrder ?? item.sort_order ?? canonical.sortOrder),
+        };
+        tables.paymentMethods.push(row);
+        saved.push(row);
+      }
+      return resolveCatalogPaymentMethods(saved);
+    },
+    async listCatalogFeeTypes(principal) {
+      const scope = resolveFinanceSchoolScope(principal);
+      if (scope.mode === "none") return [];
+      const grids = tables.feeGrids.filter(
+        (row) => schoolCodeInScope(row.school_code || mapGridRow(row).schoolCode, scope) && normalizeKey(row.status) === "active",
+      );
+      const gridIds = new Set(grids.map((row) => String(row.id)));
+      return tables.schoolFeeItems
+        .filter((row) => gridIds.has(String(row.fee_grid_id)) && normalizeKey(row.status || "Actif") === "actif")
+        .map((row) => {
+          const grid = grids.find((item) => String(item.id) === String(row.fee_grid_id));
+          return mapCatalogFeeType({
+            ...row,
+            currency: grid?.currency,
+            class_id: grid?.class_id,
+            class_name: grid?.class_name || grid?.className,
+            academic_year: grid?.academic_year || grid?.academicYear,
+          });
+        });
+    },
+    async getFinanceCatalog(principal) {
+      const school =
+        principal?.schoolCode && principal.schoolCode !== "*"
+          ? await getSchoolByCode?.(principal.schoolCode)
+          : null;
+      const [paymentMethods, feeTypes] = await Promise.all([
+        api.listSchoolPaymentMethods(principal),
+        api.listCatalogFeeTypes(principal),
+      ]);
+      return buildFinanceCatalog({
+        currency: school?.currency,
+        currencySource: school?.currency ? "school" : "country",
+        paymentMethods,
+        feeTypes,
+      });
     },
   };
 

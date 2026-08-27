@@ -51,6 +51,9 @@ function assertSourceGuards() {
 
   assert.match(modal, /Ajouter un libellé/);
   assert.match(modal, /Enregistrer le paiement/);
+  assert.match(modal, /listPaymentStudentOptions/);
+  assert.match(modal, /getFinanceCatalog/);
+  assert.doesNotMatch(modal, /\|\| ["']Espèces["']/);
   assert.doesNotMatch(modal, /totalAmount:/);
   assert.match(receipt, />Total</);
   assert.match(columns, /payment-items-detail/);
@@ -123,6 +126,7 @@ async function runHttp() {
       PORT: String(PORT),
       NODE_ENV: "development",
       SOMAFRIK_DB_REQUIRED: "false",
+      SOMAFRIK_SKIP_DEMO_SEED: "false",
       DATABASE_URL: "",
     },
     stdio: ["ignore", "pipe", "pipe"],

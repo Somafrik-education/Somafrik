@@ -32,11 +32,13 @@ export default function PaymentMutationControls({
   studentFees = [],
   onChanged,
   initialStudentId = "",
+  paymentMethods,
 }: {
   students: PaymentStudent[];
   studentFees?: PaymentFeeRow[];
   onChanged: () => Promise<void> | void;
   initialStudentId?: string;
+  paymentMethods?: string[];
 }) {
   const { session } = useAuth();
   const access = resolveEntityCrudAccess(session, "payments");
@@ -50,8 +52,14 @@ export default function PaymentMutationControls({
   const [obligationId, setObligationId] = useState("");
   const [amount, setAmount] = useState("");
   const amountRef = useRef<TextInput>(null);
-  const [method, setMethod] = useState("Espèces");
+  const [method, setMethod] = useState("");
   const [draftDate, setDraftDate] = useState(todayIsoDate);
+  const resolvedMethod =
+    paymentMethods && paymentMethods.length
+      ? paymentMethods.includes(method)
+        ? method
+        : paymentMethods[0]
+      : "";
 
   const studentOptions = useMemo(() => {
     const seen = new Set<string>();
@@ -88,13 +96,17 @@ export default function PaymentMutationControls({
     setClassId(preselectPaymentClassId(nextStudentId, students));
     setObligationId(preselectPaymentObligationId(nextStudentId, studentFees));
     setAmount("");
-    setMethod("Espèces");
+    setMethod(paymentMethods?.[0] ?? "");
     setDraftDate(todayIsoDate());
     setOpen(true);
   };
 
   const submit = async () => {
     if (saving) return;
+    if (!paymentMethods?.length || !resolvedMethod || !paymentMethods.includes(resolvedMethod)) {
+      setError("Catalogue des moyens de paiement indisponible.");
+      return;
+    }
     const nextErrors = validatePaymentDraft({
       studentId,
       amount,
@@ -120,7 +132,7 @@ export default function PaymentMutationControls({
       feeType: selectedFee?.feeType || "Acompte",
       obligationId: selectedFee?.obligationId,
       schoolFeeItemId: selectedFee?.schoolFeeItemId,
-      method,
+      method: resolvedMethod,
       date: draftDate,
     });
     const idempotencyKey = intentionsRef.current.getOrCreate(PAYMENT_DRAFT_INTENTION);
@@ -163,6 +175,7 @@ export default function PaymentMutationControls({
         saving={saving}
         onClose={() => setOpen(false)}
         onSubmit={() => void submit()}
+        submitDisabled={!paymentMethods?.length || !resolvedMethod}
       >
         <ChoiceChips
           label="Élève"
@@ -235,10 +248,18 @@ export default function PaymentMutationControls({
         )}
         <ChoiceChips
           label="Moyen"
-          options={["Espèces", "Mobile Money", "Virement"].map((item) => ({ id: item, label: item }))}
-          selectedId={method}
+          options={(paymentMethods ?? []).map((item) => ({
+            id: item,
+            label: item,
+          }))}
+          selectedId={resolvedMethod}
           onSelect={setMethod}
-          disabled={saving}
+          disabled={saving || !(paymentMethods && paymentMethods.length)}
+          error={
+            paymentMethods && paymentMethods.length
+              ? undefined
+              : "Catalogue des moyens de paiement indisponible."
+          }
         />
       </CanonicalMutationModal>
     </>

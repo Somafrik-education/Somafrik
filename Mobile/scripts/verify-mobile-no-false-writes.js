@@ -115,6 +115,9 @@ function main() {
   runUnit("studentDisplayName.test.ts");
 
   assert.match(payments, /PaymentMutationControls/);
+  assert.match(payments, /getPaymentStudentOptions/);
+  assert.match(payments, /paymentStudentsFromOptions/);
+  assert.match(payments, /getFinanceCatalog/);
   assert.doesNotMatch(payments, /AdminCrud/);
   assert.doesNotMatch(payments, /writePaymentsWebOnly/);
   const paymentControls = read(path.join("components", "PaymentMutationControls.tsx"));
@@ -133,6 +136,10 @@ function main() {
   assert.match(paymentControls, /collectOpenPaymentFees/);
   assert.match(paymentControls, /obligationId/);
   assert.doesNotMatch(paymentControls, /\["Scolarité", "Inscription", "Cantine"\]/);
+  assert.doesNotMatch(paymentControls, /\["Espèces", "Mobile money", "Virement"\]/);
+  assert.doesNotMatch(paymentControls, /setMethod\("Espèces"\)/);
+  assert.match(paymentControls, /paymentMethods/);
+  assert.match(paymentControls, /Catalogue des moyens de paiement indisponible/);
   assert.doesNotMatch(paymentControls, /createIdempotencyKey\(\)/);
   const eleveAt = paymentControls.indexOf('label="Élève"');
   const classeAt = paymentControls.indexOf('label="Classe"');
@@ -143,6 +150,9 @@ function main() {
   assert.match(studentPayments, /PaymentMutationControls/);
   assert.match(studentPayments, /PaymentCancelControls/);
   assert.match(studentPayments, /initialStudentId/);
+  assert.match(studentPayments, /getPaymentStudentOptions/);
+  assert.match(studentPayments, /getFinanceCatalog/);
+  assert.match(studentPayments, /paymentMethods=\{paymentMethods\}/);
 
   assert.match(announcements, /AnnouncementMutationControls/);
   assert.doesNotMatch(announcements, /AdminCrud/);

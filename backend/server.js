@@ -2232,8 +2232,29 @@ app.post("/api/payments/:paymentId/cancel", requireAuth, requirePermission("POST
   });
 }));
 
+app.get("/api/finance/payment-student-options", requireAuth, requirePermission("GET /api/finance/payment-student-options"), asyncHandler(async (req, res) => {
+  const rows = await repository.listPaymentStudentOptions(req.principal);
+  sendList(res, rows, req.query, ["studentCode", "firstName", "lastName", "className", "classCode"]);
+}));
+
+app.get("/api/finance/catalog", requireAuth, requirePermission("GET /api/finance/catalog"), asyncHandler(async (req, res) => {
+  const catalog = await repository.getFinanceCatalog(req.principal);
+  res.json(catalog);
+}));
+
+app.get("/api/finance/payment-methods", requireAuth, requirePermission("GET /api/finance/payment-methods"), asyncHandler(async (req, res) => {
+  const rows = await repository.listSchoolPaymentMethods(req.principal);
+  sendList(res, rows, req.query, ["methodCode", "label"]);
+}));
+
+app.put("/api/finance/payment-methods", requireAuth, requirePermission("PUT /api/finance/payment-methods"), asyncHandler(async (req, res) => {
+  assertCanManagePaymentMethods(req.principal);
+  const rows = await repository.replaceSchoolPaymentMethods(req.body?.methods ?? req.body ?? [], req.principal);
+  res.json(rows);
+}));
+
 app.get("/api/finance/payment-statuses", requireAuth, requirePermission("GET /api/payments"), asyncHandler(async (req, res) => {
-  const rows = await repository.listFinancePaymentStatuses();
+  const rows = await repository.listFinancePaymentStatuses(req.principal);
   sendList(res, tenantScopeService.filterRows(rows, req.principal), req.query, ["code", "label", "status"]);
 }));
 
@@ -2258,6 +2279,12 @@ function assertCanManageFeeGrids(principal) {
   throw new BusinessError(403, "Permission insuffisante pour gérer les grilles tarifaires.");
 }
 
+function assertCanManagePaymentMethods(principal) {
+  const { canManagePaymentMethods } = require("./lib/financeManagement");
+  if (canManagePaymentMethods(principal)) return;
+  throw new BusinessError(403, "Permission insuffisante pour configurer les moyens de paiement.");
+}
+
 function assertCanManagePaymentStatuses(principal) {
   const { canManagePaymentStatuses } = require("./lib/financeManagement");
   if (canManagePaymentStatuses(principal)) return;
@@ -2271,7 +2298,7 @@ function assertCanAdjustStudentFee(principal) {
 }
 
 app.get("/api/finance/fee-grids", requireAuth, requirePermission("GET /api/backoffice/finance/unpaid"), asyncHandler(async (req, res) => {
-  const rows = await repository.listFinanceFeeGrids();
+  const rows = await repository.listFinanceFeeGrids(req.principal);
   sendList(res, tenantScopeService.filterRows(rows, req.principal), req.query, ["className", "academicYear", "status"]);
 }));
 

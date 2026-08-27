@@ -674,6 +674,75 @@ async function main() {
     assert.ok(collided);
     assert.equal(Number(collided.amountPaid), 0, "allocation A jamais projetée sur B malgré identifiant collisionné");
 
+    const yearTenantB = await pool.query(
+      `SELECT id FROM academic_years WHERE school_id = $1 AND name = '2025-2026'`,
+      [schoolB.rows[0].id],
+    );
+    const classTenantB = await pool.query(
+      `INSERT INTO classes (school_id, academic_year_id, class_code, name, status)
+       VALUES ($1, $2, 'CLS-B1', '1ère B', 'active') RETURNING id`,
+      [schoolB.rows[0].id, yearTenantB.rows[0].id],
+    );
+    await pool.query(
+      `INSERT INTO enrollments (school_id, student_id, class_id, academic_year_id, status)
+       VALUES ($1, $2, $3, $4, 'active')`,
+      [schoolB.rows[0].id, studentB.rows[0].id, classTenantB.rows[0].id, yearTenantB.rows[0].id],
+    );
+    await pool.query(
+      `INSERT INTO students (school_id, student_code, first_name, last_name, status)
+       VALUES ($1, 'CD-2026-0001-STU-NOENR', 'Lina', 'Orpheline', 'active')`,
+      [schoolA.rows[0].id],
+    );
+    await pool.query(
+      `INSERT INTO fee_grids (school_id, grid_code, name, class_name, academic_year, currency, status)
+       VALUES ($1, 'GRID-B-ISO', 'Grille B isolée', '1ère B', '2025-2026', 'BIF', 'Active')`,
+      [schoolB.rows[0].id],
+    );
+
+    const optionsA = await store.listPaymentStudentOptions(admin);
+    assert.ok(optionsA.some((row) => row.studentCode === "CD-2026-0001-STU-0001"));
+    const awaOption = optionsA.find((row) => row.studentCode === "CD-2026-0001-STU-0001");
+    assert.equal(awaOption.firstName, "Awa");
+    assert.ok(["CLS-6A", "CLS-5B"].includes(awaOption.classCode));
+    assert.equal(optionsA.every((row) => String(row.studentCode).startsWith("CD-2026-0001")), true);
+    assert.equal(optionsA.some((row) => row.studentCode.includes("BI-")), false);
+    assert.equal(optionsA.some((row) => row.studentCode.includes("NOENR")), false);
+    assert.equal(optionsA.some((row) => row.studentCode.includes("ORPHAN")), false);
+
+    const optionsB = await store.listPaymentStudentOptions({
+      role: "Comptable",
+      schoolCode: "BI-2026-0001",
+    });
+    assert.equal(optionsB.length, 1);
+    assert.equal(optionsB[0].studentCode, "BI-2026-0001-STU-0001");
+    assert.equal(optionsB[0].lastName, "Other");
+    assert.equal(optionsB[0].classCode, "CLS-B1");
+
+    const gridsA = await store.listFinanceFeeGrids(admin);
+    assert.equal(gridsA.every((row) => row.schoolCode === "CD-2026-0001"), true);
+    assert.equal(
+      gridsA.some((row) => row.id === "GRID-B" || row.id === "GRID-B-ISO" || row.className === "1ère B"),
+      false,
+    );
+
+    const methodsA = await store.replaceSchoolPaymentMethods(
+      [
+        { methodCode: "cash", label: "Espèces", active: true },
+        { methodCode: "mobile_money", label: "Mobile money", active: false },
+      ],
+      admin,
+    );
+    assert.equal(methodsA.find((row) => row.methodCode === "cash")?.active, true);
+    assert.equal(methodsA.find((row) => row.methodCode === "mobile_money")?.active, false);
+
+    const methodsB = await store.listSchoolPaymentMethods({ role: "Admin School", schoolCode: "BI-2026-0001" });
+    assert.equal(methodsB.every((row) => row.persisted === false), true, "B n'hérite pas des moyens A");
+
+    const catalogA = await store.getFinanceCatalog(admin);
+    assert.equal(catalogA.currency, "CDF");
+    assert.equal(catalogA.discountsDeferred, true);
+    assert.equal(catalogA.penaltiesDeferred, true);
+
     console.log("financeRepository.pg.test.js: OK");
   } finally {
     await pool.end();

@@ -92,11 +92,11 @@ export interface FeeBalance {
 
 export interface QuickPaymentLine {
   id: string;
-  feeType: FeeType;
+  feeType: string;
   amount: string;
 }
 
-export function createPaymentLine(feeType: FeeType = "Minerval / scolarité"): QuickPaymentLine {
+export function createPaymentLine(feeType = "Minerval / scolarité"): QuickPaymentLine {
   const rand = globalThis.crypto?.randomUUID?.() ?? `line-${Date.now()}-${Math.random().toString(16).slice(2)}`;
   return { id: rand, feeType, amount: "" };
 }
@@ -186,10 +186,12 @@ export function searchStudentsForPayment(
         student.firstName,
         student.lastName,
         student.matricule,
+        student.studentCode,
         student.publicId,
         student.id,
-        student.parentPhone,
-        student.parentEmail,
+        student.studentId,
+        student.className,
+        student.classCode,
       ]
         .map((value) => normalize(value))
         .join(" ");
@@ -202,14 +204,14 @@ export function searchStudentsForPayment(
       return {
         id: String(student.id ?? ""),
         name: String(student.name ?? `${student.firstName ?? ""} ${student.lastName ?? ""}`.trim()),
-        matricule: String(student.matricule ?? student.publicId ?? student.id ?? ""),
+        matricule: String(student.matricule ?? student.studentCode ?? student.publicId ?? student.id ?? student.studentId ?? ""),
         classId: String(student.classId ?? "").trim() || undefined,
         classCode: String(student.classCode ?? "").trim() || undefined,
         className: String(student.className ?? ""),
         schoolCode: code,
         schoolName: String(school?.name ?? code),
-        parentPhone: String(student.parentPhone ?? ""),
-        parentEmail: String(student.parentEmail ?? ""),
+        parentPhone: "",
+        parentEmail: "",
       };
     });
 }
@@ -471,7 +473,7 @@ export function validateMultiItemPaymentInput(input: {
   student?: StudentSearchResult | null;
   classId?: string;
   classOptions?: Array<{ classId: string }>;
-  method?: PaymentMethod | "";
+  method?: string;
   date?: string;
   lines?: QuickPaymentLine[];
 }): string | null {

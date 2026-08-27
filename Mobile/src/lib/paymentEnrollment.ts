@@ -183,3 +183,35 @@ export function paymentSubmitErrorMessage(outcome: "queued" | "failed" | string,
   if (error instanceof Error && error.message.trim()) return error.message;
   return "Enregistrement refusé.";
 }
+
+export function paymentStudentsFromOptions(
+  rows: Array<{
+    studentId?: string;
+    firstName?: string;
+    lastName?: string;
+    classId?: string | null;
+    classCode?: string;
+    className?: string;
+    classes?: Array<{ classId: string; classCode?: string; className?: string }>;
+  }> = [],
+): PaymentStudent[] {
+  const students: PaymentStudent[] = [];
+  for (const row of rows) {
+    const id = trim(row.studentId);
+    if (!id) continue;
+    students.push({
+      id,
+      name: `${trim(row.firstName)} ${trim(row.lastName)}`.trim() || id,
+      classId: row.classId ?? null,
+      classCode: trim(row.classCode),
+      className: trim(row.className),
+      enrollments: (row.classes ?? []).map((klass) => ({
+        status: "active",
+        classId: klass.classId,
+        classCode: klass.classCode,
+        className: klass.className,
+      })),
+    });
+  }
+  return students;
+}

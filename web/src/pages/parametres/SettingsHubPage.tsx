@@ -102,7 +102,7 @@ const SETTING_CARDS: SettingCard[] = [
     title: "Finances",
     description: "Types de frais, échéances, moyens de paiement et pénalités.",
     icon: Wallet,
-    status: "soon",
+    status: "available",
     view: "configuration",
   },
   {

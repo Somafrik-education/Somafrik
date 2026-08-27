@@ -108,13 +108,31 @@ async function main() {
       PORT: String(PORT),
       NODE_ENV: "development",
       SOMAFRIK_DB_REQUIRED: "false",
+      SOMAFRIK_SKIP_DEMO_SEED: "false",
       DATABASE_URL: "",
+      DB_HOST: "",
+      DB_USER: "",
+      DB_PASSWORD: "",
+      DB_NAME: "",
+      POSTGRES_HOST: "",
+      POSTGRES_USER: "",
+      POSTGRES_PASSWORD: "",
+      POSTGRES_DB: "",
     },
     stdio: ["ignore", "pipe", "pipe"],
   });
+  const childLogs = [];
+  child.stdout.on("data", (chunk) => childLogs.push(String(chunk)));
+  child.stderr.on("data", (chunk) => childLogs.push(String(chunk)));
   try {
     await waitForHealth(child);
-    const adminToken = await login("admin", "1234", "CD-2026-0001");
+    let adminToken;
+    try {
+      adminToken = await login("admin", "1234", "CD-2026-0001");
+    } catch (error) {
+      error.message = `${error.message}\n--- backend ---\n${childLogs.join("")}`;
+      throw error;
+    }
     const stamp = Date.now();
 
     const { prepareCanonicalClassContext, postCanonicalClass } = require("../lib/canonicalClassHttp");
@@ -216,6 +234,104 @@ async function main() {
     const superToken = await login("superadmin", "1234");
     const prefetToken = await login("prefet", "1234", "CD-2026-0001");
     const teacherToken = await login("ENS-0001", "1234", "CD-2026-0001");
+
+    const accountantStudents = await request("/students", { token: accountantToken });
+    assert.equal(accountantStudents.status, 403, "Comptable n'a pas GET /students");
+
+    const accountantOptions = await request("/finance/payment-student-options", { token: accountantToken });
+    assert.equal(accountantOptions.status, 200, JSON.stringify(accountantOptions.data));
+    const optionRows = Array.isArray(accountantOptions.data) ? accountantOptions.data : accountantOptions.data?.items ?? [];
+    assert.ok(optionRows.some((row) => row.studentCode === studentCode || row.studentId), "Comptable voit l'élève inscrit");
+    assert.equal(
+      optionRows.every((row) => !("parentPhone" in row) && !("parentEmail" in row)),
+      true,
+      "projection minimale sans parent",
+    );
+
+    const teacherOptions = await request("/finance/payment-student-options", { token: teacherToken });
+    assert.equal(teacherOptions.status, 403, "Enseignant n'a pas payment-student-options");
+
+    const catalog = await request("/finance/catalog", { token: accountantToken });
+    assert.equal(catalog.status, 200, JSON.stringify(catalog.data));
+    assert.equal(catalog.data.currency, "CDF");
+    assert.equal(Array.isArray(catalog.data.paymentMethods), true);
+    assert.equal(catalog.data.discountsDeferred, true);
+
+    const accountantPutMethods = await request("/finance/payment-methods", {
+      method: "PUT",
+      token: accountantToken,
+      body: { methods: [{ methodCode: "cash", label: "Espèces", active: true }] },
+    });
+    assert.equal(accountantPutMethods.status, 403, "Comptable ne configure pas les moyens");
+
+    const adminPutMethods = await request("/finance/payment-methods", {
+      method: "PUT",
+      token: adminToken,
+      body: {
+        methods: [
+          { methodCode: "cash", label: "Espèces", active: true },
+          { methodCode: "mobile_money", label: "Mobile money", active: true },
+        ],
+      },
+    });
+    assert.equal(adminPutMethods.status, 200, JSON.stringify(adminPutMethods.data));
+    assert.equal(adminPutMethods.data.some((row) => row.methodCode === "cash" && row.active), true);
+
+    function asFinanceRows(payload) {
+      if (Array.isArray(payload)) return payload;
+      if (Array.isArray(payload?.items)) return payload.items;
+      return [];
+    }
+    const injectedScope = "?schoolCode=BI-2026-0002&schoolId=00000000-0000-0000-0000-0000000000bb";
+    const injectedOptions = await request(`/finance/payment-student-options${injectedScope}`, {
+      token: accountantToken,
+    });
+    assert.equal(injectedOptions.status, 200, JSON.stringify(injectedOptions.data));
+    const injectedOptionRows = asFinanceRows(injectedOptions.data);
+    assert.equal(
+      injectedOptionRows.every((row) => !String(row.studentCode || row.studentId || "").includes("BI-")),
+      true,
+      "query/tenant B n'élargit jamais payment-student-options A",
+    );
+
+    const injectedCatalog = await request(`/finance/catalog${injectedScope}`, { token: accountantToken });
+    assert.equal(injectedCatalog.status, 200, JSON.stringify(injectedCatalog.data));
+    assert.equal(injectedCatalog.data.currency, "CDF", "query B ne change pas la devise A");
+
+    const adminBiToken = await login("admin", "1234", "BI-2026-0002");
+    const forgedMethods = await request("/finance/payment-methods", {
+      method: "PUT",
+      token: adminToken,
+      body: {
+        schoolCode: "BI-2026-0002",
+        schoolId: "00000000-0000-0000-0000-0000000000bb",
+        methods: [{ methodCode: "card", label: "Carte injectée", active: true }],
+      },
+    });
+    assert.equal(forgedMethods.status, 200, JSON.stringify(forgedMethods.data));
+    assert.equal(
+      asFinanceRows(forgedMethods.data).some((row) => row.methodCode === "card" && row.persisted),
+      true,
+      "le PUT s'applique au tenant du principal A",
+    );
+
+    const methodsBi = await request("/finance/payment-methods", { token: adminBiToken });
+    assert.equal(methodsBi.status, 200, JSON.stringify(methodsBi.data));
+    assert.equal(
+      asFinanceRows(methodsBi.data).every(
+        (row) => !(row.methodCode === "card" && row.persisted === true && row.label === "Carte injectée"),
+      ),
+      true,
+      "body schoolCode/schoolId B ne mute jamais B",
+    );
+
+    const optionsBi = await request("/finance/payment-student-options", { token: adminBiToken });
+    assert.equal(optionsBi.status, 200, JSON.stringify(optionsBi.data));
+    assert.equal(
+      asFinanceRows(optionsBi.data).every((row) => !String(row.studentCode || "").startsWith("CD-")),
+      true,
+      "Admin B ne voit pas les élèves A",
+    );
 
     const accountantGrid = await request("/finance/fee-grids", {
       method: "POST",

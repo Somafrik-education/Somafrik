@@ -2736,6 +2736,14 @@ class FallbackRepository {
               studentMatchesClassScope(student, classRef),
           );
         },
+        listSchoolStudents: async (principal) => {
+          const dataset = await this.getDataset();
+          const schoolCode = String(principal?.schoolCode ?? "").trim().toUpperCase();
+          return (dataset.students ?? []).filter((student) => {
+            if (!schoolCode || schoolCode === "*") return true;
+            return String(student.schoolCode ?? "").toUpperCase() === schoolCode;
+          });
+        },
       });
     }
     return this._financeStore;
@@ -2757,16 +2765,16 @@ class FallbackRepository {
     return this.getFinanceStore().cancelSchoolPayment(id, reason, principal, auditMeta);
   }
 
-  listFinancePaymentStatuses() {
-    return this.getFinanceStore().listFinancePaymentStatuses();
+  listFinancePaymentStatuses(principal) {
+    return this.getFinanceStore().listFinancePaymentStatuses(principal);
   }
 
   upsertFinancePaymentStatus(payload, principal) {
     return this.getFinanceStore().upsertFinancePaymentStatus(payload, principal);
   }
 
-  listFinanceFeeGrids() {
-    return this.getFinanceStore().listFinanceFeeGrids();
+  listFinanceFeeGrids(principal) {
+    return this.getFinanceStore().listFinanceFeeGrids(principal);
   }
 
   getFinanceFeeGrid(id, principal) {
@@ -2803,6 +2811,26 @@ class FallbackRepository {
 
   createFinanceReminder(studentId, payload, principal, options) {
     return this.getFinanceStore().createFinanceReminder(studentId, payload, principal, options);
+  }
+
+  listPaymentStudentOptions(principal) {
+    return this.getFinanceStore().listPaymentStudentOptions(principal);
+  }
+
+  listSchoolPaymentMethods(principal) {
+    return this.getFinanceStore().listSchoolPaymentMethods(principal);
+  }
+
+  replaceSchoolPaymentMethods(methods, principal) {
+    return this.getFinanceStore().replaceSchoolPaymentMethods(methods, principal);
+  }
+
+  listCatalogFeeTypes(principal) {
+    return this.getFinanceStore().listCatalogFeeTypes(principal);
+  }
+
+  getFinanceCatalog(principal) {
+    return this.getFinanceStore().getFinanceCatalog(principal);
   }
 
   async listPedagogyProjection() {
