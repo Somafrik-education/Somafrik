@@ -30,18 +30,22 @@ vi.mock("../../context/ActiveSchoolContext", () => ({
 }));
 
 vi.mock("../../lib/fees", () => ({
-  canManageFeeGrids: () => true,
-  canViewFeeGrids: () => true,
+  canManageFeeGrids: vi.fn(() => true),
+  canViewFeeGrids: vi.fn(() => true),
 }));
 
 vi.mock("../../components/ui/Toast", () => ({
   useToast: () => ({ showToast: vi.fn() }),
 }));
 
+import { canManageFeeGrids, canViewFeeGrids } from "../../lib/fees";
 import { SettingsFinancePage } from "./SettingsFinancePage";
 
 describe("SettingsFinancePage", () => {
   beforeEach(() => {
+    vi.clearAllMocks();
+    canManageFeeGrids.mockReturnValue(true);
+    canViewFeeGrids.mockReturnValue(true);
     getFinanceCatalog.mockResolvedValue({
       currency: "CDF",
       currencySource: "country",
@@ -81,5 +85,37 @@ describe("SettingsFinancePage", () => {
     expect(screen.getAllByText("Espèces").length).toBeGreaterThan(0);
     expect(screen.getByText(/25[\s\u00a0]?000/)).toBeInTheDocument();
     expect(screen.getByText(/différées V1/i)).toBeInTheDocument();
+  });
+
+  it("refuse l'accès sans permission de lecture", async () => {
+    canManageFeeGrids.mockReturnValue(false);
+    canViewFeeGrids.mockReturnValue(false);
+    render(
+      <MemoryRouter>
+        <SettingsFinancePage />
+      </MemoryRouter>,
+    );
+    expect(await screen.findByText(/L'administration configure les règles financières/i)).toBeInTheDocument();
+    expect(getFinanceCatalog).not.toHaveBeenCalled();
+  });
+
+  it("affiche l'état vide sans grille tarifaire", async () => {
+    listFeeGrids.mockResolvedValue([]);
+    getFinanceCatalog.mockResolvedValue({
+      currency: "CDF",
+      currencySource: "country",
+      paymentMethods: [{ methodCode: "cash", label: "Espèces", active: true, sortOrder: 10 }],
+      feeTypes: [],
+      canonicalFeeTypes: [{ feeType: "Inscription", label: "Inscription" }],
+      discountsDeferred: true,
+      penaltiesDeferred: true,
+    });
+    render(
+      <MemoryRouter>
+        <SettingsFinancePage />
+      </MemoryRouter>,
+    );
+    expect(await screen.findByText("Aucune grille tarifaire")).toBeInTheDocument();
+    expect(screen.queryByText("Bientôt disponible")).not.toBeInTheDocument();
   });
 });

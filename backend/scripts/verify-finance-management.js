@@ -277,6 +277,62 @@ async function main() {
     assert.equal(adminPutMethods.status, 200, JSON.stringify(adminPutMethods.data));
     assert.equal(adminPutMethods.data.some((row) => row.methodCode === "cash" && row.active), true);
 
+    function asFinanceRows(payload) {
+      if (Array.isArray(payload)) return payload;
+      if (Array.isArray(payload?.items)) return payload.items;
+      return [];
+    }
+    const injectedScope = "?schoolCode=BI-2026-0002&schoolId=00000000-0000-0000-0000-0000000000bb";
+    const injectedOptions = await request(`/finance/payment-student-options${injectedScope}`, {
+      token: accountantToken,
+    });
+    assert.equal(injectedOptions.status, 200, JSON.stringify(injectedOptions.data));
+    const injectedOptionRows = asFinanceRows(injectedOptions.data);
+    assert.equal(
+      injectedOptionRows.every((row) => !String(row.studentCode || row.studentId || "").includes("BI-")),
+      true,
+      "query/tenant B n'élargit jamais payment-student-options A",
+    );
+
+    const injectedCatalog = await request(`/finance/catalog${injectedScope}`, { token: accountantToken });
+    assert.equal(injectedCatalog.status, 200, JSON.stringify(injectedCatalog.data));
+    assert.equal(injectedCatalog.data.currency, "CDF", "query B ne change pas la devise A");
+
+    const adminBiToken = await login("admin", "1234", "BI-2026-0002");
+    const forgedMethods = await request("/finance/payment-methods", {
+      method: "PUT",
+      token: adminToken,
+      body: {
+        schoolCode: "BI-2026-0002",
+        schoolId: "00000000-0000-0000-0000-0000000000bb",
+        methods: [{ methodCode: "card", label: "Carte injectée", active: true }],
+      },
+    });
+    assert.equal(forgedMethods.status, 200, JSON.stringify(forgedMethods.data));
+    assert.equal(
+      asFinanceRows(forgedMethods.data).some((row) => row.methodCode === "card" && row.persisted),
+      true,
+      "le PUT s'applique au tenant du principal A",
+    );
+
+    const methodsBi = await request("/finance/payment-methods", { token: adminBiToken });
+    assert.equal(methodsBi.status, 200, JSON.stringify(methodsBi.data));
+    assert.equal(
+      asFinanceRows(methodsBi.data).every(
+        (row) => !(row.methodCode === "card" && row.persisted === true && row.label === "Carte injectée"),
+      ),
+      true,
+      "body schoolCode/schoolId B ne mute jamais B",
+    );
+
+    const optionsBi = await request("/finance/payment-student-options", { token: adminBiToken });
+    assert.equal(optionsBi.status, 200, JSON.stringify(optionsBi.data));
+    assert.equal(
+      asFinanceRows(optionsBi.data).every((row) => !String(row.studentCode || "").startsWith("CD-")),
+      true,
+      "Admin B ne voit pas les élèves A",
+    );
+
     const accountantGrid = await request("/finance/fee-grids", {
       method: "POST",
       token: accountantToken,

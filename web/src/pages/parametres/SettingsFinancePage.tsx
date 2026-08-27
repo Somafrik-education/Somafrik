@@ -87,8 +87,9 @@ export function SettingsFinancePage() {
   }, []);
 
   useEffect(() => {
+    if (!canRead) return;
     void load();
-  }, [load]);
+  }, [canRead, load]);
 
   const feeTypeChoices = useMemo(
     () => catalog?.canonicalFeeTypes ?? [{ feeType: "Inscription", label: "Inscription" }],
