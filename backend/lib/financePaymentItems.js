@@ -89,13 +89,14 @@ function normalizeWriteItems(payload = {}) {
   }
   const legacyType = asTrimmed(payload.feeType || payload.feeLabel || payload.label);
   const legacyAmount = payload.amount;
-  if (legacyType || legacyAmount != null) {
+  if (legacyType || legacyAmount != null || payload.obligationId) {
     return [
       {
         feeTypeId: payload.feeTypeId || payload.schoolFeeItemId || null,
         feeType: legacyType,
         feeLabel: legacyType,
         amount: legacyAmount,
+        obligationId: payload.obligationId || null,
       },
     ];
   }
