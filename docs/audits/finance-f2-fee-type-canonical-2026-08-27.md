@@ -120,6 +120,19 @@ F3 obligations/classe/tarif · F4 soldes/allocations · F5 parité · F6 RBAC ·
 
 ---
 
+## P1 — LEGACY AMBIGUOUS FEE TYPE WRITE BYPASS
+
+Le HEAD `7e59b80a` passait CI 9/9 mais `createPayment` réécrivait encore `Annexe` / `Frais de bulletin` :
+
+1. `feeTypeId` / `schoolFeeItemId` : `resolveFeeType(..., mode:"read")` puis fallback `catalog.feeType`.
+2. `obligationId` + `feeType` vide : copie silencieuse du snapshot obligation.
+
+Correctif : les deux inférences passent par `persistableFeeType` (mode write). Alias non ambigus (`Mensualité`, `Minerval`) → `Scolarité`. Ambigu / inconnu → `FINANCE_FEE_TYPE_AMBIGUOUS`, rollback, aucune ligne `payments` / `payment_items` / `payment_allocations`. Lecture historique inchangée.
+
+Couverture : `backend/lib/financeFeeTypeWriteBypass.test.js` dans `verify:finance-fee-type-canonical`.
+
+---
+
 ## Verdict F2
 
 ```text
@@ -138,6 +151,8 @@ Listes Mobile concurrentes      0
 Matching métier ambigu          lecture seule (Annexe historique)
 Catalogue API                   CANONIQUE (feeTypeCatalog)
 Grilles → type canonique        persistableFeeType
+createPayment feeTypeId         persistableFeeType (fail-closed)
+createPayment obligationId      persistableFeeType (fail-closed)
 Cross-tenant                    catalogue système identique
 Historique                      PRÉSERVÉ (TEXT snapshot)
 Nouvelle duplication            0

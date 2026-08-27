@@ -48,6 +48,31 @@ function assertSourceGuards() {
 
   assert.match(service, /persistableFeeType/);
   assert.match(service, /isUnallocatedFeeTypeInput/);
+  assert.match(
+    service,
+    /persistableFeeType\(catalog\.feeType \|\| catalog\.label\)/,
+    "createPayment feeTypeId doit canonicaliser en écriture, pas lire + fallback",
+  );
+  assert.match(
+    service,
+    /persistableFeeType\(target\.feeType\)/,
+    "createPayment obligationId doit canonicaliser l'inférence en écriture",
+  );
+  assert.doesNotMatch(
+    service,
+    /resolved \? resolved\.feeType : catalog\.feeType/,
+    "interdit le fallback brut catalog.feeType après resolveFeeType read",
+  );
+  assert.doesNotMatch(
+    service,
+    /resolved \? resolved\.feeType : target\.feeType/,
+    "interdit de recopier le snapshot obligation legacy comme nouveau type",
+  );
+  assert.doesNotMatch(
+    service,
+    /mode:\s*["']read["']/,
+    "createPayment n'utilise plus resolveFeeType en mode read pour une nouvelle écriture",
+  );
 
   assert.doesNotMatch(fees, /SCHOOL_FEE_TYPES/);
   assert.doesNotMatch(quick, /export const FEE_TYPES/);
@@ -70,6 +95,7 @@ function runUnitTests() {
       path.join(ROOT, "backend/lib/financeFeeTypes.test.js"),
       path.join(ROOT, "backend/lib/financeFeeTypeMatch.test.js"),
       path.join(ROOT, "backend/lib/financeCatalog.test.js"),
+      path.join(ROOT, "backend/lib/financeFeeTypeWriteBypass.test.js"),
     ],
     { cwd: ROOT, encoding: "utf8" },
   );

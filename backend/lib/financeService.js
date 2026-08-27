@@ -28,7 +28,7 @@ const {
   assertItemAmount,
 } = require("./financePaymentItems");
 const { obligationMatchesPaymentFeeType } = require("./financeFeeTypeMatch");
-const { persistableFeeType, isUnallocatedFeeTypeInput, resolveFeeType } = require("./financeFeeTypes");
+const { persistableFeeType, isUnallocatedFeeTypeInput } = require("./financeFeeTypes");
 const { projectPaymentCash, resolvePaymentStatus: resolveUnallocatedPaymentStatus } = require("./financeUnallocatedCash");
 
 const REMINDER_COOLDOWN_DAYS = 3;
@@ -214,8 +214,8 @@ async function openObligationsForItem(tx, obligations, item, student, school) {
     );
   }
   if (!item.feeType && target.feeType) {
-    const resolved = resolveFeeType(target.feeType, { mode: "read" });
-    item.feeType = resolved ? resolved.feeType : target.feeType;
+    // Nouvelle écriture : canonicaliser ou fail-closed. Jamais recopier le snapshot legacy.
+    item.feeType = persistableFeeType(target.feeType);
     if (!item.feeLabel || isUnallocatedFeeTypeInput(item.feeLabel) || item.feeLabel === "Non imputé") {
       item.feeLabel = target.label || item.feeType;
     }
@@ -437,8 +437,9 @@ async function createPayment(store, rawPayload, principal, auditMeta) {
       let catalogItemId = null;
       if (feeTypeId) {
         const catalog = await resolveCatalogFeeItem(tx, school.id, feeTypeId);
-        const resolved = resolveFeeType(catalog.feeType || catalog.label, { mode: "read" });
-        feeType = resolved ? resolved.feeType : catalog.feeType || catalog.label;
+        // Écriture canonique : alias connu (Mensualité/Minerval) → Scolarité ;
+        // Annexe / Bulletin / inconnu → fail closed. Pas de fallback brut.
+        feeType = persistableFeeType(catalog.feeType || catalog.label);
         feeLabel = catalog.label || catalog.feeType;
         catalogId = catalog.dbId || null;
         catalogItemId = catalog.id || null;
