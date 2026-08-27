@@ -627,6 +627,13 @@ class AuthService {
         return {
           ...base,
           ...safeTeacher,
+          // La fiche teacher ne doit jamais écraser users.id : sinon JWT.sub
+          // devient teachers.id et GET /assignments résout 0 rôle live.
+          id: base.id,
+          publicId: base.publicId,
+          identifier: base.identifier,
+          contactId: base.contactId,
+          schoolCode: base.schoolCode,
           role: sessionRole,
           roles: user.roles,
           roleKeys: user.roleKeys,

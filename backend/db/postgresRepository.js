@@ -6240,6 +6240,10 @@ class PostgresRepository {
     return this.getTeacherAssignmentsRepository().getLiveTeacherIdentityForSchool(userId, schoolId);
   }
 
+  resolveCanonicalUserIdForSchool(principalRef, schoolId) {
+    return this.getTeacherAssignmentsRepository().resolveCanonicalUserIdForSchool(principalRef, schoolId);
+  }
+
   listLiveTeacherAssignmentIdsForSync(schoolId, teacherId) {
     return this.getTeacherAssignmentsRepository().listLiveTeacherAssignmentIdsForSync(schoolId, teacherId);
   }

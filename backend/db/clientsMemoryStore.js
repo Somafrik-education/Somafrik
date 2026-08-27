@@ -263,6 +263,30 @@ function createClientsMemoryStore(seed = {}) {
           )
           .map((row) => row.role_key);
       },
+      async resolveCanonicalUserIdForSchool(principalRef, schoolId) {
+        const ref = String(principalRef ?? "").trim();
+        const sid = String(schoolId ?? "").trim();
+        if (!ref || !sid) return null;
+        const asUser = tables.users.find((row) => String(row.id ?? "") === ref);
+        if (asUser) {
+          const hasRole = tables.userRoles.some(
+            (row) =>
+              String(row.user_id ?? "") === String(asUser.id) &&
+              String(row.school_id ?? "") === sid &&
+              row.status === "active" &&
+              !row.revoked_at,
+          );
+          if (hasRole) return String(asUser.id);
+        }
+        const asTeacher = tables.teachers.find(
+          (row) =>
+            String(row.id ?? "") === ref &&
+            String(row.school_id ?? "") === sid &&
+            row.user_id &&
+            !["deleted", "archived", "inactive"].includes(String(row.status ?? "active").toLowerCase()),
+        );
+        return asTeacher?.user_id ? String(asTeacher.user_id) : null;
+      },
       async listUserCodes() {
         return tables.users.map((row) => row.user_code);
       },
