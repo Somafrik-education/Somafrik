@@ -135,6 +135,8 @@ Le chantier COM-C4 **n'active pas** de fournisseur externe et ne transforme pas 
 
 ## E2E PostgreSQL réel
 
+La fixture C4 respecte aussi le contrat d'identité V2 : la ligne `students` canonique est créée avant le compte utilisateur élève, et `users.user_code` reprend exactement `students.student_code`. Le test ne désactive ni ne contourne `STUDENT_CANONICAL_IDENTIFIER_REQUIRED`.
+
 `backend/lib/communicationsC4.http.pg.test.js` couvre notamment :
 
 - C4-01 : POST Message réel -> outbox -> notification destinataire ;
