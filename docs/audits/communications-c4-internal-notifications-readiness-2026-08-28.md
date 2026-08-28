@@ -3,6 +3,8 @@
 Date : 2026-08-28  
 Branche : `fix/communications-c4-internal-notifications-production-ready`  
 Base de travail : `develop@5e150db5e2c2e042c5e82f6e684af05515dd554e`  
+HEAD de finalisation : `cf64de244bb5e34a8462f5234ed329c445efb528`  
+Comparaison : **32 ahead / 0 behind**, merge-base = base exacte.  
 Périmètre : notifications internes Somafrik, sans fournisseur SMS/WhatsApp/push externe.
 
 ## Verdict de chantier
