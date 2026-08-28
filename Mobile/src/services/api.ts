@@ -52,8 +52,13 @@ import {
   getRestrictedAccessToken,
   getRestrictedRefreshToken,
 } from "../lib/restrictedSession";
-import { clearRequestSchoolScope } from "../lib/requestSchoolScope";
+import { clearRequestSchoolScope, getRequestSchoolScope } from "../lib/requestSchoolScope";
 import { clearStoredSchoolCode } from "../lib/activeSchool";
+import {
+  resolveCommunicationSchoolScope,
+  withCommunicationSchoolPayload,
+  withCommunicationSchoolScope,
+} from "../lib/communicationSchoolScope";
 
 export function getApiBaseUrl() {
   return resolveApiBaseUrl();
@@ -849,10 +854,21 @@ export function updateClientsAnnouncement(announcementId: string, payload: Recor
   });
 }
 
+function communicationSchoolScope(explicit?: string | null): string {
+  return resolveCommunicationSchoolScope(explicit) || resolveCommunicationSchoolScope(getRequestSchoolScope());
+}
+
+function scopedMessagesPath(path: string, schoolCode?: string | null): string {
+  return withCommunicationSchoolScope(path, communicationSchoolScope(schoolCode));
+}
+
 export function sendClientsMessage(payload: Record<string, unknown>, options?: MutationRequestOptions) {
-  return request("/backoffice/messages", {
+  const schoolCode = communicationSchoolScope(
+    typeof payload.effectiveSchoolCode === "string" ? payload.effectiveSchoolCode : undefined,
+  );
+  return request(scopedMessagesPath("/backoffice/messages", schoolCode), {
     method: "POST",
-    body: JSON.stringify(payload),
+    body: JSON.stringify(withCommunicationSchoolPayload(payload, schoolCode)),
     idempotencyKey: options?.idempotencyKey,
   });
 }
@@ -867,31 +883,37 @@ export type CanonicalMessageRecipient = {
   className?: string;
 };
 
-export async function getMessageRecipients(): Promise<CanonicalMessageRecipient[]> {
+export async function getMessageRecipients(schoolCode?: string): Promise<CanonicalMessageRecipient[]> {
   const data = await request<{ items?: CanonicalMessageRecipient[] } | CanonicalMessageRecipient[]>(
-    "/backoffice/messages/recipients",
+    scopedMessagesPath("/backoffice/messages/recipients", schoolCode),
   );
   if (Array.isArray(data)) return data;
   return Array.isArray(data?.items) ? data.items : [];
 }
 
-export async function uploadCommunicationAttachment(file: {
-  uri: string;
-  name: string;
-  mimeType: string;
-}): Promise<{ id: string; fileName: string; mimeType?: string; fileSize?: number }> {
+export async function uploadCommunicationAttachment(
+  file: {
+    uri: string;
+    name: string;
+    mimeType: string;
+  },
+  schoolCode?: string,
+): Promise<{ id: string; fileName: string; mimeType?: string; fileSize?: number }> {
   const token = await getAccessToken();
   const root = resolveApiRootUrl().replace(/\/$/, "");
   const blob = await (await fetch(file.uri)).blob();
-  const response = await fetch(`${root}/api/backoffice/communications/attachments`, {
-    method: "POST",
-    headers: {
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      "Content-Type": file.mimeType || "application/octet-stream",
-      "X-Filename": file.name,
+  const response = await fetch(
+    scopedMessagesPath(`${root}/api/backoffice/communications/attachments`, schoolCode),
+    {
+      method: "POST",
+      headers: {
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        "Content-Type": file.mimeType || "application/octet-stream",
+        "X-Filename": file.name,
+      },
+      body: blob,
     },
-    body: blob,
-  });
+  );
   const data = (await response.json().catch(() => ({}))) as { message?: string; id?: string };
   if (!response.ok || !data.id) {
     throw new ApiClientError(String(data.message ?? "Échec de l'upload"));
@@ -899,12 +921,19 @@ export async function uploadCommunicationAttachment(file: {
   return data as { id: string; fileName: string; mimeType?: string; fileSize?: number };
 }
 
-export async function downloadCommunicationAttachment(attachmentId: string, fileName: string): Promise<string> {
+export async function downloadCommunicationAttachment(
+  attachmentId: string,
+  fileName: string,
+  schoolCode?: string,
+): Promise<string> {
   const token = await getAccessToken();
   const root = resolveApiRootUrl().replace(/\/$/, "");
   const target = `${FileSystem.cacheDirectory ?? FileSystem.documentDirectory ?? ""}${fileName}`;
   const result = await FileSystem.downloadAsync(
-    `${root}/api/backoffice/communications/attachments/${encodeURIComponent(attachmentId)}`,
+    scopedMessagesPath(
+      `${root}/api/backoffice/communications/attachments/${encodeURIComponent(attachmentId)}`,
+      schoolCode,
+    ),
     target,
     { headers: token ? { Authorization: `Bearer ${token}` } : {} },
   );

@@ -48,10 +48,16 @@ function sourceGuards() {
   assert.match(service, /effectiveSchoolCode/);
   assert.match(service, /Établissement requis \(effectiveSchoolCode\)/);
   assert.match(service, /function canBypassParticipation\(\) \{\s*return false;/);
+  assert.match(service, /async function markMessageRead\(store, messageId, principal, auditMeta, query/);
+  assert.match(service, /message\.school_id !== school\.id/);
+  assert.match(server, /markClientsMessageRead\([\s\S]{0,180}req\.query/);
+  assert.match(webApi, /withCommunicationSchoolScope/);
+  assert.match(webApi, /effectiveSchoolCode/);
   assert.match(webApi, /messages\/recipients/);
   assert.doesNotMatch(webPage, /clientsApi\.listUsers/);
   assert.match(httpTest, /C2-13 Parent voit staff/);
   assert.match(httpTest, /C2-14 Superadmin \* sans école/);
+  assert.match(httpTest, /C2-14 Superadmin mark-read sans école/);
   assert.match(httpTest, /C2-13 READ révoqué destinataires/);
   assert.match(server, /POST \/api\/backoffice\/conversations\/:conversationId\/messages/);
   assert.match(server, /communications\/attachments/);
@@ -88,6 +94,7 @@ function main() {
   run(process.execPath, ["backend/lib/communicationsAttachments.test.js"], "communicationsAttachments unit");
   run(process.execPath, ["backend/lib/clientsSecurity.test.js"], "clientsSecurity");
   run("npx", ["--yes", "tsx", "Mobile/src/lib/messageAttachments.test.ts"], "messageAttachments payload");
+  run("npx", ["--yes", "tsx", "Mobile/src/lib/communicationSchoolScope.test.ts"], "communicationSchoolScope");
   assert.ok(String(process.env.DATABASE_URL ?? "").trim(), "DATABASE_URL requis pour COM-C2");
   run(process.execPath, ["backend/lib/communicationsC2.http.pg.test.js"], "parcours HTTP PostgreSQL COM-C2");
   console.log("verify-communications-c2: GO — PostgreSQL réel inclus");

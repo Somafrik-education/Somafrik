@@ -2707,7 +2707,12 @@ app.post("/api/backoffice/messages", requireAuth, requirePermission("POST /api/b
 }));
 
 app.patch("/api/backoffice/messages/:messageId/read", requireAuth, requirePermission("PATCH /api/backoffice/messages/:messageId/read"), asyncHandler(async (req, res) => {
-  const updated = await repository.markClientsMessageRead(req.params.messageId, req.principal, clientsAuditMetaFromRequest(req));
+  const updated = await repository.markClientsMessageRead(
+    req.params.messageId,
+    req.principal,
+    clientsAuditMetaFromRequest(req),
+    req.query,
+  );
   res.json(updated);
 }));
 

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "../context/AuthContext";
+import { useActiveSchool } from "../context/ActiveSchoolContext";
 import { useFeaturePermissions } from "../lib/usePermissionContext";
 import {
   messagesApi,
@@ -8,6 +9,7 @@ import {
   type MessageAttachment,
   type MessageRecipient,
 } from "../lib/messagesApi";
+import { hasCommunicationSchoolScope } from "../lib/communicationSchoolScope";
 import { Card, SectionHeader } from "../components/ui/Card";
 import { Button } from "../components/ui/Button";
 import { Field } from "../components/ui/Field";
@@ -35,9 +37,12 @@ function counterpartName(conversation: ConversationSummary, selfId?: string) {
 
 export function MessagesConversationsPage() {
   const { session } = useAuth();
+  const { activeSchoolCode, requiresSelection } = useActiveSchool();
   const { canRead, canCreate, canUpdate } = useFeaturePermissions("Messages");
   const { showToast } = useToast();
   const selfId = String(session?.user?.id ?? "");
+  const schoolScope = hasCommunicationSchoolScope(activeSchoolCode) ? activeSchoolCode : undefined;
+  const scopeReady = !requiresSelection || Boolean(schoolScope);
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
   const [selectedId, setSelectedId] = useState<string>("");
   const [messages, setMessages] = useState<ConversationMessage[]>([]);
@@ -51,46 +56,51 @@ export function MessagesConversationsPage() {
   const fileRef = useRef<HTMLInputElement | null>(null);
 
   const loadConversations = useCallback(async () => {
-    if (!canRead) return;
-    const result = await messagesApi.listConversations();
+    if (!canRead || !scopeReady) return;
+    const result = await messagesApi.listConversations("", schoolScope);
     setConversations(result.items ?? []);
-  }, [canRead]);
+  }, [canRead, schoolScope, scopeReady]);
 
   const loadThread = useCallback(async (conversationId: string) => {
-    const result = await messagesApi.listMessages(conversationId);
+    const result = await messagesApi.listMessages(conversationId, "", schoolScope);
     const items = result.items ?? [];
     setMessages(items);
     if (canUpdate) {
       await Promise.all(
         items
           .filter((row) => row.senderUserId !== selfId && !row.readAt)
-          .map((row) => messagesApi.markRead(row.id).catch(() => null)),
+          .map((row) => messagesApi.markRead(row.id, schoolScope).catch(() => null)),
       );
     }
-  }, [canUpdate, selfId]);
+  }, [canUpdate, schoolScope, selfId]);
 
   useEffect(() => {
+    if (!scopeReady) {
+      setConversations([]);
+      setUsers([]);
+      return;
+    }
     void loadConversations().catch((error) => {
       showToast(error instanceof ApiError ? error.message : "Impossible de charger les conversations", "error");
     });
-    void messagesApi.listRecipients().then((rows) => {
+    void messagesApi.listRecipients(schoolScope).then((rows) => {
       const list = Array.isArray(rows) ? rows : rows?.items ?? [];
       setUsers(list);
     }).catch((error) => {
       setUsers([]);
       showToast(error instanceof ApiError ? error.message : "Impossible de charger les destinataires", "error");
     });
-  }, [loadConversations, showToast]);
+  }, [loadConversations, schoolScope, scopeReady, showToast]);
 
   useEffect(() => {
-    if (!selectedId) {
+    if (!selectedId || !scopeReady) {
       setMessages([]);
       return;
     }
     void loadThread(selectedId).catch((error) => {
       showToast(error instanceof ApiError ? error.message : "Impossible de charger le fil", "error");
     });
-  }, [loadThread, selectedId, showToast]);
+  }, [loadThread, selectedId, showToast, scopeReady]);
 
   const selected = useMemo(
     () => conversations.find((row) => row.id === selectedId) ?? null,
@@ -102,7 +112,7 @@ export function MessagesConversationsPage() {
     try {
       const uploaded: MessageAttachment[] = [];
       for (const file of Array.from(fileList)) {
-        uploaded.push(await messagesApi.uploadAttachment(file));
+        uploaded.push(await messagesApi.uploadAttachment(file, schoolScope));
       }
       setPendingFiles((current) => [...current, ...uploaded]);
     } catch (error) {
@@ -129,8 +139,8 @@ export function MessagesConversationsPage() {
         ...(selectedId ? {} : { participantUserIds: recipientId ? [recipientId] : [] }),
       };
       const saved = selectedId
-        ? await messagesApi.reply(selectedId, payload, intentionRef.current)
-        : await messagesApi.createConversation(payload, intentionRef.current);
+        ? await messagesApi.reply(selectedId, payload, intentionRef.current, schoolScope)
+        : await messagesApi.createConversation(payload, intentionRef.current, schoolScope);
       setDraft("");
       setPendingFiles([]);
       intentionRef.current = "";
@@ -150,6 +160,14 @@ export function MessagesConversationsPage() {
     return (
       <Card className="p-6">
         <p className="text-sm text-muted">Vous n'avez pas accès aux messages.</p>
+      </Card>
+    );
+  }
+
+  if (!scopeReady) {
+    return (
+      <Card className="p-6">
+        <p className="text-sm text-muted">Sélectionnez un établissement pour ouvrir Messages.</p>
       </Card>
     );
   }
@@ -208,9 +226,7 @@ export function MessagesConversationsPage() {
                   onClick={async (event) => {
                     event.preventDefault();
                     try {
-                      const blob = await (await import("../api/client")).requestBlob(
-                        `/backoffice/communications/attachments/${encodeURIComponent(file.id)}`,
-                      );
+                      const blob = await messagesApi.downloadAttachment(file.id, schoolScope);
                       const url = URL.createObjectURL(blob);
                       const link = document.createElement("a");
                       link.href = url;

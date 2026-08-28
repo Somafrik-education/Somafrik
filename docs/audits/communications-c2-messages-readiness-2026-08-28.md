@@ -27,7 +27,7 @@ RBAC autorise l'usage du module Messages. La relation métier PostgreSQL autoris
 
 Le placeholder `/parametres/notifications` est **conservé**. Annonces et notifications événementielles hors scope.
 
-**Contrat Superadmin (Option B, certifié)** : Communications **toujours request-scoped**. `schoolCode="*"` n'ouvre aucune vue globale. Un `effectiveSchoolCode` (query ou body) est obligatoire. Aucun bypass de participation.
+**Contrat Superadmin (Option B, certifié)** : Communications **toujours request-scoped**. `schoolCode="*"` n'ouvre aucune vue globale. Un `effectiveSchoolCode` (query ou body) est obligatoire, y compris `PATCH .../read`. Web/Mobile transmettent l'établissement actif via `withCommunicationSchoolScope`. Aucun bypass de participation.
 
 **Stockage PJ** : `SOMAFRIK_COMMUNICATION_STORAGE` = répertoire durable. Production sans variable → fail-closed 503. test/dev → tmp autorisé.
 
@@ -55,7 +55,7 @@ Le placeholder `/parametres/notifications` est **conservé**. Annonces et notifi
 | P1-011 | sender + ISO | E2E C2-06 |
 | P1-012 | PJ 0..N API/Web ACL | E2E C2-07 / C2-08 |
 | **P1-013** | Endpoint destinataires canoniques | `GET /messages/recipients` ; Web/Mobile SoT ; E2E C2-13 |
-| **P1-014** | Superadmin request-scoped | Option B ; E2E C2-14 `schoolCode=*` |
+| **P1-014** | Superadmin request-scoped | Option B ; `requireSchool` sur mark-read ; E2E C2-14 `schoolCode=*` + mark-read 400/200/403 ; helper `withCommunicationSchoolScope` Web/Mobile |
 | **P1-015** | Stockage durable / fail-closed prod | unit attachments + cleanup orphelin |
 | **P1-016** | PJ Mobile picker/upload/download | `MessagesScreen` + `messageAttachments.test.ts` |
 
@@ -105,7 +105,7 @@ RBAC ≠ accès au fil. E2E C2-10 / C2-13 : révocation PG → 403 même JWT.
 - `POST /api/backoffice/communications/attachments`
 - `GET /api/backoffice/communications/attachments/:attachmentId`
 
-Superadmin / Admin Pays : query ou body `effectiveSchoolCode` obligatoire si le JWT n'a pas d'école réelle.
+Superadmin / Admin Pays : query ou body `effectiveSchoolCode` obligatoire si le JWT n'a pas d'école réelle, y compris `PATCH /messages/:id/read`. Clients : `withCommunicationSchoolScope` depuis l'établissement actif (jamais `*`, jamais saisie libre).
 
 ## 8. Migration DB / stockage
 
@@ -121,7 +121,9 @@ Variable d'environnement :
 ## 9. Tests
 
 - `backend/lib/communicationsAttachments.test.js` (tmp, prod fail-closed, durable, cleanup)
-- `backend/lib/communicationsC2.http.pg.test.js` (C2-01 … C2-14)
+- `backend/lib/communicationsC2.http.pg.test.js` (C2-01 … C2-14, mark-read Superadmin)
+- `web/src/lib/communicationSchoolScope.test.ts`
+- `Mobile/src/lib/communicationSchoolScope.test.ts`
 - `Mobile/src/lib/messageAttachments.test.ts`
 - Gate C1 conservé
 

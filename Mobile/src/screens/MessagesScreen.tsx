@@ -28,6 +28,7 @@ import {
   resolveMessagesRouteAccess,
 } from "../lib/mobileCtaRbacAlignment";
 import { buildMessagePayload, collectSuccessfulAttachmentIds, isAllowedMessageAttachmentMime } from "../lib/messageAttachments";
+import { hasCommunicationSchoolScope, withCommunicationSchoolPayload } from "../lib/communicationSchoolScope";
 import { scopedStudentsForSession } from "../lib/establishment";
 import { useFloatingTabBarLayout } from "../lib/screenLayout";
 import { sendClientsMessage, getMessageRecipients, uploadCommunicationAttachment, downloadCommunicationAttachment } from "../services/api";
@@ -60,6 +61,8 @@ export default function MessagesScreen() {
     loadMessages,
     assignmentsSnapshot,
     resourceScopeKey,
+    activeSchoolCode,
+    requiresSchoolSelection,
   } = useAdminData();
 
   const [theme, setTheme] = useState(messageThemes[0]);
@@ -81,8 +84,10 @@ export default function MessagesScreen() {
   const messagesAccess = resolveMessagesRouteAccess(session);
   const canRead = messagesAccess.canReadList;
   const canSend = messagesAccess.canCompose;
-  const showStaffComposer = canShowStaffMessagesComposer(session);
-  const showComposer = ((role === "parent_student" || role === "teacher") && canSend) || showStaffComposer;
+  const scopeReady = !requiresSchoolSelection || hasCommunicationSchoolScope(activeSchoolCode);
+  const showStaffComposer = canShowStaffMessagesComposer(session) && scopeReady;
+  const showComposer =
+    scopeReady && (((role === "parent_student" || role === "teacher") && canSend) || showStaffComposer);
   const parentPhone = session?.user.parentPhone ?? session?.user.children?.[0]?.parentPhone ?? "";
   const parentChildren = session?.user.children ?? [];
   const teacherScopeState = {
@@ -98,14 +103,14 @@ export default function MessagesScreen() {
     (recipientSnapshot.status !== "success" || !selectedRecipientUserId);
 
   const loadCanonicalRecipients = useCallback(async () => {
-    if (!canSend) {
+    if (!canSend || !scopeReady) {
       setRecipientSnapshot(emptyResourceSnapshot());
       setSelectedRecipientUserId("");
       return;
     }
     setRecipientSnapshot({ status: "loading", data: [] });
     try {
-      const rows = await getMessageRecipients();
+      const rows = await getMessageRecipients(activeSchoolCode);
       setRecipientSnapshot(snapshotFromSuccess(rows));
       setSelectedRecipientUserId((current) =>
         rows.some((row) => row.userId === current) ? current : "",
@@ -114,7 +119,7 @@ export default function MessagesScreen() {
       setRecipientSnapshot(snapshotFromFailure(error, []));
       setSelectedRecipientUserId("");
     }
-  }, [canSend]);
+  }, [canSend, activeSchoolCode, scopeReady]);
 
   useFocusEffect(
     useCallback(() => {
@@ -170,7 +175,7 @@ export default function MessagesScreen() {
             uri: asset.uri,
             name: asset.name || "fichier",
             mimeType,
-          });
+          }, activeSchoolCode);
           uploads.push({ ok: true, id: saved.id });
           setPendingAttachments((current) => [...current, { id: saved.id, fileName: saved.fileName || asset.name || saved.id }]);
         } catch (error) {
@@ -210,7 +215,7 @@ export default function MessagesScreen() {
         uri: asset.uri,
         name: asset.fileName || "image.jpg",
         mimeType,
-      });
+      }, activeSchoolCode);
       setPendingAttachments((current) => [...current, { id: saved.id, fileName: saved.fileName || saved.id }]);
     } catch (error) {
       Alert.alert("Upload échoué", error instanceof Error ? error.message : "Impossible d'envoyer la pièce jointe.");
@@ -219,7 +224,7 @@ export default function MessagesScreen() {
 
   const sendMessage = async () => {
     if (!sendLockRef.current.tryBegin()) return;
-    if (!canSend) {
+    if (!canSend || !scopeReady) {
       sendLockRef.current.end();
       return;
     }
@@ -249,7 +254,7 @@ export default function MessagesScreen() {
       );
       return;
     }
-    const payload = built.payload;
+    const payload = withCommunicationSchoolPayload(built.payload, activeSchoolCode);
     const intentionId = `message:${String(payload.conversationId || payload.participantUserIds)}:${String(payload.message)}`;
     const idempotencyKey = sendIntentionRef.current.getOrCreate(intentionId);
     setSending(true);
@@ -262,7 +267,7 @@ export default function MessagesScreen() {
         payload,
         idempotencyKey,
         userId: String(session?.user.id ?? ""),
-        schoolScope: String(session?.school?.code ?? session?.user.schoolCode ?? ""),
+        schoolScope: String(activeSchoolCode || session?.school?.code ?? session?.user.schoolCode ?? ""),
         persistOutbox: true,
         request: () => sendClientsMessage(payload, { idempotencyKey }),
       });
@@ -298,7 +303,7 @@ export default function MessagesScreen() {
     setSelectedMessage(item);
     if (!isReceivedMessage(item, role, session) || !isUnreadStatus(item.status)) return;
     try {
-      const updated = await markCanonicalMessageRead(item.id);
+      const updated = await markCanonicalMessageRead(item.id, activeSchoolCode);
       if (updated) setSelectedMessage(updated);
       await loadMessages();
     } catch {
@@ -336,9 +341,13 @@ export default function MessagesScreen() {
           <>
         {role === "parent_student" && <StudentSwitcher />}
         <Text style={styles.title}>Messages</Text>
-        <Text style={styles.subtitle}>
-          {canRead ? `${unreadCount} non lu(s) • données serveur` : "Rédaction uniquement • lecture non autorisée"}
-        </Text>
+        {!scopeReady ? (
+          <Text style={styles.subtitle}>Sélectionnez un établissement pour ouvrir Messages.</Text>
+        ) : (
+          <Text style={styles.subtitle}>
+            {canRead ? `${unreadCount} non lu(s) • données serveur` : "Rédaction uniquement • lecture non autorisée"}
+          </Text>
+        )}
 
         {showComposer && (
           <View style={styles.composeCard} testID={USABILITY_TEST_IDS.messagesComposer}>
@@ -504,7 +513,7 @@ export default function MessagesScreen() {
                     <TouchableOpacity
                       key={file.id}
                       onPress={() => {
-                        void downloadCommunicationAttachment(file.id, file.fileName)
+                        void downloadCommunicationAttachment(file.id, file.fileName, activeSchoolCode)
                           .then((uri) => Linking.openURL(uri))
                           .catch((error) =>
                             Alert.alert(

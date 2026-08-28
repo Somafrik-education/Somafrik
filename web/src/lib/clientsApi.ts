@@ -1,6 +1,11 @@
 import { api } from "../api/client";
 import { readStoredSchoolCode } from "./activeSchool";
 import { COUNTRY_ADMIN_ROLE, SCHOOL_ADMIN_ROLE } from "./orgHierarchy";
+import {
+  readActiveCommunicationSchoolScope,
+  withCommunicationSchoolPayload,
+  withCommunicationSchoolScope,
+} from "./communicationSchoolScope";
 
 export function buildCreateUserPayload(payload: Record<string, unknown>): Record<string, unknown> {
   const hasExplicitSchoolCode = Object.prototype.hasOwnProperty.call(payload, "schoolCode");
@@ -71,13 +76,20 @@ export const clientsApi = {
   listRelations: () => api.get<unknown[]>("/backoffice/relations"),
   createRelation: (payload: Record<string, unknown>) => api.post("/backoffice/relations", payload),
 
-  listMessages: () => api.get<unknown[]>("/backoffice/messages"),
+  listMessages: () =>
+    api.get<unknown[]>(withCommunicationSchoolScope("/backoffice/messages", readActiveCommunicationSchoolScope())),
   sendMessage: (payload: Record<string, unknown>) =>
-    api.post("/backoffice/messages", payload, {
+    api.post("/backoffice/messages", withCommunicationSchoolPayload(payload), {
       headers: { "Idempotency-Key": crypto.randomUUID() },
     }),
   markMessageRead: (messageId: string) =>
-    api.patch(`/backoffice/messages/${encodeURIComponent(messageId)}/read`, {}),
+    api.patch(
+      withCommunicationSchoolScope(
+        `/backoffice/messages/${encodeURIComponent(messageId)}/read`,
+        readActiveCommunicationSchoolScope(),
+      ),
+      {},
+    ),
 
   listAnnouncements: () => api.get<unknown[]>("/backoffice/announcements"),
   createAnnouncement: (payload: Record<string, unknown>) => api.post("/backoffice/announcements", payload),

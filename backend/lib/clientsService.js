@@ -926,9 +926,9 @@ async function sendMessage(store, rawPayload, principal, auditMeta) {
   return communicationsMessagesService.sendOrCreate(store, rawPayload, principal, auditMeta);
 }
 
-async function markMessageRead(store, messageId, principal, auditMeta) {
+async function markMessageRead(store, messageId, principal, auditMeta, query = {}) {
   const communicationsMessagesService = require("./communicationsMessagesService");
-  return communicationsMessagesService.markMessageRead(store, messageId, principal, auditMeta);
+  return communicationsMessagesService.markMessageRead(store, messageId, principal, auditMeta, query);
 }
 
 async function createAnnouncement(store, rawPayload, principal, auditMeta) {

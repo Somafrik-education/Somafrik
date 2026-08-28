@@ -1304,8 +1304,8 @@ class PostgresRepository {
     return this.getClientsStore().sendMessage(payload, principal, auditMeta);
   }
 
-  markClientsMessageRead(messageId, principal, auditMeta) {
-    return this.getClientsStore().markMessageRead(messageId, principal, auditMeta);
+  markClientsMessageRead(messageId, principal, auditMeta, query) {
+    return this.getClientsStore().markMessageRead(messageId, principal, auditMeta, query);
   }
 
   listClientsMessages(principal, query) {

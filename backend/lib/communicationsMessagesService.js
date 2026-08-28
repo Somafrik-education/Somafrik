@@ -522,18 +522,17 @@ async function replyToConversation(store, conversationId, rawPayload, principal,
   );
 }
 
-async function markMessageRead(store, messageId, principal, auditMeta) {
+async function markMessageRead(store, messageId, principal, auditMeta, query = {}) {
   const readerUserId = actorUserId(principal);
   if (!readerUserId) {
     throw createClientsError(403, "Lecteur non authentifié.", CLIENTS_ERROR.FORBIDDEN);
   }
+  const { school } = await requireSchool(store, principal, query);
   return store.withTransaction(async (tx) => {
     const message = await tx.getMessageById(messageId);
-    if (!message) {
+    if (!message || message.school_id !== school.id) {
       throw createClientsError(404, "Message introuvable.", CLIENTS_ERROR.MESSAGE_NOT_FOUND);
     }
-    assertSchoolScope(principal, message.school_code);
-    await assertSchoolInPrincipalCountry(store, principal, message.school_code);
     await requireActiveParticipant(tx, message.conversation_id, readerUserId);
     const read = await tx.insertMessageRead(message.id, readerUserId);
     const attachments = (await hydrateAttachments(tx, [message.id])).get(String(message.id)) ?? [];

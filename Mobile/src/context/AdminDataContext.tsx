@@ -775,7 +775,7 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
     const scope = resourceScopeKeyRef.current;
     setMessagesSnapshot((current) => ({ ...current, status: "loading" }));
     try {
-      const rows = await getCanonicalMessages();
+      const rows = await getCanonicalMessages(activeSchoolCode);
       if (resourceScopeKeyRef.current !== scope) return;
       setMessagesData(rows);
       setMessagesSnapshot(snapshotFromSuccess(rows));
@@ -783,7 +783,7 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
       if (resourceScopeKeyRef.current !== scope) return;
       setMessagesSnapshot((current) => snapshotFromFailure(error, current.data));
     }
-  }, [session]);
+  }, [session, activeSchoolCode]);
 
   const loadSchools = useCallback(async () => {
     if (!session) return;

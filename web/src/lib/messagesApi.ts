@@ -1,8 +1,21 @@
-import { api, getAccessToken } from "../api/client";
+import { api, getAccessToken, requestBlob } from "../api/client";
 import { API_URL } from "./apiUrl";
+import {
+  readActiveCommunicationSchoolScope,
+  withCommunicationSchoolPayload,
+  withCommunicationSchoolScope,
+} from "./communicationSchoolScope";
 
 function idempotentHeaders(idempotencyKey?: string): HeadersInit {
   return idempotencyKey ? { "Idempotency-Key": idempotencyKey } : {};
+}
+
+function scoped(path: string, schoolCode?: string): string {
+  return withCommunicationSchoolScope(path, schoolCode ?? readActiveCommunicationSchoolScope());
+}
+
+function scopedPayload(payload: Record<string, unknown>, schoolCode?: string) {
+  return withCommunicationSchoolPayload(payload, schoolCode ?? readActiveCommunicationSchoolScope());
 }
 
 export type ConversationParticipant = {
@@ -65,42 +78,50 @@ export type MessageRecipient = {
 };
 
 export const messagesApi = {
-  listRecipients: () =>
-    api.get<{ items: MessageRecipient[] } | MessageRecipient[]>("/backoffice/messages/recipients"),
-  listConversations: (query = "") =>
+  listRecipients: (schoolCode?: string) =>
+    api.get<{ items: MessageRecipient[] } | MessageRecipient[]>(scoped("/backoffice/messages/recipients", schoolCode)),
+  listConversations: (query = "", schoolCode?: string) =>
     api.get<{ items: ConversationSummary[]; nextCursor: string | null }>(
-      `/backoffice/conversations${query}`,
+      scoped(`/backoffice/conversations${query}`, schoolCode),
     ),
-  getConversation: (conversationId: string) =>
-    api.get<ConversationSummary>(`/backoffice/conversations/${encodeURIComponent(conversationId)}`),
-  listMessages: (conversationId: string, query = "") =>
+  getConversation: (conversationId: string, schoolCode?: string) =>
+    api.get<ConversationSummary>(
+      scoped(`/backoffice/conversations/${encodeURIComponent(conversationId)}`, schoolCode),
+    ),
+  listMessages: (conversationId: string, query = "", schoolCode?: string) =>
     api.get<{ items: ConversationMessage[]; nextCursor: string | null }>(
-      `/backoffice/conversations/${encodeURIComponent(conversationId)}/messages${query}`,
+      scoped(`/backoffice/conversations/${encodeURIComponent(conversationId)}/messages${query}`, schoolCode),
     ),
-  unreadCount: () => api.get<{ count: number }>("/backoffice/messages/unread-count"),
-  createConversation: (payload: Record<string, unknown>, idempotencyKey: string) =>
-    api.post<ConversationMessage>("/backoffice/conversations", payload, {
+  unreadCount: (schoolCode?: string) =>
+    api.get<{ count: number }>(scoped("/backoffice/messages/unread-count", schoolCode)),
+  createConversation: (payload: Record<string, unknown>, idempotencyKey: string, schoolCode?: string) =>
+    api.post<ConversationMessage>(scoped("/backoffice/conversations", schoolCode), scopedPayload(payload, schoolCode), {
       headers: idempotentHeaders(idempotencyKey),
     }),
-  reply: (conversationId: string, payload: Record<string, unknown>, idempotencyKey: string) =>
+  reply: (conversationId: string, payload: Record<string, unknown>, idempotencyKey: string, schoolCode?: string) =>
     api.post<ConversationMessage>(
-      `/backoffice/conversations/${encodeURIComponent(conversationId)}/messages`,
-      payload,
+      scoped(`/backoffice/conversations/${encodeURIComponent(conversationId)}/messages`, schoolCode),
+      scopedPayload(payload, schoolCode),
       { headers: idempotentHeaders(idempotencyKey) },
     ),
-  markRead: (messageId: string) =>
-    api.patch(`/backoffice/messages/${encodeURIComponent(messageId)}/read`, {}),
-  uploadAttachment: async (file: File) => {
+  markRead: (messageId: string, schoolCode?: string) =>
+    api.patch(scoped(`/backoffice/messages/${encodeURIComponent(messageId)}/read`, schoolCode), {}),
+  downloadAttachment: (attachmentId: string, schoolCode?: string) =>
+    requestBlob(scoped(`/backoffice/communications/attachments/${encodeURIComponent(attachmentId)}`, schoolCode)),
+  uploadAttachment: async (file: File, schoolCode?: string) => {
     const token = getAccessToken();
-    const response = await fetch(`${API_URL.replace(/\/$/, "")}/api/backoffice/communications/attachments`, {
-      method: "POST",
-      headers: {
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        "Content-Type": file.type || "application/octet-stream",
-        "X-Filename": file.name,
+    const response = await fetch(
+      scoped(`${API_URL.replace(/\/$/, "")}/api/backoffice/communications/attachments`, schoolCode),
+      {
+        method: "POST",
+        headers: {
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          "Content-Type": file.type || "application/octet-stream",
+          "X-Filename": file.name,
+        },
+        body: file,
       },
-      body: file,
-    });
+    );
     const data = (await response.json().catch(() => ({}))) as { message?: string };
     if (!response.ok) {
       throw new Error(String(data.message ?? "Échec de l'upload"));

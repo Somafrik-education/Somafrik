@@ -531,6 +531,33 @@ async function main() {
       { token: superSa },
     );
     assert.equal(superRightSchool.status, 200, "C2-14 Superadmin A voit son fil");
+    const superMessageId = superCreate.data.id;
+    const superReadBare = await request(`/backoffice/messages/${superMessageId}/read`, {
+      method: "PATCH",
+      token: superSa,
+    });
+    assert.equal(superReadBare.status, 400, "C2-14 Superadmin mark-read sans école");
+    const superReadA = await request(
+      `/backoffice/messages/${superMessageId}/read?effectiveSchoolCode=SCH-COM-A`,
+      { method: "PATCH", token: superSa },
+    );
+    assert.equal(superReadA.status, 200, `C2-14 Superadmin mark-read A: ${JSON.stringify(superReadA.data)}`);
+    const superReadB = await request(
+      `/backoffice/messages/${superMessageId}/read?effectiveSchoolCode=SCH-COM-B`,
+      { method: "PATCH", token: superSa },
+    );
+    assert.ok([403, 404].includes(superReadB.status), `C2-14 Superadmin mark-read B: ${superReadB.status}`);
+    const adminReadOwn = await request(`/backoffice/messages/${message1Id}/read`, {
+      method: "PATCH",
+      token: adminA,
+    });
+    assert.equal(adminReadOwn.status, 200, "C2-14 Admin School mark-read sans query");
+    const teacherReadOwn = await request(`/backoffice/messages/${message1Id}/read`, {
+      method: "PATCH",
+      token: teacherA,
+    });
+    assert.notEqual(teacherReadOwn.status, 400, "C2-14 Teacher n'exige pas effectiveSchoolCode");
+    assert.ok([200, 403, 404].includes(teacherReadOwn.status), "C2-14 Teacher mark-read JWT-scoped");
 
     const reply2 = await request(`/backoffice/conversations/${conversationId}/messages`, {
       method: "POST",
