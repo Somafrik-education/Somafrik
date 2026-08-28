@@ -33,6 +33,7 @@ function sourceGuards() {
   const topbar = read("web/src/components/layout/Topbar.tsx");
   const platformPage = read("web/src/pages/NotificationsPage.tsx");
   const mobileApi = read("Mobile/src/services/internalNotificationsApi.ts");
+  const mobileHttp = read("Mobile/src/services/httpClient.ts");
   const mobileRead = read("Mobile/src/lib/internalNotificationsRead.ts");
   const mobileScreen = read("Mobile/src/screens/InternalNotificationsScreen.tsx");
   const mobileHeader = read("Mobile/src/components/CommunicationHeaderIcons.tsx");
@@ -86,7 +87,8 @@ function sourceGuards() {
   assert.doesNotMatch(webCenter, /localStorage/);
 
   assert.match(mobileApi, /internal-notifications/);
-  assert.match(mobileApi, /Idempotency-Key/);
+  assert.match(mobileApi, /idempotencyKey/);
+  assert.match(mobileHttp, /Idempotency-Key/);
   assert.match(mobileRead, /getInternalNotificationsUnreadCount/);
   assert.match(mobileScreen, /markRead|mark.*read/i);
   assert.match(mobileHeader, /useInternalNotificationsUnreadCount/);
