@@ -6,6 +6,8 @@ on:
     paths:
       - "backend/lib/financeManagement.js"
       - "backend/lib/financeLiveRbac.test.js"
+      - "backend/lib/financeLiveRbac.http.pg.test.js"
+      - "backend/lib/financeRbacRouteMatrix.js"
       - "backend/lib/liveRbacPrincipalAuthority.js"
       - "backend/lib/liveRbacPrincipalAuthority.test.js"
       - "backend/lib/functionalRbacService.js"
@@ -14,6 +16,7 @@ on:
       - "backend/db/clientsPgStore.js"
       - "backend/server.js"
       - "backend/scripts/verify-finance-rbac.js"
+      - "docs/audits/finance-f6-rbac-2026-08-28.md"
       - ".github/workflows/finance-f6.yml"
   workflow_dispatch:
 
@@ -23,7 +26,25 @@ permissions:
 jobs:
   finance-f6:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
+      NODE_ENV: test
+      JWT_SECRET: ci-test-secret-with-enough-length-for-production-checks
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -36,4 +57,4 @@ jobs:
       - name: Install root dependencies
         run: npm ci
       - name: Verify live Finance RBAC
-        run: node backend/scripts/verify-finance-rbac.js
+        run: npm run verify:finance-rbac

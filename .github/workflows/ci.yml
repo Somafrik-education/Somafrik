@@ -80,6 +80,7 @@ jobs:
           npm run verify:finance-management
           npm run verify:finance-multi-item-payment
           npm run verify:finance-web-mobile-convergence
+          npm run verify:finance-rbac
           npm run verify:mobile-data-truth
           npm run verify:mobile-evaluations-v2
           npm run verify:mobile-planning-v2

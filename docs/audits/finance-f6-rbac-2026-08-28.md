@@ -1,93 +1,139 @@
 # Finance F6 — RBAC live PostgreSQL
 
 Date : 2026-08-28  
+PR : #368  
+Branche : `cto/finance-f6-live-rbac`  
 Base : `develop@cc580307a17b171fbdd9b5fd19e99044d6b04595`
 
-## Statut
-
-**F6 = DRAFT / NO-GO tant que la preuve HTTP PostgreSQL et la granularité endpoint/action ne sont pas closes.**
+```text
+F6          DRAFT
+Ready       NON
+Merge       NON
+F7          NON OUVERT
+```
 
 F1–F5 restent invariants. F6 ne modifie ni le modèle Finance, ni les allocations, ni les soldes, ni l'UX F7.
 
-## Autorité cible
+## 1. Cause racine
 
-`user_roles PostgreSQL + role_module_permissions PostgreSQL + tenant courant -> permissions effectives par requête`
+`requirePermission()` rechargeait déjà `resolveEffectivePermissions`, mais :
 
-Le JWT ne transporte qu'une identité/contexte initial. Un rôle ou une permission présents dans un JWT ancien ne doivent jamais restaurer une autorisation retirée en PostgreSQL.
+1. une liste PostgreSQL vide de `user_roles` retombait sur `principal.role` / `roleKeys` / `roles` du JWT ;
+2. le lookup des rôles pouvait être global (`listActiveUserRoleKeys(userId)`) au lieu du tenant courant ;
+3. les mutations Finance (grilles, statuts, ajustements) réutilisaient la route key trop large `POST /api/payments` ;
+4. les helpers métier pouvaient encore s'appuyer sur le libellé de rôle ;
+5. les preuves HTTP PostgreSQL stale-JWT n'étaient pas dans la gate (`UNIT GO — HTTP PostgreSQL stale-JWT reste requis`).
 
-## Constat initial
+## 2. Architecture finale
 
-1. `requirePermission()` recharge déjà `repository.resolveEffectivePermissions(req.principal)` à chaque requête et remplace `req.principal.permissions` avant `RbacService.canAccess()`.
-2. Les helpers Finance de `financeManagement.js` ajoutaient ensuite un second contrôle fondé sur le nom du rôle JWT (`Admin School`, `Comptable`, `Secrétaire`, `Directeur`, Super Admin).
-3. Une liste PostgreSQL vide de rôles pouvait retomber sur les rôles du JWT stale.
-4. Le lookup des rôles était global utilisateur et non explicitement limité au tenant de la session établissement.
-5. Plusieurs routes Finance réutilisent encore des route keys historiques larges (`POST /api/payments`, `GET /api/backoffice/finance/unpaid`).
+```text
+JWT = identité de session (sub, schoolCode)
+        ↓
+user_roles PostgreSQL filtrés par (userId, currentSchoolId, active=true)
+        ↓
+role_module_permissions PostgreSQL
+        ↓
+permissions effectives de la requête
+        ↓
+RbacService.canAccess(routeKey) + gardes secondaires (canManage*)
+```
 
-## Corrections appliquées
+Invariant : **POSTGRESQL LIVE > JWT STALE**.
 
-### Capacités Finance fondées sur permissions live
+- Session établissement : uniquement `listActiveUserRoleKeysForSchool`. Primitive absente ou établissement introuvable → `[]`.
+- Zéro rôle actif → sentinel interne `SANS_AFFECTATION` → permissions `[]`. Le JWT `Admin School` / `ALL_PRIVILEGES` / `Paiements:UPDATE` ne restaure rien.
+- `requirePermission` **remplace toujours** `principal.permissions` par le tableau live (ou `[]` si la résolution est invalide).
+- Source `legacy-map-fallback` / `legacy-role-fallback` → fail-closed permissions vides.
+- Autorité F6 attachée au repository PostgreSQL seulement. Le mode mémoire de développement reste hors production.
 
-Les helpers de mutation Finance ne dépendent plus du nom du rôle :
+## 3. Matrice endpoint / action
 
-- grilles : `Frais & tarifs:CREATE|UPDATE`
-- moyens de paiement : `Frais & tarifs:UPDATE` ou `Paramètres Établissement:UPDATE`
-- ajustement obligation : `Paiements:UPDATE` ou `Frais & tarifs:UPDATE`
-- statuts paiement : `Paiements:UPDATE`
-- relance forcée : `Impayés:CREATE` ou `Paiements:UPDATE`
+Voir `backend/lib/financeRbacRouteMatrix.js`. Extraite :
 
-Un `Admin School`, `Comptable`, `Directeur`, `Secrétaire` ou Super Admin avec `permissions: []` ne reçoit plus de capacité Finance par son seul libellé de rôle.
+| METHOD | PATH | ACTION | PERMISSION | GARDE |
+|---|---|---|---|---|
+| GET | `/api/finance/catalog` | catalogue | Paiements:READ / Frais & tarifs:READ | |
+| GET | `/api/finance/payment-student-options` | élèves encaissement | **Paiements:READ** | pas Élèves:READ |
+| GET/PUT | `/api/finance/payment-methods` | moyens | READ catalogue / UPDATE Frais&tarifs ou Paramètres | canManagePaymentMethods |
+| GET/POST/PATCH | `/api/finance/payment-statuses` | statuts | Paiements:READ / UPDATE | canManagePaymentStatuses |
+| GET/POST/PATCH | `/api/finance/fee-grids` | grilles | Frais & tarifs:READ/CREATE/UPDATE | canManageFeeGrids |
+| POST | `/api/finance/fee-grids/:id/activate\|deactivate\|apply` | cycle de vie grille | Frais & tarifs:UPDATE | canManageFeeGrids |
+| GET | `/api/finance/student-fees` | obligations | Impayés:READ / Paiements:READ / Frais & tarifs:READ | |
+| POST | `/api/finance/student-fees/:id/adjust` | ajustement | Paiements:UPDATE / Frais & tarifs:UPDATE | canAdjustStudentFee |
+| POST | `/api/finance/reconcile-payment-allocations` | réconciliation | Paiements:UPDATE | |
+| GET | `/api/payments` | liste encaissements | Paiements:READ | |
+| POST | `/api/payments` | encaissement | Paiements:CREATE / UPDATE | obligationId ou Non imputé |
+| POST | `/api/payments/:id/cancel` | annulation | **Paiements:UPDATE** (CREATE insuffisant) | canCancelPayment |
+| GET | `/api/backoffice/finance/unpaid` | impayés | Impayés:READ / Paiements:READ | |
+| POST | `/api/backoffice/finance/unpaid/:id/reminders` | relance | Impayés:CREATE / Paiements:UPDATE | **canForceReminder = Impayés:CREATE seulement** si force |
+| GET | `/api/students/:id/payments` | fiche élève | auth + périmètre élève | pas d'élargissement Élèves:READ |
 
-### Zéro rôle live = deny autoritaire
+Les grilles ne sont plus protégées par `POST /api/payments`.
 
-`liveRbacPrincipalAuthority.js` lit les rôles actifs PostgreSQL avant la résolution des grants. Pour une session établissement, seule la primitive `listActiveUserRoleKeysForSchool(userId, schoolId)` est utilisée. Une liste vide reste vide via le sentinel interne `SANS_AFFECTATION` et ne peut plus réactiver `principal.role`, `principal.roles` ou `principal.roleKeys` du JWT.
+## 4. Preuves stale-JWT grant / revoke
 
-### Tenant courant autoritaire
+`backend/lib/financeLiveRbac.http.pg.test.js` :
 
-Le `schoolCode` de session est résolu vers l'identité PostgreSQL de l'établissement, puis les rôles actifs sont chargés pour `(user_id, school_id)`. Une primitive tenant-scoped absente ou un établissement non résolu => deny fail-closed.
+1. JWT stale `ALL_PRIVILEGES` + `roleKeys: ACCOUNTANT`. PostgreSQL : seul rôle `F6_PAY` (users.role NULL pour éviter le backfill `Comptable` → ACCOUNTANT). Grant payments CRUD → POST `/payments` 201. `GET /api/auth/effective-permissions` : `roleKeys=["F6_PAY"]` + `Paiements:CREATE`.
+2. Revoke le grant (flags CRUD false), **même JWT** → permissions live sans `Paiements:CREATE` → POST 403 `PERMISSION_DENIED`, compteur `payments` inchangé.
+3. Ré-grant, **même JWT** → 201 immédiat, sans reconnexion.
 
-### Legacy runtime neutralisé
+## 5. Preuves zéro rôle
 
-Si la résolution effective signale une source `legacy-map-fallback` ou `role_module_permissions+legacy-role-fallback`, l'autorité F6 retourne zéro permission en runtime. Les cartes legacy peuvent rester utiles au bootstrap/migration, mais elles ne restaurent plus une permission live manquante.
+Utilisateur sans aucune ligne `user_roles` active (`users.role` NULL : le boot ne backfill pas `SCHOOL_ADMIN`). JWT `Admin School` + `ALL_PRIVILEGES` + `Paiements:UPDATE`. GET et POST `/payments` → 403. Aucun fallback JWT.
 
-### PostgreSQL uniquement
+Rôle nominal `NAMED_ONLY` (libellé JWT Admin School) sans grant Finance → POST paiement et POST grille 403.
 
-L'autorité F6 est attachée uniquement au repository PostgreSQL. Le mode mémoire de développement conserve son comportement historique pour les tests/demo ; la production reste PostgreSQL obligatoire.
+## 6. Preuves cross-tenant
 
-## Tests/gate présents
+Utilisateur lié aux deux établissements : `TEACHER` sur SCH-A, `ACCOUNTANT` sur SCH-B. JWT stale Comptable/`ACCOUNTANT`.
 
-- `backend/lib/financeLiveRbac.test.js`
-- `backend/lib/liveRbacPrincipalAuthority.test.js`
-- `backend/scripts/verify-finance-rbac.js`
-- `.github/workflows/finance-f6.yml`
+- Session SCH-A : lecture et mutation Finance 403 (`PERMISSION_DENIED`) — aucun droit B.
+- Session SCH-B : lecture 200, mutation 201.
 
-Ils couvrent déjà :
+## 7. Tests exécutés
 
-- aucun rôle nominal ne débloque une mutation Finance ;
-- permissions READ seules ne débloquent aucune mutation ;
-- rôle stale JWT ignoré lorsque PostgreSQL renvoie zéro rôle ;
-- rôles d'un autre établissement non utilisés ;
-- fallback legacy neutralisé ;
-- wiring PostgreSQL-only ;
-- `requirePermission()` recharge la projection live avant `RbacService.canAccess()`.
+- `backend/lib/financeLiveRbac.test.js` — libellé de rôle ≠ capacité
+- `backend/lib/liveRbacPrincipalAuthority.test.js` — tenant scope, zéro rôle, legacy fail-closed
+- `backend/lib/financeLiveRbac.http.pg.test.js` — scénarios 1–7 HTTP PostgreSQL stale-JWT
+- `verify:finance-rbac` (source guards + unit + HTTP) → `GO — HTTP PostgreSQL stale-JWT inclus`
+- `verify:finance-management` — non-régression F4 (route keys explicites)
 
-La gate `Finance F6` est verte sur le premier HEAD qui l'embarque.
+Scénario 7 : grant `Paiements:READ` live → `payment-student-options` 200 ; sans `Élèves:READ` → `GET /students` 403.
 
-## Régression CI rencontrée et corrigée
+## 8. Gates
 
-L'autorité live avait initialement été attachée aussi au repository mémoire de développement. `verify-functional-rbac.js`, qui démarre volontairement `dev-memory.js`, recevait alors 403. Ce n'était pas une raison de réintroduire un fallback JWT : le wiring a été restreint à PostgreSQL uniquement. La production n'est pas concernée par le mode mémoire.
+- `npm run verify:finance-rbac`
+- `.github/workflows/finance-f6.yml` (service PostgreSQL 16 + `DATABASE_URL`)
+- PR Gates étape Finance
+- CI nightly
 
-## Invariants restant à prouver avant GO CTO
+Le message `UNIT GO — HTTP PostgreSQL stale-JWT reste requis` a disparu.
 
-- revoke permission/grant PostgreSQL + même JWT => 403 immédiat ;
-- grant PostgreSQL + même JWT => autorisation immédiate ;
-- changement/révocation de rôle PostgreSQL + même JWT => DB gagne ;
-- Comptable : `payment-student-options` autorisé si `Paiements:READ`, `/students` reste 403 sans `Élèves:READ` ;
-- cross-tenant lecture et écriture Finance => fail-closed ;
-- chaque endpoint Finance sensible doit avoir une politique action/module explicite ou une preuve équivalente sans route-key historique trop large.
+## 9. Diffstat
 
-## Périmètre restant avant GO
+Voir le compte rendu PR du HEAD poussé.
 
-P1-C — fermer la granularité endpoint/action Finance et supprimer les ambiguïtés de route-key réutilisée.  
-P1-D — ajouter le test HTTP PostgreSQL stale-JWT grant/revoke + cross-tenant, puis le brancher à la gate F6.
+## 10. Base SHA
 
-F7 UX reste non ouvert.
+`develop@cc580307a17b171fbdd9b5fd19e99044d6b04595`
+
+## 11. HEAD SHA
+
+Renseigné après push du HEAD #368.
+
+## 12. Ahead / behind
+
+Renseigné après push (`git rev-list --left-right --count origin/develop...HEAD`).
+
+## Web ↔ Mobile
+
+Aucun whitelist locale `Admin School => true` / `Comptable => true` sur QuickPayment ou PaymentMutationControls. L'UI masque via permissions live ; le backend reste l'autorité.
+
+## Non-régression F1–F5
+
+Aucun changement du référentiel des types de frais, du lifecycle d'obligation, de `payment_allocations`, de `obligationId`, de Non imputé, des soldes, de l'annulation, de la convergence Web↔Mobile, ni de l'interdiction offline write.
+
+## F7
+
+Non ouvert.

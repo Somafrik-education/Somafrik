@@ -361,7 +361,7 @@ function canManagePaymentStatuses(principal) {
 }
 
 function canForceReminder(principal) {
-  return hasAnyPermission(principal, ["Impayés:CREATE", "Paiements:UPDATE"]);
+  return hasAnyPermission(principal, ["Impayés:CREATE"]);
 }
 
 function classScopeSpec(classRef) {

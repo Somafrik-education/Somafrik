@@ -375,12 +375,12 @@ async function main() {
     );
     assert.ok(obligation, "obligation projetée");
 
-    const secretaryAdjust = await request(`/finance/student-fees/${encodeURIComponent(obligation.id)}/adjust`, {
+    const teacherAdjust = await request(`/finance/student-fees/${encodeURIComponent(obligation.id)}/adjust`, {
       method: "POST",
-      token: secretaryToken,
+      token: teacherToken,
       body: { exemption: 10_000 },
     });
-    assert.equal(secretaryAdjust.status, 403, "Secrétaire n'ajuste pas les obligations");
+    assert.equal(teacherAdjust.status, 403, "Enseignant sans Paiements:UPDATE n'ajuste pas les obligations");
 
     const reminder = await request(`/backoffice/finance/unpaid/${encodeURIComponent(studentCode)}/reminders`, {
       method: "POST",
