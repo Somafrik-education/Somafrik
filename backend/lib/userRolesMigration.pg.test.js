@@ -6,7 +6,9 @@ const path = require("node:path");
 const { Pool } = require("pg");
 const { PostgresRepository } = require("../db/postgresRepository");
 const { ensureClientsCanonicalBootstrap } = require("../db/clientsCanonicalBootstrap");
-const { USER_ROLES_MIGRATION_AMBIGUOUS } = require("../db/userRolesSchema");
+const { USER_ROLES_MIGRATION_AMBIGUOUS, NORMALIZE_ROLE_CODE_FUNCTION_SQL } = require("../db/userRolesSchema");
+const { ESTABLISHMENT_ROLES_SCHEMA_SQL } = require("../db/establishmentRolesSchema");
+const { normalizeRoleCode } = require("./establishmentRolesManagement");
 
 const DATABASE_URL = String(process.env.DATABASE_URL ?? "").trim();
 const IT_DB = String(process.env.SOMAFRIK_USER_ROLES_MIGRATION_IT_DATABASE ?? "somafrik_user_roles_migration_it")
@@ -228,6 +230,139 @@ async function main() {
       rolesBeforeSecondaryFail,
       "aucun backfill si secondaryRoles fail-closed",
     );
+
+    await pool.query(`DELETE FROM users WHERE id = $1`, [ambiguousSecondary.id]);
+    await pool.query(ESTABLISHMENT_ROLES_SCHEMA_SQL);
+    await pool.query(NORMALIZE_ROLE_CODE_FUNCTION_SQL);
+
+    const normalizeSamples = [
+      "CONSEILLER_PÉDAGOGIQUE",
+      "Conseiller pédagogique",
+      "conseiller_pedagogique",
+      "  Conseiller   Pédagogique  ",
+      "CONSEILLER-PÉDAGOGIQUE",
+      "Préfet des études",
+    ];
+    for (const sample of normalizeSamples) {
+      const sqlNorm = (
+        await pool.query(`SELECT somafrik_normalize_role_code($1) AS code`, [sample])
+      ).rows[0].code;
+      assert.equal(sqlNorm, normalizeRoleCode(sample), `SQL/JS normalize diverge pour ${sample}`);
+    }
+    assert.equal(
+      (await pool.query(`SELECT somafrik_normalize_role_code($1) AS code`, ["CONSEILLER_PÉDAGOGIQUE"])).rows[0]
+        .code,
+      "conseiller_pedagogique",
+    );
+
+    await pool.query(
+      `INSERT INTO establishment_roles (role_code, role_name, scope, status, school_assignable)
+       VALUES ('conseiller_pedagogique', 'Conseiller pédagogique', 'school', 'active', TRUE)`,
+    );
+
+    const counselor = await insertUser(pool, {
+      schoolId: schoolA,
+      userCode: "USR-2026-00011",
+      firstName: "Paul",
+      lastName: "Mbala",
+      role: "CONSEILLER_PÉDAGOGIQUE",
+    });
+    const usersRoleBefore = (
+      await pool.query(`SELECT role FROM users WHERE id = $1`, [counselor.id])
+    ).rows[0].role;
+    await applyUserRolesCanonical(pool);
+    await applyUserRolesCanonical(pool);
+    const counselorRole = await pool.query(
+      `SELECT role_key, status FROM user_roles WHERE user_id = $1 AND status = 'active'`,
+      [counselor.id],
+    );
+    assert.equal(counselorRole.rowCount, 1);
+    assert.equal(counselorRole.rows[0].role_key, "conseiller_pedagogique");
+    assert.equal(
+      (await pool.query(`SELECT role FROM users WHERE id = $1`, [counselor.id])).rows[0].role,
+      usersRoleBefore,
+      "users.role ne doit pas être muté",
+    );
+    assert.equal(usersRoleBefore, "CONSEILLER_PÉDAGOGIQUE");
+
+    const secondaryCounselor = await insertUser(pool, {
+      schoolId: schoolA,
+      userCode: "USR-2026-00012",
+      firstName: "Amina",
+      lastName: "Diallo",
+      role: null,
+    });
+    await pool.query(
+      `UPDATE users SET profile_payload = '{"secondaryRoles":["CONSEILLER_PÉDAGOGIQUE"]}'::jsonb WHERE id = $1`,
+      [secondaryCounselor.id],
+    );
+    await applyUserRolesCanonical(pool);
+    const secondaryCatalog = await pool.query(
+      `SELECT role_key FROM user_roles WHERE user_id = $1 AND status = 'active'`,
+      [secondaryCounselor.id],
+    );
+    assert.deepEqual(
+      secondaryCatalog.rows.map((row) => row.role_key),
+      ["conseiller_pedagogique"],
+      "secondaryRoles CONSEILLER_PÉDAGOGIQUE → conseiller_pedagogique",
+    );
+
+    const unknownDynamic = await insertUser(pool, {
+      schoolId: schoolA,
+      userCode: "USR-2026-00013",
+      firstName: "Inconnu",
+      lastName: "Dynamique",
+      role: "Alchimiste",
+    });
+    await assert.rejects(
+      () => applyUserRolesCanonical(pool),
+      (error) => error.code === USER_ROLES_MIGRATION_AMBIGUOUS,
+      "rôle dynamique inconnu → USER_ROLES_MIGRATION_AMBIGUOUS",
+    );
+    await pool.query(`DELETE FROM users WHERE id = $1`, [unknownDynamic.id]);
+
+    await pool.query(
+      `INSERT INTO establishment_roles (role_code, role_name, scope, status, school_assignable)
+       VALUES ('archiviste_pedagogique', 'Archiviste pédagogique', 'school', 'archived', TRUE)`,
+    );
+    const archivedUser = await insertUser(pool, {
+      schoolId: schoolA,
+      userCode: "USR-2026-00014",
+      firstName: "Archive",
+      lastName: "Role",
+      role: "ARCHIVISTE_PÉDAGOGIQUE",
+    });
+    await assert.rejects(
+      () => applyUserRolesCanonical(pool),
+      (error) => error.code === USER_ROLES_MIGRATION_AMBIGUOUS,
+      "rôle établissement archivé → USER_ROLES_MIGRATION_AMBIGUOUS",
+    );
+    await pool.query(`DELETE FROM users WHERE id = $1`, [archivedUser.id]);
+
+    await pool.query(
+      `INSERT INTO establishment_roles (role_code, role_name, scope, status, school_assignable)
+       VALUES ('conseiller_pedagogique_bis', 'CONSEILLER_PÉDAGOGIQUE', 'school', 'active', TRUE)`,
+    );
+    const ambiguousCatalog = await insertUser(pool, {
+      schoolId: schoolA,
+      userCode: "USR-2026-00015",
+      firstName: "Ambig",
+      lastName: "Catalog",
+      role: "CONSEILLER_PÉDAGOGIQUE",
+    });
+    await assert.rejects(
+      () => applyUserRolesCanonical(pool),
+      (error) => error.code === USER_ROLES_MIGRATION_AMBIGUOUS,
+      "résolution catalogue ambiguë → USER_ROLES_MIGRATION_AMBIGUOUS",
+    );
+    await pool.query(`DELETE FROM users WHERE id = $1`, [ambiguousCatalog.id]);
+    await pool.query(`DELETE FROM establishment_roles WHERE role_code = 'conseiller_pedagogique_bis'`);
+
+    const teacherStill = await pool.query(
+      `SELECT role_key FROM user_roles WHERE user_id = $1 AND status = 'active'`,
+      [teacher.id],
+    );
+    assert.equal(teacherStill.rows[0].role_key, "TEACHER", "rôle statique historique inchangé");
 
     console.log("userRolesMigration.pg.test.js OK");
   } finally {
