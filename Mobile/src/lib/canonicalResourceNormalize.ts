@@ -22,9 +22,15 @@ export type CanonicalUserAccount = UserAccount & {
 
 export type CanonicalAnnouncement = Announcement & {
   audience?: string;
+  audienceLabel?: string;
   status?: string;
   createdAt?: string;
+  publishedAt?: string;
   author?: string;
+  createdByName?: string;
+  createdByUserId?: string;
+  readAt?: string;
+  attachments?: Array<{ id: string; fileName: string; mimeType?: string; fileSize?: number }>;
   schoolCode?: string;
   schoolId?: string;
   countryCode?: string;
@@ -152,14 +158,34 @@ export function normalizeAnnouncement(value: unknown): CanonicalAnnouncement | n
   return {
     id,
     title: text(row.title),
-    message: text(row.message),
-    date: text(row.date ?? row.createdAt ?? row.created_at),
+    message: text(row.message ?? row.content),
+    date: text(row.publishedAt ?? row.published_at ?? row.createdAt ?? row.created_at ?? row.date),
     scope: text(row.scope) || undefined,
     systemBroadcast: row.systemBroadcast === true || row.system_broadcast === true,
-    audience: text(row.audience) || undefined,
+    audience: text(row.audienceLabel ?? row.audience) || undefined,
+    audienceLabel: text(row.audienceLabel) || undefined,
     status: text(row.status) || undefined,
     createdAt: text(row.createdAt ?? row.created_at) || undefined,
-    author: text(row.author ?? row.authorName ?? row.createdBy ?? row.created_by) || undefined,
+    publishedAt: text(row.publishedAt ?? row.published_at) || undefined,
+    author: text(row.createdByName ?? row.author ?? row.authorName ?? row.createdBy ?? row.created_by) || undefined,
+    createdByName: text(row.createdByName) || undefined,
+    createdByUserId: text(row.createdByUserId ?? row.created_by) || undefined,
+    readAt: text(row.readAt ?? row.read_at) || undefined,
+    attachments: Array.isArray(row.attachments)
+      ? row.attachments.flatMap((item) => {
+          const file = record(item);
+          const fileId = text(file.id);
+          if (!fileId) return [];
+          return [
+            {
+              id: fileId,
+              fileName: text(file.fileName ?? file.file_name),
+              ...(text(file.mimeType ?? file.mime_type) ? { mimeType: text(file.mimeType ?? file.mime_type) } : {}),
+              ...(Number(file.fileSize ?? file.file_size) ? { fileSize: Number(file.fileSize ?? file.file_size) } : {}),
+            },
+          ];
+        })
+      : undefined,
     schoolCode: tenant.schoolCode,
     schoolId: tenant.schoolId,
     countryCode: tenant.countryCode,

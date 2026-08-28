@@ -47,6 +47,9 @@ const adminSchool = liveSession({
     "Gérer paiements",
     "Notifications:CREATE",
     "Notifications:UPDATE",
+    "Announcements:READ",
+    "Announcements:CREATE",
+    "Announcements:UPDATE",
     "Gérer classes",
     "Gérer utilisateurs",
     "Gérer élèves",
@@ -203,7 +206,7 @@ const webMobileFeatureParity: Record<(typeof CANONICAL_CRUD_ENTITIES)[number], s
   teachers: "Enseignants",
   payments: "Paiements",
   assignments: "Affectations",
-  announcements: "Notifications",
+  announcements: "Announcements",
 };
 for (const entity of CANONICAL_CRUD_ENTITIES) {
   assert.equal(

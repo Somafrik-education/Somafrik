@@ -91,10 +91,30 @@ export const clientsApi = {
       {},
     ),
 
-  listAnnouncements: () => api.get<unknown[]>("/backoffice/announcements"),
-  createAnnouncement: (payload: Record<string, unknown>) => api.post("/backoffice/announcements", payload),
+  listAnnouncements: async () => {
+    const data = await api.get<{ items?: unknown[] } | unknown[]>(
+      withCommunicationSchoolScope("/backoffice/announcements", readActiveCommunicationSchoolScope()),
+    );
+    return Array.isArray(data) ? data : data?.items ?? [];
+  },
+  createAnnouncement: (payload: Record<string, unknown>) =>
+    api.post("/backoffice/announcements", withCommunicationSchoolPayload(payload), {
+      headers: { "Idempotency-Key": crypto.randomUUID() },
+    }),
   updateAnnouncement: (announcementId: string, payload: Record<string, unknown>) =>
-    api.patch(`/backoffice/announcements/${encodeURIComponent(announcementId)}`, payload),
+    api.patch(
+      withCommunicationSchoolScope(
+        `/backoffice/announcements/${encodeURIComponent(announcementId)}`,
+        readActiveCommunicationSchoolScope(),
+      ),
+      withCommunicationSchoolPayload(payload),
+    ),
   archiveAnnouncement: (announcementId: string) =>
-    api.post(`/backoffice/announcements/${encodeURIComponent(announcementId)}/archive`, {}),
+    api.post(
+      withCommunicationSchoolScope(
+        `/backoffice/announcements/${encodeURIComponent(announcementId)}/archive`,
+        readActiveCommunicationSchoolScope(),
+      ),
+      withCommunicationSchoolPayload({}),
+    ),
 };

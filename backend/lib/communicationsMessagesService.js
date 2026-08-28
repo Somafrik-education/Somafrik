@@ -19,11 +19,17 @@ const {
   readAttachmentBytes,
   mapAttachmentRow,
 } = require("./communicationsAttachments");
+const { RbacService } = require("../services/rbacService");
 
 const MESSAGE_MAX_LENGTH = 8000;
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 100;
 const MAX_ATTACHMENTS_PER_MESSAGE = 10;
+const attachmentRbac = new RbacService();
+const ENTITY_DOWNLOAD_ROUTE = Object.freeze({
+  message: "GET /api/backoffice/messages/attachments/:attachmentId",
+  announcement: "GET /api/backoffice/announcements/attachments/:attachmentId",
+});
 
 const PARENT_KEYS = new Set(["PARENT"]);
 const TEACHER_KEYS = new Set(["TEACHER"]);
@@ -763,6 +769,13 @@ async function uploadAttachment(store, principal, { buffer, fileName, mimeType }
   }
 }
 
+function assertEntityTypeDownloadAccess(principal, entityType) {
+  const routeKey = ENTITY_DOWNLOAD_ROUTE[asTrimmed(entityType)];
+  if (!routeKey || !attachmentRbac.canAccess(principal, routeKey)) {
+    throw createClientsError(404, "Pièce jointe introuvable.", CLIENTS_ERROR.FORBIDDEN);
+  }
+}
+
 async function downloadAttachment(store, attachmentId, principal, query = {}) {
   const userId = actorUserId(principal);
   if (!userId) throw createClientsError(403, "Non authentifié.", CLIENTS_ERROR.FORBIDDEN);
@@ -771,11 +784,13 @@ async function downloadAttachment(store, attachmentId, principal, query = {}) {
   if (!attachment || attachment.school_id !== school.id) {
     throw createClientsError(404, "Pièce jointe introuvable.", CLIENTS_ERROR.FORBIDDEN);
   }
+  const entityType = asTrimmed(attachment.entity_type);
+  assertEntityTypeDownloadAccess(principal, entityType);
   if (asTrimmed(attachment.status) === "uploaded" && !attachment.entity_id) {
     if (String(attachment.uploaded_by_user_id) !== String(userId) && !canBypassParticipation(principal)) {
       throw createClientsError(404, "Pièce jointe introuvable.", CLIENTS_ERROR.FORBIDDEN);
     }
-  } else if (asTrimmed(attachment.entity_type) === "message" && attachment.entity_id) {
+  } else if (entityType === "message" && attachment.entity_id) {
     const message = await tx.getMessageById(attachment.entity_id);
     if (!message || message.school_id !== school.id) {
       throw createClientsError(404, "Pièce jointe introuvable.", CLIENTS_ERROR.FORBIDDEN);
@@ -783,6 +798,9 @@ async function downloadAttachment(store, attachmentId, principal, query = {}) {
     if (!canBypassParticipation(principal)) {
       await requireActiveParticipant(tx, message.conversation_id, userId);
     }
+  } else if (entityType === "announcement") {
+    const announcements = require("./communicationsAnnouncementsService");
+    await announcements.assertCanDownloadAnnouncementAttachment(tx, school, userId, attachment, principal);
   } else {
     throw createClientsError(404, "Pièce jointe introuvable.", CLIENTS_ERROR.FORBIDDEN);
   }
@@ -809,6 +827,11 @@ module.exports = {
   unreadCount,
   uploadAttachment,
   downloadAttachment,
+  assertEntityTypeDownloadAccess,
   classifyActor,
   validateBody,
+  requireSchool,
+  resolveWritableSchoolCode,
+  actorUserId,
+  displayName,
 };

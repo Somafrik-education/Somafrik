@@ -35,6 +35,8 @@ function createClientsMemoryStore(seed = {}) {
     reads: [],
     attachments: [],
     announcements: [],
+    announcementRecipients: [],
+    announcementReads: [],
     schools: clone(seed.platformSchools ?? []),
     countries: clone(seed.countries ?? []),
     students: clone(seed.students ?? []),
@@ -793,7 +795,8 @@ function createClientsMemoryStore(seed = {}) {
             row.school_id === schoolId &&
             row.uploaded_by_user_id === uploadedByUserId &&
             row.status === "uploaded" &&
-            !row.entity_id
+            !row.entity_id &&
+            row.entity_type === "message"
           ) {
             row.entity_type = "message";
             row.entity_id = messageId;
@@ -908,9 +911,11 @@ function createClientsMemoryStore(seed = {}) {
           target_role: row.targetRole,
           target_class_id: row.targetClassId,
           created_by: row.createdByUserId,
+          published_by: row.publishedByUserId || row.createdByUserId,
           published_at: new Date(),
           status: row.status,
           profile_payload: row.profile ?? {},
+          audience_payload: row.audience ?? {},
           created_at: new Date(),
           updated_at: new Date(),
         };
@@ -932,6 +937,137 @@ function createClientsMemoryStore(seed = {}) {
           updated_at: new Date(),
         };
         return this.getAnnouncementById(id);
+      },
+      async archiveAnnouncementRow(id, actorUserId) {
+        const index = tables.announcements.findIndex((announcement) => announcement.id === id);
+        if (index < 0) return null;
+        tables.announcements[index] = {
+          ...tables.announcements[index],
+          status: "archived",
+          archived_at: new Date(),
+          archived_by: actorUserId,
+          updated_at: new Date(),
+        };
+        return this.getAnnouncementById(id);
+      },
+      async insertAnnouncementRecipients(rows) {
+        const inserted = [];
+        for (const row of rows ?? []) {
+          const exists = tables.announcementRecipients.some(
+            (item) => item.announcement_id === row.announcementId && item.user_id === row.userId,
+          );
+          if (exists) continue;
+          const saved = {
+            announcement_id: row.announcementId,
+            school_id: row.schoolId,
+            user_id: row.userId,
+            recipient_kind: row.recipientKind,
+            audience_reason: row.audienceReason ?? {},
+            created_at: new Date(),
+          };
+          tables.announcementRecipients.push(saved);
+          inserted.push(saved);
+        }
+        return inserted;
+      },
+      async isAnnouncementRecipient(announcementId, userId) {
+        return tables.announcementRecipients.some(
+          (row) => String(row.announcement_id) === String(announcementId) && String(row.user_id) === String(userId),
+        );
+      },
+      async countAnnouncementRecipients(announcementId) {
+        return tables.announcementRecipients.filter((row) => String(row.announcement_id) === String(announcementId)).length;
+      },
+      async countAnnouncementReads(announcementId) {
+        return tables.announcementReads.filter((row) => String(row.announcement_id) === String(announcementId)).length;
+      },
+      async insertAnnouncementRead(announcementId, userId) {
+        const existing = tables.announcementReads.find(
+          (row) => String(row.announcement_id) === String(announcementId) && String(row.user_id) === String(userId),
+        );
+        if (existing) return existing;
+        const saved = { announcement_id: announcementId, user_id: userId, read_at: new Date() };
+        tables.announcementReads.push(saved);
+        return saved;
+      },
+      async getAnnouncementRead(announcementId, userId) {
+        return (
+          tables.announcementReads.find(
+            (row) => String(row.announcement_id) === String(announcementId) && String(row.user_id) === String(userId),
+          ) ?? null
+        );
+      },
+      async countAnnouncementUnreadForUser(userId, schoolId) {
+        return tables.announcementRecipients.filter((row) => {
+          if (String(row.user_id) !== String(userId) || String(row.school_id) !== String(schoolId)) return false;
+          const announcement = tables.announcements.find((item) => item.id === row.announcement_id);
+          if (!announcement || announcement.status === "archived" || announcement.archived_at) return false;
+          return !tables.announcementReads.some(
+            (read) => String(read.announcement_id) === String(row.announcement_id) && String(read.user_id) === String(userId),
+          );
+        }).length;
+      },
+      async listAnnouncementsForUser({ userId, schoolId, limit, management }) {
+        return tables.announcements
+          .filter((row) => {
+            if (String(row.school_id) !== String(schoolId)) return false;
+            if (management) return true;
+            if (row.status === "archived" || row.archived_at) return false;
+            return tables.announcementRecipients.some(
+              (rec) => rec.announcement_id === row.id && String(rec.user_id) === String(userId),
+            );
+          })
+          .sort((a, b) => new Date(b.published_at || b.created_at) - new Date(a.published_at || a.created_at))
+          .slice(0, limit)
+          .map((row) => ({
+            ...row,
+            recipients_count: tables.announcementRecipients.filter((rec) => rec.announcement_id === row.id).length,
+            reads_count: tables.announcementReads.filter((rec) => rec.announcement_id === row.id).length,
+            reader_read_at: tables.announcementReads.find(
+              (rec) => rec.announcement_id === row.id && String(rec.user_id) === String(userId),
+            )?.read_at,
+          }));
+      },
+      async listSchoolClassesByIds() {
+        return [];
+      },
+      async listSchoolAudienceClasses() {
+        return [];
+      },
+      async listSchoolActiveUserIds(schoolId) {
+        return tables.users
+          .filter((row) => String(row.school_id) === String(schoolId))
+          .map((row) => ({ user_id: row.id }));
+      },
+      async listSchoolUserIdsByRecipientKind() {
+        return [];
+      },
+      async listClassStudentUserIds() {
+        return [];
+      },
+      async listClassParentUserIds() {
+        return [];
+      },
+      async listClassTeacherUserIds() {
+        return [];
+      },
+      async attachToAnnouncement({ attachmentIds, announcementId, schoolId, uploadedByUserId }) {
+        const attached = [];
+        for (const row of tables.attachments) {
+          if (
+            attachmentIds.includes(row.id) &&
+            row.school_id === schoolId &&
+            row.uploaded_by_user_id === uploadedByUserId &&
+            row.status === "uploaded" &&
+            !row.entity_id &&
+            row.entity_type === "announcement"
+          ) {
+            row.entity_id = announcementId;
+            row.status = "attached";
+            attached.push(row);
+          }
+        }
+        return attached;
       },
       async recordClientsAudit(entry) {
         auditLog.push({ ...entry });
@@ -1186,9 +1322,42 @@ function createClientsMemoryStore(seed = {}) {
       const service = require("../lib/communicationsMessagesService");
       return service.downloadAttachment(store, ...args);
     },
-    createAnnouncement: (...args) => clientsService.createAnnouncement(store, ...args),
-    updateAnnouncement: (...args) => clientsService.updateAnnouncement(store, ...args),
-    archiveAnnouncement: (...args) => clientsService.archiveAnnouncement(store, ...args),
+    createAnnouncement: (...args) => {
+      const service = require("../lib/communicationsAnnouncementsService");
+      return service.publish(store, ...args);
+    },
+    updateAnnouncement: (...args) => {
+      const service = require("../lib/communicationsAnnouncementsService");
+      return service.updateAnnouncement(store, ...args);
+    },
+    archiveAnnouncement: (...args) => {
+      const service = require("../lib/communicationsAnnouncementsService");
+      return service.archiveAnnouncement(store, ...args);
+    },
+    listAnnouncementsForPrincipal: (...args) => {
+      const service = require("../lib/communicationsAnnouncementsService");
+      return service.listAnnouncements(store, ...args);
+    },
+    getAnnouncementForPrincipal: (...args) => {
+      const service = require("../lib/communicationsAnnouncementsService");
+      return service.getAnnouncement(store, ...args);
+    },
+    markAnnouncementRead: (...args) => {
+      const service = require("../lib/communicationsAnnouncementsService");
+      return service.markRead(store, ...args);
+    },
+    unreadAnnouncementCountForPrincipal: (...args) => {
+      const service = require("../lib/communicationsAnnouncementsService");
+      return service.unreadCount(store, ...args);
+    },
+    announcementAudienceOptionsForPrincipal: (...args) => {
+      const service = require("../lib/communicationsAnnouncementsService");
+      return service.audienceOptions(store, ...args);
+    },
+    uploadAnnouncementAttachment: (...args) => {
+      const service = require("../lib/communicationsAnnouncementsService");
+      return service.uploadAttachment(store, ...args);
+    },
     ensureStudentRecord(row = {}) {
       const studentCode = asTrimmed(row.student_code || row.studentCode || row.matricule || row.id);
       const id = asTrimmed(row.id || row.student_uuid || studentCode);

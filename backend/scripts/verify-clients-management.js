@@ -100,6 +100,7 @@ async function main() {
       SOMAFRIK_DB_REQUIRED: "false",
       DATABASE_URL: "",
       SOMAFRIK_DISABLE_LOGIN_LOCKOUT: "true",
+      SOMAFRIK_SKIP_DEMO_SEED: "false",
     },
     stdio: ["ignore", "pipe", "pipe"],
   });
@@ -142,9 +143,40 @@ async function main() {
     assert.equal(user.status, 201, JSON.stringify(user.data));
     assert.equal(collectSensitiveUserFieldPaths(user.data).length, 0);
 
-    const announcement = await request("/backoffice/announcements", {
+    const publisherPassword = "E2eAnnPublisher!2026";
+    const publisher = await request("/backoffice/users", {
       method: "POST",
       token: schoolToken,
+      body: {
+        firstName: "Publisher",
+        lastName: "Annonce",
+        email: "lot7-announcement-publisher@test.local",
+        temporaryPassword: publisherPassword,
+      },
+    });
+    assert.equal(publisher.status, 201, JSON.stringify(publisher.data));
+    assert.ok(publisher.data.id, "publisher id canonique");
+    const grantPublisher = await request(`/backoffice/users/${encodeURIComponent(publisher.data.id)}/roles/grant`, {
+      method: "POST",
+      token: superToken,
+      body: { role: "Admin School" },
+    });
+    assert.equal(grantPublisher.status, 200, JSON.stringify(grantPublisher.data));
+    const publisherSession = await loginSession(
+      publisher.data.identifier,
+      publisherPassword,
+      "CD-2026-0001",
+    );
+    assert.equal(
+      decodeJwtPayload(publisherSession.accessToken).sub,
+      publisher.data.id,
+      "JWT sub = users.id canonique",
+    );
+    assert.equal(decodeJwtPayload(publisherSession.accessToken).schoolCode, "CD-2026-0001");
+
+    const announcement = await request("/backoffice/announcements", {
+      method: "POST",
+      token: publisherSession.accessToken,
       body: {
         title: "Annonce LOT7",
         message: "Test",

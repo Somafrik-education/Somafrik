@@ -191,6 +191,12 @@ function moduleMatchesNormalized(module, normalized) {
   if (normalized.includes(moduleNorm)) return true;
   if (module.moduleKey === "students" && normalized.includes("enfant")) return true;
   if (module.moduleKey === "attendance" && normalized.includes("appel")) return true;
+  if (
+    module.moduleKey === "announcements" &&
+    (normalized.includes("annonce") || normalized.includes("announcement"))
+  ) {
+    return true;
+  }
   return false;
 }
 

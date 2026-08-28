@@ -25,6 +25,7 @@ import {
   EtablissementOverviewPage,
   EntityPage,
   MessagesConversationsPage,
+  AnnouncementsPage,
   FinanceFeesPage,
   FinanceUnpaidPage,
   FinancesLayout,
@@ -260,7 +261,7 @@ export default function App() {
           path="/annonces"
           element={
             <PermissionRoute view="announcements">
-              <EntityPage entity="announcements" />
+              <AnnouncementsPage />
             </PermissionRoute>
           }
         />

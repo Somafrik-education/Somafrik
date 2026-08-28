@@ -151,6 +151,12 @@ async function grantComms(pool, roleKey, enabled) {
     : { create: false, read: false, update: false };
   await setRoleModuleGrant(pool, roleKey, "messages", flags);
   await setRoleModuleGrant(pool, roleKey, "notifications", flags);
+  const announcementFlags = enabled
+    ? roleKey === "SCHOOL_ADMIN"
+      ? { create: true, read: true, update: true }
+      : { create: false, read: true, update: false }
+    : { create: false, read: false, update: false };
+  await setRoleModuleGrant(pool, roleKey, "announcements", announcementFlags);
 }
 
 async function countRows(pool, sql, params) {

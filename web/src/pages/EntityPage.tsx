@@ -111,7 +111,6 @@ import {
   isParentChildBundleRow,
 } from "../lib/relations";
 import { csvToObjects, downloadCsv, downloadExcel, rowsToCsv } from "../lib/csv";
-import { markAllAnnouncementsRead } from "../lib/announcementsRead";
 import { normalize } from "../lib/format";
 import { isSuperAdminRole } from "../lib/orgHierarchy";
 import { inputToPeriodDate, normalizePeriodDate, periodDateToInput } from "../lib/dates";
@@ -419,12 +418,6 @@ function EntityPageContent({ entity, mode, classScope, disableCreate = false }: 
       window.clearTimeout(timer);
     };
   }, [isParentChildMode, editing?.phone, editing?.email]);
-
-  useEffect(() => {
-    if (module?.key === "announcements") {
-      markAllAnnouncementsRead(scopeUser, state);
-    }
-  }, [module?.key, scopeUser, state]);
 
   const paymentOverview = useMemo(() => {
     if (module?.key !== "payments") return null;

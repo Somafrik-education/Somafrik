@@ -182,7 +182,11 @@ function permissionMatchesFeature(
   ) {
     return true;
   }
-  if (!normalizedPermission.includes(normalizedFeature)) {
+  const featureTokens =
+    normalizedFeature === "announcements"
+      ? ["announcements", "annonces", "annonce"]
+      : [normalizedFeature];
+  if (!featureTokens.some((token) => normalizedPermission.includes(token))) {
     return false;
   }
   if (action === "READ") {
@@ -475,11 +479,10 @@ export function canReadView(ctx: PermissionContext, viewName: string): boolean {
     if (isSuperAdminRole(ctx.user?.role)) return true;
     return isSchoolAdminRole(ctx.user?.role);
   }
-  if (
-    viewName === "messages" ||
-    viewName === "notifications" ||
-    viewName === "announcements"
-  ) {
+  if (viewName === "announcements") {
+    return hasBackOfficePermission(ctx, "Announcements", "READ");
+  }
+  if (viewName === "messages" || viewName === "notifications") {
     if (hasBackOfficePermission(ctx, VIEW_PERMISSION_FEATURES[viewName] ?? null, "READ")) {
       return true;
     }

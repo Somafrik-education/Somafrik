@@ -787,6 +787,7 @@ function createClientsPgStore(repo) {
              AND uploaded_by_user_id = $4
              AND status = 'uploaded'
              AND entity_id IS NULL
+             AND entity_type = 'message'
            RETURNING *`,
           [attachmentIds, messageId, schoolId, uploadedByUserId],
         );
@@ -909,10 +910,14 @@ function createClientsPgStore(repo) {
       },
       async getAnnouncementById(id) {
         return one(
-          `SELECT a.*, s.school_code, u.first_name || ' ' || u.last_name AS author_name
+          `SELECT a.*, s.school_code,
+             trim(concat(cu.first_name, ' ', cu.last_name)) AS author_name,
+             trim(concat(cu.first_name, ' ', cu.last_name)) AS created_by_name,
+             trim(concat(pu.first_name, ' ', pu.last_name)) AS published_by_name
            FROM announcements a
            JOIN schools s ON s.id = a.school_id
-           LEFT JOIN users u ON u.id = a.created_by
+           LEFT JOIN users cu ON cu.id = a.created_by
+           LEFT JOIN users pu ON pu.id = a.published_by
            WHERE a.id::text = $1`,
           [id],
         );
@@ -921,8 +926,8 @@ function createClientsPgStore(repo) {
         return one(
           `INSERT INTO announcements (
              school_id, country_id, title, message, target_role, target_class_id, created_by,
-             published_at, status, profile_payload, created_at, updated_at
-           ) VALUES ($1,$2,$3,$4,$5,$6,$7,NOW(),$8,$9::jsonb,NOW(),NOW())
+             published_by, published_at, status, profile_payload, audience_payload, created_at, updated_at
+           ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,NOW(),$9,$10::jsonb,$11::jsonb,NOW(),NOW())
            RETURNING *`,
           [
             row.schoolId,
@@ -932,8 +937,10 @@ function createClientsPgStore(repo) {
             row.targetRole || null,
             row.targetClassId || null,
             row.createdByUserId || null,
+            row.publishedByUserId || row.createdByUserId || null,
             row.status,
             JSON.stringify(row.profile ?? {}),
+            JSON.stringify(row.audience ?? {}),
           ],
         );
       },
@@ -956,6 +963,249 @@ function createClientsPgStore(repo) {
             JSON.stringify(mergedProfile),
           ],
         );
+      },
+      async archiveAnnouncementRow(id, actorUserId) {
+        return one(
+          `UPDATE announcements
+           SET status = 'archived', archived_at = COALESCE(archived_at, NOW()), archived_by = COALESCE(archived_by, $2),
+               updated_at = NOW()
+           WHERE id = $1
+           RETURNING *, (SELECT school_code FROM schools WHERE id = announcements.school_id) AS school_code`,
+          [id, actorUserId],
+        );
+      },
+      async insertAnnouncementRecipients(rows) {
+        if (!rows?.length) return [];
+        const inserted = [];
+        for (const row of rows) {
+          const saved = await one(
+            `INSERT INTO announcement_recipients (
+               announcement_id, school_id, user_id, recipient_kind, audience_reason, created_at
+             ) VALUES ($1,$2,$3,$4,$5::jsonb,NOW())
+             ON CONFLICT (announcement_id, user_id) DO NOTHING
+             RETURNING *`,
+            [
+              row.announcementId,
+              row.schoolId,
+              row.userId,
+              row.recipientKind,
+              JSON.stringify(row.audienceReason ?? {}),
+            ],
+          );
+          if (saved) inserted.push(saved);
+        }
+        return inserted;
+      },
+      async isAnnouncementRecipient(announcementId, userId) {
+        const row = await one(
+          `SELECT 1 FROM announcement_recipients WHERE announcement_id = $1 AND user_id = $2`,
+          [announcementId, userId],
+        );
+        return Boolean(row);
+      },
+      async countAnnouncementRecipients(announcementId) {
+        const row = await one(
+          `SELECT count(*)::int AS c FROM announcement_recipients WHERE announcement_id = $1`,
+          [announcementId],
+        );
+        return row?.c ?? 0;
+      },
+      async countAnnouncementReads(announcementId) {
+        const row = await one(
+          `SELECT count(*)::int AS c FROM announcement_reads WHERE announcement_id = $1`,
+          [announcementId],
+        );
+        return row?.c ?? 0;
+      },
+      async insertAnnouncementRead(announcementId, userId) {
+        return one(
+          `INSERT INTO announcement_reads (announcement_id, user_id, read_at)
+           VALUES ($1,$2,NOW())
+           ON CONFLICT (announcement_id, user_id) DO UPDATE SET read_at = announcement_reads.read_at
+           RETURNING *`,
+          [announcementId, userId],
+        );
+      },
+      async getAnnouncementRead(announcementId, userId) {
+        return one(
+          `SELECT * FROM announcement_reads WHERE announcement_id = $1 AND user_id = $2`,
+          [announcementId, userId],
+        );
+      },
+      async countAnnouncementUnreadForUser(userId, schoolId) {
+        const row = await one(
+          `SELECT count(*)::int AS c
+           FROM announcement_recipients rec
+           JOIN announcements a ON a.id = rec.announcement_id
+           LEFT JOIN announcement_reads r ON r.announcement_id = rec.announcement_id AND r.user_id = rec.user_id
+           WHERE rec.user_id = $1
+             AND rec.school_id = $2
+             AND a.school_id = $2
+             AND COALESCE(a.status, 'published') = 'published'
+             AND a.archived_at IS NULL
+             AND r.announcement_id IS NULL`,
+          [userId, schoolId],
+        );
+        return row?.c ?? 0;
+      },
+      async listAnnouncementsForUser({ userId, schoolId, limit, cursor, management }) {
+        const params = [schoolId, userId];
+        let cursorSql = "";
+        if (cursor?.at && cursor?.id) {
+          params.push(cursor.at, cursor.id);
+          cursorSql = ` AND (COALESCE(a.published_at, a.created_at), a.id) < ($${params.length - 1}::timestamptz, $${params.length}::uuid)`;
+        }
+        params.push(limit);
+        const visibility = management
+          ? ""
+          : ` AND EXISTS (
+                SELECT 1 FROM announcement_recipients rec
+                WHERE rec.announcement_id = a.id AND rec.user_id = $2
+              )
+              AND COALESCE(a.status, 'published') = 'published'
+              AND a.archived_at IS NULL`;
+        return all(
+          `SELECT a.*, s.school_code,
+             trim(concat(cu.first_name, ' ', cu.last_name)) AS created_by_name,
+             trim(concat(pu.first_name, ' ', pu.last_name)) AS published_by_name,
+             (SELECT r.read_at FROM announcement_reads r
+               WHERE r.announcement_id = a.id AND r.user_id = $2) AS reader_read_at,
+             (SELECT count(*)::int FROM announcement_recipients rec WHERE rec.announcement_id = a.id) AS recipients_count,
+             (SELECT count(*)::int FROM announcement_reads rd WHERE rd.announcement_id = a.id) AS reads_count
+           FROM announcements a
+           JOIN schools s ON s.id = a.school_id
+           LEFT JOIN users cu ON cu.id = a.created_by
+           LEFT JOIN users pu ON pu.id = a.published_by
+           WHERE a.school_id = $1 ${visibility} ${cursorSql}
+           ORDER BY COALESCE(a.published_at, a.created_at) DESC, a.id DESC
+           LIMIT $${params.length}`,
+          params,
+        );
+      },
+      async listSchoolClassesByIds(schoolId, classIds) {
+        if (!classIds?.length) return [];
+        return all(
+          `SELECT id, class_code, name, school_id FROM classes
+           WHERE school_id = $1 AND id = ANY($2::uuid[]) AND COALESCE(status, 'active') = 'active'`,
+          [schoolId, classIds],
+        );
+      },
+      async listSchoolAudienceClasses(schoolId) {
+        return all(
+          `SELECT id, class_code, name FROM classes
+           WHERE school_id = $1 AND COALESCE(status, 'active') = 'active'
+           ORDER BY name, class_code`,
+          [schoolId],
+        );
+      },
+      async listSchoolActiveUserIds(schoolId) {
+        return all(
+          `SELECT id AS user_id FROM users WHERE school_id = $1 AND COALESCE(status, 'active') = 'active'`,
+          [schoolId],
+        );
+      },
+      async listSchoolUserIdsByRecipientKind(schoolId, kind) {
+        if (kind === "parent") {
+          return all(
+            `SELECT DISTINCT u.id AS user_id
+             FROM users u
+             JOIN user_roles ur ON ur.user_id = u.id AND ur.status = 'active' AND ur.revoked_at IS NULL
+             WHERE u.school_id = $1 AND COALESCE(u.status, 'active') = 'active'
+               AND upper(ur.role_key) = 'PARENT'`,
+            [schoolId],
+          );
+        }
+        if (kind === "teacher") {
+          return all(
+            `SELECT DISTINCT u.id AS user_id
+             FROM users u
+             JOIN user_roles ur ON ur.user_id = u.id AND ur.status = 'active' AND ur.revoked_at IS NULL
+             WHERE u.school_id = $1 AND COALESCE(u.status, 'active') = 'active'
+               AND upper(ur.role_key) = 'TEACHER'`,
+            [schoolId],
+          );
+        }
+        if (kind === "student") {
+          return all(
+            `SELECT DISTINCT u.id AS user_id
+             FROM users u
+             JOIN user_roles ur ON ur.user_id = u.id AND ur.status = 'active' AND ur.revoked_at IS NULL
+             WHERE u.school_id = $1 AND COALESCE(u.status, 'active') = 'active'
+               AND upper(ur.role_key) = 'STUDENT'`,
+            [schoolId],
+          );
+        }
+        if (kind === "staff") {
+          return all(
+            `SELECT DISTINCT u.id AS user_id
+             FROM users u
+             WHERE u.school_id = $1 AND COALESCE(u.status, 'active') = 'active'
+               AND NOT EXISTS (
+                 SELECT 1 FROM user_roles ur
+                 WHERE ur.user_id = u.id AND ur.status = 'active' AND ur.revoked_at IS NULL
+                   AND upper(ur.role_key) IN ('PARENT', 'TEACHER', 'STUDENT')
+               )
+               AND COALESCE(u.role, '') NOT IN ('Parent', 'Enseignant', 'Élève / Étudiant')`,
+            [schoolId],
+          );
+        }
+        return [];
+      },
+      async listClassStudentUserIds(schoolId, classIds) {
+        if (!classIds?.length) return [];
+        return all(
+          `SELECT DISTINCT u.id AS user_id
+           FROM enrollments e
+           JOIN students st ON st.id = e.student_id AND st.school_id = e.school_id
+           JOIN users u ON u.school_id = st.school_id AND u.user_code = st.student_code
+           WHERE e.school_id = $1
+             AND e.class_id = ANY($2::uuid[])
+             AND e.status = 'active'
+             AND COALESCE(st.status, 'active') = 'active'
+             AND COALESCE(u.status, 'active') = 'active'`,
+          [schoolId, classIds],
+        );
+      },
+      async listClassParentUserIds(schoolId, classIds) {
+        if (!classIds?.length) return [];
+        return all(
+          `SELECT DISTINCT c.user_id
+           FROM enrollments e
+           JOIN contact_relations r ON r.student_id = e.student_id AND r.status = 'active' AND r.school_id = e.school_id
+           JOIN contacts c ON c.id = r.contact_id AND c.status = 'active' AND c.user_id IS NOT NULL
+           WHERE e.school_id = $1
+             AND e.class_id = ANY($2::uuid[])
+             AND e.status = 'active'`,
+          [schoolId, classIds],
+        );
+      },
+      async listClassTeacherUserIds(schoolId, classIds) {
+        if (!classIds?.length) return [];
+        return all(
+          `SELECT DISTINCT t.user_id
+           FROM teacher_assignments ta
+           JOIN teachers t ON t.id = ta.teacher_id AND t.school_id = ta.school_id AND t.user_id IS NOT NULL
+           WHERE ta.school_id = $1
+             AND ta.class_id = ANY($2::uuid[])
+             AND ta.status = 'active'
+             AND COALESCE(t.status, 'active') = 'active'`,
+          [schoolId, classIds],
+        );
+      },
+      async attachToAnnouncement({ attachmentIds, announcementId, schoolId, uploadedByUserId }) {
+        const rows = await all(
+          `UPDATE communication_attachments
+           SET entity_id = $2, status = 'attached'
+           WHERE id = ANY($1::uuid[])
+             AND school_id = $3
+             AND uploaded_by_user_id = $4
+             AND status = 'uploaded'
+             AND entity_id IS NULL
+             AND entity_type = 'announcement'
+           RETURNING *`,
+          [attachmentIds, announcementId, schoolId, uploadedByUserId],
+        );
+        return rows;
       },
       async recordClientsAudit(entry) {
         const school = entry.schoolCode
@@ -1120,9 +1370,42 @@ function createClientsPgStore(repo) {
       const service = require("../lib/communicationsMessagesService");
       return service.downloadAttachment(store, ...args);
     },
-    createAnnouncement: (...args) => clientsService.createAnnouncement(store, ...args),
-    updateAnnouncement: (...args) => clientsService.updateAnnouncement(store, ...args),
-    archiveAnnouncement: (...args) => clientsService.archiveAnnouncement(store, ...args),
+    createAnnouncement: (...args) => {
+      const service = require("../lib/communicationsAnnouncementsService");
+      return service.publish(store, ...args);
+    },
+    updateAnnouncement: (...args) => {
+      const service = require("../lib/communicationsAnnouncementsService");
+      return service.updateAnnouncement(store, ...args);
+    },
+    archiveAnnouncement: (...args) => {
+      const service = require("../lib/communicationsAnnouncementsService");
+      return service.archiveAnnouncement(store, ...args);
+    },
+    listAnnouncementsForPrincipal: (...args) => {
+      const service = require("../lib/communicationsAnnouncementsService");
+      return service.listAnnouncements(store, ...args);
+    },
+    getAnnouncementForPrincipal: (...args) => {
+      const service = require("../lib/communicationsAnnouncementsService");
+      return service.getAnnouncement(store, ...args);
+    },
+    markAnnouncementRead: (...args) => {
+      const service = require("../lib/communicationsAnnouncementsService");
+      return service.markRead(store, ...args);
+    },
+    unreadAnnouncementCountForPrincipal: (...args) => {
+      const service = require("../lib/communicationsAnnouncementsService");
+      return service.unreadCount(store, ...args);
+    },
+    announcementAudienceOptionsForPrincipal: (...args) => {
+      const service = require("../lib/communicationsAnnouncementsService");
+      return service.audienceOptions(store, ...args);
+    },
+    uploadAnnouncementAttachment: (...args) => {
+      const service = require("../lib/communicationsAnnouncementsService");
+      return service.uploadAttachment(store, ...args);
+    },
     ensureStudentRecord() {
       return null;
     },

@@ -3463,8 +3463,32 @@ class FallbackRepository {
     return this.getClientsStore().updateAnnouncement(id, patch, principal, auditMeta);
   }
 
-  archiveClientsAnnouncement(id, principal, auditMeta) {
-    return this.getClientsStore().archiveAnnouncement(id, principal, auditMeta);
+  archiveClientsAnnouncement(id, principal, auditMeta, query) {
+    return this.getClientsStore().archiveAnnouncement(id, principal, auditMeta, query);
+  }
+
+  listClientsAnnouncements(principal, query) {
+    return this.getClientsStore().listAnnouncementsForPrincipal(principal, query);
+  }
+
+  getClientsAnnouncement(id, principal, query) {
+    return this.getClientsStore().getAnnouncementForPrincipal(id, principal, query);
+  }
+
+  markClientsAnnouncementRead(id, principal, auditMeta, query) {
+    return this.getClientsStore().markAnnouncementRead(id, principal, auditMeta, query);
+  }
+
+  getClientsAnnouncementsUnreadCount(principal, query) {
+    return this.getClientsStore().unreadAnnouncementCountForPrincipal(principal, query);
+  }
+
+  listAnnouncementAudienceOptions(principal, query) {
+    return this.getClientsStore().announcementAudienceOptionsForPrincipal(principal, query);
+  }
+
+  uploadAnnouncementAttachment(principal, file, query) {
+    return this.getClientsStore().uploadAnnouncementAttachment(principal, file, query);
   }
 
   getEducationReferenceStore() {

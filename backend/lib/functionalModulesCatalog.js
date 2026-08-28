@@ -26,6 +26,7 @@ const FUNCTIONAL_MODULES = Object.freeze([
   { moduleKey: "fees", moduleName: "Frais & tarifs", appliesWeb: true, appliesMobile: false, displayOrder: 170 },
   { moduleKey: "unpaid", moduleName: "Impayés", appliesWeb: true, appliesMobile: false, displayOrder: 180 },
   { moduleKey: "notifications", moduleName: "Notifications", appliesWeb: true, appliesMobile: true, displayOrder: 190 },
+  { moduleKey: "announcements", moduleName: "Announcements", appliesWeb: true, appliesMobile: true, displayOrder: 195 },
   { moduleKey: "messages", moduleName: "Messages", appliesWeb: true, appliesMobile: true, displayOrder: 200 },
   { moduleKey: "documents", moduleName: "Documents", appliesWeb: true, appliesMobile: true, displayOrder: 210 },
   { moduleKey: "reports", moduleName: "Rapports", appliesWeb: true, appliesMobile: true, displayOrder: 220 },

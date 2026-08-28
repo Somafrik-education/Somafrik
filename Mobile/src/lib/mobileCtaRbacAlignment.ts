@@ -106,7 +106,7 @@ export function canAccessMessagesRoute(session: any): boolean {
 export function canArchiveAnnouncement(session: any): boolean {
   if (!session) return false;
   if (hasLivePlatformToken(session)) return true;
-  return hasSecurityPermission(session, "Notifications", "UPDATE");
+  return hasSecurityPermission(session, "Announcements", "UPDATE");
 }
 
 export function canAccessPlatformNotifications(session: any): boolean {

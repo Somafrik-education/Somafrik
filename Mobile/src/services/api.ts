@@ -840,18 +840,76 @@ export function saveBackOfficeState(_payload: BackOfficeStatePayload) {
   );
 }
 
-export function createClientsAnnouncement(payload: Record<string, unknown>) {
-  return request("/backoffice/announcements", {
+export function createClientsAnnouncement(payload: Record<string, unknown>, options?: MutationRequestOptions) {
+  const schoolCode = communicationSchoolScope(
+    typeof payload.effectiveSchoolCode === "string" ? payload.effectiveSchoolCode : undefined,
+  );
+  return request(scopedMessagesPath("/backoffice/announcements", schoolCode), {
     method: "POST",
-    body: JSON.stringify(payload),
+    body: JSON.stringify(withCommunicationSchoolPayload(payload, schoolCode)),
+    idempotencyKey: options?.idempotencyKey,
   });
 }
 
 export function updateClientsAnnouncement(announcementId: string, payload: Record<string, unknown>) {
-  return request(`/backoffice/announcements/${encodeURIComponent(announcementId)}`, {
+  const schoolCode = communicationSchoolScope(
+    typeof payload.effectiveSchoolCode === "string" ? payload.effectiveSchoolCode : undefined,
+  );
+  return request(scopedMessagesPath(`/backoffice/announcements/${encodeURIComponent(announcementId)}`, schoolCode), {
     method: "PATCH",
-    body: JSON.stringify(payload),
+    body: JSON.stringify(withCommunicationSchoolPayload(payload, schoolCode)),
   });
+}
+
+export async function getAnnouncementAudienceOptions(schoolCode?: string): Promise<{
+  classes: Array<{ id: string; code: string; name: string }>;
+  recipientKinds: Array<{ id: string; label: string }>;
+}> {
+  const data = await request<{
+    classes?: Array<{ id: string; code: string; name: string }>;
+    recipientKinds?: Array<{ id: string; label: string }>;
+  }>(scopedMessagesPath("/backoffice/announcements/audience-options", schoolCode));
+  return {
+    classes: Array.isArray(data?.classes) ? data.classes : [],
+    recipientKinds: Array.isArray(data?.recipientKinds) ? data.recipientKinds : [],
+  };
+}
+
+export async function getAnnouncementsUnreadCount(schoolCode?: string): Promise<number> {
+  const data = await request<{ count?: number }>(
+    scopedMessagesPath("/backoffice/announcements/unread-count", schoolCode),
+  );
+  return Number(data?.count) || 0;
+}
+
+export async function uploadAnnouncementAttachment(
+  file: {
+    uri: string;
+    name: string;
+    mimeType: string;
+  },
+  schoolCode?: string,
+): Promise<{ id: string; fileName: string; mimeType?: string; fileSize?: number }> {
+  const token = await getAccessToken();
+  const root = resolveApiRootUrl().replace(/\/$/, "");
+  const blob = await (await fetch(file.uri)).blob();
+  const response = await fetch(
+    scopedMessagesPath(`${root}/api/backoffice/announcements/attachments`, schoolCode),
+    {
+      method: "POST",
+      headers: {
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        "Content-Type": file.mimeType || "application/octet-stream",
+        "X-Filename": file.name,
+      },
+      body: blob,
+    },
+  );
+  const data = (await response.json().catch(() => ({}))) as { message?: string; id?: string };
+  if (!response.ok || !data.id) {
+    throw new ApiClientError(String(data.message ?? "Échec de l'upload"));
+  }
+  return data as { id: string; fileName: string; mimeType?: string; fileSize?: number };
 }
 
 function communicationSchoolScope(explicit?: string | null): string {

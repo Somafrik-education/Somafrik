@@ -1,5 +1,5 @@
 import { unwrapList } from "../lib/dataTruth";
-import { withCommunicationSchoolScope } from "../lib/communicationSchoolScope";
+import { withCommunicationSchoolPayload, withCommunicationSchoolScope } from "../lib/communicationSchoolScope";
 import { getRequestSchoolScope } from "../lib/requestSchoolScope";
 import {
   normalizeAnnouncement,
@@ -44,8 +44,10 @@ export async function getCanonicalUsers(): Promise<CanonicalUserAccount[]> {
   return unwrapList(payload).map(normalizeUser).filter((row): row is CanonicalUserAccount => Boolean(row));
 }
 
-export async function getCanonicalAnnouncements(): Promise<CanonicalAnnouncement[]> {
-  const payload = await httpRequest<unknown>("/backoffice/announcements");
+export async function getCanonicalAnnouncements(schoolCode?: string): Promise<CanonicalAnnouncement[]> {
+  const payload = await httpRequest<unknown>(
+    withCommunicationSchoolScope("/backoffice/announcements", schoolCode || getRequestSchoolScope()),
+  );
   return unwrapList(payload)
     .map(normalizeAnnouncement)
     .filter((row): row is CanonicalAnnouncement => Boolean(row));
@@ -142,12 +144,39 @@ export async function getCanonicalNotifications(): Promise<PlatformNotification[
     .filter((row): row is PlatformNotification => Boolean(row));
 }
 
-export async function archiveCanonicalAnnouncement(announcementId: string): Promise<CanonicalAnnouncement | null> {
+export async function archiveCanonicalAnnouncement(
+  announcementId: string,
+  schoolCode?: string,
+): Promise<CanonicalAnnouncement | null> {
   const payload = await httpRequest<unknown>(
-    `/backoffice/announcements/${encodeURIComponent(announcementId)}/archive`,
-    { method: "POST" },
+    withCommunicationSchoolScope(
+      `/backoffice/announcements/${encodeURIComponent(announcementId)}/archive`,
+      schoolCode || getRequestSchoolScope(),
+    ),
+    { method: "POST", body: JSON.stringify(withCommunicationSchoolPayload({}, schoolCode || getRequestSchoolScope())) },
   );
   return normalizeAnnouncement(payload);
+}
+
+export async function markCanonicalAnnouncementRead(
+  announcementId: string,
+  schoolCode?: string,
+): Promise<CanonicalAnnouncement | null> {
+  const payload = await httpRequest<unknown>(
+    withCommunicationSchoolScope(
+      `/backoffice/announcements/${encodeURIComponent(announcementId)}/read`,
+      schoolCode || getRequestSchoolScope(),
+    ),
+    { method: "PATCH" },
+  );
+  return normalizeAnnouncement(payload);
+}
+
+export async function getAnnouncementsUnreadCount(schoolCode?: string): Promise<number> {
+  const payload = await httpRequest<{ count?: number }>(
+    withCommunicationSchoolScope("/backoffice/announcements/unread-count", schoolCode || getRequestSchoolScope()),
+  );
+  return Number(payload?.count) || 0;
 }
 
 export async function markCanonicalMessageRead(

@@ -1,12 +1,20 @@
-import { useRef, useState } from "react";
-import { StyleSheet, Text, TextInput, TouchableOpacity } from "react-native";
+import { useEffect, useRef, useState } from "react";
+import { StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
+import * as DocumentPicker from "expo-document-picker";
+import * as ImagePicker from "expo-image-picker";
 import { useAuth } from "../context/AuthContext";
+import { useAdminData } from "../context/AdminDataContext";
 import CanonicalMutationModal from "./CanonicalMutationModal";
 import FormField from "./FormField";
 import { hasFieldErrors, trimField, validateAnnouncementDraft } from "../lib/formFieldValidation";
 import { resolveEntityCrudAccess } from "../lib/mobileCrudParity";
 import { MIN_TOUCH_TARGET_DP } from "../lib/mobileUsability";
-import { createClientsAnnouncement } from "../services/api";
+import { hasCommunicationSchoolScope, withCommunicationSchoolPayload } from "../lib/communicationSchoolScope";
+import {
+  createClientsAnnouncement,
+  getAnnouncementAudienceOptions,
+  uploadAnnouncementAttachment,
+} from "../services/api";
 
 export default function AnnouncementMutationControls({
   onChanged,
@@ -14,6 +22,7 @@ export default function AnnouncementMutationControls({
   onChanged: () => Promise<void> | void;
 }) {
   const { session } = useAuth();
+  const { activeSchoolCode } = useAdminData();
   const access = resolveEntityCrudAccess(session, "announcements");
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -21,11 +30,67 @@ export default function AnnouncementMutationControls({
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [title, setTitle] = useState("");
   const [message, setMessage] = useState("");
+  const [scopeType, setScopeType] = useState<"school" | "roles" | "classes">("school");
+  const [selectedKinds, setSelectedKinds] = useState<string[]>([]);
+  const [selectedClasses, setSelectedClasses] = useState<string[]>([]);
+  const [classes, setClasses] = useState<Array<{ id: string; code: string; name: string }>>([]);
+  const [kinds, setKinds] = useState<Array<{ id: string; label: string }>>([
+    { id: "parent", label: "parents" },
+    { id: "teacher", label: "enseignants" },
+    { id: "student", label: "élèves" },
+    { id: "staff", label: "personnel" },
+  ]);
+  const [attachmentIds, setAttachmentIds] = useState<string[]>([]);
   const titleRef = useRef<TextInput>(null);
   const messageRef = useRef<TextInput>(null);
+  const scopeReady = hasCommunicationSchoolScope(activeSchoolCode);
+
+  useEffect(() => {
+    if (!open || !scopeReady) return;
+    void getAnnouncementAudienceOptions(activeSchoolCode)
+      .then((data) => {
+        setClasses(data.classes);
+        if (data.recipientKinds.length) setKinds(data.recipientKinds);
+      })
+      .catch(() => {
+        setClasses([]);
+      });
+  }, [open, scopeReady, activeSchoolCode]);
+
+  const toggle = (list: string[], value: string) =>
+    list.includes(value) ? list.filter((item) => item !== value) : [...list, value];
+
+  const pickFile = async () => {
+    const picked = await DocumentPicker.getDocumentAsync({
+      type: ["application/pdf", "image/jpeg", "image/png"],
+      copyToCacheDirectory: true,
+    });
+    if (picked.canceled || !picked.assets?.[0]) return;
+    const asset = picked.assets[0];
+    const saved = await uploadAnnouncementAttachment(
+      { uri: asset.uri, name: asset.name ?? "fichier", mimeType: asset.mimeType ?? "application/pdf" },
+      activeSchoolCode,
+    );
+    setAttachmentIds((current) => [...current, saved.id]);
+  };
+
+  const pickImage = async () => {
+    const picked = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, quality: 0.8 });
+    if (picked.canceled || !picked.assets?.[0]) return;
+    const asset = picked.assets[0];
+    const saved = await uploadAnnouncementAttachment(
+      { uri: asset.uri, name: "image.jpg", mimeType: asset.mimeType ?? "image/jpeg" },
+      activeSchoolCode,
+    );
+    setAttachmentIds((current) => [...current, saved.id]);
+  };
 
   const submit = async () => {
     if (saving) return;
+    if (!scopeReady) {
+      setError("Établissement requis.");
+      return;
+    }
     const nextErrors = validateAnnouncementDraft({ title, message });
     if (hasFieldErrors(nextErrors)) {
       setFieldErrors(nextErrors);
@@ -38,13 +103,26 @@ export default function AnnouncementMutationControls({
     setError("");
     setFieldErrors({});
     try {
-      await createClientsAnnouncement({
+      const payload: Record<string, unknown> = {
         title: trimField(title),
         message: trimField(message),
+        attachmentIds,
+      };
+      if (scopeType === "school") payload.audience = "Tous";
+      else if (scopeType === "roles") payload.recipientKinds = selectedKinds;
+      else {
+        payload.classIds = selectedClasses;
+        payload.recipientKinds = selectedKinds;
+      }
+      await createClientsAnnouncement(withCommunicationSchoolPayload(payload, activeSchoolCode), {
+        idempotencyKey: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
       });
       setOpen(false);
       setTitle("");
       setMessage("");
+      setAttachmentIds([]);
+      setSelectedKinds([]);
+      setSelectedClasses([]);
       await onChanged();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Publication impossible.");
@@ -77,6 +155,7 @@ export default function AnnouncementMutationControls({
         onClose={() => setOpen(false)}
         onSubmit={() => void submit()}
       >
+        {!scopeReady ? <Text style={styles.hint}>Sélectionnez un établissement pour publier.</Text> : null}
         <FormField
           ref={titleRef}
           label="Titre"
@@ -115,6 +194,33 @@ export default function AnnouncementMutationControls({
           error={fieldErrors.message}
           editable={!saving}
         />
+        <Text style={styles.hint}>Audience</Text>
+        {(["school", "roles", "classes"] as const).map((value) => (
+          <TouchableOpacity key={value} onPress={() => setScopeType(value)}>
+            <Text style={scopeType === value ? styles.kindOn : styles.kindOff}>
+              {value === "school" ? "Établissement entier" : value === "roles" ? "Rôle(s)" : "Classe(s) + catégories"}
+            </Text>
+          </TouchableOpacity>
+        ))}
+        {scopeType !== "school"
+          ? kinds.map((kind) => (
+              <TouchableOpacity key={kind.id} onPress={() => setSelectedKinds((current) => toggle(current, kind.id))}>
+                <Text style={selectedKinds.includes(kind.id) ? styles.kindOn : styles.kindOff}>{kind.label}</Text>
+              </TouchableOpacity>
+            ))
+          : null}
+        {scopeType === "classes"
+          ? classes.map((row) => (
+              <TouchableOpacity key={row.id} onPress={() => setSelectedClasses((current) => toggle(current, row.id))}>
+                <Text style={selectedClasses.includes(row.id) ? styles.kindOn : styles.kindOff}>{row.name || row.code}</Text>
+              </TouchableOpacity>
+            ))
+          : null}
+        <View style={styles.row}>
+          <TouchableOpacity onPress={() => void pickFile()}><Text style={styles.link}>PDF</Text></TouchableOpacity>
+          <TouchableOpacity onPress={() => void pickImage()}><Text style={styles.link}>Image</Text></TouchableOpacity>
+        </View>
+        {attachmentIds.length ? <Text style={styles.hint}>{attachmentIds.length} pièce(s) jointe(s)</Text> : null}
       </CanonicalMutationModal>
     </>
   );
@@ -123,4 +229,9 @@ export default function AnnouncementMutationControls({
 const styles = StyleSheet.create({
   create: { minHeight: MIN_TOUCH_TARGET_DP, borderRadius: 14, backgroundColor: "#2563EB", alignItems: "center", justifyContent: "center", marginBottom: 14 },
   createText: { color: "#FFFFFF", fontWeight: "900" },
+  hint: { color: "#64748B", marginBottom: 8, fontWeight: "700" },
+  kindOn: { color: "#2563EB", fontWeight: "800", marginBottom: 4 },
+  kindOff: { color: "#334155", marginBottom: 4 },
+  row: { flexDirection: "row", gap: 16, marginTop: 8 },
+  link: { color: "#2563EB", fontWeight: "800" },
 });
