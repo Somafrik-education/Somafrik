@@ -79,7 +79,7 @@ function sourceGuards() {
 
   assert.match(webApi, /internal-notifications/);
   assert.match(webApi, /Idempotency-Key/);
-  assert.match(webRead, /unread-count/);
+  assert.match(webRead, /\.unreadCount\(/);
   assert.match(webCenter, /markRead|mark.*read/i);
   assert.match(topbar, /useInternalNotificationsUnreadCount/);
   assert.match(platformPage, /InternalNotificationsCenter/);
@@ -87,7 +87,7 @@ function sourceGuards() {
 
   assert.match(mobileApi, /internal-notifications/);
   assert.match(mobileApi, /Idempotency-Key/);
-  assert.match(mobileRead, /unread-count/);
+  assert.match(mobileRead, /\.unreadCount\(/);
   assert.match(mobileScreen, /markRead|mark.*read/i);
   assert.match(mobileHeader, /useInternalNotificationsUnreadCount/);
   assert.match(mobileNav, /InternalNotifications/);
