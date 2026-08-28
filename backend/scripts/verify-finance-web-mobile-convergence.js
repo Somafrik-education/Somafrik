@@ -67,7 +67,11 @@ function sourceGuards() {
   assert.doesNotMatch(webModal, /feeType: line\.feeType/);
   assert.doesNotMatch(webModal, /catalogFeeTypes/);
 
-  assert.match(entityPage, /obligationId ou Non imputé/);
+  // F7 : EntityPage n'expose plus le jargon technique « obligationId ».
+  // Le contrat F4/F5 reste : encaissement via QuickPaymentModal, jamais POST générique.
+  assert.match(entityPage, /QuickPaymentModal/);
+  assert.match(entityPage, /non imputé/);
+  assert.match(entityPage, /financeActions\.canCreatePayment/);
   assert.doesNotMatch(
     entityPage.slice(entityPage.indexOf('if (module.key === "payments")'), entityPage.indexOf('if (String(module.key) === "paymentStatuses")')),
     /financeApi\.createPayment/,
@@ -97,10 +101,10 @@ function sourceGuards() {
   assert.match(mobileControls, /Catalogue des moyens de paiement indisponible/);
   assert.match(mobileControls, /label="Élève"/);
   assert.match(mobileControls, /label="Classe"/);
-  assert.match(mobileControls, /label="Montant"/);
+  assert.match(mobileControls, /label="Montant/);
   const eleveAt = mobileControls.indexOf('label="Élève"');
   const classeAt = mobileControls.indexOf('label="Classe"');
-  const montantAt = mobileControls.indexOf('label="Montant"');
+  const montantAt = mobileControls.indexOf('label="Montant');
   assert.ok(eleveAt >= 0 && eleveAt < classeAt && classeAt < montantAt, "ordre Élève → Classe → Montant");
 
   assert.match(paymentsScreen, /getPaymentStudentOptions/);
