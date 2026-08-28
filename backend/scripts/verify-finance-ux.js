@@ -68,6 +68,8 @@ assert.doesNotMatch(currencyMobile, /"USD"|"EUR"/);
 assert.doesNotMatch(mobilePayments, / FC/);
 assert.doesNotMatch(mobileStudent, / FC/);
 assert.doesNotMatch(mobileReceipt, / FC/);
+assert.match(webModal, /Ajouter une ligne de frais/);
+assert.match(webModal, /Enregistrer l'encaissement/);
 assert.match(webModal, /Chargement du catalogue financier/);
 assert.match(webFees, /EmptyState/);
 assert.match(webUnpaid, /Aucun reste à payer/);

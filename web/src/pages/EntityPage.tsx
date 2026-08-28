@@ -422,6 +422,26 @@ function EntityPageContent({ entity, mode, classScope, disableCreate = false }: 
     }
   }, [module?.key, scopeUser, state]);
 
+  const paymentOverview = useMemo(() => {
+    if (module?.key !== "payments") return null;
+    const fees = Array.isArray(state.studentFees) ? state.studentFees : [];
+    const kpi = getPaymentRateKpi(fees);
+    const remaining = Math.max(0, kpi.expectedAmount - kpi.collectedAmount);
+    const currency = resolveFinanceCurrency(
+      school?.currency,
+      fees.find((fee) => fee.currency)?.currency,
+      (rows[0] as { currency?: string } | undefined)?.currency,
+    );
+    return {
+      expectedAmount: kpi.expectedAmount,
+      collectedAmount: kpi.collectedAmount,
+      remainingAmount: remaining,
+      obligationCount: fees.filter((fee) => String(fee.status ?? "") !== "Annulé").length,
+      recentPaymentCount: rows.length,
+      currency,
+    };
+  }, [module?.key, state.studentFees, school?.currency, rows]);
+
   if (!module) {
     return <Navigate to="/etablissement" replace />;
   }
@@ -1501,26 +1521,6 @@ function EntityPageContent({ entity, mode, classScope, disableCreate = false }: 
       : school
         ? `${module.description} · Périmètre : ${school.name} (${school.code})`
         : module.description;
-
-  const paymentOverview = useMemo(() => {
-    if (module.key !== "payments") return null;
-    const fees = Array.isArray(state.studentFees) ? state.studentFees : [];
-    const kpi = getPaymentRateKpi(fees);
-    const remaining = Math.max(0, kpi.expectedAmount - kpi.collectedAmount);
-    const currency = resolveFinanceCurrency(
-      school?.currency,
-      fees.find((fee) => fee.currency)?.currency,
-      (rows[0] as { currency?: string } | undefined)?.currency,
-    );
-    return {
-      expectedAmount: kpi.expectedAmount,
-      collectedAmount: kpi.collectedAmount,
-      remainingAmount: remaining,
-      obligationCount: fees.filter((fee) => String(fee.status ?? "") !== "Annulé").length,
-      recentPaymentCount: rows.length,
-      currency,
-    };
-  }, [module.key, state.studentFees, school?.currency, rows]);
 
   const secondaryActions = (
     <>

@@ -49,8 +49,8 @@ function assertSourceGuards() {
   assert.doesNotMatch(service, /payload\.totalAmount/);
   assert.match(service, /const totalAmount = money\(resolvedItems\.reduce/);
 
-  assert.match(modal, /Ajouter un libellé/);
-  assert.match(modal, /Enregistrer le paiement/);
+  assert.match(modal, /Ajouter une ligne de frais/);
+  assert.match(modal, /Enregistrer l'encaissement/);
   assert.match(modal, /listPaymentStudentOptions/);
   assert.match(modal, /getFinanceCatalog/);
   assert.doesNotMatch(modal, /\|\| ["']Espèces["']/);
