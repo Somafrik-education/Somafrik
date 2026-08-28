@@ -4,7 +4,9 @@ import {
   canEnterGradesForEvaluation,
   courseOptionsForClass,
   evaluationsEligibleForGradeEntry,
+  gradeSaveActorScope,
   gradesToLegacyNotes,
+  isTeacherSessionRole,
   MISSING_EVALUATION_TEACHER,
   pedagogyNoteWritePayload,
   subjectOptionsForClass,
@@ -363,6 +365,29 @@ describe("canEnterGradesForEvaluation — Validée uniquement", () => {
     expect((note as Record<string, unknown>).authorId).toBe("prefet-fideline");
   });
 
+  it("Enseignant : saisie Validée sans evaluation.teacherId (session JWT, pas teacherId client)", () => {
+    const author = sekeUser(sekeTwoCourses);
+    const student = { id: "s1", firstName: "Riziki", lastName: "Masumbuko" };
+    const allowed = upsertStudentGrade([], { ...evaluation, status: "Validée", teacherId: "" }, student, {
+      value: 14,
+      gradeStatus: "Saisie",
+      author,
+    });
+    expect(allowed.error).toBeUndefined();
+    expect(allowed.grades[0]?.value).toBe(14);
+    expect(allowed.grades[0]?.teacherId).toBe("");
+    expect(allowed.grades[0]?.authorId).toBe(author.id);
+    expect(isTeacherSessionRole(author.role)).toBe(true);
+    expect(gradeSaveActorScope(true, { teacherId: "" })).toEqual({});
+    expect(gradeSaveActorScope(true, { teacherId: "ENS-0001" })).toEqual({});
+  });
+
+  it("gradeSaveActorScope : Préfet exige teacherId pédagogique ; Enseignant n'en envoie pas", () => {
+    expect(() => gradeSaveActorScope(false, { teacherId: "" })).toThrow(MISSING_EVALUATION_TEACHER);
+    expect(gradeSaveActorScope(false, { teacherId: "ENS-0001" })).toEqual({ teacherId: "ENS-0001" });
+    expect(gradeSaveActorScope(true, { teacherId: "ENS-0001" })).toEqual({});
+  });
+
   it("pedagogyNoteWritePayload réinjecte teacherId d'évaluation et retire authorId", () => {
     const refreshed = {
       id: "g1",
@@ -376,6 +401,24 @@ describe("canEnterGradesForEvaluation — Validée uniquement", () => {
       { id: "EVAL-ADV", teacherId: "ENS-0001" },
     ]);
     expect(payload.teacherId).toBe("ENS-0001");
+    expect(payload.authorId).toBeUndefined();
+    expect(payload.studentId).toBe("s1");
+  });
+
+  it("pedagogyNoteWritePayload session Enseignant : retire teacherId même s'il est présent", () => {
+    const payload = pedagogyNoteWritePayload(
+      {
+        id: "g1",
+        evaluationId: "EVAL-ADV",
+        studentId: "s1",
+        authorId: "ens-seke",
+        teacherId: "ENS-0001",
+        value: 14,
+      },
+      [{ id: "EVAL-ADV", teacherId: "ENS-0001" }],
+      { teacherSession: true },
+    );
+    expect(payload.teacherId).toBeUndefined();
     expect(payload.authorId).toBeUndefined();
     expect(payload.studentId).toBe("s1");
   });

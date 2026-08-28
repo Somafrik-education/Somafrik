@@ -31,12 +31,40 @@ export function pedagogicalTeacherId(evaluation: { teacherId?: string } | null |
   return String(evaluation?.teacherId ?? "").trim();
 }
 
-/** POST notes Admin/Préfet : teacherId pédagogique, jamais authorId acteur. */
+/** Session Enseignant : le backend résout l'enseignant via principal.sub, pas teacherId client. */
+export function isTeacherSessionRole(role?: string | null) {
+  return String(role ?? "").trim() === "Enseignant";
+}
+
+/**
+ * Acteur JWT ≠ enseignant pédagogique.
+ * Session enseignant : aucun teacherId client.
+ * Admin/préfet : teacherId = evaluation.teacherId, obligatoire.
+ */
+export function gradeSaveActorScope(
+  teacherSession: boolean,
+  evaluation: { teacherId?: string } | null | undefined,
+): { teacherId?: string } {
+  if (teacherSession) return {};
+  const pedagogical = pedagogicalTeacherId(evaluation);
+  if (!pedagogical) {
+    throw new Error(MISSING_EVALUATION_TEACHER);
+  }
+  return { teacherId: pedagogical };
+}
+
+/** POST notes : teacherId pédagogique pour Admin/Préfet ; jamais authorId ; Enseignant n'envoie pas teacherId. */
 export function pedagogyNoteWritePayload(
   note: unknown,
   evaluations: Array<{ id?: string; teacherId?: string }> = [],
+  options: { teacherSession?: boolean } = {},
 ): Record<string, unknown> {
   const payload = { ...(note as Record<string, unknown>) };
+  delete payload.authorId;
+  if (options.teacherSession) {
+    delete payload.teacherId;
+    return payload;
+  }
   const fromNote = String(payload.teacherId ?? "").trim();
   const evaluationId = String(payload.evaluationId ?? "").trim();
   const fromEval = pedagogicalTeacherId(
@@ -44,7 +72,6 @@ export function pedagogyNoteWritePayload(
   );
   const teacherId = fromNote || fromEval;
   if (teacherId) payload.teacherId = teacherId;
-  delete payload.authorId;
   return payload;
 }
 
@@ -544,8 +571,9 @@ export function upsertStudentGrade(
   if (evaluation.status !== "Validée") {
     return { grades, error: "Évaluation non validée : saisie des notes refusée." };
   }
+  const teacherSession = isTeacherSessionRole(input.author?.role);
   const teacherId = pedagogicalTeacherId(evaluation);
-  if (!teacherId) {
+  if (!teacherSession && !teacherId) {
     return { grades, error: MISSING_EVALUATION_TEACHER };
   }
   if (LOCKED_EVALUATION_STATUSES.has(evaluation.status) && input.gradeStatus !== "Corrigée") {

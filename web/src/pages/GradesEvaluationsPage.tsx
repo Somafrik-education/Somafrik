@@ -35,8 +35,8 @@ import {
   ensureEvaluationsSynced,
   evaluationsEligibleForGradeEntry,
   gradesToLegacyNotes,
-  MISSING_EVALUATION_TEACHER,
-  pedagogicalTeacherId,
+  gradeSaveActorScope,
+  isTeacherSessionRole,
   pedagogyNoteWritePayload,
   publishEvaluation,
   resolveGradesPeriod,
@@ -211,7 +211,11 @@ export function GradesEvaluationsPage() {
       if (patch.notes?.length) {
         const evaluations = state.evaluations ?? [];
         for (const note of patch.notes) {
-          await pedagogyApi.upsertNote(pedagogyNoteWritePayload(note, evaluations));
+          await pedagogyApi.upsertNote(
+            pedagogyNoteWritePayload(note, evaluations, {
+              teacherSession: isTeacherSessionRole(scopeUser?.role),
+            }),
+          );
         }
       }
       if (patch.bulletins) {
@@ -332,14 +336,18 @@ export function GradesEvaluationsPage() {
   }
 
   async function handleSaveGrades(changedGrades: StudentGrade[]) {
-    const teacherId = pedagogicalTeacherId(selectedEvaluation);
-    if (!teacherId) {
-      throw new Error(MISSING_EVALUATION_TEACHER);
-    }
+    const teacherSession = isTeacherSessionRole(scopeUser?.role);
+    const actorScope = gradeSaveActorScope(teacherSession, selectedEvaluation);
     for (const grade of changedGrades) {
-      const [note] = gradesToLegacyNotes([{ ...grade, teacherId }]);
-      const payload = pedagogyNoteWritePayload(note, selectedEvaluation ? [selectedEvaluation] : []);
-      payload.teacherId = teacherId;
+      const [note] = gradesToLegacyNotes(
+        actorScope.teacherId ? [{ ...grade, teacherId: actorScope.teacherId }] : [grade],
+      );
+      const payload = pedagogyNoteWritePayload(
+        note,
+        selectedEvaluation ? [selectedEvaluation] : [],
+        { teacherSession },
+      );
+      if (actorScope.teacherId) payload.teacherId = actorScope.teacherId;
       try {
         await pedagogyApi.upsertNote(payload);
       } catch (err) {

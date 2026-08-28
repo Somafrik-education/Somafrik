@@ -64,6 +64,7 @@ function renderGrid(overrides: {
   onSave?: (grades: StudentGrade[]) => Promise<void>;
   onError?: (message: string) => void;
   studentRows?: typeof students;
+  user?: SessionUser;
 }) {
   const evaluation = {
     ...evaluationBase,
@@ -80,7 +81,7 @@ function renderGrid(overrides: {
       students={overrides.studentRows ?? students.slice(0, 1)}
       grades={overrides.grades ?? []}
       canEdit={overrides.canEdit ?? evaluation.status === "Validée"}
-      user={seke}
+      user={overrides.user ?? seke}
       onSave={onSave}
       onError={onError}
     />,
@@ -258,8 +259,37 @@ describe("GradeEntryGrid — saisie après validation", () => {
     ]);
   });
 
-  it("évaluation sans enseignant canonique : bloque avant onSave", async () => {
+  it("Enseignant : évaluation sans teacherId — Enregistrer tout appelle onSave", async () => {
     const { onSave, onError } = renderGrid({ status: "Validée", canEdit: true, teacherId: "" });
+    fireEvent.change(screen.getByLabelText("Note /20"), { target: { value: "14" } });
+    fireEvent.click(screen.getByRole("button", { name: "Enregistrer tout" }));
+    await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
+    expect(onSave).toHaveBeenCalledWith([
+      expect.objectContaining({
+        studentId: "s1",
+        evaluationId: "EVAL-ADV",
+        value: 14,
+        teacherId: "",
+        authorId: "ens-seke",
+      }),
+    ]);
+    expect(onError).not.toHaveBeenCalled();
+  });
+
+  it("Préfet : évaluation sans enseignant canonique bloque avant onSave", async () => {
+    const prefet: SessionUser = {
+      id: "prefet-fideline",
+      role: "Préfet des études",
+      schoolCode: "CD-2026-0001",
+      firstName: "Fideline",
+      lastName: "Shisho",
+    };
+    const { onSave, onError } = renderGrid({
+      status: "Validée",
+      canEdit: true,
+      teacherId: "",
+      user: prefet,
+    });
     fireEvent.change(screen.getByLabelText("Note /20"), { target: { value: "14" } });
     fireEvent.click(screen.getByRole("button", { name: "Enregistrer tout" }));
     await waitFor(() =>
