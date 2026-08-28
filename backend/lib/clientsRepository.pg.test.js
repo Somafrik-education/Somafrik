@@ -89,6 +89,12 @@ async function main() {
        VALUES ($1, 'STU-LOT7-1', 'Jean', 'Kabila', 'active') RETURNING id`,
       [school.rows[0].id],
     );
+    const adminUser = await pool.query(
+      `INSERT INTO users (school_id, user_code, first_name, last_name, email, role, status, must_change_password)
+       VALUES ($1, 'ADM-LOT7', 'Admin', 'Nuru', 'admin-lot7@test.local', 'Admin School', 'active', FALSE)
+       RETURNING id`,
+      [school.rows[0].id],
+    );
 
     const repo = createRepo(pool);
     const store = createClientsPgStore(repo);
@@ -96,6 +102,7 @@ async function main() {
       role: "Admin School",
       schoolCode: "CD-2026-0001",
       identifier: "admin",
+      sub: adminUser.rows[0].id,
     };
     const auditMeta = { ipAddress: "127.0.0.1", userAgent: "test" };
 
