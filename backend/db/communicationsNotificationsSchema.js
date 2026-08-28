@@ -99,7 +99,9 @@ BEGIN
     v_school_id := NEW.school_id;
     v_actor := COALESCE(NEW.published_by, NEW.created_by);
     v_event_key := v_event_type || ':' || NEW.id::text;
-    should_emit := lower(trim(COALESCE(NEW.status, 'published'))) = 'published'
+    -- Publication uniquement. Un UPDATE d'une annonce déjà published
+    -- (titre, audience, statut identique) ne réémet pas.
+    should_emit := lower(trim(COALESCE(NEW.status, ''))) = 'published'
       AND (TG_OP = 'INSERT' OR lower(trim(COALESCE(OLD.status, ''))) <> 'published');
 
   ELSIF TG_TABLE_NAME = 'attendance' THEN
@@ -121,7 +123,10 @@ BEGIN
     v_actor := COALESCE(NEW.updated_by, NEW.created_by);
     v_event_key := v_event_type || ':' || NEW.id::text;
     v_payload := jsonb_build_object('studentId', NEW.student_id, 'subjectId', NEW.subject_id);
-    should_emit := lower(trim(COALESCE(NEW.publication_status, 'published'))) = 'published'
+    -- Publication uniquement. NULL / draft / déjà published → pas de nouvel event.
+    -- Un UPDATE de score d'une note déjà published ne réémet pas
+    -- (trigger limité à publication_status + garde OLD <> published).
+    should_emit := lower(trim(COALESCE(NEW.publication_status, ''))) = 'published'
       AND (TG_OP = 'INSERT' OR lower(trim(COALESCE(OLD.publication_status, ''))) <> 'published');
 
   ELSIF TG_TABLE_NAME = 'payments' THEN

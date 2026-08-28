@@ -301,11 +301,10 @@ async function uploadAttachment(store, principal, { buffer, fileName, mimeType }
   const userId = actorUserId(principal);
   if (!userId) throw createClientsError(403, "Non authentifié.", CLIENTS_ERROR.FORBIDDEN);
   const { school } = await requireSchool(store, principal, query);
-  const safe = validateUploadBuffer({ buffer, fileName, mimeType });
+  const safe = validateUploadBuffer(buffer, mimeType, fileName);
   let storageKey = null;
   try {
-    const persisted = await persistAttachmentBytes({ ...safe, schoolId: school.id });
-    storageKey = persisted.storageKey;
+    storageKey = await persistAttachmentBytes(school.id, buffer);
     const tx = openTx(store);
     const row = await tx.insertAttachment({
       schoolId: school.id,
@@ -358,6 +357,7 @@ async function createManual(store, rawPayload, principal, auditMeta, idempotency
     if (!author || (author.school_id && String(author.school_id) !== String(school.id))) {
       throw createClientsError(403, "Auteur non autorisé.", CLIENTS_ERROR.FORBIDDEN);
     }
+    // C4-09 — sender spoof ignoré : seul le principal authentifié fait autorité.
     const eventKey = `notification.manual:${school.id}:${key}`;
     let row = await tx.one(`SELECT * FROM communication_notifications WHERE event_key = $1`, [eventKey]);
     if (!row) {
@@ -523,7 +523,10 @@ async function processOneEvent(store) {
     return await store.withTransaction(async (tx) => {
       currentEvent = await tx.one(
         `SELECT * FROM communication_event_outbox
-         WHERE status IN ('pending','failed') AND available_at <= NOW()
+         WHERE (
+           (status IN ('pending','failed') AND available_at <= NOW())
+           OR (status = 'processing' AND claimed_at < NOW() - INTERVAL '2 minutes')
+         )
          ORDER BY occurred_at, id
          FOR UPDATE SKIP LOCKED LIMIT 1`,
       );
@@ -558,7 +561,7 @@ async function processOneEvent(store) {
         `UPDATE communication_event_outbox SET status='processed', processed_at=NOW(), last_error=NULL, updated_at=NOW() WHERE id=$1`,
         [currentEvent.id],
       );
-      return notification;
+      return notification || { id: currentEvent.id, eventKey: currentEvent.event_key };
     });
   } catch (error) {
     if (currentEvent?.id) {
@@ -575,12 +578,18 @@ async function processOneEvent(store) {
   }
 }
 
-async function drainOutbox(store, { limit = 50 } = {}) {
+async function drainOutbox(store, { limit = 50, logger = console } = {}) {
   const processed = [];
   for (let i = 0; i < Math.max(1, Math.min(500, Number(limit) || 50)); i += 1) {
-    const row = await processOneEvent(store);
-    if (row === null) break;
-    processed.push(row);
+    try {
+      const row = await processOneEvent(store);
+      if (row === null) break;
+      processed.push(row);
+    } catch (error) {
+      logger.error?.("[communications-c4] event skipped, continuing drain", {
+        message: String(error?.message || error).slice(0, 300),
+      });
+    }
   }
   return processed;
 }

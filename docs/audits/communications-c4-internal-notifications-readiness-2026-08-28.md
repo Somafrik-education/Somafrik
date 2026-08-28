@@ -1,171 +1,145 @@
 # COM-C4 — Notifications internes production-ready
 
 Date : 2026-08-28  
+Branche : `fix/communications-c4-internal-notifications-production-ready`  
 Base de travail : `develop@5e150db5e2c2e042c5e82f6e684af05515dd554e`  
 Périmètre : notifications internes Somafrik, sans fournisseur SMS/WhatsApp/push externe.
 
 ## Verdict de chantier
 
-**État : PR Draft candidate — validation CI obligatoire avant GO CTO.**
+**GO CONDITIONNEL** — uniquement pour une recette appareil Expo non exécutée.
 
-COM-C4 sépare désormais deux domaines qui étaient auparavant confondus :
+Le backend, l'outbox, les triggers, le RBAC live, le tenant, les pièces jointes et les E2E PostgreSQL C4-01…C4-16 sont portés au contrat production-ready. Aucun défaut backend / tenant / RBAC / outbox n'est laissé ouvert volontairement.
 
-- les **notifications plateforme** historiques, réservées aux opérations Superadmin/Admin Pays ;
-- les **notifications internes métier**, destinées aux utilisateurs d'un établissement et générées à partir d'événements métier ou d'une création humaine autorisée.
+**AUCUN :**
+- SMS
+- WhatsApp
+- email
+- push
+- provider externe
 
-Aucune notification interne n'utilise la table plateforme historique comme source de vérité.
+dans COM-C4.
 
-## Architecture canonique
+## Architecture
 
-### Outbox transactionnelle
+COM-C4 sépare deux domaines qui étaient auparavant confondus :
 
-`communication_event_outbox` enregistre dans la même transaction PostgreSQL que l'événement métier les événements suivants :
+- les **notifications plateforme** historiques (`notifications`, `/backoffice/notifications`), réservées aux opérations Superadmin/Admin Pays ;
+- les **notifications internes métier** (`communication_notifications` + `notification_recipients`), destinées aux utilisateurs d'un établissement.
 
-- `communication.message.created` ;
-- `communication.announcement.published` ;
-- `attendance.student.absent` ;
-- `pedagogy.grade.published` ;
-- `finance.payment.recorded`.
+`/parametres/notifications` reste **ComingSoon** (`Bientôt disponible`). COM-C4 n'active aucun canal externe.
 
-Les triggers font `ON CONFLICT (event_key) DO NOTHING`. Le dispatcher traite les événements avec verrouillage `FOR UPDATE SKIP LOCKED`. Une reprise après échec ne doit donc pas produire de doublon métier.
+### Schéma
 
-### Notifications et destinataires
+- `communication_event_outbox` : outbox transactionnelle, `event_key` UNIQUE
+- `communication_notifications` : enregistrement canonique
+- `notification_recipients` : destinataire individuel (`read_at`, `archived_at`)
 
-`communication_notifications` porte la notification canonique : événement source, titre, contenu, expéditeur, horodatages ISO, navigation et métadonnées.
+La table plateforme `notifications` n'est ni lue ni écrite par le service C4.
 
-`notification_recipients` porte le destinataire individuel et son état :
+### Outbox
 
-- `read_at` ;
-- `archived_at` ;
-- contexte de résolution du destinataire.
+Les triggers écrivent dans **la même transaction** que la mutation métier :
 
-La lecture et l'archive sont donc **par utilisateur**. Une archive n'efface pas physiquement l'historique de la notification.
+```
+INSERT … ON CONFLICT (event_key) DO NOTHING
+```
 
-## Politique des destinataires
+Le dispatcher claim via `FOR UPDATE SKIP LOCKED`, y compris reprise des lignes `processing` abandonnées (> 2 min). Colonnes : `processed_at`, `attempts` (compteur de retry), `last_error`, `available_at`. Un événement en erreur n'est pas supprimé ; un event invalide n'interrompt plus le drain des suivants. Le worker est désactivable (`COMMUNICATION_NOTIFICATIONS_WORKER=disabled` / `NODE_ENV=test`) et s'arrête proprement sur SIGTERM/SIGINT.
 
-### Nouveau message
+### Triggers / event catalog
 
-Les destinataires proviennent exclusivement des participants actifs de la conversation. L'expéditeur du nouveau message est exclu de la notification générée pour son propre envoi.
+| Event | Table | Condition d'émission |
+| --- | --- | --- |
+| `communication.message.created` | `school_messages` | INSERT uniquement |
+| `communication.announcement.published` | `announcements` | INSERT/UPDATE **vers** `published` ; pas de réémission si déjà published |
+| `attendance.student.absent` | `attendance` | INSERT/UPDATE **vers** `absent` ; pas de réémission si déjà absent |
+| `pedagogy.grade.published` | `grades` | INSERT/UPDATE **vers** `published` ; pas de réémission si déjà published ; un UPDATE de score d'une note déjà published n'ajoute pas d'event |
+| `finance.payment.recorded` | `payments` | INSERT/UPDATE **vers** `paid` non cancelled ; pas de réémission si déjà paid |
 
-### Nouvelle annonce
+`event_key` est stable : `{event_type}:{source_entity_id}`. Idempotence garantie même si un trigger se réexécute.
 
-Les destinataires reprennent **exactement** le snapshot canonique `announcement_recipients` produit par COM-C3. Contrairement au message, aucun retrait implicite de l'auteur n'est effectué : si l'auteur appartient au snapshot publié, il reçoit la notification.
+Point de vigilance CTO : les UPDATE d'une note déjà published, d'un paiement déjà `paid` ou d'une annonce déjà published **ne génèrent pas** de nouvelle notification. Couvert par E2E C4-02 / C4-04 / C4-05.
 
-### Absence
+### Destinataires
 
-Une absence canonique notifie les parents actifs réellement liés à l'élève par `contact_relations`.
+- Message : participants actifs **sauf** l'expéditeur
+- Annonce : **exactement** `announcement_recipients` (l'auteur reste destinataire s'il est dans le snapshot)
+- Absence : parents liés via `contact_relations`
+- Note publiée : parents liés + compte élève canonique ; le body n'expose pas le score
+- Paiement `paid` : parents liés
 
-### Note publiée
+### Sender
 
-Une note publiée notifie les parents actifs liés et le compte élève canonique lorsqu'il existe. Le corps de notification n'expose pas automatiquement la valeur de la note.
+- Auto : `senderType=system`, `senderUserId=null`, `senderName=Somafrik`
+- Humain : `senderType=user`, `senderUserId=principal.sub`, `senderName` canonique PostgreSQL. Un body `senderUserId` / `senderName` est ignoré.
 
-### Paiement enregistré
+### Read / unread / archive / historique
 
-Un paiement `paid` notifie les parents actifs liés à l'élève. Les autres comptes du même établissement ne sont pas considérés comme destinataires par simple appartenance au tenant.
+État individuel sur `notification_recipients`. Aucun DELETE physique. Archive utilisateur : la ligne `communication_notifications` reste. SoT Web/Mobile = API `unread-count`, pas localStorage/AsyncStorage.
 
-## Expéditeur et horodatage
+### Attachments
 
-Notification automatique :
+Réutilisation stricte C2/C3 (`communication_attachments`, `entity_type=notification`). Download : `Notifications:READ` live + tenant + recipient (ou gestionnaire `Notifications:UPDATE` / privilèges élevés). Pas d'OR croisé Messages/Announcements/Notifications. P1-017 C3 non régressé : un `entity_type` étranger est refusé par la route de l'autre domaine.
 
-- `senderType = system` ;
-- `senderUserId = null` ;
-- `senderName = Somafrik`.
+### RBAC / request-scope / tenant
 
-Notification créée par un humain :
+Routes internes toutes request-scoped. Superadmin `schoolCode=*` sans `effectiveSchoolCode` → 400. Isolation école B et IDOR non-destinataire → 403/404. Révocation PostgreSQL `Notifications:READ` avec JWT inchangé → list/get/download 403, alors que `Messages:READ` / `Announcements:READ` restent et **ne** débloquent **pas** la PJ notification.
 
-- `senderType = user` ;
-- `senderUserId` vient du principal authentifié ;
-- `senderName` vient du compte PostgreSQL canonique ;
-- un identifiant d'expéditeur fourni par le client n'est pas une autorité.
+### API
 
-Les dates canoniques restent des timestamps ISO complets ; l'affichage localisé appartient au client Web/Mobile.
+- `GET /api/backoffice/internal-notifications`
+- `GET /api/backoffice/internal-notifications/unread-count`
+- `GET /api/backoffice/internal-notifications/:notificationId`
+- `POST /api/backoffice/internal-notifications`
+- `PATCH …/:notificationId/read`
+- `PATCH …/:notificationId/archive`
+- `POST …/attachments`
+- `GET …/attachments/:attachmentId`
 
-## Pièces jointes
+Pagination SQL curseur `(created_at, id)` sur la liste.
 
-Les notifications internes réutilisent le sous-système sécurisé `communication_attachments` avec `entity_type = notification` :
+### Web
 
-- upload contrôlé ;
-- rattachement à la notification ;
-- accès authentifié ;
-- contrôle tenant ;
-- contrôle destinataire ou gestionnaire autorisé ;
-- refus IDOR inter-école et même-école pour un non-destinataire ;
-- l'accès est à nouveau contrôlé par le RBAC live au téléchargement.
+`InternalNotificationsCenter` sur `/notifications` dès qu'un établissement concret est actif. Badge Topbar via `GET unread-count`, rafraîchi après read/archive/create, au focus, et toutes les 30 s. La page historique plateforme reste pour `schoolCode=*`. `/parametres/notifications` inchangé (ComingSoon).
 
-Une URL publique arbitraire n'est pas utilisée comme frontière de sécurité.
+### Mobile
 
-## RBAC et isolation
+Écran `InternalNotifications` enregistré, exposé dans le drawer des rôles établissement, le menu, et le header (badge serveur). Le domaine plateforme reste `PlatformNotifications`. Aucune SoT AsyncStorage.
 
-Les routes internes utilisent les permissions live suivantes :
+### Performance / observabilité
 
-- `Notifications:READ` pour consulter une notification et modifier **son propre état destinataire** (`read_at`, `archived_at`) ;
-- `Notifications:CREATE` pour créer une notification humaine et téléverser ses pièces jointes ;
-- `ALL_PRIVILEGES` / `COUNTRY_PRIVILEGES` restent des privilèges de gestion selon le périmètre canonique.
+Claim `SKIP LOCKED`, index partiel outbox pending/failed, drain borné (max 500). Erreurs worker journalisées sans body privé (`message` tronqué 300/500). Event invalide : `status=failed` + backoff 5 s, drain continue.
 
-Le marquage lu et l'archivage ne nécessitent volontairement pas `Notifications:UPDATE` : ce sont des mutations de l'état personnel du destinataire, et non une modification du contenu canonique de la notification. Exiger `UPDATE` empêcherait notamment un parent autorisé en lecture d'archiver sa propre notification.
+## E2E C4-01…C4-16
 
-Les tests C4 imposent notamment :
+Assertions produit PostgreSQL réel (`backend/lib/communicationsC4.http.pg.test.js`) :
 
-- révocation PostgreSQL `Notifications:READ` puis réutilisation du même JWT => `403` ;
-- téléchargement de pièce jointe également refusé après révocation ;
-- tenant B incapable de lire ou télécharger une ressource du tenant A ;
-- utilisateur du tenant A non destinataire incapable de lire directement une notification A ;
-- Superadmin `schoolCode=*` obligé de fournir un `effectiveSchoolCode` pour les ressources établissement.
+| Cas | Contrat |
+| --- | --- |
+| C4-01 | POST message → 1 outbox, Parent A notifié, expéditeur exclu, sender system, navigation conversation, retry sans doublon |
+| C4-02 | Snapshot `announcement_recipients` exact, auteur inclus s'il y figure, Parent A2 / école B exclus, UPDATE déjà published sans nouvel event |
+| C4-03 | Absence → parent lié uniquement ; UPDATE absent identique idempotent |
+| C4-04 | Note published → parent + élève, score absent du body ; draft sans notif ; UPDATE déjà published sans nouvel event |
+| C4-05 | Paiement `paid` → parent lié ; pending sans notif ; UPDATE déjà paid sans doublon |
+| C4-06 | PATCH read → `readAt` ISO immédiat, unread-count -1, autre destinataire inchangé |
+| C4-07 | Même notification / readAt / unread via l'API unique Web-Mobile |
+| C4-08 | Sender system exact sur event auto |
+| C4-09 | Sender humain = principal ; spoof body ignoré |
+| C4-10 | PDF recipient 200 ; non-recipient / école B 403/404 ; `.exe`, MIME interdit, trop gros, path traversal refusés |
+| C4-11 | Revoke `Notifications:READ` live → 403 ; Messages/Announcements conservés ne débloquent pas la PJ |
+| C4-12 | Superadmin `*` : list/get/read/archive/upload/download 400 sans scope ; OK avec SCH-C4-A ; SCH-C4-B 403/404 |
+| C4-13 | `event_key` + Idempotency-Key + drains concurrents → 1 notification, 1 recipient/user |
+| C4-14 | ROLLBACK métier → 0 outbox ; event commité puis drain ultérieur → 1 notification |
+| C4-15 | IDOR GET/read/archive/PJ 403/404, aucune mutation |
+| C4-16 | Archive logique, historique physique conservé, pas de DELETE |
 
-## Web et Mobile
+## Limitations
 
-COM-C4 ajoute un centre de notifications internes distinct sur Web et Mobile :
-
-- liste canonique serveur ;
-- badge non-lu calculé côté serveur ;
-- marquage lu persistant PostgreSQL ;
-- archive utilisateur persistante ;
-- pièces jointes ;
-- date/heure ;
-- expéditeur ;
-- navigation vers la ressource métier quand le contexte existe.
-
-Les compteurs ne dépendent pas de `localStorage`.
-
-La page historique de notifications plateforme reste présente pour les fonctions plateforme ; COM-C4 ne transforme pas cette table en historique métier.
-
-## Paramètres de notifications
-
-Le chantier COM-C4 **n'active pas** de fournisseur externe et ne transforme pas `/parametres/notifications` en panneau de configuration SMS/WhatsApp/push. Cette étape reste hors périmètre tant que les canaux externes ne sont pas implémentés et audités séparément.
-
-## E2E PostgreSQL réel
-
-La fixture C4 respecte aussi le contrat d'identité V2 : la ligne `students` canonique est créée avant le compte utilisateur élève, et `users.user_code` reprend exactement `students.student_code`. Le test ne désactive ni ne contourne `STUDENT_CANONICAL_IDENTIFIER_REQUIRED`.
-
-`backend/lib/communicationsC4.http.pg.test.js` couvre notamment :
-
-- C4-01 : POST Message réel -> outbox -> notification destinataire ;
-- C4-02 : annonce -> snapshot exact C3, y compris auteur s'il est destinataire ;
-- C4-03 : absence -> parent lié uniquement ;
-- C4-04 : note publiée -> parent + élève ;
-- C4-05 : paiement `paid` -> parent lié ;
-- C4-06 : read/unread individuel ;
-- C4-09/10 : création humaine + pièce jointe sécurisée ;
-- C4-11 : révocation RBAC live avec JWT inchangé ;
-- C4-12 : Superadmin request-scoped ;
-- C4-13 : idempotence dispatcher et création humaine ;
-- C4-14 : rollback transactionnel => aucun événement orphelin ;
-- C4-15 : blocage IDOR ;
-- C4-16 : archive logique avec conservation physique de l'historique.
-
-Le gate permanent `.github/workflows/communications-c4.yml` exécute PostgreSQL 16 réel, `npm run verify:communications-c4`, le build Web et le typecheck Mobile.
-
-## Points volontairement hors périmètre
-
-- SMS ;
-- WhatsApp ;
-- email transactionnel externe ;
-- push Expo/FCM/APNs ;
-- préférences utilisateur multi-canal ;
-- cadence/digest externe ;
-- délivrabilité fournisseur.
-
-Ces éléments doivent faire l'objet d'un chantier ultérieur distinct avec consentement, préférences, sécurité, coûts et observabilité propres.
+- Recette visuelle Expo sur appareil réel non exécutée dans cet environnement (d'où GO CONDITIONNEL).
+- Compteur `retry_count` implémenté comme colonne `attempts`.
+- Pas de digest / cadence / WebSocket : hors périmètre C4.
+- Les E2E notes / paiements / absences / annonces valident les **triggers** (INSERT/UPDATE SQL métier) plutôt que chaque façade HTTP de ces domaines, afin de rester non-régressifs vis-à-vis des contrats Attendance / Pedagogy / Finance.
 
 ## Critères de GO CTO avant merge
 
@@ -178,3 +152,5 @@ Le merge ne peut être envisagé qu'après :
 5. PR Gates standard verts sur le HEAD exact ;
 6. absence de dérive de périmètre ;
 7. revalidation complète si le HEAD ou `develop` bouge.
+
+Aucun Ready. Aucun merge depuis cet agent.

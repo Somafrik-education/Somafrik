@@ -6,6 +6,7 @@ import {
   internalNotificationsApi,
   type InternalNotificationRecord,
 } from "../../lib/internalNotificationsApi";
+import { notifyInternalNotificationsChanged } from "../../lib/internalNotificationsRead";
 import { Card, SectionHeader } from "../ui/Card";
 import { Button } from "../ui/Button";
 import { Badge } from "../ui/Badge";
@@ -72,6 +73,7 @@ export function InternalNotificationsCenter() {
         ? row
         : await internalNotificationsApi.markRead(row.id, activeSchoolCode ?? undefined);
       setRows((current) => current.map((item) => (item.id === row.id ? updated : item)));
+      notifyInternalNotificationsChanged();
       const target = updated.navigationTarget ?? {};
       if (target.type === "conversation") navigate("/messages");
       else if (target.type === "announcement") navigate("/annonces");
@@ -85,6 +87,7 @@ export function InternalNotificationsCenter() {
     try {
       await internalNotificationsApi.archive(row.id, activeSchoolCode ?? undefined);
       setRows((current) => current.filter((item) => item.id !== row.id));
+      notifyInternalNotificationsChanged();
     } catch (err) {
       showToast(err instanceof Error ? err.message : "Échec de l'archivage", "error");
     }
@@ -113,6 +116,7 @@ export function InternalNotificationsCenter() {
       setBody("");
       setFiles([]);
       showToast("Notification envoyée", "success");
+      notifyInternalNotificationsChanged();
       await load();
     } catch (err) {
       showToast(err instanceof Error ? err.message : "Échec de l'envoi", "error");

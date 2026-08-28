@@ -236,8 +236,7 @@
     "mobile:docker": "powershell -ExecutionPolicy Bypass -File scripts/mobile-docker-connect.ps1",
     "mobile:host": "powershell -ExecutionPolicy Bypass -File scripts/mobile-host-expo.ps1",
     "mobile:host:tunnel": "powershell -ExecutionPolicy Bypass -File scripts/mobile-host-expo.ps1 -Tunnel",
-    "firewall:dev": "powershell -ExecutionPolicy Bypass -File scripts/open-firewall-dev.ps1",
-    "verify:communications-c4": "node backend/scripts/verify-communications-c4.js"
+    "firewall:dev": "powershell -ExecutionPolicy Bypass -File scripts/open-firewall-dev.ps1"
   },
   "devDependencies": {
     "playwright": "^1.61.1"

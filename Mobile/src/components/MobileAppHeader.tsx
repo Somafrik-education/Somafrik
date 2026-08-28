@@ -3,8 +3,10 @@ import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "../context/AuthContext";
+import { useAdminData } from "../context/AdminDataContext";
 import { canReadRoute, canReadView } from "../domain/security/permissions";
 import { canAccessMessagesRoute } from "../lib/mobileCtaRbacAlignment";
+import { useInternalNotificationsUnreadCount } from "../lib/internalNotificationsRead";
 import { MIN_TOUCH_TARGET_DP } from "../lib/mobileUsability";
 import { COMPACT_HEADER_ROW_DP, HEADER_ACTIONS_SLOT_DP, HEADER_BADGE_BAND_DP, HEADER_MENU_SLOT_DP } from "../lib/mobileUxV1Layout";
 import { shouldShowEnvironmentBadge } from "../config/env";
@@ -12,9 +14,16 @@ import RoleNavigationDrawer from "./RoleNavigationDrawer";
 
 export default function MobileAppHeader({ navigation }: { navigation: any }) {
   const { session } = useAuth();
+  const { activeSchoolCode } = useAdminData();
   const [drawerOpen, setDrawerOpen] = useState(false);
 
   const schoolName = session?.school?.name ?? session?.user?.schoolCode ?? "Somafrik";
+  const hasInternalNotificationScope = Boolean(activeSchoolCode && activeSchoolCode !== "*");
+  const canInternalNotifications = canReadRoute(session, "InternalNotifications") && hasInternalNotificationScope;
+  const { count: internalUnread } = useInternalNotificationsUnreadCount(
+    canInternalNotifications,
+    activeSchoolCode,
+  );
 
   const syncRoute = canReadRoute(session, "Synchronization")
     ? "Synchronization"
@@ -30,13 +39,15 @@ export default function MobileAppHeader({ navigation }: { navigation: any }) {
     return null;
   }, [session]);
 
-  const notificationsRoute = canReadView(session, "PlatformNotifications")
-    ? "PlatformNotifications"
-    : canReadRoute(session, "Announcements")
-      ? "Announcements"
-      : canAccessMessagesRoute(session)
-        ? "Messages"
-        : null;
+  const notificationsRoute = canInternalNotifications
+    ? "InternalNotifications"
+    : canReadView(session, "PlatformNotifications")
+      ? "PlatformNotifications"
+      : canReadRoute(session, "Announcements")
+        ? "Announcements"
+        : canAccessMessagesRoute(session)
+          ? "Messages"
+          : null;
 
   const rootNavigation = navigation.getParent?.() ?? navigation;
   const openRootRoute = (route: string) => rootNavigation.navigate(route);
@@ -91,6 +102,7 @@ export default function MobileAppHeader({ navigation }: { navigation: any }) {
                 icon="notifications-outline"
                 label="Notifications"
                 testID="mobile-header-notifications"
+                count={canInternalNotifications ? internalUnread : 0}
                 onPress={() => openRootRoute(notificationsRoute)}
               />
             ) : null}
@@ -112,22 +124,30 @@ function HeaderAction({
   label,
   testID,
   onPress,
+  count = 0,
 }: {
   icon: keyof typeof Ionicons.glyphMap;
   label: string;
   testID: string;
   onPress: () => void;
+  count?: number;
 }) {
+  const badgeLabel = count > 0 ? ` (${count} non lu${count > 1 ? "s" : ""})` : "";
   return (
     <TouchableOpacity
       style={styles.actionButton}
       onPress={onPress}
       accessibilityRole="button"
-      accessibilityLabel={label}
+      accessibilityLabel={`${label}${badgeLabel}`}
       testID={testID}
       activeOpacity={0.82}
     >
       <Ionicons name={icon} size={20} color="#334155" />
+      {count > 0 ? (
+        <View style={styles.badge}>
+          <Text style={styles.badgeText}>{count > 99 ? "99+" : count}</Text>
+        </View>
+      ) : null}
     </TouchableOpacity>
   );
 }
@@ -186,5 +206,25 @@ const styles = StyleSheet.create({
     height: MIN_TOUCH_TARGET_DP,
     alignItems: "center",
     justifyContent: "center",
+    position: "relative",
+  },
+  badge: {
+    position: "absolute",
+    top: 4,
+    right: 4,
+    minWidth: 16,
+    height: 16,
+    borderRadius: 8,
+    backgroundColor: "#DC2626",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 3,
+    borderWidth: 2,
+    borderColor: "#FFFFFF",
+  },
+  badgeText: {
+    color: "#FFFFFF",
+    fontSize: 9,
+    fontWeight: "800",
   },
 });

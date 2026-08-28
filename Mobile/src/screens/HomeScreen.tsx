@@ -388,7 +388,9 @@ export default function HomeScreen({ navigation }: any) {
     payments: canReadEntity(session, "payments") ? action("payments", "card-outline", "Paiements", () => navigation.navigate("Payments")) : null,
     platformNotifications: canReadView(session, "PlatformNotifications")
       ? action("platformNotifications", "notifications-outline", "Notifications", () => navigation.navigate("PlatformNotifications"))
-      : null,
+      : canReadRoute(session, "InternalNotifications")
+        ? action("platformNotifications", "notifications-outline", "Notifications", () => navigation.navigate("InternalNotifications"))
+        : null,
     announcements: canReadEntity(session, "announcements") ? action("announcements", "megaphone-outline", "Annonces", () => navigation.navigate("Announcements")) : null,
     students: canReadEntity(session, "students") ? action("students", "people-outline", "Élèves", () => navigation.navigate(studentsRoute)) : null,
     attendance: canReadRoute(session, "TeacherAttendance") ? action("attendance", "checkbox-outline", "Présences", () => navigation.navigate("TeacherAttendance")) : null,

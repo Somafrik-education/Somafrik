@@ -53,7 +53,10 @@ const { EstablishmentService } = require("./services/establishmentService");
 const { UnpaidService } = require("./services/unpaidService");
 const { IdempotencyService, withIdempotency } = require("./services/idempotencyService");
 const internalNotificationsService = require("./lib/communicationsNotificationsService");
-const { startCommunicationsNotificationsWorker } = require("./lib/communicationsNotificationsWorker");
+const {
+  startCommunicationsNotificationsWorker,
+  stopCommunicationsNotificationsWorker,
+} = require("./lib/communicationsNotificationsWorker");
 const schoolSubscriptionAccessService = require("./services/schoolSubscriptionAccessService");
 const {
   assertProductionSecrets,
@@ -6243,6 +6246,12 @@ app.use((error, _req, res, _next) => {
 
 const PORT = process.env.PORT || 5000;
 const HOST = "0.0.0.0";
+
+function stopCommunicationsWorkerOnSignal() {
+  stopCommunicationsNotificationsWorker();
+}
+process.on("SIGTERM", stopCommunicationsWorkerOnSignal);
+process.on("SIGINT", stopCommunicationsWorkerOnSignal);
 
 initRepository()
   .then(() => {

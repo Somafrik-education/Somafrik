@@ -386,6 +386,7 @@ export function canReadView(session: any, viewName: string): boolean {
     "notifications",
     "announcements",
     "Announcements",
+    "InternalNotifications",
   ]);
   if (communicationViews.has(viewName)) {
     const feature = VIEW_PERMISSION_FEATURES[viewName] ?? routeFeatureMap[viewName];
