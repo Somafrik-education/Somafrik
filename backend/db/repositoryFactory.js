@@ -12,6 +12,7 @@ const {
   ensureStudentLifecyclePgSchema,
 } = require("./studentLifecyclePg");
 const { ensureStudentGeneralIdentityPg } = require("./studentGeneralIdentityPg");
+const { attachLiveRbacAuthority } = require("../lib/liveRbacPrincipalAuthority");
 const {
   resolveDatabaseConfig,
   isDatabaseRequired,
@@ -69,6 +70,7 @@ function createPostgresRepository(databaseConfig, env = process.env) {
   const repository = new PostgresRepository(config);
   repository.engine = "postgresql";
   attachStudentLifecyclePg(repository);
+  attachLiveRbacAuthority(repository);
   return assertRepositoryContract(repository, "postgresql");
 }
 
@@ -83,7 +85,9 @@ function createFallbackRepository(env = process.env) {
       "Le dépôt mémoire est interdit en production.",
     );
   }
-  return assertRepositoryContract(new FallbackRepository(), "memory");
+  const repository = new FallbackRepository();
+  attachLiveRbacAuthority(repository);
+  return assertRepositoryContract(repository, "memory");
 }
 
 /**
@@ -135,7 +139,7 @@ async function initializeRepository({
   }
 
   // Laisser createPostgresRepository gérer le mode mémoire (placeholder si besoin).
-  const primary = repository ?? createPostgresRepository(databaseUrl, env);
+  const primary = attachLiveRbacAuthority(repository ?? createPostgresRepository(databaseUrl, env));
   disableLegacyBackOfficeRuntimeMigrations(primary);
   if ((primary.engine ?? "postgresql") === "postgresql") {
     attachStudentLifecyclePg(primary);
