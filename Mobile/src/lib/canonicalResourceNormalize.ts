@@ -172,19 +172,19 @@ export function normalizeAnnouncement(value: unknown): CanonicalAnnouncement | n
     createdByUserId: text(row.createdByUserId ?? row.created_by) || undefined,
     readAt: text(row.readAt ?? row.read_at) || undefined,
     attachments: Array.isArray(row.attachments)
-      ? row.attachments
-          .map((item) => {
-            const file = record(item);
-            const fileId = text(file.id);
-            if (!fileId) return null;
-            return {
+      ? row.attachments.flatMap((item) => {
+          const file = record(item);
+          const fileId = text(file.id);
+          if (!fileId) return [];
+          return [
+            {
               id: fileId,
               fileName: text(file.fileName ?? file.file_name),
-              mimeType: text(file.mimeType ?? file.mime_type) || undefined,
-              fileSize: Number(file.fileSize ?? file.file_size) || undefined,
-            };
-          })
-          .filter((item): item is { id: string; fileName: string; mimeType?: string; fileSize?: number } => Boolean(item))
+              ...(text(file.mimeType ?? file.mime_type) ? { mimeType: text(file.mimeType ?? file.mime_type) } : {}),
+              ...(Number(file.fileSize ?? file.file_size) ? { fileSize: Number(file.fileSize ?? file.file_size) } : {}),
+            },
+          ];
+        })
       : undefined,
     schoolCode: tenant.schoolCode,
     schoolId: tenant.schoolId,

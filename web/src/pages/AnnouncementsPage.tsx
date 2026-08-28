@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useAuth } from "../context/AuthContext";
 import { useActiveSchool } from "../context/ActiveSchoolContext";
 import { useFeaturePermissions } from "../lib/usePermissionContext";
 import {
@@ -37,7 +36,6 @@ function formatDisplayDate(iso?: string) {
 }
 
 export function AnnouncementsPage() {
-  const { session } = useAuth();
   const { activeSchoolCode, requiresSelection } = useActiveSchool();
   const { canRead, canCreate, canUpdate } = useFeaturePermissions("Announcements");
   const { showToast } = useToast();
@@ -233,7 +231,7 @@ export function AnnouncementsPage() {
   if (!scopeReady) {
     return (
       <div className="p-6">
-        <SectionHeader title="Annonces" subtitle="Sélectionnez un établissement pour continuer." />
+        <SectionHeader title="Annonces" description="Sélectionnez un établissement pour continuer." />
         <p className="mt-4 text-sm text-muted">Établissement requis.</p>
       </div>
     );
@@ -242,7 +240,7 @@ export function AnnouncementsPage() {
   return (
     <div className="grid gap-4 p-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)]">
       <div className="space-y-4">
-        <SectionHeader title="Annonces" subtitle="Historique publié, lecture PostgreSQL." />
+        <SectionHeader title="Annonces" description="Historique publié, lecture PostgreSQL." />
         {canCreate ? (
           <Card>
             <h2 className="mb-3 text-sm font-bold">Nouvelle annonce</h2>
