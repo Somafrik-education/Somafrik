@@ -307,9 +307,7 @@ export function resolvePaymentStatus(
   method: PaymentMethod,
   leftover = Math.max(0, amount - remainingBeforePayment),
 ): string {
-  if (method === "Mobile money") {
-    return "En attente de confirmation";
-  }
+  void method;
   const allocated = Math.max(0, amount - leftover);
   if (amount > 0 && allocated === 0) {
     return "Non imputé";

@@ -40,6 +40,7 @@ const FINANCE_ERROR = Object.freeze({
   REMINDER_COOLDOWN: "REMINDER_COOLDOWN",
   REMINDER_FORCE_FORBIDDEN: "REMINDER_FORCE_FORBIDDEN",
   NEGATIVE_BALANCE_FORBIDDEN: "NEGATIVE_BALANCE_FORBIDDEN",
+  CURRENCY_REQUIRED: "FINANCE_CURRENCY_REQUIRED",
 });
 
 function createFinanceError(statusCode, message, code, details) {
@@ -156,6 +157,7 @@ function mapPaymentRow(row) {
     reference: code,
     dbId: row.id,
     schoolCode: row.school_code || profile.schoolCode,
+    countryIso: String(row.country_iso || row.countryIso || profile.countryIso || "").trim().toUpperCase(),
     studentId: profile.studentId || row.student_code || row.student_id,
     studentName: profile.studentName || "",
     classId: profile.classId || "",
@@ -165,7 +167,7 @@ function mapPaymentRow(row) {
     label: profile.label || row.fee_type || "",
     amount: money(row.amount),
     totalAmount: money(row.amount),
-    currency: row.currency || profile.currency || "CDF",
+    currency: row.currency || profile.currency || "",
     method: row.payment_method || profile.method || "",
     date: toIsoDate(row.payment_date) || profile.date || "",
     status: cancelled ? "Annulé" : profile.status || mapDbStatusToBo(row.payment_status),
@@ -204,6 +206,7 @@ function mapObligationRow(row) {
     studentName: profile.studentName || "",
     schoolId: row.school_id,
     schoolCode: row.school_code || profile.schoolCode,
+    countryIso: String(row.country_iso || row.countryIso || profile.countryIso || "").trim().toUpperCase(),
     className: profile.className || "",
     schoolFeeItemId: row.school_fee_item_id,
     sourceFeeItemId: row.source_fee_item_uuid || row.sourceFeeItemId || null,
@@ -242,6 +245,7 @@ function mapGridRow(row) {
     dbId: row.id,
     schoolId: row.school_id || profile.schoolId || "",
     schoolCode: row.school_code || profile.schoolCode,
+    countryIso: String(row.country_iso || row.countryIso || profile.countryIso || "").trim().toUpperCase(),
     name: row.name || profile.name || row.class_name,
     className: row.class_name,
     classId: row.class_id || profile.classId || "",
@@ -265,6 +269,7 @@ function mapItemRow(row) {
     dbId: row.id,
     feeGridId: profile.gridCode || row.grid_code,
     schoolCode: row.school_code || profile.schoolCode,
+    countryIso: String(row.country_iso || row.countryIso || profile.countryIso || "").trim().toUpperCase(),
     feeType: row.fee_type,
     label: row.label,
     amount: money(row.amount),
@@ -283,6 +288,7 @@ function mapReminderRow(row) {
     dbId: row.id,
     studentId: profile.studentId || row.student_code || row.student_id,
     schoolCode: row.school_code || profile.schoolCode,
+    countryIso: String(row.country_iso || row.countryIso || profile.countryIso || "").trim().toUpperCase(),
     recipient: row.recipient,
     channel: row.channel,
     message: row.message,
@@ -396,6 +402,19 @@ function financeAuditMetaFromRequest(req) {
   };
 }
 
+function requireSchoolCurrency(school) {
+  const raw = asTrimmed(school?.currency).toUpperCase();
+  if (raw === "FC") return "CDF";
+  if (!raw) {
+    throw createFinanceError(
+      400,
+      "Devise de l'établissement introuvable — aucun repli CDF/USD/EUR.",
+      FINANCE_ERROR.CURRENCY_REQUIRED,
+    );
+  }
+  return raw;
+}
+
 module.exports = {
   FINANCE_ERROR,
   createFinanceError,
@@ -428,4 +447,5 @@ module.exports = {
   canManagePaymentStatuses,
   canForceReminder,
   financeAuditMetaFromRequest,
+  requireSchoolCurrency,
 };

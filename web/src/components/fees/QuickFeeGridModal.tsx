@@ -20,6 +20,7 @@ import {
   type QuickFeeGridInput,
 } from "../../lib/quickFeeGrid";
 import { financeApi } from "../../lib/financeApi";
+import { createFinanceIdempotencyKey } from "../../lib/financeIdempotency";
 import { formatMetric, normalize } from "../../lib/format";
 
 interface QuickFeeGridModalProps {
@@ -137,7 +138,9 @@ export function QuickFeeGridModal({ open, onClose, schoolCode, onSaved }: QuickF
         if (form.activateImmediately) {
           await financeApi.activateFeeGrid(created.id);
           if (form.applyToStudents) {
-            const applied = await financeApi.applyFeeGrid(created.id);
+            const applied = await financeApi.applyFeeGrid(created.id, {}, {
+              idempotencyKey: createFinanceIdempotencyKey(),
+            });
             appliedTotal += applied.created;
           }
         }

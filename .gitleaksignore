@@ -18,3 +18,12 @@
 #    findings ne subsistent que dans les commits historiques ci-dessous.
 48d24c16426943b872f989369cb748d51d5c8663:web/src/pages/etablissement/ClassStudentsPage.test.tsx:generic-api-key:117
 32caac43f57c233f4a8ef69f021ccc29d16c1e5e:web/src/pages/etablissement/ClassStudentsPage.test.tsx:generic-api-key:117
+#
+# 4) F8 HTTP readiness : faux positifs generic-api-key sur des identifiants
+#    d'intention de test (`f8-pay-unallocated-*`), pas des secrets. Le fichier
+#    courant utilise des jetons à faible entropie (`f8-idem-same` / `f8-idem-other`).
+85f1bab4ed210abfb2d18ac0746d936deece7d7c:backend/lib/financeReadiness.http.pg.test.js:generic-api-key:535
+85f1bab4ed210abfb2d18ac0746d936deece7d7c:backend/lib/financeReadiness.http.pg.test.js:generic-api-key:562
+2ca061035ed4c67543b7204d6ffed3fb33ee8056:backend/lib/financeReadiness.http.pg.test.js:generic-api-key:535
+2ca061035ed4c67543b7204d6ffed3fb33ee8056:backend/lib/financeReadiness.http.pg.test.js:generic-api-key:562
+

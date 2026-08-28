@@ -25,6 +25,7 @@ import {
 } from "../../lib/quickPayment";
 import { buildPaymentReceiptPrintPlan } from "../../pages/entity-page/paymentWorkflow";
 import { financeApi } from "../../lib/financeApi";
+import { createFinanceIdempotencyKey } from "../../lib/financeIdempotency";
 import {
   UNALLOCATED_FEE_TYPE,
   UNALLOCATED_TARGET,
@@ -59,6 +60,7 @@ export function QuickPaymentModal({ open, onClose, onSaved }: QuickPaymentModalP
   const [comment, setComment] = useState("");
   const [busy, setBusy] = useState(false);
   const busyRef = useRef(false);
+  const paymentIntentionRef = useRef(createFinanceIdempotencyKey());
   const [savedPayment, setSavedPayment] = useState<PaymentRecord | null>(null);
   const [showReceipt, setShowReceipt] = useState(false);
   const [optionStudents, setOptionStudents] = useState<PaymentRecord[]>([]);
@@ -221,7 +223,10 @@ export function QuickPaymentModal({ open, onClose, onSaved }: QuickPaymentModalP
           };
         }),
       });
-      const created = await financeApi.createPayment(payload);
+      const created = await financeApi.createPayment(payload, {
+        idempotencyKey: paymentIntentionRef.current,
+      });
+      paymentIntentionRef.current = createFinanceIdempotencyKey();
       await refresh();
       setSavedPayment(created as unknown as PaymentRecord);
       onSaved?.(created as unknown as PaymentRecord);

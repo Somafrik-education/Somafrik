@@ -2300,7 +2300,7 @@ function assertCanAdjustStudentFee(principal) {
 
 app.get("/api/finance/fee-grids", requireAuth, requirePermission("GET /api/finance/fee-grids"), asyncHandler(async (req, res) => {
   const rows = await repository.listFinanceFeeGrids(req.principal);
-  sendList(res, tenantScopeService.filterRows(rows, req.principal), req.query, ["className", "academicYear", "status"]);
+  sendList(res, tenantScopeService.filterRows(rows, req.principal, { countryField: "countryIso" }), req.query, ["className", "academicYear", "status"]);
 }));
 
 app.post("/api/finance/fee-grids", requireAuth, requirePermission("POST /api/finance/fee-grids"), asyncHandler(async (req, res) => {
@@ -2312,8 +2312,8 @@ app.post("/api/finance/fee-grids", requireAuth, requirePermission("POST /api/fin
 app.get("/api/finance/fee-grids/:gridId", requireAuth, requirePermission("GET /api/finance/fee-grids"), asyncHandler(async (req, res) => {
   const detail = await repository.getFinanceFeeGrid(req.params.gridId, req.principal);
   if (!detail) throw new BusinessError(404, "Grille introuvable");
-  const scope = String(req.principal?.schoolCode ?? "").trim();
-  if (scope && scope !== "*" && String(detail.grid.schoolCode ?? "").toUpperCase() !== scope.toUpperCase()) {
+  const { resolveFinanceSchoolScope, schoolRecordInFinanceScope } = require("./lib/financeSchoolScope");
+  if (!schoolRecordInFinanceScope(detail.grid, resolveFinanceSchoolScope(req.principal))) {
     throw new BusinessError(404, "Grille introuvable");
   }
   res.json(detail);
@@ -2353,7 +2353,7 @@ app.post("/api/finance/fee-grids/:gridId/apply", requireAuth, requirePermission(
 
 app.get("/api/finance/student-fees", requireAuth, requirePermission("GET /api/finance/student-fees"), asyncHandler(async (req, res) => {
   const rows = await repository.listFinanceStudentFees(req.principal);
-  sendList(res, tenantScopeService.filterRows(rows, req.principal), req.query, ["studentName", "label", "status"]);
+  sendList(res, tenantScopeService.filterRows(rows, req.principal, { countryField: "countryIso" }), req.query, ["studentName", "label", "status"]);
 }));
 
 app.post("/api/finance/reconcile-payment-allocations", requireAuth, requirePermission("POST /api/finance/reconcile-payment-allocations"), asyncHandler(async (req, res) => {
@@ -2876,18 +2876,29 @@ app.get("/api/backoffice/finance/unpaid/:studentId/reminders", requireAuth, requ
 }));
 
 app.post("/api/backoffice/finance/unpaid/:studentId/reminders", requireAuth, requirePermission("POST /api/backoffice/finance/unpaid/reminders"), asyncHandler(async (req, res) => {
-  const reminder = await repository.createFinanceReminder(
-    req.params.studentId,
-    req.body ?? {},
-    req.principal,
-    { force: Boolean(req.body?.force) },
-  );
-  await auditService.record(req, "send_payment_reminder", "student_fee", req.params.studentId, {
-    channel: reminder.channel,
-    summary: reminder.summary,
+  await withIdempotency({
+    req,
+    res,
+    routeKey: `POST /api/backoffice/finance/unpaid/${req.params.studentId}/reminders`,
+    principal: req.principal,
+    handler: async () => {
+      const reminder = await repository.createFinanceReminder(
+        req.params.studentId,
+        req.body ?? {},
+        req.principal,
+        { force: Boolean(req.body?.force) },
+      );
+      await auditService.record(req, "send_payment_reminder", "student_fee", req.params.studentId, {
+        channel: reminder.channel,
+        summary: reminder.summary,
+      });
+      const nextState = await getAuthoritativeBackOfficeState();
+      return {
+        statusCode: 201,
+        body: { reminder, state: scopedBackOfficeStateForResponse(nextState, req.principal) },
+      };
+    },
   });
-  const nextState = await getAuthoritativeBackOfficeState();
-  res.status(201).json({ reminder, state: scopedBackOfficeStateForResponse(nextState, req.principal) });
 }));
 
 app.get("/api/backoffice/state", requireAuth, asyncHandler(async (_req, res) => {

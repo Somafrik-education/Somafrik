@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { useAuth } from "../../context/AuthContext";
 import { useData } from "../../context/DataContext";
 import { useActiveSchool } from "../../context/ActiveSchoolContext";
@@ -38,6 +38,7 @@ import { usePermissionContext } from "../../lib/usePermissionContext";
 import { normalize } from "../../lib/format";
 import { QuickFeeGridModal } from "../../components/fees/QuickFeeGridModal";
 import { financeApi } from "../../lib/financeApi";
+import { createFinanceIdempotencyKey } from "../../lib/financeIdempotency";
 import { formatFinanceAmount, resolveFinanceCurrency } from "../../lib/financeCurrency";
 import { EmptyState, ErrorState, LoadingState } from "../../design-system";
 
@@ -69,6 +70,7 @@ export function FinanceFeesPage() {
   const ctx = usePermissionContext();
   const { showToast } = useToast();
   const { confirm } = useConfirm();
+  const applyIntentionRef = useRef(new Map<string, string>());
 
   const schoolCode = useMemo(() => {
     const raw =
@@ -292,7 +294,13 @@ export function FinanceFeesPage() {
   async function applyGrid(grid: FeeGrid) {
     if (!canApply) return;
     try {
-      const result = await financeApi.applyFeeGrid(grid.id);
+      if (!applyIntentionRef.current.has(grid.id)) {
+        applyIntentionRef.current.set(grid.id, createFinanceIdempotencyKey());
+      }
+      const result = await financeApi.applyFeeGrid(grid.id, {}, {
+        idempotencyKey: applyIntentionRef.current.get(grid.id),
+      });
+      applyIntentionRef.current.set(grid.id, createFinanceIdempotencyKey());
       await refresh();
       if (!result.created) {
         showToast("Aucun frais généré", "error");

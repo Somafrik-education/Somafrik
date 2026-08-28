@@ -18,7 +18,7 @@ const {
   toIsoDate,
   studentMatches,
   canForceReminder,
-  isSuperAdminPrincipal,
+  requireSchoolCurrency,
 } = require("./financeManagement");
 const {
   resolvePaymentMethod,
@@ -39,6 +39,12 @@ const {
   ensureEnrollmentFinanceObligations,
   ensureEnrollmentFinanceObligationsInTx,
 } = require("./financeObligationLifecycle");
+const {
+  resolveFinanceSchoolScope,
+  schoolCodeInScope,
+  schoolRecordInFinanceScope,
+  primaryFinanceSchoolCode,
+} = require("./financeSchoolScope");
 
 const REMINDER_COOLDOWN_DAYS = 3;
 
@@ -58,12 +64,35 @@ function ignoreClientScope(payload = {}) {
   return next;
 }
 
-function assertTenant(principal, schoolCode) {
-  const scope = asTrimmed(principal?.schoolCode);
-  if (!scope || scope === "*") return;
-  if (asTrimmed(schoolCode).toUpperCase() !== scope.toUpperCase()) {
+function assertTenant(principal, target) {
+  const scope = resolveFinanceSchoolScope(principal);
+  if (target && typeof target === "object") {
+    if (!schoolRecordInFinanceScope(target, scope)) {
+      throw createFinanceError(403, "Accès refusé : établissement hors périmètre.", FINANCE_ERROR.TENANT_MISMATCH);
+    }
+    return;
+  }
+  if (scope.mode === "country") {
     throw createFinanceError(403, "Accès refusé : établissement hors périmètre.", FINANCE_ERROR.TENANT_MISMATCH);
   }
+  if (!schoolCodeInScope(target, scope)) {
+    throw createFinanceError(403, "Accès refusé : établissement hors périmètre.", FINANCE_ERROR.TENANT_MISMATCH);
+  }
+}
+
+function resolveActorSchoolCode(principal, rawPayload = {}) {
+  const scope = resolveFinanceSchoolScope(principal);
+  if (scope.mode === "none") {
+    throw createFinanceError(403, "Accès refusé : établissement hors périmètre.", FINANCE_ERROR.TENANT_MISMATCH);
+  }
+  if (scope.mode === "schools") {
+    return primaryFinanceSchoolCode(principal);
+  }
+  const requested = asTrimmed(rawPayload.schoolCode);
+  if (!requested) {
+    throw createFinanceError(400, "Établissement requis.", FINANCE_ERROR.TENANT_MISMATCH);
+  }
+  return requested;
 }
 
 function actorName(principal) {
@@ -216,7 +245,7 @@ async function openObligationsForItem(tx, obligations, item, student, school) {
     );
   }
   assertCompatibleCurrency({
-    payment: { currency: school.currency || "CDF" },
+    payment: { currency: requireSchoolCurrency(school) },
     obligation: target,
   });
   if (asTrimmed(item.feeTypeId) || asTrimmed(item.catalogItemId)) {
@@ -292,7 +321,7 @@ async function writeFinanceAudit(tx, principal, auditMeta, entry) {
     throw createFinanceError(500, "Audit Finance indisponible dans la transaction.");
   }
   await tx.recordFinanceAudit({
-    schoolCode: entry.schoolCode || principal?.schoolCode,
+    schoolCode: entry.schoolCode || primaryFinanceSchoolCode(principal) || principal?.schoolCode,
     userId: principal?.sub || principal?.id,
     action: entry.action,
     entityType: entry.entityType,
@@ -348,11 +377,12 @@ async function createPayment(store, rawPayload, principal, auditMeta) {
     if (!student) {
       throw createFinanceError(404, "Élève introuvable", FINANCE_ERROR.STUDENT_NOT_FOUND);
     }
-    assertTenant(principal, student.schoolCode);
+    assertTenant(principal, student);
     const school = await tx.getSchoolByCode(student.schoolCode);
     if (!school) {
       throw createFinanceError(404, "Établissement introuvable", FINANCE_ERROR.TENANT_MISMATCH);
     }
+    assertTenant(principal, school);
     const enrollment = await resolvePaymentEnrollment(tx, student, payload, school);
 
     const resolvedItems = [];
@@ -446,7 +476,7 @@ async function createPayment(store, rawPayload, principal, auditMeta) {
       feeType: resolvedItems.length === 1 ? resolvedItems[0].feeType : `${resolvedItems.length} libellés`,
       label: resolvedItems.length === 1 ? resolvedItems[0].feeLabel : `${resolvedItems.length} libellés`,
       amount: totalAmount,
-      currency: school.currency || "CDF",
+      currency: requireSchoolCurrency(school),
       method,
       date: toIsoDate(paidAt) || paidAt,
       status,
@@ -517,7 +547,7 @@ async function cancelPayment(store, paymentId, reason, principal, auditMeta) {
     if (!payment) {
       throw createFinanceError(404, "Paiement introuvable.", FINANCE_ERROR.PAYMENT_NOT_FOUND);
     }
-    assertTenant(principal, payment.schoolCode);
+    assertTenant(principal, payment);
     if (isPaymentCancelled(payment)) {
       return payment;
     }
@@ -610,17 +640,7 @@ async function resolveGridClass(tx, school, payload) {
 
 async function upsertFeeGrid(store, rawPayload, principal) {
   const payload = ignoreClientScope(rawPayload);
-  let schoolCode = asTrimmed(principal?.schoolCode);
-  if (!schoolCode || schoolCode === "*") {
-    if (!isSuperAdminPrincipal(principal)) {
-      throw createFinanceError(400, "Établissement requis.", FINANCE_ERROR.TENANT_MISMATCH);
-    }
-    schoolCode = asTrimmed(rawPayload.schoolCode);
-    if (!schoolCode) {
-      throw createFinanceError(400, "Établissement requis.", FINANCE_ERROR.TENANT_MISMATCH);
-    }
-  }
-  assertTenant(principal, schoolCode);
+  const schoolCode = resolveActorSchoolCode(principal, rawPayload);
   const className = asTrimmed(payload.className);
   const academicYear = asTrimmed(payload.academicYear);
   const currency = asTrimmed(payload.currency);
@@ -644,6 +664,7 @@ async function upsertFeeGrid(store, rawPayload, principal) {
   return store.withTransaction(async (tx) => {
     const school = await tx.getSchoolByCode(schoolCode);
     if (!school) throw createFinanceError(404, "Établissement introuvable", FINANCE_ERROR.TENANT_MISMATCH);
+    assertTenant(principal, school);
     const klass = await resolveGridClass(tx, school, payload);
     const grid = await tx.upsertGrid({
       id: payload.id,
@@ -682,7 +703,7 @@ async function setFeeGridStatus(store, gridId, status, principal) {
   return store.withTransaction(async (tx) => {
     const grid = await tx.getGrid(gridId, principal);
     if (!grid) throw createFinanceError(404, "Grille introuvable.", FINANCE_ERROR.FEE_GRID_NOT_FOUND);
-    assertTenant(principal, grid.schoolCode);
+    assertTenant(principal, grid);
     return tx.setGridStatus(grid.dbId, status);
   });
 }
@@ -691,7 +712,7 @@ async function applyFeeGrid(store, gridId, principal, options = {}) {
   return store.withTransaction(async (tx) => {
     const grid = await tx.getGrid(gridId, principal);
     if (!grid) throw createFinanceError(404, "Grille introuvable.", FINANCE_ERROR.FEE_GRID_NOT_FOUND);
-    assertTenant(principal, grid.schoolCode);
+    assertTenant(principal, grid);
     if (grid.status !== "Active") {
       throw createFinanceError(409, "Seule une grille active peut être appliquée aux élèves.", FINANCE_ERROR.FEE_GRID_NOT_ACTIVE);
     }
@@ -776,7 +797,7 @@ async function adjustStudentFee(store, obligationId, patch, principal) {
   return store.withTransaction(async (tx) => {
     const fee = await tx.getObligationByPublicId(obligationId, principal);
     if (!fee) throw createFinanceError(404, "Obligation introuvable.", FINANCE_ERROR.OBLIGATION_NOT_FOUND);
-    assertTenant(principal, fee.schoolCode);
+    assertTenant(principal, fee);
     const next = { ...fee };
     if (patch.cancel) {
       next.status = "Annulé";
@@ -801,7 +822,10 @@ async function createReminder(store, studentId, payload, principal, { force = fa
   return store.withTransaction(async (tx) => {
     const student = await tx.findStudent(studentId, principal);
     if (!student) throw createFinanceError(404, "Élève introuvable", FINANCE_ERROR.STUDENT_NOT_FOUND);
-    assertTenant(principal, student.schoolCode);
+    assertTenant(principal, student);
+    const school = await tx.getSchoolByCode(student.schoolCode);
+    if (!school) throw createFinanceError(404, "Établissement introuvable", FINANCE_ERROR.TENANT_MISMATCH);
+    assertTenant(principal, school);
     const reminders = await tx.listRemindersByStudent(student.dbId || student.id);
     const latest = reminders.filter((row) => row.sendStatus !== "Échouée")[0];
     if (latest) {
@@ -820,7 +844,6 @@ async function createReminder(store, studentId, payload, principal, { force = fa
         }
       }
     }
-    const school = await tx.getSchoolByCode(student.schoolCode);
     const fees = (await tx.listObligationsByStudent(school.id, student.dbId || student.id)).filter(
       (fee) => money(fee.balance) > 0 && fee.status !== "Annulé",
     );
@@ -832,8 +855,8 @@ async function createReminder(store, studentId, payload, principal, { force = fa
       schoolCode: student.schoolCode,
       recipient: body.recipient || "Parent",
       channel: body.channel || "notification",
-      message: asTrimmed(body.message) || `Relance de paiement : ${amountDue} ${school.currency || "CDF"} restants.`,
-      summary: `Relance ${amountDue} ${school.currency || "CDF"}`,
+      message: asTrimmed(body.message) || `Relance de paiement : ${amountDue} ${requireSchoolCurrency(school)} restants.`,
+      summary: `Relance ${amountDue} ${requireSchoolCurrency(school)}`,
       sendStatus: body.sendStatus || "Envoyée",
       sentAt: new Date().toISOString(),
       triggeredByName: actorName(principal),
@@ -846,6 +869,7 @@ module.exports = {
   REMINDER_COOLDOWN_DAYS,
   F4_ERROR,
   ignoreClientScope,
+  assertTenant,
   canCancelPayment,
   assertCanCancelPayment,
   createPayment,

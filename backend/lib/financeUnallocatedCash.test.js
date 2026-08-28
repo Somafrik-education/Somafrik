@@ -120,6 +120,12 @@ describe("financeUnallocatedCash", () => {
     assert.equal(resolvePaymentStatus(150, 1000, "Espèces", 0), PARTIAL_STATUS);
   });
 
+  it("Mobile money is a method, never a pending settlement status", () => {
+    assert.equal(resolvePaymentStatus(150, 150, "Mobile money", 0), "Payé");
+    assert.equal(resolvePaymentStatus(150, 1000, "Mobile money", 0), PARTIAL_STATUS);
+    assert.equal(resolvePaymentStatus(150, 0, "Mobile money", 150), UNALLOCATED_STATUS);
+  });
+
   it("GET presentation overrides stored Payé when nothing is allocated", () => {
     const projected = projectPaymentCash(
       { amount: 150, status: "Payé", overpaymentAmount: 150 },

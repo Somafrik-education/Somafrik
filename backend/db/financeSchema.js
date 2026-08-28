@@ -366,6 +366,10 @@ CREATE TABLE IF NOT EXISTS payment_items (
 CREATE INDEX IF NOT EXISTS idx_payment_items_payment ON payment_items (payment_id);
 CREATE INDEX IF NOT EXISTS idx_payment_items_school ON payment_items (school_id);
 
+ALTER TABLE student_fee_obligations ALTER COLUMN currency DROP DEFAULT;
+ALTER TABLE fee_grids ALTER COLUMN currency DROP DEFAULT;
+
+
 CREATE TABLE IF NOT EXISTS school_payment_methods (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   school_id UUID NOT NULL REFERENCES schools(id),

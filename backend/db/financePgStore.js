@@ -22,7 +22,7 @@ const {
 const { decoratePaymentWithItems } = require("../lib/financePaymentItems");
 const { projectObligationPaidAmounts } = require("../lib/financeObligationPaid");
 const { projectPaymentsWithAllocations, projectPaymentCash } = require("../lib/financeUnallocatedCash");
-const { resolveFinanceSchoolScope, sqlSchoolPredicate } = require("../lib/financeSchoolScope");
+const { resolveFinanceSchoolScope, sqlSchoolPredicate, primaryFinanceSchoolCode } = require("../lib/financeSchoolScope");
 const {
   foldPaymentStudentOptions,
   resolveCatalogPaymentMethods,
@@ -41,7 +41,7 @@ function createFinancePgStore(repo) {
     return {
       async getSchoolByCode(code) {
         const row = await one(
-          `SELECT s.*, c.currency AS country_currency
+          `SELECT s.*, c.currency AS country_currency, c.iso_code AS country_iso
            FROM schools s
            JOIN countries c ON c.id = s.country_id
            WHERE s.school_code = $1`,
@@ -49,31 +49,35 @@ function createFinancePgStore(repo) {
         );
         if (!row) return null;
         const profile = parsePayload(row.profile_payload);
-        const currency = String(profile.currency || row.currency || row.country_currency || "CDF").trim().toUpperCase();
+        const currency = String(profile.currency || row.currency || row.country_currency || "").trim().toUpperCase();
         return {
           ...row,
           code: row.school_code,
+          countryIso: String(row.country_iso || "").trim().toUpperCase(),
           currency,
           currencySource: profile.currency ? "school" : "country",
         };
       },
       async findStudent(studentKey, principal) {
         const key = asTrimmed(studentKey);
-        const schoolCode = asTrimmed(principal?.schoolCode);
         const params = [key, key];
-        let sql = `
-          SELECT st.*, s.school_code, cl.name AS class_name
+        let pred = "TRUE";
+        if (principal) {
+          const scope = resolveFinanceSchoolScope(principal);
+          if (scope.mode === "none") return null;
+          pred = sqlSchoolPredicate("s", scope, params);
+        }
+        const sql = `
+          SELECT st.*, s.school_code, ctry.iso_code AS country_iso, cl.name AS class_name
           FROM students st
           JOIN schools s ON s.id = st.school_id
+          JOIN countries ctry ON ctry.id = s.country_id
           LEFT JOIN enrollments e ON e.student_id = st.id AND e.status = 'active'
           LEFT JOIN classes cl ON cl.id = e.class_id
-          WHERE st.student_code = $1 OR st.id::text = $2
+          WHERE (st.student_code = $1 OR st.id::text = $2)
+            AND ${pred}
+          LIMIT 1
         `;
-        if (schoolCode && schoolCode !== "*") {
-          sql += " AND s.school_code = $3";
-          params.push(schoolCode.toUpperCase());
-        }
-        sql += " LIMIT 1";
         const row = await one(sql, params);
         if (!row) return null;
         const profile = parsePayload(row.profile_payload);
@@ -86,6 +90,7 @@ function createFinancePgStore(repo) {
           lastName: row.last_name,
           name: `${row.first_name ?? ""} ${row.last_name ?? ""}`.trim(),
           schoolCode: row.school_code,
+          countryIso: String(row.country_iso || "").trim().toUpperCase(),
           className: row.class_name || profile.className || "",
         };
       },
@@ -354,18 +359,21 @@ function createFinancePgStore(repo) {
       },
       async getPaymentByCode(code, principal, { lock } = {}) {
         const params = [code, code];
+        let pred = "TRUE";
+        if (principal) {
+          const scope = resolveFinanceSchoolScope(principal);
+          if (scope.mode === "none") return null;
+          pred = sqlSchoolPredicate("s", scope, params);
+        }
         let sql = `
-          SELECT p.*, s.school_code, st.student_code
+          SELECT p.*, s.school_code, st.student_code, ctry.iso_code AS country_iso
           FROM payments p
           JOIN schools s ON s.id = p.school_id
+          JOIN countries ctry ON ctry.id = s.country_id
           JOIN students st ON st.id = p.student_id
-          WHERE p.payment_code = $1 OR p.id::text = $2
+          WHERE (p.payment_code = $1 OR p.id::text = $2)
+            AND ${pred}
         `;
-        const schoolCode = asTrimmed(principal?.schoolCode);
-        if (schoolCode && schoolCode !== "*") {
-          sql += " AND s.school_code = $3";
-          params.push(schoolCode.toUpperCase());
-        }
         sql += " LIMIT 1";
         if (lock) sql += " FOR UPDATE OF p";
         const row = await one(sql, params);
@@ -448,15 +456,24 @@ function createFinancePgStore(repo) {
         );
         return row ? mapObligationRow(row) : null;
       },
-      async getObligationByPublicId(id) {
+      async getObligationByPublicId(id, principal) {
+        const params = [id];
+        let pred = "TRUE";
+        if (principal) {
+          const scope = resolveFinanceSchoolScope(principal);
+          if (scope.mode === "none") return null;
+          pred = sqlSchoolPredicate("s", scope, params);
+        }
         const row = await one(
-          `SELECT o.*, s.school_code, st.student_code
+          `SELECT o.*, s.school_code, st.student_code, ctry.iso_code AS country_iso
            FROM student_fee_obligations o
            JOIN schools s ON s.id = o.school_id
+           JOIN countries ctry ON ctry.id = s.country_id
            JOIN students st ON st.id = o.student_id
-           WHERE o.id::text = $1 OR COALESCE(o.profile_payload->>'publicId','') = $1
+           WHERE (o.id::text = $1 OR COALESCE(o.profile_payload->>'publicId','') = $1)
+             AND ${pred}
            LIMIT 1`,
-          [id],
+          params,
         );
         return row ? mapObligationRow(row) : null;
       },
@@ -567,13 +584,22 @@ function createFinancePgStore(repo) {
         );
         return mapGridRow({ ...row, school_code: input.schoolCode });
       },
-      async getGrid(gridId) {
+      async getGrid(gridId, principal) {
+        const params = [gridId];
+        let pred = "TRUE";
+        if (principal) {
+          const scope = resolveFinanceSchoolScope(principal);
+          if (scope.mode === "none") return null;
+          pred = sqlSchoolPredicate("s", scope, params);
+        }
         const row = await one(
-          `SELECT g.*, s.school_code FROM fee_grids g
+          `SELECT g.*, s.school_code, ctry.iso_code AS country_iso FROM fee_grids g
            JOIN schools s ON s.id = g.school_id
-           WHERE g.grid_code = $1 OR g.id::text = $1
+           JOIN countries ctry ON ctry.id = s.country_id
+           WHERE (g.grid_code = $1 OR g.id::text = $1)
+             AND ${pred}
            LIMIT 1`,
-          [gridId],
+          params,
         );
         return row ? mapGridRow(row) : null;
       },
@@ -582,8 +608,12 @@ function createFinancePgStore(repo) {
           `UPDATE fee_grids SET status = $2, updated_at = NOW() WHERE id = $1 RETURNING *`,
           [dbId, status],
         );
-        const school = await one("SELECT school_code FROM schools WHERE id = $1", [row.school_id]);
-        return mapGridRow({ ...row, school_code: school?.school_code });
+        const school = await one(
+          `SELECT s.school_code, c.iso_code AS country_iso
+           FROM schools s JOIN countries c ON c.id = s.country_id WHERE s.id = $1`,
+          [row.school_id],
+        );
+        return mapGridRow({ ...row, school_code: school?.school_code, country_iso: school?.country_iso });
       },
       async replaceGridItems(grid, items) {
         await query("DELETE FROM school_fee_items WHERE fee_grid_id = $1", [grid.dbId]);
@@ -839,7 +869,10 @@ function createFinancePgStore(repo) {
       const params = [];
       const pred = sqlSchoolPredicate("s", scope, params);
       const rows = await repo.all(
-        `SELECT g.*, s.school_code FROM fee_grids g JOIN schools s ON s.id = g.school_id WHERE ${pred} ORDER BY g.created_at`,
+        `SELECT g.*, s.school_code, ctry.iso_code AS country_iso FROM fee_grids g
+         JOIN schools s ON s.id = g.school_id
+         JOIN countries ctry ON ctry.id = s.country_id
+         WHERE ${pred} ORDER BY g.created_at`,
         params,
       );
       return rows.map(mapGridRow);
@@ -853,10 +886,11 @@ function createFinancePgStore(repo) {
       const allocPred = sqlSchoolPredicate("s", scope, allocParams);
       const [rows, allocations] = await Promise.all([
         repo.all(
-          `SELECT o.*, s.school_code, st.student_code,
+          `SELECT o.*, s.school_code, st.student_code, ctry.iso_code AS country_iso,
                   COALESCE(pa.allocated, 0) AS allocated_paid
            FROM student_fee_obligations o
            JOIN schools s ON s.id = o.school_id
+           JOIN countries ctry ON ctry.id = s.country_id
            JOIN students st ON st.id = o.student_id
            LEFT JOIN LATERAL (
              SELECT SUM(amount)::numeric AS allocated
@@ -909,8 +943,9 @@ function createFinancePgStore(repo) {
       return rows.map(mapStatusRow);
     },
     upsertFinancePaymentStatus: async (payload, principal) => {
-        const school = principal?.schoolCode && principal.schoolCode !== "*"
-          ? await bind(repo).getSchoolByCode(principal.schoolCode)
+        const schoolCode = primaryFinanceSchoolCode(principal);
+        const school = schoolCode
+          ? await bind(repo).getSchoolByCode(schoolCode)
           : null;
         const code = asTrimmed(payload.code || payload.id);
         const existing = await repo.one(
@@ -975,7 +1010,8 @@ function createFinancePgStore(repo) {
         return resolveCatalogPaymentMethods(rows);
       },
       async replaceSchoolPaymentMethods(methods, principal) {
-        const school = await bind(repo).getSchoolByCode(principal?.schoolCode);
+        const schoolCode = primaryFinanceSchoolCode(principal);
+        const school = schoolCode ? await bind(repo).getSchoolByCode(schoolCode) : null;
         if (!school?.id) {
           throw createFinanceError(400, "Établissement requis.", FINANCE_ERROR.TENANT_MISMATCH);
         }
@@ -1028,10 +1064,10 @@ function createFinancePgStore(repo) {
         return rows.map(mapCatalogFeeType);
       },
       async getFinanceCatalog(principal) {
-        const school =
-          principal?.schoolCode && principal.schoolCode !== "*"
-            ? await bind(repo).getSchoolByCode(principal.schoolCode)
-            : null;
+        const schoolCode = primaryFinanceSchoolCode(principal);
+        const school = schoolCode
+          ? await bind(repo).getSchoolByCode(schoolCode)
+          : null;
         const [paymentMethods, feeTypes] = await Promise.all([
           api.listSchoolPaymentMethods(principal),
           api.listCatalogFeeTypes(principal),

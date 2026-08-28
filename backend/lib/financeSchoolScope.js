@@ -28,23 +28,61 @@ function sqlSchoolPredicate(alias, scope, params) {
   if (scope.mode === "none") return "FALSE";
   if (scope.mode === "country") {
     params.push(scope.countryCode);
-    return `left(${alias}.school_code, 2) = $${params.length}`;
+    return `EXISTS (
+      SELECT 1 FROM countries _fin_c
+      WHERE _fin_c.id = ${alias}.country_id
+        AND upper(btrim(_fin_c.iso_code)) = $${params.length}
+    )`;
   }
   params.push(scope.codes);
   return `${alias}.school_code = ANY($${params.length}::text[])`;
 }
 
-function schoolCodeInScope(schoolCode, scope) {
+function countryIsoFromRecord(record) {
+  if (!record || typeof record !== "object") return "";
+  for (const value of [record.countryIso, record.country_iso, record.countryIsoCode, record.iso_code]) {
+    const iso = String(value ?? "").trim().toUpperCase();
+    if (/^[A-Z]{2}$/.test(iso)) return iso;
+  }
+  return "";
+}
+
+function schoolCodeInScope(schoolCode, scope, extras = {}) {
   if (scope.mode === "all") return true;
   if (scope.mode === "none") return false;
+  if (scope.mode === "country") {
+    const iso = String(extras.countryIso || "").trim().toUpperCase();
+    if (!/^[A-Z]{2}$/.test(iso)) return false;
+    return iso === scope.countryCode;
+  }
   const code = String(schoolCode || "").trim().toUpperCase();
   if (!code) return false;
-  if (scope.mode === "country") return code.slice(0, 2) === scope.countryCode;
   return scope.codes.includes(code);
+}
+
+function schoolRecordInFinanceScope(record, scope) {
+  if (scope.mode === "all") return true;
+  if (scope.mode === "none") return false;
+  if (scope.mode === "country") {
+    const iso = countryIsoFromRecord(record);
+    return Boolean(iso) && iso === scope.countryCode;
+  }
+  return schoolCodeInScope(record?.schoolCode || record?.school_code || record?.code, scope);
+}
+
+function primaryFinanceSchoolCode(principal) {
+  const scope = resolveFinanceSchoolScope(principal);
+  if (scope.mode !== "schools" || !Array.isArray(scope.codes) || !scope.codes.length) {
+    return "";
+  }
+  return scope.codes[0];
 }
 
 module.exports = {
   resolveFinanceSchoolScope,
   sqlSchoolPredicate,
   schoolCodeInScope,
+  schoolRecordInFinanceScope,
+  countryIsoFromRecord,
+  primaryFinanceSchoolCode,
 };
