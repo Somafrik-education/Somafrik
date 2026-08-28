@@ -197,6 +197,13 @@ function sourceGuards() {
   assert.equal(exists(".github/workflows/com-c4-bootstrap.yml"), false, "workflow bootstrap temporaire absent");
   assert.equal(exists(".github/workflows/com-c4-finalize-patch.yml"), false, "workflow finalize temporaire absent");
   assert.equal(exists(".github/workflows/communications-c4.yml"), true);
+  const workflow = read(".github/workflows/communications-c4.yml");
+  assert.match(workflow, /npm --prefix Mobile run typecheck/);
+  assert.doesNotMatch(workflow, /npx --prefix Mobile/);
+  assert.match(schema, /information_schema\.columns/);
+  assert.match(schema, /column_name = 'cancelled_at'/);
+  assert.match(schema, /to_jsonb\(NEW\)->>'cancelled_at'/);
+  assert.match(schema, /to_jsonb\(OLD\)->>'cancelled_at'/);
 
   console.log("verify-communications-c4: source guards OK");
 }

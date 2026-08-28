@@ -137,9 +137,15 @@ BEGIN
     v_actor := NEW.created_by;
     v_event_key := v_event_type || ':' || NEW.id::text;
     v_payload := jsonb_build_object('studentId', NEW.student_id, 'paymentCode', NEW.payment_code);
+    -- cancelled_at n'existe que après le schéma finance. to_jsonb reste
+    -- valide si la colonne est absente (bootstrap Clients sur schema.sql seul).
     should_emit := lower(trim(COALESCE(NEW.payment_status, ''))) = 'paid'
-      AND NEW.cancelled_at IS NULL
-      AND (TG_OP = 'INSERT' OR lower(trim(COALESCE(OLD.payment_status, ''))) <> 'paid' OR OLD.cancelled_at IS NOT NULL);
+      AND (to_jsonb(NEW)->>'cancelled_at') IS NULL
+      AND (
+        TG_OP = 'INSERT'
+        OR lower(trim(COALESCE(OLD.payment_status, ''))) <> 'paid'
+        OR (to_jsonb(OLD)->>'cancelled_at') IS NOT NULL
+      );
   END IF;
 
   IF should_emit THEN
@@ -177,9 +183,29 @@ AFTER INSERT OR UPDATE OF publication_status ON grades
 FOR EACH ROW EXECUTE FUNCTION somafrik_enqueue_communication_event();
 
 DROP TRIGGER IF EXISTS trg_c4_payment_event ON payments;
-CREATE TRIGGER trg_c4_payment_event
-AFTER INSERT OR UPDATE OF payment_status, cancelled_at ON payments
-FOR EACH ROW EXECUTE FUNCTION somafrik_enqueue_communication_event();
+DO $c4_payment_trigger$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+      FROM information_schema.columns
+     WHERE table_schema = current_schema()
+       AND table_name = 'payments'
+       AND column_name = 'cancelled_at'
+  ) THEN
+    EXECUTE $sql$
+      CREATE TRIGGER trg_c4_payment_event
+      AFTER INSERT OR UPDATE OF payment_status, cancelled_at ON payments
+      FOR EACH ROW EXECUTE FUNCTION somafrik_enqueue_communication_event()
+    $sql$;
+  ELSE
+    EXECUTE $sql$
+      CREATE TRIGGER trg_c4_payment_event
+      AFTER INSERT OR UPDATE OF payment_status ON payments
+      FOR EACH ROW EXECUTE FUNCTION somafrik_enqueue_communication_event()
+    $sql$;
+  END IF;
+END
+$c4_payment_trigger$;
 `;
 
 module.exports = {

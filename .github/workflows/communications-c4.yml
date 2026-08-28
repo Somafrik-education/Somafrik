@@ -101,4 +101,4 @@ jobs:
       - name: Build Web
         run: npm --prefix web run build
       - name: Typecheck Mobile
-        run: npx --prefix Mobile tsc --noEmit
+        run: npm --prefix Mobile run typecheck
