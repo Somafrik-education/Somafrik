@@ -22,7 +22,9 @@ import {
   CoursePlanningPage,
   DashboardEntryPage,
   MarketplacePage,
-  EtablissementOverviewPage,  EntityPage,
+  EtablissementOverviewPage,
+  EntityPage,
+  MessagesConversationsPage,
   FinanceFeesPage,
   FinanceUnpaidPage,
   FinancesLayout,
@@ -250,7 +252,7 @@ export default function App() {
           path="/messages"
           element={
             <PermissionRoute view="messages">
-              <EntityPage entity="messages" />
+              <MessagesConversationsPage />
             </PermissionRoute>
           }
         />

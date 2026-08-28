@@ -38,10 +38,12 @@ function sourceGuards() {
   assert.match(schema, /CREATE TABLE IF NOT EXISTS school_conversation_participants/);
 
   const sendMessage = service.slice(service.indexOf("async function sendMessage"), service.indexOf("async function markMessageRead"));
-  assert.match(sendMessage, /senderUserId = asTrimmed\(principal\?\.sub/);
-  assert.doesNotMatch(sendMessage, /payload\.senderUserId/);
-  assert.match(sendMessage, /ignoreClientScope/);
-  assert.match(sendMessage, /assertParticipantsInSchool/);
+  const messagesService = read("backend/lib/communicationsMessagesService.js");
+  assert.match(sendMessage, /communicationsMessagesService\.sendOrCreate/);
+  assert.match(messagesService, /actorUserId\(principal\)/);
+  assert.doesNotMatch(messagesService, /payload\.senderUserId/);
+  assert.match(messagesService, /ignoreClientScope/);
+  assert.match(messagesService, /assertCanMessageRecipient/);
 
   assert.match(server, /routeKey: "POST \/api\/backoffice\/messages"/);
   assert.match(rbac, /GET \/api\/backoffice\/messages/);

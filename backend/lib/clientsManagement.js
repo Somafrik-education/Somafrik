@@ -357,8 +357,11 @@ function mapMessageRow(row) {
     read: "Lu",
     archived: "Archivé",
   };
+  const readerReadAt = row.reader_read_at ?? null;
+  const deliveryStatus = statusMap[asTrimmed(row.status).toLowerCase()] ?? row.status ?? "Envoyé";
   return {
     id: row.id,
+    type: "message",
     conversationId: row.conversation_id,
     parentPhone: profile.parentPhone ?? row.sender_phone ?? "",
     studentId: profile.studentId ?? row.student_id ?? "",
@@ -367,15 +370,20 @@ function mapMessageRow(row) {
     direction: row.direction ?? profile.direction ?? "",
     message: row.body,
     body: row.body,
+    content: row.body,
     subject: row.subject ?? row.theme ?? "",
-    status: statusMap[asTrimmed(row.status).toLowerCase()] ?? row.status ?? "Envoyé",
+    status: readerReadAt ? "Lu" : deliveryStatus === "Lu" ? "Envoyé" : deliveryStatus,
     date: formatDate(row.sent_at ?? row.created_at),
     sentAt: formatDateTime(row.sent_at),
-    readAt: row.read_at ? formatDateTime(row.read_at) : "",
+    createdAt: formatDateTime(row.created_at ?? row.sent_at),
+    readAt: readerReadAt ? formatDateTime(readerReadAt) : "",
     attachmentUrl: row.attachment_url ?? "",
+    attachments: Array.isArray(row.attachments) ? row.attachments : [],
     priority: row.priority ?? profile.priority ?? "Moyenne",
     schoolCode: row.school_code,
     senderUserId: row.sender_user_id,
+    senderName: row.sender_name ?? "",
+    senderRoleLabel: row.sender_role_label ?? "",
     audit: profile.audit ?? [],
   };
 }

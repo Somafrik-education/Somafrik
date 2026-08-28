@@ -14,9 +14,8 @@
  * - GET /api/backoffice/relations
  *     Relations:READ | Gérer utilisateurs | COUNTRY_PRIVILEGES | ALL_PRIVILEGES
  *
- * Composer staff RC1 : Messages:CREATE ne charge pas les destinataires.
- * Il faut aussi le contrat Contacts+Relations pour résoudre un userId parent.
- * CREATE-only => fail-closed, pas de composer staff.
+ * Composer staff : Messages:CREATE suffit. Les destinataires viennent de
+ * GET /api/backoffice/messages/recipients — pas de Contacts:READ / Relations:READ.
  *
  * Conversation : `sendMessage()` n’ajoute des destinataires que via
  * `participantUserIds`. Un POST staff sans userId parent canonique est interdit.
@@ -87,7 +86,7 @@ export function canAccessCanonicalMessageRecipients(session: any): boolean {
 export function canShowStaffMessagesComposer(session: any): boolean {
   const role = session?.role;
   if (role === "parent_student" || role === "teacher") return false;
-  return canAccessBackofficeMessagesComposer(session) && canAccessCanonicalMessageRecipients(session);
+  return canAccessBackofficeMessagesComposer(session);
 }
 
 export function resolveMessagesRouteAccess(session: any): MessagesRouteAccess {
@@ -189,6 +188,7 @@ export type StaffMessageDraft = {
   schoolCode?: string;
   theme: string;
   message: string;
+  attachmentIds?: string[];
   attachmentUrl?: string;
   priority: string;
 };
@@ -197,7 +197,13 @@ export type StaffMessagePayloadResult =
   | { ok: true; payload: Record<string, unknown> }
   | {
       ok: false;
-      code: "missing_recipient" | "unknown_recipient" | "empty_message" | "no_canonical_parent" | "cross_tenant";
+      code:
+        | "missing_recipient"
+        | "unknown_recipient"
+        | "empty_message"
+        | "no_canonical_parent"
+        | "cross_tenant"
+        | "client_attachment_url_forbidden";
     };
 
 export function buildStaffSchoolToParentMessagePayload(draft: StaffMessageDraft): StaffMessagePayloadResult {
@@ -218,7 +224,10 @@ export function buildStaffSchoolToParentMessagePayload(draft: StaffMessageDraft)
     return { ok: false, code: "cross_tenant" };
   }
 
-  const attachmentUrl = String(draft.attachmentUrl ?? "").trim();
+  const attachmentIds = (draft.attachmentIds ?? []).map((id) => String(id ?? "").trim()).filter(Boolean);
+  if (String(draft.attachmentUrl ?? "").trim()) {
+    return { ok: false, code: "client_attachment_url_forbidden" };
+  }
   return {
     ok: true,
     payload: {
@@ -227,7 +236,7 @@ export function buildStaffSchoolToParentMessagePayload(draft: StaffMessageDraft)
       theme: draft.theme,
       direction: "École vers parent",
       message: body,
-      ...(attachmentUrl ? { attachmentUrl } : {}),
+      ...(attachmentIds.length ? { attachmentIds } : {}),
       priority: draft.priority,
     },
   };

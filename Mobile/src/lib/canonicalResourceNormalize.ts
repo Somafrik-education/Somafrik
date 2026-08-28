@@ -183,6 +183,24 @@ export function normalizeMessage(value: unknown): CanonicalSchoolMessage | null 
     message: text(row.message),
     status: text(row.status),
     date: text(row.date ?? row.createdAt ?? row.created_at),
+    conversationId: text(row.conversationId ?? row.conversation_id) || undefined,
+    senderUserId: text(row.senderUserId ?? row.sender_user_id) || undefined,
+    senderName: text(row.senderName ?? row.sender_name) || undefined,
+    attachments: Array.isArray(row.attachments)
+      ? row.attachments.flatMap((item) => {
+          const rec = record(item);
+          const attachmentId = text(rec.id);
+          if (!attachmentId) return [];
+          const mimeType = text(rec.mimeType);
+          return [
+            {
+              id: attachmentId,
+              fileName: text(rec.fileName ?? rec.file_name) || attachmentId,
+              ...(mimeType ? { mimeType } : {}),
+            },
+          ];
+        })
+      : undefined,
     attachmentUrl: text(row.attachmentUrl ?? row.attachment_url) || undefined,
     priority: text(row.priority) || undefined,
     sentAt: text(row.sentAt ?? row.sent_at) || undefined,

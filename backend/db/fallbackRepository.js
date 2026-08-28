@@ -3407,8 +3407,52 @@ class FallbackRepository {
     return this.getClientsStore().sendMessage(payload, principal, auditMeta);
   }
 
-  markClientsMessageRead(messageId, principal, auditMeta) {
-    return this.getClientsStore().markMessageRead(messageId, principal, auditMeta);
+  markClientsMessageRead(messageId, principal, auditMeta, query) {
+    return this.getClientsStore().markMessageRead(messageId, principal, auditMeta, query);
+  }
+
+  listClientsMessages(principal, query) {
+    return this.getClientsStore().listMessagesForPrincipal(principal, query);
+  }
+
+  listClientConversations(principal, query) {
+    return this.getClientsStore().listConversationsForPrincipal(principal, query);
+  }
+
+  getClientConversation(conversationId, principal, query) {
+    return this.getClientsStore().getConversationForPrincipal(conversationId, principal, query);
+  }
+
+  listClientConversationMessages(conversationId, principal, query) {
+    return this.getClientsStore().listConversationMessagesForPrincipal(conversationId, principal, query);
+  }
+
+  getClientMessage(messageId, principal, query) {
+    return this.getClientsStore().getMessageForPrincipal(messageId, principal, query);
+  }
+
+  createClientConversation(payload, principal, auditMeta) {
+    return this.getClientsStore().createConversationForPrincipal(payload, principal, auditMeta);
+  }
+
+  replyClientConversationMessage(conversationId, payload, principal, auditMeta) {
+    return this.getClientsStore().replyToConversationForPrincipal(conversationId, payload, principal, auditMeta);
+  }
+
+  getClientMessagesUnreadCount(principal, query) {
+    return this.getClientsStore().unreadCountForPrincipal(principal, query);
+  }
+
+  listClientMessageRecipients(principal, query) {
+    return this.getClientsStore().listMessageRecipientsForPrincipal(principal, query);
+  }
+
+  uploadCommunicationAttachment(principal, file, query) {
+    return this.getClientsStore().uploadCommunicationAttachment(principal, file, query);
+  }
+
+  downloadCommunicationAttachment(attachmentId, principal, query) {
+    return this.getClientsStore().downloadCommunicationAttachment(attachmentId, principal, query);
   }
 
   createClientsAnnouncement(payload, principal, auditMeta) {

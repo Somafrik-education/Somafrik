@@ -8,6 +8,7 @@ on:
       - "backend/db/clientsPgStore.js"
       - "backend/lib/clientsService.js"
       - "backend/lib/clientsManagement.js"
+      - "backend/lib/communicationsMessagesService.js"
       - "backend/lib/platformService.js"
       - "backend/lib/communicationsReadiness.http.pg.test.js"
       - "backend/scripts/verify-communications-e2e.js"

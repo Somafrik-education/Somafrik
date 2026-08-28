@@ -655,16 +655,17 @@ async function main() {
     assert.equal(withPdf.status, 201, `COM-C1 E2E9 message PDF: ${JSON.stringify(withPdf.data)}`);
     assert.equal(withPdf.data.senderUserId, ADMIN_A, "COM-C1 E2E9 senderUserId canonique");
     assert.match(String(withPdf.data.sentAt || ""), /^\d{4}-\d{2}-\d{2}T/, "COM-C1 E2E9 sentAt ISO complet");
-    assert.equal(withPdf.data.attachmentUrl, pdfPath, "COM-C1 E2E9 attachmentUrl persisté");
-    if (!withPdf.data.senderName) {
-      notes.push("COM-C1-P1-011: projection message sans senderName lisible");
+    if (withPdf.data.attachmentUrl === pdfPath) {
+      notes.push("COM-C1-P1-012: attachmentUrl libre encore persisté (C2 doit ignorer l'URL cliente)");
     }
     const storedPdf = await countRows(
       pool,
       `SELECT count(*)::int AS c FROM school_messages WHERE id = $1 AND attachment_url = $2`,
       [withPdf.data.id, pdfPath],
     );
-    assert.equal(storedPdf, 1, "COM-C1 E2E9 attachment_url en PostgreSQL");
+    if (storedPdf === 1) {
+      notes.push("COM-C1-P1-012: attachment_url texte encore écrit depuis le client");
+    }
 
     const parentPdf = unwrapList((await request("/backoffice/messages", { token: parentAInbox })).data).find(
       (row) => row.id === withPdf.data.id,
@@ -672,7 +673,6 @@ async function main() {
     assert.ok(parentPdf, "COM-C1 E2E9 Parent A retrouve le message PDF");
     assert.equal(parentPdf.senderUserId, ADMIN_A);
     assert.match(String(parentPdf.sentAt || ""), /^\d{4}-\d{2}-\d{2}T/, "COM-C1 E2E9 Parent A voit date+heure");
-    assert.equal(parentPdf.attachmentUrl, pdfPath, "COM-C1 E2E9 Parent A voit la référence PDF");
 
     const bPdfList = unwrapList((await request("/backoffice/messages", { token: adminB })).data);
     assert.ok(!bPdfList.some((row) => row.id === withPdf.data.id), "COM-C1 E2E9 école B ne voit pas le message PDF");

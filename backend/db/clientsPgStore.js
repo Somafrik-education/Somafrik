@@ -59,6 +59,16 @@ function createClientsPgStore(repo) {
           [id],
         );
       },
+      async listSchoolUsers(schoolId) {
+        return all(
+          `SELECT u.*, ${USER_SCHOOL_SELECT}, c.iso_code AS country_code, c.name AS country_name
+           FROM users u
+           LEFT JOIN schools s ON s.id = u.school_id
+           LEFT JOIN countries c ON c.id = s.country_id
+           WHERE u.school_id = $1 AND COALESCE(u.status, 'active') = 'active'`,
+          [schoolId],
+        );
+      },
       async insertUser(row) {
         return one(
           `INSERT INTO users (
@@ -525,9 +535,11 @@ function createClientsPgStore(repo) {
       },
       async insertParticipant(row) {
         return one(
-          `INSERT INTO school_conversation_participants (conversation_id, user_id, school_id, participant_role, joined_at)
-           VALUES ($1,$2,$3,$4,NOW())
-           ON CONFLICT (conversation_id, user_id) DO NOTHING
+          `INSERT INTO school_conversation_participants (conversation_id, user_id, school_id, participant_role, status, joined_at)
+           VALUES ($1,$2,$3,$4,'active',NOW())
+           ON CONFLICT (conversation_id, user_id) DO UPDATE
+             SET status = 'active', left_at = NULL,
+                 participant_role = COALESCE(EXCLUDED.participant_role, school_conversation_participants.participant_role)
            RETURNING *`,
           [row.conversationId, row.userId, row.schoolId, row.role || null],
         );
@@ -555,7 +567,9 @@ function createClientsPgStore(repo) {
       },
       async getMessageById(id) {
         return one(
-          `SELECT m.*, s.school_code, u.phone AS sender_phone
+          `SELECT m.*, s.school_code, u.phone AS sender_phone,
+             trim(concat(u.first_name, ' ', u.last_name)) AS sender_name,
+             u.role AS sender_role_label
            FROM school_messages m
            JOIN schools s ON s.id = m.school_id
            JOIN users u ON u.id = m.sender_user_id
@@ -563,9 +577,28 @@ function createClientsPgStore(repo) {
           [id],
         );
       },
-      async isConversationParticipant(conversationId, userId) {
+      async getConversationById(id) {
+        return one(
+          `SELECT c.*, s.school_code
+           FROM school_conversations c
+           JOIN schools s ON s.id = c.school_id
+           WHERE c.id::text = $1`,
+          [id],
+        );
+      },
+      async touchConversation(id) {
+        return one(
+          `UPDATE school_conversations SET updated_at = NOW() WHERE id = $1 RETURNING *`,
+          [id],
+        );
+      },
+      async isConversationParticipant(conversationId, userId, options = {}) {
+        const activeOnly = options.activeOnly !== false;
         const row = await one(
-          `SELECT 1 FROM school_conversation_participants WHERE conversation_id = $1 AND user_id = $2`,
+          activeOnly
+            ? `SELECT 1 FROM school_conversation_participants
+               WHERE conversation_id = $1 AND user_id = $2 AND COALESCE(status, 'active') = 'active'`
+            : `SELECT 1 FROM school_conversation_participants WHERE conversation_id = $1 AND user_id = $2`,
           [conversationId, userId],
         );
         return Boolean(row);
@@ -579,11 +612,299 @@ function createClientsPgStore(repo) {
           [messageId, userId],
         );
       },
+      async getMessageRead(messageId, userId) {
+        return one(
+          `SELECT * FROM school_message_reads WHERE message_id = $1 AND user_id = $2`,
+          [messageId, userId],
+        );
+      },
       async updateMessageStatus(messageId, status) {
         return one(
           `UPDATE school_messages SET status = $2, updated_at = NOW() WHERE id = $1
            RETURNING *, (SELECT school_code FROM schools WHERE id = school_messages.school_id) AS school_code`,
           [messageId, status],
+        );
+      },
+      async listActiveRoleKeys(userId) {
+        const rows = await all(
+          `SELECT role_key FROM user_roles
+           WHERE user_id = $1 AND status = 'active' AND revoked_at IS NULL`,
+          [userId],
+        );
+        return rows.map((row) => row.role_key);
+      },
+      async listParentLinkedStudentIds(userId, schoolId) {
+        const rows = await all(
+          `SELECT st.id
+           FROM contacts c
+           JOIN contact_relations r ON r.contact_id = c.id AND r.status = 'active'
+           JOIN students st ON st.id = r.student_id
+           WHERE c.user_id = $1 AND c.school_id = $2 AND c.status = 'active'`,
+          [userId, schoolId],
+        );
+        return rows.map((row) => row.id);
+      },
+      async resolveSchoolStudent(schoolId, ref) {
+        return one(
+          `SELECT * FROM students WHERE school_id = $1 AND (id::text = $2 OR student_code = $2) LIMIT 1`,
+          [schoolId, asTrimmed(ref)],
+        );
+      },
+      async listTeacherActiveClassIds(userId, schoolId) {
+        const rows = await all(
+          `SELECT DISTINCT ta.class_id
+           FROM teachers t
+           JOIN teacher_assignments ta ON ta.teacher_id = t.id AND ta.status = 'active'
+           WHERE t.user_id = $1 AND t.school_id = $2 AND ta.school_id = $2`,
+          [userId, schoolId],
+        );
+        return rows.map((row) => row.class_id);
+      },
+      async teacherAssignedToStudents(teacherUserId, schoolId, studentIds) {
+        if (!studentIds?.length) return false;
+        const row = await one(
+          `SELECT 1
+           FROM teachers t
+           JOIN teacher_assignments ta ON ta.teacher_id = t.id AND ta.status = 'active'
+           JOIN enrollments e ON e.class_id = ta.class_id AND e.status = 'active' AND e.student_id = ANY($3::uuid[])
+           WHERE t.user_id = $1 AND t.school_id = $2
+           LIMIT 1`,
+          [teacherUserId, schoolId, studentIds],
+        );
+        return Boolean(row);
+      },
+      async parentLinkedToTeacherClasses(parentUserId, schoolId, classIds, studentRef) {
+        if (!classIds?.length) return false;
+        const params = [parentUserId, schoolId, classIds];
+        let studentSql = "";
+        if (asTrimmed(studentRef)) {
+          params.push(asTrimmed(studentRef));
+          studentSql = `AND (st.id::text = $4 OR st.student_code = $4)`;
+        }
+        const row = await one(
+          `SELECT 1
+           FROM contacts c
+           JOIN contact_relations r ON r.contact_id = c.id AND r.status = 'active'
+           JOIN students st ON st.id = r.student_id
+           JOIN enrollments e ON e.student_id = st.id AND e.status = 'active' AND e.class_id = ANY($3::uuid[])
+           WHERE c.user_id = $1 AND c.school_id = $2 ${studentSql}
+           LIMIT 1`,
+          params,
+        );
+        return Boolean(row);
+      },
+      async resolveTeacherUserId(schoolId, teacherRef) {
+        const row = await one(
+          `SELECT t.user_id
+           FROM teachers t
+           WHERE t.school_id = $1
+             AND (t.id::text = $2 OR t.teacher_code = $2 OR t.user_id::text = $2)
+           LIMIT 1`,
+          [schoolId, asTrimmed(teacherRef)],
+        );
+        return row?.user_id ?? null;
+      },
+      async listParentUserIdsForStudent(schoolId, studentRef) {
+        const rows = await all(
+          `SELECT DISTINCT c.user_id
+           FROM students st
+           JOIN contact_relations r ON r.student_id = st.id AND r.status = 'active'
+           JOIN contacts c ON c.id = r.contact_id AND c.status = 'active' AND c.user_id IS NOT NULL
+           WHERE st.school_id = $1 AND (st.id::text = $2 OR st.student_code = $2)`,
+          [schoolId, asTrimmed(studentRef)],
+        );
+        return rows.map((row) => row.user_id).filter(Boolean);
+      },
+      async resolveParentUserIdByPhone(schoolId, phone) {
+        const row = await one(
+          `SELECT user_id FROM contacts
+           WHERE school_id = $1 AND status = 'active' AND user_id IS NOT NULL
+             AND regexp_replace(coalesce(phone, ''), '[^0-9+]', '', 'g')
+               = regexp_replace($2, '[^0-9+]', '', 'g')
+           LIMIT 1`,
+          [schoolId, asTrimmed(phone)],
+        );
+        return row?.user_id ?? null;
+      },
+      async listSchoolAdminUserIds(schoolId) {
+        const rows = await all(
+          `SELECT DISTINCT u.id
+           FROM users u
+           JOIN user_roles ur ON ur.user_id = u.id AND ur.status = 'active' AND ur.revoked_at IS NULL
+           WHERE u.school_id = $1 AND upper(ur.role_key) IN ('SCHOOL_ADMIN', 'PROVISEUR', 'PRINCIPAL', 'PREFET_ETUDES')`,
+          [schoolId],
+        );
+        return rows.map((row) => row.id);
+      },
+      async listConversationParticipants(conversationId) {
+        return all(
+          `SELECT p.*, u.first_name, u.last_name, u.role AS role_label, u.email
+           FROM school_conversation_participants p
+           JOIN users u ON u.id = p.user_id
+           WHERE p.conversation_id = $1
+           ORDER BY p.joined_at`,
+          [conversationId],
+        );
+      },
+      async listAttachmentsForEntities(entityType, entityIds) {
+        if (!entityIds?.length) return [];
+        return all(
+          `SELECT * FROM communication_attachments
+           WHERE entity_type = $1 AND entity_id = ANY($2::uuid[]) AND status = 'attached'
+           ORDER BY created_at`,
+          [entityType, entityIds],
+        );
+      },
+      async insertAttachment(row) {
+        return one(
+          `INSERT INTO communication_attachments (
+             school_id, entity_type, entity_id, file_name, mime_type, file_size,
+             storage_key, uploaded_by_user_id, created_at, status
+           ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,NOW(),$9)
+           RETURNING *`,
+          [
+            row.schoolId,
+            row.entityType,
+            row.entityId || null,
+            row.fileName,
+            row.mimeType,
+            row.fileSize,
+            row.storageKey,
+            row.uploadedByUserId,
+            row.status || "uploaded",
+          ],
+        );
+      },
+      async getAttachmentById(id) {
+        return one(`SELECT * FROM communication_attachments WHERE id::text = $1`, [id]);
+      },
+      async attachToMessage({ attachmentIds, messageId, schoolId, uploadedByUserId }) {
+        const rows = await all(
+          `UPDATE communication_attachments
+           SET entity_type = 'message', entity_id = $2, status = 'attached'
+           WHERE id = ANY($1::uuid[])
+             AND school_id = $3
+             AND uploaded_by_user_id = $4
+             AND status = 'uploaded'
+             AND entity_id IS NULL
+           RETURNING *`,
+          [attachmentIds, messageId, schoolId, uploadedByUserId],
+        );
+        return rows;
+      },
+      async countUnreadForUser(userId, schoolId) {
+        const row = await one(
+          `SELECT count(*)::int AS c
+           FROM school_messages m
+           JOIN school_conversation_participants p
+             ON p.conversation_id = m.conversation_id
+            AND p.user_id = $1
+            AND COALESCE(p.status, 'active') = 'active'
+           JOIN school_conversations c ON c.id = m.conversation_id AND COALESCE(c.status, 'active') = 'active'
+           LEFT JOIN school_message_reads r ON r.message_id = m.id AND r.user_id = $1
+           WHERE m.school_id = $2
+             AND m.sender_user_id <> $1
+             AND r.message_id IS NULL`,
+          [userId, schoolId],
+        );
+        return row?.c ?? 0;
+      },
+      async listMessagesForUser({ userId, schoolId, bypass }) {
+        if (bypass) {
+          return all(
+            `SELECT m.*, s.school_code, u.phone AS sender_phone,
+               trim(concat(u.first_name, ' ', u.last_name)) AS sender_name,
+               u.role AS sender_role_label,
+               (SELECT read_at FROM school_message_reads mr WHERE mr.message_id = m.id AND mr.user_id = $1) AS reader_read_at
+             FROM school_messages m
+             JOIN schools s ON s.id = m.school_id
+             JOIN users u ON u.id = m.sender_user_id
+             ORDER BY m.sent_at DESC, m.id DESC`,
+            [userId],
+          );
+        }
+        return all(
+          `SELECT m.*, s.school_code, u.phone AS sender_phone,
+             trim(concat(u.first_name, ' ', u.last_name)) AS sender_name,
+             u.role AS sender_role_label,
+             r.read_at AS reader_read_at
+           FROM school_messages m
+           JOIN schools s ON s.id = m.school_id
+           JOIN users u ON u.id = m.sender_user_id
+           JOIN school_conversation_participants p
+             ON p.conversation_id = m.conversation_id AND p.user_id = $1 AND COALESCE(p.status, 'active') = 'active'
+           LEFT JOIN school_message_reads r ON r.message_id = m.id AND r.user_id = $1
+           WHERE m.school_id = $2
+           ORDER BY m.sent_at DESC, m.id DESC`,
+          [userId, schoolId],
+        );
+      },
+      async listConversationMessagesPage({ conversationId, readerUserId, limit, cursor }) {
+        const params = [conversationId, readerUserId, limit];
+        let cursorSql = "";
+        if (cursor?.at && cursor?.id) {
+          params.push(cursor.at, cursor.id);
+          cursorSql = `AND (m.sent_at, m.id) < ($4::timestamptz, $5::uuid)`;
+        }
+        return all(
+          `SELECT m.*, s.school_code, u.phone AS sender_phone,
+             trim(concat(u.first_name, ' ', u.last_name)) AS sender_name,
+             u.role AS sender_role_label,
+             r.read_at AS reader_read_at
+           FROM school_messages m
+           JOIN schools s ON s.id = m.school_id
+           JOIN users u ON u.id = m.sender_user_id
+           LEFT JOIN school_message_reads r ON r.message_id = m.id AND r.user_id = $2
+           WHERE m.conversation_id = $1 ${cursorSql}
+           ORDER BY m.sent_at DESC, m.id DESC
+           LIMIT $3`,
+          params,
+        );
+      },
+      async listConversationsForUser({ userId, schoolId, limit, cursor, bypass }) {
+        const params = bypass ? [userId, limit] : [userId, schoolId, limit];
+        const schoolFilter = bypass ? "" : "AND c.school_id = $2";
+        const limitIdx = bypass ? 2 : 3;
+        let cursorSql = "";
+        if (cursor?.at && cursor?.id) {
+          params.push(cursor.at, cursor.id);
+          const atIdx = params.length - 1;
+          const idIdx = params.length;
+          cursorSql = `AND (COALESCE(lm.sent_at, c.updated_at), c.id) < ($${atIdx}::timestamptz, $${idIdx}::uuid)`;
+        }
+        const participantJoin = bypass
+          ? ""
+          : `JOIN school_conversation_participants p
+               ON p.conversation_id = c.id AND p.user_id = $1 AND COALESCE(p.status, 'active') = 'active'`;
+        return all(
+          `SELECT c.*, s.school_code,
+             lm.id AS last_message_id,
+             lm.body AS last_message_body,
+             lm.sent_at AS last_message_at,
+             lm.sender_user_id AS last_sender_user_id,
+             trim(concat(su.first_name, ' ', su.last_name)) AS last_sender_name,
+             (
+               SELECT count(*)::int
+               FROM school_messages m
+               LEFT JOIN school_message_reads r ON r.message_id = m.id AND r.user_id = $1
+               WHERE m.conversation_id = c.id
+                 AND m.sender_user_id <> $1
+                 AND r.message_id IS NULL
+             ) AS unread_count
+           FROM school_conversations c
+           JOIN schools s ON s.id = c.school_id
+           ${participantJoin}
+           LEFT JOIN LATERAL (
+             SELECT m.* FROM school_messages m
+             WHERE m.conversation_id = c.id
+             ORDER BY m.sent_at DESC, m.id DESC
+             LIMIT 1
+           ) lm ON TRUE
+           LEFT JOIN users su ON su.id = lm.sender_user_id
+           WHERE 1=1 ${schoolFilter} ${cursorSql}
+           ORDER BY COALESCE(lm.sent_at, c.updated_at) DESC, c.id DESC
+           LIMIT $${limitIdx}`,
+          params,
         );
       },
       async getAnnouncementById(id) {
@@ -755,6 +1076,50 @@ function createClientsPgStore(repo) {
     },
     sendMessage: (...args) => clientsService.sendMessage(store, ...args),
     markMessageRead: (...args) => clientsService.markMessageRead(store, ...args),
+    listMessagesForPrincipal: (...args) => {
+      const service = require("../lib/communicationsMessagesService");
+      return service.listMessages(store, ...args);
+    },
+    listConversationsForPrincipal: (...args) => {
+      const service = require("../lib/communicationsMessagesService");
+      return service.listConversations(store, ...args);
+    },
+    getConversationForPrincipal: (...args) => {
+      const service = require("../lib/communicationsMessagesService");
+      return service.getConversation(store, ...args);
+    },
+    listConversationMessagesForPrincipal: (...args) => {
+      const service = require("../lib/communicationsMessagesService");
+      return service.listConversationMessages(store, ...args);
+    },
+    getMessageForPrincipal: (...args) => {
+      const service = require("../lib/communicationsMessagesService");
+      return service.getMessage(store, ...args);
+    },
+    createConversationForPrincipal: (...args) => {
+      const service = require("../lib/communicationsMessagesService");
+      return service.createConversation(store, ...args);
+    },
+    replyToConversationForPrincipal: (...args) => {
+      const service = require("../lib/communicationsMessagesService");
+      return service.replyToConversation(store, ...args);
+    },
+    unreadCountForPrincipal: (...args) => {
+      const service = require("../lib/communicationsMessagesService");
+      return service.unreadCount(store, ...args);
+    },
+    listMessageRecipientsForPrincipal: (...args) => {
+      const service = require("../lib/communicationsMessagesService");
+      return service.listAuthorizedRecipients(store, ...args);
+    },
+    uploadCommunicationAttachment: (...args) => {
+      const service = require("../lib/communicationsMessagesService");
+      return service.uploadAttachment(store, ...args);
+    },
+    downloadCommunicationAttachment: (...args) => {
+      const service = require("../lib/communicationsMessagesService");
+      return service.downloadAttachment(store, ...args);
+    },
     createAnnouncement: (...args) => clientsService.createAnnouncement(store, ...args),
     updateAnnouncement: (...args) => clientsService.updateAnnouncement(store, ...args),
     archiveAnnouncement: (...args) => clientsService.archiveAnnouncement(store, ...args),

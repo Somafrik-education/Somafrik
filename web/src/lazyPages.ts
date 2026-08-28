@@ -84,6 +84,10 @@ export const ChartSettingsPage = lazyPage(() => import("./pages/ChartSettingsPag
 export const ReportsPage = lazyPage(() => import("./pages/ReportsPage"), "ReportsPage");
 export const ConfigurationPage = lazyPage(() => import("./pages/ConfigurationPage"), "ConfigurationPage");
 export const EntityPage = lazyPage(() => import("./pages/EntityPage"), "EntityPage");
+export const MessagesConversationsPage = lazyPage(
+  () => import("./pages/MessagesConversationsPage"),
+  "MessagesConversationsPage",
+);
 export const CoursePlanningPage = lazyPage(() => import("./pages/CoursePlanningPage"), "CoursePlanningPage");
 export const PlanningLayout = lazyPage(() => import("./pages/planning/PlanningLayout"), "PlanningLayout");
 export const TimetableLayout = lazyPage(() => import("./pages/planning/TimetableLayout"), "TimetableLayout");

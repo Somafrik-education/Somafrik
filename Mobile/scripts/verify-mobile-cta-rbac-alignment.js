@@ -46,11 +46,12 @@ function main() {
   );
   assert.match(messages, /showComposer &&/);
   assert.match(messages, /canShowStaffMessagesComposer\(session\)/);
-  assert.match(messages, /buildStaffSchoolToParentMessagePayload/);
-  assert.match(messages, /staffRecipientKey/);
-  assert.match(messages, /getCanonicalContacts\(\)/);
-  assert.match(messages, /getCanonicalRelations\(\)/);
-  assert.match(messages, /messages-staff-composer-blocked/);
+  assert.match(messages, /getMessageRecipients\(/);
+  assert.match(messages, /uploadCommunicationAttachment\(/);
+  assert.match(messages, /attachmentIds/);
+  assert.doesNotMatch(messages, /getCanonicalContacts\(\)/);
+  assert.doesNotMatch(messages, /getCanonicalRelations\(\)/);
+  assert.doesNotMatch(messages, /messages-staff-composer-blocked/);
   assert.doesNotMatch(messages, /staffStudentId/);
   assert.doesNotMatch(
     messages,
@@ -175,7 +176,7 @@ function main() {
   );
   assert.match(
     rbac,
-    /"POST \/api\/backoffice\/messages":\s*\["Messages:CREATE",\s*"Gérer messages",\s*"COUNTRY_PRIVILEGES",\s*"ALL_PRIVILEGES"\]/,
+    /"GET \/api\/backoffice\/messages\/recipients":\s*\["Messages:READ",\s*"Messages:CREATE",\s*"Gérer messages",\s*"COUNTRY_PRIVILEGES",\s*"ALL_PRIVILEGES"\]/,
   );
   assert.match(
     rbac,

@@ -33,6 +33,7 @@ function createClientsMemoryStore(seed = {}) {
     participants: [],
     messages: [],
     reads: [],
+    attachments: [],
     announcements: [],
     schools: clone(seed.platformSchools ?? []),
     countries: clone(seed.countries ?? []),
@@ -159,6 +160,13 @@ function createClientsMemoryStore(seed = {}) {
           ...schoolPublicProjectionFromSchool(school, "*"),
           ...userCountryProjection(row, school),
         };
+      },
+      async listSchoolUsers(schoolId) {
+        return Promise.all(
+          tables.users
+            .filter((user) => user.school_id === schoolId && (user.status ?? "active") === "active")
+            .map((user) => this.getUserById(user.id)),
+        ).then((rows) => rows.filter(Boolean));
       },
       async insertUser(row) {
         if (tables.users.some((user) => user.user_code === row.userCode)) {
@@ -616,6 +624,8 @@ function createClientsMemoryStore(seed = {}) {
           user_id: row.userId,
           school_id: row.schoolId,
           participant_role: row.role,
+          status: "active",
+          left_at: null,
           joined_at: new Date(),
         };
         tables.participants.push(saved);
@@ -651,11 +661,31 @@ function createClientsMemoryStore(seed = {}) {
           ...row,
           school_code: school ? asTrimmed(school.code ?? school.schoolCode).toUpperCase() : "",
           sender_phone: sender?.phone ?? "",
+          sender_name: asTrimmed(`${sender?.first_name ?? ""} ${sender?.last_name ?? ""}`),
+          sender_role_label: sender?.role ?? "",
         };
       },
-      async isConversationParticipant(conversationId, userId) {
+      async getConversationById(id) {
+        const row = tables.conversations.find((item) => item.id === id);
+        if (!row) return null;
+        const school = tables.schools.find((item) => item.id === row.school_id);
+        return {
+          ...row,
+          school_code: school ? asTrimmed(school.code ?? school.schoolCode).toUpperCase() : "",
+        };
+      },
+      async touchConversation(id) {
+        const row = tables.conversations.find((item) => item.id === id);
+        if (row) row.updated_at = new Date();
+        return row ?? null;
+      },
+      async isConversationParticipant(conversationId, userId, options = {}) {
+        const activeOnly = options.activeOnly !== false;
         return tables.participants.some(
-          (item) => item.conversation_id === conversationId && item.user_id === userId,
+          (item) =>
+            item.conversation_id === conversationId &&
+            item.user_id === userId &&
+            (!activeOnly || (item.status ?? "active") === "active"),
         );
       },
       async insertMessageRead(messageId, userId) {
@@ -667,6 +697,194 @@ function createClientsMemoryStore(seed = {}) {
         const saved = { message_id: messageId, user_id: userId, read_at: new Date() };
         tables.reads.push(saved);
         return saved;
+      },
+      async getMessageRead(messageId, userId) {
+        return tables.reads.find((row) => row.message_id === messageId && row.user_id === userId) ?? null;
+      },
+      async listActiveRoleKeys(userId) {
+        return tables.userRoles
+          .filter((item) => item.user_id === userId && item.status === "active" && !item.revoked_at)
+          .map((item) => item.role_key);
+      },
+      async listParentLinkedStudentIds(userId, schoolId) {
+        const contactIds = tables.contacts
+          .filter((contact) => contact.user_id === userId && contact.school_id === schoolId)
+          .map((contact) => contact.id);
+        return tables.relations
+          .filter((relation) => contactIds.includes(relation.contact_id) && relation.status === "active")
+          .map((relation) => relation.student_id);
+      },
+      async resolveSchoolStudent(schoolId, ref) {
+        return (
+          tables.students.find(
+            (student) =>
+              student.school_id === schoolId &&
+              (String(student.id) === String(ref) || String(student.student_code ?? student.studentCode) === String(ref)),
+          ) ?? null
+        );
+      },
+      async listTeacherActiveClassIds() {
+        return [];
+      },
+      async teacherAssignedToStudents() {
+        return false;
+      },
+      async parentLinkedToTeacherClasses() {
+        return false;
+      },
+      async resolveTeacherUserId() {
+        return null;
+      },
+      async listParentUserIdsForStudent() {
+        return [];
+      },
+      async resolveParentUserIdByPhone() {
+        return null;
+      },
+      async listSchoolAdminUserIds(schoolId) {
+        return tables.users
+          .filter((user) => user.school_id === schoolId && String(user.role ?? "").includes("Admin"))
+          .map((user) => user.id);
+      },
+      async listConversationParticipants(conversationId) {
+        return tables.participants
+          .filter((item) => item.conversation_id === conversationId)
+          .map((item) => {
+            const user = tables.users.find((row) => row.id === item.user_id);
+            return {
+              ...item,
+              first_name: user?.first_name,
+              last_name: user?.last_name,
+              role_label: user?.role,
+            };
+          });
+      },
+      async listAttachmentsForEntities(entityType, entityIds) {
+        const ids = new Set((entityIds ?? []).map(String));
+        return tables.attachments.filter(
+          (row) => row.entity_type === entityType && ids.has(String(row.entity_id)) && row.status === "attached",
+        );
+      },
+      async insertAttachment(row) {
+        const saved = {
+          id: randomUUID(),
+          school_id: row.schoolId,
+          entity_type: row.entityType,
+          entity_id: row.entityId,
+          file_name: row.fileName,
+          mime_type: row.mimeType,
+          file_size: row.fileSize,
+          storage_key: row.storageKey,
+          uploaded_by_user_id: row.uploadedByUserId,
+          created_at: new Date(),
+          status: row.status || "uploaded",
+        };
+        tables.attachments.push(saved);
+        return saved;
+      },
+      async getAttachmentById(id) {
+        return tables.attachments.find((row) => String(row.id) === String(id)) ?? null;
+      },
+      async attachToMessage({ attachmentIds, messageId, schoolId, uploadedByUserId }) {
+        const attached = [];
+        for (const row of tables.attachments) {
+          if (
+            attachmentIds.includes(row.id) &&
+            row.school_id === schoolId &&
+            row.uploaded_by_user_id === uploadedByUserId &&
+            row.status === "uploaded" &&
+            !row.entity_id
+          ) {
+            row.entity_type = "message";
+            row.entity_id = messageId;
+            row.status = "attached";
+            attached.push(row);
+          }
+        }
+        return attached;
+      },
+      async countUnreadForUser(userId, schoolId) {
+        const conversationIds = new Set(
+          tables.participants
+            .filter((item) => item.user_id === userId && (item.status ?? "active") === "active")
+            .map((item) => item.conversation_id),
+        );
+        return tables.messages.filter((message) => {
+          if (message.school_id !== schoolId) return false;
+          if (!conversationIds.has(message.conversation_id)) return false;
+          if (String(message.sender_user_id) === String(userId)) return false;
+          return !tables.reads.some((read) => read.message_id === message.id && read.user_id === userId);
+        }).length;
+      },
+      async listMessagesForUser({ userId, schoolId, bypass }) {
+        const conversationIds = new Set(
+          tables.participants
+            .filter((item) => item.user_id === userId && (item.status ?? "active") === "active")
+            .map((item) => item.conversation_id),
+        );
+        return tables.messages
+          .filter((message) => (bypass ? true : message.school_id === schoolId && conversationIds.has(message.conversation_id)))
+          .sort((a, b) => new Date(b.sent_at) - new Date(a.sent_at))
+          .map((message) => {
+            const read = tables.reads.find((row) => row.message_id === message.id && row.user_id === userId);
+            const sender = tables.users.find((user) => user.id === message.sender_user_id);
+            const school = tables.schools.find((item) => item.id === message.school_id);
+            return {
+              ...message,
+              school_code: school ? asTrimmed(school.code ?? school.schoolCode).toUpperCase() : "",
+              sender_name: asTrimmed(`${sender?.first_name ?? ""} ${sender?.last_name ?? ""}`),
+              sender_role_label: sender?.role ?? "",
+              reader_read_at: read?.read_at ?? null,
+            };
+          });
+      },
+      async listConversationMessagesPage({ conversationId, readerUserId, limit, cursor }) {
+        let rows = tables.messages.filter((message) => message.conversation_id === conversationId);
+        rows.sort((a, b) => new Date(b.sent_at) - new Date(a.sent_at) || String(b.id).localeCompare(String(a.id)));
+        if (cursor?.at && cursor?.id) {
+          rows = rows.filter(
+            (row) =>
+              new Date(row.sent_at) < new Date(cursor.at) ||
+              (String(row.sent_at) === String(cursor.at) && String(row.id) < String(cursor.id)),
+          );
+        }
+        return rows.slice(0, limit).map((message) => {
+          const read = tables.reads.find((row) => row.message_id === message.id && row.user_id === readerUserId);
+          const sender = tables.users.find((user) => user.id === message.sender_user_id);
+          return {
+            ...message,
+            sender_name: asTrimmed(`${sender?.first_name ?? ""} ${sender?.last_name ?? ""}`),
+            sender_role_label: sender?.role ?? "",
+            reader_read_at: read?.read_at ?? null,
+          };
+        });
+      },
+      async listConversationsForUser({ userId, schoolId, limit, bypass }) {
+        const mine = new Set(
+          tables.participants
+            .filter((item) => item.user_id === userId && (item.status ?? "active") === "active")
+            .map((item) => item.conversation_id),
+        );
+        return tables.conversations
+          .filter((conversation) => (bypass ? true : conversation.school_id === schoolId && mine.has(conversation.id)))
+          .slice(0, limit)
+          .map((conversation) => {
+            const school = tables.schools.find((item) => item.id === conversation.school_id);
+            const last = tables.messages
+              .filter((message) => message.conversation_id === conversation.id)
+              .sort((a, b) => new Date(b.sent_at) - new Date(a.sent_at))[0];
+            const sender = last ? tables.users.find((user) => user.id === last.sender_user_id) : null;
+            return {
+              ...conversation,
+              school_code: school ? asTrimmed(school.code ?? school.schoolCode).toUpperCase() : "",
+              last_message_id: last?.id,
+              last_message_body: last?.body,
+              last_message_at: last?.sent_at,
+              last_sender_user_id: last?.sender_user_id,
+              last_sender_name: sender ? asTrimmed(`${sender.first_name ?? ""} ${sender.last_name ?? ""}`) : "",
+              unread_count: 0,
+            };
+          });
       },
       async updateMessageStatus(messageId, status) {
         const index = tables.messages.findIndex((message) => message.id === messageId);
@@ -924,6 +1142,50 @@ function createClientsMemoryStore(seed = {}) {
     },
     sendMessage: (...args) => clientsService.sendMessage(store, ...args),
     markMessageRead: (...args) => clientsService.markMessageRead(store, ...args),
+    listMessagesForPrincipal: (...args) => {
+      const service = require("../lib/communicationsMessagesService");
+      return service.listMessages(store, ...args);
+    },
+    listConversationsForPrincipal: (...args) => {
+      const service = require("../lib/communicationsMessagesService");
+      return service.listConversations(store, ...args);
+    },
+    getConversationForPrincipal: (...args) => {
+      const service = require("../lib/communicationsMessagesService");
+      return service.getConversation(store, ...args);
+    },
+    listConversationMessagesForPrincipal: (...args) => {
+      const service = require("../lib/communicationsMessagesService");
+      return service.listConversationMessages(store, ...args);
+    },
+    getMessageForPrincipal: (...args) => {
+      const service = require("../lib/communicationsMessagesService");
+      return service.getMessage(store, ...args);
+    },
+    createConversationForPrincipal: (...args) => {
+      const service = require("../lib/communicationsMessagesService");
+      return service.createConversation(store, ...args);
+    },
+    replyToConversationForPrincipal: (...args) => {
+      const service = require("../lib/communicationsMessagesService");
+      return service.replyToConversation(store, ...args);
+    },
+    unreadCountForPrincipal: (...args) => {
+      const service = require("../lib/communicationsMessagesService");
+      return service.unreadCount(store, ...args);
+    },
+    listMessageRecipientsForPrincipal: (...args) => {
+      const service = require("../lib/communicationsMessagesService");
+      return service.listAuthorizedRecipients(store, ...args);
+    },
+    uploadCommunicationAttachment: (...args) => {
+      const service = require("../lib/communicationsMessagesService");
+      return service.uploadAttachment(store, ...args);
+    },
+    downloadCommunicationAttachment: (...args) => {
+      const service = require("../lib/communicationsMessagesService");
+      return service.downloadAttachment(store, ...args);
+    },
     createAnnouncement: (...args) => clientsService.createAnnouncement(store, ...args),
     updateAnnouncement: (...args) => clientsService.updateAnnouncement(store, ...args),
     archiveAnnouncement: (...args) => clientsService.archiveAnnouncement(store, ...args),

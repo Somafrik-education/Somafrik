@@ -24,6 +24,10 @@ export function setAccessTokenProvider(provider: () => string | null) {
   accessTokenProvider = provider;
 }
 
+export function getAccessToken() {
+  return accessTokenProvider();
+}
+
 export async function request<T = unknown>(
   path: string,
   options: RequestInit = {},
