@@ -683,6 +683,271 @@ async function main() {
       `relance A depuis B: ${JSON.stringify(reminderForeign.data)}`,
     );
 
+    const payBSeed = await request("/payments", {
+      method: "POST",
+      token: accountantB,
+      headers: { "Idempotency-Key": "f8-p0-004-seed-b" },
+      body: {
+        studentId: fixture.studentCodeB,
+        items: [{ feeType: "Non imputé", amount: 5 }],
+        method: "Espèces",
+        date: "2026-08-28",
+      },
+    });
+    assert.equal(payBSeed.status, 201, `seed paiement B: ${JSON.stringify(payBSeed.data)}`);
+    const paymentBId = payBSeed.data?.id;
+    assert.ok(paymentBId, "id paiement B");
+
+    const paymentsBBefore = await countRows(
+      pool,
+      `SELECT count(*)::int AS c FROM payments p JOIN schools s ON s.id = p.school_id WHERE s.school_code = 'SCH-F8-B'`,
+    );
+    const remindersBBefore = await countRows(
+      pool,
+      `SELECT count(*)::int AS c FROM payment_reminders r JOIN schools s ON s.id = r.school_id WHERE s.school_code = 'SCH-F8-B'`,
+    );
+    const obligationsBBefore = await countRows(
+      pool,
+      `SELECT count(*)::int AS c FROM student_fee_obligations o JOIN schools s ON s.id = o.school_id WHERE s.school_code = 'SCH-F8-B' AND o.archived_at IS NULL`,
+    );
+
+    const emptySchoolToken = mintAccess(
+      tokens,
+      staleClaims({
+        sub: ACCOUNTANT_A,
+        schoolCode: "",
+        effectiveSchoolCode: "SCH-F8-A",
+        effectiveSchoolInternalCode: "SCH-F8-A",
+        schoolScopeSource: "request",
+        role: "Comptable",
+        roleKeys: ["ACCOUNTANT"],
+      }),
+    );
+    const blankNoScopeToken = mintAccess(
+      tokens,
+      staleClaims({
+        sub: ACCOUNTANT_A,
+        schoolCode: "",
+        role: "Comptable",
+        roleKeys: ["ACCOUNTANT"],
+      }),
+    );
+
+    const getPayAEmpty = await request(`/payments/${encodeURIComponent(unalloc1.data.id)}`, {
+      token: emptySchoolToken,
+    });
+    assert.equal(
+      getPayAEmpty.status,
+      200,
+      `F8-P0-004 GET paiement A schoolCode vide: ${JSON.stringify(getPayAEmpty.data)}`,
+    );
+    const getPayBEmpty = await request(`/payments/${encodeURIComponent(paymentBId)}`, { token: emptySchoolToken });
+    assert.ok(
+      [403, 404].includes(getPayBEmpty.status),
+      `F8-P0-004 GET paiement B schoolCode vide: ${JSON.stringify(getPayBEmpty.data)}`,
+    );
+
+    const payAEmpty = await request("/payments", {
+      method: "POST",
+      token: emptySchoolToken,
+      headers: { "Idempotency-Key": "f8-p0-004-pay-a" },
+      body: {
+        studentId: fixture.studentCodeA1,
+        items: [{ feeType: "Non imputé", amount: 1 }],
+        method: "Espèces",
+        date: "2026-08-28",
+      },
+    });
+    assert.equal(payAEmpty.status, 201, `F8-P0-004 POST A schoolCode vide: ${JSON.stringify(payAEmpty.data)}`);
+
+    const payBEmpty = await request("/payments", {
+      method: "POST",
+      token: emptySchoolToken,
+      headers: { "Idempotency-Key": "f8-p0-004-pay-b" },
+      body: {
+        studentId: fixture.studentCodeB,
+        items: [{ feeType: "Non imputé", amount: 10 }],
+        method: "Espèces",
+        date: "2026-08-28",
+      },
+    });
+    assert.ok(
+      [403, 404].includes(payBEmpty.status),
+      `F8-P0-004 POST paiement élève B schoolCode vide: ${JSON.stringify(payBEmpty.data)}`,
+    );
+    assert.equal(
+      await countRows(
+        pool,
+        `SELECT count(*)::int AS c FROM payments p JOIN schools s ON s.id = p.school_id WHERE s.school_code = 'SCH-F8-B'`,
+      ),
+      paymentsBBefore,
+      "F8-P0-004 compteur paiements B inchangé",
+    );
+
+    const reminderBEmpty = await request(
+      `/backoffice/finance/unpaid/${encodeURIComponent(fixture.studentCodeB)}/reminders`,
+      {
+        method: "POST",
+        token: emptySchoolToken,
+        body: { channel: "notification", recipient: "Parent", message: "F8-P0-004" },
+      },
+    );
+    assert.ok(
+      [403, 404].includes(reminderBEmpty.status),
+      `F8-P0-004 relance B schoolCode vide: ${JSON.stringify(reminderBEmpty.data)}`,
+    );
+    assert.equal(
+      await countRows(
+        pool,
+        `SELECT count(*)::int AS c FROM payment_reminders r JOIN schools s ON s.id = r.school_id WHERE s.school_code = 'SCH-F8-B'`,
+      ),
+      remindersBBefore,
+      "F8-P0-004 aucune payment_reminders B créée",
+    );
+
+    const getGridBEmpty = await request(`/finance/fee-grids/${encodeURIComponent(gridBId)}`, {
+      token: emptySchoolToken,
+    });
+    assert.ok(
+      [403, 404].includes(getGridBEmpty.status),
+      `F8-P0-004 GET grille B schoolCode vide: ${JSON.stringify(getGridBEmpty.data)}`,
+    );
+    const activateBEmpty = await request(`/finance/fee-grids/${encodeURIComponent(gridBId)}/activate`, {
+      method: "POST",
+      token: emptySchoolToken,
+    });
+    assert.ok(
+      [403, 404].includes(activateBEmpty.status),
+      `F8-P0-004 activate B: ${JSON.stringify(activateBEmpty.data)}`,
+    );
+    const deactivateBEmpty = await request(`/finance/fee-grids/${encodeURIComponent(gridBId)}/deactivate`, {
+      method: "POST",
+      token: emptySchoolToken,
+    });
+    assert.ok(
+      [403, 404].includes(deactivateBEmpty.status),
+      `F8-P0-004 deactivate B: ${JSON.stringify(deactivateBEmpty.data)}`,
+    );
+    const applyBEmpty = await request(`/finance/fee-grids/${encodeURIComponent(gridBId)}/apply`, {
+      method: "POST",
+      token: emptySchoolToken,
+    });
+    assert.ok(
+      [403, 404].includes(applyBEmpty.status),
+      `F8-P0-004 apply B schoolCode vide: ${JSON.stringify(applyBEmpty.data)}`,
+    );
+    assert.equal(
+      await countRows(
+        pool,
+        `SELECT count(*)::int AS c FROM student_fee_obligations o JOIN schools s ON s.id = o.school_id WHERE s.school_code = 'SCH-F8-B' AND o.archived_at IS NULL`,
+      ),
+      obligationsBBefore,
+      "F8-P0-004 aucune obligation B créée/modifiée",
+    );
+
+    const blankNoScopePay = await request("/payments", {
+      method: "POST",
+      token: blankNoScopeToken,
+      body: {
+        studentId: fixture.studentCodeA1,
+        items: [{ feeType: "Non imputé", amount: 1 }],
+        method: "Espèces",
+        date: "2026-08-28",
+      },
+    });
+    assert.ok(
+      [403, 404].includes(blankNoScopePay.status),
+      `F8-P0-004 schoolCode vide sans scope effectif: ${JSON.stringify(blankNoScopePay.data)}`,
+    );
+
+    const scopedSuperToken = mintAccess(
+      tokens,
+      staleClaims({
+        sub: ACCOUNTANT_A,
+        schoolCode: "",
+        effectiveSchoolCode: "SCH-F8-A",
+        effectiveSchoolInternalCode: "SCH-F8-A",
+        schoolScopeSource: "request",
+        role: "Super Administrateur Somafrik",
+        roleKeys: ["SUPER_ADMIN"],
+      }),
+    );
+    const scopedSuperPayB = await request("/payments", {
+      method: "POST",
+      token: scopedSuperToken,
+      body: {
+        studentId: fixture.studentCodeB,
+        items: [{ feeType: "Non imputé", amount: 10 }],
+        method: "Espèces",
+        date: "2026-08-28",
+      },
+    });
+    assert.ok(
+      [403, 404].includes(scopedSuperPayB.status),
+      `F8-P0-004 Superadmin request-scoped A ne paie pas B: ${JSON.stringify(scopedSuperPayB.data)}`,
+    );
+    assert.equal(
+      await countRows(
+        pool,
+        `SELECT count(*)::int AS c FROM payments p JOIN schools s ON s.id = p.school_id WHERE s.school_code = 'SCH-F8-B'`,
+      ),
+      paymentsBBefore,
+      "F8-P0-004 Superadmin scoped: compteur B inchangé",
+    );
+    const scopedSuperGetA = await request(`/payments/${encodeURIComponent(unalloc1.data.id)}`, {
+      token: scopedSuperToken,
+    });
+    assert.equal(
+      scopedSuperGetA.status,
+      200,
+      `F8-P0-004 Superadmin scoped lit A: ${JSON.stringify(scopedSuperGetA.data)}`,
+    );
+
+    const countryAdminToken = mintAccess(
+      tokens,
+      staleClaims({
+        sub: ACCOUNTANT_A,
+        schoolCode: "",
+        countryCode: "CI",
+        role: "Admin Pays",
+        roleKeys: ["COUNTRY_ADMIN"],
+      }),
+    );
+    const countryGetA = await request(`/payments/${encodeURIComponent(unalloc1.data.id)}`, {
+      token: countryAdminToken,
+    });
+    assert.equal(countryGetA.status, 200, `F8-P0-004 Admin Pays CI lit A: ${JSON.stringify(countryGetA.data)}`);
+    const countryPayB = await request("/payments", {
+      method: "POST",
+      token: countryAdminToken,
+      body: {
+        studentId: fixture.studentCodeB,
+        items: [{ feeType: "Non imputé", amount: 10 }],
+        method: "Espèces",
+        date: "2026-08-28",
+      },
+    });
+    assert.ok(
+      [403, 404].includes(countryPayB.status),
+      `F8-P0-004 Admin Pays CI refuse FR/B: ${JSON.stringify(countryPayB.data)}`,
+    );
+
+    const globalSuperToken = mintAccess(
+      tokens,
+      staleClaims({
+        sub: ACCOUNTANT_A,
+        schoolCode: "",
+        role: "Super Administrateur Somafrik",
+        roleKeys: ["SUPER_ADMIN"],
+      }),
+    );
+    const globalGetB = await request(`/payments/${encodeURIComponent(paymentBId)}`, { token: globalSuperToken });
+    assert.equal(
+      globalGetB.status,
+      200,
+      `F8-P0-004 Superadmin global conserve l'accès B: ${JSON.stringify(globalGetB.data)}`,
+    );
+
     const raceBody = {
       studentId: fixture.studentCodeA1,
       items: [{ obligationId: scoA1.id, amount: 150, feeType: "Scolarité" }],

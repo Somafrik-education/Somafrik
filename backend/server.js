@@ -2312,8 +2312,8 @@ app.post("/api/finance/fee-grids", requireAuth, requirePermission("POST /api/fin
 app.get("/api/finance/fee-grids/:gridId", requireAuth, requirePermission("GET /api/finance/fee-grids"), asyncHandler(async (req, res) => {
   const detail = await repository.getFinanceFeeGrid(req.params.gridId, req.principal);
   if (!detail) throw new BusinessError(404, "Grille introuvable");
-  const scope = String(req.principal?.schoolCode ?? "").trim();
-  if (scope && scope !== "*" && String(detail.grid.schoolCode ?? "").toUpperCase() !== scope.toUpperCase()) {
+  const { resolveFinanceSchoolScope, schoolCodeInScope } = require("./lib/financeSchoolScope");
+  if (!schoolCodeInScope(detail.grid.schoolCode, resolveFinanceSchoolScope(req.principal))) {
     throw new BusinessError(404, "Grille introuvable");
   }
   res.json(detail);

@@ -24,7 +24,7 @@ const {
 const { decoratePaymentWithItems } = require("../lib/financePaymentItems");
 const { projectObligationPaidAmounts } = require("../lib/financeObligationPaid");
 const { projectPaymentsWithAllocations, projectPaymentCash } = require("../lib/financeUnallocatedCash");
-const { resolveFinanceSchoolScope, schoolCodeInScope } = require("../lib/financeSchoolScope");
+const { resolveFinanceSchoolScope, schoolCodeInScope, primaryFinanceSchoolCode } = require("../lib/financeSchoolScope");
 const {
   foldPaymentStudentOptions,
   resolveCatalogPaymentMethods,
@@ -147,6 +147,10 @@ function createFinanceMemoryStore({
       async findStudent(studentKey, principal) {
         const student = await findStudent?.(studentKey, principal);
         if (!student) return null;
+        if (principal) {
+          const scope = resolveFinanceSchoolScope(principal);
+          if (!schoolCodeInScope(student.schoolCode, scope)) return null;
+        }
         return {
           ...student,
           dbId: student.dbId || student.id,
@@ -155,7 +159,7 @@ function createFinanceMemoryStore({
       },
       async listActiveEnrollmentsForStudent(studentDbId, schoolId) {
         const student =
-          (await findStudent?.(studentDbId, { schoolCode: "*" })) ||
+          (await findStudent?.(studentDbId)) ||
           null;
         if (!student) return [];
         const rows = Array.isArray(student.enrollments) ? student.enrollments : [];
@@ -209,7 +213,7 @@ function createFinanceMemoryStore({
         }
         const key = asTrimmed(classId);
         if (!key) return null;
-        const student = (await findStudent?.(key, { schoolCode: "*" })) || null;
+        const student = (await findStudent?.(key)) || null;
         if (student && asTrimmed(student.classId) === key) {
           return {
             classId: String(student.classId),
@@ -225,7 +229,7 @@ function createFinanceMemoryStore({
         const key = asTrimmed(classCode).toUpperCase();
         if (!key) return null;
         const student =
-          (await findStudent?.(key, { schoolCode: "*" })) ||
+          (await findStudent?.(key)) ||
           null;
         if (student && asTrimmed(student.classCode).toUpperCase() === key) {
           return {
@@ -531,9 +535,15 @@ function createFinanceMemoryStore({
         tables.feeGrids.push(row);
         return mapGridRow(row);
       },
-      async getGrid(gridId) {
+      async getGrid(gridId, principal) {
         const row = tables.feeGrids.find((item) => item.grid_code === gridId || item.id === gridId);
-        return row ? mapGridRow(row) : null;
+        if (!row) return null;
+        const mapped = mapGridRow(row);
+        if (principal) {
+          const scope = resolveFinanceSchoolScope(principal);
+          if (!schoolCodeInScope(mapped.schoolCode, scope)) return null;
+        }
+        return mapped;
       },
       async setGridStatus(dbId, status) {
         const row = tables.feeGrids.find((item) => item.id === dbId);
@@ -786,7 +796,7 @@ function createFinanceMemoryStore({
       const row = existing || {
         id: randomUUID(),
         status_code: code,
-        school_code: principal?.schoolCode,
+        school_code: primaryFinanceSchoolCode(principal) || principal?.schoolCode,
         created_at: new Date().toISOString(),
       };
       row.label = payload.label || code;
@@ -839,8 +849,12 @@ function createFinanceMemoryStore({
       return resolveCatalogPaymentMethods(rows);
     },
     async replaceSchoolPaymentMethods(methods, principal) {
-      const school = await getSchoolByCode?.(principal?.schoolCode);
-      const schoolCode = String(school?.code || principal?.schoolCode || "").trim().toUpperCase();
+      const scopedSchoolCode = primaryFinanceSchoolCode(principal);
+      if (!scopedSchoolCode) {
+        throw createFinanceError(400, "Établissement requis.", FINANCE_ERROR.TENANT_MISMATCH);
+      }
+      const school = await getSchoolByCode?.(scopedSchoolCode);
+      const schoolCode = String(school?.code || scopedSchoolCode || "").trim().toUpperCase();
       tables.paymentMethods = tables.paymentMethods.filter((row) => String(row.school_code).toUpperCase() !== schoolCode);
       const allowed = new Map(CANONICAL_PAYMENT_METHODS.map((item) => [item.methodCode, item]));
       const saved = [];
@@ -883,10 +897,8 @@ function createFinanceMemoryStore({
         });
     },
     async getFinanceCatalog(principal) {
-      const school =
-        principal?.schoolCode && principal.schoolCode !== "*"
-          ? await getSchoolByCode?.(principal.schoolCode)
-          : null;
+      const schoolCode = primaryFinanceSchoolCode(principal);
+      const school = schoolCode ? await getSchoolByCode?.(schoolCode) : null;
       const [paymentMethods, feeTypes] = await Promise.all([
         api.listSchoolPaymentMethods(principal),
         api.listCatalogFeeTypes(principal),

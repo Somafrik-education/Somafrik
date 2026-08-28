@@ -18,7 +18,6 @@ const {
   toIsoDate,
   studentMatches,
   canForceReminder,
-  isSuperAdminPrincipal,
   requireSchoolCurrency,
 } = require("./financeManagement");
 const {
@@ -40,6 +39,11 @@ const {
   ensureEnrollmentFinanceObligations,
   ensureEnrollmentFinanceObligationsInTx,
 } = require("./financeObligationLifecycle");
+const {
+  resolveFinanceSchoolScope,
+  schoolCodeInScope,
+  primaryFinanceSchoolCode,
+} = require("./financeSchoolScope");
 
 const REMINDER_COOLDOWN_DAYS = 3;
 
@@ -60,11 +64,26 @@ function ignoreClientScope(payload = {}) {
 }
 
 function assertTenant(principal, schoolCode) {
-  const scope = asTrimmed(principal?.schoolCode);
-  if (!scope || scope === "*") return;
-  if (asTrimmed(schoolCode).toUpperCase() !== scope.toUpperCase()) {
+  const scope = resolveFinanceSchoolScope(principal);
+  if (!schoolCodeInScope(schoolCode, scope)) {
     throw createFinanceError(403, "Accès refusé : établissement hors périmètre.", FINANCE_ERROR.TENANT_MISMATCH);
   }
+}
+
+function resolveActorSchoolCode(principal, rawPayload = {}) {
+  const scope = resolveFinanceSchoolScope(principal);
+  if (scope.mode === "none") {
+    throw createFinanceError(403, "Accès refusé : établissement hors périmètre.", FINANCE_ERROR.TENANT_MISMATCH);
+  }
+  if (scope.mode === "schools") {
+    return primaryFinanceSchoolCode(principal);
+  }
+  const requested = asTrimmed(rawPayload.schoolCode);
+  if (!requested) {
+    throw createFinanceError(400, "Établissement requis.", FINANCE_ERROR.TENANT_MISMATCH);
+  }
+  assertTenant(principal, requested);
+  return requested;
 }
 
 function actorName(principal) {
@@ -293,7 +312,7 @@ async function writeFinanceAudit(tx, principal, auditMeta, entry) {
     throw createFinanceError(500, "Audit Finance indisponible dans la transaction.");
   }
   await tx.recordFinanceAudit({
-    schoolCode: entry.schoolCode || principal?.schoolCode,
+    schoolCode: entry.schoolCode || primaryFinanceSchoolCode(principal) || principal?.schoolCode,
     userId: principal?.sub || principal?.id,
     action: entry.action,
     entityType: entry.entityType,
@@ -611,17 +630,7 @@ async function resolveGridClass(tx, school, payload) {
 
 async function upsertFeeGrid(store, rawPayload, principal) {
   const payload = ignoreClientScope(rawPayload);
-  let schoolCode = asTrimmed(principal?.schoolCode);
-  if (!schoolCode || schoolCode === "*") {
-    if (!isSuperAdminPrincipal(principal)) {
-      throw createFinanceError(400, "Établissement requis.", FINANCE_ERROR.TENANT_MISMATCH);
-    }
-    schoolCode = asTrimmed(rawPayload.schoolCode);
-    if (!schoolCode) {
-      throw createFinanceError(400, "Établissement requis.", FINANCE_ERROR.TENANT_MISMATCH);
-    }
-  }
-  assertTenant(principal, schoolCode);
+  const schoolCode = resolveActorSchoolCode(principal, rawPayload);
   const className = asTrimmed(payload.className);
   const academicYear = asTrimmed(payload.academicYear);
   const currency = asTrimmed(payload.currency);
@@ -847,6 +856,7 @@ module.exports = {
   REMINDER_COOLDOWN_DAYS,
   F4_ERROR,
   ignoreClientScope,
+  assertTenant,
   canCancelPayment,
   assertCanCancelPayment,
   createPayment,

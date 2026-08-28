@@ -2707,6 +2707,7 @@ class FallbackRepository {
     if (!this._financeStore) {
       const { createFinanceMemoryStore } = require("./financeMemoryStore");
       const { studentMatches, studentMatchesClassScope } = require("../lib/financeManagement");
+      const { resolveFinanceSchoolScope, schoolCodeInScope } = require("../lib/financeSchoolScope");
       this._financeStore = createFinanceMemoryStore({
         getSchoolByCode: async (code) => {
           const normalized = String(code ?? "").trim().toUpperCase();
@@ -2718,10 +2719,11 @@ class FallbackRepository {
         },
         findStudent: async (studentKey, principal) => {
           const dataset = await this.getDataset();
-          const schoolCode = String(principal?.schoolCode ?? "").trim().toUpperCase();
+          const scope = resolveFinanceSchoolScope(principal);
+          if (scope.mode === "none") return null;
           const student =
             (dataset.students ?? []).find((row) => {
-              if (schoolCode && schoolCode !== "*" && String(row.schoolCode ?? "").toUpperCase() !== schoolCode) {
+              if (principal && !schoolCodeInScope(row.schoolCode, scope)) {
                 return false;
               }
               return studentMatches(row, studentKey);
@@ -2747,11 +2749,9 @@ class FallbackRepository {
         },
         listSchoolStudents: async (principal) => {
           const dataset = await this.getDataset();
-          const schoolCode = String(principal?.schoolCode ?? "").trim().toUpperCase();
-          return (dataset.students ?? []).filter((student) => {
-            if (!schoolCode || schoolCode === "*") return true;
-            return String(student.schoolCode ?? "").toUpperCase() === schoolCode;
-          });
+          const scope = resolveFinanceSchoolScope(principal);
+          if (scope.mode === "none") return [];
+          return (dataset.students ?? []).filter((student) => schoolCodeInScope(student.schoolCode, scope));
         },
       });
     }

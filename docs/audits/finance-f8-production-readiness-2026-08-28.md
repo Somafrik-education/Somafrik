@@ -27,17 +27,18 @@ Après F1→F7, le domaine Finance de Somafrik a une chaîne canonique PostgreSQ
 
 L'audit F8 a cherché les écarts de **production-readiness**, pas de nouvelles fonctionnalités métier.
 
-Deux P0 ont été confirmés dans le code F7 mergé, puis un troisième pendant le parcours HTTP F8. Tous corrigés avec tests :
+Trois P0 ont été confirmés dans le code F7 mergé / le premier passage F8. Un quatrième a été levé par l'audit CTO indépendant de #371 (`0359e81f`) : le service Finance central restait fail-open si `principal.schoolCode` était vide. Tous corrigés avec tests :
 
 | ID | Sujet | Statut |
 |---|---|---|
 | F8-P0-001 | `GET /api/finance/student-fees/:obligationId` lisait une obligation étrangère (pas de filtre tenant SQL) | **CORRIGÉ** |
 | F8-P0-002 | Moyen « Mobile money » → statut présentation « En attente » → `payment_status=pending` → trigger F4 `FINANCE_PAYMENT_NOT_SETTLED` → rollback de l'imputation | **CORRIGÉ** |
 | F8-P0-003 | `GET /api/payments/:id` fuitait un encaissement A vers B si `schoolCode` absent du principal | **CORRIGÉ** |
+| F8-P0-004 | `assertTenant` / `findStudent` / `getGrid` fail-open quand `principal.schoolCode` est vide (`*` ou absence = toutes les écoles) | **CORRIGÉ** |
 
 P1 corrigés : replis devise `USD`/`CDF`, Idempotency-Key Web, relance sans `withIdempotency`, `DEFAULT` devise obligations/grilles.
 
-Aucun P0/P1 **ouvert** dans le code de cette branche après corrections. Le verdict reste **GO CONDITIONNEL** (pas GO PRODUCTION) : UX Web/Mobile non exercée dans un navigateur/appareil réel ici, smoke préprod non joué sur un établissement live, performance non mesurée à l'échelle de plusieurs milliers d'élèves.
+Aucun P0/P1 **ouvert** dans le code de cette branche après corrections. Le verdict reste **GO CONDITIONNEL** (pas GO PRODUCTION) : UX Web/Mobile non exercée dans un navigateur/appareil réel ici, smoke préprod non joué sur un établissement live, performance non mesurée à l'échelle de plusieurs milliers d'élèves. Diff CTO `develop → HEAD` obligatoire avant Ready/merge.
 
 ---
 
@@ -180,7 +181,15 @@ Lectures / mutations Finance dérivent l'école du **principal**, jamais d'un `s
 
 Contrats observés : **404** (ressource hors scope) ou **403** (RBAC / TENANT_MISMATCH). Aucune fuite d'identifiants B dans les listes A.
 
-`getObligationByPublicId` filtre désormais `sqlSchoolPredicate`. `getGrid` SQL reste global ; la couche HTTP GET force 404 hors `schoolCode`.
+Scope canonique unique : `resolveFinanceSchoolScope` + `sqlSchoolPredicate` / `schoolCodeInScope`.
+
+- école scoped → codes `effectiveSchoolCode` / `effectiveSchoolInternalCode` / `schoolCode` (jamais `*`) ;
+- Superadmin request-scoped → uniquement l'école effective ;
+- Admin Pays sans école effective → pays (`countries.iso_code` en SQL) ;
+- Superadmin réellement global → `mode: "all"` ;
+- principal sans scope exploitable → `mode: "none"` (fail-closed).
+
+`schoolCode` vide ne signifie plus « toutes les écoles ». `assertTenant`, `findStudent`, `getGrid`, catalogue / moyens / statuts passent par ce scope. HTTP GET grille applique le même prédicat (plus un `if (schoolCode)` fail-open).
 
 ---
 
@@ -267,6 +276,16 @@ Pas de campagne de charge. Lecture code :
 - **Correction :** même scope `resolveFinanceSchoolScope` / `sqlSchoolPredicate` que les obligations
 - **Test :** HTTP F8 GET paiement A depuis B + liste B sans l'id A
 
+### F8-P0-004 — tenant Finance fail-open `principal.schoolCode` vide (CORRIGÉ)
+
+- **Fichier / endpoint :** `backend/lib/financeService.js` `assertTenant` ; `findStudent` / `getGrid` (PG + mémoire) ; POST `/api/payments` ; POST relance ; activate/apply grilles
+- **Scénario reproductible :** JWT Comptable A avec `schoolCode=""` et `effectiveSchoolCode=SCH-F8-A` (`schoolScopeSource=request`) ; `studentId` / `gridId` / `paymentId` école B
+- **Attendu :** GET A 200 ; GET B 403/404 ; POST paiement B 403/404 et compteur B inchangé ; relance B refusée sans row `payment_reminders` ; activate/apply grille B refusés, obligations B inchangées ; Superadmin request-scoped A ne sort pas de A ; Admin Pays CI refuse FR/B ; Superadmin global sans request scope conserve l'accès B
+- **Observé (avant, HEAD `0359e81f`) :** `assertTenant` retournait si `schoolCode` vide ou `*` ; `findStudent` devenait un SELECT global ; `getGrid` était global. Encaissement / relance / apply grille B possibles.
+- **Impact :** mutation financière inter-tenant (P0) — même famille que P0-003, non limitée au GET paiement
+- **Correction :** un seul scope canonique (`resolveFinanceSchoolScope`) ; plus de `if (!schoolCode) return`. SQL pays via `countries.iso_code`.
+- **Test :** `financeSchoolScope.test.js` + HTTP réel `schoolCode: ""` dans `financeReadiness.http.pg.test.js` (gate `verify:finance-readiness`)
+
 ---
 
 ## 13. Findings P1
@@ -311,7 +330,7 @@ Aucun P1 ouvert dans le code de cette branche.
 
 | ID | Sujet | Commentaire |
 |---|---|---|
-| F8-P2-001 | `GET /api/finance/fee-grids/:id` SQL `getGrid` sans tenant | HTTP 404 compense |
+| F8-P2-001 | `GET /api/finance/fee-grids/:id` SQL `getGrid` sans tenant | **Reclassé / fermé par F8-P0-004** : `getGrid` + HTTP GET utilisent le scope canonique |
 | F8-P2-002 | Page Impayés Web agrège `student-fees` au lieu de GET unpaid | Même filtre, même SoT obligations ; duplication de présentation |
 | F8-P2-003 | `payments.created_by` non alimenté | Acteur dans `audit_logs` / profile |
 | F8-P2-004 | `payment_reminders.student_fee_obligation_id` jamais posé | Relance au niveau élève |
@@ -327,7 +346,8 @@ Aucun P1 ouvert dans le code de cette branche.
 
 | Artefact | Rôle |
 |---|---|
-| `backend/lib/financeReadiness.http.pg.test.js` | Parcours 1–15 PostgreSQL réel + tenant + XOF/EUR + concurrence + revoke |
+| `backend/lib/financeReadiness.http.pg.test.js` | Parcours 1–15 PostgreSQL réel + tenant + XOF/EUR + concurrence + revoke + **F8-P0-004 schoolCode vide** |
+| `backend/lib/financeSchoolScope.test.js` | Fail-closed `schoolCode` vide / `*` ; Superadmin scoped vs global ; Admin Pays |
 | `backend/scripts/verify-finance-readiness.js` | Source guards + unitaires + HTTP |
 | `web/src/lib/unpaidModule.currency.test.ts` | Pas de USD inventé |
 | `backend/lib/financeUnallocatedCash.test.js` | Mobile money ≠ pending |
@@ -367,6 +387,8 @@ Nettoyage : DELETE/annuler uniquement les rows dont `student_code` / comment / m
 ## 17. Verdict final
 
 **GO CONDITIONNEL**
+
+P0-004 (fail-open `schoolCode` vide) a été corrigé après le NO-GO CTO sur `0359e81f`. Aucun P0/P1 ouvert dans le code de cette révision. Ready / merge / F9 restent interdits jusqu'au nouveau diff GitHub CTO `develop → HEAD`.
 
 Conditions restantes (hors code P0/P1) avant un gel Finance / Release Candidate globale :
 

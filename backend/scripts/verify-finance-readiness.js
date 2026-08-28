@@ -55,7 +55,36 @@ function sourceGuards() {
   );
   assert.match(getPayment, /resolveFinanceSchoolScope/);
   assert.match(getPayment, /sqlSchoolPredicate/);
+  const findStudent = pgStore.slice(
+    pgStore.indexOf("async findStudent"),
+    pgStore.indexOf("async listActiveEnrollmentsForStudent"),
+  );
+  assert.match(findStudent, /resolveFinanceSchoolScope/);
+  assert.match(findStudent, /sqlSchoolPredicate/);
+  assert.doesNotMatch(findStudent, /schoolCode && schoolCode !== "\*"/);
+  const getGrid = pgStore.slice(
+    pgStore.indexOf("async getGrid"),
+    pgStore.indexOf("async setGridStatus"),
+  );
+  assert.match(getGrid, /resolveFinanceSchoolScope/);
+  assert.match(getGrid, /sqlSchoolPredicate/);
   assert.match(memory, /schoolCodeInScope\(mapped\.schoolCode, scope\)/);
+  assert.match(memory, /schoolCodeInScope\(student\.schoolCode, scope\)/);
+
+  const assertTenant = service.slice(
+    service.indexOf("function assertTenant"),
+    service.indexOf("function resolveActorSchoolCode"),
+  );
+  assert.match(assertTenant, /resolveFinanceSchoolScope/);
+  assert.match(assertTenant, /schoolCodeInScope/);
+  assert.doesNotMatch(assertTenant, /if \(!scope \|\| scope === "\*"\) return/);
+
+  assert.match(httpTest, /F8-P0-004 GET paiement B schoolCode vide/);
+  assert.match(httpTest, /schoolCode: ""/);
+  assert.match(httpTest, /F8-P0-004 compteur paiements B inchangé/);
+  assert.match(httpTest, /F8-P0-004 aucune payment_reminders B créée/);
+  assert.match(httpTest, /F8-P0-004 Superadmin request-scoped A ne paie pas B/);
+  assert.match(httpTest, /F8-P0-004 Superadmin global conserve l'accès B/);
 
   assert.match(cash, /void method/);
   assert.doesNotMatch(cash, /En attente de confirmation/);
@@ -92,7 +121,7 @@ function main() {
   sourceGuards();
   run(
     process.execPath,
-    ["--test", "backend/lib/financeUnallocatedCash.test.js", "backend/lib/financeCatalog.test.js"],
+    ["--test", "backend/lib/financeUnallocatedCash.test.js", "backend/lib/financeCatalog.test.js", "backend/lib/financeSchoolScope.test.js"],
     "tests unitaires caisse / catalogue F8 ont échoué",
   );
   run(

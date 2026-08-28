@@ -28,7 +28,11 @@ function sqlSchoolPredicate(alias, scope, params) {
   if (scope.mode === "none") return "FALSE";
   if (scope.mode === "country") {
     params.push(scope.countryCode);
-    return `left(${alias}.school_code, 2) = $${params.length}`;
+    return `EXISTS (
+      SELECT 1 FROM countries _fin_c
+      WHERE _fin_c.id = ${alias}.country_id
+        AND upper(btrim(_fin_c.iso_code)) = $${params.length}
+    )`;
   }
   params.push(scope.codes);
   return `${alias}.school_code = ANY($${params.length}::text[])`;
@@ -43,8 +47,17 @@ function schoolCodeInScope(schoolCode, scope) {
   return scope.codes.includes(code);
 }
 
+function primaryFinanceSchoolCode(principal) {
+  const scope = resolveFinanceSchoolScope(principal);
+  if (scope.mode !== "schools" || !Array.isArray(scope.codes) || !scope.codes.length) {
+    return "";
+  }
+  return scope.codes[0];
+}
+
 module.exports = {
   resolveFinanceSchoolScope,
   sqlSchoolPredicate,
   schoolCodeInScope,
+  primaryFinanceSchoolCode,
 };
