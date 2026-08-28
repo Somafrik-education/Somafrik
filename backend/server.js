@@ -26,6 +26,7 @@ const {
 } = require("./db/connectionConfig");
 const { TokenService } = require("./services/tokenService");
 const { RbacService, PERMISSION_DENIED } = require("./services/rbacService");
+const { isFinanceLiveRbacRouteKey } = require("./lib/financeRbacRouteMatrix");
 const { mergeRolePermissions, normalizeBusinessPermission } = require("./lib/rolePermissionsResolution");
 const { PaginationService } = require("./services/paginationService");
 const { CacheService } = require("./services/cacheService");
@@ -2213,7 +2214,7 @@ app.get("/api/payments/:paymentId", requireAuth, requirePermission("GET /api/pay
   res.json(payment);
 }));
 
-app.post("/api/payments/:paymentId/cancel", requireAuth, requirePermission("POST /api/payments"), asyncHandler(async (req, res) => {
+app.post("/api/payments/:paymentId/cancel", requireAuth, requirePermission("POST /api/payments/:paymentId/cancel"), asyncHandler(async (req, res) => {
   await withIdempotency({
     req,
     res,
@@ -2253,18 +2254,18 @@ app.put("/api/finance/payment-methods", requireAuth, requirePermission("PUT /api
   res.json(rows);
 }));
 
-app.get("/api/finance/payment-statuses", requireAuth, requirePermission("GET /api/payments"), asyncHandler(async (req, res) => {
+app.get("/api/finance/payment-statuses", requireAuth, requirePermission("GET /api/finance/payment-statuses"), asyncHandler(async (req, res) => {
   const rows = await repository.listFinancePaymentStatuses(req.principal);
   sendList(res, tenantScopeService.filterRows(rows, req.principal), req.query, ["code", "label", "status"]);
 }));
 
-app.post("/api/finance/payment-statuses", requireAuth, requirePermission("POST /api/payments"), asyncHandler(async (req, res) => {
+app.post("/api/finance/payment-statuses", requireAuth, requirePermission("POST /api/finance/payment-statuses"), asyncHandler(async (req, res) => {
   assertCanManagePaymentStatuses(req.principal);
   const row = await repository.upsertFinancePaymentStatus(req.body ?? {}, req.principal);
   res.status(201).json(row);
 }));
 
-app.patch("/api/finance/payment-statuses/:statusId", requireAuth, requirePermission("POST /api/payments"), asyncHandler(async (req, res) => {
+app.patch("/api/finance/payment-statuses/:statusId", requireAuth, requirePermission("PATCH /api/finance/payment-statuses/:statusId"), asyncHandler(async (req, res) => {
   assertCanManagePaymentStatuses(req.principal);
   const row = await repository.upsertFinancePaymentStatus(
     { ...(req.body ?? {}), code: req.params.statusId, id: req.params.statusId },
@@ -2297,18 +2298,18 @@ function assertCanAdjustStudentFee(principal) {
   throw new BusinessError(403, "Permission insuffisante pour ajuster une obligation.");
 }
 
-app.get("/api/finance/fee-grids", requireAuth, requirePermission("GET /api/backoffice/finance/unpaid"), asyncHandler(async (req, res) => {
+app.get("/api/finance/fee-grids", requireAuth, requirePermission("GET /api/finance/fee-grids"), asyncHandler(async (req, res) => {
   const rows = await repository.listFinanceFeeGrids(req.principal);
   sendList(res, tenantScopeService.filterRows(rows, req.principal), req.query, ["className", "academicYear", "status"]);
 }));
 
-app.post("/api/finance/fee-grids", requireAuth, requirePermission("POST /api/payments"), asyncHandler(async (req, res) => {
+app.post("/api/finance/fee-grids", requireAuth, requirePermission("POST /api/finance/fee-grids"), asyncHandler(async (req, res) => {
   assertCanManageFeeGrids(req.principal);
   const grid = await repository.upsertFinanceFeeGrid(req.body ?? {}, req.principal);
   res.status(201).json(grid);
 }));
 
-app.get("/api/finance/fee-grids/:gridId", requireAuth, requirePermission("GET /api/backoffice/finance/unpaid"), asyncHandler(async (req, res) => {
+app.get("/api/finance/fee-grids/:gridId", requireAuth, requirePermission("GET /api/finance/fee-grids"), asyncHandler(async (req, res) => {
   const detail = await repository.getFinanceFeeGrid(req.params.gridId, req.principal);
   if (!detail) throw new BusinessError(404, "Grille introuvable");
   const scope = String(req.principal?.schoolCode ?? "").trim();
@@ -2318,25 +2319,25 @@ app.get("/api/finance/fee-grids/:gridId", requireAuth, requirePermission("GET /a
   res.json(detail);
 }));
 
-app.patch("/api/finance/fee-grids/:gridId", requireAuth, requirePermission("POST /api/payments"), asyncHandler(async (req, res) => {
+app.patch("/api/finance/fee-grids/:gridId", requireAuth, requirePermission("PATCH /api/finance/fee-grids/:gridId"), asyncHandler(async (req, res) => {
   assertCanManageFeeGrids(req.principal);
   const grid = await repository.upsertFinanceFeeGrid({ ...(req.body ?? {}), id: req.params.gridId }, req.principal);
   res.json(grid);
 }));
 
-app.post("/api/finance/fee-grids/:gridId/activate", requireAuth, requirePermission("POST /api/payments"), asyncHandler(async (req, res) => {
+app.post("/api/finance/fee-grids/:gridId/activate", requireAuth, requirePermission("POST /api/finance/fee-grids/:gridId/activate"), asyncHandler(async (req, res) => {
   assertCanManageFeeGrids(req.principal);
   const grid = await repository.setFinanceFeeGridStatus(req.params.gridId, "Active", req.principal);
   res.json(grid);
 }));
 
-app.post("/api/finance/fee-grids/:gridId/deactivate", requireAuth, requirePermission("POST /api/payments"), asyncHandler(async (req, res) => {
+app.post("/api/finance/fee-grids/:gridId/deactivate", requireAuth, requirePermission("POST /api/finance/fee-grids/:gridId/deactivate"), asyncHandler(async (req, res) => {
   assertCanManageFeeGrids(req.principal);
   const grid = await repository.setFinanceFeeGridStatus(req.params.gridId, "Désactivée", req.principal);
   res.json(grid);
 }));
 
-app.post("/api/finance/fee-grids/:gridId/apply", requireAuth, requirePermission("POST /api/payments"), asyncHandler(async (req, res) => {
+app.post("/api/finance/fee-grids/:gridId/apply", requireAuth, requirePermission("POST /api/finance/fee-grids/:gridId/apply"), asyncHandler(async (req, res) => {
   assertCanManageFeeGrids(req.principal);
   await withIdempotency({
     req,
@@ -2350,12 +2351,12 @@ app.post("/api/finance/fee-grids/:gridId/apply", requireAuth, requirePermission(
   });
 }));
 
-app.get("/api/finance/student-fees", requireAuth, requirePermission("GET /api/backoffice/finance/unpaid"), asyncHandler(async (req, res) => {
+app.get("/api/finance/student-fees", requireAuth, requirePermission("GET /api/finance/student-fees"), asyncHandler(async (req, res) => {
   const rows = await repository.listFinanceStudentFees(req.principal);
   sendList(res, tenantScopeService.filterRows(rows, req.principal), req.query, ["studentName", "label", "status"]);
 }));
 
-app.post("/api/finance/reconcile-payment-allocations", requireAuth, requirePermission("POST /api/payments"), asyncHandler(async (req, res) => {
+app.post("/api/finance/reconcile-payment-allocations", requireAuth, requirePermission("POST /api/finance/reconcile-payment-allocations"), asyncHandler(async (req, res) => {
   const { financeAuditMetaFromRequest } = require("./lib/financeManagement");
   const result = await repository.reconcileFinancePaymentAllocations(
     req.principal,
@@ -2365,13 +2366,13 @@ app.post("/api/finance/reconcile-payment-allocations", requireAuth, requirePermi
   res.json(result);
 }));
 
-app.get("/api/finance/student-fees/:obligationId", requireAuth, requirePermission("GET /api/backoffice/finance/unpaid"), asyncHandler(async (req, res) => {
+app.get("/api/finance/student-fees/:obligationId", requireAuth, requirePermission("GET /api/finance/student-fees"), asyncHandler(async (req, res) => {
   const row = await repository.getFinanceStudentFee(req.params.obligationId, req.principal);
   if (!row) throw new BusinessError(404, "Obligation introuvable");
   res.json(row);
 }));
 
-app.post("/api/finance/student-fees/:obligationId/adjust", requireAuth, requirePermission("POST /api/payments"), asyncHandler(async (req, res) => {
+app.post("/api/finance/student-fees/:obligationId/adjust", requireAuth, requirePermission("POST /api/finance/student-fees/:obligationId/adjust"), asyncHandler(async (req, res) => {
   assertCanAdjustStudentFee(req.principal);
   const row = await repository.adjustFinanceStudentFee(req.params.obligationId, req.body ?? {}, req.principal);
   res.json(row);
@@ -5695,10 +5696,18 @@ async function principalMustChangePassword(principal = {}) {
 function requirePermission(routeKey) {
   return async (req, _res, next) => {
     try {
-      if (typeof repository.resolveEffectivePermissions === "function" && req.principal) {
-        const live = await repository.resolveEffectivePermissions(req.principal);
-        if (Array.isArray(live?.permissions)) {
-          req.principal = { ...req.principal, permissions: live.permissions };
+      if (req.principal) {
+        if (isFinanceLiveRbacRouteKey(routeKey) && typeof repository.resolveFinanceLivePermissions === "function") {
+          const live = await repository.resolveFinanceLivePermissions(req.principal);
+          req.principal = {
+            ...req.principal,
+            permissions: Array.isArray(live?.permissions) ? live.permissions : [],
+          };
+        } else if (typeof repository.resolveEffectivePermissions === "function") {
+          const live = await repository.resolveEffectivePermissions(req.principal);
+          if (Array.isArray(live?.permissions)) {
+            req.principal = { ...req.principal, permissions: live.permissions };
+          }
         }
       }
       if (!rbacService.canAccess(req.principal, routeKey)) {
