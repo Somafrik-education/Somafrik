@@ -132,3 +132,32 @@ test("F6: un fallback legacy de permissions est neutralisé", () => {
   };
   assert.equal(failClosedLegacyResolution(live, ["ACCOUNTANT"]), live);
 });
+
+test("F6: attachLiveRbacAuthority n'écrase pas resolveEffectivePermissions hors Finance", async () => {
+  const { attachLiveRbacAuthority } = require("./liveRbacPrincipalAuthority");
+  const original = async () => ({ permissions: ["Élèves:READ"], source: "original" });
+  const repo = { async resolveEffectivePermissions(principal) { return original(principal); } };
+  attachLiveRbacAuthority(repo);
+  assert.equal(typeof repo.resolveFinanceLivePermissions, "function");
+  const kept = await repo.resolveEffectivePermissions({ sub: "user-1" });
+  assert.deepEqual(kept.permissions, ["Élèves:READ"]);
+  assert.equal(kept.source, "original");
+});
+
+test("F6: les route keys L1 ne sont pas sous l'autorité Finance stricte", () => {
+  const { isFinanceLiveRbacRouteKey } = require("./financeRbacRouteMatrix");
+  for (const key of [
+    "GET /api/mobile-sync/l1/students",
+    "GET /api/mobile-sync/l1/classes",
+    "GET /api/mobile-sync/l1/assignments",
+    "GET /api/mobile-sync/l1/school-courses",
+    "GET /api/mobile-sync/l1/course-schedules",
+    "GET /api/students",
+    "GET /api/presences",
+    "POST /api/notes",
+  ]) {
+    assert.equal(isFinanceLiveRbacRouteKey(key), false, key);
+  }
+  assert.equal(isFinanceLiveRbacRouteKey("GET /api/payments"), true);
+  assert.equal(isFinanceLiveRbacRouteKey("POST /api/finance/fee-grids"), true);
+});

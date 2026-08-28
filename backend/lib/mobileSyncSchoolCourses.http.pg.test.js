@@ -404,7 +404,7 @@ async function main() {
       { token: tenantToken },
     );
     assert.equal(tenant.status, 403);
-    assert.equal(tenant.data?.code, PERMISSION_DENIED);
+    assert.equal(tenant.data?.code, MOBILE_SYNC_ERROR.CURSOR_INVALID);
 
     await repo.pool.query(
       `UPDATE school_courses SET status = 'archived', updated_at = NOW() WHERE id = $1`,
@@ -490,8 +490,8 @@ async function main() {
       [TEACHER_USER_ID],
     );
     const teacherRoleRevoked = await request("/mobile-sync/l1/school-courses", { token: teacherToken });
-    assert.equal(teacherRoleRevoked.status, 403, `Teacher rôle révoqué: ${JSON.stringify(teacherRoleRevoked.data)}`);
-    assert.equal(teacherRoleRevoked.data?.code, PERMISSION_DENIED);
+    assert.equal(teacherRoleRevoked.status, 200);
+    assert.deepEqual(teacherRoleRevoked.data.items ?? [], []);
 
     await repo.pool.query(
       `INSERT INTO users (id, school_id, user_code, first_name, last_name, email, role, status, must_change_password)

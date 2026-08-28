@@ -9,7 +9,7 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 const { spawnSync } = require("node:child_process");
-const { FINANCE_RBAC_ROUTE_MATRIX } = require("../lib/financeRbacRouteMatrix");
+const { FINANCE_RBAC_ROUTE_MATRIX, isFinanceLiveRbacRouteKey } = require("../lib/financeRbacRouteMatrix");
 const { routePermissions } = require("../services/rbacService");
 
 const ROOT = path.resolve(__dirname, "../..");
@@ -50,6 +50,8 @@ function sourceGuards() {
 
   assert.match(authority, /listActiveUserRoleKeysForSchool/);
   assert.match(authority, /resolveCanonicalUserIdForSchool/);
+  assert.match(authority, /resolveFinanceLivePermissions/);
+  assert.doesNotMatch(authority, /repository\.resolveEffectivePermissions\s*=/);
   assert.match(authority, /LIVE_RBAC_EMPTY_ROLE = "SANS_AFFECTATION"/);
   assert.match(authority, /legacy.*fail-closed-live-rbac/s);
   assert.doesNotMatch(authority, /principal\?\.permissions/);
@@ -64,10 +66,15 @@ function sourceGuards() {
 
   const requirePermissionAt = server.indexOf("function requirePermission(routeKey)");
   assert.ok(requirePermissionAt >= 0, "requirePermission absent");
-  const permissionSource = server.slice(requirePermissionAt, requirePermissionAt + 1300);
-  assert.match(permissionSource, /repository\.resolveEffectivePermissions\(req\.principal\)/);
+  const permissionSource = server.slice(requirePermissionAt, requirePermissionAt + 1800);
+  assert.match(permissionSource, /isFinanceLiveRbacRouteKey\(routeKey\)/);
+  assert.match(permissionSource, /repository\.resolveFinanceLivePermissions\(req\.principal\)/);
   assert.match(permissionSource, /permissions: Array\.isArray\(live\?\.permissions\) \? live\.permissions : \[\]/);
+  assert.match(permissionSource, /repository\.resolveEffectivePermissions\(req\.principal\)/);
   assert.match(permissionSource, /rbacService\.canAccess\(req\.principal, routeKey\)/);
+  assert.match(server, /requirePermission\("GET \/api\/mobile-sync\/l1\/students"\)/);
+  assert.equal(isFinanceLiveRbacRouteKey("GET /api/mobile-sync/l1/students"), false);
+  assert.equal(isFinanceLiveRbacRouteKey("GET /api/payments"), true);
 
   const feeGridPostAt = server.indexOf('app.post("/api/finance/fee-grids"');
   assert.ok(feeGridPostAt >= 0);

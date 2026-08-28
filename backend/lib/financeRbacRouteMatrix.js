@@ -252,4 +252,16 @@ const FINANCE_RBAC_ROUTE_MATRIX = [
   },
 ];
 
-module.exports = { FINANCE_RBAC_ROUTE_MATRIX };
+const FINANCE_LIVE_RBAC_ROUTE_KEYS = new Set(
+  FINANCE_RBAC_ROUTE_MATRIX.map((row) => String(row.routeKey ?? "").trim()).filter(Boolean),
+);
+
+function isFinanceLiveRbacRouteKey(routeKey) {
+  return FINANCE_LIVE_RBAC_ROUTE_KEYS.has(String(routeKey ?? "").trim());
+}
+
+module.exports = {
+  FINANCE_RBAC_ROUTE_MATRIX,
+  FINANCE_LIVE_RBAC_ROUTE_KEYS,
+  isFinanceLiveRbacRouteKey,
+};

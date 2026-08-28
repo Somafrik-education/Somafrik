@@ -121,10 +121,7 @@ test("contrat source : requirePermission overlaye resolveEffectivePermissions", 
     "function sendList(",
   );
   assert.match(fnBlock, /repository\.resolveEffectivePermissions/);
-  assert.match(
-    fnBlock,
-    /permissions: Array\.isArray\(live\?\.permissions\) \? live\.permissions : \[\]/,
-  );
+  assert.match(fnBlock, /req\.principal = \{ \.\.\.req\.principal, permissions: live\.permissions \}/);
 });
 
 test("contrat source : requireAuth n'overlaye pas les permissions live", () => {

@@ -39,7 +39,7 @@ async function listAuthoritativeRoleKeys(repository, principal) {
   }
 
   if (typeof repository.listActiveUserRoleKeys !== "function") return [];
-  const loaded = await repository.listActiveUserRoleKeys(userId);
+  const loaded = await repository.listActiveUserRoleKeys(rawUserId);
   if (!Array.isArray(loaded)) {
     throw new Error("LIVE_RBAC_ROLE_LOOKUP_INVALID");
   }
@@ -81,14 +81,16 @@ async function resolveLiveEffectivePermissions(repository, principal) {
 
 function attachLiveRbacAuthority(repository) {
   if (!repository || repository.__liveRbacAuthorityAttached) return repository;
-  if (typeof repository.resolveEffectivePermissions !== "function") return repository;
 
   Object.defineProperty(repository, "__liveRbacAuthorityAttached", {
     value: true,
     enumerable: false,
     configurable: false,
   });
-  repository.resolveEffectivePermissions = (principal) =>
+  // F6 strict : primitive dédiée. Ne pas remplacer resolveEffectivePermissions —
+  // L1 / Classes / Présences / Notes conservent leur contrat live existant
+  // (handler fail-closed, HTTP 200 items []).
+  repository.resolveFinanceLivePermissions = (principal) =>
     resolveLiveEffectivePermissions(repository, principal);
   return repository;
 }

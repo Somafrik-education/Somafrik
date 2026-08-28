@@ -42,10 +42,11 @@ Invariant : **POSTGRESQL LIVE > JWT STALE**.
 
 - Session établissement : uniquement `listActiveUserRoleKeysForSchool`. Primitive absente ou établissement introuvable → `[]`.
 - Identité JWT : `sub` = `users.id`, ou overlay `teachers.id` du tenant résolu vers `users.id`. Jamais de reconstruction de rôles depuis le JWT.
-- Zéro rôle actif → sentinel interne `SANS_AFFECTATION` → permissions `[]`. Le JWT `Admin School` / `ALL_PRIVILEGES` / `Paiements:UPDATE` ne restaure rien.
-- `requirePermission` **remplace toujours** `principal.permissions` par le tableau live (ou `[]` si la résolution est invalide).
-- Source `legacy-map-fallback` / `legacy-role-fallback` → fail-closed permissions vides.
-- Autorité F6 attachée au repository PostgreSQL seulement. Le mode mémoire de développement reste hors production.
+- Zéro rôle actif → sentinel interne `SANS_AFFECTATION` → permissions Finance `[]`. Le JWT `Admin School` / `ALL_PRIVILEGES` / `Paiements:UPDATE` ne restaure rien **sur les routes Finance**.
+- `requirePermission` Finance (`isFinanceLiveRbacRouteKey`) appelle `resolveFinanceLivePermissions` et **remplace toujours** `principal.permissions` par le tableau live (ou `[]`).
+- `requirePermission` hors Finance conserve l'overlay historique `resolveEffectivePermissions` (contrat L1 / Classes / Présences / Notes). `attachLiveRbacAuthority` **n'écrase plus** `resolveEffectivePermissions`.
+- Source `legacy-map-fallback` / `legacy-role-fallback` → fail-closed permissions vides **pour Finance**.
+- Autorité F6 attachée au repository PostgreSQL seulement (`resolveFinanceLivePermissions`). Le mode mémoire de développement reste hors production.
 
 ## 3. Matrice endpoint / action
 
@@ -95,13 +96,12 @@ Utilisateur lié aux deux établissements : `TEACHER` sur SCH-A, `ACCOUNTANT` su
 ## 7. Tests exécutés
 
 - `backend/lib/financeLiveRbac.test.js` — libellé de rôle ≠ capacité
-- `backend/lib/liveRbacPrincipalAuthority.test.js` — tenant scope, zéro rôle, legacy fail-closed
+- `backend/lib/liveRbacPrincipalAuthority.test.js` — tenant scope, zéro rôle, legacy fail-closed, isolation hors Finance
 - `backend/lib/financeLiveRbac.http.pg.test.js` — scénarios 1–7 HTTP PostgreSQL stale-JWT
 - `verify:finance-rbac` (source guards + unit + HTTP) → `GO — HTTP PostgreSQL stale-JWT inclus`
 - `verify:finance-management` — non-régression F4 (route keys explicites)
-- L1 mobile-sync HTTP : révocation de tous les `user_roles` actifs → **403 `PERMISSION_DENIED`** (fail-closed `requirePermission`), plus 200 items vides. CUSTOM_ROLE avec grant live reste 200.
-- JWT `schoolCode` d'un établissement sans rôle live → 403 `PERMISSION_DENIED` avant validation curseur (plus `CURSOR_INVALID`).
-- Overlay identité `teachers.id` → `users.id` via `resolveCanonicalUserIdForSchool` **avant** le lookup `user_roles` (identité, pas fallback de permissions JWT).
+- `verify:mobile-sync-l1-students` — TEACHER révoqué live → **200 `items: []`** (contrat RC2/L1, pas 403)
+- Overlay identité `teachers.id` → `users.id` via `resolveCanonicalUserIdForSchool` **avant** le lookup Finance (identité, pas fallback de permissions JWT).
 
 Scénario 7 : grant `Paiements:READ` live → `payment-student-options` 200 ; sans `Élèves:READ` → `GET /students` 403.
 
@@ -131,7 +131,7 @@ Fichiers : workflows F6/PR Gates/nightly, `liveRbacPrincipalAuthority`, matrice 
 ## 11. HEAD SHA
 
 Implémentation P1-A–D : `9f209cfff6036b0a180d4635b66e7b7b88e8497b`  
-Alignement L1 HTTP zéro rôle → 403 : voir HEAD de branche après push.
+Isolation F6 / restauration contrat L1 : voir HEAD de branche après push.
 
 ## 12. Ahead / behind
 

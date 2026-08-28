@@ -26,6 +26,7 @@ const {
 } = require("./db/connectionConfig");
 const { TokenService } = require("./services/tokenService");
 const { RbacService, PERMISSION_DENIED } = require("./services/rbacService");
+const { isFinanceLiveRbacRouteKey } = require("./lib/financeRbacRouteMatrix");
 const { mergeRolePermissions, normalizeBusinessPermission } = require("./lib/rolePermissionsResolution");
 const { PaginationService } = require("./services/paginationService");
 const { CacheService } = require("./services/cacheService");
@@ -5695,12 +5696,19 @@ async function principalMustChangePassword(principal = {}) {
 function requirePermission(routeKey) {
   return async (req, _res, next) => {
     try {
-      if (typeof repository.resolveEffectivePermissions === "function" && req.principal) {
-        const live = await repository.resolveEffectivePermissions(req.principal);
-        req.principal = {
-          ...req.principal,
-          permissions: Array.isArray(live?.permissions) ? live.permissions : [],
-        };
+      if (req.principal) {
+        if (isFinanceLiveRbacRouteKey(routeKey) && typeof repository.resolveFinanceLivePermissions === "function") {
+          const live = await repository.resolveFinanceLivePermissions(req.principal);
+          req.principal = {
+            ...req.principal,
+            permissions: Array.isArray(live?.permissions) ? live.permissions : [],
+          };
+        } else if (typeof repository.resolveEffectivePermissions === "function") {
+          const live = await repository.resolveEffectivePermissions(req.principal);
+          if (Array.isArray(live?.permissions)) {
+            req.principal = { ...req.principal, permissions: live.permissions };
+          }
+        }
       }
       if (!rbacService.canAccess(req.principal, routeKey)) {
         return next(denyPermission());
