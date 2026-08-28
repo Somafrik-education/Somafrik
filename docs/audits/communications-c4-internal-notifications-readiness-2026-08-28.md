@@ -96,7 +96,13 @@ Une URL publique arbitraire n'est pas utilisée comme frontière de sécurité.
 
 ## RBAC et isolation
 
-Les routes internes sont protégées par les permissions live `Notifications:READ`, `Notifications:CREATE` et `Notifications:UPDATE` selon l'opération.
+Les routes internes utilisent les permissions live suivantes :
+
+- `Notifications:READ` pour consulter une notification et modifier **son propre état destinataire** (`read_at`, `archived_at`) ;
+- `Notifications:CREATE` pour créer une notification humaine et téléverser ses pièces jointes ;
+- `ALL_PRIVILEGES` / `COUNTRY_PRIVILEGES` restent des privilèges de gestion selon le périmètre canonique.
+
+Le marquage lu et l'archivage ne nécessitent volontairement pas `Notifications:UPDATE` : ce sont des mutations de l'état personnel du destinataire, et non une modification du contenu canonique de la notification. Exiger `UPDATE` empêcherait notamment un parent autorisé en lecture d'archiver sa propre notification.
 
 Les tests C4 imposent notamment :
 
