@@ -165,20 +165,19 @@ async function seed(pool) {
 
   await pool.query(
     `INSERT INTO users (id,school_id,user_code,first_name,last_name,email,role,status,must_change_password) VALUES
-      ($1,$8,'ADM-C4-A','Admin','A','adm-c4-a@test.local','Admin School','active',FALSE),
-      ($2,$8,'PAR-C4-A','Parent','A','par-c4-a@test.local','Parent','active',FALSE),
-      ($3,$8,'PAR-C4-A2','Parent','A2','par-c4-a2@test.local','Parent','active',FALSE),
-      ($4,$8,'STU-C4-A','Élève','A','stu-c4-a@test.local','Élève / Étudiant','active',FALSE),
-      ($5,$9,'ADM-C4-B','Admin','B','adm-c4-b@test.local','Admin School','active',FALSE),
-      ($6,$9,'PAR-C4-B','Parent','B','par-c4-b@test.local','Parent','active',FALSE),
-      ($7,NULL,'SUPER-C4','Super','Admin','super-c4@test.local','Super Administrateur Somafrik','active',FALSE)`,
-    [ADMIN_A,PARENT_A,PARENT_A2,STUDENT_USER_A,ADMIN_B,PARENT_B,SUPER_SA,schoolA,schoolB],
+      ($1,$7,'ADM-C4-A','Admin','A','adm-c4-a@test.local','Admin School','active',FALSE),
+      ($2,$7,'PAR-C4-A','Parent','A','par-c4-a@test.local','Parent','active',FALSE),
+      ($3,$7,'PAR-C4-A2','Parent','A2','par-c4-a2@test.local','Parent','active',FALSE),
+      ($4,$8,'ADM-C4-B','Admin','B','adm-c4-b@test.local','Admin School','active',FALSE),
+      ($5,$8,'PAR-C4-B','Parent','B','par-c4-b@test.local','Parent','active',FALSE),
+      ($6,NULL,'SUPER-C4','Super','Admin','super-c4@test.local','Super Administrateur Somafrik','active',FALSE)`,
+    [ADMIN_A,PARENT_A,PARENT_A2,ADMIN_B,PARENT_B,SUPER_SA,schoolA,schoolB],
   );
   await pool.query(
     `INSERT INTO user_roles (user_id,school_id,role_key,status) VALUES
-      ($1,$8,'SCHOOL_ADMIN','active'),($2,$8,'PARENT','active'),($3,$8,'PARENT','active'),
-      ($4,$8,'STUDENT','active'),($5,$9,'SCHOOL_ADMIN','active'),($6,$9,'PARENT','active'),($7,NULL,'SUPER_ADMIN','active')`,
-    [ADMIN_A,PARENT_A,PARENT_A2,STUDENT_USER_A,ADMIN_B,PARENT_B,SUPER_SA,schoolA,schoolB],
+      ($1,$7,'SCHOOL_ADMIN','active'),($2,$7,'PARENT','active'),($3,$7,'PARENT','active'),
+      ($4,$8,'SCHOOL_ADMIN','active'),($5,$8,'PARENT','active'),($6,NULL,'SUPER_ADMIN','active')`,
+    [ADMIN_A,PARENT_A,PARENT_A2,ADMIN_B,PARENT_B,SUPER_SA,schoolA,schoolB],
   );
 
   await pool.query(
@@ -206,6 +205,15 @@ async function seed(pool) {
     `INSERT INTO students (id,school_id,student_code,first_name,last_name,status) VALUES
       ($1,$3,'STU-C4-A','Élève','A','active'),($2,$3,'STU-C4-A2','Élève','A2','active')`,
     [STUDENT_A, STUDENT_A2, schoolA],
+  );
+  await pool.query(
+    `INSERT INTO users (id,school_id,user_code,first_name,last_name,email,role,status,must_change_password)
+     VALUES ($1,$2,'STU-C4-A','Élève','A','stu-c4-a@test.local','Élève / Étudiant','active',FALSE)`,
+    [STUDENT_USER_A, schoolA],
+  );
+  await pool.query(
+    `INSERT INTO user_roles (user_id,school_id,role_key,status) VALUES ($1,$2,'STUDENT','active')`,
+    [STUDENT_USER_A, schoolA],
   );
   await pool.query(
     `INSERT INTO enrollments (school_id,student_id,class_id,academic_year_id,enrollment_date,status)
