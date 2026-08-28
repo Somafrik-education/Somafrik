@@ -3,7 +3,7 @@
 Date : 2026-08-28  
 Branche : `fix/communications-c4-internal-notifications-production-ready`  
 Base de travail : `develop@5e150db5e2c2e042c5e82f6e684af05515dd554e`  
-HEAD de finalisation : voir section « Corrections CI / bootstrap » (HEAD exact après CI-C4-001 / P1-C4-001).  
+HEAD correction CI-C4-001 / P1-C4-001 : `93e06b0fbaa9a8e1c018f36b8f49b5b571d0a527`  
 Comparaison : merge-base = `develop` exact ; PR #375 reste **Draft**.  
 Périmètre : notifications internes Somafrik, sans fournisseur SMS/WhatsApp/push externe.
 
@@ -171,7 +171,24 @@ Aucune seconde définition de `cancelled_at`. Aucune exécution de `FINANCE_SCHE
 
 ### CI exact-HEAD
 
-Les workflows doivent être relus sur le **nouveau** HEAD de cette correction, pas sur `751925b6`. PR #375 reste Draft. Aucun Ready. Aucun merge.
+Correction poussée : `93e06b0fbaa9a8e1c018f36b8f49b5b571d0a527` (pas un relance de `751925b6`).
+
+Non-régression locale sur ce HEAD :
+
+- `verify:communications-c4` GO (source guards + CAS A/B + E2E C4-01…C4-16)
+- `verify:communications-c3` GO
+- `verify:communications-c2` GO
+- `verify:communications-e2e` GO (C1)
+- `verify:functional-rbac` OK
+- `verify:user-role-lifecycle` OK (`userRoleLifecycle.pg.test.js` sans fixture C4)
+- `verify:users-login-identity` OK
+- `verify:presences-roster` OK
+- `verify:pedagogy-management` OK
+- `verify:finance-management` OK
+- `npm run typecheck` OK
+- `npm run build` OK
+
+GitHub CI du nouveau HEAD : à confirmer sur les workflows `Communications C4` et `PR Gates` (Risk-targeted / Required). PR #375 reste Draft. Aucun Ready. Aucun merge.
 
 ## Limitations
 
