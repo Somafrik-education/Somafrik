@@ -39,7 +39,7 @@ describe("paiement multi-libellés", () => {
         classOptions: [],
         method: "Espèces",
         date: "2026-08-19",
-        lines: [{ ...createPaymentLine("Scolarité"), amount: "500" }],
+        lines: [{ ...createPaymentLine("__unallocated__"), amount: "500" }],
       }),
     ).toMatch(/inscription active/);
   });

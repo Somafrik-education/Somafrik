@@ -17,7 +17,6 @@ import {
   type OutboxEntry,
 } from "../lib/outbox";
 import {
-  createSchoolPayment,
   saveNote,
   savePresences,
   sendClientsMessage,
@@ -39,8 +38,6 @@ async function dispatchOutboxEntry(entry: OutboxEntry) {
       return savePresences(payload, options);
     case "notes":
       return saveNote(payload, options);
-    case "payments":
-      return createSchoolPayment(payload, options);
     default:
       throw new Error("OUTBOX_DOMAIN_FORBIDDEN");
   }

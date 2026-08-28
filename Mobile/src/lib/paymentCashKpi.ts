@@ -30,9 +30,7 @@ export function getPaymentCashKpi(payments: readonly CanonicalPayment[]): Paymen
       if (!isCountedMobileCashPayment(payment)) return acc;
       const collected = Number(payment.amount ?? payment.totalAmount ?? 0);
       const allocated = Number(payment.allocatedAmount ?? 0);
-      const unallocated = Number(
-        payment.unallocatedAmount ?? Math.max(0, collected - allocated),
-      );
+      const unallocated = Number(payment.unallocatedAmount ?? 0);
       acc.collectedAmount += collected;
       acc.allocatedAmount += allocated;
       acc.unallocatedAmount += unallocated;

@@ -16,16 +16,25 @@ import {
   paymentDateFromInput,
   paymentDateToInput,
   parseLineAmount,
+  searchStudentsForPayment,
+  resolveSchoolCurrency,
   sumPaymentLines,
   validateMultiItemPaymentInput,
   type PaymentRecord,
   type QuickPaymentLine,
   type StudentSearchResult,
-  searchStudentsForPayment,
-  resolveSchoolCurrency,
 } from "../../lib/quickPayment";
 import { buildPaymentReceiptPrintPlan } from "../../pages/entity-page/paymentWorkflow";
 import { financeApi } from "../../lib/financeApi";
+import {
+  UNALLOCATED_FEE_TYPE,
+  UNALLOCATED_TARGET,
+  buildFinancePaymentWritePayload,
+  collectOpenObligationsFromProjection,
+  draftLineCash,
+  presentPaymentCashFromProjection,
+  type FinanceObligationProjection,
+} from "../../lib/financePaymentWrite";
 import { PaymentReceipt } from "./PaymentReceipt";
 
 interface QuickPaymentModalProps {
@@ -44,7 +53,7 @@ export function QuickPaymentModal({ open, onClose, onSaved }: QuickPaymentModalP
   const [search, setSearch] = useState("");
   const [selectedStudent, setSelectedStudent] = useState<StudentSearchResult | null>(null);
   const [classId, setClassId] = useState("");
-  const [lines, setLines] = useState<QuickPaymentLine[]>([createPaymentLine()]);
+  const [lines, setLines] = useState<QuickPaymentLine[]>([createPaymentLine(UNALLOCATED_TARGET)]);
   const [method, setMethod] = useState("");
   const [dateInput, setDateInput] = useState(paymentDateToInput(defaultPaymentDate()));
   const [comment, setComment] = useState("");
@@ -53,9 +62,9 @@ export function QuickPaymentModal({ open, onClose, onSaved }: QuickPaymentModalP
   const [showReceipt, setShowReceipt] = useState(false);
   const [optionStudents, setOptionStudents] = useState<PaymentRecord[]>([]);
   const [catalogMethods, setCatalogMethods] = useState<string[]>([]);
-  const [catalogFeeTypes, setCatalogFeeTypes] = useState<string[]>([]);
   const [catalogCurrency, setCatalogCurrency] = useState("");
   const [catalogError, setCatalogError] = useState("");
+  const [studentFees, setStudentFees] = useState<FinanceObligationProjection[]>([]);
 
   const students = useMemo(
     () => (optionStudents.length ? optionStudents : []),
@@ -85,6 +94,21 @@ export function QuickPaymentModal({ open, onClose, onSaved }: QuickPaymentModalP
     () => (selectedStudent ? collectStudentPaymentClasses(selectedStudent.id, students) : []),
     [selectedStudent, students],
   );
+  const openObligations = useMemo(
+    () => (selectedStudent ? collectOpenObligationsFromProjection(selectedStudent.id, studentFees) : []),
+    [selectedStudent, studentFees],
+  );
+  const obligationSelectOptions = useMemo(
+    () => [
+      { value: UNALLOCATED_TARGET, label: UNALLOCATED_FEE_TYPE },
+      ...openObligations.map((row) => ({
+        value: row.obligationId,
+        label: `${row.label}${row.periodLabel ? ` · ${row.periodLabel}` : ""} · solde ${formatMetric(row.balance, row.currency || catalogCurrency || "CDF")}`,
+      })),
+    ],
+    [openObligations, catalogCurrency],
+  );
+  const draftCash = draftLineCash(lines);
   const total = sumPaymentLines(lines);
   const currency = catalogCurrency || resolveSchoolCurrency(school);
 
@@ -93,7 +117,7 @@ export function QuickPaymentModal({ open, onClose, onSaved }: QuickPaymentModalP
     setSearch("");
     setSelectedStudent(null);
     setClassId("");
-    setLines([createPaymentLine()]);
+    setLines([createPaymentLine(UNALLOCATED_TARGET)]);
     setMethod("");
     setDateInput(paymentDateToInput(defaultPaymentDate()));
     setComment("");
@@ -102,9 +126,10 @@ export function QuickPaymentModal({ open, onClose, onSaved }: QuickPaymentModalP
     setCatalogError("");
     void (async () => {
       try {
-        const [options, catalog] = await Promise.all([
+        const [options, catalog, fees] = await Promise.all([
           financeApi.listPaymentStudentOptions(),
           financeApi.getFinanceCatalog(),
+          financeApi.listStudentFees(),
         ]);
         const rows = Array.isArray(options) ? options : [];
         const flattened: PaymentRecord[] = [];
@@ -131,13 +156,10 @@ export function QuickPaymentModal({ open, onClose, onSaved }: QuickPaymentModalP
           }
         }
         setOptionStudents(flattened);
+        setStudentFees(Array.isArray(fees) ? fees : []);
         const activeMethods = (catalog.paymentMethods ?? []).filter((row) => row.active).map((row) => row.label);
-        const uniqueTypes = [
-          ...new Set((catalog.feeTypeCatalog ?? catalog.canonicalFeeTypes ?? []).map((row) => row.feeType)),
-        ].filter(Boolean);
         if (!activeMethods.length) {
           setCatalogMethods([]);
-          setCatalogFeeTypes(uniqueTypes);
           setMethod("");
           setCatalogError("Aucun moyen de paiement actif pour cet établissement.");
           if (catalog.currency) setCatalogCurrency(catalog.currency);
@@ -145,21 +167,13 @@ export function QuickPaymentModal({ open, onClose, onSaved }: QuickPaymentModalP
         }
         setCatalogMethods(activeMethods);
         setMethod(activeMethods[0]);
-        setCatalogFeeTypes(uniqueTypes);
-        if (uniqueTypes.length) {
-          setLines((current) =>
-            current.map((line) =>
-              uniqueTypes.includes(line.feeType) ? line : { ...line, feeType: uniqueTypes[0] },
-            ),
-          );
-        }
         if (catalog.currency) setCatalogCurrency(catalog.currency);
       } catch (cause) {
         setCatalogError(cause instanceof Error ? cause.message : "Catalogue financier indisponible.");
         setOptionStudents([]);
         setCatalogMethods([]);
-        setCatalogFeeTypes([]);
         setCatalogCurrency("");
+        setStudentFees([]);
       }
     })();
   }, [open, schoolCode]);
@@ -169,6 +183,8 @@ export function QuickPaymentModal({ open, onClose, onSaved }: QuickPaymentModalP
     setSearch(student.name);
     const options = collectStudentPaymentClasses(student.id, students);
     setClassId(options.length === 1 ? options[0].classId : "");
+    const open = collectOpenObligationsFromProjection(student.id, studentFees);
+    setLines([createPaymentLine(open.length === 1 ? open[0].obligationId : UNALLOCATED_TARGET)]);
   }
 
   function updateLine(id: string, patch: Partial<QuickPaymentLine>) {
@@ -183,18 +199,23 @@ export function QuickPaymentModal({ open, onClose, onSaved }: QuickPaymentModalP
     if (!selectedStudent) return;
     setBusy(true);
     try {
-      const created = await financeApi.createPayment({
+      const payload = buildFinancePaymentWritePayload({
         studentId: selectedStudent.id,
         classId,
-        items: lines.map((line) => ({
-          feeType: line.feeType,
-          feeLabel: line.feeType,
-          amount: parseLineAmount(line.amount),
-        })),
         paymentMethod: method,
         paidAt: paymentDateFromInput(dateInput),
         comment,
+        lines: lines.map((line) => {
+          const obligation = openObligations.find((row) => row.obligationId === line.obligationId);
+          return {
+            obligationId: line.obligationId,
+            amount: parseLineAmount(line.amount),
+            feeType: obligation?.feeType,
+            label: obligation?.label,
+          };
+        }),
       });
+      const created = await financeApi.createPayment(payload);
       await refresh();
       setSavedPayment(created as unknown as PaymentRecord);
       onSaved?.(created as unknown as PaymentRecord);
@@ -222,10 +243,6 @@ export function QuickPaymentModal({ open, onClose, onSaved }: QuickPaymentModalP
       showToast("Moyen de paiement non autorisé pour cet établissement.", "error");
       return;
     }
-    if (catalogFeeTypes.length && lines.some((line) => !catalogFeeTypes.includes(line.feeType))) {
-      showToast("Type de frais non autorisé pour cet établissement.", "error");
-      return;
-    }
     const validationError = validateMultiItemPaymentInput({
       student: selectedStudent,
       classId,
@@ -242,11 +259,12 @@ export function QuickPaymentModal({ open, onClose, onSaved }: QuickPaymentModalP
   }
 
   if (showReceipt && savedPayment) {
+    const cash = presentPaymentCashFromProjection(savedPayment as { amount?: number; allocatedAmount?: number; unallocatedAmount?: number });
     return (
       <Modal
         open={open}
         title="Reçu de paiement"
-        description="Paiement enregistré avec succès."
+        description={`Montant reçu ${formatMetric(cash.received, currency)} · imputé ${formatMetric(cash.allocated, currency)} · Non imputé ${formatMetric(cash.unallocated, currency)}`}
         onClose={() => {
           setShowReceipt(false);
           onClose();
@@ -287,7 +305,7 @@ export function QuickPaymentModal({ open, onClose, onSaved }: QuickPaymentModalP
     <Modal
       open={open}
       title="Enregistrer le paiement"
-      description="Un reçu unique pour plusieurs libellés."
+      description="Imputation par obligationId. Le reste est explicitement Non imputé."
       onClose={onClose}
       size="lg"
       footer={
@@ -375,18 +393,18 @@ export function QuickPaymentModal({ open, onClose, onSaved }: QuickPaymentModalP
         ) : null}
 
         <div className="space-y-3">
-          <p className="text-sm font-semibold text-ink">Libellés</p>
+          <p className="text-sm font-semibold text-ink">Obligations</p>
           {lines.map((line, index) => (
             <div
               key={line.id}
               className="grid gap-3 rounded-xl border border-line bg-slate-50 p-3 sm:grid-cols-[1fr_8rem_auto]"
               data-testid={`payment-line-${index}`}
             >
-              <Field label="Type de frais / libellé" required>
+              <Field label="Obligation / Non imputé" required>
                 <Select
-                  value={line.feeType}
-                  onChange={(event) => updateLine(line.id, { feeType: event.target.value })}
-                  options={catalogFeeTypes.map((value) => ({ value, label: value }))}
+                  value={line.obligationId}
+                  onChange={(event) => updateLine(line.id, { obligationId: event.target.value })}
+                  options={obligationSelectOptions}
                 />
               </Field>
               <Field label="Montant" required>
@@ -416,9 +434,9 @@ export function QuickPaymentModal({ open, onClose, onSaved }: QuickPaymentModalP
             type="button"
             variant="secondary"
             data-testid="payment-add-line"
-            disabled={!catalogFeeTypes.length}
+            disabled={Boolean(catalogError)}
             onClick={() =>
-              setLines((current) => [...current, createPaymentLine(catalogFeeTypes[0] || "")])
+              setLines((current) => [...current, createPaymentLine(UNALLOCATED_TARGET)])
             }
           >
             <Plus className="mr-1 h-4 w-4" />
@@ -426,9 +444,29 @@ export function QuickPaymentModal({ open, onClose, onSaved }: QuickPaymentModalP
           </Button>
         </div>
 
-        <div className="rounded-xl border border-line bg-white px-4 py-3 text-right">
-          <p className="text-xs uppercase tracking-wide text-muted">Total</p>
-          <p className="text-2xl font-black text-brand" data-testid="payment-total">
+        <div className="rounded-xl border border-line bg-white px-4 py-3">
+          <div className="grid gap-2 text-sm sm:grid-cols-3">
+            <div>
+              <p className="text-xs uppercase tracking-wide text-muted">Montant reçu</p>
+              <p className="font-black text-ink" data-testid="payment-received">
+                {formatMetric(draftCash.received, currency)}
+              </p>
+            </div>
+            <div>
+              <p className="text-xs uppercase tracking-wide text-muted">Montant imputé</p>
+              <p className="font-black text-ink" data-testid="payment-allocated">
+                {formatMetric(draftCash.allocated, currency)}
+              </p>
+            </div>
+            <div>
+              <p className="text-xs uppercase tracking-wide text-muted">Montant non imputé</p>
+              <p className="font-black text-brand" data-testid="payment-unallocated">
+                {formatMetric(draftCash.unallocated, currency)}
+              </p>
+            </div>
+          </div>
+          <p className="mt-3 text-right text-xs uppercase tracking-wide text-muted">Total</p>
+          <p className="text-right text-2xl font-black text-brand" data-testid="payment-total">
             {formatMetric(total, currency)}
           </p>
         </div>
@@ -458,7 +496,7 @@ export function QuickPaymentModal({ open, onClose, onSaved }: QuickPaymentModalP
 
         <p className="flex items-center gap-2 text-xs text-muted">
           <Zap className="h-3.5 w-3.5 text-brand" aria-hidden="true" />
-          Un reçu · une référence · total recalculé côté serveur
+          Un reçu · obligationId explicite · soldes serveur
         </p>
       </form>
     </Modal>

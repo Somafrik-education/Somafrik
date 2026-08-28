@@ -180,6 +180,7 @@ assert.equal(
       amount: "25000",
       classId: "class-6a",
       classOptions: [{ classId: "class-6a" }],
+      obligationId: "__unallocated__",
     }),
   ),
   false,

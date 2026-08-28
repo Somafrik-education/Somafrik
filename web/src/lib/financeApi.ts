@@ -1,4 +1,5 @@
 import { api } from "../api/client";
+import type { FinanceObligationProjection } from "./financePaymentWrite";
 
 export interface FinancePaymentItem {
   id?: string;
@@ -6,6 +7,7 @@ export interface FinancePaymentItem {
   feeType: string;
   feeLabel?: string;
   amount: number;
+  obligationId?: string;
 }
 
 export interface FinancePayment {
@@ -130,7 +132,7 @@ export const financeApi = {
       payload,
     ),
 
-  listStudentFees: () => api.get<unknown[]>("/finance/student-fees"),
+  listStudentFees: () => api.get<FinanceObligationProjection[]>("/finance/student-fees"),
   getStudentFee: (obligationId: string) =>
     api.get(`/finance/student-fees/${encodeURIComponent(obligationId)}`),
   adjustStudentFee: (obligationId: string, payload: Record<string, unknown>) =>

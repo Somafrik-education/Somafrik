@@ -37,22 +37,17 @@ export default function StudentPaymentsScreen({ route, navigation }: Partial<Pro
     studentFeesSnapshot,
     loadPayments,
     loadStudentFees,
-    loadStudents,
-    studentsData,
   } = useAdminData();
   const [paymentStudents, setPaymentStudents] = useState<PaymentStudent[]>([]);
   const [paymentMethods, setPaymentMethods] = useState<string[]>([]);
   const studentId = route?.params?.studentId ?? selectedStudentId;
-  const pickerStudents: PaymentStudent[] = paymentStudents.length
-    ? paymentStudents
-    : (studentsData as PaymentStudent[]);
+  const pickerStudents: PaymentStudent[] = paymentStudents;
   const student = studentId ? pickerStudents.find((item) => item.id === studentId) : undefined;
 
   const refreshFinance = useCallback(async () => {
     await Promise.all([
       loadPayments(),
       loadStudentFees(),
-      loadStudents(),
       getPaymentStudentOptions()
         .then((rows) => setPaymentStudents(paymentStudentsFromOptions(rows)))
         .catch(() => setPaymentStudents([])),
@@ -64,7 +59,7 @@ export default function StudentPaymentsScreen({ route, navigation }: Partial<Pro
         })
         .catch(() => setPaymentMethods([])),
     ]);
-  }, [loadPayments, loadStudentFees, loadStudents]);
+  }, [loadPayments, loadStudentFees]);
 
   useFocusEffect(
     useCallback(() => {

@@ -290,6 +290,7 @@ jobs:
           npm run verify:finance-obligation-lifecycle
           npm run verify:finance-management
           npm run verify:finance-multi-item-payment
+          npm run verify:finance-web-mobile-convergence
 
       - name: Pedagogy
         if: needs.scope.outputs.pedagogy == 'true'

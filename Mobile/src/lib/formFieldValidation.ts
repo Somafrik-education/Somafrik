@@ -176,6 +176,12 @@ export function validateUserIdentityDraft(input: {
   return errors;
 }
 
+const UNALLOCATED_TARGET = "__unallocated__";
+
+function isUnallocatedObligationId(obligationId: unknown): boolean {
+  return trimField(obligationId) === UNALLOCATED_TARGET;
+}
+
 export function validatePaymentDraft(input: {
   studentId: unknown;
   amount: unknown;
@@ -198,15 +204,51 @@ export function validatePaymentDraft(input: {
       errors.classId = "Classe invalide pour cet élève.";
     }
     const fees = Array.isArray(input.obligationOptions) ? input.obligationOptions : [];
-    if (fees.length && !trimField(input.obligationId)) {
-      errors.obligationId = requiredError("Frais");
-    } else if (
-      fees.length &&
-      !fees.some((row) => trimField(row.obligationId) === trimField(input.obligationId))
-    ) {
-      errors.obligationId = "Frais invalide pour cet élève.";
+    const obligationId = trimField(input.obligationId);
+    if (!isUnallocatedObligationId(input.obligationId) && !obligationId) {
+      errors.obligationId = "FINANCE_OBLIGATION_ID_REQUIRED";
+    } else if (!isUnallocatedObligationId(input.obligationId) && fees.length) {
+      if (!fees.some((row) => trimField(row.obligationId) === obligationId)) {
+        errors.obligationId = "Frais invalide pour cet élève.";
+      }
     }
   }
+  return errors;
+}
+
+export function validateFinancePaymentLinesDraft(input: {
+  studentId: unknown;
+  classId?: unknown;
+  classOptions?: Array<{ classId: string }>;
+  lines?: Array<{ obligationId?: unknown; amount?: unknown }>;
+  obligationOptions?: Array<{ obligationId: string }>;
+}): Record<string, string> {
+  const first = input.lines?.[0];
+  const errors = validatePaymentDraft({
+    studentId: input.studentId,
+    amount: first?.amount,
+    classId: input.classId,
+    classOptions: input.classOptions,
+    obligationId: first?.obligationId,
+    obligationOptions: input.obligationOptions,
+  });
+  const lines = Array.isArray(input.lines) ? input.lines : [];
+  if (!lines.length) {
+    errors.lines = "Ajoutez au moins une ligne.";
+    return errors;
+  }
+  const fees = Array.isArray(input.obligationOptions) ? input.obligationOptions : [];
+  lines.forEach((line, index) => {
+    const amount = validateAmount(line.amount, "Montant", true);
+    if (amount) errors[`amount-${index}`] = amount;
+    if (!isUnallocatedObligationId(line.obligationId) && !trimField(line.obligationId)) {
+      errors[`obligationId-${index}`] = "FINANCE_OBLIGATION_ID_REQUIRED";
+    } else if (!isUnallocatedObligationId(line.obligationId) && fees.length) {
+      if (!fees.some((row) => trimField(row.obligationId) === trimField(line.obligationId))) {
+        errors[`obligationId-${index}`] = "Frais invalide pour cet élève.";
+      }
+    }
+  });
   return errors;
 }
 

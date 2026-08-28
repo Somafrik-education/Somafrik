@@ -1,16 +1,17 @@
 import { useMemo, useRef, useState } from "react";
-import { StyleSheet, Text, TextInput, TouchableOpacity } from "react-native";
+import { StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { useAuth } from "../context/AuthContext";
 import CanonicalMutationModal from "./CanonicalMutationModal";
 import ChoiceChips from "./ChoiceChips";
 import FormField from "./FormField";
-import { hasFieldErrors, trimField, validatePaymentDraft } from "../lib/formFieldValidation";
+import { hasFieldErrors, trimField, validateFinancePaymentLinesDraft } from "../lib/formFieldValidation";
 import { resolveEntityCrudAccess } from "../lib/mobileCrudParity";
 import { createIntentionStore } from "../lib/mutationGuard";
+import { isOfflineContext } from "../lib/connectivity";
 import { MIN_TOUCH_TARGET_DP } from "../lib/mobileUsability";
-import { submitProtectedMutation } from "../lib/outbox";
 import {
-  buildSchoolPaymentPayload,
+  UNALLOCATED_TARGET,
+  buildFinancePaymentWritePayload,
   collectActivePaymentClasses,
   collectOpenPaymentFees,
   paymentSubmitErrorMessage,
@@ -26,6 +27,12 @@ const PAYMENT_DRAFT_INTENTION = "payments-create-draft";
 function todayIsoDate() {
   return new Date().toISOString().slice(0, 10);
 }
+
+function newLineId() {
+  return `line-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+type DraftLine = { id: string; obligationId: string; amount: string };
 
 export default function PaymentMutationControls({
   students,
@@ -49,8 +56,9 @@ export default function PaymentMutationControls({
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [studentId, setStudentId] = useState("");
   const [classId, setClassId] = useState("");
-  const [obligationId, setObligationId] = useState("");
-  const [amount, setAmount] = useState("");
+  const [lines, setLines] = useState<DraftLine[]>([
+    { id: newLineId(), obligationId: UNALLOCATED_TARGET, amount: "" },
+  ]);
   const amountRef = useRef<TextInput>(null);
   const [method, setMethod] = useState("");
   const [draftDate, setDraftDate] = useState(todayIsoDate);
@@ -72,12 +80,27 @@ export default function PaymentMutationControls({
 
   const classOptions = useMemo(() => collectActivePaymentClasses(studentId, students), [studentId, students]);
   const feeOptions = useMemo(() => collectOpenPaymentFees(studentId, studentFees), [studentId, studentFees]);
-  const selectedFee = feeOptions.find((row) => row.obligationId === obligationId);
+  const obligationChips = useMemo(
+    () => [
+      { id: UNALLOCATED_TARGET, label: "Non imputé" },
+      ...feeOptions.map((item) => ({
+        id: item.obligationId,
+        label: `${item.label} · ${item.balance.toLocaleString("fr-FR")} FC`,
+      })),
+    ],
+    [feeOptions],
+  );
 
   const applyStudent = (nextStudentId: string) => {
     setStudentId(nextStudentId);
     setClassId(preselectPaymentClassId(nextStudentId, students));
-    setObligationId(preselectPaymentObligationId(nextStudentId, studentFees));
+    setLines([
+      {
+        id: newLineId(),
+        obligationId: preselectPaymentObligationId(nextStudentId, studentFees),
+        amount: "",
+      },
+    ]);
     setFieldErrors((current) => {
       const next = { ...current };
       delete next.studentId;
@@ -94,11 +117,20 @@ export default function PaymentMutationControls({
     const nextStudentId = trimField(initialStudentId);
     setStudentId(nextStudentId);
     setClassId(preselectPaymentClassId(nextStudentId, students));
-    setObligationId(preselectPaymentObligationId(nextStudentId, studentFees));
-    setAmount("");
+    setLines([
+      {
+        id: newLineId(),
+        obligationId: preselectPaymentObligationId(nextStudentId, studentFees),
+        amount: "",
+      },
+    ]);
     setMethod(paymentMethods?.[0] ?? "");
     setDraftDate(todayIsoDate());
     setOpen(true);
+  };
+
+  const updateLine = (id: string, patch: Partial<DraftLine>) => {
+    setLines((current) => current.map((line) => (line.id === id ? { ...line, ...patch } : line)));
   };
 
   const submit = async () => {
@@ -107,56 +139,49 @@ export default function PaymentMutationControls({
       setError("Catalogue des moyens de paiement indisponible.");
       return;
     }
-    const nextErrors = validatePaymentDraft({
+    const nextErrors = validateFinancePaymentLinesDraft({
       studentId,
-      amount,
       classId,
       classOptions,
-      obligationId,
+      lines,
       obligationOptions: feeOptions,
     });
     if (hasFieldErrors(nextErrors)) {
       setFieldErrors(nextErrors);
       setError("");
-      if (nextErrors.amount) amountRef.current?.focus();
+      if (nextErrors.amount || nextErrors["amount-0"]) amountRef.current?.focus();
       return;
     }
     setSaving(true);
     setError("");
     setFieldErrors({});
-    const parsed = Number(trimField(amount).replace(",", "."));
-    const payload = buildSchoolPaymentPayload({
-      studentId,
-      classId,
-      amount: parsed,
-      feeType: selectedFee?.feeType || "",
-      obligationId: selectedFee?.obligationId,
-      schoolFeeItemId: selectedFee?.schoolFeeItemId,
-      method: resolvedMethod,
-      date: draftDate,
-    });
     const idempotencyKey = intentionsRef.current.getOrCreate(PAYMENT_DRAFT_INTENTION);
     try {
-      const submitted = await submitProtectedMutation({
-        domain: "payments",
-        method: "POST",
-        path: "/payments",
-        payload,
-        idempotencyKey,
-        userId: String(session?.user.id ?? ""),
-        schoolScope: String(session?.school?.code ?? session?.user.schoolCode ?? ""),
-        persistOutbox: true,
-        request: () => createSchoolPayment(payload, { idempotencyKey }),
+      const payload = buildFinancePaymentWritePayload({
+        studentId,
+        classId,
+        method: resolvedMethod,
+        date: draftDate,
+        lines: lines.map((line) => {
+          const selected = feeOptions.find((row) => row.obligationId === line.obligationId);
+          return {
+            obligationId: line.obligationId,
+            amount: Number(trimField(line.amount).replace(",", ".")),
+            feeType: selected?.feeType,
+            label: selected?.label,
+          };
+        }),
       });
-      if (submitted.outcome !== "confirmed") {
-        setError(paymentSubmitErrorMessage(submitted.outcome, submitted.error));
+      if (isOfflineContext()) {
+        setError(paymentSubmitErrorMessage("failed", new Error("Paiement hors connexion refusé. Aucune file Finance.")));
         return;
       }
+      await createSchoolPayment(payload, { idempotencyKey });
       setOpen(false);
       await onChanged();
       intentionsRef.current.rotate(PAYMENT_DRAFT_INTENTION);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Enregistrement impossible.");
+      setError(paymentSubmitErrorMessage("failed", err));
     } finally {
       setSaving(false);
     }
@@ -203,49 +228,55 @@ export default function PaymentMutationControls({
           disabled={saving || !studentId}
           error={fieldErrors.classId}
         />
-        <FormField
-          ref={amountRef}
-          label="Montant"
-          required
-          type="amount"
-          value={amount}
-          onChangeText={(value) => {
-            setAmount(value);
-            setFieldErrors((current) => {
-              if (!current.amount) return current;
-              const next = { ...current };
-              delete next.amount;
-              return next;
-            });
-          }}
-          placeholder="Ex. 25000"
-          error={fieldErrors.amount}
-          editable={!saving}
-        />
-        {feeOptions.length ? (
-          <ChoiceChips
-            label="Frais"
-            required
-            options={feeOptions.map((item) => ({
-              id: item.obligationId,
-              label: `${item.label} · ${item.balance.toLocaleString("fr-FR")} FC`,
-            }))}
-            selectedId={obligationId}
-            onSelect={(id) => {
-              setObligationId(id);
-              setFieldErrors((current) => {
-                if (!current.obligationId) return current;
-                const next = { ...current };
-                delete next.obligationId;
-                return next;
-              });
-            }}
-            disabled={saving || !studentId}
-            error={fieldErrors.obligationId}
-          />
-        ) : (
-          <Text style={styles.hint}>Aucune dette ouverte — le reçu sera non imputé.</Text>
-        )}
+        {lines.map((line, index) => (
+          <View key={line.id} testID={`payment-line-${index}`}>
+            <ChoiceChips
+              label="Obligation"
+              required
+              options={obligationChips}
+              selectedId={line.obligationId}
+              onSelect={(id) => updateLine(line.id, { obligationId: id })}
+              disabled={saving || !studentId}
+              error={fieldErrors.obligationId || fieldErrors[`obligationId-${index}`]}
+            />
+            <FormField
+              ref={index === 0 ? amountRef : undefined}
+              label="Montant"
+              required
+              type="amount"
+              value={line.amount}
+              onChangeText={(value) => updateLine(line.id, { amount: value })}
+              placeholder="Ex. 25000"
+              error={fieldErrors.amount || fieldErrors[`amount-${index}`]}
+              editable={!saving}
+            />
+            {lines.length > 1 ? (
+              <TouchableOpacity
+                style={styles.removeLine}
+                onPress={() => setLines((current) => current.filter((row) => row.id !== line.id))}
+                accessibilityRole="button"
+                accessibilityLabel="Supprimer la ligne"
+              >
+                <Text style={styles.removeLineText}>Retirer cette ligne</Text>
+              </TouchableOpacity>
+            ) : null}
+          </View>
+        ))}
+        <TouchableOpacity
+          style={styles.addLine}
+          onPress={() =>
+            setLines((current) => [
+              ...current,
+              { id: newLineId(), obligationId: UNALLOCATED_TARGET, amount: "" },
+            ])
+          }
+          disabled={saving}
+          testID="payment-add-line"
+          accessibilityRole="button"
+          accessibilityLabel="Ajouter une ligne"
+        >
+          <Text style={styles.addLineText}>Ajouter une ligne</Text>
+        </TouchableOpacity>
         <ChoiceChips
           label="Moyen"
           options={(paymentMethods ?? []).map((item) => ({
@@ -269,5 +300,16 @@ export default function PaymentMutationControls({
 const styles = StyleSheet.create({
   create: { minHeight: MIN_TOUCH_TARGET_DP, borderRadius: 14, backgroundColor: "#2563EB", alignItems: "center", justifyContent: "center", marginBottom: 14 },
   createText: { color: "#FFFFFF", fontWeight: "900" },
-  hint: { color: "#64748B", fontWeight: "700", marginBottom: 12 },
+  addLine: {
+    minHeight: MIN_TOUCH_TARGET_DP,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#CBD5E1",
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 12,
+  },
+  addLineText: { color: "#0F172A", fontWeight: "800" },
+  removeLine: { minHeight: MIN_TOUCH_TARGET_DP, alignItems: "center", justifyContent: "center", marginBottom: 8 },
+  removeLineText: { color: "#B91C1C", fontWeight: "700" },
 });
