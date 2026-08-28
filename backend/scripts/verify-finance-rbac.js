@@ -42,8 +42,13 @@ function sourceGuards() {
   assert.match(authority, /LIVE_RBAC_EMPTY_ROLE = "SANS_AFFECTATION"/);
   assert.match(authority, /legacy.*fail-closed-live-rbac/s);
   assert.doesNotMatch(authority, /principal\?\.permissions/);
+  assert.match(factory, /function attachLiveRbacIfPostgres/);
   assert.match(factory, /attachLiveRbacAuthority\(repository\)/);
-  assert.match(factory, /attachLiveRbacAuthority\(repository \?\? createPostgresRepository/);
+  assert.match(factory, /return assertRepositoryContract\(new FallbackRepository\(\), "memory"\)/);
+  assert.doesNotMatch(
+    factory.slice(factory.indexOf("function createFallbackRepository"), factory.indexOf("async function initializeRepository")),
+    /attachLiveRbacAuthority/,
+  );
 
   const requirePermissionAt = server.indexOf("function requirePermission(routeKey)");
   assert.ok(requirePermissionAt >= 0, "requirePermission absent");
@@ -52,7 +57,7 @@ function sourceGuards() {
   assert.match(permissionSource, /req\.principal = \{ \.\.\.req\.principal, permissions: live\.permissions \}/);
   assert.match(permissionSource, /rbacService\.canAccess\(req\.principal, routeKey\)/);
 
-  console.log("verify-finance-rbac: source guards live authority OK");
+  console.log("verify-finance-rbac: source guards live PostgreSQL authority OK");
 }
 
 function main() {
