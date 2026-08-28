@@ -121,7 +121,7 @@ export function explicitAttendanceTeacherId(decision: AttendanceTeacherDecision)
 export function attachAttendanceTeacherToPayload<T extends { items?: unknown[] }>(
   payload: T,
   teacherId?: string,
-): T {
+): T & { teacherId?: string } {
   const key = asRef(teacherId);
   if (!key) return payload;
   const items = Array.isArray(payload.items)

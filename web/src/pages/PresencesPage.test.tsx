@@ -32,8 +32,8 @@ const dataState = vi.hoisted(() => ({
       students: 0,
     },
   ],
-  assignments: [],
-  teachers: [],
+  assignments: [] as Record<string, unknown>[],
+  teachers: [] as Record<string, unknown>[],
   presences: [],
 }));
 
@@ -165,6 +165,30 @@ describe("PresencesPage — roster canonique", () => {
 });
 
 describe("PresencesPage — enseignant pédagogique ≠ acteur JWT", () => {
+  beforeEach(() => {
+    showToast.mockReset();
+    refresh.mockReset();
+    apiPost.mockReset();
+    classStudentsList.mockReset();
+    authSession.user = { id: "admin-1", role: "Admin School", schoolCode: "SCH-001", name: "Admin" };
+    dataState.assignments = [];
+    dataState.teachers = [];
+    classStudentsList.mockResolvedValue([
+      {
+        id: "ELE-1",
+        publicId: "ELE-1",
+        studentCode: "ELE-1",
+        matricule: "ELE-1",
+        firstName: "Awa",
+        lastName: "Diop",
+        name: "Awa Diop",
+        classId: "uuid-a",
+        classCode: "CLS-A",
+        className: "",
+      },
+    ]);
+  });
+
   async function openClassWithRoster() {
     const user = userEvent.setup();
     render(<PresencesPage />);

@@ -20,8 +20,9 @@ import {
 import { formatStudentName, GradeBookService } from "./gradeBook";
 import { normalize } from "./format";
 import { isSuperAdminRole } from "./orgHierarchy";
-import { courseOptionsForClass, subjectOptionsForClass } from "./evaluationCourseOptions";
 import { classNamesMatch } from "./classRules";
+
+export { courseOptionsForClass, subjectOptionsForClass } from "./evaluationCourseOptions";
 
 export const MISSING_EVALUATION_TEACHER =
   "Aucun enseignant n'est affecté à cette évaluation. Vérifiez l'affectation du cours.";

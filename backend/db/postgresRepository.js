@@ -6612,7 +6612,7 @@ class PostgresRepository {
 
   /**
    * Clé enseignant pédagogique explicite depuis payload (admin/direction).
-   * Jamais authorId : c'est l'acteur JWT (Préfet/Admin), pas l'enseignant du cours.
+   * Jamais la clé d'acteur JWT (Préfet/Admin) : ce n'est pas l'enseignant du cours.
    */
   extractExplicitTeacherKey(payload = {}) {
     return String(

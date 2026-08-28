@@ -64,7 +64,7 @@ function main() {
     });
   }
 
-  const extractStart = repo.indexOf("extractExplicitTeacherKey");
+  const extractStart = repo.indexOf("extractExplicitTeacherKey(payload = {})");
   const extractEnd = repo.indexOf("async resolveUniqueTeacherInSchool", extractStart);
   const extractBody = extractStart >= 0 && extractEnd > extractStart ? repo.slice(extractStart, extractEnd) : "";
   if (!extractBody) {
