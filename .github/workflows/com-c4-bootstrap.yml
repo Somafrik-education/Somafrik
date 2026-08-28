@@ -1,0 +1,284 @@
+name: COM-C4 Bootstrap Patch
+
+on:
+  push:
+    branches:
+      - fix/communications-c4-internal-notifications-production-ready
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: ${{ !contains(github.event.head_commit.message, '[c4-bootstrap-applied]') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/communications-c4-internal-notifications-production-ready
+          fetch-depth: 0
+      - name: Apply anchored C4 integration
+        shell: bash
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+          import json
+
+          def replace_once(path, old, new):
+              p = Path(path)
+              text = p.read_text()
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"{path}: anchor count {count}, expected 1: {old[:100]!r}")
+              p.write_text(text.replace(old, new, 1))
+
+          # backend/server.js — imports + routes + worker startup
+          replace_once(
+              "backend/server.js",
+              'const { IdempotencyService, withIdempotency } = require("./services/idempotencyService");\n',
+              'const { IdempotencyService, withIdempotency } = require("./services/idempotencyService");\n'
+              'const internalNotificationsService = require("./lib/communicationsNotificationsService");\n'
+              'const { startCommunicationsNotificationsWorker } = require("./lib/communicationsNotificationsWorker");\n',
+          )
+
+          route_anchor = 'app.get("/api/backoffice/subscription-access", requireAuth, requirePermission("GET /api/backoffice/subscription-access"), asyncHandler(async (req, res) => {'
+          routes = r'''app.get("/api/backoffice/internal-notifications/unread-count", requireAuth, requirePermission("GET /api/backoffice/internal-notifications/unread-count"), asyncHandler(async (req, res) => {
+            const result = await internalNotificationsService.unreadCount(repository.getClientsStore(), req.principal, req.query);
+            res.json(result);
+          }));
+
+          app.get("/api/backoffice/internal-notifications", requireAuth, requirePermission("GET /api/backoffice/internal-notifications"), asyncHandler(async (req, res) => {
+            const result = await internalNotificationsService.list(repository.getClientsStore(), req.principal, req.query);
+            res.json(result);
+          }));
+
+          app.post("/api/backoffice/internal-notifications", requireAuth, requirePermission("POST /api/backoffice/internal-notifications"), asyncHandler(async (req, res) => {
+            const created = await internalNotificationsService.createManual(
+              repository.getClientsStore(),
+              req.body ?? {},
+              req.principal,
+              clientsAuditMetaFromRequest(req),
+              req.get("idempotency-key"),
+            );
+            res.status(201).json(created);
+          }));
+
+          app.post(
+            "/api/backoffice/internal-notifications/attachments",
+            requireAuth,
+            requirePermission("POST /api/backoffice/internal-notifications/attachments"),
+            express.raw({ type: () => true, limit: "11mb" }),
+            asyncHandler(async (req, res) => {
+              const buffer = Buffer.isBuffer(req.body) ? req.body : Buffer.from(req.body ?? []);
+              const fileName = req.get("x-filename") || req.get("x-file-name") || "fichier";
+              const mimeType = req.get("x-mime-type") || req.get("content-type") || "";
+              const created = await internalNotificationsService.uploadAttachment(
+                repository.getClientsStore(),
+                req.principal,
+                { buffer, fileName, mimeType },
+                req.query,
+              );
+              res.status(201).json(created);
+            }),
+          );
+
+          app.get("/api/backoffice/internal-notifications/attachments/:attachmentId", requireAuth, requirePermission("GET /api/backoffice/internal-notifications/attachments/:attachmentId"), asyncHandler(async (req, res) => {
+            const file = await internalNotificationsService.downloadAttachment(
+              repository.getClientsStore(),
+              req.params.attachmentId,
+              req.principal,
+              req.query,
+            );
+            const safeName = String(file.fileName || "fichier").replace(/["\\r\\n]/g, "_");
+            res.setHeader("Content-Type", file.mimeType || "application/octet-stream");
+            res.setHeader("Content-Disposition", `inline; filename="${safeName}"`);
+            res.setHeader("Content-Length", file.bytes.length);
+            res.send(file.bytes);
+          }));
+
+          app.get("/api/backoffice/internal-notifications/:notificationId", requireAuth, requirePermission("GET /api/backoffice/internal-notifications/:notificationId"), asyncHandler(async (req, res) => {
+            const row = await internalNotificationsService.get(
+              repository.getClientsStore(), req.params.notificationId, req.principal, req.query,
+            );
+            res.json(row);
+          }));
+
+          app.patch("/api/backoffice/internal-notifications/:notificationId/read", requireAuth, requirePermission("PATCH /api/backoffice/internal-notifications/:notificationId/read"), asyncHandler(async (req, res) => {
+            const row = await internalNotificationsService.markRead(
+              repository.getClientsStore(), req.params.notificationId, req.principal, clientsAuditMetaFromRequest(req), req.query,
+            );
+            res.json(row);
+          }));
+
+          app.patch("/api/backoffice/internal-notifications/:notificationId/archive", requireAuth, requirePermission("PATCH /api/backoffice/internal-notifications/:notificationId/archive"), asyncHandler(async (req, res) => {
+            const row = await internalNotificationsService.archive(
+              repository.getClientsStore(), req.params.notificationId, req.principal, clientsAuditMetaFromRequest(req), req.query,
+            );
+            res.json(row);
+          }));
+
+          ''' + route_anchor
+          replace_once("backend/server.js", route_anchor, routes)
+
+          replace_once(
+              "backend/server.js",
+              '  idempotencyService = new IdempotencyService(repository);\n  app.locals.idempotencyService = idempotencyService;\n}',
+              '  idempotencyService = new IdempotencyService(repository);\n'
+              '  app.locals.idempotencyService = idempotencyService;\n'
+              '  startCommunicationsNotificationsWorker(repository);\n}',
+          )
+
+          # RBAC exact routes for internal notifications.
+          replace_once(
+              "backend/services/rbacService.js",
+              '  "PATCH /api/backoffice/notifications/:notificationId": ["ALL_PRIVILEGES", "COUNTRY_PRIVILEGES"],\n',
+              '  "PATCH /api/backoffice/notifications/:notificationId": ["ALL_PRIVILEGES", "COUNTRY_PRIVILEGES"],\n'
+              '  "GET /api/backoffice/internal-notifications": ["Notifications:READ", "Gérer notifications", "ALL_PRIVILEGES", "COUNTRY_PRIVILEGES"],\n'
+              '  "GET /api/backoffice/internal-notifications/unread-count": ["Notifications:READ", "Gérer notifications", "ALL_PRIVILEGES", "COUNTRY_PRIVILEGES"],\n'
+              '  "GET /api/backoffice/internal-notifications/:notificationId": ["Notifications:READ", "Gérer notifications", "ALL_PRIVILEGES", "COUNTRY_PRIVILEGES"],\n'
+              '  "POST /api/backoffice/internal-notifications": ["Notifications:CREATE", "Gérer notifications", "ALL_PRIVILEGES", "COUNTRY_PRIVILEGES"],\n'
+              '  "PATCH /api/backoffice/internal-notifications/:notificationId/read": ["Notifications:READ", "Gérer notifications", "ALL_PRIVILEGES", "COUNTRY_PRIVILEGES"],\n'
+              '  "PATCH /api/backoffice/internal-notifications/:notificationId/archive": ["Notifications:READ", "Gérer notifications", "ALL_PRIVILEGES", "COUNTRY_PRIVILEGES"],\n'
+              '  "POST /api/backoffice/internal-notifications/attachments": ["Notifications:CREATE", "Gérer notifications", "ALL_PRIVILEGES", "COUNTRY_PRIVILEGES"],\n'
+              '  "GET /api/backoffice/internal-notifications/attachments/:attachmentId": ["Notifications:READ", "Gérer notifications", "ALL_PRIVILEGES", "COUNTRY_PRIVILEGES"],\n',
+          )
+
+          # Web: school-scoped notifications use C4; platform notifications stay intact without school scope.
+          replace_once(
+              "web/src/pages/NotificationsPage.tsx",
+              'import { useAuth } from "../context/AuthContext";\n',
+              'import { useAuth } from "../context/AuthContext";\n'
+              'import { useActiveSchool } from "../context/ActiveSchoolContext";\n'
+              'import { InternalNotificationsCenter } from "../components/communications/InternalNotificationsCenter";\n',
+          )
+          replace_once(
+              "web/src/pages/NotificationsPage.tsx",
+              '  const { session } = useAuth();\n  const { state, refresh } = useData();\n',
+              '  const { session } = useAuth();\n'
+              '  const { activeSchoolCode } = useActiveSchool();\n'
+              '  const { state, refresh } = useData();\n',
+          )
+          replace_once(
+              "web/src/pages/NotificationsPage.tsx",
+              '  const { canCreate, canUpdate, canDelete } = useFeaturePermissions("Notifications");\n\n  async function handleCreate',
+              '  const { canCreate, canUpdate, canDelete } = useFeaturePermissions("Notifications");\n\n'
+              '  if (activeSchoolCode && activeSchoolCode !== "*") {\n'
+              '    return <InternalNotificationsCenter />;\n'
+              '  }\n\n'
+              '  async function handleCreate',
+          )
+
+          replace_once(
+              "web/src/components/layout/Topbar.tsx",
+              'import { useAnnouncementsUnreadCount } from "../../lib/announcementsRead";\n',
+              'import { useAnnouncementsUnreadCount } from "../../lib/announcementsRead";\n'
+              'import { useInternalNotificationsUnreadCount } from "../../lib/internalNotificationsRead";\n',
+          )
+          replace_once(
+              "web/src/components/layout/Topbar.tsx",
+              '  const canReadNotifications = canReadView(ctx, "notifications");\n'
+              '  const unreadCount = canReadNotifications\n'
+              '    ? scopedNotifications(user ?? null, state).filter((n) => n.status !== "Lu").length\n'
+              '    : 0;\n',
+              '  const canReadNotifications = canReadView(ctx, "notifications");\n'
+              '  const hasInternalNotificationScope = Boolean(activeSchoolCode && activeSchoolCode !== "*");\n'
+              '  const internalUnreadCount = useInternalNotificationsUnreadCount(\n'
+              '    canReadNotifications && hasInternalNotificationScope,\n'
+              '    activeSchoolCode,\n'
+              '  );\n'
+              '  const unreadCount = hasInternalNotificationScope\n'
+              '    ? internalUnreadCount\n'
+              '    : canReadNotifications\n'
+              '      ? scopedNotifications(user ?? null, state).filter((n) => n.status !== "Lu").length\n'
+              '      : 0;\n',
+          )
+
+          # Mobile permission route and navigation.
+          replace_once(
+              "Mobile/src/domain/security/permissions.ts",
+              '  "PlatformNotifications",\n',
+              '  "PlatformNotifications",\n  "InternalNotifications",\n',
+          )
+          replace_once(
+              "Mobile/src/domain/security/permissions.ts",
+              '  announcements: "Announcements",\n',
+              '  announcements: "Announcements",\n  notifications: "Notifications",\n',
+          )
+          replace_once(
+              "Mobile/src/domain/security/permissions.ts",
+              '  PlatformNotifications: "Notifications",\n',
+              '  PlatformNotifications: "Notifications",\n  InternalNotifications: "Notifications",\n',
+          )
+
+          replace_once(
+              "Mobile/src/navigation/AppNavigator.tsx",
+              'import PlatformNotificationsScreen from "../screens/PlatformNotificationsScreen";\n',
+              'import PlatformNotificationsScreen from "../screens/PlatformNotificationsScreen";\n'
+              'import InternalNotificationsScreen from "../screens/InternalNotificationsScreen";\n',
+          )
+          replace_once(
+              "Mobile/src/navigation/AppNavigator.tsx",
+              '  PlatformNotifications: undefined;\n',
+              '  PlatformNotifications: undefined;\n  InternalNotifications: undefined;\n',
+          )
+          replace_once(
+              "Mobile/src/navigation/AppNavigator.tsx",
+              '        {canReadView(session, "PlatformNotifications") && <Stack.Screen name="PlatformNotifications" component={PlatformNotificationsScreen} options={{ title: "Notifications plateforme" }} />}\n',
+              '        {canReadRoute(session, "InternalNotifications") && <Stack.Screen name="InternalNotifications" component={InternalNotificationsScreen} options={{ title: "Notifications" }} />}\n'
+              '        {canReadView(session, "PlatformNotifications") && <Stack.Screen name="PlatformNotifications" component={PlatformNotificationsScreen} options={{ title: "Notifications plateforme" }} />}\n',
+          )
+
+          replace_once(
+              "Mobile/src/components/CommunicationHeaderIcons.tsx",
+              'import { useAnnouncementsUnreadCount } from "../lib/announcementsRead";\n',
+              'import { useAnnouncementsUnreadCount } from "../lib/announcementsRead";\n'
+              'import { useInternalNotificationsUnreadCount } from "../lib/internalNotificationsRead";\n',
+          )
+          replace_once(
+              "Mobile/src/components/CommunicationHeaderIcons.tsx",
+              '  const canNotifications = canReadView(session, "PlatformNotifications");\n\n'
+              '  if (!canMessages && !canAnnouncements && !canNotifications) {\n'
+              '    return null;\n'
+              '  }\n\n'
+              '  const unreadNotifications = notificationsData.filter(\n'
+              '    (item) => String(item.status ?? "") !== "Lu" && String(item.status ?? "") !== "read",\n'
+              '  ).length;\n',
+              '  const hasInternalNotificationScope = Boolean(activeSchoolCode && activeSchoolCode !== "*");\n'
+              '  const canInternalNotifications = canReadRoute(session, "InternalNotifications") && hasInternalNotificationScope;\n'
+              '  const canPlatformNotifications = canReadView(session, "PlatformNotifications") && !hasInternalNotificationScope;\n'
+              '  const { count: internalUnreadNotifications } = useInternalNotificationsUnreadCount(\n'
+              '    canInternalNotifications, activeSchoolCode,\n'
+              '  );\n'
+              '  const canNotifications = canInternalNotifications || canPlatformNotifications;\n\n'
+              '  if (!canMessages && !canAnnouncements && !canNotifications) {\n'
+              '    return null;\n'
+              '  }\n\n'
+              '  const platformUnreadNotifications = notificationsData.filter(\n'
+              '    (item) => String(item.status ?? "") !== "Lu" && String(item.status ?? "") !== "read",\n'
+              '  ).length;\n'
+              '  const unreadNotifications = canInternalNotifications ? internalUnreadNotifications : platformUnreadNotifications;\n',
+          )
+          replace_once(
+              "Mobile/src/components/CommunicationHeaderIcons.tsx",
+              '          onPress={() => navigation.navigate("PlatformNotifications")}\n',
+              '          onPress={() => navigation.navigate(canInternalNotifications ? "InternalNotifications" : "PlatformNotifications")}\n',
+          )
+
+          # package gate
+          package = Path("package.json")
+          data = json.loads(package.read_text())
+          scripts = data.setdefault("scripts", {})
+          if "verify:communications-c4" not in scripts:
+              scripts["verify:communications-c4"] = "node backend/scripts/verify-communications-c4.js"
+          package.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n")
+
+          # self-delete after applying
+          Path(".github/workflows/com-c4-bootstrap.yml").unlink()
+          PY
+      - name: Commit integration
+        run: |
+          git config user.name "Somafrik CTO Bot"
+          git config user.email "somafrik@outlook.fr"
+          git add -A
+          git commit -m "feat(communications): integrate C4 internal notifications [c4-bootstrap-applied]"
+          git push origin HEAD:fix/communications-c4-internal-notifications-production-ready
