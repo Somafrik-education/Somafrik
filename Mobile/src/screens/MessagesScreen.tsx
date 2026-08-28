@@ -267,7 +267,7 @@ export default function MessagesScreen() {
         payload,
         idempotencyKey,
         userId: String(session?.user.id ?? ""),
-        schoolScope: String(activeSchoolCode || session?.school?.code ?? session?.user.schoolCode ?? ""),
+        schoolScope: String(activeSchoolCode || session?.school?.code || session?.user.schoolCode || ""),
         persistOutbox: true,
         request: () => sendClientsMessage(payload, { idempotencyKey }),
       });
