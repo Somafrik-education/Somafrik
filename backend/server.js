@@ -2669,9 +2669,19 @@ app.patch("/api/parents/relations/:relationId", requireAuth, requirePermission("
   res.json(result);
 }));
 
+app.get("/api/backoffice/messages/unread-count", requireAuth, requirePermission("GET /api/backoffice/messages/unread-count"), asyncHandler(async (req, res) => {
+  const result = await repository.getClientMessagesUnreadCount(req.principal);
+  res.json(result);
+}));
+
+app.get("/api/backoffice/messages/:messageId", requireAuth, requirePermission("GET /api/backoffice/messages/:messageId"), asyncHandler(async (req, res) => {
+  const row = await repository.getClientMessage(req.params.messageId, req.principal);
+  res.json(row);
+}));
+
 app.get("/api/backoffice/messages", requireAuth, requirePermission("GET /api/backoffice/messages"), asyncHandler(async (req, res) => {
-  const clients = await repository.listClientsProjection();
-  sendList(res, tenantScopeService.filterRows(clients.messages ?? [], req.principal), req.query, ["theme", "message", "status", "direction"]);
+  const rows = await repository.listClientsMessages(req.principal, req.query);
+  sendList(res, rows, req.query, ["theme", "message", "status", "direction", "senderName"]);
 }));
 
 app.post("/api/backoffice/messages", requireAuth, requirePermission("POST /api/backoffice/messages"), asyncHandler(async (req, res) => {
@@ -2694,6 +2704,81 @@ app.post("/api/backoffice/messages", requireAuth, requirePermission("POST /api/b
 app.patch("/api/backoffice/messages/:messageId/read", requireAuth, requirePermission("PATCH /api/backoffice/messages/:messageId/read"), asyncHandler(async (req, res) => {
   const updated = await repository.markClientsMessageRead(req.params.messageId, req.principal, clientsAuditMetaFromRequest(req));
   res.json(updated);
+}));
+
+app.get("/api/backoffice/conversations", requireAuth, requirePermission("GET /api/backoffice/conversations"), asyncHandler(async (req, res) => {
+  const result = await repository.listClientConversations(req.principal, req.query);
+  res.json(result);
+}));
+
+app.post("/api/backoffice/conversations", requireAuth, requirePermission("POST /api/backoffice/conversations"), asyncHandler(async (req, res) => {
+  await withIdempotency({
+    req,
+    res,
+    routeKey: "POST /api/backoffice/conversations",
+    principal: req.principal,
+    handler: async () => {
+      const created = await repository.createClientConversation(
+        req.body ?? {},
+        req.principal,
+        clientsAuditMetaFromRequest(req),
+      );
+      return { statusCode: 201, body: created };
+    },
+  });
+}));
+
+app.get("/api/backoffice/conversations/:conversationId", requireAuth, requirePermission("GET /api/backoffice/conversations/:conversationId"), asyncHandler(async (req, res) => {
+  const row = await repository.getClientConversation(req.params.conversationId, req.principal);
+  res.json(row);
+}));
+
+app.get("/api/backoffice/conversations/:conversationId/messages", requireAuth, requirePermission("GET /api/backoffice/conversations/:conversationId/messages"), asyncHandler(async (req, res) => {
+  const result = await repository.listClientConversationMessages(req.params.conversationId, req.principal, req.query);
+  res.json(result);
+}));
+
+app.post("/api/backoffice/conversations/:conversationId/messages", requireAuth, requirePermission("POST /api/backoffice/conversations/:conversationId/messages"), asyncHandler(async (req, res) => {
+  await withIdempotency({
+    req,
+    res,
+    routeKey: "POST /api/backoffice/conversations/:conversationId/messages",
+    principal: req.principal,
+    handler: async () => {
+      const created = await repository.replyClientConversationMessage(
+        req.params.conversationId,
+        req.body ?? {},
+        req.principal,
+        clientsAuditMetaFromRequest(req),
+      );
+      return { statusCode: 201, body: created };
+    },
+  });
+}));
+
+app.post(
+  "/api/backoffice/communications/attachments",
+  requireAuth,
+  requirePermission("POST /api/backoffice/communications/attachments"),
+  express.raw({ type: () => true, limit: "11mb" }),
+  asyncHandler(async (req, res) => {
+    const buffer = Buffer.isBuffer(req.body) ? req.body : Buffer.from(req.body ?? []);
+    const fileName = req.get("x-filename") || req.get("x-file-name") || "fichier";
+    const mimeType = req.get("x-mime-type") || req.get("content-type") || "";
+    const created = await repository.uploadCommunicationAttachment(req.principal, {
+      buffer,
+      fileName,
+      mimeType,
+    });
+    res.status(201).json(created);
+  }),
+);
+
+app.get("/api/backoffice/communications/attachments/:attachmentId", requireAuth, requirePermission("GET /api/backoffice/communications/attachments/:attachmentId"), asyncHandler(async (req, res) => {
+  const file = await repository.downloadCommunicationAttachment(req.params.attachmentId, req.principal);
+  res.setHeader("Content-Type", file.mimeType || "application/octet-stream");
+  res.setHeader("Content-Disposition", `attachment; filename="${String(file.fileName).replace(/"/g, "")}"`);
+  res.send(file.bytes);
 }));
 
 app.get("/api/backoffice/announcements", requireAuth, requirePermission("GET /api/backoffice/announcements"), asyncHandler(async (req, res) => {

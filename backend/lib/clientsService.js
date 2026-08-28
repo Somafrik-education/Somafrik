@@ -922,121 +922,13 @@ async function createRelation(store, rawPayload, principal, auditMeta) {
 }
 
 async function sendMessage(store, rawPayload, principal, auditMeta) {
-  const payload = ignoreClientScope(rawPayload);
-  const schoolCode = resolveWritableSchoolCode(principal, rawPayload);
-  assertSchoolScope(principal, schoolCode);
-  await assertSchoolInPrincipalCountry(store, principal, schoolCode);
-
-  const body = asTrimmed(payload.message || payload.body);
-  if (!body) {
-    throw createClientsError(400, "Message obligatoire.");
-  }
-
-  const senderUserId = asTrimmed(principal?.sub || principal?.id);
-  if (!senderUserId) {
-    throw createClientsError(403, "Expéditeur non authentifié.", CLIENTS_ERROR.FORBIDDEN);
-  }
-
-  return store.withTransaction(async (tx) => {
-    const school = await tx.getSchoolByCode(schoolCode);
-    if (!school) {
-      throw createClientsError(404, "Établissement introuvable.", CLIENTS_ERROR.SCHOOL_NOT_FOUND);
-    }
-
-    const sender = await tx.getUserById(senderUserId);
-    if (!sender || (sender.school_id && sender.school_id !== school.id && !isSuperAdminPrincipal(principal))) {
-      throw createClientsError(403, "Expéditeur non autorisé.", CLIENTS_ERROR.FORBIDDEN);
-    }
-
-    const participantUserIds = new Set(
-      (Array.isArray(payload.participantUserIds) ? payload.participantUserIds : [])
-        .map((value) => asTrimmed(value))
-        .filter(Boolean),
-    );
-    participantUserIds.add(senderUserId);
-    await assertParticipantsInSchool(tx, school, participantUserIds);
-
-    const conversation = await tx.insertConversation({
-      schoolId: school.id,
-      countryId: school.country_id,
-      subject: asTrimmed(payload.theme || payload.subject),
-      createdByUserId: senderUserId,
-      profile: {},
-    });
-
-    for (const userId of participantUserIds) {
-      await tx.insertParticipant({
-        conversationId: conversation.id,
-        userId,
-        schoolId: school.id,
-        role: userId === senderUserId ? "sender" : "recipient",
-      });
-    }
-
-    const messageProfile = {
-      studentId: payload.studentId,
-      teacherId: payload.teacherId,
-      parentPhone: payload.parentPhone,
-      direction: payload.direction,
-      theme: payload.theme,
-      priority: payload.priority,
-      audit: [
-        {
-          action: "Création",
-          actorId: senderUserId,
-          date: new Date().toISOString(),
-        },
-      ],
-    };
-
-    const saved = await tx.insertMessage({
-      conversationId: conversation.id,
-      schoolId: school.id,
-      countryId: school.country_id,
-      senderUserId,
-      body,
-      direction: payload.direction,
-      theme: payload.theme,
-      priority: payload.priority,
-      attachmentUrl: payload.attachmentUrl,
-      profile: messageProfile,
-    });
-
-    await writeClientsAudit(tx, principal, auditMeta, {
-      schoolCode,
-      action: "send_message",
-      entityType: "message",
-      entityId: saved.id,
-      newValue: mapMessageRow({ ...saved, school_code: schoolCode, sender_phone: sender.phone }),
-    });
-
-    return mapMessageRow({ ...saved, school_code: schoolCode, sender_phone: sender.phone });
-  });
+  const communicationsMessagesService = require("./communicationsMessagesService");
+  return communicationsMessagesService.sendOrCreate(store, rawPayload, principal, auditMeta);
 }
 
 async function markMessageRead(store, messageId, principal, auditMeta) {
-  const readerUserId = asTrimmed(principal?.sub || principal?.id);
-  if (!readerUserId) {
-    throw createClientsError(403, "Lecteur non authentifié.", CLIENTS_ERROR.FORBIDDEN);
-  }
-
-  return store.withTransaction(async (tx) => {
-    const message = await tx.getMessageById(messageId);
-    if (!message) {
-      throw createClientsError(404, "Message introuvable.", CLIENTS_ERROR.MESSAGE_NOT_FOUND);
-    }
-    assertSchoolScope(principal, message.school_code);
-    await assertSchoolInPrincipalCountry(store, principal, message.school_code);
-
-    const isParticipant = await tx.isConversationParticipant(message.conversation_id, readerUserId);
-    if (!isParticipant && !isSuperAdminPrincipal(principal)) {
-      throw createClientsError(403, "Lecture réservée aux participants.", CLIENTS_ERROR.FORBIDDEN);
-    }
-
-    await tx.insertMessageRead(message.id, readerUserId);
-    const updated = await tx.updateMessageStatus(message.id, "read");
-    return mapMessageRow(updated);
-  });
+  const communicationsMessagesService = require("./communicationsMessagesService");
+  return communicationsMessagesService.markMessageRead(store, messageId, principal, auditMeta);
 }
 
 async function createAnnouncement(store, rawPayload, principal, auditMeta) {

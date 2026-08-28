@@ -3411,6 +3411,46 @@ class FallbackRepository {
     return this.getClientsStore().markMessageRead(messageId, principal, auditMeta);
   }
 
+  listClientsMessages(principal, query) {
+    return this.getClientsStore().listMessagesForPrincipal(principal, query);
+  }
+
+  listClientConversations(principal, query) {
+    return this.getClientsStore().listConversationsForPrincipal(principal, query);
+  }
+
+  getClientConversation(conversationId, principal) {
+    return this.getClientsStore().getConversationForPrincipal(conversationId, principal);
+  }
+
+  listClientConversationMessages(conversationId, principal, query) {
+    return this.getClientsStore().listConversationMessagesForPrincipal(conversationId, principal, query);
+  }
+
+  getClientMessage(messageId, principal) {
+    return this.getClientsStore().getMessageForPrincipal(messageId, principal);
+  }
+
+  createClientConversation(payload, principal, auditMeta) {
+    return this.getClientsStore().createConversationForPrincipal(payload, principal, auditMeta);
+  }
+
+  replyClientConversationMessage(conversationId, payload, principal, auditMeta) {
+    return this.getClientsStore().replyToConversationForPrincipal(conversationId, payload, principal, auditMeta);
+  }
+
+  getClientMessagesUnreadCount(principal) {
+    return this.getClientsStore().unreadCountForPrincipal(principal);
+  }
+
+  uploadCommunicationAttachment(principal, file) {
+    return this.getClientsStore().uploadCommunicationAttachment(principal, file);
+  }
+
+  downloadCommunicationAttachment(attachmentId, principal) {
+    return this.getClientsStore().downloadCommunicationAttachment(attachmentId, principal);
+  }
+
   createClientsAnnouncement(payload, principal, auditMeta) {
     return this.getClientsStore().createAnnouncement(payload, principal, auditMeta);
   }

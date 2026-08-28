@@ -71,7 +71,6 @@ export default function MessagesScreen() {
 
   const [theme, setTheme] = useState(messageThemes[0]);
   const [message, setMessage] = useState("");
-  const [attachmentUrl, setAttachmentUrl] = useState("");
   const [messageError, setMessageError] = useState("");
   const [priority, setPriority] = useState<MessagePriority>("Moyenne");
   const [query, setQuery] = useState("");
@@ -212,10 +211,10 @@ export default function MessagesScreen() {
         parentPhone,
         studentId: selectedStudentId ?? parentChildren[0]?.id ?? "",
         ...(teacherId ? { teacherId } : {}),
+        ...(selectedMessage?.conversationId ? { conversationId: selectedMessage.conversationId } : {}),
         theme,
         direction: recipient === "teacher" ? "Parent vers enseignant" : "Parent vers école",
         message: message.trim(),
-        ...(attachmentUrl.trim() ? { attachmentUrl: attachmentUrl.trim() } : {}),
         priority,
       };
     } else if (role === "teacher") {
@@ -228,10 +227,10 @@ export default function MessagesScreen() {
       payload = {
         parentPhone: student.parentPhone,
         studentId: student.id,
+        ...(selectedMessage?.conversationId ? { conversationId: selectedMessage.conversationId } : {}),
         theme,
         direction: "Enseignant vers parent",
         message: message.trim(),
-        ...(attachmentUrl.trim() ? { attachmentUrl: attachmentUrl.trim() } : {}),
         priority,
       };
     } else {
@@ -250,7 +249,6 @@ export default function MessagesScreen() {
         schoolCode: recipientSchoolCode,
         theme,
         message,
-        attachmentUrl,
         priority,
       });
       if (!built.ok) {
@@ -274,7 +272,11 @@ export default function MessagesScreen() {
         Alert.alert(title, body);
         return;
       }
-      payload = built.payload;
+      payload = {
+        ...built.payload,
+        ...(selectedMessage?.conversationId ? { conversationId: selectedMessage.conversationId } : {}),
+      };
+      delete payload.attachmentUrl;
     }
 
     if (!payload) {
@@ -313,7 +315,6 @@ export default function MessagesScreen() {
       sendIntentionRef.current.rotate(intentionId);
       await loadMessages();
       setMessage("");
-      setAttachmentUrl("");
       setSendHint("");
       Alert.alert("Message envoyé", "Le serveur a confirmé l'envoi du message.");
     } catch (error) {
@@ -485,16 +486,6 @@ export default function MessagesScreen() {
               error={messageError}
               accessibilityLabel="Texte du message"
             />
-            <FormField
-              label="Pièce jointe"
-              optional
-              type="url"
-              value={attachmentUrl}
-              onChangeText={setAttachmentUrl}
-              placeholder="Ex. https://…"
-              editable={!sending}
-              accessibilityLabel="Lien de pièce jointe"
-            />
             <TouchableOpacity
               style={[styles.sendButton, (sending || staffSendBlocked) && styles.disabled]}
               onPress={() => void sendMessage()}
@@ -549,11 +540,12 @@ export default function MessagesScreen() {
           </Text>
         )}
         renderItem={({ item }) => {
-          const teacher = teachersData.find((row) => row.id === item.teacherId);
           return (
             <TouchableOpacity style={styles.messageCard} onPress={() => void openMessage(item)} accessibilityRole="button" accessibilityLabel={item.theme}>
               <Text style={styles.messageTitle}>{item.theme}</Text>
-              <Text style={styles.meta}>{item.direction} • {teacher?.name || item.parentPhone} • {item.date}</Text>
+              <Text style={styles.meta}>
+                {item.senderName || item.direction} • {item.sentAt || item.date}
+              </Text>
               <Text style={styles.messageBody} numberOfLines={3}>{item.message}</Text>
               <Text style={styles.status}>Statut : {item.status}</Text>
             </TouchableOpacity>
@@ -575,9 +567,27 @@ export default function MessagesScreen() {
               style={styles.closeButton}
             />
             <Text style={styles.cardTitle}>{selectedMessage?.theme}</Text>
-            <Text style={styles.meta}>{selectedMessage?.direction} • {selectedMessage?.date}</Text>
+            <Text style={styles.meta}>
+              {selectedMessage?.senderName || selectedMessage?.senderUserId || selectedMessage?.direction} •{" "}
+              {selectedMessage?.sentAt || selectedMessage?.date}
+            </Text>
             {selectedMessage?.status ? <Text style={styles.status}>Statut : {selectedMessage.status}</Text> : null}
-            <Text style={styles.readerBody}>{selectedMessage?.message}</Text>
+            {visibleMessages
+              .filter((item) => item.conversationId && item.conversationId === selectedMessage?.conversationId)
+              .sort((a, b) => String(a.sentAt ?? a.date).localeCompare(String(b.sentAt ?? b.date)))
+              .map((item) => (
+                <View key={item.id}>
+                  <Text style={styles.meta}>
+                    {item.senderName || item.direction} • {item.sentAt || item.date}
+                    {item.status === "pending" ? " • en attente d'envoi" : ""}
+                  </Text>
+                  <Text style={styles.readerBody}>{item.message}</Text>
+                </View>
+              ))}
+            {selectedMessage &&
+            !visibleMessages.some((item) => item.conversationId === selectedMessage.conversationId) ? (
+              <Text style={styles.readerBody}>{selectedMessage.message}</Text>
+            ) : null}
           </ScrollView>
         </View>
       </Modal>

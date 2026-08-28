@@ -72,7 +72,10 @@ export const clientsApi = {
   createRelation: (payload: Record<string, unknown>) => api.post("/backoffice/relations", payload),
 
   listMessages: () => api.get<unknown[]>("/backoffice/messages"),
-  sendMessage: (payload: Record<string, unknown>) => api.post("/backoffice/messages", payload),
+  sendMessage: (payload: Record<string, unknown>) =>
+    api.post("/backoffice/messages", payload, {
+      headers: { "Idempotency-Key": crypto.randomUUID() },
+    }),
   markMessageRead: (messageId: string) =>
     api.patch(`/backoffice/messages/${encodeURIComponent(messageId)}/read`, {}),
 

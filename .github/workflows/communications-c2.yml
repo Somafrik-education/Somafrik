@@ -1,4 +1,4 @@
-name: Communications C1
+name: Communications C2
 
 on:
   pull_request:
@@ -6,30 +6,32 @@ on:
     paths:
       - "backend/db/clientsSchema.js"
       - "backend/db/clientsPgStore.js"
+      - "backend/db/clientsMemoryStore.js"
+      - "backend/db/clientsCanonicalBootstrap.js"
+      - "backend/db/communicationsMessagesSchema.js"
+      - "backend/db/migrations/20260828_communications_c2_messages.sql"
       - "backend/lib/clientsService.js"
       - "backend/lib/clientsManagement.js"
       - "backend/lib/communicationsMessagesService.js"
-      - "backend/lib/platformService.js"
-      - "backend/lib/communicationsReadiness.http.pg.test.js"
-      - "backend/scripts/verify-communications-e2e.js"
+      - "backend/lib/communicationsAttachments.js"
+      - "backend/lib/communicationsAttachments.test.js"
+      - "backend/lib/communicationsC2.http.pg.test.js"
+      - "backend/scripts/verify-communications-c2.js"
       - "backend/server.js"
       - "backend/services/rbacService.js"
-      - "web/src/pages/parametres/SettingsPlaceholders.tsx"
-      - "web/src/pages/NotificationsPage.tsx"
+      - "web/src/pages/MessagesConversationsPage.tsx"
+      - "web/src/lib/messagesApi.ts"
       - "web/src/lib/clientsApi.ts"
-      - "web/src/lib/announcementsRead.ts"
       - "Mobile/src/screens/MessagesScreen.tsx"
-      - "Mobile/src/screens/AnnouncementsScreen.tsx"
-      - "Mobile/src/lib/outbox.ts"
-      - "docs/audits/communications-c1-readiness-2026-08-28.md"
-      - ".github/workflows/communications-c1.yml"
+      - "docs/audits/communications-c2-messages-readiness-2026-08-28.md"
+      - ".github/workflows/communications-c2.yml"
   workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
-  communications-c1:
+  communications-c2:
     runs-on: ubuntu-latest
     timeout-minutes: 25
     services:
@@ -52,6 +54,12 @@ jobs:
       JWT_SECRET: ci-test-secret-with-enough-length-for-production-checks
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Record exact HEAD
+        run: |
+          echo "EXACT_HEAD=$(git rev-parse HEAD)"
+          git log -1 --oneline
       - uses: actions/setup-node@v4
         with:
           node-version: "22.12.0"
@@ -65,5 +73,5 @@ jobs:
           npm ci
           npm ci --prefix backend
           npm ci --prefix web
-      - name: Verify Communications C1 E2E
-        run: npm run verify:communications-e2e
+      - name: Verify Communications C2 E2E
+        run: npm run verify:communications-c2

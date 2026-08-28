@@ -270,6 +270,10 @@ export type SchoolMessage = {
   message: string;
   status: "Envoyé" | "Distribué" | "Lu" | "Archivé" | "Nouveau" | "En cours" | "Traité" | string;
   date: string;
+  conversationId?: string;
+  senderUserId?: string;
+  senderName?: string;
+  attachments?: Array<{ id: string; fileName: string; mimeType?: string }>;
   attachmentUrl?: string;
   priority?: "Faible" | "Moyenne" | "Haute" | "Critique" | string;
   sentAt?: string;
