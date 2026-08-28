@@ -20,7 +20,9 @@ import {
   type Column,
 } from "../../design-system";
 import { useToast } from "../../components/ui/Toast";
-import { canManageFeeGrids, canViewFeeGrids } from "../../lib/fees";
+import { canCreateFees, canReadFees, canUpdateFees } from "../../lib/feePermissions";
+import { usePermissionContext } from "../../lib/usePermissionContext";
+import { formatFinanceAmount, resolveFinanceCurrency } from "../../lib/financeCurrency";
 import {
   financeApi,
   type FinanceCatalog,
@@ -41,8 +43,9 @@ export function SettingsFinancePage() {
   const { activeSchool } = useActiveSchool();
   const { showToast } = useToast();
   const user = session?.user ?? null;
-  const canRead = canViewFeeGrids(user) || canManageFeeGrids(user);
-  const canWrite = canManageFeeGrids(user);
+  const ctx = usePermissionContext();
+  const canRead = canReadFees(ctx);
+  const canWrite = canUpdateFees(ctx) || canCreateFees(ctx);
 
   const [loading, setLoading] = useState(true);
   const [denied, setDenied] = useState(false);
@@ -134,12 +137,17 @@ export function SettingsFinancePage() {
       showToast("Classe, année et montant positif sont requis.", "error");
       return;
     }
+    const currency = resolveFinanceCurrency(catalog?.currency);
+    if (!currency) {
+      showToast("Devise établissement indisponible.", "error");
+      return;
+    }
     setBusy(true);
     try {
       const created = await financeApi.createFeeGrid({
         className: gridClassName.trim(),
         academicYear: gridYear.trim(),
-        currency: catalog?.currency || "CDF",
+        currency,
         items: [
           {
             feeType: gridFeeType,
@@ -183,7 +191,7 @@ export function SettingsFinancePage() {
           <SectionHeader title="Paramètres Finances" description="Règles financières de l'établissement." />
         </FormLayout.Header>
         <FormLayout.Content>
-          <ForbiddenState message="L'administration configure les règles financières. Le Comptable gère les opérations dans Finances." />
+          <ForbiddenState message="Les règles financières se configurent ici. Les encaissements se font dans Finances." />
         </FormLayout.Content>
       </FormLayout>
     );
@@ -311,7 +319,7 @@ export function SettingsFinancePage() {
             <ul className="space-y-1 text-sm text-ink">
               {catalog.feeTypes.map((item) => (
                 <li key={`${item.itemId}-${item.feeType}`}>
-                  {item.label} — {item.amount.toLocaleString("fr-FR")} {item.currency || catalog.currency}
+                  {item.label} — {formatFinanceAmount(item.amount, item.currency || catalog.currency)}
                   {item.className ? ` · ${item.className}` : ""}
                   {item.academicYear ? ` · ${item.academicYear}` : ""}
                   {item.dueDate ? ` · échéance ${String(item.dueDate).slice(0, 10)}` : ""}
@@ -341,7 +349,7 @@ export function SettingsFinancePage() {
               <FormField label="Libellé">
                 <Input value={gridLabel} onChange={(event) => setGridLabel(event.target.value)} />
               </FormField>
-              <FormField label={`Montant (${catalog?.currency || "CDF"})`}>
+              <FormField label={`Montant (${catalog?.currency || "devise établissement"})`}>
                 <Input value={gridAmount} onChange={(event) => setGridAmount(event.target.value)} inputMode="decimal" required />
               </FormField>
               <FormField label="Échéance">

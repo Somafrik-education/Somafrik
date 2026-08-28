@@ -147,7 +147,7 @@ function main() {
   assert.doesNotMatch(paymentControls, /createIdempotencyKey\(\)/);
   const eleveAt = paymentControls.indexOf('label="Élève"');
   const classeAt = paymentControls.indexOf('label="Classe"');
-  const montantAt = paymentControls.indexOf('label="Montant"');
+  const montantAt = paymentControls.search(/label="Montant/);
   assert.ok(eleveAt >= 0 && eleveAt < classeAt && classeAt < montantAt, "ordre Élève → Classe → Montant");
 
   const studentPayments = read(path.join("screens", "StudentPaymentsScreen.tsx"));

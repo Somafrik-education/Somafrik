@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { Plus, Trash2, Zap } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
 import { useData } from "../../context/DataContext";
@@ -8,7 +8,7 @@ import { Field, Input, Select } from "../ui/Field";
 import { Button } from "../ui/Button";
 import { useToast } from "../ui/Toast";
 import { getCurrentSchool } from "../../lib/establishment";
-import { formatMetric } from "../../lib/format";
+import { formatFinanceAmount, resolveFinanceCurrency } from "../../lib/financeCurrency";
 import {
   collectStudentPaymentClasses,
   createPaymentLine,
@@ -17,7 +17,6 @@ import {
   paymentDateToInput,
   parseLineAmount,
   searchStudentsForPayment,
-  resolveSchoolCurrency,
   sumPaymentLines,
   validateMultiItemPaymentInput,
   type PaymentRecord,
@@ -36,6 +35,7 @@ import {
   type FinanceObligationProjection,
 } from "../../lib/financePaymentWrite";
 import { PaymentReceipt } from "./PaymentReceipt";
+import { OpenObligationCards } from "./OpenObligationCards";
 
 interface QuickPaymentModalProps {
   open: boolean;
@@ -58,12 +58,14 @@ export function QuickPaymentModal({ open, onClose, onSaved }: QuickPaymentModalP
   const [dateInput, setDateInput] = useState(paymentDateToInput(defaultPaymentDate()));
   const [comment, setComment] = useState("");
   const [busy, setBusy] = useState(false);
+  const busyRef = useRef(false);
   const [savedPayment, setSavedPayment] = useState<PaymentRecord | null>(null);
   const [showReceipt, setShowReceipt] = useState(false);
   const [optionStudents, setOptionStudents] = useState<PaymentRecord[]>([]);
   const [catalogMethods, setCatalogMethods] = useState<string[]>([]);
   const [catalogCurrency, setCatalogCurrency] = useState("");
   const [catalogError, setCatalogError] = useState("");
+  const [catalogLoading, setCatalogLoading] = useState(false);
   const [studentFees, setStudentFees] = useState<FinanceObligationProjection[]>([]);
 
   const students = useMemo(
@@ -103,14 +105,14 @@ export function QuickPaymentModal({ open, onClose, onSaved }: QuickPaymentModalP
       { value: UNALLOCATED_TARGET, label: UNALLOCATED_FEE_TYPE },
       ...openObligations.map((row) => ({
         value: row.obligationId,
-        label: `${row.label}${row.periodLabel ? ` · ${row.periodLabel}` : ""} · solde ${formatMetric(row.balance, row.currency || catalogCurrency || "CDF")}`,
+        label: `${row.label}${row.periodLabel ? ` · ${row.periodLabel}` : ""} · reste ${formatFinanceAmount(row.balance, row.currency || catalogCurrency)}`,
       })),
     ],
     [openObligations, catalogCurrency],
   );
   const draftCash = draftLineCash(lines);
   const total = sumPaymentLines(lines);
-  const currency = catalogCurrency || resolveSchoolCurrency(school);
+  const currency = resolveFinanceCurrency(catalogCurrency, school?.currency);
 
   useEffect(() => {
     if (!open) return;
@@ -124,6 +126,7 @@ export function QuickPaymentModal({ open, onClose, onSaved }: QuickPaymentModalP
     setSavedPayment(null);
     setShowReceipt(false);
     setCatalogError("");
+    setCatalogLoading(true);
     void (async () => {
       try {
         const [options, catalog, fees] = await Promise.all([
@@ -174,6 +177,8 @@ export function QuickPaymentModal({ open, onClose, onSaved }: QuickPaymentModalP
         setCatalogMethods([]);
         setCatalogCurrency("");
         setStudentFees([]);
+      } finally {
+        setCatalogLoading(false);
       }
     })();
   }, [open, schoolCode]);
@@ -196,7 +201,8 @@ export function QuickPaymentModal({ open, onClose, onSaved }: QuickPaymentModalP
   }
 
   async function persistPayment(printAfter = false) {
-    if (!selectedStudent) return;
+    if (!selectedStudent || busyRef.current) return;
+    busyRef.current = true;
     setBusy(true);
     try {
       const payload = buildFinancePaymentWritePayload({
@@ -229,12 +235,14 @@ export function QuickPaymentModal({ open, onClose, onSaved }: QuickPaymentModalP
     } catch (error) {
       showToast(error instanceof Error ? error.message : "Échec de l'enregistrement du paiement", "error");
     } finally {
+      busyRef.current = false;
       setBusy(false);
     }
   }
 
   async function handleSubmit(event: FormEvent, printAfter = false) {
     event.preventDefault();
+    if (busyRef.current) return;
     if (catalogError || !catalogMethods.length) {
       showToast(catalogError || "Catalogue financier indisponible.", "error");
       return;
@@ -264,7 +272,7 @@ export function QuickPaymentModal({ open, onClose, onSaved }: QuickPaymentModalP
       <Modal
         open={open}
         title="Reçu de paiement"
-        description={`Montant reçu ${formatMetric(cash.received, currency)} · imputé ${formatMetric(cash.allocated, currency)} · Non imputé ${formatMetric(cash.unallocated, currency)}`}
+        description={`Montant reçu ${formatFinanceAmount(cash.received, currency)} · imputé ${formatFinanceAmount(cash.allocated, currency)} · non imputé ${formatFinanceAmount(cash.unallocated, currency)}`}
         onClose={() => {
           setShowReceipt(false);
           onClose();
@@ -304,8 +312,8 @@ export function QuickPaymentModal({ open, onClose, onSaved }: QuickPaymentModalP
   return (
     <Modal
       open={open}
-      title="Enregistrer le paiement"
-      description="Imputation par obligationId. Le reste est explicitement Non imputé."
+      title="Enregistrer un encaissement"
+      description="Choisissez l'élève, ses frais ouverts, puis le montant. L'affectation suit le serveur."
       onClose={onClose}
       size="lg"
       footer={
@@ -315,21 +323,26 @@ export function QuickPaymentModal({ open, onClose, onSaved }: QuickPaymentModalP
           </Button>
           <Button
             variant="secondary"
-            disabled={busy || Boolean(catalogError) || !catalogMethods.length}
+            disabled={busy || catalogLoading || Boolean(catalogError) || !catalogMethods.length}
             onClick={(event) => void handleSubmit(event, true)}
           >
-            Enregistrer et imprimer
+            {busy ? "Enregistrement…" : "Enregistrer et imprimer"}
           </Button>
           <Button
-            disabled={busy || Boolean(catalogError) || !catalogMethods.length}
+            disabled={busy || catalogLoading || Boolean(catalogError) || !catalogMethods.length}
             onClick={(event) => void handleSubmit(event, false)}
           >
-            Enregistrer le paiement
+            {busy ? "Enregistrement…" : "Enregistrer l'encaissement"}
           </Button>
         </div>
       }
     >
-      <form className="space-y-5" onSubmit={(event) => void handleSubmit(event, false)}>
+      <form className="space-y-5" aria-busy={busy || catalogLoading} onSubmit={(event) => void handleSubmit(event, false)}>
+        {catalogLoading ? (
+          <p className="rounded-xl border border-line bg-slate-50 px-4 py-3 text-sm text-muted" role="status">
+            Chargement du catalogue financier…
+          </p>
+        ) : null}
         {catalogError ? (
           <p className="rounded-xl border border-danger/30 bg-danger/10 px-4 py-3 text-sm text-danger" role="alert">
             {catalogError}
@@ -346,9 +359,13 @@ export function QuickPaymentModal({ open, onClose, onSaved }: QuickPaymentModalP
             }}
             placeholder="Nom, matricule ou code élève"
             autoFocus
+            aria-describedby="payment-student-help"
             data-testid="payment-student-search"
           />
         </Field>
+        <p id="payment-student-help" className="text-xs text-muted">
+          Saisissez au moins 2 caractères pour retrouver un élève inscrit.
+        </p>
 
         {search.length >= 2 && !selectedStudent ? (
           <div className="max-h-44 overflow-y-auto rounded-xl border border-line bg-slate-50">
@@ -392,22 +409,43 @@ export function QuickPaymentModal({ open, onClose, onSaved }: QuickPaymentModalP
           </div>
         ) : null}
 
+        {selectedStudent ? (
+          <div className="space-y-2">
+            <p className="text-sm font-semibold text-ink">Frais encore dus</p>
+            <OpenObligationCards
+              currency={currency}
+              obligations={openObligations.map((row) => ({
+                obligationId: row.obligationId,
+                label: row.label,
+                periodLabel: row.periodLabel,
+                className: row.className,
+                balance: row.balance,
+                amountDue: row.amountDue,
+                amountPaid: row.amountPaid,
+                dueDate: row.dueDate,
+                status: row.status,
+                currency: row.currency || currency,
+              }))}
+            />
+          </div>
+        ) : null}
+
         <div className="space-y-3">
-          <p className="text-sm font-semibold text-ink">Obligations</p>
+          <p className="text-sm font-semibold text-ink">Affectation de l'encaissement</p>
           {lines.map((line, index) => (
             <div
               key={line.id}
               className="grid gap-3 rounded-xl border border-line bg-slate-50 p-3 sm:grid-cols-[1fr_8rem_auto]"
               data-testid={`payment-line-${index}`}
             >
-              <Field label="Obligation / Non imputé" required>
+              <Field label="Frais concerné" required>
                 <Select
                   value={line.obligationId}
                   onChange={(event) => updateLine(line.id, { obligationId: event.target.value })}
                   options={obligationSelectOptions}
                 />
               </Field>
-              <Field label="Montant" required>
+              <Field label="Montant à encaisser" required>
                 <Input
                   type="number"
                   min={1}
@@ -440,7 +478,7 @@ export function QuickPaymentModal({ open, onClose, onSaved }: QuickPaymentModalP
             }
           >
             <Plus className="mr-1 h-4 w-4" />
-            Ajouter un libellé
+            Ajouter une ligne de frais
           </Button>
         </div>
 
@@ -449,25 +487,25 @@ export function QuickPaymentModal({ open, onClose, onSaved }: QuickPaymentModalP
             <div>
               <p className="text-xs uppercase tracking-wide text-muted">Montant reçu</p>
               <p className="font-black text-ink" data-testid="payment-received">
-                {formatMetric(draftCash.received, currency)}
+                {formatFinanceAmount(draftCash.received, currency)}
               </p>
             </div>
             <div>
               <p className="text-xs uppercase tracking-wide text-muted">Montant imputé</p>
               <p className="font-black text-ink" data-testid="payment-allocated">
-                {formatMetric(draftCash.allocated, currency)}
+                {formatFinanceAmount(draftCash.allocated, currency)}
               </p>
             </div>
             <div>
               <p className="text-xs uppercase tracking-wide text-muted">Montant non imputé</p>
               <p className="font-black text-brand" data-testid="payment-unallocated">
-                {formatMetric(draftCash.unallocated, currency)}
+                {formatFinanceAmount(draftCash.unallocated, currency)}
               </p>
             </div>
           </div>
           <p className="mt-3 text-right text-xs uppercase tracking-wide text-muted">Total</p>
           <p className="text-right text-2xl font-black text-brand" data-testid="payment-total">
-            {formatMetric(total, currency)}
+            {formatFinanceAmount(total, currency)}
           </p>
         </div>
 
@@ -479,7 +517,7 @@ export function QuickPaymentModal({ open, onClose, onSaved }: QuickPaymentModalP
               options={catalogMethods.map((value) => ({ value, label: value }))}
             />
           </Field>
-          <Field label="Date" required>
+          <Field label="Date d'encaissement" required>
             <Input type="date" value={dateInput} onChange={(event) => setDateInput(event.target.value)} />
           </Field>
         </div>
@@ -496,7 +534,7 @@ export function QuickPaymentModal({ open, onClose, onSaved }: QuickPaymentModalP
 
         <p className="flex items-center gap-2 text-xs text-muted">
           <Zap className="h-3.5 w-3.5 text-brand" aria-hidden="true" />
-          Un reçu · obligationId explicite · soldes serveur
+          Un reçu est disponible après enregistrement. Les soldes affichés viennent du serveur.
         </p>
       </form>
     </Modal>

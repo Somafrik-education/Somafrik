@@ -8,6 +8,8 @@ import {
 import { getTeacherLoginIdentifier } from "../../lib/entityIdentifiers";
 import type { EntityModuleConfig } from "../../lib/entityModules";
 import { isPaymentCancelled, paymentItemsDetailLabel, type PaymentRecord } from "../../lib/quickPayment";
+import { formatFinanceAmount, formatFinanceDate } from "../../lib/financeCurrency";
+import { financePaymentStatusLabel } from "../../lib/financeObligationStatus";
 import {
   formatContactPersonName,
   formatStudentPersonName,
@@ -132,6 +134,19 @@ function renderDataCell(
   if (module.key === "teachers" && key === "assignmentsSummary") {
     const teacherAssignments = listTeacherAssignments(row, scopedAssignments);
     return formatTeacherAssignmentsSummary(teacherAssignments);
+  }
+  if (module.key === "payments" && key === "amount") {
+    const payment = row as PaymentRecord;
+    return formatFinanceAmount(
+      Number(payment.amount ?? payment.totalAmount ?? 0),
+      typeof payment.currency === "string" ? payment.currency : undefined,
+    );
+  }
+  if (module.key === "payments" && key === "date") {
+    return formatFinanceDate(String(row.date ?? row.paidAt ?? ""));
+  }
+  if (module.key === "payments" && key === "status") {
+    return financePaymentStatusLabel(row.status);
   }
   if (module.key === "payments" && key === "itemsDetail") {
     const label = paymentItemsDetailLabel(row.items) || String(row.itemsDetail ?? row.feeType ?? "—");

@@ -17,6 +17,7 @@ import { getPaymentRateKpi } from "../lib/paymentRateKpi";
 import { paymentStudentsFromOptions, type PaymentStudent } from "../lib/paymentEnrollment";
 import { useFloatingTabBarLayout } from "../lib/screenLayout";
 import { getFinanceCatalog, getPaymentStudentOptions } from "../services/api";
+import { formatFinanceAmount, resolveFinanceCurrency } from "../lib/financeCurrency";
 import {
   STUDENT_PAYMENTS_KPI_DENSITY as KPI,
   STUDENT_SUB_SCREENS_COPY,
@@ -40,6 +41,7 @@ export default function StudentPaymentsScreen({ route, navigation }: Partial<Pro
   } = useAdminData();
   const [paymentStudents, setPaymentStudents] = useState<PaymentStudent[]>([]);
   const [paymentMethods, setPaymentMethods] = useState<string[]>([]);
+  const [catalogCurrency, setCatalogCurrency] = useState("");
   const studentId = route?.params?.studentId ?? selectedStudentId;
   const pickerStudents: PaymentStudent[] = paymentStudents;
   const student = studentId ? pickerStudents.find((item) => item.id === studentId) : undefined;
@@ -56,6 +58,7 @@ export default function StudentPaymentsScreen({ route, navigation }: Partial<Pro
           setPaymentMethods(
             (catalog.paymentMethods ?? []).filter((row) => row.active).map((row) => row.label),
           );
+          setCatalogCurrency(resolveFinanceCurrency(catalog.currency));
         })
         .catch(() => setPaymentMethods([])),
     ]);
@@ -87,17 +90,19 @@ export default function StudentPaymentsScreen({ route, navigation }: Partial<Pro
   const paymentsReady = paymentsSnapshot.status === "success" || paymentsSnapshot.status === "empty";
   const expectedLabel =
     feesReady && paymentRateKpi.expectedAmount > 0
-      ? `${paymentRateKpi.expectedAmount.toLocaleString()} FC`
+      ? formatFinanceAmount(paymentRateKpi.expectedAmount, catalogCurrency)
       : "—";
   const imputedLabel =
     feesReady && paymentRateKpi.expectedAmount > 0
-      ? `${paymentRateKpi.collectedAmount.toLocaleString()} FC`
+      ? formatFinanceAmount(paymentRateKpi.collectedAmount, catalogCurrency)
       : "—";
   const remaining = Math.max(0, paymentRateKpi.expectedAmount - paymentRateKpi.collectedAmount);
   const remainingLabel =
-    feesReady && paymentRateKpi.expectedAmount > 0 ? `${remaining.toLocaleString()} FC` : "—";
-  const collectedLabel = paymentsReady ? `${cashKpi.collectedAmount.toLocaleString()} FC` : "—";
-  const unallocatedLabel = paymentsReady ? `${cashKpi.unallocatedAmount.toLocaleString()} FC` : "—";
+    feesReady && paymentRateKpi.expectedAmount > 0
+      ? formatFinanceAmount(remaining, catalogCurrency)
+      : "—";
+  const collectedLabel = paymentsReady ? formatFinanceAmount(cashKpi.collectedAmount, catalogCurrency) : "—";
+  const unallocatedLabel = paymentsReady ? formatFinanceAmount(cashKpi.unallocatedAmount, catalogCurrency) : "—";
   const showQueryState = paymentsSnapshot.status !== "success" || sortedPayments.length === 0;
 
   const financeHeader = (
@@ -121,6 +126,7 @@ export default function StudentPaymentsScreen({ route, navigation }: Partial<Pro
         students={pickerStudents}
         studentFees={studentFeesData}
         paymentMethods={paymentMethods}
+        currency={catalogCurrency}
         initialStudentId={studentId ? String(studentId) : ""}
         onChanged={() => refreshFinance()}
       />
@@ -133,7 +139,7 @@ export default function StudentPaymentsScreen({ route, navigation }: Partial<Pro
             accessibilityRole="summary"
             accessibilityLabel={`Frais scolaires attendus ${expectedLabel}`}
           >
-            <Text style={localStyles.heroLabel}>Frais scolaires attendus</Text>
+            <Text style={localStyles.heroLabel}>Montant attendu</Text>
             <Text style={localStyles.heroValue} selectable>
               {expectedLabel}
             </Text>
@@ -216,7 +222,7 @@ export default function StudentPaymentsScreen({ route, navigation }: Partial<Pro
           ListHeaderComponent={financeHeader}
           renderItem={({ item }) => (
             <>
-              <PaymentReceiptCard payment={item} studentName={student?.name} showItems />
+              <PaymentReceiptCard payment={item} studentName={student?.name} currency={catalogCurrency} showItems />
               <PaymentCancelControls payment={item} onChanged={() => refreshFinance()} />
             </>
           )}

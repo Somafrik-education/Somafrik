@@ -37,6 +37,7 @@ import {
 } from "../services/api";
 import QueryStateView from "../components/QueryStateView";
 import { DATA_TRUTH_COPY, DATA_TRUTH_TEST_IDS, paymentItemsDetail, paymentMethodLabel, paymentReference, paymentStatusLabel, paymentTotal } from "../lib/dataTruth";
+import { formatFinanceAmount } from "../lib/financeCurrency";
 import { formatTeacherClasses } from "../lib/teacherClasses";
 import { validateCourseTeacherRule } from "../lib/pedagogyGovernance";
 import { PENDING_VALIDATION_STATUS } from "../lib/orgHierarchy";
@@ -1855,7 +1856,7 @@ function getPrimaryText(entity: AdminEntity, item: any) {
   if (entity === "payments") {
     const total = paymentTotal(item);
     const reference = paymentReference(item);
-    return `${reference} · ${item.studentName || item.studentId} · ${total.toLocaleString()} FC`;
+    return `${reference} · ${item.studentName || item.studentId} · ${formatFinanceAmount(total, item.currency)}`;
   }
   if (entity === "paymentStatuses") return item.label;
   if (entity === "schools") return `${item.name} • ${item.publicId ?? item.code}`;

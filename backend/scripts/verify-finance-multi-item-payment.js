@@ -49,11 +49,19 @@ function assertSourceGuards() {
   assert.doesNotMatch(service, /payload\.totalAmount/);
   assert.match(service, /const totalAmount = money\(resolvedItems\.reduce/);
 
-  assert.match(modal, /Ajouter un libellé/);
-  assert.match(modal, /Enregistrer le paiement/);
+  // F7 : contrat structurel du formulaire — pas de copies UI fragiles.
+  assert.match(modal, /data-testid="payment-add-line"/);
+  assert.match(modal, /createPaymentLine\(UNALLOCATED_TARGET\)/);
+  assert.match(modal, /setLines\(\(current\) => \[\.\.\.current, createPaymentLine/);
+  assert.match(modal, /obligationId/);
+  assert.match(modal, /UNALLOCATED_TARGET/);
+  assert.match(modal, /UNALLOCATED_FEE_TYPE/);
   assert.match(modal, /listPaymentStudentOptions/);
   assert.match(modal, /getFinanceCatalog/);
+  assert.match(modal, /financeApi\.createPayment/);
+  assert.match(modal, /busyRef/);
   assert.doesNotMatch(modal, /\|\| ["']Espèces["']/);
+  assert.doesNotMatch(modal, /PAYMENT_METHODS/);
   assert.doesNotMatch(modal, /totalAmount:/);
   assert.match(receipt, />Total</);
   assert.match(columns, /payment-items-detail/);

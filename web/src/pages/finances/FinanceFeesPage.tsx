@@ -13,14 +13,12 @@ import { useToast } from "../../components/ui/Toast";
 import { useConfirm } from "../../components/ui/ConfirmDialog";
 import type { FeeGrid, SchoolFeeItem, StudentFee } from "../../types";
 import {
-  canViewFeeGrids,
   classOptionsForSchool,
   classChoicesForSchool,
   DEFAULT_MONTHLY_MONTHS,
   isGridEditable,
   itemsForGrid,
   newFeeId,
-  refreshStudentFeeStatuses,
   resolveAcademicYear,
   resolveSchoolCurrency,
   scopedFeeGrids,
@@ -40,6 +38,8 @@ import { usePermissionContext } from "../../lib/usePermissionContext";
 import { normalize } from "../../lib/format";
 import { QuickFeeGridModal } from "../../components/fees/QuickFeeGridModal";
 import { financeApi } from "../../lib/financeApi";
+import { formatFinanceAmount, resolveFinanceCurrency } from "../../lib/financeCurrency";
+import { EmptyState, ErrorState, LoadingState } from "../../design-system";
 
 interface DraftItem {
   id?: string;
@@ -80,7 +80,7 @@ export function FinanceFeesPage() {
     return String(raw).trim().toUpperCase();
   }, [activeSchoolCode, session?.user?.schoolCode, state.schools]);
 
-  const canRead = canReadFees(ctx) || canViewFeeGrids(session?.user ?? null);
+  const canRead = canReadFees(ctx);
   const canCreate = canCreateFees(ctx);
   const canUpdate = canUpdateFees(ctx);
   const canApply = canApplyFees(ctx);
@@ -95,17 +95,24 @@ export function FinanceFeesPage() {
   const [feeTypeCatalog, setFeeTypeCatalog] = useState<Array<{ feeType: string; label: string }>>([
     { feeType: "Inscription", label: "Inscription" },
   ]);
+  const [catalogCurrency, setCatalogCurrency] = useState("");
+  const [catalogLoading, setCatalogLoading] = useState(true);
+  const [catalogError, setCatalogError] = useState("");
 
   useEffect(() => {
+    setCatalogLoading(true);
+    setCatalogError("");
     void financeApi
       .getFinanceCatalog()
       .then((catalog) => {
         const rows = catalog.feeTypeCatalog ?? catalog.canonicalFeeTypes ?? [];
         if (rows.length) setFeeTypeCatalog(rows);
+        if (catalog.currency) setCatalogCurrency(catalog.currency);
       })
-      .catch(() => {
-        /* le sélecteur reste sur le repli Inscription jusqu'au catalogue */
-      });
+      .catch((cause) => {
+        setCatalogError(cause instanceof Error ? cause.message : "Impossible de charger le catalogue financier.");
+      })
+      .finally(() => setCatalogLoading(false));
   }, []);
 
   const grids = useMemo(() => {
@@ -116,7 +123,8 @@ export function FinanceFeesPage() {
   }, [session?.user, state, filterClass, filterYear]);
 
   const allItems = scopedSchoolFeeItems(session?.user ?? null, state);
-  const studentFees = refreshStudentFeeStatuses(scopedStudentFees(session?.user ?? null, state));
+  const studentFees = scopedStudentFees(session?.user ?? null, state);
+  const currency = resolveFinanceCurrency(catalogCurrency, activeSchool?.currency, resolveSchoolCurrency(state, schoolCode));
   const classOptions = useMemo(() => classOptionsForSchool(state, schoolCode), [state, schoolCode]);
   const classChoices = useMemo(() => classChoicesForSchool(state, schoolCode), [state, schoolCode]);
   const years = useMemo(
@@ -156,7 +164,7 @@ export function FinanceFeesPage() {
       classId: classChoices[0]?.classId ?? "",
       classCode: classChoices[0]?.classCode ?? "",
       className: classChoices[0]?.className ?? classOptions[0] ?? "",
-      currency: resolveSchoolCurrency(state, schoolCode),
+      currency: resolveFinanceCurrency(catalogCurrency, resolveSchoolCurrency(state, schoolCode)),
       status: "Brouillon",
       periodName: "",
       periodStart: "",
@@ -315,11 +323,11 @@ export function FinanceFeesPage() {
     <>
       <Card className="p-6">
         <SectionHeader
-          title="Grilles tarifaires"
+          title="Référentiel des frais"
           description={
             activeSchool?.name
-              ? `${activeSchool.name} (${schoolCode}) — règles par classe et période, distinctes des dettes élève.`
-              : "Définissez les frais canoniques par classe (inscription, scolarité, examen…)."
+              ? `${activeSchool.name} (${schoolCode}) — tarifs par classe, puis obligations élève, puis encaissement.`
+              : "Définissez les tarifs par classe (inscription, scolarité, examen…)."
           }
           actions={
             <>
@@ -339,9 +347,9 @@ export function FinanceFeesPage() {
         />
 
         <div className="mt-4 grid gap-3 sm:grid-cols-3">
-          <Kpi label="Grilles" value={grids.length} />
-          <Kpi label="Reste à payer" value={summary.totalBalance.toLocaleString("fr-FR")} />
-          <Kpi label="En retard" value={summary.overdue} />
+          <Kpi label="Tarifs" value={grids.length} />
+          <Kpi label="Reste à payer" value={formatFinanceAmount(summary.totalBalance, currency)} />
+          <Kpi label="Échéances dépassées" value={summary.overdue} />
         </div>
 
         <div className="mt-4 flex flex-wrap gap-3">
@@ -371,9 +379,34 @@ export function FinanceFeesPage() {
           </div>
         </div>
 
-        <div className="mt-4">
-          <Table columns={columns} rows={grids} rowKey={(g) => g.id} onRowClick={setDetail} />
-        </div>
+        {catalogLoading ? (
+          <LoadingState message="Chargement des tarifs…" />
+        ) : catalogError ? (
+          <div className="mt-4">
+            <ErrorState
+              message={catalogError}
+              action={<Button onClick={() => window.location.reload()}>Réessayer</Button>}
+            />
+          </div>
+        ) : !grids.length ? (
+          <div className="mt-4">
+            <EmptyState
+              title="Aucun tarif défini"
+              description="Créez une grille par classe pour générer les obligations des élèves."
+              action={
+                canCreate ? (
+                  <Button size="sm" onClick={openCreate} disabled={!schoolCode}>
+                    Nouvelle grille
+                  </Button>
+                ) : null
+              }
+            />
+          </div>
+        ) : (
+          <div className="mt-4">
+            <Table columns={columns} rows={grids} rowKey={(g) => g.id} onRowClick={setDetail} stackOnMobile />
+          </div>
+        )}
       </Card>
 
       <Modal
@@ -467,12 +500,8 @@ export function FinanceFeesPage() {
                   placeholder="Trimestre 1, Semestre 2…"
                 />
               </Field>
-              <Field label="Devise" hint="Obligatoire" required>
-                <Input
-                  value={editing.currency}
-                  onChange={(e) => setEditing({ ...editing, currency: e.target.value.toUpperCase() })}
-                  required
-                />
+              <Field label="Devise" hint="Issue de l'établissement / du pays" required>
+                <Input value={editing.currency} readOnly />
               </Field>
               <Field label="Début période">
                 <Input
@@ -634,7 +663,7 @@ function FeeGridDetail({
           <dd>{grid.periodName || "—"}</dd>
         </div>
         <div>
-          <dt className="text-xs font-semibold uppercase text-muted">Dettes générées</dt>
+          <dt className="text-xs font-semibold uppercase text-muted">Obligations générées</dt>
           <dd>{linked.length}</dd>
         </div>
       </dl>
@@ -647,15 +676,13 @@ function FeeGridDetail({
                 {item.feeType} — {item.label}
                 {!item.mandatory ? " (optionnel)" : ""}
               </span>
-              <span className="font-semibold">
-                {item.amount.toLocaleString("fr-FR")} {grid.currency}
-              </span>
+              <span className="font-semibold">{formatFinanceAmount(item.amount, grid.currency)}</span>
             </li>
           ))}
         </ul>
       </div>
       <p className="text-xs text-muted">
-        {paid} frais soldés sur {linked.length} dettes générées à partir de cette grille.
+        {paid} obligations soldées sur {linked.length} générées à partir de ce tarif.
       </p>
     </div>
   );

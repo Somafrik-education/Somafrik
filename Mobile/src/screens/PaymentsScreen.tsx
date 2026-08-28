@@ -12,10 +12,12 @@ import { getPaymentCashKpi } from "../lib/paymentCashKpi";
 import { getPaymentRateKpi } from "../lib/paymentRateKpi";
 import { useFloatingTabBarLayout } from "../lib/screenLayout";
 import { getFinanceCatalog, getPaymentStudentOptions } from "../services/api";
+import { formatFinanceAmount, resolveFinanceCurrency } from "../lib/financeCurrency";
 import { paymentStudentsFromOptions, type PaymentStudent } from "../lib/paymentEnrollment";
 
-function moneyLabel(amount: number, ready: boolean) {
-  return ready ? `${amount.toLocaleString("fr-FR")} FC` : "—";
+function moneyLabel(amount: number, ready: boolean, currency: string) {
+  if (!ready) return "—";
+  return formatFinanceAmount(amount, currency);
 }
 
 export default function PaymentsScreen({ navigation }: any) {
@@ -31,6 +33,7 @@ export default function PaymentsScreen({ navigation }: any) {
   } = useAdminData();
   const [paymentStudents, setPaymentStudents] = useState<PaymentStudent[]>([]);
   const [paymentMethods, setPaymentMethods] = useState<string[]>([]);
+  const [catalogCurrency, setCatalogCurrency] = useState("");
   const paymentStats = getPaymentStats(paymentsData);
   const paymentRateKpi = getPaymentRateKpi(studentFeesData);
   const cashKpi = getPaymentCashKpi(paymentsData);
@@ -52,6 +55,7 @@ export default function PaymentsScreen({ navigation }: any) {
       getFinanceCatalog()
         .then((catalog) => {
           setPaymentMethods((catalog.paymentMethods ?? []).filter((row) => row.active).map((row) => row.label));
+          setCatalogCurrency(resolveFinanceCurrency(catalog.currency));
         })
         .catch(() => {
           setPaymentMethods([]);
@@ -68,12 +72,12 @@ export default function PaymentsScreen({ navigation }: any) {
   const showQueryState = paymentsSnapshot.status !== "success";
   const expectedLabel =
     feesReady && paymentRateKpi.expectedAmount > 0
-      ? `${paymentRateKpi.expectedAmount.toLocaleString("fr-FR")} FC`
+      ? formatFinanceAmount(paymentRateKpi.expectedAmount, catalogCurrency)
       : "—";
   const remaining = Math.max(0, paymentRateKpi.expectedAmount - paymentRateKpi.collectedAmount);
   const remainingLabel =
     feesReady && paymentRateKpi.expectedAmount > 0
-      ? `${remaining.toLocaleString("fr-FR")} FC`
+      ? formatFinanceAmount(remaining, catalogCurrency)
       : "—";
   const rateLabel = feesReady ? paymentRateKpi.value : "—";
 
@@ -103,21 +107,22 @@ export default function PaymentsScreen({ navigation }: any) {
                 students={paymentStudents}
                 studentFees={studentFeesData}
                 paymentMethods={paymentMethods}
+                currency={catalogCurrency}
                 onChanged={() => refreshFinance()}
               />
               <View style={styles.summaryCard}>
-                <Text style={styles.summaryLabel}>Frais de scolarité estimés</Text>
+                <Text style={styles.summaryLabel}>Montant attendu</Text>
                 <Text style={styles.summaryAmount}>{expectedLabel}</Text>
-                <Text style={styles.summarySub}>Reste estimé : {remainingLabel}</Text>
+                <Text style={styles.summarySub}>Reste à payer : {remainingLabel}</Text>
                 <Text style={styles.summarySub}>{rateLabel}</Text>
               </View>
 
               <View style={styles.summaryCardSecondary}>
-                <Text style={styles.summaryLabelDark}>Encaissé</Text>
-                <Text style={styles.summaryAmountDark}>{moneyLabel(cashKpi.collectedAmount, paymentsReady)}</Text>
+                <Text style={styles.summaryLabelDark}>Montant encaissé</Text>
+                <Text style={styles.summaryAmountDark}>{moneyLabel(cashKpi.collectedAmount, paymentsReady, catalogCurrency)}</Text>
                 <Text style={styles.summarySubDark}>
-                  Imputé {moneyLabel(cashKpi.allocatedAmount, paymentsReady)} · Non imputé{" "}
-                  {moneyLabel(cashKpi.unallocatedAmount, paymentsReady)}
+                  Imputé {moneyLabel(cashKpi.allocatedAmount, paymentsReady, catalogCurrency)} · Non imputé{" "}
+                  {moneyLabel(cashKpi.unallocatedAmount, paymentsReady, catalogCurrency)}
                 </Text>
               </View>
 
@@ -138,7 +143,7 @@ export default function PaymentsScreen({ navigation }: any) {
                 </View>
               </View>
 
-              <Text style={styles.sectionTitle}>Reçus récents</Text>
+              <Text style={styles.sectionTitle}>Paiements récents</Text>
             </View>
           )}
         </>
@@ -150,6 +155,7 @@ export default function PaymentsScreen({ navigation }: any) {
             <PaymentReceiptCard
               payment={payment}
               studentName={student?.name}
+              currency={catalogCurrency}
               onPress={() => navigation.navigate("StudentPayments", { studentId: payment.studentId })}
               showItems={false}
             />

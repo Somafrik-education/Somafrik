@@ -132,7 +132,7 @@ export function defaultPaymentDate(): string {
 }
 
 export function resolveSchoolCurrency(school?: School | null): string {
-  return String(school?.currency ?? "CDF").trim() || "CDF";
+  return String(school?.currency ?? "").trim().toUpperCase();
 }
 
 export function resolveSchoolYear(state: BackOfficeState, schoolCode: string): string {

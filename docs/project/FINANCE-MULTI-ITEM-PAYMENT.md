@@ -61,7 +61,7 @@ Les nouveaux paiements sont multi-libellés canoniques. Les anciens restent chac
 
 ## UI
 
-- Formulaire : élève *, lignes libellé/montant, **+ Ajouter un libellé**, total auto, mode *, date *, commentaire, **Enregistrer le paiement**.
+- Formulaire : élève *, lignes libellé/montant, **+ Ajouter une ligne de frais**, total auto, mode *, date *, commentaire, **Enregistrer l'encaissement**.
 - Liste `/finances/paiements` : **une ligne par reçu** — Référence, Élève, Détail (`3 libellés`), Total, Mode, Date, Statut, Actions (Reçu).
 - Clic Détail ou Reçu / PDF : toutes les lignes + total général.
 
