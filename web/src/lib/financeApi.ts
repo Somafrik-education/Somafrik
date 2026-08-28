@@ -97,10 +97,14 @@ export const financeApi = {
   listPayments: () => api.get<FinancePayment[]>("/payments"),
   getPayment: (paymentId: string) =>
     api.get<FinancePayment>(`/payments/${encodeURIComponent(paymentId)}`),
-  createPayment: (payload: Record<string, unknown>) =>
-    api.post<FinancePayment>("/payments", payload),
-  cancelPayment: (paymentId: string, reason: string) =>
-    api.post<FinancePayment>(`/payments/${encodeURIComponent(paymentId)}/cancel`, { reason }),
+  createPayment: (payload: Record<string, unknown>, options?: { idempotencyKey?: string }) =>
+    api.post<FinancePayment>("/payments", payload, {
+      headers: options?.idempotencyKey ? { "Idempotency-Key": options.idempotencyKey } : undefined,
+    }),
+  cancelPayment: (paymentId: string, reason: string, options?: { idempotencyKey?: string }) =>
+    api.post<FinancePayment>(`/payments/${encodeURIComponent(paymentId)}/cancel`, { reason }, {
+      headers: options?.idempotencyKey ? { "Idempotency-Key": options.idempotencyKey } : undefined,
+    }),
 
   listPaymentStudentOptions: () =>
     api.get<PaymentStudentOption[]>("/finance/payment-student-options"),
@@ -126,10 +130,17 @@ export const financeApi = {
     api.post<FinanceFeeGrid>(`/finance/fee-grids/${encodeURIComponent(gridId)}/activate`),
   deactivateFeeGrid: (gridId: string) =>
     api.post<FinanceFeeGrid>(`/finance/fee-grids/${encodeURIComponent(gridId)}/deactivate`),
-  applyFeeGrid: (gridId: string, payload: Record<string, unknown> = {}) =>
+  applyFeeGrid: (
+    gridId: string,
+    payload: Record<string, unknown> = {},
+    options?: { idempotencyKey?: string },
+  ) =>
     api.post<{ created: number; skipped: number }>(
       `/finance/fee-grids/${encodeURIComponent(gridId)}/apply`,
       payload,
+      {
+        headers: options?.idempotencyKey ? { "Idempotency-Key": options.idempotencyKey } : undefined,
+      },
     ),
 
   listStudentFees: () => api.get<FinanceObligationProjection[]>("/finance/student-fees"),
@@ -141,6 +152,12 @@ export const financeApi = {
   listUnpaid: (query = "") => api.get(`/backoffice/finance/unpaid${query}`),
   getUnpaidStudent: (studentId: string) =>
     api.get(`/backoffice/finance/unpaid/${encodeURIComponent(studentId)}`),
-  createReminder: (studentId: string, payload: Record<string, unknown>) =>
-    api.post(`/backoffice/finance/unpaid/${encodeURIComponent(studentId)}/reminders`, payload),
+  createReminder: (
+    studentId: string,
+    payload: Record<string, unknown>,
+    options?: { idempotencyKey?: string },
+  ) =>
+    api.post(`/backoffice/finance/unpaid/${encodeURIComponent(studentId)}/reminders`, payload, {
+      headers: options?.idempotencyKey ? { "Idempotency-Key": options.idempotencyKey } : undefined,
+    }),
 };

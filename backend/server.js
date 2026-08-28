@@ -2876,18 +2876,29 @@ app.get("/api/backoffice/finance/unpaid/:studentId/reminders", requireAuth, requ
 }));
 
 app.post("/api/backoffice/finance/unpaid/:studentId/reminders", requireAuth, requirePermission("POST /api/backoffice/finance/unpaid/reminders"), asyncHandler(async (req, res) => {
-  const reminder = await repository.createFinanceReminder(
-    req.params.studentId,
-    req.body ?? {},
-    req.principal,
-    { force: Boolean(req.body?.force) },
-  );
-  await auditService.record(req, "send_payment_reminder", "student_fee", req.params.studentId, {
-    channel: reminder.channel,
-    summary: reminder.summary,
+  await withIdempotency({
+    req,
+    res,
+    routeKey: `POST /api/backoffice/finance/unpaid/${req.params.studentId}/reminders`,
+    principal: req.principal,
+    handler: async () => {
+      const reminder = await repository.createFinanceReminder(
+        req.params.studentId,
+        req.body ?? {},
+        req.principal,
+        { force: Boolean(req.body?.force) },
+      );
+      await auditService.record(req, "send_payment_reminder", "student_fee", req.params.studentId, {
+        channel: reminder.channel,
+        summary: reminder.summary,
+      });
+      const nextState = await getAuthoritativeBackOfficeState();
+      return {
+        statusCode: 201,
+        body: { reminder, state: scopedBackOfficeStateForResponse(nextState, req.principal) },
+      };
+    },
   });
-  const nextState = await getAuthoritativeBackOfficeState();
-  res.status(201).json({ reminder, state: scopedBackOfficeStateForResponse(nextState, req.principal) });
 }));
 
 app.get("/api/backoffice/state", requireAuth, asyncHandler(async (_req, res) => {

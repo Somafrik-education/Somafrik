@@ -49,7 +49,7 @@ function createFinancePgStore(repo) {
         );
         if (!row) return null;
         const profile = parsePayload(row.profile_payload);
-        const currency = String(profile.currency || row.currency || row.country_currency || "CDF").trim().toUpperCase();
+        const currency = String(profile.currency || row.currency || row.country_currency || "").trim().toUpperCase();
         return {
           ...row,
           code: row.school_code,
@@ -448,15 +448,23 @@ function createFinancePgStore(repo) {
         );
         return row ? mapObligationRow(row) : null;
       },
-      async getObligationByPublicId(id) {
+      async getObligationByPublicId(id, principal) {
+        const params = [id];
+        let pred = "TRUE";
+        if (principal) {
+          const scope = resolveFinanceSchoolScope(principal);
+          if (scope.mode === "none") return null;
+          pred = sqlSchoolPredicate("s", scope, params);
+        }
         const row = await one(
           `SELECT o.*, s.school_code, st.student_code
            FROM student_fee_obligations o
            JOIN schools s ON s.id = o.school_id
            JOIN students st ON st.id = o.student_id
-           WHERE o.id::text = $1 OR COALESCE(o.profile_payload->>'publicId','') = $1
+           WHERE (o.id::text = $1 OR COALESCE(o.profile_payload->>'publicId','') = $1)
+             AND ${pred}
            LIMIT 1`,
-          [id],
+          params,
         );
         return row ? mapObligationRow(row) : null;
       },

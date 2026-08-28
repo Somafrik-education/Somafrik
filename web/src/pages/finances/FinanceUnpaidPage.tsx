@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useAuth } from "../../context/AuthContext";
 import { useData } from "../../context/DataContext";
 import { Card, SectionHeader } from "../../components/ui/Card";
@@ -35,6 +35,7 @@ import {
 } from "../../lib/unpaidPermissions";
 import { usePermissionContext } from "../../lib/usePermissionContext";
 import { financeApi } from "../../lib/financeApi";
+import { createFinanceIdempotencyKey } from "../../lib/financeIdempotency";
 import { ApiError } from "../../api/client";
 import { formatFinanceAmount, formatFinanceDate, resolveFinanceCurrency } from "../../lib/financeCurrency";
 import { financeObligationStatusLabel, financePaymentStatusLabel } from "../../lib/financeObligationStatus";
@@ -69,6 +70,7 @@ export function FinanceUnpaidPage() {
   const [reminderRecipient, setReminderRecipient] = useState<ReminderRecipient>("Parent");
   const [reminderMessage, setReminderMessage] = useState("");
   const [busy, setBusy] = useState(false);
+  const reminderIntentionRef = useRef(createFinanceIdempotencyKey());
 
   const reminders = useMemo(
     () => scopedPaymentReminders(session?.user ?? null, state),
@@ -135,12 +137,17 @@ export function FinanceUnpaidPage() {
     try {
       const school = state.schools.find((item) => item.code === row.schoolCode);
       const message = reminderMessage.trim() || buildReminderMessage(row, school?.name);
-      await financeApi.createReminder(row.studentId, {
-        channel: reminderChannel,
-        recipient: reminderRecipient,
-        message,
-        force: Boolean(forceSend),
-      });
+      await financeApi.createReminder(
+        row.studentId,
+        {
+          channel: reminderChannel,
+          recipient: reminderRecipient,
+          message,
+          force: Boolean(forceSend),
+        },
+        { idempotencyKey: reminderIntentionRef.current },
+      );
+      reminderIntentionRef.current = createFinanceIdempotencyKey();
       await refresh();
 
       showToast(

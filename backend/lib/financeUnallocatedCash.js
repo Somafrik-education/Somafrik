@@ -38,7 +38,9 @@ function isPendingCashStatus(status) {
 }
 
 function resolvePaymentStatus(amount, remainingBefore, method, leftover = 0) {
-  if (normalizeKey(method) === "mobile money") return "En attente de confirmation";
+  // Le moyen (Mobile money inclus) n'est pas un statut de règlement.
+  // Un encaissement enregistré doit pouvoir être imputé (F4 exige payment_status=paid).
+  void method;
   const total = money(amount);
   const rest = money(leftover);
   const allocated = money(total - rest);

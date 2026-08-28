@@ -19,6 +19,7 @@ const {
   studentMatches,
   canForceReminder,
   isSuperAdminPrincipal,
+  requireSchoolCurrency,
 } = require("./financeManagement");
 const {
   resolvePaymentMethod,
@@ -216,7 +217,7 @@ async function openObligationsForItem(tx, obligations, item, student, school) {
     );
   }
   assertCompatibleCurrency({
-    payment: { currency: school.currency || "CDF" },
+    payment: { currency: requireSchoolCurrency(school) },
     obligation: target,
   });
   if (asTrimmed(item.feeTypeId) || asTrimmed(item.catalogItemId)) {
@@ -446,7 +447,7 @@ async function createPayment(store, rawPayload, principal, auditMeta) {
       feeType: resolvedItems.length === 1 ? resolvedItems[0].feeType : `${resolvedItems.length} libellés`,
       label: resolvedItems.length === 1 ? resolvedItems[0].feeLabel : `${resolvedItems.length} libellés`,
       amount: totalAmount,
-      currency: school.currency || "CDF",
+      currency: requireSchoolCurrency(school),
       method,
       date: toIsoDate(paidAt) || paidAt,
       status,
@@ -832,8 +833,8 @@ async function createReminder(store, studentId, payload, principal, { force = fa
       schoolCode: student.schoolCode,
       recipient: body.recipient || "Parent",
       channel: body.channel || "notification",
-      message: asTrimmed(body.message) || `Relance de paiement : ${amountDue} ${school.currency || "CDF"} restants.`,
-      summary: `Relance ${amountDue} ${school.currency || "CDF"}`,
+      message: asTrimmed(body.message) || `Relance de paiement : ${amountDue} ${requireSchoolCurrency(school)} restants.`,
+      summary: `Relance ${amountDue} ${requireSchoolCurrency(school)}`,
       sendStatus: body.sendStatus || "Envoyée",
       sentAt: new Date().toISOString(),
       triggeredByName: actorName(principal),

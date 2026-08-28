@@ -141,7 +141,7 @@ function createFinanceMemoryStore({
           id: school.id || school.publicId || school.code,
           code: school.code || school.schoolCode,
           school_code: school.code || school.schoolCode,
-          currency: school.currency || "CDF",
+          currency: school.currency || "",
         };
       },
       async findStudent(studentKey, principal) {
@@ -425,11 +425,17 @@ function createFinanceMemoryStore({
         const row = tables.studentFees.find((item) => item.id === id);
         return row ? mapObligationRow(row) : null;
       },
-      async getObligationByPublicId(id) {
+      async getObligationByPublicId(id, principal) {
         const row = tables.studentFees.find(
           (item) => item.id === id || item.profile_payload?.publicId === id,
         );
-        return row ? mapObligationRow(row) : null;
+        if (!row) return null;
+        const mapped = mapObligationRow(row);
+        if (principal) {
+          const scope = resolveFinanceSchoolScope(principal);
+          if (!schoolCodeInScope(mapped.schoolCode, scope)) return null;
+        }
+        return mapped;
       },
       async updateObligation(fee) {
         const row = tables.studentFees.find((item) => item.id === (fee.dbId || fee.id));

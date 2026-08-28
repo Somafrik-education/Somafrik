@@ -32,8 +32,15 @@ const OBLIGATION_CANCEL_REASON = Object.freeze({
 const NO_APPLICABLE_GRID = "NO_APPLICABLE_FINANCE_GRID";
 
 function snapshotCurrency(school) {
-  const raw = asTrimmed(school?.currency || "CDF").toUpperCase();
-  if (!raw || raw === "FC") return PRESENTATION_CURRENCY_ALIASES.FC || "CDF";
+  const raw = asTrimmed(school?.currency).toUpperCase();
+  if (!raw) {
+    throw createFinanceError(
+      400,
+      "Devise de l'établissement introuvable — aucun repli CDF/USD/EUR.",
+      FINANCE_ERROR.TENANT_MISMATCH,
+    );
+  }
+  if (raw === "FC") return PRESENTATION_CURRENCY_ALIASES.FC || "CDF";
   return PRESENTATION_CURRENCY_ALIASES[raw] || raw;
 }
 

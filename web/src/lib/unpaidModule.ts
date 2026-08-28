@@ -212,7 +212,7 @@ export function buildUnpaidDashboard(rows: StudentUnpaidRow[]): UnpaidDashboardS
     totalAmountDue: rows.reduce((sum, row) => sum + row.amountDue, 0),
     studentCount: rows.length,
     overdueLineCount: rows.filter((row) => row.daysLate > 0).length,
-    currency: rows[0]?.currency ?? "USD",
+    currency: rows[0]?.currency ? String(rows[0].currency).trim().toUpperCase() : "",
     byClass: [...byClassMap.entries()]
       .map(([className, stats]) => ({
         className,

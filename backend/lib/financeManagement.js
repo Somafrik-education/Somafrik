@@ -40,6 +40,7 @@ const FINANCE_ERROR = Object.freeze({
   REMINDER_COOLDOWN: "REMINDER_COOLDOWN",
   REMINDER_FORCE_FORBIDDEN: "REMINDER_FORCE_FORBIDDEN",
   NEGATIVE_BALANCE_FORBIDDEN: "NEGATIVE_BALANCE_FORBIDDEN",
+  CURRENCY_REQUIRED: "FINANCE_CURRENCY_REQUIRED",
 });
 
 function createFinanceError(statusCode, message, code, details) {
@@ -165,7 +166,7 @@ function mapPaymentRow(row) {
     label: profile.label || row.fee_type || "",
     amount: money(row.amount),
     totalAmount: money(row.amount),
-    currency: row.currency || profile.currency || "CDF",
+    currency: row.currency || profile.currency || "",
     method: row.payment_method || profile.method || "",
     date: toIsoDate(row.payment_date) || profile.date || "",
     status: cancelled ? "Annulé" : profile.status || mapDbStatusToBo(row.payment_status),
@@ -396,6 +397,19 @@ function financeAuditMetaFromRequest(req) {
   };
 }
 
+function requireSchoolCurrency(school) {
+  const raw = asTrimmed(school?.currency).toUpperCase();
+  if (raw === "FC") return "CDF";
+  if (!raw) {
+    throw createFinanceError(
+      400,
+      "Devise de l'établissement introuvable — aucun repli CDF/USD/EUR.",
+      FINANCE_ERROR.CURRENCY_REQUIRED,
+    );
+  }
+  return raw;
+}
+
 module.exports = {
   FINANCE_ERROR,
   createFinanceError,
@@ -428,4 +442,5 @@ module.exports = {
   canManagePaymentStatuses,
   canForceReminder,
   financeAuditMetaFromRequest,
+  requireSchoolCurrency,
 };

@@ -142,7 +142,7 @@ function buildDashboard(rows) {
   return {
     totalAmountDue: rows.reduce((sum, row) => sum + row.amountDue, 0),
     studentCount: rows.length,
-    currency: rows[0]?.currency ?? "USD",
+    currency: rows[0]?.currency ? String(rows[0].currency).trim().toUpperCase() : "",
     byClass: [...byClassMap.entries()].map(([className, stats]) => ({
       className,
       amountDue: stats.amountDue,

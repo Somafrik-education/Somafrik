@@ -143,7 +143,7 @@ function filterRowsByPrincipal(rows, principal, schoolCodeOf) {
 
 function buildFinanceCatalog({ currency, currencySource, paymentMethods, feeTypes }) {
   return {
-    currency: String(currency || "").trim().toUpperCase() || "CDF",
+    currency: String(currency || "").trim().toUpperCase(),
     currencySource: currencySource || "country",
     paymentMethods: resolveCatalogPaymentMethods(paymentMethods),
     feeTypes: (feeTypes || []).map(mapCatalogFeeType).filter((item) => item.feeType && item.active),

@@ -4,6 +4,7 @@ import { useAuth } from "../context/AuthContext";
 import { useData } from "../context/DataContext";
 import { useActiveSchool } from "../context/ActiveSchoolContext";
 import { financeApi } from "../lib/financeApi";
+import { createFinanceIdempotencyKey } from "../lib/financeIdempotency";
 import { pedagogyApi } from "../lib/pedagogyApi";
 import { examsApi } from "../lib/examsApi";
 import { reportCardsApi } from "../lib/reportCardsApi";
@@ -238,6 +239,7 @@ function EntityPageContent({ entity, mode, classScope, disableCreate = false }: 
   const [receiptPayment, setReceiptPayment] = useState<PaymentRecord | null>(null);
   const [cancellingPayment, setCancellingPayment] = useState<PaymentRecord | null>(null);
   const [cancelReason, setCancelReason] = useState("");
+  const cancelIntentionRef = useRef("");
   const [linkContactOpen, setLinkContactOpen] = useState(false);
   const [linkContactId, setLinkContactId] = useState("");
   const [teacherAssignmentContext, setTeacherAssignmentContext] = useState<Record<string, unknown> | null>(
@@ -559,6 +561,7 @@ function EntityPageContent({ entity, mode, classScope, disableCreate = false }: 
   function closeCancelModal() {
     setCancellingPayment(null);
     setCancelReason("");
+    cancelIntentionRef.current = "";
   }
 
   async function handleResetContactPassword() {
@@ -1181,8 +1184,14 @@ function EntityPageContent({ entity, mode, classScope, disableCreate = false }: 
       return;
     }
     try {
+      if (!cancelIntentionRef.current) {
+        cancelIntentionRef.current = createFinanceIdempotencyKey();
+      }
       await persistFinanceMutation(
-        () => financeApi.cancelPayment(String(cancellingPayment.reference ?? cancellingPayment.id), reason),
+        () =>
+          financeApi.cancelPayment(String(cancellingPayment.reference ?? cancellingPayment.id), reason, {
+            idempotencyKey: cancelIntentionRef.current,
+          }),
         PAYMENT_CANCEL_SUCCESS_MESSAGE,
         closeCancelModal,
       );

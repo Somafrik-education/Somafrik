@@ -98,6 +98,11 @@ test("buildFinanceCatalog diffère réductions/pénalités", () => {
   assert.equal(catalog.canonicalFeeTypes[0].code, catalog.feeTypeCatalog[0].code);
 });
 
+test("catalogue : devise absente n'est pas remplacée par CDF/USD/EUR", () => {
+  const catalog = buildFinanceCatalog({ currency: "", currencySource: "country", paymentMethods: [], feeTypes: [] });
+  assert.equal(catalog.currency, "");
+});
+
 test("catalogue types identique pour tout établissement (système, pas par tenant)", () => {
   const catalogA = buildFinanceCatalog({ currency: "CDF", currencySource: "country", paymentMethods: [], feeTypes: [] });
   const catalogB = buildFinanceCatalog({ currency: "USD", currencySource: "school", paymentMethods: [], feeTypes: [] });
