@@ -20,6 +20,8 @@ function runNode(args, label) {
 
 function sourceGuards() {
   const finance = read("backend/lib/financeManagement.js");
+  const authority = read("backend/lib/liveRbacPrincipalAuthority.js");
+  const factory = read("backend/db/repositoryFactory.js");
   const server = read("backend/server.js");
 
   for (const helper of [
@@ -36,6 +38,13 @@ function sourceGuards() {
     assert.doesNotMatch(source, /principal\?\.role|Admin School|Comptable|Secrétaire|Directeur|Super Administrateur/);
   }
 
+  assert.match(authority, /listActiveUserRoleKeysForSchool/);
+  assert.match(authority, /LIVE_RBAC_EMPTY_ROLE = "SANS_AFFECTATION"/);
+  assert.match(authority, /legacy.*fail-closed-live-rbac/s);
+  assert.doesNotMatch(authority, /principal\?\.permissions/);
+  assert.match(factory, /attachLiveRbacAuthority\(repository\)/);
+  assert.match(factory, /attachLiveRbacAuthority\(repository \?\? createPostgresRepository/);
+
   const requirePermissionAt = server.indexOf("function requirePermission(routeKey)");
   assert.ok(requirePermissionAt >= 0, "requirePermission absent");
   const permissionSource = server.slice(requirePermissionAt, requirePermissionAt + 1300);
@@ -43,13 +52,16 @@ function sourceGuards() {
   assert.match(permissionSource, /req\.principal = \{ \.\.\.req\.principal, permissions: live\.permissions \}/);
   assert.match(permissionSource, /rbacService\.canAccess\(req\.principal, routeKey\)/);
 
-  console.log("verify-finance-rbac: source guards stage 1 OK");
+  console.log("verify-finance-rbac: source guards live authority OK");
 }
 
 function main() {
   sourceGuards();
-  runNode(["--test", "backend/lib/financeLiveRbac.test.js"], "tests RBAC Finance ont échoué");
-  console.log("verify-finance-rbac: STAGE-1 GO — F6 global reste NO-GO jusqu'aux tests stale-JWT/tenant");
+  runNode(
+    ["--test", "backend/lib/financeLiveRbac.test.js", "backend/lib/liveRbacPrincipalAuthority.test.js"],
+    "tests RBAC Finance ont échoué",
+  );
+  console.log("verify-finance-rbac: UNIT GO — HTTP PostgreSQL stale-JWT reste requis avant GO CTO");
 }
 
 main();
