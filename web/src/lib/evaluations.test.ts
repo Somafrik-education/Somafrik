@@ -6,6 +6,7 @@ import {
   evaluationsEligibleForGradeEntry,
   gradesToLegacyNotes,
   MISSING_EVALUATION_TEACHER,
+  pedagogyNoteWritePayload,
   subjectOptionsForClass,
   upsertStudentGrade,
 } from "./evaluations";
@@ -360,5 +361,22 @@ describe("canEnterGradesForEvaluation — Validée uniquement", () => {
     const [note] = gradesToLegacyNotes(allowed.grades);
     expect((note as Record<string, unknown>).teacherId).toBe("ENS-0001");
     expect((note as Record<string, unknown>).authorId).toBe("prefet-fideline");
+  });
+
+  it("pedagogyNoteWritePayload réinjecte teacherId d'évaluation et retire authorId", () => {
+    const refreshed = {
+      id: "g1",
+      evaluationId: "EVAL-ADV",
+      studentId: "s1",
+      authorId: "prefet-fideline",
+      teacherId: "",
+      value: 14,
+    };
+    const payload = pedagogyNoteWritePayload(refreshed, [
+      { id: "EVAL-ADV", teacherId: "ENS-0001" },
+    ]);
+    expect(payload.teacherId).toBe("ENS-0001");
+    expect(payload.authorId).toBeUndefined();
+    expect(payload.studentId).toBe("s1");
   });
 });

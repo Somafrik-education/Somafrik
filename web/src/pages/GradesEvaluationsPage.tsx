@@ -37,6 +37,7 @@ import {
   gradesToLegacyNotes,
   MISSING_EVALUATION_TEACHER,
   pedagogicalTeacherId,
+  pedagogyNoteWritePayload,
   publishEvaluation,
   resolveGradesPeriod,
   scopedEvaluations,
@@ -208,8 +209,9 @@ export function GradesEvaluationsPage() {
         }
       }
       if (patch.notes?.length) {
+        const evaluations = state.evaluations ?? [];
         for (const note of patch.notes) {
-          await pedagogyApi.upsertNote(note as Record<string, unknown>);
+          await pedagogyApi.upsertNote(pedagogyNoteWritePayload(note, evaluations));
         }
       }
       if (patch.bulletins) {
@@ -336,9 +338,8 @@ export function GradesEvaluationsPage() {
     }
     for (const grade of changedGrades) {
       const [note] = gradesToLegacyNotes([{ ...grade, teacherId }]);
-      const payload = note as Record<string, unknown>;
+      const payload = pedagogyNoteWritePayload(note, selectedEvaluation ? [selectedEvaluation] : []);
       payload.teacherId = teacherId;
-      delete payload.authorId;
       try {
         await pedagogyApi.upsertNote(payload);
       } catch (err) {
@@ -662,7 +663,7 @@ export function GradesEvaluationsPage() {
                       <Button
                         variant="secondary"
                         onClick={() => {
-                          const validated = grades.find(
+                          const validated = allGrades(state).find(
                             (grade) =>
                               grade.evaluationId === selectedEvaluation.id &&
                               (grade.gradeStatus === "Validée" || grade.gradeStatus === "Corrigée"),

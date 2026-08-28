@@ -4717,7 +4717,7 @@ class PostgresRepository {
     if (!isEnseignant && !teacher) {
       throw this.teacherUnresolvedError(
         "ATTENDANCE_TEACHER_UNRESOLVED",
-        "Enseignant introuvable ou ambigu pour la présence.",
+        "Enseignant introuvable, ambigu ou non affecté à cette classe.",
       );
     }
     const status = this.toAttendanceStatus(payload.status, payload.present);
@@ -6125,11 +6125,12 @@ class PostgresRepository {
       status: gradeStatus,
       comment: grade.comment ?? "",
       version: Number(grade.version ?? 1),
-      authorId: grade.teacher_code,
+      teacherId: grade.teacher_code,
+      authorId: grade.updated_by || grade.created_by || undefined,
       enteredAt: this.formatDate(grade.created_at),
       audit: [
         {
-          authorId: grade.teacher_code,
+          authorId: grade.updated_by || grade.created_by || undefined,
           newValue: score,
           date: this.formatDate(grade.created_at),
         },
@@ -6684,12 +6685,26 @@ class PostgresRepository {
   }
 
   async findTeacherForAttendance(schoolId, teacherCode, classId, principalRole) {
-    // Lot 2 — admin/direction : clé explicite unique scopée école uniquement.
+    const lookupCode = String(teacherCode ?? "").trim();
+    const targetClassId = String(classId ?? "").trim();
+    // Lot 2 — admin/direction : enseignant unique de l'école ET affectation active
+    // sur la classe demandée. Jamais un autre enseignant du même établissement.
     if (principalRole !== "Enseignant") {
-      return this.resolveUniqueTeacherInSchool(schoolId, teacherCode);
+      if (!lookupCode || !targetClassId) return null;
+      const teacher = await this.resolveUniqueTeacherInSchool(schoolId, lookupCode);
+      if (!teacher?.id) return null;
+      const assigned = await this.one(
+        `SELECT 1 AS ok
+         FROM teacher_assignments ta
+         WHERE ta.teacher_id = $1
+           AND ta.class_id::text = $2
+           AND ta.status = 'active'
+         LIMIT 1`,
+        [teacher.id, targetClassId],
+      );
+      return assigned ? teacher : null;
     }
 
-    const lookupCode = String(teacherCode ?? "").trim();
     if (!lookupCode) return null;
     // Parcours Enseignant inchangé : match par clé + préférence affectation classe.
     return this.one(

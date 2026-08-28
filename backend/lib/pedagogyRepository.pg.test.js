@@ -123,6 +123,11 @@ async function seedFixture(pool) {
      VALUES ($1, 'ENS-PG-002', 'active') RETURNING id`,
     [schoolA.rows[0].id],
   );
+  const klassB = await pool.query(
+    `INSERT INTO classes (school_id, academic_year_id, class_code, name, status)
+     VALUES ($1, $2, 'CLS-PG-ATT-B', '6ème B-ATT', 'active') RETURNING id`,
+    [schoolA.rows[0].id, openYear.rows[0].id],
+  );
   await pool.query(
     `INSERT INTO teacher_assignments (school_id, teacher_id, class_id, subject_id, academic_year_id, status)
      VALUES ($1, $2, $3, $4, $5, 'active')`,
@@ -132,6 +137,11 @@ async function seedFixture(pool) {
     `INSERT INTO teacher_assignments (school_id, teacher_id, class_id, subject_id, academic_year_id, status)
      VALUES ($1, $2, $3, $4, $5, 'inactive')`,
     [schoolA.rows[0].id, teacher.rows[0].id, klass.rows[0].id, physics.rows[0].id, openYear.rows[0].id],
+  );
+  await pool.query(
+    `INSERT INTO teacher_assignments (school_id, teacher_id, class_id, subject_id, academic_year_id, status)
+     VALUES ($1, $2, $3, $4, $5, 'active')`,
+    [schoolA.rows[0].id, teacherNoAssign.rows[0].id, klassB.rows[0].id, math.rows[0].id, openYear.rows[0].id],
   );
   const student = await pool.query(
     `INSERT INTO students (school_id, student_code, first_name, last_name, status)
@@ -158,6 +168,7 @@ async function seedFixture(pool) {
     schoolA: schoolA.rows[0].id,
     schoolB: schoolB.rows[0].id,
     klass: klass.rows[0].id,
+    klassB: klassB.rows[0].id,
     closedClass: closedClass.rows[0].id,
     openYear: openYear.rows[0].id,
     term: term.rows[0].id,
@@ -878,6 +889,40 @@ async function main() {
     );
     assert.equal(attendance.length, 1);
 
+    await assert.rejects(
+      () =>
+        store.upsertSchoolAttendanceBatch(
+          {
+            items: [
+              {
+                studentId: "CD-2026-0001-STU-PG-01",
+                classId: fixture.klass,
+                classCode: "CLS-6A",
+                date: "2026-09-05",
+                status: "present",
+                teacherId: "ENS-PG-002",
+              },
+            ],
+          },
+          admin,
+          auditMeta,
+        ),
+      (error) =>
+        error.statusCode === 409 && error.code === "ATTENDANCE_TEACHER_UNRESOLVED",
+    );
+    const wrongTeacherRows = await pool.query(
+      `SELECT count(*)::int AS count
+       FROM attendance a
+       JOIN students st ON st.id = a.student_id
+       WHERE st.student_code = 'CD-2026-0001-STU-PG-01'
+         AND a.attendance_date = DATE '2026-09-05'`,
+    );
+    assert.equal(
+      wrongTeacherRows.rows[0].count,
+      0,
+      "enseignant classe B pour appel classe A : 409, aucune ligne",
+    );
+
     const fourStatuses = [
       { status: "Présent", present: true, pg: "present" },
       { status: "Absent", present: false, pg: "absent" },
@@ -971,6 +1016,9 @@ async function main() {
     assert.ok(schoolCourses.some((row) => row.name === "Mathématiques"));
     assert.ok(schoolSlots.some((row) => row.schoolCourseId === course.schoolCourseId && row.dayOfWeek === 1));
     assert.ok(projection.notes.some((row) => Number(row.value ?? row.score) === 14 || Number(row.value) >= 14));
+    const projectedNote = projection.notes.find((row) => Number(row.value ?? row.score) >= 14);
+    assert.equal(projectedNote.teacherId, "ENS-PG-001");
+    assert.notEqual(projectedNote.authorId, "ENS-PG-001");
 
     const boState = await pool.query(`SELECT state_payload FROM backoffice_state WHERE state_key = 'default'`);
     assert.equal(boState.rowCount, 0, "aucune projection JSON historique backoffice_state");

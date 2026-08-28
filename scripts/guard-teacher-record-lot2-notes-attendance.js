@@ -90,6 +90,51 @@ function main() {
     });
   }
 
+  const mapStart = repo.indexOf("mapGrade(grade) {");
+  const mapEnd = repo.indexOf("mapAttendance(", mapStart);
+  const mapBody = mapStart >= 0 && mapEnd > mapStart ? repo.slice(mapStart, mapEnd) : "";
+  if (!mapBody) {
+    violations.push({
+      file: FILES.repository,
+      id: "MISSING_MAP_GRADE_BODY",
+      line: 0,
+      detail: "mapGrade introuvable",
+    });
+  } else if (!/teacherId:\s*grade\.teacher_code/.test(mapBody)) {
+    violations.push({
+      file: FILES.repository,
+      id: "MAP_GRADE_MISSING_TEACHER_ID",
+      line: lineOf(repo, mapStart),
+      detail: "mapGrade doit projeter teacherId depuis teacher_code",
+    });
+  } else if (/authorId:\s*grade\.teacher_code/.test(mapBody)) {
+    violations.push({
+      file: FILES.repository,
+      id: "MAP_GRADE_TEACHER_AS_AUTHOR",
+      line: lineOf(repo, mapStart),
+      detail: "teacher_code ne doit plus être présenté comme authorId",
+    });
+  }
+
+  const attendStart = repo.indexOf("async findTeacherForAttendance");
+  const attendEnd = repo.indexOf("mentionForScore(score) {", attendStart);
+  const attendBody = attendStart >= 0 && attendEnd > attendStart ? repo.slice(attendStart, attendEnd) : "";
+  if (!attendBody) {
+    violations.push({
+      file: FILES.repository,
+      id: "MISSING_FIND_TEACHER_FOR_ATTENDANCE",
+      line: 0,
+      detail: "findTeacherForAttendance introuvable",
+    });
+  } else if (!/ta\.status = 'active'/.test(attendBody) || !/teacher_assignments/.test(attendBody)) {
+    violations.push({
+      file: FILES.repository,
+      id: "ATTENDANCE_TEACHER_WITHOUT_CLASS_ASSIGNMENT",
+      line: lineOf(repo, attendStart),
+      detail: "admin/préfet : affectation active sur class_id exigée",
+    });
+  }
+
   // 2) Lot 2 symbols required in repository
   for (const symbol of [
     "resolveUniqueTeacherInSchool",

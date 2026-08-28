@@ -31,6 +31,23 @@ export function pedagogicalTeacherId(evaluation: { teacherId?: string } | null |
   return String(evaluation?.teacherId ?? "").trim();
 }
 
+/** POST notes Admin/Préfet : teacherId pédagogique, jamais authorId acteur. */
+export function pedagogyNoteWritePayload(
+  note: unknown,
+  evaluations: Array<{ id?: string; teacherId?: string }> = [],
+): Record<string, unknown> {
+  const payload = { ...(note as Record<string, unknown>) };
+  const fromNote = String(payload.teacherId ?? "").trim();
+  const evaluationId = String(payload.evaluationId ?? "").trim();
+  const fromEval = pedagogicalTeacherId(
+    evaluations.find((row) => String(row.id ?? "") === evaluationId),
+  );
+  const teacherId = fromNote || fromEval;
+  if (teacherId) payload.teacherId = teacherId;
+  delete payload.authorId;
+  return payload;
+}
+
 export const EVALUATION_STATUSES: EvaluationStatus[] = [
   "Brouillon",
   "Ouverte",
