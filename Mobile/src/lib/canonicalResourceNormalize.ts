@@ -187,14 +187,19 @@ export function normalizeMessage(value: unknown): CanonicalSchoolMessage | null 
     senderUserId: text(row.senderUserId ?? row.sender_user_id) || undefined,
     senderName: text(row.senderName ?? row.sender_name) || undefined,
     attachments: Array.isArray(row.attachments)
-      ? row.attachments
-          .map((item) => {
-            const rec = record(item);
-            const id = text(rec.id);
-            if (!id) return null;
-            return { id, fileName: text(rec.fileName ?? rec.file_name) || id, mimeType: text(rec.mimeType) || undefined };
-          })
-          .filter((item): item is { id: string; fileName: string; mimeType?: string } => Boolean(item))
+      ? row.attachments.flatMap((item) => {
+          const rec = record(item);
+          const attachmentId = text(rec.id);
+          if (!attachmentId) return [];
+          const mimeType = text(rec.mimeType);
+          return [
+            {
+              id: attachmentId,
+              fileName: text(rec.fileName ?? rec.file_name) || attachmentId,
+              ...(mimeType ? { mimeType } : {}),
+            },
+          ];
+        })
       : undefined,
     attachmentUrl: text(row.attachmentUrl ?? row.attachment_url) || undefined,
     priority: text(row.priority) || undefined,

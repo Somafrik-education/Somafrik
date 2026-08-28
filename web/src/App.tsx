@@ -22,6 +22,7 @@ import {
   CoursePlanningPage,
   DashboardEntryPage,
   MarketplacePage,
+  EtablissementOverviewPage,
   EntityPage,
   MessagesConversationsPage,
   FinanceFeesPage,

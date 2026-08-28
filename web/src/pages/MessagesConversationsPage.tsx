@@ -37,7 +37,7 @@ export function MessagesConversationsPage() {
   const { session } = useAuth();
   const { canRead, canCreate, canUpdate } = useFeaturePermissions("Messages");
   const { showToast } = useToast();
-  const selfId = String(session?.user?.id ?? session?.user?.sub ?? "");
+  const selfId = String(session?.user?.id ?? "");
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
   const [selectedId, setSelectedId] = useState<string>("");
   const [messages, setMessages] = useState<ConversationMessage[]>([]);
