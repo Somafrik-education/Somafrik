@@ -294,13 +294,38 @@ describe("Finance F5 — convergence Web ↔ Mobile", () => {
       () => assertNoFeeTypeOnlyImputation([{ feeType: "Scolarité", amount: 100 }]),
       (error) => error.code === "FINANCE_OBLIGATION_ID_REQUIRED",
     );
-    const coerced = buildFinancePaymentItems([{ feeType: "Scolarité", amount: 100 }]);
-    assert.deepEqual(coerced, [{ feeType: UNALLOCATED_FEE_TYPE, amount: 100 }]);
+    assert.throws(
+      () => buildFinancePaymentItems([{ feeType: "Scolarité", amount: 10_000 }]),
+      (error) => error.code === "FINANCE_OBLIGATION_ID_REQUIRED" && /FINANCE_OBLIGATION_ID_REQUIRED/.test(error.message),
+    );
+    assert.throws(
+      () => buildFinancePaymentItems([{ obligationId: undefined, feeType: "Scolarité", amount: 10_000 }]),
+      (error) => error.code === "FINANCE_OBLIGATION_ID_REQUIRED",
+    );
+    assert.throws(
+      () => buildFinancePaymentItems([{ obligationId: "", feeType: "Scolarité", amount: 10_000 }]),
+      (error) => error.code === "FINANCE_OBLIGATION_ID_REQUIRED",
+    );
+    assert.throws(
+      () => buildFinancePaymentItems([{ obligationId: "   ", feeType: "Scolarité", amount: 10_000 }]),
+      (error) => error.code === "FINANCE_OBLIGATION_ID_REQUIRED",
+    );
+    assert.deepEqual(buildFinancePaymentItems([{ obligationId: UNALLOCATED_TARGET, amount: 10_000 }]), [
+      { feeType: UNALLOCATED_FEE_TYPE, amount: 10_000 },
+    ]);
     const explicit = buildFinancePaymentItems([
       { obligationId: "obl-1", amount: 40, feeType: "Scolarité" },
     ]);
     assert.equal(explicit[0].obligationId, "obl-1");
     assert.equal(explicit[0].feeType, "Scolarité");
+    assert.throws(
+      () => webPayload([{ feeType: "Scolarité", amount: 10_000 }]),
+      (error) => error.code === "FINANCE_OBLIGATION_ID_REQUIRED",
+    );
+    assert.throws(
+      () => mobilePayload([{ feeType: "Scolarité", amount: 10_000 }]),
+      (error) => error.code === "FINANCE_OBLIGATION_ID_REQUIRED",
+    );
   });
 
   it("11. cross-tenant : aucune obligation étrangère visible", async () => {

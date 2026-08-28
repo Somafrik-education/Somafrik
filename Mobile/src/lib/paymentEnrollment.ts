@@ -112,9 +112,14 @@ export type FinancePaymentWriteLine = {
   label?: string;
 };
 
-export function isUnallocatedTarget(obligationId?: string | null): boolean {
-  const id = trim(obligationId);
-  return !id || id === UNALLOCATED_TARGET;
+export function isUnallocatedTarget(value: unknown): boolean {
+  return trim(value) === UNALLOCATED_TARGET;
+}
+
+function financeObligationIdRequired(): Error & { code: string } {
+  const error = new Error("FINANCE_OBLIGATION_ID_REQUIRED") as Error & { code: string };
+  error.code = "FINANCE_OBLIGATION_ID_REQUIRED";
+  return error;
 }
 
 function isOpenObligation(fee: PaymentFeeRow): boolean {
@@ -144,7 +149,8 @@ export function collectOpenPaymentFees(studentId: string, fees: PaymentFeeRow[])
     if (trim(fee.studentId).toUpperCase() !== wanted) return [];
     if (!isOpenObligation(fee)) return [];
     const obligationId = trim(fee.id || fee.obligationId);
-    if (!obligationId || isUnallocatedTarget(obligationId)) return [];
+    if (!obligationId) return [];
+    if (isUnallocatedTarget(obligationId)) return [];
     const balance = Number(fee.balance);
     const label = trim(fee.label) || trim(fee.feeType) || "Frais";
     return [
@@ -171,8 +177,12 @@ export function buildFinancePaymentItems(lines: FinancePaymentWriteLine[]): Arra
     if (isUnallocatedTarget(line.obligationId)) {
       return { feeType: UNALLOCATED_FEE_TYPE, amount };
     }
+    const obligationId = trim(line.obligationId);
+    if (!obligationId) {
+      throw financeObligationIdRequired();
+    }
     const item: Record<string, unknown> = {
-      obligationId: trim(line.obligationId),
+      obligationId,
       amount,
     };
     const feeType = trim(line.feeType || line.feeLabel || line.label);
@@ -187,10 +197,8 @@ function assertNoFeeTypeOnlyImputation(items: Array<Record<string, unknown>>) {
   for (const item of items) {
     const obligationId = trim(item.obligationId);
     const feeType = trim(item.feeType || item.feeLabel || item.label);
-    if (!obligationId && feeType && feeType !== UNALLOCATED_FEE_TYPE) {
-      throw new Error(
-        "obligationId est requis pour imputer un paiement. Utilisez Non imputé pour un encaissement sans dette cible.",
-      );
+    if (!obligationId && feeType !== UNALLOCATED_FEE_TYPE) {
+      throw financeObligationIdRequired();
     }
   }
 }

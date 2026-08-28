@@ -15,11 +15,38 @@ import {
 describe("F5 contrat d'écriture Web", () => {
   it("n'impute jamais par feeType seul", () => {
     expect(() => assertNoFeeTypeOnlyImputation([{ feeType: "Scolarité", amount: 100 }])).toThrow(
-      /obligationId/,
+      /FINANCE_OBLIGATION_ID_REQUIRED/,
     );
-    expect(buildFinancePaymentItems([{ amount: 100 }])).toEqual([
+    expect(() => buildFinancePaymentItems([{ feeType: "Scolarité", amount: 10_000 }])).toThrow(
+      /FINANCE_OBLIGATION_ID_REQUIRED/,
+    );
+    expect(() =>
+      buildFinancePaymentWritePayload({
+        studentId: "stu-1",
+        classId: "class-1",
+        paymentMethod: "Espèces",
+        paidAt: "2026-09-05",
+        lines: [{ feeType: "Scolarité", amount: 10_000 }],
+      }),
+    ).toThrow(/FINANCE_OBLIGATION_ID_REQUIRED/);
+  });
+
+  it("seul __unallocated__ explicite produit Non imputé", () => {
+    expect(buildFinancePaymentItems([{ obligationId: UNALLOCATED_TARGET, amount: 100 }])).toEqual([
       { feeType: UNALLOCATED_FEE_TYPE, amount: 100 },
     ]);
+    expect(buildFinancePaymentItems([{ obligationId: "obl-1", amount: 40, feeType: "Scolarité" }])).toEqual([
+      { obligationId: "obl-1", amount: 40, feeType: "Scolarité", feeLabel: "Scolarité" },
+    ]);
+    expect(() => buildFinancePaymentItems([{ obligationId: undefined, feeType: "Scolarité", amount: 10_000 }])).toThrow(
+      /FINANCE_OBLIGATION_ID_REQUIRED/,
+    );
+    expect(() => buildFinancePaymentItems([{ obligationId: "", feeType: "Scolarité", amount: 10_000 }])).toThrow(
+      /FINANCE_OBLIGATION_ID_REQUIRED/,
+    );
+    expect(() => buildFinancePaymentItems([{ obligationId: "   ", feeType: "Scolarité", amount: 10_000 }])).toThrow(
+      /FINANCE_OBLIGATION_ID_REQUIRED/,
+    );
   });
 
   it("aligne Web et Mobile sur obligationId + Non imputé", () => {

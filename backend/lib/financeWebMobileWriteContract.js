@@ -19,9 +19,14 @@ function parseFinanceAmount(value) {
   return Number.isFinite(amount) ? amount : Number.NaN;
 }
 
-function isUnallocatedTarget(obligationId) {
-  const id = trim(obligationId);
-  return !id || id === UNALLOCATED_TARGET;
+function isUnallocatedTarget(value) {
+  return trim(value) === UNALLOCATED_TARGET;
+}
+
+function financeObligationIdRequired() {
+  const error = new Error("FINANCE_OBLIGATION_ID_REQUIRED");
+  error.code = "FINANCE_OBLIGATION_ID_REQUIRED";
+  return error;
 }
 
 function normalizeObligationStatus(status) {
@@ -59,7 +64,8 @@ function collectOpenObligationsFromProjection(studentId, fees) {
   const open = [];
   for (const fee of rows) {
     const id = trim(fee?.id ?? fee?.obligationId);
-    if (!id || isUnallocatedTarget(id)) continue;
+    if (!id) continue;
+    if (isUnallocatedTarget(id)) continue;
     if (trim(fee?.studentId).toUpperCase() !== wanted) continue;
     if (!isOpenObligationFromProjection(fee)) continue;
     const balance = Number(fee.balance);
@@ -94,8 +100,12 @@ function buildFinancePaymentItems(lines) {
     if (isUnallocatedTarget(line.obligationId)) {
       return { feeType: UNALLOCATED_FEE_TYPE, amount };
     }
+    const obligationId = trim(line.obligationId);
+    if (!obligationId) {
+      throw financeObligationIdRequired();
+    }
     const item = {
-      obligationId: trim(line.obligationId),
+      obligationId,
       amount,
     };
     const feeType = trim(line.feeType || line.feeLabel || line.label);
@@ -110,12 +120,8 @@ function assertNoFeeTypeOnlyImputation(items) {
   for (const item of Array.isArray(items) ? items : []) {
     const obligationId = trim(item.obligationId);
     const feeType = trim(item.feeType || item.feeLabel || item.label);
-    if (!obligationId && feeType && feeType !== UNALLOCATED_FEE_TYPE) {
-      const error = new Error(
-        "obligationId est requis pour imputer un paiement. Utilisez Non imputé pour un encaissement sans dette cible.",
-      );
-      error.code = "FINANCE_OBLIGATION_ID_REQUIRED";
-      throw error;
+    if (!obligationId && feeType !== UNALLOCATED_FEE_TYPE) {
+      throw financeObligationIdRequired();
     }
   }
 }

@@ -80,6 +80,9 @@ Hors F5 (F7) : fiche élève Web « Coming soon », polish Impayés, redesign KP
 | `balance = due - paid - exemption` | `paymentEnrollment.isOpenObligation`, `normalizeStudentFeeRow` |
 | `unallocated = collected - allocated` inventé | `paymentCashKpi` |
 | Catalogue fee types comme clé d’imputation | `QuickPaymentModal` |
+| Conversion silencieuse `missing obligationId → Non imputé` | `isUnallocatedTarget` Web, Mobile, contrat backend, validation Mobile |
+
+Seul `__unallocated__` explicite produit Non imputé. `undefined` / `""` / espaces + `feeType` ciblé → `FINANCE_OBLIGATION_ID_REQUIRED`, aucun POST.
 
 Conservé hors autorité (documenté, pas branché sur l’encaissement scolaire) :
 
@@ -196,9 +199,9 @@ Mobile : `isOfflineContext()` → message « Paiement hors connexion refusé. Au
 ## Tests
 
 - `backend/lib/financeWebMobileConvergence.test.js` — scénarios 1–8, 10–11 + surpaiement
-- `web/src/lib/financePaymentWrite.test.ts`
-- `Mobile/src/lib/paymentEnrollment.test.ts`
-- Source guards : scénarios 9 (pas de fallback catalogue) et 12 (offline fail-closed)
+- `web/src/lib/financePaymentWrite.test.ts` — `__unallocated__` vs `undefined`/`""`/espaces + `feeType` Scolarité
+- `Mobile/src/lib/paymentEnrollment.test.ts` — même distinction ; aucun payload POST si refus
+- Source guards : scénarios 9 (pas de fallback catalogue) et 12 (offline fail-closed) ; refuse `!id || id === UNALLOCATED_TARGET`
 - `verify:sync-end-to-end` — POST `/payments` via `items[{ obligationId }]` après `GET /finance/student-fees` (plus de feeType-only)
 
 ---

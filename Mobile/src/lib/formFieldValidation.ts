@@ -179,8 +179,7 @@ export function validateUserIdentityDraft(input: {
 const UNALLOCATED_TARGET = "__unallocated__";
 
 function isUnallocatedObligationId(obligationId: unknown): boolean {
-  const id = trimField(obligationId);
-  return !id || id === UNALLOCATED_TARGET;
+  return trimField(obligationId) === UNALLOCATED_TARGET;
 }
 
 export function validatePaymentDraft(input: {
@@ -205,8 +204,11 @@ export function validatePaymentDraft(input: {
       errors.classId = "Classe invalide pour cet élève.";
     }
     const fees = Array.isArray(input.obligationOptions) ? input.obligationOptions : [];
-    if (!isUnallocatedObligationId(input.obligationId) && fees.length) {
-      if (!fees.some((row) => trimField(row.obligationId) === trimField(input.obligationId))) {
+    const obligationId = trimField(input.obligationId);
+    if (!isUnallocatedObligationId(input.obligationId) && !obligationId) {
+      errors.obligationId = "FINANCE_OBLIGATION_ID_REQUIRED";
+    } else if (!isUnallocatedObligationId(input.obligationId) && fees.length) {
+      if (!fees.some((row) => trimField(row.obligationId) === obligationId)) {
         errors.obligationId = "Frais invalide pour cet élève.";
       }
     }
@@ -227,7 +229,7 @@ export function validateFinancePaymentLinesDraft(input: {
     amount: first?.amount,
     classId: input.classId,
     classOptions: input.classOptions,
-    obligationId: first?.obligationId ?? UNALLOCATED_TARGET,
+    obligationId: first?.obligationId,
     obligationOptions: input.obligationOptions,
   });
   const lines = Array.isArray(input.lines) ? input.lines : [];
@@ -239,7 +241,9 @@ export function validateFinancePaymentLinesDraft(input: {
   lines.forEach((line, index) => {
     const amount = validateAmount(line.amount, "Montant", true);
     if (amount) errors[`amount-${index}`] = amount;
-    if (!isUnallocatedObligationId(line.obligationId) && fees.length) {
+    if (!isUnallocatedObligationId(line.obligationId) && !trimField(line.obligationId)) {
+      errors[`obligationId-${index}`] = "FINANCE_OBLIGATION_ID_REQUIRED";
+    } else if (!isUnallocatedObligationId(line.obligationId) && fees.length) {
       if (!fees.some((row) => trimField(row.obligationId) === trimField(line.obligationId))) {
         errors[`obligationId-${index}`] = "Frais invalide pour cet élève.";
       }

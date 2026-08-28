@@ -32,17 +32,27 @@ function sourceGuards() {
   const cash = read("Mobile/src/lib/paymentCashKpi.ts");
   const receipt = read("web/src/components/payments/PaymentReceipt.tsx");
 
+  const formValidation = read("Mobile/src/lib/formFieldValidation.ts");
+
   assert.match(contract, /UNALLOCATED_FEE_TYPE = "Non imputé"/);
   assert.match(contract, /UNALLOCATED_TARGET = "__unallocated__"/);
   assert.match(contract, /buildFinancePaymentWritePayload/);
   assert.match(contract, /isOpenObligationFromProjection/);
+  assert.match(contract, /trim\(value\) === UNALLOCATED_TARGET/);
+  assert.match(contract, /FINANCE_OBLIGATION_ID_REQUIRED/);
   assert.doesNotMatch(contract, /amountDue - amountPaid/);
   assert.doesNotMatch(contract, /Math\.max\(0,\s*(due|amountDue)/);
+  assert.doesNotMatch(contract, /!id \|\| id === UNALLOCATED_TARGET/);
+  assert.doesNotMatch(contract, /!obligationId => Non imputé/);
 
   assert.match(webWrite, /UNALLOCATED_FEE_TYPE = "Non imputé"/);
   assert.match(webWrite, /buildFinancePaymentWritePayload/);
   assert.match(webWrite, /Number\(fee\.balance\)/);
+  assert.match(webWrite, /trim\(value\) === UNALLOCATED_TARGET/);
+  assert.match(webWrite, /FINANCE_OBLIGATION_ID_REQUIRED/);
   assert.doesNotMatch(webWrite, /amountDue - amountPaid/);
+  assert.doesNotMatch(webWrite, /!id \|\| id === UNALLOCATED_TARGET/);
+  assert.doesNotMatch(webWrite, /!obligationId => Non imputé/);
 
   assert.match(webModal, /buildFinancePaymentWritePayload/);
   assert.match(webModal, /listStudentFees/);
@@ -66,8 +76,14 @@ function sourceGuards() {
   assert.match(mobileEnroll, /UNALLOCATED_FEE_TYPE = "Non imputé"/);
   assert.match(mobileEnroll, /buildFinancePaymentWritePayload/);
   assert.match(mobileEnroll, /Number\.isFinite\(balance\) && balance > 0/);
+  assert.match(mobileEnroll, /trim\(value\) === UNALLOCATED_TARGET/);
+  assert.match(mobileEnroll, /FINANCE_OBLIGATION_ID_REQUIRED/);
   assert.doesNotMatch(mobileEnroll, /due - paid - exempt/);
   assert.doesNotMatch(mobileEnroll, /Math\.max\(0, due - paid/);
+  assert.doesNotMatch(mobileEnroll, /!id \|\| id === UNALLOCATED_TARGET/);
+  assert.doesNotMatch(mobileEnroll, /!obligationId => Non imputé/);
+  assert.doesNotMatch(formValidation, /!id \|\| id === UNALLOCATED_TARGET/);
+  assert.match(formValidation, /trimField\(obligationId\) === UNALLOCATED_TARGET/);
 
   assert.match(mobileControls, /buildFinancePaymentWritePayload/);
   assert.match(mobileControls, /isOfflineContext/);

@@ -15,9 +15,13 @@
  */
 import assert from "node:assert/strict";
 import {
+  UNALLOCATED_TARGET,
+  buildFinancePaymentItems,
+  buildFinancePaymentWritePayload,
   buildSchoolPaymentPayload,
   collectActivePaymentClasses,
   collectOpenPaymentFees,
+  isUnallocatedTarget,
   paymentClassBelongsToStudent,
   paymentSubmitErrorMessage,
   paymentStudentsFromOptions,
@@ -97,20 +101,52 @@ assert.deepEqual(collectActivePaymentClasses(historic.id, [historic]), [
   { classId: "live-class", classCode: "CLS-NEW", className: "5ème B" },
 ]);
 
-const payload = buildSchoolPaymentPayload({
-  studentId: awa.id,
-  classId: String(awa.classId),
-  amount: 25000,
-  feeType: "Scolarité",
-  method: "Espèces",
-  date: "2026-08-22",
-});
-assert.deepEqual(payload.items, [{ feeType: "Non imputé", amount: 25000 }]);
-assert.equal(payload.method, "Espèces");
-assert.equal(payload.paymentMethod, "Espèces");
-assert.equal(payload.date, "2026-08-22");
-assert.equal(payload.paidAt, "2026-08-22");
-assert.ok(!("className" in payload), "className n'est pas une identité métier");
+assert.equal(isUnallocatedTarget(UNALLOCATED_TARGET), true);
+assert.equal(isUnallocatedTarget(undefined), false);
+assert.equal(isUnallocatedTarget(""), false);
+assert.equal(isUnallocatedTarget("   "), false);
+assert.equal(isUnallocatedTarget("obl-1"), false);
+
+assert.throws(
+  () =>
+    buildSchoolPaymentPayload({
+      studentId: awa.id,
+      classId: String(awa.classId),
+      amount: 25000,
+      feeType: "Scolarité",
+      method: "Espèces",
+      date: "2026-08-22",
+    }),
+  (error: unknown) =>
+    error instanceof Error &&
+    error.message.includes("FINANCE_OBLIGATION_ID_REQUIRED") &&
+    (error as Error & { code?: string }).code === "FINANCE_OBLIGATION_ID_REQUIRED",
+);
+assert.throws(
+  () =>
+    buildFinancePaymentWritePayload({
+      studentId: awa.id,
+      classId: String(awa.classId),
+      method: "Espèces",
+      date: "2026-08-22",
+      lines: [{ feeType: "Scolarité", amount: 10_000 }],
+    }),
+  (error: unknown) => error instanceof Error && error.message.includes("FINANCE_OBLIGATION_ID_REQUIRED"),
+);
+assert.throws(
+  () => buildFinancePaymentItems([{ obligationId: "", feeType: "Scolarité", amount: 10_000 }]),
+  (error: unknown) => error instanceof Error && error.message.includes("FINANCE_OBLIGATION_ID_REQUIRED"),
+);
+assert.throws(
+  () => buildFinancePaymentItems([{ obligationId: "   ", feeType: "Scolarité", amount: 10_000 }]),
+  (error: unknown) => error instanceof Error && error.message.includes("FINANCE_OBLIGATION_ID_REQUIRED"),
+);
+assert.deepEqual(buildFinancePaymentItems([{ obligationId: UNALLOCATED_TARGET, amount: 10_000 }]), [
+  { feeType: "Non imputé", amount: 10_000 },
+]);
+assert.deepEqual(buildFinancePaymentItems([{ obligationId: "obl-1", amount: 40, feeType: "Scolarité" }]), [
+  { obligationId: "obl-1", amount: 40, feeType: "Scolarité", feeLabel: "Scolarité" },
+]);
 
 const identified = buildSchoolPaymentPayload({
   studentId: awa.id,
@@ -125,6 +161,11 @@ const identified = buildSchoolPaymentPayload({
 assert.deepEqual(identified.items, [
   { obligationId: "obl-maeva-mens", amount: 150, feeType: "Mensualité", feeLabel: "Mensualité" },
 ]);
+assert.equal(identified.method, "Espèces");
+assert.equal(identified.paymentMethod, "Espèces");
+assert.equal(identified.date, "2026-08-24");
+assert.equal(identified.paidAt, "2026-08-24");
+assert.ok(!("className" in identified), "className n'est pas une identité métier");
 
 const unallocatedPayload = buildSchoolPaymentPayload({
   studentId: awa.id,
@@ -133,6 +174,7 @@ const unallocatedPayload = buildSchoolPaymentPayload({
   feeType: "",
   method: "Espèces",
   date: "2026-08-24",
+  obligationId: UNALLOCATED_TARGET,
 });
 const unallocatedItem = (unallocatedPayload.items as Array<{ feeType: string; obligationId?: string }>)[0];
 assert.equal(unallocatedItem.feeType, "Non imputé");
@@ -166,8 +208,18 @@ assert.equal(
     classOptions: [{ classId: String(awa.classId) }],
     obligationOptions: [{ obligationId: "obl-1" }],
   }).obligationId,
+  "FINANCE_OBLIGATION_ID_REQUIRED",
+);
+assert.equal(
+  validatePaymentDraft({
+    studentId: awa.id,
+    amount: "150",
+    classId: awa.classId,
+    classOptions: [{ classId: String(awa.classId) }],
+    obligationId: UNALLOCATED_TARGET,
+    obligationOptions: [{ obligationId: "obl-1" }],
+  }).obligationId,
   undefined,
-  "sans obligationId le reçu est explicitement Non imputé",
 );
 assert.equal(
   validatePaymentDraft({

@@ -155,23 +155,23 @@ export default function PaymentMutationControls({
     setSaving(true);
     setError("");
     setFieldErrors({});
-    const payload = buildFinancePaymentWritePayload({
-      studentId,
-      classId,
-      method: resolvedMethod,
-      date: draftDate,
-      lines: lines.map((line) => {
-        const selected = feeOptions.find((row) => row.obligationId === line.obligationId);
-        return {
-          obligationId: line.obligationId,
-          amount: Number(trimField(line.amount).replace(",", ".")),
-          feeType: selected?.feeType,
-          label: selected?.label,
-        };
-      }),
-    });
     const idempotencyKey = intentionsRef.current.getOrCreate(PAYMENT_DRAFT_INTENTION);
     try {
+      const payload = buildFinancePaymentWritePayload({
+        studentId,
+        classId,
+        method: resolvedMethod,
+        date: draftDate,
+        lines: lines.map((line) => {
+          const selected = feeOptions.find((row) => row.obligationId === line.obligationId);
+          return {
+            obligationId: line.obligationId,
+            amount: Number(trimField(line.amount).replace(",", ".")),
+            feeType: selected?.feeType,
+            label: selected?.label,
+          };
+        }),
+      });
       if (isOfflineContext()) {
         setError(paymentSubmitErrorMessage("failed", new Error("Paiement hors connexion refusé. Aucune file Finance.")));
         return;
