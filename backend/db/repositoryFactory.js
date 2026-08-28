@@ -43,6 +43,13 @@ function disableLegacyBackOfficeRuntimeMigrations(repository) {
   return repository;
 }
 
+function attachLiveRbacIfPostgres(repository) {
+  if ((repository?.engine ?? "postgresql") === "postgresql") {
+    attachLiveRbacAuthority(repository);
+  }
+  return repository;
+}
+
 /**
  * Crée le dépôt PostgreSQL (non initialisé).
  * @param {string|object|null} [databaseConfig] URL ou config pool explicite.
@@ -85,9 +92,7 @@ function createFallbackRepository(env = process.env) {
       "Le dépôt mémoire est interdit en production.",
     );
   }
-  const repository = new FallbackRepository();
-  attachLiveRbacAuthority(repository);
-  return assertRepositoryContract(repository, "memory");
+  return assertRepositoryContract(new FallbackRepository(), "memory");
 }
 
 /**
@@ -139,7 +144,7 @@ async function initializeRepository({
   }
 
   // Laisser createPostgresRepository gérer le mode mémoire (placeholder si besoin).
-  const primary = attachLiveRbacAuthority(repository ?? createPostgresRepository(databaseUrl, env));
+  const primary = attachLiveRbacIfPostgres(repository ?? createPostgresRepository(databaseUrl, env));
   disableLegacyBackOfficeRuntimeMigrations(primary);
   if ((primary.engine ?? "postgresql") === "postgresql") {
     attachStudentLifecyclePg(primary);
@@ -151,7 +156,7 @@ async function initializeRepository({
       await ensureStudentLifecyclePgSchema(primary);
       await ensureStudentGeneralIdentityPg(primary);
     }
-    if (isProductionEnvironment(env) && (primary.engine ?? "postgresql") === "memory") {
+    if (isProductionEnvironment(env) && (primary.engine ?? "") === "memory") {
       throw new DbConfigError("Base mémoire détectée en production.");
     }
     return {
@@ -201,4 +206,5 @@ module.exports = {
   createFallbackRepository,
   initializeRepository,
   disableLegacyBackOfficeRuntimeMigrations,
+  attachLiveRbacIfPostgres,
 };
