@@ -326,43 +326,42 @@ function studentMatches(student, key) {
   return hay.some((value) => value === needle || value.toUpperCase() === needle.toUpperCase());
 }
 
+function permissionSet(principal) {
+  return new Set(
+    (Array.isArray(principal?.permissions) ? principal.permissions : [])
+      .map((value) => asTrimmed(value))
+      .filter(Boolean),
+  );
+}
+
+function hasAnyPermission(principal, expected) {
+  const permissions = permissionSet(principal);
+  return expected.some((permission) => permissions.has(permission));
+}
+
 function isSuperAdminPrincipal(principal) {
   const role = asTrimmed(principal?.role);
   return role === "Super Administrateur Somafrik" || role === "Super Administrateur OKAFRIK";
 }
 
 function canManageFeeGrids(principal) {
-  return isSuperAdminPrincipal(principal) || asTrimmed(principal?.role) === "Admin School";
+  return hasAnyPermission(principal, ["Frais & tarifs:CREATE", "Frais & tarifs:UPDATE"]);
 }
 
 function canManagePaymentMethods(principal) {
-  return canManageFeeGrids(principal);
+  return hasAnyPermission(principal, ["Frais & tarifs:UPDATE", "Paramètres Établissement:UPDATE"]);
 }
 
 function canAdjustStudentFee(principal) {
-  const role = asTrimmed(principal?.role);
-  return isSuperAdminPrincipal(principal) || role === "Admin School" || role === "Comptable";
+  return hasAnyPermission(principal, ["Paiements:UPDATE", "Frais & tarifs:UPDATE"]);
 }
 
 function canManagePaymentStatuses(principal) {
-  const role = asTrimmed(principal?.role);
-  return (
-    isSuperAdminPrincipal(principal) ||
-    role === "Admin School" ||
-    role === "Secrétaire" ||
-    role === "Sécretaire" ||
-    role === "Comptable" ||
-    role === "Directeur"
-  );
+  return hasAnyPermission(principal, ["Paiements:UPDATE"]);
 }
 
 function canForceReminder(principal) {
-  const role = asTrimmed(principal?.role);
-  return (
-    role === "Super Administrateur Somafrik" ||
-    role === "Super Administrateur OKAFRIK" ||
-    role === "Admin School"
-  );
+  return hasAnyPermission(principal, ["Impayés:CREATE", "Paiements:UPDATE"]);
 }
 
 function classScopeSpec(classRef) {
@@ -420,6 +419,8 @@ module.exports = {
   studentMatches,
   studentMatchesClassScope,
   classScopeSpec,
+  permissionSet,
+  hasAnyPermission,
   isSuperAdminPrincipal,
   canManageFeeGrids,
   canManagePaymentMethods,
