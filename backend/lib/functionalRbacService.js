@@ -88,6 +88,8 @@ async function ensureFunctionalRbacBootstrap(repo) {
   await reconcileCanonicalPlanningGrants(store);
   await reconcileCanonicalRoomsReplacementsGrants(store);
   await reconcileCanonicalCriticalParityGrants(store);
+  const { reconcileCanonicalAnnouncementsGrants } = require("./announcementsRbacCanonical");
+  await reconcileCanonicalAnnouncementsGrants(store, repo);
 }
 
 async function ensurePlatformRolesInCatalog(repo) {

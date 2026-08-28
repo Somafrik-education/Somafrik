@@ -623,7 +623,7 @@ export const SCHOOL_ENTITY_MODULES = ([
     view: "announcements",
     path: "/annonces",
     label: "Annonces",
-    feature: "Notifications",
+    feature: "Announcements",
     group: "communication",
     description: "Communications publiées à l'établissement.",
     fields: [

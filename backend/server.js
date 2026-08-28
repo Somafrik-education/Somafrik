@@ -2791,14 +2791,65 @@ app.get("/api/backoffice/communications/attachments/:attachmentId", requireAuth,
   res.send(file.bytes);
 }));
 
+app.get("/api/backoffice/announcements/unread-count", requireAuth, requirePermission("GET /api/backoffice/announcements/unread-count"), asyncHandler(async (req, res) => {
+  const result = await repository.getClientsAnnouncementsUnreadCount(req.principal, req.query);
+  res.json(result);
+}));
+
+app.get("/api/backoffice/announcements/audience-options", requireAuth, requirePermission("GET /api/backoffice/announcements/audience-options"), asyncHandler(async (req, res) => {
+  const result = await repository.listAnnouncementAudienceOptions(req.principal, req.query);
+  res.json(result);
+}));
+
 app.get("/api/backoffice/announcements", requireAuth, requirePermission("GET /api/backoffice/announcements"), asyncHandler(async (req, res) => {
-  const clients = await repository.listClientsProjection();
-  sendList(res, tenantScopeService.filterRows(clients.announcements ?? [], req.principal), req.query, ["title", "message", "audience", "status"]);
+  const result = await repository.listClientsAnnouncements(req.principal, req.query);
+  res.json(result);
 }));
 
 app.post("/api/backoffice/announcements", requireAuth, requirePermission("POST /api/backoffice/announcements"), asyncHandler(async (req, res) => {
-  const created = await repository.createClientsAnnouncement(req.body ?? {}, req.principal, clientsAuditMetaFromRequest(req));
-  res.status(201).json(created);
+  await withIdempotency({
+    req,
+    res,
+    routeKey: "POST /api/backoffice/announcements",
+    principal: req.principal,
+    handler: async () => {
+      const created = await repository.createClientsAnnouncement(req.body ?? {}, req.principal, clientsAuditMetaFromRequest(req));
+      return { statusCode: 201, body: created };
+    },
+  });
+}));
+
+app.post(
+  "/api/backoffice/announcements/attachments",
+  requireAuth,
+  requirePermission("POST /api/backoffice/announcements/attachments"),
+  express.raw({ type: () => true, limit: "11mb" }),
+  asyncHandler(async (req, res) => {
+    const buffer = Buffer.isBuffer(req.body) ? req.body : Buffer.from(req.body ?? []);
+    const fileName = req.get("x-filename") || req.get("x-file-name") || "fichier";
+    const mimeType = req.get("x-mime-type") || req.get("content-type") || "";
+    const created = await repository.uploadAnnouncementAttachment(req.principal, {
+      buffer,
+      fileName,
+      mimeType,
+    }, req.query);
+    res.status(201).json(created);
+  }),
+);
+
+app.get("/api/backoffice/announcements/:announcementId", requireAuth, requirePermission("GET /api/backoffice/announcements/:announcementId"), asyncHandler(async (req, res) => {
+  const row = await repository.getClientsAnnouncement(req.params.announcementId, req.principal, req.query);
+  res.json(row);
+}));
+
+app.patch("/api/backoffice/announcements/:announcementId/read", requireAuth, requirePermission("PATCH /api/backoffice/announcements/:announcementId/read"), asyncHandler(async (req, res) => {
+  const updated = await repository.markClientsAnnouncementRead(
+    req.params.announcementId,
+    req.principal,
+    clientsAuditMetaFromRequest(req),
+    req.query,
+  );
+  res.json(updated);
 }));
 
 app.patch("/api/backoffice/announcements/:announcementId", requireAuth, requirePermission("PATCH /api/backoffice/announcements/:announcementId"), asyncHandler(async (req, res) => {
@@ -2807,7 +2858,12 @@ app.patch("/api/backoffice/announcements/:announcementId", requireAuth, requireP
 }));
 
 app.post("/api/backoffice/announcements/:announcementId/archive", requireAuth, requirePermission("POST /api/backoffice/announcements/:announcementId/archive"), asyncHandler(async (req, res) => {
-  const archived = await repository.archiveClientsAnnouncement(req.params.announcementId, req.principal, clientsAuditMetaFromRequest(req));
+  const archived = await repository.archiveClientsAnnouncement(
+    req.params.announcementId,
+    req.principal,
+    clientsAuditMetaFromRequest(req),
+    { ...(req.body ?? {}), ...(req.query ?? {}) },
+  );
   res.json(archived);
 }));
 

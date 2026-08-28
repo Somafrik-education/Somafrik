@@ -33,6 +33,7 @@ export const SUPER_ADMIN_ALLOWED_FEATURES = new Set([
   "Utilisateurs",
   "Référentiels pédagogiques",
   "Notifications",
+  "Announcements",
   "Messages",
   "Paramètres Établissement",
   "Paramètres graphiques",
@@ -85,7 +86,7 @@ export const entityFeatureMap: Record<string, string> = {
   subscriptions: "Abonnements",
   paymentStatuses: "Paramètres Établissement",
   messages: "Messages",
-  announcements: "Notifications",
+  announcements: "Announcements",
   courses: "Matières",
   assignments: "Affectations",
 };
@@ -110,7 +111,7 @@ export const routeFeatureMap: Record<string, string> = {
   Payments: "Paiements",
   Paiements: "Paiements",
   Messages: "Messages",
-  Announcements: "Notifications",
+  Announcements: "Announcements",
   Timetable: "Planning de cours",
   ReportCards: "Bulletins",
   Documents: "Documents",
@@ -159,7 +160,11 @@ function permissionMatchesFeature(
   ) {
     return true;
   }
-  if (!normalizedPermission.includes(normalizedFeature)) return false;
+  const featureTokens =
+    normalizedFeature === "announcements"
+      ? ["announcements", "annonces", "annonce"]
+      : [normalizedFeature];
+  if (!featureTokens.some((token) => normalizedPermission.includes(token))) return false;
   if (action === "READ") {
     return (
       normalizedPermission.includes("voir") ||
@@ -345,6 +350,10 @@ export function canReadView(session: any, viewName: string): boolean {
   }
 
   if (session?.role === "country_admin") {
+    const countryFeature = VIEW_PERMISSION_FEATURES[viewName] ?? routeFeatureMap[viewName];
+    if (countryFeature === "Messages" || countryFeature === "Notifications" || countryFeature === "Announcements") {
+      return hasSecurityPermission(session, countryFeature, "READ");
+    }
     if (
       SCHOOL_ENTITY_VIEWS.has(viewName) ||
       viewName === "establishment" ||
@@ -353,10 +362,7 @@ export function canReadView(session: any, viewName: string): boolean {
     ) {
       return false;
     }
-    const feature = VIEW_PERMISSION_FEATURES[viewName] ?? routeFeatureMap[viewName];
-    if (feature === "Messages" || feature === "Notifications") {
-      return hasSecurityPermission(session, feature, "READ");
-    }
+    const feature = countryFeature;
     if (feature && !COUNTRY_SCOPE_MODULES.has(feature) && feature !== "Rapports") {
       return false;
     }

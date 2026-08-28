@@ -88,6 +88,10 @@ export const MessagesConversationsPage = lazyPage(
   () => import("./pages/MessagesConversationsPage"),
   "MessagesConversationsPage",
 );
+export const AnnouncementsPage = lazyPage(
+  () => import("./pages/AnnouncementsPage"),
+  "AnnouncementsPage",
+);
 export const CoursePlanningPage = lazyPage(() => import("./pages/CoursePlanningPage"), "CoursePlanningPage");
 export const PlanningLayout = lazyPage(() => import("./pages/planning/PlanningLayout"), "PlanningLayout");
 export const TimetableLayout = lazyPage(() => import("./pages/planning/TimetableLayout"), "TimetableLayout");

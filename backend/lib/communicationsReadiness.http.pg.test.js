@@ -151,6 +151,7 @@ async function grantComms(pool, roleKey, enabled) {
     : { create: false, read: false, update: false };
   await setRoleModuleGrant(pool, roleKey, "messages", flags);
   await setRoleModuleGrant(pool, roleKey, "notifications", flags);
+  await setRoleModuleGrant(pool, roleKey, "announcements", flags);
 }
 
 async function countRows(pool, sql, params) {

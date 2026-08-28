@@ -932,91 +932,30 @@ async function markMessageRead(store, messageId, principal, auditMeta, query = {
 }
 
 async function createAnnouncement(store, rawPayload, principal, auditMeta) {
-  const payload = ignoreClientScope(rawPayload);
-  const schoolCode = resolveWritableSchoolCode(principal, rawPayload);
-  assertSchoolScope(principal, schoolCode);
-  await assertSchoolInPrincipalCountry(store, principal, schoolCode);
-
-  const title = asTrimmed(payload.title);
-  const message = asTrimmed(payload.message);
-  if (!title || !message) {
-    throw createClientsError(400, "Titre et message obligatoires.");
-  }
-
-  const authorUserId = asTrimmed(principal?.sub || principal?.id);
-
-  return store.withTransaction(async (tx) => {
-    const school = await tx.getSchoolByCode(schoolCode);
-    if (!school) {
-      throw createClientsError(404, "Établissement introuvable.", CLIENTS_ERROR.SCHOOL_NOT_FOUND);
-    }
-
-    const profile = {
-      audience: payload.audience,
-      targetClassId: payload.targetClassId,
-      createdByName: principal?.identifier || principal?.email || "",
-    };
-
-    const saved = await tx.insertAnnouncement({
-      schoolId: school.id,
-      countryId: school.country_id,
-      title,
-      message,
-      targetRole: asTrimmed(payload.targetRole || payload.audience),
-      targetClassId: payload.targetClassId || null,
-      createdByUserId: authorUserId || null,
-      status: "published",
-      profile,
-    });
-
-    await writeClientsAudit(tx, principal, auditMeta, {
-      schoolCode,
-      action: "create_announcement",
-      entityType: "announcement",
-      entityId: saved.id,
-      newValue: mapAnnouncementRow({ ...saved, school_code: schoolCode }),
-    });
-    return mapAnnouncementRow({ ...saved, school_code: schoolCode });
-  });
+  const communicationsAnnouncementsService = require("./communicationsAnnouncementsService");
+  return communicationsAnnouncementsService.publish(store, rawPayload, principal, auditMeta);
 }
 
 async function updateAnnouncement(store, announcementId, rawPatch, principal, auditMeta) {
-  const patch = ignoreClientScope(rawPatch);
-  return store.withTransaction(async (tx) => {
-    const existing = await tx.getAnnouncementById(announcementId);
-    if (!existing) {
-      throw createClientsError(404, "Annonce introuvable.", CLIENTS_ERROR.ANNOUNCEMENT_NOT_FOUND);
-    }
-    assertSchoolScope(principal, existing.school_code);
-    await assertSchoolInPrincipalCountry(store, principal, existing.school_code);
-
-    const profile = { ...parsePayload(existing.profile_payload) };
-    if (patch.audience !== undefined) profile.audience = patch.audience;
-    if (patch.targetClassId !== undefined) profile.targetClassId = patch.targetClassId;
-
-    const saved = await tx.updateAnnouncement(existing.id, {
-      title: patch.title ?? existing.title,
-      message: patch.message ?? existing.message,
-      targetRole: patch.targetRole ?? patch.audience ?? existing.target_role,
-      targetClassId: patch.targetClassId ?? existing.target_class_id,
-      status: patch.status ? toDbStatus(patch.status) : existing.status,
-      profile,
-    });
-
-    await writeClientsAudit(tx, principal, auditMeta, {
-      schoolCode: existing.school_code,
-      action: "update_announcement",
-      entityType: "announcement",
-      entityId: saved.id,
-      oldValue: mapAnnouncementRow(existing),
-      newValue: mapAnnouncementRow(saved),
-    });
-    return mapAnnouncementRow(saved);
-  });
+  const communicationsAnnouncementsService = require("./communicationsAnnouncementsService");
+  return communicationsAnnouncementsService.updateAnnouncement(
+    store,
+    announcementId,
+    rawPatch,
+    principal,
+    auditMeta,
+  );
 }
 
-async function archiveAnnouncement(store, announcementId, principal, auditMeta) {
-  return updateAnnouncement(store, announcementId, { status: "Archivé" }, principal, auditMeta);
+async function archiveAnnouncement(store, announcementId, principal, auditMeta, query = {}) {
+  const communicationsAnnouncementsService = require("./communicationsAnnouncementsService");
+  return communicationsAnnouncementsService.archiveAnnouncement(
+    store,
+    announcementId,
+    principal,
+    auditMeta,
+    query,
+  );
 }
 
 module.exports = {

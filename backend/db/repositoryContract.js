@@ -172,6 +172,12 @@ const REPOSITORY_METHODS = Object.freeze([
   "createClientsAnnouncement",
   "updateClientsAnnouncement",
   "archiveClientsAnnouncement",
+  "listClientsAnnouncements",
+  "getClientsAnnouncement",
+  "markClientsAnnouncementRead",
+  "getClientsAnnouncementsUnreadCount",
+  "listAnnouncementAudienceOptions",
+  "uploadAnnouncementAttachment",
 ]);
 
 /**

@@ -783,6 +783,9 @@ async function downloadAttachment(store, attachmentId, principal, query = {}) {
     if (!canBypassParticipation(principal)) {
       await requireActiveParticipant(tx, message.conversation_id, userId);
     }
+  } else if (asTrimmed(attachment.entity_type) === "announcement") {
+    const announcements = require("./communicationsAnnouncementsService");
+    await announcements.assertCanDownloadAnnouncementAttachment(tx, school, userId, attachment, principal);
   } else {
     throw createClientsError(404, "Pièce jointe introuvable.", CLIENTS_ERROR.FORBIDDEN);
   }
@@ -811,4 +814,8 @@ module.exports = {
   downloadAttachment,
   classifyActor,
   validateBody,
+  requireSchool,
+  resolveWritableSchoolCode,
+  actorUserId,
+  displayName,
 };

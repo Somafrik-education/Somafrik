@@ -4,7 +4,7 @@ import { useAuth } from "../context/AuthContext";
 import { useAdminData } from "../context/AdminDataContext";
 import { canReadRoute, canReadView } from "../domain/security/permissions";
 import { canAccessMessagesRoute } from "../lib/mobileCtaRbacAlignment";
-import { countUnreadAnnouncements, useAnnouncementsReadListener } from "../lib/announcementsRead";
+import { useAnnouncementsUnreadCount } from "../lib/announcementsRead";
 import { ICON_HIT_SLOP, MIN_TOUCH_TARGET_DP } from "../lib/mobileUsability";
 
 type IconName = keyof typeof Ionicons.glyphMap;
@@ -49,8 +49,11 @@ export default function CommunicationHeaderIcons({
   unreadMessages?: number;
 }) {
   const { session } = useAuth();
-  const { notificationsData, announcementsData } = useAdminData();
-  useAnnouncementsReadListener();
+  const { notificationsData, activeSchoolCode } = useAdminData();
+  const unreadAnnouncements = useAnnouncementsUnreadCount(
+    canReadRoute(session, "Announcements"),
+    activeSchoolCode,
+  );
 
   const canMessages = canAccessMessagesRoute(session);
   const canAnnouncements = canReadRoute(session, "Announcements");
@@ -63,7 +66,6 @@ export default function CommunicationHeaderIcons({
   const unreadNotifications = notificationsData.filter(
     (item) => String(item.status ?? "") !== "Lu" && String(item.status ?? "") !== "read",
   ).length;
-  const unreadAnnouncements = countUnreadAnnouncements(session?.user?.id, announcementsData);
 
   return (
     <View style={styles.row}>

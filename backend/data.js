@@ -330,6 +330,16 @@ const securityMatrix = {
     Parent: "R",
     "Élève / Étudiant": "R",
   },
+  Announcements: {
+    "Super Administrateur Somafrik": "CRUD",
+    "Admin Pays": "CRUD",
+    "Admin School": "CRUD",
+    "Préfet des études": "CRUD",
+    Enseignant: "R",
+    Secrétaire: "CRUD",
+    Parent: "R",
+    "Élève / Étudiant": "R",
+  },
   Messages: {
     "Super Administrateur Somafrik": "CRUD",
     "Admin Pays": "CRUD",

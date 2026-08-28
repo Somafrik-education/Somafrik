@@ -347,11 +347,11 @@ assert.equal(
       sessionRole: "principal",
       roleLabel: "Directeur",
       roleKeys: ["PRINCIPAL"],
-      permissions: ["Notifications:UPDATE"],
+      permissions: ["Announcements:UPDATE"],
     }),
   ),
   true,
-  "archive visible si Notifications:UPDATE (contrat API)",
+  "archive visible si Announcements:UPDATE (contrat API)",
 );
 
 assert.equal(
@@ -385,7 +385,7 @@ assert.equal(
       sessionRole: "principal",
       roleLabel: "Directeur",
       roleKeys: ["PRINCIPAL"],
-      permissions: ["Gérer notifications"],
+      permissions: ["Gérer annonces"],
     }),
   ),
   true,
@@ -400,7 +400,7 @@ const schoolNotificationsRead = liveSession({
 assert.equal(canAccessPlatformNotifications(schoolNotificationsRead), false);
 assert.equal(canReadView(schoolNotificationsRead, "PlatformNotifications"), false);
 assert.equal(canReadRoute(schoolNotificationsRead, "PlatformNotifications"), false);
-assert.equal(canReadView(schoolNotificationsRead, "Announcements"), true);
+assert.equal(canReadView(schoolNotificationsRead, "Announcements"), false);
 
 const countryNotificationsRead = liveSession({
   sessionRole: "country_admin",

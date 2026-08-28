@@ -188,7 +188,7 @@ function main() {
   );
   assert.match(
     rbac,
-    /"POST \/api\/backoffice\/announcements\/:announcementId\/archive":\s*\["Notifications:UPDATE",\s*"Gérer notifications",\s*"COUNTRY_PRIVILEGES",\s*"ALL_PRIVILEGES"\]/,
+    /"POST \/api\/backoffice\/announcements\/:announcementId\/archive":\s*\["Announcements:UPDATE",\s*"Gérer annonces",\s*"COUNTRY_PRIVILEGES",\s*"ALL_PRIVILEGES"\]/,
   );
   assert.match(
     rbac,

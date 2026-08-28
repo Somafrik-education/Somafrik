@@ -16,7 +16,7 @@ export const VIEW_PERMISSION_FEATURES: Record<string, string | null> = {
   courses: "Matières",
   assignments: "Affectations",
   payments: "Paiements",
-  announcements: "Notifications",
+  announcements: "Announcements",
   messages: "Messages",
   presences: "Présences",
   notes: "Notes",
@@ -49,7 +49,7 @@ export const CRUD_ACTIONS = [
 export const CRUD_PERMISSION_MODULES = [
   "Pays", "Établissements", "Abonnements", "Utilisateurs", "Classes", "Élèves",
   "Enseignants", "Affectations", "Présences", "Notes", "Bulletins", "Paiements",
-  "Notifications", "Messages", "Documents", "Rapports", "Paramètres Établissement",
+  "Notifications", "Announcements", "Messages", "Documents", "Rapports", "Paramètres Établissement",
   "Années Académiques", "Matières", "Examens", "Référentiels pédagogiques",
 ] as const;
 

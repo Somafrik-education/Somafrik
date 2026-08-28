@@ -39,6 +39,7 @@ export const SUPER_ADMIN_ALLOWED_FEATURES = new Set([
   "Utilisateurs",
   "Référentiels pédagogiques",
   "Notifications",
+  "Announcements",
   "Messages",
   "Paramètres Établissement",
   "Paramètres graphiques",

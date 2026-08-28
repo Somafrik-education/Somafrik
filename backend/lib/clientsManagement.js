@@ -390,19 +390,27 @@ function mapMessageRow(row) {
 
 function mapAnnouncementRow(row) {
   const profile = parsePayload(row.profile_payload);
+  const publishedAt = row.published_at ?? row.created_at;
   return {
     id: row.id,
+    type: "announcement",
     schoolId: row.school_id,
     schoolCode: row.school_code,
     title: row.title,
     message: row.message,
+    content: row.message,
     audience: profile.audience ?? row.target_role ?? "Tous",
     targetRole: row.target_role ?? profile.targetRole ?? "",
     targetClassId: row.target_class_id ?? profile.targetClassId ?? "",
     status: fromDbStatus(row.status),
-    date: formatDate(row.published_at ?? row.created_at),
-    createdBy: profile.createdByName ?? row.author_name ?? "",
-    createdAt: formatDate(row.created_at),
+    date: formatDate(publishedAt),
+    createdBy: profile.createdByName ?? row.author_name ?? row.created_by_name ?? "",
+    createdByUserId: row.created_by ?? profile.createdByUserId ?? "",
+    createdByName: profile.createdByName ?? row.author_name ?? row.created_by_name ?? "",
+    createdAt: formatDateTime(row.created_at),
+    publishedAt: formatDateTime(publishedAt),
+    updatedAt: formatDateTime(row.updated_at),
+    archivedAt: row.archived_at ? formatDateTime(row.archived_at) : "",
   };
 }
 
