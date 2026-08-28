@@ -42,6 +42,7 @@ const {
 const {
   resolveFinanceSchoolScope,
   schoolCodeInScope,
+  schoolRecordInFinanceScope,
   primaryFinanceSchoolCode,
 } = require("./financeSchoolScope");
 
@@ -63,9 +64,18 @@ function ignoreClientScope(payload = {}) {
   return next;
 }
 
-function assertTenant(principal, schoolCode) {
+function assertTenant(principal, target) {
   const scope = resolveFinanceSchoolScope(principal);
-  if (!schoolCodeInScope(schoolCode, scope)) {
+  if (target && typeof target === "object") {
+    if (!schoolRecordInFinanceScope(target, scope)) {
+      throw createFinanceError(403, "Accès refusé : établissement hors périmètre.", FINANCE_ERROR.TENANT_MISMATCH);
+    }
+    return;
+  }
+  if (scope.mode === "country") {
+    throw createFinanceError(403, "Accès refusé : établissement hors périmètre.", FINANCE_ERROR.TENANT_MISMATCH);
+  }
+  if (!schoolCodeInScope(target, scope)) {
     throw createFinanceError(403, "Accès refusé : établissement hors périmètre.", FINANCE_ERROR.TENANT_MISMATCH);
   }
 }
@@ -82,7 +92,6 @@ function resolveActorSchoolCode(principal, rawPayload = {}) {
   if (!requested) {
     throw createFinanceError(400, "Établissement requis.", FINANCE_ERROR.TENANT_MISMATCH);
   }
-  assertTenant(principal, requested);
   return requested;
 }
 
@@ -368,11 +377,12 @@ async function createPayment(store, rawPayload, principal, auditMeta) {
     if (!student) {
       throw createFinanceError(404, "Élève introuvable", FINANCE_ERROR.STUDENT_NOT_FOUND);
     }
-    assertTenant(principal, student.schoolCode);
+    assertTenant(principal, student);
     const school = await tx.getSchoolByCode(student.schoolCode);
     if (!school) {
       throw createFinanceError(404, "Établissement introuvable", FINANCE_ERROR.TENANT_MISMATCH);
     }
+    assertTenant(principal, school);
     const enrollment = await resolvePaymentEnrollment(tx, student, payload, school);
 
     const resolvedItems = [];
@@ -537,7 +547,7 @@ async function cancelPayment(store, paymentId, reason, principal, auditMeta) {
     if (!payment) {
       throw createFinanceError(404, "Paiement introuvable.", FINANCE_ERROR.PAYMENT_NOT_FOUND);
     }
-    assertTenant(principal, payment.schoolCode);
+    assertTenant(principal, payment);
     if (isPaymentCancelled(payment)) {
       return payment;
     }
@@ -654,6 +664,7 @@ async function upsertFeeGrid(store, rawPayload, principal) {
   return store.withTransaction(async (tx) => {
     const school = await tx.getSchoolByCode(schoolCode);
     if (!school) throw createFinanceError(404, "Établissement introuvable", FINANCE_ERROR.TENANT_MISMATCH);
+    assertTenant(principal, school);
     const klass = await resolveGridClass(tx, school, payload);
     const grid = await tx.upsertGrid({
       id: payload.id,
@@ -692,7 +703,7 @@ async function setFeeGridStatus(store, gridId, status, principal) {
   return store.withTransaction(async (tx) => {
     const grid = await tx.getGrid(gridId, principal);
     if (!grid) throw createFinanceError(404, "Grille introuvable.", FINANCE_ERROR.FEE_GRID_NOT_FOUND);
-    assertTenant(principal, grid.schoolCode);
+    assertTenant(principal, grid);
     return tx.setGridStatus(grid.dbId, status);
   });
 }
@@ -701,7 +712,7 @@ async function applyFeeGrid(store, gridId, principal, options = {}) {
   return store.withTransaction(async (tx) => {
     const grid = await tx.getGrid(gridId, principal);
     if (!grid) throw createFinanceError(404, "Grille introuvable.", FINANCE_ERROR.FEE_GRID_NOT_FOUND);
-    assertTenant(principal, grid.schoolCode);
+    assertTenant(principal, grid);
     if (grid.status !== "Active") {
       throw createFinanceError(409, "Seule une grille active peut être appliquée aux élèves.", FINANCE_ERROR.FEE_GRID_NOT_ACTIVE);
     }
@@ -786,7 +797,7 @@ async function adjustStudentFee(store, obligationId, patch, principal) {
   return store.withTransaction(async (tx) => {
     const fee = await tx.getObligationByPublicId(obligationId, principal);
     if (!fee) throw createFinanceError(404, "Obligation introuvable.", FINANCE_ERROR.OBLIGATION_NOT_FOUND);
-    assertTenant(principal, fee.schoolCode);
+    assertTenant(principal, fee);
     const next = { ...fee };
     if (patch.cancel) {
       next.status = "Annulé";
@@ -811,7 +822,10 @@ async function createReminder(store, studentId, payload, principal, { force = fa
   return store.withTransaction(async (tx) => {
     const student = await tx.findStudent(studentId, principal);
     if (!student) throw createFinanceError(404, "Élève introuvable", FINANCE_ERROR.STUDENT_NOT_FOUND);
-    assertTenant(principal, student.schoolCode);
+    assertTenant(principal, student);
+    const school = await tx.getSchoolByCode(student.schoolCode);
+    if (!school) throw createFinanceError(404, "Établissement introuvable", FINANCE_ERROR.TENANT_MISMATCH);
+    assertTenant(principal, school);
     const reminders = await tx.listRemindersByStudent(student.dbId || student.id);
     const latest = reminders.filter((row) => row.sendStatus !== "Échouée")[0];
     if (latest) {
@@ -830,7 +844,6 @@ async function createReminder(store, studentId, payload, principal, { force = fa
         }
       }
     }
-    const school = await tx.getSchoolByCode(student.schoolCode);
     const fees = (await tx.listObligationsByStudent(school.id, student.dbId || student.id)).filter(
       (fee) => money(fee.balance) > 0 && fee.status !== "Annulé",
     );

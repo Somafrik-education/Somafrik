@@ -27,6 +27,8 @@ const ACCOUNTANT_B = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa83";
 const LIVE_USER = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa82";
 const CLASS_A = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbb81";
 const CLASS_B = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbb82";
+const CLASS_TRAP = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbb83";
+const CLASS_A2 = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbb84";
 const SAME_TS = "2026-08-28T08:00:00.000Z";
 
 function withDatabaseName(databaseUrl, databaseName) {
@@ -173,8 +175,14 @@ async function seed(pool) {
   const schoolA = (await pool.query(`SELECT id FROM schools WHERE school_code = 'SCH-F8-A'`)).rows[0];
   const schoolB = (await pool.query(`SELECT id FROM schools WHERE school_code = 'SCH-F8-B'`)).rows[0];
   await pool.query(
+    `INSERT INTO schools (country_id, school_code, name, status)
+     VALUES ($1, 'CI-TRAP-26-001', 'École piège FR préfixe CI', 'active')`,
+    [fr.rows[0].id],
+  );
+  const schoolTrap = (await pool.query(`SELECT id FROM schools WHERE school_code = 'CI-TRAP-26-001'`)).rows[0];
+  await pool.query(
     `INSERT INTO academic_years (school_id, name, status)
-     SELECT id, '2025-2026', 'open' FROM schools WHERE school_code IN ('SCH-F8-A', 'SCH-F8-B')`,
+     SELECT id, '2025-2026', 'open' FROM schools WHERE school_code IN ('SCH-F8-A', 'SCH-F8-B', 'CI-TRAP-26-001')`,
   );
   const yearA = (
     await pool.query(
@@ -186,13 +194,32 @@ async function seed(pool) {
       `SELECT ay.id FROM academic_years ay JOIN schools s ON s.id = ay.school_id WHERE s.school_code = 'SCH-F8-B' LIMIT 1`,
     )
   ).rows[0];
+  const yearTrap = (
+    await pool.query(
+      `SELECT ay.id FROM academic_years ay JOIN schools s ON s.id = ay.school_id WHERE s.school_code = 'CI-TRAP-26-001' LIMIT 1`,
+    )
+  ).rows[0];
 
   await pool.query(
     `INSERT INTO classes (id, school_id, academic_year_id, class_code, name, status, updated_at)
      VALUES
-       ($1, $3, $5, 'F8-CLS-A', '6ème A', 'active', $7::timestamptz),
-       ($2, $4, $6, 'F8-CLS-B', '6ème B', 'active', $7::timestamptz)`,
-    [CLASS_A, CLASS_B, schoolA.id, schoolB.id, yearA.id, yearB.id, SAME_TS],
+       ($1, $5, $8, 'F8-CLS-A', '6ème A', 'active', $11::timestamptz),
+       ($2, $6, $9, 'F8-CLS-B', '6ème B', 'active', $11::timestamptz),
+       ($3, $5, $8, 'F8-CLS-A2', '6ème A2', 'active', $11::timestamptz),
+       ($4, $7, $10, 'F8-CLS-TRAP', '6ème Piège', 'active', $11::timestamptz)`,
+    [
+      CLASS_A,
+      CLASS_B,
+      CLASS_A2,
+      CLASS_TRAP,
+      schoolA.id,
+      schoolB.id,
+      schoolTrap.id,
+      yearA.id,
+      yearB.id,
+      yearTrap.id,
+      SAME_TS,
+    ],
   );
 
   await pool.query(
@@ -230,12 +257,19 @@ async function seed(pool) {
      RETURNING id, student_code`,
     [schoolB.id, SAME_TS],
   );
+  const studentTrap = await pool.query(
+    `INSERT INTO students (school_id, student_code, first_name, last_name, status, updated_at)
+     VALUES ($1, 'F8-STU-TRAP', 'Léo', 'Dupont', 'active', $2::timestamptz)
+     RETURNING id, student_code`,
+    [schoolTrap.id, SAME_TS],
+  );
   await pool.query(
     `INSERT INTO enrollments (school_id, student_id, class_id, academic_year_id, enrollment_date, status)
      VALUES
        ($1, $2, $3, $4, '2025-09-01', 'active'),
        ($1, $5, $3, $4, '2025-09-01', 'active'),
-       ($6, $7, $8, $9, '2025-09-01', 'active')`,
+       ($6, $7, $8, $9, '2025-09-01', 'active'),
+       ($10, $11, $12, $13, '2025-09-01', 'active')`,
     [
       schoolA.id,
       studentA1.rows[0].id,
@@ -246,11 +280,16 @@ async function seed(pool) {
       studentB.rows[0].id,
       CLASS_B,
       yearB.id,
+      schoolTrap.id,
+      studentTrap.rows[0].id,
+      CLASS_TRAP,
+      yearTrap.id,
     ],
   );
 
   await grantFinance(pool, "ACCOUNTANT", true);
   await grantFinance(pool, "F8_PAY", true);
+  await grantFinance(pool, "COUNTRY_ADMIN", true);
 
   return {
     schoolA: schoolA.id,
@@ -258,6 +297,7 @@ async function seed(pool) {
     studentCodeA1: studentA1.rows[0].student_code,
     studentCodeA2: studentA2.rows[0].student_code,
     studentCodeB: studentB.rows[0].student_code,
+    studentCodeTrap: studentTrap.rows[0].student_code,
   };
 }
 
@@ -911,6 +951,14 @@ async function main() {
         countryCode: "CI",
         role: "Admin Pays",
         roleKeys: ["COUNTRY_ADMIN"],
+        permissions: [
+          "ALL_PRIVILEGES",
+          "Paiements:UPDATE",
+          "Paiements:CREATE",
+          "Paiements:READ",
+          "Frais & tarifs:CREATE",
+          "Frais & tarifs:UPDATE",
+        ],
       }),
     );
     const countryGetA = await request(`/payments/${encodeURIComponent(unalloc1.data.id)}`, {
@@ -930,6 +978,76 @@ async function main() {
     assert.ok(
       [403, 404].includes(countryPayB.status),
       `F8-P0-004 Admin Pays CI refuse FR/B: ${JSON.stringify(countryPayB.data)}`,
+    );
+
+    const countryPayA = await request("/payments", {
+      method: "POST",
+      token: countryAdminToken,
+      body: {
+        studentId: fixture.studentCodeA1,
+        items: [{ feeType: "Non imputé", amount: 5 }],
+        method: "Espèces",
+        date: "2026-08-28",
+      },
+    });
+    assert.equal(
+      countryPayA.status,
+      201,
+      `F8-P1-006 Admin Pays CI paie A (school_code sans préfixe CI): ${JSON.stringify(countryPayA.data)}`,
+    );
+
+    const countryGridA = await request("/finance/fee-grids", {
+      method: "POST",
+      token: countryAdminToken,
+      body: { ...gridBody(CLASS_A2, "6ème A2", "XOF"), schoolCode: "SCH-F8-A" },
+    });
+    assert.equal(
+      countryGridA.status,
+      201,
+      `F8-P1-006 Admin Pays CI crée grille A: ${JSON.stringify(countryGridA.data)}`,
+    );
+
+    const countryGridB = await request("/finance/fee-grids", {
+      method: "POST",
+      token: countryAdminToken,
+      body: { ...gridBody(CLASS_B, "6ème B", "EUR"), schoolCode: "SCH-F8-B" },
+    });
+    assert.ok(
+      [403, 404].includes(countryGridB.status),
+      `F8-P1-006 Admin Pays CI refuse grille B: ${JSON.stringify(countryGridB.data)}`,
+    );
+
+    const countryPayTrap = await request("/payments", {
+      method: "POST",
+      token: countryAdminToken,
+      body: {
+        studentId: fixture.studentCodeTrap,
+        items: [{ feeType: "Non imputé", amount: 10 }],
+        method: "Espèces",
+        date: "2026-08-28",
+      },
+    });
+    assert.ok(
+      [403, 404].includes(countryPayTrap.status),
+      `F8-P1-006 Admin Pays CI refuse paiement piège préfixe CI: ${JSON.stringify(countryPayTrap.data)}`,
+    );
+
+    const countryGridTrap = await request("/finance/fee-grids", {
+      method: "POST",
+      token: countryAdminToken,
+      body: { ...gridBody(CLASS_TRAP, "6ème Piège", "EUR"), schoolCode: "CI-TRAP-26-001" },
+    });
+    assert.ok(
+      [403, 404].includes(countryGridTrap.status),
+      `F8-P1-006 Admin Pays CI refuse grille piège préfixe CI: ${JSON.stringify(countryGridTrap.data)}`,
+    );
+    assert.equal(
+      await countRows(
+        pool,
+        `SELECT count(*)::int AS c FROM payments p JOIN schools s ON s.id = p.school_id WHERE s.school_code = 'CI-TRAP-26-001'`,
+      ),
+      0,
+      "F8-P1-006 aucune paiement créé sur l'école piège FR préfixe CI",
     );
 
     const globalSuperToken = mintAccess(

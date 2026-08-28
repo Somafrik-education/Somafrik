@@ -24,7 +24,7 @@ const {
 const { decoratePaymentWithItems } = require("../lib/financePaymentItems");
 const { projectObligationPaidAmounts } = require("../lib/financeObligationPaid");
 const { projectPaymentsWithAllocations, projectPaymentCash } = require("../lib/financeUnallocatedCash");
-const { resolveFinanceSchoolScope, schoolCodeInScope, primaryFinanceSchoolCode } = require("../lib/financeSchoolScope");
+const { resolveFinanceSchoolScope, schoolRecordInFinanceScope, primaryFinanceSchoolCode } = require("../lib/financeSchoolScope");
 const {
   foldPaymentStudentOptions,
   resolveCatalogPaymentMethods,
@@ -141,6 +141,7 @@ function createFinanceMemoryStore({
           id: school.id || school.publicId || school.code,
           code: school.code || school.schoolCode,
           school_code: school.code || school.schoolCode,
+          countryIso: String(school.countryIso || school.countryCode || school.iso_code || "").trim().toUpperCase(),
           currency: school.currency || "",
         };
       },
@@ -149,7 +150,7 @@ function createFinanceMemoryStore({
         if (!student) return null;
         if (principal) {
           const scope = resolveFinanceSchoolScope(principal);
-          if (!schoolCodeInScope(student.schoolCode, scope)) return null;
+          if (!schoolRecordInFinanceScope(student, scope)) return null;
         }
         return {
           ...student,
@@ -381,7 +382,7 @@ function createFinanceMemoryStore({
         const mapped = mapPaymentRow(row);
         if (principal) {
           const scope = resolveFinanceSchoolScope(principal);
-          if (!schoolCodeInScope(mapped.schoolCode, scope)) return null;
+          if (!schoolRecordInFinanceScope(mapped, scope)) return null;
         }
         const items = await this.listPaymentItems(row.id);
         const allocations = await this.listAllocations(row.id);
@@ -437,7 +438,7 @@ function createFinanceMemoryStore({
         const mapped = mapObligationRow(row);
         if (principal) {
           const scope = resolveFinanceSchoolScope(principal);
-          if (!schoolCodeInScope(mapped.schoolCode, scope)) return null;
+          if (!schoolRecordInFinanceScope(mapped, scope)) return null;
         }
         return mapped;
       },
@@ -541,7 +542,7 @@ function createFinanceMemoryStore({
         const mapped = mapGridRow(row);
         if (principal) {
           const scope = resolveFinanceSchoolScope(principal);
-          if (!schoolCodeInScope(mapped.schoolCode, scope)) return null;
+          if (!schoolRecordInFinanceScope(mapped, scope)) return null;
         }
         return mapped;
       },
@@ -758,14 +759,14 @@ function createFinanceMemoryStore({
     listFinanceFeeGrids: async (principal) => {
       const scope = resolveFinanceSchoolScope(principal);
       if (scope.mode === "none") return [];
-      return tables.feeGrids.map(mapGridRow).filter((row) => schoolCodeInScope(row.schoolCode, scope));
+      return tables.feeGrids.map(mapGridRow).filter((row) => schoolRecordInFinanceScope(row, scope));
     },
     listFinanceStudentFees: async (principal) => {
       const scope = resolveFinanceSchoolScope(principal);
       if (scope.mode === "none") return [];
       const fees = tables.studentFees
         .map(mapObligationRow)
-        .filter((fee) => schoolCodeInScope(fee.schoolCode, scope));
+        .filter((fee) => schoolRecordInFinanceScope(fee, scope));
       const feeIds = new Set(fees.map((fee) => String(fee.dbId || fee.id)));
       return projectObligationPaidAmounts({
         fees,
@@ -788,7 +789,7 @@ function createFinanceMemoryStore({
       if (scope.mode === "none") return [];
       return tables.paymentStatuses
         .map(mapStatusRow)
-        .filter((row) => !row.schoolCode || schoolCodeInScope(row.schoolCode, scope));
+        .filter((row) => !row.schoolCode || schoolRecordInFinanceScope(row, scope));
     },
     upsertFinancePaymentStatus: async (payload, principal) => {
       const code = asTrimmed(payload.code || payload.id);
@@ -814,7 +815,7 @@ function createFinanceMemoryStore({
       const rows = [];
       for (const student of students) {
         const schoolCode = String(student.schoolCode || "").trim();
-        if (!schoolCodeInScope(schoolCode, scope)) continue;
+        if (!schoolRecordInFinanceScope(student, scope)) continue;
         const enrollments = Array.isArray(student.enrollments) && student.enrollments.length
           ? student.enrollments
           : [
@@ -845,7 +846,9 @@ function createFinanceMemoryStore({
     async listSchoolPaymentMethods(principal) {
       const scope = resolveFinanceSchoolScope(principal);
       if (scope.mode === "none") return resolveCatalogPaymentMethods([]);
-      const rows = tables.paymentMethods.filter((row) => schoolCodeInScope(row.school_code, scope));
+      const rows = tables.paymentMethods.filter((row) =>
+        schoolRecordInFinanceScope({ schoolCode: row.school_code, countryIso: row.country_iso }, scope),
+      );
       return resolveCatalogPaymentMethods(rows);
     },
     async replaceSchoolPaymentMethods(methods, principal) {
@@ -880,7 +883,7 @@ function createFinanceMemoryStore({
       const scope = resolveFinanceSchoolScope(principal);
       if (scope.mode === "none") return [];
       const grids = tables.feeGrids.filter(
-        (row) => schoolCodeInScope(row.school_code || mapGridRow(row).schoolCode, scope) && normalizeKey(row.status) === "active",
+        (row) => schoolRecordInFinanceScope(mapGridRow(row), scope) && normalizeKey(row.status) === "active",
       );
       const gridIds = new Set(grids.map((row) => String(row.id)));
       return tables.schoolFeeItems

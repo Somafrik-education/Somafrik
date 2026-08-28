@@ -6,7 +6,7 @@
  */
 
 const { asTrimmed, normalizeKey, money } = require("./financeManagement");
-const { resolveFinanceSchoolScope, schoolCodeInScope } = require("./financeSchoolScope");
+const { resolveFinanceSchoolScope, schoolRecordInFinanceScope } = require("./financeSchoolScope");
 const { activeFeeTypeCatalog } = require("./financeFeeTypes");
 
 const INACTIVE_STUDENT_STATUSES = new Set(["deleted", "archived", "inactive", "transferred", "sorti"]);
@@ -138,7 +138,7 @@ function filterRowsByPrincipal(rows, principal, schoolCodeOf) {
   const scope = resolveFinanceSchoolScope(principal);
   if (scope.mode === "none") return [];
   if (scope.mode === "all") return rows;
-  return rows.filter((row) => schoolCodeInScope(schoolCodeOf(row), scope));
+  return rows.filter((row) => schoolRecordInFinanceScope(row, scope));
 }
 
 function buildFinanceCatalog({ currency, currencySource, paymentMethods, feeTypes }) {

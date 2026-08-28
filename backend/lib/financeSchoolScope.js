@@ -38,13 +38,36 @@ function sqlSchoolPredicate(alias, scope, params) {
   return `${alias}.school_code = ANY($${params.length}::text[])`;
 }
 
-function schoolCodeInScope(schoolCode, scope) {
+function countryIsoFromRecord(record) {
+  if (!record || typeof record !== "object") return "";
+  for (const value of [record.countryIso, record.country_iso, record.countryIsoCode, record.iso_code]) {
+    const iso = String(value ?? "").trim().toUpperCase();
+    if (/^[A-Z]{2}$/.test(iso)) return iso;
+  }
+  return "";
+}
+
+function schoolCodeInScope(schoolCode, scope, extras = {}) {
   if (scope.mode === "all") return true;
   if (scope.mode === "none") return false;
+  if (scope.mode === "country") {
+    const iso = String(extras.countryIso || "").trim().toUpperCase();
+    if (!/^[A-Z]{2}$/.test(iso)) return false;
+    return iso === scope.countryCode;
+  }
   const code = String(schoolCode || "").trim().toUpperCase();
   if (!code) return false;
-  if (scope.mode === "country") return code.slice(0, 2) === scope.countryCode;
   return scope.codes.includes(code);
+}
+
+function schoolRecordInFinanceScope(record, scope) {
+  if (scope.mode === "all") return true;
+  if (scope.mode === "none") return false;
+  if (scope.mode === "country") {
+    const iso = countryIsoFromRecord(record);
+    return Boolean(iso) && iso === scope.countryCode;
+  }
+  return schoolCodeInScope(record?.schoolCode || record?.school_code || record?.code, scope);
 }
 
 function primaryFinanceSchoolCode(principal) {
@@ -59,5 +82,7 @@ module.exports = {
   resolveFinanceSchoolScope,
   sqlSchoolPredicate,
   schoolCodeInScope,
+  schoolRecordInFinanceScope,
+  countryIsoFromRecord,
   primaryFinanceSchoolCode,
 };

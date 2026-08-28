@@ -8,6 +8,8 @@ on:
       - "backend/db/financePgStore.js"
       - "backend/db/financeMemoryStore.js"
       - "backend/lib/financeService.js"
+      - "backend/lib/financeSchoolScope.js"
+      - "backend/lib/financeSchoolScope.test.js"
       - "backend/lib/financeManagement.js"
       - "backend/lib/financeUnallocatedCash.js"
       - "backend/lib/financeUnallocatedCash.test.js"

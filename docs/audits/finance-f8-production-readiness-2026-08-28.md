@@ -36,7 +36,7 @@ Trois P0 ont été confirmés dans le code F7 mergé / le premier passage F8. Un
 | F8-P0-003 | `GET /api/payments/:id` fuitait un encaissement A vers B si `schoolCode` absent du principal | **CORRIGÉ** |
 | F8-P0-004 | `assertTenant` / `findStudent` / `getGrid` fail-open quand `principal.schoolCode` est vide (`*` ou absence = toutes les écoles) | **CORRIGÉ** |
 
-P1 corrigés : replis devise `USD`/`CDF`, Idempotency-Key Web, relance sans `withIdempotency`, `DEFAULT` devise obligations/grilles.
+P1 corrigés : replis devise `USD`/`CDF`, Idempotency-Key Web, relance sans `withIdempotency`, `DEFAULT` devise obligations/grilles, **Admin Pays iso_code vs préfixe `schoolCode`** (F8-P1-006 / CTO F8-P1-005).
 
 Aucun P0/P1 **ouvert** dans le code de cette branche après corrections. Le verdict reste **GO CONDITIONNEL** (pas GO PRODUCTION) : UX Web/Mobile non exercée dans un navigateur/appareil réel ici, smoke préprod non joué sur un établissement live, performance non mesurée à l'échelle de plusieurs milliers d'élèves. Diff CTO `develop → HEAD` obligatoire avant Ready/merge.
 
@@ -185,7 +185,7 @@ Scope canonique unique : `resolveFinanceSchoolScope` + `sqlSchoolPredicate` / `s
 
 - école scoped → codes `effectiveSchoolCode` / `effectiveSchoolInternalCode` / `schoolCode` (jamais `*`) ;
 - Superadmin request-scoped → uniquement l'école effective ;
-- Admin Pays sans école effective → pays (`countries.iso_code` en SQL) ;
+- Admin Pays sans école effective → pays (`countries.iso_code` via FK `schools.country_id`, jamais le préfixe `schoolCode`) ;
 - Superadmin réellement global → `mode: "all"` ;
 - principal sans scope exploitable → `mode: "none"` (fail-closed).
 
@@ -322,6 +322,13 @@ Pas de campagne de charge. Lecture code :
 - **Correction :** même enveloppe que POST paiement
 - **Test :** replay key → une seule row
 
+### F8-P1-006 — Admin Pays : deux sources de vérité tenant (CTO F8-P1-005) (CORRIGÉ)
+
+- **Fichiers :** `financeSchoolScope.js` `schoolCodeInScope` / `schoolRecordInFinanceScope` / `assertTenant` ; `upsertFeeGrid` ; mappers `countryIso` ; GET fee-grids
+- **Observé (HEAD `8f605620`) :** le SQL Finance scope pays via `schools.country_id → countries.iso_code`, mais `schoolCodeInScope("country")` autorisait `schoolCode.slice(0, 2) === countryCode`. `assertTenant` et `resolveActorSchoolCode` s'appuyaient sur ce préfixe. Les fixtures F8 (`SCH-F8-A` / CI, `SCH-F8-B` / FR) ne commencent pas par l'ISO : une mutation Admin Pays légitime sur A pouvait être refusée, et un code commençant par `CI` pouvait être accepté même rattaché à FR.
+- **Correction :** mode `country` exige `countryIso` d'un enregistrement résolu (PostgreSQL). `assertTenant(string)` en mode pays = 403 (fail-closed, pas de décision sur le préfixe). Mutations grille : `getSchoolByCode` puis `assertTenant(principal, school)`. Aucun fallback `slice(0, 2)`.
+- **Test :** `financeSchoolScope.test.js` F8-P1-006 ; HTTP `SCH-F8-A` autorisé, `SCH-F8-B` refusé, piège `CI-TRAP-26-001` (pays FR) refusé. Tous les cas F8-P0-004 conservés.
+
 Aucun P1 ouvert dans le code de cette branche.
 
 ---
@@ -346,8 +353,8 @@ Aucun P1 ouvert dans le code de cette branche.
 
 | Artefact | Rôle |
 |---|---|
-| `backend/lib/financeReadiness.http.pg.test.js` | Parcours 1–15 PostgreSQL réel + tenant + XOF/EUR + concurrence + revoke + **F8-P0-004 schoolCode vide** |
-| `backend/lib/financeSchoolScope.test.js` | Fail-closed `schoolCode` vide / `*` ; Superadmin scoped vs global ; Admin Pays |
+| `backend/lib/financeReadiness.http.pg.test.js` | Parcours 1–15 PostgreSQL réel + tenant + XOF/EUR + concurrence + revoke + **F8-P0-004 schoolCode vide** + **F8-P1-006 Admin Pays iso_code** |
+| `backend/lib/financeSchoolScope.test.js` | Fail-closed `schoolCode` vide / `*` ; Superadmin scoped vs global ; Admin Pays **iso_code**, pas préfixe |
 | `backend/scripts/verify-finance-readiness.js` | Source guards + unitaires + HTTP |
 | `web/src/lib/unpaidModule.currency.test.ts` | Pas de USD inventé |
 | `backend/lib/financeUnallocatedCash.test.js` | Mobile money ≠ pending |
@@ -388,7 +395,7 @@ Nettoyage : DELETE/annuler uniquement les rows dont `student_code` / comment / m
 
 **GO CONDITIONNEL**
 
-P0-004 (fail-open `schoolCode` vide) a été corrigé après le NO-GO CTO sur `0359e81f`. Aucun P0/P1 ouvert dans le code de cette révision. Ready / merge / F9 restent interdits jusqu'au nouveau diff GitHub CTO `develop → HEAD`.
+P0-004 (fail-open `schoolCode` vide) a été corrigé après le NO-GO CTO sur `0359e81f`. F8-P1-006 / CTO F8-P1-005 (préfixe `schoolCode` vs `countries.iso_code` pour Admin Pays) a été corrigé après le HOLD CTO sur `8f605620`. Aucun P0/P1 ouvert dans le code de cette révision. Ready / merge / F9 restent interdits jusqu'au nouveau diff GitHub CTO `develop → HEAD`.
 
 Conditions restantes (hors code P0/P1) avant un gel Finance / Release Candidate globale :
 

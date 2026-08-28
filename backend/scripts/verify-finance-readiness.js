@@ -68,15 +68,25 @@ function sourceGuards() {
   );
   assert.match(getGrid, /resolveFinanceSchoolScope/);
   assert.match(getGrid, /sqlSchoolPredicate/);
-  assert.match(memory, /schoolCodeInScope\(mapped\.schoolCode, scope\)/);
-  assert.match(memory, /schoolCodeInScope\(student\.schoolCode, scope\)/);
+  assert.match(memory, /schoolRecordInFinanceScope\(mapped, scope\)/);
+  assert.match(memory, /schoolRecordInFinanceScope\(student, scope\)/);
+
+  const scopeLib = read("backend/lib/financeSchoolScope.js");
+  const schoolCodeFn = scopeLib.slice(
+    scopeLib.indexOf("function schoolCodeInScope"),
+    scopeLib.indexOf("function schoolRecordInFinanceScope"),
+  );
+  assert.doesNotMatch(schoolCodeFn, /slice\(\s*0\s*,\s*2\s*\)/);
+  assert.match(scopeLib, /function schoolRecordInFinanceScope/);
+  assert.match(scopeLib, /iso_code/);
 
   const assertTenant = service.slice(
     service.indexOf("function assertTenant"),
     service.indexOf("function resolveActorSchoolCode"),
   );
   assert.match(assertTenant, /resolveFinanceSchoolScope/);
-  assert.match(assertTenant, /schoolCodeInScope/);
+  assert.match(assertTenant, /schoolRecordInFinanceScope/);
+  assert.match(assertTenant, /scope\.mode === ["']country["']/);
   assert.doesNotMatch(assertTenant, /if \(!scope \|\| scope === "\*"\) return/);
 
   assert.match(httpTest, /F8-P0-004 GET paiement B schoolCode vide/);
@@ -85,6 +95,11 @@ function sourceGuards() {
   assert.match(httpTest, /F8-P0-004 aucune payment_reminders B créée/);
   assert.match(httpTest, /F8-P0-004 Superadmin request-scoped A ne paie pas B/);
   assert.match(httpTest, /F8-P0-004 Superadmin global conserve l'accès B/);
+  assert.match(httpTest, /F8-P1-006 Admin Pays CI paie A/);
+  assert.match(httpTest, /F8-P1-006 Admin Pays CI crée grille A/);
+  assert.match(httpTest, /F8-P1-006 Admin Pays CI refuse grille B/);
+  assert.match(httpTest, /CI-TRAP-26-001/);
+  assert.match(httpTest, /F8-P1-006 Admin Pays CI refuse paiement piège préfixe CI/);
 
   assert.match(cash, /void method/);
   assert.doesNotMatch(cash, /En attente de confirmation/);
