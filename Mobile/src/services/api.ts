@@ -857,6 +857,63 @@ export function sendClientsMessage(payload: Record<string, unknown>, options?: M
   });
 }
 
+export type CanonicalMessageRecipient = {
+  userId: string;
+  displayName: string;
+  roleLabel?: string;
+  kind?: string;
+  studentId?: string;
+  studentName?: string;
+  className?: string;
+};
+
+export async function getMessageRecipients(): Promise<CanonicalMessageRecipient[]> {
+  const data = await request<{ items?: CanonicalMessageRecipient[] } | CanonicalMessageRecipient[]>(
+    "/backoffice/messages/recipients",
+  );
+  if (Array.isArray(data)) return data;
+  return Array.isArray(data?.items) ? data.items : [];
+}
+
+export async function uploadCommunicationAttachment(file: {
+  uri: string;
+  name: string;
+  mimeType: string;
+}): Promise<{ id: string; fileName: string; mimeType?: string; fileSize?: number }> {
+  const token = await getAccessToken();
+  const root = resolveApiRootUrl().replace(/\/$/, "");
+  const blob = await (await fetch(file.uri)).blob();
+  const response = await fetch(`${root}/api/backoffice/communications/attachments`, {
+    method: "POST",
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      "Content-Type": file.mimeType || "application/octet-stream",
+      "X-Filename": file.name,
+    },
+    body: blob,
+  });
+  const data = (await response.json().catch(() => ({}))) as { message?: string; id?: string };
+  if (!response.ok || !data.id) {
+    throw new ApiClientError(String(data.message ?? "Échec de l'upload"));
+  }
+  return data as { id: string; fileName: string; mimeType?: string; fileSize?: number };
+}
+
+export async function downloadCommunicationAttachment(attachmentId: string, fileName: string): Promise<string> {
+  const token = await getAccessToken();
+  const root = resolveApiRootUrl().replace(/\/$/, "");
+  const target = `${FileSystem.cacheDirectory ?? FileSystem.documentDirectory ?? ""}${fileName}`;
+  const result = await FileSystem.downloadAsync(
+    `${root}/api/backoffice/communications/attachments/${encodeURIComponent(attachmentId)}`,
+    target,
+    { headers: token ? { Authorization: `Bearer ${token}` } : {} },
+  );
+  if (result.status !== 200) {
+    throw new ApiClientError("Téléchargement refusé");
+  }
+  return result.uri;
+}
+
 export function createClientsUser(payload: Record<string, unknown>) {
   return request<Record<string, unknown>>("/backoffice/users", {
     method: "POST",

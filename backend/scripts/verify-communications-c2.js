@@ -39,7 +39,20 @@ function sourceGuards() {
   assert.doesNotMatch(service, /payload\.senderUserId/);
   assert.match(attachments, /application\/pdf/);
   assert.match(attachments, /MAX_ATTACHMENT_BYTES/);
-  assert.match(server, /GET \/api\/backoffice\/conversations/);
+  assert.match(server, /GET \/api\/backoffice\/messages\/recipients/);
+  assert.match(rbac, /GET \/api\/backoffice\/messages\/recipients/);
+  assert.match(attachments, /SOMAFRIK_COMMUNICATION_STORAGE/);
+  assert.match(attachments, /isProductionEnv/);
+  assert.match(attachments, /removeStoredAttachment/);
+  assert.match(service, /listAuthorizedRecipients/);
+  assert.match(service, /effectiveSchoolCode/);
+  assert.match(service, /Établissement requis \(effectiveSchoolCode\)/);
+  assert.match(service, /function canBypassParticipation\(\) \{\s*return false;/);
+  assert.match(webApi, /messages\/recipients/);
+  assert.doesNotMatch(webPage, /clientsApi\.listUsers/);
+  assert.match(httpTest, /C2-13 Parent voit staff/);
+  assert.match(httpTest, /C2-14 Superadmin \* sans école/);
+  assert.match(httpTest, /C2-13 READ révoqué destinataires/);
   assert.match(server, /POST \/api\/backoffice\/conversations\/:conversationId\/messages/);
   assert.match(server, /communications\/attachments/);
   assert.match(rbac, /GET \/api\/backoffice\/conversations/);
@@ -59,6 +72,14 @@ function sourceGuards() {
   assert.match(httpTest, /C2-10 CREATE révoqué/);
   assert.match(httpTest, /C2-11 texte brut/);
   assert.match(httpTest, /C2-12 aucune mutation/);
+  const mobileScreen = read("Mobile/src/screens/MessagesScreen.tsx");
+  const mobilePayload = read("Mobile/src/lib/messageAttachments.ts");
+  assert.match(mobileScreen, /getMessageRecipients/);
+  assert.match(mobileScreen, /uploadCommunicationAttachment/);
+  assert.match(mobileScreen, /attachmentIds/);
+  assert.doesNotMatch(mobileScreen, /getCanonicalContacts/);
+  assert.match(mobilePayload, /buildMessagePayload/);
+  assert.match(mobilePayload, /client_attachment_url_forbidden/);
   console.log("verify-communications-c2: source guards OK");
 }
 
@@ -66,6 +87,7 @@ function main() {
   sourceGuards();
   run(process.execPath, ["backend/lib/communicationsAttachments.test.js"], "communicationsAttachments unit");
   run(process.execPath, ["backend/lib/clientsSecurity.test.js"], "clientsSecurity");
+  run("npx", ["--yes", "tsx", "Mobile/src/lib/messageAttachments.test.ts"], "messageAttachments payload");
   assert.ok(String(process.env.DATABASE_URL ?? "").trim(), "DATABASE_URL requis pour COM-C2");
   run(process.execPath, ["backend/lib/communicationsC2.http.pg.test.js"], "parcours HTTP PostgreSQL COM-C2");
   console.log("verify-communications-c2: GO — PostgreSQL réel inclus");

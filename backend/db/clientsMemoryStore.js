@@ -161,6 +161,13 @@ function createClientsMemoryStore(seed = {}) {
           ...userCountryProjection(row, school),
         };
       },
+      async listSchoolUsers(schoolId) {
+        return Promise.all(
+          tables.users
+            .filter((user) => user.school_id === schoolId && (user.status ?? "active") === "active")
+            .map((user) => this.getUserById(user.id)),
+        ).then((rows) => rows.filter(Boolean));
+      },
       async insertUser(row) {
         if (tables.users.some((user) => user.user_code === row.userCode)) {
           const error = new Error("duplicate user_code");
@@ -1166,6 +1173,10 @@ function createClientsMemoryStore(seed = {}) {
     unreadCountForPrincipal: (...args) => {
       const service = require("../lib/communicationsMessagesService");
       return service.unreadCount(store, ...args);
+    },
+    listMessageRecipientsForPrincipal: (...args) => {
+      const service = require("../lib/communicationsMessagesService");
+      return service.listAuthorizedRecipients(store, ...args);
     },
     uploadCommunicationAttachment: (...args) => {
       const service = require("../lib/communicationsMessagesService");

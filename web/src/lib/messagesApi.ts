@@ -55,7 +55,18 @@ export type ConversationSummary = {
   unreadCount?: number;
 };
 
+export type MessageRecipient = {
+  userId: string;
+  displayName: string;
+  roleLabel?: string;
+  studentId?: string;
+  studentName?: string;
+  className?: string;
+};
+
 export const messagesApi = {
+  listRecipients: () =>
+    api.get<{ items: MessageRecipient[] } | MessageRecipient[]>("/backoffice/messages/recipients"),
   listConversations: (query = "") =>
     api.get<{ items: ConversationSummary[]; nextCursor: string | null }>(
       `/backoffice/conversations${query}`,

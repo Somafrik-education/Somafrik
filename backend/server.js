@@ -2670,12 +2670,17 @@ app.patch("/api/parents/relations/:relationId", requireAuth, requirePermission("
 }));
 
 app.get("/api/backoffice/messages/unread-count", requireAuth, requirePermission("GET /api/backoffice/messages/unread-count"), asyncHandler(async (req, res) => {
-  const result = await repository.getClientMessagesUnreadCount(req.principal);
+  const result = await repository.getClientMessagesUnreadCount(req.principal, req.query);
+  res.json(result);
+}));
+
+app.get("/api/backoffice/messages/recipients", requireAuth, requirePermission("GET /api/backoffice/messages/recipients"), asyncHandler(async (req, res) => {
+  const result = await repository.listClientMessageRecipients(req.principal, req.query);
   res.json(result);
 }));
 
 app.get("/api/backoffice/messages/:messageId", requireAuth, requirePermission("GET /api/backoffice/messages/:messageId"), asyncHandler(async (req, res) => {
-  const row = await repository.getClientMessage(req.params.messageId, req.principal);
+  const row = await repository.getClientMessage(req.params.messageId, req.principal, req.query);
   res.json(row);
 }));
 
@@ -2729,7 +2734,7 @@ app.post("/api/backoffice/conversations", requireAuth, requirePermission("POST /
 }));
 
 app.get("/api/backoffice/conversations/:conversationId", requireAuth, requirePermission("GET /api/backoffice/conversations/:conversationId"), asyncHandler(async (req, res) => {
-  const row = await repository.getClientConversation(req.params.conversationId, req.principal);
+  const row = await repository.getClientConversation(req.params.conversationId, req.principal, req.query);
   res.json(row);
 }));
 
@@ -2769,13 +2774,13 @@ app.post(
       buffer,
       fileName,
       mimeType,
-    });
+    }, req.query);
     res.status(201).json(created);
   }),
 );
 
 app.get("/api/backoffice/communications/attachments/:attachmentId", requireAuth, requirePermission("GET /api/backoffice/communications/attachments/:attachmentId"), asyncHandler(async (req, res) => {
-  const file = await repository.downloadCommunicationAttachment(req.params.attachmentId, req.principal);
+  const file = await repository.downloadCommunicationAttachment(req.params.attachmentId, req.principal, req.query);
   res.setHeader("Content-Type", file.mimeType || "application/octet-stream");
   res.setHeader("Content-Disposition", `attachment; filename="${String(file.fileName).replace(/"/g, "")}"`);
   res.send(file.bytes);

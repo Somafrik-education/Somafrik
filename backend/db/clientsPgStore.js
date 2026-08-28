@@ -59,6 +59,16 @@ function createClientsPgStore(repo) {
           [id],
         );
       },
+      async listSchoolUsers(schoolId) {
+        return all(
+          `SELECT u.*, ${USER_SCHOOL_SELECT}, c.iso_code AS country_code, c.name AS country_name
+           FROM users u
+           LEFT JOIN schools s ON s.id = u.school_id
+           LEFT JOIN countries c ON c.id = s.country_id
+           WHERE u.school_id = $1 AND COALESCE(u.status, 'active') = 'active'`,
+          [schoolId],
+        );
+      },
       async insertUser(row) {
         return one(
           `INSERT INTO users (
@@ -1097,6 +1107,10 @@ function createClientsPgStore(repo) {
     unreadCountForPrincipal: (...args) => {
       const service = require("../lib/communicationsMessagesService");
       return service.unreadCount(store, ...args);
+    },
+    listMessageRecipientsForPrincipal: (...args) => {
+      const service = require("../lib/communicationsMessagesService");
+      return service.listAuthorizedRecipients(store, ...args);
     },
     uploadCommunicationAttachment: (...args) => {
       const service = require("../lib/communicationsMessagesService");

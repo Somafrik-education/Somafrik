@@ -15,6 +15,7 @@ const {
 const {
   validateUploadBuffer,
   persistAttachmentBytes,
+  removeStoredAttachment,
   readAttachmentBytes,
   mapAttachmentRow,
 } = require("./communicationsAttachments");
@@ -100,11 +101,22 @@ async function writeClientsAudit(tx, principal, auditMeta, entry) {
 }
 
 function resolveWritableSchoolCode(principal, rawPayload) {
-  let schoolCode = asTrimmed(principal?.schoolCode);
+  const requested = asTrimmed(
+    rawPayload?.effectiveSchoolCode || rawPayload?.schoolCode || rawPayload?.school_code,
+  ).toUpperCase();
+  const principalCode = asTrimmed(principal?.schoolCode).toUpperCase();
   if (isSuperAdminPrincipal(principal) || isCountryAdminPrincipal(principal)) {
-    schoolCode = asTrimmed(rawPayload.schoolCode || rawPayload.schoolId || schoolCode);
+    const schoolCode = requested && requested !== "*" ? requested : principalCode;
+    if (!schoolCode || schoolCode === "*") {
+      throw createClientsError(
+        400,
+        "Établissement requis (effectiveSchoolCode).",
+        CLIENTS_ERROR.TENANT_MISMATCH,
+      );
+    }
+    return schoolCode;
   }
-  return schoolCode.toUpperCase();
+  return principalCode;
 }
 
 async function requireSchool(store, principal, rawPayload = {}) {
@@ -243,6 +255,66 @@ async function collectRecipients(tx, school, payload, sender, senderKind) {
     await assertCanMessageRecipient(tx, { school, sender, senderKind, recipientUserId, studentRef });
   }
   return ids;
+}
+
+async function loadRecipientContext(tx, school, sender, senderKind, recipient, recipientKind) {
+  const context = {};
+  if (senderKind === "parent" && recipientKind === "teacher") {
+    const linked =
+      typeof tx.listParentLinkedStudentIds === "function"
+        ? await tx.listParentLinkedStudentIds(sender.id, school.id)
+        : [];
+    for (const studentId of linked) {
+      const ok =
+        typeof tx.teacherAssignedToStudents === "function"
+          ? await tx.teacherAssignedToStudents(recipient.id, school.id, [studentId])
+          : false;
+      if (!ok) continue;
+      const student = await tx.resolveSchoolStudent(school.id, studentId);
+      if (student) {
+        context.studentId = student.id;
+        context.studentName =
+          asTrimmed(`${student.first_name ?? ""} ${student.last_name ?? ""}`) || student.student_code || "";
+      }
+      break;
+    }
+  }
+  return context;
+}
+
+async function listAuthorizedRecipients(store, principal, query = {}) {
+  const senderUserId = actorUserId(principal);
+  if (!senderUserId) throw createClientsError(403, "Non authentifié.", CLIENTS_ERROR.FORBIDDEN);
+  const { school, tx } = await requireSchool(store, principal, query);
+  const sender = await tx.getUserById(senderUserId);
+  if (!sender) throw createClientsError(403, "Expéditeur non autorisé.", CLIENTS_ERROR.FORBIDDEN);
+  const senderKind = await loadKind(tx, sender);
+  const users = typeof tx.listSchoolUsers === "function" ? await tx.listSchoolUsers(school.id) : [];
+  const items = [];
+  for (const recipient of users) {
+    if (!recipient?.id || String(recipient.id) === String(sender.id)) continue;
+    try {
+      await assertCanMessageRecipient(tx, {
+        school,
+        sender,
+        senderKind,
+        recipientUserId: recipient.id,
+      });
+    } catch (error) {
+      if (Number(error?.statusCode) === 403 || Number(error?.statusCode) === 404) continue;
+      throw error;
+    }
+    const kind = await loadKind(tx, recipient);
+    const context = await loadRecipientContext(tx, school, sender, senderKind, recipient, kind);
+    items.push({
+      userId: recipient.id,
+      displayName: displayName(recipient),
+      roleLabel: recipient.role || "",
+      kind,
+      ...context,
+    });
+  }
+  return { items };
 }
 
 function mapHistoryMessage(row, extras = {}) {
@@ -478,14 +550,14 @@ async function markMessageRead(store, messageId, principal, auditMeta) {
   });
 }
 
-function canBypassParticipation(principal) {
-  return isSuperAdminPrincipal(principal) && asTrimmed(principal?.schoolCode) === "*";
+function canBypassParticipation() {
+  return false;
 }
 
 async function listConversations(store, principal, query = {}) {
   const senderUserId = actorUserId(principal);
   if (!senderUserId) throw createClientsError(403, "Non authentifié.", CLIENTS_ERROR.FORBIDDEN);
-  const { school, schoolCode, tx } = await requireSchool(store, principal, {});
+  const { school, schoolCode, tx } = await requireSchool(store, principal, query);
   const limit = parseLimit(query);
   const cursor = parseCursor(query.cursor);
   if (typeof tx.listConversationsForUser !== "function") {
@@ -531,10 +603,10 @@ async function listConversations(store, principal, query = {}) {
   };
 }
 
-async function getConversation(store, conversationId, principal) {
+async function getConversation(store, conversationId, principal, query = {}) {
   const userId = actorUserId(principal);
   if (!userId) throw createClientsError(403, "Non authentifié.", CLIENTS_ERROR.FORBIDDEN);
-  const { school, schoolCode, tx } = await requireSchool(store, principal, {});
+  const { school, schoolCode, tx } = await requireSchool(store, principal, query);
   const conversation = await loadConversation(tx, conversationId);
   if (conversation.school_id !== school.id && !canBypassParticipation(principal)) throw notFound();
   if (!canBypassParticipation(principal)) {
@@ -557,7 +629,7 @@ async function getConversation(store, conversationId, principal) {
 async function listConversationMessages(store, conversationId, principal, query = {}) {
   const userId = actorUserId(principal);
   if (!userId) throw createClientsError(403, "Non authentifié.", CLIENTS_ERROR.FORBIDDEN);
-  const { school, tx } = await requireSchool(store, principal, {});
+  const { school, tx } = await requireSchool(store, principal, query);
   const conversation = await loadConversation(tx, conversationId);
   if (conversation.school_id !== school.id && !canBypassParticipation(principal)) throw notFound();
   if (!canBypassParticipation(principal)) {
@@ -594,7 +666,7 @@ async function listConversationMessages(store, conversationId, principal, query 
 async function listMessages(store, principal, query = {}) {
   const userId = actorUserId(principal);
   if (!userId) throw createClientsError(403, "Non authentifié.", CLIENTS_ERROR.FORBIDDEN);
-  const { school, tx } = await requireSchool(store, principal, {});
+  const { school, tx } = await requireSchool(store, principal, query);
   if (typeof tx.listMessagesForUser !== "function") return [];
   const rows = await tx.listMessagesForUser({
     userId,
@@ -611,10 +683,10 @@ async function listMessages(store, principal, query = {}) {
   );
 }
 
-async function getMessage(store, messageId, principal) {
+async function getMessage(store, messageId, principal, query = {}) {
   const userId = actorUserId(principal);
   if (!userId) throw createClientsError(403, "Non authentifié.", CLIENTS_ERROR.FORBIDDEN);
-  const { school, tx } = await requireSchool(store, principal, {});
+  const { school, tx } = await requireSchool(store, principal, query);
   const message = await tx.getMessageById(messageId);
   if (!message || (message.school_id !== school.id && !canBypassParticipation(principal))) {
     throw createClientsError(404, "Message introuvable.", CLIENTS_ERROR.MESSAGE_NOT_FOUND);
@@ -638,52 +710,64 @@ async function getMessage(store, messageId, principal) {
   );
 }
 
-async function unreadCount(store, principal) {
+async function unreadCount(store, principal, query = {}) {
   const userId = actorUserId(principal);
   if (!userId) throw createClientsError(403, "Non authentifié.", CLIENTS_ERROR.FORBIDDEN);
-  const { school, tx } = await requireSchool(store, principal, {});
+  const { school, tx } = await requireSchool(store, principal, query);
   if (typeof tx.countUnreadForUser !== "function") return { count: 0 };
   const count = await tx.countUnreadForUser(userId, school.id);
   return { count: Number(count) || 0 };
 }
 
-async function uploadAttachment(store, principal, { buffer, fileName, mimeType }) {
+async function uploadAttachment(store, principal, { buffer, fileName, mimeType }, query = {}) {
   const userId = actorUserId(principal);
   if (!userId) throw createClientsError(403, "Non authentifié.", CLIENTS_ERROR.FORBIDDEN);
   const validated = validateUploadBuffer(buffer, mimeType, fileName);
-  return store.withTransaction(async (tx) => {
-    const { school, schoolCode } = await requireSchool(store, principal, {});
-    const sender = await tx.getUserById(userId);
-    if (!sender || (sender.school_id && sender.school_id !== school.id && !isSuperAdminPrincipal(principal))) {
-      throw createClientsError(403, "Expéditeur non autorisé.", CLIENTS_ERROR.FORBIDDEN);
-    }
-    const storageKey = await persistAttachmentBytes(school.id, buffer);
-    const saved = await tx.insertAttachment({
-      schoolId: school.id,
-      entityType: "message",
-      entityId: null,
-      fileName: validated.fileName,
-      mimeType: validated.mimeType,
-      fileSize: validated.fileSize,
-      storageKey,
-      uploadedByUserId: userId,
-      status: "uploaded",
+  let storageKey = "";
+  try {
+    return await store.withTransaction(async (tx) => {
+      const { school, schoolCode } = await requireSchool(store, principal, query);
+      const sender = await tx.getUserById(userId);
+      if (!sender || (sender.school_id && sender.school_id !== school.id && !isSuperAdminPrincipal(principal))) {
+        throw createClientsError(403, "Expéditeur non autorisé.", CLIENTS_ERROR.FORBIDDEN);
+      }
+      storageKey = await persistAttachmentBytes(school.id, buffer);
+      try {
+        const saved = await tx.insertAttachment({
+          schoolId: school.id,
+          entityType: "message",
+          entityId: null,
+          fileName: validated.fileName,
+          mimeType: validated.mimeType,
+          fileSize: validated.fileSize,
+          storageKey,
+          uploadedByUserId: userId,
+          status: "uploaded",
+        });
+        await writeClientsAudit(tx, principal, {}, {
+          schoolCode,
+          action: "upload_communication_attachment",
+          entityType: "attachment",
+          entityId: saved.id,
+          newValue: mapAttachmentRow(saved),
+        });
+        return mapAttachmentRow(saved);
+      } catch (error) {
+        await removeStoredAttachment(storageKey);
+        storageKey = "";
+        throw error;
+      }
     });
-    await writeClientsAudit(tx, principal, {}, {
-      schoolCode,
-      action: "upload_communication_attachment",
-      entityType: "attachment",
-      entityId: saved.id,
-      newValue: mapAttachmentRow(saved),
-    });
-    return mapAttachmentRow(saved);
-  });
+  } catch (error) {
+    if (storageKey) await removeStoredAttachment(storageKey);
+    throw error;
+  }
 }
 
-async function downloadAttachment(store, attachmentId, principal) {
+async function downloadAttachment(store, attachmentId, principal, query = {}) {
   const userId = actorUserId(principal);
   if (!userId) throw createClientsError(403, "Non authentifié.", CLIENTS_ERROR.FORBIDDEN);
-  const { school, tx } = await requireSchool(store, principal, {});
+  const { school, tx } = await requireSchool(store, principal, query);
   const attachment = await tx.getAttachmentById(attachmentId);
   if (!attachment || attachment.school_id !== school.id) {
     throw createClientsError(404, "Pièce jointe introuvable.", CLIENTS_ERROR.FORBIDDEN);
@@ -721,6 +805,7 @@ module.exports = {
   getConversation,
   listConversationMessages,
   listMessages,
+  listAuthorizedRecipients,
   getMessage,
   unreadCount,
   uploadAttachment,

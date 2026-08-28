@@ -27,6 +27,7 @@ const PARENT_A = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa93";
 const PARENT_A2 = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa94";
 const ADMIN_B = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa95";
 const PARENT_B = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa96";
+const SUPER_SA = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa98";
 const CLASS_A = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbb91";
 const SAME_TS = "2026-08-28T10:00:00.000Z";
 
@@ -244,8 +245,9 @@ async function seed(pool) {
        ($4, $8, 'PAR-COM-A', 'Parent', 'A', 'par-com-a@test.local', 'Parent', 'active', FALSE),
        ($5, $8, 'PAR-COM-A2', 'Parent', 'A2', 'par-com-a2@test.local', 'Parent', 'active', FALSE),
        ($6, $9, 'ADM-COM-B', 'Admin', 'B', 'adm-com-b@test.local', 'Admin School', 'active', FALSE),
-       ($7, $9, 'PAR-COM-B', 'Parent', 'B', 'par-com-b@test.local', 'Parent', 'active', FALSE)`,
-    [ADMIN_A, TEACHER_A, TEACHER_A2, PARENT_A, PARENT_A2, ADMIN_B, PARENT_B, schoolA.id, schoolB.id],
+       ($7, $9, 'PAR-COM-B', 'Parent', 'B', 'par-com-b@test.local', 'Parent', 'active', FALSE),
+       ($10, NULL, 'SUPER-COM', 'Super', 'Admin', 'super-com@test.local', 'Super Administrateur Somafrik', 'active', FALSE)`,
+    [ADMIN_A, TEACHER_A, TEACHER_A2, PARENT_A, PARENT_A2, ADMIN_B, PARENT_B, schoolA.id, schoolB.id, SUPER_SA],
   );
   await pool.query(
     `INSERT INTO user_roles (user_id, school_id, role_key, status)
@@ -256,8 +258,9 @@ async function seed(pool) {
        ($4, $8, 'PARENT', 'active'),
        ($5, $8, 'PARENT', 'active'),
        ($6, $9, 'SCHOOL_ADMIN', 'active'),
-       ($7, $9, 'PARENT', 'active')`,
-    [ADMIN_A, TEACHER_A, TEACHER_A2, PARENT_A, PARENT_A2, ADMIN_B, PARENT_B, schoolA.id, schoolB.id],
+       ($7, $9, 'PARENT', 'active'),
+       ($10, NULL, 'SUPER_ADMIN', 'active')`,
+    [ADMIN_A, TEACHER_A, TEACHER_A2, PARENT_A, PARENT_A2, ADMIN_B, PARENT_B, schoolA.id, schoolB.id, SUPER_SA],
   );
 
   await pool.query(
@@ -398,6 +401,16 @@ async function main() {
       tokens,
       claims({ sub: PARENT_B, schoolCode: "SCH-COM-B", role: "Parent", roleKeys: ["PARENT"] }),
     );
+    const superSa = mintAccess(
+      tokens,
+      claims({
+        sub: SUPER_SA,
+        schoolCode: "*",
+        role: "Super Administrateur Somafrik",
+        roleKeys: ["SUPER_ADMIN"],
+        permissions: ["ALL_PRIVILEGES"],
+      }),
+    );
 
     const created = await request("/backoffice/conversations", {
       method: "POST",
@@ -460,6 +473,64 @@ async function main() {
       body: { message: "B vers parent A", participantUserIds: [PARENT_A], schoolCode: "SCH-COM-A" },
     });
     assert.ok([403, 404].includes(bCreate.status), `C2-02 Admin B: ${bCreate.status}`);
+
+    function recipientIds(data) {
+      return unwrapList(data).map((row) => String(row.userId || row.id));
+    }
+    const parentUsers = await request("/backoffice/users", { token: parentA });
+    assert.ok([401, 403, 404].includes(parentUsers.status), `C2-13 Parent sans Utilisateurs:READ: ${parentUsers.status}`);
+    const parentRecipients = await request("/backoffice/messages/recipients", { token: parentA });
+    assert.equal(parentRecipients.status, 200, `C2-13 Parent recipients: ${JSON.stringify(parentRecipients.data)}`);
+    const parentIds = recipientIds(parentRecipients.data);
+    assert.ok(parentIds.includes(ADMIN_A), "C2-13 Parent voit staff");
+    assert.ok(parentIds.includes(TEACHER_A), "C2-13 Parent voit enseignant lié");
+    assert.ok(!parentIds.includes(TEACHER_A2), "C2-13 Parent ne voit pas enseignant hors contexte");
+    assert.ok(!parentIds.includes(PARENT_A2), "C2-13 Parent ne voit pas Parent A2");
+    assert.ok(!parentIds.includes(ADMIN_B) && !parentIds.includes(PARENT_B), "C2-13 Parent ne voit jamais école B");
+    const teacherRecipients = await request("/backoffice/messages/recipients", { token: teacherA });
+    assert.equal(teacherRecipients.status, 200);
+    const teacherIds = recipientIds(teacherRecipients.data);
+    assert.ok(teacherIds.includes(PARENT_A), "C2-13 Teacher voit parent de ses élèves");
+    assert.ok(teacherIds.includes(ADMIN_A), "C2-13 Teacher voit staff");
+    assert.ok(!teacherIds.includes(PARENT_A2), "C2-13 Teacher ne voit pas parent hors affectation");
+    const adminRecipients = await request("/backoffice/messages/recipients", { token: adminA });
+    assert.equal(adminRecipients.status, 200);
+    const adminIds = recipientIds(adminRecipients.data);
+    assert.ok(adminIds.includes(PARENT_A) && adminIds.includes(TEACHER_A), "C2-13 Admin destinataires établissement");
+    const bRecipients = await request("/backoffice/messages/recipients", { token: parentB });
+    const bRecipientIds = recipientIds(bRecipients.data);
+    assert.ok(!bRecipientIds.includes(PARENT_A) && !bRecipientIds.includes(ADMIN_A), "C2-13 école B isolée");
+
+    const superNoSchool = await request("/backoffice/conversations", { token: superSa });
+    assert.equal(superNoSchool.status, 400, `C2-14 Superadmin * sans école: ${superNoSchool.status}`);
+    const superScoped = await request("/backoffice/conversations?effectiveSchoolCode=SCH-COM-A", { token: superSa });
+    assert.equal(superScoped.status, 200, `C2-14 Superadmin scoped: ${JSON.stringify(superScoped.data)}`);
+    const superCreateBare = await request("/backoffice/messages", {
+      method: "POST",
+      token: superSa,
+      body: { message: "global fantôme", participantUserIds: [PARENT_A] },
+    });
+    assert.equal(superCreateBare.status, 400, "C2-14 création sans école refusée");
+    const superCreate = await request("/backoffice/messages", {
+      method: "POST",
+      token: superSa,
+      body: {
+        message: "Superadmin request-scoped",
+        participantUserIds: [PARENT_A],
+        effectiveSchoolCode: "SCH-COM-A",
+      },
+    });
+    assert.equal(superCreate.status, 201, `C2-14 Superadmin crée dans A: ${JSON.stringify(superCreate.data)}`);
+    const superWrongSchool = await request(
+      `/backoffice/conversations/${superCreate.data.conversationId}?effectiveSchoolCode=SCH-COM-B`,
+      { token: superSa },
+    );
+    assert.ok([403, 404].includes(superWrongSchool.status), `C2-14 Superadmin B sur fil A: ${superWrongSchool.status}`);
+    const superRightSchool = await request(
+      `/backoffice/conversations/${superCreate.data.conversationId}?effectiveSchoolCode=SCH-COM-A`,
+      { token: superSa },
+    );
+    assert.equal(superRightSchool.status, 200, "C2-14 Superadmin A voit son fil");
 
     const reply2 = await request(`/backoffice/conversations/${conversationId}/messages`, {
       method: "POST",
@@ -657,6 +728,8 @@ async function main() {
     assert.equal(msgAfter, msgBefore, "C2-10 aucune row");
     const listRevoked = await request("/backoffice/conversations", { token: adminA });
     assert.equal(listRevoked.status, 403, "C2-10 READ révoqué");
+    const recipientsRevoked = await request("/backoffice/messages/recipients", { token: adminA });
+    assert.equal(recipientsRevoked.status, 403, "C2-13 READ révoqué destinataires");
     await grantMessages(pool, "SCHOOL_ADMIN", true);
 
     console.log("OK communicationsC2.http.pg.test.js — parcours COM-C2 PostgreSQL réel");

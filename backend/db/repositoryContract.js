@@ -166,6 +166,7 @@ const REPOSITORY_METHODS = Object.freeze([
   "createClientConversation",
   "replyClientConversationMessage",
   "getClientMessagesUnreadCount",
+  "listClientMessageRecipients",
   "uploadCommunicationAttachment",
   "downloadCommunicationAttachment",
   "createClientsAnnouncement",

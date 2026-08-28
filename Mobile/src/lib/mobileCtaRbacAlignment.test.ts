@@ -87,7 +87,7 @@ const staffCreate = liveSession({
   permissions: ["Messages:CREATE"],
 });
 assert.equal(canAccessBackofficeMessagesComposer(staffCreate), true, "staff CREATE => composer API");
-assert.equal(canShowStaffMessagesComposer(staffCreate), false, "CREATE-only sans source destinataires => fail-closed");
+assert.equal(canShowStaffMessagesComposer(staffCreate), true, "CREATE-only utilise GET messages/recipients");
 assert.equal(canAccessCanonicalMessageRecipients(staffCreate), false);
 assert.equal(canReadBackofficeMessagesList(staffCreate), false, "CREATE ne devient pas READ");
 assert.equal(canAccessMessagesRoute(staffCreate), true, "staff CREATE sans READ => route atteignable");
@@ -232,7 +232,7 @@ const explicit = buildStaffSchoolToParentMessagePayload({
   schoolCode: "CD-IN-26-001",
   theme: "Absence",
   message: "Convocation",
-  attachmentUrl: "https://example.test/a.pdf",
+  attachmentIds: ["att-pdf"],
   priority: "Haute",
 });
 assert.equal(explicit.ok, true);
@@ -241,7 +241,8 @@ if (explicit.ok) {
   assert.deepEqual(explicit.payload.participantUserIds, ["user-parent-cd"]);
   assert.equal(explicit.payload.direction, "École vers parent");
   assert.equal(explicit.payload.message, "Convocation");
-  assert.equal(explicit.payload.attachmentUrl, "https://example.test/a.pdf");
+  assert.deepEqual(explicit.payload.attachmentIds, ["att-pdf"]);
+  assert.equal(explicit.payload.attachmentUrl, undefined);
   assert.equal(explicit.payload.parentPhone, undefined);
 }
 
@@ -304,7 +305,7 @@ const gererMessages = liveSession({
 });
 assert.equal(canAccessBackofficeMessagesComposer(gererMessages), true);
 assert.equal(canReadBackofficeMessagesList(gererMessages), true, "Gérer messages => liste OK");
-assert.equal(canShowStaffMessagesComposer(gererMessages), false);
+assert.equal(canShowStaffMessagesComposer(gererMessages), true);
 
 assert.equal(
   canReadBackofficeMessagesList(
@@ -464,7 +465,7 @@ assert.equal(
     }),
   ),
   true,
-  "Gérer utilisateurs autorise Contacts+Relations donc le composer staff RC1",
+  "Messages:CREATE suffit pour le composer staff ; destinataires = GET /messages/recipients",
 );
 
 assert.equal(MOBILE_GENERIC_ADMIN_CRUD_IN_RC1, false);

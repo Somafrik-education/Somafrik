@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "../context/AuthContext";
 import { useFeaturePermissions } from "../lib/usePermissionContext";
-import { clientsApi } from "../lib/clientsApi";
 import {
   messagesApi,
   type ConversationMessage,
   type ConversationSummary,
   type MessageAttachment,
+  type MessageRecipient,
 } from "../lib/messagesApi";
 import { Card, SectionHeader } from "../components/ui/Card";
 import { Button } from "../components/ui/Button";
@@ -43,7 +43,7 @@ export function MessagesConversationsPage() {
   const [messages, setMessages] = useState<ConversationMessage[]>([]);
   const [draft, setDraft] = useState("");
   const [recipientId, setRecipientId] = useState("");
-  const [users, setUsers] = useState<Array<{ id: string; firstName?: string; lastName?: string }>>([]);
+  const [users, setUsers] = useState<MessageRecipient[]>([]);
   const [pendingFiles, setPendingFiles] = useState<MessageAttachment[]>([]);
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState("");
@@ -73,10 +73,13 @@ export function MessagesConversationsPage() {
     void loadConversations().catch((error) => {
       showToast(error instanceof ApiError ? error.message : "Impossible de charger les conversations", "error");
     });
-    void clientsApi.listUsers().then((rows) => {
-      const list = Array.isArray(rows) ? rows : [];
-      setUsers(list as Array<{ id: string; firstName?: string; lastName?: string }>);
-    }).catch(() => setUsers([]));
+    void messagesApi.listRecipients().then((rows) => {
+      const list = Array.isArray(rows) ? rows : rows?.items ?? [];
+      setUsers(list);
+    }).catch((error) => {
+      setUsers([]);
+      showToast(error instanceof ApiError ? error.message : "Impossible de charger les destinataires", "error");
+    });
   }, [loadConversations, showToast]);
 
   useEffect(() => {
@@ -237,10 +240,10 @@ export function MessagesConversationsPage() {
                 >
                   <option value="">Choisir…</option>
                   {users
-                    .filter((user) => user.id !== selfId)
+                    .filter((user) => user.userId !== selfId)
                     .map((user) => (
-                      <option key={user.id} value={user.id}>
-                        {[user.firstName, user.lastName].filter(Boolean).join(" ") || user.id}
+                      <option key={user.userId} value={user.userId}>
+                        {user.displayName || user.roleLabel || user.userId}
                       </option>
                     ))}
                 </select>

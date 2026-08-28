@@ -2,6 +2,7 @@ import { useCallback, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  Linking,
   Modal,
   RefreshControl,
   ScrollView,
@@ -11,6 +12,8 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import * as ImagePicker from "expo-image-picker";
+import * as DocumentPicker from "expo-document-picker";
 import FormField from "../components/FormField";
 import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect } from "@react-navigation/native";
@@ -21,16 +24,13 @@ import { useAuth } from "../context/AuthContext";
 import { messageThemes } from "../data/catalog";
 import { MessagePriority, MessageService } from "../domain/communication/MessageService";
 import {
-  buildStaffSchoolToParentMessagePayload,
   canShowStaffMessagesComposer,
-  resolveCanonicalStaffRecipients,
   resolveMessagesRouteAccess,
-  type CanonicalStaffRecipient,
 } from "../lib/mobileCtaRbacAlignment";
-import { ALL_SCHOOLS_CODE } from "../lib/activeSchool";
-import { classNameMatches, scopedStudentsForSession } from "../lib/establishment";
+import { buildMessagePayload, collectSuccessfulAttachmentIds, isAllowedMessageAttachmentMime } from "../lib/messageAttachments";
+import { scopedStudentsForSession } from "../lib/establishment";
 import { useFloatingTabBarLayout } from "../lib/screenLayout";
-import { sendClientsMessage } from "../services/api";
+import { sendClientsMessage, getMessageRecipients, uploadCommunicationAttachment, downloadCommunicationAttachment } from "../services/api";
 import { createInFlightLock, createIntentionStore } from "../lib/mutationGuard";
 import { NETWORK_COPY } from "../lib/networkResilience";
 import { submitProtectedMutation } from "../lib/outbox";
@@ -43,12 +43,8 @@ import {
   snapshotFromSuccess,
   type ResourceSnapshot,
 } from "../lib/dataTruth";
-import {
-  getCanonicalContacts,
-  getCanonicalRelations,
-  markCanonicalMessageRead,
-  type CanonicalSchoolMessage,
-} from "../services/domainHydrationApi";
+import { markCanonicalMessageRead, type CanonicalSchoolMessage } from "../services/domainHydrationApi";
+import type { CanonicalMessageRecipient } from "../services/api";
 
 const messageService = new MessageService();
 const priorities: MessagePriority[] = ["Faible", "Moyenne", "Haute", "Critique"];
@@ -62,11 +58,8 @@ export default function MessagesScreen() {
     classesData,
     messagesSnapshot,
     loadMessages,
-    teachersSnapshot,
-    loadTeachers,
     assignmentsSnapshot,
     resourceScopeKey,
-    activeSchoolCode,
   } = useAdminData();
 
   const [theme, setTheme] = useState(messageThemes[0]);
@@ -74,12 +67,10 @@ export default function MessagesScreen() {
   const [messageError, setMessageError] = useState("");
   const [priority, setPriority] = useState<MessagePriority>("Moyenne");
   const [query, setQuery] = useState("");
-  const [recipient, setRecipient] = useState<"school" | "teacher">("school");
-  const [selectedTeacherId, setSelectedTeacherId] = useState("");
-  const [teacherStudentId, setTeacherStudentId] = useState("");
-  const [staffRecipientKey, setStaffRecipientKey] = useState("");
-  const [staffRecipientSnapshot, setStaffRecipientSnapshot] =
-    useState<ResourceSnapshot<CanonicalStaffRecipient>>(emptyResourceSnapshot());
+  const [selectedRecipientUserId, setSelectedRecipientUserId] = useState("");
+  const [recipientSnapshot, setRecipientSnapshot] =
+    useState<ResourceSnapshot<CanonicalMessageRecipient>>(emptyResourceSnapshot());
+  const [pendingAttachments, setPendingAttachments] = useState<Array<{ id: string; fileName: string }>>([]);
   const [selectedMessage, setSelectedMessage] = useState<CanonicalSchoolMessage | null>(null);
   const [sending, setSending] = useState(false);
   const [sendHint, setSendHint] = useState("");
@@ -92,65 +83,45 @@ export default function MessagesScreen() {
   const canSend = messagesAccess.canCompose;
   const showStaffComposer = canShowStaffMessagesComposer(session);
   const showComposer = ((role === "parent_student" || role === "teacher") && canSend) || showStaffComposer;
-  const staffComposerBlocked = Boolean(canSend && role !== "parent_student" && role !== "teacher" && !showStaffComposer);
-  const staffSendBlocked =
-    showStaffComposer && (staffRecipientSnapshot.status !== "success" || !staffRecipientKey);
   const parentPhone = session?.user.parentPhone ?? session?.user.children?.[0]?.parentPhone ?? "";
   const parentChildren = session?.user.children ?? [];
-  const teachersData = teachersSnapshot.data;
   const teacherScopeState = {
-    teachers: teachersData,
+    teachers: [],
     assignments: assignmentsData,
     classes: classesData,
     assignmentsSource: assignmentsSnapshot.source,
   };
   const teacherStudents = scopedStudentsForSession(session, studentsData, teacherScopeState);
-  const recipientSchoolCode =
-    activeSchoolCode && activeSchoolCode !== ALL_SCHOOLS_CODE
-      ? activeSchoolCode
-      : String(session?.school?.code ?? session?.user.schoolCode ?? "");
+  const staffSendBlocked =
+    showComposer &&
+    !selectedMessage?.conversationId &&
+    (recipientSnapshot.status !== "success" || !selectedRecipientUserId);
 
-  const loadStaffRecipients = useCallback(async () => {
-    if (!showStaffComposer) {
-      setStaffRecipientSnapshot(emptyResourceSnapshot());
-      setStaffRecipientKey("");
+  const loadCanonicalRecipients = useCallback(async () => {
+    if (!canSend) {
+      setRecipientSnapshot(emptyResourceSnapshot());
+      setSelectedRecipientUserId("");
       return;
     }
-    setStaffRecipientSnapshot({ status: "loading", data: [] });
-    setStaffRecipientKey("");
+    setRecipientSnapshot({ status: "loading", data: [] });
     try {
-      const [contacts, relations] = await Promise.all([getCanonicalContacts(), getCanonicalRelations()]);
-      setStaffRecipientSnapshot(
-        snapshotFromSuccess(
-          resolveCanonicalStaffRecipients({
-            contacts,
-            relations,
-            schoolCode: recipientSchoolCode,
-          }),
-        ),
+      const rows = await getMessageRecipients();
+      setRecipientSnapshot(snapshotFromSuccess(rows));
+      setSelectedRecipientUserId((current) =>
+        rows.some((row) => row.userId === current) ? current : "",
       );
     } catch (error) {
-      setStaffRecipientSnapshot(snapshotFromFailure(error, []));
+      setRecipientSnapshot(snapshotFromFailure(error, []));
+      setSelectedRecipientUserId("");
     }
-  }, [recipientSchoolCode, showStaffComposer]);
+  }, [canSend]);
 
   useFocusEffect(
     useCallback(() => {
       if (canRead) void loadMessages();
-      if (role === "parent_student" || role === "teacher") void loadTeachers();
-      if (showStaffComposer) void loadStaffRecipients();
-    }, [canRead, loadMessages, loadStaffRecipients, loadTeachers, role, resourceScopeKey, showStaffComposer]),
+      if (canSend) void loadCanonicalRecipients();
+    }, [canRead, canSend, loadMessages, loadCanonicalRecipients, resourceScopeKey]),
   );
-
-  const availableTeachers = useMemo(() => {
-    if (role !== "parent_student") return teachersData;
-    const childrenClasses = parentChildren.map((child) => child.className);
-    return teachersData.filter((teacher) =>
-      (teacher.assignments ?? []).some((assignment) =>
-        childrenClasses.some((className) => classNameMatches(assignment.className, className)),
-      ),
-    );
-  }, [parentChildren, role, teachersData]);
 
   const roleMessages = useMemo(() => {
     const messages = messagesSnapshot.data;
@@ -178,18 +149,78 @@ export default function MessagesScreen() {
   );
   const unreadCount = messageService.countUnreadForRole(role, session, visibleMessages);
 
+  const pickAndUploadAttachments = async () => {
+    try {
+      const picked = await DocumentPicker.getDocumentAsync({
+        type: ["application/pdf", "image/jpeg", "image/png"],
+        copyToCacheDirectory: true,
+        multiple: true,
+      });
+      if (picked.canceled) return;
+      const assets = picked.assets ?? [];
+      const uploads: Array<{ ok: boolean; id?: string }> = [];
+      for (const asset of assets) {
+        const mimeType = asset.mimeType || "";
+        if (!isAllowedMessageAttachmentMime(mimeType)) {
+          Alert.alert("Fichier refusé", "Seuls PDF, JPEG et PNG sont acceptés.");
+          return;
+        }
+        try {
+          const saved = await uploadCommunicationAttachment({
+            uri: asset.uri,
+            name: asset.name || "fichier",
+            mimeType,
+          });
+          uploads.push({ ok: true, id: saved.id });
+          setPendingAttachments((current) => [...current, { id: saved.id, fileName: saved.fileName || asset.name || saved.id }]);
+        } catch (error) {
+          uploads.push({ ok: false });
+          Alert.alert("Upload échoué", error instanceof Error ? error.message : "Impossible d'envoyer la pièce jointe.");
+          return;
+        }
+      }
+      const collected = collectSuccessfulAttachmentIds(uploads);
+      if (!collected.ok) {
+        Alert.alert("Upload échoué", "Le message n'a pas été envoyé.");
+      }
+    } catch (error) {
+      Alert.alert("Pièce jointe", error instanceof Error ? error.message : "Sélection impossible.");
+    }
+  };
+
+  const pickImageAttachment = async () => {
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permission.granted) {
+      Alert.alert("Photos", "Autorisez l'accès à la galerie pour joindre une image.");
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      quality: 0.9,
+    });
+    if (result.canceled || !result.assets[0]) return;
+    const asset = result.assets[0];
+    const mimeType = asset.mimeType || "image/jpeg";
+    if (!isAllowedMessageAttachmentMime(mimeType)) {
+      Alert.alert("Fichier refusé", "Seuls PDF, JPEG et PNG sont acceptés.");
+      return;
+    }
+    try {
+      const saved = await uploadCommunicationAttachment({
+        uri: asset.uri,
+        name: asset.fileName || "image.jpg",
+        mimeType,
+      });
+      setPendingAttachments((current) => [...current, { id: saved.id, fileName: saved.fileName || saved.id }]);
+    } catch (error) {
+      Alert.alert("Upload échoué", error instanceof Error ? error.message : "Impossible d'envoyer la pièce jointe.");
+    }
+  };
+
   const sendMessage = async () => {
     if (!sendLockRef.current.tryBegin()) return;
     if (!canSend) {
       sendLockRef.current.end();
-      return;
-    }
-    if (staffComposerBlocked) {
-      sendLockRef.current.end();
-      Alert.alert(
-        "Rédaction indisponible",
-        "Messages:CREATE seul ne permet pas de choisir un destinataire. Contacts:READ et Relations:READ sont requis. Aucun message n'a été envoyé.",
-      );
       return;
     }
     if (!message.trim()) {
@@ -198,92 +229,28 @@ export default function MessagesScreen() {
       return;
     }
     setMessageError("");
-
-    let payload: Record<string, unknown> | null = null;
-    if (role === "parent_student") {
-      const teacherId = recipient === "teacher" ? selectedTeacherId || availableTeachers[0]?.id : "";
-      if (recipient === "teacher" && !teacherId) {
-        sendLockRef.current.end();
-        Alert.alert("Enseignant requis", "Veuillez choisir un enseignant.");
-        return;
-      }
-      payload = {
-        parentPhone,
-        studentId: selectedStudentId ?? parentChildren[0]?.id ?? "",
-        ...(teacherId ? { teacherId } : {}),
-        ...(selectedMessage?.conversationId ? { conversationId: selectedMessage.conversationId } : {}),
-        theme,
-        direction: recipient === "teacher" ? "Parent vers enseignant" : "Parent vers école",
-        message: message.trim(),
-        priority,
-      };
-    } else if (role === "teacher") {
-      const student = teacherStudents.find((item) => item.id === teacherStudentId) ?? teacherStudents[0];
-      if (!student) {
-        sendLockRef.current.end();
-        Alert.alert("Parent introuvable", "Aucun parent n'est lié à vos classes.");
-        return;
-      }
-      payload = {
-        parentPhone: student.parentPhone,
-        studentId: student.id,
-        ...(selectedMessage?.conversationId ? { conversationId: selectedMessage.conversationId } : {}),
-        theme,
-        direction: "Enseignant vers parent",
-        message: message.trim(),
-        priority,
-      };
-    } else {
-      if (staffRecipientSnapshot.status !== "success") {
-        sendLockRef.current.end();
-        Alert.alert(
-          "Destinataires indisponibles",
-          staffRecipientSnapshot.errorMessage ||
-            "Aucun parent canonique n'est résolvable. Aucun message n'a été envoyé.",
-        );
-        return;
-      }
-      const built = buildStaffSchoolToParentMessagePayload({
-        selectedRecipientKey: staffRecipientKey,
-        recipients: staffRecipientSnapshot.data,
-        schoolCode: recipientSchoolCode,
-        theme,
-        message,
-        priority,
-      });
-      if (!built.ok) {
-        sendLockRef.current.end();
-        const title =
-          built.code === "empty_message"
-            ? "Message incomplet"
-            : built.code === "no_canonical_parent"
-              ? "Compte parent introuvable"
-              : built.code === "cross_tenant"
-                ? "Destinataire hors établissement"
-                : "Destinataire requis";
-        const body =
-          built.code === "empty_message"
-            ? "Veuillez écrire votre message avant l'envoi."
-            : built.code === "no_canonical_parent"
-              ? "Aucun compte parent canonique n'est lié à ce destinataire. Aucun message n'a été envoyé."
-              : built.code === "cross_tenant"
-                ? "Le destinataire n'appartient pas à l'établissement actif. Aucun message n'a été envoyé."
-                : "Choisissez explicitement un élève/parent avant l'envoi. Aucun destinataire n'est présélectionné.";
-        Alert.alert(title, body);
-        return;
-      }
-      payload = {
-        ...built.payload,
-        ...(selectedMessage?.conversationId ? { conversationId: selectedMessage.conversationId } : {}),
-      };
-      delete payload.attachmentUrl;
-    }
-
-    if (!payload) {
+    const selected = recipientSnapshot.data.find((row) => row.userId === selectedRecipientUserId);
+    const built = buildMessagePayload({
+      message,
+      recipientUserId: selectedRecipientUserId,
+      conversationId: selectedMessage?.conversationId,
+      studentId: selected?.studentId || selectedStudentId || parentChildren[0]?.id,
+      attachmentIds: pendingAttachments.map((file) => file.id),
+      theme,
+      priority,
+    });
+    if (!built.ok) {
       sendLockRef.current.end();
+      Alert.alert(
+        built.code === "empty_message" ? "Message incomplet" : "Destinataire requis",
+        built.code === "client_attachment_url_forbidden"
+          ? "Les URL libres ne sont pas acceptées."
+          : "Choisissez un destinataire autorisé avant l'envoi.",
+      );
       return;
     }
-    const intentionId = `message:${String(payload.direction)}:${String(payload.studentId)}:${String(payload.message)}`;
+    const payload = built.payload;
+    const intentionId = `message:${String(payload.conversationId || payload.participantUserIds)}:${String(payload.message)}`;
     const idempotencyKey = sendIntentionRef.current.getOrCreate(intentionId);
     setSending(true);
     setSendHint(NETWORK_COPY.recording);
@@ -315,6 +282,7 @@ export default function MessagesScreen() {
       sendIntentionRef.current.rotate(intentionId);
       await loadMessages();
       setMessage("");
+      setPendingAttachments([]);
       setSendHint("");
       Alert.alert("Message envoyé", "Le serveur a confirmé l'envoi du message.");
     } catch (error) {
@@ -358,8 +326,7 @@ export default function MessagesScreen() {
               refreshing={messagesSnapshot.status === "loading"}
               onRefresh={() => {
                 void loadMessages();
-                if (role === "parent_student" || role === "teacher") void loadTeachers();
-                if (showStaffComposer) void loadStaffRecipients();
+                if (canSend) void loadCanonicalRecipients();
               }}
             />
           ) : undefined
@@ -373,85 +340,29 @@ export default function MessagesScreen() {
           {canRead ? `${unreadCount} non lu(s) • données serveur` : "Rédaction uniquement • lecture non autorisée"}
         </Text>
 
-        {staffComposerBlocked ? (
-          <View style={styles.composeCard} testID="messages-staff-composer-blocked">
-            <Text style={styles.cardTitle}>Rédaction école vers parent indisponible</Text>
-            <Text style={styles.meta}>
-              Le droit de création de messages ne fournit pas à lui seul de source canonique de destinataires. La composition d’un message au personnel exige aussi
-              les droits de lecture des Contacts et des Relations (ou la gestion des utilisateurs / privilèges plateforme). Aucun envoi n'est proposé.
-            </Text>
-          </View>
-        ) : null}
-
         {showComposer && (
           <View style={styles.composeCard} testID={USABILITY_TEST_IDS.messagesComposer}>
             <Text style={styles.cardTitle}>{role === "teacher" ? "Écrire à un parent" : "Écrire un message"}</Text>
-
-            {role === "teacher" && (
-              <ChoiceRow
-                label="Parent"
-                values={teacherStudents.map((student) => ({ id: student.id, label: student.name }))}
-                selectedId={teacherStudentId || teacherStudents[0]?.id || ""}
-                onSelect={setTeacherStudentId}
-                disabled={sending}
+            {recipientSnapshot.status !== "success" ? (
+              <QueryStateView
+                snapshot={recipientSnapshot}
+                emptyMessage="Aucun destinataire autorisé."
+                errorMessage="Impossible de charger les destinataires."
+                offlineMessage="Réseau indisponible. Les destinataires n'ont pas pu être chargés."
+                emptyTestId="messages-staff-recipients-empty"
+                errorTestId="messages-staff-recipients-error"
+                onRetry={() => void loadCanonicalRecipients()}
+                loadingLabel="Chargement des destinataires…"
               />
-            )}
-
-            {showStaffComposer && (
-              <>
-                {staffRecipientSnapshot.status !== "success" ? (
-                  <QueryStateView
-                    snapshot={staffRecipientSnapshot}
-                    emptyMessage="Aucun parent avec compte canonique n'est disponible pour cet établissement. Aucun envoi n'est possible."
-                    errorMessage="Impossible de charger les destinataires canoniques."
-                    offlineMessage="Réseau indisponible. Les destinataires n'ont pas pu être chargés."
-                    emptyTestId="messages-staff-recipients-empty"
-                    errorTestId="messages-staff-recipients-error"
-                    onRetry={() => void loadStaffRecipients()}
-                    loadingLabel="Chargement des destinataires…"
-                  />
-                ) : (
-                  <>
-                    <ChoiceRow
-                      label="Élève / parent"
-                      values={staffRecipientSnapshot.data.map((row) => ({
-                        id: row.key,
-                        label: row.parentName
-                          ? `${row.studentName || row.studentId} (${row.parentName})`
-                          : row.studentName || row.studentId,
-                      }))}
-                      selectedId={staffRecipientKey}
-                      onSelect={setStaffRecipientKey}
-                      disabled={sending}
-                    />
-                    {!staffRecipientKey ? (
-                      <Text style={styles.meta}>Choisissez un destinataire. Aucun élève n'est présélectionné.</Text>
-                    ) : null}
-                  </>
-                )}
-              </>
-            )}
-
-            {role === "parent_student" && (
-              <View style={styles.segmentRow}>
-                <SegmentButton label="École" selected={recipient === "school"} onPress={() => setRecipient("school")} />
-                <SegmentButton
-                  label="Enseignant"
-                  selected={recipient === "teacher"}
-                  onPress={() => {
-                    setRecipient("teacher");
-                    setSelectedTeacherId((current) => current || availableTeachers[0]?.id || "");
-                  }}
-                />
-              </View>
-            )}
-
-            {role === "parent_student" && recipient === "teacher" && (
+            ) : (
               <ChoiceRow
-                label="Enseignant"
-                values={availableTeachers.map((teacher) => ({ id: teacher.id, label: teacher.name || teacher.teacherCode }))}
-                selectedId={selectedTeacherId}
-                onSelect={setSelectedTeacherId}
+                label="Destinataire"
+                values={recipientSnapshot.data.map((row) => ({
+                  id: row.userId,
+                  label: row.studentName ? `${row.displayName} (${row.studentName})` : row.displayName || row.userId,
+                }))}
+                selectedId={selectedRecipientUserId}
+                onSelect={setSelectedRecipientUserId}
                 disabled={sending}
               />
             )}
@@ -486,6 +397,13 @@ export default function MessagesScreen() {
               error={messageError}
               accessibilityLabel="Texte du message"
             />
+            {pendingAttachments.length ? (
+              <Text style={styles.meta}>{pendingAttachments.map((file) => file.fileName).join(", ")}</Text>
+            ) : null}
+            <View style={styles.segmentRow}>
+              <SegmentButton label="PDF / fichier" selected={false} onPress={() => void pickAndUploadAttachments()} />
+              <SegmentButton label="Image" selected={false} onPress={() => void pickImageAttachment()} />
+            </View>
             <TouchableOpacity
               style={[styles.sendButton, (sending || staffSendBlocked) && styles.disabled]}
               onPress={() => void sendMessage()}
@@ -507,7 +425,7 @@ export default function MessagesScreen() {
             {canSend
               ? showComposer
                 ? "Lecture des messages non autorisée. Le composer reste disponible."
-                : "Lecture non autorisée. La rédaction staff n'est pas disponible sans source canonique de destinataires."
+                : "Lecture non autorisée."
               : "Accès refusé aux messages."}
           </Text>
         ) : messagesSnapshot.status !== "success" ? (
@@ -582,6 +500,23 @@ export default function MessagesScreen() {
                     {item.status === "pending" ? " • en attente d'envoi" : ""}
                   </Text>
                   <Text style={styles.readerBody}>{item.message}</Text>
+                  {(item.attachments ?? []).map((file) => (
+                    <TouchableOpacity
+                      key={file.id}
+                      onPress={() => {
+                        void downloadCommunicationAttachment(file.id, file.fileName)
+                          .then((uri) => Linking.openURL(uri))
+                          .catch((error) =>
+                            Alert.alert(
+                              "Téléchargement refusé",
+                              error instanceof Error ? error.message : "Pièce jointe inaccessible.",
+                            ),
+                          );
+                      }}
+                    >
+                      <Text style={styles.meta}>{file.fileName}</Text>
+                    </TouchableOpacity>
+                  ))}
                 </View>
               ))}
             {selectedMessage &&

@@ -23,6 +23,9 @@ on:
       - "web/src/lib/messagesApi.ts"
       - "web/src/lib/clientsApi.ts"
       - "Mobile/src/screens/MessagesScreen.tsx"
+      - "Mobile/src/lib/messageAttachments.ts"
+      - "Mobile/src/lib/messageAttachments.test.ts"
+      - "Mobile/src/lib/mobileCtaRbacAlignment.ts"
       - "docs/audits/communications-c2-messages-readiness-2026-08-28.md"
       - ".github/workflows/communications-c2.yml"
   workflow_dispatch:

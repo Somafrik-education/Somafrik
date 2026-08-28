@@ -173,6 +173,7 @@ const routePermissions = {
   "PATCH /api/parents/relations/:relationId": ["Relations:UPDATE", "Relations:CREATE", "Gérer utilisateurs", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
   "GET /api/backoffice/messages": ["Messages:READ", "Gérer messages", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
   "GET /api/backoffice/messages/unread-count": ["Messages:READ", "Gérer messages", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
+  "GET /api/backoffice/messages/recipients": ["Messages:READ", "Messages:CREATE", "Gérer messages", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
   "GET /api/backoffice/messages/:messageId": ["Messages:READ", "Gérer messages", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
   "POST /api/backoffice/messages": ["Messages:CREATE", "Gérer messages", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
   "PATCH /api/backoffice/messages/:messageId/read": ["Messages:UPDATE", "Gérer messages", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],

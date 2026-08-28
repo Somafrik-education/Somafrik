@@ -1,10 +1,18 @@
 "use strict";
 
 const assert = require("node:assert/strict");
+const fs = require("node:fs/promises");
+const os = require("node:os");
+const path = require("node:path");
 const {
   sniffMime,
   sanitizeFileName,
   validateUploadBuffer,
+  persistAttachmentBytes,
+  removeStoredAttachment,
+  readAttachmentBytes,
+  storageRoot,
+  isProductionEnv,
   MAX_ATTACHMENT_BYTES,
 } = require("./communicationsAttachments");
 const { classifyActor, validateBody, MESSAGE_MAX_LENGTH } = require("./communicationsMessagesService");
@@ -47,6 +55,33 @@ async function main() {
   assert.throws(() => validateBody("   "), (error) => error.statusCode === 400);
   assert.throws(() => validateBody("x".repeat(MESSAGE_MAX_LENGTH + 1)), (error) => error.statusCode === 400);
   assert.equal(validateBody("<script>alert(1)</script>"), "<script>alert(1)</script>");
+
+  const previousEnv = process.env.NODE_ENV;
+  const previousStorage = process.env.SOMAFRIK_COMMUNICATION_STORAGE;
+  delete process.env.SOMAFRIK_COMMUNICATION_STORAGE;
+  process.env.NODE_ENV = "test";
+  assert.equal(isProductionEnv(), false);
+  assert.match(storageRoot(), /somafrik-communication-attachments/);
+
+  process.env.NODE_ENV = "production";
+  assert.throws(
+    () => storageRoot(),
+    (error) => error.statusCode === 503 && /SOMAFRIK_COMMUNICATION_STORAGE/.test(error.message),
+  );
+  const durable = await fs.mkdtemp(path.join(os.tmpdir(), "somafrik-c2-durable-"));
+  process.env.SOMAFRIK_COMMUNICATION_STORAGE = durable;
+  const key = await persistAttachmentBytes("school-a", pdfBuffer());
+  const firstRead = await readAttachmentBytes(key);
+  assert.ok(firstRead.length > 0, "production + stockage configuré : read OK");
+  const afterRestart = await readAttachmentBytes(key);
+  assert.deepEqual(afterRestart, firstRead, "redémarrage logique : même fichier");
+  await persistAttachmentBytes("school-a", pdfBuffer());
+  await removeStoredAttachment(key);
+  await assert.rejects(() => readAttachmentBytes(key), (error) => error.code === "ENOENT" || error.statusCode === 404);
+
+  process.env.NODE_ENV = previousEnv;
+  if (previousStorage == null) delete process.env.SOMAFRIK_COMMUNICATION_STORAGE;
+  else process.env.SOMAFRIK_COMMUNICATION_STORAGE = previousStorage;
 
   console.log("communicationsAttachments.test.js OK");
 }

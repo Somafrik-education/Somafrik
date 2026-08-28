@@ -25,9 +25,27 @@ const BLOCKED_EXTENSIONS = new Set([
   ".scr",
 ]);
 
+function isProductionEnv() {
+  return String(process.env.NODE_ENV ?? "").trim().toLowerCase() === "production";
+}
+
+/**
+ * Stockage des pièces jointes Communications.
+ * Variable : SOMAFRIK_COMMUNICATION_STORAGE = répertoire durable (mount local).
+ * Production : obligatoire, sinon fail-closed.
+ * test/dev : fallback tmp autorisé.
+ */
 function storageRoot() {
-  return asTrimmed(process.env.SOMAFRIK_COMMUNICATION_STORAGE) ||
-    path.join(require("node:os").tmpdir(), "somafrik-communication-attachments");
+  const configured = asTrimmed(process.env.SOMAFRIK_COMMUNICATION_STORAGE);
+  if (configured) return configured;
+  if (isProductionEnv()) {
+    throw createClientsError(
+      503,
+      "Stockage des pièces jointes non configuré (SOMAFRIK_COMMUNICATION_STORAGE).",
+      CLIENTS_ERROR.FORBIDDEN,
+    );
+  }
+  return path.join(require("node:os").tmpdir(), "somafrik-communication-attachments");
 }
 
 function sniffMime(buffer) {
@@ -119,6 +137,19 @@ async function persistAttachmentBytes(schoolId, buffer) {
   return key;
 }
 
+async function removeStoredAttachment(storageKey) {
+  try {
+    const key = assertSafeStorageKey(storageKey);
+    const abs = path.join(storageRoot(), ...key.split("/"));
+    const resolvedRoot = path.resolve(storageRoot());
+    const resolvedFile = path.resolve(abs);
+    if (!resolvedFile.startsWith(resolvedRoot + path.sep) && resolvedFile !== resolvedRoot) return;
+    await fs.unlink(resolvedFile);
+  } catch {
+    /* best-effort cleanup */
+  }
+}
+
 async function readAttachmentBytes(storageKey) {
   const key = assertSafeStorageKey(storageKey);
   const abs = path.join(storageRoot(), ...key.split("/"));
@@ -153,7 +184,9 @@ module.exports = {
   sanitizeFileName,
   validateUploadBuffer,
   persistAttachmentBytes,
+  removeStoredAttachment,
   readAttachmentBytes,
   mapAttachmentRow,
   storageRoot,
+  isProductionEnv,
 };

@@ -3419,16 +3419,16 @@ class FallbackRepository {
     return this.getClientsStore().listConversationsForPrincipal(principal, query);
   }
 
-  getClientConversation(conversationId, principal) {
-    return this.getClientsStore().getConversationForPrincipal(conversationId, principal);
+  getClientConversation(conversationId, principal, query) {
+    return this.getClientsStore().getConversationForPrincipal(conversationId, principal, query);
   }
 
   listClientConversationMessages(conversationId, principal, query) {
     return this.getClientsStore().listConversationMessagesForPrincipal(conversationId, principal, query);
   }
 
-  getClientMessage(messageId, principal) {
-    return this.getClientsStore().getMessageForPrincipal(messageId, principal);
+  getClientMessage(messageId, principal, query) {
+    return this.getClientsStore().getMessageForPrincipal(messageId, principal, query);
   }
 
   createClientConversation(payload, principal, auditMeta) {
@@ -3439,16 +3439,20 @@ class FallbackRepository {
     return this.getClientsStore().replyToConversationForPrincipal(conversationId, payload, principal, auditMeta);
   }
 
-  getClientMessagesUnreadCount(principal) {
-    return this.getClientsStore().unreadCountForPrincipal(principal);
+  getClientMessagesUnreadCount(principal, query) {
+    return this.getClientsStore().unreadCountForPrincipal(principal, query);
   }
 
-  uploadCommunicationAttachment(principal, file) {
-    return this.getClientsStore().uploadCommunicationAttachment(principal, file);
+  listClientMessageRecipients(principal, query) {
+    return this.getClientsStore().listMessageRecipientsForPrincipal(principal, query);
   }
 
-  downloadCommunicationAttachment(attachmentId, principal) {
-    return this.getClientsStore().downloadCommunicationAttachment(attachmentId, principal);
+  uploadCommunicationAttachment(principal, file, query) {
+    return this.getClientsStore().uploadCommunicationAttachment(principal, file, query);
+  }
+
+  downloadCommunicationAttachment(attachmentId, principal, query) {
+    return this.getClientsStore().downloadCommunicationAttachment(attachmentId, principal, query);
   }
 
   createClientsAnnouncement(payload, principal, auditMeta) {
