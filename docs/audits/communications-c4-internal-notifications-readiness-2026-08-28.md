@@ -3,15 +3,15 @@
 Date : 2026-08-28  
 Branche : `fix/communications-c4-internal-notifications-production-ready`  
 Base de travail : `develop@5e150db5e2c2e042c5e82f6e684af05515dd554e`  
-HEAD de finalisation : `cf64de244bb5e34a8462f5234ed329c445efb528`  
-Comparaison : **32 ahead / 0 behind**, merge-base = base exacte.  
+HEAD de finalisation : voir section « Corrections CI / bootstrap » (HEAD exact après CI-C4-001 / P1-C4-001).  
+Comparaison : merge-base = `develop` exact ; PR #375 reste **Draft**.  
 Périmètre : notifications internes Somafrik, sans fournisseur SMS/WhatsApp/push externe.
 
 ## Verdict de chantier
 
-**GO CONDITIONNEL** — uniquement pour une recette appareil Expo non exécutée.
+**HOLD levé sur CI-C4-001 et P1-C4-001** — le cœur métier C4 reste validé. Recette appareil Expo toujours non exécutée (**GO CONDITIONNEL** visuel uniquement).
 
-Le backend, l'outbox, les triggers, le RBAC live, le tenant, les pièces jointes et les E2E PostgreSQL C4-01…C4-16 sont portés au contrat production-ready. Aucun défaut backend / tenant / RBAC / outbox n'est laissé ouvert volontairement.
+Le backend, l'outbox, les triggers, le RBAC live, le tenant, les pièces jointes et les E2E PostgreSQL C4-01…C4-16 sont portés au contrat production-ready. Aucun défaut backend / tenant / RBAC / outbox n'est laissé ouvert volontairement. `cancelled_at` reste une colonne **Finance** ; C4 ne la crée pas.
 
 **AUCUN :**
 - SMS
@@ -57,7 +57,7 @@ Le dispatcher claim via `FOR UPDATE SKIP LOCKED`, y compris reprise des lignes `
 | `communication.announcement.published` | `announcements` | INSERT/UPDATE **vers** `published` ; pas de réémission si déjà published |
 | `attendance.student.absent` | `attendance` | INSERT/UPDATE **vers** `absent` ; pas de réémission si déjà absent |
 | `pedagogy.grade.published` | `grades` | INSERT/UPDATE **vers** `published` ; pas de réémission si déjà published ; un UPDATE de score d'une note déjà published n'ajoute pas d'event |
-| `finance.payment.recorded` | `payments` | INSERT/UPDATE **vers** `paid` non cancelled ; pas de réémission si déjà paid |
+| `finance.payment.recorded` | `payments` | INSERT/UPDATE **vers** `paid` non cancelled ; pas de réémission si déjà paid. Garde cancellation via `to_jsonb(NEW)->>'cancelled_at'` (pas de `NEW.cancelled_at` structural). Trigger `UPDATE OF` conditionnel : `payment_status, cancelled_at` si la colonne Finance existe, sinon `payment_status` seul. |
 
 `event_key` est stable : `{event_type}:{source_entity_id}`. Idempotence garantie même si un trigger se réexécute.
 
@@ -135,6 +135,43 @@ Assertions produit PostgreSQL réel (`backend/lib/communicationsC4.http.pg.test.
 | C4-14 | ROLLBACK métier → 0 outbox ; event commité puis drain ultérieur → 1 notification |
 | C4-15 | IDOR GET/read/archive/PJ 403/404, aucune mutation |
 | C4-16 | Archive logique, historique physique conservé, pas de DELETE |
+
+## Corrections CI / bootstrap (CI-C4-001, P1-C4-001)
+
+Revue CTO de `#375` sur `751925b631952a3791fc4ee36784d63f161c0286` : cœur C4 E2E validé, PR **HOLD** pour deux points CI/bootstrap. Aucune reconstruction C4.
+
+### CI-C4-001 — Typecheck Mobile
+
+`.github/workflows/communications-c4.yml` exécutait `npx --prefix Mobile tsc --noEmit`. `--prefix` est un flag **npm**, pas npx : la job affichait l'aide `tsc` et sortait 1. Le code Mobile n'était pas en cause (PR Gates / Quality / TypeScript déjà vert).
+
+Correction : `working-directory: Mobile` + `npx tsc --noEmit --project tsconfig.json` (lié à `Mobile/tsconfig.json`). Pas de `|| true`.
+
+### P1-C4-001 — Bootstrap `payments.cancelled_at`
+
+`ensureClientsCanonicalBootstrap()` applique C4 après C2/C3, sans garantir la migration Finance LOT4. `CREATE TRIGGER … UPDATE OF payment_status, cancelled_at` échouait en 42703 sur les bases `schema.sql` (ex. `userRoleLifecycle.pg.test.js`).
+
+Correction, **sans** transférer `cancelled_at` à Communications :
+
+1. lecture tolérante `to_jsonb(NEW)->>'cancelled_at'` / `to_jsonb(OLD)->>'cancelled_at'` dans `somafrik_enqueue_communication_event` ;
+2. installation conditionnelle de `trg_c4_payment_event` via `information_schema.columns` ;
+3. contrat métier inchangé (`event_key = finance.payment.recorded:<paymentId>`, `ON CONFLICT DO NOTHING`).
+
+Aucune seconde définition de `cancelled_at`. Aucune exécution de `FINANCE_SCHEMA_SQL` depuis le bootstrap Clients.
+
+### Test PostgreSQL dédié
+
+`backend/db/communicationsC4.bootstrap.pg.test.js` :
+
+| Cas | Fixture | Attendu |
+| --- | --- | --- |
+| **CAS A** | table `payments` minimale (`id`, `school_id`, `student_id`, `payment_code`, `payment_status`, `created_by`) **sans** `cancelled_at`, puis `ensureClientsCanonicalBootstrap` | succès ; trigger `UPDATE OF payment_status` ; pending → paid = 1 outbox |
+| **CAS B** | `ALTER TABLE payments ADD COLUMN cancelled_at` (geste Finance, pas C4), rejeu C4 | succès ; trigger `UPDATE OF payment_status, cancelled_at` ; paid non cancelled = event ; cancelled = 0 ; UPDATE déjà paid = 0 doublon |
+
+`backend/lib/userRoleLifecycle.pg.test.js` redevient vert **sans** modification de sa fixture.
+
+### CI exact-HEAD
+
+Les workflows doivent être relus sur le **nouveau** HEAD de cette correction, pas sur `751925b6`. PR #375 reste Draft. Aucun Ready. Aucun merge.
 
 ## Limitations
 

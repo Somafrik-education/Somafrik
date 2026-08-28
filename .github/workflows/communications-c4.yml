@@ -5,6 +5,7 @@ on:
     branches: [develop]
     paths:
       - "backend/db/clientsCanonicalBootstrap.js"
+      - "backend/db/communicationsC4.bootstrap.pg.test.js"
       - "backend/db/communicationsNotificationsSchema.js"
       - "backend/db/migrations/20260828_communications_c4_internal_notifications.sql"
       - "backend/lib/communicationsNotificationsService.js"
@@ -101,4 +102,5 @@ jobs:
       - name: Build Web
         run: npm --prefix web run build
       - name: Typecheck Mobile
-        run: npm --prefix Mobile run typecheck
+        working-directory: Mobile
+        run: npx tsc --noEmit --project tsconfig.json

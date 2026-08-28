@@ -198,12 +198,25 @@ function sourceGuards() {
   assert.equal(exists(".github/workflows/com-c4-finalize-patch.yml"), false, "workflow finalize temporaire absent");
   assert.equal(exists(".github/workflows/communications-c4.yml"), true);
   const workflow = read(".github/workflows/communications-c4.yml");
-  assert.match(workflow, /npm --prefix Mobile run typecheck/);
+  assert.match(workflow, /working-directory: Mobile/);
+  assert.match(workflow, /npx tsc --noEmit --project tsconfig\.json/);
   assert.doesNotMatch(workflow, /npx --prefix Mobile/);
+  assert.doesNotMatch(workflow, /\|\| true/);
   assert.match(schema, /information_schema\.columns/);
   assert.match(schema, /column_name = 'cancelled_at'/);
   assert.match(schema, /to_jsonb\(NEW\)->>'cancelled_at'/);
   assert.match(schema, /to_jsonb\(OLD\)->>'cancelled_at'/);
+  assert.doesNotMatch(schema, /ALTER TABLE payments ADD COLUMN.*cancelled_at/);
+
+  const bootstrapTest = read("backend/db/communicationsC4.bootstrap.pg.test.js");
+  assert.match(bootstrapTest, /CAS A payments sans cancelled_at/);
+  assert.match(bootstrapTest, /CAS A pending → paid produit exactement 1 outbox event/);
+  assert.match(bootstrapTest, /CAS B cancelled_at présent \(Finance\)/);
+  assert.match(bootstrapTest, /CAS B paid non cancelled = event/);
+  assert.match(bootstrapTest, /CAS B cancelled = pas d'event parasite/);
+  assert.match(bootstrapTest, /CAS B update déjà paid = aucun doublon/);
+  assert.match(bootstrapTest, /ensureClientsCanonicalBootstrap/);
+  assert.doesNotMatch(bootstrapTest, /FINANCE_SCHEMA_SQL/);
 
   console.log("verify-communications-c4: source guards OK");
 }
@@ -217,6 +230,7 @@ function main() {
   run("npm", ["--prefix", "web", "run", "test", "--", "src/lib/internalNotificationsC4.test.ts"], "web internal notifications C4");
   run("npx", ["--yes", "tsx", "Mobile/src/lib/internalNotificationsC4.test.ts"], "mobile internal notifications C4");
   assert.ok(String(process.env.DATABASE_URL ?? "").trim(), "DATABASE_URL requis pour COM-C4");
+  run(process.execPath, ["backend/db/communicationsC4.bootstrap.pg.test.js"], "bootstrap payments cancelled_at CAS A/B");
   run(process.execPath, ["backend/lib/communicationsC4.http.pg.test.js"], "parcours HTTP PostgreSQL COM-C4");
   console.log("verify-communications-c4: GO");
 }
