@@ -10,10 +10,8 @@ const {
   createClientsError,
   ignoreClientScope,
   isSuperAdminPrincipal,
-  isCountryAdminPrincipal,
   formatDateTime,
 } = require("./clientsManagement");
-const { isUuid } = require("./principalIdentity");
 const {
   requireSchool,
   actorUserId,
@@ -353,41 +351,16 @@ async function loadVisibleAnnouncement(tx, announcementId, school, userId, manag
   return { announcement, isRecipient };
 }
 
-function principalMatchesRequestSchool(principal, school) {
-  if (isSuperAdminPrincipal(principal) || isCountryAdminPrincipal(principal)) return true;
-  const principalSchool = asTrimmed(principal?.schoolCode).toUpperCase();
-  const targetSchool = asTrimmed(school?.school_code ?? school?.code).toUpperCase();
-  return Boolean(principalSchool) && principalSchool !== "*" && principalSchool === targetSchool;
-}
-
-/**
- * Auteur = principal.sub uniquement (jamais le body).
- * PostgreSQL : users.id UUID doit exister dans le tenant.
- * Mémoire / seed : JWT sub slug (USER-*) peut être hors clients.users ; requireSchool
- * a déjà scopé l'établissement — on synthétise l'identité JWT, fail-closed si UUID absent.
- */
 async function resolveAuthorInSchool(tx, principal, school) {
   const authorUserId = actorUserId(principal);
   if (!authorUserId || authorUserId === "anonymous") {
     throw createClientsError(403, "Auteur non authentifié.", CLIENTS_ERROR.FORBIDDEN);
   }
   const author = typeof tx.getUserById === "function" ? await tx.getUserById(authorUserId) : null;
-  if (author) {
-    if (author.school_id && String(author.school_id) !== String(school.id) && !isSuperAdminPrincipal(principal)) {
-      throw createClientsError(403, "Auteur non autorisé.", CLIENTS_ERROR.FORBIDDEN);
-    }
-    return author;
-  }
-  if (isUuid(authorUserId) || !principalMatchesRequestSchool(principal, school)) {
+  if (!author || (author.school_id && String(author.school_id) !== String(school.id) && !isSuperAdminPrincipal(principal))) {
     throw createClientsError(403, "Auteur non autorisé.", CLIENTS_ERROR.FORBIDDEN);
   }
-  return {
-    id: authorUserId,
-    first_name: asTrimmed(principal.firstName),
-    last_name: asTrimmed(principal.lastName),
-    email: asTrimmed(principal.email || principal.identifier),
-    school_id: school.id,
-  };
+  return author;
 }
 
 async function publish(store, rawPayload, principal, auditMeta) {
@@ -504,7 +477,13 @@ async function updateAnnouncement(store, announcementId, rawPatch, principal, au
       oldValue: { title: announcement.title },
       newValue: { title, updatedByUserId: authorUserId },
     });
-    return getAnnouncement(store, announcementId, principal, rawPatch);
+    return hydrateAnnouncementWithTx(tx, {
+      announcementId: saved.id,
+      school,
+      schoolCode,
+      userId: authorUserId,
+      management: true,
+    });
   });
 }
 
@@ -581,11 +560,7 @@ async function listAnnouncements(store, principal, query = {}) {
   };
 }
 
-async function getAnnouncement(store, announcementId, principal, query = {}) {
-  const userId = actorUserId(principal);
-  if (!userId) throw createClientsError(403, "Non authentifié.", CLIENTS_ERROR.FORBIDDEN);
-  const { school, schoolCode, tx } = await requireSchool(store, principal, query);
-  const management = canManageAnnouncements(principal);
+async function hydrateAnnouncementWithTx(tx, { announcementId, school, schoolCode, userId, management }) {
   const { announcement, isRecipient } = await loadVisibleAnnouncement(
     tx,
     announcementId,
@@ -622,11 +597,24 @@ async function getAnnouncement(store, announcementId, principal, query = {}) {
   );
 }
 
+async function getAnnouncement(store, announcementId, principal, query = {}) {
+  const userId = actorUserId(principal);
+  if (!userId) throw createClientsError(403, "Non authentifié.", CLIENTS_ERROR.FORBIDDEN);
+  const { school, schoolCode, tx } = await requireSchool(store, principal, query);
+  return hydrateAnnouncementWithTx(tx, {
+    announcementId,
+    school,
+    schoolCode,
+    userId,
+    management: canManageAnnouncements(principal),
+  });
+}
+
 async function markRead(store, announcementId, principal, auditMeta, query = {}) {
   const userId = actorUserId(principal);
   if (!userId) throw createClientsError(403, "Non authentifié.", CLIENTS_ERROR.FORBIDDEN);
-  const { school } = await requireSchool(store, principal, query);
   return store.withTransaction(async (tx) => {
+    const { school, schoolCode } = await requireSchool(store, principal, query);
     const announcement = await tx.getAnnouncementById(announcementId);
     if (!announcement || announcement.school_id !== school.id) throw notFound();
     const isRecipient =
@@ -637,14 +625,20 @@ async function markRead(store, announcementId, principal, auditMeta, query = {})
     const read = await tx.insertAnnouncementRead(announcement.id, userId);
     if (auditMeta) {
       await writeClientsAudit(tx, principal, auditMeta, {
-        schoolCode: announcement.school_code,
+        schoolCode: schoolCode || announcement.school_code,
         action: "mark_announcement_read",
         entityType: "announcement",
         entityId: announcement.id,
         newValue: { userId, readAt: isoOf(read?.read_at) },
       });
     }
-    return getAnnouncement(store, announcementId, principal, query);
+    return hydrateAnnouncementWithTx(tx, {
+      announcementId: announcement.id,
+      school,
+      schoolCode,
+      userId,
+      management: canManageAnnouncements(principal),
+    });
   });
 }
 
@@ -774,4 +768,5 @@ module.exports = {
   canManageAnnouncements,
   mapAnnouncementHistory,
   resolveAuthorInSchool,
+  hydrateAnnouncementWithTx,
 };

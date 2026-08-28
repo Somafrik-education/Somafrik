@@ -100,6 +100,26 @@ async function uploadAnnouncementFile(token, { fileName, mimeType, body, query =
   return { status: response.status, data };
 }
 
+async function uploadMessageFile(token, { fileName, mimeType, body }) {
+  const response = await fetch(`http://127.0.0.1:${HTTP_PORT}/api/backoffice/communications/attachments`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": mimeType,
+      "X-Filename": fileName,
+    },
+    body,
+  });
+  const text = await response.text();
+  let data = null;
+  try {
+    data = text ? JSON.parse(text) : null;
+  } catch {
+    data = text;
+  }
+  return { status: response.status, data };
+}
+
 async function downloadFile(token, attachmentId, query = "") {
   const response = await fetch(
     `http://127.0.0.1:${HTTP_PORT}/api/backoffice/communications/attachments/${encodeURIComponent(attachmentId)}${query}`,
@@ -187,6 +207,10 @@ async function setRoleModuleGrant(pool, roleKey, moduleKey, flags) {
 
 async function grantAnnouncements(pool, roleKey, flags) {
   await setRoleModuleGrant(pool, roleKey, "announcements", flags);
+}
+
+async function grantMessages(pool, roleKey, flags) {
+  await setRoleModuleGrant(pool, roleKey, "messages", flags);
 }
 
 async function countRows(pool, sql, params) {
@@ -383,6 +407,9 @@ async function seed(pool) {
   await grantAnnouncements(pool, "PARENT", { create: false, read: true, update: false });
   await grantAnnouncements(pool, "STUDENT", { create: false, read: true, update: false });
   await grantAnnouncements(pool, "SUPER_ADMIN", { create: true, read: true, update: true });
+  await grantMessages(pool, "SCHOOL_ADMIN", { create: true, read: true, update: true });
+  await grantMessages(pool, "PARENT", { create: true, read: true, update: true });
+  await grantMessages(pool, "SUPER_ADMIN", { create: true, read: true, update: true });
 
   return {
     schoolA: schoolA.id,
@@ -714,6 +741,7 @@ async function main() {
       token: parentA,
     });
     assert.equal(markParent.status, 200, `C3-06 mark-read Parent: ${JSON.stringify(markParent.data)}`);
+    assert.match(String(markParent.data?.readAt ?? ""), /^\d{4}-\d{2}-\d{2}T/, "P1-018 readAt immédiat");
     const parentReads = await countRows(
       pool,
       `SELECT count(*)::int AS c FROM announcement_reads WHERE announcement_id = $1 AND user_id = $2`,
@@ -746,6 +774,19 @@ async function main() {
     const webBadge = await request("/backoffice/announcements/unread-count", { token: parentA });
     const mobileBadge = await request("/backoffice/announcements/unread-count", { token: parentA });
     assert.equal(webBadge.data?.count, mobileBadge.data?.count, "C3-07 badge identique Web/Mobile");
+
+    const patched = await request(`/backoffice/announcements/${schoolWideId}`, {
+      method: "PATCH",
+      token: adminA,
+      body: { title: "Réunion générale (maj)", message: "horaire confirmé" },
+    });
+    assert.equal(patched.status, 200, `P1-018 update: ${JSON.stringify(patched.data)}`);
+    assert.equal(patched.data.title, "Réunion générale (maj)", "P1-018 title immédiat");
+    assert.equal(patched.data.content || patched.data.message, "horaire confirmé", "P1-018 body immédiat");
+    assert.match(String(patched.data.updatedAt ?? ""), /^\d{4}-\d{2}-\d{2}T/, "P1-018 updatedAt ISO");
+    const pgPatched = await pool.query(`SELECT title, message FROM announcements WHERE id = $1`, [schoolWideId]);
+    assert.equal(pgPatched.rows[0].title, "Réunion générale (maj)", "P1-018 PG title");
+    assert.equal(pgPatched.rows[0].message, "horaire confirmé", "P1-018 PG body");
 
     const immutableAudience = await request(`/backoffice/announcements/${classParentsId}`, {
       method: "PATCH",
@@ -835,6 +876,62 @@ async function main() {
       [multi.data.id],
     );
     assert.equal(attCount, 2, "C3-10 2 communication_attachments");
+
+    const msgPdf = await uploadMessageFile(adminA, {
+      fileName: "message.pdf",
+      mimeType: "application/pdf",
+      body: pdfBuffer(),
+    });
+    assert.equal(msgPdf.status, 201, `P1-017 upload message PDF: ${JSON.stringify(msgPdf.data)}`);
+    const msgWithPdf = await request("/backoffice/messages", {
+      method: "POST",
+      token: adminA,
+      body: {
+        message: "PJ message Parent A",
+        participantUserIds: [PARENT_A],
+        attachmentIds: [msgPdf.data.id],
+      },
+    });
+    assert.equal(msgWithPdf.status, 201, `P1-017 message PJ: ${JSON.stringify(msgWithPdf.data)}`);
+    const parentMsgDl = await downloadFile(parentA, msgPdf.data.id);
+    assert.equal(parentMsgDl.status, 200, "P1-017 Messages:READ → PJ Message 200");
+    const parentAnnDl = await downloadFile(parentA, pdfUp.data.id);
+    assert.equal(parentAnnDl.status, 200, "P1-017 Announcements:READ → PJ Annonce 200");
+
+    await grantMessages(pool, "PARENT", { create: false, read: false, update: false });
+    const parentMsgAfterMsgRevoke = await downloadFile(parentA, msgPdf.data.id);
+    assert.ok(
+      [403, 404].includes(parentMsgAfterMsgRevoke.status),
+      `P1-017 Messages:READ révoqué PJ Message: ${parentMsgAfterMsgRevoke.status}`,
+    );
+    const parentAnnKeep = await downloadFile(parentA, pdfUp.data.id);
+    assert.equal(parentAnnKeep.status, 200, "P1-017 Announcements:READ encore → PJ Annonce 200");
+
+    await grantMessages(pool, "PARENT", { create: true, read: true, update: true });
+    await grantAnnouncements(pool, "PARENT", { create: false, read: false, update: false });
+    const parentAnnAfterAnnRevoke = await downloadFile(parentA, pdfUp.data.id);
+    assert.ok(
+      [403, 404].includes(parentAnnAfterAnnRevoke.status),
+      `P1-017 Announcements:READ révoqué PJ Annonce: ${parentAnnAfterAnnRevoke.status}`,
+    );
+    const parentMsgKeep = await downloadFile(parentA, msgPdf.data.id);
+    assert.equal(parentMsgKeep.status, 200, "P1-017 Messages:READ encore → PJ Message 200");
+    await grantAnnouncements(pool, "PARENT", { create: false, read: true, update: false });
+
+    const parentA2MsgDl = await downloadFile(parentA2, msgPdf.data.id);
+    assert.ok([403, 404].includes(parentA2MsgDl.status), `P1-017 hors participation: ${parentA2MsgDl.status}`);
+    const schoolBMsgDl = await downloadFile(adminB, msgPdf.data.id);
+    assert.ok([403, 404].includes(schoolBMsgDl.status), `P1-017 école B PJ Message: ${schoolBMsgDl.status}`);
+    const superMsgBare = await downloadFile(superSa, msgPdf.data.id);
+    assert.equal(superMsgBare.status, 400, "P1-017 Superadmin download message sans école");
+    const superAnnBare = await downloadFile(superSa, pdfUp.data.id);
+    assert.equal(superAnnBare.status, 400, "P1-017 Superadmin download annonce sans école");
+    const superAnnScoped = await downloadFile(superSa, pdfUp.data.id, "?effectiveSchoolCode=SCH-COM-A");
+    assert.equal(superAnnScoped.status, 200, "P1-017 Superadmin request-scoped A PJ Annonce");
+    const superAnnWrong = await downloadFile(superSa, pdfUp.data.id, "?effectiveSchoolCode=SCH-COM-B");
+    assert.ok([403, 404].includes(superAnnWrong.status), `P1-017 Superadmin B sur PJ Annonce A: ${superAnnWrong.status}`);
+    const superMsgWrong = await downloadFile(superSa, msgPdf.data.id, "?effectiveSchoolCode=SCH-COM-B");
+    assert.ok([403, 404].includes(superMsgWrong.status), `P1-017 Superadmin B sur PJ Message A: ${superMsgWrong.status}`);
 
     await pool.query(`UPDATE enrollments SET class_id = $1 WHERE student_id = $2`, [CLASS_B, fixtures.studentA]);
     const afterMove = idsIn((await request("/backoffice/announcements", { token: parentA })).data);

@@ -6,6 +6,7 @@ const {
   canManageAnnouncements,
   resolveAuthorInSchool,
 } = require("./communicationsAnnouncementsService");
+const { assertEntityTypeDownloadAccess } = require("./communicationsMessagesService");
 
 {
   const school = parseAudience({ audience: "Tous" });
@@ -43,6 +44,17 @@ assert.equal(canManageAnnouncements({ permissions: ["Announcements:READ"] }), fa
 assert.equal(canManageAnnouncements({ permissions: ["Notifications:UPDATE"] }), false);
 assert.equal(canManageAnnouncements({ permissions: ["ALL_PRIVILEGES"] }), true);
 
+assert.doesNotThrow(() => assertEntityTypeDownloadAccess({ permissions: ["Messages:READ"] }, "message"));
+assert.throws(
+  () => assertEntityTypeDownloadAccess({ permissions: ["Announcements:READ"] }, "message"),
+  /Pièce jointe introuvable/,
+);
+assert.doesNotThrow(() => assertEntityTypeDownloadAccess({ permissions: ["Announcements:READ"] }, "announcement"));
+assert.throws(
+  () => assertEntityTypeDownloadAccess({ permissions: ["Messages:READ"] }, "announcement"),
+  /Pièce jointe introuvable/,
+);
+
 (async () => {
   const school = { id: "school-cd", school_code: "CD-2026-0001" };
   const pgUuid = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1";
@@ -66,21 +78,11 @@ assert.equal(canManageAnnouncements({ permissions: ["ALL_PRIVILEGES"] }), true);
     /Auteur non autorisé/,
   );
 
-  {
-    const seed = await resolveAuthorInSchool(
-      { getUserById: async () => null },
-      { sub: "USER-ADMIN1", schoolCode: "CD-2026-0001", identifier: "admin" },
-      school,
-    );
-    assert.equal(seed.id, "USER-ADMIN1");
-    assert.equal(seed.school_id, school.id);
-  }
-
   await assert.rejects(
     () =>
       resolveAuthorInSchool(
         { getUserById: async () => null },
-        { sub: "USER-ADMIN-BI-SCHOOL", schoolCode: "BI-2026-0002", identifier: "admin" },
+        { sub: "USER-ADMIN1", schoolCode: "CD-2026-0001", identifier: "admin" },
         school,
       ),
     /Auteur non autorisé/,

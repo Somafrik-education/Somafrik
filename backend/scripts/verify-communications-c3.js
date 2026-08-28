@@ -40,7 +40,12 @@ function sourceGuards() {
   assert.match(service, /Audience immuable après publication/);
   assert.doesNotMatch(service, /payload\.createdByUserId/);
   assert.match(service, /requireSchool/);
+  assert.match(service, /hydrateAnnouncementWithTx/);
+  assert.doesNotMatch(service, /return getAnnouncement\(store/);
   assert.match(messages, /Établissement requis \(effectiveSchoolCode\)/);
+  assert.match(messages, /assertEntityTypeDownloadAccess/);
+  assert.match(rbac, /GET \/api\/backoffice\/messages\/attachments\/:attachmentId/);
+  assert.match(rbac, /GET \/api\/backoffice\/announcements\/attachments\/:attachmentId/);
   assert.match(server, /GET \/api\/backoffice\/announcements\/unread-count/);
   assert.match(server, /GET \/api\/backoffice\/announcements\/audience-options/);
   assert.match(server, /PATCH \/api\/backoffice\/announcements\/:announcementId\/read/);
@@ -77,6 +82,8 @@ function sourceGuards() {
   assert.match(httpTest, /C3-14 Superadmin \* sans école/);
   assert.match(httpTest, /C3-15 destinataire ne voit pas legacy/);
   assert.match(httpTest, /C3-16 titre texte brut/);
+  assert.match(httpTest, /P1-017/);
+  assert.match(httpTest, /P1-018/);
 
   const mobileScreen = read("Mobile/src/screens/AnnouncementsScreen.tsx");
   const mobileRead = read("Mobile/src/lib/announcementsRead.ts");

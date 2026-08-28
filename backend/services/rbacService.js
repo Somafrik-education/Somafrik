@@ -184,6 +184,8 @@ const routePermissions = {
   "POST /api/backoffice/conversations/:conversationId/messages": ["Messages:CREATE", "Gérer messages", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
   "POST /api/backoffice/communications/attachments": ["Messages:CREATE", "Gérer messages", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
   "GET /api/backoffice/communications/attachments/:attachmentId": ["Messages:READ", "Announcements:READ", "Gérer messages", "Gérer annonces", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
+  "GET /api/backoffice/messages/attachments/:attachmentId": ["Messages:READ", "Gérer messages", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
+  "GET /api/backoffice/announcements/attachments/:attachmentId": ["Announcements:READ", "Gérer annonces", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
   "GET /api/backoffice/announcements": ["Announcements:READ", "Gérer annonces", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
   "GET /api/backoffice/announcements/unread-count": ["Announcements:READ", "Gérer annonces", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
   "GET /api/backoffice/announcements/audience-options": ["Announcements:CREATE", "Gérer annonces", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],

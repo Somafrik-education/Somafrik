@@ -33,7 +33,7 @@ La décision structurante de C3 est le **snapshot des destinataires à la public
 
 Un jeton `Announcements:READ` ne donne **pas** toutes les annonces de l'école. Un utilisateur de la même école hors snapshot reçoit 404 sur GET direct (pas de fuite titre / auteur / audience). `school_id` identique n'est jamais une autorisation de lecture.
 
-Auteur = `principal.sub` uniquement. En PostgreSQL l'UUID `users.id` doit exister dans le tenant (UUID absent → 403). En mémoire, le seed LOT7 (`USER-ADMIN1`) n'est pas dans `clients.users` : le slug JWT déjà scopé sur l'établissement est accepté, un UUID PG manquant ou un slug d'une autre école reste 403.
+Auteur = `principal.sub` uniquement, résolu dans `users` du tenant. Un UUID / identité absente de `clients.users` → 403 (la fixture LOT7 crée un Admin School canonique ; pas de synthèse d'auteur depuis un slug JWT).
 
 **Verdict Annonces : GO CONDITIONNEL** — findings COM-C1 d'annonces fermés par E2E C3-01…16. Recette appareil Expo (picker PJ réel) non exécutée dans cet agent. C4 hors scope. Autorisation de merge réservée au diff GitHub CTO.
 
@@ -166,6 +166,8 @@ Titre/corps modifiables avec UPDATE + `updated_at` + audit. Pas de recalcul d'au
 SoT = `announcement_reads`. Compteur = annonces publiées, destinées au principal, absentes des reads, **dans l'école scoped**.  
 Web Topbar et Mobile header : `GET unread-count`. Aucune mutation locale définitive avant ACK.
 
+`updateAnnouncement` / `markRead` hydratent la réponse via `hydrateAnnouncementWithTx(tx, …)` dans la **même** transaction (finding **COM-C3-P1-018 FERMÉ**). `PATCH /read` renvoie `readAt` ISO immédiatement ; `PATCH /:id` renvoie title/body/`updatedAt` déjà persistés.
+
 ---
 
 ## 11. Historique (projection)
@@ -180,7 +182,14 @@ Management : `readsCount` / `unreadCount`. `unresolved` si legacy sans snapshot.
 Réutilisation de `communication_attachments`, `entity_type=announcement`.  
 0..N, MIME PDF/JPEG/PNG, 10 Mo, filename neutralisé, `storage_key` serveur, cleanup échec DB.  
 Upload dédié `POST /announcements/attachments`. Association transactionnelle `attachmentIds[]`.  
-Attachment message ou école B : impossible. Download : auth + tenant + recipient **ou** management.
+Attachment message ou école B : impossible. Download : auth + tenant + **permission live du `entity_type`** + recipient **ou** management.
+
+Le GET générique `/communications/attachments/:id` reste un OR d'entrée (`Messages:READ` | `Announcements:READ`). Après résolution du fichier :
+
+- `entity_type=message` → `Messages:READ` live (même JWT, révocation PG immédiate)
+- `entity_type=announcement` → `Announcements:READ` live
+
+Contrats internes : `GET /api/backoffice/messages/attachments/:attachmentId` et `GET /api/backoffice/announcements/attachments/:attachmentId` (`assertEntityTypeDownloadAccess`). Finding **COM-C3-P1-017 FERMÉ**.
 
 ---
 
@@ -237,6 +246,8 @@ Pas de `if no recipients then allow school`. Annonce historique sans snapshot : 
 | COM-C1-P1-010 partie Annonce | historique | **FERMÉ** (projection ISO) |
 | COM-C1-P1-011 partie Annonce | expéditeur + timestamp | **FERMÉ** (`createdBy*` + ISO) |
 | COM-C1-P1-012 partie Annonce | PJ 0..N | **FERMÉ** (`entity_type=announcement`) |
+| COM-C3-P1-017 | ACL PJ par `entity_type` | **FERMÉ** (`assertEntityTypeDownloadAccess`) |
+| COM-C3-P1-018 | relecture hors tx | **FERMÉ** (`hydrateAnnouncementWithTx`) |
 
 Messages (C2) et notifications événementielles (C4) hors ce rapport.
 
@@ -247,6 +258,8 @@ Messages (C2) et notifications événementielles (C4) hors ce rapport.
 Tous exercés dans `backend/lib/communicationsC3.http.pg.test.js` (DB isolée `somafrik_com_c3_it`, port 19884).
 
 C3-07 : même user, mark-read API → `read_at` PG → GET suivant `readAt` + badge identique (contrat Web/Mobile).  
+P1-018 : `PATCH /read` contient `readAt` ISO dans la réponse ; `PATCH /:id` contient title/body/`updatedAt` alignés PG.  
+P1-017 : PJ Message vs Annonce, révocation live du module opposé, hors audience, école B, Superadmin request-scoped.  
 C3-16 : `<script>alert(1)</script>` stocké/retourné comme texte.
 
 Tests UI/service : `web/src/lib/announcementsC3.test.ts`, `Mobile/src/lib/announcementsC3.test.ts`, alignement RBAC Mobile.
