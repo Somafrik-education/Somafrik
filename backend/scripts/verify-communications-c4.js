@@ -75,7 +75,7 @@ function sourceGuards() {
   assert.match(server, /internal-notifications\/attachments/);
   assert.match(rbac, /Notifications:READ/);
   assert.match(rbac, /Notifications:CREATE/);
-  assert.match(rbac, /Notifications:UPDATE/);
+  assert.match(rbac, /"PATCH \/api\/backoffice\/internal-notifications\/:notificationId\/archive": \["Notifications:READ"/);
   assert.match(rbac, /internal-notifications/);
 
   assert.match(webApi, /internal-notifications/);
