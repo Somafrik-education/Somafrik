@@ -24,7 +24,10 @@ function sourceGuards() {
   const schema = read("backend/db/communicationsMessagesSchema.js");
   const server = read("backend/server.js");
   const rbac = read("backend/services/rbacService.js");
-  const webApi = read("web/src/lib/clientsApi.ts") + read("web/src/lib/messagesApi.ts");
+  const webApi =
+    read("web/src/lib/clientsApi.ts") +
+    read("web/src/lib/messagesApi.ts") +
+    read("web/src/lib/communicationSchoolScope.ts");
   const webPage = read("web/src/pages/MessagesConversationsPage.tsx");
   const placeholders = read("web/src/pages/parametres/SettingsPlaceholders.tsx");
   const httpTest = read("backend/lib/communicationsC2.http.pg.test.js");
@@ -80,12 +83,16 @@ function sourceGuards() {
   assert.match(httpTest, /C2-12 aucune mutation/);
   const mobileScreen = read("Mobile/src/screens/MessagesScreen.tsx");
   const mobilePayload = read("Mobile/src/lib/messageAttachments.ts");
+  const mobileScope = read("Mobile/src/lib/communicationSchoolScope.ts");
   assert.match(mobileScreen, /getMessageRecipients/);
   assert.match(mobileScreen, /uploadCommunicationAttachment/);
   assert.match(mobileScreen, /attachmentIds/);
+  assert.match(mobileScreen, /withCommunicationSchoolPayload/);
   assert.doesNotMatch(mobileScreen, /getCanonicalContacts/);
   assert.match(mobilePayload, /buildMessagePayload/);
   assert.match(mobilePayload, /client_attachment_url_forbidden/);
+  assert.match(mobileScope, /withCommunicationSchoolScope/);
+  assert.match(mobileScope, /effectiveSchoolCode/);
   console.log("verify-communications-c2: source guards OK");
 }
 
