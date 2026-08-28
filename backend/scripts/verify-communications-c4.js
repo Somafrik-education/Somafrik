@@ -87,7 +87,7 @@ function sourceGuards() {
 
   assert.match(mobileApi, /internal-notifications/);
   assert.match(mobileApi, /Idempotency-Key/);
-  assert.match(mobileRead, /\.unreadCount\(/);
+  assert.match(mobileRead, /getInternalNotificationsUnreadCount/);
   assert.match(mobileScreen, /markRead|mark.*read/i);
   assert.match(mobileHeader, /useInternalNotificationsUnreadCount/);
   assert.match(mobileNav, /InternalNotifications/);
