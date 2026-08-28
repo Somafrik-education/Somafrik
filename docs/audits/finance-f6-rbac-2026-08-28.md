@@ -112,7 +112,13 @@ Le message `UNIT GO — HTTP PostgreSQL stale-JWT reste requis` a disparu.
 
 ## 9. Diffstat
 
-Voir le compte rendu PR du HEAD poussé.
+`origin/develop...HEAD` (lot F6 complet) :
+
+```text
+16 files changed, 1360 insertions(+), 43 deletions(-)
+```
+
+Fichiers : workflows F6/PR Gates/nightly, `liveRbacPrincipalAuthority`, matrice `financeRbacRouteMatrix.js`, HTTP `financeLiveRbac.http.pg.test.js`, `rbacService` route keys, `server.js` `requirePermission`, gate `verify-finance-rbac`, audit.
 
 ## 10. Base SHA
 
@@ -120,11 +126,12 @@ Voir le compte rendu PR du HEAD poussé.
 
 ## 11. HEAD SHA
 
-Renseigné après push du HEAD #368.
+Implémentation P1-A–D : `9f209cfff6036b0a180d4635b66e7b7b88e8497b`  
+HEAD de branche : renseigné dans le compte rendu PR après le push final.
 
 ## 12. Ahead / behind
 
-Renseigné après push (`git rev-list --left-right --count origin/develop...HEAD`).
+`origin/develop...HEAD` : **13 ahead / 0 behind** (après le commit d'implémentation ; +1 si commit docs d'identité).
 
 ## Web ↔ Mobile
 
