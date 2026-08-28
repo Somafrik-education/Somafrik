@@ -326,13 +326,14 @@ async function main() {
       );
       await pool.query(
         `INSERT INTO announcement_recipients (announcement_id,school_id,user_id,recipient_kind,created_at)
-         VALUES ($1,$2,$3,'parent',NOW())`,
-        [announcementId, fixtures.schoolA, PARENT_A],
+         VALUES ($1,$2,$3,'parent',NOW()),($1,$2,$4,'staff',NOW())`,
+        [announcementId, fixtures.schoolA, PARENT_A, ADMIN_A],
       );
       await pool.query("COMMIT");
     } catch (error) { await pool.query("ROLLBACK"); throw error; }
     await drainOutbox(repo.getClientsStore(), { limit: 20 });
     assert.ok(unwrap((await request("/backoffice/internal-notifications", { token: parentA })).data).some((row) => row.sourceEntityId === announcementId), "C4-02 Parent A reçoit annonce");
+    assert.ok(unwrap((await request("/backoffice/internal-notifications", { token: adminA })).data).some((row) => row.sourceEntityId === announcementId), "C4-02 auteur présent dans snapshot reçoit annonce");
     assert.ok(!unwrap((await request("/backoffice/internal-notifications", { token: parentA2 })).data).some((row) => row.sourceEntityId === announcementId), "C4-02 Parent A2 hors snapshot");
     assert.ok(!unwrap((await request("/backoffice/internal-notifications", { token: parentB })).data).some((row) => row.sourceEntityId === announcementId), "C4-02 école B isolée");
 

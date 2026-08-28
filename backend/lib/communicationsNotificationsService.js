@@ -438,6 +438,10 @@ async function eventSpec(tx, event) {
   const add = (id, kind = "user", context = {}) => {
     if (id && String(id) !== String(event.actor_user_id || "")) recipients.set(String(id), { userId: id, kind, context });
   };
+  // Une annonce reprend exactement le snapshot C3, y compris son auteur s'il est destinataire.
+  const addExact = (id, kind = "user", context = {}) => {
+    if (id) recipients.set(String(id), { userId: id, kind, context });
+  };
   let title = "Nouvelle notification";
   let body = "Une nouvelle information est disponible dans Somafrik.";
   let navigationTarget = {};
@@ -462,7 +466,7 @@ async function eventSpec(tx, event) {
     const announcement = await tx.one(`SELECT id, title FROM announcements WHERE id = $1 AND school_id = $2`, [sourceId, schoolId]);
     if (!announcement) throw new Error("Annonce source introuvable");
     const rows = await tx.all(`SELECT user_id, recipient_kind FROM announcement_recipients WHERE announcement_id = $1 AND school_id = $2`, [sourceId, schoolId]);
-    for (const row of rows) add(row.user_id, row.recipient_kind, { announcementId: sourceId });
+    for (const row of rows) addExact(row.user_id, row.recipient_kind, { announcementId: sourceId });
     title = "Nouvelle annonce";
     body = announcement.title ? `Une nouvelle annonce est disponible : ${announcement.title}` : "Une nouvelle annonce est disponible.";
     navigationTarget = { type: "announcement", announcementId: sourceId };
