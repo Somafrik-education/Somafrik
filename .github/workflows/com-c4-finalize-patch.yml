@@ -1,0 +1,71 @@
+name: COM-C4 Finalize Patch
+
+on:
+  push:
+    branches:
+      - fix/communications-c4-internal-notifications-production-ready
+    paths:
+      - ".github/workflows/com-c4-finalize-patch.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/communications-c4-internal-notifications-production-ready
+          fetch-depth: 0
+      - name: Apply anchored final C4 corrections
+        shell: python
+        run: |
+          from pathlib import Path
+
+          def replace_once(path, old, new):
+              p = Path(path)
+              text = p.read_text()
+              if old not in text:
+                  raise SystemExit(f"Anchor missing in {path}: {old[:120]!r}")
+              if text.count(old) != 1:
+                  raise SystemExit(f"Anchor count != 1 in {path}: {text.count(old)}")
+              p.write_text(text.replace(old, new, 1))
+
+          replace_once(
+              "backend/lib/communicationsNotificationsService.js",
+              '''  const add = (id, kind = "user", context = {}) => {\n    if (id && String(id) !== String(event.actor_user_id || "")) recipients.set(String(id), { userId: id, kind, context });\n  };''',
+              '''  const add = (id, kind = "user", context = {}) => {\n    if (id && String(id) !== String(event.actor_user_id || "")) recipients.set(String(id), { userId: id, kind, context });\n  };\n  // Une annonce reprend exactement le snapshot C3, y compris son auteur s'il est destinataire.\n  const addExact = (id, kind = "user", context = {}) => {\n    if (id) recipients.set(String(id), { userId: id, kind, context });\n  };''',
+          )
+          replace_once(
+              "backend/lib/communicationsNotificationsService.js",
+              '''    for (const row of rows) add(row.user_id, row.recipient_kind, { announcementId: sourceId });''',
+              '''    for (const row of rows) addExact(row.user_id, row.recipient_kind, { announcementId: sourceId });''',
+          )
+
+          replace_once(
+              "backend/lib/communicationsC4.http.pg.test.js",
+              '''        `INSERT INTO announcement_recipients (announcement_id,school_id,user_id,recipient_kind,created_at)\n         VALUES ($1,$2,$3,'parent',NOW())`,\n        [announcementId, fixtures.schoolA, PARENT_A],''',
+              '''        `INSERT INTO announcement_recipients (announcement_id,school_id,user_id,recipient_kind,created_at)\n         VALUES ($1,$2,$3,'parent',NOW()),($1,$2,$4,'staff',NOW())`,\n        [announcementId, fixtures.schoolA, PARENT_A, ADMIN_A],''',
+          )
+          replace_once(
+              "backend/lib/communicationsC4.http.pg.test.js",
+              '''    assert.ok(unwrap((await request("/backoffice/internal-notifications", { token: parentA })).data).some((row) => row.sourceEntityId === announcementId), "C4-02 Parent A reçoit annonce");''',
+              '''    assert.ok(unwrap((await request("/backoffice/internal-notifications", { token: parentA })).data).some((row) => row.sourceEntityId === announcementId), "C4-02 Parent A reçoit annonce");\n    assert.ok(unwrap((await request("/backoffice/internal-notifications", { token: adminA })).data).some((row) => row.sourceEntityId === announcementId), "C4-02 auteur présent dans snapshot reçoit annonce");''',
+          )
+
+          replace_once(
+              "package.json",
+              '''    "verify:communications-c3": "node backend/scripts/verify-communications-c3.js",''',
+              '''    "verify:communications-c3": "node backend/scripts/verify-communications-c3.js",\n    "verify:communications-c4": "node backend/scripts/verify-communications-c4.js",''',
+          )
+      - name: Self-delete bootstrap workflow
+        run: git rm .github/workflows/com-c4-finalize-patch.yml
+      - name: Commit final integration
+        run: |
+          git config user.name "Somafrik CTO Bot"
+          git config user.email "somafrik@outlook.fr"
+          git add backend/lib/communicationsNotificationsService.js backend/lib/communicationsC4.http.pg.test.js package.json
+          git commit -m "fix(communications): finalize C4 recipient contract [c4-finalize-applied]"
+          git push origin HEAD:fix/communications-c4-internal-notifications-production-ready
