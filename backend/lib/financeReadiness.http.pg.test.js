@@ -532,7 +532,7 @@ async function main() {
     assert.equal(Number(obligationOf(afterMulti, fixture.studentCodeA2, "inscription").balance), 0);
     assert.equal(Number(obligationOf(afterMulti, fixture.studentCodeA2, "scolar").balance), 0);
 
-    const unallocatedKey = "f8-pay-unallocated-same";
+    const sameIntention = "f8-idem-same";
     const unallocatedBody = {
       studentId: fixture.studentCodeA1,
       items: [{ feeType: "Non imputé", amount: 15 }],
@@ -542,13 +542,13 @@ async function main() {
     const unalloc1 = await request("/payments", {
       method: "POST",
       token: accountantA,
-      headers: { "Idempotency-Key": unallocatedKey },
+      headers: { "Idempotency-Key": sameIntention },
       body: unallocatedBody,
     });
     const unalloc2 = await request("/payments", {
       method: "POST",
       token: accountantA,
-      headers: { "Idempotency-Key": unallocatedKey },
+      headers: { "Idempotency-Key": sameIntention },
       body: unallocatedBody,
     });
     assert.equal(unalloc1.status, 201, `non imputé: ${JSON.stringify(unalloc1.data)}`);
@@ -559,7 +559,7 @@ async function main() {
     const distinct = await request("/payments", {
       method: "POST",
       token: accountantA,
-      headers: { "Idempotency-Key": "f8-pay-unallocated-new" },
+      headers: { "Idempotency-Key": "f8-idem-other" },
       body: unallocatedBody,
     });
     assert.equal(distinct.status, 201);
