@@ -10,8 +10,10 @@ const {
   createClientsError,
   ignoreClientScope,
   isSuperAdminPrincipal,
+  isCountryAdminPrincipal,
   formatDateTime,
 } = require("./clientsManagement");
+const { isUuid } = require("./principalIdentity");
 const {
   requireSchool,
   actorUserId,
@@ -351,6 +353,43 @@ async function loadVisibleAnnouncement(tx, announcementId, school, userId, manag
   return { announcement, isRecipient };
 }
 
+function principalMatchesRequestSchool(principal, school) {
+  if (isSuperAdminPrincipal(principal) || isCountryAdminPrincipal(principal)) return true;
+  const principalSchool = asTrimmed(principal?.schoolCode).toUpperCase();
+  const targetSchool = asTrimmed(school?.school_code ?? school?.code).toUpperCase();
+  return Boolean(principalSchool) && principalSchool !== "*" && principalSchool === targetSchool;
+}
+
+/**
+ * Auteur = principal.sub uniquement (jamais le body).
+ * PostgreSQL : users.id UUID doit exister dans le tenant.
+ * Mémoire / seed : JWT sub slug (USER-*) peut être hors clients.users ; requireSchool
+ * a déjà scopé l'établissement — on synthétise l'identité JWT, fail-closed si UUID absent.
+ */
+async function resolveAuthorInSchool(tx, principal, school) {
+  const authorUserId = actorUserId(principal);
+  if (!authorUserId || authorUserId === "anonymous") {
+    throw createClientsError(403, "Auteur non authentifié.", CLIENTS_ERROR.FORBIDDEN);
+  }
+  const author = typeof tx.getUserById === "function" ? await tx.getUserById(authorUserId) : null;
+  if (author) {
+    if (author.school_id && String(author.school_id) !== String(school.id) && !isSuperAdminPrincipal(principal)) {
+      throw createClientsError(403, "Auteur non autorisé.", CLIENTS_ERROR.FORBIDDEN);
+    }
+    return author;
+  }
+  if (isUuid(authorUserId) || !principalMatchesRequestSchool(principal, school)) {
+    throw createClientsError(403, "Auteur non autorisé.", CLIENTS_ERROR.FORBIDDEN);
+  }
+  return {
+    id: authorUserId,
+    first_name: asTrimmed(principal.firstName),
+    last_name: asTrimmed(principal.lastName),
+    email: asTrimmed(principal.email || principal.identifier),
+    school_id: school.id,
+  };
+}
+
 async function publish(store, rawPayload, principal, auditMeta) {
   const payload = ignoreClientScope(rawPayload);
   const { title, message } = validateTitleBody(payload);
@@ -363,10 +402,7 @@ async function publish(store, rawPayload, principal, auditMeta) {
 
   return store.withTransaction(async (tx) => {
     const { school, schoolCode } = await requireSchool(store, principal, rawPayload);
-    const author = await tx.getUserById(authorUserId);
-    if (!author || (author.school_id && author.school_id !== school.id && !isSuperAdminPrincipal(principal))) {
-      throw createClientsError(403, "Auteur non autorisé.", CLIENTS_ERROR.FORBIDDEN);
-    }
+    const author = await resolveAuthorInSchool(tx, principal, school);
     const classIds = await resolveClassIds(tx, school.id, audience.classIds);
     const resolvedAudience = { ...audience, classIds };
     const recipients = await resolveAudienceRecipients(tx, school.id, resolvedAudience);
@@ -645,10 +681,7 @@ async function uploadAttachment(store, principal, { buffer, fileName, mimeType }
   try {
     return await store.withTransaction(async (tx) => {
       const { school, schoolCode } = await requireSchool(store, principal, query);
-      const sender = await tx.getUserById(userId);
-      if (!sender || (sender.school_id && sender.school_id !== school.id && !isSuperAdminPrincipal(principal))) {
-        throw createClientsError(403, "Expéditeur non autorisé.", CLIENTS_ERROR.FORBIDDEN);
-      }
+      await resolveAuthorInSchool(tx, principal, school);
       storageKey = await persistAttachmentBytes(school.id, buffer);
       try {
         const saved = await tx.insertAttachment({
@@ -740,4 +773,5 @@ module.exports = {
   parseAudience,
   canManageAnnouncements,
   mapAnnouncementHistory,
+  resolveAuthorInSchool,
 };

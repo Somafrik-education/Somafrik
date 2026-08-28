@@ -33,6 +33,8 @@ La décision structurante de C3 est le **snapshot des destinataires à la public
 
 Un jeton `Announcements:READ` ne donne **pas** toutes les annonces de l'école. Un utilisateur de la même école hors snapshot reçoit 404 sur GET direct (pas de fuite titre / auteur / audience). `school_id` identique n'est jamais une autorisation de lecture.
 
+Auteur = `principal.sub` uniquement. En PostgreSQL l'UUID `users.id` doit exister dans le tenant (UUID absent → 403). En mémoire, le seed LOT7 (`USER-ADMIN1`) n'est pas dans `clients.users` : le slug JWT déjà scopé sur l'établissement est accepté, un UUID PG manquant ou un slug d'une autre école reste 403.
+
 **Verdict Annonces : GO CONDITIONNEL** — findings COM-C1 d'annonces fermés par E2E C3-01…16. Recette appareil Expo (picker PJ réel) non exécutée dans cet agent. C4 hors scope. Autorisation de merge réservée au diff GitHub CTO.
 
 ---
