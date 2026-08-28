@@ -580,7 +580,8 @@ class PostgresRepository {
     // Boot : cette étape précède ensureEstablishmentRolesCanonicalSchema.
     // Si la table n'existe pas encore (base neuve), seul le référentiel statique
     // est reconnu ; un rôle dynamique reste fail-closed. Base existante : le
-    // catalogue actif scope=school résout un role_code unique.
+    // catalogue actif scope=school résout un role_code unique uniquement si
+    // users.school_id IS NOT NULL (jamais de rôle établissement en scope plateforme).
     const catalogRel = await this.all(`SELECT to_regclass('public.establishment_roles') AS ref`);
     const catalogAvailable = Boolean(catalogRel[0]?.ref);
     const unknownRoles = await this.all(inventoryUnknownUsersRoleSql(catalogAvailable));

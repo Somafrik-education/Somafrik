@@ -284,6 +284,85 @@ async function main() {
       "users.role ne doit pas être muté",
     );
     assert.equal(usersRoleBefore, "CONSEILLER_PÉDAGOGIQUE");
+    assert.equal(
+      String(
+        (await pool.query(`SELECT school_id FROM user_roles WHERE user_id = $1`, [counselor.id])).rows[0].school_id,
+      ),
+      String(schoolA),
+      "rôle établissement backfillé avec le school_id de l'utilisateur",
+    );
+
+    const platformAdmin = await insertUser(pool, {
+      schoolId: null,
+      userCode: "USR-2026-00016",
+      firstName: "Super",
+      lastName: "Plateforme",
+      role: "SUPER_ADMIN",
+    });
+    await applyUserRolesCanonical(pool);
+    const platformRow = await pool.query(
+      `SELECT school_id, role_key, status FROM user_roles WHERE user_id = $1 AND status = 'active'`,
+      [platformAdmin.id],
+    );
+    assert.equal(platformRow.rowCount, 1);
+    assert.equal(platformRow.rows[0].role_key, "SUPER_ADMIN");
+    assert.equal(platformRow.rows[0].school_id, null, "rôle plateforme school_id NULL inchangé");
+
+    const orphanCatalog = await insertUser(pool, {
+      schoolId: null,
+      userCode: "USR-2026-00017",
+      firstName: "Orphelin",
+      lastName: "Catalogue",
+      role: "CONSEILLER_PÉDAGOGIQUE",
+    });
+    const rolesBeforeOrphan = (await pool.query(`SELECT COUNT(*)::int AS count FROM user_roles`)).rows[0].count;
+    await assert.rejects(
+      () => applyUserRolesCanonical(pool),
+      (error) => error.code === USER_ROLES_MIGRATION_AMBIGUOUS,
+      "rôle établissement sans school_id → USER_ROLES_MIGRATION_AMBIGUOUS",
+    );
+    assert.equal(
+      (await pool.query(`SELECT COUNT(*)::int AS count FROM user_roles`)).rows[0].count,
+      rolesBeforeOrphan,
+      "aucun user_roles créé pour un rôle établissement sans tenant",
+    );
+    assert.equal(
+      (await pool.query(`SELECT COUNT(*)::int AS count FROM user_roles WHERE user_id = $1`, [orphanCatalog.id])).rows[0]
+        .count,
+      0,
+    );
+    assert.equal(
+      (await pool.query(`SELECT role FROM users WHERE id = $1`, [orphanCatalog.id])).rows[0].role,
+      "CONSEILLER_PÉDAGOGIQUE",
+      "users.role non muté sur refus sans school_id",
+    );
+    await pool.query(`DELETE FROM users WHERE id = $1`, [orphanCatalog.id]);
+
+    const orphanSecondary = await insertUser(pool, {
+      schoolId: null,
+      userCode: "USR-2026-00018",
+      firstName: "Second",
+      lastName: "Orphelin",
+      role: null,
+    });
+    await pool.query(
+      `UPDATE users SET profile_payload = '{"secondaryRoles":["CONSEILLER_PÉDAGOGIQUE"]}'::jsonb WHERE id = $1`,
+      [orphanSecondary.id],
+    );
+    const rolesBeforeOrphanSecondary = (await pool.query(`SELECT COUNT(*)::int AS count FROM user_roles`)).rows[0]
+      .count;
+    await assert.rejects(
+      () => applyUserRolesCanonical(pool),
+      (error) => error.code === USER_ROLES_MIGRATION_AMBIGUOUS,
+      "secondaryRole établissement sans school_id → USER_ROLES_MIGRATION_AMBIGUOUS",
+    );
+    assert.equal(
+      (await pool.query(`SELECT COUNT(*)::int AS count FROM user_roles`)).rows[0].count,
+      rolesBeforeOrphanSecondary,
+      "aucun user_roles créé pour secondaryRole dynamique sans tenant",
+    );
+    await pool.query(`DELETE FROM users WHERE id = $1`, [orphanSecondary.id]);
+    await applyUserRolesCanonical(pool);
 
     const secondaryCounselor = await insertUser(pool, {
       schoolId: schoolA,

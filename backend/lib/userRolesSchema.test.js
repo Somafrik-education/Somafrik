@@ -38,10 +38,13 @@ test("inventaire sans catalogue reste fail-closed pour un rôle dynamique", () =
   assert.doesNotMatch(sql, /establishment_roles/);
 });
 
-test("inventaire avec catalogue exige une correspondance unique active school", () => {
+test("inventaire avec catalogue exige une correspondance unique active school et un school_id", () => {
   const sql = inventoryUnknownUsersRoleSql(true);
   assert.match(sql, /establishment_roles/);
   assert.match(sql, /er\.status\)\) = 'active'/);
   assert.match(sql, /er\.scope\)\) = 'school'/);
+  assert.match(sql, /u\.school_id IS NOT NULL/);
   assert.match(sql, /COUNT\(\*\)::int/);
+  const catalogSql = backfillFromUsersRoleSql(true);
+  assert.match(catalogSql, /u\.school_id IS NULL THEN NULL/);
 });

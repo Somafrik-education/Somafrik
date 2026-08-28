@@ -96,29 +96,37 @@ function isStaticKnownRoleSql(expr) {
   )`;
 }
 
-function catalogUniqueMatchSql(legacyExpr) {
+function catalogUniqueMatchSql(legacyExpr, schoolIdExpr = "u.school_id") {
   return `(
-    SELECT COUNT(*)::int
-    FROM establishment_roles er
-    WHERE lower(btrim(er.status)) = 'active'
-      AND lower(btrim(er.scope)) = 'school'
-      AND (
-        somafrik_normalize_role_code(er.role_code) = somafrik_normalize_role_code(${legacyExpr})
-        OR somafrik_normalize_role_code(er.role_name) = somafrik_normalize_role_code(${legacyExpr})
-      )
-  ) = 1`;
+    ${schoolIdExpr} IS NOT NULL
+    AND (
+      SELECT COUNT(*)::int
+      FROM establishment_roles er
+      WHERE lower(btrim(er.status)) = 'active'
+        AND lower(btrim(er.scope)) = 'school'
+        AND (
+          somafrik_normalize_role_code(er.role_code) = somafrik_normalize_role_code(${legacyExpr})
+          OR somafrik_normalize_role_code(er.role_name) = somafrik_normalize_role_code(${legacyExpr})
+        )
+    ) = 1
+  )`;
 }
 
-function catalogRoleCodeSql(legacyExpr) {
+function catalogRoleCodeSql(legacyExpr, schoolIdExpr = "u.school_id") {
   return `(
-    SELECT MIN(er.role_code)
-    FROM establishment_roles er
-    WHERE lower(btrim(er.status)) = 'active'
-      AND lower(btrim(er.scope)) = 'school'
-      AND (
-        somafrik_normalize_role_code(er.role_code) = somafrik_normalize_role_code(${legacyExpr})
-        OR somafrik_normalize_role_code(er.role_name) = somafrik_normalize_role_code(${legacyExpr})
+    CASE
+      WHEN ${schoolIdExpr} IS NULL THEN NULL
+      ELSE (
+        SELECT MIN(er.role_code)
+        FROM establishment_roles er
+        WHERE lower(btrim(er.status)) = 'active'
+          AND lower(btrim(er.scope)) = 'school'
+          AND (
+            somafrik_normalize_role_code(er.role_code) = somafrik_normalize_role_code(${legacyExpr})
+            OR somafrik_normalize_role_code(er.role_name) = somafrik_normalize_role_code(${legacyExpr})
+          )
       )
+    END
   )`;
 }
 
