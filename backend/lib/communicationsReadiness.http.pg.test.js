@@ -641,6 +641,77 @@ async function main() {
     assert.equal(xss.status, 201, "contenu HTML accepté (pas de sanitization serveur)");
     assert.match(String(xss.data.message || xss.data.body), /<script>/);
 
+    const pdfPath = "/api/backoffice/communications/files/com-c1-reunion.pdf";
+    const withPdf = await request("/backoffice/messages", {
+      method: "POST",
+      token: adminA,
+      body: {
+        message: "Convocation PDF",
+        participantUserIds: [PARENT_A],
+        studentId: "COM-STU-A",
+        attachmentUrl: pdfPath,
+      },
+    });
+    assert.equal(withPdf.status, 201, `COM-C1 E2E9 message PDF: ${JSON.stringify(withPdf.data)}`);
+    assert.equal(withPdf.data.senderUserId, ADMIN_A, "COM-C1 E2E9 senderUserId canonique");
+    assert.match(String(withPdf.data.sentAt || ""), /^\d{4}-\d{2}-\d{2}T/, "COM-C1 E2E9 sentAt ISO complet");
+    assert.equal(withPdf.data.attachmentUrl, pdfPath, "COM-C1 E2E9 attachmentUrl persisté");
+    if (!withPdf.data.senderName) {
+      notes.push("COM-C1-P1-011: projection message sans senderName lisible");
+    }
+    const storedPdf = await countRows(
+      pool,
+      `SELECT count(*)::int AS c FROM school_messages WHERE id = $1 AND attachment_url = $2`,
+      [withPdf.data.id, pdfPath],
+    );
+    assert.equal(storedPdf, 1, "COM-C1 E2E9 attachment_url en PostgreSQL");
+
+    const parentPdf = unwrapList((await request("/backoffice/messages", { token: parentAInbox })).data).find(
+      (row) => row.id === withPdf.data.id,
+    );
+    assert.ok(parentPdf, "COM-C1 E2E9 Parent A retrouve le message PDF");
+    assert.equal(parentPdf.senderUserId, ADMIN_A);
+    assert.match(String(parentPdf.sentAt || ""), /^\d{4}-\d{2}-\d{2}T/, "COM-C1 E2E9 Parent A voit date+heure");
+    assert.equal(parentPdf.attachmentUrl, pdfPath, "COM-C1 E2E9 Parent A voit la référence PDF");
+
+    const bPdfList = unwrapList((await request("/backoffice/messages", { token: adminB })).data);
+    assert.ok(!bPdfList.some((row) => row.id === withPdf.data.id), "COM-C1 E2E9 école B ne voit pas le message PDF");
+    const bDownload = await request("/backoffice/communications/files/com-c1-reunion.pdf", { token: adminB });
+    assert.ok(
+      [403, 404].includes(bDownload.status),
+      `COM-C1 E2E9 B ne télécharge pas le PDF: ${bDownload.status}`,
+    );
+    const aDownload = await request("/backoffice/communications/files/com-c1-reunion.pdf", { token: adminA });
+    if (aDownload.status !== 200) {
+      notes.push("COM-C1-P1-012: pas d'upload/stockage/téléchargement authentifié (attachmentUrl texte seulement)");
+    }
+
+    const annPdf = await request("/backoffice/announcements", {
+      method: "POST",
+      token: adminA,
+      body: {
+        title: "Circulaire PDF",
+        message: "voir pièce jointe",
+        attachmentUrl: pdfPath,
+        attachments: [{ fileName: "circulaire.pdf", url: pdfPath }],
+      },
+    });
+    assert.equal(annPdf.status, 201, `COM-C1 E2E9 annonce PDF: ${JSON.stringify(annPdf.data)}`);
+    const annTs = String(annPdf.data.publishedAt || annPdf.data.createdAt || annPdf.data.date || "");
+    if (!/^\d{4}-\d{2}-\d{2}T/.test(annTs)) {
+      notes.push("COM-C1-P1-011: annonce API sans timestamp ISO (formatDate JJ-MM-AAAA)");
+    }
+    if (!annPdf.data.attachmentUrl && !Array.isArray(annPdf.data.attachments)) {
+      notes.push("COM-C1-P1-012: annonce n'accepte pas de pièce jointe");
+    }
+    const bAnnPdf = unwrapList((await request("/backoffice/announcements", { token: adminB })).data);
+    assert.ok(
+      !bAnnPdf.some((row) => row.id === annPdf.data.id),
+      "COM-C1 E2E9 école B ne voit pas l'annonce PDF",
+    );
+    notes.push("COM-C1-P1-010: pas de projection historique transversale message|annonce|notification");
+    notes.push("COM-C1-E2E9-NOTIF: pièces jointes notification reportées à COM-C4");
+
     console.log("OK communicationsReadiness.http.pg.test.js — parcours COM-C1 PostgreSQL réel");
     if (notes.length) {
       console.log("COM-C1 notes:\n- " + notes.join("\n- "));

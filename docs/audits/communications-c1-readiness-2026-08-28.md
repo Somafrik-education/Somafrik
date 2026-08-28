@@ -42,6 +42,9 @@ Ce qui **bloque une Release Candidate Communication** :
 | COM-C1-P1-004 | P1 | POST announcements **sans** `withIdempotency` |
 | COM-C1-P1-005 | P1 | `mark-read` pose `school_messages.status = read` **global** |
 | COM-C1-P1-009 | P1 | Parent sans `studentIds` JWT → GET messages vide (y compris ses fils) |
+| COM-C1-P1-010 | P1 | Historique Communication absent comme contrat transversal |
+| COM-C1-P1-011 | P1 | Expéditeur + timestamp non uniformes (ISO complet obligatoire) |
+| COM-C1-P1-012 | P1 | Pièces jointes : `attachment_url` texte, pas d'upload sécurisé 0..N |
 | COM-C1-E2E-6 | — | Notification interne événementielle : **NOT_IMPLEMENTED** |
 
 **Verdict : NO-GO** pour une clôture Communication / RC globale. Isolation inter-écoles A↔B tient. Le RBAC live via `resolveEffectivePermissions` refuse bien la mutation après révocation PG (E2E 7). Les P0 restants (liste non participant-scoped, destinataire = userId école) + l'absence de notifications événementielles interdisent de retirer le placeholder Paramètres.
@@ -295,6 +298,7 @@ DB isolée `somafrik_com_c1_it`. Fixtures `SCH-COM-A` / `SCH-COM-B`, Admin/Teach
 | E2E 6 Notification | **NOT_IMPLEMENTED** (`notifications` vide) |
 | E2E 7 RBAC live | **PASS** : révocation PG → 403, aucune ligne |
 | E2E 8 Idempotency messages | **PASS** ; annonces : doublon possible (note P1) |
+| E2E 9 PJ PDF + expéditeur + ISO | Message : `senderUserId` + `sentAt` ISO + `attachmentUrl` persistés ; Parent A les voit ; B ne voit ni le message ni le fichier (403/404). `senderName` absent. Annonce : timestamp réduit à `JJ-MM-AAAA`, PJ ignorées. Notifications : reporté COM-C4 |
 
 `clientsSecurity.test.js` déjà : participant hors école → 403.
 
@@ -335,6 +339,47 @@ RBAC live (révocation PG, même JWT) : **non-finding** — `resolveEffectivePer
 | COM-C1-P1-007 | HTML brut persisté (XSS stocké si l'UI n'échappe pas) |
 | COM-C1-P1-008 | Pas de GET message/conversation : clients pollent la liste complète |
 | COM-C1-P1-009 | Parent sans `studentIds` JWT : GET messages vide (ses propres fils inclus) |
+| COM-C1-P1-010 | Pas de vue historique transversale (type, expéditeur, date+heure, PJ, lecture, audit) |
+| COM-C1-P1-011 | Annonce/notification : `formatDate()` retire l'heure ; message sans `senderName` ; notif sans FK auteur |
+| COM-C1-P1-012 | Un seul `attachment_url` texte ; pas de table `communication_attachments` ni d'ACL fichier |
+
+### COM-C1-P1-010 — Historique Communication absent comme contrat transversal
+
+Exiger une vue historique canonique (projection commune, **pas forcément** une table `communication_history`) permettant de retrouver Messages, Annonces et Notifications.
+
+Pour chaque entrée : `type` (message \| annonce \| notification), `id`, `conversationId` si applicable, établissement, expéditeur `userId`, nom de l'expéditeur, destinataire / audience, titre / objet, contenu, **date ET heure**, statut, pièce(s) jointe(s), lecture, archivage, référence d'audit.
+
+Interdit : historique construit uniquement depuis `localStorage` ; suppression physique d'une communication devant rester traçable (les notifications archivées sont aujourd'hui **DELETE**).
+
+### COM-C1-P1-011 — Expéditeur + timestamp non uniformes
+
+Contrat obligatoire Message / Annonce / Notification :
+
+- `senderUserId` / `createdByUserId`
+- `senderName` / `createdByName`
+- `createdAt` ou `sentAt` = timestamp ISO complet (`2026-08-28T10:42:17.000Z`)
+
+L'UI pourra afficher `28/08/2026 à 12:42` ; l'API ne doit jamais réduire la donnée canonique à la seule date.
+
+État actuel :
+
+| Objet | Expéditeur | Date + heure | PJ |
+|---|---|---|---|
+| Message | `sender_user_id` OK ; **pas de `senderName`** | `sentAt` ISO OK ; `date` = `JJ-MM-AAAA` | `attachment_url` texte |
+| Annonce | `created_by` + nom profil OK | `formatDate()` **retire l'heure** | absent |
+| Notification | `createdBy` texte JSON, **pas de FK** | `formatDate()` **retire l'heure** | absent |
+
+Notification automatique (COM-C4) : `senderType = system`, `senderName = Somafrik`. Auteur humain : `created_by_user_id` / `sender_user_id` canonique.
+
+### COM-C1-P1-012 — Pièces jointes Communication
+
+Chaque domaine doit pouvoir référencer **0..N** pièces jointes. Ne pas se limiter à un `attachment_url` texte.
+
+Contrat recommandé `communication_attachments` : `id`, `school_id`, `entity_type` (message \| announcement \| notification), `entity_id`, `file_name`, `mime_type`, `file_size`, `storage_key` / url, `uploaded_by_user_id`, `created_at`, `status`.
+
+Sécurité : tenant, utilisateur autorisé, taille max, MIME allowlist, nom neutralisé, pas d'exécutable, accès authentifié aux fichiers privés, suppression/archivage contrôlé.
+
+E2E 9 : URL persistée sur le message ; **aucun** endpoint de téléchargement ; école B 404 ; annonce ignore `attachmentUrl` / `attachments`.
 
 ---
 
@@ -360,7 +405,9 @@ RBAC live (révocation PG, même JWT) : **non-finding** — `resolveEffectivePer
 - Triggers événementiels
 - Delivery logs / retry / coût
 - Providers e-mail, SMS, WhatsApp, push
-- API conversations / pagination réelle / pièces jointes sécurisées
+- API conversations / pagination réelle / pièces jointes sécurisées (`communication_attachments`)
+- Projection historique transversale (P1-010)
+- `senderName` message ; ISO `createdAt`/`publishedAt` annonce et notification (P1-011)
 - Notification interne « nouveau message » / « annonce publiée »
 - Lecture cache L1 communication
 - Outbox announcements (refus explicite hors messages)
@@ -373,16 +420,18 @@ Offline : messages peuvent entrer en outbox Mobile (domaine autorisé). Annonces
 
 Ordre recommandé, sans implémenter ici :
 
-1. **P0-001** — GET messages scoped `EXISTS participant` (staff y compris enseignant affecté).
-2. **P0-002** — résoudre destinataires via contacts/relations / affectations, refuser un `userId` nu.
-3. **P1-009** — hydrater `studentIds` à l'auth **ou** lister par participation, pas seulement par élève.
-4. **P1-001** — POST dans `conversationId` existant + GET thread paginé.
-5. **P1-002 / P1-003** — audience serveur ; `announcement_reads` PG ; retirer localStorage comme SoT.
-6. **P1-004 / P1-006** — idempotency annonces + header Web.
-7. **P1-005** — ne plus globaliser `status=read` ; dériver unread de `school_message_reads`.
-8. Ensuite seulement : écran Paramètres Notifications (préférences internes), puis canaux externes.
+**COM-C2 — sécurité Messages** (après merge COM-C1) :
 
-Ne pas ouvrir SMS/WhatsApp/push tant que l'interne n'est pas isolé et live-RBAC.
+1. P0-001 — GET messages scoped `EXISTS participant`.
+2. P0-002 — destinataires métier (parent lié / affectation), refuser un `userId` nu.
+3. Vraie API conversation/thread (P1-001 / P1-008).
+4. **P1-010 / P1-011 / P1-012** pour le domaine Message : historique/thread, `senderName`, timestamps ISO uniquement côté API, pièces jointes sécurisées 0..N + E2E PDF tenant.
+
+**COM-C3 — Annonces** : même contrat (audience serveur, reads PG, ISO `publishedAt`/`createdAt`, PJ 0..N, pas de DELETE opaque).
+
+**COM-C4 — Notifications internes** : triggers événementiels, `created_by_user_id` ou `senderType=system`, ISO, PJ, historique durable (plus de DELETE archive). Ensuite seulement : Centre de communications / historique transversal, puis `/parametres/notifications`.
+
+Ne pas ouvrir SMS/WhatsApp/push tant que l'interne n'est pas isolé, historisable et live-RBAC.
 
 ---
 
@@ -393,9 +442,9 @@ Ne pas ouvrir SMS/WhatsApp/push tant que l'interne n'est pas isolé et live-RBAC
 Conditions pour un futur GO CONDITIONNEL (COM-C2) :
 
 1. P0-001, P0-002 corrigés + E2E rouge→vert.
-2. Diff GitHub CTO `develop → HEAD`.
-3. Placeholder Paramètres conservé jusqu'à préférences **réellement** persistées.
-4. Recette Web/Mobile humaine (thread, badge, offline outbox messages).
+2. Contrat historique / expéditeur / ISO / PJ (P1-010..012) porté par COM-C2 Messages.
+3. Diff GitHub CTO `develop → HEAD`.
+4. Placeholder Paramètres conservé jusqu'à préférences **réellement** persistées (après C4).
 
 `GO PRODUCTION` Communication refusé.  
 Aucun COM-C2 dans cette PR. Aucun Ready. Aucun merge depuis cet agent.

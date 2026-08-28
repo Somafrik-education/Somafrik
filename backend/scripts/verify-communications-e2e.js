@@ -59,6 +59,10 @@ function sourceGuards() {
   assert.match(httpTest, /COM-C1 E2E6 NOT_IMPLEMENTED/);
   assert.match(httpTest, /Idempotency-Key/);
   assert.match(httpTest, /sender vient du principal/);
+  assert.match(httpTest, /COM-C1 E2E9 Parent A retrouve le message PDF/);
+  assert.match(httpTest, /COM-C1 E2E9 B ne télécharge pas le PDF/);
+  assert.match(httpTest, /COM-C1 E2E9 école B ne voit pas l'annonce PDF/);
+  assert.match(httpTest, /sentAt ISO complet/);
 
   console.log("verify-communications-e2e: source guards COM-C1 OK");
 }
