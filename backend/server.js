@@ -6247,11 +6247,8 @@ app.use((error, _req, res, _next) => {
 const PORT = process.env.PORT || 5000;
 const HOST = "0.0.0.0";
 
-function stopCommunicationsWorkerOnSignal() {
-  stopCommunicationsNotificationsWorker();
-}
-process.on("SIGTERM", stopCommunicationsWorkerOnSignal);
-process.on("SIGINT", stopCommunicationsWorkerOnSignal);
+const PORT = process.env.PORT || 5000;
+const HOST = "0.0.0.0";
 
 initRepository()
   .then(() => {
