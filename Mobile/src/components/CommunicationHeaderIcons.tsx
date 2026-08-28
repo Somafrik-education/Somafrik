@@ -5,6 +5,7 @@ import { useAdminData } from "../context/AdminDataContext";
 import { canReadRoute, canReadView } from "../domain/security/permissions";
 import { canAccessMessagesRoute } from "../lib/mobileCtaRbacAlignment";
 import { useAnnouncementsUnreadCount } from "../lib/announcementsRead";
+import { useInternalNotificationsUnreadCount } from "../lib/internalNotificationsRead";
 import { ICON_HIT_SLOP, MIN_TOUCH_TARGET_DP } from "../lib/mobileUsability";
 
 type IconName = keyof typeof Ionicons.glyphMap;
@@ -57,15 +58,22 @@ export default function CommunicationHeaderIcons({
 
   const canMessages = canAccessMessagesRoute(session);
   const canAnnouncements = canReadRoute(session, "Announcements");
-  const canNotifications = canReadView(session, "PlatformNotifications");
+  const hasInternalNotificationScope = Boolean(activeSchoolCode && activeSchoolCode !== "*");
+  const canInternalNotifications = canReadRoute(session, "InternalNotifications") && hasInternalNotificationScope;
+  const canPlatformNotifications = canReadView(session, "PlatformNotifications") && !hasInternalNotificationScope;
+  const { count: internalUnreadNotifications } = useInternalNotificationsUnreadCount(
+    canInternalNotifications, activeSchoolCode,
+  );
+  const canNotifications = canInternalNotifications || canPlatformNotifications;
 
   if (!canMessages && !canAnnouncements && !canNotifications) {
     return null;
   }
 
-  const unreadNotifications = notificationsData.filter(
+  const platformUnreadNotifications = notificationsData.filter(
     (item) => String(item.status ?? "") !== "Lu" && String(item.status ?? "") !== "read",
   ).length;
+  const unreadNotifications = canInternalNotifications ? internalUnreadNotifications : platformUnreadNotifications;
 
   return (
     <View style={styles.row}>
@@ -90,7 +98,7 @@ export default function CommunicationHeaderIcons({
           icon="notifications-outline"
           label="Notifications"
           count={unreadNotifications}
-          onPress={() => navigation.navigate("PlatformNotifications")}
+          onPress={() => navigation.navigate(canInternalNotifications ? "InternalNotifications" : "PlatformNotifications")}
         />
       ) : null}
     </View>

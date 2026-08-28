@@ -40,6 +40,7 @@ const adminMenuItems: MenuItem[] = [
   { label: "💰 Paiements", entity: "payments", route: "Payments", view: "payments" },
   { label: "⚙️ Statuts paiement", entity: "paymentStatuses", view: "configuration" },
   { label: "📢 Annonces", entity: "announcements", route: "Announcements", view: "announcements" },
+  { label: "🔔 Notifications", route: "InternalNotifications", view: "InternalNotifications" },
   { label: "🗓️ Emplois du temps", route: "Timetable", view: "Timetable" },
   { label: "📄 Bulletins", route: "ReportCards", view: "ReportCards" },
   { label: "📄 Documents scolaires", route: "Documents", view: "Documents" },
@@ -55,6 +56,7 @@ const parentMenuItems: MenuItem[] = [
   { label: "💰 Situation des frais", route: "FraisEleve", view: "FraisEleve" },
   { label: "📱 Paiement mobile", route: "MobilePayment", view: "MobilePayment" },
   { label: "📢 Annonces de l'école", route: "Announcements", view: "Announcements" },
+  { label: "🔔 Notifications", route: "InternalNotifications", view: "InternalNotifications" },
   { label: "🔄 Mode hors ligne", route: "OfflineMode", view: "OfflineMode" },
   { label: "🆘 Support", route: "Support", view: "Support" },
 ];
@@ -67,6 +69,7 @@ const studentMenuItems: MenuItem[] = [
   { label: "🗓️ Mon emploi du temps", route: "Timetable", view: "Timetable" },
   { label: "💰 Mes paiements", route: "FraisEleve", view: "FraisEleve" },
   { label: "📢 Annonces", route: "Announcements", view: "Announcements" },
+  { label: "🔔 Notifications", route: "InternalNotifications", view: "InternalNotifications" },
   { label: "🔄 Mode hors ligne", route: "OfflineMode", view: "OfflineMode" },
 ];
 
@@ -78,6 +81,7 @@ const teacherMenuItems: MenuItem[] = [
   { label: "📄 Bulletins", route: "ReportCards", view: "ReportCards" },
   { label: "🗓️ Mon emploi du temps", route: "Timetable", view: "Timetable" },
   { label: "📢 Annonces de l'école", route: "Announcements", view: "Announcements" },
+  { label: "🔔 Notifications", route: "InternalNotifications", view: "InternalNotifications" },
   { label: "🔄 Synchronisation", route: "Synchronization", view: "Synchronization" },
   { label: "🆘 Support", route: "Support", view: "Support" },
 ];

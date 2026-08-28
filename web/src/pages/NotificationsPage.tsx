@@ -1,5 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { useAuth } from "../context/AuthContext";
+import { useActiveSchool } from "../context/ActiveSchoolContext";
+import { InternalNotificationsCenter } from "../components/communications/InternalNotificationsCenter";
 import { useData } from "../context/DataContext";
 import { scopedNotifications } from "../lib/scope";
 import { useFeaturePermissions } from "../lib/usePermissionContext";
@@ -44,6 +46,7 @@ function newId(): string {
 
 export function NotificationsPage() {
   const { session } = useAuth();
+  const { activeSchoolCode } = useActiveSchool();
   const { state, refresh } = useData();
   const [busy, setBusy] = useState(false);
   const [composing, setComposing] = useState<PlatformNotification | null>(null);
@@ -51,6 +54,10 @@ export function NotificationsPage() {
 
   const rows = scopedNotifications(session?.user ?? null, state);
   const { canCreate, canUpdate, canDelete } = useFeaturePermissions("Notifications");
+
+  if (activeSchoolCode && activeSchoolCode !== "*") {
+    return <InternalNotificationsCenter />;
+  }
 
   async function handleCreate(event: FormEvent) {
     event.preventDefault();

@@ -52,6 +52,11 @@ const { ensureSubscriptionModuleState } = require("./services/subscriptionModule
 const { EstablishmentService } = require("./services/establishmentService");
 const { UnpaidService } = require("./services/unpaidService");
 const { IdempotencyService, withIdempotency } = require("./services/idempotencyService");
+const internalNotificationsService = require("./lib/communicationsNotificationsService");
+const {
+  startCommunicationsNotificationsWorker,
+  stopCommunicationsNotificationsWorker,
+} = require("./lib/communicationsNotificationsWorker");
 const schoolSubscriptionAccessService = require("./services/schoolSubscriptionAccessService");
 const {
   assertProductionSecrets,
@@ -2865,6 +2870,81 @@ app.post("/api/backoffice/announcements/:announcementId/archive", requireAuth, r
     { ...(req.body ?? {}), ...(req.query ?? {}) },
   );
   res.json(archived);
+}));
+
+app.get("/api/backoffice/internal-notifications/unread-count", requireAuth, requirePermission("GET /api/backoffice/internal-notifications/unread-count"), asyncHandler(async (req, res) => {
+  const result = await internalNotificationsService.unreadCount(repository.getClientsStore(), req.principal, req.query);
+  res.json(result);
+}));
+
+app.get("/api/backoffice/internal-notifications", requireAuth, requirePermission("GET /api/backoffice/internal-notifications"), asyncHandler(async (req, res) => {
+  const result = await internalNotificationsService.list(repository.getClientsStore(), req.principal, req.query);
+  res.json(result);
+}));
+
+app.post("/api/backoffice/internal-notifications", requireAuth, requirePermission("POST /api/backoffice/internal-notifications"), asyncHandler(async (req, res) => {
+  const created = await internalNotificationsService.createManual(
+    repository.getClientsStore(),
+    req.body ?? {},
+    req.principal,
+    clientsAuditMetaFromRequest(req),
+    req.get("idempotency-key"),
+  );
+  res.status(201).json(created);
+}));
+
+app.post(
+  "/api/backoffice/internal-notifications/attachments",
+  requireAuth,
+  requirePermission("POST /api/backoffice/internal-notifications/attachments"),
+  express.raw({ type: () => true, limit: "11mb" }),
+  asyncHandler(async (req, res) => {
+    const buffer = Buffer.isBuffer(req.body) ? req.body : Buffer.from(req.body ?? []);
+    const fileName = req.get("x-filename") || req.get("x-file-name") || "fichier";
+    const mimeType = req.get("x-mime-type") || req.get("content-type") || "";
+    const created = await internalNotificationsService.uploadAttachment(
+      repository.getClientsStore(),
+      req.principal,
+      { buffer, fileName, mimeType },
+      req.query,
+    );
+    res.status(201).json(created);
+  }),
+);
+
+app.get("/api/backoffice/internal-notifications/attachments/:attachmentId", requireAuth, requirePermission("GET /api/backoffice/internal-notifications/attachments/:attachmentId"), asyncHandler(async (req, res) => {
+  const file = await internalNotificationsService.downloadAttachment(
+    repository.getClientsStore(),
+    req.params.attachmentId,
+    req.principal,
+    req.query,
+  );
+  const safeName = String(file.fileName || "fichier").replace(/["\\r\\n]/g, "_");
+  res.setHeader("Content-Type", file.mimeType || "application/octet-stream");
+  res.setHeader("Content-Disposition", `inline; filename="${safeName}"`);
+  res.setHeader("Content-Length", file.bytes.length);
+  res.send(file.bytes);
+}));
+
+app.get("/api/backoffice/internal-notifications/:notificationId", requireAuth, requirePermission("GET /api/backoffice/internal-notifications/:notificationId"), asyncHandler(async (req, res) => {
+  const row = await internalNotificationsService.get(
+    repository.getClientsStore(), req.params.notificationId, req.principal, req.query,
+  );
+  res.json(row);
+}));
+
+app.patch("/api/backoffice/internal-notifications/:notificationId/read", requireAuth, requirePermission("PATCH /api/backoffice/internal-notifications/:notificationId/read"), asyncHandler(async (req, res) => {
+  const row = await internalNotificationsService.markRead(
+    repository.getClientsStore(), req.params.notificationId, req.principal, clientsAuditMetaFromRequest(req), req.query,
+  );
+  res.json(row);
+}));
+
+app.patch("/api/backoffice/internal-notifications/:notificationId/archive", requireAuth, requirePermission("PATCH /api/backoffice/internal-notifications/:notificationId/archive"), asyncHandler(async (req, res) => {
+  const row = await internalNotificationsService.archive(
+    repository.getClientsStore(), req.params.notificationId, req.principal, clientsAuditMetaFromRequest(req), req.query,
+  );
+  res.json(row);
 }));
 
 app.get("/api/backoffice/subscription-access", requireAuth, requirePermission("GET /api/backoffice/subscription-access"), asyncHandler(async (req, res) => {
@@ -6203,6 +6283,7 @@ async function initRepository() {
   auditService = new AuditService(repository);
   idempotencyService = new IdempotencyService(repository);
   app.locals.idempotencyService = idempotencyService;
+  startCommunicationsNotificationsWorker(repository);
 }
 
 function warnIfUnsafeConfiguration() {
