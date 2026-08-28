@@ -333,6 +333,7 @@ RBAC live (révocation PG, même JWT) : **non-finding** — `resolveEffectivePer
 | COM-C1-P1-005 | `updateMessageStatus(read)` global : un lecteur marque le message Lu pour tous |
 | COM-C1-P1-006 | Web `clientsApi.sendMessage` sans `Idempotency-Key` (Mobile outbox oui) |
 | COM-C1-P1-007 | HTML brut persisté (XSS stocké si l'UI n'échappe pas) |
+| COM-C1-P1-008 | Pas de GET message/conversation : clients pollent la liste complète |
 | COM-C1-P1-009 | Parent sans `studentIds` JWT : GET messages vide (ses propres fils inclus) |
 
 ---
