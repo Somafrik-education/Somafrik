@@ -440,6 +440,7 @@ describe("GradesEvaluationsPage — Saisie des notes Validée uniquement", () =>
     coefficient: 1,
     evaluationType: "Devoir",
     active: true,
+    teacherId: "ENS-0001",
   };
 
   const sekeAssignments = [
@@ -555,6 +556,10 @@ describe("GradesEvaluationsPage — Saisie des notes Validée uniquement", () =>
 
     expect(upsertNoteApi).toHaveBeenCalledTimes(3);
     expect(upsertNoteApi.mock.calls.map((call) => call[0].studentId)).toEqual(["s1", "s2", "s3"]);
+    for (const [payload] of upsertNoteApi.mock.calls) {
+      expect(payload.teacherId).toBe("ENS-0001");
+      expect(payload.authorId).toBeUndefined();
+    }
     expect(refreshApi).toHaveBeenCalledTimes(1);
     expect(refreshApi).toHaveBeenCalledWith(["notes"]);
     expect(showToastApi).toHaveBeenCalledWith("Notes enregistrées");
@@ -620,5 +625,30 @@ describe("GradesEvaluationsPage — Saisie des notes Validée uniquement", () =>
       }),
     );
     expect(period).toHaveValue("Trimestre 3");
+  });
+
+  it("handleSaveGrades refuse une évaluation sans teacherId pédagogique", async () => {
+    evaluationsForPage.current = [{ ...lesAdverbes, status: "Validée", teacherId: "" }];
+    dataState.current = { ...dataState.current, evaluations: evaluationsForPage.current };
+    renderPage();
+    fireEvent.click(screen.getByRole("button", { name: "Saisie des notes" }));
+    fireEvent.change(screen.getByLabelText("Évaluation"), { target: { value: "EVAL-ADV" } });
+
+    await waitFor(() => expect(gradeEntryGridProps.current?.onSave).toEqual(expect.any(Function)));
+
+    await expect(
+      gradeEntryGridProps.current!.onSave([
+        {
+          id: "g1",
+          studentId: "s1",
+          studentName: "Diallo Awa",
+          evaluationId: "EVAL-ADV",
+          value: 14,
+          gradeStatus: "Saisie",
+        },
+      ]),
+    ).rejects.toThrow("Aucun enseignant n'est affecté à cette évaluation");
+
+    expect(upsertNoteApi).not.toHaveBeenCalled();
   });
 });

@@ -4,6 +4,8 @@ import {
   canEnterGradesForEvaluation,
   courseOptionsForClass,
   evaluationsEligibleForGradeEntry,
+  gradesToLegacyNotes,
+  MISSING_EVALUATION_TEACHER,
   subjectOptionsForClass,
   upsertStudentGrade,
 } from "./evaluations";
@@ -319,12 +321,44 @@ describe("canEnterGradesForEvaluation — Validée uniquement", () => {
     });
     expect(blocked.error).toMatch(/non validée/i);
 
-    const allowed = upsertStudentGrade([], { ...evaluation, status: "Validée" }, student, {
+    const allowed = upsertStudentGrade([], { ...evaluation, status: "Validée", teacherId: "ENS-0001" }, student, {
       value: 14,
       gradeStatus: "Saisie",
       author,
     });
     expect(allowed.error).toBeUndefined();
     expect(allowed.grades[0]?.value).toBe(14);
+    expect(allowed.grades[0]?.teacherId).toBe("ENS-0001");
+    expect(allowed.grades[0]?.authorId).toBe(author.id);
+  });
+
+  it("Préfet : teacherId pédagogique ≠ authorId acteur ; POST legacy conserve les deux", () => {
+    const prefet: SessionUser = {
+      id: "prefet-fideline",
+      role: "Préfet des études",
+      schoolCode: "CD-2026-0001",
+      firstName: "Fideline",
+      lastName: "Shisho",
+    };
+    const student = { id: "s1", firstName: "Riziki", lastName: "Masumbuko" };
+    const missing = upsertStudentGrade([], { ...evaluation, status: "Validée" }, student, {
+      value: 14,
+      gradeStatus: "Saisie",
+      author: prefet,
+    });
+    expect(missing.error).toBe(MISSING_EVALUATION_TEACHER);
+
+    const allowed = upsertStudentGrade(
+      [],
+      { ...evaluation, status: "Validée", teacherId: "ENS-0001" },
+      student,
+      { value: 14, gradeStatus: "Saisie", author: prefet },
+    );
+    expect(allowed.error).toBeUndefined();
+    expect(allowed.grades[0]?.teacherId).toBe("ENS-0001");
+    expect(allowed.grades[0]?.authorId).toBe("prefet-fideline");
+    const [note] = gradesToLegacyNotes(allowed.grades);
+    expect((note as Record<string, unknown>).teacherId).toBe("ENS-0001");
+    expect((note as Record<string, unknown>).authorId).toBe("prefet-fideline");
   });
 });

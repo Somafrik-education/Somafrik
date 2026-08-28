@@ -23,7 +23,12 @@ import { isSuperAdminRole } from "./orgHierarchy";
 import { courseOptionsForClass, subjectOptionsForClass } from "./evaluationCourseOptions";
 import { classNamesMatch } from "./classRules";
 
-export { courseOptionsForClass, subjectOptionsForClass };
+export const MISSING_EVALUATION_TEACHER =
+  "Aucun enseignant n'est affecté à cette évaluation. Vérifiez l'affectation du cours.";
+
+export function pedagogicalTeacherId(evaluation: { teacherId?: string } | null | undefined) {
+  return String(evaluation?.teacherId ?? "").trim();
+}
 
 export const EVALUATION_STATUSES: EvaluationStatus[] = [
   "Brouillon",
@@ -174,6 +179,7 @@ export function legacyNotesToGrades(notes: unknown[]): StudentGrade[] {
       gradeStatus: (note.gradeStatus as GradeStatus) ?? (note.status as GradeStatus) ?? "Saisie",
       comment: String(note.comment ?? ""),
       authorId: String(note.authorId ?? ""),
+      teacherId: String(note.teacherId ?? ""),
       enteredAt: String(note.enteredAt ?? ""),
       validatedBy: String(note.validatedBy ?? ""),
       validatedAt: String(note.validatedAt ?? ""),
@@ -200,6 +206,7 @@ export function gradesToLegacyNotes(grades: StudentGrade[]): unknown[] {
     gradeStatus: grade.gradeStatus,
     status: grade.gradeStatus,
     comment: grade.comment,
+    teacherId: grade.teacherId,
     authorId: grade.authorId,
     enteredAt: grade.enteredAt,
     validatedBy: grade.validatedBy,
@@ -519,6 +526,10 @@ export function upsertStudentGrade(
   if (evaluation.status !== "Validée") {
     return { grades, error: "Évaluation non validée : saisie des notes refusée." };
   }
+  const teacherId = pedagogicalTeacherId(evaluation);
+  if (!teacherId) {
+    return { grades, error: MISSING_EVALUATION_TEACHER };
+  }
   if (LOCKED_EVALUATION_STATUSES.has(evaluation.status) && input.gradeStatus !== "Corrigée") {
     const existing = grades.find(
       (grade) => grade.evaluationId === evaluation.id && grade.studentId === String(student.id ?? ""),
@@ -554,6 +565,7 @@ export function upsertStudentGrade(
     evaluationCoefficient: evaluation.coefficient,
     gradeStatus: input.gradeStatus,
     comment: input.comment,
+    teacherId,
     authorId: input.author?.id,
     authorName: authorDisplayName(input.author),
     enteredAt: now,

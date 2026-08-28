@@ -35,6 +35,8 @@ import {
   ensureEvaluationsSynced,
   evaluationsEligibleForGradeEntry,
   gradesToLegacyNotes,
+  MISSING_EVALUATION_TEACHER,
+  pedagogicalTeacherId,
   publishEvaluation,
   resolveGradesPeriod,
   scopedEvaluations,
@@ -328,10 +330,17 @@ export function GradesEvaluationsPage() {
   }
 
   async function handleSaveGrades(changedGrades: StudentGrade[]) {
+    const teacherId = pedagogicalTeacherId(selectedEvaluation);
+    if (!teacherId) {
+      throw new Error(MISSING_EVALUATION_TEACHER);
+    }
     for (const grade of changedGrades) {
-      const [note] = gradesToLegacyNotes([grade]);
+      const [note] = gradesToLegacyNotes([{ ...grade, teacherId }]);
+      const payload = note as Record<string, unknown>;
+      payload.teacherId = teacherId;
+      delete payload.authorId;
       try {
-        await pedagogyApi.upsertNote(note as Record<string, unknown>);
+        await pedagogyApi.upsertNote(payload);
       } catch (err) {
         const message = err instanceof Error ? err.message : "Erreur de synchronisation";
         const code = err instanceof ApiError ? err.code : undefined;

@@ -6,7 +6,9 @@ import { Table, type Column } from "../ui/Table";
 import {
   ABSENCE_GRADE_STATUSES,
   GRADE_STATUSES,
+  MISSING_EVALUATION_TEACHER,
   gradesForEvaluation,
+  pedagogicalTeacherId,
   upsertStudentGrade,
 } from "../../lib/evaluations";
 import { classNamesMatch } from "../../lib/classRules";
@@ -104,6 +106,10 @@ export function GradeEntryGrid({
       .filter(([, draft]) => draft.dirty)
       .map(([studentId]) => studentId);
     if (!dirtyStudentIds.length) return;
+    if (!pedagogicalTeacherId(evaluation)) {
+      onError(MISSING_EVALUATION_TEACHER);
+      return;
+    }
 
     let working = grades;
     const changed: StudentGrade[] = [];

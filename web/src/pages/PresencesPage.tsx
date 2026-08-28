@@ -17,6 +17,13 @@ import {
   type PresenceClassCard,
 } from "../lib/presenceRoster";
 import {
+  ATTENDANCE_PEDAGOGICAL_TEACHER_COPY,
+  attachAttendanceTeacherToPayload,
+  explicitAttendanceTeacherId,
+  resolvePedagogicalAttendanceTeacher,
+} from "../lib/attendanceAuthor";
+import { Field, Select } from "../components/ui/Field";
+import {
   type AttendanceStatus,
   findTodayPresenceForStudent,
   formatAttendanceDate,
@@ -99,10 +106,23 @@ export function PresencesPage() {
   const [attendance, setAttendance] = useState<Record<string, AttendanceStatus>>({});
   const [attendanceDirty, setAttendanceDirty] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [selectedTeacherId, setSelectedTeacherId] = useState("");
 
   const selectedCard = useMemo(
     () => findPresenceClassCard(classCards, { classId: selectedClassId, classCode: selectedClassCode }),
     [classCards, selectedClassId, selectedClassCode],
+  );
+
+  const attendanceTeacher = useMemo(
+    () =>
+      resolvePedagogicalAttendanceTeacher({
+        role: scopeUser?.role,
+        assignments: (state.assignments ?? []) as Record<string, unknown>[],
+        identity: selectedCard,
+        teachers: (state.teachers ?? []) as Record<string, unknown>[],
+        selectedTeacherId,
+      }),
+    [scopeUser?.role, state.assignments, state.teachers, selectedCard, selectedTeacherId],
   );
 
   useEffect(() => {
@@ -164,11 +184,13 @@ export function PresencesPage() {
   function selectClass(card: PresenceClassCard) {
     setSelectedClassId(card.classId);
     setSelectedClassCode(card.classCode);
+    setSelectedTeacherId("");
   }
 
   function clearSelectedClass() {
     setSelectedClassId(null);
     setSelectedClassCode(null);
+    setSelectedTeacherId("");
     setRoster([]);
     setRosterError(null);
   }
@@ -205,6 +227,14 @@ export function PresencesPage() {
       showToast("Aucun élève dans cette classe.", "error");
       return;
     }
+    if (attendanceTeacher.status === "blocked") {
+      showToast(attendanceTeacher.message, "error");
+      return;
+    }
+    if (attendanceTeacher.status === "need_selection") {
+      showToast(ATTENDANCE_PEDAGOGICAL_TEACHER_COPY.needSelection, "error");
+      return;
+    }
 
     const items = classStudents.map((student) => {
       const studentId = String(student.id ?? "");
@@ -222,16 +252,20 @@ export function PresencesPage() {
         reason: status === "Justifié" ? "Absence justifiée" : undefined,
       };
     });
-
-    setBusy(true);
-    try {
-      const saved = await api.post<PresenceRow[]>("/presences", {
+    const payload = attachAttendanceTeacherToPayload(
+      {
         classId: selectedCard.classId,
         classCode: selectedCard.classCode,
         date: todayLabel,
         hour: currentHour,
         items,
-      });
+      },
+      explicitAttendanceTeacherId(attendanceTeacher),
+    );
+
+    setBusy(true);
+    try {
+      const saved = await api.post<PresenceRow[]>("/presences", payload);
       if (!saved?.length) {
         throw new Error("Aucune présence enregistrée.");
       }
@@ -319,10 +353,41 @@ export function PresencesPage() {
           <Button variant="secondary" onClick={markAllPresent} disabled={rosterLoading || !classStudents.length}>
             Tous présents
           </Button>
-          <Button disabled={busy || rosterLoading} onClick={() => void saveCall()}>
+          <Button
+            disabled={
+              busy ||
+              rosterLoading ||
+              attendanceTeacher.status === "blocked" ||
+              attendanceTeacher.status === "need_selection"
+            }
+            onClick={() => void saveCall()}
+          >
             {busy ? "Enregistrement…" : "Enregistrer l'appel"}
           </Button>
         </div>
+      ) : null}
+
+      {canUpdate && attendanceTeacher.status === "need_selection" ? (
+        <Field label="Enseignant pédagogique" htmlFor="attendance-teacher" required>
+          <Select
+            id="attendance-teacher"
+            value={selectedTeacherId}
+            onChange={(event) => setSelectedTeacherId(event.target.value)}
+            options={[
+              { value: "", label: "Choisir l'enseignant pédagogique" },
+              ...attendanceTeacher.options.map((option) => ({
+                value: option.teacherId,
+                label: option.label,
+              })),
+            ]}
+          />
+        </Field>
+      ) : null}
+
+      {canUpdate && attendanceTeacher.status === "blocked" ? (
+        <Card className="border-amber-200 bg-amber-50 p-4">
+          <p className="text-sm font-bold text-amber-900">{attendanceTeacher.message}</p>
+        </Card>
       ) : null}
 
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">

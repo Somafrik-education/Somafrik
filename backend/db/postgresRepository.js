@@ -4629,7 +4629,7 @@ class PostgresRepository {
       return [];
     }
 
-    const { mergeAttendanceClassIdentity } = require("../lib/presencesAttendanceAuthz");
+    const { mergeAttendanceClassIdentity, mergeAttendanceTeacherKey } = require("../lib/presencesAttendanceAuthz");
     const saved = [];
     for (const item of items) {
       saved.push(
@@ -4637,6 +4637,7 @@ class PostgresRepository {
           {
             ...item,
             ...mergeAttendanceClassIdentity(item, payload),
+            ...mergeAttendanceTeacherKey(item, payload),
           },
           principal,
         ),
@@ -6609,11 +6610,13 @@ class PostgresRepository {
     return error;
   }
 
-  /** Clé enseignant explicite depuis payload (admin/direction). */
+  /**
+   * Clé enseignant pédagogique explicite depuis payload (admin/direction).
+   * Jamais authorId : c'est l'acteur JWT (Préfet/Admin), pas l'enseignant du cours.
+   */
   extractExplicitTeacherKey(payload = {}) {
     return String(
       payload.teacherId ??
-        payload.authorId ??
         payload.teacher_code ??
         payload.teacherCode ??
         "",

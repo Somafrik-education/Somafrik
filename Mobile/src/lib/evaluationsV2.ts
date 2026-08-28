@@ -225,6 +225,26 @@ export function stripEvaluationClientScope(payload: Record<string, unknown>): Re
   return next;
 }
 
+export const EVALUATIONS_V2_MISSING_TEACHER =
+  "Aucun enseignant n'est affecté à cette évaluation. Vérifiez l'affectation du cours.";
+
+/**
+ * Acteur JWT ≠ enseignant pédagogique.
+ * Session enseignant : aucun teacherId client (le backend utilise principal.sub).
+ * Admin/préfet : teacherId = evaluation.teacherId, obligatoire.
+ */
+export function gradeSaveActorScope(
+  teacherSession: boolean,
+  evaluation: { teacherId?: string } | null | undefined,
+): { teacherId?: string } {
+  if (teacherSession) return {};
+  const pedagogical = asText(evaluation?.teacherId);
+  if (!pedagogical) {
+    throw new Error(EVALUATIONS_V2_MISSING_TEACHER);
+  }
+  return { teacherId: pedagogical };
+}
+
 export function buildCreateEvaluationPayload(input: CreateEvaluationInput): Record<string, unknown> {
   if (!asText(input.classId)) {
     throw new Error("classId canonique obligatoire.");
@@ -413,6 +433,7 @@ export function buildSaveNotePayload(options: {
   className?: string;
   subject?: string;
   period?: string;
+  teacherId?: string;
 }): Record<string, unknown> {
   const evaluationId = asText(options.evaluationId);
   const studentId = asText(options.studentId);
@@ -440,7 +461,10 @@ export function buildSaveNotePayload(options: {
   if (options.className) payload.className = options.className;
   if (options.subject) payload.subject = options.subject;
   if (options.period) payload.period = options.period;
-  return stripEvaluationClientScope(payload);
+  const stripped = stripEvaluationClientScope(payload);
+  const pedagogical = asText(options.teacherId);
+  if (pedagogical) stripped.teacherId = pedagogical;
+  return stripped;
 }
 
 export function gradesForEvaluation(grades: CanonicalGrade[], evaluationId: string): CanonicalGrade[] {
@@ -513,6 +537,8 @@ export const EVALUATIONS_V2_COPY = {
   offlineNotes: "Réseau indisponible. Les notes n'ont pas pu être chargées.",
   averageUnavailable: "Moyenne indisponible",
   notValidated: "Évaluation non validée : saisie des notes refusée.",
+  missingEvaluationTeacher:
+    "Aucun enseignant n'est affecté à cette évaluation. Vérifiez l'affectation du cours.",
   teacherCannotValidate: "Validation réservée au préfet ou à l'administration.",
   saving: "Enregistrement…",
   saveGrades: "Enregistrer les notes",

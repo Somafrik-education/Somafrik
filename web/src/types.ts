@@ -607,6 +607,7 @@ export interface StudentGrade {
   coefficient?: number;
   gradeStatus: GradeStatus;
   comment?: string;
+  teacherId?: string;
   authorId?: string;
   authorName?: string;
   enteredAt?: string;

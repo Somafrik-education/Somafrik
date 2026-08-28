@@ -64,6 +64,32 @@ function main() {
     });
   }
 
+  const extractStart = repo.indexOf("extractExplicitTeacherKey");
+  const extractEnd = repo.indexOf("async resolveUniqueTeacherInSchool", extractStart);
+  const extractBody = extractStart >= 0 && extractEnd > extractStart ? repo.slice(extractStart, extractEnd) : "";
+  if (!extractBody) {
+    violations.push({
+      file: FILES.repository,
+      id: "MISSING_EXTRACT_TEACHER_KEY_BODY",
+      line: 0,
+      detail: "extractExplicitTeacherKey introuvable",
+    });
+  } else if (/\bauthorId\b/.test(extractBody)) {
+    violations.push({
+      file: FILES.repository,
+      id: "AUTHOR_ID_AS_TEACHER_KEY",
+      line: lineOf(repo, extractStart),
+      detail: "authorId ne doit pas résoudre l'enseignant pédagogique",
+    });
+  } else if (!/payload\.teacherId/.test(extractBody)) {
+    violations.push({
+      file: FILES.repository,
+      id: "MISSING_TEACHER_ID_KEY",
+      line: lineOf(repo, extractStart),
+      detail: "teacherId absent de extractExplicitTeacherKey",
+    });
+  }
+
   // 2) Lot 2 symbols required in repository
   for (const symbol of [
     "resolveUniqueTeacherInSchool",

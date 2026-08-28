@@ -29,23 +29,85 @@ function isProductionEnv() {
   return String(process.env.NODE_ENV ?? "").trim().toLowerCase() === "production";
 }
 
+function isEphemeralStoragePath(root) {
+  const resolved = path.resolve(String(root ?? ""));
+  const tmp = path.resolve(require("node:os").tmpdir());
+  const prefixes = [tmp, "/tmp", "/var/tmp"];
+  return prefixes.some((base) => resolved === base || resolved.startsWith(`${base}${path.sep}`));
+}
+
+/**
+ * Readiness PJ Communications.
+ * Préprod/production (NODE_ENV=production) : SOMAFRIK_COMMUNICATION_STORAGE obligatoire,
+ * hors /tmp. Dev/test : fallback tmp autorisé.
+ */
+function communicationStorageReadiness() {
+  const configured = asTrimmed(process.env.SOMAFRIK_COMMUNICATION_STORAGE);
+  if (!isProductionEnv()) {
+    return {
+      ready: true,
+      required: false,
+      configured: Boolean(configured),
+      ephemeralFallback: !configured,
+    };
+  }
+  if (!configured) {
+    return {
+      ready: false,
+      required: true,
+      configured: false,
+      error: "SOMAFRIK_COMMUNICATION_STORAGE manquant",
+    };
+  }
+  if (isEphemeralStoragePath(configured)) {
+    return {
+      ready: false,
+      required: true,
+      configured: true,
+      error: "SOMAFRIK_COMMUNICATION_STORAGE ne doit pas utiliser /tmp",
+    };
+  }
+  return { ready: true, required: true, configured: true };
+}
+
 /**
  * Stockage des pièces jointes Communications.
  * Variable : SOMAFRIK_COMMUNICATION_STORAGE = répertoire durable (mount local).
- * Production : obligatoire, sinon fail-closed.
+ * Production : obligatoire, sinon fail-closed. /tmp interdit.
  * test/dev : fallback tmp autorisé.
  */
 function storageRoot() {
-  const configured = asTrimmed(process.env.SOMAFRIK_COMMUNICATION_STORAGE);
-  if (configured) return configured;
-  if (isProductionEnv()) {
+  const readiness = communicationStorageReadiness();
+  if (!readiness.ready) {
     throw createClientsError(
       503,
-      "Stockage des pièces jointes non configuré (SOMAFRIK_COMMUNICATION_STORAGE).",
+      readiness.error === "SOMAFRIK_COMMUNICATION_STORAGE ne doit pas utiliser /tmp"
+        ? "Stockage des pièces jointes invalide (SOMAFRIK_COMMUNICATION_STORAGE ne doit pas utiliser /tmp)."
+        : "Stockage des pièces jointes non configuré (SOMAFRIK_COMMUNICATION_STORAGE).",
       CLIENTS_ERROR.FORBIDDEN,
     );
   }
+  const configured = asTrimmed(process.env.SOMAFRIK_COMMUNICATION_STORAGE);
+  if (configured) return configured;
   return path.join(require("node:os").tmpdir(), "somafrik-communication-attachments");
+}
+
+async function probeCommunicationStorageWritable() {
+  const readiness = communicationStorageReadiness();
+  if (!readiness.ready || !isProductionEnv()) return readiness;
+  try {
+    const root = storageRoot();
+    await fs.mkdir(root, { recursive: true });
+    await fs.access(root, require("node:fs").constants.W_OK);
+    return { ...readiness, writable: true };
+  } catch {
+    return {
+      ready: false,
+      required: true,
+      configured: true,
+      error: "SOMAFRIK_COMMUNICATION_STORAGE non accessible en écriture",
+    };
+  }
 }
 
 function sniffMime(buffer) {
@@ -189,4 +251,7 @@ module.exports = {
   mapAttachmentRow,
   storageRoot,
   isProductionEnv,
+  isEphemeralStoragePath,
+  communicationStorageReadiness,
+  probeCommunicationStorageWritable,
 };
