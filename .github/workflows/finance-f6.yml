@@ -1,0 +1,39 @@
+name: Finance F6
+
+on:
+  pull_request:
+    branches: [develop]
+    paths:
+      - "backend/lib/financeManagement.js"
+      - "backend/lib/financeLiveRbac.test.js"
+      - "backend/lib/liveRbacPrincipalAuthority.js"
+      - "backend/lib/liveRbacPrincipalAuthority.test.js"
+      - "backend/lib/functionalRbacService.js"
+      - "backend/services/rbacService.js"
+      - "backend/db/repositoryFactory.js"
+      - "backend/db/clientsPgStore.js"
+      - "backend/server.js"
+      - "backend/scripts/verify-finance-rbac.js"
+      - ".github/workflows/finance-f6.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  finance-f6:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.12.0"
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            backend/package-lock.json
+      - name: Install root dependencies
+        run: npm ci
+      - name: Verify live Finance RBAC
+        run: node backend/scripts/verify-finance-rbac.js
