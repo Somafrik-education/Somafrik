@@ -27,12 +27,13 @@ Après F1→F7, le domaine Finance de Somafrik a une chaîne canonique PostgreSQ
 
 L'audit F8 a cherché les écarts de **production-readiness**, pas de nouvelles fonctionnalités métier.
 
-Deux P0 ont été confirmés dans le code F7 mergé, puis corrigés avec tests :
+Deux P0 ont été confirmés dans le code F7 mergé, puis un troisième pendant le parcours HTTP F8. Tous corrigés avec tests :
 
 | ID | Sujet | Statut |
 |---|---|---|
 | F8-P0-001 | `GET /api/finance/student-fees/:obligationId` lisait une obligation étrangère (pas de filtre tenant SQL) | **CORRIGÉ** |
 | F8-P0-002 | Moyen « Mobile money » → statut présentation « En attente » → `payment_status=pending` → trigger F4 `FINANCE_PAYMENT_NOT_SETTLED` → rollback de l'imputation | **CORRIGÉ** |
+| F8-P0-003 | `GET /api/payments/:id` fuitait un encaissement A vers B si `schoolCode` absent du principal | **CORRIGÉ** |
 
 P1 corrigés : replis devise `USD`/`CDF`, Idempotency-Key Web, relance sans `withIdempotency`, `DEFAULT` devise obligations/grilles.
 
@@ -82,7 +83,7 @@ Alias de présentation uniquement : `FC → CDF`.
 
 Scénario HTTP PostgreSQL isolé (`somafrik_finance_f8_it`, port 19872) :
 
-1. École A (pays I8, **XOF**) + école B (pays E8, **EUR**)
+1. École A (pays CI, **XOF**) + école B (pays FR, **EUR**)
 2. Classe + 2 élèves A, 1 élève B, inscriptions actives
 3. Grille A (Inscription 100 + Scolarité 200, échéance 2026-01-01)
 4. Activation + application → 4 obligations ; 2ᵉ apply → `created=0`
@@ -256,7 +257,15 @@ Pas de campagne de charge. Lecture code :
 - **Correction :** le moyen n'est plus un statut de règlement ; Payé / Partiel / Non imputé
 - **Test :** HTTP Mobile money 60 imputé ; unitaire `financeUnallocatedCash.test.js`
 
-Aucun P0 ouvert.
+### F8-P0-003 — Fuite tenant paiement par ID (CORRIGÉ)
+
+- **Fichier / endpoint :** `getPaymentByCode` ; GET `/api/payments/:paymentId`
+- **Scénario :** principal école B, `paymentId` d'un encaissement A
+- **Attendu :** 403/404
+- **Observé (avant) :** 200 + payload A si `principal.schoolCode` vide (filtre SQL sauté)
+- **Impact :** lecture d'un encaissement étranger (IDOR)
+- **Correction :** même scope `resolveFinanceSchoolScope` / `sqlSchoolPredicate` que les obligations
+- **Test :** HTTP F8 GET paiement A depuis B + liste B sans l'id A
 
 ---
 

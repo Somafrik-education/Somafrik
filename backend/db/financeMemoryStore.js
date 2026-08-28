@@ -375,9 +375,9 @@ function createFinanceMemoryStore({
         );
         if (!row) return null;
         const mapped = mapPaymentRow(row);
-        const scope = asTrimmed(principal?.schoolCode);
-        if (scope && scope !== "*" && String(mapped.schoolCode ?? "").toUpperCase() !== scope.toUpperCase()) {
-          return null;
+        if (principal) {
+          const scope = resolveFinanceSchoolScope(principal);
+          if (!schoolCodeInScope(mapped.schoolCode, scope)) return null;
         }
         const items = await this.listPaymentItems(row.id);
         const allocations = await this.listAllocations(row.id);

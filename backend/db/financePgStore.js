@@ -354,18 +354,20 @@ function createFinancePgStore(repo) {
       },
       async getPaymentByCode(code, principal, { lock } = {}) {
         const params = [code, code];
+        let pred = "TRUE";
+        if (principal) {
+          const scope = resolveFinanceSchoolScope(principal);
+          if (scope.mode === "none") return null;
+          pred = sqlSchoolPredicate("s", scope, params);
+        }
         let sql = `
           SELECT p.*, s.school_code, st.student_code
           FROM payments p
           JOIN schools s ON s.id = p.school_id
           JOIN students st ON st.id = p.student_id
-          WHERE p.payment_code = $1 OR p.id::text = $2
+          WHERE (p.payment_code = $1 OR p.id::text = $2)
+            AND ${pred}
         `;
-        const schoolCode = asTrimmed(principal?.schoolCode);
-        if (schoolCode && schoolCode !== "*") {
-          sql += " AND s.school_code = $3";
-          params.push(schoolCode.toUpperCase());
-        }
         sql += " LIMIT 1";
         if (lock) sql += " FOR UPDATE OF p";
         const row = await one(sql, params);

@@ -49,6 +49,12 @@ function sourceGuards() {
   );
   assert.match(getObligation, /resolveFinanceSchoolScope/);
   assert.match(getObligation, /sqlSchoolPredicate/);
+  const getPayment = pgStore.slice(
+    pgStore.indexOf("async getPaymentByCode"),
+    pgStore.indexOf("async resolveActorUserId"),
+  );
+  assert.match(getPayment, /resolveFinanceSchoolScope/);
+  assert.match(getPayment, /sqlSchoolPredicate/);
   assert.match(memory, /schoolCodeInScope\(mapped\.schoolCode, scope\)/);
 
   assert.match(cash, /void method/);

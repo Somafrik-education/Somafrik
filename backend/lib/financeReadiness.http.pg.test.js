@@ -159,11 +159,11 @@ async function countRows(pool, sql, params) {
 async function seed(pool) {
   const ci = await pool.query(
     `INSERT INTO countries (name, iso_code, phone_code, currency)
-     VALUES ('F8 Côte test', 'I8', '+225', 'XOF') RETURNING id`,
+     VALUES ('F8 Côte test', 'CI', '+225', 'XOF') RETURNING id`,
   );
   const fr = await pool.query(
     `INSERT INTO countries (name, iso_code, phone_code, currency)
-     VALUES ('F8 France test', 'E8', '+33', 'EUR') RETURNING id`,
+     VALUES ('F8 France test', 'FR', '+33', 'EUR') RETURNING id`,
   );
   await pool.query(
     `INSERT INTO schools (country_id, school_code, name, status)
@@ -650,6 +650,12 @@ async function main() {
 
     const getPayB = await request(`/payments/${encodeURIComponent(unalloc1.data.id)}`, { token: accountantB });
     assert.ok([403, 404].includes(getPayB.status), `lecture paiement A depuis B: ${JSON.stringify(getPayB.data)}`);
+    const listB = unwrapList((await request("/payments", { token: accountantB })).data);
+    assert.equal(
+      listB.some((row) => String(row.id ?? row.reference) === String(unalloc1.data.id)),
+      false,
+      `liste B ne doit pas contenir le paiement A: ${JSON.stringify(listB.map((row) => row.id))}`,
+    );
 
     const cancelB = await request(`/payments/${encodeURIComponent(partial.data.id)}/cancel`, {
       method: "POST",
