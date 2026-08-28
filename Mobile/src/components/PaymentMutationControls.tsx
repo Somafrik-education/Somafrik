@@ -5,7 +5,7 @@ import CanonicalMutationModal from "./CanonicalMutationModal";
 import ChoiceChips from "./ChoiceChips";
 import FormField from "./FormField";
 import { hasFieldErrors, trimField, validateFinancePaymentLinesDraft } from "../lib/formFieldValidation";
-import { resolveEntityCrudAccess } from "../lib/mobileCrudParity";
+import { canRecordSchoolPayment } from "../lib/mobileCrudParity";
 import { createIntentionStore } from "../lib/mutationGuard";
 import { isOfflineContext } from "../lib/connectivity";
 import { MIN_TOUCH_TARGET_DP } from "../lib/mobileUsability";
@@ -52,7 +52,7 @@ export default function PaymentMutationControls({
   currency?: string;
 }) {
   const { session } = useAuth();
-  const access = resolveEntityCrudAccess(session, "payments");
+  const canRecordPayment = canRecordSchoolPayment(session);
   const intentionsRef = useRef(createIntentionStore());
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -194,7 +194,7 @@ export default function PaymentMutationControls({
     }
   };
 
-  if (!access.canCreate) return null;
+  if (!canRecordPayment) return null;
   return (
     <>
       <TouchableOpacity

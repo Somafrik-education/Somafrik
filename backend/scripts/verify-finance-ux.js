@@ -58,11 +58,18 @@ assert.match(webModal, /Enregistrement…/);
 assert.match(mobileControls, /Encaissement enregistré/);
 assert.match(webModal, /OpenObligationCards/);
 assert.match(mobileControls, /Frais encore dus/);
+assert.match(mobileControls, /canRecordSchoolPayment/);
 assert.match(webFees, /canReadFees\(ctx\)/);
 assert.doesNotMatch(webFees, /canViewFeeGrids/);
 assert.match(webSettings, /canReadFees\(ctx\)/);
 assert.match(webUnpaidPerm, /hasBackOfficePermission\(ctx, UNPAID_FEATURE, "READ"\)/);
+assert.match(webUnpaidPerm, /hasBackOfficePermission\(ctx, "Paiements", "UPDATE"\)/);
 assert.match(webFeePerm, /hasBackOfficePermission\(ctx, FEE_FEATURE, "READ"\)/);
+assert.match(webFeePerm, /FEE_FEATURE, "CREATE"\)/);
+assert.match(webFeePerm, /FEE_FEATURE, "UPDATE"/);
+assert.match(webActions, /FINANCE_PAYMENT_FEATURE, "CREATE"\)/);
+assert.match(webActions, /FINANCE_PAYMENT_FEATURE, "UPDATE"/);
+assert.match(read("web/src/pages/EntityPage.tsx"), /financeActions\.canCreatePayment/);
 assert.doesNotMatch(currencyWeb, /"USD"|"EUR"/);
 assert.doesNotMatch(currencyMobile, /"USD"|"EUR"/);
 assert.doesNotMatch(mobilePayments, / FC/);
@@ -75,6 +82,7 @@ assert.match(webFees, /EmptyState/);
 assert.match(webUnpaid, /Aucun reste à payer/);
 
 run("npx", ["--yes", "tsx", "Mobile/src/lib/financeCurrency.test.ts"], "mobile financeCurrency");
+run("npx", ["--yes", "tsx", "Mobile/src/lib/mobileCrudParity.test.ts"], "mobile F6 payment OR");
 run("npm", ["--prefix", "web", "run", "test", "--",
   "src/lib/financeCurrency.test.ts",
   "src/lib/financeObligationStatus.test.ts",

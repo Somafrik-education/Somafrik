@@ -121,6 +121,7 @@ import { QuickPaymentModal } from "../components/payments/QuickPaymentModal";
 import { FinancePaymentsOverview } from "../components/payments/FinancePaymentsOverview";
 import { getPaymentRateKpi } from "../lib/paymentRateKpi";
 import { resolveFinanceCurrency } from "../lib/financeCurrency";
+import { resolveFinanceUiActions } from "../lib/financeActionPermissions";
 import { PaymentReceipt } from "../components/payments/PaymentReceipt";
 import { type PaymentRecord } from "../lib/quickPayment";
 import {
@@ -253,6 +254,7 @@ function EntityPageContent({ entity, mode, classScope, disableCreate = false }: 
   const importInputRef = useRef<HTMLInputElement>(null);
 
   const ctx = usePermissionContext();
+  const financeActions = useMemo(() => resolveFinanceUiActions(ctx), [ctx]);
   const entityPermissions = useMemo(
     () =>
       getEntityFeaturePermissions(ctx, module?.key ?? "", module?.feature ?? "Élèves", {
@@ -1571,7 +1573,7 @@ function EntityPageContent({ entity, mode, classScope, disableCreate = false }: 
 
   const primaryActions = (
     <>
-        {module.key === "payments" && canCreate ? (
+        {module.key === "payments" && financeActions.canCreatePayment ? (
         <Button size="sm" onClick={() => setQuickPaymentOpen(true)}>
           Enregistrer un encaissement
         </Button>

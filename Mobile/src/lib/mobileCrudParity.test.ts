@@ -6,6 +6,7 @@ import {
   canCancelSchoolPayment,
   canCreateTeacherIdentity,
   canGrantUserRole,
+  canRecordSchoolPayment,
   resolveEntityCrudAccess,
 } from "./mobileCrudParity";
 import { MOBILE_GENERIC_ADMIN_CRUD_IN_RC1, MOBILE_ROLE_PERMISSION_MUTATION_ENABLED } from "./mobileMutationSafety";
@@ -150,11 +151,38 @@ const paymentCreateOnly = liveSession({
   permissions: ["Paiements:READ", "Paiements:CREATE"],
 });
 assert.equal(canMutateEntity(paymentCreateOnly, "payments", "CREATE"), true);
+assert.equal(canRecordSchoolPayment(paymentCreateOnly), true, "CREATE seul ouvre l'encaissement");
 assert.equal(
   canCancelSchoolPayment(paymentCreateOnly),
   false,
   "CREATE seul n'ouvre pas l'annulation (Paiements:UPDATE requis)",
 );
+
+const paymentUpdateOnly = liveSession({
+  sessionRole: "accountant",
+  roleLabel: "Comptable",
+  roleKeys: ["ACCOUNTANT"],
+  permissions: ["Paiements:READ", "Paiements:UPDATE"],
+});
+assert.equal(canRecordSchoolPayment(paymentUpdateOnly), true, "UPDATE seul ouvre l'encaissement F6");
+assert.equal(canCancelSchoolPayment(paymentUpdateOnly), true);
+
+const paymentReadOnly = liveSession({
+  sessionRole: "parent",
+  roleLabel: "Parent",
+  roleKeys: ["PARENT"],
+  permissions: ["Paiements:READ"],
+});
+assert.equal(canRecordSchoolPayment(paymentReadOnly), false, "READ seul n'ouvre pas l'encaissement");
+assert.equal(canCancelSchoolPayment(paymentReadOnly), false);
+
+const paymentNone = liveSession({
+  sessionRole: "teacher",
+  roleLabel: "Enseignant",
+  roleKeys: ["TEACHER"],
+  permissions: [],
+});
+assert.equal(canRecordSchoolPayment(paymentNone), false, "aucune permission → encaissement absent");
 
 const accountantCancel = liveSession({
   sessionRole: "accountant",

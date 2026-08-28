@@ -21,6 +21,22 @@ describe("permissions Finance UI — pas de rôle hardcodé", () => {
     expect(canSendUnpaidReminder(ctx(["Impayés:CREATE"]))).toBe(true);
   });
 
+  it("Paiements:UPDATE → relance visible (OR F6)", () => {
+    expect(canSendUnpaidReminder(ctx(["Paiements:UPDATE"]))).toBe(true);
+  });
+
+  it("Frais & tarifs:UPDATE seul → création de grille proposée, activation conservée", () => {
+    const updateOnly = ctx(["Frais & tarifs:UPDATE"]);
+    expect(canCreateFees(updateOnly)).toBe(true);
+    expect(canUpdateFees(updateOnly)).toBe(true);
+  });
+
+  it("Frais & tarifs:CREATE seul → création proposée, pas d'activation", () => {
+    const createOnly = ctx(["Frais & tarifs:CREATE"]);
+    expect(canCreateFees(createOnly)).toBe(true);
+    expect(canUpdateFees(createOnly)).toBe(false);
+  });
+
   it("rôle Comptable sans permission → refusé", () => {
     expect(canAccessUnpaidModule(ctx([], "Comptable"))).toBe(false);
     expect(canReadFees(ctx([], "Admin School"))).toBe(false);

@@ -31,14 +31,18 @@ export function resolveFinanceUiActions(ctx: PermissionContext): FinanceUiAction
   const canConsultBalances = canConsultPayments || canConsultFees || canConsultUnpaid;
   return {
     canConsultPayments,
-    canCreatePayment: hasBackOfficePermission(ctx, FINANCE_PAYMENT_FEATURE, "CREATE"),
+    canCreatePayment:
+      hasBackOfficePermission(ctx, FINANCE_PAYMENT_FEATURE, "CREATE") ||
+      hasBackOfficePermission(ctx, FINANCE_PAYMENT_FEATURE, "UPDATE"),
     canCancelPayment: hasBackOfficePermission(ctx, FINANCE_PAYMENT_FEATURE, "UPDATE"),
     canConsultBalances,
     canConsultFees,
     canCreateObligation: hasBackOfficePermission(ctx, FINANCE_FEE_FEATURE, "UPDATE"),
     canUpdateFees: hasBackOfficePermission(ctx, FINANCE_FEE_FEATURE, "UPDATE"),
     canConsultUnpaid,
-    canSendReminder: hasBackOfficePermission(ctx, FINANCE_UNPAID_FEATURE, "CREATE"),
+    canSendReminder:
+      hasBackOfficePermission(ctx, FINANCE_UNPAID_FEATURE, "CREATE") ||
+      hasBackOfficePermission(ctx, FINANCE_PAYMENT_FEATURE, "UPDATE"),
     canManageCatalog:
       hasBackOfficePermission(ctx, FINANCE_FEE_FEATURE, "UPDATE") ||
       hasBackOfficePermission(ctx, FINANCE_SETTINGS_FEATURE, "UPDATE"),

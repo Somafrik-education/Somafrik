@@ -41,6 +41,11 @@ export function canCancelSchoolPayment(session: any): boolean {
   return canMutateEntity(session, "payments", "UPDATE");
 }
 
+/** POST /api/payments — F6 : Paiements:CREATE | Paiements:UPDATE. Distinct de l'annulation. */
+export function canRecordSchoolPayment(session: any): boolean {
+  return canMutateEntity(session, "payments", "CREATE") || canMutateEntity(session, "payments", "UPDATE");
+}
+
 export function resolveEntityCrudAccess(session: any, entity: CanonicalCrudEntity): EntityCrudAccess {
   return {
     canRead: canReadEntity(session, entity),

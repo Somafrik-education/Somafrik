@@ -16,8 +16,12 @@ export function canViewAllUnpaid(ctx: PermissionContext): boolean {
   );
 }
 
+/** POST unpaid reminders — F6 : Impayés:CREATE | Paiements:UPDATE. */
 export function canSendUnpaidReminder(ctx: PermissionContext): boolean {
-  return hasBackOfficePermission(ctx, UNPAID_FEATURE, "CREATE");
+  return (
+    hasBackOfficePermission(ctx, UNPAID_FEATURE, "CREATE") ||
+    hasBackOfficePermission(ctx, "Paiements", "UPDATE")
+  );
 }
 
 /** Dossier personnel : lecture Impayés sans mutation ni vue établissement. */

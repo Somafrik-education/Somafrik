@@ -31,6 +31,14 @@ describe("resolveFinanceUiActions — F6 permissions, jamais le rôle", () => {
   it("permission paiement CREATE → action visible", () => {
     const actions = resolveFinanceUiActions(ctx(["Paiements:READ", "Paiements:CREATE"]));
     expect(actions.canCreatePayment).toBe(true);
+    expect(actions.canCancelPayment).toBe(false);
+  });
+
+  it("Paiements:UPDATE seul → encaissement et annulation visibles", () => {
+    const actions = resolveFinanceUiActions(ctx(["Paiements:UPDATE"]));
+    expect(actions.canCreatePayment).toBe(true);
+    expect(actions.canCancelPayment).toBe(true);
+    expect(actions.canSendReminder).toBe(true);
   });
 
   it("permission retirée → action non proposée, même pour Admin School", () => {
@@ -39,10 +47,12 @@ describe("resolveFinanceUiActions — F6 permissions, jamais le rôle", () => {
     expect(actions.canCancelPayment).toBe(false);
   });
 
-  it("Paiements:UPDATE → annulation proposée", () => {
-    const actions = resolveFinanceUiActions(ctx(["Paiements:READ", "Paiements:UPDATE"]));
-    expect(actions.canCancelPayment).toBe(true);
+  it("aucune permission → aucune mutation", () => {
+    const actions = resolveFinanceUiActions(ctx([]));
     expect(actions.canCreatePayment).toBe(false);
+    expect(actions.canCancelPayment).toBe(false);
+    expect(actions.canSendReminder).toBe(false);
+    expect(actions.canCreateObligation).toBe(false);
   });
 
   it("n'accorde rien sur le seul libellé Comptable", () => {

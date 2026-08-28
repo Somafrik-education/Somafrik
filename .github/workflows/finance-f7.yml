@@ -19,6 +19,7 @@ on:
       - "Mobile/src/lib/financeCurrency.ts"
       - "Mobile/src/lib/financeObligationStatus.ts"
       - "Mobile/src/lib/paymentEnrollment.ts"
+      - "Mobile/src/lib/mobileCrudParity.ts"
       - "Mobile/src/components/PaymentMutationControls.tsx"
       - "Mobile/src/components/PaymentReceiptCard.tsx"
       - "Mobile/src/screens/PaymentsScreen.tsx"

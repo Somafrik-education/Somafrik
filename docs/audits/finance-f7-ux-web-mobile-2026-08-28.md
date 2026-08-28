@@ -24,12 +24,13 @@ Gate : `npm run verify:finance-ux`
 |---|---|---|
 | `Paiements:READ` | Liste, reçu, KPI, export | Liste, reçus, soldes |
 | `Paiements:CREATE` | CTA Enregistrer un encaissement | CTA Enregistrer un encaissement |
-| `Paiements:UPDATE` | CTA Annuler | CTA Annuler le paiement |
+| `Paiements:UPDATE` | CTA Encaissement **et** Annuler | CTA Encaissement **et** Annuler |
 | `Frais & tarifs:READ` | Consultation tarifs / catalogue | — (via catalogue paiement) |
-| `Frais & tarifs:CREATE` | Nouvelle grille | — |
-| `Frais & tarifs:UPDATE` | Modifier / activer / appliquer / catalogue | — |
+| `Frais & tarifs:CREATE` | Saisie rapide / Nouvelle grille | — |
+| `Frais & tarifs:UPDATE` | Saisie rapide / Nouvelle grille **et** modifier / activer / appliquer / catalogue | — |
 | `Impayés:READ` | Consultation restes à payer | — |
 | `Impayés:CREATE` | Relancer | — |
+| `Paiements:UPDATE` (relance) | Relancer (OR F6) | — |
 | Permission absente | Action non proposée | Action non proposée |
 
 Aucun `role === "Admin School" | "Comptable" | "Super Admin"` sur les écrans Finance.
