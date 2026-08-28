@@ -213,15 +213,20 @@ async function seed(pool) {
     `INSERT INTO teachers (id,school_id,user_id,teacher_code,status) VALUES ($1,$2,$3,'C4-TCH-A','active')`,
     [TEACHER_ROW_A, schoolA, ADMIN_A],
   );
-  await pool.query(
-    `INSERT INTO students (id,school_id,student_code,first_name,last_name,status) VALUES
-      ($1,$3,'STU-C4-A','Élève','A','active'),($2,$3,'STU-C4-A2','Élève','A2','active')`,
-    [STUDENT_A, STUDENT_A2, schoolA],
-  );
+  const studentARow = (await pool.query(
+    `INSERT INTO students (id,school_id,student_code,first_name,last_name,status)
+     VALUES ($1,$2,'PENDING','Élève','A','active') RETURNING id, student_code`,
+    [STUDENT_A, schoolA],
+  )).rows[0];
+  const studentA2Row = (await pool.query(
+    `INSERT INTO students (id,school_id,student_code,first_name,last_name,status)
+     VALUES ($1,$2,'PENDING','Élève','A2','active') RETURNING id, student_code`,
+    [STUDENT_A2, schoolA],
+  )).rows[0];
   await pool.query(
     `INSERT INTO users (id,school_id,user_code,first_name,last_name,email,role,status,must_change_password)
-     VALUES ($1,$2,'STU-C4-A','Élève','A','stu-c4-a@test.local','Élève / Étudiant','active',FALSE)`,
-    [STUDENT_USER_A, schoolA],
+     VALUES ($1,$2,$3,'Élève','A','stu-c4-a@test.local','Élève / Étudiant','active',FALSE)`,
+    [STUDENT_USER_A, schoolA, studentARow.student_code],
   );
   await pool.query(
     `INSERT INTO user_roles (user_id,school_id,role_key,status) VALUES ($1,$2,'STUDENT','active')`,

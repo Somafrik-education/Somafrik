@@ -168,7 +168,7 @@ async function loadVisible(tx, notificationId, schoolId, userId, management = fa
      FROM communication_notifications n
      JOIN schools s ON s.id = n.school_id
      LEFT JOIN notification_recipients r ON r.notification_id = n.id AND r.user_id = $2
-     WHERE n.id::text = $1 AND n.school_id = $3`,
+     WHERE n.id::text = $1 AND n.school_id = $3::uuid`,
     [notificationId, userId, schoolId],
   );
   if (!row || (!row.read_at && !row.recipient_archived_at && !management)) {
@@ -195,12 +195,12 @@ async function list(store, principal, query = {}) {
   }
   params.push(limit + 1);
   const rows = await tx.all(
-    `SELECT n.*, $1::text AS scoped_school_id, s.school_code,
+    `SELECT n.*, n.school_id::text AS scoped_school_id, s.school_code,
             r.read_at, r.archived_at AS recipient_archived_at
      FROM notification_recipients r
      JOIN communication_notifications n ON n.id = r.notification_id AND n.school_id = r.school_id
      JOIN schools s ON s.id = n.school_id
-     WHERE r.school_id = $1 AND r.user_id = $2 AND r.archived_at IS NULL
+     WHERE r.school_id = $1::uuid AND r.user_id = $2::uuid AND r.archived_at IS NULL
        ${cursorSql}
      ORDER BY n.created_at DESC, n.id DESC
      LIMIT $${params.length}`,
@@ -231,7 +231,7 @@ async function unreadCount(store, principal, query = {}) {
     `SELECT count(*)::int AS c
      FROM notification_recipients r
      JOIN communication_notifications n ON n.id = r.notification_id AND n.school_id = r.school_id
-     WHERE r.school_id = $1 AND r.user_id = $2 AND r.read_at IS NULL AND r.archived_at IS NULL`,
+     WHERE r.school_id = $1::uuid AND r.user_id = $2::uuid AND r.read_at IS NULL AND r.archived_at IS NULL`,
     [school.id, userId],
   );
   return { count: Number(row?.c || 0) };
@@ -245,7 +245,7 @@ async function markRead(store, notificationId, principal, auditMeta, query = {})
     const recipient = await tx.one(
       `UPDATE notification_recipients
        SET read_at = COALESCE(read_at, NOW())
-       WHERE notification_id = $1 AND user_id = $2 AND school_id = $3 AND archived_at IS NULL
+       WHERE notification_id = $1::uuid AND user_id = $2::uuid AND school_id = $3::uuid AND archived_at IS NULL
        RETURNING *`,
       [notificationId, userId, school.id],
     );
@@ -276,7 +276,7 @@ async function archive(store, notificationId, principal, auditMeta, query = {}) 
     const recipient = await tx.one(
       `UPDATE notification_recipients
        SET archived_at = COALESCE(archived_at, NOW())
-       WHERE notification_id = $1 AND user_id = $2 AND school_id = $3
+       WHERE notification_id = $1::uuid AND user_id = $2::uuid AND school_id = $3::uuid
        RETURNING *`,
       [notificationId, userId, school.id],
     );
@@ -421,7 +421,7 @@ async function downloadAttachment(store, attachmentId, principal, query = {}) {
     if (String(attachment.uploaded_by_user_id) !== String(userId)) throw notFound();
   } else {
     const recipient = await tx.one(
-      `SELECT 1 FROM notification_recipients WHERE notification_id = $1 AND user_id = $2 AND school_id = $3`,
+      `SELECT 1 FROM notification_recipients WHERE notification_id = $1::uuid AND user_id = $2::uuid AND school_id = $3::uuid`,
       [attachment.entity_id, userId, school.id],
     );
     if (!recipient && !canManage(principal)) throw notFound();

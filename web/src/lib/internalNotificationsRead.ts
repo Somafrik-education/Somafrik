@@ -10,7 +10,7 @@ export function notifyInternalNotificationsChanged(): void {
 
 /**
  * Badge Notifications internes : compteur PostgreSQL (GET unread-count).
- * Aucune SoT localStorage / snapshot BackOffice.
+ * Aucune source de vérité navigateur ni snapshot BackOffice.
  */
 export function useInternalNotificationsUnreadCount(enabled: boolean, schoolCode?: string | null): number {
   const [count, setCount] = useState(0);
