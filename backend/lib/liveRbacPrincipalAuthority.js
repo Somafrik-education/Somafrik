@@ -9,8 +9,8 @@ function trim(value) {
 }
 
 async function listAuthoritativeRoleKeys(repository, principal) {
-  const userId = trim(principal?.sub || principal?.id);
-  if (!userId) return [];
+  const rawUserId = trim(principal?.sub || principal?.id);
+  if (!rawUserId) return [];
 
   const schoolCode = trim(principal?.schoolCode).toUpperCase();
   if (schoolCode && schoolCode !== "*") {
@@ -20,6 +20,13 @@ async function listAuthoritativeRoleKeys(repository, principal) {
     ) {
       const school = await repository.getSchoolByCode(schoolCode);
       if (!school?.id) return [];
+      // JWT = identité : sub peut être users.id ou overlay teachers.id du tenant.
+      // Ce n'est pas un fallback de rôles/permissions JWT.
+      let userId = rawUserId;
+      if (typeof repository.resolveCanonicalUserIdForSchool === "function") {
+        const canonical = await repository.resolveCanonicalUserIdForSchool(rawUserId, school.id);
+        if (canonical) userId = trim(canonical);
+      }
       const scoped = await repository.listActiveUserRoleKeysForSchool(userId, school.id);
       if (!Array.isArray(scoped)) {
         throw new Error("LIVE_RBAC_ROLE_LOOKUP_INVALID");

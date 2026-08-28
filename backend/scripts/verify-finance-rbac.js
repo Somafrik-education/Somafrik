@@ -49,6 +49,7 @@ function sourceGuards() {
   }
 
   assert.match(authority, /listActiveUserRoleKeysForSchool/);
+  assert.match(authority, /resolveCanonicalUserIdForSchool/);
   assert.match(authority, /LIVE_RBAC_EMPTY_ROLE = "SANS_AFFECTATION"/);
   assert.match(authority, /legacy.*fail-closed-live-rbac/s);
   assert.doesNotMatch(authority, /principal\?\.permissions/);

@@ -41,6 +41,7 @@ RbacService.canAccess(routeKey) + gardes secondaires (canManage*)
 Invariant : **POSTGRESQL LIVE > JWT STALE**.
 
 - Session établissement : uniquement `listActiveUserRoleKeysForSchool`. Primitive absente ou établissement introuvable → `[]`.
+- Identité JWT : `sub` = `users.id`, ou overlay `teachers.id` du tenant résolu vers `users.id`. Jamais de reconstruction de rôles depuis le JWT.
 - Zéro rôle actif → sentinel interne `SANS_AFFECTATION` → permissions `[]`. Le JWT `Admin School` / `ALL_PRIVILEGES` / `Paiements:UPDATE` ne restaure rien.
 - `requirePermission` **remplace toujours** `principal.permissions` par le tableau live (ou `[]` si la résolution est invalide).
 - Source `legacy-map-fallback` / `legacy-role-fallback` → fail-closed permissions vides.
@@ -98,6 +99,9 @@ Utilisateur lié aux deux établissements : `TEACHER` sur SCH-A, `ACCOUNTANT` su
 - `backend/lib/financeLiveRbac.http.pg.test.js` — scénarios 1–7 HTTP PostgreSQL stale-JWT
 - `verify:finance-rbac` (source guards + unit + HTTP) → `GO — HTTP PostgreSQL stale-JWT inclus`
 - `verify:finance-management` — non-régression F4 (route keys explicites)
+- L1 mobile-sync HTTP : révocation de tous les `user_roles` actifs → **403 `PERMISSION_DENIED`** (fail-closed `requirePermission`), plus 200 items vides. CUSTOM_ROLE avec grant live reste 200.
+- JWT `schoolCode` d'un établissement sans rôle live → 403 `PERMISSION_DENIED` avant validation curseur (plus `CURSOR_INVALID`).
+- Overlay identité `teachers.id` → `users.id` via `resolveCanonicalUserIdForSchool` **avant** le lookup `user_roles` (identité, pas fallback de permissions JWT).
 
 Scénario 7 : grant `Paiements:READ` live → `payment-student-options` 200 ; sans `Élèves:READ` → `GET /students` 403.
 
@@ -127,11 +131,11 @@ Fichiers : workflows F6/PR Gates/nightly, `liveRbacPrincipalAuthority`, matrice 
 ## 11. HEAD SHA
 
 Implémentation P1-A–D : `9f209cfff6036b0a180d4635b66e7b7b88e8497b`  
-HEAD de branche : renseigné dans le compte rendu PR après le push final.
+Alignement L1 HTTP zéro rôle → 403 : voir HEAD de branche après push.
 
 ## 12. Ahead / behind
 
-`origin/develop...HEAD` : **13 ahead / 0 behind** (après le commit d'implémentation ; +1 si commit docs d'identité).
+`origin/develop...HEAD` : **0 behind**. Ahead = commits F6 sur `cto/finance-f6-live-rbac` (voir compte rendu PR).
 
 ## Web ↔ Mobile
 

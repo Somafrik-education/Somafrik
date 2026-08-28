@@ -466,7 +466,7 @@ async function main() {
       { token: tenantToken },
     );
     assert.equal(tenant.status, 403, `tenant 403: ${JSON.stringify(tenant.data)}`);
-    assert.equal(tenant.data?.code, MOBILE_SYNC_ERROR.CURSOR_INVALID);
+    assert.equal(tenant.data?.code, PERMISSION_DENIED);
 
     const dualToken = mintAccess(tokens, {
       sub: DUAL_USER_ID,
@@ -680,10 +680,11 @@ async function main() {
       [TEACHER_USER_ID],
     );
     const teacherRoleRevoked = await request("/mobile-sync/l1/assignments", { token: teacherToken });
-    assert.equal(teacherRoleRevoked.status, 200, `Teacher rôle révoqué: ${JSON.stringify(teacherRoleRevoked.data)}`);
-    assert.deepEqual(teacherRoleRevoked.data.items ?? [], []);
+    assert.equal(teacherRoleRevoked.status, 403, `Teacher rôle révoqué: ${JSON.stringify(teacherRoleRevoked.data)}`);
+    assert.equal(teacherRoleRevoked.data?.code, PERMISSION_DENIED);
     const teacherRoleRevokedGet = await request("/assignments", { token: teacherToken });
-    assert.deepEqual(teacherRoleRevokedGet.data ?? [], []);
+    assert.equal(teacherRoleRevokedGet.status, 403, `GET rôle révoqué: ${JSON.stringify(teacherRoleRevokedGet.data)}`);
+    assert.equal(teacherRoleRevokedGet.data?.code, PERMISSION_DENIED);
 
     await repo.pool.query(
       `INSERT INTO users (id, school_id, user_code, first_name, last_name, email, role, status, must_change_password)

@@ -38,6 +38,39 @@ test("F6: une session établissement charge uniquement les rôles actifs de ce t
   ]);
 });
 
+test("F6: JWT overlay teachers.id résout users.id avant le lookup tenant, sans claims JWT", async () => {
+  const calls = [];
+  const repo = {
+    async getSchoolByCode(code) {
+      return { id: "school-a", school_code: code };
+    },
+    async resolveCanonicalUserIdForSchool(ref, schoolId) {
+      calls.push(["canonical", ref, schoolId]);
+      assert.equal(ref, "teacher-row-id");
+      return "user-1";
+    },
+    async listActiveUserRoleKeysForSchool(userId, schoolId) {
+      calls.push(["roles", userId, schoolId]);
+      return ["TEACHER"];
+    },
+    async listActiveUserRoleKeys() {
+      throw new Error("le lookup global ne doit pas être utilisé pour une session école");
+    },
+  };
+  const roles = await listAuthoritativeRoleKeys(repo, {
+    sub: "teacher-row-id",
+    schoolCode: "CD-KIN-001",
+    role: "Admin School",
+    roleKeys: ["SCHOOL_ADMIN"],
+    permissions: ["ALL_PRIVILEGES"],
+  });
+  assert.deepEqual(roles, ["TEACHER"]);
+  assert.deepEqual(calls, [
+    ["canonical", "teacher-row-id", "school-a"],
+    ["roles", "user-1", "school-a"],
+  ]);
+});
+
 test("F6: zéro rôle PostgreSQL est un DENY autoritaire, jamais un fallback JWT", async () => {
   const repo = {
     async getSchoolByCode() {
