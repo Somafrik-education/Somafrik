@@ -28,6 +28,7 @@ const {
   expandWeeklyOccurrences,
   resolveSchoolTimeZone,
 } = require("./planningWeeklyOccurrences");
+const { mergeAttendanceTeacherKey } = require("./presencesAttendanceAuthz");
 const {
   resolveActiveRoomId,
   capacityWarningFor,
@@ -597,6 +598,7 @@ async function upsertAttendanceBatch(store, payload, principal, auditMeta) {
             schoolCode: tenantCode,
             classCode: asTrimmed(item.classCode ?? item.class_code) || batchClassCode,
             classId: asTrimmed(item.classId ?? item.class_id) || batchClassId,
+            ...mergeAttendanceTeacherKey(item, payload),
           }))
         : [];
       const saved = [];

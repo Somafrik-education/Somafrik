@@ -22,6 +22,8 @@ import {
   stripEvaluationClientScope,
   teacherCreatePayloadContainsForbiddenFields,
   validateGradeValue,
+  gradeSaveActorScope,
+  EVALUATIONS_V2_MISSING_TEACHER,
 } from "./evaluationsV2";
 
 function run() {
@@ -117,6 +119,21 @@ function run() {
   assert.equal(notePayload.evaluationId, "EVAL-1");
   assert.equal(notePayload.teacherId, undefined);
   assert.equal(notePayload.value, 14);
+
+  const adminNote = buildSaveNotePayload({
+    evaluationId: "EVAL-1",
+    studentId: "STU-1",
+    scale: 20,
+    value: 14,
+    teacherId: "ENS-0001",
+  });
+  assert.equal(adminNote.teacherId, "ENS-0001");
+  assert.deepEqual(gradeSaveActorScope(true, { teacherId: "ENS-0001" }), {});
+  assert.deepEqual(gradeSaveActorScope(false, { teacherId: "ENS-0001" }), { teacherId: "ENS-0001" });
+  assert.throws(
+    () => gradeSaveActorScope(false, { teacherId: "" }),
+    (error: Error) => error.message === EVALUATIONS_V2_MISSING_TEACHER,
+  );
 
   assert.equal(validateGradeValue("21", 20).ok, false);
   assert.equal(validateGradeValue("-1", 20).ok, false);

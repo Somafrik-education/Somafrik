@@ -46,7 +46,11 @@ function sourceGuards() {
   assert.match(rbac, /GET \/api\/backoffice\/messages\/recipients/);
   assert.match(attachments, /SOMAFRIK_COMMUNICATION_STORAGE/);
   assert.match(attachments, /isProductionEnv/);
+  assert.match(attachments, /communicationStorageReadiness/);
+  assert.match(attachments, /isEphemeralStoragePath/);
   assert.match(attachments, /removeStoredAttachment/);
+  assert.match(server, /probeCommunicationStorageWritable/);
+  assert.match(server, /attachments/);
   assert.match(service, /listAuthorizedRecipients/);
   assert.match(service, /effectiveSchoolCode/);
   assert.match(service, /Établissement requis \(effectiveSchoolCode\)/);

@@ -277,12 +277,19 @@ app.get("/", asyncHandler(async (req, res) => {
 
 app.get("/api/health", asyncHandler(async (_req, res) => {
   await repository.init();
-  res.json({
-    status: "ok",
+  const { probeCommunicationStorageWritable } = require("./lib/communicationsAttachments");
+  const attachments = await probeCommunicationStorageWritable();
+  const payload = {
+    status: attachments.ready ? "ok" : "not_ready",
     database: repository.engine ?? "postgresql",
     version: process.env.npm_package_version ?? "1.0.0",
     timestamp: new Date().toISOString(),
-  });
+    attachments,
+  };
+  if (!attachments.ready) {
+    return res.status(503).json(payload);
+  }
+  res.json(payload);
 }));
 
 app.post(

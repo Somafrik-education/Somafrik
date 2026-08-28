@@ -108,6 +108,7 @@ vi.mock("../lib/usePermissionContext", () => ({
 }));
 
 const evaluationsForPage = vi.hoisted(() => ({ current: [] as Record<string, unknown>[] }));
+const gradesForPage = vi.hoisted(() => ({ current: [] as Record<string, unknown>[] }));
 const updateEvaluationApi = vi.hoisted(() =>
   vi.fn<(id: string, payload: Record<string, unknown>) => Promise<Record<string, unknown>>>(async () => ({})),
 );
@@ -124,8 +125,8 @@ vi.mock("../lib/evaluations", async (importOriginal) => {
         (row) => !school || String(row.schoolCode ?? school) === school,
       );
     },
-    scopedGrades: () => [],
-    allGrades: () => [],
+    scopedGrades: () => gradesForPage.current as never[],
+    allGrades: () => gradesForPage.current as never[],
     resolveGradesPeriod: () => gradesPeriod.current,
     canEditEvaluation: () => true,
   };
@@ -205,6 +206,7 @@ describe("GradesEvaluationsPage (D3.6c ToolLayout)", () => {
     permissions.canUpdate = true;
     dataLoading.current = false;
     evaluationsForPage.current = [];
+    gradesForPage.current = [];
     dataState.current = { ...dataState.current, evaluations: [] };
     sessionUser.current = {
       id: "u1",
@@ -440,6 +442,7 @@ describe("GradesEvaluationsPage — Saisie des notes Validée uniquement", () =>
     coefficient: 1,
     evaluationType: "Devoir",
     active: true,
+    teacherId: "ENS-0001",
   };
 
   const sekeAssignments = [
@@ -555,6 +558,10 @@ describe("GradesEvaluationsPage — Saisie des notes Validée uniquement", () =>
 
     expect(upsertNoteApi).toHaveBeenCalledTimes(3);
     expect(upsertNoteApi.mock.calls.map((call) => call[0].studentId)).toEqual(["s1", "s2", "s3"]);
+    for (const [payload] of upsertNoteApi.mock.calls) {
+      expect(payload.teacherId).toBe("ENS-0001");
+      expect(payload.authorId).toBeUndefined();
+    }
     expect(refreshApi).toHaveBeenCalledTimes(1);
     expect(refreshApi).toHaveBeenCalledWith(["notes"]);
     expect(showToastApi).toHaveBeenCalledWith("Notes enregistrées");
@@ -620,5 +627,124 @@ describe("GradesEvaluationsPage — Saisie des notes Validée uniquement", () =>
       }),
     );
     expect(period).toHaveValue("Trimestre 3");
+  });
+
+  it("handleSaveGrades refuse une évaluation sans teacherId pédagogique", async () => {
+    evaluationsForPage.current = [{ ...lesAdverbes, status: "Validée", teacherId: "" }];
+    dataState.current = { ...dataState.current, evaluations: evaluationsForPage.current };
+    renderPage();
+    fireEvent.click(screen.getByRole("button", { name: "Saisie des notes" }));
+    fireEvent.change(screen.getByLabelText("Évaluation"), { target: { value: "EVAL-ADV" } });
+
+    await waitFor(() => expect(gradeEntryGridProps.current?.onSave).toEqual(expect.any(Function)));
+
+    await expect(
+      gradeEntryGridProps.current!.onSave([
+        {
+          id: "g1",
+          studentId: "s1",
+          studentName: "Diallo Awa",
+          evaluationId: "EVAL-ADV",
+          value: 14,
+          gradeStatus: "Saisie",
+        },
+      ]),
+    ).rejects.toThrow("Aucun enseignant n'est affecté à cette évaluation");
+
+    expect(upsertNoteApi).not.toHaveBeenCalled();
+  });
+});
+
+describe("GradesEvaluationsPage — refresh puis mutation Préfet", () => {
+  const evaluationBase = {
+    id: "EVAL-ADV",
+    title: "LES ADVERBES",
+    subject: "Mathématiques",
+    className: "6e A",
+    classId: "c1",
+    period: "Trimestre 1",
+    schoolCode: "SCH-001",
+    scale: 20,
+    coefficient: 1,
+    evaluationType: "Devoir",
+    active: true,
+    teacherId: "ENS-0001",
+  };
+  const refreshedNote = {
+    id: "g-refresh",
+    schoolCode: "SCH-001",
+    studentId: "s1",
+    studentName: "Diallo Awa",
+    evaluationId: "EVAL-ADV",
+    subject: "Mathématiques",
+    className: "6e A",
+    period: "Trimestre 1",
+    value: 14,
+    scale: 20,
+    gradeStatus: "Validée",
+    teacherId: "",
+    authorId: "prefet-fideline",
+  };
+
+  beforeEach(() => {
+    permissions.canRead = true;
+    permissions.canCreate = true;
+    permissions.canUpdate = true;
+    dataLoading.current = false;
+    gradesPeriod.current = "Trimestre 1";
+    sessionUser.current = {
+      id: "prefet-fideline",
+      role: "Préfet des études",
+      schoolCode: "SCH-001",
+      name: "FIDELINE SHISHO",
+    };
+    gradesForPage.current = [refreshedNote];
+    upsertNoteApi.mockClear();
+    upsertNoteApi.mockResolvedValue({});
+    refreshApi.mockClear();
+    refreshApi.mockResolvedValue(undefined);
+    showToastApi.mockClear();
+    updateEvaluationApi.mockClear();
+    updateEvaluationApi.mockResolvedValue({});
+    gradeEntryGridProps.current = null;
+  });
+
+  it("saisie → refresh → validation : teacherId pédagogique, pas authorId", async () => {
+    const evaluation = { ...evaluationBase, status: "Ouverte" };
+    evaluationsForPage.current = [evaluation];
+    dataState.current = { ...dataState.current, evaluations: [evaluation], notes: [refreshedNote] };
+    renderPage();
+
+    fireEvent.click(screen.getByRole("button", { name: "Valider" }));
+
+    await waitFor(() => expect(upsertNoteApi).toHaveBeenCalled());
+    for (const [payload] of upsertNoteApi.mock.calls) {
+      expect(payload.teacherId).toBe("ENS-0001");
+      expect(payload.authorId).toBeUndefined();
+    }
+  });
+
+  it("saisie → refresh → correction : teacherId pédagogique, pas authorId", async () => {
+    const evaluation = { ...evaluationBase, status: "Validée" };
+    evaluationsForPage.current = [evaluation];
+    dataState.current = { ...dataState.current, evaluations: [evaluation], notes: [refreshedNote] };
+    renderPage();
+    fireEvent.click(screen.getByRole("button", { name: "Saisie des notes" }));
+    fireEvent.change(screen.getByLabelText("Évaluation"), { target: { value: "EVAL-ADV" } });
+    fireEvent.click(await screen.findByRole("button", { name: "Corriger une note validée" }));
+    expect(showToastApi).not.toHaveBeenCalledWith(
+      "Aucune note validée à corriger pour cette évaluation.",
+      "error",
+    );
+    await waitFor(() => expect(screen.getByRole("dialog")).toBeInTheDocument());
+    fireEvent.change(screen.getByLabelText(/Nouvelle note/i), { target: { value: "15" } });
+    fireEvent.change(screen.getByLabelText(/Motif/i), { target: { value: "Erreur de saisie" } });
+    fireEvent.click(screen.getByRole("button", { name: "Enregistrer la correction" }));
+
+    await waitFor(() => expect(upsertNoteApi).toHaveBeenCalled());
+    for (const [payload] of upsertNoteApi.mock.calls) {
+      expect(payload.teacherId).toBe("ENS-0001");
+      expect(payload.authorId).toBeUndefined();
+    }
   });
 });

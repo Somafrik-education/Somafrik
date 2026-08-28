@@ -27,6 +27,7 @@ import {
   evaluationAllowsGradeEntry,
   EVALUATIONS_V2_COPY,
   EVALUATIONS_V2_TEST_IDS,
+  gradeSaveActorScope,
   gradesForEvaluation,
   isDraftOrOpenEvaluationStatus,
   rosterStudentsForEvaluation,
@@ -285,6 +286,16 @@ export default function TeacherGradesScreen() {
       Alert.alert("Saisie refusée", EVALUATIONS_V2_COPY.notValidated);
       return;
     }
+    let actorScope: { teacherId?: string };
+    try {
+      actorScope = gradeSaveActorScope(teacher, selected);
+    } catch (error) {
+      Alert.alert(
+        "Enseignant requis",
+        error instanceof Error ? error.message : EVALUATIONS_V2_COPY.missingEvaluationTeacher,
+      );
+      return;
+    }
     const scale = Number(selected.scale);
     const entries: Array<{ student: CanonicalRosterStudent; payload: Record<string, unknown> }> = [];
     for (const student of roster) {
@@ -301,6 +312,7 @@ export default function TeacherGradesScreen() {
             className: selected.className,
             subject: selected.subject || selected.courseName,
             period: selected.periodName,
+            ...actorScope,
           }),
         });
         continue;
@@ -313,15 +325,16 @@ export default function TeacherGradesScreen() {
       entries.push({
         student,
         payload: buildSaveNotePayload({
-          evaluationId: selected.evaluationId,
-          studentId: studentApiId(student),
-          scale,
-          value: parsed.value,
-          gradeStatus: "graded",
-          className: selected.className,
-          subject: selected.subject || selected.courseName,
-          period: selected.periodName,
-        }),
+            evaluationId: selected.evaluationId,
+            studentId: studentApiId(student),
+            scale,
+            value: parsed.value,
+            gradeStatus: "graded",
+            className: selected.className,
+            subject: selected.subject || selected.courseName,
+            period: selected.periodName,
+            ...actorScope,
+          }),
       });
     }
     if (!entries.length) {

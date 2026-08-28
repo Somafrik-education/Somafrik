@@ -46,6 +46,9 @@ services:
       TRUST_PROXY_HOPS: ${TRUST_PROXY_HOPS:-1}
       JSON_BODY_LIMIT: ${JSON_BODY_LIMIT:-2mb}
       LOGIN_RATE_LIMIT_MAX: ${LOGIN_RATE_LIMIT_MAX:-15}
+      SOMAFRIK_COMMUNICATION_STORAGE: ${SOMAFRIK_COMMUNICATION_STORAGE:-/var/lib/somafrik/communication-storage}
+    volumes:
+      - communication_storage:/var/lib/somafrik/communication-storage
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:5000/api/health >/dev/null 2>&1 || exit 1"]
       interval: 15s
@@ -79,5 +82,6 @@ networks:
 
 volumes:
   postgres_production_data:
+  communication_storage:
   caddy_data:
   caddy_config:

@@ -4,6 +4,8 @@ const assert = require("node:assert/strict");
 const {
   requestedClassIdentity,
   mergeAttendanceClassIdentity,
+  mergeAttendanceTeacherKey,
+  explicitAttendanceTeacherKey,
   activeEnrollmentMatchesRequestedClass,
   classRowMatchesRequestedIdentity,
 } = require("./presencesAttendanceAuthz");
@@ -30,6 +32,19 @@ function testMergePrefersItemThenBatch() {
   );
   assert.equal(merged.classCode, "CLS-ITEM");
   assert.equal(merged.classId, "uuid-batch");
+}
+
+function testMergeAttendanceTeacherKeyIgnoresAuthorId() {
+  assert.equal(explicitAttendanceTeacherKey({ authorId: "prefet-1", teacherId: "ENS-0001" }), "ENS-0001");
+  assert.equal(explicitAttendanceTeacherKey({ authorId: "prefet-1" }), "");
+  const fromBatch = mergeAttendanceTeacherKey({ authorId: "prefet-1" }, { teacherId: "ENS-SEKE" });
+  assert.equal(fromBatch.teacherId, "ENS-SEKE");
+  const fromItem = mergeAttendanceTeacherKey(
+    { teacherId: "ENS-ITEM", authorId: "prefet-1" },
+    { teacherId: "ENS-BATCH" },
+  );
+  assert.equal(fromItem.teacherId, "ENS-ITEM");
+  assert.deepEqual(mergeAttendanceTeacherKey({ authorId: "prefet-1" }, { authorId: "admin-1" }), {});
 }
 
 function testEnrollmentMatchCases() {
@@ -108,6 +123,7 @@ function testCaseERosterDeniedWithoutAssignment() {
 function main() {
   testRequestedClassIgnoresClassName();
   testMergePrefersItemThenBatch();
+  testMergeAttendanceTeacherKeyIgnoresAuthorId();
   testEnrollmentMatchCases();
   testClassRowConflict();
   testCaseFAssignmentWithoutClassName();

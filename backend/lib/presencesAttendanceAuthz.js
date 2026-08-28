@@ -35,6 +35,19 @@ function mergeAttendanceClassIdentity(item = {}, batch = {}) {
 }
 
 /**
+ * Enseignant pédagogique explicite (admin/préfet). Jamais authorId :
+ * c'est l'acteur JWT, pas l'enseignant du cours.
+ */
+function explicitAttendanceTeacherKey(payload = {}) {
+  return asRef(payload.teacherId ?? payload.teacher_code ?? payload.teacherCode);
+}
+
+function mergeAttendanceTeacherKey(item = {}, batch = {}) {
+  const key = explicitAttendanceTeacherKey(item) || explicitAttendanceTeacherKey(batch);
+  return key ? { teacherId: key } : {};
+}
+
+/**
  * Inscription active dans la classe demandée (UUID prioritaire, sinon classCode).
  * @param {{ classId?: string, classCode?: string, status?: string }} enrollment
  * @param {{ classId?: string, classCode?: string }} requested
@@ -86,6 +99,8 @@ module.exports = {
   asRef,
   requestedClassIdentity,
   mergeAttendanceClassIdentity,
+  explicitAttendanceTeacherKey,
+  mergeAttendanceTeacherKey,
   activeEnrollmentMatchesRequestedClass,
   classRowMatchesRequestedIdentity,
 };

@@ -93,6 +93,13 @@ function assertSourceGuards() {
   assert.match(upsert, /resolveAttendanceTargetClass/);
   assert.match(upsert, /teacherHasActiveAssignmentForClassId/);
   assert.match(upsert, /activeEnrollmentMatchesRequestedClass/);
+  const findAttend = upsert.slice(
+    upsert.indexOf("async findTeacherForAttendance"),
+    upsert.indexOf("mentionForScore(score) {"),
+  );
+  assert.match(findAttend, /resolveUniqueTeacherInSchool/);
+  assert.match(findAttend, /teacher_assignments/);
+  assert.match(findAttend, /ta\.status = 'active'/);
 }
 
 async function createClass(token, groupCode) {

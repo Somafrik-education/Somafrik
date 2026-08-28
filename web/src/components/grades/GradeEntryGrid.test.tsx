@@ -22,6 +22,7 @@ const evaluationBase: Evaluation = {
   coefficient: 1,
   status: "Brouillon",
   active: true,
+  teacherId: "ENS-0001",
 };
 
 const students = [
@@ -57,13 +58,18 @@ function createDeferred<T = void>() {
 
 function renderGrid(overrides: {
   status?: Evaluation["status"];
+  teacherId?: string;
   canEdit?: boolean;
   grades?: StudentGrade[];
   onSave?: (grades: StudentGrade[]) => Promise<void>;
   onError?: (message: string) => void;
   studentRows?: typeof students;
 }) {
-  const evaluation = { ...evaluationBase, status: overrides.status ?? "Brouillon" };
+  const evaluation = {
+    ...evaluationBase,
+    status: overrides.status ?? "Brouillon",
+    ...(overrides.teacherId !== undefined ? { teacherId: overrides.teacherId } : {}),
+  };
   const onSave =
     overrides.onSave ??
     vi.fn<(grades: StudentGrade[]) => Promise<void>>(async () => undefined);
@@ -147,6 +153,8 @@ describe("GradeEntryGrid — saisie après validation", () => {
         evaluationId: "EVAL-ADV",
         value: 14,
         gradeStatus: "Saisie",
+        teacherId: "ENS-0001",
+        authorId: "ens-seke",
       }),
     ]);
   });
@@ -248,5 +256,17 @@ describe("GradeEntryGrid — saisie après validation", () => {
     expect(onSave).toHaveBeenCalledWith([
       expect.objectContaining({ studentId: "s1", gradeStatus: "Absente", value: undefined }),
     ]);
+  });
+
+  it("évaluation sans enseignant canonique : bloque avant onSave", async () => {
+    const { onSave, onError } = renderGrid({ status: "Validée", canEdit: true, teacherId: "" });
+    fireEvent.change(screen.getByLabelText("Note /20"), { target: { value: "14" } });
+    fireEvent.click(screen.getByRole("button", { name: "Enregistrer tout" }));
+    await waitFor(() =>
+      expect(onError).toHaveBeenCalledWith(
+        "Aucun enseignant n'est affecté à cette évaluation. Vérifiez l'affectation du cours.",
+      ),
+    );
+    expect(onSave).not.toHaveBeenCalled();
   });
 });

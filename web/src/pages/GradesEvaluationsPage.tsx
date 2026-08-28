@@ -35,6 +35,9 @@ import {
   ensureEvaluationsSynced,
   evaluationsEligibleForGradeEntry,
   gradesToLegacyNotes,
+  MISSING_EVALUATION_TEACHER,
+  pedagogicalTeacherId,
+  pedagogyNoteWritePayload,
   publishEvaluation,
   resolveGradesPeriod,
   scopedEvaluations,
@@ -206,8 +209,9 @@ export function GradesEvaluationsPage() {
         }
       }
       if (patch.notes?.length) {
+        const evaluations = state.evaluations ?? [];
         for (const note of patch.notes) {
-          await pedagogyApi.upsertNote(note as Record<string, unknown>);
+          await pedagogyApi.upsertNote(pedagogyNoteWritePayload(note, evaluations));
         }
       }
       if (patch.bulletins) {
@@ -328,10 +332,16 @@ export function GradesEvaluationsPage() {
   }
 
   async function handleSaveGrades(changedGrades: StudentGrade[]) {
+    const teacherId = pedagogicalTeacherId(selectedEvaluation);
+    if (!teacherId) {
+      throw new Error(MISSING_EVALUATION_TEACHER);
+    }
     for (const grade of changedGrades) {
-      const [note] = gradesToLegacyNotes([grade]);
+      const [note] = gradesToLegacyNotes([{ ...grade, teacherId }]);
+      const payload = pedagogyNoteWritePayload(note, selectedEvaluation ? [selectedEvaluation] : []);
+      payload.teacherId = teacherId;
       try {
-        await pedagogyApi.upsertNote(note as Record<string, unknown>);
+        await pedagogyApi.upsertNote(payload);
       } catch (err) {
         const message = err instanceof Error ? err.message : "Erreur de synchronisation";
         const code = err instanceof ApiError ? err.code : undefined;
@@ -653,7 +663,7 @@ export function GradesEvaluationsPage() {
                       <Button
                         variant="secondary"
                         onClick={() => {
-                          const validated = grades.find(
+                          const validated = allGrades(state).find(
                             (grade) =>
                               grade.evaluationId === selectedEvaluation.id &&
                               (grade.gradeStatus === "Validée" || grade.gradeStatus === "Corrigée"),

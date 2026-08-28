@@ -4,17 +4,19 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs/promises");
 const os = require("node:os");
 const path = require("node:path");
-const {
-  sniffMime,
-  sanitizeFileName,
-  validateUploadBuffer,
-  persistAttachmentBytes,
-  removeStoredAttachment,
-  readAttachmentBytes,
-  storageRoot,
-  isProductionEnv,
-  MAX_ATTACHMENT_BYTES,
-} = require("./communicationsAttachments");
+  const {
+    sniffMime,
+    sanitizeFileName,
+    validateUploadBuffer,
+    persistAttachmentBytes,
+    removeStoredAttachment,
+    readAttachmentBytes,
+    storageRoot,
+    isProductionEnv,
+    isEphemeralStoragePath,
+    communicationStorageReadiness,
+    MAX_ATTACHMENT_BYTES,
+  } = require("./communicationsAttachments");
 const { classifyActor, validateBody, MESSAGE_MAX_LENGTH } = require("./communicationsMessagesService");
 
 function pdfBuffer() {
@@ -64,12 +66,24 @@ async function main() {
   assert.match(storageRoot(), /somafrik-communication-attachments/);
 
   process.env.NODE_ENV = "production";
+  assert.equal(communicationStorageReadiness().ready, false);
   assert.throws(
     () => storageRoot(),
     (error) => error.statusCode === 503 && /SOMAFRIK_COMMUNICATION_STORAGE/.test(error.message),
   );
-  const durable = await fs.mkdtemp(path.join(os.tmpdir(), "somafrik-c2-durable-"));
+  process.env.SOMAFRIK_COMMUNICATION_STORAGE = "/tmp/somafrik-pj";
+  assert.equal(isEphemeralStoragePath("/tmp/somafrik-pj"), true);
+  assert.equal(communicationStorageReadiness().ready, false);
+  assert.match(String(communicationStorageReadiness().error), /\/tmp/);
+  assert.throws(
+    () => storageRoot(),
+    (error) => error.statusCode === 503 && /\/tmp/.test(error.message),
+  );
+  const durableParent = path.join(__dirname, "../../.tmp-communication-storage");
+  await fs.mkdir(durableParent, { recursive: true });
+  const durable = await fs.mkdtemp(path.join(durableParent, "c2-"));
   process.env.SOMAFRIK_COMMUNICATION_STORAGE = durable;
+  assert.equal(communicationStorageReadiness().ready, true);
   const key = await persistAttachmentBytes("school-a", pdfBuffer());
   const firstRead = await readAttachmentBytes(key);
   assert.ok(firstRead.length > 0, "production + stockage configuré : read OK");
@@ -78,6 +92,7 @@ async function main() {
   await persistAttachmentBytes("school-a", pdfBuffer());
   await removeStoredAttachment(key);
   await assert.rejects(() => readAttachmentBytes(key), (error) => error.code === "ENOENT" || error.statusCode === 404);
+  await fs.rm(durable, { recursive: true, force: true });
 
   process.env.NODE_ENV = previousEnv;
   if (previousStorage == null) delete process.env.SOMAFRIK_COMMUNICATION_STORAGE;
