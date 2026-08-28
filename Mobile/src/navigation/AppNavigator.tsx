@@ -41,6 +41,7 @@ import SchoolYearSettingsScreen from "../screens/SchoolYearSettingsScreen";
 import SchoolPedagogicalStructureScreen from "../screens/SchoolPedagogicalStructureScreen";
 import SchoolAssignableRolesScreen from "../screens/SchoolAssignableRolesScreen";
 import PlatformNotificationsScreen from "../screens/PlatformNotificationsScreen";
+import InternalNotificationsScreen from "../screens/InternalNotificationsScreen";
 import OfflineBanner from "../components/OfflineBanner";
 import { AdminEntity } from "../context/AdminDataContext";
 import { useAuth } from "../context/AuthContext";
@@ -102,6 +103,7 @@ export type RootStackParamList = {
   SchoolPedagogicalStructure: undefined;
   SchoolAssignableRoles: undefined;
   PlatformNotifications: undefined;
+  InternalNotifications: undefined;
   Permissions: undefined;
   AdminCrud: {
     entity: AdminEntity;
@@ -321,6 +323,7 @@ export default function AppNavigator() {
         {canReadView(session, "SchoolAssignableRoles") && (
           <Stack.Screen name="SchoolAssignableRoles" component={SchoolAssignableRolesScreen} options={{ title: "Rôles disponibles" }} />
         )}
+        {canReadRoute(session, "InternalNotifications") && <Stack.Screen name="InternalNotifications" component={InternalNotificationsScreen} options={{ title: "Notifications" }} />}
         {canReadView(session, "PlatformNotifications") && <Stack.Screen name="PlatformNotifications" component={PlatformNotificationsScreen} options={{ title: "Notifications plateforme" }} />}
         {canReadView(session, "Permissions") && <Stack.Screen name="Permissions" component={PermissionsScreen} options={{ title: "Droits par rôle" }} />}
       </Stack.Navigator>

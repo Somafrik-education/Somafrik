@@ -8,6 +8,7 @@ import { displayRoleName, getInitials } from "../../lib/format";
 import { scopedNotifications } from "../../lib/scope";
 import { scopedMessages } from "../../lib/establishment";
 import { useAnnouncementsUnreadCount } from "../../lib/announcementsRead";
+import { useInternalNotificationsUnreadCount } from "../../lib/internalNotificationsRead";
 import { canReadView } from "../../lib/permissions";
 import { usePermissionContext } from "../../lib/usePermissionContext";
 import { Button } from "../ui/Button";
@@ -55,9 +56,16 @@ export function Topbar({ title, onMenuOpen }: { title: string; onMenuOpen?: () =
   const scopeUser = scopedUser ?? user ?? null;
 
   const canReadNotifications = canReadView(ctx, "notifications");
-  const unreadCount = canReadNotifications
-    ? scopedNotifications(user ?? null, state).filter((n) => n.status !== "Lu").length
-    : 0;
+  const hasInternalNotificationScope = Boolean(activeSchoolCode && activeSchoolCode !== "*");
+  const internalUnreadCount = useInternalNotificationsUnreadCount(
+    canReadNotifications && hasInternalNotificationScope,
+    activeSchoolCode,
+  );
+  const unreadCount = hasInternalNotificationScope
+    ? internalUnreadCount
+    : canReadNotifications
+      ? scopedNotifications(user ?? null, state).filter((n) => n.status !== "Lu").length
+      : 0;
 
   const canReadMessages = canReadView(ctx, "messages");
   const unreadMessages = canReadMessages

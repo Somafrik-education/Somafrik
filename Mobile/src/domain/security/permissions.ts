@@ -62,6 +62,7 @@ const SUPER_ADMIN_ALLOWED_VIEWS = new Set([
   "chartSettings",
   "notifications",
   "PlatformNotifications",
+  "InternalNotifications",
   "messages",
   "Messages",
   "announcements",
@@ -87,6 +88,7 @@ export const entityFeatureMap: Record<string, string> = {
   paymentStatuses: "Paramètres Établissement",
   messages: "Messages",
   announcements: "Announcements",
+  notifications: "Notifications",
   courses: "Matières",
   assignments: "Affectations",
 };
@@ -127,6 +129,7 @@ export const routeFeatureMap: Record<string, string> = {
   SchoolPedagogicalStructure: "Paramètres Établissement",
   SchoolAssignableRoles: "Paramètres Établissement",
   PlatformNotifications: "Notifications",
+  InternalNotifications: "Notifications",
   Permissions: "Droits par rôle",
 };
 
