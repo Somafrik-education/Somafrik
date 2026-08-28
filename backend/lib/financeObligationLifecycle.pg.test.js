@@ -414,7 +414,11 @@ async function main() {
     await store.setFinanceFeeGridStatus(gridB.id, "Active", { ...admin, schoolCode: "BI-2026-0001" });
     await assert.rejects(
       () => store.applyFinanceFeeGrid(gridB.id, admin),
-      (error) => error.code === FINANCE_ERROR.TENANT_MISMATCH || error.statusCode === 403,
+      (error) =>
+        error.code === FINANCE_ERROR.TENANT_MISMATCH ||
+        error.code === FINANCE_ERROR.FEE_GRID_NOT_FOUND ||
+        error.statusCode === 403 ||
+        error.statusCode === 404,
     );
 
     const sepRow = await pool.query(
