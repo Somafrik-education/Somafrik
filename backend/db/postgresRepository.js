@@ -570,12 +570,21 @@ class PostgresRepository {
     const {
       USER_ROLES_SCHEMA_SQL,
       USER_ROLES_MIGRATION_AMBIGUOUS,
-      INVENTORY_UNKNOWN_USERS_ROLE_SQL,
-      INVENTORY_UNKNOWN_SECONDARY_ROLES_SQL,
-      BACKFILL_FROM_USERS_ROLE_SQL,
-      BACKFILL_FROM_SECONDARY_ROLES_SQL,
+      NORMALIZE_ROLE_CODE_FUNCTION_SQL,
+      inventoryUnknownUsersRoleSql,
+      inventoryUnknownSecondaryRolesSql,
+      backfillFromUsersRoleSql,
+      backfillFromSecondaryRolesSql,
     } = require("./userRolesSchema");
-    const unknownRoles = await this.all(INVENTORY_UNKNOWN_USERS_ROLE_SQL);
+    await this.query(NORMALIZE_ROLE_CODE_FUNCTION_SQL);
+    // Boot : cette étape précède ensureEstablishmentRolesCanonicalSchema.
+    // Si la table n'existe pas encore (base neuve), seul le référentiel statique
+    // est reconnu ; un rôle dynamique reste fail-closed. Base existante : le
+    // catalogue actif scope=school résout un role_code unique uniquement si
+    // users.school_id IS NOT NULL (jamais de rôle établissement en scope plateforme).
+    const catalogRel = await this.all(`SELECT to_regclass('public.establishment_roles') AS ref`);
+    const catalogAvailable = Boolean(catalogRel[0]?.ref);
+    const unknownRoles = await this.all(inventoryUnknownUsersRoleSql(catalogAvailable));
     const profilePayloadColumns = await this.all(
       `SELECT 1
        FROM information_schema.columns
@@ -584,7 +593,9 @@ class PostgresRepository {
          AND column_name = 'profile_payload'`,
     );
     const hasProfilePayload = profilePayloadColumns.length > 0;
-    const unknownSecondary = hasProfilePayload ? await this.all(INVENTORY_UNKNOWN_SECONDARY_ROLES_SQL) : [];
+    const unknownSecondary = hasProfilePayload
+      ? await this.all(inventoryUnknownSecondaryRolesSql(catalogAvailable))
+      : [];
     if (unknownRoles.length || unknownSecondary.length) {
       const error = new Error(
         "USER_ROLES_MIGRATION_AMBIGUOUS: rôles utilisateurs non déterministes. Conversion refusée.",
@@ -594,9 +605,9 @@ class PostgresRepository {
       throw error;
     }
     await this.query(USER_ROLES_SCHEMA_SQL);
-    await this.query(BACKFILL_FROM_USERS_ROLE_SQL);
+    await this.query(backfillFromUsersRoleSql(catalogAvailable));
     if (hasProfilePayload) {
-      await this.query(BACKFILL_FROM_SECONDARY_ROLES_SQL);
+      await this.query(backfillFromSecondaryRolesSql(catalogAvailable));
     }
   }
 

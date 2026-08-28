@@ -33,18 +33,129 @@ const KNOWN_ROLE_LABELS_SQL = `
   'PARENT', 'ÉLÈVE / ÉTUDIANT', 'ELEVE / ETUDIANT', 'SURVEILLANT'
 `;
 
-const INVENTORY_UNKNOWN_USERS_ROLE_SQL = `
+/**
+ * Équivalent SQL de normalizeRoleCode() :
+ * trim, lowercase, NFD, suppression des diacritiques, non alphanumériques → `_`, trim `_`.
+ * Indépendant de l'extension unaccent.
+ */
+const NORMALIZE_ROLE_CODE_FUNCTION_SQL = `
+CREATE OR REPLACE FUNCTION somafrik_normalize_role_code(src text)
+RETURNS text
+LANGUAGE sql
+IMMUTABLE
+PARALLEL SAFE
+AS $$
+  SELECT CASE
+    WHEN src IS NULL OR btrim(src) = '' THEN ''
+    ELSE regexp_replace(
+      regexp_replace(
+        regexp_replace(
+          normalize(lower(btrim(src)), NFD),
+          '[' || chr(768) || '-' || chr(879) || ']',
+          '',
+          'g'
+        ),
+        '[^a-z0-9]+',
+        '_',
+        'g'
+      ),
+      '^_+|_+$',
+      '',
+      'g'
+    )
+  END;
+$$;
+`;
+
+function staticLabelMapSql(legacyExpr) {
+  const value = `upper(btrim(${legacyExpr}))`;
+  return `
+    WHEN ${value} = 'SUPER ADMINISTRATEUR SOMAFRIK' THEN 'SUPER_ADMIN'
+    WHEN ${value} = 'SUPER ADMINISTRATEUR OKAFRIK' THEN 'SUPER_ADMIN'
+    WHEN ${value} = 'ADMIN PAYS' THEN 'COUNTRY_ADMIN'
+    WHEN ${value} = 'ADMIN SCHOOL' THEN 'SCHOOL_ADMIN'
+    WHEN ${value} = 'PROVISEUR' THEN 'PROVISEUR'
+    WHEN ${value} = 'DIRECTEUR' THEN 'PRINCIPAL'
+    WHEN ${value} = 'PRÉFET DES ÉTUDES' THEN 'PREFET_ETUDES'
+    WHEN ${value} = 'PREFET DES ETUDES' THEN 'PREFET_ETUDES'
+    WHEN ${value} = 'ENSEIGNANT' THEN 'TEACHER'
+    WHEN ${value} = 'SECRÉTAIRE' THEN 'SECRETARY'
+    WHEN ${value} = 'SECRETAIRE' THEN 'SECRETARY'
+    WHEN ${value} = 'COMPTABLE' THEN 'ACCOUNTANT'
+    WHEN ${value} = 'PARENT' THEN 'PARENT'
+    WHEN ${value} = 'ÉLÈVE / ÉTUDIANT' THEN 'STUDENT'
+    WHEN ${value} = 'ELEVE / ETUDIANT' THEN 'STUDENT'
+    WHEN ${value} = 'SURVEILLANT' THEN 'SUPERVISOR'
+`;
+}
+
+function isStaticKnownRoleSql(expr) {
+  return `(
+    upper(btrim(${expr})) IN (${KNOWN_ROLE_KEYS_SQL})
+    OR upper(btrim(${expr})) IN (${KNOWN_ROLE_LABELS_SQL})
+  )`;
+}
+
+function catalogUniqueMatchSql(legacyExpr, schoolIdExpr = "u.school_id") {
+  return `(
+    ${schoolIdExpr} IS NOT NULL
+    AND (
+      SELECT COUNT(*)::int
+      FROM establishment_roles er
+      WHERE lower(btrim(er.status)) = 'active'
+        AND lower(btrim(er.scope)) = 'school'
+        AND (
+          somafrik_normalize_role_code(er.role_code) = somafrik_normalize_role_code(${legacyExpr})
+          OR somafrik_normalize_role_code(er.role_name) = somafrik_normalize_role_code(${legacyExpr})
+        )
+    ) = 1
+  )`;
+}
+
+function catalogRoleCodeSql(legacyExpr, schoolIdExpr = "u.school_id") {
+  return `(
+    CASE
+      WHEN ${schoolIdExpr} IS NULL THEN NULL
+      ELSE (
+        SELECT MIN(er.role_code)
+        FROM establishment_roles er
+        WHERE lower(btrim(er.status)) = 'active'
+          AND lower(btrim(er.scope)) = 'school'
+          AND (
+            somafrik_normalize_role_code(er.role_code) = somafrik_normalize_role_code(${legacyExpr})
+            OR somafrik_normalize_role_code(er.role_name) = somafrik_normalize_role_code(${legacyExpr})
+          )
+      )
+    END
+  )`;
+}
+
+function mapLegacyRoleKeySql(legacyExpr, catalogAvailable) {
+  const catalogElse = catalogAvailable ? catalogRoleCodeSql(legacyExpr) : "NULL";
+  return `CASE
+    WHEN upper(btrim(${legacyExpr})) IN (${KNOWN_ROLE_KEYS_SQL}) THEN upper(btrim(${legacyExpr}))
+    ${staticLabelMapSql(legacyExpr)}
+    ELSE ${catalogElse}
+  END`;
+}
+
+function inventoryUnknownUsersRoleSql(catalogAvailable) {
+  const catalogOk = catalogAvailable ? `AND NOT ${catalogUniqueMatchSql("u.role")}` : "";
+  return `
 SELECT u.id::text AS user_id, u.user_code, u.role
 FROM users u
 WHERE u.role IS NOT NULL
   AND btrim(u.role) <> ''
-  AND upper(btrim(u.role)) NOT IN (${KNOWN_ROLE_KEYS_SQL})
-  AND upper(btrim(u.role)) NOT IN (${KNOWN_ROLE_LABELS_SQL})
+  AND NOT ${isStaticKnownRoleSql("u.role")}
+  ${catalogOk}
 ORDER BY u.user_code
 LIMIT 50
 `;
+}
 
-const INVENTORY_UNKNOWN_SECONDARY_ROLES_SQL = `
+function inventoryUnknownSecondaryRolesSql(catalogAvailable) {
+  const catalogOk = catalogAvailable ? `AND NOT ${catalogUniqueMatchSql("elem")}` : "";
+  return `
 SELECT u.id::text AS user_id, u.user_code, elem AS secondary_role
 FROM users u
 CROSS JOIN LATERAL jsonb_array_elements_text(
@@ -55,67 +166,35 @@ CROSS JOIN LATERAL jsonb_array_elements_text(
   END
 ) AS elem
 WHERE btrim(elem) <> ''
-  AND upper(btrim(elem)) NOT IN (${KNOWN_ROLE_KEYS_SQL})
-  AND upper(btrim(elem)) NOT IN (${KNOWN_ROLE_LABELS_SQL})
+  AND NOT ${isStaticKnownRoleSql("elem")}
+  ${catalogOk}
 ORDER BY u.user_code
 LIMIT 50
 `;
+}
 
-const BACKFILL_FROM_USERS_ROLE_SQL = `
+function backfillFromUsersRoleSql(catalogAvailable) {
+  return `
 INSERT INTO user_roles (user_id, school_id, role_key, granted_at, status)
 SELECT
   u.id,
   u.school_id,
-  CASE upper(btrim(u.role))
-    WHEN 'SUPER ADMINISTRATEUR SOMAFRIK' THEN 'SUPER_ADMIN'
-    WHEN 'SUPER ADMINISTRATEUR OKAFRIK' THEN 'SUPER_ADMIN'
-    WHEN 'ADMIN PAYS' THEN 'COUNTRY_ADMIN'
-    WHEN 'ADMIN SCHOOL' THEN 'SCHOOL_ADMIN'
-    WHEN 'PROVISEUR' THEN 'PROVISEUR'
-    WHEN 'DIRECTEUR' THEN 'PRINCIPAL'
-    WHEN 'PRÉFET DES ÉTUDES' THEN 'PREFET_ETUDES'
-    WHEN 'PREFET DES ETUDES' THEN 'PREFET_ETUDES'
-    WHEN 'ENSEIGNANT' THEN 'TEACHER'
-    WHEN 'SECRÉTAIRE' THEN 'SECRETARY'
-    WHEN 'SECRETAIRE' THEN 'SECRETARY'
-    WHEN 'COMPTABLE' THEN 'ACCOUNTANT'
-    WHEN 'PARENT' THEN 'PARENT'
-    WHEN 'ÉLÈVE / ÉTUDIANT' THEN 'STUDENT'
-    WHEN 'ELEVE / ETUDIANT' THEN 'STUDENT'
-    WHEN 'SURVEILLANT' THEN 'SUPERVISOR'
-    ELSE upper(btrim(u.role))
-  END,
+  ${mapLegacyRoleKeySql("u.role", catalogAvailable)},
   COALESCE(u.created_at, NOW()),
   'active'
 FROM users u
 WHERE u.role IS NOT NULL AND btrim(u.role) <> ''
 ON CONFLICT DO NOTHING
 `;
+}
 
-const BACKFILL_FROM_SECONDARY_ROLES_SQL = `
+function backfillFromSecondaryRolesSql(catalogAvailable) {
+  return `
 INSERT INTO user_roles (user_id, school_id, role_key, granted_at, status)
 SELECT
   u.id,
   u.school_id,
-  CASE upper(btrim(elem))
-    WHEN 'SUPER ADMINISTRATEUR SOMAFRIK' THEN 'SUPER_ADMIN'
-    WHEN 'SUPER ADMINISTRATEUR OKAFRIK' THEN 'SUPER_ADMIN'
-    WHEN 'ADMIN PAYS' THEN 'COUNTRY_ADMIN'
-    WHEN 'ADMIN SCHOOL' THEN 'SCHOOL_ADMIN'
-    WHEN 'PROVISEUR' THEN 'PROVISEUR'
-    WHEN 'DIRECTEUR' THEN 'PRINCIPAL'
-    WHEN 'PRÉFET DES ÉTUDES' THEN 'PREFET_ETUDES'
-    WHEN 'PREFET DES ETUDES' THEN 'PREFET_ETUDES'
-    WHEN 'ENSEIGNANT' THEN 'TEACHER'
-    WHEN 'SECRÉTAIRE' THEN 'SECRETARY'
-    WHEN 'SECRETAIRE' THEN 'SECRETARY'
-    WHEN 'COMPTABLE' THEN 'ACCOUNTANT'
-    WHEN 'PARENT' THEN 'PARENT'
-    WHEN 'ÉLÈVE / ÉTUDIANT' THEN 'STUDENT'
-    WHEN 'ELEVE / ETUDIANT' THEN 'STUDENT'
-    WHEN 'SURVEILLANT' THEN 'SUPERVISOR'
-    ELSE upper(btrim(elem))
-  END,
+  ${mapLegacyRoleKeySql("elem", catalogAvailable)},
   COALESCE(u.created_at, NOW()),
   'active'
 FROM users u
@@ -129,12 +208,28 @@ CROSS JOIN LATERAL jsonb_array_elements_text(
 WHERE btrim(elem) <> ''
 ON CONFLICT DO NOTHING
 `;
+}
+
+const INVENTORY_UNKNOWN_USERS_ROLE_SQL = inventoryUnknownUsersRoleSql(false);
+const INVENTORY_UNKNOWN_SECONDARY_ROLES_SQL = inventoryUnknownSecondaryRolesSql(false);
+const BACKFILL_FROM_USERS_ROLE_SQL = backfillFromUsersRoleSql(false);
+const BACKFILL_FROM_SECONDARY_ROLES_SQL = backfillFromSecondaryRolesSql(false);
 
 module.exports = {
   USER_ROLES_SCHEMA_SQL,
   USER_ROLES_MIGRATION_AMBIGUOUS,
+  KNOWN_ROLE_KEYS_SQL,
+  KNOWN_ROLE_LABELS_SQL,
+  NORMALIZE_ROLE_CODE_FUNCTION_SQL,
   INVENTORY_UNKNOWN_USERS_ROLE_SQL,
   INVENTORY_UNKNOWN_SECONDARY_ROLES_SQL,
   BACKFILL_FROM_USERS_ROLE_SQL,
   BACKFILL_FROM_SECONDARY_ROLES_SQL,
+  isStaticKnownRoleSql,
+  catalogUniqueMatchSql,
+  catalogRoleCodeSql,
+  inventoryUnknownUsersRoleSql,
+  inventoryUnknownSecondaryRolesSql,
+  backfillFromUsersRoleSql,
+  backfillFromSecondaryRolesSql,
 };
