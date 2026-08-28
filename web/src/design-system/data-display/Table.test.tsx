@@ -38,6 +38,22 @@ describe("Table", () => {
     expect(screen.getByText("Vide")).toBeInTheDocument();
   });
 
+  it("stackOnMobile exposes cards and hides the table on small screens", () => {
+    render(
+      <Table
+        stackOnMobile
+        columns={[
+          { key: "name", header: "Nom" },
+          { key: "score", header: "Score" },
+        ]}
+        rows={rows}
+        rowKey={(row) => row.id}
+      />,
+    );
+    expect(screen.getAllByText("Bêta").length).toBeGreaterThan(0);
+    expect(screen.getByRole("columnheader", { name: /Nom/i })).toBeInTheDocument();
+  });
+
   it("sorts when sortable is enabled", async () => {
     const user = userEvent.setup();
     render(

@@ -262,6 +262,7 @@ export type CanonicalPayment = {
   overpaymentAmount?: number;
   obligationId?: string;
   schoolFeeItemId?: string;
+  currency?: string;
 };
 
 export function paymentReference(payment: CanonicalPayment): string {

@@ -8,23 +8,33 @@ import {
   paymentMethodLabel,
   paymentPaidAt,
   paymentReference,
-  paymentStatusLabel,
   paymentTotal,
   type CanonicalPayment,
 } from "../lib/dataTruth";
+import { formatFinanceAmount, formatFinanceDate } from "../lib/financeCurrency";
+import { financePaymentStatusLabel } from "../lib/financeObligationStatus";
 
 type Props = {
   payment: CanonicalPayment;
   studentName?: string;
   onPress?: () => void;
   showItems?: boolean;
+  currency?: string;
 };
 
-export default function PaymentReceiptCard({ payment, studentName, onPress, showItems = true }: Props) {
+export default function PaymentReceiptCard({
+  payment,
+  studentName,
+  onPress,
+  showItems = true,
+  currency = "",
+}: Props) {
   const reference = paymentReference(payment);
   const total = paymentTotal(payment);
   const items = paymentItems(payment);
+  const money = (amount: number) => formatFinanceAmount(amount, currency || payment.currency);
   const Wrapper = onPress ? TouchableOpacity : View;
+  const statusLabel = financePaymentStatusLabel(payment.status);
 
   return (
     <Wrapper
@@ -32,7 +42,7 @@ export default function PaymentReceiptCard({ payment, studentName, onPress, show
       {...(onPress ? { activeOpacity: 0.85, onPress } : {})}
       testID={`${DATA_TRUTH_TEST_IDS.paymentsReceipt}-${reference || payment.id}`}
       accessibilityRole={onPress ? "button" : "summary"}
-      accessibilityLabel={`Reçu ${reference || payment.id}, ${paymentStatusLabel(payment.status)}, ${total.toLocaleString("fr-FR")} FC`}
+      accessibilityLabel={`Reçu ${reference || payment.id}, ${statusLabel}, ${money(total)}`}
     >
       <View style={styles.header}>
         <View style={styles.headerText}>
@@ -44,20 +54,20 @@ export default function PaymentReceiptCard({ payment, studentName, onPress, show
           </Text>
           <Text style={styles.meta}>{paymentItemsDetail(payment)}</Text>
         </View>
-        <StatusBadge status={paymentStatusLabel(payment.status)} />
+        <StatusBadge status={statusLabel} />
       </View>
 
       <Text style={styles.total} selectable>
-        {total.toLocaleString("fr-FR")} FC
+        {money(total)}
       </Text>
       <Text style={styles.meta}>
         {paymentMethodLabel(payment)}
-        {paymentPaidAt(payment) ? ` • ${paymentPaidAt(payment)}` : ""}
+        {paymentPaidAt(payment) ? ` • ${formatFinanceDate(paymentPaidAt(payment))}` : ""}
       </Text>
       <Text style={styles.count}>{paymentItemCount(payment)} libellé(s)</Text>
       {Number(payment.unallocatedAmount ?? 0) > 0 ? (
         <Text style={styles.unallocated}>
-          Non imputé : {Number(payment.unallocatedAmount).toLocaleString("fr-FR")} FC
+          Non imputé : {money(Number(payment.unallocatedAmount))}
         </Text>
       ) : null}
 
@@ -67,14 +77,14 @@ export default function PaymentReceiptCard({ payment, studentName, onPress, show
             <View key={item.id || `${reference}-${index}`} style={styles.itemRow}>
               <Text style={styles.itemLabel}>{item.feeLabel || item.feeType || "Libellé"}</Text>
               <Text style={styles.itemAmount} selectable>
-                {Number(item.amount || 0).toLocaleString("fr-FR")} FC
+                {money(Number(item.amount || 0))}
               </Text>
             </View>
           ))}
           <View style={[styles.itemRow, styles.totalRow]}>
             <Text style={styles.totalLabel}>TOTAL</Text>
             <Text style={styles.totalLabel} selectable>
-              {total.toLocaleString("fr-FR")} FC
+              {money(total)}
             </Text>
           </View>
         </View>

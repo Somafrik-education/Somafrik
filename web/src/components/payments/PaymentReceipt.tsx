@@ -1,6 +1,7 @@
 import type { PaymentRecord } from "../../lib/quickPayment";
 import type { School } from "../../types";
-import { formatMetric } from "../../lib/format";
+import { formatFinanceAmount, formatFinanceDate, resolveFinanceCurrency } from "../../lib/financeCurrency";
+import { financePaymentStatusLabel } from "../../lib/financeObligationStatus";
 
 interface PaymentReceiptProps {
   payment: PaymentRecord;
@@ -29,7 +30,10 @@ function receiptItems(payment: PaymentRecord): { label: string; amount: number }
 export function PaymentReceipt({ payment, school }: PaymentReceiptProps) {
   const items = receiptItems(payment);
   const total = items.reduce((sum, item) => sum + item.amount, 0);
-  const currency = String(payment.currency ?? school?.currency ?? "CDF");
+  const currency = resolveFinanceCurrency(
+    typeof payment.currency === "string" ? payment.currency : undefined,
+    school?.currency,
+  );
 
   return (
     <div className="payment-receipt mx-auto max-w-md rounded-2xl border border-line bg-white p-8 text-sm text-ink print:border-0 print:shadow-none">
@@ -72,7 +76,7 @@ export function PaymentReceipt({ payment, school }: PaymentReceiptProps) {
           {items.map((item, index) => (
             <tr key={`${item.label}-${index}`} className="border-b border-line/70">
               <td className="py-2">{item.label}</td>
-              <td className="py-2 text-right font-semibold">{formatMetric(item.amount, currency)}</td>
+              <td className="py-2 text-right font-semibold">{formatFinanceAmount(item.amount, currency)}</td>
             </tr>
           ))}
         </tbody>
@@ -80,7 +84,7 @@ export function PaymentReceipt({ payment, school }: PaymentReceiptProps) {
           <tr>
             <td className="pt-3 font-black">Total</td>
             <td className="pt-3 text-right text-lg font-black text-brand">
-              {formatMetric(total, currency)}
+              {formatFinanceAmount(total, currency)}
             </td>
           </tr>
         </tfoot>
@@ -90,30 +94,30 @@ export function PaymentReceipt({ payment, school }: PaymentReceiptProps) {
         <div className="flex justify-between gap-4">
           <dt className="text-muted">Montant reçu</dt>
           <dd className="font-semibold">
-            {formatMetric(Number(payment.amount ?? payment.totalAmount ?? total), currency)}
+            {formatFinanceAmount(Number(payment.amount ?? payment.totalAmount ?? total), currency)}
           </dd>
         </div>
         <div className="flex justify-between gap-4">
           <dt className="text-muted">Montant imputé</dt>
-          <dd className="font-semibold">{formatMetric(Number(payment.allocatedAmount ?? 0), currency)}</dd>
+          <dd className="font-semibold">{formatFinanceAmount(Number(payment.allocatedAmount ?? 0), currency)}</dd>
         </div>
         <div className="flex justify-between gap-4">
           <dt className="text-muted">Montant non imputé</dt>
           <dd className="font-semibold">
-            {formatMetric(Number(payment.unallocatedAmount ?? payment.overpaymentAmount ?? 0), currency)}
+            {formatFinanceAmount(Number(payment.unallocatedAmount ?? payment.overpaymentAmount ?? 0), currency)}
           </dd>
         </div>
         <div className="flex justify-between gap-4">
-          <dt className="text-muted">Date</dt>
-          <dd>{String(payment.date ?? "—")}</dd>
+          <dt className="text-muted">Date d'encaissement</dt>
+          <dd>{formatFinanceDate(String(payment.date ?? payment.paidAt ?? ""))}</dd>
         </div>
         <div className="flex justify-between gap-4">
-          <dt className="text-muted">Mode</dt>
+          <dt className="text-muted">Mode de paiement</dt>
           <dd>{String(payment.method ?? "—")}</dd>
         </div>
         <div className="flex justify-between gap-4">
           <dt className="text-muted">Statut</dt>
-          <dd className="font-semibold">{String(payment.status ?? "—")}</dd>
+          <dd className="font-semibold">{financePaymentStatusLabel(payment.status)}</dd>
         </div>
         <div className="flex justify-between gap-4">
           <dt className="text-muted">Saisi par</dt>

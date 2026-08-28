@@ -118,6 +118,9 @@ import { subscriptionFeatureBlocked, type SubscriptionFeature } from "../lib/sub
 import { appendAuditLog } from "../lib/audit";
 import { validateCourseTeacherRule } from "../lib/pedagogyGovernance";
 import { QuickPaymentModal } from "../components/payments/QuickPaymentModal";
+import { FinancePaymentsOverview } from "../components/payments/FinancePaymentsOverview";
+import { getPaymentRateKpi } from "../lib/paymentRateKpi";
+import { resolveFinanceCurrency } from "../lib/financeCurrency";
 import { PaymentReceipt } from "../components/payments/PaymentReceipt";
 import { type PaymentRecord } from "../lib/quickPayment";
 import {
@@ -994,7 +997,7 @@ function EntityPageContent({ entity, mode, classScope, disableCreate = false }: 
         return;
       }
       try {
-        showToast("Utilisez Enregistrer un paiement. L'imputation exige une obligationId ou Non imputé.", "error");
+        showToast("Utilisez Enregistrer un encaissement. Chaque montant vise un frais ouvert, sinon il reste non imputé.", "error");
       } catch {
         /* toast */
       }
@@ -1491,9 +1494,33 @@ function EntityPageContent({ entity, mode, classScope, disableCreate = false }: 
       ? school
         ? `Liez un parent à un ou plusieurs élèves. Périmètre : ${school.name} (${school.code})`
         : "Liez un parent à un ou plusieurs élèves de l'établissement."
+      : module.key === "payments"
+        ? school
+          ? `Encaissements de ${school.name} (${school.code}) — référence, élève, montant, moyen et statut.`
+          : "Historique des encaissements : référence, élève, montant, moyen de paiement et statut."
       : school
         ? `${module.description} · Périmètre : ${school.name} (${school.code})`
         : module.description;
+
+  const paymentOverview = useMemo(() => {
+    if (module.key !== "payments") return null;
+    const fees = Array.isArray(state.studentFees) ? state.studentFees : [];
+    const kpi = getPaymentRateKpi(fees);
+    const remaining = Math.max(0, kpi.expectedAmount - kpi.collectedAmount);
+    const currency = resolveFinanceCurrency(
+      school?.currency,
+      fees.find((fee) => fee.currency)?.currency,
+      (rows[0] as { currency?: string } | undefined)?.currency,
+    );
+    return {
+      expectedAmount: kpi.expectedAmount,
+      collectedAmount: kpi.collectedAmount,
+      remainingAmount: remaining,
+      obligationCount: fees.filter((fee) => String(fee.status ?? "") !== "Annulé").length,
+      recentPaymentCount: rows.length,
+      currency,
+    };
+  }, [module.key, state.studentFees, school?.currency, rows]);
 
   const secondaryActions = (
     <>
@@ -1544,9 +1571,9 @@ function EntityPageContent({ entity, mode, classScope, disableCreate = false }: 
 
   const primaryActions = (
     <>
-      {module.key === "payments" && canCreate ? (
+        {module.key === "payments" && canCreate ? (
         <Button size="sm" onClick={() => setQuickPaymentOpen(true)}>
-          Enregistrer un paiement
+          Enregistrer un encaissement
         </Button>
       ) : null}
       {linkableContactKind && canUpdate ? (
@@ -1660,13 +1687,24 @@ function EntityPageContent({ entity, mode, classScope, disableCreate = false }: 
           />
         }
       >
+        {module.key === "payments" && paymentOverview ? (
+          <FinancePaymentsOverview {...paymentOverview} />
+        ) : null}
         {rows.length === 0 ? (
           <EmptyState
-            title={search.trim() ? "Aucun résultat" : "Liste vide"}
+            title={
+              search.trim()
+                ? "Aucun résultat"
+                : module.key === "payments"
+                  ? "Aucun encaissement"
+                  : "Liste vide"
+            }
             description={
               search.trim()
                 ? "Aucun élément ne correspond à votre recherche."
-                : `Aucun élément à afficher dans ${module.label.toLowerCase()}.`
+                : module.key === "payments"
+                  ? "Les paiements enregistrés apparaissent ici avec la référence, l'élève, le montant et le moyen utilisé."
+                  : `Aucun élément à afficher dans ${module.label.toLowerCase()}.`
             }
           />
         ) : (
@@ -1674,6 +1712,7 @@ function EntityPageContent({ entity, mode, classScope, disableCreate = false }: 
             columns={columns}
             rows={rows}
             rowKey={(row, index) => String(row.id ?? index)}
+            stackOnMobile={module.key === "payments"}
           />
         )}
       </EntityListShell>

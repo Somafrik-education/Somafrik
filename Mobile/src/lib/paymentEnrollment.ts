@@ -86,6 +86,12 @@ export type PaymentFeeOption = {
   feeType: string;
   label: string;
   balance: number;
+  amountDue?: number;
+  amountPaid?: number;
+  dueDate?: string;
+  className?: string;
+  status?: string;
+  currency?: string;
 };
 
 export type PaymentFeeRow = {
@@ -102,6 +108,9 @@ export type PaymentFeeRow = {
   feeType?: string;
   label?: string;
   schoolFeeItemId?: string;
+  dueDate?: string;
+  className?: string;
+  currency?: string;
 };
 
 export type FinancePaymentWriteLine = {
@@ -160,6 +169,12 @@ export function collectOpenPaymentFees(studentId: string, fees: PaymentFeeRow[])
         feeType: trim(fee.feeType) || label,
         label,
         balance,
+        amountDue: Number(fee.amountDue),
+        amountPaid: Number(fee.amountPaid),
+        dueDate: trim(fee.dueDate),
+        className: trim(fee.className),
+        status: trim(fee.status),
+        currency: trim(fee.currency),
       },
     ];
   });

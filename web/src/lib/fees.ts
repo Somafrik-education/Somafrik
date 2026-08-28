@@ -12,8 +12,6 @@ import type {
 import { getSchoolAcademicLists } from "./academicConfig";
 import { scopedStudents } from "./establishment";
 import { normalize } from "./format";
-import { isSchoolAdminRole } from "./format";
-import { COUNTRY_ADMIN_ROLE, isSuperAdminRole } from "./orgHierarchy";
 
 export const FEE_GRID_STATUSES: FeeGridStatus[] = ["Brouillon", "Active", "Désactivée", "Clôturée"];
 export const STUDENT_FEE_STATUSES: StudentFeeStatus[] = [
@@ -59,7 +57,7 @@ export function resolveSchoolCurrency(state: BackOfficeState, schoolCode: string
   if (school?.currency) return String(school.currency).trim().toUpperCase();
   const countryCode = String(school?.countryCode ?? school?.code ?? "").slice(0, 2).toUpperCase();
   const country = state.countries.find((item) => normalize(item.code) === normalize(countryCode));
-  return String(country?.currency ?? "USD").trim().toUpperCase() || "USD";
+  return String(country?.currency ?? school?.currency ?? "").trim().toUpperCase();
 }
 
 function scopedSchoolCode(user: SessionUser | null): string | null {
@@ -89,25 +87,24 @@ export function scopedStudentFees(user: SessionUser | null, state: BackOfficeSta
   return rows.filter((row) => normalize(row.schoolCode) === normalize(code));
 }
 
-/** EXG-FRAIS-020 / EXG-FRAIS-021 — gestion des grilles tarifaires : Admin School uniquement (aligné backend). */
+/** Gestion des grilles — permissions effectives uniquement (F7). */
 export function canManageFeeGrids(user: SessionUser | null): boolean {
   if (!user) return false;
-  if (isSuperAdminRole(user.role)) return true;
-  return isSchoolAdminRole(user.role);
+  const permissions = Array.isArray(user.permissions) ? user.permissions : [];
+  return permissions.includes("Frais & tarifs:CREATE") || permissions.includes("Frais & tarifs:UPDATE");
 }
 
 export function canViewFeeGrids(user: SessionUser | null): boolean {
   if (!user) return false;
-  if (isSuperAdminRole(user.role) || user.role === COUNTRY_ADMIN_ROLE) return true;
-  const role = normalize(user.role);
-  return canManageFeeGrids(user) || role === "secretaire" || role === "comptable";
+  const permissions = Array.isArray(user.permissions) ? user.permissions : [];
+  return permissions.includes("Frais & tarifs:READ") || canManageFeeGrids(user);
 }
 
 export function canViewStudentFees(user: SessionUser | null): boolean {
   if (!user) return false;
   if (canViewFeeGrids(user)) return true;
-  const role = normalize(user.role);
-  return role === "parent" || role.includes("eleve") || role.includes("etudiant");
+  const permissions = Array.isArray(user.permissions) ? user.permissions : [];
+  return permissions.includes("Paiements:READ") || permissions.includes("Impayés:READ");
 }
 
 export function feeGridKey(grid: Pick<FeeGrid, "schoolCode" | "className" | "academicYear" | "periodName">): string {

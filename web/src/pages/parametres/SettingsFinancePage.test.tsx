@@ -19,7 +19,14 @@ vi.mock("../../lib/financeApi", () => ({
 
 vi.mock("../../context/AuthContext", () => ({
   useAuth: () => ({
-    session: { user: { role: "Admin School", schoolCode: "CD-2026-0001" } },
+    session: {
+      user: {
+        role: "Admin School",
+        schoolCode: "CD-2026-0001",
+        permissions: ["Frais & tarifs:READ", "Frais & tarifs:CREATE", "Frais & tarifs:UPDATE"],
+      },
+    },
+    permissionsReady: true,
   }),
 }));
 
@@ -29,26 +36,29 @@ vi.mock("../../context/ActiveSchoolContext", () => ({
   }),
 }));
 
-vi.mock("../../lib/fees", () => ({
-  canManageFeeGrids: vi.fn(() => true),
-  canViewFeeGrids: vi.fn(() => true),
+vi.mock("../../lib/feePermissions", () => ({
+  canReadFees: vi.fn(() => true),
+  canCreateFees: vi.fn(() => true),
+  canUpdateFees: vi.fn(() => true),
 }));
 
 vi.mock("../../components/ui/Toast", () => ({
   useToast: () => ({ showToast: vi.fn() }),
 }));
 
-import { canManageFeeGrids, canViewFeeGrids } from "../../lib/fees";
+import { canCreateFees, canReadFees, canUpdateFees } from "../../lib/feePermissions";
 import { SettingsFinancePage } from "./SettingsFinancePage";
 
-const mockedCanManageFeeGrids = vi.mocked(canManageFeeGrids);
-const mockedCanViewFeeGrids = vi.mocked(canViewFeeGrids);
+const mockedCanReadFees = vi.mocked(canReadFees);
+const mockedCanCreateFees = vi.mocked(canCreateFees);
+const mockedCanUpdateFees = vi.mocked(canUpdateFees);
 
 describe("SettingsFinancePage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockedCanManageFeeGrids.mockReturnValue(true);
-    mockedCanViewFeeGrids.mockReturnValue(true);
+    mockedCanReadFees.mockReturnValue(true);
+    mockedCanCreateFees.mockReturnValue(true);
+    mockedCanUpdateFees.mockReturnValue(true);
     getFinanceCatalog.mockResolvedValue({
       currency: "CDF",
       currencySource: "country",
@@ -91,14 +101,15 @@ describe("SettingsFinancePage", () => {
   });
 
   it("refuse l'accès sans permission de lecture", async () => {
-    mockedCanManageFeeGrids.mockReturnValue(false);
-    mockedCanViewFeeGrids.mockReturnValue(false);
+    mockedCanReadFees.mockReturnValue(false);
+    mockedCanCreateFees.mockReturnValue(false);
+    mockedCanUpdateFees.mockReturnValue(false);
     render(
       <MemoryRouter>
         <SettingsFinancePage />
       </MemoryRouter>,
     );
-    expect(await screen.findByText(/L'administration configure les règles financières/i)).toBeInTheDocument();
+    expect(await screen.findByText(/Les règles financières se configurent ici/i)).toBeInTheDocument();
     expect(getFinanceCatalog).not.toHaveBeenCalled();
   });
 

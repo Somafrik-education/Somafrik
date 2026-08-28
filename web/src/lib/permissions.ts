@@ -20,7 +20,6 @@ import {
   isSuperAdminAllowedFeature,
   isSuperAdminAllowedView,
 } from "./superAdminAccess";
-import { canManageFeeGrids, canViewFeeGrids, canViewStudentFees } from "./fees";
 import {
   isEstablishmentCommunicationUser,
   isPlatformCommunicationFeature,
@@ -408,16 +407,6 @@ export function hasBackOfficePermission(
     (normalizedAction === "CREATE" || normalizedAction === "DELETE")
   ) {
     return false;
-  }
-
-  if (featureList.some((feature) => feature === "Frais & tarifs")) {
-    if (normalizedAction === "READ") {
-      return canViewFeeGrids(ctx.user) || canViewStudentFees(ctx.user);
-    }
-    return (
-      canManageFeeGrids(ctx.user) &&
-      hasPermissionForFeature(ctx, "Frais & tarifs", normalizedAction)
-    );
   }
 
   return featureList.some((feature) => {

@@ -16,7 +16,7 @@ export function FinancesLayout() {
         <p className="text-xs font-black uppercase tracking-wide text-brand">Gestion financière</p>
         <h1 className="mt-1 text-2xl font-black text-ink">Finances</h1>
         <p className="mt-1 text-sm text-muted">
-          Paiements, frais de scolarité et suivi des impayés d'un même endroit.
+          Tarif → obligation élève → encaissement → affectation → solde.
         </p>
       </div>
       <TabNav tabs={FINANCE_TABS} />

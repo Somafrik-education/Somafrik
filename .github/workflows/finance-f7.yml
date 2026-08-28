@@ -1,0 +1,52 @@
+name: Finance F7
+
+on:
+  pull_request:
+    branches: [develop]
+    paths:
+      - "web/src/lib/financeCurrency.ts"
+      - "web/src/lib/financeObligationStatus.ts"
+      - "web/src/lib/financeActionPermissions.ts"
+      - "web/src/lib/feePermissions.ts"
+      - "web/src/lib/unpaidPermissions.ts"
+      - "web/src/lib/permissions.ts"
+      - "web/src/components/payments/**"
+      - "web/src/pages/finances/**"
+      - "web/src/pages/parametres/SettingsFinancePage.tsx"
+      - "web/src/pages/EntityPage.tsx"
+      - "web/src/pages/entity-page/entityColumns.tsx"
+      - "web/src/design-system/data-display/Table.tsx"
+      - "Mobile/src/lib/financeCurrency.ts"
+      - "Mobile/src/lib/financeObligationStatus.ts"
+      - "Mobile/src/lib/paymentEnrollment.ts"
+      - "Mobile/src/components/PaymentMutationControls.tsx"
+      - "Mobile/src/components/PaymentReceiptCard.tsx"
+      - "Mobile/src/screens/PaymentsScreen.tsx"
+      - "Mobile/src/screens/StudentPaymentsScreen.tsx"
+      - "backend/scripts/verify-finance-ux.js"
+      - "docs/audits/finance-f7-ux-web-mobile-2026-08-28.md"
+      - ".github/workflows/finance-f7.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  finance-f7:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.12.0"
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            web/package-lock.json
+      - name: Install dependencies
+        run: |
+          npm ci
+          npm ci --prefix web
+      - name: Verify Finance F7 UX
+        run: npm run verify:finance-ux

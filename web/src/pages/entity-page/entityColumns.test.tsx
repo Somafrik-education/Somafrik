@@ -165,6 +165,14 @@ describe("entityColumns (D2.8a)", () => {
     expect(screen.getByRole("button", { name: "Reçu" })).toBeInTheDocument();
   });
 
+  it("n'offre pas Annuler sans Paiements:UPDATE", () => {
+    const module = getEntityModule("payments")!;
+    const columns = buildEntityColumns(baseCtx({ module, canUpdate: false }));
+    renderActions(columns, { id: "p1", reference: "PAY-0004", status: "Payé" });
+    expect(screen.getByRole("button", { name: "Reçu" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Annuler" })).not.toBeInTheDocument();
+  });
+
   it("rend les noms d’élèves séparés pour les cellules multi-valeurs", () => {
     render(<>{renderSeparatedStudentNames(["Awa Diop", "Ibrahima Fall"])}</>);
     expect(screen.getByText("Awa Diop")).toBeInTheDocument();
