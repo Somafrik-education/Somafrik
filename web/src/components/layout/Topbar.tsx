@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { NavLink } from "react-router-dom";
-import { Bell, LogOut, Mail, Megaphone, Menu } from "lucide-react";
+import { Bell, LogOut, Mail, Megaphone, Menu, RefreshCw } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
 import { useData } from "../../context/DataContext";
 import { useActiveSchool } from "../../context/ActiveSchoolContext";
@@ -96,10 +96,10 @@ export function Topbar({ title, onMenuOpen }: { title: string; onMenuOpen?: () =
         </div>
       </div>
 
-      <div className="flex shrink-0 items-center gap-1 sm:gap-3">
+      <div className="flex shrink-0 items-center gap-1 sm:gap-2 xl:gap-3">
         <GlobalSearch />
         {error ? (
-          <p className="hidden max-w-xs truncate text-xs text-danger md:block" title={error}>
+          <p className="hidden max-w-xs truncate text-xs text-danger 2xl:block" title={error}>
             {error}
           </p>
         ) : null}
@@ -109,19 +109,20 @@ export function Topbar({ title, onMenuOpen }: { title: string; onMenuOpen?: () =
           onClick={() => void refresh()}
           disabled={loading}
           aria-label={loading ? "Synchronisation en cours" : "Rafraîchir les données"}
-          className="hidden sm:inline-flex"
+          className="hidden px-2.5 lg:inline-flex xl:px-3"
         >
-          {loading ? "Synchronisation…" : "Rafraîchir"}
+          <RefreshCw className={`h-4 w-4 xl:hidden ${loading ? "animate-spin" : ""}`} />
+          <span className="hidden xl:inline">{loading ? "Synchronisation…" : "Rafraîchir"}</span>
         </Button>
         {canReadMessages ? (
-          <div className="hidden sm:block">
+          <div className="hidden lg:block">
             <TopbarIcon to="/messages" label="Messages" count={unreadMessages}>
               <Mail className="h-5 w-5" strokeWidth={1.8} />
             </TopbarIcon>
           </div>
         ) : null}
         {canReadAnnouncements ? (
-          <div className="hidden sm:block">
+          <div className="hidden lg:block">
             <TopbarIcon to="/annonces" label="Annonces" count={unreadAnnouncements}>
               <Megaphone className="h-5 w-5" strokeWidth={1.8} />
             </TopbarIcon>
@@ -132,7 +133,7 @@ export function Topbar({ title, onMenuOpen }: { title: string; onMenuOpen?: () =
             <Bell className="h-5 w-5" strokeWidth={1.8} />
           </TopbarIcon>
         ) : null}
-        <div className="hidden items-center gap-3 sm:flex">
+        <div className="hidden items-center gap-3 xl:flex">
           <div className="text-right">
             <p className="text-sm font-semibold leading-tight text-ink">
               {user?.firstName} {user?.lastName}
@@ -149,10 +150,10 @@ export function Topbar({ title, onMenuOpen }: { title: string; onMenuOpen?: () =
           onClick={logout}
           aria-label="Déconnexion"
           data-testid="logout-button"
-          className="px-2.5 sm:px-3"
+          className="px-2.5 xl:px-3"
         >
-          <LogOut className="h-4 w-4 sm:hidden" />
-          <span className="hidden sm:inline">Déconnexion</span>
+          <LogOut className="h-4 w-4 xl:hidden" />
+          <span className="hidden xl:inline">Déconnexion</span>
         </Button>
       </div>
     </header>
