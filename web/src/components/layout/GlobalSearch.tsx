@@ -141,14 +141,14 @@ export function GlobalSearch() {
       <button
         type="button"
         onClick={openMobileSearch}
-        className="flex h-9 w-9 items-center justify-center rounded-full text-slate-500 transition hover:bg-slate-50 hover:text-ink md:hidden"
+        className="flex h-9 w-9 items-center justify-center rounded-full text-slate-500 transition hover:bg-slate-50 hover:text-ink xl:hidden"
         aria-label="Ouvrir la recherche globale"
         aria-expanded={open}
       >
         <Search className="h-5 w-5" strokeWidth={1.8} />
       </button>
 
-      <div className="hidden items-center gap-2 rounded-full border border-line bg-slate-50 px-3 py-1.5 md:flex">
+      <div className="hidden items-center gap-2 rounded-full border border-line bg-slate-50 px-3 py-1.5 xl:flex">
         <Search className="h-4 w-4 text-slate-400" strokeWidth={1.8} />
         <input
           type="search"
@@ -166,11 +166,11 @@ export function GlobalSearch() {
 
       {open ? (
         <div
-          className={`fixed inset-x-4 top-16 z-40 max-h-[calc(100vh-5rem)] overflow-auto rounded-xl border border-line bg-white p-2 shadow-lg md:absolute md:inset-x-auto md:right-0 md:top-auto md:mt-2 md:max-h-[420px] md:w-80 ${
-            searchReady ? "" : "md:hidden"
+          className={`fixed inset-x-4 top-16 z-40 max-h-[calc(100vh-5rem)] overflow-auto rounded-xl border border-line bg-white p-2 shadow-lg xl:absolute xl:inset-x-auto xl:right-0 xl:top-auto xl:mt-2 xl:max-h-[420px] xl:w-80 ${
+            searchReady ? "" : "xl:hidden"
           }`}
         >
-          <div className="flex items-center gap-2 border-b border-line p-1 pb-2 md:hidden">
+          <div className="flex items-center gap-2 border-b border-line p-1 pb-2 xl:hidden">
             <Search className="h-4 w-4 shrink-0 text-slate-400" strokeWidth={1.8} />
             <input
               ref={mobileInputRef}
@@ -192,7 +192,7 @@ export function GlobalSearch() {
           </div>
 
           {!searchReady ? (
-            <p className="px-3 py-4 text-center text-sm text-muted md:hidden">
+            <p className="px-3 py-4 text-center text-sm text-muted xl:hidden">
               Saisissez au moins 2 caractères.
             </p>
           ) : grouped.length === 0 ? (
