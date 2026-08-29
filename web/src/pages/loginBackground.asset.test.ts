@@ -25,5 +25,6 @@ describe("login background asset", () => {
     assert.doesNotMatch(source, /new URL\(\s*["'].*somafrik-login-background/);
     assert.match(source, /data-testid="login-background"/);
     assert.match(source, /onError=/);
+    assert.match(source, /profile: "school"/);
   });
 });
