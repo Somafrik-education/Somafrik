@@ -41,6 +41,9 @@ CREATE INDEX IF NOT EXISTS idx_mobile_push_receipts_due
   ON mobile_push_receipts (next_check_at)
   WHERE status = 'pending';
 
+ALTER TABLE mobile_push_devices ADD COLUMN IF NOT EXISTS backend_environment TEXT;
+ALTER TABLE mobile_push_devices ADD COLUMN IF NOT EXISTS app_profile TEXT;
+
 DO $push_n1$
 BEGIN
   IF EXISTS (
@@ -67,9 +70,6 @@ BEGIN
   END IF;
 END
 $push_n1$;
-
-ALTER TABLE mobile_push_devices ADD COLUMN IF NOT EXISTS backend_environment TEXT;
-ALTER TABLE mobile_push_devices ADD COLUMN IF NOT EXISTS app_profile TEXT;
 
 UPDATE mobile_push_devices SET backend_environment = 'development' WHERE backend_environment IS NULL;
 UPDATE mobile_push_devices SET app_profile = 'development' WHERE app_profile IS NULL;
