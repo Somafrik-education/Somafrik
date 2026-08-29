@@ -9,6 +9,8 @@ import { canReadEntity, canReadRoute, canReadView } from "../domain/security/per
 import { useFloatingTabBarLayout } from "../lib/screenLayout";
 import { useResponsiveLayout } from "../hooks/useResponsiveLayout";
 import { MENU_TEST_IDS } from "../lib/loginScreenSpec";
+import { getReleaseProfile } from "../config/env";
+import { sendControlledPushTest } from "../services/pushNotifications";
 import { ENTITY_VIEW_MAP } from "../lib/constants";
 import {
   resolveTeacherAssignmentsForSession,
@@ -209,6 +211,24 @@ export default function MenuScreen() {
       >
         <Text style={styles.logoutText}>Déconnexion</Text>
       </TouchableOpacity>
+      {["development", "preview"].includes(getReleaseProfile()) ? (
+        <TouchableOpacity
+          style={styles.logout}
+          onPress={() => {
+            void sendControlledPushTest()
+              .then(() => {
+                Alert.alert("Test push", "Notification de test envoyée.");
+              })
+              .catch(() => {
+                Alert.alert("Test push", "Impossible d'envoyer la notification de test.");
+              });
+          }}
+          accessibilityRole="button"
+          accessibilityLabel="Tester les notifications push"
+        >
+          <Text style={styles.logoutText}>Tester les notifications push</Text>
+        </TouchableOpacity>
+      ) : null}
     </ScrollView>
   );
 }

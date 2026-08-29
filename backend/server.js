@@ -491,6 +491,32 @@ app.post("/api/auth/logout", requireAuth, asyncHandler(async (req, res) => {
   res.json({ message: "Déconnexion sécurisée effectuée" });
 }));
 
+app.post("/api/mobile/push-devices", requireAuth, asyncHandler(async (req, res) => {
+  const device = await repository.upsertMobilePushDevice(req.principal, req.body || {});
+  await auditService.record(req, "mobile_push_device_upsert", "push_device", device.id, {
+    platform: device.platform,
+    releaseProfile: device.releaseProfile,
+  });
+  res.json(device);
+}));
+
+app.delete("/api/mobile/push-devices/current", requireAuth, asyncHandler(async (req, res) => {
+  const result = await repository.revokeCurrentMobilePushDevice(req.principal, req.body || {});
+  await auditService.record(req, "mobile_push_device_revoke", "push_device", result.id, {
+    revoked: result.revoked,
+  });
+  res.json(result);
+}));
+
+app.post("/api/mobile/push-devices/test", requireAuth, asyncHandler(async (req, res) => {
+  const result = await repository.sendMobilePushSelfTest(req.principal, req.body || {});
+  await auditService.record(req, "mobile_push_self_test", "push_device", req.principal.sub, {
+    sent: result.sent,
+    revoked: result.revoked,
+  });
+  res.json(result);
+}));
+
 app.post("/api/auth/change-password", requireAuth, asyncHandler(async (req, res) => {
   const newPassword = String(req.body?.newPassword ?? "").trim();
   const passwordError = validateAccountSecret(newPassword);

@@ -3308,6 +3308,32 @@ class FallbackRepository {
     return this._clientsStore;
   }
 
+  getMobilePushStore() {
+    if (!this._mobilePushStore) {
+      const { createMemoryMobilePushDevicesStore } = require("./mobilePushDevicesStore");
+      this._mobilePushStore = createMemoryMobilePushDevicesStore();
+    }
+    return this._mobilePushStore;
+  }
+
+  upsertMobilePushDevice(principal, payload) {
+    const service = require("../lib/mobilePushDevicesService");
+    return service.upsertFromSession(this.getMobilePushStore(), principal, payload);
+  }
+
+  revokeCurrentMobilePushDevice(principal, payload) {
+    const service = require("../lib/mobilePushDevicesService");
+    return service.revokeCurrentFromSession(this.getMobilePushStore(), principal, payload);
+  }
+
+  sendMobilePushSelfTest(principal, payload) {
+    const { createExpoPushService } = require("../lib/expoPushService");
+    const service = require("../lib/mobilePushDevicesService");
+    const store = this.getMobilePushStore();
+    const pushClient = createExpoPushService({ store });
+    return service.sendSelfTest(store, principal, payload, pushClient);
+  }
+
   listClientsProjection() {
     return Promise.resolve(this.getClientsStore().listProjection());
   }

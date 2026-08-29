@@ -250,11 +250,13 @@ function main() {
   const authCtx = read(path.join(SRC, "context", "AuthContext.tsx"));
   assert.ok(authCtx.includes("logout"), "logout AuthContext");
   assert.ok(api.includes("clearSecureSession"), "logout clearSecureSession");
+  assert.ok(api.includes("revokeCurrentPushDevice"), "logout révoque le jeton push");
   console.log("OK: nettoyage déconnexion");
 
   // 12) Package deps
   const pkg = JSON.parse(read(path.join(MOBILE, "package.json")));
   assert.ok(pkg.dependencies["expo-secure-store"], "dépendance expo-secure-store");
+  assert.ok(pkg.dependencies["expo-notifications"], "dépendance expo-notifications");
   assert.ok(!pkg.dependencies["axios"], "pas d'axios requis (fetch client unique)");
   console.log("OK: dépendances sécurité");
 

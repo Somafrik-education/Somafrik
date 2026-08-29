@@ -2,14 +2,15 @@
  * S2.3 — Journalisation sanitisée (jamais de JWT / headers / secrets).
  */
 
-const SENSITIVE_KEY = /(authorization|access[_-]?token|refresh[_-]?token|password|passwd|secret|apikey|api[_-]?key|client[_-]?secret|bearer|cookie|set-cookie)/i;
+const SENSITIVE_KEY = /(authorization|access[_-]?token|refresh[_-]?token|password|passwd|secret|apikey|api[_-]?key|client[_-]?secret|bearer|cookie|set-cookie|expo[_-]?push[_-]?token)/i;
 const JWT_LIKE = /eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}/g;
+const EXPO_PUSH_TOKEN = /Expo(nent)?PushToken\[[^\]]+\]/gi;
 
 function redactValue(value: unknown, depth = 0): unknown {
   if (depth > 4) return "[…]";
   if (value == null) return value;
   if (typeof value === "string") {
-    return value.replace(JWT_LIKE, "[REDACTED_JWT]");
+    return value.replace(JWT_LIKE, "[REDACTED_JWT]").replace(EXPO_PUSH_TOKEN, "[REDACTED_PUSH_TOKEN]");
   }
   if (Array.isArray(value)) {
     return value.map((item) => redactValue(item, depth + 1));
@@ -26,11 +27,11 @@ function redactValue(value: unknown, depth = 0): unknown {
 
 function toSafeArgs(args: unknown[]) {
   return args.map((arg) => {
-    if (typeof arg === "string") return arg.replace(JWT_LIKE, "[REDACTED_JWT]");
+    if (typeof arg === "string") return arg.replace(JWT_LIKE, "[REDACTED_JWT]").replace(EXPO_PUSH_TOKEN, "[REDACTED_PUSH_TOKEN]");
     if (arg instanceof Error) {
       return {
         name: arg.name,
-        message: String(arg.message ?? "").replace(JWT_LIKE, "[REDACTED_JWT]"),
+        message: String(arg.message ?? "").replace(JWT_LIKE, "[REDACTED_JWT]").replace(EXPO_PUSH_TOKEN, "[REDACTED_PUSH_TOKEN]"),
       };
     }
     try {

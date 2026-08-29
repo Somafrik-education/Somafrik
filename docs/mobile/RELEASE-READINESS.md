@@ -107,9 +107,9 @@ eas build:version:sync   # optionnel : recopier le remote vers un prebuild local
 | SYSTEM_ALERT_WINDOW | ✅ (main) | debug only | overlay RN | Inutile en release | — | Retiré du main |
 | READ_EXTERNAL_STORAGE | ✅ | ❌ | legacy | Remplacé par READ_MEDIA_IMAGES | — | Retiré |
 | WRITE_EXTERNAL_STORAGE | ✅ | ❌ | legacy | Non utilisé | — | Retiré |
-| VIBRATE | ✅ | ❌ | template Expo | Non utilisé | — | Retiré |
+| VIBRATE | ✅ | ✅ | `expo-notifications` | Channel push Android N1 | Oui | Notifications |
 | NFC | ❌ | ❌ | — | Hors LOT | — | Non ajouté |
-| POST_NOTIFICATIONS | ❌ | ❌ | — | FCM hors LOT | — | Non ajouté |
+| POST_NOTIFICATIONS | ❌ | ✅ | `expo-notifications` | Push Android N1 | Oui | Notifications |
 | ACCESS_FINE/COARSE_LOCATION | ❌ | ❌ | — | Non utilisé | — | Non |
 | READ_CONTACTS / CALL_PHONE | ❌ | ❌ | — | Non utilisé | — | Non |
 

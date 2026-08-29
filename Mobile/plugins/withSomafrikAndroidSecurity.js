@@ -15,10 +15,8 @@ const BLOCKED_PERMISSIONS = new Set([
   "android.permission.ACCESS_FINE_LOCATION",
   "android.permission.ACCESS_COARSE_LOCATION",
   "android.permission.NFC",
-  "android.permission.POST_NOTIFICATIONS",
   "android.permission.READ_CONTACTS",
   "android.permission.CALL_PHONE",
-  "android.permission.VIBRATE",
 ]);
 
 const BACKUP_RULES = `<?xml version="1.0" encoding="utf-8"?>

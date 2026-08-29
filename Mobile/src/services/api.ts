@@ -9,6 +9,7 @@ import {
   type SecureUploadFile,
   type SecureUploadRequestOptions,
 } from "./httpClient";
+import { revokeCurrentPushDevice } from "./pushNotifications";
 import { sanitizeUserFacingError } from "./safeLogger";
 import {
   clearSecureSession,
@@ -290,6 +291,11 @@ export function login(payload: LoginPayload) {
 }
 
 export async function logout() {
+  try {
+    await revokeCurrentPushDevice();
+  } catch {
+    // best effort — le logout local ne doit pas être bloqué
+  }
   try {
     await request<{ message: string }>("/auth/logout", {
       method: "POST",

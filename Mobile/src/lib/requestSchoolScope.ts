@@ -22,6 +22,7 @@ const PLATFORM_PREFIXES = [
   "/backoffice/countries",
   "/backoffice/subscriptions",
   "/backoffice/notifications",
+  "/mobile/push-devices",
   "/auth/",
 ];
 

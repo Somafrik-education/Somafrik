@@ -2,6 +2,7 @@ import { ActivityIndicator, Text, TouchableOpacity, View } from "react-native";
 import { ROLE_SELECTION_NAV_TITLE } from "../lib/roleSelectionLayout";
 import { NavigationContainer } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
+import { navigationRef } from "./rootNavigation";
 
 import RoleSelectionScreen from "../screens/RoleSelectionScreen";
 import WelcomeScreen from "../screens/WelcomeScreen";
@@ -239,7 +240,7 @@ export default function AppNavigator() {
     canReadRoute(session, "StudentPresences");
 
   return (
-    <NavigationContainer key={session ? "authenticated" : "public"}>
+    <NavigationContainer ref={navigationRef} key={session ? "authenticated" : "public"}>
       <Stack.Navigator initialRouteName={session ? "Home" : "Welcome"}>
         <Stack.Screen name="Welcome" component={WelcomeScreen} options={{ headerShown: false }} />
         <Stack.Screen
