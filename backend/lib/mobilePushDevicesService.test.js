@@ -93,6 +93,10 @@ async function main() {
 
   throwsStatus(() => assertPushSelfTestAllowed({ APP_ENV: "production", SOMAFRIK_PUSH_SELFTEST_ENABLED: "true" }), 403);
   throwsStatus(() => assertPushSelfTestAllowed({ APP_ENV: "preproduction" }), 403);
+  throwsStatus(
+    () => assertPushSelfTestAllowed({ APP_ENV: "preproduction", SOMAFRIK_PUSH_SELFTEST_ENABLED: "false" }),
+    403,
+  );
   assert.equal(assertPushSelfTestAllowed(preprodEnv()), "preproduction");
   assert.equal(assertPushSelfTestAllowed({ NODE_ENV: "development" }), "development");
   throwsStatus(() => assertPushSelfTestActor(teacher, preprodEnv()), 403);

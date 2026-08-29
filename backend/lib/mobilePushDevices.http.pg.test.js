@@ -439,23 +439,27 @@ async function main() {
     }
     assert.equal(saw429, true, "rate limit bloque l'abus");
 
-    async function spawnBackend(portOffset, extraEnv) {
+    async function spawnBackend(portOffset, extraEnv = {}) {
       const port = HTTP_PORT + portOffset;
+      const env = {
+        ...process.env,
+        NODE_ENV: "test",
+        PORT: String(port),
+        DATABASE_URL: isolatedUrl,
+        JWT_SECRET,
+        SOMAFRIK_DB_REQUIRED: "true",
+        SOMAFRIK_SKIP_DEMO_SEED: "true",
+        SOMAFRIK_API_ONLY: "true",
+        EXPO_PUSH_SEND_URL: `http://127.0.0.1:${EXPO_MOCK_PORT}/send`,
+        EXPO_PUSH_RECEIPTS_URL: `http://127.0.0.1:${EXPO_MOCK_PORT}/getReceipts`,
+        ...extraEnv,
+      };
+      if (!Object.prototype.hasOwnProperty.call(extraEnv, "SOMAFRIK_PUSH_SELFTEST_ENABLED")) {
+        delete env.SOMAFRIK_PUSH_SELFTEST_ENABLED;
+      }
       const spawned = spawn(process.execPath, ["backend/server.js"], {
         cwd: ROOT,
-        env: {
-          ...process.env,
-          NODE_ENV: "test",
-          PORT: String(port),
-          DATABASE_URL: isolatedUrl,
-          JWT_SECRET,
-          SOMAFRIK_DB_REQUIRED: "true",
-          SOMAFRIK_SKIP_DEMO_SEED: "true",
-          SOMAFRIK_API_ONLY: "true",
-          EXPO_PUSH_SEND_URL: `http://127.0.0.1:${EXPO_MOCK_PORT}/send`,
-          EXPO_PUSH_RECEIPTS_URL: `http://127.0.0.1:${EXPO_MOCK_PORT}/getReceipts`,
-          ...extraEnv,
-        },
+        env,
         stdio: ["ignore", "pipe", "pipe"],
       });
       const err = { value: "" };
@@ -501,6 +505,7 @@ async function main() {
 
     const preprodNoFlag = await spawnBackend(3, {
       APP_ENV: "preproduction",
+      SOMAFRIK_PUSH_SELFTEST_ENABLED: "false",
     });
     try {
       const expoBefore = mock.state.sends.length;
