@@ -13,6 +13,11 @@ export type PushTapResponse = {
   };
 } | null | undefined;
 
+export type PushTapGate = {
+  isReady: () => boolean;
+  isAuthenticated: () => boolean;
+};
+
 const consumedIds = new Set<string>();
 let pendingDestination: AllowedPushDestination | null = null;
 
@@ -33,17 +38,21 @@ export function destinationFromPushResponse(response: PushTapResponse): AllowedP
   return resolvePushDestination(record.somafrikDestination);
 }
 
+function canNavigate(gate: PushTapGate) {
+  return Boolean(gate.isAuthenticated()) && Boolean(gate.isReady());
+}
+
 export function consumePushTapResponse(
   response: PushTapResponse,
   navigate: (destination: AllowedPushDestination) => void,
-  isReady: () => boolean,
+  gate: PushTapGate,
 ): "navigated" | "queued" | "ignored" {
   if (!response) return "ignored";
   const identity = identityOfPushResponse(response);
   if (identity && consumedIds.has(identity)) return "ignored";
   if (identity) consumedIds.add(identity);
   const destination = destinationFromPushResponse(response);
-  if (isReady()) {
+  if (canNavigate(gate)) {
     navigate(destination);
     pendingDestination = null;
     return "navigated";
@@ -54,19 +63,23 @@ export function consumePushTapResponse(
 
 export function flushPendingPushNavigation(
   navigate: (destination: AllowedPushDestination) => void,
-  isReady: () => boolean,
+  gate: PushTapGate,
 ): boolean {
-  if (!pendingDestination || !isReady()) return false;
+  if (!pendingDestination || !canNavigate(gate)) return false;
   navigate(pendingDestination);
   pendingDestination = null;
   return true;
 }
 
+export function dismissPendingPushNavigation() {
+  pendingDestination = null;
+}
+
 export async function consumeInitialPushResponse(
   readLast: () => Promise<PushTapResponse> | PushTapResponse,
   navigate: (destination: AllowedPushDestination) => void,
-  isReady: () => boolean,
+  gate: PushTapGate,
 ) {
   const last = await readLast();
-  return consumePushTapResponse(last, navigate, isReady);
+  return consumePushTapResponse(last, navigate, gate);
 }

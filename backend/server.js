@@ -82,7 +82,7 @@ const { assertProductionSecurityConfiguration } = require("./lib/demoSeedPolicy"
 const { createRateLimiter, loginRateLimitKey } = require("./lib/rateLimit");
 const {
   assertPushSelfTestAllowed,
-  assertPushReleaseProfileConfigured,
+  skipPushSelfTestPermissionCheck,
 } = require("./lib/mobilePushDevicesService");
 const { startExpoPushReceiptsWorker } = require("./lib/expoPushReceiptsWorker");
 const {
@@ -118,6 +118,14 @@ function requirePushSelfTestEnvironment(_req, _res, next) {
   try {
     assertPushSelfTestAllowed();
     next();
+  } catch (error) {
+    next(error instanceof BusinessError ? error : new BusinessError(403, error.message));
+  }
+}
+function requirePushSelfTestActor(req, res, next) {
+  try {
+    if (skipPushSelfTestPermissionCheck()) return next();
+    return requirePermission("POST /api/mobile/push-devices/test")(req, res, next);
   } catch (error) {
     next(error instanceof BusinessError ? error : new BusinessError(403, error.message));
   }
@@ -514,7 +522,8 @@ app.post("/api/mobile/push-devices", requireAuth, asyncHandler(async (req, res) 
   const device = await repository.upsertMobilePushDevice(req.principal, req.body || {});
   await auditService.record(req, "mobile_push_device_upsert", "push_device", device.id, {
     platform: device.platform,
-    releaseProfile: device.releaseProfile,
+    backendEnvironment: device.backendEnvironment,
+    appProfile: device.appProfile,
   });
   res.json(device);
 }));
@@ -531,6 +540,7 @@ app.post(
   "/api/mobile/push-devices/test",
   requireAuth,
   requirePushSelfTestEnvironment,
+  requirePushSelfTestActor,
   pushSelfTestRateLimiter,
   asyncHandler(async (req, res) => {
     const result = await repository.sendMobilePushSelfTest(req.principal, req.body || {});
@@ -6428,5 +6438,4 @@ function warnIfUnsafeConfiguration() {
   assertLoginLockoutProductionGuards();
   assertProductionCors();
   warnIfUnsafeDevelopmentSecrets();
-  assertPushReleaseProfileConfigured();
 }

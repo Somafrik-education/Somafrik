@@ -11,7 +11,8 @@ async function main() {
     schoolId: null,
     expoPushToken: "ExponentPushToken[alive]",
     platform: "android",
-    releaseProfile: "preview",
+    backendEnvironment: "preproduction",
+    appProfile: "preview",
   });
 
   const t0 = Date.parse("2026-08-29T12:00:00.000Z");

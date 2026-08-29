@@ -6,8 +6,11 @@ const {
   revokeCurrentFromSession,
   sendSelfTest,
   TEST_CONFIRM,
-  resolveServerPushReleaseProfile,
+  resolvePushBackendEnvironment,
+  resolveStoredPushScope,
   assertPushSelfTestAllowed,
+  assertPushSelfTestActor,
+  hasPushSelfTestPermission,
 } = require("./mobilePushDevicesService");
 
 function throwsStatus(fn, status) {
@@ -18,8 +21,13 @@ async function throwsStatusAsync(fn, status) {
   await assert.rejects(fn, (error) => error.statusCode === status);
 }
 
-function previewEnv(extra = {}) {
-  return { NODE_ENV: "test", SOMAFRIK_PUSH_RELEASE_PROFILE: "preview", ...extra };
+function preprodEnv(extra = {}) {
+  return {
+    NODE_ENV: "test",
+    APP_ENV: "preproduction",
+    SOMAFRIK_PUSH_SELFTEST_ENABLED: "true",
+    ...extra,
+  };
 }
 
 async function main() {
@@ -36,7 +44,8 @@ async function main() {
         school_id: row.schoolId,
         expo_push_token: row.expoPushToken,
         platform: row.platform,
-        release_profile: row.releaseProfile,
+        backend_environment: row.backendEnvironment,
+        app_profile: row.appProfile,
         revoked_at: null,
         last_seen_at: new Date().toISOString(),
       };
@@ -53,33 +62,48 @@ async function main() {
     async getByToken(token) {
       return devices.find((item) => item.expo_push_token === token) || null;
     },
-    async listActiveForUser({ userId, releaseProfile }) {
+    async listActiveForUser({ userId, backendEnvironment }) {
       return devices.filter(
-        (item) => item.user_id === userId && item.release_profile === releaseProfile && !item.revoked_at,
+        (item) => item.user_id === userId && item.backend_environment === backendEnvironment && !item.revoked_at,
       );
     },
   };
 
-  const principal = { sub: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1", schoolCode: "SCH-A" };
+  const principal = { sub: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1", schoolCode: "SCH-A", permissions: ["Push:TEST"] };
+  const teacher = { sub: principal.sub, schoolCode: "SCH-A", permissions: [], roleKeys: ["TEACHER"] };
   const other = { sub: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb1", schoolCode: "SCH-A" };
   const token = "ExponentPushToken[somafrik-android-n1]";
-  const env = previewEnv();
+  const env = preprodEnv();
 
-  assert.equal(resolveServerPushReleaseProfile(previewEnv()), "preview");
-  assert.equal(resolveServerPushReleaseProfile({ NODE_ENV: "test" }), "preview");
-  assert.equal(resolveServerPushReleaseProfile({ NODE_ENV: "development" }), "development");
-  throwsStatus(() => resolveServerPushReleaseProfile({ NODE_ENV: "production" }), 500);
-  throwsStatus(() => resolveServerPushReleaseProfile({ NODE_ENV: "production", SOMAFRIK_PUSH_RELEASE_PROFILE: "staging" }), 500);
-  throwsStatus(() => assertPushSelfTestAllowed(previewEnv({ SOMAFRIK_PUSH_RELEASE_PROFILE: "production" })), 403);
-  throwsStatus(() => assertPushSelfTestAllowed(previewEnv({ SOMAFRIK_PUSH_RELEASE_PROFILE: "preproduction" })), 403);
-  assert.equal(assertPushSelfTestAllowed(previewEnv()), "preview");
+  assert.equal(resolvePushBackendEnvironment({ APP_ENV: "preproduction" }), "preproduction");
+  assert.equal(resolvePushBackendEnvironment({ NODE_ENV: "development" }), "development");
+  assert.equal(resolvePushBackendEnvironment({ NODE_ENV: "test" }), "development");
+  assert.equal(resolvePushBackendEnvironment({ NODE_ENV: "production", APP_ENV: "production" }), "production");
+
+  const previewOnPreprod = resolveStoredPushScope({ appProfile: "preview" }, { APP_ENV: "preproduction" });
+  assert.deepEqual(previewOnPreprod, { backendEnvironment: "preproduction", appProfile: "preview" });
+  const preprodOnPreprod = resolveStoredPushScope({ appProfile: "preproduction" }, { APP_ENV: "preproduction" });
+  assert.deepEqual(preprodOnPreprod, { backendEnvironment: "preproduction", appProfile: "preproduction" });
+  throwsStatus(() => resolveStoredPushScope({ appProfile: "production" }, { APP_ENV: "preproduction" }), 400);
+  throwsStatus(() => resolveStoredPushScope({ appProfile: "preview" }, { APP_ENV: "production" }), 400);
+  assert.deepEqual(resolveStoredPushScope({ appProfile: "production" }, { APP_ENV: "production" }), {
+    backendEnvironment: "production",
+    appProfile: "production",
+  });
+
+  throwsStatus(() => assertPushSelfTestAllowed({ APP_ENV: "production", SOMAFRIK_PUSH_SELFTEST_ENABLED: "true" }), 403);
+  throwsStatus(() => assertPushSelfTestAllowed({ APP_ENV: "preproduction" }), 403);
+  assert.equal(assertPushSelfTestAllowed(preprodEnv()), "preproduction");
+  assert.equal(assertPushSelfTestAllowed({ NODE_ENV: "development" }), "development");
+  throwsStatus(() => assertPushSelfTestActor(teacher, preprodEnv()), 403);
+  assert.equal(hasPushSelfTestPermission({ permissions: ["ALL_PRIVILEGES"] }), true);
 
   await throwsStatusAsync(
     () => upsertFromSession(store, principal, { expoPushToken: token, platform: "android", userId: "x" }, env),
     400,
   );
   await throwsStatusAsync(
-    () => upsertFromSession(store, principal, { expoPushToken: token, platform: "ios" }, env),
+    () => upsertFromSession(store, principal, { expoPushToken: token, platform: "ios", appProfile: "preview" }, env),
     400,
   );
   await throwsStatusAsync(
@@ -87,7 +111,7 @@ async function main() {
       upsertFromSession(
         store,
         principal,
-        { expoPushToken: token, platform: "android", releaseProfile: "production" },
+        { expoPushToken: token, platform: "android", appProfile: "production" },
         env,
       ),
     400,
@@ -96,17 +120,18 @@ async function main() {
   const upserted = await upsertFromSession(
     store,
     principal,
-    { expoPushToken: token, platform: "android", releaseProfile: "preview" },
+    { expoPushToken: token, platform: "android", appProfile: "preview" },
     env,
   );
   assert.equal(upserted.platform, "android");
-  assert.equal(upserted.releaseProfile, "preview");
+  assert.equal(upserted.appProfile, "preview");
+  assert.equal(upserted.backendEnvironment, "preproduction");
   assert.equal(devices[0].user_id, principal.sub);
   assert.equal(devices[0].school_id, "11111111-1111-4111-8111-111111111111");
 
   await upsertFromSession(store, principal, { expoPushToken: token, platform: "android" }, env);
   assert.equal(devices.length, 1, "upsert idempotent");
-  assert.equal(devices[0].release_profile, "preview", "profil serveur, pas client");
+  assert.equal(devices[0].backend_environment, "preproduction", "APP_ENV serveur, pas profil client");
 
   await throwsStatusAsync(
     () => revokeCurrentFromSession(store, other, { expoPushToken: token }),
@@ -116,7 +141,7 @@ async function main() {
   const revoked = await revokeCurrentFromSession(store, principal, { expoPushToken: token });
   assert.equal(revoked.revoked, true);
 
-  await upsertFromSession(store, principal, { expoPushToken: token, platform: "android" }, env);
+  await upsertFromSession(store, principal, { expoPushToken: token, platform: "android", appProfile: "preview" }, env);
   let expoCalled = 0;
   const pushClient = {
     async sendToTokens(tokens, message) {
@@ -133,10 +158,10 @@ async function main() {
   assert.equal(expoCalled, 1);
 
   await throwsStatusAsync(
-    () => sendSelfTest(store, principal, { confirm: TEST_CONFIRM, releaseProfile: "production" }, pushClient, env),
-    400,
+    () => sendSelfTest(store, teacher, { confirm: TEST_CONFIRM }, pushClient, env),
+    403,
   );
-  assert.equal(expoCalled, 1, "falsification production : aucun envoi Expo");
+  assert.equal(expoCalled, 1, "enseignant sans permission : aucun envoi Expo");
 
   await throwsStatusAsync(
     () =>
@@ -145,7 +170,7 @@ async function main() {
         principal,
         { confirm: TEST_CONFIRM },
         pushClient,
-        previewEnv({ SOMAFRIK_PUSH_RELEASE_PROFILE: "production" }),
+        preprodEnv({ APP_ENV: "production", SOMAFRIK_PUSH_SELFTEST_ENABLED: "true" }),
       ),
     403,
   );
@@ -156,11 +181,11 @@ async function main() {
         principal,
         { confirm: TEST_CONFIRM },
         pushClient,
-        previewEnv({ SOMAFRIK_PUSH_RELEASE_PROFILE: "preproduction" }),
+        { APP_ENV: "preproduction", SOMAFRIK_PUSH_SELFTEST_ENABLED: "false" },
       ),
     403,
   );
-  assert.equal(expoCalled, 1, "prod/preprod : aucun appel Expo");
+  assert.equal(expoCalled, 1, "prod/preprod sans flag : aucun appel Expo");
 
   await throwsStatusAsync(
     () => sendSelfTest(store, principal, { confirm: "nope" }, pushClient, env),

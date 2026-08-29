@@ -10,6 +10,7 @@ import {
 import { enrichSessionPermissions } from "../domain/security/permissions";
 import { attachCanonicalRoleIdentity } from "../lib/canonicalRoleIdentity";
 import { canRestorePersistedSession } from "../lib/dataTruth";
+import { dismissPendingPushNavigation } from "../lib/pushNotificationTap";
 import { blockOutboxOnLogout } from "../lib/outbox";
 import { invalidateL1CacheSession } from "../offline/l1/lifecycle";
 import {
@@ -172,6 +173,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     refresherRef.current.invalidate();
     snapshotRef.current = null;
     invalidateL1CacheSession();
+    dismissPendingPushNavigation();
     saveSession(null);
     setPermissionsBootstrap("idle");
     setPermissionsBootstrapError(null);

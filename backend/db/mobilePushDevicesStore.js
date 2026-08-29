@@ -21,22 +21,23 @@ function createMobilePushDevicesStore(repo) {
       return uuidOrNull(row?.id);
     },
 
-    async upsertDevice({ userId, schoolId, expoPushToken, platform, releaseProfile }) {
+    async upsertDevice({ userId, schoolId, expoPushToken, platform, backendEnvironment, appProfile }) {
       return one(
         `INSERT INTO mobile_push_devices (
-           user_id, school_id, expo_push_token, platform, release_profile, revoked_at, last_seen_at
+           user_id, school_id, expo_push_token, platform, backend_environment, app_profile, revoked_at, last_seen_at
          )
-         VALUES ($1, $2, $3, $4, $5, NULL, NOW())
+         VALUES ($1, $2, $3, $4, $5, $6, NULL, NOW())
          ON CONFLICT (expo_push_token) DO UPDATE SET
            user_id = EXCLUDED.user_id,
            school_id = EXCLUDED.school_id,
            platform = EXCLUDED.platform,
-           release_profile = EXCLUDED.release_profile,
+           backend_environment = EXCLUDED.backend_environment,
+           app_profile = EXCLUDED.app_profile,
            revoked_at = NULL,
            updated_at = NOW(),
            last_seen_at = NOW()
-         RETURNING id, user_id, school_id, platform, release_profile, revoked_at, created_at, updated_at, last_seen_at`,
-        [userId, schoolId, expoPushToken, platform, releaseProfile],
+         RETURNING id, user_id, school_id, platform, backend_environment, app_profile, revoked_at, created_at, updated_at, last_seen_at`,
+        [userId, schoolId, expoPushToken, platform, backendEnvironment, appProfile],
       );
     },
 
@@ -62,21 +63,21 @@ function createMobilePushDevicesStore(repo) {
       return row;
     },
 
-    async listActiveForUser({ userId, releaseProfile }) {
+    async listActiveForUser({ userId, backendEnvironment }) {
       return all(
-        `SELECT id, user_id, school_id, expo_push_token, platform, release_profile, last_seen_at
+        `SELECT id, user_id, school_id, expo_push_token, platform, backend_environment, app_profile, last_seen_at
          FROM mobile_push_devices
          WHERE user_id = $1
-           AND release_profile = $2
+           AND backend_environment = $2
            AND revoked_at IS NULL
          ORDER BY last_seen_at DESC, created_at DESC`,
-        [userId, releaseProfile],
+        [userId, backendEnvironment],
       );
     },
 
     async getByToken(expoPushToken) {
       return one(
-        `SELECT id, user_id, school_id, expo_push_token, platform, release_profile, revoked_at
+        `SELECT id, user_id, school_id, expo_push_token, platform, backend_environment, app_profile, revoked_at
          FROM mobile_push_devices
          WHERE expo_push_token = $1`,
         [expoPushToken],
@@ -151,7 +152,7 @@ function createMemoryMobilePushDevicesStore() {
     async resolveSchoolId() {
       return null;
     },
-    async upsertDevice({ userId, schoolId, expoPushToken, platform, releaseProfile }) {
+    async upsertDevice({ userId, schoolId, expoPushToken, platform, backendEnvironment, appProfile }) {
       const existing = rows.find((row) => row.expo_push_token === expoPushToken);
       const saved = {
         id: existing?.id || require("node:crypto").randomUUID(),
@@ -159,7 +160,8 @@ function createMemoryMobilePushDevicesStore() {
         school_id: schoolId,
         expo_push_token: expoPushToken,
         platform,
-        release_profile: releaseProfile,
+        backend_environment: backendEnvironment,
+        app_profile: appProfile,
         revoked_at: null,
         last_seen_at: new Date().toISOString(),
         created_at: existing?.created_at || new Date().toISOString(),
@@ -182,9 +184,9 @@ function createMemoryMobilePushDevicesStore() {
       row.revoked_at = new Date().toISOString();
       return { ...row };
     },
-    async listActiveForUser({ userId, releaseProfile }) {
+    async listActiveForUser({ userId, backendEnvironment }) {
       return rows.filter(
-        (item) => item.user_id === userId && item.release_profile === releaseProfile && !item.revoked_at,
+        (item) => item.user_id === userId && item.backend_environment === backendEnvironment && !item.revoked_at,
       );
     },
     async getByToken(expoPushToken) {

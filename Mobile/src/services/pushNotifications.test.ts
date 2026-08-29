@@ -53,6 +53,8 @@ async function main() {
   assert.equal(alreadyGranted, "registered");
   assert.equal(posts.length, 1);
   assert.match(String(posts[0].init?.body), /ExponentPushToken\[test-granted\]/);
+  assert.match(String(posts[0].init?.body), /"appProfile":"preview"/);
+  assert.doesNotMatch(String(posts[0].init?.body), /releaseProfile/);
   assert.equal(getLastRegisteredPushTokenForTests(), "ExponentPushToken[test-granted]");
 
   resetPushRegistrationStateForTests();

@@ -1,11 +1,18 @@
 "use strict";
 
 const { BusinessError } = require("../services/authService");
+const { resolveAppEnv } = require("./corsConfig");
 const { uuidOrNull } = require("./principalIdentity");
 
 const N1_PLATFORM = "android";
-const RELEASE_PROFILES = new Set(["development", "preview", "preproduction", "production"]);
-const SELF_TEST_ALLOWED_PROFILES = new Set(["development", "preview"]);
+const BACKEND_ENVIRONMENTS = new Set(["development", "preproduction", "production"]);
+const APP_PROFILES = new Set(["development", "preview", "preproduction", "production"]);
+const APP_PROFILES_BY_BACKEND = Object.freeze({
+  development: Object.freeze(["development"]),
+  preproduction: Object.freeze(["preview", "preproduction"]),
+  production: Object.freeze(["production"]),
+});
+const PUSH_SELFTEST_PERMISSION = "Push:TEST";
 const EXPO_PUSH_TOKEN_RE = /^(Expo(nent)?PushToken)\[.+]$/;
 const TEST_CONFIRM = "TEST_SOMAFRIK_PUSH";
 const TEST_TITLE = "Test Somafrik";
@@ -30,49 +37,77 @@ function parseExpoPushToken(value) {
   return token;
 }
 
-function parseReleaseProfile(value) {
-  const profile = asTrimmed(value).toLowerCase();
-  if (!RELEASE_PROFILES.has(profile)) {
-    throw new BusinessError(400, "Profil de release inconnu.");
-  }
-  return profile;
+function isTruthyFlag(value) {
+  return ["1", "true", "yes", "on"].includes(asTrimmed(value).toLowerCase());
 }
 
 /**
- * Autorité exclusive : SOMAFRIK_PUSH_RELEASE_PROFILE.
- * Un body.releaseProfile client n'est jamais lu ici.
+ * Frontière serveur canonique : APP_ENV (development | preproduction | production).
+ * Un profil Mobile n'est jamais une autorité d'environnement.
  */
-function resolveServerPushReleaseProfile(env = process.env) {
-  const raw = asTrimmed(env.SOMAFRIK_PUSH_RELEASE_PROFILE).toLowerCase();
-  const nodeEnv = asTrimmed(env.NODE_ENV).toLowerCase();
-  if (RELEASE_PROFILES.has(raw)) return raw;
-  if (raw) {
-    throw new BusinessError(500, "SOMAFRIK_PUSH_RELEASE_PROFILE invalide.");
-  }
-  if (nodeEnv === "test") return "preview";
-  if (nodeEnv === "development") return "development";
-  throw new BusinessError(500, "SOMAFRIK_PUSH_RELEASE_PROFILE obligatoire hors développement/test.");
+function resolvePushBackendEnvironment(env = process.env) {
+  const appEnv = asTrimmed(resolveAppEnv(env)).toLowerCase();
+  if (BACKEND_ENVIRONMENTS.has(appEnv)) return appEnv;
+  throw new BusinessError(500, "APP_ENV push invalide.");
 }
 
-function assertPushReleaseProfileConfigured(env = process.env) {
-  resolveServerPushReleaseProfile(env);
+function parseAppProfile(body = {}) {
+  const raw = asTrimmed(body.appProfile ?? body.app_profile).toLowerCase();
+  if (!raw) return null;
+  if (!APP_PROFILES.has(raw)) {
+    throw new BusinessError(400, "Profil application inconnu.");
+  }
+  return raw;
 }
 
-function serverReleaseProfileFromBody(body = {}, env = process.env) {
-  const serverProfile = resolveServerPushReleaseProfile(env);
-  const client = asTrimmed(body.releaseProfile).toLowerCase();
-  if (client && client !== serverProfile) {
-    throw new BusinessError(400, "Profil de release client rejeté.");
+function defaultAppProfileForBackend(backendEnvironment) {
+  return backendEnvironment;
+}
+
+function assertAppProfileAllowed(backendEnvironment, appProfile) {
+  const allowed = APP_PROFILES_BY_BACKEND[backendEnvironment] || [];
+  if (!allowed.includes(appProfile)) {
+    throw new BusinessError(400, "Profil application incompatible avec l'environnement serveur.");
   }
-  return serverProfile;
+}
+
+function resolveStoredPushScope(body = {}, env = process.env) {
+  const backendEnvironment = resolvePushBackendEnvironment(env);
+  const clientProfile = parseAppProfile(body);
+  const appProfile = clientProfile || defaultAppProfileForBackend(backendEnvironment);
+  assertAppProfileAllowed(backendEnvironment, appProfile);
+  return { backendEnvironment, appProfile };
 }
 
 function assertPushSelfTestAllowed(env = process.env) {
-  const profile = resolveServerPushReleaseProfile(env);
-  if (!SELF_TEST_ALLOWED_PROFILES.has(profile)) {
-    throw new BusinessError(403, "Auto-test push interdit dans cet environnement.");
+  const backendEnvironment = resolvePushBackendEnvironment(env);
+  if (backendEnvironment === "production") {
+    throw new BusinessError(403, "Auto-test push interdit en production.");
   }
-  return profile;
+  if (backendEnvironment === "preproduction" && !isTruthyFlag(env.SOMAFRIK_PUSH_SELFTEST_ENABLED)) {
+    throw new BusinessError(403, "Auto-test push désactivé dans cet environnement.");
+  }
+  return backendEnvironment;
+}
+
+function hasPushSelfTestPermission(principal = {}) {
+  const perms = new Set(principal.permissions || []);
+  if (perms.has(PUSH_SELFTEST_PERMISSION) || perms.has("ALL_PRIVILEGES")) return true;
+  const keys = (principal.roleKeys || []).map((key) => String(key || "").toUpperCase());
+  return keys.includes("SUPER_ADMIN");
+}
+
+function assertPushSelfTestActor(principal, env = process.env) {
+  const backendEnvironment = resolvePushBackendEnvironment(env);
+  if (backendEnvironment === "development") return principal;
+  if (!hasPushSelfTestPermission(principal)) {
+    throw new BusinessError(403, "Permission push-test requise.");
+  }
+  return principal;
+}
+
+function skipPushSelfTestPermissionCheck(env = process.env) {
+  return resolvePushBackendEnvironment(env) === "development";
 }
 
 function parsePlatform(value) {
@@ -96,7 +131,8 @@ function publicDevice(row) {
   return {
     id: row.id,
     platform: row.platform,
-    releaseProfile: row.release_profile,
+    backendEnvironment: row.backend_environment,
+    appProfile: row.app_profile,
     revokedAt: row.revoked_at ?? null,
     lastSeenAt: row.last_seen_at ?? null,
   };
@@ -107,14 +143,15 @@ async function upsertFromSession(store, principal, body = {}, env = process.env)
   const userId = sessionUserId(principal);
   const expoPushToken = parseExpoPushToken(body.expoPushToken ?? body.token);
   const platform = parsePlatform(body.platform);
-  const releaseProfile = serverReleaseProfileFromBody(body, env);
+  const { backendEnvironment, appProfile } = resolveStoredPushScope(body, env);
   const schoolId = await store.resolveSchoolId(principal.schoolCode);
   const row = await store.upsertDevice({
     userId,
     schoolId,
     expoPushToken,
     platform,
-    releaseProfile,
+    backendEnvironment,
+    appProfile,
   });
   return publicDevice(row);
 }
@@ -139,10 +176,10 @@ async function sendSelfTest(store, principal, body, pushClient, env = process.en
   if (asTrimmed(body?.confirm) !== TEST_CONFIRM) {
     throw new BusinessError(400, "Confirmation de test push requise.");
   }
-  const releaseProfile = assertPushSelfTestAllowed(env);
-  serverReleaseProfileFromBody(body, env);
+  const backendEnvironment = assertPushSelfTestAllowed(env);
+  assertPushSelfTestActor(principal, env);
   const userId = sessionUserId(principal);
-  const devices = await store.listActiveForUser({ userId, releaseProfile });
+  const devices = await store.listActiveForUser({ userId, backendEnvironment });
   if (!devices.length) {
     throw new BusinessError(404, "Aucun appareil push actif pour cette session.");
   }
@@ -167,15 +204,19 @@ module.exports = {
   TEST_TITLE,
   TEST_BODY,
   TEST_DESTINATION,
-  RELEASE_PROFILES,
-  SELF_TEST_ALLOWED_PROFILES,
+  BACKEND_ENVIRONMENTS,
+  APP_PROFILES,
+  APP_PROFILES_BY_BACKEND,
+  PUSH_SELFTEST_PERMISSION,
   upsertFromSession,
   revokeCurrentFromSession,
   sendSelfTest,
   parseExpoPushToken,
-  parseReleaseProfile,
-  resolveServerPushReleaseProfile,
-  assertPushReleaseProfileConfigured,
+  parseAppProfile,
+  resolvePushBackendEnvironment,
+  resolveStoredPushScope,
   assertPushSelfTestAllowed,
-  serverReleaseProfileFromBody,
+  assertPushSelfTestActor,
+  hasPushSelfTestPermission,
+  skipPushSelfTestPermissionCheck,
 };

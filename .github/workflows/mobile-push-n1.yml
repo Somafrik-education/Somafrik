@@ -17,7 +17,12 @@ on:
       - "backend/lib/rateLimit.push-selftest.test.js"
       - "backend/lib/mobilePushDevices.http.pg.test.js"
       - "backend/scripts/verify-mobile-push-n1.js"
-      - "backend/server.js"
+      - "backend/services/rbacService.js"
+      - "docker-compose.preprod.yml"
+      - "docker-compose.production.yml"
+      - "Mobile/src/navigation/AppNavigator.tsx"
+      - "Mobile/src/context/AuthContext.tsx"
+      - "Mobile/src/screens/MenuScreen.tsx"
       - "Mobile/app.config.js"
       - "Mobile/plugins/withSomafrikAndroidSecurity.js"
       - "Mobile/src/services/pushNotifications.ts"
@@ -54,7 +59,8 @@ jobs:
       DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
       NODE_ENV: test
       JWT_SECRET: ci-test-secret-with-enough-length-for-production-checks
-      SOMAFRIK_PUSH_RELEASE_PROFILE: preview
+      APP_ENV: preproduction
+      SOMAFRIK_PUSH_SELFTEST_ENABLED: "true"
     steps:
       - uses: actions/checkout@v4
         with:

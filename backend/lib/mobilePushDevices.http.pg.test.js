@@ -21,6 +21,7 @@ const JWT_SECRET = process.env.JWT_SECRET || "ci-test-secret-with-enough-length-
 
 const USER_A = "a9000000-0000-4000-8000-000000000001";
 const USER_B = "a9000000-0000-4000-8000-000000000002";
+const USER_SA = "a9000000-0000-4000-8000-000000000099";
 const TOKEN_A = "ExponentPushToken[somafrik-user-a]";
 const TOKEN_DUP = "ExponentPushToken[somafrik-shared-device]";
 
@@ -110,13 +111,14 @@ async function seed(pool) {
     `INSERT INTO users (id, school_id, user_code, first_name, last_name, email, role, status, must_change_password)
      VALUES
        ($1, $3, 'PUSH-A', 'User', 'A', 'push-a@test.local', 'Enseignant', 'active', FALSE),
-       ($2, $3, 'PUSH-B', 'User', 'B', 'push-b@test.local', 'Enseignant', 'active', FALSE)`,
-    [USER_A, USER_B, school.id],
+       ($2, $3, 'PUSH-B', 'User', 'B', 'push-b@test.local', 'Enseignant', 'active', FALSE),
+       ($4, NULL, 'PUSH-SA', 'Super', 'Admin', 'push-sa@test.local', 'SUPER_ADMIN', 'active', FALSE)`,
+    [USER_A, USER_B, school.id, USER_SA],
   );
   await pool.query(
     `INSERT INTO user_roles (user_id, school_id, role_key, status)
-     VALUES ($1, $3, 'TEACHER', 'active'), ($2, $3, 'TEACHER', 'active')`,
-    [USER_A, USER_B, school.id],
+     VALUES ($1, $3, 'TEACHER', 'active'), ($2, $3, 'TEACHER', 'active'), ($4, NULL, 'SUPER_ADMIN', 'active')`,
+    [USER_A, USER_B, school.id, USER_SA],
   );
   return { schoolId: school.id };
 }
@@ -195,7 +197,8 @@ async function main() {
         SOMAFRIK_DB_REQUIRED: "true",
         SOMAFRIK_SKIP_DEMO_SEED: "true",
         SOMAFRIK_API_ONLY: "true",
-        SOMAFRIK_PUSH_RELEASE_PROFILE: "preview",
+        APP_ENV: "preproduction",
+        SOMAFRIK_PUSH_SELFTEST_ENABLED: "true",
         SOMAFRIK_PUSH_SELFTEST_RATE_MAX: "5",
         EXPO_PUSH_SEND_URL: `http://127.0.0.1:${EXPO_MOCK_PORT}/send`,
         EXPO_PUSH_RECEIPTS_URL: `http://127.0.0.1:${EXPO_MOCK_PORT}/getReceipts`,
@@ -222,16 +225,23 @@ async function main() {
       roleKeys: ["TEACHER"],
       permissions: [],
     });
+    const tokenSa = mintAccess(tokens, {
+      sub: USER_SA,
+      schoolCode: "*",
+      role: "Super Administrateur Somafrik",
+      roleKeys: ["SUPER_ADMIN"],
+      permissions: ["ALL_PRIVILEGES"],
+    });
 
     const unauth = await request("/mobile/push-devices", {
       method: "POST",
-      body: { expoPushToken: TOKEN_A, platform: "android", releaseProfile: "preview" },
+      body: { expoPushToken: TOKEN_A, platform: "android", appProfile: "preview" },
     });
     assert.equal(unauth.status, 401, "authentification obligatoire");
 
     const unauthTest = await request("/mobile/push-devices/test", {
       method: "POST",
-      body: { confirm: TEST_CONFIRM, releaseProfile: "preview" },
+      body: { confirm: TEST_CONFIRM },
     });
     assert.equal(unauthTest.status, 401, "test push authentifié");
 
@@ -241,7 +251,7 @@ async function main() {
       body: {
         expoPushToken: TOKEN_A,
         platform: "android",
-        releaseProfile: "preview",
+        appProfile: "preview",
         userId: USER_B,
       },
     });
@@ -250,50 +260,68 @@ async function main() {
     const ios = await request("/mobile/push-devices", {
       method: "POST",
       token: tokenA,
-      body: { expoPushToken: TOKEN_A, platform: "ios", releaseProfile: "preview" },
+      body: { expoPushToken: TOKEN_A, platform: "ios", appProfile: "preview" },
     });
     assert.equal(ios.status, 400, "iOS hors N1");
+
+    const previewAccepted = await request("/mobile/push-devices", {
+      method: "POST",
+      token: tokenA,
+      body: { expoPushToken: TOKEN_A, platform: "android", appProfile: "preview" },
+    });
+    assert.equal(previewAccepted.status, 200, "preview → backend preproduction : accepté");
+
+    const preprodAccepted = await request("/mobile/push-devices", {
+      method: "POST",
+      token: tokenA,
+      body: { expoPushToken: "ExponentPushToken[preprod-profile]", platform: "android", appProfile: "preproduction" },
+    });
+    assert.equal(preprodAccepted.status, 200, "preproduction → backend preproduction : accepté");
 
     const forged = await request("/mobile/push-devices", {
       method: "POST",
       token: tokenA,
-      body: { expoPushToken: TOKEN_A, platform: "android", releaseProfile: "production" },
+      body: { expoPushToken: TOKEN_A, platform: "android", appProfile: "production" },
     });
-    assert.equal(forged.status, 400, "releaseProfile client ne fait pas autorité");
+    assert.equal(forged.status, 400, "production → backend preproduction : rejeté");
 
     const created = await request("/mobile/push-devices", {
       method: "POST",
       token: tokenA,
-      body: { expoPushToken: TOKEN_A, platform: "android", releaseProfile: "preview" },
+      body: { expoPushToken: TOKEN_A, platform: "android", appProfile: "preview" },
     });
     assert.equal(created.status, 200);
     assert.equal(created.data.platform, "android");
+    assert.equal(created.data.backendEnvironment, "preproduction");
+    assert.equal(created.data.appProfile, "preview");
     assert.ok(!JSON.stringify(created.data).includes("ExponentPushToken"), "token absent de la réponse");
 
     const again = await request("/mobile/push-devices", {
       method: "POST",
       token: tokenA,
-      body: { expoPushToken: TOKEN_A, platform: "android", releaseProfile: "preview" },
+      body: { expoPushToken: TOKEN_A, platform: "android", appProfile: "preview" },
     });
     assert.equal(again.status, 200);
     assert.equal(again.data.id, created.data.id, "upsert idempotent");
 
-    const stored = await pool.query(`SELECT user_id, school_id, release_profile FROM mobile_push_devices WHERE id = $1`, [
-      created.data.id,
-    ]);
+    const stored = await pool.query(
+      `SELECT user_id, school_id, backend_environment, app_profile FROM mobile_push_devices WHERE id = $1`,
+      [created.data.id],
+    );
     assert.equal(String(stored.rows[0].user_id), USER_A);
     assert.equal(String(stored.rows[0].school_id), String(fixtures.schoolId));
-    assert.equal(stored.rows[0].release_profile, "preview");
+    assert.equal(stored.rows[0].backend_environment, "preproduction");
+    assert.equal(stored.rows[0].app_profile, "preview");
 
     await request("/mobile/push-devices", {
       method: "POST",
       token: tokenA,
-      body: { expoPushToken: TOKEN_DUP, platform: "android", releaseProfile: "preview" },
+      body: { expoPushToken: TOKEN_DUP, platform: "android", appProfile: "preview" },
     });
     const stolen = await request("/mobile/push-devices", {
       method: "POST",
       token: tokenB,
-      body: { expoPushToken: TOKEN_DUP, platform: "android", releaseProfile: "preview" },
+      body: { expoPushToken: TOKEN_DUP, platform: "android", appProfile: "preview" },
     });
     assert.equal(stolen.status, 200);
     const dup = await pool.query(`SELECT user_id FROM mobile_push_devices WHERE expo_push_token = $1`, [TOKEN_DUP]);
@@ -306,27 +334,36 @@ async function main() {
     });
     assert.equal(crossRevoke.status, 403, "impossible de révoquer le jeton d'un autre compte");
 
-    const isolation = await request("/mobile/push-devices/test", {
+    const teacherDenied = await request("/mobile/push-devices/test", {
       method: "POST",
       token: tokenA,
-      body: { confirm: TEST_CONFIRM, releaseProfile: "production" },
+      body: { confirm: TEST_CONFIRM },
     });
-    assert.equal(isolation.status, 400, "releaseProfile client rejeté sur le self-test");
+    assert.equal(teacherDenied.status, 403, "self-test préprod protégé par permission");
+    assert.equal(mock.state.sends.length, 0, "enseignant : aucun appel Expo");
 
     const activeA = await pool.query(
-      `SELECT expo_push_token, user_id, release_profile, revoked_at FROM mobile_push_devices WHERE user_id = $1 ORDER BY created_at`,
+      `SELECT expo_push_token, user_id, backend_environment, revoked_at FROM mobile_push_devices WHERE user_id = $1 ORDER BY created_at`,
       [USER_A],
     );
     assert.deepEqual(
       activeA.rows.filter((row) => !row.revoked_at).map((row) => row.expo_push_token),
-      [TOKEN_A],
+      [TOKEN_A, "ExponentPushToken[preprod-profile]"],
       JSON.stringify(activeA.rows),
     );
 
+    await request("/mobile/push-devices", {
+      method: "POST",
+      token: tokenSa,
+      body: { expoPushToken: TOKEN_A, platform: "android", appProfile: "preview" },
+    });
+    const reassigned = await pool.query(`SELECT user_id FROM mobile_push_devices WHERE expo_push_token = $1`, [TOKEN_A]);
+    assert.equal(String(reassigned.rows[0].user_id), USER_SA);
+
     const testSend = await request("/mobile/push-devices/test", {
       method: "POST",
-      token: tokenA,
-      body: { confirm: TEST_CONFIRM, releaseProfile: "preview" },
+      token: tokenSa,
+      body: { confirm: TEST_CONFIRM },
     });
     assert.equal(testSend.status, 200, JSON.stringify(testSend.data));
     assert.equal(testSend.data.sent, 1, JSON.stringify({ data: testSend.data, expo: mock.state.sends }));
@@ -346,13 +383,13 @@ async function main() {
     const deadToken = "ExponentPushToken[dead-device]";
     await request("/mobile/push-devices", {
       method: "POST",
-      token: tokenA,
-      body: { expoPushToken: deadToken, platform: "android", releaseProfile: "preview" },
+      token: tokenSa,
+      body: { expoPushToken: deadToken, platform: "android", appProfile: "preview" },
     });
     const deadSend = await request("/mobile/push-devices/test", {
       method: "POST",
-      token: tokenA,
-      body: { confirm: TEST_CONFIRM, releaseProfile: "preview" },
+      token: tokenSa,
+      body: { confirm: TEST_CONFIRM },
     });
     assert.equal(deadSend.status, 200);
     assert.ok(deadSend.data.revoked.length >= 1, "DeviceNotRegistered révoque");
@@ -361,7 +398,7 @@ async function main() {
 
     const revoked = await request("/mobile/push-devices/current", {
       method: "DELETE",
-      token: tokenA,
+      token: tokenSa,
       body: { expoPushToken: TOKEN_A },
     });
     assert.equal(revoked.status, 200);
@@ -369,75 +406,115 @@ async function main() {
 
     const rawTarget = await request("/mobile/push-devices/test", {
       method: "POST",
-      token: tokenA,
-      body: { confirm: TEST_CONFIRM, releaseProfile: "preview", expoPushToken: TOKEN_DUP },
+      token: tokenSa,
+      body: { confirm: TEST_CONFIRM, expoPushToken: TOKEN_DUP },
     });
     assert.equal(rawTarget.status, 400, "pas de ciblage par raw token client");
+
+    await request("/mobile/push-devices", {
+      method: "POST",
+      token: tokenSa,
+      body: { expoPushToken: TOKEN_A, platform: "android", appProfile: "preview" },
+    });
 
     let saw429 = false;
     for (let i = 0; i < 12; i += 1) {
       const hit = await request("/mobile/push-devices/test", {
         method: "POST",
-        token: tokenA,
+        token: tokenSa,
         body: { confirm: TEST_CONFIRM },
       });
       if (hit.status === 429) {
         saw429 = true;
         const sendsAtLimit = mock.state.sends.length;
-        const again = await request("/mobile/push-devices/test", {
+        const limited = await request("/mobile/push-devices/test", {
           method: "POST",
-          token: tokenA,
+          token: tokenSa,
           body: { confirm: TEST_CONFIRM },
         });
-        assert.equal(again.status, 429);
+        assert.equal(limited.status, 429);
         assert.equal(mock.state.sends.length, sendsAtLimit, "rate limit : aucun appel Expo");
         break;
       }
     }
     assert.equal(saw429, true, "rate limit bloque l'abus");
 
-    async function assertSelfTestForbidden(profile) {
-      const forbiddenPort = HTTP_PORT + (profile === "production" ? 2 : 3);
-      const forbiddenChild = spawn(process.execPath, ["backend/server.js"], {
+    async function spawnBackend(portOffset, extraEnv) {
+      const port = HTTP_PORT + portOffset;
+      const spawned = spawn(process.execPath, ["backend/server.js"], {
         cwd: ROOT,
         env: {
           ...process.env,
           NODE_ENV: "test",
-          PORT: String(forbiddenPort),
+          PORT: String(port),
           DATABASE_URL: isolatedUrl,
           JWT_SECRET,
           SOMAFRIK_DB_REQUIRED: "true",
           SOMAFRIK_SKIP_DEMO_SEED: "true",
           SOMAFRIK_API_ONLY: "true",
-          SOMAFRIK_PUSH_RELEASE_PROFILE: profile,
           EXPO_PUSH_SEND_URL: `http://127.0.0.1:${EXPO_MOCK_PORT}/send`,
           EXPO_PUSH_RECEIPTS_URL: `http://127.0.0.1:${EXPO_MOCK_PORT}/getReceipts`,
+          ...extraEnv,
         },
         stdio: ["ignore", "pipe", "pipe"],
       });
-      const forbiddenErr = { value: "" };
-      forbiddenChild.stderr.on("data", (chunk) => {
-        forbiddenErr.value += String(chunk);
+      const err = { value: "" };
+      spawned.stderr.on("data", (chunk) => {
+        err.value += String(chunk);
       });
-      forbiddenChild.stdout.on("data", () => {});
-      try {
-        await waitForHealth(forbiddenChild, forbiddenErr, forbiddenPort);
-        const expoBefore = mock.state.sends.length;
-        const blocked = await request("/mobile/push-devices/test", {
-          method: "POST",
-          token: tokenA,
-          body: { confirm: TEST_CONFIRM },
-          port: forbiddenPort,
-        });
-        assert.equal(blocked.status, 403, `${profile} interdit le self-test`);
-        assert.equal(mock.state.sends.length, expoBefore, `${profile} : aucun appel Expo`);
-      } finally {
-        await stopChild(forbiddenChild);
-      }
+      spawned.stdout.on("data", () => {});
+      await waitForHealth(spawned, err, port);
+      return { spawned, port, err };
     }
 
-    await assertSelfTestForbidden("production");
-    await assertSelfTestForbidden("preproduction");
+    const production = await spawnBackend(2, {
+      APP_ENV: "production",
+      SOMAFRIK_PUSH_SELFTEST_ENABLED: "true",
+    });
+    try {
+      const expoBefore = mock.state.sends.length;
+      const previewOnProd = await request("/mobile/push-devices", {
+        method: "POST",
+        token: tokenSa,
+        body: { expoPushToken: TOKEN_A, platform: "android", appProfile: "preview" },
+        port: production.port,
+      });
+      assert.equal(previewOnProd.status, 400, "preview → backend production : rejeté");
+      const prodOnProd = await request("/mobile/push-devices", {
+        method: "POST",
+        token: tokenSa,
+        body: { expoPushToken: TOKEN_A, platform: "android", appProfile: "production" },
+        port: production.port,
+      });
+      assert.equal(prodOnProd.status, 200, "production → backend production : accepté");
+      const blockedProd = await request("/mobile/push-devices/test", {
+        method: "POST",
+        token: tokenSa,
+        body: { confirm: TEST_CONFIRM },
+        port: production.port,
+      });
+      assert.equal(blockedProd.status, 403, "production interdit le self-test");
+      assert.equal(mock.state.sends.length, expoBefore, "production : aucun appel Expo");
+    } finally {
+      await stopChild(production.spawned);
+    }
+
+    const preprodNoFlag = await spawnBackend(3, {
+      APP_ENV: "preproduction",
+    });
+    try {
+      const expoBefore = mock.state.sends.length;
+      const blockedPreprod = await request("/mobile/push-devices/test", {
+        method: "POST",
+        token: tokenSa,
+        body: { confirm: TEST_CONFIRM },
+        port: preprodNoFlag.port,
+      });
+      assert.equal(blockedPreprod.status, 403, "préprod sans flag interdit le self-test");
+      assert.equal(mock.state.sends.length, expoBefore, "préprod sans flag : aucun appel Expo");
+    } finally {
+      await stopChild(preprodNoFlag.spawned);
+    }
 
     console.log("mobilePushDevices.http.pg.test.js GO — PUSH-N1");
   } catch (error) {

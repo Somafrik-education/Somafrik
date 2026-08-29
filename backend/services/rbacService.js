@@ -14,6 +14,7 @@ const roleAliases = {
 
 const routePermissions = {
   ...COURSE_ROUTE_PERMISSIONS,
+  "POST /api/mobile/push-devices/test": ["Push:TEST", "ALL_PRIVILEGES"],
   "POST /api/users/:id/reset-password": [
     "Utilisateurs:UPDATE",
     "Gérer utilisateurs",

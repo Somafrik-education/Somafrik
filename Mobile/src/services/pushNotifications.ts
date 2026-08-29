@@ -181,7 +181,7 @@ export async function registerAuthenticatedPushDevice(deps: PushRegisterDeps = {
     body: JSON.stringify({
       expoPushToken,
       platform: "android",
-      releaseProfile: (deps.getReleaseProfileImpl ?? defaultReleaseProfile)(),
+      appProfile: (deps.getReleaseProfileImpl ?? defaultReleaseProfile)(),
     }),
   });
   await rememberPushToken(expoPushToken);
@@ -212,7 +212,6 @@ export async function sendControlledPushTest(deps: PushRegisterDeps = {}) {
     method: "POST",
     body: JSON.stringify({
       confirm: TEST_PUSH_CONFIRM,
-      releaseProfile: (deps.getReleaseProfileImpl ?? defaultReleaseProfile)(),
     }),
   });
 }

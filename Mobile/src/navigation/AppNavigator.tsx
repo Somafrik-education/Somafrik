@@ -47,6 +47,7 @@ import InternalNotificationsScreen from "../screens/InternalNotificationsScreen"
 import OfflineBanner from "../components/OfflineBanner";
 import { AdminEntity } from "../context/AdminDataContext";
 import { useAuth } from "../context/AuthContext";
+import { canPersistFullSession } from "../lib/dataTruth";
 import { canReadRoute, canReadView } from "../domain/security/permissions";
 import { canAccessMessagesRoute } from "../lib/mobileCtaRbacAlignment";
 import { isMetierRenderable } from "../lib/livePermissionsRefresh";
@@ -247,7 +248,10 @@ export default function AppNavigator() {
       onReady={() => {
         flushPendingPushNavigation(
           (destination) => navigationRef.navigate(destination as never),
-          () => navigationRef.isReady(),
+          {
+            isReady: () => navigationRef.isReady(),
+            isAuthenticated: () => Boolean(session) && canPersistFullSession(session),
+          },
         );
       }}
     >
