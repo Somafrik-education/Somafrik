@@ -1,10 +1,13 @@
-import { Modal, Pressable, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { Alert, Modal, Pressable, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "../context/AuthContext";
+import { isSuperAdminSessionRole } from "../domain/security/permissions";
 import { resolveCanonicalRoleIdentity } from "../lib/canonicalRoleIdentity";
 import { getAllowedRoleDrawerSections, type RoleDrawerItem } from "../navigation/roleDrawerPreferences";
 import { MIN_TOUCH_TARGET_DP } from "../lib/mobileUsability";
+import { getReleaseProfile } from "../config/env";
+import { sendControlledPushTest } from "../services/pushNotifications";
 
 const ROLE_LABELS: Record<string, string> = {
   super_admin: "Superadmin",
@@ -21,6 +24,18 @@ const ROLE_LABELS: Record<string, string> = {
   parent_student: "Parent",
   student: "Élève",
 };
+
+function canShowPushSelfTestButton(session: {
+  role?: string;
+  permissions?: string[];
+  user?: { permissions?: string[] };
+} | null | undefined) {
+  const profile = getReleaseProfile();
+  if (profile === "production" || profile === "preproduction") return false;
+  if (profile === "development") return true;
+  const perms = new Set([...(session?.permissions ?? []), ...(session?.user?.permissions ?? [])]);
+  return perms.has("ALL_PRIVILEGES") || perms.has("Push:TEST") || isSuperAdminSessionRole(session?.role);
+}
 
 export default function RoleNavigationDrawer({
   visible,
@@ -55,6 +70,16 @@ export default function RoleNavigationDrawer({
     onClose();
     logout();
     rootNavigation.reset({ index: 0, routes: [{ name: "Welcome" }] });
+  };
+
+  const handlePushSelfTest = () => {
+    void sendControlledPushTest()
+      .then(() => {
+        Alert.alert("Test push", "Notification de test envoyée.");
+      })
+      .catch(() => {
+        Alert.alert("Test push", "Impossible d'envoyer la notification de test.");
+      });
   };
 
   return (
@@ -104,6 +129,18 @@ export default function RoleNavigationDrawer({
           </ScrollView>
 
           <View style={styles.footer}>
+            {canShowPushSelfTestButton(session) ? (
+              <TouchableOpacity
+                style={styles.pushTestButton}
+                onPress={handlePushSelfTest}
+                accessibilityRole="button"
+                accessibilityLabel="Tester les notifications push"
+                testID="mobile-role-drawer-push-self-test"
+              >
+                <Ionicons name="notifications-outline" size={21} color="#1D4ED8" />
+                <Text style={styles.pushTestText}>Tester les notifications push</Text>
+              </TouchableOpacity>
+            ) : null}
             <TouchableOpacity
               style={styles.logoutButton}
               onPress={handleLogout}
@@ -211,7 +248,17 @@ const styles = StyleSheet.create({
     marginRight: 10,
   },
   itemLabel: { flex: 1, color: "#0F172A", fontSize: 15, fontWeight: "800" },
-  footer: { borderTopWidth: 1, borderTopColor: "#E2E8F0", padding: 12 },
+  footer: { borderTopWidth: 1, borderTopColor: "#E2E8F0", padding: 12, gap: 10 },
+  pushTestButton: {
+    minHeight: 52,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    borderRadius: 12,
+    backgroundColor: "#EFF6FF",
+  },
+  pushTestText: { color: "#1D4ED8", fontSize: 15, fontWeight: "900" },
   logoutButton: {
     minHeight: 52,
     flexDirection: "row",
