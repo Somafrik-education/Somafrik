@@ -58,6 +58,7 @@
     "verify:communications-c2": "node backend/scripts/verify-communications-c2.js",
     "verify:communications-c3": "node backend/scripts/verify-communications-c3.js",
     "verify:communications-c4": "node backend/scripts/verify-communications-c4.js",
+    "verify:platform-announcements": "node backend/scripts/verify-platform-announcements.js",
     "verify:finance-legacy-cleanup": "node --test backend/lib/legacyFinanceStateWrite.test.js && node backend/scripts/verify-finance-legacy-cleanup.js",
     "verify:pedagogy-management": "node --test backend/lib/legacyPedagogyStateWrite.test.js backend/lib/pedagogyReferences.test.js backend/lib/evaluationGradeEntry.test.js && node backend/lib/presenceContract.test.js && node backend/lib/attendanceUniqueness.test.js && node backend/lib/pedagogyRepository.test.js && node backend/lib/pedagogyRepository.pg.test.js && node backend/lib/pedagogyMigration.pg.test.js && node backend/scripts/verify-pedagogy-management.js",
     "verify:planning-v2-weekly": "node --test backend/lib/planningWeekly.test.js backend/lib/planningWeeklyOccurrences.test.js backend/lib/planningWeeklyMigrationPreflight.test.js backend/lib/courseSchedulesRbacLive.test.js && node backend/lib/planningWeekly.pg.test.js && node backend/scripts/inventory-planning-weekly-preflight.js && node backend/scripts/verify-planning-v2-weekly.js && npm --prefix web run test -- src/lib/permissions.planningUi.test.ts src/lib/coursePlanning.weekly.test.ts src/lib/planningWeeklyWrite.test.ts",

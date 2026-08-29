@@ -14,6 +14,7 @@ const { CLIENTS_SCHEMA_SQL } = require("./clientsSchema");
 const { COMMUNICATIONS_C2_SCHEMA_SQL } = require("./communicationsMessagesSchema");
 const { COMMUNICATIONS_C3_SCHEMA_SQL } = require("./communicationsAnnouncementsSchema");
 const { COMMUNICATIONS_C4_SCHEMA_SQL } = require("./communicationsNotificationsSchema");
+const { PLATFORM_ANNOUNCEMENTS_SCHEMA_SQL } = require("./platformAnnouncementsSchema");
 const { ensureParentLinkingConstraints } = require("../lib/parentLinkingConstraints");
 
 function asClientsDb(queryable) {
@@ -54,11 +55,18 @@ async function applyCommunicationsC4Schema(queryable) {
   return db;
 }
 
+async function applyPlatformAnnouncementsSchema(queryable) {
+  const db = asClientsDb(queryable);
+  await db.query(PLATFORM_ANNOUNCEMENTS_SCHEMA_SQL);
+  return db;
+}
+
 async function ensureClientsCanonicalBootstrap(queryable, logger = console) {
   const db = await applyClientsTablesSchema(queryable);
   await applyCommunicationsC2Schema(db);
   await applyCommunicationsC3Schema(db);
   await applyCommunicationsC4Schema(db);
+  await applyPlatformAnnouncementsSchema(db);
   await ensureParentLinkingConstraints(db, logger);
   return db;
 }
@@ -69,5 +77,6 @@ module.exports = {
   applyCommunicationsC2Schema,
   applyCommunicationsC3Schema,
   applyCommunicationsC4Schema,
+  applyPlatformAnnouncementsSchema,
   ensureClientsCanonicalBootstrap,
 };

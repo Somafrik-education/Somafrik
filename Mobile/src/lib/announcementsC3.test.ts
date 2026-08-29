@@ -31,6 +31,7 @@ assert.equal(canReadView(liveSession(["Announcements:READ"]), "Announcements"), 
 
 const readSrc = fs.readFileSync(path.join(ROOT, "src/lib/announcementsRead.ts"), "utf8");
 assert.doesNotMatch(readSrc, /localStorage/);
+assert.doesNotMatch(readSrc, /\.catch\([\s\S]*setCount\(0\)/);
 assert.match(readSrc, /getAnnouncementsUnreadCount/);
 
 const screenSrc = fs.readFileSync(path.join(ROOT, "src/screens/AnnouncementsScreen.tsx"), "utf8");

@@ -160,6 +160,16 @@ async function main() {
   );
   console.log("OK: aucun catch(() => []) sur le client Mobile");
 
+  const catchZeroCount = srcFiles.filter(({ source }) =>
+    /\.catch\(\(\) => \(\{ count: 0 \}\)\)/.test(source.replace(/\s+/g, " ")),
+  );
+  assert.deepStrictEqual(
+    catchZeroCount.map(({ file }) => rel(file)),
+    [],
+    `catch(() => ({ count: 0 })) interdit: ${catchZeroCount.map(({ file }) => rel(file)).join(", ")}`,
+  );
+  console.log("OK: aucun catch(() => ({ count: 0 })) sur le client Mobile");
+
   const timetable = read(path.join(SRC, "screens", "TimetableScreen.tsx"));
   assert.doesNotMatch(timetable, /\btimetable\b/);
   assert.doesNotMatch(timetable, /getTeacherById/);

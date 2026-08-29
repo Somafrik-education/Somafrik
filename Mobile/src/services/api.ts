@@ -55,6 +55,7 @@ import {
 import { clearRequestSchoolScope, getRequestSchoolScope } from "../lib/requestSchoolScope";
 import { clearStoredSchoolCode } from "../lib/activeSchool";
 import {
+  hasCommunicationSchoolScope,
   resolveCommunicationSchoolScope,
   withCommunicationSchoolPayload,
   withCommunicationSchoolScope,
@@ -876,10 +877,46 @@ export async function getAnnouncementAudienceOptions(schoolCode?: string): Promi
 }
 
 export async function getAnnouncementsUnreadCount(schoolCode?: string): Promise<number> {
-  const data = await request<{ count?: number }>(
-    scopedMessagesPath("/backoffice/announcements/unread-count", schoolCode),
-  );
-  return Number(data?.count) || 0;
+  const scope = communicationSchoolScope(schoolCode);
+  const [school, platform] = await Promise.all([
+    hasCommunicationSchoolScope(scope)
+      ? request<{ count?: number }>(scopedMessagesPath("/backoffice/announcements/unread-count", scope))
+      : Promise.resolve({ count: 0 }),
+    request<{ count?: number }>("/backoffice/platform-announcements/unread-count"),
+  ]);
+  return (Number(school?.count) || 0) + (Number(platform?.count) || 0);
+}
+
+export function createPlatformAnnouncement(payload: Record<string, unknown>, options?: MutationRequestOptions) {
+  return request("/backoffice/platform-announcements", {
+    method: "POST",
+    body: JSON.stringify(payload),
+    idempotencyKey: options?.idempotencyKey,
+  });
+}
+
+export async function uploadPlatformAnnouncementAttachment(file: {
+  uri: string;
+  name: string;
+  mimeType: string;
+}): Promise<{ id: string; fileName: string; mimeType?: string; fileSize?: number }> {
+  const token = await getAccessToken();
+  const root = resolveApiRootUrl().replace(/\/$/, "");
+  const blob = await (await fetch(file.uri)).blob();
+  const response = await fetch(`${root}/api/backoffice/platform-announcements/attachments`, {
+    method: "POST",
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      "Content-Type": file.mimeType || "application/octet-stream",
+      "X-Filename": file.name,
+    },
+    body: blob,
+  });
+  const data = (await response.json().catch(() => ({}))) as { message?: string; id?: string };
+  if (!response.ok || !data.id) {
+    throw new ApiClientError(String(data.message ?? "Échec de l'upload"));
+  }
+  return data as { id: string; fileName: string; mimeType?: string; fileSize?: number };
 }
 
 export async function uploadAnnouncementAttachment(
@@ -992,6 +1029,24 @@ export async function downloadCommunicationAttachment(
       `${root}/api/backoffice/communications/attachments/${encodeURIComponent(attachmentId)}`,
       schoolCode,
     ),
+    target,
+    { headers: token ? { Authorization: `Bearer ${token}` } : {} },
+  );
+  if (result.status !== 200) {
+    throw new ApiClientError("Téléchargement refusé");
+  }
+  return result.uri;
+}
+
+export async function downloadPlatformAnnouncementAttachment(
+  attachmentId: string,
+  fileName: string,
+): Promise<string> {
+  const token = await getAccessToken();
+  const root = resolveApiRootUrl().replace(/\/$/, "");
+  const target = `${FileSystem.cacheDirectory ?? FileSystem.documentDirectory ?? ""}${fileName}`;
+  const result = await FileSystem.downloadAsync(
+    `${root}/api/backoffice/platform-announcements/attachments/${encodeURIComponent(attachmentId)}`,
     target,
     { headers: token ? { Authorization: `Bearer ${token}` } : {} },
   );

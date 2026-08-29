@@ -1388,6 +1388,38 @@ class PostgresRepository {
     return this.getClientsStore().uploadAnnouncementAttachment(principal, file, query);
   }
 
+  createPlatformAnnouncement(payload, principal, auditMeta) {
+    return this.getClientsStore().createPlatformAnnouncement(payload, principal, auditMeta);
+  }
+
+  listPlatformAnnouncements(principal, query) {
+    return this.getClientsStore().listPlatformAnnouncementsForPrincipal(principal, query);
+  }
+
+  getPlatformAnnouncement(id, principal) {
+    return this.getClientsStore().getPlatformAnnouncementForPrincipal(id, principal);
+  }
+
+  markPlatformAnnouncementRead(id, principal, auditMeta) {
+    return this.getClientsStore().markPlatformAnnouncementRead(id, principal, auditMeta);
+  }
+
+  archivePlatformAnnouncement(id, principal, auditMeta) {
+    return this.getClientsStore().archivePlatformAnnouncementForPrincipal(id, principal, auditMeta);
+  }
+
+  getPlatformAnnouncementsUnreadCount(principal) {
+    return this.getClientsStore().unreadPlatformAnnouncementCountForPrincipal(principal);
+  }
+
+  uploadPlatformAnnouncementAttachment(principal, file) {
+    return this.getClientsStore().uploadPlatformAnnouncementAttachment(principal, file);
+  }
+
+  downloadPlatformAnnouncementAttachment(attachmentId, principal) {
+    return this.getClientsStore().downloadPlatformAnnouncementAttachment(attachmentId, principal);
+  }
+
   getPedagogyStore() {
     if (!this._pedagogyStore) {
       const { createPedagogyPgStore } = require("./pedagogyPgStore");

@@ -1,0 +1,82 @@
+name: Platform Announcements
+
+on:
+  pull_request:
+    branches: [develop]
+    paths:
+      - "backend/db/clientsCanonicalBootstrap.js"
+      - "backend/db/clientsPgStore.js"
+      - "backend/db/clientsMemoryStore.js"
+      - "backend/db/platformAnnouncementsSchema.js"
+      - "backend/db/migrations/20260829_platform_announcements.sql"
+      - "backend/lib/platformAnnouncementsService.js"
+      - "backend/lib/platformAnnouncements.unit.test.js"
+      - "backend/lib/platformAnnouncements.http.pg.test.js"
+      - "backend/lib/communicationsAttachments.js"
+      - "backend/lib/communicationsAttachments.test.js"
+      - "backend/scripts/verify-platform-announcements.js"
+      - "backend/server.js"
+      - "backend/services/rbacService.js"
+      - "web/src/pages/AnnouncementsPage.tsx"
+      - "web/src/lib/platformAnnouncementsApi.ts"
+      - "web/src/lib/announcementsRead.ts"
+      - "web/src/lib/announcementsPlatform.test.ts"
+      - "Mobile/src/screens/AnnouncementsScreen.tsx"
+      - "Mobile/src/components/AnnouncementMutationControls.tsx"
+      - "Mobile/src/lib/announcementsRead.ts"
+      - "Mobile/src/lib/announcementsPlatform.test.ts"
+      - "Mobile/src/lib/canonicalResourceNormalize.ts"
+      - "Mobile/src/services/api.ts"
+      - "Mobile/src/services/domainHydrationApi.ts"
+      - "package.json"
+      - ".github/workflows/platform-announcements.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  platform-announcements:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
+      NODE_ENV: test
+      JWT_SECRET: ci-test-secret-with-enough-length-for-production-checks
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Record exact HEAD
+        run: |
+          echo "EXACT_HEAD=$(git rev-parse HEAD)"
+          git log -1 --oneline
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.12.0"
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            backend/package-lock.json
+            web/package-lock.json
+      - name: Install dependencies
+        run: |
+          npm ci
+          npm ci --prefix backend
+          npm ci --prefix web
+      - name: Verify Platform Announcements
+        run: npm run verify:platform-announcements
