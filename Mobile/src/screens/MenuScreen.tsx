@@ -5,10 +5,12 @@ import { useAuth } from "../context/AuthContext";
 import StudentSwitcher from "../components/StudentSwitcher";
 import SchoolSelector from "../components/SchoolSelector";
 import { AdminEntity, useAdminData } from "../context/AdminDataContext";
-import { canReadEntity, canReadRoute, canReadView } from "../domain/security/permissions";
+import { canReadEntity, canReadRoute, canReadView, isSuperAdminSessionRole } from "../domain/security/permissions";
 import { useFloatingTabBarLayout } from "../lib/screenLayout";
 import { useResponsiveLayout } from "../hooks/useResponsiveLayout";
 import { MENU_TEST_IDS } from "../lib/loginScreenSpec";
+import { getReleaseProfile } from "../config/env";
+import { sendControlledPushTest } from "../services/pushNotifications";
 import { ENTITY_VIEW_MAP } from "../lib/constants";
 import {
   resolveTeacherAssignmentsForSession,
@@ -85,6 +87,18 @@ const teacherMenuItems: MenuItem[] = [
   { label: "🔄 Synchronisation", route: "Synchronization", view: "Synchronization" },
   { label: "🆘 Support", route: "Support", view: "Support" },
 ];
+
+function canShowPushSelfTestButton(session: {
+  role?: string;
+  permissions?: string[];
+  user?: { permissions?: string[] };
+} | null) {
+  const profile = getReleaseProfile();
+  if (profile === "production" || profile === "preproduction") return false;
+  if (profile === "development") return true;
+  const perms = new Set([...(session?.permissions ?? []), ...(session?.user?.permissions ?? [])]);
+  return perms.has("ALL_PRIVILEGES") || perms.has("Push:TEST") || isSuperAdminSessionRole(session?.role);
+}
 
 function filterMenuItemsByPermission(session: any, items: MenuItem[]) {
   return items.filter((item) => {
@@ -209,6 +223,24 @@ export default function MenuScreen() {
       >
         <Text style={styles.logoutText}>Déconnexion</Text>
       </TouchableOpacity>
+      {canShowPushSelfTestButton(session) ? (
+        <TouchableOpacity
+          style={styles.logout}
+          onPress={() => {
+            void sendControlledPushTest()
+              .then(() => {
+                Alert.alert("Test push", "Notification de test envoyée.");
+              })
+              .catch(() => {
+                Alert.alert("Test push", "Impossible d'envoyer la notification de test.");
+              });
+          }}
+          accessibilityRole="button"
+          accessibilityLabel="Tester les notifications push"
+        >
+          <Text style={styles.logoutText}>Tester les notifications push</Text>
+        </TouchableOpacity>
+      ) : null}
     </ScrollView>
   );
 }

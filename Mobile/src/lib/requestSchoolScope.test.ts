@@ -49,6 +49,9 @@ function run() {
   assert.equal(isSchoolScopedApiPath("/backoffice/countries"), false);
   assert.equal(isSchoolScopedApiPath("/backoffice/subscriptions"), false);
   assert.equal(isSchoolScopedApiPath("/backoffice/notifications"), false);
+  assert.equal(isSchoolScopedApiPath("/mobile/push-devices"), false);
+  assert.equal(isSchoolScopedApiPath("/mobile/push-devices/current"), false);
+  assert.equal(isSchoolScopedApiPath("/mobile/push-devices/test"), false);
   assert.equal(isSchoolScopedApiPath("/auth/logout"), false);
   assert.equal(isSchoolScopedApiPath("/login"), false);
 

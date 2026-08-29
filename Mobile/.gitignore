@@ -11,5 +11,7 @@ dist/
 *.apk
 android/
 ios/
+*-firebase-adminsdk-*.json
+fcm-service-account*.json
 android/keystore.properties
 artifacts/

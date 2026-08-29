@@ -46,5 +46,8 @@ export const MOBILE_MUTATION_INVENTORY = [
   { name: "createPlatformNotification", method: "POST", path: "/backoffice/notifications", class: "D", outbox: false, domain: "notifications" },
   { name: "login", method: "POST", path: "/login", class: "D", outbox: false, domain: "auth" },
   { name: "logout", method: "POST", path: "/auth/logout", class: "D", outbox: false, domain: "auth" },
+  { name: "registerPushDevice", method: "POST", path: "/mobile/push-devices", class: "A", outbox: false, domain: "push" },
+  { name: "revokePushDevice", method: "DELETE", path: "/mobile/push-devices/current", class: "D", outbox: false, domain: "push" },
+  { name: "sendPushSelfTest", method: "POST", path: "/mobile/push-devices/test", class: "D", outbox: false, domain: "push" },
   { name: "changePassword", method: "POST", path: "/auth/change-password", class: "D", outbox: false, domain: "auth" },
 ] as const;

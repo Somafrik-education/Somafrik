@@ -1,0 +1,102 @@
+name: Mobile Push N1
+
+on:
+  pull_request:
+    branches: [develop]
+    paths:
+      - "backend/db/clientsCanonicalBootstrap.js"
+      - "backend/db/mobilePushDevicesSchema.js"
+      - "backend/db/mobilePushDevicesStore.js"
+      - "backend/db/migrations/20260829_mobile_push_devices.sql"
+      - "backend/lib/mobilePushDevicesService.js"
+      - "backend/lib/mobilePushDevicesService.test.js"
+      - "backend/lib/expoPushService.js"
+      - "backend/lib/expoPushService.test.js"
+      - "backend/lib/expoPushReceiptsWorker.js"
+      - "backend/lib/expoPushReceiptsWorker.test.js"
+      - "backend/lib/rateLimit.push-selftest.test.js"
+      - "backend/lib/mobilePushDevices.http.pg.test.js"
+      - "backend/scripts/verify-mobile-push-n1.js"
+      - "backend/services/rbacService.js"
+      - "docker-compose.preprod.yml"
+      - "docker-compose.production.yml"
+      - "Mobile/src/navigation/AppNavigator.tsx"
+      - "Mobile/src/context/AuthContext.tsx"
+      - "Mobile/src/screens/MenuScreen.tsx"
+      - "Mobile/app.config.js"
+      - "Mobile/plugins/withSomafrikAndroidSecurity.js"
+      - "Mobile/src/services/pushNotifications.ts"
+      - "Mobile/src/services/pushNotifications.test.ts"
+      - "Mobile/src/lib/pushNotificationTap.ts"
+      - "Mobile/src/lib/pushNotificationTap.test.ts"
+      - "Mobile/src/components/PushNotificationsRuntime.tsx"
+      - "package.json"
+      - ".github/workflows/mobile-push-n1.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  mobile-push-n1:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
+      NODE_ENV: test
+      JWT_SECRET: ci-test-secret-with-enough-length-for-production-checks
+      APP_ENV: preproduction
+      SOMAFRIK_PUSH_SELFTEST_ENABLED: "true"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Record exact HEAD
+        run: |
+          echo "EXACT_HEAD=$(git rev-parse HEAD)"
+          git log -1 --oneline
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.12.0"
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            backend/package-lock.json
+            web/package-lock.json
+            Mobile/package-lock.json
+      - name: Install dependencies
+        run: |
+          npm ci
+          npm ci --prefix backend
+          npm ci --prefix web
+          npm ci --prefix Mobile
+      - name: Verify Mobile Push N1
+        shell: bash
+        run: |
+          set -o pipefail
+          npm run verify:mobile-push-n1 2>&1 | tee mobile-push-n1.log
+      - name: Preserve Push N1 verification log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mobile-push-n1-verification
+          path: mobile-push-n1.log
+          if-no-files-found: error
+          retention-days: 7
+      - name: Typecheck Mobile
+        working-directory: Mobile
+        run: npx tsc --noEmit --project tsconfig.json

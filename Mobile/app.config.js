@@ -59,6 +59,9 @@ module.exports = ({ config }) => {
     userInterfaceStyle: "light",
       extra: {
       ...config.extra,
+      eas: {
+        ...(config.extra?.eas && typeof config.extra.eas === "object" ? config.extra.eas : {}),
+      },
       apiUrl,
       releaseProfile,
       demoMode: releaseProfile === "development" ? demoMode : false,
@@ -84,15 +87,23 @@ module.exports = ({ config }) => {
         "android.permission.ACCESS_FINE_LOCATION",
         "android.permission.ACCESS_COARSE_LOCATION",
         "android.permission.NFC",
-        "android.permission.POST_NOTIFICATIONS",
         "android.permission.READ_CONTACTS",
         "android.permission.CALL_PHONE",
-        "android.permission.VIBRATE",
       ],
+      ...(fs.existsSync(path.join(mobileRoot, "google-services.json"))
+        ? { googleServicesFile: "./google-services.json" }
+        : {}),
     },
     plugins: [
       ...(config.plugins ?? []),
       "expo-secure-store",
+      [
+        "expo-notifications",
+        {
+          color: "#1d4ed8",
+          defaultChannel: "somafrik-default",
+        },
+      ],
       [
         "expo-sqlite",
         {

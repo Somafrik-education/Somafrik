@@ -1155,6 +1155,32 @@ class PostgresRepository {
     return this._clientsStore;
   }
 
+  getMobilePushStore() {
+    if (!this._mobilePushStore) {
+      const { createMobilePushDevicesStore } = require("./mobilePushDevicesStore");
+      this._mobilePushStore = createMobilePushDevicesStore(this);
+    }
+    return this._mobilePushStore;
+  }
+
+  upsertMobilePushDevice(principal, payload) {
+    const service = require("../lib/mobilePushDevicesService");
+    return service.upsertFromSession(this.getMobilePushStore(), principal, payload);
+  }
+
+  revokeCurrentMobilePushDevice(principal, payload) {
+    const service = require("../lib/mobilePushDevicesService");
+    return service.revokeCurrentFromSession(this.getMobilePushStore(), principal, payload);
+  }
+
+  sendMobilePushSelfTest(principal, payload) {
+    const { createExpoPushService } = require("../lib/expoPushService");
+    const service = require("../lib/mobilePushDevicesService");
+    const store = this.getMobilePushStore();
+    const pushClient = createExpoPushService({ store });
+    return service.sendSelfTest(store, principal, payload, pushClient);
+  }
+
   /**
    * Store clients lié au client PostgreSQL de la transaction courante.
    * withTransaction du store rejoint ce scope (pas de second BEGIN/COMMIT).

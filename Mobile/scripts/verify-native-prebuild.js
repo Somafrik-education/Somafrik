@@ -96,7 +96,9 @@ function inspectGeneratedAndroid(profile) {
     if (name === "android.permission.RECORD_AUDIO") {
       assert.ok(isRemovedPermission(attr), `${profile}: RECORD_AUDIO doit être tools:node=remove`);
     }
-    assert.notEqual(name, "android.permission.POST_NOTIFICATIONS", `${profile}: POST_NOTIFICATIONS présent`);
+    if (name === "android.permission.POST_NOTIFICATIONS" || name === "android.permission.VIBRATE") {
+      continue;
+    }
     assert.notEqual(name, "android.permission.NFC", `${profile}: NFC présent`);
     assert.notEqual(name, "android.permission.ACCESS_FINE_LOCATION", `${profile}: localisation présente`);
   }

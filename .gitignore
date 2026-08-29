@@ -23,6 +23,13 @@ Mobile/ios/
 Mobile/.env.local
 web/.env.local
 
+# Firebase FCM V1 private service account — never commit
+**/firebase-adminsdk*.json
+**/fcm-service-account*.json
+**/google-fcm-service-account*.json
+Mobile/*-firebase-adminsdk-*.json
+backend/*-firebase-adminsdk-*.json
+
 # Logs
 *.log
 npm-debug.log*

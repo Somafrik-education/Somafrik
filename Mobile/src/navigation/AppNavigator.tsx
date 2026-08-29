@@ -2,6 +2,8 @@ import { ActivityIndicator, Text, TouchableOpacity, View } from "react-native";
 import { ROLE_SELECTION_NAV_TITLE } from "../lib/roleSelectionLayout";
 import { NavigationContainer } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
+import { navigationRef } from "./rootNavigation";
+import { flushPendingPushNavigation } from "../lib/pushNotificationTap";
 
 import RoleSelectionScreen from "../screens/RoleSelectionScreen";
 import WelcomeScreen from "../screens/WelcomeScreen";
@@ -45,6 +47,7 @@ import InternalNotificationsScreen from "../screens/InternalNotificationsScreen"
 import OfflineBanner from "../components/OfflineBanner";
 import { AdminEntity } from "../context/AdminDataContext";
 import { useAuth } from "../context/AuthContext";
+import { canPersistFullSession } from "../lib/dataTruth";
 import { canReadRoute, canReadView } from "../domain/security/permissions";
 import { canAccessMessagesRoute } from "../lib/mobileCtaRbacAlignment";
 import { isMetierRenderable } from "../lib/livePermissionsRefresh";
@@ -239,7 +242,19 @@ export default function AppNavigator() {
     canReadRoute(session, "StudentPresences");
 
   return (
-    <NavigationContainer key={session ? "authenticated" : "public"}>
+    <NavigationContainer
+      ref={navigationRef}
+      key={session ? "authenticated" : "public"}
+      onReady={() => {
+        flushPendingPushNavigation(
+          (destination) => navigationRef.navigate(destination as never),
+          {
+            isReady: () => navigationRef.isReady(),
+            isAuthenticated: () => Boolean(session) && canPersistFullSession(session),
+          },
+        );
+      }}
+    >
       <Stack.Navigator initialRouteName={session ? "Home" : "Welcome"}>
         <Stack.Screen name="Welcome" component={WelcomeScreen} options={{ headerShown: false }} />
         <Stack.Screen

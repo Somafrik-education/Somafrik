@@ -44,6 +44,10 @@ async function main() {
     calls.some((c) => c.op === "query" && /CREATE TABLE IF NOT EXISTS platform_announcements/.test(c.sql)),
     "bootstrap must apply platform announcements schema",
   );
+  assert.ok(
+    calls.some((c) => c.op === "query" && /CREATE TABLE IF NOT EXISTS mobile_push_devices/.test(c.sql)),
+    "bootstrap must apply mobile push devices schema",
+  );
   const inventoryIdx = calls.findIndex((c) => c.op === "one" && c.sql.includes("FROM contacts"));
   const indexIdx = calls.findIndex(
     (c) => c.op === "query" && /CREATE UNIQUE INDEX/i.test(c.sql) && c.sql.includes("uq_contact_relations_active"),

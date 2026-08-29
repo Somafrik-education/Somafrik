@@ -186,7 +186,8 @@ function main() {
   assert.match(plugin, /allowCleartext \? NETWORK_SECURITY_DEV : NETWORK_SECURITY_RELEASE/);
   assert.match(plugin, /usesCleartextTraffic/);
   assert.match(plugin, /RECORD_AUDIO/);
-  assert.match(plugin, /POST_NOTIFICATIONS/);
+  assert.doesNotMatch(plugin, /POST_NOTIFICATIONS/);
+  assert.doesNotMatch(plugin, /android\.permission\.VIBRATE/);
   const gitignoreMobile = read(path.join(MOBILE, ".gitignore"));
   assert.match(gitignoreMobile, /^android\/$/m);
   const trackedAndroid = spawnSync("git", ["ls-files", "Mobile/android"], {
