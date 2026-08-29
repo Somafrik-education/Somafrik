@@ -1,7 +1,14 @@
 "use strict";
 
 const assert = require("node:assert/strict");
-const { upsertFromSession, revokeCurrentFromSession, sendSelfTest, TEST_CONFIRM } = require("./mobilePushDevicesService");
+const {
+  upsertFromSession,
+  revokeCurrentFromSession,
+  sendSelfTest,
+  TEST_CONFIRM,
+  resolveServerPushReleaseProfile,
+  assertPushSelfTestAllowed,
+} = require("./mobilePushDevicesService");
 
 function throwsStatus(fn, status) {
   assert.throws(fn, (error) => error.statusCode === status);
@@ -9,6 +16,10 @@ function throwsStatus(fn, status) {
 
 async function throwsStatusAsync(fn, status) {
   await assert.rejects(fn, (error) => error.statusCode === status);
+}
+
+function previewEnv(extra = {}) {
+  return { NODE_ENV: "test", SOMAFRIK_PUSH_RELEASE_PROFILE: "preview", ...extra };
 }
 
 async function main() {
@@ -52,31 +63,50 @@ async function main() {
   const principal = { sub: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1", schoolCode: "SCH-A" };
   const other = { sub: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb1", schoolCode: "SCH-A" };
   const token = "ExponentPushToken[somafrik-android-n1]";
+  const env = previewEnv();
+
+  assert.equal(resolveServerPushReleaseProfile(previewEnv()), "preview");
+  assert.equal(resolveServerPushReleaseProfile({ NODE_ENV: "test" }), "preview");
+  assert.equal(resolveServerPushReleaseProfile({ NODE_ENV: "development" }), "development");
+  throwsStatus(() => resolveServerPushReleaseProfile({ NODE_ENV: "production" }), 500);
+  throwsStatus(() => resolveServerPushReleaseProfile({ NODE_ENV: "production", SOMAFRIK_PUSH_RELEASE_PROFILE: "staging" }), 500);
+  throwsStatus(() => assertPushSelfTestAllowed(previewEnv({ SOMAFRIK_PUSH_RELEASE_PROFILE: "production" })), 403);
+  throwsStatus(() => assertPushSelfTestAllowed(previewEnv({ SOMAFRIK_PUSH_RELEASE_PROFILE: "preproduction" })), 403);
+  assert.equal(assertPushSelfTestAllowed(previewEnv()), "preview");
 
   await throwsStatusAsync(
-    () => upsertFromSession(store, principal, { expoPushToken: token, platform: "android", releaseProfile: "preview", userId: "x" }),
+    () => upsertFromSession(store, principal, { expoPushToken: token, platform: "android", userId: "x" }, env),
     400,
   );
   await throwsStatusAsync(
-    () => upsertFromSession(store, principal, { expoPushToken: token, platform: "ios", releaseProfile: "preview" }),
+    () => upsertFromSession(store, principal, { expoPushToken: token, platform: "ios" }, env),
+    400,
+  );
+  await throwsStatusAsync(
+    () =>
+      upsertFromSession(
+        store,
+        principal,
+        { expoPushToken: token, platform: "android", releaseProfile: "production" },
+        env,
+      ),
     400,
   );
 
-  const upserted = await upsertFromSession(store, principal, {
-    expoPushToken: token,
-    platform: "android",
-    releaseProfile: "preview",
-  });
+  const upserted = await upsertFromSession(
+    store,
+    principal,
+    { expoPushToken: token, platform: "android", releaseProfile: "preview" },
+    env,
+  );
   assert.equal(upserted.platform, "android");
+  assert.equal(upserted.releaseProfile, "preview");
   assert.equal(devices[0].user_id, principal.sub);
   assert.equal(devices[0].school_id, "11111111-1111-4111-8111-111111111111");
 
-  await upsertFromSession(store, principal, {
-    expoPushToken: token,
-    platform: "android",
-    releaseProfile: "preview",
-  });
+  await upsertFromSession(store, principal, { expoPushToken: token, platform: "android" }, env);
   assert.equal(devices.length, 1, "upsert idempotent");
+  assert.equal(devices[0].release_profile, "preview", "profil serveur, pas client");
 
   await throwsStatusAsync(
     () => revokeCurrentFromSession(store, other, { expoPushToken: token }),
@@ -86,13 +116,11 @@ async function main() {
   const revoked = await revokeCurrentFromSession(store, principal, { expoPushToken: token });
   assert.equal(revoked.revoked, true);
 
-  await upsertFromSession(store, principal, {
-    expoPushToken: token,
-    platform: "android",
-    releaseProfile: "preview",
-  });
+  await upsertFromSession(store, principal, { expoPushToken: token, platform: "android" }, env);
+  let expoCalled = 0;
   const pushClient = {
     async sendToTokens(tokens, message) {
+      expoCalled += 1;
       assert.deepEqual(tokens, [token]);
       assert.equal(message.title, "Test Somafrik");
       assert.match(message.body, /fonctionnent correctement/);
@@ -100,16 +128,42 @@ async function main() {
       return { sent: 1, ticketCount: 1, revoked: [] };
     },
   };
-  const sent = await sendSelfTest(
-    store,
-    principal,
-    { confirm: TEST_CONFIRM, releaseProfile: "preview" },
-    pushClient,
-  );
+  const sent = await sendSelfTest(store, principal, { confirm: TEST_CONFIRM }, pushClient, env);
   assert.equal(sent.sent, 1);
+  assert.equal(expoCalled, 1);
 
   await throwsStatusAsync(
-    () => sendSelfTest(store, principal, { confirm: "nope", releaseProfile: "preview" }, pushClient),
+    () => sendSelfTest(store, principal, { confirm: TEST_CONFIRM, releaseProfile: "production" }, pushClient, env),
+    400,
+  );
+  assert.equal(expoCalled, 1, "falsification production : aucun envoi Expo");
+
+  await throwsStatusAsync(
+    () =>
+      sendSelfTest(
+        store,
+        principal,
+        { confirm: TEST_CONFIRM },
+        pushClient,
+        previewEnv({ SOMAFRIK_PUSH_RELEASE_PROFILE: "production" }),
+      ),
+    403,
+  );
+  await throwsStatusAsync(
+    () =>
+      sendSelfTest(
+        store,
+        principal,
+        { confirm: TEST_CONFIRM },
+        pushClient,
+        previewEnv({ SOMAFRIK_PUSH_RELEASE_PROFILE: "preproduction" }),
+      ),
+    403,
+  );
+  assert.equal(expoCalled, 1, "prod/preprod : aucun appel Expo");
+
+  await throwsStatusAsync(
+    () => sendSelfTest(store, principal, { confirm: "nope" }, pushClient, env),
     400,
   );
 

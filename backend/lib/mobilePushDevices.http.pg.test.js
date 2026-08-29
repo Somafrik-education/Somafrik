@@ -41,8 +41,8 @@ async function ensureIsolatedDatabase(databaseUrl, databaseName) {
   return withDatabaseName(databaseUrl, databaseName);
 }
 
-async function request(pathname, { method = "GET", token, body } = {}) {
-  const response = await fetch(`http://127.0.0.1:${HTTP_PORT}/api${pathname}`, {
+async function request(pathname, { method = "GET", token, body, port = HTTP_PORT } = {}) {
+  const response = await fetch(`http://127.0.0.1:${port}/api${pathname}`, {
     method,
     headers: {
       "Content-Type": "application/json",
@@ -60,13 +60,13 @@ async function request(pathname, { method = "GET", token, body } = {}) {
   return { status: response.status, data };
 }
 
-async function waitForHealth(child, stderrRef) {
+async function waitForHealth(child, stderrRef, port = HTTP_PORT) {
   for (let attempt = 0; attempt < 80; attempt += 1) {
     if (child.exitCode != null) {
       throw new Error(`Backend exited early: ${child.exitCode}\n${stderrRef.value}`);
     }
     try {
-      const response = await fetch(`http://127.0.0.1:${HTTP_PORT}/api/health`);
+      const response = await fetch(`http://127.0.0.1:${port}/api/health`);
       if (response.ok) return;
     } catch {
       /* retry */
@@ -195,6 +195,8 @@ async function main() {
         SOMAFRIK_DB_REQUIRED: "true",
         SOMAFRIK_SKIP_DEMO_SEED: "true",
         SOMAFRIK_API_ONLY: "true",
+        SOMAFRIK_PUSH_RELEASE_PROFILE: "preview",
+        SOMAFRIK_PUSH_SELFTEST_RATE_MAX: "5",
         EXPO_PUSH_SEND_URL: `http://127.0.0.1:${EXPO_MOCK_PORT}/send`,
         EXPO_PUSH_RECEIPTS_URL: `http://127.0.0.1:${EXPO_MOCK_PORT}/getReceipts`,
       },
@@ -252,6 +254,13 @@ async function main() {
     });
     assert.equal(ios.status, 400, "iOS hors N1");
 
+    const forged = await request("/mobile/push-devices", {
+      method: "POST",
+      token: tokenA,
+      body: { expoPushToken: TOKEN_A, platform: "android", releaseProfile: "production" },
+    });
+    assert.equal(forged.status, 400, "releaseProfile client ne fait pas autorité");
+
     const created = await request("/mobile/push-devices", {
       method: "POST",
       token: tokenA,
@@ -302,7 +311,7 @@ async function main() {
       token: tokenA,
       body: { confirm: TEST_CONFIRM, releaseProfile: "production" },
     });
-    assert.equal(isolation.status, 404, "isolation release_profile");
+    assert.equal(isolation.status, 400, "releaseProfile client rejeté sur le self-test");
 
     const activeA = await pool.query(
       `SELECT expo_push_token, user_id, release_profile, revoked_at FROM mobile_push_devices WHERE user_id = $1 ORDER BY created_at`,
@@ -328,6 +337,11 @@ async function main() {
     assert.ok(!JSON.stringify(mock.state.sends[0]).includes("montant"));
     assert.ok(!JSON.stringify(mock.state.sends[0]).includes("note"));
     assert.ok(!JSON.stringify(mock.state.sends[0]).includes("jwt"));
+    assert.equal(mock.state.receipts.length, 0, "aucun getReceipts immédiat");
+    const pendingReceipts = await pool.query(
+      `SELECT receipt_id, status FROM mobile_push_receipts WHERE status = 'pending'`,
+    );
+    assert.ok(pendingReceipts.rowCount >= 1, "ticket OK persiste receipt ID");
 
     const deadToken = "ExponentPushToken[dead-device]";
     await request("/mobile/push-devices", {
@@ -359,6 +373,71 @@ async function main() {
       body: { confirm: TEST_CONFIRM, releaseProfile: "preview", expoPushToken: TOKEN_DUP },
     });
     assert.equal(rawTarget.status, 400, "pas de ciblage par raw token client");
+
+    let saw429 = false;
+    for (let i = 0; i < 12; i += 1) {
+      const hit = await request("/mobile/push-devices/test", {
+        method: "POST",
+        token: tokenA,
+        body: { confirm: TEST_CONFIRM },
+      });
+      if (hit.status === 429) {
+        saw429 = true;
+        const sendsAtLimit = mock.state.sends.length;
+        const again = await request("/mobile/push-devices/test", {
+          method: "POST",
+          token: tokenA,
+          body: { confirm: TEST_CONFIRM },
+        });
+        assert.equal(again.status, 429);
+        assert.equal(mock.state.sends.length, sendsAtLimit, "rate limit : aucun appel Expo");
+        break;
+      }
+    }
+    assert.equal(saw429, true, "rate limit bloque l'abus");
+
+    async function assertSelfTestForbidden(profile) {
+      const forbiddenPort = HTTP_PORT + (profile === "production" ? 2 : 3);
+      const forbiddenChild = spawn(process.execPath, ["backend/server.js"], {
+        cwd: ROOT,
+        env: {
+          ...process.env,
+          NODE_ENV: "test",
+          PORT: String(forbiddenPort),
+          DATABASE_URL: isolatedUrl,
+          JWT_SECRET,
+          SOMAFRIK_DB_REQUIRED: "true",
+          SOMAFRIK_SKIP_DEMO_SEED: "true",
+          SOMAFRIK_API_ONLY: "true",
+          SOMAFRIK_PUSH_RELEASE_PROFILE: profile,
+          EXPO_PUSH_SEND_URL: `http://127.0.0.1:${EXPO_MOCK_PORT}/send`,
+          EXPO_PUSH_RECEIPTS_URL: `http://127.0.0.1:${EXPO_MOCK_PORT}/getReceipts`,
+        },
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+      const forbiddenErr = { value: "" };
+      forbiddenChild.stderr.on("data", (chunk) => {
+        forbiddenErr.value += String(chunk);
+      });
+      forbiddenChild.stdout.on("data", () => {});
+      try {
+        await waitForHealth(forbiddenChild, forbiddenErr, forbiddenPort);
+        const expoBefore = mock.state.sends.length;
+        const blocked = await request("/mobile/push-devices/test", {
+          method: "POST",
+          token: tokenA,
+          body: { confirm: TEST_CONFIRM },
+          port: forbiddenPort,
+        });
+        assert.equal(blocked.status, 403, `${profile} interdit le self-test`);
+        assert.equal(mock.state.sends.length, expoBefore, `${profile} : aucun appel Expo`);
+      } finally {
+        await stopChild(forbiddenChild);
+      }
+    }
+
+    await assertSelfTestForbidden("production");
+    await assertSelfTestForbidden("preproduction");
 
     console.log("mobilePushDevices.http.pg.test.js GO — PUSH-N1");
   } catch (error) {

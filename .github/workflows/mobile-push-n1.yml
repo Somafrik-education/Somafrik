@@ -7,11 +7,14 @@ on:
       - "backend/db/clientsCanonicalBootstrap.js"
       - "backend/db/mobilePushDevicesSchema.js"
       - "backend/db/mobilePushDevicesStore.js"
-      - "backend/db/migrations/20260903_mobile_push_devices.sql"
+      - "backend/db/migrations/20260829_mobile_push_devices.sql"
       - "backend/lib/mobilePushDevicesService.js"
       - "backend/lib/mobilePushDevicesService.test.js"
       - "backend/lib/expoPushService.js"
       - "backend/lib/expoPushService.test.js"
+      - "backend/lib/expoPushReceiptsWorker.js"
+      - "backend/lib/expoPushReceiptsWorker.test.js"
+      - "backend/lib/rateLimit.push-selftest.test.js"
       - "backend/lib/mobilePushDevices.http.pg.test.js"
       - "backend/scripts/verify-mobile-push-n1.js"
       - "backend/server.js"
@@ -19,8 +22,8 @@ on:
       - "Mobile/plugins/withSomafrikAndroidSecurity.js"
       - "Mobile/src/services/pushNotifications.ts"
       - "Mobile/src/services/pushNotifications.test.ts"
-      - "Mobile/src/services/api.ts"
-      - "Mobile/src/services/safeLogger.ts"
+      - "Mobile/src/lib/pushNotificationTap.ts"
+      - "Mobile/src/lib/pushNotificationTap.test.ts"
       - "Mobile/src/components/PushNotificationsRuntime.tsx"
       - "package.json"
       - ".github/workflows/mobile-push-n1.yml"
@@ -51,6 +54,7 @@ jobs:
       DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
       NODE_ENV: test
       JWT_SECRET: ci-test-secret-with-enough-length-for-production-checks
+      SOMAFRIK_PUSH_RELEASE_PROFILE: preview
     steps:
       - uses: actions/checkout@v4
         with:

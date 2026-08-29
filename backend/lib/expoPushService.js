@@ -45,6 +45,7 @@ function createExpoPushService({
       const error = new Error(`Expo Push HTTP ${response.status}`);
       error.statusCode = response.status;
       error.details = data;
+      error.retryable = isRetryableStatus(response.status);
       throw error;
     }
     return data;
@@ -77,10 +78,18 @@ function createExpoPushService({
     return [...new Set(lost.filter(Boolean))];
   }
 
+  async function fetchReceipts(ids) {
+    const unique = [...new Set((ids || []).map((id) => String(id || "").trim()).filter(Boolean))];
+    if (!unique.length) return {};
+    const data = await requestJson(receiptsUrl, { ids: unique });
+    const receiptMap = data?.data && typeof data.data === "object" && !Array.isArray(data.data) ? data.data : {};
+    return receiptMap;
+  }
+
   async function sendToTokens(tokens, message) {
     const unique = [...new Set((tokens || []).map((token) => String(token || "").trim()).filter(Boolean))];
     if (!unique.length) {
-      return { sent: 0, ticketCount: 0, revoked: [] };
+      return { sent: 0, ticketCount: 0, revoked: [], pendingReceipts: [] };
     }
     const payload = unique.map((to) => ({
       to,
@@ -94,26 +103,28 @@ function createExpoPushService({
     const data = await requestJson(sendUrl, payload);
     const tickets = Array.isArray(data?.data) ? data.data : Array.isArray(data) ? data : [];
     const unregistered = collectUnregistered(tickets, unique);
-    const receiptIds = tickets.map((ticket) => ticket?.id).filter(Boolean);
-    if (receiptIds.length) {
-      try {
-        const receipts = await requestJson(receiptsUrl, { ids: receiptIds });
-        const receiptMap = receipts?.data && typeof receipts.data === "object" ? receipts.data : {};
-        for (const [index, ticket] of tickets.entries()) {
-          const receipt = ticket?.id ? receiptMap[ticket.id] : null;
-          if (receipt?.status === "error" && receipt?.details?.error === "DeviceNotRegistered") {
-            unregistered.push(unique[index]);
-          }
-        }
-      } catch {
-        // Les receipts sont best-effort : un échec temporaire ne boucle pas.
+    const pendingReceipts = [];
+    tickets.forEach((ticket, index) => {
+      const receiptId = String(ticket?.id ?? "").trim();
+      if (ticket?.status === "ok" && receiptId) {
+        pendingReceipts.push({ receiptId, expoPushToken: unique[index] });
       }
+    });
+    // Les receipts Expo ne sont PAS consultés ici : ticket ≠ livraison.
+    if (pendingReceipts.length && typeof store?.enqueuePushReceipts === "function") {
+      await store.enqueuePushReceipts(pendingReceipts, { now: now() });
     }
     const revoked = await revokeUnregistered([...new Set(unregistered)]);
-    return { sent: unique.length, ticketCount: tickets.length, revoked, at: now() };
+    return {
+      sent: unique.length,
+      ticketCount: tickets.length,
+      revoked,
+      pendingReceipts,
+      at: now(),
+    };
   }
 
-  return { sendToTokens };
+  return { sendToTokens, fetchReceipts };
 }
 
 module.exports = {

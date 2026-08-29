@@ -20,22 +20,28 @@ function run(cmd, args, label) {
 
 function sourceGuards() {
   const schema = read("backend/db/mobilePushDevicesSchema.js");
-  const migration = read("backend/db/migrations/20260903_mobile_push_devices.sql");
+  const migration = read("backend/db/migrations/20260829_mobile_push_devices.sql");
   const service = read("backend/lib/mobilePushDevicesService.js");
   const expo = read("backend/lib/expoPushService.js");
+  const receiptsWorker = read("backend/lib/expoPushReceiptsWorker.js");
   const store = read("backend/db/mobilePushDevicesStore.js");
   const bootstrap = read("backend/db/clientsCanonicalBootstrap.js");
   const server = read("backend/server.js");
   const appConfig = read("Mobile/app.config.js");
   const plugin = read("Mobile/plugins/withSomafrikAndroidSecurity.js");
   const mobile = read("Mobile/src/services/pushNotifications.ts");
+  const runtime = read("Mobile/src/components/PushNotificationsRuntime.tsx");
+  const tap = read("Mobile/src/lib/pushNotificationTap.ts");
   const api = read("Mobile/src/services/api.ts");
   const gitignore = `${read(".gitignore")}\n${read("Mobile/.gitignore")}`;
   const httpTest = read("backend/lib/mobilePushDevices.http.pg.test.js");
 
+  assert.equal(fs.existsSync(path.join(ROOT, "backend/db/migrations/20260903_mobile_push_devices.sql")), false);
   assert.match(schema, /CREATE TABLE IF NOT EXISTS mobile_push_devices/);
+  assert.match(schema, /CREATE TABLE IF NOT EXISTS mobile_push_receipts/);
   assert.match(schema, /UNIQUE \(expo_push_token\)/);
   assert.match(migration, /mobile_push_devices/);
+  assert.match(migration, /mobile_push_receipts/);
   assert.match(bootstrap, /applyMobilePushDevicesSchema/);
   const bootstrapFn = bootstrap.indexOf("async function ensureClientsCanonicalBootstrap");
   const platformCall = bootstrap.indexOf("applyPlatformAnnouncementsSchema", bootstrapFn);
@@ -45,18 +51,35 @@ function sourceGuards() {
 
   assert.match(server, /app\.post\("\/api\/mobile\/push-devices"/);
   assert.match(server, /app\.delete\("\/api\/mobile\/push-devices\/current"/);
-  assert.match(server, /app\.post\("\/api\/mobile\/push-devices\/test"/);
+  assert.match(server, /app\.post\(\s*"\/api\/mobile\/push-devices\/test"/);
+  assert.match(server, /requirePushSelfTestEnvironment/);
+  assert.match(server, /pushSelfTestRateLimiter/);
+  assert.match(server, /startExpoPushReceiptsWorker/);
   assert.doesNotMatch(server, /req\.body\.userId/);
   assert.match(service, /Identité user\/school interdite depuis le client/);
   assert.match(service, /Ciblage par jeton client interdit/);
   assert.match(service, /PUSH-N1 : Android uniquement/);
+  assert.match(service, /SOMAFRIK_PUSH_RELEASE_PROFILE/);
+  assert.match(service, /resolveServerPushReleaseProfile/);
+  assert.match(service, /Profil de release client rejeté/);
+  assert.match(service, /Auto-test push interdit dans cet environnement/);
   assert.match(service, /Test Somafrik/);
   assert.match(service, /Les notifications push Somafrik fonctionnent correctement/);
+  assert.doesNotMatch(service, /parseReleaseProfile\(body\.releaseProfile\)/);
   assert.match(store, /ON CONFLICT \(expo_push_token\) DO UPDATE/);
+  assert.match(store, /enqueuePushReceipts/);
   assert.match(expo, /DeviceNotRegistered/);
-  assert.match(expo, /MAX_ATTEMPTS = 3/);
+  assert.match(expo, /enqueuePushReceipts/);
+  assert.match(expo, /ticket ≠ livraison/);
+  assert.match(receiptsWorker, /next_check_at|nextCheckAt/);
+  assert.match(receiptsWorker, /DeviceNotRegistered/);
+  assert.match(receiptsWorker, /receipt_expired/);
   assert.match(httpTest, /authentification obligatoire/);
   assert.match(httpTest, /DeviceNotRegistered/);
+  assert.match(httpTest, /releaseProfile client ne fait pas autorité/);
+  assert.match(httpTest, /aucun getReceipts immédiat/);
+  assert.match(httpTest, /interdit le self-test/);
+  assert.match(httpTest, /rate limit/);
 
   assert.match(appConfig, /expo-notifications/);
   assert.match(appConfig, /somafrik-default/);
@@ -68,6 +91,9 @@ function sourceGuards() {
 
   assert.match(mobile, /getExpoPushTokenAsync/);
   assert.match(mobile, /ProjectId EAS absent/);
+  assert.match(runtime, /getLastNotificationResponse/);
+  assert.match(tap, /consumeInitialPushResponse/);
+  assert.match(tap, /resolvePushDestination/);
   assert.match(api, /revokeCurrentPushDevice/);
   assert.match(gitignore, /firebase-adminsdk/);
   assert.doesNotMatch(mobile, /console\.log\([^)]*expoPushToken/);
@@ -88,7 +114,10 @@ function main() {
   sourceGuards();
   run(process.execPath, ["backend/lib/mobilePushDevicesService.test.js"], "push devices unit");
   run(process.execPath, ["backend/lib/expoPushService.test.js"], "expo push unit");
+  run(process.execPath, ["backend/lib/expoPushReceiptsWorker.test.js"], "expo receipts différés");
+  run(process.execPath, ["backend/lib/rateLimit.push-selftest.test.js"], "rate limit self-test");
   run("npx", ["--yes", "tsx", "Mobile/src/services/pushNotifications.test.ts"], "mobile push unit");
+  run("npx", ["--yes", "tsx", "Mobile/src/lib/pushNotificationTap.test.ts"], "mobile cold-start tap");
   run(process.execPath, ["backend/db/clientsCanonicalBootstrap.test.js"], "clientsCanonicalBootstrap");
   assert.ok(String(process.env.DATABASE_URL ?? "").trim(), "DATABASE_URL requis pour PUSH-N1");
   run(process.execPath, ["backend/lib/mobilePushDevices.http.pg.test.js"], "parcours HTTP PostgreSQL PUSH-N1");

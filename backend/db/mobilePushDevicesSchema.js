@@ -3,6 +3,7 @@
 /**
  * PUSH-N1 — Jetons Expo Push (Android) par utilisateur authentifié.
  * Isolation preview / preproduction / production. Aucun userId client.
+ * Receipts Expo persistés pour une vérification différée (~15 min).
  */
 
 const MOBILE_PUSH_DEVICES_SCHEMA_SQL = `
@@ -27,6 +28,28 @@ CREATE TABLE IF NOT EXISTS mobile_push_devices (
 CREATE INDEX IF NOT EXISTS idx_mobile_push_devices_user_active
   ON mobile_push_devices (user_id, release_profile)
   WHERE revoked_at IS NULL;
+
+CREATE TABLE IF NOT EXISTS mobile_push_receipts (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  receipt_id TEXT NOT NULL,
+  expo_push_token TEXT NOT NULL,
+  device_id UUID REFERENCES mobile_push_devices(id),
+  status TEXT NOT NULL DEFAULT 'pending',
+  attempts INTEGER NOT NULL DEFAULT 0,
+  next_check_at TIMESTAMPTZ NOT NULL,
+  expires_at TIMESTAMPTZ NOT NULL,
+  last_error TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  checked_at TIMESTAMPTZ,
+  CONSTRAINT mobile_push_receipts_status_check
+    CHECK (status IN ('pending', 'ok', 'error', 'expired')),
+  CONSTRAINT mobile_push_receipts_id_unique UNIQUE (receipt_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_mobile_push_receipts_due
+  ON mobile_push_receipts (next_check_at)
+  WHERE status = 'pending';
 `;
 
 module.exports = {

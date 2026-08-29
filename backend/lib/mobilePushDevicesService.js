@@ -5,6 +5,7 @@ const { uuidOrNull } = require("./principalIdentity");
 
 const N1_PLATFORM = "android";
 const RELEASE_PROFILES = new Set(["development", "preview", "preproduction", "production"]);
+const SELF_TEST_ALLOWED_PROFILES = new Set(["development", "preview"]);
 const EXPO_PUSH_TOKEN_RE = /^(Expo(nent)?PushToken)\[.+]$/;
 const TEST_CONFIRM = "TEST_SOMAFRIK_PUSH";
 const TEST_TITLE = "Test Somafrik";
@@ -37,6 +38,43 @@ function parseReleaseProfile(value) {
   return profile;
 }
 
+/**
+ * Autorité exclusive : SOMAFRIK_PUSH_RELEASE_PROFILE.
+ * Un body.releaseProfile client n'est jamais lu ici.
+ */
+function resolveServerPushReleaseProfile(env = process.env) {
+  const raw = asTrimmed(env.SOMAFRIK_PUSH_RELEASE_PROFILE).toLowerCase();
+  const nodeEnv = asTrimmed(env.NODE_ENV).toLowerCase();
+  if (RELEASE_PROFILES.has(raw)) return raw;
+  if (raw) {
+    throw new BusinessError(500, "SOMAFRIK_PUSH_RELEASE_PROFILE invalide.");
+  }
+  if (nodeEnv === "test") return "preview";
+  if (nodeEnv === "development") return "development";
+  throw new BusinessError(500, "SOMAFRIK_PUSH_RELEASE_PROFILE obligatoire hors développement/test.");
+}
+
+function assertPushReleaseProfileConfigured(env = process.env) {
+  resolveServerPushReleaseProfile(env);
+}
+
+function serverReleaseProfileFromBody(body = {}, env = process.env) {
+  const serverProfile = resolveServerPushReleaseProfile(env);
+  const client = asTrimmed(body.releaseProfile).toLowerCase();
+  if (client && client !== serverProfile) {
+    throw new BusinessError(400, "Profil de release client rejeté.");
+  }
+  return serverProfile;
+}
+
+function assertPushSelfTestAllowed(env = process.env) {
+  const profile = resolveServerPushReleaseProfile(env);
+  if (!SELF_TEST_ALLOWED_PROFILES.has(profile)) {
+    throw new BusinessError(403, "Auto-test push interdit dans cet environnement.");
+  }
+  return profile;
+}
+
 function parsePlatform(value) {
   const platform = asTrimmed(value).toLowerCase();
   if (platform !== N1_PLATFORM) {
@@ -64,12 +102,12 @@ function publicDevice(row) {
   };
 }
 
-async function upsertFromSession(store, principal, body = {}) {
+async function upsertFromSession(store, principal, body = {}, env = process.env) {
   rejectClientIdentity(body);
   const userId = sessionUserId(principal);
   const expoPushToken = parseExpoPushToken(body.expoPushToken ?? body.token);
   const platform = parsePlatform(body.platform);
-  const releaseProfile = parseReleaseProfile(body.releaseProfile);
+  const releaseProfile = serverReleaseProfileFromBody(body, env);
   const schoolId = await store.resolveSchoolId(principal.schoolCode);
   const row = await store.upsertDevice({
     userId,
@@ -93,7 +131,7 @@ async function revokeCurrentFromSession(store, principal, body = {}) {
   return { revoked: Boolean(row?.id), id: row?.id ?? null };
 }
 
-async function sendSelfTest(store, principal, body, pushClient) {
+async function sendSelfTest(store, principal, body, pushClient, env = process.env) {
   rejectClientIdentity(body);
   if (body?.expoPushToken != null || body?.token != null || body?.to != null) {
     throw new BusinessError(400, "Ciblage par jeton client interdit.");
@@ -101,8 +139,9 @@ async function sendSelfTest(store, principal, body, pushClient) {
   if (asTrimmed(body?.confirm) !== TEST_CONFIRM) {
     throw new BusinessError(400, "Confirmation de test push requise.");
   }
+  const releaseProfile = assertPushSelfTestAllowed(env);
+  serverReleaseProfileFromBody(body, env);
   const userId = sessionUserId(principal);
-  const releaseProfile = parseReleaseProfile(body.releaseProfile);
   const devices = await store.listActiveForUser({ userId, releaseProfile });
   if (!devices.length) {
     throw new BusinessError(404, "Aucun appareil push actif pour cette session.");
@@ -128,9 +167,15 @@ module.exports = {
   TEST_TITLE,
   TEST_BODY,
   TEST_DESTINATION,
+  RELEASE_PROFILES,
+  SELF_TEST_ALLOWED_PROFILES,
   upsertFromSession,
   revokeCurrentFromSession,
   sendSelfTest,
   parseExpoPushToken,
   parseReleaseProfile,
+  resolveServerPushReleaseProfile,
+  assertPushReleaseProfileConfigured,
+  assertPushSelfTestAllowed,
+  serverReleaseProfileFromBody,
 };

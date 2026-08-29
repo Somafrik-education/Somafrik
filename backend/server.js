@@ -81,6 +81,11 @@ const {
 const { assertProductionSecurityConfiguration } = require("./lib/demoSeedPolicy");
 const { createRateLimiter, loginRateLimitKey } = require("./lib/rateLimit");
 const {
+  assertPushSelfTestAllowed,
+  assertPushReleaseProfileConfigured,
+} = require("./lib/mobilePushDevicesService");
+const { startExpoPushReceiptsWorker } = require("./lib/expoPushReceiptsWorker");
+const {
   isTeacherNotesPrincipal,
   evaluateTeacherNotesTouchedKeys,
   prepareTeacherNotesWritePayload,
@@ -103,6 +108,20 @@ const loginRateLimiter = createRateLimiter({
   keyFn: loginRateLimitKey,
   message: "Trop de tentatives de connexion. Réessayez dans quelques minutes.",
 });
+const pushSelfTestRateLimiter = createRateLimiter({
+  windowMs: Number(process.env.SOMAFRIK_PUSH_SELFTEST_WINDOW_MS ?? 60_000),
+  max: Number(process.env.SOMAFRIK_PUSH_SELFTEST_RATE_MAX ?? 5),
+  keyFn: (req) => `push-selftest:${String(req.principal?.sub || req.ip || "unknown")}`,
+  message: "Trop de tests push. Réessayez dans une minute.",
+});
+function requirePushSelfTestEnvironment(_req, _res, next) {
+  try {
+    assertPushSelfTestAllowed();
+    next();
+  } catch (error) {
+    next(error instanceof BusinessError ? error : new BusinessError(403, error.message));
+  }
+}
 let repository = createPostgresRepository();
 const tokenService = new TokenService();
 const rbacService = new RbacService();
@@ -508,14 +527,20 @@ app.delete("/api/mobile/push-devices/current", requireAuth, asyncHandler(async (
   res.json(result);
 }));
 
-app.post("/api/mobile/push-devices/test", requireAuth, asyncHandler(async (req, res) => {
-  const result = await repository.sendMobilePushSelfTest(req.principal, req.body || {});
-  await auditService.record(req, "mobile_push_self_test", "push_device", req.principal.sub, {
-    sent: result.sent,
-    revoked: result.revoked,
-  });
-  res.json(result);
-}));
+app.post(
+  "/api/mobile/push-devices/test",
+  requireAuth,
+  requirePushSelfTestEnvironment,
+  pushSelfTestRateLimiter,
+  asyncHandler(async (req, res) => {
+    const result = await repository.sendMobilePushSelfTest(req.principal, req.body || {});
+    await auditService.record(req, "mobile_push_self_test", "push_device", req.principal.sub, {
+      sent: result.sent,
+      revoked: result.revoked,
+    });
+    res.json(result);
+  }),
+);
 
 app.post("/api/auth/change-password", requireAuth, asyncHandler(async (req, res) => {
   const newPassword = String(req.body?.newPassword ?? "").trim();
@@ -6392,6 +6417,7 @@ async function initRepository() {
   idempotencyService = new IdempotencyService(repository);
   app.locals.idempotencyService = idempotencyService;
   startCommunicationsNotificationsWorker(repository);
+  startExpoPushReceiptsWorker(repository);
 }
 
 function warnIfUnsafeConfiguration() {
@@ -6402,4 +6428,5 @@ function warnIfUnsafeConfiguration() {
   assertLoginLockoutProductionGuards();
   assertProductionCors();
   warnIfUnsafeDevelopmentSecrets();
+  assertPushReleaseProfileConfigured();
 }
