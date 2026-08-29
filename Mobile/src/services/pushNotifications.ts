@@ -31,6 +31,7 @@ type NotificationsLike = {
 export type PushRegisterDeps = {
   platform?: string;
   executionEnvironment?: string | null;
+  expoGoConfig?: unknown | null;
   notifications?: NotificationsLike;
   httpRequestImpl?: (path: string, init?: RequestInit) => Promise<unknown>;
   getProjectId?: () => string | null;
@@ -124,9 +125,20 @@ function readExecutionEnvironment(): string {
   }
 }
 
-function isNativePushCompatible(executionEnvironment?: string | null) {
+function readExpoGoConfig(): unknown | null {
+  try {
+    const Constants = require("expo-constants") as { expoGoConfig?: unknown };
+    return Constants.expoGoConfig ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function isNativePushCompatible(executionEnvironment?: string | null, expoGoConfig?: unknown | null) {
   const env = String(executionEnvironment ?? readExecutionEnvironment());
-  return env === "bare" || env === "standalone";
+  const resolvedExpoGoConfig = expoGoConfig === undefined ? readExpoGoConfig() : expoGoConfig;
+  if (resolvedExpoGoConfig != null) return false;
+  return env === "bare" || env === "standalone" || env === "storeClient";
 }
 
 export function getLastRegisteredPushTokenForTests() {
@@ -142,7 +154,7 @@ export async function registerAuthenticatedPushDevice(deps: PushRegisterDeps = {
 > {
   const platform = deps.platform ?? defaultPlatform();
   if (platform !== "android") return "unsupported";
-  if (!isNativePushCompatible(deps.executionEnvironment)) return "unsupported";
+  if (!isNativePushCompatible(deps.executionEnvironment, deps.expoGoConfig)) return "unsupported";
 
   const notifications = deps.notifications ?? nativeNotifications();
   const importance = notifications.AndroidImportance?.DEFAULT ?? 3;
