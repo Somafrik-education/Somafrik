@@ -127,9 +127,35 @@ async function main() {
     /ProjectId EAS absent/,
   );
 
+  resetPushRegistrationStateForTests();
+  posts.length = 0;
+  const nativeStoreClient = await registerAuthenticatedPushDevice({
+    platform: "android",
+    executionEnvironment: "storeClient",
+    expoGoConfig: null,
+    getProjectId: () => "47b217aa-3d96-4d50-a9f5-fc0ec8a3cef5",
+    getReleaseProfileImpl: () => "preview",
+    httpRequestImpl: httpRequestImpl as never,
+    notifications: {
+      async getPermissionsAsync() {
+        return granted();
+      },
+      async requestPermissionsAsync() {
+        return granted();
+      },
+      async getExpoPushTokenAsync() {
+        return { data: "ExponentPushToken[test-store-client-native]" };
+      },
+    },
+  });
+  assert.equal(nativeStoreClient, "registered");
+  assert.equal(posts.length, 1);
+  assert.equal(posts[0]?.path, "/mobile/push-devices");
+
   const expoGo = await registerAuthenticatedPushDevice({
     platform: "android",
     executionEnvironment: "storeClient",
+    expoGoConfig: { hostUri: "expo-go" },
     getProjectId: () => "47b217aa-3d96-4d50-a9f5-fc0ec8a3cef5",
     httpRequestImpl: httpRequestImpl as never,
   });
