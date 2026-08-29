@@ -30,6 +30,11 @@ const PROFILES: { id: LoginProfile; label: string }[] = [
   { id: "school", label: "Établissement" },
 ];
 
+const LOGIN_BACKGROUND_URL = new URL(
+  "../assets/somafrik-login-background.webp",
+  import.meta.url,
+).href;
+
 const loginSchema = z
   .object({
     profile: z.enum(["superadmin", "country", "school"]),
@@ -155,36 +160,37 @@ export function LoginPage() {
 
   return (
     <div className="relative min-h-screen overflow-x-hidden bg-slate-950">
-      <div
+      <img
+        src={LOGIN_BACKGROUND_URL}
+        alt=""
         aria-hidden="true"
-        className="fixed inset-0 bg-cover bg-center bg-no-repeat"
-        style={{ backgroundImage: "url('/somafrik-login-background.webp')" }}
+        className="fixed inset-0 h-full w-full object-cover object-center"
       />
-      <div aria-hidden="true" className="fixed inset-0 bg-slate-950/55" />
+      <div aria-hidden="true" className="fixed inset-0 bg-slate-950/35" />
       <div
         aria-hidden="true"
-        className="fixed inset-0 bg-gradient-to-b from-slate-950/10 via-slate-950/20 to-slate-950/50"
+        className="fixed inset-0 bg-gradient-to-b from-slate-950/5 via-slate-950/10 to-slate-950/35"
       />
 
-      <main className="relative z-10 flex min-h-screen items-center justify-center px-4 py-8 sm:px-6 lg:px-8">
+      <main className="relative z-10 flex min-h-screen items-center justify-center px-4 py-4 sm:px-6 sm:py-6">
         <section
           aria-labelledby="login-title"
-          className="w-full max-w-[560px] rounded-[28px] border border-white/60 bg-white/95 p-5 shadow-[0_32px_90px_-28px_rgba(15,23,42,0.65)] backdrop-blur-xl sm:p-8"
+          className="w-full max-w-[440px] rounded-3xl border border-white/60 bg-white/95 p-4 shadow-[0_24px_70px_-24px_rgba(15,23,42,0.62)] backdrop-blur-xl sm:p-6"
         >
           <div className="text-center">
-            <BrandLogo className="justify-center" size="lg" />
-            <p className="mt-4 text-xs font-black uppercase tracking-[0.2em] text-brand">
+            <BrandLogo className="justify-center" size="md" />
+            <p className="mt-3 text-[11px] font-black uppercase tracking-[0.18em] text-brand">
               Accès sécurisé
             </p>
-            <h1 id="login-title" className="mt-2 text-2xl font-black tracking-tight text-ink sm:text-3xl">
+            <h1 id="login-title" className="mt-1.5 text-xl font-black tracking-tight text-ink sm:text-2xl">
               Connexion plateforme
             </h1>
-            <p className="mx-auto mt-2 max-w-sm text-sm leading-relaxed text-muted sm:text-base">
+            <p className="mx-auto mt-1.5 max-w-sm text-sm leading-relaxed text-muted">
               Connectez-vous à votre espace Somafrik.
             </p>
           </div>
 
-          <div className="mt-7 grid grid-cols-3 overflow-hidden rounded-2xl border border-line bg-slate-50 p-1.5 shadow-inner">
+          <div className="mt-5 grid grid-cols-3 overflow-hidden rounded-xl border border-line bg-slate-50 p-1 shadow-inner">
             {PROFILES.map((option) => (
               <button
                 key={option.id}
@@ -193,7 +199,7 @@ export function LoginPage() {
                 data-testid={`login-profile-${option.id}`}
                 onClick={() => selectProfile(option.id)}
                 className={cn(
-                  "min-h-[72px] rounded-xl px-2 py-3 text-center text-xs font-bold leading-tight transition sm:px-3",
+                  "min-h-[52px] rounded-lg px-1.5 py-2 text-center text-[11px] font-bold leading-tight transition sm:px-2 sm:text-xs",
                   profile === option.id
                     ? "bg-brand text-white shadow-brand"
                     : "text-slate-600 hover:bg-white hover:text-brand",
@@ -205,7 +211,7 @@ export function LoginPage() {
           </div>
 
           <Form {...form}>
-            <form onSubmit={form.handleSubmit(onSubmit)} className="mt-6 space-y-4">
+            <form onSubmit={form.handleSubmit(onSubmit)} className="mt-5 space-y-3.5">
               {profile === "school" ? (
                 <FormField
                   control={form.control}
@@ -215,7 +221,7 @@ export function LoginPage() {
                       <FormLabel required>Code établissement</FormLabel>
                       <FormControl>
                         <Input
-                          className="h-11 bg-white"
+                          className="h-10 bg-white"
                           placeholder="ex. CD-IN-26-001"
                           data-testid="login-school-code"
                           {...field}
@@ -236,7 +242,7 @@ export function LoginPage() {
                     <FormLabel required>Identifiant</FormLabel>
                     <FormControl>
                       <Input
-                        className="h-11 bg-white"
+                        className="h-10 bg-white"
                         placeholder="Entrez votre identifiant"
                         autoComplete="username"
                         data-testid="login-identifier"
@@ -256,7 +262,7 @@ export function LoginPage() {
                     <FormLabel required>Mot de passe</FormLabel>
                     <FormControl>
                       <Input
-                        className="h-11 bg-white"
+                        className="h-10 bg-white"
                         type="password"
                         placeholder="Entrez votre mot de passe"
                         autoComplete="current-password"
@@ -280,7 +286,7 @@ export function LoginPage() {
 
               <Button
                 type="submit"
-                className="h-11 w-full rounded-xl bg-brand-gradient font-bold text-white shadow-brand hover:bg-brand-gradient hover:opacity-95"
+                className="h-10 w-full rounded-xl bg-brand-gradient font-bold text-white shadow-brand hover:bg-brand-gradient hover:opacity-95"
                 disabled={submitting}
                 data-testid="login-submit"
               >
@@ -290,24 +296,24 @@ export function LoginPage() {
           </Form>
 
           {showDemoAccounts ? (
-            <div className="mt-6 rounded-xl border border-dashed border-line bg-slate-50/90 p-4">
-              <p className="mb-3 text-xs font-bold uppercase tracking-wide text-muted">
+            <div className="mt-4 rounded-xl border border-dashed border-line bg-slate-50/90 p-3">
+              <p className="mb-2 text-[11px] font-bold uppercase tracking-wide text-muted">
                 Comptes de démonstration
               </p>
-              <div className="space-y-3">
+              <div className="space-y-2.5">
                 {DEMO_ACCOUNT_GROUPS.map((group) => (
                   <div key={group.title}>
-                    <p className="mb-1.5 text-[11px] font-bold uppercase tracking-wide text-brand">
+                    <p className="mb-1.5 text-[10px] font-bold uppercase tracking-wide text-brand">
                       {group.title}
                     </p>
-                    <div className="flex flex-wrap gap-2">
+                    <div className="flex flex-wrap gap-1.5">
                       {group.accounts.map((account) => (
                         <button
                           key={`${group.title}-${account.label}`}
                           type="button"
                           onClick={() => applyDemo(account)}
                           title={`${account.role} · ${account.identifier}`}
-                          className="rounded-lg border border-line bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:border-brand/40 hover:text-brand"
+                          className="rounded-lg border border-line bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-600 transition hover:border-brand/40 hover:text-brand"
                         >
                           {account.label}
                         </button>
@@ -316,14 +322,14 @@ export function LoginPage() {
                   </div>
                 ))}
               </div>
-              <p className="mt-3 text-[11px] text-muted">
+              <p className="mt-2.5 text-[10px] text-muted">
                 Mot de passe démo : <strong>1234</strong> · Code établissement :{" "}
                 <strong>{DEMO_SCHOOL_CODE}</strong>
               </p>
             </div>
           ) : null}
 
-          <div className="mt-6 border-t border-line pt-5 text-center">
+          <div className="mt-4 border-t border-line pt-4 text-center">
             <Link
               to="/"
               className="inline-flex items-center gap-2 text-sm font-bold text-brand transition hover:text-brand-700"
