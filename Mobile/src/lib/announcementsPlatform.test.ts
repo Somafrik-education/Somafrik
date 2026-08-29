@@ -30,5 +30,6 @@ assert.match(apiSrc, /createPlatformAnnouncement/);
 const hydrateSrc = fs.readFileSync(path.join(ROOT, "src/services/domainHydrationApi.ts"), "utf8");
 assert.match(hydrateSrc, /platform-announcements/);
 assert.match(hydrateSrc, /source === "platform"/);
+assert.doesNotMatch(hydrateSrc, /\.catch\(\s*\(\)\s*=>\s*\[\s*\]\s*\)/);
 
 console.log("OK Mobile announcementsPlatform.test.ts");

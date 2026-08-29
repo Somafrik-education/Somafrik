@@ -35,6 +35,7 @@ function sourceGuards() {
   const mobileScreen = read("Mobile/src/screens/AnnouncementsScreen.tsx");
   const mobileControls = read("Mobile/src/components/AnnouncementMutationControls.tsx");
   const mobileRead = read("Mobile/src/lib/announcementsRead.ts");
+  const hydrateSrc = read("Mobile/src/services/domainHydrationApi.ts");
   const httpTest = read("backend/lib/platformAnnouncements.http.pg.test.js");
   const c3Http = read("backend/lib/communicationsC3.http.pg.test.js");
 
@@ -126,6 +127,8 @@ function sourceGuards() {
   assert.doesNotMatch(mobileScreen, /AsyncStorage/);
   assert.doesNotMatch(mobileRead, /localStorage/);
   assert.doesNotMatch(mobileRead, /AsyncStorage/);
+  assert.match(hydrateSrc, /platform-announcements/);
+  assert.doesNotMatch(hydrateSrc, /\.catch\(\s*\(\)\s*=>\s*\[\s*\]\s*\)/);
 
   assert.match(httpTest, /PA-01/);
   assert.match(httpTest, /PA-02/);

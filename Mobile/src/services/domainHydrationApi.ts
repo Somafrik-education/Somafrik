@@ -46,10 +46,12 @@ export async function getCanonicalUsers(): Promise<CanonicalUserAccount[]> {
 
 export async function getCanonicalAnnouncements(schoolCode?: string): Promise<CanonicalAnnouncement[]> {
   const scope = schoolCode || getRequestSchoolScope();
-  const platformPayload = await httpRequest<unknown>("/backoffice/platform-announcements").catch(() => []);
-  const schoolPayload = hasCommunicationSchoolScope(scope)
-    ? await httpRequest<unknown>(withCommunicationSchoolScope("/backoffice/announcements", scope)).catch(() => [])
-    : [];
+  const [platformPayload, schoolPayload] = await Promise.all([
+    httpRequest<unknown>("/backoffice/platform-announcements"),
+    hasCommunicationSchoolScope(scope)
+      ? httpRequest<unknown>(withCommunicationSchoolScope("/backoffice/announcements", scope))
+      : Promise.resolve([]),
+  ]);
   const platform = unwrapList(platformPayload)
     .map(normalizeAnnouncement)
     .filter((row): row is CanonicalAnnouncement => Boolean(row))
