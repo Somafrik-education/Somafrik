@@ -8,6 +8,7 @@ import {
   GRADE_STATUSES,
   MISSING_EVALUATION_TEACHER,
   gradesForEvaluation,
+  isTeacherSessionRole,
   pedagogicalTeacherId,
   upsertStudentGrade,
 } from "../../lib/evaluations";
@@ -106,7 +107,7 @@ export function GradeEntryGrid({
       .filter(([, draft]) => draft.dirty)
       .map(([studentId]) => studentId);
     if (!dirtyStudentIds.length) return;
-    if (!pedagogicalTeacherId(evaluation)) {
+    if (!isTeacherSessionRole(user?.role) && !pedagogicalTeacherId(evaluation)) {
       onError(MISSING_EVALUATION_TEACHER);
       return;
     }

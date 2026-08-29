@@ -45,6 +45,19 @@ function sourceGuards() {
   assert.match(server, /GET \/api\/backoffice\/messages\/recipients/);
   assert.match(rbac, /GET \/api\/backoffice\/messages\/recipients/);
   assert.match(attachments, /SOMAFRIK_COMMUNICATION_STORAGE/);
+  for (const composeFile of ["docker-compose.preprod.yml", "docker-compose.production.yml"]) {
+    const compose = read(composeFile);
+    assert.match(
+      compose,
+      /communication_storage:\$\{SOMAFRIK_COMMUNICATION_STORAGE:-/,
+      `${composeFile}: volume must mount at SOMAFRIK_COMMUNICATION_STORAGE`,
+    );
+    assert.doesNotMatch(
+      compose,
+      /communication_storage:\/var\/lib\/somafrik\/communication-storage/,
+      `${composeFile}: volume must not hard-code the default path`,
+    );
+  }
   assert.match(attachments, /isProductionEnv/);
   assert.match(attachments, /communicationStorageReadiness/);
   assert.match(attachments, /isEphemeralStoragePath/);
