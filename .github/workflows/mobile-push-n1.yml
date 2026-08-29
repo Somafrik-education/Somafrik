@@ -8,6 +8,7 @@ on:
       - "backend/db/mobilePushDevicesSchema.js"
       - "backend/db/mobilePushDevicesStore.js"
       - "backend/db/migrations/20260829_mobile_push_devices.sql"
+      - "backend/db/mobilePushDevicesSchema.upgrade.pg.test.js"
       - "backend/lib/mobilePushDevicesService.js"
       - "backend/lib/mobilePushDevicesService.test.js"
       - "backend/lib/expoPushService.js"
