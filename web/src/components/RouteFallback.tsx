@@ -1,7 +1,5 @@
+import { LoadingState } from "@/design-system";
+
 export function RouteFallback() {
-  return (
-    <div className="flex min-h-[40vh] items-center justify-center text-sm text-muted-foreground">
-      Chargement…
-    </div>
-  );
+  return <LoadingState className="min-h-[40vh]" message="Chargement de l’espace…" />;
 }
