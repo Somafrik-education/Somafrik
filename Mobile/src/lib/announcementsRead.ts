@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import { getAnnouncementsUnreadCount } from "../services/api";
-import { hasCommunicationSchoolScope } from "./communicationSchoolScope";
 
 /**
  * Badge Annonces : compteur PostgreSQL.
@@ -13,7 +12,7 @@ export function useAnnouncementsUnreadCount(
 ): number {
   const [count, setCount] = useState(0);
   useEffect(() => {
-    if (!enabled || !hasCommunicationSchoolScope(schoolCode)) {
+    if (!enabled) {
       setCount(0);
       return;
     }

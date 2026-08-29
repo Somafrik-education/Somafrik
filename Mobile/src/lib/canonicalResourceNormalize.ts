@@ -29,6 +29,10 @@ export type CanonicalAnnouncement = Announcement & {
   author?: string;
   createdByName?: string;
   createdByUserId?: string;
+  senderDisplayName?: string;
+  originLabel?: string;
+  badge?: string;
+  source?: "school" | "platform";
   readAt?: string;
   attachments?: Array<{ id: string; fileName: string; mimeType?: string; fileSize?: number }>;
   schoolCode?: string;
@@ -155,21 +159,30 @@ export function normalizeAnnouncement(value: unknown): CanonicalAnnouncement | n
   const id = text(row.id);
   if (!id) return null;
   const tenant = readTenantScopeFields(row);
+  const source =
+    text(row.source) === "platform" || text(row.domain) === "platform" || text(row.type) === "platform-announcement"
+      ? "platform"
+      : "school";
+  const senderDisplayName = text(row.senderDisplayName ?? row.sender_display_name);
   return {
     id,
     title: text(row.title),
     message: text(row.message ?? row.content),
     date: text(row.publishedAt ?? row.published_at ?? row.createdAt ?? row.created_at ?? row.date),
     scope: text(row.scope) || undefined,
-    systemBroadcast: row.systemBroadcast === true || row.system_broadcast === true,
+    systemBroadcast: row.systemBroadcast === true || row.system_broadcast === true || text(row.announcementType) === "system",
     audience: text(row.audienceLabel ?? row.audience) || undefined,
     audienceLabel: text(row.audienceLabel) || undefined,
     status: text(row.status) || undefined,
     createdAt: text(row.createdAt ?? row.created_at) || undefined,
     publishedAt: text(row.publishedAt ?? row.published_at) || undefined,
-    author: text(row.createdByName ?? row.author ?? row.authorName ?? row.createdBy ?? row.created_by) || undefined,
+    author: senderDisplayName || text(row.createdByName ?? row.author ?? row.authorName ?? row.createdBy ?? row.created_by) || undefined,
     createdByName: text(row.createdByName) || undefined,
     createdByUserId: text(row.createdByUserId ?? row.created_by) || undefined,
+    senderDisplayName: senderDisplayName || undefined,
+    originLabel: text(row.originLabel) || undefined,
+    badge: text(row.badge) || undefined,
+    source,
     readAt: text(row.readAt ?? row.read_at) || undefined,
     attachments: Array.isArray(row.attachments)
       ? row.attachments.flatMap((item) => {

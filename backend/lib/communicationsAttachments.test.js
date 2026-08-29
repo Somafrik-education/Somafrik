@@ -9,6 +9,7 @@ const path = require("node:path");
     sanitizeFileName,
     validateUploadBuffer,
     persistAttachmentBytes,
+    persistPlatformAttachmentBytes,
     removeStoredAttachment,
     readAttachmentBytes,
     storageRoot,
@@ -85,6 +86,8 @@ async function main() {
   process.env.SOMAFRIK_COMMUNICATION_STORAGE = durable;
   assert.equal(communicationStorageReadiness().ready, true);
   const key = await persistAttachmentBytes("school-a", pdfBuffer());
+  const platformKey = await persistPlatformAttachmentBytes(pdfBuffer());
+  assert.match(platformKey, /^platform-announcements\/\d{4}\//);
   const firstRead = await readAttachmentBytes(key);
   assert.ok(firstRead.length > 0, "production + stockage configuré : read OK");
   const afterRestart = await readAttachmentBytes(key);

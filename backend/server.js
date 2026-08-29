@@ -2879,6 +2879,81 @@ app.post("/api/backoffice/announcements/:announcementId/archive", requireAuth, r
   res.json(archived);
 }));
 
+app.get("/api/backoffice/platform-announcements/unread-count", requireAuth, requirePermission("GET /api/backoffice/platform-announcements/unread-count"), asyncHandler(async (req, res) => {
+  const result = await repository.getPlatformAnnouncementsUnreadCount(req.principal);
+  res.json(result);
+}));
+
+app.get("/api/backoffice/platform-announcements", requireAuth, requirePermission("GET /api/backoffice/platform-announcements"), asyncHandler(async (req, res) => {
+  const result = await repository.listPlatformAnnouncements(req.principal, req.query);
+  res.json(result);
+}));
+
+app.post("/api/backoffice/platform-announcements", requireAuth, requirePermission("POST /api/backoffice/platform-announcements"), asyncHandler(async (req, res) => {
+  await withIdempotency({
+    req,
+    res,
+    routeKey: "POST /api/backoffice/platform-announcements",
+    principal: req.principal,
+    handler: async () => {
+      const created = await repository.createPlatformAnnouncement(
+        req.body ?? {},
+        req.principal,
+        clientsAuditMetaFromRequest(req),
+      );
+      return { statusCode: 201, body: created };
+    },
+  });
+}));
+
+app.post(
+  "/api/backoffice/platform-announcements/attachments",
+  requireAuth,
+  requirePermission("POST /api/backoffice/platform-announcements/attachments"),
+  express.raw({ type: () => true, limit: "11mb" }),
+  asyncHandler(async (req, res) => {
+    const buffer = Buffer.isBuffer(req.body) ? req.body : Buffer.from(req.body ?? []);
+    const fileName = req.get("x-filename") || req.get("x-file-name") || "fichier";
+    const mimeType = req.get("x-mime-type") || req.get("content-type") || "";
+    const created = await repository.uploadPlatformAnnouncementAttachment(req.principal, {
+      buffer,
+      fileName,
+      mimeType,
+    });
+    res.status(201).json(created);
+  }),
+);
+
+app.get("/api/backoffice/platform-announcements/attachments/:attachmentId", requireAuth, requirePermission("GET /api/backoffice/platform-announcements/attachments/:attachmentId"), asyncHandler(async (req, res) => {
+  const file = await repository.downloadPlatformAnnouncementAttachment(req.params.attachmentId, req.principal);
+  res.setHeader("Content-Type", file.mimeType || "application/octet-stream");
+  res.setHeader("Content-Disposition", `attachment; filename="${String(file.fileName).replace(/"/g, "")}"`);
+  res.send(file.bytes);
+}));
+
+app.get("/api/backoffice/platform-announcements/:announcementId", requireAuth, requirePermission("GET /api/backoffice/platform-announcements/:announcementId"), asyncHandler(async (req, res) => {
+  const row = await repository.getPlatformAnnouncement(req.params.announcementId, req.principal);
+  res.json(row);
+}));
+
+app.patch("/api/backoffice/platform-announcements/:announcementId/read", requireAuth, requirePermission("PATCH /api/backoffice/platform-announcements/:announcementId/read"), asyncHandler(async (req, res) => {
+  const updated = await repository.markPlatformAnnouncementRead(
+    req.params.announcementId,
+    req.principal,
+    clientsAuditMetaFromRequest(req),
+  );
+  res.json(updated);
+}));
+
+app.post("/api/backoffice/platform-announcements/:announcementId/archive", requireAuth, requirePermission("POST /api/backoffice/platform-announcements/:announcementId/archive"), asyncHandler(async (req, res) => {
+  const archived = await repository.archivePlatformAnnouncement(
+    req.params.announcementId,
+    req.principal,
+    clientsAuditMetaFromRequest(req),
+  );
+  res.json(archived);
+}));
+
 app.get("/api/backoffice/internal-notifications/unread-count", requireAuth, requirePermission("GET /api/backoffice/internal-notifications/unread-count"), asyncHandler(async (req, res) => {
   const result = await internalNotificationsService.unreadCount(repository.getClientsStore(), req.principal, req.query);
   res.json(result);

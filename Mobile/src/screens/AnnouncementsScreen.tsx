@@ -17,10 +17,10 @@ import QueryStateView from "../components/QueryStateView";
 import StatusBadge from "../components/StatusBadge";
 import { useAuth } from "../context/AuthContext";
 import { useAdminData } from "../context/AdminDataContext";
-import { canMutateEntity, canReadEntity } from "../domain/security/permissions";
+import { canMutateEntity, canReadEntity, isSuperAdminSessionRole } from "../domain/security/permissions";
 import { canArchiveAnnouncement } from "../lib/mobileCtaRbacAlignment";
 import { useFloatingTabBarLayout } from "../lib/screenLayout";
-import { downloadCommunicationAttachment } from "../services/api";
+import { downloadCommunicationAttachment, downloadPlatformAnnouncementAttachment } from "../services/api";
 import {
   archiveCanonicalAnnouncement,
   markCanonicalAnnouncementRead,
@@ -47,6 +47,7 @@ export default function AnnouncementsScreen() {
   const canRead = canReadEntity(session, "announcements");
   const canCreate = canMutateEntity(session, "announcements", "CREATE");
   const canArchive = canArchiveAnnouncement(session);
+  const isSuperadmin = isSuperAdminSessionRole(session?.role) || isSuperAdminSessionRole(session?.user?.role);
   const { announcementsSnapshot: snapshot, loadAnnouncements: load, resourceScopeKey, activeSchoolCode } = useAdminData();
   const [archivingId, setArchivingId] = useState("");
   const [selected, setSelected] = useState<CanonicalAnnouncement | null>(null);
@@ -60,7 +61,11 @@ export default function AnnouncementsScreen() {
   const openAnnouncement = async (announcement: CanonicalAnnouncement) => {
     setSelected(announcement);
     if (!announcement.readAt) {
-      const marked = await markCanonicalAnnouncementRead(announcement.id, activeSchoolCode).catch(() => null);
+      const marked = await markCanonicalAnnouncementRead(
+        announcement.id,
+        activeSchoolCode,
+        announcement.source,
+      ).catch(() => null);
       if (marked) {
         setSelected(marked);
         await load();
@@ -78,7 +83,7 @@ export default function AnnouncementsScreen() {
         onPress: async () => {
           setArchivingId(announcement.id);
           try {
-            await archiveCanonicalAnnouncement(announcement.id, activeSchoolCode);
+            await archiveCanonicalAnnouncement(announcement.id, activeSchoolCode, announcement.source);
             await load();
             setSelected(null);
           } catch (error) {
@@ -139,13 +144,20 @@ export default function AnnouncementsScreen() {
               <View style={styles.cardContent}>
                 <View style={styles.titleRow}>
                   <Text style={styles.cardTitle} numberOfLines={3}>{announcement.title}</Text>
+                  {announcement.badge ? <Text style={styles.unread}>{announcement.badge}</Text> : null}
                   {!announcement.readAt ? (
                     <Text style={styles.unread}>Non lu</Text>
                   ) : (
                     <Text style={styles.read}>Lu</Text>
                   )}
                 </View>
-                <Text style={styles.message} numberOfLines={4}>{announcement.message}</Text>
+                {announcement.originLabel || announcement.source === "platform" ? (
+                  <Text style={styles.date} numberOfLines={2}>
+                    {announcement.originLabel || (announcement.systemBroadcast ? "Annonce Somafrik" : "Annonce administrative Somafrik")}
+                  </Text>
+                ) : (
+                  <Text style={styles.date} numberOfLines={2}>Annonce établissement</Text>
+                )}
                 {announcement.author ? <Text style={styles.date} numberOfLines={2}>Expéditeur : {announcement.author}</Text> : null}
                 <Text style={styles.date} numberOfLines={2}>
                   {formatDisplayDate(announcement.publishedAt || announcement.createdAt || announcement.date)}
@@ -154,7 +166,7 @@ export default function AnnouncementsScreen() {
                 {announcement.status ? <StatusBadge status={announcement.status} /> : null}
               </View>
             </View>
-            {canArchive && (
+            {canArchive && (announcement.source !== "platform" || isSuperadmin) && (
               <View style={styles.actionRow}>
                 <TouchableOpacity
                   style={[styles.smallDangerAction, archivingId === announcement.id && styles.disabled]}
@@ -183,7 +195,11 @@ export default function AnnouncementsScreen() {
             <TouchableOpacity
               key={file.id}
               onPress={() => {
-                void downloadCommunicationAttachment(file.id, file.fileName, activeSchoolCode)
+                const download =
+                  selected?.source === "platform"
+                    ? downloadPlatformAnnouncementAttachment(file.id, file.fileName)
+                    : downloadCommunicationAttachment(file.id, file.fileName, activeSchoolCode);
+                void download
                   .then((uri) => Linking.openURL(uri))
                   .catch((error) => Alert.alert("Téléchargement impossible", error instanceof Error ? error.message : ""));
               }}

@@ -1032,6 +1032,230 @@ function createClientsPgStore(repo) {
           [announcementId, userId],
         );
       },
+      async listPlatformAnnouncementRecipients({ audienceKey, roleKeys = [] }) {
+        if (audienceKey === "all_active_users") {
+          return all(
+            `SELECT DISTINCT ON (u.id)
+               u.id AS user_id,
+               'user' AS recipient_kind,
+               s.country_id,
+               u.school_id,
+               jsonb_build_object('audienceKey', 'all_active_users') AS audience_reason
+             FROM users u
+             LEFT JOIN schools s ON s.id = u.school_id
+             WHERE lower(COALESCE(u.status, 'active')) = 'active'
+             ORDER BY u.id`,
+          );
+        }
+        const keys = Array.isArray(roleKeys) ? roleKeys.filter(Boolean) : [];
+        if (!keys.length) return [];
+        return all(
+          `SELECT DISTINCT ON (u.id)
+             u.id AS user_id,
+             CASE
+               WHEN ur.role_key = 'COUNTRY_ADMIN' THEN 'country_admin'
+               WHEN ur.role_key = 'SCHOOL_ADMIN' THEN 'school_admin'
+               ELSE lower(ur.role_key)
+             END AS recipient_kind,
+             s.country_id,
+             COALESCE(u.school_id, ur.school_id) AS school_id,
+             jsonb_build_object('audienceKey', $2::text, 'roleKey', ur.role_key) AS audience_reason,
+             ur.role_key
+           FROM users u
+           JOIN user_roles ur
+             ON ur.user_id = u.id
+            AND ur.status = 'active'
+            AND ur.revoked_at IS NULL
+            AND ur.role_key = ANY($1::text[])
+           LEFT JOIN schools s ON s.id = COALESCE(u.school_id, ur.school_id)
+           WHERE lower(COALESCE(u.status, 'active')) = 'active'
+           ORDER BY u.id, ur.role_key`,
+          [keys, audienceKey],
+        );
+      },
+      async insertPlatformAnnouncement(row) {
+        return one(
+          `INSERT INTO platform_announcements (
+             announcement_type, audience_key, title, message,
+             created_by, published_by, sender_display_name, status, published_at, created_at, updated_at
+           ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,NOW(),NOW(),NOW())
+           RETURNING *`,
+          [
+            row.announcementType,
+            row.audienceKey,
+            row.title,
+            row.message,
+            row.createdByUserId,
+            row.publishedByUserId,
+            row.senderDisplayName,
+            row.status || "published",
+          ],
+        );
+      },
+      async insertPlatformAnnouncementRecipients(rows) {
+        if (!rows?.length) return [];
+        const inserted = [];
+        for (const row of rows) {
+          const saved = await one(
+            `INSERT INTO platform_announcement_recipients (
+               announcement_id, user_id, recipient_kind, country_id, school_id, audience_reason, created_at
+             ) VALUES ($1,$2,$3,$4,$5,$6::jsonb,NOW())
+             ON CONFLICT (announcement_id, user_id) DO NOTHING
+             RETURNING *`,
+            [
+              row.announcementId,
+              row.userId,
+              row.recipientKind,
+              row.countryId || null,
+              row.schoolId || null,
+              JSON.stringify(row.audienceReason ?? {}),
+            ],
+          );
+          if (saved) inserted.push(saved);
+        }
+        return inserted;
+      },
+      async isPlatformAnnouncementRecipient(announcementId, userId) {
+        const row = await one(
+          `SELECT 1 FROM platform_announcement_recipients WHERE announcement_id = $1 AND user_id = $2`,
+          [announcementId, userId],
+        );
+        return Boolean(row);
+      },
+      async countPlatformAnnouncementRecipients(announcementId) {
+        const row = await one(
+          `SELECT count(*)::int AS c FROM platform_announcement_recipients WHERE announcement_id = $1`,
+          [announcementId],
+        );
+        return row?.c ?? 0;
+      },
+      async insertPlatformAnnouncementRead(announcementId, userId) {
+        return one(
+          `INSERT INTO platform_announcement_reads (announcement_id, user_id, read_at)
+           VALUES ($1,$2,NOW())
+           ON CONFLICT (announcement_id, user_id) DO UPDATE SET read_at = platform_announcement_reads.read_at
+           RETURNING *`,
+          [announcementId, userId],
+        );
+      },
+      async getPlatformAnnouncementRead(announcementId, userId) {
+        return one(
+          `SELECT * FROM platform_announcement_reads WHERE announcement_id = $1 AND user_id = $2`,
+          [announcementId, userId],
+        );
+      },
+      async getPlatformAnnouncementById(id) {
+        return one(
+          `SELECT a.*,
+             trim(concat(cu.first_name, ' ', cu.last_name)) AS created_by_name,
+             trim(concat(pu.first_name, ' ', pu.last_name)) AS published_by_name
+           FROM platform_announcements a
+           LEFT JOIN users cu ON cu.id = a.created_by
+           LEFT JOIN users pu ON pu.id = a.published_by
+           WHERE a.id::text = $1`,
+          [id],
+        );
+      },
+      async archivePlatformAnnouncement(id, actorUserId) {
+        return one(
+          `UPDATE platform_announcements
+           SET status = 'archived',
+               archived_at = COALESCE(archived_at, NOW()),
+               archived_by = COALESCE(archived_by, $2),
+               updated_at = NOW()
+           WHERE id = $1
+           RETURNING *`,
+          [id, actorUserId],
+        );
+      },
+      async listPlatformAnnouncementsForUser({ userId, limit, cursor, management }) {
+        const params = [userId];
+        let cursorSql = "";
+        if (cursor?.at && cursor?.id) {
+          params.push(cursor.at, cursor.id);
+          cursorSql = `AND (a.published_at, a.id) < ($${params.length - 1}::timestamptz, $${params.length}::uuid)`;
+        }
+        params.push(limit);
+        const visibility = management
+          ? "TRUE"
+          : `EXISTS (
+               SELECT 1 FROM platform_announcement_recipients rec
+               WHERE rec.announcement_id = a.id AND rec.user_id = $1
+             )`;
+        return all(
+          `SELECT a.*,
+             trim(concat(cu.first_name, ' ', cu.last_name)) AS created_by_name,
+             trim(concat(pu.first_name, ' ', pu.last_name)) AS published_by_name,
+             (SELECT count(*)::int FROM platform_announcement_recipients rec WHERE rec.announcement_id = a.id) AS recipients_count,
+             (SELECT r.read_at FROM platform_announcement_reads r WHERE r.announcement_id = a.id AND r.user_id = $1) AS reader_read_at
+           FROM platform_announcements a
+           LEFT JOIN users cu ON cu.id = a.created_by
+           LEFT JOIN users pu ON pu.id = a.published_by
+           WHERE ${visibility}
+             ${cursorSql}
+           ORDER BY a.published_at DESC, a.id DESC
+           LIMIT $${params.length}`,
+          params,
+        );
+      },
+      async countPlatformAnnouncementUnreadForUser(userId) {
+        const row = await one(
+          `SELECT count(*)::int AS c
+           FROM platform_announcement_recipients rec
+           JOIN platform_announcements a ON a.id = rec.announcement_id
+           LEFT JOIN platform_announcement_reads r
+             ON r.announcement_id = rec.announcement_id AND r.user_id = rec.user_id
+           WHERE rec.user_id = $1
+             AND a.status = 'published'
+             AND r.read_at IS NULL`,
+          [userId],
+        );
+        return row?.c ?? 0;
+      },
+      async insertPlatformAnnouncementAttachment(row) {
+        return one(
+          `INSERT INTO platform_announcement_attachments (
+             announcement_id, file_name, mime_type, file_size, storage_key,
+             uploaded_by_user_id, created_at, status
+           ) VALUES ($1,$2,$3,$4,$5,$6,NOW(),$7)
+           RETURNING *`,
+          [
+            row.announcementId || null,
+            row.fileName,
+            row.mimeType,
+            row.fileSize,
+            row.storageKey,
+            row.uploadedByUserId,
+            row.status || "uploaded",
+          ],
+        );
+      },
+      async getPlatformAnnouncementAttachmentById(id) {
+        return one(`SELECT * FROM platform_announcement_attachments WHERE id::text = $1`, [id]);
+      },
+      async listPlatformAnnouncementAttachments(announcementIds) {
+        if (!announcementIds?.length) return [];
+        return all(
+          `SELECT * FROM platform_announcement_attachments
+           WHERE announcement_id = ANY($1::uuid[]) AND status = 'attached'
+           ORDER BY created_at`,
+          [announcementIds],
+        );
+      },
+      async attachToPlatformAnnouncement({ attachmentIds, announcementId, uploadedByUserId }) {
+        if (!attachmentIds?.length) return [];
+        const rows = await all(
+          `UPDATE platform_announcement_attachments
+           SET announcement_id = $1, status = 'attached'
+           WHERE id = ANY($2::uuid[])
+             AND uploaded_by_user_id = $3
+             AND announcement_id IS NULL
+             AND status = 'uploaded'
+           RETURNING *`,
+          [announcementId, attachmentIds, uploadedByUserId],
+        );
+        return rows;
+      },
       async countAnnouncementUnreadForUser(userId, schoolId) {
         const row = await one(
           `SELECT count(*)::int AS c
@@ -1405,6 +1629,38 @@ function createClientsPgStore(repo) {
     uploadAnnouncementAttachment: (...args) => {
       const service = require("../lib/communicationsAnnouncementsService");
       return service.uploadAttachment(store, ...args);
+    },
+    createPlatformAnnouncement: (...args) => {
+      const service = require("../lib/platformAnnouncementsService");
+      return service.publish(store, ...args);
+    },
+    listPlatformAnnouncementsForPrincipal: (...args) => {
+      const service = require("../lib/platformAnnouncementsService");
+      return service.listAnnouncements(store, ...args);
+    },
+    getPlatformAnnouncementForPrincipal: (...args) => {
+      const service = require("../lib/platformAnnouncementsService");
+      return service.getAnnouncement(store, ...args);
+    },
+    markPlatformAnnouncementRead: (...args) => {
+      const service = require("../lib/platformAnnouncementsService");
+      return service.markRead(store, ...args);
+    },
+    archivePlatformAnnouncementForPrincipal: (...args) => {
+      const service = require("../lib/platformAnnouncementsService");
+      return service.archiveAnnouncement(store, ...args);
+    },
+    unreadPlatformAnnouncementCountForPrincipal: (...args) => {
+      const service = require("../lib/platformAnnouncementsService");
+      return service.unreadCount(store, ...args);
+    },
+    uploadPlatformAnnouncementAttachment: (...args) => {
+      const service = require("../lib/platformAnnouncementsService");
+      return service.uploadAttachment(store, ...args);
+    },
+    downloadPlatformAnnouncementAttachment: (...args) => {
+      const service = require("../lib/platformAnnouncementsService");
+      return service.downloadAttachment(store, ...args);
     },
     ensureStudentRecord() {
       return null;

@@ -191,12 +191,21 @@ function validateUploadBuffer(buffer, declaredMime, fileName) {
   return { mimeType: sniffed, fileName: safeName, fileSize: buffer.length };
 }
 
-async function persistAttachmentBytes(schoolId, buffer) {
-  const key = `${schoolId}/${new Date().getUTCFullYear()}/${randomUUID()}`;
+async function persistAttachmentKey(prefix, buffer) {
+  const key = `${asTrimmed(prefix)}/${new Date().getUTCFullYear()}/${randomUUID()}`;
+  assertSafeStorageKey(key);
   const abs = path.join(storageRoot(), ...key.split("/"));
   await fs.mkdir(path.dirname(abs), { recursive: true });
   await fs.writeFile(abs, buffer, { flag: "wx" });
   return key;
+}
+
+async function persistAttachmentBytes(schoolId, buffer) {
+  return persistAttachmentKey(String(schoolId), buffer);
+}
+
+async function persistPlatformAttachmentBytes(buffer) {
+  return persistAttachmentKey("platform-announcements", buffer);
 }
 
 async function removeStoredAttachment(storageKey) {
@@ -246,6 +255,7 @@ module.exports = {
   sanitizeFileName,
   validateUploadBuffer,
   persistAttachmentBytes,
+  persistPlatformAttachmentBytes,
   removeStoredAttachment,
   readAttachmentBytes,
   mapAttachmentRow,

@@ -1358,6 +1358,38 @@ function createClientsMemoryStore(seed = {}) {
       const service = require("../lib/communicationsAnnouncementsService");
       return service.uploadAttachment(store, ...args);
     },
+    createPlatformAnnouncement: (...args) => {
+      const service = require("../lib/platformAnnouncementsService");
+      return service.publish(store, ...args);
+    },
+    listPlatformAnnouncementsForPrincipal: (...args) => {
+      const service = require("../lib/platformAnnouncementsService");
+      return service.listAnnouncements(store, ...args);
+    },
+    getPlatformAnnouncementForPrincipal: (...args) => {
+      const service = require("../lib/platformAnnouncementsService");
+      return service.getAnnouncement(store, ...args);
+    },
+    markPlatformAnnouncementRead: (...args) => {
+      const service = require("../lib/platformAnnouncementsService");
+      return service.markRead(store, ...args);
+    },
+    archivePlatformAnnouncementForPrincipal: (...args) => {
+      const service = require("../lib/platformAnnouncementsService");
+      return service.archiveAnnouncement(store, ...args);
+    },
+    unreadPlatformAnnouncementCountForPrincipal: (...args) => {
+      const service = require("../lib/platformAnnouncementsService");
+      return service.unreadCount(store, ...args);
+    },
+    uploadPlatformAnnouncementAttachment: (...args) => {
+      const service = require("../lib/platformAnnouncementsService");
+      return service.uploadAttachment(store, ...args);
+    },
+    downloadPlatformAnnouncementAttachment: (...args) => {
+      const service = require("../lib/platformAnnouncementsService");
+      return service.downloadAttachment(store, ...args);
+    },
     ensureStudentRecord(row = {}) {
       const studentCode = asTrimmed(row.student_code || row.studentCode || row.matricule || row.id);
       const id = asTrimmed(row.id || row.student_uuid || studentCode);
