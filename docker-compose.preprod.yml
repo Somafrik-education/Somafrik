@@ -51,7 +51,8 @@ services:
       LOGIN_RATE_LIMIT_MAX: ${LOGIN_RATE_LIMIT_MAX:-15}
       SOMAFRIK_COMMUNICATION_STORAGE: ${SOMAFRIK_COMMUNICATION_STORAGE:-/var/lib/somafrik/communication-storage}
     volumes:
-      - communication_storage:/var/lib/somafrik/communication-storage
+      # Named volume must mount at the same path the API writes to.
+      - communication_storage:${SOMAFRIK_COMMUNICATION_STORAGE:-/var/lib/somafrik/communication-storage}
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:5000/api/health >/dev/null 2>&1 || exit 1"]
       interval: 15s
