@@ -129,6 +129,12 @@ function sourceGuards() {
   assert.doesNotMatch(mobileRead, /AsyncStorage/);
   assert.match(hydrateSrc, /platform-announcements/);
   assert.doesNotMatch(hydrateSrc, /\.catch\(\s*\(\)\s*=>\s*\[\s*\]\s*\)/);
+  assert.doesNotMatch(hydrateSrc.replace(/\s+/g, " "), /\.catch\(\(\) => \(\{ count: 0 \}\)\)/);
+  assert.doesNotMatch(webPage.replace(/\s+/g, " "), /\.catch\(\(\) => \(\{ items: \[\]/);
+  assert.doesNotMatch(webRead.replace(/\s+/g, " "), /\.catch\(\(\) => \(\{ count: 0 \}\)\)/);
+  assert.doesNotMatch(mobileRead, /\.catch\([\s\S]*setCount\(0\)/);
+  const mobileApi = read("Mobile/src/services/api.ts");
+  assert.doesNotMatch(mobileApi.replace(/\s+/g, " "), /\.catch\(\(\) => \(\{ count: 0 \}\)\)/);
 
   assert.match(httpTest, /PA-01/);
   assert.match(httpTest, /PA-02/);

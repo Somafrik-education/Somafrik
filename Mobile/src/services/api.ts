@@ -878,14 +878,12 @@ export async function getAnnouncementAudienceOptions(schoolCode?: string): Promi
 
 export async function getAnnouncementsUnreadCount(schoolCode?: string): Promise<number> {
   const scope = communicationSchoolScope(schoolCode);
-  const school = hasCommunicationSchoolScope(scope)
-    ? await request<{ count?: number }>(scopedMessagesPath("/backoffice/announcements/unread-count", scope)).catch(
-        () => ({ count: 0 }),
-      )
-    : { count: 0 };
-  const platform = await request<{ count?: number }>("/backoffice/platform-announcements/unread-count").catch(() => ({
-    count: 0,
-  }));
+  const [school, platform] = await Promise.all([
+    hasCommunicationSchoolScope(scope)
+      ? request<{ count?: number }>(scopedMessagesPath("/backoffice/announcements/unread-count", scope))
+      : Promise.resolve({ count: 0 }),
+    request<{ count?: number }>("/backoffice/platform-announcements/unread-count"),
+  ]);
   return (Number(school?.count) || 0) + (Number(platform?.count) || 0);
 }
 

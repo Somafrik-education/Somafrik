@@ -11,7 +11,6 @@ import {
 } from "../lib/announcementsApi";
 import {
   platformAnnouncementsApi,
-  type PlatformAnnouncementRecord,
   type PlatformAnnouncementType,
   type PlatformAudienceKey,
 } from "../lib/platformAnnouncementsApi";
@@ -108,9 +107,9 @@ export function AnnouncementsPage() {
     setError("");
     try {
       const [platformResult, schoolResult] = await Promise.all([
-        platformAnnouncementsApi.list().catch(() => ({ items: [] as PlatformAnnouncementRecord[] })),
+        platformAnnouncementsApi.list(),
         schoolScope
-          ? announcementsApi.list(schoolScope).catch(() => ({ items: [] as AnnouncementRecord[] }))
+          ? announcementsApi.list(schoolScope)
           : Promise.resolve({ items: [] as AnnouncementRecord[] }),
       ]);
       const platformItems = (platformResult.items ?? []).map((row) => ({

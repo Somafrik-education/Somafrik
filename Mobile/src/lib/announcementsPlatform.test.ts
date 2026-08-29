@@ -31,5 +31,10 @@ const hydrateSrc = fs.readFileSync(path.join(ROOT, "src/services/domainHydration
 assert.match(hydrateSrc, /platform-announcements/);
 assert.match(hydrateSrc, /source === "platform"/);
 assert.doesNotMatch(hydrateSrc, /\.catch\(\s*\(\)\s*=>\s*\[\s*\]\s*\)/);
+assert.doesNotMatch(hydrateSrc.replace(/\s+/g, " "), /\.catch\(\(\) => \(\{ count: 0 \}\)\)/);
+assert.doesNotMatch(apiSrc.replace(/\s+/g, " "), /\.catch\(\(\) => \(\{ count: 0 \}\)\)/);
+assert.doesNotMatch(readSrc, /\.catch\([\s\S]*setCount\(0\)/);
+assert.match(hydrateSrc, /hasCommunicationSchoolScope\(scope\)/);
+assert.match(hydrateSrc, /Promise\.resolve\(\{ count: 0 \}\)/);
 
 console.log("OK Mobile announcementsPlatform.test.ts");

@@ -29,5 +29,9 @@ describe("annonces plateforme Superadmin", () => {
     expect(api).not.toMatch(/effectiveSchoolCode/);
     expect(read).toMatch(/platformAnnouncementsApi\.unreadCount/);
     expect(read).not.toMatch(/localStorage/);
+    expect(read.replace(/\s+/g, " ")).not.toMatch(/\.catch\(\(\) => \(\{ count: 0 \}\)\)/);
+    expect(page.replace(/\s+/g, " ")).not.toMatch(/\.catch\(\(\) => \(\{ items: \[\]/);
+    expect(page).toMatch(/schoolScope\s*\n\s*\? announcementsApi\.list\(schoolScope\)/);
+    expect(page).toMatch(/Promise\.resolve\(\{ items: \[\] as AnnouncementRecord\[\] \}\)/);
   });
 });

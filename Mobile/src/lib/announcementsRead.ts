@@ -21,9 +21,7 @@ export function useAnnouncementsUnreadCount(
       .then((value) => {
         if (!cancelled) setCount(value);
       })
-      .catch(() => {
-        if (!cancelled) setCount(0);
-      });
+      .catch(() => undefined);
     return () => {
       cancelled = true;
     };

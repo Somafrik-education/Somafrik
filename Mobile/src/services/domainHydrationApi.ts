@@ -201,14 +201,14 @@ export async function markCanonicalAnnouncementRead(
 
 export async function getAnnouncementsUnreadCount(schoolCode?: string): Promise<number> {
   const scope = schoolCode || getRequestSchoolScope();
-  const school = hasCommunicationSchoolScope(scope)
-    ? await httpRequest<{ count?: number }>(
-        withCommunicationSchoolScope("/backoffice/announcements/unread-count", scope),
-      ).catch(() => ({ count: 0 }))
-    : { count: 0 };
-  const platform = await httpRequest<{ count?: number }>("/backoffice/platform-announcements/unread-count").catch(
-    () => ({ count: 0 }),
-  );
+  const [school, platform] = await Promise.all([
+    hasCommunicationSchoolScope(scope)
+      ? httpRequest<{ count?: number }>(
+          withCommunicationSchoolScope("/backoffice/announcements/unread-count", scope),
+        )
+      : Promise.resolve({ count: 0 }),
+    httpRequest<{ count?: number }>("/backoffice/platform-announcements/unread-count"),
+  ]);
   return (Number(school?.count) || 0) + (Number(platform?.count) || 0);
 }
 

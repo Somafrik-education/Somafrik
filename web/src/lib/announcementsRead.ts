@@ -19,13 +19,13 @@ export function useAnnouncementsUnreadCount(enabled: boolean, schoolCode?: strin
     }
     let cancelled = false;
     void Promise.all([
-      schoolScope
-        ? announcementsApi.unreadCount(schoolScope).catch(() => ({ count: 0 }))
-        : Promise.resolve({ count: 0 }),
-      platformAnnouncementsApi.unreadCount().catch(() => ({ count: 0 })),
-    ]).then(([school, platform]) => {
-      if (!cancelled) setCount((Number(school?.count) || 0) + (Number(platform?.count) || 0));
-    });
+      schoolScope ? announcementsApi.unreadCount(schoolScope) : Promise.resolve({ count: 0 }),
+      platformAnnouncementsApi.unreadCount(),
+    ])
+      .then(([school, platform]) => {
+        if (!cancelled) setCount((Number(school?.count) || 0) + (Number(platform?.count) || 0));
+      })
+      .catch(() => undefined);
     return () => {
       cancelled = true;
     };
