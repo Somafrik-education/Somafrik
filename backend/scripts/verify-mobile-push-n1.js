@@ -49,12 +49,19 @@ function sourceGuards() {
   assert.match(migration, /mobile_push_receipts/);
   const addBackendCol = migration.indexOf("ADD COLUMN IF NOT EXISTS backend_environment");
   const addAppCol = migration.indexOf("ADD COLUMN IF NOT EXISTS app_profile");
+  const doBlock = migration.indexOf("DO $push_n1$");
   const legacyUpdate = migration.indexOf("app_profile = COALESCE(NULLIF(app_profile, ''), release_profile)");
-  assert.ok(addBackendCol > 0 && addAppCol > 0 && legacyUpdate > 0);
+  assert.ok(addBackendCol > 0 && addAppCol > 0 && doBlock > 0 && legacyUpdate > 0);
   assert.ok(
-    addBackendCol < legacyUpdate && addAppCol < legacyUpdate,
-    "ADD COLUMN backend_environment/app_profile must precede the legacy release_profile UPDATE",
+    addBackendCol < doBlock && addAppCol < doBlock && addBackendCol < legacyUpdate && addAppCol < legacyUpdate,
+    "ADD COLUMN backend_environment/app_profile must precede DO $push_n1$ and the legacy UPDATE",
   );
+  const upgradeTest = read("backend/db/mobilePushDevicesSchema.upgrade.pg.test.js");
+  assert.match(upgradeTest, /applyMobilePushDevicesSchema\(pool\)/);
+  const firstBootstrap = upgradeTest.indexOf("await applyMobilePushDevicesSchema(pool);");
+  const secondBootstrap = upgradeTest.indexOf("await applyMobilePushDevicesSchema(pool);", firstBootstrap + 1);
+  assert.ok(firstBootstrap > 0 && secondBootstrap > firstBootstrap, "upgrade test must bootstrap twice");
+  assert.match(upgradeTest, /aucune perte de token/);
   assert.match(bootstrap, /applyMobilePushDevicesSchema/);
   const bootstrapFn = bootstrap.indexOf("async function ensureClientsCanonicalBootstrap");
   const platformCall = bootstrap.indexOf("applyPlatformAnnouncementsSchema", bootstrapFn);
