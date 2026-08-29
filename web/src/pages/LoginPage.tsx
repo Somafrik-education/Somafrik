@@ -104,6 +104,11 @@ export function LoginPage() {
     setServerError("");
   }
 
+  function selectProfile(nextProfile: LoginProfile) {
+    form.setValue("profile", nextProfile, { shouldValidate: true });
+    setServerError("");
+  }
+
   async function onSubmit(values: LoginValues) {
     setServerError("");
     try {
@@ -149,49 +154,49 @@ export function LoginPage() {
   }
 
   return (
-    <div className="grid min-h-screen lg:grid-cols-2">
-      <section className="relative hidden flex-col justify-between bg-gradient-to-br from-brand to-brand-700 p-12 text-white lg:flex">
-        <BrandLogo variant="onDark" size="hero" />
-        <div className="max-w-md space-y-4">
-          <h2 className="text-3xl font-black leading-tight">
-            La plateforme qui simplifie la gestion de votre établissement scolaire
-          </h2>
-          <p className="text-white/80">
-            Établissements, utilisateurs, droits, élèves, enseignants, présences, notes, paiements,
-            communications et rapports — pilotés depuis une plateforme unique et sécurisée.
-          </p>
-        </div>
-        <p className="text-sm text-white/60">© {new Date().getFullYear()} Somafrik</p>
-      </section>
+    <div className="relative min-h-screen overflow-x-hidden bg-slate-950">
+      <div
+        aria-hidden="true"
+        className="fixed inset-0 bg-cover bg-center bg-no-repeat"
+        style={{ backgroundImage: "url('/somafrik-login-background.webp')" }}
+      />
+      <div aria-hidden="true" className="fixed inset-0 bg-slate-950/55" />
+      <div
+        aria-hidden="true"
+        className="fixed inset-0 bg-gradient-to-b from-slate-950/10 via-slate-950/20 to-slate-950/50"
+      />
 
-      <section className="flex items-center justify-center p-6 sm:p-12">
-        <div className="w-full max-w-md space-y-6">
-          <BrandLogo className="mb-4 lg:hidden" size="xl" />
-          <div>
-            <Link
-              to="/"
-              className="mb-4 inline-flex items-center gap-1 text-sm font-semibold text-muted transition hover:text-brand"
-            >
-              <span aria-hidden>←</span> Retour à l’accueil
-            </Link>
-            <h1 className="text-2xl font-black text-ink">Connexion plateforme</h1>
-            <p className="mt-1 text-sm text-muted">
-              Sélectionnez un compte démo ou saisissez vos identifiants.
+      <main className="relative z-10 flex min-h-screen items-center justify-center px-4 py-8 sm:px-6 lg:px-8">
+        <section
+          aria-labelledby="login-title"
+          className="w-full max-w-[560px] rounded-[28px] border border-white/60 bg-white/95 p-5 shadow-[0_32px_90px_-28px_rgba(15,23,42,0.65)] backdrop-blur-xl sm:p-8"
+        >
+          <div className="text-center">
+            <BrandLogo className="justify-center" size="lg" />
+            <p className="mt-4 text-xs font-black uppercase tracking-[0.2em] text-brand">
+              Accès sécurisé
+            </p>
+            <h1 id="login-title" className="mt-2 text-2xl font-black tracking-tight text-ink sm:text-3xl">
+              Connexion plateforme
+            </h1>
+            <p className="mx-auto mt-2 max-w-sm text-sm leading-relaxed text-muted sm:text-base">
+              Connectez-vous à votre espace Somafrik.
             </p>
           </div>
 
-          <div className="grid grid-cols-3 gap-2">
+          <div className="mt-7 grid grid-cols-3 overflow-hidden rounded-2xl border border-line bg-slate-50 p-1.5 shadow-inner">
             {PROFILES.map((option) => (
               <button
                 key={option.id}
                 type="button"
+                aria-pressed={profile === option.id}
                 data-testid={`login-profile-${option.id}`}
-                onClick={() => form.setValue("profile", option.id, { shouldValidate: true })}
+                onClick={() => selectProfile(option.id)}
                 className={cn(
-                  "rounded-xl border px-2 py-3 text-center text-xs font-bold transition",
+                  "min-h-[72px] rounded-xl px-2 py-3 text-center text-xs font-bold leading-tight transition sm:px-3",
                   profile === option.id
-                    ? "border-brand bg-brand-50 text-brand"
-                    : "border-line bg-white text-slate-600 hover:border-brand/40",
+                    ? "bg-brand text-white shadow-brand"
+                    : "text-slate-600 hover:bg-white hover:text-brand",
                 )}
               >
                 {option.label}
@@ -200,7 +205,7 @@ export function LoginPage() {
           </div>
 
           <Form {...form}>
-            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+            <form onSubmit={form.handleSubmit(onSubmit)} className="mt-6 space-y-4">
               {profile === "school" ? (
                 <FormField
                   control={form.control}
@@ -210,6 +215,7 @@ export function LoginPage() {
                       <FormLabel required>Code établissement</FormLabel>
                       <FormControl>
                         <Input
+                          className="h-11 bg-white"
                           placeholder="ex. CD-IN-26-001"
                           data-testid="login-school-code"
                           {...field}
@@ -230,7 +236,8 @@ export function LoginPage() {
                     <FormLabel required>Identifiant</FormLabel>
                     <FormControl>
                       <Input
-                        placeholder="ex. identifiant administrateur"
+                        className="h-11 bg-white"
+                        placeholder="Entrez votre identifiant"
                         autoComplete="username"
                         data-testid="login-identifier"
                         {...field}
@@ -249,8 +256,9 @@ export function LoginPage() {
                     <FormLabel required>Mot de passe</FormLabel>
                     <FormControl>
                       <Input
+                        className="h-11 bg-white"
                         type="password"
-                        placeholder="••••"
+                        placeholder="Entrez votre mot de passe"
                         autoComplete="current-password"
                         data-testid="login-password"
                         {...field}
@@ -262,52 +270,70 @@ export function LoginPage() {
               />
 
               {serverError ? (
-                <p className="rounded-lg bg-danger/10 px-3 py-2 text-sm font-medium text-danger">
+                <p
+                  role="alert"
+                  className="rounded-xl border border-danger/15 bg-danger/10 px-3 py-2.5 text-sm font-medium text-danger"
+                >
                   {serverError}
                 </p>
               ) : null}
 
-              <Button type="submit" className="w-full" disabled={submitting} data-testid="login-submit">
+              <Button
+                type="submit"
+                className="h-11 w-full rounded-xl bg-brand-gradient font-bold text-white shadow-brand hover:bg-brand-gradient hover:opacity-95"
+                disabled={submitting}
+                data-testid="login-submit"
+              >
                 {submitting ? "Connexion…" : "Se connecter"}
               </Button>
             </form>
           </Form>
 
           {showDemoAccounts ? (
-          <div className="rounded-xl border border-dashed border-line bg-slate-50 p-4">
-            <p className="mb-3 text-xs font-bold uppercase tracking-wide text-muted">
-              Comptes de démonstration
-            </p>
-            <div className="space-y-3">
-              {DEMO_ACCOUNT_GROUPS.map((group) => (
-                <div key={group.title}>
-                  <p className="mb-1.5 text-[11px] font-bold uppercase tracking-wide text-brand">
-                    {group.title}
-                  </p>
-                  <div className="flex flex-wrap gap-2">
-                    {group.accounts.map((account) => (
-                      <button
-                        key={`${group.title}-${account.label}`}
-                        type="button"
-                        onClick={() => applyDemo(account)}
-                        title={`${account.role} · ${account.identifier}`}
-                        className="rounded-lg border border-line bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 hover:border-brand/40 hover:text-brand"
-                      >
-                        {account.label}
-                      </button>
-                    ))}
+            <div className="mt-6 rounded-xl border border-dashed border-line bg-slate-50/90 p-4">
+              <p className="mb-3 text-xs font-bold uppercase tracking-wide text-muted">
+                Comptes de démonstration
+              </p>
+              <div className="space-y-3">
+                {DEMO_ACCOUNT_GROUPS.map((group) => (
+                  <div key={group.title}>
+                    <p className="mb-1.5 text-[11px] font-bold uppercase tracking-wide text-brand">
+                      {group.title}
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      {group.accounts.map((account) => (
+                        <button
+                          key={`${group.title}-${account.label}`}
+                          type="button"
+                          onClick={() => applyDemo(account)}
+                          title={`${account.role} · ${account.identifier}`}
+                          className="rounded-lg border border-line bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:border-brand/40 hover:text-brand"
+                        >
+                          {account.label}
+                        </button>
+                      ))}
+                    </div>
                   </div>
-                </div>
-              ))}
+                ))}
+              </div>
+              <p className="mt-3 text-[11px] text-muted">
+                Mot de passe démo : <strong>1234</strong> · Code établissement :{" "}
+                <strong>{DEMO_SCHOOL_CODE}</strong>
+              </p>
             </div>
-            <p className="mt-3 text-[11px] text-muted">
-              Mot de passe démo : <strong>1234</strong> · Code établissement :{" "}
-              <strong>{DEMO_SCHOOL_CODE}</strong>
-            </p>
-          </div>
           ) : null}
-        </div>
-      </section>
+
+          <div className="mt-6 border-t border-line pt-5 text-center">
+            <Link
+              to="/"
+              className="inline-flex items-center gap-2 text-sm font-bold text-brand transition hover:text-brand-700"
+            >
+              <span aria-hidden>←</span>
+              Retour à l’accueil
+            </Link>
+          </div>
+        </section>
+      </main>
 
       <Modal
         open={passwordChangeOpen}
@@ -357,9 +383,7 @@ export function LoginPage() {
                 </FormItem>
               )}
             />
-            {passwordChangeError ? (
-              <p className="text-sm text-danger">{passwordChangeError}</p>
-            ) : null}
+            {passwordChangeError ? <p className="text-sm text-danger">{passwordChangeError}</p> : null}
           </form>
         </Form>
       </Modal>
