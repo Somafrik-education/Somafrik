@@ -3,6 +3,7 @@
 /**
  * ANN-PLATFORM-1 — Annonces Superadmin (domaine plateforme).
  * Domaine distinct du C3 établissement : pas d'école obligatoire, snapshot plateforme.
+ * all_active_users : users.status=active ET au moins un user_roles canonique actif.
  */
 
 const {
@@ -267,15 +268,17 @@ function mapPlatformAnnouncement(row, extras = {}) {
   };
 }
 
-async function resolveAudienceRecipients(tx, audienceKey) {
-  if (typeof tx.listPlatformAnnouncementRecipients !== "function") {
-    throw createClientsError(500, "Résolution des destinataires plateforme indisponible.");
+async function snapshotAudienceRecipients(tx, announcementId, audienceKey) {
+  if (typeof tx.snapshotPlatformAnnouncementRecipients !== "function") {
+    throw createClientsError(500, "Snapshot destinataires plateforme indisponible.");
   }
   const roleKeys = ROLE_KEYS_BY_AUDIENCE[audienceKey] || [];
-  return tx.listPlatformAnnouncementRecipients({
+  const count = await tx.snapshotPlatformAnnouncementRecipients({
+    announcementId,
     audienceKey,
     roleKeys,
   });
+  return Number(count) || 0;
 }
 
 async function bindAttachments(tx, uploaderUserId, announcementId, attachmentIds) {
@@ -350,7 +353,6 @@ async function publish(store, rawPayload, principal, auditMeta) {
 
   return store.withTransaction(async (tx) => {
     const author = await requireLiveSuperAdmin(tx, principal);
-    const recipients = await resolveAudienceRecipients(tx, audienceKey);
     const senderDisplayName =
       announcementType === "system" ? SYSTEM_SENDER_DISPLAY_NAME : displayName(author);
     const saved = await tx.insertPlatformAnnouncement({
@@ -363,24 +365,13 @@ async function publish(store, rawPayload, principal, auditMeta) {
       senderDisplayName,
       status: "published",
     });
-    if (typeof tx.insertPlatformAnnouncementRecipients === "function" && recipients.length) {
-      await tx.insertPlatformAnnouncementRecipients(
-        recipients.map((row) => ({
-          announcementId: saved.id,
-          userId: row.user_id || row.userId,
-          recipientKind: row.recipient_kind || row.kind,
-          countryId: row.country_id || null,
-          schoolId: row.school_id || null,
-          audienceReason: row.audience_reason || { audienceKey, roleKey: row.role_key },
-        })),
-      );
-    }
+    const recipientCount = await snapshotAudienceRecipients(tx, saved.id, audienceKey);
     const attachments = await bindAttachments(tx, author.id, saved.id, attachmentIds);
     const mapped = mapPlatformAnnouncement(
       { ...saved, sender_display_name: senderDisplayName },
       {
         attachments,
-        recipientCount: recipients.length,
+        recipientCount,
         createdByName: displayName(author),
         publishedByName: displayName(author),
         senderDisplayName,
@@ -394,7 +385,7 @@ async function publish(store, rawPayload, principal, auditMeta) {
         id: saved.id,
         announcementType,
         audienceKey,
-        recipientCount: recipients.length,
+        recipientCount,
         attachmentCount: attachments.length,
         createdByUserId: author.id,
         senderDisplayName,

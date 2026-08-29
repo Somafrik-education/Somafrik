@@ -1032,46 +1032,79 @@ function createClientsPgStore(repo) {
           [announcementId, userId],
         );
       },
-      async listPlatformAnnouncementRecipients({ audienceKey, roleKeys = [] }) {
+      /**
+       * Snapshot plateforme set-based (INSERT … SELECT).
+       * all_active_users : users.status=active ET au moins un user_roles actif (revoked_at IS NULL).
+       * Retourne uniquement le nombre inséré — pas la population en JS.
+       */
+      async snapshotPlatformAnnouncementRecipients({ announcementId, audienceKey, roleKeys = [] }) {
         if (audienceKey === "all_active_users") {
-          return all(
-            `SELECT DISTINCT ON (u.id)
-               u.id AS user_id,
-               'user' AS recipient_kind,
-               s.country_id,
-               u.school_id,
-               jsonb_build_object('audienceKey', 'all_active_users') AS audience_reason
-             FROM users u
-             LEFT JOIN schools s ON s.id = u.school_id
-             WHERE lower(COALESCE(u.status, 'active')) = 'active'
-             ORDER BY u.id`,
+          const row = await one(
+            `WITH inserted AS (
+               INSERT INTO platform_announcement_recipients (
+                 announcement_id, user_id, recipient_kind, country_id, school_id, audience_reason, created_at
+               )
+               SELECT
+                 $1::uuid,
+                 u.id,
+                 'user',
+                 s.country_id,
+                 u.school_id,
+                 jsonb_build_object('audienceKey', 'all_active_users'),
+                 NOW()
+               FROM users u
+               LEFT JOIN schools s ON s.id = u.school_id
+               WHERE lower(COALESCE(u.status, 'active')) = 'active'
+                 AND EXISTS (
+                   SELECT 1
+                   FROM user_roles ur
+                   WHERE ur.user_id = u.id
+                     AND ur.status = 'active'
+                     AND ur.revoked_at IS NULL
+                 )
+               ON CONFLICT (announcement_id, user_id) DO NOTHING
+               RETURNING user_id
+             )
+             SELECT count(*)::int AS c FROM inserted`,
+            [announcementId],
           );
+          return row?.c ?? 0;
         }
         const keys = Array.isArray(roleKeys) ? roleKeys.filter(Boolean) : [];
-        if (!keys.length) return [];
-        return all(
-          `SELECT DISTINCT ON (u.id)
-             u.id AS user_id,
-             CASE
-               WHEN ur.role_key = 'COUNTRY_ADMIN' THEN 'country_admin'
-               WHEN ur.role_key = 'SCHOOL_ADMIN' THEN 'school_admin'
-               ELSE lower(ur.role_key)
-             END AS recipient_kind,
-             s.country_id,
-             COALESCE(u.school_id, ur.school_id) AS school_id,
-             jsonb_build_object('audienceKey', $2::text, 'roleKey', ur.role_key) AS audience_reason,
-             ur.role_key
-           FROM users u
-           JOIN user_roles ur
-             ON ur.user_id = u.id
-            AND ur.status = 'active'
-            AND ur.revoked_at IS NULL
-            AND ur.role_key = ANY($1::text[])
-           LEFT JOIN schools s ON s.id = COALESCE(u.school_id, ur.school_id)
-           WHERE lower(COALESCE(u.status, 'active')) = 'active'
-           ORDER BY u.id, ur.role_key`,
-          [keys, audienceKey],
+        if (!keys.length) return 0;
+        const row = await one(
+          `WITH inserted AS (
+             INSERT INTO platform_announcement_recipients (
+               announcement_id, user_id, recipient_kind, country_id, school_id, audience_reason, created_at
+             )
+             SELECT DISTINCT ON (u.id)
+               $1::uuid,
+               u.id,
+               CASE
+                 WHEN ur.role_key = 'COUNTRY_ADMIN' THEN 'country_admin'
+                 WHEN ur.role_key = 'SCHOOL_ADMIN' THEN 'school_admin'
+                 ELSE lower(ur.role_key)
+               END,
+               s.country_id,
+               COALESCE(u.school_id, ur.school_id),
+               jsonb_build_object('audienceKey', $3::text, 'roleKey', ur.role_key),
+               NOW()
+             FROM users u
+             JOIN user_roles ur
+               ON ur.user_id = u.id
+              AND ur.status = 'active'
+              AND ur.revoked_at IS NULL
+              AND ur.role_key = ANY($2::text[])
+             LEFT JOIN schools s ON s.id = COALESCE(u.school_id, ur.school_id)
+             WHERE lower(COALESCE(u.status, 'active')) = 'active'
+             ORDER BY u.id, ur.role_key
+             ON CONFLICT (announcement_id, user_id) DO NOTHING
+             RETURNING user_id
+           )
+           SELECT count(*)::int AS c FROM inserted`,
+          [announcementId, keys, audienceKey],
         );
+        return row?.c ?? 0;
       },
       async insertPlatformAnnouncement(row) {
         return one(
@@ -1092,28 +1125,8 @@ function createClientsPgStore(repo) {
           ],
         );
       },
-      async insertPlatformAnnouncementRecipients(rows) {
-        if (!rows?.length) return [];
-        const inserted = [];
-        for (const row of rows) {
-          const saved = await one(
-            `INSERT INTO platform_announcement_recipients (
-               announcement_id, user_id, recipient_kind, country_id, school_id, audience_reason, created_at
-             ) VALUES ($1,$2,$3,$4,$5,$6::jsonb,NOW())
-             ON CONFLICT (announcement_id, user_id) DO NOTHING
-             RETURNING *`,
-            [
-              row.announcementId,
-              row.userId,
-              row.recipientKind,
-              row.countryId || null,
-              row.schoolId || null,
-              JSON.stringify(row.audienceReason ?? {}),
-            ],
-          );
-          if (saved) inserted.push(saved);
-        }
-        return inserted;
+      async insertPlatformAnnouncementRecipients() {
+        throw new Error("insertPlatformAnnouncementRecipients unitaire interdit — utiliser snapshotPlatformAnnouncementRecipients (INSERT … SELECT).");
       },
       async isPlatformAnnouncementRecipient(announcementId, userId) {
         const row = await one(

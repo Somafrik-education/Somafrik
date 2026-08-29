@@ -60,8 +60,10 @@ function sourceGuards() {
   assert.doesNotMatch(service, /effectiveSchoolCode/);
   assert.doesNotMatch(service, /payload\.createdByUserId/);
   assert.match(service, /requireLiveSuperAdmin/);
-  assert.match(service, /listPlatformAnnouncementRecipients/);
+  assert.match(service, /snapshotPlatformAnnouncementRecipients/);
   assert.match(service, /assertNoClientRecipients/);
+  assert.doesNotMatch(service, /listPlatformAnnouncementRecipients/);
+  assert.doesNotMatch(service, /insertPlatformAnnouncementRecipients\(/);
   assert.match(service, /SYSTEM_SENDER_DISPLAY_NAME = "Somafrik"/);
   assert.match(service, /persistPlatformAttachmentBytes/);
   assert.match(service, /country_admins/);
@@ -74,10 +76,20 @@ function sourceGuards() {
   assert.match(c3Http, /C3-01/);
   assert.match(c3Http, /C3-16 titre texte brut/);
 
-  assert.match(pgStore, /listPlatformAnnouncementRecipients/);
+  assert.match(pgStore, /snapshotPlatformAnnouncementRecipients/);
+  assert.match(pgStore, /INSERT INTO platform_announcement_recipients/);
+  assert.match(pgStore, /ON CONFLICT \(announcement_id, user_id\) DO NOTHING/);
   assert.match(pgStore, /all_active_users/);
+  assert.match(pgStore, /EXISTS \(/);
   assert.match(pgStore, /ur\.status = 'active'/);
   assert.match(pgStore, /ur\.revoked_at IS NULL/);
+  const snapshotStart = pgStore.indexOf("async snapshotPlatformAnnouncementRecipients");
+  const snapshotEnd = pgStore.indexOf("async insertPlatformAnnouncement(", snapshotStart);
+  assert.ok(snapshotStart >= 0 && snapshotEnd > snapshotStart, "bloc snapshot plateforme");
+  const snapshotBlock = pgStore.slice(snapshotStart, snapshotEnd);
+  assert.match(snapshotBlock, /INSERT INTO platform_announcement_recipients/);
+  assert.match(snapshotBlock, /SELECT/);
+  assert.doesNotMatch(snapshotBlock, /for \(const row of rows\)/);
   assert.match(attachments, /platform-announcements/);
   assert.match(attachments, /persistPlatformAttachmentBytes/);
 
@@ -127,6 +139,10 @@ function sourceGuards() {
   assert.match(httpTest, /PA-10/);
   assert.match(httpTest, /PA-11/);
   assert.match(httpTest, /PA-12/);
+  assert.match(httpTest, /PA-13/);
+  assert.match(httpTest, /PA-14/);
+  assert.match(httpTest, /recipient_insert_statement/);
+  assert.match(httpTest, /REVOKED_U/);
   console.log("verify-platform-announcements: source guards OK");
 }
 

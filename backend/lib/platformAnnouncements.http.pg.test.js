@@ -29,6 +29,8 @@ const TEACHER_A = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa06";
 const PARENT_A = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa07";
 const STUDENT_A = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa08";
 const INACTIVE_U = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa09";
+const REVOKED_U = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa10";
+const BULK_ACTIVE_USERS = 40;
 
 const SUPER_PERMS = ["ALL_PRIVILEGES", "Announcements:READ", "Announcements:CREATE", "Announcements:UPDATE"];
 const READ_PERMS = ["Announcements:READ"];
@@ -255,6 +257,25 @@ async function seed(pool) {
      VALUES ($1, $2, 'TCH-PA-A', 'active')`,
     [schoolA.id, TEACHER_A],
   );
+  await pool.query(
+    `INSERT INTO users (id, school_id, user_code, first_name, last_name, email, role, status, must_change_password)
+     VALUES ($1, $2, 'REV-PA', 'Révoqué', 'U', 'rev-pa@test.local', NULL, 'active', FALSE)`,
+    [REVOKED_U, schoolA.id],
+  );
+  const existingRoles = await pool.query(`SELECT id FROM user_roles WHERE user_id = $1`, [REVOKED_U]);
+  if (!existingRoles.rowCount) {
+    await pool.query(
+      `INSERT INTO user_roles (user_id, school_id, role_key, status)
+       VALUES ($1, $2, 'PARENT', 'active')`,
+      [REVOKED_U, schoolA.id],
+    );
+  }
+  await pool.query(
+    `UPDATE user_roles
+     SET status = 'revoked', revoked_at = NOW(), revoked_by = $2, updated_at = NOW()
+     WHERE user_id = $1 AND (status = 'active' OR revoked_at IS NULL)`,
+    [REVOKED_U, SUPER_SA],
+  );
 
   await setRoleModuleGrant(pool, "SUPER_ADMIN", { create: true, read: true, update: true });
   await setRoleModuleGrant(pool, "COUNTRY_ADMIN", { create: false, read: true, update: false });
@@ -301,7 +322,7 @@ async function main() {
 
   try {
     await repo.init();
-    await seed(pool);
+    const fixtures = await seed(pool);
 
     child = spawn(process.execPath, ["backend/server.js"], {
       cwd: ROOT,
@@ -323,6 +344,12 @@ async function main() {
     });
     child.stdout.on("data", () => {});
     await waitForHealth(child, stderrRef);
+    await pool.query(
+      `UPDATE user_roles
+       SET status = 'revoked', revoked_at = COALESCE(revoked_at, NOW()), revoked_by = $2, updated_at = NOW()
+       WHERE user_id = $1 AND (status = 'active' OR revoked_at IS NULL)`,
+      [REVOKED_U, SUPER_SA],
+    );
 
     const superSa = mintAccess(tokens, {
       sub: SUPER_SA,
@@ -459,6 +486,8 @@ async function main() {
       assert.ok(pa04Ids.includes(id), `PA-04 actif ${id}`);
     }
     assert.ok(!pa04Ids.includes(INACTIVE_U), "PA-04 inactive exclu");
+    assert.ok(!pa04Ids.includes(REVOKED_U), "PA-13 user actif + tous rôles révoqués exclu");
+    assert.equal(Number(pa04.data.recipientCount), pa04Ids.length, "PA-04 recipientCount = snapshot PG");
     assert.equal((await request(`/backoffice/platform-announcements/${pa04.data.id}`, { token: teacherA })).status, 200);
     assert.equal((await request(`/backoffice/platform-announcements/${pa04.data.id}`, { token: parentA })).status, 200);
     assert.equal((await request(`/backoffice/platform-announcements/${pa04.data.id}`, { token: studentA })).status, 200);
@@ -631,10 +660,68 @@ async function main() {
     const teacherDl = await downloadFile(teacherA, pdfUp.data.id);
     assert.ok([403, 404].includes(teacherDl.status), "PA-10 non-recipient refusé");
 
+    await pool.query(
+      `INSERT INTO users (school_id, user_code, first_name, last_name, email, role, status, must_change_password)
+       SELECT $1, 'BULK-PA-' || i, 'Bulk', i::text, 'bulk-pa-' || i || '@test.local', 'Parent', 'active', FALSE
+       FROM generate_series(1, $2) AS i`,
+      [fixtures.schoolA, BULK_ACTIVE_USERS],
+    );
+    await pool.query(
+      `INSERT INTO user_roles (user_id, school_id, role_key, status)
+       SELECT u.id, $1, 'PARENT', 'active'
+       FROM users u
+       WHERE u.user_code LIKE 'BULK-PA-%'`,
+      [fixtures.schoolA],
+    );
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS platform_ann_snapshot_probe (
+        id BIGSERIAL PRIMARY KEY,
+        kind TEXT NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+      CREATE OR REPLACE FUNCTION platform_ann_probe_statement()
+      RETURNS trigger
+      LANGUAGE plpgsql
+      AS $$
+      BEGIN
+        INSERT INTO platform_ann_snapshot_probe(kind) VALUES ('recipient_insert_statement');
+        RETURN NULL;
+      END;
+      $$;
+      DROP TRIGGER IF EXISTS trg_platform_ann_recipients_statement ON platform_announcement_recipients;
+      CREATE TRIGGER trg_platform_ann_recipients_statement
+      AFTER INSERT ON platform_announcement_recipients
+      FOR EACH STATEMENT
+      EXECUTE FUNCTION platform_ann_probe_statement();
+      TRUNCATE platform_ann_snapshot_probe;
+    `);
+    const pa14 = await request("/backoffice/platform-announcements", {
+      method: "POST",
+      token: superSa,
+      body: {
+        announcementType: "system",
+        audienceKey: "all_active_users",
+        title: "Snapshot set-based",
+        message: "Publication globale sans INSERT unitaire.",
+      },
+    });
+    assert.equal(pa14.status, 201, `PA-14 publish: ${JSON.stringify(pa14.data)}`);
+    const pa14Ids = await recipientIds(pool, pa14.data.id);
+    const statementCount = Number(
+      (await pool.query(`SELECT count(*)::int AS c FROM platform_ann_snapshot_probe WHERE kind = 'recipient_insert_statement'`))
+        .rows[0].c,
+    );
+    assert.equal(statementCount, 1, `PA-14 INSERT set-based (1 statement, pas N unitaires): ${statementCount}`);
+    assert.ok(pa14Ids.length >= BULK_ACTIVE_USERS + 8, `PA-14 audience importante: ${pa14Ids.length}`);
+    assert.ok(statementCount < pa14Ids.length, "PA-14 preuve: 1 statement << N destinataires");
+    assert.equal(Number(pa14.data.recipientCount), pa14Ids.length, "PA-14 recipientCount sans reload JS");
+    assert.ok(!pa14Ids.includes(REVOKED_U), "PA-13/PA-14 révoqué toujours exclu");
+    assert.ok(!pa14Ids.includes(INACTIVE_U), "PA-14 inactive exclu");
+
     const c3Still = await request("/backoffice/announcements", { token: schoolA });
     assert.notEqual(c3Still.status, 500, "PA-12 C3 établissement toujours joignable");
 
-    console.log("platformAnnouncements.http.pg.test.js GO — PA-01..PA-12");
+    console.log("platformAnnouncements.http.pg.test.js GO — PA-01..PA-14");
   } finally {
     await stopChild(child);
     await pool.end();

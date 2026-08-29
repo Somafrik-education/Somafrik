@@ -3,6 +3,7 @@
 /**
  * ANN-PLATFORM-1 — Annonces Superadmin (administratives + système Somafrik).
  * Domaine distinct de C3 (announcements.school_id NOT NULL). Pas de school_id obligatoire.
+ * all_active_users : users.status=active ET au moins un user_roles canonique actif.
  */
 
 const PLATFORM_ANNOUNCEMENTS_SCHEMA_SQL = `
