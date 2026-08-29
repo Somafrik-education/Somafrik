@@ -7,7 +7,11 @@ import { resolveCanonicalRoleIdentity } from "../lib/canonicalRoleIdentity";
 import { getAllowedRoleDrawerSections, type RoleDrawerItem } from "../navigation/roleDrawerPreferences";
 import { MIN_TOUCH_TARGET_DP } from "../lib/mobileUsability";
 import { getReleaseProfile } from "../config/env";
-import { sendControlledPushTest } from "../services/pushNotifications";
+import {
+  registerAuthenticatedPushDevice,
+  sendControlledPushTest,
+} from "../services/pushNotifications";
+import { sanitizeUserFacingError } from "../services/safeLogger";
 
 const ROLE_LABELS: Record<string, string> = {
   super_admin: "Superadmin",
@@ -73,13 +77,31 @@ export default function RoleNavigationDrawer({
   };
 
   const handlePushSelfTest = () => {
-    void sendControlledPushTest()
-      .then(() => {
-        Alert.alert("Test push", "Notification de test envoyée.");
-      })
-      .catch(() => {
-        Alert.alert("Test push", "Impossible d'envoyer la notification de test.");
-      });
+    void (async () => {
+      const registration = await registerAuthenticatedPushDevice();
+      if (registration === "permission_denied") {
+        Alert.alert(
+          "Test push",
+          "Autorisez les notifications dans les paramètres Android puis réessayez.",
+        );
+        return;
+      }
+      if (registration === "unsupported") {
+        Alert.alert(
+          "Test push",
+          "Les notifications push ne sont pas disponibles dans cet environnement.",
+        );
+        return;
+      }
+
+      await sendControlledPushTest();
+      Alert.alert("Test push", "Notification de test envoyée.");
+    })().catch((error) => {
+      Alert.alert(
+        "Test push",
+        sanitizeUserFacingError(error, "Impossible d'envoyer la notification de test."),
+      );
+    });
   };
 
   return (
