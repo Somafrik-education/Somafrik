@@ -1,6 +1,6 @@
-import { useMemo, useRef, useState, useEffect } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Search } from "lucide-react";
+import { Search, X } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
 import { useData } from "../../context/DataContext";
 import { usePermissionContext } from "../../lib/usePermissionContext";
@@ -30,6 +30,7 @@ export function GlobalSearch() {
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
+  const mobileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     function onClickOutside(event: MouseEvent) {
@@ -128,9 +129,26 @@ export function GlobalSearch() {
     navigate(to);
   }
 
+  function openMobileSearch() {
+    setOpen(true);
+    window.requestAnimationFrame(() => mobileInputRef.current?.focus());
+  }
+
+  const searchReady = query.trim().length >= 2;
+
   return (
-    <div ref={containerRef} className="relative hidden md:block">
-      <div className="flex items-center gap-2 rounded-full border border-line bg-slate-50 px-3 py-1.5">
+    <div ref={containerRef} className="relative">
+      <button
+        type="button"
+        onClick={openMobileSearch}
+        className="flex h-9 w-9 items-center justify-center rounded-full text-slate-500 transition hover:bg-slate-50 hover:text-ink md:hidden"
+        aria-label="Ouvrir la recherche globale"
+        aria-expanded={open}
+      >
+        <Search className="h-5 w-5" strokeWidth={1.8} />
+      </button>
+
+      <div className="hidden items-center gap-2 rounded-full border border-line bg-slate-50 px-3 py-1.5 md:flex">
         <Search className="h-4 w-4 text-slate-400" strokeWidth={1.8} />
         <input
           type="search"
@@ -145,9 +163,39 @@ export function GlobalSearch() {
           aria-label="Recherche globale"
         />
       </div>
-      {open && query.trim().length >= 2 ? (
-        <div className="absolute right-0 z-30 mt-2 max-h-[420px] w-80 overflow-auto rounded-xl border border-line bg-white p-2 shadow-lg">
-          {grouped.length === 0 ? (
+
+      {open ? (
+        <div
+          className={`fixed inset-x-4 top-16 z-40 max-h-[calc(100vh-5rem)] overflow-auto rounded-xl border border-line bg-white p-2 shadow-lg md:absolute md:inset-x-auto md:right-0 md:top-auto md:mt-2 md:max-h-[420px] md:w-80 ${
+            searchReady ? "" : "md:hidden"
+          }`}
+        >
+          <div className="flex items-center gap-2 border-b border-line p-1 pb-2 md:hidden">
+            <Search className="h-4 w-4 shrink-0 text-slate-400" strokeWidth={1.8} />
+            <input
+              ref={mobileInputRef}
+              type="search"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Rechercher…"
+              className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-slate-400"
+              aria-label="Recherche globale mobile"
+            />
+            <button
+              type="button"
+              onClick={() => setOpen(false)}
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-50 hover:text-ink"
+              aria-label="Fermer la recherche"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+
+          {!searchReady ? (
+            <p className="px-3 py-4 text-center text-sm text-muted md:hidden">
+              Saisissez au moins 2 caractères.
+            </p>
+          ) : grouped.length === 0 ? (
             <p className="px-3 py-4 text-center text-sm text-muted">Aucun résultat.</p>
           ) : (
             grouped.map(([group, items]) => (
