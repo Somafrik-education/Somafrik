@@ -75,7 +75,7 @@ export function LoginPage() {
   const form = useForm<LoginValues>({
     resolver: zodResolver(loginSchema),
     defaultValues: {
-      profile: "superadmin",
+      profile: "school",
       schoolCode: DEMO_SCHOOL_CODE,
       identifier: "",
       password: "",
