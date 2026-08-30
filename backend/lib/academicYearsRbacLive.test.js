@@ -26,6 +26,7 @@ test("contrat source : GET/POST/PATCH academic-years passent par requirePermissi
   assert.match(getBlock, /requirePermission\("GET \/api\/v2\/academic-years"\)/);
   const postBlock = sliceFrom(serverSrc, 'app.post("/api/v2/academic-years"', 'app.patch("/api/v2/academic-years/:id"');
   assert.match(postBlock, /requirePermission\("POST \/api\/v2\/academic-years"\)/);
+  assert.match(postBlock, /resolveAcademicYearCreateTenant/);
   const patchBlock = sliceFrom(serverSrc, 'app.patch("/api/v2/academic-years/:id"', 'app.get("/api/v2/exams"');
   assert.match(patchBlock, /requirePermission\("PATCH \/api\/v2\/academic-years\/:id"\)/);
 });

@@ -100,6 +100,11 @@ function createInjectableAcademicYearsRepository() {
     const text = String(sql).replace(/\s+/g, " ").trim();
     const upper = text.toUpperCase();
 
+    if (upper.includes("FROM SCHOOLS") && upper.includes("LOGIN_CODE") && upper.includes("ISO_CODE")) {
+      return tables.schools.filter((row) =>
+        eq(String(row.login_code ?? "").toUpperCase(), String(params[0] ?? "").toUpperCase()),
+      );
+    }
     if (upper.includes("FROM SCHOOLS") && upper.includes("SCHOOL_CODE")) {
       return tables.schools.filter((row) => eq(row.school_code, params[0]));
     }

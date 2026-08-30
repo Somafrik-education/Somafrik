@@ -3389,8 +3389,22 @@ app.get("/api/v2/academic-years", requireAuth, requirePermission("GET /api/v2/ac
 }));
 
 app.post("/api/v2/academic-years", requireAuth, requirePermission("POST /api/v2/academic-years"), asyncHandler(async (req, res) => {
-  const schoolCode = req.body?.schoolCode ?? req.principal.schoolCode;
-  tenantScopeService.assertSchoolAccess(req.principal, schoolCode);
+  const { resolveAcademicYearCreateTenant } = require("./lib/academicYearTenant");
+  let schoolCode = req.body?.schoolCode ?? req.principal.schoolCode;
+  if (
+    typeof repository.getSchoolByLoginCode === "function" &&
+    typeof repository.getSchoolForPrincipalUser === "function"
+  ) {
+    const resolved = await resolveAcademicYearCreateTenant({
+      principal: req.principal,
+      bodySchoolCode: req.body?.schoolCode,
+      getSchoolByLoginCode: (code) => repository.getSchoolByLoginCode(code),
+      getSchoolForPrincipalUser: () => repository.getSchoolForPrincipalUser(req.principal),
+    });
+    schoolCode = resolved.schoolCode;
+  } else {
+    tenantScopeService.assertSchoolAccess(req.principal, schoolCode);
+  }
   const created = await repository.createAcademicYearV2({ ...req.body, schoolCode });
   cacheService.invalidate("v2:academic-years");
   await auditService.record(req, "academic_year_create", "academic_year", created.id, {

@@ -73,11 +73,12 @@ async function ensureSchoolYear(request, schoolToken, name = "2025-2026", school
   const yearMatch = String(name).match(/^(\d{4})-(\d{4})$/);
   const startDate = yearMatch ? `${yearMatch[1]}-09-01` : isCurrent ? "2025-09-01" : "2024-09-01";
   const endDate = yearMatch ? `${yearMatch[2]}-08-31` : isCurrent ? "2026-08-31" : "2025-08-31";
+  const { isV2SchoolLoginCode } = require("./schoolCodeV2");
   const created = await request("/v2/academic-years", {
     method: "POST",
     token: schoolToken,
     body: {
-      schoolCode,
+      ...(isV2SchoolLoginCode(schoolCode) ? { schoolCode } : {}),
       name,
       startDate,
       endDate,
