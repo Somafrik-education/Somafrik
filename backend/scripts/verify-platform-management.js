@@ -107,6 +107,7 @@ async function main() {
       PORT: String(PORT),
       NODE_ENV: "development",
       SOMAFRIK_DB_REQUIRED: "false",
+      SOMAFRIK_SKIP_DEMO_SEED: "false",
       DATABASE_URL: "",
       SOMAFRIK_DISABLE_LOGIN_LOCKOUT: "true",
     },

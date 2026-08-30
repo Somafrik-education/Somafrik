@@ -285,6 +285,7 @@ async function ensureApiBase() {
       PORT: port,
       HOST: "127.0.0.1",
       SOMAFRIK_DB_REQUIRED: "false",
+      SOMAFRIK_SKIP_DEMO_SEED: "false",
       DATABASE_URL: "",
       SOMAFRIK_API_ONLY: "true",
       SOMAFRIK_E2E: "true",

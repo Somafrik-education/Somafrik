@@ -5,6 +5,11 @@ const path = require("path");
 require("dotenv").config({ path: path.join(__dirname, "..", ".env") });
 require("dotenv").config({ path: path.join(__dirname, "..", ".env.local"), override: true });
 require("dotenv").config();
+if (String(process.env.SOMAFRIK_FORCE_MEMORY ?? "").trim().toLowerCase() === "true") {
+  delete process.env.DATABASE_URL;
+  process.env.SOMAFRIK_DB_REQUIRED = "false";
+  process.env.SOMAFRIK_SKIP_DEMO_SEED = "false";
+}
 const { AuthService, BusinessError } = require("./services/authService");
 const { BackOfficeAccessService } = require("./services/backOfficeAccessService");
 const { hashSecret } = require("./services/credentialService");
