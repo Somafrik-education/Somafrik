@@ -285,6 +285,10 @@ test("maps Web Paramètres paths and Mobile settings routes to distinct screens"
     HELP_SCREEN.SETTINGS_COMING_SOON,
   );
   assert.equal(
+    resolveHelpScreen({ platform: "mobile", routeName: "Accueil" }),
+    HELP_SCREEN.DASHBOARD,
+  );
+  assert.equal(
     resolveHelpScreen({ platform: "mobile", routeName: "EstablishmentProfile" }),
     HELP_SCREEN.SETTINGS_PROFILE,
   );

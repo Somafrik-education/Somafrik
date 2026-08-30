@@ -1,0 +1,276 @@
+{
+  "generatedAt": "2026-08-30T15:56:18.069Z",
+  "chrome": "/usr/bin/google-chrome-stable",
+  "viewports": [
+    "360",
+    "390",
+    "iphone"
+  ],
+  "pages": [
+    "dashboard",
+    "classes",
+    "profil",
+    "annee",
+    "structure",
+    "keyboard"
+  ],
+  "collisions": [],
+  "findings": [
+    {
+      "viewport": "360",
+      "page": "dashboard",
+      "helpVisible": true,
+      "helpHiddenForKeyboard": false,
+      "overlapCta": false,
+      "overlapTabs": false,
+      "overlapKeyboard": false,
+      "panelBox": {
+        "x": 0,
+        "y": 88,
+        "width": 360,
+        "height": 712
+      }
+    },
+    {
+      "viewport": "360",
+      "page": "classes",
+      "helpVisible": true,
+      "helpHiddenForKeyboard": false,
+      "overlapCta": false,
+      "overlapTabs": false,
+      "overlapKeyboard": false,
+      "panelBox": {
+        "x": 0,
+        "y": 88,
+        "width": 360,
+        "height": 712
+      }
+    },
+    {
+      "viewport": "360",
+      "page": "profil",
+      "helpVisible": true,
+      "helpHiddenForKeyboard": false,
+      "overlapCta": false,
+      "overlapTabs": false,
+      "overlapKeyboard": false,
+      "panelBox": {
+        "x": 0,
+        "y": 88,
+        "width": 360,
+        "height": 712
+      }
+    },
+    {
+      "viewport": "360",
+      "page": "annee",
+      "helpVisible": true,
+      "helpHiddenForKeyboard": false,
+      "overlapCta": false,
+      "overlapTabs": false,
+      "overlapKeyboard": false,
+      "panelBox": {
+        "x": 0,
+        "y": 88,
+        "width": 360,
+        "height": 712
+      }
+    },
+    {
+      "viewport": "360",
+      "page": "structure",
+      "helpVisible": true,
+      "helpHiddenForKeyboard": false,
+      "overlapCta": false,
+      "overlapTabs": false,
+      "overlapKeyboard": false,
+      "panelBox": {
+        "x": 0,
+        "y": 88,
+        "width": 360,
+        "height": 712
+      }
+    },
+    {
+      "viewport": "360",
+      "page": "keyboard",
+      "helpVisible": false,
+      "helpHiddenForKeyboard": true,
+      "overlapCta": false,
+      "overlapTabs": false,
+      "overlapKeyboard": false,
+      "panelBox": null
+    },
+    {
+      "viewport": "390",
+      "page": "dashboard",
+      "helpVisible": true,
+      "helpHiddenForKeyboard": false,
+      "overlapCta": false,
+      "overlapTabs": false,
+      "overlapKeyboard": false,
+      "panelBox": {
+        "x": 0,
+        "y": 95,
+        "width": 390,
+        "height": 749
+      }
+    },
+    {
+      "viewport": "390",
+      "page": "classes",
+      "helpVisible": true,
+      "helpHiddenForKeyboard": false,
+      "overlapCta": false,
+      "overlapTabs": false,
+      "overlapKeyboard": false,
+      "panelBox": {
+        "x": 0,
+        "y": 95,
+        "width": 390,
+        "height": 749
+      }
+    },
+    {
+      "viewport": "390",
+      "page": "profil",
+      "helpVisible": true,
+      "helpHiddenForKeyboard": false,
+      "overlapCta": false,
+      "overlapTabs": false,
+      "overlapKeyboard": false,
+      "panelBox": {
+        "x": 0,
+        "y": 95,
+        "width": 390,
+        "height": 749
+      }
+    },
+    {
+      "viewport": "390",
+      "page": "annee",
+      "helpVisible": true,
+      "helpHiddenForKeyboard": false,
+      "overlapCta": false,
+      "overlapTabs": false,
+      "overlapKeyboard": false,
+      "panelBox": {
+        "x": 0,
+        "y": 95,
+        "width": 390,
+        "height": 749
+      }
+    },
+    {
+      "viewport": "390",
+      "page": "structure",
+      "helpVisible": true,
+      "helpHiddenForKeyboard": false,
+      "overlapCta": false,
+      "overlapTabs": false,
+      "overlapKeyboard": false,
+      "panelBox": {
+        "x": 0,
+        "y": 95,
+        "width": 390,
+        "height": 749
+      }
+    },
+    {
+      "viewport": "390",
+      "page": "keyboard",
+      "helpVisible": false,
+      "helpHiddenForKeyboard": true,
+      "overlapCta": false,
+      "overlapTabs": false,
+      "overlapKeyboard": false,
+      "panelBox": null
+    },
+    {
+      "viewport": "iphone",
+      "page": "dashboard",
+      "helpVisible": true,
+      "helpHiddenForKeyboard": false,
+      "overlapCta": false,
+      "overlapTabs": false,
+      "overlapKeyboard": false,
+      "panelBox": {
+        "x": 0,
+        "y": 95,
+        "width": 390,
+        "height": 749
+      }
+    },
+    {
+      "viewport": "iphone",
+      "page": "classes",
+      "helpVisible": true,
+      "helpHiddenForKeyboard": false,
+      "overlapCta": false,
+      "overlapTabs": false,
+      "overlapKeyboard": false,
+      "panelBox": {
+        "x": 0,
+        "y": 95,
+        "width": 390,
+        "height": 749
+      }
+    },
+    {
+      "viewport": "iphone",
+      "page": "profil",
+      "helpVisible": true,
+      "helpHiddenForKeyboard": false,
+      "overlapCta": false,
+      "overlapTabs": false,
+      "overlapKeyboard": false,
+      "panelBox": {
+        "x": 0,
+        "y": 95,
+        "width": 390,
+        "height": 749
+      }
+    },
+    {
+      "viewport": "iphone",
+      "page": "annee",
+      "helpVisible": true,
+      "helpHiddenForKeyboard": false,
+      "overlapCta": false,
+      "overlapTabs": false,
+      "overlapKeyboard": false,
+      "panelBox": {
+        "x": 0,
+        "y": 95,
+        "width": 390,
+        "height": 749
+      }
+    },
+    {
+      "viewport": "iphone",
+      "page": "structure",
+      "helpVisible": true,
+      "helpHiddenForKeyboard": false,
+      "overlapCta": false,
+      "overlapTabs": false,
+      "overlapKeyboard": false,
+      "panelBox": {
+        "x": 0,
+        "y": 95,
+        "width": 390,
+        "height": 749
+      }
+    },
+    {
+      "viewport": "iphone",
+      "page": "keyboard",
+      "helpVisible": false,
+      "helpHiddenForKeyboard": true,
+      "overlapCta": false,
+      "overlapTabs": false,
+      "overlapKeyboard": false,
+      "panelBox": null
+    }
+  ],
+  "result": "GO"
+}

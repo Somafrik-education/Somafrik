@@ -78,7 +78,7 @@ function assertSourceGuards() {
     /packages\/help-catalog[\s\S]{0,80}\/src\/help\//,
     "ne pas fusionner web/src/help dans le chunk catalogue (vitrine)",
   );
-  assert.equal(fs.existsSync(path.join(ROOT, "Mobile/src/help")), false, "HELP-V1B ne doit pas ajouter Mobile/src/help");
+  assert.doesNotMatch(readRepo("web/src/help/HelpHost.tsx"), /from ["']react-native/);
   assert.doesNotMatch(readRepo("backend/server.js"), /\/api\/help/);
 
   console.log("verify-help-v1b-web: source guards OK");

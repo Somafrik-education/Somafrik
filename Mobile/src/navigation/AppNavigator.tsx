@@ -45,6 +45,7 @@ import SchoolAssignableRolesScreen from "../screens/SchoolAssignableRolesScreen"
 import PlatformNotificationsScreen from "../screens/PlatformNotificationsScreen";
 import InternalNotificationsScreen from "../screens/InternalNotificationsScreen";
 import OfflineBanner from "../components/OfflineBanner";
+import HelpHost from "../help/HelpHost";
 import { AdminEntity } from "../context/AdminDataContext";
 import { useAuth } from "../context/AuthContext";
 import { canPersistFullSession } from "../lib/dataTruth";
@@ -342,6 +343,7 @@ export default function AppNavigator() {
         {canReadView(session, "PlatformNotifications") && <Stack.Screen name="PlatformNotifications" component={PlatformNotificationsScreen} options={{ title: "Notifications plateforme" }} />}
         {canReadView(session, "Permissions") && <Stack.Screen name="Permissions" component={PermissionsScreen} options={{ title: "Droits par rôle" }} />}
       </Stack.Navigator>
+      <HelpHost />
     </NavigationContainer>
   );
 }

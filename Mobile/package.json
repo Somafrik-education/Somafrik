@@ -69,13 +69,15 @@
     "verify:mobile-l1-offline-reads": "node scripts/verify-mobile-l1-offline-reads.js",
     "verify:mobile-l1-native-sqlcipher-smoke": "node scripts/run-native-sqlcipher-smoke.js",
     "verify:mobile-rc2-offline-read-smoke": "node scripts/verify-mobile-rc2-offline-read-smoke.js",
-    "test:role-selection-layout": "npx --yes tsx src/lib/roleSelectionLayout.test.ts"
+    "test:role-selection-layout": "npx --yes tsx src/lib/roleSelectionLayout.test.ts",
+    "test:help-v1c": "npx --yes tsx src/help/buildMobileHelpContext.test.ts && npx --yes tsx src/help/resolveMobileHelpRoute.test.ts && npx --yes tsx src/help/helpAvailability.test.ts && npx --yes tsx src/help/helpRbac.test.ts && npx --yes tsx src/help/helpOverlayPolicy.test.ts && npx --yes tsx src/help/helpBusinessModal.test.ts"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.3",
     "@react-navigation/bottom-tabs": "^7.16.2",
     "@react-navigation/native": "^7.2.5",
     "@react-navigation/native-stack": "^7.16.0",
+    "@somafrik/help-catalog": "file:../packages/help-catalog",
     "expo": "~54.0.37",
     "expo-build-properties": "~1.0.10",
     "expo-constants": "~18.0.14",

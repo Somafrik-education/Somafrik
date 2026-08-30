@@ -5,6 +5,8 @@ on:
     branches: [develop]
     paths:
       - "packages/help-catalog/**"
+      - "Mobile/src/help/**"
+      - "Mobile/src/navigation/AppNavigator.tsx"
       - "scripts/verify-help-v1a-catalogue.js"
       - ".github/workflows/help-v1a.yml"
   workflow_dispatch:
