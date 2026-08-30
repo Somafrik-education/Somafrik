@@ -428,7 +428,7 @@ describe("GradesEvaluationsPage — enseignant conserve la période active", () 
   });
 });
 
-describe("GradesEvaluationsPage — Saisie des notes Validée uniquement", () => {
+describe("GradesEvaluationsPage — Saisie des notes brouillon/ouverte/validée", () => {
   const lesAdverbes = {
     id: "EVAL-ADV",
     title: "LES ADVERBES",
@@ -479,11 +479,45 @@ describe("GradesEvaluationsPage — Saisie des notes Validée uniquement", () =>
     gradeEntryGridProps.current = null;
   });
 
-  it("Brouillon absente du select Saisie des notes", () => {
+  it("Brouillon présente dans le select Saisie des notes", () => {
     renderPage();
     fireEvent.click(screen.getByRole("button", { name: "Saisie des notes" }));
     const select = screen.getByLabelText("Évaluation") as HTMLSelectElement;
-    expect([...select.options].map((option) => option.text).join(" ")).not.toContain("LES ADVERBES");
+    expect([...select.options].map((option) => option.text).join(" ")).toContain("LES ADVERBES");
+  });
+
+  it("Enseignant + Notes:CREATE : bouton Nouvelle évaluation visible", () => {
+    renderPage();
+    expect(screen.getAllByRole("button", { name: "Nouvelle évaluation" }).length).toBeGreaterThan(0);
+  });
+
+  it("handleSaveGrades sur Brouillon : POST /notes sans teacherId client", async () => {
+    renderPage();
+    fireEvent.click(screen.getByRole("button", { name: "Saisie des notes" }));
+    fireEvent.change(screen.getByLabelText("Évaluation"), { target: { value: "EVAL-ADV" } });
+
+    await waitFor(() => expect(gradeEntryGridProps.current?.onSave).toEqual(expect.any(Function)));
+
+    await gradeEntryGridProps.current!.onSave([
+      {
+        id: "g-draft",
+        schoolCode: "SCH-001",
+        studentId: "s1",
+        studentName: "Diallo Awa",
+        evaluationId: "EVAL-ADV",
+        subject: "Mathématiques",
+        className: "6e A",
+        period: "Trimestre 1",
+        value: 13,
+        scale: 20,
+        gradeStatus: "Saisie",
+      },
+    ]);
+
+    expect(upsertNoteApi).toHaveBeenCalledTimes(1);
+    expect(upsertNoteApi.mock.calls[0][0].teacherId).toBeUndefined();
+    expect(upsertNoteApi.mock.calls[0][0].authorId).toBeUndefined();
+    expect(refreshApi).toHaveBeenCalledWith(["notes"]);
   });
 
   it("Validée Trimestre 1 visible dans Saisie même si la période active est Trimestre 3", () => {

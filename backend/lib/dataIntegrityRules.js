@@ -8,7 +8,6 @@ const {
   validateGradeContract,
   toGradeStatus,
   toEvaluationStatus,
-  isValidatedEvaluationStatus,
   isPublishedEvaluationStatus,
 } = require("./gradesCanonical");
 
@@ -262,8 +261,8 @@ function validateNoteWrite(state = {}, note = {}, options = {}) {
       if (isPublishedEvaluationStatus(evaluation.status) || canonical === "archived") {
         return `Évaluation ${evaluation.status} : modification de note refusée.`;
       }
-      if (!isValidatedEvaluationStatus(evaluation.status)) {
-        return "Évaluation non validée : saisie des notes refusée.";
+      if (canonical !== "draft" && canonical !== "open" && canonical !== "locked") {
+        return "Évaluation non saisissable : saisie des notes refusée.";
       }
     }
     scale = Number(evaluation.scale ?? evaluation.max_score ?? scale);

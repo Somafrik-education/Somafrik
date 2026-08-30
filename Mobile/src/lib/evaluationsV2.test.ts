@@ -94,6 +94,14 @@ function run() {
   assert.equal(evaluationAllowsGradeEntry(evaluation), true);
   assert.equal(
     evaluationAllowsGradeEntry({ ...evaluation, status: "Brouillon", canonicalStatus: "draft" }),
+    true,
+  );
+  assert.equal(
+    evaluationAllowsGradeEntry({ ...evaluation, status: "Publiée", canonicalStatus: "published" }),
+    false,
+  );
+  assert.equal(
+    evaluationAllowsGradeEntry({ ...evaluation, status: "Annulée", canonicalStatus: "archived" }),
     false,
   );
 

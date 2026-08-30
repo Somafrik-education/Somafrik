@@ -33,7 +33,19 @@ export function pedagogicalTeacherId(evaluation: { teacherId?: string } | null |
 
 /** Session Enseignant : le backend résout l'enseignant via principal.sub, pas teacherId client. */
 export function isTeacherSessionRole(role?: string | null) {
-  return String(role ?? "").trim() === "Enseignant";
+  const value = String(role ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .toLowerCase();
+  return value === "enseignant" || value === "teacher";
+}
+
+export function evaluationStatusAllowsGradeWrite(status?: string | null, active = true): boolean {
+  if (active === false) return false;
+  const normalized = normalize(status);
+  if (["publiee", "published", "annulee", "archived"].includes(normalized)) return false;
+  return ["brouillon", "draft", "ouverte", "open", "saisie terminee", "validee", "locked"].includes(normalized);
 }
 
 /**
@@ -413,7 +425,7 @@ export function canEnterGradesForEvaluation(
 ): boolean {
   if (!user || !evaluation) return false;
   if (evaluation.active === false) return false;
-  if (evaluation.status !== "Validée") return false;
+  if (!evaluationStatusAllowsGradeWrite(evaluation.status)) return false;
   return teacherCanAccessEvaluation(user, evaluation, state);
 }
 
@@ -568,8 +580,8 @@ export function upsertStudentGrade(
   if (evaluation.active === false) {
     return { grades, error: "Évaluation inactive : saisie des notes refusée." };
   }
-  if (evaluation.status !== "Validée") {
-    return { grades, error: "Évaluation non validée : saisie des notes refusée." };
+  if (!evaluationStatusAllowsGradeWrite(evaluation.status)) {
+    return { grades, error: "Évaluation publiée ou annulée : saisie des notes refusée." };
   }
   const teacherSession = isTeacherSessionRole(input.author?.role);
   const teacherId = pedagogicalTeacherId(evaluation);

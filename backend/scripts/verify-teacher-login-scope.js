@@ -112,13 +112,14 @@ function assertNotesWebUsesSessionAssignments() {
 
   const evaluationsLib = fs.readFileSync(path.join(ROOT, "web/src/lib/evaluations.ts"), "utf8");
   assert.match(evaluationsLib, /export function canEnterGradesForEvaluation/);
-  assert.match(evaluationsLib, /evaluation\.status !== "Validée"/);
+  assert.match(evaluationsLib, /evaluationStatusAllowsGradeWrite/);
   assert.match(evaluationsLib, /evaluationsEligibleForGradeEntry/);
 
   const gradeEntry = fs.readFileSync(path.join(ROOT, "backend/lib/evaluationGradeEntry.js"), "utf8");
   assert.match(gradeEntry, /EVALUATION_NOT_VALIDATED/);
-  assert.match(gradeEntry, /isValidatedEvaluationStatus/);
+  assert.match(gradeEntry, /evaluationStatusAllowsGradeWrite/);
   assert.match(gradeEntry, /assertTeacherCannotValidateEvaluation/);
+  assert.match(gradeEntry, /isTeacherPrincipal/);
 
   const notesRoute = fs.readFileSync(path.join(ROOT, "backend/server.js"), "utf8");
   assert.match(notesRoute, /assertNoteWrite/);
