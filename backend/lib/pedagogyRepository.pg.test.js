@@ -836,32 +836,37 @@ async function main() {
       auditMeta,
     );
     assert.ok(grade.id);
+    const lockVersion = Number(grade.version ?? 1);
 
     const [gradeA, gradeB] = await Promise.all([
-      store.upsertSchoolGrade(
-        {
-          evaluationId: evaluation.id,
-          studentId: "CD-2026-0001-STU-PG-01",
-          teacherId: "ENS-PG-001",
-          value: 15,
-          scale: 20,
-          version: 1,
-        },
-        admin,
-        auditMeta,
-      ),
-      store.upsertSchoolGrade(
-        {
-          evaluationId: evaluation.id,
-          studentId: "CD-2026-0001-STU-PG-01",
-          teacherId: "ENS-PG-001",
-          value: 16,
-          scale: 20,
-          version: 1,
-        },
-        admin,
-        auditMeta,
-      ).catch((error) => error),
+      store
+        .upsertSchoolGrade(
+          {
+            evaluationId: evaluation.id,
+            studentId: "CD-2026-0001-STU-PG-01",
+            teacherId: "ENS-PG-001",
+            value: 15,
+            scale: 20,
+            version: lockVersion,
+          },
+          admin,
+          auditMeta,
+        )
+        .catch((error) => error),
+      store
+        .upsertSchoolGrade(
+          {
+            evaluationId: evaluation.id,
+            studentId: "CD-2026-0001-STU-PG-01",
+            teacherId: "ENS-PG-001",
+            value: 16,
+            scale: 20,
+            version: lockVersion,
+          },
+          admin,
+          auditMeta,
+        )
+        .catch((error) => error),
     ]);
     const gradeRows = await pool.query(
       `SELECT count(*)::int AS count FROM grades WHERE evaluation_id = $1 AND student_id = $2`,
