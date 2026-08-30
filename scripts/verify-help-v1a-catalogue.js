@@ -66,12 +66,34 @@ function assertSourceGuards() {
     "HELP-V1A ne doit pas publier un parcours d'écriture parent-enfant",
   );
 
-  const mobileSrc = walk(path.join(ROOT, "Mobile/src"))
-    .filter((file) => /\.(ts|tsx)$/.test(file))
-    .map((file) => fs.readFileSync(file, "utf8"))
-    .join("\n");
-  assert.doesNotMatch(mobileSrc, /@somafrik\/help-catalog/);
-  assert.doesNotMatch(mobileSrc, /HelpTrigger|HelpPanel/);
+  const mobileSrcFiles = walk(path.join(ROOT, "Mobile/src")).filter((file) => /\.(ts|tsx)$/.test(file));
+  const publicOrBootstrap = mobileSrcFiles.filter((file) => {
+    const rel = file.replace(/\\/g, "/");
+    return /\/(WelcomeScreen|RoleSelectionScreen|LoginScreen|PermissionsScreen|ConfigurationErrorScreen)\.(ts|tsx)$/.test(
+      rel,
+    );
+  });
+  for (const file of publicOrBootstrap) {
+    const src = fs.readFileSync(file, "utf8");
+    assert.doesNotMatch(src, /@somafrik\/help-catalog/);
+    assert.doesNotMatch(src, /HelpTrigger|HelpPanel|HelpHost/);
+  }
+
+  const helpHostFiles = walk(path.join(ROOT, "Mobile/src/help")).filter((file) => /\.(ts|tsx)$/.test(file));
+  assert.ok(helpHostFiles.length > 0, "HELP-V1C : le host Mobile doit exister");
+  const helpHostBlob = helpHostFiles.map((file) => fs.readFileSync(file, "utf8")).join("\n");
+  assert.match(helpHostBlob, /@somafrik\/help-catalog/);
+
+  for (const file of mobileSrcFiles) {
+    const rel = path.relative(ROOT, file).replace(/\\/g, "/");
+    if (rel.startsWith("Mobile/src/help/")) continue;
+    const src = fs.readFileSync(file, "utf8");
+    assert.equal(
+      src.includes("@somafrik/help-catalog"),
+      false,
+      `HELP-V1A : import catalogue hors host Mobile (${rel})`,
+    );
+  }
 
   console.log("verify-help-v1a-catalogue: source guards OK");
 }

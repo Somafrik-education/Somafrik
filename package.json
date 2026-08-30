@@ -30,6 +30,8 @@
     "verify:help-v1a-catalogue": "node scripts/verify-help-v1a-catalogue.js",
     "verify:help-v1b-web": "node scripts/verify-help-v1b-web.js",
     "verify:help-v1b-viewport": "node scripts/help-v1b-viewport-smoke.js",
+    "verify:help-v1c-mobile": "node scripts/verify-help-v1c-mobile.js",
+    "verify:help-v1c-viewport": "node scripts/help-v1c-viewport-smoke.js",
     "verify:settings-functional-audit": "node scripts/verify-settings-functional-audit.js",
     "verify:help-settings": "node scripts/verify-help-settings.js",
     "test:v2-api": "npm --prefix apps/api test",
