@@ -34,6 +34,23 @@ export function getLeafRouteName(state: NavStateLike): string | null {
   return typeof route.name === "string" && route.name.trim() ? route.name : null;
 }
 
+export function getRootRouteName(state: NavStateLike): string | null {
+  if (!state || !Array.isArray(state.routes) || state.routes.length === 0) return null;
+  const index = Number.isInteger(state.index) ? Number(state.index) : 0;
+  const route = state.routes[index] ?? state.routes[0];
+  return typeof route?.name === "string" && route.name.trim() ? route.name : null;
+}
+
+export function readHelpNavigationSnapshot(state: NavStateLike): {
+  routeName: string | null;
+  rootName: string | null;
+} {
+  return {
+    routeName: getLeafRouteName(state),
+    rootName: getRootRouteName(state),
+  };
+}
+
 export function catalogRouteName(routeName: string | null | undefined): string | null {
   if (typeof routeName !== "string" || routeName.trim() === "") return null;
   const name = routeName.trim();

@@ -35,7 +35,11 @@ function assertSourceGuards() {
 
   const navigator = readRepo("Mobile/src/navigation/AppNavigator.tsx");
   assert.match(navigator, /import HelpHost from ["']\.\.\/help\/HelpHost["']/);
-  assert.match(navigator, /<HelpHost \/>/);
+  assert.match(navigator, /<HelpHost\b[^>]*routeName=/);
+  assert.match(navigator, /<HelpHost\b[^>]*rootName=/);
+  assert.match(navigator, /onReady=/);
+  assert.match(navigator, /onStateChange=/);
+  assert.match(navigator, /readHelpNavigationSnapshot|applyHelpNavigationState/);
   assert.doesNotMatch(navigator, /@somafrik\/help-catalog/);
 
   const publicFiles = [
@@ -84,6 +88,9 @@ function assertSourceGuards() {
   assert.match(host, /session/);
   assert.match(host, /permissionsBootstrap/);
   assert.match(host, /subscribeHelpBusinessModal/);
+  assert.match(host, /navigationRef/);
+  assert.doesNotMatch(host, /useNavigation(?:State)?\s*\(/);
+  assert.doesNotMatch(host, /from\s+["']@react-navigation\/native["']/);
   assert.doesNotMatch(host, /businessModalOpen:\s*false/);
   assert.match(readRepo("Mobile/src/help/helpAvailability.ts"), /ready_offline/);
   assert.match(readRepo("Mobile/src/components/CanonicalMutationModal.tsx"), /reportHelpBusinessModal/);

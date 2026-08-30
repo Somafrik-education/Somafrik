@@ -1,5 +1,11 @@
 import assert from "node:assert/strict";
-import { catalogRouteName, getLeafRouteName, isPublicOrBootstrapRoute } from "./resolveMobileHelpRoute";
+import {
+  catalogRouteName,
+  getLeafRouteName,
+  getRootRouteName,
+  isPublicOrBootstrapRoute,
+  readHelpNavigationSnapshot,
+} from "./resolveMobileHelpRoute";
 
 assert.equal(catalogRouteName("Accueil"), "Home");
 assert.equal(catalogRouteName("Enseignants"), "Teachers");
@@ -36,5 +42,11 @@ const stackClasses = {
   routes: [{ name: "Home" }, { name: "Classes" }],
 };
 assert.equal(getLeafRouteName(stackClasses), "Classes");
+assert.equal(getRootRouteName(nested), "Home");
+assert.equal(getRootRouteName(stackClasses), "Classes");
+assert.equal(getRootRouteName(null), null);
+assert.deepEqual(readHelpNavigationSnapshot(nested), { routeName: "Accueil", rootName: "Home" });
+assert.deepEqual(readHelpNavigationSnapshot(stackClasses), { routeName: "Classes", rootName: "Classes" });
+assert.deepEqual(readHelpNavigationSnapshot(null), { routeName: null, rootName: null });
 
 console.log("resolveMobileHelpRoute.test.ts OK");
