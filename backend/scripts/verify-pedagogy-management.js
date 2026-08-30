@@ -596,9 +596,10 @@ async function runPostgresHttpGuards(databaseUrl) {
     const teacherCoursesRead = await request(PG_PORT, "/courses", { token: teacherToken });
     assertPermissionDenied(teacherCoursesRead, "enseignant GET /courses");
 
+    // POST /evaluations = Notes:CREATE. Admin School n'a que Modifier notes (UPDATE).
     const forgedEvaluation = await request(PG_PORT, "/evaluations", {
       method: "POST",
-      token: adminToken,
+      token: prefetToken,
       body: {
         id: `EVAL-FORGE-${stamp}`,
         schoolCode: "BI-2026-0002",
@@ -668,7 +669,7 @@ async function runPostgresHttpGuards(databaseUrl) {
 
     const postForeignLegacy = await request(PG_PORT, "/evaluations", {
       method: "POST",
-      token: adminToken,
+      token: prefetToken,
       body: {
         id: biEvaluation.rows[0].legacy_json_id,
         className: "6ème A",
@@ -835,7 +836,7 @@ async function runPostgresHttpGuards(databaseUrl) {
 
     const historyEval = await request(PG_PORT, "/evaluations", {
       method: "POST",
-      token: adminToken,
+      token: prefetToken,
       body: {
         className: "6ème A",
         subject: "Histoire",
@@ -882,7 +883,7 @@ async function runPostgresHttpGuards(databaseUrl) {
     );
     const otherClassEval = await request(PG_PORT, "/evaluations", {
       method: "POST",
-      token: adminToken,
+      token: prefetToken,
       body: {
         className: "6ème B",
         subject: "Mathématiques",

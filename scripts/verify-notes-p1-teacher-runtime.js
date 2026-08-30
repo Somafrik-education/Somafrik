@@ -106,6 +106,13 @@ function assertTeacherRuntimeSource() {
 
   const criticalParity = readRepo("backend/lib/criticalParityRbacCanonical.js");
   assert.doesNotMatch(criticalParity, /moduleKey:\s*"grades"/);
+
+  const { rolePermissionsDeclared } = require(path.join(ROOT, "backend/data"));
+  assert.ok(rolePermissionsDeclared.Enseignant.includes("Créer notes"));
+  assert.ok(rolePermissionsDeclared.Enseignant.includes("Modifier notes"));
+  assert.ok(rolePermissionsDeclared["Préfet des études"].includes("Créer notes"));
+  assert.equal(rolePermissionsDeclared["Admin School"].includes("Créer notes"), false);
+  assert.equal(rolePermissionsDeclared["Admin School"].includes("Notes:CREATE"), false);
 }
 
 assertHelpWriteArticlesAbsent();
