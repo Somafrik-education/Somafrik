@@ -95,9 +95,17 @@ function assertTeacherRuntimeSource() {
   );
 
   const contactProvision = readRepo("backend/lib/contactUserProvision.js");
-  assert.match(contactProvision, /Notes:CREATE/);
-  assert.match(contactProvision, /Notes:UPDATE/);
-  assert.match(contactProvision, /Affectations:READ/);
+  const enseignantDefaults = contactProvision.match(/Enseignant:\s*\[[^\]]+\]/);
+  assert.ok(enseignantDefaults, "defaults Enseignant introuvables");
+  assert.match(enseignantDefaults[0], /Notes:CREATE/);
+  assert.match(enseignantDefaults[0], /Notes:UPDATE/);
+  assert.match(enseignantDefaults[0], /Affectations:READ/);
+  assert.match(enseignantDefaults[0], /Matières:READ/);
+  assert.doesNotMatch(enseignantDefaults[0], /Présences:CREATE/);
+  assert.doesNotMatch(enseignantDefaults[0], /Présences:UPDATE/);
+
+  const criticalParity = readRepo("backend/lib/criticalParityRbacCanonical.js");
+  assert.doesNotMatch(criticalParity, /moduleKey:\s*"grades"/);
 }
 
 assertHelpWriteArticlesAbsent();

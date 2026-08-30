@@ -12,8 +12,6 @@ const INTERNAL_ROLE_DEFAULT_PERMISSIONS = {
     "Notifications:READ",
     "Announcements:READ",
     "Présences:READ",
-    "Présences:CREATE",
-    "Présences:UPDATE",
     "Notes:READ",
     "Notes:CREATE",
     "Notes:UPDATE",

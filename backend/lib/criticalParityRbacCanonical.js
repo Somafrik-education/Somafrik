@@ -7,6 +7,8 @@
  * UNION idempotente des flags globaux. Le Comptable n'obtient jamais
  * Élèves:READ ici : le picker Finance doit utiliser une projection minimale
  * dédiée plutôt que l'annuaire élèves général.
+ * NOTES-P1 : ne pas y mettre TEACHER/grades — un OR bootstrap réintroduirait
+ * Notes:CREATE/UPDATE après une révocation Superadmin.
  * Après bootstrap, PostgreSQL reste l'autorité.
  */
 
@@ -22,16 +24,6 @@ const CANONICAL_CRITICAL_PARITY_GRANTS = Object.freeze([
       canCreate: false,
       canRead: true,
       canUpdate: false,
-      canDelete: false,
-    }),
-  }),
-  Object.freeze({
-    roleKey: "TEACHER",
-    moduleKey: "grades",
-    crud: Object.freeze({
-      canCreate: true,
-      canRead: true,
-      canUpdate: true,
       canDelete: false,
     }),
   }),

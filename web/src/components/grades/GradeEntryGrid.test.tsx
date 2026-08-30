@@ -101,11 +101,31 @@ describe("GradeEntryGrid — saisie brouillon / ouverte / validée", () => {
     expect(screen.getByRole("button", { name: "Enregistrer tout" })).toBeDisabled();
   });
 
+  it("Brouillon + canEdit=false : champs désactivés sans « en attente de validation »", () => {
+    renderGrid({ status: "Brouillon", canEdit: false });
+
+    expect(screen.queryByText("En attente de validation")).not.toBeInTheDocument();
+    expect(screen.queryByText("Saisie fermée")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Note /20")).toBeDisabled();
+    expect(screen.getByLabelText("Statut de la note")).toBeDisabled();
+    expect(screen.queryByRole("button", { name: "Enregistrer tout" })).not.toBeInTheDocument();
+  });
+
   it("Publiée : saisie fermée, champs désactivés, aucun enregistrement", () => {
     renderGrid({ status: "Publiée", canEdit: false });
 
     expect(screen.getByRole("status")).toHaveTextContent("Saisie fermée");
     expect(screen.getByRole("status")).toHaveTextContent("publiée");
+    expect(screen.getByLabelText("Note /20")).toBeDisabled();
+    expect(screen.getByLabelText("Statut de la note")).toBeDisabled();
+    expect(screen.queryByRole("button", { name: "Enregistrer tout" })).not.toBeInTheDocument();
+  });
+
+  it("Annulée : saisie fermée, champs désactivés, aucun enregistrement", () => {
+    renderGrid({ status: "Annulée", canEdit: false });
+
+    expect(screen.getByRole("status")).toHaveTextContent("Saisie fermée");
+    expect(screen.getByRole("status")).toHaveTextContent("annulée");
     expect(screen.getByLabelText("Note /20")).toBeDisabled();
     expect(screen.getByLabelText("Statut de la note")).toBeDisabled();
     expect(screen.queryByRole("button", { name: "Enregistrer tout" })).not.toBeInTheDocument();
