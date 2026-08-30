@@ -262,3 +262,31 @@ test("catalog excludes parent-child write, vitrine support and Support alias", (
     ),
   );
 });
+
+test("does not index Notes write procedures still contradicted by KNOWN-ISSUES P1", () => {
+  const ids = HELP_CATALOG.map((article) => article.id);
+  assert.equal(ids.includes("help/grades/evaluations"), true);
+  assert.equal(ids.includes("help/grades/create-evaluation"), false);
+  assert.equal(ids.includes("help/grades/enter"), false);
+  assert.equal(
+    HELP_CATALOG.some((article) => article.title === "Créer une évaluation" || article.title === "Saisir les notes"),
+    false,
+  );
+
+  const consultation = HELP_CATALOG.find((article) => article.id === "help/grades/evaluations");
+  assert.ok(consultation.permissions.includes("Notes:READ"));
+  assert.equal(consultation.permissions.includes("Notes:CREATE"), false);
+  assert.equal(consultation.permissions.includes("Notes:UPDATE"), false);
+  assert.equal(consultation.relatedArticles.includes("help/grades/create-evaluation"), false);
+  assert.equal(consultation.relatedArticles.includes("help/grades/enter"), false);
+
+  const teacherOnGrades = teacher({
+    routeName: "TeacherGrades",
+    permissions: ["Notes:READ", "Notes:CREATE", "Notes:UPDATE", "Classes:READ", "Élèves:READ"],
+  });
+  const hits = searchHelpArticles(teacherOnGrades, "saisir les notes");
+  assert.equal(
+    hits.some((article) => article.id === "help/grades/enter" || article.id === "help/grades/create-evaluation"),
+    false,
+  );
+});

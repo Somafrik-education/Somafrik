@@ -49,6 +49,9 @@ function assertSourceGuards() {
   assert.match(blob, /suggestHelpArticles/);
   assert.match(blob, /help\/users\/create/);
   assert.match(blob, /help\/parent\/home/);
+  assert.match(blob, /help\/grades\/evaluations/);
+  assert.doesNotMatch(blob, /help\/grades\/create-evaluation/);
+  assert.doesNotMatch(blob, /help\/grades\/enter/);
   assert.doesNotMatch(blob, /from ["']react/);
   assert.doesNotMatch(blob, /require\(["']express/);
   assert.doesNotMatch(blob, /require\(["']pg["']\)/);
