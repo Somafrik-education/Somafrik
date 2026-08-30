@@ -577,7 +577,7 @@ async function runPostgresHttpGuards(databaseUrl) {
       },
     });
     assert.equal(crossTenant.status, 201, JSON.stringify(crossTenant.data));
-    assert.equal(crossTenant.data?.schoolCode, "CD-2026-0001", "schoolCode client ignoré");
+    assert.equal(crossTenant.data?.schoolCode, SCHOOL_LOGIN, "schoolCode client ignoré");
 
     const teacherUnknownSubject = await request(PG_PORT, "/courses", {
       method: "POST",
