@@ -13,7 +13,8 @@ const { spawn } = require("node:child_process");
 const { Pool } = require("pg");
 const { createPostgresRepository } = require("../db/repositoryFactory");
 
-const LOCAL_DATABASE_HOSTS = new Set(["localhost", "127.0.0.1", "::1", "0.0.0.0"]);
+const LOCAL_DATABASE_HOSTS = new Set(["localhost", "127.0.0.1", "::1", "[::1]", "0.0.0.0"]);
+const TENANT_DATA_TABLES = Object.freeze(["schools", "users", "students", "teachers", "classes"]);
 
 function parseLocalTestDatabaseUrl(rawUrl) {
   const text = String(rawUrl ?? "").trim();
@@ -98,6 +99,22 @@ async function dropIsolatedDatabase(databaseUrl, databaseName) {
   });
 }
 
+async function assertTenantDataEmpty(repository) {
+  const columns = TENANT_DATA_TABLES.map(
+    (table) => `(SELECT COUNT(*)::int FROM ${quoteIdentifier(table)}) AS ${quoteIdentifier(table)}`,
+  ).join(", ");
+  const result = await repository.query(`SELECT ${columns}`);
+  const counts = result.rows?.[0] ?? {};
+  const contaminated = TENANT_DATA_TABLES.filter((table) => Number(counts[table] ?? 0) !== 0);
+  if (contaminated.length) {
+    throw new Error(
+      `Base de test non vide après bootstrap canonical-only: ${contaminated
+        .map((table) => `${table}=${counts[table]}`)
+        .join(", ")}. Les fixtures doivent être créées par les tests.`,
+    );
+  }
+}
+
 async function bootstrapCanonicalSchema(isolatedUrl) {
   process.env.DATABASE_URL = isolatedUrl;
   process.env.NODE_ENV = "test";
@@ -107,6 +124,7 @@ async function bootstrapCanonicalSchema(isolatedUrl) {
   const repository = createPostgresRepository(isolatedUrl, process.env);
   try {
     await repository.init();
+    await assertTenantDataEmpty(repository);
   } finally {
     await repository.pool.end();
   }
@@ -175,12 +193,14 @@ if (require.main === module) {
 
 module.exports = {
   LOCAL_DATABASE_HOSTS,
+  TENANT_DATA_TABLES,
   parseLocalTestDatabaseUrl,
   withDatabaseName,
   quoteIdentifier,
   buildIsolatedDatabaseName,
   createIsolatedDatabase,
   dropIsolatedDatabase,
+  assertTenantDataEmpty,
   bootstrapCanonicalSchema,
   runIsolatedSuite,
 };
