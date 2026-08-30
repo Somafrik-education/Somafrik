@@ -1,6 +1,23 @@
-# Capture marketing — tableau de bord établissement
+# Visuels marketing — tableau de bord établissement
 
-Asset versionné : `somafrik-dashboard-etablissement.webp`
+## Hero — `somafrik-dashboard-hero.webp`
+
+Visuel marketing du tableau de bord Somafrik, basé sur l’interface produit.
+
+| Champ | Valeur |
+|---|---|
+| Usage | Hero de la vitrine publique uniquement |
+| Écran | Tableau de bord administrateur d’établissement |
+| Profil affiché | Administrateur somafrik / AS |
+| Périmètre | `CD-2026-0001` |
+| Modules visibles | Scolarité, Paiements, Présences, Pédagogie, Administration, Taux de présence |
+| Résolution | 1760 × 1400 |
+| Encodage | WebP lossless |
+| Poids | ~73 Ko |
+
+Documenté uniquement comme visuel marketing. Les captures VITRINE-02 et VITRINE-03 restent les preuves officielles.
+
+## Produit — `somafrik-dashboard-etablissement.webp`
 
 | Champ | Valeur |
 |---|---|

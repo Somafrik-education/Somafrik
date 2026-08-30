@@ -70,6 +70,15 @@ export const marketingProduct = {
   ],
 } as const;
 
+/** Visuel marketing du tableau de bord Somafrik, basé sur l’interface produit. */
+export const marketingHeroVisual = {
+  src: `${import.meta.env.BASE_URL}marketing/somafrik-dashboard-hero.webp`,
+  alt: "Tableau de bord Somafrik présentant la scolarité, les paiements, les présences et le suivi pédagogique d’un établissement.",
+  caption: "Visuel marketing du tableau de bord Somafrik, basé sur l’interface produit.",
+  width: 1760,
+  height: 1400,
+} as const;
+
 /** Capture runtime réelle — pas d’illustration, pas de maquette. */
 export const marketingProductVisual = {
   src: `${import.meta.env.BASE_URL}marketing/somafrik-dashboard-etablissement.webp`,

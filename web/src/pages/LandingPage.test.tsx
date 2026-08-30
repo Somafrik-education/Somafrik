@@ -8,6 +8,7 @@ import {
   marketingBusinessProofs,
   marketingFinalCta,
   marketingHero,
+  marketingHeroVisual,
   marketingLegalRoutes,
   marketingLogin,
   marketingMobileVisuals,
@@ -166,15 +167,21 @@ describe("LandingPage — vitrine publique", () => {
     );
   });
 
-  it("affiche la capture réelle et retire le placeholder VITRINE-01", () => {
+  it("affiche le visuel Hero distinct du visuel Produit et retire le placeholder", () => {
     const { container } = renderLanding();
-    const images = [...container.querySelectorAll("img")].filter((image) =>
-      (image.getAttribute("src") ?? "").includes("somafrik-dashboard-etablissement.webp"),
-    );
-    expect(images.length).toBeGreaterThanOrEqual(2);
-    expect(images[0]).toHaveAttribute("alt", marketingProductVisual.alt);
-    expect(images[0]).not.toHaveAttribute("loading", "lazy");
-    expect(images.some((image) => image.getAttribute("loading") === "lazy")).toBe(true);
+    const hero = container.querySelector(`img[src="${marketingHeroVisual.src}"]`);
+    const product = container.querySelector(`#produit img[src="${marketingProductVisual.src}"]`);
+    expect(hero).toHaveAttribute("alt", marketingHeroVisual.alt);
+    expect(hero).toHaveAttribute("width", String(marketingHeroVisual.width));
+    expect(hero).toHaveAttribute("height", String(marketingHeroVisual.height));
+    expect(hero).toHaveAttribute("loading", "eager");
+    expect(hero?.getAttribute("fetchpriority") ?? hero?.getAttribute("fetchPriority")).toBe("high");
+    expect(hero).toHaveAttribute("decoding", "async");
+    expect(product).toHaveAttribute("alt", marketingProductVisual.alt);
+    expect(product).toHaveAttribute("loading", "lazy");
+    expect(marketingHeroVisual.src).not.toBe(marketingProductVisual.src);
+    expect(container.innerHTML).not.toMatch(/\/docs\//);
+    expect(container.innerHTML).not.toMatch(/data:image\//);
     expect(screen.queryByText(/Emplacement réservé à une capture réelle/i)).not.toBeInTheDocument();
   });
 
@@ -232,8 +239,8 @@ describe("LandingPage — vitrine publique", () => {
   it("conserve le Hero et Web et mobile de VITRINE-02", () => {
     const { container } = renderLanding();
     expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent(marketingHero.title);
-    const heroImage = container.querySelector('img[src*="somafrik-dashboard-etablissement.webp"]');
-    expect(heroImage).not.toHaveAttribute("loading", "lazy");
+    const heroImage = container.querySelector(`img[src="${marketingHeroVisual.src}"]`);
+    expect(heroImage).toHaveAttribute("loading", "eager");
     expect(container.querySelector("#web-mobile")).not.toBeNull();
     expect(container.querySelectorAll("#web-mobile img[src*='/marketing/mobile/']")).toHaveLength(3);
     expect(marketingNav.some((link) => link.href === "#preuves")).toBe(false);
