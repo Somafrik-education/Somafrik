@@ -131,13 +131,37 @@ export const marketingWebMobile = {
   title: "Le bureau pour piloter, le mobile pour le terrain",
   web: {
     title: "Application web",
-    text: "La direction et l’administration gèrent l’établissement : élèves, classes, enseignants, finances et communication.",
+    text: "Pilotez et administrez votre établissement depuis un écran complet.",
   },
   mobile: {
     title: "Application mobile",
-    text: "Les équipes font l’appel et suivent les notes sur le terrain. Les parents et les élèves consultent le parcours scolaire selon leurs accès.",
+    text: "Retrouvez les opérations du quotidien directement dans l’application Somafrik.",
   },
 } as const;
+
+export const marketingMobileVisuals = [
+  {
+    src: `${import.meta.env.BASE_URL}marketing/mobile/somafrik-mobile-classes.webp`,
+    alt: "Application mobile Somafrik — liste des classes",
+    caption: "Classes",
+    width: 780,
+    height: 1688,
+  },
+  {
+    src: `${import.meta.env.BASE_URL}marketing/mobile/somafrik-mobile-eleves.webp`,
+    alt: "Application mobile Somafrik — liste des élèves",
+    caption: "Élèves",
+    width: 780,
+    height: 1688,
+  },
+  {
+    src: `${import.meta.env.BASE_URL}marketing/mobile/somafrik-mobile-enseignants.webp`,
+    alt: "Application mobile Somafrik — liste des enseignants",
+    caption: "Enseignants",
+    width: 780,
+    height: 1688,
+  },
+] as const;
 
 export const marketingAudiences: MarketingAudience[] = [
   {

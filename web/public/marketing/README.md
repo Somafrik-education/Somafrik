@@ -15,3 +15,15 @@ Asset versionné : `somafrik-dashboard-etablissement.webp`
 | Encodage | WebP lossless |
 
 Aucune donnée personnelle réelle, aucun token, aucun secret.
+
+## Application mobile — captures natives
+
+Copies marketing de captures runtime déjà validées. Aucune génération, aucune reconstruction.
+
+| Asset | Source | Écran |
+|---|---|---|
+| `mobile/somafrik-mobile-classes.webp` | `docs/user-guides/assets/mobile/02-classes-liste.png` | Liste des classes |
+| `mobile/somafrik-mobile-eleves.webp` | `docs/user-guides/assets/mobile/04-eleves-liste.png` | Liste des élèves |
+| `mobile/somafrik-mobile-enseignants.webp` | `docs/user-guides/assets/mobile/07-enseignants.png` | Liste des enseignants |
+
+Résolution source et asset : 780 × 1688. Encodage WebP lossless. Données fictives (Institut Nouvelle Espérance).
