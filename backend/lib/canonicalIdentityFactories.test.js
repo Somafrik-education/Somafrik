@@ -9,7 +9,7 @@ const {
   createCanonicalStudent,
 } = require("./canonicalIdentityFactories");
 
-test("createCanonicalSchool émet un login V2 et un alias interne SCH-", () => {
+test("createCanonicalSchool n'expose que UUID + login_code V2", () => {
   const school = createCanonicalSchool({
     countryIso: "CD",
     name: "Institut Nuru",
@@ -17,9 +17,9 @@ test("createCanonicalSchool émet un login V2 et un alias interne SCH-", () => {
     sequence: 1,
   });
   assert.equal(school.loginCode, "CD-IN-26-001");
-  assert.match(school.schoolCode, /^SCH-[A-Z0-9]+$/);
-  assert.notEqual(school.loginCode, school.schoolCode);
+  assert.equal(Object.hasOwn(school, "schoolCode"), false);
   assert.doesNotMatch(school.loginCode, /^[A-Z]{2}-20\d{2}-\d{4}$/);
+  assert.doesNotMatch(school.loginCode, /^SCH-/);
 });
 
 test("createCanonicalUser n'a qu'une identité publique", () => {
@@ -42,8 +42,8 @@ test("createCanonicalTeacher reprend l'identité user, jamais ENS-####", () => {
   const school = createCanonicalSchool({ sequence: 2 });
   const user = createCanonicalUser({ school, firstName: "Seke", lastName: "Mbuyi", sequence: 2 });
   const teacher = createCanonicalTeacher({ school, user });
-  assert.equal(teacher.teacherCode, user.identityCode);
-  assert.equal(teacher.publicId, teacher.teacherCode);
+  assert.equal(teacher.teacherCode, user.userCode);
+  assert.equal(teacher.publicId, user.userCode);
   assert.equal(teacher.userId, user.id);
   assert.doesNotMatch(teacher.teacherCode, /\bENS-\d{4}\b/);
   assert.doesNotMatch(teacher.teacherCode, /20\d{2}-\d{4}-ENS-/);

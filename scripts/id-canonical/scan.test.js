@@ -6,7 +6,13 @@ const os = require("node:os");
 const path = require("node:path");
 const { test } = require("node:test");
 const { spawnSync } = require("node:child_process");
-const { REQUIRED_ENTITIES, isAllowlisted } = require("./rules");
+const {
+  REQUIRED_ENTITIES,
+  ALLOWLIST_PREFIXES,
+  FORBIDDEN_RUNTIME_ALLOWLIST_ROOTS,
+  isAllowlisted,
+  isForbiddenRuntimeAllowlistEntry,
+} = require("./rules");
 const { scanRepository, scanFile, loadEntityInventory, INVENTORY_RELATIVE } = require("./scan");
 
 const ROOT = path.resolve(__dirname, "../..");
@@ -26,8 +32,32 @@ test("allowlist couvre le contrat et le scanner, pas le runtime enseignant", () 
   assert.equal(isAllowlisted("docs/audits/ID-CANONICAL-01A-INVENTAIRE-CONTRAT.md"), true);
   assert.equal(isAllowlisted("scripts/id-canonical/rules.js"), true);
   assert.equal(isAllowlisted("backend/lib/teacherCodeAllocation.js"), false);
+  assert.equal(isAllowlisted("backend/lib/teachersLegacyCodeSchema.js"), false);
   assert.equal(isAllowlisted("backend/db/postgresRepository.js"), false);
   assert.equal(isAllowlisted("backend/data.js"), false);
+});
+
+test("aucun préfixe runtime ne peut entrer dans ALLOWLIST_PREFIXES", () => {
+  for (const root of FORBIDDEN_RUNTIME_ALLOWLIST_ROOTS) {
+    assert.equal(isForbiddenRuntimeAllowlistEntry(root), true, root);
+    assert.equal(isForbiddenRuntimeAllowlistEntry(root.slice(0, -1)), true, root.slice(0, -1));
+  }
+  assert.equal(isForbiddenRuntimeAllowlistEntry("backend/lib/teachersLegacyCodeSchema.js"), true);
+  assert.equal(isForbiddenRuntimeAllowlistEntry("web/src/lib/entityIdentifiers.ts"), true);
+  assert.equal(isForbiddenRuntimeAllowlistEntry("Mobile/src/data/demoCredentials.ts"), true);
+  assert.equal(isForbiddenRuntimeAllowlistEntry("apps/api/index.js"), true);
+  assert.equal(isForbiddenRuntimeAllowlistEntry("packages/auth/src/index.js"), true);
+  assert.equal(
+    isForbiddenRuntimeAllowlistEntry("backend/db/migrations/20260819_teacher_legacy_code.sql"),
+    false,
+  );
+  for (const prefix of ALLOWLIST_PREFIXES) {
+    assert.equal(
+      isForbiddenRuntimeAllowlistEntry(prefix),
+      false,
+      `préfixe runtime interdit dans ALLOWLIST_PREFIXES: ${prefix}`,
+    );
+  }
 });
 
 test("scanFile détecte les formats et helpers legacy", () => {

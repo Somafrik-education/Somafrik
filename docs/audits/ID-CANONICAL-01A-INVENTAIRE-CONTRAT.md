@@ -4,7 +4,7 @@
 **Lot :** A — contrat + inventaire (aucune suppression runtime)  
 **Base :** `develop` @ `f2543cae12c77f83950072fc69b2ec7a1dfb7a29` (après #402)  
 **Branche :** `refactor/id-canonical-01a-inventaire`  
-**Statut :** DRAFT — verdict CTO requis. Cursor ne fait ni Ready ni merge.
+**Statut :** DRAFT — HOLD CTO architecture (P1.1 school_code DELETE, P1.2 teacher_code DELETE, P1.3 zéro allowlist runtime). Cursor ne fait ni Ready ni merge.
 
 Machine-readable : [`id-canonical-01a-entities.json`](./id-canonical-01a-entities.json)  
 Scanner : `npm run verify:id-canonical` (rapport). Strict : `npm run verify:id-canonical:strict` (Lot D).
@@ -26,11 +26,10 @@ Noms de colonnes cibles (plus de synonymes) :
 | Concept | Colonne | Jamais |
 | --- | --- | --- |
 | UUID technique | `id` | — |
-| Identité publique établissement | `schools.login_code` | `code`, `publicId`, `school_code` public, `legacySchoolCode` |
+| Identité publique établissement | `schools.login_code` | `code`, `publicId`, `school_code`, `legacySchoolCode`, alias `SCH-…` |
 | Identité publique personne | `users.user_code` = `identity_code` | `identifier` ≠ `publicId` ≠ `login_code` court |
 | Identité publique élève | `students.student_code` | `matricule` / `publicId` / `login_code` distincts |
-| Identité publique enseignant | `teachers.teacher_code` = `users.user_code` lié | `legacy_teacher_code`, `ENS-####` |
-| Alias interne établissement | `schools.school_code` préfixe `SCH-` | `CC-YYYY-NNNN` |
+| Identité publique enseignant | `users.user_code` du `user_id` lié (JOIN) | `teachers.teacher_code` stocké, `legacy_teacher_code`, `ENS-####` |
 
 API, si les deux champs sont exposés :
 
@@ -50,9 +49,9 @@ Légende décision : **KEEP** (forme déjà canonique) · **RENAME** · **COLLAP
 | Entité | Table | PK actuelle | Code public actuel | Login | Aliases legacy | Décision | Format canonique final | Contrainte PG finale |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | Country | `countries` | `id UUID` | `iso_code` UNIQUE | — | — | KEEP | `CD` | `iso_code NOT NULL UNIQUE` |
-| School | `schools` | `id UUID` | `login_code` **et** `school_code` | `login_code` | `CD-2026-0001`, `publicId`, `code`, `legacySchoolCode` | COLLAPSE | `CD-IN-26-001` | `login_code` UNIQUE V2 ; `school_code` = `SCH-…` interne |
+| School | `schools` | `id UUID` | `login_code` **et** `school_code` | `login_code` | `CD-2026-0001`, `publicId`, `code`, `legacySchoolCode`, `SCH-…` | COLLAPSE puis **DELETE** `school_code` | `CD-IN-26-001` | `login_code` UNIQUE V2 ; **DROP `school_code` au plus tard Lot D** |
 | User | `users` | `id UUID` | `user_code` + `identity_code` + `login_code` | `identifier` / `publicId` / email / tél. | `ENS-0001`, codes composites, login court | COLLAPSE | `CD-IN-JPM-26-00001` | `user_code = identity_code` UNIQUE |
-| Teacher | `teachers` | `id UUID` | `teacher_code` | `ENS-####` déclaré officiel | `legacy_teacher_code`, suffixe, `publicId` distinct | COLLAPSE | = `users.user_code` lié | `UNIQUE(teacher_code)` ; `DROP legacy_teacher_code` |
+| Teacher | `teachers` | `id UUID` | `teacher_code` (doublon de `users.user_code`) | `ENS-####` déclaré officiel | `legacy_teacher_code`, suffixe, `publicId` distinct | COLLAPSE puis **DELETE** `teacher_code` | = `users.user_code` via JOIN | `user_id NOT NULL` ; `UNIQUE(school_id, user_id)` ; **DROP `legacy_teacher_code` B** ; **DROP `teacher_code` D** |
 | Student | `students` | `id UUID` | `student_code` + `login_code` + `identity_code` | matricule / `student_code` | `CD-IN-EL-26-001`, `publicId`, `id` BO | COLLAPSE | `CD-IN-OHS-26-00001` | `student_code` UNIQUE canonical |
 | Class | `classes` | `id UUID` | `class_code` UNIQUE | — | résolution par `className` JWT | KEEP | `class_code` serveur | `class_code NOT NULL UNIQUE` |
 | Subject | `subjects` | `id UUID` | `subject_code` UNIQUE | — | nom matière comme identité BO | KEEP | `subject_code` serveur | `subject_code NOT NULL UNIQUE` |
@@ -77,13 +76,15 @@ Légende décision : **KEEP** (forme déjà canonique) · **RENAME** · **COLLAP
 
 État @ `f2543cae` :
 
-- Création V2 : `login_code` = `CD-IN-26-001` (trigger PG). `school_code` interne `SCH-…`.
+- Création V2 : `login_code` = `CD-IN-26-001` (trigger PG). `school_code` existe encore (souvent `CD-2026-0001` ou `SCH-…`).
 - Lecture : `getByCode` matche **encore** `school_code` **ou** `login_code`.
 - `schoolCodeV2.schoolLookupKeys` accepte `loginCode`, `publicId`, `code`, `legacySchoolCode`, `school_code`.
 - `validateSchoolCode("CD-2026-0001")` → `kind: "legacy-read"` (création refusée, lecture acceptée).
 - Seeds / fixtures / `backend/data.js` : `code: "CD-2026-0001"` partout.
 
-**Lot B :** une seule identité fonctionnelle = `login_code`. Lookup exact. `CD-2026-0001` → refus. JWT `schoolCode` = `login_code`.
+**Cible finale :** `schools.id` UUID + `schools.login_code` uniquement. `school_code` (y compris un éventuel `SCH-…`) est un **troisième identifiant** — **DELETE** au plus tard Lot D. Lots B/C peuvent le conserver temporairement pendant la bascule, jamais comme identité publique ni comme alias interne durable.
+
+**Lot B :** une seule identité fonctionnelle = `login_code`. Lookup exact. `CD-2026-0001` → refus. JWT `schoolCode` = `login_code`. Pas de nouveau `SCH-…` comme contrat.
 
 ### 2.2 Enseignant — le fichier à réécrire
 
@@ -116,7 +117,7 @@ Consommateurs SQL de ces prédicats : `postgresRepository`, `teachersRepository`
 
 **Cible Lot B :** session → `principal.sub` (UUID user) → `teachers.user_id` → `teachers.id`. Un seul chemin. Zéro BO. Zéro suffixe.
 
-Schéma : `teachers.legacy_teacher_code` + index `idx_teachers_school_legacy_code` + migration `20260819_teacher_legacy_code.sql` (immuable, allowlist) + `DROP COLUMN` Lot B.
+Schéma : `teachers.legacy_teacher_code` + index `idx_teachers_school_legacy_code` + migration `20260819_teacher_legacy_code.sql` (immuable, allowlist SQL) + **DROP `legacy_teacher_code` Lot B**. `teachers.teacher_code` reste une colonne de transition (B/C) puis **DROP Lot D** — l’identité publique enseignant n’est pas une 2e colonne, c’est `users.user_code` via `teachers.user_id`.
 
 `teacherCourseCanonicalReconcile` **écrit** encore `legacy_teacher_code = ENS-0001` au boot. À décommissionner (plus de couche de compatibilité permanente).
 
@@ -175,6 +176,8 @@ Interdit côté clients : fabriquer un identifiant, le reconstruire depuis un no
 | Champ | Usage | Décision |
 | --- | --- | --- |
 | `teachers.legacy_teacher_code` | alias login / lookup | **DELETE** Lot B |
+| `teachers.teacher_code` | doublon de `users.user_code` sans contrainte d’égalité | **DELETE** Lot D (projection API = JOIN pendant B/C) |
+| `schools.school_code` | 2e/3e identifiant (`CC-YYYY-NNNN` ou `SCH-…`) | **DELETE** Lot D (`login_code` seul public) |
 | `evaluations.legacy_json_id` | id JSON BO, servi comme `publicId` | **DELETE** Lot D (identité runtime) |
 | `school_courses.legacy_json_id` | pont JSON→PG cours | **DELETE** Lot D si plus de lookup multi-clé |
 | `course_schedule_slots.legacy_json_id` | slots datés historiques | **DELETE** Lot D (planning V2 = weekly UUID) |
@@ -206,12 +209,12 @@ Confirmés par inventaire croisé, non couverts seulement par les 19 lignes du t
 ### École
 
 ```text
-id         = UUID
-login_code = CD-IN-26-001     ← seule identité publique / tenant de connexion
-school_code= SCH-…            ← alias interne, jamais affiché, jamais dans le JWT
+id         = UUID              ← seule clé technique
+login_code = CD-IN-26-001      ← seule identité publique / tenant de connexion
+school_code = DELETE final     ← Lot D au plus tard ; pas un alias interne SCH-…
 ```
 
-Aucune création `CD-2026-0001`. Aucune lecture runtime de ce format après Lot B.
+Aucune création `CD-2026-0001`. Aucune lecture runtime de ce format après Lot B. Aucun `SCH-…` comme 2e identité.
 
 ### Personne (user staff / enseignant / préfet / parent)
 
@@ -226,12 +229,24 @@ Login métier = cette chaîne. Pas de login court distinct `JPM-26-00001`. Pas d
 ### Enseignant (profil, pas une deuxième personne)
 
 ```text
-id           = UUID
-user_id      = users.id
-teacher_code = users.user_code
+id        = UUID
+school_id = UUID
+user_id   = users.id
+
+identité publique enseignant = users.user_code via JOIN
+teacher_code          = DELETE final Lot D
+legacy_teacher_code   = DELETE Lot B
 ```
 
-`resolveTeacherPgIdForPrincipal(principal)` = `SELECT t.id FROM teachers t WHERE t.user_id = $principal.sub AND t.school_id = $sessionSchoolId`.
+API temporaire B/C (projection, pas une 2e autorité stockée) :
+
+```text
+teacherCode = joinedUser.user_code
+publicId    = joinedUser.user_code
+```
+
+`resolveTeacherPgIdForPrincipal(principal)` = `SELECT t.id FROM teachers t WHERE t.user_id = $principal.sub AND t.school_id = $sessionSchoolId`.  
+Aucun lookup par `teacher_code`.
 
 ### Élève
 
@@ -250,6 +265,8 @@ createCanonicalStudent()
 ```
 
 Module : `backend/lib/canonicalIdentityFactories.js`.  
+`createCanonicalSchool()` n’expose pas `schoolCode`.  
+`createCanonicalTeacher().teacherCode` / `publicId` = projection de `users.user_code`, pas une 2e autorité.  
 Les tests s’adaptent au produit V2. Interdiction de conserver `CD-2026-0001` « parce que les tests l’utilisent ».
 
 ---
@@ -260,7 +277,7 @@ Les tests s’adaptent au produit V2. Interdiction de conserver `CD-2026-0001` �
 | --- | --- | --- | --- |
 | **B** | `refactor/id-canonical-01b-postgres-auth` | PG + Auth + `teacherCodeAllocation` + `resolveTeacherPgIdForPrincipal` + seeds runtime + tests Auth/multi-tenant | Web/Mobile UI |
 | **C** | `refactor/id-canonical-01c-consommateurs` | Web, Mobile, SQLCipher, outbox, sync | Gate strict |
-| **D** | `refactor/id-canonical-01d-zero-legacy` | Purge helpers/colonnes/commentaires ; `verify:id-canonical --strict` bloquant PR Gates | — |
+| **D** | `refactor/id-canonical-01d-zero-legacy` | Purge helpers/colonnes/commentaires ; **DROP `schools.school_code`** ; **DROP `teachers.teacher_code`** ; `verify:id-canonical --strict` bloquant PR Gates | — |
 
 Lot A **ne masque aucun résidu**. Le scanner en mode rapport **doit** encore lister `teacherCodeAllocation.js`, `legacy_teacher_code`, `CD-2026-0001`, `materializeBackOfficeTeacher`.
 
@@ -282,7 +299,8 @@ Règles (runtime, pas la doc) :
 - `schoolLookupKeys` / `legacySchoolCode`
 - `legacy_json_id`
 
-Allowlist **minuscule** : `docs/audits/`, `docs/project/`, migrations SQL historiques immuables listées dans `scripts/id-canonical/rules.js`, le scanner lui-même. **Aucune allowlist runtime.**
+Allowlist **minuscule** : `docs/audits/`, `docs/project/`, migrations SQL historiques immuables **nommées** (`backend/db/migrations/20YYMMDD_…`) listées dans `scripts/id-canonical/rules.js`, le scanner lui-même.  
+**Aucune allowlist runtime.** Interdit : tout préfixe `backend/`, `web/`, `Mobile/`, `apps/`, `packages/` (hors migrations SQL historiques explicitement nommées). Test : aucun de ces préfixes ne peut entrer dans `ALLOWLIST_PREFIXES`.
 
 Lot A : le script est branché sur PR Gates en **rapport** (exit 0 si l’inventaire JSON est complet).  
 Lot D : `--strict` devient bloquant.
@@ -321,12 +339,16 @@ Ces chiffres sont le **point de départ**. Lot B/C/D doivent les faire descendre
 - UUID = seule autorité relationnelle
 - une identité publique / entité ; une identité de login / compte
 - plus d’ancien identifiant accepté silencieusement
-- `legacy_teacher_code` disparu ; plus de suffix matching `ENS-####`
+- `schools.school_code` DROP (pas d’alias `SCH-…`)
+- `teachers.legacy_teacher_code` DROP Lot B ; `teachers.teacher_code` DROP Lot D
+- identité enseignant = `users.user_code` via `teachers.user_id` uniquement
+- plus de suffix matching `ENS-####`
 - plus de fallback identité BackOffice
 - plus de seed runtime `CD-2026-0001`
 - Web = Mobile ; offline = mêmes UUID
 - Auth canonical-only testée ; isolation multi-tenant testée
 - Notes #402 verte
 - `verify:id-canonical --strict` vert ; PR Gates verts
+- allowlist = docs + scanner + SQL historique nommé ; zéro chemin runtime
 
 **ZERO LEGACY IDENTITY RUNTIME.**

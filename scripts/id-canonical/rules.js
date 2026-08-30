@@ -44,8 +44,25 @@ const ALLOWLIST_PREFIXES = [
   "backend/db/migrations/20260823_student_canonical_identifier.sql",
   "backend/db/migrations/20260824_student_canonical_identifier_backfill.sql",
   "backend/db/migrations/20260825_school_login_code",
-  "backend/lib/teachersLegacyCodeSchema.js",
 ];
+
+const FORBIDDEN_RUNTIME_ALLOWLIST_ROOTS = ["backend/", "web/", "Mobile/", "apps/", "packages/"];
+const HISTORICAL_SQL_ALLOWLIST_RE = /^backend\/db\/migrations\/20\d{6}_[A-Za-z0-9._-]+$/;
+
+function isHistoricalSqlMigrationAllowlistEntry(prefix) {
+  return HISTORICAL_SQL_ALLOWLIST_RE.test(String(prefix ?? "").replaceAll("\\", "/"));
+}
+
+function isForbiddenRuntimeAllowlistEntry(prefix) {
+  const normalized = String(prefix ?? "").replaceAll("\\", "/");
+  if (isHistoricalSqlMigrationAllowlistEntry(normalized)) {
+    return false;
+  }
+  return FORBIDDEN_RUNTIME_ALLOWLIST_ROOTS.some((root) => {
+    const name = root.slice(0, -1);
+    return normalized === name || normalized === root || normalized.startsWith(root);
+  });
+}
 
 const SCAN_ROOTS = [
   "backend",
@@ -166,9 +183,13 @@ function isAllowlisted(relativePath) {
 module.exports = {
   REQUIRED_ENTITIES,
   ALLOWLIST_PREFIXES,
+  FORBIDDEN_RUNTIME_ALLOWLIST_ROOTS,
+  HISTORICAL_SQL_ALLOWLIST_RE,
   SCAN_ROOTS,
   SCAN_EXTENSIONS,
   IGNORE_DIR_NAMES,
   RULES,
   isAllowlisted,
+  isHistoricalSqlMigrationAllowlistEntry,
+  isForbiddenRuntimeAllowlistEntry,
 };

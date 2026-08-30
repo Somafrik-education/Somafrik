@@ -4,6 +4,7 @@
  * Factories d'identité canonique V2 — formes de production uniquement.
  *
  * Interdit : CD-2026-0001, ENS-####, publicId distinct, loginCode distinct,
+ * school_code / SCH-… comme identité, teacher_code stocké comme 2e autorité,
  * legacy_teacher_code, fabrication client d'un identifiant métier.
  *
  * Allocation réelle = PostgreSQL. Ces helpers existent pour tests / seeds
@@ -16,7 +17,7 @@ const {
   identityInitials,
   schoolShortCodeFromName,
 } = require("./permanentIdentifier");
-const { formatSchoolLoginCode, generateInternalSchoolAlias } = require("./schoolCodeV2");
+const { formatSchoolLoginCode } = require("./schoolCodeV2");
 const {
   formatStudentCanonicalCode,
   studentIdentityInitials,
@@ -34,7 +35,6 @@ function createCanonicalSchool(overrides = {}) {
     countryIso,
     name,
     loginCode,
-    schoolCode: overrides.schoolCode ?? generateInternalSchoolAlias(),
     shortCode: overrides.shortCode ?? schoolShortCodeFromName(name),
   };
 }
@@ -73,13 +73,14 @@ function createCanonicalUser(overrides = {}) {
 function createCanonicalTeacher(overrides = {}) {
   const school = overrides.school ?? createCanonicalSchool();
   const user = overrides.user ?? createCanonicalUser({ school, role: "Teacher" });
-  const teacherCode = overrides.teacherCode ?? user.identityCode;
+  // Projection API uniquement — l'autorité stockée est users.user_code via user_id.
+  const publicIdentity = user.userCode;
   return {
     id: overrides.id ?? randomUUID(),
     schoolId: school.id,
     userId: user.id,
-    teacherCode,
-    publicId: teacherCode,
+    teacherCode: publicIdentity,
+    publicId: publicIdentity,
     user,
     school,
   };
