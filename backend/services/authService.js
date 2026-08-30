@@ -9,6 +9,10 @@ const {
 } = require("../lib/loginLockout");
 const { GENERIC_AUTH_ERROR, canUserAccountLogin, loginBlockedMessage } = require("../lib/userAccountRules");
 const {
+  isForbiddenLegacyLoginIdentifier,
+  assertCanonicalSchoolLoginCode,
+} = require("../lib/canonicalLoginIdentity");
+const {
   sanitizeUserForResponse,
   sanitizeUsersForResponse,
 } = require("../lib/sanitizeUserForResponse");
@@ -313,6 +317,7 @@ class AuthService {
 
   identify({ schoolCode, identifier }) {
     this.assertRequiredFields({ identifier }, "Champs manquants");
+    this.assertCanonicalAuthIdentifiers({ schoolCode, identifier });
     const requestedSchool = String(schoolCode ?? "").trim();
     if (!requestedSchool) {
       const platformUser = this.findPlatformManagedUser(identifier);
@@ -353,6 +358,7 @@ class AuthService {
 
   async login({ role, schoolCode, identifier, pin }) {
     this.assertRequiredFields({ role, identifier, pin }, "Champs manquants");
+    this.assertCanonicalAuthIdentifiers({ schoolCode, identifier });
     const requestedSchool = String(schoolCode ?? "").trim();
     if (!requestedSchool) {
       return this.loginPlatformAccount({ role, identifier, pin });
@@ -477,9 +483,22 @@ class AuthService {
     return matches[0] || null;
   }
 
+  assertCanonicalAuthIdentifiers({ schoolCode, identifier }) {
+    if (isForbiddenLegacyLoginIdentifier(identifier)) {
+      throw new BusinessError(401, "Identifiant de connexion legacy refusé.");
+    }
+    const requestedSchool = String(schoolCode ?? "").trim();
+    if (!requestedSchool) return;
+    try {
+      assertCanonicalSchoolLoginCode(requestedSchool, { required: true });
+    } catch (error) {
+      throw new BusinessError(error.statusCode || 401, error.message);
+    }
+  }
+
   userMatchesIdentifier(user, identifier) {
     const normalizedIdentifier = normalizeText(identifier);
-    const fields = ["identifier", "phone", "publicId", "email"];
+    const fields = ["identifier", "phone", "email"];
 
     return fields.some((field) => {
       const value = normalizeText(user[field]);
@@ -499,13 +518,7 @@ class AuthService {
   findManagedUser(identifier, schoolCode, preferredMobileRole = null) {
     const school = this.findSchoolByCode(schoolCode);
     const tenantKeys = new Set(
-      [
-        schoolCode,
-        school?.code,
-        school?.loginCode,
-        school?.publicId,
-        school?.legacySchoolCode,
-      ]
+      [schoolCode, school?.loginCode]
         .map((value) => String(value ?? "").trim().toUpperCase())
         .filter(Boolean),
     );
@@ -534,28 +547,7 @@ class AuthService {
       }
     }
 
-    if (matches[0]) {
-      return matches[0];
-    }
-
-    const teacher = this.teachers.find(
-      (item) =>
-        (!item.schoolCode || tenantKeys.has(String(item.schoolCode).trim().toUpperCase())) &&
-        [item.identifier, item.publicId, item.id].some(
-          (value) => normalizeText(value) === normalizeText(identifier)
-        )
-    );
-    if (!teacher?.userId) {
-      return undefined;
-    }
-
-    return this.userAccounts.find((user) => {
-      const userSchool = String(user.schoolCode ?? "").trim().toUpperCase();
-      return (
-        (userSchool === "*" || tenantKeys.has(userSchool)) &&
-        String(user.id) === String(teacher.userId)
-      );
-    });
+    return matches[0] || undefined;
   }
 
   findLinkedTeacher(user) {
@@ -804,7 +796,7 @@ class AuthService {
   }
 
   resolveSchoolAccountCode(school) {
-    return String(school?.code ?? school?.legacySchoolCode ?? school?.publicId ?? "").trim().toUpperCase();
+    return String(school?.loginCode ?? school?.publicId ?? "").trim().toUpperCase();
   }
 
   matchesSchoolCode(schoolCode) {
@@ -812,12 +804,15 @@ class AuthService {
   }
 
   findSchoolByCode(schoolCode) {
-    const normalizedCode = String(schoolCode).trim().toUpperCase();
-    return this.schools.find((school) =>
-      [school.loginCode, school.code, school.publicId, school.legacySchoolCode].some(
-        (value) => String(value ?? "").trim().toUpperCase() === normalizedCode
-      )
-    );
+    const { isLegacySchoolCodeFormat, normalizeSchoolCode } = require("../lib/schoolCodeV2");
+    const normalizedCode = normalizeSchoolCode(schoolCode);
+    if (!normalizedCode || isLegacySchoolCodeFormat(normalizedCode)) {
+      return undefined;
+    }
+    return this.schools.find((school) => {
+      const login = normalizeSchoolCode(school.loginCode ?? school.publicId);
+      return login === normalizedCode;
+    });
   }
 
   assertManagedUserCanUseMobile(user) {

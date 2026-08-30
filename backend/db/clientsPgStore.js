@@ -284,11 +284,17 @@ function createClientsPgStore(repo) {
         await acquireTeacherSchoolCreationLock({ query }, row.schoolId);
         const existing = await this.getTeacherBySchoolUser(row.schoolId, row.userId);
         if (existing) return existing;
+        const schoolRow = await one(`SELECT * FROM schools WHERE id = $1 LIMIT 1`, [row.schoolId]);
+        const userRow = await one(`SELECT first_name, last_name FROM users WHERE id = $1 LIMIT 1`, [row.userId]);
         const codes = await allocateTeacherCodesLocked(
           { query, all },
           row.schoolId,
-          row.schoolCode,
-          { alreadyLocked: true },
+          schoolRow ?? { loginCode: row.schoolCode, school_code: row.schoolCode },
+          {
+            alreadyLocked: true,
+            firstName: row.firstName ?? userRow?.first_name,
+            lastName: row.lastName ?? userRow?.last_name,
+          },
         );
         try {
           return await one(

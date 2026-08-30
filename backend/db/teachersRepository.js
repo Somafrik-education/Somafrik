@@ -241,8 +241,10 @@ function createTeachersRepository(db) {
     await acquireTeacherSchoolCreationLock(tx, school.id);
     await assertNoAmbiguousCanon(tx, school.id, input);
 
-    const codes = await allocateTeacherCodesLocked(tx, school.id, school.school_code ?? schoolCode, {
+    const codes = await allocateTeacherCodesLocked(tx, school.id, school, {
       alreadyLocked: true,
+      firstName: input.firstName,
+      lastName: input.lastName,
     });
     const secretHash = hashSecret(input.temporaryPassword);
 

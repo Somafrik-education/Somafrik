@@ -11,7 +11,6 @@ const schoolRoomsService = require("../lib/schoolRoomsService");
 const replacementsService = require("../lib/courseScheduleReplacementsService");
 const { mapWeeklyScheduleDto } = require("../lib/planningWeekly");
 const {
-  sqlTeacherIdentityEqualsAny,
   sqlTeacherPublicCodeEquals,
 } = require("../lib/teacherCodeAllocation");
 
@@ -282,24 +281,15 @@ function createPedagogyPgStore(repo) {
         );
       },
       async resolveTeacherIdForPrincipal(principal, schoolId) {
-        const keys = [
-          principal?.sub,
-          principal?.id,
-          principal?.identifier,
-          principal?.teacherId,
-          principal?.teacherCode,
-        ]
-          .map((value) => asTrimmed(value))
-          .filter(Boolean);
-        if (!keys.length || !schoolId) return null;
+        const userId = asTrimmed(principal?.sub);
+        if (!userId || !schoolId) return null;
         const row = await one(
           `SELECT t.id
            FROM teachers t
-           LEFT JOIN users u ON u.id = t.user_id
            WHERE t.school_id = $1
-             AND ${sqlTeacherIdentityEqualsAny("t", "u", "$2::text[]")}
+             AND t.user_id::text = $2
            LIMIT 1`,
-          [schoolId, keys],
+          [schoolId, userId],
         );
         return row?.id ?? null;
       },

@@ -5,11 +5,7 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("path");
 const {
-  extractEnsSequence,
-  extractTeacherLoginId,
   formatCanonicalTeacherCodes,
-  generateNextTeacherCodes,
-  isLegacyShortTeacherCode,
   teacherPublicCodesMatch,
   sqlTeacherIdentityEquals,
 } = require("./teacherCodeAllocation");
@@ -19,38 +15,20 @@ const {
   CANONICAL_SCHOOL_COURSE_AMBIGUOUS,
 } = require("./teacherCourseCanonicalReconcile");
 
-test("règle officielle : ENS-0001 → {schoolCode}-ENS-0001, login inchangé", () => {
-  const codes = formatCanonicalTeacherCodes("CD-2026-0001", 1);
-  assert.deepEqual(codes, {
-    identifier: "ENS-0001",
-    teacherCode: "CD-2026-0001-ENS-0001",
-    userCode: "CD-2026-0001-ENS-0001",
-    publicId: "CD-2026-0001-ENS-0001",
-  });
-  assert.equal(extractTeacherLoginId("ENS-0001"), "ENS-0001");
-  assert.equal(extractTeacherLoginId(codes.teacherCode), "ENS-0001");
-  assert.equal(extractEnsSequence("ENS-0001"), 1);
-  assert.equal(isLegacyShortTeacherCode("ENS-0001"), true);
-  assert.equal(isLegacyShortTeacherCode("CD-2026-0001-ENS-0001"), false);
+test("identité enseignant = code personne, pas ENS-####", () => {
+  const codes = formatCanonicalTeacherCodes(
+    { loginCode: "CD-IN-26-001" },
+    { firstName: "Jean Pierre", lastName: "Mbuyi" },
+    1,
+    2026,
+  );
+  assert.equal(codes.teacherCode, "CD-IN-JPM-26-00001");
+  assert.equal(codes.identifier, codes.teacherCode);
+  assert.equal(teacherPublicCodesMatch(codes.teacherCode, "ENS-0001"), false);
 });
 
-test("generateNextTeacherCodes réutilise formatCanonicalTeacherCodes", () => {
-  const next = generateNextTeacherCodes("CD-2026-0001", ["ENS-0001", "CD-2026-0001-ENS-0002"]);
-  assert.equal(next.identifier, "ENS-0003");
-  assert.equal(next.teacherCode, "CD-2026-0001-ENS-0003");
-});
-
-test("cas Seke : teacher_code historique classé legacy-short", () => {
-  const seke = classifyTeacherPublicCode("ENS-0001", "CD-2026-0001");
-  assert.equal(seke.kind, "legacy-short");
-  assert.equal(seke.canonical.teacherCode, "CD-2026-0001-ENS-0001");
-  assert.equal(classifyTeacherPublicCode("CD-2026-0001-ENS-0001", "CD-2026-0001").kind, "canonical");
-});
-
-test("alias login : ENS-0001 matche le code technique canonique", () => {
-  assert.equal(teacherPublicCodesMatch("CD-2026-0001-ENS-0001", "ENS-0001"), true);
-  assert.equal(teacherPublicCodesMatch("CD-2026-0001-ENS-0001", "CD-2026-0001-ENS-0001"), true);
-  assert.equal(teacherPublicCodesMatch("CD-2026-0001-ENS-0001", "ENS-0002"), false);
+test("réconciliation n'écrit plus de code enseignant", () => {
+  assert.equal(classifyTeacherPublicCode().kind, "canonical");
 });
 
 test("B : 0 school_course → insert ; déjà présent → skip ; collision → STOP", () => {
@@ -71,19 +49,12 @@ test("B : 0 school_course → insert ; déjà présent → skip ; collision → 
   });
   assert.equal(ambiguous.action, "stop");
   assert.equal(ambiguous.code, CANONICAL_SCHOOL_COURSE_AMBIGUOUS);
-  assert.equal(
-    decideSchoolCourseMaterialization({
-      matchingByTeacher: [{ id: "a" }, { id: "b" }],
-      matchingByClassSubject: [{ id: "a" }, { id: "b" }],
-    }).action,
-    "stop",
-  );
 });
 
-test("prédicat SQL d'identité enseignant accepte l'alias ENS-####", () => {
+test("prédicat SQL enseignant : exact, sans legacy_teacher_code", () => {
   const sql = sqlTeacherIdentityEquals("t", "u", "$2");
-  assert.match(sql, /legacy_teacher_code/);
-  assert.match(sql, /ENS-\[0-9\]\+/);
+  assert.doesNotMatch(sql, /legacy_teacher_code/);
+  assert.doesNotMatch(sql, /ENS-/);
   assert.match(sql, /u\.user_code/);
 });
 
@@ -93,31 +64,14 @@ test("boot PostgreSQL appelle la réconciliation après le schéma pédagogie", 
   assert.match(source, /ensurePedagogyCanonicalSchema\(\)/);
 });
 
-test("schema.sql et la migration dédiée exposent legacy_teacher_code", () => {
+test("schema.sql ne crée plus legacy_teacher_code ; DROP est la source boot", () => {
   const schema = fs.readFileSync(path.join(__dirname, "../db/schema.sql"), "utf8");
-  const migration = fs.readFileSync(
-    path.join(__dirname, "../db/migrations/20260819_teacher_legacy_code.sql"),
+  assert.doesNotMatch(schema, /ADD COLUMN IF NOT EXISTS legacy_teacher_code/);
+  const drop = fs.readFileSync(
+    path.join(__dirname, "../db/migrations/20260903_drop_legacy_teacher_code.sql"),
     "utf8",
   );
-  assert.match(schema, /legacy_teacher_code/);
-  assert.match(migration, /legacy_teacher_code/);
+  assert.match(drop, /DROP COLUMN IF EXISTS legacy_teacher_code/);
   const helper = fs.readFileSync(path.join(__dirname, "../db/teachersLegacyCodeSchema.js"), "utf8");
-  assert.match(helper, /20260819_teacher_legacy_code\.sql/);
-});
-
-test("fixtures PG enseignants appliquent la migration legacy_teacher_code", () => {
-  const files = [
-    "teachersRepository.pg.test.js",
-    "teacherLifecycleRepository.pg.test.js",
-    "subjectsAssignments.pg.test.js",
-    "teacherLoginScope.pg.test.js",
-  ];
-  for (const file of files) {
-    const source = fs.readFileSync(path.join(__dirname, file), "utf8");
-    assert.match(
-      source,
-      /ensureTeachersLegacyCodeSchema/,
-      `${file} doit appliquer la migration canonique legacy_teacher_code`,
-    );
-  }
+  assert.match(helper, /20260903_drop_legacy_teacher_code\.sql/);
 });

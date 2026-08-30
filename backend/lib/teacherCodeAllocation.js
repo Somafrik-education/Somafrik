@@ -1,178 +1,166 @@
 "use strict";
 
 /**
- * Alloue le prochain couple identifiant / codes enseignant pour un établissement.
- * Format login : ENS-#### ; codes techniques : {schoolCode}-ENS-#### (unicité globale).
- */
-
-const LEGACY_SHORT_TEACHER_CODE_RE = /^ENS-\d+$/i;
-
-/**
- * @param {string | null | undefined} value
- * @returns {number | null}
- */
-function extractEnsSequence(value) {
-  const match = String(value ?? "").match(/ENS-(\d+)$/i);
-  if (!match?.[1]) return null;
-  const sequence = Number(match[1]);
-  return Number.isFinite(sequence) ? sequence : null;
-}
-
-/**
- * Identifiant court de connexion (ex. ENS-0001), suffixe du code technique.
- * @param {string | null | undefined} code
- * @returns {string}
- */
-function extractTeacherLoginId(code) {
-  const match = String(code ?? "").match(/(ENS-\d+)$/i);
-  return match ? match[1].toUpperCase() : "";
-}
-
-/**
- * @param {string | null | undefined} value
- * @returns {boolean}
- */
-function isLegacyShortTeacherCode(value) {
-  return LEGACY_SHORT_TEACHER_CODE_RE.test(String(value ?? "").trim());
-}
-
-/**
- * Règle officielle actuelle (nouveaux enseignants) :
- * login identifier = ENS-#### ;
- * teacherCode / userCode / publicId = {schoolCode}-ENS-####.
+ * Allocation et lookup enseignant V2 — identité canonique uniquement.
  *
- * @param {string} schoolCode
- * @param {number} sequence
- * @returns {{ identifier: string, teacherCode: string, userCode: string, publicId: string }}
+ * teacher_code = user_code = identity_code
+ *   = {ISO}-{ETAB}-{INITIALES}-{YY}-{SEQ5}
+ *   ex. CD-IN-JPM-26-00001
+ *
+ * Login métier = cette même chaîne. Jamais ENS-####.
+ * Lookup exact : UUID teacher, UUID user, teacher_code, user_code.
+ * Aucun suffixe, aucun legacy_teacher_code, aucun alias.
  */
-function formatCanonicalTeacherCodes(schoolCode, sequence) {
-  const normalizedSchool = String(schoolCode ?? "").trim().toUpperCase();
-  const identifier = `ENS-${String(Number(sequence)).padStart(4, "0")}`;
-  const teacherCode = normalizedSchool ? `${normalizedSchool}-${identifier}` : identifier;
-  return {
-    identifier,
-    teacherCode,
-    userCode: teacherCode,
-    publicId: teacherCode,
-  };
-}
 
-/**
- * @param {string | null | undefined} stored
- * @param {string | null | undefined} lookup
- * @returns {boolean}
- */
-function teacherPublicCodesMatch(stored, lookup) {
-  const a = String(stored ?? "").trim().toUpperCase();
-  const b = String(lookup ?? "").trim().toUpperCase();
-  if (!b) return true;
-  if (a === b) return true;
-  if (isLegacyShortTeacherCode(b) && a.endsWith(`-${b}`)) return true;
-  if (isLegacyShortTeacherCode(a) && b.endsWith(`-${a}`)) return true;
-  return false;
-}
-
-/**
- * Prédicat SQL : code public enseignant (canonique, legacy court, suffixe ENS-####).
- * @param {string} alias table teachers
- * @param {string} param ex. `$2` ou `ANY($2::text[])`
- */
-function sqlTeacherPublicCodeEquals(alias, param) {
-  return `(
-    ${alias}.teacher_code = ${param}
-    OR ${alias}.legacy_teacher_code = ${param}
-    OR (
-      ${param} ~* '^ENS-[0-9]+$'
-      AND right(${alias}.teacher_code, char_length(${param}) + 1) = '-' || upper(${param})
-    )
-  )`;
-}
-
-/**
- * @param {string} alias
- * @param {string} param ex. `$2::text[]`
- */
-function sqlTeacherPublicCodeEqualsAny(alias, param) {
-  return `(
-    ${alias}.teacher_code = ANY(${param})
-    OR ${alias}.legacy_teacher_code = ANY(${param})
-    OR EXISTS (
-      SELECT 1 FROM unnest(${param}) AS lookup(code)
-      WHERE lookup.code ~* '^ENS-[0-9]+$'
-        AND right(${alias}.teacher_code, char_length(lookup.code) + 1) = '-' || upper(lookup.code)
-    )
-  )`;
-}
-
-/**
- * Identité enseignant : UUID, codes publics, user_code, alias login ENS-####.
- * @param {string} teacherAlias
- * @param {string | null} userAlias LEFT JOIN users, ou null
- * @param {string} param
- */
-function sqlTeacherIdentityEquals(teacherAlias, userAlias, param) {
-  const userPart = userAlias
-    ? `OR ${userAlias}.id::text = ${param}
-       OR ${userAlias}.user_code = ${param}
-       OR (
-         ${param} ~* '^ENS-[0-9]+$'
-         AND ${userAlias}.user_code IS NOT NULL
-         AND right(${userAlias}.user_code, char_length(${param}) + 1) = '-' || upper(${param})
-       )`
-    : "";
-  return `(
-    ${teacherAlias}.id::text = ${param}
-    OR ${sqlTeacherPublicCodeEquals(teacherAlias, param).slice(1, -1)}
-    ${userPart}
-  )`;
-}
-
-/**
- * @param {string} teacherAlias
- * @param {string | null} userAlias
- * @param {string} param ex. `$2::text[]`
- */
-function sqlTeacherIdentityEqualsAny(teacherAlias, userAlias, param) {
-  const userPart = userAlias
-    ? `OR ${userAlias}.id::text = ANY(${param})
-       OR ${userAlias}.user_code = ANY(${param})
-       OR EXISTS (
-         SELECT 1 FROM unnest(${param}) AS lookup(code)
-         WHERE lookup.code ~* '^ENS-[0-9]+$'
-           AND ${userAlias}.user_code IS NOT NULL
-           AND right(${userAlias}.user_code, char_length(lookup.code) + 1) = '-' || upper(lookup.code)
-       )`
-    : "";
-  return `(
-    ${teacherAlias}.id::text = ANY(${param})
-    OR ${sqlTeacherPublicCodeEqualsAny(teacherAlias, param).slice(1, -1)}
-    ${userPart}
-  )`;
-}
-
-/**
- * @param {string} schoolCode
- * @param {string[]} existingCodes
- * @returns {{ identifier: string, teacherCode: string, userCode: string, publicId: string }}
- */
-function generateNextTeacherCodes(schoolCode, existingCodes = []) {
-  let max = 0;
-  for (const code of existingCodes) {
-    const sequence = extractEnsSequence(code);
-    if (sequence != null) {
-      max = Math.max(max, sequence);
-    }
-  }
-  return formatCanonicalTeacherCodes(schoolCode, max + 1);
-}
+const {
+  formatIdentityCode,
+  identityInitials,
+  schoolShortCodeFromName,
+} = require("./permanentIdentifier");
+const { isV2SchoolLoginCode, normalizeSchoolCode } = require("./schoolCodeV2");
 
 const TEACHER_CODE_UNIQUE_CONSTRAINT = "teachers_teacher_code_key";
 const USER_CODE_UNIQUE_CONSTRAINT = "users_user_code_key";
+const PERSON_IDENTITY_RE = /^([A-Z]{2})-([A-Z0-9]{2,5})-([A-Z0-9]{1,5})-(\d{2})-(\d{5})$/;
+
+function normalizeIdentityCode(value) {
+  return String(value ?? "").trim().toUpperCase();
+}
+
+function isPersonIdentityCode(value) {
+  return PERSON_IDENTITY_RE.test(normalizeIdentityCode(value));
+}
+
+function parsePersonIdentityCode(value) {
+  const match = PERSON_IDENTITY_RE.exec(normalizeIdentityCode(value));
+  if (!match) return null;
+  return {
+    countryIso: match[1],
+    schoolInitials: match[2],
+    initials: match[3],
+    yearShort: match[4],
+    sequence: Number(match[5]),
+  };
+}
+
+function schoolIdentityFromRecord(school = {}) {
+  const login = normalizeSchoolCode(school.loginCode ?? school.login_code ?? school);
+  if (typeof school === "string") {
+    if (isV2SchoolLoginCode(school)) {
+      const parts = normalizeSchoolCode(school).split("-");
+      return { countryIso: parts[0], schoolInitials: parts[1] };
+    }
+    const error = new Error("SCHOOL_LOGIN_CODE_REQUIRED");
+    error.code = "SCHOOL_LOGIN_CODE_REQUIRED";
+    throw error;
+  }
+  if (isV2SchoolLoginCode(login)) {
+    const parts = login.split("-");
+    return { countryIso: parts[0], schoolInitials: parts[1], loginCode: login };
+  }
+  const countryIso = normalizeSchoolCode(
+    school.countryIso ?? school.country_code ?? school.iso_code ?? "",
+  ).slice(0, 2);
+  const shortCode = String(school.shortCode ?? school.short_code ?? "").trim();
+  if (countryIso && shortCode) {
+    return {
+      countryIso,
+      schoolInitials: shortCode.replace(/[^A-Z0-9]/gi, "").slice(0, 5).toUpperCase(),
+      loginCode: login,
+    };
+  }
+  const name = String(school.name ?? "").trim();
+  if (countryIso && name) {
+    return { countryIso, schoolInitials: schoolShortCodeFromName(name), loginCode: login };
+  }
+  const error = new Error("SCHOOL_LOGIN_CODE_REQUIRED");
+  error.code = "SCHOOL_LOGIN_CODE_REQUIRED";
+  throw error;
+}
 
 /**
- * @param {unknown} error
- * @returns {boolean}
+ * Identité publique unique — plus de login court ENS-####.
+ * @returns {{ identifier: string, teacherCode: string, userCode: string, publicId: string, identityCode: string }}
  */
+function formatCanonicalTeacherCodes(school, person, sequence, year = new Date().getFullYear()) {
+  const { countryIso, schoolInitials } = schoolIdentityFromRecord(school);
+  const firstName = person?.firstName ?? person?.first_name ?? "";
+  const lastName = person?.lastName ?? person?.last_name ?? "";
+  const initials = person?.initials ?? identityInitials(firstName, lastName);
+  const identityCode = formatIdentityCode({
+    countryCode: countryIso,
+    schoolShortCode: schoolInitials,
+    initials,
+    year,
+    sequence,
+  });
+  return {
+    identifier: identityCode,
+    teacherCode: identityCode,
+    userCode: identityCode,
+    publicId: identityCode,
+    identityCode,
+  };
+}
+
+function maxIdentitySequence(existingCodes, countryIso, schoolInitials) {
+  const iso = normalizeIdentityCode(countryIso);
+  const school = normalizeIdentityCode(schoolInitials);
+  let max = 0;
+  for (const code of existingCodes ?? []) {
+    const parsed = parsePersonIdentityCode(code);
+    if (!parsed) continue;
+    if (parsed.countryIso !== iso || parsed.schoolInitials !== school) continue;
+    max = Math.max(max, parsed.sequence);
+  }
+  return max;
+}
+
+function generateNextTeacherCodes(school, existingCodes = [], person = {}, year = new Date().getFullYear()) {
+  const { countryIso, schoolInitials } = schoolIdentityFromRecord(school);
+  const sequence = maxIdentitySequence(existingCodes, countryIso, schoolInitials) + 1;
+  return formatCanonicalTeacherCodes(school, person, sequence, year);
+}
+
+function teacherPublicCodesMatch(stored, lookup) {
+  const a = normalizeIdentityCode(stored);
+  const b = normalizeIdentityCode(lookup);
+  if (!b) return false;
+  return a === b;
+}
+
+function sqlTeacherPublicCodeEquals(alias, param) {
+  return `${alias}.teacher_code = ${param}`;
+}
+
+function sqlTeacherPublicCodeEqualsAny(alias, param) {
+  return `${alias}.teacher_code = ANY(${param})`;
+}
+
+function sqlTeacherIdentityEquals(teacherAlias, userAlias, param) {
+  const userPart = userAlias
+    ? `OR ${userAlias}.id::text = ${param}
+       OR ${userAlias}.user_code = ${param}`
+    : "";
+  return `(
+    ${teacherAlias}.id::text = ${param}
+    OR ${sqlTeacherPublicCodeEquals(teacherAlias, param)}
+    ${userPart}
+  )`;
+}
+
+function sqlTeacherIdentityEqualsAny(teacherAlias, userAlias, param) {
+  const userPart = userAlias
+    ? `OR ${userAlias}.id::text = ANY(${param})
+       OR ${userAlias}.user_code = ANY(${param})`
+    : "";
+  return `(
+    ${teacherAlias}.id::text = ANY(${param})
+    OR ${sqlTeacherPublicCodeEqualsAny(teacherAlias, param)}
+    ${userPart}
+  )`;
+}
+
 function isTeacherOrUserCodeUniquenessViolation(error) {
   if (!error || String(error.code) !== "23505") {
     return false;
@@ -190,25 +178,11 @@ function isTeacherOrUserCodeUniquenessViolation(error) {
   );
 }
 
-/**
- * Verrou transactionnel établissement pour création enseignant (codes + identité).
- * @param {{ query: (sql: string, params?: unknown[]) => Promise<unknown> }} db
- * @param {string} schoolId
- */
 async function acquireTeacherSchoolCreationLock(db, schoolId) {
   await db.query("SELECT pg_advisory_xact_lock(hashtext($1::text))", [`teacher-code:${schoolId}`]);
 }
 
-/**
- * @param {{
- *   query: (sql: string, params?: unknown[]) => Promise<unknown>,
- *   all: (sql: string, params?: unknown[]) => Promise<any[]>,
- * }} db
- * @param {string} schoolId
- * @param {string} schoolCode
- * @param {{ alreadyLocked?: boolean }} [options]
- */
-async function allocateTeacherCodesLocked(db, schoolId, schoolCode, options = {}) {
+async function allocateTeacherCodesLocked(db, schoolId, school, options = {}) {
   if (!options.alreadyLocked) {
     await acquireTeacherSchoolCreationLock(db, schoolId);
   }
@@ -221,23 +195,29 @@ async function allocateTeacherCodesLocked(db, schoolId, schoolCode, options = {}
     [schoolId],
   );
   const existing = [...teacherRows, ...userRows].map((row) => row.code);
-  return generateNextTeacherCodes(schoolCode, existing);
+  const year = Number(options.year ?? new Date().getFullYear());
+  return generateNextTeacherCodes(school, existing, {
+    firstName: options.firstName ?? options.first_name,
+    lastName: options.lastName ?? options.last_name,
+    initials: options.initials,
+  }, year);
 }
 
 module.exports = {
   TEACHER_CODE_UNIQUE_CONSTRAINT,
   USER_CODE_UNIQUE_CONSTRAINT,
-  LEGACY_SHORT_TEACHER_CODE_RE,
-  extractEnsSequence,
-  extractTeacherLoginId,
-  isLegacyShortTeacherCode,
+  PERSON_IDENTITY_RE,
+  normalizeIdentityCode,
+  isPersonIdentityCode,
+  parsePersonIdentityCode,
+  schoolIdentityFromRecord,
   formatCanonicalTeacherCodes,
+  generateNextTeacherCodes,
   teacherPublicCodesMatch,
   sqlTeacherPublicCodeEquals,
   sqlTeacherPublicCodeEqualsAny,
   sqlTeacherIdentityEquals,
   sqlTeacherIdentityEqualsAny,
-  generateNextTeacherCodes,
   isTeacherOrUserCodeUniquenessViolation,
   acquireTeacherSchoolCreationLock,
   allocateTeacherCodesLocked,

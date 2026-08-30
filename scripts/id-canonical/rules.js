@@ -39,6 +39,7 @@ const ALLOWLIST_PREFIXES = [
   "scripts/id-canonical/",
   "scripts/verify-id-canonical.js",
   "backend/db/migrations/20260819_teacher_legacy_code.sql",
+  "backend/db/migrations/20260903_drop_legacy_teacher_code.sql",
   "backend/db/migrations/20260821_permanent_student_identifiers.sql",
   "backend/db/migrations/20260822_school_login_code.sql",
   "backend/db/migrations/20260823_student_canonical_identifier.sql",

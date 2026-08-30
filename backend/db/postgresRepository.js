@@ -4317,20 +4317,17 @@ class PostgresRepository {
   }
 
   async resolveTeacherPgIdForPrincipal(principal, schoolId) {
-    const lookupKeys = await this.collectTeacherLookupKeysForPrincipal(principal, schoolId);
-    for (const lookupValue of lookupKeys) {
-      const teacher = await this.one(
-        `SELECT t.id, t.teacher_code
-         FROM teachers t
-         LEFT JOIN users u ON u.id = t.user_id
-         WHERE t.school_id = $1
-           AND ${sqlTeacherIdentityEquals("t", "u", "$2")}
-         LIMIT 1`,
-        [schoolId, lookupValue],
-      );
-      if (teacher?.id) return teacher.id;
-    }
-    return null;
+    const userId = String(principal?.sub ?? "").trim();
+    if (!userId || !schoolId) return null;
+    const teacher = await this.one(
+      `SELECT t.id
+       FROM teachers t
+       WHERE t.school_id = $1
+         AND t.user_id::text = $2
+       LIMIT 1`,
+      [schoolId, userId],
+    );
+    return teacher?.id ?? null;
   }
 
   async findActiveTeacherAssignmentRow({ teacherId, classId, subjectId, academicYearId }) {
@@ -5881,7 +5878,7 @@ class PostgresRepository {
       scopeLevel: role === "Super Administrateur Somafrik" ? "Global" : role === "Admin Pays" ? "Pays" : "Établissement",
       countryScope,
       countryCode,
-      schoolCode: role === "Admin Pays" ? "*" : user.school_code ?? "*",
+      schoolCode: role === "Admin Pays" ? "*" : (school?.login_code || user.school_code || "*"),
       accessChannel: "Application",
       identifier,
       passwordHash: user.password_hash,
@@ -5953,17 +5950,11 @@ class PostgresRepository {
     }
 
     if (role === "Enseignant") {
-      if (teacherLoginId) {
-        return teacherLoginId;
-      }
-
-      const fromUserCode = this.extractTeacherLoginId(user.user_code);
-      if (fromUserCode) {
-        return fromUserCode;
-      }
-
-      if (/^ENS-\d+$/i.test(String(user.user_code))) {
-        return String(user.user_code).toUpperCase();
+      const canonical = String(teacherLoginId || user.identity_code || user.user_code || "")
+        .trim()
+        .toUpperCase();
+      if (canonical && !/^ENS-\d+$/i.test(canonical)) {
+        return canonical;
       }
     }
 
@@ -6002,7 +5993,7 @@ class PostgresRepository {
       schoolCode: teacher.school_code,
       publicId: teacher.teacher_code,
       userId: teacher.user_id,
-      identifier: this.extractTeacherLoginId(teacher.teacher_code),
+      identifier: String(teacher.teacher_code ?? "").trim().toUpperCase(),
       name: [teacher.first_name, teacher.last_name].filter(Boolean).join(" ") || teacher.teacher_code,
       firstName: teacher.first_name,
       lastName: teacher.last_name ?? "",

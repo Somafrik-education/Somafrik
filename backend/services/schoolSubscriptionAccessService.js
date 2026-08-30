@@ -48,9 +48,10 @@ function resolveAccessLevel(subscription = {}, school = {}) {
 }
 
 function schoolMatchesCode(school, schoolCode) {
-  const code = String(schoolCode ?? "").trim().toUpperCase();
-  return [school?.loginCode, school?.code, school?.publicId, school?.legacySchoolCode]
-    .some((value) => String(value ?? "").trim().toUpperCase() === code);
+  const { isLegacySchoolCodeFormat, normalizeSchoolCode } = require("../lib/schoolCodeV2");
+  const code = normalizeSchoolCode(schoolCode);
+  if (!code || isLegacySchoolCodeFormat(code)) return false;
+  return normalizeSchoolCode(school?.loginCode ?? school?.publicId) === code;
 }
 
 function findSchool(state, schoolCode) {
@@ -59,7 +60,7 @@ function findSchool(state, schoolCode) {
 
 function findSubscriptionForSchool(subscriptions = [], schoolCode, school = null) {
   const acceptedCodes = new Set(
-    [schoolCode, school?.code, school?.legacySchoolCode, school?.loginCode, school?.publicId]
+    [schoolCode, school?.loginCode, school?.publicId]
       .map((value) => String(value ?? "").trim().toUpperCase())
       .filter(Boolean),
   );

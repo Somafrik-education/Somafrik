@@ -45,17 +45,8 @@ class AccountIdentifier {
     return [...values];
   }
 
-  static parseLocalIdentifier(value) {
-    const match = String(value ?? "")
-      .trim()
-      .toUpperCase()
-      .match(/(?:^|-)(ELE|ETU|ENS)-(\d+)$/);
-
-    if (!match) {
-      return null;
-    }
-
-    return { profile: match[1], sequence: match[2] };
+  static parseLocalIdentifier() {
+    return null;
   }
 
   static buildAliases(schoolCode, profile, sequence) {

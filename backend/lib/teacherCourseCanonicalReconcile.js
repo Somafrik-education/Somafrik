@@ -3,18 +3,11 @@
 /**
  * P0 — réconciliation canonique enseignant / cours.
  *
- * A — teacher_code legacy ENS-#### → {schoolCode}-ENS-#### (règle teacherCodeAllocation).
- *     UUID teachers.id inchangé. FK teacher_id inchangées. Alias login conservé.
- * B — teacher_assignments actives → un school_courses actif si refs non ambiguës.
- *     0 correspondance → INSERT unique. >1 ou collision classe+matière → STOP.
+ * ID-CANONICAL-01B : plus de réécriture teacher_code ni legacy_teacher_code.
+ * Les affectations actives produisent un school_courses si les FK UUID sont
+ * non ambiguës. 0 correspondance → INSERT. >1 ou collision → STOP.
  */
 
-const {
-  extractEnsSequence,
-  extractTeacherLoginId,
-  formatCanonicalTeacherCodes,
-  isLegacyShortTeacherCode,
-} = require("./teacherCodeAllocation");
 const { generateCourseCode } = require("./pedagogyService");
 const {
   TEACHERS_LEGACY_CODE_SCHEMA_SQL,
@@ -32,29 +25,8 @@ function createCanonicalReconcileError(code, message, details) {
   return error;
 }
 
-/**
- * @param {string | null | undefined} teacherCode
- * @param {string | null | undefined} schoolCode
- */
-function classifyTeacherPublicCode(teacherCode, schoolCode) {
-  const current = String(teacherCode ?? "").trim();
-  const school = String(schoolCode ?? "").trim().toUpperCase();
-  if (isLegacyShortTeacherCode(current)) {
-    const sequence = extractEnsSequence(current);
-    return {
-      kind: "legacy-short",
-      sequence,
-      canonical: formatCanonicalTeacherCodes(school, sequence),
-    };
-  }
-  const sequence = extractEnsSequence(current);
-  if (sequence != null && school) {
-    const canonical = formatCanonicalTeacherCodes(school, sequence);
-    if (current.toUpperCase() === canonical.teacherCode) {
-      return { kind: "canonical", sequence, canonical };
-    }
-  }
-  return { kind: "other", sequence, canonical: null };
+function classifyTeacherPublicCode() {
+  return { kind: "canonical", sequence: null, canonical: null };
 }
 
 /**
@@ -98,86 +70,12 @@ async function ensureTeacherCourseCanonicalSchema(db) {
   await ensureTeachersLegacyCodeSchema(db);
 }
 
-async function inventoryTeachers(db) {
-  return all(
-    db,
-    `SELECT t.id,
-            t.school_id,
-            t.teacher_code,
-            t.legacy_teacher_code,
-            t.user_id,
-            s.school_code,
-            u.user_code
-     FROM teachers t
-     JOIN schools s ON s.id = t.school_id
-     LEFT JOIN users u ON u.id = t.user_id
-     ORDER BY s.school_code, t.created_at, t.id`,
-  );
-}
-
-async function reconcileTeacherPublicCodes(db) {
-  const rows = await inventoryTeachers(db);
-  const before = rows.map((row) => ({
-    teacherId: row.id,
-    schoolCode: row.school_code,
-    teacher_code: row.teacher_code,
-    user_code: row.user_code,
-    kind: classifyTeacherPublicCode(row.teacher_code, row.school_code).kind,
-  }));
-  let rewritten = 0;
-  const rewrittenIds = [];
-
-  for (const row of rows) {
-    const classified = classifyTeacherPublicCode(row.teacher_code, row.school_code);
-    if (classified.kind !== "legacy-short" || classified.sequence == null) {
-      continue;
-    }
-    const canonical = classified.canonical.teacherCode;
-    const identifier = classified.canonical.identifier;
-    if (String(row.teacher_code).toUpperCase() === canonical) {
-      continue;
-    }
-
-    const owner = await one(db, `SELECT id FROM teachers WHERE teacher_code = $1 LIMIT 1`, [canonical]);
-    if (owner && String(owner.id) !== String(row.id)) {
-      throw createCanonicalReconcileError(
-        CANONICAL_TEACHER_CODE_CONFLICT,
-        `Code enseignant canonique ${canonical} déjà porté par un autre UUID.`,
-        {
-          teacherId: row.id,
-          conflictingTeacherId: owner.id,
-          legacyCode: row.teacher_code,
-          canonicalCode: canonical,
-        },
-      );
-    }
-
-    await exec(
-      db,
-      `UPDATE teachers
-       SET teacher_code = $1,
-           legacy_teacher_code = COALESCE(legacy_teacher_code, $2),
-           updated_at = NOW()
-       WHERE id = $3`,
-      [canonical, identifier, row.id],
-    );
-    rewritten += 1;
-    rewrittenIds.push(row.id);
-  }
-
-  const afterRows = await inventoryTeachers(db);
+async function reconcileTeacherPublicCodes() {
   return {
-    rewritten,
-    rewrittenIds,
-    before,
-    after: afterRows.map((row) => ({
-      teacherId: row.id,
-      schoolCode: row.school_code,
-      teacher_code: row.teacher_code,
-      legacy_teacher_code: row.legacy_teacher_code,
-      user_code: row.user_code,
-      kind: classifyTeacherPublicCode(row.teacher_code, row.school_code).kind,
-    })),
+    rewritten: 0,
+    rewrittenIds: [],
+    before: [],
+    after: [],
   };
 }
 
@@ -305,7 +203,7 @@ async function materializeSchoolCoursesFromAssignments(db) {
 
     const existingCodes = await codesForSchool(row.school_id);
     const courseCode = generateCourseCode(row.school_code, existingCodes);
-    const loginId = extractTeacherLoginId(row.teacher_code);
+    const teacherPublicId = String(row.teacher_code ?? "").trim();
     const coefficient = Number(row.coefficient ?? 1) > 0 ? Number(row.coefficient) : 1;
 
     const inserted = await one(
@@ -321,7 +219,7 @@ async function materializeSchoolCoursesFromAssignments(db) {
         row.teacher_id,
         courseCode,
         coefficient,
-        JSON.stringify({ teacherId: loginId }),
+        JSON.stringify({ teacherId: teacherPublicId }),
       ],
     );
     existingCodes.push({ course_code: courseCode });

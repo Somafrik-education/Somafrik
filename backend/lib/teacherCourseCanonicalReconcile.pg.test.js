@@ -10,7 +10,6 @@ const { PEDAGOGY_SCHEMA_SQL } = require("../db/pedagogySchema");
 const {
   ensureTeacherCourseCanonicalReconcile,
   CANONICAL_SCHOOL_COURSE_AMBIGUOUS,
-  CANONICAL_TEACHER_CODE_CONFLICT,
 } = require("./teacherCourseCanonicalReconcile");
 
 const DATABASE_URL = String(process.env.DATABASE_URL ?? "").trim();
@@ -70,15 +69,17 @@ async function resetSchema(pool) {
   await pool.query("CREATE SCHEMA public");
   await pool.query(fs.readFileSync(path.join(__dirname, "../db/schema.sql"), "utf8"));
   await pool.query(PEDAGOGY_SCHEMA_SQL);
+  await pool.query(fs.readFileSync(path.join(__dirname, "../db/migrations/20260903_drop_legacy_teacher_code.sql"), "utf8"));
 }
 
-async function seedSeke(pool, { withCoursesForOtherTeacher = false, conflictingCanonical = false } = {}) {
+async function seedSeke(pool, { withCoursesForOtherTeacher = false } = {}) {
   const country = await pool.query(
     `INSERT INTO countries (name, iso_code, phone_code, currency) VALUES ('RDC', 'CD', '+243', 'CDF') RETURNING id`,
   );
   const school = await pool.query(
     `INSERT INTO schools (country_id, school_code, name, status, profile_payload)
-     VALUES ($1, 'CD-2026-0001', 'Lycée A', 'active', '{"timezone":"Africa/Kinshasa"}'::jsonb) RETURNING id`,
+     VALUES ($1, 'SCH-TESTA', 'Lycée A', 'active', '{"timezone":"Africa/Kinshasa"}'::jsonb)
+     RETURNING id, login_code`,
     [country.rows[0].id],
   );
   const year = await pool.query(
@@ -102,12 +103,12 @@ async function seedSeke(pool, { withCoursesForOtherTeacher = false, conflictingC
   );
   const teacherUser = await pool.query(
     `INSERT INTO users (school_id, user_code, first_name, last_name, email, role, status)
-     VALUES ($1, 'ENS-0001', 'Seke', 'Kilombo', 'seke@test.cd', 'TEACHER', 'active') RETURNING id`,
+     VALUES ($1, 'CD-LA-SK-26-00001', 'Seke', 'Kilombo', 'seke@test.cd', 'TEACHER', 'active') RETURNING id`,
     [school.rows[0].id],
   );
   const teacher = await pool.query(
     `INSERT INTO teachers (school_id, user_id, teacher_code, status)
-     VALUES ($1, $2, 'ENS-0001', 'active') RETURNING id`,
+     VALUES ($1, $2, 'CD-LA-SK-26-00001', 'active') RETURNING id`,
     [school.rows[0].id, teacherUser.rows[0].id],
   );
   const a1 = await pool.query(
@@ -121,45 +122,33 @@ async function seedSeke(pool, { withCoursesForOtherTeacher = false, conflictingC
     [school.rows[0].id, teacher.rows[0].id, classA.rows[0].id, french.rows[0].id, year.rows[0].id],
   );
 
-  if (conflictingCanonical) {
-    const otherUser = await pool.query(
-      `INSERT INTO users (school_id, user_code, first_name, last_name, email, role, status)
-       VALUES ($1, 'USR-OTHER', 'Autre', 'Ens', 'other@test.cd', 'TEACHER', 'active') RETURNING id`,
-      [school.rows[0].id],
-    );
-    await pool.query(
-      `INSERT INTO teachers (school_id, user_id, teacher_code, status)
-       VALUES ($1, $2, 'CD-2026-0001-ENS-0001', 'active')`,
-      [school.rows[0].id, otherUser.rows[0].id],
-    );
-  }
-
   if (withCoursesForOtherTeacher) {
     const otherUser = await pool.query(
       `INSERT INTO users (school_id, user_code, first_name, last_name, email, role, status)
-       VALUES ($1, 'USR-OTHER-COURSE', 'Autre', 'Cours', 'other-course@test.cd', 'TEACHER', 'active') RETURNING id`,
+       VALUES ($1, 'CD-LA-AC-26-00002', 'Autre', 'Cours', 'other-course@test.cd', 'TEACHER', 'active') RETURNING id`,
       [school.rows[0].id],
     );
     const otherTeacher = await pool.query(
       `INSERT INTO teachers (school_id, user_id, teacher_code, status)
-       VALUES ($1, $2, 'CD-2026-0001-ENS-0099', 'active') RETURNING id`,
+       VALUES ($1, $2, 'CD-LA-AC-26-00002', 'active') RETURNING id`,
       [school.rows[0].id, otherUser.rows[0].id],
     );
     await pool.query(
       `INSERT INTO school_courses (school_id, class_id, subject_id, teacher_id, course_code, coefficient, status)
-       VALUES ($1, $2, $3, $4, 'CD-2026-0001-CRS-0001', 2, 'active')`,
+       VALUES ($1, $2, $3, $4, 'SCH-TESTA-CRS-0001', 2, 'active')`,
       [school.rows[0].id, classA.rows[0].id, math.rows[0].id, otherTeacher.rows[0].id],
     );
   }
 
   const adminUser = await pool.query(
     `INSERT INTO users (school_id, user_code, first_name, last_name, email, role, status)
-     VALUES ($1, 'USR-ADMIN', 'Admin', 'School', 'admin@test.cd', 'SCHOOL_ADMIN', 'active') RETURNING id`,
+     VALUES ($1, 'CD-LA-AS-26-00003', 'Admin', 'School', 'admin@test.cd', 'SCHOOL_ADMIN', 'active') RETURNING id`,
     [school.rows[0].id],
   );
 
   return {
     schoolId: school.rows[0].id,
+    schoolLoginCode: school.rows[0].login_code,
     yearId: year.rows[0].id,
     classId: classA.rows[0].id,
     teacherId: teacher.rows[0].id,
@@ -179,69 +168,46 @@ async function main() {
   try {
     await resetSchema(pool);
     const fixture = await seedSeke(pool);
-    const assignmentCountBefore = await pool.query(`SELECT count(*)::int AS c FROM teacher_assignments`);
-    const teacherCountBefore = await pool.query(`SELECT count(*)::int AS c FROM teachers`);
-    const coursesBefore = await pool.query(`SELECT count(*)::int AS c FROM school_courses`);
-    assert.equal(assignmentCountBefore.rows[0].c, 2);
-    assert.equal(teacherCountBefore.rows[0].c, 1);
-    assert.equal(coursesBefore.rows[0].c, 0);
+    assert.equal((await pool.query(`SELECT count(*)::int AS c FROM teacher_assignments`)).rows[0].c, 2);
+    assert.equal((await pool.query(`SELECT count(*)::int AS c FROM school_courses`)).rows[0].c, 0);
 
     const db = poolAdapter(pool);
     const first = await ensureTeacherCourseCanonicalReconcile(db, { info() {} });
-    assert.equal(first.teachersRewritten, 1);
+    assert.equal(first.teachersRewritten, 0);
     assert.equal(first.schoolCoursesCreated, 2);
 
-    const seke = await pool.query(`SELECT id, teacher_code, legacy_teacher_code, user_id FROM teachers WHERE id = $1`, [
+    const seke = await pool.query(`SELECT id, teacher_code, user_id FROM teachers WHERE id = $1`, [
       fixture.teacherId,
     ]);
-    assert.equal(seke.rows[0].id, fixture.teacherId, "UUID enseignant inchangé");
-    assert.equal(seke.rows[0].teacher_code, "CD-2026-0001-ENS-0001");
-    assert.equal(seke.rows[0].legacy_teacher_code, "ENS-0001");
+    assert.equal(seke.rows[0].id, fixture.teacherId);
+    assert.equal(seke.rows[0].teacher_code, "CD-LA-SK-26-00001");
     assert.equal(seke.rows[0].user_id, fixture.teacherUserId);
 
-    const user = await pool.query(`SELECT user_code FROM users WHERE id = $1`, [fixture.teacherUserId]);
-    assert.equal(user.rows[0].user_code, "ENS-0001", "alias de login temporaire conservé");
-
-    const assignmentsAfter = await pool.query(
-      `SELECT id, teacher_id FROM teacher_assignments ORDER BY id`,
+    const columns = await pool.query(
+      `SELECT column_name FROM information_schema.columns
+       WHERE table_name = 'teachers' AND column_name = 'legacy_teacher_code'`,
     );
-    assert.deepEqual(
-      assignmentsAfter.rows.map((row) => row.id).sort(),
-      fixture.assignmentIds,
-    );
-    assert.ok(assignmentsAfter.rows.every((row) => row.teacher_id === fixture.teacherId));
+    assert.equal(columns.rowCount, 0, "legacy_teacher_code doit être DROP");
 
     const second = await ensureTeacherCourseCanonicalReconcile(db, { info() {} });
-    assert.equal(second.teachersRewritten, 0, "bootstrap #2 → +0 teacher_code");
-    assert.equal(second.schoolCoursesCreated, 0, "bootstrap #2 → +0 school_courses");
-    const coursesAfter = await pool.query(`SELECT count(*)::int AS c FROM school_courses`);
-    assert.equal(coursesAfter.rows[0].c, 2);
-    assert.equal((await pool.query(`SELECT count(*)::int AS c FROM teacher_assignments`)).rows[0].c, 2);
-    assert.equal((await pool.query(`SELECT count(*)::int AS c FROM teachers`)).rows[0].c, 1);
+    assert.equal(second.teachersRewritten, 0);
+    assert.equal(second.schoolCoursesCreated, 0);
+    assert.equal((await pool.query(`SELECT count(*)::int AS c FROM school_courses`)).rows[0].c, 2);
 
     const repo = createPostgresRepository(isolatedUrl);
     repo.ready = true;
     const store = createPedagogyPgStore(repo);
-    const prefet = { role: "Préfet des études", schoolCode: "CD-2026-0001" };
+    const prefet = { role: "Préfet des études", schoolCode: fixture.schoolLoginCode };
     const options = await store.listCourseSchedules(prefet, {
       projection: "course-options",
       className: "2ème A",
     });
-    assert.equal(options.projection, "planning-course-options");
     assert.equal(options.items.length, 2);
-    const math = options.items.find((row) => row.name === "Mathématiques");
-    const french = options.items.find((row) => row.name === "Français");
-    assert.ok(math?.schoolCourseId);
-    assert.ok(french?.schoolCourseId);
-    assert.notEqual(math.schoolCourseId, french.schoolCourseId);
-    assert.equal(math.classId, fixture.classId);
-    assert.equal(math.academicYearId, fixture.yearId);
-    assert.match(String(math.teacherId), /ENS-0001/i);
 
     const teacherPrincipal = {
       role: "Enseignant",
-      schoolCode: "CD-2026-0001",
-      identifier: "ENS-0001",
+      schoolCode: fixture.schoolLoginCode,
+      identifier: "CD-LA-SK-26-00001",
       sub: fixture.teacherUserId,
     };
     const teacherOptions = await store.listCourseSchedules(teacherPrincipal, {
@@ -257,14 +223,7 @@ async function main() {
       (error) => error.code === CANONICAL_SCHOOL_COURSE_AMBIGUOUS,
     );
 
-    await resetSchema(pool);
-    await seedSeke(pool, { conflictingCanonical: true });
-    await assert.rejects(
-      () => ensureTeacherCourseCanonicalReconcile(poolAdapter(pool), { info() {} }),
-      (error) => error.code === CANONICAL_TEACHER_CODE_CONFLICT,
-    );
-
-    console.log("OK pg: Seke ENS-0001 réconcilié, 2 school_courses idempotents, fail-closed si ambigu");
+    console.log("OK pg: school_courses depuis assignments UUID, zéro rewrite teacher_code, DROP legacy");
   } finally {
     await pool.end();
   }

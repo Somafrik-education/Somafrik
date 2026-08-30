@@ -8,7 +8,7 @@ const {
   isExactTeacherCivilIdentity,
 } = require("./teachersManagement");
 const { toIsoDate } = require("./clientsManagement");
-const { generateNextTeacherCodes, extractEnsSequence } = require("./teacherCodeAllocation");
+const { generateNextTeacherCodes } = require("./teacherCodeAllocation");
 
 function expectStatus(fn, statusCode, code) {
   try {
@@ -115,10 +115,14 @@ function main() {
     "toIsoDate(Date) doit matcher l'identité civile existante",
   );
 
-  assert.equal(extractEnsSequence("CD-2026-0001-ENS-0012"), 12);
-  const codes = generateNextTeacherCodes("CD-2026-0001", ["CD-2026-0001-ENS-0003", "ENS-0005"]);
-  assert.equal(codes.identifier, "ENS-0006");
-  assert.equal(codes.teacherCode, "CD-2026-0001-ENS-0006");
+  const codes = generateNextTeacherCodes(
+    { loginCode: "CD-IN-26-001" },
+    ["CD-IN-JPM-26-00003"],
+    { firstName: "Awa", lastName: "Diop" },
+    2026,
+  );
+  assert.equal(codes.identifier, "CD-IN-AD-26-00004");
+  assert.equal(codes.teacherCode, codes.identifier);
   assert.equal(codes.userCode, codes.teacherCode);
 
   console.log("teachersManagement.test.js: OK");
