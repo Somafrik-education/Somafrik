@@ -121,10 +121,9 @@ async function main() {
     const stamp = Date.now().toString().slice(-3);
     const country = await client.query(
       `INSERT INTO countries (name, iso_code, phone_code, currency)
-       VALUES ('RDC', $1, '+243', 'CDF')
-       ON CONFLICT (iso_code) DO UPDATE SET name = EXCLUDED.name
+       VALUES ('RDC', 'CD', '+243', 'CDF')
+       ON CONFLICT (iso_code) DO UPDATE SET phone_code = EXCLUDED.phone_code
        RETURNING id`,
-      [`T${Date.now().toString().slice(-6)}`],
     );
     const countryId = country.rows[0].id;
     const schoolAId = randomUUID();

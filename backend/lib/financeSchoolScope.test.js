@@ -95,6 +95,25 @@ test("F8-P1-006: Admin Pays n'utilise pas le préfixe schoolCode comme autorité
   );
 });
 
+test("Lot B : schoolRecordInFinanceScope lit login_code, jamais school_code", () => {
+  const principal = { role: "Comptable", schoolCode: "CI-EA-26-001" };
+  const scope = resolveFinanceSchoolScope(principal);
+  assert.equal(
+    schoolRecordInFinanceScope(
+      { school_code: "SCH-F8-A", login_code: "CI-EA-26-001", code: "CI-EA-26-001" },
+      scope,
+    ),
+    true,
+  );
+  assert.equal(
+    schoolRecordInFinanceScope(
+      { school_code: "CI-EA-26-001", login_code: "CI-EB-26-002", code: "CI-EB-26-002" },
+      scope,
+    ),
+    false,
+  );
+});
+
 test("F8-P0-004: schoolCode * n'est plus un passe-partout hors Superadmin", () => {
   const scope = resolveFinanceSchoolScope({
     role: "Comptable",

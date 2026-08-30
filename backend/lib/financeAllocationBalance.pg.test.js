@@ -98,16 +98,16 @@ async function main() {
        VALUES ('RDC','CD','+243','CDF') RETURNING id`,
     );
     const schoolA = await pool.query(
-      `INSERT INTO schools (country_id, school_code, name, status)
-       VALUES ($1,'CD-2026-F4A','École F4 A','active') RETURNING id, login_code`,
+      `INSERT INTO schools (country_id, school_code, login_code, name, status)
+       VALUES ($1,'CD-2026-F4A','CD-EA-26-001','École F4 A','active') RETURNING id, login_code`,
       [country.rows[0].id],
     );
     const schoolB = await pool.query(
-      `INSERT INTO schools (country_id, school_code, name, status)
-       VALUES ($1,'CD-2026-F4B','École F4 B','active') RETURNING id, login_code`,
+      `INSERT INTO schools (country_id, school_code, login_code, name, status)
+       VALUES ($1,'CD-2026-F4B','CD-EB-26-002','École F4 B','active') RETURNING id, login_code`,
       [country.rows[0].id],
     );
-    const schoolALogin = String(schoolA.rows[0].login_code ?? "").trim().toUpperCase();
+    const schoolALogin = String(schoolA.rows[0].login_code ?? "CD-EA-26-001").trim().toUpperCase();
     assert.ok(schoolALogin, "login_code école F4 A manquant");
     const yearA = await pool.query(
       `INSERT INTO academic_years (school_id,name,status,is_current)

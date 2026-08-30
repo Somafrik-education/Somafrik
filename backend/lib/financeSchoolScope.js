@@ -67,7 +67,10 @@ function schoolRecordInFinanceScope(record, scope) {
     const iso = countryIsoFromRecord(record);
     return Boolean(iso) && iso === scope.countryCode;
   }
-  return schoolCodeInScope(record?.schoolCode || record?.school_code || record?.code, scope);
+  const publicCode = String(
+    record?.login_code || record?.loginCode || record?.code || record?.schoolCode || "",
+  ).trim().toUpperCase();
+  return schoolCodeInScope(publicCode, scope);
 }
 
 function primaryFinanceSchoolCode(principal) {
