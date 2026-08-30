@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  marketingAudiences,
+  marketingAudiencesSection,
   marketingBusinessProofs,
   marketingFinalCta,
   marketingHero,
@@ -10,6 +12,7 @@ import {
   marketingProduct,
   marketingProductVisual,
   marketingSecurity,
+  marketingSeo,
   marketingWebMobile,
 } from "./marketingContent";
 
@@ -74,5 +77,34 @@ describe("marketingContent", () => {
       "L’enseignant saisit les résultats d’une évaluation directement depuis l’application.",
     );
     expect(marketingBusinessProofs.items[3]?.src).toMatch(/somafrik-notes-saisie\.webp$/);
+  });
+
+  it("présente les quatre audiences et une sécurité vérifiable", () => {
+    expect(marketingAudiencesSection.eyebrow).toBe("Pour qui ?");
+    expect(marketingAudiences.map((item) => item.title)).toEqual([
+      "Direction",
+      "Administration",
+      "Enseignants",
+      "Parents",
+    ]);
+    expect(marketingSecurity.items).toHaveLength(3);
+    expect(marketingSecurity.items.map((item) => item.title)).toEqual([
+      "Authentification",
+      "Séparation des établissements",
+      "Accès selon les responsabilités",
+    ]);
+    const securityText = [marketingSecurity.title, marketingSecurity.intro, ...marketingSecurity.items.flatMap((item) => [item.title, item.text])].join(" ");
+    expect(securityText).not.toMatch(/ISO|SOC 2|99,99|souverain|chiffrement certifié/i);
+  });
+
+  it("décrit le SEO public sans inventer de domaine ni de conformité", () => {
+    expect(marketingSeo.title).toBe("Somafrik — Pilotez votre établissement scolaire");
+    expect(marketingSeo.description.length).toBeGreaterThan(80);
+    expect(marketingSeo.description.length).toBeLessThan(200);
+    expect(marketingSeo.ogImage).toMatch(/marketing\/somafrik-dashboard-etablissement\.webp$/);
+    expect(marketingSeo.ogLocale).toBe("fr_FR");
+    expect(`${marketingSeo.title} ${marketingSeo.description} ${marketingSeo.ogDescription}`).not.toMatch(
+      /ISO|SOC 2|Demander une démo|Nous contacter/i,
+    );
   });
 });

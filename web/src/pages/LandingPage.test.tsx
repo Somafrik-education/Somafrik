@@ -3,7 +3,10 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import {
+  marketingAudiences,
+  marketingAudiencesSection,
   marketingBusinessProofs,
+  marketingFinalCta,
   marketingHero,
   marketingLegalRoutes,
   marketingLogin,
@@ -11,6 +14,7 @@ import {
   marketingNav,
   marketingProduct,
   marketingProductVisual,
+  marketingSecurity,
   marketingWebMobile,
 } from "../data/marketingContent";
 
@@ -233,5 +237,35 @@ describe("LandingPage — vitrine publique", () => {
     expect(container.querySelector("#web-mobile")).not.toBeNull();
     expect(container.querySelectorAll("#web-mobile img[src*='/marketing/mobile/']")).toHaveLength(3);
     expect(marketingNav.some((link) => link.href === "#preuves")).toBe(false);
+  });
+
+  it("expose le skip link, un seul H1 et le focus du menu mobile", async () => {
+    const user = userEvent.setup();
+    const { container } = renderLanding();
+    expect(screen.getByRole("link", { name: /aller au contenu/i })).toHaveAttribute("href", "#contenu");
+    expect(container.querySelectorAll("h1")).toHaveLength(1);
+    expect(screen.getByRole("link", { name: "Somafrik, accueil" })).toHaveAttribute("href", "/");
+    await user.click(screen.getByRole("button", { name: /ouvrir le menu/i }));
+    expect(screen.getByLabelText("Navigation vitrine mobile")).toBeInTheDocument();
+    await user.keyboard("{Escape}");
+    expect(screen.queryByLabelText("Navigation vitrine mobile")).not.toBeInTheDocument();
+  });
+
+  it("présente les audiences, la sécurité vérifiable et le CTA /connexion", () => {
+    const { container } = renderLanding();
+    expect(container.querySelector("#utilisateurs")).not.toBeNull();
+    expect(screen.getByRole("heading", { name: marketingAudiencesSection.title })).toBeInTheDocument();
+    for (const audience of marketingAudiences) {
+      expect(screen.getByRole("heading", { name: audience.title })).toBeInTheDocument();
+    }
+    expect(screen.getByRole("heading", { name: marketingSecurity.title })).toBeInTheDocument();
+    for (const item of marketingSecurity.items) {
+      expect(screen.getByRole("heading", { name: item.title })).toBeInTheDocument();
+    }
+    expect(container.textContent).not.toMatch(/ISO 27001|SOC 2|99,99|hébergement souverain/i);
+    expect(screen.getByRole("heading", { name: marketingFinalCta.title })).toBeInTheDocument();
+    expect(screen.getAllByRole("link", { name: marketingFinalCta.cta.label })[0]).toHaveAttribute("href", "/connexion");
+    expect(screen.getByLabelText("Liens de la vitrine")).toBeInTheDocument();
+    expect(screen.getByLabelText("Accès à Somafrik")).toBeInTheDocument();
   });
 });

@@ -7,14 +7,14 @@ export function BusinessProofsSection() {
       className="scroll-mt-28 border-y border-line bg-slate-50/70"
       aria-labelledby="preuves-titre"
     >
-      <div className="mx-auto max-w-6xl px-4 py-16 sm:px-6">
+      <div className="mx-auto max-w-6xl px-4 py-14 sm:px-6 sm:py-16">
         <p className="text-xs font-bold uppercase tracking-wide text-brand">{marketingBusinessProofs.eyebrow}</p>
         <h2 id="preuves-titre" className="mt-2 max-w-2xl text-2xl font-black tracking-tight text-ink sm:text-3xl">
           {marketingBusinessProofs.title}
         </h2>
         <p className="mt-4 max-w-2xl text-base leading-relaxed text-slate-600">{marketingBusinessProofs.intro}</p>
 
-        <div className="mt-12 space-y-16">
+        <div className="mt-10 space-y-12 md:space-y-14">
           {marketingBusinessProofs.items.map((item, index) => {
             const reverse = index % 2 === 1;
             return (
