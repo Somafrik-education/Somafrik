@@ -2811,12 +2811,14 @@ class PostgresRepository {
     let attachmentEvaluation = { ...evaluation };
     if (existing) {
       const refs = await this.one(
-        `SELECT c.name AS class_name, sub.name AS subject_name, tm.name AS term_name, t.teacher_code
+        `SELECT c.name AS class_name, sub.name AS subject_name, tm.name AS term_name,
+                e.teacher_id, u.user_code
          FROM evaluations e
          JOIN classes c ON c.id = e.class_id
          JOIN subjects sub ON sub.id = e.subject_id
          JOIN terms tm ON tm.id = e.term_id
          LEFT JOIN teachers t ON t.id = e.teacher_id
+         LEFT JOIN users u ON u.id = t.user_id
          WHERE e.id = $1`,
         [existing.id],
       );
@@ -2828,7 +2830,11 @@ class PostgresRepository {
           attachmentEvaluation.subjectName ??
           refs?.subject_name,
         period: attachmentEvaluation.period ?? refs?.term_name,
-        teacherId: attachmentEvaluation.teacherId ?? refs?.teacher_code,
+        teacherId:
+          attachmentEvaluation.teacherId ??
+          (refs?.teacher_id ? String(refs.teacher_id) : "") ||
+          refs?.user_code ||
+          undefined,
       };
     }
 
