@@ -24,7 +24,13 @@ const {
 const { decoratePaymentWithItems } = require("../lib/financePaymentItems");
 const { projectObligationPaidAmounts } = require("../lib/financeObligationPaid");
 const { projectPaymentsWithAllocations, projectPaymentCash } = require("../lib/financeUnallocatedCash");
-const { resolveFinanceSchoolScope, schoolRecordInFinanceScope, primaryFinanceSchoolCode } = require("../lib/financeSchoolScope");
+const {
+  resolveFinanceSchoolScope,
+  schoolRecordInFinanceScope,
+  studentSchoolPublicLogin,
+  studentRecordInFinanceScope,
+  primaryFinanceSchoolCode,
+} = require("../lib/financeSchoolScope");
 const {
   foldPaymentStudentOptions,
   resolveCatalogPaymentMethods,
@@ -151,17 +157,19 @@ function createFinanceMemoryStore({
       async findStudent(studentKey, principal) {
         const student = await findStudent?.(studentKey, principal);
         if (!student) return null;
-        const login = student.loginCode || student.login_code || student.schoolCode;
+        const schoolLogin = studentSchoolPublicLogin(student);
         const scoped = {
           ...student,
           dbId: student.dbId || student.id,
-          schoolCode: login,
-          loginCode: login,
-          login_code: login,
+          schoolCode: schoolLogin,
+          schoolLoginCode: schoolLogin,
+          school_login_code: schoolLogin,
+          loginCode: schoolLogin,
+          login_code: schoolLogin,
         };
         if (principal) {
           const scope = resolveFinanceSchoolScope(principal);
-          if (!schoolRecordInFinanceScope(scoped, scope)) return null;
+          if (!studentRecordInFinanceScope(scoped, scope)) return null;
         }
         return scoped;
       },
@@ -825,8 +833,8 @@ function createFinanceMemoryStore({
       const students = typeof listSchoolStudents === "function" ? await listSchoolStudents(principal) : [];
       const rows = [];
       for (const student of students) {
-        const schoolCode = String(student.loginCode || student.login_code || student.schoolCode || "").trim();
-        if (!schoolRecordInFinanceScope({ ...student, loginCode: schoolCode, login_code: schoolCode }, scope)) continue;
+        const schoolCode = studentSchoolPublicLogin(student);
+        if (!studentRecordInFinanceScope(student, scope)) continue;
         const enrollments = Array.isArray(student.enrollments) && student.enrollments.length
           ? student.enrollments
           : [

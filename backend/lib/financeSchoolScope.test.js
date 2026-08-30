@@ -6,6 +6,8 @@ const {
   resolveFinanceSchoolScope,
   schoolCodeInScope,
   schoolRecordInFinanceScope,
+  studentSchoolPublicLogin,
+  studentRecordInFinanceScope,
   primaryFinanceSchoolCode,
 } = require("./financeSchoolScope");
 const { assertTenant } = require("./financeService");
@@ -135,6 +137,27 @@ test("Lot B : schoolRecordInFinanceScope lit login_code, jamais school_code", ()
     ),
     false,
   );
+});
+
+test("Lot B : fiche élève — scope via schoolCode, jamais loginCode personne", () => {
+  const principal = { role: "Comptable", schoolCode: "CD-IN-26-001" };
+  const scope = resolveFinanceSchoolScope(principal);
+  const enrolled = {
+    loginCode: "CD-IN-EL-26-001",
+    login_code: "CD-IN-EL-26-001",
+    schoolCode: "CD-IN-26-001",
+    school_login_code: "CD-IN-26-001",
+  };
+  assert.equal(studentRecordInFinanceScope(enrolled, scope), true);
+  assert.equal(schoolRecordInFinanceScope(enrolled, scope), false);
+  assert.equal(
+    studentRecordInFinanceScope(
+      { loginCode: "CD-IN-EL-26-001", schoolCode: "BI-ESB-26-001" },
+      scope,
+    ),
+    false,
+  );
+  assert.equal(studentSchoolPublicLogin(enrolled), "CD-IN-26-001");
 });
 
 test("Lot B : schoolRecordInFinanceScope fail-closed sans login_code", () => {

@@ -298,7 +298,7 @@ async function main() {
     assert.equal(injectedCatalog.status, 200, JSON.stringify(injectedCatalog.data));
     assert.equal(injectedCatalog.data.currency, "CDF", "query B ne change pas la devise A");
 
-    const adminBiToken = await login("admin", "1234", "BI-2026-0002");
+    const adminBiToken = await login("admin", "1234", "BI-ESB-26-001");
     const forgedMethods = await request("/finance/payment-methods", {
       method: "PUT",
       token: adminToken,

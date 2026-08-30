@@ -72,6 +72,28 @@ function schoolRecordInFinanceScope(record, scope) {
   return schoolCodeInScope(publicCode, scope);
 }
 
+/**
+ * Identité établissement d'une fiche élève. Ne jamais lire `loginCode` /
+ * `login_code` : sur l'élève ce sont l'identité personne (user_code / student_code).
+ */
+function studentSchoolPublicLogin(record = {}) {
+  return String(
+    record.school_login_code || record.schoolLoginCode || record.schoolCode || "",
+  ).trim();
+}
+
+function studentRecordInFinanceScope(student, scope) {
+  const login = studentSchoolPublicLogin(student);
+  return schoolRecordInFinanceScope(
+    {
+      login_code: login,
+      loginCode: login,
+      countryIso: countryIsoFromRecord(student) || student.countryCode,
+    },
+    scope,
+  );
+}
+
 function primaryFinanceSchoolCode(principal) {
   const scope = resolveFinanceSchoolScope(principal);
   if (scope.mode !== "schools" || !Array.isArray(scope.codes) || !scope.codes.length) {
@@ -85,6 +107,8 @@ module.exports = {
   sqlSchoolPredicate,
   schoolCodeInScope,
   schoolRecordInFinanceScope,
+  studentSchoolPublicLogin,
+  studentRecordInFinanceScope,
   countryIsoFromRecord,
   primaryFinanceSchoolCode,
 };
