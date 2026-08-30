@@ -109,9 +109,9 @@ async function runMemorySuite() {
     const unauth = await request(MEMORY_PORT, "/exams");
     assert.equal(unauth.status, 401);
 
-    const adminToken = await login(MEMORY_PORT, "admin", "1234", "CD-2026-0001");
-    const adminBi = await login(MEMORY_PORT, "admin", "1234", "BI-2026-0002");
-    const teacherToken = await login(MEMORY_PORT, "ENS-0001", "1234", "CD-2026-0001");
+    const adminToken = await login(MEMORY_PORT, "admin", "1234", "CD-IN-26-001");
+    const adminBi = await login(MEMORY_PORT, "admin", "1234", "BI-ESB-26-001");
+    const teacherToken = await login(MEMORY_PORT, "CD-IN-JK-26-00001", "1234", "CD-IN-26-001");
 
     assertLegacyForbidden(
       await request(MEMORY_PORT, "/backoffice/planning-exams", { method: "PUT", token: adminToken, body: { exams: [] } }),
@@ -139,7 +139,7 @@ async function runMemorySuite() {
       body: { ...examPayload, schoolCode: "BI-2026-0002", schoolId: "ignore" },
     });
     assert.equal(created.status, 201, JSON.stringify(created.data));
-    assert.equal(created.data.schoolCode, "CD-2026-0001");
+    assert.equal(created.data.schoolCode, "CD-IN-26-001");
     assert.equal(created.data.className, "6ème A");
 
     const duplicate = await request(MEMORY_PORT, "/exams", { method: "POST", token: adminToken, body: examPayload });
@@ -223,11 +223,11 @@ async function preparePgHttpDatabase(databaseUrl) {
       `INSERT INTO countries (name, iso_code, phone_code, currency) VALUES ('RDC', 'CD', '+243', 'CDF') RETURNING id`,
     );
     const schoolA = await pool.query(
-      `INSERT INTO schools (country_id, school_code, name, status) VALUES ($1, 'CD-2026-0001', 'Lycée HTTP', 'active') RETURNING id`,
+      `INSERT INTO schools (country_id, school_code, login_code, name, status) VALUES ($1, 'CD-2026-0001', 'CD-IN-26-001', 'Lycée HTTP', 'active') RETURNING id`,
       [country.rows[0].id],
     );
     const schoolB = await pool.query(
-      `INSERT INTO schools (country_id, school_code, name, status) VALUES ($1, 'BI-2026-0002', 'Lycée B', 'active') RETURNING id`,
+      `INSERT INTO schools (country_id, school_code, login_code, name, status) VALUES ($1, 'BI-2026-0002', 'BI-ESB-26-001', 'Lycée B', 'active') RETURNING id`,
       [country.rows[0].id],
     );
     const year = await pool.query(
@@ -249,17 +249,17 @@ async function preparePgHttpDatabase(databaseUrl) {
     ]);
     await pool.query(
       `INSERT INTO users (school_id, user_code, first_name, last_name, email, password_hash, pin_hash, role, status)
-       VALUES ($1, 'ADMIN-CD-2026-0001-01', 'Admin', 'HTTP', 'admin-http@test.cd', $2, $2, 'SCHOOL_ADMIN', 'active')`,
+       VALUES ($1, 'CD-IN-AD-26-00001', 'Admin', 'HTTP', 'admin-http@test.cd', $2, $2, 'SCHOOL_ADMIN', 'active')`,
       [schoolA.rows[0].id, passwordHash],
     );
     await pool.query(
       `INSERT INTO users (school_id, user_code, first_name, last_name, email, password_hash, pin_hash, role, status)
-       VALUES ($1, 'ADMIN-BI-2026-0002-01', 'Admin', 'BI', 'admin-bi@test.bi', $2, $2, 'SCHOOL_ADMIN', 'active')`,
+       VALUES ($1, 'BI-ESB-AD-26-00001', 'Admin', 'BI', 'admin-bi@test.bi', $2, $2, 'SCHOOL_ADMIN', 'active')`,
       [schoolB.rows[0].id, passwordHash],
     );
     const teacherUser = await pool.query(
       `INSERT INTO users (school_id, user_code, first_name, last_name, email, password_hash, pin_hash, role, status)
-       VALUES ($1, 'ENS-0001', 'Paul', 'Prof', 'ens-http@test.cd', $2, $2, 'TEACHER', 'active') RETURNING id`,
+       VALUES ($1, 'CD-IN-ET-26-00001', 'Paul', 'Prof', 'ens-http@test.cd', $2, $2, 'TEACHER', 'active') RETURNING id`,
       [schoolA.rows[0].id, passwordHash],
     );
     await pool.query(
@@ -294,9 +294,9 @@ async function runPgSuite(databaseUrl) {
   });
   try {
     await waitForHealth(child, PG_PORT);
-    const adminToken = await login(PG_PORT, "admin-http@test.cd", "1234", "CD-2026-0001");
-    const adminBi = await login(PG_PORT, "admin-bi@test.bi", "1234", "BI-2026-0002");
-    const teacherToken = await login(PG_PORT, "ens-http@test.cd", "1234", "CD-2026-0001");
+    const adminToken = await login(PG_PORT, "admin-http@test.cd", "1234", "CD-IN-26-001");
+    const adminBi = await login(PG_PORT, "admin-bi@test.bi", "1234", "BI-ESB-26-001");
+    const teacherToken = await login(PG_PORT, "ens-http@test.cd", "1234", "CD-IN-26-001");
 
     assertLegacyForbidden(
       await request(PG_PORT, "/backoffice/planning-exams", { method: "PUT", token: adminToken, body: { exams: [{ id: "x" }] } }),
@@ -312,7 +312,7 @@ async function runPgSuite(databaseUrl) {
       body: { ...examPayload, schoolCode: "BI-2026-0002" },
     });
     assert.equal(created.status, 201, JSON.stringify(created.data));
-    assert.equal(created.data.schoolCode, "CD-2026-0001");
+    assert.equal(created.data.schoolCode, "CD-IN-26-001");
     assert.equal(created.data.subject, "Mathématiques");
 
     const duplicate = await request(PG_PORT, "/exams", { method: "POST", token: adminToken, body: examPayload });

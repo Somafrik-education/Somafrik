@@ -106,20 +106,20 @@ async function main() {
        VALUES ('Burundi', 'BI', '+257', 'BIF') RETURNING id`,
     );
     const schoolA = await pool.query(
-      `INSERT INTO schools (country_id, school_code, name, status)
-       VALUES ($1, 'CD-2026-0001', 'Lycée A', 'active') RETURNING id`,
+      `INSERT INTO schools (country_id, school_code, login_code, name, status)
+       VALUES ($1, 'CD-2026-0001', 'CD-IN-26-001', 'Lycée A', 'active') RETURNING id`,
       [country.rows[0].id],
     );
     await pool.query(
-      `INSERT INTO schools (country_id, school_code, name, status)
-       VALUES ($1, 'BI-2026-0002', 'Lycée B', 'active') RETURNING id`,
+      `INSERT INTO schools (country_id, school_code, login_code, name, status)
+       VALUES ($1, 'BI-2026-0002', 'BI-ESB-26-001', 'Lycée B', 'active') RETURNING id`,
       [countryBi.rows[0].id],
     );
 
     const repo = createRepo(pool);
     const store = createPlatformPgStore(repo);
     const superAdmin = { role: "Super Administrateur Somafrik", schoolCode: "*", identifier: "superadmin" };
-    const schoolAdmin = { role: "Admin School", schoolCode: "CD-2026-0001", identifier: "admin" };
+    const schoolAdmin = { role: "Admin School", schoolCode: "CD-IN-26-001", identifier: "admin" };
     const countryAdmin = { role: "Admin Pays", schoolCode: "*", countryCode: "CD", identifier: "country-admin" };
     const auditMeta = { ipAddress: "127.0.0.1", userAgent: "platform-it" };
 
@@ -127,7 +127,7 @@ async function main() {
     await assert.rejects(
       () =>
         store.upsertSubscription(
-          { schoolCode: "BI-2026-0002", plan: "Premium", monthlyPrice: 12, currency: "CDF" },
+          { schoolCode: "BI-ESB-26-001", plan: "Premium", monthlyPrice: 12, currency: "CDF" },
           countryAdmin,
           auditMeta,
         ),
@@ -137,11 +137,11 @@ async function main() {
     assert.equal(auditAfterReject.rows[0].count, auditBeforeReject.rows[0].count, "zero audit on tenant reject");
 
     const subscription = await store.upsertSubscription(
-      { schoolCode: "CD-2026-0001", plan: "Premium", monthlyPrice: 10, currency: "CDF" },
+      { schoolCode: "CD-IN-26-001", plan: "Premium", monthlyPrice: 10, currency: "CDF" },
       schoolAdmin,
       auditMeta,
     );
-    assert.equal(subscription.schoolCode, "CD-2026-0001");
+    assert.equal(subscription.schoolCode, "CD-IN-26-001");
 
     await assert.rejects(
       () => store.replaceRolePermissions({ "Admin School": ["Voir tableau de bord"] }, superAdmin, auditMeta),
@@ -163,15 +163,15 @@ async function main() {
     await pool2.end();
 
     const projection = await store.listProjection();
-    assert.ok(projection.subscriptions.some((row) => row.schoolCode === "CD-2026-0001"));
+    assert.ok(projection.subscriptions.some((row) => row.schoolCode === "CD-IN-26-001"));
     assert.ok(projection.rolePermissions["Admin School"]);
 
     const payment = await store.createSubscriptionPayment(
-      { schoolCode: "CD-2026-0001", amount: 15, currency: "CDF", reference: "PAY-PG-1" },
+      { schoolCode: "CD-IN-26-001", amount: 15, currency: "CDF", reference: "PAY-PG-1" },
       schoolAdmin,
       auditMeta,
     );
-    assert.equal(payment.schoolCode, "CD-2026-0001");
+    assert.equal(payment.schoolCode, "CD-IN-26-001");
 
     const validatedByCountryAdmin = await store.updateSubscriptionPayment(
       payment.id,

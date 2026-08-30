@@ -217,17 +217,17 @@ async function prepareDatabase(databaseUrl) {
     );
     await pool.query(
       `INSERT INTO users (school_id, user_code, first_name, last_name, email, password_hash, pin_hash, role, status)
-       VALUES ($1, 'ADMIN-CD-2026-0001-01', 'Admin', 'HTTP', 'admin-http@test.cd', $2, $2, 'SCHOOL_ADMIN', 'active')`,
+       VALUES ($1, 'CD-IN-AD-26-00001', 'Admin', 'HTTP', 'admin-http@test.cd', $2, $2, 'SCHOOL_ADMIN', 'active')`,
       [schoolA.rows[0].id, passwordHash],
     );
     await pool.query(
       `INSERT INTO users (school_id, user_code, first_name, last_name, email, password_hash, pin_hash, role, status)
-       VALUES ($1, 'PREFET-CD-2026-0001-01', 'Samuel', 'Prefet', 'prefet-http@test.cd', $2, $2, 'PREFET_ETUDES', 'active')`,
+       VALUES ($1, 'CD-IN-PF-26-00001', 'Samuel', 'Prefet', 'prefet-http@test.cd', $2, $2, 'PREFET_ETUDES', 'active')`,
       [schoolA.rows[0].id, passwordHash],
     );
     await pool.query(
       `INSERT INTO users (school_id, user_code, first_name, last_name, email, password_hash, pin_hash, role, status)
-       VALUES ($1, 'SECRETAIRE-CD-2026-0001-01', 'Amina', 'Secretaire', 'secretaire-http@test.cd', $2, $2, 'SECRETARY', 'active')`,
+       VALUES ($1, 'CD-IN-SC-26-00001', 'Amina', 'Secretaire', 'secretaire-http@test.cd', $2, $2, 'SECRETARY', 'active')`,
       [schoolA.rows[0].id, passwordHash],
     );
     await pool.query(
@@ -237,12 +237,12 @@ async function prepareDatabase(databaseUrl) {
     );
     const sekeUser = await pool.query(
       `INSERT INTO users (school_id, user_code, first_name, last_name, email, password_hash, pin_hash, role, status)
-       VALUES ($1, 'ENS-0001', 'Seke', 'Kilombo', 'seke-http@test.cd', $2, $2, 'TEACHER', 'active') RETURNING id`,
+       VALUES ($1, 'CD-IN-SK-26-00001', 'Seke', 'Kilombo', 'seke-http@test.cd', $2, $2, 'TEACHER', 'active') RETURNING id`,
       [schoolA.rows[0].id, passwordHash],
     );
     const kabeyaUser = await pool.query(
       `INSERT INTO users (school_id, user_code, first_name, last_name, email, password_hash, pin_hash, role, status)
-       VALUES ($1, 'ENS-0002', 'Jean', 'Kabeya', 'kabeya-http@test.cd', $2, $2, 'TEACHER', 'active') RETURNING id`,
+       VALUES ($1, 'CD-IN-KB-26-00001', 'Jean', 'Kabeya', 'kabeya-http@test.cd', $2, $2, 'TEACHER', 'active') RETURNING id`,
       [schoolA.rows[0].id, passwordHash],
     );
     const seke = await pool.query(
@@ -292,10 +292,10 @@ async function runHttp(databaseUrl) {
   const child = spawnBackend(isolatedUrl);
   try {
     await waitForHealth(child, PG_PORT);
-    const adminToken = await login(PG_PORT, "admin", "1234", SCHOOL_CODE);
-    const prefetToken = await loginReady(PG_PORT, "prefet", "1234", SCHOOL_CODE);
+    const adminToken = await login(PG_PORT, "CD-IN-AD-26-00001", "1234", SCHOOL_CODE);
+    const prefetToken = await loginReady(PG_PORT, "CD-IN-PF-26-00001", "1234", SCHOOL_CODE);
     const teacherToken = await login(PG_PORT, "seke-http@test.cd", "1234", SCHOOL_CODE);
-    const secretaryToken = await loginReady(PG_PORT, "secretaire", "1234", SCHOOL_CODE);
+    const secretaryToken = await loginReady(PG_PORT, "CD-IN-SC-26-00001", "1234", SCHOOL_CODE);
     const parentToken = await login(PG_PORT, "+243 820 000 001", "1234", SCHOOL_CODE);
 
     const prefetJwt = decodeJwt(prefetToken);

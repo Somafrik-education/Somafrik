@@ -27,6 +27,13 @@ function isV2SchoolLoginCode(value) {
   return V2_SCHOOL_LOGIN_PATTERN.test(normalizeSchoolCode(value));
 }
 
+/** Lookup Auth/tenant : null si leftover `CC-YYYY-NNNN`, alias SCH-*, ou format invalide. */
+function canonicalSchoolLoginOrNull(value) {
+  const normalized = normalizeSchoolCode(value);
+  if (!normalized || !isV2SchoolLoginCode(normalized)) return null;
+  return normalized;
+}
+
 function isLegacySchoolCodeFormat(value) {
   return LEGACY_SCHOOL_CODE_PATTERN.test(normalizeSchoolCode(value));
 }
@@ -163,6 +170,7 @@ module.exports = {
   LEGACY_SCHOOL_CODE_PATTERN,
   normalizeSchoolCode,
   isV2SchoolLoginCode,
+  canonicalSchoolLoginOrNull,
   isLegacySchoolCodeFormat,
   isInternalSchoolAlias,
   padSchoolSequence,

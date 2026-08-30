@@ -102,13 +102,13 @@ async function runMemorySuite() {
     assert.equal(unauth.status, 401);
 
     const superToken = await login(MEMORY_PORT, "superadmin", "1234");
-    const adminToken = await login(MEMORY_PORT, "admin", "1234", "CD-2026-0001");
-    const adminBi = await login(MEMORY_PORT, "admin", "1234", "BI-2026-0002");
-    const teacherToken = await login(MEMORY_PORT, "ENS-0001", "1234", "CD-2026-0001");
+    const adminToken = await login(MEMORY_PORT, "admin", "1234", "CD-IN-26-001");
+    const adminBi = await login(MEMORY_PORT, "admin", "1234", "BI-ESB-26-001");
+    const teacherToken = await login(MEMORY_PORT, "CD-IN-JK-26-00001", "1234", "CD-IN-26-001");
 
     const list = await request(MEMORY_PORT, "/school-settings", { token: adminToken });
     assert.equal(list.status, 200, JSON.stringify(list.data));
-    assert.equal(list.data.schoolCode, "CD-2026-0001");
+    assert.equal(list.data.schoolCode, "CD-IN-26-001");
     assert.ok(list.data.periodMode);
 
     const patched = await request(MEMORY_PORT, "/school-settings", {
@@ -119,7 +119,7 @@ async function runMemorySuite() {
     assert.equal(patched.status, 200, JSON.stringify(patched.data));
     assert.equal(patched.data.periodMode, "semestre");
     assert.equal(patched.data.defaultScale, 10);
-    assert.equal(patched.data.schoolCode, "CD-2026-0001");
+    assert.equal(patched.data.schoolCode, "CD-IN-26-001");
 
     const invalid = await request(MEMORY_PORT, "/school-settings", {
       method: "PATCH",
@@ -137,7 +137,7 @@ async function runMemorySuite() {
 
     const biSettings = await request(MEMORY_PORT, "/school-settings", { token: adminBi });
     assert.equal(biSettings.status, 200, JSON.stringify(biSettings.data));
-    assert.equal(biSettings.data.schoolCode, "BI-2026-0002");
+    assert.equal(biSettings.data.schoolCode, "BI-ESB-26-001");
     assert.notEqual(biSettings.data.periodMode, "semestre");
 
     const periods = await request(MEMORY_PORT, "/academic-periods", {
@@ -204,7 +204,7 @@ async function runMemorySuite() {
     assert.equal(emptyPut.status, 200, JSON.stringify(emptyPut.data));
     assert.equal(emptyPut.data.periodMode, "semestre");
 
-    const superBackoffice = await request(MEMORY_PORT, "/backoffice/establishments/CD-2026-0001/school-settings", {
+    const superBackoffice = await request(MEMORY_PORT, "/backoffice/establishments/CD-IN-26-001/school-settings", {
       token: superToken,
     });
     assert.equal(superBackoffice.status, 200, JSON.stringify(superBackoffice.data));
@@ -228,11 +228,11 @@ async function preparePgHttpDatabase(databaseUrl) {
       `INSERT INTO countries (name, iso_code, phone_code, currency) VALUES ('RDC', 'CD', '+243', 'CDF') RETURNING id`,
     );
     const schoolA = await pool.query(
-      `INSERT INTO schools (country_id, school_code, name, status) VALUES ($1, 'CD-2026-0001', 'Lycée HTTP', 'active') RETURNING id`,
+      `INSERT INTO schools (country_id, school_code, login_code, name, status) VALUES ($1, 'CD-2026-0001', 'CD-IN-26-001', 'Lycée HTTP', 'active') RETURNING id`,
       [country.rows[0].id],
     );
     const schoolB = await pool.query(
-      `INSERT INTO schools (country_id, school_code, name, status) VALUES ($1, 'BI-2026-0002', 'Lycée B', 'active') RETURNING id`,
+      `INSERT INTO schools (country_id, school_code, login_code, name, status) VALUES ($1, 'BI-2026-0002', 'BI-ESB-26-001', 'Lycée B', 'active') RETURNING id`,
       [country.rows[0].id],
     );
     const year = await pool.query(
@@ -251,17 +251,17 @@ async function preparePgHttpDatabase(databaseUrl) {
     );
     await pool.query(
       `INSERT INTO users (school_id, user_code, first_name, last_name, email, password_hash, pin_hash, role, status)
-       VALUES ($1, 'ADMIN-CD-2026-0001-01', 'Admin', 'HTTP', 'admin-http@test.cd', $2, $2, 'SCHOOL_ADMIN', 'active')`,
+       VALUES ($1, 'CD-IN-AD-26-00001', 'Admin', 'HTTP', 'admin-http@test.cd', $2, $2, 'SCHOOL_ADMIN', 'active')`,
       [schoolA.rows[0].id, passwordHash],
     );
     await pool.query(
       `INSERT INTO users (school_id, user_code, first_name, last_name, email, password_hash, pin_hash, role, status)
-       VALUES ($1, 'ADMIN-BI-2026-0002-01', 'Admin', 'BI', 'admin-bi@test.bi', $2, $2, 'SCHOOL_ADMIN', 'active')`,
+       VALUES ($1, 'CD-IN-AD-26-00002', 'Admin', 'BI', 'admin-bi@test.bi', $2, $2, 'SCHOOL_ADMIN', 'active')`,
       [schoolB.rows[0].id, passwordHash],
     );
     const teacherUser = await pool.query(
       `INSERT INTO users (school_id, user_code, first_name, last_name, email, password_hash, pin_hash, role, status)
-       VALUES ($1, 'ENS-0001', 'Paul', 'Prof', 'ens-http@test.cd', $2, $2, 'TEACHER', 'active') RETURNING id`,
+       VALUES ($1, 'CD-IN-ET-26-00001', 'Paul', 'Prof', 'ens-http@test.cd', $2, $2, 'TEACHER', 'active') RETURNING id`,
       [schoolA.rows[0].id, passwordHash],
     );
     await pool.query(
@@ -299,9 +299,9 @@ async function runPgSuite(databaseUrl) {
   });
   try {
     await waitForHealth(child, PG_PORT);
-    const adminToken = await login(PG_PORT, "admin-http@test.cd", "1234", "CD-2026-0001");
-    const adminBi = await login(PG_PORT, "admin-bi@test.bi", "1234", "BI-2026-0002");
-    const teacherToken = await login(PG_PORT, "ens-http@test.cd", "1234", "CD-2026-0001");
+    const adminToken = await login(PG_PORT, "admin-http@test.cd", "1234", "CD-IN-26-001");
+    const adminBi = await login(PG_PORT, "admin-bi@test.bi", "1234", "BI-ESB-26-001");
+    const teacherToken = await login(PG_PORT, "ens-http@test.cd", "1234", "CD-IN-26-001");
 
     const patched = await request(PG_PORT, "/school-settings", {
       method: "PATCH",
@@ -311,7 +311,7 @@ async function runPgSuite(databaseUrl) {
     assert.equal(patched.status, 200, JSON.stringify(patched.data));
     assert.equal(patched.data.periodMode, "semestre");
     assert.equal(patched.data.defaultScale, 15);
-    assert.equal(patched.data.schoolCode, "CD-2026-0001");
+    assert.equal(patched.data.schoolCode, "CD-IN-26-001");
 
     const teacherWrite = await request(PG_PORT, "/school-settings", {
       method: "PATCH",

@@ -107,7 +107,7 @@ async function main() {
   try {
     await waitForHealth(child);
     const superToken = await login("superadmin", "1234");
-    const schoolToken = await login("admin", "1234", "CD-2026-0001");
+    const schoolToken = await login("admin", "1234", "CD-IN-26-001");
 
     for (const key of ["users", "contacts", "relations", "messages", "announcements"]) {
       const legacy = await request("/backoffice/state", {
@@ -126,7 +126,7 @@ async function main() {
         lastName: "Lot7",
         contactType: "Parent",
         phone: "+243900111222",
-        schoolCode: "CD-2026-0001",
+        schoolCode: "CD-IN-26-001",
       },
     });
     assert.equal(contact.status, 201, JSON.stringify(contact.data));
@@ -165,14 +165,14 @@ async function main() {
     const publisherSession = await loginSession(
       publisher.data.identifier,
       publisherPassword,
-      "CD-2026-0001",
+      "CD-IN-26-001",
     );
     assert.equal(
       decodeJwtPayload(publisherSession.accessToken).sub,
       publisher.data.id,
       "JWT sub = users.id canonique",
     );
-    assert.equal(decodeJwtPayload(publisherSession.accessToken).schoolCode, "CD-2026-0001");
+    assert.equal(decodeJwtPayload(publisherSession.accessToken).schoolCode, "CD-IN-26-001");
 
     const announcement = await request("/backoffice/announcements", {
       method: "POST",
@@ -181,7 +181,7 @@ async function main() {
         title: "Annonce LOT7",
         message: "Test",
         audience: "Parents",
-        schoolCode: "CD-2026-0001",
+        schoolCode: "CD-IN-26-001",
       },
     });
     assert.equal(announcement.status, 201, JSON.stringify(announcement.data));
@@ -200,7 +200,7 @@ async function main() {
         lastName: "Body",
         contactType: "Parent",
         phone: "+243900111333",
-        schoolCode: "BI-2026-0002",
+        schoolCode: "BI-ESB-26-001",
       },
     });
     assert.equal(crossTenant.status, 403, JSON.stringify(crossTenant.data));
@@ -232,7 +232,7 @@ async function main() {
     const beforeSession = await loginSession(
       secondAdmin.data.identifier,
       adminSchoolPassword,
-      "CD-2026-0001",
+      "CD-IN-26-001",
     );
     const adminSchoolOwnToken = beforeSession.accessToken;
     const beforeJwtPermissions = jwtPermissions(adminSchoolOwnToken);
@@ -259,7 +259,7 @@ async function main() {
     const afterSession = await loginSession(
       secondAdmin.data.identifier,
       adminSchoolPassword,
-      "CD-2026-0001",
+      "CD-IN-26-001",
     );
     const afterJwtPermissions = jwtPermissions(afterSession.accessToken);
     assert.equal(afterJwtPermissions.includes("ALL_PRIVILEGES"), false, "JWT sans ALL_PRIVILEGES");
@@ -273,11 +273,11 @@ async function main() {
     assert.ok(projectedAfter, "admin secondaire toujours projeté");
     assert.equal(projectedAfter.permissions?.includes("ALL_PRIVILEGES"), false, "projection sans ALL_PRIVILEGES");
     assert.equal(projectedAfter.firstName, projectedBefore.firstName, "projection inchangée (zéro mutation)");
-    assert.equal(projectedAfter.schoolCode, "CD-2026-0001", "schoolCode tenant inchangé");
+    assert.equal(projectedAfter.schoolCode, "CD-IN-26-001", "schoolCode tenant = login_code");
     assert.equal(
       decodeJwtPayload(adminSchoolOwnToken).schoolCode,
-      "CD-2026-0001",
-      "JWT schoolCode reste l'alias historique",
+      "CD-IN-26-001",
+      "JWT schoolCode = schools.login_code",
     );
     assert.equal(
       decodeJwtPayload(adminSchoolOwnToken).schoolPublicCode,

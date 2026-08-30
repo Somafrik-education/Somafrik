@@ -124,20 +124,20 @@ async function seedSchools(pool) {
      VALUES ('RDC', 'CD', '+243', 'CDF') RETURNING id`,
   );
   const schoolA = await pool.query(
-    `INSERT INTO schools (country_id, school_code, name, status)
-     VALUES ($1, 'CD-2026-0001', 'Lycée A', 'active') RETURNING id`,
+    `INSERT INTO schools (country_id, school_code, login_code, name, status)
+     VALUES ($1, 'CD-2026-0001', 'CD-IN-26-001', 'Lycée A', 'active') RETURNING id, login_code`,
     [country.rows[0].id],
   );
   const schoolB = await pool.query(
-    `INSERT INTO schools (country_id, school_code, name, status)
-     VALUES ($1, 'BI-2026-0002', 'Lycée B', 'active') RETURNING id`,
+    `INSERT INTO schools (country_id, school_code, login_code, name, status)
+     VALUES ($1, 'BI-2026-0002', 'BI-ESB-26-001', 'Lycée B', 'active') RETURNING id, login_code`,
     [country.rows[0].id],
   );
   return {
     schoolAId: schoolA.rows[0].id,
     schoolBId: schoolB.rows[0].id,
-    schoolACode: "CD-2026-0001",
-    schoolBCode: "BI-2026-0002",
+    schoolACode: String(schoolA.rows[0].login_code).trim().toUpperCase(),
+    schoolBCode: String(schoolB.rows[0].login_code).trim().toUpperCase(),
   };
 }
 
@@ -215,13 +215,13 @@ async function main() {
   const adminA = {
     role: "Admin School",
     sub: "admin-a",
-    schoolCode: "CD-2026-0001",
+    schoolCode: "CD-IN-26-001",
     permissions: ["Paramètres Établissement:UPDATE"],
   };
   const adminB = {
     role: "Admin School",
     sub: "admin-b",
-    schoolCode: "BI-2026-0002",
+    schoolCode: "BI-ESB-26-001",
     permissions: ["Paramètres Établissement:UPDATE"],
   };
   const auditMeta = { ipAddress: "127.0.0.1", userAgent: "test" };
@@ -237,17 +237,17 @@ async function main() {
     const repo = createRepo(pool);
 
     const created = await repo.createEvaluationType(
-      { name: "Devoir", code: "devoir", schoolId: fixture.schoolBId, schoolCode: "BI-2026-0002" },
+      { name: "Devoir", code: "devoir", schoolId: fixture.schoolBId, schoolCode: "BI-ESB-26-001" },
       adminA,
       auditMeta,
-      "CD-2026-0001",
+      "CD-IN-26-001",
     );
     assert.ok(created.id);
-    assert.equal(created.schoolCode, "CD-2026-0001");
+    assert.equal(created.schoolCode, "CD-IN-26-001");
     assert.equal(created.code, "devoir");
 
     await assert.rejects(
-      () => repo.createEvaluationType({ name: "Devoir 2", code: "devoir" }, adminA, auditMeta, "CD-2026-0001"),
+      () => repo.createEvaluationType({ name: "Devoir 2", code: "devoir" }, adminA, auditMeta, "CD-IN-26-001"),
       (error) => error.statusCode === 409,
     );
 
@@ -255,13 +255,13 @@ async function main() {
       { name: "Devoir", code: "devoir" },
       adminB,
       auditMeta,
-      "BI-2026-0002",
+      "BI-ESB-26-001",
     );
     assert.ok(sameCodeB.id);
     assert.notEqual(sameCodeB.id, created.id);
 
-    const listA = await repo.getEvaluationTypesStore().listBySchool("CD-2026-0001");
-    const listB = await repo.getEvaluationTypesStore().listBySchool("BI-2026-0002");
+    const listA = await repo.getEvaluationTypesStore().listBySchool("CD-IN-26-001");
+    const listB = await repo.getEvaluationTypesStore().listBySchool("BI-ESB-26-001");
     assert.equal(listA.some((row) => row.id === sameCodeB.id), false);
     assert.equal(listB.some((row) => row.id === created.id), false);
 
@@ -270,7 +270,7 @@ async function main() {
       { name: "Devoir écrit", displayOrder: 5 },
       adminA,
       auditMeta,
-      "CD-2026-0001",
+      "CD-IN-26-001",
     );
     assert.equal(renamed.name, "Devoir écrit");
     assert.equal(renamed.displayOrder, 5);
@@ -279,10 +279,10 @@ async function main() {
       { name: "Interrogation", code: "interrogation" },
       adminA,
       auditMeta,
-      "CD-2026-0001",
+      "CD-IN-26-001",
     );
 
-    await repo.archiveEvaluationType(created.id, adminA, auditMeta, "CD-2026-0001");
+    await repo.archiveEvaluationType(created.id, adminA, auditMeta, "CD-IN-26-001");
     const archived = await repo.getEvaluationTypesStore().getById(created.id);
     assert.equal(archived.status, "archived");
 
@@ -323,10 +323,10 @@ async function main() {
       { required: true },
     );
     assert.equal(usable.id, interrogation.id);
-    assert.equal(usable.schoolCode, "CD-2026-0001");
+    assert.equal(usable.schoolCode, "CD-IN-26-001");
 
     await assert.rejects(
-      () => repo.saveAcademicConfig("CD-2026-0001", { evaluationTypes: ["legacy"] }),
+      () => repo.saveAcademicConfig("CD-IN-26-001", { evaluationTypes: ["legacy"] }),
       (error) => error.code === "LEGACY_EVALUATION_TYPES_WRITE_FORBIDDEN",
     );
     assert.throws(() => assertNoLegacyEvaluationTypesWrite({ evaluationTypes: null }));
@@ -354,7 +354,7 @@ async function main() {
       [fixture.schoolAId],
     );
     await assert.rejects(
-      () => failRepo.createEvaluationType({ name: "Oral", code: "oral" }, failPrincipal, auditMeta, "CD-2026-0001"),
+      () => failRepo.createEvaluationType({ name: "Oral", code: "oral" }, failPrincipal, auditMeta, "CD-IN-26-001"),
       (error) => /audit failed/.test(String(error.message)),
     );
     const afterCount = await pool.query(
@@ -364,7 +364,7 @@ async function main() {
     assert.equal(afterCount.rows[0].count, beforeCount.rows[0].count, "rollback total si audit échoue");
 
     await ensureEvaluationTypesBootstrap(repo);
-    const bootstrappedB = await repo.getEvaluationTypesStore().listBySchool("BI-2026-0002");
+    const bootstrappedB = await repo.getEvaluationTypesStore().listBySchool("BI-ESB-26-001");
     assert.ok(bootstrappedB.length >= 1);
 
     const year = await pool.query(

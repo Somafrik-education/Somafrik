@@ -2718,13 +2718,13 @@ class PostgresRepository {
       matchByNormalizedName(state.subjects, normalizedName) ||
       matchByNormalizedName(state.courses, normalizedName);
 
-    const school = await this.one(`SELECT school_code FROM schools WHERE id = $1`, [schoolId]);
+    const school = await this.one(`SELECT login_code AS school_code FROM schools WHERE id = $1`, [schoolId]);
     const subjectCode = String(
       fromContext?.code ??
         fromContext?.subjectCode ??
         fromContext?.publicId ??
         fromContext?.id ??
-        `${String(school?.school_code ?? schoolId).trim().toUpperCase()}-SUB-${normalizedName
+        `${String(school?.school_code ?? schoolId).trim().toUpperCase()}-SUB-${normalizedName`)
           .replace(/\s+/g, "-")
           .toUpperCase()
           .slice(0, 24)}`,
@@ -5198,7 +5198,9 @@ class PostgresRepository {
     if (!shouldSeedDemoData()) {
       return;
     }
-    const school = await this.one("SELECT id FROM schools WHERE school_code = $1", [seedData.school.code]);
+    const school = await this.one("SELECT id FROM schools WHERE upper(login_code) = $1", [
+      String(seedData.school.loginCode ?? seedData.school.code ?? "").trim().toUpperCase(),
+    ]);
     if (!school) return;
 
     const existingExam = await this.one("SELECT id FROM exams WHERE school_id = $1 LIMIT 1", [school.id]);
@@ -5335,7 +5337,7 @@ class PostgresRepository {
     const schoolCode = String(query.schoolCode ?? "").trim().toUpperCase();
     const params = [];
     let sql = `
-      SELECT sub.*, s.school_code, c.iso_code AS country_code,
+      SELECT sub.*, s.login_code AS school_code, c.iso_code AS country_code,
              COUNT(DISTINCT sca.class_id) AS class_count,
              COUNT(DISTINCT ta.teacher_id) AS teacher_count,
              COUNT(DISTINCT g.id) AS grade_count,
@@ -5353,10 +5355,10 @@ class PostgresRepository {
     `;
     if (schoolCode && schoolCode !== "*") {
       params.push(schoolCode);
-      sql += ` WHERE upper(s.school_code) = $1`;
+      sql += ` WHERE upper(s.login_code) = $1`;
     }
     sql += `
-      GROUP BY sub.id, s.school_code, c.iso_code
+      GROUP BY sub.id, s.login_code, c.iso_code
       ORDER BY sub.created_at, sub.subject_code
     `;
     const rows = await this.all(sql, params);

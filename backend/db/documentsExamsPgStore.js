@@ -24,11 +24,14 @@ function createDocumentsExamsPgStore(repo) {
   const query = (...args) => repo.query(...args);
 
   async function getSchoolByCode(schoolCode) {
+    const { canonicalSchoolLoginOrNull } = require("../lib/schoolCodeV2");
+    const normalized = canonicalSchoolLoginOrNull(schoolCode);
+    if (!normalized) return null;
     return one(
-      `SELECT s.id, s.school_code FROM schools s
-       WHERE upper(s.school_code) = upper($1)
-          OR upper(coalesce(s.login_code, '')) = upper($1)`,
-      [asTrimmed(schoolCode).toUpperCase()],
+      `SELECT s.id, s.login_code AS school_code, s.login_code FROM schools s
+       WHERE upper(s.login_code) = $1
+       LIMIT 1`,
+      [normalized],
     );
   }
 
@@ -181,7 +184,7 @@ function createDocumentsExamsPgStore(repo) {
 
   async function hydrateExam(row) {
     if (!row) return null;
-    const school = await one(`SELECT school_code FROM schools WHERE id = $1`, [row.school_id]);
+    const school = await one(`SELECT login_code AS school_code FROM schools WHERE id = $1`, [row.school_id]);
     const klass = row.class_id ? await one(`SELECT name FROM classes WHERE id = $1`, [row.class_id]) : null;
     const subject = row.subject_id ? await one(`SELECT name FROM subjects WHERE id = $1`, [row.subject_id]) : null;
     const term = row.term_id ? await one(`SELECT name FROM terms WHERE id = $1`, [row.term_id]) : null;
@@ -196,7 +199,7 @@ function createDocumentsExamsPgStore(repo) {
 
   async function listExams(schoolId) {
     const rows = await all(
-      `SELECT ex.*, s.school_code, cl.name AS class_name, sub.name AS subject_name, t.name AS term_name
+      `SELECT ex.*, s.login_code AS school_code, cl.name AS class_name, sub.name AS subject_name, t.name AS term_name
        FROM exams ex
        JOIN schools s ON s.id = ex.school_id
        JOIN classes cl ON cl.id = ex.class_id
@@ -372,7 +375,7 @@ function createDocumentsExamsPgStore(repo) {
   }
 
   async function hydrateReportCard(row) {
-    const school = await one(`SELECT school_code FROM schools WHERE id = $1`, [row.school_id]);
+    const school = await one(`SELECT login_code AS school_code FROM schools WHERE id = $1`, [row.school_id]);
     const student = await one(`SELECT first_name, last_name, student_code FROM students WHERE id = $1`, [row.student_id]);
     const klass = row.class_id ? await one(`SELECT name FROM classes WHERE id = $1`, [row.class_id]) : null;
     const term = await one(`SELECT name FROM terms WHERE id = $1`, [row.term_id]);
@@ -446,7 +449,7 @@ function createDocumentsExamsPgStore(repo) {
 
   async function listTemplates(schoolId) {
     const rows = await all(
-      `SELECT t.*, s.school_code, c.name AS class_name
+      `SELECT t.*, s.login_code AS school_code, c.name AS class_name
        FROM report_card_templates t
        JOIN schools s ON s.id = t.school_id
        LEFT JOIN classes c ON c.id = t.class_id
@@ -484,7 +487,7 @@ function createDocumentsExamsPgStore(repo) {
          RETURNING *`,
         [existing.id, schoolId, JSON.stringify(layout), body.academicYearId || existing.academic_year_id],
       );
-      return mapTemplateRow(row, { schoolCode: (await one(`SELECT school_code FROM schools WHERE id = $1`, [schoolId]))?.school_code });
+      return mapTemplateRow(row, { schoolCode: (await one(`SELECT login_code AS school_code FROM schools WHERE id = $1`, [schoolId]))?.school_code });
     }
     const row = await one(
       `INSERT INTO report_card_templates (school_id, class_id, academic_year_id, template_type, layout, status, version)
@@ -549,7 +552,7 @@ function createDocumentsExamsPgStore(repo) {
 
   async function listSchoolDocuments(schoolId) {
     const rows = await all(
-      `SELECT d.*, s.school_code, st.first_name, st.last_name
+      `SELECT d.*, s.login_code AS school_code, st.first_name, st.last_name
        FROM school_documents d
        JOIN schools s ON s.id = d.school_id
        LEFT JOIN students st ON st.id = d.student_id
@@ -702,7 +705,7 @@ function createDocumentsExamsPgStore(repo) {
   }
 
   async function inventoryLegacyResidualRecords() {
-    const schools = await all(`SELECT id, school_code FROM schools ORDER BY school_code`);
+    const schools = await all(`SELECT id, login_code AS school_code FROM schools ORDER BY login_code`);
     const inventory = [];
     const examAmbiguous = [];
     const cardAmbiguous = [];

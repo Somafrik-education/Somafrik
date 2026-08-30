@@ -16,7 +16,11 @@ const {
 function resolveSeedSchoolCountryCode(school, countries) {
   const explicit = asTrimmed(school?.countryCode ?? school?.country_code).toUpperCase();
   if (explicit && explicit !== "*") return explicit;
-  const schoolCode = asTrimmed(school?.code ?? school?.schoolCode).toUpperCase();
+  const { canonicalSchoolLoginOrNull } = require("../lib/schoolCodeV2");
+  const schoolCode = canonicalSchoolLoginOrNull(
+    school?.loginCode ?? school?.login_code ?? school?.publicId ?? school?.code ?? school?.schoolCode,
+  );
+  if (!schoolCode) return "";
   const matched = [...countries.keys()]
     .filter((iso) => iso && schoolCode.startsWith(iso))
     .sort((a, b) => b.length - a.length)[0];
@@ -44,32 +48,41 @@ function createEducationReferenceMemoryStore(seed = {}) {
       },
     ]),
   );
+  const { canonicalSchoolLoginOrNull } = require("../lib/schoolCodeV2");
   const schools = new Map(
-    (seed.schools ?? []).map((school) => {
-      const code = asTrimmed(school.code ?? school.schoolCode).toUpperCase();
-      const countryCode = resolveSeedSchoolCountryCode(school, countries);
-      const country = countries.get(countryCode) ?? {
-        id: randomUUID(),
-        iso_code: countryCode,
-        pedagogical_level_label: DEFAULT_PEDAGOGICAL_LABELS.levelLabel,
-        pedagogical_track_label: DEFAULT_PEDAGOGICAL_LABELS.trackLabel,
-        pedagogical_group_label: DEFAULT_PEDAGOGICAL_LABELS.groupLabel,
-      };
-      if (!countries.has(countryCode)) countries.set(countryCode, country);
-      return [
-        code,
-        {
-          id: school.id ?? randomUUID(),
-          school_code: code,
-          country_id: country.id,
-          country_code: countryCode,
-        },
-      ];
-    }),
+    (seed.schools ?? [])
+      .map((school) => {
+        const code = canonicalSchoolLoginOrNull(
+          school.loginCode ?? school.login_code ?? school.publicId ?? school.code ?? school.schoolCode,
+        );
+        if (!code) return null;
+        const countryCode = resolveSeedSchoolCountryCode(school, countries);
+        const country = countries.get(countryCode) ?? {
+          id: randomUUID(),
+          iso_code: countryCode,
+          pedagogical_level_label: DEFAULT_PEDAGOGICAL_LABELS.levelLabel,
+          pedagogical_track_label: DEFAULT_PEDAGOGICAL_LABELS.trackLabel,
+          pedagogical_group_label: DEFAULT_PEDAGOGICAL_LABELS.groupLabel,
+        };
+        if (!countries.has(countryCode)) countries.set(countryCode, country);
+        return [
+          code,
+          {
+            id: school.id ?? randomUUID(),
+            school_code: code,
+            login_code: code,
+            country_id: country.id,
+            country_code: countryCode,
+          },
+        ];
+      })
+      .filter(Boolean),
   );
 
-  if (seed.school && !schools.has(asTrimmed(seed.school.code).toUpperCase())) {
-    const code = asTrimmed(seed.school.code).toUpperCase();
+  const seedLogin = canonicalSchoolLoginOrNull(
+    seed.school?.loginCode ?? seed.school?.login_code ?? seed.school?.publicId ?? seed.school?.code,
+  );
+  if (seed.school && seedLogin && !schools.has(seedLogin)) {
     const countryCode = resolveSeedSchoolCountryCode(seed.school, countries);
     const country = countries.get(countryCode) ?? {
       id: randomUUID(),
@@ -79,9 +92,10 @@ function createEducationReferenceMemoryStore(seed = {}) {
       pedagogical_group_label: DEFAULT_PEDAGOGICAL_LABELS.groupLabel,
     };
     countries.set(countryCode, country);
-    schools.set(code, {
+    schools.set(seedLogin, {
       id: seed.school.id ?? randomUUID(),
-      school_code: code,
+      school_code: seedLogin,
+      login_code: seedLogin,
       country_id: country.id,
       country_code: countryCode,
     });
@@ -109,7 +123,9 @@ function createEducationReferenceMemoryStore(seed = {}) {
       return countries.get(asTrimmed(countryCode).toUpperCase()) ?? null;
     },
     async getSchoolByCode(schoolCode) {
-      return schools.get(asTrimmed(schoolCode).toUpperCase()) ?? null;
+      const login = canonicalSchoolLoginOrNull(schoolCode);
+      if (!login) return null;
+      return schools.get(login) ?? null;
     },
     async listLevelsByCountry(countryCode, { includeArchived = false } = {}) {
       const country = countries.get(asTrimmed(countryCode).toUpperCase());

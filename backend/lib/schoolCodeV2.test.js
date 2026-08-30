@@ -5,6 +5,8 @@ const {
   formatSchoolLoginCode,
   isLegacySchoolCodeFormat,
   isV2SchoolLoginCode,
+  canonicalSchoolLoginOrNull,
+  matchesSchoolLookup,
   padSchoolSequence,
   publicSchoolCodeFromRecord,
   validateSchoolCode,
@@ -32,6 +34,12 @@ assert.equal(padSchoolSequence(2), "002");
 assert.equal(isV2SchoolLoginCode("CD-IN-26-001"), true);
 assert.equal(isV2SchoolLoginCode("CD-IN-26-002"), true);
 assert.equal(isV2SchoolLoginCode("CD-2026-0001"), false);
+assert.equal(canonicalSchoolLoginOrNull("CD-IN-26-001"), "CD-IN-26-001");
+assert.equal(canonicalSchoolLoginOrNull("cd-in-26-001"), "CD-IN-26-001");
+assert.equal(canonicalSchoolLoginOrNull("CD-2026-0001"), null);
+assert.equal(canonicalSchoolLoginOrNull("SCH-ABCDEF"), null);
+assert.equal(canonicalSchoolLoginOrNull("ENS-0001"), null);
+assert.equal(canonicalSchoolLoginOrNull("CD-IN-EL-26-001"), null, "login personne ≠ login établissement");
 assert.equal(isLegacySchoolCodeFormat("CD-2026-0001"), true);
 assert.equal(isLegacySchoolCodeFormat("CD-IN-26-001"), false);
 

@@ -37,13 +37,13 @@ async function seed(pool) {
     `INSERT INTO countries (name, iso_code, phone_code, currency) VALUES ('RDC', 'CD', '+243', 'CDF') RETURNING id`,
   );
   const schoolA = await pool.query(
-    `INSERT INTO schools (country_id, school_code, name, status, profile_payload)
-     VALUES ($1, 'CD-2026-0001', 'Lycée A', 'active', '{"timezone":"Africa/Kinshasa"}'::jsonb) RETURNING id`,
+    `INSERT INTO schools (country_id, school_code, login_code, name, status, profile_payload)
+     VALUES ($1, 'CD-2026-0001', 'CD-PL-26-001', 'Lycée A', 'active', '{"timezone":"Africa/Kinshasa"}'::jsonb) RETURNING id, login_code`,
     [country.rows[0].id],
   );
   const schoolB = await pool.query(
-    `INSERT INTO schools (country_id, school_code, name, status)
-     VALUES ($1, 'BI-2026-0001', 'Lycée B', 'active') RETURNING id`,
+    `INSERT INTO schools (country_id, school_code, login_code, name, status)
+     VALUES ($1, 'BI-2026-0001', 'BI-PL-26-001', 'Lycée B', 'active') RETURNING id, login_code`,
     [country.rows[0].id],
   );
   const yearOpen = await pool.query(
@@ -115,6 +115,8 @@ async function seed(pool) {
     seke: seke.rows[0].id,
     kabeya: kabeya.rows[0].id,
     adminUser: adminUser.rows[0].id,
+    schoolACode: String(schoolA.rows[0].login_code ?? "CD-PL-26-001").trim().toUpperCase(),
+    schoolBCode: String(schoolB.rows[0].login_code ?? "BI-PL-26-001").trim().toUpperCase(),
   };
 }
 
@@ -134,8 +136,8 @@ async function main() {
     const repo = createPostgresRepository(isolatedUrl);
     repo.ready = true;
     const store = createPedagogyPgStore(repo);
-    const admin = { role: "Admin School", schoolCode: "CD-2026-0001", sub: fixture.adminUser };
-    const otherTenant = { role: "Admin School", schoolCode: "BI-2026-0001" };
+    const admin = { role: "Admin School", schoolCode: fixture.schoolACode, sub: fixture.adminUser };
+    const otherTenant = { role: "Admin School", schoolCode: fixture.schoolBCode };
     const auditMeta = { ipAddress: "127.0.0.1", userAgent: "rooms-it" };
 
     const a01 = await store.createSchoolRoom(
@@ -156,12 +158,12 @@ async function main() {
     );
 
     const courseA = await store.createSchoolCourse(
-      { className: "2ème A", name: "Mathématiques", teacherId: "ENS-SEKE" },
+      { className: "2ème A", name: "Mathématiques", teacherId: "USR-SEKE" },
       admin,
       auditMeta,
     );
     const courseB = await store.createSchoolCourse(
-      { className: "2ème B", name: "Français", teacherId: "ENS-KABEYA" },
+      { className: "2ème B", name: "Français", teacherId: "USR-KABEYA" },
       admin,
       auditMeta,
     );

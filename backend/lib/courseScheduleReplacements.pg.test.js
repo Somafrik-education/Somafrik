@@ -39,8 +39,8 @@ async function seed(pool) {
     `INSERT INTO countries (name, iso_code, phone_code, currency) VALUES ('RDC', 'CD', '+243', 'CDF') RETURNING id`,
   );
   const schoolA = await pool.query(
-    `INSERT INTO schools (country_id, school_code, name, status, profile_payload)
-     VALUES ($1, 'CD-2026-0001', 'Lycée A', 'active', '{"timezone":"Africa/Kinshasa"}'::jsonb) RETURNING id`,
+    `INSERT INTO schools (country_id, school_code, login_code, name, status, profile_payload)
+     VALUES ($1, 'CD-2026-0001', 'CD-PL-26-001', 'Lycée A', 'active', '{"timezone":"Africa/Kinshasa"}'::jsonb) RETURNING id, login_code`,
     [country.rows[0].id],
   );
   const yearOpen = await pool.query(
@@ -125,6 +125,7 @@ async function seed(pool) {
     kabeya: kabeya.rows[0].id,
     mbala: mbala.rows[0].id,
     adminUser: adminUser.rows[0].id,
+    schoolACode: String(schoolA.rows[0].login_code ?? "CD-PL-26-001").trim().toUpperCase(),
   };
 }
 
@@ -144,16 +145,16 @@ async function main() {
     const repo = createPostgresRepository(isolatedUrl);
     repo.ready = true;
     const store = createPedagogyPgStore(repo);
-    const admin = { role: "Admin School", schoolCode: "CD-2026-0001", sub: fixture.adminUser };
+    const admin = { role: "Admin School", schoolCode: fixture.schoolACode, sub: fixture.adminUser };
     const auditMeta = { ipAddress: "127.0.0.1", userAgent: "replacements-it" };
 
     const courseA = await store.createSchoolCourse(
-      { className: "2ème A", name: "Mathématiques", teacherId: "ENS-SEKE" },
+      { className: "2ème A", name: "Mathématiques", teacherId: "USR-SEKE" },
       admin,
       auditMeta,
     );
     const courseB = await store.createSchoolCourse(
-      { className: "2ème B", name: "Français", teacherId: "ENS-KABEYA" },
+      { className: "2ème B", name: "Français", teacherId: "USR-KABEYA" },
       admin,
       auditMeta,
     );
@@ -200,7 +201,7 @@ async function main() {
     assert.equal(created.substituteTeacherId, fixture.mbala);
     assert.equal(created.originalTeacherId, fixture.seke);
 
-    const teacher = { role: "Enseignant", schoolCode: "CD-2026-0001", sub: fixture.sekeUser };
+    const teacher = { role: "Enseignant", schoolCode: fixture.schoolACode, sub: fixture.sekeUser };
     const teacherList = await store.listCourseScheduleReplacements(teacher, {});
     assert.ok((teacherList.items || []).some((row) => row.id === created.id));
     const teacherOptions = await store

@@ -95,12 +95,12 @@ test("magasin mémoire infère le pays depuis le code établissement, sans défa
       { id: "c-bi", code: "BI" },
     ],
     schools: [
-      { id: "s-cd", code: "CD-2026-0001" },
-      { id: "s-bi", code: "BI-2026-0002" },
+      { id: "s-cd", loginCode: "CD-IN-26-001", code: "CD-IN-26-001" },
+      { id: "s-bi", loginCode: "BI-ESB-26-001", code: "BI-ESB-26-001" },
     ],
   });
-  const cd = await store.getSchoolByCode("CD-2026-0001");
-  const bi = await store.getSchoolByCode("BI-2026-0002");
+  const cd = await store.getSchoolByCode("CD-IN-26-001");
+  const bi = await store.getSchoolByCode("BI-ESB-26-001");
   assert.equal(cd.country_code, "CD");
   assert.equal(bi.country_code, "BI");
   assert.notEqual(cd.country_id, bi.country_id);

@@ -125,7 +125,7 @@ async function main() {
 const subscription = await request("/backoffice/subscriptions", {
       method: "POST",
       token: superToken,
-      body: { schoolCode: "CD-2026-0001", plan: "Premium", monthlyPrice: 12, currency: "CDF" },
+      body: { schoolCode: "CD-IN-26-001", plan: "Premium", monthlyPrice: 12, currency: "CDF" },
     });
     assert.equal(subscription.status, 201, JSON.stringify(subscription.data));
 
@@ -133,14 +133,14 @@ const subscription = await request("/backoffice/subscriptions", {
     const inCountryScope = await request("/backoffice/subscriptions", {
       method: "POST",
       token: countryAdminToken,
-      body: { schoolCode: "CD-2026-0001", plan: "Standard", monthlyPrice: 8, currency: "CDF" },
+      body: { schoolCode: "CD-IN-26-001", plan: "Standard", monthlyPrice: 8, currency: "CDF" },
     });
     assert.equal(inCountryScope.status, 201, JSON.stringify(inCountryScope.data));
 
     const crossCountry = await request("/backoffice/subscriptions", {
       method: "POST",
       token: countryAdminToken,
-      body: { schoolCode: "BI-2026-0002", plan: "Premium", monthlyPrice: 12, currency: "CDF" },
+      body: { schoolCode: "BI-ESB-26-001", plan: "Premium", monthlyPrice: 12, currency: "CDF" },
     });
     assert.equal(crossCountry.status, 403, JSON.stringify(crossCountry.data));
 
@@ -157,12 +157,12 @@ const subscription = await request("/backoffice/subscriptions", {
     const roleMap = await request("/backoffice/role-permissions", { token: superToken });
     assert.equal(roleMap.status, 200);
 
-    const access = await request("/backoffice/subscription-access?schoolCode=CD-2026-0001", {
+    const access = await request("/backoffice/subscription-access?schoolCode=CD-IN-26-001", {
       token: countryAdminToken,
     });
     assert.equal(access.status, 200);
 
-    const crossCountryAccess = await request("/backoffice/subscription-access?schoolCode=BI-2026-0002", {
+    const crossCountryAccess = await request("/backoffice/subscription-access?schoolCode=BI-ESB-26-001", {
       token: countryAdminToken,
     });
     assert.equal(crossCountryAccess.status, 403, JSON.stringify(crossCountryAccess.data));
@@ -171,14 +171,14 @@ const subscription = await request("/backoffice/subscriptions", {
       method: "POST",
       token: superToken,
       body: {
-        schoolCode: "CD-2026-0001",
+        schoolCode: "CD-IN-26-001",
         amount: 42,
         currency: "CDF",
         reference: "PAY-VERIFY-1",
       },
     });
     assert.equal(payment.status, 201, JSON.stringify(payment.data));
-    assert.equal(payment.data.schoolCode, "CD-2026-0001");
+    assert.equal(payment.data.schoolCode, "CD-IN-26-001");
 
     const countryNotice = await request("/backoffice/notifications", {
       method: "POST",
@@ -204,7 +204,7 @@ const subscription = await request("/backoffice/subscriptions", {
     assert.ok(Array.isArray(countries.data));
     assert.ok(countries.data.some((row) => row.code === "CD"));
 
-    const deniedAccess = await request("/backoffice/subscription-access?schoolCode=CD-2026-0001");
+    const deniedAccess = await request("/backoffice/subscription-access?schoolCode=CD-IN-26-001");
     assert.equal(deniedAccess.status, 401);
 
     const deniedUsersPut = await request("/backoffice/state", {

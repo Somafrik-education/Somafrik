@@ -147,20 +147,20 @@ async function seedSchools(pool) {
      VALUES ('RDC', 'CD', '+243', 'CDF') RETURNING id`,
   );
   const schoolA = await pool.query(
-    `INSERT INTO schools (country_id, school_code, name, status)
-     VALUES ($1, 'CD-2026-0001', 'Lycée A', 'active') RETURNING id`,
+    `INSERT INTO schools (country_id, school_code, login_code, name, status)
+     VALUES ($1, 'CD-2026-0001', 'CD-IN-26-001', 'Lycée A', 'active') RETURNING id, login_code`,
     [country.rows[0].id],
   );
   const schoolB = await pool.query(
-    `INSERT INTO schools (country_id, school_code, name, status)
-     VALUES ($1, 'BI-2026-0002', 'Lycée B', 'active') RETURNING id`,
+    `INSERT INTO schools (country_id, school_code, login_code, name, status)
+     VALUES ($1, 'BI-2026-0002', 'BI-ESB-26-001', 'Lycée B', 'active') RETURNING id, login_code`,
     [country.rows[0].id],
   );
   return {
     schoolAId: schoolA.rows[0].id,
     schoolBId: schoolB.rows[0].id,
-    schoolACode: "CD-2026-0001",
-    schoolBCode: "BI-2026-0002",
+    schoolACode: String(schoolA.rows[0].login_code).trim().toUpperCase(),
+    schoolBCode: String(schoolB.rows[0].login_code).trim().toUpperCase(),
   };
 }
 
@@ -260,10 +260,10 @@ async function testGetMaterializesMissingSettingsRow(pool) {
   const adminA = {
     role: "Admin School",
     sub: "admin-a",
-    schoolCode: "CD-2026-0001",
+    schoolCode: "CD-IN-26-001",
     permissions: ["Paramètres Établissement:UPDATE"],
   };
-  const settings = await repo.getSchoolSettings(adminA, "CD-2026-0001");
+  const settings = await repo.getSchoolSettings(adminA, "CD-IN-26-001");
   assert.equal(settings.periodMode, "trimestre");
   assert.equal(settings.defaultScale, 20);
   assert.equal(settings.reportCardMode, "period");
@@ -300,19 +300,19 @@ async function main() {
   const adminA = {
     role: "Admin School",
     sub: "admin-a",
-    schoolCode: "CD-2026-0001",
+    schoolCode: "CD-IN-26-001",
     permissions: ["Paramètres Établissement:UPDATE"],
   };
   const adminB = {
     role: "Admin School",
     sub: "admin-b",
-    schoolCode: "BI-2026-0002",
+    schoolCode: "BI-ESB-26-001",
     permissions: ["Paramètres Établissement:UPDATE"],
   };
   const teacher = {
     role: "Enseignant",
     sub: "teacher-a",
-    schoolCode: "CD-2026-0001",
+    schoolCode: "CD-IN-26-001",
     permissions: ["Notes:UPDATE"],
   };
   const auditMeta = { ipAddress: "127.0.0.1", userAgent: "test" };
@@ -340,32 +340,32 @@ async function main() {
       [fixture.schoolAId],
     );
 
-    const created = await repo.getSchoolSettings(adminA, "CD-2026-0001");
-    assert.equal(created.schoolCode, "CD-2026-0001");
+    const created = await repo.getSchoolSettings(adminA, "CD-IN-26-001");
+    assert.equal(created.schoolCode, "CD-IN-26-001");
     assert.equal(created.periodMode, "trimestre");
     assert.equal(created.defaultScale, 20);
 
     const patched = await repo.patchSchoolSettings(
-      { periodMode: "semestre", defaultScale: 10, schoolId: fixture.schoolBId, schoolCode: "BI-2026-0002" },
+      { periodMode: "semestre", defaultScale: 10, schoolId: fixture.schoolBId, schoolCode: "BI-ESB-26-001" },
       adminA,
       auditMeta,
-      "CD-2026-0001",
+      "CD-IN-26-001",
     );
     assert.equal(patched.periodMode, "semestre");
     assert.equal(patched.defaultScale, 10);
-    assert.equal(patched.schoolCode, "CD-2026-0001");
+    assert.equal(patched.schoolCode, "CD-IN-26-001");
 
-    const stillB = await repo.getSchoolSettings(adminB, "BI-2026-0002");
+    const stillB = await repo.getSchoolSettings(adminB, "BI-ESB-26-001");
     assert.equal(stillB.periodMode, "trimestre");
     assert.equal(stillB.defaultScale, 20);
 
     await assert.rejects(
-      () => repo.patchSchoolSettings({ periodMode: "periode" }, teacher, auditMeta, "CD-2026-0001"),
+      () => repo.patchSchoolSettings({ periodMode: "periode" }, teacher, auditMeta, "CD-IN-26-001"),
       (error) => error.statusCode === 403,
     );
 
     await assert.rejects(
-      () => repo.patchSchoolSettings({ defaultScale: 0 }, adminA, auditMeta, "CD-2026-0001"),
+      () => repo.patchSchoolSettings({ defaultScale: 0 }, adminA, auditMeta, "CD-IN-26-001"),
       (error) => error.statusCode === 400,
     );
 
@@ -378,12 +378,12 @@ async function main() {
       },
       adminA,
       auditMeta,
-      "CD-2026-0001",
+      "CD-IN-26-001",
     );
     assert.equal(replaced.periods.length, 2);
     assert.ok(replaced.periods.some((row) => row.name === "Semestre 1"));
 
-    const projection = await repo.getAcademicConfig("CD-2026-0001");
+    const projection = await repo.getAcademicConfig("CD-IN-26-001");
     assert.equal(projection.periodMode, "semestre");
     assert.equal(projection.defaultScale, 10);
     assert.equal(projection.periods.length, 2);
@@ -392,23 +392,23 @@ async function main() {
     assert.equal("allowCustomClasses" in projection, false);
 
     await assert.rejects(
-      () => repo.saveAcademicConfig("CD-2026-0001", { periodMode: "trimestre" }),
+      () => repo.saveAcademicConfig("CD-IN-26-001", { periodMode: "trimestre" }),
       (error) => error.code === SCHOOL_SETTINGS_ERROR.LEGACY_SCHOOL_PERIODS_WRITE_FORBIDDEN,
     );
     await assert.rejects(
-      () => repo.saveAcademicConfig("CD-2026-0001", { periods: null }),
+      () => repo.saveAcademicConfig("CD-IN-26-001", { periods: null }),
       (error) => error.code === SCHOOL_SETTINGS_ERROR.LEGACY_SCHOOL_PERIODS_WRITE_FORBIDDEN,
     );
     await assert.rejects(
-      () => repo.saveAcademicConfig("CD-2026-0001", { classNames: [] }),
+      () => repo.saveAcademicConfig("CD-IN-26-001", { classNames: [] }),
       (error) => error.code === SCHOOL_SETTINGS_ERROR.LEGACY_SCHOOL_CLASS_NAMES_WRITE_FORBIDDEN,
     );
     await assert.rejects(
-      () => repo.saveAcademicConfig("CD-2026-0001", { defaultScale: 20 }),
+      () => repo.saveAcademicConfig("CD-IN-26-001", { defaultScale: 20 }),
       (error) => error.code === SCHOOL_SETTINGS_ERROR.LEGACY_SCHOOL_SETTINGS_WRITE_FORBIDDEN,
     );
 
-    const emptyPut = await repo.saveAcademicConfig("CD-2026-0001", {});
+    const emptyPut = await repo.saveAcademicConfig("CD-IN-26-001", {});
     assert.equal(emptyPut.periodMode, "semestre");
     const jsonAfterPut = await pool.query(`SELECT config_payload FROM school_academic_configs WHERE school_id = $1`, [
       fixture.schoolAId,
@@ -432,7 +432,7 @@ async function main() {
       fixture.schoolAId,
     ]);
     await assert.rejects(
-      () => failRepo.patchSchoolSettings({ periodMode: "periode" }, adminA, auditMeta, "CD-2026-0001"),
+      () => failRepo.patchSchoolSettings({ periodMode: "periode" }, adminA, auditMeta, "CD-IN-26-001"),
       (error) => /audit failed/.test(String(error.message)),
     );
     const afterMode = await pool.query(`SELECT period_mode FROM school_settings WHERE school_id = $1`, [
@@ -497,12 +497,12 @@ async function main() {
           { periods: [{ name: "Période unique", startDate: "01-09-2025", endDate: "30-06-2026" }] },
           adminA,
           auditMeta,
-          "CD-2026-0001",
+          "CD-IN-26-001",
         ),
       (error) => error.statusCode === 409 && error.code === SCHOOL_SETTINGS_ERROR.TERM_IN_USE,
     );
 
-    const projectedLists = await repo.getAcademicConfig("CD-2026-0001");
+    const projectedLists = await repo.getAcademicConfig("CD-IN-26-001");
     assert.deepEqual(projectedLists.classNames, ["6ème A"]);
     assert.ok(projectedLists.subjects.includes("Mathématiques"));
 

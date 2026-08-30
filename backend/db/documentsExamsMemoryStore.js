@@ -28,9 +28,12 @@ function createDocumentsExamsMemoryStore(seed = {}) {
   const residual = { exam: [], bulletin: [], document: [] };
 
   function rememberSchool(school) {
-    const code = asTrimmed(school.code ?? school.schoolCode ?? school.school_code).toUpperCase();
+    const { canonicalSchoolLoginOrNull } = require("../lib/schoolCodeV2");
+    const code = canonicalSchoolLoginOrNull(
+      school.loginCode ?? school.login_code ?? school.publicId ?? school.code ?? school.schoolCode ?? school.school_code,
+    );
     if (!code) return null;
-    const entry = { id: school.id ?? randomUUID(), school_code: code };
+    const entry = { id: school.id ?? randomUUID(), school_code: code, login_code: code };
     schools.set(code, entry);
     return entry;
   }
@@ -39,7 +42,10 @@ function createDocumentsExamsMemoryStore(seed = {}) {
   if (seed.school) rememberSchool(seed.school);
 
   function schoolByCode(schoolCode) {
-    return schools.get(asTrimmed(schoolCode).toUpperCase()) ?? null;
+    const { canonicalSchoolLoginOrNull } = require("../lib/schoolCodeV2");
+    const code = canonicalSchoolLoginOrNull(schoolCode);
+    if (!code) return null;
+    return schools.get(code) ?? null;
   }
 
   function notFound(label) {

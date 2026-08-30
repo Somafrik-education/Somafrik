@@ -129,11 +129,15 @@ async function seedSchool(pool) {
      VALUES ('France', 'FR', '+33', 'EUR') RETURNING id`,
   );
   const school = await pool.query(
-    `INSERT INTO schools (country_id, school_code, name, status)
-     VALUES ($1, 'CD-2026-0001', 'Test', 'active') RETURNING id`,
+    `INSERT INTO schools (country_id, school_code, login_code, name, status)
+     VALUES ($1, 'CD-2026-0001', 'CD-IN-26-001', 'Test', 'active') RETURNING id, login_code`,
     [country.rows[0].id],
   );
-  return { schoolId: school.rows[0].id, schoolCode: "CD-2026-0001", frCountryId: fr.rows[0].id };
+  return {
+    schoolId: school.rows[0].id,
+    schoolCode: String(school.rows[0].login_code).trim().toUpperCase(),
+    frCountryId: fr.rows[0].id,
+  };
 }
 
 async function resetBaseSchema(pool) {
@@ -208,7 +212,7 @@ async function main() {
   const schoolPrincipal = {
     role: "Admin School",
     sub: "admin-1",
-    schoolCode: "CD-2026-0001",
+    schoolCode: "CD-IN-26-001",
     permissions: ["Paramètres Établissement:UPDATE"],
   };
   const auditMeta = { ipAddress: "127.0.0.1", userAgent: "test" };
@@ -274,8 +278,8 @@ async function main() {
     );
     const biCountry = await pool.query(`SELECT id FROM countries WHERE iso_code = 'BI'`);
     await pool.query(
-      `INSERT INTO schools (country_id, school_code, name, status)
-       VALUES ($1, 'BI-2026-0002', 'Lycée BI', 'active')
+      `INSERT INTO schools (country_id, school_code, login_code, name, status)
+       VALUES ($1, 'BI-2026-0002', 'BI-ESB-26-001', 'Lycée BI', 'active')
        ON CONFLICT (school_code) DO NOTHING`,
       [biCountry.rows[0].id],
     );
@@ -323,7 +327,7 @@ async function main() {
     await assert.rejects(
       () =>
         repo.saveSchoolEducationActivation(
-          "CD-2026-0001",
+          "CD-IN-26-001",
           { levelIds: [frLevel.id], streamIds: [] },
           schoolPrincipal,
           auditMeta,
@@ -332,7 +336,7 @@ async function main() {
     );
 
     const activation = await repo.saveSchoolEducationActivation(
-      "CD-2026-0001",
+      "CD-IN-26-001",
       { levelIds: [levelA.id], streamIds: [stream.id], groupIds: [groupA.id, groupB.id] },
       schoolPrincipal,
       auditMeta,
@@ -344,7 +348,7 @@ async function main() {
     await assert.rejects(
       () =>
         repo.saveSchoolEducationActivation(
-          "CD-2026-0001",
+          "CD-IN-26-001",
           { levelIds: [levelA.id], streamIds: [], groupIds: [groupBi.id] },
           schoolPrincipal,
           auditMeta,
@@ -352,18 +356,18 @@ async function main() {
       (error) => error.statusCode === 403 && error.code === "COUNTRY_MISMATCH",
     );
 
-    const lists = await repo.getSchoolEducationActiveLists("CD-2026-0001");
+    const lists = await repo.getSchoolEducationActiveLists("CD-IN-26-001");
     assert.deepEqual(lists.levels, ["1ère"]);
     assert.deepEqual(lists.tracks, ["Générale"]);
 
     await assert.rejects(
-      () => repo.saveAcademicConfig("CD-2026-0001", { levels: ["legacy"] }),
+      () => repo.saveAcademicConfig("CD-IN-26-001", { levels: ["legacy"] }),
       (error) => error.code === "LEGACY_ACADEMIC_LEVELS_WRITE_FORBIDDEN",
     );
     assert.throws(() => assertNoLegacyAcademicLevelsTracksWrite({ tracks: null }));
 
     await repo.saveSchoolEducationActivation(
-      "CD-2026-0001",
+      "CD-IN-26-001",
       { levelIds: [levelA.id], streamIds: [stream.id], groupIds: [groupA.id] },
       schoolPrincipal,
       auditMeta,
@@ -378,7 +382,7 @@ async function main() {
     );
 
     await repo.saveSchoolEducationActivation(
-      "CD-2026-0001",
+      "CD-IN-26-001",
       { levelIds: [levelDup.id], streamIds: [stream.id], groupIds: [] },
       schoolPrincipal,
       auditMeta,

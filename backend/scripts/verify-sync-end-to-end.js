@@ -57,8 +57,8 @@ async function prepareDatabase(databaseUrl, fixtureSecret) {
        VALUES ('RDC', 'CD', '+243', 'CDF') RETURNING id`,
     );
     const school = await pool.query(
-      `INSERT INTO schools (country_id, school_code, name, status)
-       VALUES ($1, 'CD-2026-0001', 'Lycée SYNC-E2E', 'active') RETURNING id`,
+      `INSERT INTO schools (country_id, school_code, login_code, name, status)
+       VALUES ($1, 'CD-2026-0001', 'CD-IN-26-001', 'Lycée SYNC-E2E', 'active') RETURNING id`,
       [country.rows[0].id],
     );
     const schoolId = school.rows[0].id;
@@ -233,10 +233,10 @@ async function runSyncEndToEnd(databaseUrl) {
 
   try {
     await waitForHealth(child);
-    console.log("[sync-e2e] login HTTP réel", { identifier: "admin-sync-e2e@test.cd", schoolCode: "CD-2026-0001" });
-    const adminToken = await login("admin-sync-e2e@test.cd", fixtureSecret, "CD-2026-0001");
-    console.log("[sync-e2e] login HTTP réel", { identifier: "prefet-sync-e2e@test.cd", schoolCode: "CD-2026-0001" });
-    const prefetToken = await login("prefet-sync-e2e@test.cd", fixtureSecret, "CD-2026-0001");
+    console.log("[sync-e2e] login HTTP réel", { identifier: "admin-sync-e2e@test.cd", schoolCode: "CD-IN-26-001" });
+    const adminToken = await login("admin-sync-e2e@test.cd", fixtureSecret, "CD-IN-26-001");
+    console.log("[sync-e2e] login HTTP réel", { identifier: "prefet-sync-e2e@test.cd", schoolCode: "CD-IN-26-001" });
+    const prefetToken = await login("prefet-sync-e2e@test.cd", fixtureSecret, "CD-IN-26-001");
     console.log("[sync-e2e] login HTTP réel", { identifier: "super-sync-e2e@test.cd" });
     const superToken = await login("super-sync-e2e@test.cd", fixtureSecret);
 
@@ -338,7 +338,7 @@ async function runSyncEndToEnd(databaseUrl) {
     // --- Classes ---
     const { prepareCanonicalClassContext, postCanonicalClass } = require("../lib/canonicalClassHttp");
     const offering = await prepareCanonicalClassContext(request, {
-      schoolCode: "CD-2026-0001",
+      schoolCode: "CD-IN-26-001",
       countryCode: "CD",
       superToken,
       schoolToken: adminToken,
@@ -595,7 +595,7 @@ async function runSyncEndToEnd(databaseUrl) {
         message: "Test convergence",
         type: "Information",
         audience: "etablissement",
-        schoolCode: "CD-2026-0001",
+        schoolCode: "CD-IN-26-001",
         status: "Non lu",
       },
     });

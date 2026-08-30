@@ -24,12 +24,16 @@ function createPlatformPgStore(repo) {
 
     return {
       async getSchoolByCode(code) {
+        const { canonicalSchoolLoginOrNull } = require("../lib/schoolCodeV2");
+        const normalized = canonicalSchoolLoginOrNull(code);
+        if (!normalized) return null;
         const row = await one(
-          `SELECT s.*, c.iso_code AS country_code, c.name AS country_name
+          `SELECT s.*, s.login_code AS school_code, c.iso_code AS country_code, c.name AS country_name
            FROM schools s
            JOIN countries c ON c.id = s.country_id
-           WHERE s.school_code = $1`,
-          [asTrimmed(code).toUpperCase()],
+           WHERE upper(s.login_code) = $1
+           LIMIT 1`,
+          [normalized],
         );
         return row || null;
       },

@@ -1,5 +1,6 @@
 "use strict";
 
+const { canonicalSchoolLoginOrNull } = require("../lib/schoolCodeV2");
 const { parsePeriodDate } = require("../lib/academicPeriods");
 const { withSystemActivePeriods, defaultAcademicPeriods, inferPeriodMode } = require("../lib/academicConfigDefaults");
 const {
@@ -42,12 +43,14 @@ function createSchoolSettingsPgStore(repo) {
   const query = (...args) => repo.query(...args);
 
   async function getSchoolByCode(schoolCode) {
+    const normalized = canonicalSchoolLoginOrNull(schoolCode);
+    if (!normalized) return null;
     return one(
-      `SELECT s.id, s.school_code, s.country_id
+      `SELECT s.id, s.login_code, s.login_code AS school_code, s.country_id
        FROM schools s
-       WHERE upper(s.school_code) = upper($1)
-          OR upper(coalesce(s.login_code, '')) = upper($1)`,
-      [asTrimmed(schoolCode).toUpperCase()],
+       WHERE upper(s.login_code) = $1
+       LIMIT 1`,
+      [normalized],
     );
   }
 
@@ -280,7 +283,7 @@ function createSchoolSettingsPgStore(repo) {
 
   async function inventoryLegacySchoolSettingsPayloads() {
     const rows = await all(
-      `SELECT s.id AS school_id, s.school_code, sac.config_payload
+      `SELECT s.id AS school_id, s.login_code AS school_code, sac.config_payload
        FROM school_academic_configs sac
        JOIN schools s ON s.id = sac.school_id`,
     );
@@ -324,7 +327,7 @@ function createSchoolSettingsPgStore(repo) {
 
   async function bootstrapCanonicalSettingsForAllSchools(captured = []) {
     const capturedBySchoolId = new Map((captured ?? []).map((item) => [item.schoolId, item]));
-    const schools = await all(`SELECT id, school_code FROM schools`);
+    const schools = await all(`SELECT id, login_code AS school_code FROM schools`);
     for (const school of schools) {
       const patch = settingsPatchFromCaptured(capturedBySchoolId.get(school.id));
       if (Object.keys(patch).length > 0) {

@@ -98,7 +98,7 @@ async function runMemorySuite() {
 
     const superToken = await login(MEMORY_PORT, "superadmin", "1234");
     const adminToken = await login(MEMORY_PORT, "admin", "1234", "CD-IN-26-001");
-    const adminBi = await login(MEMORY_PORT, "admin", "1234", "BI-2026-0002");
+    const adminBi = await login(MEMORY_PORT, "admin", "1234", "BI-ESB-26-001");
     const teacherToken = await login(MEMORY_PORT, "CD-IN-JK-26-00001", "1234", "CD-IN-26-001");
 
     const list = await request(MEMORY_PORT, "/evaluation-types", { token: adminToken });
@@ -112,7 +112,7 @@ async function runMemorySuite() {
       body: { name: "Oral", code: "oral", schoolId: "ignore-me", schoolCode: "BI-ESB-26-001" },
     });
     assert.equal(created.status, 201, JSON.stringify(created.data));
-    assert.equal(created.data.schoolCode, "CD-2026-0001");
+    assert.equal(created.data.schoolCode, "CD-IN-26-001");
     assert.equal(created.data.code, "oral");
 
     const patched = await request(MEMORY_PORT, `/evaluation-types/${encodeURIComponent(created.data.id)}`, {
@@ -176,7 +176,7 @@ async function runMemorySuite() {
     assert.ok(Array.isArray(projection.data.evaluationTypes));
     assert.equal(projection.data.evaluationTypes.includes("Oral blanc"), false);
 
-    const superBackoffice = await request(MEMORY_PORT, "/backoffice/establishments/CD-2026-0001/evaluation-types", {
+    const superBackoffice = await request(MEMORY_PORT, "/backoffice/establishments/CD-IN-26-001/evaluation-types", {
       token: superToken,
     });
     assert.equal(superBackoffice.status, 200, JSON.stringify(superBackoffice.data));
@@ -222,12 +222,12 @@ async function preparePgHttpDatabase(databaseUrl) {
     );
     await pool.query(
       `INSERT INTO users (school_id, user_code, first_name, last_name, email, password_hash, pin_hash, role, status)
-       VALUES ($1, 'ADMIN-CD-2026-0001-01', 'Admin', 'HTTP', 'admin-http@test.cd', $2, $2, 'SCHOOL_ADMIN', 'active')`,
+       VALUES ($1, 'CD-IN-AD-26-00001', 'Admin', 'HTTP', 'admin-http@test.cd', $2, $2, 'SCHOOL_ADMIN', 'active')`,
       [schoolA.rows[0].id, passwordHash],
     );
     const teacherUser = await pool.query(
       `INSERT INTO users (school_id, user_code, first_name, last_name, email, password_hash, pin_hash, role, status)
-       VALUES ($1, 'ENS-0001', 'Paul', 'Prof', 'ens-http@test.cd', $2, $2, 'TEACHER', 'active') RETURNING id`,
+       VALUES ($1, 'CD-IN-ET-26-00001', 'Paul', 'Prof', 'ens-http@test.cd', $2, $2, 'TEACHER', 'active') RETURNING id`,
       [schoolA.rows[0].id, passwordHash],
     );
     const teacher = await pool.query(
@@ -301,7 +301,7 @@ async function runPgSuite(databaseUrl) {
         subject: "Mathématiques",
         period: "Trimestre 1",
         title: "Devoir canonique",
-        teacherId: "ENS-0001",
+        teacherId: "CD-IN-ET-26-00001",
         evaluationTypeId: prepared.typeAId,
         schoolCode: "BI-ESB-26-001",
         scale: 20,
@@ -318,7 +318,7 @@ async function runPgSuite(databaseUrl) {
         subject: "Mathématiques",
         period: "Trimestre 1",
         title: "Évaluation",
-        teacherId: "ENS-0001",
+        teacherId: "CD-IN-ET-26-00001",
         scale: 20,
       },
     });
@@ -333,7 +333,7 @@ async function runPgSuite(databaseUrl) {
         subject: "Mathématiques",
         period: "Trimestre 1",
         title: "Type étranger",
-        teacherId: "ENS-0001",
+        teacherId: "CD-IN-ET-26-00001",
         evaluationTypeId: prepared.typeBId,
         scale: 20,
       },
@@ -349,7 +349,7 @@ async function runPgSuite(databaseUrl) {
         subject: "Mathématiques",
         period: "Trimestre 1",
         title: "Type inventé",
-        teacherId: "ENS-0001",
+        teacherId: "CD-IN-ET-26-00001",
         evaluationType: "Quiz surprise",
         scale: 20,
       },
@@ -364,7 +364,7 @@ async function runPgSuite(databaseUrl) {
         subject: "Mathématiques",
         period: "Trimestre 1",
         title: "Type archivé",
-        teacherId: "ENS-0001",
+        teacherId: "CD-IN-ET-26-00001",
         evaluationTypeId: prepared.archivedId,
         scale: 20,
       },

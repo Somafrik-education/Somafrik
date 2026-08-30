@@ -139,8 +139,8 @@ async function runMemorySuite() {
     assert.equal(missing.status, 404);
 
     await runLockoutHttpSuite(MEMORY_PORT, {
-      adminA: { identifier: "admin", schoolCode: "CD-2026-0001" },
-      adminB: { identifier: "admin", schoolCode: "BI-2026-0002" },
+      adminA: { identifier: "admin", schoolCode: "CD-IN-26-001" },
+      adminB: { identifier: "admin", schoolCode: "BI-ESB-26-001" },
       goodPassword: "1234",
     });
   } finally {
@@ -161,11 +161,11 @@ async function preparePgHttpDatabase(databaseUrl) {
       `INSERT INTO countries (name, iso_code, phone_code, currency) VALUES ('RDC', 'CD', '+243', 'CDF') RETURNING id`,
     );
     const schoolA = await pool.query(
-      `INSERT INTO schools (country_id, school_code, name, status) VALUES ($1, 'CD-2026-0001', 'Lycée A', 'active') RETURNING id`,
+      `INSERT INTO schools (country_id, school_code, login_code, name, status) VALUES ($1, 'CD-2026-0001', 'CD-IN-26-001', 'Lycée A', 'active') RETURNING id`,
       [country.rows[0].id],
     );
     const schoolB = await pool.query(
-      `INSERT INTO schools (country_id, school_code, name, status) VALUES ($1, 'BI-2026-0002', 'Lycée B', 'active') RETURNING id`,
+      `INSERT INTO schools (country_id, school_code, login_code, name, status) VALUES ($1, 'BI-2026-0002', 'BI-ESB-26-001', 'Lycée B', 'active') RETURNING id`,
       [country.rows[0].id],
     );
     await pool.query(
@@ -213,8 +213,8 @@ async function runPgSuite(databaseUrl) {
     assert.equal(missing.status, 404);
 
     await runLockoutHttpSuite(PG_PORT, {
-      adminA: { identifier: "admin-a@test.cd", schoolCode: "CD-2026-0001" },
-      adminB: { identifier: "admin-b@test.bi", schoolCode: "BI-2026-0002" },
+      adminA: { identifier: "admin-a@test.cd", schoolCode: "CD-IN-26-001" },
+      adminB: { identifier: "admin-b@test.bi", schoolCode: "BI-ESB-26-001" },
       goodPassword: "1234",
     });
 
@@ -228,7 +228,7 @@ async function runPgSuite(databaseUrl) {
     } finally {
       await expirePool.end();
     }
-    const afterExpiry = await login(PG_PORT, "admin-a@test.cd", "1234", "CD-2026-0001");
+    const afterExpiry = await login(PG_PORT, "admin-a@test.cd", "1234", "CD-IN-26-001");
     assert.equal(afterExpiry.status, 200, JSON.stringify(afterExpiry.data));
   } finally {
     child.kill("SIGTERM");

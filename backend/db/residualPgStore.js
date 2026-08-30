@@ -54,7 +54,7 @@ function createResidualPgStore(repo) {
 
   const store = {
     async listProjection() {
-      const schoolRows = await all(`SELECT id, school_code FROM schools`);
+      const schoolRows = await all(`SELECT id, login_code AS school_code FROM schools`);
       const academicConfigs = {};
       for (const row of schoolRows) {
         const code = String(row.school_code).toUpperCase();
@@ -77,7 +77,7 @@ function createResidualPgStore(repo) {
       }
 
       const residualRows = await all(
-        `SELECT r.*, s.school_code
+        `SELECT r.*, s.login_code AS school_code
          FROM establishment_residual_records r
          JOIN schools s ON s.id = r.school_id
          WHERE r.archived_at IS NULL`,

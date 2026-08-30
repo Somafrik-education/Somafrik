@@ -232,17 +232,17 @@ async function prepareDatabase(databaseUrl) {
     );
     await pool.query(
       `INSERT INTO users (school_id, user_code, first_name, last_name, email, password_hash, pin_hash, role, status)
-       VALUES ($1, 'ADMIN-CD-2026-0001-01', 'Admin', 'HTTP', 'admin-http@test.cd', $2, $2, 'SCHOOL_ADMIN', 'active')`,
+       VALUES ($1, 'CD-IN-AD-26-00001', 'Admin', 'HTTP', 'admin-http@test.cd', $2, $2, 'SCHOOL_ADMIN', 'active')`,
       [schoolA.rows[0].id, passwordHash],
     );
     await pool.query(
       `INSERT INTO users (school_id, user_code, first_name, last_name, email, password_hash, pin_hash, role, status)
-       VALUES ($1, 'PREFET-CD-2026-0001-01', 'Samuel', 'Prefet', 'prefet-http@test.cd', $2, $2, 'PREFET_ETUDES', 'active')`,
+       VALUES ($1, 'CD-IN-PF-26-00001', 'Samuel', 'Prefet', 'prefet-http@test.cd', $2, $2, 'PREFET_ETUDES', 'active')`,
       [schoolA.rows[0].id, passwordHash],
     );
     await pool.query(
       `INSERT INTO users (school_id, user_code, first_name, last_name, email, password_hash, pin_hash, role, status)
-       VALUES ($1, 'SECRETAIRE-CD-2026-0001-01', 'Amina', 'Secretaire', 'secretaire-http@test.cd', $2, $2, 'SECRETARY', 'active')`,
+       VALUES ($1, 'CD-IN-SC-26-00001', 'Amina', 'Secretaire', 'secretaire-http@test.cd', $2, $2, 'SECRETARY', 'active')`,
       [schoolA.rows[0].id, passwordHash],
     );
     await pool.query(
@@ -319,11 +319,11 @@ async function runHttp(databaseUrl) {
   const child = spawnBackend(isolatedUrl);
   try {
     await waitForHealth(child, PG_PORT);
-    const prefetToken = await loginReady(PG_PORT, "prefet", "1234", SCHOOL_CODE);
-    const adminToken = await login(PG_PORT, "admin", "1234", SCHOOL_CODE);
+    const prefetToken = await loginReady(PG_PORT, "CD-IN-PF-26-00001", "1234", SCHOOL_CODE);
+    const adminToken = await login(PG_PORT, "CD-IN-AD-26-00001", "1234", SCHOOL_CODE);
     const teacherToken = await login(PG_PORT, SEKE_CODE, "1234", SCHOOL_CODE);
     const kabeyaToken = await login(PG_PORT, KABEYA_CODE, "1234", SCHOOL_CODE);
-    const secretaryToken = await loginReady(PG_PORT, "secretaire", "1234", SCHOOL_CODE);
+    const secretaryToken = await loginReady(PG_PORT, "CD-IN-SC-26-00001", "1234", SCHOOL_CODE);
     const parentToken = await login(PG_PORT, "+243 820 000 001", "1234", SCHOOL_CODE);
 
     const prefetJwt = decodeJwt(prefetToken);
@@ -487,7 +487,7 @@ async function runBrowser(databaseUrl) {
   try {
     await waitForHealth(backend, PG_PORT);
     await waitForUrl(WEB_URL, "web");
-    const prefetToken = await loginReady(PG_PORT, "prefet", "1234", SCHOOL_CODE);
+    const prefetToken = await loginReady(PG_PORT, "CD-IN-PF-26-00001", "1234", SCHOOL_CODE);
     const yearId = (await request(PG_PORT, "/course-schedules", { token: prefetToken })).data;
     const pool = new Pool({ connectionString: isolatedUrl });
     const year = (await pool.query(`SELECT id FROM academic_years LIMIT 1`)).rows[0].id;
@@ -515,7 +515,7 @@ async function runBrowser(databaseUrl) {
       await page.goto(`${WEB_URL}/login`, { waitUntil: "domcontentloaded" });
       await page.getByTestId("login-profile-school").click();
       await page.getByTestId("login-school-code").fill(SCHOOL_CODE);
-      await page.getByTestId("login-identifier").fill("prefet");
+      await page.getByTestId("login-identifier").fill("CD-IN-PF-26-00001");
       await page.getByTestId("login-password").fill(NEW_PASSWORD);
       await page.getByTestId("login-submit").click();
       await page.getByTestId("logout-button").waitFor({ timeout: 45000 });

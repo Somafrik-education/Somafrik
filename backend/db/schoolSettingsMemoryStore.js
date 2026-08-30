@@ -23,7 +23,10 @@ function createSchoolSettingsMemoryStore(seed = {}) {
   const legacyPayloads = new Map();
 
   function rememberSchool(school) {
-    const code = asTrimmed(school.loginCode ?? school.login_code).toUpperCase();
+    const { canonicalSchoolLoginOrNull } = require("../lib/schoolCodeV2");
+    const code = canonicalSchoolLoginOrNull(
+      school.loginCode ?? school.login_code ?? school.publicId ?? school.code,
+    );
     if (!code) return null;
     const entry = {
       id: school.id ?? randomUUID(),
@@ -38,7 +41,10 @@ function createSchoolSettingsMemoryStore(seed = {}) {
   if (seed.school) rememberSchool(seed.school);
 
   function schoolByCode(schoolCode) {
-    return schools.get(asTrimmed(schoolCode).toUpperCase()) ?? null;
+    const { canonicalSchoolLoginOrNull } = require("../lib/schoolCodeV2");
+    const code = canonicalSchoolLoginOrNull(schoolCode);
+    if (!code) return null;
+    return schools.get(code) ?? null;
   }
 
   return {

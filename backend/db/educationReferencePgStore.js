@@ -25,13 +25,16 @@ function createEducationReferencePgStore(repo) {
   }
 
   async function getSchoolByCode(schoolCode) {
+    const { canonicalSchoolLoginOrNull } = require("../lib/schoolCodeV2");
+    const normalized = canonicalSchoolLoginOrNull(schoolCode);
+    if (!normalized) return null;
     return one(
-      `SELECT s.id, s.school_code, c.iso_code AS country_code, s.country_id
+      `SELECT s.id, s.login_code AS school_code, s.login_code, c.iso_code AS country_code, s.country_id
        FROM schools s
        JOIN countries c ON c.id = s.country_id
-       WHERE upper(s.school_code) = upper($1)
-          OR upper(coalesce(s.login_code, '')) = upper($1)`,
-      [asTrimmed(schoolCode).toUpperCase()],
+       WHERE upper(s.login_code) = $1
+       LIMIT 1`,
+      [normalized],
     );
   }
 

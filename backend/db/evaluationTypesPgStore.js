@@ -28,17 +28,20 @@ function createEvaluationTypesPgStore(repo) {
   const query = (...args) => repo.query(...args);
 
   async function getSchoolByCode(schoolCode) {
+    const { canonicalSchoolLoginOrNull } = require("../lib/schoolCodeV2");
+    const normalized = canonicalSchoolLoginOrNull(schoolCode);
+    if (!normalized) return null;
     return one(
-      `SELECT s.id, s.school_code
+      `SELECT s.id, s.login_code AS school_code, s.login_code
        FROM schools s
-       WHERE upper(s.school_code) = upper($1)
-          OR upper(coalesce(s.login_code, '')) = upper($1)`,
-      [asTrimmed(schoolCode).toUpperCase()],
+       WHERE upper(s.login_code) = $1
+       LIMIT 1`,
+      [normalized],
     );
   }
 
   async function getSchoolById(schoolId) {
-    return one(`SELECT id, school_code FROM schools WHERE id = $1::uuid`, [schoolId]);
+    return one(`SELECT id, login_code AS school_code, login_code FROM schools WHERE id = $1::uuid`, [schoolId]);
   }
 
   async function requireSchoolByCode(schoolCode) {
@@ -53,9 +56,9 @@ function createEvaluationTypesPgStore(repo) {
     const school = await getSchoolByCode(schoolCode);
     if (!school) return [];
     const rows = await all(
-      `SELECT et.*, s.school_code
+      `SELECT et.*, s.login_code AS school_code
        FROM evaluation_types et
-       JOIN schools s ON s.id = et.school_id
+       JOIN schools s ON s.id = et.school_id`
        WHERE et.school_id = $1
          AND ($2::boolean OR et.status = 'active')
        ORDER BY et.display_order, et.name`,
@@ -71,9 +74,9 @@ function createEvaluationTypesPgStore(repo) {
 
   async function getById(typeId) {
     const row = await one(
-      `SELECT et.*, s.school_code
+      `SELECT et.*, s.login_code AS school_code
        FROM evaluation_types et
-       JOIN schools s ON s.id = et.school_id
+       JOIN schools s ON s.id = et.school_id`
        WHERE et.id = $1::uuid`,
       [typeId],
     );
@@ -96,9 +99,9 @@ function createEvaluationTypesPgStore(repo) {
     const normalizedName = normalizeTypeLabel(name || code);
     if (!normalizedCode && !normalizedName) return null;
     const row = await one(
-      `SELECT et.*, s.school_code
+      `SELECT et.*, s.login_code AS school_code
        FROM evaluation_types et
-       JOIN schools s ON s.id = et.school_id
+       JOIN schools s ON s.id = et.school_id`
        WHERE et.school_id = $1::uuid
          AND (
            et.code = $2

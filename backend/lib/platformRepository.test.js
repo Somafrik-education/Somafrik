@@ -54,7 +54,7 @@ async function main() {
   const auditLogs = [];
   const store = createPlatformMemoryStore({
     getSchoolByCode: async (code) => ({
-      id: code === "BI-2026-0002" ? "school-2" : "school-1",
+      id: code === "BI-ESB-26-001" ? "school-2" : "school-1",
       school_code: code,
       code,
       schoolCode: code,
@@ -73,8 +73,8 @@ async function main() {
   });
 
   const superAdmin = { role: "Super Administrateur Somafrik", schoolCode: "*", identifier: "superadmin" };
-  const schoolAdmin = { role: "Admin School", schoolCode: "CD-2026-0001", identifier: "admin" };
-  const foreignAdmin = { role: "Admin School", schoolCode: "BI-2026-0002", identifier: "foreign" };
+  const schoolAdmin = { role: "Admin School", schoolCode: "CD-IN-26-001", identifier: "admin" };
+  const foreignAdmin = { role: "Admin School", schoolCode: "BI-ESB-26-001", identifier: "foreign" };
   const auditMeta = { ipAddress: "127.0.0.1", userAgent: "test" };
 
   const originalWithTransaction = store.withTransaction.bind(store);
@@ -98,7 +98,7 @@ async function main() {
   await assert.rejects(
     () =>
       store.upsertSubscription(
-        { schoolCode: "BI-2026-0002", plan: "Premium", monthlyPrice: 12, currency: "CDF" },
+        { schoolCode: "BI-ESB-26-001", plan: "Premium", monthlyPrice: 12, currency: "CDF" },
         countryAdmin,
         auditMeta,
       ),
@@ -107,11 +107,11 @@ async function main() {
   assert.equal(auditLogs.length, 1, "no audit on tenant rejection");
 
   const subscription = await store.upsertSubscription(
-    { schoolCode: "CD-2026-0001", plan: "Premium", monthlyPrice: 10, currency: "CDF" },
+    { schoolCode: "CD-IN-26-001", plan: "Premium", monthlyPrice: 10, currency: "CDF" },
     schoolAdmin,
     auditMeta,
   );
-  assert.equal(subscription.schoolCode, "CD-2026-0001");
+  assert.equal(subscription.schoolCode, "CD-IN-26-001");
 
   const notification = await store.createNotification(
     { title: "Test", message: "Hello", type: "Information" },
@@ -131,11 +131,11 @@ async function main() {
   assert.ok(projection.notifications.length >= 1);
 
   const payment = await store.createSubscriptionPayment(
-    { schoolCode: "CD-2026-0001", amount: 25, currency: "CDF", reference: "PAY-TEST-1" },
+    { schoolCode: "CD-IN-26-001", amount: 25, currency: "CDF", reference: "PAY-TEST-1" },
     schoolAdmin,
     auditMeta,
   );
-  assert.equal(payment.schoolCode, "CD-2026-0001");
+  assert.equal(payment.schoolCode, "CD-IN-26-001");
 
   await assert.rejects(
     () =>

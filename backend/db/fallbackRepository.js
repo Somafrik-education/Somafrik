@@ -3732,8 +3732,14 @@ class FallbackRepository {
         school: seedData.school,
         schools: seedData.platformSchools,
       });
-      this._schoolSettingsStore.setClassNames(seedData.school.code, seedData.demoClassNames);
-      this._schoolSettingsStore.setSubjectNames(seedData.school.code, seedData.demoSubjects);
+      this._schoolSettingsStore.setClassNames(
+        seedData.school.loginCode ?? seedData.school.code,
+        seedData.demoClassNames,
+      );
+      this._schoolSettingsStore.setSubjectNames(
+        seedData.school.loginCode ?? seedData.school.code,
+        seedData.demoSubjects,
+      );
       this._schoolSettingsBootstrap = this._schoolSettingsStore.bootstrapCanonicalSettingsForAllSchools();
     }
     return this._schoolSettingsStore;
