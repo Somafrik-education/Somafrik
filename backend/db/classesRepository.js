@@ -235,7 +235,7 @@ function createClassesRepository(db) {
                 cl.group_code,
                 cl.created_at,
                 cl.updated_at,
-                s.school_code,
+                COALESCE(NULLIF(btrim(s.login_code), ''), s.school_code) AS school_code,
                 ay.name AS academic_year_name,
                 el.name AS level_name,
                 es.name AS stream_name,
@@ -323,7 +323,7 @@ function createClassesRepository(db) {
       const rows = await db.all(
         `${CLASS_SELECT}
          WHERE cl.school_id = $1
-         GROUP BY cl.id, s.school_code, ay.name, el.name, es.name
+         GROUP BY cl.id, s.login_code, s.school_code, ay.name, el.name, es.name
          ORDER BY cl.name ASC, cl.class_code ASC`,
         [school.id],
       );
@@ -488,7 +488,7 @@ function createClassesRepository(db) {
         const current = await executor.one(
           `${CLASS_SELECT}
            WHERE cl.class_code = $1 AND cl.school_id = $2
-           GROUP BY cl.id, s.school_code, ay.name, el.name, es.name
+           GROUP BY cl.id, s.login_code, s.school_code, ay.name, el.name, es.name
            LIMIT 1`,
           [classCode, school.id],
         );

@@ -86,9 +86,27 @@ test("mapEstablishmentRow privilégie profile_payload pour le statut BO", () => 
     updated_at: "2026-08-13T00:00:00.000Z",
   });
   assert.equal(mapped.code, "CD-2026-0099");
+  assert.equal(mapped.legacySchoolCode, "CD-2026-0099");
   assert.equal(mapped.status, "En attente");
   assert.equal(mapped.principalName, "Awa Kabila");
   assert.equal(mapped.country, "RDC");
   assert.equal(mapped.countryCode, "CD");
   assert.equal(mapped.validationStatus, "En attente de validation");
+});
+
+test("mapEstablishmentRow émet login_code V2 comme code public", () => {
+  const mapped = mapEstablishmentRow({
+    id: "uuid-1",
+    school_code: "CD-2026-0001",
+    login_code: "CD-IN-26-001",
+    name: "Institut Nuru",
+    status: "active",
+    iso_code: "CD",
+    country_name: "République Démocratique du Congo",
+    profile_payload: {},
+  });
+  assert.equal(mapped.code, "CD-IN-26-001");
+  assert.equal(mapped.loginCode, "CD-IN-26-001");
+  assert.equal(mapped.publicId, "CD-IN-26-001");
+  assert.equal(mapped.legacySchoolCode, "CD-2026-0001");
 });
