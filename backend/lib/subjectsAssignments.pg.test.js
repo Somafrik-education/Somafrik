@@ -190,12 +190,12 @@ async function setupFixture(pool) {
   );
   const userA = await pool.query(
     `INSERT INTO users (school_id, user_code, first_name, last_name, role, status)
-     VALUES ($1, 'USR-ENS-A', 'Awa', 'Diop', 'TEACHER', 'active') RETURNING id`,
+     VALUES ($1, 'CD-SA-AD-26-00001', 'Awa', 'Diop', 'TEACHER', 'active') RETURNING id`,
     [schoolA.id],
   );
   const userB = await pool.query(
     `INSERT INTO users (school_id, user_code, first_name, last_name, role, status)
-     VALUES ($1, 'USR-ENS-B', 'Jean', 'Other', 'TEACHER', 'active') RETURNING id`,
+     VALUES ($1, 'CD-SB-JO-26-00001', 'Jean', 'Other', 'TEACHER', 'active') RETURNING id`,
     [schoolB.id],
   );
   await pool.query(
@@ -302,7 +302,7 @@ async function main() {
     );
 
     const created = await repo.create(
-      { teacherCode: "USR-ENS-A", classCode: "CLS-1A", subjectCode: "SUB-MATH" },
+      { teacherCode: "CD-SA-AD-26-00001", classCode: "CLS-1A", subjectCode: "SUB-MATH" },
       "CD-SA-26-001",
     );
     assert.ok(created.id);
@@ -324,7 +324,7 @@ async function main() {
     await assert.rejects(
       () =>
         repo.create(
-          { teacherCode: "USR-ENS-A", classCode: "CLS-1A", subjectCode: "SUB-MATH" },
+          { teacherCode: "CD-SA-AD-26-00001", classCode: "CLS-1A", subjectCode: "SUB-MATH" },
           "CD-SA-26-001",
         ),
       (error) => error.statusCode === 409 && error.code === "TEACHER_ASSIGNMENT_ALREADY_EXISTS",
@@ -332,7 +332,7 @@ async function main() {
     await assert.rejects(
       () =>
         repo.create(
-          { teacherCode: "USR-ENS-A", classCode: "CLS-1A", subjectCode: "SUB-OLD" },
+          { teacherCode: "CD-SA-AD-26-00001", classCode: "CLS-1A", subjectCode: "SUB-OLD" },
           "CD-SA-26-001",
         ),
       (error) => error.statusCode === 404 && error.code === "ASSIGNMENT_SUBJECT_NOT_FOUND",
@@ -340,7 +340,7 @@ async function main() {
     await assert.rejects(
       () =>
         repo.create(
-          { teacherCode: "USR-ENS-A", classCode: "CLS-1A", subjectCode: "SUB-UNKNOWN" },
+          { teacherCode: "CD-SA-AD-26-00001", classCode: "CLS-1A", subjectCode: "SUB-UNKNOWN" },
           "CD-SA-26-001",
         ),
       (error) => error.statusCode === 404 && error.code === "ASSIGNMENT_SUBJECT_NOT_FOUND",
@@ -348,7 +348,7 @@ async function main() {
     await assert.rejects(
       () =>
         repo.create(
-          { teacherCode: "USR-ENS-A", classCode: "CLS-1A", subjectCode: "SUB-BIO" },
+          { teacherCode: "CD-SA-AD-26-00001", classCode: "CLS-1A", subjectCode: "SUB-BIO" },
           "CD-SA-26-001",
         ),
       (error) => error.statusCode === 404 && error.code === "ASSIGNMENT_SUBJECT_NOT_FOUND",
@@ -356,7 +356,7 @@ async function main() {
     await assert.rejects(
       () =>
         repo.create(
-          { teacherCode: "USR-ENS-B", classCode: "CLS-1A", subjectCode: "SUB-MATH" },
+          { teacherCode: "CD-SB-JO-26-00001", classCode: "CLS-1A", subjectCode: "SUB-MATH" },
           "CD-SA-26-001",
         ),
       (error) => error.statusCode === 404 && error.code === "ASSIGNMENT_TEACHER_NOT_FOUND",

@@ -76,9 +76,11 @@ async function setupFixture(pool) {
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       country_id UUID NOT NULL REFERENCES countries(id),
       school_code VARCHAR(64) NOT NULL UNIQUE,
+      login_code TEXT,
       name TEXT NOT NULL,
       status TEXT NOT NULL DEFAULT 'active'
     );
+    ALTER TABLE schools ADD COLUMN IF NOT EXISTS login_code TEXT;
     CREATE TABLE IF NOT EXISTS academic_years (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       school_id UUID NOT NULL REFERENCES schools(id),
@@ -150,8 +152,9 @@ async function setupFixture(pool) {
 
   const country = await pool.query(`INSERT INTO countries (name, iso_code) VALUES ('Testland', 'TT') RETURNING id`);
   await pool.query(
-    `INSERT INTO schools (country_id, school_code, name)
-     VALUES ($1, 'SCH-A', 'École A'), ($1, 'SCH-B', 'École B')`,
+    `INSERT INTO schools (country_id, school_code, login_code, name)
+     VALUES ($1, 'SCH-A', 'CD-MA-26-001', 'École A'),
+            ($1, 'SCH-B', 'CD-MB-26-001', 'École B')`,
     [country.rows[0].id],
   );
   await pool.query(
@@ -186,7 +189,7 @@ function createDbAdapter(pool) {
     },
     async getSchoolByCode(code) {
       const result = await pool.query(
-        `SELECT id, school_code FROM schools WHERE school_code = $1 LIMIT 1`,
+        `SELECT id, school_code, login_code FROM schools WHERE upper(login_code) = $1 LIMIT 1`,
         [String(code ?? "").trim().toUpperCase()],
       );
       return result.rows[0] ?? null;
@@ -198,7 +201,7 @@ function adminPrincipal(overrides = {}) {
   return {
     sub: "admin-1",
     role: "Admin School",
-    schoolCode: "SCH-A",
+    schoolCode: "CD-MA-26-001",
     permissions: ["Affectations:READ"],
     ...overrides,
   };
@@ -209,7 +212,7 @@ function teacherPrincipal(overrides = {}) {
     sub: TEACHER_USER_ID,
     role: "Enseignant",
     roleKeys: ["TEACHER"],
-    schoolCode: "SCH-A",
+    schoolCode: "CD-MA-26-001",
     permissions: ["Affectations:READ"],
     teacherCode: "JWT-CODE",
     teacherId: "JWT-CODE",
@@ -445,7 +448,7 @@ async function main() {
     assert.ok(!teacher.body.items.some((item) => item.tombstone));
 
     // GET historique vs L1 : même périmètre actif
-    const historical = await assignmentsRepo.listBySchoolCode("SCH-A", { teacherId: TEACHER_ID });
+    const historical = await assignmentsRepo.listBySchoolCode("CD-MA-26-001", { teacherId: TEACHER_ID });
     assert.deepEqual(
       historical.map((row) => row.id).sort(),
       teacher.body.items.map((item) => item.id).sort(),
@@ -541,7 +544,7 @@ async function main() {
     assert.equal(orphan.teacherUserId, TEACHER_B_USER_ID);
     assert.equal(orphan.teacherId, TEACHER_ORPHAN_ID);
 
-    const historicalLeaks = await assignmentsRepo.listBySchoolCode("SCH-A");
+    const historicalLeaks = await assignmentsRepo.listBySchoolCode("CD-MA-26-001");
     assert.ok(!historicalLeaks.some((row) => row.id === ASSIGN_CROSS_CLASS));
     assert.ok(!historicalLeaks.some((row) => row.id === ASSIGN_CROSS_TEACHER));
     assert.ok(!historicalLeaks.some((row) => row.id === ASSIGN_CROSS_SUBJECT));

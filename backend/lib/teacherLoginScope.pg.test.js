@@ -52,9 +52,11 @@ async function setupFixture(pool) {
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       country_id UUID NOT NULL REFERENCES countries(id),
       school_code VARCHAR(64) NOT NULL UNIQUE,
+      login_code TEXT,
       name TEXT NOT NULL,
       status TEXT NOT NULL DEFAULT 'active'
     );
+    ALTER TABLE schools ADD COLUMN IF NOT EXISTS login_code TEXT;
     CREATE TABLE IF NOT EXISTS users (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       school_id UUID REFERENCES schools(id),
@@ -122,8 +124,9 @@ async function setupFixture(pool) {
 
   const country = await pool.query(`INSERT INTO countries (name, iso_code) VALUES ('RDC', 'CD') RETURNING id`);
   const school = await pool.query(
-    `INSERT INTO schools (country_id, school_code, name)
-     VALUES ($1, 'CD-2026-0001', 'Lycée Scope') RETURNING id, school_code`,
+    `INSERT INTO schools (country_id, school_code, login_code, name)
+     VALUES ($1, 'CD-2026-0001', 'CD-LS-26-001', 'Lycée Scope')
+     RETURNING id, school_code, login_code`,
     [country.rows[0].id],
   );
   const year = await pool.query(
@@ -147,7 +150,7 @@ async function setupFixture(pool) {
   const phys = subjects.rows.find((row) => row.subject_code === "SUB-PHYS");
   const user = await pool.query(
     `INSERT INTO users (school_id, user_code, first_name, last_name, role, status)
-     VALUES ($1, 'USR-SEKE', 'Seke', 'Kilombo', 'TEACHER', 'active') RETURNING id`,
+     VALUES ($1, 'CD-LS-SK-26-00001', 'Seke', 'Kilombo', 'TEACHER', 'active') RETURNING id`,
     [school.rows[0].id],
   );
   const teacher = await pool.query(
@@ -172,9 +175,10 @@ async function setupFixture(pool) {
   );
 
   return {
-    schoolCode: school.rows[0].school_code,
+    schoolCode: school.rows[0].login_code,
     teacher: teacher.rows[0],
     userId: user.rows[0].id,
+    userCode: "CD-LS-SK-26-00001",
     classes: classes.rows,
   };
 }
@@ -199,16 +203,16 @@ async function main() {
 
     const embed = pgRows.rows.map((row) => ({ className: row.class_name, course: row.subject_name }));
     const teacher = {
-      id: fixture.teacher.teacher_code,
-      publicId: fixture.teacher.teacher_code,
+      id: fixture.teacher.id,
+      publicId: fixture.userCode,
       userId: fixture.userId,
-      identifier: "ENS-0099",
+      identifier: fixture.userCode,
       schoolCode: fixture.schoolCode,
       assignments: embed,
     };
     const user = {
       id: fixture.userId,
-      identifier: "ENS-0099",
+      identifier: fixture.userCode,
       role: "Enseignant",
       schoolCode: fixture.schoolCode,
     };
