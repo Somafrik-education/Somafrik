@@ -74,7 +74,7 @@ function createFinancePgStore(repo) {
           pred = sqlSchoolPredicate("s", scope, params);
         }
         const sql = `
-          SELECT st.*, s.login_code AS school_code, ctry.iso_code AS country_iso, cl.name AS class_name
+          SELECT st.*, s.login_code AS school_code, s.login_code AS school_login_code, ctry.iso_code AS country_iso, cl.name AS class_name
           FROM students st
           JOIN schools s ON s.id = st.school_id
           JOIN countries ctry ON ctry.id = s.country_id
@@ -220,7 +220,7 @@ function createFinancePgStore(repo) {
           throw createFinanceError(400, "Identifiant de classe canonique requis (classId ou classCode).", FINANCE_ERROR.CLASS_REQUIRED);
         }
         const rows = await all(
-          `SELECT st.*, s.login_code AS school_code, cl.id AS class_id, cl.class_code, cl.name AS class_name,
+          `SELECT st.*, s.login_code AS school_code, s.login_code AS school_login_code, cl.id AS class_id, cl.class_code, cl.name AS class_name,
                   ay.name AS academic_year
            FROM students st
            JOIN schools s ON s.id = st.school_id

@@ -77,12 +77,12 @@ async function main() {
     const { prepareCanonicalClassContext, postCanonicalClass } = require("../lib/canonicalClassHttp");
 
     const cd = await prepareCanonicalClassContext(request, {
-      schoolCode: "CD-2026-0001",
+      schoolCode: "CD-IN-26-001",
       countryCode: "CD",
       levelName: "6ème",
     });
     const bi = await prepareCanonicalClassContext(request, {
-      schoolCode: "BI-2026-0002",
+      schoolCode: "BI-ESB-26-001",
       countryCode: "BI",
       levelName: "5ème",
     });
@@ -96,7 +96,7 @@ async function main() {
     assert.equal(createdCd.status, 201, JSON.stringify(createdCd.data));
     assert.match(createdCd.data.classCode, /^CLS-/);
     assert.equal(createdCd.data.status, "active");
-    assert.equal(createdCd.data.schoolCode, "CD-2026-0001");
+    assert.equal(createdCd.data.schoolCode, "CD-IN-26-001");
     assert.equal(createdCd.data.name, "6ème");
 
     const createdBi = await postCanonicalClass(request, bi.schoolToken, {
@@ -106,7 +106,7 @@ async function main() {
       status: "active",
     });
     assert.equal(createdBi.status, 201, JSON.stringify(createdBi.data));
-    assert.equal(createdBi.data.schoolCode, "BI-2026-0002");
+    assert.equal(createdBi.data.schoolCode, "BI-ESB-26-001");
 
     const listedCd = await request("/classes", { token: cd.schoolToken });
     assert.equal(listedCd.status, 200);
@@ -142,7 +142,7 @@ async function main() {
     assert.equal(duplicate.status, 409, JSON.stringify(duplicate.data));
 
     const groupB = await prepareCanonicalClassContext(request, {
-      schoolCode: "CD-2026-0001",
+      schoolCode: "CD-IN-26-001",
       countryCode: "CD",
       groupCode: "B",
     });

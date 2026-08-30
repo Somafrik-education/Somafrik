@@ -98,7 +98,7 @@ test("F8-P1-006: Admin Pays n'utilise pas le préfixe schoolCode comme autorité
 
 test("Lot B : mapGridRow projette login_code, jamais school_code transition", () => {
   assert.equal(
-    publicSchoolIdentity({ school_code: "SCH-F8-A", login_code: "CI-EA-26-001" }),
+    publicSchoolIdentity({ school_code: "SCH-F8-A", school_login_code: "CI-EA-26-001", login_code: "ADA-26-00001" }),
     "CI-EA-26-001",
   );
   const mapped = mapGridRow({
@@ -106,7 +106,8 @@ test("Lot B : mapGridRow projette login_code, jamais school_code transition", ()
     grid_code: "FEEGRID-1",
     school_id: "s1",
     school_code: "SCH-F8-A",
-    login_code: "CI-EA-26-001",
+    school_login_code: "CI-EA-26-001",
+    login_code: "ADA-26-00001",
     class_name: "6ème A",
     academic_year: "2025-2026",
     status: "Active",

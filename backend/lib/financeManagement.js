@@ -88,13 +88,13 @@ function obligationStatus({ amountDue, amountPaid, exemption, dueDate, now = new
 
 function publicSchoolIdentity(row = {}, profile = {}) {
   return asTrimmed(
-    row.login_code
+    row.school_login_code
+      || row.schoolLoginCode
       || row.loginCode
-      || row.school_login_code
-      || row.school_code
       || profile.loginCode
       || profile.login_code
       || profile.schoolCode
+      || row.school_code
       || "",
   );
 }
