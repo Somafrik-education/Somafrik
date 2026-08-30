@@ -2,7 +2,7 @@ import { marketingFeatures } from "../../data/marketingContent";
 
 export function FeaturesSection() {
   return (
-    <section id="fonctionnalites" className="scroll-mt-24 bg-white" aria-labelledby="fonctionnalites-titre">
+    <section id="fonctionnalites" className="scroll-mt-28 bg-white" aria-labelledby="fonctionnalites-titre">
       <div className="mx-auto max-w-6xl px-4 py-16 sm:px-6">
         <h2 id="fonctionnalites-titre" className="max-w-2xl text-2xl font-black tracking-tight text-ink sm:text-3xl">
           Les besoins couverts aujourd’hui

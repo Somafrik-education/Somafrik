@@ -2,7 +2,7 @@ import { marketingWebMobile } from "../../data/marketingContent";
 
 export function WebMobileSection() {
   return (
-    <section id={marketingWebMobile.id} className="scroll-mt-24 border-y border-line bg-slate-50/80" aria-labelledby="web-mobile-titre">
+    <section id={marketingWebMobile.id} className="scroll-mt-28 border-y border-line bg-slate-50/80" aria-labelledby="web-mobile-titre">
       <div className="mx-auto max-w-6xl px-4 py-16 sm:px-6">
         <p className="text-xs font-bold uppercase tracking-wide text-brand">{marketingWebMobile.eyebrow}</p>
         <h2 id="web-mobile-titre" className="mt-2 max-w-2xl text-2xl font-black tracking-tight text-ink sm:text-3xl">

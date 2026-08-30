@@ -6,6 +6,7 @@ import {
   marketingLogin,
   marketingNav,
   marketingProduct,
+  marketingProductVisual,
   marketingSecurity,
   marketingWebMobile,
 } from "./marketingContent";
@@ -27,5 +28,12 @@ describe("marketingContent", () => {
   it("garde des identifiants de section stables", () => {
     expect(marketingWebMobile.id).toBe("web-mobile");
     expect(marketingSecurity.id).toBe("securite");
+  });
+
+  it("pointe vers la capture locale du tableau de bord", () => {
+    expect(marketingProductVisual.src).toMatch(/marketing\/somafrik-dashboard-etablissement\.webp$/);
+    expect(marketingProductVisual.alt.length).toBeGreaterThan(20);
+    expect(marketingProductVisual.width).toBe(1440);
+    expect(marketingProductVisual.height).toBe(900);
   });
 });

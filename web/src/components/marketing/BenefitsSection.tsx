@@ -2,7 +2,7 @@ import { marketingBenefits } from "../../data/marketingContent";
 
 export function BenefitsSection() {
   return (
-    <section id="benefices" className="scroll-mt-24 border-y border-line bg-slate-50/80" aria-labelledby="benefices-titre">
+    <section id="benefices" className="scroll-mt-28 border-y border-line bg-slate-50/80" aria-labelledby="benefices-titre">
       <div className="mx-auto max-w-6xl px-4 py-16 sm:px-6">
         <h2 id="benefices-titre" className="max-w-2xl text-2xl font-black tracking-tight text-ink sm:text-3xl">
           Ce que Somafrik apporte à votre établissement

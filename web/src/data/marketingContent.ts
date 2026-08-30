@@ -65,6 +65,15 @@ export const marketingProduct = {
   ],
 } as const;
 
+/** Capture runtime réelle — pas d’illustration, pas de maquette. */
+export const marketingProductVisual = {
+  src: `${import.meta.env.BASE_URL}marketing/somafrik-dashboard-etablissement.webp`,
+  alt: "Tableau de bord Somafrik d’un établissement : scolarité, pédagogie, administration et effectifs, avec des données fictives.",
+  caption: "Tableau de bord de l’établissement, données fictives.",
+  width: 1440,
+  height: 900,
+} as const;
+
 export const marketingBenefits: MarketingBenefit[] = [
   {
     title: "Centraliser la gestion",
