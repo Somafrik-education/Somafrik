@@ -1350,6 +1350,28 @@ class FallbackRepository {
       if (!this._managedEnrollments) this._managedEnrollments = [];
       const self = this;
       const memoryAdapter = {
+        resolveSchoolLoginCode(schoolId) {
+          if (schoolId === seedData.school.id) {
+            return String(
+              seedData.school.loginCode ?? seedData.school.login_code ?? seedData.school.code ?? "",
+            ).trim();
+          }
+          const managed = (self._managedClasses ?? []).find((row) => {
+            const rowSchoolId =
+              String(row.schoolCode ?? "").trim().toUpperCase() ===
+              String(seedData.school.code).toUpperCase()
+                ? seedData.school.id
+                : `school-${String(row.schoolCode ?? "").trim().toUpperCase()}`;
+            return rowSchoolId === schoolId;
+          });
+          if (managed?.schoolCode) return String(managed.schoolCode).trim();
+          const stripped = String(schoolId).replace(/^school-/i, "");
+          const platform = (seedData.platformSchools ?? []).find((row) => {
+            const login = String(row.loginCode ?? row.login_code ?? row.code ?? "").trim().toUpperCase();
+            return login === stripped.toUpperCase();
+          });
+          return String(platform?.loginCode ?? platform?.login_code ?? platform?.code ?? stripped).trim();
+        },
         async getSchoolByCode(code) {
           const normalized = String(code ?? "").trim().toUpperCase();
           const match = (seedData.platformSchools ?? [seedData.school]).find((row) => {
@@ -1483,14 +1505,12 @@ class FallbackRepository {
             );
             const cls = (self._managedClasses ?? []).find((row) => row.id === enrollment?.class_id || row.classCode === enrollment?.class_id);
             const year = (self._managedAcademicYears ?? []).find((item) => item.id === enrollment?.academic_year_id);
-            const schoolCode =
-              params[1] === seedData.school.id
-                ? seedData.school.code
-                : String(params[1]).replace(/^school-/i, "");
+            const schoolLogin = memoryAdapter.resolveSchoolLoginCode(params[1]);
             return {
               ...student,
               student_uuid: student.id,
-              school_code: schoolCode,
+              school_code: schoolLogin,
+              school_login_code: schoolLogin,
               class_id: cls?.id ?? cls?.classId ?? null,
               class_code: cls?.classCode ?? "",
               class_name: cls?.name ?? "",
@@ -1503,18 +1523,7 @@ class FallbackRepository {
         },
         async all(sql, params = []) {
           const text = String(sql).replace(/\s+/g, " ").trim().toUpperCase();
-          const resolveSchoolCode = (schoolId) => {
-            if (schoolId === seedData.school.id) return seedData.school.code;
-            const managed = (self._managedClasses ?? []).find((row) => {
-              const rowSchoolId =
-                String(row.schoolCode ?? "").trim().toUpperCase() ===
-                String(seedData.school.code).toUpperCase()
-                  ? seedData.school.id
-                  : `school-${String(row.schoolCode ?? "").trim().toUpperCase()}`;
-              return rowSchoolId === schoolId;
-            });
-            return managed?.schoolCode ?? String(schoolId).replace(/^school-/i, "");
-          };
+          const resolveSchoolCode = (schoolId) => memoryAdapter.resolveSchoolLoginCode(schoolId);
           if (text.includes("FROM ENROLLMENTS E") && text.includes("WHERE E.CLASS_ID")) {
             const classId = params[0];
             const schoolId = params[1];
@@ -1532,6 +1541,7 @@ class FallbackRepository {
                       ...student,
                       student_uuid: student.id,
                       school_code: resolveSchoolCode(schoolId),
+                      school_login_code: resolveSchoolCode(schoolId),
                       class_id: cls?.id ?? cls?.classId ?? classId,
                       class_code: cls?.classCode ?? "",
                       class_name: cls?.name ?? "",
@@ -1558,6 +1568,7 @@ class FallbackRepository {
                   ...student,
                   student_uuid: student.id,
                   school_code: resolveSchoolCode(schoolId),
+                  school_login_code: resolveSchoolCode(schoolId),
                   class_id: cls?.id ?? cls?.classId ?? null,
                   class_code: cls?.classCode ?? "",
                   class_name: cls?.name ?? "",
