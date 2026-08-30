@@ -174,7 +174,7 @@ function run() {
     status: "Brouillon",
     active: true,
   });
-  const draftBlockedAfter = validateNoteWrite(state, {
+  const draftAllowed = validateNoteWrite(state, {
     studentId: "STU-1",
     schoolCode: "SCH-001",
     evaluationId: "EVAL-DRAFT",
@@ -183,7 +183,7 @@ function run() {
     value: 14,
     gradeStatus: "Saisie",
   });
-  assert.ok(draftBlockedAfter && draftBlockedAfter.includes("non validée"));
+  assert.equal(draftAllowed, null, "NOTES-P1 : brouillon saisissable");
 
   // Calcul pondéré canonique — exclusions
   const { average } = weightedAverage(

@@ -26,6 +26,16 @@ const CANONICAL_CRITICAL_PARITY_GRANTS = Object.freeze([
     }),
   }),
   Object.freeze({
+    roleKey: "TEACHER",
+    moduleKey: "grades",
+    crud: Object.freeze({
+      canCreate: true,
+      canRead: true,
+      canUpdate: true,
+      canDelete: false,
+    }),
+  }),
+  Object.freeze({
     roleKey: "PREFET_ETUDES",
     moduleKey: "assignments",
     crud: Object.freeze({

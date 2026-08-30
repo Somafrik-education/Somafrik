@@ -183,7 +183,7 @@ test("réconciliation J3 ne touche pas un grant students préexistant du comptab
     updatedBy: "custom",
   });
   const changed = await reconcileCanonicalCriticalParityGrants(store);
-  assert.equal(changed, 2, "seuls teacher + prefet sont réconciliés");
+  assert.equal(changed, 3, "teacher assignments + teacher grades + prefet sont réconciliés");
   const accountant = (await store.listGrantsForScope({
     roleKey: "ACCOUNTANT",
     scopeType: "global",
@@ -199,10 +199,14 @@ test("réconciliation J3 ne touche pas un grant students préexistant du comptab
 test("ensureFunctionalRbacBootstrap appelle la réconciliation J3 fail-closed", () => {
   const source = fs.readFileSync(path.join(__dirname, "functionalRbacService.js"), "utf8");
   assert.match(source, /reconcileCanonicalCriticalParityGrants/);
-  assert.equal(CANONICAL_CRITICAL_PARITY_GRANTS.length, 2);
+  assert.equal(CANONICAL_CRITICAL_PARITY_GRANTS.length, 3);
   assert.deepEqual(
     CANONICAL_CRITICAL_PARITY_GRANTS.map((grant) => [grant.roleKey, grant.moduleKey]),
-    [["TEACHER", "assignments"], ["PREFET_ETUDES", "assignments"]],
+    [
+      ["TEACHER", "assignments"],
+      ["TEACHER", "grades"],
+      ["PREFET_ETUDES", "assignments"],
+    ],
   );
   assert.ok(CRITICAL_PARITY_EXCLUDED_ROLE_KEYS.includes("ACCOUNTANT"));
   assert.ok(CRITICAL_PARITY_EXCLUDED_ROLE_KEYS.includes("PARENT"));

@@ -707,18 +707,20 @@ async function runPostgresHttpGuards(databaseUrl) {
 
     const pgCreated = await pool.query(
       `SELECT e.title, e.status, e.active, tm.name AS term_name, e.term_id::text AS term_id,
-              s.school_code, sub.name AS subject_name, c.name AS class_name
+              s.school_code, sub.name AS subject_name, c.name AS class_name, t.teacher_code
        FROM evaluations e
        JOIN schools s ON s.id = e.school_id
        JOIN terms tm ON tm.id = e.term_id
        JOIN subjects sub ON sub.id = e.subject_id
        JOIN classes c ON c.id = e.class_id
+       JOIN teachers t ON t.id = e.teacher_id
        WHERE e.title = 'Interrogation 1' AND s.school_code = 'CD-2026-0001'`,
     );
     assert.equal(pgCreated.rowCount, 1, "évaluation persistée PostgreSQL");
     assert.equal(pgCreated.rows[0].term_name, "Trimestre 1");
     assert.equal(pgCreated.rows[0].subject_name, "Mathématiques");
     assert.equal(pgCreated.rows[0].class_name, "6ème A");
+    assert.equal(pgCreated.rows[0].teacher_code, "ENS-0001", "NOTES-P1 : teacher_id session, pas payload client");
 
     const teacherRefresh = await request(PG_PORT, "/evaluations", { token: teacherToken });
     assert.equal(teacherRefresh.status, 200, JSON.stringify(teacherRefresh.data));
@@ -749,15 +751,7 @@ async function runPostgresHttpGuards(databaseUrl) {
     assert.equal(adverbs.status, 201, JSON.stringify(adverbs.data));
     assert.equal(adverbs.data?.status, "Brouillon");
 
-    const teacherSelfValidate = await request(PG_PORT, `/evaluations/${encodeURIComponent(adverbs.data.id)}`, {
-      method: "PATCH",
-      token: teacherToken,
-      body: { status: "Validée" },
-    });
-    assert.equal(teacherSelfValidate.status, 403, JSON.stringify(teacherSelfValidate.data));
-    assert.equal(teacherSelfValidate.data?.code, PEDAGOGY_ERROR.EVALUATION_VALIDATION_FORBIDDEN);
-
-    const noteBeforeValidation = await request(PG_PORT, "/notes", {
+    const noteOnDraft = await request(PG_PORT, "/notes", {
       method: "POST",
       token: teacherToken,
       body: {
@@ -767,16 +761,26 @@ async function runPostgresHttpGuards(databaseUrl) {
         scale: 20,
       },
     });
-    assert.equal(noteBeforeValidation.status, 409, JSON.stringify(noteBeforeValidation.data));
-    assert.equal(noteBeforeValidation.data?.code, PEDAGOGY_ERROR.EVALUATION_NOT_VALIDATED);
+    assert.ok([200, 201].includes(noteOnDraft.status), JSON.stringify(noteOnDraft.data));
+    assert.equal(Number(noteOnDraft.data?.value ?? noteOnDraft.data?.score), 14);
 
-    const gradesBefore = await pool.query(
-      `SELECT count(*)::int AS count
+    const gradesOnDraft = await pool.query(
+      `SELECT g.score
        FROM grades g
        JOIN evaluations e ON e.id = g.evaluation_id
-       WHERE e.title = 'LES ADVERBES'`,
+       JOIN students st ON st.id = g.student_id
+       WHERE e.title = 'LES ADVERBES' AND st.student_code = 'CD-2026-0001-STU-HTTP-01'`,
     );
-    assert.equal(gradesBefore.rows[0].count, 0, "aucune note PostgreSQL avant validation");
+    assert.equal(gradesOnDraft.rowCount, 1, "note PostgreSQL persistée avant validation direction");
+    assert.equal(Number(gradesOnDraft.rows[0].score), 14);
+
+    const teacherSelfValidate = await request(PG_PORT, `/evaluations/${encodeURIComponent(adverbs.data.id)}`, {
+      method: "PATCH",
+      token: teacherToken,
+      body: { status: "Validée" },
+    });
+    assert.equal(teacherSelfValidate.status, 403, JSON.stringify(teacherSelfValidate.data));
+    assert.equal(teacherSelfValidate.data?.code, PEDAGOGY_ERROR.EVALUATION_VALIDATION_FORBIDDEN);
 
     const prefetValidate = await request(PG_PORT, `/evaluations/${encodeURIComponent(adverbs.data.id)}`, {
       method: "PATCH",
@@ -889,6 +893,34 @@ async function runPostgresHttpGuards(databaseUrl) {
       },
     });
     assert.equal(otherClassEval.status, 201, JSON.stringify(otherClassEval.data));
+
+    const teacherCreateHistory = await request(PG_PORT, "/evaluations", {
+      method: "POST",
+      token: teacherToken,
+      body: {
+        className: "6ème A",
+        subject: "Histoire",
+        period: "Trimestre 1",
+        title: "Teacher Histoire forbidden",
+        evaluationType: "Devoir",
+        scale: 20,
+      },
+    });
+    assert.equal(teacherCreateHistory.status, 403, JSON.stringify(teacherCreateHistory.data));
+
+    const teacherCreateClassB = await request(PG_PORT, "/evaluations", {
+      method: "POST",
+      token: teacherToken,
+      body: {
+        className: "6ème B",
+        subject: "Mathématiques",
+        period: "Trimestre 1",
+        title: "Teacher 6B forbidden",
+        evaluationType: "Devoir",
+        scale: 20,
+      },
+    });
+    assert.equal(teacherCreateClassB.status, 403, JSON.stringify(teacherCreateClassB.data));
 
     const teacherScoped = await request(PG_PORT, "/evaluations", { token: teacherToken });
     const teacherTitles = (teacherScoped.data ?? []).map((row) => row.title);

@@ -151,9 +151,9 @@ test("routePermissions Notes : CREATE OR UPDATE, sans alias legacy", () => {
   ]);
   assert.deepEqual(routePermissions["POST /api/evaluations"], [
     "Notes:CREATE",
-    "Notes:UPDATE",
     "ALL_PRIVILEGES",
   ]);
+  assert.equal(routePermissions["POST /api/evaluations"].includes("Notes:UPDATE"), false);
   assert.deepEqual(routePermissions["PATCH /api/evaluations/:evaluationId"], [
     "Notes:UPDATE",
     "ALL_PRIVILEGES",
@@ -225,6 +225,28 @@ test("CREATE OR UPDATE : POST notes autorisé ; ni l'un ni l'autre → 403", () 
   );
   assert.equal(
     rbac.canAccess({ role: "Préfet des études", permissions: ["Notes:CREATE"] }, "POST /api/evaluations"),
+    true,
+  );
+  assert.equal(
+    rbac.canAccess({ role: "Enseignant", permissions: ["Notes:READ"] }, "POST /api/evaluations"),
+    false,
+    "TEACHER + READ seul : création évaluation refusée",
+  );
+  assert.equal(
+    rbac.canAccess({ role: "Enseignant", permissions: ["Notes:READ", "Notes:UPDATE"] }, "POST /api/evaluations"),
+    false,
+    "TEACHER + UPDATE sans CREATE : création évaluation refusée",
+  );
+  assert.equal(
+    rbac.canAccess({ role: "Enseignant", permissions: ["Notes:READ", "Notes:CREATE"] }, "POST /api/evaluations"),
+    true,
+  );
+  assert.equal(
+    rbac.canAccess({ role: "Enseignant", permissions: ["Notes:READ"] }, "POST /api/notes"),
+    false,
+  );
+  assert.equal(
+    rbac.canAccess({ role: "Enseignant", permissions: ["Notes:READ", "Notes:CREATE"] }, "POST /api/notes"),
     true,
   );
   assert.equal(

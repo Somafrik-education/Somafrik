@@ -1,15 +1,20 @@
 "use strict";
 
-const { toEvaluationStatus, isValidatedEvaluationStatus, isPublishedEvaluationStatus } = require("./gradesCanonical");
+const {
+  toEvaluationStatus,
+  isPublishedEvaluationStatus,
+  evaluationStatusAllowsGradeWrite,
+} = require("./gradesCanonical");
 const { createPedagogyError, PEDAGOGY_ERROR } = require("./pedagogyManagement");
+const { PERMISSION_DENIED } = require("../services/rbacService");
 
 function evaluationIsActive(evaluation) {
   return evaluation?.active !== false && evaluation?.active !== 0;
 }
 
 /**
- * Garde métier P0 : une note n'est acceptée que si l'évaluation PostgreSQL est Validée (`locked`).
- * Ne jamais comparer l'UI « Validée » directement à la colonne PG.
+ * NOTES-P1 : une note est acceptée sur brouillon / ouverte / validée (locked).
+ * Publiée, annulée ou inactive → 409. La validation direction n'est plus un prérequis de saisie.
  */
 function assertEvaluationAllowsGradeEntry(evaluation) {
   if (!evaluation) {
@@ -30,10 +35,10 @@ function assertEvaluationAllowsGradeEntry(evaluation) {
       PEDAGOGY_ERROR.EVALUATION_NOT_VALIDATED,
     );
   }
-  if (!isValidatedEvaluationStatus(evaluation.status)) {
+  if (!evaluationStatusAllowsGradeWrite(evaluation.status, evaluation.active)) {
     throw createPedagogyError(
       409,
-      "Évaluation non validée : saisie des notes refusée.",
+      "Évaluation non saisissable : saisie des notes refusée.",
       PEDAGOGY_ERROR.EVALUATION_NOT_VALIDATED,
     );
   }
@@ -71,6 +76,35 @@ function isTeacherPrincipal(principal) {
   return role === "enseignant" || role === "teacher" || role.includes("enseignant") || role.includes("teacher");
 }
 
+function principalHasToken(principal, token) {
+  const permissions = Array.isArray(principal?.permissions) ? principal.permissions : [];
+  return permissions.some((item) => String(item ?? "").trim() === token);
+}
+
+function throwPermissionDenied(message) {
+  const error = createPedagogyError(403, message, PERMISSION_DENIED);
+  error.code = PERMISSION_DENIED;
+  throw error;
+}
+
+/**
+ * CREATE pour une première saisie, UPDATE pour modifier une note existante.
+ * ALL_PRIVILEGES court-circuite (direction / superadmin déjà hors isTeacherPrincipal).
+ */
+function assertTeacherGradeMutationPermission(principal, existingGrade) {
+  if (!isTeacherPrincipal(principal)) return;
+  if (principalHasToken(principal, "ALL_PRIVILEGES")) return;
+  if (existingGrade) {
+    if (!principalHasToken(principal, "Notes:UPDATE")) {
+      throwPermissionDenied("Permission insuffisante pour modifier une note.");
+    }
+    return;
+  }
+  if (!principalHasToken(principal, "Notes:CREATE")) {
+    throwPermissionDenied("Permission insuffisante pour saisir une note.");
+  }
+}
+
 /**
  * Un enseignant peut créer une évaluation, pas la valider (Préfet / administration).
  */
@@ -90,6 +124,7 @@ module.exports = {
   assertEvaluationAllowsGradeEntry,
   assertStudentEnrolledInEvaluationClass,
   assertTeacherCannotValidateEvaluation,
+  assertTeacherGradeMutationPermission,
   findStateEvaluation,
   isTeacherPrincipal,
 };

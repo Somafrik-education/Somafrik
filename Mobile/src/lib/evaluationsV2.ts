@@ -519,7 +519,9 @@ export function canonicalWeightedAverage(
 }
 
 export function evaluationAllowsGradeEntry(evaluation: CanonicalEvaluation): boolean {
-  return evaluation.active !== false && isValidatedEvaluationStatus(evaluation.status);
+  if (evaluation.active === false) return false;
+  const status = toEvaluationStatus(evaluation.status ?? evaluation.canonicalStatus, "");
+  return status === "draft" || status === "open" || status === "locked";
 }
 
 export const EVALUATIONS_V2_COPY = {
@@ -536,7 +538,7 @@ export const EVALUATIONS_V2_COPY = {
   errorNotes: "Impossible de charger les notes.",
   offlineNotes: "Réseau indisponible. Les notes n'ont pas pu être chargées.",
   averageUnavailable: "Moyenne indisponible",
-  notValidated: "Évaluation non validée : saisie des notes refusée.",
+  notValidated: "Évaluation publiée ou annulée : saisie des notes refusée.",
   missingEvaluationTeacher:
     "Aucun enseignant n'est affecté à cette évaluation. Vérifiez l'affectation du cours.",
   teacherCannotValidate: "Validation réservée au préfet ou à l'administration.",
