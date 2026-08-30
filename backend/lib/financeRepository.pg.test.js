@@ -178,12 +178,9 @@ async function main() {
         error.code === FINANCE_ERROR.STUDENT_NOT_FOUND || error.code === FINANCE_ERROR.TENANT_MISMATCH,
       "principal leftover school_code doit être refusé",
     );
-    assert.equal(
-      await store.getSchoolByCode(leftoverA),
-      null,
-      "getSchoolByCode refuse le leftover school_code",
-    );
-    const byLogin = await store.getSchoolByCode(schoolALogin);
+    const leftoverResolved = await store.withTransaction((tx) => tx.getSchoolByCode(leftoverA));
+    assert.equal(leftoverResolved, null, "getSchoolByCode refuse le leftover school_code");
+    const byLogin = await store.withTransaction((tx) => tx.getSchoolByCode(schoolALogin));
     assert.ok(byLogin, "getSchoolByCode résout le login_code canonique");
     assert.equal(byLogin.code, schoolALogin);
     assert.equal(byLogin.schoolCode, schoolALogin);
