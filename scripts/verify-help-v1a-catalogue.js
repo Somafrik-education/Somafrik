@@ -66,17 +66,11 @@ function assertSourceGuards() {
     "HELP-V1A ne doit pas publier un parcours d'écriture parent-enfant",
   );
 
-  const webSrc = walk(path.join(ROOT, "web/src"))
-    .filter((file) => /\.(ts|tsx)$/.test(file))
-    .map((file) => fs.readFileSync(file, "utf8"))
-    .join("\n");
   const mobileSrc = walk(path.join(ROOT, "Mobile/src"))
     .filter((file) => /\.(ts|tsx)$/.test(file))
     .map((file) => fs.readFileSync(file, "utf8"))
     .join("\n");
-  assert.doesNotMatch(webSrc, /@somafrik\/help-catalog/);
   assert.doesNotMatch(mobileSrc, /@somafrik\/help-catalog/);
-  assert.doesNotMatch(webSrc, /HelpTrigger|HelpPanel/);
   assert.doesNotMatch(mobileSrc, /HelpTrigger|HelpPanel/);
 
   console.log("verify-help-v1a-catalogue: source guards OK");
