@@ -77,6 +77,7 @@ async function setupFixture(pool) {
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       country_id UUID NOT NULL REFERENCES countries(id),
       school_code VARCHAR(64) NOT NULL UNIQUE,
+      login_code VARCHAR(64) NOT NULL UNIQUE,
       name TEXT NOT NULL,
       logo_url TEXT DEFAULT '',
       address TEXT DEFAULT '',
@@ -173,6 +174,8 @@ async function setupFixture(pool) {
   `);
 
   await pool.query(`
+    ALTER TABLE schools ADD COLUMN IF NOT EXISTS login_code VARCHAR(64);
+    CREATE UNIQUE INDEX IF NOT EXISTS uq_schools_login_code ON schools (login_code);
     ALTER TABLE classes ADD COLUMN IF NOT EXISTS level_id UUID REFERENCES education_levels(id);
     ALTER TABLE classes ADD COLUMN IF NOT EXISTS stream_id UUID REFERENCES education_streams(id);
     ALTER TABLE classes ADD COLUMN IF NOT EXISTS group_id UUID REFERENCES education_class_groups(id);
@@ -194,8 +197,8 @@ async function setupFixture(pool) {
   const countryId = country.rows[0].id;
 
   await pool.query(
-    `INSERT INTO schools (country_id, school_code, name)
-     VALUES ($1, 'SCH-A', 'École A'), ($1, 'SCH-B', 'École B')`,
+    `INSERT INTO schools (country_id, school_code, login_code, name)
+     VALUES ($1, 'SCH-A', 'TT-EA-26-001', 'École A'), ($1, 'SCH-B', 'TT-EB-26-001', 'École B')`,
     [countryId],
   );
 
@@ -279,7 +282,7 @@ function createDbAdapter(pool) {
     },
     async getSchoolByCode(code) {
       const result = await pool.query(
-        `SELECT id, school_code, country_id FROM schools WHERE school_code = $1 LIMIT 1`,
+        `SELECT id, school_code, login_code, country_id FROM schools WHERE upper(login_code) = $1 LIMIT 1`,
         [String(code ?? "").trim().toUpperCase()],
       );
       return result.rows[0] ?? null;
@@ -329,7 +332,7 @@ async function main() {
         groupId: ids.groupA,
         status: "active",
       },
-      "SCH-A",
+      "TT-EA-26-001",
     );
     assert.equal(created.name, "6ème");
     assert.equal(created.status, "active");
@@ -339,17 +342,17 @@ async function main() {
     assert.notEqual(created.id, created.classCode);
     assert.match(String(created.id), /^[0-9a-f-]{36}$/i);
 
-    const listed = await repo.listBySchoolCode("SCH-A");
+    const listed = await repo.listBySchoolCode("TT-EA-26-001");
     assert.equal(listed.length, 1);
     assert.equal(listed[0].classCode, created.classCode);
 
-    const updated = await repo.update(created.classCode, "SCH-A", {
+    const updated = await repo.update(created.classCode, "TT-EA-26-001", {
       status: "inactive",
     });
     assert.equal(updated.status, "inactive");
     assert.equal(updated.name, "6ème");
 
-    const reread = await repo.listBySchoolCode("SCH-A");
+    const reread = await repo.listBySchoolCode("TT-EA-26-001");
     assert.equal(reread[0].name, "6ème");
     assert.equal(reread[0].status, "inactive");
 
@@ -362,7 +365,7 @@ async function main() {
             groupId: ids.groupA,
             status: "active",
           },
-          "SCH-A",
+          "TT-EA-26-001",
         ),
       (error) => error.statusCode === 409,
     );
@@ -370,11 +373,11 @@ async function main() {
     const results = await Promise.allSettled([
       repo.create(
         { academicYearId: ids.yearA, levelId: ids.levelA, groupId: ids.groupC, status: "active" },
-        "SCH-A",
+        "TT-EA-26-001",
       ),
       repo.create(
         { academicYearId: ids.yearA, levelId: ids.levelA, groupId: ids.groupC, status: "active" },
-        "SCH-A",
+        "TT-EA-26-001",
       ),
     ]);
     const fulfilled = results.filter((item) => item.status === "fulfilled");
@@ -390,18 +393,18 @@ async function main() {
         groupId: ids.groupA,
         status: "active",
       },
-      "SCH-B",
+      "TT-EB-26-001",
     );
-    assert.equal(inOtherSchool.schoolCode, "SCH-B");
+    assert.equal(inOtherSchool.schoolCode, "TT-EB-26-001");
     assert.equal(inOtherSchool.name, "5ème");
 
-    const listB = await repo.listBySchoolCode("SCH-B");
+    const listB = await repo.listBySchoolCode("TT-EB-26-001");
     assert.equal(listB.length, 1);
     assert.equal(listB[0].classCode, inOtherSchool.classCode);
     assert.ok(!listB.some((row) => row.classCode === created.classCode));
 
     await assert.rejects(
-      () => repo.update(created.classCode, "SCH-B", { status: "active" }),
+      () => repo.update(created.classCode, "TT-EB-26-001", { status: "active" }),
       (error) => error.statusCode === 404,
     );
 
@@ -409,7 +412,7 @@ async function main() {
       () =>
         repo.create(
           { name: "Inventé", academicYearName: "2025-2026", level: "X" },
-          "SCH-A",
+          "TT-EA-26-001",
         ),
       (error) => error.statusCode === 400,
     );

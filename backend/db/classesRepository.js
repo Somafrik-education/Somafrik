@@ -298,7 +298,7 @@ function createClassesRepository(db) {
     }
     return {
       ...inserted,
-      school_code: school.school_code ?? input.schoolCode,
+      school_code: school.login_code ?? school.school_code ?? input.schoolCode,
       academic_year_name: academicYear.name,
       level_name: offering.levelName,
       stream_name: offering.streamName,
@@ -451,7 +451,7 @@ function createClassesRepository(db) {
             entityId: mapped.classCode,
             oldValue: null,
             newValue: mapped,
-            schoolCode: school.school_code ?? input.schoolCode,
+            schoolCode: school.login_code ?? school.school_code ?? input.schoolCode,
           });
         }
         return mapClassRow(inserted);
@@ -597,7 +597,7 @@ function createClassesRepository(db) {
             entityId: mapped.classCode,
             oldValue: mapClassRow(current),
             newValue: mapped,
-            schoolCode: school.school_code ?? schoolCode,
+            schoolCode: school.login_code ?? school.school_code ?? schoolCode,
           });
         }
         return mapped;
