@@ -10,6 +10,7 @@ const FILES = [
   "somafrik-finance-paiements.webp",
   "somafrik-presences-appel.webp",
   "somafrik-evaluations.webp",
+  "somafrik-notes-saisie.webp",
 ];
 const SOURCES = [
   path.join(WEB_ROOT, "src/components/marketing/BusinessProofsSection.tsx"),
@@ -17,7 +18,7 @@ const SOURCES = [
 ];
 
 describe("marketing business proof assets", () => {
-  it("versionne trois WebP locaux, sans docs/, base64 ni Notes", () => {
+  it("versionne quatre WebP runtime locaux, sans docs/ ni base64", () => {
     assert.equal(fs.existsSync(path.join(PROOFS_DIR, "somafrik-notes.webp")), false);
     for (const name of FILES) {
       const bytes = fs.readFileSync(path.join(PROOFS_DIR, name));
@@ -30,7 +31,8 @@ describe("marketing business proof assets", () => {
       const source = fs.readFileSync(file, "utf8");
       assert.doesNotMatch(source, /data:image\//);
       assert.doesNotMatch(source, /["']\/docs\//);
-      assert.doesNotMatch(source, /somafrik-notes/);
     }
+    const content = fs.readFileSync(path.join(WEB_ROOT, "src/data/marketingContent.ts"), "utf8");
+    assert.match(content, /somafrik-notes-saisie\.webp/);
   });
 });

@@ -215,6 +215,17 @@ export const marketingBusinessProofs = {
       width: 780,
       height: 1688,
     },
+    {
+      id: "notes",
+      domain: "Notes",
+      title: "Saisir les notes des élèves",
+      description: "L’enseignant saisit les résultats d’une évaluation directement depuis l’application.",
+      src: `${import.meta.env.BASE_URL}marketing/proofs/somafrik-notes-saisie.webp`,
+      alt: "Application mobile Somafrik — saisie des notes",
+      caption: "Notes",
+      width: 780,
+      height: 1688,
+    },
   ] satisfies readonly MarketingBusinessProof[],
 } as const;
 

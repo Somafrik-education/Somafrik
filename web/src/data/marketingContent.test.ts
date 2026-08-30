@@ -56,16 +56,23 @@ describe("marketingContent", () => {
     ]);
   });
 
-  it("décrit trois preuves métier réelles, sans Notes de substitution", () => {
+  it("décrit quatre preuves métier runtime, dont la saisie des notes", () => {
     expect(marketingBusinessProofs.id).toBe("preuves");
-    expect(marketingBusinessProofs.items).toHaveLength(3);
-    expect(marketingBusinessProofs.items.map((item) => item.id)).toEqual(["finance", "presences", "pedagogie"]);
+    expect(marketingBusinessProofs.items).toHaveLength(4);
+    expect(marketingBusinessProofs.items.map((item) => item.id)).toEqual([
+      "finance",
+      "presences",
+      "pedagogie",
+      "notes",
+    ]);
     expect(marketingBusinessProofs.items.every((item) => item.src.includes("/marketing/proofs/"))).toBe(true);
     expect(marketingBusinessProofs.items.every((item) => !item.src.includes("/docs/"))).toBe(true);
-    const joined = marketingBusinessProofs.items
-      .flatMap((item) => [item.title, item.description, item.alt, item.caption, item.domain])
-      .join(" ");
-    expect(joined).not.toMatch(/notes/i);
+    expect(marketingBusinessProofs.items[2]?.title).toBe("Organiser les évaluations");
     expect(marketingBusinessProofs.items[2]?.caption).toBe("Évaluations");
+    expect(marketingBusinessProofs.items[3]?.title).toBe("Saisir les notes des élèves");
+    expect(marketingBusinessProofs.items[3]?.description).toBe(
+      "L’enseignant saisit les résultats d’une évaluation directement depuis l’application.",
+    );
+    expect(marketingBusinessProofs.items[3]?.src).toMatch(/somafrik-notes-saisie\.webp$/);
   });
 });

@@ -203,14 +203,14 @@ describe("LandingPage — vitrine publique", () => {
     expect(container.querySelector('img[src*="vitrine_02_hero_mobile"]')).toBeNull();
   });
 
-  it("expose #preuves avec les trois captures métier, sans Notes", () => {
+  it("expose #preuves avec les quatre captures métier runtime", () => {
     const { container } = renderLanding();
     const section = container.querySelector("#preuves");
     expect(section).not.toBeNull();
     expect(screen.getByRole("heading", { name: marketingBusinessProofs.title })).toBeInTheDocument();
-    expect(marketingBusinessProofs.items).toHaveLength(3);
+    expect(marketingBusinessProofs.items).toHaveLength(4);
     const images = [...(section?.querySelectorAll("img") ?? [])];
-    expect(images).toHaveLength(3);
+    expect(images).toHaveLength(4);
     for (const item of marketingBusinessProofs.items) {
       const image = images.find((node) => node.getAttribute("src") === item.src);
       expect(image).toBeDefined();
@@ -220,8 +220,9 @@ describe("LandingPage — vitrine publique", () => {
     }
     expect(section?.innerHTML).not.toMatch(/\/docs\//);
     expect(section?.innerHTML).not.toMatch(/data:image\//);
-    expect(section?.textContent).not.toMatch(/notes/i);
-    expect(screen.queryByRole("heading", { name: /suivre les notes/i })).not.toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Organiser les évaluations" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Saisir les notes des élèves" })).toBeInTheDocument();
+    expect(section?.innerHTML).not.toMatch(/iphone|android|device-frame/i);
   });
 
   it("conserve le Hero et Web et mobile de VITRINE-02", () => {

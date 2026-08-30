@@ -6,7 +6,7 @@ Référence : `develop@3be39cfee2718157cfd54993b2745b4aa2dd1fb1`.
 
 ### 1. Captures runtime — lot W01→W06 et Mobile M01–M23
 
-Les captures Web **W01 à W06** et le lot Mobile **M01–M18**, **M20–M23** sont désormais issues d'une instance Somafrik réellement exécutée et marquées dans `CAPTURES-METIER.md`. **M11** reste `À REVALIDER`. **M19** est `BLOQUÉE`. Les lignes Web W07+ restent `À CAPTURER`.
+Les captures Web **W01 à W06** et le lot Mobile **M01–M18**, **M20–M23** sont désormais issues d'une instance Somafrik réellement exécutée et marquées dans `CAPTURES-METIER.md`. **M11** reste `À REVALIDER`. **M19** est `VALIDÉE` (saisie des notes, `TeacherGradesScreen`, données QA fictives). Les lignes Web W07+ restent `À CAPTURER`.
 
 **Décision documentation :** aucun mockup n'est utilisé comme remplacement temporaire.
 
@@ -175,7 +175,7 @@ Comportement observé :
 - `POST /api/evaluations` est refusé : *« L'accès à la plateforme est suspendu pour cet établissement (abonnement expiré ou impayé). »* (`write_notes`) ;
 - le Préfet a `Notes:READ` seulement, pas `Notes:UPDATE` : il ne valide pas non plus.
 
-Impact guide : M17/M18 documentent l'écran réel. **M19 BLOQUÉE**. Aucun correctif produit dans cette PR.
+Impact guide : M17/M18 documentent l'écran réel. **M19** a ensuite été recapturée depuis `TeacherGradesScreen` avec un jeu QA fictif (voir `CAPTURES-METIER.md`). Le blocage write_notes / abonnement peut toujours empêcher ce parcours sur certains établissements. Aucun correctif produit dans cette PR.
 
 Sévérité proposée : P1 — bloque le parcours notes enseignant documenté.
 
