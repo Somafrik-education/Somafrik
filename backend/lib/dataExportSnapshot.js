@@ -11,6 +11,7 @@
 const { DATA_EXPORT_ERROR } = require("./dataExportManagement");
 const { BusinessError } = require("../services/authService");
 const { mapSettingsRow } = require("./schoolSettingsManagement");
+const { canonicalSchoolLoginOrNull } = require("./schoolCodeV2");
 
 function createExportError(status, message, code) {
   const error = new BusinessError(status, message);
@@ -62,7 +63,7 @@ function mapStudent(row) {
     className: row.class_name ?? "",
     classCode: row.class_code ?? "",
     classId: row.class_id ?? row.classId ?? null,
-    schoolCode: row.school_login_code ?? row.login_code ?? "",
+    schoolCode: row.school_login_code ?? row.login_code ?? row.school_code ?? "",
     status: row.status ?? "active",
     academicYearName: row.academic_year_name ?? "",
   };
@@ -106,11 +107,15 @@ function mapTeacher(row) {
 }
 
 async function requireSchoolInSnapshot(executor, schoolCode) {
+  const code = canonicalSchoolLoginOrNull(schoolCode);
+  if (!code) {
+    throw createExportError(404, "Établissement introuvable.", DATA_EXPORT_ERROR.SCHOOL_NOT_FOUND);
+  }
   const school = await executor.one(
-    `SELECT id, school_code, status
+    `SELECT id, login_code, school_code, status
      FROM schools
-     WHERE upper(school_code) = upper($1)`,
-    [schoolCode],
+     WHERE upper(login_code) = $1`,
+    [code],
   );
   if (!school) {
     throw createExportError(404, "Établissement introuvable.", DATA_EXPORT_ERROR.SCHOOL_NOT_FOUND);
@@ -143,8 +148,8 @@ async function loadSchoolSettingsDomain(executor, school) {
     endDate: toIsoDate(row.end_date),
   }));
   const mapped = settingsRow
-    ? mapSettingsRow(settingsRow, school.school_code)
-    : { schoolCode: school.school_code };
+    ? mapSettingsRow(settingsRow, school.login_code)
+    : { schoolCode: school.login_code };
   return {
     ...mapped,
     periods,
@@ -158,7 +163,7 @@ async function loadStudentsDomain(executor, school) {
             st.first_name,
             st.last_name,
             st.status,
-            s.school_code,
+            s.login_code AS school_code,
             cl.id AS class_id,
             cl.class_code,
             cl.name AS class_name,
@@ -181,7 +186,7 @@ async function loadClassesDomain(executor, school) {
             cl.class_code,
             cl.name,
             cl.status,
-            s.school_code,
+            s.login_code AS school_code,
             ay.name AS academic_year_name,
             COUNT(e.id) FILTER (WHERE e.status = 'active')::int AS enrollment_count
      FROM classes cl
@@ -189,7 +194,7 @@ async function loadClassesDomain(executor, school) {
      JOIN academic_years ay ON ay.id = cl.academic_year_id
      LEFT JOIN enrollments e ON e.class_id = cl.id
      WHERE cl.school_id = $1
-     GROUP BY cl.id, s.school_code, ay.name
+     GROUP BY cl.id, s.login_code, ay.name
      ORDER BY cl.name ASC, cl.class_code ASC`,
     [school.id],
   );
@@ -201,7 +206,8 @@ async function loadTeachersDomain(executor, school) {
     `SELECT t.teacher_code,
             t.speciality,
             t.status,
-            s.school_code,
+            s.login_code,
+            u.user_code,
             u.first_name,
             u.last_name,
             u.email,
@@ -227,7 +233,7 @@ async function loadAuditDomain(executor, schoolCode) {
      FROM audit_logs a
      LEFT JOIN schools s ON s.id = a.school_id
      LEFT JOIN users u ON u.id = a.user_id
-     WHERE s.school_code = $1
+     WHERE upper(s.login_code) = $1
      ORDER BY a.created_at DESC
      LIMIT 200`,
     [schoolCode],
@@ -263,7 +269,7 @@ async function loadPgExportDomains(executor, { schoolCode, includeAudit = false,
   await maybeBarrier(options, "teachers", executor);
 
   if (includeAudit) {
-    domains.audit = await loadAuditDomain(executor, school.school_code);
+    domains.audit = await loadAuditDomain(executor, school.login_code);
   }
 
   return { school, domains };

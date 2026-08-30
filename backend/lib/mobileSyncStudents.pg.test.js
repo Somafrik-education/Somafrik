@@ -84,9 +84,11 @@ async function setupFixture(pool) {
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       country_id UUID NOT NULL REFERENCES countries(id),
       school_code VARCHAR(64) NOT NULL UNIQUE,
+      login_code TEXT,
       name TEXT NOT NULL,
       status TEXT NOT NULL DEFAULT 'active'
     );
+    ALTER TABLE schools ADD COLUMN IF NOT EXISTS login_code TEXT;
     CREATE TABLE IF NOT EXISTS academic_years (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       school_id UUID NOT NULL REFERENCES schools(id),
@@ -210,8 +212,9 @@ async function setupFixture(pool) {
     `INSERT INTO countries (name, iso_code) VALUES ('Testland', 'TT') RETURNING id`,
   );
   await pool.query(
-    `INSERT INTO schools (country_id, school_code, name)
-     VALUES ($1, 'SCH-A', 'École A'), ($1, 'SCH-B', 'École B')`,
+    `INSERT INTO schools (country_id, school_code, login_code, name)
+     VALUES ($1, 'SCH-A', 'CD-ST-26-001', 'École A'),
+            ($1, 'SCH-B', 'CD-SU-26-001', 'École B')`,
     [country.rows[0].id],
   );
   await pool.query(
@@ -253,7 +256,7 @@ function createDbAdapter(pool) {
     },
     async getSchoolByCode(code) {
       const result = await pool.query(
-        `SELECT id, school_code FROM schools WHERE school_code = $1 LIMIT 1`,
+        `SELECT id, school_code, login_code FROM schools WHERE upper(login_code) = $1 LIMIT 1`,
         [String(code ?? "").trim().toUpperCase()],
       );
       return result.rows[0] ?? null;
@@ -289,7 +292,7 @@ function adminPrincipal(overrides = {}) {
   return {
     sub: "admin-1",
     role: "Admin School",
-    schoolCode: "SCH-A",
+    schoolCode: "CD-ST-26-001",
     permissions: ["Élèves:READ", "Gérer élèves"],
     ...overrides,
   };
@@ -300,7 +303,7 @@ function teacherPrincipal(overrides = {}) {
     sub: TEACHER_USER_ID,
     role: "Enseignant",
     roleKeys: ["TEACHER"],
-    schoolCode: "SCH-A",
+    schoolCode: "CD-ST-26-001",
     permissions: ["Élèves:READ"],
     assignments: [
       { classId: CLASS_A, classCode: "CLS-A", status: "active" },
@@ -702,7 +705,7 @@ async function main() {
       sub: DUAL_USER_ID,
       role: "Admin School",
       roleKeys: ["SCHOOL_ADMIN"],
-      schoolCode: "SCH-A",
+      schoolCode: "CD-ST-26-001",
       permissions: ["Élèves:READ", "Gérer élèves"],
     });
     assert.equal(dual.httpStatus, 200);
@@ -713,7 +716,7 @@ async function main() {
     const accountantResult = await sync({
       sub: "acc-1",
       role: "Admin School",
-      schoolCode: "SCH-A",
+      schoolCode: "CD-ST-26-001",
       permissions: ["Élèves:READ", "Gérer élèves"],
     });
     assert.equal(accountantResult.httpStatus, 403);
@@ -723,7 +726,7 @@ async function main() {
     const parentPrincipal = {
       sub: PARENT_USER_ID,
       role: "Parent",
-      schoolCode: "SCH-A",
+      schoolCode: "CD-ST-26-001",
       permissions: ["Élèves:READ"],
       studentIds: [STU_B],
     };
@@ -743,7 +746,7 @@ async function main() {
     const selfPrincipal = {
       sub: STUDENT_USER_ID,
       role: "Élève / Étudiant",
-      schoolCode: "SCH-A",
+      schoolCode: "CD-ST-26-001",
       permissions: ["Élèves:READ"],
       studentIds: [STU_B],
     };
@@ -757,7 +760,7 @@ async function main() {
     const customRole = await sync({
       sub: "custom-1",
       role: "CUSTOM_ROLE",
-      schoolCode: "SCH-A",
+      schoolCode: "CD-ST-26-001",
       permissions: ["Élèves:READ"],
     });
     assert.equal(customRole.httpStatus, 200, "CUSTOM_ROLE + Élèves:READ → 200 vide");
@@ -815,7 +818,7 @@ async function main() {
     const classesCursor = encodeMobileSyncCursor(
       {
         resource: "classes",
-        schoolCode: "SCH-A",
+        schoolCode: "CD-ST-26-001",
         schoolId: ids.schoolA,
         principalId: "admin-1",
         scopeHash: cold.body.scopeHash,

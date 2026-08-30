@@ -9,8 +9,8 @@ const { createClassesRepository } = require("../db/classesRepository");
 
 function createMemoryDb() {
   const schools = [
-    { id: "school-a", school_code: "SCH-A", country_id: "country-a" },
-    { id: "school-b", school_code: "SCH-B", country_id: "country-b" },
+    { id: "school-a", school_code: "SCH-A", login_code: "TT-EA-26-001", country_id: "country-a" },
+    { id: "school-b", school_code: "SCH-B", login_code: "TT-EB-26-001", country_id: "country-b" },
   ];
   const years = [
     { id: "ay-a", school_id: "school-a", name: "2025-2026" },
@@ -47,7 +47,7 @@ function createMemoryDb() {
 
   return {
     async getSchoolByCode(code) {
-      return schools.find((row) => row.school_code === String(code).trim().toUpperCase()) ?? null;
+      return schools.find((row) => String(row.login_code).toUpperCase() === String(code).trim().toUpperCase()) ?? null;
     },
     async one(sql, params = []) {
       const text = String(sql).replace(/\s+/g, " ").trim().toUpperCase();
@@ -139,7 +139,7 @@ function createMemoryDb() {
         const stream = streams.find((item) => item.id === row.stream_id);
         return {
           ...row,
-          school_code: school?.school_code,
+          school_code: school?.login_code,
           academic_year_name: year?.name,
           level_name: level?.name,
           stream_name: stream?.name ?? null,
@@ -180,7 +180,7 @@ function createMemoryDb() {
             const stream = streams.find((item) => item.id === row.stream_id);
             return {
               ...row,
-              school_code: school?.school_code,
+              school_code: school?.login_code,
               academic_year_name: year?.name,
               level_name: level?.name,
               stream_name: stream?.name ?? null,
@@ -210,9 +210,9 @@ async function main() {
       groupId: "group-a",
       status: "active",
     },
-    "SCH-A",
+    "TT-EA-26-001",
   );
-  assert.equal(created.schoolCode, "SCH-A");
+  assert.equal(created.schoolCode, "TT-EA-26-001");
   assert.equal(created.name, "6ème Générale");
   assert.equal(created.groupCode, "A");
   assert.equal(created.track, "Générale");
@@ -230,18 +230,18 @@ async function main() {
       groupId: "group-a2",
       status: "active",
     },
-    "SCH-A",
+    "TT-EA-26-001",
   );
   assert.equal(sameNameOtherGroup.name, created.name);
   assert.equal(sameNameOtherGroup.groupCode, "B");
   assert.notEqual(sameNameOtherGroup.classCode, created.classCode);
 
-  const listed = await repo.listBySchoolCode("SCH-A");
+  const listed = await repo.listBySchoolCode("TT-EA-26-001");
   assert.equal(listed.length, 2);
   assert.ok(listed.some((row) => row.classCode === created.classCode));
   assert.ok(listed.some((row) => row.classCode === sameNameOtherGroup.classCode));
 
-  const otherSchoolList = await repo.listBySchoolCode("SCH-B");
+  const otherSchoolList = await repo.listBySchoolCode("TT-EB-26-001");
   assert.equal(otherSchoolList.length, 0);
 
   await assert.rejects(
@@ -254,17 +254,17 @@ async function main() {
           groupId: "group-a",
           status: "active",
         },
-        "SCH-A",
+        "TT-EA-26-001",
       ),
     (error) => error.statusCode === 409,
   );
 
-  const updated = await repo.update(created.classCode, "SCH-A", { status: "inactive" });
+  const updated = await repo.update(created.classCode, "TT-EA-26-001", { status: "inactive" });
   assert.equal(updated.status, "inactive");
   assert.equal(updated.name, "6ème Générale");
 
   await assert.rejects(
-    () => repo.update(created.classCode, "SCH-B", { status: "active" }),
+    () => repo.update(created.classCode, "TT-EB-26-001", { status: "active" }),
     (error) => error.statusCode === 404,
   );
 
@@ -276,7 +276,7 @@ async function main() {
           academicYearName: "2025-2026",
           level: "X",
         },
-        "SCH-A",
+        "TT-EA-26-001",
       ),
     (error) => error.statusCode === 400,
   );

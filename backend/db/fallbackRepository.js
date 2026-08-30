@@ -1799,16 +1799,28 @@ class FallbackRepository {
       const self = this;
       const memoryAdapter = {
         async getSchoolByCode(code) {
-          const normalized = String(code ?? "").trim().toUpperCase();
+          const { canonicalSchoolLoginOrNull } = require("../lib/schoolCodeV2");
+          const login = canonicalSchoolLoginOrNull(code);
+          if (!login) return null;
           const primaryLogin = primarySchoolLoginCode().toUpperCase();
-          if (normalized === primaryLogin) {
+          if (login === primaryLogin) {
             return {
               id: seedData.school.id,
-              school_code: seedData.school.code,
+              school_code: primaryLogin,
               login_code: primarySchoolLoginCode(),
             };
           }
-          return { id: `school-${normalized}`, school_code: normalized, login_code: normalized };
+          const match = (seedData.platformSchools ?? []).find((row) => {
+            const rowLogin = String(row.loginCode ?? row.login_code ?? "").trim().toUpperCase();
+            return rowLogin === login;
+          });
+          if (!match) return null;
+          return {
+            id: match.id ?? `school-${login}`,
+            school_code: login,
+            login_code: login,
+            name: match.name,
+          };
         },
         async one(sql, params = []) {
           const text = String(sql).replace(/\s+/g, " ").trim().toUpperCase();
@@ -3146,10 +3158,14 @@ class FallbackRepository {
       this._platformStore = createPlatformMemoryStore({
         getSchoolByCode: async (code) => {
           const { getCountryCodeFromScope } = require("../lib/countryScope");
+          const { canonicalSchoolLoginOrNull } = require("../lib/schoolCodeV2");
+          const login = canonicalSchoolLoginOrNull(code);
+          if (!login) return null;
           const dataset = await this.getDataset();
-          const school = (dataset.platformSchools ?? []).find(
-            (row) => String(row.code ?? row.schoolCode).toUpperCase() === String(code).toUpperCase(),
-          );
+          const school = (dataset.platformSchools ?? []).find((row) => {
+            const rowLogin = String(row.loginCode ?? row.login_code ?? "").trim().toUpperCase();
+            return rowLogin && rowLogin === login;
+          });
           if (!school) return null;
           const countryCode =
             school.country_code ??

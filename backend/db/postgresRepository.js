@@ -5806,7 +5806,7 @@ class PostgresRepository {
   }
 
   publicSchoolCodeFromRow(school = {}) {
-    return String(school.login_code ?? "").trim() || String(school.school_code ?? "").trim();
+    return String(school.login_code ?? "").trim();
   }
 
   mapSchool(school, subscription) {

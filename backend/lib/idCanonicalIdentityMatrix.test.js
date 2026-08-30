@@ -76,4 +76,9 @@ assert.equal(
   "login personne ne doit jamais servir de tenant établissement",
 );
 
+assert.notEqual(leftoverSchool, schoolLogin, "school_code leftover ≠ login_code");
+assert.notEqual(leftoverTeacher, userCode, "teacher_code leftover ≠ user_code");
+assert.notEqual(personLogin, schoolLogin, "student login_code ≠ school login_code");
+assert.notEqual(schoolLogin, otherSchoolLogin, "école A ≠ école B");
+
 console.log("idCanonicalIdentityMatrix.test.js OK");

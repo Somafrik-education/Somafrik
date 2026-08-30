@@ -62,20 +62,31 @@ async function prepareDatabase(databaseUrl, fixtureSecret) {
       [country.rows[0].id],
     );
     const schoolId = school.rows[0].id;
-    await pool.query(
+    const adminUser = await pool.query(
       `INSERT INTO users (school_id, user_code, first_name, last_name, email, password_hash, pin_hash, role, status)
-       VALUES ($1, 'ADMIN-SYNC-E2E', 'Admin', 'Sync', 'admin-sync-e2e@test.cd', $2, $2, 'SCHOOL_ADMIN', 'active')`,
+       VALUES ($1, 'ADMIN-SYNC-E2E', 'Admin', 'Sync', 'admin-sync-e2e@test.cd', $2, $2, 'SCHOOL_ADMIN', 'active')
+       RETURNING id`,
       [schoolId, passwordHash],
     );
-    await pool.query(
+    const prefetUser = await pool.query(
       `INSERT INTO users (school_id, user_code, first_name, last_name, email, password_hash, pin_hash, role, status)
-       VALUES ($1, 'PREFET-SYNC-E2E', 'Samuel', 'Prefet', 'prefet-sync-e2e@test.cd', $2, $2, 'PREFET_ETUDES', 'active')`,
+       VALUES ($1, 'PREFET-SYNC-E2E', 'Samuel', 'Prefet', 'prefet-sync-e2e@test.cd', $2, $2, 'PREFET_ETUDES', 'active')
+       RETURNING id`,
       [schoolId, passwordHash],
     );
-    await pool.query(
+    const superUser = await pool.query(
       `INSERT INTO users (school_id, user_code, first_name, last_name, email, password_hash, pin_hash, role, status)
-       VALUES (NULL, 'SUPER-SYNC-E2E', 'Super', 'Sync', 'super-sync-e2e@test.cd', $1, $1, 'SUPER_ADMIN', 'active')`,
+       VALUES (NULL, 'SUPER-SYNC-E2E', 'Super', 'Sync', 'super-sync-e2e@test.cd', $1, $1, 'SUPER_ADMIN', 'active')
+       RETURNING id`,
       [passwordHash],
+    );
+    await pool.query(
+      `INSERT INTO user_roles (user_id, school_id, role_key, status)
+       VALUES
+         ($1, $4, 'SCHOOL_ADMIN', 'active'),
+         ($2, $4, 'PREFET_ETUDES', 'active'),
+         ($3, NULL, 'SUPER_ADMIN', 'active')`,
+      [adminUser.rows[0].id, prefetUser.rows[0].id, superUser.rows[0].id, schoolId],
     );
     console.log("[sync-e2e] bootstrap Superadmin fixture", {
       identifier: "super-sync-e2e@test.cd",
@@ -318,11 +329,13 @@ async function runSyncEndToEnd(databaseUrl) {
     assert.ok(createdTeacher, "teachers: GET contient le profil créé par GRANT");
     const teacherCode = String(createdTeacher.teacherCode ?? createdTeacher.id ?? "");
     assert.ok(teacherCode, "teachers: teacherCode canonique");
-    const pgTeacher = await pool.query(`SELECT count(*)::int AS c FROM teachers WHERE user_id = $1 AND teacher_code = $2`, [
-      teacherUserId,
-      teacherCode,
-    ]);
-    assert.equal(pgTeacher.rows[0].c, 1, "teachers: PostgreSQL");
+    const pgTeacher = await pool.query(
+      `SELECT count(*)::int AS c FROM teachers t
+       JOIN users u ON u.id = t.user_id AND u.school_id = t.school_id
+       WHERE t.user_id = $1 AND u.user_code = $2`,
+      [teacherUserId, teacherCode],
+    );
+    assert.equal(pgTeacher.rows[0].c, 1, "teachers: PostgreSQL via users.user_code");
     const deletedTeacher = await request(`/teachers/${encodeURIComponent(teacherCode)}`, {
       method: "DELETE",
       token: prefetToken,

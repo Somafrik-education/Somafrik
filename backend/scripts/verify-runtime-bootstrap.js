@@ -172,7 +172,7 @@ async function runHttpBootstrap() {
     const login = await request("POST", "/api/backoffice/login", {
       identifier: "bootstrap-probe-unknown",
       password: "definitely-wrong-password",
-      schoolCode: "CD-2026-0001",
+      schoolCode: "CD-IN-26-001",
     });
     assert.notStrictEqual(login.status, 500, "POST /api/backoffice/login ne doit jamais être 500");
     assert.strictEqual(

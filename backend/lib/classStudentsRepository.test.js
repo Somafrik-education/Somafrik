@@ -61,7 +61,7 @@ function createMemoryDb() {
 
   const memory = {
     async getSchoolByCode(code) {
-      return schools.find((row) => row.school_code === String(code).trim().toUpperCase()) ?? null;
+      return schools.find((row) => String(row.login_code).toUpperCase() === String(code).trim().toUpperCase()) ?? null;
     },
     async one(sql, params = []) {
       const text = String(sql).replace(/\s+/g, " ").trim().toUpperCase();
@@ -266,7 +266,9 @@ function createMemoryDb() {
       throw new Error(`Unhandled query(): ${text}`);
     },
     seedClass(schoolCode, overrides = {}) {
-      const school = schools.find((row) => row.school_code === schoolCode);
+      const school = schools.find(
+        (row) => row.school_code === schoolCode || row.login_code === schoolCode,
+      );
       const year = years.find((row) => row.school_id === school.id);
       const classCode = overrides.class_code ?? `CLS-${schoolCode}-${classSeq++}`;
       const row = {
@@ -325,12 +327,12 @@ function assertCreateEnvelope(result) {
 async function main() {
   const db = createMemoryDb();
   const repo = createClassStudentsRepository(db);
-  const activeClass = db.seedClass("CD-2026-0001");
-  const inactiveClass = db.seedClass("CD-2026-0001", { name: "6ème B", status: "inactive" });
-  db.seedClass("CD-2026-0002", { name: "5ème A", class_code: "CLS-SCH-B-1" });
+  const activeClass = db.seedClass("CD-IN-26-001");
+  const inactiveClass = db.seedClass("CD-IN-26-001", { name: "6ème B", status: "inactive" });
+  db.seedClass("CD-LL-26-001", { name: "5ème A", class_code: "CLS-SCH-B-1" });
 
   const enrolled = assertCreateEnvelope(
-    await repo.enroll(activeClass.class_code, "CD-2026-0001", {
+    await repo.enroll(activeClass.class_code, "CD-IN-26-001", {
       firstName: "Awa",
       lastName: "Diop",
       gender: "Féminin",
@@ -343,17 +345,17 @@ async function main() {
   assert.equal(enrolled.student.classId, activeClass.id);
   assert.equal(enrolled.student.className, "6ème A");
 
-  const listed = await repo.listByClassCode(activeClass.class_code, "CD-2026-0001");
+  const listed = await repo.listByClassCode(activeClass.class_code, "CD-IN-26-001");
   assert.equal(listed.length, 1);
   assert.equal(listed[0].studentCode, enrolled.student.studentCode);
   listed.forEach(assertStudentProjectionHasNoSecret);
 
-  const schoolList = await repo.listBySchoolCode("CD-2026-0001");
+  const schoolList = await repo.listBySchoolCode("CD-IN-26-001");
   assert.equal(schoolList.length, 1);
   assert.equal(schoolList[0].studentCode, enrolled.student.studentCode);
   schoolList.forEach(assertStudentProjectionHasNoSecret);
 
-  const fetched = await repo.getByStudentCode(enrolled.student.studentCode, "CD-2026-0001");
+  const fetched = await repo.getByStudentCode(enrolled.student.studentCode, "CD-IN-26-001");
   assert.equal(fetched.firstName, "Awa");
   assert.ok(Array.isArray(fetched.enrollments));
   assert.equal(fetched.enrollments.length, 1);
@@ -364,7 +366,7 @@ async function main() {
   assert.ok(fetched.access?.notesPath);
   assertStudentProjectionHasNoSecret(fetched);
 
-  const updated = await repo.updateByStudentCode(enrolled.student.studentCode, "CD-2026-0001", {
+  const updated = await repo.updateByStudentCode(enrolled.student.studentCode, "CD-IN-26-001", {
     parentPhone: "+243800000001",
     expectedUpdatedAt: fetched.updatedAt,
   });
@@ -376,7 +378,7 @@ async function main() {
 
   await assert.rejects(
     () =>
-      repo.updateByStudentCode(enrolled.student.studentCode, "CD-2026-0001", {
+      repo.updateByStudentCode(enrolled.student.studentCode, "CD-IN-26-001", {
         parentPhone: "+243800000002",
         expectedUpdatedAt: fetched.updatedAt,
       }),
@@ -385,7 +387,7 @@ async function main() {
 
   await assert.rejects(
     () =>
-      repo.updateByStudentCode(enrolled.student.studentCode, "CD-2026-0001", {
+      repo.updateByStudentCode(enrolled.student.studentCode, "CD-IN-26-001", {
         classCode: "HACK",
         expectedUpdatedAt: updated.updatedAt,
       }),
@@ -394,16 +396,16 @@ async function main() {
 
   await assert.rejects(
     () =>
-      repo.updateByStudentCode(enrolled.student.studentCode, "CD-2026-0001", {
-        schoolCode: "CD-2026-0002",
+      repo.updateByStudentCode(enrolled.student.studentCode, "CD-IN-26-001", {
+        schoolCode: "CD-LL-26-001",
         expectedUpdatedAt: updated.updatedAt,
       }),
     (error) => error.statusCode === 400,
   );
 
-  const biClass = db.seedClass("BI-2026-0001", { name: "6ème A", class_code: "CLS-BI-1" });
+  const biClass = db.seedClass("BI-LB-26-001", { name: "6ème A", class_code: "CLS-BI-1" });
   const enrolledBi = assertCreateEnvelope(
-    await repo.enroll(biClass.class_code, "BI-2026-0001", {
+    await repo.enroll(biClass.class_code, "BI-LB-26-001", {
       firstName: "Grace",
       lastName: "Nkurunziza",
     }),
@@ -420,7 +422,7 @@ async function main() {
   );
 
   await assert.rejects(
-    () => repo.getByStudentCode(enrolled.student.studentCode, "CD-2026-0002"),
+    () => repo.getByStudentCode(enrolled.student.studentCode, "CD-LL-26-001"),
     (error) => error.statusCode === 404,
   );
 
@@ -436,7 +438,7 @@ async function main() {
     return previousAll(sql, params);
   };
   await assert.rejects(
-    () => repo.getByStudentCode(enrolled.student.studentCode, "CD-2026-0001"),
+    () => repo.getByStudentCode(enrolled.student.studentCode, "CD-IN-26-001"),
     (error) => error.code === "42501",
   );
   db.all = previousAll;
@@ -451,13 +453,13 @@ async function main() {
     }
     return previousAll(sql, params);
   };
-  const dossierWithoutDocsTable = await repo.getByStudentCode(enrolled.student.studentCode, "CD-2026-0001");
+  const dossierWithoutDocsTable = await repo.getByStudentCode(enrolled.student.studentCode, "CD-IN-26-001");
   assert.deepEqual(dossierWithoutDocsTable.documents, []);
   db.all = previousAll;
 
   await assert.rejects(
     () =>
-      repo.enroll(inactiveClass.class_code, "CD-2026-0001", {
+      repo.enroll(inactiveClass.class_code, "CD-IN-26-001", {
         firstName: "Ibra",
         lastName: "Fall",
       }),
@@ -466,7 +468,7 @@ async function main() {
 
   await assert.rejects(
     () =>
-      repo.enroll(activeClass.class_code, "CD-2026-0001", {
+      repo.enroll(activeClass.class_code, "CD-IN-26-001", {
         firstName: "Hack",
         lastName: "Test",
         classCode: "CLS-SCH-B-1",
@@ -475,7 +477,7 @@ async function main() {
   );
 
   await assert.rejects(
-    () => repo.listByClassCode(activeClass.class_code, "CD-2026-0002"),
+    () => repo.listByClassCode(activeClass.class_code, "CD-LL-26-001"),
     (error) => error.statusCode === 404,
   );
 

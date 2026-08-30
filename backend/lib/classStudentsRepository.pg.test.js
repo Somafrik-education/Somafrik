@@ -68,6 +68,7 @@ async function setupFixture(pool) {
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       country_id UUID NOT NULL REFERENCES countries(id),
       school_code VARCHAR(64) NOT NULL UNIQUE,
+      login_code TEXT,
       name TEXT NOT NULL,
       status TEXT NOT NULL DEFAULT 'active',
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -291,11 +292,11 @@ async function setupFixture(pool) {
   const biId = bi.rows[0].id;
 
   await pool.query(
-    `INSERT INTO schools (country_id, school_code, name, short_code)
+    `INSERT INTO schools (country_id, school_code, login_code, name, short_code)
      VALUES
-       ($1, 'CD-2026-0001', 'Institut Nuru', 'IN'),
-       ($1, 'CD-2026-0002', 'Lycée Lumumba', 'LL'),
-       ($2, 'BI-2026-0001', 'Lycée Bujumbura', 'LB')`,
+       ($1, 'CD-2026-0001', 'CD-IN-26-001', 'Institut Nuru', 'IN'),
+       ($1, 'CD-2026-0002', 'CD-LL-26-002', 'Lycée Lumumba', 'LL'),
+       ($2, 'BI-2026-0001', 'BI-LB-26-001', 'Lycée Bujumbura', 'LB')`,
     [cdId, biId],
   );
 
@@ -381,15 +382,15 @@ async function setupFixture(pool) {
     (
       await pool.query(
         `SELECT ay.id FROM academic_years ay JOIN schools s ON s.id = ay.school_id
-         WHERE s.school_code = $1 AND ay.name = $2`,
+         WHERE upper(s.login_code) = $1 AND ay.name = $2`,
         [schoolCode, name],
       )
     ).rows[0].id;
 
   return {
-    yearCd1: await year("CD-2026-0001"),
-    yearCd2: await year("CD-2026-0002"),
-    yearBi: await year("BI-2026-0001"),
+    yearCd1: await year("CD-IN-26-001"),
+    yearCd2: await year("CD-LL-26-002"),
+    yearBi: await year("BI-LB-26-001"),
     levelCd6: levelCd6.rows[0].id,
     levelCd5: levelCd5.rows[0].id,
     levelBi6: levelBi6.rows[0].id,
@@ -415,7 +416,7 @@ function createDbAdapter(pool) {
     },
     async getSchoolByCode(code) {
       const result = await pool.query(
-        `SELECT id, school_code, country_id, name FROM schools WHERE school_code = $1 LIMIT 1`,
+        `SELECT id, school_code, login_code, country_id, name FROM schools WHERE upper(login_code) = $1 LIMIT 1`,
         [String(code ?? "").trim().toUpperCase()],
       );
       return result.rows[0] ?? null;
@@ -487,7 +488,7 @@ async function countStudents(pool, schoolCode) {
     `SELECT COUNT(*)::int AS count
      FROM students st
      JOIN schools s ON s.id = st.school_id
-     WHERE s.school_code = $1`,
+     WHERE upper(s.login_code) = $1`,
     [schoolCode],
   );
   return result.rows[0].count;
@@ -498,7 +499,7 @@ async function countEnrollments(pool, schoolCode) {
     `SELECT COUNT(*)::int AS count
      FROM enrollments e
      JOIN schools s ON s.id = e.school_id
-     WHERE s.school_code = $1`,
+     WHERE upper(s.login_code) = $1`,
     [schoolCode],
   );
   return result.rows[0].count;
@@ -509,7 +510,7 @@ async function countUsers(pool, schoolCode) {
     `SELECT COUNT(*)::int AS count
      FROM users u
      JOIN schools s ON s.id = u.school_id
-     WHERE s.school_code = $1`,
+     WHERE upper(s.login_code) = $1`,
     [schoolCode],
   );
   return result.rows[0].count;
@@ -547,7 +548,7 @@ async function assertCanonicalStudentLogin(pool, studentCode, schoolCode, expect
      FROM students st
      JOIN users u ON u.user_code = st.student_code AND u.school_id = st.school_id
      JOIN schools s ON s.id = st.school_id
-     WHERE st.student_code = $1 AND s.school_code = $2`,
+     WHERE st.student_code = $1 AND upper(s.login_code) = $2`,
     [studentCode, schoolCode],
   );
   assert.equal(result.rowCount, 1, `compte users manquant pour ${studentCode}`);
@@ -627,7 +628,7 @@ async function peekNextStudentCanonicalCode(pool, schoolCode, lastName, firstNam
      FROM schools s
      JOIN countries c ON c.id = s.country_id
      LEFT JOIN student_general_code_counters ctr ON ctr.school_id = s.id
-     WHERE s.school_code = $1`,
+     WHERE upper(s.login_code) = $1`,
     [schoolCode, lastName, firstName],
   );
   assert.equal(result.rowCount, 1);
@@ -655,7 +656,7 @@ async function main() {
         groupId: ids.groupCdA,
         status: "active",
       },
-      "CD-2026-0001",
+      "CD-IN-26-001",
     );
     const activeClassOtherSchool = await classesRepo.create(
       {
@@ -664,7 +665,7 @@ async function main() {
         groupId: ids.groupCdB,
         status: "active",
       },
-      "CD-2026-0002",
+      "CD-LL-26-002",
     );
     const inactiveClass = await classesRepo.create(
       {
@@ -673,7 +674,7 @@ async function main() {
         groupId: ids.groupCdI,
         status: "inactive",
       },
-      "CD-2026-0001",
+      "CD-IN-26-001",
     );
 
     const closedYearClassCode = `CLS-CLOSED-${Date.now()}`;
@@ -690,75 +691,75 @@ async function main() {
       [closedYear.rows[0].school_id, closedYear.rows[0].id, closedYearClassCode],
     );
 
-    const beforeFailed = await countStudents(pool, "CD-2026-0001");
+    const beforeFailed = await countStudents(pool, "CD-IN-26-001");
     await assert.rejects(
       () =>
-        studentsRepo.enroll(inactiveClass.classCode, "CD-2026-0001", {
+        studentsRepo.enroll(inactiveClass.classCode, "CD-IN-26-001", {
           firstName: "Refus",
           lastName: "Inactive",
         }),
       (error) => error.statusCode === 409,
     );
-    assert.equal(await countStudents(pool, "CD-2026-0001"), beforeFailed);
+    assert.equal(await countStudents(pool, "CD-IN-26-001"), beforeFailed);
 
     await assert.rejects(
       () =>
-        studentsRepo.enroll(closedYearClassCode, "CD-2026-0001", {
+        studentsRepo.enroll(closedYearClassCode, "CD-IN-26-001", {
           firstName: "Refus",
           lastName: "ClosedYear",
         }),
       (error) => error.statusCode === 409,
     );
-    assert.equal(await countStudents(pool, "CD-2026-0001"), beforeFailed);
+    assert.equal(await countStudents(pool, "CD-IN-26-001"), beforeFailed);
 
     const rollbackEnrollmentRepo = createRollbackTestRepository(db, wrapTxFailingEnrollment);
-    const beforeRollback = await countStudents(pool, "CD-2026-0001");
-    const beforeRollbackUsers = await countUsers(pool, "CD-2026-0001");
-    const beforeRollbackEnrollments = await countEnrollments(pool, "CD-2026-0001");
+    const beforeRollback = await countStudents(pool, "CD-IN-26-001");
+    const beforeRollbackUsers = await countUsers(pool, "CD-IN-26-001");
+    const beforeRollbackEnrollments = await countEnrollments(pool, "CD-IN-26-001");
     await assert.rejects(
       () =>
-        rollbackEnrollmentRepo.enroll(activeClass.classCode, "CD-2026-0001", {
+        rollbackEnrollmentRepo.enroll(activeClass.classCode, "CD-IN-26-001", {
           firstName: "Rollback",
           lastName: "Test",
         }),
       (error) => error.statusCode === 409,
     );
     assert.equal(
-      await countStudents(pool, "CD-2026-0001"),
+      await countStudents(pool, "CD-IN-26-001"),
       beforeRollback,
       "l'élève doit être annulé si l'inscription échoue",
     );
-    assert.equal(await countUsers(pool, "CD-2026-0001"), beforeRollbackUsers);
-    assert.equal(await countEnrollments(pool, "CD-2026-0001"), beforeRollbackEnrollments);
+    assert.equal(await countUsers(pool, "CD-IN-26-001"), beforeRollbackUsers);
+    assert.equal(await countEnrollments(pool, "CD-IN-26-001"), beforeRollbackEnrollments);
 
     const rollbackUsersRepo = createRollbackTestRepository(db, wrapTxFailingUsers);
     const beforeUsersFail = {
-      students: await countStudents(pool, "CD-2026-0001"),
-      users: await countUsers(pool, "CD-2026-0001"),
-      enrollments: await countEnrollments(pool, "CD-2026-0001"),
+      students: await countStudents(pool, "CD-IN-26-001"),
+      users: await countUsers(pool, "CD-IN-26-001"),
+      enrollments: await countEnrollments(pool, "CD-IN-26-001"),
     };
     await assert.rejects(
       () =>
-        rollbackUsersRepo.enroll(activeClass.classCode, "CD-2026-0001", {
+        rollbackUsersRepo.enroll(activeClass.classCode, "CD-IN-26-001", {
           firstName: "Sans",
           lastName: "Compte",
         }),
       (error) => error.statusCode === 409,
     );
     assert.equal(
-      await countStudents(pool, "CD-2026-0001"),
+      await countStudents(pool, "CD-IN-26-001"),
       beforeUsersFail.students,
       "aucun élève sans compte de connexion",
     );
-    assert.equal(await countUsers(pool, "CD-2026-0001"), beforeUsersFail.users);
+    assert.equal(await countUsers(pool, "CD-IN-26-001"), beforeUsersFail.users);
     assert.equal(
-      await countEnrollments(pool, "CD-2026-0001"),
+      await countEnrollments(pool, "CD-IN-26-001"),
       beforeUsersFail.enrollments,
       "aucune inscription si le compte users échoue",
     );
 
     const enrolled = assertCreateEnvelope(
-      await studentsRepo.enroll(activeClass.classCode, "CD-2026-0001", {
+      await studentsRepo.enroll(activeClass.classCode, "CD-IN-26-001", {
         firstName: "Awa",
         lastName: "Diop",
         gender: "Féminin",
@@ -771,7 +772,7 @@ async function main() {
     await assertCanonicalStudentLogin(
       pool,
       enrolled.student.studentCode,
-      "CD-2026-0001",
+      "CD-IN-26-001",
       studentIdentityInitials("Diop", "Awa"),
     );
     await assert.rejects(
@@ -784,19 +785,19 @@ async function main() {
     );
     assertEnrollmentProjectionHasNoSecret(enrolled.student);
 
-    const listed = await studentsRepo.listByClassCode(activeClass.classCode, "CD-2026-0001");
+    const listed = await studentsRepo.listByClassCode(activeClass.classCode, "CD-IN-26-001");
     assert.equal(listed.length, 1);
     assert.equal(listed[0].studentCode, enrolled.student.studentCode);
     listed.forEach(assertEnrollmentProjectionHasNoSecret);
 
-    const reread = await studentsRepo.getByStudentCode(enrolled.student.studentCode, "CD-2026-0001");
+    const reread = await studentsRepo.getByStudentCode(enrolled.student.studentCode, "CD-IN-26-001");
     assert.equal(reread.classCode, activeClass.classCode);
     assertEnrollmentProjectionHasNoSecret(reread);
 
     const enrolledOtherSchool = assertCreateEnvelope(
       await studentsRepo.enroll(
         activeClassOtherSchool.classCode,
-        "CD-2026-0002",
+        "CD-LL-26-002",
         { firstName: "Ibra", lastName: "Fall" },
       ),
     );
@@ -805,7 +806,7 @@ async function main() {
     await assertCanonicalStudentLogin(
       pool,
       enrolledOtherSchool.student.studentCode,
-      "CD-2026-0002",
+      "CD-LL-26-002",
       studentIdentityInitials("Fall", "Ibra"),
     );
     assertEnrollmentProjectionHasNoSecret(enrolledOtherSchool.student);
@@ -854,12 +855,12 @@ async function main() {
         groupId: ids.groupBiA,
         status: "active",
       },
-      "BI-2026-0001",
+      "BI-LB-26-001",
     );
     const enrolledBiSameEstablishment = assertCreateEnvelope(
       await studentsRepo.enroll(
         activeClassBiSameNumber.classCode,
-        "BI-2026-0001",
+        "BI-LB-26-001",
         { firstName: "Grace", lastName: "Nkurunziza" },
       ),
     );
@@ -875,18 +876,18 @@ async function main() {
     await assertCanonicalStudentLogin(
       pool,
       enrolledBiSameEstablishment.student.studentCode,
-      "BI-2026-0001",
+      "BI-LB-26-001",
       studentIdentityInitials("Nkurunziza", "Grace"),
     );
 
     await assert.rejects(
-      () => studentsRepo.listByClassCode(activeClass.classCode, "CD-2026-0002"),
+      () => studentsRepo.listByClassCode(activeClass.classCode, "CD-LL-26-002"),
       (error) => error.statusCode === 404,
     );
 
     const concurrent = await Promise.all(
       Array.from({ length: 4 }, (_, index) =>
-        studentsRepo.enroll(activeClass.classCode, "CD-2026-0001", {
+        studentsRepo.enroll(activeClass.classCode, "CD-IN-26-001", {
           firstName: `Eleve${index}`,
           lastName: "Concurrent",
         }),
@@ -907,14 +908,14 @@ async function main() {
       await assertCanonicalStudentLogin(
         pool,
         row.student.studentCode,
-        "CD-2026-0001",
+        "CD-IN-26-001",
         studentIdentityInitials("Concurrent", row.student.firstName),
       );
     }
 
     await assert.rejects(
       () =>
-        studentsRepo.enroll(activeClass.classCode, "CD-2026-0001", {
+        studentsRepo.enroll(activeClass.classCode, "CD-IN-26-001", {
           firstName: "Hack",
           lastName: "Scope",
           classCode: activeClassOtherSchool.classCode,
@@ -922,7 +923,7 @@ async function main() {
       (error) => error.statusCode === 400,
     );
 
-    const colliding = await peekNextStudentCanonicalCode(pool, "CD-2026-0001", "Eleve", "Collision");
+    const colliding = await peekNextStudentCanonicalCode(pool, "CD-IN-26-001", "Eleve", "Collision");
     const reservedHash = hashSecret("reserved-occupant-not-student");
     await pool.query("ALTER TABLE users DISABLE TRIGGER USER");
     await pool.query(
@@ -943,12 +944,12 @@ async function main() {
     assert.equal(reservedBefore.rows[0].role, "SECRETARY");
 
     const beforeCollision = {
-      students: await countStudents(pool, "CD-2026-0001"),
-      enrollments: await countEnrollments(pool, "CD-2026-0001"),
-      users: await countUsers(pool, "CD-2026-0001"),
+      students: await countStudents(pool, "CD-IN-26-001"),
+      enrollments: await countEnrollments(pool, "CD-IN-26-001"),
+      users: await countUsers(pool, "CD-IN-26-001"),
     };
     const skipped = assertCreateEnvelope(
-      await studentsRepo.enroll(activeClass.classCode, "CD-2026-0001", {
+      await studentsRepo.enroll(activeClass.classCode, "CD-IN-26-001", {
         firstName: "Collision",
         lastName: "Eleve",
       }),
@@ -962,12 +963,12 @@ async function main() {
     await assertCanonicalStudentLogin(
       pool,
       skipped.student.studentCode,
-      "CD-2026-0001",
+      "CD-IN-26-001",
       studentIdentityInitials("Eleve", "Collision"),
     );
-    assert.equal(await countStudents(pool, "CD-2026-0001"), beforeCollision.students + 1);
-    assert.equal(await countEnrollments(pool, "CD-2026-0001"), beforeCollision.enrollments + 1);
-    assert.equal(await countUsers(pool, "CD-2026-0001"), beforeCollision.users + 1);
+    assert.equal(await countStudents(pool, "CD-IN-26-001"), beforeCollision.students + 1);
+    assert.equal(await countEnrollments(pool, "CD-IN-26-001"), beforeCollision.enrollments + 1);
+    assert.equal(await countUsers(pool, "CD-IN-26-001"), beforeCollision.users + 1);
 
     const reservedAfter = await pool.query(
       `SELECT id, user_code, first_name, last_name, email, role, password_hash, pin_hash,
@@ -982,7 +983,7 @@ async function main() {
     );
     assert.equal(linkedStudent.rowCount, 0, "aucun élève lié implicitement au compte préexistant");
 
-    const micro = await studentsRepo.enroll(activeClass.classCode, "CD-2026-0001", {
+    const micro = await studentsRepo.enroll(activeClass.classCode, "CD-IN-26-001", {
       firstName: "Micro",
       lastName: "Stamp",
     });
@@ -990,13 +991,13 @@ async function main() {
       `UPDATE students SET updated_at = TIMESTAMPTZ '2026-08-25 16:21:38.644244+00' WHERE student_code = $1`,
       [micro.student.studentCode],
     );
-    const microFetched = await studentsRepo.getByStudentCode(micro.student.studentCode, "CD-2026-0001");
+    const microFetched = await studentsRepo.getByStudentCode(micro.student.studentCode, "CD-IN-26-001");
     const jsonToken =
       microFetched.updatedAt instanceof Date
         ? microFetched.updatedAt.toISOString()
         : new Date(microFetched.updatedAt).toISOString();
     assert.equal(jsonToken, "2026-08-25T16:21:38.644Z");
-    const microUpdated = await studentsRepo.updateByStudentCode(micro.student.studentCode, "CD-2026-0001", {
+    const microUpdated = await studentsRepo.updateByStudentCode(micro.student.studentCode, "CD-IN-26-001", {
       firstName: "Micro",
       lastName: "Stamp",
       expectedUpdatedAt: jsonToken,
@@ -1007,7 +1008,7 @@ async function main() {
       "updated_at est strictement supérieur à la milliseconde JSON du token",
     );
 
-    const occRace = await studentsRepo.enroll(activeClass.classCode, "CD-2026-0001", {
+    const occRace = await studentsRepo.enroll(activeClass.classCode, "CD-IN-26-001", {
       firstName: "Occ",
       lastName: "Race",
     });
@@ -1015,7 +1016,7 @@ async function main() {
       `UPDATE students SET updated_at = TIMESTAMPTZ '2026-08-25 16:21:38.644244+00' WHERE student_code = $1`,
       [occRace.student.studentCode],
     );
-    const occFetched = await studentsRepo.getByStudentCode(occRace.student.studentCode, "CD-2026-0001");
+    const occFetched = await studentsRepo.getByStudentCode(occRace.student.studentCode, "CD-IN-26-001");
     const occToken =
       occFetched.updatedAt instanceof Date
         ? occFetched.updatedAt.toISOString()
@@ -1044,12 +1045,12 @@ async function main() {
     const repoA = createClassStudentsRepository(createBarrierDb(pool));
     const repoB = createClassStudentsRepository(createBarrierDb(pool));
     const raced = await Promise.allSettled([
-      repoA.updateByStudentCode(occRace.student.studentCode, "CD-2026-0001", {
+      repoA.updateByStudentCode(occRace.student.studentCode, "CD-IN-26-001", {
         firstName: "OccAlpha",
         lastName: "Race",
         expectedUpdatedAt: occToken,
       }),
-      repoB.updateByStudentCode(occRace.student.studentCode, "CD-2026-0001", {
+      repoB.updateByStudentCode(occRace.student.studentCode, "CD-IN-26-001", {
         parentPhone: "+243800009991",
         expectedUpdatedAt: occToken,
       }),
@@ -1061,7 +1062,7 @@ async function main() {
     assert.equal(accepted.length, 1, "OCC concurrent : un seul PATCH réussit");
     assert.equal(rejected.length, 1, "OCC concurrent : l'autre PATCH reçoit 409");
     const winner = accepted[0].value;
-    const finalRow = await studentsRepo.getByStudentCode(occRace.student.studentCode, "CD-2026-0001");
+    const finalRow = await studentsRepo.getByStudentCode(occRace.student.studentCode, "CD-IN-26-001");
     if (winner.firstName === "OccAlpha") {
       assert.equal(finalRow.firstName, "OccAlpha");
       assert.notEqual(finalRow.parentPhone, "+243800009991");

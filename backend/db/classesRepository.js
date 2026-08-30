@@ -235,7 +235,7 @@ function createClassesRepository(db) {
                 cl.group_code,
                 cl.created_at,
                 cl.updated_at,
-                COALESCE(NULLIF(btrim(s.login_code), ''), s.school_code) AS school_code,
+                s.login_code AS school_code,
                 ay.name AS academic_year_name,
                 el.name AS level_name,
                 es.name AS stream_name,
@@ -298,7 +298,7 @@ function createClassesRepository(db) {
     }
     return {
       ...inserted,
-      school_code: school.login_code ?? school.school_code ?? input.schoolCode,
+      school_code: school.login_code,
       academic_year_name: academicYear.name,
       level_name: offering.levelName,
       stream_name: offering.streamName,
@@ -451,7 +451,7 @@ function createClassesRepository(db) {
             entityId: mapped.classCode,
             oldValue: null,
             newValue: mapped,
-            schoolCode: school.login_code ?? school.school_code ?? input.schoolCode,
+            schoolCode: school.login_code,
           });
         }
         return mapClassRow(inserted);
@@ -597,7 +597,7 @@ function createClassesRepository(db) {
             entityId: mapped.classCode,
             oldValue: mapClassRow(current),
             newValue: mapped,
-            schoolCode: school.login_code ?? school.school_code ?? schoolCode,
+            schoolCode: school.login_code,
           });
         }
         return mapped;
