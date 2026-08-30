@@ -432,7 +432,7 @@ async function runBrowser(databaseUrl) {
       await page.goto(`${WEB_URL}/login`, { waitUntil: "domcontentloaded" });
       await page.getByTestId("login-profile-school").click();
       await page.getByTestId("login-school-code").fill(SCHOOL_CODE);
-      await page.getByTestId("login-identifier").fill("prefet");
+      await page.getByTestId("login-identifier").fill("CD-IN-PF-26-00001");
       await page.getByTestId("login-password").fill("1234");
       await page.getByTestId("login-submit").click();
       const changeTitle = page.getByText("Nouveau mot de passe");

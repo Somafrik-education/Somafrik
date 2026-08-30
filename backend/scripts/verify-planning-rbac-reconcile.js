@@ -228,17 +228,17 @@ async function prepareDatabase(databaseUrl) {
     );
     await pool.query(
       `INSERT INTO users (school_id, user_code, first_name, last_name, email, password_hash, pin_hash, role, status)
-       VALUES ($1, 'ADMIN-CD-2026-0001-01', 'Admin', 'HTTP', 'admin-http@test.cd', $2, $2, 'SCHOOL_ADMIN', 'active')`,
+       VALUES ($1, 'CD-IN-AD-26-00001', 'Admin', 'HTTP', 'admin-http@test.cd', $2, $2, 'SCHOOL_ADMIN', 'active')`,
       [schoolA.rows[0].id, passwordHash],
     );
     await pool.query(
       `INSERT INTO users (school_id, user_code, first_name, last_name, email, password_hash, pin_hash, role, status)
-       VALUES ($1, 'PREFET-CD-2026-0001-01', 'Samuel', 'Prefet', 'prefet-http@test.cd', $2, $2, 'PREFET_ETUDES', 'active')`,
+       VALUES ($1, 'CD-IN-PF-26-00001', 'Samuel', 'Prefet', 'prefet-http@test.cd', $2, $2, 'PREFET_ETUDES', 'active')`,
       [schoolA.rows[0].id, passwordHash],
     );
     await pool.query(
       `INSERT INTO users (school_id, user_code, first_name, last_name, email, password_hash, pin_hash, role, status)
-       VALUES ($1, 'SECRETAIRE-CD-2026-0001-01', 'Amina', 'Secretaire', 'secretaire-http@test.cd', $2, $2, 'SECRETARY', 'active')`,
+       VALUES ($1, 'CD-IN-SC-26-00001', 'Amina', 'Secretaire', 'secretaire-http@test.cd', $2, $2, 'SECRETARY', 'active')`,
       [schoolA.rows[0].id, passwordHash],
     );
     await pool.query(
@@ -248,7 +248,7 @@ async function prepareDatabase(databaseUrl) {
     );
     const teacherUser = await pool.query(
       `INSERT INTO users (school_id, user_code, first_name, last_name, email, password_hash, pin_hash, role, status)
-       VALUES ($1, 'ENS-0001', 'Seke', 'Kilombo', 'seke-http@test.cd', $2, $2, 'TEACHER', 'active') RETURNING id`,
+       VALUES ($1, 'CD-IN-SK-26-00001', 'Seke', 'Kilombo', 'seke-http@test.cd', $2, $2, 'TEACHER', 'active') RETURNING id`,
       [schoolA.rows[0].id, passwordHash],
     );
     const teacher = await pool.query(
@@ -320,7 +320,7 @@ async function main() {
   let child = await startBackend(isolatedUrl);
   try {
     await simulateStalePlanningGrants(isolatedUrl);
-    const stalePrefet = await loginReady("prefet", "1234");
+    const stalePrefet = await loginReady("CD-IN-PF-26-00001", "1234");
     assert.equal(
       planningTokens(sessionPermissions(stalePrefet)).includes("Planning de cours:READ"),
       false,
@@ -333,7 +333,7 @@ async function main() {
     await wait(500);
     child = await startBackend(isolatedUrl);
 
-    const prefet = await loginWithFallback("prefet", ["Planning#2026Aa", "1234"]);
+    const prefet = await loginWithFallback("CD-IN-PF-26-00001", ["Planning#2026Aa", "1234"]);
     const prefetToken = sessionToken(prefet);
     const prefetPerms = planningTokens(sessionPermissions(prefet));
     assert.ok(prefetPerms.includes("Planning de cours:READ"), `Préfet login ${JSON.stringify(prefetPerms)}`);
@@ -384,11 +384,11 @@ async function main() {
     assert.equal(planningTokens(sessionPermissions(parent)).includes("Planning de cours:READ"), false);
     assert.equal((await request("/course-schedules", { token: parentToken })).status, 403);
 
-    const secretary = await loginReady("secretaire", "1234");
+    const secretary = await loginReady("CD-IN-SC-26-00001", "1234");
     assert.equal(planningTokens(sessionPermissions(secretary)).includes("Planning de cours:READ"), false);
     assert.equal((await request("/course-schedules", { token: sessionToken(secretary) })).status, 403);
 
-    const admin = await loginWithFallback("admin", ["1234", "Planning#2026Aa"]);
+    const admin = await loginWithFallback("CD-IN-AD-26-00001", ["1234", "Planning#2026Aa"]);
     const adminPerms = planningTokens(sessionPermissions(admin));
     assert.ok(adminPerms.includes("Planning de cours:READ"));
     assert.ok(adminPerms.includes("Planning de cours:CREATE"));

@@ -174,12 +174,12 @@ async function prepareDatabase(databaseUrl) {
     );
     await pool.query(
       `INSERT INTO users (school_id, user_code, first_name, last_name, email, password_hash, pin_hash, role, status)
-       VALUES ($1, 'ADMIN-CD-2026-0001-01', 'Admin', 'HTTP', 'admin-http@test.cd', $2, $2, 'SCHOOL_ADMIN', 'active')`,
+       VALUES ($1, 'CD-IN-AD-26-00001', 'Admin', 'HTTP', 'admin-http@test.cd', $2, $2, 'SCHOOL_ADMIN', 'active')`,
       [schoolA.rows[0].id, passwordHash],
     );
     await pool.query(
       `INSERT INTO users (school_id, user_code, first_name, last_name, email, password_hash, pin_hash, role, status)
-       VALUES ($1, 'SECRETAIRE-CD-2026-0001-01', 'Amina', 'Secretaire', 'secretaire-http@test.cd', $2, $2, 'SECRETARY', 'active')`,
+       VALUES ($1, 'CD-IN-SC-26-00001', 'Amina', 'Secretaire', 'secretaire-http@test.cd', $2, $2, 'SECRETARY', 'active')`,
       [schoolA.rows[0].id, passwordHash],
     );
     await pool.query(
@@ -189,7 +189,7 @@ async function prepareDatabase(databaseUrl) {
     );
     const teacherUser = await pool.query(
       `INSERT INTO users (school_id, user_code, first_name, last_name, email, password_hash, pin_hash, role, status)
-       VALUES ($1, 'ENS-0001', 'Seke', 'Kilombo', 'seke-http@test.cd', $2, $2, 'TEACHER', 'active') RETURNING id`,
+       VALUES ($1, 'CD-IN-SK-26-00001', 'Seke', 'Kilombo', 'seke-http@test.cd', $2, $2, 'TEACHER', 'active') RETURNING id`,
       [schoolA.rows[0].id, passwordHash],
     );
     const teacher = await pool.query(
@@ -271,7 +271,7 @@ async function runBrowserScenarios() {
   const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
   page.setDefaultTimeout(20000);
   try {
-    await loginAs(page, "admin", "1234");
+    await loginAs(page, "CD-IN-AD-26-00001", "1234");
     const planningNav = page.getByTestId("nav-planning");
     await planningNav.waitFor({ timeout: 20000 });
     await page.locator("nav").getByText("Planning de cours").waitFor();
@@ -314,7 +314,7 @@ async function runBrowserScenarios() {
     assert.equal(await page.getByTestId("planning-page").count(), 0);
     await logout(page);
 
-    await loginAs(page, "secretaire", "1234");
+    await loginAs(page, "CD-IN-SC-26-00001", "1234");
     assert.equal(await page.getByTestId("nav-planning").count(), 0);
     await page.goto(`${WEB_URL}/planning`, { waitUntil: "domcontentloaded" });
     await wait(2000);

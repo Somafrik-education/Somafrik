@@ -223,17 +223,17 @@ async function prepareDatabase(databaseUrl) {
     );
     await pool.query(
       `INSERT INTO users (school_id, user_code, first_name, last_name, email, password_hash, pin_hash, role, status)
-       VALUES ($1, 'ADMIN-CD-2026-0001-01', 'Admin', 'HTTP', 'admin-http@test.cd', $2, $2, 'SCHOOL_ADMIN', 'active')`,
+       VALUES ($1, 'CD-IN-AD-26-00001', 'Admin', 'HTTP', 'admin-http@test.cd', $2, $2, 'SCHOOL_ADMIN', 'active')`,
       [schoolA.rows[0].id, passwordHash],
     );
     await pool.query(
       `INSERT INTO users (school_id, user_code, first_name, last_name, email, password_hash, pin_hash, role, status)
-       VALUES ($1, 'PREFET-CD-2026-0001-01', 'Samuel', 'Prefet', 'prefet-http@test.cd', $2, $2, 'PREFET_ETUDES', 'active')`,
+       VALUES ($1, 'CD-IN-PF-26-00001', 'Samuel', 'Prefet', 'prefet-http@test.cd', $2, $2, 'PREFET_ETUDES', 'active')`,
       [schoolA.rows[0].id, passwordHash],
     );
     await pool.query(
       `INSERT INTO users (school_id, user_code, first_name, last_name, email, password_hash, pin_hash, role, status)
-       VALUES ($1, 'SECRETAIRE-CD-2026-0001-01', 'Amina', 'Secretaire', 'secretaire-http@test.cd', $2, $2, 'SECRETARY', 'active')`,
+       VALUES ($1, 'CD-IN-SC-26-00001', 'Amina', 'Secretaire', 'secretaire-http@test.cd', $2, $2, 'SECRETARY', 'active')`,
       [schoolA.rows[0].id, passwordHash],
     );
     await pool.query(
@@ -351,7 +351,7 @@ function planningTokens(permissions) {
 }
 
 async function runHttpChecks(reconciledMathId) {
-  const prefetToken = await loginReady("prefet", "1234");
+  const prefetToken = await loginReady("CD-IN-PF-26-00001", "1234");
   const prefetJwt = decodeJwt(prefetToken);
   assert.ok(planningTokens(prefetJwt.permissions).includes("Planning de cours:READ"));
   assert.ok(planningTokens(prefetJwt.permissions).includes("Planning de cours:CREATE"));
@@ -396,7 +396,7 @@ async function runHttpChecks(reconciledMathId) {
     (await request("/course-schedules?projection=course-options", { token: parentToken })).status,
     403,
   );
-  const secretaryToken = await loginReady("secretaire", "1234");
+  const secretaryToken = await loginReady("CD-IN-SC-26-00001", "1234");
   assert.equal(
     (await request("/course-schedules?projection=course-options", { token: secretaryToken })).status,
     403,
@@ -409,7 +409,7 @@ async function runBrowserScenarios(reconciledMathId, databaseUrl, assignmentIdsB
   const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
   page.setDefaultTimeout(20000);
   try {
-    await loginAs(page, "prefet", NEW_PASSWORD);
+    await loginAs(page, "CD-IN-PF-26-00001", NEW_PASSWORD);
     await page.getByTestId("nav-planning").click();
     await page.getByTestId("planning-page").waitFor({ timeout: 30000 });
     await page.getByTestId("planning-class-select").waitFor();
@@ -508,7 +508,7 @@ async function main() {
     const mathCourse = afterBoot.courses.find((row) => {
       return true;
     });
-    const prefetProbe = await login("prefet", "1234");
+    const prefetProbe = await login("CD-IN-PF-26-00001", "1234");
     const optionsProbe = await request(
       `/course-schedules?projection=course-options&className=${encodeURIComponent("2ème A")}`,
       { token: prefetProbe },
@@ -522,7 +522,7 @@ async function main() {
     await runHttpChecks(reconciledMathId);
     await runBrowserScenarios(reconciledMathId, isolatedUrl, assignmentIdsBefore);
 
-    const prefetToken = await login("prefet", NEW_PASSWORD);
+    const prefetToken = await login("CD-IN-PF-26-00001", NEW_PASSWORD);
     const weekly = await request("/course-schedules", { token: prefetToken });
     assert.equal(weekly.status, 200, JSON.stringify(weekly.data));
     const slots = Array.isArray(weekly.data) ? weekly.data : [];

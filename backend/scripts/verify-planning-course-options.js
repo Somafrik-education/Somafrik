@@ -391,7 +391,7 @@ async function runBrowserScenarios(existingCourseId, databaseUrl) {
   const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
   page.setDefaultTimeout(20000);
   try {
-    await loginAs(page, "prefet", NEW_PASSWORD);
+    await loginAs(page, "CD-IN-PF-26-00001", NEW_PASSWORD);
     await page.getByTestId("nav-planning").click();
     await page.getByTestId("planning-page").waitFor({ timeout: 30000 });
     await page.getByTestId("planning-class-select").waitFor();
