@@ -164,6 +164,9 @@ Interdit de réintroduire : JWT `classNames`, fallback BO assignment, `teacherCo
 | Mobile | `userTeacherSync` ids `TEACHERS-*` ; login demo `ENS-0001` |
 | SQLCipher / outbox | doit porter UUID serveur ; code public = affichage / recherche |
 | `backend/data.js` | seed runtime `CD-2026-0001` + `identifier: ENS-0001` |
+| Web fabrication | `entityIdentifiers.generateTeacherIdentifiers` / `getTeacherLoginIdentifier` ; `userAccounts.generateUserIdentifier` ; `EntityPage` ; `contacts.ts` |
+| Mobile fabrication | `AdminCrudScreen.generateTeacherPublicId` (`ENS-####` + préfixe école) ; `PRE-*` présences locales |
+| Offline L1 | SQLCipher stocke UUID (`teacher_id`, `teacher_user_id`) **et** `*_code` ; auth L1 = `teacher_user_id` |
 
 Interdit côté clients : fabriquer un identifiant, le reconstruire depuis un nom, tronquer, comparer plusieurs représentations.
 
@@ -173,11 +176,28 @@ Interdit côté clients : fabriquer un identifiant, le reconstruire depuis un no
 | --- | --- | --- |
 | `teachers.legacy_teacher_code` | alias login / lookup | **DELETE** Lot B |
 | `evaluations.legacy_json_id` | id JSON BO, servi comme `publicId` | **DELETE** Lot D (identité runtime) |
+| `school_courses.legacy_json_id` | pont JSON→PG cours | **DELETE** Lot D si plus de lookup multi-clé |
+| `course_schedule_slots.legacy_json_id` | slots datés historiques | **DELETE** Lot D (planning V2 = weekly UUID) |
+| `contacts.legacy_json_id` / `contact_relations.legacy_json_id` | pont BO contacts | **DELETE** Lot D si plus de consommateur d’identité |
 | `school_messages.legacy_json_id` | sync BO | **DELETE** Lot D si plus de consommateur |
-| `establishment_residual_records.legacy_json_id` | résidus archivés | **KEEP** (archive, pas login) — allowlist scanner si besoin |
-| `studentGeneralIdentityPg` variable `legacy_identifier` | PL/pgSQL interne | analyser Lot B ; supprimer si c’est un alias de login |
+| `establishment_residual_records.legacy_json_id` | résidus archivés | **KEEP** (archive, pas login) |
+| `studentGeneralIdentityPg` / `profile_payload.legacyIdentifier` | alias login persisté | **DELETE** Lot B si c’est un alias de connexion |
 | `schoolModule.legacy_school_code` | projection JS | **DELETE** Lot B |
-| `packages/auth` `legacy_admin` | rôle de test Auth | hors identité personne — **KEEP** (pas une colonne `legacy_*` métier) |
+| `packages/auth` `legacy_admin` | rôle de test Auth | **KEEP** (hors identité métier) |
+
+### 2.8 Compléments d’audit (schéma + backend + consommateurs)
+
+Confirmés par inventaire croisé, non couverts seulement par les 19 lignes du tableau :
+
+| Surface | Fait | Lot |
+| --- | --- | --- |
+| `pedagogyPgStore.resolveTeacherIdForPrincipal` | second résolveur multi-alias parallèle à `postgresRepository` | B |
+| `AuthService.findManagedUser` + `AccountIdentifier` | fallback table `teachers` + expansion `ENS-####` | B |
+| `principalIdentity.resolvePrincipalSub` | fallback `publicId` / matricule si pas d’UUID | B |
+| `teacherCanAccessClassFromBackOffice` | mort pour Notes #402 ; encore dans le repo | B DELETE |
+| `mapTeacher` / `getUserIdentifier` | projettent encore `identifier = extractTeacherLoginId` → `ENS-####` | B |
+| Offline L1 `uiProjection` | `teacherCode` affichage vs `teacherId` UUID | C |
+| `verify:teacher-course-canonical-reconcile` | **écrit** encore `legacy_teacher_code = ENS-0001` | B décommission |
 
 ---
 

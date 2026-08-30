@@ -208,7 +208,7 @@
       "loginIdentifier": "aucun",
       "legacyAliases": "course_schedule_slots historique; room TEXT vs room_id",
       "consumers": "Planning Web/Mobile, replacements",
-      "runtimeFallbacks": "verify-planning-replacements OR legacy_teacher_code",
+      "runtimeFallbacks": "verify-planning-replacements OR legacy_teacher_code; school_courses/course_schedule_slots.legacy_json_id (UUID OR code OR legacy)",
       "decision": "KEEP",
       "canonicalFormat": "UUID. teacher_id/class_id/subject/course UUID. room_id UUID.",
       "finalConstraint": "FK UUID NOT NULL sur teacher/class/course/year"
