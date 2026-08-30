@@ -38,6 +38,7 @@ yarn-error.log*
 pnpm-debug.log*
 
 # Dumps live pédagogiques — identifiants opérationnels, jamais committer
+docs/audits/id-canonical-01a-scan-report.json
 docs/audits/evidence/pedagogical-reference-inventory*
 **/pedagogical-reference-inventory.json
 **/pedagogical-reference-inventory.md
