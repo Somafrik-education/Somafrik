@@ -55,7 +55,7 @@ Statuts :
 | M16 | `assets/mobile/16-presences-appel.png` | Appel complet | Enseignant | `TeacherAttendanceScreen.tsx` | VALIDÉE |
 | M17 | `assets/mobile/17-evaluations.png` | Liste évaluations | Enseignant | `Mobile/src/screens/TeacherGradesScreen.tsx` | VALIDÉE |
 | M18 | `assets/mobile/18-evaluation-creation.png` | Nouvelle évaluation | Enseignant habilité | `TeacherGradesScreen.tsx` | VALIDÉE |
-| M19 | `assets/mobile/19-notes-saisie.png` | Roster + saisie notes | Enseignant | `TeacherGradesScreen.tsx` | BLOQUÉE |
+| M19 | `assets/mobile/19-notes-saisie.png` | Roster + saisie notes | Enseignant | `TeacherGradesScreen.tsx` | VALIDÉE |
 | M20 | `assets/mobile/20-parent-accueil.png` | Onglets Profil/Notes/Présence/Frais | Parent | `Mobile/src/navigation/roleTabPreferences.ts` + écrans Student* | VALIDÉE |
 | M21 | `assets/mobile/21-eleve-accueil.png` | Onglets Profil/Notes/Présence/Frais | Élève | `roleTabPreferences.ts` + écrans Student* | VALIDÉE |
 | M22 | `assets/mobile/22-menu-admin-etablissement.png` | Menu filtré avec Paramètres/Structure selon droits | Admin établissement | `Mobile/src/navigation/roleDrawerPreferences.ts` | VALIDÉE |
@@ -79,7 +79,7 @@ Lot Mobile (runtime `50d6dcaac4f5b6d0ab3040a2ab5410ba3240eb34`, Expo web + API +
 
 - le référentiel a fourni **6ème A** / **5ème B**, pas « 6e A » ni « 1ère Scientifique » ;
 - **M11** reste `À REVALIDER` : l'action **Attribuer Enseignant** est réelle, mais la confirmation est un `Alert.alert` natif, non screenshotable ;
-- **M19** est `BLOQUÉE` : aucune évaluation validée n'est saisissable (voir `KNOWN-ISSUES.md`).
+- **M19** est `VALIDÉE` : capture runtime de `TeacherGradesScreen` (mode saisie) avec un jeu QA fictif uniquement — évaluation `Contrôle de géographie`, classe `2ème A`, matière `Géographie`, Trimestre 1, /20, élèves `Amina Kabasele`, `Junior Mbala`, `Grâce Ilunga`, `Patrick Nsona`. L’interface n’a pas été retouchée.
 
 ## Contrôles avant validation d'une capture
 

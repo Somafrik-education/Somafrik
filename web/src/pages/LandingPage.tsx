@@ -8,6 +8,7 @@ import { HeroSection } from "../components/marketing/HeroSection";
 import { ProductSection } from "../components/marketing/ProductSection";
 import { BenefitsSection } from "../components/marketing/BenefitsSection";
 import { FeaturesSection } from "../components/marketing/FeaturesSection";
+import { BusinessProofsSection } from "../components/marketing/BusinessProofsSection";
 import { WebMobileSection } from "../components/marketing/WebMobileSection";
 import { AudiencesSection } from "../components/marketing/AudiencesSection";
 import { SecuritySection } from "../components/marketing/SecuritySection";
@@ -43,6 +44,7 @@ export function LandingPage() {
         <ProductSection />
         <BenefitsSection />
         <FeaturesSection />
+        <BusinessProofsSection />
         <WebMobileSection />
         <AudiencesSection />
         <SecuritySection />

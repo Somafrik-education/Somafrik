@@ -163,6 +163,72 @@ export const marketingMobileVisuals = [
   },
 ] as const;
 
+export type MarketingBusinessProof = {
+  id: string;
+  domain: string;
+  title: string;
+  description: string;
+  src: string;
+  alt: string;
+  caption: string;
+  width: number;
+  height: number;
+};
+
+export const marketingBusinessProofs = {
+  id: "preuves",
+  eyebrow: "Preuves métier",
+  title: "Somafrik dans le quotidien de l’établissement",
+  intro: "Quelques opérations réalisées directement dans l’application.",
+  items: [
+    {
+      id: "finance",
+      domain: "Finance",
+      title: "Suivre les paiements scolaires",
+      description:
+        "Consultez les paiements enregistrés et retrouvez les opérations financières de l’établissement.",
+      src: `${import.meta.env.BASE_URL}marketing/proofs/somafrik-finance-paiements.webp`,
+      alt: "Application mobile Somafrik — liste des paiements",
+      caption: "Paiements",
+      width: 780,
+      height: 1688,
+    },
+    {
+      id: "presences",
+      domain: "Présences",
+      title: "Faire l’appel depuis le mobile",
+      description: "L’enseignant retrouve sa classe et enregistre les présences directement dans l’application.",
+      src: `${import.meta.env.BASE_URL}marketing/proofs/somafrik-presences-appel.webp`,
+      alt: "Application mobile Somafrik — appel des présences",
+      caption: "Appel",
+      width: 780,
+      height: 1688,
+    },
+    {
+      id: "pedagogie",
+      domain: "Pédagogie",
+      title: "Organiser les évaluations",
+      description: "Retrouvez les évaluations utilisées pour le suivi pédagogique.",
+      src: `${import.meta.env.BASE_URL}marketing/proofs/somafrik-evaluations.webp`,
+      alt: "Application mobile Somafrik — liste des évaluations",
+      caption: "Évaluations",
+      width: 780,
+      height: 1688,
+    },
+    {
+      id: "notes",
+      domain: "Notes",
+      title: "Saisir les notes des élèves",
+      description: "L’enseignant saisit les résultats d’une évaluation directement depuis l’application.",
+      src: `${import.meta.env.BASE_URL}marketing/proofs/somafrik-notes-saisie.webp`,
+      alt: "Application mobile Somafrik — saisie des notes",
+      caption: "Notes",
+      width: 780,
+      height: 1688,
+    },
+  ] satisfies readonly MarketingBusinessProof[],
+} as const;
+
 export const marketingAudiences: MarketingAudience[] = [
   {
     title: "Direction",
