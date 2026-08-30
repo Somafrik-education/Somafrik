@@ -53,13 +53,18 @@ function createRepo(pool) {
     query: (sql, params) => pool.query(sql, params),
     one: async (sql, params) => (await pool.query(sql, params)).rows[0] ?? null,
     all: async (sql, params) => (await pool.query(sql, params)).rows,
-    getSchoolByCode: async (code) =>
-      repo.one(
-        `SELECT s.id, s.school_code, s.country_id, c.iso_code AS country_code
+    getSchoolByCode: async (code) => {
+      const { canonicalSchoolLoginOrNull } = require("./schoolCodeV2");
+      const normalized = canonicalSchoolLoginOrNull(code);
+      if (!normalized) return null;
+      return repo.one(
+        `SELECT s.id, s.login_code AS school_code, s.login_code, s.country_id, c.iso_code AS country_code
          FROM schools s JOIN countries c ON c.id = s.country_id
-         WHERE upper(s.school_code) = upper($1)`,
-        [code],
-      ),
+         WHERE upper(s.login_code) = $1
+         LIMIT 1`,
+        [normalized],
+      );
+    },
     getEducationReferenceStore: () => createEducationReferencePgStore(repo),
     getSchoolEducationActiveLists: (schoolCode) => createEducationReferencePgStore(repo).getSchoolActiveLists(schoolCode),
     createTxScope(tx) {

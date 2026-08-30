@@ -57,13 +57,18 @@ function createRepo(pool) {
       const month = String(date.getMonth() + 1).padStart(2, "0");
       return `${day}-${month}-${date.getFullYear()}`;
     },
-    getSchoolByCode: async (code) =>
-      repo.one(
-        `SELECT s.id, s.school_code, s.country_id
+    getSchoolByCode: async (code) => {
+      const { canonicalSchoolLoginOrNull } = require("./schoolCodeV2");
+      const normalized = canonicalSchoolLoginOrNull(code);
+      if (!normalized) return null;
+      return repo.one(
+        `SELECT s.id, s.login_code AS school_code, s.login_code, s.country_id
          FROM schools s
-         WHERE upper(s.school_code) = upper($1)`,
-        [code],
-      ),
+         WHERE upper(s.login_code) = $1
+         LIMIT 1`,
+        [normalized],
+      );
+    },
     async ensureCurrentAcademicYearForSchool(schoolId) {
       return repo.one(
         `SELECT *

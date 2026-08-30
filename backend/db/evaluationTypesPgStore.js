@@ -58,7 +58,7 @@ function createEvaluationTypesPgStore(repo) {
     const rows = await all(
       `SELECT et.*, s.login_code AS school_code
        FROM evaluation_types et
-       JOIN schools s ON s.id = et.school_id`
+       JOIN schools s ON s.id = et.school_id
        WHERE et.school_id = $1
          AND ($2::boolean OR et.status = 'active')
        ORDER BY et.display_order, et.name`,
@@ -76,7 +76,7 @@ function createEvaluationTypesPgStore(repo) {
     const row = await one(
       `SELECT et.*, s.login_code AS school_code
        FROM evaluation_types et
-       JOIN schools s ON s.id = et.school_id`
+       JOIN schools s ON s.id = et.school_id
        WHERE et.id = $1::uuid`,
       [typeId],
     );
@@ -87,7 +87,7 @@ function createEvaluationTypesPgStore(repo) {
     const typeId = asTrimmed(id);
     if (typeId) {
       const row = await one(
-        `SELECT et.*, s.school_code
+        `SELECT et.*, s.login_code AS school_code
          FROM evaluation_types et
          JOIN schools s ON s.id = et.school_id
          WHERE et.id = $1::uuid AND et.school_id = $2::uuid`,
@@ -101,7 +101,7 @@ function createEvaluationTypesPgStore(repo) {
     const row = await one(
       `SELECT et.*, s.login_code AS school_code
        FROM evaluation_types et
-       JOIN schools s ON s.id = et.school_id`
+       JOIN schools s ON s.id = et.school_id
        WHERE et.school_id = $1::uuid
          AND (
            et.code = $2
@@ -176,7 +176,7 @@ function createEvaluationTypesPgStore(repo) {
   }
 
   async function bootstrapCanonicalTypesForAllSchools() {
-    const schools = await all(`SELECT id, school_code FROM schools WHERE deleted_at IS NULL`);
+    const schools = await all(`SELECT id, login_code AS school_code FROM schools WHERE deleted_at IS NULL`);
     for (const school of schools) {
       await seedDefaultTypesIfEmpty(school.id);
     }

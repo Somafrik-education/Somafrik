@@ -107,7 +107,7 @@ function createPlatformPgStore(repo) {
       async getNotificationById(id, principal, { lock } = {}) {
         const params = [id, id];
         let sql = `
-          SELECT n.*, s.school_code, COALESCE(c.iso_code, n.profile_payload->>'countryCode') AS country_code
+          SELECT n.*, s.login_code AS school_code, COALESCE(c.iso_code, n.profile_payload->>'countryCode') AS country_code
           FROM notifications n
           LEFT JOIN schools s ON s.id = n.school_id
           LEFT JOIN countries c ON c.id = s.country_id
@@ -146,7 +146,7 @@ function createPlatformPgStore(repo) {
            SET title = $2, message = $3, type = $4, status = $5, read_at = $6,
                profile_payload = $7::jsonb, updated_at = NOW()
            WHERE id = $1
-           RETURNING *, (SELECT school_code FROM schools WHERE id = notifications.school_id) AS school_code`,
+           RETURNING *, (SELECT login_code FROM schools WHERE id = notifications.school_id) AS school_code`,
           [id, row.title, row.message, row.type, row.status, row.readAt || null, JSON.stringify(mergedProfile)],
         );
       },
@@ -209,7 +209,7 @@ function createPlatformPgStore(repo) {
       },
       async getSubscriptionPaymentByCode(code, principal, { lock } = {}) {
         let sql = `
-          SELECT p.*, s.school_code
+          SELECT p.*, s.login_code AS school_code
           FROM subscription_payments p
           JOIN schools s ON s.id = p.school_id
           WHERE p.payment_code = $1 OR p.id::text = $1
@@ -242,13 +242,13 @@ function createPlatformPgStore(repo) {
           `UPDATE subscription_payments
            SET payment_status = $2, profile_payload = $3::jsonb, updated_at = NOW()
            WHERE id = $1
-           RETURNING *, (SELECT school_code FROM schools WHERE id = subscription_payments.school_id) AS school_code`,
+           RETURNING *, (SELECT login_code FROM schools WHERE id = subscription_payments.school_id) AS school_code`,
           [id, row.paymentStatus, JSON.stringify(mergedProfile)],
         );
       },
       async getSubscriptionDiscountById(id, principal, { lock } = {}) {
         let sql = `
-          SELECT d.*, s.school_code
+          SELECT d.*, s.login_code AS school_code
           FROM subscription_discounts d
           LEFT JOIN schools s ON s.id = d.school_id
           WHERE d.id::text = $1 OR COALESCE(d.profile_payload->>'id','') = $1
@@ -261,7 +261,7 @@ function createPlatformPgStore(repo) {
         return one(
           `INSERT INTO subscription_discounts (school_id, offer_id, status, profile_payload, created_at, updated_at)
            VALUES ($1, (SELECT id FROM subscription_offers WHERE offer_code = $2 OR id::text = $2 LIMIT 1), $3, $4::jsonb, NOW(), NOW())
-           RETURNING *, (SELECT school_code FROM schools WHERE id = subscription_discounts.school_id) AS school_code`,
+           RETURNING *, (SELECT login_code FROM schools WHERE id = subscription_discounts.school_id) AS school_code`,
           [row.schoolId, row.offerId || null, row.status, JSON.stringify(row.profile ?? {})],
         );
       },
@@ -272,7 +272,7 @@ function createPlatformPgStore(repo) {
           `UPDATE subscription_discounts
            SET status = $2, profile_payload = $3::jsonb, updated_at = NOW()
            WHERE id = $1
-           RETURNING *, (SELECT school_code FROM schools WHERE id = subscription_discounts.school_id) AS school_code`,
+           RETURNING *, (SELECT login_code FROM schools WHERE id = subscription_discounts.school_id) AS school_code`,
           [id, row.status, JSON.stringify(mergedProfile)],
         );
       },
@@ -336,14 +336,14 @@ function createPlatformPgStore(repo) {
       ] = await Promise.all([
         repo.all("SELECT * FROM countries ORDER BY created_at, iso_code"),
         repo.all(
-          `SELECT sub.*, s.school_code, c.iso_code AS country_code, c.name AS country_name
+          `SELECT sub.*, s.login_code AS school_code, c.iso_code AS country_code, c.name AS country_name
            FROM subscriptions sub
            JOIN schools s ON s.id = sub.school_id
            JOIN countries c ON c.id = s.country_id
            ORDER BY sub.created_at`,
         ),
         repo.all(
-          `SELECT n.*, s.school_code, COALESCE(c.iso_code, n.profile_payload->>'countryCode') AS country_code
+          `SELECT n.*, s.login_code AS school_code, COALESCE(c.iso_code, n.profile_payload->>'countryCode') AS country_code
            FROM notifications n
            LEFT JOIN schools s ON s.id = n.school_id
            LEFT JOIN countries c ON c.id = s.country_id
@@ -351,25 +351,25 @@ function createPlatformPgStore(repo) {
         ),
         repo.all("SELECT * FROM subscription_offers ORDER BY created_at"),
         repo.all(
-          `SELECT p.*, s.school_code
+          `SELECT p.*, s.login_code AS school_code
            FROM subscription_payments p
            JOIN schools s ON s.id = p.school_id
            ORDER BY p.created_at DESC`,
         ),
         repo.all(
-          `SELECT i.*, s.school_code
+          `SELECT i.*, s.login_code AS school_code
            FROM subscription_invoices i
            JOIN schools s ON s.id = i.school_id
            ORDER BY i.created_at DESC`,
         ),
         repo.all(
-          `SELECT d.*, s.school_code
+          `SELECT d.*, s.login_code AS school_code
            FROM subscription_discounts d
            LEFT JOIN schools s ON s.id = d.school_id
            ORDER BY d.created_at DESC`,
         ),
         repo.all(
-          `SELECT a.*, s.school_code
+          `SELECT a.*, s.login_code AS school_code
            FROM subscription_audit_log a
            LEFT JOIN schools s ON s.id = a.school_id
            ORDER BY a.created_at DESC

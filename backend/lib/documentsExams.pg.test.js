@@ -54,8 +54,17 @@ function createRepo(pool) {
     query: (sql, params) => pool.query(sql, params),
     one: async (sql, params) => (await pool.query(sql, params)).rows[0] ?? null,
     all: async (sql, params) => (await pool.query(sql, params)).rows,
-    getSchoolByCode: async (code) =>
-      repo.one(`SELECT s.id, s.school_code FROM schools s WHERE upper(s.school_code) = upper($1)`, [code]),
+    getSchoolByCode: async (code) => {
+      const { canonicalSchoolLoginOrNull } = require("./schoolCodeV2");
+      const normalized = canonicalSchoolLoginOrNull(code);
+      if (!normalized) return null;
+      return repo.one(
+        `SELECT s.id, s.login_code AS school_code, s.login_code FROM schools s
+         WHERE upper(s.login_code) = $1
+         LIMIT 1`,
+        [normalized],
+      );
+    },
     getDocumentsExamsStore() {
       return createDocumentsExamsPgStore(repo);
     },
@@ -101,7 +110,7 @@ function createRepo(pool) {
 const adminA = {
   role: "Admin School",
   sub: "admin-a",
-  schoolCode: "CD-2026-0001",
+  schoolCode: "CD-IN-26-001",
   permissions: [
     "Organiser examens",
     "Valider examens",
@@ -116,7 +125,7 @@ const adminA = {
 const adminB = {
   role: "Admin School",
   sub: "admin-b",
-  schoolCode: "BI-2026-0002",
+  schoolCode: "BI-ESB-26-001",
   permissions: [
     "Organiser examens",
     "Valider examens",
@@ -144,11 +153,13 @@ async function seedSchools(pool) {
     `INSERT INTO countries (name, iso_code, phone_code, currency) VALUES ('RDC', 'CD', '+243', 'CDF') RETURNING id`,
   );
   const schoolA = await pool.query(
-    `INSERT INTO schools (country_id, school_code, name, status) VALUES ($1, 'CD-2026-0001', 'Lycée A', 'active') RETURNING id`,
+    `INSERT INTO schools (country_id, school_code, login_code, name, status)
+     VALUES ($1, 'CD-2026-0001', 'CD-IN-26-001', 'Lycée A', 'active') RETURNING id`,
     [country.rows[0].id],
   );
   const schoolB = await pool.query(
-    `INSERT INTO schools (country_id, school_code, name, status) VALUES ($1, 'BI-2026-0002', 'Lycée B', 'active') RETURNING id`,
+    `INSERT INTO schools (country_id, school_code, login_code, name, status)
+     VALUES ($1, 'BI-2026-0002', 'BI-ESB-26-001', 'Lycée B', 'active') RETURNING id`,
     [country.rows[0].id],
   );
   return { schoolAId: schoolA.rows[0].id, schoolBId: schoolB.rows[0].id };
@@ -270,12 +281,12 @@ async function testExamCanonicalFlow(pool) {
       subjectId: refsA.subjectId,
       termId: refsA.termId,
       date: "2026-06-10",
-      schoolCode: "BI-2026-0002",
+      schoolCode: "BI-ESB-26-001",
     },
     adminA,
     {},
   );
-  assert.equal(exam.schoolCode, "CD-2026-0001");
+  assert.equal(exam.schoolCode, "CD-IN-26-001");
   assert.equal(exam.className, "6ème A");
   assert.equal(exam.subject, "Mathématiques");
   assert.equal(exam.statusCode, "scheduled");

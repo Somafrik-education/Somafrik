@@ -2724,7 +2724,7 @@ class PostgresRepository {
         fromContext?.subjectCode ??
         fromContext?.publicId ??
         fromContext?.id ??
-        `${String(school?.school_code ?? schoolId).trim().toUpperCase()}-SUB-${normalizedName`)
+        `${String(school?.school_code ?? schoolId).trim().toUpperCase()}-SUB-${normalizedName
           .replace(/\s+/g, "-")
           .toUpperCase()
           .slice(0, 24)}`,
