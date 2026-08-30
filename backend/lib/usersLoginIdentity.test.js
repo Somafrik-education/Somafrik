@@ -96,7 +96,7 @@ function schoolLoginFixture() {
     userCode: "GK-26-00001",
     identifier: "GK-26-00001",
     publicId: "GK-26-00001",
-    schoolCode: school.code,
+    schoolCode: school.loginCode,
     firstName: "Grace",
     lastName: "Kabongo",
     role: "Admin School",
@@ -135,7 +135,7 @@ test("AuthService accepte CD-IK-26-001 avec GK-26-00001", async () => {
   });
   assert.equal(result.school.loginCode, "CD-IK-26-001");
   assert.equal(result.user.id, user.id);
-  assert.equal(result.user.schoolCode, school.code);
+  assert.equal(result.user.schoolCode, school.loginCode);
 });
 
 test("BackOfficeAccessService résout CD-IK-26-001 vers le tenant historique", async () => {

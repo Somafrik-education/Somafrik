@@ -307,7 +307,9 @@ class BackOfficeAccessService {
       return;
     }
 
-    if (user.schoolCode !== school.code) {
+    const schoolLogin = String(school.loginCode ?? "").trim().toUpperCase();
+    const userSchool = String(user.schoolCode ?? "").trim().toUpperCase();
+    if (!schoolLogin || userSchool !== schoolLogin) {
       throw new BusinessError(403, "Un établissement ne peut pas voir les données d'un autre établissement.");
     }
   }
