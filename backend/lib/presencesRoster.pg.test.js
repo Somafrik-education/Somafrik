@@ -54,6 +54,7 @@ async function setupSchema(pool) {
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       country_id UUID NOT NULL REFERENCES countries(id),
       school_code VARCHAR(64) NOT NULL UNIQUE,
+      login_code VARCHAR(64) NOT NULL UNIQUE,
       name TEXT NOT NULL,
       status TEXT NOT NULL DEFAULT 'active'
     );
@@ -116,7 +117,7 @@ function createAdapter(pool) {
     },
     async getSchoolByCode(code) {
       const result = await pool.query(
-        `SELECT id, school_code FROM schools WHERE school_code = $1 LIMIT 1`,
+        `SELECT id, school_code, login_code FROM schools WHERE upper(login_code) = $1 LIMIT 1`,
         [String(code ?? "").trim().toUpperCase()],
       );
       return result.rows[0] ?? null;
@@ -138,11 +139,13 @@ async function main() {
       `INSERT INTO countries (name, iso_code) VALUES ('RDC', 'CD') RETURNING id`,
     );
     const schoolA = await pool.query(
-      `INSERT INTO schools (country_id, school_code, name) VALUES ($1, 'SCH-PRE-A', 'École A') RETURNING id`,
+      `INSERT INTO schools (country_id, school_code, login_code, name)
+       VALUES ($1, 'SCH-PRE-A', 'CD-PRA-26-001', 'École A') RETURNING id`,
       [country.rows[0].id],
     );
     const schoolB = await pool.query(
-      `INSERT INTO schools (country_id, school_code, name) VALUES ($1, 'SCH-PRE-B', 'École B') RETURNING id`,
+      `INSERT INTO schools (country_id, school_code, login_code, name)
+       VALUES ($1, 'SCH-PRE-B', 'CD-PRB-26-001', 'École B') RETURNING id`,
       [country.rows[0].id],
     );
     const yearA = await pool.query(
@@ -186,8 +189,8 @@ async function main() {
 
     const repo = createClassStudentsRepository(createAdapter(pool));
 
-    const rosterA = await repo.listByClassCode("CLS-PRE-A", "SCH-PRE-A");
-    const rosterB = await repo.listByClassCode("CLS-PRE-B", "SCH-PRE-A");
+    const rosterA = await repo.listByClassCode("CLS-PRE-A", "CD-PRA-26-001");
+    const rosterB = await repo.listByClassCode("CLS-PRE-B", "CD-PRA-26-001");
 
     // A / B — inscription active, indépendamment d'un libellé élève (le DTO className est une projection classes.name).
     assert.equal(rosterA.length, 1, "A/B — roster classe A = 1");
@@ -206,15 +209,15 @@ async function main() {
 
     // H — tenant étranger fail-closed.
     await assert.rejects(
-      () => repo.listByClassCode("CLS-PRE-A", "SCH-PRE-B"),
+      () => repo.listByClassCode("CLS-PRE-A", "CD-PRB-26-001"),
       (error) => error.statusCode === 404,
     );
     await assert.rejects(
-      () => repo.listByClassCode("CLS-PRE-X", "SCH-PRE-A"),
+      () => repo.listByClassCode("CLS-PRE-X", "CD-PRA-26-001"),
       (error) => error.statusCode === 404,
     );
 
-    const foreignRoster = await repo.listByClassCode("CLS-PRE-X", "SCH-PRE-B");
+    const foreignRoster = await repo.listByClassCode("CLS-PRE-X", "CD-PRB-26-001");
     assert.equal(foreignRoster.length, 0);
 
     console.log("presencesRoster.pg.test.js: OK");
