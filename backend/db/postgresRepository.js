@@ -2832,8 +2832,7 @@ class PostgresRepository {
         period: attachmentEvaluation.period ?? refs?.term_name,
         teacherId:
           attachmentEvaluation.teacherId ??
-          (refs?.teacher_id ? String(refs.teacher_id) : "") ||
-          refs?.user_code ||
+          (refs?.teacher_id ? String(refs.teacher_id) : refs?.user_code) ??
           undefined,
       };
     }
