@@ -17,17 +17,21 @@ const path = require("node:path");
 const { scanRepository, formatReport } = require("./id-canonical/scan");
 
 function parseArgs(argv) {
-  const args = new Set(argv);
+  const args = [...argv];
+  const flags = new Set(args.filter((item) => item.startsWith("--") && !item.startsWith("--root=")));
+  const rootFlag = args.find((item) => item.startsWith("--root="));
+  const rootIndex = args.indexOf("--root");
   return {
-    strict: args.has("--strict") || process.env.ID_CANONICAL_STRICT === "1",
-    json: args.has("--json"),
-    write: args.has("--write"),
+    strict: flags.has("--strict") || process.env.ID_CANONICAL_STRICT === "1",
+    json: flags.has("--json"),
+    write: flags.has("--write"),
+    root: rootFlag ? rootFlag.slice("--root=".length) : rootIndex >= 0 ? args[rootIndex + 1] : undefined,
   };
 }
 
 function main() {
   const options = parseArgs(process.argv.slice(2));
-  const report = scanRepository({ strict: options.strict });
+  const report = scanRepository({ strict: options.strict, root: options.root });
   const text = formatReport(report);
 
   if (options.write) {

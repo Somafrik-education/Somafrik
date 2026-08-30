@@ -106,19 +106,19 @@ const RULES = [
     id: "LEGACY_SCHOOL_CODE_FORMAT",
     severity: "runtime",
     description: "Format établissement interdit CC-YYYY-NNNN (ex. CD-2026-0001)",
-    re: /\b[A-Z]{2}-20\d{2}-\d{4}\b/g,
+    re: /\b[A-Za-z]{2}-20\d{2}-\d{4}\b/gi,
   },
   {
     id: "LEGACY_SHORT_TEACHER_LOGIN",
     severity: "runtime",
     description: "Login enseignant court ENS-#### (ex. ENS-0001)",
-    re: /\bENS-\d{4}\b/g,
+    re: /\bENS-\d{4}\b/gi,
   },
   {
     id: "LEGACY_COMPOSITE_TEACHER_CODE",
     severity: "runtime",
     description: "Code enseignant composite legacy CC-YYYY-NNNN-ENS-####",
-    re: /\b[A-Z]{2}-20\d{2}-\d{4}-ENS-\d+\b/g,
+    re: /\b[A-Za-z]{2}-20\d{2}-\d{4}-ENS-\d+\b/gi,
   },
   {
     id: "LEGACY_TEACHER_CODE_COLUMN",

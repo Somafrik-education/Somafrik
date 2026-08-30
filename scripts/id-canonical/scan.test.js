@@ -60,11 +60,14 @@ test("aucun préfixe runtime ne peut entrer dans ALLOWLIST_PREFIXES", () => {
   }
 });
 
-test("scanFile détecte les formats et helpers legacy", () => {
+test("scanFile détecte les formats et helpers legacy, y compris en minuscules", () => {
   const sample = `
     const school = "CD-2026-0001";
+    const schoolLower = "cd-2026-0001";
     const login = "ENS-0001";
+    const loginLower = "ens-0001";
     const composite = "CD-2026-0001-ENS-0001";
+    const compositeLower = "cd-2026-0001-ens-0001";
     const legacy_teacher_code = "ENS-0001";
     function isLegacyShortTeacherCode() {}
     const sql = sqlTeacherIdentityEquals("t", "u", "$2");
@@ -81,25 +84,33 @@ test("scanFile détecte les formats et helpers legacy", () => {
   assert.ok(ids.has("TEACHER_SUFFIX_SQL"));
   assert.ok(ids.has("MATERIALIZE_BACKOFFICE_IDENTITY"));
   assert.ok(ids.has("COLLECT_TEACHER_LOOKUP_KEYS"));
+  assert.ok(findings.some((item) => item.ruleId === "LEGACY_SCHOOL_CODE_FORMAT" && item.match === "cd-2026-0001"));
+  assert.ok(findings.some((item) => item.ruleId === "LEGACY_SHORT_TEACHER_LOGIN" && item.match === "ens-0001"));
 });
 
-test("teacherCodeAllocation n'a plus de helper ENS ; des résidus restent ailleurs", () => {
+test("teacherCodeAllocation n'a plus de helper ENS", () => {
   const report = scanRepository({ root: ROOT, strict: false });
-  assert.ok(report.summary.blocking > 0, "des résidus restent hors Lot B — le chantier n'est pas fini");
   const teacherHelper = report.findings.find(
     (item) => item.file === "backend/lib/teacherCodeAllocation.js" && item.ruleId === "LEGACY_SHORT_TEACHER_HELPER",
   );
   assert.equal(teacherHelper, undefined, "allocation enseignant Lot B ne doit plus exposer le helper ENS");
 });
 
-test("CLI rapport sort 0 ; --strict sort 1 tant que des résidus existent", () => {
+test("CLI rapport sort 0 ; --strict sort 1 sur une fixture avec résidu", () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "id-canonical-cli-"));
+  fs.mkdirSync(path.join(tmp, "docs/audits"), { recursive: true });
+  fs.mkdirSync(path.join(tmp, "backend/lib"), { recursive: true });
+  fs.copyFileSync(path.join(ROOT, INVENTORY_RELATIVE), path.join(tmp, INVENTORY_RELATIVE));
+  fs.writeFileSync(path.join(tmp, "backend/lib/legacy-fixture.js"), 'const school = "CD-2026-0001";\n');
+
   const cli = path.join(ROOT, "scripts/verify-id-canonical.js");
-  const report = spawnSync(process.execPath, [cli], { encoding: "utf8" });
+  const report = spawnSync(process.execPath, [cli, `--root=${tmp}`], { encoding: "utf8" });
   assert.equal(report.status, 0, report.stderr);
   assert.match(report.stdout, /ID-CANONICAL-01/);
   assert.match(report.stdout, /inventaire OK/);
+  assert.match(report.stdout, /bloquants=1/);
 
-  const strict = spawnSync(process.execPath, [cli, "--strict"], { encoding: "utf8" });
+  const strict = spawnSync(process.execPath, [cli, "--strict", `--root=${tmp}`], { encoding: "utf8" });
   assert.equal(strict.status, 1);
   assert.match(strict.stderr, /résidu/);
 });

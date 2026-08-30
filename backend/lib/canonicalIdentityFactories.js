@@ -17,25 +17,77 @@ const {
   identityInitials,
   schoolShortCodeFromName,
 } = require("./permanentIdentifier");
-const { formatSchoolLoginCode } = require("./schoolCodeV2");
+const {
+  formatSchoolLoginCode,
+  isLegacySchoolCodeFormat,
+  isV2SchoolLoginCode,
+  normalizeSchoolCode,
+} = require("./schoolCodeV2");
+
+function assertCanonicalSchoolLoginCode(value) {
+  const normalized = normalizeSchoolCode(value);
+  if (isLegacySchoolCodeFormat(normalized)) {
+    const error = new Error(
+      "createCanonicalSchool refuse le format legacy CC-YYYY-NNNN (ex. CD-2026-0001).",
+    );
+    error.code = "CANONICAL_SCHOOL_LOGIN_LEGACY_FORBIDDEN";
+    throw error;
+  }
+  if (!isV2SchoolLoginCode(normalized)) {
+    const error = new Error("createCanonicalSchool exige un login_code V2 (ex. CD-IN-26-001).");
+    error.code = "CANONICAL_SCHOOL_LOGIN_INVALID";
+    throw error;
+  }
+  const [countryIso, shortCode] = normalized.split("-");
+  return { loginCode: normalized, countryIso, shortCode };
+}
 const {
   formatStudentCanonicalCode,
   studentIdentityInitials,
 } = require("./studentCanonicalIdentifier");
 
 function createCanonicalSchool(overrides = {}) {
-  const countryIso = String(overrides.countryIso ?? "CD").trim().toUpperCase();
   const name = String(overrides.name ?? "Institut Nuru").trim();
   const year = Number(overrides.year ?? 2026);
   const sequence = Number(overrides.sequence ?? 1);
-  const loginCode =
-    overrides.loginCode ?? formatSchoolLoginCode({ countryIso, schoolName: name, year, sequence });
+  let countryIso = String(overrides.countryIso ?? "CD").trim().toUpperCase();
+  let loginCode;
+  let shortCode;
+  if (overrides.loginCode != null) {
+    const parsed = assertCanonicalSchoolLoginCode(overrides.loginCode);
+    loginCode = parsed.loginCode;
+    countryIso = parsed.countryIso;
+    shortCode = parsed.shortCode;
+    if (overrides.shortCode != null) {
+      const requested = String(overrides.shortCode).trim().toUpperCase();
+      if (requested !== shortCode) {
+        const error = new Error(
+          `createCanonicalSchool: shortCode ${requested} incompatible avec login_code ${loginCode}.`,
+        );
+        error.code = "CANONICAL_SCHOOL_SHORT_CODE_MISMATCH";
+        throw error;
+      }
+    }
+  } else {
+    loginCode = formatSchoolLoginCode({ countryIso, schoolName: name, year, sequence });
+    shortCode = schoolShortCodeFromName(name);
+    if (overrides.shortCode != null) {
+      const requested = String(overrides.shortCode).trim().toUpperCase();
+      if (requested !== shortCode) {
+        const error = new Error(
+          `createCanonicalSchool: shortCode ${requested} incompatible avec le nom « ${name} ».`,
+        );
+        error.code = "CANONICAL_SCHOOL_SHORT_CODE_MISMATCH";
+        throw error;
+      }
+    }
+  }
   return {
     id: overrides.id ?? randomUUID(),
     countryIso,
     name,
     loginCode,
-    shortCode: overrides.shortCode ?? schoolShortCodeFromName(name),
+    shortCode,
   };
 }
 

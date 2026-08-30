@@ -63,6 +63,28 @@ test("createCanonicalStudent aligne matricule / login / publicId", () => {
   assert.equal(student.identifier, student.studentCode);
 });
 
+test("createCanonicalSchool refuse un loginCode legacy et aligne shortCode sur le V2", () => {
+  assert.throws(
+    () => createCanonicalSchool({ loginCode: "CD-2026-0001" }),
+    (error) => error.code === "CANONICAL_SCHOOL_LOGIN_LEGACY_FORBIDDEN",
+  );
+  assert.throws(
+    () => createCanonicalSchool({ loginCode: "cd-2026-0001" }),
+    (error) => error.code === "CANONICAL_SCHOOL_LOGIN_LEGACY_FORBIDDEN",
+  );
+  const school = createCanonicalSchool({
+    name: "Institut Nuru",
+    loginCode: "CD-LST-26-002",
+  });
+  assert.equal(school.loginCode, "CD-LST-26-002");
+  assert.equal(school.shortCode, "LST");
+  assert.equal(school.countryIso, "CD");
+  assert.throws(
+    () => createCanonicalSchool({ loginCode: "CD-LST-26-002", shortCode: "IN" }),
+    (error) => error.code === "CANONICAL_SCHOOL_SHORT_CODE_MISMATCH",
+  );
+});
+
 test("deux établissements produisent des identités disjointes", () => {
   const a = createCanonicalSchool({ name: "Institut Nuru", sequence: 1 });
   const b = createCanonicalSchool({ name: "Lycée Somafrik Test", sequence: 2 });
