@@ -75,6 +75,7 @@ jobs:
           npm run verify:teacher-course-canonical-reconcile
           npm run verify:pedagogy-legacy-cleanup
           npm run verify:help-v1a-catalogue
+          npm run verify:help-v1b-web
           npm run verify:finance-domain-invariants
           npm run verify:finance-fee-type-canonical
           npm run verify:finance-obligation-lifecycle

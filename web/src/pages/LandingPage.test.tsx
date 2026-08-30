@@ -106,6 +106,8 @@ describe("LandingPage — vitrine publique", () => {
     expect(marketingLegalRoutes).toHaveLength(0);
     expect(screen.queryByRole("link", { name: /Mentions légales|Confidentialité|Conditions/i })).not.toBeInTheDocument();
     expect(screen.queryByText(/support@somafrik\.app/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /ouvrir l.aide/i })).not.toBeInTheDocument();
+    expect(screen.queryByText(/besoin d.aide/i)).not.toBeInTheDocument();
   });
 
   it("n’utilise que des ancres publiques valides ou /connexion", () => {
