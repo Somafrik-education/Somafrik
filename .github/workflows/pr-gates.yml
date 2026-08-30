@@ -192,6 +192,8 @@ jobs:
             Mobile/package-lock.json
       - name: Install dependencies
         run: npm run ci:install
+      - name: Test DB isolation guards
+        run: node --test backend/lib/testDatabaseIsolation.test.js
       - name: Foundation
         run: npm run verify:v2-foundation
       - name: Security baseline
@@ -252,85 +254,85 @@ jobs:
           set -euo pipefail
           npm run verify:db-config
           npm run verify:runtime-bootstrap
-          npm run verify:id-canonical:pg
+          node backend/scripts/run-isolated-test-suite.js npm run verify:id-canonical:pg
 
       - name: Auth and RBAC
         if: needs.scope.outputs.auth == 'true'
         run: |
           set -euo pipefail
-          npm run verify:functional-rbac
-          npm run verify:user-role-lifecycle
-          npm run verify:users-login-identity
+          node backend/scripts/run-isolated-test-suite.js npm run verify:functional-rbac
+          node backend/scripts/run-isolated-test-suite.js npm run verify:user-role-lifecycle
+          node backend/scripts/run-isolated-test-suite.js npm run verify:users-login-identity
 
       - name: Classes
         if: needs.scope.outputs.classes == 'true'
-        run: npm run verify:classes-management
+        run: node backend/scripts/run-isolated-test-suite.js npm run verify:classes-management
 
       - name: Students and attendance
         if: needs.scope.outputs.students == 'true'
         run: |
           set -euo pipefail
-          npm run verify:class-student-enrollment
-          npm run verify:students-fiche-consolidation
-          npm run verify:presences-roster
-          npm run verify:mobile-sync-l1-students
+          node backend/scripts/run-isolated-test-suite.js npm run verify:class-student-enrollment
+          node backend/scripts/run-isolated-test-suite.js npm run verify:students-fiche-consolidation
+          node backend/scripts/run-isolated-test-suite.js npm run verify:presences-roster
+          node backend/scripts/run-isolated-test-suite.js npm run verify:mobile-sync-l1-students
 
       - name: Teachers
         if: needs.scope.outputs.teachers == 'true'
         run: |
           set -euo pipefail
-          npm run verify:teacher-account-creation
-          npm run verify:teachers-lifecycle
-          npm run verify:teacher-login-scope
-          npm run verify:mobile-sync-l1-assignments
+          node backend/scripts/run-isolated-test-suite.js npm run verify:teacher-account-creation
+          node backend/scripts/run-isolated-test-suite.js npm run verify:teachers-lifecycle
+          node backend/scripts/run-isolated-test-suite.js npm run verify:teacher-login-scope
+          node backend/scripts/run-isolated-test-suite.js npm run verify:mobile-sync-l1-assignments
 
       - name: Finance
         if: needs.scope.outputs.finance == 'true'
         run: |
           set -euo pipefail
-          npm run verify:finance-domain-invariants
-          npm run verify:finance-fee-type-canonical
-          npm run verify:finance-obligation-lifecycle
-          npm run verify:finance-management
-          npm run verify:finance-multi-item-payment
-          npm run verify:finance-web-mobile-convergence
-          npm run verify:finance-rbac
+          node backend/scripts/run-isolated-test-suite.js npm run verify:finance-domain-invariants
+          node backend/scripts/run-isolated-test-suite.js npm run verify:finance-fee-type-canonical
+          node backend/scripts/run-isolated-test-suite.js npm run verify:finance-obligation-lifecycle
+          node backend/scripts/run-isolated-test-suite.js npm run verify:finance-management
+          node backend/scripts/run-isolated-test-suite.js npm run verify:finance-multi-item-payment
+          node backend/scripts/run-isolated-test-suite.js npm run verify:finance-web-mobile-convergence
+          node backend/scripts/run-isolated-test-suite.js npm run verify:finance-rbac
 
       - name: Pedagogy
         if: needs.scope.outputs.pedagogy == 'true'
         run: |
           set -euo pipefail
-          npm run verify:pedagogy-management
-          npm run verify:education-reference-data
-          npm run verify:evaluation-types-data
-          npm run verify:mobile-sync-l1-school-courses
+          node backend/scripts/run-isolated-test-suite.js npm run verify:pedagogy-management
+          node backend/scripts/run-isolated-test-suite.js npm run verify:education-reference-data
+          node backend/scripts/run-isolated-test-suite.js npm run verify:evaluation-types-data
+          node backend/scripts/run-isolated-test-suite.js npm run verify:mobile-sync-l1-school-courses
 
       - name: Planning
         if: needs.scope.outputs.planning == 'true'
         run: |
           set -euo pipefail
-          npm run verify:planning-v2-weekly
-          npm run verify:planning-v2-web
-          npm run verify:planning-rooms
-          npm run verify:planning-replacements
-          npm run verify:planning-course-options
-          npm run verify:mobile-sync-l1-course-schedules
+          node backend/scripts/run-isolated-test-suite.js npm run verify:planning-v2-weekly
+          node backend/scripts/run-isolated-test-suite.js npm run verify:planning-v2-web
+          node backend/scripts/run-isolated-test-suite.js npm run verify:planning-rooms
+          node backend/scripts/run-isolated-test-suite.js npm run verify:planning-replacements
+          node backend/scripts/run-isolated-test-suite.js npm run verify:planning-course-options
+          node backend/scripts/run-isolated-test-suite.js npm run verify:mobile-sync-l1-course-schedules
 
       - name: Users
         if: needs.scope.outputs.users == 'true'
         run: |
           set -euo pipefail
-          npm run verify:clients-management
-          npm run verify:user-role-lifecycle
-          npm run verify:parent-linking
+          node backend/scripts/run-isolated-test-suite.js npm run verify:clients-management
+          node backend/scripts/run-isolated-test-suite.js npm run verify:user-role-lifecycle
+          node backend/scripts/run-isolated-test-suite.js npm run verify:parent-linking
 
       - name: Platform and school settings
         if: needs.scope.outputs.platform == 'true'
         run: |
           set -euo pipefail
-          npm run verify:platform-management
-          npm run verify:school-settings-data
-          npm run verify:login-lockout-data
+          node backend/scripts/run-isolated-test-suite.js npm run verify:platform-management
+          node backend/scripts/run-isolated-test-suite.js npm run verify:school-settings-data
+          node backend/scripts/run-isolated-test-suite.js npm run verify:login-lockout-data
 
       - name: Web tests
         if: needs.scope.outputs.web == 'true'
@@ -354,8 +356,8 @@ jobs:
         if: needs.scope.outputs.sync == 'true'
         run: |
           set -euo pipefail
-          npm run verify:canonical-state-convergence
-          npm run verify:sync-end-to-end
+          node backend/scripts/run-isolated-test-suite.js npm run verify:canonical-state-convergence
+          node backend/scripts/run-isolated-test-suite.js npm run verify:sync-end-to-end
           node scripts/verify-remove-legacy-sync-core.js
 
   required:
