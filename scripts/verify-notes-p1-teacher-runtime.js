@@ -113,6 +113,12 @@ function assertTeacherRuntimeSource() {
   assert.ok(rolePermissionsDeclared["Préfet des études"].includes("Créer notes"));
   assert.equal(rolePermissionsDeclared["Admin School"].includes("Créer notes"), false);
   assert.equal(rolePermissionsDeclared["Admin School"].includes("Notes:CREATE"), false);
+
+  const pedagogy = readRepo("backend/scripts/verify-pedagogy-management.js");
+  const forge = pedagogy.slice(pedagogy.indexOf("forgedEvaluation"), pedagogy.indexOf("évaluation scellée"));
+  assert.match(forge, /EVAL-FORGE/);
+  assert.match(forge, /token: teacherToken/);
+  assert.doesNotMatch(forge, /token: adminToken/);
 }
 
 assertHelpWriteArticlesAbsent();

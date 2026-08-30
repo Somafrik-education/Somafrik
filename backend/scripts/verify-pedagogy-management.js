@@ -596,10 +596,11 @@ async function runPostgresHttpGuards(databaseUrl) {
     const teacherCoursesRead = await request(PG_PORT, "/courses", { token: teacherToken });
     assertPermissionDenied(teacherCoursesRead, "enseignant GET /courses");
 
-    // POST /evaluations = Notes:CREATE. Admin School n'a que Modifier notes (UPDATE).
+    // NOTES-P1 : POST /evaluations = Notes:CREATE + affectation PG.
+    // Admin School n'a que « Modifier notes » (UPDATE) — ne pas l'utiliser ici.
     const forgedEvaluation = await request(PG_PORT, "/evaluations", {
       method: "POST",
-      token: prefetToken,
+      token: teacherToken,
       body: {
         id: `EVAL-FORGE-${stamp}`,
         schoolCode: "BI-2026-0002",
@@ -614,14 +615,16 @@ async function runPostgresHttpGuards(databaseUrl) {
     });
     assert.equal(forgedEvaluation.status, 201, JSON.stringify(forgedEvaluation.data));
     const evalTenant = await pool.query(
-      `SELECT s.school_code
+      `SELECT s.school_code, t.teacher_code
        FROM evaluations e
        JOIN schools s ON s.id = e.school_id
+       JOIN teachers t ON t.id = e.teacher_id
        WHERE e.legacy_json_id = $1`,
       [`EVAL-FORGE-${stamp}`],
     );
     assert.equal(evalTenant.rowCount, 1);
     assert.equal(evalTenant.rows[0].school_code, "CD-2026-0001", "évaluation scellée au tenant principal");
+    assert.equal(evalTenant.rows[0].teacher_code, "ENS-0001", "teacher_id session, pas tenant client");
 
     const evalInBi = await pool.query(
       `SELECT count(*)::int AS count
@@ -669,7 +672,7 @@ async function runPostgresHttpGuards(databaseUrl) {
 
     const postForeignLegacy = await request(PG_PORT, "/evaluations", {
       method: "POST",
-      token: prefetToken,
+      token: teacherToken,
       body: {
         id: biEvaluation.rows[0].legacy_json_id,
         className: "6ème A",
@@ -834,6 +837,7 @@ async function runPostgresHttpGuards(databaseUrl) {
     );
     assert.ok(persistedNote, `GET /notes relit 14/20: ${JSON.stringify(notesRefresh.data)}`);
 
+    // Hors affectation enseignant (Histoire / 6ème B) : préfet Notes:CREATE, pas admin UPDATE.
     const historyEval = await request(PG_PORT, "/evaluations", {
       method: "POST",
       token: prefetToken,
