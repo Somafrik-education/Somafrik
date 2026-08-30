@@ -17,6 +17,7 @@ const {
   generateTemporaryPassword,
   generateUserCode,
   resolveUserIdentifier,
+  schoolLoginCodeFromUserRow,
   toIsoDate,
   toDbStatus,
   mapUserRow,
@@ -428,7 +429,7 @@ async function updateUser(store, userId, rawPatch, principal, auditMeta) {
   if (!existing) {
     throw createClientsError(404, "Utilisateur introuvable.", CLIENTS_ERROR.USER_NOT_FOUND);
   }
-  const schoolCode = existing.school_code;
+  const schoolCode = schoolLoginCodeFromUserRow(existing);
   assertSchoolScope(principal, schoolCode);
   await assertSchoolInPrincipalCountry(store, principal, schoolCode);
   assertSafeUserPatch(principal, existing, patch);

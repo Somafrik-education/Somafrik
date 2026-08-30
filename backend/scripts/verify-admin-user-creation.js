@@ -65,13 +65,13 @@ async function prepareDatabase(databaseUrl) {
     );
     await pool.query(
       `INSERT INTO schools (country_id, school_code, login_code, name, status)
-       VALUES ($1, $2, $2, 'Institut Admin E2E CD', 'active')`,
-      [cd.rows[0].id, SCHOOL_CD],
+       VALUES ($1, $2, $3, 'Institut Admin E2E CD', 'active')`,
+      [cd.rows[0].id, SCHOOL_CD, SCHOOL_CD],
     );
     await pool.query(
       `INSERT INTO schools (country_id, school_code, login_code, name, status)
-       VALUES ($1, $2, $2, 'Institut Admin E2E BI', 'active')`,
-      [bi.rows[0].id, SCHOOL_BI],
+       VALUES ($1, $2, $3, 'Institut Admin E2E BI', 'active')`,
+      [bi.rows[0].id, SCHOOL_BI, SCHOOL_BI],
     );
     await pool.query(
       `INSERT INTO users (school_id, user_code, first_name, last_name, email, password_hash, pin_hash, role, status)

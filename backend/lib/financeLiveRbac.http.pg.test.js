@@ -161,8 +161,9 @@ async function seed(pool) {
      VALUES ('Testland', 'TT', '+000', 'XOF') RETURNING id`,
   );
   await pool.query(
-    `INSERT INTO schools (country_id, school_code, name, status)
-     VALUES ($1, 'SCH-A', 'École A', 'active'), ($1, 'SCH-B', 'École B', 'active')`,
+    `INSERT INTO schools (country_id, school_code, login_code, name, status)
+     VALUES ($1, 'SCH-A', 'TT-EA-26-001', 'École A', 'active'),
+            ($1, 'SCH-B', 'TT-EB-26-001', 'École B', 'active')`,
     [country.rows[0].id],
   );
   const schoolA = (await pool.query(`SELECT id FROM schools WHERE school_code = 'SCH-A'`)).rows[0];
@@ -289,32 +290,32 @@ async function main() {
 
     const liveToken = mintAccess(
       tokens,
-      staleClaims({ sub: LIVE_USER, schoolCode: "SCH-A", role: "Comptable", roleKeys: ["ACCOUNTANT"] }),
+      staleClaims({ sub: LIVE_USER, schoolCode: "TT-EA-26-001", role: "Comptable", roleKeys: ["ACCOUNTANT"] }),
     );
     const accountantToken = mintAccess(
       tokens,
-      staleClaims({ sub: ACCOUNTANT_A, schoolCode: "SCH-A", role: "Comptable", roleKeys: ["ACCOUNTANT"] }),
+      staleClaims({ sub: ACCOUNTANT_A, schoolCode: "TT-EA-26-001", role: "Comptable", roleKeys: ["ACCOUNTANT"] }),
     );
     const zeroToken = mintAccess(
       tokens,
-      staleClaims({ sub: ZERO_USER, schoolCode: "SCH-A" }),
+      staleClaims({ sub: ZERO_USER, schoolCode: "TT-EA-26-001" }),
     );
     const namedToken = mintAccess(
       tokens,
       staleClaims({
         sub: NAMED_USER,
-        schoolCode: "SCH-A",
+        schoolCode: "TT-EA-26-001",
         role: "Admin School",
         roleKeys: ["SCHOOL_ADMIN"],
       }),
     );
     const dualOnA = mintAccess(
       tokens,
-      staleClaims({ sub: DUAL_USER, schoolCode: "SCH-A", role: "Comptable", roleKeys: ["ACCOUNTANT"] }),
+      staleClaims({ sub: DUAL_USER, schoolCode: "TT-EA-26-001", role: "Comptable", roleKeys: ["ACCOUNTANT"] }),
     );
     const dualOnB = mintAccess(
       tokens,
-      staleClaims({ sub: DUAL_USER, schoolCode: "SCH-B", role: "Comptable", roleKeys: ["ACCOUNTANT"] }),
+      staleClaims({ sub: DUAL_USER, schoolCode: "TT-EB-26-001", role: "Comptable", roleKeys: ["ACCOUNTANT"] }),
     );
 
     const authorized = await request("/payments", {

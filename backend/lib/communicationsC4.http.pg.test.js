@@ -167,11 +167,11 @@ async function seed(pool) {
     `INSERT INTO countries (name,iso_code,phone_code,currency) VALUES ('C4 B','FR','+33','EUR') RETURNING id`,
   )).rows[0].id;
   const schoolA = (await pool.query(
-    `INSERT INTO schools (country_id,school_code,login_code,name,status) VALUES ($1,'CI-C4A-26-001','CI-C4A-26-001','École C4 A','active') RETURNING id`,
+    `INSERT INTO schools (country_id,school_code,login_code,name,status) VALUES ($1,'CI-ECA-26-001','CI-ECA-26-001','École C4 A','active') RETURNING id`,
     [countryA],
   )).rows[0].id;
   const schoolB = (await pool.query(
-    `INSERT INTO schools (country_id,school_code,login_code,name,status) VALUES ($1,'FR-C4B-26-001','FR-C4B-26-001','École C4 B','active') RETURNING id`,
+    `INSERT INTO schools (country_id,school_code,login_code,name,status) VALUES ($1,'FR-ECB-26-001','FR-ECB-26-001','École C4 B','active') RETURNING id`,
     [countryB],
   )).rows[0].id;
 
@@ -311,12 +311,12 @@ async function main() {
     child.stdout.on("data", () => {});
     await waitForHealth(child, stderrRef);
 
-    const adminA = mint(tokens, { sub: ADMIN_A, schoolCode: "CI-C4A-26-001", role: "Admin School", roleKeys: ["SCHOOL_ADMIN"] });
-    const parentA = mint(tokens, { sub: PARENT_A, schoolCode: "CI-C4A-26-001", role: "Parent", roleKeys: ["PARENT"], permissions: ["Notifications:READ","Messages:READ","Messages:CREATE","Announcements:READ"] });
-    const parentA2 = mint(tokens, { sub: PARENT_A2, schoolCode: "CI-C4A-26-001", role: "Parent", roleKeys: ["PARENT"], permissions: ["Notifications:READ"] });
-    const studentA = mint(tokens, { sub: STUDENT_USER_A, schoolCode: "CI-C4A-26-001", role: "Élève / Étudiant", roleKeys: ["STUDENT"], permissions: ["Notifications:READ"] });
-    const adminB = mint(tokens, { sub: ADMIN_B, schoolCode: "FR-C4B-26-001", role: "Admin School", roleKeys: ["SCHOOL_ADMIN"] });
-    const parentB = mint(tokens, { sub: PARENT_B, schoolCode: "FR-C4B-26-001", role: "Parent", roleKeys: ["PARENT"], permissions: ["Notifications:READ"] });
+    const adminA = mint(tokens, { sub: ADMIN_A, schoolCode: "CI-ECA-26-001", role: "Admin School", roleKeys: ["SCHOOL_ADMIN"] });
+    const parentA = mint(tokens, { sub: PARENT_A, schoolCode: "CI-ECA-26-001", role: "Parent", roleKeys: ["PARENT"], permissions: ["Notifications:READ","Messages:READ","Messages:CREATE","Announcements:READ"] });
+    const parentA2 = mint(tokens, { sub: PARENT_A2, schoolCode: "CI-ECA-26-001", role: "Parent", roleKeys: ["PARENT"], permissions: ["Notifications:READ"] });
+    const studentA = mint(tokens, { sub: STUDENT_USER_A, schoolCode: "CI-ECA-26-001", role: "Élève / Étudiant", roleKeys: ["STUDENT"], permissions: ["Notifications:READ"] });
+    const adminB = mint(tokens, { sub: ADMIN_B, schoolCode: "FR-ECB-26-001", role: "Admin School", roleKeys: ["SCHOOL_ADMIN"] });
+    const parentB = mint(tokens, { sub: PARENT_B, schoolCode: "FR-ECB-26-001", role: "Parent", roleKeys: ["PARENT"], permissions: ["Notifications:READ"] });
     const superSa = mint(tokens, { sub: SUPER_SA, schoolCode: "*", role: "Super Administrateur Somafrik", roleKeys: ["SUPER_ADMIN"], permissions: ["ALL_PRIVILEGES"] });
 
     const store = repo.getClientsStore();
@@ -593,19 +593,19 @@ async function main() {
     assert.equal(superBareArchive.status, 400, "C4-12 archive sans scope");
     const superBareUpload = await uploadNotificationFile(superSa, { fileName: "c4-sa.pdf", mimeType: "application/pdf", body: pdfBuffer() });
     assert.equal(superBareUpload.status, 400, "C4-12 upload sans scope");
-    const superA = await request("/backoffice/internal-notifications?effectiveSchoolCode=CI-C4A-26-001", { token: superSa });
+    const superA = await request("/backoffice/internal-notifications?effectiveSchoolCode=CI-ECA-26-001", { token: superSa });
     assert.equal(superA.status, 200, "C4-12 super scoped A");
-    const superGetA = await request(`/backoffice/internal-notifications/${manual.data.id}?effectiveSchoolCode=CI-C4A-26-001`, { token: superSa });
+    const superGetA = await request(`/backoffice/internal-notifications/${manual.data.id}?effectiveSchoolCode=CI-ECA-26-001`, { token: superSa });
     assert.equal(superGetA.status, 200, "C4-12 get scoped A");
     const superUpload = await uploadNotificationFile(superSa, {
-      fileName: "c4-sa.pdf", mimeType: "application/pdf", body: pdfBuffer(), query: "?effectiveSchoolCode=CI-C4A-26-001",
+      fileName: "c4-sa.pdf", mimeType: "application/pdf", body: pdfBuffer(), query: "?effectiveSchoolCode=CI-ECA-26-001",
     });
     assert.equal(superUpload.status, 201, `C4-12 upload scoped: ${JSON.stringify(superUpload.data)}`);
-    const superDownload = await downloadNotificationFile(superSa, upload.data.id, "?effectiveSchoolCode=CI-C4A-26-001");
+    const superDownload = await downloadNotificationFile(superSa, upload.data.id, "?effectiveSchoolCode=CI-ECA-26-001");
     assert.equal(superDownload.status, 200, "C4-12 download scoped A");
-    const superWrong = await request(`/backoffice/internal-notifications/${messageN.id}?effectiveSchoolCode=FR-C4B-26-001`, { token: superSa });
+    const superWrong = await request(`/backoffice/internal-notifications/${messageN.id}?effectiveSchoolCode=FR-ECB-26-001`, { token: superSa });
     assert.ok([403,404].includes(superWrong.status), "C4-12 ressource A sous scope B refusée");
-    const superWrongDownload = await downloadNotificationFile(superSa, upload.data.id, "?effectiveSchoolCode=FR-C4B-26-001");
+    const superWrongDownload = await downloadNotificationFile(superSa, upload.data.id, "?effectiveSchoolCode=FR-ECB-26-001");
     assert.ok([403,404].includes(superWrongDownload.status), "C4-12 download A sous scope B");
 
     // C4-13 — concurrence dispatcher : deux drains du même event → 1 notification.

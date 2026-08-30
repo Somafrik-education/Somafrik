@@ -246,6 +246,10 @@ function resolveUserIdentifier({ role, phone, email, userCode }) {
  * school_code colonne = transition (DROP D), jamais une clé de lookup.
  * Ne jamais lire users.login_code ici (identité personne).
  */
+function schoolLoginCodeFromUserRow(row) {
+  return asTrimmed(row?.school_login_code) || asTrimmed(row?.school_code);
+}
+
 function schoolPublicProjectionFromSchool(school, fallbackSchoolCode = "*") {
   if (!school) {
     return {
@@ -459,6 +463,7 @@ module.exports = {
   generateUserCode,
   resolveUserIdentifier,
   schoolPublicProjectionFromSchool,
+  schoolLoginCodeFromUserRow,
   mapUserRow,
   mapUserRowToAuthAccount,
   mapContactRow,

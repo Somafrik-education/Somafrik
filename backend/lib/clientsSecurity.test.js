@@ -8,8 +8,8 @@ const { USER_ROLE_ERROR } = require("./userRoleLifecycle");
 function buildStore() {
   return createClientsMemoryStore({
     platformSchools: [
-      { id: "school-cd", code: "CD-2026-0001", name: "CD", countryId: "country-cd", countryCode: "CD" },
-      { id: "school-bi", code: "BI-2026-0001", name: "BI", countryId: "country-bi", countryCode: "BI" },
+      { id: "school-cd", code: "CD-CD-26-001", loginCode: "CD-CD-26-001", name: "CD", countryId: "country-cd", countryCode: "CD" },
+      { id: "school-bi", code: "BI-BI-26-001", loginCode: "BI-BI-26-001", name: "BI", countryId: "country-bi", countryCode: "BI" },
     ],
     students: [
       { id: "student-cd", school_id: "school-cd", first_name: "Jean", last_name: "CD", studentCode: "STU-CD" },
@@ -32,7 +32,7 @@ async function expectRejection(promise, { status, code }) {
 
 async function main() {
   const store = buildStore();
-  const schoolAdmin = { sub: "admin-cd", role: "Admin School", schoolCode: "CD-2026-0001", identifier: "admin" };
+  const schoolAdmin = { sub: "admin-cd", role: "Admin School", schoolCode: "CD-CD-26-001", identifier: "admin" };
   const countryAdmin = { sub: "admin-pays", role: "Admin Pays", countryCode: "CD", schoolCode: "*", identifier: "admin-rdc" };
   const superAdmin = { sub: "super", role: "Super Administrateur Somafrik", identifier: "superadmin" };
   const auditMeta = { ipAddress: "127.0.0.1", userAgent: "security-test" };
@@ -47,7 +47,7 @@ async function main() {
           firstName: "Teacher",
           lastName: "Orphan",
           role: principal === schoolAdmin ? "Enseignant" : "TEACHER",
-          schoolCode: "CD-2026-0001",
+          schoolCode: "CD-CD-26-001",
           phone: "+243810099999",
         },
         principal,
@@ -66,7 +66,7 @@ async function main() {
         firstName: "Global",
         lastName: "Admin",
         role: "Super Administrateur Somafrik",
-        schoolCode: "CD-2026-0001",
+        schoolCode: "CD-CD-26-001",
       },
       schoolAdmin,
       auditMeta,
@@ -82,7 +82,7 @@ async function main() {
         firstName: "Pays",
         lastName: "Admin",
         role: "Admin Pays",
-        schoolCode: "CD-2026-0001",
+        schoolCode: "CD-CD-26-001",
       },
       schoolAdmin,
       auditMeta,
@@ -98,7 +98,7 @@ async function main() {
         firstName: "Global",
         lastName: "Admin",
         role: "Super Administrateur Somafrik",
-        schoolCode: "CD-2026-0001",
+        schoolCode: "CD-CD-26-001",
       },
       countryAdmin,
       auditMeta,
@@ -111,7 +111,7 @@ async function main() {
     {
       firstName: "Sec",
       lastName: "Ret",
-      schoolCode: "CD-2026-0001",
+      schoolCode: "CD-CD-26-001",
     },
     schoolAdmin,
     auditMeta,
@@ -159,7 +159,7 @@ async function main() {
       lastName: "Parent",
       contactType: "Parent",
       phone: "+243900000111",
-      schoolCode: "CD-2026-0001",
+      schoolCode: "CD-CD-26-001",
     },
     schoolAdmin,
     auditMeta,
@@ -192,7 +192,7 @@ async function main() {
     {
       firstName: "User",
       lastName: "BI",
-      schoolCode: "BI-2026-0001",
+      schoolCode: "BI-BI-26-001",
     },
     superAdmin,
     auditMeta,
@@ -201,7 +201,7 @@ async function main() {
     {
       firstName: "Sender",
       lastName: "CD",
-      schoolCode: "CD-2026-0001",
+      schoolCode: "CD-CD-26-001",
     },
     schoolAdmin,
     auditMeta,
@@ -212,7 +212,7 @@ async function main() {
     store.sendMessage(
       {
         message: "Hello",
-        schoolCode: "CD-2026-0001",
+        schoolCode: "CD-CD-26-001",
         participantUserIds: [biUser.id],
       },
       { ...schoolAdmin, sub: cdSender.id },
@@ -228,7 +228,7 @@ async function main() {
     store.sendMessage(
       {
         message: "Hello",
-        schoolCode: "CD-2026-0001",
+        schoolCode: "CD-CD-26-001",
         participantUserIds: ["00000000-0000-0000-0000-000000000099"],
       },
       { ...schoolAdmin, sub: cdSender.id },

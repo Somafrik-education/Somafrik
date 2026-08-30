@@ -11,14 +11,11 @@ const {
   requestedCountryCodeFromPayload,
   assertRequestedCountryMatchesSchool,
   mapUserRow,
+  schoolLoginCodeFromUserRow,
   toDbStatus,
   parsePayload,
 } = require("./clientsManagement");
 const { toDbRole } = require("./clientsRolePolicy");
-
-function schoolLoginCodeFromUserRow(row) {
-  return asTrimmed(row?.school_login_code) || asTrimmed(row?.school_code);
-}
 
 const {
   USER_ROLE_ERROR,
