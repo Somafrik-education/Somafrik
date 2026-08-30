@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  marketingBusinessProofs,
   marketingFinalCta,
   marketingHero,
   marketingLegalRoutes,
@@ -53,5 +54,18 @@ describe("marketingContent", () => {
       "Application mobile Somafrik — liste des élèves",
       "Application mobile Somafrik — liste des enseignants",
     ]);
+  });
+
+  it("décrit trois preuves métier réelles, sans Notes de substitution", () => {
+    expect(marketingBusinessProofs.id).toBe("preuves");
+    expect(marketingBusinessProofs.items).toHaveLength(3);
+    expect(marketingBusinessProofs.items.map((item) => item.id)).toEqual(["finance", "presences", "pedagogie"]);
+    expect(marketingBusinessProofs.items.every((item) => item.src.includes("/marketing/proofs/"))).toBe(true);
+    expect(marketingBusinessProofs.items.every((item) => !item.src.includes("/docs/"))).toBe(true);
+    const joined = marketingBusinessProofs.items
+      .flatMap((item) => [item.title, item.description, item.alt, item.caption, item.domain])
+      .join(" ");
+    expect(joined).not.toMatch(/notes/i);
+    expect(marketingBusinessProofs.items[2]?.caption).toBe("Évaluations");
   });
 });

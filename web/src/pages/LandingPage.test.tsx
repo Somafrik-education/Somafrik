@@ -3,6 +3,7 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import {
+  marketingBusinessProofs,
   marketingHero,
   marketingLegalRoutes,
   marketingLogin,
@@ -200,5 +201,36 @@ describe("LandingPage — vitrine publique", () => {
     }
     expect(section?.innerHTML).not.toMatch(/\/docs\//);
     expect(container.querySelector('img[src*="vitrine_02_hero_mobile"]')).toBeNull();
+  });
+
+  it("expose #preuves avec les trois captures métier, sans Notes", () => {
+    const { container } = renderLanding();
+    const section = container.querySelector("#preuves");
+    expect(section).not.toBeNull();
+    expect(screen.getByRole("heading", { name: marketingBusinessProofs.title })).toBeInTheDocument();
+    expect(marketingBusinessProofs.items).toHaveLength(3);
+    const images = [...(section?.querySelectorAll("img") ?? [])];
+    expect(images).toHaveLength(3);
+    for (const item of marketingBusinessProofs.items) {
+      const image = images.find((node) => node.getAttribute("src") === item.src);
+      expect(image).toBeDefined();
+      expect(image).toHaveAttribute("alt", item.alt);
+      expect(image).toHaveAttribute("loading", "lazy");
+      expect(image).toHaveAttribute("decoding", "async");
+    }
+    expect(section?.innerHTML).not.toMatch(/\/docs\//);
+    expect(section?.innerHTML).not.toMatch(/data:image\//);
+    expect(section?.textContent).not.toMatch(/notes/i);
+    expect(screen.queryByRole("heading", { name: /suivre les notes/i })).not.toBeInTheDocument();
+  });
+
+  it("conserve le Hero et Web et mobile de VITRINE-02", () => {
+    const { container } = renderLanding();
+    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent(marketingHero.title);
+    const heroImage = container.querySelector('img[src*="somafrik-dashboard-etablissement.webp"]');
+    expect(heroImage).not.toHaveAttribute("loading", "lazy");
+    expect(container.querySelector("#web-mobile")).not.toBeNull();
+    expect(container.querySelectorAll("#web-mobile img[src*='/marketing/mobile/']")).toHaveLength(3);
+    expect(marketingNav.some((link) => link.href === "#preuves")).toBe(false);
   });
 });
