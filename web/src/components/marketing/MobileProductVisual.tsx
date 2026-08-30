@@ -2,12 +2,12 @@ import { marketingMobileVisuals } from "../../data/marketingContent";
 
 export function MobileProductVisual() {
   return (
-    <ul className="flex snap-x snap-mandatory gap-4 overflow-x-auto pb-1 [-ms-overflow-style:none] [scrollbar-width:thin] md:grid md:grid-cols-2 md:justify-items-center md:overflow-visible lg:flex lg:justify-center lg:overflow-visible">
+    <ul className="flex snap-x snap-mandatory gap-4 overflow-x-auto pb-1 [-ms-overflow-style:none] [scrollbar-width:thin] md:grid md:grid-cols-2 md:justify-items-center md:overflow-visible xl:flex xl:justify-center xl:overflow-visible">
       {marketingMobileVisuals.map((visual, index) => (
         <li
           key={visual.src}
           className={`w-[10.75rem] shrink-0 snap-center sm:w-[11.5rem] md:w-[12rem] ${
-            index === 1 ? "lg:-translate-y-3" : "lg:translate-y-2"
+            index === 1 ? "xl:-translate-y-3" : "xl:translate-y-2"
           }`}
         >
           <figure className="min-w-0">

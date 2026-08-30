@@ -16,7 +16,7 @@ export function MarketingFooter() {
         <div className="min-w-0">
           <BrandLogo size="md" variant="onDark" imageClassName="h-12 w-12 object-contain" />
           <p className="mt-3 max-w-sm text-sm font-medium text-slate-400">{marketingFooter.tagline}</p>
-          <small className="mt-3 block text-slate-500">
+          <small className="mt-3 block text-slate-400">
             © {year} {marketingFooter.copyrightName}. Tous droits réservés.
           </small>
         </div>
