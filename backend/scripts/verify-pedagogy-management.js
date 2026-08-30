@@ -19,6 +19,7 @@ const ROOT = path.resolve(__dirname, "../..");
 const MEMORY_PORT = 19676;
 const PG_PORT = 19677;
 const { PEDAGOGY_ERROR } = require("../lib/pedagogyManagement");
+const { extractTeacherLoginId } = require("../lib/teacherCodeAllocation");
 const PG_HTTP_DATABASE = String(process.env.SOMAFRIK_PEDAGOGY_HTTP_IT_DATABASE ?? "somafrik_pedagogy_http_it")
   .trim()
   .replace(/[^a-zA-Z0-9_]/g, "");
@@ -242,6 +243,10 @@ function schedulePayload(stamp, extra = {}) {
 function assertPermissionDenied(result, label) {
   assert.equal(result.status, 403, `${label}: ${JSON.stringify(result.data)}`);
   assert.equal(result.data?.code, "PERMISSION_DENIED", `${label} code ${result.data?.code}`);
+}
+
+function assertSessionTeacherCode(actual, message) {
+  assert.equal(extractTeacherLoginId(actual), "ENS-0001", message);
 }
 
 async function assertCourseScheduleWriteDenied(port, token, scheduleId, label) {
@@ -624,7 +629,7 @@ async function runPostgresHttpGuards(databaseUrl) {
     );
     assert.equal(evalTenant.rowCount, 1);
     assert.equal(evalTenant.rows[0].school_code, "CD-2026-0001", "évaluation scellée au tenant principal");
-    assert.equal(evalTenant.rows[0].teacher_code, "ENS-0001", "teacher_id session, pas tenant client");
+    assertSessionTeacherCode(evalTenant.rows[0].teacher_code, "teacher_id session, pas tenant client");
 
     const evalInBi = await pool.query(
       `SELECT count(*)::int AS count
@@ -724,7 +729,7 @@ async function runPostgresHttpGuards(databaseUrl) {
     assert.equal(pgCreated.rows[0].term_name, "Trimestre 1");
     assert.equal(pgCreated.rows[0].subject_name, "Mathématiques");
     assert.equal(pgCreated.rows[0].class_name, "6ème A");
-    assert.equal(pgCreated.rows[0].teacher_code, "ENS-0001", "NOTES-P1 : teacher_id session, pas payload client");
+    assertSessionTeacherCode(pgCreated.rows[0].teacher_code, "NOTES-P1 : teacher_id session, pas payload client");
 
     const teacherRefresh = await request(PG_PORT, "/evaluations", { token: teacherToken });
     assert.equal(teacherRefresh.status, 200, JSON.stringify(teacherRefresh.data));
