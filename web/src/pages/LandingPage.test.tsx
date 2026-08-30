@@ -140,6 +140,15 @@ describe("LandingPage — vitrine publique", () => {
     expect(screen.getAllByRole("link", { name: "Produit" }).length).toBeGreaterThan(0);
   });
 
+  it("garde un header collant sans casser le défilement de page", () => {
+    const { container } = renderLanding();
+    const header = container.querySelector("header");
+    const shell = container.firstElementChild;
+    expect(header?.className).toMatch(/\bsticky\b/);
+    expect(shell?.className).toMatch(/overflow-x-clip/);
+    expect(shell?.className).not.toMatch(/overflow-x-hidden/);
+  });
+
   it("expose la navigation header canonique et le CTA Connexion", () => {
     renderLanding();
     for (const link of marketingNav) {
