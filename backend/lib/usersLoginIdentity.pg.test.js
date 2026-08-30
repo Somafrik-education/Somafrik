@@ -70,8 +70,8 @@ async function seedSchool(pool) {
      VALUES ('RDC', 'CD', '+243', 'CDF') RETURNING id`,
   );
   const school = await pool.query(
-    `INSERT INTO schools (country_id, school_code, name, status)
-     VALUES ($1, 'CD-2026-0001', 'Institut Nuru', 'active') RETURNING id, login_code`,
+    `INSERT INTO schools (country_id, school_code, login_code, name, status)
+     VALUES ($1, 'CD-2026-0001', 'CD-IN-26-001', 'Institut Nuru', 'active') RETURNING id, login_code`,
     [country.rows[0].id],
   );
   const loginCode = String(school.rows[0].login_code ?? "").trim().toUpperCase();

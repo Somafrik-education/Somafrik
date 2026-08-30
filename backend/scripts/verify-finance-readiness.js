@@ -68,6 +68,8 @@ function sourceGuards() {
   );
   assert.match(getGrid, /resolveFinanceSchoolScope/);
   assert.match(getGrid, /sqlSchoolPredicate/);
+  assert.match(getGrid, /s\.login_code AS school_code/);
+  assert.doesNotMatch(getGrid, /s\.school_code(?!_)/);
   assert.match(memory, /schoolRecordInFinanceScope\(mapped, scope\)/);
   assert.match(memory, /schoolRecordInFinanceScope\(student, scope\)/);
 

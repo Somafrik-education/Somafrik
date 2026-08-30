@@ -116,18 +116,18 @@ async function main() {
        VALUES ('Burundi', 'BI', '+257', 'BIF') RETURNING id`,
     );
     const schoolA = await pool.query(
-      `INSERT INTO schools (country_id, school_code, name, status)
-       VALUES ($1, 'CD-2026-0001', 'INSTITUT NURU', 'active') RETURNING id, login_code`,
+      `INSERT INTO schools (country_id, school_code, login_code, name, status)
+       VALUES ($1, 'CD-2026-0001', 'CD-IN-26-001', 'INSTITUT NURU', 'active') RETURNING id, login_code`,
       [country.rows[0].id],
     );
     const schoolB = await pool.query(
-      `INSERT INTO schools (country_id, school_code, name, status)
-       VALUES ($1, 'CD-2026-0002', 'Autre école', 'active') RETURNING id, login_code`,
+      `INSERT INTO schools (country_id, school_code, login_code, name, status)
+       VALUES ($1, 'CD-2026-0002', 'CD-AE-26-002', 'Autre école', 'active') RETURNING id, login_code`,
       [country.rows[0].id],
     );
     await pool.query(
-      `INSERT INTO schools (country_id, school_code, name, status)
-       VALUES ($1, 'BI-2026-0002', 'Lycée BI', 'active')`,
+      `INSERT INTO schools (country_id, school_code, login_code, name, status)
+       VALUES ($1, 'BI-2026-0002', 'BI-LB-26-001', 'Lycée BI', 'active')`,
       [countryBi.rows[0].id],
     );
     const schoolALogin = String(schoolA.rows[0].login_code ?? "").trim().toUpperCase();

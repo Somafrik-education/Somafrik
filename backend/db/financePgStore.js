@@ -132,7 +132,7 @@ function createFinancePgStore(repo) {
       },
       async listApplicableFeeGrids({ schoolId, classId, className, academicYear }) {
         const rows = await all(
-          `SELECT g.*, s.school_code, cl.class_code
+          `SELECT g.*, s.login_code AS school_code, cl.class_code
            FROM fee_grids g
            JOIN schools s ON s.id = g.school_id
            LEFT JOIN classes cl ON cl.id = g.class_id
@@ -151,7 +151,7 @@ function createFinancePgStore(repo) {
         const key = asTrimmed(classId);
         if (!key) return null;
         const row = await one(
-          `SELECT cl.id, cl.school_id, cl.class_code, cl.name, s.school_code
+          `SELECT cl.id, cl.school_id, cl.class_code, cl.name, s.login_code AS school_code
            FROM classes cl
            JOIN schools s ON s.id = cl.school_id
            WHERE cl.id::text = $1
@@ -171,7 +171,7 @@ function createFinancePgStore(repo) {
         const key = asTrimmed(classCode);
         if (!key) return null;
         const row = await one(
-          `SELECT cl.id, cl.school_id, cl.class_code, cl.name, s.school_code
+          `SELECT cl.id, cl.school_id, cl.class_code, cl.name, s.login_code AS school_code
            FROM classes cl
            JOIN schools s ON s.id = cl.school_id
            WHERE cl.school_id = $1 AND upper(btrim(cl.class_code)) = upper(btrim($2))
@@ -192,7 +192,7 @@ function createFinancePgStore(repo) {
         if (!name) return null;
         const year = asTrimmed(academicYear);
         const rows = await all(
-          `SELECT cl.id, cl.school_id, cl.class_code, cl.name, s.school_code
+          `SELECT cl.id, cl.school_id, cl.class_code, cl.name, s.login_code AS school_code
            FROM classes cl
            JOIN schools s ON s.id = cl.school_id
            JOIN academic_years ay ON ay.id = cl.academic_year_id
@@ -217,7 +217,7 @@ function createFinancePgStore(repo) {
           throw createFinanceError(400, "Identifiant de classe canonique requis (classId ou classCode).", FINANCE_ERROR.CLASS_REQUIRED);
         }
         const rows = await all(
-          `SELECT st.*, s.school_code, cl.id AS class_id, cl.class_code, cl.name AS class_name,
+          `SELECT st.*, s.login_code AS school_code, cl.id AS class_id, cl.class_code, cl.name AS class_name,
                   ay.name AS academic_year
            FROM students st
            JOIN schools s ON s.id = st.school_id
@@ -256,7 +256,7 @@ function createFinancePgStore(repo) {
       },
       async listCountedPayments(schoolId, { studentDbId } = {}) {
         const rows = await all(
-          `SELECT p.*, s.school_code, st.student_code
+          `SELECT p.*, s.login_code AS school_code, st.student_code
            FROM payments p
            JOIN schools s ON s.id = p.school_id
            JOIN students st ON st.id = p.student_id
@@ -338,7 +338,7 @@ function createFinancePgStore(repo) {
       },
       async getSchoolFeeItemById(feeItemId, schoolId) {
         const row = await one(
-          `SELECT i.*, g.grid_code, s.school_code
+          `SELECT i.*, g.grid_code, s.login_code AS school_code
            FROM school_fee_items i
            JOIN fee_grids g ON g.id = i.fee_grid_id
            JOIN schools s ON s.id = i.school_id
@@ -350,7 +350,7 @@ function createFinancePgStore(repo) {
       },
       async getSchoolFeeItemByIdAnySchool(feeItemId) {
         const row = await one(
-          `SELECT i.*, g.grid_code, s.school_code
+          `SELECT i.*, g.grid_code, s.login_code AS school_code
            FROM school_fee_items i
            JOIN fee_grids g ON g.id = i.fee_grid_id
            JOIN schools s ON s.id = i.school_id
@@ -369,7 +369,7 @@ function createFinancePgStore(repo) {
           pred = sqlSchoolPredicate("s", scope, params);
         }
         let sql = `
-          SELECT p.*, s.school_code, st.student_code, ctry.iso_code AS country_iso
+          SELECT p.*, s.login_code AS school_code, st.student_code, ctry.iso_code AS country_iso
           FROM payments p
           JOIN schools s ON s.id = p.school_id
           JOIN countries ctry ON ctry.id = s.country_id
@@ -410,7 +410,7 @@ function createFinancePgStore(repo) {
         );
         const persisted = row || await one("SELECT * FROM payments WHERE id = $1", [dbId]);
         if (!persisted) throw createFinanceError(404, "Paiement introuvable.", FINANCE_ERROR.PAYMENT_NOT_FOUND);
-        const school = await one("SELECT school_code FROM schools WHERE id = $1", [persisted.school_id]);
+        const school = await one("SELECT login_code AS school_code FROM schools WHERE id = $1", [persisted.school_id]);
         const student = await one("SELECT student_code FROM students WHERE id = $1", [persisted.student_id]);
         return {
           payment: mapPaymentRow({ ...persisted, school_code: school?.school_code, student_code: student?.student_code }),
@@ -438,7 +438,7 @@ function createFinancePgStore(repo) {
       },
       async listObligationsByStudent(schoolId, studentDbId, { lock } = {}) {
         const sql = `
-          SELECT o.*, s.school_code, st.student_code
+          SELECT o.*, s.login_code AS school_code, st.student_code
           FROM student_fee_obligations o
           JOIN schools s ON s.id = o.school_id
           JOIN students st ON st.id = o.student_id
@@ -450,7 +450,7 @@ function createFinancePgStore(repo) {
       },
       async getObligation(id) {
         const row = await one(
-          `SELECT o.*, s.school_code, st.student_code
+          `SELECT o.*, s.login_code AS school_code, st.student_code
            FROM student_fee_obligations o
            JOIN schools s ON s.id = o.school_id
            JOIN students st ON st.id = o.student_id
@@ -468,7 +468,7 @@ function createFinancePgStore(repo) {
           pred = sqlSchoolPredicate("s", scope, params);
         }
         const row = await one(
-          `SELECT o.*, s.school_code, st.student_code, ctry.iso_code AS country_iso
+          `SELECT o.*, s.login_code AS school_code, st.student_code, ctry.iso_code AS country_iso
            FROM student_fee_obligations o
            JOIN schools s ON s.id = o.school_id
            JOIN countries ctry ON ctry.id = s.country_id
@@ -596,7 +596,7 @@ function createFinancePgStore(repo) {
           pred = sqlSchoolPredicate("s", scope, params);
         }
         const row = await one(
-          `SELECT g.*, s.school_code, ctry.iso_code AS country_iso FROM fee_grids g
+          `SELECT g.*, s.login_code AS school_code, ctry.iso_code AS country_iso FROM fee_grids g
            JOIN schools s ON s.id = g.school_id
            JOIN countries ctry ON ctry.id = s.country_id
            WHERE (g.grid_code = $1 OR g.id::text = $1)
@@ -612,7 +612,7 @@ function createFinancePgStore(repo) {
           [dbId, status],
         );
         const school = await one(
-          `SELECT s.school_code, c.iso_code AS country_iso
+          `SELECT s.login_code AS school_code, c.iso_code AS country_iso
            FROM schools s JOIN countries c ON c.id = s.country_id WHERE s.id = $1`,
           [row.school_id],
         );
@@ -645,7 +645,7 @@ function createFinancePgStore(repo) {
       },
       async listItemsByGrid(gridDbId) {
         const rows = await all(
-          `SELECT i.*, g.grid_code, s.school_code
+          `SELECT i.*, g.grid_code, s.login_code AS school_code
            FROM school_fee_items i
            JOIN fee_grids g ON g.id = i.fee_grid_id
            JOIN schools s ON s.id = i.school_id
@@ -725,7 +725,7 @@ function createFinancePgStore(repo) {
       },
       async listRemindersByStudent(studentDbId) {
         const rows = await all(
-          `SELECT r.*, s.school_code, st.student_code
+          `SELECT r.*, s.login_code AS school_code, st.student_code
            FROM payment_reminders r
            JOIN schools s ON s.id = r.school_id
            JOIN students st ON st.id = r.student_id
@@ -767,30 +767,30 @@ function createFinancePgStore(repo) {
     async listProjection() {
       const [payments, statuses, grids, items, fees, history, reminders, paymentItems, allocations] = await Promise.all([
         repo.all(
-          `SELECT p.*, s.school_code, st.student_code
+          `SELECT p.*, s.login_code AS school_code, st.student_code
            FROM payments p
            JOIN schools s ON s.id = p.school_id
            JOIN students st ON st.id = p.student_id
            ORDER BY p.created_at`,
         ),
         repo.all(
-          `SELECT ps.*, s.school_code FROM payment_statuses ps LEFT JOIN schools s ON s.id = ps.school_id`,
+          `SELECT ps.*, s.login_code AS school_code FROM payment_statuses ps LEFT JOIN schools s ON s.id = ps.school_id`,
         ),
         repo.all(
-          `SELECT g.*, s.school_code, cl.class_code
+          `SELECT g.*, s.login_code AS school_code, cl.class_code
            FROM fee_grids g
            JOIN schools s ON s.id = g.school_id
            LEFT JOIN classes cl ON cl.id = g.class_id
            ORDER BY g.created_at`,
         ),
         repo.all(
-          `SELECT i.*, g.grid_code, s.school_code
+          `SELECT i.*, g.grid_code, s.login_code AS school_code
            FROM school_fee_items i
            JOIN fee_grids g ON g.id = i.fee_grid_id
            JOIN schools s ON s.id = i.school_id`,
         ),
         repo.all(
-          `SELECT o.*, s.school_code, st.student_code
+          `SELECT o.*, s.login_code AS school_code, st.student_code
            FROM student_fee_obligations o
            JOIN schools s ON s.id = o.school_id
            JOIN students st ON st.id = o.student_id
@@ -798,7 +798,7 @@ function createFinancePgStore(repo) {
         ),
         repo.all(`SELECT * FROM fee_tariff_history ORDER BY created_at DESC`),
         repo.all(
-          `SELECT r.*, s.school_code, st.student_code
+          `SELECT r.*, s.login_code AS school_code, st.student_code
            FROM payment_reminders r
            JOIN schools s ON s.id = r.school_id
            JOIN students st ON st.id = r.student_id
@@ -872,7 +872,7 @@ function createFinancePgStore(repo) {
       const params = [];
       const pred = sqlSchoolPredicate("s", scope, params);
       const rows = await repo.all(
-        `SELECT g.*, s.school_code, ctry.iso_code AS country_iso FROM fee_grids g
+        `SELECT g.*, s.login_code AS school_code, ctry.iso_code AS country_iso FROM fee_grids g
          JOIN schools s ON s.id = g.school_id
          JOIN countries ctry ON ctry.id = s.country_id
          WHERE ${pred} ORDER BY g.created_at`,
@@ -889,7 +889,7 @@ function createFinancePgStore(repo) {
       const allocPred = sqlSchoolPredicate("s", scope, allocParams);
       const [rows, allocations] = await Promise.all([
         repo.all(
-          `SELECT o.*, s.school_code, st.student_code, ctry.iso_code AS country_iso,
+          `SELECT o.*, s.login_code AS school_code, st.student_code, ctry.iso_code AS country_iso,
                   COALESCE(pa.allocated, 0) AS allocated_paid
            FROM student_fee_obligations o
            JOIN schools s ON s.id = o.school_id
@@ -939,7 +939,7 @@ function createFinancePgStore(repo) {
       const params = [];
       const pred = sqlSchoolPredicate("s", scope, params);
       const rows = await repo.all(
-        `SELECT ps.*, s.school_code FROM payment_statuses ps LEFT JOIN schools s ON s.id = ps.school_id
+        `SELECT ps.*, s.login_code AS school_code FROM payment_statuses ps LEFT JOIN schools s ON s.id = ps.school_id
          WHERE ps.school_id IS NULL OR ${pred}`,
         params,
       );
@@ -983,7 +983,7 @@ function createFinancePgStore(repo) {
                   cl.id AS class_id,
                   cl.class_code,
                   cl.name AS class_name,
-                  s.school_code
+                  s.login_code AS school_code
            FROM students st
            JOIN schools s ON s.id = st.school_id
            JOIN enrollments e ON e.student_id = st.id
@@ -1003,7 +1003,7 @@ function createFinancePgStore(repo) {
         const params = [];
         const pred = sqlSchoolPredicate("s", scope, params);
         const rows = await repo.all(
-          `SELECT m.*, s.school_code
+          `SELECT m.*, s.login_code AS school_code
            FROM school_payment_methods m
            JOIN schools s ON s.id = m.school_id
            WHERE ${pred}
@@ -1053,7 +1053,7 @@ function createFinancePgStore(repo) {
         const pred = sqlSchoolPredicate("s", scope, params);
         const rows = await repo.all(
           `SELECT i.*, g.grid_code, g.currency, g.class_id, g.class_name, g.academic_year,
-                  s.school_code, cl.class_code
+                  s.login_code AS school_code, cl.class_code
            FROM school_fee_items i
            JOIN fee_grids g ON g.id = i.fee_grid_id AND g.school_id = i.school_id
            JOIN schools s ON s.id = i.school_id

@@ -86,6 +86,10 @@ function obligationStatus({ amountDue, amountPaid, exemption, dueDate, now = new
   });
 }
 
+function publicSchoolIdentity(row = {}, profile = {}) {
+  return asTrimmed(row.login_code || row.loginCode || row.school_code || profile.schoolCode || "");
+}
+
 function generatePaymentReference(schoolCode, existingCodes = []) {
   const year = new Date().getFullYear();
   const prefix = `${asTrimmed(schoolCode || "ETAB").toUpperCase()}-${year}-PAY-`;
@@ -156,7 +160,7 @@ function mapPaymentRow(row) {
     publicId: code,
     reference: code,
     dbId: row.id,
-    schoolCode: row.school_code || profile.schoolCode,
+    schoolCode: publicSchoolIdentity(row, profile),
     countryIso: String(row.country_iso || row.countryIso || profile.countryIso || "").trim().toUpperCase(),
     studentId: profile.studentId || row.student_code || row.student_id,
     studentName: profile.studentName || "",
@@ -205,7 +209,7 @@ function mapObligationRow(row) {
     studentDbId: row.student_id,
     studentName: profile.studentName || "",
     schoolId: row.school_id,
-    schoolCode: row.school_code || profile.schoolCode,
+    schoolCode: publicSchoolIdentity(row, profile),
     countryIso: String(row.country_iso || row.countryIso || profile.countryIso || "").trim().toUpperCase(),
     className: profile.className || "",
     schoolFeeItemId: row.school_fee_item_id,
@@ -244,7 +248,7 @@ function mapGridRow(row) {
     id: row.grid_code,
     dbId: row.id,
     schoolId: row.school_id || profile.schoolId || "",
-    schoolCode: row.school_code || profile.schoolCode,
+    schoolCode: publicSchoolIdentity(row, profile),
     countryIso: String(row.country_iso || row.countryIso || profile.countryIso || "").trim().toUpperCase(),
     name: row.name || profile.name || row.class_name,
     className: row.class_name,
@@ -268,7 +272,7 @@ function mapItemRow(row) {
     id: row.item_code,
     dbId: row.id,
     feeGridId: profile.gridCode || row.grid_code,
-    schoolCode: row.school_code || profile.schoolCode,
+    schoolCode: publicSchoolIdentity(row, profile),
     countryIso: String(row.country_iso || row.countryIso || profile.countryIso || "").trim().toUpperCase(),
     feeType: row.fee_type,
     label: row.label,
@@ -287,7 +291,7 @@ function mapReminderRow(row) {
     id: profile.publicId || row.id,
     dbId: row.id,
     studentId: profile.studentId || row.student_code || row.student_id,
-    schoolCode: row.school_code || profile.schoolCode,
+    schoolCode: publicSchoolIdentity(row, profile),
     countryIso: String(row.country_iso || row.countryIso || profile.countryIso || "").trim().toUpperCase(),
     recipient: row.recipient,
     channel: row.channel,
@@ -305,7 +309,7 @@ function mapStatusRow(row) {
   return {
     id: row.status_code,
     dbId: row.id,
-    schoolCode: row.school_code || profile.schoolCode || "",
+    schoolCode: publicSchoolIdentity(row, profile),
     code: row.status_code,
     label: row.label,
     status: row.is_active ? "Actif" : "Inactif",
@@ -429,6 +433,7 @@ module.exports = {
   mapBoStatusToDb,
   toIsoDate,
   parsePayload,
+  publicSchoolIdentity,
   mapPaymentRow,
   mapObligationRow,
   mapGridRow,
