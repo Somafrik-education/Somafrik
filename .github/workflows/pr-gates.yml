@@ -141,6 +141,8 @@ jobs:
         env:
           VITE_API_URL: https://api.somafrik.app
         run: npm run build
+      - name: ID-CANONICAL inventory (report)
+        run: npm run verify:id-canonical
 
   secrets:
     name: Secrets
