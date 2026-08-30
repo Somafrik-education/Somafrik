@@ -6,8 +6,8 @@ const { verifySecret } = require("../services/credentialService");
 
 function createMemoryDb() {
   const schools = new Map([
-    ["CD-2026-0001", { id: "school-1", school_code: "CD-2026-0001" }],
-    ["CD-2026-0002", { id: "school-2", school_code: "CD-2026-0002" }],
+    ["CD-IN-26-001", { id: "school-1", school_code: "SCH-TEST1", login_code: "CD-IN-26-001", name: "Lycée Test 1" }],
+    ["CD-LT-26-002", { id: "school-2", school_code: "SCH-TEST2", login_code: "CD-LT-26-002", name: "Lycée Test 2" }],
   ]);
   const users = [];
   const teachers = [];
@@ -74,6 +74,7 @@ function createMemoryDb() {
         return {
           ...teacher,
           school_code: [...schools.values()].find((s) => s.id === teacher.school_id)?.school_code,
+          login_code: [...schools.values()].find((s) => s.id === teacher.school_id)?.login_code,
           first_name: user?.first_name,
           last_name: user?.last_name,
           email: user?.email,
@@ -98,6 +99,7 @@ function createMemoryDb() {
             return {
               ...teacher,
               school_code: [...schools.values()].find((s) => s.id === teacher.school_id)?.school_code,
+              login_code: [...schools.values()].find((s) => s.id === teacher.school_id)?.login_code,
               first_name: user?.first_name,
               last_name: user?.last_name,
               email: user?.email,
@@ -177,21 +179,22 @@ async function main() {
       temporaryPassword: "TempPass1",
       speciality: "Mathématiques",
     },
-    "CD-2026-0001",
+    "CD-IN-26-001",
   );
-  assert.equal(created.identifier, "ENS-0001");
-  assert.equal(created.teacherCode, "CD-2026-0001-ENS-0001");
+  assert.equal(created.identifier, "CD-IN-AD-26-00001");
+  assert.equal(created.teacherCode, "CD-IN-AD-26-00001");
+  assert.equal(created.publicId, created.teacherCode);
   assert.equal(created.mustChangePassword, true);
   assert.equal(db._users.length, 1);
   assert.equal(db._teachers.length, 1);
   assert.ok(verifySecret("TempPass1", db._users[0].password_hash));
   assert.notEqual(db._users[0].password_hash, "TempPass1");
 
-  const reread = await repo.getByTeacherCode(created.teacherCode, "CD-2026-0001");
+  const reread = await repo.getByTeacherCode(created.teacherCode, "CD-IN-26-001");
   assert.equal(reread.firstName, "Awa");
   assert.equal(reread.lastName, "Diop");
 
-  const listed = await repo.listBySchoolCode("CD-2026-0001");
+  const listed = await repo.listBySchoolCode("CD-IN-26-001");
   assert.equal(listed.length, 1);
 
   // Homonyme (même nom, autre date) accepté
@@ -203,9 +206,9 @@ async function main() {
       email: "awa2@example.com",
       temporaryPassword: "TempPass2",
     },
-    "CD-2026-0001",
+    "CD-IN-26-001",
   );
-  assert.equal(homonym.identifier, "ENS-0002");
+  assert.equal(homonym.identifier, "CD-IN-AD-26-00002");
 
   // Identité exacte → ambiguïté
   await assert.rejects(
@@ -218,7 +221,7 @@ async function main() {
           phone: "+243 801",
           temporaryPassword: "TempPass3",
         },
-        "CD-2026-0001",
+        "CD-IN-26-001",
       ),
     (error) => error.statusCode === 409 && error.code === "TEACHER_CANON_AMBIGUOUS",
   );
@@ -232,11 +235,11 @@ async function main() {
       phone: "+243 802",
       temporaryPassword: "TempPass4",
     },
-    "CD-2026-0002",
+    "CD-LT-26-002",
   );
-  assert.equal(other.schoolCode, "CD-2026-0002");
-  assert.equal((await repo.listBySchoolCode("CD-2026-0001")).length, 2);
-  assert.equal((await repo.listBySchoolCode("CD-2026-0002")).length, 1);
+  assert.equal(other.schoolCode, "CD-LT-26-002");
+  assert.equal((await repo.listBySchoolCode("CD-IN-26-001")).length, 2);
+  assert.equal((await repo.listBySchoolCode("CD-LT-26-002")).length, 1);
 
   // Rollback si fiche échoue après compte
   const beforeUsers = db._users.length;
@@ -252,7 +255,7 @@ async function main() {
           temporaryPassword: "TempPass5",
           speciality: "FORCE_TEACHER_FAIL",
         },
-        "CD-2026-0001",
+        "CD-IN-26-001",
       ),
     (error) => error.code === "FORCE_TEACHER_FAIL",
   );
@@ -269,9 +272,9 @@ async function main() {
           birthDate: "1985-01-01",
           phone: "+243 804",
           temporaryPassword: "TempPass6",
-          schoolCode: "CD-2026-0002",
+          schoolCode: "CD-LT-26-002",
         },
-        "CD-2026-0001",
+        "CD-IN-26-001",
       ),
     (error) => error.statusCode === 400,
   );
@@ -286,7 +289,7 @@ async function main() {
         phone: "+243 805",
         temporaryPassword: "TempPass7",
       },
-      "CD-2026-0001",
+      "CD-IN-26-001",
     ),
     repo.create(
       {
@@ -296,7 +299,7 @@ async function main() {
         phone: "+243 806",
         temporaryPassword: "TempPass8",
       },
-      "CD-2026-0001",
+      "CD-IN-26-001",
     ),
   ]);
   assert.equal(raced.filter((item) => item.status === "fulfilled").length, 1);

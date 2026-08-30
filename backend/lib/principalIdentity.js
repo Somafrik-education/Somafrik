@@ -51,11 +51,12 @@ function resolvePrincipalUserRef(principal = {}) {
 }
 
 function classifyPrincipalUserRef(value) {
+  const { isPersonIdentityCode } = require("./teacherCodeAllocation");
   const raw = String(value ?? "").trim();
   if (!raw) return "empty";
   if (isUuid(raw)) return "uuid";
   if (/^USR-\d{4}-\d+$/i.test(raw)) return "user_code";
-  if (/-ENS-\d+$/i.test(raw)) return "teacher_code";
+  if (isPersonIdentityCode(raw)) return "teacher_code";
   return "other";
 }
 

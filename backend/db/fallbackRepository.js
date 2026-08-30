@@ -2298,7 +2298,7 @@ class FallbackRepository {
       .filter((row) => !["deleted", "archived"].includes(String(row.status ?? "active").toLowerCase()))
       .map((teacher) => {
         const user = tables.users.find((row) => row.id === teacher.user_id);
-        const identifier = String(teacher.teacher_code ?? "").match(/(ENS-\d+)$/i)?.[1]?.toUpperCase() ?? teacher.teacher_code;
+        const identifier = String(teacher.teacher_code ?? "").trim().toUpperCase();
         return {
           id: teacher.teacher_code,
           teacherCode: teacher.teacher_code,

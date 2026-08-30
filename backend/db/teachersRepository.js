@@ -85,11 +85,10 @@ function mapActiveAssignments(assignmentRows, teacherCode) {
  * @param {any[]} [assignmentRows]
  */
 function mapTeacherRow(row, assignmentRows = []) {
-  const teacherCode = row.teacher_code;
+  const teacherCode = String(row.teacher_code ?? "").trim().toUpperCase();
   const firstName = row.first_name ?? "";
   const lastName = row.last_name ?? "";
-  const identifierMatch = String(teacherCode ?? "").match(/(ENS-\d+)$/i);
-  const identifier = identifierMatch ? identifierMatch[1].toUpperCase() : "";
+  const identifier = teacherCode;
   const assignments = mapActiveAssignments(assignmentRows, teacherCode);
   return {
     id: teacherCode,
@@ -107,7 +106,7 @@ function mapTeacherRow(row, assignmentRows = []) {
     email: row.email ?? "",
     speciality: row.speciality ?? "",
     mainSubject: row.speciality ?? "",
-    schoolCode: row.school_code,
+    schoolCode: row.login_code || row.school_code,
     status: row.status === "active" || row.status === "Actif" ? "Actif" : row.status ?? "Actif",
     mustChangePassword: Boolean(row.must_change_password),
     assignments,
@@ -320,6 +319,7 @@ function createTeachersRepository(db) {
       gender: user.gender,
       must_change_password: user.must_change_password,
       school_code: school.school_code ?? schoolCode,
+      login_code: school.login_code ?? school.loginCode ?? null,
     });
   }
 
@@ -339,6 +339,7 @@ function createTeachersRepository(db) {
                   t.created_at,
                   t.updated_at,
                   s.school_code,
+                  s.login_code,
                   u.first_name,
                   u.last_name,
                   u.email,
@@ -379,6 +380,7 @@ function createTeachersRepository(db) {
                 t.created_at,
                 t.updated_at,
                 s.school_code,
+                s.login_code,
                 u.first_name,
                 u.last_name,
                 u.email,

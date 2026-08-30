@@ -60,6 +60,7 @@ async function setupFixture(pool) {
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       country_id UUID NOT NULL REFERENCES countries(id),
       school_code VARCHAR(64) NOT NULL UNIQUE,
+      login_code TEXT,
       name TEXT NOT NULL,
       status TEXT NOT NULL DEFAULT 'active',
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -175,9 +176,10 @@ async function setupFixture(pool) {
     `INSERT INTO countries (name, iso_code) VALUES ('RDC', 'CD') RETURNING id`,
   );
   const schools = await pool.query(
-    `INSERT INTO schools (country_id, school_code, name)
-     VALUES ($1, 'CD-2026-0001', 'Lycée Test 1'), ($1, 'CD-2026-0002', 'Lycée Test 2')
-     RETURNING id, school_code`,
+    `INSERT INTO schools (country_id, school_code, login_code, name)
+     VALUES ($1, 'CD-2026-0001', 'CD-IN-26-001', 'Lycée Test 1'),
+            ($1, 'CD-2026-0002', 'CD-LT-26-002', 'Lycée Test 2')
+     RETURNING id, school_code, login_code`,
     [country.rows[0].id],
   );
   const school1 = schools.rows.find((row) => row.school_code === "CD-2026-0001");
@@ -264,7 +266,7 @@ async function countUsers(pool, schoolCode) {
     `SELECT COUNT(*)::int AS count
      FROM users u
      JOIN schools s ON s.id = u.school_id
-     WHERE s.school_code = $1`,
+     WHERE s.school_code = $1 OR s.login_code = $1`,
     [schoolCode],
   );
   return result.rows[0].count;
@@ -275,7 +277,7 @@ async function countTeachers(pool, schoolCode) {
     `SELECT COUNT(*)::int AS count
      FROM teachers t
      JOIN schools s ON s.id = t.school_id
-     WHERE s.school_code = $1`,
+     WHERE s.school_code = $1 OR s.login_code = $1`,
     [schoolCode],
   );
   return result.rows[0].count;
@@ -305,9 +307,9 @@ async function main() {
         temporaryPassword: "TempPass1",
         speciality: "Mathématiques",
       },
-      "CD-2026-0001",
+      "CD-IN-26-001",
     );
-    assert.match(created.teacherCode, /^CD-2026-0001-ENS-\d{4}$/);
+    assert.match(created.teacherCode, /^CD-IN-[A-Z0-9]{1,5}-26-\d{5}$/);
     assert.equal(created.mustChangePassword, true);
 
     const pgUser = await pool.query(
@@ -320,7 +322,7 @@ async function main() {
     assert.equal(pgUser.rows[0].must_change_password, true);
     assert.ok(verifySecret("TempPass1", pgUser.rows[0].password_hash));
 
-    const reread = await repo.getByTeacherCode(created.teacherCode, "CD-2026-0001");
+    const reread = await repo.getByTeacherCode(created.teacherCode, "CD-IN-26-001");
     assert.equal(reread.firstName, "Jean");
     assert.equal(reread.identifier, created.identifier);
 
@@ -332,7 +334,7 @@ async function main() {
         phone: "+243 810 000 202",
         temporaryPassword: "TempPass2",
       },
-      "CD-2026-0001",
+      "CD-IN-26-001",
     );
 
     await assert.rejects(
@@ -345,7 +347,7 @@ async function main() {
             phone: "+243 810 000 203",
             temporaryPassword: "TempPass3",
           },
-          "CD-2026-0001",
+          "CD-IN-26-001",
         ),
       (error) => error.statusCode === 409 && error.code === "TEACHER_CANON_AMBIGUOUS",
     );
@@ -358,11 +360,11 @@ async function main() {
         phone: "+243 810 000 204",
         temporaryPassword: "TempPass4",
       },
-      "CD-2026-0002",
+      "CD-LT-26-002",
     );
-    assert.equal(otherSchool.schoolCode, "CD-2026-0002");
-    assert.equal((await repo.listBySchoolCode("CD-2026-0001")).length, 2);
-    assert.equal((await repo.listBySchoolCode("CD-2026-0002")).length, 1);
+    assert.equal(otherSchool.schoolCode, "CD-LT-26-002");
+    assert.equal((await repo.listBySchoolCode("CD-IN-26-001")).length, 2);
+    assert.equal((await repo.listBySchoolCode("CD-LT-26-002")).length, 1);
 
     const rollbackRepo = createRollbackTestRepository(db);
     const beforeUsers = await countUsers(pool, "CD-2026-0001");
@@ -377,7 +379,7 @@ async function main() {
             phone: "+243 810 000 205",
             temporaryPassword: "TempPass5",
           },
-          "CD-2026-0001",
+          "CD-IN-26-001",
         ),
       (error) => error.code === "FORCE_TEACHER_FAIL",
     );
@@ -393,7 +395,7 @@ async function main() {
           phone: "+243 810 000 206",
           temporaryPassword: "TempPass6",
         },
-        "CD-2026-0001",
+        "CD-IN-26-001",
       ),
       repo.create(
         {
@@ -403,7 +405,7 @@ async function main() {
           phone: "+243 810 000 207",
           temporaryPassword: "TempPass7",
         },
-        "CD-2026-0001",
+        "CD-IN-26-001",
       ),
     ]);
     assert.notEqual(concurrent[0].teacherCode, concurrent[1].teacherCode);
@@ -418,8 +420,8 @@ async function main() {
       temporaryPassword: "TempPass8",
     };
     const raced = await Promise.allSettled([
-      repo.create({ ...sameIdentity, phone: "+243 810 000 208" }, "CD-2026-0001"),
-      repo.create({ ...sameIdentity, phone: "+243 810 000 209", temporaryPassword: "TempPass9" }, "CD-2026-0001"),
+      repo.create({ ...sameIdentity, phone: "+243 810 000 208" }, "CD-IN-26-001"),
+      repo.create({ ...sameIdentity, phone: "+243 810 000 209", temporaryPassword: "TempPass9" }, "CD-IN-26-001"),
     ]);
     const fulfilled = raced.filter((item) => item.status === "fulfilled");
     const rejected = raced.filter((item) => item.status === "rejected");
@@ -445,7 +447,7 @@ async function main() {
         classCode: "CLS-6A",
         subjectCode: "SUB-MATH",
       },
-      "CD-2026-0001",
+      "CD-IN-26-001",
     );
     assert.equal(createdAssignment.teacherCode, withAssign.teacherCode);
     assert.equal(createdAssignment.className, "6ème A");
@@ -453,7 +455,7 @@ async function main() {
     await assert.rejects(
       () => assignmentsRepo.create(
         { teacherCode: created.teacherCode, classCode: "CLS-6A", subjectCode: "SUB-MATH" },
-        "CD-2026-0001",
+        "CD-IN-26-001",
       ),
       (error) => error.statusCode === 409 && error.code === "ASSIGNMENT_COURSE_CONFLICT",
     );
@@ -470,7 +472,7 @@ async function main() {
       ],
     );
 
-    const listedWithAssign = await repo.listBySchoolCode("CD-2026-0001");
+    const listedWithAssign = await repo.listBySchoolCode("CD-IN-26-001");
     const listedTeacher = listedWithAssign.find((row) => row.teacherCode === withAssign.teacherCode);
     assert.ok(listedTeacher);
     assert.equal(listedTeacher.assignments.length, 1);
@@ -479,25 +481,25 @@ async function main() {
     assert.deepEqual(listedTeacher.assignedClasses, ["6ème A"]);
     assert.deepEqual(listedTeacher.courses, ["Mathématiques"]);
 
-    const detail = await repo.getByTeacherCode(withAssign.teacherCode, "CD-2026-0001");
+    const detail = await repo.getByTeacherCode(withAssign.teacherCode, "CD-IN-26-001");
     assert.equal(detail.assignments.length, 1);
     assert.deepEqual(detail.assignedClasses, ["6ème A"]);
 
     const reassigned = await assignmentsRepo.update(
       createdAssignment.id,
       { teacherCode: created.teacherCode },
-      "CD-2026-0001",
+      "CD-IN-26-001",
     );
     assert.equal(reassigned.teacherCode, created.teacherCode);
     await assert.rejects(
-      () => assignmentsRepo.update(createdAssignment.id, { teacherCode: otherSchool.teacherCode }, "CD-2026-0001"),
+      () => assignmentsRepo.update(createdAssignment.id, { teacherCode: otherSchool.teacherCode }, "CD-IN-26-001"),
       (error) => error.statusCode === 404 && error.code === "ASSIGNMENT_TEACHER_NOT_FOUND",
     );
     assert.deepEqual(
-      await assignmentsRepo.remove(createdAssignment.id, "CD-2026-0001"),
+      await assignmentsRepo.remove(createdAssignment.id, "CD-IN-26-001"),
       { id: createdAssignment.id, deleted: true },
     );
-    assert.equal((await assignmentsRepo.listBySchoolCode("CD-2026-0001")).length, 0);
+    assert.equal((await assignmentsRepo.listBySchoolCode("CD-IN-26-001")).length, 0);
 
     console.log("teachersRepository.pg.test.js: OK");
   } finally {

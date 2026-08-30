@@ -229,8 +229,9 @@ async function main() {
 
     const created = await createTeacherViaUsers(admin.token, teacherPayload());
     assert.equal(created.status, 201, JSON.stringify(created.data));
-    assert.match(String(created.data.teacherCode), /ENS-\d{4}$/);
-    assert.equal(created.data.identifier.startsWith("ENS-"), true);
+    assert.match(String(created.data.teacherCode), /^CD-IN-[A-Z0-9]{1,5}-26-\d{5}$/);
+    assert.equal(created.data.identifier, created.data.teacherCode);
+    assert.equal(created.data.publicId, created.data.teacherCode);
     assert.equal(created.data.mustChangePassword, true);
 
     const replay = await request("/teachers", {

@@ -1180,7 +1180,7 @@ function createClientsMemoryStore(seed = {}) {
           },
           roleKeys,
         );
-        const teacherLogin = String(teacher?.teacher_code ?? "").match(/(ENS-\d+)$/i)?.[1]?.toUpperCase() ?? "";
+        const teacherLogin = String(teacher?.teacher_code ?? "").trim().toUpperCase();
         return {
           ...account,
           ...hydrated,

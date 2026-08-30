@@ -83,13 +83,13 @@ test("scanFile détecte les formats et helpers legacy", () => {
   assert.ok(ids.has("COLLECT_TEACHER_LOOKUP_KEYS"));
 });
 
-test("le dépôt actuel expose encore des résidus runtime hors allowlist", () => {
+test("teacherCodeAllocation n'a plus de helper ENS ; des résidus restent ailleurs", () => {
   const report = scanRepository({ root: ROOT, strict: false });
-  assert.ok(report.summary.blocking > 0, "Lot A attend des résidus — le chantier n'est pas fini");
+  assert.ok(report.summary.blocking > 0, "des résidus restent hors Lot B — le chantier n'est pas fini");
   const teacherHelper = report.findings.find(
     (item) => item.file === "backend/lib/teacherCodeAllocation.js" && item.ruleId === "LEGACY_SHORT_TEACHER_HELPER",
   );
-  assert.ok(teacherHelper, "teacherCodeAllocation.js doit encore apparaître dans l'inventaire");
+  assert.equal(teacherHelper, undefined, "allocation enseignant Lot B ne doit plus exposer le helper ENS");
 });
 
 test("CLI rapport sort 0 ; --strict sort 1 tant que des résidus existent", () => {
