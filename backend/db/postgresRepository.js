@@ -2353,7 +2353,7 @@ class PostgresRepository {
     const score = gradeStatus === "graded" ? Number(scoreRaw) : null;
 
     // HOTFIX-PRE-E1-01 : résolution par identifiants stables (+ matérialisation BO), jamais par nom.
-    const evaluationSchool = await this.one(`SELECT school_code FROM schools WHERE id = $1`, [
+    const evaluationSchool = await this.one(`SELECT login_code FROM schools WHERE id = $1`, [
       evaluation.school_id,
     ]);
     const principalSchool = String(principal?.schoolCode ?? "")
@@ -2362,7 +2362,7 @@ class PostgresRepository {
     const lookupSchoolCode =
       principalSchool && principalSchool !== "*"
         ? principalSchool
-        : String(evaluationSchool?.school_code ?? "").trim().toUpperCase();
+        : String(evaluationSchool?.login_code ?? "").trim().toUpperCase();
     const student = await this.resolveStudentForGrade(payload.studentId, lookupSchoolCode);
     if (!student) {
       const error = new Error("Eleve introuvable");
@@ -3331,14 +3331,14 @@ class PostgresRepository {
     for (const key of lookupKeys) {
       const params = [key];
       let sql = `
-        SELECT st.*, s.school_code, e.class_id, cl.name AS class_name, cl.class_code
+        SELECT st.*, s.login_code AS school_code, e.class_id, cl.name AS class_name, cl.class_code
         FROM students st
         JOIN schools s ON s.id = st.school_id
         LEFT JOIN enrollments e ON e.student_id = st.id AND e.status = 'active'
         LEFT JOIN classes cl ON cl.id = e.class_id
         WHERE (st.student_code = $1 OR st.id::text = $1)`;
       if (schoolCode && schoolCode !== "*") {
-        sql += ` AND s.school_code = $2`;
+        sql += ` AND upper(s.login_code) = $2`;
         params.push(String(schoolCode).trim().toUpperCase());
       }
       sql += ` LIMIT 1`;
@@ -4420,10 +4420,10 @@ class PostgresRepository {
       .trim()
       .toUpperCase();
     if (principalSchool && principalSchool !== "*") {
-      const evaluationSchool = await this.one(`SELECT school_code FROM schools WHERE id = $1`, [
+      const evaluationSchool = await this.one(`SELECT login_code FROM schools WHERE id = $1`, [
         evaluation.school_id,
       ]);
-      const evaluationSchoolCode = String(evaluationSchool?.school_code ?? "")
+      const evaluationSchoolCode = String(evaluationSchool?.login_code ?? "")
         .trim()
         .toUpperCase();
       if (evaluationSchoolCode && evaluationSchoolCode !== principalSchool) {
@@ -4516,7 +4516,7 @@ class PostgresRepository {
          JOIN schools s ON s.id = cl.school_id
          WHERE 1=1`;
       if (schoolCode && schoolCode !== "*") {
-        sql += ` AND s.school_code = $${params.length + 1}`;
+        sql += ` AND upper(s.login_code) = $${params.length + 1}`;
         params.push(schoolCode);
       }
       if (requested.classId && requested.classCode) {
