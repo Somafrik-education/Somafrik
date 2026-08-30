@@ -28,8 +28,9 @@ assert.equal(isHelpBusinessModalOpen(), false);
 assert.equal(seen.at(-1), false);
 
 unsubscribe();
+const afterUnsub = seen.length;
 reportHelpBusinessModal(true);
-assert.equal(seen.filter((value) => value === true).length, 2, "listener retiré");
+assert.equal(seen.length, afterUnsub, "listener retiré");
 
 resetHelpBusinessModalForTests();
 assert.equal(isHelpBusinessModalOpen(), false);
