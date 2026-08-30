@@ -21,6 +21,7 @@ export function MarketingHeader() {
       <div className="mx-auto flex min-w-0 max-w-6xl items-center justify-between gap-3 px-4 py-3 sm:px-6">
         <Link
           to="/"
+          aria-label="Somafrik, accueil"
           className="min-w-0 shrink rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2"
         >
           <BrandLogo

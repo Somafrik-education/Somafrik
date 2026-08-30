@@ -24,6 +24,11 @@ export type MarketingAudience = {
   description: string;
 };
 
+export type MarketingSecurityItem = {
+  title: string;
+  text: string;
+};
+
 export const marketingNav: MarketingNavLink[] = [
   { href: "#produit", label: "Produit" },
   { href: "#fonctionnalites", label: "Fonctionnalités" },
@@ -63,6 +68,15 @@ export const marketingProduct = {
     "Suivi des enseignants et du travail pédagogique",
     "Tableaux de bord pour lire la situation de l’établissement",
   ],
+} as const;
+
+/** Visuel marketing du tableau de bord Somafrik, basé sur l’interface produit. */
+export const marketingHeroVisual = {
+  src: `${import.meta.env.BASE_URL}marketing/somafrik-dashboard-hero.webp`,
+  alt: "Tableau de bord Somafrik présentant la scolarité, les paiements, les présences et le suivi pédagogique d’un établissement.",
+  caption: "Visuel marketing du tableau de bord Somafrik, basé sur l’interface produit.",
+  width: 1760,
+  height: 1400,
 } as const;
 
 /** Capture runtime réelle — pas d’illustration, pas de maquette. */
@@ -229,22 +243,30 @@ export const marketingBusinessProofs = {
   ] satisfies readonly MarketingBusinessProof[],
 } as const;
 
+export const marketingAudiencesSection = {
+  id: "utilisateurs",
+  eyebrow: "Pour qui ?",
+  title: "Pensé d’abord pour l’établissement",
+  intro: "Chaque profil retrouve son travail quotidien, sans changer d’outil.",
+} as const;
+
 export const marketingAudiences: MarketingAudience[] = [
   {
     title: "Direction",
-    description: "Voir la situation de l’établissement et décider à partir des dossiers, des présences et des frais.",
+    description:
+      "Suivre les classes, les effectifs, les présences et les frais depuis un même endroit, puis décider à partir de la situation réelle de l’établissement.",
   },
   {
     title: "Administration",
-    description: "Inscrire les élèves, organiser les classes et tenir les comptes de l’école.",
+    description: "Inscrire les élèves, organiser les classes et enregistrer les paiements de l’école.",
   },
   {
     title: "Enseignants",
-    description: "Faire l’appel et saisir les notes depuis le web ou le mobile.",
+    description: "Faire l’appel et saisir les notes des élèves depuis le web ou le mobile.",
   },
   {
     title: "Parents",
-    description: "Suivre l’enfant sur mobile : notes, présences et frais.",
+    description: "Consulter les notes, les présences et les frais de l’enfant sur mobile, selon les accès accordés.",
   },
 ];
 
@@ -252,20 +274,43 @@ export const marketingSecurity = {
   id: "securite",
   eyebrow: "Sécurité",
   title: "Chaque établissement reste dans son périmètre",
+  intro: "L’accès et le partage des informations suivent l’établissement et le rôle de chacun.",
   items: [
-    "Connexion par code établissement et identifiant.",
-    "Les données sont séparées par établissement et protégées par des contrôles d’accès.",
-    "Des accès adaptés aux responsabilités de chacun.",
-  ],
+    {
+      title: "Authentification",
+      text: "La connexion se fait avec le code de l’établissement et un identifiant.",
+    },
+    {
+      title: "Séparation des établissements",
+      text: "Les données d’une école restent dans son périmètre. Elles ne sont pas mélangées avec celles d’un autre établissement.",
+    },
+    {
+      title: "Accès selon les responsabilités",
+      text: "Chaque personne voit ce qui correspond à son rôle : direction, administration, enseignant ou parent.",
+    },
+  ] satisfies readonly MarketingSecurityItem[],
 } as const;
 
 export const marketingFinalCta = {
-  title: "Accéder à Somafrik",
-  text: "Si votre établissement dispose déjà d’un compte, connectez-vous pour ouvrir votre espace.",
+  title: "Ouvrez l’espace de votre établissement",
+  text: "Si votre école dispose déjà d’un compte Somafrik, connectez-vous pour retrouver les classes, les élèves, les présences, les notes et les finances.",
   cta: {
     href: "/connexion",
     label: "Se connecter",
   },
+} as const;
+
+export const marketingSeo = {
+  title: "Somafrik — Pilotez votre établissement scolaire",
+  description:
+    "Somafrik réunit les élèves, les enseignants, les présences, les notes et les finances dans une plateforme accessible sur Web et Mobile.",
+  ogTitle: "Somafrik — Pilotez votre établissement scolaire",
+  ogDescription:
+    "Pilotez les classes, les élèves, les présences, les notes et les finances depuis un seul endroit, sur Web et Mobile.",
+  ogType: "website",
+  ogLocale: "fr_FR",
+  ogImage: `${import.meta.env.BASE_URL}marketing/somafrik-dashboard-etablissement.webp`,
+  twitterCard: "summary_large_image",
 } as const;
 
 export const marketingFooter = {

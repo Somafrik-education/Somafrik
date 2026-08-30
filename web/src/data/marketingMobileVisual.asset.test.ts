@@ -32,5 +32,9 @@ describe("marketing mobile visual assets", () => {
       assert.doesNotMatch(source, /["']\/docs\//);
       assert.doesNotMatch(source, /vitrine_02_hero_mobile/);
     }
+
+    const mobileVisual = fs.readFileSync(SOURCES[1], "utf8");
+    assert.match(mobileVisual, /xl:flex xl:justify-center xl:overflow-visible/);
+    assert.doesNotMatch(mobileVisual, /lg:flex lg:justify-center lg:overflow-visible/);
   });
 });

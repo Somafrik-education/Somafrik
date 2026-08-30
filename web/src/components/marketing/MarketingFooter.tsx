@@ -16,21 +16,28 @@ export function MarketingFooter() {
         <div className="min-w-0">
           <BrandLogo size="md" variant="onDark" imageClassName="h-12 w-12 object-contain" />
           <p className="mt-3 max-w-sm text-sm font-medium text-slate-400">{marketingFooter.tagline}</p>
-          <small className="mt-3 block text-slate-500">
+          <small className="mt-3 block text-slate-400">
             © {year} {marketingFooter.copyrightName}. Tous droits réservés.
           </small>
         </div>
-        <div className="min-w-0">
+        <nav className="min-w-0" aria-label="Liens de la vitrine">
           <strong className="mb-3 block text-white">Somafrik</strong>
           {marketingNav.map((link) => (
-            <a key={link.href} href={link.href} className="mb-2 block text-sm transition hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white">
+            <a
+              key={link.href}
+              href={link.href}
+              className="mb-2 block rounded-md text-sm text-slate-300 transition hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
+            >
               {link.label}
             </a>
           ))}
-        </div>
-        <div className="min-w-0">
+        </nav>
+        <nav className="min-w-0" aria-label="Accès à Somafrik">
           <strong className="mb-3 block text-white">Accès</strong>
-          <Link to={marketingLogin.href} className="mb-2 block text-sm transition hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white">
+          <Link
+            to={marketingLogin.href}
+            className="mb-2 block rounded-md text-sm text-slate-300 transition hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
+          >
             {marketingLogin.ctaLabel}
           </Link>
           {marketingLegalRoutes.length > 0
@@ -40,7 +47,7 @@ export function MarketingFooter() {
                 </a>
               ))
             : null}
-        </div>
+        </nav>
       </div>
     </footer>
   );

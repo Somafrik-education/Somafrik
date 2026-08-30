@@ -6,7 +6,7 @@ import { ProductVisual } from "./ProductVisual";
 export function HeroSection() {
   return (
     <section className="border-b border-line bg-gradient-to-b from-white to-brand-50" aria-labelledby="vitrine-titre">
-      <div className="mx-auto grid max-w-6xl items-center gap-10 px-4 py-14 sm:px-6 sm:py-20 lg:grid-cols-2 lg:gap-12">
+      <div className="mx-auto grid max-w-6xl items-center gap-8 px-4 py-12 sm:px-6 sm:py-16 lg:grid-cols-2 lg:gap-10 lg:py-20 xl:max-w-7xl xl:grid-cols-[minmax(0,26.5rem)_minmax(0,1fr)]">
         <div className="min-w-0">
           <p className="text-xs font-bold uppercase tracking-wide text-brand">{marketingHero.eyebrow}</p>
           <h1 id="vitrine-titre" className="mt-3 text-3xl font-black leading-tight tracking-tight text-ink sm:text-5xl">

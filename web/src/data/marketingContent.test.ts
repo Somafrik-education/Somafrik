@@ -1,8 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
+  marketingAudiences,
+  marketingAudiencesSection,
   marketingBusinessProofs,
   marketingFinalCta,
   marketingHero,
+  marketingHeroVisual,
   marketingLegalRoutes,
   marketingLogin,
   marketingMobileVisuals,
@@ -10,6 +13,7 @@ import {
   marketingProduct,
   marketingProductVisual,
   marketingSecurity,
+  marketingSeo,
   marketingWebMobile,
 } from "./marketingContent";
 
@@ -37,6 +41,19 @@ describe("marketingContent", () => {
     expect(marketingProductVisual.alt.length).toBeGreaterThan(20);
     expect(marketingProductVisual.width).toBe(1440);
     expect(marketingProductVisual.height).toBe(900);
+  });
+
+  it("sépare le visuel marketing Hero du visuel Produit", () => {
+    expect(marketingHeroVisual.src).toMatch(/marketing\/somafrik-dashboard-hero\.webp$/);
+    expect(marketingHeroVisual.alt).toBe(
+      "Tableau de bord Somafrik présentant la scolarité, les paiements, les présences et le suivi pédagogique d’un établissement.",
+    );
+    expect(marketingHeroVisual.caption).toBe(
+      "Visuel marketing du tableau de bord Somafrik, basé sur l’interface produit.",
+    );
+    expect(marketingHeroVisual.width).toBe(1760);
+    expect(marketingHeroVisual.height).toBe(1400);
+    expect(marketingHeroVisual.src).not.toBe(marketingProductVisual.src);
   });
 
   it("décrit Web et mobile depuis la copie canonique", () => {
@@ -74,5 +91,34 @@ describe("marketingContent", () => {
       "L’enseignant saisit les résultats d’une évaluation directement depuis l’application.",
     );
     expect(marketingBusinessProofs.items[3]?.src).toMatch(/somafrik-notes-saisie\.webp$/);
+  });
+
+  it("présente les quatre audiences et une sécurité vérifiable", () => {
+    expect(marketingAudiencesSection.eyebrow).toBe("Pour qui ?");
+    expect(marketingAudiences.map((item) => item.title)).toEqual([
+      "Direction",
+      "Administration",
+      "Enseignants",
+      "Parents",
+    ]);
+    expect(marketingSecurity.items).toHaveLength(3);
+    expect(marketingSecurity.items.map((item) => item.title)).toEqual([
+      "Authentification",
+      "Séparation des établissements",
+      "Accès selon les responsabilités",
+    ]);
+    const securityText = [marketingSecurity.title, marketingSecurity.intro, ...marketingSecurity.items.flatMap((item) => [item.title, item.text])].join(" ");
+    expect(securityText).not.toMatch(/ISO|SOC 2|99,99|souverain|chiffrement certifié/i);
+  });
+
+  it("décrit le SEO public sans inventer de domaine ni de conformité", () => {
+    expect(marketingSeo.title).toBe("Somafrik — Pilotez votre établissement scolaire");
+    expect(marketingSeo.description.length).toBeGreaterThan(80);
+    expect(marketingSeo.description.length).toBeLessThan(200);
+    expect(marketingSeo.ogImage).toMatch(/marketing\/somafrik-dashboard-etablissement\.webp$/);
+    expect(marketingSeo.ogLocale).toBe("fr_FR");
+    expect(`${marketingSeo.title} ${marketingSeo.description} ${marketingSeo.ogDescription}`).not.toMatch(
+      /ISO|SOC 2|Demander une démo|Nous contacter/i,
+    );
   });
 });
