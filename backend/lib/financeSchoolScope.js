@@ -35,7 +35,7 @@ function sqlSchoolPredicate(alias, scope, params) {
     )`;
   }
   params.push(scope.codes);
-  return `${alias}.school_code = ANY($${params.length}::text[])`;
+  return `${alias}.login_code = ANY($${params.length}::text[])`;
 }
 
 function countryIsoFromRecord(record) {
@@ -60,6 +60,27 @@ function schoolCodeInScope(schoolCode, scope, extras = {}) {
   return scope.codes.includes(code);
 }
 
+/**
+ * Identité établissement d'une fiche élève. Ne jamais lire `loginCode` /
+ * `login_code` : sur l'élève ce sont l'identité personne (user_code / student_code).
+ */
+function studentSchoolPublicLogin(record = {}) {
+  return String(record.school_login_code || record.schoolLoginCode || record.schoolCode || "").trim();
+}
+
+function publicFinanceTenantLogin(record = {}) {
+  if (!record || typeof record !== "object") return "";
+  const schoolLogin = String(record.school_login_code || record.schoolLoginCode || "").trim().toUpperCase();
+  if (schoolLogin) return schoolLogin;
+  const isStudent = Boolean(record.studentCode || record.student_code || record.studentId);
+  if (isStudent) {
+    return String(record.schoolCode || "").trim().toUpperCase();
+  }
+  return String(record.login_code || record.loginCode || record.schoolCode || record.code || "")
+    .trim()
+    .toUpperCase();
+}
+
 function schoolRecordInFinanceScope(record, scope) {
   if (scope.mode === "all") return true;
   if (scope.mode === "none") return false;
@@ -67,7 +88,21 @@ function schoolRecordInFinanceScope(record, scope) {
     const iso = countryIsoFromRecord(record);
     return Boolean(iso) && iso === scope.countryCode;
   }
-  return schoolCodeInScope(record?.schoolCode || record?.school_code || record?.code, scope);
+  const login = publicFinanceTenantLogin(record);
+  if (!login) return false;
+  return schoolCodeInScope(login, scope);
+}
+
+function studentRecordInFinanceScope(student, scope) {
+  const login = studentSchoolPublicLogin(student);
+  return schoolRecordInFinanceScope(
+    {
+      login_code: login,
+      loginCode: login,
+      countryIso: countryIsoFromRecord(student) || student.countryCode,
+    },
+    scope,
+  );
 }
 
 function primaryFinanceSchoolCode(principal) {
@@ -83,6 +118,8 @@ module.exports = {
   sqlSchoolPredicate,
   schoolCodeInScope,
   schoolRecordInFinanceScope,
+  studentSchoolPublicLogin,
+  studentRecordInFinanceScope,
   countryIsoFromRecord,
   primaryFinanceSchoolCode,
 };

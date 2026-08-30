@@ -228,7 +228,7 @@ test("PG idempotency lock + replay + 409 hash + concurrence", async () => {
 
     const first = mockHttp(key, payload, service);
     const second = mockHttp(key, payload, service);
-    const principal = { sub: "acc-pg", schoolCode: "CD-2026-0001" };
+    const principal = { sub: "acc-pg", schoolCode: "CD-LA-26-001" };
     await Promise.all([
       withIdempotency({ req: first.req, res: first.res, routeKey: "POST /api/payments", principal, handler }),
       withIdempotency({ req: second.req, res: second.res, routeKey: "POST /api/payments", principal, handler }),
@@ -272,10 +272,20 @@ test("PG Finance : crash avant stockage idempotence rollback le paiement", async
       `INSERT INTO countries (name, iso_code, phone_code, currency)
        VALUES ('RDC', 'CD', '+243', 'CDF') RETURNING id`,
     );
+    const leftoverSchoolCode = "CD-2026-0001";
+    const canonicalLoginCode = "CD-LA-26-001";
     const school = await pool.query(
-      `INSERT INTO schools (country_id, school_code, name, status)
-       VALUES ($1, 'CD-2026-0001', 'Lycée A', 'active') RETURNING id`,
-      [country.rows[0].id],
+      `INSERT INTO schools (country_id, school_code, login_code, name, status)
+       VALUES ($1, $2, $3, 'Lycée A', 'active')
+       RETURNING id, school_code, login_code`,
+      [country.rows[0].id, leftoverSchoolCode, canonicalLoginCode],
+    );
+    assert.equal(school.rows[0].school_code, leftoverSchoolCode);
+    assert.equal(school.rows[0].login_code, canonicalLoginCode);
+    assert.notEqual(
+      school.rows[0].school_code,
+      school.rows[0].login_code,
+      "leftover school_code ≠ login_code canonique",
     );
     const year = await pool.query(
       `INSERT INTO academic_years (school_id, name, status)
@@ -309,7 +319,7 @@ test("PG Finance : crash avant stockage idempotence rollback le paiement", async
     const service = new IdempotencyService(repo);
     const admin = {
       role: "Admin School",
-      schoolCode: "CD-2026-0001",
+      schoolCode: school.rows[0].login_code,
       firstName: "Admin",
       lastName: "A",
       sub: user.rows[0].id,

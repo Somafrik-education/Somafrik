@@ -97,16 +97,21 @@ async function main() {
       `INSERT INTO countries (name, iso_code, phone_code, currency)
        VALUES ('RDC','CD','+243','CDF') RETURNING id`,
     );
+    const leftoverA = "CD-2026-F4A";
+    const leftoverB = "CD-2026-F4B";
     const schoolA = await pool.query(
-      `INSERT INTO schools (country_id, school_code, name, status)
-       VALUES ($1,'CD-2026-F4A','École F4 A','active') RETURNING id`,
-      [country.rows[0].id],
+      `INSERT INTO schools (country_id, school_code, login_code, name, status)
+       VALUES ($1,$2,'CD-EA-26-001','École F4 A','active') RETURNING id, school_code, login_code`,
+      [country.rows[0].id, leftoverA],
     );
     const schoolB = await pool.query(
-      `INSERT INTO schools (country_id, school_code, name, status)
-       VALUES ($1,'CD-2026-F4B','École F4 B','active') RETURNING id`,
-      [country.rows[0].id],
+      `INSERT INTO schools (country_id, school_code, login_code, name, status)
+       VALUES ($1,$2,'CD-EB-26-002','École F4 B','active') RETURNING id, school_code, login_code`,
+      [country.rows[0].id, leftoverB],
     );
+    const schoolALogin = String(schoolA.rows[0].login_code).trim().toUpperCase();
+    assert.notEqual(schoolA.rows[0].school_code, schoolALogin);
+    assert.notEqual(schoolB.rows[0].school_code, schoolB.rows[0].login_code);
     const yearA = await pool.query(
       `INSERT INTO academic_years (school_id,name,status,is_current)
        VALUES ($1,'2026-2027','open',true) RETURNING id`,
@@ -162,7 +167,7 @@ async function main() {
     const store = createFinancePgStore(createRepo(pool));
     const admin = {
       role: "Admin School",
-      schoolCode: "CD-2026-F4A",
+      schoolCode: schoolALogin,
       firstName: "Admin",
       lastName: "F4",
       sub: user.rows[0].id,

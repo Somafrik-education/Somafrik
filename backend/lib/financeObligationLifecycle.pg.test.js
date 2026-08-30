@@ -110,16 +110,22 @@ async function main() {
       `INSERT INTO countries (name, iso_code, phone_code, currency)
        VALUES ('RDC', 'CD', '+243', 'CDF') RETURNING id`,
     );
+    const leftoverA = "CD-2026-0001";
+    const leftoverB = "BI-2026-0001";
     const schoolA = await pool.query(
-      `INSERT INTO schools (country_id, school_code, name, status)
-       VALUES ($1, 'CD-2026-0001', 'Lycée A', 'active') RETURNING id`,
-      [country.rows[0].id],
+      `INSERT INTO schools (country_id, school_code, login_code, name, status)
+       VALUES ($1, $2, 'CD-F3-26-001', 'Lycée A', 'active') RETURNING id, school_code, login_code`,
+      [country.rows[0].id, leftoverA],
     );
     const schoolB = await pool.query(
-      `INSERT INTO schools (country_id, school_code, name, status)
-       VALUES ($1, 'BI-2026-0001', 'Lycée B', 'active') RETURNING id`,
-      [country.rows[0].id],
+      `INSERT INTO schools (country_id, school_code, login_code, name, status)
+       VALUES ($1, $2, 'BI-F3-26-001', 'Lycée B', 'active') RETURNING id, school_code, login_code`,
+      [country.rows[0].id, leftoverB],
     );
+    const schoolALogin = String(schoolA.rows[0].login_code).trim().toUpperCase();
+    const schoolBLogin = String(schoolB.rows[0].login_code).trim().toUpperCase();
+    assert.notEqual(schoolA.rows[0].school_code, schoolALogin);
+    assert.notEqual(schoolB.rows[0].school_code, schoolBLogin);
     const year = await pool.query(
       `INSERT INTO academic_years (school_id, name, status)
        VALUES ($1, '2026-2027', 'open') RETURNING id`,
@@ -170,7 +176,7 @@ async function main() {
     const store = createFinancePgStore(repo);
     const admin = {
       role: "Admin School",
-      schoolCode: "CD-2026-0001",
+      schoolCode: schoolALogin,
       firstName: "Admin",
       lastName: "A",
       sub: user.rows[0].id,
@@ -187,7 +193,7 @@ async function main() {
     const none = await store.ensureEnrollmentObligations(
       {
         reason: "enrollment_active",
-        schoolCode: "CD-2026-0001",
+        schoolCode: schoolALogin,
         studentKey: "CD-2026-0001-STU-0001",
         academicYear: "2026-2027",
         classId: klassA.rows[0].id,
@@ -234,7 +240,7 @@ async function main() {
         store.ensureEnrollmentObligations(
           {
             reason: "grid_apply",
-            schoolCode: "CD-2026-0001",
+            schoolCode: schoolALogin,
             studentKey: "CD-2026-0001-STU-0001",
             academicYear: "2026-2027",
             classId: klassA.rows[0].id,
@@ -256,7 +262,7 @@ async function main() {
         store.ensureEnrollmentObligations(
           {
             reason: "enrollment_active",
-            schoolCode: "CD-2026-0001",
+            schoolCode: schoolALogin,
             studentKey: "CD-2026-0001-STU-0001",
             academicYear: "2027-2028",
             classId: klassA.rows[0].id,
@@ -270,7 +276,7 @@ async function main() {
         store.ensureEnrollmentObligations(
           {
             reason: "enrollment_active",
-            schoolCode: "CD-2026-0001",
+            schoolCode: schoolALogin,
             studentKey: "CD-2026-0001-STU-0001",
             academicYear: "2026-2027",
             classId: klassB.rows[0].id,
@@ -284,7 +290,7 @@ async function main() {
         store.ensureEnrollmentObligations(
           {
             reason: "enrollment_active",
-            schoolCode: "CD-2026-0001",
+            schoolCode: schoolALogin,
             studentKey: "CD-2026-0001-STU-0001",
             academicYear: "2099-2100",
             classId: klassA.rows[0].id,
@@ -300,7 +306,7 @@ async function main() {
         store.ensureEnrollmentObligations(
           {
             reason: "class_transfer",
-            schoolCode: "CD-2026-0001",
+            schoolCode: schoolALogin,
             studentKey: "CD-2026-0001-STU-0001",
             academicYear: "2026-2027",
             classId: klassA.rows[0].id,
@@ -335,7 +341,7 @@ async function main() {
         store.ensureEnrollmentObligations(
           {
             reason: "catch_up",
-            schoolCode: "CD-2026-0001",
+            schoolCode: schoolALogin,
             studentKey: "CD-2026-0001-STU-0001",
             academicYear: "2026-2027",
             classId: klassA.rows[0].id,
@@ -409,9 +415,9 @@ async function main() {
         status: "Active",
         items: [{ feeType: "Inscription", label: "Inscription", amount: 8_000, status: "Actif" }],
       },
-      { ...admin, schoolCode: "BI-2026-0001" },
+      { ...admin, schoolCode: schoolBLogin },
     );
-    await store.setFinanceFeeGridStatus(gridB.id, "Active", { ...admin, schoolCode: "BI-2026-0001" });
+    await store.setFinanceFeeGridStatus(gridB.id, "Active", { ...admin, schoolCode: schoolBLogin });
     await assert.rejects(
       () => store.applyFinanceFeeGrid(gridB.id, admin),
       (error) =>
@@ -451,7 +457,7 @@ async function main() {
     const seededTransfer = await store.ensureEnrollmentObligations(
       {
         reason: "enrollment_active",
-        schoolCode: "CD-2026-0001",
+        schoolCode: schoolALogin,
         studentKey: "CD-2026-0001-STU-0002",
         academicYear: "2026-2027",
         classId: klassA.rows[0].id,
@@ -573,7 +579,7 @@ async function main() {
       const seededRecovery = await store.ensureEnrollmentObligations(
         {
           reason: "enrollment_active",
-          schoolCode: "CD-2026-0001",
+          schoolCode: schoolALogin,
           studentKey: "CD-2026-0001-STU-0003",
           academicYear: "2026-2027",
           classId: klassA.rows[0].id,
@@ -714,7 +720,7 @@ async function main() {
       const seededRace = await store.ensureEnrollmentObligations(
         {
           reason: "enrollment_active",
-          schoolCode: "CD-2026-0001",
+          schoolCode: schoolALogin,
           studentKey: "CD-2026-0001-STU-0004",
           academicYear: "2026-2027",
           classId: klassA.rows[0].id,
@@ -834,7 +840,7 @@ async function main() {
     const transfer = await store.ensureEnrollmentObligations(
       {
         reason: "class_transfer",
-        schoolCode: "CD-2026-0001",
+        schoolCode: schoolALogin,
         studentKey: "CD-2026-0001-STU-0001",
         academicYear: "2026-2027",
         classId: klassB.rows[0].id,

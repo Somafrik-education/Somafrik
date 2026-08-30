@@ -6,6 +6,7 @@ const {
   resolveFinanceSchoolScope,
   schoolCodeInScope,
   schoolRecordInFinanceScope,
+  sqlSchoolPredicate,
   primaryFinanceSchoolCode,
 } = require("./financeSchoolScope");
 const { assertTenant } = require("./financeService");
@@ -93,6 +94,28 @@ test("F8-P1-006: Admin Pays n'utilise pas le préfixe schoolCode comme autorité
     () => assertTenant(principal, { schoolCode: "CI-TRAP-26-001", countryIso: "FR" }),
     (error) => error.statusCode === 403,
   );
+});
+
+test("tenant Finance : leftover school_code refusé, login_code canonique accepté", () => {
+  const leftover = "LEFTOVER-A";
+  const canonical = "CANONICAL-A";
+  const leftoverScope = resolveFinanceSchoolScope({ role: "Admin School", schoolCode: leftover });
+  const canonicalScope = resolveFinanceSchoolScope({ role: "Admin School", schoolCode: canonical });
+  const school = { login_code: canonical, school_code: leftover };
+  assert.notEqual(leftover, canonical);
+  assert.equal(schoolRecordInFinanceScope(school, leftoverScope), false);
+  assert.equal(schoolRecordInFinanceScope(school, canonicalScope), true);
+  const student = {
+    studentCode: "CD-IN-EL-26-001",
+    login_code: "CD-IN-EL-26-001",
+    school_login_code: canonical,
+  };
+  assert.equal(schoolRecordInFinanceScope(student, leftoverScope), false);
+  assert.equal(schoolRecordInFinanceScope(student, canonicalScope), true);
+  const params = [];
+  const pred = sqlSchoolPredicate("s", canonicalScope, params);
+  assert.match(pred, /login_code/);
+  assert.doesNotMatch(pred, /s\.school_code/);
 });
 
 test("F8-P0-004: schoolCode * n'est plus un passe-partout hors Superadmin", () => {
