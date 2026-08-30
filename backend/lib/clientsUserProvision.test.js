@@ -9,8 +9,8 @@ const clientsService = require("./clientsService");
 function buildStore(seed = {}) {
   return createClientsMemoryStore({
     platformSchools: [
-      { id: "school-cd", code: "CD-2026-0001", name: "Institut Bukavu", countryId: "country-cd", countryCode: "CD", country: "RDC", login_code: "CD-IB-26-002" },
-      { id: "school-bi", code: "BI-2026-0001", name: "Ecole Kanyosha", countryId: "country-bi", countryCode: "BI", country: "Burundi", login_code: "BI-EK-26-001" },
+      { id: "school-cd", code: "CD-2026-0001", loginCode: "CD-IB-26-002", login_code: "CD-IB-26-002", name: "Institut Bukavu", countryId: "country-cd", countryCode: "CD", country: "RDC" },
+      { id: "school-bi", code: "BI-2026-0001", loginCode: "BI-EK-26-001", login_code: "BI-EK-26-001", name: "Ecole Kanyosha", countryId: "country-bi", countryCode: "BI", country: "Burundi" },
     ],
     countries: [
       { id: "country-cd", iso_code: "CD", name: "RDC" },
@@ -47,7 +47,7 @@ async function main() {
   const schoolAdmin = {
     sub: "admin-school",
     role: "Admin School",
-    schoolCode: "CD-2026-0001",
+    schoolCode: "CD-IB-26-002",
     countryCode: "CD",
     identifier: "admin-cd",
   };
@@ -86,13 +86,13 @@ async function main() {
       temporaryPassword: "SchoolAdminBI!2026",
       roleKey: "SCHOOL_ADMIN",
       countryCode: "BI",
-      schoolCode: "BI-2026-0001",
+      schoolCode: "BI-EK-26-001",
     },
     superAdmin,
     auditMeta,
   );
   assert.ok((schoolAdminBi.roleKeys || []).includes("SCHOOL_ADMIN"));
-  assert.equal(schoolAdminBi.schoolCode, "BI-2026-0001");
+  assert.equal(schoolAdminBi.schoolCode, "BI-EK-26-001");
   assert.equal(schoolAdminBi.countryCode, "BI");
   const schoolRow = await store.getUserById(schoolAdminBi.id);
   assert.equal(schoolRow.school_id, "school-bi");
@@ -110,15 +110,15 @@ async function main() {
       temporaryPassword: "SchoolAdminCD!2026",
       roleKey: "SCHOOL_ADMIN",
       countryCode: "CD",
-      schoolCode: "CD-2026-0001",
+      schoolCode: "CD-IB-26-002",
     },
     superAdmin,
     auditMeta,
   );
   assert.ok((schoolAdminCd.roleKeys || []).includes("SCHOOL_ADMIN"));
-  assert.equal(schoolAdminCd.schoolCode, "CD-2026-0001");
+  assert.equal(schoolAdminCd.schoolCode, "CD-IB-26-002");
   assert.equal(schoolAdminCd.countryCode, "CD");
-  assert.notEqual(schoolAdminCd.schoolCode, "BI-2026-0001");
+  assert.notEqual(schoolAdminCd.schoolCode, "BI-EK-26-001");
 
   const schoolAdminCdAccent = await store.provisionUser(
     {
@@ -128,13 +128,13 @@ async function main() {
       temporaryPassword: "SchoolAdminCD!2026",
       roleKey: "SCHOOL_ADMIN",
       countryScope: "République Démocratique du Congo",
-      schoolCode: "CD-2026-0001",
+      schoolCode: "CD-IB-26-002",
     },
     superAdmin,
     auditMeta,
   );
   assert.equal(schoolAdminCdAccent.countryCode, "CD");
-  assert.equal(schoolAdminCdAccent.schoolCode, "CD-2026-0001");
+  assert.equal(schoolAdminCdAccent.schoolCode, "CD-IB-26-002");
 
   const schoolAdminByLoginCode = await store.provisionUser(
     {
@@ -149,8 +149,7 @@ async function main() {
     superAdmin,
     auditMeta,
   );
-  assert.equal(schoolAdminByLoginCode.schoolCode, "CD-2026-0001");
-  assert.notEqual(schoolAdminByLoginCode.schoolCode, "CD-IB-26-002");
+  assert.equal(schoolAdminByLoginCode.schoolCode, "CD-IB-26-002");
   assert.equal(schoolAdminByLoginCode.countryCode, "CD");
 
   await expectRejection(
@@ -161,7 +160,7 @@ async function main() {
         email: "wrong.scope@test.local",
         roleKey: "SCHOOL_ADMIN",
         countryCode: "BI",
-        schoolCode: "CD-2026-0001",
+        schoolCode: "CD-IB-26-002",
       },
       superAdmin,
       auditMeta,
@@ -171,7 +170,7 @@ async function main() {
 
   await expectRejection(
     store.provisionUser(
-      { firstName: "No", lastName: "Country", email: "no.country.school@test.local", roleKey: "SCHOOL_ADMIN", schoolCode: "BI-2026-0001" },
+      { firstName: "No", lastName: "Country", email: "no.country.school@test.local", roleKey: "SCHOOL_ADMIN", schoolCode: "BI-EK-26-001" },
       superAdmin,
       auditMeta,
     ),
@@ -204,7 +203,7 @@ async function main() {
         email: "country.with.school@test.local",
         roleKey: "COUNTRY_ADMIN",
         countryCode: "BI",
-        schoolCode: "BI-2026-0001",
+        schoolCode: "BI-EK-26-001",
       },
       superAdmin,
       auditMeta,
@@ -235,7 +234,7 @@ async function main() {
         email: "teacher.provision@test.local",
         roleKey: "TEACHER",
         countryCode: "BI",
-        schoolCode: "BI-2026-0001",
+        schoolCode: "BI-EK-26-001",
       },
       superAdmin,
       auditMeta,
@@ -275,7 +274,7 @@ async function main() {
 
   await expectRejection(
     store.createUser(
-      { firstName: "Role", lastName: "Forbidden", email: "role.on.create@test.local", role: "Admin School", schoolCode: "BI-2026-0001" },
+      { firstName: "Role", lastName: "Forbidden", email: "role.on.create@test.local", role: "Admin School", schoolCode: "BI-EK-26-001" },
       superAdmin,
       auditMeta,
     ),
@@ -370,7 +369,7 @@ async function main() {
           email: "rollback.audit@test.local",
           roleKey: "SCHOOL_ADMIN",
           countryCode: "BI",
-          schoolCode: "BI-2026-0001",
+          schoolCode: "BI-EK-26-001",
         },
         superAdmin,
         auditMeta,

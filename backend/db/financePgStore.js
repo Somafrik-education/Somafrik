@@ -40,19 +40,22 @@ function createFinancePgStore(repo) {
 
     return {
       async getSchoolByCode(code) {
+        const { isV2SchoolLoginCode, normalizeSchoolCode } = require("../lib/schoolCodeV2");
+        const normalized = normalizeSchoolCode(code);
+        if (!normalized || !isV2SchoolLoginCode(normalized)) return null;
         const row = await one(
           `SELECT s.*, c.currency AS country_currency, c.iso_code AS country_iso
            FROM schools s
            JOIN countries c ON c.id = s.country_id
-           WHERE s.school_code = $1`,
-          [asTrimmed(code).toUpperCase()],
+           WHERE upper(s.login_code) = $1`,
+          [normalized],
         );
         if (!row) return null;
         const profile = parsePayload(row.profile_payload);
         const currency = String(profile.currency || row.currency || row.country_currency || "").trim().toUpperCase();
         return {
           ...row,
-          code: row.school_code,
+          code: row.login_code,
           countryIso: String(row.country_iso || "").trim().toUpperCase(),
           currency,
           currencySource: profile.currency ? "school" : "country",
@@ -68,7 +71,7 @@ function createFinancePgStore(repo) {
           pred = sqlSchoolPredicate("s", scope, params);
         }
         const sql = `
-          SELECT st.*, s.school_code, ctry.iso_code AS country_iso, cl.name AS class_name
+          SELECT st.*, s.login_code AS school_code, ctry.iso_code AS country_iso, cl.name AS class_name
           FROM students st
           JOIN schools s ON s.id = st.school_id
           JOIN countries ctry ON ctry.id = s.country_id
@@ -82,9 +85,9 @@ function createFinancePgStore(repo) {
         if (!row) return null;
         const profile = parsePayload(row.profile_payload);
         return {
-          id: profile.publicId || profile.id || row.student_code,
+          id: row.id,
           dbId: row.id,
-          publicId: profile.publicId || row.student_code,
+          publicId: row.student_code,
           studentCode: row.student_code,
           firstName: row.first_name,
           lastName: row.last_name,
@@ -221,7 +224,7 @@ function createFinancePgStore(repo) {
            JOIN enrollments e ON e.student_id = st.id AND e.status = 'active'
            JOIN classes cl ON cl.id = e.class_id
            LEFT JOIN academic_years ay ON ay.id = e.academic_year_id
-           WHERE s.school_code = $1
+           WHERE upper(s.login_code) = $1
              AND (
                ($2::text <> '' AND e.class_id::text = $2)
                OR ($2::text = '' AND $3::text <> '' AND upper(btrim(cl.class_code)) = upper(btrim($3)))

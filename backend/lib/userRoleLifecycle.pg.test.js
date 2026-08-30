@@ -104,10 +104,10 @@ async function main() {
       auditMeta,
     );
     assert.match(created.id, /^[0-9a-f-]{36}$/i);
-    assert.equal(created.publicId, "CD-IK-GK-26-00001");
-    assert.equal(created.identityCode, "CD-IK-GK-26-00001");
-    assert.equal(created.identifier, "GK-26-00001", "login court permanent exposé par le compte");
-    assert.match(created.userCode, /^USR-\d{4}-\d{5}$/, "alias user_code legacy conservé");
+    assert.equal(created.publicId, created.userCode);
+    assert.equal(created.identityCode, created.userCode);
+    assert.equal(created.identifier, created.userCode, "login métier = users.user_code");
+    assert.ok(created.userCode, "user_code alloué");
     assert.equal(created.assignmentStatus, "Sans affectation");
 
     const row = await pool.query(
@@ -120,10 +120,11 @@ async function main() {
     assert.equal(row.rows[0].role, null);
     assert.equal(row.rows[0].identity_initials, "GK");
     assert.equal(Number(row.rows[0].identity_year), 2026);
-    assert.equal(row.rows[0].login_code, "GK-26-00001");
-    assert.equal(row.rows[0].identity_code, "CD-IK-GK-26-00001");
-    assert.equal(row.rows[0].profile_payload.identifier, "GK-26-00001");
-    assert.equal(row.rows[0].profile_payload.identityCode, "CD-IK-GK-26-00001");
+    assert.equal(row.rows[0].login_code, created.userCode);
+    assert.equal(row.rows[0].identity_code, created.userCode);
+    assert.equal(row.rows[0].profile_payload.identifier, created.userCode);
+    assert.equal(row.rows[0].profile_payload.identityCode, created.userCode);
+    assert.equal(row.rows[0].profile_payload.legacyIdentifier, undefined);
 
     const documentedOhS = await pool.query(
       `SELECT somafrik_student_person_initials($1, $2) AS initials`,
@@ -193,8 +194,8 @@ async function main() {
     await store.grantUserRole(created.id, { role: "Enseignant" }, principal, auditMeta);
     assert.equal((await pool.query(`SELECT role FROM users WHERE id = $1`, [created.id])).rows[0].role, "SECRETARY");
     const stableAfterRoles = await pool.query(`SELECT identity_code, login_code FROM users WHERE id = $1`, [created.id]);
-    assert.equal(stableAfterRoles.rows[0].identity_code, "CD-IK-GK-26-00001", "GRANT ne renumérote pas l'identité");
-    assert.equal(stableAfterRoles.rows[0].login_code, "GK-26-00001");
+    assert.equal(stableAfterRoles.rows[0].identity_code, created.userCode, "GRANT ne renumérote pas l'identité");
+    assert.equal(stableAfterRoles.rows[0].login_code, created.userCode);
 
     const roles = await pool.query(
       `SELECT role_key FROM user_roles WHERE user_id = $1 AND status = 'active' ORDER BY role_key`,
@@ -236,7 +237,7 @@ async function main() {
     );
     assert.equal(leftoverAfterLast.rows[0].count, 0);
     const stableAfterRevokes = await pool.query(`SELECT identity_code, login_code FROM users WHERE id = $1`, [created.id]);
-    assert.equal(stableAfterRevokes.rows[0].identity_code, "CD-IK-GK-26-00001", "REVOKE ne renumérote pas l'identité");
+    assert.equal(stableAfterRevokes.rows[0].identity_code, created.userCode, "REVOKE ne renumérote pas l'identité");
     const studentAfterRoles = await pool.query(
       `SELECT student_code, identity_code, login_code FROM students WHERE id = $1`,
       [student.rows[0].id],
@@ -251,8 +252,8 @@ async function main() {
       [created.id],
     );
     assert.equal(stableAfterRename.rows[0].last_name, "Mukendi");
-    assert.equal(stableAfterRename.rows[0].identity_code, "CD-IK-GK-26-00001", "changement de nom sans renumérotation");
-    assert.equal(stableAfterRename.rows[0].login_code, "GK-26-00001");
+    assert.equal(stableAfterRename.rows[0].identity_code, created.userCode, "changement de nom sans renumérotation");
+    assert.equal(stableAfterRename.rows[0].login_code, created.userCode);
 
     await assert.rejects(
       () => pool.query(`UPDATE users SET identity_code = 'CD-IK-HACK-26-99999' WHERE id = $1`, [created.id]),

@@ -47,9 +47,9 @@ function toIsoDate(value) {
 }
 
 function mapStudent(row) {
-  const studentCode = row.login_code || row.identity_code || row.student_code;
+  const studentCode = row.student_code;
   return {
-    id: studentCode,
+    id: row.id,
     publicId: studentCode,
     studentCode,
     matricule: studentCode,
@@ -62,7 +62,7 @@ function mapStudent(row) {
     className: row.class_name ?? "",
     classCode: row.class_code ?? "",
     classId: row.class_id ?? row.classId ?? null,
-    schoolCode: row.school_code,
+    schoolCode: row.school_login_code ?? row.login_code ?? "",
     status: row.status ?? "active",
     academicYearName: row.academic_year_name ?? "",
   };
@@ -86,11 +86,12 @@ function mapClass(row) {
 }
 
 function mapTeacher(row) {
-  const teacherCode = row.teacher_code;
+  const teacherCode = String(row.user_code ?? "").trim();
   const firstName = row.first_name ?? "";
   const lastName = row.last_name ?? "";
   return {
-    id: teacherCode,
+    id: row.id,
+    userId: row.user_id ?? null,
     teacherCode,
     publicId: teacherCode,
     firstName,
@@ -99,7 +100,7 @@ function mapTeacher(row) {
     email: row.email ?? "",
     phone: row.phone ?? "",
     speciality: row.speciality ?? "",
-    schoolCode: row.school_code,
+    schoolCode: row.login_code ?? "",
     status: row.status ?? "active",
   };
 }

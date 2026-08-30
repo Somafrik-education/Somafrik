@@ -27,7 +27,7 @@ const STUDENT_SELECT_COLUMNS = `
   st.status,
   st.created_at,
   st.updated_at,
-  s.school_code
+  s.login_code AS school_login_code
 `;
 
 /**
@@ -137,9 +137,9 @@ function createClassStudentsRepository(db) {
    * @param {any} row
    */
   function mapStudentRow(row) {
-    const studentCode = row.login_code || row.identity_code || row.student_code;
+    const studentCode = row.student_code;
     return {
-      id: studentCode,
+      id: row.student_uuid ?? row.id,
       publicId: studentCode,
       studentCode,
       matricule: studentCode,
@@ -156,7 +156,7 @@ function createClassStudentsRepository(db) {
       classId: row.class_id ?? row.classId ?? null,
       className: row.class_name ?? "",
       classCode: row.class_code ?? "",
-      schoolCode: row.school_code,
+      schoolCode: row.school_login_code ?? "",
       parentPhone: row.parent_phone ?? "",
       parentEmail: row.parent_email ?? "",
       status: row.status ?? "active",

@@ -1,6 +1,7 @@
 "use strict";
 
 const assert = require("node:assert/strict");
+const { randomUUID } = require("node:crypto");
 const { createTeachersRepository } = require("../db/teachersRepository");
 const { verifySecret } = require("../services/credentialService");
 
@@ -23,7 +24,7 @@ function createMemoryDb() {
           throw Object.assign(new Error("forced user failure"), { code: "FORCE_USER_FAIL" });
         }
         const row = {
-          id: `u-${users.length + 1}`,
+          id: randomUUID(),
           school_id: params[0],
           user_code: params[1],
           first_name: params[2],
@@ -54,7 +55,7 @@ function createMemoryDb() {
           });
         }
         const row = {
-          id: `t-${teachers.length + 1}`,
+          id: randomUUID(),
           school_id: params[0],
           user_id: params[1],
           teacher_code: params[2],
@@ -190,6 +191,12 @@ async function main() {
   assert.equal(created.identifier, "CD-IN-AD-26-00001");
   assert.equal(created.teacherCode, "CD-IN-AD-26-00001");
   assert.equal(created.publicId, created.teacherCode);
+  assert.equal(created.id, db._teachers[0].id);
+  assert.equal(created.userId, db._users[0].id);
+  assert.match(created.id, /^[0-9a-f-]{36}$/i);
+  assert.match(created.userId, /^[0-9a-f-]{36}$/i);
+  assert.equal(created.publicId, db._users[0].user_code);
+  assert.notEqual(created.id, created.publicId);
   assert.equal(created.schoolCode, "CD-IN-26-001");
   assert.equal(created.mustChangePassword, true);
   assert.equal(db._users.length, 1);

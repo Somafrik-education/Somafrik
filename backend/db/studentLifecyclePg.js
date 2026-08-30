@@ -44,7 +44,7 @@ function attachStudentLifecyclePg(repository) {
         `SELECT id, student_code, status
          FROM students
          WHERE school_id = $1
-           AND (student_code = $2 OR login_code = $2 OR identity_code = $2)
+           AND student_code = $2
          FOR UPDATE
          LIMIT 1`,
         [school.id, code],
@@ -66,7 +66,7 @@ function attachStudentLifecyclePg(repository) {
         `UPDATE students
          SET status = 'archived', archived_at = COALESCE(archived_at, NOW()), updated_at = NOW()
          WHERE id = $1 AND school_id = $2
-         RETURNING student_code, status, archived_at`,
+         RETURNING id, student_code, status, archived_at`,
         [student.id, school.id],
       );
 
@@ -75,12 +75,12 @@ function attachStudentLifecyclePg(repository) {
          SET status = 'archived', updated_at = NOW()
          WHERE school_id = $1
            AND status <> 'archived'
-           AND (user_code = $2 OR login_code = $2 OR identity_code = $2)`,
+           AND user_code = $2`,
         [school.id, student.student_code],
       );
 
       return {
-        id: archived.student_code,
+        id: archived.id,
         publicId: archived.student_code,
         studentCode: archived.student_code,
         matricule: archived.student_code,

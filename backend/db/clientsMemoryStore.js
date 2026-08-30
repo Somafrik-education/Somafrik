@@ -53,9 +53,8 @@ function createClientsMemoryStore(seed = {}) {
     if (!normalized || !isV2SchoolLoginCode(normalized)) return null;
     return (
       tables.schools.find((row) => {
-        const loginCode = normalizeSchoolCode(row.loginCode ?? row.login_code ?? row.publicId);
-        const schoolCode = normalizeSchoolCode(row.code ?? row.schoolCode ?? row.school_code);
-        return loginCode === normalized || schoolCode === normalized;
+        const loginCode = normalizeSchoolCode(row.loginCode ?? row.login_code);
+        return loginCode === normalized;
       }) ?? null
     );
   }
@@ -63,7 +62,7 @@ function createClientsMemoryStore(seed = {}) {
   function resolveSchoolCountryCode(school) {
     const explicit = asTrimmed(school.countryCode ?? school.country_code).toUpperCase();
     if (explicit) return explicit;
-    const code = asTrimmed(school.code ?? school.schoolCode).toUpperCase();
+    const code = asTrimmed(school.loginCode ?? school.login_code).toUpperCase();
     const prefix = code.split("-")[0];
     if (/^[A-Z]{2}$/.test(prefix)) return prefix;
     return "";
@@ -125,10 +124,9 @@ function createClientsMemoryStore(seed = {}) {
         const school = resolveSchool(code);
         if (!school) return null;
         const login = asTrimmed(school.loginCode ?? school.login_code).toUpperCase();
-        const legacy = asTrimmed(school.code ?? school.schoolCode ?? school.school_code).toUpperCase();
         return {
           id: school.id,
-          school_code: login || legacy,
+          school_code: login,
           login_code: login,
           loginCode: login,
           name: school.name,
@@ -448,7 +446,7 @@ function createClientsMemoryStore(seed = {}) {
         const school = tables.schools.find((item) => item.id === row.school_id);
         return {
           ...row,
-          school_code: school ? asTrimmed(school.code ?? school.schoolCode).toUpperCase() : "",
+          school_code: school ? asTrimmed(school.loginCode ?? school.login_code).toUpperCase() : "",
           school_name: school?.name ?? "",
         };
       },
@@ -557,7 +555,7 @@ function createClientsMemoryStore(seed = {}) {
         const student = tables.students.find((item) => item.id === row.student_id);
         return {
           ...row,
-          school_code: school ? asTrimmed(school.code ?? school.schoolCode).toUpperCase() : "",
+          school_code: school ? asTrimmed(school.loginCode ?? school.login_code).toUpperCase() : "",
           contact_name: contact ? `${contact.first_name ?? ""} ${contact.last_name ?? ""}`.trim() : "",
           student_name: student
             ? `${student.first_name ?? ""} ${student.last_name ?? student.name ?? ""}`.trim()
@@ -677,7 +675,7 @@ function createClientsMemoryStore(seed = {}) {
         const sender = tables.users.find((user) => user.id === row.sender_user_id);
         return {
           ...row,
-          school_code: school ? asTrimmed(school.code ?? school.schoolCode).toUpperCase() : "",
+          school_code: school ? asTrimmed(school.loginCode ?? school.login_code).toUpperCase() : "",
           sender_phone: sender?.phone ?? "",
           sender_name: asTrimmed(`${sender?.first_name ?? ""} ${sender?.last_name ?? ""}`),
           sender_role_label: sender?.role ?? "",
@@ -689,7 +687,7 @@ function createClientsMemoryStore(seed = {}) {
         const school = tables.schools.find((item) => item.id === row.school_id);
         return {
           ...row,
-          school_code: school ? asTrimmed(school.code ?? school.schoolCode).toUpperCase() : "",
+          school_code: school ? asTrimmed(school.loginCode ?? school.login_code).toUpperCase() : "",
         };
       },
       async touchConversation(id) {
@@ -850,7 +848,7 @@ function createClientsMemoryStore(seed = {}) {
             const school = tables.schools.find((item) => item.id === message.school_id);
             return {
               ...message,
-              school_code: school ? asTrimmed(school.code ?? school.schoolCode).toUpperCase() : "",
+              school_code: school ? asTrimmed(school.loginCode ?? school.login_code).toUpperCase() : "",
               sender_name: asTrimmed(`${sender?.first_name ?? ""} ${sender?.last_name ?? ""}`),
               sender_role_label: sender?.role ?? "",
               reader_read_at: read?.read_at ?? null,
@@ -895,7 +893,7 @@ function createClientsMemoryStore(seed = {}) {
             const sender = last ? tables.users.find((user) => user.id === last.sender_user_id) : null;
             return {
               ...conversation,
-              school_code: school ? asTrimmed(school.code ?? school.schoolCode).toUpperCase() : "",
+              school_code: school ? asTrimmed(school.loginCode ?? school.login_code).toUpperCase() : "",
               last_message_id: last?.id,
               last_message_body: last?.body,
               last_message_at: last?.sent_at,
@@ -915,7 +913,7 @@ function createClientsMemoryStore(seed = {}) {
         const row = tables.announcements.find((announcement) => announcement.id === id);
         if (!row) return null;
         const school = tables.schools.find((item) => item.id === row.school_id);
-        return { ...row, school_code: school ? asTrimmed(school.code ?? school.schoolCode).toUpperCase() : "" };
+        return { ...row, school_code: school ? asTrimmed(school.loginCode ?? school.login_code).toUpperCase() : "" };
       },
       async insertAnnouncement(row) {
         const saved = {
@@ -1136,13 +1134,13 @@ function createClientsMemoryStore(seed = {}) {
         const school = tables.schools.find((item) => item.id === row.school_id);
         return mapContactRow({
           ...row,
-          school_code: school ? asTrimmed(school.code ?? school.schoolCode).toUpperCase() : "",
+          school_code: school ? asTrimmed(school.loginCode ?? school.login_code).toUpperCase() : "",
           school_name: school?.name ?? "",
         });
       });
       const relations = tables.relations.map((row) => {
         const school = tables.schools.find((item) => item.id === row.school_id);
-        return mapRelationRow({ ...row, school_code: school ? asTrimmed(school.code ?? school.schoolCode).toUpperCase() : "" });
+        return mapRelationRow({ ...row, school_code: school ? asTrimmed(school.loginCode ?? school.login_code).toUpperCase() : "" });
       });
       const messages = tables.messages.map((row) => {
         const school = tables.schools.find((item) => item.id === row.school_id);
@@ -1150,7 +1148,7 @@ function createClientsMemoryStore(seed = {}) {
         const read = tables.reads.find((item) => item.message_id === row.id);
         return mapMessageRow({
           ...row,
-          school_code: school ? asTrimmed(school.code ?? school.schoolCode).toUpperCase() : "",
+          school_code: school ? asTrimmed(school.loginCode ?? school.login_code).toUpperCase() : "",
           sender_phone: sender?.phone ?? "",
           read_at: read?.read_at,
         });
@@ -1159,7 +1157,7 @@ function createClientsMemoryStore(seed = {}) {
         const school = tables.schools.find((item) => item.id === row.school_id);
         return mapAnnouncementRow({
           ...row,
-          school_code: school ? asTrimmed(school.code ?? school.schoolCode).toUpperCase() : "",
+          school_code: school ? asTrimmed(school.loginCode ?? school.login_code).toUpperCase() : "",
         });
       });
       return { users, contacts, relations, messages, announcements };
@@ -1170,7 +1168,6 @@ function createClientsMemoryStore(seed = {}) {
         const roleKeys = tables.userRoles
           .filter((item) => item.user_id === row.id && item.status === "active" && !item.revoked_at)
           .map((item) => item.role_key);
-        const teacher = tables.teachers.find((item) => item.user_id === row.id);
         const account = mapUserRowToAuthAccount({
           ...row,
           ...schoolPublicProjectionFromSchool(school, "*"),
@@ -1186,7 +1183,6 @@ function createClientsMemoryStore(seed = {}) {
           },
           roleKeys,
         );
-        const teacherLogin = String(teacher?.teacher_code ?? "").trim().toUpperCase();
         return {
           ...account,
           ...hydrated,
@@ -1194,7 +1190,7 @@ function createClientsMemoryStore(seed = {}) {
           pinHash: account.pinHash,
           mustChangePassword: account.mustChangePassword,
           hasTemporaryPassword: account.hasTemporaryPassword,
-          identifier: teacherLogin || account.identifier,
+          identifier: account.identifier,
         };
       });
     },

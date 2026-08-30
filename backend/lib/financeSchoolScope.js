@@ -35,7 +35,7 @@ function sqlSchoolPredicate(alias, scope, params) {
     )`;
   }
   params.push(scope.codes);
-  return `${alias}.school_code = ANY($${params.length}::text[])`;
+  return `${alias}.login_code = ANY($${params.length}::text[])`;
 }
 
 function countryIsoFromRecord(record) {

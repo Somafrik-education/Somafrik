@@ -193,7 +193,7 @@ async function main() {
     const principal = {
       sub: resolvePrincipalSub({ id: actorId }),
       role: "Admin School",
-      schoolCode: "CD-2026-0001",
+      schoolCode: "CD-IN-26-001",
       identifier: "admin",
     };
     assert.ok(isUuid(principal.sub));
@@ -452,7 +452,7 @@ async function main() {
     const slugPrincipal = {
       sub: "actor-1",
       role: "Admin School",
-      schoolCode: "CD-2026-0001",
+      schoolCode: "CD-IN-26-001",
       identifier: "admin",
     };
     assert.equal(grantedByUserId(slugPrincipal), null);

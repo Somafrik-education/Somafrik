@@ -1353,20 +1353,16 @@ class FallbackRepository {
         async getSchoolByCode(code) {
           const normalized = String(code ?? "").trim().toUpperCase();
           const match = (seedData.platformSchools ?? [seedData.school]).find((row) => {
-            const keys = [row.code, row.schoolCode, row.loginCode, row.login_code, row.publicId]
-              .map((value) => String(value ?? "").trim().toUpperCase())
-              .filter(Boolean);
-            return keys.includes(normalized);
+            const login = String(row.loginCode ?? row.login_code ?? "").trim().toUpperCase();
+            return login && login === normalized;
           });
-          const isPrimary =
-            normalized === String(seedData.school.code).toUpperCase() ||
-            normalized === String(seedData.school.loginCode ?? "").toUpperCase() ||
-            normalized === String(seedData.school.publicId ?? "").toUpperCase();
+          const primaryLogin = String(seedData.school.loginCode ?? seedData.school.login_code ?? "").trim().toUpperCase();
+          const isPrimary = Boolean(primaryLogin) && primaryLogin === normalized;
           return {
             id: isPrimary ? seedData.school.id : `school-${normalized}`,
-            school_code: match?.code ?? normalized,
+            school_code: match?.loginCode ?? match?.login_code ?? normalized,
             name: match?.name ?? normalized,
-            login_code: match?.loginCode ?? match?.login_code,
+            login_code: match?.loginCode ?? match?.login_code ?? normalized,
           };
         },
         async one(sql, params = []) {
@@ -3171,11 +3167,9 @@ class FallbackRepository {
         async resolveCountryAndSchool({ countryCode, schoolCode, countryId, schoolId }) {
           const dataset = await self.getDataset();
           const school = (dataset.platformSchools ?? []).find((row) => {
-            const keys = [row.code, row.schoolCode, row.school_code, row.loginCode, row.login_code, row.publicId]
-              .map((value) => String(value ?? "").toUpperCase())
-              .filter(Boolean);
+            const login = String(row.loginCode ?? row.login_code ?? "").trim().toUpperCase();
             return (
-              (schoolCode && keys.includes(String(schoolCode).toUpperCase())) ||
+              (schoolCode && login && login === String(schoolCode).toUpperCase()) ||
               (schoolId && String(row.id) === String(schoolId))
             );
           });

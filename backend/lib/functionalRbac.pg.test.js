@@ -117,12 +117,12 @@ async function main() {
     );
     const schoolA = await pool.query(
       `INSERT INTO schools (country_id, school_code, name, status)
-       VALUES ($1, 'CD-2026-0001', 'INSTITUT NURU', 'active') RETURNING id`,
+       VALUES ($1, 'CD-2026-0001', 'INSTITUT NURU', 'active') RETURNING id, login_code`,
       [country.rows[0].id],
     );
     const schoolB = await pool.query(
       `INSERT INTO schools (country_id, school_code, name, status)
-       VALUES ($1, 'CD-2026-0002', 'Autre école', 'active') RETURNING id`,
+       VALUES ($1, 'CD-2026-0002', 'Autre école', 'active') RETURNING id, login_code`,
       [country.rows[0].id],
     );
     await pool.query(
@@ -130,6 +130,8 @@ async function main() {
        VALUES ($1, 'BI-2026-0002', 'Lycée BI', 'active')`,
       [countryBi.rows[0].id],
     );
+    const schoolALogin = String(schoolA.rows[0].login_code ?? "").trim().toUpperCase();
+    assert.ok(schoolALogin, "login_code école A manquant");
 
     const repo = createRepo(pool);
     await ensureFunctionalRbacBootstrap(repo);
@@ -140,7 +142,7 @@ async function main() {
       repo,
       {
         roleKey: "PREFET_ETUDES",
-        schoolCode: "CD-2026-0001",
+        schoolCode: schoolALogin,
         grants: [{ moduleKey: "students", canCreate: false, canRead: true, canUpdate: true, canDelete: true }],
       },
       superAdmin,
@@ -156,7 +158,7 @@ async function main() {
       repo,
       {
         roleKey: "PREFET_ETUDES",
-        schoolCode: "CD-2026-0001",
+        schoolCode: schoolALogin,
         expectedUpdatedAt: first,
         grants: [{ moduleKey: "students", canCreate: false, canRead: true, canUpdate: true, canDelete: false }],
       },
@@ -215,7 +217,7 @@ async function main() {
       repo,
       {
         roleKey: "PREFET_ETUDES",
-        schoolCode: "CD-2026-0001",
+        schoolCode: schoolALogin,
         expectedUpdatedAt: stale,
         grants: [{ moduleKey: "students", canCreate: false, canRead: true, canUpdate: true, canDelete: false }],
       },
@@ -228,7 +230,7 @@ async function main() {
           repo,
           {
             roleKey: "PREFET_ETUDES",
-            schoolCode: "CD-2026-0001",
+            schoolCode: schoolALogin,
             expectedUpdatedAt: first,
             grants: [{ moduleKey: "students", canCreate: false, canRead: true, canUpdate: true, canDelete: true }],
           },
@@ -255,7 +257,7 @@ async function main() {
           failRepo,
           {
             roleKey: "PREFET_ETUDES",
-            schoolCode: "CD-2026-0001",
+            schoolCode: schoolALogin,
             expectedUpdatedAt: currentUpdatedAt,
             grants: [{ moduleKey: "students", canCreate: true, canRead: true, canUpdate: true, canDelete: true }],
           },
@@ -342,7 +344,7 @@ async function main() {
       repo,
       {
         roleKey: "PREFET_ETUDES",
-        schoolCode: "CD-2026-0001",
+        schoolCode: schoolALogin,
         expectedUpdatedAt: attendanceSchoolAt,
         grants: [
           { moduleKey: "attendance", canCreate: true, canRead: true, canUpdate: false, canDelete: false },
@@ -374,7 +376,7 @@ async function main() {
       repo,
       {
         roleKey: "PREFET_ETUDES",
-        schoolCode: "CD-2026-0001",
+        schoolCode: schoolALogin,
         expectedUpdatedAt: attendanceSchoolAt2,
         grants: [
           { moduleKey: "attendance", canCreate: false, canRead: true, canUpdate: false, canDelete: false },
@@ -396,7 +398,7 @@ async function main() {
           repo,
           {
             roleKey: "SUPER_ADMIN",
-            schoolCode: "CD-2026-0001",
+            schoolCode: schoolALogin,
             grants: [{ moduleKey: "users", canCreate: true, canRead: false, canUpdate: true, canDelete: true }],
           },
           superAdmin,
@@ -410,7 +412,7 @@ async function main() {
           repo,
           {
             roleKey: "PREFET_ETUDES",
-            schoolCode: "CD-2026-0001",
+            schoolCode: schoolALogin,
             expectedUpdatedAt: attendanceSchoolAt2,
             grants: [
               { moduleKey: "attendance", canCreate: true, canRead: false, canUpdate: false, canDelete: false },
@@ -438,7 +440,7 @@ async function main() {
       repo,
       {
         roleKey: "PREFET_ETUDES",
-        schoolCode: "CD-2026-0001",
+        schoolCode: schoolALogin,
         expectedUpdatedAt: gradesSchoolAt,
         grants: [{ moduleKey: "grades", canCreate: true, canRead: true, canUpdate: false, canDelete: false }],
       },
@@ -531,7 +533,7 @@ async function main() {
       repo,
       {
         roleKey: "SECRETARY",
-        schoolCode: "CD-2026-0001",
+        schoolCode: schoolALogin,
         expectedUpdatedAt: secretaryMax,
         grants: [{ moduleKey: "students", canCreate: false, canRead: true, canUpdate: false, canDelete: false }],
       },
@@ -548,7 +550,7 @@ async function main() {
           repo,
           {
             roleKey: "SECRETARY",
-            schoolCode: "CD-2026-0001",
+            schoolCode: schoolALogin,
             expectedUpdatedAt: secretaryMax,
             grants: [{ moduleKey: "students", canCreate: false, canRead: true, canUpdate: false, canDelete: true }],
           },
@@ -600,7 +602,7 @@ async function main() {
         repoA,
         {
           roleKey: "SECRETARY",
-          schoolCode: "CD-2026-0001",
+          schoolCode: schoolALogin,
           expectedUpdatedAt: concurrentToken,
           grants: [{ moduleKey: "students", canCreate: false, canRead: true, canUpdate: false, canDelete: true }],
         },
@@ -611,7 +613,7 @@ async function main() {
         repoB,
         {
           roleKey: "SECRETARY",
-          schoolCode: "CD-2026-0001",
+          schoolCode: schoolALogin,
           expectedUpdatedAt: concurrentToken,
           grants: [{ moduleKey: "grades", canCreate: true, canRead: true, canUpdate: false, canDelete: false }],
         },

@@ -100,7 +100,7 @@ async function main() {
     const store = createClientsPgStore(repo);
     const principal = {
       role: "Admin School",
-      schoolCode: "CD-2026-0001",
+      schoolCode: "CD-IN-26-001",
       identifier: "admin",
       sub: adminUser.rows[0].id,
     };
@@ -112,7 +112,7 @@ async function main() {
         lastName: "Parent",
         contactType: "Parent",
         phone: "+243900000001",
-        schoolCode: "CD-2026-0001",
+        schoolCode: "CD-IN-26-001",
       },
       principal,
       auditMeta,
@@ -160,7 +160,7 @@ async function main() {
         title: "Réunion",
         message: "Parents invités",
         audience: "Parents",
-        schoolCode: "CD-2026-0001",
+        schoolCode: "CD-IN-26-001",
       },
       principal,
       auditMeta,
@@ -170,7 +170,7 @@ async function main() {
     const projection = await store.listProjection();
     assert.ok(projection.users.some((row) => row.id === provisioned.user.id));
     const projectedUser = projection.users.find((row) => row.id === provisioned.user.id);
-    assert.equal(projectedUser.schoolCode, "CD-2026-0001");
+    assert.equal(projectedUser.schoolCode, "CD-IN-26-001");
     assert.equal(projectedUser.schoolPublicCode, "CD-IN-26-001");
     assert.equal(projectedUser.schoolName, "INSTITUT NURU");
     assert.ok(projection.contacts.some((row) => row.id === contact.id));
@@ -187,7 +187,7 @@ async function main() {
             firstName: "Escalade",
             lastName: "Admin",
             role: "Super Administrateur Somafrik",
-            schoolCode: "CD-2026-0001",
+            schoolCode: "CD-IN-26-001",
           },
           principal,
           auditMeta,
@@ -202,7 +202,7 @@ async function main() {
         lastName: "Parent",
         contactType: "Parent",
         phone: "+243900000099",
-        schoolCode: "CD-2026-0001",
+        schoolCode: "CD-IN-26-001",
       },
       principal,
       auditMeta,

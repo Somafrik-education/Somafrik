@@ -40,6 +40,7 @@ function createAuth(overrides = {}) {
     userAccounts: [
       {
         id: userA.id,
+        userCode: userA.userCode,
         identifier: userA.identifier,
         publicId: userA.publicId,
         firstName: userA.firstName,
@@ -49,6 +50,7 @@ function createAuth(overrides = {}) {
         status: "Actif",
         pin: "1234",
         password: "1234",
+        ...(overrides.patchUserA ?? {}),
       },
       {
         id: userB.id,
@@ -215,6 +217,99 @@ test("UUID user utilisé comme login public → refus", async () => {
     }),
     401,
   );
+});
+
+test("users.login_code différent de user_code → refus", async () => {
+  const schoolA = createCanonicalSchool({ name: "Institut Nuru", sequence: 1, loginCode: "CD-IN-26-001" });
+  const userA = createCanonicalUser({
+    school: schoolA,
+    firstName: "Jean Pierre",
+    lastName: "Mbuyi",
+    sequence: 1,
+  });
+  const auth = new AuthService({
+    userAccounts: [
+      {
+        id: userA.id,
+        userCode: userA.userCode,
+        identifier: userA.userCode,
+        publicId: userA.userCode,
+        loginCode: "GK-26-00001",
+        firstName: userA.firstName,
+        lastName: userA.lastName,
+        role: "Enseignant",
+        schoolCode: schoolA.loginCode,
+        status: "Actif",
+        pin: "1234",
+        password: "1234",
+      },
+    ],
+    schools: [
+      {
+        id: schoolA.id,
+        loginCode: schoolA.loginCode,
+        name: schoolA.name,
+        countryCode: "CD",
+        country: "RDC",
+        status: "Actif",
+        validationStatus: "Validé",
+      },
+    ],
+    teachers: [],
+    students: [],
+    relations: [],
+    assignments: [],
+    subscriptions: [{ schoolCode: schoolA.loginCode, status: "active" }],
+  });
+  attachMemoryLoginLockoutStore(auth);
+  await expectBusiness(
+    () => auth.login({
+      role: "teacher",
+      schoolCode: schoolA.loginCode,
+      identifier: "GK-26-00001",
+      pin: "1234",
+    }),
+    401,
+  );
+});
+
+test("profile_payload.identifier ≠ user_code → refus", async () => {
+  const { auth, schoolA } = createAuth();
+  await expectBusiness(
+    () => auth.login({
+      role: "teacher",
+      schoolCode: schoolA.loginCode,
+      identifier: "admin-overlay",
+      pin: "1234",
+    }),
+    401,
+  );
+});
+
+test("email autorisé comme moyen Auth, identifier métier = user_code", async () => {
+  const { auth, schoolA, userA } = createAuth({
+    patchUserA: { email: "jp.mbuyi@test.local" },
+  });
+  const session = await auth.login({
+    role: "teacher",
+    schoolCode: schoolA.loginCode,
+    identifier: "jp.mbuyi@test.local",
+    pin: "1234",
+  });
+  assert.equal(session.user.identifier, userA.identifier);
+});
+
+test("téléphone autorisé comme moyen Auth", async () => {
+  const { auth, schoolA, userA } = createAuth({
+    patchUserA: { phone: "+243900000010" },
+  });
+  const session = await auth.login({
+    role: "teacher",
+    schoolCode: schoolA.loginCode,
+    identifier: "+243900000010",
+    pin: "1234",
+  });
+  assert.equal(session.user.identifier, userA.identifier);
 });
 
 test("ancien alias élève ELE-0001 → refus", async () => {

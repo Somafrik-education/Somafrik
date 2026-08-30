@@ -49,6 +49,7 @@ function createMemoryDb() {
       ...student,
       student_uuid: student.id,
       school_code: schools.find((item) => item.id === student.school_id)?.school_code,
+      school_login_code: schools.find((item) => item.id === student.school_id)?.login_code,
       class_id: cls?.id ?? null,
       class_code: cls?.class_code,
       class_name: cls?.name,

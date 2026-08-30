@@ -7,8 +7,8 @@ const { CLIENTS_ERROR } = require("./clientsManagement");
 function buildStore() {
   return createClientsMemoryStore({
     platformSchools: [
-      { id: "school-cd", code: "CD-2026-0001", name: "Institut CD", countryId: "country-cd", countryCode: "CD", country: "RDC" },
-      { id: "school-bi", code: "BI-2026-0001", name: "Institut BI", countryId: "country-bi", countryCode: "BI", country: "Burundi" },
+      { id: "school-cd", code: "CD-IC-26-001", loginCode: "CD-IC-26-001", login_code: "CD-IC-26-001", name: "Institut CD", countryId: "country-cd", countryCode: "CD", country: "RDC" },
+      { id: "school-bi", code: "BI-IB-26-001", loginCode: "BI-IB-26-001", login_code: "BI-IB-26-001", name: "Institut BI", countryId: "country-bi", countryCode: "BI", country: "Burundi" },
     ],
   });
 }
@@ -45,13 +45,13 @@ async function main() {
       firstName: "Grace",
       lastName: "Ndayishimiye",
       email: "grace.bi@test.local",
-      schoolCode: "BI-2026-0001",
+      schoolCode: "BI-IB-26-001",
       countryCode: "BI",
     },
     superAdmin,
     auditMeta,
   );
-  assert.equal(nominal.schoolCode, "BI-2026-0001");
+  assert.equal(nominal.schoolCode, "BI-IB-26-001");
   assert.equal(nominal.countryCode, "BI");
   const granted = await store.grantUserRole(nominal.id, { role: "Admin School" }, superAdmin, auditMeta);
   assert.ok((granted.roleKeys || []).includes("SCHOOL_ADMIN"));
@@ -69,7 +69,7 @@ async function main() {
         firstName: "Wrong",
         lastName: "Tenant",
         email: "wrong.tenant@test.local",
-        schoolCode: "CD-2026-0001",
+        schoolCode: "CD-IC-26-001",
         countryCode: "BI",
       },
       superAdmin,
@@ -133,17 +133,17 @@ async function main() {
       firstName: "Patrick",
       lastName: "School",
       email: "patrick.school@test.local",
-      schoolCode: "CD-2026-0001",
+      schoolCode: "CD-IC-26-001",
     },
     countryAdmin,
     auditMeta,
   );
-  assert.equal(countryScoped.schoolCode, "CD-2026-0001");
+  assert.equal(countryScoped.schoolCode, "CD-IC-26-001");
 
   const biAdmin = {
     sub: nominal.id,
     role: "Admin School",
-    schoolCode: "BI-2026-0001",
+    schoolCode: "BI-IB-26-001",
     countryCode: "BI",
     identifier: "admin-bi",
   };
@@ -152,20 +152,20 @@ async function main() {
       firstName: "Kept",
       lastName: "Burundi",
       email: "kept.bi@test.local",
-      schoolCode: "CD-2026-0001",
+      schoolCode: "CD-IC-26-001",
     },
     biAdmin,
     auditMeta,
   );
-  assert.equal(ignoredCdPayload.schoolCode, "BI-2026-0001");
-  assert.notEqual(ignoredCdPayload.schoolCode, "CD-2026-0001");
+  assert.equal(ignoredCdPayload.schoolCode, "BI-IB-26-001");
+  assert.notEqual(ignoredCdPayload.schoolCode, "CD-IC-26-001");
 
   const cdVictim = await store.createUser(
     {
       firstName: "Victim",
       lastName: "CD",
       email: "victim.cd@test.local",
-      schoolCode: "CD-2026-0001",
+      schoolCode: "CD-IC-26-001",
     },
     superAdmin,
     auditMeta,

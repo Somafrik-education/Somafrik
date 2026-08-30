@@ -196,13 +196,16 @@ function createFunctionalRbacPgStore(repo) {
       );
     }
     if (!school && schoolCodeLookup) {
-      school = await one(
-        `SELECT s.id, s.school_code, s.country_id, c.iso_code AS country_code
-         FROM schools s JOIN countries c ON c.id = s.country_id
-         WHERE upper(s.school_code) = upper($1)
-            OR upper(coalesce(s.login_code, '')) = upper($1)`,
-        [schoolCodeLookup],
-      );
+      const { isV2SchoolLoginCode, normalizeSchoolCode } = require("../lib/schoolCodeV2");
+      const normalized = normalizeSchoolCode(schoolCodeLookup);
+      if (normalized && isV2SchoolLoginCode(normalized)) {
+        school = await one(
+          `SELECT s.id, s.login_code, s.school_code, s.country_id, c.iso_code AS country_code
+           FROM schools s JOIN countries c ON c.id = s.country_id
+           WHERE upper(s.login_code) = $1`,
+          [normalized],
+        );
+      }
     }
     if (school) {
       country = {

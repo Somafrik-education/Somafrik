@@ -252,6 +252,7 @@ jobs:
           set -euo pipefail
           npm run verify:db-config
           npm run verify:runtime-bootstrap
+          npm run verify:id-canonical:pg
 
       - name: Auth and RBAC
         if: needs.scope.outputs.auth == 'true'

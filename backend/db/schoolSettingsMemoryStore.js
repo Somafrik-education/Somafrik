@@ -23,11 +23,12 @@ function createSchoolSettingsMemoryStore(seed = {}) {
   const legacyPayloads = new Map();
 
   function rememberSchool(school) {
-    const code = asTrimmed(school.code ?? school.schoolCode ?? school.school_code).toUpperCase();
+    const code = asTrimmed(school.loginCode ?? school.login_code).toUpperCase();
     if (!code) return null;
     const entry = {
       id: school.id ?? randomUUID(),
       school_code: code,
+      login_code: code,
     };
     schools.set(code, entry);
     return entry;

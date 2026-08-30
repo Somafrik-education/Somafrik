@@ -14,7 +14,7 @@ async function main() {
   const principal = {
     sub: "actor-1",
     role: "Admin School",
-    schoolCode: "CD-2026-0001",
+    schoolCode: "CD-IN-26-001",
     identifier: "admin",
   };
   const auditMeta = { ipAddress: "127.0.0.1", userAgent: "test" };
@@ -25,7 +25,7 @@ async function main() {
       lastName: "Mukendi",
       contactType: "Parent",
       phone: "+243900000099",
-      schoolCode: "CD-2026-0001",
+      schoolCode: "CD-IN-26-001",
     },
     principal,
     auditMeta,
@@ -46,7 +46,7 @@ async function main() {
   const projection = store.listProjection();
   assert.ok(projection.users.length >= 1);
   const projected = projection.users.find((row) => row.id === provisioned.user.id);
-  assert.equal(projected.schoolCode, "CD-2026-0001");
+  assert.equal(projected.schoolCode, "CD-IN-26-001");
   assert.equal(projected.schoolPublicCode, "CD-IN-26-001");
   assert.equal(projected.schoolName, "INSTITUT NURU");
   assert.ok(projection.contacts.length >= 1);

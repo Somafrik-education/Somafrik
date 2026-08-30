@@ -247,7 +247,7 @@ function resolveUserIdentifier({ role, phone, email, userCode }) {
  * Ne jamais lire users.login_code ici (identité personne).
  */
 function schoolLoginCodeFromUserRow(row) {
-  return asTrimmed(row?.school_login_code) || asTrimmed(row?.school_code);
+  return asTrimmed(row?.school_login_code).toUpperCase();
 }
 
 function schoolPublicProjectionFromSchool(school, fallbackSchoolCode = "*") {
@@ -259,9 +259,8 @@ function schoolPublicProjectionFromSchool(school, fallbackSchoolCode = "*") {
     };
   }
   const login = asTrimmed(school.loginCode ?? school.login_code).toUpperCase();
-  const legacy = asTrimmed(school.code ?? school.schoolCode ?? school.school_code).toUpperCase();
   return {
-    school_code: login || legacy || fallbackSchoolCode,
+    school_code: login || fallbackSchoolCode,
     school_login_code: login,
     school_name: asTrimmed(school.name),
   };
@@ -270,19 +269,17 @@ function schoolPublicProjectionFromSchool(school, fallbackSchoolCode = "*") {
 function mapUserRow(row) {
   const profile = parsePayload(row.profile_payload);
   const role = ROLE_FROM_DB[row.role] ?? row.role;
+  const userCode = asTrimmed(row.user_code);
   const schoolCode =
     asTrimmed(row.school_login_code).toUpperCase() ||
-    row.school_code ||
     (role === "Admin Pays" ? "*" : "");
-  const identityCode = row.identity_code ?? profile.identityCode ?? "";
-  const loginCode = row.login_code ?? profile.identifier ?? "";
   return {
     id: row.id,
-    publicId: identityCode || row.user_code,
-    identityCode,
-    loginCode,
-    userCode: row.user_code,
-    legacyUserCode: row.user_code,
+    publicId: userCode,
+    identityCode: userCode,
+    loginCode: userCode,
+    userCode,
+    legacyUserCode: userCode,
     contactId: profile.contactId || row.contact_id || "",
     firstName: row.first_name,
     lastName: row.last_name,
@@ -300,7 +297,7 @@ function mapUserRow(row) {
     schoolName: asTrimmed(row.school_name ?? row.schoolName),
     schoolId: row.school_id,
     accessChannel: profile.accessChannel ?? "Application",
-    identifier: loginCode || resolveUserIdentifier({ role, phone: row.phone, email: row.email, userCode: row.user_code }),
+    identifier: userCode,
     status: fromDbStatus(row.status),
     permissions: [],
     hasTemporaryPassword: Boolean(row.must_change_password),

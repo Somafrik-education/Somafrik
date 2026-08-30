@@ -497,21 +497,24 @@ class AuthService {
 
   userMatchesIdentifier(user, identifier) {
     const normalizedIdentifier = normalizeText(identifier);
-    const fields = ["identifier", "phone", "email"];
+    if (!normalizedIdentifier) return false;
 
-    return fields.some((field) => {
-      const value = normalizeText(user[field]);
-      if (value !== normalizedIdentifier) {
-        return false;
-      }
-
-      // Le téléphone sur un compte élève réfère le parent, pas un identifiant de connexion.
-      if (isStudentRole(user.role) && field === "phone") {
-        return false;
-      }
-
+    const userCode = normalizeText(user.userCode ?? user.user_code ?? user.identifier);
+    if (userCode && userCode === normalizedIdentifier) {
       return true;
-    });
+    }
+
+    const email = normalizeText(user.email);
+    if (email && email === normalizedIdentifier) {
+      return true;
+    }
+
+    const phone = normalizeText(user.phone);
+    if (phone && phone === normalizedIdentifier && !isStudentRole(user.role)) {
+      return true;
+    }
+
+    return false;
   }
 
   findManagedUser(identifier, schoolCode, preferredMobileRole = null) {

@@ -6,7 +6,7 @@ const { mapUserRow } = require("./clientsManagement");
 const { tenantSchoolCodeFromPrincipal } = require("./pedagogyManagement");
 const { TenantScopeService } = require("../services/tenantScopeService");
 
-test("mapUserRow sépare schoolCode tenant et schoolPublicCode canonique", () => {
+test("mapUserRow : schoolCode API = login_code, identifier = user_code", () => {
   const mapped = mapUserRow({
     id: "11111111-1111-1111-1111-111111111111",
     user_code: "USR-JPK",
@@ -18,39 +18,42 @@ test("mapUserRow sépare schoolCode tenant et schoolPublicCode canonique", () =>
     school_code: "CD-2026-0001",
     school_login_code: "CD-IN-26-001",
     school_name: "INSTITUT NURU",
-    login_code: "CD-IN-JPK-26-00004",
+    login_code: "GK-26-00001",
     identity_code: "CD-IN-JPK-26-00004",
-    profile_payload: {},
+    profile_payload: { identifier: "admin-overlay" },
   });
 
-  assert.equal(mapped.schoolCode, "CD-2026-0001");
+  assert.equal(mapped.id, "11111111-1111-1111-1111-111111111111");
+  assert.equal(mapped.schoolCode, "CD-IN-26-001");
   assert.equal(mapped.schoolPublicCode, "CD-IN-26-001");
   assert.equal(mapped.schoolName, "INSTITUT NURU");
-  assert.equal(mapped.loginCode, "CD-IN-JPK-26-00004");
-  assert.notEqual(mapped.schoolPublicCode, mapped.schoolCode);
-  assert.notEqual(mapped.loginCode, mapped.schoolPublicCode);
+  assert.equal(mapped.userCode, "USR-JPK");
+  assert.equal(mapped.identifier, "USR-JPK");
+  assert.equal(mapped.publicId, "USR-JPK");
+  assert.notEqual(mapped.identifier, "GK-26-00001");
+  assert.notEqual(mapped.identifier, "admin-overlay");
+  assert.notEqual(mapped.schoolCode, "CD-2026-0001");
 });
 
-test("tenantSchoolCodeFromPrincipal ignore schoolPublicCode", () => {
+test("tenantSchoolCodeFromPrincipal = login_code JWT, ignore school_code interne", () => {
   assert.equal(
     tenantSchoolCodeFromPrincipal({
-      schoolCode: "CD-2026-0001",
+      schoolCode: "CD-IN-26-001",
       schoolPublicCode: "CD-IN-26-001",
     }),
-    "CD-2026-0001",
+    "CD-IN-26-001",
   );
 });
 
-test("tenantScopeService filtre toujours sur schoolCode historique", () => {
+test("tenantScopeService filtre sur login_code, pas school_code", () => {
   const service = new TenantScopeService();
   const rows = [
-    { id: "same", schoolCode: "CD-2026-0001", schoolPublicCode: "CD-IN-26-001" },
-    { id: "other", schoolCode: "BI-2026-0002", schoolPublicCode: "CD-IN-26-001" },
+    { id: "same", schoolCode: "CD-IN-26-001", school_code: "CD-2026-0001" },
+    { id: "other", schoolCode: "BI-LB-26-001", school_code: "CD-2026-0001" },
   ];
   const filtered = service.filterRows(rows, {
     role: "Préfet des études",
-    schoolCode: "CD-2026-0001",
-    schoolPublicCode: "CD-IN-26-001",
+    schoolCode: "CD-IN-26-001",
   });
   assert.equal(filtered.length, 1);
   assert.equal(filtered[0].id, "same");

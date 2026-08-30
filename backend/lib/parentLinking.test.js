@@ -47,7 +47,7 @@ function seedStore() {
 const principal = {
   sub: "actor-1",
   role: "Admin School",
-  schoolCode: "CD-2026-0001",
+  schoolCode: "CD-IN-26-001",
   identifier: "admin",
 };
 const auditMeta = { ipAddress: "127.0.0.1", userAgent: "test" };
@@ -189,7 +189,7 @@ async function main() {
     identifier: teacher.email,
     phone: teacher.phone,
     email: teacher.email,
-    schoolCode: "CD-2026-0001",
+    schoolCode: "CD-IN-26-001",
     status: "Actif",
     passwordHash: store._tables.users.find((row) => row.id === teacher.id).password_hash,
   };
@@ -201,7 +201,7 @@ async function main() {
       id: row.id,
       firstName: row.first_name,
       lastName: row.last_name,
-      schoolCode: "CD-2026-0001",
+      schoolCode: "CD-IN-26-001",
     })),
     relations: store.listProjection().relations,
     userAccounts: [authUser],
@@ -211,7 +211,7 @@ async function main() {
   });
   const parentLogin = await auth.login({
     role: "parent_student",
-    schoolCode: "CD-2026-0001",
+    schoolCode: "CD-IN-26-001",
     identifier: "paul.teacher@test.local",
     pin: "TeacherPin1!",
   });
@@ -219,7 +219,7 @@ async function main() {
   assert.equal(parentLogin.user.role, "Parent");
   const teacherLogin = await auth.login({
     role: "teacher",
-    schoolCode: "CD-2026-0001",
+    schoolCode: "CD-IN-26-001",
     identifier: "paul.teacher@test.local",
     pin: "TeacherPin1!",
   });

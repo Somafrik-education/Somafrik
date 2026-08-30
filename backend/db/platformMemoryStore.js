@@ -24,11 +24,12 @@ function clone(value) {
 function resolveSeedSchoolId(schoolCode, seed = {}) {
   const normalized = asTrimmed(schoolCode).toUpperCase();
   if (!normalized) return null;
-  if (seed.school && asTrimmed(seed.school.code).toUpperCase() === normalized) {
+  const seedLogin = asTrimmed(seed.school?.loginCode ?? seed.school?.login_code).toUpperCase();
+  if (seed.school && seedLogin && seedLogin === normalized) {
     return seed.school.id;
   }
   const match = (seed.platformSchools ?? []).find(
-    (row) => asTrimmed(row.code ?? row.schoolCode).toUpperCase() === normalized,
+    (row) => asTrimmed(row.loginCode ?? row.login_code).toUpperCase() === normalized,
   );
   return match?.id ?? `school-${normalized}`;
 }

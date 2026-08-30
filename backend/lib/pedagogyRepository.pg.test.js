@@ -60,12 +60,12 @@ async function seedFixture(pool) {
   );
   const schoolA = await pool.query(
     `INSERT INTO schools (country_id, school_code, name, status)
-     VALUES ($1, 'CD-2026-0001', 'Lycée A', 'active') RETURNING id`,
+     VALUES ($1, 'CD-2026-0001', 'Lycée A', 'active') RETURNING id, login_code`,
     [country.rows[0].id],
   );
   const schoolB = await pool.query(
     `INSERT INTO schools (country_id, school_code, name, status)
-     VALUES ($1, 'BI-2026-0001', 'Lycée B', 'active') RETURNING id`,
+     VALUES ($1, 'BI-2026-0001', 'Lycée B', 'active') RETURNING id, login_code`,
     [country.rows[0].id],
   );
   const openYear = await pool.query(
@@ -180,6 +180,9 @@ async function seedFixture(pool) {
     student: student.rows[0].id,
     outsider: outsider.rows[0].id,
     adminUser: adminUser.rows[0].id,
+    schoolACode: String(schoolA.rows[0].login_code ?? "").trim().toUpperCase(),
+    schoolBCode: String(schoolB.rows[0].login_code ?? "").trim().toUpperCase(),
+    teacherUserCode: "USR-ENS-PG",
   };
 }
 
@@ -202,15 +205,12 @@ async function main() {
     const repo = createPostgresRepository(isolatedUrl);
     repo.ready = true;
     const store = createPedagogyPgStore(repo);
+    assert.ok(fixture.schoolACode, "login_code école A manquant");
+    assert.ok(fixture.schoolBCode, "login_code école B manquant");
     const admin = {
       role: "Admin School",
-      schoolCode: "CD-2026-0001",
+      schoolCode: fixture.schoolACode,
       sub: fixture.adminUser,
-    };
-    const teacherPrincipal = {
-      role: "Enseignant",
-      schoolCode: "CD-2026-0001",
-      sub: "ENS-PG-001",
     };
     const auditMeta = { ipAddress: "127.0.0.1", userAgent: "pedagogy-it" };
 
@@ -314,7 +314,7 @@ async function main() {
       () =>
         store.createSchoolCourse(
           { className: "6ème A", name: "Physique" },
-          { role: "Admin School", schoolCode: "BI-2026-0001" },
+          { role: "Admin School", schoolCode: fixture.schoolBCode },
           auditMeta,
         ),
       (error) => error.code === PEDAGOGY_ERROR.TENANT_MISMATCH || error.code === PEDAGOGY_ERROR.COURSE_NOT_FOUND,
@@ -526,7 +526,7 @@ async function main() {
         period: "Trimestre 1",
         title: "Devoir intégration",
         maxScore: 20,
-        schoolCode: "CD-2026-0001",
+        schoolCode: fixture.schoolACode,
         teacherId: "ENS-PG-001",
         evaluationType: "Devoir",
       },
@@ -566,7 +566,7 @@ async function main() {
         period: "Trimestre 1",
         title: "Tenant scellé",
         maxScore: 20,
-        schoolCode: "BI-2026-0001",
+        schoolCode: fixture.schoolBCode,
         teacherId: "ENS-PG-001",
         evaluationType: "Devoir",
       },
@@ -1018,15 +1018,51 @@ async function main() {
 
     const teacherLive = {
       role: "Enseignant",
-      schoolCode: "CD-2026-0001",
+      schoolCode: fixture.schoolACode,
       sub: fixture.teacherUser,
-      identifier: "ENS-PG-001",
+      identifier: fixture.teacherUserCode,
       permissions: ["Notes:READ", "Notes:CREATE", "Notes:UPDATE"],
     };
     const teacherCreateOnly = {
       ...teacherLive,
       permissions: ["Notes:READ", "Notes:CREATE"],
     };
+
+    await assert.rejects(
+      () =>
+        store.createEvaluation(
+          {
+            className: "6ème A",
+            subject: "Mathématiques",
+            period: "Trimestre 1",
+            title: "NOTES-P1 sub ENS refuse",
+            evaluationType: "Devoir",
+            scale: 20,
+          },
+          { ...teacherLive, sub: "ENS-0001" },
+          auditMeta,
+        ),
+      (error) => error.code === PEDAGOGY_ERROR.TEACHER_ASSIGNMENT_REQUIRED || error.statusCode === 403,
+      "principal.sub = ENS-0001 → refus résolution teacher",
+    );
+    await assert.rejects(
+      () =>
+        store.createEvaluation(
+          {
+            className: "6ème A",
+            subject: "Mathématiques",
+            period: "Trimestre 1",
+            title: "NOTES-P1 sub user_code refuse",
+            evaluationType: "Devoir",
+            scale: 20,
+          },
+          { ...teacherLive, sub: fixture.teacherUserCode },
+          auditMeta,
+        ),
+      (error) => error.code === PEDAGOGY_ERROR.TEACHER_ASSIGNMENT_REQUIRED || error.statusCode === 403,
+      "principal.sub = users.user_code → refus résolution teacher",
+    );
+
     const teacherEval = await store.createEvaluation(
       {
         className: "6ème A",

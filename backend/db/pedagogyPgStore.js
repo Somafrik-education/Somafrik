@@ -134,7 +134,7 @@ function createPedagogyPgStore(repo) {
         );
         if (!row) return null;
         const profile = parsePayload(row.profile_payload);
-        return { ...row, code: row.login_code || row.school_code, timezone: profile.timezone };
+        return { ...row, code: row.login_code, timezone: profile.timezone };
       },
       async resolveActorUserId(principal) {
         const normalized = asTrimmed(principal?.sub || principal?.id);

@@ -88,7 +88,11 @@ async function main() {
       [cd.rows[0].id, bi.rows[0].id],
     );
     const cdLogin = await pool.query(`SELECT login_code FROM schools WHERE school_code = 'CD-2026-0001'`);
+    const biLogin = await pool.query(`SELECT login_code FROM schools WHERE school_code = 'BI-2026-0001'`);
     const cdLoginCode = String(cdLogin.rows[0]?.login_code ?? "").trim().toUpperCase();
+    const biLoginCode = String(biLogin.rows[0]?.login_code ?? "").trim().toUpperCase();
+    assert.ok(cdLoginCode, "login_code PostgreSQL manquant pour CD");
+    assert.ok(biLoginCode, "login_code PostgreSQL manquant pour BI");
 
     const repo = createRepo(pool);
     const store = createClientsPgStore(repo);
@@ -133,7 +137,7 @@ async function main() {
         temporaryPassword: "SchoolAdminBI!2026",
         roleKey: "SCHOOL_ADMIN",
         countryCode: "BI",
-        schoolCode: "BI-2026-0001",
+        schoolCode: biLoginCode,
       },
       superAdmin,
       auditMeta,
@@ -161,15 +165,15 @@ async function main() {
         temporaryPassword: "SchoolAdminCD!2026",
         roleKey: "SCHOOL_ADMIN",
         countryCode: "CD",
-        schoolCode: "CD-2026-0001",
+        schoolCode: cdLoginCode,
       },
       superAdmin,
       auditMeta,
     );
-    assert.equal(schoolAdminCd.schoolCode, "CD-2026-0001");
+    assert.equal(schoolAdminCd.schoolCode, cdLoginCode);
+    assert.notEqual(schoolAdminCd.schoolCode, "CD-2026-0001");
     assert.equal(schoolAdminCd.countryCode, "CD");
 
-    assert.ok(cdLoginCode, "login_code PostgreSQL manquant pour CD-2026-0001");
     const schoolAdminCdLogin = await store.provisionUser(
       {
         firstName: "Login",
@@ -183,8 +187,8 @@ async function main() {
       superAdmin,
       auditMeta,
     );
-    assert.equal(schoolAdminCdLogin.schoolCode, "CD-2026-0001");
-    assert.notEqual(schoolAdminCdLogin.schoolCode, cdLoginCode);
+    assert.equal(schoolAdminCdLogin.schoolCode, cdLoginCode);
+    assert.notEqual(schoolAdminCdLogin.schoolCode, "CD-2026-0001");
 
     const schoolAdminCdAccent = await store.provisionUser(
       {
@@ -194,7 +198,7 @@ async function main() {
         temporaryPassword: "SchoolAdminCD!2026",
         roleKey: "SCHOOL_ADMIN",
         countryScope: "République Démocratique du Congo",
-        schoolCode: "CD-2026-0001",
+        schoolCode: cdLoginCode,
       },
       superAdmin,
       auditMeta,
@@ -210,7 +214,7 @@ async function main() {
             email: "wrong.scope.pg@test.local",
             roleKey: "SCHOOL_ADMIN",
             countryCode: "BI",
-            schoolCode: "CD-2026-0001",
+            schoolCode: cdLoginCode,
           },
           superAdmin,
           auditMeta,
@@ -226,7 +230,7 @@ async function main() {
             lastName: "Country",
             email: "no.country.pg@test.local",
             roleKey: "SCHOOL_ADMIN",
-            schoolCode: "CD-2026-0001",
+            schoolCode: cdLoginCode,
           },
           superAdmin,
           auditMeta,
@@ -290,7 +294,7 @@ async function main() {
             email: "rollback.audit.pg@test.local",
             roleKey: "SCHOOL_ADMIN",
             countryCode: "BI",
-            schoolCode: "BI-2026-0001",
+            schoolCode: biLoginCode,
           },
           superAdmin,
           auditMeta,

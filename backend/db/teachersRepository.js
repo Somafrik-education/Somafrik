@@ -91,7 +91,7 @@ function mapTeacherRow(row, assignmentRows = []) {
   const identifier = teacherCode;
   const assignments = mapActiveAssignments(assignmentRows, teacherCode);
   return {
-    id: teacherCode,
+    id: row.id,
     teacherCode,
     publicId: teacherCode,
     identifier,
@@ -106,7 +106,7 @@ function mapTeacherRow(row, assignmentRows = []) {
     email: row.email ?? "",
     speciality: row.speciality ?? "",
     mainSubject: row.speciality ?? "",
-    schoolCode: row.login_code || row.school_code,
+    schoolCode: String(row.login_code ?? "").trim(),
     status: row.status === "active" || row.status === "Actif" ? "Actif" : row.status ?? "Actif",
     mustChangePassword: Boolean(row.must_change_password),
     assignments,
@@ -336,7 +336,8 @@ function createTeachersRepository(db) {
       const school = await requireSchool(schoolCode);
       const [rows, assignmentRows] = await Promise.all([
         db.all(
-          `SELECT t.teacher_code,
+          `SELECT t.id,
+                  t.teacher_code,
                   t.user_id,
                   t.speciality,
                   t.hire_date,
@@ -378,13 +379,14 @@ function createTeachersRepository(db) {
       }
       const school = await requireSchool(schoolCode);
       const row = await db.one(
-        `SELECT t.teacher_code,
+        `SELECT t.id,
+                t.teacher_code,
                 t.user_id,
                 t.speciality,
                 t.hire_date,
                 t.status,
-                t.created_at,
-                t.updated_at,
+                  t.created_at,
+                  t.updated_at,
                 s.school_code,
                 s.login_code,
                 u.user_code,
@@ -440,7 +442,7 @@ function createTeachersRepository(db) {
                     schoolCode: inserted.schoolCode,
                     userId: inserted.userId,
                   },
-                  schoolCode: school.school_code ?? schoolCode,
+                  schoolCode: school.login_code ?? school.loginCode ?? schoolCode,
                 });
               }
               return inserted;

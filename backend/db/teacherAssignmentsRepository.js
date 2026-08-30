@@ -9,11 +9,14 @@ const { isTeacherAssignmentsActiveUniquenessViolation } = require("../lib/teache
 const { sqlTeacherIdentityEquals } = require("../lib/teacherCodeAllocation");
 
 function mapAssignment(row) {
+  const teacherCode = String(row.user_code ?? "").trim();
   return {
     id: row.id,
-    schoolCode: row.school_code,
-    teacherId: row.teacher_code,
-    teacherCode: row.teacher_code,
+    schoolId: row.school_id ?? null,
+    schoolCode: String(row.login_code ?? "").trim(),
+    teacherId: row.teacher_id,
+    teacherUserId: row.teacher_user_id ? String(row.teacher_user_id) : row.user_id ? String(row.user_id) : null,
+    teacherCode,
     teacherName: [row.first_name, row.last_name].filter(Boolean).join(" "),
     classId: row.class_id ?? row.classId ?? null,
     className: row.class_name,
@@ -39,15 +42,15 @@ function asIsoTimestamp(value) {
 }
 
 /**
- * Projection L1 Assignments : teacherId = UUID PostgreSQL réel.
- * Ne pas recopier mapAssignment() où teacherId = teacher_code.
+ * Projection L1 Assignments : teacherId = teachers.id UUID.
+ * teacherCode = users.user_code uniquement comme projection.
  */
 function mapMobileSyncAssignmentRow(row) {
   const status = String(row.status ?? "").trim();
   return {
     id: String(row.id),
     teacherId: String(row.teacher_id),
-    teacherCode: row.teacher_code ?? null,
+    teacherCode: row.user_code ?? row.teacher_code ?? null,
     teacherUserId: row.teacher_user_id ? String(row.teacher_user_id) : null,
     classId: String(row.class_id),
     classCode: row.class_code ?? null,
@@ -64,7 +67,7 @@ function mapMobileSyncAssignmentRow(row) {
 const SELECT_ASSIGNMENT = `SELECT ta.id,
        ta.school_id, ta.teacher_id, ta.class_id, ta.subject_id, ta.academic_year_id,
        ta.assignment_role, ta.status, ta.created_at, ta.updated_at,
-       s.school_code, t.teacher_code, u.first_name, u.last_name,
+       s.login_code, u.user_code, u.id AS teacher_user_id, u.first_name, u.last_name,
        cl.class_code, cl.name AS class_name,
        sub.subject_code, sub.name AS subject_name,
        ay.name AS academic_year_name
@@ -104,13 +107,13 @@ function createTeacherAssignmentsRepository(db) {
   }
 
   async function resolveReferences(reader, school, input, current = null) {
-    const teacherRef = input.present.teacherCode ? input.teacherCode : current?.teacher_code;
+    const teacherRef = input.present.teacherCode ? input.teacherCode : current?.user_code ?? current?.teacher_id;
     const classRef = input.present.classRef ? input.classRef : current?.class_code;
     const subjectRef = input.present.subjectRef ? input.subjectRef : current?.subject_code;
 
     const [teacher, schoolClass, subject] = await Promise.all([
       reader.one(
-        `SELECT t.id, t.teacher_code FROM teachers t
+        `SELECT t.id, t.user_id, u.user_code FROM teachers t
          LEFT JOIN users u ON u.id = t.user_id
          WHERE t.school_id = $1
            AND ${sqlTeacherIdentityEquals("t", "u", "$2")}
@@ -151,7 +154,7 @@ function createTeacherAssignmentsRepository(db) {
 
   async function assertCourseAvailable(reader, schoolId, refs, excludeId = null) {
     const conflict = await reader.one(
-      `SELECT ta.id, t.teacher_code
+      `SELECT ta.id, ta.teacher_id
        FROM teacher_assignments ta
        JOIN teachers t ON t.id = ta.teacher_id
          AND t.school_id = ta.school_id
@@ -163,7 +166,7 @@ function createTeacherAssignmentsRepository(db) {
     );
     if (conflict) {
       const sameTeacher =
-        String(conflict.teacher_code ?? "") === String(refs.teacher.teacher_code ?? "");
+        String(conflict.teacher_id ?? "") === String(refs.teacher.id ?? "");
       throw assignmentError(
         409,
         sameTeacher
@@ -189,7 +192,7 @@ function createTeacherAssignmentsRepository(db) {
       }
       const rows = await db.all(
         `${SELECT_ASSIGNMENT} WHERE ${conditions.join(" AND ")}
-         ORDER BY cl.name, sub.name, t.teacher_code`,
+         ORDER BY cl.name, sub.name, u.user_code`,
         params,
       );
       return rows.map(mapAssignment);
@@ -211,9 +214,10 @@ function createTeacherAssignmentsRepository(db) {
       if (!uid || !sid) return null;
       const row = await db.one(
         `SELECT t.id::text AS teacher_id,
-                t.teacher_code,
+                u.user_code AS teacher_code,
                 t.user_id::text AS teacher_user_id
          FROM teachers t
+         JOIN users u ON u.id = t.user_id
          WHERE t.user_id::text = $1
            AND t.school_id::text = $2
            AND COALESCE(lower(btrim(t.status)), 'active') NOT IN ('deleted', 'archived', 'inactive')
@@ -384,7 +388,7 @@ function createTeacherAssignmentsRepository(db) {
       const rows = await db.all(
         `SELECT ta.id,
                 ta.teacher_id,
-                t.teacher_code,
+                u.user_code,
                 t.user_id AS teacher_user_id,
                 ta.class_id,
                 cl.class_code,
@@ -397,6 +401,8 @@ function createTeacherAssignmentsRepository(db) {
          FROM teacher_assignments ta
          JOIN teachers t ON t.id = ta.teacher_id
            AND t.school_id = ta.school_id
+         JOIN users u ON u.id = t.user_id
+           AND u.school_id = ta.school_id
          JOIN classes cl ON cl.id = ta.class_id
            AND cl.school_id = ta.school_id
          JOIN subjects sub ON sub.id = ta.subject_id
@@ -461,9 +467,9 @@ function createTeacherAssignmentsRepository(db) {
               teacherCode: created.teacherCode,
               classCode: created.classCode,
               subjectCode: created.subjectCode,
-              schoolCode: school.school_code ?? schoolCode,
+              schoolCode: school.login_code ?? school.loginCode ?? schoolCode,
             },
-            schoolCode: school.school_code ?? schoolCode,
+            schoolCode: school.login_code ?? school.loginCode ?? schoolCode,
           });
         }
         return created;
@@ -520,9 +526,9 @@ function createTeacherAssignmentsRepository(db) {
               teacherCode: updated.teacherCode,
               classCode: updated.classCode,
               subjectCode: updated.subjectCode,
-              schoolCode: school.school_code ?? schoolCode,
+              schoolCode: school.login_code ?? school.loginCode ?? schoolCode,
             },
-            schoolCode: school.school_code ?? schoolCode,
+            schoolCode: school.login_code ?? school.loginCode ?? schoolCode,
           });
         }
         return updated;
@@ -550,8 +556,8 @@ function createTeacherAssignmentsRepository(db) {
             entityType: "teacher_assignment",
             entityId: result.id,
             oldValue: { id: result.id, status: "active" },
-            newValue: { id: result.id, deleted: true, schoolCode: school.school_code ?? schoolCode },
-            schoolCode: school.school_code ?? schoolCode,
+            newValue: { id: result.id, deleted: true, schoolCode: school.login_code ?? school.loginCode ?? schoolCode },
+            schoolCode: school.login_code ?? school.loginCode ?? schoolCode,
           });
         }
         return result;

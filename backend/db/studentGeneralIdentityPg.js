@@ -167,14 +167,10 @@ AS $$
       EXISTS (
         SELECT 1 FROM students
         WHERE student_code = p_canonical
-           OR login_code = p_canonical
-           OR identity_code = p_canonical
       )
       OR EXISTS (
         SELECT 1 FROM users
-        WHERE identity_code = p_canonical
-           OR user_code = p_canonical
-           OR login_code = p_canonical
+        WHERE user_code = p_canonical
       )
     );
 $$;
@@ -281,9 +277,6 @@ DECLARE
   year_short TEXT;
   initials TEXT;
   sequence_value INTEGER;
-  short_login TEXT;
-  full_identity TEXT;
-  legacy_identifier TEXT;
   student_role BOOLEAN;
 BEGIN
   IF NEW.school_id IS NULL THEN
@@ -308,11 +301,7 @@ BEGIN
   INTO student_row
   FROM students st
   WHERE st.school_id = NEW.school_id
-    AND (
-      st.student_code = NEW.user_code
-      OR st.login_code = NEW.user_code
-      OR st.identity_code = NEW.user_code
-    )
+    AND st.student_code = NEW.user_code
   LIMIT 1;
 
   IF student_row.student_code IS NOT NULL OR student_role THEN
@@ -333,12 +322,11 @@ BEGIN
     IF NEW.identity_year IS NULL THEN
       NEW.identity_year := extract(year FROM coalesce(NEW.created_at, NOW()))::integer;
     END IF;
-    legacy_identifier := nullif(btrim(coalesce(NEW.profile_payload->>'identifier', '')), '');
     NEW.profile_payload := coalesce(NEW.profile_payload, '{}'::jsonb)
+      - 'legacyIdentifier'
       || jsonb_build_object(
         'identifier', student_row.student_code,
-        'identityCode', student_row.student_code,
-        'legacyIdentifier', legacy_identifier
+        'identityCode', student_row.student_code
       );
     RETURN NEW;
   END IF;
@@ -347,45 +335,20 @@ BEGIN
     RAISE EXCEPTION 'CLIENT_IDENTITY_CODE_FORBIDDEN';
   END IF;
 
-  SELECT s.id, s.short_code, c.iso_code
-  INTO school_row
-  FROM schools s
-  JOIN countries c ON c.id = s.country_id
-  WHERE s.id = NEW.school_id;
-
-  IF school_row.id IS NULL OR nullif(btrim(school_row.short_code), '') IS NULL THEN
-    RAISE EXCEPTION 'SCHOOL_SHORT_CODE_REQUIRED';
+  IF nullif(btrim(NEW.user_code), '') IS NULL THEN
+    RAISE EXCEPTION 'USER_CODE_REQUIRED';
   END IF;
 
-  country_code := upper(btrim(school_row.iso_code));
-  identity_creation_year := extract(year FROM coalesce(NEW.created_at, NOW()))::integer;
-  year_short := lpad((identity_creation_year % 100)::text, 2, '0');
-  initials := somafrik_identity_initials(NEW.first_name, NEW.last_name);
+  NEW.identity_initials := somafrik_identity_initials(NEW.first_name, NEW.last_name);
+  NEW.identity_year := extract(year FROM coalesce(NEW.created_at, NOW()))::integer;
+  NEW.login_code := NEW.user_code;
+  NEW.identity_code := NEW.user_code;
 
-  INSERT INTO identity_counters (school_id, creation_year, last_value)
-  VALUES (NEW.school_id, identity_creation_year, 1)
-  ON CONFLICT (school_id, creation_year)
-  DO UPDATE SET last_value = identity_counters.last_value + 1, updated_at = NOW()
-  RETURNING last_value INTO sequence_value;
-
-  IF sequence_value > 99999 THEN
-    RAISE EXCEPTION 'IDENTITY_SEQUENCE_EXHAUSTED: school %, year %', NEW.school_id, identity_creation_year;
-  END IF;
-
-  short_login := initials || '-' || year_short || '-' || lpad(sequence_value::text, 5, '0');
-  full_identity := country_code || '-' || upper(school_row.short_code) || '-' || short_login;
-
-  NEW.identity_initials := initials;
-  NEW.identity_year := identity_creation_year;
-  NEW.login_code := short_login;
-  NEW.identity_code := full_identity;
-
-  legacy_identifier := nullif(btrim(coalesce(NEW.profile_payload->>'identifier', '')), '');
   NEW.profile_payload := coalesce(NEW.profile_payload, '{}'::jsonb)
+    - 'legacyIdentifier'
     || jsonb_build_object(
-      'identifier', short_login,
-      'identityCode', full_identity,
-      'legacyIdentifier', legacy_identifier
+      'identifier', NEW.user_code,
+      'identityCode', NEW.user_code
     );
 
   RETURN NEW;

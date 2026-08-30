@@ -1875,7 +1875,7 @@ class PostgresRepository {
         ORDER BY t.teacher_code, cl.name, sub.name
       `),
       this.all(`
-        SELECT st.*, s.school_code, e.class_id, cl.name AS class_name, u.pin_hash AS student_pin_hash
+        SELECT st.*, s.login_code AS school_login_code, e.class_id, cl.name AS class_name, u.pin_hash AS student_pin_hash
         FROM students st
         JOIN schools s ON s.id = st.school_id
         LEFT JOIN users u ON u.school_id = st.school_id AND u.user_code = st.student_code
@@ -3386,7 +3386,7 @@ class PostgresRepository {
     const academicYear = await this.getCurrentAcademicYear(schoolId);
     if (!academicYear) return;
     const requestedEffectiveDate = String(options.effectiveDate ?? "").trim() || null;
-    const school = await this.one("SELECT school_code FROM schools WHERE id = $1", [schoolId]);
+    const school = await this.one("SELECT login_code FROM schools WHERE id = $1", [schoolId]);
     const student = await this.one(
       `SELECT st.student_code, st.first_name, st.last_name, st.id
        FROM students st WHERE st.id = $1`,
@@ -3404,21 +3404,21 @@ class PostgresRepository {
     } = require("../lib/financeObligationLifecycle");
     const actor = options.principal || {
       role: "system",
-      schoolCode: school.school_code,
+      schoolCode: school.login_code,
       sub: "finance-obligation-lifecycle",
     };
     let financeInput = {
       reason: "enrollment_active",
-      schoolCode: school.school_code,
+      schoolCode: school.login_code,
       studentKey: student.student_code,
       student: {
-        id: student.student_code,
+        id: student.id,
         dbId: student.id,
         publicId: student.student_code,
         studentCode: student.student_code,
         firstName: student.first_name,
         lastName: student.last_name,
-        schoolCode: school.school_code,
+        schoolCode: school.login_code,
         classId: klass.id,
         classCode: klass.class_code,
         className: klass.name,
@@ -5835,14 +5835,14 @@ class PostgresRepository {
     }
     const countryCode = school?.iso_code ?? this.getCountryCodeForUser(user, role, profilePayload);
     const countryScope = this.getCountryScopeForUser(school, countryCode, profilePayload);
-    const identityCode = String(user.identity_code ?? profilePayload.identityCode ?? "").trim();
+    const userCode = String(user.user_code ?? "").trim();
 
     return {
       id: user.id,
       schoolId: user.school_id,
-      publicId: identityCode || user.user_code,
-      identityCode: identityCode || user.user_code,
-      userCode: user.user_code,
+      publicId: userCode,
+      identityCode: userCode,
+      userCode,
       lastName: user.last_name,
       firstName: user.first_name,
       gender: user.gender ?? "",
@@ -5857,7 +5857,7 @@ class PostgresRepository {
       scopeLevel: role === "Super Administrateur Somafrik" ? "Global" : role === "Admin Pays" ? "Pays" : "Établissement",
       countryScope,
       countryCode,
-      schoolCode: role === "Admin Pays" ? "*" : (school?.login_code || user.school_code || "*"),
+      schoolCode: role === "Admin Pays" ? "*" : (school?.login_code || ""),
       accessChannel: "Application",
       identifier,
       passwordHash: user.password_hash,
@@ -5899,58 +5899,8 @@ class PostgresRepository {
     return countryCode;
   }
 
-  getUserIdentifier(user, role, teacherLoginId = "") {
-    const aliases = {
-      "USR-2026-000001": "admin",
-      "USR-2026-000002": "superadmin",
-      "ADM-CD-2026-0001": "admin-rdc",
-      "USR-PREFET-0001": "prefet",
-      "USR-SECRETARY-0001": "secretaire",
-      // Jeu bulk : alias user_code historiques (school_code interne, pas login_code V2)
-      "ADMIN-CD-2026-0001-01": "admin",
-      "ADMIN-CG-2026-0001-01": "admin-cg",
-      "ADMIN-BI-2026-0001-01": "admin-bi",
-      "SECRETAIRE-CD-2026-0001-01": "secretaire",
-      "PREFET-CD-2026-0001-01": "prefet",
-    };
-
-    if (aliases[user.user_code]) {
-      return aliases[user.user_code];
-    }
-
-    if (role === "Admin Pays") {
-      const match = String(user.user_code ?? "").match(/^ADM-([A-Z]{2})-/i);
-      if (match) return `admin-${match[1].toLowerCase()}`;
-    }
-
-    if (role === "Enseignant") {
-      const canonical = String(teacherLoginId || user.identity_code || user.user_code || "")
-        .trim()
-        .toUpperCase();
-      if (canonical && !/^ENS-\d+$/i.test(canonical)) {
-        return canonical;
-      }
-    }
-
-    if (role === "Parent" && user.phone) {
-      return user.phone;
-    }
-
-    if (["Élève / Étudiant", "Élève", "Étudiant"].includes(role)) {
-      const canonical = String(user.login_code || user.identity_code || user.user_code || "")
-        .trim()
-        .toUpperCase();
-      if (/^[A-Z]{2}-[A-Z0-9]{2,5}-EL-[0-9]{2}-[0-9]{3}$/.test(canonical)) {
-        return canonical;
-      }
-      const legacy = String(user.user_code ?? "").match(/(ELE-\d+)$/i);
-      if (legacy) {
-        return legacy[1].toUpperCase();
-      }
-      if (canonical) return canonical;
-    }
-
-    return user.user_code || user.phone || user.email;
+  getUserIdentifier(user, _role, _teacherLoginId = "") {
+    return String(user.user_code ?? "").trim();
   }
 
   mapTeacher(teacher, gradeRows, assignmentRows = []) {
@@ -5965,10 +5915,11 @@ class PostgresRepository {
       .map((grade) => ({ className: grade.class_name, course: grade.subject_name }));
     const assignments = this.uniqueBy([...officialAssignments, ...gradeAssignments], "className", "course");
     return {
-      id: publicIdentity,
+      id: teacher.id,
       schoolId: teacher.school_id,
-      schoolCode: teacher.login_code || teacher.school_code,
+      schoolCode: String(teacher.login_code ?? "").trim(),
       publicId: publicIdentity,
+      teacherCode: publicIdentity,
       userId: teacher.user_id,
       identifier: publicIdentity,
       name: [teacher.first_name, teacher.last_name].filter(Boolean).join(" ") || publicIdentity,
@@ -5988,21 +5939,22 @@ class PostgresRepository {
   }
 
   mapStudent(student) {
-    const canonical = student.login_code || student.identity_code || student.student_code;
+    const studentCode = student.student_code;
     return {
-      id: canonical,
+      id: student.id,
       schoolId: student.school_id,
-      publicId: canonical,
-      identifier: canonical,
-      loginCode: canonical,
-      identityCode: canonical,
+      publicId: studentCode,
+      studentCode,
+      identifier: studentCode,
+      loginCode: studentCode,
+      identityCode: studentCode,
       name: `${student.first_name} ${student.last_name}`.trim(),
       firstName: student.first_name,
-      matricule: canonical,
+      matricule: studentCode,
       gender: student.gender,
       birthDate: this.formatDate(student.birth_date),
       className: student.class_name,
-      schoolCode: student.school_code,
+      schoolCode: String(student.school_login_code ?? "").trim(),
       pinHash: student.student_pin_hash,
       parentName: "Parent Somafrik",
       parentPhone: student.parent_phone,

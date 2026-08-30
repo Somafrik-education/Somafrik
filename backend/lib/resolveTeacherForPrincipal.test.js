@@ -53,6 +53,20 @@ test("principal.sub code public → refus", async () => {
   assert.equal(queried, false);
 });
 
+test("principal.sub = users.user_code → refus", async () => {
+  let queried = false;
+  const id = await resolveTeacherIdForPrincipal(
+    async () => {
+      queried = true;
+      return { id: TEACHER_ID };
+    },
+    { sub: "CD-IN-AL-26-00001" },
+    SCHOOL_ID,
+  );
+  assert.equal(id, null);
+  assert.equal(queried, false);
+});
+
 test("sub absent / school absent → refus", async () => {
   assert.equal(await resolveTeacherIdForPrincipal(async () => ({ id: TEACHER_ID }), {}, SCHOOL_ID), null);
   assert.equal(await resolveTeacherIdForPrincipal(async () => ({ id: TEACHER_ID }), { sub: USER_ID }, ""), null);

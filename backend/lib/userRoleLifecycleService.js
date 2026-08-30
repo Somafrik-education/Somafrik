@@ -198,7 +198,7 @@ async function activateTeacherProfile(tx, user, school, principal) {
 
   const teacher = await tx.insertTeacherForUser({
     schoolId: school.id,
-    schoolCode: school.login_code || school.loginCode || school.school_code,
+    schoolCode: school.login_code || school.loginCode,
     userId: user.id,
     speciality: null,
     hireDate: null,

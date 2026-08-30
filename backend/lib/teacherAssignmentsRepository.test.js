@@ -35,7 +35,10 @@ function createMemoryAdapter() {
     return {
       ...row,
       school_code: school?.school_code,
+      login_code: school?.login_code ?? school?.school_code,
       teacher_code: teacher?.teacher_code,
+      user_code: teacher?.user_code ?? teacher?.teacher_code,
+      teacher_user_id: teacher?.user_id ?? null,
       first_name: teacher?.first_name,
       last_name: teacher?.last_name,
       class_code: schoolClass?.class_code,
@@ -59,11 +62,11 @@ function createMemoryAdapter() {
           ),
         );
       }
-      if (text.startsWith("SELECT T.ID, T.TEACHER_CODE")) {
+      if (text.startsWith("SELECT T.ID, T.USER_ID") || text.startsWith("SELECT T.ID, T.TEACHER_CODE")) {
         return teachers.find(
           (row) =>
             row.school_id === params[0] &&
-            [row.id, row.teacher_code].includes(String(params[1])) &&
+            [row.id, row.teacher_code, row.user_code].includes(String(params[1])) &&
             String(row.status ?? "active") === "active" &&
             String(row.user_status ?? "active") === "active",
         ) ?? null;
@@ -83,7 +86,7 @@ function createMemoryAdapter() {
             String(row.status ?? "active") === "active",
         ) ?? null;
       }
-      if (text.startsWith("SELECT TA.ID, T.TEACHER_CODE")) {
+      if (text.startsWith("SELECT TA.ID, TA.TEACHER_ID") || text.startsWith("SELECT TA.ID, T.TEACHER_CODE")) {
         const conflict = assignments.find(
           (row) =>
             row.school_id === params[0] &&
@@ -93,7 +96,7 @@ function createMemoryAdapter() {
             row.status === "active" &&
             (!params[4] || String(row.id) !== String(params[4])),
         );
-        return conflict ? { id: conflict.id, teacher_code: mapped(conflict).teacher_code } : null;
+        return conflict ? { id: conflict.id, teacher_id: conflict.teacher_id } : null;
       }
       if (text.startsWith("INSERT INTO TEACHER_ASSIGNMENTS")) {
         const row = {
@@ -172,6 +175,9 @@ test("CRUD affectation, conflit et isolation établissement", async () => {
     "CD-2026-0001",
   );
   assert.equal(created.teacherName, "Awa Diop");
+  assert.equal(created.teacherId, "teacher-1");
+  assert.equal(created.teacherCode, "CD-2026-0001-ENS-0001");
+  assert.notEqual(created.teacherId, created.teacherCode);
   assert.equal((await repo.listBySchoolCode("CD-2026-0001")).length, 1);
 
   await assert.rejects(
@@ -296,7 +302,7 @@ test("L1 teacherUserId = t.user_id ; tombstone ⇔ status != 'active'", () => {
   const l1 = src.slice(l1Start, src.indexOf("async create(body, schoolCode"));
   assert.match(l1, /t\.user_id AS teacher_user_id/);
   assert.equal(l1.includes("u.id AS teacher_user_id"), false);
-  assert.doesNotMatch(l1, /LEFT JOIN users u ON u\.id = t\.user_id/);
+  assert.match(l1, /JOIN users u ON u\.id = t\.user_id/);
   assert.equal(
     mapMobileSyncAssignmentRow({
       id: "a",

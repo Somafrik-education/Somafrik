@@ -8,8 +8,8 @@ const { USER_ROLE_ERROR } = require("./userRoleLifecycle");
 function buildStore(seed = {}) {
   return createClientsMemoryStore({
     platformSchools: [
-      { id: "school-cd", code: "CD-2026-0001", name: "Institut CD", countryId: "country-cd", countryCode: "CD", country: "RDC" },
-      { id: "school-bi", code: "BI-2026-0001", name: "Ecole Kanyosha", countryId: "country-bi", countryCode: "BI", country: "Burundi" },
+      { id: "school-cd", code: "CD-2026-0001", loginCode: "CD-IC-26-001", login_code: "CD-IC-26-001", name: "Institut CD", countryId: "country-cd", countryCode: "CD", country: "RDC" },
+      { id: "school-bi", code: "BI-2026-0001", loginCode: "BI-EK-26-001", login_code: "BI-EK-26-001", name: "Ecole Kanyosha", countryId: "country-bi", countryCode: "BI", country: "Burundi" },
     ],
     ...seed,
   });
@@ -53,7 +53,7 @@ async function main() {
   const schoolAdminCd = {
     sub: "admin-cd",
     role: "Admin School",
-    schoolCode: "CD-2026-0001",
+    schoolCode: "CD-IC-26-001",
     countryCode: "CD",
     identifier: "admin-cd",
   };
@@ -64,10 +64,10 @@ async function main() {
     firstName: "Aline",
     lastName: "Ndayishimiye",
     email: "aline.kanyosha@test.local",
-    schoolCode: "CD-2026-0001",
+    schoolCode: "CD-IC-26-001",
     countryCode: "CD",
   });
-  assert.equal(target.schoolCode, "CD-2026-0001");
+  assert.equal(target.schoolCode, "CD-IC-26-001");
   const before = await store.getUserById(target.id);
   assert.equal(before.school_id, "school-cd");
   const beforeRole = store._tables.userRoles.find(
@@ -90,7 +90,7 @@ async function main() {
     auditMeta,
   );
   assert.equal(identityOnly.firstName, "Aline-Edit");
-  assert.equal(identityOnly.schoolCode, "CD-2026-0001");
+  assert.equal(identityOnly.schoolCode, "CD-IC-26-001");
   assert.equal((await store.getUserById(target.id)).school_id, "school-cd");
 
   // A. PATCH identité n'écrit jamais users.school_id, même si schoolCode/countryCode sont envoyés.
@@ -98,7 +98,7 @@ async function main() {
     target.id,
     {
       firstName: "Aline-Maj",
-      schoolCode: "BI-2026-0001",
+      schoolCode: "BI-EK-26-001",
       countryCode: "BI",
       countryScope: "Burundi",
     },
@@ -106,7 +106,7 @@ async function main() {
     auditMeta,
   );
   assert.equal(patched.firstName, "Aline-Maj");
-  assert.equal(patched.schoolCode, "CD-2026-0001");
+  assert.equal(patched.schoolCode, "CD-IC-26-001");
   const afterIgnored = await store.getUserById(target.id);
   assert.equal(afterIgnored.school_id, "school-cd");
   const afterIgnoredRole = store._tables.userRoles.find(
@@ -129,28 +129,28 @@ async function main() {
   assert.equal(stillCd.school_id, "school-cd");
 
   await expectRejection(
-    store.reassignUserSchool(target.id, { schoolCode: "BI-2026-0001", countryCode: "CD" }, superAdmin, auditMeta),
+    store.reassignUserSchool(target.id, { schoolCode: "BI-EK-26-001", countryCode: "CD" }, superAdmin, auditMeta),
     { status: 409, code: CLIENTS_ERROR.SCHOOL_COUNTRY_MISMATCH },
   );
   assert.equal((await store.getUserById(target.id)).school_id, "school-cd");
 
   await expectRejection(
-    store.reassignUserSchool(target.id, { schoolCode: "BI-2026-0001" }, schoolAdminCd, auditMeta),
+    store.reassignUserSchool(target.id, { schoolCode: "BI-EK-26-001" }, schoolAdminCd, auditMeta),
     { status: 403, code: CLIENTS_ERROR.USER_TENANT_REASSIGN_FORBIDDEN },
   );
 
   await expectRejection(
-    store.reassignUserSchool(target.id, { schoolCode: "BI-2026-0001" }, countryAdmin, auditMeta),
+    store.reassignUserSchool(target.id, { schoolCode: "BI-EK-26-001" }, countryAdmin, auditMeta),
     { status: 403, code: CLIENTS_ERROR.TENANT_MISMATCH },
   );
 
   const reassigned = await store.reassignUserSchool(
     target.id,
-    { schoolCode: "BI-2026-0001", countryCode: "BI" },
+    { schoolCode: "BI-EK-26-001", countryCode: "BI" },
     superAdmin,
     auditMeta,
   );
-  assert.equal(reassigned.schoolCode, "BI-2026-0001");
+  assert.equal(reassigned.schoolCode, "BI-EK-26-001");
   assert.equal(reassigned.countryCode, "BI");
   const after = await store.getUserById(target.id);
   assert.equal(after.school_id, "school-bi");
@@ -164,13 +164,13 @@ async function main() {
   assert.equal(session.revoke_reason, "tenant_reassign");
   const audit = store.getAuditLog().find((entry) => entry.action === "reassign_user_school");
   assert.ok(audit, "audit before/after obligatoire");
-  assert.equal(audit.oldValue?.schoolCode, "CD-2026-0001");
-  assert.equal(audit.newValue?.schoolCode, "BI-2026-0001");
+  assert.equal(audit.oldValue?.schoolCode, "CD-IC-26-001");
+  assert.equal(audit.newValue?.schoolCode, "BI-EK-26-001");
   assert.equal(parsePayloadSchool(after.profile_payload).schoolCode, undefined);
   assert.equal(parsePayloadSchool(after.profile_payload).countryCode, undefined);
 
   await expectRejection(
-    store.reassignUserSchool(target.id, { schoolCode: "BI-2026-0001", countryCode: "BI" }, superAdmin, auditMeta),
+    store.reassignUserSchool(target.id, { schoolCode: "BI-EK-26-001", countryCode: "BI" }, superAdmin, auditMeta),
     { status: 409, code: CLIENTS_ERROR.CONFLICT },
   );
 
@@ -187,7 +187,7 @@ async function main() {
   );
   await store.grantUserRole(countryIdentity.id, { role: "Admin Pays" }, superAdmin, auditMeta);
   await expectRejection(
-    store.reassignUserSchool(countryIdentity.id, { schoolCode: "BI-2026-0001" }, superAdmin, auditMeta),
+    store.reassignUserSchool(countryIdentity.id, { schoolCode: "BI-EK-26-001" }, superAdmin, auditMeta),
     { status: 409, code: CLIENTS_ERROR.ROLE_SCOPE_CONFLICT },
   );
 
@@ -196,7 +196,7 @@ async function main() {
     firstName: "Rollback",
     lastName: "Case",
     email: "rollback.case@test.local",
-    schoolCode: "CD-2026-0001",
+    schoolCode: "CD-IC-26-001",
     countryCode: "CD",
   });
   rollbackStore._tables.sessions.push({
@@ -220,7 +220,7 @@ async function main() {
   try {
     await rollbackStore.reassignUserSchool(
       rollbackUser.id,
-      { schoolCode: "BI-2026-0001", countryCode: "BI" },
+      { schoolCode: "BI-EK-26-001", countryCode: "BI" },
       superAdmin,
       auditMeta,
     );
@@ -244,7 +244,7 @@ async function main() {
   const biAdmin = {
     sub: target.id,
     role: "Admin School",
-    schoolCode: "BI-2026-0001",
+    schoolCode: "BI-EK-26-001",
     countryCode: "BI",
     identifier: "admin-bi",
   };
@@ -253,7 +253,7 @@ async function main() {
       firstName: "Victim",
       lastName: "CD",
       email: "victim.stay.cd@test.local",
-      schoolCode: "CD-2026-0001",
+      schoolCode: "CD-IC-26-001",
     },
     superAdmin,
     auditMeta,
