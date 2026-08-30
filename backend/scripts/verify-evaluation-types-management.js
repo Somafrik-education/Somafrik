@@ -88,7 +88,13 @@ async function login(port, identifier, password, schoolCode) {
 async function runMemorySuite() {
   const child = spawn("node", ["backend/scripts/dev-memory.js"], {
     cwd: ROOT,
-    env: { ...process.env, PORT: String(MEMORY_PORT), NODE_ENV: "development", SOMAFRIK_DB_REQUIRED: "false" },
+    env: {
+      ...process.env,
+      PORT: String(MEMORY_PORT),
+      NODE_ENV: "development",
+      SOMAFRIK_DB_REQUIRED: "false",
+      DATABASE_URL: "",
+    },
     stdio: ["ignore", "pipe", "pipe"],
   });
   try {
