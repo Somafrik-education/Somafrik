@@ -18,7 +18,7 @@ describe("marketing hero visual asset", () => {
     const bytes = fs.readFileSync(ASSET);
     assert.equal(bytes.subarray(8, 12).toString("ascii"), "WEBP");
     assert.ok(bytes.length > 80_000, `asset trop léger: ${bytes.length}`);
-    assert.ok(bytes.length < 220_000, `asset trop lourd: ${bytes.length}`);
+    assert.ok(bytes.length < 360_000, `asset trop lourd: ${bytes.length}`);
     assert.equal(fs.existsSync(LEGACY), false, "l’ancien asset Hero ne doit plus être versionné");
     assert.notEqual(fs.readFileSync(PRODUCT).equals(bytes), true);
 

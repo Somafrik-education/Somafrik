@@ -75,8 +75,8 @@ export const marketingHeroVisual = {
   src: `${import.meta.env.BASE_URL}marketing/hero-somafrik-school-dashboard.webp`,
   alt: "Administration d’un établissement scolaire utilisant le tableau de bord Somafrik",
   caption: "Visuel officiel du Hero : administration d’un établissement scolaire utilisant le tableau de bord Somafrik.",
-  width: 1448,
-  height: 1086,
+  width: 1672,
+  height: 941,
 } as const;
 
 /** Capture runtime réelle — pas d’illustration, pas de maquette. */

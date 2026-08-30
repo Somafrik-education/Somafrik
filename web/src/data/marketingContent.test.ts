@@ -51,8 +51,8 @@ describe("marketingContent", () => {
     expect(marketingHeroVisual.caption).toBe(
       "Visuel officiel du Hero : administration d’un établissement scolaire utilisant le tableau de bord Somafrik.",
     );
-    expect(marketingHeroVisual.width).toBe(1448);
-    expect(marketingHeroVisual.height).toBe(1086);
+    expect(marketingHeroVisual.width).toBe(1672);
+    expect(marketingHeroVisual.height).toBe(941);
     expect(marketingHeroVisual.src).not.toBe(marketingProductVisual.src);
   });
 

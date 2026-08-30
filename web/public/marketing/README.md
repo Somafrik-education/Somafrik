@@ -8,10 +8,10 @@ Visuel Hero officiel de la vitrine : administration d’un établissement scolai
 |---|---|
 | Usage | Hero de la vitrine publique uniquement |
 | Sujet | Bureau d’établissement scolaire, administratrice et écran Somafrik |
-| Source | Photographie fournie (même visuel que le fond de connexion) |
-| Résolution | 1448 × 1086 |
+| Source | Photographie officielle fournie pour le Hero (PNG 1672 × 941) |
+| Résolution | 1672 × 941 |
 | Encodage | WebP lossy (qualité 90, ratio source conservé) |
-| Poids | ~134 Ko |
+| Poids | ~283 Ko |
 
 Documenté uniquement comme visuel marketing. Les captures VITRINE-02 et VITRINE-03 restent les preuves officielles.
 
