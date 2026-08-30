@@ -71,15 +71,16 @@ async function seedSchool(pool) {
   );
   const school = await pool.query(
     `INSERT INTO schools (country_id, school_code, name, status)
-     VALUES ($1, 'CD-2026-0001', 'Test', 'active') RETURNING id`,
+     VALUES ($1, 'CD-2026-0001', 'Institut Nuru', 'active') RETURNING id, login_code`,
     [country.rows[0].id],
   );
+  const loginCode = String(school.rows[0].login_code ?? "").trim().toUpperCase();
   const student = await pool.query(
     `INSERT INTO students (school_id, student_code, first_name, last_name, status)
      VALUES ($1, 'STU-ID-1', 'Jean', 'Kabila', 'active') RETURNING id`,
     [school.rows[0].id],
   );
-  return { schoolId: school.rows[0].id, studentId: student.rows[0].id };
+  return { schoolId: school.rows[0].id, studentId: student.rows[0].id, loginCode };
 }
 
 async function resetSchema(pool) {
@@ -182,7 +183,8 @@ async function main() {
     await testEnsureRejectsLegacyDuplicates(pool, db);
 
     await resetSchema(pool);
-    const { schoolId } = await seedSchool(pool);
+    const { schoolId, loginCode } = await seedSchool(pool);
+    assert.match(loginCode, /^[A-Z]{2}-[A-Z0-9]{2,5}-\d{2}-\d{3}$/, "seed alloue un login_code V2");
 
     // Actif + archivé même email → inventaire 0 doublon, boot/index OK
     await pool.query(
@@ -205,7 +207,7 @@ async function main() {
     await ensureUsersLoginIdentityConstraints(db);
 
     const store = createClientsPgStore(db);
-    const principal = { role: "Admin School", schoolCode: "CD-2026-0001", identifier: "admin" };
+    const principal = { role: "Admin School", schoolCode: loginCode, identifier: "admin" };
     const auditMeta = { ipAddress: "127.0.0.1", userAgent: "test" };
 
     // Après archivage du compte actif, réutilisation de l'email → création OK
@@ -215,7 +217,7 @@ async function main() {
         firstName: "Actif",
         lastName: "User",
         email: "reuse@school.test",
-        schoolCode: "CD-2026-0001",
+        schoolCode: loginCode,
       },
       principal,
       auditMeta,
@@ -231,7 +233,7 @@ async function main() {
             firstName: "Collision",
             lastName: "Email",
             email: "reuse@school.test",
-            schoolCode: "CD-2026-0001",
+            schoolCode: loginCode,
           },
           principal,
           auditMeta,
@@ -247,7 +249,7 @@ async function main() {
         lastName: "Parent",
         email: "parent.block@test",
         phone: "+243900000010",
-        schoolCode: "CD-2026-0001",
+        schoolCode: loginCode,
       },
       principal,
       auditMeta,
@@ -261,7 +263,7 @@ async function main() {
         contactType: "Parent",
         email: "parent.block@test",
         phone: "+243900000010",
-        schoolCode: "CD-2026-0001",
+        schoolCode: loginCode,
       },
       principal,
       auditMeta,
@@ -291,7 +293,7 @@ async function main() {
         contactType: "Parent",
         email: "race.parent@test",
         phone: "+243900000099",
-        schoolCode: "CD-2026-0001",
+        schoolCode: loginCode,
       },
       principal,
       auditMeta,

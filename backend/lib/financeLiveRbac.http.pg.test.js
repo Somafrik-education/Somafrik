@@ -160,28 +160,35 @@ async function seed(pool) {
     `INSERT INTO countries (name, iso_code, phone_code, currency)
      VALUES ('Testland', 'TT', '+000', 'XOF') RETURNING id`,
   );
+  // login_code est alloué par trigger : SEQ3 global (country_id, year).
+  // École B n'est donc PAS …-001. Relire login_code et aligner school_code
+  // (colonne de transition encore utilisée par le store Finance).
   await pool.query(
-    `INSERT INTO schools (country_id, school_code, login_code, name, status)
-     VALUES ($1, 'TT-EA-26-001', 'TT-EA-26-001', 'École A', 'active'),
-            ($1, 'TT-EB-26-001', 'TT-EB-26-001', 'École B', 'active')`,
+    `INSERT INTO schools (country_id, school_code, name, status)
+     VALUES ($1, 'F6-SCH-A', 'École A', 'active'),
+            ($1, 'F6-SCH-B', 'École B', 'active')`,
     [country.rows[0].id],
   );
-  const schoolA = (await pool.query(`SELECT id FROM schools WHERE school_code = 'TT-EA-26-001'`)).rows[0];
-  const schoolB = (await pool.query(`SELECT id FROM schools WHERE school_code = 'TT-EB-26-001'`)).rows[0];
+  await pool.query(`UPDATE schools SET school_code = login_code WHERE school_code IS DISTINCT FROM login_code`);
+  const schoolA = (
+    await pool.query(`SELECT id, login_code, school_code FROM schools WHERE name = 'École A' LIMIT 1`)
+  ).rows[0];
+  const schoolB = (
+    await pool.query(`SELECT id, login_code, school_code FROM schools WHERE name = 'École B' LIMIT 1`)
+  ).rows[0];
+  const loginA = String(schoolA.login_code ?? "").trim().toUpperCase();
+  const loginB = String(schoolB.login_code ?? "").trim().toUpperCase();
   await pool.query(
     `INSERT INTO academic_years (school_id, name, status)
-     SELECT id, '2025-2026', 'open' FROM schools WHERE school_code IN ('TT-EA-26-001', 'TT-EB-26-001')`,
+     VALUES ($1, '2025-2026', 'open'), ($2, '2025-2026', 'open')`,
+    [schoolA.id, schoolB.id],
   );
   const yearA = (
-    await pool.query(
-      `SELECT ay.id FROM academic_years ay JOIN schools s ON s.id = ay.school_id WHERE s.school_code = 'TT-EA-26-001' LIMIT 1`,
-    )
+    await pool.query(`SELECT id FROM academic_years WHERE school_id = $1 LIMIT 1`, [schoolA.id])
   ).rows[0];
 
   const yearB = (
-    await pool.query(
-      `SELECT ay.id FROM academic_years ay JOIN schools s ON s.id = ay.school_id WHERE s.school_code = 'TT-EB-26-001' LIMIT 1`,
-    )
+    await pool.query(`SELECT id FROM academic_years WHERE school_id = $1 LIMIT 1`, [schoolB.id])
   ).rows[0];
 
   await pool.query(
@@ -237,6 +244,8 @@ async function seed(pool) {
   return {
     schoolA: schoolA.id,
     schoolB: schoolB.id,
+    loginA,
+    loginB,
     studentCodeA: student.rows[0].student_code,
     studentCodeB: studentB.rows[0].student_code,
   };
@@ -266,6 +275,9 @@ async function main() {
   try {
     await repo.init();
     const fixture = await seed(repo.pool);
+    assert.match(fixture.loginA, /^[A-Z]{2}-[A-Z0-9]{2,5}-\d{2}-\d{3}$/, `login A alloué: ${fixture.loginA}`);
+    assert.match(fixture.loginB, /^[A-Z]{2}-[A-Z0-9]{2,5}-\d{2}-\d{3}$/, `login B alloué: ${fixture.loginB}`);
+    assert.notEqual(fixture.loginA, fixture.loginB, "deux établissements, deux login_code");
 
     child = spawn(process.execPath, ["backend/server.js"], {
       cwd: ROOT,
@@ -290,32 +302,32 @@ async function main() {
 
     const liveToken = mintAccess(
       tokens,
-      staleClaims({ sub: LIVE_USER, schoolCode: "TT-EA-26-001", role: "Comptable", roleKeys: ["ACCOUNTANT"] }),
+      staleClaims({ sub: LIVE_USER, schoolCode: fixture.loginA, role: "Comptable", roleKeys: ["ACCOUNTANT"] }),
     );
     const accountantToken = mintAccess(
       tokens,
-      staleClaims({ sub: ACCOUNTANT_A, schoolCode: "TT-EA-26-001", role: "Comptable", roleKeys: ["ACCOUNTANT"] }),
+      staleClaims({ sub: ACCOUNTANT_A, schoolCode: fixture.loginA, role: "Comptable", roleKeys: ["ACCOUNTANT"] }),
     );
     const zeroToken = mintAccess(
       tokens,
-      staleClaims({ sub: ZERO_USER, schoolCode: "TT-EA-26-001" }),
+      staleClaims({ sub: ZERO_USER, schoolCode: fixture.loginA }),
     );
     const namedToken = mintAccess(
       tokens,
       staleClaims({
         sub: NAMED_USER,
-        schoolCode: "TT-EA-26-001",
+        schoolCode: fixture.loginA,
         role: "Admin School",
         roleKeys: ["SCHOOL_ADMIN"],
       }),
     );
     const dualOnA = mintAccess(
       tokens,
-      staleClaims({ sub: DUAL_USER, schoolCode: "TT-EA-26-001", role: "Comptable", roleKeys: ["ACCOUNTANT"] }),
+      staleClaims({ sub: DUAL_USER, schoolCode: fixture.loginA, role: "Comptable", roleKeys: ["ACCOUNTANT"] }),
     );
     const dualOnB = mintAccess(
       tokens,
-      staleClaims({ sub: DUAL_USER, schoolCode: "TT-EB-26-001", role: "Comptable", roleKeys: ["ACCOUNTANT"] }),
+      staleClaims({ sub: DUAL_USER, schoolCode: fixture.loginB, role: "Comptable", roleKeys: ["ACCOUNTANT"] }),
     );
 
     const authorized = await request("/payments", {
@@ -335,7 +347,7 @@ async function main() {
       ["F6_PAY"],
       `LIVE_USER ne doit pas hériter d'ACCOUNTANT via users.role: ${JSON.stringify(liveBefore.data?.roleKeys)}`,
     );
-    const beforeRevoke = await countPayments(pool, "TT-EA-26-001");
+    const beforeRevoke = await countPayments(pool, fixture.loginA);
 
     await setRolePaymentsGrant(pool, "F6_PAY", { create: false, read: false, update: false });
     const grantAfter = await pool.query(
@@ -361,7 +373,7 @@ async function main() {
     });
     assert.equal(revoked.status, 403, `scénario 1 revoke: ${JSON.stringify(revoked.data)}`);
     assert.equal(revoked.data?.code, PERMISSION_DENIED);
-    assert.equal(await countPayments(pool, "TT-EA-26-001"), beforeRevoke, "aucune mutation DB après revoke");
+    assert.equal(await countPayments(pool, fixture.loginA), beforeRevoke, "aucune mutation DB après revoke");
 
     await setRolePaymentsGrant(pool, "F6_PAY", { create: true, read: true, update: true });
     const granted = await request("/payments", {
@@ -381,7 +393,7 @@ async function main() {
     const zeroRead = await request("/payments", { token: zeroToken });
     assert.equal(zeroRead.status, 403, `scénario 3 lecture: ${JSON.stringify(zeroRead.data)}`);
 
-    const beforeRoleChange = await countPayments(pool, "TT-EA-26-001");
+    const beforeRoleChange = await countPayments(pool, fixture.loginA);
     const accPay = await request("/payments", {
       method: "POST",
       token: accountantToken,
@@ -404,7 +416,7 @@ async function main() {
       body: paymentBody(fixture.studentCodeA),
     });
     assert.equal(afterRoleChange.status, 403, `scénario 4 rôle B: ${JSON.stringify(afterRoleChange.data)}`);
-    assert.equal(await countPayments(pool, "TT-EA-26-001"), beforeRoleChange + 1, "TEACHER n'écrit pas un paiement");
+    assert.equal(await countPayments(pool, fixture.loginA), beforeRoleChange + 1, "TEACHER n'écrit pas un paiement");
 
     const dualReadA = await request("/payments", { token: dualOnA });
     const dualPayA = await request("/payments", {
