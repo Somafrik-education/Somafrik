@@ -170,7 +170,7 @@ async function replaceTeacherAssignmentsViaApi(assignmentToken, teacherIdentifie
 }
 
 async function createActiveClass(token, _label, scope = {}) {
-  const schoolCode = scope.schoolCode ?? "CD-2026-0001";
+  const schoolCode = scope.schoolCode ?? "CD-IN-26-001";
   const countryCode = scope.countryCode ?? "CD";
   const levelName = scope.levelName ?? "6ème";
   const { prepareCanonicalClassContext, postCanonicalClass } = require("../lib/canonicalClassHttp");
@@ -212,10 +212,10 @@ async function main() {
   try {
     await waitForHealth(child);
 
-    const tokenCd = await login("admin", "CD-2026-0001");
-    const tokenBi = await login("admin", "BI-2026-0002");
-    const tokenTeacher = await login("ENS-0001", "CD-2026-0001");
-    const tokenPrefet = await loginWithoutPasswordGate("prefet", "CD-2026-0001");
+    const tokenCd = await login("admin", "CD-IN-26-001");
+    const tokenBi = await login("admin", "BI-ESB-26-001");
+    const tokenTeacher = await login("CD-IN-JK-26-00001", "CD-IN-26-001");
+    const tokenPrefet = await loginWithoutPasswordGate("prefet", "CD-IN-26-001");
 
     const activeClass = await createActiveClass(tokenCd, "Classe active", { groupCode: "E1" });
     const inactiveClass = await createActiveClass(tokenCd, "Classe à désactiver", { groupCode: "E2" });
@@ -227,7 +227,7 @@ async function main() {
     assert.equal(patched.status, 200, JSON.stringify(patched.data));
 
     const classOtherSchool = await createActiveClass(tokenBi, "Classe autre école", {
-      schoolCode: "BI-2026-0002",
+      schoolCode: "BI-ESB-26-001",
       countryCode: "BI",
       levelName: "5ème",
     });
@@ -344,7 +344,7 @@ async function main() {
       body: {
         identifier: studentCode,
         password: temporarySecret,
-        schoolCode: "CD-2026-0001",
+        schoolCode: "CD-IN-26-001",
       },
     });
     assert.equal(studentLogin.status, 200, JSON.stringify(studentLogin.data));
@@ -366,7 +366,7 @@ async function main() {
       body: {
         identifier: studentCode,
         password: temporarySecret,
-        schoolCode: "CD-2026-0001",
+        schoolCode: "CD-IN-26-001",
       },
     });
     assert.equal(oldSecretLogin.status, 401, JSON.stringify(oldSecretLogin.data));
@@ -376,7 +376,7 @@ async function main() {
       body: {
         identifier: studentCode,
         password: "StudentPass12",
-        schoolCode: "CD-2026-0001",
+        schoolCode: "CD-IN-26-001",
       },
     });
     assert.equal(rotatedLogin.status, 200, JSON.stringify(rotatedLogin.data));
@@ -389,7 +389,7 @@ async function main() {
     assert.equal(superLogin.status, 200, JSON.stringify(superLogin.data));
     const superToken = superLogin.data.accessToken || superLogin.data.token;
     const audit = await request(
-      `/audit?action=enroll_student&schoolCode=${encodeURIComponent("CD-2026-0001")}`,
+      `/audit?action=enroll_student&schoolCode=${encodeURIComponent("CD-IN-26-001")}`,
       { token: superToken },
     );
     assert.equal(audit.status, 200, JSON.stringify(audit.data));
@@ -448,7 +448,7 @@ async function main() {
     assert.equal(unknownYear.status, 400, JSON.stringify(unknownYear.data));
 
     // Connexion réelle : affectation active + classCode → 200 avant et après refresh.
-    await replaceTeacherAssignmentsViaApi(tokenPrefet, "ENS-0001", [
+    await replaceTeacherAssignmentsViaApi(tokenPrefet, "CD-IN-JK-26-00001", [
       {
         className: activeClass.name,
         classCode: activeClass.classCode,
@@ -456,7 +456,7 @@ async function main() {
         status: "active",
       },
     ]);
-    const activeTeacherSession = await loginSession("ENS-0001", "CD-2026-0001");
+    const activeTeacherSession = await loginSession("CD-IN-JK-26-00001", "CD-IN-26-001");
     const teacherReadBeforeRefresh = await request(
       `/students/${encodeURIComponent(studentCode)}`,
       { token: activeTeacherSession.token },
@@ -488,7 +488,7 @@ async function main() {
     );
 
     // Affectation retirée avant refresh → accès refusé après refresh.
-    await replaceTeacherAssignmentsViaApi(tokenPrefet, "ENS-0001", [
+    await replaceTeacherAssignmentsViaApi(tokenPrefet, "CD-IN-JK-26-00001", [
       {
         className: activeClass.name,
         classCode: activeClass.classCode,
@@ -508,7 +508,7 @@ async function main() {
     );
 
     // Connexion réelle avec affectation inactive → refus.
-    const inactiveLogin = await loginSession("ENS-0001", "CD-2026-0001");
+    const inactiveLogin = await loginSession("CD-IN-JK-26-00001", "CD-IN-26-001");
     const teacherInactiveLoginDenied = await request(
       `/students/${encodeURIComponent(studentCode)}`,
       { token: inactiveLogin.token },
@@ -520,14 +520,14 @@ async function main() {
     );
 
     // Le client ne peut pas créer une affectation sans statut actif → refus fail-closed.
-    await replaceTeacherAssignmentsViaApi(tokenPrefet, "ENS-0001", [
+    await replaceTeacherAssignmentsViaApi(tokenPrefet, "CD-IN-JK-26-00001", [
       {
         className: activeClass.name,
         classCode: activeClass.classCode,
         course: "Mathématiques",
       },
     ]);
-    const missingStatusLogin = await loginSession("ENS-0001", "CD-2026-0001");
+    const missingStatusLogin = await loginSession("CD-IN-JK-26-00001", "CD-IN-26-001");
     const teacherMissingStatusDenied = await request(
       `/students/${encodeURIComponent(studentCode)}`,
       { token: missingStatusLogin.token },
@@ -551,11 +551,11 @@ async function main() {
     // Homonymes inter-années (fixture 2024-2025 explicite) + principal classNames seuls.
     const { prepareCanonicalClassContext, postCanonicalClass, ensureSchoolYear } = require("../lib/canonicalClassHttp");
     const offering = await prepareCanonicalClassContext(request, {
-      schoolCode: "CD-2026-0001",
+      schoolCode: "CD-IN-26-001",
       countryCode: "CD",
       groupCode: "H1",
     });
-    const priorYearRow = await ensureSchoolYear(request, tokenCd, "2024-2025", "CD-2026-0001", {
+    const priorYearRow = await ensureSchoolYear(request, tokenCd, "2024-2025", "CD-IN-26-001", {
       isCurrent: false,
     });
     const priorYear = await postCanonicalClass(request, tokenCd, {
@@ -589,7 +589,7 @@ async function main() {
       studentIdentityInitials("Nyme", "Homo"),
     );
 
-    await replaceTeacherAssignmentsViaApi(tokenPrefet, "ENS-0001", [
+    await replaceTeacherAssignmentsViaApi(tokenPrefet, "CD-IN-JK-26-00001", [
       {
         classCode: priorYear.data.classCode,
         className: priorYear.data.name,
@@ -597,7 +597,7 @@ async function main() {
         status: "inactive",
       },
     ]);
-    const nameOnlyLogin = await loginSession("ENS-0001", "CD-2026-0001");
+    const nameOnlyLogin = await loginSession("CD-IN-JK-26-00001", "CD-IN-26-001");
     const teacherNameOnlyStudentDenied = await request(
       `/students/${encodeURIComponent(homonymCreated.studentCode)}`,
       { token: nameOnlyLogin.token },
@@ -618,7 +618,7 @@ async function main() {
     );
 
     // Parent : pas de dossier d'un autre élève du même établissement.
-    const tokenParent = await login("+243 820 000 001", "CD-2026-0001");
+    const tokenParent = await login("+243 820 000 001", "CD-IN-26-001");
     const parentOtherStudentDenied = await request(
       `/students/${encodeURIComponent(studentCode)}`,
       { token: tokenParent },
@@ -653,7 +653,7 @@ async function main() {
         body: {
           firstName: "Hack",
           lastName: "School",
-          schoolCode: "CD-2026-0001",
+          schoolCode: "CD-IN-26-001",
         },
       },
     );

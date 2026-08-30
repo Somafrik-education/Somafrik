@@ -15,9 +15,10 @@ function createMobilePushDevicesStore(repo) {
 
   return {
     async resolveSchoolId(schoolCode) {
-      const normalized = asTrimmed(schoolCode).toUpperCase();
-      if (!normalized || normalized === "*") return null;
-      const row = await one(`SELECT id FROM schools WHERE school_code = $1`, [normalized]);
+      const { isV2SchoolLoginCode, normalizeSchoolCode } = require("../lib/schoolCodeV2");
+      const normalized = normalizeSchoolCode(schoolCode);
+      if (!normalized || normalized === "*" || !isV2SchoolLoginCode(normalized)) return null;
+      const row = await one(`SELECT id FROM schools WHERE upper(login_code) = $1`, [normalized]);
       return uuidOrNull(row?.id);
     },
 

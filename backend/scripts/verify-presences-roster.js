@@ -105,7 +105,7 @@ function assertSourceGuards() {
 async function createClass(token, groupCode) {
   const { prepareCanonicalClassContext, postCanonicalClass } = require("../lib/canonicalClassHttp");
   const ctx = await prepareCanonicalClassContext(request, {
-    schoolCode: "CD-2026-0001",
+    schoolCode: "CD-IN-26-001",
     countryCode: "CD",
     levelName: "6ème",
     groupCode,
@@ -138,9 +138,9 @@ async function main() {
 
   try {
     await waitForHealth(child);
-    const adminToken = await login("admin", "1234", "CD-2026-0001");
-    const teacherToken = await login("ENS-0001", "1234", "CD-2026-0001");
-    const otherSchoolToken = await login("admin", "1234", "BI-2026-0002");
+    const adminToken = await login("admin", "1234", "CD-IN-26-001");
+    const teacherToken = await login("CD-IN-JK-26-00001", "1234", "CD-IN-26-001");
+    const otherSchoolToken = await login("admin", "1234", "BI-ESB-26-001");
 
     const legacy = await request("/backoffice/state", {
       method: "PUT",

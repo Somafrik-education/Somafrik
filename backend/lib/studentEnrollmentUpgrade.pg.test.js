@@ -123,7 +123,9 @@ async function seedHistoricalPreprod(pool) {
   );
   assert.equal(staff.rows[0].identity_code, "CD-IN-OE-26-00001");
   assert.equal(staff.rows[0].identity_initials, "OE");
-  return { schoolId, staffIdentity: staff.rows[0].identity_code };
+  const loginCode = String(school.rows[0].login_code || "").trim();
+  assert.match(loginCode, /^CD-IN-\d{2}-\d{3}$/);
+  return { schoolId, loginCode, staffIdentity: staff.rows[0].identity_code };
 }
 
 function createDbAdapter(pool, repo) {
@@ -283,7 +285,7 @@ async function main() {
     const beforePhone = await counts(pool, seeded.schoolId);
     await assert.rejects(
       () =>
-        repo.enrollStudentInClass("CLS-6A-REPRO", "CD-2026-0001", {
+        repo.enrollStudentInClass("CLS-6A-REPRO", seeded.loginCode, {
           firstName: "ESTHER",
           lastName: "OKITO",
           parentPhone: "Baudouin OKITO",
@@ -292,7 +294,7 @@ async function main() {
     );
     assert.deepEqual(await counts(pool, seeded.schoolId), beforePhone, "400 téléphone : aucune donnée partielle");
 
-    const created = await repo.enrollStudentInClass("CLS-6A-REPRO", "CD-2026-0001", {
+    const created = await repo.enrollStudentInClass("CLS-6A-REPRO", seeded.loginCode, {
       firstName: "ESTHER",
       lastName: "OKITO",
       gender: "Féminin",
@@ -340,21 +342,21 @@ async function main() {
     );
     assert.equal(stillLegacy.rows[0].n, 2);
 
-    const diop = await repo.enrollStudentInClass("CLS-6A-REPRO", "CD-2026-0001", {
+    const diop = await repo.enrollStudentInClass("CLS-6A-REPRO", seeded.loginCode, {
       firstName: "Awa",
       lastName: "Diop",
       parentPhone: "+243 820 000 222",
     });
     assert.match(diop.student.studentCode, new RegExp(`^CD-IN-DA-${yy}-\\d{5}$`));
 
-    const plus33 = await repo.enrollStudentInClass("CLS-6A-REPRO", "CD-2026-0001", {
+    const plus33 = await repo.enrollStudentInClass("CLS-6A-REPRO", seeded.loginCode, {
       firstName: "Léa",
       lastName: "Martin",
       parentPhone: "+33 6 12 34 56 78",
     });
     assert.equal(plus33.student.parentPhone, "+33 6 12 34 56 78");
 
-    const emptyPhone = await repo.enrollStudentInClass("CLS-6A-REPRO", "CD-2026-0001", {
+    const emptyPhone = await repo.enrollStudentInClass("CLS-6A-REPRO", seeded.loginCode, {
       firstName: "Nia",
       lastName: "Kone",
     });
@@ -394,7 +396,7 @@ async function main() {
     });
     await assert.rejects(
       () =>
-        failing.enroll("CLS-6A-REPRO", "CD-2026-0001", {
+        failing.enroll("CLS-6A-REPRO", seeded.loginCode, {
           firstName: "Rollback",
           lastName: "Atomique",
         }),

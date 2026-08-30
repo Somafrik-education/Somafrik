@@ -134,7 +134,7 @@ async function main() {
     await waitForHealth(child);
 
     const tokenCd = await login("admin", "CD-IN-26-001");
-    const tokenBi = await login("admin", "BI-2026-0002");
+    const tokenBi = await login("admin", "BI-ESB-26-001");
 
     // Création impossible sans classe (pas de POST /api/students).
     const bareCreate = await request("/students", {

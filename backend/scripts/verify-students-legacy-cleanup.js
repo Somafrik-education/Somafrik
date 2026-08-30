@@ -92,7 +92,7 @@ function runUnitGuards() {
   );
   assert.equal(
     evaluateBackOfficeWriteAccess(
-      { role: "Admin School", schoolCode: "CD-2026-0001" },
+      { role: "Admin School", schoolCode: "CD-IN-26-001" },
       ["students"],
       ["students", "users"],
     ).ok,
@@ -151,7 +151,7 @@ function runUnitGuards() {
 async function loginAdmin() {
   const login = await request("/backoffice/login", {
     method: "POST",
-    body: { identifier: "admin", password: "1234", schoolCode: "CD-2026-0001" },
+    body: { identifier: "admin", password: "1234", schoolCode: "CD-IN-26-001" },
   });
   assert.equal(login.status, 200, JSON.stringify(login.data));
   const token = login.data.accessToken || login.data.token;
@@ -184,7 +184,7 @@ async function runHttpGuards() {
 
     const { prepareCanonicalClassContext, postCanonicalClass } = require("../lib/canonicalClassHttp");
     const offering = await prepareCanonicalClassContext(request, {
-      schoolCode: "CD-2026-0001",
+      schoolCode: "CD-IN-26-001",
       countryCode: "CD",
       groupCode: "L2",
     });
@@ -246,7 +246,7 @@ async function runHttpGuards() {
     const onlyStudents = await request("/backoffice/state", {
       method: "PUT",
       token,
-      body: { students: [{ id: "STUDENT-HACK", schoolCode: "CD-2026-0001" }] },
+      body: { students: [{ id: "STUDENT-HACK", schoolCode: "CD-IN-26-001" }] },
     });
     assertBackOfficeStateWriteRemoved(onlyStudents);
 
@@ -262,7 +262,7 @@ async function runHttpGuards() {
             id: userSentinelId,
             name: "Sentinel Lot 2",
             role: "Admin School",
-            schoolCode: "CD-2026-0001",
+            schoolCode: "CD-IN-26-001",
           },
         ],
       },
@@ -306,7 +306,7 @@ async function runHttpGuards() {
       body: {
         rows: [
           {
-            schoolCode: "CD-2026-0001",
+            schoolCode: "CD-IN-26-001",
             lastName: `LotDeux${stamp}`,
             firstName: "Awa",
             className: createdClass.data.name,

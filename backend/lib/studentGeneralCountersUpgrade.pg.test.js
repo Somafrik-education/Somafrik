@@ -213,7 +213,9 @@ async function seedSchoolClass(pool, { schoolCode = "CD-2026-0001", schoolName =
      VALUES ($1, $2, $3, '6ème A', 'active', $4, $5)`,
     [schoolId, year.rows[0].id, classCode, levelId, groupId],
   );
-  return { countryId, schoolId, shortCode: school.rows[0].short_code, classCode, schoolCode };
+  const loginCode = String(school.rows[0].login_code || "").trim();
+  assert.ok(loginCode, "login_code école manquant");
+  return { countryId, schoolId, shortCode: school.rows[0].short_code, classCode, schoolCode: loginCode };
 }
 
 async function seedLegacyStudentsAndStaff(pool, schoolId) {
