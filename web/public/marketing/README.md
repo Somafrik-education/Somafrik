@@ -1,19 +1,17 @@
 # Visuels marketing — tableau de bord établissement
 
-## Hero — `somafrik-dashboard-hero.webp`
+## Hero — `hero-somafrik-school-dashboard.webp`
 
-Visuel marketing du tableau de bord Somafrik, basé sur l’interface produit.
+Visuel Hero officiel de la vitrine : administration d’un établissement scolaire utilisant le tableau de bord Somafrik.
 
 | Champ | Valeur |
 |---|---|
 | Usage | Hero de la vitrine publique uniquement |
-| Écran | Tableau de bord administrateur d’établissement |
-| Profil affiché | Administrateur somafrik / AS |
-| Périmètre | `CD-2026-0001` |
-| Modules visibles | Scolarité, Paiements, Présences, Pédagogie, Administration, Taux de présence |
-| Résolution | 1760 × 1400 |
-| Encodage | WebP lossless |
-| Poids | ~73 Ko |
+| Sujet | Bureau d’établissement scolaire, administratrice et écran Somafrik |
+| Source | Photographie officielle fournie pour le Hero (PNG 1672 × 941) |
+| Résolution | 1672 × 941 |
+| Encodage | WebP lossy (qualité 90, ratio source conservé) |
+| Poids | ~283 Ko |
 
 Documenté uniquement comme visuel marketing. Les captures VITRINE-02 et VITRINE-03 restent les preuves officielles.
 

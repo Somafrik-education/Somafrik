@@ -15,7 +15,7 @@ export function ProductVisual({ variant }: ProductVisualProps) {
       <div
         className={
           isHero
-            ? "aspect-[1760/1400] overflow-hidden rounded-2xl bg-slate-100 shadow-[0_22px_50px_-24px_rgba(15,23,42,0.45)] ring-1 ring-slate-200/80"
+            ? "aspect-[16/9] overflow-hidden rounded-2xl bg-slate-100 shadow-[0_22px_50px_-24px_rgba(15,23,42,0.45)] ring-1 ring-slate-200/80 lg:aspect-[1672/941]"
             : "overflow-hidden rounded-2xl bg-slate-100 shadow-[0_18px_40px_-24px_rgba(15,23,42,0.35)] ring-1 ring-slate-200/80"
         }
       >
@@ -29,7 +29,7 @@ export function ProductVisual({ variant }: ProductVisualProps) {
           loading={isHero ? "eager" : "lazy"}
           className={
             isHero
-              ? "h-full w-full object-contain object-left-top"
+              ? "h-full w-full object-cover object-[52%_42%]"
               : "h-auto w-full object-contain object-top"
           }
         />
