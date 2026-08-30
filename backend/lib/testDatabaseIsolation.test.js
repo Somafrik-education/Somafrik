@@ -11,13 +11,13 @@ const {
 
 test("accepte uniquement une DATABASE_URL PostgreSQL locale", () => {
   const parsed = parseLocalTestDatabaseUrl(
-    "postgresql://somafrik:secret@localhost:5432/somafrik",
+    "postgresql://somafrik@localhost:5432/somafrik",
   );
   assert.equal(parsed.hostname, "localhost");
   assert.throws(
     () =>
       parseLocalTestDatabaseUrl(
-        "postgresql://somafrik:secret@preprod-db.example.com:5432/somafrik",
+        "postgresql://somafrik@preprod-db.example.com:5432/somafrik",
       ),
     /non locale refusée/,
   );
@@ -29,14 +29,14 @@ test("accepte uniquement une DATABASE_URL PostgreSQL locale", () => {
 
 test("refuse une URL sans base explicite", () => {
   assert.throws(
-    () => parseLocalTestDatabaseUrl("postgresql://somafrik:secret@localhost:5432/"),
+    () => parseLocalTestDatabaseUrl("postgresql://somafrik@localhost:5432/"),
     /base locale explicite/,
   );
 });
 
 test("construit une URL isolée sans changer l'hôte ni les credentials", () => {
   const url = withDatabaseName(
-    "postgresql://somafrik:secret@127.0.0.1:5432/somafrik?sslmode=disable",
+    "postgresql://somafrik@127.0.0.1:5432/somafrik?sslmode=disable",
     "somafrik_ci_123",
   );
   const parsed = new URL(url);
