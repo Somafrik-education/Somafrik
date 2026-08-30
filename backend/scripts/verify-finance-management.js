@@ -94,7 +94,7 @@ async function main() {
         },
         "PAY-TEST",
         "Correction de saisie",
-        { permissions: ["Paiements:CREATE"], schoolCode: "CD-2026-0001" },
+        { permissions: ["Paiements:CREATE"], schoolCode: "CD-IN-26-001" },
         {},
       ),
     (error) => error?.statusCode === 403 && /Paiements:UPDATE/.test(String(error?.message ?? "")),
@@ -128,7 +128,7 @@ async function main() {
     await waitForHealth(child);
     let adminToken;
     try {
-      adminToken = await login("admin", "1234", "CD-2026-0001");
+      adminToken = await login("admin", "1234", "CD-IN-26-001");
     } catch (error) {
       error.message = `${error.message}\n--- backend ---\n${childLogs.join("")}`;
       throw error;
@@ -137,7 +137,7 @@ async function main() {
 
     const { prepareCanonicalClassContext, postCanonicalClass } = require("../lib/canonicalClassHttp");
     const offering = await prepareCanonicalClassContext(request, {
-      schoolCode: "CD-2026-0001",
+      schoolCode: "CD-IN-26-001",
       countryCode: "CD",
       groupCode: "FN",
     });
@@ -176,7 +176,7 @@ async function main() {
       lastName: "Lot4",
       role: "Comptable",
       identifier: `cpt-lot4-${stamp}`,
-      schoolCode: "CD-2026-0001",
+      schoolCode: "CD-IN-26-001",
       status: "Actif",
       password: "E2eTest!2026",
       temporaryPassword: "E2eTest!2026",
@@ -187,7 +187,7 @@ async function main() {
       lastName: "Lot4",
       role: "Secrétaire",
       identifier: `sec-lot4-${stamp}`,
-      schoolCode: "CD-2026-0001",
+      schoolCode: "CD-IN-26-001",
       status: "Actif",
       password: "E2eTest!2026",
       temporaryPassword: "E2eTest!2026",
@@ -198,7 +198,7 @@ async function main() {
       lastName: "Lot4",
       role: "Directeur",
       identifier: `dir-lot4-${stamp}`,
-      schoolCode: "CD-2026-0001",
+      schoolCode: "CD-IN-26-001",
       status: "Actif",
       password: "E2eTest!2026",
       temporaryPassword: "E2eTest!2026",
@@ -228,12 +228,12 @@ async function main() {
     const secretary = await createStaffUser(secretaryUser);
     const director = await createStaffUser(directorUser);
 
-    const accountantToken = await login(accountant.identifier, "E2eTest!2026", "CD-2026-0001");
-    const secretaryToken = await login(secretary.identifier, "E2eTest!2026", "CD-2026-0001");
-    const directorToken = await login(director.identifier, "E2eTest!2026", "CD-2026-0001");
+    const accountantToken = await login(accountant.identifier, "E2eTest!2026", "CD-IN-26-001");
+    const secretaryToken = await login(secretary.identifier, "E2eTest!2026", "CD-IN-26-001");
+    const directorToken = await login(director.identifier, "E2eTest!2026", "CD-IN-26-001");
     const superToken = await login("superadmin", "1234");
-    const prefetToken = await login("prefet", "1234", "CD-2026-0001");
-    const teacherToken = await login("ENS-0001", "1234", "CD-2026-0001");
+    const prefetToken = await login("prefet", "1234", "CD-IN-26-001");
+    const teacherToken = await login("CD-IN-JK-26-00001", "1234", "CD-IN-26-001");
 
     const accountantStudents = await request("/students", { token: accountantToken });
     assert.equal(accountantStudents.status, 403, "Comptable n'a pas GET /students");
@@ -303,7 +303,7 @@ async function main() {
       method: "PUT",
       token: adminToken,
       body: {
-        schoolCode: "BI-2026-0002",
+        schoolCode: "BI-ESB-26-001",
         schoolId: "00000000-0000-0000-0000-0000000000bb",
         methods: [{ methodCode: "card", label: "Carte injectée", active: true }],
       },
@@ -407,7 +407,7 @@ async function main() {
       method: "POST",
       token: superToken,
       body: {
-        schoolCode: "CD-2026-0001",
+        schoolCode: "CD-IN-26-001",
         className: createdClass.data.name,
         academicYear: "2023-2024",
         currency: "CDF",
@@ -450,7 +450,7 @@ async function main() {
         items: [{ feeType: "Non imputé", amount: 10 }],
         method: "Espèces",
         date: "2026-08-13",
-        schoolCode: "BI-2026-0001",
+        schoolCode: "BI-ESB-26-001",
         createdBy: "forged-actor",
       },
     });

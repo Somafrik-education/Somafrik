@@ -97,9 +97,9 @@ async function runMemorySuite() {
     assert.equal(unauth.status, 401);
 
     const superToken = await login(MEMORY_PORT, "superadmin", "1234");
-    const adminToken = await login(MEMORY_PORT, "admin", "1234", "CD-2026-0001");
+    const adminToken = await login(MEMORY_PORT, "admin", "1234", "CD-IN-26-001");
     const adminBi = await login(MEMORY_PORT, "admin", "1234", "BI-2026-0002");
-    const teacherToken = await login(MEMORY_PORT, "ENS-0001", "1234", "CD-2026-0001");
+    const teacherToken = await login(MEMORY_PORT, "CD-IN-JK-26-00001", "1234", "CD-IN-26-001");
 
     const list = await request(MEMORY_PORT, "/evaluation-types", { token: adminToken });
     assert.equal(list.status, 200, JSON.stringify(list.data));
@@ -109,7 +109,7 @@ async function runMemorySuite() {
     const created = await request(MEMORY_PORT, "/evaluation-types", {
       method: "POST",
       token: adminToken,
-      body: { name: "Oral", code: "oral", schoolId: "ignore-me", schoolCode: "BI-2026-0002" },
+      body: { name: "Oral", code: "oral", schoolId: "ignore-me", schoolCode: "BI-ESB-26-001" },
     });
     assert.equal(created.status, 201, JSON.stringify(created.data));
     assert.equal(created.data.schoolCode, "CD-2026-0001");
@@ -118,7 +118,7 @@ async function runMemorySuite() {
     const patched = await request(MEMORY_PORT, `/evaluation-types/${encodeURIComponent(created.data.id)}`, {
       method: "PATCH",
       token: adminToken,
-      body: { name: "Oral blanc", displayOrder: 90, schoolCode: "BI-2026-0002" },
+      body: { name: "Oral blanc", displayOrder: 90, schoolCode: "BI-ESB-26-001" },
     });
     assert.equal(patched.status, 200, JSON.stringify(patched.data));
     assert.equal(patched.data.name, "Oral blanc");
@@ -199,11 +199,11 @@ async function preparePgHttpDatabase(databaseUrl) {
       `INSERT INTO countries (name, iso_code, phone_code, currency) VALUES ('RDC', 'CD', '+243', 'CDF') RETURNING id`,
     );
     const schoolA = await pool.query(
-      `INSERT INTO schools (country_id, school_code, name, status) VALUES ($1, 'CD-2026-0001', 'Lycée HTTP', 'active') RETURNING id`,
+      `INSERT INTO schools (country_id, school_code, login_code, name, status) VALUES ($1, 'CD-2026-0001', 'CD-IN-26-001', 'Lycée HTTP', 'active') RETURNING id`,
       [country.rows[0].id],
     );
     const schoolB = await pool.query(
-      `INSERT INTO schools (country_id, school_code, name, status) VALUES ($1, 'BI-2026-0002', 'Lycée B', 'active') RETURNING id`,
+      `INSERT INTO schools (country_id, school_code, login_code, name, status) VALUES ($1, 'BI-2026-0002', 'BI-LB-26-001', 'Lycée B', 'active') RETURNING id`,
       [country.rows[0].id],
     );
     const year = await pool.query(
@@ -291,7 +291,7 @@ async function runPgSuite(databaseUrl) {
   try {
     await waitForHealth(child, PG_PORT);
     // POST /evaluations = Notes:CREATE. Admin School n'a que Modifier notes (UPDATE).
-    const teacherToken = await login(PG_PORT, "ENS-0001", "1234", "CD-2026-0001");
+    const teacherToken = await login(PG_PORT, "ens-http@test.cd", "1234", "CD-IN-26-001");
 
     const createdEval = await request(PG_PORT, "/evaluations", {
       method: "POST",
@@ -303,7 +303,7 @@ async function runPgSuite(databaseUrl) {
         title: "Devoir canonique",
         teacherId: "ENS-0001",
         evaluationTypeId: prepared.typeAId,
-        schoolCode: "BI-2026-0002",
+        schoolCode: "BI-ESB-26-001",
         scale: 20,
       },
     });

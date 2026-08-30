@@ -19,7 +19,7 @@ const WEB_PORT = 5182;
 const PG_HTTP_DATABASE = String(process.env.SOMAFRIK_PLANNING_ROOMS_HTTP_IT_DATABASE ?? "somafrik_planning_rooms_http_it")
   .trim()
   .replace(/[^a-zA-Z0-9_]/g, "");
-const SCHOOL_CODE = "CD-2026-0001";
+const SCHOOL_CODE = "CD-IN-26-001";
 const WEB_URL = `http://127.0.0.1:${WEB_PORT}`;
 const NEW_PASSWORD = "Planning#2026Aa";
 const ARTIFACTS = process.env.CURSOR_ARTIFACTS_DIR || "/tmp/cursor/artifacts";
@@ -182,12 +182,12 @@ async function prepareDatabase(databaseUrl) {
       `INSERT INTO countries (name, iso_code, phone_code, currency) VALUES ('RDC', 'CD', '+243', 'CDF') RETURNING id`,
     );
     const schoolA = await pool.query(
-      `INSERT INTO schools (country_id, school_code, name, status, profile_payload)
-       VALUES ($1, 'CD-2026-0001', 'Lycée IN', 'active', '{"timezone":"Africa/Kinshasa"}'::jsonb) RETURNING id`,
+      `INSERT INTO schools (country_id, school_code, login_code, name, status, profile_payload)
+       VALUES ($1, 'CD-2026-0001', 'CD-IN-26-001', 'Lycée IN', 'active', '{"timezone":"Africa/Kinshasa"}'::jsonb) RETURNING id`,
       [country.rows[0].id],
     );
     await pool.query(
-      `INSERT INTO schools (country_id, school_code, name, status) VALUES ($1, 'BI-2026-0002', 'Lycée B', 'active')`,
+      `INSERT INTO schools (country_id, school_code, login_code, name, status) VALUES ($1, 'BI-2026-0002', 'BI-LB-26-001', 'Lycée B', 'active')`,
       [country.rows[0].id],
     );
     const year = await pool.query(
@@ -294,7 +294,7 @@ async function runHttp(databaseUrl) {
     await waitForHealth(child, PG_PORT);
     const adminToken = await login(PG_PORT, "admin", "1234", SCHOOL_CODE);
     const prefetToken = await loginReady(PG_PORT, "prefet", "1234", SCHOOL_CODE);
-    const teacherToken = await login(PG_PORT, "ENS-0001", "1234", SCHOOL_CODE);
+    const teacherToken = await login(PG_PORT, "seke-http@test.cd", "1234", SCHOOL_CODE);
     const secretaryToken = await loginReady(PG_PORT, "secretaire", "1234", SCHOOL_CODE);
     const parentToken = await login(PG_PORT, "+243 820 000 001", "1234", SCHOOL_CODE);
 

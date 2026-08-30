@@ -15,6 +15,11 @@ const {
   parsePayload,
 } = require("./clientsManagement");
 const { toDbRole } = require("./clientsRolePolicy");
+
+function schoolLoginCodeFromUserRow(row) {
+  return asTrimmed(row?.school_login_code) || asTrimmed(row?.school_code);
+}
+
 const {
   USER_ROLE_ERROR,
   FORBIDDEN_CREATE_KEYS,
@@ -196,7 +201,7 @@ async function activateTeacherProfile(tx, user, school, principal) {
 
   const teacher = await tx.insertTeacherForUser({
     schoolId: school.id,
-    schoolCode: school.school_code,
+    schoolCode: school.login_code || school.loginCode || school.school_code,
     userId: user.id,
     speciality: null,
     hireDate: null,
@@ -239,7 +244,7 @@ async function grantRole(store, userId, rawPayload, principal, auditMeta) {
     throw createUserRoleError(404, "Utilisateur introuvable.", USER_ROLE_ERROR.USER_NOT_FOUND);
   }
 
-  const schoolCode = asTrimmed(existing.school_code);
+  const schoolCode = schoolLoginCodeFromUserRow(existing);
   assertSchoolScope(principal, schoolCode);
   await assertSchoolInPrincipalCountry(store, principal, schoolCode);
   assertNotSelfTarget(principal, existing.id);
@@ -364,7 +369,7 @@ async function revokeRole(store, userId, rawPayload, principal, auditMeta) {
     throw createUserRoleError(404, "Utilisateur introuvable.", USER_ROLE_ERROR.USER_NOT_FOUND);
   }
 
-  const schoolCode = asTrimmed(existing.school_code);
+  const schoolCode = schoolLoginCodeFromUserRow(existing);
   assertSchoolScope(principal, schoolCode);
   await assertSchoolInPrincipalCountry(store, principal, schoolCode);
   assertNotSelfTarget(principal, existing.id);

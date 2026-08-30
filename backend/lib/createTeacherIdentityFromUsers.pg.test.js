@@ -110,13 +110,16 @@ async function main() {
        VALUES ('RDC', 'CD', '+243', 'CDF') RETURNING id`,
     );
     await pool.query(
-      `INSERT INTO schools (country_id, school_code, name, status)
-       VALUES ($1, 'CD-2026-0001', 'Institut Kibwija', 'active')`,
+      `INSERT INTO schools (country_id, school_code, login_code, name, status)
+       VALUES ($1, 'CD-2026-0001', 'CD-IK-26-001', 'Institut Kibwija', 'active')`,
       [country.rows[0].id],
     );
+    const schoolLogin = (
+      await pool.query(`SELECT COALESCE(login_code, 'CD-IK-26-001') AS login_code FROM schools WHERE school_code = 'CD-2026-0001'`)
+    ).rows[0].login_code;
 
     const repository = createRepository(pool);
-    const principal = { role: "Admin School", schoolCode: "CD-2026-0001", identifier: "admin" };
+    const principal = { role: "Admin School", schoolCode: schoolLogin, identifier: "admin" };
     const auditMeta = { ipAddress: "127.0.0.1", userAgent: "pg-create-teacher-atomic" };
     const civil = {
       firstName: "Awa",

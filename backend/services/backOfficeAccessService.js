@@ -210,18 +210,17 @@ class BackOfficeAccessService {
   }
 
   findSchoolByAnyCode(schoolCode) {
-    const normalizedCode = String(schoolCode ?? "").trim().toUpperCase();
-    if (!normalizedCode) return undefined;
-    return this.schools.find((item) =>
-      [item.loginCode, item.code, item.publicId, item.legacySchoolCode].some(
-        (value) => String(value ?? "").trim().toUpperCase() === normalizedCode
-      )
-    );
+    const { isV2SchoolLoginCode, isLegacySchoolCodeFormat, normalizeSchoolCode } = require("../lib/schoolCodeV2");
+    const normalizedCode = normalizeSchoolCode(schoolCode);
+    if (!normalizedCode || isLegacySchoolCodeFormat(normalizedCode) || !isV2SchoolLoginCode(normalizedCode)) {
+      return undefined;
+    }
+    return this.schools.find((item) => normalizeSchoolCode(item.loginCode) === normalizedCode);
   }
 
   resolveAccountSchoolCode(schoolCode) {
     const school = this.findSchoolByAnyCode(schoolCode);
-    return String(school?.code ?? schoolCode ?? "").trim().toUpperCase();
+    return String(school?.loginCode ?? schoolCode ?? "").trim().toUpperCase();
   }
 
   resolveSchoolContext(schoolCode, { forPlatformAdmin = false } = {}) {

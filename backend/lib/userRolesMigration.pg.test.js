@@ -51,13 +51,13 @@ async function seedCountryAndSchools(pool) {
   );
   const countryId = country.rows[0].id;
   const schoolA = await pool.query(
-    `INSERT INTO schools (country_id, school_code, name, status)
-     VALUES ($1, 'CD-2026-0001', 'Kin', 'active') RETURNING id`,
+    `INSERT INTO schools (country_id, school_code, login_code, name, status)
+     VALUES ($1, 'CD-2026-0001', 'CD-KIN-26-001', 'Kin', 'active') RETURNING id`,
     [countryId],
   );
   const schoolB = await pool.query(
-    `INSERT INTO schools (country_id, school_code, name, status)
-     VALUES ($1, 'BI-2026-0002', 'Buj', 'active') RETURNING id`,
+    `INSERT INTO schools (country_id, school_code, login_code, name, status)
+     VALUES ($1, 'BI-2026-0002', 'BI-BUJ-26-001', 'Buj', 'active') RETURNING id`,
     [countryId],
   );
   return { schoolA: schoolA.rows[0].id, schoolB: schoolB.rows[0].id };

@@ -107,10 +107,10 @@ async function main() {
 
   try {
     await waitForHealth(child);
-    const school = await login("admin", "1234", "CD-2026-0001");
-    const schoolBi = await login("admin", "1234", "BI-2026-0002");
+    const school = await login("admin", "1234", "CD-IN-26-001");
+    const schoolBi = await login("admin", "1234", "BI-ESB-26-001");
     const superadmin = await login("superadmin", "1234");
-    const teacherSeed = await login("ENS-0001", "1234", "CD-2026-0001");
+    const teacherSeed = await login("CD-IN-JK-26-00001", "1234", "CD-IN-26-001");
 
     const legacy = await request("/backoffice/state", {
       method: "PUT",
@@ -168,7 +168,7 @@ async function main() {
     assert.deepEqual(grantTeacher.data.roleKeys, ["PREFET_ETUDES", "TEACHER"]);
     assert.equal(grantTeacher.data.roles[0], "Préfet des études");
 
-    const afterGrantSession = await login(created.data.publicId, "LifecyclePass12", "CD-2026-0001");
+    const afterGrantSession = await login(created.data.publicId, "LifecyclePass12", "CD-IN-26-001");
     assert.deepEqual(afterGrantSession.user.roleKeys, ["PREFET_ETUDES", "TEACHER"]);
     assert.equal(afterGrantSession.user.role, "Préfet des études");
     const grantedPermissions = new Set(afterGrantSession.user.permissions ?? []);
@@ -273,7 +273,7 @@ async function main() {
     assert.equal(revokeLast.data.assignmentStatus, "Sans affectation");
     assert.deepEqual(revokeLast.data.roleKeys ?? [], []);
 
-    const afterRevokeSession = await login(created.data.publicId, "LifecyclePass12", "CD-2026-0001");
+    const afterRevokeSession = await login(created.data.publicId, "LifecyclePass12", "CD-IN-26-001");
     assert.deepEqual(afterRevokeSession.user.roleKeys ?? [], []);
     assert.ok(
       !afterRevokeSession.user.role || afterRevokeSession.user.role === "Sans affectation",

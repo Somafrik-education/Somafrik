@@ -44,7 +44,7 @@ test("mapUserRow expose validationStatus depuis profile_payload", () => {
   assert.equal(row.status, "En attente de validation");
   assert.equal(row.validationStatus, "En attente de validation");
   assert.equal(row.validationRequestedBy, "country-admin");
-  assert.equal(row.schoolCode, "CD-2026-0001");
+  assert.equal(row.schoolCode, "CD-IN-26-001");
   assert.equal(row.schoolPublicCode, "CD-IN-26-001");
   assert.equal(row.schoolName, "INSTITUT NURU");
 });

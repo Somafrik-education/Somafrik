@@ -19,8 +19,8 @@ function storedPrimaryRole(store, userId) {
 function buildStore() {
   return createClientsMemoryStore({
     platformSchools: [
-      { id: "school-cd", code: "CD-2026-0001", name: "CD", countryId: "country-cd", countryCode: "CD" },
-      { id: "school-bi", code: "BI-2026-0001", name: "BI", countryId: "country-bi", countryCode: "BI" },
+      { id: "school-cd", code: "CD-CD-26-001", loginCode: "CD-CD-26-001", name: "CD", countryId: "country-cd", countryCode: "CD" },
+      { id: "school-bi", code: "BI-BI-26-001", loginCode: "BI-BI-26-001", name: "BI", countryId: "country-bi", countryCode: "BI" },
     ],
     students: [
       { id: "student-cd", school_id: "school-cd", first_name: "Jean", last_name: "CD", studentCode: "STU-CD" },
@@ -55,8 +55,8 @@ async function main() {
   );
 
   const store = buildStore();
-  const schoolAdmin = { sub: "admin-cd", role: "Admin School", schoolCode: "CD-2026-0001", identifier: "admin" };
-  const biAdmin = { sub: "admin-bi", role: "Admin School", schoolCode: "BI-2026-0001", identifier: "admin-bi" };
+  const schoolAdmin = { sub: "admin-cd", role: "Admin School", schoolCode: "CD-CD-26-001", identifier: "admin" };
+  const biAdmin = { sub: "admin-bi", role: "Admin School", schoolCode: "BI-BI-26-001", identifier: "admin-bi" };
   const auditMeta = { ipAddress: "127.0.0.1", userAgent: "lifecycle-test" };
 
   const created = await store.createUser(
@@ -155,7 +155,7 @@ async function main() {
       contactType: "Parent",
       phone: "+243900111000",
       email: "marie.kabeya@test.local",
-      schoolCode: "CD-2026-0001",
+      schoolCode: "CD-CD-26-001",
     },
     schoolAdmin,
     auditMeta,

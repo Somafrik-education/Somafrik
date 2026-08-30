@@ -242,8 +242,8 @@ function resolveUserIdentifier({ role, phone, email, userCode }) {
 }
 
 /**
- * Projection établissement pour un compte : school_code reste l'alias tenant,
- * school_login_code / school_name portent le code public et le nom.
+ * Projection établissement pour un compte : identité runtime = login_code V2.
+ * school_code colonne = transition (DROP D), jamais une clé de lookup.
  * Ne jamais lire users.login_code ici (identité personne).
  */
 function schoolPublicProjectionFromSchool(school, fallbackSchoolCode = "*") {
@@ -254,10 +254,11 @@ function schoolPublicProjectionFromSchool(school, fallbackSchoolCode = "*") {
       school_name: "",
     };
   }
+  const login = asTrimmed(school.loginCode ?? school.login_code).toUpperCase();
+  const legacy = asTrimmed(school.code ?? school.schoolCode ?? school.school_code).toUpperCase();
   return {
-    school_code:
-      asTrimmed(school.code ?? school.schoolCode ?? school.school_code).toUpperCase() || fallbackSchoolCode,
-    school_login_code: asTrimmed(school.loginCode ?? school.login_code).toUpperCase(),
+    school_code: login || legacy || fallbackSchoolCode,
+    school_login_code: login,
     school_name: asTrimmed(school.name),
   };
 }
@@ -265,7 +266,10 @@ function schoolPublicProjectionFromSchool(school, fallbackSchoolCode = "*") {
 function mapUserRow(row) {
   const profile = parsePayload(row.profile_payload);
   const role = ROLE_FROM_DB[row.role] ?? row.role;
-  const schoolCode = row.school_code ?? (role === "Admin Pays" ? "*" : "");
+  const schoolCode =
+    asTrimmed(row.school_login_code).toUpperCase() ||
+    row.school_code ||
+    (role === "Admin Pays" ? "*" : "");
   const identityCode = row.identity_code ?? profile.identityCode ?? "";
   const loginCode = row.login_code ?? profile.identifier ?? "";
   return {

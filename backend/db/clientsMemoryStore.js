@@ -48,13 +48,14 @@ function createClientsMemoryStore(seed = {}) {
   }
 
   function resolveSchool(code) {
-    const normalized = asTrimmed(code).toUpperCase();
-    if (!normalized) return null;
+    const { isV2SchoolLoginCode, normalizeSchoolCode } = require("../lib/schoolCodeV2");
+    const normalized = normalizeSchoolCode(code);
+    if (!normalized || !isV2SchoolLoginCode(normalized)) return null;
     return (
       tables.schools.find((row) => {
-        const schoolCode = asTrimmed(row.code ?? row.schoolCode ?? row.school_code).toUpperCase();
-        const loginCode = asTrimmed(row.loginCode ?? row.login_code ?? row.publicId).toUpperCase();
-        return schoolCode === normalized || (loginCode && loginCode === normalized);
+        const loginCode = normalizeSchoolCode(row.loginCode ?? row.login_code ?? row.publicId);
+        const schoolCode = normalizeSchoolCode(row.code ?? row.schoolCode ?? row.school_code);
+        return loginCode === normalized || schoolCode === normalized;
       }) ?? null
     );
   }
@@ -123,9 +124,13 @@ function createClientsMemoryStore(seed = {}) {
       async getSchoolByCode(code) {
         const school = resolveSchool(code);
         if (!school) return null;
+        const login = asTrimmed(school.loginCode ?? school.login_code).toUpperCase();
+        const legacy = asTrimmed(school.code ?? school.schoolCode ?? school.school_code).toUpperCase();
         return {
           id: school.id,
-          school_code: asTrimmed(school.code ?? school.schoolCode).toUpperCase(),
+          school_code: login || legacy,
+          login_code: login,
+          loginCode: login,
           name: school.name,
           country_id: school.countryId ?? school.country_id ?? "country-seed",
           country_code: resolveSchoolCountryCode(school),
@@ -393,11 +398,12 @@ function createClientsMemoryStore(seed = {}) {
         const { randomUUID } = require("node:crypto");
         const { generateNextTeacherCodes } = require("../lib/teacherCodeAllocation");
         const seedData = require("../data");
-        const school = (seedData.schools ?? []).find((item) => item.id === row.schoolId)
-          ?? { loginCode: row.schoolCode, name: "Institut Nuru" };
+        const school = tables.schools.find((item) => item.id === row.schoolId)
+          ?? (seedData.schools ?? []).find((item) => item.id === row.schoolId)
+          ?? { loginCode: row.schoolCode, login_code: row.schoolCode, name: "Institut Nuru" };
         const user = tables.users.find((item) => item.id === row.userId);
         const codes = generateNextTeacherCodes(
-          school.login_code || school.loginCode || row.schoolCode,
+          school,
           [
             ...tables.teachers.map((item) => item.teacher_code),
             ...(seedData.teachers ?? []).map((item) => item.publicId ?? item.identifier ?? item.id),

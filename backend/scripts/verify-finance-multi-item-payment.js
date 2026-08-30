@@ -141,12 +141,12 @@ async function runHttp() {
   });
   try {
     await waitForHealth(child);
-    const adminToken = await login("admin", "1234", "CD-2026-0001");
+    const adminToken = await login("admin", "1234", "CD-IN-26-001");
     const stamp = Date.now();
 
     const { prepareCanonicalClassContext, postCanonicalClass } = require("../lib/canonicalClassHttp");
     const offering = await prepareCanonicalClassContext(request, {
-      schoolCode: "CD-2026-0001",
+      schoolCode: "CD-IN-26-001",
       countryCode: "CD",
       groupCode: "MI",
     });

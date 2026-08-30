@@ -174,20 +174,21 @@ async function seed(pool) {
      VALUES ('COM France test', 'FR', '+33', 'EUR') RETURNING id`,
   );
   await pool.query(
-    `INSERT INTO schools (country_id, school_code, name, status)
-     VALUES ($1, 'SCH-COM-A', 'École COM A', 'active'), ($2, 'SCH-COM-B', 'École COM B', 'active')`,
+    `INSERT INTO schools (country_id, school_code, login_code, name, status)
+     VALUES ($1, 'CI-ECA-26-001', 'CI-ECA-26-001', 'École COM A', 'active'),
+            ($2, 'FR-ECB-26-001', 'FR-ECB-26-001', 'École COM B', 'active')`,
     [ci.rows[0].id, fr.rows[0].id],
   );
-  const schoolA = (await pool.query(`SELECT id FROM schools WHERE school_code = 'SCH-COM-A'`)).rows[0];
-  const schoolB = (await pool.query(`SELECT id FROM schools WHERE school_code = 'SCH-COM-B'`)).rows[0];
+  const schoolA = (await pool.query(`SELECT id FROM schools WHERE school_code = 'CI-ECA-26-001'`)).rows[0];
+  const schoolB = (await pool.query(`SELECT id FROM schools WHERE school_code = 'FR-ECB-26-001'`)).rows[0];
 
   await pool.query(
     `INSERT INTO academic_years (school_id, name, status)
-     SELECT id, '2025-2026', 'open' FROM schools WHERE school_code IN ('SCH-COM-A', 'SCH-COM-B')`,
+     SELECT id, '2025-2026', 'open' FROM schools WHERE school_code IN ('CI-ECA-26-001', 'FR-ECB-26-001')`,
   );
   const yearA = (
     await pool.query(
-      `SELECT ay.id FROM academic_years ay JOIN schools s ON s.id = ay.school_id WHERE s.school_code = 'SCH-COM-A' LIMIT 1`,
+      `SELECT ay.id FROM academic_years ay JOIN schools s ON s.id = ay.school_id WHERE s.school_code = 'CI-ECA-26-001' LIMIT 1`,
     )
   ).rows[0];
 
@@ -313,17 +314,17 @@ async function main() {
 
     const adminA = mintAccess(
       tokens,
-      claims({ sub: ADMIN_A, schoolCode: "SCH-COM-A", role: "Admin School", roleKeys: ["SCHOOL_ADMIN"] }),
+      claims({ sub: ADMIN_A, schoolCode: "CI-ECA-26-001", role: "Admin School", roleKeys: ["SCHOOL_ADMIN"] }),
     );
     const parentA = mintAccess(
       tokens,
-      claims({ sub: PARENT_A, schoolCode: "SCH-COM-A", role: "Parent", roleKeys: ["PARENT"] }),
+      claims({ sub: PARENT_A, schoolCode: "CI-ECA-26-001", role: "Parent", roleKeys: ["PARENT"] }),
     );
     const parentAInbox = mintAccess(
       tokens,
       claims({
         sub: PARENT_A,
-        schoolCode: "SCH-COM-A",
+        schoolCode: "CI-ECA-26-001",
         role: "Parent",
         roleKeys: ["PARENT"],
         studentIds: ["COM-STU-A"],
@@ -333,7 +334,7 @@ async function main() {
       tokens,
       claims({
         sub: PARENT_A2,
-        schoolCode: "SCH-COM-A",
+        schoolCode: "CI-ECA-26-001",
         role: "Parent",
         roleKeys: ["PARENT"],
         studentIds: ["COM-STU-UNRELATED"],
@@ -343,7 +344,7 @@ async function main() {
       tokens,
       claims({
         sub: TEACHER_A,
-        schoolCode: "SCH-COM-A",
+        schoolCode: "CI-ECA-26-001",
         role: "Enseignant",
         roleKeys: ["TEACHER"],
         classNames: ["6ème A"],
@@ -351,11 +352,11 @@ async function main() {
     );
     const adminB = mintAccess(
       tokens,
-      claims({ sub: ADMIN_B, schoolCode: "SCH-COM-B", role: "Admin School", roleKeys: ["SCHOOL_ADMIN"] }),
+      claims({ sub: ADMIN_B, schoolCode: "FR-ECB-26-001", role: "Admin School", roleKeys: ["SCHOOL_ADMIN"] }),
     );
     const parentB = mintAccess(
       tokens,
-      claims({ sub: PARENT_B, schoolCode: "SCH-COM-B", role: "Parent", roleKeys: ["PARENT"] }),
+      claims({ sub: PARENT_B, schoolCode: "FR-ECB-26-001", role: "Parent", roleKeys: ["PARENT"] }),
     );
 
     const empty = await request("/backoffice/messages", {
@@ -373,13 +374,13 @@ async function main() {
         participantUserIds: [PARENT_A],
         senderUserId: PARENT_B,
         senderId: PARENT_B,
-        schoolCode: "SCH-COM-B",
+        schoolCode: "FR-ECB-26-001",
         studentId: "COM-STU-A",
       },
     });
     assert.equal(spoof.status, 201, `COM-C1 E2E1 envoi: ${JSON.stringify(spoof.data)}`);
     assert.equal(spoof.data.senderUserId, ADMIN_A, "sender vient du principal, jamais du body");
-    assert.equal(spoof.data.schoolCode, "SCH-COM-A", "schoolId/schoolCode client ignorés");
+    assert.equal(spoof.data.schoolCode, "CI-ECA-26-001", "schoolId/schoolCode client ignorés");
     const messageAId = spoof.data.id;
     const conversationAId = spoof.data.conversationId;
     assert.ok(messageAId && conversationAId, "conversation + message persistés dans la réponse");
@@ -387,7 +388,7 @@ async function main() {
     const convCount = await countRows(
       pool,
       `SELECT count(*)::int AS c FROM school_conversations WHERE id = $1 AND school_id = $2`,
-      [conversationAId, (await pool.query(`SELECT id FROM schools WHERE school_code = 'SCH-COM-A'`)).rows[0].id],
+      [conversationAId, (await pool.query(`SELECT id FROM schools WHERE school_code = 'CI-ECA-26-001'`)).rows[0].id],
     );
     assert.equal(convCount, 1, "COM-C1 E2E1 PostgreSQL conversation A");
     const partCount = await countRows(
@@ -504,7 +505,7 @@ async function main() {
         message: "injection B",
         conversationId: conversationAId,
         participantUserIds: [PARENT_A],
-        schoolCode: "SCH-COM-A",
+        schoolCode: "CI-ECA-26-001",
       },
     });
     assert.ok(

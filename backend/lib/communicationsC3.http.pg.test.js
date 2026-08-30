@@ -243,25 +243,26 @@ async function seed(pool) {
      VALUES ('COM France test', 'FR', '+33', 'EUR') RETURNING id`,
   );
   await pool.query(
-    `INSERT INTO schools (country_id, school_code, name, status)
-     VALUES ($1, 'SCH-COM-A', 'École COM A', 'active'), ($2, 'SCH-COM-B', 'École COM B', 'active')`,
+    `INSERT INTO schools (country_id, school_code, login_code, name, status)
+     VALUES ($1, 'CI-ECA-26-001', 'CI-ECA-26-001', 'École COM A', 'active'),
+            ($2, 'FR-ECB-26-001', 'FR-ECB-26-001', 'École COM B', 'active')`,
     [ci.rows[0].id, fr.rows[0].id],
   );
-  const schoolA = (await pool.query(`SELECT id FROM schools WHERE school_code = 'SCH-COM-A'`)).rows[0];
-  const schoolB = (await pool.query(`SELECT id FROM schools WHERE school_code = 'SCH-COM-B'`)).rows[0];
+  const schoolA = (await pool.query(`SELECT id FROM schools WHERE school_code = 'CI-ECA-26-001'`)).rows[0];
+  const schoolB = (await pool.query(`SELECT id FROM schools WHERE school_code = 'FR-ECB-26-001'`)).rows[0];
 
   await pool.query(
     `INSERT INTO academic_years (school_id, name, status)
-     SELECT id, '2025-2026', 'open' FROM schools WHERE school_code IN ('SCH-COM-A', 'SCH-COM-B')`,
+     SELECT id, '2025-2026', 'open' FROM schools WHERE school_code IN ('CI-ECA-26-001', 'FR-ECB-26-001')`,
   );
   const yearA = (
     await pool.query(
-      `SELECT ay.id FROM academic_years ay JOIN schools s ON s.id = ay.school_id WHERE s.school_code = 'SCH-COM-A' LIMIT 1`,
+      `SELECT ay.id FROM academic_years ay JOIN schools s ON s.id = ay.school_id WHERE s.school_code = 'CI-ECA-26-001' LIMIT 1`,
     )
   ).rows[0];
   const yearB = (
     await pool.query(
-      `SELECT ay.id FROM academic_years ay JOIN schools s ON s.id = ay.school_id WHERE s.school_code = 'SCH-COM-B' LIMIT 1`,
+      `SELECT ay.id FROM academic_years ay JOIN schools s ON s.id = ay.school_id WHERE s.school_code = 'FR-ECB-26-001' LIMIT 1`,
     )
   ).rows[0];
 
@@ -470,13 +471,13 @@ async function main() {
 
     const adminA = mintAccess(
       tokens,
-      claims({ sub: ADMIN_A, schoolCode: "SCH-COM-A", role: "Admin School", roleKeys: ["SCHOOL_ADMIN"] }),
+      claims({ sub: ADMIN_A, schoolCode: "CI-ECA-26-001", role: "Admin School", roleKeys: ["SCHOOL_ADMIN"] }),
     );
     const parentA = mintAccess(
       tokens,
       claims({
         sub: PARENT_A,
-        schoolCode: "SCH-COM-A",
+        schoolCode: "CI-ECA-26-001",
         role: "Parent",
         roleKeys: ["PARENT"],
         permissions: ANN_READ,
@@ -486,7 +487,7 @@ async function main() {
       tokens,
       claims({
         sub: PARENT_A2,
-        schoolCode: "SCH-COM-A",
+        schoolCode: "CI-ECA-26-001",
         role: "Parent",
         roleKeys: ["PARENT"],
         permissions: ANN_READ,
@@ -496,7 +497,7 @@ async function main() {
       tokens,
       claims({
         sub: TEACHER_A,
-        schoolCode: "SCH-COM-A",
+        schoolCode: "CI-ECA-26-001",
         role: "Enseignant",
         roleKeys: ["TEACHER"],
         permissions: ANN_READ,
@@ -506,7 +507,7 @@ async function main() {
       tokens,
       claims({
         sub: TEACHER_A2,
-        schoolCode: "SCH-COM-A",
+        schoolCode: "CI-ECA-26-001",
         role: "Enseignant",
         roleKeys: ["TEACHER"],
         permissions: ANN_READ,
@@ -516,7 +517,7 @@ async function main() {
       tokens,
       claims({
         sub: STUDENT_A,
-        schoolCode: "SCH-COM-A",
+        schoolCode: "CI-ECA-26-001",
         role: "Élève / Étudiant",
         roleKeys: ["STUDENT"],
         permissions: ANN_READ,
@@ -526,7 +527,7 @@ async function main() {
       tokens,
       claims({
         sub: STUDENT_A2,
-        schoolCode: "SCH-COM-A",
+        schoolCode: "CI-ECA-26-001",
         role: "Élève / Étudiant",
         roleKeys: ["STUDENT"],
         permissions: ANN_READ,
@@ -534,13 +535,13 @@ async function main() {
     );
     const adminB = mintAccess(
       tokens,
-      claims({ sub: ADMIN_B, schoolCode: "SCH-COM-B", role: "Admin School", roleKeys: ["SCHOOL_ADMIN"] }),
+      claims({ sub: ADMIN_B, schoolCode: "FR-ECB-26-001", role: "Admin School", roleKeys: ["SCHOOL_ADMIN"] }),
     );
     const parentB = mintAccess(
       tokens,
       claims({
         sub: PARENT_B,
-        schoolCode: "SCH-COM-B",
+        schoolCode: "FR-ECB-26-001",
         role: "Parent",
         roleKeys: ["PARENT"],
         permissions: ANN_READ,
@@ -926,11 +927,11 @@ async function main() {
     assert.equal(superMsgBare.status, 400, "P1-017 Superadmin download message sans école");
     const superAnnBare = await downloadFile(superSa, pdfUp.data.id);
     assert.equal(superAnnBare.status, 400, "P1-017 Superadmin download annonce sans école");
-    const superAnnScoped = await downloadFile(superSa, pdfUp.data.id, "?effectiveSchoolCode=SCH-COM-A");
+    const superAnnScoped = await downloadFile(superSa, pdfUp.data.id, "?effectiveSchoolCode=CI-ECA-26-001");
     assert.equal(superAnnScoped.status, 200, "P1-017 Superadmin request-scoped A PJ Annonce");
-    const superAnnWrong = await downloadFile(superSa, pdfUp.data.id, "?effectiveSchoolCode=SCH-COM-B");
+    const superAnnWrong = await downloadFile(superSa, pdfUp.data.id, "?effectiveSchoolCode=FR-ECB-26-001");
     assert.ok([403, 404].includes(superAnnWrong.status), `P1-017 Superadmin B sur PJ Annonce A: ${superAnnWrong.status}`);
-    const superMsgWrong = await downloadFile(superSa, msgPdf.data.id, "?effectiveSchoolCode=SCH-COM-B");
+    const superMsgWrong = await downloadFile(superSa, msgPdf.data.id, "?effectiveSchoolCode=FR-ECB-26-001");
     assert.ok([403, 404].includes(superMsgWrong.status), `P1-017 Superadmin B sur PJ Message A: ${superMsgWrong.status}`);
 
     await pool.query(`UPDATE enrollments SET class_id = $1 WHERE student_id = $2`, [CLASS_B, fixtures.studentA]);
@@ -960,7 +961,7 @@ async function main() {
       tokens,
       claims({
         sub: PARENT_A3,
-        schoolCode: "SCH-COM-A",
+        schoolCode: "CI-ECA-26-001",
         role: "Parent",
         roleKeys: ["PARENT"],
         permissions: ANN_READ,
@@ -1068,14 +1069,14 @@ async function main() {
     const superDlBare = await downloadFile(superSa, pdfUp.data.id);
     assert.equal(superDlBare.status, 400, "C3-14 download sans école");
 
-    const superScoped = await request("/backoffice/announcements?effectiveSchoolCode=SCH-COM-A", { token: superSa });
+    const superScoped = await request("/backoffice/announcements?effectiveSchoolCode=CI-ECA-26-001", { token: superSa });
     assert.equal(superScoped.status, 200, `C3-14 Superadmin scoped A: ${JSON.stringify(superScoped.data)}`);
     assert.ok(idsIn(superScoped.data).includes(schoolWideId), "C3-14 Superadmin voit A");
-    const superWrong = await request(`/backoffice/announcements/${schoolWideId}?effectiveSchoolCode=SCH-COM-B`, {
+    const superWrong = await request(`/backoffice/announcements/${schoolWideId}?effectiveSchoolCode=FR-ECB-26-001`, {
       token: superSa,
     });
     assert.ok([403, 404].includes(superWrong.status), `C3-14 Superadmin B sur A: ${superWrong.status}`);
-    const superRight = await request(`/backoffice/announcements/${schoolWideId}?effectiveSchoolCode=SCH-COM-A`, {
+    const superRight = await request(`/backoffice/announcements/${schoolWideId}?effectiveSchoolCode=CI-ECA-26-001`, {
       token: superSa,
     });
     assert.equal(superRight.status, 200, "C3-14 Superadmin A GET");
@@ -1087,7 +1088,7 @@ async function main() {
         title: "Superadmin scoped",
         message: "dans A",
         audience: "Tous",
-        effectiveSchoolCode: "SCH-COM-A",
+        effectiveSchoolCode: "CI-ECA-26-001",
       },
     });
     assert.equal(superCreate.status, 201, `C3-14 Superadmin crée dans A: ${JSON.stringify(superCreate.data)}`);

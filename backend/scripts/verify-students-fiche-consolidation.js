@@ -68,7 +68,7 @@ async function login(identifier, schoolCode) {
 async function createActiveClass(token, _label, groupCode = "A", levelName = "6ème") {
   const { prepareCanonicalClassContext, postCanonicalClass } = require("../lib/canonicalClassHttp");
   const ctx = await prepareCanonicalClassContext(request, {
-    schoolCode: "CD-2026-0001",
+    schoolCode: "CD-IN-26-001",
     countryCode: "CD",
     levelName,
     groupCode,
@@ -133,7 +133,7 @@ async function main() {
   try {
     await waitForHealth(child);
 
-    const tokenCd = await login("admin", "CD-2026-0001");
+    const tokenCd = await login("admin", "CD-IN-26-001");
     const tokenBi = await login("admin", "BI-2026-0002");
 
     // Création impossible sans classe (pas de POST /api/students).
@@ -247,7 +247,7 @@ async function main() {
       token: tokenCd,
       body: {
         parentPhone: "+243111",
-        schoolCode: "BI-2026-0002",
+        schoolCode: "BI-ESB-26-001",
         expectedUpdatedAt: detail.data.updatedAt,
       },
     });

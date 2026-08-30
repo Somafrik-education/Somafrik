@@ -26,8 +26,8 @@ const PORT = 19792;
 const DATABASE_NAME = String(process.env.SOMAFRIK_ADMIN_USER_E2E_DATABASE || "somafrik_admin_user_e2e_it")
   .trim()
   .replace(/[^a-zA-Z0-9_]/g, "");
-const SCHOOL_CD = "CD-2026-0001";
-const SCHOOL_BI = "BI-2026-0002";
+const SCHOOL_CD = "CD-IAEC-26-001";
+const SCHOOL_BI = "BI-IAEB-26-001";
 
 function withDatabaseName(databaseUrl, databaseName) {
   const parsed = new URL(databaseUrl);
@@ -64,13 +64,13 @@ async function prepareDatabase(databaseUrl) {
        VALUES ('Burundi', 'BI', '+257', 'BIF') RETURNING id`,
     );
     await pool.query(
-      `INSERT INTO schools (country_id, school_code, name, status)
-       VALUES ($1, $2, 'Institut Admin E2E CD', 'active')`,
+      `INSERT INTO schools (country_id, school_code, login_code, name, status)
+       VALUES ($1, $2, $2, 'Institut Admin E2E CD', 'active')`,
       [cd.rows[0].id, SCHOOL_CD],
     );
     await pool.query(
-      `INSERT INTO schools (country_id, school_code, name, status)
-       VALUES ($1, $2, 'Institut Admin E2E BI', 'active')`,
+      `INSERT INTO schools (country_id, school_code, login_code, name, status)
+       VALUES ($1, $2, $2, 'Institut Admin E2E BI', 'active')`,
       [bi.rows[0].id, SCHOOL_BI],
     );
     await pool.query(

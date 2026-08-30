@@ -66,7 +66,7 @@ async function main() {
   try {
     await waitForHealth(child);
     const superToken = await login("superadmin", "1234");
-    const adminToken = await login("admin", "1234", "CD-2026-0001");
+    const adminToken = await login("admin", "1234", "CD-IN-26-001");
 
     const catalogue = await request("/backoffice/establishment-roles", { token: superToken });
     assert.equal(catalogue.status, 200, JSON.stringify(catalogue.data));
@@ -218,7 +218,7 @@ async function main() {
 
     const beforeSession = await request("/backoffice/login", {
       method: "POST",
-      body: { identifier: staff.identifier || staff.publicId, password: staffPassword, schoolCode: "CD-2026-0001" },
+      body: { identifier: staff.identifier || staff.publicId, password: staffPassword, schoolCode: "CD-IN-26-001" },
     });
     assert.equal(beforeSession.status, 200, JSON.stringify(beforeSession.data));
     const beforePermissions = beforeSession.data.permissions ?? [];
@@ -232,7 +232,7 @@ async function main() {
 
     const afterSession = await request("/backoffice/login", {
       method: "POST",
-      body: { identifier: staff.identifier || staff.publicId, password: staffPassword, schoolCode: "CD-2026-0001" },
+      body: { identifier: staff.identifier || staff.publicId, password: staffPassword, schoolCode: "CD-IN-26-001" },
     });
     assert.equal(afterSession.status, 200, JSON.stringify(afterSession.data));
     const afterPermissions = afterSession.data.permissions ?? [];
@@ -257,7 +257,7 @@ async function main() {
 
     const emptySession = await request("/backoffice/login", {
       method: "POST",
-      body: { identifier: staff.identifier || staff.publicId, password: staffPassword, schoolCode: "CD-2026-0001" },
+      body: { identifier: staff.identifier || staff.publicId, password: staffPassword, schoolCode: "CD-IN-26-001" },
     });
     assert.equal(emptySession.status, 200, JSON.stringify(emptySession.data));
     const emptyPermissions = emptySession.data.permissions ?? emptySession.data.user?.permissions ?? [];

@@ -146,12 +146,12 @@ async function prepareDatabase(databaseUrl) {
       `INSERT INTO countries (name, iso_code, phone_code, currency) VALUES ('RDC', 'CD', '+243', 'CDF') RETURNING id`,
     );
     const schoolA = await pool.query(
-      `INSERT INTO schools (country_id, school_code, name, status, profile_payload)
-       VALUES ($1, 'CD-2026-0001', 'Lycée IN', 'active', '{"timezone":"Africa/Kinshasa"}'::jsonb) RETURNING id`,
+      `INSERT INTO schools (country_id, school_code, login_code, name, status, profile_payload)
+       VALUES ($1, 'CD-2026-0001', 'CD-IN-26-001', 'Lycée IN', 'active', '{"timezone":"Africa/Kinshasa"}'::jsonb) RETURNING id`,
       [country.rows[0].id],
     );
     await pool.query(
-      `INSERT INTO schools (country_id, school_code, name, status) VALUES ($1, 'BI-2026-0002', 'Lycée B', 'active')`,
+      `INSERT INTO schools (country_id, school_code, login_code, name, status) VALUES ($1, 'BI-2026-0002', 'BI-LB-26-001', 'Lycée B', 'active')`,
       [country.rows[0].id],
     );
     const year = await pool.query(
@@ -237,11 +237,11 @@ async function runMemoryRbac() {
   const child = spawnBackend({ port: MEMORY_PORT });
   try {
     await waitForHealth(child, MEMORY_PORT);
-    const adminToken = await login(MEMORY_PORT, "admin", "1234", "CD-2026-0001");
-    const teacherToken = await login(MEMORY_PORT, "ENS-0001", "1234", "CD-2026-0001");
-    const parentToken = await login(MEMORY_PORT, "+243 820 000 001", "1234", "CD-2026-0001");
-    const secretaryToken = await loginReady(MEMORY_PORT, "secretaire", "1234", "CD-2026-0001");
-    const prefetToken = await loginReady(MEMORY_PORT, "prefet", "1234", "CD-2026-0001");
+    const adminToken = await login(MEMORY_PORT, "admin", "1234", "CD-IN-26-001");
+    const teacherToken = await login(MEMORY_PORT, "CD-IN-JK-26-00001", "1234", "CD-IN-26-001");
+    const parentToken = await login(MEMORY_PORT, "+243 820 000 001", "1234", "CD-IN-26-001");
+    const secretaryToken = await loginReady(MEMORY_PORT, "secretaire", "1234", "CD-IN-26-001");
+    const prefetToken = await loginReady(MEMORY_PORT, "prefet", "1234", "CD-IN-26-001");
     assert.equal((await request(MEMORY_PORT, "/course-schedules", { token: adminToken })).status, 200);
     assert.equal((await request(MEMORY_PORT, "/course-schedules", { token: teacherToken })).status, 200);
     assert.equal((await request(MEMORY_PORT, "/course-schedules", { token: prefetToken })).status, 200);
@@ -264,11 +264,11 @@ async function runPostgresHttp(databaseUrl) {
   const child = spawnBackend({ port: PG_PORT, databaseUrl: isolatedUrl });
   try {
     await waitForHealth(child, PG_PORT);
-    const adminToken = await login(PG_PORT, "admin", "1234", "CD-2026-0001");
-    const teacherToken = await login(PG_PORT, "ENS-0001", "1234", "CD-2026-0001");
-    const prefetToken = await loginReady(PG_PORT, "prefet", "1234", "CD-2026-0001");
-    const secretaryToken = await loginReady(PG_PORT, "secretaire", "1234", "CD-2026-0001");
-    const parentToken = await login(PG_PORT, "+243 820 000 001", "1234", "CD-2026-0001");
+    const adminToken = await login(PG_PORT, "admin", "1234", "CD-IN-26-001");
+    const teacherToken = await login(PG_PORT, "seke-http@test.cd", "1234", "CD-IN-26-001");
+    const prefetToken = await loginReady(PG_PORT, "prefet", "1234", "CD-IN-26-001");
+    const secretaryToken = await loginReady(PG_PORT, "secretaire", "1234", "CD-IN-26-001");
+    const parentToken = await login(PG_PORT, "+243 820 000 001", "1234", "CD-IN-26-001");
     const yearId = (await pool.query(`SELECT id FROM academic_years LIMIT 1`)).rows[0].id;
 
     const courseAId = await loadReconciledSchoolCourseId(isolatedUrl, {

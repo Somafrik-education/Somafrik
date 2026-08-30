@@ -116,11 +116,11 @@ test("createTeacherIdentityFromUsers : GRANT échoué rollback, pas d'état part
 test("createTeacherIdentityFromUsers mémoire : TEACHER_PROFILE_AMBIGUOUS rollback total", async () => {
   const store = createClientsMemoryStore({
     platformSchools: [
-      { id: "school-cd", code: "CD-2026-0001", school_code: "CD-2026-0001", name: "CD", countryCode: "CD" },
+      { id: "school-cd", code: "CD-CD-26-001", loginCode: "CD-CD-26-001", school_code: "CD-CD-26-001", name: "CD", countryCode: "CD" },
     ],
   });
   const repository = memoryRepository(store);
-  const principal = { sub: "admin-cd", role: "Admin School", schoolCode: "CD-2026-0001", identifier: "admin" };
+  const principal = { sub: "admin-cd", role: "Admin School", schoolCode: "CD-CD-26-001", identifier: "admin" };
   const auditMeta = { ipAddress: "127.0.0.1", userAgent: "memory-atomic" };
   const civil = {
     firstName: "Awa",
@@ -172,11 +172,11 @@ test("toIsoDate : Date JS pg-like → YYYY-MM-DD (régression TEACHER_PROFILE_AM
 test("GRANT Enseignant : birth_date Date JS détecte TEACHER_PROFILE_AMBIGUOUS", async () => {
   const store = createClientsMemoryStore({
     platformSchools: [
-      { id: "school-cd", code: "CD-2026-0001", school_code: "CD-2026-0001", name: "CD", countryCode: "CD" },
+      { id: "school-cd", code: "CD-CD-26-001", loginCode: "CD-CD-26-001", school_code: "CD-CD-26-001", name: "CD", countryCode: "CD" },
     ],
   });
   const repository = memoryRepository(store);
-  const principal = { sub: "admin-cd", role: "Admin School", schoolCode: "CD-2026-0001", identifier: "admin" };
+  const principal = { sub: "admin-cd", role: "Admin School", schoolCode: "CD-CD-26-001", identifier: "admin" };
   const auditMeta = { ipAddress: "127.0.0.1", userAgent: "memory-pg-date" };
   const civil = {
     firstName: "Awa",

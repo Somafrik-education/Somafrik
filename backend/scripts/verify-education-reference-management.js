@@ -62,7 +62,7 @@ async function main() {
   try {
     await waitForHealth(child);
     const superToken = await login("superadmin", "1234");
-    const adminToken = await login("admin", "1234", "CD-2026-0001");
+    const adminToken = await login("admin", "1234", "CD-IN-26-001");
     const countryAdminToken = await login("admin-rdc", "1234");
 
     const createdLevel = await request("/backoffice/education-levels", {

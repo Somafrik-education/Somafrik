@@ -131,7 +131,7 @@ function runUnitGuards() {
 async function loginAdmin() {
   const login = await request("/backoffice/login", {
     method: "POST",
-    body: { identifier: "admin", password: "1234", schoolCode: "CD-2026-0001" },
+    body: { identifier: "admin", password: "1234", schoolCode: "CD-IN-26-001" },
   });
   assert.equal(login.status, 200, JSON.stringify(login.data));
   const token = login.data.accessToken || login.data.token;

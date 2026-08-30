@@ -90,7 +90,7 @@ async function main() {
   });
   try {
     await waitForHealth(child);
-    const schoolToken = await login("admin", "1234", "CD-2026-0001");
+    const schoolToken = await login("admin", "1234", "CD-IN-26-001");
     const superToken = await login("superadmin", "1234");
 
     const legacy = await request("/backoffice/state", {
@@ -187,7 +187,7 @@ async function main() {
 
     let teacherToken = null;
     try {
-      teacherToken = await login("enseignant", "1234", "CD-2026-0001");
+      teacherToken = await login("enseignant", "1234", "CD-IN-26-001");
     } catch {
       teacherToken = null;
     }
@@ -248,7 +248,7 @@ async function main() {
         method: "POST",
         body: {
           role: "parent_student",
-          schoolCode: "CD-2026-0001",
+          schoolCode: "CD-IN-26-001",
           identifier: parentEmail,
           pin: parentPin,
         },
@@ -283,7 +283,7 @@ async function main() {
         method: "POST",
         body: {
           role: "parent_student",
-          schoolCode: "CD-2026-0001",
+          schoolCode: "CD-IN-26-001",
           identifier: teacher.email || teacher.phone || teacher.identifier,
           pin: teacherPin,
         },
