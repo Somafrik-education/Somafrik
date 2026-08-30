@@ -80,7 +80,7 @@ function renderGrid(overrides: {
       evaluation={evaluation}
       students={overrides.studentRows ?? students.slice(0, 1)}
       grades={overrides.grades ?? []}
-      canEdit={overrides.canEdit ?? evaluation.status === "Validée"}
+      canEdit={overrides.canEdit ?? ["Brouillon", "Ouverte", "Validée", "Saisie terminée"].includes(evaluation.status)}
       user={overrides.user ?? seke}
       onSave={onSave}
       onError={onError}
@@ -89,17 +89,25 @@ function renderGrid(overrides: {
   return { ...view, onSave, onError };
 }
 
-describe("GradeEntryGrid — saisie après validation", () => {
-  it("Brouillon : note / statut désactivés, aucun bouton d'enregistrement, message d'attente", () => {
-    renderGrid({ status: "Brouillon", canEdit: false });
+describe("GradeEntryGrid — saisie brouillon / ouverte / validée", () => {
+  it("Brouillon : saisie active, Enregistrer tout présent, pas de message d'attente", () => {
+    renderGrid({ status: "Brouillon", canEdit: true });
 
-    expect(screen.getByRole("status")).toHaveTextContent("En attente de validation");
-    expect(screen.getByRole("status")).toHaveTextContent(
-      "La saisie des notes sera disponible après validation par le Préfet ou l'administration.",
-    );
+    expect(screen.queryByText("En attente de validation")).not.toBeInTheDocument();
+    expect(screen.queryByText("Saisie fermée")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Note /20")).not.toBeDisabled();
+    expect(screen.getByLabelText("Statut de la note")).not.toBeDisabled();
+    expect(screen.queryByRole("button", { name: "Enregistrer" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Enregistrer tout" })).toBeDisabled();
+  });
+
+  it("Publiée : saisie fermée, champs désactivés, aucun enregistrement", () => {
+    renderGrid({ status: "Publiée", canEdit: false });
+
+    expect(screen.getByRole("status")).toHaveTextContent("Saisie fermée");
+    expect(screen.getByRole("status")).toHaveTextContent("publiée");
     expect(screen.getByLabelText("Note /20")).toBeDisabled();
     expect(screen.getByLabelText("Statut de la note")).toBeDisabled();
-    expect(screen.queryByRole("button", { name: "Enregistrer" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Enregistrer tout" })).not.toBeInTheDocument();
   });
 

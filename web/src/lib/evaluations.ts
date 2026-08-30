@@ -425,7 +425,7 @@ export function canEnterGradesForEvaluation(
 ): boolean {
   if (!user || !evaluation) return false;
   if (evaluation.active === false) return false;
-  if (!evaluationStatusAllowsGradeWrite(evaluation.status, evaluation.active !== false)) return false;
+  if (!evaluationStatusAllowsGradeWrite(evaluation.status)) return false;
   return teacherCanAccessEvaluation(user, evaluation, state);
 }
 
@@ -580,7 +580,7 @@ export function upsertStudentGrade(
   if (evaluation.active === false) {
     return { grades, error: "Évaluation inactive : saisie des notes refusée." };
   }
-  if (!evaluationStatusAllowsGradeWrite(evaluation.status, evaluation.active !== false)) {
+  if (!evaluationStatusAllowsGradeWrite(evaluation.status)) {
     return { grades, error: "Évaluation publiée ou annulée : saisie des notes refusée." };
   }
   const teacherSession = isTeacherSessionRole(input.author?.role);
