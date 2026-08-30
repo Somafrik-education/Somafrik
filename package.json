@@ -26,6 +26,8 @@
     "typecheck": "npm run typecheck:backend && npm run typecheck:web && npm run typecheck:mobile",
     "test:v2-domain": "npm --prefix packages/domain test",
     "test:v2-auth": "npm --prefix packages/auth test",
+    "test:help-catalog": "npm --prefix packages/help-catalog test",
+    "verify:help-v1a-catalogue": "node scripts/verify-help-v1a-catalogue.js",
     "test:v2-api": "npm --prefix apps/api test",
     "verify:v2-foundation": "node scripts/verify-v2-foundation.js && npm run test:v2-domain && npm run test:v2-auth && npm run test:v2-api",
     "verify:notes-sync": "node --test backend/lib/legacyBootMigrations.guard.test.js && node backend/lib/gradesBoPersistence.test.js && node backend/lib/evaluationAttachment.test.js && node backend/lib/evaluationSyncRepository.test.js && node backend/lib/teacherNotesWriteAccess.test.js",
