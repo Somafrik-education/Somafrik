@@ -107,7 +107,7 @@ run(process.execPath, ["--test", "backend/lib/evaluationGradeEntry.test.js"]);
 run(process.execPath, ["--test", "backend/lib/notesEvaluationsRbacLive.test.js"]);
 run(process.execPath, ["--test", "backend/lib/criticalParityRbacCanonical.test.js"]);
 run(process.execPath, ["backend/lib/noteContract.test.js"]);
-run("npm", ["--prefix", "web", "run", "test", "--", "src/lib/evaluations.test.ts", "src/pages/GradesEvaluationsPage.test.tsx"]);
+run("npm", ["--prefix", "web", "run", "test", "--", "src/lib/evaluations.test.ts", "src/pages/GradesEvaluationsPage.test.tsx", "src/components/grades/GradeEntryGrid.test.tsx"]);
 run("npx", ["--yes", "tsx", "Mobile/src/lib/evaluationsV2.test.ts"]);
 
 console.log("OK: verify-notes-p1-teacher-runtime");
