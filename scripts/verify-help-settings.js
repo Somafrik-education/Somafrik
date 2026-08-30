@@ -18,15 +18,28 @@ function readRepo(relativePath) {
 }
 
 const CARD_ARTICLES = {
-  profil: ["help/settings/profile"],
+  profil: ["help/settings/profile", "help/settings/profile-edit"],
   "annee-scolaire": [
     "help/settings/academic-year",
+    "help/settings/academic-year-create",
+    "help/settings/academic-year-current",
     "help/settings/academic-periods",
+    "help/settings/academic-periods-edit",
     "help/settings/grading-configuration",
+    "help/settings/grading-configuration-edit",
   ],
-  structure: ["help/settings/pedagogical-structure"],
+  structure: [
+    "help/settings/pedagogical-structure",
+    "help/settings/pedagogical-structure-activate",
+    "help/settings/school-courses-create",
+    "help/settings/school-courses-edit",
+  ],
   "roles-droits": ["help/settings/roles-permissions"],
-  finances: ["help/settings/finance"],
+  finances: [
+    "help/settings/finance",
+    "help/settings/finance-fee-grid-create",
+    "help/settings/finance-fee-grid-update",
+  ],
   donnees: ["help/settings/data-export"],
   securite: ["help/settings/security"],
   "mon-abonnement": ["help/settings/subscription"],
@@ -48,6 +61,16 @@ const REQUIRED_IDS = [
   "help/settings/subscription",
   "help/settings/security",
   "help/settings/coming-soon",
+  "help/settings/profile-edit",
+  "help/settings/academic-year-create",
+  "help/settings/academic-year-current",
+  "help/settings/academic-periods-edit",
+  "help/settings/grading-configuration-edit",
+  "help/settings/pedagogical-structure-activate",
+  "help/settings/school-courses-create",
+  "help/settings/school-courses-edit",
+  "help/settings/finance-fee-grid-create",
+  "help/settings/finance-fee-grid-update",
   "help/users/assign-role",
   "help/users/create",
 ];
@@ -148,6 +171,61 @@ async function main() {
 
   const year = articleText(byId["help/settings/academic-year"]);
   assert.match(year, /avant de pouvoir créer les classes/);
+
+  const writePermissions = {
+    "help/settings/profile-edit": "Paramètres Établissement:UPDATE",
+    "help/settings/academic-year-create": "Années Académiques:CREATE",
+    "help/settings/academic-year-current": "Années Académiques:UPDATE",
+    "help/settings/academic-periods-edit": "Paramètres Établissement:UPDATE",
+    "help/settings/grading-configuration-edit": "Paramètres Établissement:UPDATE",
+    "help/settings/pedagogical-structure-activate": "Paramètres Établissement:UPDATE",
+    "help/settings/school-courses-create": "Matières:CREATE",
+    "help/settings/school-courses-edit": "Matières:UPDATE",
+    "help/settings/finance-fee-grid-create": "Frais & tarifs:CREATE",
+    "help/settings/finance-fee-grid-update": "Frais & tarifs:UPDATE",
+  };
+  for (const [id, permission] of Object.entries(writePermissions)) {
+    const article = byId[id];
+    assert.ok(article.permissions.includes(permission), `${id} doit exiger ${permission}`);
+    assert.equal(
+      article.permissions.some((token) => /:READ$/.test(token)),
+      false,
+      `${id} ne doit pas être filtré par READ`,
+    );
+  }
+
+  const readOnlyIds = [
+    "help/settings/profile",
+    "help/settings/academic-year",
+    "help/settings/academic-periods",
+    "help/settings/grading-configuration",
+    "help/settings/pedagogical-structure",
+    "help/settings/finance",
+  ];
+  const leakedWritePhrases = [
+    "Enregistrez",
+    "Créer l’année",
+    "Créer l'année",
+    "Définir comme courante",
+    "Choisissez le mode",
+    "Renseignez les dates",
+    "Configurez le barème",
+    "Configurez les types",
+    "Activez uniquement",
+    "Enregistrer le type de frais",
+  ];
+  for (const id of readOnlyIds) {
+    const article = byId[id];
+    assert.equal(
+      article.permissions.some((token) => /:(CREATE|UPDATE|DELETE)$/.test(token)),
+      false,
+      `${id} doit rester READ-only`,
+    );
+    const text = articleText(article);
+    for (const phrase of leakedWritePhrases) {
+      assert.equal(text.includes(phrase), false, `${id} (READ) ne doit pas exposer « ${phrase} »`);
+    }
+  }
 
   const createUser = articleText(byId["help/users/create"]);
   assert.match(createUser, /aucun rôle n’est attribué pendant cette création/);
