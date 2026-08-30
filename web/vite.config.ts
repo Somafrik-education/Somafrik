@@ -53,6 +53,9 @@ export default defineConfig(({ mode }) => {
     resolve: {
       alias: {
         "@": fileURLToPath(new URL("./src", import.meta.url)),
+        "@somafrik/help-catalog": fileURLToPath(
+          new URL("../packages/help-catalog/src/index.js", import.meta.url),
+        ),
       },
     },
     server: {
@@ -70,6 +73,9 @@ export default defineConfig(({ mode }) => {
       rollupOptions: {
         output: {
           manualChunks(id) {
+            if (id.includes("packages/help-catalog") || id.includes("/src/help/")) {
+              return "help-catalog";
+            }
             if (!id.includes("node_modules")) return;
 
             if (id.includes("react-router")) return "router";

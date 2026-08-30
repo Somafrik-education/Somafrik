@@ -17,7 +17,8 @@
     "noFallthroughCasesInSwitch": true,
     "baseUrl": ".",
     "paths": {
-      "@/*": ["src/*"]
+      "@/*": ["src/*"],
+      "@somafrik/help-catalog": ["../packages/help-catalog/src/index.js"]
     }
   },
   "include": ["src"]
