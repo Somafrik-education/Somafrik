@@ -52,11 +52,13 @@ async function setupFixture(pool) {
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       country_id UUID NOT NULL REFERENCES countries(id),
       school_code VARCHAR(64) NOT NULL UNIQUE,
+      login_code TEXT,
       name TEXT NOT NULL,
       status TEXT NOT NULL DEFAULT 'active',
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
+    ALTER TABLE schools ADD COLUMN IF NOT EXISTS login_code TEXT;
     CREATE TABLE IF NOT EXISTS users (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       school_id UUID REFERENCES schools(id),
@@ -151,9 +153,10 @@ async function setupFixture(pool) {
 
   const country = await pool.query(`INSERT INTO countries (name, iso_code) VALUES ('RDC', 'CD') RETURNING id`);
   const schools = await pool.query(
-    `INSERT INTO schools (country_id, school_code, name)
-     VALUES ($1, 'CD-2026-0001', 'Lycée A'), ($1, 'CD-2026-0002', 'Lycée B')
-     RETURNING id, school_code`,
+    `INSERT INTO schools (country_id, school_code, login_code, name)
+     VALUES ($1, 'CD-2026-0001', 'CD-SA-26-001', 'Lycée A'),
+            ($1, 'CD-2026-0002', 'CD-SB-26-001', 'Lycée B')
+     RETURNING id, school_code, login_code`,
     [country.rows[0].id],
   );
   const schoolA = schools.rows.find((row) => row.school_code === "CD-2026-0001");
@@ -223,9 +226,10 @@ function createDbAdapter(pool) {
       return pool.query(sql, params);
     },
     async getSchoolByCode(code) {
-      return adapter.one(`SELECT id, school_code FROM schools WHERE school_code = $1 LIMIT 1`, [
-        String(code).toUpperCase(),
-      ]);
+      return adapter.one(
+        `SELECT id, school_code, login_code FROM schools WHERE upper(login_code) = $1 LIMIT 1`,
+        [String(code).toUpperCase()],
+      );
     },
     createTxScope(tx) {
       return {
@@ -233,9 +237,10 @@ function createDbAdapter(pool) {
         all: (sql, params) => tx.all(sql, params),
         query: (sql, params) => tx.query(sql, params),
         getSchoolByCode: (code) =>
-          tx.one(`SELECT id, school_code FROM schools WHERE school_code = $1 LIMIT 1`, [
-            String(code).toUpperCase(),
-          ]),
+          tx.one(
+            `SELECT id, school_code, login_code FROM schools WHERE upper(login_code) = $1 LIMIT 1`,
+            [String(code).toUpperCase()],
+          ),
         withTransaction: (fn) => fn(tx),
       };
     },
@@ -297,8 +302,8 @@ async function main() {
     );
 
     const created = await repo.create(
-      { teacherCode: "CD-2026-0001-ENS-0001", classCode: "CLS-1A", subjectCode: "SUB-MATH" },
-      "CD-2026-0001",
+      { teacherCode: "USR-ENS-A", classCode: "CLS-1A", subjectCode: "SUB-MATH" },
+      "CD-SA-26-001",
     );
     assert.ok(created.id);
     assert.equal(created.subjectCode, "SUB-MATH");
@@ -319,40 +324,40 @@ async function main() {
     await assert.rejects(
       () =>
         repo.create(
-          { teacherCode: "CD-2026-0001-ENS-0001", classCode: "CLS-1A", subjectCode: "SUB-MATH" },
-          "CD-2026-0001",
+          { teacherCode: "USR-ENS-A", classCode: "CLS-1A", subjectCode: "SUB-MATH" },
+          "CD-SA-26-001",
         ),
       (error) => error.statusCode === 409 && error.code === "TEACHER_ASSIGNMENT_ALREADY_EXISTS",
     );
     await assert.rejects(
       () =>
         repo.create(
-          { teacherCode: "CD-2026-0001-ENS-0001", classCode: "CLS-1A", subjectCode: "SUB-OLD" },
-          "CD-2026-0001",
+          { teacherCode: "USR-ENS-A", classCode: "CLS-1A", subjectCode: "SUB-OLD" },
+          "CD-SA-26-001",
         ),
       (error) => error.statusCode === 404 && error.code === "ASSIGNMENT_SUBJECT_NOT_FOUND",
     );
     await assert.rejects(
       () =>
         repo.create(
-          { teacherCode: "CD-2026-0001-ENS-0001", classCode: "CLS-1A", subjectCode: "SUB-UNKNOWN" },
-          "CD-2026-0001",
+          { teacherCode: "USR-ENS-A", classCode: "CLS-1A", subjectCode: "SUB-UNKNOWN" },
+          "CD-SA-26-001",
         ),
       (error) => error.statusCode === 404 && error.code === "ASSIGNMENT_SUBJECT_NOT_FOUND",
     );
     await assert.rejects(
       () =>
         repo.create(
-          { teacherCode: "CD-2026-0001-ENS-0001", classCode: "CLS-1A", subjectCode: "SUB-BIO" },
-          "CD-2026-0001",
+          { teacherCode: "USR-ENS-A", classCode: "CLS-1A", subjectCode: "SUB-BIO" },
+          "CD-SA-26-001",
         ),
       (error) => error.statusCode === 404 && error.code === "ASSIGNMENT_SUBJECT_NOT_FOUND",
     );
     await assert.rejects(
       () =>
         repo.create(
-          { teacherCode: "CD-2026-0002-ENS-0001", classCode: "CLS-1A", subjectCode: "SUB-MATH" },
-          "CD-2026-0001",
+          { teacherCode: "USR-ENS-B", classCode: "CLS-1A", subjectCode: "SUB-MATH" },
+          "CD-SA-26-001",
         ),
       (error) => error.statusCode === 404 && error.code === "ASSIGNMENT_TEACHER_NOT_FOUND",
     );
