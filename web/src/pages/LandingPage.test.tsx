@@ -6,8 +6,11 @@ import {
   marketingHero,
   marketingLegalRoutes,
   marketingLogin,
+  marketingMobileVisuals,
   marketingNav,
   marketingProduct,
+  marketingProductVisual,
+  marketingWebMobile,
 } from "../data/marketingContent";
 
 const navigateMock = vi.hoisted(() => vi.fn());
@@ -133,7 +136,69 @@ describe("LandingPage — vitrine publique", () => {
   it("ouvre la navigation mobile sans créer de lien mort", async () => {
     const user = userEvent.setup();
     renderLanding();
-    await user.click(screen.getByRole("button", { name: "Menu" }));
+    await user.click(screen.getByRole("button", { name: /menu/i }));
     expect(screen.getAllByRole("link", { name: "Produit" }).length).toBeGreaterThan(0);
+  });
+
+  it("garde un header collant sans casser le défilement de page", () => {
+    const { container } = renderLanding();
+    const header = container.querySelector("header");
+    const shell = container.firstElementChild;
+    expect(header?.className).toMatch(/\bsticky\b/);
+    expect(shell?.className).toMatch(/overflow-x-clip/);
+    expect(shell?.className).not.toMatch(/overflow-x-hidden/);
+  });
+
+  it("expose la navigation header canonique et le CTA Connexion", () => {
+    renderLanding();
+    for (const link of marketingNav) {
+      const matches = screen.getAllByRole("link", { name: link.label });
+      expect(matches.some((node) => node.getAttribute("href") === link.href)).toBe(true);
+    }
+    expect(screen.getAllByRole("link", { name: marketingLogin.label })[0]).toHaveAttribute(
+      "href",
+      marketingLogin.href,
+    );
+  });
+
+  it("affiche la capture réelle et retire le placeholder VITRINE-01", () => {
+    const { container } = renderLanding();
+    const images = [...container.querySelectorAll("img")].filter((image) =>
+      (image.getAttribute("src") ?? "").includes("somafrik-dashboard-etablissement.webp"),
+    );
+    expect(images.length).toBeGreaterThanOrEqual(2);
+    expect(images[0]).toHaveAttribute("alt", marketingProductVisual.alt);
+    expect(images[0]).not.toHaveAttribute("loading", "lazy");
+    expect(images.some((image) => image.getAttribute("loading") === "lazy")).toBe(true);
+    expect(screen.queryByText(/Emplacement réservé à une capture réelle/i)).not.toBeInTheDocument();
+  });
+
+  it("ferme le menu mobile après un clic de navigation", async () => {
+    const user = userEvent.setup();
+    renderLanding();
+    await user.click(screen.getByRole("button", { name: /menu/i }));
+    const mobileNav = screen.getByLabelText("Navigation vitrine mobile");
+    await user.click(mobileNav.querySelector('a[href="#produit"]') as HTMLAnchorElement);
+    expect(screen.queryByLabelText("Navigation vitrine mobile")).not.toBeInTheDocument();
+  });
+
+  it("démontre Web et l’application mobile native dans #web-mobile", () => {
+    const { container } = renderLanding();
+    const section = container.querySelector("#web-mobile");
+    expect(section).not.toBeNull();
+    expect(screen.getByRole("heading", { name: marketingWebMobile.title })).toBeInTheDocument();
+    expect(section?.querySelector(`img[src="${marketingProductVisual.src}"]`)).not.toBeNull();
+    const mobileImages = [...(section?.querySelectorAll("img") ?? [])].filter((image) =>
+      (image.getAttribute("src") ?? "").includes("/marketing/mobile/"),
+    );
+    expect(mobileImages.length).toBeGreaterThanOrEqual(2);
+    for (const visual of marketingMobileVisuals) {
+      const image = mobileImages.find((node) => node.getAttribute("src") === visual.src);
+      expect(image).toBeDefined();
+      expect(image).toHaveAttribute("alt", visual.alt);
+      expect(image).toHaveAttribute("loading", "lazy");
+    }
+    expect(section?.innerHTML).not.toMatch(/\/docs\//);
+    expect(container.querySelector('img[src*="vitrine_02_hero_mobile"]')).toBeNull();
   });
 });

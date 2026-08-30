@@ -30,7 +30,7 @@ export function LandingPage() {
   }, [isAuthenticated, session, navigate]);
 
   return (
-    <div className="min-h-screen overflow-x-hidden bg-white text-ink">
+    <div className="min-h-screen overflow-x-clip bg-white text-ink">
       <a
         href={marketingSkipLink.href}
         className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-50 focus:rounded-lg focus:bg-brand focus:px-4 focus:py-2 focus:font-bold focus:text-white"
