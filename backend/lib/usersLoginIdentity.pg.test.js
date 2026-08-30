@@ -71,10 +71,14 @@ async function seedSchool(pool) {
   );
   const school = await pool.query(
     `INSERT INTO schools (country_id, school_code, login_code, name, status)
-     VALUES ($1, 'CD-2026-0001', 'CD-IN-26-001', 'Institut Nuru', 'active') RETURNING id, login_code`,
+     VALUES ($1, 'CD-2026-0001', 'CD-IN-26-001', 'Institut Nuru', 'active') RETURNING id`,
     [country.rows[0].id],
   );
-  const loginCode = String(school.rows[0].login_code ?? "").trim().toUpperCase();
+  const reloaded = await pool.query(
+    `SELECT id, login_code FROM schools WHERE id = $1`,
+    [school.rows[0].id],
+  );
+  const loginCode = String(reloaded.rows[0]?.login_code ?? "").trim().toUpperCase();
   const student = await pool.query(
     `INSERT INTO students (school_id, student_code, first_name, last_name, status)
      VALUES ($1, 'STU-ID-1', 'Jean', 'Kabila', 'active') RETURNING id`,

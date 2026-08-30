@@ -13,10 +13,10 @@ const {
 } = require("../lib/clientsManagement");
 const { uuidOrNull } = require("../lib/principalIdentity");
 
-const USER_SCHOOL_SELECT = `s.school_code, s.login_code AS school_login_code, s.name AS school_name`;
+const USER_SCHOOL_SELECT = `s.login_code AS school_code, s.login_code AS school_login_code, s.name AS school_name`;
 
 function userSchoolReturningSql(schoolIdSql) {
-  return `(SELECT school_code FROM schools WHERE id = ${schoolIdSql}) AS school_code,
+  return `(SELECT login_code FROM schools WHERE id = ${schoolIdSql}) AS school_code,
           (SELECT login_code FROM schools WHERE id = ${schoolIdSql}) AS school_login_code,
           (SELECT name FROM schools WHERE id = ${schoolIdSql}) AS school_name`;
 }
@@ -334,7 +334,7 @@ function createClientsPgStore(repo) {
       },
       async getContactById(id) {
         return one(
-          `SELECT c.*, s.school_code, s.name AS school_name
+          `SELECT c.*, s.login_code AS school_code, s.name AS school_name
            FROM contacts c
            JOIN schools s ON s.id = c.school_id
            WHERE c.id::text = $1`,
@@ -343,7 +343,7 @@ function createClientsPgStore(repo) {
       },
       async getContactByIdForUpdate(id) {
         return one(
-          `SELECT c.*, s.school_code, s.name AS school_name
+          `SELECT c.*, s.login_code AS school_code, s.name AS school_name
            FROM contacts c
            JOIN schools s ON s.id = c.school_id
            WHERE c.id::text = $1
@@ -382,7 +382,7 @@ function createClientsPgStore(repo) {
            SET first_name = $2, last_name = $3, contact_type = $4, phone = $5, email = $6,
                gender = $7, birth_date = $8, address = $9, status = $10, profile_payload = $11::jsonb, updated_at = NOW()
            WHERE id = $1
-           RETURNING *, (SELECT school_code FROM schools WHERE id = contacts.school_id) AS school_code,
+           RETURNING *, (SELECT login_code FROM schools WHERE id = contacts.school_id) AS school_code,
              (SELECT name FROM schools WHERE id = contacts.school_id) AS school_name`,
           [
             id,
@@ -404,14 +404,14 @@ function createClientsPgStore(repo) {
           `UPDATE contacts
            SET user_id = $2, profile_payload = $3::jsonb, updated_at = NOW()
            WHERE id = $1
-           RETURNING *, (SELECT school_code FROM schools WHERE id = contacts.school_id) AS school_code,
+           RETURNING *, (SELECT login_code FROM schools WHERE id = contacts.school_id) AS school_code,
              (SELECT name FROM schools WHERE id = contacts.school_id) AS school_name`,
           [contactId, userId, JSON.stringify(profile ?? {})],
         );
       },
       async getActiveContactByUserId(schoolId, userId) {
         return one(
-          `SELECT c.*, s.school_code, s.name AS school_name
+          `SELECT c.*, s.login_code AS school_code, s.name AS school_name
            FROM contacts c
            JOIN schools s ON s.id = c.school_id
            WHERE c.school_id = $1 AND c.user_id = $2 AND c.status = 'active'
@@ -424,7 +424,7 @@ function createClientsPgStore(repo) {
         const key = asTrimmed(email).toLowerCase();
         if (!key) return null;
         return one(
-          `SELECT c.*, s.school_code, s.name AS school_name
+          `SELECT c.*, s.login_code AS school_code, s.name AS school_name
            FROM contacts c
            JOIN schools s ON s.id = c.school_id
            WHERE c.school_id = $1 AND c.status = 'active'
@@ -438,7 +438,7 @@ function createClientsPgStore(repo) {
         const key = asTrimmed(phone).toLowerCase();
         if (!key) return null;
         return one(
-          `SELECT c.*, s.school_code, s.name AS school_name
+          `SELECT c.*, s.login_code AS school_code, s.name AS school_name
            FROM contacts c
            JOIN schools s ON s.id = c.school_id
            WHERE c.school_id = $1 AND c.status = 'active'
@@ -453,7 +453,7 @@ function createClientsPgStore(repo) {
       },
       async getStudentById(id) {
         return one(
-          `SELECT st.*, s.school_code
+          `SELECT st.*, s.login_code AS school_code
            FROM students st
            JOIN schools s ON s.id = st.school_id
            WHERE st.id::text = $1 OR st.student_code = $1`,
@@ -462,7 +462,7 @@ function createClientsPgStore(repo) {
       },
       async getRelationById(id) {
         return one(
-          `SELECT r.*, s.school_code,
+          `SELECT r.*, s.login_code AS school_code,
              trim(concat(c.first_name, ' ', c.last_name)) AS contact_name,
              trim(concat(st.first_name, ' ', st.last_name)) AS student_name
            FROM contact_relations r
@@ -475,7 +475,7 @@ function createClientsPgStore(repo) {
       },
       async getRelationByContactAndStudent(contactId, studentId) {
         return one(
-          `SELECT r.*, s.school_code,
+          `SELECT r.*, s.login_code AS school_code,
              trim(concat(c.first_name, ' ', c.last_name)) AS contact_name,
              trim(concat(st.first_name, ' ', st.last_name)) AS student_name
            FROM contact_relations r
@@ -490,7 +490,7 @@ function createClientsPgStore(repo) {
       },
       async getActiveRelationByContactAndStudent(contactId, studentId) {
         return one(
-          `SELECT r.*, s.school_code,
+          `SELECT r.*, s.login_code AS school_code,
              trim(concat(c.first_name, ' ', c.last_name)) AS contact_name,
              trim(concat(st.first_name, ' ', st.last_name)) AS student_name
            FROM contact_relations r
@@ -573,7 +573,7 @@ function createClientsPgStore(repo) {
       },
       async getMessageById(id) {
         return one(
-          `SELECT m.*, s.school_code, u.phone AS sender_phone,
+          `SELECT m.*, s.login_code AS school_code, u.phone AS sender_phone,
              trim(concat(u.first_name, ' ', u.last_name)) AS sender_name,
              u.role AS sender_role_label
            FROM school_messages m
@@ -585,7 +585,7 @@ function createClientsPgStore(repo) {
       },
       async getConversationById(id) {
         return one(
-          `SELECT c.*, s.school_code
+          `SELECT c.*, s.login_code AS school_code
            FROM school_conversations c
            JOIN schools s ON s.id = c.school_id
            WHERE c.id::text = $1`,
@@ -627,7 +627,7 @@ function createClientsPgStore(repo) {
       async updateMessageStatus(messageId, status) {
         return one(
           `UPDATE school_messages SET status = $2, updated_at = NOW() WHERE id = $1
-           RETURNING *, (SELECT school_code FROM schools WHERE id = school_messages.school_id) AS school_code`,
+           RETURNING *, (SELECT login_code FROM schools WHERE id = school_messages.school_id) AS school_code`,
           [messageId, status],
         );
       },
@@ -820,7 +820,7 @@ function createClientsPgStore(repo) {
       async listMessagesForUser({ userId, schoolId, bypass }) {
         if (bypass) {
           return all(
-            `SELECT m.*, s.school_code, u.phone AS sender_phone,
+            `SELECT m.*, s.login_code AS school_code, u.phone AS sender_phone,
                trim(concat(u.first_name, ' ', u.last_name)) AS sender_name,
                u.role AS sender_role_label,
                (SELECT read_at FROM school_message_reads mr WHERE mr.message_id = m.id AND mr.user_id = $1) AS reader_read_at
@@ -832,7 +832,7 @@ function createClientsPgStore(repo) {
           );
         }
         return all(
-          `SELECT m.*, s.school_code, u.phone AS sender_phone,
+          `SELECT m.*, s.login_code AS school_code, u.phone AS sender_phone,
              trim(concat(u.first_name, ' ', u.last_name)) AS sender_name,
              u.role AS sender_role_label,
              r.read_at AS reader_read_at
@@ -855,7 +855,7 @@ function createClientsPgStore(repo) {
           cursorSql = `AND (m.sent_at, m.id) < ($4::timestamptz, $5::uuid)`;
         }
         return all(
-          `SELECT m.*, s.school_code, u.phone AS sender_phone,
+          `SELECT m.*, s.login_code AS school_code, u.phone AS sender_phone,
              trim(concat(u.first_name, ' ', u.last_name)) AS sender_name,
              u.role AS sender_role_label,
              r.read_at AS reader_read_at
@@ -885,7 +885,7 @@ function createClientsPgStore(repo) {
           : `JOIN school_conversation_participants p
                ON p.conversation_id = c.id AND p.user_id = $1 AND COALESCE(p.status, 'active') = 'active'`;
         return all(
-          `SELECT c.*, s.school_code,
+          `SELECT c.*, s.login_code AS school_code,
              lm.id AS last_message_id,
              lm.body AS last_message_body,
              lm.sent_at AS last_message_at,
@@ -917,7 +917,7 @@ function createClientsPgStore(repo) {
       },
       async getAnnouncementById(id) {
         return one(
-          `SELECT a.*, s.school_code,
+          `SELECT a.*, s.login_code AS school_code,
              trim(concat(cu.first_name, ' ', cu.last_name)) AS author_name,
              trim(concat(cu.first_name, ' ', cu.last_name)) AS created_by_name,
              trim(concat(pu.first_name, ' ', pu.last_name)) AS published_by_name
@@ -959,7 +959,7 @@ function createClientsPgStore(repo) {
            SET title = $2, message = $3, target_role = $4, target_class_id = $5, status = $6,
                profile_payload = $7::jsonb, updated_at = NOW()
            WHERE id = $1
-           RETURNING *, (SELECT school_code FROM schools WHERE id = announcements.school_id) AS school_code`,
+           RETURNING *, (SELECT login_code FROM schools WHERE id = announcements.school_id) AS school_code`,
           [
             id,
             row.title,
@@ -977,7 +977,7 @@ function createClientsPgStore(repo) {
            SET status = 'archived', archived_at = COALESCE(archived_at, NOW()), archived_by = COALESCE(archived_by, $2),
                updated_at = NOW()
            WHERE id = $1
-           RETURNING *, (SELECT school_code FROM schools WHERE id = announcements.school_id) AS school_code`,
+           RETURNING *, (SELECT login_code FROM schools WHERE id = announcements.school_id) AS school_code`,
           [id, actorUserId],
         );
       },
@@ -1309,7 +1309,7 @@ function createClientsPgStore(repo) {
               AND COALESCE(a.status, 'published') = 'published'
               AND a.archived_at IS NULL`;
         return all(
-          `SELECT a.*, s.school_code,
+          `SELECT a.*, s.login_code AS school_code,
              trim(concat(cu.first_name, ' ', cu.last_name)) AS created_by_name,
              trim(concat(pu.first_name, ' ', pu.last_name)) AS published_by_name,
              (SELECT r.read_at FROM announcement_reads r
@@ -1453,7 +1453,7 @@ function createClientsPgStore(repo) {
       },
       async recordClientsAudit(entry) {
         const school = entry.schoolCode
-          ? await one("SELECT id FROM schools WHERE school_code = $1", [asTrimmed(entry.schoolCode).toUpperCase()])
+          ? await one("SELECT id FROM schools WHERE upper(login_code) = $1", [asTrimmed(entry.schoolCode).toUpperCase()])
           : null;
         await query(
           `INSERT INTO audit_logs (school_id, user_id, action, entity_type, entity_id, old_value, new_value, ip_address, user_agent, created_at)
@@ -1504,13 +1504,13 @@ function createClientsPgStore(repo) {
         rolesByUser.set(String(row.user_id), list);
       }
       const contacts = await repo.all(
-        `SELECT c.*, s.school_code, s.name AS school_name
+        `SELECT c.*, s.login_code AS school_code, s.name AS school_name
          FROM contacts c
          JOIN schools s ON s.id = c.school_id
          ORDER BY c.created_at DESC`,
       );
       const relations = await repo.all(
-        `SELECT r.*, s.school_code,
+        `SELECT r.*, s.login_code AS school_code,
            trim(concat(ct.first_name, ' ', ct.last_name)) AS contact_name,
            trim(concat(st.first_name, ' ', st.last_name)) AS student_name
          FROM contact_relations r
@@ -1520,7 +1520,7 @@ function createClientsPgStore(repo) {
          ORDER BY r.created_at DESC`,
       );
       const messages = await repo.all(
-        `SELECT m.*, s.school_code, u.phone AS sender_phone,
+        `SELECT m.*, s.login_code AS school_code, u.phone AS sender_phone,
            (SELECT read_at FROM school_message_reads mr WHERE mr.message_id = m.id ORDER BY read_at DESC LIMIT 1) AS read_at
          FROM school_messages m
          JOIN schools s ON s.id = m.school_id
@@ -1528,7 +1528,7 @@ function createClientsPgStore(repo) {
          ORDER BY m.sent_at DESC`,
       );
       const announcements = await repo.all(
-        `SELECT a.*, s.school_code, u.first_name || ' ' || u.last_name AS author_name
+        `SELECT a.*, s.login_code AS school_code, u.first_name || ' ' || u.last_name AS author_name
          FROM announcements a
          JOIN schools s ON s.id = a.school_id
          LEFT JOIN users u ON u.id = a.created_by
