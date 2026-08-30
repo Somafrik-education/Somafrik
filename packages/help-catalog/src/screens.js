@@ -49,10 +49,10 @@ const MOBILE_ROUTE_SCREENS = Object.freeze(
     InternalNotifications: HELP_SCREEN.NOTIFICATIONS,
     PlatformNotifications: HELP_SCREEN.NOTIFICATIONS,
     Configuration: HELP_SCREEN.SETTINGS,
-    EstablishmentProfile: HELP_SCREEN.SETTINGS,
-    SchoolYearSettings: HELP_SCREEN.SETTINGS,
-    SchoolPedagogicalStructure: HELP_SCREEN.SETTINGS,
-    SchoolAssignableRoles: HELP_SCREEN.SETTINGS,
+    EstablishmentProfile: HELP_SCREEN.SETTINGS_PROFILE,
+    SchoolYearSettings: HELP_SCREEN.SETTINGS_ACADEMIC_YEAR,
+    SchoolPedagogicalStructure: HELP_SCREEN.SETTINGS_STRUCTURE,
+    SchoolAssignableRoles: HELP_SCREEN.SETTINGS_ROLES,
     Synchronization: HELP_SCREEN.SYNC,
     OfflineMode: HELP_SCREEN.SYNC,
   }),
@@ -76,7 +76,24 @@ function resolveWebScreen(pathname) {
   if (path.startsWith("/finances")) return HELP_SCREEN.PAYMENTS;
   if (path.startsWith("/planning")) return HELP_SCREEN.PLANNING;
   if (path.startsWith("/notifications")) return HELP_SCREEN.NOTIFICATIONS;
-  if (path.startsWith("/parametres")) return HELP_SCREEN.SETTINGS;
+  if (path.startsWith("/parametres/profil")) return HELP_SCREEN.SETTINGS_PROFILE;
+  if (path.startsWith("/parametres/annee-scolaire")) return HELP_SCREEN.SETTINGS_ACADEMIC_YEAR;
+  if (path.startsWith("/parametres/structure")) return HELP_SCREEN.SETTINGS_STRUCTURE;
+  if (path.startsWith("/parametres/roles-droits")) return HELP_SCREEN.SETTINGS_ROLES;
+  if (path.startsWith("/parametres/finances")) return HELP_SCREEN.SETTINGS_FINANCE;
+  if (path.startsWith("/parametres/donnees")) return HELP_SCREEN.SETTINGS_DATA;
+  if (path.startsWith("/parametres/securite")) return HELP_SCREEN.SETTINGS_SECURITY;
+  if (path.startsWith("/parametres/mon-abonnement")) return HELP_SCREEN.SETTINGS_SUBSCRIPTION;
+  if (
+    path.startsWith("/parametres/notifications") ||
+    path.startsWith("/parametres/apparence") ||
+    path.startsWith("/parametres/integrations")
+  ) {
+    return HELP_SCREEN.SETTINGS_COMING_SOON;
+  }
+  if (path === "/parametres" || path === "/parametres/" || path.startsWith("/parametres")) {
+    return HELP_SCREEN.SETTINGS;
+  }
   if (path.startsWith("/messages")) return HELP_SCREEN.MESSAGES;
   if (path.startsWith("/annonces")) return HELP_SCREEN.ANNOUNCEMENTS;
   return null;
