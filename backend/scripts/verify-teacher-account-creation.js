@@ -103,6 +103,9 @@ async function createTeacherViaUsers(token, payload) {
   assert.equal(listed.status, 200, JSON.stringify(listed.data));
   const teacher = (listed.data ?? []).find((row) => String(row.userId) === String(user.data.id));
   assert.ok(teacher, "profil enseignant attendu après GRANT Enseignant");
+  const userCode = String(user.data.userCode ?? user.data.publicId ?? user.data.identifier ?? "").trim();
+  assert.ok(userCode, "users.user_code attendu après POST /backoffice/users");
+  assert.equal(String(teacher.teacherCode ?? ""), userCode, "teacherCode = users.user_code");
   return {
     status: 201,
     data: {
@@ -229,7 +232,12 @@ async function main() {
 
     const created = await createTeacherViaUsers(admin.token, teacherPayload());
     assert.equal(created.status, 201, JSON.stringify(created.data));
-    assert.match(String(created.data.teacherCode), /^CD-IN-[A-Z0-9]{1,5}-26-\d{5}$/);
+    // Identité publique = users.user_code (login métier). GRANT ne renumérote pas.
+    // Compte Users : USR-YYYY-NNNNN ; création enseignant canonique : {ISO}-{ETAB}-{INI}-{YY}-{SEQ5}.
+    assert.match(
+      String(created.data.teacherCode),
+      /^(USR-\d{4}-\d{5}|[A-Z]{2}-[A-Z0-9]{2,5}-[A-Z0-9]{1,5}-\d{2}-\d{5})$/,
+    );
     assert.equal(created.data.identifier, created.data.teacherCode);
     assert.equal(created.data.publicId, created.data.teacherCode);
     assert.equal(created.data.mustChangePassword, true);

@@ -12,13 +12,46 @@ function isTerminalTeacherStatus(status) {
   return ["deleted", "archived"].includes(String(status ?? "").toLowerCase());
 }
 
+function schoolLoginFromRecord(school) {
+  return String(
+    school?.loginCode ?? school?.login_code ?? school?.code ?? school?.schoolCode ?? "",
+  ).trim();
+}
+
+function primarySchoolLoginCode() {
+  return schoolLoginFromRecord(seedData.school);
+}
+
 function managedSchoolIdForClientsTeacher(teacher, tables) {
   const school = (tables.schools ?? []).find((row) => String(row.id) === String(teacher.school_id));
-  const code = String(school?.code ?? school?.schoolCode ?? "").trim().toUpperCase();
-  if (code && code === String(seedData.school.code).toUpperCase()) {
+  const code = schoolLoginFromRecord(school).toUpperCase();
+  if (code && code === primarySchoolLoginCode().toUpperCase()) {
     return seedData.school.id;
   }
   return teacher.school_id;
+}
+
+function projectManagedTeacherRow(teacher, user, schoolId) {
+  const loginCode =
+    schoolId === seedData.school.id
+      ? primarySchoolLoginCode()
+      : String(schoolId).replace(/^school-/i, "");
+  return {
+    ...teacher,
+    teacher_id: teacher.id,
+    teacher_status: teacher.status,
+    user_status: user?.status ?? "active",
+    user_code: user?.user_code ?? "",
+    school_code: loginCode,
+    login_code: loginCode,
+    first_name: user?.first_name,
+    last_name: user?.last_name,
+    email: user?.email,
+    phone: user?.phone,
+    birth_date: user?.birth_date,
+    gender: user?.gender,
+    must_change_password: user?.must_change_password,
+  };
 }
 
 function upsertSeedClassProjection(row) {
@@ -1767,10 +1800,15 @@ class FallbackRepository {
       const memoryAdapter = {
         async getSchoolByCode(code) {
           const normalized = String(code ?? "").trim().toUpperCase();
-          if (normalized === String(seedData.school.code).toUpperCase()) {
-            return { id: seedData.school.id, school_code: seedData.school.code };
+          const primaryLogin = primarySchoolLoginCode().toUpperCase();
+          if (normalized === primaryLogin) {
+            return {
+              id: seedData.school.id,
+              school_code: seedData.school.code,
+              login_code: primarySchoolLoginCode(),
+            };
           }
-          return { id: `school-${normalized}`, school_code: normalized };
+          return { id: `school-${normalized}`, school_code: normalized, login_code: normalized };
         },
         async one(sql, params = []) {
           const text = String(sql).replace(/\s+/g, " ").trim().toUpperCase();
@@ -1829,39 +1867,29 @@ class FallbackRepository {
           }
           if (
             text.includes("FROM TEACHERS T") &&
-            text.includes("T.TEACHER_CODE") &&
+            (text.includes("T.TEACHER_CODE") || text.includes("U.USER_CODE") || text.includes("T.ID::TEXT")) &&
             (text.includes("WHERE T.TEACHER_CODE") ||
               text.includes("LEGACY_TEACHER_CODE") ||
-              text.includes("FOR UPDATE"))
+              text.includes("FOR UPDATE") ||
+              text.includes("U.USER_CODE") ||
+              text.includes("T.ID::TEXT"))
           ) {
             const teacherCodeFirst =
               text.includes("T.SCHOOL_ID = $2") || text.includes("WHERE T.TEACHER_CODE");
             const teacherCode = teacherCodeFirst ? params[0] : params[1];
             const schoolId = teacherCodeFirst ? params[1] : params[0];
             const { teacherPublicCodesMatch } = require("../lib/teacherCodeAllocation");
-            const teacher = (self._managedTeachers ?? []).find(
-              (row) =>
-                teacherPublicCodesMatch(row.teacher_code, teacherCode) && row.school_id === schoolId,
-            );
+            const teacher = (self._managedTeachers ?? []).find((row) => {
+              if (row.school_id !== schoolId) return false;
+              const linked = (self._managedTeacherUsers ?? []).find((item) => item.id === row.user_id);
+              return (
+                String(row.id) === String(teacherCode) ||
+                teacherPublicCodesMatch(linked?.user_code, teacherCode)
+              );
+            });
             if (!teacher) return null;
             const user = (self._managedTeacherUsers ?? []).find((row) => row.id === teacher.user_id);
-            return {
-              ...teacher,
-              teacher_id: teacher.id,
-              teacher_status: teacher.status,
-              user_status: user?.status ?? "active",
-              school_code:
-                schoolId === seedData.school.id
-                  ? seedData.school.code
-                  : String(schoolId).replace(/^school-/, ""),
-              first_name: user?.first_name,
-              last_name: user?.last_name,
-              email: user?.email,
-              phone: user?.phone,
-              birth_date: user?.birth_date,
-              gender: user?.gender,
-              must_change_password: user?.must_change_password,
-            };
+            return projectManagedTeacherRow(teacher, user, schoolId);
           }
           if (text.startsWith("SELECT U.ID") && text.includes("FROM USERS U")) {
             const excludeUserId = text.includes("U.ID::TEXT <>") ? params[0] : null;
@@ -1952,20 +1980,7 @@ class FallbackRepository {
                 if (user && ["deleted", "archived"].includes(String(user.status ?? "active").toLowerCase())) {
                   return null;
                 }
-                return {
-                  ...teacher,
-                  school_code:
-                    schoolId === seedData.school.id
-                      ? seedData.school.code
-                      : String(schoolId).replace(/^school-/, ""),
-                  first_name: user?.first_name,
-                  last_name: user?.last_name,
-                  email: user?.email,
-                  phone: user?.phone,
-                  birth_date: user?.birth_date,
-                  gender: user?.gender,
-                  must_change_password: user?.must_change_password,
-                };
+                return projectManagedTeacherRow(teacher, user, schoolId);
               })
               .filter(Boolean);
           }
@@ -1979,7 +1994,12 @@ class FallbackRepository {
             const excludeCode = params[1];
             return (self._managedTeachers ?? [])
               .filter((row) => row.school_id === schoolId)
-              .filter((row) => !excludeCode || row.teacher_code !== excludeCode)
+              .filter((row) => {
+                if (!excludeCode) return true;
+                if (row.teacher_code === excludeCode) return false;
+                const linked = (self._managedTeacherUsers ?? []).find((item) => item.id === row.user_id);
+                return String(linked?.user_code ?? "") !== String(excludeCode);
+              })
               .filter((row) => !["deleted", "archived"].includes(String(row.status ?? "active").toLowerCase()))
               .map((teacher) => {
                 const user = (self._managedTeacherUsers ?? []).find((row) => row.id === teacher.user_id);
@@ -2211,10 +2231,16 @@ class FallbackRepository {
     const tables = this.getClientsStore()?._tables;
     if (!tables) return;
     const teacherCode = String(snapshot.teacherCode ?? snapshot.teacher_code ?? "").trim();
-    if (!teacherCode) return;
-    const teacher = (tables.teachers ?? []).find(
-      (row) => String(row.teacher_code ?? "") === teacherCode,
-    );
+    const teacherId = String(snapshot.id ?? snapshot.teacherId ?? "").trim();
+    const userId = String(snapshot.userId ?? snapshot.user_id ?? "").trim();
+    if (!teacherCode && !teacherId && !userId) return;
+    const teacher = (tables.teachers ?? []).find((row) => {
+      if (teacherId && String(row.id) === teacherId) return true;
+      if (userId && String(row.user_id) === userId) return true;
+      if (teacherCode && String(row.teacher_code ?? "") === teacherCode) return true;
+      const linked = (tables.users ?? []).find((item) => String(item.id) === String(row.user_id));
+      return Boolean(teacherCode) && String(linked?.user_code ?? "") === teacherCode;
+    });
     if (!teacher) return;
     if (snapshot.speciality !== undefined) teacher.speciality = snapshot.speciality;
     if (snapshot.entryDate !== undefined || snapshot.hire_date !== undefined) {
@@ -2297,7 +2323,7 @@ class FallbackRepository {
     if (!tables) return [];
     const normalized = String(schoolCode ?? "").trim().toUpperCase();
     const school = tables.schools.find(
-      (row) => String(row.code ?? row.schoolCode ?? "").trim().toUpperCase() === normalized,
+      (row) => schoolLoginFromRecord(row).toUpperCase() === normalized,
     );
     if (!school) return [];
     return tables.teachers
@@ -2305,11 +2331,11 @@ class FallbackRepository {
       .filter((row) => !["deleted", "archived"].includes(String(row.status ?? "active").toLowerCase()))
       .map((teacher) => {
         const user = tables.users.find((row) => row.id === teacher.user_id);
-        const identifier = String(teacher.teacher_code ?? "").trim().toUpperCase();
+        const identifier = String(user?.user_code ?? "").trim().toUpperCase();
         return {
-          id: teacher.teacher_code,
-          teacherCode: teacher.teacher_code,
-          publicId: teacher.teacher_code,
+          id: teacher.id,
+          teacherCode: identifier,
+          publicId: identifier,
           identifier,
           userId: teacher.user_id,
           firstName: user?.first_name ?? "",

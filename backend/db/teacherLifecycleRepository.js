@@ -131,7 +131,7 @@ function formatIsoDate(value) {
 
 function teacherSnapshot(row) {
   return {
-    teacherCode: row.teacher_code,
+    teacherCode: String(row.user_code ?? "").trim() || row.teacher_code,
     userId: row.user_id,
     firstName: row.first_name,
     lastName: row.last_name,
@@ -160,8 +160,8 @@ function createTeacherLifecycleRepository(db) {
   async function lockedTeacher(scope, schoolId, teacherCode) {
     const row = await scope.one(
       `SELECT t.id AS teacher_id, t.teacher_code, t.user_id, t.speciality, t.hire_date,
-              t.status AS teacher_status, u.first_name, u.last_name, u.email, u.phone,
-              u.birth_date, u.gender, u.status AS user_status, s.school_code
+              t.status AS teacher_status, u.user_code, u.first_name, u.last_name, u.email, u.phone,
+              u.birth_date, u.gender, u.status AS user_status, s.school_code, s.login_code
        FROM teachers t
        JOIN users u ON u.id = t.user_id
        JOIN schools s ON s.id = t.school_id
@@ -181,11 +181,11 @@ function createTeacherLifecycleRepository(db) {
 
   async function assertCivilIdentityAvailable(scope, schoolId, currentTeacherCode, candidate) {
     const rows = await scope.all(
-      `SELECT t.teacher_code, u.first_name, u.last_name, u.birth_date, u.gender
+      `SELECT t.teacher_code, u.user_code, u.first_name, u.last_name, u.birth_date, u.gender
        FROM teachers t
        JOIN users u ON u.id = t.user_id
        WHERE t.school_id = $1
-         AND t.teacher_code <> $2
+         AND u.user_code <> $2
          AND COALESCE(t.status, 'active') NOT IN ('deleted', 'archived')
          AND COALESCE(u.status, 'active') NOT IN ('deleted', 'archived')`,
       [schoolId, currentTeacherCode],
