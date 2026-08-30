@@ -19,6 +19,7 @@ export default defineConfig({
       "src/components/**/*.{test,spec}.{ts,tsx}",
       // HOTFIX-SYNC-01 — outbox / merge non destructif
       "src/lib/**/*.{test,spec}.{ts,tsx}",
+      "src/data/**/*.{test,spec}.{ts,tsx}",
     ],
     css: false,
     globals: false,
