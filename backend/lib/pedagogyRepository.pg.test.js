@@ -59,13 +59,13 @@ async function seedFixture(pool) {
      VALUES ('RDC', 'CD', '+243', 'CDF') RETURNING id`,
   );
   const schoolA = await pool.query(
-    `INSERT INTO schools (country_id, school_code, name, status)
-     VALUES ($1, 'CD-2026-0001', 'Lycée A', 'active') RETURNING id, login_code`,
+    `INSERT INTO schools (country_id, school_code, login_code, name, status)
+     VALUES ($1, 'CD-2026-0001', 'CD-PG-26-001', 'Lycée A', 'active') RETURNING id, login_code`,
     [country.rows[0].id],
   );
   const schoolB = await pool.query(
-    `INSERT INTO schools (country_id, school_code, name, status)
-     VALUES ($1, 'BI-2026-0001', 'Lycée B', 'active') RETURNING id, login_code`,
+    `INSERT INTO schools (country_id, school_code, login_code, name, status)
+     VALUES ($1, 'BI-2026-0001', 'BI-PG-26-001', 'Lycée B', 'active') RETURNING id, login_code`,
     [country.rows[0].id],
   );
   const openYear = await pool.query(
@@ -118,10 +118,15 @@ async function seedFixture(pool) {
      VALUES ($1, $2, 'ENS-PG-001', 'active') RETURNING id`,
     [schoolA.rows[0].id, teacherUser.rows[0].id],
   );
-  const teacherNoAssign = await pool.query(
-    `INSERT INTO teachers (school_id, teacher_code, status)
-     VALUES ($1, 'ENS-PG-002', 'active') RETURNING id`,
+  const teacherNoAssignUser = await pool.query(
+    `INSERT INTO users (school_id, user_code, first_name, last_name, email, role, status)
+     VALUES ($1, 'USR-ENS-PG-002', 'Lina', 'Libre', 'ens-pg-002@test.cd', 'TEACHER', 'active') RETURNING id`,
     [schoolA.rows[0].id],
+  );
+  const teacherNoAssign = await pool.query(
+    `INSERT INTO teachers (school_id, user_id, teacher_code, status)
+     VALUES ($1, $2, 'ENS-PG-002', 'active') RETURNING id`,
+    [schoolA.rows[0].id, teacherNoAssignUser.rows[0].id],
   );
   const klassB = await pool.query(
     `INSERT INTO classes (school_id, academic_year_id, class_code, name, status)
@@ -180,9 +185,10 @@ async function seedFixture(pool) {
     student: student.rows[0].id,
     outsider: outsider.rows[0].id,
     adminUser: adminUser.rows[0].id,
-    schoolACode: String(schoolA.rows[0].login_code ?? "").trim().toUpperCase(),
-    schoolBCode: String(schoolB.rows[0].login_code ?? "").trim().toUpperCase(),
+    schoolACode: String(schoolA.rows[0].login_code ?? "CD-PG-26-001").trim().toUpperCase(),
+    schoolBCode: String(schoolB.rows[0].login_code ?? "BI-PG-26-001").trim().toUpperCase(),
     teacherUserCode: "USR-ENS-PG",
+    teacherNoAssignUserCode: "USR-ENS-PG-002",
   };
 }
 
@@ -266,7 +272,7 @@ async function main() {
           {
             className: "6ème A",
             name: "Mathématiques",
-            teacherId: "ENS-PG-002",
+            teacherId: fixture.teacherNoAssignUserCode,
           },
           admin,
           auditMeta,
@@ -280,7 +286,7 @@ async function main() {
           {
             className: "6ème A",
             name: "Physique",
-            teacherId: "ENS-PG-001",
+            teacherId: fixture.teacherUserCode,
           },
           admin,
           auditMeta,
@@ -304,11 +310,11 @@ async function main() {
 
     const courseWithTeacher = await store.updateSchoolCourse(
       course.id,
-      { teacherId: "ENS-PG-001" },
+      { teacherId: fixture.teacherUserCode },
       admin,
       auditMeta,
     );
-    assert.equal(courseWithTeacher.teacherId, "ENS-PG-001");
+    assert.equal(courseWithTeacher.teacherId, fixture.teacherUserCode);
 
     await assert.rejects(
       () =>
@@ -464,7 +470,7 @@ async function main() {
       {
         className: "6ème B",
         name: "Mathématiques",
-        teacherId: "ENS-PG-001",
+        teacherId: fixture.teacherUserCode,
       },
       admin,
       auditMeta,
@@ -527,7 +533,7 @@ async function main() {
         title: "Devoir intégration",
         maxScore: 20,
         schoolCode: fixture.schoolACode,
-        teacherId: "ENS-PG-001",
+        teacherId: fixture.teacherUserCode,
         evaluationType: "Devoir",
       },
       admin,
@@ -539,7 +545,7 @@ async function main() {
       {
         evaluationId: evaluation.id,
         studentId: "CD-2026-0001-STU-PG-01",
-        teacherId: "ENS-PG-001",
+        teacherId: fixture.teacherUserCode,
         value: 12,
         scale: 20,
       },
@@ -567,7 +573,7 @@ async function main() {
         title: "Tenant scellé",
         maxScore: 20,
         schoolCode: fixture.schoolBCode,
-        teacherId: "ENS-PG-001",
+        teacherId: fixture.teacherUserCode,
         evaluationType: "Devoir",
       },
       admin,
@@ -632,7 +638,7 @@ async function main() {
             subject: "Mathématiques",
             period: "Trimestre 1",
             title: "Compromis legacy",
-            teacherId: "ENS-PG-001",
+            teacherId: fixture.teacherUserCode,
             evaluationType: "Devoir",
           },
           admin,
@@ -716,7 +722,7 @@ async function main() {
                 className: "6ème A",
                 date: "2026-09-15",
                 status: "present",
-                teacherId: "ENS-PG-001",
+                teacherId: fixture.teacherUserCode,
               },
             ],
           },
@@ -773,7 +779,7 @@ async function main() {
             subject: "Mathématiques",
             period: "Trimestre 1",
             title: "Sans année ouverte",
-            teacherId: "ENS-PG-001",
+            teacherId: fixture.teacherUserCode,
             evaluationType: "Devoir",
           },
           { role: "Admin School", schoolCode: "NO-YEAR-2026", sub: fixture.adminUser },
@@ -828,7 +834,7 @@ async function main() {
       {
         evaluationId: evaluation.id,
         studentId: "CD-2026-0001-STU-PG-01",
-        teacherId: "ENS-PG-001",
+        teacherId: fixture.teacherUserCode,
         value: 14,
         scale: 20,
       },
@@ -844,7 +850,7 @@ async function main() {
           {
             evaluationId: evaluation.id,
             studentId: "CD-2026-0001-STU-PG-01",
-            teacherId: "ENS-PG-001",
+            teacherId: fixture.teacherUserCode,
             value: 15,
             scale: 20,
             version: lockVersion,
@@ -858,7 +864,7 @@ async function main() {
           {
             evaluationId: evaluation.id,
             studentId: "CD-2026-0001-STU-PG-01",
-            teacherId: "ENS-PG-001",
+            teacherId: fixture.teacherUserCode,
             value: 16,
             scale: 20,
             version: lockVersion,
@@ -886,7 +892,7 @@ async function main() {
             className: "6ème A",
             date: "2026-09-01",
             status: "present",
-            teacherId: "ENS-PG-001",
+            teacherId: fixture.teacherUserCode,
           },
         ],
       },
@@ -906,7 +912,7 @@ async function main() {
                 classCode: "CLS-6A",
                 date: "2026-09-05",
                 status: "present",
-                teacherId: "ENS-PG-002",
+                teacherId: fixture.teacherNoAssignUserCode,
               },
             ],
           },
@@ -944,7 +950,7 @@ async function main() {
               className: "6ème A",
               date: "2026-09-03",
               status: item.status,
-              teacherId: "ENS-PG-001",
+              teacherId: fixture.teacherUserCode,
             },
           ],
         },
@@ -974,14 +980,14 @@ async function main() {
                 className: "6ème A",
                 date: "2026-09-04",
                 status: "Présent",
-                teacherId: "ENS-PG-001",
+                teacherId: fixture.teacherUserCode,
               },
               {
                 studentId: "BI-2026-0001-STU-01",
                 className: "6ème A",
                 date: "2026-09-04",
                 status: "Absent",
-                teacherId: "ENS-PG-001",
+                teacherId: fixture.teacherUserCode,
               },
             ],
           },
@@ -1193,14 +1199,14 @@ async function main() {
     assert.equal(Number(teacherUpdated.score ?? teacherUpdated.value), 15, "NOTES-P1 : UPDATE note après affectation restaurée");
 
     const projection = await store.listProjection();
-    const schoolCourses = projection.courses.filter((row) => row.schoolCode === "CD-2026-0001");
-    const schoolSlots = projection.courseSchedules.filter((row) => row.schoolCode === "CD-2026-0001");
+    const schoolCourses = projection.courses.filter((row) => row.schoolCode === fixture.schoolACode);
+    const schoolSlots = projection.courseSchedules.filter((row) => row.schoolCode === fixture.schoolACode);
     assert.ok(schoolCourses.some((row) => row.name === "Mathématiques"));
     assert.ok(schoolSlots.some((row) => row.schoolCourseId === course.schoolCourseId && row.dayOfWeek === 1));
     assert.ok(projection.notes.some((row) => Number(row.value ?? row.score) === 14 || Number(row.value) >= 14));
     const projectedNote = projection.notes.find((row) => Number(row.value ?? row.score) >= 14);
-    assert.equal(projectedNote.teacherId, "ENS-PG-001");
-    assert.notEqual(projectedNote.authorId, "ENS-PG-001");
+    assert.equal(projectedNote.teacherId, fixture.teacherUserCode);
+    assert.notEqual(projectedNote.authorId, fixture.teacherUserCode);
 
     const boState = await pool.query(`SELECT state_payload FROM backoffice_state WHERE state_key = 'default'`);
     assert.equal(boState.rowCount, 0, "aucune projection JSON historique backoffice_state");

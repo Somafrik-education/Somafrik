@@ -236,7 +236,7 @@ async function assertWeeklySlotReferences(tx, school, payload, { requireOpenYear
     classAcademicYearId: course.class_academic_year_id,
     requireOpen: requireOpenYear,
   });
-  const teacherKey = course.teacher_code || course.teacher_id;
+  const teacherKey = course.teacher_id;
   await requireTeacherWithActiveAssignment(tx, {
     schoolId: school.id,
     teacherKey,

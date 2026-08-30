@@ -23,7 +23,7 @@ const WEEKLY_SLOT_SELECT = `
                  w.day_of_week, w.start_time, w.end_time, w.status, w.room,
                  r.id AS room_id,
                  w.created_at, w.updated_at,
-                 s.school_code, c.name AS class_name, c.class_code,
+                 s.login_code AS school_code, c.name AS class_name, c.class_code,
                  sub.id AS subject_id, sc.status AS school_course_status,
                  sub.name AS subject_name, t.teacher_code,
                  NULLIF(TRIM(CONCAT(COALESCE(u.first_name, ''), ' ', COALESCE(u.last_name, ''))), '') AS teacher_name,
@@ -52,7 +52,7 @@ const REPLACEMENT_SELECT = `
                  orig.id AS original_teacher_id,
                  subste.id AS substitute_teacher_id, r.reason, r.note, r.status, r.created_by, r.cancelled_by,
                  ay.id AS academic_year_id, r.start_time, r.end_time, r.created_at, r.updated_at,
-                 s.school_code, c.id AS class_id, w.day_of_week, room.id AS room_id,
+                 s.login_code AS school_code, c.id AS class_id, w.day_of_week, room.id AS room_id,
                  c.name AS class_name, sub.name AS subject_name,
                  orig.teacher_code AS original_teacher_code,
                  subste.teacher_code AS substitute_teacher_code,
@@ -238,17 +238,19 @@ function createPedagogyPgStore(repo) {
       async getCourseByCode(code, principal) {
         const params = [asTrimmed(code)];
         let sql = `
-          SELECT sc.*, s.school_code, c.name AS class_name, sub.name AS subject_name, t.teacher_code
+          SELECT sc.*, s.login_code AS school_code, c.name AS class_name, sub.name AS subject_name,
+                 t.teacher_code, u.user_code
           FROM school_courses sc
           JOIN schools s ON s.id = sc.school_id
           JOIN classes c ON c.id = sc.class_id
           JOIN subjects sub ON sub.id = sc.subject_id
           LEFT JOIN teachers t ON t.id = sc.teacher_id
+          LEFT JOIN users u ON u.id = t.user_id
           WHERE sc.course_code = $1 OR sc.id::text = $1 OR sc.legacy_json_id = $1
         `;
         const schoolCode = asTrimmed(principal?.schoolCode);
         if (schoolCode && schoolCode !== "*") {
-          sql += " AND s.school_code = $2";
+          sql += " AND upper(s.login_code) = $2";
           params.push(schoolCode.toUpperCase());
         }
         sql += " LIMIT 1";
@@ -258,7 +260,7 @@ function createPedagogyPgStore(repo) {
       async getCourseContextByCode(code, principal) {
         const params = [asTrimmed(code)];
         let sql = `
-          SELECT sc.id AS course_db_id, sc.school_id, s.school_code,
+          SELECT sc.id AS course_db_id, sc.school_id, s.login_code AS school_code,
                  c.id AS class_id, c.academic_year_id,
                  sub.id AS subject_id
           FROM school_courses sc
@@ -269,7 +271,7 @@ function createPedagogyPgStore(repo) {
         `;
         const schoolCode = asTrimmed(principal?.schoolCode);
         if (schoolCode && schoolCode !== "*") {
-          sql += " AND s.school_code = $2";
+          sql += " AND upper(s.login_code) = $2";
           params.push(schoolCode.toUpperCase());
         }
         sql += " LIMIT 1";
@@ -279,12 +281,13 @@ function createPedagogyPgStore(repo) {
         const key = asTrimmed(courseKey);
         if (!key) return null;
         return one(
-          `SELECT sc.*, s.school_code, c.academic_year_id AS class_academic_year_id,
-                  t.teacher_code, t.status AS teacher_row_status
+          `SELECT sc.*, s.login_code AS school_code, c.academic_year_id AS class_academic_year_id,
+                  t.teacher_code, t.status AS teacher_row_status, u.user_code
            FROM school_courses sc
            JOIN schools s ON s.id = sc.school_id
            JOIN classes c ON c.id = sc.class_id
            LEFT JOIN teachers t ON t.id = sc.teacher_id
+           LEFT JOIN users u ON u.id = t.user_id
            WHERE sc.school_id = $2
              AND (sc.id::text = $1 OR sc.course_code = $1 OR sc.legacy_json_id = $1)
            LIMIT 1`,
@@ -364,7 +367,7 @@ function createPedagogyPgStore(repo) {
         let sql = `${WEEKLY_SLOT_SELECT} WHERE w.id::text = $1`;
         const schoolCode = asTrimmed(principal?.schoolCode);
         if (schoolCode && schoolCode !== "*") {
-          sql += " AND s.school_code = $2";
+          sql += " AND upper(s.login_code) = $2";
           params.push(schoolCode.toUpperCase());
         }
         sql += " LIMIT 1";
@@ -399,7 +402,7 @@ function createPedagogyPgStore(repo) {
         const sql = `
           SELECT sc.id, sc.status,
                  c.id AS class_id, c.name AS class_name, c.academic_year_id,
-                 sub.name AS subject_name, t.teacher_code,
+                 sub.name AS subject_name, t.teacher_code, u.user_code,
                  NULLIF(TRIM(CONCAT(COALESCE(u.first_name, ''), ' ', COALESCE(u.last_name, ''))), '') AS teacher_name
           FROM school_courses sc
           JOIN schools s ON s.id = sc.school_id
@@ -421,7 +424,7 @@ function createPedagogyPgStore(repo) {
         };
         if (filters.schoolId) push("w.school_id = ?", filters.schoolId);
         if (filters.schoolCode && filters.schoolCode !== "*") {
-          push("s.school_code = ?", asTrimmed(filters.schoolCode).toUpperCase());
+          push("upper(s.login_code) = ?", asTrimmed(filters.schoolCode).toUpperCase());
         }
         if (filters.academicYearId) push("w.academic_year_id::text = ?", filters.academicYearId);
         if (filters.classId) push("w.class_id::text = ?", filters.classId);
@@ -471,11 +474,17 @@ function createPedagogyPgStore(repo) {
             JSON.stringify(payload.profile ?? {}),
           ],
         );
-        const school = await one("SELECT school_code FROM schools WHERE id = $1", [row.school_id]);
+        const school = await one("SELECT login_code AS school_code FROM schools WHERE id = $1", [row.school_id]);
         const klass = await one("SELECT name FROM classes WHERE id = $1", [row.class_id]);
         const subject = await one("SELECT name FROM subjects WHERE id = $1", [row.subject_id]);
         const teacher = row.teacher_id
-          ? await one("SELECT teacher_code FROM teachers WHERE id = $1", [row.teacher_id])
+          ? await one(
+              `SELECT t.teacher_code, u.user_code
+               FROM teachers t
+               LEFT JOIN users u ON u.id = t.user_id
+               WHERE t.id = $1`,
+              [row.teacher_id],
+            )
           : null;
         return mapCourseRow({
           ...row,
@@ -483,6 +492,7 @@ function createPedagogyPgStore(repo) {
           class_name: klass?.name,
           subject_name: subject?.name,
           teacher_code: teacher?.teacher_code,
+          user_code: teacher?.user_code,
         });
       },
       async updateCourse(dbId, patch) {
@@ -504,11 +514,17 @@ function createPedagogyPgStore(repo) {
           ],
         );
         if (!row) return null;
-        const school = await one("SELECT school_code FROM schools WHERE id = $1", [row.school_id]);
+        const school = await one("SELECT login_code AS school_code FROM schools WHERE id = $1", [row.school_id]);
         const klass = await one("SELECT name FROM classes WHERE id = $1", [row.class_id]);
         const subject = await one("SELECT name FROM subjects WHERE id = $1", [row.subject_id]);
         const teacher = row.teacher_id
-          ? await one("SELECT teacher_code FROM teachers WHERE id = $1", [row.teacher_id])
+          ? await one(
+              `SELECT t.teacher_code, u.user_code
+               FROM teachers t
+               LEFT JOIN users u ON u.id = t.user_id
+               WHERE t.id = $1`,
+              [row.teacher_id],
+            )
           : null;
         return mapCourseRow({
           ...row,
@@ -516,6 +532,7 @@ function createPedagogyPgStore(repo) {
           class_name: klass?.name,
           subject_name: subject?.name,
           teacher_code: teacher?.teacher_code,
+          user_code: teacher?.user_code,
         });
       },
       async archiveCourse(dbId) {
@@ -562,7 +579,7 @@ function createPedagogyPgStore(repo) {
             JSON.stringify(payload.profile ?? {}),
           ],
         );
-        const school = await one("SELECT school_code FROM schools WHERE id = $1", [row.school_id]);
+        const school = await one("SELECT login_code AS school_code FROM schools WHERE id = $1", [row.school_id]);
         return mapScheduleRow({ ...row, school_code: school?.school_code });
       },
       async updateScheduleSlot(dbId, patch) {
@@ -595,7 +612,7 @@ function createPedagogyPgStore(repo) {
           ],
         );
         if (!row) return null;
-        const school = await one("SELECT school_code FROM schools WHERE id = $1", [row.school_id]);
+        const school = await one("SELECT login_code AS school_code FROM schools WHERE id = $1", [row.school_id]);
         return mapScheduleRow({ ...row, school_code: school?.school_code });
       },
       async deleteScheduleSlot(dbId) {
@@ -604,14 +621,14 @@ function createPedagogyPgStore(repo) {
       async getScheduleById(id, principal) {
         const params = [asTrimmed(id)];
         let sql = `
-          SELECT css.*, s.school_code
+          SELECT css.*, s.login_code AS school_code
           FROM course_schedule_slots css
           JOIN schools s ON s.id = css.school_id
           WHERE css.id::text = $1 OR css.legacy_json_id = $1
         `;
         const schoolCode = asTrimmed(principal?.schoolCode);
         if (schoolCode && schoolCode !== "*") {
-          sql += " AND s.school_code = $2";
+          sql += " AND upper(s.login_code) = $2";
           params.push(schoolCode.toUpperCase());
         }
         sql += " LIMIT 1";
@@ -625,8 +642,8 @@ function createPedagogyPgStore(repo) {
           ...options,
         });
         const mappedRow = await one(
-          `SELECT e.*, s.school_code, c.name AS class_name, c.class_code, sub.name AS subject_name,
-                  t.teacher_code, tm.name AS term_name, tm.academic_year_id,
+          `SELECT e.*, s.login_code AS school_code, c.name AS class_name, c.class_code, sub.name AS subject_name,
+                  t.teacher_code, u.user_code, tm.name AS term_name, tm.academic_year_id,
                   ay.name AS academic_year_name,
                   NULLIF(TRIM(CONCAT(COALESCE(u.first_name, ''), ' ', COALESCE(u.last_name, ''))), '') AS teacher_name,
                   et.name AS evaluation_type_name, et.code AS evaluation_type_code
@@ -1178,8 +1195,8 @@ function createPedagogyPgStore(repo) {
     async listProjection() {
       const [evaluationRows, gradeRows, attendanceRows, courseRows, scheduleRows] = await Promise.all([
         repo.all(`
-          SELECT e.*, s.school_code, c.name AS class_name, c.class_code, sub.name AS subject_name,
-                 t.teacher_code, tm.name AS term_name, tm.academic_year_id,
+          SELECT e.*, s.login_code AS school_code, c.name AS class_name, c.class_code, sub.name AS subject_name,
+                 t.teacher_code, u.user_code, tm.name AS term_name, tm.academic_year_id,
                  ay.name AS academic_year_name,
                  NULLIF(TRIM(CONCAT(COALESCE(u.first_name, ''), ' ', COALESCE(u.last_name, ''))), '') AS teacher_name,
                  et.name AS evaluation_type_name, et.code AS evaluation_type_code
@@ -1195,8 +1212,8 @@ function createPedagogyPgStore(repo) {
           ORDER BY e.created_at DESC
         `),
         repo.all(`
-          SELECT g.*, s.school_code, st.student_code, c.name AS class_name, sub.name AS subject_name,
-                 t.teacher_code, tm.name AS term_name, e.title AS evaluation_title,
+          SELECT g.*, s.login_code AS school_code, st.student_code, c.name AS class_name, sub.name AS subject_name,
+                 t.teacher_code, tu.user_code, tm.name AS term_name, e.title AS evaluation_title,
                  e.max_score AS evaluation_max_score, e.coefficient AS evaluation_coefficient,
                  e.evaluation_type AS evaluation_type_pg, e.legacy_json_id AS evaluation_legacy_id,
                  e.id AS evaluation_uuid, e.evaluation_type_id,
@@ -1207,13 +1224,14 @@ function createPedagogyPgStore(repo) {
           JOIN classes c ON c.id = g.class_id
           JOIN subjects sub ON sub.id = g.subject_id
           JOIN teachers t ON t.id = g.teacher_id
+          LEFT JOIN users tu ON tu.id = t.user_id
           JOIN terms tm ON tm.id = g.term_id
           LEFT JOIN evaluations e ON e.id = g.evaluation_id
           LEFT JOIN evaluation_types et ON et.id = e.evaluation_type_id
           ORDER BY g.updated_at DESC
         `),
         repo.all(`
-          SELECT a.*, s.school_code, st.student_code, c.name AS class_name, t.teacher_code
+          SELECT a.*, s.login_code AS school_code, st.student_code, c.name AS class_name, t.teacher_code
           FROM attendance a
           JOIN schools s ON s.id = a.school_id
           JOIN students st ON st.id = a.student_id
@@ -1222,12 +1240,14 @@ function createPedagogyPgStore(repo) {
           ORDER BY a.attendance_date DESC
         `),
         repo.all(`
-          SELECT sc.*, s.school_code, c.name AS class_name, sub.name AS subject_name, t.teacher_code
+          SELECT sc.*, s.login_code AS school_code, c.name AS class_name, sub.name AS subject_name,
+                 t.teacher_code, u.user_code
           FROM school_courses sc
           JOIN schools s ON s.id = sc.school_id
           JOIN classes c ON c.id = sc.class_id
           JOIN subjects sub ON sub.id = sc.subject_id
           LEFT JOIN teachers t ON t.id = sc.teacher_id
+          LEFT JOIN users u ON u.id = t.user_id
           WHERE sc.status = 'active'
           ORDER BY sc.created_at
         `),
@@ -1312,7 +1332,7 @@ function mapPlanningCourseOption(row) {
     className: row.class_name,
     academicYearId: row.academic_year_id,
     name: row.subject_name,
-    teacherId: row.teacher_code || "",
+    teacherId: row.user_code || "",
     teacherName: row.teacher_name || "",
     status: row.status === "archived" ? "archived" : "active",
   };
@@ -1331,7 +1351,7 @@ function mapCourseRow(row) {
     className: row.class_name,
     name: row.subject_name,
     coefficient: Number(row.coefficient ?? 1),
-    teacherId: row.teacher_code || profile.teacherId || "",
+    teacherId: row.user_code || profile.teacherId || "",
     status: row.status === "archived" ? "Archivé" : "Actif",
     ...profile,
   };

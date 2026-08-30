@@ -5980,7 +5980,7 @@ class PostgresRepository {
       subjectId: evaluation.subject_id,
       subject: subjectName,
       course: subjectName,
-      teacherId: evaluation.teacher_code,
+      teacherId: evaluation.user_code || evaluation.teacher_code,
       teacherName: evaluation.teacher_name || undefined,
       academicYearId: evaluation.academic_year_id,
       academicYear: evaluation.academic_year_name,
@@ -6028,7 +6028,7 @@ class PostgresRepository {
       status: gradeStatus,
       comment: grade.comment ?? "",
       version: Number(grade.version ?? 1),
-      teacherId: grade.teacher_code,
+      teacherId: grade.user_code || grade.teacher_code,
       authorId: grade.updated_by || grade.created_by || undefined,
       enteredAt: this.formatDate(grade.created_at),
       audit: [
