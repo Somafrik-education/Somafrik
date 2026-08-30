@@ -526,7 +526,9 @@ async function main() {
     assert.ok(!crossYear.body.items.some((item) => item.id === ASSIGN_CROSS_YEAR));
     assert.ok(!crossYear.body.items.some((item) => item.academicYearId === ids.yearB));
 
-    // teacher A → user B : assignment visible, teacherUserId null, zéro UUID B
+    // teacher A → user B : L1 JOIN users est tenant-strict (school_id).
+    // La ligne n'entre pas dans le sync. GET historique (LEFT JOIN) la garde
+    // sans projeter l'UUID user B.
     await pool.query(
       `INSERT INTO teachers (id, school_id, user_id, teacher_code, status)
        VALUES ($1, $2, $3, 'TCH-ASG-ORPHAN', 'active')`,
@@ -539,10 +541,12 @@ async function main() {
       [ASSIGN_CROSS_USER, ids.schoolA, TEACHER_ORPHAN_ID, CLASS_A, SUBJECT_A, ids.yearA],
     );
     const crossUser = await sync(adminPrincipal());
-    const orphan = crossUser.body.items.find((item) => item.id === ASSIGN_CROSS_USER);
-    assert.ok(orphan, "assignment teacher A / user B reste listé");
-    assert.equal(orphan.teacherUserId, TEACHER_B_USER_ID);
-    assert.equal(orphan.teacherId, TEACHER_ORPHAN_ID);
+    assert.equal(
+      crossUser.body.items.some((item) => item.id === ASSIGN_CROSS_USER),
+      false,
+      "L1 ne liste pas teacher A / user B (JOIN users tenant-strict)",
+    );
+    assert.ok(!crossUser.body.items.some((item) => String(item.teacherUserId ?? "") === TEACHER_B_USER_ID));
 
     const historicalLeaks = await assignmentsRepo.listBySchoolCode("CD-MA-26-001");
     assert.ok(!historicalLeaks.some((row) => row.id === ASSIGN_CROSS_CLASS));
