@@ -71,6 +71,13 @@ function assertSourceGuards() {
   assert.doesNotMatch(panel, /Créer la classe|Enregistrer l['’]appel|Saisir un paiement/);
   assert.doesNotMatch(panel, /\/support/);
 
+  const viteConfig = readRepo("web/vite.config.ts");
+  assert.match(viteConfig, /packages\/help-catalog/);
+  assert.doesNotMatch(
+    viteConfig,
+    /packages\/help-catalog[\s\S]{0,80}\/src\/help\//,
+    "ne pas fusionner web/src/help dans le chunk catalogue (vitrine)",
+  );
   assert.equal(fs.existsSync(path.join(ROOT, "Mobile/src/help")), false, "HELP-V1B ne doit pas ajouter Mobile/src/help");
   assert.doesNotMatch(readRepo("backend/server.js"), /\/api\/help/);
 

@@ -73,7 +73,10 @@ export default defineConfig(({ mode }) => {
       rollupOptions: {
         output: {
           manualChunks(id) {
-            if (id.includes("packages/help-catalog") || id.includes("/src/help/")) {
+            // Uniquement le package catalogue. Ne pas y coller web/src/help :
+            // HelpHost importe AuthContext/cn, et un chunk partagé ferait
+            // télécharger le catalogue depuis la vitrine et /connexion.
+            if (id.includes("packages/help-catalog")) {
               return "help-catalog";
             }
             if (!id.includes("node_modules")) return;
