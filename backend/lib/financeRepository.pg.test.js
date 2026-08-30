@@ -104,15 +104,18 @@ async function main() {
        VALUES ('RDC', 'CD', '+243', 'CDF') RETURNING id`,
     );
     const schoolA = await pool.query(
-      `INSERT INTO schools (country_id, school_code, name, status)
-       VALUES ($1, 'CD-2026-0001', 'Lycée A', 'active') RETURNING id`,
+      `INSERT INTO schools (country_id, school_code, login_code, name, status)
+       VALUES ($1, 'CD-2026-0001', 'CD-FM-26-001', 'Lycée A', 'active') RETURNING id, login_code`,
       [country.rows[0].id],
     );
     const schoolB = await pool.query(
-      `INSERT INTO schools (country_id, school_code, name, status)
-       VALUES ($1, 'BI-2026-0001', 'Lycée B', 'active') RETURNING id`,
+      `INSERT INTO schools (country_id, school_code, login_code, name, status)
+       VALUES ($1, 'BI-2026-0001', 'BI-FM-26-001', 'Lycée B', 'active') RETURNING id, login_code`,
       [country.rows[0].id],
     );
+    const schoolALogin = String(schoolA.rows[0].login_code ?? "CD-FM-26-001").trim().toUpperCase();
+    const schoolBLogin = String(schoolB.rows[0].login_code ?? "BI-FM-26-001").trim().toUpperCase();
+    assert.ok(schoolALogin && schoolBLogin, "login_code finance management manquant");
     const year = await pool.query(
       `INSERT INTO academic_years (school_id, name, status)
        VALUES ($1, '2025-2026', 'open') RETURNING id`,
@@ -149,7 +152,7 @@ async function main() {
     const store = createFinancePgStore(repo);
     const admin = {
       role: "Admin School",
-      schoolCode: "CD-2026-0001",
+      schoolCode: schoolALogin,
       firstName: "Admin",
       lastName: "A",
       sub: user.rows[0].id,
@@ -200,11 +203,11 @@ async function main() {
         items: [{ obligationId: inscription.id, feeType: "Inscription", amount: 40_000 }],
         method: "Espèces",
         date: "2026-08-13",
-        schoolCode: "BI-2026-0001",
+        schoolCode: schoolBLogin,
       },
       admin,
     );
-    assert.match(payment.reference, /^CD-2026-0001-\d{4}-PAY-/);
+    assert.match(payment.reference, new RegExp(`^${schoolALogin}-\\d{4}-PAY-`));
     const paid = (await store.listFinanceStudentFees())[0];
     assert.equal(Number(paid.balance), 0);
 
@@ -228,7 +231,7 @@ async function main() {
             method: "Espèces",
             date: "2026-08-13",
           },
-          { role: "Admin School", schoolCode: "BI-2026-0001" },
+          { role: "Admin School", schoolCode: schoolBLogin },
         ),
       (error) => error.code === FINANCE_ERROR.STUDENT_NOT_FOUND || error.code === FINANCE_ERROR.TENANT_MISMATCH,
     );
@@ -532,7 +535,7 @@ async function main() {
       [
         schoolA.rows[0].id,
         rateStudent.rows[0].id,
-        JSON.stringify({ studentId: "CD-2026-0001-STU-RATE", status: "Payé", feeType: "Scolarité", schoolCode: "CD-2026-0001" }),
+        JSON.stringify({ studentId: "CD-2026-0001-STU-RATE", status: "Payé", feeType: "Scolarité", schoolCode: schoolALogin }),
       ],
     );
     const beforeRecon = (await store.listFinanceStudentFees(admin)).find(
@@ -602,7 +605,7 @@ async function main() {
           studentId: "CD-2026-0001-STU-CONC",
           status: "Payé",
           feeType: "Minerval",
-          schoolCode: "CD-2026-0001",
+          schoolCode: schoolALogin,
         }),
       ],
     );
@@ -656,12 +659,12 @@ async function main() {
       [
         schoolB.rows[0].id,
         studentB.rows[0].id,
-        JSON.stringify({ studentId: "CD-2026-0001-STU-RATE", schoolCode: "BI-2026-0001" }),
+        JSON.stringify({ studentId: "CD-2026-0001-STU-RATE", schoolCode: schoolBLogin }),
       ],
     );
     const listedA = await store.listFinanceStudentFees(admin);
     assert.equal(listedA.some((row) => String(row.dbId) === String(collide.rows[0].id)), false);
-    assert.equal(listedA.every((row) => row.schoolCode === "CD-2026-0001"), true);
+    assert.equal(listedA.every((row) => row.schoolCode === schoolALogin), true);
     const platform = await store.listFinanceStudentFees({
       role: "Super Administrateur Somafrik",
       schoolCode: "*",
@@ -707,7 +710,7 @@ async function main() {
 
     const optionsB = await store.listPaymentStudentOptions({
       role: "Comptable",
-      schoolCode: "BI-2026-0001",
+      schoolCode: schoolBLogin,
     });
     assert.equal(optionsB.length, 1);
     assert.equal(optionsB[0].studentCode, "BI-2026-0001-STU-0001");
@@ -715,7 +718,7 @@ async function main() {
     assert.equal(optionsB[0].classCode, "CLS-B1");
 
     const gridsA = await store.listFinanceFeeGrids(admin);
-    assert.equal(gridsA.every((row) => row.schoolCode === "CD-2026-0001"), true);
+    assert.equal(gridsA.every((row) => row.schoolCode === schoolALogin), true);
     assert.equal(
       gridsA.some((row) => row.id === "GRID-B" || row.id === "GRID-B-ISO" || row.className === "1ère B"),
       false,
@@ -731,7 +734,7 @@ async function main() {
     assert.equal(methodsA.find((row) => row.methodCode === "cash")?.active, true);
     assert.equal(methodsA.find((row) => row.methodCode === "mobile_money")?.active, false);
 
-    const methodsB = await store.listSchoolPaymentMethods({ role: "Admin School", schoolCode: "BI-2026-0001" });
+    const methodsB = await store.listSchoolPaymentMethods({ role: "Admin School", schoolCode: schoolBLogin });
     assert.equal(methodsB.every((row) => row.persisted === false), true, "B n'hérite pas des moyens A");
 
     const catalogA = await store.getFinanceCatalog(admin);

@@ -471,7 +471,7 @@ async function main() {
       },
     });
     assert.equal(secretaryPay.status, 201, JSON.stringify(secretaryPay.data));
-    assert.match(String(secretaryPay.data.reference), /^CD-2026-0001-\d{4}-PAY-/);
+    assert.match(String(secretaryPay.data.reference), /^CD-IN-26-001-\d{4}-PAY-/);
     assert.equal(Number(secretaryPay.data.allocatedAmount || 0), 0);
     assert.equal(Number(secretaryPay.data.unallocatedAmount), 1);
     assert.equal(secretaryPay.data.status, "Non imputé");
