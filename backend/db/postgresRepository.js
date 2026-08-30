@@ -1849,7 +1849,7 @@ class PostgresRepository {
       `),
       this.all("SELECT * FROM subjects ORDER BY created_at, subject_code"),
       this.all(`
-        SELECT t.*, s.school_code, u.first_name, u.last_name, u.email, u.phone,
+        SELECT t.*, s.school_code, u.user_code, u.first_name, u.last_name, u.email, u.phone,
                u.password_hash, u.pin_hash, u.birth_date, u.gender, u.must_change_password
         FROM teachers t
         JOIN schools s ON s.id = t.school_id
@@ -1860,7 +1860,7 @@ class PostgresRepository {
         SELECT ta.id, ta.school_id, ta.teacher_id, ta.class_id, ta.subject_id,
                ta.academic_year_id, ta.assignment_role, ta.status,
                ta.created_at, ta.updated_at,
-               s.school_code, t.teacher_code, u.first_name, u.last_name,
+               s.school_code, t.teacher_code, u.user_code, u.first_name, u.last_name,
                cl.class_code, cl.name AS class_name,
                sub.subject_code, sub.name AS subject_name,
                ay.name AS academic_year_name
@@ -2886,7 +2886,10 @@ class PostgresRepository {
           : undefined,
         findTeacherByCode: (schoolId, code) =>
           this.one(
-            `SELECT * FROM teachers WHERE school_id = $1 AND (${sqlTeacherPublicCodeEquals("teachers", "$2")} OR id::text = $2) LIMIT 1`,
+            `SELECT t.*
+             FROM teachers t
+             LEFT JOIN users u ON u.id = t.user_id
+             WHERE t.school_id = $1 AND (${sqlTeacherPublicCodeEquals("u", "$2")} OR t.id::text = $2) LIMIT 1`,
             [schoolId, code],
           ),
         ensureTeacher: ensure
@@ -2931,8 +2934,9 @@ class PostgresRepository {
                 `SELECT t.*
                  FROM teachers t
                  JOIN teacher_assignments ta ON ta.teacher_id = t.id
+                 LEFT JOIN users u ON u.id = t.user_id
                  WHERE t.school_id = $1
-                   AND ${sqlTeacherPublicCodeEquals("t", "$2")}
+                   AND ${sqlTeacherPublicCodeEquals("u", "$2")}
                    AND ta.class_id = $3
                    AND ta.subject_id = $4
                    AND ta.status = 'active'
@@ -3960,7 +3964,10 @@ class PostgresRepository {
     }
 
     let teacher = await this.one(
-      `SELECT * FROM teachers WHERE school_id = $1 AND (${sqlTeacherPublicCodeEquals("teachers", "$2")} OR id::text = $2) LIMIT 1`,
+      `SELECT t.*
+       FROM teachers t
+       LEFT JOIN users u ON u.id = t.user_id
+       WHERE t.school_id = $1 AND (${sqlTeacherPublicCodeEquals("u", "$2")} OR t.id::text = $2) LIMIT 1`,
       [school.id, validation.teacherCode],
     );
     if (!teacher) {
@@ -4472,8 +4479,8 @@ class PostgresRepository {
   }
 
   /**
-   * Clés enseignant pour filtres lecture : session UUID + teacher_code lié.
-   * Pas de projection BackOffice, pas d'alias ENS.
+   * Clés enseignant pour filtres lecture : UUID session + UUID fiche.
+   * Pas de teacher_code, pas de projection BackOffice, pas d'alias ENS.
    */
   async collectTeacherLookupKeysForPrincipal(principal = {}, schoolId = null) {
     const keys = new Set();
@@ -4482,13 +4489,11 @@ class PostgresRepository {
       if (text) keys.add(text);
     };
     add(principal.sub);
-    add(principal.publicId);
-    add(principal.identifier);
 
     const principalSub = String(principal.sub ?? "").trim();
     if (schoolId && principalSub) {
       const byUser = await this.one(
-        `SELECT t.id, t.teacher_code, t.user_id
+        `SELECT t.id, t.user_id
          FROM teachers t
          WHERE t.school_id = $1
            AND t.user_id::text = $2
@@ -4496,7 +4501,6 @@ class PostgresRepository {
         [schoolId, principalSub],
       );
       add(byUser?.id);
-      add(byUser?.teacher_code);
       add(byUser?.user_id);
     }
 
@@ -5959,21 +5963,24 @@ class PostgresRepository {
   }
 
   mapTeacher(teacher, gradeRows, assignmentRows = []) {
+    const publicIdentity = String(teacher.user_code ?? "").trim().toUpperCase();
     const officialAssignments = assignmentRows
-      .filter((assignment) => assignment.teacher_code === teacher.teacher_code)
+      .filter((assignment) =>
+        assignment.user_code === teacher.user_code || assignment.teacher_id === teacher.id,
+      )
       .map((assignment) => ({ className: assignment.class_name, course: assignment.subject_name }));
     const gradeAssignments = gradeRows
-      .filter((grade) => grade.teacher_code === teacher.teacher_code)
+      .filter((grade) => grade.teacher_id === teacher.id || grade.user_code === teacher.user_code)
       .map((grade) => ({ className: grade.class_name, course: grade.subject_name }));
     const assignments = this.uniqueBy([...officialAssignments, ...gradeAssignments], "className", "course");
     return {
-      id: teacher.teacher_code,
+      id: publicIdentity,
       schoolId: teacher.school_id,
-      schoolCode: teacher.school_code,
-      publicId: teacher.teacher_code,
+      schoolCode: teacher.login_code || teacher.school_code,
+      publicId: publicIdentity,
       userId: teacher.user_id,
-      identifier: String(teacher.teacher_code ?? "").trim().toUpperCase(),
-      name: [teacher.first_name, teacher.last_name].filter(Boolean).join(" ") || teacher.teacher_code,
+      identifier: publicIdentity,
+      name: [teacher.first_name, teacher.last_name].filter(Boolean).join(" ") || publicIdentity,
       firstName: teacher.first_name,
       lastName: teacher.last_name ?? "",
       gender: teacher.gender ?? "",

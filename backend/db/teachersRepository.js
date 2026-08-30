@@ -67,7 +67,7 @@ function formatIsoDate(value) {
 function mapActiveAssignments(assignmentRows, teacherCode) {
   const code = String(teacherCode ?? "");
   return (assignmentRows ?? [])
-    .filter((row) => teacherPublicCodesMatch(row.teacher_code, code))
+    .filter((row) => teacherPublicCodesMatch(row.user_code ?? row.teacher_code, code))
     .map((row) => ({
       id: row.id ?? null,
       classId: row.class_id ?? row.classId ?? null,
@@ -85,7 +85,7 @@ function mapActiveAssignments(assignmentRows, teacherCode) {
  * @param {any[]} [assignmentRows]
  */
 function mapTeacherRow(row, assignmentRows = []) {
-  const teacherCode = String(row.teacher_code ?? "").trim().toUpperCase();
+  const teacherCode = String(row.user_code ?? "").trim().toUpperCase();
   const firstName = row.first_name ?? "";
   const lastName = row.last_name ?? "";
   const identifier = teacherCode;
@@ -153,6 +153,7 @@ function createTeachersRepository(db) {
     if (teacherCode) {
       return reader.all(
         `SELECT ta.id,
+                u.user_code,
                 t.teacher_code,
                 cl.id AS class_id,
                 cl.name AS class_name,
@@ -162,10 +163,11 @@ function createTeachersRepository(db) {
                 ta.status
          FROM teacher_assignments ta
          JOIN teachers t ON t.id = ta.teacher_id
+         JOIN users u ON u.id = t.user_id
          JOIN classes cl ON cl.id = ta.class_id
          JOIN subjects sub ON sub.id = ta.subject_id
          WHERE t.school_id = $1
-           AND ${sqlTeacherPublicCodeEquals("t", "$2")}
+           AND ${sqlTeacherPublicCodeEquals("u", "$2")}
            AND ta.status = 'active'
          ORDER BY cl.name, sub.name`,
         [schoolId, teacherCode],
@@ -173,6 +175,7 @@ function createTeachersRepository(db) {
     }
     return reader.all(
       `SELECT ta.id,
+              u.user_code,
               t.teacher_code,
               cl.id AS class_id,
               cl.name AS class_name,
@@ -182,11 +185,12 @@ function createTeachersRepository(db) {
               ta.status
        FROM teacher_assignments ta
        JOIN teachers t ON t.id = ta.teacher_id
+       JOIN users u ON u.id = t.user_id
        JOIN classes cl ON cl.id = ta.class_id
        JOIN subjects sub ON sub.id = ta.subject_id
        WHERE t.school_id = $1
          AND ta.status = 'active'
-       ORDER BY t.teacher_code, cl.name, sub.name`,
+       ORDER BY u.user_code, cl.name, sub.name`,
       [schoolId],
     );
   }
@@ -311,6 +315,7 @@ function createTeachersRepository(db) {
 
     return mapTeacherRow({
       ...teacher,
+      user_code: user.user_code,
       first_name: user.first_name,
       last_name: user.last_name,
       email: user.email,
@@ -340,6 +345,7 @@ function createTeachersRepository(db) {
                   t.updated_at,
                   s.school_code,
                   s.login_code,
+                  u.user_code,
                   u.first_name,
                   u.last_name,
                   u.email,
@@ -381,6 +387,7 @@ function createTeachersRepository(db) {
                 t.updated_at,
                 s.school_code,
                 s.login_code,
+                u.user_code,
                 u.first_name,
                 u.last_name,
                 u.email,
@@ -391,7 +398,7 @@ function createTeachersRepository(db) {
          FROM teachers t
          JOIN schools s ON s.id = t.school_id
          LEFT JOIN users u ON u.id = t.user_id
-         WHERE (${sqlTeacherPublicCodeEquals("t", "$1")} OR t.id::text = $1) AND t.school_id = $2
+         WHERE (${sqlTeacherPublicCodeEquals("u", "$1")} OR t.id::text = $1) AND t.school_id = $2
            AND COALESCE(t.status, 'active') NOT IN ('deleted', 'archived')
            AND COALESCE(u.status, 'active') NOT IN ('deleted', 'archived')
          LIMIT 1`,

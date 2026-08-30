@@ -51,9 +51,10 @@ test("B : 0 school_course → insert ; déjà présent → skip ; collision → 
   assert.equal(ambiguous.code, CANONICAL_SCHOOL_COURSE_AMBIGUOUS);
 });
 
-test("prédicat SQL enseignant : exact, sans legacy_teacher_code", () => {
+test("prédicat SQL enseignant : exact, sans teacher_code ni legacy", () => {
   const sql = sqlTeacherIdentityEquals("t", "u", "$2");
   assert.doesNotMatch(sql, /legacy_teacher_code/);
+  assert.doesNotMatch(sql, /teacher_code/);
   assert.doesNotMatch(sql, /ENS-/);
   assert.match(sql, /u\.user_code/);
 });

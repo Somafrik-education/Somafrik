@@ -226,8 +226,11 @@ function createPedagogyPgStore(repo) {
         const key = asTrimmed(teacherKey);
         if (!key) return null;
         return one(
-          `SELECT * FROM teachers
-           WHERE school_id = $1 AND (${sqlTeacherPublicCodeEquals("teachers", "$2")} OR id::text = $2)
+          `SELECT t.*
+           FROM teachers t
+           LEFT JOIN users u ON u.id = t.user_id
+           WHERE t.school_id = $1
+             AND (${sqlTeacherPublicCodeEquals("u", "$2")} OR t.id::text = $2)
            LIMIT 1`,
           [schoolId, key],
         );
@@ -1004,6 +1007,7 @@ function createPedagogyPgStore(repo) {
       }) {
         const rows = await all(
           `SELECT t.id, t.teacher_code, t.speciality, t.status,
+                  u.user_code,
                   NULLIF(TRIM(CONCAT(COALESCE(u.first_name, ''), ' ', COALESCE(u.last_name, ''))), '') AS teacher_name,
                   EXISTS (
                     SELECT 1 FROM course_schedule_weekly_slots w
@@ -1061,8 +1065,8 @@ function createPedagogyPgStore(repo) {
           const subjectMismatch = Boolean(subjectNorm && specialityNorm && !specialityNorm.includes(subjectNorm) && !subjectNorm.includes(specialityNorm));
           return {
             teacherId: row.id,
-            teacherCode: row.teacher_code,
-            name: row.teacher_name || row.teacher_code,
+            teacherCode: row.user_code || row.teacher_code,
+            name: row.teacher_name || row.user_code || row.teacher_code,
             speciality,
             courses: grouped.get(String(row.id)) || [],
             availability: conflict ? "schedule_conflict" : subjectMismatch ? "subject_mismatch" : "available",

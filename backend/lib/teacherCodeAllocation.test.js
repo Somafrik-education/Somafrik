@@ -41,15 +41,18 @@ test("teacherPublicCodesMatch est exact — aucun suffixe ENS", () => {
   assert.equal(teacherPublicCodesMatch("CD-IN-JPM-26-00001", "JPM-26-00001"), false);
 });
 
-test("SQL enseignant : égalité exacte, pas de legacy_teacher_code ni right()", () => {
-  const publicSql = sqlTeacherPublicCodeEquals("t", "$2");
+test("SQL enseignant : user_code + UUID, jamais teacher_code ni right()", () => {
+  const publicSql = sqlTeacherPublicCodeEquals("u", "$2");
   assert.equal(publicSql.includes("legacy_teacher_code"), false);
+  assert.equal(publicSql.includes("teacher_code"), false);
   assert.equal(publicSql.includes("right("), false);
-  assert.match(publicSql, /t\.teacher_code = \$2/);
+  assert.match(publicSql, /u\.user_code = \$2/);
 
   const identity = sqlTeacherIdentityEquals("t", "u", "$2");
   assert.equal(identity.includes("legacy_teacher_code"), false);
+  assert.equal(identity.includes("teacher_code"), false);
   assert.equal(identity.includes("ENS-"), false);
   assert.match(identity, /t\.id::text = \$2/);
+  assert.match(identity, /u\.id::text = \$2/);
   assert.match(identity, /u\.user_code = \$2/);
 });

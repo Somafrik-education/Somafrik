@@ -67,12 +67,17 @@ function createMemoryDb() {
         teachers.push(row);
         return { ...row };
       }
-      if (text.includes("FROM TEACHERS T") && text.includes("T.TEACHER_CODE") && text.includes("T.SCHOOL_ID")) {
-        const teacher = teachers.find((row) => row.teacher_code === params[0] && row.school_id === params[1]);
+      if (text.includes("FROM TEACHERS T") && text.includes("T.SCHOOL_ID") && (text.includes("U.USER_CODE") || text.includes("T.ID::TEXT"))) {
+        const teacher = teachers.find((row) => {
+          if (row.school_id !== params[1]) return false;
+          const user = users.find((item) => item.id === row.user_id);
+          return row.id === params[0] || user?.user_code === params[0];
+        });
         if (!teacher) return null;
         const user = users.find((row) => row.id === teacher.user_id);
         return {
           ...teacher,
+          user_code: user?.user_code,
           school_code: [...schools.values()].find((s) => s.id === teacher.school_id)?.school_code,
           login_code: [...schools.values()].find((s) => s.id === teacher.school_id)?.login_code,
           first_name: user?.first_name,
@@ -98,6 +103,7 @@ function createMemoryDb() {
             const user = users.find((row) => row.id === teacher.user_id);
             return {
               ...teacher,
+              user_code: user?.user_code,
               school_code: [...schools.values()].find((s) => s.id === teacher.school_id)?.school_code,
               login_code: [...schools.values()].find((s) => s.id === teacher.school_id)?.login_code,
               first_name: user?.first_name,
@@ -184,6 +190,7 @@ async function main() {
   assert.equal(created.identifier, "CD-IN-AD-26-00001");
   assert.equal(created.teacherCode, "CD-IN-AD-26-00001");
   assert.equal(created.publicId, created.teacherCode);
+  assert.equal(created.schoolCode, "CD-IN-26-001");
   assert.equal(created.mustChangePassword, true);
   assert.equal(db._users.length, 1);
   assert.equal(db._teachers.length, 1);

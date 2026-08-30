@@ -1,15 +1,15 @@
 "use strict";
 
 /**
- * Allocation et lookup enseignant V2 — identité canonique uniquement.
+ * Allocation enseignant V2 — une seule autorité stockée.
  *
- * teacher_code = user_code = identity_code
- *   = {ISO}-{ETAB}-{INITIALES}-{YY}-{SEQ5}
+ * users.user_code = {ISO}-{ETAB}-{INITIALES}-{YY}-{SEQ5}
  *   ex. CD-IN-JPM-26-00001
  *
- * Login métier = cette même chaîne. Jamais ENS-####.
- * Lookup exact : UUID teacher, UUID user, teacher_code, user_code.
- * Aucun suffixe, aucun legacy_teacher_code, aucun alias.
+ * teachers.teacher_code = colonne de transition (dual-write B/C, DROP Lot D).
+ * Identité publique = users.user_code via teachers.user_id (JOIN).
+ * Lookup : UUID teacher, UUID user, users.user_code. Jamais teacher_code.
+ * Jamais ENS-####, jamais suffixe, jamais legacy_teacher_code.
  */
 
 const {
@@ -129,35 +129,33 @@ function teacherPublicCodesMatch(stored, lookup) {
   return a === b;
 }
 
-function sqlTeacherPublicCodeEquals(alias, param) {
-  return `${alias}.teacher_code = ${param}`;
+function sqlTeacherPublicCodeEquals(userAlias, param) {
+  return `${userAlias}.user_code = ${param}`;
 }
 
-function sqlTeacherPublicCodeEqualsAny(alias, param) {
-  return `${alias}.teacher_code = ANY(${param})`;
+function sqlTeacherPublicCodeEqualsAny(userAlias, param) {
+  return `${userAlias}.user_code = ANY(${param})`;
 }
 
 function sqlTeacherIdentityEquals(teacherAlias, userAlias, param) {
-  const userPart = userAlias
-    ? `OR ${userAlias}.id::text = ${param}
-       OR ${userAlias}.user_code = ${param}`
-    : "";
+  if (!userAlias) {
+    throw new Error("sqlTeacherIdentityEquals requires a users alias — identity is users.user_code");
+  }
   return `(
     ${teacherAlias}.id::text = ${param}
-    OR ${sqlTeacherPublicCodeEquals(teacherAlias, param)}
-    ${userPart}
+    OR ${userAlias}.id::text = ${param}
+    OR ${sqlTeacherPublicCodeEquals(userAlias, param)}
   )`;
 }
 
 function sqlTeacherIdentityEqualsAny(teacherAlias, userAlias, param) {
-  const userPart = userAlias
-    ? `OR ${userAlias}.id::text = ANY(${param})
-       OR ${userAlias}.user_code = ANY(${param})`
-    : "";
+  if (!userAlias) {
+    throw new Error("sqlTeacherIdentityEqualsAny requires a users alias — identity is users.user_code");
+  }
   return `(
     ${teacherAlias}.id::text = ANY(${param})
-    OR ${sqlTeacherPublicCodeEqualsAny(teacherAlias, param)}
-    ${userPart}
+    OR ${userAlias}.id::text = ANY(${param})
+    OR ${sqlTeacherPublicCodeEqualsAny(userAlias, param)}
   )`;
 }
 

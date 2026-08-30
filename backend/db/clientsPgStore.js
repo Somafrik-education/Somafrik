@@ -703,8 +703,9 @@ function createClientsPgStore(repo) {
         const row = await one(
           `SELECT t.user_id
            FROM teachers t
+           LEFT JOIN users u ON u.id = t.user_id
            WHERE t.school_id = $1
-             AND (t.id::text = $2 OR t.teacher_code = $2 OR t.user_id::text = $2)
+             AND (t.id::text = $2 OR t.user_id::text = $2 OR u.user_code = $2)
            LIMIT 1`,
           [schoolId, asTrimmed(teacherRef)],
         );

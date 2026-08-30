@@ -1,34 +1,50 @@
 # ID-CANONICAL-01B — Autorité PostgreSQL et Auth
 
-**Base Lot A :** `91e1827671df31443899355e5422c02d2b83ea01`  
-**Base develop :** `f2543cae12c77f83950072fc69b2ec7a1dfb7a29`  
-**Statut :** Draft — pas Ready, pas merge.
+**Base develop :** `415fc3af51feab7f5ee0f0f13de16aba429548da` (#403 mergée)  
+**Statut :** Draft — pas Ready, pas merge. Contrat figé par #403.
+
+## Contrat (figé Lot A)
+
+```text
+schools.id         = UUID
+schools.login_code = seule identité publique
+schools.school_code = DELETE final D
+
+teachers.id / school_id / user_id → users.id
+identité publique enseignant = users.user_code via JOIN
+legacy_teacher_code = DELETE B (DROP 20260903)
+teacher_code        = DELETE D (dual-write transition B/C)
+
+resolveTeacherPgIdForPrincipal
+  = principal.sub UUID → teachers.user_id → teachers.id
+Aucun lookup par teacher_code.
+```
 
 ## Changements runtime
 
-| Zone | Avant | Après |
-| --- | --- | --- |
-| Allocation enseignant | `ENS-####` + `{school}-ENS-####` | `{ISO}-{ETAB}-{INITIALES}-{YY}-{SEQ5}` unique |
-| Lookup SQL | `teacher_code OR legacy_teacher_code OR suffixe` | égalité exacte UUID / `teacher_code` / `user_code` |
-| `resolveTeacherPgIdForPrincipal` | multi-clés + projection BO | `teachers.user_id = principal.sub` |
-| Auth | `ENS-0001`, `CD-2026-0001`, aliases école | login V2 uniquement ; legacy → 401 |
-| Schéma | `legacy_teacher_code` | `DROP COLUMN` (`20260903`) |
-| Reconcile boot | réécrit ENS → composite + alias | plus de rewrite code ; school_courses UUID only |
+| Zone | Après |
+| --- | --- |
+| Allocation | `{ISO}-{ETAB}-{INITIALES}-{YY}-{SEQ5}` écrit sur `users.user_code` ; dual-write `teachers.teacher_code` (transition) |
+| Lookup SQL | UUID teacher / UUID user / `users.user_code` uniquement |
+| Session enseignant | `teachers.user_id = principal.sub` |
+| Auth | login V2 uniquement ; `ENS-####`, composite, `CD-2026-0001` → 401 |
+| Schéma | `DROP legacy_teacher_code` |
+| Reconcile boot | plus de rewrite code ; `school_courses` UUID only |
+| API | `teacherCode` / `publicId` = projection de `users.user_code` |
 
 ## Tests
 
 - `backend/lib/teacherCodeAllocation.test.js`
-- `backend/lib/authCanonicalIdentity.test.js` (canonique 200 ; ENS / composite / autre tenant / `CD-2026-0001` → 401)
+- `backend/lib/authCanonicalIdentity.test.js`
 - `backend/lib/teacherCourseCanonicalReconcile.test.js`
-- Notes #402 : `resolveTeacherPgIdForPrincipal` toujours sur le chemin write ; plus de JWT/BO.
+- `backend/lib/teachersRepository.test.js`
+- Notes #402 : `resolveTeacherPgIdForPrincipal` sur le chemin write
 
-## Résidus reportés (volontaires, non masqués)
+## Résidus reportés (volontaires)
 
-- `getSchoolByCode` PG accepte encore `school_code` interne **ou** `login_code` (fixtures PG isolées).
-- Nombreux `*.pg.test.js` Web/Mobile encore écrits avec `ENS-####` / `CD-2026-0001` — Lot C.
-- Fabrication client Web/Mobile (`generateTeacherIdentifiers`) — Lot C.
-- `legacy_json_id` — Lot D.
+- `getSchoolByCode` PG accepte encore `school_code` interne **ou** `login_code` (fixtures PG isolées). Auth refuse `CD-2026-0001`.
+- Nombreux `*.pg.test.js` / Web / Mobile encore écrits avec `ENS-####` / `CD-2026-0001` — Lot C.
+- Fabrication client Web/Mobile — Lot C.
+- `legacy_json_id` + `DROP teachers.teacher_code` + `DROP schools.school_code` — Lot D.
 
-Seed mémoire : tenant = `CD-IN-26-001`, enseignant seed = `CD-IN-JK-26-00001`. Plus de login `ENS-####`.
-
-Aucun fallback n’a été réintroduit pour faire passer un test.
+Seed mémoire : tenant = `CD-IN-26-001`, enseignant = `CD-IN-JK-26-00001`.
