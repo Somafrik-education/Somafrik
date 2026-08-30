@@ -172,14 +172,20 @@ async function seed(pool) {
      VALUES ($1, 'SCH-F8-A', 'École F8 A', 'active'), ($2, 'SCH-F8-B', 'École F8 B', 'active')`,
     [ci.rows[0].id, fr.rows[0].id],
   );
-  const schoolA = (await pool.query(`SELECT id FROM schools WHERE school_code = 'SCH-F8-A'`)).rows[0];
-  const schoolB = (await pool.query(`SELECT id FROM schools WHERE school_code = 'SCH-F8-B'`)).rows[0];
+  const schoolA = (await pool.query(`SELECT id, login_code FROM schools WHERE school_code = 'SCH-F8-A'`)).rows[0];
+  const schoolB = (await pool.query(`SELECT id, login_code FROM schools WHERE school_code = 'SCH-F8-B'`)).rows[0];
   await pool.query(
     `INSERT INTO schools (country_id, school_code, name, status)
      VALUES ($1, 'CI-TRAP-26-001', 'École piège FR préfixe CI', 'active')`,
     [fr.rows[0].id],
   );
-  const schoolTrap = (await pool.query(`SELECT id FROM schools WHERE school_code = 'CI-TRAP-26-001'`)).rows[0];
+  const schoolTrap = (await pool.query(`SELECT id, login_code FROM schools WHERE school_code = 'CI-TRAP-26-001'`)).rows[0];
+  const schoolALogin = String(schoolA.login_code ?? "").trim().toUpperCase();
+  const schoolBLogin = String(schoolB.login_code ?? "").trim().toUpperCase();
+  const schoolTrapLogin = String(schoolTrap.login_code ?? "").trim().toUpperCase();
+  if (!schoolALogin || !schoolBLogin) {
+    throw new Error("login_code F8 manquant après INSERT schools");
+  }
   await pool.query(
     `INSERT INTO academic_years (school_id, name, status)
      SELECT id, '2025-2026', 'open' FROM schools WHERE school_code IN ('SCH-F8-A', 'SCH-F8-B', 'CI-TRAP-26-001')`,
@@ -294,6 +300,9 @@ async function seed(pool) {
   return {
     schoolA: schoolA.id,
     schoolB: schoolB.id,
+    schoolALogin,
+    schoolBLogin,
+    schoolTrapLogin,
     studentCodeA1: studentA1.rows[0].student_code,
     studentCodeA2: studentA2.rows[0].student_code,
     studentCodeB: studentB.rows[0].student_code,
@@ -383,15 +392,15 @@ async function main() {
 
     const accountantA = mintAccess(
       tokens,
-      staleClaims({ sub: ACCOUNTANT_A, schoolCode: "SCH-F8-A", role: "Comptable", roleKeys: ["ACCOUNTANT"] }),
+      staleClaims({ sub: ACCOUNTANT_A, schoolCode: fixture.schoolALogin, role: "Comptable", roleKeys: ["ACCOUNTANT"] }),
     );
     const accountantB = mintAccess(
       tokens,
-      staleClaims({ sub: ACCOUNTANT_B, schoolCode: "SCH-F8-B", role: "Comptable", roleKeys: ["ACCOUNTANT"] }),
+      staleClaims({ sub: ACCOUNTANT_B, schoolCode: fixture.schoolBLogin, role: "Comptable", roleKeys: ["ACCOUNTANT"] }),
     );
     const liveToken = mintAccess(
       tokens,
-      staleClaims({ sub: LIVE_USER, schoolCode: "SCH-F8-A", role: "Comptable", roleKeys: ["ACCOUNTANT"] }),
+      staleClaims({ sub: LIVE_USER, schoolCode: fixture.schoolALogin, role: "Comptable", roleKeys: ["ACCOUNTANT"] }),
     );
 
     const catalog = await request("/finance/catalog", { token: accountantA });
@@ -756,8 +765,8 @@ async function main() {
       staleClaims({
         sub: ACCOUNTANT_A,
         schoolCode: "",
-        effectiveSchoolCode: "SCH-F8-A",
-        effectiveSchoolInternalCode: "SCH-F8-A",
+        effectiveSchoolCode: fixture.schoolALogin,
+        effectiveSchoolInternalCode: fixture.schoolALogin,
         schoolScopeSource: "request",
         role: "Comptable",
         roleKeys: ["ACCOUNTANT"],
@@ -905,8 +914,8 @@ async function main() {
       staleClaims({
         sub: ACCOUNTANT_A,
         schoolCode: "",
-        effectiveSchoolCode: "SCH-F8-A",
-        effectiveSchoolInternalCode: "SCH-F8-A",
+        effectiveSchoolCode: fixture.schoolALogin,
+        effectiveSchoolInternalCode: fixture.schoolALogin,
         schoolScopeSource: "request",
         role: "Super Administrateur Somafrik",
         roleKeys: ["SUPER_ADMIN"],
@@ -999,7 +1008,7 @@ async function main() {
     const countryGridA = await request("/finance/fee-grids", {
       method: "POST",
       token: countryAdminToken,
-      body: { ...gridBody(CLASS_A2, "6ème A2", "XOF"), schoolCode: "SCH-F8-A" },
+      body: { ...gridBody(CLASS_A2, "6ème A2", "XOF"), schoolCode: fixture.schoolALogin },
     });
     assert.equal(
       countryGridA.status,
@@ -1010,7 +1019,7 @@ async function main() {
     const countryGridB = await request("/finance/fee-grids", {
       method: "POST",
       token: countryAdminToken,
-      body: { ...gridBody(CLASS_B, "6ème B", "EUR"), schoolCode: "SCH-F8-B" },
+      body: { ...gridBody(CLASS_B, "6ème B", "EUR"), schoolCode: fixture.schoolBLogin },
     });
     assert.ok(
       [403, 404].includes(countryGridB.status),
@@ -1035,7 +1044,7 @@ async function main() {
     const countryGridTrap = await request("/finance/fee-grids", {
       method: "POST",
       token: countryAdminToken,
-      body: { ...gridBody(CLASS_TRAP, "6ème Piège", "EUR"), schoolCode: "CI-TRAP-26-001" },
+      body: { ...gridBody(CLASS_TRAP, "6ème Piège", "EUR"), schoolCode: fixture.schoolTrapLogin },
     });
     assert.ok(
       [403, 404].includes(countryGridTrap.status),

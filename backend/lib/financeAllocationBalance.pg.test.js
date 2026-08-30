@@ -99,14 +99,16 @@ async function main() {
     );
     const schoolA = await pool.query(
       `INSERT INTO schools (country_id, school_code, name, status)
-       VALUES ($1,'CD-2026-F4A','École F4 A','active') RETURNING id`,
+       VALUES ($1,'CD-2026-F4A','École F4 A','active') RETURNING id, login_code`,
       [country.rows[0].id],
     );
     const schoolB = await pool.query(
       `INSERT INTO schools (country_id, school_code, name, status)
-       VALUES ($1,'CD-2026-F4B','École F4 B','active') RETURNING id`,
+       VALUES ($1,'CD-2026-F4B','École F4 B','active') RETURNING id, login_code`,
       [country.rows[0].id],
     );
+    const schoolALogin = String(schoolA.rows[0].login_code ?? "").trim().toUpperCase();
+    assert.ok(schoolALogin, "login_code école F4 A manquant");
     const yearA = await pool.query(
       `INSERT INTO academic_years (school_id,name,status,is_current)
        VALUES ($1,'2026-2027','open',true) RETURNING id`,
@@ -162,7 +164,7 @@ async function main() {
     const store = createFinancePgStore(createRepo(pool));
     const admin = {
       role: "Admin School",
-      schoolCode: "CD-2026-F4A",
+      schoolCode: schoolALogin,
       firstName: "Admin",
       lastName: "F4",
       sub: user.rows[0].id,

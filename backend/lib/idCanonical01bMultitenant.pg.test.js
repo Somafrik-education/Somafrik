@@ -118,8 +118,10 @@ async function main() {
   }
   try {
     await client.query("BEGIN");
+    const stamp = Date.now().toString().slice(-3);
     const country = await client.query(
-      `INSERT INTO countries (name, iso_code) VALUES ('RDC', $1)
+      `INSERT INTO countries (name, iso_code, phone_code, currency)
+       VALUES ('RDC', $1, '+243', 'CDF')
        ON CONFLICT (iso_code) DO UPDATE SET name = EXCLUDED.name
        RETURNING id`,
       [`T${Date.now().toString().slice(-6)}`],
@@ -129,12 +131,13 @@ async function main() {
     const schoolBId = randomUUID();
     const userAId = randomUUID();
     const userBId = randomUUID();
+    const loginA = `CD-IN-26-${stamp}`;
+    const loginB = `CD-LS-26-${stamp}`;
     await client.query(
       `INSERT INTO schools (id, country_id, school_code, login_code, name)
-       VALUES ($1, $3, 'SCH-A-TMP', 'CD-IN-26-001', 'Institut Nuru'),
-              ($2, $3, 'SCH-B-TMP', 'CD-LS-26-002', 'Lycée Somafrik')
-       ON CONFLICT DO NOTHING`,
-      [schoolAId, schoolBId, countryId],
+       VALUES ($1, $3, $4, $6, 'Institut Nuru'),
+              ($2, $3, $5, $7, 'Lycée Somafrik')`,
+      [schoolAId, schoolBId, countryId, `TMP-A-${stamp}`, `TMP-B-${stamp}`, loginA, loginB],
     );
     await client.query(
       `INSERT INTO users (id, school_id, user_code, first_name, last_name, role, status)
