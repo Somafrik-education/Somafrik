@@ -123,10 +123,18 @@ function createPedagogyPgStore(repo) {
         return query(sql, params);
       },
       async getSchoolByCode(code) {
-        const row = await one("SELECT * FROM schools WHERE school_code = $1", [asTrimmed(code).toUpperCase()]);
+        const normalized = asTrimmed(code).toUpperCase();
+        if (!normalized) return null;
+        const row = await one(
+          `SELECT * FROM schools
+           WHERE upper(school_code) = $1
+              OR upper(coalesce(login_code, '')) = $1
+           LIMIT 1`,
+          [normalized],
+        );
         if (!row) return null;
         const profile = parsePayload(row.profile_payload);
-        return { ...row, code: row.school_code, timezone: profile.timezone };
+        return { ...row, code: row.login_code || row.school_code, timezone: profile.timezone };
       },
       async resolveActorUserId(principal) {
         const normalized = asTrimmed(principal?.sub || principal?.id);

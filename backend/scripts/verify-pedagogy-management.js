@@ -19,7 +19,10 @@ const ROOT = path.resolve(__dirname, "../..");
 const MEMORY_PORT = 19676;
 const PG_PORT = 19677;
 const { PEDAGOGY_ERROR } = require("../lib/pedagogyManagement");
-const { extractTeacherLoginId } = require("../lib/teacherCodeAllocation");
+const SCHOOL_LOGIN = "CD-IN-26-001";
+const MEMORY_TEACHER_CODE = "CD-IN-JK-26-00001";
+const PG_TEACHER_CODE = "CD-IN-PP-26-00001";
+const PG_OTHER_TEACHER_CODE = "CD-IN-OT-26-00002";
 const PG_HTTP_DATABASE = String(process.env.SOMAFRIK_PEDAGOGY_HTTP_IT_DATABASE ?? "somafrik_pedagogy_http_it")
   .trim()
   .replace(/[^a-zA-Z0-9_]/g, "");
@@ -60,13 +63,13 @@ async function preparePedagogyHttpDatabase(databaseUrl) {
        VALUES ('RDC', 'CD', '+243', 'CDF') RETURNING id`,
     );
     const schoolA = await pool.query(
-      `INSERT INTO schools (country_id, school_code, name, status)
-       VALUES ($1, 'CD-2026-0001', 'Lycée HTTP', 'active') RETURNING id`,
+      `INSERT INTO schools (country_id, school_code, login_code, name, status)
+       VALUES ($1, 'CD-2026-0001', 'CD-IN-26-001', 'Lycée HTTP', 'active') RETURNING id`,
       [country.rows[0].id],
     );
     await pool.query(
-      `INSERT INTO schools (country_id, school_code, name, status)
-       VALUES ($1, 'BI-2026-0002', 'Lycée B', 'active')`,
+      `INSERT INTO schools (country_id, school_code, login_code, name, status)
+       VALUES ($1, 'BI-2026-0002', 'BI-ESB-26-002', 'Lycée B', 'active')`,
       [country.rows[0].id],
     );
     const schoolBId = (
@@ -120,13 +123,13 @@ async function preparePedagogyHttpDatabase(databaseUrl) {
     );
     const teacherUser = await pool.query(
       `INSERT INTO users (school_id, user_code, first_name, last_name, email, password_hash, pin_hash, role, status)
-       VALUES ($1, 'ENS-0001', 'Paul', 'Prof', 'ens-http@test.cd', $2, $2, 'TEACHER', 'active')
+       VALUES ($1, 'CD-IN-PP-26-00001', 'Paul', 'Prof', 'ens-http@test.cd', $2, $2, 'TEACHER', 'active')
        RETURNING id`,
       [schoolA.rows[0].id, passwordHash],
     );
     const teacher = await pool.query(
       `INSERT INTO teachers (school_id, user_id, teacher_code, status)
-       VALUES ($1, $2, 'ENS-0001', 'active') RETURNING id`,
+       VALUES ($1, $2, 'CD-IN-PP-26-00001', 'active') RETURNING id`,
       [schoolA.rows[0].id, teacherUser.rows[0].id],
     );
     await pool.query(
@@ -232,7 +235,7 @@ function schedulePayload(stamp, extra = {}) {
   return {
     className: "6ème A",
     subject: "Mathématiques",
-    teacherId: "ENS-0001",
+    teacherId: extra.teacherId ?? MEMORY_TEACHER_CODE,
     start: "2026-10-02T08:00:00.000Z",
     end: "2026-10-02T09:00:00.000Z",
     ...extra,
@@ -246,7 +249,7 @@ function assertPermissionDenied(result, label) {
 }
 
 function assertSessionTeacherCode(actual, message) {
-  assert.equal(extractTeacherLoginId(actual), "ENS-0001", message);
+  assert.equal(String(actual ?? "").trim().toUpperCase(), PG_TEACHER_CODE, message);
 }
 
 async function assertCourseScheduleWriteDenied(port, token, scheduleId, label) {
@@ -311,11 +314,11 @@ async function runMemoryHttpGuards() {
   const child = spawnBackend({ port: MEMORY_PORT });
   try {
     await waitForHealth(child, MEMORY_PORT);
-    const adminToken = await login(MEMORY_PORT, "admin", "1234", "CD-2026-0001");
-    const teacherToken = await login(MEMORY_PORT, "ENS-0001", "1234", "CD-2026-0001");
-    const parentToken = await login(MEMORY_PORT, "+243 820 000 001", "1234", "CD-2026-0001");
-    const prefetToken = await loginReady(MEMORY_PORT, "prefet", "1234", "CD-2026-0001");
-    const secretaryToken = await loginReady(MEMORY_PORT, "secretaire", "1234", "CD-2026-0001");
+    const adminToken = await login(MEMORY_PORT, "admin", "1234", SCHOOL_LOGIN);
+    const teacherToken = await login(MEMORY_PORT, MEMORY_TEACHER_CODE, "1234", SCHOOL_LOGIN);
+    const parentToken = await login(MEMORY_PORT, "+243 820 000 001", "1234", SCHOOL_LOGIN);
+    const prefetToken = await loginReady(MEMORY_PORT, "prefet", "1234", SCHOOL_LOGIN);
+    const secretaryToken = await loginReady(MEMORY_PORT, "secretaire", "1234", SCHOOL_LOGIN);
 
     const unauth = await request(MEMORY_PORT, "/courses", { method: "POST", body: {} });
     assert.equal(unauth.status, 401, "POST /courses sans token");
@@ -422,11 +425,11 @@ async function runPostgresHttpGuards(databaseUrl) {
   const child = spawnBackend({ port: PG_PORT, databaseUrl: isolatedUrl });
   try {
     await waitForHealth(child, PG_PORT);
-    const adminToken = await login(PG_PORT, "admin", "1234", "CD-2026-0001");
-    const teacherToken = await login(PG_PORT, "ENS-0001", "1234", "CD-2026-0001");
-    const prefetToken = await login(PG_PORT, "prefet", "1234", "CD-2026-0001");
-    const secretaryToken = await login(PG_PORT, "secretaire", "1234", "CD-2026-0001");
-    const parentToken = await login(PG_PORT, "+243 820 000 001", "1234", "CD-2026-0001");
+    const adminToken = await login(PG_PORT, "admin", "1234", SCHOOL_LOGIN);
+    const teacherToken = await login(PG_PORT, PG_TEACHER_CODE, "1234", SCHOOL_LOGIN);
+    const prefetToken = await login(PG_PORT, "prefet", "1234", SCHOOL_LOGIN);
+    const secretaryToken = await login(PG_PORT, "secretaire", "1234", SCHOOL_LOGIN);
+    const parentToken = await login(PG_PORT, "+243 820 000 001", "1234", SCHOOL_LOGIN);
     const stamp = Date.now();
     const schoolBId = (
       await pool.query(`SELECT id FROM schools WHERE school_code = 'BI-2026-0002'`)
@@ -469,7 +472,7 @@ async function runPostgresHttpGuards(databaseUrl) {
       body: {
         className: "6ème A",
         name: "Histoire",
-        teacherId: "ENS-0001",
+        teacherId: PG_TEACHER_CODE,
       },
     });
     assert.equal(missingAssignment.status, 403, JSON.stringify(missingAssignment.data));
@@ -613,7 +616,7 @@ async function runPostgresHttpGuards(databaseUrl) {
         subject: "Mathématiques",
         period: "Trimestre 1",
         title: "Contrôle tenant",
-        teacherId: "ENS-0001",
+        teacherId: PG_TEACHER_CODE,
         evaluationType: "Devoir",
         scale: 20,
       },
@@ -684,7 +687,7 @@ async function runPostgresHttpGuards(databaseUrl) {
         subject: "Mathématiques",
         period: "Trimestre 1",
         title: "Compromis legacy",
-        teacherId: "ENS-0001",
+        teacherId: PG_TEACHER_CODE,
         scale: 20,
       },
     });
@@ -703,7 +706,7 @@ async function runPostgresHttpGuards(databaseUrl) {
         subject: "Mathématiques",
         period: "Trimestre 1",
         title: "Interrogation 1",
-        teacherId: "ENS-0001",
+        teacherId: PG_TEACHER_CODE,
         evaluationType: "Devoir",
         scale: 20,
         coefficient: 1,
@@ -751,7 +754,7 @@ async function runPostgresHttpGuards(databaseUrl) {
         subject: "Mathématiques",
         period: "Trimestre 1",
         title: "LES ADVERBES",
-        teacherId: "ENS-0001",
+        teacherId: PG_TEACHER_CODE,
         evaluationType: "Devoir",
         scale: 20,
         coefficient: 1,
@@ -950,16 +953,16 @@ async function runPostgresHttpGuards(databaseUrl) {
       `INSERT INTO users (school_id, user_code, first_name, last_name, email, password_hash, pin_hash, role, status)
        VALUES (
          (SELECT id FROM schools WHERE school_code = 'CD-2026-0001'),
-         'ENS-0002', 'Autre', 'Prof', 'ens2-http@test.cd', $1, $1, 'TEACHER', 'active'
+         'CD-IN-OT-26-00002', 'Autre', 'Prof', 'ens2-http@test.cd', $1, $1, 'TEACHER', 'active'
        ) RETURNING id`,
       [otherPasswordHash],
     );
     await pool.query(
       `INSERT INTO teachers (school_id, user_id, teacher_code, status)
-       VALUES ((SELECT id FROM schools WHERE school_code = 'CD-2026-0001'), $1, 'ENS-0002', 'active')`,
+       VALUES ((SELECT id FROM schools WHERE school_code = 'CD-2026-0001'), $1, 'CD-IN-OT-26-00002', 'active')`,
       [otherUser.rows[0].id],
     );
-    const otherTeacherToken = await login(PG_PORT, "ENS-0002", "1234", "CD-2026-0001");
+    const otherTeacherToken = await login(PG_PORT, PG_OTHER_TEACHER_CODE, "1234", SCHOOL_LOGIN);
     const otherTeacherList = await request(PG_PORT, "/evaluations", { token: otherTeacherToken });
     assert.equal(otherTeacherList.status, 200, JSON.stringify(otherTeacherList.data));
     assert.equal((otherTeacherList.data ?? []).length, 0, "enseignant non affecté : liste vide");
@@ -1048,7 +1051,7 @@ async function runPostgresHttpGuards(databaseUrl) {
         subject: "Mathématiques",
         period: "Trimestre 1",
         title: "EVAL ANNULEE SAISIE",
-        teacherId: "ENS-0001",
+        teacherId: PG_TEACHER_CODE,
         evaluationType: "Devoir",
         scale: 20,
       },
@@ -1087,7 +1090,7 @@ async function runPostgresHttpGuards(databaseUrl) {
         subject: "Mathématiques",
         period: "Trimestre 1",
         title: "EVAL PUBLIEE SAISIE",
-        teacherId: "ENS-0001",
+        teacherId: PG_TEACHER_CODE,
         evaluationType: "Devoir",
         scale: 20,
       },
@@ -1162,7 +1165,7 @@ async function runPostgresHttpGuards(databaseUrl) {
         schoolCode: "BI-2026-0002",
         evaluationId: `EVAL-FORGE-${stamp}`,
         studentId: "CD-2026-0001-STU-HTTP-01",
-        teacherId: "ENS-0001",
+        teacherId: PG_TEACHER_CODE,
         value: 12,
         scale: 20,
       },
@@ -1190,7 +1193,7 @@ async function runPostgresHttpGuards(databaseUrl) {
             className: "6ème A",
             date: "2026-09-10",
             status: "present",
-            teacherId: "ENS-0001",
+            teacherId: PG_TEACHER_CODE,
           },
         ],
       },
@@ -1216,7 +1219,7 @@ async function runPostgresHttpGuards(databaseUrl) {
             className: "6ème A",
             date: "2026-09-11",
             status: "present",
-            teacherId: "ENS-0001",
+            teacherId: PG_TEACHER_CODE,
           },
         ],
       },

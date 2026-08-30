@@ -147,11 +147,11 @@ async function main() {
   try {
     await waitForHealth(child);
 
-    const admin = await login("admin", "CD-2026-0001");
-    const adminBi = await login("admin", "BI-2026-0002");
-    const teacherSeed = await login("ENS-0001", "CD-2026-0001");
-    const parent = await login("+243 820 000 001", "CD-2026-0001");
-    const prefet = await loginWithoutPasswordGate("prefet", "CD-2026-0001");
+    const admin = await login("admin", "CD-IN-26-001");
+    const adminBi = await login("admin", "BI-ESB-26-001");
+    const teacherSeed = await login("CD-IN-JK-26-00001", "CD-IN-26-001");
+    const parent = await login("+243 820 000 001", "CD-IN-26-001");
+    const prefet = await loginWithoutPasswordGate("prefet", "CD-IN-26-001");
 
     const adminEffective = await request("/auth/effective-permissions", { token: admin.token });
     assert.equal(adminEffective.status, 200, JSON.stringify(adminEffective.data));
@@ -176,8 +176,8 @@ async function main() {
     const listedBefore = await request("/teachers", { token: admin.token });
     assert.equal(listedBefore.status, 200, JSON.stringify(listedBefore.data));
     assert.ok(Array.isArray(listedBefore.data));
-    const seedTeacher = listedBefore.data.find((row) => row.identifier === "ENS-0001");
-    assert.ok(seedTeacher, "enseignant seed ENS-0001 attendu");
+    const seedTeacher = listedBefore.data.find((row) => row.identifier === "CD-IN-JK-26-00001");
+    assert.ok(seedTeacher, "enseignant seed CD-IN-JK-26-00001 attendu");
     assert.ok(
       Array.isArray(seedTeacher.assignments) && seedTeacher.assignments.length > 0,
       "régression : affectations actives absentes de GET /api/teachers",
@@ -258,7 +258,7 @@ async function main() {
       body: {
         identifier: created.data.identifier,
         password: "TempPass1",
-        schoolCode: "CD-2026-0001",
+        schoolCode: "CD-IN-26-001",
       },
     });
     assert.equal(teacherLogin.status, 200, JSON.stringify(teacherLogin.data));
@@ -280,7 +280,7 @@ async function main() {
       body: {
         identifier: created.data.identifier,
         password: "NewPass12",
-        schoolCode: "CD-2026-0001",
+        schoolCode: "CD-IN-26-001",
       },
     });
     assert.equal(relogin.status, 200, JSON.stringify(relogin.data));
@@ -357,7 +357,7 @@ async function main() {
         lastName: "Tenant",
         phone: "+243 811 000 006",
         temporaryPassword: "TempPass6",
-        schoolCode: "BI-2026-0002",
+        schoolCode: "BI-ESB-26-001",
         role: "Admin School",
         teacherCode: "HACK",
       }),
@@ -402,7 +402,7 @@ async function main() {
     // Non-régression Classes + inscription élèves
     const { prepareCanonicalClassContext, postCanonicalClass } = require("../lib/canonicalClassHttp");
     const offering = await prepareCanonicalClassContext(request, {
-      schoolCode: "CD-2026-0001",
+      schoolCode: "CD-IN-26-001",
       countryCode: "CD",
       groupCode: "PR",
     });
@@ -520,7 +520,7 @@ async function main() {
         assignments: assignmentsList.data,
         users: [
           ...(usersBeforeMixed.data ?? []),
-          { id: sentinelId, name: "Sentinel LOT 3", schoolCode: "CD-2026-0001" },
+          { id: sentinelId, name: "Sentinel LOT 3", schoolCode: "CD-IN-26-001" },
         ],
       },
     });
@@ -572,7 +572,7 @@ async function main() {
     const forgedPatch = await request(`/teachers/${encodeURIComponent(created.data.teacherCode)}`, {
       method: "PATCH",
       token: admin.token,
-      body: { schoolCode: "BI-2026-0002", speciality: "Hack" },
+      body: { schoolCode: "BI-ESB-26-001", speciality: "Hack" },
     });
     assert.equal(forgedPatch.status, 400, JSON.stringify(forgedPatch.data));
 
@@ -624,7 +624,7 @@ async function main() {
     });
     assert.equal(adminDelete.status, 403, JSON.stringify(adminDelete.data));
 
-    const missingDelete = await request("/teachers/CD-2026-0001-ENS-9999", {
+    const missingDelete = await request("/teachers/CD-IN-XX-26-99999", {
       method: "DELETE",
       token: prefet.token,
     });

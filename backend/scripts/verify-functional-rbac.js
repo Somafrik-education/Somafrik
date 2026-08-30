@@ -63,10 +63,10 @@ async function main() {
     await waitForHealth(child);
     const superToken = await login("superadmin", "1234");
     const countryToken = await login("admin-rdc", "1234");
-    const schoolToken = await login("admin", "1234", "CD-2026-0001");
+    const schoolToken = await login("admin", "1234", "CD-IN-26-001");
     const prefetLogin = await request("/backoffice/login", {
       method: "POST",
-      body: { identifier: "prefet", password: "1234", schoolCode: "CD-2026-0001" },
+      body: { identifier: "prefet", password: "1234", schoolCode: "CD-IN-26-001" },
     });
     assert.equal(prefetLogin.status, 200, JSON.stringify(prefetLogin.data));
     let prefetToken = prefetLogin.data.accessToken || prefetLogin.data.token;
@@ -76,7 +76,7 @@ async function main() {
       body: { newPassword: "Prefet#2026Aa" },
     });
     assert.ok([200, 201].includes(changed.status), JSON.stringify(changed.data));
-    prefetToken = changed.data?.accessToken || (await login("prefet", "Prefet#2026Aa", "CD-2026-0001"));
+    prefetToken = changed.data?.accessToken || (await login("prefet", "Prefet#2026Aa", "CD-IN-26-001"));
 
     const catalog = await request("/backoffice/rbac/catalog", { token: superToken });
     assert.equal(catalog.status, 200, JSON.stringify(catalog.data));
@@ -110,11 +110,11 @@ async function main() {
       `GET /v2/subjects attendu 200, reçu ${subjectsCatalog.status} ${JSON.stringify(subjectsCatalog.data)}`,
     );
 
-    const secretaryToken = await login("secretaire", "1234", "CD-2026-0001");
+    const secretaryToken = await login("secretaire", "1234", "CD-IN-26-001");
     const secretaryDenied = await request("/assignments", {
       method: "POST",
       token: secretaryToken,
-      body: { teacherCode: "CD-2026-0001-ENS-0001", classCode: "CLS-6A", subjectCode: "SUB-MATH" },
+      body: { teacherCode: "CD-IN-JK-26-00001", classCode: "CLS-6A", subjectCode: "SUB-MATH" },
     });
     assert.equal(secretaryDenied.status, 403, JSON.stringify(secretaryDenied.data));
 
@@ -123,7 +123,7 @@ async function main() {
       token: countryToken,
       body: {
         roleKey: "PREFET_ETUDES",
-        schoolCode: "CD-2026-0001",
+        schoolCode: "CD-IN-26-001",
         grants: [{ moduleKey: "students", canCreate: false, canRead: true, canUpdate: true, canDelete: false }],
       },
     });
@@ -134,7 +134,7 @@ async function main() {
       token: schoolToken,
       body: {
         roleKey: "PREFET_ETUDES",
-        schoolCode: "CD-2026-0001",
+        schoolCode: "CD-IN-26-001",
         grants: [{ moduleKey: "students", canCreate: false, canRead: true, canUpdate: true, canDelete: false }],
       },
     });
@@ -145,7 +145,7 @@ async function main() {
       token: prefetToken,
       body: {
         roleKey: "PREFET_ETUDES",
-        schoolCode: "CD-2026-0001",
+        schoolCode: "CD-IN-26-001",
         grants: [{ moduleKey: "students", canCreate: false, canRead: true, canUpdate: true, canDelete: false }],
       },
     });
@@ -165,7 +165,7 @@ async function main() {
       body: {
         roleKey: "PREFET_ETUDES",
         countryCode: "CD",
-        schoolCode: "CD-2026-0001",
+        schoolCode: "CD-IN-26-001",
         grants: [{ moduleKey: "students", canCreate: false, canRead: true, canUpdate: true, canDelete: false }],
       },
     });
@@ -182,7 +182,7 @@ async function main() {
     assert.equal(denied.status, 403, JSON.stringify({ denied: denied.data, effective: effective.data }));
 
     const configured = await request(
-      `/backoffice/rbac/permissions?roleKey=PREFET_ETUDES&schoolCode=${encodeURIComponent("CD-2026-0001")}`,
+      `/backoffice/rbac/permissions?roleKey=PREFET_ETUDES&schoolCode=${encodeURIComponent("CD-IN-26-001")}`,
       { token: superToken },
     );
     assert.equal(configured.status, 200, JSON.stringify(configured.data));
@@ -191,7 +191,7 @@ async function main() {
       token: superToken,
       body: {
         roleKey: "PREFET_ETUDES",
-        schoolCode: "CD-2026-0001",
+        schoolCode: "CD-IN-26-001",
         expectedUpdatedAt: configured.data.updatedAt,
         grants: [{ moduleKey: "students", canCreate: false, canRead: true, canUpdate: true, canDelete: true }],
       },
@@ -200,7 +200,7 @@ async function main() {
 
     const afterRestore = await request("/auth/effective-permissions", { token: prefetToken });
     const configuredAfter = await request(
-      `/backoffice/rbac/permissions?roleKey=PREFET_ETUDES&countryCode=CD&schoolCode=${encodeURIComponent("CD-2026-0001")}`,
+      `/backoffice/rbac/permissions?roleKey=PREFET_ETUDES&countryCode=CD&schoolCode=${encodeURIComponent("CD-IN-26-001")}`,
       { token: superToken },
     );
     const allowed = await request("/students/CD-IN-EL-26-001", { method: "DELETE", token: prefetToken });
@@ -217,7 +217,7 @@ async function main() {
 
     async function latestSchoolMatrixUpdatedAt() {
       const current = await request(
-        `/backoffice/rbac/permissions?roleKey=PREFET_ETUDES&countryCode=CD&schoolCode=${encodeURIComponent("CD-2026-0001")}`,
+        `/backoffice/rbac/permissions?roleKey=PREFET_ETUDES&countryCode=CD&schoolCode=${encodeURIComponent("CD-IN-26-001")}`,
         { token: superToken },
       );
       assert.equal(current.status, 200, JSON.stringify(current.data));
@@ -228,7 +228,7 @@ async function main() {
       const payload = {
         roleKey: "PREFET_ETUDES",
         countryCode: "CD",
-        schoolCode: "CD-2026-0001",
+        schoolCode: "CD-IN-26-001",
         expectedUpdatedAt: await latestSchoolMatrixUpdatedAt(),
         grants: [{ moduleKey: "attendance", ...flags }],
       };
@@ -302,7 +302,7 @@ async function main() {
     assert.equal(revokedWrite.status, 403, JSON.stringify(revokedWrite.data));
     assert.equal(revokedWrite.data?.code, "PERMISSION_DENIED");
 
-    const parentToken = await login("+243 820 000 001", "1234", "CD-2026-0001");
+    const parentToken = await login("+243 820 000 001", "1234", "CD-IN-26-001");
     const parentList = await request("/presences", { token: parentToken });
     assert.ok(
       [200, 403].includes(parentList.status),
@@ -339,7 +339,7 @@ async function main() {
 
     async function patchGrades(flags) {
       const current = await request(
-        `/backoffice/rbac/permissions?roleKey=PREFET_ETUDES&countryCode=CD&schoolCode=${encodeURIComponent("CD-2026-0001")}`,
+        `/backoffice/rbac/permissions?roleKey=PREFET_ETUDES&countryCode=CD&schoolCode=${encodeURIComponent("CD-IN-26-001")}`,
         { token: superToken },
       );
       assert.equal(current.status, 200, JSON.stringify(current.data));
@@ -349,7 +349,7 @@ async function main() {
         body: {
           roleKey: "PREFET_ETUDES",
           countryCode: "CD",
-          schoolCode: "CD-2026-0001",
+          schoolCode: "CD-IN-26-001",
           expectedUpdatedAt: current.data.updatedAt,
           grants: [{ moduleKey: "grades", ...flags }],
         },
@@ -414,7 +414,7 @@ async function main() {
       token: superToken,
       body: {
         roleKey: "PREFET_ETUDES",
-        schoolCode: "CD-2026-0001",
+        schoolCode: "CD-IN-26-001",
         expectedUpdatedAt: configured.data.updatedAt,
         grants: [{ moduleKey: "students", canCreate: false, canRead: true, canUpdate: true, canDelete: false }],
       },
@@ -454,7 +454,7 @@ async function main() {
       body: {
         roleKey: "SUPER_ADMIN",
         countryCode: "CD",
-        schoolCode: "CD-2026-0001",
+        schoolCode: "CD-IN-26-001",
         grants: [{ moduleKey: "users", canCreate: true, canRead: false, canUpdate: true, canDelete: true }],
       },
     });
@@ -462,7 +462,7 @@ async function main() {
     assert.equal(mandatoryUsers.data?.code, "MANDATORY_PERMISSION");
 
     const currentAttendance = await request(
-      `/backoffice/rbac/permissions?roleKey=PREFET_ETUDES&countryCode=CD&schoolCode=${encodeURIComponent("CD-2026-0001")}`,
+      `/backoffice/rbac/permissions?roleKey=PREFET_ETUDES&countryCode=CD&schoolCode=${encodeURIComponent("CD-IN-26-001")}`,
       { token: superToken },
     );
     const dependencyDenied = await request("/backoffice/rbac/permissions", {
@@ -471,7 +471,7 @@ async function main() {
       body: {
         roleKey: "PREFET_ETUDES",
         countryCode: "CD",
-        schoolCode: "CD-2026-0001",
+        schoolCode: "CD-IN-26-001",
         expectedUpdatedAt: currentAttendance.data?.updatedAt,
         grants: [{ moduleKey: "attendance", canCreate: true, canRead: false, canUpdate: false, canDelete: false }],
       },

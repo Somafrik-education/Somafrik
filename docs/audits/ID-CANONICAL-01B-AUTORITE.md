@@ -24,10 +24,11 @@
 
 ## Résidus reportés (volontaires, non masqués)
 
-- `backend/data.js` seed mémoire `CD-2026-0001` / `ENS-0001` — Lot C/D (tests Web/Mobile + verify scripts).
-- `getSchoolByCode` PG accepte encore `school_code` interne pour les fixtures existantes.
-- `verify-pedagogy-management` et nombreux `*.pg.test.js` encore écrits avec `ENS-####`.
-- Fabrication client Web/Mobile — Lot C.
+- `getSchoolByCode` PG accepte encore `school_code` interne **ou** `login_code` (fixtures PG isolées).
+- Nombreux `*.pg.test.js` Web/Mobile encore écrits avec `ENS-####` / `CD-2026-0001` — Lot C.
+- Fabrication client Web/Mobile (`generateTeacherIdentifiers`) — Lot C.
 - `legacy_json_id` — Lot D.
+
+Seed mémoire : tenant = `CD-IN-26-001`, enseignant seed = `CD-IN-JK-26-00001`. Plus de login `ENS-####`.
 
 Aucun fallback n’a été réintroduit pour faire passer un test.

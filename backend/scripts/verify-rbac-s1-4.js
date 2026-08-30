@@ -214,14 +214,14 @@ async function runHttpTestsIfAvailable() {
     return session;
   }
 
-  const schoolAdmin = await login("admin", "1234", "CD-2026-0001");
-  const secretary = await login("secretaire", "1234", "CD-2026-0001");
+  const schoolAdmin = await login("admin", "1234", "CD-IN-26-001");
+  const secretary = await login("secretaire", "1234", "CD-IN-26-001");
   const superadmin = await login("superadmin@somafrik.app", "1234");
 
   // Mobile teacher / parent for MVP RBAC
   const teacherMobileRes = await request("/login", {
     method: "POST",
-    body: { role: "teacher", schoolCode: "CD-2026-0001", identifier: "ENS-0001", pin: "1234" },
+    body: { role: "teacher", schoolCode: "CD-IN-26-001", identifier: "CD-IN-JK-26-00001", pin: "1234" },
   });
   assert.strictEqual(teacherMobileRes.status, 200, "teacher mobile login");
   let teacherToken = teacherMobileRes.data.accessToken;
@@ -239,7 +239,7 @@ async function runHttpTestsIfAvailable() {
     method: "POST",
     body: {
       role: "parent_student",
-      schoolCode: "CD-2026-0001",
+      schoolCode: "CD-IN-26-001",
       identifier: "+243 820 000 001",
       pin: "1234",
     },
@@ -266,7 +266,7 @@ async function runHttpTestsIfAvailable() {
     firstName: "Compte",
     lastName: "Able",
     role: "Comptable",
-    schoolCode: "CD-2026-0001",
+    schoolCode: "CD-IN-26-001",
     identifier: "comptable-s14",
     email: "comptable-s14@somafrik.app",
     status: "Actif",
@@ -294,7 +294,7 @@ async function runHttpTestsIfAvailable() {
   });
   assert.strictEqual(grantComptable.status, 200, `grant comptable: ${JSON.stringify(grantComptable.data)}`);
 
-  const accountant = await login(comptableUser.email, "Soma1234", "CD-2026-0001");
+  const accountant = await login(comptableUser.email, "Soma1234", "CD-IN-26-001");
 
   // A1/A2 — LOT 2 : toute présence de students est refusée avant la matrice RBAC.
   for (const [label, token] of [
@@ -430,7 +430,7 @@ async function runHttpTestsIfAvailable() {
   }
 
   const dash = await request("/mvp/dashboard", { token: schoolAdmin.accessToken });
-  assert.strictEqual(dash.data.schoolCode, "CD-2026-0001");
+  assert.strictEqual(dash.data.schoolCode, "CD-IN-26-001");
 
   const snap = await request("/mvp/snapshot", { token: schoolAdmin.accessToken });
   const latePayers = snap.data.latePayers ?? [];
@@ -438,7 +438,7 @@ async function runHttpTestsIfAvailable() {
     if (row.schoolCode) {
       assert.strictEqual(
         String(row.schoolCode).toUpperCase(),
-        "CD-2026-0001",
+        "CD-IN-26-001",
         "latePayer hors tenant",
       );
     }

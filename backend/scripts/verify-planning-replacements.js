@@ -21,7 +21,9 @@ const PG_HTTP_DATABASE = String(
 )
   .trim()
   .replace(/[^a-zA-Z0-9_]/g, "");
-const SCHOOL_CODE = "CD-2026-0001";
+const SCHOOL_CODE = "CD-IN-26-001";
+const SEKE_CODE = "CD-IN-SK-26-00001";
+const KABEYA_CODE = "CD-IN-JK-26-00002";
 const WEB_URL = `http://127.0.0.1:${WEB_PORT}`;
 const NEW_PASSWORD = "Planning#2026Aa";
 const ARTIFACTS = process.env.CURSOR_ARTIFACTS_DIR || "/tmp/cursor/artifacts";
@@ -177,9 +179,8 @@ async function teacherIdByPublicCode(pool, code) {
      FROM teachers t
      LEFT JOIN users u ON u.id = t.user_id
      WHERE t.teacher_code = $1
-        OR t.legacy_teacher_code = $1
         OR u.user_code = $1
-        OR right(t.teacher_code, char_length($1) + 1) = '-' || $1
+        OR t.id::text = $1
      LIMIT 1`,
     [code],
   );
@@ -200,8 +201,8 @@ async function prepareDatabase(databaseUrl) {
       `INSERT INTO countries (name, iso_code, phone_code, currency) VALUES ('RDC', 'CD', '+243', 'CDF') RETURNING id`,
     );
     const schoolA = await pool.query(
-      `INSERT INTO schools (country_id, school_code, name, status, profile_payload)
-       VALUES ($1, 'CD-2026-0001', 'Lycée IN', 'active', '{"timezone":"Africa/Kinshasa"}'::jsonb) RETURNING id`,
+      `INSERT INTO schools (country_id, school_code, login_code, name, status, profile_payload)
+       VALUES ($1, 'CD-2026-0001', 'CD-IN-26-001', 'Lycée IN', 'active', '{"timezone":"Africa/Kinshasa"}'::jsonb) RETURNING id`,
       [country.rows[0].id],
     );
     const year = await pool.query(
@@ -251,22 +252,22 @@ async function prepareDatabase(databaseUrl) {
     );
     const sekeUser = await pool.query(
       `INSERT INTO users (school_id, user_code, first_name, last_name, email, password_hash, pin_hash, role, status)
-       VALUES ($1, 'ENS-0001', 'Seke', 'Kilombo', 'seke-http@test.cd', $2, $2, 'TEACHER', 'active') RETURNING id`,
+       VALUES ($1, 'CD-IN-SK-26-00001', 'Seke', 'Kilombo', 'seke-http@test.cd', $2, $2, 'TEACHER', 'active') RETURNING id`,
       [schoolA.rows[0].id, passwordHash],
     );
     const kabeyaUser = await pool.query(
       `INSERT INTO users (school_id, user_code, first_name, last_name, email, password_hash, pin_hash, role, status)
-       VALUES ($1, 'ENS-0002', 'Jean', 'Kabeya', 'kabeya-http@test.cd', $2, $2, 'TEACHER', 'active') RETURNING id`,
+       VALUES ($1, 'CD-IN-JK-26-00002', 'Jean', 'Kabeya', 'kabeya-http@test.cd', $2, $2, 'TEACHER', 'active') RETURNING id`,
       [schoolA.rows[0].id, passwordHash],
     );
     const seke = await pool.query(
       `INSERT INTO teachers (school_id, user_id, teacher_code, speciality, status)
-       VALUES ($1, $2, 'ENS-0001', 'Mathématiques', 'active') RETURNING id`,
+       VALUES ($1, $2, 'CD-IN-SK-26-00001', 'Mathématiques', 'active') RETURNING id`,
       [schoolA.rows[0].id, sekeUser.rows[0].id],
     );
     const kabeya = await pool.query(
       `INSERT INTO teachers (school_id, user_id, teacher_code, speciality, status)
-       VALUES ($1, $2, 'ENS-0002', 'Français', 'active') RETURNING id`,
+       VALUES ($1, $2, 'CD-IN-JK-26-00002', 'Français', 'active') RETURNING id`,
       [schoolA.rows[0].id, kabeyaUser.rows[0].id],
     );
     await pool.query(
@@ -320,8 +321,8 @@ async function runHttp(databaseUrl) {
     await waitForHealth(child, PG_PORT);
     const prefetToken = await loginReady(PG_PORT, "prefet", "1234", SCHOOL_CODE);
     const adminToken = await login(PG_PORT, "admin", "1234", SCHOOL_CODE);
-    const teacherToken = await login(PG_PORT, "ENS-0001", "1234", SCHOOL_CODE);
-    const kabeyaToken = await login(PG_PORT, "ENS-0002", "1234", SCHOOL_CODE);
+    const teacherToken = await login(PG_PORT, SEKE_CODE, "1234", SCHOOL_CODE);
+    const kabeyaToken = await login(PG_PORT, KABEYA_CODE, "1234", SCHOOL_CODE);
     const secretaryToken = await loginReady(PG_PORT, "secretaire", "1234", SCHOOL_CODE);
     const parentToken = await login(PG_PORT, "+243 820 000 001", "1234", SCHOOL_CODE);
 
@@ -339,8 +340,8 @@ async function runHttp(databaseUrl) {
     );
 
     const yearId = (await pool.query(`SELECT id FROM academic_years LIMIT 1`)).rows[0].id;
-    const kabeyaId = await teacherIdByPublicCode(pool, "ENS-0002");
-    const sekeId = await teacherIdByPublicCode(pool, "ENS-0001");
+    const kabeyaId = await teacherIdByPublicCode(pool, KABEYA_CODE);
+    const sekeId = await teacherIdByPublicCode(pool, SEKE_CODE);
     const courseAId = await loadReconciledSchoolCourseId(isolatedUrl, { className: "2ème A", subjectName: "Mathématiques" });
     const courseBId = await loadReconciledSchoolCourseId(isolatedUrl, { className: "2ème B", subjectName: "Français" });
 
@@ -490,7 +491,7 @@ async function runBrowser(databaseUrl) {
     const yearId = (await request(PG_PORT, "/course-schedules", { token: prefetToken })).data;
     const pool = new Pool({ connectionString: isolatedUrl });
     const year = (await pool.query(`SELECT id FROM academic_years LIMIT 1`)).rows[0].id;
-    const kabeyaId = await teacherIdByPublicCode(pool, "ENS-0002");
+    const kabeyaId = await teacherIdByPublicCode(pool, KABEYA_CODE);
     await pool.end();
     const courseAId = await loadReconciledSchoolCourseId(isolatedUrl, { className: "2ème A", subjectName: "Mathématiques" });
     const slot = await request(PG_PORT, "/course-schedules", {
@@ -528,7 +529,7 @@ async function runBrowser(databaseUrl) {
       await page.getByTestId("login-submit").waitFor({ timeout: 15000 });
       await page.getByTestId("login-profile-school").click();
       await page.getByTestId("login-school-code").fill(SCHOOL_CODE);
-      await page.getByTestId("login-identifier").fill("ENS-0002");
+      await page.getByTestId("login-identifier").fill(KABEYA_CODE);
       await page.getByTestId("login-password").fill("1234");
       await page.getByTestId("login-submit").click();
       const changeTitle = page.getByText("Nouveau mot de passe");

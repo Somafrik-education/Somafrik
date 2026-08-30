@@ -380,7 +380,7 @@ async function login(base) {
 async function loginSchoolScoped(base) {
   const identifier = process.env.SOMAFRIK_VERIFY_SCHOOL_IDENTIFIER || "admin";
   const password = process.env.SOMAFRIK_VERIFY_PASSWORD || "1234";
-  const schoolCode = process.env.SOMAFRIK_VERIFY_SCHOOL_CODE || "CD-2026-0001";
+  const schoolCode = process.env.SOMAFRIK_VERIFY_SCHOOL_CODE || "CD-IN-26-001";
   const loginRes = await fetch(`${base}/backoffice/login`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },

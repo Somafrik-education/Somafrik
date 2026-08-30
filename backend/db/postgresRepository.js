@@ -1227,7 +1227,7 @@ class PostgresRepository {
     const teacherLoginByUserId = new Map(
       teacherRows
         .filter((row) => row.user_id)
-        .map((row) => [row.user_id, this.extractTeacherLoginId(row.teacher_code)]),
+        .map((row) => [row.user_id, String(row.teacher_code ?? "").trim().toUpperCase()]),
     );
     const schoolRows = await this.all(`
       SELECT s.*, c.name AS country_name, c.iso_code
@@ -1985,7 +1985,7 @@ class PostgresRepository {
     const teacherLoginByUserId = new Map(
       teacherRows
         .filter((teacher) => teacher.user_id)
-        .map((teacher) => [teacher.user_id, this.extractTeacherLoginId(teacher.teacher_code)])
+        .map((teacher) => [teacher.user_id, String(teacher.teacher_code ?? "").trim().toUpperCase()]),
     );
     const teachers = teacherRows.map((teacher) => this.mapTeacher(teacher, gradeRows, teacherAssignmentRows));
     const evaluations = evaluationRows.map((evaluation) => this.mapEvaluation(evaluation));
@@ -4472,7 +4472,8 @@ class PostgresRepository {
   }
 
   /**
-   * HOTFIX-PRE-E1-02 — Clés stables enseignant pour le principal (jamais par nom seul).
+   * Clés enseignant pour filtres lecture : session UUID + teacher_code lié.
+   * Pas de projection BackOffice, pas d'alias ENS.
    */
   async collectTeacherLookupKeysForPrincipal(principal = {}, schoolId = null) {
     const keys = new Set();
@@ -4484,36 +4485,19 @@ class PostgresRepository {
     add(principal.publicId);
     add(principal.identifier);
 
-    const state = (await this.getBackOfficeState()) ?? {};
     const principalSub = String(principal.sub ?? "").trim();
-    const principalIdentifier = this.normalizeComparableText(principal.identifier);
-    const linkedTeachers = (state.teachers ?? []).filter((row) => {
-      if (principalSub && [row.userId, row.id, row.publicId].some((v) => String(v ?? "").trim() === principalSub)) {
-        return true;
-      }
-      if (principalIdentifier && this.normalizeComparableText(row.identifier) === principalIdentifier) {
-        return true;
-      }
-      return false;
-    });
-    for (const boTeacher of linkedTeachers) {
-      add(boTeacher.id);
-      add(boTeacher.publicId);
-      add(boTeacher.userId);
-      add(boTeacher.identifier);
-    }
-
     if (schoolId && principalSub) {
       const byUser = await this.one(
-        `SELECT t.teacher_code
+        `SELECT t.id, t.teacher_code, t.user_id
          FROM teachers t
-         LEFT JOIN users u ON u.id = t.user_id
          WHERE t.school_id = $1
-           AND ${sqlTeacherIdentityEquals("t", "u", "$2")}
+           AND t.user_id::text = $2
          LIMIT 1`,
         [schoolId, principalSub],
       );
+      add(byUser?.id);
       add(byUser?.teacher_code);
+      add(byUser?.user_id);
     }
 
     return [...keys];
@@ -5918,11 +5902,6 @@ class PostgresRepository {
       return "RDC";
     }
     return countryCode;
-  }
-
-  extractTeacherLoginId(code) {
-    const { extractTeacherLoginId } = require("../lib/teacherCodeAllocation");
-    return extractTeacherLoginId(code);
   }
 
   getUserIdentifier(user, role, teacherLoginId = "") {

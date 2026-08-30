@@ -1,13 +1,13 @@
 const { buildSchoolBulletinBundle } = require("./lib/bulletinSeedData");
 const { buildSchoolPlanningSlots, buildAcademicConfigForSchool } = require("./lib/planningSeedData");
+const { formatIdentityCode, identityInitials } = require("./lib/permanentIdentifier");
 
-// Seed mémoire : `code` = alias interne school_code (tests / lecture legacy).
-// Code public canonique = `loginCode` / `publicId` = CD-IN-26-001.
-// Aucune nouvelle création ne doit réutiliser CD-YYYY-NNNN.
+// Seed mémoire : `code` = `loginCode` = identité publique V2.
+// Plus de CD-YYYY-NNNN comme clé tenant ou de connexion.
 const school = {
   id: "550e8400-e29b-41d4-a716-446655440001",
   publicId: "CD-IN-26-001",
-  code: "CD-2026-0001",
+  code: "CD-IN-26-001",
   loginCode: "CD-IN-26-001",
   name: "Universite de Kinshasa",
   type: "Universite",
@@ -533,8 +533,8 @@ const countries = [
 
 const subscriptions = [
   {
-    id: "SUB-CD-2026-0001",
-    schoolCode: "CD-2026-0001",
+    id: "SUB-CD-IN-26-001",
+    schoolCode: "CD-IN-26-001",
     countryCode: "CD",
     country: "RDC",
     offerId: "OFFER-PREMIUM-CD",
@@ -767,7 +767,7 @@ const userAccounts = [
     secondaryRoles: [],
     scopeLevel: "Établissement",
     countryScope: "RDC",
-    schoolCode: "CD-2026-0001",
+    schoolCode: "CD-IN-26-001",
     accessChannel: "Application",
     identifier: "admin",
     password: "1234",
@@ -792,7 +792,7 @@ const userAccounts = [
     secondaryRoles: [],
     scopeLevel: "Établissement",
     countryScope: "BI",
-    schoolCode: "BI-2026-0002",
+    schoolCode: "BI-ESB-26-001",
     accessChannel: "Application",
     identifier: "admin",
     password: "1234",
@@ -832,7 +832,7 @@ const userAccounts = [
   },
   {
     id: "USER-COUNTRY-RDC",
-    publicId: "ADM-CD-2026-0001",
+    publicId: "ADM-CD-IN-26-001",
     lastName: "Admin",
     firstName: "RDC",
     gender: "Masculin",
@@ -892,7 +892,7 @@ const userAccounts = [
     secondaryRoles: [],
     scopeLevel: "Établissement",
     countryScope: "RDC",
-    schoolCode: "CD-2026-0001",
+    schoolCode: "CD-IN-26-001",
     accessChannel: "Application",
     identifier: "prefet",
     password: "1234",
@@ -917,7 +917,7 @@ const userAccounts = [
     secondaryRoles: [],
     scopeLevel: "Établissement",
     countryScope: "RDC",
-    schoolCode: "CD-2026-0001",
+    schoolCode: "CD-IN-26-001",
     accessChannel: "Application",
     identifier: "secretaire",
     password: "1234",
@@ -932,7 +932,7 @@ const userAccounts = [
   },
   {
     id: "USER-T1",
-    publicId: "USR-2026-000004",
+    publicId: "CD-IN-JK-26-00001",
     lastName: "Kabeya",
     firstName: "Jean",
     gender: "Masculin",
@@ -942,9 +942,9 @@ const userAccounts = [
     secondaryRoles: [],
     scopeLevel: "Établissement",
     countryScope: "RDC",
-    schoolCode: "CD-2026-0001",
+    schoolCode: "CD-IN-26-001",
     accessChannel: "Application",
-    identifier: "ENS-0001",
+    identifier: "CD-IN-JK-26-00001",
     password: "1234",
     status: "Actif",
     permissions: rolePermissions.Enseignant,
@@ -967,7 +967,7 @@ const userAccounts = [
     secondaryRoles: [],
     scopeLevel: "Établissement",
     countryScope: "RDC",
-    schoolCode: "CD-2026-0001",
+    schoolCode: "CD-IN-26-001",
     accessChannel: "Application",
     identifier: "+243 820 000 001",
     password: "1234",
@@ -994,7 +994,7 @@ const userAccounts = [
     secondaryRoles: [],
     scopeLevel: "Établissement",
     countryScope: "RDC",
-    schoolCode: "CD-2026-0001",
+    schoolCode: "CD-IN-26-001",
     accessChannel: "Application",
     identifier: "CD-IN-EL-26-001",
     password: "1234",
@@ -1013,9 +1013,9 @@ const teachers = [
   {
     id: "T1",
     userId: "USER-T1",
-    publicId: "CD-2026-0001-ENS-0001",
-    identifier: "ENS-0001",
-    schoolCode: "CD-2026-0001",
+    publicId: "CD-IN-JK-26-00001",
+    identifier: "CD-IN-JK-26-00001",
+    schoolCode: "CD-IN-26-001",
     name: "Jean Kabeya",
     firstName: "Jean",
     gender: "Masculin",
@@ -1031,9 +1031,9 @@ const teachers = [
   },
   {
     id: "T2",
-    publicId: "CD-2026-0001-ENS-0002",
-    identifier: "ENS-0002",
-    schoolCode: "CD-2026-0001",
+    publicId: "CD-IN-MM-26-00002",
+    identifier: "CD-IN-MM-26-00002",
+    schoolCode: "CD-IN-26-001",
     name: "Marie Mukendi",
     firstName: "Marie",
     gender: "Féminin",
@@ -1048,9 +1048,9 @@ const teachers = [
   },
   {
     id: "T3",
-    publicId: "CD-2026-0001-ENS-0003",
-    identifier: "ENS-0003",
-    schoolCode: "CD-2026-0001",
+    publicId: "CD-IN-PI-26-00003",
+    identifier: "CD-IN-PI-26-00003",
+    schoolCode: "CD-IN-26-001",
     name: "Patrick Ilunga",
     firstName: "Patrick",
     gender: "Masculin",
@@ -1065,9 +1065,9 @@ const teachers = [
   },
   {
     id: "T4",
-    publicId: "CD-2026-0001-ENS-0004",
-    identifier: "ENS-0004",
-    schoolCode: "CD-2026-0001",
+    publicId: "CD-IN-SM-26-00004",
+    identifier: "CD-IN-SM-26-00004",
+    schoolCode: "CD-IN-26-001",
     name: "Sarah Mbuyi",
     firstName: "Sarah",
     gender: "Féminin",
@@ -1090,28 +1090,28 @@ const classes = [
 ];
 
 const courses = [
-  { id: "COURSE1", publicId: "COU-2026-000001", schoolCode: "CD-2026-0001", className: "6ème A", name: "Mathématiques", coefficient: 3 },
-  { id: "COURSE2", publicId: "COU-2026-000002", schoolCode: "CD-2026-0001", className: "6ème A", name: "Français", coefficient: 3 },
-  { id: "COURSE3", publicId: "COU-2026-000003", schoolCode: "CD-2026-0001", className: "6ème A", name: "Sciences", coefficient: 2 },
-  { id: "COURSE4", publicId: "COU-2026-000004", schoolCode: "CD-2026-0001", className: "6ème A", name: "Anglais", coefficient: 2 },
-  { id: "COURSE5", publicId: "COU-2026-000005", schoolCode: "CD-2026-0001", className: "6ème A", name: "Histoire", coefficient: 1 },
-  { id: "COURSE6", publicId: "COU-2026-000006", schoolCode: "CD-2026-0001", className: "6ème B", name: "Mathématiques", coefficient: 3 },
-  { id: "COURSE7", publicId: "COU-2026-000007", schoolCode: "CD-2026-0001", className: "6ème B", name: "Français", coefficient: 3 },
-  { id: "COURSE8", publicId: "COU-2026-000008", schoolCode: "CD-2026-0001", className: "6ème B", name: "Sciences", coefficient: 2 },
-  { id: "COURSE9", publicId: "COU-2026-000009", schoolCode: "CD-2026-0001", className: "6ème B", name: "Anglais", coefficient: 2 },
-  { id: "COURSE10", publicId: "COU-2026-000010", schoolCode: "CD-2026-0001", className: "5ème A", name: "Physique", coefficient: 2 },
-  { id: "COURSE11", publicId: "COU-2026-000011", schoolCode: "CD-2026-0001", className: "5ème A", name: "Histoire", coefficient: 1 },
-  { id: "COURSE12", publicId: "COU-2026-000012", schoolCode: "CD-2026-0001", className: "5ème A", name: "Mathématiques", coefficient: 3 },
-  { id: "COURSE13", publicId: "COU-2026-000013", schoolCode: "CD-2026-0001", className: "5ème B", name: "Français", coefficient: 3 },
-  { id: "COURSE14", publicId: "COU-2026-000014", schoolCode: "CD-2026-0001", className: "5ème B", name: "Histoire", coefficient: 1 },
-  { id: "COURSE15", publicId: "COU-2026-000015", schoolCode: "CD-2026-0001", className: "5ème B", name: "Sciences", coefficient: 2 },
+  { id: "COURSE1", publicId: "COU-2026-000001", schoolCode: "CD-IN-26-001", className: "6ème A", name: "Mathématiques", coefficient: 3 },
+  { id: "COURSE2", publicId: "COU-2026-000002", schoolCode: "CD-IN-26-001", className: "6ème A", name: "Français", coefficient: 3 },
+  { id: "COURSE3", publicId: "COU-2026-000003", schoolCode: "CD-IN-26-001", className: "6ème A", name: "Sciences", coefficient: 2 },
+  { id: "COURSE4", publicId: "COU-2026-000004", schoolCode: "CD-IN-26-001", className: "6ème A", name: "Anglais", coefficient: 2 },
+  { id: "COURSE5", publicId: "COU-2026-000005", schoolCode: "CD-IN-26-001", className: "6ème A", name: "Histoire", coefficient: 1 },
+  { id: "COURSE6", publicId: "COU-2026-000006", schoolCode: "CD-IN-26-001", className: "6ème B", name: "Mathématiques", coefficient: 3 },
+  { id: "COURSE7", publicId: "COU-2026-000007", schoolCode: "CD-IN-26-001", className: "6ème B", name: "Français", coefficient: 3 },
+  { id: "COURSE8", publicId: "COU-2026-000008", schoolCode: "CD-IN-26-001", className: "6ème B", name: "Sciences", coefficient: 2 },
+  { id: "COURSE9", publicId: "COU-2026-000009", schoolCode: "CD-IN-26-001", className: "6ème B", name: "Anglais", coefficient: 2 },
+  { id: "COURSE10", publicId: "COU-2026-000010", schoolCode: "CD-IN-26-001", className: "5ème A", name: "Physique", coefficient: 2 },
+  { id: "COURSE11", publicId: "COU-2026-000011", schoolCode: "CD-IN-26-001", className: "5ème A", name: "Histoire", coefficient: 1 },
+  { id: "COURSE12", publicId: "COU-2026-000012", schoolCode: "CD-IN-26-001", className: "5ème A", name: "Mathématiques", coefficient: 3 },
+  { id: "COURSE13", publicId: "COU-2026-000013", schoolCode: "CD-IN-26-001", className: "5ème B", name: "Français", coefficient: 3 },
+  { id: "COURSE14", publicId: "COU-2026-000014", schoolCode: "CD-IN-26-001", className: "5ème B", name: "Histoire", coefficient: 1 },
+  { id: "COURSE15", publicId: "COU-2026-000015", schoolCode: "CD-IN-26-001", className: "5ème B", name: "Sciences", coefficient: 2 },
 ];
 
 const students = [
-  { id: "1", publicId: "CD-IN-EL-26-001", name: "Jean Dupont", firstName: "Jean", matricule: "CD-IN-EL-26-001", loginCode: "CD-IN-EL-26-001", identifier: "CD-IN-EL-26-001", gender: "Masculin", birthDate: "12-04-2012", className: "6ème A", schoolCode: "CD-2026-0001", pin: "1234", parentName: "Parent Dupont", parentPhone: "+243 820 000 001", parentEmail: "parent.dupont@example.com", archived: false },
-  { id: "2", publicId: "CD-IN-EL-26-002", name: "Marie Martin", firstName: "Marie", matricule: "CD-IN-EL-26-002", loginCode: "CD-IN-EL-26-002", identifier: "CD-IN-EL-26-002", gender: "Féminin", birthDate: "18-09-2012", className: "6ème A", schoolCode: "CD-2026-0001", pin: "1234", parentName: "Parent Martin", parentPhone: "+243 820 000 001", parentEmail: "parent.martin@example.com", archived: false },
-  { id: "3", publicId: "CD-IN-EL-26-003", name: "Paul Bernard", firstName: "Paul", matricule: "CD-IN-EL-26-003", loginCode: "CD-IN-EL-26-003", identifier: "CD-IN-EL-26-003", gender: "Masculin", birthDate: "03-02-2011", className: "6ème B", schoolCode: "CD-2026-0001", pin: "1234", parentName: "Parent Bernard", parentPhone: "+243 820 000 003", parentEmail: "parent.bernard@example.com", archived: false },
-  { id: "4", publicId: "CD-IN-EL-26-004", name: "Sarah Mbala", firstName: "Sarah", matricule: "CD-IN-EL-26-004", loginCode: "CD-IN-EL-26-004", identifier: "CD-IN-EL-26-004", gender: "Féminin", birthDate: "21-07-2011", className: "5ème A", schoolCode: "CD-2026-0001", pin: "1234", parentName: "Parent Mbala", parentPhone: "+243 820 000 004", parentEmail: "parent.mbala@example.com", archived: false },
+  { id: "1", publicId: "CD-IN-EL-26-001", name: "Jean Dupont", firstName: "Jean", matricule: "CD-IN-EL-26-001", loginCode: "CD-IN-EL-26-001", identifier: "CD-IN-EL-26-001", gender: "Masculin", birthDate: "12-04-2012", className: "6ème A", schoolCode: "CD-IN-26-001", pin: "1234", parentName: "Parent Dupont", parentPhone: "+243 820 000 001", parentEmail: "parent.dupont@example.com", archived: false },
+  { id: "2", publicId: "CD-IN-EL-26-002", name: "Marie Martin", firstName: "Marie", matricule: "CD-IN-EL-26-002", loginCode: "CD-IN-EL-26-002", identifier: "CD-IN-EL-26-002", gender: "Féminin", birthDate: "18-09-2012", className: "6ème A", schoolCode: "CD-IN-26-001", pin: "1234", parentName: "Parent Martin", parentPhone: "+243 820 000 001", parentEmail: "parent.martin@example.com", archived: false },
+  { id: "3", publicId: "CD-IN-EL-26-003", name: "Paul Bernard", firstName: "Paul", matricule: "CD-IN-EL-26-003", loginCode: "CD-IN-EL-26-003", identifier: "CD-IN-EL-26-003", gender: "Masculin", birthDate: "03-02-2011", className: "6ème B", schoolCode: "CD-IN-26-001", pin: "1234", parentName: "Parent Bernard", parentPhone: "+243 820 000 003", parentEmail: "parent.bernard@example.com", archived: false },
+  { id: "4", publicId: "CD-IN-EL-26-004", name: "Sarah Mbala", firstName: "Sarah", matricule: "CD-IN-EL-26-004", loginCode: "CD-IN-EL-26-004", identifier: "CD-IN-EL-26-004", gender: "Féminin", birthDate: "21-07-2011", className: "5ème A", schoolCode: "CD-IN-26-001", pin: "1234", parentName: "Parent Mbala", parentPhone: "+243 820 000 004", parentEmail: "parent.mbala@example.com", archived: false },
 ];
 
 const presences = [
@@ -1129,22 +1129,22 @@ const payments = [
 ];
 
 const announcements = [
-  { id: "A1", schoolCode: "CD-2026-0001", title: "Reunion des parents", message: "Reunion generale samedi a 10h00.", date: "2026-05-30", audience: "Parents", status: "Publié" },
-  { id: "A2", schoolCode: "CD-2026-0001", title: "Examens", message: "Les evaluations commencent le 10 juin.", date: "2026-05-29", audience: "Tous", status: "Publié" },
+  { id: "A1", schoolCode: "CD-IN-26-001", title: "Reunion des parents", message: "Reunion generale samedi a 10h00.", date: "2026-05-30", audience: "Parents", status: "Publié" },
+  { id: "A2", schoolCode: "CD-IN-26-001", title: "Examens", message: "Les evaluations commencent le 10 juin.", date: "2026-05-29", audience: "Tous", status: "Publié" },
 ];
 
 const exams = [
-  { id: "EX1", schoolCode: "CD-2026-0001", name: "Contrôle T1 — Mathématiques", className: "6ème A", subject: "Mathématiques", examType: "Contrôle", date: "2026-06-10", period: "Trimestre 1", status: "Programmé" },
-  { id: "EX2", schoolCode: "CD-2026-0001", name: "Devoir T1 — Français", className: "6ème A", subject: "Français", examType: "Devoir", date: "2026-06-12", period: "Trimestre 1", status: "Programmé" },
-  { id: "EX3", schoolCode: "CD-2026-0001", name: "Examen T1 — Sciences", className: "6ème B", subject: "Sciences", examType: "Examen", date: "2026-06-15", period: "Trimestre 1", status: "En cours" },
-  { id: "EX4", schoolCode: "CD-2026-0001", name: "Interrogation — Physique", className: "5ème A", subject: "Physique", examType: "Interrogation", date: "2026-05-28", period: "Trimestre 1", status: "Publié" },
+  { id: "EX1", schoolCode: "CD-IN-26-001", name: "Contrôle T1 — Mathématiques", className: "6ème A", subject: "Mathématiques", examType: "Contrôle", date: "2026-06-10", period: "Trimestre 1", status: "Programmé" },
+  { id: "EX2", schoolCode: "CD-IN-26-001", name: "Devoir T1 — Français", className: "6ème A", subject: "Français", examType: "Devoir", date: "2026-06-12", period: "Trimestre 1", status: "Programmé" },
+  { id: "EX3", schoolCode: "CD-IN-26-001", name: "Examen T1 — Sciences", className: "6ème B", subject: "Sciences", examType: "Examen", date: "2026-06-15", period: "Trimestre 1", status: "En cours" },
+  { id: "EX4", schoolCode: "CD-IN-26-001", name: "Interrogation — Physique", className: "5ème A", subject: "Physique", examType: "Interrogation", date: "2026-05-28", period: "Trimestre 1", status: "Publié" },
 ];
 
 const documents = [
-  { id: "DOC1", schoolCode: "CD-2026-0001", studentId: "1", studentName: "Jean Dupont", documentType: "Attestation", title: "Attestation de scolarité 2025-2026", format: "PDF", status: "Disponible", generatedAt: "15-05-2026" },
-  { id: "DOC2", schoolCode: "CD-2026-0001", studentId: "2", studentName: "Marie Martin", documentType: "Certificat", title: "Certificat de réussite", format: "PDF", status: "Disponible", generatedAt: "20-05-2026" },
-  { id: "DOC3", schoolCode: "CD-2026-0001", studentId: "3", studentName: "Paul Bernard", documentType: "Attestation", title: "Attestation de présence", format: "PDF", status: "En génération", generatedAt: "" },
-  { id: "DOC4", schoolCode: "CD-2026-0001", studentId: "4", studentName: "Sarah Mbala", documentType: "Relevé", title: "Relevé de notes provisoire", format: "PDF", status: "Disponible", generatedAt: "25-05-2026" },
+  { id: "DOC1", schoolCode: "CD-IN-26-001", studentId: "1", studentName: "Jean Dupont", documentType: "Attestation", title: "Attestation de scolarité 2025-2026", format: "PDF", status: "Disponible", generatedAt: "15-05-2026" },
+  { id: "DOC2", schoolCode: "CD-IN-26-001", studentId: "2", studentName: "Marie Martin", documentType: "Certificat", title: "Certificat de réussite", format: "PDF", status: "Disponible", generatedAt: "20-05-2026" },
+  { id: "DOC3", schoolCode: "CD-IN-26-001", studentId: "3", studentName: "Paul Bernard", documentType: "Attestation", title: "Attestation de présence", format: "PDF", status: "En génération", generatedAt: "" },
+  { id: "DOC4", schoolCode: "CD-IN-26-001", studentId: "4", studentName: "Sarah Mbala", documentType: "Relevé", title: "Relevé de notes provisoire", format: "PDF", status: "Disponible", generatedAt: "25-05-2026" },
 ];
 
 const demoCountryTemplates = [
@@ -1221,8 +1221,8 @@ while (countries.length < 50) {
 const burundiSchool = {
   ...school,
   id: "SCHOOL-BI-2026-0002",
-  publicId: "BI-2026-0002",
-  code: "BI-2026-0002",
+  publicId: "BI-ESB-26-001",
+  code: "BI-ESB-26-001",
   loginCode: "BI-ESB-26-001",
   name: "Établissement Somafrik Burundi",
   type: "Université",
@@ -1296,10 +1296,17 @@ while (teachers.length < 50) {
   const subject = demoSubjects[index % demoSubjects.length];
   const firstName = demoFirstNames[index % demoFirstNames.length];
   const lastName = demoLastNames[index % demoLastNames.length];
+  const identityCode = formatIdentityCode({
+    countryCode: "CD",
+    schoolShortCode: "IN",
+    initials: identityInitials(firstName, lastName),
+    year: 2026,
+    sequence: index,
+  });
   teachers.push({
     id: `T${index}`,
-    publicId: `${school.code}-ENS-${String(index).padStart(4, "0")}`,
-    identifier: `ENS-${String(index).padStart(4, "0")}`,
+    publicId: identityCode,
+    identifier: identityCode,
     schoolCode: school.code,
     name: `${firstName} ${lastName}`,
     firstName,
@@ -1363,7 +1370,7 @@ while (students.length < 50) {
     gender: index % 2 === 0 ? "Féminin" : "Masculin",
     birthDate: `${String((index % 27) + 1).padStart(2, "0")}-${String((index % 12) + 1).padStart(2, "0")}-2012`,
     className: classItem.name,
-    schoolCode: "CD-2026-0001",
+    schoolCode: "CD-IN-26-001",
     pin: "1234",
     parentName: `Parent ${lastName}`,
     parentPhone: `+243 820 100 ${String(Math.ceil(index / 2)).padStart(3, "0")}`,
@@ -1404,7 +1411,7 @@ while (announcements.length < 50) {
   const index = announcements.length + 1;
   announcements.push({
     id: `A${index}`,
-    schoolCode: "CD-2026-0001",
+    schoolCode: "CD-IN-26-001",
     title: `Annonce Somafrik ${index}`,
     message: `Communication importante numéro ${index} pour les familles et le personnel.`,
     date: `${String((index % 27) + 1).padStart(2, "0")}-06-2026`,
