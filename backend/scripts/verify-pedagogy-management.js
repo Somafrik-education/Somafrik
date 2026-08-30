@@ -23,6 +23,9 @@ const SCHOOL_LOGIN = "CD-IN-26-001";
 const MEMORY_TEACHER_CODE = "CD-IN-JK-26-00001";
 const PG_TEACHER_CODE = "CD-IN-PP-26-00001";
 const PG_OTHER_TEACHER_CODE = "CD-IN-OT-26-00002";
+const PG_ADMIN_CODE = "CD-IN-AD-26-00001";
+const PG_PREFET_CODE = "CD-IN-PF-26-00001";
+const PG_SECRETARY_CODE = "CD-IN-SC-26-00001";
 const PG_HTTP_DATABASE = String(process.env.SOMAFRIK_PEDAGOGY_HTTP_IT_DATABASE ?? "somafrik_pedagogy_http_it")
   .trim()
   .replace(/[^a-zA-Z0-9_]/g, "");
@@ -102,18 +105,18 @@ async function preparePedagogyHttpDatabase(databaseUrl) {
     );
     const adminUser = await pool.query(
       `INSERT INTO users (school_id, user_code, first_name, last_name, email, password_hash, pin_hash, role, status)
-       VALUES ($1, 'ADMIN-CD-2026-0001-01', 'Admin', 'HTTP', 'admin-http@test.cd', $2, $2, 'SCHOOL_ADMIN', 'active')
+       VALUES ($1, 'CD-IN-AD-26-00001', 'Admin', 'HTTP', 'admin-http@test.cd', $2, $2, 'SCHOOL_ADMIN', 'active')
        RETURNING id`,
       [schoolA.rows[0].id, passwordHash],
     );
     await pool.query(
       `INSERT INTO users (school_id, user_code, first_name, last_name, email, password_hash, pin_hash, role, status)
-       VALUES ($1, 'PREFET-CD-2026-0001-01', 'Samuel', 'Prefet', 'prefet-http@test.cd', $2, $2, 'PREFET_ETUDES', 'active')`,
+       VALUES ($1, 'CD-IN-PF-26-00001', 'Samuel', 'Prefet', 'prefet-http@test.cd', $2, $2, 'PREFET_ETUDES', 'active')`,
       [schoolA.rows[0].id, passwordHash],
     );
     await pool.query(
       `INSERT INTO users (school_id, user_code, first_name, last_name, email, password_hash, pin_hash, role, status)
-       VALUES ($1, 'SECRETAIRE-CD-2026-0001-01', 'Amina', 'Secretaire', 'secretaire-http@test.cd', $2, $2, 'SECRETARY', 'active')`,
+       VALUES ($1, 'CD-IN-SC-26-00001', 'Amina', 'Secretaire', 'secretaire-http@test.cd', $2, $2, 'SECRETARY', 'active')`,
       [schoolA.rows[0].id, passwordHash],
     );
     await pool.query(
@@ -425,10 +428,10 @@ async function runPostgresHttpGuards(databaseUrl) {
   const child = spawnBackend({ port: PG_PORT, databaseUrl: isolatedUrl });
   try {
     await waitForHealth(child, PG_PORT);
-    const adminToken = await login(PG_PORT, "admin", "1234", SCHOOL_LOGIN);
+    const adminToken = await login(PG_PORT, PG_ADMIN_CODE, "1234", SCHOOL_LOGIN);
     const teacherToken = await login(PG_PORT, PG_TEACHER_CODE, "1234", SCHOOL_LOGIN);
-    const prefetToken = await login(PG_PORT, "prefet", "1234", SCHOOL_LOGIN);
-    const secretaryToken = await login(PG_PORT, "secretaire", "1234", SCHOOL_LOGIN);
+    const prefetToken = await login(PG_PORT, PG_PREFET_CODE, "1234", SCHOOL_LOGIN);
+    const secretaryToken = await login(PG_PORT, PG_SECRETARY_CODE, "1234", SCHOOL_LOGIN);
     const parentToken = await login(PG_PORT, "+243 820 000 001", "1234", SCHOOL_LOGIN);
     const stamp = Date.now();
     const schoolBId = (
