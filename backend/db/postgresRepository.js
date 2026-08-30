@@ -4324,17 +4324,8 @@ class PostgresRepository {
   }
 
   async resolveTeacherPgIdForPrincipal(principal, schoolId) {
-    const userId = String(principal?.sub ?? "").trim();
-    if (!userId || !schoolId) return null;
-    const teacher = await this.one(
-      `SELECT t.id
-       FROM teachers t
-       WHERE t.school_id = $1
-         AND t.user_id::text = $2
-       LIMIT 1`,
-      [schoolId, userId],
-    );
-    return teacher?.id ?? null;
+    const { resolveTeacherIdForPrincipal } = require("../lib/resolveTeacherForPrincipal");
+    return resolveTeacherIdForPrincipal((sql, params) => this.one(sql, params), principal, schoolId);
   }
 
   async findActiveTeacherAssignmentRow({ teacherId, classId, subjectId, academicYearId }) {
@@ -6217,12 +6208,12 @@ class PostgresRepository {
   }
 
   getSchoolByCode(code) {
-    const normalized = String(code ?? "").trim().toUpperCase();
-    if (!normalized) return null;
+    const { isV2SchoolLoginCode, normalizeSchoolCode } = require("../lib/schoolCodeV2");
+    const normalized = normalizeSchoolCode(code);
+    if (!normalized || !isV2SchoolLoginCode(normalized)) return null;
     return this.one(
       `SELECT * FROM schools
-       WHERE upper(school_code) = $1
-          OR upper(coalesce(login_code, '')) = $1
+       WHERE upper(login_code) = $1
        LIMIT 1`,
       [normalized],
     );

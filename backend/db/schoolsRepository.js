@@ -70,14 +70,14 @@ function createSchoolsRepository(db) {
   }
 
   async function getByCode(schoolCode) {
+    const { isV2SchoolLoginCode } = require("../lib/schoolCodeV2");
     const code = normalizeSchoolCode(schoolCode);
-    if (!code) return null;
+    if (!code || !isV2SchoolLoginCode(code)) return null;
     const row = await db.one(
       `SELECT s.*, c.name AS country_name, c.iso_code, c.currency AS country_currency
        FROM schools s
        JOIN countries c ON c.id = s.country_id
-       WHERE upper(s.school_code) = $1
-          OR upper(coalesce(s.login_code, '')) = $1
+       WHERE upper(s.login_code) = $1
        LIMIT 1`,
       [code],
     );

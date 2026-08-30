@@ -24,14 +24,19 @@ function uuidOrNull(value) {
 }
 
 /**
- * Sujet de session : `users.id` s'il existe (UUID en PG).
+ * Sujet de session production : `users.id` UUID uniquement.
+ * Mémoire historique : slug `USER-*` encore accepté hors chemin PG.
+ * Jamais publicId / matricule / teacherCode / anonymous pour une session PG.
  * @param {{ id?: string, publicId?: string, matricule?: string }} user
+ * @param {{ postgres?: boolean }} [options]
  */
-function resolvePrincipalSub(user = {}) {
+function resolvePrincipalSub(user = {}, options = {}) {
   const id = String(user.id ?? "").trim();
+  if (options.postgres) {
+    return isUuid(id) ? id : "";
+  }
   if (id) return id;
-  const fallback = String(user.publicId ?? user.matricule ?? "").trim();
-  return fallback || "anonymous";
+  return "";
 }
 
 /**

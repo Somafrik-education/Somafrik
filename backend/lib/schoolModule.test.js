@@ -90,7 +90,7 @@ const counted = withActiveStudentCounts(
     { id: "stu-7", schoolId: "school-cd-nuru", status: "archived" },
   ],
 );
-assert.equal(counted[0].studentCount, 3, "NURU compte les élèves actifs via UUID, code interne et code public");
+assert.equal(counted[0].studentCount, 2, "NURU compte les élèves actifs via UUID et login_code uniquement");
 assert.equal(counted[1].studentCount, 1, "Kanyosha exclut les élèves supprimés");
 assert.equal(nuru.studentCount, undefined, "l'agrégation ne mute pas la source établissement");
 

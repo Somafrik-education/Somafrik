@@ -123,12 +123,12 @@ function createPedagogyPgStore(repo) {
         return query(sql, params);
       },
       async getSchoolByCode(code) {
-        const normalized = asTrimmed(code).toUpperCase();
-        if (!normalized) return null;
+        const { isV2SchoolLoginCode, normalizeSchoolCode } = require("../lib/schoolCodeV2");
+        const normalized = normalizeSchoolCode(code);
+        if (!normalized || !isV2SchoolLoginCode(normalized)) return null;
         const row = await one(
           `SELECT * FROM schools
-           WHERE upper(school_code) = $1
-              OR upper(coalesce(login_code, '')) = $1
+           WHERE upper(login_code) = $1
            LIMIT 1`,
           [normalized],
         );
@@ -292,17 +292,8 @@ function createPedagogyPgStore(repo) {
         );
       },
       async resolveTeacherIdForPrincipal(principal, schoolId) {
-        const userId = asTrimmed(principal?.sub);
-        if (!userId || !schoolId) return null;
-        const row = await one(
-          `SELECT t.id
-           FROM teachers t
-           WHERE t.school_id = $1
-             AND t.user_id::text = $2
-           LIMIT 1`,
-          [schoolId, userId],
-        );
-        return row?.id ?? null;
+        const { resolveTeacherIdForPrincipal } = require("../lib/resolveTeacherForPrincipal");
+        return resolveTeacherIdForPrincipal(one, principal, schoolId);
       },
       async insertWeeklyScheduleSlot(payload) {
         const row = await one(

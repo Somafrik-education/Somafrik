@@ -1,4 +1,3 @@
-const { AccountIdentifier } = require("./accountIdentifier");
 const { verifySecret } = require("./credentialService");
 const { resolveParentChildren } = require("../lib/parentChildren");
 const {
@@ -551,30 +550,20 @@ class AuthService {
   }
 
   findLinkedTeacher(user) {
-    const userId = String(user.id ?? "");
-    const userIdentifier = normalizeText(user.identifier);
-    const schoolCode = normalizeText(user.schoolCode);
-
-    return this.teachers.find((teacher) => {
-      if (userId && String(teacher.userId ?? "") === userId) {
-        return true;
-      }
-      if (schoolCode && teacher.schoolCode && normalizeText(teacher.schoolCode) !== schoolCode) {
-        return false;
-      }
-      return userIdentifier && normalizeText(teacher.identifier) === userIdentifier;
-    });
+    const userId = String(user.id ?? "").trim();
+    if (!userId) return undefined;
+    return this.teachers.find((teacher) => String(teacher.userId ?? "") === userId);
   }
 
   findLinkedStudent(user, schoolCode) {
-    const accountIdentifier = new AccountIdentifier(schoolCode, user.identifier);
-    return this.students.find(
-      (student) =>
-        student.schoolCode === accountIdentifier.schoolCode &&
-        (accountIdentifier.matches(student.matricule) ||
-          accountIdentifier.matches(student.publicId) ||
-          String(student.id) === String(user.id))
-    );
+    const school = String(schoolCode ?? "").trim().toUpperCase();
+    const code = String(user.identifier ?? "").trim().toUpperCase();
+    if (!school || !code) return undefined;
+    return this.students.find((student) => {
+      const studentSchool = String(student.schoolCode ?? "").trim().toUpperCase();
+      const studentCode = String(student.studentCode ?? student.student_code ?? "").trim().toUpperCase();
+      return studentSchool === school && studentCode === code;
+    });
   }
 
   findLinkedParentChildren(user, schoolCode) {
@@ -796,7 +785,7 @@ class AuthService {
   }
 
   resolveSchoolAccountCode(school) {
-    return String(school?.loginCode ?? school?.publicId ?? "").trim().toUpperCase();
+    return String(school?.loginCode ?? "").trim().toUpperCase();
   }
 
   matchesSchoolCode(schoolCode) {
@@ -810,7 +799,7 @@ class AuthService {
       return undefined;
     }
     return this.schools.find((school) => {
-      const login = normalizeSchoolCode(school.loginCode ?? school.publicId);
+      const login = normalizeSchoolCode(school.loginCode);
       return login === normalizedCode;
     });
   }

@@ -1487,12 +1487,33 @@ while (userAccounts.length < 50) {
     identifier: isBackOffice
       ? `demo-user-${index}`
       : role === "Enseignant"
-        ? `ENS-${String(index).padStart(4, "0")}`
+        ? formatIdentityCode({
+            countryCode: country.code,
+            schoolShortCode: "IN",
+            initials: identityInitials(
+              demoFirstNames[index % demoFirstNames.length],
+              demoLastNames[index % demoLastNames.length],
+            ),
+            year: 2026,
+            sequence: index,
+          })
         : role === "Élève / Étudiant"
-          ? `ETU-${String(index).padStart(4, "0")}`
+          ? formatIdentityCode({
+              countryCode: country.code,
+              schoolShortCode: "IN",
+              initials: "EL",
+              year: 2026,
+              sequence: index,
+            })
           : role === "Parent"
             ? `${country.phonePrefix} 830 000 ${String(index).padStart(3, "0")}`
-            : `USR-${String(index).padStart(5, "0")}`,
+            : formatIdentityCode({
+                countryCode: country.code,
+                schoolShortCode: "IN",
+                initials: "USR",
+                year: 2026,
+                sequence: index,
+              }),
     password: isBackOffice ? "1234" : undefined,
     status: index % 13 === 0 ? "Suspendu" : "Actif",
     permissions: rolePermissions[role] ?? ["Voir tableau de bord"],

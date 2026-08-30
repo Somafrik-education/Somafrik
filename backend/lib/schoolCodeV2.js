@@ -69,16 +69,13 @@ function validateSchoolCode(value, options = {}) {
     error.code = "SCHOOL_CODE_REQUIRED";
     throw error;
   }
-  if (isLegacySchoolCodeFormat(normalized)) {
-    if (options.forCreation) {
-      const error = new Error(
-        "Format établissement legacy interdit pour une création (ex. CD-2026-0001). Utiliser le code V2 généré par PostgreSQL.",
-      );
-      error.code = "SCHOOL_CODE_LEGACY_FORBIDDEN";
-      error.statusCode = 400;
-      throw error;
-    }
-    return { normalized, kind: "legacy-read" };
+  if (isLegacySchoolCodeFormat(normalized) || isInternalSchoolAlias(normalized)) {
+    const error = new Error(
+      "Ancien code établissement refusé. Utiliser le login_code V2 (ex. CD-IN-26-001).",
+    );
+    error.code = "SCHOOL_CODE_LEGACY_FORBIDDEN";
+    error.statusCode = 400;
+    throw error;
   }
   if (!isV2SchoolLoginCode(normalized)) {
     const error = new Error("Code établissement invalide.");
@@ -99,23 +96,23 @@ function publicSchoolCodeFromRecord(school = {}) {
   return login || publicId || code;
 }
 
+function schoolLoginCodeFromRecord(school = {}) {
+  const login = normalizeSchoolCode(school.loginCode ?? school.login_code);
+  return isV2SchoolLoginCode(login) ? login : "";
+}
+
 function schoolLookupKeys(school = {}) {
-  return [
-    school.loginCode,
-    school.login_code,
-    school.publicId,
-    school.code,
-    school.legacySchoolCode,
-    school.school_code,
-  ]
-    .map((value) => normalizeSchoolCode(value))
-    .filter(Boolean);
+  const login = schoolLoginCodeFromRecord(school);
+  return login ? [login] : [];
 }
 
 function matchesSchoolLookup(school, requestedCode) {
   const requested = normalizeSchoolCode(requestedCode);
-  if (!requested) return false;
-  return schoolLookupKeys(school).includes(requested);
+  if (!requested || isLegacySchoolCodeFormat(requested) || isInternalSchoolAlias(requested)) {
+    return false;
+  }
+  const login = schoolLoginCodeFromRecord(school);
+  return Boolean(login) && login === requested;
 }
 
 function generateInternalSchoolAlias() {
@@ -172,6 +169,7 @@ module.exports = {
   formatSchoolLoginCode,
   validateSchoolCode,
   publicSchoolCodeFromRecord,
+  schoolLoginCodeFromRecord,
   schoolLookupKeys,
   matchesSchoolLookup,
   generateInternalSchoolAlias,

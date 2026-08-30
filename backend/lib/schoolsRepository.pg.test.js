@@ -262,23 +262,13 @@ async function main() {
     assert.equal(updated.status, "Actif");
 
     /*
-     * 4. Relecture via alias interne school_code (SCH-*).
+     * 4. Relecture via school_code interne (SCH-*) — refus Lot B.
      */
-    const rereadLegacy = await repo.getByCode(created.code);
-
-    assert.ok(
-      rereadLegacy,
-      "l'établissement doit être résolu via school_code interne",
-    );
-
+    const rereadInternal = await repo.getByCode(created.code);
     assert.equal(
-      rereadLegacy.name,
-      "Collège Lot 1 PG Persisté",
-    );
-
-    assert.equal(
-      rereadLegacy.principalName,
-      "Jean Ndayishimiye",
+      rereadInternal,
+      null,
+      "school_code interne n'est plus une identité runtime",
     );
 
     /*
@@ -367,13 +357,9 @@ async function main() {
     );
 
     /*
-     * 8. Les deux codes doivent résoudre le même établissement.
+     * 8. school_code interne ne résout plus l'établissement.
      */
-    assert.equal(
-      rereadCanonical.id,
-      rereadLegacy.id,
-      "login_code et school_code doivent résoudre le même établissement",
-    );
+    assert.equal(await repo.getByCode(created.code), null);
 
     /*
      * 9. Casse insensible pour le code de connexion.
@@ -386,7 +372,7 @@ async function main() {
 
     assert.equal(
       rereadCanonicalUpper.id,
-      rereadLegacy.id,
+      rereadCanonical.id,
     );
 
     /*

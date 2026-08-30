@@ -25,8 +25,11 @@ assert.equal(uuidOrNull(PG_USER_ID), PG_USER_ID);
 assert.equal(resolvePrincipalSub({ id: PG_USER_ID, publicId: "USR-1" }), PG_USER_ID);
 assert.equal(isUuid(resolvePrincipalSub({ id: PG_USER_ID })), true);
 assert.equal(resolvePrincipalSub({ id: "USER-T1" }), "USER-T1");
-assert.equal(resolvePrincipalSub({ publicId: "CD-IN-EL-26-001" }), "CD-IN-EL-26-001");
-assert.equal(resolvePrincipalSub({}), "anonymous");
+assert.equal(resolvePrincipalSub({ publicId: "CD-IN-EL-26-001" }), "");
+assert.equal(resolvePrincipalSub({}), "");
+assert.equal(resolvePrincipalSub({ publicId: "CD-IN-EL-26-001" }, { postgres: true }), "");
+assert.equal(resolvePrincipalSub({ id: "ENS-0001" }, { postgres: true }), "");
+assert.equal(resolvePrincipalSub({ id: PG_USER_ID }, { postgres: true }), PG_USER_ID);
 
 assert.equal(grantedByUserId({ sub: PG_USER_ID }), PG_USER_ID);
 assert.equal(grantedByUserId({ sub: "actor-1" }), null);

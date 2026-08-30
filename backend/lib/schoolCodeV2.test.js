@@ -36,7 +36,14 @@ assert.equal(isLegacySchoolCodeFormat("CD-2026-0001"), true);
 assert.equal(isLegacySchoolCodeFormat("CD-IN-26-001"), false);
 
 assert.deepEqual(validateSchoolCode("cd-in-26-001"), { normalized: "CD-IN-26-001", kind: "v2" });
-assert.deepEqual(validateSchoolCode("CD-2026-0001"), { normalized: "CD-2026-0001", kind: "legacy-read" });
+assert.throws(
+  () => validateSchoolCode("CD-2026-0001"),
+  (error) => error.code === "SCHOOL_CODE_LEGACY_FORBIDDEN",
+);
+assert.throws(
+  () => validateSchoolCode("SCH-ABCDEF"),
+  (error) => error.code === "SCHOOL_CODE_LEGACY_FORBIDDEN",
+);
 assert.throws(
   () => validateSchoolCode("CD-2026-0001", { forCreation: true }),
   (error) => error.code === "SCHOOL_CODE_LEGACY_FORBIDDEN",

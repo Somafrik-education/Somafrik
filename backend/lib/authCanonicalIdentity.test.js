@@ -164,3 +164,68 @@ test("code établissement legacy CD-2026-0001 → refus", async () => {
     401,
   );
 });
+
+test("alias SCH-… → refus comme login public", async () => {
+  const { auth, userA } = createAuth();
+  await expectBusiness(
+    () => auth.login({
+      role: "teacher",
+      schoolCode: "SCH-ABCDEF0123456789",
+      identifier: userA.identifier,
+      pin: "1234",
+    }),
+    401,
+  );
+});
+
+test("publicId école distinct du login_code → refus", async () => {
+  const { auth, schoolA, userA } = createAuth();
+  await expectBusiness(
+    () => auth.login({
+      role: "teacher",
+      schoolCode: schoolA.id,
+      identifier: userA.identifier,
+      pin: "1234",
+    }),
+    401,
+  );
+});
+
+test("user_code inexistant → refus générique", async () => {
+  const { auth, schoolA } = createAuth();
+  await expectBusiness(
+    () => auth.login({
+      role: "teacher",
+      schoolCode: schoolA.loginCode,
+      identifier: "CD-IN-ZZ-26-99999",
+      pin: "1234",
+    }),
+    401,
+  );
+});
+
+test("UUID user utilisé comme login public → refus", async () => {
+  const { auth, schoolA, userA } = createAuth();
+  await expectBusiness(
+    () => auth.login({
+      role: "teacher",
+      schoolCode: schoolA.loginCode,
+      identifier: userA.id,
+      pin: "1234",
+    }),
+    401,
+  );
+});
+
+test("ancien alias élève ELE-0001 → refus", async () => {
+  const { auth, schoolA } = createAuth();
+  await expectBusiness(
+    () => auth.login({
+      role: "student",
+      schoolCode: schoolA.loginCode,
+      identifier: "ELE-0001",
+      pin: "1234",
+    }),
+    401,
+  );
+});

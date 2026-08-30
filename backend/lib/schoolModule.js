@@ -46,17 +46,7 @@ function normalizeSchoolLookup(value) {
 }
 
 function schoolLookupKeys(school = {}) {
-  return [
-    school.id,
-    school.code,
-    school.schoolCode,
-    school.school_code,
-    school.publicId,
-    school.loginCode,
-    school.login_code,
-    school.legacySchoolCode,
-    school.legacy_school_code,
-  ]
+  return [school.id, school.loginCode, school.login_code]
     .map(normalizeSchoolLookup)
     .filter(Boolean);
 }

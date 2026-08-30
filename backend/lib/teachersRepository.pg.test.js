@@ -215,7 +215,7 @@ function createDbAdapter(pool) {
     },
     async getSchoolByCode(code) {
       const result = await pool.query(
-        `SELECT id, school_code FROM schools WHERE school_code = $1 LIMIT 1`,
+        `SELECT id, school_code, login_code FROM schools WHERE upper(login_code) = $1 LIMIT 1`,
         [String(code).toUpperCase()],
       );
       return result.rows[0] ?? null;
