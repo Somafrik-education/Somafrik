@@ -165,8 +165,23 @@ async function seed(pool) {
      VALUES ($1, 'SCH-A', 'École A', 'active'), ($1, 'SCH-B', 'École B', 'active')`,
     [country.rows[0].id],
   );
-  const schoolA = (await pool.query(`SELECT id FROM schools WHERE school_code = 'SCH-A'`)).rows[0];
-  const schoolB = (await pool.query(`SELECT id FROM schools WHERE school_code = 'SCH-B'`)).rows[0];
+  const schoolA = (
+    await pool.query(`SELECT id, login_code, school_code FROM schools WHERE school_code = 'SCH-A'`)
+  ).rows[0];
+  const schoolB = (
+    await pool.query(`SELECT id, login_code, school_code FROM schools WHERE school_code = 'SCH-B'`)
+  ).rows[0];
+  const loginA = String(schoolA.login_code ?? "").trim().toUpperCase();
+  const loginB = String(schoolB.login_code ?? "").trim().toUpperCase();
+  if (!loginA || !loginB) {
+    throw new Error("login_code F6 manquant après INSERT schools");
+  }
+  if (loginA === String(schoolA.school_code).trim().toUpperCase()) {
+    throw new Error("leftover school_code F6 A ne doit pas égaler login_code");
+  }
+  if (loginB === String(schoolB.school_code).trim().toUpperCase()) {
+    throw new Error("leftover school_code F6 B ne doit pas égaler login_code");
+  }
   await pool.query(
     `INSERT INTO academic_years (school_id, name, status)
      SELECT id, '2025-2026', 'open' FROM schools WHERE school_code IN ('SCH-A', 'SCH-B')`,
@@ -238,6 +253,8 @@ async function seed(pool) {
     schoolB: schoolB.id,
     studentCodeA: student.rows[0].student_code,
     studentCodeB: studentB.rows[0].student_code,
+    loginA,
+    loginB,
   };
 }
 
@@ -265,6 +282,9 @@ async function main() {
   try {
     await repo.init();
     const fixture = await seed(repo.pool);
+    assert.match(fixture.loginA, /^[A-Z]{2}-[A-Z0-9]{2,5}-\d{2}-\d{3}$/, `login A alloué: ${fixture.loginA}`);
+    assert.match(fixture.loginB, /^[A-Z]{2}-[A-Z0-9]{2,5}-\d{2}-\d{3}$/, `login B alloué: ${fixture.loginB}`);
+    assert.notEqual(fixture.loginA, fixture.loginB);
 
     child = spawn(process.execPath, ["backend/server.js"], {
       cwd: ROOT,
@@ -289,32 +309,32 @@ async function main() {
 
     const liveToken = mintAccess(
       tokens,
-      staleClaims({ sub: LIVE_USER, schoolCode: "SCH-A", role: "Comptable", roleKeys: ["ACCOUNTANT"] }),
+      staleClaims({ sub: LIVE_USER, schoolCode: fixture.loginA, role: "Comptable", roleKeys: ["ACCOUNTANT"] }),
     );
     const accountantToken = mintAccess(
       tokens,
-      staleClaims({ sub: ACCOUNTANT_A, schoolCode: "SCH-A", role: "Comptable", roleKeys: ["ACCOUNTANT"] }),
+      staleClaims({ sub: ACCOUNTANT_A, schoolCode: fixture.loginA, role: "Comptable", roleKeys: ["ACCOUNTANT"] }),
     );
     const zeroToken = mintAccess(
       tokens,
-      staleClaims({ sub: ZERO_USER, schoolCode: "SCH-A" }),
+      staleClaims({ sub: ZERO_USER, schoolCode: fixture.loginA }),
     );
     const namedToken = mintAccess(
       tokens,
       staleClaims({
         sub: NAMED_USER,
-        schoolCode: "SCH-A",
+        schoolCode: fixture.loginA,
         role: "Admin School",
         roleKeys: ["SCHOOL_ADMIN"],
       }),
     );
     const dualOnA = mintAccess(
       tokens,
-      staleClaims({ sub: DUAL_USER, schoolCode: "SCH-A", role: "Comptable", roleKeys: ["ACCOUNTANT"] }),
+      staleClaims({ sub: DUAL_USER, schoolCode: fixture.loginA, role: "Comptable", roleKeys: ["ACCOUNTANT"] }),
     );
     const dualOnB = mintAccess(
       tokens,
-      staleClaims({ sub: DUAL_USER, schoolCode: "SCH-B", role: "Comptable", roleKeys: ["ACCOUNTANT"] }),
+      staleClaims({ sub: DUAL_USER, schoolCode: fixture.loginB, role: "Comptable", roleKeys: ["ACCOUNTANT"] }),
     );
 
     const authorized = await request("/payments", {

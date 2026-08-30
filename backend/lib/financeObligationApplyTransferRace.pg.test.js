@@ -126,11 +126,14 @@ async function main() {
       `INSERT INTO countries (name, iso_code, phone_code, currency)
        VALUES ('RDC', 'CD', '+243', 'CDF') RETURNING id`,
     );
+    const leftoverSchool = "CD-2026-0001";
     const school = await pool.query(
-      `INSERT INTO schools (country_id, school_code, name, status)
-       VALUES ($1, 'CD-2026-0001', 'Lycée F3 Race', 'active') RETURNING id`,
-      [country.rows[0].id],
+      `INSERT INTO schools (country_id, school_code, login_code, name, status)
+       VALUES ($1, $2, 'CD-F3R-26-001', 'Lycée F3 Race', 'active') RETURNING id, school_code, login_code`,
+      [country.rows[0].id, leftoverSchool],
     );
+    const schoolLogin = String(school.rows[0].login_code).trim().toUpperCase();
+    assert.notEqual(school.rows[0].school_code, schoolLogin);
     const year = await pool.query(
       `INSERT INTO academic_years (school_id, name, status)
        VALUES ($1, '2026-2027', 'open') RETURNING id`,
@@ -169,7 +172,7 @@ async function main() {
     const store = createFinancePgStore(repo);
     const admin = {
       role: "Admin School",
-      schoolCode: "CD-2026-0001",
+      schoolCode: schoolLogin,
       firstName: "Admin",
       lastName: "Race",
       sub: user.rows[0].id,

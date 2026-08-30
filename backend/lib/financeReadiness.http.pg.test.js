@@ -172,14 +172,35 @@ async function seed(pool) {
      VALUES ($1, 'SCH-F8-A', 'École F8 A', 'active'), ($2, 'SCH-F8-B', 'École F8 B', 'active')`,
     [ci.rows[0].id, fr.rows[0].id],
   );
-  const schoolA = (await pool.query(`SELECT id FROM schools WHERE school_code = 'SCH-F8-A'`)).rows[0];
-  const schoolB = (await pool.query(`SELECT id FROM schools WHERE school_code = 'SCH-F8-B'`)).rows[0];
+  const schoolA = (
+    await pool.query(`SELECT id, login_code, school_code FROM schools WHERE school_code = 'SCH-F8-A'`)
+  ).rows[0];
+  const schoolB = (
+    await pool.query(`SELECT id, login_code, school_code FROM schools WHERE school_code = 'SCH-F8-B'`)
+  ).rows[0];
+  const loginA = String(schoolA.login_code ?? "").trim().toUpperCase();
+  const loginB = String(schoolB.login_code ?? "").trim().toUpperCase();
+  if (!loginA || !loginB) {
+    throw new Error("login_code F8 A/B manquant après INSERT leftover");
+  }
+  if (loginA === "SCH-F8-A" || loginB === "SCH-F8-B") {
+    throw new Error("login_code F8 ne doit pas égaler le leftover school_code");
+  }
   await pool.query(
     `INSERT INTO schools (country_id, school_code, name, status)
      VALUES ($1, 'CI-TRAP-26-001', 'École piège FR préfixe CI', 'active')`,
     [fr.rows[0].id],
   );
-  const schoolTrap = (await pool.query(`SELECT id FROM schools WHERE school_code = 'CI-TRAP-26-001'`)).rows[0];
+  const schoolTrap = (
+    await pool.query(`SELECT id, login_code, school_code FROM schools WHERE school_code = 'CI-TRAP-26-001'`)
+  ).rows[0];
+  const loginTrap = String(schoolTrap.login_code ?? "").trim().toUpperCase();
+  if (!loginTrap) {
+    throw new Error("login_code piège manquant après INSERT leftover");
+  }
+  if (loginTrap === "CI-TRAP-26-001") {
+    throw new Error("login_code piège ne doit pas égaler le leftover school_code");
+  }
   await pool.query(
     `INSERT INTO academic_years (school_id, name, status)
      SELECT id, '2025-2026', 'open' FROM schools WHERE school_code IN ('SCH-F8-A', 'SCH-F8-B', 'CI-TRAP-26-001')`,
@@ -298,6 +319,9 @@ async function seed(pool) {
     studentCodeA2: studentA2.rows[0].student_code,
     studentCodeB: studentB.rows[0].student_code,
     studentCodeTrap: studentTrap.rows[0].student_code,
+    loginA,
+    loginB,
+    loginTrap,
   };
 }
 
@@ -383,15 +407,55 @@ async function main() {
 
     const accountantA = mintAccess(
       tokens,
-      staleClaims({ sub: ACCOUNTANT_A, schoolCode: "SCH-F8-A", role: "Comptable", roleKeys: ["ACCOUNTANT"] }),
+      staleClaims({
+        sub: ACCOUNTANT_A,
+        schoolCode: fixture.loginA,
+        role: "Comptable",
+        roleKeys: ["ACCOUNTANT"],
+      }),
     );
     const accountantB = mintAccess(
       tokens,
-      staleClaims({ sub: ACCOUNTANT_B, schoolCode: "SCH-F8-B", role: "Comptable", roleKeys: ["ACCOUNTANT"] }),
+      staleClaims({
+        sub: ACCOUNTANT_B,
+        schoolCode: fixture.loginB,
+        role: "Comptable",
+        roleKeys: ["ACCOUNTANT"],
+      }),
     );
     const liveToken = mintAccess(
       tokens,
-      staleClaims({ sub: LIVE_USER, schoolCode: "SCH-F8-A", role: "Comptable", roleKeys: ["ACCOUNTANT"] }),
+      staleClaims({
+        sub: LIVE_USER,
+        schoolCode: fixture.loginA,
+        role: "Comptable",
+        roleKeys: ["ACCOUNTANT"],
+      }),
+    );
+
+    const leftoverAToken = mintAccess(
+      tokens,
+      staleClaims({
+        sub: ACCOUNTANT_A,
+        schoolCode: "SCH-F8-A",
+        role: "Comptable",
+        roleKeys: ["ACCOUNTANT"],
+      }),
+    );
+    const leftoverPay = await request("/payments", {
+      method: "POST",
+      token: leftoverAToken,
+      headers: { "Idempotency-Key": "f8-leftover-refused" },
+      body: {
+        studentId: fixture.studentCodeA1,
+        items: [{ feeType: "Non imputé", amount: 1 }],
+        method: "Espèces",
+        date: "2026-08-28",
+      },
+    });
+    assert.ok(
+      [403, 404].includes(leftoverPay.status),
+      `principal leftover SCH-F8-A refusé: ${JSON.stringify(leftoverPay.data)}`,
     );
 
     const catalog = await request("/finance/catalog", { token: accountantA });
@@ -756,8 +820,8 @@ async function main() {
       staleClaims({
         sub: ACCOUNTANT_A,
         schoolCode: "",
-        effectiveSchoolCode: "SCH-F8-A",
-        effectiveSchoolInternalCode: "SCH-F8-A",
+        effectiveSchoolCode: fixture.loginA,
+        effectiveSchoolInternalCode: fixture.loginA,
         schoolScopeSource: "request",
         role: "Comptable",
         roleKeys: ["ACCOUNTANT"],
@@ -905,8 +969,8 @@ async function main() {
       staleClaims({
         sub: ACCOUNTANT_A,
         schoolCode: "",
-        effectiveSchoolCode: "SCH-F8-A",
-        effectiveSchoolInternalCode: "SCH-F8-A",
+        effectiveSchoolCode: fixture.loginA,
+        effectiveSchoolInternalCode: fixture.loginA,
         schoolScopeSource: "request",
         role: "Super Administrateur Somafrik",
         roleKeys: ["SUPER_ADMIN"],
@@ -999,7 +1063,7 @@ async function main() {
     const countryGridA = await request("/finance/fee-grids", {
       method: "POST",
       token: countryAdminToken,
-      body: { ...gridBody(CLASS_A2, "6ème A2", "XOF"), schoolCode: "SCH-F8-A" },
+      body: { ...gridBody(CLASS_A2, "6ème A2", "XOF"), schoolCode: fixture.loginA },
     });
     assert.equal(
       countryGridA.status,
@@ -1010,7 +1074,7 @@ async function main() {
     const countryGridB = await request("/finance/fee-grids", {
       method: "POST",
       token: countryAdminToken,
-      body: { ...gridBody(CLASS_B, "6ème B", "EUR"), schoolCode: "SCH-F8-B" },
+      body: { ...gridBody(CLASS_B, "6ème B", "EUR"), schoolCode: fixture.loginB },
     });
     assert.ok(
       [403, 404].includes(countryGridB.status),
@@ -1035,7 +1099,7 @@ async function main() {
     const countryGridTrap = await request("/finance/fee-grids", {
       method: "POST",
       token: countryAdminToken,
-      body: { ...gridBody(CLASS_TRAP, "6ème Piège", "EUR"), schoolCode: "CI-TRAP-26-001" },
+      body: { ...gridBody(CLASS_TRAP, "6ème Piège", "EUR"), schoolCode: fixture.loginTrap },
     });
     assert.ok(
       [403, 404].includes(countryGridTrap.status),
