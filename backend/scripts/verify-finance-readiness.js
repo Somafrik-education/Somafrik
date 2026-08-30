@@ -71,7 +71,7 @@ function sourceGuards() {
   assert.match(getGrid, /s\.login_code AS school_code/);
   assert.doesNotMatch(getGrid, /s\.school_code(?!_)/);
   assert.match(memory, /schoolRecordInFinanceScope\(mapped, scope\)/);
-  assert.match(memory, /schoolRecordInFinanceScope\(scoped, scope\)/);
+  assert.match(memory, /studentRecordInFinanceScope\(scoped, scope\)/);
 
   const scopeLib = read("backend/lib/financeSchoolScope.js");
   const schoolCodeFn = scopeLib.slice(
