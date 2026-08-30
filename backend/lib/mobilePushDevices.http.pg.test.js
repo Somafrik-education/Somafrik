@@ -106,7 +106,14 @@ async function seed(pool) {
      VALUES ($1, 'SCH-PUSH-A', 'École Push A', 'active')`,
     [country.rows[0].id],
   );
-  const school = (await pool.query(`SELECT id FROM schools WHERE school_code = 'SCH-PUSH-A'`)).rows[0];
+  const school = (
+    await pool.query(`SELECT id, login_code FROM schools WHERE school_code = 'SCH-PUSH-A'`)
+  ).rows[0];
+  let loginA = String(school?.login_code || "").trim();
+  if (!loginA) {
+    await pool.query(`UPDATE schools SET login_code = $1 WHERE school_code = 'SCH-PUSH-A'`, ["CI-PSH-26-001"]);
+    loginA = "CI-PSH-26-001";
+  }
   await pool.query(
     `INSERT INTO users (id, school_id, user_code, first_name, last_name, email, role, status, must_change_password)
      VALUES
@@ -120,7 +127,7 @@ async function seed(pool) {
      VALUES ($1, $3, 'TEACHER', 'active'), ($2, $3, 'TEACHER', 'active'), ($4, NULL, 'SUPER_ADMIN', 'active')`,
     [USER_A, USER_B, school.id, USER_SA],
   );
-  return { schoolId: school.id };
+  return { schoolId: school.id, loginA };
 }
 
 function startExpoMock() {
@@ -213,14 +220,14 @@ async function main() {
 
     const tokenA = mintAccess(tokens, {
       sub: USER_A,
-      schoolCode: "SCH-PUSH-A",
+      schoolCode: fixtures.loginA,
       role: "Enseignant",
       roleKeys: ["TEACHER"],
       permissions: [],
     });
     const tokenB = mintAccess(tokens, {
       sub: USER_B,
-      schoolCode: "SCH-PUSH-A",
+      schoolCode: fixtures.loginA,
       role: "Enseignant",
       roleKeys: ["TEACHER"],
       permissions: [],

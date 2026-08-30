@@ -198,6 +198,18 @@ async function grantParentStudentsRead(pool) {
   );
 }
 
+async function readAllocatedSchool(pool, schoolCode, fallbackLogin) {
+  const row = (
+    await pool.query(`SELECT id, login_code FROM schools WHERE school_code = $1`, [schoolCode])
+  ).rows[0];
+  let login = String(row?.login_code || "").trim();
+  if (!login) {
+    await pool.query(`UPDATE schools SET login_code = $1 WHERE school_code = $2`, [fallbackLogin, schoolCode]);
+    login = fallbackLogin;
+  }
+  return { id: row.id, login };
+}
+
 async function seedHttpFixture(pool) {
   const country = await pool.query(
     `INSERT INTO countries (name, iso_code, phone_code, currency)
@@ -209,8 +221,8 @@ async function seedHttpFixture(pool) {
      VALUES ($1, 'SCH-A', 'École A', 'active'), ($1, 'SCH-B', 'École B', 'active')`,
     [countryId],
   );
-  const schoolA = (await pool.query(`SELECT id FROM schools WHERE school_code = 'SCH-A'`)).rows[0];
-  const schoolB = (await pool.query(`SELECT id FROM schools WHERE school_code = 'SCH-B'`)).rows[0];
+  const schoolA = await readAllocatedSchool(pool, "SCH-A", "CI-LYA-26-001");
+  const schoolB = await readAllocatedSchool(pool, "SCH-B", "CI-LYB-26-001");
   await pool.query(
     `INSERT INTO academic_years (school_id, name, status)
      SELECT id, '2025-2026', 'open' FROM schools WHERE school_code IN ('SCH-A', 'SCH-B')`,
@@ -357,6 +369,8 @@ async function seedHttpFixture(pool) {
   return {
     schoolA: schoolA.id,
     schoolB: schoolB.id,
+    loginA: schoolA.login,
+    loginB: schoolB.login,
     studentA: studentA.rows[0],
     studentB: studentB.rows[0],
     studentC: studentC.rows[0],
@@ -413,14 +427,14 @@ async function main() {
       sub: ADMIN_USER_ID,
       role: "Admin School",
       roleKeys: ["SCHOOL_ADMIN"],
-      schoolCode: "SCH-A",
+      schoolCode: fixture.loginA,
       permissions: ["Élèves:READ", "Gérer élèves"],
     });
     const teacherToken = mintAccess(tokens, {
       sub: TEACHER_USER_ID,
       role: "Enseignant",
       roleKeys: ["TEACHER"],
-      schoolCode: "SCH-A",
+      schoolCode: fixture.loginA,
       permissions: ["Élèves:READ"],
       assignments: [
         { classId: ID_A, classCode: "MS-CLS-A", status: "active" },
@@ -431,7 +445,7 @@ async function main() {
       sub: ACCOUNTANT_USER_ID,
       role: "Comptable",
       roleKeys: ["ACCOUNTANT"],
-      schoolCode: "SCH-A",
+      schoolCode: fixture.loginA,
       permissions: ["Gérer paiements", "Voir rapports financiers"],
     });
 
@@ -462,7 +476,7 @@ async function main() {
     const classesCursor = encodeMobileSyncCursor(
       {
         resource: "classes",
-        schoolCode: "SCH-A",
+        schoolCode: fixture.loginA,
         schoolId: fixture.schoolA,
         principalId: ADMIN_USER_ID,
         scopeHash: admin.data.scopeHash,
@@ -480,7 +494,7 @@ async function main() {
       sub: ADMIN_USER_ID,
       role: "Admin School",
       roleKeys: ["SCHOOL_ADMIN"],
-      schoolCode: "SCH-B",
+      schoolCode: fixture.loginB,
       permissions: ["Élèves:READ", "Gérer élèves"],
     });
     const tenant = await request(
@@ -493,7 +507,7 @@ async function main() {
       sub: DUAL_USER_ID,
       role: "Admin School",
       roleKeys: ["SCHOOL_ADMIN"],
-      schoolCode: "SCH-A",
+      schoolCode: fixture.loginA,
       permissions: ["Élèves:READ", "Gérer élèves"],
     });
     const dual = await request("/mobile-sync/l1/students", { token: dualToken });
@@ -505,7 +519,7 @@ async function main() {
       sub: ACC_DUAL_USER_ID,
       role: "Admin School",
       roleKeys: ["SCHOOL_ADMIN"],
-      schoolCode: "SCH-A",
+      schoolCode: fixture.loginA,
       permissions: ["Élèves:READ", "Gérer élèves"],
     });
     const accountantDual = await request("/mobile-sync/l1/students", { token: accountantDualToken });
@@ -533,7 +547,7 @@ async function main() {
       sub: PARENT_USER_ID,
       role: "Parent",
       roleKeys: ["PARENT"],
-      schoolCode: "SCH-A",
+      schoolCode: fixture.loginA,
       permissions: ["Élèves:READ"],
       studentIds: [fixture.studentB.id],
     });
@@ -568,7 +582,7 @@ async function main() {
       sub: CUSTOM_USER_ID,
       role: "CUSTOM_ROLE",
       roleKeys: ["CUSTOM_ROLE"],
-      schoolCode: "SCH-A",
+      schoolCode: fixture.loginA,
       permissions: ["Élèves:READ"],
     });
     const customRole = await request("/mobile-sync/l1/students", { token: customToken });

@@ -201,8 +201,18 @@ async function seed(pool) {
      VALUES ($1, 'SCH-PA-A', 'École PA A', 'active'), ($2, 'SCH-PA-B', 'École PA B', 'active')`,
     [ci.rows[0].id, fr.rows[0].id],
   );
-  const schoolA = (await pool.query(`SELECT id FROM schools WHERE school_code = 'SCH-PA-A'`)).rows[0];
-  const schoolB = (await pool.query(`SELECT id FROM schools WHERE school_code = 'SCH-PA-B'`)).rows[0];
+  const schoolA = (await pool.query(`SELECT id, login_code FROM schools WHERE school_code = 'SCH-PA-A'`)).rows[0];
+  const schoolB = (await pool.query(`SELECT id, login_code FROM schools WHERE school_code = 'SCH-PA-B'`)).rows[0];
+  let loginA = String(schoolA?.login_code || "").trim();
+  let loginB = String(schoolB?.login_code || "").trim();
+  if (!loginA) {
+    await pool.query(`UPDATE schools SET login_code = $1 WHERE school_code = 'SCH-PA-A'`, ["CI-PAA-26-001"]);
+    loginA = "CI-PAA-26-001";
+  }
+  if (!loginB) {
+    await pool.query(`UPDATE schools SET login_code = $1 WHERE school_code = 'SCH-PA-B'`, ["FR-PAB-26-001"]);
+    loginB = "FR-PAB-26-001";
+  }
 
   const student = await pool.query(
     `INSERT INTO students (school_id, student_code, first_name, last_name, status)
@@ -284,7 +294,7 @@ async function seed(pool) {
   await setRoleModuleGrant(pool, "PARENT", { create: false, read: true, update: false });
   await setRoleModuleGrant(pool, "STUDENT", { create: false, read: true, update: false });
 
-  return { schoolA: schoolA.id, schoolB: schoolB.id };
+  return { schoolA: schoolA.id, schoolB: schoolB.id, loginA, loginB };
 }
 
 async function recipientIds(pool, announcementId) {
@@ -374,42 +384,42 @@ async function main() {
     });
     const schoolA = mintAccess(tokens, {
       sub: SCHOOL_A,
-      schoolCode: "SCH-PA-A",
+      schoolCode: fixtures.loginA,
       role: "Admin School",
       roleKeys: ["SCHOOL_ADMIN"],
       permissions: SCHOOL_WRITE,
     });
     const schoolB = mintAccess(tokens, {
       sub: SCHOOL_B,
-      schoolCode: "SCH-PA-B",
+      schoolCode: fixtures.loginB,
       role: "Admin School",
       roleKeys: ["SCHOOL_ADMIN"],
       permissions: SCHOOL_WRITE,
     });
     const teacherA = mintAccess(tokens, {
       sub: TEACHER_A,
-      schoolCode: "SCH-PA-A",
+      schoolCode: fixtures.loginA,
       role: "Enseignant",
       roleKeys: ["TEACHER"],
       permissions: READ_PERMS,
     });
     const parentA = mintAccess(tokens, {
       sub: PARENT_A,
-      schoolCode: "SCH-PA-A",
+      schoolCode: fixtures.loginA,
       role: "Parent",
       roleKeys: ["PARENT"],
       permissions: READ_PERMS,
     });
     const studentA = mintAccess(tokens, {
       sub: STUDENT_A,
-      schoolCode: "SCH-PA-A",
+      schoolCode: fixtures.loginA,
       role: "Élève / Étudiant",
       roleKeys: ["STUDENT"],
       permissions: READ_PERMS,
     });
     const inactive = mintAccess(tokens, {
       sub: INACTIVE_U,
-      schoolCode: "SCH-PA-A",
+      schoolCode: fixtures.loginA,
       role: "Parent",
       roleKeys: ["PARENT"],
       permissions: READ_PERMS,
