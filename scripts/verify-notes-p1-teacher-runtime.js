@@ -119,6 +119,11 @@ function assertTeacherRuntimeSource() {
   assert.match(forge, /EVAL-FORGE/);
   assert.match(forge, /token: teacherToken/);
   assert.doesNotMatch(forge, /token: adminToken/);
+
+  const evalTypes = readRepo("backend/scripts/verify-evaluation-types-management.js");
+  const pgTypes = evalTypes.slice(evalTypes.indexOf("async function runPgSuite"), evalTypes.indexOf("async function main"));
+  assert.match(pgTypes, /token: teacherToken/);
+  assert.doesNotMatch(pgTypes, /token: adminToken/);
 }
 
 assertHelpWriteArticlesAbsent();
