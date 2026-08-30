@@ -491,9 +491,12 @@ async function main() {
     assert.equal(teachersList.status, 200, JSON.stringify(teachersList.data));
     assert.ok(
       (teachersList.data ?? []).some(
-        (row) => String(row.id ?? row.teacherCode ?? row.publicId) === homonym.data.teacherCode,
+        (row) =>
+          [row.teacherCode, row.publicId, row.identifier].some(
+            (value) => String(value ?? "") === String(homonym.data.teacherCode),
+          ),
       ),
-      "GET /teachers projette PostgreSQL",
+      "GET /teachers projette users.user_code",
     );
 
     const assignmentsList = await request("/assignments", { token: admin.token });
