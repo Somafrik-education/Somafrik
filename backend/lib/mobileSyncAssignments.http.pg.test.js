@@ -595,8 +595,8 @@ async function main() {
     assert.ok(!leakItems.some((item) => item.subjectCode === "SUB-ASG-B" || item.subjectId === SUBJECT_B));
     assert.ok(!leakItems.some((item) => item.academicYearId === yearB));
     const orphanL1 = leakItems.find((item) => item.id === ASSIGN_CROSS_USER);
-    assert.ok(orphanL1);
-    assert.equal(orphanL1.teacherUserId, TEACHER_B_USER_ID);
+    assert.equal(orphanL1, undefined, "L1 JOIN users tenant-strict : teacher A / user B hors sync");
+    assert.ok(!leakItems.some((item) => String(item.teacherUserId ?? "") === TEACHER_B_USER_ID));
 
     const leakGet = await request("/assignments", { token: adminToken });
     assert.equal(leakGet.status, 200, `leak GET: ${JSON.stringify(leakGet.data)}`);
