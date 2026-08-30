@@ -44,15 +44,15 @@ describe("marketingContent", () => {
   });
 
   it("sépare le visuel marketing Hero du visuel Produit", () => {
-    expect(marketingHeroVisual.src).toMatch(/marketing\/somafrik-dashboard-hero\.webp$/);
+    expect(marketingHeroVisual.src).toMatch(/marketing\/hero-somafrik-school-dashboard\.webp$/);
     expect(marketingHeroVisual.alt).toBe(
-      "Tableau de bord Somafrik présentant la scolarité, les paiements, les présences et le suivi pédagogique d’un établissement.",
+      "Administration d’un établissement scolaire utilisant le tableau de bord Somafrik",
     );
     expect(marketingHeroVisual.caption).toBe(
-      "Visuel marketing du tableau de bord Somafrik, basé sur l’interface produit.",
+      "Visuel officiel du Hero : administration d’un établissement scolaire utilisant le tableau de bord Somafrik.",
     );
-    expect(marketingHeroVisual.width).toBe(1760);
-    expect(marketingHeroVisual.height).toBe(1400);
+    expect(marketingHeroVisual.width).toBe(1448);
+    expect(marketingHeroVisual.height).toBe(1086);
     expect(marketingHeroVisual.src).not.toBe(marketingProductVisual.src);
   });
 

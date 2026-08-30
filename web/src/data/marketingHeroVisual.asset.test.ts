@@ -5,7 +5,8 @@ import { fileURLToPath } from "node:url";
 import { describe, it } from "vitest";
 
 const WEB_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
-const ASSET = path.join(WEB_ROOT, "public/marketing/somafrik-dashboard-hero.webp");
+const ASSET = path.join(WEB_ROOT, "public/marketing/hero-somafrik-school-dashboard.webp");
+const LEGACY = path.join(WEB_ROOT, "public/marketing/somafrik-dashboard-hero.webp");
 const PRODUCT = path.join(WEB_ROOT, "public/marketing/somafrik-dashboard-etablissement.webp");
 const README = path.join(WEB_ROOT, "public/marketing/README.md");
 const HERO = path.join(WEB_ROOT, "src/components/marketing/HeroSection.tsx");
@@ -16,20 +17,22 @@ describe("marketing hero visual asset", () => {
   it("versionne un WebP Hero distinct du Produit, sans le présenter comme preuve runtime", () => {
     const bytes = fs.readFileSync(ASSET);
     assert.equal(bytes.subarray(8, 12).toString("ascii"), "WEBP");
-    assert.ok(bytes.length > 30_000, `asset trop léger: ${bytes.length}`);
-    assert.ok(bytes.length < 180_000, `asset trop lourd: ${bytes.length}`);
+    assert.ok(bytes.length > 80_000, `asset trop léger: ${bytes.length}`);
+    assert.ok(bytes.length < 220_000, `asset trop lourd: ${bytes.length}`);
+    assert.equal(fs.existsSync(LEGACY), false, "l’ancien asset Hero ne doit plus être versionné");
     assert.notEqual(fs.readFileSync(PRODUCT).equals(bytes), true);
 
     const content = fs.readFileSync(CONTENT, "utf8");
     const heroStart = content.indexOf("export const marketingHeroVisual");
     const heroEnd = content.indexOf("} as const;", heroStart);
     const heroBlock = content.slice(heroStart, heroEnd);
-    assert.match(content, /Visuel marketing du tableau de bord Somafrik[\s\S]*export const marketingHeroVisual/);
+    assert.match(content, /Visuel Hero officiel[\s\S]*export const marketingHeroVisual/);
     assert.doesNotMatch(heroBlock, /capture runtime|preuve runtime|capture preprod/i);
 
     const readme = fs.readFileSync(README, "utf8");
     const readmeHero = readme.slice(0, readme.indexOf("## Produit"));
-    assert.match(readmeHero, /Visuel marketing du tableau de bord Somafrik/);
+    assert.match(readmeHero, /hero-somafrik-school-dashboard\.webp/);
+    assert.match(readmeHero, /Visuel Hero officiel/);
     assert.doesNotMatch(readmeHero, /capture runtime|preuve runtime|capture preprod/i);
 
     for (const file of [HERO, VISUAL, CONTENT]) {

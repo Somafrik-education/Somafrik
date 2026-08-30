@@ -70,13 +70,13 @@ export const marketingProduct = {
   ],
 } as const;
 
-/** Visuel marketing du tableau de bord Somafrik, basé sur l’interface produit. */
+/** Visuel Hero officiel — administration scolaire et tableau de bord Somafrik. */
 export const marketingHeroVisual = {
-  src: `${import.meta.env.BASE_URL}marketing/somafrik-dashboard-hero.webp`,
-  alt: "Tableau de bord Somafrik présentant la scolarité, les paiements, les présences et le suivi pédagogique d’un établissement.",
-  caption: "Visuel marketing du tableau de bord Somafrik, basé sur l’interface produit.",
-  width: 1760,
-  height: 1400,
+  src: `${import.meta.env.BASE_URL}marketing/hero-somafrik-school-dashboard.webp`,
+  alt: "Administration d’un établissement scolaire utilisant le tableau de bord Somafrik",
+  caption: "Visuel officiel du Hero : administration d’un établissement scolaire utilisant le tableau de bord Somafrik.",
+  width: 1448,
+  height: 1086,
 } as const;
 
 /** Capture runtime réelle — pas d’illustration, pas de maquette. */
