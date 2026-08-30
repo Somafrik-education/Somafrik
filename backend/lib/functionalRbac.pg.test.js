@@ -130,8 +130,13 @@ async function main() {
        VALUES ($1, 'BI-2026-0002', 'BI-LB-26-001', 'Lycée BI', 'active')`,
       [countryBi.rows[0].id],
     );
-    const schoolALogin = String(schoolA.rows[0].login_code ?? "").trim().toUpperCase();
+    const schoolAReloaded = await pool.query(
+      `SELECT id, login_code FROM schools WHERE id = $1`,
+      [schoolA.rows[0].id],
+    );
+    const schoolALogin = String(schoolAReloaded.rows[0]?.login_code ?? "").trim().toUpperCase();
     assert.ok(schoolALogin, "login_code école A manquant");
+    assert.match(schoolALogin, /^[A-Z]{2}-[A-Z0-9]{2,5}-\d{2}-\d{3}$/, "login_code école A doit être V2");
 
     const repo = createRepo(pool);
     await ensureFunctionalRbacBootstrap(repo);

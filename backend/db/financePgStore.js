@@ -12,6 +12,7 @@ const {
   mapItemRow,
   mapReminderRow,
   mapStatusRow,
+  financeSchoolIdentityFields,
   studentMatches,
   classScopeSpec,
   obligationStatus,
@@ -56,6 +57,8 @@ function createFinancePgStore(repo) {
         return {
           ...row,
           code: row.login_code,
+          loginCode: row.login_code,
+          login_code: row.login_code,
           countryIso: String(row.country_iso || "").trim().toUpperCase(),
           currency,
           currencySource: profile.currency ? "school" : "country",
@@ -92,7 +95,7 @@ function createFinancePgStore(repo) {
           firstName: row.first_name,
           lastName: row.last_name,
           name: `${row.first_name ?? ""} ${row.last_name ?? ""}`.trim(),
-          schoolCode: row.school_code,
+          ...financeSchoolIdentityFields(row, profile),
           countryIso: String(row.country_iso || "").trim().toUpperCase(),
           className: row.class_name || profile.className || "",
         };
@@ -164,7 +167,7 @@ function createFinancePgStore(repo) {
           schoolId: row.school_id,
           classCode: row.class_code || "",
           className: row.name || "",
-          schoolCode: row.school_code,
+          ...financeSchoolIdentityFields(row),
         };
       },
       async getClassByCode(classCode, schoolId) {
@@ -184,7 +187,7 @@ function createFinancePgStore(repo) {
           schoolId: row.school_id,
           classCode: row.class_code || "",
           className: row.name || "",
-          schoolCode: row.school_code,
+          ...financeSchoolIdentityFields(row),
         };
       },
       async findUniqueClassBySchoolYearName(schoolId, academicYear, className) {
@@ -208,7 +211,7 @@ function createFinancePgStore(repo) {
           schoolId: row.school_id,
           classCode: row.class_code || "",
           className: row.name || "",
-          schoolCode: row.school_code,
+          ...financeSchoolIdentityFields(row),
         };
       },
       async listStudentsInClass(schoolCode, classRef) {
@@ -241,7 +244,7 @@ function createFinancePgStore(repo) {
             firstName: row.first_name,
             lastName: row.last_name,
             name: `${row.first_name ?? ""} ${row.last_name ?? ""}`.trim(),
-            schoolCode: row.school_code,
+            ...financeSchoolIdentityFields(row, profile),
             schoolId: row.school_id,
             classId: row.class_id,
             classCode: row.class_code || "",
@@ -413,7 +416,12 @@ function createFinancePgStore(repo) {
         const school = await one("SELECT login_code AS school_code FROM schools WHERE id = $1", [persisted.school_id]);
         const student = await one("SELECT student_code FROM students WHERE id = $1", [persisted.student_id]);
         return {
-          payment: mapPaymentRow({ ...persisted, school_code: school?.school_code, student_code: student?.student_code }),
+          payment: mapPaymentRow({
+            ...persisted,
+            login_code: school?.login_code || school?.school_code,
+            school_code: school?.login_code || school?.school_code,
+            student_code: student?.student_code,
+          }),
           cancelledNow: Boolean(row),
         };
       },
@@ -585,7 +593,7 @@ function createFinancePgStore(repo) {
             JSON.stringify(input),
           ],
         );
-        return mapGridRow({ ...row, school_code: input.schoolCode });
+        return mapGridRow({ ...row, login_code: input.schoolCode, school_code: input.schoolCode });
       },
       async getGrid(gridId, principal) {
         const params = [gridId];
@@ -616,7 +624,12 @@ function createFinancePgStore(repo) {
            FROM schools s JOIN countries c ON c.id = s.country_id WHERE s.id = $1`,
           [row.school_id],
         );
-        return mapGridRow({ ...row, school_code: school?.school_code, country_iso: school?.country_iso });
+        return mapGridRow({
+          ...row,
+          login_code: school?.login_code || school?.school_code,
+          school_code: school?.login_code || school?.school_code,
+          country_iso: school?.country_iso,
+        });
       },
       async replaceGridItems(grid, items) {
         await query("DELETE FROM school_fee_items WHERE fee_grid_id = $1", [grid.dbId]);

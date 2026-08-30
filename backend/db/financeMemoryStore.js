@@ -137,10 +137,13 @@ function createFinanceMemoryStore({
       async getSchoolByCode(code) {
         const school = await getSchoolByCode?.(code);
         if (!school) return null;
+        const login = school.loginCode || school.login_code || school.code || school.schoolCode;
         return {
           id: school.id || school.publicId || school.code,
-          code: school.code || school.schoolCode,
-          school_code: school.code || school.schoolCode,
+          code: login,
+          loginCode: login,
+          login_code: login,
+          school_code: login,
           countryIso: String(school.countryIso || school.countryCode || school.iso_code || "").trim().toUpperCase(),
           currency: school.currency || "",
         };
@@ -148,15 +151,19 @@ function createFinanceMemoryStore({
       async findStudent(studentKey, principal) {
         const student = await findStudent?.(studentKey, principal);
         if (!student) return null;
-        if (principal) {
-          const scope = resolveFinanceSchoolScope(principal);
-          if (!schoolRecordInFinanceScope(student, scope)) return null;
-        }
-        return {
+        const login = student.loginCode || student.login_code || student.schoolCode;
+        const scoped = {
           ...student,
           dbId: student.dbId || student.id,
-          schoolCode: student.schoolCode,
+          schoolCode: login,
+          loginCode: login,
+          login_code: login,
         };
+        if (principal) {
+          const scope = resolveFinanceSchoolScope(principal);
+          if (!schoolRecordInFinanceScope(scoped, scope)) return null;
+        }
+        return scoped;
       },
       async listActiveEnrollmentsForStudent(studentDbId, schoolId) {
         const student =
@@ -511,6 +518,8 @@ function createFinanceMemoryStore({
             currency: input.currency,
             status: input.status,
             name: input.name,
+            login_code: input.schoolCode || existing.login_code,
+            school_code: input.schoolCode || existing.school_code,
             profile_payload: input,
             updated_at: new Date().toISOString(),
           });
@@ -520,6 +529,7 @@ function createFinanceMemoryStore({
           id: randomUUID(),
           school_id: input.schoolId,
           school_code: input.schoolCode,
+          login_code: input.schoolCode,
           grid_code: input.id || `FEEGRID-${randomUUID()}`,
           name: input.name,
           class_name: input.className,
@@ -798,6 +808,7 @@ function createFinanceMemoryStore({
         id: randomUUID(),
         status_code: code,
         school_code: primaryFinanceSchoolCode(principal) || principal?.schoolCode,
+        login_code: primaryFinanceSchoolCode(principal) || principal?.schoolCode,
         created_at: new Date().toISOString(),
       };
       row.label = payload.label || code;
@@ -814,8 +825,8 @@ function createFinanceMemoryStore({
       const students = typeof listSchoolStudents === "function" ? await listSchoolStudents(principal) : [];
       const rows = [];
       for (const student of students) {
-        const schoolCode = String(student.schoolCode || "").trim();
-        if (!schoolRecordInFinanceScope(student, scope)) continue;
+        const schoolCode = String(student.loginCode || student.login_code || student.schoolCode || "").trim();
+        if (!schoolRecordInFinanceScope({ ...student, loginCode: schoolCode, login_code: schoolCode }, scope)) continue;
         const enrollments = Array.isArray(student.enrollments) && student.enrollments.length
           ? student.enrollments
           : [
@@ -847,7 +858,7 @@ function createFinanceMemoryStore({
       const scope = resolveFinanceSchoolScope(principal);
       if (scope.mode === "none") return resolveCatalogPaymentMethods([]);
       const rows = tables.paymentMethods.filter((row) =>
-        schoolRecordInFinanceScope({ schoolCode: row.school_code, countryIso: row.country_iso }, scope),
+        schoolRecordInFinanceScope({ login_code: row.login_code || row.school_code, countryIso: row.country_iso }, scope),
       );
       return resolveCatalogPaymentMethods(rows);
     },

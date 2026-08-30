@@ -81,6 +81,12 @@ function sourceGuards() {
   assert.doesNotMatch(schoolCodeFn, /slice\(\s*0\s*,\s*2\s*\)/);
   assert.match(scopeLib, /function schoolRecordInFinanceScope/);
   assert.match(scopeLib, /iso_code/);
+  const recordInScope = scopeLib.slice(
+    scopeLib.indexOf("function schoolRecordInFinanceScope"),
+    scopeLib.indexOf("function primaryFinanceSchoolCode"),
+  );
+  assert.match(recordInScope, /record\?\.login_code \|\| record\?\.loginCode/);
+  assert.doesNotMatch(recordInScope, /record\?\.code \|\| record\?\.schoolCode/);
 
   const assertTenant = service.slice(
     service.indexOf("function assertTenant"),

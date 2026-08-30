@@ -113,6 +113,8 @@ test("Lot B : mapGridRow projette login_code, jamais school_code transition", ()
     currency: "XOF",
   });
   assert.equal(mapped.schoolCode, "CI-EA-26-001");
+  assert.equal(mapped.loginCode, "CI-EA-26-001");
+  assert.equal(mapped.login_code, "CI-EA-26-001");
 });
 
 test("Lot B : schoolRecordInFinanceScope lit login_code, jamais school_code", () => {
@@ -128,6 +130,25 @@ test("Lot B : schoolRecordInFinanceScope lit login_code, jamais school_code", ()
   assert.equal(
     schoolRecordInFinanceScope(
       { school_code: "CI-EA-26-001", login_code: "CI-EB-26-002", code: "CI-EB-26-002" },
+      scope,
+    ),
+    false,
+  );
+});
+
+test("Lot B : schoolRecordInFinanceScope fail-closed sans login_code", () => {
+  const principal = { role: "Comptable", schoolCode: "CI-EA-26-001" };
+  const scope = resolveFinanceSchoolScope(principal);
+  assert.equal(
+    schoolRecordInFinanceScope(
+      { code: "SCH-F8-A", schoolCode: "SCH-F8-A", school_code: "SCH-F8-A" },
+      scope,
+    ),
+    false,
+  );
+  assert.equal(
+    schoolRecordInFinanceScope(
+      { code: "CI-EA-26-001", schoolCode: "CI-EA-26-001" },
       scope,
     ),
     false,
