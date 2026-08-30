@@ -1,32 +1,29 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Keyboard, Platform } from "react-native";
-import { useNavigation, useNavigationState } from "@react-navigation/native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth } from "../context/AuthContext";
 import { computeFloatingTabBarLayout } from "../lib/screenLayout";
+import { navigationRef } from "../navigation/rootNavigation";
 import { shouldShowMobileHelp, buildHelpContextFromSession } from "./helpAvailability";
 import { subscribeHelpBusinessModal } from "./helpBusinessModal";
 import { computeHelpTriggerLayout } from "./helpOverlayPolicy";
 import HelpPanel from "./HelpPanel";
 import HelpTrigger from "./HelpTrigger";
-import { getLeafRouteName } from "./resolveMobileHelpRoute";
 
 const TAB_ROOT = "Home";
 
-export default function HelpHost() {
+export type HelpHostProps = {
+  routeName: string | null;
+  rootName: string | null;
+};
+
+export default function HelpHost({ routeName, rootName }: HelpHostProps) {
   const { session, permissionsBootstrap } = useAuth();
-  const navigation = useNavigation();
   const insets = useSafeAreaInsets();
   const [open, setOpen] = useState(false);
   const [keyboardVisible, setKeyboardVisible] = useState(false);
   const [businessModalOpen, setBusinessModalOpen] = useState(false);
 
-  const routeName = useNavigationState((state) => getLeafRouteName(state));
-  const rootName = useNavigationState((state) => {
-    const routes = state?.routes ?? [];
-    const index = Number.isInteger(state?.index) ? Number(state?.index) : 0;
-    return routes[index]?.name ?? null;
-  });
   const hasTabBar = rootName === TAB_ROOT;
 
   const available = shouldShowMobileHelp({
@@ -75,13 +72,11 @@ export default function HelpHost() {
 
   const openPanel = useCallback(() => setOpen(true), []);
   const close = useCallback(() => setOpen(false), []);
-  const goTo = useCallback(
-    (target: string) => {
-      setOpen(false);
-      (navigation as { navigate: (name: string) => void }).navigate(target);
-    },
-    [navigation],
-  );
+  const goTo = useCallback((target: string) => {
+    setOpen(false);
+    if (!navigationRef.isReady()) return;
+    navigationRef.navigate(target as never);
+  }, []);
 
   if (!available) return null;
 

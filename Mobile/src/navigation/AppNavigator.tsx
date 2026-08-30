@@ -1,9 +1,11 @@
+import { useState } from "react";
 import { ActivityIndicator, Text, TouchableOpacity, View } from "react-native";
 import { ROLE_SELECTION_NAV_TITLE } from "../lib/roleSelectionLayout";
-import { NavigationContainer } from "@react-navigation/native";
+import { NavigationContainer, type NavigationState } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { navigationRef } from "./rootNavigation";
 import { flushPendingPushNavigation } from "../lib/pushNotificationTap";
+import { readHelpNavigationSnapshot } from "../help/resolveMobileHelpRoute";
 
 import RoleSelectionScreen from "../screens/RoleSelectionScreen";
 import WelcomeScreen from "../screens/WelcomeScreen";
@@ -209,6 +211,13 @@ export default function AppNavigator() {
     refreshEffectivePermissions,
     logout,
   } = useAuth();
+  const [helpNav, setHelpNav] = useState(() => readHelpNavigationSnapshot(null));
+
+  const applyHelpNavigationState = (state?: NavigationState) => {
+    setHelpNav(
+      readHelpNavigationSnapshot(state ?? (navigationRef.isReady() ? navigationRef.getRootState() : null)),
+    );
+  };
 
   if (bootstrapping) {
     return <View style={{ flex: 1, backgroundColor: "#F8FAFC" }} />;
@@ -247,6 +256,7 @@ export default function AppNavigator() {
       ref={navigationRef}
       key={session ? "authenticated" : "public"}
       onReady={() => {
+        applyHelpNavigationState();
         flushPendingPushNavigation(
           (destination) => navigationRef.navigate(destination as never),
           {
@@ -254,6 +264,9 @@ export default function AppNavigator() {
             isAuthenticated: () => Boolean(session) && canPersistFullSession(session),
           },
         );
+      }}
+      onStateChange={(state) => {
+        applyHelpNavigationState(state);
       }}
     >
       <Stack.Navigator initialRouteName={session ? "Home" : "Welcome"}>
@@ -343,7 +356,7 @@ export default function AppNavigator() {
         {canReadView(session, "PlatformNotifications") && <Stack.Screen name="PlatformNotifications" component={PlatformNotificationsScreen} options={{ title: "Notifications plateforme" }} />}
         {canReadView(session, "Permissions") && <Stack.Screen name="Permissions" component={PermissionsScreen} options={{ title: "Droits par rôle" }} />}
       </Stack.Navigator>
-      <HelpHost />
+      <HelpHost routeName={helpNav.routeName} rootName={helpNav.rootName} />
     </NavigationContainer>
   );
 }
