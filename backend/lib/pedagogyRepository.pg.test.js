@@ -873,7 +873,10 @@ async function main() {
       [evaluation.dbId ?? evaluation.id, fixture.student],
     );
     assert.equal(gradeRows.rows[0].count, 1, "une seule note canonique après concurrence");
-    assert.ok(gradeA?.id || gradeB?.statusCode === 409 || gradeB?.code);
+    const winner = [gradeA, gradeB].find((row) => row?.id && !row.statusCode);
+    const conflict = [gradeA, gradeB].find((row) => Number(row?.statusCode) === 409);
+    assert.ok(winner, "un upsert concurrent doit réussir");
+    assert.ok(conflict, "l'autre upsert concurrent doit 409 (verrou optimiste)");
 
     const attendance = await store.upsertSchoolAttendanceBatch(
       {
@@ -1039,8 +1042,8 @@ async function main() {
     assert.ok(teacherEval.id);
     assert.equal(teacherEval.status, "Brouillon");
     const teacherEvalRow = await pool.query(
-      `SELECT teacher_id, status FROM evaluations WHERE id = $1 OR legacy_json_id = $1`,
-      [teacherEval.id],
+      `SELECT teacher_id, status FROM evaluations WHERE id::text = $1 OR COALESCE(legacy_json_id, '') = $1`,
+      [String(teacherEval.id)],
     );
     assert.equal(String(teacherEvalRow.rows[0].teacher_id), String(fixture.teacher));
     assert.equal(teacherEvalRow.rows[0].status, "draft");
