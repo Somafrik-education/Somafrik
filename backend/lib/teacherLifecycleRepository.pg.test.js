@@ -65,6 +65,7 @@ async function setupFixture(pool) {
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       country_id UUID NOT NULL REFERENCES countries(id),
       school_code VARCHAR(64) NOT NULL UNIQUE,
+      login_code VARCHAR(64) NOT NULL UNIQUE,
       name TEXT NOT NULL,
       status TEXT NOT NULL DEFAULT 'active',
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -278,12 +279,13 @@ async function setupFixture(pool) {
 
   const country = await pool.query(`INSERT INTO countries (name, iso_code) VALUES ('RDC', 'CD') RETURNING id`);
   const schools = await pool.query(
-    `INSERT INTO schools (country_id, school_code, name)
-     VALUES ($1, 'CD-2026-0001', 'Lycée Test 1'), ($1, 'CD-2026-0002', 'Lycée Test 2')
-     RETURNING id, school_code`,
+    `INSERT INTO schools (country_id, school_code, login_code, name)
+     VALUES ($1, 'CD-2026-0001', 'CD-LT-26-001', 'Lycée Test 1'),
+            ($1, 'CD-2026-0002', 'CD-LT-26-002', 'Lycée Test 2')
+     RETURNING id, school_code, login_code`,
     [country.rows[0].id],
   );
-  const school1 = schools.rows.find((row) => row.school_code === "CD-2026-0001");
+  const school1 = schools.rows.find((row) => row.login_code === "CD-LT-26-001");
   const year = await pool.query(
     `INSERT INTO academic_years (school_id, name, status) VALUES ($1, '2025-2026', 'open') RETURNING id`,
     [school1.id],
@@ -349,7 +351,7 @@ function createDbAdapter(pool, options = {}) {
     },
     async getSchoolByCode(code) {
       return adapter.one(
-        `SELECT id, school_code FROM schools WHERE school_code = $1 LIMIT 1`,
+        `SELECT id, school_code, login_code FROM schools WHERE upper(login_code) = $1 LIMIT 1`,
         [String(code).toUpperCase()],
       );
     },
@@ -364,7 +366,7 @@ function createDbAdapter(pool, options = {}) {
             };
       const school = payload.schoolCode
         ? await runOne(
-            `SELECT id, school_code FROM schools WHERE school_code = $1 LIMIT 1`,
+            `SELECT id, school_code, login_code FROM schools WHERE upper(login_code) = $1 LIMIT 1`,
             [String(payload.schoolCode).toUpperCase()],
           )
         : null;
@@ -410,7 +412,7 @@ function createDbAdapter(pool, options = {}) {
         all: (sql, params) => tx.all(sql, params),
         query: (sql, params) => tx.query(sql, params),
         getSchoolByCode: (code) =>
-          tx.one(`SELECT id, school_code FROM schools WHERE school_code = $1 LIMIT 1`, [
+          tx.one(`SELECT id, school_code, login_code FROM schools WHERE upper(login_code) = $1 LIMIT 1`, [
             String(code).toUpperCase(),
           ]),
         recordAudit: (payload, innerTx) => adapter.recordAudit(payload, innerTx ?? tx),
@@ -463,7 +465,7 @@ async function main() {
         temporaryPassword: "TempPass1",
         speciality: "Mathématiques",
       },
-      "CD-2026-0001",
+      "CD-LT-26-001",
       principal,
       { ipAddress: "127.0.0.1" },
     );
@@ -482,7 +484,7 @@ async function main() {
     const updated = await lifecycle.update(
       created.teacherCode,
       { firstName: "Jean-Paul", speciality: "Physique" },
-      "CD-2026-0001",
+      "CD-LT-26-001",
       principal,
       {},
     );
@@ -497,19 +499,19 @@ async function main() {
     assert.equal(await countAudit(pool, "update_teacher", created.teacherCode), 1);
 
     await assert.rejects(
-      () => lifecycle.update(created.teacherCode, { schoolCode: "BI-2026-0002" }, "CD-2026-0001"),
+      () => lifecycle.update(created.teacherCode, { schoolCode: "BI-2026-0002" }, "CD-LT-26-001"),
       (error) => error.statusCode === 400,
     );
     await assert.rejects(
-      () => lifecycle.update(created.teacherCode, { role: "Admin School" }, "CD-2026-0001"),
+      () => lifecycle.update(created.teacherCode, { role: "Admin School" }, "CD-LT-26-001"),
       (error) => error.statusCode === 400,
     );
     await assert.rejects(
-      () => lifecycle.update(created.teacherCode, { teacherCode: "HACK" }, "CD-2026-0001"),
+      () => lifecycle.update(created.teacherCode, { teacherCode: "HACK" }, "CD-LT-26-001"),
       (error) => error.statusCode === 400,
     );
     await assert.rejects(
-      () => lifecycle.update(created.teacherCode, { userId: "x" }, "CD-2026-0001"),
+      () => lifecycle.update(created.teacherCode, { userId: "x" }, "CD-LT-26-001"),
       (error) => error.statusCode === 400,
     );
 
@@ -522,17 +524,17 @@ async function main() {
         email: "marie.mbala@example.com",
         temporaryPassword: "TempPass2",
       },
-      "CD-2026-0001",
+      "CD-LT-26-001",
       principal,
       {},
     );
     assert.equal(await countAudit(pool, "create_teacher", other.teacherCode), 1);
     await assert.rejects(
-      () => lifecycle.update(other.teacherCode, { email: "jean.kabeya@example.com" }, "CD-2026-0001"),
+      () => lifecycle.update(other.teacherCode, { email: "jean.kabeya@example.com" }, "CD-LT-26-001"),
       (error) => error.statusCode === 409 && error.code === "TEACHER_LOGIN_IDENTITY_DUPLICATE",
     );
     await assert.rejects(
-      () => lifecycle.update(other.teacherCode, { phone: "+243 810 100 201" }, "CD-2026-0001"),
+      () => lifecycle.update(other.teacherCode, { phone: "+243 810 100 201" }, "CD-LT-26-001"),
       (error) => error.statusCode === 409 && error.code === "TEACHER_LOGIN_IDENTITY_DUPLICATE",
     );
     await assert.rejects(
@@ -540,16 +542,16 @@ async function main() {
         lifecycle.update(
           other.teacherCode,
           { firstName: "Jean-Paul", lastName: "Kabeya", birthDate: "1988-03-15", gender: "Masculin" },
-          "CD-2026-0001",
+          "CD-LT-26-001",
         ),
       (error) => error.statusCode === 409 && error.code === "TEACHER_CANON_AMBIGUOUS",
     );
 
     await assert.rejects(
-      () => lifecycle.update(created.teacherCode, { speciality: "Chimie" }, "CD-2026-0002"),
+      () => lifecycle.update(created.teacherCode, { speciality: "Chimie" }, "CD-LT-26-002"),
       (error) => error.statusCode === 404,
     );
-    assert.equal((await teachers.listBySchoolCode("CD-2026-0002")).length, 0);
+    assert.equal((await teachers.listBySchoolCode("CD-LT-26-002")).length, 0);
 
     const teacherRow = await pool.query(`SELECT id, user_id FROM teachers WHERE teacher_code = $1`, [
       created.teacherCode,
@@ -559,18 +561,18 @@ async function main() {
 
     const assignment = await assignments.create(
       { teacherCode: created.teacherCode, classCode: "CLS-6A", subjectCode: "SUB-MATH" },
-      "CD-2026-0001",
+      "CD-LT-26-001",
       principal,
       {},
     );
     assert.equal(await countAudit(pool, "create_teacher_assignment", assignment.id), 1);
 
-    await assignments.remove(assignment.id, "CD-2026-0001", principal, {});
+    await assignments.remove(assignment.id, "CD-LT-26-001", principal, {});
     assert.equal(await countAudit(pool, "delete_teacher_assignment", assignment.id), 1);
 
     const recreated = await assignments.create(
       { teacherCode: created.teacherCode, classCode: "CLS-6A", subjectCode: "SUB-MATH" },
-      "CD-2026-0001",
+      "CD-LT-26-001",
       principal,
       {},
     );
@@ -589,7 +591,7 @@ async function main() {
     const updatedAssignment = await assignments.update(
       recreated.id,
       { teacherCode: created.teacherCode },
-      "CD-2026-0001",
+      "CD-LT-26-001",
       principal,
       {},
     );
@@ -617,7 +619,7 @@ async function main() {
       [userId, fixture.school1.id, `hash-${created.teacherCode}`],
     );
 
-    const archived = await lifecycle.archive(created.teacherCode, "CD-2026-0001", principal, {});
+    const archived = await lifecycle.archive(created.teacherCode, "CD-LT-26-001", principal, {});
     assert.deepEqual(archived, { teacherCode: created.teacherCode, archived: true });
     const archiveBundle = await pool.query(
       `SELECT
@@ -638,16 +640,16 @@ async function main() {
     assert.equal((await pool.query(`SELECT COUNT(*)::int AS c FROM grades WHERE teacher_id = $1`, [teacherId])).rows[0].c, 1);
     assert.equal((await pool.query(`SELECT COUNT(*)::int AS c FROM evaluations WHERE teacher_id = $1`, [teacherId])).rows[0].c, 1);
     assert.equal((await pool.query(`SELECT COUNT(*)::int AS c FROM attendance WHERE teacher_id = $1`, [teacherId])).rows[0].c, 1);
-    assert.equal((await teachers.listBySchoolCode("CD-2026-0001")).some((row) => row.teacherCode === created.teacherCode), false);
+    assert.equal((await teachers.listBySchoolCode("CD-LT-26-001")).some((row) => row.teacherCode === created.teacherCode), false);
     await assert.rejects(
-      () => teachers.getByTeacherCode(created.teacherCode, "CD-2026-0001"),
+      () => teachers.getByTeacherCode(created.teacherCode, "CD-LT-26-001"),
       (error) => error.statusCode === 404,
     );
     await assert.rejects(
       () =>
         assignments.create(
           { teacherCode: created.teacherCode, classCode: "CLS-6A", subjectCode: "SUB-MATH" },
-          "CD-2026-0001",
+          "CD-LT-26-001",
         ),
       (error) => error.statusCode === 404 && error.code === "ASSIGNMENT_TEACHER_NOT_FOUND",
     );
@@ -660,7 +662,7 @@ async function main() {
         phone: "+243 810 100 203",
         temporaryPassword: "TempPass3",
       },
-      "CD-2026-0001",
+      "CD-LT-26-001",
       principal,
       {},
     );
@@ -673,7 +675,7 @@ async function main() {
       [fixture.school1.id, fixture.classId, fixture.subjectId, blockedId],
     );
     await assert.rejects(
-      () => lifecycle.archive(blocked.teacherCode, "CD-2026-0001", principal, {}),
+      () => lifecycle.archive(blocked.teacherCode, "CD-LT-26-001", principal, {}),
       (error) => error.statusCode === 409 && error.code === "TEACHER_ACTIVE_PEDAGOGY_REFERENCES",
     );
     await pool.query(`UPDATE school_courses SET status = 'archived' WHERE teacher_id = $1`, [blockedId]);
@@ -683,7 +685,7 @@ async function main() {
       [fixture.school1.id, fixture.classId, blockedId],
     );
     await assert.rejects(
-      () => lifecycle.archive(blocked.teacherCode, "CD-2026-0001", principal, {}),
+      () => lifecycle.archive(blocked.teacherCode, "CD-LT-26-001", principal, {}),
       (error) => error.statusCode === 409 && error.code === "TEACHER_ACTIVE_PEDAGOGY_REFERENCES",
     );
 
@@ -695,7 +697,7 @@ async function main() {
     );
     const auditsBeforeUpdateFail = await countTable(pool, `SELECT COUNT(*)::int AS c FROM audit_logs`);
     await assert.rejects(
-      () => failUpdateLifecycle.update(other.teacherCode, { firstName: "Rollback" }, "CD-2026-0001", principal, {}),
+      () => failUpdateLifecycle.update(other.teacherCode, { firstName: "Rollback" }, "CD-LT-26-001", principal, {}),
       isNotNullViolation,
     );
     const afterName = await pool.query(
@@ -719,13 +721,13 @@ async function main() {
         phone: "+243 810 100 204",
         temporaryPassword: "TempPass4",
       },
-      "CD-2026-0001",
+      "CD-LT-26-001",
       principal,
       {},
     );
     const auditsBeforeArchiveFail = await countTable(pool, `SELECT COUNT(*)::int AS c FROM audit_logs`);
     await assert.rejects(
-      () => failArchiveLifecycle.archive(free.teacherCode, "CD-2026-0001", principal, {}),
+      () => failArchiveLifecycle.archive(free.teacherCode, "CD-LT-26-001", principal, {}),
       isNotNullViolation,
     );
     const stillActive = await pool.query(`SELECT status FROM teachers WHERE teacher_code = $1`, [free.teacherCode]);
@@ -740,7 +742,7 @@ async function main() {
       () =>
         failAssignments.create(
           { teacherCode: other.teacherCode, classCode: "CLS-6A", subjectCode: "SUB-MATH" },
-          "CD-2026-0001",
+          "CD-LT-26-001",
           principal,
           {},
         ),
@@ -758,7 +760,7 @@ async function main() {
         phone: "+243 810 100 205",
         temporaryPassword: "TempPass5",
       },
-      "CD-2026-0001",
+      "CD-LT-26-001",
       principal,
       {},
     );
@@ -771,7 +773,7 @@ async function main() {
         phone: "+243 810 100 206",
         temporaryPassword: "TempPass6",
       },
-      "CD-2026-0001",
+      "CD-LT-26-001",
       principal,
       {},
     );
@@ -779,14 +781,14 @@ async function main() {
       lifecycle.update(
         raceA.teacherCode,
         { firstName: "Identique", lastName: "Canon", birthDate: "1980-12-12", gender: "Masculin" },
-        "CD-2026-0001",
+        "CD-LT-26-001",
         principal,
         {},
       ),
       lifecycle.update(
         raceB.teacherCode,
         { firstName: "Identique", lastName: "Canon", birthDate: "1980-12-12", gender: "Masculin" },
-        "CD-2026-0001",
+        "CD-LT-26-001",
         principal,
         {},
       ),
