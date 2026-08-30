@@ -92,6 +92,8 @@ function assertSourceGuards() {
 
   const metro = readRepo("Mobile/metro.config.js");
   assert.match(metro, /packages\/help-catalog/);
+  assert.match(metro, /@babel\/runtime/);
+  assert.match(metro, /resolveRequest/);
 
   for (const file of walk(path.join(ROOT, "Mobile/src")).filter((item) => /\.(ts|tsx)$/.test(item))) {
     const rel = path.relative(ROOT, file).replace(/\\/g, "/");
