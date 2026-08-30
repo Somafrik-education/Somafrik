@@ -70,7 +70,7 @@
     "verify:mobile-l1-native-sqlcipher-smoke": "node scripts/run-native-sqlcipher-smoke.js",
     "verify:mobile-rc2-offline-read-smoke": "node scripts/verify-mobile-rc2-offline-read-smoke.js",
     "test:role-selection-layout": "npx --yes tsx src/lib/roleSelectionLayout.test.ts",
-    "test:help-v1c": "npx --yes tsx src/help/buildMobileHelpContext.test.ts && npx --yes tsx src/help/resolveMobileHelpRoute.test.ts && npx --yes tsx src/help/helpAvailability.test.ts && npx --yes tsx src/help/helpRbac.test.ts && npx --yes tsx src/help/helpOverlayPolicy.test.ts"
+    "test:help-v1c": "npx --yes tsx src/help/buildMobileHelpContext.test.ts && npx --yes tsx src/help/resolveMobileHelpRoute.test.ts && npx --yes tsx src/help/helpAvailability.test.ts && npx --yes tsx src/help/helpRbac.test.ts && npx --yes tsx src/help/helpOverlayPolicy.test.ts && npx --yes tsx src/help/helpBusinessModal.test.ts"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.3",

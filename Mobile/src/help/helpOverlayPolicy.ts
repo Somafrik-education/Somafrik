@@ -4,12 +4,14 @@ import { MIN_TOUCH_TARGET_DP } from "../lib/mobileUsability";
  * Politique de superposition HELP-V1C Mobile.
  *
  * HELP est un View (pas un Modal natif) :
- *   - les Modal métier (CanonicalMutationModal, confirmations) s'empilent
- *     au-dessus via la fenêtre native — pas de double-overlay ambigu ;
+ *   - CanonicalMutationModal signale son `visible` via reportHelpBusinessModal :
+ *     le trigger se masque et le sheet HELP se ferme ;
+ *   - les autres Modal RN (OverflowActions, AdminCrud, Messages, Annonces,
+ *     drawer) s'empilent au-dessus via la fenêtre native — elles ne sont
+ *     pas toutes câblées au registre HELP ;
  *   - Toast / Alert / erreurs restent visibles au-dessus de HELP ;
  *   - le trigger se masque si le clavier est ouvert (ne couvre pas un CTA
- *     Enregistrer / Ajouter ni un champ) ;
- *   - le trigger se masque si une modal métier est signalée ouverte.
+ *     Enregistrer / Ajouter ni un champ).
  *
  * Empilement applicatif (zIndex View) :
  *   EnvironmentBadge     40

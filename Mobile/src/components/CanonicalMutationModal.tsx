@@ -1,4 +1,6 @@
+import { useEffect } from "react";
 import { ActivityIndicator, Modal, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { reportHelpBusinessModal } from "../help/helpBusinessModal";
 import { MIN_TOUCH_TARGET_DP } from "../lib/mobileUsability";
 
 /** Erreur API globale sous les champs. Les erreurs locales vont dans FormField. */
@@ -26,6 +28,11 @@ export default function CanonicalMutationModal({
   submitDisabled,
 }: Props) {
   const disabled = Boolean(saving || submitDisabled);
+  useEffect(() => {
+    if (!visible) return undefined;
+    reportHelpBusinessModal(true);
+    return () => reportHelpBusinessModal(false);
+  }, [visible]);
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <View style={styles.backdrop}>

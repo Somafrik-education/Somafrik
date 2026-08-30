@@ -83,7 +83,11 @@ function assertSourceGuards() {
   assert.match(host, /buildHelpContextFromSession|buildMobileHelpContext/);
   assert.match(host, /session/);
   assert.match(host, /permissionsBootstrap/);
+  assert.match(host, /subscribeHelpBusinessModal/);
+  assert.doesNotMatch(host, /businessModalOpen:\s*false/);
   assert.match(readRepo("Mobile/src/help/helpAvailability.ts"), /ready_offline/);
+  assert.match(readRepo("Mobile/src/components/CanonicalMutationModal.tsx"), /reportHelpBusinessModal/);
+  assert.match(readRepo("Mobile/src/help/helpBusinessModal.ts"), /reportHelpBusinessModal/);
 
   const overlay = readRepo("Mobile/src/help/helpOverlayPolicy.ts");
   assert.match(overlay, /HELP_TRIGGER_ZINDEX/);
@@ -92,8 +96,10 @@ function assertSourceGuards() {
 
   const metro = readRepo("Mobile/metro.config.js");
   assert.match(metro, /packages\/help-catalog/);
+  assert.match(metro, /nodeModulesPaths/);
   assert.match(metro, /@babel\/runtime/);
   assert.match(metro, /resolveRequest/);
+  assert.doesNotMatch(metro, /disableHierarchicalLookup\s*:\s*true/);
 
   for (const file of walk(path.join(ROOT, "Mobile/src")).filter((item) => /\.(ts|tsx)$/.test(item))) {
     const rel = path.relative(ROOT, file).replace(/\\/g, "/");

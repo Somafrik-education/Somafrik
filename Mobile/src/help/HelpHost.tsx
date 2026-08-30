@@ -5,6 +5,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth } from "../context/AuthContext";
 import { computeFloatingTabBarLayout } from "../lib/screenLayout";
 import { shouldShowMobileHelp, buildHelpContextFromSession } from "./helpAvailability";
+import { subscribeHelpBusinessModal } from "./helpBusinessModal";
 import { computeHelpTriggerLayout } from "./helpOverlayPolicy";
 import HelpPanel from "./HelpPanel";
 import HelpTrigger from "./HelpTrigger";
@@ -18,6 +19,7 @@ export default function HelpHost() {
   const insets = useSafeAreaInsets();
   const [open, setOpen] = useState(false);
   const [keyboardVisible, setKeyboardVisible] = useState(false);
+  const [businessModalOpen, setBusinessModalOpen] = useState(false);
 
   const routeName = useNavigationState((state) => getLeafRouteName(state));
   const rootName = useNavigationState((state) => {
@@ -42,6 +44,12 @@ export default function HelpHost() {
     setOpen(false);
   }, [routeName]);
 
+  useEffect(() => subscribeHelpBusinessModal(setBusinessModalOpen), []);
+
+  useEffect(() => {
+    if (businessModalOpen) setOpen(false);
+  }, [businessModalOpen]);
+
   useEffect(() => {
     const show = Keyboard.addListener(Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow", () => {
       setKeyboardVisible(true);
@@ -61,7 +69,7 @@ export default function HelpHost() {
     tabBarOccupiedHeight: tabLayout.tabBarOccupiedHeight,
     safeBottom: insets.bottom,
     keyboardVisible,
-    businessModalOpen: false,
+    businessModalOpen,
     helpOpen: open,
   });
 
