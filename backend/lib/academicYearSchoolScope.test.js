@@ -17,6 +17,7 @@ const {
 
 const LEFTOVER_A = "CD-2026-0001";
 const LOGIN_A = "CD-LAC-26-001";
+const LEFTOVER_B = "BI-2026-0001";
 const LOGIN_B = "BI-BUJ-26-001";
 const SCHOOL_ID_A = "11111111-1111-4111-8111-111111111111";
 const SCHOOL_ID_B = "22222222-2222-4222-8222-222222222222";
@@ -257,6 +258,23 @@ test("GP-002: findSchoolForPlatformScope n'émet que login_code", async () => {
   assert.equal(found.schoolId, SCHOOL_ID_A);
   assert.equal(leftoverLookups.length, 2);
   assert.equal(await findSchoolForPlatformScope(LEFTOVER_A, async () => ({ id: SCHOOL_ID_A, login_code: null })), null);
+});
+
+test("GP-002: Admin Pays mémoire refuse schoolCode hors pays", async () => {
+  const principal = {
+    role: "Admin Pays",
+    countryCode: "CD",
+  };
+  await assert.rejects(
+    () => resolveAcademicYearWriteSchool(principal, { schoolCode: LOGIN_B }, null),
+    (error) => error.statusCode === 403,
+  );
+  await assert.rejects(
+    () => resolveAcademicYearWriteSchool(principal, { schoolCode: LEFTOVER_B }, null),
+    (error) => error.statusCode === 403,
+  );
+  const allowed = await resolveAcademicYearWriteSchool(principal, { schoolCode: LOGIN_A }, null);
+  assert.equal(allowed.loginCode, LOGIN_A);
 });
 
 test("GP-002: fixture mémoire n'utilise pas leftover comme autorité PG", () => {

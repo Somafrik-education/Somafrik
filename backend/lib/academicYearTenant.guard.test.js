@@ -96,4 +96,9 @@ test("GP-002: academicYearSchoolScope n'autorise pas leftover comme autorité é
 
   assert.doesNotMatch(findFn, /\sOR\s/i);
   assert.doesNotMatch(findFn, /COALESCE/i);
+
+  const writeFn = sliceFrom(scopeLib, "async function resolveAcademicYearWriteSchool", "module.exports");
+  assert.match(writeFn, /typeof one !== "function"/);
+  assert.match(writeFn, /countryIsoFromPublicCode/);
+  assert.match(writeFn, /pays hors périmètre/);
 });

@@ -31,6 +31,11 @@ function isCountryAdminPrincipal(principal) {
   return String(principal?.role ?? "").trim() === "Admin Pays";
 }
 
+function countryIsoFromPublicCode(code) {
+  const iso = normalizeLoginCode(code).slice(0, 2);
+  return /^[A-Z]{2}$/.test(iso) ? iso : "";
+}
+
 function failClosed(message) {
   throw new BusinessError(403, message || "Accès refusé: établissement hors périmètre.");
 }
@@ -328,6 +333,12 @@ async function resolveAcademicYearWriteSchool(principal, body = {}, one) {
     throw error;
   }
   if (typeof one !== "function") {
+    if (scope.mode === "country") {
+      const iso = countryIsoFromPublicCode(requested);
+      if (!iso || iso !== scope.countryCode) {
+        failClosed("Accès refusé: pays hors périmètre.");
+      }
+    }
     return { schoolId: "", loginCode: requested };
   }
   const found = await findSchoolForPlatformScope(requested, one);
