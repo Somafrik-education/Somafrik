@@ -11,6 +11,7 @@ const {
   assertPresenceReadable,
   assertPresenceWriteAccess,
   hasPresenceMembershipAttached,
+  presenceListStaysStudentScoped,
 } = require("./presenceSchoolScope");
 
 const LEFTOVER_A = "CD-2026-0001";
@@ -154,4 +155,12 @@ test("GP-015: fixture mémoire n'est pas un lookup leftover PG", () => {
     schoolCode: LOGIN_A,
   });
   assert.equal(attached.presenceLoginCode, LOGIN_A);
+});
+
+test("GP-015: enseignant et parent restent scopés élève, admin école non", () => {
+  assert.equal(presenceListStaysStudentScoped({ role: "Enseignant" }), true);
+  assert.equal(presenceListStaysStudentScoped({ role: "Parent" }), true);
+  assert.equal(presenceListStaysStudentScoped({ role: "Élève / Étudiant" }), true);
+  assert.equal(presenceListStaysStudentScoped({ role: "Admin School" }), false);
+  assert.equal(presenceListStaysStudentScoped({ role: "Admin Pays" }), false);
 });

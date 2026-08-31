@@ -699,11 +699,13 @@ async function upsertAttendanceBatch(store, payload, principal, auditMeta) {
       for (const item of items) {
         saved.push(await tx.upsertAttendance(item, principal));
       }
+      const auditSchoolCode =
+        asTrimmed(principal?.presenceLoginCode) || asTrimmed(saved[0]?.schoolCode);
       await writePedagogyAudit(tx, principal, auditMeta, {
         action: "upsert_attendance_batch",
         entityType: "attendance",
         entityId: String(saved.length),
-        schoolCode: principal?.schoolCode,
+        schoolCode: auditSchoolCode,
         newValue: { count: saved.length },
       });
       return saved;

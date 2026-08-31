@@ -1929,7 +1929,11 @@ app.get("/api/notes", requireAuth, requirePermission("GET /api/notes"), asyncHan
 
 /** Lecture présences : Présences:READ live (Parent/Élève : seed « Voir présences »). */
 app.get("/api/presences", requireAuth, requirePermission("GET /api/presences"), asyncHandler(async (req, res) => {
-  const { assertPresenceReadable, filterPresenceRows } = require("./lib/presenceSchoolScope");
+  const {
+    assertPresenceReadable,
+    filterPresenceRows,
+    presenceListStaysStudentScoped,
+  } = require("./lib/presenceSchoolScope");
   const principal = await presenceHttpPrincipal(req);
   const scope = assertPresenceReadable(principal);
   const { presences, students } = await loadCanonicalPedagogyForPrincipal(principal);
@@ -1950,7 +1954,15 @@ app.get("/api/presences", requireAuth, requirePermission("GET /api/presences"), 
     studentIds.has(String(presence.studentId ?? "")) &&
     (!date || String(presence.date) === String(date))
   );
-  res.json(studentIds.size ? byStudents : scopedPresences.filter((presence) =>
+  if (studentIds.size) {
+    res.json(byStudents);
+    return;
+  }
+  if (presenceListStaysStudentScoped(principal)) {
+    res.json([]);
+    return;
+  }
+  res.json(scopedPresences.filter((presence) =>
     (!className || presence.className === className) &&
     (!date || String(presence.date) === String(date))
   ));

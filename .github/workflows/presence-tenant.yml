@@ -8,6 +8,7 @@ on:
       - "backend/lib/presenceSchoolScope.test.js"
       - "backend/lib/presenceTenant.guard.test.js"
       - "backend/lib/presenceTenant.http.pg.test.js"
+      - "backend/lib/pedagogyService.js"
       - "backend/db/postgresRepository.js"
       - "backend/db/pedagogyPgStore.js"
       - "backend/scripts/verify-presence-tenant.js"
