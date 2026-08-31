@@ -1,0 +1,615 @@
+{
+  "baseline": {
+    "repository": "Somafrik-education/Somafrik",
+    "branchRequested": "develop",
+    "expectedSha": "ece159605147c2ad16ff7f3f32c7f448377baae0",
+    "expectedPr": 400,
+    "head": "ece159605147c2ad16ff7f3f32c7f448377baae0",
+    "status": "?? docs/audits/evidence/go-prod-baseline-400-results.json\n?? docs/audits/go-prod-baseline-400-matrix.json\n?? scripts/audit-go-prod-baseline-400.js",
+    "ahead": 0,
+    "behind": 0,
+    "log": "ece159605147c2ad16ff7f3f32c7f448377baae0 Merge pull request #400 from Somafrik-education/feat/help-settings-02-catalog",
+    "branch": "cursor/audit-go-prod-baseline-400-a873",
+    "confirmed": true
+  },
+  "unit": {
+    "leftoverIsLegacy": true,
+    "canonicalIsV2": true,
+    "leftoverVsCanonical403": true,
+    "leftoverSelfOk": true,
+    "seesLeftover": true,
+    "seesCanonicalAsOtherTenant": true,
+    "financePredicateLeftover": true,
+    "financeScopeCodes": [
+      "CD-2026-0001"
+    ],
+    "teacherAlwaysWrite": true,
+    "teacherJwtFallback": true,
+    "teacherUnassignedDenied": true,
+    "postEvaluationsPerms": [
+      "Notes:CREATE",
+      "Notes:UPDATE",
+      "ALL_PRIVILEGES"
+    ],
+    "postNotesPerms": [
+      "Notes:CREATE",
+      "Notes:UPDATE",
+      "ALL_PRIVILEGES"
+    ]
+  },
+  "static": {
+    "postAcademicYearsUsesBodyOrJwt": true,
+    "getAcademicYearsProjectsLeftover": true,
+    "mapUserJwtLeftover": true,
+    "financeSqlLeftoverOnly": true,
+    "financeGetSchoolLeftoverOnly": true,
+    "teacherImplicitWrite": true,
+    "teacherJwtAssignmentFallback": true,
+    "postEvaluationsAllowsUpdate": true,
+    "writeNotesBeforeRbac": true,
+    "j3TeacherHasAssignmentsReadNotGrades": true,
+    "adminCdAliasPresent": true
+  },
+  "http": {
+    "skipped": false,
+    "failed": false,
+    "leftoverA": "CD-2026-0001",
+    "loginA": "CD-LAC-26-001",
+    "leftoverEqualsLogin": false,
+    "jwtSchoolCode": "CD-2026-0001",
+    "steps": [
+      {
+        "id": "SCHOOL_DUAL_IDENTITY",
+        "ok": true,
+        "detail": "school_code=CD-2026-0001 login_code=CD-LAC-26-001",
+        "leftoverA": "CD-2026-0001",
+        "loginA": "CD-LAC-26-001"
+      },
+      {
+        "id": "BACKEND_BOOT",
+        "ok": true,
+        "detail": "port 19740"
+      },
+      {
+        "id": "LOGIN_LEFTOVER",
+        "ok": true,
+        "detail": "HTTP 200 \"\""
+      },
+      {
+        "id": "LOGIN_CANONICAL",
+        "ok": true,
+        "detail": "HTTP 200"
+      },
+      {
+        "id": "JWT_SCHOOLCODE_LEFTOVER",
+        "ok": true,
+        "detail": "jwt.schoolCode=CD-2026-0001 leftover=CD-2026-0001 login=CD-LAC-26-001",
+        "jwtSchoolCode": "CD-2026-0001"
+      },
+      {
+        "id": "POST_YEAR_CANONICAL_BODY",
+        "ok": true,
+        "detail": "HTTP 403 {\"message\":\"Accès refusé: établissement hors périmètre.\"}",
+        "expected": "403 établissement hors périmètre (JWT leftover vs body login_code)"
+      },
+      {
+        "id": "POST_YEAR_JWT_LEFTOVER",
+        "ok": true,
+        "detail": "HTTP 201 schoolCode=CD-2026-0001 \"\""
+      },
+      {
+        "id": "GET_YEAR_PROJECTS_LEFTOVER",
+        "ok": true,
+        "detail": "HTTP 200 schoolCodes=[\"CD-2026-0001\"] count=1"
+      },
+      {
+        "id": "POST_USER_CLIENT_LOGIN_CODE_IGNORED",
+        "ok": true,
+        "detail": "HTTP 201 schoolCode=CD-2026-0001 \"\""
+      },
+      {
+        "id": "POST_USER_SCHOOL_UUID",
+        "ok": true,
+        "detail": "user.school_id=a6ea833a-87b3-4c49-8451-9daca114f0f8 expected=a6ea833a-87b3-4c49-8451-9daca114f0f8"
+      },
+      {
+        "id": "FINANCE_CATALOG_JWT_LEFTOVER",
+        "ok": true,
+        "detail": "HTTP 200 [\"currency\",\"currencySource\",\"paymentMethods\",\"feeTypes\",\"feeTypeCatalog\",\"canonicalFeeTypes\",\"discountsDeferred\",\"penaltiesDeferred\"]"
+      },
+      {
+        "id": "FINANCE_GETSCHOOL_LEFTOVER_ACCEPTED",
+        "ok": true,
+        "detail": "id=a6ea833a-87b3-4c49-8451-9daca114f0f8"
+      },
+      {
+        "id": "FINANCE_GETSCHOOL_LOGIN_CODE_REFUSED",
+        "ok": true,
+        "detail": "null (attendu : financePgStore WHERE school_code leftover-only)"
+      },
+      {
+        "id": "FINANCE_FEE_GRIDS_JWT_LEFTOVER",
+        "ok": true,
+        "detail": "HTTP 200"
+      },
+      {
+        "id": "FINANCE_CATALOG_AFTER_LOGIN_CODE",
+        "ok": true,
+        "detail": "HTTP 200 (JWT reste leftover même après login_code)"
+      },
+      {
+        "id": "CROSS_TENANT_YEARS_HIDDEN",
+        "ok": true,
+        "detail": "B sees 0 years, leak=false"
+      }
+    ],
+    "error": null,
+    "reason": null
+  },
+  "counts": {
+    "REPRODUIT": 8,
+    "sev_P1": 11,
+    "sev_P0": 6,
+    "DÉJÀ_OK": 6,
+    "sev_P2": 5,
+    "HOLD": 5,
+    "HORS_RELEASE": 1,
+    "UNKNOWN": 2
+  },
+  "rows": [
+    {
+      "id": "GP-001",
+      "domain": "Notes",
+      "scenario": "Enseignant crée une évaluation (RBAC live + teacher_assignments PG)",
+      "result": "REPRODUIT",
+      "severity": "P1",
+      "historical": [
+        "#402"
+      ],
+      "fixBeforeProd": true,
+      "proposition": "PR minimale NOTES-P1 : POST /evaluations = Notes:CREATE uniquement ; écriture enseignante bornée à teacher_assignments PG ; retirer fallback JWT classNames et teacherHasNotesWritePermission(role===Enseignant); grant J3 TEACHER/grades CREATE si contrat V1.",
+      "evidence": [
+        "POST /api/evaluations permissions = [\"Notes:CREATE\",\"Notes:UPDATE\",\"ALL_PRIVILEGES\"] (CREATE|UPDATE, pas CREATE seul)",
+        "teacherHasNotesWritePermission(Enseignant, permissions=[]) = true",
+        "fallback JWT classNames/subjects = true",
+        "J3 critical parity TEACHER = assignments READ seulement, pas grades (true)",
+        "KNOWN-ISSUES.md §18 toujours présent sur cette baseline"
+      ],
+      "proofKind": "source+unit",
+      "http": null
+    },
+    {
+      "id": "GP-002",
+      "domain": "Academic year",
+      "scenario": "Tenant canonique leftover school_code != login_code — GET/POST année scolaire",
+      "result": "REPRODUIT",
+      "severity": "P0",
+      "historical": [
+        "#408",
+        "#409"
+      ],
+      "fixBeforeProd": true,
+      "proposition": "PR minimale academic-year tenant : résoudre l'école via membership UUID / login_code V2 ; refuser leftover en body ; GET projette login_code ; ne pas comparer JWT leftover à un body V2.",
+      "evidence": [
+        "POST schoolCode = body ?? jwt leftover (true)",
+        "aucun resolveAcademicYearCreateTenant (true)",
+        "GET projette s.school_code leftover (true)",
+        "assertSchoolAccess leftover vs login_code → 403 (true)",
+        "filterRows : leftover visible=true login_code traité comme autre tenant=true",
+        "HTTP POST body login_code : {\"id\":\"POST_YEAR_CANONICAL_BODY\",\"ok\":true,\"detail\":\"HTTP 403 {\\\"message\\\":\\\"Accès refusé: établissement hors périmètre.\\\"}\",\"expected\":\"403 établissement hors périmètre (JWT leftover vs body login_code)\"}",
+        "HTTP POST JWT leftover omit body : {\"id\":\"POST_YEAR_JWT_LEFTOVER\",\"ok\":true,\"detail\":\"HTTP 201 schoolCode=CD-2026-0001 \\\"\\\"\"}"
+      ],
+      "proofKind": "http+source",
+      "http": {
+        "id": "POST_YEAR_CANONICAL_BODY",
+        "ok": true,
+        "detail": "HTTP 403 {\"message\":\"Accès refusé: établissement hors périmètre.\"}",
+        "expected": "403 établissement hors périmètre (JWT leftover vs body login_code)"
+      }
+    },
+    {
+      "id": "GP-003",
+      "domain": "Users",
+      "scenario": "Admin établissement crée un utilisateur — tenant membership vs leftover JWT",
+      "result": "REPRODUIT",
+      "severity": "P1",
+      "historical": [
+        "#410",
+        "#411"
+      ],
+      "fixBeforeProd": true,
+      "proposition": "PR minimale users tenant : dériver school_id de users.school_id membership ; ignorer leftover comme autorité ; fail-closed sans membership ; conserver ignoreClientScope. Ne pas réintroduire presets admin-cd/admin-bi comme autorité.",
+      "evidence": [
+        "resolveCreateUserSchoolCode School Admin = principal.schoolCode leftover (true)",
+        "assertSchoolScope égalité de chaînes leftover vs body (true)",
+        "aliases mapUser admin / admin-bi / admin-cd présents (true)",
+        "HTTP POST users : {\"id\":\"POST_USER_CLIENT_LOGIN_CODE_IGNORED\",\"ok\":true,\"detail\":\"HTTP 201 schoolCode=CD-2026-0001 \\\"\\\"\"}"
+      ],
+      "proofKind": "http+source",
+      "http": {
+        "id": "POST_USER_CLIENT_LOGIN_CODE_IGNORED",
+        "ok": true,
+        "detail": "HTTP 201 schoolCode=CD-2026-0001 \"\""
+      }
+    },
+    {
+      "id": "GP-004",
+      "domain": "Students",
+      "scenario": "Inscription élève → sync obligations Finance avec leftover JWT",
+      "result": "REPRODUIT",
+      "severity": "P0",
+      "historical": [
+        "#412"
+      ],
+      "fixBeforeProd": true,
+      "proposition": "PR minimale enrollment tenant : school_id classe/élève via membership ; transmettre login_code V2 (jamais leftover) à Finance après #406. Dépend de GP-005.",
+      "evidence": [
+        "POST /classes/:classCode/students utilise req.principal.schoolCode leftover",
+        "enrollStudentInClass passe schoolCode leftover à syncEnrollmentFinanceObligations (false)",
+        "Aucun resolveEnrollmentTenant sur HEAD #400",
+        "module studentEnrollmentTenant.js absent (true)"
+      ],
+      "proofKind": "source",
+      "http": null
+    },
+    {
+      "id": "GP-005",
+      "domain": "Finance",
+      "scenario": "Identité établissement login_code vs leftover school_code",
+      "result": "REPRODUIT",
+      "severity": "P0",
+      "historical": [
+        "#406"
+      ],
+      "fixBeforeProd": true,
+      "proposition": "PR minimale finance tenant : sqlSchoolPredicate et getSchoolByCode sur login_code uniquement ; leftover ne doit plus être une identité métier ; schoolCode client forgé ignoré.",
+      "evidence": [
+        "sqlSchoolPredicate alias.school_code leftover (true / unit true)",
+        "financePgStore.getSchoolByCode WHERE school_code leftover only (true)",
+        "HTTP leftover accepted=true login_code refused=true"
+      ],
+      "proofKind": "http+source",
+      "http": {
+        "id": "FINANCE_GETSCHOOL_LOGIN_CODE_REFUSED",
+        "ok": true,
+        "detail": "null (attendu : financePgStore WHERE school_code leftover-only)"
+      }
+    },
+    {
+      "id": "GP-006",
+      "domain": "Notes",
+      "scenario": "Impossibilité d'évaluation hors affectation / matière / cross-school",
+      "result": "REPRODUIT",
+      "severity": "P1",
+      "historical": [
+        "#402"
+      ],
+      "fixBeforeProd": true,
+      "proposition": "Même PR que GP-001 : autorité teacher_assignments PG, IDs canoniques, pas de résolution par nom de classe.",
+      "evidence": [
+        "JWT fallback autorise 6ème A / Maths sans fiche teacher_assignments (true)",
+        "hors affectation session 6ème B / Histoire refusé=true",
+        "évaluation résout la classe par nom normalisé (true)",
+        "pedagogyPgStore.getSchoolByCode leftover-only (true)"
+      ],
+      "proofKind": "source+unit",
+      "http": null
+    },
+    {
+      "id": "GP-007",
+      "domain": "Notes",
+      "scenario": "RBAC refusé vs abonnement write_notes refusé",
+      "result": "DÉJÀ_OK",
+      "severity": "P2",
+      "historical": [
+        "#402",
+        "SETTINGS-01"
+      ],
+      "fixBeforeProd": false,
+      "proposition": "Aucune PR. Conserver write_notes avant requirePermission. Ne pas fusionner les messages.",
+      "evidence": [
+        "write_notes précède requirePermission sur POST /evaluations (true)",
+        "notesEvaluationsRbacLive.test.js distingue PERMISSION_DENIED et suspension abonnement"
+      ],
+      "proofKind": "source",
+      "http": null
+    },
+    {
+      "id": "GP-008",
+      "domain": "Notes",
+      "scenario": "Aucun ALL_PRIVILEGES implicite enseignant",
+      "result": "REPRODUIT",
+      "severity": "P1",
+      "historical": [
+        "#402"
+      ],
+      "fixBeforeProd": true,
+      "proposition": "Retirer teacherHasNotesWritePermission(role===Enseignant) → true. ALL_PRIVILEGES reste Superadmin via routePermissions.",
+      "evidence": [
+        "Enseignant sans permission live → write autorisé=true"
+      ],
+      "proofKind": "unit",
+      "http": null
+    },
+    {
+      "id": "GP-009",
+      "domain": "Notes",
+      "scenario": "Préfet / Direction / Admin — validation publication lecture modification",
+      "result": "DÉJÀ_OK",
+      "severity": "P1",
+      "historical": [
+        "#402"
+      ],
+      "fixBeforeProd": false,
+      "proposition": "Pas de PR dédiée si GP-001 ne casse pas le contrat Préfet Notes:UPDATE. Vérifier matrice live après GP-001.",
+      "evidence": [
+        "assertTeacherCannotValidateEvaluation refuse locked/published pour Enseignant",
+        "PATCH evaluations = Notes:UPDATE",
+        "securityMatrix Préfet Notes=CRUD, Admin School Notes=R, Enseignant Notes=CRUD déclaré"
+      ],
+      "proofKind": "source+unit",
+      "http": null
+    },
+    {
+      "id": "GP-010",
+      "domain": "Paramètres",
+      "scenario": "Profil établissement lecture / modification / persistence PG",
+      "result": "DÉJÀ_OK",
+      "severity": "P2",
+      "historical": [
+        "#399",
+        "#400"
+      ],
+      "fixBeforeProd": false,
+      "proposition": "Aucune. SETTINGS-01 ACTUEL_COMPLET. Rejouer smoke Web après PRs tenant.",
+      "evidence": [
+        "settings-functional-audit.md Profil ACTUEL_COMPLET",
+        "establishmentsApi.update → schools PG"
+      ],
+      "proofKind": "source",
+      "http": null
+    },
+    {
+      "id": "GP-011",
+      "domain": "Paramètres",
+      "scenario": "Structure pédagogique — activation pays, pas de mutation catalogues Superadmin",
+      "result": "DÉJÀ_OK",
+      "severity": "P2",
+      "historical": [
+        "#399"
+      ],
+      "fixBeforeProd": false,
+      "proposition": "Aucune PR. Conserver activation établissement vs catalogue pays Superadmin.",
+      "evidence": [
+        "education-reference school-activation vs backoffice education-levels"
+      ],
+      "proofKind": "source",
+      "http": null
+    },
+    {
+      "id": "GP-012",
+      "domain": "Paramètres",
+      "scenario": "Rôles et droits établissement = lecture catalogue, pas matrice globale",
+      "result": "DÉJÀ_OK",
+      "severity": "P2",
+      "historical": [
+        "#399"
+      ],
+      "fixBeforeProd": false,
+      "proposition": "Aucune. Attribution rôle = Comptes utilisateurs.",
+      "evidence": [
+        "LECTURE_SEULE documenté SETTINGS-01",
+        "matrice Superadmin /administration/permissions"
+      ],
+      "proofKind": "source",
+      "http": null
+    },
+    {
+      "id": "GP-013",
+      "domain": "Paramètres",
+      "scenario": "Finances V1 — devise, types de frais, échéances, moyens de paiement",
+      "result": "HOLD",
+      "severity": "P1",
+      "historical": [
+        "#399",
+        "#406"
+      ],
+      "fixBeforeProd": true,
+      "proposition": "Fonctionnel V1 présent mais identité tenant Finance = leftover (GP-005). Pénalités/restore/apparence HORS_RELEASE.",
+      "evidence": [
+        "SETTINGS-01 ACTUEL_PARTIEL Finances",
+        "dépendance GP-005"
+      ],
+      "proofKind": "source",
+      "http": null
+    },
+    {
+      "id": "GP-014",
+      "domain": "Planning",
+      "scenario": "Créneau create/update/drag/salle/enseignant/matière/classe/refresh PG",
+      "result": "HOLD",
+      "severity": "P1",
+      "historical": [],
+      "fixBeforeProd": false,
+      "proposition": "Pas de PR planning dédiée avant tenant. ComingSoon salles-vue / conflits UI : HORS_RELEASE. Persistence weekly slots déjà PG.",
+      "evidence": [
+        "CoursePlanningPage + planningWeeklyWrite",
+        "PlanningPlaceholders ComingSoon vue par salle",
+        "pedagogy leftover getSchoolByCode"
+      ],
+      "proofKind": "source",
+      "http": null
+    },
+    {
+      "id": "GP-015",
+      "domain": "Présences",
+      "scenario": "Enseignant → classe affectée → saisie → refresh — IDs canoniques",
+      "result": "HOLD",
+      "severity": "P1",
+      "historical": [
+        "#413"
+      ],
+      "fixBeforeProd": true,
+      "proposition": "Rejouer après GP-001. #413 était test-only (affectation fixture ENS-SYNC-01). Runtime findTeacherForAttendance déjà fail-closed. Homonymes : contrat presencesRoster. Offline SQLCipher HORS_RELEASE.",
+      "evidence": [
+        "verify:presences-roster présent sur HEAD",
+        "POST /presences fail-closed inscription + affectation documenté TESTING.md",
+        "RC3 SQLCipher explicitement hors audit"
+      ],
+      "proofKind": "source",
+      "http": null
+    },
+    {
+      "id": "GP-016",
+      "domain": "Parent/Élève",
+      "scenario": "Création parent → rôle → liaison enfant → relogin → notes/présences/frais",
+      "result": "HORS_RELEASE",
+      "severity": "P1",
+      "historical": [
+        "KNOWN-ISSUES §6 §19"
+      ],
+      "fixBeforeProd": false,
+      "proposition": "Code parentLinking.js + verify:parent-linking existent. Guide : workflow non certifié. Classer HORS_RELEASE V1 sauf décision CTO d'exiger le parcours. Ne pas simuler par fixture.",
+      "evidence": [
+        "KNOWN-ISSUES.md §6 Parent-enfant non publié",
+        "§19 seed parent sans enfant lié"
+      ],
+      "proofKind": "source",
+      "http": null
+    },
+    {
+      "id": "GP-017",
+      "domain": "Mobile",
+      "scenario": "Smoke V1 Accueil/Classes/Élèves/Enseignants/Utilisateurs/Appel/Notes/Paiements/Planning/Paramètres",
+      "result": "UNKNOWN",
+      "severity": "P1",
+      "historical": [
+        "#414",
+        "#415",
+        "#416",
+        "#417"
+      ],
+      "fixBeforeProd": false,
+      "proposition": "Aucun correctif géométrique. Bottom nav #414–#416 hors baseline (rollback #400). Preuve device obligatoire avant toute PR mobile visuelle. Permissions source : verify:mobile-* présents.",
+      "evidence": [
+        "Pas d'émulateur Android/iOS dans cet environnement",
+        "PRs bottom-nav post-#400 volontairement non rejouées comme vérité runtime"
+      ],
+      "proofKind": "none",
+      "http": null
+    },
+    {
+      "id": "GP-018",
+      "domain": "Web",
+      "scenario": "Smoke métier par rôle login/dashboard/nav/lecture/écriture/logout",
+      "result": "UNKNOWN",
+      "severity": "P1",
+      "historical": [
+        "#399"
+      ],
+      "fixBeforeProd": false,
+      "proposition": "Smoke navigateur après PRs tenant. Signaler CTA visibles 403 systématiques lors du smoke.",
+      "evidence": [
+        "Web UI non démarrée pour smoke E2E dans cet audit (Docker web absent ; preuve HTTP API faite)"
+      ],
+      "proofKind": "none",
+      "http": null
+    },
+    {
+      "id": "GP-019",
+      "domain": "Seed",
+      "scenario": "Seed démo vs production sans demo seed — doublons / identités non canoniques",
+      "result": "HOLD",
+      "severity": "P2",
+      "historical": [
+        "KNOWN-ISSUES §11"
+      ],
+      "fixBeforeProd": false,
+      "proposition": "Ne pas corriger le seed dans une PR métier. Classer séparément des blockers runtime. HTTP de cet audit : SOMAFRIK_SKIP_DEMO_SEED=true.",
+      "evidence": [
+        "KNOWN-ISSUES §11 boot local cassé sans contournement ops",
+        "aliases admin-cd/admin-bi dans mapUser"
+      ],
+      "proofKind": "source",
+      "http": null
+    },
+    {
+      "id": "GP-020",
+      "domain": "Sync E2E",
+      "scenario": "Users → Teachers → Academic year → Classes → Students → Evaluations → Notes → Presences → Finance",
+      "result": "HOLD",
+      "severity": "P0",
+      "historical": [
+        "#407",
+        "#408",
+        "#409",
+        "#410",
+        "#412",
+        "#413"
+      ],
+      "fixBeforeProd": true,
+      "proposition": "Ne pas modifier verify-sync-end-to-end pour le faire passer. Rejouer le script APRÈS GP-002/003/004/005. STOP à la première panne domaine. #413 = fixture attendance only.",
+      "evidence": [
+        "Script HEAD login schoolCode leftover CD-2026-0001",
+        "ensureSchoolYear envoie schoolCode leftover au POST année — cohérent leftover, casse si login_code exigé plus tard",
+        "POST /evaluations avec adminToken (Admin School Notes:R) → 403 RBAC probable",
+        "HTTP partiel leftover=CD-2026-0001 login=CD-LAC-26-001"
+      ],
+      "proofKind": "http+source",
+      "http": null
+    },
+    {
+      "id": "GP-021",
+      "domain": "Auth/JWT",
+      "scenario": "mapUser / JWT schoolCode = leftover school_code, pas login_code",
+      "result": "REPRODUIT",
+      "severity": "P0",
+      "historical": [
+        "#404",
+        "#406",
+        "#408"
+      ],
+      "fixBeforeProd": true,
+      "proposition": "Ne pas ouvrir #404 (Auth canonical-only, gelée historiquement) comme mega-PR. Corriger domaine par domaine (années, finance, users, enrollment) via membership UUID. JWT leftover peut rester le temps des PRs minimales si chaque write ignore leftover comme autorité.",
+      "evidence": [
+        "mapUser schoolCode = user.school_code (true)",
+        "mapEstablishmentRow.code = leftover, loginCode = V2 (true)",
+        "HTTP JWT {\"id\":\"JWT_SCHOOLCODE_LEFTOVER\",\"ok\":true,\"detail\":\"jwt.schoolCode=CD-2026-0001 leftover=CD-2026-0001 login=CD-LAC-26-001\",\"jwtSchoolCode\":\"CD-2026-0001\"}"
+      ],
+      "proofKind": "http+source",
+      "http": {
+        "id": "JWT_SCHOOLCODE_LEFTOVER",
+        "ok": true,
+        "detail": "jwt.schoolCode=CD-2026-0001 leftover=CD-2026-0001 login=CD-LAC-26-001",
+        "jwtSchoolCode": "CD-2026-0001"
+      }
+    },
+    {
+      "id": "GP-022",
+      "domain": "Tenant",
+      "scenario": "Isolation établissement A/B — années / users / finance",
+      "result": "DÉJÀ_OK",
+      "severity": "P0",
+      "historical": [
+        "#408",
+        "#406"
+      ],
+      "fixBeforeProd": true,
+      "proposition": "Isolation leftover-vs-leftover fonctionne. Le risque P0 est leftover vs login_code du MÊME tenant (faux 403 / double identité), pas seulement A vs B.",
+      "evidence": [
+        "unit filterRows login_code vu comme étranger=true",
+        "HTTP B ne voit pas années A : {\"id\":\"CROSS_TENANT_YEARS_HIDDEN\",\"ok\":true,\"detail\":\"B sees 0 years, leak=false\"}"
+      ],
+      "proofKind": "http",
+      "http": null
+    }
+  ],
+  "generatedAt": "2026-08-31T13:33:48.929Z",
+  "mandate": "GO-PROD-BASELINE-400 AUDIT + REPRODUCTION ONLY",
+  "governance": {
+    "draft": true,
+    "ready": false,
+    "merge": false,
+    "noRuntimeFix": true
+  }
+}
