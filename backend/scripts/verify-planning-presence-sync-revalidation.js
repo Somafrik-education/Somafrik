@@ -35,9 +35,9 @@ function sourceGuards() {
   assert.match(http, /CD-LAC-26-001/);
   assert.match(http, /BI-BUJ-26-001/);
   assert.match(http, /CD-LAC-26-002/);
-  assert.match(http, /PL-02 JWT leftover B/);
-  assert.match(http, /PR-05 JWT leftover B/);
-  assert.match(http, /SY-06/);
+  for (const id of ["PL-02", "PL-08", "PR-02", "PR-05", "PR-08", "SY-06", "SY-08"]) {
+    assert.match(http, new RegExp(`check\\(\\s*"${id}"`));
+  }
   assert.match(http, /0 write B/);
 
   assert.match(findings, /GP-014/);

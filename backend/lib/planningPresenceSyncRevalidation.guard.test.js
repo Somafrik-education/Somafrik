@@ -113,4 +113,8 @@ test("revalidation PPS: verify ne traite pas un skip HTTP comme succès si DATAB
   assert.match(verify, /DATABASE_URL/);
   assert.match(verify, /planningPresenceSyncRevalidation\.http\.pg\.test\.js/);
   assert.doesNotMatch(verify, /allowFail:\s*true/);
+  assert.doesNotMatch(verify, /PL-02 JWT leftover B/);
+  assert.match(verify, /"PL-02"/);
+  assert.match(verify, /"PR-02"/);
+  assert.match(verify, /"SY-08"/);
 });
