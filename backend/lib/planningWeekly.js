@@ -105,12 +105,25 @@ function isExclusionViolation(error) {
 
 /**
  * Projection publique : schoolCode = schools.login_code uniquement.
- * Row sans login_code ⇒ null (omit / fail-closed). Jamais leftover school_code.
+ * Row sans login_code ⇒ null (omit / fail-closed). Jamais leftover JWT.
  */
 function mapWeeklyScheduleDto(row) {
   if (!row) return null;
   const schoolCode = String(row.login_code ?? "").trim();
   if (!schoolCode) return null;
+  return buildWeeklyScheduleDto(row, schoolCode);
+}
+
+/**
+ * Persist / get-by-id : la row existe. schoolCode = login_code (éventuellement vide).
+ * Jamais leftover JWT. Ne pas utiliser pour la projection HTTP publique.
+ */
+function mapWeeklySchedulePersistDto(row) {
+  if (!row) return null;
+  return buildWeeklyScheduleDto(row, String(row.login_code ?? "").trim());
+}
+
+function buildWeeklyScheduleDto(row, schoolCode) {
   return {
     id: row.id,
     schoolCourseId: row.school_course_id,
@@ -157,4 +170,5 @@ module.exports = {
   isExclusionViolation,
   mapWeeklyScheduleDto,
   mapWeeklyScheduleDtos,
+  mapWeeklySchedulePersistDto,
 };

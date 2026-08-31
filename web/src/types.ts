@@ -293,6 +293,8 @@ export interface UserAccount {
 
 export interface SessionUser extends UserAccount {
   mustChangePassword?: boolean;
+  /** UUID membership établissement (`users.school_id`). */
+  schoolId?: string;
   /** Affectations pédagogiques projetées depuis le JWT (#248). */
   assignments?: Record<string, unknown>[];
   assignedClassIds?: string[];

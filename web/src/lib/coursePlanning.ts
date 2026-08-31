@@ -374,10 +374,12 @@ export function scopedCourseSchedules(user: SessionUser | null, state: BackOffic
   const rows = (state.courseSchedules ?? []) as CourseScheduleSlot[];
   if (!schoolCode || schoolCode === "*") return rows;
   const leftover = normalize(schoolCode);
+  const publicCode = normalize(user?.schoolPublicCode);
   const userSchoolId = String(user?.schoolId ?? "").trim();
   const matched = rows.filter((row) => {
     if (userSchoolId && String(row.schoolId ?? "").trim() === userSchoolId) return true;
-    return normalize(row.schoolCode) === leftover;
+    const projected = normalize(row.schoolCode);
+    return projected === leftover || (publicCode && projected === publicCode);
   });
   // GET /api/course-schedules is already tenant-scoped. leftover JWT ≠ login_code
   // projection must not empty the planning UI (GP-014).

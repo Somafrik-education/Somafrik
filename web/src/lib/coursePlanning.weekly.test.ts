@@ -159,4 +159,22 @@ describe("Planning V2 — mapping Web canonique", () => {
     expect(rows).toHaveLength(1);
     expect(rows[0]?.schoolCode).toBe("CD-LAC-26-001");
   });
+
+  it("scopedCourseSchedules matches by schoolId and public login_code", () => {
+    const user = {
+      role: "Admin School",
+      schoolCode: "CD-2026-0001",
+      schoolPublicCode: "CD-LAC-26-001",
+      schoolId: "school-a",
+    } as never;
+    const rows = scopedCourseSchedules(user, {
+      courseSchedules: [
+        { ...weekly, schoolCode: "CD-LAC-26-001", schoolId: "school-a" },
+        { ...weekly, id: "slot-other", schoolCode: "BI-BUJ-26-001", schoolId: "school-b" },
+      ],
+    } as never);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.schoolId).toBe("school-a");
+    expect(rows[0]?.schoolCode).toBe("CD-LAC-26-001");
+  });
 });

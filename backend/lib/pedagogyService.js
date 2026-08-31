@@ -488,6 +488,16 @@ async function listPlanningDiagnostics(store, principal, query = {}, school = nu
   return { projection: "diagnostics", items };
 }
 
+function hasPublicPlanningLoginCode(row) {
+  return Boolean(String(row?.schoolCode ?? "").trim());
+}
+
+function publicWeeklyScheduleRows(rows, scope) {
+  if (!scope) return rows;
+  if (Array.isArray(rows)) return rows.filter(hasPublicPlanningLoginCode);
+  return rows;
+}
+
 async function resolvePlanningListSchool(store, principal) {
   const scope = resolvePlanningSchoolScope(principal);
   if (scope.mode === "school") {
@@ -561,7 +571,7 @@ async function listCourseSchedules(store, principal, query = {}) {
 
   const rows = await store.listWeeklyScheduleSlots(filters);
   if (!from || !to) {
-    return rows;
+    return publicWeeklyScheduleRows(rows, scope);
   }
 
   const timeZone = resolveSchoolTimeZone(school?.timezone || school?.profile_payload?.timezone);
@@ -588,7 +598,7 @@ async function listCourseSchedules(store, principal, query = {}) {
     from,
     to,
     timeZone,
-    items,
+    items: publicWeeklyScheduleRows(items, scope),
   };
 }
 

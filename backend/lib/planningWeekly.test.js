@@ -136,3 +136,20 @@ test("DTO weekly omet une row sans login_code, jamais leftover school_code", () 
     false,
   );
 });
+
+test("persist DTO conserve l'id sans login_code, sans émettre leftover", () => {
+  const { mapWeeklySchedulePersistDto } = require("./planningWeekly");
+  const saved = mapWeeklySchedulePersistDto({
+    id: "slot-write",
+    login_code: null,
+    school_code: "CD-2026-0099",
+    school_id: "school-empty",
+    day_of_week: 1,
+    start_time: "08:00:00",
+    end_time: "09:00:00",
+  });
+  assert.equal(saved.id, "slot-write");
+  assert.equal(saved.schoolId, "school-empty");
+  assert.equal(saved.schoolCode, "");
+  assert.notEqual(saved.schoolCode, "CD-2026-0099");
+});

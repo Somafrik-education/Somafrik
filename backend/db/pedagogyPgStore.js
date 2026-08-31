@@ -9,7 +9,7 @@ const {
 const pedagogyService = require("../lib/pedagogyService");
 const schoolRoomsService = require("../lib/schoolRoomsService");
 const replacementsService = require("../lib/courseScheduleReplacementsService");
-const { mapWeeklyScheduleDto, mapWeeklyScheduleDtos } = require("../lib/planningWeekly");
+const { mapWeeklyScheduleDtos, mapWeeklySchedulePersistDto } = require("../lib/planningWeekly");
 const {
   sqlTeacherIdentityEqualsAny,
   sqlTeacherPublicCodeEquals,
@@ -404,7 +404,7 @@ function createPedagogyPgStore(repo) {
         }
         sql += " LIMIT 1";
         const row = await one(sql, params);
-        return mapWeeklyScheduleDto(row);
+        return mapWeeklySchedulePersistDto(row);
       },
       async listPlanningCourseOptions(filters = {}) {
         const params = [];
@@ -488,7 +488,7 @@ function createPedagogyPgStore(repo) {
           ${where.length ? `WHERE ${where.join(" AND ")}` : ""}
           ORDER BY w.day_of_week, w.start_time, w.id`;
         const rows = await all(sql, params);
-        return mapWeeklyScheduleDtos(rows);
+        return rows.map(mapWeeklySchedulePersistDto).filter(Boolean);
       },
       async insertCourse(payload) {
         const row = await one(
