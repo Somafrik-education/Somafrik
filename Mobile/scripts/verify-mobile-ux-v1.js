@@ -37,6 +37,7 @@ function main() {
   const drawerPrefs = read("Mobile/src/navigation/roleDrawerPreferences.ts");
   const layout = read("Mobile/src/lib/mobileUxV1Layout.ts");
   const screenLayout = read("Mobile/src/lib/screenLayout.ts");
+  const tabBarLayout = read("Mobile/src/lib/floatingTabBarLayout.ts");
   const badge = read("Mobile/src/components/EnvironmentBadge.tsx");
 
   assert.match(spec, /V2/);
@@ -63,6 +64,7 @@ function main() {
   assert.match(layout, /homeAboveFoldFitsAllViewports/);
 
   runTsx("mobileUxV1Layout.test.ts");
+  runTsx("screenLayout.test.ts");
   runTsx("roleHomeConfig.test.ts");
   runTsx("homeShellPermissions.test.ts");
   runTsx("roleNavigationPreferences.test.ts");
@@ -94,9 +96,18 @@ function main() {
   assert.doesNotMatch(roleTabCatalog, /^\s*label: "Utilisateurs"/m);
   assert.doesNotMatch(roleTabCatalog, /^\s*label: "Enseignants"/m);
 
-  assert.match(screenLayout, /TAB_BAR_CONTENT_HEIGHT/);
+  assert.match(tabBarLayout, /TAB_BAR_CONTENT_HEIGHT/);
+  assert.match(tabBarLayout, /tabBarBottom/);
+  assert.match(tabBarLayout, /paddingBottom/);
+  assert.match(tabBarLayout, /itemCenterY/);
+  assert.match(tabBarLayout, /itemTop/);
+  assert.match(tabBarLayout, /itemBottom/);
+  assert.match(tabBarLayout, /legacyItemGeometry/);
+  assert.match(screenLayout, /computeFloatingTabBarMetrics/);
   assert.match(screenLayout, /borderTopLeftRadius/);
   assert.doesNotMatch(screenLayout, /borderRadius:\s*20/);
+  assert.doesNotMatch(tabBarLayout, /paddingBottom:\s*bottomInset/);
+  assert.doesNotMatch(screenLayout, /height:\s*FLOATING_TAB_BAR_HEIGHT \+ bottomInset/);
 
   assert.match(header, /SafeAreaView/);
   assert.match(header, /edges=\{\["top"\]\}/);
