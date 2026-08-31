@@ -3155,6 +3155,14 @@ class FallbackRepository {
     return this.getPlatformSchoolByCode(code);
   }
 
+  getSchoolForPrincipalUser(principal) {
+    const store = this.getClientsStore();
+    if (typeof store.getSchoolForPrincipalUser === "function") {
+      return store.getSchoolForPrincipalUser(principal);
+    }
+    return null;
+  }
+
   async getRolePermissionsMap() {
     const { mergeRolePermissionMaps } = require("../lib/functionalRbacService");
     const seedMap = require("../data").rolePermissions ?? {};
