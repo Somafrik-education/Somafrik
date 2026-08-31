@@ -5,11 +5,14 @@ import {
   PLANNING_WEEKDAYS,
   detectScheduleConflicts,
   expandScheduleOccurrences,
+  filterSlotsForPlanningWrite,
   isoWeekdayFromLocalDate,
   mapServerOccurrencesToCalendarEvents,
+  resolvePlanningWriteSchoolIdentity,
   scopedCourseSchedules,
   type CourseScheduleSlot,
 } from "./coursePlanning";
+import { planningSyncMutations } from "./pedagogyPlanningSync";
 
 const adminWithPlanning: PermissionContext = {
   user: {
@@ -185,5 +188,71 @@ describe("Planning V2 — mapping Web canonique", () => {
     expect(rows).toHaveLength(1);
     expect(rows[0]?.schoolId).toBe("school-a");
     expect(rows[0]?.schoolCode).toBe("CD-LAC-26-001");
+  });
+
+  it("écriture Superadmin/Admin Pays sans UUID actif est fail-closed", () => {
+    expect(
+      resolvePlanningWriteSchoolIdentity({
+        user: { role: "Super Administrateur Somafrik", schoolCode: "*" },
+        activeSchool: null,
+        slots: [
+          { ...weekly, id: "slot-a", schoolId: "school-a", schoolCode: "CD-LAC-26-001" },
+          { ...weekly, id: "slot-b", schoolId: "school-b", schoolCode: "BI-BUJ-26-001" },
+        ],
+      }),
+    ).toBeNull();
+    expect(
+      resolvePlanningWriteSchoolIdentity({
+        user: { role: "Admin Pays", schoolCode: "*", countryCode: "CD" } as never,
+        activeSchool: { id: "" },
+      }),
+    ).toBeNull();
+  });
+
+  it("reset/save A depuis un dataset A+B n'émet aucune mutation sur B", () => {
+    const slotA = { ...weekly, id: "slot-a", schoolId: "school-a", schoolCode: "CD-LAC-26-001" };
+    const slotB = { ...weekly, id: "slot-b", schoolId: "school-b", schoolCode: "BI-BUJ-26-001" };
+    const weeklySlots = [slotA, slotB];
+    const identity = resolvePlanningWriteSchoolIdentity({
+      user: { role: "Super Administrateur Somafrik", schoolCode: "*" },
+      activeSchool: { id: "school-a" },
+    });
+    expect(identity?.schoolId).toBe("school-a");
+    const previous = filterSlotsForPlanningWrite(weeklySlots, identity!);
+    expect(previous.map((row) => row.id)).toEqual(["slot-a"]);
+
+    const reset = planningSyncMutations(previous, []);
+    expect(reset.deletes).toEqual(["slot-a"]);
+    expect(reset.creates).toEqual([]);
+    expect(reset.updates).toEqual([]);
+    expect([...reset.deletes, ...reset.creates, ...reset.updates].includes("slot-b")).toBe(false);
+
+    const savedA = { ...slotA, startTime: "09:00", endTime: "10:00" };
+    const nextAll = [savedA, slotB];
+    const scopedNext = filterSlotsForPlanningWrite(nextAll, identity!);
+    const save = planningSyncMutations(previous, scopedNext);
+    expect(save.updates).toEqual(["slot-a"]);
+    expect(save.deletes).toEqual([]);
+    expect(save.creates).toEqual([]);
+    expect([...save.deletes, ...save.creates, ...save.updates].includes("slot-b")).toBe(false);
+  });
+
+  it("filtre d'écriture ignore leftover JWT schoolCode", () => {
+    const identity = resolvePlanningWriteSchoolIdentity({
+      user: {
+        role: "Admin School",
+        schoolCode: "CD-2026-0001",
+        schoolPublicCode: "CD-LAC-26-001",
+        schoolId: "school-a",
+      },
+    });
+    const rows = filterSlotsForPlanningWrite(
+      [
+        { ...weekly, id: "slot-a", schoolId: "school-a", schoolCode: "CD-LAC-26-001" },
+        { ...weekly, id: "slot-leftover", schoolId: "school-b", schoolCode: "CD-2026-0001" },
+      ],
+      identity!,
+    );
+    expect(rows.map((row) => row.id)).toEqual(["slot-a"]);
   });
 });

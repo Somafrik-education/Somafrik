@@ -32,6 +32,8 @@ import {
   PLANNING_WEEKDAYS,
   resolveCourseTeacher,
   scopedCourseSchedules,
+  filterSlotsForPlanningWrite,
+  resolvePlanningWriteSchoolIdentity,
   type CourseScheduleSlot,
   type PlanningCalendarEvent,
 } from "../lib/coursePlanning";
@@ -117,9 +119,18 @@ export function CoursePlanningPage() {
   const { state, refresh } = useData();
   const { showToast } = useToast();
   const { confirm } = useConfirm();
-  const { scopedUser, activeSchoolCode } = useActiveSchool();
+  const { scopedUser, activeSchoolCode, activeSchool } = useActiveSchool();
   const scopeUser = scopedUser ?? session?.user ?? null;
   const schoolCode = activeSchoolCode || scopeUser?.schoolCode || "";
+  const writeSchoolIdentity = useMemo(
+    () =>
+      resolvePlanningWriteSchoolIdentity({
+        user: scopeUser,
+        activeSchool,
+        slots: (state.courseSchedules ?? []) as CourseScheduleSlot[],
+      }),
+    [scopeUser, activeSchool, state.courseSchedules],
+  );
   const { canRead, canCreate, canUpdate, canDelete } = useFeaturePermissions("Planning de cours");
   const replacements = useFeaturePermissions("Remplacements");
   const navigate = useNavigate();
@@ -304,6 +315,10 @@ export function CoursePlanningPage() {
 
   async function handleResetPlanning() {
     if (!schoolCode || !canDelete) return;
+    if (!writeSchoolIdentity) {
+      showToast("Établissement actif introuvable. Sélectionnez un établissement pour annuler le planning.", "error");
+      return;
+    }
     const confirmed = await confirm({
       title: "Annuler tous les créneaux hebdomadaires ?",
       description:
@@ -313,7 +328,7 @@ export function CoursePlanningPage() {
     });
     if (!confirmed) return;
 
-    const previousSchoolSlots = weeklySlots;
+    const previousSchoolSlots = filterSlotsForPlanningWrite(weeklySlots, writeSchoolIdentity);
     setSaving(true);
     try {
       await syncSchoolCourseSchedules(previousSchoolSlots, []);
@@ -388,10 +403,15 @@ export function CoursePlanningPage() {
       showToast("Sélectionnez un établissement actif.", "error");
       return;
     }
-    const previousSchoolSlots = weeklySlots;
+    if (!writeSchoolIdentity) {
+      showToast("Établissement actif introuvable. Sélectionnez un établissement.", "error");
+      return;
+    }
+    const previousSchoolSlots = filterSlotsForPlanningWrite(weeklySlots, writeSchoolIdentity);
+    const scopedNextSlots = filterSlotsForPlanningWrite(nextSchoolSlots, writeSchoolIdentity);
     setSaving(true);
     try {
-      await syncSchoolCourseSchedules(previousSchoolSlots, nextSchoolSlots);
+      await syncSchoolCourseSchedules(previousSchoolSlots, scopedNextSlots);
       await refresh(["courseSchedules"]);
       showToast(message, "success");
       if (!options.keepForm) {
@@ -405,12 +425,13 @@ export function CoursePlanningPage() {
   }
 
   function buildSlotFromForm(): CourseScheduleSlot | null {
-    if (!form || !schoolCode) return null;
+    if (!form || !schoolCode || !writeSchoolIdentity) return null;
     const course = classCourses.find((row) => row.schoolCourseId === form.schoolCourseId);
     const resolved = resolveCourseTeacher(state, scopeUser, form.className, course?.name || form.subject);
     return normalizePlanningSlotForSave({
       id: form.id || `tmp-${Date.now()}`,
-      schoolCode,
+      schoolId: writeSchoolIdentity.schoolId || undefined,
+      schoolCode: writeSchoolIdentity.publicCode || schoolCode,
       className: form.className.trim(),
       subject: (course?.name || form.subject).trim(),
       courseName: (course?.name || form.subject).trim(),

@@ -387,6 +387,60 @@ export function scopedCourseSchedules(user: SessionUser | null, state: BackOffic
   return matched;
 }
 
+export type PlanningWriteSchoolIdentity = {
+  schoolId: string;
+  publicCode: string;
+};
+
+function isPlatformPlanningUser(user: SessionUser | null): boolean {
+  const role = String(user?.role ?? "").trim();
+  return role === "Admin Pays" || role.includes("Super Administrateur");
+}
+
+function unanimousSlotSchoolId(slots: CourseScheduleSlot[]): string {
+  const ids = [
+    ...new Set(slots.map((row) => String(row.schoolId ?? "").trim()).filter(Boolean)),
+  ];
+  return ids.length === 1 ? ids[0] : "";
+}
+
+/**
+ * Identité d'écriture Planning : schools.id en priorité.
+ * schoolPublicCode / login_code = projection seulement. Jamais leftover JWT.
+ * Superadmin / Admin Pays sans UUID actif ⇒ null (fail-closed, pas « tous les rows »).
+ */
+export function resolvePlanningWriteSchoolIdentity(input: {
+  user: SessionUser | null;
+  activeSchool?: { id?: string } | null;
+  slots?: CourseScheduleSlot[];
+}): PlanningWriteSchoolIdentity | null {
+  const publicCode = String(input.user?.schoolPublicCode ?? "").trim();
+  const fromActive = String(input.activeSchool?.id ?? "").trim();
+  const fromUser = String(input.user?.schoolId ?? "").trim();
+  if (fromActive) return { schoolId: fromActive, publicCode };
+  if (fromUser) return { schoolId: fromUser, publicCode };
+  if (isPlatformPlanningUser(input.user)) return null;
+  const fromSlots = unanimousSlotSchoolId(input.slots ?? []);
+  if (fromSlots) return { schoolId: fromSlots, publicCode };
+  if (publicCode) return { schoolId: "", publicCode };
+  return null;
+}
+
+/** Filtre d'écriture établissement : schoolId, sinon projection login_code. Jamais leftover. */
+export function filterSlotsForPlanningWrite(
+  slots: CourseScheduleSlot[],
+  identity: PlanningWriteSchoolIdentity,
+): CourseScheduleSlot[] {
+  const list = Array.isArray(slots) ? slots : [];
+  const schoolId = String(identity.schoolId ?? "").trim();
+  if (schoolId) {
+    return list.filter((row) => String(row.schoolId ?? "").trim() === schoolId);
+  }
+  const publicCode = normalize(identity.publicCode);
+  if (!publicCode) return [];
+  return list.filter((row) => normalize(row.schoolCode) === publicCode);
+}
+
 const OCCURRENCE_ID_SUFFIX = "__";
 
 export function getMasterScheduleId(eventId: string): string {
