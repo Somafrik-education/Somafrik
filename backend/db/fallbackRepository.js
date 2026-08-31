@@ -1358,14 +1358,16 @@ class FallbackRepository {
               .filter(Boolean);
             return keys.includes(normalized);
           });
+          const leftover = String(match?.code ?? match?.schoolCode ?? normalized).trim().toUpperCase();
           const isPrimary =
+            leftover === String(seedData.school.code).toUpperCase() ||
             normalized === String(seedData.school.code).toUpperCase() ||
             normalized === String(seedData.school.loginCode ?? "").toUpperCase() ||
             normalized === String(seedData.school.publicId ?? "").toUpperCase();
           return {
-            id: isPrimary ? seedData.school.id : `school-${normalized}`,
-            school_code: match?.code ?? normalized,
-            name: match?.name ?? normalized,
+            id: isPrimary ? seedData.school.id : `school-${leftover}`,
+            school_code: leftover,
+            name: match?.name ?? leftover,
             login_code: match?.loginCode ?? match?.login_code,
           };
         },
