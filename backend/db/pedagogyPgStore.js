@@ -9,7 +9,7 @@ const {
 const pedagogyService = require("../lib/pedagogyService");
 const schoolRoomsService = require("../lib/schoolRoomsService");
 const replacementsService = require("../lib/courseScheduleReplacementsService");
-const { mapWeeklyScheduleDtos, mapWeeklySchedulePersistDto } = require("../lib/planningWeekly");
+const { mapWeeklySchedulePersistDto } = require("../lib/planningWeekly");
 const {
   sqlTeacherIdentityEqualsAny,
   sqlTeacherPublicCodeEquals,
@@ -1280,7 +1280,7 @@ function createPedagogyPgStore(repo) {
 
       return {
         courses,
-        courseSchedules: mapWeeklyScheduleDtos(scheduleRows),
+        courseSchedules: scheduleRows.map(mapWeeklySchedulePersistDto).filter(Boolean),
         evaluations: evaluationRows.map((row) => repo.mapEvaluation(row)),
         notes: gradeRows.map((row) => repo.mapGrade(row)),
         presences: attendanceRows.map((row) => repo.mapAttendance(row)),

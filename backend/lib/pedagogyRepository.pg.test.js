@@ -1220,9 +1220,16 @@ async function main() {
 
     const projection = await store.listProjection();
     const schoolCourses = projection.courses.filter((row) => row.schoolCode === "CD-2026-0001");
-    const schoolSlots = projection.courseSchedules.filter((row) => row.schoolCode === "CD-2026-0001");
+    const schoolSlots = projection.courseSchedules.filter(
+      (row) => String(row.schoolId) === String(fixture.schoolA),
+    );
     assert.ok(schoolCourses.some((row) => row.name === "Mathématiques"));
     assert.ok(schoolSlots.some((row) => row.schoolCourseId === course.schoolCourseId && row.dayOfWeek === 1));
+    assert.equal(
+      schoolSlots.some((row) => row.schoolCode === "CD-2026-0001"),
+      false,
+      "projection weekly n'émet pas leftover JWT",
+    );
     assert.ok(projection.notes.some((row) => Number(row.value ?? row.score) === 14 || Number(row.value) >= 14));
     const projectedNote = projection.notes.find((row) => Number(row.value ?? row.score) >= 14);
     assert.equal(projectedNote.teacherId, "ENS-PG-001");
