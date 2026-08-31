@@ -87,6 +87,7 @@ async function setupFixture(pool) {
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       country_id UUID NOT NULL REFERENCES countries(id),
       school_code VARCHAR(64) NOT NULL UNIQUE,
+      login_code TEXT,
       name TEXT NOT NULL,
       status TEXT NOT NULL DEFAULT 'active'
     );
@@ -191,6 +192,7 @@ async function setupFixture(pool) {
     );
     CREATE INDEX IF NOT EXISTS idx_course_schedule_weekly_school_updated_at_id
       ON course_schedule_weekly_slots (school_id, updated_at, id);
+    ALTER TABLE schools ADD COLUMN IF NOT EXISTS login_code TEXT;
   `);
   await pool.query(
     `TRUNCATE course_schedule_weekly_slots, school_rooms, school_courses, teacher_assignments,
