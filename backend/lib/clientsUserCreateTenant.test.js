@@ -86,6 +86,24 @@ test("createUser établissement : payload login_code d'un autre tenant refusé",
   );
 });
 
+test("createUser établissement : membership user_roles si users row absente (seed mémoire)", async () => {
+  const store = buildStore();
+  store._tables.userRoles.push({
+    user_id: "USER-ADMIN1",
+    school_id: "school-cd",
+    role_key: "SCHOOL_ADMIN",
+    status: "active",
+    revoked_at: null,
+  });
+  const resolved = await resolveCreateUserTenant(
+    store,
+    { sub: "USER-ADMIN1", role: "Admin School", schoolCode: "CD-2026-0001" },
+    {},
+  );
+  assert.equal(resolved.school.id, "school-cd");
+  assert.equal(resolved.schoolCode, "CD-SY-26-001");
+});
+
 test("createUser établissement : sans membership → 404 TENANT_MISMATCH", async () => {
   const store = buildStore();
   await assert.rejects(

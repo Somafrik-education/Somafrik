@@ -160,8 +160,19 @@ function createClientsMemoryStore(seed = {}) {
         const userId = asTrimmed(principal?.sub || principal?.id);
         if (!userId) return null;
         const user = tables.users.find((row) => String(row.id) === userId);
-        if (!user?.school_id) return null;
-        const school = tables.schools.find((row) => String(row.id) === String(user.school_id));
+        let schoolId = user?.school_id;
+        if (!schoolId) {
+          const membership = tables.userRoles.find(
+            (row) =>
+              String(row.user_id) === userId &&
+              row.school_id &&
+              row.status === "active" &&
+              !row.revoked_at,
+          );
+          schoolId = membership?.school_id;
+        }
+        if (!schoolId) return null;
+        const school = tables.schools.find((row) => String(row.id) === String(schoolId));
         if (!school) return null;
         return {
           id: school.id,
