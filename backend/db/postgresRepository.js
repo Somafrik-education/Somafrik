@@ -5497,7 +5497,10 @@ class PostgresRepository {
       error.statusCode = 400;
       throw error;
     }
-    const school = await this.ensureSchoolFromBackOfficeRecord(schoolCode);
+    const { isV2SchoolLoginCode } = require("../lib/schoolCodeV2");
+    const school = isV2SchoolLoginCode(schoolCode)
+      ? await this.getSchoolByLoginCode(schoolCode)
+      : await this.ensureSchoolFromBackOfficeRecord(schoolCode);
     if (!school) {
       const error = new Error("Établissement introuvable.");
       error.statusCode = 404;
@@ -5520,7 +5523,10 @@ class PostgresRepository {
        VALUES ($1, $2, $3, $4, $5, 'open') RETURNING *`,
       [school.id, name, startDate, endDate, isCurrent],
     );
-    return this.mapAcademicYearV2({ ...row, school_code: schoolCode });
+    return this.mapAcademicYearV2({
+      ...row,
+      school_code: school.login_code || schoolCode,
+    });
   }
 
   async getAcademicYearV2ById(id) {
@@ -6248,6 +6254,33 @@ class PostgresRepository {
           OR upper(coalesce(login_code, '')) = $1
        LIMIT 1`,
       [normalized],
+    );
+  }
+
+  getSchoolByLoginCode(code) {
+    const normalized = String(code ?? "").trim().toUpperCase();
+    if (!normalized) return null;
+    return this.one(
+      `SELECT s.*, c.iso_code AS country_iso
+       FROM schools s
+       JOIN countries c ON c.id = s.country_id
+       WHERE upper(s.login_code) = $1
+       LIMIT 1`,
+      [normalized],
+    );
+  }
+
+  getSchoolForPrincipalUser(principal = {}) {
+    const userId = String(principal.sub ?? "").trim();
+    if (!userId) return null;
+    return this.one(
+      `SELECT s.*, c.iso_code AS country_iso
+       FROM users u
+       JOIN schools s ON s.id = u.school_id
+       JOIN countries c ON c.id = s.country_id
+       WHERE u.id::text = $1
+       LIMIT 1`,
+      [userId],
     );
   }
 
