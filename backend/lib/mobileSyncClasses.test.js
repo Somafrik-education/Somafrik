@@ -550,3 +550,27 @@ test("ACCOUNTANT@A + SCHOOL_ADMIN@B + JWT Admin@A → 403, aucune classe, pas de
   assert.equal(result.body.items, undefined);
   assert.equal(live.sqlCalls, 0);
 });
+
+test("SY-08: login_code vide fail-closed, aucun listing leftover", async () => {
+  let listed = false;
+  await assert.rejects(
+    () =>
+      handleMobileSyncL1Classes({
+        principal: adminPrincipal({ schoolCode: "CD-2026-0099" }),
+        tokenService: tokens,
+        repository: {
+          ...createFakeRepo({}, {}),
+          async getSchoolByCode(code) {
+            return { id: "sid-empty", school_code: code, login_code: null };
+          },
+          async listSchoolClassesForMobileSync() {
+            listed = true;
+            return [];
+          },
+        },
+        tenantScopeService,
+      }),
+    (error) => error?.statusCode === 403 && /hors périmètre/i.test(String(error.message)),
+  );
+  assert.equal(listed, false, "SY-08 ne doit pas lister via leftover");
+});
