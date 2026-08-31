@@ -35,6 +35,11 @@ const {
   assertNoLegacyRoomTextWrite,
 } = require("./schoolRoomsService");
 const { overlayOccurrenceReplacement } = require("./courseScheduleReplacementsService");
+const {
+  resolvePlanningSchoolScope,
+  hasPlanningMembershipAttached,
+  assertPlanningPatchAccess,
+} = require("./planningSchoolScope");
 
 function assertTenant(principal, schoolCode) {
   const scope = asTrimmed(principal?.schoolCode);
@@ -82,6 +87,51 @@ async function resolveSchoolContext(tx, principal) {
   if (!school) throw createPedagogyError(404, "Établissement introuvable.", PEDAGOGY_ERROR.TENANT_MISMATCH);
   assertTenant(principal, school.code);
   return school;
+}
+
+async function resolvePlanningWriteSchool(tx, principal) {
+  const scope = resolvePlanningSchoolScope(principal);
+  if (scope.mode === "school" && scope.schoolId && typeof tx.getSchoolById === "function") {
+    const school = await tx.getSchoolById(scope.schoolId);
+    if (!school) {
+      throw createPedagogyError(404, "Établissement introuvable.", PEDAGOGY_ERROR.TENANT_MISMATCH);
+    }
+    return school;
+  }
+  if (hasPlanningMembershipAttached(principal) && scope.mode === "none") {
+    throw createPedagogyError(403, "Accès refusé : établissement hors périmètre.", PEDAGOGY_ERROR.TENANT_MISMATCH);
+  }
+  if (scope.mode === "country" || scope.mode === "all") {
+    throw createPedagogyError(400, "Établissement requis.", PEDAGOGY_ERROR.TENANT_MISMATCH);
+  }
+  return resolveSchoolContext(tx, principal);
+}
+
+async function resolveSchoolForExistingSlot(tx, existing) {
+  if (existing?.schoolId && typeof tx.getSchoolById === "function") {
+    const school = await tx.getSchoolById(existing.schoolId);
+    if (school) return school;
+  }
+  if (existing?.schoolCode) {
+    const school = await tx.getSchoolByCode(existing.schoolCode);
+    if (school) return school;
+  }
+  throw createPedagogyError(404, "Établissement introuvable.", PEDAGOGY_ERROR.TENANT_MISMATCH);
+}
+
+function assertPlanningSlotAccess(principal, existing, school = null) {
+  const scope = resolvePlanningSchoolScope(principal);
+  if (scope.mode === "school" || scope.mode === "country" || scope.mode === "all") {
+    assertPlanningPatchAccess(principal, existing);
+    return;
+  }
+  if (hasPlanningMembershipAttached(principal) && scope.mode === "none") {
+    throw createPedagogyError(403, "Accès refusé : établissement hors périmètre.", PEDAGOGY_ERROR.TENANT_MISMATCH);
+  }
+  // Leftover store path: compare JWT leftover to the school row loaded by UUID,
+  // never to DTO schoolCode (login_code may be empty on seed schools).
+  const leftoverTarget = asTrimmed(school?.code) || asTrimmed(existing?.schoolCode);
+  assertTenant(principal, leftoverTarget);
 }
 
 async function createCourse(store, rawPayload, principal, auditMeta) {
@@ -276,7 +326,7 @@ async function createCourseSchedule(store, rawPayload, principal, auditMeta) {
     );
   }
   return store.withTransaction(async (tx) => {
-    const school = await resolveSchoolContext(tx, principal);
+    const school = await resolvePlanningWriteSchool(tx, principal);
     const { course, year } = await assertWeeklySlotReferences(tx, school, payload, { requireOpenYear: true });
     const times = parseWeeklyTimes(payload);
     assertNoLegacyRoomTextWrite(payload);
@@ -300,6 +350,13 @@ async function createCourseSchedule(store, rawPayload, principal, auditMeta) {
         roomId,
       }),
     );
+    if (!saved) {
+      throw createPedagogyError(
+        403,
+        "Accès refusé : établissement hors périmètre.",
+        PEDAGOGY_ERROR.TENANT_MISMATCH,
+      );
+    }
     const warning = capacityWarningFor(room, classSize);
     await writePedagogyAudit(tx, principal, auditMeta, {
       action: "create_course_schedule",
@@ -317,8 +374,8 @@ async function updateCourseSchedule(store, scheduleId, patchRaw, principal, audi
   return store.withTransaction(async (tx) => {
     const existing = await tx.getWeeklyScheduleById(scheduleId, principal);
     if (!existing) throw createPedagogyError(404, "Créneau introuvable.", PEDAGOGY_ERROR.COURSE_NOT_FOUND);
-    assertTenant(principal, existing.schoolCode);
-    const school = await tx.getSchoolByCode(existing.schoolCode);
+    const school = await resolveSchoolForExistingSlot(tx, existing);
+    assertPlanningSlotAccess(principal, existing, school);
     const nextPayload = {
       schoolCourseId: patch.schoolCourseId ?? patch.school_course_id ?? existing.schoolCourseId,
       academicYearId: patch.academicYearId ?? patch.academic_year_id ?? existing.academicYearId,
@@ -372,7 +429,8 @@ async function deleteCourseSchedule(store, scheduleId, principal, auditMeta) {
   return store.withTransaction(async (tx) => {
     const existing = await tx.getWeeklyScheduleById(scheduleId, principal);
     if (!existing) throw createPedagogyError(404, "Créneau introuvable.", PEDAGOGY_ERROR.COURSE_NOT_FOUND);
-    assertTenant(principal, existing.schoolCode);
+    const school = await resolveSchoolForExistingSlot(tx, existing);
+    assertPlanningSlotAccess(principal, existing, school);
     const saved = await tx.cancelWeeklyScheduleSlot(existing.id);
     await writePedagogyAudit(tx, principal, auditMeta, {
       action: "cancel_course_schedule",
@@ -441,7 +499,36 @@ async function listPlanningDiagnostics(store, principal, query = {}, school = nu
   return { projection: "diagnostics", items };
 }
 
-async function listCourseSchedules(store, principal, query = {}) {
+function hasPublicPlanningLoginCode(row) {
+  return Boolean(String(row?.schoolCode ?? "").trim());
+}
+
+function publicWeeklyScheduleRows(rows, scope) {
+  if (!scope) return rows;
+  if (Array.isArray(rows)) return rows.filter(hasPublicPlanningLoginCode);
+  return rows;
+}
+
+async function resolvePlanningListSchool(store, principal) {
+  const scope = resolvePlanningSchoolScope(principal);
+  if (scope.mode === "school") {
+    if (scope.schoolId && typeof store.getSchoolById === "function") {
+      const school = await store.getSchoolById(scope.schoolId);
+      if (!school) {
+        throw createPedagogyError(404, "Établissement introuvable.", PEDAGOGY_ERROR.TENANT_MISMATCH);
+      }
+      return { school, scope };
+    }
+    if (hasPlanningMembershipAttached(principal)) {
+      throw createPedagogyError(403, "Accès refusé : établissement hors périmètre.", PEDAGOGY_ERROR.TENANT_MISMATCH);
+    }
+  }
+  if (scope.mode === "country" || scope.mode === "all") {
+    return { school: null, scope };
+  }
+  if (hasPlanningMembershipAttached(principal) && scope.mode === "none") {
+    throw createPedagogyError(403, "Accès refusé : établissement hors périmètre.", PEDAGOGY_ERROR.TENANT_MISMATCH);
+  }
   const schoolCode = asTrimmed(principal?.schoolCode);
   let school = null;
   if (schoolCode && schoolCode !== "*") {
@@ -450,6 +537,11 @@ async function listCourseSchedules(store, principal, query = {}) {
       throw createPedagogyError(404, "Établissement introuvable.", PEDAGOGY_ERROR.TENANT_MISMATCH);
     }
   }
+  return { school, scope: null };
+}
+
+async function listCourseSchedules(store, principal, query = {}) {
+  const { school, scope } = await resolvePlanningListSchool(store, principal);
   if (isPlanningCourseOptionsProjection(query)) {
     return listPlanningCourseOptions(store, principal, query, school);
   }
@@ -458,9 +550,11 @@ async function listCourseSchedules(store, principal, query = {}) {
   }
   const from = asTrimmed(query.from);
   const to = asTrimmed(query.to);
+  const leftoverSchoolCode = asTrimmed(principal?.schoolCode);
   const filters = {
     schoolId: school?.id ?? null,
-    schoolCode: school?.code ?? schoolCode,
+    schoolCode: scope ? null : school?.code ?? leftoverSchoolCode,
+    countryCode: scope?.mode === "country" ? scope.countryCode : null,
     academicYearId: asTrimmed(query.academicYearId || query.academic_year_id) || null,
     classId: asTrimmed(query.classId || query.class_id) || null,
     teacherId: asTrimmed(query.teacherId || query.teacher_id) || null,
@@ -488,7 +582,7 @@ async function listCourseSchedules(store, principal, query = {}) {
 
   const rows = await store.listWeeklyScheduleSlots(filters);
   if (!from || !to) {
-    return rows;
+    return publicWeeklyScheduleRows(rows, scope);
   }
 
   const timeZone = resolveSchoolTimeZone(school?.timezone || school?.profile_payload?.timezone);
@@ -515,7 +609,7 @@ async function listCourseSchedules(store, principal, query = {}) {
     from,
     to,
     timeZone,
-    items,
+    items: publicWeeklyScheduleRows(items, scope),
   };
 }
 

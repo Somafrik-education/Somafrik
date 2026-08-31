@@ -59,13 +59,13 @@ async function seedFixture(pool) {
      VALUES ('RDC', 'CD', '+243', 'CDF') RETURNING id`,
   );
   const schoolA = await pool.query(
-    `INSERT INTO schools (country_id, school_code, name, status)
-     VALUES ($1, 'CD-2026-0001', 'Lycée A', 'active') RETURNING id`,
+    `INSERT INTO schools (country_id, school_code, login_code, name, status)
+     VALUES ($1, 'CD-2026-0001', 'CD-LAC-26-001', 'Lycée A', 'active') RETURNING id`,
     [country.rows[0].id],
   );
   const schoolB = await pool.query(
-    `INSERT INTO schools (country_id, school_code, name, status)
-     VALUES ($1, 'BI-2026-0001', 'Lycée B', 'active') RETURNING id`,
+    `INSERT INTO schools (country_id, school_code, login_code, name, status)
+     VALUES ($1, 'BI-2026-0001', 'BI-BUJ-26-001', 'Lycée B', 'active') RETURNING id`,
     [country.rows[0].id],
   );
   const openYear = await pool.query(
@@ -735,8 +735,8 @@ async function main() {
     assert.equal(biAttendance.rows[0].count, 0, "aucune présence BI via tenant CD");
 
     const noYearSchool = await pool.query(
-      `INSERT INTO schools (country_id, school_code, name, status)
-       SELECT country_id, 'NO-YEAR-2026', 'Sans année ouverte', 'active'
+      `INSERT INTO schools (country_id, school_code, login_code, name, status)
+       SELECT country_id, 'NO-YEAR-2026', 'CD-SAY-26-001', 'Sans année ouverte', 'active'
        FROM schools WHERE school_code = 'CD-2026-0001'
        RETURNING id`,
     );
@@ -1220,9 +1220,16 @@ async function main() {
 
     const projection = await store.listProjection();
     const schoolCourses = projection.courses.filter((row) => row.schoolCode === "CD-2026-0001");
-    const schoolSlots = projection.courseSchedules.filter((row) => row.schoolCode === "CD-2026-0001");
+    const schoolSlots = projection.courseSchedules.filter(
+      (row) => String(row.schoolId) === String(fixture.schoolA),
+    );
     assert.ok(schoolCourses.some((row) => row.name === "Mathématiques"));
     assert.ok(schoolSlots.some((row) => row.schoolCourseId === course.schoolCourseId && row.dayOfWeek === 1));
+    assert.equal(
+      schoolSlots.some((row) => row.schoolCode === "CD-2026-0001"),
+      false,
+      "projection weekly n'émet pas leftover JWT",
+    );
     assert.ok(projection.notes.some((row) => Number(row.value ?? row.score) === 14 || Number(row.value) >= 14));
     const projectedNote = projection.notes.find((row) => Number(row.value ?? row.score) >= 14);
     assert.equal(projectedNote.teacherId, "ENS-PG-001");

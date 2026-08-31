@@ -103,8 +103,27 @@ function isExclusionViolation(error) {
   );
 }
 
+/**
+ * Projection publique : schoolCode = schools.login_code uniquement.
+ * Row sans login_code ⇒ null (omit / fail-closed). Jamais leftover JWT.
+ */
 function mapWeeklyScheduleDto(row) {
   if (!row) return null;
+  const schoolCode = String(row.login_code ?? "").trim();
+  if (!schoolCode) return null;
+  return buildWeeklyScheduleDto(row, schoolCode);
+}
+
+/**
+ * Persist / get-by-id : la row existe. schoolCode = login_code (éventuellement vide).
+ * Jamais leftover JWT. Ne pas utiliser pour la projection HTTP publique.
+ */
+function mapWeeklySchedulePersistDto(row) {
+  if (!row) return null;
+  return buildWeeklyScheduleDto(row, String(row.login_code ?? "").trim());
+}
+
+function buildWeeklyScheduleDto(row, schoolCode) {
   return {
     id: row.id,
     schoolCourseId: row.school_course_id,
@@ -116,7 +135,9 @@ function mapWeeklyScheduleDto(row) {
     startTime: formatTimeHm(row.start_time),
     endTime: formatTimeHm(row.end_time),
     status: row.status,
-    schoolCode: row.school_code,
+    schoolId: row.school_id || row.schoolId || "",
+    schoolCode,
+    countryCode: String(row.country_iso || row.country_code || row.countryCode || "").trim(),
     roomId: row.room_id || null,
     room: row.room_name || row.room || "",
     roomCode: row.room_code || "",
@@ -133,6 +154,10 @@ function mapWeeklyScheduleDto(row) {
   };
 }
 
+function mapWeeklyScheduleDtos(rows) {
+  return (Array.isArray(rows) ? rows : []).map(mapWeeklyScheduleDto).filter(Boolean);
+}
+
 module.exports = {
   DAY_OF_WEEK_MIN,
   DAY_OF_WEEK_MAX,
@@ -144,4 +169,6 @@ module.exports = {
   mapExclusionViolation,
   isExclusionViolation,
   mapWeeklyScheduleDto,
+  mapWeeklyScheduleDtos,
+  mapWeeklySchedulePersistDto,
 };

@@ -38,6 +38,8 @@ export interface CourseScheduleSlot {
   periodName?: string;
   periodStart?: string;
   periodEnd?: string;
+  /** UUID membership — autorité tenant, distinct du schoolCode leftover. */
+  schoolId?: string;
   /** DTO canonique Planning V2 — projection, jamais autorité locale. */
   schoolCourseId?: string;
   academicYearId?: string;
@@ -371,7 +373,54 @@ export function scopedCourseSchedules(user: SessionUser | null, state: BackOffic
   const schoolCode = user?.schoolCode;
   const rows = (state.courseSchedules ?? []) as CourseScheduleSlot[];
   if (!schoolCode || schoolCode === "*") return rows;
-  return rows.filter((row) => normalize(row.schoolCode) === normalize(schoolCode));
+  const leftover = normalize(schoolCode);
+  const publicCode = normalize(user?.schoolPublicCode);
+  const userSchoolId = String(user?.schoolId ?? "").trim();
+  const matched = rows.filter((row) => {
+    if (userSchoolId && String(row.schoolId ?? "").trim() === userSchoolId) return true;
+    const projected = normalize(row.schoolCode);
+    return projected === leftover || (publicCode && projected === publicCode);
+  });
+  // GET /api/course-schedules is already tenant-scoped. leftover JWT ≠ login_code
+  // projection must not empty the planning UI (GP-014).
+  if (matched.length === 0 && rows.length > 0) return rows;
+  return matched;
+}
+
+export type PlanningWriteSchoolIdentity = {
+  schoolId: string;
+  publicCode: string;
+};
+
+/**
+ * Identité d'écriture Planning : schools.id uniquement.
+ * schoolPublicCode / login_code = projection seulement. Jamais leftover JWT,
+ * jamais UUID déduit des rows (fuite A+B), jamais « tous les rows ».
+ */
+export function resolvePlanningWriteSchoolIdentity(input: {
+  user: SessionUser | null;
+  activeSchool?: { id?: string; publicId?: string } | null;
+}): PlanningWriteSchoolIdentity | null {
+  const schoolId =
+    String(input.activeSchool?.id ?? "").trim() || String(input.user?.schoolId ?? "").trim();
+  if (!schoolId) return null;
+  const publicCode = String(input.user?.schoolPublicCode ?? input.activeSchool?.publicId ?? "").trim();
+  return { schoolId, publicCode };
+}
+
+/** Filtre d'écriture établissement : schoolId, sinon projection login_code. Jamais leftover. */
+export function filterSlotsForPlanningWrite(
+  slots: CourseScheduleSlot[],
+  identity: PlanningWriteSchoolIdentity,
+): CourseScheduleSlot[] {
+  const list = Array.isArray(slots) ? slots : [];
+  const schoolId = String(identity.schoolId ?? "").trim();
+  if (schoolId) {
+    return list.filter((row) => String(row.schoolId ?? "").trim() === schoolId);
+  }
+  const publicCode = normalize(identity.publicCode);
+  if (!publicCode) return [];
+  return list.filter((row) => normalize(row.schoolCode) === publicCode);
 }
 
 const OCCURRENCE_ID_SUFFIX = "__";

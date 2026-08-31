@@ -266,6 +266,8 @@ export interface UserAccount {
   countryScope?: string;
   /** Alias tenant historique = schools.school_code. Ne pas afficher comme code public. */
   schoolCode?: string;
+  /** UUID établissement = schools.id. Autorité membership, pas leftover schoolCode. */
+  schoolId?: string;
   /** Code public canonique = schools.login_code. */
   schoolPublicCode?: string;
   schoolName?: string;

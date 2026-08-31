@@ -38,6 +38,7 @@
     "verify:notes-sync": "node --test backend/lib/legacyBootMigrations.guard.test.js && node backend/lib/gradesBoPersistence.test.js && node backend/lib/evaluationAttachment.test.js && node backend/lib/evaluationSyncRepository.test.js && node backend/lib/teacherNotesWriteAccess.test.js",
     "verify:students-sync": "node --test backend/lib/legacyStudentsStateWrite.test.js backend/lib/studentsProjectionCache.test.js",
     "verify:academic-year-tenant": "node backend/scripts/verify-academic-year-tenant.js",
+    "verify:planning-tenant": "node backend/scripts/verify-planning-tenant.js",
     "verify:users-tenant": "node backend/scripts/verify-users-tenant.js",
     "verify:enrollment-tenant": "node backend/scripts/verify-enrollment-tenant.js",
     "verify:tenant-revalidation": "node backend/scripts/verify-tenant-revalidation.js",
