@@ -238,6 +238,23 @@ async function main() {
     });
     assert.equal(usurped.status, 403, `usurpation refusée: ${JSON.stringify(usurped.data)}`);
 
+    const countryOk = await request("/backoffice/users", {
+      method: "POST",
+      token: leftoverJwt,
+      body: {
+        firstName: "Country",
+        lastName: "Match",
+        email: "country-ok@test.local",
+        countryCode: "CD",
+        temporaryPassword: "E2eTest!2026",
+      },
+    });
+    assert.equal(countryOk.status, 201, `countryCode valide: ${JSON.stringify(countryOk.data)}`);
+    const countryPersisted = await repo.pool.query(`SELECT school_id FROM users WHERE id = $1`, [
+      countryOk.data.id,
+    ]);
+    assert.equal(String(countryPersisted.rows[0].school_id), String(schoolIdA));
+
     console.log("OK clientsUserCreateTenant.http.pg.test.js — leftover JWT, membership, isolation");
   } finally {
     await stopChild(child);

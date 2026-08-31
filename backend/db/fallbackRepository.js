@@ -3284,9 +3284,17 @@ class FallbackRepository {
   getClientsStore() {
     if (!this._clientsStore) {
       const { createClientsMemoryStore } = require("./clientsMemoryStore");
+      const { usersFromSeedAccounts } = require("../lib/memoryUserRolesBackfill");
+      const platformSchools = this._managedSchools ?? (shouldSeedDemoData() ? seedData.platformSchools : []);
       const store = createClientsMemoryStore({
         school: shouldSeedDemoData() ? seedData.school : null,
-        platformSchools: this._managedSchools ?? (shouldSeedDemoData() ? seedData.platformSchools : []),
+        platformSchools,
+        users: shouldSeedDemoData()
+          ? usersFromSeedAccounts(
+              [...(platformSchools ?? []), seedData.school].filter(Boolean),
+              seedData.userAccounts,
+            )
+          : [],
         students: shouldSeedDemoData()
           ? (seedData.students ?? []).map((student) => ({
               ...student,

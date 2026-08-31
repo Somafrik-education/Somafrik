@@ -24,6 +24,19 @@ function schoolLoginCode(school = {}) {
   return normalizeSchoolCode(school.login_code || school.loginCode || school.school_login_code);
 }
 
+function memberCountryCode(school = {}) {
+  return normalizeSchoolCode(
+    school.country_code || school.countryCode || school.country_iso || school.countryIso,
+  );
+}
+
+function normalizeMemberSchool(school) {
+  if (!school) return school;
+  const countryCode = memberCountryCode(school);
+  if (!countryCode) return school;
+  return { ...school, country_code: countryCode };
+}
+
 async function resolveCreateUserTenant(store, principal, rawPayload = {}) {
   const bodySchool = normalizeSchoolCode(rawPayload.schoolCode || rawPayload.schoolId);
 
@@ -36,12 +49,13 @@ async function resolveCreateUserTenant(store, principal, rawPayload = {}) {
     if (!school) {
       scopeDenied(404, "Établissement introuvable.", CLIENTS_ERROR.SCHOOL_NOT_FOUND);
     }
-    return { school, schoolCode: schoolLoginCode(school) || bodySchool };
+    return { school: normalizeMemberSchool(school), schoolCode: schoolLoginCode(school) || bodySchool };
   }
 
-  const memberSchool = typeof store.getSchoolForPrincipalUser === "function"
+  const rawMemberSchool = typeof store.getSchoolForPrincipalUser === "function"
     ? await store.getSchoolForPrincipalUser(principal)
     : null;
+  const memberSchool = normalizeMemberSchool(rawMemberSchool);
   if (!memberSchool?.id) {
     scopeDenied(404, "Établissement introuvable.", CLIENTS_ERROR.TENANT_MISMATCH);
   }
@@ -59,4 +73,5 @@ async function resolveCreateUserTenant(store, principal, rawPayload = {}) {
 
 module.exports = {
   resolveCreateUserTenant,
+  normalizeMemberSchool,
 };

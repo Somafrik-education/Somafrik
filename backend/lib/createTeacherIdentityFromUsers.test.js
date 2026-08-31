@@ -118,6 +118,9 @@ test("createTeacherIdentityFromUsers mémoire : TEACHER_PROFILE_AMBIGUOUS rollba
     platformSchools: [
       { id: "school-cd", code: "CD-2026-0001", school_code: "CD-2026-0001", name: "CD", countryCode: "CD" },
     ],
+    users: [
+      { id: "admin-cd", school_id: "school-cd", first_name: "Admin", last_name: "CD", email: "admin-cd@test.local", role: "SCHOOL_ADMIN", status: "active" },
+    ],
   });
   const repository = memoryRepository(store);
   const principal = { sub: "admin-cd", role: "Admin School", schoolCode: "CD-2026-0001", identifier: "admin" };
@@ -173,6 +176,9 @@ test("GRANT Enseignant : birth_date Date JS détecte TEACHER_PROFILE_AMBIGUOUS",
   const store = createClientsMemoryStore({
     platformSchools: [
       { id: "school-cd", code: "CD-2026-0001", school_code: "CD-2026-0001", name: "CD", countryCode: "CD" },
+    ],
+    users: [
+      { id: "admin-cd", school_id: "school-cd", first_name: "Admin", last_name: "CD", email: "admin-cd@test.local", role: "SCHOOL_ADMIN", status: "active" },
     ],
   });
   const repository = memoryRepository(store);

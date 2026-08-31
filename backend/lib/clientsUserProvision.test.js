@@ -16,6 +16,9 @@ function buildStore(seed = {}) {
       { id: "country-cd", iso_code: "CD", name: "RDC" },
       { id: "country-bi", iso_code: "BI", name: "Burundi" },
     ],
+    users: [
+      { id: "admin-school", school_id: "school-cd", first_name: "Admin", last_name: "School", email: "admin-school@test.local", role: "SCHOOL_ADMIN", status: "active" },
+    ],
     ...seed,
   });
 }
