@@ -44,37 +44,56 @@ function clone(value) {
 }
 
 function scopedPrincipal(principal) {
-  const attached = attachFinanceFixtureScope(principal);
-  const requested = asTrimmed(attached?.financeLoginCode);
-  if (!requested) return attached;
-  const login = fixturePublicLoginCode(requested);
-  if (login && login !== requested) {
-    return { ...attached, financeLoginCode: login };
-  }
-  return attached;
+  return attachFinanceFixtureScope(principal);
 }
 
 function fixturePublicLoginCode(requested) {
   const key = asTrimmed(requested).toUpperCase();
   if (!key) return "";
-  const schools = Array.isArray(seedData.platformSchools) ? seedData.platformSchools : [];
-  const school = schools.find((row) =>
-    [row.loginCode, row.login_code, row.publicId, row.code, row.schoolCode, row.school_code].some(
-      (value) => asTrimmed(value).toUpperCase() === key,
-    ),
-  );
+  const school = fixtureSchoolRow(key);
   if (!school) return key;
   return asTrimmed(school.loginCode || school.login_code || school.publicId || school.code).toUpperCase();
+}
+
+function fixtureSchoolRow(requested) {
+  const key = asTrimmed(requested).toUpperCase();
+  if (!key) return null;
+  const schools = Array.isArray(seedData.platformSchools) ? seedData.platformSchools : [];
+  return (
+    schools.find((row) =>
+      [row.loginCode, row.login_code, row.publicId, row.code, row.schoolCode, row.school_code].some(
+        (value) => asTrimmed(value).toUpperCase() === key,
+      ),
+    ) || null
+  );
+}
+
+function fixtureLookupAliases(requested) {
+  const key = asTrimmed(requested).toUpperCase();
+  if (!key) return [];
+  const school = fixtureSchoolRow(key);
+  const aliases = [
+    key,
+    school?.loginCode,
+    school?.login_code,
+    school?.publicId,
+    school?.code,
+    school?.schoolCode,
+    school?.school_code,
+  ]
+    .map((value) => asTrimmed(value).toUpperCase())
+    .filter(Boolean);
+  return [...new Set(aliases)];
 }
 
 /** Fixture mémoire : le schoolCode EST le login_code. Ne jamais copier leftover PG. */
 function withFixtureLoginCode(row = {}) {
   if (!row || typeof row !== "object") return row;
-  const raw = asTrimmed(row.login_code || row.loginCode || row.schoolCode || row.school_code);
-  if (!raw) return row;
-  const canonical = fixturePublicLoginCode(raw) || raw;
-  if (asTrimmed(row.login_code || row.loginCode) === canonical) return row;
-  return { ...row, login_code: canonical, loginCode: canonical };
+  const login = asTrimmed(row.login_code || row.loginCode);
+  if (login) return row;
+  const fixture = asTrimmed(row.schoolCode || row.school_code);
+  if (!fixture) return row;
+  return { ...row, login_code: fixture, loginCode: fixture };
 }
 
 function fixtureCodesMatch(left, right) {
@@ -86,7 +105,19 @@ function fixtureCodesMatch(left, right) {
 }
 
 function fixtureRecordInScope(record, scope) {
-  return recordInFinanceScope(withFixtureLoginCode(record), scope);
+  if (!record || typeof record !== "object") {
+    return recordInFinanceScope(record, scope);
+  }
+  if (scope.mode !== "schools") {
+    return recordInFinanceScope(record, scope);
+  }
+  return recordInFinanceScope(projectFixtureSchoolIdentity(record), scope);
+}
+
+function projectFixtureSchoolIdentity(record = {}) {
+  const schoolCode = asTrimmed(record.schoolCode || record.school_code);
+  if (!schoolCode) return withFixtureLoginCode(record);
+  return { ...record, login_code: schoolCode, loginCode: schoolCode };
 }
 
 function mapPaymentRow(row) {
@@ -210,11 +241,17 @@ function createFinanceMemoryStore({
   function txApi() {
     return {
       async getSchoolByCode(code) {
-        const school = await getSchoolByCode?.(code);
+        const requested = asTrimmed(code).toUpperCase();
+        if (!requested) return null;
+        let school = null;
+        for (const alias of fixtureLookupAliases(requested)) {
+          school = await getSchoolByCode?.(alias);
+          if (school) break;
+        }
         if (!school) return null;
         const login = asTrimmed(school.loginCode || school.login_code || school.publicId);
         const fixture = asTrimmed(school.code || school.schoolCode || school.school_code);
-        const publicCode = login || fixture;
+        const publicCode = fixture || login;
         return {
           id: school.id || school.publicId || school.code,
           code: publicCode,
@@ -242,7 +279,7 @@ function createFinanceMemoryStore({
           if (!fixtureRecordInScope(student, scope)) return null;
         }
         return {
-          ...student,
+          ...projectFixtureSchoolIdentity(student),
           dbId: student.dbId || student.id,
           schoolCode: student.schoolCode,
         };
