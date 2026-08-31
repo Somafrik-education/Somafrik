@@ -213,6 +213,47 @@ async function waitForHealth(child) {
   throw new Error("Backend health timeout");
 }
 
+/**
+ * Fixture RBAC strictement locale au verify sync-e2e.
+ * Le boot canonique garde ses règles fail-closed ; on complète uniquement le
+ * grant Notes:CREATE requis par POST /api/evaluations dans la base isolée.
+ */
+async function ensureSyncE2eNotesCreateGrant(pool) {
+  const before = await pool.query(
+    `SELECT role_key, module_key, can_create, can_read, can_update, can_delete
+     FROM role_module_permissions
+     WHERE role_key = 'SCHOOL_ADMIN'
+       AND scope_type = 'global'
+       AND country_id IS NULL
+       AND school_id IS NULL
+       AND module_key = 'grades'
+       AND status = 'active'`,
+  );
+  assert.equal(before.rowCount, 1, "sync-e2e: grant Notes SCHOOL_ADMIN global attendu après bootstrap");
+
+  const updated = await pool.query(
+    `UPDATE role_module_permissions
+     SET can_create = TRUE,
+         updated_at = NOW(),
+         updated_by = 'sync-e2e-fixture'
+     WHERE role_key = 'SCHOOL_ADMIN'
+       AND scope_type = 'global'
+       AND country_id IS NULL
+       AND school_id IS NULL
+       AND module_key = 'grades'
+       AND status = 'active'
+     RETURNING can_create, can_read, can_update, can_delete`,
+  );
+  assert.equal(updated.rowCount, 1, "sync-e2e: grant Notes:CREATE fixture non appliqué");
+  assert.equal(updated.rows[0].can_create, true, "sync-e2e: Notes:CREATE doit être actif");
+
+  const platform = await pool.query(
+    `SELECT permissions FROM role_permissions WHERE role_name = 'Admin School'`,
+  );
+  const tokens = Array.isArray(platform.rows[0]?.permissions) ? platform.rows[0].permissions : [];
+  assert.equal(tokens.includes("ALL_PRIVILEGES"), false, "sync-e2e: la fixture ne doit jamais injecter ALL_PRIVILEGES");
+}
+
 async function assertReloadStable(label, fetchList, pickId) {
   const first = extractList((await fetchList()).data);
   const second = extractList((await fetchList()).data);
@@ -233,6 +274,7 @@ async function runSyncEndToEnd(databaseUrl) {
 
   try {
     await waitForHealth(child);
+    await ensureSyncE2eNotesCreateGrant(pool);
     console.log("[sync-e2e] login HTTP réel", { identifier: "admin-sync-e2e@test.cd", schoolCode: "CD-2026-0001" });
     const adminToken = await login("admin-sync-e2e@test.cd", fixtureSecret, "CD-2026-0001");
     console.log("[sync-e2e] login HTTP réel", { identifier: "prefet-sync-e2e@test.cd", schoolCode: "CD-2026-0001" });
