@@ -44,6 +44,7 @@
     "verify:users-tenant": "node backend/scripts/verify-users-tenant.js",
     "verify:enrollment-tenant": "node backend/scripts/verify-enrollment-tenant.js",
     "verify:tenant-revalidation": "node backend/scripts/verify-tenant-revalidation.js",
+    "verify:d-revalidation": "node backend/scripts/verify-d-revalidation.js",
     "verify:classes-management": "node --test backend/lib/classesManagement.test.js backend/lib/classesManagement.displayName.test.js backend/lib/classesUniqueness.test.js backend/lib/academicYearsManagement.test.js && node backend/lib/classesRepository.test.js && node backend/lib/classesRepository.pg.test.js && node backend/lib/classesStructuralNullUniqueness.pg.test.js && node backend/lib/academicYearsCurrentSwitch.pg.test.js && node backend/scripts/verify-classes-management.js && npm --prefix web run test -- src/pages/etablissement/ClassesListPage.test.tsx src/pages/ConfigurationPage.test.tsx src/pages/parametres/SettingsHubPage.test.tsx && npm run verify:mobile-sync-l1-classes",
     "verify:classes-legacy-cleanup": "node --test backend/lib/legacyClassesStateWrite.test.js && node backend/scripts/verify-classes-legacy-cleanup.js",
     "verify:mobile-sync-l1-classes": "node --test backend/lib/mobileSyncCursor.test.js backend/lib/mobileSyncScope.test.js backend/lib/mobileSyncClasses.test.js && node backend/lib/mobileSyncClasses.pg.test.js && node backend/lib/mobileSyncClasses.http.pg.test.js",
