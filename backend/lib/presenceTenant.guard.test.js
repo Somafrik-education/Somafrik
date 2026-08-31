@@ -56,6 +56,7 @@ test("GP-015: audit présence n'utilise pas leftover JWT schoolCode", () => {
   const svc = read("lib/pedagogyService.js");
   const fn = sliceFrom(svc, "async function upsertAttendanceBatch", "module.exports");
   assert.doesNotMatch(fn, /schoolCode:\s*principal\?\.schoolCode/);
+  assert.match(fn, /presenceSchoolId/);
   assert.match(fn, /presenceLoginCode/);
 });
 

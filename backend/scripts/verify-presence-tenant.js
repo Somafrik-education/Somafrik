@@ -46,6 +46,7 @@ function sourceGuards() {
     pedagogy.indexOf("async function upsertAttendanceBatch"),
     pedagogy.indexOf("module.exports"),
   );
+  assert.match(auditFn, /presenceSchoolId/);
   assert.match(auditFn, /presenceLoginCode/);
   assert.doesNotMatch(auditFn, /schoolCode:\s*principal\?\.schoolCode/);
   assert.match(postBlock, /presenceHttpPrincipal/);
