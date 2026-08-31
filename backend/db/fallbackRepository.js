@@ -3381,6 +3381,10 @@ class FallbackRepository {
     return Promise.resolve(this.getClientsStore().listProjection());
   }
 
+  listClientsUsers(scope) {
+    return Promise.resolve(this.getClientsStore().listUsers(scope));
+  }
+
   listClientsAuthAccounts() {
     return Promise.resolve(this.getClientsStore().listAuthAccounts());
   }

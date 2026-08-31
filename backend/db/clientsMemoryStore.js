@@ -16,6 +16,7 @@ const {
   mapAnnouncementRow,
   schoolPublicProjectionFromSchool,
 } = require("../lib/clientsManagement");
+const { filterUsersRows } = require("../lib/usersSchoolScope");
 
 function clone(value) {
   return JSON.parse(JSON.stringify(value));
@@ -126,6 +127,21 @@ function createClientsMemoryStore(seed = {}) {
         return {
           id: school.id,
           school_code: asTrimmed(school.code ?? school.schoolCode).toUpperCase(),
+          name: school.name,
+          country_id: school.countryId ?? school.country_id ?? "country-seed",
+          country_code: resolveSchoolCountryCode(school),
+          country_name: school.country ?? school.country_name ?? "",
+        };
+      },
+      async getSchoolById(id) {
+        const schoolId = asTrimmed(id);
+        if (!schoolId) return null;
+        const school = tables.schools.find((row) => String(row.id) === schoolId);
+        if (!school) return null;
+        return {
+          id: school.id,
+          school_code: asTrimmed(school.code ?? school.schoolCode).toUpperCase(),
+          login_code: asTrimmed(school.loginCode ?? school.login_code).toUpperCase(),
           name: school.name,
           country_id: school.countryId ?? school.country_id ?? "country-seed",
           country_code: resolveSchoolCountryCode(school),
@@ -1079,6 +1095,7 @@ function createClientsMemoryStore(seed = {}) {
   const store = {
     bind,
     getSchoolByCode: (code) => txApi.getSchoolByCode(code),
+    getSchoolById: (id) => txApi.getSchoolById(id),
     getCountryByCode: (code) => txApi.getCountryByCode(code),
     getUserById: (id) => txApi.getUserById(id),
     async withTransaction(fn) {
@@ -1100,6 +1117,9 @@ function createClientsMemoryStore(seed = {}) {
       } finally {
         transactionDepth -= 1;
       }
+    },
+    listUsers(scope) {
+      return filterUsersRows(this.listProjection().users, scope);
     },
     listProjection() {
       const users = tables.users.map((row) => {

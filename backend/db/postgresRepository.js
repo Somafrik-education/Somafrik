@@ -1194,6 +1194,10 @@ class PostgresRepository {
     return this.getClientsStore().listProjection();
   }
 
+  listClientsUsers(scope) {
+    return this.getClientsStore().listUsers(scope);
+  }
+
   async listClientsAuthAccounts() {
     await this.init();
     const rows = await this.all(
