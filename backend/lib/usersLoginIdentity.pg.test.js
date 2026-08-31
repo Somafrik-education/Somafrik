@@ -204,8 +204,19 @@ async function main() {
     );
     await ensureUsersLoginIdentityConstraints(db);
 
+    const adminUser = await pool.query(
+      `INSERT INTO users (school_id, user_code, first_name, last_name, email, role, status)
+       VALUES ($1, 'ADM-LOGIN-ID', 'Admin', 'Member', 'admin-login-id@test.local', 'SCHOOL_ADMIN', 'active')
+       RETURNING id`,
+      [schoolId],
+    );
     const store = createClientsPgStore(db);
-    const principal = { role: "Admin School", schoolCode: "CD-2026-0001", identifier: "admin" };
+    const principal = {
+      role: "Admin School",
+      schoolCode: "CD-2026-0001",
+      identifier: "admin",
+      sub: adminUser.rows[0].id,
+    };
     const auditMeta = { ipAddress: "127.0.0.1", userAgent: "test" };
 
     // Après archivage du compte actif, réutilisation de l'email → création OK

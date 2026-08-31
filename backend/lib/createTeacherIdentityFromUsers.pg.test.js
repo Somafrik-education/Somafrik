@@ -115,8 +115,18 @@ async function main() {
       [country.rows[0].id],
     );
 
+    const adminUser = await pool.query(
+      `INSERT INTO users (school_id, user_code, first_name, last_name, email, role, status, must_change_password)
+       VALUES ((SELECT id FROM schools WHERE school_code = 'CD-2026-0001'), 'ADM-TEACHER', 'Admin', 'Member', 'admin-teacher@test.local', 'SCHOOL_ADMIN', 'active', FALSE)
+       RETURNING id`,
+    );
     const repository = createRepository(pool);
-    const principal = { role: "Admin School", schoolCode: "CD-2026-0001", identifier: "admin" };
+    const principal = {
+      role: "Admin School",
+      schoolCode: "CD-2026-0001",
+      identifier: "admin",
+      sub: adminUser.rows[0].id,
+    };
     const auditMeta = { ipAddress: "127.0.0.1", userAgent: "pg-create-teacher-atomic" };
     const civil = {
       firstName: "Awa",
@@ -142,7 +152,7 @@ async function main() {
     assert.ok((created.user.roleKeys ?? []).includes("TEACHER"));
 
     const afterSuccess = await counts(pool);
-    assert.equal(afterSuccess.users, 1);
+    assert.equal(afterSuccess.users, 2, "admin membership + enseignant créé");
     assert.equal(afterSuccess.user_roles, 1);
     assert.equal(afterSuccess.teachers, 1);
     assert.ok(afterSuccess.audit_logs >= 2, "create_user + grant_role audités");

@@ -44,6 +44,22 @@ function createClientsPgStore(repo) {
           [normalized],
         );
       },
+      async getSchoolForPrincipalUser(principal = {}) {
+        if (typeof repo.getSchoolForPrincipalUser === "function") {
+          return repo.getSchoolForPrincipalUser(principal);
+        }
+        const userId = asTrimmed(principal?.sub || principal?.id);
+        if (!userId) return null;
+        return one(
+          `SELECT s.*, c.iso_code AS country_code, c.name AS country_name
+           FROM users u
+           JOIN schools s ON s.id = u.school_id
+           JOIN countries c ON c.id = s.country_id
+           WHERE u.id::text = $1
+           LIMIT 1`,
+          [userId],
+        );
+      },
       async getCountryByCode(code) {
         const normalized = asTrimmed(code).toUpperCase();
         if (!normalized) return null;
@@ -1470,6 +1486,7 @@ function createClientsPgStore(repo) {
   const store = {
     bind,
     getSchoolByCode: (code) => bind({}).getSchoolByCode(code),
+    getSchoolForPrincipalUser: (principal) => bind({}).getSchoolForPrincipalUser(principal),
     getCountryByCode: (code) => bind({}).getCountryByCode(code),
     getUserById: (id) => bind({}).getUserById(id),
     withTransaction(fn) {

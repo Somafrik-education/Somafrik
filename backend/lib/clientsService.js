@@ -108,13 +108,6 @@ function resolveWritableSchoolCode(principal, rawPayload) {
   return schoolCode.toUpperCase();
 }
 
-function resolveCreateUserSchoolCode(principal, rawPayload) {
-  if (isSuperAdminPrincipal(principal) || isCountryAdminPrincipal(principal)) {
-    return asTrimmed(rawPayload.schoolCode || rawPayload.schoolId).toUpperCase();
-  }
-  return asTrimmed(principal?.schoolCode).toUpperCase();
-}
-
 function requireConcreteSchoolCode(principal, schoolCode) {
   if (schoolCode && schoolCode !== "*") return;
   if (isSuperAdminPrincipal(principal)) return;
@@ -138,11 +131,12 @@ function rethrowLoginIdentityConflict(error) {
 async function createUser(store, rawPayload, principal, auditMeta) {
   assertNoClientPrivilegeKeys(rawPayload, FORBIDDEN_CREATE_KEYS, USER_ROLE_ERROR.ROLE_NOT_ALLOWED_ON_CREATE);
   const payload = ignoreClientScope(rawPayload);
-  const schoolCode = resolveCreateUserSchoolCode(principal, rawPayload);
+  const { resolveCreateUserTenant } = require("./clientsUserCreateTenant");
   const requestedCountry = requestedCountryCodeFromPayload(rawPayload);
-  assertSchoolScope(principal, schoolCode);
-  requireConcreteSchoolCode(principal, schoolCode);
-  if (schoolCode && schoolCode !== "*") {
+  const resolved = await resolveCreateUserTenant(store, principal, rawPayload);
+  const school = resolved.school;
+  const schoolCode = asTrimmed(resolved.schoolCode);
+  if (isCountryAdminPrincipal(principal) && schoolCode) {
     await assertSchoolInPrincipalCountry(store, principal, schoolCode);
   }
 
@@ -153,8 +147,7 @@ async function createUser(store, rawPayload, principal, auditMeta) {
   }
 
   return store.withTransaction(async (tx) => {
-    const hasSchool = Boolean(schoolCode) && schoolCode !== "*";
-    const school = hasSchool ? await tx.getSchoolByCode(schoolCode) : null;
+    const hasSchool = Boolean(school?.id);
     if (hasSchool && !school) {
       throw createClientsError(404, "Établissement introuvable.", CLIENTS_ERROR.SCHOOL_NOT_FOUND);
     }
