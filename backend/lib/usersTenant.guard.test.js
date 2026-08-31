@@ -67,6 +67,7 @@ test("GP-003: usersSchoolScope n'autorise pas leftover comme autorité établiss
   assert.doesNotMatch(resolveFn, /principal\.schoolCode/);
 
   assert.match(sqlFn, /u\.school_id/);
+  assert.match(sqlFn, /profile_payload->>'countryCode'/);
   assert.doesNotMatch(sqlFn, /school_code/);
   assert.doesNotMatch(sqlFn, /login_code/);
   assert.doesNotMatch(sqlFn, /COALESCE/i);
@@ -75,6 +76,7 @@ test("GP-003: usersSchoolScope n'autorise pas leftover comme autorité établiss
   assert.doesNotMatch(findFn, /\sOR\s/i);
   assert.doesNotMatch(findFn, /COALESCE/i);
 
+  assert.match(scopeLib, /membership\.schoolId && sameId\(requestedRaw, membership\.schoolId\)/);
   assert.match(writeFn, /typeof one !== "function"/);
   assert.match(writeFn, /countryIsoFromPublicCode/);
 });

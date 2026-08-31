@@ -53,6 +53,8 @@ function sourceGuards() {
   assert.match(httpTest, /P0-11 jamais A/);
   assert.match(httpTest, /schoolId: fixture.schoolAId/);
   assert.match(httpTest, /USER_PAYS_BI/);
+  assert.match(scopeLib, /profile_payload->>'countryCode'/);
+  assert.match(scopeLib, /sameId\(requestedRaw, membership\.schoolId\)/);
 }
 
 function main() {

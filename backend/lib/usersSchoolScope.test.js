@@ -177,6 +177,8 @@ test("GP-003: sqlUsersScope country inclut schoolless du pays, jamais l'autre pa
   assert.match(pred, /school_id IS NULL/);
   assert.match(pred, /profile_payload->>'countryCode'/);
   assert.doesNotMatch(pred, /school_code/);
+  assert.doesNotMatch(pred, /COALESCE/i);
+  assert.doesNotMatch(pred, /\sOR\s/i);
   assert.doesNotMatch(pred, /jwt/i);
   assert.deepEqual(params, ["CD"]);
   const rows = [
