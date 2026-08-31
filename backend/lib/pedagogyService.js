@@ -119,7 +119,7 @@ async function resolveSchoolForExistingSlot(tx, existing) {
   throw createPedagogyError(404, "Établissement introuvable.", PEDAGOGY_ERROR.TENANT_MISMATCH);
 }
 
-function assertPlanningSlotAccess(principal, existing) {
+function assertPlanningSlotAccess(principal, existing, school = null) {
   const scope = resolvePlanningSchoolScope(principal);
   if (scope.mode === "school" || scope.mode === "country" || scope.mode === "all") {
     assertPlanningPatchAccess(principal, existing);
@@ -128,7 +128,10 @@ function assertPlanningSlotAccess(principal, existing) {
   if (hasPlanningMembershipAttached(principal) && scope.mode === "none") {
     throw createPedagogyError(403, "Accès refusé : établissement hors périmètre.", PEDAGOGY_ERROR.TENANT_MISMATCH);
   }
-  assertTenant(principal, existing.schoolCode);
+  // Leftover store path: compare JWT leftover to the school row loaded by UUID,
+  // never to DTO schoolCode (login_code may be empty on seed schools).
+  const leftoverTarget = asTrimmed(school?.code) || asTrimmed(existing?.schoolCode);
+  assertTenant(principal, leftoverTarget);
 }
 
 async function createCourse(store, rawPayload, principal, auditMeta) {
@@ -364,8 +367,8 @@ async function updateCourseSchedule(store, scheduleId, patchRaw, principal, audi
   return store.withTransaction(async (tx) => {
     const existing = await tx.getWeeklyScheduleById(scheduleId, principal);
     if (!existing) throw createPedagogyError(404, "Créneau introuvable.", PEDAGOGY_ERROR.COURSE_NOT_FOUND);
-    assertPlanningSlotAccess(principal, existing);
     const school = await resolveSchoolForExistingSlot(tx, existing);
+    assertPlanningSlotAccess(principal, existing, school);
     const nextPayload = {
       schoolCourseId: patch.schoolCourseId ?? patch.school_course_id ?? existing.schoolCourseId,
       academicYearId: patch.academicYearId ?? patch.academic_year_id ?? existing.academicYearId,
@@ -419,7 +422,8 @@ async function deleteCourseSchedule(store, scheduleId, principal, auditMeta) {
   return store.withTransaction(async (tx) => {
     const existing = await tx.getWeeklyScheduleById(scheduleId, principal);
     if (!existing) throw createPedagogyError(404, "Créneau introuvable.", PEDAGOGY_ERROR.COURSE_NOT_FOUND);
-    assertPlanningSlotAccess(principal, existing);
+    const school = await resolveSchoolForExistingSlot(tx, existing);
+    assertPlanningSlotAccess(principal, existing, school);
     const saved = await tx.cancelWeeklyScheduleSlot(existing.id);
     await writePedagogyAudit(tx, principal, auditMeta, {
       action: "cancel_course_schedule",
