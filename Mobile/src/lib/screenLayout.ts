@@ -1,42 +1,46 @@
 import { Platform, StyleSheet } from "react-native";
 import { useSafeAreaInsets, type EdgeInsets } from "react-native-safe-area-context";
 import {
-  TAB_BAR_CONTENT_HEIGHT,
-  TAB_BAR_GAP_DP,
   TAB_BAR_INNER_PADDING_DP,
   TAB_BAR_SIDE_INSET_DP,
 } from "./mobileUxV1Layout";
 import { MIN_TOUCH_TARGET_DP } from "./mobileUsability";
+import {
+  computeFloatingTabBarMetrics,
+  CONTENT_ABOVE_TAB_GAP,
+  FLOATING_TAB_BAR_GAP,
+  FLOATING_TAB_BAR_HEIGHT,
+  type TabBarPlatform,
+} from "./floatingTabBarLayout";
 
-/** Hauteur de contenu (hors safe area). Alias historique conservé. */
-export const FLOATING_TAB_BAR_HEIGHT = TAB_BAR_CONTENT_HEIGHT;
-export const FLOATING_TAB_BAR_GAP = TAB_BAR_GAP_DP;
-export const CONTENT_ABOVE_TAB_GAP = 8;
+export {
+  ANDROID_TAB_BAR_MIN_BOTTOM_INSET_DP,
+  computeFloatingTabBarMetrics,
+  CONTENT_ABOVE_TAB_GAP,
+  FLOATING_TAB_BAR_GAP,
+  FLOATING_TAB_BAR_HEIGHT,
+  resolveTabBarBottomInset,
+  TAB_BAR_OPTICAL_TOP_PADDING_DP,
+} from "./floatingTabBarLayout";
 
-export function computeFloatingTabBarLayout(insets: EdgeInsets) {
-  const bottomInset = Math.max(insets.bottom, Platform.OS === "android" ? 8 : 0);
-  const tabBarBottom = FLOATING_TAB_BAR_GAP;
-  const tabBarHeight = FLOATING_TAB_BAR_HEIGHT + bottomInset;
-  const tabBarOccupiedHeight = tabBarHeight + tabBarBottom;
-  const scrollContentPaddingBottom = tabBarOccupiedHeight + CONTENT_ABOVE_TAB_GAP;
+export function computeFloatingTabBarLayout(insets: EdgeInsets, platform: TabBarPlatform = Platform.OS) {
+  const metrics = computeFloatingTabBarMetrics(insets, platform);
 
   return {
-    tabBarBottom,
-    tabBarOccupiedHeight,
-    scrollContentPaddingBottom,
+    ...metrics,
     tabBarStyle: {
       position: "absolute" as const,
       left: TAB_BAR_SIDE_INSET_DP,
       right: TAB_BAR_SIDE_INSET_DP,
-      bottom: tabBarBottom,
-      height: tabBarHeight,
+      bottom: metrics.tabBarBottom,
+      height: metrics.tabBarHeight,
       backgroundColor: "#FFFFFF",
       borderTopLeftRadius: 14,
       borderTopRightRadius: 14,
       borderTopWidth: StyleSheet.hairlineWidth,
       borderTopColor: "#E2E8F0",
-      paddingTop: 2,
-      paddingBottom: bottomInset,
+      paddingTop: metrics.paddingTop,
+      paddingBottom: metrics.paddingBottom,
       paddingHorizontal: TAB_BAR_INNER_PADDING_DP,
       elevation: 10,
       shadowColor: "#0F172A",
