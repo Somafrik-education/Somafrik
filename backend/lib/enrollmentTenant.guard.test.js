@@ -67,11 +67,11 @@ test("ENR: enrollmentSchoolScope n'autorise pas leftover comme autorité établi
   assert.doesNotMatch(projectFn, /school_code/);
 });
 
-test("ENR: mapStudentRow projette login_code, pas leftover", () => {
-  const repo = read("db/classStudentsRepository.js");
-  const select = sliceFrom(repo, "const STUDENT_SELECT_COLUMNS", "function createClassStudentsDb");
-  const mapFn = sliceFrom(repo, "function mapStudentRow(row)", "function mapEnrollmentRow");
-  assert.match(select, /s\.login_code AS school_login_code/);
-  assert.match(mapFn, /publicSchoolCodeFromRow/);
-  assert.doesNotMatch(mapFn, /schoolCode: row\.school_code/);
+test("ENR: HTTP projette login_code, pas leftover", () => {
+  const server = read("server.js");
+  const helper = sliceFrom(server, "function enrollmentApiStudent", "function enrollmentApiStudents");
+  assert.match(helper, /projectEnrollmentApiStudent/);
+  const getList = sliceFrom(server, 'app.get("/api/students"', 'app.get("/api/students/:id"');
+  assert.match(getList, /enrollmentApiStudents/);
+  assert.doesNotMatch(getList, /sanitizeUsersForResponse\(scoped\)/);
 });

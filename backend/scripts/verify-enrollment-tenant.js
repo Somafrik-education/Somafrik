@@ -45,8 +45,8 @@ function sourceGuards() {
   assert.match(postBlock, /resolveEnrollmentWriteSchool/);
 
   assert.match(scopeLib, /principal\.sub → users\.id → users\.school_id/);
+  assert.match(scopeLib, /projectEnrollmentApiStudent/);
   assert.match(repo, /school_login_code/);
-  assert.match(repo, /publicSchoolCodeFromRow/);
 
   assert.match(httpTest, /CD-LAC-26-001/);
   assert.match(httpTest, /BI-BUJ-26-001/);

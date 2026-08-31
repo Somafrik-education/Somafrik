@@ -244,10 +244,17 @@ function assertEnrollmentStudentAccess(principal, current) {
     }
     return scope;
   }
-  if (scope.schoolId && current?.schoolId && !sameId(current.schoolId, scope.schoolId)) {
-    failClosed("Accès refusé: établissement hors périmètre.");
+  if (scope.schoolId && current?.schoolId) {
+    if (!sameId(current.schoolId, scope.schoolId)) {
+      failClosed("Accès refusé: établissement hors périmètre.");
+    }
+    return scope;
   }
-  if (normalizeLoginCode(current?.schoolCode) !== scope.loginCode) {
+  const currentCode = normalizeLoginCode(current?.schoolCode);
+  if (!current?.schoolId) {
+    return scope;
+  }
+  if (currentCode && currentCode !== scope.loginCode) {
     failClosed("Accès refusé: établissement hors périmètre.");
   }
   return scope;

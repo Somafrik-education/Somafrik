@@ -209,6 +209,12 @@ test("ENR: PATCH compare school_id / login_code, pas leftover JWT", () => {
   assert.doesNotThrow(() =>
     assertEnrollmentStudentAccess(principal, { schoolId: SCHOOL_ID_A, schoolCode: LOGIN_A }),
   );
+  assert.doesNotThrow(() =>
+    assertEnrollmentStudentAccess(principal, { schoolId: SCHOOL_ID_A, schoolCode: LEFTOVER_A }),
+  );
+  assert.doesNotThrow(() =>
+    assertEnrollmentStudentAccess(principal, { schoolCode: LOGIN_A }),
+  );
   assert.throws(
     () => assertEnrollmentStudentAccess(principal, { schoolId: SCHOOL_ID_B, schoolCode: LOGIN_B }),
     (error) => error.statusCode === 403,

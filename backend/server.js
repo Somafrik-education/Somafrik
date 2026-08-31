@@ -775,6 +775,10 @@ function requireEnrollmentLoginCode(principal) {
   return assertEnrollmentSchoolCode(principal);
 }
 
+function enrollmentAuthzPrincipal(reqPrincipal, loginCode) {
+  return { ...reqPrincipal, schoolCode: loginCode };
+}
+
 function enrollmentApiStudent(row, loginCode) {
   const { projectEnrollmentApiStudent } = require("./lib/enrollmentSchoolScope");
   return sanitizeUserForResponse(projectEnrollmentApiStudent(row, loginCode));
@@ -1779,14 +1783,17 @@ app.get("/api/students/:id", requireAuth, requirePermission("GET /api/students/:
     throw new BusinessError(503, "Fiche élève PostgreSQL indisponible.");
   }
 
-  const pgStudent = await repository.getSchoolStudentByCode(req.params.id, schoolCode);
+  const pgStudent = enrollmentApiStudent(
+    await repository.getSchoolStudentByCode(req.params.id, schoolCode),
+    schoolCode,
+  );
   assertEnrollmentStudentAccess(principal, pgStudent);
   const {
     authorizeStudentReadForPrincipal,
   } = require("./lib/classStudentsAuthz");
   const authorizedPg = authorizeStudentReadForPrincipal(
     pgStudent,
-    req.principal,
+    enrollmentAuthzPrincipal(req.principal, schoolCode),
     req.params.id,
     resolveAuthorizedStudentForPrincipal,
   );
@@ -1805,14 +1812,17 @@ app.patch("/api/students/:id", requireAuth, requirePermission("PATCH /api/studen
     throw new BusinessError(503, "Modification élève PostgreSQL indisponible.");
   }
 
-  const existing = await repository.getSchoolStudentByCode(req.params.id, schoolCode);
+  const existing = enrollmentApiStudent(
+    await repository.getSchoolStudentByCode(req.params.id, schoolCode),
+    schoolCode,
+  );
   assertEnrollmentStudentAccess(principal, existing);
   const {
     authorizeStudentReadForPrincipal,
   } = require("./lib/classStudentsAuthz");
   const authorized = authorizeStudentReadForPrincipal(
     existing,
-    req.principal,
+    enrollmentAuthzPrincipal(req.principal, schoolCode),
     req.params.id,
     resolveAuthorizedStudentForPrincipal,
   );
@@ -1838,12 +1848,15 @@ app.delete("/api/students/:id", requireAuth, requirePermission("DELETE /api/stud
   if (typeof repository.getSchoolStudentByCode !== "function") {
     throw new BusinessError(503, "Suppression élève PostgreSQL indisponible.");
   }
-  const existing = await repository.getSchoolStudentByCode(req.params.id, schoolCode);
+  const existing = enrollmentApiStudent(
+    await repository.getSchoolStudentByCode(req.params.id, schoolCode),
+    schoolCode,
+  );
   assertEnrollmentStudentAccess(principal, existing);
   const { authorizeStudentReadForPrincipal } = require("./lib/classStudentsAuthz");
   const authorized = authorizeStudentReadForPrincipal(
     existing,
-    req.principal,
+    enrollmentAuthzPrincipal(req.principal, schoolCode),
     req.params.id,
     resolveAuthorizedStudentForPrincipal,
   );
