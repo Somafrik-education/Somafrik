@@ -6465,7 +6465,7 @@ class PostgresRepository {
     this.cachedDataset = null;
     const student = created?.student;
     let financeSync = null;
-    if (student?.studentCode) {
+    if (student?.studentCode && this.pool) {
       const school = await this.getSchoolByCode(schoolCode);
       const financeLoginCode = String(school?.login_code ?? "").trim();
       financeSync = await this.syncEnrollmentFinanceObligations(
