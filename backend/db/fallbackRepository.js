@@ -1683,6 +1683,20 @@ class FallbackRepository {
   }
 
   /**
+   * Auth mémoire clé encore sur leftover school_code. L'inscription HTTP
+   * passe le login_code V2 (Finance) ; le compte de login reste sur leftover.
+   */
+  memoryAuthSchoolCode(schoolCode) {
+    const requested = String(schoolCode ?? "").trim().toUpperCase();
+    const leftover = String(seedData.school.code ?? "").trim().toUpperCase();
+    const aliases = [seedData.school.loginCode, seedData.school.publicId, seedData.school.login_code]
+      .map((value) => String(value ?? "").trim().toUpperCase())
+      .filter(Boolean);
+    if (requested && leftover && aliases.includes(requested)) return leftover;
+    return schoolCode;
+  }
+
+  /**
    * Enregistre le compte de connexion élève (hash seul) pour le premier login mémoire.
    * Jamais de secret clair : le plaintext n'existe que dans la réponse CREATE.
    */
@@ -1710,7 +1724,7 @@ class FallbackRepository {
       scopeLevel: "Établissement",
       countryScope: seedData.school.countryScope ?? "RDC",
       countryCode: seedData.school.countryCode ?? "CD",
-      schoolCode,
+      schoolCode: this.memoryAuthSchoolCode(schoolCode),
       accessChannel: "Application",
       identifier: studentCode,
       passwordHash: managedUser.password_hash,
