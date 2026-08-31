@@ -1,5 +1,7 @@
-import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
+import { createBottomTabNavigator, type BottomTabBarButtonProps } from "@react-navigation/bottom-tabs";
+import { PlatformPressable } from "@react-navigation/elements";
 import { Ionicons } from "@expo/vector-icons";
+import { Text } from "react-native";
 
 import HomeScreen from "../screens/HomeScreen";
 import StudentsScreen from "../screens/StudentsScreen";
@@ -9,11 +11,12 @@ import {
   partitionRoleTabs,
   type RoleTabDefinition,
 } from "./roleTabPreferences";
-import SomafrikBottomTabBar from "./SomafrikBottomTabBar";
+import { useFloatingTabBarLayout } from "../lib/screenLayout";
+import { TAB_ITEM_INNER_ALIGN } from "../lib/tabBarItemInnerLayout";
 import { TAB_TEST_IDS } from "../lib/loginScreenSpec";
 import { tabTestIdForTabName } from "../lib/mobileNavigationSpec";
-import { SOMAFRIK_TAB_ICON_DP } from "../lib/tabBarItemInnerLayout";
-import { shortBottomTabLabel } from "../lib/mobileUxV1Layout";
+import { MIN_TOUCH_TARGET_DP } from "../lib/mobileUsability";
+import { TAB_BAR_CONTENT_HEIGHT, TAB_LABEL_FONT_SIZE, shortBottomTabLabel } from "../lib/mobileUxV1Layout";
 import MobileAppHeader from "../components/MobileAppHeader";
 
 const Tab = createBottomTabNavigator();
@@ -23,8 +26,39 @@ const hiddenTabOptions = {
   tabBarItemStyle: { display: "none" } as const,
 };
 
+function CompactTabButton({ style, ...props }: BottomTabBarButtonProps) {
+  return (
+    <PlatformPressable
+      {...props}
+      style={[style, { justifyContent: TAB_ITEM_INNER_ALIGN }]}
+    />
+  );
+}
+
+function CompactTabLabel({ label, color }: { label: string; color: string }) {
+  return (
+    <Text
+      numberOfLines={1}
+      maxFontSizeMultiplier={1.3}
+      allowFontScaling
+      style={{
+        color,
+        fontSize: TAB_LABEL_FONT_SIZE,
+        fontWeight: "700",
+        letterSpacing: 0.1,
+        textAlign: "center",
+        width: "100%",
+        includeFontPadding: false,
+      }}
+    >
+      {label}
+    </Text>
+  );
+}
+
 export default function BottomTabsNavigator() {
   const { session } = useAuth();
+  const { tabBarStyle } = useFloatingTabBarLayout();
   const { visibleTabs, overflowTabs } = partitionRoleTabs(session);
   const hiddenTabs = [...overflowTabs];
   const needsStudentsScreen =
@@ -47,20 +81,38 @@ export default function BottomTabsNavigator() {
 
   return (
     <Tab.Navigator
-      tabBar={(props) => <SomafrikBottomTabBar {...props} />}
       screenOptions={({ route, navigation }) => ({
         headerShown: true,
         headerStatusBarHeight: 0,
         header: () => <MobileAppHeader navigation={navigation} />,
         safeAreaInsets: { top: 0, bottom: 0 },
+        tabBarShowLabel: true,
         tabBarActiveTintColor: "#2563EB",
         tabBarInactiveTintColor: "#64748B",
+        tabBarButton: CompactTabButton,
+        tabBarIconStyle: { marginBottom: 0 },
+        tabBarLabelStyle: { marginBottom: 0 },
+        tabBarLabel: ({ color }) => (
+          <CompactTabLabel
+            label={getTabLabel(route.name, visibleTabs, overflowTabs, hiddenTabs)}
+            color={color}
+          />
+        ),
+        tabBarStyle,
+        tabBarItemStyle: {
+          flex: 1,
+          minWidth: 0,
+          minHeight: MIN_TOUCH_TARGET_DP,
+          height: TAB_BAR_CONTENT_HEIGHT,
+          marginHorizontal: 0,
+          paddingVertical: 0,
+        },
         tabBarIcon: ({ focused, color }) => {
           if (route.name === "Accueil") {
             return (
               <Ionicons
                 name={focused ? "home" : "home-outline"}
-                size={SOMAFRIK_TAB_ICON_DP}
+                size={20}
                 color={color}
               />
             );
@@ -72,7 +124,7 @@ export default function BottomTabsNavigator() {
           return (
             <Ionicons
               name={iconName}
-              size={SOMAFRIK_TAB_ICON_DP}
+              size={20}
               color={color}
             />
           );
@@ -90,7 +142,6 @@ export default function BottomTabsNavigator() {
       />
       {visibleTabs.map((tab) => {
         const tabTestId = tabTestIdForTabName(tab.tabName) ?? tabTestIdForTabName(tab.label);
-        const label = shortBottomTabLabel(tab.tabName, tab.label);
         return (
           <Tab.Screen
             key={tab.tabName}
@@ -100,11 +151,11 @@ export default function BottomTabsNavigator() {
             options={
               tabTestId
                 ? {
-                    tabBarLabel: label,
+                    tabBarLabel: tab.label,
                     tabBarButtonTestID: tabTestId,
-                    tabBarAccessibilityLabel: label,
+                    tabBarAccessibilityLabel: tab.label,
                   }
-                : { tabBarLabel: label, tabBarAccessibilityLabel: label }
+                : { tabBarLabel: tab.label, tabBarAccessibilityLabel: tab.label }
             }
           />
         );
@@ -129,4 +180,15 @@ function findTabDefinition(
   hiddenTabs: RoleTabDefinition[],
 ): RoleTabDefinition | undefined {
   return [...visibleTabs, ...overflowTabs, ...hiddenTabs].find((tab) => tab.tabName === tabName);
+}
+
+function getTabLabel(
+  tabName: string,
+  visibleTabs: RoleTabDefinition[],
+  overflowTabs: RoleTabDefinition[],
+  hiddenTabs: RoleTabDefinition[],
+) {
+  if (tabName === "Accueil") return "Accueil";
+  const definition = findTabDefinition(tabName, visibleTabs, overflowTabs, hiddenTabs);
+  return shortBottomTabLabel(tabName, definition?.label);
 }
