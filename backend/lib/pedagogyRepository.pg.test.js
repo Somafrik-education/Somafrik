@@ -171,6 +171,7 @@ async function seedFixture(pool) {
     klassB: klassB.rows[0].id,
     closedClass: closedClass.rows[0].id,
     openYear: openYear.rows[0].id,
+    closedYear: closedYear.rows[0].id,
     term: term.rows[0].id,
     math: math.rows[0].id,
     physics: physics.rows[0].id,
@@ -1065,6 +1066,67 @@ async function main() {
       auditMeta,
     );
     assert.equal(Number(teacherGrade.score ?? teacherGrade.value), 13);
+
+    const gradesBeforeOtherYear = await pool.query(
+      `SELECT count(*)::int AS count, coalesce(max(score), 0)::float AS score FROM grades`,
+    );
+    await pool.query(
+      `UPDATE teacher_assignments
+       SET academic_year_id = $1
+       WHERE teacher_id = $2 AND class_id = $3 AND subject_id = $4 AND academic_year_id = $5`,
+      [fixture.closedYear, fixture.teacher, fixture.klass, fixture.math, fixture.openYear],
+    );
+    await assert.rejects(
+      () =>
+        store.upsertSchoolGrade(
+          {
+            evaluationId: teacherEval.id,
+            studentId: "CD-2026-0001-STU-PG-01",
+            value: 11,
+            scale: 20,
+          },
+          teacherLive,
+          auditMeta,
+        ),
+      (error) => error.statusCode === 403,
+      "même teacher/class/subject, assignment autre année → 403",
+    );
+    const gradesAfterOtherYear = await pool.query(
+      `SELECT count(*)::int AS count, coalesce(max(score), 0)::float AS score FROM grades`,
+    );
+    assert.equal(
+      gradesAfterOtherYear.rows[0].count,
+      gradesBeforeOtherYear.rows[0].count,
+      "COUNT grades inchangé si assignment d'une autre année",
+    );
+    assert.equal(Number(gradesAfterOtherYear.rows[0].score), Number(gradesBeforeOtherYear.rows[0].score));
+    await pool.query(
+      `UPDATE teacher_assignments
+       SET academic_year_id = $1
+       WHERE teacher_id = $2 AND class_id = $3 AND subject_id = $4 AND academic_year_id = $5`,
+      [fixture.openYear, fixture.teacher, fixture.klass, fixture.math, fixture.closedYear],
+    );
+
+    await assert.rejects(
+      () =>
+        store.upsertSchoolGrade(
+          {
+            evaluationId: teacherEval.id,
+            studentId: "CD-2026-0001-STU-PG-01",
+            value: 11,
+            scale: 20,
+          },
+          {
+            role: "Enseignant",
+            schoolCode: "CD-2026-0001",
+            identifier: "ENS-PG-001",
+            permissions: ["Notes:READ", "Notes:CREATE", "Notes:UPDATE"],
+          },
+          auditMeta,
+        ),
+      (error) => error.statusCode === 403,
+      "principal sans sub (identifier BO) → 403",
+    );
 
     await assert.rejects(
       () =>

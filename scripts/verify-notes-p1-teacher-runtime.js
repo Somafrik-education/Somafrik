@@ -55,6 +55,18 @@ function assertTeacherRuntimeSource() {
   assert.match(insertBlock, /teacherId,/);
   assert.doesNotMatch(insertBlock.slice(0, 900), /teacher\?\.id \?\? null/);
 
+  const resolver = pg.slice(
+    pg.indexOf("async resolveTeacherPgIdForPrincipal"),
+    pg.indexOf("async resolveAcademicYearIdForEvaluation"),
+  );
+  assert.match(resolver, /principal\?\.sub/);
+  assert.match(resolver, /t\.user_id = u\.id/);
+  assert.match(resolver, /u\.id::text = \$2/);
+  assert.doesNotMatch(resolver, /collectTeacherLookupKeysForPrincipal/);
+  assert.doesNotMatch(resolver, /getBackOfficeState/);
+  assert.doesNotMatch(resolver, /principal\.publicId/);
+  assert.doesNotMatch(resolver, /principal\.identifier/);
+
   const classAccess = pg.slice(
     pg.indexOf("async teacherCanAccessStudentClass"),
     pg.indexOf("async teacherCanAccessEvaluation"),
@@ -68,6 +80,8 @@ function assertTeacherRuntimeSource() {
     pg.indexOf("async collectTeacherLookupKeysForPrincipal"),
   );
   assert.match(evalAccess, /findActiveTeacherAssignmentRow/);
+  assert.match(evalAccess, /academicYearId/);
+  assert.match(evalAccess, /resolveAcademicYearIdForEvaluation/);
   assert.match(evalAccess, /pg_teacher_assignment/);
   assert.doesNotMatch(evalAccess, /jwt_classNames/);
   assert.doesNotMatch(evalAccess, /fallback_bo_class/);

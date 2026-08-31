@@ -4316,47 +4316,58 @@ class PostgresRepository {
     return jwtHit;
   }
 
+  /**
+   * GP-001 — identité enseignant Notes : session canonique uniquement.
+   * principal.sub → users.id → teachers.user_id → teachers.id
+   * Pas de publicId / identifier, pas de BackOffice (collectTeacherLookupKeysForPrincipal reste hors Notes).
+   */
   async resolveTeacherPgIdForPrincipal(principal, schoolId) {
-    const lookupKeys = await this.collectTeacherLookupKeysForPrincipal(principal, schoolId);
-    for (const lookupValue of lookupKeys) {
-      const teacher = await this.one(
-        `SELECT t.id, t.teacher_code
-         FROM teachers t
-         LEFT JOIN users u ON u.id = t.user_id
-         WHERE t.school_id = $1
-           AND ${sqlTeacherIdentityEquals("t", "u", "$2")}
-         LIMIT 1`,
-        [schoolId, lookupValue],
+    const userId = String(principal?.sub ?? "").trim();
+    if (!userId || !schoolId) return null;
+    const teacher = await this.one(
+      `SELECT t.id
+       FROM users u
+       INNER JOIN teachers t ON t.user_id = u.id AND t.school_id = u.school_id
+       WHERE t.school_id = $1
+         AND u.id::text = $2
+       LIMIT 1`,
+      [schoolId, userId],
+    );
+    return teacher?.id ?? null;
+  }
+
+  async resolveAcademicYearIdForEvaluation(evaluation) {
+    const fromRow = String(evaluation?.academic_year_id ?? "").trim();
+    if (fromRow) return fromRow;
+    if (evaluation?.term_id) {
+      const term = await this.one(
+        `SELECT academic_year_id FROM terms WHERE id = $1 LIMIT 1`,
+        [evaluation.term_id],
       );
-      if (teacher?.id) return teacher.id;
+      if (term?.academic_year_id) return term.academic_year_id;
+    }
+    if (evaluation?.class_id) {
+      const klass = await this.one(
+        `SELECT academic_year_id FROM classes WHERE id = $1 LIMIT 1`,
+        [evaluation.class_id],
+      );
+      if (klass?.academic_year_id) return klass.academic_year_id;
     }
     return null;
   }
 
   async findActiveTeacherAssignmentRow({ teacherId, classId, subjectId, academicYearId }) {
-    if (!teacherId || !classId || !subjectId) return null;
-    if (academicYearId) {
-      return this.one(
-        `SELECT 1 AS ok
-         FROM teacher_assignments ta
-         WHERE ta.teacher_id = $1
-           AND ta.class_id = $2
-           AND ta.subject_id = $3
-           AND ta.academic_year_id = $4
-           AND lower(ta.status) = 'active'
-         LIMIT 1`,
-        [teacherId, classId, subjectId, academicYearId],
-      );
-    }
+    if (!teacherId || !classId || !subjectId || !academicYearId) return null;
     return this.one(
       `SELECT 1 AS ok
        FROM teacher_assignments ta
        WHERE ta.teacher_id = $1
          AND ta.class_id = $2
          AND ta.subject_id = $3
+         AND ta.academic_year_id = $4
          AND lower(ta.status) = 'active'
        LIMIT 1`,
-      [teacherId, classId, subjectId],
+      [teacherId, classId, subjectId, academicYearId],
     );
   }
 
@@ -4400,8 +4411,9 @@ class PostgresRepository {
   }
 
   /**
-   * NOTES-P1 — écriture notes : uniquement teacher_assignments PostgreSQL actives.
-   * Pas de JWT classNames, pas de fallback BO.
+   * NOTES-P1 — écriture notes : teacher_assignments PostgreSQL actives
+   * (teacher / class / subject / academic_year).
+   * Identité : principal.sub → users.id → teachers.user_id. Pas de JWT classNames, pas de BO.
    */
   async teacherCanAccessEvaluation(principal, evaluation, student) {
     const { pushStep } = require("../lib/notesAuthzTrace");
@@ -4447,10 +4459,23 @@ class PostgresRepository {
       pushStep(trace, { gate: "pg_teacher_lookup_for_evaluation", result: "miss" });
       return false;
     }
+    const academicYearId = await this.resolveAcademicYearIdForEvaluation(evaluation);
+    if (!academicYearId) {
+      pushStep(trace, {
+        gate: "pg_teacher_assignment_subject",
+        result: "deny",
+        reason: "missing_academic_year",
+        teacherId,
+        classId: evaluation.class_id,
+        subjectId: evaluation.subject_id,
+      });
+      return false;
+    }
     const assignment = await this.findActiveTeacherAssignmentRow({
       teacherId,
       classId: evaluation.class_id,
       subjectId: evaluation.subject_id,
+      academicYearId,
     });
     if (assignment) {
       this._lastTeacherEvaluationAccessVia = "pg_teacher_assignment";
@@ -4461,6 +4486,7 @@ class PostgresRepository {
         teacherId,
         classId: evaluation.class_id,
         subjectId: evaluation.subject_id,
+        academicYearId,
       });
       return true;
     }
@@ -4470,6 +4496,7 @@ class PostgresRepository {
       teacherId,
       classId: evaluation.class_id,
       subjectId: evaluation.subject_id,
+      academicYearId,
     });
     return false;
   }
