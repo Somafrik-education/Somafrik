@@ -8,6 +8,9 @@ async function main() {
   const store = createClientsMemoryStore({
     school: { id: "school-1", code: "CD-2026-0001", loginCode: "CD-IN-26-001", name: "INSTITUT NURU", countryId: "country-1", countryCode: "CD" },
     platformSchools: [{ id: "school-1", code: "CD-2026-0001", loginCode: "CD-IN-26-001", name: "INSTITUT NURU", countryId: "country-1", countryCode: "CD" }],
+    users: [
+      { id: "actor-1", school_id: "school-1", first_name: "Admin", last_name: "Actor", email: "actor-1@test.local", role: "SCHOOL_ADMIN", status: "active" },
+    ],
     students: [{ id: "student-1", school_id: "school-1", first_name: "Jean", last_name: "Kabila", studentCode: "STU-1" }],
   });
 

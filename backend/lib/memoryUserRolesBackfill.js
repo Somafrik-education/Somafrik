@@ -13,6 +13,35 @@ function normalizeCode(value) {
   return asRef(value).toUpperCase();
 }
 
+function usersFromSeedAccounts(schools, userAccounts = []) {
+  const users = [];
+  for (const account of userAccounts) {
+    const id = asRef(account?.id);
+    const schoolId = schoolIdForAccount(schools, account?.schoolCode);
+    if (!id || !schoolId) continue;
+    users.push({
+      id,
+      school_id: schoolId,
+      user_code: asRef(account.userCode || account.user_code || account.publicId || id),
+      first_name: account.firstName ?? account.first_name ?? "",
+      last_name: account.lastName ?? account.last_name ?? "",
+      email: account.email ?? "",
+      phone: account.phone ?? "",
+      role: account.role ?? null,
+      status: "active",
+      ...(account.password ? { password: account.password } : {}),
+      ...(account.passwordHash ? { password_hash: account.passwordHash } : {}),
+      ...(account.temporaryPassword
+        ? { temporary_password: account.temporaryPassword, must_change_password: true }
+        : {}),
+      profile_payload: {
+        identifier: asRef(account.identifier),
+      },
+    });
+  }
+  return users;
+}
+
 function schoolIdForAccount(schools, schoolCode) {
   const wanted = normalizeCode(schoolCode);
   if (!wanted || wanted === "*") {
@@ -111,4 +140,5 @@ function backfillMemoryUserRolesFromSeedAccounts(tables, userAccounts = []) {
 module.exports = {
   backfillMemoryUserRolesFromSeedAccounts,
   schoolIdForAccount,
+  usersFromSeedAccounts,
 };

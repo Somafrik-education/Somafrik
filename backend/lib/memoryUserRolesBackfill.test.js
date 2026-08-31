@@ -5,8 +5,23 @@ const assert = require("node:assert/strict");
 const seedData = require("../data");
 const {
   backfillMemoryUserRolesFromSeedAccounts,
+  usersFromSeedAccounts,
 } = require("./memoryUserRolesBackfill");
 const { resolveLiveAssignmentsSyncSnapshot } = require("./mobileSyncScope");
+
+test("usersFromSeedAccounts : USER-ADMIN1 porte le school_id réel, pas un preset", () => {
+  const users = usersFromSeedAccounts(
+    [seedData.school, seedData.platformSchools.find((row) => row.code === "BI-2026-0002")],
+    seedData.userAccounts,
+  );
+  const admin = users.find((row) => row.id === "USER-ADMIN1");
+  assert.equal(admin?.school_id, seedData.school.id);
+  assert.notEqual(admin?.school_id, "school-cd");
+  const bi = users.find((row) => row.id === "USER-ADMIN-BI-SCHOOL");
+  const biSchool = seedData.platformSchools.find((row) => row.code === "BI-2026-0002");
+  assert.equal(bi?.school_id, biSchool.id);
+  assert.equal(users.some((row) => row.id === "USER-SUPERADMIN"), false);
+});
 
 test("backfill seed Admin School → SCHOOL_ADMIN sur le school_id du tenant", () => {
   const tables = {
@@ -54,6 +69,17 @@ async function withDemoSeed(fn) {
     }
   }
 }
+
+test("FallbackRepository : getClientsStore expose USER-ADMIN1.school_id réel", async () => {
+  await withDemoSeed(async () => {
+    const { FallbackRepository } = require("../db/fallbackRepository");
+    const repo = new FallbackRepository();
+    const store = repo.getClientsStore();
+    const admin = store._tables.users.find((row) => row.id === "USER-ADMIN1");
+    assert.equal(admin?.school_id, seedData.school.id);
+    assert.equal(store._tables.users.some((row) => row.id === "admin-cd"), false);
+  });
+});
 
 test("FallbackRepository : Admin School seed a un rôle live tenant (pas JWT)", async () => {
   await withDemoSeed(async () => {

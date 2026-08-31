@@ -11,6 +11,9 @@ function buildStore(seed = {}) {
       { id: "school-cd", code: "CD-2026-0001", name: "Institut CD", countryId: "country-cd", countryCode: "CD", country: "RDC" },
       { id: "school-bi", code: "BI-2026-0001", name: "Ecole Kanyosha", countryId: "country-bi", countryCode: "BI", country: "Burundi" },
     ],
+    users: [
+      { id: "admin-cd", school_id: "school-cd", first_name: "Admin", last_name: "CD", email: "admin-cd@test.local", role: "SCHOOL_ADMIN", status: "active" },
+    ],
     ...seed,
   });
 }

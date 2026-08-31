@@ -45,19 +45,22 @@ function createClientsPgStore(repo) {
         );
       },
       async getSchoolForPrincipalUser(principal = {}) {
+        const { normalizeMemberSchool } = require("../lib/clientsUserCreateTenant");
         if (typeof repo.getSchoolForPrincipalUser === "function") {
-          return repo.getSchoolForPrincipalUser(principal);
+          return normalizeMemberSchool(await repo.getSchoolForPrincipalUser(principal));
         }
         const userId = asTrimmed(principal?.sub || principal?.id);
         if (!userId) return null;
-        return one(
-          `SELECT s.*, c.iso_code AS country_code, c.name AS country_name
-           FROM users u
-           JOIN schools s ON s.id = u.school_id
-           JOIN countries c ON c.id = s.country_id
-           WHERE u.id::text = $1
-           LIMIT 1`,
-          [userId],
+        return normalizeMemberSchool(
+          await one(
+            `SELECT s.*, c.iso_code AS country_code, c.name AS country_name
+             FROM users u
+             JOIN schools s ON s.id = u.school_id
+             JOIN countries c ON c.id = s.country_id
+             WHERE u.id::text = $1
+             LIMIT 1`,
+            [userId],
+          ),
         );
       },
       async getCountryByCode(code) {

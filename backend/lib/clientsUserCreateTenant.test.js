@@ -26,6 +26,26 @@ function buildStore() {
         countryCode: "BI",
       },
     ],
+    users: [
+      {
+        id: "admin-cd",
+        school_id: "school-cd",
+        first_name: "Admin",
+        last_name: "CD",
+        email: "admin-cd@test.local",
+        role: "SCHOOL_ADMIN",
+        status: "active",
+      },
+      {
+        id: "admin-bi",
+        school_id: "school-bi",
+        first_name: "Admin",
+        last_name: "BI",
+        email: "admin-bi@test.local",
+        role: "SCHOOL_ADMIN",
+        status: "active",
+      },
+    ],
   });
 }
 
@@ -86,21 +106,19 @@ test("createUser établissement : payload login_code d'un autre tenant refusé",
   );
 });
 
-test("createUser établissement : membership user_roles si users row absente (seed mémoire)", async () => {
+test("createUser établissement : country_iso membership → country_code", async () => {
   const store = buildStore();
-  store._tables.userRoles.push({
-    user_id: "USER-ADMIN1",
-    school_id: "school-cd",
-    role_key: "SCHOOL_ADMIN",
-    status: "active",
-    revoked_at: null,
+  store.getSchoolForPrincipalUser = async () => ({
+    id: "school-cd",
+    login_code: "CD-SY-26-001",
+    country_iso: "CD",
   });
   const resolved = await resolveCreateUserTenant(
     store,
-    { sub: "USER-ADMIN1", role: "Admin School", schoolCode: "CD-2026-0001" },
-    {},
+    { sub: "admin-cd", role: "Admin School", schoolCode: "CD-2026-0001" },
+    { countryCode: "CD" },
   );
-  assert.equal(resolved.school.id, "school-cd");
+  assert.equal(resolved.school.country_code, "CD");
   assert.equal(resolved.schoolCode, "CD-SY-26-001");
 });
 

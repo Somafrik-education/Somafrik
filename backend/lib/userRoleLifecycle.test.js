@@ -22,6 +22,10 @@ function buildStore() {
       { id: "school-cd", code: "CD-2026-0001", name: "CD", countryId: "country-cd", countryCode: "CD" },
       { id: "school-bi", code: "BI-2026-0001", name: "BI", countryId: "country-bi", countryCode: "BI" },
     ],
+    users: [
+      { id: "admin-cd", school_id: "school-cd", first_name: "Admin", last_name: "CD", email: "admin-cd@test.local", role: "SCHOOL_ADMIN", status: "active" },
+      { id: "admin-bi", school_id: "school-bi", first_name: "Admin", last_name: "BI", email: "admin-bi@test.local", role: "SCHOOL_ADMIN", status: "active" },
+    ],
     students: [
       { id: "student-cd", school_id: "school-cd", first_name: "Jean", last_name: "CD", studentCode: "STU-CD" },
     ],

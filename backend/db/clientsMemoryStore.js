@@ -51,24 +51,6 @@ function createClientsMemoryStore(seed = {}) {
       tables.users.push({ ...user });
     }
   }
-  const memberPresets = [
-    { id: "admin-cd", schoolId: "school-cd" },
-    { id: "admin-bi", schoolId: "school-bi" },
-  ];
-  for (const preset of memberPresets) {
-    if (tables.users.some((row) => String(row.id) === preset.id)) continue;
-    if (!tables.schools.some((row) => String(row.id) === preset.schoolId)) continue;
-    tables.users.push({
-      id: preset.id,
-      school_id: preset.schoolId,
-      user_code: String(preset.id).toUpperCase(),
-      first_name: "Admin",
-      last_name: "Member",
-      email: `${preset.id}@test.local`,
-      role: "SCHOOL_ADMIN",
-      status: "active",
-    });
-  }
 
   function resolveSchool(code) {
     const normalized = asTrimmed(code).toUpperCase();
@@ -160,18 +142,8 @@ function createClientsMemoryStore(seed = {}) {
         const userId = asTrimmed(principal?.sub || principal?.id);
         if (!userId) return null;
         const user = tables.users.find((row) => String(row.id) === userId);
-        let schoolId = user?.school_id;
-        if (!schoolId) {
-          const membership = tables.userRoles.find(
-            (row) =>
-              String(row.user_id) === userId &&
-              row.school_id &&
-              row.status === "active" &&
-              !row.revoked_at,
-          );
-          schoolId = membership?.school_id;
-        }
-        if (!schoolId) return null;
+        if (!user?.school_id) return null;
+        const schoolId = user.school_id;
         const school = tables.schools.find((row) => String(row.id) === String(schoolId));
         if (!school) return null;
         return {
@@ -1224,6 +1196,7 @@ function createClientsMemoryStore(seed = {}) {
           roleKeys,
         );
         const teacherLogin = String(teacher?.teacher_code ?? "").match(/(ENS-\d+)$/i)?.[1]?.toUpperCase() ?? "";
+        const profile = parsePayload(row.profile_payload);
         return {
           ...account,
           ...hydrated,
@@ -1231,7 +1204,8 @@ function createClientsMemoryStore(seed = {}) {
           pinHash: account.pinHash,
           mustChangePassword: account.mustChangePassword,
           hasTemporaryPassword: account.hasTemporaryPassword,
-          identifier: teacherLogin || account.identifier,
+          identifier: teacherLogin || profile.identifier || account.identifier,
+          ...(row.password ? { password: row.password } : {}),
         };
       });
     },
