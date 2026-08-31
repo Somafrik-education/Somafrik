@@ -51,6 +51,8 @@ function sourceGuards() {
   assert.match(httpTest, /BI-BUJ-26-001/);
   assert.match(httpTest, /P0-1 GET A/);
   assert.match(httpTest, /P0-11 jamais A/);
+  assert.match(httpTest, /schoolId: fixture.schoolAId/);
+  assert.match(httpTest, /USER_PAYS_BI/);
 }
 
 function main() {

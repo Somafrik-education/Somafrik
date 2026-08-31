@@ -31,6 +31,7 @@ const USER_NO_SCHOOL = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa03";
 const USER_NO_LOGIN = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa04";
 const USER_SUPER = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa05";
 const USER_PAYS_CD = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa06";
+const USER_PAYS_BI = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa07";
 const STAFF_A = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa11";
 const STAFF_B = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa12";
 
@@ -183,6 +184,20 @@ async function seed(pool) {
        ($7, $9, 'SECRETARY', 'active')`,
     [USER_A, USER_B, USER_NO_SCHOOL, USER_SUPER, USER_PAYS_CD, STAFF_A, STAFF_B, schoolA.rows[0].id, schoolB.rows[0].id],
   );
+  await pool.query(
+    `UPDATE users SET profile_payload = jsonb_build_object('countryCode', 'CD') WHERE id = $1`,
+    [USER_PAYS_CD],
+  );
+  await pool.query(
+    `INSERT INTO users (id, school_id, user_code, first_name, last_name, email, role, status, must_change_password, profile_payload)
+     VALUES ($1, NULL, 'PAYS-BI', 'Admin', 'PaysBI', 'paysbi@gp003.test', 'Admin Pays', 'active', FALSE, '{"countryCode":"BI"}'::jsonb)`,
+    [USER_PAYS_BI],
+  );
+  await pool.query(
+    `INSERT INTO user_roles (user_id, school_id, role_key, status)
+     VALUES ($1, NULL, 'COUNTRY_ADMIN', 'active')`,
+    [USER_PAYS_BI],
+  );
 
   return { schoolAId: schoolA.rows[0].id, schoolBId: schoolB.rows[0].id };
 }
@@ -309,6 +324,29 @@ async function main() {
     ).rows[0].c;
     assert.equal(countBAfter, countBBefore, "P0-3: 0 write B");
 
+    const postSchoolIdA = await request("/backoffice/users", {
+      method: "POST",
+      token: tokenA,
+      body: { firstName: "Membre", lastName: "UuidA", email: "uuid.a@gp003.test", schoolId: fixture.schoolAId },
+    });
+    assert.equal(postSchoolIdA.status, 201, `P0-12 POST schoolId A: ${JSON.stringify(postSchoolIdA.data)}`);
+    assert.equal(postSchoolIdA.data.schoolId, fixture.schoolAId);
+    assert.equal(postSchoolIdA.data.schoolCode, LOGIN_A);
+
+    const countBBeforeUuid = (
+      await pool.query(`SELECT count(*)::int AS c FROM users WHERE school_id = $1`, [fixture.schoolBId])
+    ).rows[0].c;
+    const postSchoolIdB = await request("/backoffice/users", {
+      method: "POST",
+      token: tokenA,
+      body: { firstName: "Intrus", lastName: "UuidB", email: "uuid.b@gp003.test", schoolId: fixture.schoolBId },
+    });
+    assert.equal(postSchoolIdB.status, 403, `P0-12 POST schoolId B: ${JSON.stringify(postSchoolIdB.data)}`);
+    const countBAfterUuid = (
+      await pool.query(`SELECT count(*)::int AS c FROM users WHERE school_id = $1`, [fixture.schoolBId])
+    ).rows[0].c;
+    assert.equal(countBAfterUuid, countBBeforeUuid, "P0-12: 0 write B via schoolId");
+
     const getForgedJwt = await request("/backoffice/users", { token: tokenForgedB });
     const forgedUsers = unwrapList(getForgedJwt.data);
     assert.ok(
@@ -374,7 +412,8 @@ async function main() {
     const getPays = await request("/backoffice/users", { token: tokenPaysCd });
     assert.equal(getPays.status, 200, `P0-10 Admin Pays GET: ${JSON.stringify(getPays.data)}`);
     const paysUsers = unwrapList(getPays.data);
-    assert.equal(paysUsers.some((row) => row.schoolCode === LOGIN_B || row.id === STAFF_B), false, "P0-10 jamais BI");
+    assert.equal(paysUsers.some((row) => row.schoolCode === LOGIN_B || row.id === STAFF_B || row.id === USER_PAYS_BI), false, "P0-10 jamais BI");
+    assert.ok(paysUsers.some((row) => row.id === USER_PAYS_CD), "P0-10 voit compte pays CD sans school_id");
     assert.ok(paysUsers.every((row) => !row.schoolCode || row.schoolCode === LOGIN_A || row.countryCode === "CD" || row.schoolCode === "*"));
 
     const patchPaysBi = await request(`/backoffice/users/${STAFF_B}`, {

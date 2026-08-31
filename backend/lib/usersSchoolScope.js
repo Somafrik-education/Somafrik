@@ -21,7 +21,7 @@ function normalizeLoginCode(value) {
 }
 
 function sameId(left, right) {
-  return String(left ?? "").trim() === String(right ?? "").trim();
+  return String(left ?? "").trim().toLowerCase() === String(right ?? "").trim().toLowerCase();
 }
 
 function isPlatformPrincipal(principal) {
@@ -298,7 +298,11 @@ function sqlUsersScope(scope, params) {
   if (scope.mode === "none") return "FALSE";
   if (scope.mode === "country") {
     params.push(scope.countryCode);
-    return `upper(btrim(c.iso_code)) = $${params.length}`;
+    const n = params.length;
+    return `(CASE
+      WHEN u.school_id IS NULL THEN upper(btrim(u.profile_payload->>'countryCode')) = $${n}
+      ELSE upper(btrim(c.iso_code)) = $${n}
+    END)`;
   }
   if (scope.mode === "school") {
     const schoolId = String(scope.schoolId ?? "").trim();
@@ -377,8 +381,12 @@ function assertUsersTargetAccess(principal, current) {
 }
 
 async function bodyConflictsWithMembership(bodyCode, membership, one) {
+  const requestedRaw = String(bodyCode ?? "").trim();
+  if (!requestedRaw) return false;
+  if (membership.schoolId && sameId(requestedRaw, membership.schoolId)) {
+    return false;
+  }
   const requested = normalizeLoginCode(bodyCode);
-  if (!requested) return false;
   if (requested === membership.loginCode) return false;
   if (typeof one !== "function") {
     return requested !== membership.loginCode;

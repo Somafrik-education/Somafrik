@@ -171,6 +171,47 @@ test("GP-003: sqlUsersScope cible school_id UUID, pas leftover", () => {
   assert.deepEqual(params, [SCHOOL_ID_A]);
 });
 
+test("GP-003: sqlUsersScope country inclut schoolless du pays, jamais l'autre pays", () => {
+  const params = [];
+  const pred = sqlUsersScope({ mode: "country", countryCode: "CD" }, params);
+  assert.match(pred, /school_id IS NULL/);
+  assert.match(pred, /profile_payload->>'countryCode'/);
+  assert.doesNotMatch(pred, /school_code/);
+  assert.doesNotMatch(pred, /jwt/i);
+  assert.deepEqual(params, ["CD"]);
+  const rows = [
+    { id: "pays-cd", schoolId: "", countryCode: "CD" },
+    { id: "pays-bi", schoolId: "", countryCode: "BI" },
+    { id: "staff-cd", schoolId: SCHOOL_ID_A, countryCode: "CD" },
+  ];
+  assert.deepEqual(
+    filterUsersRows(rows, { mode: "country", countryCode: "CD" }).map((row) => row.id),
+    ["pays-cd", "staff-cd"],
+  );
+});
+
+test("GP-003: schoolId UUID membership A accepté ; UUID B refusé", async () => {
+  const principal = {
+    role: "Admin School",
+    schoolCode: LEFTOVER_A,
+    usersLoginCode: LOGIN_A,
+    usersSchoolId: SCHOOL_ID_A,
+    sub: "user-a",
+  };
+  const one = async () => {
+    throw new Error("schoolId membership ne doit pas lancer de lookup code");
+  };
+  const same = await resolveUsersWriteSchool(principal, { schoolId: SCHOOL_ID_A }, one);
+  assert.equal(same.schoolId, SCHOOL_ID_A);
+  assert.equal(same.loginCode, LOGIN_A);
+  const cased = await resolveUsersWriteSchool(principal, { schoolId: SCHOOL_ID_A.toUpperCase() }, one);
+  assert.equal(cased.schoolId, SCHOOL_ID_A);
+  await assert.rejects(
+    () => resolveUsersWriteSchool(principal, { schoolId: SCHOOL_ID_B }, async () => null),
+    (error) => error.statusCode === 403,
+  );
+});
+
 test("GP-003: PATCH/grant compare school_id, pas leftover JWT", () => {
   const principal = {
     role: "Admin School",
