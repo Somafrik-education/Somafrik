@@ -68,8 +68,10 @@ function sourceGuards() {
   );
   assert.match(getGrid, /resolveFinanceSchoolScope/);
   assert.match(getGrid, /sqlSchoolPredicate/);
-  assert.match(memory, /schoolRecordInFinanceScope\(mapped, scope\)/);
-  assert.match(memory, /schoolRecordInFinanceScope\(student, scope\)/);
+  assert.match(memory, /fixtureRecordInScope\(mapped, scope\)/);
+  assert.match(memory, /fixtureRecordInScope\(student, scope\)/);
+  assert.match(memory, /function fixtureRecordInScope/);
+  assert.match(memory, /withFixtureLoginCode\(record\)/);
 
   const scopeLib = read("backend/lib/financeSchoolScope.js");
   const schoolCodeFn = scopeLib.slice(
@@ -97,8 +99,28 @@ function sourceGuards() {
   );
   assert.match(attachFn, /SELECT s\.login_code/);
   assert.doesNotMatch(attachFn, /coalesce\(nullif\(btrim\(s\.login_code\)/);
-  const getSchoolFn = pgStore.slice(pgStore.indexOf("async getSchoolByCode"), pgStore.indexOf("async findStudent"));
+  const findFn = scopeLib.slice(
+    scopeLib.indexOf("async function findEmittedLoginCode"),
+    scopeLib.indexOf("async function attachFinanceMembershipScope"),
+  );
+  assert.doesNotMatch(findFn, /\sOR\s/i);
+  assert.doesNotMatch(findFn, /coalesce/i);
+  const getSchoolFn = pgStore.slice(pgStore.indexOf("async getSchoolByCode"), pgStore.indexOf("async mapSchoolRow"));
   assert.doesNotMatch(getSchoolFn, /school_code/);
+  const resolveWriteFn = pgStore.slice(
+    pgStore.indexOf("async resolveSchoolForScopedWrite"),
+    pgStore.indexOf("async findStudent"),
+  );
+  assert.match(resolveWriteFn, /login_code/);
+  assert.doesNotMatch(resolveWriteFn, /\sOR\s/i);
+  assert.doesNotMatch(resolveWriteFn, /coalesce/i);
+  assert.match(service, /resolveSchoolForScopedWrite/);
+  const loadWriteFn = service.slice(
+    service.indexOf("async function loadSchoolForWrite"),
+    service.indexOf("function actorName"),
+  );
+  assert.match(loadWriteFn, /scope\.mode === "country"/);
+  assert.match(loadWriteFn, /primaryFinanceSchoolCode/);
   const listClassFn = pgStore.slice(pgStore.indexOf("async listStudentsInClass"), pgStore.indexOf("async listPaymentCodes"));
   assert.doesNotMatch(listClassFn, /OR upper\(btrim\(s\.school_code\)\)/);
   assert.match(pgStore, /withFinancePrincipal/);
@@ -108,6 +130,8 @@ function sourceGuards() {
   assert.match(httpTest, /P0 leftover ≠ login_code du même tenant/);
   assert.match(httpTest, /leftover JWT n'est pas l'autorité Finance/);
   assert.match(read("backend/lib/financeMembershipScope.pg.test.js"), /P0-4: leftover jamais promu/);
+  assert.match(read("backend/lib/financeMembershipScope.pg.test.js"), /Admin Pays CD ne peut pas écrire école BI/);
+  assert.match(read("backend/lib/financeMembershipScope.pg.test.js"), /Admin Pays refuse école CD sans login_code/);
   const management = read("backend/lib/financeManagement.js");
   const mappedFn = management.slice(
     management.indexOf("function mappedSchoolCode"),

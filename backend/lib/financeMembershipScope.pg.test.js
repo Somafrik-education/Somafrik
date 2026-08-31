@@ -186,8 +186,15 @@ async function main() {
       "attach n'émet pas leftover via coalesce",
     );
     const pgStoreSrc = fs.readFileSync(path.join(__dirname, "../db/financePgStore.js"), "utf8");
-    const getSchoolFn = pgStoreSrc.slice(pgStoreSrc.indexOf("async getSchoolByCode"), pgStoreSrc.indexOf("async findStudent"));
+    const getSchoolFn = pgStoreSrc.slice(pgStoreSrc.indexOf("async getSchoolByCode"), pgStoreSrc.indexOf("async mapSchoolRow"));
     assert.doesNotMatch(getSchoolFn, /school_code/, "getSchoolByCode Finance = login_code only");
+    const resolveWriteFn = pgStoreSrc.slice(
+      pgStoreSrc.indexOf("async resolveSchoolForScopedWrite"),
+      pgStoreSrc.indexOf("async findStudent"),
+    );
+    assert.match(resolveWriteFn, /login_code/);
+    assert.doesNotMatch(resolveWriteFn, /\sOR\s/i, "Admin Pays write lookup sans OR leftover");
+    assert.doesNotMatch(resolveWriteFn, /coalesce/i);
     const listClassFn = pgStoreSrc.slice(
       pgStoreSrc.indexOf("async listStudentsInClass"),
       pgStoreSrc.indexOf("async listPaymentCodes"),
@@ -237,6 +244,85 @@ async function main() {
           leftoverOnly,
         ),
       (error) => error.code === FINANCE_ERROR.TENANT_MISMATCH || error.statusCode === 403,
+    );
+
+    await pool.query(
+      `INSERT INTO classes (school_id, academic_year_id, class_code, name, status)
+       VALUES ($1, $2, 'CLS-6AP', '6ème AP', 'active')`,
+      [school.rows[0].id, year.rows[0].id],
+    );
+    const adminPaysCd = {
+      role: "Admin Pays",
+      countryCode: "CD",
+      firstName: "Admin",
+      lastName: "Pays",
+      permissions: ["Frais & tarifs:CREATE", "Frais & tarifs:UPDATE"],
+    };
+    const countryGrid = await store.upsertFinanceFeeGrid(
+      {
+        schoolCode: LEFTOVER,
+        className: "6ème AP",
+        academicYear: "2025-2026",
+        currency: "CDF",
+        status: "Active",
+        items: [{ feeType: "Scolarité", label: "Scolarité", amount: 5_000, dueDate: "2026-02-01", status: "Actif" }],
+      },
+      adminPaysCd,
+    );
+    assert.equal(countryGrid.schoolCode, LOGIN_CODE, "Admin Pays write émet login_code");
+    assert.notEqual(countryGrid.schoolCode, LEFTOVER);
+
+    const biCountry = await pool.query(
+      `INSERT INTO countries (name, iso_code, phone_code, currency)
+       VALUES ('Burundi', 'BI', '+257', 'BIF') RETURNING id`,
+    );
+    await pool.query(
+      `INSERT INTO schools (country_id, school_code, login_code, name, status)
+       VALUES ($1, 'BI-2026-0001', 'BI-LAC-26-001', 'Lycée Bujumbura', 'active')`,
+      [biCountry.rows[0].id],
+    );
+    const gridsBeforeBi = await pool.query(`SELECT count(*)::int AS c FROM fee_grids`);
+    await assert.rejects(
+      () =>
+        store.upsertFinanceFeeGrid(
+          {
+            schoolCode: "BI-LAC-26-001",
+            className: "6ème A",
+            academicYear: "2025-2026",
+            currency: "BIF",
+            status: "Active",
+            items: [{ feeType: "Inscription", label: "Inscription", amount: 1, status: "Actif" }],
+          },
+          adminPaysCd,
+        ),
+      (error) =>
+        error.code === FINANCE_ERROR.TENANT_MISMATCH || error.statusCode === 403 || error.statusCode === 404,
+      "Admin Pays CD ne peut pas écrire école BI",
+    );
+    const gridsAfterBi = await pool.query(`SELECT count(*)::int AS c FROM fee_grids`);
+    assert.equal(gridsAfterBi.rows[0].c, gridsBeforeBi.rows[0].c, "aucune mutation école BI");
+
+    await pool.query(
+      `INSERT INTO schools (country_id, school_code, login_code, name, status)
+       VALUES ($1, 'CD-NULL-WRITE', NULL, 'École sans login', 'active')`,
+      [country.rows[0].id],
+    );
+    await assert.rejects(
+      () =>
+        store.upsertFinanceFeeGrid(
+          {
+            schoolCode: "CD-NULL-WRITE",
+            className: "6ème C",
+            academicYear: "2025-2026",
+            currency: "CDF",
+            status: "Active",
+            items: [{ feeType: "Inscription", label: "Inscription", amount: 1, status: "Actif" }],
+          },
+          adminPaysCd,
+        ),
+      (error) =>
+        error.code === FINANCE_ERROR.TENANT_MISMATCH || error.statusCode === 403 || error.statusCode === 404,
+      "Admin Pays refuse école CD sans login_code",
     );
 
     const sqlLeftover = await pool.query(

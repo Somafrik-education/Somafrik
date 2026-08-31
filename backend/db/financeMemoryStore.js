@@ -24,7 +24,12 @@ const {
 const { decoratePaymentWithItems } = require("../lib/financePaymentItems");
 const { projectObligationPaidAmounts } = require("../lib/financeObligationPaid");
 const { projectPaymentsWithAllocations, projectPaymentCash } = require("../lib/financeUnallocatedCash");
-const { attachFinanceFixtureScope, resolveFinanceSchoolScope, schoolRecordInFinanceScope, primaryFinanceSchoolCode } = require("../lib/financeSchoolScope");
+const {
+  attachFinanceFixtureScope,
+  resolveFinanceSchoolScope,
+  schoolRecordInFinanceScope: recordInFinanceScope,
+  primaryFinanceSchoolCode,
+} = require("../lib/financeSchoolScope");
 const {
   foldPaymentStudentOptions,
   resolveCatalogPaymentMethods,
@@ -39,17 +44,49 @@ function clone(value) {
 }
 
 function scopedPrincipal(principal) {
-  return attachFinanceFixtureScope(principal);
+  const attached = attachFinanceFixtureScope(principal);
+  const requested = asTrimmed(attached?.financeLoginCode);
+  if (!requested) return attached;
+  const login = fixturePublicLoginCode(requested);
+  if (login && login !== requested) {
+    return { ...attached, financeLoginCode: login };
+  }
+  return attached;
+}
+
+function fixturePublicLoginCode(requested) {
+  const key = asTrimmed(requested).toUpperCase();
+  if (!key) return "";
+  const schools = Array.isArray(seedData.platformSchools) ? seedData.platformSchools : [];
+  const school = schools.find((row) =>
+    [row.loginCode, row.login_code, row.publicId, row.code, row.schoolCode, row.school_code].some(
+      (value) => asTrimmed(value).toUpperCase() === key,
+    ),
+  );
+  if (!school) return key;
+  return asTrimmed(school.loginCode || school.login_code || school.publicId || school.code).toUpperCase();
 }
 
 /** Fixture mémoire : le schoolCode EST le login_code. Ne jamais copier leftover PG. */
 function withFixtureLoginCode(row = {}) {
   if (!row || typeof row !== "object") return row;
-  const login = asTrimmed(row.login_code || row.loginCode);
-  if (login) return row;
-  const fixture = asTrimmed(row.schoolCode || row.school_code);
-  if (!fixture) return row;
-  return { ...row, login_code: fixture, loginCode: fixture };
+  const raw = asTrimmed(row.login_code || row.loginCode || row.schoolCode || row.school_code);
+  if (!raw) return row;
+  const canonical = fixturePublicLoginCode(raw) || raw;
+  if (asTrimmed(row.login_code || row.loginCode) === canonical) return row;
+  return { ...row, login_code: canonical, loginCode: canonical };
+}
+
+function fixtureCodesMatch(left, right) {
+  const a = asTrimmed(left).toUpperCase();
+  const b = asTrimmed(right).toUpperCase();
+  if (!a || !b) return false;
+  if (a === b) return true;
+  return fixturePublicLoginCode(a) === fixturePublicLoginCode(b);
+}
+
+function fixtureRecordInScope(record, scope) {
+  return recordInFinanceScope(withFixtureLoginCode(record), scope);
 }
 
 function mapPaymentRow(row) {
@@ -148,7 +185,7 @@ function createFinanceMemoryStore({
     const candidates = [];
     for (const row of seedData.classes ?? []) {
       if (asTrimmed(row.className || row.name).toLowerCase() !== name) continue;
-      if (code && asTrimmed(row.schoolCode).toUpperCase() !== code) continue;
+      if (code && !fixtureCodesMatch(row.schoolCode, code)) continue;
       const rowYear = asTrimmed(row.academicYearName || row.schoolYear).toLowerCase();
       if (year && rowYear && rowYear !== year) continue;
       const school = await getSchoolByCode?.(row.schoolCode);
@@ -175,26 +212,34 @@ function createFinanceMemoryStore({
       async getSchoolByCode(code) {
         const school = await getSchoolByCode?.(code);
         if (!school) return null;
+        const login = asTrimmed(school.loginCode || school.login_code || school.publicId);
+        const fixture = asTrimmed(school.code || school.schoolCode || school.school_code);
+        const publicCode = login || fixture;
         return {
           id: school.id || school.publicId || school.code,
-          code: school.code || school.schoolCode,
-          school_code: school.code || school.schoolCode,
-          login_code: school.loginCode || school.login_code || school.code || school.schoolCode,
-          loginCode: school.loginCode || school.login_code || school.code || school.schoolCode,
+          code: publicCode,
+          login_code: publicCode,
+          loginCode: publicCode,
           countryIso: String(school.countryIso || school.countryCode || school.iso_code || "").trim().toUpperCase(),
           currency: school.currency || "",
         };
       },
-      async findEmittedLoginCode(code) {
+      async resolveSchoolForScopedWrite(code, countryCode) {
         const school = await this.getSchoolByCode(code);
-        return asTrimmed(school?.loginCode || school?.login_code || school?.code || "");
+        if (!school) return null;
+        if (!asTrimmed(school.loginCode || school.login_code)) return null;
+        if (countryCode) {
+          const iso = String(school.countryIso || "").trim().toUpperCase();
+          if (iso !== String(countryCode).trim().toUpperCase()) return null;
+        }
+        return school;
       },
       async findStudent(studentKey, principal) {
         const student = await findStudent?.(studentKey, principal);
         if (!student) return null;
         if (principal) {
           const scope = resolveFinanceSchoolScope(scopedPrincipal(principal));
-          if (!schoolRecordInFinanceScope(student, scope)) return null;
+          if (!fixtureRecordInScope(student, scope)) return null;
         }
         return {
           ...student,
@@ -426,7 +471,7 @@ function createFinanceMemoryStore({
         const mapped = mapPaymentRow(row);
         if (principal) {
           const scope = resolveFinanceSchoolScope(scopedPrincipal(principal));
-          if (!schoolRecordInFinanceScope(mapped, scope)) return null;
+          if (!fixtureRecordInScope(mapped, scope)) return null;
         }
         const items = await this.listPaymentItems(row.id);
         const allocations = await this.listAllocations(row.id);
@@ -482,7 +527,7 @@ function createFinanceMemoryStore({
         const mapped = mapObligationRow(row);
         if (principal) {
           const scope = resolveFinanceSchoolScope(scopedPrincipal(principal));
-          if (!schoolRecordInFinanceScope(mapped, scope)) return null;
+          if (!fixtureRecordInScope(mapped, scope)) return null;
         }
         return mapped;
       },
@@ -586,7 +631,7 @@ function createFinanceMemoryStore({
         const mapped = mapGridRow(row);
         if (principal) {
           const scope = resolveFinanceSchoolScope(scopedPrincipal(principal));
-          if (!schoolRecordInFinanceScope(mapped, scope)) return null;
+          if (!fixtureRecordInScope(mapped, scope)) return null;
         }
         return mapped;
       },
@@ -810,14 +855,14 @@ function createFinanceMemoryStore({
     listFinanceFeeGrids: async (principal) => {
       const scope = resolveFinanceSchoolScope(scopedPrincipal(principal));
       if (scope.mode === "none") return [];
-      return tables.feeGrids.map(mapGridRow).filter((row) => schoolRecordInFinanceScope(row, scope));
+      return tables.feeGrids.map(mapGridRow).filter((row) => fixtureRecordInScope(row, scope));
     },
     listFinanceStudentFees: async (principal) => {
       const scope = resolveFinanceSchoolScope(scopedPrincipal(principal));
       if (scope.mode === "none") return [];
       const fees = tables.studentFees
         .map(mapObligationRow)
-        .filter((fee) => schoolRecordInFinanceScope(fee, scope));
+        .filter((fee) => fixtureRecordInScope(fee, scope));
       const feeIds = new Set(fees.map((fee) => String(fee.dbId || fee.id)));
       return projectObligationPaidAmounts({
         fees,
@@ -841,7 +886,7 @@ function createFinanceMemoryStore({
       if (scope.mode === "none") return [];
       return tables.paymentStatuses
         .map(mapStatusRow)
-        .filter((row) => !row.schoolCode || schoolRecordInFinanceScope(row, scope));
+        .filter((row) => !row.schoolCode || fixtureRecordInScope(row, scope));
     },
     upsertFinancePaymentStatus: async (payload, principal) => {
       const code = asTrimmed(payload.code || payload.id);
@@ -867,7 +912,7 @@ function createFinanceMemoryStore({
       const rows = [];
       for (const student of students) {
         const schoolCode = String(student.schoolCode || "").trim();
-        if (!schoolRecordInFinanceScope(student, scope)) continue;
+        if (!fixtureRecordInScope(student, scope)) continue;
         const enrollments = Array.isArray(student.enrollments) && student.enrollments.length
           ? student.enrollments
           : [
@@ -899,7 +944,7 @@ function createFinanceMemoryStore({
       const scope = resolveFinanceSchoolScope(scopedPrincipal(principal));
       if (scope.mode === "none") return resolveCatalogPaymentMethods([]);
       const rows = tables.paymentMethods.filter((row) =>
-        schoolRecordInFinanceScope({ schoolCode: row.school_code, countryIso: row.country_iso }, scope),
+        fixtureRecordInScope({ schoolCode: row.school_code, countryIso: row.country_iso }, scope),
       );
       return resolveCatalogPaymentMethods(rows);
     },
@@ -935,7 +980,7 @@ function createFinanceMemoryStore({
       const scope = resolveFinanceSchoolScope(scopedPrincipal(principal));
       if (scope.mode === "none") return [];
       const grids = tables.feeGrids.filter(
-        (row) => schoolRecordInFinanceScope(mapGridRow(row), scope) && normalizeKey(row.status) === "active",
+        (row) => fixtureRecordInScope(mapGridRow(row), scope) && normalizeKey(row.status) === "active",
       );
       const gridIds = new Set(grids.map((row) => String(row.id)));
       return tables.schoolFeeItems

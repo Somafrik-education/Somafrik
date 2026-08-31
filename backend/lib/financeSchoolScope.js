@@ -25,22 +25,31 @@ function publicSchoolCodeFromRow(row = {}, profile = {}) {
 }
 
 /**
- * Trouve une école par le code demandé (login_code ou leftover JWT) et n'émet
- * que login_code. NULL/vide ⇒ '' (fail-closed). Pas un prédicat de scope.
+ * Trouve une école par le code demandé (login_code, sinon leftover JWT
+ * en clé de recherche séparée) et n'émet que login_code.
+ * NULL/vide ⇒ '' (fail-closed). Pas un prédicat de scope.
+ * Deux requêtes distinctes : aucun OR/coalesce login_code/school_code.
  */
 async function findEmittedLoginCode(requested, one) {
   const code = normalizeLoginCode(requested);
   if (!code || code === "*" || typeof one !== "function") return "";
-  const row = await one(
+  const byLogin = await one(
     `SELECT login_code
      FROM schools
-     WHERE upper(btrim(coalesce(login_code, ''))) = $1
-        OR upper(btrim(school_code)) = $1
-     ORDER BY CASE WHEN upper(btrim(coalesce(login_code, ''))) = $1 THEN 0 ELSE 1 END
+     WHERE upper(btrim(login_code)) = $1
      LIMIT 1`,
     [code],
   );
-  return normalizeLoginCode(row?.login_code);
+  const emitted = normalizeLoginCode(byLogin?.login_code);
+  if (emitted) return emitted;
+  const leftoverHit = await one(
+    `SELECT login_code
+     FROM schools
+     WHERE upper(btrim(school_code)) = $1
+     LIMIT 1`,
+    [code],
+  );
+  return normalizeLoginCode(leftoverHit?.login_code);
 }
 
 /**

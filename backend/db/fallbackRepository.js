@@ -2712,9 +2712,12 @@ class FallbackRepository {
         getSchoolByCode: async (code) => {
           const normalized = String(code ?? "").trim().toUpperCase();
           return (
-            this._establishmentStore().find(
-              (row) => String(row.code ?? row.publicId ?? "").trim().toUpperCase() === normalized,
-            ) || null
+            this._establishmentStore().find((row) => {
+              const keys = [row.loginCode, row.login_code, row.publicId, row.code, row.schoolCode, row.school_code]
+                .map((value) => String(value ?? "").trim().toUpperCase())
+                .filter(Boolean);
+              return keys.includes(normalized);
+            }) || null
           );
         },
         findStudent: async (studentKey, principal) => {
@@ -2736,10 +2739,30 @@ class FallbackRepository {
         },
         listStudentsInClass: async (schoolCode, classRef) => {
           const dataset = await this.getDataset();
+          const requested = String(schoolCode ?? "").trim().toUpperCase();
+          const school = this._establishmentStore().find((row) => {
+            const keys = [row.loginCode, row.login_code, row.publicId, row.code, row.schoolCode, row.school_code]
+              .map((value) => String(value ?? "").trim().toUpperCase())
+              .filter(Boolean);
+            return keys.includes(requested);
+          });
+          const aliases = new Set(
+            [
+              requested,
+              school?.loginCode,
+              school?.login_code,
+              school?.publicId,
+              school?.code,
+              school?.schoolCode,
+              school?.school_code,
+            ]
+              .map((value) => String(value ?? "").trim().toUpperCase())
+              .filter(Boolean),
+          );
           return (dataset.students ?? [])
             .filter(
               (student) =>
-                String(student.schoolCode ?? "").toUpperCase() === String(schoolCode).toUpperCase() &&
+                aliases.has(String(student.schoolCode ?? "").toUpperCase()) &&
                 studentMatchesClassScope(student, classRef),
             )
             .map((student) => ({

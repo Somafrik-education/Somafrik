@@ -222,14 +222,26 @@ test("GP-005: findEmittedLoginCode n'émet que login_code", async () => {
   const { findEmittedLoginCode } = require("./financeSchoolScope");
   const leftover = "CD-2026-0001";
   const login = "CD-LAC-26-001";
+  const leftoverLookups = [];
   const one = async (sql, params) => {
-    assert.match(String(sql), /FROM schools/i);
+    leftoverLookups.push(String(sql));
+    assert.doesNotMatch(String(sql), /\sOR\s/i);
+    assert.doesNotMatch(String(sql), /coalesce/i);
     assert.equal(params[0], leftover);
-    return { login_code: login };
+    if (/school_code/.test(String(sql))) return { login_code: login };
+    return null;
   };
   assert.equal(await findEmittedLoginCode(leftover, one), login);
+  assert.equal(leftoverLookups.length, 2);
   assert.equal(await findEmittedLoginCode(leftover, async () => ({ login_code: null })), "");
-  assert.equal(await findEmittedLoginCode(leftover, async () => ({ login_code: leftover })), leftover);
+  assert.equal(
+    await findEmittedLoginCode(login, async (sql, params) => {
+      assert.doesNotMatch(String(sql), /school_code/);
+      assert.equal(params[0], login);
+      return { login_code: login };
+    }),
+    login,
+  );
 });
 
 test("GP-005: projection n'utilise pas leftover school_code", () => {

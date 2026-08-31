@@ -95,15 +95,24 @@ function resolveActorSchoolCode(principal, rawPayload = {}) {
   return requested;
 }
 
-async function loadSchoolForWrite(tx, schoolCode) {
+async function loadSchoolForWrite(tx, schoolCode, principal) {
+  const scope = resolveFinanceSchoolScope(principal);
+  if (scope.mode === "schools") {
+    return tx.getSchoolByCode(primaryFinanceSchoolCode(principal));
+  }
   const requested = asTrimmed(schoolCode);
   if (!requested) return null;
-  const direct = await tx.getSchoolByCode(requested);
-  if (direct) return direct;
-  if (typeof tx.findEmittedLoginCode !== "function") return null;
-  const login = asTrimmed(await tx.findEmittedLoginCode(requested));
-  if (!login) return null;
-  return tx.getSchoolByCode(login);
+  if (typeof tx.resolveSchoolForScopedWrite === "function") {
+    return tx.resolveSchoolForScopedWrite(requested, scope.mode === "country" ? scope.countryCode : "");
+  }
+  const school = await tx.getSchoolByCode(requested);
+  if (!school) return null;
+  if (!asTrimmed(school.loginCode || school.login_code)) return null;
+  if (scope.mode === "country") {
+    const iso = String(school.countryIso || "").trim().toUpperCase();
+    if (iso !== scope.countryCode) return null;
+  }
+  return school;
 }
 
 function actorName(principal) {
@@ -673,10 +682,11 @@ async function upsertFeeGrid(store, rawPayload, principal) {
   }
 
   return store.withTransaction(async (tx) => {
-    const school = await loadSchoolForWrite(tx, schoolCode);
+    const school = await loadSchoolForWrite(tx, schoolCode, principal);
     if (!school) throw createFinanceError(404, "Établissement introuvable", FINANCE_ERROR.TENANT_MISMATCH);
     assertTenant(principal, school);
-    const publicCode = asTrimmed(school.loginCode || school.schoolCode || school.code);
+    const publicCode = asTrimmed(school.loginCode || school.login_code);
+    if (!publicCode) throw createFinanceError(404, "Établissement introuvable", FINANCE_ERROR.TENANT_MISMATCH);
     const klass = await resolveGridClass(tx, school, payload);
     const grid = await tx.upsertGrid({
       id: payload.id,

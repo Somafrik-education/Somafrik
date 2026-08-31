@@ -1033,6 +1033,12 @@ async function main() {
       201,
       `F8-P1-006 Admin Pays CI crée grille A: ${JSON.stringify(countryGridA.data)}`,
     );
+    assert.ok(countryGridA.data?.schoolCode, "F8-P1-006 projection schoolCode présente");
+    assert.notEqual(
+      countryGridA.data.schoolCode,
+      "SCH-F8-A",
+      `F8-P1-006 projection = login_code, pas leftover: ${countryGridA.data.schoolCode}`,
+    );
 
     const countryGridB = await request("/finance/fee-grids", {
       method: "POST",

@@ -27,7 +27,6 @@ const {
   resolveFinanceSchoolScope,
   sqlSchoolPredicate,
   primaryFinanceSchoolCode,
-  findEmittedLoginCode: lookupEmittedLoginCode,
 } = require("../lib/financeSchoolScope");
 
 function publicSchoolCode(row) {
@@ -62,21 +61,61 @@ function createFinancePgStore(repo) {
            LIMIT 1`,
           [asTrimmed(code).toUpperCase()],
         );
+        return this.mapSchoolRow(row);
+      },
+      async mapSchoolRow(row) {
         if (!row) return null;
         const profile = parsePayload(row.profile_payload);
         const currency = String(profile.currency || row.currency || row.country_currency || "").trim().toUpperCase();
+        const login = asTrimmed(row.login_code);
+        if (!login) return null;
         return {
           ...row,
-          code: row.login_code || "",
-          loginCode: row.login_code || "",
-          schoolCode: publicSchoolCode(row),
+          code: login,
+          loginCode: login,
+          schoolCode: login,
           countryIso: String(row.country_iso || "").trim().toUpperCase(),
           currency,
           currencySource: profile.currency ? "school" : "country",
         };
       },
-      async findEmittedLoginCode(code) {
-        return lookupEmittedLoginCode(code, one);
+      async resolveSchoolForScopedWrite(requested, countryCode) {
+        const code = asTrimmed(requested).toUpperCase();
+        if (!code) return null;
+        let row = await one(
+          `SELECT s.*, c.currency AS country_currency, c.iso_code AS country_iso
+           FROM schools s
+           JOIN countries c ON c.id = s.country_id
+           WHERE upper(btrim(s.login_code)) = $1
+           LIMIT 1`,
+          [code],
+        );
+        if (!row) {
+          const alias = await one(
+            `SELECT login_code
+             FROM schools
+             WHERE upper(btrim(school_code)) = $1
+             LIMIT 1`,
+            [code],
+          );
+          const login = asTrimmed(alias?.login_code);
+          if (!login) return null;
+          row = await one(
+            `SELECT s.*, c.currency AS country_currency, c.iso_code AS country_iso
+             FROM schools s
+             JOIN countries c ON c.id = s.country_id
+             WHERE upper(btrim(s.login_code)) = $1
+             LIMIT 1`,
+            [login.toUpperCase()],
+          );
+        }
+        const mapped = await this.mapSchoolRow(row);
+        if (!mapped) return null;
+        if (countryCode) {
+          const iso = String(mapped.countryIso || "").trim().toUpperCase();
+          if (iso !== String(countryCode).trim().toUpperCase()) return null;
+        }
+        return mapped;
       },
       async findStudent(studentKey, principal) {
         const key = asTrimmed(studentKey);
