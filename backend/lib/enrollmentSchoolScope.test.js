@@ -85,7 +85,11 @@ test("ENR: schoolId UUID A accepté ; UUID B / login B refusés", async () => {
   );
   await assert.rejects(
     () => resolveEnrollmentWriteSchool(principal, { schoolCode: LOGIN_B }, async () => null),
-    (error) => error.statusCode === 403,
+    (error) => error.statusCode === 400 && /contradictoire/i.test(error.message),
+  );
+  await assert.rejects(
+    () => resolveEnrollmentWriteSchool(principal, { schoolCode: "HACK" }, async () => null),
+    (error) => error.statusCode === 400 && /contradictoire/i.test(error.message),
   );
 });
 

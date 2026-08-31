@@ -294,8 +294,14 @@ async function bodyConflictsWithMembership(bodyCode, membership, one) {
 
 async function resolveEnrollmentWriteSchool(principal, body = {}, one) {
   const scope = requireEstablishmentLogin(resolveEnrollmentSchoolScope(principal));
-  if (await bodyConflictsWithMembership(body.schoolCode || body.schoolId, scope, one)) {
+  const bodySchoolId = String(body.schoolId ?? body.school_id ?? "").trim();
+  if (bodySchoolId && scope.schoolId && !sameId(bodySchoolId, scope.schoolId)) {
     failClosed("Accès refusé : établissement hors périmètre.");
+  }
+  // schoolCode dans le corps est un champ immuable : 400 (contrat fiche / enroll),
+  // pas un 403 tenant. UUID établissement étranger reste 403 ci-dessus.
+  if (await bodyConflictsWithMembership(body.schoolCode ?? body.school_code, scope, one)) {
+    throw new BusinessError(400, "schoolCode contradictoire.");
   }
   return { schoolId: scope.schoolId, loginCode: scope.loginCode };
 }

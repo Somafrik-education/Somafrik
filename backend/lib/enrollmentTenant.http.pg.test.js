@@ -344,9 +344,15 @@ async function main() {
     const postB = await request(`/classes/${CLASS_B}/students`, {
       method: "POST",
       token: tokenA,
-      body: { firstName: "Intrus", lastName: "B", schoolCode: LOGIN_B },
+      body: { firstName: "Intrus", lastName: "B" },
     });
     assert.ok(postB.status === 403 || postB.status === 404, `ENR-03 POST classe B status=${postB.status}`);
+    const postForgedCode = await request(`/classes/${CLASS_A}/students`, {
+      method: "POST",
+      token: tokenA,
+      body: { firstName: "Intrus", lastName: "B", schoolCode: LOGIN_B },
+    });
+    assert.equal(postForgedCode.status, 400, `schoolCode corps contradictoire: ${postForgedCode.status}`);
     const countBAfter = (
       await pool.query(`SELECT count(*)::int AS c FROM students WHERE school_id = (SELECT id FROM schools WHERE school_code = $1)`, [
         LEFTOVER_B,
