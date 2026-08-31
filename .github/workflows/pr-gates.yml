@@ -96,7 +96,7 @@ jobs:
 
             if [[ "$lower" =~ (auth|jwt|session|permission|rbac|role|login|identity|principal) ]]; then auth=true; fi
             if [[ "$lower" =~ (sync|canonical-state|outbox|legacy.*state|backoffice-state) ]]; then sync=true; fi
-            if [[ "$lower" =~ (class|academic-year) ]]; then classes=true; fi
+            if [[ "$lower" =~ (class|academic-year|academicyear) ]]; then classes=true; fi
             if [[ "$lower" =~ (student|enrollment|parent-link|presence|attendance) ]]; then students=true; fi
             if [[ "$lower" =~ (teacher|subject|assignment) ]]; then teachers=true; fi
             if [[ "$lower" =~ (finance|payment|fee|cash|receipt) ]]; then finance=true; fi
@@ -261,7 +261,10 @@ jobs:
 
       - name: Classes
         if: needs.scope.outputs.classes == 'true'
-        run: npm run verify:classes-management
+        run: |
+          set -euo pipefail
+          npm run verify:classes-management
+          npm run verify:academic-year-tenant
 
       - name: Students and attendance
         if: needs.scope.outputs.students == 'true'

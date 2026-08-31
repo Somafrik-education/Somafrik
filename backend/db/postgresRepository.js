@@ -5490,10 +5490,49 @@ class PostgresRepository {
     return { message: "Cours supprimé" };
   }
 
-  async getAcademicYearsV2() {
+  async resolveAcademicYearSchoolRecord(input = {}) {
+    const schoolId = String(input.schoolId ?? "").trim();
+    if (schoolId) {
+      return this.one(
+        `SELECT s.id, s.login_code, c.iso_code AS country_code
+         FROM schools s
+         JOIN countries c ON c.id = s.country_id
+         WHERE s.id::text = $1
+         LIMIT 1`,
+        [schoolId],
+      );
+    }
+    const schoolCode = String(input.schoolCode ?? "").trim().toUpperCase();
+    if (!schoolCode) return null;
+    const byLogin = await this.one(
+      `SELECT s.id, s.login_code, c.iso_code AS country_code
+       FROM schools s
+       JOIN countries c ON c.id = s.country_id
+       WHERE upper(btrim(s.login_code)) = $1
+       LIMIT 1`,
+      [schoolCode],
+    );
+    if (byLogin) return byLogin;
+    const school = await this.ensureSchoolFromBackOfficeRecord(schoolCode);
+    if (!school) return null;
+    return this.one(
+      `SELECT s.id, s.login_code, c.iso_code AS country_code
+       FROM schools s
+       JOIN countries c ON c.id = s.country_id
+       WHERE s.id::text = $1
+       LIMIT 1`,
+      [school.id],
+    );
+  }
+
+  async getAcademicYearsV2(scope = { mode: "all" }) {
     await this.init();
-    const rows = await this.all(`
-      SELECT ay.*, s.school_code, c.iso_code AS country_code,
+    const { sqlAcademicYearScope } = require("../lib/academicYearSchoolScope");
+    const params = [];
+    const where = sqlAcademicYearScope(scope, params);
+    const rows = await this.all(
+      `
+      SELECT ay.*, s.login_code, c.iso_code AS country_code,
              COUNT(DISTINCT e.id) AS enrollment_count,
              COUNT(DISTINCT g.id) AS grade_count,
              COUNT(DISTINCT pd.id) AS decision_count
@@ -5504,20 +5543,29 @@ class PostgresRepository {
       LEFT JOIN terms tm ON tm.academic_year_id = ay.id
       LEFT JOIN grades g ON g.term_id = tm.id
       LEFT JOIN promotion_decisions pd ON pd.academic_year_id = ay.id
-      GROUP BY ay.id, s.school_code, c.iso_code
+      WHERE ${where}
+      GROUP BY ay.id, s.login_code, c.iso_code
       ORDER BY ay.start_date DESC NULLS LAST, ay.created_at DESC
-    `);
+    `,
+      params,
+    );
     return rows.map((row) => this.mapAcademicYearV2(row));
   }
 
   async createAcademicYearV2(input = {}) {
     await this.init();
+    const schoolIdInput = String(input.schoolId ?? "").trim();
     const schoolCode = String(input.schoolCode ?? "").trim().toUpperCase();
     const name = String(input.name ?? "").trim();
     const startDate = String(input.startDate ?? "").trim();
     const endDate = String(input.endDate ?? "").trim();
     const isCurrent = input.isCurrent !== false;
-    if (!schoolCode || !name || !/^\d{4}-\d{2}-\d{2}$/.test(startDate) || !/^\d{4}-\d{2}-\d{2}$/.test(endDate)) {
+    if (
+      (!schoolIdInput && !schoolCode) ||
+      !name ||
+      !/^\d{4}-\d{2}-\d{2}$/.test(startDate) ||
+      !/^\d{4}-\d{2}-\d{2}$/.test(endDate)
+    ) {
       const error = new Error("Établissement, nom, date de début et date de fin sont requis.");
       error.statusCode = 400;
       throw error;
@@ -5527,10 +5575,16 @@ class PostgresRepository {
       error.statusCode = 400;
       throw error;
     }
-    const school = await this.ensureSchoolFromBackOfficeRecord(schoolCode);
+    const school = await this.resolveAcademicYearSchoolRecord(input);
     if (!school) {
       const error = new Error("Établissement introuvable.");
       error.statusCode = 404;
+      throw error;
+    }
+    const loginCode = String(school.login_code ?? "").trim().toUpperCase();
+    if (!loginCode) {
+      const error = new Error("Établissement sans code public canonique.");
+      error.statusCode = 403;
       throw error;
     }
     const duplicate = await this.one(
@@ -5550,7 +5604,11 @@ class PostgresRepository {
        VALUES ($1, $2, $3, $4, $5, 'open') RETURNING *`,
       [school.id, name, startDate, endDate, isCurrent],
     );
-    return this.mapAcademicYearV2({ ...row, school_code: schoolCode });
+    return this.mapAcademicYearV2({
+      ...row,
+      login_code: loginCode,
+      country_code: school.country_code ?? null,
+    });
   }
 
   async getAcademicYearV2ById(id) {
@@ -5558,7 +5616,7 @@ class PostgresRepository {
     const yearId = String(id ?? "").trim();
     if (!yearId) return null;
     const row = await this.one(
-      `SELECT ay.*, s.school_code, c.iso_code AS country_code
+      `SELECT ay.*, s.login_code, c.iso_code AS country_code
        FROM academic_years ay
        JOIN schools s ON s.id = ay.school_id
        JOIN countries c ON c.id = s.country_id
@@ -5585,9 +5643,10 @@ class PostgresRepository {
     return this.withTransaction(async (tx) => {
       const db = this.createTxScope(tx);
       const existing = await db.one(
-        `SELECT ay.*, s.school_code
+        `SELECT ay.*, s.login_code, c.iso_code AS country_code
          FROM academic_years ay
          JOIN schools s ON s.id = ay.school_id
+         JOIN countries c ON c.id = s.country_id
          WHERE ay.id::text = $1
          LIMIT 1`,
         [yearId],
@@ -5602,9 +5661,10 @@ class PostgresRepository {
         [existing.school_id],
       );
       const locked = await db.one(
-        `SELECT ay.*, s.school_code
+        `SELECT ay.*, s.login_code, c.iso_code AS country_code
          FROM academic_years ay
          JOIN schools s ON s.id = ay.school_id
+         JOIN countries c ON c.id = s.country_id
          WHERE ay.id::text = $1
          LIMIT 1`,
         [yearId],
@@ -5653,7 +5713,11 @@ class PostgresRepository {
          RETURNING *`,
         [yearId, name, startDate, endDate, isCurrent],
       );
-      return this.mapAcademicYearV2({ ...row, school_code: locked.school_code });
+      return this.mapAcademicYearV2({
+        ...row,
+        login_code: locked.login_code,
+        country_code: locked.country_code ?? null,
+      });
     });
   }
 
@@ -5661,7 +5725,7 @@ class PostgresRepository {
     return {
       id: row.id,
       schoolId: row.school_id,
-      schoolCode: row.school_code,
+      schoolCode: String(row.login_code ?? "").trim().toUpperCase() || null,
       countryCode: row.country_code ?? extras.countryCode ?? null,
       name: row.name,
       startDate: this.formatIsoDate(row.start_date),

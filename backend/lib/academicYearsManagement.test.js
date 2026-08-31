@@ -100,6 +100,20 @@ function createInjectableAcademicYearsRepository() {
     const text = String(sql).replace(/\s+/g, " ").trim();
     const upper = text.toUpperCase();
 
+    if (upper.includes("FROM SCHOOLS") && upper.includes("LOGIN_CODE") && upper.includes("S.ID::TEXT")) {
+      const school = tables.schools.find((row) => eq(row.id, params[0]));
+      if (!school) return [];
+      const country = tables.countries.find((row) => eq(row.id, school.country_id));
+      return [{ id: school.id, login_code: school.login_code, country_code: country?.iso_code }];
+    }
+    if (upper.includes("FROM SCHOOLS") && upper.includes("LOGIN_CODE") && !upper.includes("SCHOOL_CODE")) {
+      return tables.schools
+        .filter((row) => eq(String(row.login_code ?? "").trim().toUpperCase(), String(params[0] ?? "").trim().toUpperCase()))
+        .map((row) => {
+          const country = tables.countries.find((item) => eq(item.id, row.country_id));
+          return { id: row.id, login_code: row.login_code, country_code: country?.iso_code };
+        });
+    }
     if (upper.includes("FROM SCHOOLS") && upper.includes("SCHOOL_CODE")) {
       return tables.schools.filter((row) => eq(row.school_code, params[0]));
     }
@@ -119,6 +133,7 @@ function createInjectableAcademicYearsRepository() {
         id: nextId(),
         country_id: params[0],
         school_code: params[1],
+        login_code: "CD-POST-26-099",
         name: params[2],
         logo_url: params[3],
         address: params[4],
@@ -157,7 +172,7 @@ function createInjectableAcademicYearsRepository() {
       if (!year) return [];
       const school = tables.schools.find((row) => eq(row.id, year.school_id));
       const country = tables.countries.find((row) => eq(row.id, school?.country_id));
-      return [{ ...year, school_code: school?.school_code, country_code: country?.iso_code }];
+      return [{ ...year, login_code: school?.login_code, country_code: country?.iso_code }];
     }
     if (upper.startsWith("UPDATE ACADEMIC_YEARS SET IS_CURRENT")) {
       for (const row of tables.academic_years) {
@@ -230,7 +245,8 @@ test("PostgreSQL: matérialise un établissement BackOffice-only puis crée la 1
   assert.equal(repo.tables.schools.length, 1, "établissement matérialisé dans schools");
   assert.equal(repo.tables.schools[0].school_code, "CD-2026-0099", "code normalisé en majuscules");
   assert.equal(repo.tables.schools[0].country_id, countryIdBefore, "FK pays = CD préchargé");
-  assert.equal(created.schoolCode, "CD-2026-0099");
+  assert.equal(created.schoolCode, "CD-POST-26-099", "projection = login_code, pas leftover");
+  assert.notEqual(created.schoolCode, "CD-2026-0099");
   assert.equal(created.schoolId, repo.tables.schools[0].id);
   assert.equal(created.name, "2026-2027");
   assert.equal(created.isCurrent, true);
