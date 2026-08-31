@@ -149,8 +149,13 @@ function createPedagogyPgStore(repo) {
         const byCode = await one("SELECT id FROM users WHERE user_code = $1", [normalized]);
         return byCode?.id ?? null;
       },
-      async recordPedagogyAudit({ schoolCode, userId, action, entityType, entityId, oldValue, newValue, ipAddress, userAgent }) {
-        const school = schoolCode && schoolCode !== "*" ? await this.getSchoolByCode(schoolCode) : null;
+      async recordPedagogyAudit({ schoolId, schoolCode, userId, action, entityType, entityId, oldValue, newValue, ipAddress, userAgent }) {
+        const membershipId = asTrimmed(schoolId);
+        const school = membershipId
+          ? await this.getSchoolById(membershipId)
+          : schoolCode && schoolCode !== "*"
+            ? await this.getSchoolByCode(schoolCode)
+            : null;
         const actorId = await this.resolveActorUserId({ sub: userId });
         await query(
           `INSERT INTO audit_logs (school_id, user_id, action, entity_type, entity_id, old_value, new_value, ip_address, user_agent)

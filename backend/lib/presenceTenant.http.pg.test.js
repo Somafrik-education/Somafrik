@@ -40,7 +40,9 @@ const USER_PAYS_CD = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa09";
 const PRESENCE_A = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeee01";
 const PRESENCE_B = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeee02";
 const PRESENCE_A2 = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeee03";
+const CLASS_A = "CLS-LAC-6A";
 const CLASS_B = "CLS-BUJ-6A";
+const TEACHER_CODE_A = "TCH-LAC-01";
 const TEACHER_CODE_B = "TCH-BUJ-01";
 const PERMS = ["ALL_PRIVILEGES"];
 const TEACHER_PERMS = ["Présences:READ", "Présences:CREATE", "ALL_PRIVILEGES"];
@@ -262,10 +264,22 @@ async function seed(pool) {
     [USER_A, USER_B, USER_A2, USER_TEACHER_A, schoolAId, schoolBId, schoolA2Id, USER_SUPER, USER_PAYS_CD],
   );
 
-  await pool.query(
+  const teacherA = await pool.query(
     `INSERT INTO teachers (school_id, user_id, teacher_code, status)
-     VALUES ($1, $3, 'TCH-LAC-01', 'active'), ($2, NULL, $4, 'active')`,
-    [schoolAId, schoolBId, USER_TEACHER_A, TEACHER_CODE_B],
+     VALUES ($1, $3, $5, 'active'), ($2, NULL, $4, 'active')
+     RETURNING id, school_id`,
+    [schoolAId, schoolBId, USER_TEACHER_A, TEACHER_CODE_B, TEACHER_CODE_A],
+  );
+  const subjectA = await pool.query(
+    `INSERT INTO subjects (school_id, subject_code, name, status)
+     VALUES ($1, 'SUB-LAC-MATH', 'Maths Lac', 'active') RETURNING id`,
+    [schoolAId],
+  );
+  const teacherAId = teacherA.rows.find((row) => String(row.school_id) === String(schoolAId))?.id;
+  await pool.query(
+    `INSERT INTO teacher_assignments (school_id, teacher_id, class_id, subject_id, academic_year_id, status)
+     VALUES ($1, $2, $3, $4, $5, 'active')`,
+    [schoolAId, teacherAId, classA.rows[0].id, subjectA.rows[0].id, yearA.rows[0].id],
   );
 
   await pool.query(
@@ -496,6 +510,77 @@ async function main() {
     ).rows[0].c;
     assert.ok([400, 403, 404, 409].includes(postForged.status), `PR-05 status=${postForged.status}`);
     assert.equal(countBForged, countBBefore, "PR-05 0 write B via leftover");
+
+    const countABefore = (
+      await pool.query(`SELECT count(*)::int AS c FROM attendance WHERE school_id = $1`, [fixture.schoolAId])
+    ).rows[0].c;
+    const postOwnLeftover = await request("/presences", {
+      method: "POST",
+      token: tokenForgedB,
+      body: {
+        classCode: CLASS_A,
+        teacherId: TEACHER_CODE_A,
+        schoolCode: LOGIN_B,
+        items: [{ studentId: "STU-A-001", date: "2026-09-15", status: "Présent", classCode: CLASS_A }],
+      },
+    });
+    assert.equal(
+      postOwnLeftover.status,
+      201,
+      `PR-audit POST A JWT leftover B: ${JSON.stringify(postOwnLeftover.data)}`,
+    );
+    const savedOwn = Array.isArray(postOwnLeftover.data) ? postOwnLeftover.data : [];
+    assert.ok(savedOwn.length >= 1, "PR-audit au moins une présence A");
+    assert.ok(
+      savedOwn.every((row) => !row.schoolCode || row.schoolCode === LOGIN_A),
+      `PR-audit projection login_code A: ${JSON.stringify(savedOwn)}`,
+    );
+    assert.equal(
+      savedOwn.some((row) => row.schoolCode === LOGIN_B || row.schoolCode === LEFTOVER_B),
+      false,
+      "PR-audit jamais leftover B sur le DTO",
+    );
+    const countAAfter = (
+      await pool.query(`SELECT count(*)::int AS c FROM attendance WHERE school_id = $1`, [fixture.schoolAId])
+    ).rows[0].c;
+    assert.ok(countAAfter >= countABefore + 1, "PR-audit write A");
+    const countBAfterOwn = (
+      await pool.query(`SELECT count(*)::int AS c FROM attendance WHERE school_id = $1`, [fixture.schoolBId])
+    ).rows[0].c;
+    assert.equal(countBAfterOwn, countBBefore, "PR-audit 0 write B");
+
+    const auditRows = (
+      await pool.query(
+        `SELECT a.action, a.school_id, s.school_code, s.login_code
+         FROM audit_logs a
+         JOIN schools s ON s.id = a.school_id
+         WHERE a.action = 'upsert_attendance_batch'
+           AND a.user_id::text = $1
+         ORDER BY a.created_at DESC`,
+        [USER_A],
+      )
+    ).rows;
+    assert.ok(auditRows.length >= 1, "PR-audit une trace upsert_attendance_batch");
+    assert.ok(
+      auditRows.every(
+        (row) => row.login_code === LOGIN_A && String(row.school_id) === String(fixture.schoolAId),
+      ),
+      `PR-audit attaché à A / login_code A: ${JSON.stringify(auditRows)}`,
+    );
+    assert.equal(
+      auditRows.some((row) => row.school_code === LEFTOVER_B || row.login_code === LOGIN_B),
+      false,
+      "PR-audit jamais B",
+    );
+    const leakedAuditB = await pool.query(
+      `SELECT count(*)::int AS c
+       FROM audit_logs a
+       JOIN schools s ON s.id = a.school_id
+       WHERE s.school_code = $1
+         AND a.action = 'upsert_attendance_batch'`,
+      [LEFTOVER_B],
+    );
+    assert.equal(leakedAuditB.rows[0].c, 0, "PR-audit 0 ligne leftover B");
 
     const getNoSub = await request("/presences", { token: tokenNoSub });
     assert.equal(getNoSub.status, 403, `PR-06 sans sub status=${getNoSub.status}`);

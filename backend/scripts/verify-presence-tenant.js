@@ -62,7 +62,15 @@ function sourceGuards() {
   assert.match(httpTest, /PR-08/);
   assert.match(httpTest, /PR-04/);
   assert.match(httpTest, /PR-05/);
+  assert.match(httpTest, /PR-audit/);
+  assert.match(httpTest, /upsert_attendance_batch/);
   assert.match(httpTest, /ALTER COLUMN login_code DROP NOT NULL/);
+
+  const pedagogy = read("backend/lib/pedagogyService.js");
+  const attendStart = pedagogy.indexOf("async function upsertAttendanceBatch");
+  const attendFn = pedagogy.slice(attendStart, pedagogy.indexOf("module.exports", attendStart));
+  assert.match(attendFn, /presenceSchoolId/);
+  assert.doesNotMatch(attendFn, /schoolCode: principal\?\.schoolCode/);
 
   const resolveStart = repo.indexOf("async resolveStudentForAttendance");
   const resolveFn = repo.slice(resolveStart, repo.indexOf("async teacherCanAccessClassFromBackOffice", resolveStart));
