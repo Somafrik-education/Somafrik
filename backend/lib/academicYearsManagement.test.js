@@ -157,6 +157,20 @@ function createInjectableAcademicYearsRepository() {
         .filter((row) => eq(row.school_id, params[0]) && ["active", "open"].includes(row.status))
         .sort((a, b) => Number(b.is_current) - Number(a.is_current));
     }
+    if (upper.includes("FROM ACADEMIC_YEARS AY") && upper.includes("LOGIN_CODE") && !upper.includes("WHERE AY.ID")) {
+      return tables.academic_years.map((year) => {
+        const school = tables.schools.find((row) => eq(row.id, year.school_id));
+        const country = tables.countries.find((row) => eq(row.id, school?.country_id));
+        return {
+          ...year,
+          school_code: school?.login_code || school?.school_code,
+          country_code: country?.iso_code,
+          enrollment_count: 0,
+          grade_count: 0,
+          decision_count: 0,
+        };
+      });
+    }
     if (upper.includes("FROM ACADEMIC_YEARS AY") && upper.includes("WHERE AY.ID")) {
       const year = tables.academic_years.find((row) => eq(row.id, params[0]));
       if (!year) return [];

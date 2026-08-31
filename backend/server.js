@@ -3384,8 +3384,16 @@ app.delete("/api/v2/subjects/:code", requireAuth, requirePermission("DELETE /api
 }));
 
 app.get("/api/v2/academic-years", requireAuth, requirePermission("GET /api/v2/academic-years"), asyncHandler(async (req, res) => {
+  const { scopeAcademicYearList } = require("./lib/academicYearReadScope");
   const rows = await cacheService.remember("v2:academic-years", () => repository.getAcademicYearsV2());
-  sendList(res, tenantScopeService.filterRows(rows, req.principal), req.query, ["name", "status"]);
+  const scoped = typeof repository.getSchoolForPrincipalUser === "function"
+    ? await scopeAcademicYearList({
+      rows,
+      principal: req.principal,
+      getSchoolForPrincipalUser: () => repository.getSchoolForPrincipalUser(req.principal),
+    })
+    : tenantScopeService.filterRows(rows, req.principal);
+  sendList(res, scoped, req.query, ["name", "status"]);
 }));
 
 app.post("/api/v2/academic-years", requireAuth, requirePermission("POST /api/v2/academic-years"), asyncHandler(async (req, res) => {
