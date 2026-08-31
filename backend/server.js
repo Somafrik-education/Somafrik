@@ -857,6 +857,14 @@ async function planningHttpPrincipal(req) {
   return attachPlanningFixtureScope(req.principal);
 }
 
+async function presenceHttpPrincipal(req) {
+  const { attachPresenceMembershipScope, attachPresenceFixtureScope } = require("./lib/presenceSchoolScope");
+  if (repository?.engine !== "memory" && typeof repository.one === "function") {
+    return attachPresenceMembershipScope(req.principal, repository.one.bind(repository));
+  }
+  return attachPresenceFixtureScope(req.principal);
+}
+
 app.get("/api/course-schedules", requireAuth, requirePermission("GET /api/course-schedules"), asyncHandler(async (req, res) => {
   const { assertPlanningReadable } = require("./lib/planningSchoolScope");
   const principal = await planningHttpPrincipal(req);
@@ -1921,23 +1929,31 @@ app.get("/api/notes", requireAuth, requirePermission("GET /api/notes"), asyncHan
 
 /** Lecture présences : Présences:READ live (Parent/Élève : seed « Voir présences »). */
 app.get("/api/presences", requireAuth, requirePermission("GET /api/presences"), asyncHandler(async (req, res) => {
-  const { presences, students } = await loadCanonicalPedagogyForPrincipal(req.principal);
+  const { assertPresenceReadable, filterPresenceRows } = require("./lib/presenceSchoolScope");
+  const principal = await presenceHttpPrincipal(req);
+  const scope = assertPresenceReadable(principal);
+  const { presences, students } = await loadCanonicalPedagogyForPrincipal(principal);
   const { className, date } = req.query;
-  let scopedStudents = tenantScopeService.filterRows(students, req.principal)
+  let scopedPresences = filterPresenceRows(presences, scope);
+  let scopedStudents = tenantScopeService.filterRows(students, principal)
     .filter((student) => !className || student.className === className);
-  if (!scopedStudents.length && isParentOrStudentPrincipalRole(req.principal.role)) {
-    const linkedIds = principalLinkedStudentIds(req.principal);
-    scopedStudents = students
+  scopedStudents = filterPresenceRows(scopedStudents, scope)
+    .filter((student) => !className || student.className === className);
+  if (!scopedStudents.length && isParentOrStudentPrincipalRole(principal.role)) {
+    const linkedIds = principalLinkedStudentIds(principal);
+    scopedStudents = filterPresenceRows(students, scope)
       .filter((student) => linkedIds.has(String(student.id ?? "").trim()))
       .filter((student) => !className || student.className === className);
   }
   const studentIds = buildScopedStudentIdSet(scopedStudents);
-  res.json(
-    presences.filter((presence) =>
-      studentIds.has(String(presence.studentId ?? "")) &&
-      (!date || String(presence.date) === String(date))
-    )
+  const byStudents = scopedPresences.filter((presence) =>
+    studentIds.has(String(presence.studentId ?? "")) &&
+    (!date || String(presence.date) === String(date))
   );
+  res.json(studentIds.size ? byStudents : scopedPresences.filter((presence) =>
+    (!className || presence.className === className) &&
+    (!date || String(presence.date) === String(date))
+  ));
 }));
 
 app.post("/api/notes", requireAuth, requireSchoolSubscriptionFeature("write_notes"), requirePermission("POST /api/notes"), asyncHandler(async (req, res) => {
@@ -1985,7 +2001,10 @@ app.post("/api/presences", requireAuth, requireSchoolSubscriptionFeature("write_
     routeKey: "POST /api/presences",
     principal: req.principal,
     handler: async () => {
-      const state = await loadCanonicalPedagogyForPrincipal(req.principal);
+      const { assertPresenceReadable } = require("./lib/presenceSchoolScope");
+      const principal = await presenceHttpPrincipal(req);
+      assertPresenceReadable(principal);
+      const state = await loadCanonicalPedagogyForPrincipal(principal);
       const { pedagogyAuditMetaFromRequest, ignoreClientScope } = require("./lib/pedagogyManagement");
       const rawBody = req.body ?? {};
       const body = Array.isArray(rawBody.items)
@@ -2008,11 +2027,11 @@ app.post("/api/presences", requireAuth, requireSchoolSubscriptionFeature("write_
       if (engine === "postgresql" && typeof repository.upsertSchoolAttendanceBatch === "function") {
         saved = await repository.upsertSchoolAttendanceBatch(
           { ...body, items: canonicalItems },
-          req.principal,
+          principal,
           pedagogyAuditMetaFromRequest(req),
         );
       } else {
-        saved = await repository.upsertAttendanceBatch({ ...body, items: canonicalItems }, req.principal);
+        saved = await repository.upsertAttendanceBatch({ ...body, items: canonicalItems }, principal);
         await auditService.record(req, "upsert_attendance", "attendance", body?.classCode ?? body?.className ?? "batch", {
           count: saved.length,
         });
@@ -2060,13 +2079,18 @@ app.get("/api/students/:id/report.pdf", requireAuth, asyncHandler(async (req, re
 
 /** Fiche élève : même jeton Présences:READ (parcours Parent E2E /students/:id/presences). */
 app.get("/api/students/:id/presences", requireAuth, requirePermission("GET /api/students/:id/presences"), asyncHandler(async (req, res) => {
-  const { presences, students } = await loadCanonicalPedagogyForPrincipal(req.principal);
-  const student = resolveAuthorizedStudentForPrincipal(students, req.principal, req.params.id);
+  const { assertPresenceReadable, filterPresenceRows } = require("./lib/presenceSchoolScope");
+  const principal = await presenceHttpPrincipal(req);
+  const scope = assertPresenceReadable(principal);
+  const { presences, students } = await loadCanonicalPedagogyForPrincipal(principal);
+  const student = resolveAuthorizedStudentForPrincipal(students, principal, req.params.id);
   if (!student) {
     return res.json([]);
   }
   const studentIds = buildScopedStudentIdSet([student]);
-  res.json(presences.filter((presence) => studentIds.has(String(presence.studentId ?? ""))));
+  res.json(
+    filterPresenceRows(presences, scope).filter((presence) => studentIds.has(String(presence.studentId ?? ""))),
+  );
 }));
 
 app.get("/api/students/:id/payments", requireAuth, asyncHandler(async (req, res) => {

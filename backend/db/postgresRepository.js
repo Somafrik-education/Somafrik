@@ -1925,7 +1925,7 @@ class PostgresRepository {
         ORDER BY g.created_at
       `),
       this.all(`
-        SELECT a.*, st.student_code, s.school_code, cl.name AS class_name, cl.class_code
+        SELECT a.*, st.student_code, s.login_code, cl.name AS class_name, cl.class_code
         FROM attendance a
         JOIN schools s ON s.id = a.school_id
         JOIN students st ON st.id = a.student_id
@@ -4157,6 +4157,16 @@ class PostgresRepository {
   }
 
   async assertPrincipalStudentTenant(principal, student) {
+    const membershipId = String(principal?.presenceSchoolId ?? "").trim();
+    if (membershipId) {
+      if (String(student?.school_id ?? "") !== membershipId) {
+        const error = new Error("Accès refusé : élève hors périmètre établissement.");
+        error.statusCode = 403;
+        error.code = "TENANT_MISMATCH";
+        throw error;
+      }
+      return;
+    }
     const schoolCode = String(principal?.schoolCode ?? "")
       .trim()
       .toUpperCase();
@@ -4171,7 +4181,11 @@ class PostgresRepository {
   }
 
   async resolveStudentForAttendance(payload, principal = {}, options = {}) {
-    const schoolCode = String(payload.schoolCode ?? principal.schoolCode ?? "").trim().toUpperCase();
+    const schoolCode = String(
+      principal.presenceLoginCode ?? payload.schoolCode ?? principal.schoolCode ?? "",
+    )
+      .trim()
+      .toUpperCase();
     const tenantScoped = Boolean(schoolCode && schoolCode !== "*");
     const pedagogyStrict = options.pedagogyStrict === true || tenantScoped;
     const className = String(payload.className ?? "").trim();
@@ -4565,7 +4579,10 @@ class PostgresRepository {
       classRowMatchesRequestedIdentity,
     } = require("../lib/presencesAttendanceAuthz");
     const requested = requestedClassIdentity(payload);
-    const schoolCode = String(principal.schoolCode ?? payload.schoolCode ?? "").trim().toUpperCase();
+    const membershipId = String(principal.presenceSchoolId ?? "").trim();
+    const schoolCode = String(principal.presenceLoginCode ?? principal.schoolCode ?? payload.schoolCode ?? "")
+      .trim()
+      .toUpperCase();
 
     if (requested.classId || requested.classCode) {
       const params = [];
@@ -4573,7 +4590,10 @@ class PostgresRepository {
          FROM classes cl
          JOIN schools s ON s.id = cl.school_id
          WHERE 1=1`;
-      if (schoolCode && schoolCode !== "*") {
+      if (membershipId) {
+        sql += ` AND cl.school_id = $${params.length + 1}::uuid`;
+        params.push(membershipId);
+      } else if (schoolCode && schoolCode !== "*") {
         sql += ` AND s.school_code = $${params.length + 1}`;
         params.push(schoolCode);
       }
@@ -4768,7 +4788,7 @@ class PostgresRepository {
 
   async getAttendanceById(id) {
     const attendance = await this.one(
-      `SELECT a.*, st.student_code, s.school_code, cl.name AS class_name, cl.class_code, a.class_id
+      `SELECT a.*, st.student_code, s.login_code, cl.name AS class_name, cl.class_code, a.class_id
        FROM attendance a
        JOIN schools s ON s.id = a.school_id
        JOIN students st ON st.id = a.student_id
@@ -6221,10 +6241,11 @@ class PostgresRepository {
 
   mapAttendance(attendance) {
     const status = this.fromAttendanceStatus(attendance.status);
+    const loginCode = String(attendance.login_code ?? "").trim();
     return {
       id: attendance.id,
       schoolId: attendance.school_id,
-      schoolCode: attendance.school_code,
+      schoolCode: loginCode || undefined,
       publicId: attendance.id,
       studentId: attendance.student_code,
       classId: attendance.class_id ?? null,
