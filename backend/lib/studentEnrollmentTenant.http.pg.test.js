@@ -221,9 +221,9 @@ async function main() {
     assert.notEqual(schoolA.loginCode, LEFTOVER_A);
 
     const financeStore = repo.getFinanceStore();
-    const leftoverFinance = await financeStore.getSchoolByCode(LEFTOVER_A);
+    const leftoverFinance = await financeStore.withTransaction((tx) => tx.getSchoolByCode(LEFTOVER_A));
     assert.equal(leftoverFinance, null, "leftover n'est pas une identité Finance valide");
-    const canonicalFinance = await financeStore.getSchoolByCode(schoolA.loginCode);
+    const canonicalFinance = await financeStore.withTransaction((tx) => tx.getSchoolByCode(schoolA.loginCode));
     assert.ok(canonicalFinance?.id, "Finance résout le login_code V2");
     assert.equal(String(canonicalFinance.id), String(schoolA.schoolId));
 
