@@ -187,6 +187,83 @@ function attachUsersFixtureScope(principal) {
   };
 }
 
+/**
+ * HTTP mémoire : pas le stub FallbackRepository.one.
+ * principal.sub → users / user_roles → schools.login_code.
+ * JWT leftover n'est pas l'autorité.
+ */
+async function attachUsersMemoryMembership(principal, store) {
+  if (!principal) return principal;
+  const existingLogin = normalizeLoginCode(principal.usersLoginCode);
+  const existingId = String(principal.usersSchoolId ?? "").trim();
+  if (existingLogin && existingLogin !== "*" && existingId) {
+    return principal;
+  }
+
+  const platform = isPlatformPrincipal(principal);
+  const adminPays = isCountryAdminPrincipal(principal);
+  const requestScoped = tenantScope.hasEffectiveSchoolScope(principal);
+
+  if ((platform || adminPays) && !requestScoped) {
+    return principal;
+  }
+
+  if (!store) {
+    return { ...principal, usersLoginCode: "", usersSchoolId: "" };
+  }
+
+  if ((platform || adminPays) && requestScoped) {
+    const requested = tenantScope.normalizeSchoolCode(principal.effectiveSchoolCode);
+    if (!requested || typeof store.getSchoolByCode !== "function") {
+      return { ...principal, usersLoginCode: "", usersSchoolId: "" };
+    }
+    const school = await store.getSchoolByCode(requested);
+    const loginCode = normalizeLoginCode(school?.login_code || school?.loginCode);
+    const schoolId = String(school?.id ?? "").trim();
+    if (!schoolId || !loginCode) {
+      return { ...principal, usersLoginCode: "", usersSchoolId: "" };
+    }
+    return { ...principal, usersLoginCode: loginCode, usersSchoolId: schoolId };
+  }
+
+  const userId = String(principal.sub ?? "").trim();
+  if (!userId) {
+    return { ...principal, usersLoginCode: "", usersSchoolId: "" };
+  }
+
+  let schoolId = "";
+  let loginCode = "";
+  if (typeof store.getUserById === "function") {
+    const user = await store.getUserById(userId);
+    schoolId = String(user?.school_id ?? user?.schoolId ?? "").trim();
+    loginCode = normalizeLoginCode(user?.school_login_code || user?.schoolPublicCode);
+  }
+  if ((!schoolId || !loginCode) && store._tables) {
+    const role = (store._tables.userRoles ?? []).find(
+      (row) =>
+        String(row.user_id ?? "") === userId &&
+        row.status === "active" &&
+        !row.revoked_at &&
+        row.school_id,
+    );
+    if (role?.school_id) {
+      schoolId = String(role.school_id).trim();
+    }
+  }
+  if (schoolId && !loginCode && typeof store.getSchoolById === "function") {
+    const school = await store.getSchoolById(schoolId);
+    loginCode = normalizeLoginCode(school?.login_code || school?.loginCode);
+  }
+  if (!schoolId || !loginCode) {
+    return { ...principal, usersLoginCode: "", usersSchoolId: "" };
+  }
+  return {
+    ...principal,
+    usersLoginCode: loginCode,
+    usersSchoolId: schoolId,
+  };
+}
+
 async function attachUsersStorePrincipal(principal, store) {
   const one = sqlOneFromStore(store);
   if (one) {
@@ -400,6 +477,7 @@ function projectUsersApiUser(user) {
 module.exports = {
   attachUsersMembershipScope,
   attachUsersFixtureScope,
+  attachUsersMemoryMembership,
   attachUsersStorePrincipal,
   resolveUsersSchoolScope,
   sqlUsersScope,

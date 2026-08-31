@@ -2153,9 +2153,16 @@ function canResetUserPassword(principal) {
 }
 
 async function usersHttpPrincipal(req) {
-  const { attachUsersMembershipScope, attachUsersFixtureScope } = require("./lib/usersSchoolScope");
-  if (typeof repository.one === "function") {
+  const {
+    attachUsersMembershipScope,
+    attachUsersFixtureScope,
+    attachUsersMemoryMembership,
+  } = require("./lib/usersSchoolScope");
+  if (repository?.engine !== "memory" && typeof repository.one === "function") {
     return attachUsersMembershipScope(req.principal, repository.one.bind(repository));
+  }
+  if (typeof repository.getClientsStore === "function") {
+    return attachUsersMemoryMembership(req.principal, repository.getClientsStore());
   }
   return attachUsersFixtureScope(req.principal);
 }

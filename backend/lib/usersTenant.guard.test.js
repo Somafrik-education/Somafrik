@@ -24,6 +24,11 @@ function sliceFrom(src, startNeedle, endNeedle) {
 
 test("GP-003: GET/POST/PATCH users n'utilisent plus leftover JWT comme autorité", () => {
   const server = read("server.js");
+  const httpPrincipal = sliceFrom(server, "async function usersHttpPrincipal", "function usersApiUser");
+  assert.match(httpPrincipal, /engine !== "memory"/);
+  assert.match(httpPrincipal, /attachUsersMemoryMembership/);
+  assert.match(httpPrincipal, /getClientsStore/);
+
   const getBlock = sliceFrom(server, 'app.get("/api/backoffice/users"', 'app.get("/api/backoffice/users/assignable-roles"');
   const postBlock = sliceFrom(server, 'app.post("/api/backoffice/users"', 'app.post("/api/backoffice/users/provision"');
   const patchBlock = sliceFrom(server, 'app.patch("/api/backoffice/users/:userId"', 'app.post("/api/backoffice/users/:userId/reassign-school"');

@@ -5,6 +5,7 @@ const assert = require("node:assert/strict");
 const {
   attachUsersMembershipScope,
   attachUsersFixtureScope,
+  attachUsersMemoryMembership,
   resolveUsersSchoolScope,
   sqlUsersScope,
   filterUsersRows,
@@ -256,6 +257,29 @@ test("GP-003: fixture mémoire n'utilise pas leftover comme autorité PG", () =>
   });
   assert.equal(attached.usersLoginCode, "SCH-001");
   assert.equal(resolveUsersSchoolScope(attached).mode, "school");
+});
+
+test("GP-003: mémoire HTTP résout login_code depuis membership, pas leftover JWT", async () => {
+  const store = {
+    _tables: {
+      userRoles: [{ user_id: "admin-cd", school_id: SCHOOL_ID_A, status: "active", revoked_at: null }],
+      schools: [{ id: SCHOOL_ID_A, code: LEFTOVER_A, loginCode: LOGIN_A }],
+    },
+    async getUserById() {
+      return null;
+    },
+    async getSchoolById(id) {
+      assert.equal(id, SCHOOL_ID_A);
+      return { id: SCHOOL_ID_A, login_code: LOGIN_A, school_code: LEFTOVER_A };
+    },
+  };
+  const attached = await attachUsersMemoryMembership(
+    { role: "Admin School", sub: "admin-cd", schoolCode: LEFTOVER_A },
+    store,
+  );
+  assert.equal(attached.usersLoginCode, LOGIN_A);
+  assert.equal(attached.usersSchoolId, SCHOOL_ID_A);
+  assert.notEqual(attached.usersLoginCode, LEFTOVER_A);
 });
 
 test("GP-003: projection API émet login_code, pas leftover", () => {
