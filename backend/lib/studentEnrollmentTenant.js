@@ -15,8 +15,9 @@ function tenantMismatch(status, message) {
   return error;
 }
 
-function schoolLoginCode(school = {}) {
-  return normalizeSchoolCode(school.login_code || school.loginCode || school.school_login_code);
+function schoolLoginCode(school) {
+  const row = school || {};
+  return normalizeSchoolCode(row.login_code || row.loginCode || row.school_login_code);
 }
 
 async function resolveEnrollmentTenant({ principal, getSchoolForPrincipalUser } = {}) {
