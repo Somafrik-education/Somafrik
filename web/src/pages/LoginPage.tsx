@@ -154,7 +154,7 @@ export function LoginPage() {
   }
 
   return (
-    <div className="relative min-h-dvh overflow-x-hidden bg-brand md:overflow-hidden">
+    <div className="relative min-h-dvh overflow-x-hidden bg-[#1e3a5f] md:overflow-hidden">
       <main className="relative z-10 flex min-h-dvh items-center justify-center px-3 py-3 sm:px-4">
         <section
           aria-labelledby="login-title"
