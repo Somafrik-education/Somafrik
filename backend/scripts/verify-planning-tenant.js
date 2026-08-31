@@ -51,6 +51,10 @@ function sourceGuards() {
 
   assert.match(store, /s\.login_code/);
   assert.match(dto, /row\.login_code/);
+  const mapFn = dto.slice(dto.indexOf("function mapWeeklyScheduleDto"), dto.indexOf("module.exports"));
+  assert.doesNotMatch(mapFn, /school_code/);
+  assert.doesNotMatch(mapFn, /login_code\s*\|\|/);
+  assert.doesNotMatch(mapFn, /login_code[\s\S]{0,120}\|\|[\s\S]{0,120}school_code/);
 
   assert.match(httpTest, /CD-LAC-26-001/);
   assert.match(httpTest, /BI-BUJ-26-001/);
@@ -59,13 +63,19 @@ function sourceGuards() {
   assert.match(httpTest, /PL-08/);
   assert.match(httpTest, /PL-11/);
   assert.match(httpTest, /PL-14/);
+  assert.match(httpTest, /PL-15/);
 }
 
 function main() {
   sourceGuards();
   run(
     process.execPath,
-    ["--test", "backend/lib/planningSchoolScope.test.js", "backend/lib/planningTenant.guard.test.js"],
+    [
+      "--test",
+      "backend/lib/planningSchoolScope.test.js",
+      "backend/lib/planningTenant.guard.test.js",
+      "backend/lib/planningWeekly.test.js",
+    ],
     "tests unitaires / garde-fou GP-014 ont échoué",
   );
   if (!String(process.env.DATABASE_URL ?? "").trim()) {

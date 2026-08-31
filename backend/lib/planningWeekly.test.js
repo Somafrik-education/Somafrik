@@ -11,6 +11,7 @@ const {
   isoWeekdayFromUtcDate,
   mapExclusionViolation,
   mapWeeklyScheduleDto,
+  mapWeeklyScheduleDtos,
 } = require("./planningWeekly");
 
 test("dayOfWeek 1=lundi … 7=dimanche, 0 refusé", () => {
@@ -66,6 +67,8 @@ test("DTO weekly conserve dayOfWeek / heures / IDs canoniques", () => {
     start_time: "08:00:00",
     end_time: "09:00:00",
     status: "active",
+    login_code: "CD-LAC-26-001",
+    school_code: "CD-2026-0001",
     room_id: "room-4",
     room_name: "Salle 4",
     class_code: "3A",
@@ -80,4 +83,56 @@ test("DTO weekly conserve dayOfWeek / heures / IDs canoniques", () => {
   assert.equal(dto.schoolCourseId, "course-1");
   assert.equal(dto.roomId, "room-4");
   assert.equal(dto.classCode, "3A");
+  assert.equal(dto.schoolCode, "CD-LAC-26-001");
+  assert.notEqual(dto.schoolCode, "CD-2026-0001");
+});
+
+test("DTO weekly omet une row sans login_code, jamais leftover school_code", () => {
+  assert.equal(
+    mapWeeklyScheduleDto({
+      id: "slot-empty",
+      login_code: null,
+      school_code: "CD-2026-0099",
+      school_id: "school-empty",
+      day_of_week: 1,
+      start_time: "08:00:00",
+      end_time: "09:00:00",
+    }),
+    null,
+  );
+  assert.equal(
+    mapWeeklyScheduleDto({
+      id: "slot-blank",
+      login_code: "   ",
+      school_code: "CD-2026-0099",
+      day_of_week: 2,
+    }),
+    null,
+  );
+  const listed = mapWeeklyScheduleDtos([
+    {
+      id: "slot-ok",
+      login_code: "CD-LAC-26-001",
+      school_code: "CD-2026-0001",
+      day_of_week: 1,
+      start_time: "08:00:00",
+      end_time: "09:00:00",
+    },
+    {
+      id: "slot-empty",
+      login_code: null,
+      school_code: "CD-2026-0099",
+      day_of_week: 1,
+      start_time: "08:00:00",
+      end_time: "09:00:00",
+    },
+  ]);
+  assert.deepEqual(
+    listed.map((row) => row.id),
+    ["slot-ok"],
+  );
+  assert.equal(
+    listed.some((row) => row.schoolCode === "CD-2026-0099" || row.schoolCode === "CD-2026-0001"),
+    false,
+  );
 });

@@ -9,7 +9,7 @@ const {
 const pedagogyService = require("../lib/pedagogyService");
 const schoolRoomsService = require("../lib/schoolRoomsService");
 const replacementsService = require("../lib/courseScheduleReplacementsService");
-const { mapWeeklyScheduleDto } = require("../lib/planningWeekly");
+const { mapWeeklyScheduleDto, mapWeeklyScheduleDtos } = require("../lib/planningWeekly");
 const {
   sqlTeacherIdentityEqualsAny,
   sqlTeacherPublicCodeEquals,
@@ -488,7 +488,7 @@ function createPedagogyPgStore(repo) {
           ${where.length ? `WHERE ${where.join(" AND ")}` : ""}
           ORDER BY w.day_of_week, w.start_time, w.id`;
         const rows = await all(sql, params);
-        return rows.map(mapWeeklyScheduleDto);
+        return mapWeeklyScheduleDtos(rows);
       },
       async insertCourse(payload) {
         const row = await one(
@@ -1280,7 +1280,7 @@ function createPedagogyPgStore(repo) {
 
       return {
         courses,
-        courseSchedules: scheduleRows.map(mapWeeklyScheduleDto),
+        courseSchedules: mapWeeklyScheduleDtos(scheduleRows),
         evaluations: evaluationRows.map((row) => repo.mapEvaluation(row)),
         notes: gradeRows.map((row) => repo.mapGrade(row)),
         presences: attendanceRows.map((row) => repo.mapAttendance(row)),

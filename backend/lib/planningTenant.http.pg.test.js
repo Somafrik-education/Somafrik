@@ -27,6 +27,7 @@ const LEFTOVER_B = "BI-2026-0001";
 const LOGIN_B = "BI-BUJ-26-001";
 const LEFTOVER_A2 = "CD-2026-0002";
 const LOGIN_A2 = "CD-LAC-26-002";
+const LEFTOVER_NO_LOGIN = "CD-2026-0099";
 
 const USER_A = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa01";
 const USER_B = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa02";
@@ -40,13 +41,16 @@ const USER_PAYS_CD = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa09";
 const TEACHER_A = "cccccccc-cccc-4ccc-8ccc-cccccccccc01";
 const TEACHER_B = "cccccccc-cccc-4ccc-8ccc-cccccccccc02";
 const TEACHER_A2 = "cccccccc-cccc-4ccc-8ccc-cccccccccc03";
+const TEACHER_NO_LOGIN = "cccccccc-cccc-4ccc-8ccc-cccccccccc04";
 const SUBJECT_A = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbb01";
 const SUBJECT_B = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbb02";
 const SUBJECT_A2 = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbb03";
 const SUBJECT_FR = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbb04";
+const SUBJECT_NO_LOGIN = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbb05";
 const SLOT_A = "dddddddd-dddd-4ddd-8ddd-dddddddddd01";
 const SLOT_B = "dddddddd-dddd-4ddd-8ddd-dddddddddd02";
 const SLOT_A2 = "dddddddd-dddd-4ddd-8ddd-dddddddddd03";
+const SLOT_NO_LOGIN = "dddddddd-dddd-4ddd-8ddd-dddddddddd04";
 
 const PERMS = ["ALL_PRIVILEGES"];
 const TEACHER_PERMS = ["Planning de cours:READ", "ALL_PRIVILEGES"];
@@ -465,20 +469,60 @@ async function main() {
     const cdId = (await pool.query(`SELECT id FROM countries WHERE iso_code = 'CD' LIMIT 1`)).rows[0].id;
     const emptySchool = await pool.query(
       `INSERT INTO schools (country_id, school_code, login_code, short_code, name, status)
-       VALUES ($1, 'CD-2026-0099', NULL, 'SLG', 'École sans login', 'active')
+       VALUES ($1, $2, NULL, 'SLG', 'École sans login', 'active')
        RETURNING id, school_code, login_code`,
-      [cdId],
+      [cdId, LEFTOVER_NO_LOGIN],
     );
     assert.equal(emptySchool.rows[0].login_code, null, "PL-08 fixture login_code vide");
+    const emptySchoolId = emptySchool.rows[0].id;
     await pool.query(
       `INSERT INTO users (id, school_id, user_code, first_name, last_name, email, role, status, must_change_password)
        VALUES ($1, $2, 'ADM-NL', 'Sans', 'Login', 'nl@planning.gp.test', 'Admin School', 'active', FALSE)`,
-      [USER_NO_LOGIN, emptySchool.rows[0].id],
+      [USER_NO_LOGIN, emptySchoolId],
     );
     await pool.query(
       `INSERT INTO user_roles (user_id, school_id, role_key, status)
        VALUES ($1, $2, 'SCHOOL_ADMIN', 'active')`,
-      [USER_NO_LOGIN, emptySchool.rows[0].id],
+      [USER_NO_LOGIN, emptySchoolId],
+    );
+    const yearNoLogin = await pool.query(
+      `INSERT INTO academic_years (school_id, name, start_date, end_date, is_current, status)
+       VALUES ($1, '2026-2027', '2026-09-01', '2027-08-31', TRUE, 'open') RETURNING id`,
+      [emptySchoolId],
+    );
+    const classNoLogin = await pool.query(
+      `INSERT INTO classes (school_id, academic_year_id, class_code, name, status)
+       VALUES ($1, $2, 'CLS-SLG-6A', '6ème A sans login', 'active') RETURNING id`,
+      [emptySchoolId, yearNoLogin.rows[0].id],
+    );
+    await pool.query(
+      `INSERT INTO subjects (id, school_id, subject_code, name, coefficient, status)
+       VALUES ($1, $2, 'SUB-SLG-MATH', 'Mathématiques', 1, 'active')`,
+      [SUBJECT_NO_LOGIN, emptySchoolId],
+    );
+    await pool.query(
+      `INSERT INTO teachers (id, school_id, user_id, teacher_code, status)
+       VALUES ($1, $2, NULL, 'TCH-SLG-01', 'active')`,
+      [TEACHER_NO_LOGIN, emptySchoolId],
+    );
+    const courseNoLogin = await pool.query(
+      `INSERT INTO school_courses (school_id, class_id, subject_id, teacher_id, course_code, coefficient, status)
+       VALUES ($1, $2, $3, $4, 'CRS-SLG-MATH', 1, 'active') RETURNING id`,
+      [emptySchoolId, classNoLogin.rows[0].id, SUBJECT_NO_LOGIN, TEACHER_NO_LOGIN],
+    );
+    await pool.query(
+      `INSERT INTO course_schedule_weekly_slots
+         (id, school_id, academic_year_id, school_course_id, class_id, teacher_id,
+          day_of_week, start_time, end_time, status)
+       VALUES ($1, $2, $3, $4, $5, $6, 1, '08:00', '09:00', 'active')`,
+      [
+        SLOT_NO_LOGIN,
+        emptySchoolId,
+        yearNoLogin.rows[0].id,
+        courseNoLogin.rows[0].id,
+        classNoLogin.rows[0].id,
+        TEACHER_NO_LOGIN,
+      ],
     );
 
     const tokenA = mint({
@@ -526,7 +570,7 @@ async function main() {
       sub: USER_NO_LOGIN,
       role: "Admin School",
       roleKeys: ["SCHOOL_ADMIN"],
-      schoolCode: "CD-2026-0099",
+      schoolCode: LEFTOVER_NO_LOGIN,
       permissions: PERMS,
     });
     const tokenSuper = mint({
@@ -654,7 +698,7 @@ async function main() {
     const getNoLogin = await request("/course-schedules", { token: tokenNoLogin });
     assert.equal(getNoLogin.status, 403, `PL-08 login_code vide: ${JSON.stringify(getNoLogin.data)}`);
     assert.equal(
-      unwrapList(getNoLogin.data).some((row) => row.schoolCode === "CD-2026-0099"),
+      unwrapList(getNoLogin.data).some((row) => row.schoolCode === LEFTOVER_NO_LOGIN),
       false,
       "PL-08: aucun fallback leftover",
     );
@@ -665,11 +709,26 @@ async function main() {
     assert.ok(schedulesB.every((row) => row.schoolCode === LOGIN_B && row.schoolId === fixture.schoolBId), "PL-09 projection login_code B");
     assert.equal(schedulesB.some((row) => row.schoolCode === LEFTOVER_B || row.schoolCode === LOGIN_A), false);
 
+    const leftoverCodes = [LEFTOVER_A, LEFTOVER_B, LEFTOVER_A2, LEFTOVER_NO_LOGIN];
     const getSuper = await request("/course-schedules", { token: tokenSuper });
     assert.equal(getSuper.status, 200, `PL-10 Superadmin: ${getSuper.status}`);
     const superRows = unwrapList(getSuper.data);
     assert.ok(superRows.some((row) => String(row.id) === SLOT_A));
     assert.ok(superRows.some((row) => String(row.id) === SLOT_B));
+    assert.equal(
+      superRows.some((row) => String(row.id) === SLOT_NO_LOGIN),
+      false,
+      `PL-15 Superadmin omet row sans login_code: ${JSON.stringify(superRows)}`,
+    );
+    assert.equal(
+      superRows.some((row) => leftoverCodes.includes(String(row.schoolCode ?? "").trim())),
+      false,
+      `PL-15 Superadmin n'émet aucun leftover: ${JSON.stringify(superRows.map((row) => row.schoolCode))}`,
+    );
+    assert.ok(
+      superRows.every((row) => String(row.schoolCode ?? "").trim()),
+      "PL-15 Superadmin: schoolCode = login_code uniquement",
+    );
 
     const getPays = await request("/course-schedules", { token: tokenPaysCd });
     assert.equal(getPays.status, 200, `PL-11 Admin Pays: ${JSON.stringify(getPays.data)}`);
@@ -680,6 +739,16 @@ async function main() {
       "PL-11 Admin Pays CD ne voit pas BI",
     );
     assert.ok(paysRows.some((row) => String(row.id) === SLOT_A || row.schoolCode === LOGIN_A), "PL-11 voit CD");
+    assert.equal(
+      paysRows.some((row) => String(row.id) === SLOT_NO_LOGIN || row.schoolCode === LEFTOVER_NO_LOGIN),
+      false,
+      `PL-15 Admin Pays CD n'émet pas leftover login_code NULL: ${JSON.stringify(paysRows.map((row) => row.schoolCode))}`,
+    );
+    assert.equal(
+      paysRows.some((row) => leftoverCodes.includes(String(row.schoolCode ?? "").trim())),
+      false,
+      "PL-15 Admin Pays: aucun leftover",
+    );
 
     const getA2 = await request("/course-schedules", { token: tokenA2 });
     assert.equal(unwrapList(getA2.data).some((row) => String(row.id) === SLOT_A), false, "PL-12 A2 jamais A");

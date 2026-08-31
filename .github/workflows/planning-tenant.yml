@@ -9,6 +9,7 @@ on:
       - "backend/lib/planningTenant.guard.test.js"
       - "backend/lib/planningTenant.http.pg.test.js"
       - "backend/lib/planningWeekly.js"
+      - "backend/lib/planningWeekly.test.js"
       - "backend/lib/pedagogyService.js"
       - "backend/db/pedagogyPgStore.js"
       - "backend/scripts/verify-planning-tenant.js"

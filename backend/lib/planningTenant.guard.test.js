@@ -10,6 +10,7 @@ const { test } = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("path");
+const { mapWeeklyScheduleDto, mapWeeklyScheduleDtos } = require("./planningWeekly");
 
 function read(relative) {
   return fs.readFileSync(path.join(__dirname, "..", relative), "utf8");
@@ -54,6 +55,48 @@ test("GP-014: projection / scope PG sans COALESCE leftover ni OR school_code", (
   const mapFn = sliceFrom(dto, "function mapWeeklyScheduleDto", "module.exports");
   assert.match(mapFn, /row\.login_code/);
   assert.match(mapFn, /row\.school_id/);
+  assert.doesNotMatch(mapFn, /school_code/);
+  assert.doesNotMatch(mapFn, /login_code\s*\|\|/);
+  assert.doesNotMatch(mapFn, /login_code[\s\S]{0,120}\|\|[\s\S]{0,120}school_code/);
+  assert.doesNotMatch(mapFn, /COALESCE/i);
+});
+
+test("GP-014: mapWeeklyScheduleDto omet login_code vide, jamais leftover", () => {
+  const leftover = "CD-2026-0099";
+  assert.equal(
+    mapWeeklyScheduleDto({
+      id: "slot-empty",
+      login_code: null,
+      school_code: leftover,
+      school_id: "school-empty",
+      day_of_week: 1,
+      start_time: "08:00:00",
+      end_time: "09:00:00",
+    }),
+    null,
+  );
+  const listed = mapWeeklyScheduleDtos([
+    {
+      id: "slot-ok",
+      login_code: "CD-LAC-26-001",
+      school_code: "CD-2026-0001",
+      day_of_week: 1,
+      start_time: "08:00:00",
+      end_time: "09:00:00",
+    },
+    {
+      id: "slot-empty",
+      login_code: "",
+      school_code: leftover,
+      day_of_week: 1,
+      start_time: "08:00:00",
+      end_time: "09:00:00",
+    },
+  ]);
+  assert.deepEqual(
+    listed.map((row) => ({ id: row.id, schoolCode: row.schoolCode })),
+    [{ id: "slot-ok", schoolCode: "CD-LAC-26-001" }],
+  );
 });
 
 test("GP-014: planningSchoolScope n'autorise pas leftover comme autorité établissement", () => {

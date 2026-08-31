@@ -103,8 +103,14 @@ function isExclusionViolation(error) {
   );
 }
 
+/**
+ * Projection publique : schoolCode = schools.login_code uniquement.
+ * Row sans login_code ⇒ null (omit / fail-closed). Jamais leftover school_code.
+ */
 function mapWeeklyScheduleDto(row) {
   if (!row) return null;
+  const schoolCode = String(row.login_code ?? "").trim();
+  if (!schoolCode) return null;
   return {
     id: row.id,
     schoolCourseId: row.school_course_id,
@@ -117,7 +123,7 @@ function mapWeeklyScheduleDto(row) {
     endTime: formatTimeHm(row.end_time),
     status: row.status,
     schoolId: row.school_id || row.schoolId || "",
-    schoolCode: String(row.login_code ?? "").trim() || String(row.school_code ?? "").trim(),
+    schoolCode,
     countryCode: String(row.country_iso || row.country_code || row.countryCode || "").trim(),
     roomId: row.room_id || null,
     room: row.room_name || row.room || "",
@@ -135,6 +141,10 @@ function mapWeeklyScheduleDto(row) {
   };
 }
 
+function mapWeeklyScheduleDtos(rows) {
+  return (Array.isArray(rows) ? rows : []).map(mapWeeklyScheduleDto).filter(Boolean);
+}
+
 module.exports = {
   DAY_OF_WEEK_MIN,
   DAY_OF_WEEK_MAX,
@@ -146,4 +156,5 @@ module.exports = {
   mapExclusionViolation,
   isExclusionViolation,
   mapWeeklyScheduleDto,
+  mapWeeklyScheduleDtos,
 };
