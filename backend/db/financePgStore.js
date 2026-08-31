@@ -850,7 +850,7 @@ function createFinancePgStore(repo) {
            ORDER BY g.created_at`,
         ),
         repo.all(
-          `SELECT i.*, g.grid_code, s.school_code
+          `SELECT i.*, g.grid_code, s.school_code, s.login_code
            FROM school_fee_items i
            JOIN fee_grids g ON g.id = i.fee_grid_id
            JOIN schools s ON s.id = i.school_id`,

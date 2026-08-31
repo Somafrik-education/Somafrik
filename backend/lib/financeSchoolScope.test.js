@@ -202,6 +202,28 @@ test("GP-005: login_code vide ne promeut pas leftover en financeLoginCode", asyn
   assert.equal(resolveFinanceSchoolScope(attached).mode, "none");
 });
 
+test("GP-005: rôle établissement request-scoped reste membership UUID", async () => {
+  const leftover = "CD-2026-0001";
+  const oldLogin = "CD-LAC-26-001";
+  const newLogin = "CD-NEW-26-001";
+  const one = async (sql) => {
+    if (/FROM users u/i.test(String(sql))) return { login_code: newLogin };
+    throw new Error("FIND request-scoped interdit pour un rôle établissement");
+  };
+  const attached = await attachFinanceMembershipScope(
+    {
+      role: "Comptable",
+      sub: "user-uuid-1",
+      schoolCode: leftover,
+      effectiveSchoolCode: oldLogin,
+      schoolScopeSource: "request",
+    },
+    one,
+  );
+  assert.equal(attached.financeLoginCode, newLogin);
+  assert.notEqual(attached.financeLoginCode, oldLogin);
+});
+
 test("GP-005: Superadmin request-scoped login_code vide fail-closed", async () => {
   const leftover = "CD-2026-0001";
   const one = async () => ({ login_code: "   " });

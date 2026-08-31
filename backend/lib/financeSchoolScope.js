@@ -55,7 +55,8 @@ async function findEmittedLoginCode(requested, one) {
 /**
  * Attache `financeLoginCode` depuis le membership UUID (PostgreSQL).
  * Superadmin / Admin Pays globaux : pas de lookup.
- * Superadmin request-scoped : trouve l'école demandée, n'émet que login_code.
+ * Superadmin / Admin Pays request-scoped : trouve l'école demandée, n'émet que login_code.
+ * Rôle établissement : toujours membership UUID, le header request-scoped n'est pas l'autorité.
  * login_code NULL/vide ⇒ financeLoginCode vide ⇒ mode none.
  * Sans `one` (fixtures mémoire) : fail-closed — utiliser
  * `attachFinanceFixtureScope` côté store mémoire.
@@ -79,7 +80,7 @@ async function attachFinanceMembershipScope(principal, one) {
     return { ...principal, financeLoginCode: "" };
   }
 
-  if (requestScoped) {
+  if ((platform || adminPays) && requestScoped) {
     const requested = tenantScope.normalizeSchoolCode(principal.effectiveSchoolCode);
     if (!requested) return { ...principal, financeLoginCode: "" };
     const loginCode = await findEmittedLoginCode(requested, one);
@@ -115,9 +116,10 @@ function attachFinanceFixtureScope(principal) {
   if ((platform || adminPays) && !requestScoped) {
     return principal;
   }
-  const requested = requestScoped
-    ? tenantScope.normalizeSchoolCode(principal.effectiveSchoolCode)
-    : normalizeLoginCode(principal.schoolCode);
+  const requested =
+    (platform || adminPays) && requestScoped
+      ? tenantScope.normalizeSchoolCode(principal.effectiveSchoolCode)
+      : normalizeLoginCode(principal.schoolCode);
   if (!requested || requested === "*") {
     return { ...principal, financeLoginCode: "" };
   }

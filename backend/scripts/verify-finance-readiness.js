@@ -99,6 +99,12 @@ function sourceGuards() {
   );
   assert.match(attachFn, /SELECT s\.login_code/);
   assert.doesNotMatch(attachFn, /coalesce\(nullif\(btrim\(s\.login_code\)/);
+  assert.match(attachFn, /\(platform \|\| adminPays\) && requestScoped/);
+  const itemsProjection = pgStore.slice(
+    pgStore.indexOf("FROM school_fee_items i"),
+    pgStore.indexOf("FROM student_fee_obligations o"),
+  );
+  assert.match(itemsProjection, /s\.login_code/);
   const findFn = scopeLib.slice(
     scopeLib.indexOf("async function findEmittedLoginCode"),
     scopeLib.indexOf("async function attachFinanceMembershipScope"),
