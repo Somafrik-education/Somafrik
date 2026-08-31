@@ -313,9 +313,7 @@ export function CoursePlanningPage() {
     });
     if (!confirmed) return;
 
-    const previousSchoolSlots = weeklySlots.filter(
-      (row) => normalize(row.schoolCode) === normalize(schoolCode),
-    );
+    const previousSchoolSlots = weeklySlots;
     setSaving(true);
     try {
       await syncSchoolCourseSchedules(previousSchoolSlots, []);
@@ -390,9 +388,7 @@ export function CoursePlanningPage() {
       showToast("Sélectionnez un établissement actif.", "error");
       return;
     }
-    const previousSchoolSlots = weeklySlots.filter(
-      (row) => normalize(row.schoolCode) === normalize(schoolCode),
-    );
+    const previousSchoolSlots = weeklySlots;
     setSaving(true);
     try {
       await syncSchoolCourseSchedules(previousSchoolSlots, nextSchoolSlots);

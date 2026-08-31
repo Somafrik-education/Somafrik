@@ -38,6 +38,8 @@ export interface CourseScheduleSlot {
   periodName?: string;
   periodStart?: string;
   periodEnd?: string;
+  /** UUID membership — autorité tenant, distinct du schoolCode leftover. */
+  schoolId?: string;
   /** DTO canonique Planning V2 — projection, jamais autorité locale. */
   schoolCourseId?: string;
   academicYearId?: string;
@@ -371,7 +373,16 @@ export function scopedCourseSchedules(user: SessionUser | null, state: BackOffic
   const schoolCode = user?.schoolCode;
   const rows = (state.courseSchedules ?? []) as CourseScheduleSlot[];
   if (!schoolCode || schoolCode === "*") return rows;
-  return rows.filter((row) => normalize(row.schoolCode) === normalize(schoolCode));
+  const leftover = normalize(schoolCode);
+  const userSchoolId = String(user?.schoolId ?? "").trim();
+  const matched = rows.filter((row) => {
+    if (userSchoolId && String(row.schoolId ?? "").trim() === userSchoolId) return true;
+    return normalize(row.schoolCode) === leftover;
+  });
+  // GET /api/course-schedules is already tenant-scoped. leftover JWT ≠ login_code
+  // projection must not empty the planning UI (GP-014).
+  if (matched.length === 0 && rows.length > 0) return rows;
+  return matched;
 }
 
 const OCCURRENCE_ID_SUFFIX = "__";

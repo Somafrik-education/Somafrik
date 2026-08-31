@@ -7,6 +7,7 @@ import {
   expandScheduleOccurrences,
   isoWeekdayFromLocalDate,
   mapServerOccurrencesToCalendarEvents,
+  scopedCourseSchedules,
   type CourseScheduleSlot,
 } from "./coursePlanning";
 
@@ -148,5 +149,14 @@ describe("Planning V2 — mapping Web canonique", () => {
     expect(events[0]?.start).toBe("2026-09-07T07:00:00.000Z");
     expect(events[0]?.end).toBe("2026-09-07T08:00:00.000Z");
     expect(events[0]?.extendedProps.id).toBe("slot-1");
+  });
+
+  it("scopedCourseSchedules garde la projection login_code malgré leftover JWT", () => {
+    const user = { role: "Admin School", schoolCode: "CD-2026-0001" } as never;
+    const rows = scopedCourseSchedules(user, {
+      courseSchedules: [{ ...weekly, schoolCode: "CD-LAC-26-001", schoolId: "school-a" }],
+    } as never);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.schoolCode).toBe("CD-LAC-26-001");
   });
 });
