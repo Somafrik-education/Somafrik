@@ -66,9 +66,8 @@ async function ensureCountryGroup(request, superToken, countryCode, code) {
 async function ensureSchoolYear(request, schoolToken, name = "2025-2026", schoolCode, { isCurrent = true } = {}) {
   const listed = await request("/v2/academic-years", { token: schoolToken });
   const rows = extractList(listed.data);
-  const existing = rows.find(
-    (row) => row.name === name && (!schoolCode || !row.schoolCode || row.schoolCode === schoolCode),
-  );
+  const { findExistingAcademicYear } = require("./academicYearReadScope");
+  const existing = findExistingAcademicYear(rows, name, schoolCode);
   if (existing) return existing;
   const yearMatch = String(name).match(/^(\d{4})-(\d{4})$/);
   const startDate = yearMatch ? `${yearMatch[1]}-09-01` : isCurrent ? "2025-09-01" : "2024-09-01";

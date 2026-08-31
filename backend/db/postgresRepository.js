@@ -5463,7 +5463,7 @@ class PostgresRepository {
   async getAcademicYearsV2() {
     await this.init();
     const rows = await this.all(`
-      SELECT ay.*, s.school_code, c.iso_code AS country_code,
+      SELECT ay.*, s.login_code AS school_code, c.iso_code AS country_code,
              COUNT(DISTINCT e.id) AS enrollment_count,
              COUNT(DISTINCT g.id) AS grade_count,
              COUNT(DISTINCT pd.id) AS decision_count
@@ -5474,7 +5474,7 @@ class PostgresRepository {
       LEFT JOIN terms tm ON tm.academic_year_id = ay.id
       LEFT JOIN grades g ON g.term_id = tm.id
       LEFT JOIN promotion_decisions pd ON pd.academic_year_id = ay.id
-      GROUP BY ay.id, s.school_code, c.iso_code
+      GROUP BY ay.id, s.login_code, c.iso_code
       ORDER BY ay.start_date DESC NULLS LAST, ay.created_at DESC
     `);
     return rows.map((row) => this.mapAcademicYearV2(row));

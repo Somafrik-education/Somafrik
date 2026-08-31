@@ -24,6 +24,7 @@ function sliceFrom(src, startNeedle, endNeedle) {
 test("contrat source : GET/POST/PATCH academic-years passent par requirePermission", () => {
   const getBlock = sliceFrom(serverSrc, 'app.get("/api/v2/academic-years"', 'app.post("/api/v2/academic-years"');
   assert.match(getBlock, /requirePermission\("GET \/api\/v2\/academic-years"\)/);
+  assert.match(getBlock, /scopeAcademicYearList/);
   const postBlock = sliceFrom(serverSrc, 'app.post("/api/v2/academic-years"', 'app.patch("/api/v2/academic-years/:id"');
   assert.match(postBlock, /requirePermission\("POST \/api\/v2\/academic-years"\)/);
   assert.match(postBlock, /resolveAcademicYearCreateTenant/);
