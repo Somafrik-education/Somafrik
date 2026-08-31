@@ -12,6 +12,7 @@ const {
   STUDENT_CODE_PLACEHOLDER,
   isStudentCanonicalCode,
 } = require("../lib/studentCanonicalIdentifier");
+const { publicSchoolCodeFromRow } = require("../lib/enrollmentSchoolScope");
 
 const STUDENT_SELECT_COLUMNS = `
   st.id AS student_uuid,
@@ -27,7 +28,8 @@ const STUDENT_SELECT_COLUMNS = `
   st.status,
   st.created_at,
   st.updated_at,
-  s.school_code
+  st.school_id,
+  s.login_code AS school_login_code
 `;
 
 /**
@@ -156,7 +158,8 @@ function createClassStudentsRepository(db) {
       classId: row.class_id ?? row.classId ?? null,
       className: row.class_name ?? "",
       classCode: row.class_code ?? "",
-      schoolCode: row.school_code,
+      schoolId: row.school_id ?? row.schoolId ?? null,
+      schoolCode: publicSchoolCodeFromRow(row),
       parentPhone: row.parent_phone ?? "",
       parentEmail: row.parent_email ?? "",
       status: row.status ?? "active",
@@ -387,7 +390,8 @@ function createClassStudentsRepository(db) {
 
     const mapped = mapStudentRow({
       ...student,
-      school_code: school.school_code ?? schoolCode,
+      school_id: school.id,
+      school_login_code: school.login_code,
       class_id: classRow.id,
       class_code: classRow.class_code,
       class_name: classRow.name,
