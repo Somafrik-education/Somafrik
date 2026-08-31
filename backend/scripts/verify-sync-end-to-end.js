@@ -354,6 +354,15 @@ async function runSyncEndToEnd(databaseUrl) {
     const classCode = String(createdClass.data.classCode ?? "");
     const pgClass = await pool.query(`SELECT count(*)::int AS c FROM classes WHERE class_code = $1`, [classCode]);
     assert.equal(pgClass.rows[0].c, 1, "classes: PostgreSQL");
+    await pool.query(
+      `INSERT INTO teacher_assignments (school_id, teacher_id, class_id, subject_id, academic_year_id, status)
+       SELECT t.school_id, t.id, c.id, s.id, c.academic_year_id, 'active'
+       FROM teachers t
+       JOIN classes c ON c.class_code = $1
+       JOIN subjects s ON s.school_id = t.school_id AND s.subject_code = 'SUB-MATH'
+       WHERE t.teacher_code = 'ENS-SYNC-01'`,
+      [classCode],
+    );
     let classesGet = await assertReloadStable(
       "classes",
       () => request("/classes", { token: adminToken }),
@@ -384,9 +393,10 @@ async function runSyncEndToEnd(databaseUrl) {
     );
 
     // --- Notes / Présences (évaluation requise) ---
+    // GP-001 : POST /evaluations = Notes:CREATE. Admin School n'a que Modifier notes (UPDATE).
     const evaluation = await request("/evaluations", {
       method: "POST",
-      token: adminToken,
+      token: prefetToken,
       body: {
         className: createdClass.data.name,
         subject: "Mathématiques",
