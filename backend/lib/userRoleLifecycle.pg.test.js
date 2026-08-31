@@ -87,12 +87,28 @@ async function main() {
        VALUES ($1, 'CD-2026-0001', 'Institut Kibwija', 'active')`,
       [country.rows[0].id],
     );
-    const schoolRow = await pool.query(`SELECT id, short_code FROM schools WHERE school_code = 'CD-2026-0001'`);
+    const schoolRow = await pool.query(
+      `SELECT id, short_code, login_code FROM schools WHERE school_code = 'CD-2026-0001'`,
+    );
     assert.equal(schoolRow.rows[0].short_code, "IK", "code court établissement dérivé une seule fois");
+    const schoolLogin = String(schoolRow.rows[0].login_code ?? "").trim().toUpperCase();
+    assert.ok(schoolLogin, "login_code établissement requis pour le membership Users");
+
+    const actor = await pool.query(
+      `INSERT INTO users (school_id, user_code, first_name, last_name, email, role, status)
+       VALUES ($1, 'USR-ACTOR-LC', 'Admin', 'Kibwija', 'admin.lifecycle.pg@test.local', 'Admin School', 'active')
+       RETURNING id`,
+      [schoolRow.rows[0].id],
+    );
 
     const repo = createRepo(pool);
     const store = createClientsPgStore(repo);
-    const principal = { role: "Admin School", schoolCode: "CD-2026-0001", identifier: "admin" };
+    const principal = {
+      sub: actor.rows[0].id,
+      role: "Admin School",
+      schoolCode: "CD-2026-0001",
+      identifier: "admin",
+    };
     const auditMeta = { ipAddress: "127.0.0.1", userAgent: "pg-lifecycle" };
 
     const created = await store.createUser(

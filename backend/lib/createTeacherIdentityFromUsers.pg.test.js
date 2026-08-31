@@ -114,9 +114,24 @@ async function main() {
        VALUES ($1, 'CD-2026-0001', 'Institut Kibwija', 'active')`,
       [country.rows[0].id],
     );
+    const schoolRow = await pool.query(
+      `SELECT id, login_code FROM schools WHERE school_code = 'CD-2026-0001'`,
+    );
+    assert.ok(String(schoolRow.rows[0].login_code ?? "").trim(), "login_code établissement requis");
+    const actor = await pool.query(
+      `INSERT INTO users (school_id, user_code, first_name, last_name, email, role, status)
+       VALUES ($1, 'USR-ACTOR-CT', 'Admin', 'Kibwija', 'admin.create-teacher.pg@test.local', 'Admin School', 'active')
+       RETURNING id`,
+      [schoolRow.rows[0].id],
+    );
 
     const repository = createRepository(pool);
-    const principal = { role: "Admin School", schoolCode: "CD-2026-0001", identifier: "admin" };
+    const principal = {
+      sub: actor.rows[0].id,
+      role: "Admin School",
+      schoolCode: "CD-2026-0001",
+      identifier: "admin",
+    };
     const auditMeta = { ipAddress: "127.0.0.1", userAgent: "pg-create-teacher-atomic" };
     const civil = {
       firstName: "Awa",
@@ -125,6 +140,7 @@ async function main() {
       gender: "F",
     };
 
+    const beforeCreate = await counts(pool);
     const created = await createTeacherIdentityFromUsers(
       repository,
       {
@@ -142,10 +158,10 @@ async function main() {
     assert.ok((created.user.roleKeys ?? []).includes("TEACHER"));
 
     const afterSuccess = await counts(pool);
-    assert.equal(afterSuccess.users, 1);
-    assert.equal(afterSuccess.user_roles, 1);
-    assert.equal(afterSuccess.teachers, 1);
-    assert.ok(afterSuccess.audit_logs >= 2, "create_user + grant_role audités");
+    assert.equal(afterSuccess.users, beforeCreate.users + 1);
+    assert.equal(afterSuccess.user_roles, beforeCreate.user_roles + 1);
+    assert.equal(afterSuccess.teachers, beforeCreate.teachers + 1);
+    assert.ok(afterSuccess.audit_logs >= beforeCreate.audit_logs + 2, "create_user + grant_role audités");
 
     await assert.rejects(
       () =>

@@ -70,8 +70,8 @@ async function seedSchool(pool) {
      VALUES ('RDC', 'CD', '+243', 'CDF') RETURNING id`,
   );
   const school = await pool.query(
-    `INSERT INTO schools (country_id, school_code, name, status)
-     VALUES ($1, 'CD-2026-0001', 'Test', 'active') RETURNING id`,
+    `INSERT INTO schools (country_id, school_code, login_code, name, status)
+     VALUES ($1, 'CD-2026-0001', 'CD-TEST-26-001', 'Test', 'active') RETURNING id`,
     [country.rows[0].id],
   );
   const student = await pool.query(
@@ -79,7 +79,13 @@ async function seedSchool(pool) {
      VALUES ($1, 'STU-ID-1', 'Jean', 'Kabila', 'active') RETURNING id`,
     [school.rows[0].id],
   );
-  return { schoolId: school.rows[0].id, studentId: student.rows[0].id };
+  const actor = await pool.query(
+    `INSERT INTO users (school_id, user_code, first_name, last_name, email, role, status)
+     VALUES ($1, 'USR-ACTOR', 'Admin', 'Actor', 'actor.school@test', 'Admin School', 'active')
+     RETURNING id`,
+    [school.rows[0].id],
+  );
+  return { schoolId: school.rows[0].id, studentId: student.rows[0].id, actorId: actor.rows[0].id };
 }
 
 async function resetSchema(pool) {
@@ -182,7 +188,7 @@ async function main() {
     await testEnsureRejectsLegacyDuplicates(pool, db);
 
     await resetSchema(pool);
-    const { schoolId } = await seedSchool(pool);
+    const { schoolId, actorId } = await seedSchool(pool);
 
     // Actif + archivé même email → inventaire 0 doublon, boot/index OK
     await pool.query(
@@ -205,7 +211,12 @@ async function main() {
     await ensureUsersLoginIdentityConstraints(db);
 
     const store = createClientsPgStore(db);
-    const principal = { role: "Admin School", schoolCode: "CD-2026-0001", identifier: "admin" };
+    const principal = {
+      sub: actorId,
+      role: "Admin School",
+      schoolCode: "CD-2026-0001",
+      identifier: "admin",
+    };
     const auditMeta = { ipAddress: "127.0.0.1", userAgent: "test" };
 
     // Après archivage du compte actif, réutilisation de l'email → création OK
