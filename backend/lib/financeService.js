@@ -95,6 +95,26 @@ function resolveActorSchoolCode(principal, rawPayload = {}) {
   return requested;
 }
 
+async function loadSchoolForWrite(tx, schoolCode, principal) {
+  const scope = resolveFinanceSchoolScope(principal);
+  if (scope.mode === "schools") {
+    return tx.getSchoolByCode(primaryFinanceSchoolCode(principal));
+  }
+  const requested = asTrimmed(schoolCode);
+  if (!requested) return null;
+  if (typeof tx.resolveSchoolForScopedWrite === "function") {
+    return tx.resolveSchoolForScopedWrite(requested, scope.mode === "country" ? scope.countryCode : "");
+  }
+  const school = await tx.getSchoolByCode(requested);
+  if (!school) return null;
+  if (!asTrimmed(school.loginCode || school.login_code)) return null;
+  if (scope.mode === "country") {
+    const iso = String(school.countryIso || "").trim().toUpperCase();
+    if (iso !== scope.countryCode) return null;
+  }
+  return school;
+}
+
 function actorName(principal) {
   return `${principal?.firstName ?? ""} ${principal?.lastName ?? ""}`.trim() || principal?.identifier || principal?.role;
 }
@@ -662,14 +682,16 @@ async function upsertFeeGrid(store, rawPayload, principal) {
   }
 
   return store.withTransaction(async (tx) => {
-    const school = await tx.getSchoolByCode(schoolCode);
+    const school = await loadSchoolForWrite(tx, schoolCode, principal);
     if (!school) throw createFinanceError(404, "Établissement introuvable", FINANCE_ERROR.TENANT_MISMATCH);
     assertTenant(principal, school);
+    const publicCode = asTrimmed(school.loginCode || school.login_code);
+    if (!publicCode) throw createFinanceError(404, "Établissement introuvable", FINANCE_ERROR.TENANT_MISMATCH);
     const klass = await resolveGridClass(tx, school, payload);
     const grid = await tx.upsertGrid({
       id: payload.id,
       schoolId: school.id,
-      schoolCode,
+      schoolCode: publicCode,
       classId: klass.classId,
       classCode: klass.classCode || "",
       className: klass.className || className,
@@ -686,7 +708,7 @@ async function upsertFeeGrid(store, rawPayload, principal) {
       ...item,
       feeType: persistableFeeType(item.feeType || item.fee_type),
       schoolId: school.id,
-      schoolCode,
+      schoolCode: publicCode,
     })));
     await tx.insertTariffHistory({
       schoolId: school.id,

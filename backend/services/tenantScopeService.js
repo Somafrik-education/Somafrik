@@ -95,6 +95,7 @@ class TenantScopeService {
         principal.effectiveSchoolCode,
         principal.effectiveSchoolInternalCode,
         principal.schoolCode,
+        principal.financeLoginCode,
       ]
         .map((value) => this.normalizeSchoolCode(value))
         .filter((value) => value && value !== "*"),

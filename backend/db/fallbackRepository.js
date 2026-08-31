@@ -2707,23 +2707,31 @@ class FallbackRepository {
     if (!this._financeStore) {
       const { createFinanceMemoryStore } = require("./financeMemoryStore");
       const { studentMatches, studentMatchesClassScope } = require("../lib/financeManagement");
-      const { resolveFinanceSchoolScope, schoolRecordInFinanceScope } = require("../lib/financeSchoolScope");
+      const { resolveFinanceSchoolScope, schoolRecordInFinanceScope, attachFinanceFixtureScope } = require("../lib/financeSchoolScope");
+      const fixtureSchoolRecord = (row) => {
+        const schoolCode = String(row?.schoolCode || row?.school_code || "").trim();
+        if (!schoolCode) return row;
+        return { ...row, login_code: schoolCode, loginCode: schoolCode };
+      };
       this._financeStore = createFinanceMemoryStore({
         getSchoolByCode: async (code) => {
           const normalized = String(code ?? "").trim().toUpperCase();
           return (
-            this._establishmentStore().find(
-              (row) => String(row.code ?? row.publicId ?? "").trim().toUpperCase() === normalized,
-            ) || null
+            this._establishmentStore().find((row) => {
+              const keys = [row.loginCode, row.login_code, row.publicId, row.code, row.schoolCode, row.school_code]
+                .map((value) => String(value ?? "").trim().toUpperCase())
+                .filter(Boolean);
+              return keys.includes(normalized);
+            }) || null
           );
         },
         findStudent: async (studentKey, principal) => {
           const dataset = await this.getDataset();
-          const scope = resolveFinanceSchoolScope(principal);
+          const scope = resolveFinanceSchoolScope(attachFinanceFixtureScope(principal));
           if (scope.mode === "none") return null;
           const student =
             (dataset.students ?? []).find((row) => {
-              if (principal && !schoolRecordInFinanceScope(row, scope)) {
+              if (principal && !schoolRecordInFinanceScope(fixtureSchoolRecord(row), scope)) {
                 return false;
               }
               return studentMatches(row, studentKey);
@@ -2736,10 +2744,30 @@ class FallbackRepository {
         },
         listStudentsInClass: async (schoolCode, classRef) => {
           const dataset = await this.getDataset();
+          const requested = String(schoolCode ?? "").trim().toUpperCase();
+          const school = this._establishmentStore().find((row) => {
+            const keys = [row.loginCode, row.login_code, row.publicId, row.code, row.schoolCode, row.school_code]
+              .map((value) => String(value ?? "").trim().toUpperCase())
+              .filter(Boolean);
+            return keys.includes(requested);
+          });
+          const aliases = new Set(
+            [
+              requested,
+              school?.loginCode,
+              school?.login_code,
+              school?.publicId,
+              school?.code,
+              school?.schoolCode,
+              school?.school_code,
+            ]
+              .map((value) => String(value ?? "").trim().toUpperCase())
+              .filter(Boolean),
+          );
           return (dataset.students ?? [])
             .filter(
               (student) =>
-                String(student.schoolCode ?? "").toUpperCase() === String(schoolCode).toUpperCase() &&
+                aliases.has(String(student.schoolCode ?? "").toUpperCase()) &&
                 studentMatchesClassScope(student, classRef),
             )
             .map((student) => ({
@@ -2749,9 +2777,11 @@ class FallbackRepository {
         },
         listSchoolStudents: async (principal) => {
           const dataset = await this.getDataset();
-          const scope = resolveFinanceSchoolScope(principal);
+          const scope = resolveFinanceSchoolScope(attachFinanceFixtureScope(principal));
           if (scope.mode === "none") return [];
-          return (dataset.students ?? []).filter((student) => schoolRecordInFinanceScope(student, scope));
+          return (dataset.students ?? []).filter((student) =>
+            schoolRecordInFinanceScope(fixtureSchoolRecord(student), scope),
+          );
         },
       });
     }

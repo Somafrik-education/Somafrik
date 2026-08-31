@@ -98,13 +98,13 @@ async function main() {
        VALUES ('RDC','CD','+243','CDF') RETURNING id`,
     );
     const schoolA = await pool.query(
-      `INSERT INTO schools (country_id, school_code, name, status)
-       VALUES ($1,'CD-2026-F4A','École F4 A','active') RETURNING id`,
+      `INSERT INTO schools (country_id, school_code, login_code, name, status)
+       VALUES ($1,'CD-2026-F4A','CD-2026-F4A','École F4 A','active') RETURNING id`,
       [country.rows[0].id],
     );
     const schoolB = await pool.query(
-      `INSERT INTO schools (country_id, school_code, name, status)
-       VALUES ($1,'CD-2026-F4B','École F4 B','active') RETURNING id`,
+      `INSERT INTO schools (country_id, school_code, login_code, name, status)
+       VALUES ($1,'CD-2026-F4B','CD-2026-F4B','École F4 B','active') RETURNING id`,
       [country.rows[0].id],
     );
     const yearA = await pool.query(

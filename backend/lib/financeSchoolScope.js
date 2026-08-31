@@ -1,9 +1,130 @@
 "use strict";
 
+/**
+ * Autorité Finance (GP-005) :
+ * principal.sub → users.id → users.school_id → schools.id → schools.login_code
+ * Le JWT schoolCode leftover n'est plus l'autorité. login_code vide ⇒ fail-closed.
+ * Aucun repli PostgreSQL vers schools.school_code.
+ */
+
 const { TenantScopeService } = require("../services/tenantScopeService");
 
 const SUPER_ADMIN_ROLES = new Set(["Super Administrateur Somafrik", "Super Administrateur OKAFRIK"]);
 const tenantScope = new TenantScopeService();
+
+function normalizeLoginCode(value) {
+  return String(value ?? "")
+    .trim()
+    .toUpperCase();
+}
+
+function publicSchoolCodeFromRow(row = {}, profile = {}) {
+  return normalizeLoginCode(
+    row.login_code || row.loginCode || row.schoolLoginCode || row.code || profile.loginCode || row.schoolCode,
+  );
+}
+
+/**
+ * Trouve une école par le code demandé (login_code, sinon leftover JWT
+ * en clé de recherche séparée) et n'émet que login_code.
+ * NULL/vide ⇒ '' (fail-closed). Pas un prédicat de scope.
+ * Deux requêtes distinctes : aucun OR/coalesce login_code/school_code.
+ */
+async function findEmittedLoginCode(requested, one) {
+  const code = normalizeLoginCode(requested);
+  if (!code || code === "*" || typeof one !== "function") return "";
+  const byLogin = await one(
+    `SELECT login_code
+     FROM schools
+     WHERE upper(btrim(login_code)) = $1
+     LIMIT 1`,
+    [code],
+  );
+  const emitted = normalizeLoginCode(byLogin?.login_code);
+  if (emitted) return emitted;
+  const leftoverHit = await one(
+    `SELECT login_code
+     FROM schools
+     WHERE upper(btrim(school_code)) = $1
+     LIMIT 1`,
+    [code],
+  );
+  return normalizeLoginCode(leftoverHit?.login_code);
+}
+
+/**
+ * Attache `financeLoginCode` depuis le membership UUID (PostgreSQL).
+ * Superadmin / Admin Pays globaux : pas de lookup.
+ * Superadmin / Admin Pays request-scoped : trouve l'école demandée, n'émet que login_code.
+ * Rôle établissement : toujours membership UUID, le header request-scoped n'est pas l'autorité.
+ * login_code NULL/vide ⇒ financeLoginCode vide ⇒ mode none.
+ * Sans `one` (fixtures mémoire) : fail-closed — utiliser
+ * `attachFinanceFixtureScope` côté store mémoire.
+ */
+async function attachFinanceMembershipScope(principal, one) {
+  if (!principal) return principal;
+  const existing = normalizeLoginCode(principal.financeLoginCode);
+  if (existing && existing !== "*") {
+    return principal;
+  }
+
+  const platform = SUPER_ADMIN_ROLES.has(principal.role);
+  const adminPays = principal.role === "Admin Pays";
+  const requestScoped = tenantScope.hasEffectiveSchoolScope(principal);
+
+  if ((platform || adminPays) && !requestScoped) {
+    return principal;
+  }
+
+  if (typeof one !== "function") {
+    return { ...principal, financeLoginCode: "" };
+  }
+
+  if ((platform || adminPays) && requestScoped) {
+    const requested = tenantScope.normalizeSchoolCode(principal.effectiveSchoolCode);
+    if (!requested) return { ...principal, financeLoginCode: "" };
+    const loginCode = await findEmittedLoginCode(requested, one);
+    return { ...principal, financeLoginCode: loginCode };
+  }
+
+  const userId = String(principal.sub ?? "").trim();
+  if (!userId) return { ...principal, financeLoginCode: "" };
+  const row = await one(
+    `SELECT s.login_code
+     FROM users u
+     INNER JOIN schools s ON s.id = u.school_id
+     WHERE u.id::text = $1
+     LIMIT 1`,
+    [userId],
+  );
+  return { ...principal, financeLoginCode: normalizeLoginCode(row?.login_code) };
+}
+
+/**
+ * Store mémoire : une seule identité par établissement (le schoolCode du
+ * fixture EST le login_code). Ne jamais utiliser en PostgreSQL.
+ */
+function attachFinanceFixtureScope(principal) {
+  if (!principal) return principal;
+  const existing = normalizeLoginCode(principal.financeLoginCode);
+  if (existing && existing !== "*") {
+    return principal;
+  }
+  const platform = SUPER_ADMIN_ROLES.has(principal.role);
+  const adminPays = principal.role === "Admin Pays";
+  const requestScoped = tenantScope.hasEffectiveSchoolScope(principal);
+  if ((platform || adminPays) && !requestScoped) {
+    return principal;
+  }
+  const requested =
+    (platform || adminPays) && requestScoped
+      ? tenantScope.normalizeSchoolCode(principal.effectiveSchoolCode)
+      : normalizeLoginCode(principal.schoolCode);
+  if (!requested || requested === "*") {
+    return { ...principal, financeLoginCode: "" };
+  }
+  return { ...principal, financeLoginCode: requested };
+}
 
 function resolveFinanceSchoolScope(principal) {
   if (!principal) {
@@ -18,9 +139,11 @@ function resolveFinanceSchoolScope(principal) {
     if (!countryCode) return { mode: "none" };
     return { mode: "country", countryCode };
   }
-  const codes = [...tenantScope.principalSchoolCodes(principal)];
-  if (!codes.length) return { mode: "none" };
-  return { mode: "schools", codes };
+  const membership = normalizeLoginCode(principal.financeLoginCode);
+  if (membership && membership !== "*") {
+    return { mode: "schools", codes: [membership] };
+  }
+  return { mode: "none" };
 }
 
 function sqlSchoolPredicate(alias, scope, params) {
@@ -35,7 +158,7 @@ function sqlSchoolPredicate(alias, scope, params) {
     )`;
   }
   params.push(scope.codes);
-  return `${alias}.school_code = ANY($${params.length}::text[])`;
+  return `upper(btrim(${alias}.login_code)) = ANY($${params.length}::text[])`;
 }
 
 function countryIsoFromRecord(record) {
@@ -55,7 +178,7 @@ function schoolCodeInScope(schoolCode, scope, extras = {}) {
     if (!/^[A-Z]{2}$/.test(iso)) return false;
     return iso === scope.countryCode;
   }
-  const code = String(schoolCode || "").trim().toUpperCase();
+  const code = normalizeLoginCode(schoolCode);
   if (!code) return false;
   return scope.codes.includes(code);
 }
@@ -67,7 +190,9 @@ function schoolRecordInFinanceScope(record, scope) {
     const iso = countryIsoFromRecord(record);
     return Boolean(iso) && iso === scope.countryCode;
   }
-  return schoolCodeInScope(record?.schoolCode || record?.school_code || record?.code, scope);
+  const publicCode = publicSchoolCodeFromRow(record);
+  if (!publicCode) return false;
+  return schoolCodeInScope(publicCode, scope);
 }
 
 function primaryFinanceSchoolCode(principal) {
@@ -79,10 +204,14 @@ function primaryFinanceSchoolCode(principal) {
 }
 
 module.exports = {
+  attachFinanceMembershipScope,
+  attachFinanceFixtureScope,
   resolveFinanceSchoolScope,
   sqlSchoolPredicate,
   schoolCodeInScope,
   schoolRecordInFinanceScope,
   countryIsoFromRecord,
   primaryFinanceSchoolCode,
+  publicSchoolCodeFromRow,
+  findEmittedLoginCode,
 };

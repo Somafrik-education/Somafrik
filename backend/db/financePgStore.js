@@ -22,7 +22,16 @@ const {
 const { decoratePaymentWithItems } = require("../lib/financePaymentItems");
 const { projectObligationPaidAmounts } = require("../lib/financeObligationPaid");
 const { projectPaymentsWithAllocations, projectPaymentCash } = require("../lib/financeUnallocatedCash");
-const { resolveFinanceSchoolScope, sqlSchoolPredicate, primaryFinanceSchoolCode } = require("../lib/financeSchoolScope");
+const {
+  attachFinanceMembershipScope,
+  resolveFinanceSchoolScope,
+  sqlSchoolPredicate,
+  primaryFinanceSchoolCode,
+} = require("../lib/financeSchoolScope");
+
+function publicSchoolCode(row) {
+  return asTrimmed(row?.login_code || row?.code);
+}
 const {
   foldPaymentStudentOptions,
   resolveCatalogPaymentMethods,
@@ -33,6 +42,10 @@ const {
 const financeService = require("../lib/financeService");
 
 function createFinancePgStore(repo) {
+  async function withFinancePrincipal(principal) {
+    return attachFinanceMembershipScope(principal, (sql, params) => repo.one(sql, params));
+  }
+
   function bind(client) {
     const one = (sql, params) => (client.one ? client.one(sql, params) : repo.one(sql, params));
     const all = (sql, params) => (client.all ? client.all(sql, params) : repo.all(sql, params));
@@ -44,31 +57,77 @@ function createFinancePgStore(repo) {
           `SELECT s.*, c.currency AS country_currency, c.iso_code AS country_iso
            FROM schools s
            JOIN countries c ON c.id = s.country_id
-           WHERE s.school_code = $1`,
+           WHERE upper(btrim(s.login_code)) = $1
+           LIMIT 1`,
           [asTrimmed(code).toUpperCase()],
         );
+        return this.mapSchoolRow(row);
+      },
+      async mapSchoolRow(row) {
         if (!row) return null;
         const profile = parsePayload(row.profile_payload);
         const currency = String(profile.currency || row.currency || row.country_currency || "").trim().toUpperCase();
+        const login = asTrimmed(row.login_code);
+        if (!login) return null;
         return {
           ...row,
-          code: row.school_code,
+          code: login,
+          loginCode: login,
+          schoolCode: login,
           countryIso: String(row.country_iso || "").trim().toUpperCase(),
           currency,
           currencySource: profile.currency ? "school" : "country",
         };
+      },
+      async resolveSchoolForScopedWrite(requested, countryCode) {
+        const code = asTrimmed(requested).toUpperCase();
+        if (!code) return null;
+        let row = await one(
+          `SELECT s.*, c.currency AS country_currency, c.iso_code AS country_iso
+           FROM schools s
+           JOIN countries c ON c.id = s.country_id
+           WHERE upper(btrim(s.login_code)) = $1
+           LIMIT 1`,
+          [code],
+        );
+        if (!row) {
+          const alias = await one(
+            `SELECT login_code
+             FROM schools
+             WHERE upper(btrim(school_code)) = $1
+             LIMIT 1`,
+            [code],
+          );
+          const login = asTrimmed(alias?.login_code);
+          if (!login) return null;
+          row = await one(
+            `SELECT s.*, c.currency AS country_currency, c.iso_code AS country_iso
+             FROM schools s
+             JOIN countries c ON c.id = s.country_id
+             WHERE upper(btrim(s.login_code)) = $1
+             LIMIT 1`,
+            [login.toUpperCase()],
+          );
+        }
+        const mapped = await this.mapSchoolRow(row);
+        if (!mapped) return null;
+        if (countryCode) {
+          const iso = String(mapped.countryIso || "").trim().toUpperCase();
+          if (iso !== String(countryCode).trim().toUpperCase()) return null;
+        }
+        return mapped;
       },
       async findStudent(studentKey, principal) {
         const key = asTrimmed(studentKey);
         const params = [key, key];
         let pred = "TRUE";
         if (principal) {
-          const scope = resolveFinanceSchoolScope(principal);
+          const scope = resolveFinanceSchoolScope(await attachFinanceMembershipScope(principal, one));
           if (scope.mode === "none") return null;
           pred = sqlSchoolPredicate("s", scope, params);
         }
         const sql = `
-          SELECT st.*, s.school_code, ctry.iso_code AS country_iso, cl.name AS class_name
+          SELECT st.*, s.school_code, s.login_code, ctry.iso_code AS country_iso, cl.name AS class_name
           FROM students st
           JOIN schools s ON s.id = st.school_id
           JOIN countries ctry ON ctry.id = s.country_id
@@ -89,7 +148,7 @@ function createFinancePgStore(repo) {
           firstName: row.first_name,
           lastName: row.last_name,
           name: `${row.first_name ?? ""} ${row.last_name ?? ""}`.trim(),
-          schoolCode: row.school_code,
+          schoolCode: publicSchoolCode(row),
           countryIso: String(row.country_iso || "").trim().toUpperCase(),
           className: row.class_name || profile.className || "",
         };
@@ -129,7 +188,7 @@ function createFinancePgStore(repo) {
       },
       async listApplicableFeeGrids({ schoolId, classId, className, academicYear }) {
         const rows = await all(
-          `SELECT g.*, s.school_code, cl.class_code
+          `SELECT g.*, s.school_code, s.login_code, cl.class_code
            FROM fee_grids g
            JOIN schools s ON s.id = g.school_id
            LEFT JOIN classes cl ON cl.id = g.class_id
@@ -148,7 +207,7 @@ function createFinancePgStore(repo) {
         const key = asTrimmed(classId);
         if (!key) return null;
         const row = await one(
-          `SELECT cl.id, cl.school_id, cl.class_code, cl.name, s.school_code
+          `SELECT cl.id, cl.school_id, cl.class_code, cl.name, s.school_code, s.login_code
            FROM classes cl
            JOIN schools s ON s.id = cl.school_id
            WHERE cl.id::text = $1
@@ -161,14 +220,14 @@ function createFinancePgStore(repo) {
           schoolId: row.school_id,
           classCode: row.class_code || "",
           className: row.name || "",
-          schoolCode: row.school_code,
+          schoolCode: publicSchoolCode(row),
         };
       },
       async getClassByCode(classCode, schoolId) {
         const key = asTrimmed(classCode);
         if (!key) return null;
         const row = await one(
-          `SELECT cl.id, cl.school_id, cl.class_code, cl.name, s.school_code
+          `SELECT cl.id, cl.school_id, cl.class_code, cl.name, s.school_code, s.login_code
            FROM classes cl
            JOIN schools s ON s.id = cl.school_id
            WHERE cl.school_id = $1 AND upper(btrim(cl.class_code)) = upper(btrim($2))
@@ -181,7 +240,7 @@ function createFinancePgStore(repo) {
           schoolId: row.school_id,
           classCode: row.class_code || "",
           className: row.name || "",
-          schoolCode: row.school_code,
+          schoolCode: publicSchoolCode(row),
         };
       },
       async findUniqueClassBySchoolYearName(schoolId, academicYear, className) {
@@ -189,7 +248,7 @@ function createFinancePgStore(repo) {
         if (!name) return null;
         const year = asTrimmed(academicYear);
         const rows = await all(
-          `SELECT cl.id, cl.school_id, cl.class_code, cl.name, s.school_code
+          `SELECT cl.id, cl.school_id, cl.class_code, cl.name, s.school_code, s.login_code
            FROM classes cl
            JOIN schools s ON s.id = cl.school_id
            JOIN academic_years ay ON ay.id = cl.academic_year_id
@@ -205,7 +264,7 @@ function createFinancePgStore(repo) {
           schoolId: row.school_id,
           classCode: row.class_code || "",
           className: row.name || "",
-          schoolCode: row.school_code,
+          schoolCode: publicSchoolCode(row),
         };
       },
       async listStudentsInClass(schoolCode, classRef) {
@@ -214,14 +273,14 @@ function createFinancePgStore(repo) {
           throw createFinanceError(400, "Identifiant de classe canonique requis (classId ou classCode).", FINANCE_ERROR.CLASS_REQUIRED);
         }
         const rows = await all(
-          `SELECT st.*, s.school_code, cl.id AS class_id, cl.class_code, cl.name AS class_name,
+          `SELECT st.*, s.school_code, s.login_code, cl.id AS class_id, cl.class_code, cl.name AS class_name,
                   ay.name AS academic_year
            FROM students st
            JOIN schools s ON s.id = st.school_id
            JOIN enrollments e ON e.student_id = st.id AND e.status = 'active'
            JOIN classes cl ON cl.id = e.class_id
            LEFT JOIN academic_years ay ON ay.id = e.academic_year_id
-           WHERE s.school_code = $1
+           WHERE upper(btrim(s.login_code)) = $1
              AND (
                ($2::text <> '' AND e.class_id::text = $2)
                OR ($2::text = '' AND $3::text <> '' AND upper(btrim(cl.class_code)) = upper(btrim($3)))
@@ -238,7 +297,7 @@ function createFinancePgStore(repo) {
             firstName: row.first_name,
             lastName: row.last_name,
             name: `${row.first_name ?? ""} ${row.last_name ?? ""}`.trim(),
-            schoolCode: row.school_code,
+            schoolCode: publicSchoolCode(row),
             schoolId: row.school_id,
             classId: row.class_id,
             classCode: row.class_code || "",
@@ -253,7 +312,7 @@ function createFinancePgStore(repo) {
       },
       async listCountedPayments(schoolId, { studentDbId } = {}) {
         const rows = await all(
-          `SELECT p.*, s.school_code, st.student_code
+          `SELECT p.*, s.school_code, s.login_code, st.student_code
            FROM payments p
            JOIN schools s ON s.id = p.school_id
            JOIN students st ON st.id = p.student_id
@@ -335,7 +394,7 @@ function createFinancePgStore(repo) {
       },
       async getSchoolFeeItemById(feeItemId, schoolId) {
         const row = await one(
-          `SELECT i.*, g.grid_code, s.school_code
+          `SELECT i.*, g.grid_code, s.school_code, s.login_code
            FROM school_fee_items i
            JOIN fee_grids g ON g.id = i.fee_grid_id
            JOIN schools s ON s.id = i.school_id
@@ -347,7 +406,7 @@ function createFinancePgStore(repo) {
       },
       async getSchoolFeeItemByIdAnySchool(feeItemId) {
         const row = await one(
-          `SELECT i.*, g.grid_code, s.school_code
+          `SELECT i.*, g.grid_code, s.school_code, s.login_code
            FROM school_fee_items i
            JOIN fee_grids g ON g.id = i.fee_grid_id
            JOIN schools s ON s.id = i.school_id
@@ -361,12 +420,12 @@ function createFinancePgStore(repo) {
         const params = [code, code];
         let pred = "TRUE";
         if (principal) {
-          const scope = resolveFinanceSchoolScope(principal);
+          const scope = resolveFinanceSchoolScope(await attachFinanceMembershipScope(principal, one));
           if (scope.mode === "none") return null;
           pred = sqlSchoolPredicate("s", scope, params);
         }
         let sql = `
-          SELECT p.*, s.school_code, st.student_code, ctry.iso_code AS country_iso
+          SELECT p.*, s.school_code, s.login_code, st.student_code, ctry.iso_code AS country_iso
           FROM payments p
           JOIN schools s ON s.id = p.school_id
           JOIN countries ctry ON ctry.id = s.country_id
@@ -407,10 +466,15 @@ function createFinancePgStore(repo) {
         );
         const persisted = row || await one("SELECT * FROM payments WHERE id = $1", [dbId]);
         if (!persisted) throw createFinanceError(404, "Paiement introuvable.", FINANCE_ERROR.PAYMENT_NOT_FOUND);
-        const school = await one("SELECT school_code FROM schools WHERE id = $1", [persisted.school_id]);
+        const school = await one("SELECT school_code, login_code FROM schools WHERE id = $1", [persisted.school_id]);
         const student = await one("SELECT student_code FROM students WHERE id = $1", [persisted.student_id]);
         return {
-          payment: mapPaymentRow({ ...persisted, school_code: school?.school_code, student_code: student?.student_code }),
+          payment: mapPaymentRow({
+            ...persisted,
+            school_code: publicSchoolCode(school),
+            login_code: school?.login_code,
+            student_code: student?.student_code,
+          }),
           cancelledNow: Boolean(row),
         };
       },
@@ -435,7 +499,7 @@ function createFinancePgStore(repo) {
       },
       async listObligationsByStudent(schoolId, studentDbId, { lock } = {}) {
         const sql = `
-          SELECT o.*, s.school_code, st.student_code
+          SELECT o.*, s.school_code, s.login_code, st.student_code
           FROM student_fee_obligations o
           JOIN schools s ON s.id = o.school_id
           JOIN students st ON st.id = o.student_id
@@ -447,7 +511,7 @@ function createFinancePgStore(repo) {
       },
       async getObligation(id) {
         const row = await one(
-          `SELECT o.*, s.school_code, st.student_code
+          `SELECT o.*, s.school_code, s.login_code, st.student_code
            FROM student_fee_obligations o
            JOIN schools s ON s.id = o.school_id
            JOIN students st ON st.id = o.student_id
@@ -460,12 +524,12 @@ function createFinancePgStore(repo) {
         const params = [id];
         let pred = "TRUE";
         if (principal) {
-          const scope = resolveFinanceSchoolScope(principal);
+          const scope = resolveFinanceSchoolScope(await attachFinanceMembershipScope(principal, one));
           if (scope.mode === "none") return null;
           pred = sqlSchoolPredicate("s", scope, params);
         }
         const row = await one(
-          `SELECT o.*, s.school_code, st.student_code, ctry.iso_code AS country_iso
+          `SELECT o.*, s.school_code, s.login_code, st.student_code, ctry.iso_code AS country_iso
            FROM student_fee_obligations o
            JOIN schools s ON s.id = o.school_id
            JOIN countries ctry ON ctry.id = s.country_id
@@ -582,18 +646,18 @@ function createFinancePgStore(repo) {
             JSON.stringify(input),
           ],
         );
-        return mapGridRow({ ...row, school_code: input.schoolCode });
+        return mapGridRow({ ...row, school_code: input.schoolCode, login_code: input.schoolCode });
       },
       async getGrid(gridId, principal) {
         const params = [gridId];
         let pred = "TRUE";
         if (principal) {
-          const scope = resolveFinanceSchoolScope(principal);
+          const scope = resolveFinanceSchoolScope(await attachFinanceMembershipScope(principal, one));
           if (scope.mode === "none") return null;
           pred = sqlSchoolPredicate("s", scope, params);
         }
         const row = await one(
-          `SELECT g.*, s.school_code, ctry.iso_code AS country_iso FROM fee_grids g
+          `SELECT g.*, s.school_code, s.login_code, ctry.iso_code AS country_iso FROM fee_grids g
            JOIN schools s ON s.id = g.school_id
            JOIN countries ctry ON ctry.id = s.country_id
            WHERE (g.grid_code = $1 OR g.id::text = $1)
@@ -609,11 +673,16 @@ function createFinancePgStore(repo) {
           [dbId, status],
         );
         const school = await one(
-          `SELECT s.school_code, c.iso_code AS country_iso
+          `SELECT s.school_code, s.login_code, c.iso_code AS country_iso
            FROM schools s JOIN countries c ON c.id = s.country_id WHERE s.id = $1`,
           [row.school_id],
         );
-        return mapGridRow({ ...row, school_code: school?.school_code, country_iso: school?.country_iso });
+        return mapGridRow({
+          ...row,
+          school_code: publicSchoolCode(school),
+          login_code: school?.login_code,
+          country_iso: school?.country_iso,
+        });
       },
       async replaceGridItems(grid, items) {
         await query("DELETE FROM school_fee_items WHERE fee_grid_id = $1", [grid.dbId]);
@@ -642,7 +711,7 @@ function createFinancePgStore(repo) {
       },
       async listItemsByGrid(gridDbId) {
         const rows = await all(
-          `SELECT i.*, g.grid_code, s.school_code
+          `SELECT i.*, g.grid_code, s.school_code, s.login_code
            FROM school_fee_items i
            JOIN fee_grids g ON g.id = i.fee_grid_id
            JOIN schools s ON s.id = i.school_id
@@ -722,7 +791,7 @@ function createFinancePgStore(repo) {
       },
       async listRemindersByStudent(studentDbId) {
         const rows = await all(
-          `SELECT r.*, s.school_code, st.student_code
+          `SELECT r.*, s.school_code, s.login_code, st.student_code
            FROM payment_reminders r
            JOIN schools s ON s.id = r.school_id
            JOIN students st ON st.id = r.student_id
@@ -764,30 +833,30 @@ function createFinancePgStore(repo) {
     async listProjection() {
       const [payments, statuses, grids, items, fees, history, reminders, paymentItems, allocations] = await Promise.all([
         repo.all(
-          `SELECT p.*, s.school_code, st.student_code
+          `SELECT p.*, s.school_code, s.login_code, st.student_code
            FROM payments p
            JOIN schools s ON s.id = p.school_id
            JOIN students st ON st.id = p.student_id
            ORDER BY p.created_at`,
         ),
         repo.all(
-          `SELECT ps.*, s.school_code FROM payment_statuses ps LEFT JOIN schools s ON s.id = ps.school_id`,
+          `SELECT ps.*, s.school_code, s.login_code FROM payment_statuses ps LEFT JOIN schools s ON s.id = ps.school_id`,
         ),
         repo.all(
-          `SELECT g.*, s.school_code, cl.class_code
+          `SELECT g.*, s.school_code, s.login_code, cl.class_code
            FROM fee_grids g
            JOIN schools s ON s.id = g.school_id
            LEFT JOIN classes cl ON cl.id = g.class_id
            ORDER BY g.created_at`,
         ),
         repo.all(
-          `SELECT i.*, g.grid_code, s.school_code
+          `SELECT i.*, g.grid_code, s.school_code, s.login_code
            FROM school_fee_items i
            JOIN fee_grids g ON g.id = i.fee_grid_id
            JOIN schools s ON s.id = i.school_id`,
         ),
         repo.all(
-          `SELECT o.*, s.school_code, st.student_code
+          `SELECT o.*, s.school_code, s.login_code, st.student_code
            FROM student_fee_obligations o
            JOIN schools s ON s.id = o.school_id
            JOIN students st ON st.id = o.student_id
@@ -795,7 +864,7 @@ function createFinancePgStore(repo) {
         ),
         repo.all(`SELECT * FROM fee_tariff_history ORDER BY created_at DESC`),
         repo.all(
-          `SELECT r.*, s.school_code, st.student_code
+          `SELECT r.*, s.school_code, s.login_code, st.student_code
            FROM payment_reminders r
            JOIN schools s ON s.id = r.school_id
            JOIN students st ON st.id = r.student_id
@@ -829,22 +898,38 @@ function createFinancePgStore(repo) {
         paymentReminders: reminders.map(mapReminderRow),
       };
     },
-    createSchoolPayment: (payload, principal, auditMeta) => financeService.createPayment(api, payload, principal, auditMeta),
-    reconcileFinancePaymentAllocations: (principal, options, auditMeta) =>
-      financeService.reconcileHistoricalPaymentAllocations(api, principal, auditMeta, options),
+    createSchoolPayment: async (payload, principal, auditMeta) =>
+      financeService.createPayment(api, payload, await withFinancePrincipal(principal), auditMeta),
+    reconcileFinancePaymentAllocations: async (principal, options, auditMeta) =>
+      financeService.reconcileHistoricalPaymentAllocations(
+        api,
+        await withFinancePrincipal(principal),
+        auditMeta,
+        options,
+      ),
     getSchoolPayment: (id, principal) => bind(repo).getPaymentByCode(id, principal),
-    cancelSchoolPayment: (id, reason, principal, auditMeta) => financeService.cancelPayment(api, id, reason, principal, auditMeta),
-    upsertFinanceFeeGrid: (payload, principal) => financeService.upsertFeeGrid(api, payload, principal),
+    cancelSchoolPayment: async (id, reason, principal, auditMeta) =>
+      financeService.cancelPayment(api, id, reason, await withFinancePrincipal(principal), auditMeta),
+    upsertFinanceFeeGrid: async (payload, principal) =>
+      financeService.upsertFeeGrid(api, payload, await withFinancePrincipal(principal)),
     getFinanceFeeGrid: async (id, principal) => {
       const grid = await bind(repo).getGrid(id, principal);
       if (!grid) return null;
       return { grid, items: await bind(repo).listItemsByGrid(grid.dbId) };
     },
-    setFinanceFeeGridStatus: (id, status, principal) => financeService.setFeeGridStatus(api, id, status, principal),
-    applyFinanceFeeGrid: (id, principal, options) => financeService.applyFeeGrid(api, id, principal, options),
-    ensureEnrollmentObligations: (input, principal, auditMeta) =>
-      financeService.ensureEnrollmentFinanceObligations(api, input, principal, auditMeta),
+    setFinanceFeeGridStatus: async (id, status, principal) =>
+      financeService.setFeeGridStatus(api, id, status, await withFinancePrincipal(principal)),
+    applyFinanceFeeGrid: async (id, principal, options) =>
+      financeService.applyFeeGrid(api, id, await withFinancePrincipal(principal), options),
+    ensureEnrollmentObligations: async (input, principal, auditMeta) =>
+      financeService.ensureEnrollmentFinanceObligations(
+        api,
+        input,
+        await withFinancePrincipal(principal),
+        auditMeta,
+      ),
     ensureEnrollmentObligationsInTx: async (tx, input, principal, auditMeta) => {
+      const scopedPrincipal = await withFinancePrincipal(principal);
       const financeTx = bind(repo.createTxScope(tx));
       let school = input.school;
       if (!school && input.schoolCode && typeof financeTx.getSchoolByCode === "function") {
@@ -853,23 +938,23 @@ function createFinancePgStore(repo) {
       let students = input.students;
       if (!students && input.student) students = [input.student];
       if (!students && input.studentKey && typeof financeTx.findStudent === "function") {
-        const found = await financeTx.findStudent(input.studentKey, principal);
+        const found = await financeTx.findStudent(input.studentKey, scopedPrincipal);
         students = found ? [found] : [];
       }
       return financeService.ensureEnrollmentFinanceObligationsInTx(
         financeTx,
         { ...input, school, students },
-        principal,
+        scopedPrincipal,
         auditMeta,
       );
     },
     listFinanceFeeGrids: async (principal) => {
-      const scope = resolveFinanceSchoolScope(principal);
+      const scope = resolveFinanceSchoolScope(await withFinancePrincipal(principal));
       if (scope.mode === "none") return [];
       const params = [];
       const pred = sqlSchoolPredicate("s", scope, params);
       const rows = await repo.all(
-        `SELECT g.*, s.school_code, ctry.iso_code AS country_iso FROM fee_grids g
+        `SELECT g.*, s.school_code, s.login_code, ctry.iso_code AS country_iso FROM fee_grids g
          JOIN schools s ON s.id = g.school_id
          JOIN countries ctry ON ctry.id = s.country_id
          WHERE ${pred} ORDER BY g.created_at`,
@@ -878,7 +963,7 @@ function createFinancePgStore(repo) {
       return rows.map(mapGridRow);
     },
     listFinanceStudentFees: async (principal) => {
-      const scope = resolveFinanceSchoolScope(principal);
+      const scope = resolveFinanceSchoolScope(await withFinancePrincipal(principal));
       if (scope.mode === "none") return [];
       const feeParams = [];
       const feePred = sqlSchoolPredicate("s", scope, feeParams);
@@ -886,7 +971,7 @@ function createFinancePgStore(repo) {
       const allocPred = sqlSchoolPredicate("s", scope, allocParams);
       const [rows, allocations] = await Promise.all([
         repo.all(
-          `SELECT o.*, s.school_code, st.student_code, ctry.iso_code AS country_iso,
+          `SELECT o.*, s.school_code, s.login_code, st.student_code, ctry.iso_code AS country_iso,
                   COALESCE(pa.allocated, 0) AS allocated_paid
            FROM student_fee_obligations o
            JOIN schools s ON s.id = o.school_id
@@ -927,23 +1012,25 @@ function createFinancePgStore(repo) {
       });
     },
     getFinanceStudentFee: (id, principal) => bind(repo).getObligationByPublicId(id, principal),
-    adjustFinanceStudentFee: (id, patch, principal) => financeService.adjustStudentFee(api, id, patch, principal),
-    createFinanceReminder: (studentId, payload, principal, options) =>
-      financeService.createReminder(api, studentId, payload, principal, options),
+    adjustFinanceStudentFee: async (id, patch, principal) =>
+      financeService.adjustStudentFee(api, id, patch, await withFinancePrincipal(principal)),
+    createFinanceReminder: async (studentId, payload, principal, options) =>
+      financeService.createReminder(api, studentId, payload, await withFinancePrincipal(principal), options),
     listFinancePaymentStatuses: async (principal) => {
-      const scope = resolveFinanceSchoolScope(principal);
+      const scope = resolveFinanceSchoolScope(await withFinancePrincipal(principal));
       if (scope.mode === "none") return [];
       const params = [];
       const pred = sqlSchoolPredicate("s", scope, params);
       const rows = await repo.all(
-        `SELECT ps.*, s.school_code FROM payment_statuses ps LEFT JOIN schools s ON s.id = ps.school_id
+        `SELECT ps.*, s.school_code, s.login_code FROM payment_statuses ps LEFT JOIN schools s ON s.id = ps.school_id
          WHERE ps.school_id IS NULL OR ${pred}`,
         params,
       );
       return rows.map(mapStatusRow);
     },
     upsertFinancePaymentStatus: async (payload, principal) => {
-        const schoolCode = primaryFinanceSchoolCode(principal);
+        const scopedPrincipal = await withFinancePrincipal(principal);
+        const schoolCode = primaryFinanceSchoolCode(scopedPrincipal);
         const school = schoolCode
           ? await bind(repo).getSchoolByCode(schoolCode)
           : null;
@@ -963,10 +1050,10 @@ function createFinancePgStore(repo) {
                VALUES ($1,$2,$3,$4,$5,$6::jsonb) RETURNING *`,
               [school?.id || null, code, payload.label || code, payload.status !== "Inactif", Number(payload.sortOrder || 0), JSON.stringify(payload)],
             );
-        return mapStatusRow({ ...row, school_code: school?.code });
+        return mapStatusRow({ ...row, school_code: school?.code, login_code: school?.loginCode || school?.code });
       },
       async listPaymentStudentOptions(principal) {
-        const scope = resolveFinanceSchoolScope(principal);
+        const scope = resolveFinanceSchoolScope(await withFinancePrincipal(principal));
         if (scope.mode === "none") return [];
         const params = [];
         const pred = sqlSchoolPredicate("s", scope, params);
@@ -980,7 +1067,8 @@ function createFinancePgStore(repo) {
                   cl.id AS class_id,
                   cl.class_code,
                   cl.name AS class_name,
-                  s.school_code
+                  s.school_code,
+                  s.login_code
            FROM students st
            JOIN schools s ON s.id = st.school_id
            JOIN enrollments e ON e.student_id = st.id
@@ -995,12 +1083,12 @@ function createFinancePgStore(repo) {
         return foldPaymentStudentOptions(rows);
       },
       async listSchoolPaymentMethods(principal) {
-        const scope = resolveFinanceSchoolScope(principal);
+        const scope = resolveFinanceSchoolScope(await withFinancePrincipal(principal));
         if (scope.mode === "none") return resolveCatalogPaymentMethods([]);
         const params = [];
         const pred = sqlSchoolPredicate("s", scope, params);
         const rows = await repo.all(
-          `SELECT m.*, s.school_code
+          `SELECT m.*, s.school_code, s.login_code
            FROM school_payment_methods m
            JOIN schools s ON s.id = m.school_id
            WHERE ${pred}
@@ -1010,7 +1098,8 @@ function createFinancePgStore(repo) {
         return resolveCatalogPaymentMethods(rows);
       },
       async replaceSchoolPaymentMethods(methods, principal) {
-        const schoolCode = primaryFinanceSchoolCode(principal);
+        const scopedPrincipal = await withFinancePrincipal(principal);
+        const schoolCode = primaryFinanceSchoolCode(scopedPrincipal);
         const school = schoolCode ? await bind(repo).getSchoolByCode(schoolCode) : null;
         if (!school?.id) {
           throw createFinanceError(400, "Établissement requis.", FINANCE_ERROR.TENANT_MISMATCH);
@@ -1044,13 +1133,13 @@ function createFinancePgStore(repo) {
         return resolveCatalogPaymentMethods(saved);
       },
       async listCatalogFeeTypes(principal) {
-        const scope = resolveFinanceSchoolScope(principal);
+        const scope = resolveFinanceSchoolScope(await withFinancePrincipal(principal));
         if (scope.mode === "none") return [];
         const params = [];
         const pred = sqlSchoolPredicate("s", scope, params);
         const rows = await repo.all(
           `SELECT i.*, g.grid_code, g.currency, g.class_id, g.class_name, g.academic_year,
-                  s.school_code, cl.class_code
+                  s.school_code, s.login_code, cl.class_code
            FROM school_fee_items i
            JOIN fee_grids g ON g.id = i.fee_grid_id AND g.school_id = i.school_id
            JOIN schools s ON s.id = i.school_id
@@ -1064,13 +1153,14 @@ function createFinancePgStore(repo) {
         return rows.map(mapCatalogFeeType);
       },
       async getFinanceCatalog(principal) {
-        const schoolCode = primaryFinanceSchoolCode(principal);
+        const scopedPrincipal = await withFinancePrincipal(principal);
+        const schoolCode = primaryFinanceSchoolCode(scopedPrincipal);
         const school = schoolCode
           ? await bind(repo).getSchoolByCode(schoolCode)
           : null;
         const [paymentMethods, feeTypes] = await Promise.all([
-          api.listSchoolPaymentMethods(principal),
-          api.listCatalogFeeTypes(principal),
+          api.listSchoolPaymentMethods(scopedPrincipal),
+          api.listCatalogFeeTypes(scopedPrincipal),
         ]);
         return buildFinanceCatalog({
           currency: school?.currency,

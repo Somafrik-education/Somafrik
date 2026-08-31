@@ -3,6 +3,7 @@
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
 const {
+  attachFinanceMembershipScope,
   resolveFinanceSchoolScope,
   schoolCodeInScope,
   schoolRecordInFinanceScope,
@@ -24,12 +25,39 @@ test("F8-P0-004: schoolCode vide sans scope effectif = fail-closed", () => {
   );
 });
 
-test("F8-P0-004: schoolCode vide + effectiveSchoolCode A n'autorise pas B", () => {
+test("F8-P0-004: leftover JWT n'est plus l'autorité Finance", () => {
+  const scope = resolveFinanceSchoolScope({
+    role: "Comptable",
+    schoolCode: "CD-2026-0001",
+    sub: "user-uuid",
+  });
+  assert.equal(scope.mode, "none");
+});
+
+test("GP-005: membership login_code est l'autorité, leftover ignoré", () => {
+  const principal = {
+    role: "Comptable",
+    schoolCode: "CD-2026-0001",
+    financeLoginCode: "CD-LAC-26-001",
+    sub: "user-uuid",
+  };
+  const scope = resolveFinanceSchoolScope(principal);
+  assert.equal(scope.mode, "schools");
+  assert.deepEqual(scope.codes, ["CD-LAC-26-001"]);
+  assert.equal(schoolCodeInScope("CD-LAC-26-001", scope), true);
+  assert.equal(schoolCodeInScope("CD-2026-0001", scope), false);
+  assert.doesNotThrow(() => assertTenant(principal, "CD-LAC-26-001"));
+  assert.throws(
+    () => assertTenant(principal, "CD-2026-0001"),
+    (error) => error.statusCode === 403,
+  );
+});
+
+test("F8-P0-004: schoolCode vide + financeLoginCode A n'autorise pas B", () => {
   const principal = {
     role: "Comptable",
     schoolCode: "",
-    effectiveSchoolCode: "SCH-F8-A",
-    schoolScopeSource: "request",
+    financeLoginCode: "SCH-F8-A",
   };
   const scope = resolveFinanceSchoolScope(principal);
   assert.equal(scope.mode, "schools");
@@ -49,6 +77,7 @@ test("F8-P0-004: Superadmin request-scoped A ne sort pas de A", () => {
     schoolCode: "",
     effectiveSchoolCode: "SCH-F8-A",
     schoolScopeSource: "request",
+    financeLoginCode: "SCH-F8-A",
   };
   const scope = resolveFinanceSchoolScope(principal);
   assert.equal(scope.mode, "schools");
@@ -101,4 +130,150 @@ test("F8-P0-004: schoolCode * n'est plus un passe-partout hors Superadmin", () =
     schoolCode: "*",
   });
   assert.equal(scope.mode, "none");
+});
+
+test("GP-005: attachFinanceMembershipScope lit users.school_id → login_code", async () => {
+  const one = async (sql, params) => {
+    assert.match(String(sql), /users u/i);
+    assert.equal(params[0], "user-uuid-1");
+    return { login_code: "CD-LAC-26-001" };
+  };
+  const attached = await attachFinanceMembershipScope(
+    { role: "Comptable", sub: "user-uuid-1", schoolCode: "CD-2026-0001" },
+    one,
+  );
+  assert.equal(attached.financeLoginCode, "CD-LAC-26-001");
+  assert.equal(attached.schoolCode, "CD-2026-0001");
+  const scope = resolveFinanceSchoolScope(attached);
+  assert.deepEqual(scope.codes, ["CD-LAC-26-001"]);
+});
+
+test("GP-005: attach sans `one` fail-closed (leftover JWT ignoré)", async () => {
+  const attached = await attachFinanceMembershipScope(
+    { role: "Comptable", sub: "user-uuid-1", schoolCode: "CD-2026-0001" },
+    null,
+  );
+  assert.equal(attached.financeLoginCode, "");
+  assert.equal(resolveFinanceSchoolScope(attached).mode, "none");
+});
+
+test("GP-005: Superadmin request-scoped résout leftover → login_code", async () => {
+  const one = async (sql, params) => {
+    assert.match(String(sql), /FROM schools/i);
+    assert.equal(params[0], "CD-2026-0001");
+    return { login_code: "CD-LAC-26-001" };
+  };
+  const attached = await attachFinanceMembershipScope(
+    {
+      role: "Super Administrateur Somafrik",
+      schoolCode: "",
+      effectiveSchoolCode: "CD-2026-0001",
+      schoolScopeSource: "request",
+    },
+    one,
+  );
+  assert.equal(attached.financeLoginCode, "CD-LAC-26-001");
+  assert.deepEqual(resolveFinanceSchoolScope(attached).codes, ["CD-LAC-26-001"]);
+});
+
+test("GP-005: sqlSchoolPredicate cible login_code uniquement (aucun repli leftover)", () => {
+  const { sqlSchoolPredicate } = require("./financeSchoolScope");
+  const params = [];
+  const pred = sqlSchoolPredicate("s", { mode: "schools", codes: ["CD-LAC-26-001"] }, params);
+  assert.match(pred, /login_code/);
+  assert.doesNotMatch(pred, /school_code/);
+  assert.doesNotMatch(pred, /coalesce/i);
+  assert.deepEqual(params, [["CD-LAC-26-001"]]);
+});
+
+test("GP-005: login_code vide ne promeut pas leftover en financeLoginCode", async () => {
+  const leftover = "CD-2026-0001";
+  const one = async (sql) => {
+    assert.match(String(sql), /s\.login_code|SELECT login_code/i);
+    assert.doesNotMatch(String(sql), /coalesce\(nullif\(btrim\(s\.login_code\)/i);
+    return { login_code: null };
+  };
+  const attached = await attachFinanceMembershipScope(
+    { role: "Comptable", sub: "user-uuid-1", schoolCode: leftover },
+    one,
+  );
+  assert.equal(attached.financeLoginCode, "");
+  assert.notEqual(attached.financeLoginCode, leftover);
+  assert.equal(resolveFinanceSchoolScope(attached).mode, "none");
+});
+
+test("GP-005: rôle établissement request-scoped reste membership UUID", async () => {
+  const leftover = "CD-2026-0001";
+  const oldLogin = "CD-LAC-26-001";
+  const newLogin = "CD-NEW-26-001";
+  const one = async (sql) => {
+    if (/FROM users u/i.test(String(sql))) return { login_code: newLogin };
+    throw new Error("FIND request-scoped interdit pour un rôle établissement");
+  };
+  const attached = await attachFinanceMembershipScope(
+    {
+      role: "Comptable",
+      sub: "user-uuid-1",
+      schoolCode: leftover,
+      effectiveSchoolCode: oldLogin,
+      schoolScopeSource: "request",
+    },
+    one,
+  );
+  assert.equal(attached.financeLoginCode, newLogin);
+  assert.notEqual(attached.financeLoginCode, oldLogin);
+});
+
+test("GP-005: Superadmin request-scoped login_code vide fail-closed", async () => {
+  const leftover = "CD-2026-0001";
+  const one = async () => ({ login_code: "   " });
+  const attached = await attachFinanceMembershipScope(
+    {
+      role: "Super Administrateur Somafrik",
+      schoolCode: leftover,
+      effectiveSchoolCode: leftover,
+      schoolScopeSource: "request",
+    },
+    one,
+  );
+  assert.equal(attached.financeLoginCode, "");
+  assert.equal(resolveFinanceSchoolScope(attached).mode, "none");
+});
+
+test("GP-005: findEmittedLoginCode n'émet que login_code", async () => {
+  const { findEmittedLoginCode } = require("./financeSchoolScope");
+  const leftover = "CD-2026-0001";
+  const login = "CD-LAC-26-001";
+  const leftoverLookups = [];
+  const one = async (sql, params) => {
+    leftoverLookups.push(String(sql));
+    assert.doesNotMatch(String(sql), /\sOR\s/i);
+    assert.doesNotMatch(String(sql), /coalesce/i);
+    assert.equal(params[0], leftover);
+    if (/school_code/.test(String(sql))) return { login_code: login };
+    return null;
+  };
+  assert.equal(await findEmittedLoginCode(leftover, one), login);
+  assert.equal(leftoverLookups.length, 2);
+  assert.equal(await findEmittedLoginCode(leftover, async () => ({ login_code: null })), "");
+  assert.equal(
+    await findEmittedLoginCode(login, async (sql, params) => {
+      assert.doesNotMatch(String(sql), /school_code/);
+      assert.equal(params[0], login);
+      return { login_code: login };
+    }),
+    login,
+  );
+});
+
+test("GP-005: projection n'utilise pas leftover school_code", () => {
+  const { publicSchoolCodeFromRow, schoolRecordInFinanceScope } = require("./financeSchoolScope");
+  const leftover = "CD-2026-0001";
+  const login = "CD-LAC-26-001";
+  assert.equal(publicSchoolCodeFromRow({ login_code: login, school_code: leftover }), login);
+  assert.equal(publicSchoolCodeFromRow({ login_code: "", school_code: leftover }), "");
+  assert.equal(publicSchoolCodeFromRow({ school_code: leftover }), "");
+  const scope = { mode: "schools", codes: [login] };
+  assert.equal(schoolRecordInFinanceScope({ login_code: login, school_code: leftover }, scope), true);
+  assert.equal(schoolRecordInFinanceScope({ login_code: "", school_code: leftover, schoolCode: leftover }, scope), false);
 });

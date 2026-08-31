@@ -7,12 +7,12 @@ const {
   FINANCE_ERROR,
   asTrimmed,
   money,
-  mapPaymentRow,
-  mapObligationRow,
-  mapGridRow,
-  mapItemRow,
-  mapReminderRow,
-  mapStatusRow,
+  mapPaymentRow: mapPaymentRowRaw,
+  mapObligationRow: mapObligationRowRaw,
+  mapGridRow: mapGridRowRaw,
+  mapItemRow: mapItemRowRaw,
+  mapReminderRow: mapReminderRowRaw,
+  mapStatusRow: mapStatusRowRaw,
   studentMatches,
   studentMatchesClassScope,
   classScopeSpec,
@@ -24,7 +24,12 @@ const {
 const { decoratePaymentWithItems } = require("../lib/financePaymentItems");
 const { projectObligationPaidAmounts } = require("../lib/financeObligationPaid");
 const { projectPaymentsWithAllocations, projectPaymentCash } = require("../lib/financeUnallocatedCash");
-const { resolveFinanceSchoolScope, schoolRecordInFinanceScope, primaryFinanceSchoolCode } = require("../lib/financeSchoolScope");
+const {
+  attachFinanceFixtureScope,
+  resolveFinanceSchoolScope,
+  schoolRecordInFinanceScope: recordInFinanceScope,
+  primaryFinanceSchoolCode,
+} = require("../lib/financeSchoolScope");
 const {
   foldPaymentStudentOptions,
   resolveCatalogPaymentMethods,
@@ -36,6 +41,107 @@ const financeService = require("../lib/financeService");
 
 function clone(value) {
   return JSON.parse(JSON.stringify(value));
+}
+
+function scopedPrincipal(principal) {
+  return attachFinanceFixtureScope(principal);
+}
+
+function fixturePublicLoginCode(requested) {
+  const key = asTrimmed(requested).toUpperCase();
+  if (!key) return "";
+  const school = fixtureSchoolRow(key);
+  if (!school) return key;
+  return asTrimmed(school.loginCode || school.login_code || school.publicId || school.code).toUpperCase();
+}
+
+function fixtureSchoolRow(requested) {
+  const key = asTrimmed(requested).toUpperCase();
+  if (!key) return null;
+  const schools = Array.isArray(seedData.platformSchools) ? seedData.platformSchools : [];
+  return (
+    schools.find((row) =>
+      [row.loginCode, row.login_code, row.publicId, row.code, row.schoolCode, row.school_code].some(
+        (value) => asTrimmed(value).toUpperCase() === key,
+      ),
+    ) || null
+  );
+}
+
+function fixtureLookupAliases(requested) {
+  const key = asTrimmed(requested).toUpperCase();
+  if (!key) return [];
+  const school = fixtureSchoolRow(key);
+  const aliases = [
+    key,
+    school?.loginCode,
+    school?.login_code,
+    school?.publicId,
+    school?.code,
+    school?.schoolCode,
+    school?.school_code,
+  ]
+    .map((value) => asTrimmed(value).toUpperCase())
+    .filter(Boolean);
+  return [...new Set(aliases)];
+}
+
+/** Fixture mémoire : le schoolCode EST le login_code. Ne jamais copier leftover PG. */
+function withFixtureLoginCode(row = {}) {
+  if (!row || typeof row !== "object") return row;
+  const login = asTrimmed(row.login_code || row.loginCode);
+  if (login) return row;
+  const fixture = asTrimmed(row.schoolCode || row.school_code);
+  if (!fixture) return row;
+  return { ...row, login_code: fixture, loginCode: fixture };
+}
+
+function fixtureCodesMatch(left, right) {
+  const a = asTrimmed(left).toUpperCase();
+  const b = asTrimmed(right).toUpperCase();
+  if (!a || !b) return false;
+  if (a === b) return true;
+  return fixturePublicLoginCode(a) === fixturePublicLoginCode(b);
+}
+
+function fixtureRecordInScope(record, scope) {
+  if (!record || typeof record !== "object") {
+    return recordInFinanceScope(record, scope);
+  }
+  if (scope.mode !== "schools") {
+    return recordInFinanceScope(record, scope);
+  }
+  return recordInFinanceScope(projectFixtureSchoolIdentity(record), scope);
+}
+
+function projectFixtureSchoolIdentity(record = {}) {
+  const schoolCode = asTrimmed(record.schoolCode || record.school_code);
+  if (!schoolCode) return withFixtureLoginCode(record);
+  return { ...record, login_code: schoolCode, loginCode: schoolCode };
+}
+
+function mapPaymentRow(row) {
+  return mapPaymentRowRaw(withFixtureLoginCode(row));
+}
+
+function mapObligationRow(row) {
+  return mapObligationRowRaw(withFixtureLoginCode(row));
+}
+
+function mapGridRow(row) {
+  return mapGridRowRaw(withFixtureLoginCode(row));
+}
+
+function mapItemRow(row) {
+  return mapItemRowRaw(withFixtureLoginCode(row));
+}
+
+function mapReminderRow(row) {
+  return mapReminderRowRaw(withFixtureLoginCode(row));
+}
+
+function mapStatusRow(row) {
+  return mapStatusRowRaw(withFixtureLoginCode(row));
 }
 
 function createFinanceMemoryStore({
@@ -110,7 +216,7 @@ function createFinanceMemoryStore({
     const candidates = [];
     for (const row of seedData.classes ?? []) {
       if (asTrimmed(row.className || row.name).toLowerCase() !== name) continue;
-      if (code && asTrimmed(row.schoolCode).toUpperCase() !== code) continue;
+      if (code && !fixtureCodesMatch(row.schoolCode, code)) continue;
       const rowYear = asTrimmed(row.academicYearName || row.schoolYear).toLowerCase();
       if (year && rowYear && rowYear !== year) continue;
       const school = await getSchoolByCode?.(row.schoolCode);
@@ -135,25 +241,45 @@ function createFinanceMemoryStore({
   function txApi() {
     return {
       async getSchoolByCode(code) {
-        const school = await getSchoolByCode?.(code);
+        const requested = asTrimmed(code).toUpperCase();
+        if (!requested) return null;
+        let school = null;
+        for (const alias of fixtureLookupAliases(requested)) {
+          school = await getSchoolByCode?.(alias);
+          if (school) break;
+        }
         if (!school) return null;
+        const login = asTrimmed(school.loginCode || school.login_code || school.publicId);
+        const fixture = asTrimmed(school.code || school.schoolCode || school.school_code);
+        const publicCode = fixture || login;
         return {
           id: school.id || school.publicId || school.code,
-          code: school.code || school.schoolCode,
-          school_code: school.code || school.schoolCode,
+          code: publicCode,
+          login_code: publicCode,
+          loginCode: publicCode,
           countryIso: String(school.countryIso || school.countryCode || school.iso_code || "").trim().toUpperCase(),
           currency: school.currency || "",
         };
+      },
+      async resolveSchoolForScopedWrite(code, countryCode) {
+        const school = await this.getSchoolByCode(code);
+        if (!school) return null;
+        if (!asTrimmed(school.loginCode || school.login_code)) return null;
+        if (countryCode) {
+          const iso = String(school.countryIso || "").trim().toUpperCase();
+          if (iso !== String(countryCode).trim().toUpperCase()) return null;
+        }
+        return school;
       },
       async findStudent(studentKey, principal) {
         const student = await findStudent?.(studentKey, principal);
         if (!student) return null;
         if (principal) {
-          const scope = resolveFinanceSchoolScope(principal);
-          if (!schoolRecordInFinanceScope(student, scope)) return null;
+          const scope = resolveFinanceSchoolScope(scopedPrincipal(principal));
+          if (!fixtureRecordInScope(student, scope)) return null;
         }
         return {
-          ...student,
+          ...projectFixtureSchoolIdentity(student),
           dbId: student.dbId || student.id,
           schoolCode: student.schoolCode,
         };
@@ -381,8 +507,8 @@ function createFinanceMemoryStore({
         if (!row) return null;
         const mapped = mapPaymentRow(row);
         if (principal) {
-          const scope = resolveFinanceSchoolScope(principal);
-          if (!schoolRecordInFinanceScope(mapped, scope)) return null;
+          const scope = resolveFinanceSchoolScope(scopedPrincipal(principal));
+          if (!fixtureRecordInScope(mapped, scope)) return null;
         }
         const items = await this.listPaymentItems(row.id);
         const allocations = await this.listAllocations(row.id);
@@ -437,8 +563,8 @@ function createFinanceMemoryStore({
         if (!row) return null;
         const mapped = mapObligationRow(row);
         if (principal) {
-          const scope = resolveFinanceSchoolScope(principal);
-          if (!schoolRecordInFinanceScope(mapped, scope)) return null;
+          const scope = resolveFinanceSchoolScope(scopedPrincipal(principal));
+          if (!fixtureRecordInScope(mapped, scope)) return null;
         }
         return mapped;
       },
@@ -541,8 +667,8 @@ function createFinanceMemoryStore({
         if (!row) return null;
         const mapped = mapGridRow(row);
         if (principal) {
-          const scope = resolveFinanceSchoolScope(principal);
-          if (!schoolRecordInFinanceScope(mapped, scope)) return null;
+          const scope = resolveFinanceSchoolScope(scopedPrincipal(principal));
+          if (!fixtureRecordInScope(mapped, scope)) return null;
         }
         return mapped;
       },
@@ -722,22 +848,29 @@ function createFinanceMemoryStore({
         paymentReminders: tables.paymentReminders.map(mapReminderRow),
       };
     },
-    createSchoolPayment: (payload, principal, auditMeta) => financeService.createPayment(api, payload, principal, auditMeta),
+    createSchoolPayment: (payload, principal, auditMeta) =>
+      financeService.createPayment(api, payload, scopedPrincipal(principal), auditMeta),
     reconcileFinancePaymentAllocations: (principal, options, auditMeta) =>
-      financeService.reconcileHistoricalPaymentAllocations(api, principal, auditMeta, options),
-    getSchoolPayment: async (id, principal) => txApi().getPaymentByCode(id, principal),
-    cancelSchoolPayment: (id, reason, principal, auditMeta) => financeService.cancelPayment(api, id, reason, principal, auditMeta),
-    upsertFinanceFeeGrid: (payload, principal) => financeService.upsertFeeGrid(api, payload, principal),
+      financeService.reconcileHistoricalPaymentAllocations(api, scopedPrincipal(principal), auditMeta, options),
+    getSchoolPayment: async (id, principal) => txApi().getPaymentByCode(id, scopedPrincipal(principal)),
+    cancelSchoolPayment: (id, reason, principal, auditMeta) =>
+      financeService.cancelPayment(api, id, reason, scopedPrincipal(principal), auditMeta),
+    upsertFinanceFeeGrid: (payload, principal) =>
+      financeService.upsertFeeGrid(api, payload, scopedPrincipal(principal)),
     getFinanceFeeGrid: async (id, principal) => {
-      const grid = await txApi().getGrid(id, principal);
+      const scoped = scopedPrincipal(principal);
+      const grid = await txApi().getGrid(id, scoped);
       if (!grid) return null;
       return { grid, items: await txApi().listItemsByGrid(grid.dbId) };
     },
-    setFinanceFeeGridStatus: (id, status, principal) => financeService.setFeeGridStatus(api, id, status, principal),
-    applyFinanceFeeGrid: (id, principal, options) => financeService.applyFeeGrid(api, id, principal, options),
+    setFinanceFeeGridStatus: (id, status, principal) =>
+      financeService.setFeeGridStatus(api, id, status, scopedPrincipal(principal)),
+    applyFinanceFeeGrid: (id, principal, options) =>
+      financeService.applyFeeGrid(api, id, scopedPrincipal(principal), options),
     ensureEnrollmentObligations: (input, principal, auditMeta) =>
-      financeService.ensureEnrollmentFinanceObligations(api, input, principal, auditMeta),
+      financeService.ensureEnrollmentFinanceObligations(api, input, scopedPrincipal(principal), auditMeta),
     ensureEnrollmentObligationsInTx: async (tx, input, principal, auditMeta) => {
+      const scoped = scopedPrincipal(principal);
       const financeTx = tx || txApi();
       let school = input.school;
       if (!school && input.schoolCode && typeof financeTx.getSchoolByCode === "function") {
@@ -746,27 +879,27 @@ function createFinanceMemoryStore({
       let students = input.students;
       if (!students && input.student) students = [input.student];
       if (!students && input.studentKey && typeof financeTx.findStudent === "function") {
-        const found = await financeTx.findStudent(input.studentKey, principal);
+        const found = await financeTx.findStudent(input.studentKey, scoped);
         students = found ? [found] : [];
       }
       return financeService.ensureEnrollmentFinanceObligationsInTx(
         financeTx,
         { ...input, school, students },
-        principal,
+        scoped,
         auditMeta,
       );
     },
     listFinanceFeeGrids: async (principal) => {
-      const scope = resolveFinanceSchoolScope(principal);
+      const scope = resolveFinanceSchoolScope(scopedPrincipal(principal));
       if (scope.mode === "none") return [];
-      return tables.feeGrids.map(mapGridRow).filter((row) => schoolRecordInFinanceScope(row, scope));
+      return tables.feeGrids.map(mapGridRow).filter((row) => fixtureRecordInScope(row, scope));
     },
     listFinanceStudentFees: async (principal) => {
-      const scope = resolveFinanceSchoolScope(principal);
+      const scope = resolveFinanceSchoolScope(scopedPrincipal(principal));
       if (scope.mode === "none") return [];
       const fees = tables.studentFees
         .map(mapObligationRow)
-        .filter((fee) => schoolRecordInFinanceScope(fee, scope));
+        .filter((fee) => fixtureRecordInScope(fee, scope));
       const feeIds = new Set(fees.map((fee) => String(fee.dbId || fee.id)));
       return projectObligationPaidAmounts({
         fees,
@@ -780,16 +913,17 @@ function createFinanceMemoryStore({
           })),
       });
     },
-    getFinanceStudentFee: (id, principal) => txApi().getObligationByPublicId(id, principal),
-    adjustFinanceStudentFee: (id, patch, principal) => financeService.adjustStudentFee(api, id, patch, principal),
+    getFinanceStudentFee: (id, principal) => txApi().getObligationByPublicId(id, scopedPrincipal(principal)),
+    adjustFinanceStudentFee: (id, patch, principal) =>
+      financeService.adjustStudentFee(api, id, patch, scopedPrincipal(principal)),
     createFinanceReminder: (studentId, payload, principal, options) =>
-      financeService.createReminder(api, studentId, payload, principal, options),
+      financeService.createReminder(api, studentId, payload, scopedPrincipal(principal), options),
     listFinancePaymentStatuses: async (principal) => {
-      const scope = resolveFinanceSchoolScope(principal);
+      const scope = resolveFinanceSchoolScope(scopedPrincipal(principal));
       if (scope.mode === "none") return [];
       return tables.paymentStatuses
         .map(mapStatusRow)
-        .filter((row) => !row.schoolCode || schoolRecordInFinanceScope(row, scope));
+        .filter((row) => !row.schoolCode || fixtureRecordInScope(row, scope));
     },
     upsertFinancePaymentStatus: async (payload, principal) => {
       const code = asTrimmed(payload.code || payload.id);
@@ -797,7 +931,7 @@ function createFinanceMemoryStore({
       const row = existing || {
         id: randomUUID(),
         status_code: code,
-        school_code: primaryFinanceSchoolCode(principal) || principal?.schoolCode,
+        school_code: primaryFinanceSchoolCode(scopedPrincipal(principal)) || principal?.schoolCode,
         created_at: new Date().toISOString(),
       };
       row.label = payload.label || code;
@@ -809,13 +943,13 @@ function createFinanceMemoryStore({
       return mapStatusRow(row);
     },
     async listPaymentStudentOptions(principal) {
-      const scope = resolveFinanceSchoolScope(principal);
+      const scope = resolveFinanceSchoolScope(scopedPrincipal(principal));
       if (scope.mode === "none") return [];
       const students = typeof listSchoolStudents === "function" ? await listSchoolStudents(principal) : [];
       const rows = [];
       for (const student of students) {
         const schoolCode = String(student.schoolCode || "").trim();
-        if (!schoolRecordInFinanceScope(student, scope)) continue;
+        if (!fixtureRecordInScope(student, scope)) continue;
         const enrollments = Array.isArray(student.enrollments) && student.enrollments.length
           ? student.enrollments
           : [
@@ -844,15 +978,15 @@ function createFinanceMemoryStore({
       return foldPaymentStudentOptions(rows);
     },
     async listSchoolPaymentMethods(principal) {
-      const scope = resolveFinanceSchoolScope(principal);
+      const scope = resolveFinanceSchoolScope(scopedPrincipal(principal));
       if (scope.mode === "none") return resolveCatalogPaymentMethods([]);
       const rows = tables.paymentMethods.filter((row) =>
-        schoolRecordInFinanceScope({ schoolCode: row.school_code, countryIso: row.country_iso }, scope),
+        fixtureRecordInScope({ schoolCode: row.school_code, countryIso: row.country_iso }, scope),
       );
       return resolveCatalogPaymentMethods(rows);
     },
     async replaceSchoolPaymentMethods(methods, principal) {
-      const scopedSchoolCode = primaryFinanceSchoolCode(principal);
+      const scopedSchoolCode = primaryFinanceSchoolCode(scopedPrincipal(principal));
       if (!scopedSchoolCode) {
         throw createFinanceError(400, "Établissement requis.", FINANCE_ERROR.TENANT_MISMATCH);
       }
@@ -880,10 +1014,10 @@ function createFinanceMemoryStore({
       return resolveCatalogPaymentMethods(saved);
     },
     async listCatalogFeeTypes(principal) {
-      const scope = resolveFinanceSchoolScope(principal);
+      const scope = resolveFinanceSchoolScope(scopedPrincipal(principal));
       if (scope.mode === "none") return [];
       const grids = tables.feeGrids.filter(
-        (row) => schoolRecordInFinanceScope(mapGridRow(row), scope) && normalizeKey(row.status) === "active",
+        (row) => fixtureRecordInScope(mapGridRow(row), scope) && normalizeKey(row.status) === "active",
       );
       const gridIds = new Set(grids.map((row) => String(row.id)));
       return tables.schoolFeeItems
@@ -900,11 +1034,12 @@ function createFinanceMemoryStore({
         });
     },
     async getFinanceCatalog(principal) {
-      const schoolCode = primaryFinanceSchoolCode(principal);
+      const scoped = scopedPrincipal(principal);
+      const schoolCode = primaryFinanceSchoolCode(scoped);
       const school = schoolCode ? await getSchoolByCode?.(schoolCode) : null;
       const [paymentMethods, feeTypes] = await Promise.all([
-        api.listSchoolPaymentMethods(principal),
-        api.listCatalogFeeTypes(principal),
+        api.listSchoolPaymentMethods(scoped),
+        api.listCatalogFeeTypes(scoped),
       ]);
       return buildFinanceCatalog({
         currency: school?.currency,

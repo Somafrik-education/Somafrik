@@ -2251,9 +2251,10 @@ app.post("/api/users/:id/reset-password", requireAuth, asyncHandler(async (req, 
 }));
 
 app.get("/api/payments", requireAuth, requirePermission("GET /api/payments"), asyncHandler(async (req, res) => {
-  const { payments, students } = await loadCanonicalFinanceForPrincipal(req.principal);
-  const scope = deriveSchoolScope(req.principal, { students });
-  let scopedPayments = tenantScopeService.filterRows(payments, req.principal, scope);
+  const principal = await financeHttpPrincipal(req);
+  const { payments, students } = await loadCanonicalFinanceForPrincipal(principal);
+  const scope = deriveSchoolScope(principal, { students });
+  let scopedPayments = tenantScopeService.filterRows(payments, principal, scope);
   const result = scopedPayments.map((payment) => {
     const student = findStudent(students, payment.studentId);
     return {
@@ -2328,8 +2329,9 @@ app.put("/api/finance/payment-methods", requireAuth, requirePermission("PUT /api
 }));
 
 app.get("/api/finance/payment-statuses", requireAuth, requirePermission("GET /api/finance/payment-statuses"), asyncHandler(async (req, res) => {
-  const rows = await repository.listFinancePaymentStatuses(req.principal);
-  sendList(res, tenantScopeService.filterRows(rows, req.principal), req.query, ["code", "label", "status"]);
+  const principal = await financeHttpPrincipal(req);
+  const rows = await repository.listFinancePaymentStatuses(principal);
+  sendList(res, tenantScopeService.filterRows(rows, principal), req.query, ["code", "label", "status"]);
 }));
 
 app.post("/api/finance/payment-statuses", requireAuth, requirePermission("POST /api/finance/payment-statuses"), asyncHandler(async (req, res) => {
@@ -2371,9 +2373,18 @@ function assertCanAdjustStudentFee(principal) {
   throw new BusinessError(403, "Permission insuffisante pour ajuster une obligation.");
 }
 
+async function financeHttpPrincipal(req) {
+  const { attachFinanceMembershipScope, attachFinanceFixtureScope } = require("./lib/financeSchoolScope");
+  if (typeof repository.one === "function") {
+    return attachFinanceMembershipScope(req.principal, repository.one.bind(repository));
+  }
+  return attachFinanceFixtureScope(req.principal);
+}
+
 app.get("/api/finance/fee-grids", requireAuth, requirePermission("GET /api/finance/fee-grids"), asyncHandler(async (req, res) => {
-  const rows = await repository.listFinanceFeeGrids(req.principal);
-  sendList(res, tenantScopeService.filterRows(rows, req.principal, { countryField: "countryIso" }), req.query, ["className", "academicYear", "status"]);
+  const principal = await financeHttpPrincipal(req);
+  const rows = await repository.listFinanceFeeGrids(principal);
+  sendList(res, tenantScopeService.filterRows(rows, principal, { countryField: "countryIso" }), req.query, ["className", "academicYear", "status"]);
 }));
 
 app.post("/api/finance/fee-grids", requireAuth, requirePermission("POST /api/finance/fee-grids"), asyncHandler(async (req, res) => {
@@ -2383,10 +2394,11 @@ app.post("/api/finance/fee-grids", requireAuth, requirePermission("POST /api/fin
 }));
 
 app.get("/api/finance/fee-grids/:gridId", requireAuth, requirePermission("GET /api/finance/fee-grids"), asyncHandler(async (req, res) => {
-  const detail = await repository.getFinanceFeeGrid(req.params.gridId, req.principal);
+  const principal = await financeHttpPrincipal(req);
+  const detail = await repository.getFinanceFeeGrid(req.params.gridId, principal);
   if (!detail) throw new BusinessError(404, "Grille introuvable");
   const { resolveFinanceSchoolScope, schoolRecordInFinanceScope } = require("./lib/financeSchoolScope");
-  if (!schoolRecordInFinanceScope(detail.grid, resolveFinanceSchoolScope(req.principal))) {
+  if (!schoolRecordInFinanceScope(detail.grid, resolveFinanceSchoolScope(principal))) {
     throw new BusinessError(404, "Grille introuvable");
   }
   res.json(detail);
@@ -2425,8 +2437,9 @@ app.post("/api/finance/fee-grids/:gridId/apply", requireAuth, requirePermission(
 }));
 
 app.get("/api/finance/student-fees", requireAuth, requirePermission("GET /api/finance/student-fees"), asyncHandler(async (req, res) => {
-  const rows = await repository.listFinanceStudentFees(req.principal);
-  sendList(res, tenantScopeService.filterRows(rows, req.principal, { countryField: "countryIso" }), req.query, ["studentName", "label", "status"]);
+  const principal = await financeHttpPrincipal(req);
+  const rows = await repository.listFinanceStudentFees(principal);
+  sendList(res, tenantScopeService.filterRows(rows, principal, { countryField: "countryIso" }), req.query, ["studentName", "label", "status"]);
 }));
 
 app.post("/api/finance/reconcile-payment-allocations", requireAuth, requirePermission("POST /api/finance/reconcile-payment-allocations"), asyncHandler(async (req, res) => {
@@ -3228,9 +3241,10 @@ app.delete("/api/backoffice/establishments/:code", requireAuth, requirePermissio
 }));
 
 app.get("/api/backoffice/finance/unpaid", requireAuth, requirePermission("GET /api/backoffice/finance/unpaid"), asyncHandler(async (req, res) => {
+  const principal = await financeHttpPrincipal(req);
   const state = await getAuthoritativeBackOfficeState();
   res.json(
-    unpaidService.list(state, req.principal, {
+    unpaidService.list(state, principal, {
       search: req.query.search,
       className: req.query.className,
       period: req.query.period,
@@ -3239,13 +3253,15 @@ app.get("/api/backoffice/finance/unpaid", requireAuth, requirePermission("GET /a
 }));
 
 app.get("/api/backoffice/finance/unpaid/:studentId", requireAuth, requirePermission("GET /api/backoffice/finance/unpaid"), asyncHandler(async (req, res) => {
+  const principal = await financeHttpPrincipal(req);
   const state = await getAuthoritativeBackOfficeState();
-  res.json(unpaidService.detail(state, req.principal, req.params.studentId));
+  res.json(unpaidService.detail(state, principal, req.params.studentId));
 }));
 
 app.get("/api/backoffice/finance/unpaid/:studentId/reminders", requireAuth, requirePermission("GET /api/backoffice/finance/unpaid"), asyncHandler(async (req, res) => {
+  const principal = await financeHttpPrincipal(req);
   const state = await getAuthoritativeBackOfficeState();
-  const detail = unpaidService.detail(state, req.principal, req.params.studentId);
+  const detail = unpaidService.detail(state, principal, req.params.studentId);
   res.json(detail.reminders);
 }));
 

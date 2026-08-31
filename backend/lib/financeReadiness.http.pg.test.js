@@ -25,6 +25,7 @@ const JWT_SECRET = process.env.JWT_SECRET || "ci-test-secret-with-enough-length-
 const ACCOUNTANT_A = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa81";
 const ACCOUNTANT_B = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa83";
 const LIVE_USER = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa82";
+const ORPHAN_USER = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa99";
 const CLASS_A = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbb81";
 const CLASS_B = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbb82";
 const CLASS_TRAP = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbb83";
@@ -398,6 +399,16 @@ async function main() {
     assert.equal(catalog.status, 200, `catalogue A: ${JSON.stringify(catalog.data)}`);
     assert.equal(catalog.data?.currency, "XOF", `devise A doit être XOF, pas un repli: ${JSON.stringify(catalog.data)}`);
 
+    const dualIdentity = await pool.query(
+      `SELECT school_code, login_code FROM schools WHERE school_code = 'SCH-F8-A'`,
+    );
+    assert.ok(dualIdentity.rows[0]?.login_code, "login_code école A manquant");
+    assert.notEqual(
+      String(dualIdentity.rows[0].login_code).trim().toUpperCase(),
+      "SCH-F8-A",
+      "P0 leftover ≠ login_code du même tenant",
+    );
+
     const createdGrid = await request("/finance/fee-grids", {
       method: "POST",
       token: accountantA,
@@ -441,6 +452,22 @@ async function main() {
     assert.equal(feesA.length, 4, `obligations A: ${JSON.stringify(feesA)}`);
     assert.ok(feesA.every((row) => String(row.currency).toUpperCase() === "XOF"), "obligations en XOF");
     assert.ok(feesA.every((row) => Number(row.balance) > 0));
+
+    const leftoverOnlyToken = mintAccess(
+      tokens,
+      staleClaims({
+        sub: ORPHAN_USER,
+        schoolCode: "SCH-F8-A",
+        role: "Comptable",
+        roleKeys: ["ACCOUNTANT"],
+      }),
+    );
+    const leftoverOnlyGrids = await request("/finance/fee-grids", { token: leftoverOnlyToken });
+    assert.equal(
+      unwrapList(leftoverOnlyGrids.data).length,
+      0,
+      `leftover JWT n'est pas l'autorité Finance: ${JSON.stringify(leftoverOnlyGrids)}`,
+    );
 
     const insA1 = obligationOf(feesA, fixture.studentCodeA1, "inscription");
     const scoA1 = obligationOf(feesA, fixture.studentCodeA1, "scolar");
@@ -766,7 +793,7 @@ async function main() {
     const blankNoScopeToken = mintAccess(
       tokens,
       staleClaims({
-        sub: ACCOUNTANT_A,
+        sub: ORPHAN_USER,
         schoolCode: "",
         role: "Comptable",
         roleKeys: ["ACCOUNTANT"],
@@ -1005,6 +1032,12 @@ async function main() {
       countryGridA.status,
       201,
       `F8-P1-006 Admin Pays CI crée grille A: ${JSON.stringify(countryGridA.data)}`,
+    );
+    assert.ok(countryGridA.data?.schoolCode, "F8-P1-006 projection schoolCode présente");
+    assert.notEqual(
+      countryGridA.data.schoolCode,
+      "SCH-F8-A",
+      `F8-P1-006 projection = login_code, pas leftover: ${countryGridA.data.schoolCode}`,
     );
 
     const countryGridB = await request("/finance/fee-grids", {
