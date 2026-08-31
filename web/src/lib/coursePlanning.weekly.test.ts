@@ -195,16 +195,25 @@ describe("Planning V2 — mapping Web canonique", () => {
       resolvePlanningWriteSchoolIdentity({
         user: { role: "Super Administrateur Somafrik", schoolCode: "*" },
         activeSchool: null,
-        slots: [
-          { ...weekly, id: "slot-a", schoolId: "school-a", schoolCode: "CD-LAC-26-001" },
-          { ...weekly, id: "slot-b", schoolId: "school-b", schoolCode: "BI-BUJ-26-001" },
-        ],
       }),
     ).toBeNull();
     expect(
       resolvePlanningWriteSchoolIdentity({
         user: { role: "Admin Pays", schoolCode: "*", countryCode: "CD" } as never,
         activeSchool: { id: "" },
+      }),
+    ).toBeNull();
+  });
+
+  it("écriture établissement sans schoolId fail-closed — pas d'UUID déduit des rows A+B", () => {
+    expect(
+      resolvePlanningWriteSchoolIdentity({
+        user: {
+          role: "Admin School",
+          schoolCode: "CD-2026-0001",
+          schoolPublicCode: "CD-LAC-26-001",
+        },
+        activeSchool: null,
       }),
     ).toBeNull();
   });

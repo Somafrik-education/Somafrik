@@ -34,6 +34,9 @@ function main() {
   assert.match(page, /listCourseScheduleOccurrences/);
   assert.match(page, /mapServerOccurrencesToCalendarEvents/);
   assert.match(page, /refresh\(\["courseSchedules"\]\)/);
+  assert.match(page, /resolvePlanningWriteSchoolIdentity/);
+  assert.match(page, /filterSlotsForPlanningWrite/);
+  assert.doesNotMatch(page, /previousSchoolSlots = weeklySlots/);
   assert.doesNotMatch(page, /listSchoolCoursesForClass/);
   assert.doesNotMatch(page, /Créez-le dans Mon établissement/);
   assert.doesNotMatch(page, /slotsToClassCalendarEvents/);

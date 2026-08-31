@@ -127,9 +127,8 @@ export function CoursePlanningPage() {
       resolvePlanningWriteSchoolIdentity({
         user: scopeUser,
         activeSchool,
-        slots: (state.courseSchedules ?? []) as CourseScheduleSlot[],
       }),
-    [scopeUser, activeSchool, state.courseSchedules],
+    [scopeUser, activeSchool],
   );
   const { canRead, canCreate, canUpdate, canDelete } = useFeaturePermissions("Planning de cours");
   const replacements = useFeaturePermissions("Remplacements");

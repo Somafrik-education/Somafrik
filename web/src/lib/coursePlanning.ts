@@ -392,38 +392,20 @@ export type PlanningWriteSchoolIdentity = {
   publicCode: string;
 };
 
-function isPlatformPlanningUser(user: SessionUser | null): boolean {
-  const role = String(user?.role ?? "").trim();
-  return role === "Admin Pays" || role.includes("Super Administrateur");
-}
-
-function unanimousSlotSchoolId(slots: CourseScheduleSlot[]): string {
-  const ids = [
-    ...new Set(slots.map((row) => String(row.schoolId ?? "").trim()).filter(Boolean)),
-  ];
-  return ids.length === 1 ? ids[0] : "";
-}
-
 /**
- * Identité d'écriture Planning : schools.id en priorité.
- * schoolPublicCode / login_code = projection seulement. Jamais leftover JWT.
- * Superadmin / Admin Pays sans UUID actif ⇒ null (fail-closed, pas « tous les rows »).
+ * Identité d'écriture Planning : schools.id uniquement.
+ * schoolPublicCode / login_code = projection seulement. Jamais leftover JWT,
+ * jamais UUID déduit des rows (fuite A+B), jamais « tous les rows ».
  */
 export function resolvePlanningWriteSchoolIdentity(input: {
   user: SessionUser | null;
-  activeSchool?: { id?: string } | null;
-  slots?: CourseScheduleSlot[];
+  activeSchool?: { id?: string; publicId?: string } | null;
 }): PlanningWriteSchoolIdentity | null {
-  const publicCode = String(input.user?.schoolPublicCode ?? "").trim();
-  const fromActive = String(input.activeSchool?.id ?? "").trim();
-  const fromUser = String(input.user?.schoolId ?? "").trim();
-  if (fromActive) return { schoolId: fromActive, publicCode };
-  if (fromUser) return { schoolId: fromUser, publicCode };
-  if (isPlatformPlanningUser(input.user)) return null;
-  const fromSlots = unanimousSlotSchoolId(input.slots ?? []);
-  if (fromSlots) return { schoolId: fromSlots, publicCode };
-  if (publicCode) return { schoolId: "", publicCode };
-  return null;
+  const schoolId =
+    String(input.activeSchool?.id ?? "").trim() || String(input.user?.schoolId ?? "").trim();
+  if (!schoolId) return null;
+  const publicCode = String(input.user?.schoolPublicCode ?? input.activeSchool?.publicId ?? "").trim();
+  return { schoolId, publicCode };
 }
 
 /** Filtre d'écriture établissement : schoolId, sinon projection login_code. Jamais leftover. */
