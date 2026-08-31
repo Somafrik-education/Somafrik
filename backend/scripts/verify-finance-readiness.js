@@ -89,12 +89,31 @@ function sourceGuards() {
   assert.doesNotMatch(resolveFn, /principal\.schoolCode/);
   const predFn = scopeLib.slice(scopeLib.indexOf("function sqlSchoolPredicate"), scopeLib.indexOf("function countryIsoFromRecord"));
   assert.match(predFn, /login_code/);
+  assert.doesNotMatch(predFn, /school_code/);
+  assert.doesNotMatch(predFn, /coalesce/i);
+  const attachFn = scopeLib.slice(
+    scopeLib.indexOf("async function attachFinanceMembershipScope"),
+    scopeLib.indexOf("function attachFinanceFixtureScope"),
+  );
+  assert.match(attachFn, /SELECT s\.login_code/);
+  assert.doesNotMatch(attachFn, /coalesce\(nullif\(btrim\(s\.login_code\)/);
+  const getSchoolFn = pgStore.slice(pgStore.indexOf("async getSchoolByCode"), pgStore.indexOf("async findStudent"));
+  assert.doesNotMatch(getSchoolFn, /school_code/);
+  const listClassFn = pgStore.slice(pgStore.indexOf("async listStudentsInClass"), pgStore.indexOf("async listPaymentCodes"));
+  assert.doesNotMatch(listClassFn, /OR upper\(btrim\(s\.school_code\)\)/);
   assert.match(pgStore, /withFinancePrincipal/);
   assert.match(pgStore, /attachFinanceMembershipScope/);
   assert.match(server, /function financeHttpPrincipal/);
   assert.match(read("backend/services/tenantScopeService.js"), /principal\.financeLoginCode/);
   assert.match(httpTest, /P0 leftover ≠ login_code du même tenant/);
   assert.match(httpTest, /leftover JWT n'est pas l'autorité Finance/);
+  assert.match(read("backend/lib/financeMembershipScope.pg.test.js"), /P0-4: leftover jamais promu/);
+  const management = read("backend/lib/financeManagement.js");
+  const mappedFn = management.slice(
+    management.indexOf("function mappedSchoolCode"),
+    management.indexOf("function mapPaymentRow"),
+  );
+  assert.doesNotMatch(mappedFn, /school_code/);
 
   const assertTenant = service.slice(
     service.indexOf("function assertTenant"),

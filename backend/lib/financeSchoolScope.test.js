@@ -176,11 +176,56 @@ test("GP-005: Superadmin request-scoped résout leftover → login_code", async 
   assert.deepEqual(resolveFinanceSchoolScope(attached).codes, ["CD-LAC-26-001"]);
 });
 
-test("GP-005: sqlSchoolPredicate cible login_code (repli school_code si vide)", () => {
+test("GP-005: sqlSchoolPredicate cible login_code uniquement (aucun repli leftover)", () => {
   const { sqlSchoolPredicate } = require("./financeSchoolScope");
   const params = [];
   const pred = sqlSchoolPredicate("s", { mode: "schools", codes: ["CD-LAC-26-001"] }, params);
   assert.match(pred, /login_code/);
-  assert.match(pred, /school_code/);
+  assert.doesNotMatch(pred, /school_code/);
+  assert.doesNotMatch(pred, /coalesce/i);
   assert.deepEqual(params, [["CD-LAC-26-001"]]);
+});
+
+test("GP-005: login_code vide ne promeut pas leftover en financeLoginCode", async () => {
+  const leftover = "CD-2026-0001";
+  const one = async (sql) => {
+    assert.match(String(sql), /s\.login_code|SELECT login_code/i);
+    assert.doesNotMatch(String(sql), /coalesce\(nullif\(btrim\(s\.login_code\)/i);
+    return { login_code: null };
+  };
+  const attached = await attachFinanceMembershipScope(
+    { role: "Comptable", sub: "user-uuid-1", schoolCode: leftover },
+    one,
+  );
+  assert.equal(attached.financeLoginCode, "");
+  assert.notEqual(attached.financeLoginCode, leftover);
+  assert.equal(resolveFinanceSchoolScope(attached).mode, "none");
+});
+
+test("GP-005: Superadmin request-scoped login_code vide fail-closed", async () => {
+  const leftover = "CD-2026-0001";
+  const one = async () => ({ login_code: "   " });
+  const attached = await attachFinanceMembershipScope(
+    {
+      role: "Super Administrateur Somafrik",
+      schoolCode: leftover,
+      effectiveSchoolCode: leftover,
+      schoolScopeSource: "request",
+    },
+    one,
+  );
+  assert.equal(attached.financeLoginCode, "");
+  assert.equal(resolveFinanceSchoolScope(attached).mode, "none");
+});
+
+test("GP-005: projection n'utilise pas leftover school_code", () => {
+  const { publicSchoolCodeFromRow, schoolRecordInFinanceScope } = require("./financeSchoolScope");
+  const leftover = "CD-2026-0001";
+  const login = "CD-LAC-26-001";
+  assert.equal(publicSchoolCodeFromRow({ login_code: login, school_code: leftover }), login);
+  assert.equal(publicSchoolCodeFromRow({ login_code: "", school_code: leftover }), "");
+  assert.equal(publicSchoolCodeFromRow({ school_code: leftover }), "");
+  const scope = { mode: "schools", codes: [login] };
+  assert.equal(schoolRecordInFinanceScope({ login_code: login, school_code: leftover }, scope), true);
+  assert.equal(schoolRecordInFinanceScope({ login_code: "", school_code: leftover, schoolCode: leftover }, scope), false);
 });

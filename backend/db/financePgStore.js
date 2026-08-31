@@ -30,7 +30,7 @@ const {
 } = require("../lib/financeSchoolScope");
 
 function publicSchoolCode(row) {
-  return asTrimmed(row?.login_code || row?.code || row?.school_code);
+  return asTrimmed(row?.login_code || row?.code);
 }
 const {
   foldPaymentStudentOptions,
@@ -57,9 +57,7 @@ function createFinancePgStore(repo) {
           `SELECT s.*, c.currency AS country_currency, c.iso_code AS country_iso
            FROM schools s
            JOIN countries c ON c.id = s.country_id
-           WHERE upper(btrim(coalesce(s.login_code, ''))) = $1
-              OR upper(btrim(s.school_code)) = $1
-           ORDER BY CASE WHEN upper(btrim(coalesce(s.login_code, ''))) = $1 THEN 0 ELSE 1 END
+           WHERE upper(btrim(s.login_code)) = $1
            LIMIT 1`,
           [asTrimmed(code).toUpperCase()],
         );
@@ -68,7 +66,7 @@ function createFinancePgStore(repo) {
         const currency = String(profile.currency || row.currency || row.country_currency || "").trim().toUpperCase();
         return {
           ...row,
-          code: row.login_code || row.school_code,
+          code: row.login_code || "",
           loginCode: row.login_code || "",
           schoolCode: publicSchoolCode(row),
           countryIso: String(row.country_iso || "").trim().toUpperCase(),
@@ -239,7 +237,7 @@ function createFinancePgStore(repo) {
            JOIN enrollments e ON e.student_id = st.id AND e.status = 'active'
            JOIN classes cl ON cl.id = e.class_id
            LEFT JOIN academic_years ay ON ay.id = e.academic_year_id
-           WHERE (upper(btrim(coalesce(s.login_code, ''))) = $1 OR upper(btrim(s.school_code)) = $1)
+           WHERE upper(btrim(s.login_code)) = $1
              AND (
                ($2::text <> '' AND e.class_id::text = $2)
                OR ($2::text = '' AND $3::text <> '' AND upper(btrim(cl.class_code)) = upper(btrim($3)))

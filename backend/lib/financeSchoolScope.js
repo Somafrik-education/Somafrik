@@ -3,9 +3,8 @@
 /**
  * Autorité Finance (GP-005) :
  * principal.sub → users.id → users.school_id → schools.id → schools.login_code
- * Le JWT schoolCode leftover n'est plus l'autorité. Il peut rester sur le
- * principal pour compatibilité, mais le scope schools n'utilise que
- * `financeLoginCode` (login_code, ou school_code si login_code encore vide).
+ * Le JWT schoolCode leftover n'est plus l'autorité. login_code vide ⇒ fail-closed.
+ * Aucun repli PostgreSQL vers schools.school_code.
  */
 
 const { TenantScopeService } = require("../services/tenantScopeService");
@@ -21,21 +20,15 @@ function normalizeLoginCode(value) {
 
 function publicSchoolCodeFromRow(row = {}, profile = {}) {
   return normalizeLoginCode(
-    row.login_code ||
-      row.loginCode ||
-      row.schoolLoginCode ||
-      row.code ||
-      profile.loginCode ||
-      row.school_code ||
-      row.schoolCode ||
-      profile.schoolCode,
+    row.login_code || row.loginCode || row.schoolLoginCode || row.code || profile.loginCode || row.schoolCode,
   );
 }
 
 /**
  * Attache `financeLoginCode` depuis le membership UUID (PostgreSQL).
  * Superadmin / Admin Pays globaux : pas de lookup.
- * Superadmin request-scoped : résout l'école demandée vers login_code.
+ * Superadmin request-scoped : trouve l'école demandée, n'émet que login_code.
+ * login_code NULL/vide ⇒ financeLoginCode vide ⇒ mode none.
  * Sans `one` (fixtures mémoire) : fail-closed — utiliser
  * `attachFinanceFixtureScope` côté store mémoire.
  */
@@ -62,7 +55,7 @@ async function attachFinanceMembershipScope(principal, one) {
     const requested = tenantScope.normalizeSchoolCode(principal.effectiveSchoolCode);
     if (!requested) return { ...principal, financeLoginCode: "" };
     const row = await one(
-      `SELECT coalesce(nullif(btrim(login_code), ''), school_code) AS login_code
+      `SELECT login_code
        FROM schools
        WHERE upper(btrim(coalesce(login_code, ''))) = $1
           OR upper(btrim(school_code)) = $1
@@ -75,7 +68,7 @@ async function attachFinanceMembershipScope(principal, one) {
   const userId = String(principal.sub ?? "").trim();
   if (!userId) return { ...principal, financeLoginCode: "" };
   const row = await one(
-    `SELECT coalesce(nullif(btrim(s.login_code), ''), s.school_code) AS login_code
+    `SELECT s.login_code
      FROM users u
      INNER JOIN schools s ON s.id = u.school_id
      WHERE u.id::text = $1
@@ -87,8 +80,7 @@ async function attachFinanceMembershipScope(principal, one) {
 
 /**
  * Store mémoire : une seule identité par établissement (le schoolCode du
- * fixture EST le login_code). Ne jamais utiliser en PostgreSQL — leftover
- * JWT y est distinct de login_code.
+ * fixture EST le login_code). Ne jamais utiliser en PostgreSQL.
  */
 function attachFinanceFixtureScope(principal) {
   if (!principal) return principal;
@@ -143,7 +135,7 @@ function sqlSchoolPredicate(alias, scope, params) {
     )`;
   }
   params.push(scope.codes);
-  return `upper(btrim(coalesce(nullif(${alias}.login_code, ''), ${alias}.school_code))) = ANY($${params.length}::text[])`;
+  return `upper(btrim(${alias}.login_code)) = ANY($${params.length}::text[])`;
 }
 
 function countryIsoFromRecord(record) {
@@ -176,8 +168,8 @@ function schoolRecordInFinanceScope(record, scope) {
     return Boolean(iso) && iso === scope.countryCode;
   }
   const publicCode = publicSchoolCodeFromRow(record);
-  if (publicCode && schoolCodeInScope(publicCode, scope)) return true;
-  return schoolCodeInScope(record?.schoolCode || record?.school_code, scope);
+  if (!publicCode) return false;
+  return schoolCodeInScope(publicCode, scope);
 }
 
 function primaryFinanceSchoolCode(principal) {

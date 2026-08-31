@@ -273,8 +273,8 @@ test("PG Finance : crash avant stockage idempotence rollback le paiement", async
        VALUES ('RDC', 'CD', '+243', 'CDF') RETURNING id`,
     );
     const school = await pool.query(
-      `INSERT INTO schools (country_id, school_code, name, status)
-       VALUES ($1, 'CD-2026-0001', 'Lycée A', 'active') RETURNING id`,
+      `INSERT INTO schools (country_id, school_code, login_code, name, status)
+       VALUES ($1, 'CD-2026-0001', 'CD-2026-0001', 'Lycée A', 'active') RETURNING id`,
       [country.rows[0].id],
     );
     const year = await pool.query(

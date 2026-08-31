@@ -7,12 +7,12 @@ const {
   FINANCE_ERROR,
   asTrimmed,
   money,
-  mapPaymentRow,
-  mapObligationRow,
-  mapGridRow,
-  mapItemRow,
-  mapReminderRow,
-  mapStatusRow,
+  mapPaymentRow: mapPaymentRowRaw,
+  mapObligationRow: mapObligationRowRaw,
+  mapGridRow: mapGridRowRaw,
+  mapItemRow: mapItemRowRaw,
+  mapReminderRow: mapReminderRowRaw,
+  mapStatusRow: mapStatusRowRaw,
   studentMatches,
   studentMatchesClassScope,
   classScopeSpec,
@@ -40,6 +40,40 @@ function clone(value) {
 
 function scopedPrincipal(principal) {
   return attachFinanceFixtureScope(principal);
+}
+
+/** Fixture mémoire : le schoolCode EST le login_code. Ne jamais copier leftover PG. */
+function withFixtureLoginCode(row = {}) {
+  if (!row || typeof row !== "object") return row;
+  const login = asTrimmed(row.login_code || row.loginCode);
+  if (login) return row;
+  const fixture = asTrimmed(row.schoolCode || row.school_code);
+  if (!fixture) return row;
+  return { ...row, login_code: fixture, loginCode: fixture };
+}
+
+function mapPaymentRow(row) {
+  return mapPaymentRowRaw(withFixtureLoginCode(row));
+}
+
+function mapObligationRow(row) {
+  return mapObligationRowRaw(withFixtureLoginCode(row));
+}
+
+function mapGridRow(row) {
+  return mapGridRowRaw(withFixtureLoginCode(row));
+}
+
+function mapItemRow(row) {
+  return mapItemRowRaw(withFixtureLoginCode(row));
+}
+
+function mapReminderRow(row) {
+  return mapReminderRowRaw(withFixtureLoginCode(row));
+}
+
+function mapStatusRow(row) {
+  return mapStatusRowRaw(withFixtureLoginCode(row));
 }
 
 function createFinanceMemoryStore({
@@ -145,6 +179,8 @@ function createFinanceMemoryStore({
           id: school.id || school.publicId || school.code,
           code: school.code || school.schoolCode,
           school_code: school.code || school.schoolCode,
+          login_code: school.loginCode || school.login_code || school.code || school.schoolCode,
+          loginCode: school.loginCode || school.login_code || school.code || school.schoolCode,
           countryIso: String(school.countryIso || school.countryCode || school.iso_code || "").trim().toUpperCase(),
           currency: school.currency || "",
         };

@@ -149,7 +149,7 @@ function parsePayload(value) {
 
 function mappedSchoolCode(row, profile = {}) {
   return asTrimmed(
-    row?.login_code || row?.loginCode || profile.loginCode || row?.school_code || row?.schoolCode || profile.schoolCode,
+    row?.login_code || row?.loginCode || profile.loginCode || row?.schoolCode || profile.schoolCode,
   );
 }
 
