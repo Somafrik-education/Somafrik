@@ -416,10 +416,15 @@ async function main() {
     assert.equal(enrollAudits[0].school_code, LEFTOVER_A);
     assert.notEqual(enrollAudits[0].school_code, LEFTOVER_B, "ENR-07 enroll jamais leftover B");
 
+    const getEnrolled = await request(`/students/${enrolledCode}`, { token: tokenForgedB });
+    assert.equal(getEnrolled.status, 200, `ENR-07 GET enrolled leftover B status=${getEnrolled.status}`);
     const patchALeftover = await request(`/students/${enrolledCode}`, {
       method: "PATCH",
       token: tokenForgedB,
-      body: { firstName: "Nouveau2" },
+      body: {
+        firstName: "Nouveau2",
+        expectedUpdatedAt: getEnrolled.data?.updatedAt,
+      },
     });
     assert.equal(patchALeftover.status, 200, `ENR-07 PATCH leftover B status=${patchALeftover.status}`);
     const patchAudits = await leftoverAuditOnB("update_student", enrolledCode);
@@ -503,7 +508,7 @@ async function main() {
     const getPays = await request("/students", { token: tokenPaysCd });
     assert.ok(!unwrapList(getPays.data).some(isStudentB), "P0-10 Admin Pays CD ne voit pas BI");
 
-    console.log("OK enrollmentTenant.http.pg.test.js — ENR-01…ENR-06 invariants dual-identity");
+    console.log("OK enrollmentTenant.http.pg.test.js — ENR-01…ENR-07 invariants dual-identity");
   } finally {
     await stopChild(child);
     await pool.end();
