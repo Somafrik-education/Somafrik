@@ -95,6 +95,17 @@ function resolveActorSchoolCode(principal, rawPayload = {}) {
   return requested;
 }
 
+async function loadSchoolForWrite(tx, schoolCode) {
+  const requested = asTrimmed(schoolCode);
+  if (!requested) return null;
+  const direct = await tx.getSchoolByCode(requested);
+  if (direct) return direct;
+  if (typeof tx.findEmittedLoginCode !== "function") return null;
+  const login = asTrimmed(await tx.findEmittedLoginCode(requested));
+  if (!login) return null;
+  return tx.getSchoolByCode(login);
+}
+
 function actorName(principal) {
   return `${principal?.firstName ?? ""} ${principal?.lastName ?? ""}`.trim() || principal?.identifier || principal?.role;
 }
@@ -662,14 +673,15 @@ async function upsertFeeGrid(store, rawPayload, principal) {
   }
 
   return store.withTransaction(async (tx) => {
-    const school = await tx.getSchoolByCode(schoolCode);
+    const school = await loadSchoolForWrite(tx, schoolCode);
     if (!school) throw createFinanceError(404, "Établissement introuvable", FINANCE_ERROR.TENANT_MISMATCH);
     assertTenant(principal, school);
+    const publicCode = asTrimmed(school.loginCode || school.schoolCode || school.code);
     const klass = await resolveGridClass(tx, school, payload);
     const grid = await tx.upsertGrid({
       id: payload.id,
       schoolId: school.id,
-      schoolCode,
+      schoolCode: publicCode,
       classId: klass.classId,
       classCode: klass.classCode || "",
       className: klass.className || className,
@@ -686,7 +698,7 @@ async function upsertFeeGrid(store, rawPayload, principal) {
       ...item,
       feeType: persistableFeeType(item.feeType || item.fee_type),
       schoolId: school.id,
-      schoolCode,
+      schoolCode: publicCode,
     })));
     await tx.insertTariffHistory({
       schoolId: school.id,

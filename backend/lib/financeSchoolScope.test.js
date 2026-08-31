@@ -218,6 +218,20 @@ test("GP-005: Superadmin request-scoped login_code vide fail-closed", async () =
   assert.equal(resolveFinanceSchoolScope(attached).mode, "none");
 });
 
+test("GP-005: findEmittedLoginCode n'émet que login_code", async () => {
+  const { findEmittedLoginCode } = require("./financeSchoolScope");
+  const leftover = "CD-2026-0001";
+  const login = "CD-LAC-26-001";
+  const one = async (sql, params) => {
+    assert.match(String(sql), /FROM schools/i);
+    assert.equal(params[0], leftover);
+    return { login_code: login };
+  };
+  assert.equal(await findEmittedLoginCode(leftover, one), login);
+  assert.equal(await findEmittedLoginCode(leftover, async () => ({ login_code: null })), "");
+  assert.equal(await findEmittedLoginCode(leftover, async () => ({ login_code: leftover })), leftover);
+});
+
 test("GP-005: projection n'utilise pas leftover school_code", () => {
   const { publicSchoolCodeFromRow, schoolRecordInFinanceScope } = require("./financeSchoolScope");
   const leftover = "CD-2026-0001";

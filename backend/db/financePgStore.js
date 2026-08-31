@@ -27,6 +27,7 @@ const {
   resolveFinanceSchoolScope,
   sqlSchoolPredicate,
   primaryFinanceSchoolCode,
+  findEmittedLoginCode: lookupEmittedLoginCode,
 } = require("../lib/financeSchoolScope");
 
 function publicSchoolCode(row) {
@@ -73,6 +74,9 @@ function createFinancePgStore(repo) {
           currency,
           currencySource: profile.currency ? "school" : "country",
         };
+      },
+      async findEmittedLoginCode(code) {
+        return lookupEmittedLoginCode(code, one);
       },
       async findStudent(studentKey, principal) {
         const key = asTrimmed(studentKey);

@@ -185,6 +185,10 @@ function createFinanceMemoryStore({
           currency: school.currency || "",
         };
       },
+      async findEmittedLoginCode(code) {
+        const school = await this.getSchoolByCode(code);
+        return asTrimmed(school?.loginCode || school?.login_code || school?.code || "");
+      },
       async findStudent(studentKey, principal) {
         const student = await findStudent?.(studentKey, principal);
         if (!student) return null;

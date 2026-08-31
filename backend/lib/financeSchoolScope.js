@@ -25,6 +25,25 @@ function publicSchoolCodeFromRow(row = {}, profile = {}) {
 }
 
 /**
+ * Trouve une école par le code demandé (login_code ou leftover JWT) et n'émet
+ * que login_code. NULL/vide ⇒ '' (fail-closed). Pas un prédicat de scope.
+ */
+async function findEmittedLoginCode(requested, one) {
+  const code = normalizeLoginCode(requested);
+  if (!code || code === "*" || typeof one !== "function") return "";
+  const row = await one(
+    `SELECT login_code
+     FROM schools
+     WHERE upper(btrim(coalesce(login_code, ''))) = $1
+        OR upper(btrim(school_code)) = $1
+     ORDER BY CASE WHEN upper(btrim(coalesce(login_code, ''))) = $1 THEN 0 ELSE 1 END
+     LIMIT 1`,
+    [code],
+  );
+  return normalizeLoginCode(row?.login_code);
+}
+
+/**
  * Attache `financeLoginCode` depuis le membership UUID (PostgreSQL).
  * Superadmin / Admin Pays globaux : pas de lookup.
  * Superadmin request-scoped : trouve l'école demandée, n'émet que login_code.
@@ -54,15 +73,8 @@ async function attachFinanceMembershipScope(principal, one) {
   if (requestScoped) {
     const requested = tenantScope.normalizeSchoolCode(principal.effectiveSchoolCode);
     if (!requested) return { ...principal, financeLoginCode: "" };
-    const row = await one(
-      `SELECT login_code
-       FROM schools
-       WHERE upper(btrim(coalesce(login_code, ''))) = $1
-          OR upper(btrim(school_code)) = $1
-       LIMIT 1`,
-      [requested],
-    );
-    return { ...principal, financeLoginCode: normalizeLoginCode(row?.login_code) };
+    const loginCode = await findEmittedLoginCode(requested, one);
+    return { ...principal, financeLoginCode: loginCode };
   }
 
   const userId = String(principal.sub ?? "").trim();
@@ -190,4 +202,5 @@ module.exports = {
   countryIsoFromRecord,
   primaryFinanceSchoolCode,
   publicSchoolCodeFromRow,
+  findEmittedLoginCode,
 };
