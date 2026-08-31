@@ -63,12 +63,16 @@ async function ensureCountryGroup(request, superToken, countryCode, code) {
   return created.data;
 }
 
+function yearNameEquals(row, name) {
+  return String(row?.name ?? "").trim() === String(name ?? "").trim();
+}
+
 async function ensureSchoolYear(request, schoolToken, name = "2025-2026", schoolCode, { isCurrent = true } = {}) {
   const listed = await request("/v2/academic-years", { token: schoolToken });
   const rows = extractList(listed.data);
-  const existing = rows.find(
-    (row) => row.name === name && (!schoolCode || !row.schoolCode || row.schoolCode === schoolCode),
-  );
+  // Token is already school-scoped. DTO schoolCode = login_code; leftover JWT must not
+  // skip an existing year and POST a duplicate.
+  const existing = rows.find((row) => yearNameEquals(row, name));
   if (existing) return existing;
   const yearMatch = String(name).match(/^(\d{4})-(\d{4})$/);
   const startDate = yearMatch ? `${yearMatch[1]}-09-01` : isCurrent ? "2025-09-01" : "2024-09-01";
@@ -84,10 +88,15 @@ async function ensureSchoolYear(request, schoolToken, name = "2025-2026", school
       isCurrent,
     },
   });
-  if (created.status !== 201 && created.status !== 200) {
-    throw new Error(`create academic year: ${JSON.stringify(created.data)}`);
+  if (created.status === 201 || created.status === 200) return created.data;
+  const conflict =
+    created.status === 409 || /existe déjà/i.test(String(created.data?.message ?? created.data?.error ?? ""));
+  if (conflict) {
+    const retry = extractList((await request("/v2/academic-years", { token: schoolToken })).data);
+    const found = retry.find((row) => yearNameEquals(row, name));
+    if (found) return found;
   }
-  return created.data;
+  throw new Error(`create academic year: ${JSON.stringify(created.data)}`);
 }
 
 async function activateOffering(request, schoolToken, levelIds, streamIds = [], groupIds = []) {
