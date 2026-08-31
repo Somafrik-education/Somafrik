@@ -38,6 +38,17 @@ function sourceGuards() {
 
   assert.match(getBlock, /presenceHttpPrincipal/);
   assert.match(getBlock, /assertPresenceReadable/);
+  assert.match(getBlock, /presenceListStaysStudentScoped/);
+  assert.doesNotMatch(getBlock, /studentIds\.size \? byStudents : scopedPresences/);
+
+  const pedagogy = read("backend/lib/pedagogyService.js");
+  const auditFn = pedagogy.slice(
+    pedagogy.indexOf("async function upsertAttendanceBatch"),
+    pedagogy.indexOf("module.exports"),
+  );
+  assert.match(auditFn, /presenceSchoolId/);
+  assert.match(auditFn, /presenceLoginCode/);
+  assert.doesNotMatch(auditFn, /schoolCode:\s*principal\?\.schoolCode/);
   assert.match(postBlock, /presenceHttpPrincipal/);
   assert.match(postBlock, /assertPresenceReadable/);
 
@@ -62,6 +73,9 @@ function sourceGuards() {
   assert.match(httpTest, /PR-08/);
   assert.match(httpTest, /PR-04/);
   assert.match(httpTest, /PR-05/);
+  assert.match(httpTest, /PR-audit/);
+  assert.match(httpTest, /PR-scope-teacher/);
+  assert.match(httpTest, /PR-scope-parent/);
   assert.match(httpTest, /ALTER COLUMN login_code DROP NOT NULL/);
 
   const resolveStart = repo.indexOf("async resolveStudentForAttendance");

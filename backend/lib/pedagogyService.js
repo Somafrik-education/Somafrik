@@ -54,6 +54,7 @@ async function writePedagogyAudit(tx, principal, auditMeta, entry) {
     throw createPedagogyError(500, "Audit pédagogie indisponible dans la transaction.");
   }
   await tx.recordPedagogyAudit({
+    schoolId: entry.schoolId,
     schoolCode: entry.schoolCode || principal?.schoolCode,
     userId: principal?.sub || principal?.id,
     action: entry.action,
@@ -703,7 +704,8 @@ async function upsertAttendanceBatch(store, payload, principal, auditMeta) {
         action: "upsert_attendance_batch",
         entityType: "attendance",
         entityId: String(saved.length),
-        schoolCode: principal?.schoolCode,
+        schoolId: asTrimmed(principal?.presenceSchoolId),
+        schoolCode: asTrimmed(principal?.presenceLoginCode),
         newValue: { count: saved.length },
       });
       return saved;

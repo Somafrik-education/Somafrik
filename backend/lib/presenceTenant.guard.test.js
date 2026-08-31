@@ -52,6 +52,21 @@ test("GP-015: resolveStudentForAttendance privilégie presenceSchoolId, pas logi
   assert.match(queryFn, /st\.school_id = \$2::uuid/);
 });
 
+test("GP-015: audit présence n'utilise pas leftover JWT schoolCode", () => {
+  const svc = read("lib/pedagogyService.js");
+  const fn = sliceFrom(svc, "async function upsertAttendanceBatch", "module.exports");
+  assert.doesNotMatch(fn, /schoolCode:\s*principal\?\.schoolCode/);
+  assert.match(fn, /presenceSchoolId/);
+  assert.match(fn, /presenceLoginCode/);
+});
+
+test("GP-015: GET /api/presences ne doit pas élargir un scope élève vide", () => {
+  const server = read("server.js");
+  const getBlock = sliceFrom(server, 'app.get("/api/presences"', 'app.post("/api/notes"');
+  assert.match(getBlock, /presenceListStaysStudentScoped/);
+  assert.doesNotMatch(getBlock, /studentIds\.size \? byStudents : scopedPresences/);
+});
+
 test("GP-015: presenceSchoolScope n'autorise pas leftover comme autorité établissement", () => {
   const scopeLib = read("lib/presenceSchoolScope.js");
   const attachFn = sliceFrom(scopeLib, "async function attachPresenceMembershipScope", "function attachPresenceFixtureScope");

@@ -233,6 +233,19 @@ function filterPresenceRows(rows, scope) {
   return [];
 }
 
+function isStudentScopedPresenceRole(role = "") {
+  const key = String(role ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .toLowerCase();
+  return key === "enseignant" || key.includes("parent") || key.includes("eleve") || key.includes("etudiant");
+}
+
+function presenceListStaysStudentScoped(principal) {
+  return isStudentScopedPresenceRole(principal?.role);
+}
+
 function assertPresenceReadable(principal) {
   const scope = resolvePresenceSchoolScope(principal);
   if (scope.mode === "none") {
@@ -283,4 +296,6 @@ module.exports = {
   hasPresenceMembershipAttached,
   projectPresenceSchoolCode,
   normalizeLoginCode,
+  isStudentScopedPresenceRole,
+  presenceListStaysStudentScoped,
 };
