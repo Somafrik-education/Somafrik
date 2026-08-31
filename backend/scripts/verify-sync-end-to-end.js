@@ -222,6 +222,93 @@ async function assertReloadStable(label, fetchList, pickId) {
   return first;
 }
 
+/** login_code V2 de l'école fixture, via user_code enseignant — jamais leftover school_code. */
+async function resolveCanonicalLoginCode(pool) {
+  const row = await pool.query(
+    `SELECT s.login_code
+     FROM users u
+     JOIN schools s ON s.id = u.school_id
+     WHERE u.user_code = 'ENS-SYNC-01'
+     LIMIT 1`,
+  );
+  assert.equal(row.rowCount, 1, "fixture ENS-SYNC-01 sans école");
+  const loginCode = String(row.rows[0].login_code ?? "").trim().toUpperCase();
+  assert.match(
+    loginCode,
+    /^[A-Z]{2}-[A-Z0-9]{2,5}-\d{2}-\d{3}$/,
+    `login_code V2 attendu, reçu ${loginCode}`,
+  );
+  return loginCode;
+}
+
+/**
+ * SYNC-E2E-ATTENDANCE-ASSIGNMENT-01 — ENS-SYNC-01 × classe canonique.
+ * Présences admin exige une affectation active sur la classe ciblée.
+ */
+async function assignFixtureTeacherToCreatedClass(pool, { classCode, loginCode }) {
+  const teacher = await pool.query(
+    `SELECT t.id AS teacher_id, s.id AS school_id
+     FROM users u
+     JOIN teachers t ON t.user_id = u.id AND t.status = 'active'
+     JOIN schools s ON s.id = u.school_id AND s.id = t.school_id
+     WHERE u.user_code = 'ENS-SYNC-01'
+       AND upper(s.login_code) = $1
+     LIMIT 2`,
+    [loginCode],
+  );
+  assert.equal(teacher.rowCount, 1, `ENS-SYNC-01 introuvable pour login_code ${loginCode}`);
+
+  const klass = await pool.query(
+    `SELECT cl.id AS class_id, cl.academic_year_id
+     FROM classes cl
+     JOIN schools s ON s.id = cl.school_id
+     WHERE cl.class_code = $1 AND upper(s.login_code) = $2
+     LIMIT 2`,
+    [classCode, loginCode],
+  );
+  assert.equal(klass.rowCount, 1, `classe ${classCode} introuvable pour login_code ${loginCode}`);
+
+  const subject = await pool.query(
+    `SELECT sub.id AS subject_id
+     FROM subjects sub
+     JOIN schools s ON s.id = sub.school_id
+     WHERE sub.subject_code = 'SUB-MATH' AND upper(s.login_code) = $1
+     LIMIT 2`,
+    [loginCode],
+  );
+  assert.equal(subject.rowCount, 1, `SUB-MATH introuvable pour login_code ${loginCode}`);
+
+  const inserted = await pool.query(
+    `INSERT INTO teacher_assignments (
+       school_id, teacher_id, class_id, subject_id, academic_year_id, status
+     )
+     VALUES ($1::uuid, $2::uuid, $3::uuid, $4::uuid, $5::uuid, 'active')
+     RETURNING id`,
+    [
+      teacher.rows[0].school_id,
+      teacher.rows[0].teacher_id,
+      klass.rows[0].class_id,
+      subject.rows[0].subject_id,
+      klass.rows[0].academic_year_id,
+    ],
+  );
+  assert.equal(inserted.rowCount, 1, "INSERT teacher_assignments attendu");
+
+  const active = await pool.query(
+    `SELECT count(*)::int AS c
+     FROM teacher_assignments
+     WHERE teacher_id = $1::uuid
+       AND class_id = $2::uuid
+       AND status = 'active'`,
+    [teacher.rows[0].teacher_id, klass.rows[0].class_id],
+  );
+  assert.equal(
+    active.rows[0].c,
+    1,
+    "exactement une affectation active ENS-SYNC-01 × classe canonique",
+  );
+}
+
 async function runSyncEndToEnd(databaseUrl) {
   const fixtureSecret = `SyncE2e!${crypto.randomBytes(16).toString("hex")}`;
   console.log("[sync-e2e] identifier attendu: super-sync-e2e@test.cd (pas superadmin)");
@@ -436,6 +523,12 @@ async function runSyncEndToEnd(databaseUrl) {
     await pool.query(`DELETE FROM grades WHERE id::text = $1`, [noteId]);
     notesGet = extractList((await request("/notes", { token: adminToken })).data);
     assert.ok(!notesGet.some((row) => String(row.id) === noteId), "notes: suppression PG reflétée par GET");
+
+    const CANONICAL_LOGIN_CODE = await resolveCanonicalLoginCode(pool);
+    await assignFixtureTeacherToCreatedClass(pool, {
+      classCode,
+      loginCode: CANONICAL_LOGIN_CODE,
+    });
 
     const presencePost = await request("/presences", {
       method: "POST",
