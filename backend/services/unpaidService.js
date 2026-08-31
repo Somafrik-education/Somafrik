@@ -60,7 +60,7 @@ function isOverdueStudentFee(fee, now = new Date()) {
 
 function scopeFees(state, principal) {
   const fees = refreshStudentFeeStatuses(state.studentFees ?? []);
-  const schoolCode = String(principal?.schoolCode ?? "").trim().toUpperCase();
+  const schoolCode = String(principal?.financeLoginCode || principal?.schoolCode || "").trim().toUpperCase();
   if (!schoolCode || schoolCode === "*") return fees;
   return fees.filter((fee) => String(fee.schoolCode ?? "").trim().toUpperCase() === schoolCode);
 }

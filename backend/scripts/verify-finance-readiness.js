@@ -91,6 +91,8 @@ function sourceGuards() {
   assert.match(predFn, /login_code/);
   assert.match(pgStore, /withFinancePrincipal/);
   assert.match(pgStore, /attachFinanceMembershipScope/);
+  assert.match(server, /function financeHttpPrincipal/);
+  assert.match(read("backend/services/tenantScopeService.js"), /principal\.financeLoginCode/);
   assert.match(httpTest, /P0 leftover ≠ login_code du même tenant/);
   assert.match(httpTest, /leftover JWT n'est pas l'autorité Finance/);
 
