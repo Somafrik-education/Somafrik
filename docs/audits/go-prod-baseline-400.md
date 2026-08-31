@@ -5,6 +5,7 @@
 **Repo :** Somafrik-education/Somafrik  
 **Baseline exigée :** `develop@ece159605147c2ad16ff7f3f32c7f448377baae0` = merge PR **#400**  
 **Branche d’audit :** `cursor/audit-go-prod-baseline-400-a873`  
+**PR :** https://github.com/Somafrik-education/Somafrik/pull/420 (Draft)  
 **Date :** 2026-08-31  
 
 Les PR **#401–#416** ne sont **pas** la vérité runtime. Elles sont des signalements historiques.  
