@@ -46,6 +46,29 @@ function createClientsMemoryStore(seed = {}) {
   if (seed.school) {
     tables.schools.push(seed.school);
   }
+  if (Array.isArray(seed.users)) {
+    for (const user of seed.users) {
+      tables.users.push({ ...user });
+    }
+  }
+  const memberPresets = [
+    { id: "admin-cd", schoolId: "school-cd" },
+    { id: "admin-bi", schoolId: "school-bi" },
+  ];
+  for (const preset of memberPresets) {
+    if (tables.users.some((row) => String(row.id) === preset.id)) continue;
+    if (!tables.schools.some((row) => String(row.id) === preset.schoolId)) continue;
+    tables.users.push({
+      id: preset.id,
+      school_id: preset.schoolId,
+      user_code: String(preset.id).toUpperCase(),
+      first_name: "Admin",
+      last_name: "Member",
+      email: `${preset.id}@test.local`,
+      role: "SCHOOL_ADMIN",
+      status: "active",
+    });
+  }
 
   function resolveSchool(code) {
     const normalized = asTrimmed(code).toUpperCase();
@@ -126,6 +149,24 @@ function createClientsMemoryStore(seed = {}) {
         return {
           id: school.id,
           school_code: asTrimmed(school.code ?? school.schoolCode).toUpperCase(),
+          login_code: asTrimmed(school.loginCode ?? school.login_code).toUpperCase(),
+          name: school.name,
+          country_id: school.countryId ?? school.country_id ?? "country-seed",
+          country_code: resolveSchoolCountryCode(school),
+          country_name: school.country ?? school.country_name ?? "",
+        };
+      },
+      async getSchoolForPrincipalUser(principal = {}) {
+        const userId = asTrimmed(principal?.sub || principal?.id);
+        if (!userId) return null;
+        const user = tables.users.find((row) => String(row.id) === userId);
+        if (!user?.school_id) return null;
+        const school = tables.schools.find((row) => String(row.id) === String(user.school_id));
+        if (!school) return null;
+        return {
+          id: school.id,
+          school_code: asTrimmed(school.code ?? school.schoolCode).toUpperCase(),
+          login_code: asTrimmed(school.loginCode ?? school.login_code).toUpperCase(),
           name: school.name,
           country_id: school.countryId ?? school.country_id ?? "country-seed",
           country_code: resolveSchoolCountryCode(school),
@@ -1079,6 +1120,7 @@ function createClientsMemoryStore(seed = {}) {
   const store = {
     bind,
     getSchoolByCode: (code) => txApi.getSchoolByCode(code),
+    getSchoolForPrincipalUser: (principal) => txApi.getSchoolForPrincipalUser(principal),
     getCountryByCode: (code) => txApi.getCountryByCode(code),
     getUserById: (id) => txApi.getUserById(id),
     async withTransaction(fn) {
