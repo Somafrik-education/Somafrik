@@ -6,24 +6,32 @@ import {
 import { TAB_BAR_CONTENT_HEIGHT } from "./mobileUxV1Layout";
 import { MIN_TOUCH_TARGET_DP } from "./mobileUsability";
 import {
-  computeTabItemInnerLayout,
-  TAB_ITEM_INNER_ALIGN,
-  TAB_ITEM_RN_PADDING_DP,
+  computeSomafrikTabItemGeometry,
+  projectItemToParentUp,
+  SOMAFRIK_TAB_ICON_DP,
+  SOMAFRIK_TAB_SPACE_BELOW_LABEL_DP,
+  spaceBelowLabelIsWithinAndroidBudget,
   tabItemTouchTargetOk,
 } from "./tabBarItemInnerLayout";
 
-const start = computeTabItemInnerLayout(TAB_BAR_CONTENT_HEIGHT, "flex-start");
-const end = computeTabItemInnerLayout(TAB_BAR_CONTENT_HEIGHT, "flex-end");
+const geo = computeSomafrikTabItemGeometry();
 
-assert.equal(TAB_ITEM_INNER_ALIGN, "flex-end");
-assert.equal(start.itemHeight, 52);
-assert.equal(end.itemHeight, 52);
-assert.ok(start.spaceBelowLabel > TAB_ITEM_RN_PADDING_DP, "flex-start : slack sous le label");
-assert.equal(end.spaceBelowLabel, TAB_ITEM_RN_PADDING_DP, "flex-end : seule la respiration RN (5 dp)");
-assert.ok(end.clusterTop > start.clusterTop, "le bloc icône+label descend dans les 52 dp");
-assert.ok(end.labelBottom > start.labelBottom, "le libellé se rapproche du bas du conteneur");
-assert.ok(end.spaceBelowLabel < start.spaceBelowLabel);
-
+assert.equal(geo.itemHeight, 52);
+assert.equal(geo.itemTop, 0);
+assert.equal(geo.itemBottom, 52);
+assert.equal(geo.iconTop, 15);
+assert.equal(geo.iconBottom, 35);
+assert.equal(geo.labelTop, 37);
+assert.equal(geo.labelBottom, 49);
+assert.equal(geo.spaceBelowLabel, 3);
+assert.equal(geo.spaceBelowLabel, SOMAFRIK_TAB_SPACE_BELOW_LABEL_DP);
+assert.ok(spaceBelowLabelIsWithinAndroidBudget(geo.spaceBelowLabel), "2–5 dp sous le libellé");
+assert.equal(geo.labelBottom, 52 - geo.spaceBelowLabel);
+assert.ok(geo.labelTop < geo.labelBottom);
+assert.ok(geo.iconTop < geo.iconBottom);
+assert.ok(geo.iconBottom <= geo.labelTop);
+assert.equal(geo.iconBottom - geo.iconTop, SOMAFRIK_TAB_ICON_DP);
+assert.ok(geo.iconTop >= 0, "icône dans les 52 dp");
 assert.equal(tabItemTouchTargetOk(52), true);
 assert.ok(TAB_BAR_CONTENT_HEIGHT >= MIN_TOUCH_TARGET_DP);
 
@@ -33,5 +41,18 @@ assert.equal(android.bottomInset, ANDROID_TAB_BAR_MIN_BOTTOM_INSET_DP, "#414 : A
 assert.equal(android.tabBarBottom, 8);
 assert.notEqual(android.tabBarHeight, 52 + 48, "pas de retour du double inset");
 assert.notEqual(android.paddingBottom, 48);
+
+const ios = computeFloatingTabBarMetrics({ bottom: 34 }, "ios");
+assert.equal(ios.tabBarHeight, 52);
+assert.equal(ios.tabBarBottom, 34, "#414 : iOS conserve l'indicateur d'accueil");
+
+const androidOnScreen = projectItemToParentUp(geo, android.itemBottom);
+assert.equal(androidOnScreen.itemBottom, 8);
+assert.equal(androidOnScreen.itemTop, 60);
+assert.equal(androidOnScreen.iconTop, 45);
+assert.equal(androidOnScreen.iconBottom, 25);
+assert.equal(androidOnScreen.labelTop, 23);
+assert.equal(androidOnScreen.labelBottom, 11);
+assert.equal(androidOnScreen.spaceBelowLabel, 3);
 
 console.log("tabBarItemInnerLayout.test.ts OK");

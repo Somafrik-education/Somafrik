@@ -1,54 +1,79 @@
 /**
- * Placement interne icon + label dans les 52 dp de l'item.
- * Ne touche pas à la safe-area (#414).
+ * Géométrie interne propriétaire SomafrikBottomTabBar.
+ * Ne dépend plus de tabVerticalUiKit / CompactTabButton (#415).
  *
- * React Navigation (uikit vertical) pose le stack en `flex-start` avec
- * `padding: 5`. L'espace restant se retrouve sous le libellé.
- * L'alignement `flex-end` le décale vers le bas du conteneur.
+ * Repère item : Y = 0 au top de l'item, croissant vers le bas.
+ * L'espace sous le libellé est une constante 2–5 dp, pas le slack flex-start.
  */
 
 import { TAB_BAR_CONTENT_HEIGHT, TAB_LABEL_FONT_SIZE } from "./mobileUxV1Layout";
 import { MIN_TOUCH_TARGET_DP } from "./mobileUsability";
 
-/** wrapperUikit height — TabBarIcon ICON_SIZE_TALL */
-export const TAB_ITEM_ICON_BOX_DP = 28;
-/** tabVerticalUiKit.padding */
-export const TAB_ITEM_RN_PADDING_DP = 5;
-export const TAB_ITEM_LABEL_HEIGHT_DP = TAB_LABEL_FONT_SIZE + 2;
-export const TAB_ITEM_INNER_ALIGN = "flex-end" as const;
+export const SOMAFRIK_TAB_ICON_DP = 20;
+export const SOMAFRIK_TAB_LABEL_LINE_DP = TAB_LABEL_FONT_SIZE + 2;
+export const SOMAFRIK_TAB_ICON_LABEL_GAP_DP = 2;
+export const SOMAFRIK_TAB_SPACE_BELOW_LABEL_DP = 3;
+export const SOMAFRIK_TAB_SPACE_BELOW_LABEL_MIN_DP = 2;
+export const SOMAFRIK_TAB_SPACE_BELOW_LABEL_MAX_DP = 5;
 
-export type TabItemInnerAlign = "flex-start" | "flex-end";
-
-export type TabItemInnerLayout = {
+export type SomafrikTabItemGeometry = {
   itemHeight: number;
-  clusterHeight: number;
-  clusterTop: number;
+  itemTop: number;
+  itemBottom: number;
+  iconTop: number;
+  iconBottom: number;
+  labelTop: number;
   labelBottom: number;
   spaceBelowLabel: number;
-  align: TabItemInnerAlign;
 };
 
-export function computeTabItemInnerLayout(
+export function computeSomafrikTabItemGeometry(
   itemHeight: number = TAB_BAR_CONTENT_HEIGHT,
-  align: TabItemInnerAlign = TAB_ITEM_INNER_ALIGN,
-): TabItemInnerLayout {
-  const padding = TAB_ITEM_RN_PADDING_DP;
-  const clusterHeight = TAB_ITEM_ICON_BOX_DP + TAB_ITEM_LABEL_HEIGHT_DP;
-  const inner = Math.max(0, itemHeight - padding * 2);
-  const slack = Math.max(0, inner - clusterHeight);
-  const clusterTop = align === "flex-end" ? padding + slack : padding;
-  const labelBottom = clusterTop + clusterHeight;
-  const spaceBelowLabel = Math.max(0, itemHeight - labelBottom);
+): SomafrikTabItemGeometry {
+  const spaceBelowLabel = SOMAFRIK_TAB_SPACE_BELOW_LABEL_DP;
+  const labelBottom = itemHeight - spaceBelowLabel;
+  const labelTop = labelBottom - SOMAFRIK_TAB_LABEL_LINE_DP;
+  const iconBottom = labelTop - SOMAFRIK_TAB_ICON_LABEL_GAP_DP;
+  const iconTop = iconBottom - SOMAFRIK_TAB_ICON_DP;
   return {
     itemHeight,
-    clusterHeight,
-    clusterTop,
+    itemTop: 0,
+    itemBottom: itemHeight,
+    iconTop,
+    iconBottom,
+    labelTop,
     labelBottom,
     spaceBelowLabel,
-    align,
+  };
+}
+
+/**
+ * Projette la géométrie d'item (Y=0 au top, vers le bas) dans le repère
+ * chrome #414 (Y=0 au bas du parent, vers le haut).
+ */
+export function projectItemToParentUp(
+  item: SomafrikTabItemGeometry,
+  itemBottomFromParent: number,
+) {
+  const itemTop = itemBottomFromParent + item.itemHeight;
+  return {
+    itemTop,
+    itemBottom: itemBottomFromParent,
+    iconTop: itemTop - item.iconTop,
+    iconBottom: itemTop - item.iconBottom,
+    labelTop: itemTop - item.labelTop,
+    labelBottom: itemTop - item.labelBottom,
+    spaceBelowLabel: item.spaceBelowLabel,
   };
 }
 
 export function tabItemTouchTargetOk(itemHeight: number = TAB_BAR_CONTENT_HEIGHT): boolean {
   return itemHeight >= MIN_TOUCH_TARGET_DP;
+}
+
+export function spaceBelowLabelIsWithinAndroidBudget(spaceBelowLabel: number): boolean {
+  return (
+    spaceBelowLabel >= SOMAFRIK_TAB_SPACE_BELOW_LABEL_MIN_DP &&
+    spaceBelowLabel <= SOMAFRIK_TAB_SPACE_BELOW_LABEL_MAX_DP
+  );
 }
