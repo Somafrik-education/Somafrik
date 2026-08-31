@@ -166,6 +166,12 @@ async function main() {
        RETURNING id`,
       [schoolA.rows[0].id],
     );
+    const userB = await pool.query(
+      `INSERT INTO users (school_id, user_code, first_name, last_name, email, role, status)
+       VALUES ($1, 'USR-F3-IT-B', 'Admin', 'B', 'admin-f3-it-b@somafrik.test', 'SCHOOL_ADMIN', 'active')
+       RETURNING id`,
+      [schoolB.rows[0].id],
+    );
     const repo = createRepo(pool);
     const store = createFinancePgStore(repo);
     const admin = {
@@ -174,6 +180,14 @@ async function main() {
       firstName: "Admin",
       lastName: "A",
       sub: user.rows[0].id,
+      permissions: ["Paiements:UPDATE"],
+    };
+    const adminB = {
+      role: "Admin School",
+      schoolCode: "BI-2026-0001",
+      firstName: "Admin",
+      lastName: "B",
+      sub: userB.rows[0].id,
       permissions: ["Paiements:UPDATE"],
     };
 
@@ -409,9 +423,9 @@ async function main() {
         status: "Active",
         items: [{ feeType: "Inscription", label: "Inscription", amount: 8_000, status: "Actif" }],
       },
-      { ...admin, schoolCode: "BI-2026-0001" },
+      adminB,
     );
-    await store.setFinanceFeeGridStatus(gridB.id, "Active", { ...admin, schoolCode: "BI-2026-0001" });
+    await store.setFinanceFeeGridStatus(gridB.id, "Active", adminB);
     await assert.rejects(
       () => store.applyFinanceFeeGrid(gridB.id, admin),
       (error) =>

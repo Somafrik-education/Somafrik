@@ -2707,7 +2707,7 @@ class FallbackRepository {
     if (!this._financeStore) {
       const { createFinanceMemoryStore } = require("./financeMemoryStore");
       const { studentMatches, studentMatchesClassScope } = require("../lib/financeManagement");
-      const { resolveFinanceSchoolScope, schoolRecordInFinanceScope } = require("../lib/financeSchoolScope");
+      const { resolveFinanceSchoolScope, schoolRecordInFinanceScope, attachFinanceFixtureScope } = require("../lib/financeSchoolScope");
       this._financeStore = createFinanceMemoryStore({
         getSchoolByCode: async (code) => {
           const normalized = String(code ?? "").trim().toUpperCase();
@@ -2719,7 +2719,7 @@ class FallbackRepository {
         },
         findStudent: async (studentKey, principal) => {
           const dataset = await this.getDataset();
-          const scope = resolveFinanceSchoolScope(principal);
+          const scope = resolveFinanceSchoolScope(attachFinanceFixtureScope(principal));
           if (scope.mode === "none") return null;
           const student =
             (dataset.students ?? []).find((row) => {
@@ -2749,7 +2749,7 @@ class FallbackRepository {
         },
         listSchoolStudents: async (principal) => {
           const dataset = await this.getDataset();
-          const scope = resolveFinanceSchoolScope(principal);
+          const scope = resolveFinanceSchoolScope(attachFinanceFixtureScope(principal));
           if (scope.mode === "none") return [];
           return (dataset.students ?? []).filter((student) => schoolRecordInFinanceScope(student, scope));
         },

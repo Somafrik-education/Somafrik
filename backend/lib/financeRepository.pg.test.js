@@ -118,6 +118,11 @@ async function main() {
        VALUES ($1, '2025-2026', 'open') RETURNING id`,
       [schoolA.rows[0].id],
     );
+    await pool.query(
+      `INSERT INTO academic_years (school_id, name, status)
+       VALUES ($1, '2025-2026', 'open')`,
+      [schoolB.rows[0].id],
+    );
     const klass = await pool.query(
       `INSERT INTO classes (school_id, academic_year_id, class_code, name, status)
        VALUES ($1, $2, 'CLS-6A', '6ème A', 'active') RETURNING id`,
@@ -145,6 +150,12 @@ async function main() {
        RETURNING id`,
       [schoolA.rows[0].id],
     );
+    const userB = await pool.query(
+      `INSERT INTO users (school_id, user_code, first_name, last_name, email, role, status)
+       VALUES ($1, 'USR-FIN-IT-ADMIN-B', 'Admin', 'B', 'admin-finance-it-b@somafrik.test', 'SCHOOL_ADMIN', 'active')
+       RETURNING id`,
+      [schoolB.rows[0].id],
+    );
     const repo = createRepo(pool);
     const store = createFinancePgStore(repo);
     const admin = {
@@ -153,6 +164,14 @@ async function main() {
       firstName: "Admin",
       lastName: "A",
       sub: user.rows[0].id,
+      permissions: ["Paiements:UPDATE"],
+    };
+    const adminB = {
+      role: "Admin School",
+      schoolCode: "BI-2026-0001",
+      firstName: "Admin",
+      lastName: "B",
+      sub: userB.rows[0].id,
       permissions: ["Paiements:UPDATE"],
     };
 
@@ -705,10 +724,7 @@ async function main() {
     assert.equal(optionsA.some((row) => row.studentCode.includes("NOENR")), false);
     assert.equal(optionsA.some((row) => row.studentCode.includes("ORPHAN")), false);
 
-    const optionsB = await store.listPaymentStudentOptions({
-      role: "Comptable",
-      schoolCode: "BI-2026-0001",
-    });
+    const optionsB = await store.listPaymentStudentOptions(adminB);
     assert.equal(optionsB.length, 1);
     assert.equal(optionsB[0].studentCode, "BI-2026-0001-STU-0001");
     assert.equal(optionsB[0].lastName, "Other");
@@ -731,7 +747,7 @@ async function main() {
     assert.equal(methodsA.find((row) => row.methodCode === "cash")?.active, true);
     assert.equal(methodsA.find((row) => row.methodCode === "mobile_money")?.active, false);
 
-    const methodsB = await store.listSchoolPaymentMethods({ role: "Admin School", schoolCode: "BI-2026-0001" });
+    const methodsB = await store.listSchoolPaymentMethods(adminB);
     assert.equal(methodsB.every((row) => row.persisted === false), true, "B n'hérite pas des moyens A");
 
     const catalogA = await store.getFinanceCatalog(admin);

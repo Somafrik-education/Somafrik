@@ -17,6 +17,7 @@ on:
       - "backend/lib/financeCatalog.test.js"
       - "backend/lib/financeObligationLifecycle.js"
       - "backend/lib/financeReadiness.http.pg.test.js"
+      - "backend/lib/financeMembershipScope.pg.test.js"
       - "backend/services/unpaidService.js"
       - "backend/server.js"
       - "backend/scripts/verify-finance-readiness.js"

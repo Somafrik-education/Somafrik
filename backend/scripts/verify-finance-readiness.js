@@ -79,6 +79,20 @@ function sourceGuards() {
   assert.doesNotMatch(schoolCodeFn, /slice\(\s*0\s*,\s*2\s*\)/);
   assert.match(scopeLib, /function schoolRecordInFinanceScope/);
   assert.match(scopeLib, /iso_code/);
+  assert.match(scopeLib, /attachFinanceMembershipScope/);
+  assert.match(scopeLib, /principal\.sub → users\.id → users\.school_id/);
+  const resolveFn = scopeLib.slice(
+    scopeLib.indexOf("function resolveFinanceSchoolScope"),
+    scopeLib.indexOf("function sqlSchoolPredicate"),
+  );
+  assert.match(resolveFn, /financeLoginCode/);
+  assert.doesNotMatch(resolveFn, /principal\.schoolCode/);
+  const predFn = scopeLib.slice(scopeLib.indexOf("function sqlSchoolPredicate"), scopeLib.indexOf("function countryIsoFromRecord"));
+  assert.match(predFn, /login_code/);
+  assert.match(pgStore, /withFinancePrincipal/);
+  assert.match(pgStore, /attachFinanceMembershipScope/);
+  assert.match(httpTest, /P0 leftover ≠ login_code du même tenant/);
+  assert.match(httpTest, /leftover JWT n'est pas l'autorité Finance/);
 
   const assertTenant = service.slice(
     service.indexOf("function assertTenant"),
@@ -145,6 +159,7 @@ function main() {
     "tests devise Web F8 ont échoué",
   );
   assert.ok(String(process.env.DATABASE_URL ?? "").trim(), "DATABASE_URL requis pour le parcours PostgreSQL F8");
+  run(process.execPath, ["backend/lib/financeMembershipScope.pg.test.js"], "preuve leftover ≠ login_code GP-005 a échoué");
   run(process.execPath, ["backend/lib/financeReadiness.http.pg.test.js"], "parcours HTTP PostgreSQL F8 a échoué");
   console.log("verify-finance-readiness: GO — PostgreSQL réel inclus");
 }
