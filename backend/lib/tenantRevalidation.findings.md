@@ -1,18 +1,19 @@
-# Tenant revalidation — findings Enrollment
+# Tenant revalidation — Enrollment fermé par #432
 
 Sonde HTTP dual-identity `enrollmentTenant.http.pg.test.js` (A leftover `CD-2026-0001` / login `CD-LAC-26-001`, B leftover `BI-2026-0001` / login `BI-BUJ-26-001`).
 
-Runtime inchangé dans ce lot. La sonde **caractérise** ENR-01…ENR-06 (dette encore présente) et **échoue** si une non-régression casse ou si la dette change. Correctif étroit dédié requis.
+Base : `develop@2fd8cdb9` (merge #432). ENR-01…ENR-07 sont des **invariants**, plus des findings.
 
-| # | Endpoint / identité | Effet observé | Contrat |
-|---|---------------------|---------------|---------|
-| ENR-01 | `GET /api/students` Admin School A | `schoolCode=CD-2026-0001` (leftover) | émettre `CD-LAC-26-001` |
-| ENR-02 | `GET /api/students` user A + JWT leftover B | **200 liste B** | jamais B |
-| ENR-03 | `POST /api/classes/CLS-BUJ-6A/students` depuis A | 400 (0 write B) | 403/404 |
-| ENR-04 | principal school sans `sub` | 200 | fail-closed |
-| ENR-05 | user sans `school_id` | 200 | fail-closed |
-| ENR-06 | membership `login_code` vide | 200 | fail-closed |
+| # | Endpoint / identité | Contrat | Statut |
+|---|---------------------|---------|--------|
+| ENR-01 | `GET /api/students` Admin School A | émettre `CD-LAC-26-001` | **fermé** |
+| ENR-02 | `GET /api/students` user A + JWT leftover B | jamais B ; projection membership A | **fermé** |
+| ENR-03 | `POST /api/classes/CLS-BUJ-6A/students` depuis A | 403/404 ; 0 write B | **fermé** |
+| ENR-04 | principal school sans `sub` | fail-closed 403/401 | **fermé** |
+| ENR-05 | user sans `school_id` | fail-closed 403/401 | **fermé** |
+| ENR-06 | membership `login_code` vide | fail-closed 403/401 | **fermé** |
+| ENR-07 | POST/PATCH/DELETE A + leftover JWT B | audit sur A ; 0 audit leftover B | **fermé** |
 
-Cause source : `server.js` GET/POST/PATCH students lit `req.principal.schoolCode` ; `postgresRepository.getSchoolByCode` fait `school_code OR COALESCE(login_code, '')`.
+Autorité Enrollment : `principal.sub → users.id → users.school_id → schools.id`. Projection HTTP `schoolCode = schools.login_code`.
 
-Non-régressions observées dans la même sonde : A leftover A ne liste pas B ; header `X-Somafrik-School-Code=B` depuis A ne liste pas B ; PATCH élève B depuis A sans mutation ; B ne liste pas A ; Admin Pays CD ne liste pas BI.
+`getSchoolByCode` global conserve `school_code OR COALESCE(login_code)` (hors scope Enrollment). Les routes GET/POST/PATCH/DELETE élèves n'utilisent plus `req.principal.schoolCode` comme autorité.
