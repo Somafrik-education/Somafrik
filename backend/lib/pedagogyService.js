@@ -53,8 +53,11 @@ async function writePedagogyAudit(tx, principal, auditMeta, entry) {
   if (typeof tx.recordPedagogyAudit !== "function") {
     throw createPedagogyError(500, "Audit pédagogie indisponible dans la transaction.");
   }
+  const auditSchoolId = asTrimmed(entry.schoolId);
+  const auditSchoolCode = asTrimmed(entry.schoolCode);
   await tx.recordPedagogyAudit({
-    schoolCode: entry.schoolCode || principal?.schoolCode,
+    schoolId: auditSchoolId || undefined,
+    schoolCode: auditSchoolCode || (auditSchoolId ? "" : principal?.schoolCode),
     userId: principal?.sub || principal?.id,
     action: entry.action,
     entityType: entry.entityType,
@@ -682,6 +685,7 @@ async function upsertGrade(store, payload, principal, auditMeta) {
 
 async function upsertAttendanceBatch(store, payload, principal, auditMeta) {
   const tenantCode = tenantSchoolCodeFromPrincipal(principal);
+  const { presenceAuditSchoolCode } = require("./presenceSchoolScope");
   try {
     return await store.withTransaction(async (tx) => {
       const batchClassCode = asTrimmed(payload.classCode ?? payload.class_code);
@@ -703,7 +707,8 @@ async function upsertAttendanceBatch(store, payload, principal, auditMeta) {
         action: "upsert_attendance_batch",
         entityType: "attendance",
         entityId: String(saved.length),
-        schoolCode: principal?.schoolCode,
+        schoolId: asTrimmed(principal?.presenceSchoolId) || undefined,
+        schoolCode: presenceAuditSchoolCode(principal) || undefined,
         newValue: { count: saved.length },
       });
       return saved;

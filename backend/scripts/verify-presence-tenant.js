@@ -26,6 +26,7 @@ function run(cmd, args, label) {
 function sourceGuards() {
   const server = read("backend/server.js");
   const scopeLib = read("backend/lib/presenceSchoolScope.js");
+  const service = read("backend/lib/pedagogyService.js");
   const repo = read("backend/db/postgresRepository.js");
   const store = read("backend/db/pedagogyPgStore.js");
   const httpTest = read("backend/lib/presenceTenant.http.pg.test.js");
@@ -38,8 +39,18 @@ function sourceGuards() {
 
   assert.match(getBlock, /presenceHttpPrincipal/);
   assert.match(getBlock, /assertPresenceReadable/);
+  assert.match(getBlock, /listPresencesForStudentScope/);
+  assert.doesNotMatch(getBlock, /studentIds\.size \? byStudents : scopedPresences/);
   assert.match(postBlock, /presenceHttpPrincipal/);
   assert.match(postBlock, /assertPresenceReadable/);
+  assert.match(postBlock, /presenceAuditSchoolCode/);
+
+  const upsertStart = service.indexOf("async function upsertAttendanceBatch");
+  const upsertFn = service.slice(upsertStart, service.indexOf("module.exports", upsertStart));
+  assert.match(upsertFn, /presenceAuditSchoolCode/);
+  assert.match(upsertFn, /presenceSchoolId/);
+  assert.doesNotMatch(upsertFn, /schoolCode:\s*principal\?\.schoolCode/);
+  assert.doesNotMatch(upsertFn, /schoolCode:\s*principal\.schoolCode/);
 
   assert.match(scopeLib, /principal\.sub → users\.id → users\.school_id/);
   const sqlFn = scopeLib.slice(scopeLib.indexOf("function sqlPresenceScope"), scopeLib.indexOf("function filterPresenceRows"));
@@ -62,6 +73,9 @@ function sourceGuards() {
   assert.match(httpTest, /PR-08/);
   assert.match(httpTest, /PR-04/);
   assert.match(httpTest, /PR-05/);
+  assert.match(httpTest, /PR-audit/);
+  assert.match(httpTest, /PR-scope-teacher/);
+  assert.match(httpTest, /PR-scope-parent/);
   assert.match(httpTest, /ALTER COLUMN login_code DROP NOT NULL/);
 
   const resolveStart = repo.indexOf("async resolveStudentForAttendance");

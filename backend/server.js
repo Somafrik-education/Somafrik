@@ -1929,7 +1929,12 @@ app.get("/api/notes", requireAuth, requirePermission("GET /api/notes"), asyncHan
 
 /** Lecture présences : Présences:READ live (Parent/Élève : seed « Voir présences »). */
 app.get("/api/presences", requireAuth, requirePermission("GET /api/presences"), asyncHandler(async (req, res) => {
-  const { assertPresenceReadable, filterPresenceRows } = require("./lib/presenceSchoolScope");
+  const {
+    assertPresenceReadable,
+    filterPresenceRows,
+    isPresenceStudentScopedRole,
+    listPresencesForStudentScope,
+  } = require("./lib/presenceSchoolScope");
   const principal = await presenceHttpPrincipal(req);
   const scope = assertPresenceReadable(principal);
   const { presences, students } = await loadCanonicalPedagogyForPrincipal(principal);
@@ -1946,14 +1951,13 @@ app.get("/api/presences", requireAuth, requirePermission("GET /api/presences"), 
       .filter((student) => !className || student.className === className);
   }
   const studentIds = buildScopedStudentIdSet(scopedStudents);
-  const byStudents = scopedPresences.filter((presence) =>
-    studentIds.has(String(presence.studentId ?? "")) &&
-    (!date || String(presence.date) === String(date))
-  );
-  res.json(studentIds.size ? byStudents : scopedPresences.filter((presence) =>
-    (!className || presence.className === className) &&
-    (!date || String(presence.date) === String(date))
-  ));
+  res.json(listPresencesForStudentScope({
+    scopedPresences,
+    studentIds,
+    studentScopeCalculated: isPresenceStudentScopedRole(principal),
+    className,
+    date,
+  }));
 }));
 
 app.post("/api/notes", requireAuth, requireSchoolSubscriptionFeature("write_notes"), requirePermission("POST /api/notes"), asyncHandler(async (req, res) => {
@@ -2032,9 +2036,10 @@ app.post("/api/presences", requireAuth, requireSchoolSubscriptionFeature("write_
         );
       } else {
         saved = await repository.upsertAttendanceBatch({ ...body, items: canonicalItems }, principal);
+        const { presenceAuditSchoolCode } = require("./lib/presenceSchoolScope");
         await auditService.record(req, "upsert_attendance", "attendance", body?.classCode ?? body?.className ?? "batch", {
           count: saved.length,
-        });
+        }, { schoolCode: presenceAuditSchoolCode(principal) });
       }
       return { statusCode: 201, body: saved };
     },

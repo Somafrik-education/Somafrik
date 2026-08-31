@@ -24,10 +24,23 @@ test("GP-015: routes présences attachent le membership UUID", () => {
 
   assert.match(getBlock, /presenceHttpPrincipal/);
   assert.match(getBlock, /assertPresenceReadable/);
+  assert.match(getBlock, /listPresencesForStudentScope/);
+  assert.match(getBlock, /isPresenceStudentScopedRole/);
+  assert.doesNotMatch(getBlock, /studentIds\.size \? byStudents : scopedPresences/);
   assert.match(postBlock, /presenceHttpPrincipal/);
   assert.match(postBlock, /assertPresenceReadable/);
+  assert.match(postBlock, /presenceAuditSchoolCode/);
   assert.match(studentBlock, /presenceHttpPrincipal/);
   assert.match(studentBlock, /assertPresenceReadable/);
+});
+
+test("GP-015: upsertAttendanceBatch n'audite pas principal.schoolCode leftover", () => {
+  const service = read("lib/pedagogyService.js");
+  const upsertFn = sliceFrom(service, "async function upsertAttendanceBatch", "module.exports");
+  assert.match(upsertFn, /presenceAuditSchoolCode/);
+  assert.match(upsertFn, /presenceSchoolId/);
+  assert.doesNotMatch(upsertFn, /schoolCode:\s*principal\?\.schoolCode/);
+  assert.doesNotMatch(upsertFn, /schoolCode:\s*principal\.schoolCode/);
 });
 
 test("GP-015: mapAttendance projette login_code, jamais leftover", () => {

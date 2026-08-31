@@ -11,6 +11,9 @@ const {
   assertPresenceReadable,
   assertPresenceWriteAccess,
   hasPresenceMembershipAttached,
+  isPresenceStudentScopedRole,
+  presenceAuditSchoolCode,
+  listPresencesForStudentScope,
 } = require("./presenceSchoolScope");
 
 const LEFTOVER_A = "CD-2026-0001";
@@ -154,4 +157,57 @@ test("GP-015: fixture mémoire n'est pas un lookup leftover PG", () => {
     schoolCode: LOGIN_A,
   });
   assert.equal(attached.presenceLoginCode, LOGIN_A);
+});
+
+test("GP-015: audit school-role = presenceLoginCode, jamais leftover JWT", () => {
+  assert.equal(
+    presenceAuditSchoolCode({
+      role: "Admin School",
+      schoolCode: LEFTOVER_B,
+      presenceLoginCode: LOGIN_A,
+      presenceSchoolId: SCHOOL_ID_A,
+    }),
+    LOGIN_A,
+  );
+  assert.equal(
+    presenceAuditSchoolCode({
+      role: "Admin School",
+      schoolCode: LEFTOVER_B,
+    }),
+    "",
+  );
+});
+
+test("GP-015: scope élève calculé vide ne s'élargit pas à l'école", () => {
+  const rows = [
+    { id: "pre-a", studentId: "STU-A-001", schoolCode: LOGIN_A },
+    { id: "pre-b", studentId: "STU-B-001", schoolCode: LOGIN_B },
+  ];
+  assert.equal(isPresenceStudentScopedRole({ role: "Enseignant" }), true);
+  assert.equal(isPresenceStudentScopedRole({ role: "Parent" }), true);
+  assert.equal(isPresenceStudentScopedRole({ role: "Admin School" }), false);
+  assert.deepEqual(
+    listPresencesForStudentScope({
+      scopedPresences: rows,
+      studentIds: new Set(),
+      studentScopeCalculated: true,
+    }).map((row) => row.id),
+    [],
+  );
+  assert.deepEqual(
+    listPresencesForStudentScope({
+      scopedPresences: rows,
+      studentIds: new Set(["STU-A-001"]),
+      studentScopeCalculated: true,
+    }).map((row) => row.id),
+    ["pre-a"],
+  );
+  assert.deepEqual(
+    listPresencesForStudentScope({
+      scopedPresences: rows,
+      studentIds: new Set(),
+      studentScopeCalculated: false,
+    }).map((row) => row.id),
+    ["pre-a", "pre-b"],
+  );
 });

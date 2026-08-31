@@ -33,14 +33,20 @@ const USER_A = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa01";
 const USER_B = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa02";
 const USER_A2 = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa03";
 const USER_TEACHER_A = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa04";
+const USER_TEACHER_NONE = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa05";
 const USER_NO_SCHOOL = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa06";
 const USER_NO_LOGIN = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa07";
 const USER_SUPER = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa08";
 const USER_PAYS_CD = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa09";
+const USER_PARENT = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa0a";
+const USER_PARENT_LINKED = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa0b";
 const PRESENCE_A = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeee01";
 const PRESENCE_B = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeee02";
 const PRESENCE_A2 = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeee03";
+const CLASS_A = "CLS-LAC-6A";
+const CLASS_A_NAME = "6ème A Lac";
 const CLASS_B = "CLS-BUJ-6A";
+const TEACHER_CODE_A = "TCH-LAC-01";
 const TEACHER_CODE_B = "TCH-BUJ-01";
 const PERMS = ["ALL_PRIVILEGES"];
 const TEACHER_PERMS = ["Présences:READ", "Présences:CREATE", "ALL_PRIVILEGES"];
@@ -189,8 +195,8 @@ async function seed(pool) {
 
   const classA = await pool.query(
     `INSERT INTO classes (school_id, academic_year_id, class_code, name, status)
-     VALUES ($1, $2, 'CLS-LAC-6A', '6ème A Lac', 'active') RETURNING id`,
-    [schoolAId, yearA.rows[0].id],
+     VALUES ($1, $2, $3, $4, 'active') RETURNING id`,
+    [schoolAId, yearA.rows[0].id, CLASS_A, CLASS_A_NAME],
   );
   const classB = await pool.query(
     `INSERT INTO classes (school_id, academic_year_id, class_code, name, status)
@@ -247,8 +253,25 @@ async function seed(pool) {
        ($4, $7, 'TCH-A', 'Tana', 'A', 'ta@presence.gp.test', 'Enseignant', 'active', FALSE),
        ($5, NULL, 'ADM-NS', 'Sans', 'Ecole', 'ns@presence.gp.test', 'Admin School', 'active', FALSE),
        ($6, NULL, 'SUPER', 'Super', 'Admin', 'super@presence.gp.test', 'Super Administrateur Somafrik', 'active', FALSE),
-       ($10, NULL, 'PAYS-CD', 'Admin', 'Pays', 'pays@presence.gp.test', 'Admin Pays', 'active', FALSE)`,
-    [USER_A, USER_B, USER_A2, USER_TEACHER_A, USER_NO_SCHOOL, USER_SUPER, schoolAId, schoolBId, schoolA2Id, USER_PAYS_CD],
+       ($10, NULL, 'PAYS-CD', 'Admin', 'Pays', 'pays@presence.gp.test', 'Admin Pays', 'active', FALSE),
+       ($11, $7, 'TCH-NONE', 'Sans', 'Aff', 'tn@presence.gp.test', 'Enseignant', 'active', FALSE),
+       ($12, $7, 'PAR-A', 'Parent', 'Vide', 'pa@presence.gp.test', 'Parent', 'active', FALSE),
+       ($13, $7, 'PAR-LINK', 'Parent', 'Lie', 'pl@presence.gp.test', 'Parent', 'active', FALSE)`,
+    [
+      USER_A,
+      USER_B,
+      USER_A2,
+      USER_TEACHER_A,
+      USER_NO_SCHOOL,
+      USER_SUPER,
+      schoolAId,
+      schoolBId,
+      schoolA2Id,
+      USER_PAYS_CD,
+      USER_TEACHER_NONE,
+      USER_PARENT,
+      USER_PARENT_LINKED,
+    ],
   );
   await pool.query(
     `INSERT INTO user_roles (user_id, school_id, role_key, status)
@@ -258,14 +281,42 @@ async function seed(pool) {
        ($3, $7, 'SCHOOL_ADMIN', 'active'),
        ($4, $5, 'TEACHER', 'active'),
        ($8, NULL, 'SUPER_ADMIN', 'active'),
-       ($9, NULL, 'COUNTRY_ADMIN', 'active')`,
-    [USER_A, USER_B, USER_A2, USER_TEACHER_A, schoolAId, schoolBId, schoolA2Id, USER_SUPER, USER_PAYS_CD],
+       ($9, NULL, 'COUNTRY_ADMIN', 'active'),
+       ($10, $5, 'TEACHER', 'active'),
+       ($11, $5, 'PARENT', 'active'),
+       ($12, $5, 'PARENT', 'active')`,
+    [
+      USER_A,
+      USER_B,
+      USER_A2,
+      USER_TEACHER_A,
+      schoolAId,
+      schoolBId,
+      schoolA2Id,
+      USER_SUPER,
+      USER_PAYS_CD,
+      USER_TEACHER_NONE,
+      USER_PARENT,
+      USER_PARENT_LINKED,
+    ],
   );
 
-  await pool.query(
+  const subjectA = await pool.query(
+    `INSERT INTO subjects (school_id, subject_code, name, status)
+     VALUES ($1, 'SUB-LAC-MATH', 'Maths Lac', 'active') RETURNING id`,
+    [schoolAId],
+  );
+  const teacherA = await pool.query(
     `INSERT INTO teachers (school_id, user_id, teacher_code, status)
-     VALUES ($1, $3, 'TCH-LAC-01', 'active'), ($2, NULL, $4, 'active')`,
-    [schoolAId, schoolBId, USER_TEACHER_A, TEACHER_CODE_B],
+     VALUES ($1, $3, $5, 'active'), ($2, NULL, $4, 'active'), ($1, $6, 'TCH-LAC-NONE', 'active')
+     RETURNING id, user_id`,
+    [schoolAId, schoolBId, USER_TEACHER_A, TEACHER_CODE_B, TEACHER_CODE_A, USER_TEACHER_NONE],
+  );
+  const teacherAId = teacherA.rows.find((row) => String(row.user_id) === USER_TEACHER_A)?.id;
+  await pool.query(
+    `INSERT INTO teacher_assignments (school_id, teacher_id, class_id, subject_id, academic_year_id, status)
+     VALUES ($1, $2, $3, $4, $5, 'active')`,
+    [schoolAId, teacherAId, classA.rows[0].id, subjectA.rows[0].id, yearA.rows[0].id],
   );
 
   await pool.query(
@@ -290,7 +341,7 @@ async function seed(pool) {
     ],
   );
 
-  return { schoolAId, schoolBId, schoolA2Id };
+  return { schoolAId, schoolBId, schoolA2Id, studentAId: studentA.rows[0].id };
 }
 
 async function main() {
@@ -384,6 +435,33 @@ async function main() {
       role: "Enseignant",
       roleKeys: ["TEACHER"],
       schoolCode: LEFTOVER_A,
+      classNames: [CLASS_A_NAME],
+      classCodes: [CLASS_A],
+      permissions: TEACHER_PERMS,
+    });
+    const tokenTeacherNone = mint({
+      sub: USER_TEACHER_NONE,
+      role: "Enseignant",
+      roleKeys: ["TEACHER"],
+      schoolCode: LEFTOVER_A,
+      classNames: [],
+      classCodes: [],
+      permissions: TEACHER_PERMS,
+    });
+    const tokenParent = mint({
+      sub: USER_PARENT,
+      role: "Parent",
+      roleKeys: ["PARENT"],
+      schoolCode: LEFTOVER_A,
+      studentIds: [],
+      permissions: TEACHER_PERMS,
+    });
+    const tokenParentLinked = mint({
+      sub: USER_PARENT_LINKED,
+      role: "Parent",
+      roleKeys: ["PARENT"],
+      schoolCode: LEFTOVER_A,
+      studentIds: ["STU-A-001"],
       permissions: TEACHER_PERMS,
     });
     const tokenNoSub = mint({
@@ -533,6 +611,102 @@ async function main() {
     ).rows[0].c;
     assert.ok([400, 403, 404, 409].includes(teacherWriteB.status), `PR-11 status=${teacherWriteB.status}`);
     assert.equal(countBTeacher, countBBefore, "PR-11 enseignant A 0 write B");
+
+    const attendanceBody = (date) => ({
+      classCode: CLASS_A,
+      className: CLASS_A_NAME,
+      teacherId: TEACHER_CODE_A,
+      items: [
+        {
+          studentId: fixture.studentAId,
+          date,
+          status: "Présent",
+          classCode: CLASS_A,
+          className: CLASS_A_NAME,
+        },
+      ],
+    });
+    const postALeftover = await request("/presences", {
+      method: "POST",
+      token: tokenForgedB,
+      body: attendanceBody("2026-09-10"),
+    });
+    assert.ok(
+      postALeftover.status === 201 || postALeftover.status === 200,
+      `PR-audit-write status=${postALeftover.status} body=${JSON.stringify(postALeftover.data)}`,
+    );
+    const written = Array.isArray(postALeftover.data) ? postALeftover.data : [postALeftover.data];
+    assert.ok(
+      written.every((row) => !row?.schoolCode || row.schoolCode === LOGIN_A),
+      `PR-audit métier A: ${JSON.stringify(postALeftover.data)}`,
+    );
+    const audits = await pool.query(
+      `SELECT a.action, s.school_code, s.login_code
+       FROM audit_logs a
+       JOIN schools s ON s.id = a.school_id
+       WHERE a.action = 'upsert_attendance_batch'
+       ORDER BY a.created_at DESC`,
+    );
+    const leftoverWriteAudits = audits.rows.filter((row) => row.school_code === LEFTOVER_B);
+    assert.equal(leftoverWriteAudits.length, 0, `PR-audit leftoverB=${JSON.stringify(audits.rows)}`);
+    assert.ok(
+      audits.rows.some((row) => row.login_code === LOGIN_A && row.school_code === LEFTOVER_A),
+      `PR-audit canonique A: ${JSON.stringify(audits.rows)}`,
+    );
+
+    const getTeacherNone = await request("/presences", { token: tokenTeacherNone });
+    const teacherNoneRows = unwrapList(getTeacherNone.data);
+    assert.equal(getTeacherNone.status, 200, `PR-scope-teacher status=${getTeacherNone.status}`);
+    assert.equal(teacherNoneRows.length, 0, `PR-scope-teacher count=${teacherNoneRows.length}`);
+    assert.equal(
+      teacherNoneRows.some((row) => String(row.id) === PRESENCE_A || row.schoolCode === LOGIN_A),
+      false,
+      "PR-scope-teacher jamais school-wide",
+    );
+
+    const getParent = await request("/presences", { token: tokenParent });
+    const parentRows = unwrapList(getParent.data);
+    assert.equal(getParent.status, 200, `PR-scope-parent status=${getParent.status}`);
+    assert.equal(parentRows.length, 0, `PR-scope-parent count=${parentRows.length}`);
+
+    const getTeacherAssigned = await request("/presences", { token: tokenTeacherA });
+    const teacherAssignedRows = unwrapList(getTeacherAssigned.data);
+    assert.equal(getTeacherAssigned.status, 200, `PR-scope-teacher-assigned status=${getTeacherAssigned.status}`);
+    assert.ok(
+      teacherAssignedRows.some((row) => String(row.id) === PRESENCE_A || row.studentId === "STU-A-001"),
+      `PR-scope-teacher-assigned subset A: ${JSON.stringify(teacherAssignedRows)}`,
+    );
+    assert.equal(
+      teacherAssignedRows.some((row) => String(row.id) === PRESENCE_B || row.schoolCode === LOGIN_B),
+      false,
+      "PR-scope-teacher-assigned jamais B",
+    );
+
+    const getParentLinked = await request("/presences", { token: tokenParentLinked });
+    const parentLinkedRows = unwrapList(getParentLinked.data);
+    assert.equal(getParentLinked.status, 200, `PR-scope-parent-linked status=${getParentLinked.status}`);
+    assert.ok(
+      parentLinkedRows.some((row) => String(row.id) === PRESENCE_A || row.studentId === "STU-A-001"),
+      `PR-scope-parent-linked subset A: ${JSON.stringify(parentLinkedRows)}`,
+    );
+    assert.equal(
+      parentLinkedRows.some((row) => String(row.id) === PRESENCE_B || row.schoolCode === LOGIN_B),
+      false,
+      "PR-scope-parent-linked jamais B",
+    );
+
+    const getAdminA = await request("/presences", { token: tokenA });
+    const adminARows = unwrapList(getAdminA.data);
+    assert.equal(getAdminA.status, 200, "PR-scope-admin A");
+    assert.ok(
+      adminARows.some((row) => String(row.id) === PRESENCE_A || row.studentId === "STU-A-001"),
+      "PR-scope-admin A voit l'école A",
+    );
+    assert.equal(
+      adminARows.some((row) => String(row.id) === PRESENCE_B || row.schoolCode === LOGIN_B),
+      false,
+      "PR-scope-admin A jamais B",
+    );
 
     console.log("OK presenceTenant.http.pg.test.js");
   } finally {

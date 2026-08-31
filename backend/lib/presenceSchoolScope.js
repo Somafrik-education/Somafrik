@@ -271,6 +271,56 @@ function projectPresenceSchoolCode(row) {
   return login || undefined;
 }
 
+function isPresenceStudentScopedRole(principal) {
+  const role = String(principal?.role ?? "").trim();
+  if (role === "Enseignant") return true;
+  const key = role
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+  return key.includes("parent") || key.includes("eleve") || key.includes("etudiant");
+}
+
+/**
+ * Audit Présences school-role : login_code membership, jamais leftover JWT.
+ * Plateforme sans membership attaché : chaîne vide (pas d'autorité leftover).
+ */
+function presenceAuditSchoolCode(principal = {}) {
+  const login = normalizeLoginCode(principal.presenceLoginCode);
+  if (login && login !== "*") return login;
+  return "";
+}
+
+/**
+ * Scope élève calculé et vide ⇒ liste vide, jamais school-wide.
+ * Admin école / plateforme : conserve le fallback établissement si aucun élève
+ * n'a pu être projeté (leftover JWT ≠ login_code sur les lignes élèves).
+ */
+function listPresencesForStudentScope({
+  scopedPresences,
+  studentIds,
+  studentScopeCalculated,
+  className,
+  date,
+} = {}) {
+  const list = Array.isArray(scopedPresences) ? scopedPresences : [];
+  const ids = studentIds instanceof Set ? studentIds : new Set();
+  const byStudents = list.filter(
+    (presence) =>
+      ids.has(String(presence.studentId ?? "")) &&
+      (!date || String(presence.date) === String(date)),
+  );
+  if (studentScopeCalculated) {
+    return byStudents;
+  }
+  if (ids.size) return byStudents;
+  return list.filter(
+    (presence) =>
+      (!className || presence.className === className) &&
+      (!date || String(presence.date) === String(date)),
+  );
+}
+
 module.exports = {
   attachPresenceMembershipScope,
   attachPresenceFixtureScope,
@@ -283,4 +333,7 @@ module.exports = {
   hasPresenceMembershipAttached,
   projectPresenceSchoolCode,
   normalizeLoginCode,
+  isPresenceStudentScopedRole,
+  presenceAuditSchoolCode,
+  listPresencesForStudentScope,
 };
