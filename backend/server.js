@@ -1759,7 +1759,7 @@ app.get("/api/students/:id", requireAuth, requirePermission("GET /api/students/:
     authorizeStudentReadForPrincipal,
   } = require("./lib/classStudentsAuthz");
   const authorizedPg = authorizeStudentReadForPrincipal(
-    projectEnrollmentApiStudent(pgStudent, scope),
+    pgStudent,
     principal,
     req.params.id,
     resolveAuthorizedStudentForPrincipal,
@@ -1767,7 +1767,7 @@ app.get("/api/students/:id", requireAuth, requirePermission("GET /api/students/:
   if (!authorizedPg) {
     return res.status(404).json({ message: "Eleve introuvable" });
   }
-  return res.json(sanitizeUserForResponse(authorizedPg));
+  return res.json(sanitizeUserForResponse(projectEnrollmentApiStudent(authorizedPg, scope)));
 }));
 
 app.patch("/api/students/:id", requireAuth, requirePermission("PATCH /api/students/:id"), asyncHandler(async (req, res) => {
@@ -1785,7 +1785,7 @@ app.patch("/api/students/:id", requireAuth, requirePermission("PATCH /api/studen
     authorizeStudentReadForPrincipal,
   } = require("./lib/classStudentsAuthz");
   const authorized = authorizeStudentReadForPrincipal(
-    projectEnrollmentApiStudent(existing, scope),
+    existing,
     principal,
     req.params.id,
     resolveAuthorizedStudentForPrincipal,
@@ -2153,13 +2153,9 @@ async function enrollmentHttpPrincipal(req) {
   const {
     attachEnrollmentMembershipScope,
     attachEnrollmentFixtureScope,
-    attachEnrollmentMemoryMembership,
   } = require("./lib/enrollmentSchoolScope");
   if (repository?.engine !== "memory" && typeof repository.one === "function") {
     return attachEnrollmentMembershipScope(req.principal, repository.one.bind(repository));
-  }
-  if (typeof repository.getClientsStore === "function") {
-    return attachEnrollmentMemoryMembership(req.principal, repository.getClientsStore());
   }
   return attachEnrollmentFixtureScope(req.principal);
 }
