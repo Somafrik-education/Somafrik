@@ -19,6 +19,8 @@ export {
   CONTENT_ABOVE_TAB_GAP,
   FLOATING_TAB_BAR_GAP,
   FLOATING_TAB_BAR_HEIGHT,
+  legacyItemGeometry,
+  measureTabBarItems,
   resolveTabBarBottomInset,
   TAB_BAR_OPTICAL_TOP_PADDING_DP,
 } from "./floatingTabBarLayout";

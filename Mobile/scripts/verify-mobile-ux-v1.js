@@ -99,6 +99,10 @@ function main() {
   assert.match(tabBarLayout, /TAB_BAR_CONTENT_HEIGHT/);
   assert.match(tabBarLayout, /tabBarBottom/);
   assert.match(tabBarLayout, /paddingBottom/);
+  assert.match(tabBarLayout, /itemCenterY/);
+  assert.match(tabBarLayout, /itemTop/);
+  assert.match(tabBarLayout, /itemBottom/);
+  assert.match(tabBarLayout, /legacyItemGeometry/);
   assert.match(screenLayout, /computeFloatingTabBarMetrics/);
   assert.match(screenLayout, /borderTopLeftRadius/);
   assert.doesNotMatch(screenLayout, /borderRadius:\s*20/);
