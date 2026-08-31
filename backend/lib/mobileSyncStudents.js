@@ -112,7 +112,8 @@ async function handleMobileSyncL1Students(args) {
 
   let school = null;
   if (typeof repository.getSchoolByCode === "function") {
-    school = await repository.getSchoolByCode(schoolCode);
+    const { assertMobileSyncCanonicalLoginCode } = require("./mobileSyncSchoolScope");
+    school = assertMobileSyncCanonicalLoginCode(await repository.getSchoolByCode(schoolCode));
   }
   const schoolId = asTrimmed(principal.effectiveSchoolId ?? school?.id);
   const schoolRef = { schoolCode, schoolId };
