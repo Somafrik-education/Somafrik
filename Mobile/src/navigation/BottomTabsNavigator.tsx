@@ -1,4 +1,5 @@
-import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
+import { createBottomTabNavigator, type BottomTabBarButtonProps } from "@react-navigation/bottom-tabs";
+import { PlatformPressable } from "@react-navigation/elements";
 import { Ionicons } from "@expo/vector-icons";
 import { Text } from "react-native";
 
@@ -11,6 +12,7 @@ import {
   type RoleTabDefinition,
 } from "./roleTabPreferences";
 import { useFloatingTabBarLayout } from "../lib/screenLayout";
+import { TAB_ITEM_INNER_ALIGN } from "../lib/tabBarItemInnerLayout";
 import { TAB_TEST_IDS } from "../lib/loginScreenSpec";
 import { tabTestIdForTabName } from "../lib/mobileNavigationSpec";
 import { MIN_TOUCH_TARGET_DP } from "../lib/mobileUsability";
@@ -23,6 +25,15 @@ const hiddenTabOptions = {
   tabBarButton: () => null,
   tabBarItemStyle: { display: "none" } as const,
 };
+
+function CompactTabButton({ style, ...props }: BottomTabBarButtonProps) {
+  return (
+    <PlatformPressable
+      {...props}
+      style={[style, { justifyContent: TAB_ITEM_INNER_ALIGN }]}
+    />
+  );
+}
 
 function CompactTabLabel({ label, color }: { label: string; color: string }) {
   return (
@@ -78,6 +89,9 @@ export default function BottomTabsNavigator() {
         tabBarShowLabel: true,
         tabBarActiveTintColor: "#2563EB",
         tabBarInactiveTintColor: "#64748B",
+        tabBarButton: CompactTabButton,
+        tabBarIconStyle: { marginBottom: 0 },
+        tabBarLabelStyle: { marginBottom: 0 },
         tabBarLabel: ({ color }) => (
           <CompactTabLabel
             label={getTabLabel(route.name, visibleTabs, overflowTabs, hiddenTabs)}
