@@ -41,11 +41,11 @@ export function LandingPage() {
       <MarketingHeader />
       <main id="contenu">
         <HeroSection />
+        <WebMobileSection />
         <ProductSection />
         <BenefitsSection />
         <FeaturesSection />
         <BusinessProofsSection />
-        <WebMobileSection />
         <AudiencesSection />
         <SecuritySection />
         <FinalCtaSection />
