@@ -1674,6 +1674,7 @@ class PostgresRepository {
     const actor = principal || {
       role: "system",
       schoolCode: input.schoolCode || "*",
+      financeLoginCode: String(input.schoolCode || "").trim(),
       sub: "finance-obligation-lifecycle",
     };
     try {
@@ -3382,7 +3383,7 @@ class PostgresRepository {
     const academicYear = await this.getCurrentAcademicYear(schoolId);
     if (!academicYear) return;
     const requestedEffectiveDate = String(options.effectiveDate ?? "").trim() || null;
-    const school = await this.one("SELECT school_code FROM schools WHERE id = $1", [schoolId]);
+    const school = await this.one("SELECT login_code FROM schools WHERE id = $1", [schoolId]);
     const student = await this.one(
       `SELECT st.student_code, st.first_name, st.last_name, st.id
        FROM students st WHERE st.id = $1`,
@@ -3393,6 +3394,7 @@ class PostgresRepository {
       [classId],
     );
     if (!school || !student || !klass) return;
+    const financeLoginCode = String(school.login_code ?? "").trim();
     const { createFinanceError, FINANCE_ERROR } = require("../lib/financeManagement");
     const {
       persistObligationSyncFailure,
@@ -3400,12 +3402,13 @@ class PostgresRepository {
     } = require("../lib/financeObligationLifecycle");
     const actor = options.principal || {
       role: "system",
-      schoolCode: school.school_code,
+      schoolCode: financeLoginCode,
+      financeLoginCode,
       sub: "finance-obligation-lifecycle",
     };
     let financeInput = {
       reason: "enrollment_active",
-      schoolCode: school.school_code,
+      schoolCode: financeLoginCode,
       studentKey: student.student_code,
       student: {
         id: student.student_code,
@@ -3414,7 +3417,7 @@ class PostgresRepository {
         studentCode: student.student_code,
         firstName: student.first_name,
         lastName: student.last_name,
-        schoolCode: school.school_code,
+        schoolCode: financeLoginCode,
         classId: klass.id,
         classCode: klass.class_code,
         className: klass.name,
@@ -6395,15 +6398,17 @@ class PostgresRepository {
     const student = created?.student;
     let financeSync = null;
     if (student?.studentCode) {
+      const school = await this.getSchoolByCode(schoolCode);
+      const financeLoginCode = String(school?.login_code ?? "").trim();
       financeSync = await this.syncEnrollmentFinanceObligations(
         {
           reason: "enrollment_active",
-          schoolCode,
+          schoolCode: financeLoginCode,
           studentKey: student.studentCode,
           academicYear: student.academicYearName || student.academicYear,
           classId: student.classId,
         },
-        { role: "system", schoolCode, sub: "finance-obligation-lifecycle" },
+        { role: "system", schoolCode: financeLoginCode, financeLoginCode, sub: "finance-obligation-lifecycle" },
       );
     }
     return { ...created, financeSync };
