@@ -148,6 +148,31 @@ async function setLoginCodeTriggers(pool, enabled) {
   `);
 }
 
+async function setRoleModuleGrant(pool, roleKey, moduleKey, flags) {
+  const existing = await pool.query(
+    `SELECT id FROM role_module_permissions
+     WHERE upper(role_key) = upper($1) AND module_key = $2 AND scope_type = 'global' AND status = 'active'
+     LIMIT 1`,
+    [roleKey, moduleKey],
+  );
+  if (existing.rowCount) {
+    await pool.query(
+      `UPDATE role_module_permissions
+       SET can_create = $2, can_read = $3, can_update = $4, can_delete = $5, updated_by = 'gp014', updated_at = NOW()
+       WHERE id = $1`,
+      [existing.rows[0].id, flags.create, flags.read, flags.update, flags.delete],
+    );
+    return;
+  }
+  await pool.query(
+    `INSERT INTO role_module_permissions (
+       role_key, scope_type, module_key, can_create, can_read, can_update, can_delete, updated_by
+     )
+     VALUES ($1, 'global', $2, $3, $4, $5, $6, 'gp014')`,
+    [roleKey, moduleKey, flags.create, flags.read, flags.update, flags.delete],
+  );
+}
+
 async function ensureCountry(pool, name, iso, phone, currency) {
   const existing = await pool.query(`SELECT id FROM countries WHERE iso_code = $1 LIMIT 1`, [iso]);
   if (existing.rowCount) return existing.rows[0];
@@ -342,6 +367,31 @@ async function seed(pool) {
       TEACHER_A2,
     ],
   );
+
+  await setRoleModuleGrant(pool, "SCHOOL_ADMIN", "planning", {
+    create: true,
+    read: true,
+    update: true,
+    delete: true,
+  });
+  await setRoleModuleGrant(pool, "COUNTRY_ADMIN", "planning", {
+    create: true,
+    read: true,
+    update: true,
+    delete: true,
+  });
+  await setRoleModuleGrant(pool, "SUPER_ADMIN", "planning", {
+    create: true,
+    read: true,
+    update: true,
+    delete: true,
+  });
+  await setRoleModuleGrant(pool, "TEACHER", "planning", {
+    create: false,
+    read: true,
+    update: false,
+    delete: false,
+  });
 
   return {
     schoolAId,
