@@ -39,6 +39,7 @@
     "verify:students-sync": "node --test backend/lib/legacyStudentsStateWrite.test.js backend/lib/studentsProjectionCache.test.js",
     "verify:academic-year-tenant": "node backend/scripts/verify-academic-year-tenant.js",
     "verify:planning-tenant": "node backend/scripts/verify-planning-tenant.js",
+    "verify:presence-tenant": "node backend/scripts/verify-presence-tenant.js",
     "verify:users-tenant": "node backend/scripts/verify-users-tenant.js",
     "verify:enrollment-tenant": "node backend/scripts/verify-enrollment-tenant.js",
     "verify:tenant-revalidation": "node backend/scripts/verify-tenant-revalidation.js",
