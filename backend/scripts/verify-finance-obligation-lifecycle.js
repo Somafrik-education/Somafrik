@@ -101,7 +101,9 @@ function assertSourceGuards() {
   const beforeTx = ensureFn.slice(0, txIdx);
   assert.doesNotMatch(beforeTx, /FROM enrollments/);
   assert.doesNotMatch(beforeTx, /classChanged/);
-  assert.match(ensureFn, /FOR UPDATE/);
+  assert.match(ensureFn, /SELECT login_code FROM schools WHERE id/);
+  assert.doesNotMatch(ensureFn, /school\.school_code/);
+  assert.match(ensureFn, /financeLoginCode/);
 
   const inTxIdx = ensureFn.indexOf("ensureEnrollmentObligationsInTx");
   assert.ok(inTxIdx > updateIdx, "Finance InTx avant mutation enrollment sous lock");

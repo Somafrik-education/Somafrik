@@ -836,6 +836,72 @@ async function main() {
         [studentRace.rows[0].id],
       );
       assert.ok(raceSuperseded.rowCount >= 1, "historique CLASS_TRANSFER absent");
+
+      const dualLeftover = "CD-2026-DUAL";
+      const dualLogin = "CD-LAC-26-001";
+      const dualSchool = await pool.query(
+        `INSERT INTO schools (country_id, school_code, login_code, name, status)
+         VALUES ($1, $2, $3, 'Lycée Dual', 'active') RETURNING id`,
+        [country.rows[0].id, dualLeftover, dualLogin],
+      );
+      const dualYear = await pool.query(
+        `INSERT INTO academic_years (school_id, name, status)
+         VALUES ($1, '2026-2027', 'open') RETURNING id`,
+        [dualSchool.rows[0].id],
+      );
+      const dualClass = await pool.query(
+        `INSERT INTO classes (school_id, academic_year_id, class_code, name, status)
+         VALUES ($1, $2, 'CLS-DUAL', '6ème Dual', 'active') RETURNING id`,
+        [dualSchool.rows[0].id, dualYear.rows[0].id],
+      );
+      const dualStudent = await pool.query(
+        `INSERT INTO students (school_id, student_code, first_name, last_name)
+         VALUES ($1, 'CD-LAC-26-001-STU-0001', 'Dual', 'Enroll') RETURNING id`,
+        [dualSchool.rows[0].id],
+      );
+      await pool.query(
+        `INSERT INTO enrollments (school_id, student_id, class_id, academic_year_id, status, enrollment_date, class_effective_date)
+         VALUES ($1, $2, $3, $4, 'active', '2026-09-01', '2026-09-01')`,
+        [dualSchool.rows[0].id, dualStudent.rows[0].id, dualClass.rows[0].id, dualYear.rows[0].id],
+      );
+      const dualUser = await pool.query(
+        `INSERT INTO users (school_id, user_code, first_name, last_name, email, role, status)
+         VALUES ($1, 'USR-GP004', 'Dual', 'Admin', 'gp004@somafrik.test', 'SCHOOL_ADMIN', 'active')
+         RETURNING id`,
+        [dualSchool.rows[0].id],
+      );
+      const dualAdmin = {
+        role: "Admin School",
+        schoolCode: dualLeftover,
+        sub: dualUser.rows[0].id,
+        firstName: "Dual",
+        lastName: "Admin",
+        permissions: ["Paiements:UPDATE", "Frais & tarifs:CREATE", "Frais & tarifs:UPDATE"],
+      };
+      const dualGrid = await store.upsertFinanceFeeGrid(
+        {
+          classId: dualClass.rows[0].id,
+          className: "6ème Dual",
+          academicYear: "2026-2027",
+          currency: "CDF",
+          status: "Active",
+          items: [{ feeType: "Inscription", label: "Inscription Dual", amount: 10_000, status: "Actif" }],
+        },
+        dualAdmin,
+      );
+      await store.setFinanceFeeGridStatus(dualGrid.id, "Active", dualAdmin);
+      await pgRepo.ensureActiveEnrollment(
+        dualSchool.rows[0].id,
+        dualStudent.rows[0].id,
+        dualClass.rows[0].id,
+        { principal: dualAdmin },
+      );
+      const dualFees = await store.listFinanceStudentFees(dualAdmin);
+      assert.ok(dualFees.length >= 1, "GP-004 enrollment sync via login_code");
+      assert.ok(
+        dualFees.every((row) => String(row.schoolCode).toUpperCase() === dualLogin),
+        "GP-004 projection login_code, leftover jamais promu",
+      );
     } finally {
       await pgRepo.close();
     }
