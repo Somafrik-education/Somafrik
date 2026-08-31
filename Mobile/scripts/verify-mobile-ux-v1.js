@@ -65,6 +65,7 @@ function main() {
 
   runTsx("mobileUxV1Layout.test.ts");
   runTsx("screenLayout.test.ts");
+  runTsx("tabBarItemInnerLayout.test.ts");
   runTsx("roleHomeConfig.test.ts");
   runTsx("homeShellPermissions.test.ts");
   runTsx("roleNavigationPreferences.test.ts");
@@ -72,9 +73,16 @@ function main() {
   assert.match(tabs, /MobileAppHeader/);
   assert.match(tabs, /headerStatusBarHeight:\s*0/);
   assert.match(tabs, /CompactTabLabel/);
+  assert.match(tabs, /CompactTabButton/);
+  assert.match(tabs, /TAB_ITEM_INNER_ALIGN/);
+  assert.match(tabs, /tabBarButton/);
+  assert.match(tabs, /tabBarIconStyle/);
+  assert.match(tabs, /tabBarLabelStyle/);
   assert.match(tabs, /TAB_LABEL_FONT_SIZE/);
   assert.match(tabs, /shortBottomTabLabel/);
   assert.match(tabs, /size=\{20\}/);
+  assert.doesNotMatch(tabs, /translateY/);
+  assert.doesNotMatch(tabs, /resolveTabBarBottomInset/);
   assert.doesNotMatch(tabs, /adjustsFontSizeToFit/);
   assert.doesNotMatch(tabs, /minimumFontScale/);
   assert.doesNotMatch(tabs, /name="Menu"/);
