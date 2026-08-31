@@ -7,6 +7,8 @@
  * UNION idempotente des flags globaux. Le Comptable n'obtient jamais
  * Élèves:READ ici : le picker Finance doit utiliser une projection minimale
  * dédiée plutôt que l'annuaire élèves général.
+ * NOTES-P1 : ne pas y mettre TEACHER/grades — un OR bootstrap réintroduirait
+ * Notes:CREATE/UPDATE après une révocation Superadmin.
  * Après bootstrap, PostgreSQL reste l'autorité.
  */
 

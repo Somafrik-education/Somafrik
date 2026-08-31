@@ -2325,7 +2325,7 @@ class PostgresRepository {
       throw error;
     }
 
-    const { assertEvaluationAllowsGradeEntry, assertStudentEnrolledInEvaluationClass } = require("../lib/evaluationGradeEntry");
+    const { assertEvaluationAllowsGradeEntry, assertStudentEnrolledInEvaluationClass, isTeacherPrincipal, assertTeacherGradeMutationPermission } = require("../lib/evaluationGradeEntry");
     if (!options.allowUnvalidatedEvaluation) {
       assertEvaluationAllowsGradeEntry(evaluation);
     }
@@ -2392,7 +2392,7 @@ class PostgresRepository {
     this._activeNotesAuthzTrace = authzTrace;
     let classAccessVia = null;
     let evaluationAccessVia = null;
-    if (principal.role === "Enseignant" && !options.allowMissingTeacher) {
+    if (isTeacherPrincipal(principal) && !options.allowMissingTeacher) {
       const principalSchool = String(principal.schoolCode ?? "")
         .trim()
         .toUpperCase();
@@ -2479,9 +2479,9 @@ class PostgresRepository {
     // Lot 2 — auteur pédagogique déterministe (jamais inventé via created_at / premier de l'école).
     // Rôle d'abord : admin/direction exige TOUJOURS une clé explicite (même si evaluation.teacher_id).
     // Enseignant : résolution par affectation ; evaluation.teacher_id reste source déterministe si déjà présent.
-    const isEnseignant = principal.role === "Enseignant";
+    const teacherSession = isTeacherPrincipal(principal);
     let teacherId = null;
-    if (!isEnseignant) {
+    if (!teacherSession) {
       const explicitKey = this.extractExplicitTeacherKey(payload);
       if (!explicitKey) {
         throw this.teacherUnresolvedError(
@@ -2509,23 +2509,15 @@ class PostgresRepository {
         );
       }
       teacherId = explicitTeacher.id;
-    } else if (evaluation.teacher_id) {
-      teacherId = evaluation.teacher_id;
     } else {
-      const teacher = await this.findTeacherForGrade(
-        evaluation.school_id,
-        String(principal.sub ?? "").trim(),
-        evaluation.class_id,
-        evaluation.subject_id,
-        principal.role,
-      );
-      if (!teacher) {
+      const sessionTeacherId = await this.resolveTeacherPgIdForPrincipal(principal, evaluation.school_id);
+      if (!sessionTeacherId) {
         throw this.teacherUnresolvedError(
           "GRADE_TEACHER_UNRESOLVED",
           "Enseignant introuvable ou ambigu pour la note.",
         );
       }
-      teacherId = teacher.id;
+      teacherId = sessionTeacherId;
     }
 
     let existing = await this.one(
@@ -2537,6 +2529,8 @@ class PostgresRepository {
     if (!existing && isUuid(payload.id)) {
       existing = await this.one("SELECT * FROM grades WHERE id = $1", [payload.id]);
     }
+
+    assertTeacherGradeMutationPermission(principal, existing);
 
     if (existing) {
       assertNoteOptimisticLock(
@@ -3077,6 +3071,35 @@ class PostgresRepository {
       teacherId = teacher?.id ?? null;
     }
 
+    if (principal) {
+      const { isTeacherPrincipal } = require("../lib/evaluationGradeEntry");
+      if (isTeacherPrincipal(principal)) {
+        const teacherPgId = await this.resolveTeacherPgIdForPrincipal(principal, school.id);
+        if (!teacherPgId) {
+          const error = new Error("Enseignant introuvable pour cette session.");
+          error.statusCode = 403;
+          error.code = "GRADE_TEACHER_UNRESOLVED";
+          throw error;
+        }
+        const yearId = schoolClass.academic_year_id ?? academicYear?.id ?? null;
+        const assignment = await this.findActiveTeacherAssignmentRow({
+          teacherId: teacherPgId,
+          classId,
+          subjectId,
+          academicYearId: yearId,
+        });
+        if (!assignment) {
+          const { createPedagogyError, PEDAGOGY_ERROR } = require("../lib/pedagogyManagement");
+          throw createPedagogyError(
+            403,
+            "Affectation enseignant active requise pour cette classe et ce cours.",
+            PEDAGOGY_ERROR.TEACHER_ASSIGNMENT_REQUIRED,
+          );
+        }
+        if (!existing) teacherId = teacherPgId;
+      }
+    }
+
     if (principal && !existing) {
       const { assertTeacherCannotValidateEvaluation } = require("../lib/evaluationGradeEntry");
       assertTeacherCannotValidateEvaluation(principal, status);
@@ -3150,7 +3173,7 @@ class PostgresRepository {
         school.id,
         schoolClass.id,
         subject.id,
-        teacher?.id ?? null,
+        teacherId,
         term.id,
         title,
         evaluationType,
@@ -4293,104 +4316,111 @@ class PostgresRepository {
     return jwtHit;
   }
 
+  /**
+   * GP-001 — identité enseignant Notes : session canonique uniquement.
+   * principal.sub → users.id → teachers.user_id → teachers.id
+   * Pas de publicId / identifier, pas de BackOffice (collectTeacherLookupKeysForPrincipal reste hors Notes).
+   */
+  async resolveTeacherPgIdForPrincipal(principal, schoolId) {
+    const userId = String(principal?.sub ?? "").trim();
+    if (!userId || !schoolId) return null;
+    const teacher = await this.one(
+      `SELECT t.id
+       FROM users u
+       INNER JOIN teachers t ON t.user_id = u.id AND t.school_id = u.school_id
+       WHERE t.school_id = $1
+         AND u.id::text = $2
+       LIMIT 1`,
+      [schoolId, userId],
+    );
+    return teacher?.id ?? null;
+  }
+
+  async resolveAcademicYearIdForEvaluation(evaluation) {
+    const fromRow = String(evaluation?.academic_year_id ?? "").trim();
+    if (fromRow) return fromRow;
+    if (evaluation?.term_id) {
+      const term = await this.one(
+        `SELECT academic_year_id FROM terms WHERE id = $1 LIMIT 1`,
+        [evaluation.term_id],
+      );
+      if (term?.academic_year_id) return term.academic_year_id;
+    }
+    if (evaluation?.class_id) {
+      const klass = await this.one(
+        `SELECT academic_year_id FROM classes WHERE id = $1 LIMIT 1`,
+        [evaluation.class_id],
+      );
+      if (klass?.academic_year_id) return klass.academic_year_id;
+    }
+    return null;
+  }
+
+  async findActiveTeacherAssignmentRow({ teacherId, classId, subjectId, academicYearId }) {
+    if (!teacherId || !classId || !subjectId || !academicYearId) return null;
+    return this.one(
+      `SELECT 1 AS ok
+       FROM teacher_assignments ta
+       WHERE ta.teacher_id = $1
+         AND ta.class_id = $2
+         AND ta.subject_id = $3
+         AND ta.academic_year_id = $4
+         AND lower(ta.status) = 'active'
+       LIMIT 1`,
+      [teacherId, classId, subjectId, academicYearId],
+    );
+  }
+
   async teacherCanAccessStudentClass(principal, student) {
     const { pushStep } = require("../lib/notesAuthzTrace");
+    const { isTeacherPrincipal } = require("../lib/evaluationGradeEntry");
     const trace = this._activeNotesAuthzTrace;
     this._lastTeacherClassAccessVia = null;
-    if (principal.role !== "Enseignant") {
+    if (!isTeacherPrincipal(principal)) {
       this._lastTeacherClassAccessVia = "non_teacher";
       return true;
     }
-    if (this.classNamesInclude(principal.classNames, student.class_name)) {
-      this._lastTeacherClassAccessVia = "jwt_classNames";
+    const teacherId = await this.resolveTeacherPgIdForPrincipal(principal, student.school_id);
+    pushStep(trace, { gate: "pg_teacher_lookup", teacherId: teacherId || null });
+    if (!teacherId || !student.class_id) {
+      this._lastTeacherClassAccessVia = null;
+      return false;
+    }
+    const assignment = await this.one(
+      `SELECT 1 AS ok
+       FROM teacher_assignments ta
+       WHERE ta.teacher_id = $1
+         AND ta.class_id = $2
+         AND lower(ta.status) = 'active'
+       LIMIT 1`,
+      [teacherId, student.class_id],
+    );
+    if (assignment) {
+      this._lastTeacherClassAccessVia = "pg_teacher_assignment";
       pushStep(trace, {
-        gate: "pg_or_jwt_class",
+        gate: "pg_teacher_assignment",
         result: "allow",
-        via: "jwt_classNames",
-        jwtClassNames: principal.classNames ?? [],
-        studentClassName: student.class_name,
+        via: "pg_teacher_assignment",
+        teacherId,
+        classId: student.class_id,
       });
       return true;
     }
-    pushStep(trace, {
-      gate: "jwt_classNames",
-      result: "miss",
-      jwtClassNames: principal.classNames ?? [],
-      studentClassName: student.class_name,
-    });
-
-    const lookupKeys = await this.collectTeacherLookupKeysForPrincipal(principal, student.school_id);
-    pushStep(trace, { gate: "pg_teacher_lookup", lookupValues: lookupKeys });
-    let pgTeacherFound = false;
-    for (const lookupValue of lookupKeys) {
-      const teacher = await this.one(
-        `SELECT t.id, t.teacher_code
-         FROM teachers t
-         LEFT JOIN users u ON u.id = t.user_id
-         WHERE t.school_id = $1
-           AND ${sqlTeacherIdentityEquals("t", "u", "$2")}
-         LIMIT 1`,
-        [student.school_id, lookupValue],
-      );
-      if (!teacher?.id) continue;
-      pgTeacherFound = true;
-      pushStep(trace, {
-        gate: "pg_teacher_lookup",
-        result: "hit",
-        lookupValue,
-        teacherId: teacher.id,
-        teacherCode: teacher.teacher_code,
-      });
-      if (teacher?.id && student.class_id) {
-        const assignment = await this.one(
-          `SELECT 1 AS ok
-           FROM teacher_assignments ta
-           WHERE ta.teacher_id = $1
-             AND ta.class_id = $2
-             AND ta.status = 'active'
-           LIMIT 1`,
-          [teacher.id, student.class_id],
-        );
-        if (assignment) {
-          this._lastTeacherClassAccessVia = "pg_teacher_assignment";
-          pushStep(trace, {
-            gate: "pg_teacher_assignment",
-            result: "allow",
-            via: "pg_teacher_assignment",
-            teacherId: teacher.id,
-            classId: student.class_id,
-          });
-          return true;
-        }
-        pushStep(trace, {
-          gate: "pg_teacher_assignment",
-          result: "miss",
-          teacherId: teacher.id,
-          classId: student.class_id,
-        });
-      }
-    }
-    if (!pgTeacherFound) {
-      pushStep(trace, {
-        gate: "pg_teacher_lookup",
-        result: "miss",
-        lookupValues: lookupKeys,
-      });
-    }
-
-    pushStep(trace, { gate: "fallback_bo_class", entering: true });
-    return this.teacherCanAccessClassFromBackOffice(principal, student);
+    pushStep(trace, { gate: "pg_teacher_assignment", result: "deny", teacherId, classId: student.class_id });
+    return false;
   }
 
   /**
-   * HOTFIX-PRE-E1-02 — Enseignant autorisé sur l'évaluation (classe + matière).
-   * PG teacher_assignments, sinon affectation BO, sinon teacher_id évaluation.
+   * NOTES-P1 — écriture notes : teacher_assignments PostgreSQL actives
+   * (teacher / class / subject / academic_year).
+   * Identité : principal.sub → users.id → teachers.user_id. Pas de JWT classNames, pas de BO.
    */
   async teacherCanAccessEvaluation(principal, evaluation, student) {
     const { pushStep } = require("../lib/notesAuthzTrace");
+    const { isTeacherPrincipal } = require("../lib/evaluationGradeEntry");
     const trace = this._activeNotesAuthzTrace;
     this._lastTeacherEvaluationAccessVia = null;
-    if (principal.role !== "Enseignant") {
+    if (!isTeacherPrincipal(principal)) {
       this._lastTeacherEvaluationAccessVia = "non_teacher";
       return true;
     }
@@ -4424,128 +4454,50 @@ class PostgresRepository {
       }
     }
 
-    const lookupKeys = await this.collectTeacherLookupKeysForPrincipal(
-      principal,
-      evaluation.school_id,
-    );
-    pushStep(trace, {
-      gate: "pg_teacher_lookup_for_evaluation",
-      lookupValues: lookupKeys,
-    });
-    let pgTeacherFound = false;
-    for (const lookupValue of lookupKeys) {
-      const teacher = await this.one(
-        `SELECT t.id, t.teacher_code
-         FROM teachers t
-         LEFT JOIN users u ON u.id = t.user_id
-         WHERE t.school_id = $1
-           AND ${sqlTeacherIdentityEquals("t", "u", "$2")}
-         LIMIT 1`,
-        [evaluation.school_id, lookupValue],
-      );
-      if (!teacher?.id) continue;
-      pgTeacherFound = true;
-      pushStep(trace, {
-        gate: "pg_teacher_lookup_for_evaluation",
-        result: "hit",
-        lookupValue,
-        teacherId: teacher.id,
-        teacherCode: teacher.teacher_code,
-      });
-      // Exiger l'affectation classe+matière (ne pas se fier seul à evaluation.teacher_id).
-      const assignment = await this.one(
-        `SELECT 1 AS ok
-         FROM teacher_assignments ta
-         WHERE ta.teacher_id = $1
-           AND ta.class_id = $2
-           AND ta.subject_id = $3
-           AND ta.status = 'active'
-         LIMIT 1`,
-        [teacher.id, evaluation.class_id, evaluation.subject_id],
-      );
-      if (assignment) {
-        this._lastTeacherEvaluationAccessVia = "pg_teacher_assignment";
-        pushStep(trace, {
-          gate: "pg_teacher_assignment_subject",
-          result: "allow",
-          via: "pg_teacher_assignment",
-          teacherId: teacher.id,
-          classId: evaluation.class_id,
-          subjectId: evaluation.subject_id,
-        });
-        return true;
-      }
+    const teacherId = await this.resolveTeacherPgIdForPrincipal(principal, evaluation.school_id);
+    if (!teacherId) {
+      pushStep(trace, { gate: "pg_teacher_lookup_for_evaluation", result: "miss" });
+      return false;
+    }
+    const academicYearId = await this.resolveAcademicYearIdForEvaluation(evaluation);
+    if (!academicYearId) {
       pushStep(trace, {
         gate: "pg_teacher_assignment_subject",
-        result: "miss",
-        teacherId: teacher.id,
+        result: "deny",
+        reason: "missing_academic_year",
+        teacherId,
         classId: evaluation.class_id,
         subjectId: evaluation.subject_id,
       });
-    }
-    if (!pgTeacherFound) {
-      pushStep(trace, {
-        gate: "pg_teacher_lookup_for_evaluation",
-        result: "miss",
-        lookupValues: lookupKeys,
-      });
-    }
-
-    // Fallback BO : affectation classe + matière (ID enseignant stable), même école.
-    const state = (await this.getBackOfficeState()) ?? {};
-    const className = String(student?.class_name ?? "").trim();
-    const subjectRow = await this.one(`SELECT name FROM subjects WHERE id = $1`, [
-      evaluation.subject_id,
-    ]);
-    const subjectName = String(subjectRow?.name ?? "").trim();
-    if (!className || !subjectName) {
-      pushStep(trace, {
-        gate: "fallback_bo_evaluation",
-        result: "deny",
-        reason: "missing_class_or_subject_name",
-      });
       return false;
     }
-
-    const { resolveTeacherAssignments } = require("../services/authService");
-    const principalSub = String(principal.sub ?? "").trim();
-    const linkedTeachers = (state.teachers ?? []).filter((row) =>
-      [row.userId, row.id, row.publicId].some((value) => String(value ?? "").trim() === principalSub),
-    );
-    const schoolCode = String(principal.schoolCode ?? "").trim().toUpperCase();
-    pushStep(trace, {
-      gate: "fallback_bo_evaluation",
-      entering: true,
-      linkedTeacherIds: linkedTeachers.map((row) => row.id),
-      className,
-      subjectName,
+    const assignment = await this.findActiveTeacherAssignmentRow({
+      teacherId,
+      classId: evaluation.class_id,
+      subjectId: evaluation.subject_id,
+      academicYearId,
     });
-    for (const teacher of linkedTeachers) {
-      const assignments = resolveTeacherAssignments(teacher, principal, state.assignments ?? []);
-      const matched = assignments.find((assignment) => {
-        const assignmentSchool = String(assignment.schoolCode ?? "").trim().toUpperCase();
-        if (schoolCode && assignmentSchool && schoolCode !== "*" && schoolCode !== assignmentSchool) {
-          return false;
-        }
-        return (
-          this.classNamesInclude([assignment.className], className) &&
-          this.normalizeComparableText(assignment.course ?? assignment.subject) ===
-            this.normalizeComparableText(subjectName)
-        );
+    if (assignment) {
+      this._lastTeacherEvaluationAccessVia = "pg_teacher_assignment";
+      pushStep(trace, {
+        gate: "pg_teacher_assignment_subject",
+        result: "allow",
+        via: "pg_teacher_assignment",
+        teacherId,
+        classId: evaluation.class_id,
+        subjectId: evaluation.subject_id,
+        academicYearId,
       });
-      if (matched) {
-        this._lastTeacherEvaluationAccessVia = "bo_assignment";
-        pushStep(trace, {
-          gate: "fallback_bo_evaluation",
-          result: "allow",
-          via: "bo_assignment",
-          teacherId: teacher.id,
-          assignmentId: matched.id ?? null,
-        });
-        return true;
-      }
+      return true;
     }
-    pushStep(trace, { gate: "fallback_bo_evaluation", result: "deny" });
+    pushStep(trace, {
+      gate: "pg_teacher_assignment_subject",
+      result: "deny",
+      teacherId,
+      classId: evaluation.class_id,
+      subjectId: evaluation.subject_id,
+      academicYearId,
+    });
     return false;
   }
 

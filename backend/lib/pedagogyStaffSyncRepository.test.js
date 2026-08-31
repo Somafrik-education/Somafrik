@@ -345,13 +345,34 @@ function createInjectablePostgresRepository() {
         if (!(eq(row.teacher_id, params[0]) && eq(row.class_id, params[1]) && row.status === "active")) {
           return false;
         }
-        // Variante classe seule (2 params) vs classe+matière (3 params).
-        if (params.length >= 3 && params[2] != null) {
-          return eq(row.subject_id, params[2]);
+        if (params.length >= 3 && params[2] != null && !eq(row.subject_id, params[2])) {
+          return false;
+        }
+        if (params.length >= 4 && params[3] != null && !eq(row.academic_year_id, params[3])) {
+          return false;
         }
         return true;
       });
       return hit ? [{ ok: 1 }] : [];
+    }
+    if (upper.includes("SELECT ACADEMIC_YEAR_ID FROM TERMS WHERE ID")) {
+      return tables.terms
+        .filter((row) => eq(row.id, params[0]))
+        .map((row) => ({ academic_year_id: row.academic_year_id }));
+    }
+    if (upper.includes("SELECT ACADEMIC_YEAR_ID FROM CLASSES WHERE ID")) {
+      return tables.classes
+        .filter((row) => eq(row.id, params[0]))
+        .map((row) => ({ academic_year_id: row.academic_year_id }));
+    }
+    if (
+      upper.includes("FROM USERS U") &&
+      upper.includes("JOIN TEACHERS T") &&
+      upper.includes("T.USER_ID = U.ID")
+    ) {
+      return tables.teachers
+        .filter((row) => eq(row.school_id, params[0]) && eq(row.user_id, params[1]))
+        .map((row) => ({ id: row.id }));
     }
     if (upper.startsWith("SELECT NAME FROM SUBJECTS WHERE ID")) {
       return tables.subjects
@@ -741,8 +762,10 @@ async function run() {
   // 3) Garde RBAC : enseignant affecté OK ; non affecté KO
   const pgStudent = await repo.resolveStudentForGrade("STUDENTS-A-1", "SCH-A");
   assert.ok(pgStudent?.class_id);
+  const teacherUser = repo.tables.users.find((row) => String(row.user_code ?? "") === "USERS-T-1");
+  assert.ok(teacherUser?.id, "user session enseignant matérialisé");
   const allowed = await repo.teacherCanAccessStudentClass(
-    { role: "Enseignant", sub: "USERS-T-1", classNames: [] },
+    { role: "Enseignant", sub: teacherUser.id, classNames: [] },
     pgStudent,
   );
   assert.strictEqual(allowed, true, "enseignant affecté autorisé même sans classNames JWT");
@@ -753,9 +776,15 @@ async function run() {
   );
   assert.strictEqual(denied, false, "enseignant non affecté toujours refusé");
 
+  const deniedBoIdentifier = await repo.teacherCanAccessStudentClass(
+    { role: "Enseignant", sub: "USERS-T-1", identifier: "USERS-T-1", classNames: [] },
+    pgStudent,
+  );
+  assert.strictEqual(deniedBoIdentifier, false, "user_code BO n'est plus une autorité Notes");
+
   const evalRow = repo.tables.evaluations[0];
   const canEval = await repo.teacherCanAccessEvaluation(
-    { role: "Enseignant", sub: "USERS-T-1", schoolCode: "SCH-A", classNames: ["6e A"] },
+    { role: "Enseignant", sub: teacherUser.id, schoolCode: "SCH-A", classNames: ["6e A"] },
     evalRow,
     pgStudent,
   );
@@ -770,7 +799,7 @@ async function run() {
   repo.tables.subjects.push(otherSubject);
   const physicsEval = { ...evalRow, subject_id: otherSubject.id, teacher_id: null };
   const cannotPhysics = await repo.teacherCanAccessEvaluation(
-    { role: "Enseignant", sub: "USERS-T-1", schoolCode: "SCH-A", classNames: ["6e A"] },
+    { role: "Enseignant", sub: teacherUser.id, schoolCode: "SCH-A", classNames: ["6e A"] },
     physicsEval,
     pgStudent,
   );
@@ -781,7 +810,7 @@ async function run() {
   repo.tables.schools.push({ id: schoolBId, school_code: "SCH-B", name: "École B" });
 
   const crossSchoolDenied = await repo.teacherCanAccessEvaluation(
-    { role: "Enseignant", sub: "USERS-T-1", schoolCode: "SCH-A", classNames: ["6e A"] },
+    { role: "Enseignant", sub: teacherUser.id, schoolCode: "SCH-A", classNames: ["6e A"] },
     { ...evalRow, school_id: schoolBId },
     pgStudent,
   );

@@ -171,10 +171,12 @@ async function seedFixture(pool) {
     klassB: klassB.rows[0].id,
     closedClass: closedClass.rows[0].id,
     openYear: openYear.rows[0].id,
+    closedYear: closedYear.rows[0].id,
     term: term.rows[0].id,
     math: math.rows[0].id,
     physics: physics.rows[0].id,
     teacher: teacher.rows[0].id,
+    teacherUser: teacherUser.rows[0].id,
     teacherNoAssign: teacherNoAssign.rows[0].id,
     student: student.rows[0].id,
     outsider: outsider.rows[0].id,
@@ -534,21 +536,18 @@ async function main() {
     );
     assert.ok(evaluation.id);
 
-    await assert.rejects(
-      () =>
-        store.upsertSchoolGrade(
-          {
-            evaluationId: evaluation.id,
-            studentId: "CD-2026-0001-STU-PG-01",
-            teacherId: "ENS-PG-001",
-            value: 12,
-            scale: 20,
-          },
-          admin,
-          auditMeta,
-        ),
-      (error) => error.code === PEDAGOGY_ERROR.EVALUATION_NOT_VALIDATED || error.statusCode === 409,
+    const draftGrade = await store.upsertSchoolGrade(
+      {
+        evaluationId: evaluation.id,
+        studentId: "CD-2026-0001-STU-PG-01",
+        teacherId: "ENS-PG-001",
+        value: 12,
+        scale: 20,
+      },
+      admin,
+      auditMeta,
     );
+    assert.equal(Number(draftGrade.score ?? draftGrade.value), 12, "NOTES-P1 : saisie sur brouillon");
 
     const validated = await store.updateEvaluation(
       evaluation.id,
@@ -838,39 +837,47 @@ async function main() {
       auditMeta,
     );
     assert.ok(grade.id);
+    const lockVersion = Number(grade.version ?? 1);
 
     const [gradeA, gradeB] = await Promise.all([
-      store.upsertSchoolGrade(
-        {
-          evaluationId: evaluation.id,
-          studentId: "CD-2026-0001-STU-PG-01",
-          teacherId: "ENS-PG-001",
-          value: 15,
-          scale: 20,
-          version: 1,
-        },
-        admin,
-        auditMeta,
-      ),
-      store.upsertSchoolGrade(
-        {
-          evaluationId: evaluation.id,
-          studentId: "CD-2026-0001-STU-PG-01",
-          teacherId: "ENS-PG-001",
-          value: 16,
-          scale: 20,
-          version: 1,
-        },
-        admin,
-        auditMeta,
-      ).catch((error) => error),
+      store
+        .upsertSchoolGrade(
+          {
+            evaluationId: evaluation.id,
+            studentId: "CD-2026-0001-STU-PG-01",
+            teacherId: "ENS-PG-001",
+            value: 15,
+            scale: 20,
+            version: lockVersion,
+          },
+          admin,
+          auditMeta,
+        )
+        .catch((error) => error),
+      store
+        .upsertSchoolGrade(
+          {
+            evaluationId: evaluation.id,
+            studentId: "CD-2026-0001-STU-PG-01",
+            teacherId: "ENS-PG-001",
+            value: 16,
+            scale: 20,
+            version: lockVersion,
+          },
+          admin,
+          auditMeta,
+        )
+        .catch((error) => error),
     ]);
     const gradeRows = await pool.query(
       `SELECT count(*)::int AS count FROM grades WHERE evaluation_id = $1 AND student_id = $2`,
       [evaluation.dbId ?? evaluation.id, fixture.student],
     );
     assert.equal(gradeRows.rows[0].count, 1, "une seule note canonique après concurrence");
-    assert.ok(gradeA?.id || gradeB?.statusCode === 409 || gradeB?.code);
+    const winner = [gradeA, gradeB].find((row) => row?.id && !row.statusCode);
+    const conflict = [gradeA, gradeB].find((row) => Number(row?.statusCode) === 409);
+    assert.ok(winner, "un upsert concurrent doit réussir");
+    assert.ok(conflict, "l'autre upsert concurrent doit 409 (verrou optimiste)");
 
     const attendance = await store.upsertSchoolAttendanceBatch(
       {
@@ -1009,6 +1016,207 @@ async function main() {
       [fixture.physics, fixture.klass],
     );
     assert.equal(coursesAfterFailedAudit.rows[0].count, 0, "rollback audit : cours non persisté");
+
+    const teacherLive = {
+      role: "Enseignant",
+      schoolCode: "CD-2026-0001",
+      sub: fixture.teacherUser,
+      identifier: "ENS-PG-001",
+      permissions: ["Notes:READ", "Notes:CREATE", "Notes:UPDATE"],
+    };
+    const teacherCreateOnly = {
+      ...teacherLive,
+      permissions: ["Notes:READ", "Notes:CREATE"],
+    };
+    const teacherEval = await store.createEvaluation(
+      {
+        className: "6ème A",
+        subject: "Mathématiques",
+        period: "Trimestre 1",
+        title: "NOTES-P1 teacher draft",
+        evaluationType: "Devoir",
+        scale: 20,
+      },
+      teacherLive,
+      auditMeta,
+    );
+    assert.ok(teacherEval.id);
+    assert.equal(teacherEval.status, "Brouillon");
+    const teacherEvalRow = await pool.query(
+      `SELECT teacher_id, status FROM evaluations WHERE id::text = $1 OR COALESCE(legacy_json_id, '') = $1`,
+      [String(teacherEval.id)],
+    );
+    assert.equal(String(teacherEvalRow.rows[0].teacher_id), String(fixture.teacher));
+    assert.equal(teacherEvalRow.rows[0].status, "draft");
+
+    await assert.rejects(
+      () =>
+        store.updateEvaluation(teacherEval.id, { status: "Validée" }, teacherLive, auditMeta),
+      (error) => error.code === PEDAGOGY_ERROR.EVALUATION_VALIDATION_FORBIDDEN,
+    );
+
+    const teacherGrade = await store.upsertSchoolGrade(
+      {
+        evaluationId: teacherEval.id,
+        studentId: "CD-2026-0001-STU-PG-01",
+        value: 13,
+        scale: 20,
+      },
+      teacherLive,
+      auditMeta,
+    );
+    assert.equal(Number(teacherGrade.score ?? teacherGrade.value), 13);
+
+    const gradesBeforeOtherYear = await pool.query(
+      `SELECT count(*)::int AS count, coalesce(max(score), 0)::float AS score FROM grades`,
+    );
+    await pool.query(
+      `UPDATE teacher_assignments
+       SET academic_year_id = $1
+       WHERE teacher_id = $2 AND class_id = $3 AND subject_id = $4 AND academic_year_id = $5`,
+      [fixture.closedYear, fixture.teacher, fixture.klass, fixture.math, fixture.openYear],
+    );
+    await assert.rejects(
+      () =>
+        store.upsertSchoolGrade(
+          {
+            evaluationId: teacherEval.id,
+            studentId: "CD-2026-0001-STU-PG-01",
+            value: 11,
+            scale: 20,
+          },
+          teacherLive,
+          auditMeta,
+        ),
+      (error) => error.statusCode === 403,
+      "même teacher/class/subject, assignment autre année → 403",
+    );
+    const gradesAfterOtherYear = await pool.query(
+      `SELECT count(*)::int AS count, coalesce(max(score), 0)::float AS score FROM grades`,
+    );
+    assert.equal(
+      gradesAfterOtherYear.rows[0].count,
+      gradesBeforeOtherYear.rows[0].count,
+      "COUNT grades inchangé si assignment d'une autre année",
+    );
+    assert.equal(Number(gradesAfterOtherYear.rows[0].score), Number(gradesBeforeOtherYear.rows[0].score));
+    await pool.query(
+      `UPDATE teacher_assignments
+       SET academic_year_id = $1
+       WHERE teacher_id = $2 AND class_id = $3 AND subject_id = $4 AND academic_year_id = $5`,
+      [fixture.openYear, fixture.teacher, fixture.klass, fixture.math, fixture.closedYear],
+    );
+
+    await assert.rejects(
+      () =>
+        store.upsertSchoolGrade(
+          {
+            evaluationId: teacherEval.id,
+            studentId: "CD-2026-0001-STU-PG-01",
+            value: 11,
+            scale: 20,
+          },
+          {
+            role: "Enseignant",
+            schoolCode: "CD-2026-0001",
+            identifier: "ENS-PG-001",
+            permissions: ["Notes:READ", "Notes:CREATE", "Notes:UPDATE"],
+          },
+          auditMeta,
+        ),
+      (error) => error.statusCode === 403,
+      "principal sans sub (identifier BO) → 403",
+    );
+
+    await assert.rejects(
+      () =>
+        store.upsertSchoolGrade(
+          {
+            evaluationId: teacherEval.id,
+            studentId: "CD-2026-0001-STU-PG-01",
+            value: 15,
+            scale: 20,
+          },
+          teacherCreateOnly,
+          auditMeta,
+        ),
+      (error) => error.statusCode === 403,
+      "CREATE seul ne modifie pas une note existante",
+    );
+
+    await assert.rejects(
+      () =>
+        store.createEvaluation(
+          {
+            className: "6ème A",
+            subject: "Physique",
+            period: "Trimestre 1",
+            title: "NOTES-P1 other subject",
+            evaluationType: "Devoir",
+            scale: 20,
+          },
+          teacherLive,
+          auditMeta,
+        ),
+      (error) => error.code === PEDAGOGY_ERROR.TEACHER_ASSIGNMENT_REQUIRED || error.statusCode === 403,
+    );
+
+    await assert.rejects(
+      () =>
+        store.createEvaluation(
+          {
+            className: "6ème B-ATT",
+            subject: "Mathématiques",
+            period: "Trimestre 1",
+            title: "NOTES-P1 other class",
+            evaluationType: "Devoir",
+            scale: 20,
+          },
+          teacherLive,
+          auditMeta,
+        ),
+      (error) => error.code === PEDAGOGY_ERROR.TEACHER_ASSIGNMENT_REQUIRED || error.statusCode === 403,
+    );
+
+    await pool.query(
+      `UPDATE teacher_assignments
+       SET status = 'deleted'
+       WHERE teacher_id = $1 AND class_id = $2 AND subject_id = $3`,
+      [fixture.teacher, fixture.klass, fixture.math],
+    );
+    await assert.rejects(
+      () =>
+        store.upsertSchoolGrade(
+          {
+            evaluationId: teacherEval.id,
+            studentId: "CD-2026-0001-STU-PG-01",
+            value: 11,
+            scale: 20,
+          },
+          teacherLive,
+          auditMeta,
+        ),
+      (error) => error.statusCode === 403,
+      "affectation révoquée → fail closed",
+    );
+    await pool.query(
+      `UPDATE teacher_assignments
+       SET status = 'active'
+       WHERE teacher_id = $1 AND class_id = $2 AND subject_id = $3`,
+      [fixture.teacher, fixture.klass, fixture.math],
+    );
+
+    const teacherUpdated = await store.upsertSchoolGrade(
+      {
+        evaluationId: teacherEval.id,
+        studentId: "CD-2026-0001-STU-PG-01",
+        value: 15,
+        scale: 20,
+      },
+      teacherLive,
+      auditMeta,
+    );
+    assert.equal(Number(teacherUpdated.score ?? teacherUpdated.value), 15, "NOTES-P1 : UPDATE note après affectation restaurée");
 
     const projection = await store.listProjection();
     const schoolCourses = projection.courses.filter((row) => row.schoolCode === "CD-2026-0001");
