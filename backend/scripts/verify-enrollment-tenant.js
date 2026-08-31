@@ -27,7 +27,6 @@ function sourceGuards() {
   const server = read("backend/server.js");
   const scopeLib = read("backend/lib/enrollmentSchoolScope.js");
   const httpTest = read("backend/lib/enrollmentTenant.http.pg.test.js");
-  const repo = read("backend/db/classStudentsRepository.js");
 
   const getBlock = server.slice(
     server.indexOf('app.get("/api/students"'),
@@ -46,7 +45,7 @@ function sourceGuards() {
 
   assert.match(scopeLib, /principal\.sub → users\.id → users\.school_id/);
   assert.match(scopeLib, /projectEnrollmentApiStudent/);
-  assert.match(repo, /school_login_code/);
+  assert.match(getBlock, /enrollmentApiStudents/);
 
   assert.match(httpTest, /CD-LAC-26-001/);
   assert.match(httpTest, /BI-BUJ-26-001/);

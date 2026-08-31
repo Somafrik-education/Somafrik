@@ -28,8 +28,7 @@ const STUDENT_SELECT_COLUMNS = `
   st.created_at,
   st.updated_at,
   st.school_id,
-  s.school_code,
-  s.login_code AS school_login_code
+  s.school_code
 `;
 
 /**
@@ -392,7 +391,6 @@ function createClassStudentsRepository(db) {
       ...student,
       school_id: school.id,
       school_code: school.school_code ?? schoolCode,
-      school_login_code: school.login_code,
       class_id: classRow.id,
       class_code: classRow.class_code,
       class_name: classRow.name,
