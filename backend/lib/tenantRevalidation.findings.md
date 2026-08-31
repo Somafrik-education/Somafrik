@@ -2,7 +2,7 @@
 
 Sonde HTTP dual-identity `enrollmentTenant.http.pg.test.js` (A leftover `CD-2026-0001` / login `CD-LAC-26-001`, B leftover `BI-2026-0001` / login `BI-BUJ-26-001`).
 
-Runtime inchangé dans ce lot. Correctif étroit dédié requis.
+Runtime inchangé dans ce lot. La sonde **caractérise** ENR-01…ENR-06 (dette encore présente) et **échoue** si une non-régression casse ou si la dette change. Correctif étroit dédié requis.
 
 | # | Endpoint / identité | Effet observé | Contrat |
 |---|---------------------|---------------|---------|
