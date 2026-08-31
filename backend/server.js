@@ -2152,14 +2152,45 @@ function canResetUserPassword(principal) {
   );
 }
 
+async function usersHttpPrincipal(req) {
+  const {
+    attachUsersMembershipScope,
+    attachUsersFixtureScope,
+    attachUsersMemoryMembership,
+  } = require("./lib/usersSchoolScope");
+  if (repository?.engine !== "memory" && typeof repository.one === "function") {
+    return attachUsersMembershipScope(req.principal, repository.one.bind(repository));
+  }
+  if (typeof repository.getClientsStore === "function") {
+    return attachUsersMemoryMembership(req.principal, repository.getClientsStore());
+  }
+  return attachUsersFixtureScope(req.principal);
+}
+
+function usersApiUser(user) {
+  const { projectUsersApiUser } = require("./lib/usersSchoolScope");
+  return sanitizeUserForResponse(projectUsersApiUser(user));
+}
+
+function usersApiUsers(users) {
+  const { projectUsersApiUser } = require("./lib/usersSchoolScope");
+  return sanitizeUsersForResponse((Array.isArray(users) ? users : []).map(projectUsersApiUser));
+}
+
 app.post("/api/users/:id/reset-password", requireAuth, asyncHandler(async (req, res) => {
   if (!canResetUserPassword(req.principal)) {
     throw new BusinessError(403, "Permission insuffisante pour réinitialiser le mot de passe.");
   }
 
-  // Comptes utilisateurs = PostgreSQL canonique. Aucun lookup via backoffice_state.
-  const { users: canonicalUsers = [] } = await repository.listClientsProjection();
-  const scopedUsers = tenantScopeService.filterRows(canonicalUsers, req.principal);
+  const {
+    assertUsersReadable,
+    assertUsersTargetAccess,
+    filterUsersRows,
+  } = require("./lib/usersSchoolScope");
+  const principal = await usersHttpPrincipal(req);
+  const scope = assertUsersReadable(principal);
+  const canonicalUsers = await repository.listClientsUsers(scope);
+  const scopedUsers = filterUsersRows(canonicalUsers, scope);
   const requested = String(req.params.id);
   const target = scopedUsers.find((user) =>
     [user.id, user.publicId, user.identityCode, user.userCode, user.identifier].some(
@@ -2170,6 +2201,7 @@ app.post("/api/users/:id/reset-password", requireAuth, asyncHandler(async (req, 
   if (!target) {
     throw new BusinessError(404, "Utilisateur introuvable dans votre établissement.");
   }
+  assertUsersTargetAccess(principal, target);
 
   if (isPendingValidationUser(target) && !isSuperAdminPrincipal(req.principal)) {
     throw new BusinessError(
@@ -2633,8 +2665,11 @@ app.patch("/api/backoffice/subscription-discounts/:discountId", requireAuth, req
 const { clientsAuditMetaFromRequest } = require("./lib/clientsManagement");
 
 app.get("/api/backoffice/users", requireAuth, requirePermission("GET /api/backoffice/users"), asyncHandler(async (req, res) => {
-  const clients = await repository.listClientsProjection();
-  sendList(res, sanitizeUsersForResponse(tenantScopeService.filterRows(clients.users ?? [], req.principal)), req.query, ["firstName", "lastName", "identifier", "role", "schoolCode"]);
+  const { assertUsersReadable, filterUsersRows } = require("./lib/usersSchoolScope");
+  const principal = await usersHttpPrincipal(req);
+  const scope = assertUsersReadable(principal);
+  const users = await repository.listClientsUsers(scope);
+  sendList(res, usersApiUsers(filterUsersRows(users, scope)), req.query, ["firstName", "lastName", "identifier", "role", "schoolCode"]);
 }));
 
 app.get("/api/backoffice/users/assignable-roles", requireAuth, requirePermission("GET /api/backoffice/users/assignable-roles"), asyncHandler(async (req, res) => {
@@ -2643,13 +2678,15 @@ app.get("/api/backoffice/users/assignable-roles", requireAuth, requirePermission
 }));
 
 app.post("/api/backoffice/users", requireAuth, requirePermission("POST /api/backoffice/users"), asyncHandler(async (req, res) => {
-  const created = await repository.createClientsUser(req.body ?? {}, req.principal, clientsAuditMetaFromRequest(req));
-  res.status(201).json(sanitizeUserForResponse(created));
+  const principal = await usersHttpPrincipal(req);
+  const created = await repository.createClientsUser(req.body ?? {}, principal, clientsAuditMetaFromRequest(req));
+  res.status(201).json(usersApiUser(created));
 }));
 
 app.post("/api/backoffice/users/provision", requireAuth, requirePermission("POST /api/backoffice/users/provision"), asyncHandler(async (req, res) => {
-  const created = await repository.provisionClientsUser(req.body ?? {}, req.principal, clientsAuditMetaFromRequest(req));
-  res.status(201).json(sanitizeUserForResponse(created));
+  const principal = await usersHttpPrincipal(req);
+  const created = await repository.provisionClientsUser(req.body ?? {}, principal, clientsAuditMetaFromRequest(req));
+  res.status(201).json(usersApiUser(created));
 }));
 
 app.post("/api/backoffice/users/create-teacher", requireAuth, requirePermission("POST /api/backoffice/users/create-teacher"), asyncHandler(async (req, res) => {
@@ -2657,41 +2694,46 @@ app.post("/api/backoffice/users/create-teacher", requireAuth, requirePermission(
     throw denyPermission("Utilisateurs:UPDATE requis pour attribuer le rôle Enseignant.");
   }
   const { createTeacherIdentityFromUsers } = require("./lib/createTeacherIdentityFromUsers");
+  const principal = await usersHttpPrincipal(req);
   const created = await createTeacherIdentityFromUsers(
     repository,
     req.body ?? {},
-    req.principal,
+    principal,
     clientsAuditMetaFromRequest(req),
   );
   res.status(201).json({
-    user: sanitizeUserForResponse(created.user),
+    user: usersApiUser(created.user),
     credentials: created.credentials,
   });
 }));
 
 app.patch("/api/backoffice/users/:userId", requireAuth, requirePermission("PATCH /api/backoffice/users/:userId"), asyncHandler(async (req, res) => {
-  const updated = await repository.updateClientsUser(req.params.userId, req.body ?? {}, req.principal, clientsAuditMetaFromRequest(req));
-  res.json(sanitizeUserForResponse(updated));
+  const principal = await usersHttpPrincipal(req);
+  const updated = await repository.updateClientsUser(req.params.userId, req.body ?? {}, principal, clientsAuditMetaFromRequest(req));
+  res.json(usersApiUser(updated));
 }));
 
 app.post("/api/backoffice/users/:userId/reassign-school", requireAuth, requirePermission("POST /api/backoffice/users/:userId/reassign-school"), asyncHandler(async (req, res) => {
+  const principal = await usersHttpPrincipal(req);
   const updated = await repository.reassignClientsUserSchool(
     req.params.userId,
     req.body ?? {},
-    req.principal,
+    principal,
     clientsAuditMetaFromRequest(req),
   );
-  res.json(sanitizeUserForResponse(updated));
+  res.json(usersApiUser(updated));
 }));
 
 app.post("/api/backoffice/users/:userId/roles/grant", requireAuth, requirePermission("POST /api/backoffice/users/:userId/roles/grant"), asyncHandler(async (req, res) => {
-  const updated = await repository.grantClientsUserRole(req.params.userId, req.body ?? {}, req.principal, clientsAuditMetaFromRequest(req));
-  res.json(sanitizeUserForResponse(updated));
+  const principal = await usersHttpPrincipal(req);
+  const updated = await repository.grantClientsUserRole(req.params.userId, req.body ?? {}, principal, clientsAuditMetaFromRequest(req));
+  res.json(usersApiUser(updated));
 }));
 
 app.post("/api/backoffice/users/:userId/roles/revoke", requireAuth, requirePermission("POST /api/backoffice/users/:userId/roles/revoke"), asyncHandler(async (req, res) => {
-  const updated = await repository.revokeClientsUserRole(req.params.userId, req.body ?? {}, req.principal, clientsAuditMetaFromRequest(req));
-  res.json(sanitizeUserForResponse(updated));
+  const principal = await usersHttpPrincipal(req);
+  const updated = await repository.revokeClientsUserRole(req.params.userId, req.body ?? {}, principal, clientsAuditMetaFromRequest(req));
+  res.json(usersApiUser(updated));
 }));
 
 app.get("/api/backoffice/contacts", requireAuth, requirePermission("GET /api/backoffice/contacts"), asyncHandler(async (req, res) => {

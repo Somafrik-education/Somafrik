@@ -147,18 +147,19 @@ async function main() {
     countryCode: "BI",
     identifier: "admin-bi",
   };
-  const ignoredCdPayload = await store.createUser(
-    {
-      firstName: "Kept",
-      lastName: "Burundi",
-      email: "kept.bi@test.local",
-      schoolCode: "CD-2026-0001",
-    },
-    biAdmin,
-    auditMeta,
+  await expectRejection(
+    store.createUser(
+      {
+        firstName: "Kept",
+        lastName: "Burundi",
+        email: "kept.bi@test.local",
+        schoolCode: "CD-2026-0001",
+      },
+      biAdmin,
+      auditMeta,
+    ),
+    { status: 403, code: CLIENTS_ERROR.TENANT_MISMATCH },
   );
-  assert.equal(ignoredCdPayload.schoolCode, "BI-2026-0001");
-  assert.notEqual(ignoredCdPayload.schoolCode, "CD-2026-0001");
 
   const cdVictim = await store.createUser(
     {

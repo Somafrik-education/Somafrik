@@ -12,6 +12,7 @@ const {
   mapAnnouncementRow,
 } = require("../lib/clientsManagement");
 const { uuidOrNull } = require("../lib/principalIdentity");
+const { sqlUsersScope } = require("../lib/usersSchoolScope");
 
 const USER_SCHOOL_SELECT = `s.school_code, s.login_code AS school_login_code, s.name AS school_name`;
 
@@ -42,6 +43,18 @@ function createClientsPgStore(repo) {
               OR UPPER(COALESCE(s.login_code, '')) = $1
            LIMIT 1`,
           [normalized],
+        );
+      },
+      async getSchoolById(id) {
+        const schoolId = asTrimmed(id);
+        if (!schoolId) return null;
+        return one(
+          `SELECT s.*, c.iso_code AS country_code, c.name AS country_name
+           FROM schools s
+           JOIN countries c ON c.id = s.country_id
+           WHERE s.id::text = $1
+           LIMIT 1`,
+          [schoolId],
         );
       },
       async getCountryByCode(code) {
@@ -1470,10 +1483,40 @@ function createClientsPgStore(repo) {
   const store = {
     bind,
     getSchoolByCode: (code) => bind({}).getSchoolByCode(code),
+    getSchoolById: (id) => bind({}).getSchoolById(id),
     getCountryByCode: (code) => bind({}).getCountryByCode(code),
     getUserById: (id) => bind({}).getUserById(id),
     withTransaction(fn) {
       return repo.withTransaction((tx) => fn(bind(tx)));
+    },
+    async listUsers(scope) {
+      const params = [];
+      const pred = sqlUsersScope(scope, params);
+      const users = await repo.all(
+        `SELECT u.*, ${USER_SCHOOL_SELECT}, c.iso_code AS country_code, c.name AS country_name
+         FROM users u
+         LEFT JOIN schools s ON s.id = u.school_id
+         LEFT JOIN countries c ON c.id = s.country_id
+         WHERE ${pred}
+         ORDER BY u.created_at`,
+        params,
+      );
+      const roleRows = users.length
+        ? await repo.all(
+            `SELECT user_id, role_key FROM user_roles
+             WHERE status = 'active' AND revoked_at IS NULL AND user_id = ANY($1::uuid[])`,
+            [users.map((row) => row.id)],
+          )
+        : [];
+      const rolesByUser = new Map();
+      for (const row of roleRows) {
+        const list = rolesByUser.get(String(row.user_id)) ?? [];
+        list.push(row.role_key);
+        rolesByUser.set(String(row.user_id), list);
+      }
+      return users.map((row) =>
+        userRoleLifecycleService.hydrateUser(row, rolesByUser.get(String(row.id)) ?? []),
+      );
     },
     async listProjection() {
       const users = await repo.all(

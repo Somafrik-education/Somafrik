@@ -52,6 +52,13 @@ const {
   isUsersLoginIdentityUniquenessViolation,
   PARENT_IDENTITY_AMBIGUOUS,
 } = require("./usersLoginIdentity");
+const {
+  attachUsersStorePrincipal,
+  resolveUsersWriteSchool,
+  assertUsersTargetAccess,
+  targetFromUserRow,
+  sqlOneFromStore,
+} = require("./usersSchoolScope");
 
 const SCHOOL_ADMIN_ROLE = "Admin School";
 const PENDING_VALIDATION_STATUS = "En attente de validation";
@@ -108,11 +115,10 @@ function resolveWritableSchoolCode(principal, rawPayload) {
   return schoolCode.toUpperCase();
 }
 
-function resolveCreateUserSchoolCode(principal, rawPayload) {
-  if (isSuperAdminPrincipal(principal) || isCountryAdminPrincipal(principal)) {
-    return asTrimmed(rawPayload.schoolCode || rawPayload.schoolId).toUpperCase();
-  }
-  return asTrimmed(principal?.schoolCode).toUpperCase();
+async function resolveCreateUserSchool(store, principal, rawPayload) {
+  const attached = await attachUsersStorePrincipal(principal, store);
+  const write = await resolveUsersWriteSchool(attached, rawPayload, sqlOneFromStore(store));
+  return { attached, write };
 }
 
 function requireConcreteSchoolCode(principal, schoolCode) {
@@ -138,13 +144,10 @@ function rethrowLoginIdentityConflict(error) {
 async function createUser(store, rawPayload, principal, auditMeta) {
   assertNoClientPrivilegeKeys(rawPayload, FORBIDDEN_CREATE_KEYS, USER_ROLE_ERROR.ROLE_NOT_ALLOWED_ON_CREATE);
   const payload = ignoreClientScope(rawPayload);
-  const schoolCode = resolveCreateUserSchoolCode(principal, rawPayload);
+  const { attached, write } = await resolveCreateUserSchool(store, principal, rawPayload);
   const requestedCountry = requestedCountryCodeFromPayload(rawPayload);
-  assertSchoolScope(principal, schoolCode);
-  requireConcreteSchoolCode(principal, schoolCode);
-  if (schoolCode && schoolCode !== "*") {
-    await assertSchoolInPrincipalCountry(store, principal, schoolCode);
-  }
+  const schoolCode = write.loginCode;
+  requireConcreteSchoolCode(attached, schoolCode);
 
   const firstName = asTrimmed(payload.firstName);
   const lastName = asTrimmed(payload.lastName);
@@ -153,8 +156,16 @@ async function createUser(store, rawPayload, principal, auditMeta) {
   }
 
   return store.withTransaction(async (tx) => {
-    const hasSchool = Boolean(schoolCode) && schoolCode !== "*";
-    const school = hasSchool ? await tx.getSchoolByCode(schoolCode) : null;
+    const hasSchool = Boolean(write.schoolId || (schoolCode && schoolCode !== "*"));
+    let school = null;
+    if (hasSchool) {
+      if (write.schoolId && typeof tx.getSchoolById === "function") {
+        school = await tx.getSchoolById(write.schoolId);
+      }
+      if (!school && schoolCode) {
+        school = await tx.getSchoolByCode(schoolCode);
+      }
+    }
     if (hasSchool && !school) {
       throw createClientsError(404, "Établissement introuvable.", CLIENTS_ERROR.SCHOOL_NOT_FOUND);
     }
@@ -428,10 +439,10 @@ async function updateUser(store, userId, rawPatch, principal, auditMeta) {
   if (!existing) {
     throw createClientsError(404, "Utilisateur introuvable.", CLIENTS_ERROR.USER_NOT_FOUND);
   }
-  const schoolCode = existing.school_code;
-  assertSchoolScope(principal, schoolCode);
-  await assertSchoolInPrincipalCountry(store, principal, schoolCode);
-  assertSafeUserPatch(principal, existing, patch);
+  const attached = await attachUsersStorePrincipal(principal, store);
+  assertUsersTargetAccess(attached, targetFromUserRow(existing));
+  const schoolCode = existing.school_login_code || existing.school_code;
+  assertSafeUserPatch(attached, existing, patch);
 
   return store.withTransaction(async (tx) => {
     const locked = await tx.getUserById(userId);

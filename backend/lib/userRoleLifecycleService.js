@@ -6,14 +6,17 @@ const {
   ignoreClientScope,
   isSuperAdminPrincipal,
   isCountryAdminPrincipal,
-  assertSchoolScope,
-  assertSchoolInPrincipalCountry,
   requestedCountryCodeFromPayload,
   assertRequestedCountryMatchesSchool,
   mapUserRow,
   toDbStatus,
   parsePayload,
 } = require("./clientsManagement");
+const {
+  attachUsersStorePrincipal,
+  assertUsersTargetAccess,
+  targetFromUserRow,
+} = require("./usersSchoolScope");
 const { toDbRole } = require("./clientsRolePolicy");
 const {
   USER_ROLE_ERROR,
@@ -239,10 +242,10 @@ async function grantRole(store, userId, rawPayload, principal, auditMeta) {
     throw createUserRoleError(404, "Utilisateur introuvable.", USER_ROLE_ERROR.USER_NOT_FOUND);
   }
 
-  const schoolCode = asTrimmed(existing.school_code);
-  assertSchoolScope(principal, schoolCode);
-  await assertSchoolInPrincipalCountry(store, principal, schoolCode);
-  assertNotSelfTarget(principal, existing.id);
+  const attached = await attachUsersStorePrincipal(principal, store);
+  assertUsersTargetAccess(attached, targetFromUserRow(existing));
+  assertNotSelfTarget(attached, existing.id);
+  const schoolCode = asTrimmed(existing.school_login_code || existing.school_code);
 
   return store.withTransaction(async (tx) => {
     if (typeof tx.lockUserById === "function") {
@@ -259,7 +262,13 @@ async function grantRole(store, userId, rawPayload, principal, auditMeta) {
       throw createUserRoleError(409, "Ce rôle est déjà attribué.", USER_ROLE_ERROR.ROLE_ALREADY_GRANTED);
     }
 
-    const school = schoolCode && schoolCode !== "*" ? await tx.getSchoolByCode(schoolCode) : null;
+    let school = null;
+    if (locked.school_id && typeof tx.getSchoolById === "function") {
+      school = await tx.getSchoolById(locked.school_id);
+    }
+    if (!school && schoolCode && schoolCode !== "*") {
+      school = await tx.getSchoolByCode(schoolCode);
+    }
     if (schoolCode && schoolCode !== "*" && !school) {
       throw createUserRoleError(404, "Établissement introuvable.", USER_ROLE_ERROR.SCHOOL_NOT_FOUND);
     }
@@ -364,10 +373,10 @@ async function revokeRole(store, userId, rawPayload, principal, auditMeta) {
     throw createUserRoleError(404, "Utilisateur introuvable.", USER_ROLE_ERROR.USER_NOT_FOUND);
   }
 
-  const schoolCode = asTrimmed(existing.school_code);
-  assertSchoolScope(principal, schoolCode);
-  await assertSchoolInPrincipalCountry(store, principal, schoolCode);
-  assertNotSelfTarget(principal, existing.id);
+  const attached = await attachUsersStorePrincipal(principal, store);
+  assertUsersTargetAccess(attached, targetFromUserRow(existing));
+  assertNotSelfTarget(attached, existing.id);
+  const schoolCode = asTrimmed(existing.school_login_code || existing.school_code);
 
   if (isPlatformRoleKey(roleKey) && !isSuperAdminPrincipal(principal)) {
     throw createUserRoleError(403, "Rôle plateforme interdit pour ce principal.", USER_ROLE_ERROR.PLATFORM_ROLE_FORBIDDEN);
@@ -387,7 +396,13 @@ async function revokeRole(store, userId, rawPayload, principal, auditMeta) {
       throw createUserRoleError(404, "Ce rôle n'est pas attribué.", USER_ROLE_ERROR.ROLE_NOT_GRANTED);
     }
 
-    const school = schoolCode && schoolCode !== "*" ? await tx.getSchoolByCode(schoolCode) : null;
+    let school = null;
+    if (locked.school_id && typeof tx.getSchoolById === "function") {
+      school = await tx.getSchoolById(locked.school_id);
+    }
+    if (!school && schoolCode && schoolCode !== "*") {
+      school = await tx.getSchoolByCode(schoolCode);
+    }
     let teacher = null;
     if (roleKey === TEACHER_KEY && school) {
       teacher = await assertTeacherRevokeAllowed(tx, locked, school);

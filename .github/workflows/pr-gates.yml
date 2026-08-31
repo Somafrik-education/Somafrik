@@ -323,6 +323,7 @@ jobs:
           npm run verify:clients-management
           npm run verify:user-role-lifecycle
           npm run verify:parent-linking
+          npm run verify:users-tenant
 
       - name: Platform and school settings
         if: needs.scope.outputs.platform == 'true'

@@ -273,7 +273,9 @@ async function main() {
     assert.ok(projectedAfter, "admin secondaire toujours projeté");
     assert.equal(projectedAfter.permissions?.includes("ALL_PRIVILEGES"), false, "projection sans ALL_PRIVILEGES");
     assert.equal(projectedAfter.firstName, projectedBefore.firstName, "projection inchangée (zéro mutation)");
-    assert.equal(projectedAfter.schoolCode, "CD-2026-0001", "schoolCode tenant inchangé");
+    assert.equal(projectedAfter.schoolCode, projectedBefore.schoolCode, "projection schoolCode inchangée");
+    assert.equal(projectedAfter.schoolCode, "CD-IN-26-001", "Users API schoolCode = login_code");
+    assert.notEqual(projectedAfter.schoolCode, "CD-2026-0001", "Users API n'émet plus leftover JWT");
     assert.equal(
       decodeJwtPayload(adminSchoolOwnToken).schoolCode,
       "CD-2026-0001",

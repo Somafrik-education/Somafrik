@@ -227,6 +227,20 @@ async function main() {
 
   try {
     await waitForHealth(child);
+    const schoolCodes = await pool.query(
+      `SELECT school_code, login_code FROM schools WHERE school_code IN ($1, $2)`,
+      [SCHOOL_CD, SCHOOL_BI],
+    );
+    const loginByLeftover = new Map(
+      schoolCodes.rows.map((row) => [
+        String(row.school_code || "").trim().toUpperCase(),
+        String(row.login_code || "").trim().toUpperCase(),
+      ]),
+    );
+    const loginCd = loginByLeftover.get(SCHOOL_CD) || "";
+    const loginBi = loginByLeftover.get(SCHOOL_BI) || "";
+    assert.ok(loginCd && loginCd !== SCHOOL_CD, `login_code CD attendu après boot, reçu ${loginCd}`);
+    assert.ok(loginBi && loginBi !== SCHOOL_BI, `login_code BI attendu après boot, reçu ${loginBi}`);
     const superadmin = await login("super-admin-e2e@test.local", "1234");
 
     // P0 provisioning Superadmin : création directe Admin Pays BI + Admin School BI.
@@ -444,7 +458,7 @@ async function main() {
       },
     });
     assert.equal(biIdentity.status, 201, JSON.stringify(biIdentity.data));
-    assert.equal(biIdentity.data.schoolCode, SCHOOL_BI);
+    assert.equal(biIdentity.data.schoolCode, loginBi);
     assert.equal(biIdentity.data.countryCode, "BI");
     const biGranted = await grantRole(superadmin.token, biIdentity.data.id, "Admin School", "SCHOOL_ADMIN");
     assert.equal(biGranted.status, "Actif");
@@ -500,7 +514,7 @@ async function main() {
     });
     assert.equal(identityOnly.status, 200, JSON.stringify(identityOnly.data));
     assert.equal(identityOnly.data.firstName, "Irène-Edit");
-    assert.equal(identityOnly.data.schoolCode, SCHOOL_CD);
+    assert.equal(identityOnly.data.schoolCode, loginCd);
 
     const identityKept = await request(`/backoffice/users/${encodeURIComponent(reassignIdentity.id)}`, {
       method: "PATCH",
@@ -513,7 +527,7 @@ async function main() {
     });
     assert.equal(identityKept.status, 200, JSON.stringify(identityKept.data));
     assert.equal(identityKept.data.firstName, "Irène-Maj");
-    assert.equal(identityKept.data.schoolCode, SCHOOL_CD);
+    assert.equal(identityKept.data.schoolCode, loginCd);
     assert.notEqual(identityKept.data.schoolCode, SCHOOL_BI);
 
     const beforeReassign = await pool.query(
@@ -562,7 +576,7 @@ async function main() {
       body: { schoolCode: SCHOOL_BI, countryCode: "BI" },
     });
     assert.equal(reassigned.status, 200, JSON.stringify(reassigned.data));
-    assert.equal(reassigned.data.schoolCode, SCHOOL_BI);
+    assert.equal(reassigned.data.schoolCode, loginBi);
     assert.equal(reassigned.data.countryCode, "BI");
 
     const afterReassign = await pool.query(
@@ -683,7 +697,7 @@ async function main() {
     assert.ok(first, "GET utilisateurs ne contient pas l'utilisateur créé");
     assert.ok(second, "reload GET utilisateurs perd l'utilisateur créé");
     assert.ok((second.roleKeys || []).includes("SECRETARY"));
-    assert.equal(second.schoolCode, SCHOOL_CD);
+    assert.equal(second.schoolCode, loginCd);
 
     // Les trois identités doivent être uniques et relisibles côté PostgreSQL.
     const ids = [countryIdentity.id, activeSchoolIdentity.id, standardUser.id];
