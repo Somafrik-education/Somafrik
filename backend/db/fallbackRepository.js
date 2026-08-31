@@ -960,32 +960,45 @@ class FallbackRepository {
     };
   }
 
-  async getAcademicYearsV2() {
+  async getAcademicYearsV2(scope = { mode: "all" }) {
     if (!this._managedAcademicYears) {
       this._managedAcademicYears = this.demoAcademicYears();
     }
-    return this._managedAcademicYears.map((row) => this.mapAcademicYearV2(row));
+    const { filterAcademicYearRows } = require("../lib/academicYearSchoolScope");
+    const mapped = this._managedAcademicYears.map((row) => this.mapAcademicYearV2(row));
+    return filterAcademicYearRows(mapped, scope);
   }
 
   async createAcademicYearV2(input = {}) {
+    const schoolId = String(input.schoolId ?? "").trim();
     const schoolCode = String(input.schoolCode ?? "").trim().toUpperCase();
     const name = String(input.name ?? "").trim();
     const startDate = String(input.startDate ?? "").trim();
     const endDate = String(input.endDate ?? "").trim();
-    if (!schoolCode || !name || !startDate || !endDate || startDate >= endDate) {
+    if ((!schoolId && !schoolCode) || !name || !startDate || !endDate || startDate >= endDate) {
       const error = new Error("Établissement, nom et dates valides sont requis.");
       error.statusCode = 400;
       throw error;
     }
     await this.getAcademicYearsV2();
-    if (this._managedAcademicYears.some((row) => row.school_code === schoolCode && row.name.toLowerCase() === name.toLowerCase())) {
+    const identity = schoolCode || schoolId;
+    if (this._managedAcademicYears.some((row) => row.school_code === identity && row.name.toLowerCase() === name.toLowerCase())) {
       const error = new Error(`L'année scolaire « ${name} » existe déjà pour cet établissement.`);
       error.statusCode = 409;
       throw error;
     }
     const isCurrent = input.isCurrent !== false;
-    if (isCurrent) this._managedAcademicYears.forEach((row) => { if (row.school_code === schoolCode) row.is_current = false; });
-    const row = { id: `AY-${Date.now()}-${this._managedAcademicYears.length}`, school_id: `school-${schoolCode}`, school_code: schoolCode, name, start_date: startDate, end_date: endDate, status: "open", is_current: isCurrent };
+    if (isCurrent) this._managedAcademicYears.forEach((row) => { if (row.school_code === identity || (schoolId && row.school_id === schoolId)) row.is_current = false; });
+    const row = {
+      id: `AY-${Date.now()}-${this._managedAcademicYears.length}`,
+      school_id: schoolId || `school-${identity}`,
+      school_code: identity,
+      name,
+      start_date: startDate,
+      end_date: endDate,
+      status: "open",
+      is_current: isCurrent,
+    };
     this._managedAcademicYears.push(row);
     return (await this.getAcademicYearsV2()).find((item) => item.id === row.id);
   }

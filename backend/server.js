@@ -3399,15 +3399,39 @@ app.delete("/api/v2/subjects/:code", requireAuth, requirePermission("DELETE /api
   res.json(deleted);
 }));
 
+async function academicYearHttpPrincipal(req) {
+  const { attachAcademicYearMembershipScope, attachAcademicYearFixtureScope } = require("./lib/academicYearSchoolScope");
+  if (typeof repository.one === "function") {
+    return attachAcademicYearMembershipScope(req.principal, repository.one.bind(repository));
+  }
+  return attachAcademicYearFixtureScope(req.principal);
+}
+
 app.get("/api/v2/academic-years", requireAuth, requirePermission("GET /api/v2/academic-years"), asyncHandler(async (req, res) => {
-  const rows = await cacheService.remember("v2:academic-years", () => repository.getAcademicYearsV2());
-  sendList(res, tenantScopeService.filterRows(rows, req.principal), req.query, ["name", "status"]);
+  const {
+    assertAcademicYearReadable,
+    academicYearCacheKey,
+    filterAcademicYearRows,
+  } = require("./lib/academicYearSchoolScope");
+  const principal = await academicYearHttpPrincipal(req);
+  const scope = assertAcademicYearReadable(principal);
+  const rows = await cacheService.remember(academicYearCacheKey(scope), () => repository.getAcademicYearsV2(scope));
+  sendList(res, filterAcademicYearRows(rows, scope), req.query, ["name", "status"]);
 }));
 
 app.post("/api/v2/academic-years", requireAuth, requirePermission("POST /api/v2/academic-years"), asyncHandler(async (req, res) => {
-  const schoolCode = req.body?.schoolCode ?? req.principal.schoolCode;
-  tenantScopeService.assertSchoolAccess(req.principal, schoolCode);
-  const created = await repository.createAcademicYearV2({ ...req.body, schoolCode });
+  const { resolveAcademicYearWriteSchool } = require("./lib/academicYearSchoolScope");
+  const principal = await academicYearHttpPrincipal(req);
+  const writeSchool = await resolveAcademicYearWriteSchool(
+    principal,
+    req.body ?? {},
+    typeof repository.one === "function" ? repository.one.bind(repository) : null,
+  );
+  const created = await repository.createAcademicYearV2({
+    ...(req.body ?? {}),
+    schoolId: writeSchool.schoolId,
+    schoolCode: writeSchool.loginCode,
+  });
   cacheService.invalidate("v2:academic-years");
   await auditService.record(req, "academic_year_create", "academic_year", created.id, {
     schoolCode: created.schoolCode,
@@ -3418,11 +3442,13 @@ app.post("/api/v2/academic-years", requireAuth, requirePermission("POST /api/v2/
 }));
 
 app.patch("/api/v2/academic-years/:id", requireAuth, requirePermission("PATCH /api/v2/academic-years/:id"), asyncHandler(async (req, res) => {
+  const { assertAcademicYearPatchAccess } = require("./lib/academicYearSchoolScope");
+  const principal = await academicYearHttpPrincipal(req);
   const current = await repository.getAcademicYearV2ById(req.params.id);
   if (!current) {
     throw new BusinessError(404, "Année scolaire introuvable.");
   }
-  tenantScopeService.assertSchoolAccess(req.principal, current.schoolCode);
+  assertAcademicYearPatchAccess(principal, current);
   const updated = await repository.updateAcademicYearV2(req.params.id, req.body ?? {});
   cacheService.invalidate("v2:academic-years");
   await auditService.record(req, "academic_year_update", "academic_year", updated.id, {

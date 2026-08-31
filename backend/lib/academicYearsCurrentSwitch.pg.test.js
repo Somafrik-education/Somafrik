@@ -50,6 +50,7 @@ async function resetSchema(pool) {
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       country_id UUID NOT NULL REFERENCES countries(id),
       school_code VARCHAR(64) NOT NULL UNIQUE,
+      login_code TEXT,
       name TEXT NOT NULL,
       status TEXT NOT NULL DEFAULT 'active'
     );
@@ -74,9 +75,9 @@ async function seedYears(pool) {
     `INSERT INTO countries (name, iso_code) VALUES ('RDC', 'CD') RETURNING id`,
   );
   const school = await pool.query(
-    `INSERT INTO schools (country_id, school_code, name, status)
-     VALUES ($1, 'CD-2026-AY01', 'Lycée Atomic', 'active')
-     RETURNING id, school_code`,
+    `INSERT INTO schools (country_id, school_code, login_code, name, status)
+     VALUES ($1, 'CD-2026-AY01', 'CD-AY-26-001', 'Lycée Atomic', 'active')
+     RETURNING id, school_code, login_code`,
     [country.rows[0].id],
   );
   const yearA = await pool.query(
