@@ -789,11 +789,13 @@ app.get("/api/classes/:classCode/students", requireAuth, requirePermission("GET 
 }));
 
 app.post("/api/classes/:classCode/students", requireAuth, requirePermission("POST /api/classes/:classCode/students"), asyncHandler(async (req, res) => {
-  const schoolCode = String(req.principal?.schoolCode ?? "").trim();
-  if (!schoolCode || schoolCode === "*") {
-    throw new BusinessError(400, "schoolCode établissement requis.");
-  }
-  tenantScopeService.assertSchoolAccess(req.principal, schoolCode);
+  const { resolveEnrollmentTenant } = require("./lib/studentEnrollmentTenant");
+  const { schoolCode } = await resolveEnrollmentTenant({
+    principal: req.principal,
+    getSchoolForPrincipalUser: typeof repository.getSchoolForPrincipalUser === "function"
+      ? () => repository.getSchoolForPrincipalUser(req.principal)
+      : undefined,
+  });
   const created = await repository.enrollStudentInClass(req.params.classCode, schoolCode, req.body ?? {});
   const student = sanitizeUserForResponse(created.student);
   const credentials = {

@@ -6395,21 +6395,44 @@ class PostgresRepository {
     return this.getClassStudentsRepository().listBySchoolCode(schoolCode);
   }
 
+  async resolveEnrollmentFinanceLoginCode(studentKey) {
+    const { isV2SchoolLoginCode, normalizeSchoolCode } = require("../lib/schoolCodeV2");
+    const key = String(studentKey ?? "").trim();
+    if (!key) return null;
+    const row = await this.one(
+      `SELECT s.login_code
+       FROM students st
+       JOIN schools s ON s.id = st.school_id
+       WHERE st.student_code = $1 OR st.login_code = $1 OR st.identity_code = $1
+       LIMIT 1`,
+      [key],
+    );
+    const login = normalizeSchoolCode(row?.login_code);
+    return isV2SchoolLoginCode(login) ? login : null;
+  }
+
   async enrollStudentInClass(classCode, schoolCode, body) {
     const created = await this.getClassStudentsRepository().enroll(classCode, schoolCode, body);
     this.cachedDataset = null;
     const student = created?.student;
     let financeSync = null;
     if (student?.studentCode) {
+      const financeSchoolCode = await this.resolveEnrollmentFinanceLoginCode(student.studentCode);
+      if (!financeSchoolCode) {
+        const error = new Error("Établissement introuvable");
+        error.statusCode = 404;
+        error.code = "TENANT_MISMATCH";
+        throw error;
+      }
       financeSync = await this.syncEnrollmentFinanceObligations(
         {
           reason: "enrollment_active",
-          schoolCode,
+          schoolCode: financeSchoolCode,
           studentKey: student.studentCode,
           academicYear: student.academicYearName || student.academicYear,
           classId: student.classId,
         },
-        { role: "system", schoolCode, sub: "finance-obligation-lifecycle" },
+        { role: "system", schoolCode: financeSchoolCode, sub: "finance-obligation-lifecycle" },
       );
     }
     return { ...created, financeSync };

@@ -1358,14 +1358,16 @@ class FallbackRepository {
               .filter(Boolean);
             return keys.includes(normalized);
           });
+          const leftover = String(match?.code ?? match?.schoolCode ?? normalized).trim().toUpperCase();
           const isPrimary =
+            leftover === String(seedData.school.code).toUpperCase() ||
             normalized === String(seedData.school.code).toUpperCase() ||
             normalized === String(seedData.school.loginCode ?? "").toUpperCase() ||
             normalized === String(seedData.school.publicId ?? "").toUpperCase();
           return {
-            id: isPrimary ? seedData.school.id : `school-${normalized}`,
-            school_code: match?.code ?? normalized,
-            name: match?.name ?? normalized,
+            id: isPrimary ? seedData.school.id : `school-${leftover}`,
+            school_code: leftover,
+            name: match?.name ?? leftover,
             login_code: match?.loginCode ?? match?.login_code,
           };
         },
@@ -1683,6 +1685,20 @@ class FallbackRepository {
   }
 
   /**
+   * Auth mémoire clé encore sur leftover school_code. L'inscription HTTP
+   * passe le login_code V2 (Finance) ; le compte de login reste sur leftover.
+   */
+  memoryAuthSchoolCode(schoolCode) {
+    const requested = String(schoolCode ?? "").trim().toUpperCase();
+    const leftover = String(seedData.school.code ?? "").trim().toUpperCase();
+    const aliases = [seedData.school.loginCode, seedData.school.publicId, seedData.school.login_code]
+      .map((value) => String(value ?? "").trim().toUpperCase())
+      .filter(Boolean);
+    if (requested && leftover && aliases.includes(requested)) return leftover;
+    return schoolCode;
+  }
+
+  /**
    * Enregistre le compte de connexion élève (hash seul) pour le premier login mémoire.
    * Jamais de secret clair : le plaintext n'existe que dans la réponse CREATE.
    */
@@ -1710,7 +1726,7 @@ class FallbackRepository {
       scopeLevel: "Établissement",
       countryScope: seedData.school.countryScope ?? "RDC",
       countryCode: seedData.school.countryCode ?? "CD",
-      schoolCode,
+      schoolCode: this.memoryAuthSchoolCode(schoolCode),
       accessChannel: "Application",
       identifier: studentCode,
       passwordHash: managedUser.password_hash,
@@ -3153,6 +3169,14 @@ class FallbackRepository {
 
   getSchoolByCode(code) {
     return this.getPlatformSchoolByCode(code);
+  }
+
+  getSchoolForPrincipalUser(principal) {
+    const store = this.getClientsStore();
+    if (typeof store.getSchoolForPrincipalUser === "function") {
+      return store.getSchoolForPrincipalUser(principal);
+    }
+    return null;
   }
 
   async getRolePermissionsMap() {
