@@ -23,7 +23,6 @@ import { showDemoAccounts } from "../lib/featureFlags";
 import { cn } from "../lib/utils";
 import { DEMO_ACCOUNT_GROUPS, DEMO_SCHOOL_CODE, type DemoAccount } from "../lib/demoAccounts";
 import type { LoginProfile } from "../types";
-import loginBackground from "../assets/somafrik-login-background.png";
 
 const PROFILES: { id: LoginProfile; label: string }[] = [
   { id: "superadmin", label: "Super administrateur" },
@@ -70,7 +69,6 @@ export function LoginPage() {
   const [serverError, setServerError] = useState("");
   const [passwordChangeOpen, setPasswordChangeOpen] = useState(false);
   const [passwordChangeError, setPasswordChangeError] = useState("");
-  const [backgroundStatus, setBackgroundStatus] = useState<"pending" | "ready" | "error">("pending");
 
   const form = useForm<LoginValues>({
     resolver: zodResolver(loginSchema),
@@ -156,29 +154,7 @@ export function LoginPage() {
   }
 
   return (
-    <div
-      className={cn(
-        "relative min-h-dvh overflow-x-hidden md:overflow-hidden",
-        backgroundStatus === "error" ? "bg-slate-200" : "bg-transparent",
-      )}
-    >
-      <img
-        src={loginBackground}
-        alt=""
-        aria-hidden="true"
-        data-testid="login-background"
-        data-status={backgroundStatus}
-        onLoad={() => setBackgroundStatus("ready")}
-        onError={() => {
-          setBackgroundStatus("error");
-          console.error("[login] somafrik-login-background.png failed to decode or load", loginBackground);
-        }}
-        className="pointer-events-none absolute inset-0 h-full w-full object-cover"
-      />
-      {backgroundStatus !== "error" ? (
-        <div aria-hidden="true" className="pointer-events-none absolute inset-0 bg-slate-950/20" />
-      ) : null}
-
+    <div className="relative min-h-dvh overflow-x-hidden bg-brand md:overflow-hidden">
       <main className="relative z-10 flex min-h-dvh items-center justify-center px-3 py-3 sm:px-4">
         <section
           aria-labelledby="login-title"
