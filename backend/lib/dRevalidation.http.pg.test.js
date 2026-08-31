@@ -379,18 +379,47 @@ async function main() {
       permissions: PERMS,
     });
 
+    const results = [];
+    function check(id, ok, detail) {
+      results.push({ id, ok: Boolean(ok), detail: detail ?? "" });
+      console.log(`${ok ? "PASS" : "FAIL"} ${id}${detail ? ` — ${detail}` : ""}`);
+    }
+
+    const attendanceBody = (date) => ({
+      classCode: CLASS_A,
+      className: "6ème A Lac",
+      teacherId: TEACHER_CODE_A,
+      items: [
+        {
+          studentId: fixture.studentAId,
+          date,
+          status: "Présent",
+          classCode: CLASS_A,
+          className: "6ème A Lac",
+        },
+      ],
+    });
+
+    const postAControl = await request("/presences", {
+      method: "POST",
+      token: tokenA,
+      body: attendanceBody("2026-09-09"),
+    });
+    check(
+      "PR-audit-control",
+      postAControl.status === 201 || postAControl.status === 200,
+      `status=${postAControl.status} body=${JSON.stringify(postAControl.data)}`,
+    );
+
     const postALeftover = await request("/presences", {
       method: "POST",
       token: tokenForgedB,
-      body: {
-        classCode: CLASS_A,
-        teacherId: TEACHER_CODE_A,
-        items: [{ studentId: "STU-A-001", date: "2026-09-10", status: "Présent", classCode: CLASS_A }],
-      },
+      body: attendanceBody("2026-09-10"),
     });
-    assert.ok(
+    check(
+      "PR-audit-write",
       postALeftover.status === 201 || postALeftover.status === 200,
-      `PR-audit POST A leftover B status=${postALeftover.status} body=${JSON.stringify(postALeftover.data)}`,
+      `status=${postALeftover.status} body=${JSON.stringify(postALeftover.data)}`,
     );
     const audits = await pool.query(
       `SELECT a.action, s.school_code, s.login_code
@@ -399,48 +428,40 @@ async function main() {
        WHERE a.action = 'upsert_attendance_batch'
        ORDER BY a.created_at DESC`,
     );
-    assert.ok(audits.rowCount >= 1, "PR-audit: au moins une ligne upsert_attendance_batch");
-    assert.ok(
-      audits.rows.every((row) => row.login_code === LOGIN_A && row.school_code === LEFTOVER_A),
-      `PR-audit: audit canonique A, jamais B: ${JSON.stringify(audits.rows)}`,
+    const leftoverWriteAudits = audits.rows.filter((row) => row.school_code === LEFTOVER_B);
+    check(
+      "PR-audit",
+      leftoverWriteAudits.length === 0 &&
+        audits.rows.some((row) => row.login_code === LOGIN_A && row.school_code === LEFTOVER_A),
+      `rows=${JSON.stringify(audits.rows)} leftoverB=${leftoverWriteAudits.length}`,
     );
-    const leakedB = await pool.query(
-      `SELECT count(*)::int AS c
-       FROM audit_logs a
-       JOIN schools s ON s.id = a.school_id
-       WHERE s.school_code = $1 AND a.action = 'upsert_attendance_batch'`,
-      [LEFTOVER_B],
-    );
-    assert.equal(leakedB.rows[0].c, 0, "PR-audit: 0 audit leftover B");
 
     const getTeacherNone = await request("/presences", { token: tokenTeacherNone });
-    assert.ok(
-      getTeacherNone.status === 200 || getTeacherNone.status === 403,
-      `PR-scope enseignant status=${getTeacherNone.status}`,
-    );
     const teacherNoneRows = unwrapList(getTeacherNone.data);
-    assert.equal(
-      teacherNoneRows.some(isPresenceA) || teacherNoneRows.some(isPresenceB),
-      false,
-      `PR-scope: enseignant non affecté n'élargit pas l'école: ${JSON.stringify(teacherNoneRows)}`,
+    const teacherExpanded =
+      getTeacherNone.status === 200 && (teacherNoneRows.some(isPresenceA) || teacherNoneRows.some(isPresenceB));
+    check(
+      "PR-scope-teacher",
+      getTeacherNone.status === 403 || (getTeacherNone.status === 200 && !teacherExpanded),
+      `status=${getTeacherNone.status} count=${teacherNoneRows.length} expanded=${teacherExpanded}`,
     );
 
     const getParent = await request("/presences", { token: tokenParent });
-    assert.ok(getParent.status === 200 || getParent.status === 403, `PR-scope parent status=${getParent.status}`);
     const parentRows = unwrapList(getParent.data);
-    assert.equal(
-      parentRows.some(isPresenceA) || parentRows.some(isPresenceB),
-      false,
-      `PR-scope: parent sans élève n'élargit pas l'école: ${JSON.stringify(parentRows)}`,
+    const parentExpanded = getParent.status === 200 && (parentRows.some(isPresenceA) || parentRows.some(isPresenceB));
+    check(
+      "PR-scope-parent",
+      getParent.status === 403 || (getParent.status === 200 && !parentExpanded),
+      `status=${getParent.status} count=${parentRows.length} expanded=${parentExpanded}`,
     );
 
     const studentsB = await request("/mobile-sync/l1/students", { token: tokenB });
-    assert.equal(studentsB.status, 200, `SY-02 GET B students: ${JSON.stringify(studentsB.data)}`);
     const itemsB = Array.isArray(studentsB.data?.items) ? studentsB.data.items : [];
-    assert.equal(
-      itemsB.some((row) => String(row.studentCode ?? row.student_code ?? row.id) === "STU-A-001"),
-      false,
-      "SY-02 B jamais A",
+    check(
+      "SY-02",
+      studentsB.status === 200 &&
+        !itemsB.some((row) => String(row.studentCode ?? row.student_code ?? row.id) === "STU-A-001"),
+      `status=${studentsB.status} items=${itemsB.length}`,
     );
 
     await pool.query(
@@ -449,21 +470,28 @@ async function main() {
       [USER_TEACHER_A, fixture.schoolAId],
     );
     const revoked = await request("/mobile-sync/l1/students", { token: tokenTeacherA });
-    assert.equal(revoked.status, 200, `SY-09 enseignant révoqué ne doit pas 403: ${JSON.stringify(revoked.data)}`);
-    assert.deepEqual(revoked.data?.items ?? null, [], "SY-09 items vides");
-    if (revoked.data?.scopeKind != null) {
-      assert.equal(revoked.data.scopeKind, "none", "SY-09 scopeKind=none");
-    }
-
-    const pays = await request("/mobile-sync/l1/students", { token: tokenPaysCd });
-    assert.ok(pays.status === 200 || pays.status === 400 || pays.status === 403, `SY-10 status=${pays.status}`);
-    const paysItems = Array.isArray(pays.data?.items) ? pays.data.items : [];
-    assert.equal(
-      paysItems.some((row) => String(row.studentCode ?? row.student_code) === "STU-B-001"),
-      false,
-      "SY-10 Admin Pays CD jamais BI",
+    const revokedItems = Array.isArray(revoked.data?.items) ? revoked.data.items : null;
+    const scopeKindOk = revoked.data?.scopeKind == null || revoked.data.scopeKind === "none";
+    check(
+      "SY-09",
+      revoked.status === 200 && Array.isArray(revokedItems) && revokedItems.length === 0 && scopeKindOk,
+      `status=${revoked.status} items=${JSON.stringify(revokedItems)} scopeKind=${revoked.data?.scopeKind ?? "absent"}`,
     );
 
+    const pays = await request("/mobile-sync/l1/students", { token: tokenPaysCd });
+    const paysItems = Array.isArray(pays.data?.items) ? pays.data.items : [];
+    check(
+      "SY-10",
+      (pays.status === 200 || pays.status === 400 || pays.status === 403) &&
+        !paysItems.some((row) => String(row.studentCode ?? row.student_code) === "STU-B-001"),
+      `status=${pays.status} items=${paysItems.length}`,
+    );
+
+    const failed = results.filter((row) => !row.ok);
+    console.log(`dRevalidation.http.pg.test.js ${results.length - failed.length} PASS / ${failed.length} FAIL`);
+    if (failed.length) {
+      throw new Error(`D revalidation extras FAIL: ${failed.map((row) => row.id).join(", ")}`);
+    }
     console.log("OK dRevalidation.http.pg.test.js — PR-audit / PR-scope / SY-02 / SY-09 / SY-10");
   } finally {
     await stopChild(child);

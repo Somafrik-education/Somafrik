@@ -73,8 +73,8 @@ test("D-reval: sonde HTTP couvre PR-audit, PR-scope et SY-09 sans assouplir", ()
   const http = read("lib/dRevalidation.http.pg.test.js");
   assert.match(http, /PR-audit/);
   assert.match(http, /upsert_attendance_batch/);
-  assert.match(http, /PR-scope: enseignant non affecté/);
-  assert.match(http, /PR-scope: parent sans élève/);
-  assert.match(http, /SY-09 enseignant révoqué/);
-  assert.doesNotMatch(http, /assouplir/);
+  assert.match(http, /PR-scope-teacher/);
+  assert.match(http, /PR-scope-parent/);
+  assert.match(http, /check\(\s*"SY-09"/);
+  assert.doesNotMatch(http, /allowFail|t\.skip\(/);
 });
