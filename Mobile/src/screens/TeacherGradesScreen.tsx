@@ -85,7 +85,7 @@ export default function TeacherGradesScreen() {
 
   const teacher = isTeacherSession(session as { role?: string; user?: { role?: string } } | null);
   const platformRole = sessionRoleToPlatformRole(session?.role);
-  const canCreate = hasSecurityPermission(session, "Notes", "CREATE") || hasSecurityPermission(session, "Notes", "UPDATE");
+  const canCreate = hasSecurityPermission(session, "Notes", "CREATE");
   const canUpdate = hasSecurityPermission(session, "Notes", "UPDATE");
   const canValidate = canUpdate && !teacher;
 

@@ -121,6 +121,8 @@ const rolePermissions = {
     "Affectations:DELETE",
     "Voir classes",
     "Voir notes",
+    "Créer notes",
+    "Modifier notes",
     "Voir présences",
     "Organiser examens",
     "Modifier présences",
@@ -144,6 +146,7 @@ const rolePermissions = {
   Enseignant: [
     "Voir élèves",
     "Modifier notes",
+    "Créer notes",
     "Faire appel",
     "Messages parents",
     "Voir examens",

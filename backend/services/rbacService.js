@@ -477,7 +477,7 @@ const routePermissions = {
   "GET /api/students/:id/notes": ["Notes:READ", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
   "GET /api/evaluations": ["Notes:READ", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
   "POST /api/notes": ["Notes:CREATE", "Notes:UPDATE", "ALL_PRIVILEGES"],
-  "POST /api/evaluations": ["Notes:CREATE", "Notes:UPDATE", "ALL_PRIVILEGES"],
+  "POST /api/evaluations": ["Notes:CREATE", "ALL_PRIVILEGES"],
   "PATCH /api/evaluations/:evaluationId": ["Notes:UPDATE", "ALL_PRIVILEGES"],
   "GET /api/course-schedules": ["Planning de cours:READ", "ALL_PRIVILEGES"],
   "POST /api/course-schedules": ["Planning de cours:CREATE", "ALL_PRIVILEGES"],

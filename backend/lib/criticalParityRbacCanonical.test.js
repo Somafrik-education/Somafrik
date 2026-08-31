@@ -183,7 +183,7 @@ test("réconciliation J3 ne touche pas un grant students préexistant du comptab
     updatedBy: "custom",
   });
   const changed = await reconcileCanonicalCriticalParityGrants(store);
-  assert.equal(changed, 2, "seuls teacher + prefet sont réconciliés");
+  assert.equal(changed, 2, "seuls teacher + prefet assignments sont réconciliés");
   const accountant = (await store.listGrantsForScope({
     roleKey: "ACCOUNTANT",
     scopeType: "global",
@@ -202,9 +202,51 @@ test("ensureFunctionalRbacBootstrap appelle la réconciliation J3 fail-closed", 
   assert.equal(CANONICAL_CRITICAL_PARITY_GRANTS.length, 2);
   assert.deepEqual(
     CANONICAL_CRITICAL_PARITY_GRANTS.map((grant) => [grant.roleKey, grant.moduleKey]),
-    [["TEACHER", "assignments"], ["PREFET_ETUDES", "assignments"]],
+    [
+      ["TEACHER", "assignments"],
+      ["PREFET_ETUDES", "assignments"],
+    ],
   );
   assert.ok(CRITICAL_PARITY_EXCLUDED_ROLE_KEYS.includes("ACCOUNTANT"));
   assert.ok(CRITICAL_PARITY_EXCLUDED_ROLE_KEYS.includes("PARENT"));
   assert.ok(CRITICAL_PARITY_EXCLUDED_ROLE_KEYS.includes("STUDENT"));
+});
+
+test("bootstrap J3 ne réintroduit pas Notes:CREATE/UPDATE enseignant après révocation", async () => {
+  const store = createFunctionalRbacMemoryStore();
+  await store.upsertGrant({
+    roleKey: "TEACHER",
+    scopeType: "global",
+    moduleKey: "grades",
+    canCreate: false,
+    canRead: true,
+    canUpdate: false,
+    canDelete: false,
+    updatedBy: "superadmin-revoke",
+  });
+  const repo = emptyCatalogRepo(store);
+  await reconcileCanonicalCriticalParityGrants(store);
+  await ensureFunctionalRbacBootstrap(repo);
+
+  const teacherGrades = (await store.listGrantsForScope({
+    roleKey: "TEACHER",
+    scopeType: "global",
+    countryId: null,
+    schoolId: null,
+  })).find((row) => row.moduleKey === "grades");
+  assert.ok(teacherGrades);
+  assert.equal(teacherGrades.canCreate, false, "Notes:CREATE reste révoqué après bootstrap");
+  assert.equal(teacherGrades.canUpdate, false, "Notes:UPDATE reste révoqué après bootstrap");
+  assert.equal(teacherGrades.canRead, true);
+
+  const teacher = await resolveEffectivePermissionsForPrincipal(repo, {
+    role: "Enseignant",
+    roleKeys: ["TEACHER"],
+  });
+  assert.equal(teacher.permissions.includes("Notes:CREATE"), false);
+  assert.equal(teacher.permissions.includes("Notes:UPDATE"), false);
+  assert.equal(
+    rbac.canAccess({ role: "Enseignant", permissions: teacher.permissions }, "POST /api/evaluations"),
+    false,
+  );
 });

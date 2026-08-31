@@ -290,11 +290,12 @@ async function runPgSuite(databaseUrl) {
   });
   try {
     await waitForHealth(child, PG_PORT);
-    const adminToken = await login(PG_PORT, "admin-http@test.cd", "1234", "CD-2026-0001");
+    // POST /evaluations = Notes:CREATE. Admin School n'a que Modifier notes (UPDATE).
+    const teacherToken = await login(PG_PORT, "ENS-0001", "1234", "CD-2026-0001");
 
     const createdEval = await request(PG_PORT, "/evaluations", {
       method: "POST",
-      token: adminToken,
+      token: teacherToken,
       body: {
         className: "6ème A",
         subject: "Mathématiques",
@@ -311,7 +312,7 @@ async function runPgSuite(databaseUrl) {
 
     const missingType = await request(PG_PORT, "/evaluations", {
       method: "POST",
-      token: adminToken,
+      token: teacherToken,
       body: {
         className: "6ème A",
         subject: "Mathématiques",
@@ -326,7 +327,7 @@ async function runPgSuite(databaseUrl) {
 
     const foreignType = await request(PG_PORT, "/evaluations", {
       method: "POST",
-      token: adminToken,
+      token: teacherToken,
       body: {
         className: "6ème A",
         subject: "Mathématiques",
@@ -342,7 +343,7 @@ async function runPgSuite(databaseUrl) {
 
     const invented = await request(PG_PORT, "/evaluations", {
       method: "POST",
-      token: adminToken,
+      token: teacherToken,
       body: {
         className: "6ème A",
         subject: "Mathématiques",
@@ -357,7 +358,7 @@ async function runPgSuite(databaseUrl) {
 
     const archived = await request(PG_PORT, "/evaluations", {
       method: "POST",
-      token: adminToken,
+      token: teacherToken,
       body: {
         className: "6ème A",
         subject: "Mathématiques",

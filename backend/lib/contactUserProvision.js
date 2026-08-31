@@ -13,8 +13,12 @@ const INTERNAL_ROLE_DEFAULT_PERMISSIONS = {
     "Announcements:READ",
     "Présences:READ",
     "Notes:READ",
+    "Notes:CREATE",
+    "Notes:UPDATE",
+    "Affectations:READ",
     "Classes:READ",
     "Élèves:READ",
+    "Matières:READ",
   ],
   Parent: [
     "Messages:READ",
