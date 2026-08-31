@@ -22,6 +22,8 @@ const PORT = 19690;
 const PG_DATABASE = String(process.env.SOMAFRIK_SYNC_E2E_DATABASE ?? "somafrik_sync_e2e_it")
   .trim()
   .replace(/[^a-zA-Z0-9_]/g, "");
+const LEFTOVER_SCHOOL_CODE = "CD-2026-0001";
+const CANONICAL_LOGIN_CODE = "CD-SY-26-001";
 
 function withDatabaseName(databaseUrl, databaseName) {
   const parsed = new URL(databaseUrl);
@@ -57,9 +59,17 @@ async function prepareDatabase(databaseUrl, fixtureSecret) {
        VALUES ('RDC', 'CD', '+243', 'CDF') RETURNING id`,
     );
     const school = await pool.query(
-      `INSERT INTO schools (country_id, school_code, name, status)
-       VALUES ($1, 'CD-2026-0001', 'Lycée SYNC-E2E', 'active') RETURNING id`,
-      [country.rows[0].id],
+      `INSERT INTO schools (country_id, school_code, login_code, name, status)
+       VALUES ($1, $2, $3, 'Lycée SYNC-E2E', 'active')
+       RETURNING id, school_code, login_code`,
+      [country.rows[0].id, LEFTOVER_SCHOOL_CODE, CANONICAL_LOGIN_CODE],
+    );
+    assert.equal(school.rows[0].school_code, LEFTOVER_SCHOOL_CODE);
+    assert.equal(school.rows[0].login_code, CANONICAL_LOGIN_CODE);
+    assert.notEqual(
+      school.rows[0].school_code,
+      school.rows[0].login_code,
+      "leftover school_code ≠ login_code canonique",
     );
     const schoolId = school.rows[0].id;
     await pool.query(
@@ -275,10 +285,16 @@ async function runSyncEndToEnd(databaseUrl) {
   try {
     await waitForHealth(child);
     await ensureSyncE2eNotesCreateGrant(pool);
-    console.log("[sync-e2e] login HTTP réel", { identifier: "admin-sync-e2e@test.cd", schoolCode: "CD-2026-0001" });
-    const adminToken = await login("admin-sync-e2e@test.cd", fixtureSecret, "CD-2026-0001");
-    console.log("[sync-e2e] login HTTP réel", { identifier: "prefet-sync-e2e@test.cd", schoolCode: "CD-2026-0001" });
-    const prefetToken = await login("prefet-sync-e2e@test.cd", fixtureSecret, "CD-2026-0001");
+    console.log("[sync-e2e] login HTTP réel", {
+      identifier: "admin-sync-e2e@test.cd",
+      schoolCode: CANONICAL_LOGIN_CODE,
+    });
+    const adminToken = await login("admin-sync-e2e@test.cd", fixtureSecret, CANONICAL_LOGIN_CODE);
+    console.log("[sync-e2e] login HTTP réel", {
+      identifier: "prefet-sync-e2e@test.cd",
+      schoolCode: CANONICAL_LOGIN_CODE,
+    });
+    const prefetToken = await login("prefet-sync-e2e@test.cd", fixtureSecret, CANONICAL_LOGIN_CODE);
     console.log("[sync-e2e] login HTTP réel", { identifier: "super-sync-e2e@test.cd" });
     const superToken = await login("super-sync-e2e@test.cd", fixtureSecret);
 
@@ -380,7 +396,7 @@ async function runSyncEndToEnd(databaseUrl) {
     // --- Classes ---
     const { prepareCanonicalClassContext, postCanonicalClass } = require("../lib/canonicalClassHttp");
     const offering = await prepareCanonicalClassContext(request, {
-      schoolCode: "CD-2026-0001",
+      schoolCode: CANONICAL_LOGIN_CODE,
       countryCode: "CD",
       superToken,
       schoolToken: adminToken,
@@ -594,8 +610,8 @@ async function runSyncEndToEnd(databaseUrl) {
     const pgPayment = await pool.query(
       `SELECT count(*)::int AS c FROM payments p
        JOIN schools s ON s.id = p.school_id
-       WHERE s.school_code = 'CD-2026-0001' AND (p.payment_code = $1 OR p.id::text = $1)`,
-      [paymentRef],
+       WHERE s.login_code = $2 AND (p.payment_code = $1 OR p.id::text = $1)`,
+      [paymentRef, CANONICAL_LOGIN_CODE],
     );
     assert.ok(pgPayment.rows[0].c >= 1, "payments: PostgreSQL");
     let paymentsGet = await assertReloadStable(
@@ -612,15 +628,15 @@ async function runSyncEndToEnd(databaseUrl) {
        USING payments p, schools s
        WHERE pa.payment_id = p.id
          AND p.school_id = s.id
-         AND s.school_code = 'CD-2026-0001'
+         AND s.login_code = $2
          AND (p.payment_code = $1 OR p.id::text = $1)`,
-      [paymentRef],
+      [paymentRef, CANONICAL_LOGIN_CODE],
     );
     await pool.query(
       `DELETE FROM payments p USING schools s
-       WHERE p.school_id = s.id AND s.school_code = 'CD-2026-0001'
+       WHERE p.school_id = s.id AND s.login_code = $2
          AND (p.payment_code = $1 OR p.id::text = $1)`,
-      [paymentRef],
+      [paymentRef, CANONICAL_LOGIN_CODE],
     );
     paymentsGet = extractList((await request("/payments", { token: adminToken })).data);
     assert.ok(
@@ -637,7 +653,7 @@ async function runSyncEndToEnd(databaseUrl) {
         message: "Test convergence",
         type: "Information",
         audience: "etablissement",
-        schoolCode: "CD-2026-0001",
+        schoolCode: CANONICAL_LOGIN_CODE,
         status: "Non lu",
       },
     });
