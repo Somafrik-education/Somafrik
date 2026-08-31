@@ -39,6 +39,19 @@ test("GP-015: mapAttendance projette login_code, jamais leftover", () => {
   assert.doesNotMatch(mapFn, /login_code[\s\S]{0,80}\|\|[\s\S]{0,80}school_code/);
 });
 
+test("GP-015: resolveStudentForAttendance privilégie presenceSchoolId, pas login_code comme school_code", () => {
+  const repo = read("db/postgresRepository.js");
+  const resolveFn = sliceFrom(repo, "async resolveStudentForAttendance", "async teacherCanAccessClassFromBackOffice");
+  const queryFn = sliceFrom(repo, "async queryStudentWithClass", "async findOpenAcademicYear");
+
+  assert.match(resolveFn, /presenceSchoolId/);
+  assert.match(resolveFn, /queryStudentWithClass/);
+  assert.doesNotMatch(resolveFn, /presenceLoginCode \?\? payload\.schoolCode/);
+  assert.doesNotMatch(resolveFn, /presenceLoginCode \?\? principal\.schoolCode/);
+  assert.match(queryFn, /options\.schoolId/);
+  assert.match(queryFn, /st\.school_id = \$2::uuid/);
+});
+
 test("GP-015: presenceSchoolScope n'autorise pas leftover comme autorité établissement", () => {
   const scopeLib = read("lib/presenceSchoolScope.js");
   const attachFn = sliceFrom(scopeLib, "async function attachPresenceMembershipScope", "function attachPresenceFixtureScope");

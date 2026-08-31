@@ -62,6 +62,12 @@ function sourceGuards() {
   assert.match(httpTest, /PR-08/);
   assert.match(httpTest, /PR-04/);
   assert.match(httpTest, /PR-05/);
+  assert.match(httpTest, /ALTER COLUMN login_code DROP NOT NULL/);
+
+  const resolveStart = repo.indexOf("async resolveStudentForAttendance");
+  const resolveFn = repo.slice(resolveStart, repo.indexOf("async teacherCanAccessClassFromBackOffice", resolveStart));
+  assert.match(resolveFn, /presenceSchoolId/);
+  assert.doesNotMatch(resolveFn, /presenceLoginCode \?\? payload\.schoolCode/);
 }
 
 function main() {

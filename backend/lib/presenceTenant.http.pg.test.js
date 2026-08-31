@@ -321,6 +321,10 @@ async function main() {
 
   try {
     await repo.init();
+    await pool.query(`
+      ALTER TABLE schools ALTER COLUMN login_code DROP NOT NULL;
+      ALTER TABLE schools DROP CONSTRAINT IF EXISTS schools_login_code_format_check;
+    `);
     const fixture = await seed(repo.pool);
 
     child = spawn(process.execPath, ["backend/server.js"], {
@@ -343,6 +347,10 @@ async function main() {
     });
     await waitForHealth(child, stderrRef);
 
+    await pool.query(`
+      ALTER TABLE schools ALTER COLUMN login_code DROP NOT NULL;
+      ALTER TABLE schools DROP CONSTRAINT IF EXISTS schools_login_code_format_check;
+    `);
     await setLoginCodeTriggers(pool, false);
     const cdId = (await pool.query(`SELECT id FROM countries WHERE iso_code = 'CD' LIMIT 1`)).rows[0].id;
     const emptySchool = await pool.query(

@@ -3325,9 +3325,10 @@ class PostgresRepository {
     return [...keys];
   }
 
-  async queryStudentWithClass(studentKey, schoolCode) {
+  async queryStudentWithClass(studentKey, schoolCode, options = {}) {
     const backOfficeStudent = await this.findBackOfficeStudentRecord(studentKey);
     const lookupKeys = this.collectStudentLookupKeys(studentKey, backOfficeStudent);
+    const schoolId = String(options.schoolId ?? "").trim();
 
     for (const key of lookupKeys) {
       const params = [key];
@@ -3338,7 +3339,10 @@ class PostgresRepository {
         LEFT JOIN enrollments e ON e.student_id = st.id AND e.status = 'active'
         LEFT JOIN classes cl ON cl.id = e.class_id
         WHERE (st.student_code = $1 OR st.id::text = $1)`;
-      if (schoolCode && schoolCode !== "*") {
+      if (schoolId) {
+        sql += ` AND st.school_id = $2::uuid`;
+        params.push(schoolId);
+      } else if (schoolCode && schoolCode !== "*") {
         sql += ` AND s.school_code = $2`;
         params.push(String(schoolCode).trim().toUpperCase());
       }
@@ -4181,20 +4185,25 @@ class PostgresRepository {
   }
 
   async resolveStudentForAttendance(payload, principal = {}, options = {}) {
-    const schoolCode = String(
-      principal.presenceLoginCode ?? payload.schoolCode ?? principal.schoolCode ?? "",
-    )
-      .trim()
-      .toUpperCase();
-    const tenantScoped = Boolean(schoolCode && schoolCode !== "*");
+    const membershipId = String(principal.presenceSchoolId ?? "").trim();
+    const schoolCode = membershipId
+      ? ""
+      : String(payload.schoolCode ?? principal.schoolCode ?? "")
+          .trim()
+          .toUpperCase();
+    const tenantScoped = Boolean(membershipId) || Boolean(schoolCode && schoolCode !== "*");
     const pedagogyStrict = options.pedagogyStrict === true || tenantScoped;
     const className = String(payload.className ?? "").trim();
 
-    if (tenantScoped && !options.skipSchoolEnsure) {
+    if (!membershipId && tenantScoped && !options.skipSchoolEnsure) {
       await this.ensureSchoolFromBackOfficeRecord(schoolCode);
     }
 
-    let { row: student, backOfficeStudent } = await this.queryStudentWithClass(payload.studentId, schoolCode);
+    let { row: student, backOfficeStudent } = await this.queryStudentWithClass(
+      payload.studentId,
+      schoolCode,
+      { schoolId: membershipId },
+    );
 
     if (!student && !backOfficeStudent && !pedagogyStrict) {
       ({ row: student, backOfficeStudent } = await this.queryStudentWithClass(payload.studentId, ""));
@@ -4206,13 +4215,18 @@ class PostgresRepository {
         ({ row: student, backOfficeStudent } = await this.queryStudentWithClass(
           payload.studentId,
           schoolCode,
+          { schoolId: membershipId },
         ));
       }
     }
 
     if (!student) return null;
 
-    if (tenantScoped) {
+    if (membershipId) {
+      if (String(student.school_id) !== membershipId) {
+        return null;
+      }
+    } else if (tenantScoped) {
       const tenantSchool = await this.getSchoolByCode(schoolCode);
       if (!tenantSchool || String(student.school_id) !== String(tenantSchool.id)) {
         return null;
