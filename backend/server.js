@@ -759,12 +759,43 @@ app.patch("/api/classes/:classCode", requireAuth, requirePermission("PATCH /api/
   res.json(updated);
 }));
 
-app.get("/api/classes/:classCode/students", requireAuth, requirePermission("GET /api/classes/:classCode/students"), asyncHandler(async (req, res) => {
-  const schoolCode = String(req.principal?.schoolCode ?? "").trim();
-  if (!schoolCode || schoolCode === "*") {
-    throw new BusinessError(400, "schoolCode établissement requis.");
+async function enrollmentHttpPrincipal(req) {
+  const {
+    attachEnrollmentMembershipScope,
+    attachEnrollmentFixtureScope,
+  } = require("./lib/enrollmentSchoolScope");
+  if (repository?.engine !== "memory" && typeof repository.one === "function") {
+    return attachEnrollmentMembershipScope(req.principal, repository.one.bind(repository));
   }
-  tenantScopeService.assertSchoolAccess(req.principal, schoolCode);
+  return attachEnrollmentFixtureScope(req.principal);
+}
+
+function requireEnrollmentLoginCode(principal) {
+  const { assertEnrollmentSchoolCode } = require("./lib/enrollmentSchoolScope");
+  return assertEnrollmentSchoolCode(principal);
+}
+
+function enrollmentAuthzPrincipal(reqPrincipal, loginCode) {
+  return { ...reqPrincipal, schoolCode: loginCode };
+}
+
+function enrollmentApiStudent(row, loginCode) {
+  const { projectEnrollmentApiStudent } = require("./lib/enrollmentSchoolScope");
+  return sanitizeUserForResponse(projectEnrollmentApiStudent(row, loginCode));
+}
+
+function enrollmentApiStudents(rows, loginCode) {
+  return sanitizeUsersForResponse(
+    (Array.isArray(rows) ? rows : []).map((row) => {
+      const { projectEnrollmentApiStudent } = require("./lib/enrollmentSchoolScope");
+      return projectEnrollmentApiStudent(row, loginCode);
+    }),
+  );
+}
+
+app.get("/api/classes/:classCode/students", requireAuth, requirePermission("GET /api/classes/:classCode/students"), asyncHandler(async (req, res) => {
+  const principal = await enrollmentHttpPrincipal(req);
+  const schoolCode = requireEnrollmentLoginCode(principal);
   const rows = await repository.listClassStudents(req.params.classCode, schoolCode);
   const classes = await repository.listSchoolClasses(schoolCode);
   const match = (classes ?? []).find(
@@ -785,17 +816,20 @@ app.get("/api/classes/:classCode/students", requireAuth, requirePermission("GET 
     rows,
     resolveAuthorizedStudentForPrincipal,
   );
-  res.json(sanitizeUsersForResponse(scoped));
+  res.json(enrollmentApiStudents(scoped, schoolCode));
 }));
 
 app.post("/api/classes/:classCode/students", requireAuth, requirePermission("POST /api/classes/:classCode/students"), asyncHandler(async (req, res) => {
-  const schoolCode = String(req.principal?.schoolCode ?? "").trim();
-  if (!schoolCode || schoolCode === "*") {
-    throw new BusinessError(400, "schoolCode établissement requis.");
-  }
-  tenantScopeService.assertSchoolAccess(req.principal, schoolCode);
+  const { resolveEnrollmentWriteSchool } = require("./lib/enrollmentSchoolScope");
+  const principal = await enrollmentHttpPrincipal(req);
+  const writeSchool = await resolveEnrollmentWriteSchool(
+    principal,
+    req.body ?? {},
+    repository?.engine !== "memory" && typeof repository.one === "function" ? repository.one.bind(repository) : null,
+  );
+  const schoolCode = writeSchool.loginCode;
   const created = await repository.enrollStudentInClass(req.params.classCode, schoolCode, req.body ?? {});
-  const student = sanitizeUserForResponse(created.student);
+  const student = enrollmentApiStudent(created.student, schoolCode);
   const credentials = {
     login: String(created.credentials?.login ?? student?.studentCode ?? "").trim(),
     temporarySecret: String(created.credentials?.temporarySecret ?? "").trim(),
@@ -803,7 +837,9 @@ app.post("/api/classes/:classCode/students", requireAuth, requirePermission("POS
   if (!student?.studentCode || !credentials.temporarySecret) {
     throw new BusinessError(500, "Le secret temporaire d'inscription n'a pas pu être remis.");
   }
-  await auditService.record(req, "enroll_student", "student", student.studentCode, student);
+  await auditService.record(req, "enroll_student", "student", student.studentCode, student, {
+    schoolCode,
+  });
   res.status(201).json({ student, credentials });
 }));
 
@@ -1718,11 +1754,8 @@ app.put("/api/backoffice/establishment-documents", requireAuth, requirePermissio
 }));
 
 app.get("/api/students", requireAuth, requirePermission("GET /api/students"), asyncHandler(async (req, res) => {
-  const schoolCode = String(req.principal?.schoolCode ?? "").trim();
-  if (!schoolCode || schoolCode === "*") {
-    throw new BusinessError(400, "schoolCode établissement requis.");
-  }
-  tenantScopeService.assertSchoolAccess(req.principal, schoolCode);
+  const principal = await enrollmentHttpPrincipal(req);
+  const schoolCode = requireEnrollmentLoginCode(principal);
 
   if (typeof repository.listSchoolStudents !== "function") {
     throw new BusinessError(503, "Liste élèves PostgreSQL indisponible.");
@@ -1739,57 +1772,59 @@ app.get("/api/students", requireAuth, requirePermission("GET /api/students"), as
     filtered,
     resolveAuthorizedStudentForPrincipal,
   );
-  const result = sanitizeUsersForResponse(scoped);
+  const result = enrollmentApiStudents(scoped, schoolCode);
   sendList(res, result, req.query, ["name", "matricule", "studentCode", "className", "parentPhone"]);
 }));
 
 app.get("/api/students/:id", requireAuth, requirePermission("GET /api/students/:id"), asyncHandler(async (req, res) => {
-  const schoolCode = String(req.principal?.schoolCode ?? "").trim();
-  if (!schoolCode || schoolCode === "*") {
-    throw new BusinessError(400, "schoolCode établissement requis.");
-  }
-  tenantScopeService.assertSchoolAccess(req.principal, schoolCode);
+  const { assertEnrollmentStudentAccess } = require("./lib/enrollmentSchoolScope");
+  const principal = await enrollmentHttpPrincipal(req);
+  const schoolCode = requireEnrollmentLoginCode(principal);
 
   if (typeof repository.getSchoolStudentByCode !== "function") {
     throw new BusinessError(503, "Fiche élève PostgreSQL indisponible.");
   }
 
-  const pgStudent = await repository.getSchoolStudentByCode(req.params.id, schoolCode);
-  tenantScopeService.assertSchoolAccess(req.principal, pgStudent.schoolCode);
+  const pgStudent = enrollmentApiStudent(
+    await repository.getSchoolStudentByCode(req.params.id, schoolCode),
+    schoolCode,
+  );
+  assertEnrollmentStudentAccess(principal, pgStudent);
   const {
     authorizeStudentReadForPrincipal,
   } = require("./lib/classStudentsAuthz");
   const authorizedPg = authorizeStudentReadForPrincipal(
     pgStudent,
-    req.principal,
+    enrollmentAuthzPrincipal(req.principal, schoolCode),
     req.params.id,
     resolveAuthorizedStudentForPrincipal,
   );
   if (!authorizedPg) {
     return res.status(404).json({ message: "Eleve introuvable" });
   }
-  return res.json(sanitizeUserForResponse(authorizedPg));
+  return res.json(enrollmentApiStudent(authorizedPg, schoolCode));
 }));
 
 app.patch("/api/students/:id", requireAuth, requirePermission("PATCH /api/students/:id"), asyncHandler(async (req, res) => {
-  const schoolCode = String(req.principal?.schoolCode ?? "").trim();
-  if (!schoolCode || schoolCode === "*") {
-    throw new BusinessError(400, "schoolCode établissement requis.");
-  }
-  tenantScopeService.assertSchoolAccess(req.principal, schoolCode);
+  const { assertEnrollmentStudentAccess } = require("./lib/enrollmentSchoolScope");
+  const principal = await enrollmentHttpPrincipal(req);
+  const schoolCode = requireEnrollmentLoginCode(principal);
 
   if (typeof repository.updateSchoolStudentByCode !== "function") {
     throw new BusinessError(503, "Modification élève PostgreSQL indisponible.");
   }
 
-  const existing = await repository.getSchoolStudentByCode(req.params.id, schoolCode);
-  tenantScopeService.assertSchoolAccess(req.principal, existing.schoolCode);
+  const existing = enrollmentApiStudent(
+    await repository.getSchoolStudentByCode(req.params.id, schoolCode),
+    schoolCode,
+  );
+  assertEnrollmentStudentAccess(principal, existing);
   const {
     authorizeStudentReadForPrincipal,
   } = require("./lib/classStudentsAuthz");
   const authorized = authorizeStudentReadForPrincipal(
     existing,
-    req.principal,
+    enrollmentAuthzPrincipal(req.principal, schoolCode),
     req.params.id,
     resolveAuthorizedStudentForPrincipal,
   );
@@ -1804,25 +1839,26 @@ app.patch("/api/students/:id", requireAuth, requirePermission("PATCH /api/studen
   );
   await auditService.record(req, "update_student", "student", updated.studentCode, {
     studentCode: updated.studentCode,
-  });
-  res.json(sanitizeUserForResponse(updated));
+  }, { schoolCode });
+  res.json(enrollmentApiStudent(updated, schoolCode));
 }));
 
 app.delete("/api/students/:id", requireAuth, requirePermission("DELETE /api/students/:id"), asyncHandler(async (req, res) => {
-  const schoolCode = String(req.principal?.schoolCode ?? "").trim();
-  if (!schoolCode || schoolCode === "*") {
-    throw new BusinessError(400, "schoolCode établissement requis.");
-  }
-  tenantScopeService.assertSchoolAccess(req.principal, schoolCode);
+  const { assertEnrollmentStudentAccess } = require("./lib/enrollmentSchoolScope");
+  const principal = await enrollmentHttpPrincipal(req);
+  const schoolCode = requireEnrollmentLoginCode(principal);
   if (typeof repository.getSchoolStudentByCode !== "function") {
     throw new BusinessError(503, "Suppression élève PostgreSQL indisponible.");
   }
-  const existing = await repository.getSchoolStudentByCode(req.params.id, schoolCode);
-  tenantScopeService.assertSchoolAccess(req.principal, existing.schoolCode);
+  const existing = enrollmentApiStudent(
+    await repository.getSchoolStudentByCode(req.params.id, schoolCode),
+    schoolCode,
+  );
+  assertEnrollmentStudentAccess(principal, existing);
   const { authorizeStudentReadForPrincipal } = require("./lib/classStudentsAuthz");
   const authorized = authorizeStudentReadForPrincipal(
     existing,
-    req.principal,
+    enrollmentAuthzPrincipal(req.principal, schoolCode),
     req.params.id,
     resolveAuthorizedStudentForPrincipal,
   );
@@ -1833,8 +1869,8 @@ app.delete("/api/students/:id", requireAuth, requirePermission("DELETE /api/stud
     const archived = await repository.archiveSchoolStudentByCode(req.params.id, schoolCode, req.principal);
     await auditService.record(req, "archive_student", "student", archived.studentCode || req.params.id, {
       studentCode: archived.studentCode || req.params.id,
-    });
-    return res.json(sanitizeUserForResponse(archived));
+    }, { schoolCode });
+    return res.json(enrollmentApiStudent(archived, schoolCode));
   }
   res.status(204).end();
 }));

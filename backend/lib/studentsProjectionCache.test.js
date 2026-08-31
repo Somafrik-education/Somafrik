@@ -13,6 +13,8 @@ test("invalide le cache dataset après inscription élève", async () => {
       credentials: { login: "ELE-CD-0001-0001-000001", temporarySecret: "Tmp-ab" },
     }),
   });
+  repository.getSchoolByCode = async () => ({ login_code: "CD-LAC-26-001" });
+  repository.syncEnrollmentFinanceObligations = async () => ({ skipped: true });
 
   const created = await repository.enrollStudentInClass("CLS-1", "CD-2026-0001", {
     firstName: "Awa",

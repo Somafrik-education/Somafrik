@@ -182,7 +182,7 @@ async function main() {
         },
       },
     );
-    assert.equal(enrolled.status, 400, JSON.stringify(enrolled.data));
+    assert.equal(enrolled.status, 403, JSON.stringify(enrolled.data));
 
     const enrolledOk = await request(
       `/classes/${encodeURIComponent(activeClass.classCode)}/students`,

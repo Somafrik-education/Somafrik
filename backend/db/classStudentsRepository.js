@@ -27,6 +27,7 @@ const STUDENT_SELECT_COLUMNS = `
   st.status,
   st.created_at,
   st.updated_at,
+  st.school_id,
   s.school_code
 `;
 
@@ -156,6 +157,7 @@ function createClassStudentsRepository(db) {
       classId: row.class_id ?? row.classId ?? null,
       className: row.class_name ?? "",
       classCode: row.class_code ?? "",
+      schoolId: row.school_id ?? row.schoolId ?? null,
       schoolCode: row.school_code,
       parentPhone: row.parent_phone ?? "",
       parentEmail: row.parent_email ?? "",
@@ -387,6 +389,7 @@ function createClassStudentsRepository(db) {
 
     const mapped = mapStudentRow({
       ...student,
+      school_id: school.id,
       school_code: school.school_code ?? schoolCode,
       class_id: classRow.id,
       class_code: classRow.class_code,
