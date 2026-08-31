@@ -10,6 +10,8 @@ on:
       - "backend/lib/enrollmentTenant.http.pg.test.js"
       - "backend/db/classStudentsRepository.js"
       - "backend/scripts/verify-enrollment-tenant.js"
+      - "backend/services/auditService.js"
+      - "backend/services/auditService.test.js"
       - "backend/server.js"
       - "package.json"
       - ".github/workflows/enrollment-tenant.yml"

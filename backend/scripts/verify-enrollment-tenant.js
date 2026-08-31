@@ -53,13 +53,23 @@ function sourceGuards() {
   assert.match(httpTest, /ENR-02/);
   assert.match(httpTest, /ENR-03 0 write B/);
   assert.match(httpTest, /ENR-06/);
+  assert.match(httpTest, /ENR-07/);
+
+  const postAudit = postBlock.slice(postBlock.indexOf("auditService.record"));
+  assert.match(postAudit, /\{\s*schoolCode\s*,?\s*\}/);
+  assert.match(read("backend/services/auditService.js"), /resolveAuditSchoolCode/);
 }
 
 function main() {
   sourceGuards();
   run(
     process.execPath,
-    ["--test", "backend/lib/enrollmentSchoolScope.test.js", "backend/lib/enrollmentTenant.guard.test.js"],
+    [
+      "--test",
+      "backend/lib/enrollmentSchoolScope.test.js",
+      "backend/lib/enrollmentTenant.guard.test.js",
+      "backend/services/auditService.test.js",
+    ],
     "tests unitaires / garde-fou Enrollment tenant ont échoué",
   );
   if (!String(process.env.DATABASE_URL ?? "").trim()) {

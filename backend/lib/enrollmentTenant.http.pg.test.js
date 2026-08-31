@@ -390,6 +390,66 @@ async function main() {
     assert.ok(patchB.status === 403 || patchB.status === 404, `P0-8 PATCH B status=${patchB.status}`);
     assert.equal(studentBAfter.rows[0].first_name, studentBBefore.rows[0].first_name, "P0-8 0 mutation B");
 
+    const leftoverAuditOnB = async (action, entityId) => {
+      const rows = await pool.query(
+        `SELECT a.action, s.school_code, s.login_code
+         FROM audit_logs a
+         JOIN schools s ON s.id = a.school_id
+         WHERE a.action = $1 AND a.entity_id::text = $2
+         ORDER BY a.created_at DESC`,
+        [action, entityId],
+      );
+      return rows.rows;
+    };
+
+    const postALeftover = await request(`/classes/${CLASS_A}/students`, {
+      method: "POST",
+      token: tokenForgedB,
+      body: { firstName: "Nouveau", lastName: "AuditA", gender: "Féminin", birthDate: "2012-04-12" },
+    });
+    assert.equal(postALeftover.status, 201, `ENR-07 POST leftover B status=${postALeftover.status}`);
+    const enrolledCode = String(postALeftover.data?.student?.studentCode ?? "").trim();
+    assert.ok(enrolledCode, "ENR-07 studentCode enroll A");
+    const enrollAudits = await leftoverAuditOnB("enroll_student", enrolledCode);
+    assert.equal(enrollAudits.length, 1, "ENR-07 une ligne audit enroll");
+    assert.equal(enrollAudits[0].login_code, LOGIN_A, "ENR-07 enroll audit = membership A");
+    assert.equal(enrollAudits[0].school_code, LEFTOVER_A);
+    assert.notEqual(enrollAudits[0].school_code, LEFTOVER_B, "ENR-07 enroll jamais leftover B");
+
+    const patchALeftover = await request(`/students/${enrolledCode}`, {
+      method: "PATCH",
+      token: tokenForgedB,
+      body: { firstName: "Nouveau2" },
+    });
+    assert.equal(patchALeftover.status, 200, `ENR-07 PATCH leftover B status=${patchALeftover.status}`);
+    const patchAudits = await leftoverAuditOnB("update_student", enrolledCode);
+    assert.equal(patchAudits.length, 1, "ENR-07 une ligne audit patch");
+    assert.equal(patchAudits[0].login_code, LOGIN_A, "ENR-07 patch audit = membership A");
+    assert.notEqual(patchAudits[0].school_code, LEFTOVER_B, "ENR-07 patch jamais leftover B");
+
+    const deleteALeftover = await request(`/students/${enrolledCode}`, {
+      method: "DELETE",
+      token: tokenForgedB,
+    });
+    assert.ok(
+      deleteALeftover.status === 200 || deleteALeftover.status === 204,
+      `ENR-07 DELETE leftover B status=${deleteALeftover.status}`,
+    );
+    const deleteAudits = await leftoverAuditOnB("archive_student", enrolledCode);
+    assert.equal(deleteAudits.length, 1, "ENR-07 une ligne audit archive");
+    assert.equal(deleteAudits[0].login_code, LOGIN_A, "ENR-07 archive audit = membership A");
+    assert.notEqual(deleteAudits[0].school_code, LEFTOVER_B, "ENR-07 archive jamais leftover B");
+
+    const leakedB = await pool.query(
+      `SELECT count(*)::int AS c
+       FROM audit_logs a
+       JOIN schools s ON s.id = a.school_id
+       WHERE s.school_code = $1
+         AND a.action IN ('enroll_student', 'update_student', 'archive_student')`,
+      [LEFTOVER_B],
+    );
+    assert.equal(leakedB.rows[0].c, 0, "ENR-07 0 audit Enrollment sur leftover B");
+
     const getNoSub = await request("/students", { token: tokenNoSub });
     assert.ok(getNoSub.status === 403 || getNoSub.status === 401, `ENR-04 sans sub status=${getNoSub.status}`);
 

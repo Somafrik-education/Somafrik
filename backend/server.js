@@ -837,7 +837,9 @@ app.post("/api/classes/:classCode/students", requireAuth, requirePermission("POS
   if (!student?.studentCode || !credentials.temporarySecret) {
     throw new BusinessError(500, "Le secret temporaire d'inscription n'a pas pu être remis.");
   }
-  await auditService.record(req, "enroll_student", "student", student.studentCode, student);
+  await auditService.record(req, "enroll_student", "student", student.studentCode, student, {
+    schoolCode,
+  });
   res.status(201).json({ student, credentials });
 }));
 
@@ -1837,7 +1839,7 @@ app.patch("/api/students/:id", requireAuth, requirePermission("PATCH /api/studen
   );
   await auditService.record(req, "update_student", "student", updated.studentCode, {
     studentCode: updated.studentCode,
-  });
+  }, { schoolCode });
   res.json(enrollmentApiStudent(updated, schoolCode));
 }));
 
@@ -1867,7 +1869,7 @@ app.delete("/api/students/:id", requireAuth, requirePermission("DELETE /api/stud
     const archived = await repository.archiveSchoolStudentByCode(req.params.id, schoolCode, req.principal);
     await auditService.record(req, "archive_student", "student", archived.studentCode || req.params.id, {
       studentCode: archived.studentCode || req.params.id,
-    });
+    }, { schoolCode });
     return res.json(enrollmentApiStudent(archived, schoolCode));
   }
   res.status(204).end();

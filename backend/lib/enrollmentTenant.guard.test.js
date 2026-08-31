@@ -67,6 +67,23 @@ test("ENR: enrollmentSchoolScope n'autorise pas leftover comme autorité établi
   assert.doesNotMatch(projectFn, /school_code/);
 });
 
+test("ENR: audit POST/PATCH/DELETE propage le login_code résolu, pas leftover JWT", () => {
+  const server = read("server.js");
+  const postEnroll = sliceFrom(server, 'app.post("/api/classes/:classCode/students"', 'app.get("/api/courses"');
+  const patch = sliceFrom(server, 'app.patch("/api/students/:id"', 'app.delete("/api/students/:id"');
+  const del = sliceFrom(server, 'app.delete("/api/students/:id"', 'app.get("/api/students/:id/notes"');
+
+  for (const block of [postEnroll, patch, del]) {
+    assert.match(block, /auditService\.record\(/);
+    assert.match(block, /\{\s*schoolCode\s*,?\s*\}/);
+  }
+
+  const audit = read("services/auditService.js");
+  assert.match(audit, /function resolveAuditSchoolCode/);
+  assert.match(audit, /enrollmentLoginCode/);
+  assert.match(audit, /options\.schoolCode/);
+});
+
 test("ENR: HTTP projette login_code, pas leftover", () => {
   const server = read("server.js");
   const helper = sliceFrom(server, "function enrollmentApiStudent", "function enrollmentApiStudents");
