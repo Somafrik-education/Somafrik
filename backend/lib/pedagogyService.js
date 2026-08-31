@@ -350,6 +350,13 @@ async function createCourseSchedule(store, rawPayload, principal, auditMeta) {
         roomId,
       }),
     );
+    if (!saved) {
+      throw createPedagogyError(
+        403,
+        "Accès refusé : établissement hors périmètre.",
+        PEDAGOGY_ERROR.TENANT_MISMATCH,
+      );
+    }
     const warning = capacityWarningFor(room, classSize);
     await writePedagogyAudit(tx, principal, auditMeta, {
       action: "create_course_schedule",

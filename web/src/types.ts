@@ -266,6 +266,8 @@ export interface UserAccount {
   countryScope?: string;
   /** Alias tenant historique = schools.school_code. Ne pas afficher comme code public. */
   schoolCode?: string;
+  /** UUID établissement = schools.id. Autorité membership, pas leftover schoolCode. */
+  schoolId?: string;
   /** Code public canonique = schools.login_code. */
   schoolPublicCode?: string;
   schoolName?: string;
@@ -293,8 +295,6 @@ export interface UserAccount {
 
 export interface SessionUser extends UserAccount {
   mustChangePassword?: boolean;
-  /** UUID membership établissement (`users.school_id`). */
-  schoolId?: string;
   /** Affectations pédagogiques projetées depuis le JWT (#248). */
   assignments?: Record<string, unknown>[];
   assignedClassIds?: string[];

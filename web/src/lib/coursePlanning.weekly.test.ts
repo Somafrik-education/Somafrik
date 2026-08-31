@@ -152,7 +152,16 @@ describe("Planning V2 — mapping Web canonique", () => {
   });
 
   it("scopedCourseSchedules garde la projection login_code malgré leftover JWT", () => {
-    const user = { role: "Admin School", schoolCode: "CD-2026-0001" } as never;
+    const user = { role: "Admin School", schoolCode: "CD-2026-0001" };
+    const rows = scopedCourseSchedules(user, {
+      courseSchedules: [{ ...weekly, schoolCode: "CD-LAC-26-001", schoolId: "school-a" }],
+    } as never);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.schoolCode).toBe("CD-LAC-26-001");
+  });
+
+  it("scopedCourseSchedules matche schools.id quand leftover JWT ≠ login_code", () => {
+    const user = { role: "Admin School", schoolCode: "CD-2026-0001", schoolId: "school-a" };
     const rows = scopedCourseSchedules(user, {
       courseSchedules: [{ ...weekly, schoolCode: "CD-LAC-26-001", schoolId: "school-a" }],
     } as never);
