@@ -849,15 +849,26 @@ app.get("/api/courses", requireAuth, requirePermission("GET /api/courses"), asyn
   res.json(tenantScopeService.filterRows(state.courses, req.principal, scope));
 }));
 
+async function planningHttpPrincipal(req) {
+  const { attachPlanningMembershipScope, attachPlanningFixtureScope } = require("./lib/planningSchoolScope");
+  if (typeof repository.one === "function") {
+    return attachPlanningMembershipScope(req.principal, repository.one.bind(repository));
+  }
+  return attachPlanningFixtureScope(req.principal);
+}
+
 app.get("/api/course-schedules", requireAuth, requirePermission("GET /api/course-schedules"), asyncHandler(async (req, res) => {
+  const { assertPlanningReadable } = require("./lib/planningSchoolScope");
+  const principal = await planningHttpPrincipal(req);
+  assertPlanningReadable(principal);
   if (typeof repository.listCourseSchedules === "function") {
-    const result = await repository.listCourseSchedules(req.principal, req.query ?? {});
+    const result = await repository.listCourseSchedules(principal, req.query ?? {});
     res.json(result);
     return;
   }
   const state = await getAuthoritativeBackOfficeState();
-  const scope = deriveSchoolScope(req.principal, state);
-  const rows = tenantScopeService.filterRows(state.courseSchedules ?? [], req.principal, scope);
+  const scope = deriveSchoolScope(principal, state);
+  const rows = tenantScopeService.filterRows(state.courseSchedules ?? [], principal, scope);
   res.json(rows);
 }));
 
@@ -889,16 +900,19 @@ app.delete("/api/courses/:courseId", requireAuth, requirePermission("DELETE /api
 }));
 
 app.post("/api/course-schedules", requireAuth, requirePermission("POST /api/course-schedules"), asyncHandler(async (req, res) => {
+  const { assertPlanningReadable } = require("./lib/planningSchoolScope");
+  const principal = await planningHttpPrincipal(req);
+  assertPlanningReadable(principal);
   await withIdempotency({
     req,
     res,
     routeKey: "POST /api/course-schedules",
-    principal: req.principal,
+    principal,
     handler: async () => {
       const { pedagogyAuditMetaFromRequest } = require("./lib/pedagogyManagement");
       const created = await repository.createCourseSchedule(
         req.body ?? {},
-        req.principal,
+        principal,
         pedagogyAuditMetaFromRequest(req),
       );
       return { statusCode: 201, body: created };
@@ -907,21 +921,27 @@ app.post("/api/course-schedules", requireAuth, requirePermission("POST /api/cour
 }));
 
 app.patch("/api/course-schedules/:scheduleId", requireAuth, requirePermission("PATCH /api/course-schedules/:scheduleId"), asyncHandler(async (req, res) => {
+  const { assertPlanningReadable } = require("./lib/planningSchoolScope");
+  const principal = await planningHttpPrincipal(req);
+  assertPlanningReadable(principal);
   const { pedagogyAuditMetaFromRequest } = require("./lib/pedagogyManagement");
   const updated = await repository.updateCourseSchedule(
     req.params.scheduleId,
     req.body ?? {},
-    req.principal,
+    principal,
     pedagogyAuditMetaFromRequest(req),
   );
   res.json(updated);
 }));
 
 app.delete("/api/course-schedules/:scheduleId", requireAuth, requirePermission("DELETE /api/course-schedules/:scheduleId"), asyncHandler(async (req, res) => {
+  const { assertPlanningReadable } = require("./lib/planningSchoolScope");
+  const principal = await planningHttpPrincipal(req);
+  assertPlanningReadable(principal);
   const { pedagogyAuditMetaFromRequest } = require("./lib/pedagogyManagement");
   const deleted = await repository.deleteCourseSchedule(
     req.params.scheduleId,
-    req.principal,
+    principal,
     pedagogyAuditMetaFromRequest(req),
   );
   res.json(deleted);

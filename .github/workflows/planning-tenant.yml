@@ -1,0 +1,59 @@
+name: Planning tenant GP-014
+
+on:
+  pull_request:
+    branches: [develop]
+    paths:
+      - "backend/lib/planningSchoolScope.js"
+      - "backend/lib/planningSchoolScope.test.js"
+      - "backend/lib/planningTenant.guard.test.js"
+      - "backend/lib/planningTenant.http.pg.test.js"
+      - "backend/lib/planningWeekly.js"
+      - "backend/lib/pedagogyService.js"
+      - "backend/db/pedagogyPgStore.js"
+      - "backend/scripts/verify-planning-tenant.js"
+      - "backend/server.js"
+      - "package.json"
+      - ".github/workflows/planning-tenant.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  planning-tenant:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
+      NODE_ENV: test
+      JWT_SECRET: ci-test-secret-with-enough-length-for-production-checks
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.12.0"
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            backend/package-lock.json
+      - name: Install dependencies
+        run: |
+          npm ci
+          npm ci --prefix backend
+      - name: Verify Planning tenant GP-014
+        run: npm run verify:planning-tenant

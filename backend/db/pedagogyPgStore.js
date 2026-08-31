@@ -24,7 +24,8 @@ const WEEKLY_SLOT_SELECT = `
                  w.day_of_week, w.start_time, w.end_time, w.status, w.room,
                  r.id AS room_id,
                  w.created_at, w.updated_at,
-                 s.school_code, c.name AS class_name, c.class_code,
+                 s.school_code, s.login_code, c.name AS class_name, c.class_code,
+                 co.iso_code AS country_iso,
                  sub.id AS subject_id, sc.status AS school_course_status,
                  sub.name AS subject_name, t.teacher_code,
                  NULLIF(TRIM(CONCAT(COALESCE(u.first_name, ''), ' ', COALESCE(u.last_name, ''))), '') AS teacher_name,
@@ -32,6 +33,7 @@ const WEEKLY_SLOT_SELECT = `
                  COALESCE(r.name, w.room) AS room_name, r.room_code, r.capacity AS room_capacity, r.status AS room_status
           FROM course_schedule_weekly_slots w
           JOIN schools s ON s.id = w.school_id
+          LEFT JOIN countries co ON co.id = s.country_id
           JOIN school_courses sc ON sc.id = w.school_course_id
             AND sc.school_id = w.school_id
           JOIN classes c ON c.id = w.class_id
@@ -125,6 +127,14 @@ function createPedagogyPgStore(repo) {
       },
       async getSchoolByCode(code) {
         const row = await one("SELECT * FROM schools WHERE school_code = $1", [asTrimmed(code).toUpperCase()]);
+        if (!row) return null;
+        const profile = parsePayload(row.profile_payload);
+        return { ...row, code: row.school_code, timezone: profile.timezone };
+      },
+      async getSchoolById(id) {
+        const key = asTrimmed(id);
+        if (!key) return null;
+        const row = await one("SELECT * FROM schools WHERE id = $1::uuid", [key]);
         if (!row) return null;
         const profile = parsePayload(row.profile_payload);
         return { ...row, code: row.school_code, timezone: profile.timezone };
@@ -370,10 +380,27 @@ function createPedagogyPgStore(repo) {
       async getWeeklyScheduleById(id, principal) {
         const params = [asTrimmed(id)];
         let sql = `${WEEKLY_SLOT_SELECT} WHERE w.id::text = $1`;
-        const schoolCode = asTrimmed(principal?.schoolCode);
-        if (schoolCode && schoolCode !== "*") {
-          sql += " AND s.school_code = $2";
-          params.push(schoolCode.toUpperCase());
+        const {
+          resolvePlanningSchoolScope,
+          hasPlanningMembershipAttached,
+        } = require("../lib/planningSchoolScope");
+        const scope = resolvePlanningSchoolScope(principal);
+        if (scope.mode === "school" && scope.schoolId) {
+          sql += " AND w.school_id = $2::uuid";
+          params.push(scope.schoolId);
+        } else if (scope.mode === "country" && scope.countryCode) {
+          sql += " AND upper(btrim(co.iso_code)) = $2";
+          params.push(scope.countryCode);
+        } else if (scope.mode === "all") {
+          /* Superadmin global : pas de filtre établissement. */
+        } else if (hasPlanningMembershipAttached(principal) && scope.mode === "none") {
+          sql += " AND FALSE";
+        } else {
+          const schoolCode = asTrimmed(principal?.schoolCode);
+          if (schoolCode && schoolCode !== "*") {
+            sql += " AND s.school_code = $2";
+            params.push(schoolCode.toUpperCase());
+          }
         }
         sql += " LIMIT 1";
         const row = await one(sql, params);
@@ -428,7 +455,9 @@ function createPedagogyPgStore(repo) {
           where.push(sql.replace("?", `$${params.length}`));
         };
         if (filters.schoolId) push("w.school_id = ?", filters.schoolId);
-        if (filters.schoolCode && filters.schoolCode !== "*") {
+        if (filters.countryCode) {
+          push("upper(btrim(co.iso_code)) = ?", asTrimmed(filters.countryCode).toUpperCase());
+        } else if (!filters.schoolId && filters.schoolCode && filters.schoolCode !== "*") {
           push("s.school_code = ?", asTrimmed(filters.schoolCode).toUpperCase());
         }
         if (filters.academicYearId) push("w.academic_year_id::text = ?", filters.academicYearId);
@@ -1258,6 +1287,7 @@ function createPedagogyPgStore(repo) {
       };
     },
     getSchoolByCode: (code) => bind(repo).getSchoolByCode(code),
+    getSchoolById: (id) => bind(repo).getSchoolById(id),
     resolveTeacherIdForPrincipal: (principal, schoolId) =>
       bind(repo).resolveTeacherIdForPrincipal(principal, schoolId),
     listPlanningCourseOptions: (filters) => bind(repo).listPlanningCourseOptions(filters),
