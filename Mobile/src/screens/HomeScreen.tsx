@@ -10,6 +10,7 @@ import RoleDashboardLayout, {
   type RoleDashboardKpi,
 } from "../components/RoleDashboardLayout";
 import { useAdminData } from "../context/AdminDataContext";
+import StudentsScopeAlert from "../components/StudentsScopeAlert";
 import { getPaymentCashKpi } from "../lib/paymentCashKpi";
 import { getPaymentStats, getPresenceStats } from "../domain/metrics/schoolMetrics";
 import { canReadEntity, canReadRoute, canReadView } from "../domain/security/permissions";
@@ -30,7 +31,6 @@ import { useFloatingTabBarLayout } from "../lib/screenLayout";
 import { useResponsiveLayout } from "../hooks/useResponsiveLayout";
 import {
   resolveTeacherAssignmentsForSession,
-  scopedStudentsForSession,
   teacherScopedClassLabels,
 } from "../lib/establishment";
 import { HOME_TEST_IDS } from "../lib/loginScreenSpec";
@@ -86,6 +86,7 @@ export default function HomeScreen({ navigation }: any) {
     classesData,
     classesSnapshot,
     assignmentsSnapshot,
+    establishmentStudents,
   } = useAdminData();
   const { isTablet, horizontalPadding, contentMaxWidth } = useResponsiveLayout();
   const teacherScopeState = {
@@ -110,7 +111,7 @@ export default function HomeScreen({ navigation }: any) {
     paymentsSnapshot.status === "empty" ||
     (paymentsSnapshot.status === "offline" && paymentsSnapshot.data.length > 0);
 
-  const visibleStudents = scopedStudentsForSession(session, studentsData, teacherScopeState);
+  const visibleStudents = establishmentStudents;
   const usersValue = metricLabelFromSnapshot(usersSnapshot, (rows) => String(countActiveUserAccounts(rows)));
   const studentsValue = metricLabelFromSnapshot(studentsSnapshot, () => String(visibleStudents.length));
   const classesValue = metricLabelFromSnapshot(classesSnapshot, (rows) =>
@@ -146,7 +147,7 @@ export default function HomeScreen({ navigation }: any) {
     "0",
   );
   const announcementsValue = metricLabelFromSnapshot(announcementsSnapshot, (rows) => String(rows.length));
-  const unreadMessagesCount = getUnreadMessagesCount(session, messagesSnapshot.data, studentsData, teacherScopeState);
+  const unreadMessagesCount = getUnreadMessagesCount(session, messagesSnapshot.data, visibleStudents);
   const unreadMessagesValue = metricLabelFromSnapshot(messagesSnapshot, () => String(unreadMessagesCount));
   const unreadMessages = messagesSnapshot.status === "success" || messagesSnapshot.status === "empty" ? unreadMessagesCount : 0;
   const teachersValue = String(teachersData.length);
@@ -442,11 +443,14 @@ export default function HomeScreen({ navigation }: any) {
       paddingHorizontal={isTablet ? horizontalPadding : 12}
       contentMaxWidth={contentMaxWidth}
       headerSlot={
-        isPlatformAdmin ? (
-          <SchoolSelector />
-        ) : isParentLike ? (
-          <StudentSwitcher />
-        ) : null
+        <>
+          <StudentsScopeAlert />
+          {isPlatformAdmin ? (
+            <SchoolSelector />
+          ) : isParentLike ? (
+            <StudentSwitcher />
+          ) : null}
+        </>
       }
       identity={{
         name: identityName,
@@ -553,8 +557,7 @@ function toDateKey(value?: string | Date) {
 function getUnreadMessagesCount(
   session: any,
   messagesData: any[],
-  studentsData: any[],
-  teacherScopeState?: { teachers?: any[]; assignments?: any[]; classes?: any[] },
+  scopedStudents: any[],
 ) {
   if (
     session?.role === "super_admin" ||
@@ -572,8 +575,7 @@ function getUnreadMessagesCount(
     ).length;
   }
   if (session?.role === "teacher") {
-    const teacherStudents = scopedStudentsForSession(session, studentsData, teacherScopeState);
-    const teacherParents = teacherStudents.map((student) => student.parentPhone);
+    const teacherParents = scopedStudents.map((student) => student.parentPhone);
     return messagesData.filter(
       (message) =>
         message.status === "Nouveau" &&

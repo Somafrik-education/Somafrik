@@ -15,6 +15,8 @@ function read(rel: string): string {
 
 const establishment = read("lib/establishment.ts");
 const studentsScope = read("lib/studentsScope.ts");
+const adminData = read("context/AdminDataContext.tsx");
+const alert = read("components/StudentsScopeAlert.tsx");
 const home = read("screens/HomeScreen.tsx");
 const students = read("screens/StudentsScreen.tsx");
 const classes = read("screens/ClassesScreen.tsx");
@@ -29,20 +31,38 @@ assert.match(studentsScope, /schoolId membership uniquement/);
 assert.match(establishment, /projectScopedStudentsForSession/);
 assert.doesNotMatch(establishment, /normalize\(student\.schoolCode\) === normalize\(schoolCode\)/);
 
-assert.match(home, /scopedStudentsForSession/);
+assert.match(adminData, /projectScopedStudentsForSession/);
+assert.match(adminData, /studentsProjection/);
+assert.match(adminData, /studentsScopeError/);
+assert.match(adminData, /establishmentStudents/);
+assert.match(alert, /studentsScopeError/);
+assert.match(alert, /students-scope-error/);
+
+for (const [name, src] of [
+  ["HomeScreen", home],
+  ["StudentsScreen", students],
+  ["ClassesScreen", classes],
+  ["TeacherAttendanceScreen", attendance],
+  ["MessagesScreen", messages],
+  ["MenuScreen", menu],
+] as const) {
+  assert.match(src, /StudentsScopeAlert/, `${name} doit exposer studentsScopeError via StudentsScopeAlert`);
+  assert.doesNotMatch(src, /projectScopedStudentsForSession/, `${name} ne recalcule pas la projection`);
+  assert.doesNotMatch(src, /scopedStudentsForSession/, `${name} consomme establishmentStudents du context`);
+}
+
+assert.match(home, /establishmentStudents/);
 assert.match(home, /visibleStudents/);
 assert.doesNotMatch(home, /metricLabelFromSnapshot\(studentsSnapshot, \(rows\) => String\(rows\.length\)\)/);
 
-assert.match(students, /scopedStudentsForSession/);
-assert.match(students, /projectScopedStudentsForSession/);
-
-assert.match(classes, /scopedStudentsForSession/);
-assert.match(attendance, /scopedStudentsForSession/);
-assert.match(messages, /scopedStudentsForSession/);
-assert.match(menu, /scopedStudentsForSession/);
+assert.match(students, /establishmentStudents/);
+assert.match(classes, /establishmentStudents/);
+assert.match(attendance, /establishmentStudents/);
+assert.match(messages, /establishmentStudents/);
+assert.match(menu, /establishmentStudents/);
 
 assert.match(l1Projection, /schoolId: partition.schoolId/);
 
 assert.match(mvp, /studentsData\.length/, "MvpUtilityScreens : compte brut documenté, hors SCHOOL_ADMIN Élèves");
 
-console.log("OK: audit consommateurs — Accueil/Élèves/Classes/Appel/Messages observent la projection schoolId");
+console.log("OK: audit consommateurs — projection canonique AdminDataContext + fail-closed visible");

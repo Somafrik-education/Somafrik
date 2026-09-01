@@ -11,10 +11,10 @@ import { useFocusEffect } from "@react-navigation/native";
 import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "../context/AuthContext";
 import { useAdminData } from "../context/AdminDataContext";
+import StudentsScopeAlert from "../components/StudentsScopeAlert";
 import { canReadRoute } from "../domain/security/permissions";
 import {
   scopedClassesForSession,
-  scopedStudentsForSession,
 } from "../lib/establishment";
 import { filterStudentsByClassIdentity } from "../lib/attendanceClassIdentity";
 import {
@@ -55,7 +55,7 @@ export default function ClassesScreen({ navigation }: any) {
     },
   ];
   const { session, permissionsBootstrap } = useAuth();
-  const { classesData, studentsData, teachersData, assignmentsData, schoolsData, presencesSnapshot, loadClasses, loadStudents, loadPresences, loadTeachers, loadAssignments, classesSnapshot, studentsSnapshot, assignmentsSnapshot, resourceScopeKey } = useAdminData();
+  const { classesData, studentsData, teachersData, assignmentsData, schoolsData, presencesSnapshot, loadClasses, loadStudents, loadPresences, loadTeachers, loadAssignments, classesSnapshot, studentsSnapshot, assignmentsSnapshot, resourceScopeKey, establishmentStudents } = useAdminData();
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [offlineActionMessage, setOfflineActionMessage] = useState<string | null>(null);
@@ -71,7 +71,7 @@ export default function ClassesScreen({ navigation }: any) {
     classes: classesData,
     assignmentsSource: assignmentsSnapshot.source,
   };
-  const visibleStudents = scopedStudentsForSession(session, studentsData, teacherScopeState);
+  const visibleStudents = establishmentStudents;
   const visibleClasses = scopedClassesForSession(session, classesData, studentsData, teacherScopeState);
   const totalStudents = visibleStudents.length;
   const canOpenStudents = canReadRoute(session, session?.role === "teacher" ? "TeacherStudents" : "Students");
@@ -164,6 +164,8 @@ export default function ClassesScreen({ navigation }: any) {
           <Text style={styles.offlineActionText}>{offlineActionMessage}</Text>
         </View>
       ) : null}
+
+      <StudentsScopeAlert />
 
       <TouchableOpacity
         activeOpacity={0.85}

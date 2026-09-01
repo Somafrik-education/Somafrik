@@ -68,6 +68,16 @@ function homeStudentsKpi(session: ReturnType<typeof schoolAdmin>, rows: Student[
   return metricLabelFromSnapshot(snapshot(rows), () => String(visible.length));
 }
 
+/** Contrat Accueil : le KPI filtré n'est jamais silencieux — studentsScopeError vient de la même projection. */
+function homeSurface(session: ReturnType<typeof schoolAdmin>, rows: Student[]) {
+  const projection = projectScopedStudentsForSession(session, rows);
+  return {
+    kpi: homeStudentsKpi(session, rows),
+    scopeError: projection.error?.message ?? null,
+    errorCode: projection.error?.code ?? null,
+  };
+}
+
 function studentsScreenCounts(session: ReturnType<typeof schoolAdmin>, rows: Student[]) {
   const visible = scopedStudentsForSession(session, rows);
   const projection = projectScopedStudentsForSession(session, rows);
@@ -105,7 +115,10 @@ const thirteen = Array.from({ length: 13 }, (_, index) => student(index));
   assert.equal(projection.kept, 12);
   assert.equal(projection.error?.code, "SCOPE_LEAK");
   assert.equal(projection.students.some((row) => row.schoolId === SCHOOL_ID_B), false);
-  assert.equal(homeStudentsKpi(schoolAdmin(), mixed), "12");
+  const home = homeSurface(schoolAdmin(), mixed);
+  assert.equal(home.kpi, "12");
+  assert.equal(home.errorCode, "SCOPE_LEAK");
+  assert.match(home.scopeError ?? "", /autre établissement/);
 }
 
 {
@@ -114,6 +127,10 @@ const thirteen = Array.from({ length: 13 }, (_, index) => student(index));
   assert.equal(projection.students.length, 0);
   assert.equal(projection.error?.code, "MISSING_CANONICAL_IDENTITY");
   assert.match(projection.error?.message ?? "", /schoolId/i);
+  const home = homeSurface(session, thirteen);
+  assert.equal(home.kpi, "0");
+  assert.equal(home.errorCode, "MISSING_CANONICAL_IDENTITY");
+  assert.ok(home.scopeError);
 }
 
 {
@@ -122,7 +139,10 @@ const thirteen = Array.from({ length: 13 }, (_, index) => student(index));
   assert.equal(projection.received, 13);
   assert.equal(projection.kept, 12);
   assert.equal(projection.error?.code, "INCOMPLETE_ROW_IDENTITY");
-  assert.equal(homeStudentsKpi(schoolAdmin(), mixed), "12");
+  const home = homeSurface(schoolAdmin(), mixed);
+  assert.equal(home.kpi, "12");
+  assert.equal(home.errorCode, "INCOMPLETE_ROW_IDENTITY");
+  assert.ok(home.scopeError);
 }
 
 {
@@ -218,13 +238,16 @@ const thirteen = Array.from({ length: 13 }, (_, index) => student(index));
     path.join(path.dirname(fileURLToPath(import.meta.url)), "../screens/StudentsScreen.tsx"),
     "utf8",
   );
-  assert.match(homeSrc, /scopedStudentsForSession/);
+  assert.match(homeSrc, /StudentsScopeAlert/);
+  assert.match(homeSrc, /establishmentStudents/);
+  assert.doesNotMatch(homeSrc, /scopedStudentsForSession/);
   assert.doesNotMatch(
     homeSrc,
     /metricLabelFromSnapshot\(studentsSnapshot, \(rows\) => String\(rows\.length\)\)/,
   );
-  assert.match(studentsSrc, /projectScopedStudentsForSession/);
-  assert.match(studentsSrc, /students-scope-error/);
+  assert.match(studentsSrc, /StudentsScopeAlert/);
+  assert.match(studentsSrc, /establishmentStudents/);
+  assert.doesNotMatch(studentsSrc, /projectScopedStudentsForSession/);
 }
 
 console.log("OK: studentsScope leftover vs schoolId — Accueil/Élèves/L1/teacher/parent");

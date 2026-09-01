@@ -32,10 +32,8 @@ import {
 
   filterStudentsByClassName,
 
-  scopedStudentsForSession,
-
 } from "../lib/establishment";
-import { projectScopedStudentsForSession } from "../lib/studentsScope";
+import StudentsScopeAlert from "../components/StudentsScopeAlert";
 
 import { useFloatingTabBarLayout } from "../lib/screenLayout";
 
@@ -61,11 +59,11 @@ import { MIN_TOUCH_TARGET_DP } from "../lib/mobileUsability";
 import StudentMutationControls from "../components/StudentMutationControls";
 import FormField from "../components/FormField";
 
-import type { PresenceItem } from "../data/catalog";
+import type { PresenceItem, Student } from "../data/catalog";
 
 
 
-type StudentRow = ReturnType<typeof scopedStudentsForSession>[number];
+type StudentRow = Student;
 
 
 
@@ -87,7 +85,7 @@ export default function StudentsScreen({ route, navigation }: any) {
 
   const { session, permissionsBootstrap } = useAuth();
 
-  const { studentsData, presencesData, teachersData, assignmentsData, classesData, loadStudents, loadPresences, loadPayments, loadStudentFees, loadTeachers, loadClasses, loadAssignments, studentsSnapshot, assignmentsSnapshot, presencesSnapshot, studentFeesSnapshot, resourceScopeKey } = useAdminData();
+  const { presencesData, classesData, loadStudents, loadPresences, loadPayments, loadStudentFees, loadTeachers, loadClasses, loadAssignments, studentsSnapshot, presencesSnapshot, studentFeesSnapshot, resourceScopeKey, establishmentStudents, studentsProjection } = useAdminData();
 
   const className = route?.params?.className ?? "Toutes les classes";
 
@@ -109,15 +107,7 @@ export default function StudentsScreen({ route, navigation }: any) {
     }, [loadStudents, loadPresences, loadPayments, loadStudentFees, loadTeachers, loadClasses, loadAssignments, resourceScopeKey]),
   );
 
-  const teacherScopeState = {
-    teachers: teachersData,
-    assignments: assignmentsData,
-    classes: classesData,
-    assignmentsSource: assignmentsSnapshot.source,
-  };
-
-  const studentsProjection = projectScopedStudentsForSession(session, studentsData);
-  const availableStudents = scopedStudentsForSession(session, studentsData, teacherScopeState);
+  const availableStudents = establishmentStudents;
 
 
 
@@ -475,11 +465,7 @@ export default function StudentsScreen({ route, navigation }: any) {
 
           {renderStudentCreate()}
 
-        {studentsProjection.error ? (
-          <Text style={{ color: "#B91C1C", fontWeight: "700", marginBottom: 12 }} testID="students-scope-error">
-            {studentsProjection.error.message}
-          </Text>
-        ) : null}
+        <StudentsScopeAlert />
 
         {mutationsBlocked ? (
           <Text style={{ color: "#B91C1C", fontWeight: "700", marginBottom: 12 }} testID="l1-offline-banner">

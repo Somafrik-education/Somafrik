@@ -129,8 +129,12 @@ function main() {
   assert.match(home, /announcementsSnapshot/);
   assert.match(home, /messagesSnapshot/);
   assert.match(home, /metricLabelFromSnapshot/);
-  assert.match(home, /scopedStudentsForSession/);
+  assert.match(home, /establishmentStudents/);
+  assert.match(home, /StudentsScopeAlert/);
   assert.match(home, /visibleStudents/);
+  assert.match(context, /studentsScopeError/);
+  assert.match(context, /studentsProjection/);
+  assert.match(context, /establishmentStudents/);
   assert.doesNotMatch(
     home,
     /metricLabelFromSnapshot\(studentsSnapshot, \(rows\) => String\(rows\.length\)\)/,
