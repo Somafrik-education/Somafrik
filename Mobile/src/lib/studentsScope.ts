@@ -218,7 +218,9 @@ export function logStudentScopeTrace(trace: StudentScopeTrace): void {
 }
 
 /** Préserve schoolId / schoolPublicCode renvoyés par GET /students. */
-export function attachStudentTenantIdentity<T extends Record<string, unknown>>(row: T): T {
+export function attachStudentTenantIdentity<T extends Record<string, unknown>>(
+  row: T,
+): T & { schoolId?: string; schoolPublicCode?: string } {
   const schoolId = String(row.schoolId ?? row.school_id ?? "").trim();
   const schoolPublicCode = String(row.schoolPublicCode ?? row.school_public_code ?? "").trim();
   return {
