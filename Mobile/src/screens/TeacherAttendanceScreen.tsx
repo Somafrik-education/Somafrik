@@ -5,12 +5,12 @@ import { useFocusEffect } from "@react-navigation/native";
 import ChoiceChips from "../components/ChoiceChips";
 import { useAuth } from "../context/AuthContext";
 import { useAdminData } from "../context/AdminDataContext";
+import StudentsScopeAlert from "../components/StudentsScopeAlert";
 import { canManagePresences, canReadRoute } from "../domain/security/permissions";
 import {
   classNameMatches,
   resolveStudentApiId,
   resolveTeacherAssignmentsForSession,
-  scopedStudentsForSession,
 } from "../lib/establishment";
 import {
   ATTENDANCE_AUTHOR_COPY,
@@ -111,6 +111,7 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
     presencesSnapshot,
     assignmentsSnapshot,
     resourceScopeKey,
+    establishmentStudents,
   } = useAdminData();
   const saveLockRef = useRef(createInFlightLock());
   const intentionRef = useRef(createIntentionStore());
@@ -126,10 +127,7 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
     }),
     [teachersData, assignmentsData, classesData, assignmentsSnapshot.source],
   );
-  const classStudents = useMemo(
-    () => scopedStudentsForSession(session, studentsData, scopeState),
-    [session, studentsData, scopeState],
-  );
+  const classStudents = establishmentStudents;
   const assignedClasses = useMemo(
     () => listScopedAttendanceClasses(studentsData, classesData, session, scopeState),
     [studentsData, classesData, session, scopeState],
@@ -570,6 +568,7 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
   if (!selectedClass) {
     return (
       <ScrollView style={styles.container} contentContainerStyle={contentStyle}>
+        <StudentsScopeAlert />
         <Text style={styles.title}>Présences</Text>
         <Text style={styles.subtitle}>Sélectionnez une classe • {todayLabel} à {currentHour}</Text>
         <Text style={styles.sectionTitle}>Mes classes</Text>
@@ -630,6 +629,7 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
       keyboardShouldPersistTaps="handled"
       ListHeaderComponent={
         <>
+          <StudentsScopeAlert />
           <Text style={styles.title}>Présences</Text>
           <Text style={styles.subtitle}>Appel de {selectedClass.className} • {todayLabel} à {currentHour}</Text>
           <TouchableOpacity

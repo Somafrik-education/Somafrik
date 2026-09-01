@@ -31,6 +31,7 @@
     "verify:mobile-form-fields": "node scripts/verify-mobile-form-fields.js",
     "test:scope": "npx --yes tsx src/lib/scope.test.ts",
     "test:teacher-class-scope": "npx --yes tsx src/lib/establishment.teacherScope.test.ts",
+    "test:students-scope": "npx --yes tsx src/lib/studentsScope.test.ts && npx --yes tsx src/lib/establishmentStudents.audit.test.ts",
     "verify:mobile-security": "node scripts/verify-mobile-security.js",
     "verify:mobile-rbac-live": "node scripts/verify-mobile-rbac-live.js",
     "verify:mobile-no-false-writes": "node scripts/verify-mobile-no-false-writes.js",

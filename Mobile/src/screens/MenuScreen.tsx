@@ -5,6 +5,7 @@ import { useAuth } from "../context/AuthContext";
 import StudentSwitcher from "../components/StudentSwitcher";
 import SchoolSelector from "../components/SchoolSelector";
 import { AdminEntity, useAdminData } from "../context/AdminDataContext";
+import StudentsScopeAlert from "../components/StudentsScopeAlert";
 import { canReadEntity, canReadRoute, canReadView, isSuperAdminSessionRole } from "../domain/security/permissions";
 import { useFloatingTabBarLayout } from "../lib/screenLayout";
 import { useResponsiveLayout } from "../hooks/useResponsiveLayout";
@@ -14,7 +15,6 @@ import { sendControlledPushTest } from "../services/pushNotifications";
 import { ENTITY_VIEW_MAP } from "../lib/constants";
 import {
   resolveTeacherAssignmentsForSession,
-  scopedStudentsForSession,
   teacherScopedClassLabels,
 } from "../lib/establishment";
 
@@ -114,7 +114,7 @@ function filterMenuItemsByPermission(session: any, items: MenuItem[]) {
 export default function MenuScreen() {
   const navigation = useNavigation<any>();
   const { session, logout } = useAuth();
-  const { studentsData, teachersData, assignmentsData, classesData, assignmentsSnapshot } = useAdminData();
+  const { teachersData, assignmentsData, classesData, assignmentsSnapshot, establishmentStudents } = useAdminData();
   const teacherScopeState = {
     teachers: teachersData,
     assignments: assignmentsData,
@@ -156,6 +156,7 @@ export default function MenuScreen() {
       <Text style={styles.title} testID="menu-title-legacy">
         Menu
       </Text>
+      <StudentsScopeAlert />
       <Text style={styles.userName}>{session?.user.name ?? "Utilisateur"}</Text>
 
       {isPlatformAdmin && <SchoolSelector />}
@@ -182,7 +183,7 @@ export default function MenuScreen() {
           {" • "}
           {teacherScopedClassLabels(
             session,
-            scopedStudentsForSession(session, studentsData, teacherScopeState),
+            establishmentStudents,
             teacherScopeState,
           ).join(", ") || "Classes non renseignées"}
         </Text>

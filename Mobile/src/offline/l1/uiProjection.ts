@@ -90,6 +90,7 @@ export function projectL1Student(
     classCode: cell(row, "class_code") || undefined,
     className: joinedClassName(row, lookup),
     academicYearId: cell(row, "academic_year_id") || undefined,
+    schoolId: partition.schoolId,
     schoolCode: partition.schoolCode,
     parentName: "",
     parentPhone: "",

@@ -351,18 +351,19 @@ function run() {
 
   const schoolA = "CD-NURU-001";
   const schoolB = "CD-OTHER-002";
+  const schoolIdA = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
   const homonymCatalog: SchoolClass[] = [
     { id: "cls-nuru-6a", publicId: "CLS-NURU-6A", classCode: "CLS-NURU-6A", name: "6ème A", level: "6ème", track: "A", teacherId: "", schoolCode: schoolA },
     { id: "cls-other-6a", publicId: "CLS-OTHER-6A", classCode: "CLS-OTHER-6A", name: "6ème A", level: "6ème", track: "A", teacherId: "", schoolCode: schoolB },
     { id: "cls-legacy-6a", publicId: "CLS-LEGACY-6A", classCode: "CLS-LEGACY-6A", name: "6ème A", level: "6ème", track: "A", teacherId: "" },
   ];
   const localSixieme = [
-    student({ id: "stu-nuru-1", className: "6ème A", classId: "cls-nuru-6a", classCode: "CLS-NURU-6A", schoolCode: schoolA }),
+    student({ id: "stu-nuru-1", className: "6ème A", classId: "cls-nuru-6a", classCode: "CLS-NURU-6A", schoolCode: schoolA, schoolId: schoolIdA }),
   ];
   const adminNuru = {
     role: "school_admin",
-    user: { role: "Admin School", schoolCode: schoolA },
-    school: { code: schoolA },
+    user: { role: "Admin School", schoolCode: schoolA, schoolId: schoolIdA },
+    school: { id: schoolIdA, code: schoolA },
   };
   const teacherNuru = {
     role: "teacher",

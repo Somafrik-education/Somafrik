@@ -2,6 +2,7 @@ import { normalize } from "./format";
 import { isTeacherUserRole } from "./userTeacherSync";
 import { sessionRoleToPlatformRole } from "./orgHierarchy";
 import type { Student, Teacher, TeacherAssignment, SchoolClass } from "../data/catalog";
+import { projectScopedStudentsForSession } from "./studentsScope";
 
 type Row = Record<string, unknown>;
 
@@ -269,15 +270,11 @@ export function teacherScopedClassLabels(
 }
 
 export function scopedStudentsForSession(
-  session: { role?: string; user?: Row; school?: { code?: string } } | null,
+  session: { role?: string; user?: Row; school?: { id?: string; code?: string } } | null,
   students: Student[],
   state: TeacherScopeState = {},
 ): Student[] {
-  const schoolCode = String(session?.user?.schoolCode ?? session?.school?.code ?? "").trim();
-  let rows = students;
-  if (schoolCode && schoolCode !== "*") {
-    rows = rows.filter((student) => normalize(student.schoolCode) === normalize(schoolCode));
-  }
+  let rows = projectScopedStudentsForSession(session, students).students;
 
   const teacherClasses = teacherScopedClassNames(session, state);
   if (teacherClasses) {
