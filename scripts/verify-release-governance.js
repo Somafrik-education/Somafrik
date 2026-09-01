@@ -5,16 +5,14 @@
  * Ne merge pas main. Ne déploie pas. N'ouvre pas develop→main.
  *
  * FREEZE STATUS = LIFTED (2026-09-01)
- * L'ancien freeze exclusif « toute PR = uniquement GOVERNANCE_ONLY_PATHS »
- * est clos. Le régime live de remplacement est le fail-closed #451 :
- * 1. PR gouvernance-only → PASS
- * 2. PR métier sans autorisation exacte → FAIL CLOSED
- * 3. PR métier PASS seulement si PR + (HEAD exact OU identité de contenu) +
- *    égalité stricte d'ensemble des fichiers + decision CTO_GO,
- *    avec autorité lue à pull_request.base.sha (jamais le HEAD candidat).
+ * CTO_GO #451 = HISTORICAL / ONE-SHOT GO-PROD (#447 mergée).
+ * LIVE_POST_FREEZE_RELEASE_POLICY : une PR normale vers develop n'est plus
+ * refusée parce qu'elle est hors GOVERNANCE_ONLY_PATHS ou sans CTO_GO.
+ * Contrôle live : origin/main, pas de develop→main, pas de deploy,
+ * historique frozen. Les PR Gates risk-based contrôlent le reste.
  *
- * Cette PR de levée exécute elle-même ce contrat (chicken-egg) : y ajouter
- * un fichier métier (ex. Mobile/app.json) → FAIL CLOSED avant merge.
+ * Ce workflow est RELEASE-SENSITIVE (paths:). Il ne s'exécute pas sur
+ * toutes les PR du dépôt.
  */
 
 const assert = require("node:assert/strict");
@@ -27,6 +25,11 @@ const ROOT = path.resolve(__dirname, "..");
 
 /** CLOS — freeze temporaire GO-PROD. Ne pas remettre à ACTIVE sans revalidation CTO. */
 const FREEZE_STATUS = "LIFTED";
+/** #451 manifeste CTO_GO : HISTORICAL / ONE-SHOT GO-PROD. Ne plus exiger en live. */
+const HISTORICAL_CTO_GO = "HISTORICAL";
+const CTO_GO_STATUS = HISTORICAL_CTO_GO;
+/** Politique live post-freeze : PR normales develop sans CTO_GO. */
+const LIVE_POST_FREEZE_RELEASE_POLICY = true;
 /** Ancien baseline freeze (historique). Conservé pour preuves unitaires et docs. */
 const HISTORICAL_FREEZE_BASELINE = "78228be06286b464afd9e691fb227d16be95a63a";
 const BASELINE = HISTORICAL_FREEZE_BASELINE;
@@ -147,20 +150,19 @@ function assertNoProductionDeployInReleaseWorkflow(workflowText) {
 }
 
 /**
- * Live = fail-closed #451 (gouvernance-only OU candidat CTO_GO).
- * FREEZE_STATUS LIFTED ne saute PAS ce contrat : l'exclusivité « 3 fichiers
- * seulement » est close, le manifeste reste obligatoire pour tout diff métier.
- * Chicken-egg : CI exécute ce script depuis le HEAD candidat ; un fichier
- * métier ajouté à cette PR de levée → FAIL CLOSED.
+ * LIVE_POST_FREEZE_RELEASE_POLICY : ne pas refuser une PR develop uniquement
+ * parce qu'elle est hors GOVERNANCE_ONLY_PATHS ou sans CTO_GO.
+ * assertCurrentPrAllowed reste la preuve HISTORICAL_CTO_GO (#451 / #447).
  */
 function applyLivePrPathPolicy(prNumber, baseSha, headSha, changedFiles, bootstrapOverrides) {
+  if (LIVE_POST_FREEZE_RELEASE_POLICY && FREEZE_STATUS === "LIFTED" && CTO_GO_STATUS === "HISTORICAL") {
+    return "post-freeze";
+  }
   return assertCurrentPrAllowed(prNumber, baseSha, headSha, changedFiles, bootstrapOverrides);
 }
 
 function applyLiveDevelopDriftPolicy(originDevelop, baseline, changedFiles, bootstrapCtx) {
   if (FREEZE_STATUS === "LIFTED") {
-    // Contrôle A exclusif clos : après merge d'un candidat CTO_GO (#447),
-    // origin/develop contient des fichiers métier. Le fail-closed live reste B.
     return;
   }
   assertDevelopFrozen(originDevelop, baseline, changedFiles, bootstrapCtx);
@@ -642,29 +644,27 @@ function runNegativeUnitTests() {
   console.log("PASS RG-NEG-workflow-arbitrary-change-forbidden");
 
   assert.equal(FREEZE_STATUS, "LIFTED", "FREEZE STATUS must be LIFTED");
+  assert.equal(CTO_GO_STATUS, "HISTORICAL", "CTO_GO #451 must be HISTORICAL");
+  assert.equal(LIVE_POST_FREEZE_RELEASE_POLICY, true);
   assert.equal(
-    applyLivePrPathPolicy(null, BASELINE, BASELINE, governanceOnly),
-    "governance-only",
-    "RG-POSTFREEZE-POS-governance-only-still-live",
+    applyLivePrPathPolicy(null, BASELINE, BASELINE, ["web/src/example.tsx"]),
+    "post-freeze",
+    "RG-POSTFREEZE-POS-normal-web-pr",
   );
-  assert.throws(
-    () => applyLivePrPathPolicy(null, BASELINE, BASELINE, ["web/src/example.tsx"]),
-    /RG-NEG-unapproved-business-pr/,
-    "RG-POSTFREEZE-NEG-unapproved-business-still-fail-closed",
+  console.log("PASS RG-POSTFREEZE-POS-normal-web-pr");
+
+  assert.equal(
+    applyLivePrPathPolicy(null, BASELINE, BASELINE, ["SECURITY.md", "docs/project/SECURITY.md"]),
+    "post-freeze",
+    "RG-POSTFREEZE-POS-security-pr",
   );
-  console.log("PASS RG-POSTFREEZE-POS-business-pr-allowed-via-cto-go-only");
+  console.log("PASS RG-POSTFREEZE-POS-security-pr");
 
   assert.throws(
-    () => applyLivePrPathPolicy(null, BASELINE, BASELINE, ["SECURITY.md", "docs/project/SECURITY.md"]),
+    () => assertCurrentPrAllowed(null, BASELINE, BASELINE, ["web/src/example.tsx"]),
     /RG-NEG-unapproved-business-pr/,
-    "RG-POSTFREEZE-NEG-security-without-cto-go",
+    "RG-HISTORICAL-CTO-GO still fail-closed if invoked",
   );
-  assert.throws(
-    () => applyLivePrPathPolicy(null, BASELINE, BASELINE, [...governanceOnly, "Mobile/app.json"]),
-    /RG-NEG-unapproved-business-pr/,
-    "RG-POSTFREEZE-NEG-transition-pr-stays-governance-only",
-  );
-  console.log("PASS RG-POSTFREEZE-POS-security-pr-allowed-only-with-cto-go");
   applyLiveDevelopDriftPolicy(moved, BASELINE, governanceOnly);
   applyLiveDevelopDriftPolicy(moved, BASELINE, ["web/src/example.tsx"]);
   assert.throws(
@@ -700,6 +700,7 @@ function runApprovedCandidateTests() {
   assert.equal(approved447.diffSha256, APPROVED_447_HASH);
   assert.equal(approved447.decision, "CTO_GO");
   assert.deepEqual(approved447.files, APPROVED_447_FILES);
+  console.log("PASS RG-HISTORICAL-CTO-GO-447");
 
   assert.equal(
     assertApprovedBusinessPr({
@@ -878,10 +879,13 @@ function main() {
 
   const sha = gitSha();
   console.log(
-    `Release governance SHA=${sha} freeze=${FREEZE_STATUS} ` +
-      `historicalBaseline=${BASELINE} postFreezeAnchor=${POST_FREEZE_ANCHOR}`,
+    `Release governance SHA=${sha} freeze=${FREEZE_STATUS} ctoGo=${CTO_GO_STATUS} ` +
+      `livePolicy=${LIVE_POST_FREEZE_RELEASE_POLICY} historicalBaseline=${BASELINE} ` +
+      `postFreezeAnchor=${POST_FREEZE_ANCHOR}`,
   );
   assert.equal(FREEZE_STATUS, "LIFTED");
+  assert.equal(CTO_GO_STATUS, "HISTORICAL");
+  assert.equal(LIVE_POST_FREEZE_RELEASE_POLICY, true);
   assertBaseline(sha);
   assertPostFreezeAnchor(sha);
   runNegativeUnitTests();
@@ -913,12 +917,17 @@ function main() {
   assert.match(audit, /FREEZE STATUS = LIFTED/);
   assert.match(audit, new RegExp(POST_FREEZE_ANCHOR));
   assert.match(audit, /PR Gates/);
+  assert.match(audit, /HISTORICAL \/ ONE-SHOT/);
+  assert.match(audit, /LIVE_POST_FREEZE_RELEASE_POLICY/);
+  assert.match(audit, /RELEASE-SENSITIVE/);
+  assert.match(audit, /ne contrôle pas toutes les PR/);
   assert.match(checklist, /USER GO/);
   assert.match(checklist, /Aucun acte ci-dessous n’est exécuté/);
   assert.match(checklist, /eas submit/);
   assert.match(checklist, /candidat métier autorisé/);
   assert.match(checklist, /FREEZE STATUS = LIFTED/);
-  console.log("PASS RG-DOCS HOLD + checklist USER GO + freeze LIFTED");
+  assert.match(checklist, /HISTORICAL \/ ONE-SHOT/);
+  console.log("PASS RG-DOCS HOLD + checklist USER GO + freeze LIFTED + CTO_GO historical");
 
   const subjects = sh("git log --pretty=%s HEAD");
   for (const n of FROZEN) {
@@ -934,6 +943,7 @@ function main() {
     }
   }
   console.log("PASS RG-FROZEN ancestry + sujets merge/squash (#295…#355)");
+  console.log("PASS RG-NEG-frozen-history");
 
   const originMain = refSha("origin/main");
   const originDevelop = refSha("origin/develop");
@@ -954,8 +964,9 @@ function main() {
     prNumber: null,
   });
   console.log(
-    `PASS RG-POSTFREEZE-DEVELOP freeze=${FREEZE_STATUS} origin/develop=${originDevelop} ` +
-      `files=${developChanged.join(",") || "(none)"} (contrôle A exclusif non appliqué ; B #451 live)`,
+    `PASS RG-POSTFREEZE-DEVELOP freeze=${FREEZE_STATUS} ctoGo=${CTO_GO_STATUS} ` +
+      `origin/develop=${originDevelop} files=${developChanged.join(",") || "(none)"} ` +
+      `(contrôle A exclusif non appliqué ; CTO_GO non exigé en live)`,
   );
 
   const prRange = resolvePrRange(originDevelop);
@@ -965,22 +976,10 @@ function main() {
   );
   const prChanged = listChangedFilesThreeDot(prRange.base, prRange.head);
   const prMode = applyLivePrPathPolicy(prRange.number, prRange.base, prRange.head, prChanged);
-  if (prMode === "governance-only") {
-    console.log(
-      `PASS RG-PR-GOVERNANCE-ONLY source=${prRange.source} ${prRange.base}...${prRange.head} ` +
-        `files=${prChanged.join(",") || "(none)"}`,
-    );
-  } else if (prMode === "governance-bootstrap-451") {
-    console.log(
-      `PASS RG-POS-workflow-bootstrap-451 source=${prRange.source} pr=#${prRange.number} ` +
-        `${prRange.base}...${prRange.head} files=${prChanged.join(",") || "(none)"}`,
-    );
-  } else {
-    console.log(
-      `PASS RG-POS-approved-current-pr source=${prRange.source} pr=#${prRange.number} ` +
-        `${prRange.base}...${prRange.head} files=${prChanged.join(",") || "(none)"}`,
-    );
-  }
+  console.log(
+    `PASS RG-PR-POSTFREEZE source=${prRange.source} mode=${prMode} ` +
+      `${prRange.base}...${prRange.head} files=${prChanged.join(",") || "(none)"}`,
+  );
 
   const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, "package.json"), "utf8"));
   assert.equal(pkg.scripts["verify:release-governance"], "node scripts/verify-release-governance.js");
@@ -1013,7 +1012,7 @@ function main() {
   assert.match(audit, /Aucune PR `develop → main` ouverte/);
   console.log("PASS RG-NO-MAIN-PR (audit : forme proposée, PR non ouverte)");
 
-  console.log("OK verify-release-governance — freeze exclusif LIFTED ; fail-closed #451 live ; HOLD production/main");
+  console.log("OK verify-release-governance — freeze LIFTED ; CTO_GO HISTORICAL ; HOLD production/main");
 }
 
 try {
