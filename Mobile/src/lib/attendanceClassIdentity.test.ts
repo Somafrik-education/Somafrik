@@ -135,6 +135,53 @@ function run() {
     [],
     "enseignant sans affectation : fail-closed, le catalogue ne s'ouvre pas",
   );
+
+  const nuru = "CD-NURU-001";
+  const otherSchool = "CD-OTHER-002";
+  const homonymCatalog: SchoolClass[] = [
+    { id: "cls-nuru-6a", publicId: "CLS-NURU-6A", classCode: "CLS-NURU-6A", name: "6ème A", level: "6ème", track: "A", teacherId: "", schoolCode: nuru },
+    { id: "cls-other-6a", publicId: "CLS-OTHER-6A", classCode: "CLS-OTHER-6A", name: "6ème A", level: "6ème", track: "A", teacherId: "", schoolCode: otherSchool },
+  ];
+  const nuruStudent = [student({ id: "s-nuru", className: "6ème A", classId: "cls-nuru-6a", classCode: "CLS-NURU-6A", schoolCode: nuru })];
+  const adminNuruSession = {
+    role: "school_admin" as const,
+    user: { role: "Admin School", schoolCode: nuru },
+    school: { code: nuru },
+  };
+  const teacherNuruSession = {
+    role: "teacher" as const,
+    user: { id: "user-nuru", role: "Enseignant", teacherCode: "ENS-NURU", schoolCode: nuru },
+    school: { code: nuru },
+  };
+  const teacherNuruState = {
+    classes: homonymCatalog,
+    assignments: [
+      {
+        id: "asg-nuru-6a",
+        teacherId: "ENS-NURU",
+        teacherCode: "ENS-NURU",
+        classId: "cls-nuru-6a",
+        classCode: "CLS-NURU-6A",
+        className: "6ème A",
+        course: "Mathématiques",
+        status: "active" as const,
+      },
+    ],
+  };
+  assert.deepEqual(
+    listScopedAttendanceClasses(nuruStudent, homonymCatalog, adminNuruSession, { classes: homonymCatalog }).map(
+      (row) => row.classId,
+    ),
+    ["cls-nuru-6a"],
+    "school_admin : homonyme 6ème A d'un autre établissement exclu",
+  );
+  assert.deepEqual(
+    listScopedAttendanceClasses(nuruStudent, homonymCatalog, teacherNuruSession, teacherNuruState).map(
+      (row) => row.classId,
+    ),
+    ["cls-nuru-6a"],
+    "teacher : homonyme 6ème A d'un autre établissement exclu",
+  );
   assert.deepEqual(
     filterStudentsByClassIdentity([a, b], listed[0], classes).map((row) => row.id),
     listed[0].classId === "uuid-a" ? ["s1"] : ["s2"],
