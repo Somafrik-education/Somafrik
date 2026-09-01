@@ -45,16 +45,137 @@ const API_READS = [
 ];
 
 const BROWSER_PAGES = [
-  { id: "WS-UI-dashboard", path: "/tableau-de-bord", expect: /tableau|pilotage|établissement|dashboard/i },
-  { id: "WS-UI-classes", path: "/etablissement/classes", expect: /classes/i },
-  { id: "WS-UI-students", path: "/etablissement/eleves", expect: /élèves|eleves/i },
-  { id: "WS-UI-presences", path: "/presences", expect: /présence|appel|classe/i },
-  { id: "WS-UI-notes", path: "/notes", expect: /note|évaluation/i },
-  { id: "WS-UI-planning", path: "/planning/emploi-du-temps/calendrier", expect: /planning|emploi|calendrier|cours/i },
-  { id: "WS-UI-finance", path: "/finances/paiements", expect: /paiement|finance/i },
-  { id: "WS-UI-users", path: "/etablissement/comptes-utilisateurs", expect: /utilisateur|compte/i },
-  { id: "WS-UI-settings", path: "/parametres", expect: /paramètre|profil|année|réglage/i },
+  {
+    id: "WS-UI-dashboard",
+    path: "/tableau-de-bord",
+    allowPaths: ["/tableau-de-bord"],
+    outlet: [
+      { anyOf: [
+        { text: "Aucun graphique disponible pour votre rôle dans ce périmètre." },
+        { text: "Glissez les poignées pour réorganiser les graphiques" },
+        { selector: ".recharts-wrapper" },
+      ] },
+    ],
+  },
+  {
+    id: "WS-UI-classes",
+    path: "/etablissement/classes",
+    allowPaths: ["/etablissement/classes"],
+    outlet: [
+      { heading: "Classes" },
+      { text: "persistance PostgreSQL" },
+      { selector: '[aria-label="Rechercher dans classes"]' },
+    ],
+  },
+  {
+    id: "WS-UI-students",
+    path: "/etablissement/eleves",
+    allowPaths: ["/etablissement/eleves"],
+    outlet: [
+      { heading: "Élèves" },
+      { text: "Inscrire un élève" },
+      { selector: '[aria-label="Rechercher dans élèves"]' },
+    ],
+  },
+  {
+    id: "WS-UI-presences",
+    path: "/presences",
+    allowPaths: ["/presences"],
+    outlet: [
+      { heading: "Présences" },
+      { text: "Sélectionnez une classe pour faire l'appel" },
+    ],
+  },
+  {
+    id: "WS-UI-notes",
+    path: "/notes",
+    allowPaths: ["/notes"],
+    outlet: [
+      { heading: "Notes & évaluations" },
+      { selector: '[aria-label="Vues Notes"]' },
+    ],
+  },
+  {
+    id: "WS-UI-planning",
+    path: "/planning/emploi-du-temps/calendrier",
+    allowPaths: ["/planning/emploi-du-temps/calendrier"],
+    outlet: [
+      { testid: "planning-page" },
+      { heading: "Planning de cours" },
+    ],
+  },
+  {
+    id: "WS-UI-finance",
+    path: "/finances/paiements",
+    allowPaths: ["/finances/paiements"],
+    outlet: [
+      { heading: "Finances" },
+      { text: "Tarif → obligation élève → encaissement" },
+      { heading: "Paiements" },
+    ],
+  },
+  {
+    id: "WS-UI-users",
+    path: "/etablissement/comptes-utilisateurs",
+    allowPaths: ["/etablissement/comptes-utilisateurs"],
+    outlet: [
+      { heading: "Utilisateurs" },
+      { text: "compte(s) accessibles" },
+    ],
+  },
+  {
+    id: "WS-UI-settings",
+    path: "/parametres",
+    allowPaths: ["/parametres"],
+    outlet: [
+      { heading: "Paramètres" },
+      { text: "Configuration stable de la plateforme" },
+      { heading: "Année scolaire" },
+    ],
+  },
 ];
+
+const LOGIN_SPEC = {
+  id: "WS-UI-login",
+  path: "/etablissement/vue-ensemble",
+  allowPaths: ["/etablissement/vue-ensemble"],
+  outlet: [
+    { heading: "Utilisateurs actifs" },
+    { text: "Alertes" },
+  ],
+};
+
+function evaluateProof(snapshot, spec) {
+  if (snapshot.pathname === "/connexion") {
+    return { ok: false, reason: "silent-connexion" };
+  }
+  if (!spec.allowPaths.includes(snapshot.pathname)) {
+    return { ok: false, reason: `pathname ${snapshot.pathname}` };
+  }
+  if (snapshot.denied) return { ok: false, reason: "permissions-or-forbidden" };
+  if (snapshot.httpError) return { ok: false, reason: "401-403-5xx-text" };
+  if (!snapshot.proofHit) return { ok: false, reason: "missing-outlet-proof" };
+  return { ok: true };
+}
+
+function runNegativeProofUnit() {
+  const spec = BROWSER_PAGES.find((row) => row.id === "WS-UI-classes");
+  const chromeWithDenied = {
+    pathname: "/etablissement/classes",
+    denied: true,
+    httpError: false,
+    proofHit: false,
+  };
+  assert.equal(evaluateProof(chromeWithDenied, spec).ok, false, "chrome+permissions doit échouer");
+  const silentLogin = {
+    pathname: "/connexion",
+    denied: false,
+    httpError: false,
+    proofHit: true,
+  };
+  assert.equal(evaluateProof(silentLogin, spec).ok, false, "retour /connexion doit échouer");
+  console.log("PASS WS-UI-negative-unit chrome+permissions et silent-connexion");
+}
 
 function gitSha() {
   try {
@@ -243,11 +364,18 @@ async function waitFor(fn, label, attempts = 40, delayMs = 500) {
 
 function sourceGuards() {
   const findings = fs.readFileSync(path.join(ROOT, "docs/audits/web-smoke-goprod-2026-09-01.md"), "utf8");
+  const script = fs.readFileSync(path.join(ROOT, "scripts/verify-web-smoke.js"), "utf8");
   assert.match(findings, /Web smoke GO-PROD/);
   assert.match(findings, /58ef7b67d6c815aa85d1066b17394e68c15fd174/);
   assert.match(findings, /MANUAL BLOCKER/);
+  assert.match(findings, /outlet/);
   assert.doesNotMatch(findings, /déclencher un déploiement/i);
   assert.doesNotMatch(findings, /Play Store|merge `main`/i);
+  assert.match(script, /evaluateProof/);
+  assert.match(script, /WS-UI-negative/);
+  assert.match(script, /Permissions indisponibles/);
+  assert.doesNotMatch(script, /document\.body\.innerText/);
+  runNegativeProofUnit();
 }
 
 async function probeHosted() {
@@ -289,6 +417,27 @@ async function probeHosted() {
     }
   }
   return rows;
+}
+
+async function collectSnapshot(page, spec) {
+  return page.evaluate((route) => {
+    const pathname = window.location.pathname;
+    const main = document.querySelector("main");
+    const mainText = main ? main.innerText : "";
+    const denied = /Permissions indisponibles|Accès non autorisé|n'avez pas l'autorisation/i.test(mainText);
+    const httpError = /failed to fetch|Erreur serveur|\b401\b|\b403\b|\b50[0-9]\b/i.test(mainText);
+    const headings = [...(main?.querySelectorAll("h1,h2,h3") || [])].map((node) => (node.textContent || "").trim());
+    const ruleHits = (rule) => {
+      if (rule.heading) return headings.includes(rule.heading);
+      if (rule.testid) return Boolean(main?.querySelector(`[data-testid="${rule.testid}"]`));
+      if (rule.selector) return Boolean(main?.querySelector(rule.selector));
+      if (rule.text) return mainText.includes(rule.text);
+      if (Array.isArray(rule.anyOf)) return rule.anyOf.some((inner) => ruleHits(inner));
+      return false;
+    };
+    const proofHit = (route.outlet || []).every((rule) => ruleHits(rule));
+    return { pathname, denied, httpError, proofHit, mainText: mainText.slice(0, 400) };
+  }, spec);
 }
 
 async function browserSmoke(tokenIgnored) {
@@ -347,32 +496,52 @@ async function browserSmoke(tokenIgnored) {
         url = page.url();
       }
     }
-    const loginOk = /tableau-de-bord|etablissement|planning|notes|presences/.test(url);
-    const bodyText = await page.evaluate(() => document.body.innerText);
+    const loginSnap = await collectSnapshot(page, LOGIN_SPEC);
+    const loginProof = evaluateProof(loginSnap, LOGIN_SPEC);
     results.push({
       id: "WS-UI-login",
-      status: loginOk ? 200 : 500,
-      detail: url,
-      note: loginOk ? "session établissement" : bodyText.slice(0, 240),
+      status: loginProof.ok ? 200 : 500,
+      detail: `${loginSnap.pathname} ${loginProof.reason || "outlet"}`,
+      note: loginProof.ok ? "redirect /etablissement/vue-ensemble" : loginSnap.mainText,
     });
-    assert.ok(loginOk, `login web n'a pas quitté /connexion (${url}) — ${bodyText.slice(0, 240)}`);
+    assert.ok(loginProof.ok, `login web ${loginProof.reason} (${loginSnap.pathname})`);
     await page.screenshot({ path: path.join(ARTIFACT_DIR, "ws-dashboard.png") });
 
     for (const route of BROWSER_PAGES) {
       await page.goto(`${WEB_BASE}${route.path}`, { waitUntil: "networkidle0", timeout: 30000 });
-      const text = await page.evaluate(() => document.body.innerText);
-      const ok = route.expect.test(text) && !/erreur serveur|failed to fetch/i.test(text);
+      const snap = await collectSnapshot(page, route);
+      const proof = evaluateProof(snap, route);
       await page.screenshot({
         path: path.join(ARTIFACT_DIR, `${route.id.toLowerCase()}.png`),
       });
       results.push({
         id: route.id,
-        status: ok ? 200 : 500,
-        detail: page.url(),
-        note: ok ? `texte métier visible` : text.slice(0, 240),
+        status: proof.ok ? 200 : 500,
+        detail: `${snap.pathname} ${proof.reason || "outlet"}`,
+        note: proof.ok ? "pathname + outlet métier" : snap.mainText,
       });
-      assert.ok(ok, `${route.id} page vide ou erreur (${page.url()})`);
+      assert.ok(proof.ok, `${route.id} ${proof.reason} (${snap.pathname})`);
     }
+
+    await page.goto(`${WEB_BASE}/etablissement/classes`, { waitUntil: "networkidle0", timeout: 30000 });
+    const classesOk = evaluateProof(await collectSnapshot(page, BROWSER_PAGES[1]), BROWSER_PAGES[1]);
+    assert.ok(classesOk.ok, "précondition négatif : Classes outlet doit d'abord passer");
+    await page.evaluate(() => {
+      const main = document.querySelector("main");
+      if (!main) throw new Error("main manquant");
+      main.innerHTML = [
+        "<nav>Classes Notes Paiements Présences Planning Paramètres</nav>",
+        '<div role="alert"><p>Permissions indisponibles</p></div>',
+      ].join("");
+    });
+    const negative = evaluateProof(await collectSnapshot(page, BROWSER_PAGES[1]), BROWSER_PAGES[1]);
+    assert.equal(negative.ok, false, "chrome + Permissions indisponibles doit faire échouer le smoke");
+    results.push({
+      id: "WS-UI-negative-permissions-chrome",
+      status: 200,
+      detail: negative.reason,
+      note: "gate rouge si outlet = alerte permissions sous chrome",
+    });
 
     const logout = await page.evaluateHandle(() =>
       [...document.querySelectorAll("a,button")].find((el) => /Déconnexion/i.test(el.textContent || "")),
@@ -383,14 +552,15 @@ async function browserSmoke(tokenIgnored) {
       logout.asElement().click(),
     ]);
     await wait(500);
-    const afterLogout = page.url();
-    const backToLogin = afterLogout.includes("/connexion") || (await page.$("#login-title"));
+    const afterLogout = new URL(page.url()).pathname;
+    const loginTitle = await page.$("#login-title");
+    const backToLogin = afterLogout === "/connexion" && Boolean(loginTitle);
     await page.screenshot({ path: path.join(ARTIFACT_DIR, "ws-logout.png") });
     results.push({
       id: "WS-UI-logout",
       status: backToLogin ? 200 : 500,
       detail: afterLogout,
-      note: backToLogin ? "retour connexion" : "logout n'a pas rendu /connexion",
+      note: backToLogin ? "retour /connexion + #login-title" : "logout n'a pas rendu /connexion",
     });
     assert.ok(backToLogin, `logout n'est pas revenu à /connexion (${afterLogout})`);
   } finally {

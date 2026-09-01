@@ -82,3 +82,12 @@ Verdict hébergé : **WEB_SMOKE_BLOCKED** / `BLOCKER — ENVIRONMENT_COMMIT_UNVE
 La gate échoue si le login local ou un écran critique ne rend pas. Elle ne masque pas le MANUAL BLOCKER hébergé et ne déclenche aucun deploy.
 
 CI : le checkout `pull_request` est un merge-ref peu profond ; la gate accepte soit l'ancêtre git `58ef7b67…`, soit `pull_request.base.sha` identique (workflow `fetch-depth: 0`). Ce n'est pas un assouplissement métier.
+
+## P1 harness — outlet + pathname (HOLD)
+
+Le smoke n'utilise plus `document.body.innerText` pour les routes métier. Chaque parcours exige :
+- `location.pathname` exact (pas de retour silencieux `/connexion`) ;
+- preuve dans `<main>` (heading / `data-testid` existant / texte d'outlet), pas le chrome sidebar/topbar ;
+- échec si « Permissions indisponibles », accès interdit, ou 401/403/5xx dans l'outlet.
+
+Test négatif : chrome « Classes Notes Paiements… » + alerte permissions dans `<main>` ⇒ **FAIL** (`WS-UI-negative-permissions-chrome`).
