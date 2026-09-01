@@ -1,0 +1,36 @@
+name: Security disclosure
+
+on:
+  pull_request:
+    branches: [develop, main]
+    paths:
+      - "SECURITY.md"
+      - "docs/project/SECURITY.md"
+      - "docs/project/CONTRIBUTING.md"
+      - "scripts/verify-security-disclosure.js"
+      - "scripts/verify-pr-git-identity.js"
+      - ".github/workflows/security-disclosure.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: security-disclosure-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  disclosure-tree:
+    name: verify:security-disclosure
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.12.0"
+      - name: Tree HEAD + politiques
+        run: node scripts/verify-security-disclosure.js
+      - name: Git identity on PR commits only
+        env:
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: node scripts/verify-pr-git-identity.js
