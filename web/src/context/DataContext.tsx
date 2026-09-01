@@ -244,7 +244,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
         }
         logDomainSync("DOMAIN_FETCH_START", { domains: keys, schoolCode });
 
-        const result = await loadDomains(keys, { schoolCode });
+        const result = await loadDomains(keys, { schoolCode, role: session.user?.role });
         if (result.loaded.length) {
           const applied = mergeLoadedDomains(
             result.data,
@@ -397,7 +397,10 @@ export function DataProvider({ children }: { children: ReactNode }) {
         if (refreshKeys.length) {
           const targetSchool =
             String(options.schoolCode ?? sessionUserRef.current?.schoolCode ?? "").trim().toUpperCase() || undefined;
-          const result = await loadDomains(refreshKeys, { schoolCode: targetSchool });
+          const result = await loadDomains(refreshKeys, {
+            schoolCode: targetSchool,
+            role: sessionUserRef.current?.role,
+          });
           if (result.loaded.length) {
             mergeLoadedDomains(
               result.data,

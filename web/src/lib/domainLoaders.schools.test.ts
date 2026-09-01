@@ -49,7 +49,10 @@ vi.mock("./studentsApi", () => ({ studentsApi: { list: vi.fn() } }));
 vi.mock("./teachersApi", () => ({ teachersApi: { list: vi.fn() } }));
 
 import { establishmentsApi } from "./establishmentsApi";
-import { loadDomains } from "./domainLoaders";
+import { loadDomains, usesPlatformSchoolCatalog } from "./domainLoaders";
+import { COUNTRY_ADMIN_ROLE, SUPER_ADMIN_ROLE } from "./orgHierarchy";
+import { scopedSchools } from "./scope";
+import type { School, SessionUser } from "../types";
 
 describe("loadDomains — schools tenant-scoped", () => {
   beforeEach(() => {
@@ -61,7 +64,10 @@ describe("loadDomains — schools tenant-scoped", () => {
     const own = { id: "school-a", code: "CD-2026-0001", name: "Nuru" };
     vi.mocked(establishmentsApi.get).mockResolvedValue(own as never);
 
-    const result = await loadDomains(["schools"], { schoolCode: "CD-2026-0001" });
+    const result = await loadDomains(["schools"], {
+      schoolCode: "CD-2026-0001",
+      role: "Admin School",
+    });
 
     expect(establishmentsApi.get).toHaveBeenCalledWith("CD-2026-0001");
     expect(establishmentsApi.list).not.toHaveBeenCalled();
@@ -69,16 +75,70 @@ describe("loadDomains — schools tenant-scoped", () => {
     expect(result.data.schools).toHaveLength(1);
   });
 
-  it("catalogue plateforme (super/pays) → list()", async () => {
-    vi.mocked(establishmentsApi.list).mockResolvedValue([
-      { code: "CD-2026-0001", name: "Nuru" },
-      { code: "BI-2026-0002", name: "B" },
-    ] as never);
+  it("Superadmin + activeSchoolCode concret → list() et catalogue complet", async () => {
+    expect(usesPlatformSchoolCatalog(SUPER_ADMIN_ROLE)).toBe(true);
+    const catalog = [
+      { code: "CD-2026-0001", name: "Nuru", countryCode: "CD" },
+      { code: "BI-2026-0002", name: "Bujumbura", countryCode: "BI" },
+      { code: "CD-EL-26-002", name: "Lumière", countryCode: "CD" },
+    ] as School[];
+    vi.mocked(establishmentsApi.list).mockResolvedValue(catalog as never);
 
-    const result = await loadDomains(["schools"], { schoolCode: "*" });
+    const result = await loadDomains(["schools"], {
+      schoolCode: "CD-2026-0001",
+      role: SUPER_ADMIN_ROLE,
+    });
+
+    expect(establishmentsApi.list).toHaveBeenCalledTimes(1);
+    expect(establishmentsApi.get).not.toHaveBeenCalled();
+    expect(result.data.schools).toEqual(catalog);
+    expect(result.data.schools).toHaveLength(3);
+
+    const selector = scopedSchools(
+      { role: SUPER_ADMIN_ROLE, schoolCode: "*" } as SessionUser,
+      {
+        schools: result.data.schools ?? [],
+        users: [],
+        countries: [],
+        subscriptions: [],
+        notifications: [],
+      },
+    );
+    expect(selector.map((school) => school.code)).toEqual([
+      "CD-2026-0001",
+      "BI-2026-0002",
+      "CD-EL-26-002",
+    ]);
+  });
+
+  it("Admin Pays + activeSchoolCode concret → list() dans son périmètre", async () => {
+    expect(usesPlatformSchoolCatalog(COUNTRY_ADMIN_ROLE)).toBe(true);
+    const catalog = [
+      { code: "CD-2026-0001", name: "Nuru", countryCode: "CD", country: "RDC" },
+      { code: "CD-EL-26-002", name: "Lumière", countryCode: "CD", country: "RDC" },
+    ] as School[];
+    vi.mocked(establishmentsApi.list).mockResolvedValue(catalog as never);
+
+    const result = await loadDomains(["schools"], {
+      schoolCode: "CD-2026-0001",
+      role: COUNTRY_ADMIN_ROLE,
+    });
 
     expect(establishmentsApi.list).toHaveBeenCalledTimes(1);
     expect(establishmentsApi.get).not.toHaveBeenCalled();
     expect(result.data.schools).toHaveLength(2);
+
+    const selector = scopedSchools(
+      { role: COUNTRY_ADMIN_ROLE, schoolCode: "*", countryScope: "CD" } as SessionUser,
+      {
+        schools: result.data.schools ?? [],
+        users: [],
+        countries: [],
+        subscriptions: [],
+        notifications: [],
+      },
+    );
+    expect(selector).toHaveLength(2);
+    expect(selector.some((school) => school.code === "CD-EL-26-002")).toBe(true);
   });
 });

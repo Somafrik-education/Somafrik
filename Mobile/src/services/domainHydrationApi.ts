@@ -134,11 +134,22 @@ export async function getCanonicalRelations(): Promise<CanonicalMessageRelation[
     .filter((row): row is CanonicalMessageRelation => Boolean(row));
 }
 
+function usesPlatformSchoolCatalog(session?: { role?: string; user?: { role?: string; schoolCode?: string } }) {
+  const role = String(session?.role ?? session?.user?.role ?? "").toLowerCase();
+  return (
+    role === "super_admin" ||
+    role.includes("super administrateur") ||
+    role === "country_admin" ||
+    role === "admin pays"
+  );
+}
+
 export async function getCanonicalSchools(session?: {
-  user?: { schoolCode?: string };
+  role?: string;
+  user?: { schoolCode?: string; role?: string };
 }): Promise<SchoolProfile[]> {
   const membership = String(session?.user?.schoolCode ?? "").trim();
-  if (membership && membership !== "*") {
+  if (!usesPlatformSchoolCatalog(session) && membership && membership !== "*") {
     const row = await httpRequest<unknown>(`/backoffice/establishments/${encodeURIComponent(membership)}`);
     const mapped = normalizeSchool(row);
     return mapped ? [mapped] : [];

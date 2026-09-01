@@ -103,7 +103,7 @@ function run() {
   const here = dirname(fileURLToPath(import.meta.url));
   const hydration = readFileSync(join(here, "../services/domainHydrationApi.ts"), "utf8");
   assert.match(hydration, /establishments\/\$\{encodeURIComponent\(membership\)\}/);
-  assert.match(hydration, /if \(membership && membership !== "\*"\)/);
+  assert.match(hydration, /usesPlatformSchoolCatalog/);
   const adminData = readFileSync(join(here, "../context/AdminDataContext.tsx"), "utf8");
   assert.match(adminData, /getCanonicalSchools\(session\)/);
   assert.match(adminData, /if \(!hasPlatformBackofficePrivilege\(session\)\) return;/);
