@@ -19,6 +19,7 @@ import {
 } from "../lib/activeSchool";
 import { normalize } from "../lib/format";
 import { scopedSchools } from "../lib/scope";
+import { getAccessToken } from "../api/client";
 import { useAuth } from "./AuthContext";
 import { useData } from "./DataContext";
 
@@ -48,7 +49,7 @@ export function ActiveSchoolProvider({ children }: { children: ReactNode }) {
   const previousSchoolRef = useRef(activeSchoolCode);
 
   useEffect(() => {
-    if (!session?.accessToken) return;
+    if (!session?.accessToken || !getAccessToken()) return;
     void ensureDomains(["schools"]).catch(() => undefined);
   }, [session?.accessToken, ensureDomains]);
 

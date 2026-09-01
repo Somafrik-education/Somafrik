@@ -1,5 +1,4 @@
-import { ApiError } from "../api/client";
-import { api } from "../api/client";
+import { ApiError, api, getAccessToken } from "../api/client";
 import { clientsApi } from "./clientsApi";
 import { classesApi } from "./classesApi";
 import { establishmentsApi } from "./establishmentsApi";
@@ -51,7 +50,7 @@ export interface LoadDomainsResult {
   data: Partial<BackOfficeState>;
   loaded: DomainKey[];
   skipped: DomainKey[];
-  serverErrors: { domain: DomainKey; message: string }[];
+  serverErrors: { domain: DomainKey; message: string; status?: number }[];
 }
 
 type DomainSlice = Partial<Pick<BackOfficeState, DomainKey>>;
@@ -151,6 +150,18 @@ export async function loadDomains(
     return { data: {}, loaded: [], skipped: [], serverErrors: [] };
   }
 
+  if (!getAccessToken()) {
+    return {
+      data: {},
+      loaded: [],
+      skipped: [],
+      serverErrors: unique.map((domain) => ({
+        domain,
+        message: `${domain}: accessToken absent — aucun fetch métier avant session prête.`,
+      })),
+    };
+  }
+
   const loaders = createDomainLoaders(options);
   const results = await Promise.allSettled(
     unique.map(async (domain) => ({ domain, slice: await loaders[domain]() })),
@@ -159,7 +170,7 @@ export async function loadDomains(
   const data: Partial<BackOfficeState> = {};
   const loaded: DomainKey[] = [];
   const skipped: DomainKey[] = [];
-  const serverErrors: { domain: DomainKey; message: string }[] = [];
+  const serverErrors: { domain: DomainKey; message: string; status?: number }[] = [];
 
   for (let index = 0; index < results.length; index += 1) {
     const domain = unique[index];
@@ -172,8 +183,18 @@ export async function loadDomains(
 
     const error = result.reason;
     if (error instanceof ApiError) {
-      if (error.status === 401) throw error;
-      if (error.status === 403 || error.status === 404) {
+      if (error.status === 401 || error.status === 403) {
+        serverErrors.push({
+          domain,
+          status: error.status,
+          message:
+            error.status === 401
+              ? `${domain}: session expirée. Reconnectez-vous.`
+              : `${domain}: accès refusé pour ce domaine.`,
+        });
+        continue;
+      }
+      if (error.status === 404) {
         skipped.push(domain);
         continue;
       }

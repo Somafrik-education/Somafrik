@@ -25,6 +25,10 @@ import {
 } from "./orgHierarchy";
 import { isSuperadminManagedUser, isUnassignedUserAccount } from "./userAccounts";
 import { isUserAccountVisible } from "./userAccountRules";
+import {
+  projectScopedUsersForSchool,
+  type UserScopeProjection,
+} from "./schoolCanonicalIdentity";
 
 interface ScopeState {
   schools: School[];
@@ -55,6 +59,8 @@ export function scopedSchools(user: SessionUser | null, state: ScopeState): Scho
     if (!countryScope || !getCountryCodeFromScope(countryScope)) return [];
     return state.schools.filter((school) => schoolMatchesCountryScope(school, countryScope));
   }
+  // Audit #456 SAFE aujourd'hui : GET /schools projette `code` = leftover school_code,
+  // aligné sur le leftover JWT. Preuve : scope.otherDomains.audit.test.ts.
   return state.schools.filter((school) => normalize(school.code) === normalize(user.schoolCode));
 }
 
@@ -73,6 +79,7 @@ export function scopedSubscriptions(user: SessionUser | null, state: ScopeState)
         normalize(subscription.countryCode) === normalize(countryCode),
     );
   }
+  // Audit #456 SAFE aujourd'hui : GET /subscriptions.schoolCode = leftover school_code.
   return state.subscriptions.filter(
     (subscription) => normalize(subscription.schoolCode) === normalize(user.schoolCode),
   );
@@ -92,6 +99,8 @@ export function scopedNotifications(
         normalize(notification.audience).includes("admin pays"),
     );
   }
+  // Audit #456 SAFE aujourd'hui : GET /notifications.schoolCode = leftover school_code.
+  // Audience « etablissement » / rôle est un filet supplémentaire, pas une autorité UUID.
   return state.notifications.filter(
     (notification) =>
       normalize(notification.schoolCode) === normalize(user.schoolCode) ||
@@ -100,24 +109,104 @@ export function scopedNotifications(
   );
 }
 
-export function scopedUsers(user: SessionUser | null, state: ScopeState): UserAccount[] {
-  if (!user) return [];
+export function projectScopedUsers(user: SessionUser | null, state: ScopeState): UserScopeProjection {
+  if (!user) {
+    return {
+      users: [],
+      error: null,
+      received: 0,
+      kept: 0,
+      trace: {
+        kind: "users_scope_trace",
+        role: "",
+        session: {
+          hasSchoolId: false,
+          hasPublicCode: false,
+          leftoverPresent: false,
+          schoolCodeIsV2: false,
+          leftoverEqualsPublic: null,
+        },
+        api: {
+          received: 0,
+          distinctSchoolIds: 0,
+          distinctPublicCodes: 0,
+          distinctProjectedSchoolCodes: 0,
+        },
+        kept: 0,
+        error: null,
+      },
+    };
+  }
   const visible = state.users.filter((account) => isUserAccountVisible(account));
   if (isSuperAdminRole(user.role)) {
-    return visible.filter((account) => isSuperadminManagedUser(account));
+    const users = visible.filter((account) => isSuperadminManagedUser(account));
+    return {
+      users,
+      error: null,
+      received: visible.length,
+      kept: users.length,
+      trace: {
+        kind: "users_scope_trace",
+        role: String(user.role ?? ""),
+        session: {
+          hasSchoolId: false,
+          hasPublicCode: false,
+          leftoverPresent: false,
+          schoolCodeIsV2: false,
+          leftoverEqualsPublic: null,
+        },
+        api: {
+          received: visible.length,
+          distinctSchoolIds: 0,
+          distinctPublicCodes: 0,
+          distinctProjectedSchoolCodes: 0,
+        },
+        kept: users.length,
+        error: null,
+      },
+    };
   }
   if (user.role === COUNTRY_ADMIN_ROLE) {
     const countrySchoolCodes = new Set(
       scopedSchools(user, state).map((school) => normalize(school.code)),
     );
-    return visible.filter(
+    const users = visible.filter(
       (account) =>
         (account.role === SCHOOL_ADMIN_ROLE || isUnassignedUserAccount(account)) &&
         (countryScopeMatches(account.countryScope, user.countryScope) ||
           countrySchoolCodes.has(normalize(account.schoolCode))),
     );
+    return {
+      users,
+      error: null,
+      received: visible.length,
+      kept: users.length,
+      trace: {
+        kind: "users_scope_trace",
+        role: String(user.role ?? ""),
+        session: {
+          hasSchoolId: false,
+          hasPublicCode: false,
+          leftoverPresent: false,
+          schoolCodeIsV2: false,
+          leftoverEqualsPublic: null,
+        },
+        api: {
+          received: visible.length,
+          distinctSchoolIds: 0,
+          distinctPublicCodes: 0,
+          distinctProjectedSchoolCodes: 0,
+        },
+        kept: users.length,
+        error: null,
+      },
+    };
   }
-  return visible.filter((account) => normalize(account.schoolCode) === normalize(user.schoolCode));
+  return projectScopedUsersForSchool(user, visible);
+}
+
+export function scopedUsers(user: SessionUser | null, state: ScopeState): UserAccount[] {
+  return projectScopedUsers(user, state).users;
 }
 
 function countUsersByRole(users: UserAccount[], roles: string[]): number {

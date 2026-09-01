@@ -8,6 +8,8 @@ import type { SessionUser, UserAccount } from "../types";
 
 const here = dirname(fileURLToPath(import.meta.url));
 
+const KPI_SCHOOL_ID = "school-kpi-1";
+
 function schoolAdmin(): SessionUser {
   return {
     id: "admin-1",
@@ -15,6 +17,8 @@ function schoolAdmin(): SessionUser {
     lastName: "École",
     role: "Admin School",
     schoolCode: "CD-IN-26-001",
+    schoolPublicCode: "CD-IN-26-001",
+    schoolId: KPI_SCHOOL_ID,
     identifier: "admin",
   } as SessionUser;
 }
@@ -26,6 +30,8 @@ function user(partial: Partial<UserAccount> & { status?: string }): UserAccount 
     lastName: "B",
     role: "Enseignant",
     schoolCode: "CD-IN-26-001",
+    schoolPublicCode: "CD-IN-26-001",
+    schoolId: KPI_SCHOOL_ID,
     identifier: partial.identifier ?? "id",
     status: partial.status ?? "Actif",
     ...partial,
