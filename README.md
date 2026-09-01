@@ -83,7 +83,9 @@ powershell -ExecutionPolicy Bypass -File scripts\docker-up.ps1
 | PostgreSQL (hôte) | localhost:5433 |
 | Expo Metro (mobile) | port 8083 — QR dans les logs |
 
-### Production / préproduction (Vercel + API séparée)
+### Hébergement Render — production / préproduction
+
+**Render est l'unique fournisseur d'hébergement Web/API de Somafrik.**
 
 | Service | Production | Préproduction |
 |---------|------------|---------------|
@@ -91,7 +93,7 @@ powershell -ExecutionPolicy Bypass -File scripts\docker-up.ps1
 | Connexion | https://somafrik.app/connexion | https://preprod.somafrik.app/connexion |
 | API | https://api.somafrik.app/api/health | https://somafrik-api-preprod.onrender.com/api/health |
 
-Déploiement : `docs/preproduction.md` (API) + `docs/vercel.md` (frontend Vercel).
+En préproduction, les services Render sont `somafrik-web-preprod` (Static Site) et `somafrik-api-preprod` (Node). Déploiement et source de vérité : `docs/render.md` et `docs/preproduction.md`.
 
 ```powershell
 npm run docker:logs:mobile   # QR Code Expo

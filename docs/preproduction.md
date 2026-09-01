@@ -1,120 +1,51 @@
-# Déploiement préproduction — Somafrik MVP
+# Déploiement préproduction — Somafrik
 
-Guide pour mettre en ligne le MVP avec frontend Vercel et API backend séparée.
+Ce document décrit la topologie de préproduction réellement utilisée par Somafrik.
 
-## Architecture
+## Source de vérité hébergement
 
-| Composant | Hébergement | URL |
-|-----------|-------------|-----|
-| Frontend web prod | Vercel (`main`) | https://somafrik.app |
-| Frontend web préprod | Vercel (`develop`) | https://preprod.somafrik.app |
-| API production | Docker + Caddy | https://api.somafrik.app |
-| API préproduction | Render | https://somafrik-api-preprod.onrender.com |
+**Render est l'unique fournisseur d'hébergement Web/API de Somafrik.**
 
-Voir aussi `docs/vercel.md` pour la configuration Vercel.
+| Composant | Service Render | Branche | URL |
+|-----------|----------------|---------|-----|
+| Frontend Web préprod | Static Site `somafrik-web-preprod` | `develop` | https://preprod.somafrik.app |
+| API préprod | Web Service Node `somafrik-api-preprod` | `develop` | https://somafrik-api-preprod.onrender.com |
 
-## Prérequis
+La production utilise également Render comme fournisseur cible. Le frontend production est servi sur `https://somafrik.app` et l'API sur `https://api.somafrik.app` après GO production explicite.
 
-- Compte [Render](https://render.com) pour l'API préprod (Web Service + PostgreSQL)
-- Compte Vercel lié au dépôt (`web/` comme racine)
-- DNS :
-  - `somafrik.app`, `preprod.somafrik.app` → Vercel
-  - `api.somafrik.app` → serveur backend production
-- Node.js 22+ (bootstrap / scripts locaux)
+Voir `docs/render.md` pour la configuration hébergement canonique.
 
-## 1. Configuration backend (préprod)
+## 1. Configuration API préproduction
 
-```powershell
-npm run preprod:init-env
-```
-
-Cela crée **`.env.preproduction`** (séparé du `.env` de développement local) avec des secrets générés.
-
-Ou copiez `.env.preproduction.example` vers `.env.preproduction` et renseignez :
-
-| Variable | Description |
-|----------|-------------|
-| `SOMAFRIK_API_DOMAIN` | `somafrik-api-preprod.onrender.com` |
-| `CORS_ORIGINS` | `https://preprod.somafrik.app` |
-| `POSTGRES_PASSWORD` | Mot de passe fort unique |
-| `JWT_SECRET` | Secret ≥ 32 caractères (`openssl rand -hex 32`) |
-| `BOOTSTRAP_SUPERADMIN_PASSWORD` | Mot de passe initial superadmin (≥ 12 car.) |
-| `EXPO_PUBLIC_API_URL` | `https://somafrik-api-preprod.onrender.com` |
-| `VITE_API_URL` (Vercel develop) | `https://somafrik-api-preprod.onrender.com` |
-
-Variables obligatoires :
+Sur le service Render `somafrik-api-preprod`, définir au minimum :
 
 ```env
 NODE_ENV=production
-SOMAFRIK_SKIP_DEMO_SEED=true
-SOMAFRIK_DISABLE_LOGIN_LOCKOUT=false
-TRUST_PROXY_HOPS=1
-```
-
-## 2. Déploiement API sur Render
-
-Sur le **Web Service** Render (`somafrik-api-preprod`), définir au minimum :
-
-```env
-NODE_ENV=production
-DATABASE_URL=<fourni par Postgres Render>
+APP_ENV=preproduction
+DATABASE_URL=<connexion PostgreSQL préproduction>
 JWT_SECRET=<secret fort>
 CORS_ORIGINS=https://preprod.somafrik.app
 SOMAFRIK_SKIP_DEMO_SEED=true
 SOMAFRIK_DB_REQUIRED=true
+SOMAFRIK_DISABLE_LOGIN_LOCKOUT=false
 TRUST_PROXY_HOPS=1
 ```
 
-Vérifier : `https://somafrik-api-preprod.onrender.com/api/health`
+Les secrets ne doivent jamais être copiés dans Git, les issues, les PR ou les captures d'écran.
 
-## 3. Stack Docker local (optionnel)
+Vérification :
 
-Pour tester l'API en local avec Docker :
-
-```powershell
-npm run preprod:check
-npm run preprod:up
+```text
+GET https://somafrik-api-preprod.onrender.com/api/health
 ```
 
-Si vous avez déjà lancé la préprod avec un `.env` de développement (mots de passe faibles), réinitialisez les volumes avant de relancer :
+Attendu : HTTP 200, `status=ok`, `database=postgresql`.
 
-```powershell
-docker compose -f docker-compose.preprod.yml --env-file .env.preproduction down -v
-npm run preprod:up
-```
+## 2. Configuration Web préproduction
 
-## 4. Bootstrap base vide + superadmin
+Le frontend est le Static Site Render `somafrik-web-preprod`, construit depuis `develop`.
 
-Une fois PostgreSQL accessible (Render ou stack Docker local) :
-
-```powershell
-npm run preprod:bootstrap
-```
-
-Le bootstrap s'exécute dans le conteneur backend (connexion PostgreSQL via le réseau Docker).
-
-Crée une base PostgreSQL vide avec un compte Super Admin initial (`mustChangePassword: true`).
-
-Services déployés par `preprod:up` :
-
-| Service | Rôle |
-|---------|------|
-| `postgres` | Base de données (port hôte `5434` pour bootstrap) |
-| `backend` | API Express API-only (`SOMAFRIK_API_ONLY=true`) |
-| `caddy` | HTTPS (stack Docker local uniquement) |
-
-URLs :
-
-- Web préprod (Vercel) : `https://preprod.somafrik.app/`
-- Connexion : `https://preprod.somafrik.app/connexion`
-- API santé : `https://somafrik-api-preprod.onrender.com/api/health`
-- BackOffice legacy : `https://somafrik-api-preprod.onrender.com/backoffice/`
-
-## 5. Déploiement frontend Vercel
-
-1. Lier le projet Vercel au dépôt, **Root Directory** = `web`.
-2. Branche `develop` → domaine `preprod.somafrik.app`.
-3. Variables d'environnement (voir `docs/vercel.md`) :
+Variables de build attendues :
 
 ```env
 VITE_API_URL=https://somafrik-api-preprod.onrender.com
@@ -122,95 +53,108 @@ VITE_SHOW_DEMO_ACCOUNTS=false
 VITE_ENABLE_MARKETPLACE=false
 ```
 
-## 6. Configuration initiale métier
+Le domaine public de préproduction est :
 
-Connectez-vous en Super Admin sur `https://preprod.somafrik.app/connexion` puis :
-
-1. Créer les pays
-2. Créer les établissements
-3. Créer les comptes Admin Pays / Admin School
-4. Configurer l'année scolaire, classes, matières
-5. Importer ou saisir élèves, enseignants, parents
-
-## 7. Production
-
-Même procédure avec :
-
-- `.env` basé sur `.env.production.example`
-- `docker compose -f docker-compose.production.yml up -d --build`
-- Vercel branche `main` → `somafrik.app`
-- `CORS_ORIGINS=https://somafrik.app`
-- `VITE_API_URL=https://api.somafrik.app`
-
-```powershell
-npm run production:up
+```text
+https://preprod.somafrik.app
 ```
 
-## 8. Application mobile
+L'application étant une SPA React, Render doit conserver une règle de rewrite permettant aux routes telles que `/connexion` d'être servies par `index.html`.
 
-`Mobile/eas.json` pointe déjà vers les API :
+## 3. Contrat de déploiement GO-PROD
 
-- Preview / préprod : `https://somafrik-api-preprod.onrender.com`
-- Production : `https://api.somafrik.app`
+Un candidat préproduction n'est certifié que si les deux services Render servent le même SHA Git :
 
-## 9. Sécurité activée en préproduction
-
-- Pas de seed automatique de données démo
-- Comptes démo masqués sur la page de connexion web
-- Rate limiting sur `/api/login`, `/api/identify`, `/api/backoffice/login`
-- Verrouillage après échecs de connexion (actif)
-- Validation des secrets au démarrage
-- CORS strict (origine Vercel exacte)
-- Headers de sécurité + HSTS derrière HTTPS
-- `SOMAFRIK_E2E` et `SOMAFRIK_AUTH_OPTIONAL` interdits en production
-
-## 10. Commandes utiles
-
-```powershell
-npm run preprod:logs
-npm run preprod:down
-npm run production:up
-npm run production:logs
-npm run production:down
-npm run docker:build
+```text
+RENDER_WEB_DEPLOYED_SHA == RENDER_API_DEPLOYED_SHA == G3_CANDIDATE_SHA
 ```
 
-## 11. Sauvegarde PostgreSQL
+Un statut `Deployed` seul ne suffit pas : le SHA doit être vérifié dans les métadonnées du déploiement Render.
 
-```powershell
-docker compose -f docker-compose.preprod.yml exec -T postgres pg_dump -U somafrik somafrik > backup.sql
-```
+Si `develop` avance pendant une certification de release, le candidat est considéré obsolète et doit être recapturé.
 
-## 12. Développement local vs préproduction
+## 4. Non-destruction des données
 
-| | Développement | Préproduction |
-|--|---------------|---------------|
-| Frontend | `localhost:5173/` (Vite) | Vercel `preprod.somafrik.app` |
-| API | `localhost:5000` | `somafrik-api-preprod.onrender.com` |
-| Fichier env | `.env.example` | `.env.preproduction` |
-| Compose API | `docker-compose.yml` | `docker-compose.preprod.yml` |
-| Seed démo | Oui (optionnel) | Non |
-| HTTPS | Non | Oui (Caddy + Vercel) |
+Un déploiement standard ne doit jamais exécuter automatiquement :
 
-## 13. Dépannage
+- wipe de la base ;
+- reset PostgreSQL ;
+- seed de démonstration ;
+- bootstrap superadmin ;
+- migration destructive non explicitement approuvée.
 
-**Erreur CORS** — `CORS_ORIGINS` doit être exactement `https://preprod.somafrik.app` (sans slash final).
+`SOMAFRIK_SKIP_DEMO_SEED=true` et `SOMAFRIK_DB_REQUIRED=true` restent obligatoires en préproduction.
 
-**API inaccessible** — vérifier le service Render et `https://somafrik-api-preprod.onrender.com/api/health`.
+## 5. Stack Docker locale préproduction
 
-**Frontend sans données** — vérifier `VITE_API_URL` dans Vercel (rebuild nécessaire après modification).
-
-**Backend ne démarre pas** — le stack préprod lit **`.env.preproduction`**, pas `.env` local. Vérifiez :
+Le stack Docker reste disponible pour reproduire l'API localement :
 
 ```powershell
 npm run preprod:check
+npm run preprod:up
 ```
 
-**Mot de passe superadmin refusé** — le mot de passe est **uniquement** celui de `.env.preproduction` (`BOOTSTRAP_SUPERADMIN_PASSWORD`), pas le `.env` local.
+Le fichier `.env.preproduction` est local et non versionné. Pour le créer :
 
 ```powershell
-npm run preprod:repair-superadmin
-npm run preprod:verify-login
+npm run preprod:init-env
 ```
 
-Identifiant : `superadmin` (ou `BOOTSTRAP_SUPERADMIN_ID`).
+Le bootstrap est une opération explicite réservée à l'initialisation d'une base vide :
+
+```powershell
+npm run preprod:bootstrap
+```
+
+Il ne doit pas être exécuté lors d'un déploiement normal d'une préproduction contenant déjà des données.
+
+## 6. Application mobile
+
+Le profil preview/préproduction EAS consomme :
+
+```text
+https://somafrik-api-preprod.onrender.com
+```
+
+La production mobile consomme :
+
+```text
+https://api.somafrik.app
+```
+
+## 7. Vérifications après déploiement
+
+Contrôler au minimum :
+
+1. `somafrik-web-preprod` = `Deployed` sur le SHA candidat ;
+2. `somafrik-api-preprod` = `Deployed` sur le même SHA candidat ;
+3. `GET /api/health` = HTTP 200, PostgreSQL prêt ;
+4. `https://preprod.somafrik.app/connexion` s'ouvre ;
+5. les appels Web partent vers `https://somafrik-api-preprod.onrender.com` ;
+6. aucune erreur CORS ou 5xx ;
+7. les données de recette préexistantes sont conservées.
+
+## 8. Dépannage
+
+**Erreur CORS** — `CORS_ORIGINS` doit contenir exactement `https://preprod.somafrik.app` sans slash final.
+
+**API inaccessible** — vérifier le service Render `somafrik-api-preprod`, son dernier déploiement, puis `/api/health`.
+
+**Frontend sans données** — vérifier `VITE_API_URL` sur le Static Site Render et redéployer le bon SHA si cette variable a changé.
+
+**Route Web directe en 404** — vérifier la règle SPA rewrite du Static Site Render vers `index.html`.
+
+**Backend ne démarre pas** — vérifier les variables Render, la connexion PostgreSQL et `SOMAFRIK_DB_REQUIRED=true`.
+
+## 9. Production
+
+La promotion production reste une opération séparée et soumise au GO utilisateur/CTO :
+
+- branche `main` ;
+- hébergement Render ;
+- Web `https://somafrik.app` ;
+- API `https://api.somafrik.app` ;
+- CORS `https://somafrik.app` ;
+- aucune réutilisation implicite des secrets préproduction.
+
+Aucun merge vers `main` ni déploiement production n'est autorisé par ce guide sans le gate de release correspondant.
