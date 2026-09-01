@@ -157,17 +157,20 @@ function main() {
 
   verifyMobileBranding();
   const icon = pngInfo(path.join(MOBILE, "assets", "somafrik-app-icon.png"));
+  const androidForeground = pngInfo(path.join(MOBILE, "assets", "somafrik-android-adaptive-foreground.png"));
   const uiLogo = pngInfo(path.join(MOBILE, "assets", "somafrik-logo.png"));
   const splash = pngInfo(path.join(MOBILE, "assets", "somafrik-splash.png"));
   assert.ok(icon.isPng && !icon.isJpeg, "icon doit être un vrai PNG");
   assert.ok(icon.width >= 1024 && icon.height >= 1024, "icon dimensions insuffisantes");
-  assert.equal(icon.width, icon.height, "icon Android doit être carrée");
+  assert.equal(icon.width, icon.height, "icon iOS/Expo doit être carrée");
+  assert.ok(androidForeground.isPng && !androidForeground.isJpeg, "foreground Android doit être un vrai PNG");
+  assert.ok(androidForeground.width >= 1024 && androidForeground.width === androidForeground.height, "foreground Android dimensions insuffisantes");
   assert.ok(uiLogo.isPng && !uiLogo.isJpeg, "logo UI doit être un vrai PNG");
   assert.ok(uiLogo.width >= 1024 && uiLogo.height >= 1024, "logo UI dimensions insuffisantes");
   assert.ok(splash.isPng && !splash.isJpeg, "splash doit être un vrai PNG (pas un JPEG renommé)");
   assert.ok(splash.width >= 1024 && splash.height >= 1024, "splash dimensions insuffisantes");
   assert.ok(!fs.existsSync(path.join(MOBILE, "assets", "schoollink-logo.png")), "relique SchoolLink");
-  console.log("OK: assets BRANDING-V2 icon/logo/splash MIME réel + dimensions");
+  console.log("OK: assets BRANDING-V2 icon iOS + Android adaptive + logo/splash MIME réel + dimensions");
 
   const gitignore = `${read(path.join(ROOT, ".gitignore"))}\n${read(path.join(MOBILE, ".gitignore"))}`;
   for (const needle of ["*.jks", "*.keystore", "credentials.json", "*.apk"]) {
