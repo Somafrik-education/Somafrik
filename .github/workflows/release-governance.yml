@@ -7,6 +7,7 @@ on:
       - "scripts/verify-release-governance.js"
       - "docs/audits/release-governance-goprod-2026-09-01.md"
       - "docs/audits/release-checklist-goprod-2026-09-01.md"
+      - "docs/audits/release-approved-candidates-2026-09-01.json"
       - "package.json"
       - ".github/workflows/release-governance.yml"
       - "Mobile/app.json"

@@ -210,11 +210,21 @@ scripts/verify-android-release-readiness.js
 
 Cette PR de gouvernance **ne modifie pas** #447. Ready / merge de #447, merge `develop → main`, EAS submit / Play restent interdits ici.
 
-### Workflow `paths:`
+### Workflow `paths:` (bootstrap one-shot #451)
 
-Le fichier YAML `.github/workflows/release-governance.yml` **reste hors allowlist** (test `RG-NEG-workflow-not-governance-only`). L’ajouter aux `paths:` du workflow dans cette PR ferait échouer le contrôle B.
+Le YAML `.github/workflows/release-governance.yml` **reste hors allowlist** du contrôle B (test `RG-NEG-workflow-not-governance-only`). Une modification **arbitraire** du workflow continue de **FAIL CLOSED** (`RG-NEG-workflow-arbitrary-change-forbidden`).
 
-Le manifeste n’est donc **pas** un trigger isolé. Toute réémission d’autorisation **doit** aussi modifier le script et/ou Lot G (déjà dans `paths:`). C’est volontaire : un commit JSON-only ne relance pas le gate tant qu’une décision CTO explicite n’allowliste pas le YAML.
+Cette PR **#451** porte une **migration bootstrap one-shot** : ajout **exact** de `docs/audits/release-approved-candidates-2026-09-01.json` aux `paths:` du workflow, pin SHA-256 du fichier YAML :
+
+`ee5886ae55848257da713f6f71740e7c78aa4ff14613129cfb44b141e1f9e321`
+
+Conditions de l’exception (pas une allowlist permanente) :
+
+- en CI : `pull_request.number === 451` **et** SHA-256 du YAML au HEAD identique au pin ;
+- après merge / en local : le pin de contenu suffit pour le drift `BASELINE..origin/develop` (sinon le merge de #451 casserait le contrôle A) ;
+- tout autre numéro de PR, ou tout autre contenu YAML → **FAIL**.
+
+Une PR qui ne modifie **que** le manifeste CTO_GO déclenche désormais le gate. Toute réémission d’autorisation n’a plus besoin de toucher le script « pour faire passer le trigger ».
 
 ## Gate
 
@@ -222,4 +232,4 @@ Le manifeste n’est donc **pas** un trigger isolé. Toute réémission d’auto
 
 Échoue si `origin/develop` avance **hors** fichiers de gouvernance, si le diff de la **PR courante** n’est ni gouvernance-only ni un candidat `CTO_GO` exact (PR + HEAD/identité + ensemble de fichiers), si `origin/main` bouge, ou si une PR frozen est ancêtre de HEAD / citée en sujet merge ou squash `(#n)`. Ne merge pas `main`. Ne déploie pas.
 
-P1 Codex #445 : exclusion frozen squash/cherry-pick. P2 : `Mobile/app.json` + `Mobile/package.json` dans `paths`. P3 : exception gouvernance-only sur le drift `develop`. P4 : le même allowlist s’applique au candidat PR (`base...head`) pour HOLD pré-merge. P5 : candidat métier explicitement autorisé (PR + HEAD + fichiers + `diffSha256` rebase-equivalent).
+P1 Codex #445 : exclusion frozen squash/cherry-pick. P2 : `Mobile/app.json` + `Mobile/package.json` dans `paths`. P3 : exception gouvernance-only sur le drift `develop`. P4 : le même allowlist s’applique au candidat PR (`base...head`) pour HOLD pré-merge. P5 : candidat métier explicitement autorisé (PR + HEAD + fichiers + `diffSha256` rebase-equivalent). P6 : manifeste CTO_GO dans les `paths:` du workflow via bootstrap one-shot #451 (YAML hors allowlist ; contenu piné).

@@ -33,6 +33,16 @@ const MAIN_ONLY = [
 const FROZEN = ["295", "297", "298", "312", "337", "354", "355"];
 const MAIN_SNAPSHOT_ON_DEVELOP = "878e4ab82e2fd91a9e419dd63d2b4d2ad6eb5b6b";
 const CANDIDATES_REL = "docs/audits/release-approved-candidates-2026-09-01.json";
+const WORKFLOW_REL = ".github/workflows/release-governance.yml";
+/**
+ * Migration bootstrap one-shot #451 : le YAML n'est PAS dans l'allowlist B.
+ * Seule la PR #451 (ou un checkout local sans numéro) peut le porter, et
+ * uniquement si le contenu SHA-256 est exactement ce pin (ajout du manifeste
+ * aux paths:). Toute autre modification du workflow → FAIL CLOSED.
+ */
+const BOOTSTRAP_WORKFLOW_PR = 451;
+const BOOTSTRAP_WORKFLOW_SHA256 =
+  "ee5886ae55848257da713f6f71740e7c78aa4ff14613129cfb44b141e1f9e321";
 /** Seuls ces chemins peuvent apparaître sur origin/develop après le baseline sans revalidation métier. */
 const GOVERNANCE_ONLY_PATHS = new Set([
   "scripts/verify-release-governance.js",
@@ -128,6 +138,42 @@ function listChangedFilesThreeDot(baseSha, headSha) {
 
 function extraDevelopFiles(changedFiles) {
   return [...new Set(changedFiles || [])].filter((file) => !GOVERNANCE_ONLY_PATHS.has(file));
+}
+
+function sha256Buffer(buf) {
+  return crypto.createHash("sha256").update(buf).digest("hex");
+}
+
+function workingTreeSha256(rel) {
+  const abs = path.join(ROOT, rel);
+  if (!fs.existsSync(abs)) return "ABSENT";
+  return sha256Buffer(fs.readFileSync(abs));
+}
+
+function resolveWorkflowSha256(tipSha) {
+  if (tipSha) {
+    const fromGit = gitBlobSha256(tipSha, WORKFLOW_REL);
+    if (fromGit !== "ABSENT") return fromGit;
+  }
+  return workingTreeSha256(WORKFLOW_REL);
+}
+
+/**
+ * Exception bootstrap #451 — contenu exact du YAML, pas une allowlist permanente.
+ * En CI, le numéro de PR doit être 451. En local / contrôle A (numéro absent),
+ * le pin de contenu suffit (nécessaire pour npm run et le drift develop post-merge).
+ */
+function isBootstrapWorkflowAllowed({ tipSha, prNumber, workflowSha256 } = {}) {
+  if (prNumber != null && prNumber !== BOOTSTRAP_WORKFLOW_PR) return false;
+  const hash = workflowSha256 || resolveWorkflowSha256(tipSha);
+  return hash === BOOTSTRAP_WORKFLOW_SHA256;
+}
+
+function extraAfterBootstrap(changedFiles, bootstrapCtx) {
+  return extraDevelopFiles(changedFiles).filter((file) => {
+    if (file !== WORKFLOW_REL) return true;
+    return !isBootstrapWorkflowAllowed(bootstrapCtx);
+  });
 }
 
 function readPullRequestEvent() {
@@ -319,14 +365,29 @@ function assertApprovedBusinessPr({ pr, headSha, files, diffSha256 }) {
   );
 }
 
-function assertCurrentPrAllowed(prNumber, baseSha, headSha, changedFiles) {
+function assertCurrentPrAllowed(prNumber, baseSha, headSha, changedFiles, bootstrapOverrides) {
   const extra = extraDevelopFiles(changedFiles);
-  if (extra.length === 0) return "governance-only";
+  const extraAfter = extraAfterBootstrap(changedFiles, {
+    tipSha: headSha,
+    prNumber,
+    ...bootstrapOverrides,
+  });
+  if (extraAfter.length === 0) {
+    return extra.includes(WORKFLOW_REL) ? "governance-bootstrap-451" : "governance-only";
+  }
+  if (extraAfter.includes(WORKFLOW_REL)) {
+    assert.ok(
+      false,
+      `RG-NEG-workflow-not-governance-only: ${WORKFLOW_REL} hors allowlist. ` +
+        `Exception bootstrap uniquement PR #${BOOTSTRAP_WORKFLOW_PR} + contenu YAML exact ` +
+        `(sha256=${BOOTSTRAP_WORKFLOW_SHA256}). FAIL CLOSED.`,
+    );
+  }
   if (prNumber == null || !Number.isInteger(prNumber)) {
     assert.ok(
       false,
       `RG-NEG-unapproved-business-pr: PR fonctionnelle sans numéro GitHub. ` +
-        `Fichiers métier: ${extra.join(", ")}. FAIL CLOSED.`,
+        `Fichiers métier: ${extraAfter.join(", ")}. FAIL CLOSED.`,
     );
   }
   const identity = computeContentIdentitySha256(baseSha, headSha, changedFiles);
@@ -345,12 +406,14 @@ function assertCurrentPrAllowed(prNumber, baseSha, headSha, changedFiles) {
  * sinon git diff --name-only baseline..origin/develop ⊆ GOVERNANCE_ONLY_PATHS → PASS
  * tout autre fichier → FAIL (revalidation métier obligatoire)
  */
-function assertDevelopFrozen(originDevelop, baseline, changedFiles) {
+function assertDevelopFrozen(originDevelop, baseline, changedFiles, bootstrapCtx) {
   if (!originDevelop) {
     throw new Error("origin/develop absent — git fetch origin develop requis");
   }
   if (originDevelop === baseline) return;
-  const extra = extraDevelopFiles(changedFiles);
+  const extra = bootstrapCtx
+    ? extraAfterBootstrap(changedFiles, bootstrapCtx)
+    : extraDevelopFiles(changedFiles);
   assert.equal(
     extra.length,
     0,
@@ -420,6 +483,65 @@ function runNegativeUnitTests() {
   console.log("PASS RG-NEG-current-pr-business-change-forbidden");
   console.log("PASS RG-NEG-workflow-not-governance-only");
   console.log("PASS RG-NEG-frozen-squash-subject");
+
+  assert.equal(GOVERNANCE_ONLY_PATHS.has(WORKFLOW_REL), false, "YAML hors allowlist B");
+  assert.equal(
+    isBootstrapWorkflowAllowed({ prNumber: 451, workflowSha256: BOOTSTRAP_WORKFLOW_SHA256 }),
+    true,
+    "RG-POS-workflow-bootstrap-451",
+  );
+  assert.equal(
+    extraAfterBootstrap([...governanceOnly, WORKFLOW_REL], {
+      prNumber: 451,
+      workflowSha256: BOOTSTRAP_WORKFLOW_SHA256,
+    }).length,
+    0,
+  );
+  assert.equal(
+    assertCurrentPrAllowed(451, BASELINE, BASELINE, [...governanceOnly, WORKFLOW_REL], {
+      workflowSha256: BOOTSTRAP_WORKFLOW_SHA256,
+    }),
+    "governance-bootstrap-451",
+    "RG-POS-workflow-bootstrap-451",
+  );
+  console.log("PASS RG-POS-workflow-bootstrap-451");
+
+  assert.equal(
+    isBootstrapWorkflowAllowed({ prNumber: 999, workflowSha256: BOOTSTRAP_WORKFLOW_SHA256 }),
+    false,
+  );
+  assert.throws(
+    () => assertCurrentPrAllowed(999, BASELINE, BASELINE, [...governanceOnly, WORKFLOW_REL]),
+    /RG-NEG-workflow-not-governance-only/,
+    "RG-NEG-workflow-bootstrap-wrong-pr",
+  );
+  console.log("PASS RG-NEG-workflow-bootstrap-wrong-pr");
+
+  const wrongYamlHash = "ff".repeat(32);
+  assert.equal(
+    isBootstrapWorkflowAllowed({ prNumber: 451, workflowSha256: wrongYamlHash }),
+    false,
+  );
+  assert.deepEqual(
+    extraAfterBootstrap([...governanceOnly, WORKFLOW_REL], {
+      prNumber: 451,
+      workflowSha256: wrongYamlHash,
+    }),
+    [WORKFLOW_REL],
+  );
+  assert.throws(
+    () => assertDevelopFrozen(moved, BASELINE, [...governanceOnly, WORKFLOW_REL], {
+      prNumber: null,
+      workflowSha256: wrongYamlHash,
+    }),
+    /release-governance\.yml/,
+    "RG-NEG-workflow-arbitrary-change-forbidden",
+  );
+  assertDevelopFrozen(moved, BASELINE, [...governanceOnly, WORKFLOW_REL], {
+    prNumber: null,
+    workflowSha256: BOOTSTRAP_WORKFLOW_SHA256,
+  });
+  console.log("PASS RG-NEG-workflow-arbitrary-change-forbidden");
 }
 
 function runApprovedCandidateTests() {
@@ -564,6 +686,7 @@ function main() {
   assert.match(audit, /diffSha256/);
   assert.match(audit, /rebase-equivalent/);
   assert.match(audit, /release-approved-candidates-2026-09-01\.json/);
+  assert.match(audit, /bootstrap one-shot/);
   assert.match(checklist, /USER GO/);
   assert.match(checklist, /Aucun acte ci-dessous n’est exécuté/);
   assert.match(checklist, /eas submit/);
@@ -603,7 +726,10 @@ function main() {
   }
 
   const developChanged = listChangedFiles(BASELINE, originDevelop);
-  assertDevelopFrozen(originDevelop, BASELINE, developChanged);
+  assertDevelopFrozen(originDevelop, BASELINE, developChanged, {
+    tipSha: originDevelop,
+    prNumber: null,
+  });
   if (originDevelop === BASELINE) {
     console.log(`PASS RG-DEVELOP-FROZEN origin/develop=${originDevelop} (égal baseline)`);
   } else {
@@ -623,6 +749,11 @@ function main() {
     console.log(
       `PASS RG-PR-GOVERNANCE-ONLY source=${prRange.source} ${prRange.base}...${prRange.head} ` +
         `files=${prChanged.join(",") || "(none)"}`,
+    );
+  } else if (prMode === "governance-bootstrap-451") {
+    console.log(
+      `PASS RG-POS-workflow-bootstrap-451 source=${prRange.source} pr=#${prRange.number} ` +
+        `${prRange.base}...${prRange.head} files=${prChanged.join(",") || "(none)"}`,
     );
   } else {
     console.log(
@@ -651,9 +782,13 @@ function main() {
   assert.match(workflow, /pull\/\$n\/head/);
   assert.match(workflow, /Mobile\/app\.json/);
   assert.match(workflow, /Mobile\/package\.json/);
+  assert.match(workflow, /release-approved-candidates-2026-09-01\.json/);
   assert.doesNotMatch(workflow, /eas submit/);
   assert.doesNotMatch(workflow, /SKIP_RELEASE_GOVERNANCE/);
-  console.log("PASS RG-CI workflow fetch main+develop+PR frozen ; paths Mobile manifests");
+  assert.equal(GOVERNANCE_ONLY_PATHS.has(WORKFLOW_REL), false);
+  assert.equal(workingTreeSha256(WORKFLOW_REL), BOOTSTRAP_WORKFLOW_SHA256);
+  assert.match(audit, /bootstrap one-shot/);
+  console.log("PASS RG-CI workflow fetch main+develop+PR frozen ; paths manifeste + Mobile manifests");
 
   assert.match(audit, /Aucune PR `develop → main` ouverte/);
   console.log("PASS RG-NO-MAIN-PR (audit : forme proposée, PR non ouverte)");
