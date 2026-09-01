@@ -36,7 +36,9 @@ export interface Student {
   personId?: string;
   matricule: string;
   publicId?: string;
+  schoolId?: string;
   schoolCode: string;
+  schoolPublicCode?: string;
   status?: StudentStatus;
   admissionDate?: string;
   exitDate?: string;

@@ -8,6 +8,8 @@ const admin = {
   id: "u-admin",
   role: "Admin School",
   schoolCode: "IN",
+  schoolId: "school-in",
+  schoolPublicCode: "IN",
   name: "Admin",
 } as SessionUser;
 
@@ -23,6 +25,7 @@ function stateWithRiziki14(): BackOfficeState {
         lastName: "Test",
         className: "2ème A",
         schoolCode: "IN",
+        schoolId: "school-in",
       },
     ],
     teachers: [],

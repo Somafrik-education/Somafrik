@@ -17,6 +17,7 @@ import { logDomainSync } from "../lib/domainSyncTelemetry";
 import { getAccessToken } from "../api/client";
 import { applyClientScopeToState, projectScopedUsers } from "../lib/scope";
 import { logUserScopeTrace } from "../lib/schoolCanonicalIdentity";
+import { logStudentScopeTrace, projectScopedStudents } from "../lib/studentsScope";
 import { stripClientFinanceFromPutPayload } from "../lib/stripClientFinance";
 import { stripClientSchoolsFromPutPayload } from "../lib/stripClientSchools";
 import { stripClientStudentsFromPutPayload } from "../lib/stripClientStudents";
@@ -182,10 +183,25 @@ export function DataProvider({ children }: { children: ReactNode }) {
           count: loadedKeys.length,
         });
         const withPending = reapplyOutboxToState(merged, listActiveOutboxEntries());
-        if (sessionUserRef.current && loadedKeys.includes("users")) {
-          const projection = projectScopedUsers(sessionUserRef.current, withPending);
-          nextScopeError = projection.error?.message ?? null;
-          logUserScopeTrace(projection.trace);
+        if (sessionUserRef.current && (loadedKeys.includes("users") || loadedKeys.includes("students"))) {
+          const userProjection = loadedKeys.includes("users")
+            ? projectScopedUsers(sessionUserRef.current, withPending)
+            : null;
+          const studentProjection = loadedKeys.includes("students")
+            ? projectScopedStudents(sessionUserRef.current, withPending)
+            : null;
+          if (userProjection) logUserScopeTrace(userProjection.trace);
+          if (studentProjection) logStudentScopeTrace(studentProjection.trace);
+          const messages = [userProjection?.error?.message, studentProjection?.error?.message].filter(
+            (message): message is string => Boolean(message),
+          );
+          if (userProjection && studentProjection) {
+            nextScopeError = messages.join(" ") || null;
+          } else if (userProjection) {
+            nextScopeError = userProjection.error?.message ?? null;
+          } else if (studentProjection?.error) {
+            nextScopeError = studentProjection.error.message;
+          }
         }
         return sessionUserRef.current
           ? applyClientScopeToState(withPending, sessionUserRef.current)

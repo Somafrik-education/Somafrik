@@ -3,6 +3,7 @@ import { isActiveUserAccount, normalize } from "./format";
 import { dedupeClassesByName } from "./classRules";
 import { COUNTRY_ADMIN_ROLE, isSuperAdminRole } from "./orgHierarchy";
 import { scopedSchools } from "./scope";
+import { projectScopedStudents } from "./studentsScope";
 
 type Row = Record<string, unknown>;
 
@@ -155,12 +156,7 @@ export function listTeacherScopedClassLabels(
 }
 
 export function scopedStudents(user: SessionUser | null, state: BackOfficeState): Row[] {
-  const schoolCode = user?.schoolCode;
-  const rows = (state.students ?? []) as Row[];
-  const bySchool =
-    !schoolCode || schoolCode === "*"
-      ? rows
-      : rows.filter((row) => normalize(row.schoolCode) === normalize(schoolCode));
+  const bySchool = projectScopedStudents(user, state).students as Row[];
   const teacherClassNames = teacherScopedClassNames(user, state);
   if (teacherClassNames) {
     return bySchool.filter((row) => teacherClassNames.has(normalize(row.className)));

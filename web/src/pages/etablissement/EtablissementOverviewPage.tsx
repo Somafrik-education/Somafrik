@@ -8,6 +8,7 @@ import {
   Users,
   type LucideIcon,
 } from "lucide-react";
+import { InlineAlert } from "@/design-system";
 import { Card, SectionHeader } from "../../components/ui/Card";
 import { useData } from "../../context/DataContext";
 import { useActiveSchool } from "../../context/ActiveSchoolContext";
@@ -21,6 +22,7 @@ import {
   scopedClasses,
   getEstablishmentMetrics,
 } from "../../lib/establishment";
+import { projectScopedStudents } from "../../lib/studentsScope";
 import { countUniqueParentsInRelations } from "../../lib/relations";
 import { scopedUsers } from "../../lib/scope";
 import { ACTIVE_USERS_KPI_LABEL } from "../../lib/format";
@@ -38,9 +40,11 @@ interface OverviewTile {
 
 /** WEB-ME-001 — Tableau de bord Mon établissement (compteurs + accès rapides + alertes). */
 export function EtablissementOverviewPage() {
-  const { state } = useData();
+  const { state, scopeError } = useData();
   const { scopedUser } = useActiveSchool();
   const ctx = usePermissionContext();
+  const studentsProjection = projectScopedStudents(scopedUser, state);
+  const visibleScopeError = scopeError || studentsProjection.error?.message || null;
 
   const { tiles, alerts } = useMemo(() => {
     const students = scopedStudents(scopedUser, state);
@@ -131,6 +135,11 @@ export function EtablissementOverviewPage() {
 
   return (
     <div className="space-y-6">
+      {visibleScopeError ? (
+        <InlineAlert tone="danger" title="Périmètre">
+          {visibleScopeError}
+        </InlineAlert>
+      ) : null}
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
         {tiles.map((tile) => {
           const Icon = tile.icon;
