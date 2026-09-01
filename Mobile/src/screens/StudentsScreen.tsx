@@ -35,6 +35,7 @@ import {
   scopedStudentsForSession,
 
 } from "../lib/establishment";
+import { projectScopedStudentsForSession } from "../lib/studentsScope";
 
 import { useFloatingTabBarLayout } from "../lib/screenLayout";
 
@@ -115,6 +116,7 @@ export default function StudentsScreen({ route, navigation }: any) {
     assignmentsSource: assignmentsSnapshot.source,
   };
 
+  const studentsProjection = projectScopedStudentsForSession(session, studentsData);
   const availableStudents = scopedStudentsForSession(session, studentsData, teacherScopeState);
 
 
@@ -473,6 +475,12 @@ export default function StudentsScreen({ route, navigation }: any) {
 
           {renderStudentCreate()}
 
+        {studentsProjection.error ? (
+          <Text style={{ color: "#B91C1C", fontWeight: "700", marginBottom: 12 }} testID="students-scope-error">
+            {studentsProjection.error.message}
+          </Text>
+        ) : null}
+
         {mutationsBlocked ? (
           <Text style={{ color: "#B91C1C", fontWeight: "700", marginBottom: 12 }} testID="l1-offline-banner">
             {OFFLINE_COPY.l1ModeTitle}
@@ -562,6 +570,8 @@ export default function StudentsScreen({ route, navigation }: any) {
       presenceRateLabel,
 
       studentsCountLabel,
+
+      studentsProjection.error,
 
       studentsSubtitle,
 

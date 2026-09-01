@@ -60,6 +60,20 @@ function main() {
   }
   process.stdout.write(teacherScopeUnit.stdout || "");
 
+  for (const rel of [
+    path.join("src", "lib", "studentsScope.test.ts"),
+    path.join("src", "lib", "establishmentStudents.audit.test.ts"),
+  ]) {
+    const extra = spawnSync("npx", ["--yes", "tsx", rel], {
+      cwd: MOBILE,
+      encoding: "utf8",
+    });
+    if (extra.status !== 0) {
+      throw new Error(extra.stderr || extra.stdout || `${rel} failed`);
+    }
+    process.stdout.write(extra.stdout || "");
+  }
+
   const home = read(path.join("screens", "HomeScreen.tsx"));
   const formatLib = read(path.join("lib", "format.ts"));
   const homeKpis = read(path.join("lib", "homeDashboardKpis.ts"));
@@ -115,6 +129,13 @@ function main() {
   assert.match(home, /announcementsSnapshot/);
   assert.match(home, /messagesSnapshot/);
   assert.match(home, /metricLabelFromSnapshot/);
+  assert.match(home, /scopedStudentsForSession/);
+  assert.match(home, /visibleStudents/);
+  assert.doesNotMatch(
+    home,
+    /metricLabelFromSnapshot\(studentsSnapshot, \(rows\) => String\(rows\.length\)\)/,
+    "Accueil ne doit plus compter studentsSnapshot.data.length brut",
+  );
   assert.match(home, /DATA_TRUTH_TEST_IDS\.homeUsersValue/);
   assert.match(home, /DATA_TRUTH_TEST_IDS\.homePresenceValue/);
   assert.match(home, /DATA_TRUTH_TEST_IDS\.homePaymentsValue/);

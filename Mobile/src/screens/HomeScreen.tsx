@@ -110,10 +110,11 @@ export default function HomeScreen({ navigation }: any) {
     paymentsSnapshot.status === "empty" ||
     (paymentsSnapshot.status === "offline" && paymentsSnapshot.data.length > 0);
 
+  const visibleStudents = scopedStudentsForSession(session, studentsData, teacherScopeState);
   const usersValue = metricLabelFromSnapshot(usersSnapshot, (rows) => String(countActiveUserAccounts(rows)));
-  const studentsValue = metricLabelFromSnapshot(studentsSnapshot, (rows) => String(rows.length));
+  const studentsValue = metricLabelFromSnapshot(studentsSnapshot, () => String(visibleStudents.length));
   const classesValue = metricLabelFromSnapshot(classesSnapshot, (rows) =>
-    String(rows.length || new Set(studentsData.map((student) => student.className)).size),
+    String(rows.length || new Set(visibleStudents.map((student) => student.className)).size),
   );
   const studentsReady =
     studentsSnapshot.status === "success" ||
@@ -124,9 +125,8 @@ export default function HomeScreen({ navigation }: any) {
     presencesSnapshot.status === "empty" ||
     (presencesSnapshot.status === "offline" && presencesSnapshot.data.length > 0);
   const todayPresenceKpi = getTodayEstablishmentPresenceKpi({
-    students: studentsData,
+    students: visibleStudents,
     presences: presencesData,
-    schoolCode: currentSchool.code || session?.school?.code || session?.user?.schoolCode,
     timeZone: currentSchool.timezone,
   });
   const establishmentPresenceValue =
@@ -150,7 +150,7 @@ export default function HomeScreen({ navigation }: any) {
   const unreadMessagesValue = metricLabelFromSnapshot(messagesSnapshot, () => String(unreadMessagesCount));
   const unreadMessages = messagesSnapshot.status === "success" || messagesSnapshot.status === "empty" ? unreadMessagesCount : 0;
   const teachersValue = String(teachersData.length);
-  const teacherStudents = scopedStudentsForSession(session, studentsData, teacherScopeState);
+  const teacherStudents = visibleStudents;
   const teacherStudentIds = teacherStudents.map((student) => student.id);
   const teacherPresenceStats = getPresenceStats(
     presencesData.filter((presence) => isTodayPresence(presence.date)),

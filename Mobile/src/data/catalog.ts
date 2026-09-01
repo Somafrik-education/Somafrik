@@ -12,6 +12,8 @@ export type Student = {
   classCode?: string;
   className: string;
   academicYearId?: string;
+  schoolId?: string;
+  schoolPublicCode?: string;
   schoolCode: string;
   parentName: string;
   parentPhone: string;
