@@ -1,0 +1,33 @@
+name: Release governance GO-PROD
+
+on:
+  pull_request:
+    branches: [develop]
+    paths:
+      - "scripts/verify-release-governance.js"
+      - "docs/audits/release-governance-goprod-2026-09-01.md"
+      - "docs/audits/release-checklist-goprod-2026-09-01.md"
+      - "package.json"
+      - ".github/workflows/release-governance.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  release-governance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Fetch main and develop for graph audit
+        run: |
+          git fetch origin main
+          git fetch origin develop
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.12.0"
+      - name: Verify release governance (no main merge / no deploy)
+        run: npm run verify:release-governance
