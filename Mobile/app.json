@@ -30,7 +30,7 @@
         "READ_MEDIA_IMAGES"
       ],
       "adaptiveIcon": {
-        "foregroundImage": "./assets/somafrik-app-icon.png",
+        "foregroundImage": "./assets/somafrik-android-adaptive-foreground.png",
         "backgroundColor": "#FFFFFF"
       }
     },

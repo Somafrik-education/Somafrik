@@ -257,10 +257,17 @@ async function main() {
   console.log("PASS AR-PERMS CAMERA+READ_MEDIA_IMAGES ; RECORD_AUDIO bloqué ; backup off");
 
   const icon = pngInfo(path.join(MOBILE, "assets", "somafrik-app-icon.png"));
+  const androidForeground = pngInfo(path.join(MOBILE, "assets", "somafrik-android-adaptive-foreground.png"));
   const splash = pngInfo(path.join(MOBILE, "assets", "somafrik-splash.png"));
   assert.ok(icon.isPng && icon.width >= 1024 && icon.width === icon.height);
+  assert.ok(androidForeground.isPng && androidForeground.width >= 1024 && androidForeground.width === androidForeground.height);
   assert.ok(splash.isPng && splash.width >= 1024 && splash.height >= 1024);
-  console.log("PASS AR-ASSETS icon/splash PNG ≥1024");
+  assert.equal(appJson.expo.icon, "./assets/somafrik-app-icon.png");
+  assert.equal(
+    appJson.expo.android?.adaptiveIcon?.foregroundImage,
+    "./assets/somafrik-android-adaptive-foreground.png",
+  );
+  console.log("PASS AR-ASSETS icon iOS + Android adaptive foreground + splash PNG ≥1024");
 
   const loginSpec = read(path.join(MOBILE, "src", "lib", "loginScreenSpec.ts"));
   const navSpec = read(path.join(MOBILE, "src", "lib", "mobileNavigationSpec.ts"));
