@@ -1,10 +1,11 @@
 # Checklist release GO-PROD — 2026-09-01
 
-**Aucun acte ci-dessous n’est exécuté par l’agent.** Chaque phase exige **USER GO** explicite. Candidat métier figé : `develop@78228be06286b464afd9e691fb227d16be95a63a`. Si `develop` avance **hors fichiers de gouvernance** : STOP, rebase, revalider.
+**Aucun acte ci-dessous n’est exécuté par l’agent.** Chaque phase exige **USER GO** explicite. Candidat métier figé : `develop@78228be06286b464afd9e691fb227d16be95a63a`. Si `develop` avance **hors fichiers de gouvernance** : STOP, rebase, revalider. Un candidat métier autorisé (`CTO_GO` dans `docs/audits/release-approved-candidates-2026-09-01.json`) n’est pas un GO release ni un Ready/merge automatique : HEAD exact ou `diffSha256` rebase-equivalent + ensemble de fichiers strict, sinon FAIL CLOSED.
 
 ## A — Pré-merge `main` (USER GO)
 
 - [ ] Confirmer qu’aucune PR Cursor Go Production n’est ouverte hors la PR d’audit.
+- [ ] Si un candidat métier (ex. #447) est encore ouvert : vérifier que son `diffSha256` versionné correspond toujours après rebase ; sinon **réémettre** l’autorisation (nouveau HEAD + nouvelle empreinte), jamais un GO implicite.
 - [ ] Confirmer #295/#297/#298/#312/#337/#354/#355 toujours hors `develop` / `main`.
 - [ ] Rejouer `git fetch origin main develop` ; noter SHA `main` et `develop`.
 - [ ] Si `main` ≠ `b5074565b08472217702d8ff848f5a398d08831c` : **STOP** — reclasser les main-only.

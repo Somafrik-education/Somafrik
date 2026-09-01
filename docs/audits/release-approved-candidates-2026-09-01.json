@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "issuedAt": "2026-09-01",
+  "notes": [
+    "Fail-closed: PR number alone is never sufficient.",
+    "Exact file-set equality is required (no wildcards).",
+    "headSha pins the audited snapshot of PR #447.",
+    "diffSha256 is a content identity (path + base blob + head blob), not a git-diff index hash.",
+    "After #449 merges, a rebase of #447 that keeps the same file contents yields the same diffSha256 and remains authorized without re-issuing headSha.",
+    "Any content change voids CTO_GO automatically."
+  ],
+  "candidates": [
+    {
+      "pr": 447,
+      "headSha": "6b4370e4879d399f668463ef3e8cf3fe385e31ab",
+      "baseSha": "1f5fc0d6594b45434a216ae461df99fd97bec86c",
+      "files": [
+        "Mobile/app.json",
+        "Mobile/assets/somafrik-android-adaptive-foreground.png",
+        "Mobile/assets/somafrik-app-icon.png",
+        "Mobile/package.json",
+        "Mobile/scripts/generate-launcher-icons.py",
+        "Mobile/scripts/verify-mobile-branding.js",
+        "Mobile/scripts/verify-mobile-release-readiness.js",
+        "scripts/verify-android-release-readiness.js"
+      ],
+      "diffSha256": "5e704e7bd40233d1f70c6707f23d805e07c4bc8d8ae76902ab2ce7da7f1422e8",
+      "decision": "CTO_GO"
+    }
+  ]
+}

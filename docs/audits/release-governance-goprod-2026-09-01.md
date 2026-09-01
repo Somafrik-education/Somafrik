@@ -143,17 +143,83 @@ Fichiers de gouvernance autorisés :
 - `scripts/verify-release-governance.js`
 - `docs/audits/release-governance-goprod-2026-09-01.md`
 - `docs/audits/release-checklist-goprod-2026-09-01.md`
+- `docs/audits/release-approved-candidates-2026-09-01.json`
 
 Conséquences :
 
 - merge **#448** : drift `develop` = gouvernance-only → A vert ; B de #448 vert
-- CI pré-merge **#447** : B voit `Mobile/*` → **rouge avant merge**
+- CI pré-merge **#447** avant merge de **#449** : B voit `Mobile/*` sans autorisation → **rouge avant merge**
+- CI pré-merge **#447** après merge de **#449** : B peut PASS seulement si l’autorisation versionnée correspond encore (voir §11)
 - le HOLD n’attend plus un `workflow_dispatch` post-merge
+
+## 11. Autorisation contrôlée d’un candidat métier (fail-closed)
+
+Le contrôle B reste **fail-closed**. Il n’existe **aucun** bypass env (`SKIP_RELEASE_GOVERNANCE` ignoré), aucun wildcard `Mobile/*` / `scripts/*` / `docs/*`, aucune autorisation par numéro de PR seul ni par nom de branche.
+
+Deux modes, exclusifs :
+
+1. **PR gouvernance-only** — tous les fichiers ∈ allowlist ci-dessus → **PASS** automatique.
+2. **Candidat métier** — au moins un fichier hors allowlist → **PASS uniquement** après décision **CTO_GO** versionnée dans `docs/audits/release-approved-candidates-2026-09-01.json`, et seulement si **toutes** les conditions suivantes tiennent :
+   - le numéro de PR est explicitement listé ;
+   - le diff réel (`git diff --name-only pull_request.base.sha...pull_request.head.sha`) est en **égalité stricte d’ensemble** avec `files[]` (aucun fichier en plus, aucun fichier manquant) ;
+   - **et** l’une des deux identités suivantes :
+     - `headSha` du manifeste === `pull_request.head.sha` **et** `diffSha256` identique (snapshot audité) ;
+     - **rebase-equivalent** : `headSha` a changé (rebase après merge gouvernance) **mais** `diffSha256` est strictement identique.
+
+Toute divergence (HEAD différent **et** identité de contenu différente, fichier extra/manquant, PR absente du manifeste, `decision ≠ CTO_GO`) → **FAIL CLOSED**. Un nouveau HEAD n’est jamais autorisé implicitement.
+
+### Empreinte `diffSha256` (anti-boucle rebase)
+
+Ce n’est **pas** un hash de `git diff` ni du merge commit GitHub. Pour chaque chemin trié du diff réel :
+
+`path<TAB>sha256(blob au merge-base)<TAB>sha256(blob au HEAD)`
+
+puis SHA-256 UTF-8 des lignes jointes par `\n` (pas de newline final). Fichier absent d’un côté = `ABSENT`.
+
+Conséquence après merge futur de **#449** :
+
+1. Rebase #447 sur le nouveau `develop` (gouvernance-only : script + audits + manifeste).
+2. Le HEAD de #447 change probablement.
+3. Les 8 fichiers métier de #447 **ne sont pas** touchés par #449 → les blobs avant/après restent identiques → **même `diffSha256`** → le GO reste valide **sans réémettre `headSha`**.
+4. Si un rebase (ou un commit supplémentaire) change le contenu d’un fichier autorisé, ou si `develop` a avancé sur l’un de ces 8 chemins, `diffSha256` change → **GO annulé automatiquement**. Il faut alors **réémettre** l’entrée (nouveau `headSha` + nouveau `diffSha256` + même revue CTO).
+
+`baseSha` dans le manifeste est documentaire (tip `develop` au moment de l’audit). Il n’est **pas** exigé égal au `pull_request.base.sha` futur — l’exiger recréerait la boucle. L’identité de contenu porte la contrainte.
+
+### Candidat initial — PR #447
+
+| Champ | Valeur |
+|---|---|
+| PR | `#447` |
+| `headSha` audité | `6b4370e4879d399f668463ef3e8cf3fe385e31ab` |
+| `baseSha` documentaire | `develop@1f5fc0d6594b45434a216ae461df99fd97bec86c` |
+| `diffSha256` | `5e704e7bd40233d1f70c6707f23d805e07c4bc8d8ae76902ab2ce7da7f1422e8` |
+| `decision` | `CTO_GO` |
+
+Périmètre exact (8 fichiers, **aucun** wildcard) :
+
+```text
+Mobile/app.json
+Mobile/assets/somafrik-android-adaptive-foreground.png
+Mobile/assets/somafrik-app-icon.png
+Mobile/package.json
+Mobile/scripts/generate-launcher-icons.py
+Mobile/scripts/verify-mobile-branding.js
+Mobile/scripts/verify-mobile-release-readiness.js
+scripts/verify-android-release-readiness.js
+```
+
+Cette PR de gouvernance **ne modifie pas** #447. Ready / merge de #447, merge `develop → main`, EAS submit / Play restent interdits ici.
+
+### Workflow `paths:`
+
+Le fichier YAML `.github/workflows/release-governance.yml` **reste hors allowlist** (test `RG-NEG-workflow-not-governance-only`). L’ajouter aux `paths:` du workflow dans cette PR ferait échouer le contrôle B.
+
+Le manifeste n’est donc **pas** un trigger isolé. Toute réémission d’autorisation **doit** aussi modifier le script et/ou Lot G (déjà dans `paths:`). C’est volontaire : un commit JSON-only ne relance pas le gate tant qu’une décision CTO explicite n’allowliste pas le YAML.
 
 ## Gate
 
 `npm run verify:release-governance`
 
-Échoue si `origin/develop` avance **hors** fichiers de gouvernance, si le diff de la **PR courante** n’est pas gouvernance-only, si `origin/main` bouge, ou si une PR frozen est ancêtre de HEAD / citée en sujet merge ou squash `(#n)`. Ne merge pas `main`. Ne déploie pas.
+Échoue si `origin/develop` avance **hors** fichiers de gouvernance, si le diff de la **PR courante** n’est ni gouvernance-only ni un candidat `CTO_GO` exact (PR + HEAD/identité + ensemble de fichiers), si `origin/main` bouge, ou si une PR frozen est ancêtre de HEAD / citée en sujet merge ou squash `(#n)`. Ne merge pas `main`. Ne déploie pas.
 
-P1 Codex #445 : exclusion frozen squash/cherry-pick. P2 : `Mobile/app.json` + `Mobile/package.json` dans `paths`. P3 : exception gouvernance-only sur le drift `develop`. P4 : le même allowlist s’applique au candidat PR (`base...head`) pour HOLD pré-merge.
+P1 Codex #445 : exclusion frozen squash/cherry-pick. P2 : `Mobile/app.json` + `Mobile/package.json` dans `paths`. P3 : exception gouvernance-only sur le drift `develop`. P4 : le même allowlist s’applique au candidat PR (`base...head`) pour HOLD pré-merge. P5 : candidat métier explicitement autorisé (PR + HEAD + fichiers + `diffSha256` rebase-equivalent).
