@@ -1,0 +1,43 @@
+name: Android release readiness GO-PROD
+
+on:
+  pull_request:
+    branches: [develop]
+    paths:
+      - "scripts/verify-android-release-readiness.js"
+      - "docs/audits/android-release-readiness-goprod-2026-09-01.md"
+      - "package.json"
+      - ".github/workflows/android-release-readiness.yml"
+      - ".github/workflows/ci.yml"
+      - ".github/workflows/security.yml"
+      - ".github/workflows/mobile-release-build.yml"
+      - "Mobile/app.json"
+      - "Mobile/app.config.js"
+      - "Mobile/eas.json"
+      - "Mobile/package.json"
+      - "Mobile/config/releaseEnvironments.js"
+      - "Mobile/config/releaseEnvironments.test.js"
+      - "Mobile/plugins/withSomafrikAndroidSecurity.js"
+      - "Mobile/scripts/verify-mobile-release-readiness.js"
+      - "Mobile/scripts/verify-mobile-ui-e2e-scaffold.js"
+      - "Mobile/src/config/env.ts"
+      - "Mobile/src/lib/loginScreenSpec.ts"
+      - "Mobile/src/lib/mobileNavigationSpec.ts"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  android-release-readiness:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.12.0"
+      - name: Verify Android release readiness (no EAS / no device / no deploy)
+        run: npm run verify:android-release-readiness
