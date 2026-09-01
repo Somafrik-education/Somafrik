@@ -191,7 +191,7 @@ function main() {
   }
 
   assert.equal(PREVIEW_API, "https://somafrik-api-preprod.onrender.com");
-  assert.equal(DISPLAY_NAMES.preview, "Somafrik QA");
+  assert.equal(DISPLAY_NAMES.preview, "Somafrik");
   assert.equal(ANDROID_PACKAGE, "com.somafrik.app");
   assert.equal(APP_SLUG, "somafrik");
 
@@ -233,7 +233,7 @@ function main() {
   assert.match(badge, /testID="environment-badge"/);
   const appTsx = read(path.join(MOBILE, "App.tsx"));
   assert.match(appTsx, /<EnvironmentBadge\s*\/>/);
-  console.log("OK: UX Preview — nom Somafrik QA + badge environnement visible");
+  console.log("OK: UX Preview — nom launcher Somafrik + badge environnement visible");
 
   const expoConfig = run("npx", ["expo", "config", "--type", "public", "--json"], {
     env: {
@@ -247,7 +247,7 @@ function main() {
     },
   });
   const publicConfig = parseExpoConfigJson(expoConfig.stdout);
-  assert.equal(publicConfig.name, "Somafrik QA");
+  assert.equal(publicConfig.name, "Somafrik");
   assert.equal(publicConfig.slug, APP_SLUG);
   assert.equal(publicConfig.android.package, ANDROID_PACKAGE);
   assert.equal(publicConfig.extra.apiUrl, PREVIEW_API);
@@ -257,7 +257,7 @@ function main() {
   assert.equal(publicConfig.extra.showEnvironmentBadge, true);
   assert.equal(publicConfig.extra.eas.projectId, EXPO_PROJECT_ID);
   assert.notEqual(publicConfig.updates?.enabled, true);
-  console.log("OK: expo config public preview — Somafrik QA / HTTPS préprod / badge");
+  console.log("OK: expo config public preview — Somafrik / HTTPS préprod / badge");
 
   const pkg = JSON.parse(read(path.join(MOBILE, "package.json")));
   assert.equal(pkg.scripts["build:preview"], "eas build --platform android --profile preview");
@@ -275,7 +275,9 @@ function main() {
   assert.match(docs, /eas whoami/);
   assert.match(docs, /eas project:info/);
   assert.match(docs, /eas build --platform android --profile preview/);
-  assert.match(docs, /Somafrik QA/);
+  assert.match(docs, /Nom affiché \| \*\*Somafrik\*\*/);
+  assert.match(docs, /Badge \| \*\*Preview QA\*\*/);
+  assert.doesNotMatch(docs, /lanceur doit afficher \*\*Somafrik QA\*\*/);
   assert.match(docs, /somafrik-api-preprod\.onrender\.com/);
   assert.match(docs, /ne constitue pas un service Render/);
   assert.match(docs, /BLOCKED_EAS_AUTH|eas login/);

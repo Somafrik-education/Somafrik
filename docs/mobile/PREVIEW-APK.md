@@ -1,4 +1,4 @@
-# Somafrik QA — APK Preview Android (Expo / EAS)
+# Somafrik — APK Preview Android (Expo / EAS)
 
 PR Draft uniquement. **Aucun `eas submit`. Aucun upload Google Play. Aucun merge Ready.**
 
@@ -7,7 +7,7 @@ Render héberge l’API et le Web. Le Mobile Preview est distribué via Expo/EAS
 Cible :
 
 ```text
-Somafrik QA
+Somafrik
    ↓
 APK Android Preview (distribution interne)
    ↓
@@ -28,7 +28,7 @@ PostgreSQL préproduction
 | Distribution | `internal` |
 | Plateforme | Android |
 | Artefact | **APK** (`buildType: apk`) |
-| Nom affiché | **Somafrik QA** |
+| Nom affiché | **Somafrik** |
 | Badge | **Preview QA** (jamais en production) |
 | Package | `com.somafrik.app` |
 | Slug Expo | `somafrik` |
@@ -41,7 +41,7 @@ PostgreSQL préproduction
 
 Fail-closed : si le profil `preview` est mal configuré, `app.config.js` et `verify:mobile-preview-apk` échouent.
 
-Le package Android est **le même** que Production (`com.somafrik.app`). Android refuse d’installer deux APK du même package signés différemment. Désinstaller l’app Play / production **avant** d’installer Somafrik QA.
+Le package Android est **le même** que Production (`com.somafrik.app`). Android refuse d’installer deux APK du même package signés différemment. Désinstaller l’app Play / production **avant** d’installer l’APK Preview. L’environnement Preview se distingue par le badge in-app **Preview QA**, pas par le nom launcher.
 
 ## CNG
 
@@ -113,18 +113,18 @@ Sur le téléphone :
 2. Autoriser le navigateur (Chrome) **ou** l’application Fichiers utilisée pour ouvrir l’APK.
 3. Confirmer l’avertissement Android (sideload).
 
-## 4. Installer Somafrik QA
+## 4. Installer l’APK Preview
 
 1. Désinstaller toute app `com.somafrik.app` déjà présente (Play / autre signature).
 2. Ouvrir l’APK téléchargé → Installer.
-3. Le lanceur doit afficher **Somafrik QA** (pas « Somafrik » production).
+3. Le lanceur doit afficher **Somafrik** (pas « Somafrik QA » ni « Somafrik Préprod »).
 4. Au lancement, le badge **Preview QA** doit être visible.
 
 ## 5. Vérifier l’API préprod
 
 Contrôles attendus :
 
-- Nom : Somafrik QA
+- Nom : Somafrik
 - Badge : Preview QA
 - Login : identifiants **préproduction** uniquement (pas de PIN démo, pas de comptes production)
 - L’app ne doit pas joindre `https://api.somafrik.app`

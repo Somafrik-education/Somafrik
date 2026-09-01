@@ -27,11 +27,11 @@ assert.equal(ANDROID_PACKAGE, "com.somafrik.app");
 assert.equal(APP_VERSION, "1.2.1");
 assert.equal(ANDROID_VERSION_CODE, 13);
 assert.ok(Number.isInteger(ANDROID_VERSION_CODE) && ANDROID_VERSION_CODE > 0);
-assert.equal(DISPLAY_NAMES.preview, "Somafrik QA");
-assert.equal(DISPLAY_NAMES.preproduction, "Somafrik Préprod");
-assert.equal(DISPLAY_NAMES.production, "Somafrik");
-assert.equal(DISPLAY_NAMES.development, "Somafrik");
-assert.doesNotMatch(DISPLAY_NAMES.production, /SchoolLink|Expo App|Somafrik Dev/);
+for (const profile of RELEASE_PROFILES) {
+  assert.equal(DISPLAY_NAMES[profile], "Somafrik", `${profile}: nom launcher doit être Somafrik`);
+  assert.doesNotMatch(DISPLAY_NAMES[profile], /QA|Préprod|Preprod|Dev|Preview/i);
+}
+assert.doesNotMatch(DISPLAY_NAMES.production, /SchoolLink|Expo App/);
 
 assert.equal(resolveReleaseProfile({ EXPO_PUBLIC_RELEASE_PROFILE: "preproduction" }), "preproduction");
 assert.equal(resolveReleaseProfile({ EAS_BUILD_PROFILE: "production" }), "production");

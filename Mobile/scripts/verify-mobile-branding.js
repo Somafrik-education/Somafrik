@@ -35,17 +35,20 @@ const CANONICAL = {
 const LAUNCHER = {
   iosIcon: {
     path: path.join(MOBILE, "assets", "somafrik-app-icon.png"),
-    gitBlobSha: "956e583e40246e109dc2a0838f5e8a1fddbc4c94",
+    gitBlobSha: "1b97e3d1b6cce3b8138b46c193e43fadb09898be",
     appJsonPath: "./assets/somafrik-app-icon.png",
   },
   androidForeground: {
     path: path.join(MOBILE, "assets", "somafrik-android-adaptive-foreground.png"),
-    gitBlobSha: "d7d79d5e2ca99d190686ef5d84ec73819446cb34",
+    gitBlobSha: "94f800bdc8a0f92297bf3514a05b799ac2688803",
     appJsonPath: "./assets/somafrik-android-adaptive-foreground.png",
   },
 };
 
 const ANDROID_SAFE_ZONE_RATIO = 66 / 108;
+const ANDROID_VIEWPORT_RATIO = 72 / 108;
+const ANDROID_TARGET_BOUNDING_CIRCLE = 0.42;
+const IOS_TARGET_WIDTH_RATIO = 0.50;
 const WHITE_THRESHOLD = 248;
 
 const LEGACY_MOBILE_ASSET_SHAS = new Set([
@@ -185,6 +188,13 @@ function contentMetrics(buffer) {
   const centerX = (minX + maxX) / 2;
   const centerY = (minY + maxY) / 2;
   const boundingCircle = Math.hypot(boxW, boxH) / width;
+  const padLeft = minX;
+  const padTop = minY;
+  const padRight = width - 1 - maxX;
+  const padBottom = height - 1 - maxY;
+  const minPadRatio = Math.min(padLeft, padTop, padRight, padBottom) / width;
+  const viewportInset = Math.round(width * (1 - ANDROID_VIEWPORT_RATIO) / 2);
+  const safeInset = Math.round(width * (1 - ANDROID_SAFE_ZONE_RATIO) / 2);
   return {
     width,
     height,
@@ -195,6 +205,17 @@ function contentMetrics(buffer) {
     centerOffsetX: (centerX - width / 2) / width,
     centerOffsetY: (centerY - height / 2) / height,
     boundingCircle,
+    minPadRatio,
+    insideViewport:
+      minX >= viewportInset
+      && minY >= viewportInset
+      && maxX < width - viewportInset
+      && maxY < height - viewportInset,
+    insideSafeZone:
+      minX >= safeInset
+      && minY >= safeInset
+      && maxX < width - safeInset
+      && maxY < height - safeInset,
   };
 }
 
@@ -258,16 +279,29 @@ function verifyMobileBranding() {
     LAUNCHER.androidForeground.gitBlobSha,
   );
   assert.ok(
-    ios.metrics.widthRatio >= 0.68 && ios.metrics.widthRatio <= 0.72,
-    `icône iOS: largeur du logo hors cible 70% (${(ios.metrics.widthRatio * 100).toFixed(2)}%)`,
+    ios.metrics.widthRatio >= IOS_TARGET_WIDTH_RATIO - 0.02
+      && ios.metrics.widthRatio <= IOS_TARGET_WIDTH_RATIO + 0.02,
+    `icône iOS: largeur du logo hors cible 50% (${(ios.metrics.widthRatio * 100).toFixed(2)}%)`,
+  );
+  assert.ok(
+    ios.metrics.insideViewport,
+    `icône iOS/legacy Android: logo hors viewport 72/108 (bounding ${(ios.metrics.boundingCircle * 100).toFixed(2)}%)`,
   );
   assert.ok(
     Math.abs(ios.metrics.centerOffsetX) < 0.01 && Math.abs(ios.metrics.centerOffsetY) < 0.01,
     "icône iOS: logo non centré",
   );
   assert.ok(
-    android.metrics.boundingCircle <= ANDROID_SAFE_ZONE_RATIO + 0.002,
-    `Android adaptive: bounding circle ${(android.metrics.boundingCircle * 100).toFixed(2)}% hors zone de sécurité 61.11%`,
+    android.metrics.boundingCircle <= ANDROID_TARGET_BOUNDING_CIRCLE + 0.01,
+    `Android adaptive: bounding circle ${(android.metrics.boundingCircle * 100).toFixed(2)}% au-dessus de la cible 42%`,
+  );
+  assert.ok(
+    android.metrics.insideSafeZone && android.metrics.insideViewport,
+    `Android adaptive: logo hors zone de sécurité (${(android.metrics.boundingCircle * 100).toFixed(2)}%)`,
+  );
+  assert.ok(
+    android.metrics.minPadRatio >= 0.28,
+    `Android adaptive: padding insuffisant (${(android.metrics.minPadRatio * 100).toFixed(2)}%)`,
   );
   assert.ok(
     Math.abs(android.metrics.centerOffsetX) < 0.01 && Math.abs(android.metrics.centerOffsetY) < 0.01,

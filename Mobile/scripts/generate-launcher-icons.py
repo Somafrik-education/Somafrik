@@ -6,7 +6,8 @@ white square so Android adaptive masks (circle, squircle, rounded square) and
 iOS rounded corners keep the full symbol visible.
 
 Android adaptive icons are 108dp with a 66dp-diameter safe zone. The
-foreground asset therefore uses a tighter layout than the iOS icon.
+foreground asset is more padded than the iOS icon. Expo `icon` is also the
+Android legacy fallback, so the iOS asset itself must survive a circle mask.
 """
 
 from __future__ import annotations
@@ -16,17 +17,20 @@ import math
 import sys
 from pathlib import Path
 
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageFont
 
 ROOT = Path(__file__).resolve().parents[2]
 CANONICAL_MARK = ROOT / "logo without text.png"
 ASSETS = ROOT / "Mobile" / "assets"
 
-# Expo / iOS: full-bleed square; keep modest inset so the mark is not edge-to-edge.
-IOS_CONTENT_WIDTH_RATIO = 0.70
-# Android: bounding circle of the mark, as a fraction of the 108dp canvas.
-# Safe zone is 66/108 ≈ 0.611; 0.54 leaves margin inside every OEM mask.
-ANDROID_BOUNDING_CIRCLE_RATIO = 0.54
+# Expo `icon` is also the Android legacy / Play fallback. A 70% wide mark has a
+# bounding circle ~81% and is cropped by circle / squircle launcher masks.
+# Target ~50% width so the square asset still fits the 72/108 Android viewport.
+IOS_CONTENT_WIDTH_RATIO = 0.50
+# Android adaptive: 108dp canvas, 72dp viewport, 66dp-diameter safe zone.
+# 0.54 still looked cropped on OEM launchers (extra inset on top of the mask).
+# 0.42 keeps the full mark inside aggressive circular crops.
+ANDROID_BOUNDING_CIRCLE_RATIO = 0.42
 WHITE_THRESHOLD = 248
 WHITE = (255, 255, 255)
 SAFE_ZONE_RATIO = 66 / 108
@@ -178,6 +182,40 @@ def build_previews(
     new_android_circle.save(preview_dir / "after-android-circle.png")
     new_android_round.save(preview_dir / "after-android-rounded-square.png")
     guide.save(preview_dir / "after-android-safe-zone-guide.png")
+    build_launcher_home(android_fg, preview_dir / "after-android-launcher-home.png")
+
+
+def build_launcher_home(android_fg: Image.Image, dest: Path) -> None:
+    """Simulate a Pixel-style launcher tile: circular adaptive icon + label."""
+    tile = 208
+    canvas_w, canvas_h = 512, 400
+    wallpaper = (32, 33, 36)
+    home = Image.new("RGB", (canvas_w, canvas_h), wallpaper)
+    icon_resized = android_fg.resize((tile, tile), Image.Resampling.LANCZOS)
+    mask = circle_mask(tile)
+    circular = icon_resized.convert("RGBA")
+    circular.putalpha(mask)
+    left = (canvas_w - tile) // 2
+    top = 64
+    home_rgba = home.convert("RGBA")
+    home_rgba.alpha_composite(circular.convert("RGBA"), (left, top))
+    home = home_rgba.convert("RGB")
+    draw = ImageDraw.Draw(home)
+    label = "Somafrik"
+    font = None
+    for candidate in (
+        Path("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"),
+        Path("/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf"),
+    ):
+        if candidate.exists():
+            font = ImageFont.truetype(str(candidate), 28)
+            break
+    if font is None:
+        font = ImageFont.load_default()
+    bbox = draw.textbbox((0, 0), label, font=font)
+    text_w = bbox[2] - bbox[0]
+    draw.text(((canvas_w - text_w) // 2, top + tile + 18), label, fill=(248, 250, 252), font=font)
+    home.save(dest, format="PNG", optimize=True)
 
 
 def main() -> int:
