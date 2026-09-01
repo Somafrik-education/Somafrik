@@ -11,7 +11,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 
 const ROOT = path.resolve(__dirname, "..");
-const BASELINE = "5173537d29d31d16039883552f5e2cb506060581";
+const BASELINE = "78228be06286b464afd9e691fb227d16be95a63a";
 const EXPECTED_MAIN = "b5074565b08472217702d8ff848f5a398d08831c";
 const MAIN_ONLY = [
   "6ff6110643d4cfdd349162d66b6dd590daf4c902",
@@ -19,6 +19,12 @@ const MAIN_ONLY = [
 ];
 const FROZEN = ["295", "297", "298", "312", "337", "354", "355"];
 const MAIN_SNAPSHOT_ON_DEVELOP = "878e4ab82e2fd91a9e419dd63d2b4d2ad6eb5b6b";
+/** Seuls ces chemins peuvent apparaître sur origin/develop après le baseline sans revalidation métier. */
+const GOVERNANCE_ONLY_PATHS = new Set([
+  "scripts/verify-release-governance.js",
+  "docs/audits/release-governance-goprod-2026-09-01.md",
+  "docs/audits/release-checklist-goprod-2026-09-01.md",
+]);
 
 function sh(cmd) {
   return execSync(cmd, { cwd: ROOT, encoding: "utf8" }).trim();
@@ -70,14 +76,74 @@ function refSha(ref) {
   }
 }
 
-function assertDevelopFrozen(originDevelop, baseline) {
+function listChangedFiles(fromSha, toSha) {
+  if (!fromSha || !toSha || fromSha === toSha) return [];
+  const out = sh(`git diff --name-only ${fromSha}..${toSha}`);
+  return out ? out.split(/\r?\n/).filter(Boolean) : [];
+}
+
+function listChangedFilesThreeDot(baseSha, headSha) {
+  if (!baseSha || !headSha || baseSha === headSha) return [];
+  const out = sh(`git diff --name-only ${baseSha}...${headSha}`);
+  return out ? out.split(/\r?\n/).filter(Boolean) : [];
+}
+
+function extraDevelopFiles(changedFiles) {
+  return [...new Set(changedFiles || [])].filter((file) => !GOVERNANCE_ONLY_PATHS.has(file));
+}
+
+function readPullRequestRange() {
+  const eventPath = process.env.GITHUB_EVENT_PATH;
+  if (!eventPath || !fs.existsSync(eventPath)) return null;
+  try {
+    const event = JSON.parse(fs.readFileSync(eventPath, "utf8"));
+    const base = event.pull_request?.base?.sha || null;
+    const head = event.pull_request?.head?.sha || null;
+    if (base && head) return { base, head, source: "pull_request" };
+  } catch {
+    return null;
+  }
+  return null;
+}
+
+function resolvePrRange(originDevelop) {
+  const fromEvent = readPullRequestRange();
+  if (fromEvent) return fromEvent;
+  if (originDevelop) {
+    return { base: originDevelop, head: gitSha(), source: "local-origin-develop" };
+  }
+  return null;
+}
+
+/**
+ * Freeze strict du tip métier, avec exception gouvernance-only :
+ * origin/develop === baseline → PASS
+ * sinon git diff --name-only baseline..origin/develop ⊆ GOVERNANCE_ONLY_PATHS → PASS
+ * tout autre fichier → FAIL (revalidation métier obligatoire)
+ */
+function assertDevelopFrozen(originDevelop, baseline, changedFiles) {
   if (!originDevelop) {
     throw new Error("origin/develop absent — git fetch origin develop requis");
   }
+  if (originDevelop === baseline) return;
+  const extra = extraDevelopFiles(changedFiles);
   assert.equal(
-    originDevelop,
-    baseline,
-    `origin/develop a avancé (${originDevelop}). STOP : rebase/revalidation (baseline ${baseline}).`,
+    extra.length,
+    0,
+    `origin/develop a avancé fonctionnellement (${originDevelop}). ` +
+      `Fichiers hors gouvernance: ${extra.join(", ") || "(diff vide non listé)"}. ` +
+      `STOP : rebase/revalidation (baseline ${baseline}).`,
+  );
+}
+
+function assertCurrentPrGovernanceOnly(changedFiles) {
+  const extra = extraDevelopFiles(changedFiles);
+  assert.equal(
+    extra.length,
+    0,
+    `PR courante a avancé fonctionnellement. ` +
+      `Fichiers hors gouvernance: ${extra.join(", ") || "(diff vide non listé)"}. ` +
+      `FAIL avant merge.`,
   );
 }
 
@@ -90,17 +156,44 @@ function assertFrozenAbsentFromLog(subjects, n) {
 }
 
 function runNegativeUnitTests() {
+  const moved = "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef";
+  const governanceOnly = [...GOVERNANCE_ONLY_PATHS];
   assert.throws(
-    () => assertDevelopFrozen("deadbeefdeadbeefdeadbeefdeadbeefdeadbeef", BASELINE),
-    /avancé/,
-    "RG-NEG-develop-moved",
+    () => assertDevelopFrozen(moved, BASELINE, ["Mobile/app.json"]),
+    /avancé fonctionnellement[\s\S]*Mobile\/app\.json/,
+    "RG-NEG-business-change-forbidden",
   );
-  assertDevelopFrozen(BASELINE, BASELINE);
+  assert.throws(
+    () => assertDevelopFrozen(moved, BASELINE, [
+      ...governanceOnly,
+      "Mobile/package.json",
+    ]),
+    /Mobile\/package\.json/,
+    "RG-NEG-business-change-forbidden-with-governance",
+  );
+  assert.throws(
+    () => assertDevelopFrozen(moved, BASELINE, [
+      ...governanceOnly,
+      ".github/workflows/release-governance.yml",
+    ]),
+    /release-governance\.yml/,
+    "RG-NEG-workflow-not-governance-only",
+  );
+  assertDevelopFrozen(moved, BASELINE, governanceOnly);
+  assertDevelopFrozen(BASELINE, BASELINE, ["Mobile/app.json"]);
+  assert.throws(
+    () => assertCurrentPrGovernanceOnly(["Mobile/app.json"]),
+    /PR courante[\s\S]*Mobile\/app\.json/,
+    "RG-NEG-current-pr-business-change-forbidden",
+  );
+  assertCurrentPrGovernanceOnly(governanceOnly);
   assert.match("Merge pull request #297 from x", frozenSubjectRe("297"));
   assert.match("fix(seed): identités (#297)", frozenSubjectRe("297"));
   assert.doesNotMatch("fix(seed): identités (#1297)", frozenSubjectRe("297"));
   assert.doesNotMatch("docs: voir PR 297", frozenSubjectRe("297"));
-  console.log("PASS RG-NEG-develop-moved");
+  console.log("PASS RG-NEG-business-change-forbidden");
+  console.log("PASS RG-POS-governance-only-merge");
+  console.log("PASS RG-NEG-current-pr-business-change-forbidden");
   console.log("PASS RG-NEG-frozen-squash-subject");
 }
 
@@ -122,6 +215,9 @@ function main() {
   assert.match(audit, /pas `RELEASE_ENGINEERING_READY`/);
   assert.match(audit, new RegExp(EXPECTED_MAIN));
   assert.match(audit, new RegExp(BASELINE));
+  assert.match(audit, /gouvernance-only/);
+  assert.match(audit, /git diff --name-only BASELINE\.\.origin\/develop/);
+  assert.match(audit, /pull_request\.base\.sha\.\.\.pull_request\.head\.sha/);
   assert.match(checklist, /USER GO/);
   assert.match(checklist, /Aucun acte ci-dessous n’est exécuté/);
   assert.match(checklist, /eas submit/);
@@ -159,8 +255,27 @@ function main() {
     throw new Error("origin/main absent — git fetch origin main requis");
   }
 
-  assertDevelopFrozen(originDevelop, BASELINE);
-  console.log(`PASS RG-DEVELOP-FROZEN origin/develop=${originDevelop}`);
+  const developChanged = listChangedFiles(BASELINE, originDevelop);
+  assertDevelopFrozen(originDevelop, BASELINE, developChanged);
+  if (originDevelop === BASELINE) {
+    console.log(`PASS RG-DEVELOP-FROZEN origin/develop=${originDevelop} (égal baseline)`);
+  } else {
+    console.log(
+      `PASS RG-DEVELOP-GOVERNANCE-ONLY origin/develop=${originDevelop} files=${developChanged.join(",") || "(none)"}`,
+    );
+  }
+
+  const prRange = resolvePrRange(originDevelop);
+  assert.ok(
+    prRange?.base && prRange?.head,
+    "impossible de résoudre pull_request.base/head (event GitHub ou origin/develop...HEAD)",
+  );
+  const prChanged = listChangedFilesThreeDot(prRange.base, prRange.head);
+  assertCurrentPrGovernanceOnly(prChanged);
+  console.log(
+    `PASS RG-PR-GOVERNANCE-ONLY source=${prRange.source} ${prRange.base}...${prRange.head} ` +
+      `files=${prChanged.join(",") || "(none)"}`,
+  );
 
   const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, "package.json"), "utf8"));
   assert.equal(pkg.scripts["verify:release-governance"], "node scripts/verify-release-governance.js");
