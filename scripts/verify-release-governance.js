@@ -8,7 +8,8 @@
  * 1. PR gouvernance-only → PASS
  * 2. PR métier sans autorisation exacte → FAIL CLOSED
  * 3. PR métier PASS seulement si PR + (HEAD exact OU identité de contenu) +
- *    égalité stricte d'ensemble des fichiers + decision CTO_GO
+ *    égalité stricte d'ensemble des fichiers + decision CTO_GO,
+ *    avec autorité lue à pull_request.base.sha (jamais le HEAD candidat).
  *
  * L'identité de contenu (diffSha256) est un hash SHA-256 des blobs avant/après
  * au merge-base…HEAD, pas un hash de `git diff` (indépendant du merge commit GitHub).
@@ -176,6 +177,91 @@ function extraAfterBootstrap(changedFiles, bootstrapCtx) {
   });
 }
 
+function gitShowUtf8(rev, file) {
+  const spec = `${rev}:${file}`;
+  try {
+    execFileSync("git", ["cat-file", "-e", spec], { cwd: ROOT, stdio: "ignore" });
+  } catch {
+    return null;
+  }
+  return execFileSync("git", ["cat-file", "blob", spec], {
+    cwd: ROOT,
+    encoding: "utf8",
+    maxBuffer: 20 * 1024 * 1024,
+  });
+}
+
+function parseApprovedCandidatesJson(raw, sourceLabel) {
+  let data;
+  try {
+    data = JSON.parse(raw);
+  } catch {
+    throw new Error(`manifeste d'autorisation illisible (${sourceLabel}). FAIL CLOSED.`);
+  }
+  if (!data || !Array.isArray(data.candidates)) {
+    throw new Error(`manifeste (${sourceLabel}): candidates[] obligatoire. FAIL CLOSED.`);
+  }
+  const seen = new Set();
+  return data.candidates.map((candidate, index) => {
+    if (!Number.isInteger(candidate.pr) || candidate.pr <= 0) {
+      throw new Error(`candidates[${index}].pr invalide`);
+    }
+    if (seen.has(candidate.pr)) {
+      throw new Error(`candidates: PR #${candidate.pr} dupliquée`);
+    }
+    seen.add(candidate.pr);
+    if (!/^[0-9a-f]{40}$/.test(candidate.headSha || "")) {
+      throw new Error(`candidates[${index}].headSha invalide`);
+    }
+    if (candidate.baseSha && !/^[0-9a-f]{40}$/.test(candidate.baseSha)) {
+      throw new Error(`candidates[${index}].baseSha invalide`);
+    }
+    if (!/^[0-9a-f]{64}$/.test(candidate.diffSha256 || "")) {
+      throw new Error(`candidates[${index}].diffSha256 invalide`);
+    }
+    if (!Array.isArray(candidate.files) || candidate.files.length === 0) {
+      throw new Error(`candidates[${index}].files vide`);
+    }
+    for (const file of candidate.files) assertExactAuthPath(file);
+    if (candidate.files.length !== new Set(candidate.files).size) {
+      throw new Error(`candidates[${index}].files dupliqués`);
+    }
+    if (typeof candidate.decision !== "string" || !candidate.decision) {
+      throw new Error(`candidates[${index}].decision manquante`);
+    }
+    return {
+      pr: candidate.pr,
+      headSha: candidate.headSha,
+      baseSha: candidate.baseSha || null,
+      files: [...candidate.files],
+      diffSha256: candidate.diffSha256,
+      decision: candidate.decision,
+    };
+  });
+}
+
+/** Schéma du manifeste dans le checkout courant (cette PR gouvernance). Pas une source d'autorité B. */
+function loadApprovedCandidatesFromWorkingTree() {
+  const abs = path.join(ROOT, CANDIDATES_REL);
+  if (!fs.existsSync(abs)) {
+    throw new Error(`manifeste d'autorisation absent: ${CANDIDATES_REL}. FAIL CLOSED.`);
+  }
+  return parseApprovedCandidatesJson(fs.readFileSync(abs, "utf8"), `working-tree:${CANDIDATES_REL}`);
+}
+
+/**
+ * Source d'autorité du contrôle B : manifeste à fromSha (pull_request.base.sha).
+ * Absent sur la base → aucune autorisation (fail-closed). Jamais le HEAD candidat.
+ */
+function loadApprovedCandidates({ fromSha } = {}) {
+  if (!fromSha) {
+    throw new Error("loadApprovedCandidates: fromSha (base de confiance) obligatoire. FAIL CLOSED.");
+  }
+  const raw = gitShowUtf8(fromSha, CANDIDATES_REL);
+  if (raw == null) return [];
+  return parseApprovedCandidatesJson(raw, `${fromSha}:${CANDIDATES_REL}`);
+}
+
 function readPullRequestEvent() {
   const eventPath = process.env.GITHUB_EVENT_PATH;
   if (!eventPath || !fs.existsSync(eventPath)) return null;
@@ -228,59 +314,6 @@ function assertExactAuthPath(filePath) {
   }
 }
 
-function loadApprovedCandidates() {
-  const abs = path.join(ROOT, CANDIDATES_REL);
-  if (!fs.existsSync(abs)) {
-    throw new Error(`manifeste d'autorisation absent: ${CANDIDATES_REL}. FAIL CLOSED.`);
-  }
-  let data;
-  try {
-    data = JSON.parse(fs.readFileSync(abs, "utf8"));
-  } catch {
-    throw new Error(`manifeste d'autorisation illisible: ${CANDIDATES_REL}. FAIL CLOSED.`);
-  }
-  if (!data || !Array.isArray(data.candidates)) {
-    throw new Error("manifeste: candidates[] obligatoire. FAIL CLOSED.");
-  }
-  const seen = new Set();
-  return data.candidates.map((candidate, index) => {
-    if (!Number.isInteger(candidate.pr) || candidate.pr <= 0) {
-      throw new Error(`candidates[${index}].pr invalide`);
-    }
-    if (seen.has(candidate.pr)) {
-      throw new Error(`candidates: PR #${candidate.pr} dupliquée`);
-    }
-    seen.add(candidate.pr);
-    if (!/^[0-9a-f]{40}$/.test(candidate.headSha || "")) {
-      throw new Error(`candidates[${index}].headSha invalide`);
-    }
-    if (candidate.baseSha && !/^[0-9a-f]{40}$/.test(candidate.baseSha)) {
-      throw new Error(`candidates[${index}].baseSha invalide`);
-    }
-    if (!/^[0-9a-f]{64}$/.test(candidate.diffSha256 || "")) {
-      throw new Error(`candidates[${index}].diffSha256 invalide`);
-    }
-    if (!Array.isArray(candidate.files) || candidate.files.length === 0) {
-      throw new Error(`candidates[${index}].files vide`);
-    }
-    for (const file of candidate.files) assertExactAuthPath(file);
-    if (candidate.files.length !== new Set(candidate.files).size) {
-      throw new Error(`candidates[${index}].files dupliqués`);
-    }
-    if (typeof candidate.decision !== "string" || !candidate.decision) {
-      throw new Error(`candidates[${index}].decision manquante`);
-    }
-    return {
-      pr: candidate.pr,
-      headSha: candidate.headSha,
-      baseSha: candidate.baseSha || null,
-      files: [...candidate.files],
-      diffSha256: candidate.diffSha256,
-      decision: candidate.decision,
-    };
-  });
-}
-
 function gitBlobSha256(rev, file) {
   const spec = `${rev}:${file}`;
   try {
@@ -316,15 +349,19 @@ function computeContentIdentitySha256(baseSha, headSha, files) {
 /**
  * Autorisation métier : PR + égalité stricte des fichiers + (HEAD exact et hash
  * OU hash seul après rebase). Le numéro de PR ne suffit jamais.
+ * `candidates` doit venir de la base de confiance, jamais du HEAD candidat.
  */
-function assertApprovedBusinessPr({ pr, headSha, files, diffSha256 }) {
+function assertApprovedBusinessPr({ pr, headSha, files, diffSha256, candidates }) {
+  if (!Array.isArray(candidates)) {
+    throw new Error("assertApprovedBusinessPr: candidates (autorité base) obligatoire. FAIL CLOSED.");
+  }
   if (!Number.isInteger(pr) || pr <= 0) {
     throw new Error("RG-NEG-pr-number-alone-insufficient: numéro de PR invalide. FAIL CLOSED.");
   }
   if (!/^[0-9a-f]{40}$/.test(headSha || "")) {
     throw new Error("RG-NEG-pr-number-alone-insufficient: headSha invalide. FAIL CLOSED.");
   }
-  const matches = loadApprovedCandidates().filter((candidate) => candidate.pr === pr);
+  const matches = candidates.filter((candidate) => candidate.pr === pr);
   if (matches.length === 0) {
     throw new Error(
       `RG-NEG-unapproved-business-pr: PR #${pr} n'a aucune autorisation CTO_GO versionnée. FAIL CLOSED.`,
@@ -390,12 +427,24 @@ function assertCurrentPrAllowed(prNumber, baseSha, headSha, changedFiles, bootst
         `Fichiers métier: ${extraAfter.join(", ")}. FAIL CLOSED.`,
     );
   }
+  const candidates = loadApprovedCandidates({ fromSha: baseSha });
+  const listed = candidates.filter((candidate) => candidate.pr === prNumber);
+  const touchesManifest = (changedFiles || []).includes(CANDIDATES_REL);
+  if (listed.length === 0 && touchesManifest) {
+    assert.ok(
+      false,
+      `RG-NEG-business-pr-self-authorizes-via-manifest: ` +
+        `PR #${prNumber} touche ${CANDIDATES_REL} et un fichier métier, ` +
+        `mais l'autorité est ${baseSha}:${CANDIDATES_REL} (pas le HEAD candidat). FAIL CLOSED.`,
+    );
+  }
   const identity = computeContentIdentitySha256(baseSha, headSha, changedFiles);
   assertApprovedBusinessPr({
     pr: prNumber,
     headSha,
     files: changedFiles,
     diffSha256: identity,
+    candidates,
   });
   return "approved-candidate";
 }
@@ -547,7 +596,7 @@ function runNegativeUnitTests() {
 function runApprovedCandidateTests() {
   const otherHead = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
   const otherHash = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
-  const candidates = loadApprovedCandidates();
+  const candidates = loadApprovedCandidatesFromWorkingTree();
   const approved447 = candidates.find((candidate) => candidate.pr === 447);
   assert.ok(approved447, "manifeste doit contenir PR #447");
   assert.equal(approved447.headSha, APPROVED_447_HEAD);
@@ -561,6 +610,7 @@ function runApprovedCandidateTests() {
       headSha: APPROVED_447_HEAD,
       files: APPROVED_447_FILES,
       diffSha256: APPROVED_447_HASH,
+      candidates,
     }),
     "exact-head",
     "RG-POS-approved-current-pr",
@@ -573,6 +623,7 @@ function runApprovedCandidateTests() {
       headSha: otherHead,
       files: APPROVED_447_FILES,
       diffSha256: APPROVED_447_HASH,
+      candidates,
     }),
     "rebase-equivalent",
     "RG-POS-approved-pr-rebase-equivalent",
@@ -585,6 +636,7 @@ function runApprovedCandidateTests() {
       headSha: otherHead,
       files: APPROVED_447_FILES,
       diffSha256: otherHash,
+      candidates,
     }),
     /RG-NEG-approved-pr-head-mismatch/,
     "RG-NEG-approved-pr-head-mismatch",
@@ -597,6 +649,7 @@ function runApprovedCandidateTests() {
       headSha: APPROVED_447_HEAD,
       files: [...APPROVED_447_FILES, "backend/server.js"],
       diffSha256: APPROVED_447_HASH,
+      candidates,
     }),
     /RG-NEG-approved-pr-extra-file[\s\S]*backend\/server\.js/,
     "RG-NEG-approved-pr-extra-file",
@@ -609,6 +662,7 @@ function runApprovedCandidateTests() {
       headSha: APPROVED_447_HEAD,
       files: APPROVED_447_FILES.slice(0, 7),
       diffSha256: APPROVED_447_HASH,
+      candidates,
     }),
     /RG-NEG-approved-pr-missing-file/,
     "RG-NEG-approved-pr-missing-file",
@@ -621,6 +675,7 @@ function runApprovedCandidateTests() {
       headSha: APPROVED_447_HEAD,
       files: APPROVED_447_FILES,
       diffSha256: APPROVED_447_HASH,
+      candidates,
     }),
     /RG-NEG-unapproved-business-pr/,
     "RG-NEG-unapproved-business-pr",
@@ -633,11 +688,64 @@ function runApprovedCandidateTests() {
       headSha: otherHead,
       files: APPROVED_447_FILES,
       diffSha256: otherHash,
+      candidates,
     }),
     /RG-NEG-pr-number-alone-insufficient/,
     "RG-NEG-pr-number-alone-insufficient",
   );
   console.log("PASS RG-NEG-pr-number-alone-insufficient");
+
+  const selfAuthPr = 2147483646;
+  const selfAuthFiles = ["backend/server.js", CANDIDATES_REL];
+  const fakeHeadManifest = [
+    ...candidates,
+    {
+      pr: selfAuthPr,
+      headSha: APPROVED_447_HEAD,
+      baseSha: APPROVED_447_BASE,
+      files: ["backend/server.js"],
+      diffSha256: otherHash,
+      decision: "CTO_GO",
+    },
+  ];
+  assert.equal(
+    assertApprovedBusinessPr({
+      pr: selfAuthPr,
+      headSha: APPROVED_447_HEAD,
+      files: ["backend/server.js"],
+      diffSha256: otherHash,
+      candidates: fakeHeadManifest,
+    }),
+    "exact-head",
+    "attaque HEAD: le manifeste candidat s'autoriserait",
+  );
+  if (commitExists(APPROVED_447_BASE)) {
+    const fromBase = loadApprovedCandidates({ fromSha: APPROVED_447_BASE });
+    assert.equal(fromBase.some((candidate) => candidate.pr === selfAuthPr), false);
+    assert.throws(
+      () => assertApprovedBusinessPr({
+        pr: selfAuthPr,
+        headSha: APPROVED_447_HEAD,
+        files: ["backend/server.js"],
+        diffSha256: otherHash,
+        candidates: fromBase,
+      }),
+      /RG-NEG-unapproved-business-pr/,
+    );
+    assert.throws(
+      () => assertCurrentPrAllowed(
+        selfAuthPr,
+        APPROVED_447_BASE,
+        APPROVED_447_HEAD,
+        selfAuthFiles,
+      ),
+      /RG-NEG-business-pr-self-authorizes-via-manifest/,
+      "RG-NEG-business-pr-self-authorizes-via-manifest",
+    );
+    console.log("PASS RG-NEG-business-pr-self-authorizes-via-manifest");
+  } else {
+    throw new Error("RG-NEG-business-pr-self-authorizes-via-manifest: base 1f5fc0d6 absente");
+  }
 
   if (commitExists(APPROVED_447_HEAD) && commitExists(APPROVED_447_BASE)) {
     const liveHash = computeContentIdentitySha256(
@@ -646,11 +754,21 @@ function runApprovedCandidateTests() {
       APPROVED_447_FILES,
     );
     assert.equal(liveHash, APPROVED_447_HASH, "diffSha256 live #447");
-    assert.equal(
-      assertCurrentPrAllowed(447, APPROVED_447_BASE, APPROVED_447_HEAD, APPROVED_447_FILES),
-      "approved-candidate",
-    );
-    console.log("PASS RG-POS-approved-current-pr (live identity 1f5fc0d6...6b4370e4)");
+    const baseHas447 = loadApprovedCandidates({ fromSha: APPROVED_447_BASE })
+      .some((candidate) => candidate.pr === 447);
+    if (baseHas447) {
+      assert.equal(
+        assertCurrentPrAllowed(447, APPROVED_447_BASE, APPROVED_447_HEAD, APPROVED_447_FILES),
+        "approved-candidate",
+      );
+      console.log("PASS RG-POS-approved-current-pr (live identity, autorité=base)");
+    } else {
+      assert.throws(
+        () => assertCurrentPrAllowed(447, APPROVED_447_BASE, APPROVED_447_HEAD, APPROVED_447_FILES),
+        /RG-NEG-unapproved-business-pr/,
+      );
+      console.log("PASS RG-POS-approved-current-pr (live identity 1f5fc0d6...6b4370e4 ; autorité absente de la base)");
+    }
   } else {
     console.log("SKIP live #447 identity (commits absents de ce clone)");
   }
@@ -687,6 +805,9 @@ function main() {
   assert.match(audit, /rebase-equivalent/);
   assert.match(audit, /release-approved-candidates-2026-09-01\.json/);
   assert.match(audit, /bootstrap one-shot/);
+  assert.match(audit, /self-authorizes-via-manifest/);
+  assert.match(audit, /HEAD candidat/);
+  assert.match(audit, /cat-file blob/);
   assert.match(checklist, /USER GO/);
   assert.match(checklist, /Aucun acte ci-dessous n’est exécuté/);
   assert.match(checklist, /eas submit/);

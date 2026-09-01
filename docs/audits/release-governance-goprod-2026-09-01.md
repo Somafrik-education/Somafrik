@@ -166,7 +166,17 @@ Deux modes, exclusifs :
      - `headSha` du manifeste === `pull_request.head.sha` **et** `diffSha256` identique (snapshot audité) ;
      - **rebase-equivalent** : `headSha` a changé (rebase après merge gouvernance) **mais** `diffSha256` est strictement identique.
 
-Toute divergence (HEAD différent **et** identité de contenu différente, fichier extra/manquant, PR absente du manifeste, `decision ≠ CTO_GO`) → **FAIL CLOSED**. Un nouveau HEAD n’est jamais autorisé implicitement.
+Toute divergence (HEAD différent **et** identité de contenu différente, fichier extra/manquant, PR absente du manifeste **de la base**, `decision ≠ CTO_GO`) → **FAIL CLOSED**. Un nouveau HEAD n’est jamais autorisé implicitement.
+
+### Racine de confiance du manifeste
+
+Le contrôle B lit :
+
+`git cat-file blob <pull_request.base.sha>:docs/audits/release-approved-candidates-2026-09-01.json`
+
+**Pas** le manifeste du HEAD candidat. L’autorisation doit déjà exister sur `develop` (base de la PR) **avant** le candidat métier. Une PR qui s’ajoute elle-même dans le JSON + un fichier métier → **FAIL** (`RG-NEG-business-pr-self-authorizes-via-manifest`).
+
+Une PR **gouvernance-only** peut toujours *introduire* ou *réémettre* une entrée CTO_GO (le JSON est sur l’allowlist) ; cette entrée ne devient opérante pour un candidat métier qu’**après merge sur develop**.
 
 ### Empreinte `diffSha256` (anti-boucle rebase)
 
@@ -232,4 +242,4 @@ Une PR qui ne modifie **que** le manifeste CTO_GO déclenche désormais le gate.
 
 Échoue si `origin/develop` avance **hors** fichiers de gouvernance, si le diff de la **PR courante** n’est ni gouvernance-only ni un candidat `CTO_GO` exact (PR + HEAD/identité + ensemble de fichiers), si `origin/main` bouge, ou si une PR frozen est ancêtre de HEAD / citée en sujet merge ou squash `(#n)`. Ne merge pas `main`. Ne déploie pas.
 
-P1 Codex #445 : exclusion frozen squash/cherry-pick. P2 : `Mobile/app.json` + `Mobile/package.json` dans `paths`. P3 : exception gouvernance-only sur le drift `develop`. P4 : le même allowlist s’applique au candidat PR (`base...head`) pour HOLD pré-merge. P5 : candidat métier explicitement autorisé (PR + HEAD + fichiers + `diffSha256` rebase-equivalent). P6 : manifeste CTO_GO dans les `paths:` du workflow via bootstrap one-shot #451 (YAML hors allowlist ; contenu piné).
+P1 Codex #445 : exclusion frozen squash/cherry-pick. P2 : `Mobile/app.json` + `Mobile/package.json` dans `paths`. P3 : exception gouvernance-only sur le drift `develop`. P4 : le même allowlist s’applique au candidat PR (`base...head`) pour HOLD pré-merge. P5 : candidat métier explicitement autorisé (PR + HEAD + fichiers + `diffSha256` rebase-equivalent). P6 : manifeste CTO_GO dans les `paths:` du workflow via bootstrap one-shot #451 (YAML hors allowlist ; contenu piné). P7 : autorité du manifeste = `pull_request.base.sha`, pas le HEAD candidat.
