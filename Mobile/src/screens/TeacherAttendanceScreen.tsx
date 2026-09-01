@@ -14,6 +14,7 @@ import {
 } from "../lib/establishment";
 import {
   ATTENDANCE_AUTHOR_COPY,
+  ATTENDANCE_EMPTY_CLASSES_COPY,
   assertAttendanceClassIdentity,
   assignmentsForClassIdentity,
   attachAttendanceAuthorToPayload,
@@ -130,8 +131,8 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
     [session, studentsData, scopeState],
   );
   const assignedClasses = useMemo(
-    () => listScopedAttendanceClasses(classStudents, classesData, session, scopeState),
-    [classStudents, classesData, session, scopeState],
+    () => listScopedAttendanceClasses(studentsData, classesData, session, scopeState),
+    [studentsData, classesData, session, scopeState],
   );
   const assignments = useMemo(
     () => resolveTeacherAssignmentsForSession(session, scopeState),
@@ -573,6 +574,14 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
         <Text style={styles.subtitle}>Sélectionnez une classe • {todayLabel} à {currentHour}</Text>
         <Text style={styles.sectionTitle}>Mes classes</Text>
         <View testID="attendance-class-list" style={isTablet ? styles.classGridTablet : undefined}>
+          {assignedClasses.length === 0 ? (
+            <Text
+              testID={USABILITY_TEST_IDS.attendanceEmptyClasses}
+              style={styles.emptyClasses}
+            >
+              {ATTENDANCE_EMPTY_CLASSES_COPY}
+            </Text>
+          ) : null}
           {assignedClasses.map((classRef) => {
             const rows = filterStudentsByClassIdentity(classStudents, classRef, classesData);
             const classCourses = assignmentsForClassIdentity(assignments, classRef).map((assignment) =>
@@ -914,6 +923,7 @@ const styles = StyleSheet.create({
   title: { fontSize: 32, fontWeight: "900", color: "#0F172A" },
   subtitle: { marginTop: 6, marginBottom: 16, color: "#64748B", fontWeight: "700" },
   sectionTitle: { color: "#0F172A", fontSize: 20, fontWeight: "900", marginBottom: 12 },
+  emptyClasses: { color: "#64748B", fontWeight: "700", paddingVertical: 24 },
   selectClassCard: {
     backgroundColor: "#FFFFFF",
     borderRadius: 22,

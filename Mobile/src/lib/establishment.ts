@@ -386,6 +386,30 @@ export function filterStudentsByClassName(students: Student[], className: string
   return students.filter((student) => classNameMatches(student.className, className));
 }
 
+function classSchoolCodeOf(item: SchoolClass | Row): string {
+  return String((item as Row).schoolCode ?? "").trim();
+}
+
+/**
+ * Isolation établissement : un `schoolCode` différent ne passe jamais.
+ * Fallback legacy : uniquement une classe réellement sans `schoolCode`.
+ * Si `legacyNames` est fourni, cette classe sans code n'est gardée que si
+ * un élève local porte déjà ce nom.
+ */
+function classCompatibleWithSessionSchool(
+  item: SchoolClass,
+  schoolCode: string,
+  opts?: { legacyNames?: Set<string> },
+): boolean {
+  const expected = normalize(schoolCode);
+  if (!expected || expected === "*") return true;
+  const rowSchool = classSchoolCodeOf(item);
+  if (rowSchool) return normalize(rowSchool) === expected;
+  if (!opts?.legacyNames) return true;
+  const nameKey = normalize(item.name);
+  return Boolean(nameKey) && opts.legacyNames.has(nameKey);
+}
+
 /** Classes visibles selon établissement et périmètre enseignant (aligné web `scopedClasses`). */
 export function scopedClassesForSession(
   session: { role?: string; user?: Row; school?: { code?: string } } | null,
@@ -395,6 +419,9 @@ export function scopedClassesForSession(
 ): SchoolClass[] {
   const schoolCode = String(session?.user?.schoolCode ?? session?.school?.code ?? "").trim();
   const scopedStudentsList = scopedStudentsForSession(session, students, state);
+  const localClassNameKeys = new Set(
+    scopedStudentsList.map((student) => normalize(student.className)).filter(Boolean),
+  );
   const classNames = new Set(
     scopedStudentsList.map((student) => String(student.className ?? "").trim()).filter(Boolean),
   );
@@ -402,10 +429,9 @@ export function scopedClassesForSession(
   const base =
     !schoolCode || schoolCode === "*"
       ? classes
-      : classes.filter((item) => {
-          const row = item as Row;
-          return normalize(row.schoolCode) === normalize(schoolCode) || classNames.has(String(item.name ?? "").trim());
-        });
+      : classes.filter((item) =>
+          classCompatibleWithSessionSchool(item, schoolCode, { legacyNames: localClassNameKeys }),
+        );
 
   const rows = [...base];
   classNames.forEach((className) => {
@@ -429,6 +455,7 @@ export function scopedClassesForSession(
     if (!className) return;
     if (rows.some((item) => classNameMatches(item.name, className))) return;
     if (catalogRow) {
+      if (!classCompatibleWithSessionSchool(catalogRow, schoolCode)) return;
       rows.push(catalogRow);
       return;
     }
@@ -443,9 +470,9 @@ export function scopedClassesForSession(
   };
 
   for (const schoolClass of classes) {
-    if (teacherClassNames.has(normalize(schoolClass.name))) {
-      ensureAssignedClass(String(schoolClass.name ?? "").trim(), schoolClass);
-    }
+    if (!teacherClassNames.has(normalize(schoolClass.name))) continue;
+    if (!classCompatibleWithSessionSchool(schoolClass, schoolCode)) continue;
+    ensureAssignedClass(String(schoolClass.name ?? "").trim(), schoolClass);
   }
   for (const assignment of listCanonicalTeacherAssignments(session, state)) {
     ensureAssignedClass(String(assignment.className ?? "").trim());

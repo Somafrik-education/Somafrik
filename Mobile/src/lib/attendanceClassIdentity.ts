@@ -2,12 +2,14 @@
  * Identité de classe pour l'appel Mobile : classId + classCode, jamais className comme clé.
  */
 import type { SchoolClass, Student } from "../data/catalog";
+import { normalize } from "./format";
 import {
   classNameMatches,
   filterStudentsByClassName,
   isCanonicalActiveAssignment,
   isTeacherSession,
-  listCanonicalTeacherAssignments,
+  scopedClassesForSession,
+  scopedStudentsForSession,
   teacherScopedClassNames,
   type TeacherScopeState,
 } from "./establishment";
@@ -85,44 +87,73 @@ function rememberAttendanceClass(
   if (!byKey.has(key)) byKey.set(key, identity);
 }
 
+function attendanceIdentityFromSchoolClass(row: SchoolClass): AttendanceClassIdentity | null {
+  const classId = asRef(row.id);
+  const classCode = asRef(row.classCode) || asRef(row.publicId);
+  const className = asRef(row.name);
+  if (classId && classCode) {
+    return { classId, classCode, className };
+  }
+  if (!className && !classId) return null;
+  return { classId, classCode, className };
+}
+
+function alreadyListedAttendanceClass(
+  byKey: Map<string, AttendanceClassIdentity>,
+  identity: AttendanceClassIdentity,
+) {
+  if (identity.classId || identity.classCode) {
+    return byKey.has(classIdentityKey(identity));
+  }
+  return [...byKey.values()].some((row) => classNameMatches(row.className, identity.className));
+}
+
+/**
+ * Liste Appel / Présences : même source canonique que Classes (`scopedClassesForSession`).
+ * Catalogue d'établissement d'abord ; les élèves ne complètent que les classes absentes du catalogue.
+ */
 export function listScopedAttendanceClasses(
   students: Student[],
   classes: SchoolClass[] = [],
-  session?: { role?: string; user?: Record<string, unknown> } | null,
+  session?: { role?: string; user?: Record<string, unknown>; school?: { code?: string } } | null,
   state?: TeacherScopeState,
 ): AttendanceClassIdentity[] {
   const byKey = new Map<string, AttendanceClassIdentity>();
-  for (const student of students) {
-    const identity = resolveStudentClassIdentity(student, classes);
+  const scopeState = state ?? {};
+  const scopedCatalog = scopedClassesForSession(session ?? null, classes, students, scopeState);
+
+  for (const schoolClass of scopedCatalog) {
+    const identity =
+      lookupClassCatalogIdentity(scopedCatalog, {
+        classId: schoolClass.id,
+        classCode: schoolClass.classCode || schoolClass.publicId,
+        className: schoolClass.name,
+      }) ?? attendanceIdentityFromSchoolClass(schoolClass);
+    if (identity) rememberAttendanceClass(byKey, identity);
+  }
+
+  const teacherKeys = session ? teacherScopedClassNames(session, scopeState) : null;
+  if (teacherKeys && teacherKeys.size === 0) {
+    return [...byKey.values()].sort((left, right) =>
+      left.className.localeCompare(right.className, "fr"),
+    );
+  }
+
+  const scopedStudents = scopedStudentsForSession(session ?? null, students, scopeState);
+  for (const student of scopedStudents) {
+    const identity = resolveStudentClassIdentity(student, scopedCatalog);
     if (identity) {
+      if (teacherKeys && !teacherKeys.has(normalize(identity.className))) continue;
+      if (alreadyListedAttendanceClass(byKey, identity)) continue;
       rememberAttendanceClass(byKey, identity);
       continue;
     }
     const className = asRef(student.className);
     if (!className) continue;
-    rememberAttendanceClass(byKey, { classId: "", classCode: "", className });
-  }
-
-  const scopedKeys = session ? teacherScopedClassNames(session, state) : null;
-  if (scopedKeys) {
-    for (const assignment of listCanonicalTeacherAssignments(session ?? null, state)) {
-      const identity = lookupClassCatalogIdentity(classes, {
-        classId: assignment.classId,
-        classCode: assignment.classCode,
-        className: assignment.className,
-      });
-      if (identity) {
-        rememberAttendanceClass(byKey, identity);
-        continue;
-      }
-      const className = asRef(assignment.className);
-      if (!className) continue;
-      rememberAttendanceClass(byKey, {
-        classId: asRef(assignment.classId),
-        classCode: asRef(assignment.classCode),
-        className,
-      });
-    }
+    if (teacherKeys && !teacherKeys.has(normalize(className))) continue;
+    const namedOnly = { classId: "", classCode: "", className };
+    if (alreadyListedAttendanceClass(byKey, namedOnly)) continue;
+    rememberAttendanceClass(byKey, namedOnly);
   }
 
   return [...byKey.values()].sort((left, right) =>
@@ -227,6 +258,8 @@ export const ATTENDANCE_AUTHOR_COPY = {
   outsideClass: "Cet enseignant n'est pas affecté à cette classe.",
   outsideTenant: "Cet enseignant n'appartient pas à cet établissement.",
 } as const;
+
+export const ATTENDANCE_EMPTY_CLASSES_COPY = "Aucune classe disponible";
 
 function assignmentTeacherKey(row: AttendanceAssignmentAuthor) {
   return asRef(row.teacherId) || asRef(row.teacherCode);

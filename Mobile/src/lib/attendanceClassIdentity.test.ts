@@ -7,6 +7,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   ATTENDANCE_AUTHOR_COPY,
+  ATTENDANCE_EMPTY_CLASSES_COPY,
   assertAttendanceClassIdentity,
   assignmentsForClassIdentity,
   attachAttendanceAuthorToPayload,
@@ -54,6 +55,133 @@ function run() {
 
   const listed = listScopedAttendanceClasses([a, b], classes);
   assert.equal(listed.length, 2, "homonymes distincts par classId");
+
+  const school = "CD-2026-0001";
+  const foreignSchool = "CD-OTHER-0002";
+  const establishmentCatalog: SchoolClass[] = [
+    { id: "cls-6a", publicId: "CLS-6A", classCode: "CLS-6A", name: "6ème A", level: "6ème", track: "A", teacherId: "", schoolCode: school },
+    { id: "cls-5b", publicId: "CLS-5B", classCode: "CLS-5B", name: "5ème B", level: "5ème", track: "B", teacherId: "", schoolCode: school },
+    { id: "cls-empty", publicId: "CLS-4C", classCode: "CLS-4C", name: "4ème C", level: "4ème", track: "C", teacherId: "", schoolCode: school },
+    { id: "cls-foreign", publicId: "CLS-X", classCode: "CLS-X", name: "Terminale", level: "Tle", track: "", teacherId: "", schoolCode: foreignSchool },
+  ];
+  const studentsWithoutClassRef = [student({ id: "s-orphan" })];
+  for (const role of ["school_admin", "secretary", "principal"] as const) {
+    const establishmentSession = {
+      role,
+      user: {
+        role: role === "school_admin" ? "Admin School" : role === "secretary" ? "Secrétaire" : "Directeur",
+        schoolCode: school,
+      },
+      school: { code: school },
+    };
+    const fromCatalog = listScopedAttendanceClasses(
+      studentsWithoutClassRef,
+      establishmentCatalog,
+      establishmentSession,
+      { classes: establishmentCatalog },
+    );
+    assert.deepEqual(
+      fromCatalog.map((row) => row.className),
+      ["4ème C", "5ème B", "6ème A"],
+      `${role} part du catalogue établissement, pas des élèves`,
+    );
+    assert.equal(
+      fromCatalog.some((row) => row.classId === "cls-foreign"),
+      false,
+      `${role} n'importe pas une classe d'un autre établissement`,
+    );
+    assert.deepEqual(
+      listScopedAttendanceClasses([], [], establishmentSession, { classes: [] }),
+      [],
+      `${role} sans classe accessible → liste vide`,
+    );
+  }
+
+  const teacherEmptyClassSession = {
+    role: "teacher" as const,
+    user: { id: "user-t", role: "Enseignant", teacherCode: "ENS-T", schoolCode: school },
+    school: { code: school },
+  };
+  const teacherEmptyAssignments = [
+    {
+      id: "asg-empty",
+      teacherId: "ENS-T",
+      teacherCode: "ENS-T",
+      classId: "cls-empty",
+      classCode: "CLS-4C",
+      className: "4ème C",
+      course: "Mathématiques",
+      status: "active" as const,
+    },
+  ];
+  const teacherEmptyListed = listScopedAttendanceClasses(
+    [],
+    establishmentCatalog,
+    teacherEmptyClassSession,
+    { assignments: teacherEmptyAssignments, classes: establishmentCatalog },
+  );
+  assert.deepEqual(
+    teacherEmptyListed.map((row) => ({ classId: row.classId, className: row.className })),
+    [{ classId: "cls-empty", className: "4ème C" }],
+    "enseignant : classe affectée vide (0 élève) reste listée",
+  );
+  assert.deepEqual(
+    listScopedAttendanceClasses(
+      studentsWithoutClassRef,
+      establishmentCatalog,
+      teacherEmptyClassSession,
+      { assignments: [], classes: establishmentCatalog },
+    ),
+    [],
+    "enseignant sans affectation : fail-closed, le catalogue ne s'ouvre pas",
+  );
+
+  const nuru = "CD-NURU-001";
+  const otherSchool = "CD-OTHER-002";
+  const homonymCatalog: SchoolClass[] = [
+    { id: "cls-nuru-6a", publicId: "CLS-NURU-6A", classCode: "CLS-NURU-6A", name: "6ème A", level: "6ème", track: "A", teacherId: "", schoolCode: nuru },
+    { id: "cls-other-6a", publicId: "CLS-OTHER-6A", classCode: "CLS-OTHER-6A", name: "6ème A", level: "6ème", track: "A", teacherId: "", schoolCode: otherSchool },
+  ];
+  const nuruStudent = [student({ id: "s-nuru", className: "6ème A", classId: "cls-nuru-6a", classCode: "CLS-NURU-6A", schoolCode: nuru })];
+  const adminNuruSession = {
+    role: "school_admin" as const,
+    user: { role: "Admin School", schoolCode: nuru },
+    school: { code: nuru },
+  };
+  const teacherNuruSession = {
+    role: "teacher" as const,
+    user: { id: "user-nuru", role: "Enseignant", teacherCode: "ENS-NURU", schoolCode: nuru },
+    school: { code: nuru },
+  };
+  const teacherNuruState = {
+    classes: homonymCatalog,
+    assignments: [
+      {
+        id: "asg-nuru-6a",
+        teacherId: "ENS-NURU",
+        teacherCode: "ENS-NURU",
+        classId: "cls-nuru-6a",
+        classCode: "CLS-NURU-6A",
+        className: "6ème A",
+        course: "Mathématiques",
+        status: "active" as const,
+      },
+    ],
+  };
+  assert.deepEqual(
+    listScopedAttendanceClasses(nuruStudent, homonymCatalog, adminNuruSession, { classes: homonymCatalog }).map(
+      (row) => row.classId,
+    ),
+    ["cls-nuru-6a"],
+    "school_admin : homonyme 6ème A d'un autre établissement exclu",
+  );
+  assert.deepEqual(
+    listScopedAttendanceClasses(nuruStudent, homonymCatalog, teacherNuruSession, teacherNuruState).map(
+      (row) => row.classId,
+    ),
+    ["cls-nuru-6a"],
+    "teacher : homonyme 6ème A d'un autre établissement exclu",
+  );
   assert.deepEqual(
     filterStudentsByClassIdentity([a, b], listed[0], classes).map((row) => row.id),
     listed[0].classId === "uuid-a" ? ["s1"] : ["s2"],
@@ -268,6 +396,19 @@ function run() {
   assert.match(screen, /attendanceAuthorPicker/);
   assert.match(screen, /persistAttendanceAuthorSelection/);
   assert.match(screen, /assignmentsForClassIdentity/);
+  assert.match(screen, /ATTENDANCE_EMPTY_CLASSES_COPY/);
+  assert.match(screen, /attendanceEmptyClasses/);
+  assert.match(screen, /listScopedAttendanceClasses\(studentsData/);
+  assert.equal(ATTENDANCE_EMPTY_CLASSES_COPY, "Aucune classe disponible");
+  const identitySrc = fs.readFileSync(
+    path.join(path.dirname(fileURLToPath(import.meta.url)), "attendanceClassIdentity.ts"),
+    "utf8",
+  );
+  assert.match(identitySrc, /scopedClassesForSession/);
+  assert.match(
+    identitySrc,
+    /Liste Appel \/ Présences : même source canonique que Classes/,
+  );
   assert.ok(
     (screen.match(/assignmentsForClassIdentity/g) ?? []).length >= 2,
     "sélecteur UI et handler d'enregistrement partagent assignmentsForClassIdentity",

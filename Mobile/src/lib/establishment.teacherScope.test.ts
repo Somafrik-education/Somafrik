@@ -343,6 +343,114 @@ function run() {
   assert.deepEqual(teacherScopedClassLabels(session, students, poisonOnly), []);
   assert.deepEqual(scopedStudentsForSession(session, students, poisonOnly), []);
   assert.deepEqual(scopedClassesForSession(session, classes, students, poisonOnly), []);
+  assert.deepEqual(
+    listScopedAttendanceClasses(students, classes, session, poisonOnly),
+    [],
+    "enseignant sans affectation canonique : Présences ne reconstruit pas les classes depuis les élèves",
+  );
+
+  const schoolA = "CD-NURU-001";
+  const schoolB = "CD-OTHER-002";
+  const homonymCatalog: SchoolClass[] = [
+    { id: "cls-nuru-6a", publicId: "CLS-NURU-6A", classCode: "CLS-NURU-6A", name: "6ème A", level: "6ème", track: "A", teacherId: "", schoolCode: schoolA },
+    { id: "cls-other-6a", publicId: "CLS-OTHER-6A", classCode: "CLS-OTHER-6A", name: "6ème A", level: "6ème", track: "A", teacherId: "", schoolCode: schoolB },
+    { id: "cls-legacy-6a", publicId: "CLS-LEGACY-6A", classCode: "CLS-LEGACY-6A", name: "6ème A", level: "6ème", track: "A", teacherId: "" },
+  ];
+  const localSixieme = [
+    student({ id: "stu-nuru-1", className: "6ème A", classId: "cls-nuru-6a", classCode: "CLS-NURU-6A", schoolCode: schoolA }),
+  ];
+  const adminNuru = {
+    role: "school_admin",
+    user: { role: "Admin School", schoolCode: schoolA },
+    school: { code: schoolA },
+  };
+  const teacherNuru = {
+    role: "teacher",
+    user: { id: "user-nuru", role: "Enseignant", teacherCode: "ENS-NURU", schoolCode: schoolA },
+    school: { code: schoolA },
+  };
+  const teacherNuruState = {
+    assignments: [
+      {
+        id: "asg-nuru-6a",
+        teacherId: "ENS-NURU",
+        teacherCode: "ENS-NURU",
+        classId: "cls-nuru-6a",
+        classCode: "CLS-NURU-6A",
+        className: "6ème A",
+        course: "Mathématiques",
+        status: "active",
+      },
+    ] as TeacherAssignment[],
+    classes: homonymCatalog.filter((row) => row.schoolCode),
+  };
+
+  const adminHomonyms = scopedClassesForSession(
+    adminNuru,
+    homonymCatalog.filter((row) => row.schoolCode),
+    localSixieme,
+    { classes: homonymCatalog.filter((row) => row.schoolCode) },
+  );
+  assert.deepEqual(
+    adminHomonyms.map((row) => row.id),
+    ["cls-nuru-6a"],
+    "school_admin : homonyme inter-tenant 6ème A exclu (seul Nuru)",
+  );
+
+  const teacherHomonyms = scopedClassesForSession(
+    teacherNuru,
+    homonymCatalog.filter((row) => row.schoolCode),
+    localSixieme,
+    teacherNuruState,
+  );
+  assert.deepEqual(
+    teacherHomonyms.map((row) => row.id),
+    ["cls-nuru-6a"],
+    "teacher : homonyme inter-tenant 6ème A exclu (seul Nuru)",
+  );
+  assert.deepEqual(
+    scopedClassesForSession(
+      teacherNuru,
+      homonymCatalog.filter((row) => row.schoolCode),
+      [],
+      teacherNuruState,
+    ).map((row) => row.id),
+    ["cls-nuru-6a"],
+    "teacher sans élèves : la 6ème A affectée locale reste, l'homonyme étranger non",
+  );
+
+  const adminLegacyOnly = scopedClassesForSession(
+    adminNuru,
+    [homonymCatalog[1], homonymCatalog[2]],
+    localSixieme,
+    { classes: [homonymCatalog[1], homonymCatalog[2]] },
+  );
+  assert.deepEqual(
+    adminLegacyOnly.map((row) => row.id),
+    ["cls-legacy-6a"],
+    "fallback legacy : classe sans schoolCode gardée, schoolCode étranger refusé",
+  );
+
+  assert.deepEqual(
+    listScopedAttendanceClasses(
+      localSixieme,
+      homonymCatalog.filter((row) => row.schoolCode),
+      adminNuru,
+      { classes: homonymCatalog.filter((row) => row.schoolCode) },
+    ).map((row) => row.classId),
+    ["cls-nuru-6a"],
+    "Présences school_admin : une seule 6ème A (établissement courant)",
+  );
+  assert.deepEqual(
+    listScopedAttendanceClasses(
+      localSixieme,
+      homonymCatalog.filter((row) => row.schoolCode),
+      teacherNuru,
+      teacherNuruState,
+    ).map((row) => row.classId),
+    ["cls-nuru-6a"],
+    "Présences teacher : une seule 6ème A (classe affectée locale)",
+  );
 
   const here = path.dirname(fileURLToPath(import.meta.url));
   const establishmentSrc = fs.readFileSync(path.join(here, "establishment.ts"), "utf8");
@@ -362,6 +470,12 @@ function run() {
   assert.doesNotMatch(canonicalFn[0], /assignedClasses/);
   assert.doesNotMatch(canonicalFn[0], /teacherNameKeys/);
   assert.doesNotMatch(canonicalFn[0], /schoolClass\.teacherId/);
+  assert.match(establishmentSrc, /classCompatibleWithSessionSchool/);
+  assert.doesNotMatch(
+    establishmentSrc,
+    /normalize\(row\.schoolCode\) === normalize\(schoolCode\) \|\| classNames\.has/,
+    "scopedClassesForSession ne doit plus laisser passer un homonyme via le nom seul",
+  );
 
   console.log("establishment.teacherScope.test.ts OK");
 }

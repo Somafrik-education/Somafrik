@@ -136,6 +136,8 @@ function main() {
   console.log("OK: Notes — dernier élève + clavier + outbox LOT 5 intacte");
 
   const attendance = source(path.join("screens", "TeacherAttendanceScreen.tsx"));
+  assert.match(attendance, /ATTENDANCE_EMPTY_CLASSES_COPY|Aucune classe disponible/);
+  assert.match(attendance, /attendanceEmptyClasses|attendance-empty-classes/);
   assert.match(attendance, /ATTENDANCE_ACTIONS/);
   assert.match(attendance, /attendanceActionForStudent/);
   assert.match(attendance, /FlatList/);
