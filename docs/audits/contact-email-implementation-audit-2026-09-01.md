@@ -9,6 +9,8 @@
 **Périmètre :** inventaire des adresses e-mail de contact / support / transactionnel / sécurité / facturation.  
 **Hors périmètre :** toute modification métier, tout merge, toute implémentation de formulaire, tout branchement SMTP.
 
+**Révision CTO** (REQUEST CHANGES PR #449) : §10.5 métadonnées Git / historique ; P1 EMAIL-P1-003b ; PR F = fichiers + identité Git future (pas de rewrite) ; `main` = historique/stale (Vercel live non sourcé).
+
 ```text
 AUCUN READY
 AUCUN MERGE
@@ -40,10 +42,10 @@ working tree = clean
 | Repo | `Somafrik-education/Somafrik` |
 | Visibilité GitHub | **PUBLIC** |
 | Branche cible | `develop` |
-| `main` observé | `b5074565b08472217702d8ff848f5a398d08831c` (snapshot develop du 27 juillet, **pas** le HEAD `develop` actuel) |
+| `main` observé | `b5074565b08472217702d8ff848f5a398d08831c` — branche **historique/stale** (snapshot develop du 27 juillet, **pas** le HEAD `develop` actuel). `docs/vercel.md` *documente* un mapping « production Vercel = `main` » ; **aucune preuve GitHub Deployments indépendante** n’établit que ce SHA est le site live `somafrik.app` (les deployments GitHub visibles sont des previews **Render** `somafrik-api-preprod`). |
 | Fichier livré | `docs/audits/contact-email-implementation-audit-2026-09-01.md` |
 
-Méthode : recherche exhaustive dans le monorepo (`web/`, `Mobile/`, `backend/`, `scripts/`, `docs/`, `packages/`, `BackOffice/`, `.github/`, `.env*.example`) sur `@somafrik`, `outlook`, `gmail`, `mailto:`, `noreply`, `replyTo`, `SMTP`, `MAIL_`, `EMAIL_`, `RESEND`, `SENDGRID`, `BREVO`, `POSTMARK`, `SES`, `Cloudflare`, `support`, `contact`. Aucun `node_modules` n’est cité comme source de vérité.
+Méthode : recherche exhaustive dans le monorepo (`web/`, `Mobile/`, `backend/`, `scripts/`, `docs/`, `packages/`, `BackOffice/`, `.github/`, `.env*.example`) sur `@somafrik`, `outlook`, `gmail`, `mailto:`, `noreply`, `replyTo`, `SMTP`, `MAIL_`, `EMAIL_`, `RESEND`, `SENDGRID`, `BREVO`, `POSTMARK`, `SES`, `Cloudflare`, `support`, `contact`. Complément : `git log origin/develop --format='%ae%n%ce'` (métadonnées d’auteur / committer, distinctes des fichiers). Aucun `node_modules` n’est cité comme source de vérité.
 
 ---
 
@@ -63,12 +65,12 @@ Sur `develop` :
 - les notifications métier sont **in-app** (`senderName = "Somafrik"`), pas des e-mails ;
 - la réinitialisation de mot de passe est **opérateur → mot de passe temporaire à l’écran**, jamais un e-mail « forgot password ».
 
-Sur `main` (production Vercel actuelle, **stale**) :
+Sur la branche `main` **historique/stale** (`b5074565`) :
 
 - le pied de page affiche encore `support@somafrik.app` **sans** `mailto:` ;
 - le BackOffice legacy affiche la même adresse.
 
-`somafrik@outlook.fr` n’apparaît **pas** dans le produit. Elle est **codée en dur** dans `docs/project/SECURITY.md` (politique de divulgation). Le dépôt GitHub est **public** : cette adresse interne est donc **indexable**. Verdict fuite Outlook : **C — exposée publiquement = anomalie** (gravité P1, pas P0 : ce n’est pas un secret SMTP).
+`somafrik@outlook.fr` n’apparaît **pas** dans le produit. Elle est **codée en dur** dans `docs/project/SECURITY.md` (politique de divulgation) **et** dans les **métadonnées Git publiques** : le HEAD de `develop` (`78228be0`, merge PR #446) a `author.email = somafrik@outlook.fr` (committer = `noreply@github.com`). Retirer l’adresse de `SECURITY.md` **ne la fait pas disparaître** de l’historique Git déjà publié. Verdict fuite Outlook : **C — exposée publiquement = anomalie** (gravité P1, pas P0 : ce n’est pas un secret SMTP). Surfaces distinctes : fichiers / UI / Git futur / historique (voir §10.5).
 
 **Risque d’architecture principal (le mandat le vise explicitement) :** coller `contact@somafrik.app` à la fois comme identité humaine, destinataire de formulaire, FROM des mots de passe, FROM des notifications et FROM système. **Aujourd’hui ce mélange n’est pas implémenté** (il n’y a pas d’envoi). Il serait **très facile** de le commettre à la première PR « on branche l’e-mail ». Ce rapport fige la séparation **avant** toute mise en production d’un canal sortant.
 
@@ -81,7 +83,7 @@ L’adoption de `contact@somafrik.app` comme identité **publique générale** e
 
 ### 2.1 Identité publique
 
-| Surface | `develop` (cible) | `main` (prod actuelle) |
+| Surface | `develop` (cible) | `main` (historique/stale) |
 |---|---|---|
 | Adresse publique affichée | **aucune** | `support@somafrik.app` (footer vitrine + BackOffice) |
 | `contact@somafrik.app` affichée | non | non |
@@ -151,7 +153,7 @@ Légende **usage** :
 | `web/src/data/marketingContent.test.ts` | 31, 121 | routes légales vides ; interdit « Nous contacter » | garde-fou | n/a | test | Coordonner avec PR B. |
 | `web/src/components/marketing/MarketingFooter.tsx` | 43–49 | pas d’e-mail ; légal conditionnel vide | footer vitrine | oui (sans adresse) | `develop` | PR B : afficher `contact@somafrik.app` via constante, `mailto:`. |
 | `web/index.html` | 1–41 | SEO title/description, **pas** d’e-mail | métadonnées | oui | web | Plus tard : `Organization.contactPoint` **après** pages légales. |
-| `docs/project/SECURITY.md` | 162 | `somafrik@outlook.fr` | `SECURITY` + `INTERNAL` codé en dur | **oui si repo public** (GitHub) | docs | **P1.** Remplacer par `security@somafrik.app` (PR F). Outlook hors dépôt public. |
+| `docs/project/SECURITY.md` | 162 | `somafrik@outlook.fr` | `SECURITY` + `INTERNAL` codé en dur | **oui** (repo GitHub public) | docs | **P1 fichiers.** Remplacer par `security@somafrik.app` (PR F). **Insuffisant** à lui seul : l’adresse reste dans l’historique Git (§10.5). |
 | `docs/mobile/RELEASE-READINESS.md` | 177 | `support@somafrik.app` « présent landing web » | `DOC_STALE` / `SUPPORT` | docs internes | docs | **P1 doc.** Faux sur `develop`. Play listing : décider `support@` vs `contact@`. |
 | `packages/help-catalog/test/catalog.test.js` | 254 | interdit « Nous contacter » | garde-fou aide | n/a | test | Garder l’interdiction **dans l’aide in-app** si le canal public est le footer. Ne pas coller un mailto Somafrik dans le catalogue HELP-V1. |
 | `web/src/pages/abonnements/MonAbonnementPage.tsx` | 45 | « Contactez Somafrik ou votre Administrateur pays » | `BILLING` sans adresse | oui | web authentifié | PR G : canal `facturation@` **ou** `contact@` selon décision, jamais Outlook. |
@@ -167,16 +169,43 @@ Légende **usage** :
 | `backend/lib/superadminBootstrap.js` | 43 | `superadmin@somafrik.app` défaut | `FIXTURE` / bootstrap | non (compte interne) | preprod/dev | Ne pas afficher. Pas un contact public. |
 | `.env.preproduction.example` | 56 | `BOOTSTRAP_SUPERADMIN_EMAIL=superadmin@somafrik.app` | bootstrap | non | preprod | OK interne. |
 | `backend/data.js` / `Mobile/src/data/catalog.ts` | divers | `superadmin@`, `admin.rdc@`, `jean.kabeya@somafrik.cd`, `contact@unikin.somafrik`, `@somafrik.demo` | `FIXTURE` démo | UI démo seulement si seed | dev | Ne pas promouvoir en identité publique. |
-| `origin/main:web/src/pages/LandingPage.tsx` | 392 | `support@somafrik.app` | `SUPPORT` affiché, **pas** `mailto:` | **oui (prod actuelle)** | `main` / Vercel | À la prochaine promo `develop → main` : remplacer par `contact@` (contact général). Décider si `support@` reste listing Play. |
-| `origin/main:BackOffice/index.html` | 193 | `support@somafrik.app` | legacy | oui si BackOffice encore servi | `main` | Hors `develop`. Ne pas réintroduire. |
+| `origin/main:web/src/pages/LandingPage.tsx` | 392 | `support@somafrik.app` | `SUPPORT` affiché, **pas** `mailto:` | **oui** dans le tree `main` | `main` historique/stale | À la prochaine promo `develop → main` : remplacer par `contact@` (contact général). Décider si `support@` reste listing Play. Ne **pas** affirmer que ce tree est le déploiement Vercel live sans preuve Deployments. |
+| `origin/main:BackOffice/index.html` | 193 | `support@somafrik.app` | legacy | oui si ce tree est encore servi | `main` | Hors `develop`. Ne pas réintroduire. |
+| métadonnées Git `origin/develop` HEAD `78228be0` | n/a | `author.email = somafrik@outlook.fr` | `INTERNAL` comme identité Git publique | **oui** (`git log`, GitHub commit UI) | tous les clones publics | **P1 Git.** Stopper l’usage futur (noreply GitHub). **Ne pas** réécrire l’historique. |
 
 ### 3.2 Occurrences volontairement **non** inventoriées ligne à ligne
 
 Centaines d’e-mails `*@somafrik.app` / `@test.cd` / `@example.com` dans `scripts/verify-e2e-*.js`, `backend/scripts/verify-*.js`, `docs/audits/evidence/*.json`. Ce sont des **identifiants de comptes de test**, pas des adresses de contact Somafrik.
 
-Aucun `gmail.com`, `hotmail`, `yahoo`, `icloud`, `live.com` trouvé comme adresse de contact plateforme.
+Aucun `gmail.com`, `hotmail`, `yahoo`, `icloud`, `live.com` trouvé comme adresse de contact **dans les fichiers versionnés** du tree `develop`.
 
 Aucun `mailto:` dans tout le dépôt `develop`.
+
+### 3.3 Métadonnées Git (hors fichiers)
+
+Preuve au HEAD `develop` :
+
+```text
+git log -1 --format='author=%an <%ae>%ncommitter=%cn <%ce>' origin/develop
+# author=Somafrik <somafrik@outlook.fr>
+# committer=GitHub <noreply@github.com>
+# commit=78228be06286b464afd9e691fb227d16be95a63a
+# subject=Merge pull request #446 …
+```
+
+Sur `origin/develop` (1504 commits) :
+
+| Identité | Auteur (`%ae`) | Committer (`%ce`) |
+|---|---|---|
+| `somafrik@outlook.fr` | **690** | **392** |
+| `cursoragent@cursor.com` | 699 | 697 |
+| `noreply@github.com` | 0 | 378 (merges GitHub) |
+| `206951365+cursor[bot]@users.noreply.github.com` | 78 | 0 |
+| `baudouinbring@gmail.com` | 33 | 33 |
+
+`main@b5074565` a le même schéma : `author=Somafrik <somafrik@outlook.fr>`, `committer=GitHub <noreply@github.com>`.
+
+Ces occurrences **ne sont pas** dans le diff d’un fichier. `git grep somafrik@outlook.fr` ne les voit pas. Elles restent visibles via `git log`, l’UI GitHub (commit / merge) et tout clone public.
 
 ---
 
@@ -244,7 +273,7 @@ Canal UI `email` / `sms` / `whatsapp` « si configuré ». Backend `unpaidServic
 | `app.json` / `app.config.js` | pas de `privacy` URL, pas d’e-mail support Expo | — | Listing Play : voir §5.1. |
 | `Linking.openURL` | pièces jointes / PDF | pas de `mailto:` | |
 
-Web et Mobile **ne présentent pas** aujourd’hui une identité e-mail Somafrik. Ils sont cohérents **par l’absence** sur `develop`. Ils **divergent** de `main` (vitrine prod = `support@`).
+Web et Mobile **ne présentent pas** aujourd’hui une identité e-mail Somafrik. Ils sont cohérents **par l’absence** sur `develop`. Ils **divergent** du tree `main` historique/stale (footer = `support@`).
 
 ### 5.1 Google Play
 
@@ -379,20 +408,42 @@ PUBLIC_CONTACT_EMAIL=contact@somafrik.app
 
 SPF, DKIM, DMARC, Reply-To, fournisseur d’envoi : **non documentés**. Normal tant qu’il n’y a pas d’envoi. **Obligatoire avant** tout FROM `@somafrik.app`.
 
-### 10.3 Outlook dans un dépôt public
+### 10.3 Outlook dans un dépôt public — quatre surfaces
 
 `docs/project/SECURITY.md:162` publie `somafrik@outlook.fr` comme contact de divulgation.
 
 - Ce n’est **pas** un mot de passe.
 - C’est la destination interne Cloudflare.
-- Sur un repo **public**, crawlers et chercheurs la voient.
 - Gravité mandat : **P1** (Outlook visible publiquement), pas P0 (pas de secret exploitable).
 
 Pas de `SECURITY.md` à la racine GitHub (fichier standard de politique de vulnérabilité).
 
+**Retirer Outlook de `SECURITY.md` ne permet PAS d’affirmer qu’Outlook devient « hors dépôt public ».** Voir §10.5.
+
 ### 10.4 Injection / HTML e-mail
 
 Sans mailer, pas de surface d’injection MIME. Les champs `email` métier sont validés (longueur, format) pour des **fiches**, pas pour un transport SMTP.
+
+### 10.5 Métadonnées Git / historique
+
+Quatre couches **distinctes** :
+
+| Couche | État actuel | Correction | L’historique déjà publié disparaît-il ? |
+|---|---|---|---|
+| **Produit / UI** | Outlook **absent** (Web, Mobile, PDF) | Ne jamais l’afficher (`mailto:`, footer, légal, Store) | n/a |
+| **Fichiers versionnés** | Outlook dans `docs/project/SECURITY.md` seulement | PR F : remplacer par `security@somafrik.app` | Le blob ancien reste dans les commits qui ont porté ce fichier |
+| **Métadonnées Git futures** | Le compte « Somafrik » pose `user.email` / `author.email` = `somafrik@outlook.fr` (y compris merges GitHub : auteur Outlook, committer `noreply@github.com`) | Configurer l’adresse **GitHub noreply officielle** du compte Somafrik comme `user.email` (Settings → Emails → *Keep my email addresses private* → `{id}+{login}@users.noreply.github.com`). Plus aucun commit / merge avec `author.email=somafrik@outlook.fr` | Non — seuls les **nouveaux** objets Git changent |
+| **Historique Git déjà publié** | 690 auteurs + 392 committers `somafrik@outlook.fr` sur `develop` ; HEAD `78228be0` inclus | **Ne PAS** réécrire l’historique (`filter-repo` / `filter-branch` / BFG) par défaut | **Non.** Une réécriture casserait SHA, PR, tags, branches, audits et signatures. L’adresse n’est pas un secret. Accepter l’exposition historique ; arrêter l’exposition **future**. |
+
+Mesure corrective **par défaut** (PR F, gouvernance) :
+
+1. Compte GitHub Somafrik : e-mail de commit = noreply GitHub (`ID+login@users.noreply.github.com` ou équivalent affiché dans Settings → Emails).
+2. `git config --global user.email` (et la config org / machine de merge) alignés sur ce noreply — **pas** sur Outlook, **pas** sur `contact@somafrik.app`.
+3. Documenter la règle dans `docs/project/CONTRIBUTING.md` ou `SECURITY.md` : « identité Git ≠ destination Cloudflare ≠ contact public ».
+4. Optionnel : scanner CI des **nouveaux** commits (`git log -1 --format=%ae` du HEAD de PR) pour échouer si `%ae` / `%ce` matche `outlook.fr` — sans réécrire le passé.
+5. **Interdit comme correctif par défaut :** `git filter-repo`, force-push de `develop`/`main`, squash de tout l’historique.
+
+Note connexe (pas le P1 CTO) : 33 commits portent `baudouinbring@gmail.com` comme auteur/committer. Même logique : stop futur si encore utilisé ; pas de rewrite. Ce n’est **pas** une adresse de contact plateforme dans les fichiers.
 
 ---
 
@@ -438,9 +489,12 @@ App Somafrik  --ESP (Resend/SES/…)-->  From: noreply@ ou notifications@
 | T-BE-01 | `GENERIC_EMAILS` contient toujours `contact@somafrik.app` | schoolModule tests |
 | T-BE-02 | C4 ne gagne **pas** de SMTP | `verify-communications-c4.js` |
 | T-BE-03 | Pas de From `contact@` dans un futur mailer | scanner / contrat |
-| T-DOC-01 | `SECURITY.md` sans Outlook | grep CI |
+| T-DOC-01 | `SECURITY.md` (et racine GitHub) sans Outlook | grep CI sur le **tree HEAD** |
+| T-GIT-01 | HEAD de PR : `%ae` / `%ce` ≠ `*outlook.fr` | check CI optionnelle **forward-looking** |
 | T-SCAN-01 | Scanner anti-adresse personnelle / Outlook dans `web/src`, `Mobile/src` (hors tests fixtures) | CI optionnelle |
 | T-FORM-01 | Si formulaire : rate limit, validation, pas de secret client | PR D seulement |
+
+`T-GIT-01` ne doit **pas** faire échouer le dépôt à cause des commits historiques. Il ne s’applique qu’au commit **introduit par la PR**.
 
 Les tests **actuels** qui **bloquent** l’adoption :
 
@@ -456,13 +510,14 @@ Les tests **actuels** qui **bloquent** l’adoption :
 1. **Duplication** `GENERIC_EMAILS` web ↔ backend.
 2. **Collision sémantique** : `contact@somafrik.app` = denylist école **et** future identité publique.
 3. **Garde-fous vitrine trop larges** : ils ont retiré `support@` (bien) mais interdisent aussi tout contact public.
-4. **`main` stale** affiche encore `support@` ; `develop` n’affiche rien — identité prod ≠ cible.
+4. **`main` historique/stale** affiche encore `support@` ; `develop` n’affiche rien — identité du tree `main` ≠ cible. Mapping Vercel live **non prouvé** dans cet audit.
 5. **RELEASE-READINESS** décrit un landing qui n’existe plus sur `develop`.
 6. **Pas de module d’identité publique** (centralisation absente).
 7. **Pas de `SECURITY.md` GitHub** racine.
 8. **Faux liens légaux** sur `main` (`#securite` pour Confidentialité / CGU).
 9. **Canal `email` impayés** dans l’UI sans transport — dette produit qui invitera un branchement précipité.
 10. **BackOffice legacy** (`main`) encore porteur de `support@`.
+11. **Identité Git** du compte Somafrik = Outlook ; historique public irréversible sans rewrite (non recommandé).
 
 ---
 
@@ -473,8 +528,9 @@ Les tests **actuels** qui **bloquent** l’adoption :
 | EMAIL-P0 | — | **Aucun P0** constaté | Pas de secret SMTP, pas de mailer exploitable, pas d’adresse personnelle type Gmail dans le produit |
 | EMAIL-P1-001 | P1 | Mauvaise / absente adresse publique sur `develop` | Prospect / école / chercheur sécurité n’a aucun canal vitrine |
 | EMAIL-P1-002 | P1 | CI **interdit** l’identité publique | PR « ajouter contact@ » rouge sans lot tests |
-| EMAIL-P1-003 | P1 | Outlook dans repo **public** | `SECURITY.md` indexé ; destination interne devenue contact de divulgation public |
-| EMAIL-P1-004 | P1 | Prod `main` = `support@` ; cible = `contact@` | Double identité jusqu’au merge `develop → main` |
+| EMAIL-P1-003 | P1 | Outlook dans **fichiers** publics | `SECURITY.md` indexé ; destination interne devenue contact de divulgation |
+| EMAIL-P1-003b | P1 | Outlook dans **métadonnées Git** publiques | HEAD `develop` `author.email=somafrik@outlook.fr` ; 690 auteurs / 392 committers. Une PR F fichiers-seule **ne ferme pas** cette surface |
+| EMAIL-P1-004 | P1 | Tree `main` = `support@` ; cible = `contact@` | Double identité jusqu’à une promo `develop → main`. *Non établi* que `main` = site Vercel live |
 | EMAIL-P1-005 | P1 | Doc Play = `support@` « sur la landing » alors que `develop` l’a retirée | Listing Store mensonger |
 | EMAIL-P1-006 | P1 | Mélange futur contact / transactionnel | Première PR mailer utilise `contact@` en From reset / relances |
 | EMAIL-P1-007 | P1 | « Contactez Somafrik » abonnement sans canal | CTA mort facturation |
@@ -482,6 +538,8 @@ Les tests **actuels** qui **bloquent** l’adoption :
 | EMAIL-P2-002 | P2 | Fixtures écoles = `contact@somafrik.app` | Confusion revue de code (« c’est déjà le contact public ») |
 | EMAIL-P2-003 | P2 | SPF/DKIM/DMARC absents | Bloquant **avant** tout envoi, pas avant l’affichage mailto |
 | EMAIL-P2-004 | P2 | Aide / catalogues interdisent « Nous contacter » | À coordonner, pas à casser à l’aveugle |
+| EMAIL-P2-005 | P2 | Formulation « `main` = production Vercel » non sourcée | `docs/vercel.md` est une intention ; GitHub Deployments observés = Render preprod, pas Vercel `somafrik.app` |
+| EMAIL-P2-006 | P2 | `baudouinbring@gmail.com` dans l’historique Git | 33 commits ; personnelle historique ; stop futur, pas de rewrite |
 | EMAIL-P3-001 | P3 | Support Mobile sans mailto Somafrik | Acceptable V1 si footer web porte l’identité |
 | EMAIL-P3-002 | P3 | Footer sans `mailto:` même quand l’adresse sera affichée | Accessibilité |
 
@@ -491,9 +549,26 @@ Les tests **actuels** qui **bloquent** l’adoption :
 
 ## 15. Plan de correction
 
-**Ne pas créer ces PR automatiquement.** Lots atomiques, ordre imposé.
+**Ne pas créer ces PR automatiquement.** Lots atomiques. Ordre privilégié CTO : **F → A → B**, puis C/G, puis D/E.
 
-### PR A — Canonicalisation identité e-mail publique
+### PR F — Divulgation sécurité **et** gouvernance d’identité Git *(premier lot)*
+
+Fichiers :
+
+- `security@somafrik.app` (Routing vers la même boîte interne si besoin).
+- Remplacer Outlook dans `docs/project/SECURITY.md`.
+- Ajouter `SECURITY.md` racine GitHub pointant vers `security@`.
+- Outlook **uniquement** dans un runbook ops **privé** (hors repo public) si encore nécessaire.
+
+Identité Git **future** (obligatoire dans le même lot F, hors rewrite) :
+
+- Compte GitHub Somafrik : commit email = **noreply GitHub officiel** (`{id}+{login}@users.noreply.github.com`, valeur exacte lue dans Settings → Emails).
+- Plus de `user.email=somafrik@outlook.fr` sur les commits / merges produits par ce compte.
+- Documenter : identité Git ≠ `contact@` ≠ destination Cloudflare Outlook.
+- Check optionnelle forward-looking `T-GIT-01` (HEAD de PR seulement).
+- **Ne pas** proposer `git filter-repo` / force-push d’historique comme correction.
+
+### PR A — Canonicalisation identité e-mail publique *(après F)*
 
 - Module partagé (ex. `packages/public-identity` **ou** un fichier unique consommé web + backend).
 - Exporter au minimum :
@@ -534,13 +609,6 @@ Les tests **actuels** qui **bloquent** l’adoption :
 - **Contrat test :** From ≠ `contact@somafrik.app`.
 - Reset password par e-mail = **décision produit explicite** ; aujourd’hui le modèle opérateur suffit.
 
-### PR F — Divulgation sécurité
-
-- `security@somafrik.app` (Routing vers la même boîte interne si besoin).
-- Remplacer Outlook dans `docs/project/SECURITY.md`.
-- Ajouter `SECURITY.md` racine GitHub pointant vers `security@`.
-- Outlook **uniquement** dans un runbook ops **privé** (hors repo public) si encore nécessaire.
-
 ### PR G — Facturation
 
 - Remplacer le CTA mort « Contactez Somafrik » par `facturation@` **ou** `contact@` (si un seul canal humain au début).
@@ -552,6 +620,7 @@ Les tests **actuels** qui **bloquent** l’adoption :
 - Ne pas « tout remplacer » par `contact@`.
 - Ne pas brancher C4 sur SMTP.
 - Ne pas mettre de token Cloudflare dans Git.
+- **Ne pas** réécrire l’historique Git pour masquer Outlook.
 
 ---
 
@@ -567,28 +636,30 @@ Les tests **actuels** qui **bloquent** l’adoption :
 | `noreply@somafrik.app` | **TRANSACTIONAL** système / reset | non | **oui** (futur ESP) | bounce uniquement |
 | `security@somafrik.app` | **SECURITY** | docs sécurité / GitHub Advisory | non | à router |
 | `facturation@somafrik.app` | **BILLING** | écrans abonnement si canal dédié | non | à router |
-| `somafrik@outlook.fr` | **INTERNAL** destination | **jamais** | jamais | boîte technique actuelle |
+| `somafrik@outlook.fr` | **INTERNAL** destination Cloudflare + **ancienne** identité Git | **jamais** (UI) ; historique Git déjà public | jamais | boîte technique actuelle |
 | `superadmin@somafrik.app` | bootstrap | **jamais** | n/a | n/a |
 | `info@` / `hello@` / `admin@` | denylist école | non | non | n/a |
 
 **Règle d’or :** `contact@somafrik.app` = humains qui écrivent à Somafrik.  
 Les machines qui écrivent aux humains utilisent `notifications@` / `noreply@`.  
-Outlook n’existe pas dans le produit.
+Outlook n’existe pas dans le produit **ni** comme `user.email` Git futur.  
+L’historique Git déjà publié conservant Outlook **n’est pas** « nettoyé » par une PR de fichiers.
 
 ### Conditions du GO
 
-1. PR A+B avant toute communication marketing « écrivez à contact@ ».
-2. Interdiction contractuelle (test) : jamais `contact@` en From.
-3. Outlook retiré des docs **publiques** (PR F) avant d’amplifier le trafic vers Routing.
-4. Formulaire (PR D) et ESP (PR E) **après** l’identité publique, pas avant.
-5. Ne pas casser le modèle reset-opérateur en collant un faux « mot de passe oublié » mailto.
-6. `GENERIC_EMAILS` **conserve** `contact@somafrik.app`.
-7. Harmoniser `main` seulement via le processus de release existant — **pas** dans cet audit.
+1. **PR F d’abord** : `SECURITY.md` + identité Git noreply **future**. Pas de rewrite.
+2. Puis **PR A** (constante publique) puis **PR B** (vitrine + légal) avant toute communication marketing « écrivez à contact@ ».
+3. Interdiction contractuelle (test) : jamais `contact@` en From.
+4. Ne pas affirmer « Outlook hors dépôt public » après F fichiers-seule : dire « hors **tree HEAD** et hors UI ; historique Git inchangé ».
+5. Formulaire (PR D) et ESP (PR E) **après** l’identité publique, pas avant.
+6. Ne pas casser le modèle reset-opérateur en collant un faux « mot de passe oublié » mailto.
+7. `GENERIC_EMAILS` **conserve** `contact@somafrik.app`.
+8. Harmoniser `main` seulement via le processus de release existant — **pas** dans cet audit. Ne pas traiter `main` comme preuve de déploiement Vercel sans Deployments.
 
 ### Verdict
 
 **GO SOUS CONDITIONS**
 
-L’adresse cible est déjà réservée côté réception (Cloudflare) et déjà présente dans la denylist métier. Le produit `develop` n’a simplement **pas** d’identité publique. Le danger n’est pas l’absence d’ESP : c’est de combler le vide en faisant de `contact@somafrik.app` le From universel.
+L’adresse cible est déjà réservée côté réception (Cloudflare) et déjà présente dans la denylist métier. Le produit `develop` n’a simplement **pas** d’identité publique. Le danger n’est pas l’absence d’ESP : c’est de combler le vide en faisant de `contact@somafrik.app` le From universel. Outlook reste destination Cloudflare et **historique Git** ; il ne doit plus être ni affiché, ni `user.email` des commits futurs.
 
 **AUCUN READY. AUCUN MERGE.**
