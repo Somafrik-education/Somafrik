@@ -1,7 +1,7 @@
 # Contribuer — Somafrik
 
 **Statut :** règles obligatoires de développement  
-**Dernière mise à jour :** 2026-07-26
+**Dernière mise à jour :** 2026-09-01
 
 Ce document définit comment livrer du code sur Somafrik.  
 La documentation sous `docs/project/` est la **source de vérité** : toute évolution fonctionnelle doit la mettre à jour.
@@ -86,6 +86,35 @@ docs(project): gouvernance ROADMAP / ARCHITECTURE
 feat(eleves): C1.8a — valider inscription et affecter une classe
 ```
 
+### 3.1 Identité Git / confidentialité des auteurs
+
+Règle : **identité Git ≠ adresse publique Somafrik ≠ boîte interne de réception**.
+
+Les commits humains du compte Somafrik doivent utiliser l’adresse **GitHub noreply officielle** de ce compte.
+
+1. GitHub → **Settings → Emails**.
+2. Activer *Keep my email addresses private* si ce n’est pas déjà le cas.
+3. Copier l’adresse noreply affichée par GitHub (forme `ID+login@users.noreply.github.com`). **Ne pas inventer l’ID.**
+4. Configurer `user.email` avec **cette** adresse, pas une adresse inventée dans la doc.
+
+Interdit comme `user.email` / `author.email` **nouveau** :
+
+- toute adresse du domaine Outlook historique interne ;
+- `contact@somafrik.app` ;
+- `security@somafrik.app` ;
+- `support@somafrik.app` ;
+- `notifications@somafrik.app` ;
+- `noreply@somafrik.app` ;
+- `facturation@somafrik.app`.
+
+Les adresses fonctionnelles Somafrik (`contact@`, `security@`, etc.) sont des **canaux produit / divulgation**, pas une identité d’auteur Git.
+
+Les trailers `Co-authored-by:` des contributeurs humains Somafrik doivent eux aussi utiliser l’adresse GitHub noreply du compte, pas une boîte personnelle. **Ne pas inventer** d’ID noreply.
+
+**Ne pas réécrire** l’historique Git existant (`filter-repo`, `filter-branch`, BFG, force-push de `develop` / `main`) pour masquer d’anciennes identités. Les occurrences déjà publiées **ne sont pas des secrets**. Réécrire uniquement une branche PR non mergée pour retirer un trailer personnel **nouveau** n’est pas une réécriture de `develop` / `main`.
+
+Signalement de vulnérabilité : [SECURITY.md](./SECURITY.md) et [SECURITY.md](../../SECURITY.md) racine — `security@somafrik.app`.
+
 ---
 
 ## 4. Conventions de Pull Requests
@@ -160,6 +189,7 @@ npm run verify:finance-multi-item-payment # si touch reçu multi-libellés / pay
 
 - Jamais de JWT en query string
 - Jamais de secrets commités (`.env*`, tokens, clés)
+- Identité Git : §3.1 (noreply GitHub ; pas d’adresse fonctionnelle Somafrik)
 - Sanitizer les réponses utilisateur
 - Respecter la matrice S1.4 et les hotfixes sync/RBAC
 

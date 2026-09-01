@@ -1,7 +1,7 @@
 # Sécurité — Somafrik
 
 **Statut :** politique & contrôles de sécurité  
-**Dernière mise à jour :** 2026-08-14  
+**Dernière mise à jour :** 2026-09-01  
 **Liens :** [ARCHITECTURE.md](./ARCHITECTURE.md) · [DECISIONS.md](./DECISIONS.md) · [../ci-cd-security.md](../ci-cd-security.md)
 
 ---
@@ -158,11 +158,21 @@ Voir [../ci-cd-security.md](../ci-cd-security.md).
 
 ## 9. Politique de divulgation
 
-1. **Ne pas** ouvrir d’issue publique détaillant un exploit exploitable.
-2. Contacter le CTO / propriétaire du dépôt (`somafrik@outlook.fr` / canal privé équipe).
-3. Délai de remediation cible : critique ≤ 72 h, haute ≤ 7 j, moyenne planifiée.
-4. Hotfix via branche `hotfix/*` + gate préprod ([CONTRIBUTING.md](./CONTRIBUTING.md)).
-5. Après correctif : entrée CHANGELOG **Security** + ADR si règle durable.
+Canal public de signalement : **`security@somafrik.app`**.
+
+1. **Ne pas** ouvrir d’issue publique détaillant un exploit exploitable, ni publier un PoC avant correctif.
+2. Contacter **`security@somafrik.app`**. Ne pas utiliser une adresse interne, personnelle, ou une identité Git comme canal de signalement.
+3. Fournir uniquement les informations **minimales** nécessaires à la reproduction (produit, branche/version si connue, impact, étapes). **Ne pas** joindre de données personnelles inutiles (élèves, familles, secrets hors besoin de preuve).
+4. Respecter la **divulgation responsable** : attendre un correctif avant toute publication.
+5. Délai de remédiation **cible** (engagement d’effort, pas un SLA contractuel) : critique ≤ 72 h, haute ≤ 7 j, moyenne planifiée.
+6. Hotfix via branche `hotfix/*` + gate préprod ([CONTRIBUTING.md](./CONTRIBUTING.md)).
+7. Après correctif : entrée CHANGELOG **Security** + ADR si règle durable.
+
+Résumé GitHub : [SECURITY.md](../../SECURITY.md) à la racine du dépôt.
+
+Routage **security@somafrik.app** configuré et test de réception validé le **2026-09-01**. Canal hors dépôt (Cloudflare Email Routing). Ne pas documenter ici la destination interne.
+
+Identité Git des auteurs : voir [CONTRIBUTING.md](./CONTRIBUTING.md) §3.1 — distincte de `security@somafrik.app` et des adresses fonctionnelles Somafrik.
 
 ---
 
