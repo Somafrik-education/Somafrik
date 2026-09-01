@@ -218,8 +218,12 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const refreshDomains = useCallback(
     async (domains?: DomainKey[], options: EnsureDomainsOptions = {}) => {
       if (!session || !getAccessToken() || syncPausedRef.current) return;
-      rememberSchoolCode(options.schoolCode ?? activeSchoolCodeRef.current);
-      const schoolCode = options.schoolCode ?? activeSchoolCodeRef.current;
+      const sessionMembership = String(session.user?.schoolCode ?? "").trim();
+      const schoolCode =
+        options.schoolCode ||
+        activeSchoolCodeRef.current ||
+        (sessionMembership && sessionMembership !== "*" ? sessionMembership : "");
+      rememberSchoolCode(schoolCode);
 
       let keys = domains;
       if (!keys?.length) {
@@ -240,7 +244,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
         }
         logDomainSync("DOMAIN_FETCH_START", { domains: keys, schoolCode });
 
-        const result = await loadDomains(keys, { schoolCode });
+        const result = await loadDomains(keys, { schoolCode, role: session.user?.role });
         if (result.loaded.length) {
           const applied = mergeLoadedDomains(
             result.data,
@@ -278,8 +282,12 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const ensureDomains = useCallback(
     async (domains: DomainKey[], options: EnsureDomainsOptions = {}) => {
       if (!session || !getAccessToken()) return;
-      rememberSchoolCode(options.schoolCode ?? activeSchoolCodeRef.current);
-      const schoolCode = options.schoolCode ?? activeSchoolCodeRef.current;
+      const sessionMembership = String(session.user?.schoolCode ?? "").trim();
+      const schoolCode =
+        options.schoolCode ||
+        activeSchoolCodeRef.current ||
+        (sessionMembership && sessionMembership !== "*" ? sessionMembership : "");
+      rememberSchoolCode(schoolCode);
       const pending = domains.filter((domain) => {
         const cacheKey = domainCacheKey(domain, schoolCode);
         if (options.force) return true;
@@ -389,7 +397,10 @@ export function DataProvider({ children }: { children: ReactNode }) {
         if (refreshKeys.length) {
           const targetSchool =
             String(options.schoolCode ?? sessionUserRef.current?.schoolCode ?? "").trim().toUpperCase() || undefined;
-          const result = await loadDomains(refreshKeys, { schoolCode: targetSchool });
+          const result = await loadDomains(refreshKeys, {
+            schoolCode: targetSchool,
+            role: sessionUserRef.current?.role,
+          });
           if (result.loaded.length) {
             mergeLoadedDomains(
               result.data,

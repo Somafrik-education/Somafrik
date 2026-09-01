@@ -1,6 +1,9 @@
 /**
  *   npx tsx Mobile/src/lib/requestSchoolScope.test.ts
  */
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import assert from "node:assert/strict";
 import {
   SCHOOL_SCOPE_HEADER,
@@ -96,6 +99,14 @@ function run() {
   assert.equal(nextPrincipal.values.get(SCHOOL_SCOPE_HEADER), "BI-EC-26-001");
   assert.notEqual(nextPrincipal.values.get(SCHOOL_SCOPE_HEADER), "CD-IN-26-001");
   clearRequestSchoolScope();
+
+  const here = dirname(fileURLToPath(import.meta.url));
+  const hydration = readFileSync(join(here, "../services/domainHydrationApi.ts"), "utf8");
+  assert.match(hydration, /establishments\/\$\{encodeURIComponent\(membership\)\}/);
+  assert.match(hydration, /usesPlatformSchoolCatalog/);
+  const adminData = readFileSync(join(here, "../context/AdminDataContext.tsx"), "utf8");
+  assert.match(adminData, /getCanonicalSchools\(session\)/);
+  assert.match(adminData, /if \(!hasPlatformBackofficePrivilege\(session\)\) return;/);
 }
 
 run();

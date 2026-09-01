@@ -1,5 +1,6 @@
 import type { DomainKey } from "./domainLoaders";
 import { userRequiresSchoolSelection } from "./activeSchool";
+import { isPlatformCommunicationUser } from "./establishmentCommunication";
 import {
   canManageRolePermissions,
   canReadView,
@@ -39,7 +40,16 @@ const DOMAIN_VIEW_MAP: Partial<Record<DomainKey, string>> = {
 export function canLoadDomain(ctx: PermissionContext, domain: DomainKey): boolean {
   if (domain === "schools") {
     if (userRequiresSchoolSelection(ctx.user)) return true;
-    return canReadView(ctx, "schools");
+    if (canReadView(ctx, "schools")) return true;
+    // SCHOOL_ADMIN : profil mono-tenant (GET /establishments/:code), pas le catalogue.
+    const schoolCode = String(ctx.user?.schoolCode ?? "").trim();
+    return Boolean(schoolCode && schoolCode !== "*" && canReadView(ctx, "configuration"));
+  }
+
+  if (domain === "notifications") {
+    // GET /backoffice/notifications = catalogue plateforme (ALL/COUNTRY).
+    // L'établissement lit /internal-notifications, pas ce domaine.
+    return isPlatformCommunicationUser(ctx);
   }
 
   if (domain === "rolePermissions") {

@@ -3,6 +3,8 @@ import { clientsApi } from "./clientsApi";
 import { classesApi } from "./classesApi";
 import { establishmentsApi } from "./establishmentsApi";
 import { financeApi } from "./financeApi";
+import { isInternalSchoolRole } from "./format";
+import { COUNTRY_ADMIN_ROLE, isSuperAdminRole } from "./orgHierarchy";
 import { pedagogyApi } from "./pedagogyApi";
 import { platformApi } from "./platformApi";
 import { studentsApi } from "./studentsApi";
@@ -44,6 +46,13 @@ export type DomainKey = (typeof DOMAIN_KEYS)[number];
 
 export interface LoadDomainsOptions {
   schoolCode?: string;
+  /** Rôle session : le catalogue schools se décide sur le rôle, pas sur schoolCode. */
+  role?: string;
+}
+
+/** Superadmin / Admin Pays : toujours GET /establishments (liste). */
+export function usesPlatformSchoolCatalog(role?: string): boolean {
+  return isSuperAdminRole(role) || role === COUNTRY_ADMIN_ROLE;
 }
 
 export interface LoadDomainsResult {
@@ -65,7 +74,17 @@ function academicConfigPath(schoolCode?: string): string {
 
 function createDomainLoaders(options: LoadDomainsOptions = {}): Record<DomainKey, () => Promise<DomainSlice>> {
   return {
-    schools: async () => ({ schools: (await establishmentsApi.list()) as BackOfficeState["schools"] }),
+    schools: async () => {
+      if (usesPlatformSchoolCatalog(options.role) || !options.role) {
+        return { schools: (await establishmentsApi.list()) as BackOfficeState["schools"] };
+      }
+      const scoped = String(options.schoolCode ?? "").trim();
+      if (isInternalSchoolRole(options.role) && scoped && scoped !== "*") {
+        const school = await establishmentsApi.get(scoped);
+        return { schools: school ? [school] : [] };
+      }
+      return { schools: [] };
+    },
     countries: async () => ({ countries: (await platformApi.listCountries()) as BackOfficeState["countries"] }),
     subscriptions: async () => ({
       subscriptions: (await platformApi.listSubscriptions()) as BackOfficeState["subscriptions"],

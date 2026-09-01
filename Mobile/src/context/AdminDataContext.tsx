@@ -790,7 +790,7 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
     const scope = principalScopeKeyRef.current;
     setSchoolsSnapshot((current) => ({ ...current, status: "loading" }));
     try {
-      const rows = await getCanonicalSchools();
+      const rows = await getCanonicalSchools(session);
       if (principalScopeKeyRef.current !== scope) return;
       setSchoolsData(rows);
       setSchoolsSnapshot(snapshotFromSuccess(rows));

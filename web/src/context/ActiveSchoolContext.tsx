@@ -50,8 +50,13 @@ export function ActiveSchoolProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (!session?.accessToken || !getAccessToken()) return;
+    const membership = String(user?.schoolCode ?? "").trim();
+    if (membership && membership !== "*") {
+      void ensureDomains(["schools"], { schoolCode: membership }).catch(() => undefined);
+      return;
+    }
     void ensureDomains(["schools"]).catch(() => undefined);
-  }, [session?.accessToken, ensureDomains]);
+  }, [session?.accessToken, user?.schoolCode, ensureDomains]);
 
   useEffect(() => {
     const previous = previousSchoolRef.current;

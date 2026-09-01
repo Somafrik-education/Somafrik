@@ -154,7 +154,11 @@ const routePermissions = {
   "DELETE /api/backoffice/establishments/:code": ["Établissements:DELETE", "ALL_PRIVILEGES"],
   "POST /api/backoffice/establishments/import": ["Établissements:CREATE", "Gérer établissements", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
   "POST /api/backoffice/import/students/validate": ["Élèves:CREATE", "Gérer élèves", "Gérer établissements", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
-  "GET /api/backoffice/subscription-access": ["ALL_PRIVILEGES", "COUNTRY_PRIVILEGES"],
+  "GET /api/backoffice/subscription-access": [
+    "ALL_PRIVILEGES",
+    "COUNTRY_PRIVILEGES",
+    "Paramètres Établissement:READ",
+  ],
   "GET /api/backoffice/finance/unpaid": ["Impayés:READ", "Paiements:READ", "Frais & tarifs:READ", "Gérer paiements", "ALL_PRIVILEGES", "COUNTRY_PRIVILEGES"],
   "POST /api/backoffice/finance/unpaid/reminders": ["Impayés:CREATE", "Paiements:UPDATE", "Gérer paiements", "ALL_PRIVILEGES"],
   "GET /api/backoffice/users": ["Utilisateurs:READ", "Gérer utilisateurs", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
