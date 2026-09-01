@@ -26,7 +26,6 @@ import {
 import { isSuperadminManagedUser, isUnassignedUserAccount } from "./userAccounts";
 import { isUserAccountVisible } from "./userAccountRules";
 import {
-  logUserScopeTrace,
   projectScopedUsersForSchool,
   type UserScopeProjection,
 } from "./schoolCanonicalIdentity";
@@ -198,9 +197,7 @@ export function projectScopedUsers(user: SessionUser | null, state: ScopeState):
       },
     };
   }
-  const projection = projectScopedUsersForSchool(user, visible);
-  logUserScopeTrace(projection.trace);
-  return projection;
+  return projectScopedUsersForSchool(user, visible);
 }
 
 export function scopedUsers(user: SessionUser | null, state: ScopeState): UserAccount[] {

@@ -16,6 +16,7 @@ import { domainsFromPatch, domainCacheKey, loadDomains, type DomainKey } from ".
 import { logDomainSync } from "../lib/domainSyncTelemetry";
 import { getAccessToken } from "../api/client";
 import { applyClientScopeToState, projectScopedUsers } from "../lib/scope";
+import { logUserScopeTrace } from "../lib/schoolCanonicalIdentity";
 import { stripClientFinanceFromPutPayload } from "../lib/stripClientFinance";
 import { stripClientSchoolsFromPutPayload } from "../lib/stripClientSchools";
 import { stripClientStudentsFromPutPayload } from "../lib/stripClientStudents";
@@ -184,6 +185,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
         if (sessionUserRef.current && loadedKeys.includes("users")) {
           const projection = projectScopedUsers(sessionUserRef.current, withPending);
           nextScopeError = projection.error?.message ?? null;
+          logUserScopeTrace(projection.trace);
         }
         return sessionUserRef.current
           ? applyClientScopeToState(withPending, sessionUserRef.current)

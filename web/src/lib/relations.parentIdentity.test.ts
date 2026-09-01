@@ -10,6 +10,8 @@ const admin = {
   id: "u-admin",
   role: "Admin School",
   schoolCode: "SCH-001",
+  schoolId: "school-1",
+  schoolPublicCode: "CD-IN-26-001",
 } as unknown as SessionUser;
 
 const state = {
@@ -22,6 +24,8 @@ const state = {
       lastName: "Diallo",
       role: "Parent",
       schoolCode: "SCH-001",
+      schoolId: "school-1",
+      schoolPublicCode: "CD-IN-26-001",
       identifier: "+2431",
     },
     {
@@ -30,6 +34,8 @@ const state = {
       lastName: "Contact",
       role: "Parent",
       schoolCode: "SCH-001",
+      schoolId: "school-1",
+      schoolPublicCode: "CD-IN-26-001",
     },
   ],
   students: [{ id: "STU-1", firstName: "Jean", name: "Dupont", schoolCode: "SCH-001" }],
