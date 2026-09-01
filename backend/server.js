@@ -3238,13 +3238,8 @@ app.patch("/api/backoffice/internal-notifications/:notificationId/archive", requ
 }));
 
 app.get("/api/backoffice/subscription-access", requireAuth, requirePermission("GET /api/backoffice/subscription-access"), asyncHandler(async (req, res) => {
-  const {
-    asTrimmed,
-    isSuperAdminPrincipal,
-    isCountryAdminPrincipal,
-    assertSchoolScope,
-    resolvePrincipalCountryCode,
-  } = require("./lib/platformManagement");
+  const { asTrimmed } = require("./lib/platformManagement");
+  const { assertSubscriptionAccessForPrincipal } = require("./lib/subscriptionAccessScope");
   const requestedSchoolCode = asTrimmed(req.query.schoolCode).toUpperCase();
   const principalSchoolCode = asTrimmed(req.principal?.schoolCode).toUpperCase();
   const schoolCode = requestedSchoolCode || principalSchoolCode;
@@ -3253,22 +3248,8 @@ app.get("/api/backoffice/subscription-access", requireAuth, requirePermission("G
     return res.json({ level: "full", message: "" });
   }
 
-  if (requestedSchoolCode) {
-    if (isSuperAdminPrincipal(req.principal)) {
-      // accès global autorisé
-    } else if (isCountryAdminPrincipal(req.principal)) {
-      const school = await repository.getPlatformSchoolByCode(schoolCode);
-      const principalCountry = resolvePrincipalCountryCode(req.principal);
-      if (
-        !school ||
-        asTrimmed(school.country_code).toUpperCase() !== principalCountry.toUpperCase()
-      ) {
-        throw new BusinessError(403, "Accès refusé : établissement hors périmètre pays.");
-      }
-    } else {
-      assertSchoolScope(req.principal, schoolCode);
-    }
-  }
+  const school = await repository.getPlatformSchoolByCode(schoolCode);
+  assertSubscriptionAccessForPrincipal(req.principal, schoolCode, school);
 
   const state = await getAuthoritativeBackOfficeState();
   res.json(schoolSubscriptionAccessService.resolveSchoolAccess(schoolCode, state));

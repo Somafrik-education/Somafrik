@@ -65,7 +65,14 @@ function academicConfigPath(schoolCode?: string): string {
 
 function createDomainLoaders(options: LoadDomainsOptions = {}): Record<DomainKey, () => Promise<DomainSlice>> {
   return {
-    schools: async () => ({ schools: (await establishmentsApi.list()) as BackOfficeState["schools"] }),
+    schools: async () => {
+      const scoped = String(options.schoolCode ?? "").trim();
+      if (scoped && scoped !== "*") {
+        const school = await establishmentsApi.get(scoped);
+        return { schools: school ? [school] : [] };
+      }
+      return { schools: (await establishmentsApi.list()) as BackOfficeState["schools"] };
+    },
     countries: async () => ({ countries: (await platformApi.listCountries()) as BackOfficeState["countries"] }),
     subscriptions: async () => ({
       subscriptions: (await platformApi.listSubscriptions()) as BackOfficeState["subscriptions"],

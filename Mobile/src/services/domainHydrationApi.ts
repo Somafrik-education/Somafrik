@@ -134,7 +134,15 @@ export async function getCanonicalRelations(): Promise<CanonicalMessageRelation[
     .filter((row): row is CanonicalMessageRelation => Boolean(row));
 }
 
-export async function getCanonicalSchools(): Promise<SchoolProfile[]> {
+export async function getCanonicalSchools(session?: {
+  user?: { schoolCode?: string };
+}): Promise<SchoolProfile[]> {
+  const membership = String(session?.user?.schoolCode ?? "").trim();
+  if (membership && membership !== "*") {
+    const row = await httpRequest<unknown>(`/backoffice/establishments/${encodeURIComponent(membership)}`);
+    const mapped = normalizeSchool(row);
+    return mapped ? [mapped] : [];
+  }
   const payload = await httpRequest<unknown>("/backoffice/establishments");
   return unwrapList(payload).map(normalizeSchool).filter((row): row is SchoolProfile => Boolean(row));
 }

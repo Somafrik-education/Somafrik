@@ -26,7 +26,7 @@ vi.mock("./clientsApi", () => ({
     listAnnouncements: vi.fn(),
   },
 }));
-vi.mock("./establishmentsApi", () => ({ establishmentsApi: { list: vi.fn() } }));
+vi.mock("./establishmentsApi", () => ({ establishmentsApi: { list: vi.fn(), get: vi.fn() } }));
 vi.mock("./platformApi", () => ({
   platformApi: {
     listCountries: vi.fn(),

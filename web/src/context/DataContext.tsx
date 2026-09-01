@@ -218,8 +218,12 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const refreshDomains = useCallback(
     async (domains?: DomainKey[], options: EnsureDomainsOptions = {}) => {
       if (!session || !getAccessToken() || syncPausedRef.current) return;
-      rememberSchoolCode(options.schoolCode ?? activeSchoolCodeRef.current);
-      const schoolCode = options.schoolCode ?? activeSchoolCodeRef.current;
+      const sessionMembership = String(session.user?.schoolCode ?? "").trim();
+      const schoolCode =
+        options.schoolCode ||
+        activeSchoolCodeRef.current ||
+        (sessionMembership && sessionMembership !== "*" ? sessionMembership : "");
+      rememberSchoolCode(schoolCode);
 
       let keys = domains;
       if (!keys?.length) {
@@ -278,8 +282,12 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const ensureDomains = useCallback(
     async (domains: DomainKey[], options: EnsureDomainsOptions = {}) => {
       if (!session || !getAccessToken()) return;
-      rememberSchoolCode(options.schoolCode ?? activeSchoolCodeRef.current);
-      const schoolCode = options.schoolCode ?? activeSchoolCodeRef.current;
+      const sessionMembership = String(session.user?.schoolCode ?? "").trim();
+      const schoolCode =
+        options.schoolCode ||
+        activeSchoolCodeRef.current ||
+        (sessionMembership && sessionMembership !== "*" ? sessionMembership : "");
+      rememberSchoolCode(schoolCode);
       const pending = domains.filter((domain) => {
         const cacheKey = domainCacheKey(domain, schoolCode);
         if (options.force) return true;
