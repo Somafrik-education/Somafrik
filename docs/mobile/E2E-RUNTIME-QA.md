@@ -50,7 +50,7 @@ Profil attendu (voir `docs/mobile/PREVIEW-APK.md`) :
 ```text
 preview
 package = com.somafrik.app
-display = Somafrik QA
+display = Somafrik
 API = https://somafrik-api-preprod.onrender.com
 ```
 

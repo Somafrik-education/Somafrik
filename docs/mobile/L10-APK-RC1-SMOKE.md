@@ -30,7 +30,7 @@ Identité APK :
 | ----- | ------ |
 | Profil EAS | `preview` |
 | Artefact | APK interne |
-| Nom lanceur | **Somafrik QA** |
+| Nom lanceur | **Somafrik** |
 | Badge | **Preview QA** |
 | Package | `com.somafrik.app` |
 | Comptes | préproduction uniquement |
@@ -65,7 +65,7 @@ Si un NO-GO est constaté : **stop terrain**, ticket P0/P1, pas de poursuite des
 1. Humain : `eas login` dans `Mobile/` (cette VM Cloud n’a pas `EXPO_TOKEN`).
 2. `eas whoami` puis `eas project:info` (projectId `47b217aa-3d96-4d50-a9f5-fc0ec8a3cef5`).
 3. `eas build --platform android --profile preview` — attendre **finished**.
-4. Télécharger l’APK, **désinstaller** toute `com.somafrik.app` (Play / autre signature), installer **Somafrik QA**.
+4. Télécharger l’APK, **désinstaller** toute `com.somafrik.app` (Play / autre signature), installer l’APK Preview (**Somafrik**).
 5. Confirmer le badge **Preview QA** et le texte login `API : https://somafrik-api-preprod.onrender.com/api`.
 
 Interdit : `eas submit`, Play, PIN démo, comptes production.
@@ -86,7 +86,7 @@ Cocher uniquement après observation téléphone. `—` = non applicable au rôl
 
 | # | Contrôle | Admin School | Directeur / Préfet | Enseignant | NO-GO si |
 | - | -------- | ------------ | ------------------ | ---------- | -------- |
-| C1 | Lanceur **Somafrik QA**, badge **Preview QA** | | | | Nom prod / pas de badge |
+| C1 | Lanceur **Somafrik**, badge **Preview QA** | | | | Nom ≠ Somafrik / pas de badge |
 | C2 | Login préprod OK, session persistée, Home après `permissionsBootstrap ready` | | | | Login impossible / Home avant ready |
 | C3 | Texte API = préprod HTTPS, pas `api.somafrik.app` | | | | Mauvaise préprod |
 | C4 | Rôle / libellé cohérents avec le compte (pas de Super Admin fantôme) | | | | Identité reconstruite |

@@ -15,15 +15,15 @@ Inventaire **avant** retrait (LOT 7) :
 
 Stratégie : **Continuous Native Generation**. `android/` et `ios/` sont gitignorés. EAS Build et `npx expo prebuild --platform android` régénèrent le natif à partir de la config + plugins (permissions, backup, network security, cleartext). Plus de mode hybride involontaire : EAS n’ignore plus `app.config.js` à cause d’un `android/` commité.
 
-Package Android **stable** : `com.somafrik.app` (identique préprod / prod). Même listing Play, tracks différents. Préproduction identifiable par le nom affiché `Somafrik Préprod` + badge in-app. Pas de changement de package.
+Package Android **stable** : `com.somafrik.app` (identique préprod / prod). Même listing Play, tracks différents. Préproduction identifiable par le badge in-app **Préproduction**, pas par le nom launcher (`Somafrik` partout). Pas de changement de package.
 
 ## 4 environnements
 
 | Profil | API | Package | Nom affiché | Distribution | Artefact | Google Play |
 | ------ | --- | ------- | ----------- | ------------ | -------- | ----------- |
 | development | `EXPO_PUBLIC_API_URL` / LAN (HTTP local autorisé) | `com.somafrik.app` | Somafrik + badge Développement | internal | APK / dev client | Non |
-| preview | `https://somafrik-api-preprod.onrender.com` | `com.somafrik.app` | Somafrik QA + badge | internal | APK | Non — voir [PREVIEW-APK.md](./PREVIEW-APK.md) |
-| **preproduction** | **`https://somafrik-api-preprod.onrender.com`** (Render, déjà dans `docs/preproduction.md`) | `com.somafrik.app` | Somafrik Préprod + badge | store | **AAB** | **Internal testing** |
+| preview | `https://somafrik-api-preprod.onrender.com` | `com.somafrik.app` | Somafrik + badge Preview QA | internal | APK | Non — voir [PREVIEW-APK.md](./PREVIEW-APK.md) |
+| **preproduction** | **`https://somafrik-api-preprod.onrender.com`** (Render, déjà dans `docs/preproduction.md`) | `com.somafrik.app` | Somafrik + badge Préproduction | store | **AAB** | **Internal testing** |
 | production | `https://api.somafrik.app` | `com.somafrik.app` | Somafrik | store | AAB | Production |
 
 Preview et préproduction partagent l’API Render préprod : **aucune URL QA distincte n’existe dans le dépôt**. La séparation Play vs APK interne reste obligatoire. `preproduction ≠ production`.

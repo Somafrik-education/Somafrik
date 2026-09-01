@@ -20,10 +20,11 @@ const APP_SCHEME = "somafrik";
 const APP_VERSION = "1.2.1";
 const ANDROID_VERSION_CODE = 13;
 
+/** Nom launcher identique partout. L'environnement se distingue par le badge in-app. */
 const DISPLAY_NAMES = {
   development: "Somafrik",
-  preview: "Somafrik QA",
-  preproduction: "Somafrik Préprod",
+  preview: "Somafrik",
+  preproduction: "Somafrik",
   production: "Somafrik",
 };
 
