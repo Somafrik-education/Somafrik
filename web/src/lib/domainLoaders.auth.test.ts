@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const getAccessToken = vi.hoisted(() => vi.fn(() => "test-access-token"));
+const getAccessToken = vi.hoisted(() => vi.fn((): string | null => "test-access-token"));
 
 vi.mock("../api/client", () => {
   class ApiError extends Error {
