@@ -1,7 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
-import type { SessionUser, UserAccount } from "../types";
+import type { BackOfficeState, SessionUser, UserAccount } from "../types";
 import { SCHOOL_ADMIN_ROLE } from "./orgHierarchy";
-import { projectScopedUsers, scopedUsers } from "./scope";
+import {
+  applyClientScopeToState,
+  projectScopedUsers,
+  scopedUsers,
+  usersScopeErrorFromLoadedDomains,
+} from "./scope";
 import {
   accountMatchesSchoolIdentity,
   isLegacySchoolCode,
@@ -238,6 +243,41 @@ describe("scopedUsers — SCHOOL_ADMIN canonique (A–E, I)", () => {
     const projection = projectScopedUsers(session, stateOf(leftoverRows));
     expect(projection.users).toEqual([]);
     expect(projection.error?.code).toBe("MISSING_CANONICAL_IDENTITY");
+  });
+});
+
+describe("usersScopeErrorFromLoadedDomains — avant applyClientScopeToState", () => {
+  it("ne touche pas scopeError si le batch ne charge pas users", () => {
+    expect(usersScopeErrorFromLoadedDomains(schoolAdmin(), ["schools"], stateOf([apiUser()]))).toBeUndefined();
+  });
+
+  it("conserve SCOPE_LEAK ; UsersPage ne peut plus le reconstruire après filtrage", () => {
+    const unfiltered = stateOf([
+      apiUser({ id: "own" }),
+      apiUser({
+        id: "foreign",
+        schoolId: SCHOOL_ID_B,
+        schoolCode: LOGIN_B,
+        schoolPublicCode: LOGIN_B,
+      }),
+    ]);
+    expect(usersScopeErrorFromLoadedDomains(schoolAdmin(), ["users"], unfiltered)).toMatch(
+      /autre établissement/i,
+    );
+
+    const filtered = applyClientScopeToState(unfiltered as unknown as BackOfficeState, schoolAdmin());
+    expect(filtered.users.map((row) => row.id)).toEqual(["own"]);
+    expect(projectScopedUsers(schoolAdmin(), filtered).error).toBeNull();
+  });
+
+  it("conserve SCOPE_MISMATCH ; après filtrage ça ressemble à une liste vide", () => {
+    const unfiltered = stateOf([apiUser({ schoolId: "" })]);
+    expect(usersScopeErrorFromLoadedDomains(schoolAdmin(), ["users"], unfiltered)).toMatch(
+      /Incohérence de périmètre/i,
+    );
+    const filtered = applyClientScopeToState(unfiltered as unknown as BackOfficeState, schoolAdmin());
+    expect(filtered.users).toEqual([]);
+    expect(projectScopedUsers(schoolAdmin(), filtered).error).toBeNull();
   });
 });
 

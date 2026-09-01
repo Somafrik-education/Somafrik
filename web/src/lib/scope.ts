@@ -209,6 +209,20 @@ export function scopedUsers(user: SessionUser | null, state: ScopeState): UserAc
   return projectScopedUsers(user, state).users;
 }
 
+/**
+ * Erreur users à propager depuis le merge distant, AVANT applyClientScopeToState.
+ * `undefined` = ce batch ne charge pas `users` (ne pas toucher scopeError).
+ * Après filtrage client, UsersPage ne peut plus reconstruire SCOPE_LEAK / SCOPE_MISMATCH.
+ */
+export function usersScopeErrorFromLoadedDomains(
+  user: SessionUser | null,
+  loadedKeys: readonly string[],
+  state: Pick<ScopeState, "users" | "schools" | "countries" | "subscriptions" | "notifications">,
+): string | null | undefined {
+  if (!loadedKeys.includes("users")) return undefined;
+  return projectScopedUsers(user, state).error?.message ?? null;
+}
+
 function countUsersByRole(users: UserAccount[], roles: string[]): number {
   const normalizedRoles = roles.map((role) => normalize(role));
   return users.filter((user) => normalizedRoles.includes(normalize(user.role))).length;

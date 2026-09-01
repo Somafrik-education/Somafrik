@@ -15,7 +15,7 @@ import { assertNoStrippedCanonicalWrites } from "../lib/canonicalStateWriteGuard
 import { domainsFromPatch, domainCacheKey, loadDomains, type DomainKey } from "../lib/domainLoaders";
 import { logDomainSync } from "../lib/domainSyncTelemetry";
 import { getAccessToken } from "../api/client";
-import { applyClientScopeToState, projectScopedUsers } from "../lib/scope";
+import { applyClientScopeToState, projectScopedUsers, usersScopeErrorFromLoadedDomains } from "../lib/scope";
 import { logUserScopeTrace } from "../lib/schoolCanonicalIdentity";
 import { stripClientFinanceFromPutPayload } from "../lib/stripClientFinance";
 import { stripClientSchoolsFromPutPayload } from "../lib/stripClientSchools";
@@ -170,7 +170,6 @@ export function DataProvider({ children }: { children: ReactNode }) {
       }
 
       for (const key of cacheKeys) loadedDomainsRef.current.add(key);
-      let nextScopeError: string | null | undefined;
       setState((prev) => {
         const merged = mergeRemoteSnapshot(prev, remote, {
           activeSchoolCode: schoolCode ?? activeSchoolCodeRef.current,
@@ -182,18 +181,18 @@ export function DataProvider({ children }: { children: ReactNode }) {
           count: loadedKeys.length,
         });
         const withPending = reapplyOutboxToState(merged, listActiveOutboxEntries());
-        if (sessionUserRef.current && loadedKeys.includes("users")) {
-          const projection = projectScopedUsers(sessionUserRef.current, withPending);
-          nextScopeError = projection.error?.message ?? null;
-          logUserScopeTrace(projection.trace);
+        const sessionUser = sessionUserRef.current;
+        const nextScopeError = usersScopeErrorFromLoadedDomains(sessionUser, loadedKeys, withPending);
+        if (sessionUser && loadedKeys.includes("users")) {
+          logUserScopeTrace(projectScopedUsers(sessionUser, withPending).trace);
         }
-        return sessionUserRef.current
-          ? applyClientScopeToState(withPending, sessionUserRef.current)
-          : withPending;
+        if (nextScopeError !== undefined) {
+          // L'updater setState est différé (createRoot). Ne pas lire une variable
+          // externe après setState : programmer l'erreur depuis l'updater lui-même.
+          queueMicrotask(() => setScopeError(nextScopeError));
+        }
+        return sessionUser ? applyClientScopeToState(withPending, sessionUser) : withPending;
       });
-      if (nextScopeError !== undefined) {
-        setScopeError(nextScopeError);
-      }
       return true;
     },
     [],
