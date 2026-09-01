@@ -2,6 +2,9 @@ import { api } from "../api/client";
 
 export interface AcademicYear {
   id: string;
+  /** UUID établissement = schools.id. Autorité de scope, jamais leftover school_code. */
+  schoolId?: string;
+  /** Projection publique = schools.login_code. Jamais une autorité de sécurité. */
   schoolCode: string;
   name: string;
   startDate: string;
