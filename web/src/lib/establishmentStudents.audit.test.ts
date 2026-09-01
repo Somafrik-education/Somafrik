@@ -70,22 +70,24 @@ describe("audit tuiles Vue d'ensemble + écrans détail (SAFE / BUG)", () => {
 });
 
 describe("audit Mobile — dashboard vs liste Élèves", () => {
-  it("SAFE snapshot : HomeScreen et StudentsScreen partagent AdminDataContext.studentsData", () => {
+  it("SAFE snapshot : HomeScreen et StudentsScreen consomment establishmentStudents du context", () => {
     const home = readRepo("Mobile/src/screens/HomeScreen.tsx");
     const list = readRepo("Mobile/src/screens/StudentsScreen.tsx");
     expect(home).toContain("useAdminData()");
-    expect(home).toContain("studentsData");
+    expect(home).toContain("establishmentStudents");
     expect(home).toContain("studentsSnapshot");
     expect(list).toContain("useAdminData()");
-    expect(list).toContain("studentsData");
-    expect(list).toContain("scopedStudentsForSession");
+    expect(list).toContain("establishmentStudents");
+    expect(list).toContain("studentsProjection");
+    expect(list).not.toContain("scopedStudentsForSession");
     expect(list).not.toMatch(/studentsApi\.list\(/);
   });
 
-  it("dette latente documentée : Home KPI = rows.length brut, liste = scopedStudentsForSession(schoolCode)", () => {
+  it("KPI Home et isolation établissement : schoolId, plus leftover schoolCode", () => {
     const home = readRepo("Mobile/src/screens/HomeScreen.tsx");
     const establishment = readRepo("Mobile/src/lib/establishment.ts");
-    expect(home).toContain("metricLabelFromSnapshot(studentsSnapshot, (rows) => String(rows.length))");
-    expect(establishment).toMatch(/normalize\(student\.schoolCode\) === normalize\(schoolCode\)/);
+    expect(home).toContain("metricLabelFromSnapshot(studentsSnapshot, () => String(visibleStudents.length))");
+    expect(establishment).toContain("projectScopedStudentsForSession");
+    expect(establishment).not.toMatch(/normalize\(student\.schoolCode\) === normalize\(schoolCode\)/);
   });
 });
