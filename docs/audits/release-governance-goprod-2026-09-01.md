@@ -2,6 +2,8 @@
 
 Lot unique **G**. Evidence/governance-only. **Aucun merge `main`. Aucun deploy. Aucun EAS/Play.**
 
+**FREEZE STATUS = LIFTED** (2026-09-01). L’ancien freeze **exclusif** « toute PR = uniquement les fichiers de gouvernance » est **TERMINÉ**. SHA de sortie : `develop@1f5fc0d6594b45434a216ae461df99fd97bec86c`. Le régime live de remplacement est le fail-closed **#451** (gouvernance-only **ou** candidat `CTO_GO` exact). HOLD **release production / `main`** inchangé — pas `RELEASE_ENGINEERING_READY`. Les **PR Gates** restent le contrôle de risque une fois le contrat Release Governance satisfait.
+
 Revalidation du baseline après avancement **légitime** de `develop` (#445 gate Lot G, #446 favicon Web). **#447 (icône launcher) n’est pas dans ce lot** : correctif technique OK, HOLD merge tant que cette revalidation n’est pas tranchée.
 
 | | |
@@ -236,10 +238,27 @@ Conditions de l’exception (pas une allowlist permanente) :
 
 Une PR qui ne modifie **que** le manifeste CTO_GO déclenche désormais le gate. Toute réémission d’autorisation n’a plus besoin de toucher le script « pour faire passer le trigger ».
 
+Ces contrôles A/B + manifeste **restent le régime live** après levée du freeze exclusif (voir §12). Chicken-egg : la PR qui déclare `FREEZE STATUS = LIFTED` doit elle-même rester gouvernance-only ; y ajouter un fichier métier → **FAIL CLOSED**.
+
+## 12. FREEZE STATUS = LIFTED (2026-09-01)
+
+| | |
+|---|---|
+| Freeze exclusif « 3 fichiers seulement » | **TERMINÉ / LIFTED** |
+| Date | 2026-09-01 |
+| Ancien baseline freeze | `78228be06286b464afd9e691fb227d16be95a63a` |
+| SHA de sortie / `POST_FREEZE_ANCHOR` | `1f5fc0d6594b45434a216ae461df99fd97bec86c` |
+| Régime live de remplacement | **fail-closed #451** (gouvernance-only **ou** `CTO_GO`) |
+| Protections #451 conservées | manifeste ; autorité = `pull_request.base.sha` ; `files[]` strict ; `headSha` / `diffSha256` ; anti auto-autorisation |
+
+Le freeze levé n’est **pas** une autorisation générale des PR métier. Une PR hors `GOVERNANCE_ONLY_PATHS` **sans** entrée `CTO_GO` valide sur la base → **FAIL CLOSED** (contrôle B, live). Le contrôle A exclusif (`BASELINE..origin/develop` ⊆ gouvernance-only) est **clos** : après merge d’un candidat `CTO_GO`, `develop` contient des fichiers métier. Les **PR Gates** évaluent le risque **après** le contrat B.
+
+Production / `main` reste protégée : pas de promotion `develop → main`, pas de deploy, pas d’`eas submit` dans ce gate.
+
 ## Gate
 
 `npm run verify:release-governance`
 
-Échoue si `origin/develop` avance **hors** fichiers de gouvernance, si le diff de la **PR courante** n’est ni gouvernance-only ni un candidat `CTO_GO` exact (PR + HEAD/identité + ensemble de fichiers), si `origin/main` bouge, ou si une PR frozen est ancêtre de HEAD / citée en sujet merge ou squash `(#n)`. Ne merge pas `main`. Ne déploie pas.
+Échoue si le diff de la **PR courante** n’est ni gouvernance-only ni un candidat `CTO_GO` exact, si `origin/main` bouge, si une PR frozen est ancêtre de HEAD / citée en sujet merge ou squash `(#n)`, ou si le workflow de ce gate contient un déploiement production. Le drift `BASELINE..origin/develop` n’est plus un FAIL exclusif après merge d’un candidat autorisé. Ne merge pas `main`. Ne déploie pas.
 
-P1 Codex #445 : exclusion frozen squash/cherry-pick. P2 : `Mobile/app.json` + `Mobile/package.json` dans `paths`. P3 : exception gouvernance-only sur le drift `develop`. P4 : le même allowlist s’applique au candidat PR (`base...head`) pour HOLD pré-merge. P5 : candidat métier explicitement autorisé (PR + HEAD + fichiers + `diffSha256` rebase-equivalent). P6 : manifeste CTO_GO dans les `paths:` du workflow via bootstrap one-shot #451 (YAML hors allowlist ; contenu piné). P7 : autorité du manifeste = `pull_request.base.sha`, pas le HEAD candidat.
+P1 Codex #445 : exclusion frozen squash/cherry-pick. P2 : `Mobile/app.json` + `Mobile/package.json` dans `paths`. P3 : exception gouvernance-only sur le drift `develop`. P4 : allowlist candidat PR (`base...head`) pour HOLD pré-merge. P5 : candidat métier `CTO_GO` + `diffSha256` (fail-closed #451, **live**). P6 : manifeste dans les `paths:` via bootstrap #451. P7 : autorité du manifeste = `pull_request.base.sha`, pas le HEAD candidat. P8 : **FREEZE STATUS = LIFTED** — freeze exclusif clos ; régime live = #451.

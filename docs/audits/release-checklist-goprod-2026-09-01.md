@@ -1,6 +1,10 @@
 # Checklist release GO-PROD — 2026-09-01
 
-**Aucun acte ci-dessous n’est exécuté par l’agent.** Chaque phase exige **USER GO** explicite. Candidat métier figé : `develop@78228be06286b464afd9e691fb227d16be95a63a`. Si `develop` avance **hors fichiers de gouvernance** : STOP, rebase, revalider. Un candidat métier autorisé (`CTO_GO` dans `docs/audits/release-approved-candidates-2026-09-01.json`) n’est pas un GO release ni un Ready/merge automatique : HEAD exact ou `diffSha256` rebase-equivalent + ensemble de fichiers strict, sinon FAIL CLOSED.
+**Aucun acte ci-dessous n’est exécuté par l’agent.** Chaque phase exige **USER GO** explicite.
+
+**FREEZE STATUS = LIFTED** (2026-09-01). Ancien freeze exclusif : `develop@78228be06286b464afd9e691fb227d16be95a63a`. SHA de sortie : `develop@1f5fc0d6594b45434a216ae461df99fd97bec86c`. Régime live : fail-closed #451 (gouvernance-only **ou** `CTO_GO`). Les **PR Gates** restent le contrôle de risque ensuite. Production / merge `main` : toujours USER GO. Si `origin/main` bouge sans autorisation : STOP.
+
+Un candidat métier autorisé (`CTO_GO` dans `docs/audits/release-approved-candidates-2026-09-01.json`) n’est pas un GO release ni un Ready/merge automatique : HEAD exact ou `diffSha256` rebase-equivalent + ensemble de fichiers strict, sinon **FAIL CLOSED**. Ce contrat **reste live**.
 
 ## A — Pré-merge `main` (USER GO)
 
