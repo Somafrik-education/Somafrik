@@ -1,19 +1,23 @@
 # Release governance GO-PROD — 2026-09-01
 
-Lot unique **G** après merge **#444**. Evidence/governance-only. **Aucun merge `main`. Aucun deploy. Aucun EAS/Play.**
+Lot unique **G**. Evidence/governance-only. **Aucun merge `main`. Aucun deploy. Aucun EAS/Play.**
+
+Revalidation du baseline après avancement **légitime** de `develop` (#445 gate Lot G, #446 favicon Web). **#447 (icône launcher) n’est pas dans ce lot** : correctif technique OK, HOLD merge tant que cette revalidation n’est pas tranchée.
 
 | | |
 |---|---|
-| Candidat release (baseline) | `develop@5173537d29d31d16039883552f5e2cb506060581` (merge #444) |
+| Candidat release (baseline) | `develop@78228be06286b464afd9e691fb227d16be95a63a` (merge #446) |
+| Baseline précédent | `5173537d29d31d16039883552f5e2cb506060581` (merge #444) |
 | `main` observé | `b5074565b08472217702d8ff848f5a398d08831c` |
 | Merge-base | `c2e33cf1c865abd0e9e4f91726d7547b25f039a6` |
-| Ahead / behind (`develop`…`main`) | **1266 develop-only / 2 main-only** |
+| Ahead / behind (`develop`…`main`) | **1271 develop-only / 2 main-only** |
 | Décision | **HOLD** — pas `RELEASE_ENGINEERING_READY` |
 
 ## Gouvernance avant ouverture
 
 - 1 PR Cursor Go Production à la fois.
-- #444 MERGED (`5173537d…`). Aucune autre PR Go-Prod ouverte.
+- #444 MERGED (`5173537d…`). #445 MERGED (`b9a26cb6…`, audit Lot G). #446 MERGED (`78228be0…`, favicon Web).
+- #447 Draft icône launcher : **hors de cette PR** ; ne pas y mélanger le baseline.
 - Historiques ouvertes, **non reprises**, **absentes de `develop` et `main`** : #295, #297, #298, #312, #337, #354, #355.
 - **Aucune PR `develop → main` ouverte** (serait lisible comme autorisation de merge).
 
@@ -24,10 +28,10 @@ Lot unique **G** après merge **#444**. Evidence/governance-only. **Aucun merge 
 | Default branch | `main` |
 | Tree `main` | `5a9c8e47…` = tree de `develop@878e4ab8` (`docs(project): … (#83)`, 2026-07-27) |
 | Tree merge-base / `6ff61106` | identiques (`be4eceb0…`) |
-| Diffstat `main…develop` | 1678 files, +330929 / −23304 |
+| Diffstat `main…develop` | 1687 files, +331406 / −23306 |
 | Top catégories | backend 591 · web 356 · Mobile 350 · docs 211 · scripts 49 · `.github` 32 |
 
-`878e4ab8` **est ancêtre** de `develop@5173537d`. Le tip `main` est un **snapshot develop du 27 juillet**, pas un HEAD release actuel.
+`878e4ab8` **est ancêtre** de `develop@78228be0` (et de l’ancien tip `5173537d`). Le tip `main` est un **snapshot develop du 27 juillet**, pas un HEAD release actuel.
 
 ## 2. Commits `main`-only (ne pas écraser en silence)
 
@@ -53,7 +57,7 @@ API `branches/*/protection` : **403** (token intégration, non admin). Rulesets 
 
 Le check GitHub nommé **`CI`** est **stale** : le workflow actuel s’appelle **CI Full Nightly** (cron/`workflow_dispatch`, `ref: develop`) et n’est pas un required PR check. Les checks convention CTO (PR Gates, tenant, smokes) **ne sont pas required par GitHub** sur ces rulesets disabled.
 
-## 4. Checks sur le HEAD release (`develop@5173537d`)
+## 4. Checks sur le HEAD release (`develop@78228be0`)
 
 **Required GitHub (enforced) :** aucun (rulesets disabled ; protection 403).
 
@@ -92,7 +96,7 @@ Aucune des PR #295 / #297 / #298 / #312 / #337 / #354 / #355 n’a de merge comm
 
 ## 8. Forme de PR `develop → main` (non ouverte)
 
-Titre possible plus tard : `release: develop@5173537d → main` (ou le SHA develop du jour).  
+Titre possible plus tard : `release: develop@78228be0 → main` (ou le SHA develop du jour).  
 Base `main`, head `develop`. Draft + USER GO + stratégie de conflits **documentée**. **Cette PR n’existe pas.** L’ouvrir maintenant serait interprété comme autorisation de merge.
 
 ## 9. Décision
@@ -102,14 +106,27 @@ Base `main`, head `develop`. Draft + USER GO + stratégie de conflits **document
 1. Blockers runtime/hosting/device/DNS/Store ci-dessus encore ouverts.
 2. `main` n’est pas fast-forwardable ; 2 commits main-only stale + 29 conflits.
 3. Rulesets `main`/`develop` **disabled** ; check required `CI` stale ; 0 required GitHub enforced.
-4. Candidat `5173537d` sain **comme tip develop**, pas comme tip `main`.
+4. Candidat `78228be0` sain **comme tip develop**, pas comme tip `main`. `5173537d` reste un ancêtre (#444).
 
 Le lot G peut merger comme **audit** sans lever le HOLD release.
+
+## 10. Revalidation baseline (2026-09-01, après #445 / #446)
+
+Le gate `assert.equal(originDevelop, baseline)` a échoué **volontairement** dès que #445 a atterri : le freeze #444 (`5173537d`) n’était plus le tip. Avancement **audité**, pas un drift inconnu :
+
+| SHA | PR | Nature |
+|---|---|---|
+| `b9a26cb6` | #445 | audit Lot G (ce gate) |
+| `78228be0` | #446 | favicon Web uniquement |
+
+#447 (icône mobile) est **1 ahead / 0 behind** ce tip, Draft, PR Gates verts — **non mergée**, **non rejouée ici**.
+
+Contrat inchangé : `origin/develop` **doit** égaler le baseline. Après merge de **cette** PR d’audit, le tip `develop` bougera à nouveau ; le HOLD se réactivera jusqu’à une revalidation du SHA de merge. C’est le mécanisme, pas un contournement de #447.
 
 ## Gate
 
 `npm run verify:release-governance`
 
-Échoue si `origin/develop` **≠** `5173537d…` (tip avancé → STOP rebase), si `origin/main` bouge, ou si une PR frozen est ancêtre de HEAD / citée en sujet merge ou squash `(#n)`. Ne merge pas `main`. Ne déploie pas.
+Échoue si `origin/develop` **≠** `78228be0…` (tip avancé → STOP rebase), si `origin/main` bouge, ou si une PR frozen est ancêtre de HEAD / citée en sujet merge ou squash `(#n)`. Ne merge pas `main`. Ne déploie pas.
 
-P1 Codex #445 (même PR) : le tip `develop` est comparé **directement** au baseline (plus un `hasAncestor` qui restait vert) ; l’exclusion frozen couvre squash/cherry-pick, pas seulement `Merge pull request #n`. P2 : `Mobile/app.json` + `Mobile/package.json` dans `paths`.
+P1 Codex #445 : le tip `develop` est comparé **directement** au baseline (plus un `hasAncestor` qui restait vert) ; l’exclusion frozen couvre squash/cherry-pick, pas seulement `Merge pull request #n`. P2 : `Mobile/app.json` + `Mobile/package.json` dans `paths` — d’où le rouge de #447 tant que le baseline n’est pas revalidé.

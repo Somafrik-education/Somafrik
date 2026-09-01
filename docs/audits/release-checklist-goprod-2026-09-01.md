@@ -1,6 +1,6 @@
 # Checklist release GO-PROD — 2026-09-01
 
-**Aucun acte ci-dessous n’est exécuté par l’agent.** Chaque phase exige **USER GO** explicite. Candidat figé à la rédaction : `develop@5173537d29d31d16039883552f5e2cb506060581`. Si `develop` avance : STOP, rebase, revalider.
+**Aucun acte ci-dessous n’est exécuté par l’agent.** Chaque phase exige **USER GO** explicite. Candidat figé à la revalidation : `develop@78228be06286b464afd9e691fb227d16be95a63a`. Si `develop` avance : STOP, rebase, revalider.
 
 ## A — Pré-merge `main` (USER GO)
 

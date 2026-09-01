@@ -11,7 +11,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 
 const ROOT = path.resolve(__dirname, "..");
-const BASELINE = "5173537d29d31d16039883552f5e2cb506060581";
+const BASELINE = "78228be06286b464afd9e691fb227d16be95a63a";
 const EXPECTED_MAIN = "b5074565b08472217702d8ff848f5a398d08831c";
 const MAIN_ONLY = [
   "6ff6110643d4cfdd349162d66b6dd590daf4c902",
