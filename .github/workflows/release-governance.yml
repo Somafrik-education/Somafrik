@@ -1,0 +1,39 @@
+name: Release governance GO-PROD
+
+on:
+  pull_request:
+    branches: [develop]
+    paths:
+      - "scripts/verify-release-governance.js"
+      - "docs/audits/release-governance-goprod-2026-09-01.md"
+      - "docs/audits/release-checklist-goprod-2026-09-01.md"
+      - "package.json"
+      - ".github/workflows/release-governance.yml"
+      - "Mobile/app.json"
+      - "Mobile/package.json"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  release-governance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Fetch main, develop, and frozen PR heads
+        run: |
+          set -euo pipefail
+          git fetch origin main
+          git fetch origin develop
+          for n in 295 297 298 312 337 354 355; do
+            git fetch origin "pull/$n/head:refs/remotes/origin/pr-$n"
+          done
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.12.0"
+      - name: Verify release governance (no main merge / no deploy)
+        run: npm run verify:release-governance
