@@ -20,6 +20,7 @@ import { SchoolSubjectsPanel } from "../components/SchoolSubjectsPanel";
 import { getSchoolAcademicLists } from "../lib/academicConfig";
 import { ApiError } from "../api/client";
 import { academicYearsApi, type AcademicYear } from "../lib/academicYearsApi";
+import { scopeAcademicYearsForConfiguration } from "../lib/academicYearsScope";
 import { schoolSettingsApi } from "../lib/schoolSettingsApi";
 import {
   applySystemActivePeriod,
@@ -78,6 +79,11 @@ export function ConfigurationPage({ section }: { section?: ConfigurationSection 
   const configSchool = isAllSchoolsSelection(configTarget)
     ? null
     : availableSchools.find((item) => normalize(item.code) === normalize(configTarget)) ?? null;
+  const selectedSchoolId = String(configSchool?.id ?? "").trim();
+  const selectedSchoolForYears = useMemo(
+    () => (selectedSchoolId ? { id: selectedSchoolId } : null),
+    [selectedSchoolId],
+  );
 
   const targetSchoolCodes = useMemo(
     () => resolveTargetSchoolCodes(configTarget, availableSchools.map((item) => item.code)),
@@ -183,9 +189,11 @@ export function ConfigurationPage({ section }: { section?: ConfigurationSection 
       .list()
       .then((rows) => {
         if (cancelled) return;
-        const scoped = (Array.isArray(rows) ? rows : []).filter((year) => {
-          if (!configTarget) return true;
-          return !year.schoolCode || year.schoolCode === configTarget;
+        const scoped = scopeAcademicYearsForConfiguration({
+          role: user?.role,
+          rows,
+          selectedSchool: selectedSchoolForYears,
+          sessionSchoolId: user?.schoolId,
         });
         setAcademicYears(scoped);
       })
@@ -198,7 +206,7 @@ export function ConfigurationPage({ section }: { section?: ConfigurationSection 
     return () => {
       cancelled = true;
     };
-  }, [section, configTarget, canReadYears, academicFormKey]);
+  }, [section, configTarget, canReadYears, academicFormKey, user?.role, user?.schoolId, selectedSchoolForYears]);
 
   if (!canAccessSchoolBackOffice(user?.role)) {
     return (
@@ -243,9 +251,11 @@ export function ConfigurationPage({ section }: { section?: ConfigurationSection 
       return [];
     }
     const rows = await academicYearsApi.list();
-    const scoped = (Array.isArray(rows) ? rows : []).filter((year) => {
-      if (!configTarget) return true;
-      return !year.schoolCode || year.schoolCode === configTarget;
+    const scoped = scopeAcademicYearsForConfiguration({
+      role: user?.role,
+      rows,
+      selectedSchool: selectedSchoolForYears,
+      sessionSchoolId: user?.schoolId,
     });
     setAcademicYears(scoped);
     return scoped;
