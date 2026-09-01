@@ -35,6 +35,8 @@ const STUDENT_SCOPE_MESSAGES: Record<SchoolScopeErrorCode, string> = {
     "Incohérence de périmètre : l'API a renvoyé des élèves, mais aucun ne correspond à l'identité établissement canonique de la session.",
   SCOPE_LEAK:
     "Alerte sécurité : la réponse élèves contient un autre établissement. Ces élèves sont masqués.",
+  INCOMPLETE_ROW_IDENTITY:
+    "Incohérence de périmètre : des élèves n'ont pas l'identité canonique schoolId. Ces lignes sont masquées.",
 };
 
 function toStudentRows(state: Pick<BackOfficeState, "students"> | { students?: unknown[] }): StudentRow[] {
@@ -147,13 +149,21 @@ export function projectScopedStudents(
 
   const matched = received.filter((row) => studentMatchesSchoolIdentity(row, identity.schoolId));
   const foreignById = received.filter(
-    (row) => row.schoolId && !sameSchoolId(row.schoolId, identity.schoolId),
+    (row) => String(row.schoolId ?? "").trim() && !sameSchoolId(row.schoolId, identity.schoolId),
   );
+  const missingSchoolId = received.filter((row) => !String(row.schoolId ?? "").trim());
 
   if (foreignById.length) {
     return withStudents(user, received, matched, {
       code: "SCOPE_LEAK",
       message: STUDENT_SCOPE_MESSAGES.SCOPE_LEAK,
+    });
+  }
+
+  if (missingSchoolId.length && matched.length > 0) {
+    return withStudents(user, received, matched, {
+      code: "INCOMPLETE_ROW_IDENTITY",
+      message: STUDENT_SCOPE_MESSAGES.INCOMPLETE_ROW_IDENTITY,
     });
   }
 

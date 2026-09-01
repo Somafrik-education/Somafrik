@@ -20,6 +20,7 @@ export default defineConfig({
       // Pages migrées D2.3+ (tests de structure / non-régression UI)
       "src/pages/**/*.{test,spec}.{ts,tsx}",
       "src/components/**/*.{test,spec}.{ts,tsx}",
+      "src/context/**/*.{test,spec}.{ts,tsx}",
       // HOTFIX-SYNC-01 — outbox / merge non destructif
       "src/lib/**/*.{test,spec}.{ts,tsx}",
       "src/data/**/*.{test,spec}.{ts,tsx}",

@@ -171,4 +171,25 @@ describe("EtablissementOverviewPage — payload PostgreSQL réel-like", () => {
     expect(tileCount("Élèves")).toBe("0");
     expect(screen.getByText(/autre établissement/i)).toBeInTheDocument();
   });
+
+  it("payload mixte : 14 élèves affichés + alerte scopeError (ligne sans schoolId déjà filtrée du state)", () => {
+    schoolAdmin.user = {
+      ...schoolAdmin.user,
+      schoolId: SCHOOL_ID_A,
+      schoolCode: LEFTOVER_A,
+      schoolPublicCode: LOGIN_A,
+    };
+    dataState.students = Array.from({ length: 14 }, (_, index) => pgStudent(index));
+    dataState.scopeError =
+      "Incohérence de périmètre : des élèves n'ont pas l'identité canonique schoolId. Ces lignes sont masquées.";
+
+    render(
+      <MemoryRouter>
+        <EtablissementOverviewPage />
+      </MemoryRouter>,
+    );
+
+    expect(tileCount("Élèves")).toBe("14");
+    expect(screen.getByText(/identité canonique schoolId/i)).toBeInTheDocument();
+  });
 });

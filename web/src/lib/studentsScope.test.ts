@@ -123,6 +123,22 @@ describe("scopedStudents — SCHOOL_ADMIN schoolId fail-closed", () => {
     expect(projection.error?.code).toBe("SCOPE_MISMATCH");
   });
 
+  it("payload mixte 14 schoolId + 1 sans schoolId → 14 gardés + INCOMPLETE_ROW_IDENTITY visible", () => {
+    const session = schoolAdmin();
+    const payload = [
+      ...Array.from({ length: 14 }, (_, index) => pgStudent(index)),
+      pgStudent(14, { schoolId: "" }),
+    ];
+    const projection = projectScopedStudents(session, stateOf(payload));
+    expect(projection.received).toBe(15);
+    expect(projection.kept).toBe(14);
+    expect(projection.students).toHaveLength(14);
+    expect(projection.error?.code).toBe("INCOMPLETE_ROW_IDENTITY");
+    expect(projection.error?.message).toMatch(/schoolId/i);
+    expect(projection.error?.message).toMatch(/masqu/i);
+    expect(scopedStudents(session, stateOf(payload))).toHaveLength(14);
+  });
+
   it("publicCode / leftover ne sont jamais une autorité même s'ils matchent", () => {
     const session = schoolAdmin();
     const leftoverOnly = pgStudent(0, { schoolId: SCHOOL_ID_B, schoolCode: LEFTOVER_A, schoolPublicCode: LOGIN_A });

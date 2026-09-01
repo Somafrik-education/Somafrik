@@ -240,7 +240,7 @@ describe("convergence canonique Élèves — annuaire + vue d'ensemble", () => {
     expect(tileCount("Élèves")).toBe("15");
   });
 
-  it("5. Hard reload simulé sur vue-ensemble (re-mount DataContext) → 15", () => {
+  it("5. Remount page seule (useData mocké) n'est pas un hard reload — voir EtablissementOverviewPage.bootstrap.test.tsx", () => {
     const { unmount } = render(
       <MemoryRouter>
         <EtablissementOverviewPage />
@@ -254,5 +254,6 @@ describe("convergence canonique Élèves — annuaire + vue d'ensemble", () => {
       </MemoryRouter>,
     );
     expect(tileCount("Élèves")).toBe("15");
+    expect(listMock).not.toHaveBeenCalled();
   });
 });
