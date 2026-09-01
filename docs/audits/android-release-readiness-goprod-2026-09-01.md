@@ -130,3 +130,5 @@ Verdict device / binaire / prod DNS : **ANDROID_DEVICE_BLOCKED**.
 Ne masque pas les MANUAL BLOCKER physiques / DNS prod. Ne déclenche aucun build distant.
 
 CI : checkout `fetch-depth: 0` ; accepte l’ancêtre `e215e0d5…` ou `pull_request.base.sha` identique.
+
+`on.pull_request.paths` couvre **tous** les inputs directs de la gate (`Mobile/**`, `.github/workflows/**`, `.gitignore`, audit RC3 parked). Un allowlist trop étroit (icon, Maestro, gitignore, `pr-gates.yml`, `mobile-e2e-runtime.yml`) ferait bypasser le job — P1 Codex #444, corrigé sur la même PR.

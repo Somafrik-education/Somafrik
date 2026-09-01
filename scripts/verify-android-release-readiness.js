@@ -308,6 +308,11 @@ async function main() {
   assert.match(e2eRuntime, /runs-on:\s*\[self-hosted, linux, android, somafrik-mobile-e2e\]/);
   assert.doesNotMatch(e2eRuntime, /runs-on:\s*ubuntu-latest/);
   assert.match(aabWorkflow, /ref: develop/);
+  const lotFWorkflow = read(path.join(ROOT, ".github", "workflows", "android-release-readiness.yml"));
+  assert.match(lotFWorkflow, /Mobile\/\*\*/);
+  assert.match(lotFWorkflow, /\.github\/workflows\/\*\*/);
+  assert.match(lotFWorkflow, /"\.gitignore"/);
+  assert.match(lotFWorkflow, /mobile-rc3-parked-rollback-to-rc2-2026-08-27\.md/);
   console.log("PASS AR-GATE-scripts nightly + LOT7 retargeté AAB isolé ; PR gates ≠ release-readiness lourd");
 
   for (const pr of FROZEN_RC3) {

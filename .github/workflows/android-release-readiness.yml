@@ -6,23 +6,11 @@ on:
     paths:
       - "scripts/verify-android-release-readiness.js"
       - "docs/audits/android-release-readiness-goprod-2026-09-01.md"
+      - "docs/audits/mobile-rc3-parked-rollback-to-rc2-2026-08-27.md"
       - "package.json"
-      - ".github/workflows/android-release-readiness.yml"
-      - ".github/workflows/ci.yml"
-      - ".github/workflows/security.yml"
-      - ".github/workflows/mobile-release-build.yml"
-      - "Mobile/app.json"
-      - "Mobile/app.config.js"
-      - "Mobile/eas.json"
-      - "Mobile/package.json"
-      - "Mobile/config/releaseEnvironments.js"
-      - "Mobile/config/releaseEnvironments.test.js"
-      - "Mobile/plugins/withSomafrikAndroidSecurity.js"
-      - "Mobile/scripts/verify-mobile-release-readiness.js"
-      - "Mobile/scripts/verify-mobile-ui-e2e-scaffold.js"
-      - "Mobile/src/config/env.ts"
-      - "Mobile/src/lib/loginScreenSpec.ts"
-      - "Mobile/src/lib/mobileNavigationSpec.ts"
+      - ".gitignore"
+      - ".github/workflows/**"
+      - "Mobile/**"
   workflow_dispatch:
 
 permissions:
