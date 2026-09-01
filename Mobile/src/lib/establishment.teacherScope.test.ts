@@ -343,6 +343,11 @@ function run() {
   assert.deepEqual(teacherScopedClassLabels(session, students, poisonOnly), []);
   assert.deepEqual(scopedStudentsForSession(session, students, poisonOnly), []);
   assert.deepEqual(scopedClassesForSession(session, classes, students, poisonOnly), []);
+  assert.deepEqual(
+    listScopedAttendanceClasses(students, classes, session, poisonOnly),
+    [],
+    "enseignant sans affectation canonique : Présences ne reconstruit pas les classes depuis les élèves",
+  );
 
   const here = path.dirname(fileURLToPath(import.meta.url));
   const establishmentSrc = fs.readFileSync(path.join(here, "establishment.ts"), "utf8");
