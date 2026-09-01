@@ -55,6 +55,7 @@ import {
 } from "../lib/restrictedSession";
 import { clearRequestSchoolScope, getRequestSchoolScope } from "../lib/requestSchoolScope";
 import { clearStoredSchoolCode } from "../lib/activeSchool";
+import { attachStudentTenantIdentity } from "../lib/studentsScope";
 import {
   hasCommunicationSchoolScope,
   resolveCommunicationSchoolScope,
@@ -81,6 +82,8 @@ export type StudentSummary = {
   classId?: string | null;
   classCode?: string;
   className: string;
+  schoolId?: string;
+  schoolPublicCode?: string;
   schoolCode: string;
   parentName?: string;
   parentPhone: string;
@@ -161,6 +164,8 @@ export type LoginResponse = {
     lastName?: string;
     matricule?: string;
     className?: string;
+    schoolId?: string;
+    schoolPublicCode?: string;
     schoolCode?: string;
     scopeLevel?: string;
     countryScope?: string;
@@ -387,7 +392,12 @@ export function getPresences() {
 }
 
 export function getStudents() {
-  return request<unknown>("/students").then((payload) => unwrapList(payload) as StudentSummary[]);
+  return request<unknown>("/students").then(
+    (payload) =>
+      unwrapList(payload).map((row) =>
+        attachStudentTenantIdentity((row && typeof row === "object" ? row : {}) as Record<string, unknown>),
+      ) as StudentSummary[],
+  );
 }
 
 export type PaymentStudentOption = {

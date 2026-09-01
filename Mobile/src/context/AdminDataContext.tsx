@@ -76,7 +76,11 @@ import {
   type PlanningCourseOption,
 } from "../lib/planningV2";
 import { useAuth } from "./AuthContext";
-import { filterL1AssignmentsForTeacherSession } from "../lib/establishment";
+import { filterL1AssignmentsForTeacherSession, scopedStudentsForSession } from "../lib/establishment";
+import {
+  projectScopedStudentsForSession,
+  type StudentScopeProjection,
+} from "../lib/studentsScope";
 import { loadL1BackedSnapshot } from "../offline/l1/readModel";
 import {
   classRowsForJoin,
@@ -120,6 +124,9 @@ type AdminDataContextValue = {
   usersSnapshot: ResourceSnapshot<CanonicalUserAccount>;
   teachersSnapshot: ResourceSnapshot<CanonicalTeacher>;
   studentsSnapshot: ResourceSnapshot<Student>;
+  studentsProjection: StudentScopeProjection;
+  studentsScopeError: string | null;
+  establishmentStudents: Student[];
   classesSnapshot: ResourceSnapshot<SchoolClass>;
   assignmentsSnapshot: ResourceSnapshot<TeacherAssignment>;
   schoolCoursesSnapshot: ResourceSnapshot<SchoolClassCourseRecord>;
@@ -1203,8 +1210,21 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
       });
     };
 
+    const presentedStudents = presentedStudentsSnapshot.data as Student[];
+    const studentsProjection = projectScopedStudentsForSession(session, presentedStudents);
+    const establishmentStudents = scopedStudentsForSession(session, presentedStudents, {
+      teachers: presentedTeachersSnapshot.data as Teacher[],
+      assignments: (state.assignments ?? []) as TeacherAssignment[],
+      classes: presentedClassesSnapshot.data as SchoolClass[],
+      assignmentsSource: assignmentsSnapshot.source,
+    });
+    const studentsScopeError = studentsProjection.error?.message ?? null;
+
     return {
       studentsData: presentedStudentsSnapshot.data as Student[],
+      studentsProjection,
+      studentsScopeError,
+      establishmentStudents,
       teachersData: presentedTeachersSnapshot.data as Teacher[],
       classesData: presentedClassesSnapshot.data as SchoolClass[],
       countriesData: (state.countries ?? []) as CountryProfile[],

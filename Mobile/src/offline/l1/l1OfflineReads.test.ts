@@ -245,6 +245,7 @@ async function run() {
   assert.equal(students[0].studentCode, "STU-001");
   assert.equal(students[0].name, "Esther Okito");
   assert.equal(students[0].className, "6ème A", "className joint localement");
+  assert.equal(students[0].schoolId, "school-1", "L1 porte schoolId de la partition");
   assert.equal(students[0].gender, "", "sexe absent du L1 — ne pas inventer");
   assert.equal(detailSrc.includes("Non renseigné"), true);
 

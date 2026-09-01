@@ -20,6 +20,7 @@ import { useFocusEffect } from "@react-navigation/native";
 import QueryStateView from "../components/QueryStateView";
 import StudentSwitcher from "../components/StudentSwitcher";
 import { useAdminData } from "../context/AdminDataContext";
+import StudentsScopeAlert from "../components/StudentsScopeAlert";
 import { useAuth } from "../context/AuthContext";
 import { messageThemes } from "../data/catalog";
 import { MessagePriority, MessageService } from "../domain/communication/MessageService";
@@ -29,7 +30,6 @@ import {
 } from "../lib/mobileCtaRbacAlignment";
 import { buildMessagePayload, collectSuccessfulAttachmentIds, isAllowedMessageAttachmentMime } from "../lib/messageAttachments";
 import { hasCommunicationSchoolScope, withCommunicationSchoolPayload } from "../lib/communicationSchoolScope";
-import { scopedStudentsForSession } from "../lib/establishment";
 import { useFloatingTabBarLayout } from "../lib/screenLayout";
 import { sendClientsMessage, getMessageRecipients, uploadCommunicationAttachment, downloadCommunicationAttachment } from "../services/api";
 import { createInFlightLock, createIntentionStore } from "../lib/mutationGuard";
@@ -54,15 +54,12 @@ export default function MessagesScreen() {
   const { scrollContentPaddingBottom } = useFloatingTabBarLayout();
   const { session, selectedStudentId } = useAuth();
   const {
-    studentsData,
-    assignmentsData,
-    classesData,
     messagesSnapshot,
     loadMessages,
-    assignmentsSnapshot,
     resourceScopeKey,
     activeSchoolCode,
     requiresSchoolSelection,
+    establishmentStudents,
   } = useAdminData();
 
   const [theme, setTheme] = useState(messageThemes[0]);
@@ -90,13 +87,7 @@ export default function MessagesScreen() {
     scopeReady && (((role === "parent_student" || role === "teacher") && canSend) || showStaffComposer);
   const parentPhone = session?.user.parentPhone ?? session?.user.children?.[0]?.parentPhone ?? "";
   const parentChildren = session?.user.children ?? [];
-  const teacherScopeState = {
-    teachers: [],
-    assignments: assignmentsData,
-    classes: classesData,
-    assignmentsSource: assignmentsSnapshot.source,
-  };
-  const teacherStudents = scopedStudentsForSession(session, studentsData, teacherScopeState);
+  const teacherStudents = establishmentStudents;
   const staffSendBlocked =
     showComposer &&
     !selectedMessage?.conversationId &&
@@ -340,6 +331,7 @@ export default function MessagesScreen() {
         ListHeaderComponent={
           <>
         {role === "parent_student" && <StudentSwitcher />}
+        <StudentsScopeAlert />
         <Text style={styles.title}>Messages</Text>
         {!scopeReady ? (
           <Text style={styles.subtitle}>Sélectionnez un établissement pour ouvrir Messages.</Text>
