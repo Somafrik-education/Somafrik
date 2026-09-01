@@ -26,6 +26,8 @@ jobs:
       JWT_SECRET: ci-web-smoke-jwt-secret-with-enough-length-32
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: "22.12.0"

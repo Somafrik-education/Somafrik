@@ -69,8 +69,34 @@ function hasBaselineAncestor() {
     execSync(`git merge-base --is-ancestor ${BASELINE} HEAD`, { cwd: ROOT, stdio: "ignore" });
     return true;
   } catch {
-    return process.env.SOMAFRIK_WEB_SMOKE_ALLOW_OTHER_SHA === "1";
+    return false;
   }
+}
+
+function pullRequestBaseSha() {
+  const eventPath = process.env.GITHUB_EVENT_PATH;
+  if (!eventPath || !fs.existsSync(eventPath)) return null;
+  try {
+    const event = JSON.parse(fs.readFileSync(eventPath, "utf8"));
+    return event.pull_request?.base?.sha || null;
+  } catch {
+    return null;
+  }
+}
+
+function assertBaselineLineage(sha) {
+  if (hasBaselineAncestor()) return;
+  if (process.env.SOMAFRIK_WEB_SMOKE_ALLOW_OTHER_SHA === "1") return;
+  const prBase = pullRequestBaseSha();
+  if (prBase === BASELINE) {
+    console.log(`CI merge checkout ${sha}; pull_request.base.sha=${prBase} = baseline`);
+    return;
+  }
+  assert.ok(
+    false,
+    `HEAD ${sha} ne contient pas l'ancêtre obligatoire ${BASELINE}` +
+      (prBase ? ` (PR base ${prBase})` : " (clone peu profond ou base inconnue)"),
+  );
 }
 
 function wait(ms) {
@@ -395,10 +421,7 @@ async function main() {
   sourceGuards();
   const sha = gitSha();
   console.log(`Web smoke SHA local=${sha} baseline=${BASELINE}`);
-  assert.ok(
-    hasBaselineAncestor(),
-    `HEAD ${sha} ne contient pas l'ancêtre obligatoire ${BASELINE}`,
-  );
+  assertBaselineLineage(sha);
 
   const hosted = await probeHosted();
   for (const row of hosted) {
