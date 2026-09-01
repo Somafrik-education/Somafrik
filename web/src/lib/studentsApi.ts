@@ -66,7 +66,9 @@ export interface SchoolStudent {
   classId?: string | null;
   className: string;
   classCode: string;
+  schoolId?: string;
   schoolCode: string;
+  schoolPublicCode?: string;
   parentPhone: string;
   parentEmail: string;
   status: string;

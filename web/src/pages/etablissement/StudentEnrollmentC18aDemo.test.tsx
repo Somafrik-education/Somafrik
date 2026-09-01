@@ -7,8 +7,9 @@ import { render, screen, within, cleanup } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 
-const { SCHOOL, STUDENT_ID, ENROLLMENT_ID, dataState, studentsApiGet } = vi.hoisted(() => {
+const { SCHOOL, SCHOOL_ID, STUDENT_ID, ENROLLMENT_ID, dataState, studentsApiGet } = vi.hoisted(() => {
   const SCHOOL = "CD-2026-0001";
+  const SCHOOL_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
   const STUDENT_ID = "stu-c18a-demo";
   const ENROLLMENT_ID = "enr-c18a-demo";
   const dataState = {
@@ -26,6 +27,7 @@ const { SCHOOL, STUDENT_ID, ENROLLMENT_ID, dataState, studentsApiGet } = vi.hois
           lastName: "Kabongo",
           name: "Kabongo",
           schoolCode: SCHOOL,
+          schoolId: SCHOOL_ID,
           schoolYear: "2026-2027",
           schoolStatus: "En examen",
         },
@@ -127,7 +129,7 @@ const { SCHOOL, STUDENT_ID, ENROLLMENT_ID, dataState, studentsApiGet } = vi.hois
   }
 
   const studentsApiGet = vi.fn(async () => buildDossier());
-  return { SCHOOL, STUDENT_ID, ENROLLMENT_ID, dataState, studentsApiGet };
+  return { SCHOOL, SCHOOL_ID, STUDENT_ID, ENROLLMENT_ID, dataState, studentsApiGet };
 });
 
 vi.mock("../../lib/studentsApi", () => ({
@@ -145,6 +147,7 @@ vi.mock("../../context/AuthContext", () => ({
         id: "u-secretaire",
         role: "Secrétaire",
         schoolCode: SCHOOL,
+        schoolId: SCHOOL_ID,
         identifier: "secretaire@demo.local",
         permissions: [
           "Élèves:READ",
@@ -180,6 +183,7 @@ vi.mock("../../context/ActiveSchoolContext", () => ({
       id: "u-secretaire",
       role: "Secrétaire",
       schoolCode: SCHOOL,
+      schoolId: SCHOOL_ID,
       name: "Secrétaire Démo",
     },
   }),

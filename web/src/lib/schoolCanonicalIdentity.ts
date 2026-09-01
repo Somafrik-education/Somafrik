@@ -9,7 +9,8 @@ const LEGACY_SCHOOL_CODE_PATTERN = /^[A-Z]{2}-\d{4}-\d{4}$/;
 export type SchoolScopeErrorCode =
   | "MISSING_CANONICAL_IDENTITY"
   | "SCOPE_MISMATCH"
-  | "SCOPE_LEAK";
+  | "SCOPE_LEAK"
+  | "INCOMPLETE_ROW_IDENTITY";
 
 export type SchoolCanonicalIdentity = {
   schoolId: string;
@@ -159,6 +160,8 @@ const SCOPE_MESSAGES: Record<SchoolScopeErrorCode, string> = {
     "Incohérence de périmètre : l'API a renvoyé des comptes, mais aucun ne correspond à l'identité établissement canonique de la session.",
   SCOPE_LEAK:
     "Alerte sécurité : la réponse utilisateurs contient un autre établissement. Ces comptes sont masqués.",
+  INCOMPLETE_ROW_IDENTITY:
+    "Incohérence de périmètre : des comptes n'ont pas l'identité canonique schoolId. Ces comptes sont masqués.",
 };
 
 export function projectScopedUsersForSchool(

@@ -17,6 +17,14 @@ import { logDomainSync } from "../lib/domainSyncTelemetry";
 import { getAccessToken } from "../api/client";
 import { applyClientScopeToState, projectScopedUsers } from "../lib/scope";
 import { logUserScopeTrace } from "../lib/schoolCanonicalIdentity";
+import { logStudentScopeTrace, projectScopedStudents } from "../lib/studentsScope";
+import {
+  combinedScopeError,
+  EMPTY_DOMAIN_SCOPE_ERRORS,
+  mergeDomainScopeErrors,
+  scopeErrorPatchFromLoadedDomains,
+  type DomainScopeErrors,
+} from "../lib/scopeErrorState";
 import { stripClientFinanceFromPutPayload } from "../lib/stripClientFinance";
 import { stripClientSchoolsFromPutPayload } from "../lib/stripClientSchools";
 import { stripClientStudentsFromPutPayload } from "../lib/stripClientStudents";
@@ -141,7 +149,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const syncPausedRef = useRef(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [scopeError, setScopeError] = useState<string | null>(null);
+  const [scopeErrors, setScopeErrors] = useState<DomainScopeErrors>(EMPTY_DOMAIN_SCOPE_ERRORS);
+  const scopeError = combinedScopeError(scopeErrors);
   const [syncJournal, setSyncJournal] = useState<SyncOutboxEntry[]>(() => listActiveOutboxEntries());
 
   const persistJournal = useCallback((entries: SyncOutboxEntry[]) => {
@@ -170,7 +179,33 @@ export function DataProvider({ children }: { children: ReactNode }) {
       }
 
       for (const key of cacheKeys) loadedDomainsRef.current.add(key);
-      let nextScopeError: string | null | undefined;
+      const sessionUser = sessionUserRef.current;
+      // Projection sur le payload GET, hors updater setState (#457) : après
+      // applyClientScopeToState les lignes incomplètes ont disparu, mais
+      // l'alerte fail-closed doit rester. Le patch ne touche que les
+      // domaines réellement rechargés (un GET users propre n'efface pas
+      // une fuite students encore valide).
+      let scopePatch: Partial<DomainScopeErrors> | undefined;
+      if (sessionUser && (loadedKeys.includes("users") || loadedKeys.includes("students"))) {
+        if (loadedKeys.includes("users")) {
+          logUserScopeTrace(
+            projectScopedUsers(sessionUser, {
+              users: remote.users ?? [],
+              schools: [],
+              countries: [],
+              subscriptions: [],
+              notifications: [],
+            }).trace,
+          );
+        }
+        if (loadedKeys.includes("students")) {
+          logStudentScopeTrace(projectScopedStudents(sessionUser, { students: remote.students ?? [] }).trace);
+        }
+        scopePatch = scopeErrorPatchFromLoadedDomains(loadedKeys, sessionUser, {
+          users: remote.users ?? [],
+          students: remote.students ?? [],
+        });
+      }
       setState((prev) => {
         const merged = mergeRemoteSnapshot(prev, remote, {
           activeSchoolCode: schoolCode ?? activeSchoolCodeRef.current,
@@ -182,17 +217,10 @@ export function DataProvider({ children }: { children: ReactNode }) {
           count: loadedKeys.length,
         });
         const withPending = reapplyOutboxToState(merged, listActiveOutboxEntries());
-        if (sessionUserRef.current && loadedKeys.includes("users")) {
-          const projection = projectScopedUsers(sessionUserRef.current, withPending);
-          nextScopeError = projection.error?.message ?? null;
-          logUserScopeTrace(projection.trace);
-        }
-        return sessionUserRef.current
-          ? applyClientScopeToState(withPending, sessionUserRef.current)
-          : withPending;
+        return sessionUser ? applyClientScopeToState(withPending, sessionUser) : withPending;
       });
-      if (nextScopeError !== undefined) {
-        setScopeError(nextScopeError);
+      if (scopePatch && Object.keys(scopePatch).length) {
+        setScopeErrors((previous) => mergeDomainScopeErrors(previous, scopePatch));
       }
       return true;
     },
@@ -305,12 +333,12 @@ export function DataProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (session) {
       loadedDomainsRef.current = new Set();
-      setScopeError(null);
+      setScopeErrors(EMPTY_DOMAIN_SCOPE_ERRORS);
       const seeded = reapplyOutboxToState(stateFromSession(session), listActiveOutboxEntries());
       setState(seeded);
     } else {
       loadedDomainsRef.current = new Set();
-      setScopeError(null);
+      setScopeErrors(EMPTY_DOMAIN_SCOPE_ERRORS);
       setState(EMPTY_STATE);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps

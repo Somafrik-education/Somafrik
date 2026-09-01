@@ -29,6 +29,7 @@ import {
   projectScopedUsersForSchool,
   type UserScopeProjection,
 } from "./schoolCanonicalIdentity";
+import { projectScopedStudents } from "./studentsScope";
 
 interface ScopeState {
   schools: School[];
@@ -48,6 +49,7 @@ export function applyClientScopeToState(state: BackOfficeState, user: SessionUse
     subscriptions: scopedSubscriptions(user, state),
     notifications: scopedNotifications(user, state),
     users: scopedUsers(user, state),
+    students: projectScopedStudents(user, state).students as BackOfficeState["students"],
   };
 }
 

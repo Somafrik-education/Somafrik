@@ -16,11 +16,15 @@ const sessionUser = vi.hoisted(() => ({
     id: "u1",
     role: "Admin School",
     schoolCode: "SCH-001",
+    schoolId: "school-sch-001",
+    schoolPublicCode: "SCH-001",
     name: "Admin",
   } as {
     id: string;
     role: string;
     schoolCode: string;
+    schoolId?: string;
+    schoolPublicCode?: string;
     name?: string;
     assignments?: Record<string, unknown>[];
   },
@@ -38,6 +42,7 @@ const dataState = vi.hoisted(() => ({
         name: "Diallo Awa",
         className: "6e A",
         schoolCode: "SCH-001",
+        schoolId: "school-sch-001",
       },
     ],
     teachers: [],
@@ -212,6 +217,8 @@ describe("GradesEvaluationsPage (D3.6c ToolLayout)", () => {
       id: "u1",
       role: "Admin School",
       schoolCode: "SCH-001",
+      schoolId: "school-sch-001",
+      schoolPublicCode: "SCH-001",
       name: "Admin",
     };
     gradesPeriod.current = "Trimestre 3";

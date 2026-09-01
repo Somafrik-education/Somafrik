@@ -14,11 +14,15 @@ const sessionUser = vi.hoisted(() => ({
     id: "u-admin",
     role: "Admin School",
     schoolCode: "IN",
+    schoolId: "school-in",
+    schoolPublicCode: "IN",
     name: "Admin",
   } as {
     id: string;
     role: string;
     schoolCode: string;
+    schoolId?: string;
+    schoolPublicCode?: string;
     name?: string;
   },
 }));
@@ -39,6 +43,7 @@ function notesState() {
         lastName: "Test",
         className: "2ème A",
         schoolCode: "IN",
+        schoolId: "school-in",
       },
     ],
     teachers: [],
@@ -170,6 +175,8 @@ describe("GradesEvaluationsPage — Par classe / Statistiques", () => {
       id: "u-admin",
       role: "Admin School",
       schoolCode: "IN",
+      schoolId: "school-in",
+      schoolPublicCode: "IN",
       name: "Admin",
     };
     dataState.current = notesState();
