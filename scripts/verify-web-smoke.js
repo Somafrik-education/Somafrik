@@ -52,6 +52,8 @@ const BROWSER_PAGES = [
   { id: "WS-UI-notes", path: "/notes", expect: /note|évaluation/i },
   { id: "WS-UI-planning", path: "/planning/emploi-du-temps/calendrier", expect: /planning|emploi|calendrier|cours/i },
   { id: "WS-UI-finance", path: "/finances/paiements", expect: /paiement|finance/i },
+  { id: "WS-UI-users", path: "/etablissement/comptes-utilisateurs", expect: /utilisateur|compte/i },
+  { id: "WS-UI-settings", path: "/parametres", expect: /paramètre|profil|année|réglage/i },
 ];
 
 function gitSha() {
@@ -345,6 +347,26 @@ async function browserSmoke(tokenIgnored) {
       });
       assert.ok(ok, `${route.id} page vide ou erreur (${page.url()})`);
     }
+
+    const logout = await page.evaluateHandle(() =>
+      [...document.querySelectorAll("a,button")].find((el) => /Déconnexion/i.test(el.textContent || "")),
+    );
+    assert.ok(logout.asElement(), "lien Déconnexion introuvable");
+    await Promise.all([
+      page.waitForNavigation({ waitUntil: "networkidle0", timeout: 20000 }).catch(() => null),
+      logout.asElement().click(),
+    ]);
+    await wait(500);
+    const afterLogout = page.url();
+    const backToLogin = afterLogout.includes("/connexion") || (await page.$("#login-title"));
+    await page.screenshot({ path: path.join(ARTIFACT_DIR, "ws-logout.png") });
+    results.push({
+      id: "WS-UI-logout",
+      status: backToLogin ? 200 : 500,
+      detail: afterLogout,
+      note: backToLogin ? "retour connexion" : "logout n'a pas rendu /connexion",
+    });
+    assert.ok(backToLogin, `logout n'est pas revenu à /connexion (${afterLogout})`);
   } finally {
     await browser.close();
   }

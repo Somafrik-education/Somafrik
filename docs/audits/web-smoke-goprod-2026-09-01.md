@@ -59,8 +59,15 @@ Connexion établissement `CD-IN-26-001` / `admin` / démo locale. Pages métier 
 | WS-UI-notes | `/notes` | **PASS** | module Notes |
 | WS-UI-planning | `/planning/emploi-du-temps/calendrier` | **PASS** | calendrier Planning |
 | WS-UI-finance | `/finances/paiements` | **PASS** | Paiements |
+| WS-UI-users | `/etablissement/comptes-utilisateurs` | **PASS** | Comptes utilisateurs |
+| WS-UI-settings | `/parametres` | **PASS** | hub Paramètres |
+| WS-UI-logout | Déconnexion | **PASS** | retour `/connexion` |
+| WS-UI-student-fiche | dossier élève | **BLOCKED seed** | 0 élève en mémoire — pas de fiche à ouvrir |
 
-**0 FAIL** sur le runtime local relié au SHA. **0 correctif métier** dans cette PR.
+Verdict local SHA-linked : **WEB_SMOKE_PASS** (12 parcours accessibles).  
+Verdict hébergé : **WEB_SMOKE_BLOCKED** / `BLOCKER — ENVIRONMENT_COMMIT_UNVERIFIED`.
+
+**0 FAIL** métier bloquant le smoke local. **0 correctif métier** dans cette PR.
 
 ## Observations (ne bloquent pas le smoke local)
 
