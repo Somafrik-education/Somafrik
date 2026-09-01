@@ -121,13 +121,22 @@ Le freeze #444 (`5173537d`) a échoué **volontairement** dès que #445 a atterr
 
 #447 (icône mobile) est **1 ahead / 0 behind** ce tip, Draft, PR Gates verts — **non mergée**, **non rejouée ici**.
 
-### Contrat anti-boucle (gouvernance-only)
+### Contrat anti-boucle + garde pré-merge (gouvernance-only)
 
 `BASELINE` = dernier tip `develop` métier/release explicitement validé (`78228be0`).
 
+Deux contrôles **indépendants** :
+
+**A. Drift déjà sur `develop`** — `git diff --name-only BASELINE..origin/develop`
+
 1. `origin/develop === BASELINE` → **PASS**
-2. sinon `git diff --name-only BASELINE..origin/develop` ⊆ fichiers de gouvernance uniquement → **PASS**
-3. tout autre fichier (ex. `Mobile/app.json`) → **FAIL** — `develop` a avancé fonctionnellement, revalidation obligatoire
+2. sinon diff ⊆ fichiers de gouvernance uniquement → **PASS**
+3. tout autre fichier (ex. `Mobile/app.json`) → **FAIL**
+
+**B. Diff de la PR courante** — `pull_request.base.sha...pull_request.head.sha` (hors CI : `origin/develop...HEAD`)
+
+- ⊆ fichiers de gouvernance → **PASS**
+- sinon → **FAIL avant merge**
 
 Fichiers de gouvernance autorisés :
 
@@ -135,12 +144,16 @@ Fichiers de gouvernance autorisés :
 - `docs/audits/release-governance-goprod-2026-09-01.md`
 - `docs/audits/release-checklist-goprod-2026-09-01.md`
 
-Ainsi le merge de **cette** PR d’audit fait bouger le SHA `develop` sans rougir le gate. Un merge **#447** (`Mobile/*`) le rougit à nouveau, volontairement.
+Conséquences :
+
+- merge **#448** : drift `develop` = gouvernance-only → A vert ; B de #448 vert
+- CI pré-merge **#447** : B voit `Mobile/*` → **rouge avant merge**
+- le HOLD n’attend plus un `workflow_dispatch` post-merge
 
 ## Gate
 
 `npm run verify:release-governance`
 
-Échoue si `origin/develop` avance **hors** fichiers de gouvernance, si `origin/main` bouge, ou si une PR frozen est ancêtre de HEAD / citée en sujet merge ou squash `(#n)`. Ne merge pas `main`. Ne déploie pas.
+Échoue si `origin/develop` avance **hors** fichiers de gouvernance, si le diff de la **PR courante** n’est pas gouvernance-only, si `origin/main` bouge, ou si une PR frozen est ancêtre de HEAD / citée en sujet merge ou squash `(#n)`. Ne merge pas `main`. Ne déploie pas.
 
-P1 Codex #445 : exclusion frozen squash/cherry-pick. P2 : `Mobile/app.json` + `Mobile/package.json` dans `paths`. P3 : exception gouvernance-only pour casser la boucle `assert.equal(originDevelop, baseline)`.
+P1 Codex #445 : exclusion frozen squash/cherry-pick. P2 : `Mobile/app.json` + `Mobile/package.json` dans `paths`. P3 : exception gouvernance-only sur le drift `develop`. P4 : le même allowlist s’applique au candidat PR (`base...head`) pour HOLD pré-merge.
