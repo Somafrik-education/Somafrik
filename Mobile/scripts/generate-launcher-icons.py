@@ -191,7 +191,8 @@ def build_launcher_home(android_fg: Image.Image, dest: Path) -> None:
     canvas_w, canvas_h = 512, 400
     wallpaper = (32, 33, 36)
     home = Image.new("RGB", (canvas_w, canvas_h), wallpaper)
-    icon_resized = android_fg.resize((tile, tile), Image.Resampling.LANCZOS)
+    android_viewport = crop_center(android_fg, VIEWPORT_RATIO)
+    icon_resized = android_viewport.resize((tile, tile), Image.Resampling.LANCZOS)
     mask = circle_mask(tile)
     circular = icon_resized.convert("RGBA")
     circular.putalpha(mask)
