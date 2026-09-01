@@ -25,11 +25,20 @@ interface ScopeUser {
   role?: string;
   countryScope?: string;
   schoolCode?: string;
+  schoolId?: string;
+  schoolPublicCode?: string;
 }
 
 interface ScopeState {
-  schools: { code: string; country?: string; countryCode?: string }[];
-  users: { role?: string; schoolCode?: string; countryScope?: string; status?: string }[];
+  schools: { code: string; id?: string; loginCode?: string; country?: string; countryCode?: string }[];
+  users: {
+    role?: string;
+    schoolCode?: string;
+    schoolId?: string;
+    schoolPublicCode?: string;
+    countryScope?: string;
+    status?: string;
+  }[];
   countries: { name: string; code: string }[];
   subscriptions: { schoolCode?: string; country?: string; countryCode?: string }[];
   notifications: PlatformNotification[];
@@ -101,6 +110,32 @@ export function scopedNotifications(user: ScopeUser | null, state: ScopeState) {
   );
 }
 
+function sameSchoolId(left?: string, right?: string) {
+  const a = String(left ?? "").trim().toLowerCase();
+  const b = String(right ?? "").trim().toLowerCase();
+  return Boolean(a && b && a === b);
+}
+
+function isLegacySchoolCode(value?: string) {
+  return /^[A-Z]{2}-\d{4}-\d{4}$/.test(String(value ?? "").trim().toUpperCase());
+}
+
+function accountMatchesCanonicalSchool(
+  account: { schoolId?: string; schoolPublicCode?: string; schoolCode?: string },
+  user: ScopeUser,
+) {
+  const sessionId = String(user.schoolId ?? "").trim();
+  const accountId = String(account.schoolId ?? "").trim();
+  if (sessionId && accountId) return sameSchoolId(sessionId, accountId);
+
+  const publicCode = String(user.schoolPublicCode ?? "").trim().toUpperCase();
+  if (!publicCode || isLegacySchoolCode(publicCode)) return false;
+  const candidates = [account.schoolPublicCode, account.schoolCode]
+    .map((value) => String(value ?? "").trim().toUpperCase())
+    .filter((value) => value && !isLegacySchoolCode(value));
+  return candidates.includes(publicCode);
+}
+
 export function scopedUsers(user: ScopeUser | null, state: ScopeState) {
   if (!user) return [];
   if (user.role === "super_admin" || isSuperAdminRole(sessionRoleToPlatformRole(user.role))) {
@@ -118,7 +153,12 @@ export function scopedUsers(user: ScopeUser | null, state: ScopeState) {
           countrySchoolCodes.has(normalize(account.schoolCode))),
     );
   }
-  return state.users.filter((account) => normalize(account.schoolCode) === normalize(user.schoolCode));
+  const sessionId = String(user.schoolId ?? "").trim();
+  const publicCode = String(user.schoolPublicCode ?? "").trim();
+  if (!sessionId && (!publicCode || isLegacySchoolCode(publicCode))) {
+    return [];
+  }
+  return state.users.filter((account) => accountMatchesCanonicalSchool(account, user));
 }
 
 /** Diffusion système (Super Admin) : marquée explicitement, visible par tous les établissements. */

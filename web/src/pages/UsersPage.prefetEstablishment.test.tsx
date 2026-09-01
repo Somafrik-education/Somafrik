@@ -18,6 +18,8 @@ vi.mock("../context/AuthContext", () => ({
         id: "prefet-1",
         role: "Préfet des études",
         schoolCode: "CD-2026-0001",
+        schoolId: "school-nuru",
+        schoolPublicCode: "CD-IN-26-001",
         permissions: ["Utilisateurs:READ"],
       },
       permissions: ["Utilisateurs:READ"],
@@ -31,6 +33,8 @@ vi.mock("../context/ActiveSchoolContext", () => ({
       id: "prefet-1",
       role: "Préfet des études",
       schoolCode: "CD-2026-0001",
+      schoolId: "school-nuru",
+      schoolPublicCode: "CD-IN-26-001",
     },
     activeSchoolCode: "CD-2026-0001",
   }),
@@ -48,7 +52,8 @@ vi.mock("../context/DataContext", () => ({
           identifier: "CD-IN-JPK-26-00004",
           role: "Préfet des études",
           roles: ["Préfet des études"],
-          schoolCode: "CD-2026-0001",
+          schoolCode: "CD-IN-26-001",
+          schoolId: "school-nuru",
           schoolPublicCode: "CD-IN-26-001",
           schoolName: "INSTITUT NURU",
           status: "Actif",
@@ -66,7 +71,13 @@ vi.mock("../context/DataContext", () => ({
 
 vi.mock("../lib/usePermissionContext", () => ({
   usePermissionContext: () => ({
-    user: { role: "Préfet des études", schoolCode: "CD-2026-0001", permissions: ["Utilisateurs:READ"] },
+    user: {
+      role: "Préfet des études",
+      schoolCode: "CD-2026-0001",
+      schoolId: "school-nuru",
+      schoolPublicCode: "CD-IN-26-001",
+      permissions: ["Utilisateurs:READ"],
+    },
     rolePermissions: {},
   }),
   useFeaturePermissions: () => permissions,

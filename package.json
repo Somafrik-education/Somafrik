@@ -42,6 +42,7 @@
     "verify:presence-tenant": "node backend/scripts/verify-presence-tenant.js",
     "verify:sync-l1-tenant": "node backend/scripts/verify-sync-l1-tenant.js",
     "verify:users-tenant": "node backend/scripts/verify-users-tenant.js",
+    "verify:school-admin-users-scope": "node scripts/verify-school-admin-users-scope.js",
     "verify:enrollment-tenant": "node backend/scripts/verify-enrollment-tenant.js",
     "verify:tenant-revalidation": "node backend/scripts/verify-tenant-revalidation.js",
     "verify:d-revalidation": "node backend/scripts/verify-d-revalidation.js",

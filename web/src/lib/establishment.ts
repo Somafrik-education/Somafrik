@@ -19,7 +19,10 @@ function scopedByCountrySchools(user: SessionUser | null, state: BackOfficeState
 }
 
 export function getCurrentSchool(user: SessionUser | null, state: BackOfficeState): School | null {
-  if (!user?.schoolCode || user.schoolCode === "*") {
+  if (!user) return state.schools[0] ?? null;
+  const scoped = scopedSchools(user, state);
+  if (scoped.length) return scoped[0];
+  if (!user.schoolCode || user.schoolCode === "*") {
     return state.schools[0] ?? null;
   }
   return state.schools.find((school) => normalize(school.code) === normalize(user.schoolCode)) ?? null;

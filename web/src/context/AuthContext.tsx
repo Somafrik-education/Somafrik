@@ -3,12 +3,14 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
   type ReactNode,
 } from "react";
 import { api, ApiError, setAccessTokenProvider } from "../api/client";
+import { attachCanonicalSchoolIdentity } from "../lib/schoolTenantIdentity";
 import { normalizePlatformRole } from "../lib/orgHierarchy";
 import type { LoginProfile, Session } from "../types";
 
@@ -36,10 +38,16 @@ interface AuthContextValue {
 const AuthContext = createContext<AuthContextValue | null>(null);
 const STORAGE_KEY = "somafrik.web.session";
 
+function hydrateSession(session: Session | null): Session | null {
+  if (!session?.user) return session;
+  const user = attachCanonicalSchoolIdentity(session.user, session.schoolContext);
+  return user ? { ...session, user } : session;
+}
+
 function loadStoredSession(): Session | null {
   try {
     const raw = sessionStorage.getItem(STORAGE_KEY);
-    return raw ? (JSON.parse(raw) as Session) : null;
+    return hydrateSession(raw ? (JSON.parse(raw) as Session) : null);
   } catch {
     return null;
   }
@@ -66,19 +74,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const sessionRef = useRef<Session | null>(session);
 
   const setSession = useCallback((next: Session | null) => {
-    sessionRef.current = next;
-    setSessionState(next);
+    const hydrated = next
+      ? {
+          ...next,
+          user: next.user
+            ? attachCanonicalSchoolIdentity(next.user, next.schoolContext) ?? next.user
+            : next.user,
+        }
+      : next;
+    sessionRef.current = hydrated;
+    setAccessTokenProvider(() => sessionRef.current?.accessToken ?? null);
+    setSessionState(hydrated);
     try {
-      if (next) sessionStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+      if (hydrated) sessionStorage.setItem(STORAGE_KEY, JSON.stringify(hydrated));
       else sessionStorage.removeItem(STORAGE_KEY);
     } catch {
       /* stockage indisponible: on continue en mémoire */
     }
   }, []);
 
-  useEffect(() => {
+  setAccessTokenProvider(() => sessionRef.current?.accessToken ?? null);
+
+  useLayoutEffect(() => {
     setAccessTokenProvider(() => sessionRef.current?.accessToken ?? null);
-  }, []);
+  }, [session?.accessToken]);
 
   const hydrateEffectivePermissions = useCallback(async () => {
     const current = sessionRef.current;
@@ -153,7 +172,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const normalized: Session = {
         ...response,
         user: response.user
-          ? { ...response.user, role: normalizePlatformRole(response.user.role) }
+          ? {
+              ...response.user,
+              role: normalizePlatformRole(response.user.role),
+            }
           : response.user,
       };
       setSession(normalized);

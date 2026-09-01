@@ -25,6 +25,14 @@ import {
 } from "./orgHierarchy";
 import { isSuperadminManagedUser, isUnassignedUserAccount } from "./userAccounts";
 import { isUserAccountVisible } from "./userAccountRules";
+import {
+  accountMatchesSchoolScope,
+  buildUsersScopeTrace,
+  logUsersScopeTrace,
+  resolveSessionSchoolScope,
+  schoolMatchesSessionScope,
+  type DiagnoseScopedUsersResult,
+} from "./schoolTenantIdentity";
 
 interface ScopeState {
   schools: School[];
@@ -55,7 +63,9 @@ export function scopedSchools(user: SessionUser | null, state: ScopeState): Scho
     if (!countryScope || !getCountryCodeFromScope(countryScope)) return [];
     return state.schools.filter((school) => schoolMatchesCountryScope(school, countryScope));
   }
-  return state.schools.filter((school) => normalize(school.code) === normalize(user.schoolCode));
+  const scope = resolveSessionSchoolScope(user);
+  if (scope.mode !== "school") return [];
+  return state.schools.filter((school) => schoolMatchesSessionScope(school, scope));
 }
 
 export function scopedCountries(user: SessionUser | null, state: ScopeState): Country[] {
@@ -100,24 +110,65 @@ export function scopedNotifications(
   );
 }
 
-export function scopedUsers(user: SessionUser | null, state: ScopeState): UserAccount[] {
-  if (!user) return [];
+export function diagnoseScopedUsers(
+  user: SessionUser | null,
+  state: ScopeState,
+): DiagnoseScopedUsersResult {
+  if (!user) {
+    const trace = buildUsersScopeTrace(user, [], [], "CANONICAL_IDENTITY_MISSING");
+    return { users: [], trace };
+  }
   const visible = state.users.filter((account) => isUserAccountVisible(account));
   if (isSuperAdminRole(user.role)) {
-    return visible.filter((account) => isSuperadminManagedUser(account));
+    const users = visible.filter((account) => isSuperadminManagedUser(account));
+    return { users, trace: buildUsersScopeTrace(user, visible, users, null) };
   }
   if (user.role === COUNTRY_ADMIN_ROLE) {
     const countrySchoolCodes = new Set(
       scopedSchools(user, state).map((school) => normalize(school.code)),
     );
-    return visible.filter(
+    const users = visible.filter(
       (account) =>
         (account.role === SCHOOL_ADMIN_ROLE || isUnassignedUserAccount(account)) &&
         (countryScopeMatches(account.countryScope, user.countryScope) ||
           countrySchoolCodes.has(normalize(account.schoolCode))),
     );
+    return { users, trace: buildUsersScopeTrace(user, visible, users, null) };
   }
-  return visible.filter((account) => normalize(account.schoolCode) === normalize(user.schoolCode));
+
+  const scope = resolveSessionSchoolScope(user);
+  if (scope.mode === "none") {
+    const trace = buildUsersScopeTrace(user, visible, [], scope.error);
+    logUsersScopeTrace(trace);
+    return { users: [], trace };
+  }
+  if (scope.mode !== "school") {
+    const trace = buildUsersScopeTrace(user, visible, [], "CANONICAL_IDENTITY_MISSING");
+    logUsersScopeTrace(trace);
+    return { users: [], trace };
+  }
+
+  const tenantIds = new Set(
+    visible
+      .map((account) => String(account.schoolId ?? "").trim().toLowerCase())
+      .filter(Boolean),
+  );
+  if (tenantIds.size > 1) {
+    const trace = buildUsersScopeTrace(user, visible, [], "MULTI_TENANT_RESPONSE");
+    logUsersScopeTrace(trace);
+    return { users: [], trace };
+  }
+
+  const users = visible.filter((account) => accountMatchesSchoolScope(account, scope));
+  const error =
+    visible.length > 0 && users.length === 0 ? "SCOPE_INCONSISTENCY" : null;
+  const trace = buildUsersScopeTrace(user, visible, users, error);
+  logUsersScopeTrace(trace);
+  return { users: error ? [] : users, trace };
+}
+
+export function scopedUsers(user: SessionUser | null, state: ScopeState): UserAccount[] {
+  return diagnoseScopedUsers(user, state).users;
 }
 
 function countUsersByRole(users: UserAccount[], roles: string[]): number {

@@ -172,8 +172,14 @@ export async function loadDomains(
 
     const error = result.reason;
     if (error instanceof ApiError) {
-      if (error.status === 401) throw error;
-      if (error.status === 403 || error.status === 404) {
+      if (error.status === 401 || error.status === 403) {
+        serverErrors.push({
+          domain,
+          message: `${error.status} ${error.message}`.trim(),
+        });
+        continue;
+      }
+      if (error.status === 404) {
         skipped.push(domain);
         continue;
       }

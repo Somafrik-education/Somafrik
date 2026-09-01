@@ -14,7 +14,9 @@ import { SCHOOL_SCOPED_CANONICAL_KEYS } from "../lib/canonicalDomains";
 import { assertNoStrippedCanonicalWrites } from "../lib/canonicalStateWriteGuard";
 import { domainsFromPatch, domainCacheKey, loadDomains, type DomainKey } from "../lib/domainLoaders";
 import { logDomainSync } from "../lib/domainSyncTelemetry";
-import { applyClientScopeToState } from "../lib/scope";
+import { getAccessToken } from "../api/client";
+import { applyClientScopeToState, diagnoseScopedUsers } from "../lib/scope";
+import type { UsersScopeTrace } from "../lib/schoolTenantIdentity";
 import { stripClientFinanceFromPutPayload } from "../lib/stripClientFinance";
 import { stripClientSchoolsFromPutPayload } from "../lib/stripClientSchools";
 import { stripClientStudentsFromPutPayload } from "../lib/stripClientStudents";
@@ -55,6 +57,7 @@ interface DataContextValue {
   state: BackOfficeState;
   loading: boolean;
   error: string | null;
+  usersScopeTrace: UsersScopeTrace | null;
   /** HOTFIX-SYNC-01 — journal des mutations non synchronisées. */
   syncJournal: SyncOutboxEntry[];
   /** Recharge les domaines déjà chargés, ou ceux passés en argument. */
@@ -137,6 +140,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const syncPausedRef = useRef(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [usersScopeTrace, setUsersScopeTrace] = useState<UsersScopeTrace | null>(null);
   const [syncJournal, setSyncJournal] = useState<SyncOutboxEntry[]>(() => listActiveOutboxEntries());
 
   const persistJournal = useCallback((entries: SyncOutboxEntry[]) => {
@@ -176,6 +180,10 @@ export function DataProvider({ children }: { children: ReactNode }) {
           count: loadedKeys.length,
         });
         const withPending = reapplyOutboxToState(merged, listActiveOutboxEntries());
+        if (sessionUserRef.current && Array.isArray(withPending.users)) {
+          const trace = diagnoseScopedUsers(sessionUserRef.current, withPending).trace;
+          queueMicrotask(() => setUsersScopeTrace(trace));
+        }
         return sessionUserRef.current
           ? applyClientScopeToState(withPending, sessionUserRef.current)
           : withPending;
@@ -203,7 +211,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
   const refreshDomains = useCallback(
     async (domains?: DomainKey[], options: EnsureDomainsOptions = {}) => {
-      if (!session || syncPausedRef.current) return;
+      if (!session?.accessToken || !getAccessToken() || syncPausedRef.current) return;
       rememberSchoolCode(options.schoolCode ?? activeSchoolCodeRef.current);
       const schoolCode = options.schoolCode ?? activeSchoolCodeRef.current;
 
@@ -263,7 +271,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
   const ensureDomains = useCallback(
     async (domains: DomainKey[], options: EnsureDomainsOptions = {}) => {
-      if (!session) return;
+      if (!session?.accessToken || !getAccessToken()) return;
       rememberSchoolCode(options.schoolCode ?? activeSchoolCodeRef.current);
       const schoolCode = options.schoolCode ?? activeSchoolCodeRef.current;
       const pending = domains.filter((domain) => {
@@ -448,6 +456,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       state,
       loading,
       error,
+      usersScopeTrace,
       syncJournal,
       refresh: refreshDomains,
       ensureDomains,
@@ -456,7 +465,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       update,
       retryFailedSync,
     }),
-    [state, loading, error, syncJournal, refreshDomains, ensureDomains, invalidateDomains, purgeSchoolScopedState, update, retryFailedSync],
+    [state, loading, error, usersScopeTrace, syncJournal, refreshDomains, ensureDomains, invalidateDomains, purgeSchoolScopedState, update, retryFailedSync],
   );
 
   return <DataContext.Provider value={value}>{children}</DataContext.Provider>;

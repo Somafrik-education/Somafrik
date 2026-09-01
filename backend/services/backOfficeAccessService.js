@@ -126,13 +126,23 @@ class BackOfficeAccessService {
         : Boolean(user.mustChangePassword) || Boolean(String(user.temporaryPassword ?? "").trim());
     const scopedSchoolCode = schoolContext?.code || resolvedSchoolCode || user.schoolCode || "";
     const safeUser = sanitizeUserForResponse(user);
+    const loginCode = String(schoolContext?.loginCode || schoolContext?.publicId || "").trim().toUpperCase();
+    const schoolId = String(safeUser.schoolId || schoolContext?.id || schoolContext?.schoolId || "").trim();
+    const schoolPublicCode = String(safeUser.schoolPublicCode || loginCode).trim().toUpperCase();
+    const withCanonicalSchool = {
+      ...safeUser,
+      ...(schoolId ? { schoolId } : {}),
+      ...(schoolPublicCode && !/^[A-Z]{2}-\d{4}-\d{4}$/.test(schoolPublicCode)
+        ? { schoolPublicCode }
+        : {}),
+    };
     const enrichedUser =
       user.role === "Parent"
         ? {
-            ...safeUser,
+            ...withCanonicalSchool,
             children: sanitizeUsersForResponse(this.findLinkedParentChildren(user, scopedSchoolCode)),
           }
-        : safeUser;
+        : withCanonicalSchool;
 
     return {
       user: { ...enrichedUser, mustChangePassword },

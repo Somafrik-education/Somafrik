@@ -1,8 +1,10 @@
 import { useMemo, useState, type FormEvent } from "react";
+import { InlineAlert } from "@/design-system";
 import { useAuth } from "../context/AuthContext";
 import { useActiveSchool } from "../context/ActiveSchoolContext";
 import { useData } from "../context/DataContext";
-import { scopedCountries, scopedSchools, scopedUsers } from "../lib/scope";
+import { diagnoseScopedUsers, scopedCountries, scopedSchools } from "../lib/scope";
+import { usersScopeErrorMessage } from "../lib/schoolTenantIdentity";
 import { getCurrentSchool } from "../lib/establishment";
 import { isInternalSchoolRole, normalize, getInitials, getCountryCodeFromScope } from "../lib/format";
 import { formatCaughtApiError } from "../lib/apiErrors";
@@ -65,13 +67,21 @@ function toCsv(users: UserAccount[]): string {
 export function UsersPage() {
   const { session } = useAuth();
   const { scopedUser, activeSchoolCode } = useActiveSchool();
-  const { state, refresh } = useData();
+  const { state, refresh, error: loadError, usersScopeTrace } = useData();
   const ctx = usePermissionContext();
   const scopeUser = scopedUser ?? session?.user ?? null;
   const { showToast } = useToast();
   const { prompt } = usePrompt();
 
-  const allUsers = scopedUsers(scopeUser, state);
+  const usersScope = useMemo(() => diagnoseScopedUsers(scopeUser, state), [scopeUser, state]);
+  const allUsers = usersScope.users;
+  const scopeError = usersScopeErrorMessage(usersScope.trace.error ?? usersScopeTrace?.error ?? null);
+  const authzLoadError =
+    loadError && /\b(401|403)\b/.test(loadError)
+      ? loadError
+      : loadError && /non autoris|interdit|unauthorized|forbidden/i.test(loadError)
+        ? loadError
+        : null;
   const schoolsForLabels = useMemo(
     () => scopedSchools(scopeUser, state),
     [scopeUser, state],
@@ -508,6 +518,19 @@ export function UsersPage() {
 
   return (
     <>
+      {authzLoadError ? (
+        <InlineAlert tone="danger" title="Chargement utilisateurs refusé">
+          {authzLoadError}
+        </InlineAlert>
+      ) : null}
+      {scopeError ? (
+        <InlineAlert
+          tone="danger"
+          title={usersScope.trace.security ? "Sécurité périmètre établissement" : "Périmètre établissement"}
+        >
+          {scopeError}
+        </InlineAlert>
+      ) : null}
       {isInternalSchoolRole(session?.user?.role) && school ? (
         <Card className="p-5">
           <p className="text-xs font-bold uppercase tracking-wide text-brand">Périmètre établissement</p>
@@ -522,7 +545,9 @@ export function UsersPage() {
         <SectionHeader
           title="Utilisateurs"
           description={
-            isSuperadminView
+            authzLoadError || scopeError
+              ? undefined
+              : isSuperadminView
               ? `${filtered.length} compte(s) plateforme. Le Super administrateur valide et gère les Administrateurs établissement créés par les Administrateurs pays.`
               : isCountryAdminView
                 ? `${filtered.length} administrateur(s) d’établissement dans votre pays. Les comptes métier (secrétaire, enseignant…) se gèrent dans Configuration établissement.`

@@ -26,6 +26,7 @@ export type { DashboardChartConfig };
 export interface School {
   id?: string;
   publicId?: string;
+  loginCode?: string;
   code: string;
   name: string;
   type?: string;
@@ -307,6 +308,14 @@ export interface SessionScope {
   hint: string;
 }
 
+export interface SessionSchoolContext {
+  id?: string;
+  schoolId?: string;
+  loginCode?: string;
+  publicId?: string;
+  code?: string;
+}
+
 export interface Session {
   user: SessionUser;
   scope: SessionScope;
@@ -317,6 +326,7 @@ export interface Session {
   rolePermissions?: Record<string, string[]>;
   academicConfigs?: Record<string, unknown>;
   auditLog?: unknown[];
+  schoolContext?: SessionSchoolContext;
 }
 
 /** Personne référencée dans le CRM Somafrik (socle « contact »). */

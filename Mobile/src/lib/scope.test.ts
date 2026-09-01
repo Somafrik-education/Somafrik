@@ -9,6 +9,7 @@ import assert from "node:assert/strict";
 import {
   scopeBackOfficeForSession,
   scopeSchoolEntityData,
+  scopedUsers,
   trustServerScopedPlatformTenant,
 } from "./scope";
 import {
@@ -209,6 +210,49 @@ function run() {
   ) as { users: Array<{ id: string }>; schools: Array<{ code: string }> };
   assert.equal(trusted.users[0]?.id, "tenant-user");
   assert.equal(trusted.schools[0]?.code, SCHOOL);
+
+  const leftoverJwt = "CD-2026-0001";
+  const schoolIdA = "11111111-1111-4111-8111-111111111111";
+  const schoolIdB = "22222222-2222-4222-8222-222222222222";
+  const sameTenantUsers = [
+    { id: "usr-a", schoolCode: SCHOOL, schoolId: schoolIdA, schoolPublicCode: SCHOOL },
+  ];
+  const leftoverSession = {
+    role: "Admin School",
+    schoolCode: leftoverJwt,
+    schoolId: schoolIdA,
+    schoolPublicCode: SCHOOL,
+  };
+  assert.equal(
+    scopedUsers(leftoverSession, {
+      schools: [],
+      users: sameTenantUsers,
+      countries: [],
+      subscriptions: [],
+      notifications: [],
+    }).length,
+    1,
+    "H — leftover JWT ≠ login_code ne vide pas les users autorisés",
+  );
+  assert.equal(
+    scopedUsers(
+      { role: "Admin School", schoolCode: leftoverJwt },
+      { schools: [], users: sameTenantUsers, countries: [], subscriptions: [], notifications: [] },
+    ).length,
+    0,
+    "H — absence d'identité canonique fail-closed",
+  );
+  assert.equal(
+    scopedUsers(leftoverSession, {
+      schools: [],
+      users: [{ id: "usr-b", schoolCode: OTHER, schoolId: schoolIdB, schoolPublicCode: OTHER }],
+      countries: [],
+      subscriptions: [],
+      notifications: [],
+    }).length,
+    0,
+    "H — autre école jamais visible",
+  );
 
   console.log("scope.test.ts OK");
 }

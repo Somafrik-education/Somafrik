@@ -34,7 +34,7 @@ interface ActiveSchoolContextValue {
 const ActiveSchoolContext = createContext<ActiveSchoolContextValue | null>(null);
 
 export function ActiveSchoolProvider({ children }: { children: ReactNode }) {
-  const { session } = useAuth();
+  const { session, permissionsReady } = useAuth();
   const { state, ensureDomains, invalidateDomains, purgeSchoolScopedState } = useData();
   const user = session?.user ?? null;
 
@@ -48,9 +48,9 @@ export function ActiveSchoolProvider({ children }: { children: ReactNode }) {
   const previousSchoolRef = useRef(activeSchoolCode);
 
   useEffect(() => {
-    if (!session?.accessToken) return;
+    if (!permissionsReady || !session?.accessToken) return;
     void ensureDomains(["schools"]).catch(() => undefined);
-  }, [session?.accessToken, ensureDomains]);
+  }, [permissionsReady, session?.accessToken, ensureDomains]);
 
   useEffect(() => {
     const previous = previousSchoolRef.current;
@@ -63,11 +63,11 @@ export function ActiveSchoolProvider({ children }: { children: ReactNode }) {
     writeStoredSchoolCode(activeSchoolCode);
 
     invalidateDomains(["academicConfigs"], { schoolCode: activeSchoolCode });
-    if (!activeSchoolCode || activeSchoolCode === "*") return;
+    if (!permissionsReady || !activeSchoolCode || activeSchoolCode === "*") return;
     void ensureDomains(["academicConfigs"], { schoolCode: activeSchoolCode, force: true }).catch(
       () => undefined,
     );
-  }, [activeSchoolCode, ensureDomains, invalidateDomains, purgeSchoolScopedState]);
+  }, [activeSchoolCode, ensureDomains, invalidateDomains, permissionsReady, purgeSchoolScopedState]);
 
   useEffect(() => {
     setActiveSchoolCodeState((current) => {
