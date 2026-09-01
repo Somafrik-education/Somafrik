@@ -238,20 +238,20 @@ function main() {
 
   const ci = read(path.join(ROOT, ".github", "workflows", "ci.yml"));
   const security = read(path.join(ROOT, ".github", "workflows", "security.yml"));
-  assert.match(ci, /name: verify:mobile-release-readiness/);
+  const aabWorkflow = read(path.join(ROOT, ".github", "workflows", "mobile-release-build.yml"));
   assert.match(ci, /npm run verify:mobile-release-readiness/);
-  assert.match(security, /name: verify:mobile-release-readiness/);
-  assert.match(security, /npm run verify:mobile-release-readiness/);
-  assert.match(ci, /name: verify:mobile-preview-apk/);
   assert.match(ci, /npm run verify:mobile-preview-apk/);
-  assert.match(security, /name: verify:mobile-preview-apk/);
-  assert.match(security, /npm run verify:mobile-preview-apk/);
-  assert.match(ci, /name: verify:mobile-usability/);
+  assert.match(ci, /npm run verify:mobile-usability/);
   assert.match(ci, /name: Bootstrap runtime guard/);
-  assert.match(ci, /name: Mobile AAB preproduction/);
-  assert.match(ci, /SOMAFRIK_REQUIRE_AAB/);
-  assert.match(ci, /android-actions\/setup-android/);
-  console.log("OK: CI + Security branchent verify:mobile-release-readiness + job AAB isolé");
+  // AAB Gradle n'est plus un step du nightly : job isolé workflow_dispatch.
+  assert.match(aabWorkflow, /name: Android AAB/);
+  assert.match(aabWorkflow, /SOMAFRIK_REQUIRE_AAB/);
+  assert.match(aabWorkflow, /android-actions\/setup-android/);
+  assert.doesNotMatch(aabWorkflow, /eas submit/);
+  // Security nightly : invariants mobile-security, pas le scan Expo doctor / bundles.
+  assert.match(security, /npm run verify:mobile-security/);
+  assert.doesNotMatch(security, /eas submit/);
+  console.log("OK: nightly CI release-readiness + preview-apk ; AAB Gradle = mobile-release-build.yml");
 
   console.log("verify:mobile-release-readiness OK");
 }
