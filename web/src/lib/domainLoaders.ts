@@ -1,5 +1,4 @@
-import { ApiError } from "../api/client";
-import { api } from "../api/client";
+import { ApiError, api, getAccessToken } from "../api/client";
 import { clientsApi } from "./clientsApi";
 import { classesApi } from "./classesApi";
 import { establishmentsApi } from "./establishmentsApi";
@@ -151,6 +150,18 @@ export async function loadDomains(
     return { data: {}, loaded: [], skipped: [], serverErrors: [] };
   }
 
+  if (!getAccessToken()) {
+    return {
+      data: {},
+      loaded: [],
+      skipped: [],
+      serverErrors: unique.map((domain) => ({
+        domain,
+        message: `${domain}: accessToken absent — aucun fetch métier avant session prête.`,
+      })),
+    };
+  }
+
   const loaders = createDomainLoaders(options);
   const results = await Promise.allSettled(
     unique.map(async (domain) => ({ domain, slice: await loaders[domain]() })),
@@ -172,8 +183,17 @@ export async function loadDomains(
 
     const error = result.reason;
     if (error instanceof ApiError) {
-      if (error.status === 401) throw error;
-      if (error.status === 403 || error.status === 404) {
+      if (error.status === 401 || error.status === 403) {
+        serverErrors.push({
+          domain,
+          message:
+            error.status === 401
+              ? `${domain}: session non authentifiée (${error.status}).`
+              : `${domain}: accès refusé (${error.status}).`,
+        });
+        continue;
+      }
+      if (error.status === 404) {
         skipped.push(domain);
         continue;
       }

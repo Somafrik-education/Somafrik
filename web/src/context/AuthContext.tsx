@@ -65,8 +65,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [permissionsBootstrapError, setPermissionsBootstrapError] = useState<string | null>(null);
   const sessionRef = useRef<Session | null>(session);
 
+  // Provider de jeton synchrone : aucun fetch métier ne doit partir avant le 1er paint.
+  setAccessTokenProvider(() => sessionRef.current?.accessToken ?? null);
+
   const setSession = useCallback((next: Session | null) => {
     sessionRef.current = next;
+    setAccessTokenProvider(() => sessionRef.current?.accessToken ?? null);
     setSessionState(next);
     try {
       if (next) sessionStorage.setItem(STORAGE_KEY, JSON.stringify(next));
@@ -74,10 +78,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch {
       /* stockage indisponible: on continue en mémoire */
     }
-  }, []);
-
-  useEffect(() => {
-    setAccessTokenProvider(() => sessionRef.current?.accessToken ?? null);
   }, []);
 
   const hydrateEffectivePermissions = useCallback(async () => {

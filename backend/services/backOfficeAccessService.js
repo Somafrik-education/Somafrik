@@ -15,6 +15,7 @@ const {
   sanitizeUserForResponse,
   sanitizeUsersForResponse,
 } = require("../lib/sanitizeUserForResponse");
+const { attachCanonicalSchoolIdentity } = require("../lib/sessionSchoolIdentity");
 
 const SUPER_ADMIN_ROLE = "Super Administrateur Somafrik";
 const LEGACY_SUPER_ADMIN_ROLE = "Super Administrateur OKAFRIK";
@@ -125,7 +126,7 @@ class BackOfficeAccessService {
         ? false
         : Boolean(user.mustChangePassword) || Boolean(String(user.temporaryPassword ?? "").trim());
     const scopedSchoolCode = schoolContext?.code || resolvedSchoolCode || user.schoolCode || "";
-    const safeUser = sanitizeUserForResponse(user);
+    const safeUser = attachCanonicalSchoolIdentity(sanitizeUserForResponse(user), schoolContext);
     const enrichedUser =
       user.role === "Parent"
         ? {

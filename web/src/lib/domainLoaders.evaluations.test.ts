@@ -9,6 +9,7 @@ vi.mock("../api/client", () => ({
     }
   },
   api: { get: vi.fn() },
+  getAccessToken: () => "test-access-token",
 }));
 
 vi.mock("./clientsApi", () => ({

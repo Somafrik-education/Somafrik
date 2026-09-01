@@ -2,7 +2,7 @@ import { useMemo, useState, type FormEvent } from "react";
 import { useAuth } from "../context/AuthContext";
 import { useActiveSchool } from "../context/ActiveSchoolContext";
 import { useData } from "../context/DataContext";
-import { scopedCountries, scopedSchools, scopedUsers } from "../lib/scope";
+import { projectScopedUsers, scopedCountries, scopedSchools } from "../lib/scope";
 import { getCurrentSchool } from "../lib/establishment";
 import { isInternalSchoolRole, normalize, getInitials, getCountryCodeFromScope } from "../lib/format";
 import { formatCaughtApiError } from "../lib/apiErrors";
@@ -40,6 +40,7 @@ import {
   VALIDATED_STATUS,
 } from "../lib/orgHierarchy";
 
+import { InlineAlert } from "@/design-system";
 import { Card, SectionHeader } from "../components/ui/Card";
 import { Button } from "../components/ui/Button";
 import { PrintButton } from "../components/ui/PrintButton";
@@ -65,13 +66,15 @@ function toCsv(users: UserAccount[]): string {
 export function UsersPage() {
   const { session } = useAuth();
   const { scopedUser, activeSchoolCode } = useActiveSchool();
-  const { state, refresh } = useData();
+  const { state, refresh, error: dataError, scopeError } = useData();
   const ctx = usePermissionContext();
   const scopeUser = scopedUser ?? session?.user ?? null;
   const { showToast } = useToast();
   const { prompt } = usePrompt();
 
-  const allUsers = scopedUsers(scopeUser, state);
+  const usersProjection = projectScopedUsers(scopeUser, state);
+  const allUsers = usersProjection.users;
+  const visibleScopeError = scopeError || usersProjection.error?.message || null;
   const schoolsForLabels = useMemo(
     () => scopedSchools(scopeUser, state),
     [scopeUser, state],
@@ -506,8 +509,26 @@ export function UsersPage() {
     canUpdate &&
     canReassignUserTenant(scopeUser, editing);
 
+  const usersDescription = visibleScopeError
+    ? "Les comptes ne peuvent pas être affichés tant que le périmètre établissement n'est pas cohérent."
+    : isSuperadminView
+      ? `${filtered.length} compte(s) plateforme. Le Super administrateur valide et gère les Administrateurs établissement créés par les Administrateurs pays.`
+      : isCountryAdminView
+        ? `${filtered.length} administrateur(s) d’établissement dans votre pays. Les comptes métier (secrétaire, enseignant…) se gèrent dans Configuration établissement.`
+        : `${filtered.length} compte(s) accessibles.`;
+
   return (
     <>
+      {visibleScopeError ? (
+        <InlineAlert tone="danger" title="Périmètre établissement">
+          {visibleScopeError}
+        </InlineAlert>
+      ) : null}
+      {dataError && !visibleScopeError ? (
+        <InlineAlert tone="danger" title="Chargement utilisateurs">
+          {dataError}
+        </InlineAlert>
+      ) : null}
       {isInternalSchoolRole(session?.user?.role) && school ? (
         <Card className="p-5">
           <p className="text-xs font-bold uppercase tracking-wide text-brand">Périmètre établissement</p>
@@ -521,13 +542,7 @@ export function UsersPage() {
       <Card className="p-6">
         <SectionHeader
           title="Utilisateurs"
-          description={
-            isSuperadminView
-              ? `${filtered.length} compte(s) plateforme. Le Super administrateur valide et gère les Administrateurs établissement créés par les Administrateurs pays.`
-              : isCountryAdminView
-                ? `${filtered.length} administrateur(s) d’établissement dans votre pays. Les comptes métier (secrétaire, enseignant…) se gèrent dans Configuration établissement.`
-                : `${filtered.length} compte(s) accessibles.`
-          }
+          description={usersDescription}
           actions={
             <div className="flex gap-2">
               <PrintButton documentTitle="Utilisateurs — Somafrik" />

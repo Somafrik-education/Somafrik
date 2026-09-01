@@ -1,7 +1,7 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { ApiError, api } from "../api/client";
+import { ApiError, api, getAccessToken } from "../api/client";
 import { AuthProvider, useAuth } from "../context/AuthContext";
 
 vi.mock("../api/client", async (importOriginal) => {
@@ -25,6 +25,20 @@ describe("AuthProvider — permissions live sans refresh", () => {
     sessionStorage.clear();
     vi.mocked(api.post).mockReset();
     vi.mocked(api.get).mockReset();
+  });
+
+  it("F. expose accessToken au client API dès le premier rendu, sans attendre useEffect", () => {
+    sessionStorage.setItem(
+      "somafrik.web.session",
+      JSON.stringify({
+        accessToken: "stored-token",
+        user: { id: "u1", role: "Admin School", schoolCode: "CD-2026-0001" },
+      }),
+    );
+    vi.mocked(api.get).mockResolvedValue({ permissions: [] });
+    const { result } = renderHook(() => useAuth(), { wrapper });
+    expect(result.current.session?.accessToken).toBe("stored-token");
+    expect(getAccessToken()).toBe("stored-token");
   });
 
   it("hydrate GET /auth/effective-permissions juste après login, sans remount", async () => {

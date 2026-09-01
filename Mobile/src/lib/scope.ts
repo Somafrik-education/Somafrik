@@ -118,6 +118,10 @@ export function scopedUsers(user: ScopeUser | null, state: ScopeState) {
           countrySchoolCodes.has(normalize(account.schoolCode))),
     );
   }
+  // SCHOOL_ADMIN ne passe plus par ici (scopeBackOfficeForSession fait confiance
+  // au tenant serveur). Ce comparateur leftover reste pour Superadmin / Admin Pays.
+  // Ne pas l'utiliser pour masquer une réponse /backoffice/users déjà scopée :
+  // leftover JWT (CC-YYYY-NNNN) ≠ login_code projeté (CC-IN-YY-SEQ) vide la liste.
   return state.users.filter((account) => normalize(account.schoolCode) === normalize(user.schoolCode));
 }
 

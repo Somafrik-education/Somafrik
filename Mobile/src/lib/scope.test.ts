@@ -191,17 +191,25 @@ function run() {
 
   // Admin School : le JWT/repository impose déjà le tenant. Une projection Users
   // normalisée en public V2 ne doit pas être comparée à l'alias interne de session.
+  // H. Même contrat Web : leftover session ≠ login_code API ne doit pas vider la liste.
   const schoolAdminScoped = scopeBackOfficeForSession(
     emptyPayload({
-      users: [{ id: "usr-school", schoolCode: SCHOOL }],
+      users: [
+        { id: "usr-school", schoolCode: SCHOOL, schoolPublicCode: SCHOOL },
+        { id: "usr-school-2", schoolCode: SCHOOL, publicId: "CD-IN-BBB-26-00002" },
+      ],
       students: [{ id: "stu-school", schoolCode: INTERNAL_SCHOOL }],
       teachers: [{ id: "teacher-school", schoolCode: INTERNAL_SCHOOL }],
     }),
     { role: "school_admin", user: { schoolCode: INTERNAL_SCHOOL } },
   ) as Record<string, Array<{ id?: string }>>;
-  assert.equal(schoolAdminScoped.users.length, 1);
+  assert.equal(schoolAdminScoped.users.length, 2, "H: SCHOOL_ADMIN conserve la réponse serveur");
   assert.equal(schoolAdminScoped.students.length, 1);
   assert.equal(schoolAdminScoped.teachers.length, 1);
+  const leftoverWouldDrop = schoolAdminScoped.users.filter(
+    (row) => String((row as { schoolCode?: string }).schoolCode ?? "") === INTERNAL_SCHOOL,
+  );
+  assert.equal(leftoverWouldDrop.length, 0, "preuve : leftover SCH-* ≠ login_code V2");
 
   const trusted = trustServerScopedPlatformTenant(
     emptyPayload({ users: [{ id: "tenant-user", schoolCode: INTERNAL_SCHOOL }] }),

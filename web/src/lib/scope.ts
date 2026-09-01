@@ -25,6 +25,11 @@ import {
 } from "./orgHierarchy";
 import { isSuperadminManagedUser, isUnassignedUserAccount } from "./userAccounts";
 import { isUserAccountVisible } from "./userAccountRules";
+import {
+  logUserScopeTrace,
+  projectScopedUsersForSchool,
+  type UserScopeProjection,
+} from "./schoolCanonicalIdentity";
 
 interface ScopeState {
   schools: School[];
@@ -100,24 +105,106 @@ export function scopedNotifications(
   );
 }
 
-export function scopedUsers(user: SessionUser | null, state: ScopeState): UserAccount[] {
-  if (!user) return [];
+export function projectScopedUsers(user: SessionUser | null, state: ScopeState): UserScopeProjection {
+  if (!user) {
+    return {
+      users: [],
+      error: null,
+      received: 0,
+      kept: 0,
+      trace: {
+        kind: "users_scope_trace",
+        role: "",
+        session: {
+          hasSchoolId: false,
+          hasPublicCode: false,
+          leftoverPresent: false,
+          schoolCodeIsV2: false,
+          leftoverEqualsPublic: null,
+        },
+        api: {
+          received: 0,
+          distinctSchoolIds: 0,
+          distinctPublicCodes: 0,
+          distinctProjectedSchoolCodes: 0,
+        },
+        kept: 0,
+        error: null,
+      },
+    };
+  }
   const visible = state.users.filter((account) => isUserAccountVisible(account));
   if (isSuperAdminRole(user.role)) {
-    return visible.filter((account) => isSuperadminManagedUser(account));
+    const users = visible.filter((account) => isSuperadminManagedUser(account));
+    return {
+      users,
+      error: null,
+      received: visible.length,
+      kept: users.length,
+      trace: {
+        kind: "users_scope_trace",
+        role: String(user.role ?? ""),
+        session: {
+          hasSchoolId: false,
+          hasPublicCode: false,
+          leftoverPresent: false,
+          schoolCodeIsV2: false,
+          leftoverEqualsPublic: null,
+        },
+        api: {
+          received: visible.length,
+          distinctSchoolIds: 0,
+          distinctPublicCodes: 0,
+          distinctProjectedSchoolCodes: 0,
+        },
+        kept: users.length,
+        error: null,
+      },
+    };
   }
   if (user.role === COUNTRY_ADMIN_ROLE) {
     const countrySchoolCodes = new Set(
       scopedSchools(user, state).map((school) => normalize(school.code)),
     );
-    return visible.filter(
+    const users = visible.filter(
       (account) =>
         (account.role === SCHOOL_ADMIN_ROLE || isUnassignedUserAccount(account)) &&
         (countryScopeMatches(account.countryScope, user.countryScope) ||
           countrySchoolCodes.has(normalize(account.schoolCode))),
     );
+    return {
+      users,
+      error: null,
+      received: visible.length,
+      kept: users.length,
+      trace: {
+        kind: "users_scope_trace",
+        role: String(user.role ?? ""),
+        session: {
+          hasSchoolId: false,
+          hasPublicCode: false,
+          leftoverPresent: false,
+          schoolCodeIsV2: false,
+          leftoverEqualsPublic: null,
+        },
+        api: {
+          received: visible.length,
+          distinctSchoolIds: 0,
+          distinctPublicCodes: 0,
+          distinctProjectedSchoolCodes: 0,
+        },
+        kept: users.length,
+        error: null,
+      },
+    };
   }
-  return visible.filter((account) => normalize(account.schoolCode) === normalize(user.schoolCode));
+  const projection = projectScopedUsersForSchool(user, visible);
+  logUserScopeTrace(projection.trace);
+  return projection;
+}
+
+export function scopedUsers(user: SessionUser | null, state: ScopeState): UserAccount[] {
+  return projectScopedUsers(user, state).users;
 }
 
 function countUsersByRole(users: UserAccount[], roles: string[]): number {
