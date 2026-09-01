@@ -32,9 +32,9 @@ function gitSha() {
   }
 }
 
-function hasAncestor(ancestor) {
+function isAncestor(ancestor, tip = "HEAD") {
   try {
-    execSync(`git merge-base --is-ancestor ${ancestor} HEAD`, { cwd: ROOT, stdio: "ignore" });
+    execSync(`git merge-base --is-ancestor ${ancestor} ${tip}`, { cwd: ROOT, stdio: "ignore" });
     return true;
   } catch {
     return false;
@@ -52,7 +52,7 @@ function pullRequestBaseSha() {
 }
 
 function assertBaseline(sha) {
-  if (hasAncestor(BASELINE)) return;
+  if (isAncestor(BASELINE)) return;
   if (process.env.SOMAFRIK_RELEASE_GOV_ALLOW_OTHER_SHA === "1") return;
   const prBase = pullRequestBaseSha();
   if (prBase === BASELINE) {
@@ -70,10 +70,45 @@ function refSha(ref) {
   }
 }
 
+function assertDevelopFrozen(originDevelop, baseline) {
+  if (!originDevelop) {
+    throw new Error("origin/develop absent — git fetch origin develop requis");
+  }
+  assert.equal(
+    originDevelop,
+    baseline,
+    `origin/develop a avancé (${originDevelop}). STOP : rebase/revalidation (baseline ${baseline}).`,
+  );
+}
+
+function frozenSubjectRe(n) {
+  return new RegExp(`(?:Merge pull request #${n}\\b|\\(#${n}\\))`);
+}
+
+function assertFrozenAbsentFromLog(subjects, n) {
+  assert.doesNotMatch(subjects, frozenSubjectRe(n), `PR frozen #${n} citée en sujet git (merge/squash)`);
+}
+
+function runNegativeUnitTests() {
+  assert.throws(
+    () => assertDevelopFrozen("deadbeefdeadbeefdeadbeefdeadbeefdeadbeef", BASELINE),
+    /avancé/,
+    "RG-NEG-develop-moved",
+  );
+  assertDevelopFrozen(BASELINE, BASELINE);
+  assert.match("Merge pull request #297 from x", frozenSubjectRe("297"));
+  assert.match("fix(seed): identités (#297)", frozenSubjectRe("297"));
+  assert.doesNotMatch("fix(seed): identités (#1297)", frozenSubjectRe("297"));
+  assert.doesNotMatch("docs: voir PR 297", frozenSubjectRe("297"));
+  console.log("PASS RG-NEG-develop-moved");
+  console.log("PASS RG-NEG-frozen-squash-subject");
+}
+
 function main() {
   const sha = gitSha();
   console.log(`Release governance SHA=${sha} baseline=${BASELINE}`);
   assertBaseline(sha);
+  runNegativeUnitTests();
 
   const audit = fs.readFileSync(
     path.join(ROOT, "docs/audits/release-governance-goprod-2026-09-01.md"),
@@ -92,11 +127,20 @@ function main() {
   assert.match(checklist, /eas submit/);
   console.log("PASS RG-DOCS HOLD + checklist USER GO");
 
-  for (const pr of FROZEN) {
-    const hits = sh(`git log --oneline --grep="pull request #${pr}" HEAD`);
-    assert.equal(hits, "", `PR frozen #${pr} présente sur HEAD`);
+  const subjects = sh("git log --pretty=%s HEAD");
+  for (const n of FROZEN) {
+    assertFrozenAbsentFromLog(subjects, n);
+    const prTip = refSha(`origin/pr-${n}`);
+    if (prTip) {
+      assert.ok(
+        !isAncestor(prTip),
+        `PR frozen #${n} tip ${prTip} est ancêtre de HEAD (merge/squash/cherry-pick)`,
+      );
+    } else {
+      throw new Error(`origin/pr-${n} absent — git fetch origin pull/${n}/head requis`);
+    }
   }
-  console.log("PASS RG-FROZEN #295/#297/#298/#312/#337/#354/#355 absentes de HEAD");
+  console.log("PASS RG-FROZEN ancestry + sujets merge/squash (#295…#355)");
 
   const originMain = refSha("origin/main");
   const originDevelop = refSha("origin/develop");
@@ -109,15 +153,14 @@ function main() {
     const only = sh("git rev-list --reverse origin/develop..origin/main");
     const onlyList = only ? only.split(/\n/) : [];
     assert.deepEqual(onlyList, MAIN_ONLY, `main-only inattendu: ${only}`);
-    assert.ok(hasAncestor(MAIN_SNAPSHOT_ON_DEVELOP), "snapshot main 878e4ab8 doit rester ancêtre develop");
+    assert.ok(isAncestor(MAIN_SNAPSHOT_ON_DEVELOP), "snapshot main 878e4ab8 doit rester ancêtre develop");
     console.log("PASS RG-MAIN-ONLY 2 commits stale (6ff61106, b5074565) ; tree #109 ⊂ develop");
   } else {
-    console.log("HOLD RG-MAIN-ONLY origin/main absent de ce clone (fetch requis en CI)");
+    throw new Error("origin/main absent — git fetch origin main requis");
   }
 
-  if (originDevelop && originDevelop !== sha && !hasAncestor(originDevelop === sha ? sha : BASELINE)) {
-    console.log(`NOTE origin/develop=${originDevelop}`);
-  }
+  assertDevelopFrozen(originDevelop, BASELINE);
+  console.log(`PASS RG-DEVELOP-FROZEN origin/develop=${originDevelop}`);
 
   const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, "package.json"), "utf8"));
   assert.equal(pkg.scripts["verify:release-governance"], "node scripts/verify-release-governance.js");
@@ -136,8 +179,11 @@ function main() {
   );
   assert.match(workflow, /fetch-depth:\s*0/);
   assert.match(workflow, /git fetch origin main/);
+  assert.match(workflow, /pull\/\$n\/head/);
+  assert.match(workflow, /Mobile\/app\.json/);
+  assert.match(workflow, /Mobile\/package\.json/);
   assert.doesNotMatch(workflow, /eas submit/);
-  console.log("PASS RG-CI workflow fetch main+develop, pas de submit");
+  console.log("PASS RG-CI workflow fetch main+develop+PR frozen ; paths Mobile manifests");
 
   assert.match(audit, /Aucune PR `develop → main` ouverte/);
   console.log("PASS RG-NO-MAIN-PR (audit : forme proposée, PR non ouverte)");

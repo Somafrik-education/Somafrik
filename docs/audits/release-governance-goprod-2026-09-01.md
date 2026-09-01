@@ -110,4 +110,6 @@ Le lot G peut merger comme **audit** sans lever le HOLD release.
 
 `npm run verify:release-governance`
 
-Échoue si `origin/main` bouge, si une PR frozen apparaît sur HEAD, ou si le baseline n’est plus ancêtre. Ne merge pas `main`. Ne déploie pas.
+Échoue si `origin/develop` **≠** `5173537d…` (tip avancé → STOP rebase), si `origin/main` bouge, ou si une PR frozen est ancêtre de HEAD / citée en sujet merge ou squash `(#n)`. Ne merge pas `main`. Ne déploie pas.
+
+P1 Codex #445 (même PR) : le tip `develop` est comparé **directement** au baseline (plus un `hasAncestor` qui restait vert) ; l’exclusion frozen couvre squash/cherry-pick, pas seulement `Merge pull request #n`. P2 : `Mobile/app.json` + `Mobile/package.json` dans `paths`.
