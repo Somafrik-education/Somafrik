@@ -211,6 +211,35 @@ function run() {
   );
   assert.equal(leftoverWouldDrop.length, 0, "preuve : leftover SCH-* ≠ login_code V2");
 
+  // Audit #456 — schools / subscriptions / notifications : SCHOOL_ADMIN trust serveur.
+  // Les comparateurs leftover existent encore mais ne s'appliquent pas à ce rôle.
+  const leftoverSession = INTERNAL_SCHOOL;
+  const schoolAdminPlatform = scopeBackOfficeForSession(
+    emptyPayload({
+      schools: [
+        { code: leftoverSession, name: "Nuru leftover" },
+        { code: SCHOOL, name: "Nuru login_code" },
+      ],
+      subscriptions: [
+        { schoolCode: leftoverSession, plan: "Standard" },
+        { schoolCode: SCHOOL, plan: "Premium" },
+      ],
+      notifications: [
+        { id: "n-leftover", schoolCode: leftoverSession, title: "A", message: "x" },
+        { id: "n-v2", schoolCode: SCHOOL, title: "B", message: "x" },
+      ],
+    }),
+    { role: "school_admin", user: { schoolCode: leftoverSession } },
+  ) as {
+    schools: Array<{ code?: string }>;
+    subscriptions: Array<{ schoolCode?: string }>;
+    notifications: Array<{ id?: string }>;
+  };
+  assert.equal(schoolAdminPlatform.schools.length, 2, "SAFE: schools non filtrés côté client");
+  assert.equal(schoolAdminPlatform.subscriptions.length, 2, "SAFE: subscriptions non filtrées");
+  assert.equal(schoolAdminPlatform.notifications.length, 2, "SAFE: notifications non filtrées");
+  assert.notEqual(leftoverSession, SCHOOL);
+
   const trusted = trustServerScopedPlatformTenant(
     emptyPayload({ users: [{ id: "tenant-user", schoolCode: INTERNAL_SCHOOL }] }),
     emptyPayload({ schools: [{ code: SCHOOL }], countries: [{ code: "CD", name: "RDC" }] }),

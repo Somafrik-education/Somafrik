@@ -71,23 +71,23 @@ export function isSchoolScopedRole(role?: string): boolean {
 }
 
 /**
- * Autorité établissement côté session :
- * 1. schoolId (UUID membership)
- * 2. schoolPublicCode (login_code)
- * 3. schoolCode uniquement s'il est déjà un login_code V2 (projection API / session alignée)
+ * Autorité établissement côté session pour le scope users :
+ * schoolId (membership) est obligatoire.
+ * schoolPublicCode / login_code V2 sont des projections de diagnostic uniquement.
  *
- * Interdit : leftover CC-YYYY-NNNN comme autorité, fallback permissif, déduction depuis les rows.
+ * Interdit : leftover CC-YYYY-NNNN, publicCode seul, schoolCode V2 seul,
+ * fallback permissif, déduction depuis les rows.
  */
 export function resolveSessionSchoolIdentity(
   user: Pick<SessionUser, "schoolId" | "schoolPublicCode" | "schoolCode"> | null,
 ): SchoolCanonicalIdentity | null {
   if (!user) return null;
   const schoolId = String(user.schoolId ?? "").trim();
+  if (!schoolId) return null;
   let publicCode = normalizeSchoolIdentity(user.schoolPublicCode);
   if (!publicCode && isV2SchoolLoginCode(user.schoolCode)) {
     publicCode = normalizeSchoolIdentity(user.schoolCode);
   }
-  if (!schoolId && !publicCode) return null;
   return { schoolId, publicCode };
 }
 
@@ -95,14 +95,8 @@ export function accountMatchesSchoolIdentity(
   account: Pick<UserAccount, "schoolId" | "schoolPublicCode" | "schoolCode">,
   identity: SchoolCanonicalIdentity,
 ): boolean {
-  if (identity.schoolId && sameSchoolId(account.schoolId, identity.schoolId)) {
-    return true;
-  }
-  if (!identity.publicCode) return false;
-  return (
-    normalizeSchoolIdentity(account.schoolPublicCode) === identity.publicCode ||
-    normalizeSchoolIdentity(account.schoolCode) === identity.publicCode
-  );
+  if (!identity.schoolId) return false;
+  return sameSchoolId(account.schoolId, identity.schoolId);
 }
 
 function uniqueNormalized(values: Array<unknown>): number {
@@ -160,7 +154,7 @@ export function logUserScopeTrace(trace: UserScopeTrace): void {
 
 const SCOPE_MESSAGES: Record<SchoolScopeErrorCode, string> = {
   MISSING_CANONICAL_IDENTITY:
-    "Périmètre établissement incomplet : l'identité canonique (schoolId / login_code) est absente de la session. Les comptes ne sont pas affichés.",
+    "Périmètre établissement incomplet : l'identité canonique schoolId (UUID membership) est absente de la session. Les comptes ne sont pas affichés.",
   SCOPE_MISMATCH:
     "Incohérence de périmètre : l'API a renvoyé des comptes, mais aucun ne correspond à l'identité établissement canonique de la session.",
   SCOPE_LEAK:
@@ -189,18 +183,13 @@ export function projectScopedUsersForSchool(
   }
 
   const matched = visible.filter((account) => accountMatchesSchoolIdentity(account, identity));
-  const foreignById =
-    identity.schoolId
-      ? visible.filter(
-          (account) => account.schoolId && !sameSchoolId(account.schoolId, identity.schoolId),
-        )
-      : [];
+  const foreignById = visible.filter(
+    (account) => account.schoolId && !sameSchoolId(account.schoolId, identity.schoolId),
+  );
 
   if (foreignById.length) {
     const error = { code: "SCOPE_LEAK" as const, message: SCOPE_MESSAGES.SCOPE_LEAK };
-    const kept = matched.filter(
-      (account) => !account.schoolId || sameSchoolId(account.schoolId, identity.schoolId),
-    );
+    const kept = matched;
     const trace = buildUserScopeTrace({
       role: user?.role,
       session: user,

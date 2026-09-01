@@ -170,4 +170,38 @@ describe("UsersPage — SCHOOL_ADMIN périmètre canonique", () => {
     expect(screen.getByText(/identité canonique/i)).toBeInTheDocument();
     expect(screen.queryByText("0 compte(s) accessibles.")).not.toBeInTheDocument();
   });
+
+  it("E2. schoolId absent + schoolPublicCode présent → fail closed observable", () => {
+    schoolAdmin.user = {
+      id: "admin-nuru",
+      role: "Admin School",
+      schoolCode: "CD-2026-0001",
+      schoolPublicCode: "CD-IN-26-001",
+      schoolId: "",
+      permissions: ["Utilisateurs:READ"],
+    };
+    dataState.scopeError = null;
+    dataState.users = [
+      {
+        id: "usr-hidden",
+        firstName: "Hidden",
+        lastName: "User",
+        role: "Enseignant",
+        schoolCode: "CD-IN-26-001",
+        schoolPublicCode: "CD-IN-26-001",
+        schoolId: "school-nuru",
+        status: "Actif",
+      } as UserAccount,
+    ];
+
+    render(
+      <MemoryRouter>
+        <UsersPage />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByText(/schoolId/i)).toBeInTheDocument();
+    expect(screen.queryByText("Hidden User")).not.toBeInTheDocument();
+    expect(screen.queryByText("0 compte(s) accessibles.")).not.toBeInTheDocument();
+  });
 });

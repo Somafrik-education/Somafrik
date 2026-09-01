@@ -81,8 +81,13 @@ describe("loadDomains — bootstrap auth (F, G)", () => {
     expect(result.skipped).toEqual([]);
     expect(result.data.users).toBeUndefined();
     expect(result.serverErrors).toEqual([
-      expect.objectContaining({ domain: "users", message: expect.stringMatching(/401/) }),
+      expect.objectContaining({
+        domain: "users",
+        status: 401,
+        message: expect.stringMatching(/session expirée/i),
+      }),
     ]);
+    expect(result.serverErrors[0]?.message).not.toMatch(/\b401\b|\b403\b|\b50[0-9]\b/);
   });
 
   it("G. 403 n'est pas un succès vide", async () => {
@@ -93,7 +98,12 @@ describe("loadDomains — bootstrap auth (F, G)", () => {
     expect(result.skipped).toEqual([]);
     expect(result.data.users).toBeUndefined();
     expect(result.serverErrors).toEqual([
-      expect.objectContaining({ domain: "users", message: expect.stringMatching(/403/) }),
+      expect.objectContaining({
+        domain: "users",
+        status: 403,
+        message: expect.stringMatching(/accès refusé/i),
+      }),
     ]);
+    expect(result.serverErrors[0]?.message).not.toMatch(/\b401\b|\b403\b|\b50[0-9]\b/);
   });
 });

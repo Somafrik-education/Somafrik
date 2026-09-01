@@ -43,6 +43,8 @@ export function scopedSchools(user: ScopeUser | null, state: ScopeState) {
   if (user.role === "country_admin" || user.role === COUNTRY_ADMIN_ROLE) {
     return state.schools.filter((school) => schoolMatchesCountryScope(school, user.countryScope));
   }
+  // Audit #456 : SCHOOL_ADMIN ne passe pas par ici (scopeBackOfficeForSession
+  // retourne le payload serveur). Comparateur leftover conservé Superadmin/Pays.
   return state.schools.filter((school) => normalize(school.code) === normalize(user.schoolCode));
 }
 
@@ -75,6 +77,7 @@ export function scopedSubscriptions(user: ScopeUser | null, state: ScopeState) {
         normalize(subscription.countryCode) === normalize(countryCode),
     );
   }
+  // Audit #456 : SCHOOL_ADMIN ne passe pas par ici (trust serveur).
   return state.subscriptions.filter(
     (subscription) => normalize(subscription.schoolCode) === normalize(user.schoolCode),
   );
@@ -93,6 +96,7 @@ export function scopedNotifications(user: ScopeUser | null, state: ScopeState) {
         normalize(notification.audience).includes("admin pays"),
     );
   }
+  // Audit #456 : SCHOOL_ADMIN ne passe pas par ici (trust serveur).
   return state.notifications.filter(
     (notification) =>
       normalize(notification.schoolCode) === normalize(user.schoolCode) ||

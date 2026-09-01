@@ -59,6 +59,8 @@ export function scopedSchools(user: SessionUser | null, state: ScopeState): Scho
     if (!countryScope || !getCountryCodeFromScope(countryScope)) return [];
     return state.schools.filter((school) => schoolMatchesCountryScope(school, countryScope));
   }
+  // Audit #456 SAFE aujourd'hui : GET /schools projette `code` = leftover school_code,
+  // aligné sur le leftover JWT. Preuve : scope.otherDomains.audit.test.ts.
   return state.schools.filter((school) => normalize(school.code) === normalize(user.schoolCode));
 }
 
@@ -77,6 +79,7 @@ export function scopedSubscriptions(user: SessionUser | null, state: ScopeState)
         normalize(subscription.countryCode) === normalize(countryCode),
     );
   }
+  // Audit #456 SAFE aujourd'hui : GET /subscriptions.schoolCode = leftover school_code.
   return state.subscriptions.filter(
     (subscription) => normalize(subscription.schoolCode) === normalize(user.schoolCode),
   );
@@ -96,6 +99,8 @@ export function scopedNotifications(
         normalize(notification.audience).includes("admin pays"),
     );
   }
+  // Audit #456 SAFE aujourd'hui : GET /notifications.schoolCode = leftover school_code.
+  // Audience « etablissement » / rôle est un filet supplémentaire, pas une autorité UUID.
   return state.notifications.filter(
     (notification) =>
       normalize(notification.schoolCode) === normalize(user.schoolCode) ||

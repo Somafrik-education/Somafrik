@@ -50,7 +50,7 @@ export interface LoadDomainsResult {
   data: Partial<BackOfficeState>;
   loaded: DomainKey[];
   skipped: DomainKey[];
-  serverErrors: { domain: DomainKey; message: string }[];
+  serverErrors: { domain: DomainKey; message: string; status?: number }[];
 }
 
 type DomainSlice = Partial<Pick<BackOfficeState, DomainKey>>;
@@ -170,7 +170,7 @@ export async function loadDomains(
   const data: Partial<BackOfficeState> = {};
   const loaded: DomainKey[] = [];
   const skipped: DomainKey[] = [];
-  const serverErrors: { domain: DomainKey; message: string }[] = [];
+  const serverErrors: { domain: DomainKey; message: string; status?: number }[] = [];
 
   for (let index = 0; index < results.length; index += 1) {
     const domain = unique[index];
@@ -186,10 +186,11 @@ export async function loadDomains(
       if (error.status === 401 || error.status === 403) {
         serverErrors.push({
           domain,
+          status: error.status,
           message:
             error.status === 401
-              ? `${domain}: session non authentifiée (${error.status}).`
-              : `${domain}: accès refusé (${error.status}).`,
+              ? `${domain}: session expirée. Reconnectez-vous.`
+              : `${domain}: accès refusé pour ce domaine.`,
         });
         continue;
       }

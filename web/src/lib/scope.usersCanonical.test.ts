@@ -135,7 +135,59 @@ describe("scopedUsers — SCHOOL_ADMIN canonique (A–E, I)", () => {
     expect(resolveSessionSchoolIdentity(session)).toBeNull();
     expect(projection.users).toEqual([]);
     expect(projection.error?.code).toBe("MISSING_CANONICAL_IDENTITY");
-    expect(projection.error?.message).toMatch(/identité canonique/i);
+    expect(projection.error?.message).toMatch(/schoolId/i);
+  });
+
+  it("E2. schoolId absent + schoolPublicCode présent → fail closed (publicCode n'est pas une autorité)", () => {
+    const session = schoolAdmin({
+      schoolCode: LEFTOVER_A,
+      schoolPublicCode: LOGIN_A,
+      schoolId: "",
+    });
+    const users = [apiUser()];
+    expect(resolveSessionSchoolIdentity(session)).toBeNull();
+    const projection = projectScopedUsers(session, stateOf(users));
+    expect(projection.users).toEqual([]);
+    expect(projection.error?.code).toBe("MISSING_CANONICAL_IDENTITY");
+    expect(accountMatchesSchoolIdentity(users[0], { schoolId: "", publicCode: LOGIN_A })).toBe(false);
+  });
+
+  it("E3. schoolCode V2 seul, sans schoolId → fail closed", () => {
+    const session = schoolAdmin({
+      schoolCode: LOGIN_A,
+      schoolPublicCode: LOGIN_A,
+      schoolId: "",
+    });
+    expect(isV2SchoolLoginCode(session.schoolCode)).toBe(true);
+    expect(resolveSessionSchoolIdentity(session)).toBeNull();
+    const projection = projectScopedUsers(session, stateOf([apiUser()]));
+    expect(projection.users).toEqual([]);
+    expect(projection.error?.code).toBe("MISSING_CANONICAL_IDENTITY");
+  });
+
+  it("E4. schoolId session présent + row sans schoolId → ne pas autoriser par code public", () => {
+    const session = schoolAdmin();
+    const identity = resolveSessionSchoolIdentity(session)!;
+    const rowWithoutId = apiUser({ schoolId: "", schoolCode: LOGIN_A, schoolPublicCode: LOGIN_A });
+    expect(accountMatchesSchoolIdentity(rowWithoutId, identity)).toBe(false);
+    const projection = projectScopedUsers(session, stateOf([rowWithoutId]));
+    expect(projection.users).toEqual([]);
+    expect(projection.error?.code).toBe("SCOPE_MISMATCH");
+  });
+
+  it("E5. schoolId différents + même publicCode → SCOPE_LEAK, pas d'autorisation par code", () => {
+    const session = schoolAdmin();
+    const identity = resolveSessionSchoolIdentity(session)!;
+    const foreignSameCode = apiUser({
+      id: "foreign",
+      schoolId: SCHOOL_ID_B,
+      schoolCode: LOGIN_A,
+      schoolPublicCode: LOGIN_A,
+    });
+    expect(accountMatchesSchoolIdentity(foreignSameCode, identity)).toBe(false);
+    const projection = projectScopedUsers(session, stateOf([foreignSameCode]));
+    expect(projection.users).toEqual([]);
+    expect(projection.error?.code).toBe("SCOPE_LEAK");
   });
 
   it("I. SCHOOL_ADMIN préprod-like : leftover JWT + projection login_code + plusieurs publicId user", () => {
