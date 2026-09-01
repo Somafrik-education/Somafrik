@@ -6,7 +6,7 @@
     "Exact file-set equality is required (no wildcards).",
     "headSha pins the audited snapshot of PR #447.",
     "diffSha256 is a content identity (path + base blob + head blob), not a git-diff index hash.",
-    "After #449 merges, a rebase of #447 that keeps the same file contents yields the same diffSha256 and remains authorized without re-issuing headSha.",
+    "After this governance PR (#451) merges, a rebase of #447 that keeps the same file contents yields the same diffSha256 and remains authorized without re-issuing headSha.",
     "Any content change voids CTO_GO automatically."
   ],
   "candidates": [

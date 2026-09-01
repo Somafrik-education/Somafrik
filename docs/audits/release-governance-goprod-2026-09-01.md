@@ -148,8 +148,8 @@ Fichiers de gouvernance autorisés :
 Conséquences :
 
 - merge **#448** : drift `develop` = gouvernance-only → A vert ; B de #448 vert
-- CI pré-merge **#447** avant merge de **#449** : B voit `Mobile/*` sans autorisation → **rouge avant merge**
-- CI pré-merge **#447** après merge de **#449** : B peut PASS seulement si l’autorisation versionnée correspond encore (voir §11)
+- CI pré-merge **#447** avant merge de **#451** : B voit `Mobile/*` sans autorisation → **rouge avant merge**
+- CI pré-merge **#447** après merge de **#451** : B peut PASS seulement si l’autorisation versionnée correspond encore (voir §11)
 - le HOLD n’attend plus un `workflow_dispatch` post-merge
 
 ## 11. Autorisation contrôlée d’un candidat métier (fail-closed)
@@ -176,11 +176,11 @@ Ce n’est **pas** un hash de `git diff` ni du merge commit GitHub. Pour chaque 
 
 puis SHA-256 UTF-8 des lignes jointes par `\n` (pas de newline final). Fichier absent d’un côté = `ABSENT`.
 
-Conséquence après merge futur de **#449** :
+Conséquence après merge futur de **#451** (cette PR de gouvernance ; #449 est un autre chantier email, déjà occupé) :
 
 1. Rebase #447 sur le nouveau `develop` (gouvernance-only : script + audits + manifeste).
 2. Le HEAD de #447 change probablement.
-3. Les 8 fichiers métier de #447 **ne sont pas** touchés par #449 → les blobs avant/après restent identiques → **même `diffSha256`** → le GO reste valide **sans réémettre `headSha`**.
+3. Les 8 fichiers métier de #447 **ne sont pas** touchés par #451 → les blobs avant/après restent identiques → **même `diffSha256`** → le GO reste valide **sans réémettre `headSha`**.
 4. Si un rebase (ou un commit supplémentaire) change le contenu d’un fichier autorisé, ou si `develop` a avancé sur l’un de ces 8 chemins, `diffSha256` change → **GO annulé automatiquement**. Il faut alors **réémettre** l’entrée (nouveau `headSha` + nouveau `diffSha256` + même revue CTO).
 
 `baseSha` dans le manifeste est documentaire (tip `develop` au moment de l’audit). Il n’est **pas** exigé égal au `pull_request.base.sha` futur — l’exiger recréerait la boucle. L’identité de contenu porte la contrainte.
