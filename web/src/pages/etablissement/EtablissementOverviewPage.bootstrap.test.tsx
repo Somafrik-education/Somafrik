@@ -16,8 +16,8 @@ const store = vi.hoisted(() => ({
   classes: [] as Record<string, unknown>[],
 }));
 
-const apiGetMock = vi.hoisted(() => vi.fn(async (_path: string) => [] as unknown));
-const apiDeleteMock = vi.hoisted(() => vi.fn(async (_path: string) => ({ status: "archived" })));
+const apiGetMock = vi.hoisted(() => vi.fn(async () => [] as unknown));
+const apiDeleteMock = vi.hoisted(() => vi.fn(async () => ({ status: "archived" })));
 
 const schoolAdminUser = {
   id: "admin-nuru",
