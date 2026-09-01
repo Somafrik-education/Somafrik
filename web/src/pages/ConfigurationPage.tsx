@@ -79,6 +79,11 @@ export function ConfigurationPage({ section }: { section?: ConfigurationSection 
   const configSchool = isAllSchoolsSelection(configTarget)
     ? null
     : availableSchools.find((item) => normalize(item.code) === normalize(configTarget)) ?? null;
+  const selectedSchoolId = String(configSchool?.id ?? "").trim();
+  const selectedSchoolForYears = useMemo(
+    () => (selectedSchoolId ? { id: selectedSchoolId } : null),
+    [selectedSchoolId],
+  );
 
   const targetSchoolCodes = useMemo(
     () => resolveTargetSchoolCodes(configTarget, availableSchools.map((item) => item.code)),
@@ -187,7 +192,7 @@ export function ConfigurationPage({ section }: { section?: ConfigurationSection 
         const scoped = scopeAcademicYearsForConfiguration({
           role: user?.role,
           rows,
-          selectedSchool: configSchool,
+          selectedSchool: selectedSchoolForYears,
           sessionSchoolId: user?.schoolId,
         });
         setAcademicYears(scoped);
@@ -201,7 +206,7 @@ export function ConfigurationPage({ section }: { section?: ConfigurationSection 
     return () => {
       cancelled = true;
     };
-  }, [section, configTarget, canReadYears, academicFormKey, user?.role, user?.schoolId, configSchool]);
+  }, [section, configTarget, canReadYears, academicFormKey, user?.role, user?.schoolId, selectedSchoolForYears]);
 
   if (!canAccessSchoolBackOffice(user?.role)) {
     return (
@@ -249,7 +254,7 @@ export function ConfigurationPage({ section }: { section?: ConfigurationSection 
     const scoped = scopeAcademicYearsForConfiguration({
       role: user?.role,
       rows,
-      selectedSchool: configSchool,
+      selectedSchool: selectedSchoolForYears,
       sessionSchoolId: user?.schoolId,
     });
     setAcademicYears(scoped);

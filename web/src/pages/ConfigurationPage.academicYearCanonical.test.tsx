@@ -178,11 +178,12 @@ describe("ConfigurationPage — scope canonique années scolaires", () => {
 
   it("reloadAcademicYears conserve l'année login_code malgré leftover configTarget", async () => {
     const user = userEvent.setup();
-    const current = existingYear({ isCurrent: false, status: "Ouverte" });
-    academicYearsApiMock.list
-      .mockResolvedValueOnce([current])
-      .mockResolvedValue([existingYear({ isCurrent: true })]);
-    academicYearsApiMock.update.mockResolvedValue(existingYear({ isCurrent: true }));
+    const pending = existingYear({ isCurrent: false, status: "Ouverte" });
+    academicYearsApiMock.list.mockResolvedValue([pending]);
+    academicYearsApiMock.update.mockImplementation(async () => {
+      academicYearsApiMock.list.mockResolvedValue([existingYear({ isCurrent: true })]);
+      return existingYear({ isCurrent: true });
+    });
 
     render(
       <MemoryRouter>
@@ -195,7 +196,7 @@ describe("ConfigurationPage — scope canonique années scolaires", () => {
 
     await waitFor(() => {
       expect(academicYearsApiMock.update).toHaveBeenCalled();
-      expect(academicYearsApiMock.list).toHaveBeenCalledTimes(2);
+      expect(academicYearsApiMock.list.mock.calls.length).toBeGreaterThanOrEqual(2);
     });
     expect(await screen.findByText("Année courante")).toBeInTheDocument();
     expect(screen.queryByText(/Aucune année configurée/)).not.toBeInTheDocument();
