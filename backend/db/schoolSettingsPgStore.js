@@ -1,7 +1,12 @@
 "use strict";
 
 const { parsePeriodDate } = require("../lib/academicPeriods");
-const { withSystemActivePeriods, defaultAcademicPeriods, inferPeriodMode } = require("../lib/academicConfigDefaults");
+const {
+  withSystemActivePeriods,
+  defaultAcademicPeriods,
+  hasLegacyDefaultAcademicPeriodSignature,
+  inferPeriodMode,
+} = require("../lib/academicConfigDefaults");
 const {
   SCHOOL_SETTINGS_ERROR,
   asTrimmed,
@@ -159,12 +164,49 @@ function createSchoolSettingsPgStore(repo) {
     return created;
   }
 
+  async function repairLegacyDefaultTermsForCurrentYear(schoolId, year, existing) {
+    if (!hasLegacyDefaultAcademicPeriodSignature(existing)) return existing;
+    const expected = defaultAcademicPeriods(year, "trimestre");
+    if (expected.length !== existing.length) return existing;
+
+    const expectedByName = new Map(expected.map((period) => [period.name.toLowerCase(), period]));
+    const alreadyAligned = existing.every((term) => {
+      const target = expectedByName.get(String(term.name ?? "").toLowerCase());
+      return target
+        && toIsoDate(term.start_date) === toIsoDate(target.startDate)
+        && toIsoDate(term.end_date) === toIsoDate(target.endDate);
+    });
+    if (alreadyAligned) return existing;
+
+    for (const term of existing) {
+      const target = expectedByName.get(String(term.name ?? "").toLowerCase());
+      if (!target) return existing;
+    }
+
+    for (const term of existing) {
+      const target = expectedByName.get(String(term.name ?? "").toLowerCase());
+      await query(
+        `UPDATE terms
+         SET start_date = $2, end_date = $3, updated_at = NOW()
+         WHERE id = $1`,
+        [term.id, toIsoDate(target.startDate), toIsoDate(target.endDate)],
+      );
+    }
+    console.warn(
+      `[school-settings] LEGACY_DEFAULT_PERIOD_DATES_REPAIRED school_id=${schoolId} academic_year_id=${year.id}`,
+    );
+    return all(`SELECT * FROM terms WHERE academic_year_id = $1 ORDER BY start_date NULLS LAST, created_at, name`, [year.id]);
+  }
+
   async function seedDefaultTermsIfEmpty(schoolId) {
     const year = await findCurrentAcademicYear(schoolId);
     if (!year) return [];
     const existing = await all(`SELECT * FROM terms WHERE academic_year_id = $1`, [year.id]);
-    if (existing.length) return existing;
-    const defaults = defaultAcademicPeriods();
+    if (existing.length) {
+      return repairLegacyDefaultTermsForCurrentYear(schoolId, year, existing);
+    }
+    const settings = await getSettings(schoolId);
+    const defaults = defaultAcademicPeriods(year, settings?.period_mode ?? "trimestre");
     const inserted = [];
     for (const period of defaults) {
       const row = await one(
@@ -196,6 +238,30 @@ function createSchoolSettingsPgStore(repo) {
     const unique = new Set(names.map((name) => name.toLowerCase()));
     if (unique.size !== names.length) {
       throw createSchoolSettingsError(400, "Les noms de périodes doivent être uniques.", SCHOOL_SETTINGS_ERROR.PERIODS_REQUIRED);
+    }
+
+    const academicYearStart = toIsoDate(year.start_date);
+    const academicYearEnd = toIsoDate(year.end_date);
+    for (const period of incoming) {
+      const startDate = toIsoDate(period?.startDate ?? period?.start_date);
+      const endDate = toIsoDate(period?.endDate ?? period?.end_date);
+      if (!startDate || !endDate || startDate > endDate) {
+        throw createSchoolSettingsError(
+          400,
+          `Dates invalides pour la période « ${asTrimmed(period?.name) || "sans nom"} ».`,
+          SCHOOL_SETTINGS_ERROR.PERIODS_REQUIRED,
+        );
+      }
+      if (
+        (academicYearStart && startDate < academicYearStart)
+        || (academicYearEnd && endDate > academicYearEnd)
+      ) {
+        throw createSchoolSettingsError(
+          400,
+          `La période « ${asTrimmed(period?.name) || "sans nom"} » doit rester dans les bornes de l'année scolaire ${year.name}.`,
+          SCHOOL_SETTINGS_ERROR.PERIODS_REQUIRED,
+        );
+      }
     }
 
     const existing = await all(`SELECT * FROM terms WHERE academic_year_id = $1`, [year.id]);
@@ -346,6 +412,7 @@ function createSchoolSettingsPgStore(repo) {
     upsertSettings,
     seedDefaultSettingsIfEmpty,
     ensureSettingsRow,
+    repairLegacyDefaultTermsForCurrentYear,
     seedDefaultTermsIfEmpty,
     replaceTerms,
     projectAcademicConfig,
