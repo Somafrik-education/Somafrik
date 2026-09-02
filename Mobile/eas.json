@@ -25,8 +25,8 @@
       "env": {
         "EAS_BUILD_PROFILE": "preview",
         "EXPO_PUBLIC_RELEASE_PROFILE": "preview",
-        "EXPO_PUBLIC_API_URL": "https://somafrik-api-preprod.onrender.com",
-        "EXPO_PUBLIC_API_URL_PREVIEW": "https://somafrik-api-preprod.onrender.com",
+        "EXPO_PUBLIC_API_URL": "https://api-preprod.somafrik.app",
+        "EXPO_PUBLIC_API_URL_PREVIEW": "https://api-preprod.somafrik.app",
         "EXPO_PUBLIC_DEMO_MODE": "false"
       }
     },
@@ -39,8 +39,8 @@
       "env": {
         "EAS_BUILD_PROFILE": "preproduction",
         "EXPO_PUBLIC_RELEASE_PROFILE": "preproduction",
-        "EXPO_PUBLIC_API_URL": "https://somafrik-api-preprod.onrender.com",
-        "EXPO_PUBLIC_API_URL_PREPRODUCTION": "https://somafrik-api-preprod.onrender.com",
+        "EXPO_PUBLIC_API_URL": "https://api-preprod.somafrik.app",
+        "EXPO_PUBLIC_API_URL_PREPRODUCTION": "https://api-preprod.somafrik.app",
         "EXPO_PUBLIC_DEMO_MODE": "false"
       }
     },
