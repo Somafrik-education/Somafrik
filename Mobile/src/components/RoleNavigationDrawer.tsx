@@ -1,4 +1,4 @@
-import { Alert, Modal, Pressable, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { Alert, Linking, Modal, Pressable, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "../context/AuthContext";
@@ -7,6 +7,12 @@ import { resolveCanonicalRoleIdentity } from "../lib/canonicalRoleIdentity";
 import { getAllowedRoleDrawerSections, type RoleDrawerItem } from "../navigation/roleDrawerPreferences";
 import { MIN_TOUCH_TARGET_DP } from "../lib/mobileUsability";
 import { getReleaseProfile } from "../config/env";
+import {
+  ACCOUNT_DELETION_URL,
+  isAllowedProductionLegalUrl,
+  LEGAL_COPY,
+  PRIVACY_POLICY_URL,
+} from "../lib/legalCompliance";
 import {
   registerAuthenticatedPushDevice,
   sendControlledPushTest,
@@ -68,6 +74,18 @@ export default function RoleNavigationDrawer({
     if (item.route) {
       rootNavigation.navigate(item.route);
     }
+  };
+
+  const openLegalLink = (url: string) => {
+    if (!isAllowedProductionLegalUrl(url)) {
+      Alert.alert("Lien indisponible", "Cette ressource légale n'est pas configurée pour la production.");
+      return;
+    }
+
+    onClose();
+    void Linking.openURL(url).catch(() => {
+      Alert.alert("Lien indisponible", "Impossible d'ouvrir cette ressource légale sur cet appareil.");
+    });
   };
 
   const handleLogout = () => {
@@ -151,6 +169,20 @@ export default function RoleNavigationDrawer({
           </ScrollView>
 
           <View style={styles.footer}>
+            <View style={styles.legalLinks}>
+              <LegalLinkButton
+                label={LEGAL_COPY.privacy}
+                icon="shield-checkmark-outline"
+                testID="mobile-role-drawer-privacy"
+                onPress={() => openLegalLink(PRIVACY_POLICY_URL)}
+              />
+              <LegalLinkButton
+                label={LEGAL_COPY.deletion}
+                icon="person-remove-outline"
+                testID="mobile-role-drawer-account-deletion"
+                onPress={() => openLegalLink(ACCOUNT_DELETION_URL)}
+              />
+            </View>
             {canShowPushSelfTestButton(session) ? (
               <TouchableOpacity
                 style={styles.pushTestButton}
@@ -203,6 +235,32 @@ function DrawerButton({
       </View>
       <Text style={styles.itemLabel}>{label}</Text>
       <Ionicons name="chevron-forward" size={18} color="#94A3B8" />
+    </TouchableOpacity>
+  );
+}
+
+function LegalLinkButton({
+  label,
+  icon,
+  testID,
+  onPress,
+}: {
+  label: string;
+  icon: keyof typeof Ionicons.glyphMap;
+  testID: string;
+  onPress: () => void;
+}) {
+  return (
+    <TouchableOpacity
+      style={styles.legalLinkButton}
+      onPress={onPress}
+      activeOpacity={0.82}
+      accessibilityRole="link"
+      accessibilityLabel={label}
+      testID={testID}
+    >
+      <Ionicons name={icon} size={19} color="#1D4ED8" />
+      <Text style={styles.legalLinkText}>{label}</Text>
     </TouchableOpacity>
   );
 }
@@ -271,6 +329,17 @@ const styles = StyleSheet.create({
   },
   itemLabel: { flex: 1, color: "#0F172A", fontSize: 15, fontWeight: "800" },
   footer: { borderTopWidth: 1, borderTopColor: "#E2E8F0", padding: 12, gap: 10 },
+  legalLinks: { gap: 4 },
+  legalLinkButton: {
+    minHeight: 44,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 9,
+    paddingHorizontal: 10,
+    borderRadius: 10,
+    backgroundColor: "#EFF6FF",
+  },
+  legalLinkText: { flex: 1, color: "#1D4ED8", fontSize: 13, fontWeight: "800" },
   pushTestButton: {
     minHeight: 52,
     flexDirection: "row",
