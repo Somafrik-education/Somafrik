@@ -8,8 +8,8 @@ const RELEASE_PROFILES = ["development", "preview", "preproduction", "production
 
 /** API HTTPS réellement utilisées par Somafrik — ne pas inventer. */
 const CANONICAL_API_URLS = {
-  preview: "https://somafrik-api-preprod.onrender.com",
-  preproduction: "https://somafrik-api-preprod.onrender.com",
+  preview: "https://api-preprod.somafrik.app",
+  preproduction: "https://api-preprod.somafrik.app",
   production: "https://api.somafrik.app",
 };
 
