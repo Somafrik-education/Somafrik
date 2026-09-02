@@ -19,7 +19,7 @@ const {
 } = require("./releaseEnvironments");
 
 assert.deepStrictEqual(RELEASE_PROFILES, ["development", "preview", "preproduction", "production"]);
-assert.equal(CANONICAL_API_URLS.preproduction, "https://somafrik-api-preprod.onrender.com");
+assert.equal(CANONICAL_API_URLS.preproduction, "https://api-preprod.somafrik.app");
 assert.equal(CANONICAL_API_URLS.preview, CANONICAL_API_URLS.preproduction);
 assert.equal(CANONICAL_API_URLS.production, "https://api.somafrik.app");
 assert.notEqual(CANONICAL_API_URLS.preproduction, CANONICAL_API_URLS.production);
@@ -43,7 +43,7 @@ assert.equal(
 );
 assert.equal(resolveApiUrlForProfile("production", {}), CANONICAL_API_URLS.production);
 assert.equal(
-  resolveApiUrlForProfile("preview", { EXPO_PUBLIC_API_URL_PREVIEW: "https://somafrik-api-preprod.onrender.com" }),
+  resolveApiUrlForProfile("preview", { EXPO_PUBLIC_API_URL_PREVIEW: "https://api-preprod.somafrik.app" }),
   CANONICAL_API_URLS.preview,
 );
 assert.equal(resolveApiUrlForProfile("development", {}), "");
