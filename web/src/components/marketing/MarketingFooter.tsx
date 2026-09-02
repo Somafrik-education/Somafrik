@@ -41,10 +41,10 @@ export function MarketingFooter() {
             {marketingLogin.ctaLabel}
           </Link>
           {marketingLegalRoutes.length > 0
-            ? marketingLegalRoutes.map((href) => (
-                <a key={href} href={href} className="mb-2 block text-sm transition hover:text-white">
-                  {href}
-                </a>
+            ? marketingLegalRoutes.map((route) => (
+                <Link key={route.href} to={route.href} className="mb-2 block text-sm transition hover:text-white">
+                  {route.label}
+                </Link>
               ))
             : null}
         </nav>
