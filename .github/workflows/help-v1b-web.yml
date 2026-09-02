@@ -1,0 +1,41 @@
+name: HELP-V1B Web
+
+on:
+  pull_request:
+    branches: [develop]
+    paths:
+      - "web/src/help/**"
+      - "web/src/components/layout/AppLayout.tsx"
+      - "web/src/pages/LandingPage.test.tsx"
+      - "web/src/pages/LoginPage.helpAbsence.test.tsx"
+      - "web/vite.config.ts"
+      - "web/vitest.config.ts"
+      - "web/tsconfig.json"
+      - "web/package.json"
+      - "web/package-lock.json"
+      - "package.json"
+      - "scripts/verify-help-v1b-web.js"
+      - ".github/workflows/help-v1b-web.yml"
+      - "packages/help-catalog/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  help-v1b-web:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.12.0"
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            web/package-lock.json
+      - name: Install web dependencies
+        run: npm ci --prefix web
+      - name: Verify HELP-V1B Web
+        run: npm run verify:help-v1b-web

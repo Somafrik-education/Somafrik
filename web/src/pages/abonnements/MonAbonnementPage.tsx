@@ -42,7 +42,7 @@ export function MonAbonnementPage() {
       <Card className="p-6">
         <SectionHeader
           title="Mon abonnement"
-          description="Aucun abonnement actif pour cet établissement. Contactez Somafrik ou votre Admin Pays."
+          description="Aucun abonnement actif pour cet établissement. Contactez Somafrik ou votre Administrateur pays."
         />
       </Card>
     );

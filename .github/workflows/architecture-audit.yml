@@ -1,0 +1,42 @@
+name: Architecture Audit
+
+on:
+  pull_request:
+    branches: [develop]
+    paths:
+      - 'scripts/audit-api-orphans.js'
+      - 'scripts/audit-api-orphans.test.js'
+      - 'scripts/audit-feature-pg-relations.js'
+      - 'scripts/verify-api-legacy-aliases.js'
+      - '.github/workflows/architecture-audit.yml'
+      - 'backend/**'
+      - 'web/src/**'
+      - 'Mobile/src/**'
+  workflow_dispatch:
+
+jobs:
+  architecture-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.12.0'
+      - name: Verify removed legacy API aliases
+        run: node scripts/verify-api-legacy-aliases.js
+      - name: Test API orphan scanner classifications
+        run: node scripts/audit-api-orphans.test.js
+      - name: Run API orphan audit
+        run: node scripts/audit-api-orphans.js architecture-api-audit.json
+      - name: Run feature/API/PostgreSQL audit
+        run: node scripts/audit-feature-pg-relations.js architecture-feature-pg-audit.json
+      - name: Print audit summaries
+        run: |
+          node -e "const a=require('./architecture-api-audit.json'); console.log('API_AUDIT_SUMMARY=' + JSON.stringify(a.summary)); console.log(JSON.stringify(a.rows.filter(r=>r.classification!=='ACTIVE'), null, 2));"
+          node -e "const a=require('./architecture-feature-pg-audit.json'); const s=a.rows.reduce((o,r)=>(o[r.verdict]=(o[r.verdict]||0)+1,o),{}); console.log('FEATURE_PG_AUDIT_SUMMARY=' + JSON.stringify(s)); console.log(JSON.stringify(a.rows.filter(r=>r.verdict!=='CANONICAL_CANDIDATE'), null, 2));"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: architecture-audit-results
+          path: |
+            architecture-api-audit.json
+            architecture-feature-pg-audit.json

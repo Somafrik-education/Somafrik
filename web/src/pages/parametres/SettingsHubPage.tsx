@@ -52,7 +52,7 @@ const SETTING_CARDS: SettingCard[] = [
   {
     to: "/parametres/annee-scolaire",
     title: "Année scolaire",
-    description: "Périodes (trimestres / semestres), dates, barème et année active.",
+    description: "Création de l'année scolaire/académique, périodes, dates, barème et année active.",
     icon: CalendarRange,
     status: "available",
     view: "configuration",
@@ -60,7 +60,7 @@ const SETTING_CARDS: SettingCard[] = [
   {
     to: "/parametres/structure",
     title: "Structure pédagogique",
-    description: "Niveaux, filières, classes et matières de référence.",
+    description: "Niveaux, filières, classes et cours de référence.",
     icon: Network,
     status: "available",
     view: "configuration",
@@ -92,7 +92,7 @@ const SETTING_CARDS: SettingCard[] = [
   {
     to: "/parametres/donnees",
     title: "Données et sauvegarde",
-    description: "Exports Excel/CSV, sauvegarde et restauration des données.",
+    description: "Export CSV d'extrait affiché et export JSON versionné. La restauration complète n'est pas disponible.",
     icon: DatabaseBackup,
     status: "available",
     view: "configuration",
@@ -102,7 +102,7 @@ const SETTING_CARDS: SettingCard[] = [
     title: "Finances",
     description: "Types de frais, échéances, moyens de paiement et pénalités.",
     icon: Wallet,
-    status: "soon",
+    status: "available",
     view: "configuration",
   },
   {

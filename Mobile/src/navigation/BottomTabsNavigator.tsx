@@ -1,9 +1,9 @@
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { Ionicons } from "@expo/vector-icons";
+import { Text } from "react-native";
 
 import HomeScreen from "../screens/HomeScreen";
 import StudentsScreen from "../screens/StudentsScreen";
-import MenuScreen from "../screens/MenuScreen";
 import { useAuth } from "../context/AuthContext";
 import { canReadRoute } from "../domain/security/permissions";
 import {
@@ -13,6 +13,9 @@ import {
 import { useFloatingTabBarLayout } from "../lib/screenLayout";
 import { TAB_TEST_IDS } from "../lib/loginScreenSpec";
 import { tabTestIdForTabName } from "../lib/mobileNavigationSpec";
+import { MIN_TOUCH_TARGET_DP } from "../lib/mobileUsability";
+import { TAB_BAR_CONTENT_HEIGHT, TAB_LABEL_FONT_SIZE, shortBottomTabLabel } from "../lib/mobileUxV1Layout";
+import MobileAppHeader from "../components/MobileAppHeader";
 
 const Tab = createBottomTabNavigator();
 
@@ -20,6 +23,27 @@ const hiddenTabOptions = {
   tabBarButton: () => null,
   tabBarItemStyle: { display: "none" } as const,
 };
+
+function CompactTabLabel({ label, color }: { label: string; color: string }) {
+  return (
+    <Text
+      numberOfLines={1}
+      maxFontSizeMultiplier={1.3}
+      allowFontScaling
+      style={{
+        color,
+        fontSize: TAB_LABEL_FONT_SIZE,
+        fontWeight: "700",
+        letterSpacing: 0.1,
+        textAlign: "center",
+        width: "100%",
+        includeFontPadding: false,
+      }}
+    >
+      {label}
+    </Text>
+  );
+}
 
 export default function BottomTabsNavigator() {
   const { session } = useAuth();
@@ -46,44 +70,36 @@ export default function BottomTabsNavigator() {
 
   return (
     <Tab.Navigator
-      screenOptions={({ route }) => ({
-        headerShown: false,
+      screenOptions={({ route, navigation }) => ({
+        headerShown: true,
+        headerStatusBarHeight: 0,
+        header: () => <MobileAppHeader navigation={navigation} />,
+        safeAreaInsets: { top: 0, bottom: 0 },
         tabBarShowLabel: true,
-        tabBarActiveTintColor: "#FFFFFF",
-        tabBarInactiveTintColor: "#94A3B8",
-        tabBarLabel: getTabLabel(route.name, visibleTabs, overflowTabs, hiddenTabs),
-        tabBarLabelStyle: {
-          fontSize: 11,
-          fontWeight: "800",
-          marginTop: 2,
-        },
+        tabBarActiveTintColor: "#2563EB",
+        tabBarInactiveTintColor: "#64748B",
+        tabBarLabel: ({ color }) => (
+          <CompactTabLabel
+            label={getTabLabel(route.name, visibleTabs, overflowTabs, hiddenTabs)}
+            color={color}
+          />
+        ),
         tabBarStyle,
         tabBarItemStyle: {
           flex: 1,
-          minWidth: 48,
-          minHeight: 48,
-          height: 58,
-          borderRadius: 18,
-          marginHorizontal: 1,
-          paddingVertical: 5,
+          minWidth: 0,
+          minHeight: MIN_TOUCH_TARGET_DP,
+          height: TAB_BAR_CONTENT_HEIGHT,
+          marginHorizontal: 0,
+          paddingVertical: 0,
         },
-        tabBarIcon: ({ focused }) => {
+        tabBarIcon: ({ focused, color }) => {
           if (route.name === "Accueil") {
             return (
               <Ionicons
                 name={focused ? "home" : "home-outline"}
-                size={24}
-                color={focused ? "#FFFFFF" : "#94A3B8"}
-              />
-            );
-          }
-
-          if (route.name === "Menu") {
-            return (
-              <Ionicons
-                name={focused ? "menu" : "menu-outline"}
-                size={24}
-                color={focused ? "#FFFFFF" : "#94A3B8"}
+                size={20}
+                color={color}
               />
             );
           }
@@ -94,8 +110,8 @@ export default function BottomTabsNavigator() {
           return (
             <Ionicons
               name={iconName}
-              size={24}
-              color={focused ? "#FFFFFF" : "#94A3B8"}
+              size={20}
+              color={color}
             />
           );
         },
@@ -113,20 +129,21 @@ export default function BottomTabsNavigator() {
       {visibleTabs.map((tab) => {
         const tabTestId = tabTestIdForTabName(tab.tabName) ?? tabTestIdForTabName(tab.label);
         return (
-        <Tab.Screen
-          key={tab.tabName}
-          name={tab.tabName}
-          component={tab.component}
-          options={
-            tabTestId
-              ? {
-                  tabBarButtonTestID: tabTestId,
-                  tabBarLabel: tab.label,
-                  tabBarAccessibilityLabel: tab.label,
-                }
-              : { tabBarLabel: tab.label, tabBarAccessibilityLabel: tab.label }
-          }
-        />
+          <Tab.Screen
+            key={tab.tabName}
+            name={tab.tabName}
+            component={tab.component}
+            initialParams={tab.initialParams}
+            options={
+              tabTestId
+                ? {
+                    tabBarLabel: tab.label,
+                    tabBarButtonTestID: tabTestId,
+                    tabBarAccessibilityLabel: tab.label,
+                  }
+                : { tabBarLabel: tab.label, tabBarAccessibilityLabel: tab.label }
+            }
+          />
         );
       })}
       {hiddenTabs.map((tab) => (
@@ -134,18 +151,10 @@ export default function BottomTabsNavigator() {
           key={`hidden-${tab.tabName}`}
           name={tab.tabName}
           component={tab.component}
+          initialParams={tab.initialParams}
           options={hiddenTabOptions}
         />
       ))}
-      <Tab.Screen
-        name="Menu"
-        component={MenuScreen}
-        options={{
-          tabBarLabel: "Menu",
-          tabBarButtonTestID: TAB_TEST_IDS.menu,
-          tabBarAccessibilityLabel: "Menu",
-        }}
-      />
     </Tab.Navigator>
   );
 }
@@ -166,7 +175,6 @@ function getTabLabel(
   hiddenTabs: RoleTabDefinition[],
 ) {
   if (tabName === "Accueil") return "Accueil";
-  if (tabName === "Menu") return "Menu";
   const definition = findTabDefinition(tabName, visibleTabs, overflowTabs, hiddenTabs);
-  return definition?.label ?? tabName;
+  return shortBottomTabLabel(tabName, definition?.label);
 }

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import { Outlet, useLocation } from "react-router-dom";
 import { NAV_ITEMS } from "../../lib/constants";
 import { CONFIGURATION_USER_ACCOUNTS, SCHOOL_ENTITY_MODULES } from "../../lib/entityModules";
@@ -6,6 +6,11 @@ import { Sidebar } from "./Sidebar";
 import { Topbar } from "./Topbar";
 import { MobileNavDrawer } from "./MobileNavDrawer";
 import { SubscriptionAccessBanner } from "../SubscriptionAccessBanner";
+import { DomainRouteBootstrap } from "../DomainRouteBootstrap";
+
+const HelpHost = lazy(() =>
+  import("../../help/HelpHost").then((module) => ({ default: module.HelpHost })),
+);
 
 const SUBSCRIPTION_NAV = [
   { path: "/abonnements/offres", label: "Abonnements" },
@@ -61,6 +66,7 @@ export function AppLayout() {
 
   return (
     <div className="flex min-h-screen">
+      <DomainRouteBootstrap />
       <Sidebar />
       <MobileNavDrawer open={mobileNavOpen} onClose={() => setMobileNavOpen(false)} />
       <div className="flex min-w-0 flex-1 flex-col">
@@ -72,6 +78,9 @@ export function AppLayout() {
           </div>
         </main>
       </div>
+      <Suspense fallback={null}>
+        <HelpHost />
+      </Suspense>
     </div>
   );
 }

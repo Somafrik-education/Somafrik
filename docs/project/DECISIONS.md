@@ -1,7 +1,7 @@
 # Décisions d’architecture (ADR simplifié) — Somafrik
 
 **Statut :** registre officiel des décisions durables  
-**Dernière mise à jour :** 2026-07-26
+**Dernière mise à jour :** 2026-08-13
 
 Format obligatoire pour chaque entrée :
 
@@ -106,6 +106,84 @@ Les conversations (Chat, agents) **ne remplacent pas** ce registre.
 | **Alternatives** | Wiki externe seul ; Notion exclusif ; README unique. |
 | **Impact** | PR incomplète sans doc ; onboarding < 1 h via ARCHITECTURE + ROADMAP ; traçabilité phase ↔ release ↔ ADR ; runbooks ops/sécurité/tests versionnés. |
 | **Statut** | Acceptée |
+
+---
+
+## ADR-008 — Reconstruction contrôlée par capacités
+
+| | |
+|--|--|
+| **Date** | 2026-08-10 |
+| **Décision** | Construire Somafrik V2 à côté du runtime actuel dans `apps/`, `packages/` et `tests/v2/`, puis migrer une capacité à la fois. Le legacy reste actif jusqu'à parité, migration, rollback documenté, gate préproduction et validation CTO. |
+| **Contexte** | La coexistence de plusieurs générations d'applications, du snapshot JSON et de PostgreSQL concentre les changements dans de gros fichiers et augmente conflits et régressions. Les règles métier, tests et données fiables doivent cependant être conservés. |
+| **Alternatives** | Continuer uniquement les correctifs dans les monolithes ; supprimer l'existant et effectuer une réécriture « big bang » ; créer un second dépôt sans historique commun. |
+| **Impact** | Frontières V2 automatisées ; aucune nouvelle dépendance au snapshot global ; petites PR par capacité ; aucune suppression legacy avant preuve de parité ; contrat détaillé dans [V2-RECONSTRUCTION.md](./V2-RECONSTRUCTION.md). |
+| **Statut** | Acceptée |
+
+---
+
+## ADR-009 — Établissements : PostgreSQL source de vérité (LOT 1)
+
+| | |
+|--|--|
+| **Date** | 2026-08-13 |
+| **Décision** | Le CRUD établissements passe exclusivement par `/api/backoffice/establishments`, persisté dans la table PostgreSQL `schools` (`profile_payload` pour les champs BO). `PUT /api/backoffice/state` refuse **toute présence** de la clé `schools` (y compris payload mixte). Un pays absent du référentiel est refusé (`COUNTRY_NOT_FOUND`) : aucun `INSERT` pays avec métadonnées inventées. `GET /state.schools` reste une projection de lecture. |
+| **Contexte** | Inventaire LOT 0 : le CRUD écoles écrivait encore le snapshot JSON puis matérialisait PG en side-effect. Les classes avaient déjà ce modèle. |
+| **Alternatives** | Dual-write JSON+PG durable ; nouvelle API `/api/v2/schools` ; attendre LOT 8 pour tout retirer. |
+| **Impact** | Matrice S1.4 sans `schools` ; Mobile AdminCrud schools en lecture/retrait CRUD ; Web/Mobile/BackOffice omettent `schools` du PUT ; `verify:schools-legacy-cleanup` (pays inconnu + PUT mixte). |
+| **Statut** | Proposée |
+
+---
+
+## ADR-010 — Élèves : PostgreSQL source de vérité (LOT 2)
+
+| | |
+|--|--|
+| **Date** | 2026-08-13 |
+| **Décision** | Les élèves sont créés par inscription via `POST /api/classes/:classCode/students` et lus/modifiés via `GET/PATCH /api/students`. Toute présence de `students` dans `PUT /api/backoffice/state` est refusée avant merge. `GET state.students` reste une projection PostgreSQL read-only. |
+| **Contexte** | Les tables `students` / `enrollments` et les APIs fiche/inscription existaient déjà, mais le snapshot pouvait encore écrire `students[]` et déclencher une matérialisation JSON → PG. |
+| **Alternatives** | Conserver le dual-write jusqu'au LOT 8 ; tolérer silencieusement `students` dans les snapshots complets ; créer une seconde API élèves. |
+| **Impact** | Matrice S1.4 sans `students` ; writers Web/Mobile/BackOffice retirés ; side-effect `syncStudentsDomainFromBackOffice` retiré de `saveBackOfficeState` ; preuve `verify:students-legacy-cleanup`. |
+| **Statut** | Proposée |
+
+---
+
+## ADR-011 — Enseignants / affectations : PostgreSQL source de vérité (LOT 3)
+
+| | |
+|--|--|
+| **Date** | 2026-08-13 |
+| **Décision** | `state.teachers` et `state.assignments` deviennent des projections PostgreSQL read-only. Toute présence de ces clés dans `PUT /api/backoffice/state` est refusée avant merge. Les affectations sont créées, modifiées et retirées via `POST/PATCH/DELETE /api/assignments`, scopées par le principal authentifié. |
+| **Contexte** | La création d'enseignants disposait déjà de `/api/teachers`, mais les affectations et les mises à jour staff transitaient encore par un dual-write snapshot JSON → PostgreSQL. |
+| **Alternatives** | Conserver le dual-write jusqu'au LOT 8 ; tolérer les clés sans les persister ; étendre le snapshot avec des ACK staff. |
+| **Impact** | Matrice S1.4 sans `teachers`/`assignments` ; side-effect staff retiré de `saveBackOfficeState` ; projection PG complète des `teacher_assignments` ; writers Web/Mobile/BackOffice retirés ; preuve `verify:teachers-assignments-legacy-cleanup`. |
+| **Statut** | Proposée |
+
+---
+
+## ADR-012 — Finance : PostgreSQL source de vérité (LOT 4)
+
+| | |
+|--|--|
+| **Date** | 2026-08-13 |
+| **Décision** | Le domaine Finance (paiements, statuts, grilles, lignes, obligations, historique tarifaire, reminders, allocations, soldes, annulations) est autoritatif en PostgreSQL. Toute présence d'une clé Finance dans `PUT /api/backoffice/state` est refusée avant fusion, y compris `[]`, `{}`, `null`, payload mixte ou snapshot identique (`LEGACY_FINANCE_STATE_WRITE_FORBIDDEN`, `details.rejectedKeys` déterministes). `GET state` peut encore projeter Finance, uniquement depuis PostgreSQL, sans fusion ni backfill des anciennes lignes JSON. V2 repart avec des données propres ; un seed de démonstration contrôlé reste possible. L'annulation d'un paiement est une action dédiée (motif obligatoire, réversion atomique des allocations/soldes, idempotente, jamais un hard delete). L'écriture d'audit `create_payment` / `cancel_payment` est effectuée dans **la même transaction PostgreSQL** que le paiement ou l'annulation (`audit_logs` via `tx.recordFinanceAudit`) ; un échec d'audit provoque un ROLLBACK complet (paiement, allocations, soldes). `cancelled_by` est persisté. Une annulation concurrente ne produit qu'une réversion et un seul événement d'audit. L'idempotence HTTP existante et les gardes d'unicité (référence paiement, obligations actives, application de grille) protègent la concurrence. |
+| **Contexte** | Les tables `payments`, `student_fee_obligations` et `payment_reminders` existaient déjà, mais les écritures métier transitaient encore par le snapshot JSON. |
+| **Alternatives** | Dual-write JSON+PG ; backfill des données historiques `backoffice_state` ; attendre le LOT 8 pour retirer le PUT. |
+| **Impact** | Matrice S1.4 sans clés Finance ; writers Web/Mobile/BackOffice retirés ; APIs `/api/payments` et `/api/finance/*` ; preuves `verify:finance-legacy-cleanup` et `verify:finance-management`. Lots 5–8 (pédagogie, plateforme, clients, retrait PUT) restent bloqués. Notifications / Audit généraux restent LOT 6. |
+| **Statut** | Proposée |
+
+---
+
+## ADR-013 — Code établissement V2 `CD-IN-26-001`
+
+| | |
+|--|--|
+| **Date** | 2026-08-19 |
+| **Décision** | Le code public d'établissement est `schools.login_code` au format `{ISO}-{INITIALES}-{YY}-{SEQ3}` (ex. `CD-IN-26-001`). PostgreSQL est l'unique générateur (`somafrik_prepare_school_login_code`, compteur `(country_id, creation_year)`). `IN` = initiales déterministes du nom (`somafrik_school_short_code`), jamais une constante « INSTITUT NURU ». L'ancien format `CD-2026-0001` (`CC-YYYY-NNNN`) est interdit à la création et retiré des UI / bundles ; la lecture par `school_code` reste temporaire. Aucune mutation préprod dans le lot code. |
+| **Contexte** | L'APK Preview QA affichait encore `CD-2026-0001` (placeholder Mobile + mapping public `code` = `school_code`). |
+| **Alternatives** | Dual-write login_code + school_code public ; regex unique acceptant les deux formats ; génération Web/Mobile. |
+| **Impact** | `toPublicSchool` expose le V2 ; `GET /api/schools/:code` matche login_code ; gate `verify:school-code-v2` ; bundle Preview sans `CD-2026-0001`. Contrat : `docs/project/SCHOOL-CODE-V2.md`. |
+| **Statut** | Proposée |
 
 ---
 

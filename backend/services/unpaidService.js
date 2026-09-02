@@ -60,7 +60,7 @@ function isOverdueStudentFee(fee, now = new Date()) {
 
 function scopeFees(state, principal) {
   const fees = refreshStudentFeeStatuses(state.studentFees ?? []);
-  const schoolCode = String(principal?.schoolCode ?? "").trim().toUpperCase();
+  const schoolCode = String(principal?.financeLoginCode || principal?.schoolCode || "").trim().toUpperCase();
   if (!schoolCode || schoolCode === "*") return fees;
   return fees.filter((fee) => String(fee.schoolCode ?? "").trim().toUpperCase() === schoolCode);
 }
@@ -142,7 +142,7 @@ function buildDashboard(rows) {
   return {
     totalAmountDue: rows.reduce((sum, row) => sum + row.amountDue, 0),
     studentCount: rows.length,
-    currency: rows[0]?.currency ?? "USD",
+    currency: rows[0]?.currency ? String(rows[0].currency).trim().toUpperCase() : "",
     byClass: [...byClassMap.entries()].map(([className, stats]) => ({
       className,
       amountDue: stats.amountDue,

@@ -1,0 +1,60 @@
+name: Academic Year tenant GP-002
+
+on:
+  pull_request:
+    branches: [develop]
+    paths:
+      - "backend/lib/academicYearSchoolScope.js"
+      - "backend/lib/academicYearSchoolScope.test.js"
+      - "backend/lib/academicYearTenant.guard.test.js"
+      - "backend/lib/academicYearTenant.http.pg.test.js"
+      - "backend/lib/academicYearsManagement.test.js"
+      - "backend/lib/academicYearsCurrentSwitch.pg.test.js"
+      - "backend/scripts/verify-academic-year-tenant.js"
+      - "backend/db/postgresRepository.js"
+      - "backend/db/fallbackRepository.js"
+      - "backend/server.js"
+      - "package.json"
+      - ".github/workflows/academic-year-tenant.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  academic-year-tenant:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
+      NODE_ENV: test
+      JWT_SECRET: ci-test-secret-with-enough-length-for-production-checks
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.12.0"
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            backend/package-lock.json
+      - name: Install dependencies
+        run: |
+          npm ci
+          npm ci --prefix backend
+      - name: Verify Academic Year tenant GP-002
+        run: npm run verify:academic-year-tenant

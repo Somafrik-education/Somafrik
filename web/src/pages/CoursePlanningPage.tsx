@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { useData } from "../context/DataContext";
 import { useActiveSchool } from "../context/ActiveSchoolContext";
+import { ApiError } from "../api/client";
 import { Card, SectionHeader } from "../components/ui/Card";
 import { Button } from "../components/ui/Button";
 import { PrintButton } from "../components/ui/PrintButton";
@@ -9,48 +11,41 @@ import { Field, Input, Select } from "../components/ui/Field";
 import { useToast } from "../components/ui/Toast";
 import { useConfirm } from "../components/ui/ConfirmDialog";
 import { useFeaturePermissions } from "../lib/usePermissionContext";
-import { scopedClasses, scopedTeachers } from "../lib/establishment";
+import { scopedClasses } from "../lib/establishment";
 import { normalize } from "../lib/format";
 import { CoursePlanningCalendar } from "../components/planning/CoursePlanningCalendar";
 import {
   ALL_PLANNING_PERIODS,
-  auditSchoolPlanningConsistency,
-  buildSchoolPlanningResetPatch,
-  buildExamSlotTimes,
-  buildSlotTemplateTimes,
-  canRepairSchoolPlanning,
-  clearSchoolAssignments,
-  createScheduleId,
-  EXAM_TYPE_OPTIONS,
   extractTimeFromIso,
   filterSlotsByClass,
-  filterSlotsByKind,
   filterSlotsByPeriod,
   formatScheduleRecurrenceSummary,
-  getClassSubjectNames,
   getDefaultPlanningPeriod,
   getMasterScheduleId,
+  getOccurrenceDateFromEventId,
   getSchoolAcademicPeriods,
+  isoWeekdayFromLocalDate,
   isExamSchedule,
-  isoToPeriodDate,
-  mergeCourseSchedules,
-  mergePlanningLinkedCourses,
-  mergePlanningLinkedExams,
+  mapServerOccurrencesToCalendarEvents,
   normalizePlanningSlotForSave,
-  normalizeScheduleKind,
   pickPlanningPeriodWithSlots,
   PLANNING_WEEKDAYS,
-  repairSchoolCourseSchedules,
   resolveCourseTeacher,
   scopedCourseSchedules,
-  slotsToClassCalendarEvents,
-  validatePlanningSlotBusinessRules,
-  weekdayFromIso,
+  filterSlotsForPlanningWrite,
+  resolvePlanningWriteSchoolIdentity,
   type CourseScheduleSlot,
-  type PlanningScheduleKind,
-  type PlanningViewFilter,
+  type PlanningCalendarEvent,
 } from "../lib/coursePlanning";
-import { inputToPeriodDate, parsePeriodDate, periodDateToInput } from "../lib/academicPeriods";
+import { pedagogyApi } from "../lib/pedagogyApi";
+import { schoolRoomsApi, type SchoolRoom } from "../lib/planningRoomsReplacementsApi";
+import { syncSchoolCourseSchedules } from "../lib/pedagogyPlanningSync";
+import {
+  mapPlanningCourseOptions,
+  planningNoSchedulableCoursesMessage,
+  resolveClassAcademicYearId,
+  type PlanningSchoolCourseOption,
+} from "../lib/planningWeeklyWrite";
 import type { BackOfficeState, SessionUser } from "../types";
 
 function classNamesKeyFromState(data: BackOfficeState, user: SessionUser | null): string {
@@ -62,96 +57,93 @@ function classNamesKeyFromState(data: BackOfficeState, user: SessionUser | null)
 
 type FormState = {
   id: string;
-  kind: PlanningScheduleKind;
   className: string;
+  schoolCourseId: string;
+  academicYearId: string;
   subject: string;
   teacherId: string;
   teacherName: string;
   weekday: number;
   startTime: string;
   endTime: string;
-  room: string;
-  periodName: string;
-  periodStart: string;
-  periodEnd: string;
-  examType: string;
-  examName: string;
-  examDate: string;
-  examId: string;
+  roomId: string;
+  occurrenceDate: string;
 };
 
-const EMPTY_FORM = (
-  className: string,
-  period: Pick<CourseScheduleSlot, "periodName" | "periodStart" | "periodEnd">,
-  kind: PlanningScheduleKind = "course",
-): FormState => ({
+const EMPTY_FORM = (className: string, academicYearId = ""): FormState => ({
   id: "",
-  kind,
   className,
+  schoolCourseId: "",
+  academicYearId,
   subject: "",
   teacherId: "",
   teacherName: "",
   weekday: 1,
   startTime: "08:00",
   endTime: "09:00",
-  room: "",
-  periodName: period.periodName ?? "",
-  periodStart: period.periodStart ?? "",
-  periodEnd: period.periodEnd ?? "",
-  examType: EXAM_TYPE_OPTIONS[0],
-  examName: "",
-  examDate: period.periodStart ?? "",
-  examId: "",
+  roomId: "",
+  occurrenceDate: "",
 });
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function planningWriteErrorMessage(err: unknown, fallback: string): string {
+  if (err instanceof ApiError && err.message) return err.message;
+  if (err instanceof Error && err.message) return err.message;
+  return fallback;
+}
 
 function formFromSlot(
   slot: CourseScheduleSlot,
-  fallbackPeriod: Pick<CourseScheduleSlot, "periodName" | "periodStart" | "periodEnd">,
+  academicYearId: string,
 ): FormState {
-  const kind = normalizeScheduleKind(slot.kind);
+  const weekday = Number(slot.dayOfWeek);
   return {
     id: slot.id,
-    kind,
     className: slot.className,
-    subject: slot.subject,
+    schoolCourseId: slot.schoolCourseId ?? "",
+    academicYearId: slot.academicYearId || academicYearId,
+    subject: String(slot.courseName ?? slot.subject ?? ""),
     teacherId: slot.teacherId ?? "",
     teacherName: slot.teacherName ?? "",
-    weekday: weekdayFromIso(slot.start),
-    startTime: extractTimeFromIso(slot.start),
-    endTime: extractTimeFromIso(slot.end),
-    room: slot.room ?? "",
-    periodName: slot.periodName ?? fallbackPeriod.periodName ?? "",
-    periodStart: slot.periodStart ?? fallbackPeriod.periodStart ?? "",
-    periodEnd: slot.periodEnd ?? fallbackPeriod.periodEnd ?? "",
-    examType: slot.examType ?? EXAM_TYPE_OPTIONS[0],
-    examName: slot.examName ?? "",
-    examDate: kind === "exam" ? isoToPeriodDate(slot.start) : fallbackPeriod.periodStart ?? "",
-    examId: slot.examId ?? "",
+    weekday: weekday >= 1 && weekday <= 7 ? weekday : isoWeekdayFromLocalDate(new Date(slot.start)),
+    startTime: String(slot.startTime ?? "").trim().slice(0, 5) || extractTimeFromIso(slot.start),
+    endTime: String(slot.endTime ?? "").trim().slice(0, 5) || extractTimeFromIso(slot.end),
+    roomId: slot.roomId ?? "",
+    occurrenceDate: slot.occurrenceDate ?? "",
   };
-}
-
-function slotTimesFromForm(form: FormState): { start: string; end: string } {
-  return buildSlotTemplateTimes(form.weekday, form.startTime, form.endTime, form.periodStart);
 }
 
 export function CoursePlanningPage() {
   const { session } = useAuth();
-  const { state, update } = useData();
-  const stateRef = useRef(state);
-  stateRef.current = state;
+  const { state, refresh } = useData();
   const { showToast } = useToast();
   const { confirm } = useConfirm();
-  const { scopedUser, activeSchoolCode } = useActiveSchool();
+  const { scopedUser, activeSchoolCode, activeSchool } = useActiveSchool();
   const scopeUser = scopedUser ?? session?.user ?? null;
   const schoolCode = activeSchoolCode || scopeUser?.schoolCode || "";
+  const writeSchoolIdentity = useMemo(
+    () =>
+      resolvePlanningWriteSchoolIdentity({
+        user: scopeUser,
+        activeSchool,
+      }),
+    [scopeUser, activeSchool],
+  );
   const { canRead, canCreate, canUpdate, canDelete } = useFeaturePermissions("Planning de cours");
+  const replacements = useFeaturePermissions("Remplacements");
+  const navigate = useNavigate();
 
   const [selectedClassName, setSelectedClassName] = useState("");
   const selectedClassRef = useRef("");
   const [selectedPeriodName, setSelectedPeriodName] = useState("");
-  const [viewKindFilter, setViewKindFilter] = useState<PlanningViewFilter>("all");
   const [form, setForm] = useState<FormState | null>(null);
   const [saving, setSaving] = useState(false);
+  const [visibleRange, setVisibleRange] = useState<{ from: string; to: string } | null>(null);
+  const [calendarEvents, setCalendarEvents] = useState<PlanningCalendarEvent[]>([]);
+  const [classCourses, setClassCourses] = useState<PlanningSchoolCourseOption[]>([]);
+  const [courseOptionsStatus, setCourseOptionsStatus] = useState<"idle" | "loading" | "ok" | "error">("idle");
+  const [rooms, setRooms] = useState<SchoolRoom[]>([]);
 
   const schoolPeriods = useMemo(
     () => getSchoolAcademicPeriods(state, schoolCode),
@@ -212,119 +204,138 @@ export function CoursePlanningPage() {
     });
   }, [classNamesKey, classes.length]);
 
-  const teachers = useMemo(() => scopedTeachers(scopeUser, state), [scopeUser, state]);
+  const classAcademicYearId = useMemo(
+    () => resolveClassAcademicYearId(scopeUser, state, selectedClassName),
+    [scopeUser, state, selectedClassName],
+  );
 
-  const subjectOptions = useMemo(
-    () => getClassSubjectNames(scopeUser, state, selectedClassName, schoolCode),
-    [scopeUser, state, selectedClassName, schoolCode],
+  const selectedClassId = useMemo(() => {
+    const row = scopedClasses(scopeUser, state).find(
+      (item) => normalize(String(item.name ?? "")) === normalize(selectedClassName),
+    );
+    const id = String((row as { id?: string } | undefined)?.id ?? "").trim();
+    return UUID_RE.test(id) ? id : "";
+  }, [scopeUser, state.classes, selectedClassName]);
+
+  useEffect(() => {
+    if (!canRead) {
+      setRooms([]);
+      return;
+    }
+    let cancelled = false;
+    schoolRoomsApi
+      .list({ status: "active", classId: selectedClassId || undefined })
+      .then((result) => {
+        if (!cancelled) setRooms(result.items ?? []);
+      })
+      .catch(() => {
+        if (!cancelled) setRooms([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [canRead, selectedClassId]);
+
+  useEffect(() => {
+    if (!canRead || !selectedClassName) {
+      setClassCourses([]);
+      setCourseOptionsStatus("idle");
+      return;
+    }
+    let cancelled = false;
+    setCourseOptionsStatus("loading");
+    pedagogyApi
+      .listPlanningCourseOptions({
+        classId: selectedClassId || undefined,
+        className: selectedClassName,
+      })
+      .then((payload) => {
+        if (cancelled) return;
+        setClassCourses(mapPlanningCourseOptions(payload?.items));
+        setCourseOptionsStatus("ok");
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setClassCourses([]);
+        setCourseOptionsStatus("error");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [canRead, selectedClassName, selectedClassId]);
+
+  const weeklySlots = useMemo(
+    () => schoolSlots.filter((slot) => !isExamSchedule(slot) && String(slot.status ?? "active") !== "cancelled"),
+    [schoolSlots],
   );
 
   const periodScopedSlots = useMemo(
-    () => filterSlotsByPeriod(schoolSlots, activePeriod),
-    [schoolSlots, activePeriod],
-  );
-
-  const kindScopedSlots = useMemo(
-    () => filterSlotsByKind(periodScopedSlots, viewKindFilter),
-    [periodScopedSlots, viewKindFilter],
+    () => filterSlotsByPeriod(weeklySlots, activePeriod),
+    [weeklySlots, activePeriod],
   );
 
   const classSlots = useMemo(
-    () => filterSlotsByClass(kindScopedSlots, selectedClassName),
-    [kindScopedSlots, selectedClassName],
+    () => filterSlotsByClass(periodScopedSlots, selectedClassName),
+    [periodScopedSlots, selectedClassName],
   );
-
-  const classCourseCount = useMemo(
-    () => classSlots.filter((slot) => !isExamSchedule(slot)).length,
-    [classSlots],
-  );
-
-  const classExamCount = useMemo(
-    () => classSlots.filter(isExamSchedule).length,
-    [classSlots],
-  );
-
-  const events = useMemo(
-    () => slotsToClassCalendarEvents(kindScopedSlots, selectedClassName),
-    [kindScopedSlots, selectedClassName],
-  );
-
-  const consistencyIssues = useMemo(
-    () => auditSchoolPlanningConsistency(schoolSlots, state, scopeUser, schoolCode),
-    [schoolSlots, state, scopeUser, schoolCode],
-  );
-
-  const planningRepairAvailable = useMemo(
-    () => Boolean(schoolCode && canRepairSchoolPlanning(state, scopeUser, schoolCode)),
-    [state, scopeUser, schoolCode],
-  );
-
-  const autoRepairRef = useRef(false);
-
-  async function handleRepairPlanningData() {
-    if (!schoolCode || !canUpdate) return;
-    const report = repairSchoolCourseSchedules(stateRef.current, scopeUser, schoolCode);
-    const summary = [
-      report.encodingFixes ? `${report.encodingFixes} libellé(s) corrigé(s)` : "",
-      report.periodsAdded ? `${report.periodsAdded} période(s) ajoutée(s)` : "",
-      report.duplicatesRemoved ? `${report.duplicatesRemoved} doublon(s) horaire(s) supprimé(s)` : "",
-      report.subjectPeriodDuplicatesRemoved
-        ? `${report.subjectPeriodDuplicatesRemoved} doublon(s) matière/période supprimé(s)`
-        : "",
-      report.conflictsResolved ? `${report.conflictsResolved} conflit(s) horaire(s) résolu(s)` : "",
-      report.migratedFromPedagogy
-        ? `${report.migratedFromPedagogy} matière(s) importée(s) au planning`
-        : "",
-      report.examsLinked ? `${report.examsLinked} examen(s) relié(s) au calendrier` : "",
-      report.teachersSynced ? `${report.teachersSynced} enseignant(s) complété(s)` : "",
-      report.invalidRemoved ? `${report.invalidRemoved} créneau(x) invalide(s) retiré(s)` : "",
-    ]
-      .filter(Boolean)
-      .join(", ");
-    await persistSlots(
-      report.slots,
-      summary ? `Planning corrigé : ${summary}.` : "Planning cohérent — aucune correction nécessaire.",
-    );
-  }
 
   useEffect(() => {
-    autoRepairRef.current = false;
-  }, [schoolCode]);
+    if (!canRead || !selectedClassName || !visibleRange?.from || !visibleRange?.to) {
+      setCalendarEvents([]);
+      return;
+    }
+    let cancelled = false;
+    void pedagogyApi
+      .listCourseScheduleOccurrences({
+        from: visibleRange.from,
+        to: visibleRange.to,
+        academicYearId: classAcademicYearId || undefined,
+        classId: selectedClassId || undefined,
+      })
+      .then((payload) => {
+        if (cancelled) return;
+        setCalendarEvents(mapServerOccurrencesToCalendarEvents(payload?.items, selectedClassName));
+      })
+      .catch(() => {
+        if (!cancelled) setCalendarEvents([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    canRead,
+    selectedClassName,
+    selectedClassId,
+    classAcademicYearId,
+    visibleRange?.from,
+    visibleRange?.to,
+    state.courseSchedules,
+  ]);
 
   async function handleResetPlanning() {
     if (!schoolCode || !canDelete) return;
+    if (!writeSchoolIdentity) {
+      showToast("Établissement actif introuvable. Sélectionnez un établissement pour annuler le planning.", "error");
+      return;
+    }
     const confirmed = await confirm({
-      title: "Réinitialiser le planning ?",
+      title: "Annuler tous les créneaux hebdomadaires ?",
       description:
-        "Tous les créneaux cours et examens seront supprimés. Les affectations legacy et les examens planifiés seront retirés. Les matières, classes et périodes académiques (Configuration) sont conservées.",
-      confirmLabel: "Réinitialiser",
+        "Chaque créneau actif sera annulé (statut cancelled). Les cours, classes, affectations et examens restent inchangés.",
+      confirmLabel: "Annuler les créneaux",
       tone: "danger",
     });
     if (!confirmed) return;
 
-    const previousSchoolSlots = scopedCourseSchedules(scopeUser, stateRef.current).filter(
-      (row) => normalize(row.schoolCode) === normalize(schoolCode),
-    );
-    const resetPatch = buildSchoolPlanningResetPatch(stateRef.current, schoolCode);
+    const previousSchoolSlots = filterSlotsForPlanningWrite(weeklySlots, writeSchoolIdentity);
     setSaving(true);
     try {
-      await update(
-        {
-          ...resetPatch,
-          courses: mergePlanningLinkedCourses(
-            stateRef.current,
-            [],
-            previousSchoolSlots,
-            schoolCode,
-          ),
-        },
-        { partial: true },
-      );
+      await syncSchoolCourseSchedules(previousSchoolSlots, []);
+      await refresh(["courseSchedules"]);
       setForm(null);
-      autoRepairRef.current = true;
-      showToast("Planning réinitialisé. Vous pouvez recréer vos créneaux.", "success");
+      showToast("Créneaux hebdomadaires annulés.", "success");
     } catch {
-      showToast("Échec de la réinitialisation du planning.", "error");
+      showToast("Échec de l'annulation du planning.", "error");
     } finally {
       setSaving(false);
     }
@@ -332,7 +343,7 @@ export function CoursePlanningPage() {
 
   const editable = canCreate || canUpdate;
 
-  function openCreate(kind: PlanningScheduleKind, start: string, end: string, subject = "") {
+  function openCreate(start?: string, end?: string) {
     if (!canCreate) {
       showToast("Vous n'avez pas le droit de créer un créneau.", "error");
       return;
@@ -341,44 +352,44 @@ export function CoursePlanningPage() {
       showToast("Sélectionnez une classe.", "error");
       return;
     }
-    const defaultSubject = subject || subjectOptions[0] || "";
-    const period = activePeriod
-      ? {
-          periodName: activePeriod.name,
-          periodStart: activePeriod.startDate,
-          periodEnd: activePeriod.endDate,
-        }
-      : defaultPeriod;
-    const base = {
-      ...EMPTY_FORM(selectedClassName, period, kind),
-      weekday: weekdayFromIso(start),
-      startTime: extractTimeFromIso(start),
-      endTime: extractTimeFromIso(end),
-      examDate: isoToPeriodDate(start) || period.periodStart || "",
-      subject: defaultSubject,
-    };
-    const { teacherId, teacherName } = resolveCourseTeacher(
-      state,
-      scopeUser,
-      selectedClassName,
-      defaultSubject,
-    );
-    base.teacherId = teacherId;
-    base.teacherName = teacherName;
-    setForm(base);
+    if (!classAcademicYearId) {
+      showToast("Année académique introuvable pour cette classe.", "error");
+      return;
+    }
+    if (courseOptionsStatus === "loading") {
+      showToast("Chargement des cours planifiables…", "info");
+      return;
+    }
+    if (courseOptionsStatus === "error") {
+      showToast("Impossible de charger les cours planifiables. Réessayez.", "error");
+      return;
+    }
+    if (!classCourses.length) {
+      showToast(planningNoSchedulableCoursesMessage(selectedClassName), "error");
+      return;
+    }
+    const course = classCourses[0];
+    const weekday = start ? isoWeekdayFromLocalDate(new Date(start)) : 1;
+    setForm({
+      ...EMPTY_FORM(selectedClassName, classAcademicYearId),
+      schoolCourseId: course.schoolCourseId,
+      subject: course.name,
+      teacherId: course.teacherId,
+      teacherName: course.teacherName,
+      weekday,
+      startTime: start ? extractTimeFromIso(start) : "08:00",
+      endTime: end ? extractTimeFromIso(end) : "09:00",
+    });
   }
 
   function openEdit(slot: CourseScheduleSlot) {
     if (!canUpdate && !canRead) return;
-    const resolved = resolveCourseTeacher(state, scopeUser, slot.className, slot.subject);
-    const fallbackPeriod = activePeriod
-      ? { periodName: activePeriod.name, periodStart: activePeriod.startDate, periodEnd: activePeriod.endDate }
-      : defaultPeriod;
-    const base = formFromSlot(slot, fallbackPeriod);
+    const base = formFromSlot(slot, slot.academicYearId || classAcademicYearId);
+    const course = classCourses.find((row) => row.schoolCourseId === base.schoolCourseId);
     setForm({
       ...base,
-      teacherId: resolved.fromCourse ? resolved.teacherId : base.teacherId || resolved.teacherId,
-      teacherName: resolved.fromCourse ? resolved.teacherName : base.teacherName || resolved.teacherName,
+      teacherId: course?.teacherId || base.teacherId,
+      teacherName: course?.teacherName || base.teacherName,
     });
   }
 
@@ -391,68 +402,51 @@ export function CoursePlanningPage() {
       showToast("Sélectionnez un établissement actif.", "error");
       return;
     }
-    const previousSchoolSlots = scopedCourseSchedules(scopeUser, stateRef.current).filter(
-      (row) => normalize(row.schoolCode) === normalize(schoolCode),
-    );
+    if (!writeSchoolIdentity) {
+      showToast("Établissement actif introuvable. Sélectionnez un établissement.", "error");
+      return;
+    }
+    const previousSchoolSlots = filterSlotsForPlanningWrite(weeklySlots, writeSchoolIdentity);
+    const scopedNextSlots = filterSlotsForPlanningWrite(nextSchoolSlots, writeSchoolIdentity);
     setSaving(true);
     try {
-      await update(
-        {
-          courseSchedules: mergeCourseSchedules(stateRef.current, schoolCode, nextSchoolSlots),
-          exams: mergePlanningLinkedExams(
-            stateRef.current,
-            nextSchoolSlots,
-            previousSchoolSlots,
-          ),
-          courses: mergePlanningLinkedCourses(
-            stateRef.current,
-            nextSchoolSlots,
-            previousSchoolSlots,
-            schoolCode,
-          ),
-          assignments: clearSchoolAssignments(stateRef.current, schoolCode),
-        },
-        { partial: true },
-      );
+      await syncSchoolCourseSchedules(previousSchoolSlots, scopedNextSlots);
+      await refresh(["courseSchedules"]);
       showToast(message, "success");
       if (!options.keepForm) {
         setForm(null);
       }
-    } catch {
-      showToast("Échec de l'enregistrement du planning.", "error");
+    } catch (err) {
+      showToast(planningWriteErrorMessage(err, "Échec de l'enregistrement du planning."), "error");
     } finally {
       setSaving(false);
     }
   }
 
   function buildSlotFromForm(): CourseScheduleSlot | null {
-    if (!form || !schoolCode) return null;
-    const resolved = resolveCourseTeacher(state, scopeUser, form.className, form.subject);
-    const teacherId = resolved.fromCourse ? resolved.teacherId : form.teacherId || resolved.teacherId;
-    const teacherName = resolved.fromCourse ? resolved.teacherName : form.teacherName || resolved.teacherName;
-    const isExam = form.kind === "exam";
-    const { start, end } = isExam
-      ? buildExamSlotTimes(form.examDate, form.startTime, form.endTime)
-      : slotTimesFromForm(form);
-    const scheduleId = form.id || createScheduleId();
-
+    if (!form || !schoolCode || !writeSchoolIdentity) return null;
+    const course = classCourses.find((row) => row.schoolCourseId === form.schoolCourseId);
+    const resolved = resolveCourseTeacher(state, scopeUser, form.className, course?.name || form.subject);
     return normalizePlanningSlotForSave({
-      id: scheduleId,
-      schoolCode,
+      id: form.id || `tmp-${Date.now()}`,
+      schoolId: writeSchoolIdentity.schoolId || undefined,
+      schoolCode: writeSchoolIdentity.publicCode || schoolCode,
       className: form.className.trim(),
-      subject: form.subject.trim(),
-      teacherId,
-      teacherName,
-      start,
-      end,
-      room: form.room.trim() || undefined,
-      kind: form.kind,
-      examType: isExam ? form.examType.trim() || EXAM_TYPE_OPTIONS[0] : undefined,
-      examName: isExam ? form.examName.trim() || undefined : undefined,
-      examId: isExam ? form.examId || `EX-${scheduleId}` : undefined,
-      periodName: (isExam ? activePeriod?.name ?? form.periodName : form.periodName)?.trim() || undefined,
-      periodStart: isExam ? undefined : form.periodStart.trim() || undefined,
-      periodEnd: isExam ? undefined : form.periodEnd.trim() || undefined,
+      subject: (course?.name || form.subject).trim(),
+      courseName: (course?.name || form.subject).trim(),
+      schoolCourseId: form.schoolCourseId,
+      academicYearId: form.academicYearId || classAcademicYearId,
+      teacherId: course?.teacherId || resolved.teacherId || form.teacherId,
+      teacherName: course?.teacherName || resolved.teacherName || form.teacherName,
+      dayOfWeek: form.weekday,
+      startTime: form.startTime,
+      endTime: form.endTime,
+      start: "",
+      end: "",
+      room: rooms.find((row) => row.id === form.roomId)?.name,
+      roomId: form.roomId || undefined,
+      kind: "course",
+      status: "active",
     });
   }
 
@@ -460,98 +454,70 @@ export function CoursePlanningPage() {
     if (!form) return;
     const slot = buildSlotFromForm();
     if (!slot) return;
-    if (!slot.className || !slot.subject || !form.startTime || !form.endTime) {
-      showToast("Classe, matière et horaires sont obligatoires.", "error");
+    if (!slot.schoolCourseId || !slot.academicYearId || !form.startTime || !form.endTime) {
+      showToast("Cours canonique, année académique et horaires sont obligatoires.", "error");
       return;
     }
-
-    if (form.kind === "exam") {
-      if (!form.examDate.trim()) {
-        showToast("Indiquez la date de l'examen.", "error");
-        return;
-      }
-    } else if (!slot.periodStart || !slot.periodEnd) {
-      showToast("Indiquez la période (dates de début et de fin) pour ce cours.", "error");
+    if (form.endTime <= form.startTime) {
+      showToast("L'heure de fin doit être postérieure à l'heure de début.", "error");
       return;
     }
-
-    if (form.kind === "course") {
-      const periodStart = parsePeriodDate(slot.periodStart);
-      const periodEnd = parsePeriodDate(slot.periodEnd);
-      if (!periodStart || !periodEnd || periodEnd < periodStart) {
-        showToast("La date de fin doit être postérieure ou égale à la date de début.", "error");
-        return;
-      }
+    const selectedRoom = rooms.find((row) => row.id === form.roomId);
+    if (selectedRoom?.capacityWarning) {
+      const ok = await confirm({
+        title: "Capacité inférieure à l'effectif",
+        description: `${selectedRoom.capacityWarning.message} Vous pouvez confirmer malgré tout.`,
+        confirmLabel: "Confirmer",
+      });
+      if (!ok) return;
     }
 
-    const conflicts = validatePlanningSlotBusinessRules(schoolSlots, slot, {
-      ignoreId: form?.id,
-      allowedSubjects: subjectOptions,
-    });
-    if (conflicts.length) {
-      showToast(conflicts[0], "error");
-      return;
-    }
-
-    const next = form?.id
-      ? schoolSlots.map((row) => (row.id === slot.id ? slot : row))
-      : [...schoolSlots, slot];
-    await persistSlots(next, form?.id ? "Planning mis à jour" : form.kind === "exam" ? "Examen planifié" : "Cours planifié sur la période");
+    const next = form.id
+      ? weeklySlots.map((row) => (row.id === slot.id ? slot : row))
+      : [...weeklySlots, slot];
+    await persistSlots(next, form.id ? "Créneau mis à jour" : "Créneau hebdomadaire créé");
   }
 
   async function deleteForm() {
     if (!form?.id || !canDelete) return;
-    const next = schoolSlots.filter((row) => row.id !== form.id);
-    await persistSlots(next, "Créneau supprimé");
+    const next = weeklySlots.filter((row) => row.id !== form.id);
+    await persistSlots(next, "Créneau annulé");
   }
 
   async function persistSlotChange(eventId: string, start: string, end: string, message: string) {
     if (!canUpdate) return;
     const masterId = getMasterScheduleId(eventId);
-    const current = schoolSlots.find((row) => row.id === masterId);
+    const current = weeklySlots.find((row) => row.id === masterId);
     if (!current) return;
 
     const patch = normalizePlanningSlotForSave({
       ...current,
-      start,
-      end,
-      className: selectedClassName,
+      dayOfWeek: isoWeekdayFromLocalDate(new Date(start)),
+      startTime: extractTimeFromIso(start),
+      endTime: extractTimeFromIso(end),
+      start: "",
+      end: "",
     });
 
-    const resolved = resolveCourseTeacher(state, scopeUser, patch.className, patch.subject);
-    if (resolved.fromCourse) {
-      patch.teacherId = resolved.teacherId;
-      patch.teacherName = resolved.teacherName;
-    }
-
-    const conflicts = validatePlanningSlotBusinessRules(schoolSlots, patch, {
-      ignoreId: masterId,
-      allowedSubjects: getClassSubjectNames(scopeUser, state, selectedClassName, schoolCode),
-    });
-    if (conflicts.length) {
-      showToast(conflicts[0], "error");
-      return;
-    }
-
-    const next = schoolSlots.map((row) => (row.id === masterId ? patch : row));
+    const next = weeklySlots.map((row) => (row.id === masterId ? patch : row));
     await persistSlots(next, message, { keepForm: true });
   }
 
   const handleSelectSlot = useCallback(
-    (start: string, end: string) => openCreate("course", start, end),
-    // openCreate lit state / subjectOptions au moment du clic
+    (start: string, end: string) => openCreate(start, end),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [selectedClassName, canCreate, subjectOptions.join("\u0000"), schoolCode],
+    [selectedClassName, canCreate, classCourses, classAcademicYearId, schoolCode],
   );
 
   const handleEventClick = useCallback(
     (eventId: string) => {
       const masterId = getMasterScheduleId(eventId);
-      const slot = schoolSlots.find((row) => row.id === masterId);
-      if (slot) openEdit(slot);
+      const slot = weeklySlots.find((row) => row.id === masterId);
+      const occurrenceDate = getOccurrenceDateFromEventId(eventId);
+      if (slot) openEdit({ ...slot, occurrenceDate });
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [schoolSlots, canRead, canUpdate],
+    [weeklySlots, canRead, canUpdate, classCourses, classAcademicYearId],
   );
 
   const handleEventMoveStable = useCallback(
@@ -559,7 +525,7 @@ export function CoursePlanningPage() {
       void persistSlotChange(eventId, start, end, "Créneau déplacé");
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [schoolSlots, selectedClassName, canUpdate, state, scopeUser],
+    [weeklySlots, selectedClassName, canUpdate, classCourses],
   );
 
   const handleEventResizeStable = useCallback(
@@ -567,61 +533,53 @@ export function CoursePlanningPage() {
       void persistSlotChange(eventId, start, end, "Créneau redimensionné");
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [schoolSlots, selectedClassName, canUpdate, state, scopeUser],
+    [weeklySlots, selectedClassName, canUpdate, classCourses],
   );
 
-  function applyPeriodDefaults(periodName: string) {
-    const period = schoolPeriods.find((row) => row.name === periodName);
-    if (!period) return;
-    setForm((current) =>
-      current
-        ? {
-            ...current,
-            periodName: period.name,
-            periodStart: period.startDate,
-            periodEnd: period.endDate,
-          }
-        : current,
-    );
-  }
-
-  function applySubjectDefaults(subject: string) {
-    const resolved = resolveCourseTeacher(state, scopeUser, selectedClassName, subject);
+  function applyCourseDefaults(schoolCourseId: string) {
+    const course = classCourses.find((row) => row.schoolCourseId === schoolCourseId);
+    if (!course) return;
     setForm((current) =>
       current
         ? {
             ...current,
             className: selectedClassName,
-            subject: subject.trim(),
-            teacherId: resolved.teacherId,
-            teacherName: resolved.teacherName,
+            schoolCourseId: course.schoolCourseId,
+            academicYearId: current.academicYearId || classAcademicYearId,
+            subject: course.name,
+            teacherId: course.teacherId,
+            teacherName: course.teacherName,
           }
         : current,
     );
   }
 
   const resolvedFormTeacher = useMemo(() => {
-    if (!form?.subject.trim()) return null;
+    if (!form?.schoolCourseId && !form?.subject.trim()) return null;
+    const course = classCourses.find((row) => row.schoolCourseId === form.schoolCourseId);
+    if (course?.teacherName) {
+      return { teacherId: course.teacherId, teacherName: course.teacherName, fromCourse: true };
+    }
     return resolveCourseTeacher(state, scopeUser, form.className || selectedClassName, form.subject);
-  }, [form?.className, form?.subject, selectedClassName, scopeUser, state]);
+  }, [form, selectedClassName, scopeUser, state, classCourses]);
 
   if (!canRead) {
     return (
-      <Card className="p-6">
+      <Card className="p-6" data-testid="planning-access-denied">
         <p className="text-sm font-semibold text-muted">Accès refusé au planning de cours.</p>
       </Card>
     );
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6" data-testid="planning-page">
       <Card className="bg-gradient-to-br from-slate-800 to-brand p-6 text-white">
         <p className="text-sm font-semibold text-white/75">Pédagogie</p>
         <h2 className="mt-2 text-2xl font-black">Planning de cours</h2>
         <p className="mt-2 max-w-3xl text-sm text-white/85">
-          Point unique pour planifier cours et examens : créneaux récurrents, enseignant par matière,
-          calendrier et horaires. Les anciennes affectations sont migrées ici ; le module Examens sert
-          uniquement au suivi des statuts.
+          Emploi du temps hebdomadaire rattaché à un cours canonique, une année académique et un
+          enseignant. Les examens restent dans le module Examens. Les salles sont des ressources
+          canoniques ; un remplacement ponctuel n'altère pas le titulaire du cours.
         </p>
       </Card>
 
@@ -629,11 +587,9 @@ export function CoursePlanningPage() {
         <SectionHeader
           title={selectedClassName ? `Classe ${selectedClassName}` : "Calendrier"}
           description={
-            selectedClassName && activePeriod
-              ? `${classCourseCount} cours · ${classExamCount} examen(s) · ${activePeriod.name}`
-              : selectedClassName
-                ? `${classCourseCount} cours · ${classExamCount} examen(s)`
-                : "Sélectionnez une classe pour afficher son emploi du temps."
+            selectedClassName
+              ? `${classSlots.length} créneau(x) hebdomadaire(s)${activePeriod ? ` · vue ${activePeriod.name}` : ""}`
+              : "Sélectionnez une classe pour afficher son emploi du temps."
           }
           actions={
             selectedClassName ? (
@@ -648,6 +604,7 @@ export function CoursePlanningPage() {
         <div className="no-print mt-4 flex flex-wrap gap-3">
           <Field label="Classe">
             <Select
+              data-testid="planning-class-select"
               value={selectedClassName}
               onChange={(event) => {
                 const value = event.target.value;
@@ -685,44 +642,14 @@ export function CoursePlanningPage() {
               }
             />
           </Field>
-          <Field label="Afficher">
-            <Select
-              value={viewKindFilter}
-              onChange={(event) => setViewKindFilter(event.target.value as PlanningViewFilter)}
-              options={[
-                { value: "all", label: "Cours et examens" },
-                { value: "course", label: "Cours uniquement" },
-                { value: "exam", label: "Examens uniquement" },
-              ]}
-            />
-          </Field>
           {canCreate && selectedClassName ? (
             <div className="flex flex-wrap items-end gap-2">
               <Button
-                onClick={() => {
-                  const monday = new Date();
-                  monday.setHours(10, 0, 0, 0);
-                  const day = monday.getDay();
-                  const diff = day === 0 ? -6 : 1 - day;
-                  monday.setDate(monday.getDate() + diff);
-                  const start = monday.toISOString();
-                  const end = new Date(monday.getTime() + 3600000).toISOString();
-                  openCreate("course", start, end);
-                }}
+                data-testid="planning-create-button"
+                disabled={courseOptionsStatus === "loading"}
+                onClick={() => openCreate()}
               >
                 Planifier un cours
-              </Button>
-              <Button
-                variant="secondary"
-                onClick={() => {
-                  const today = new Date();
-                  today.setHours(10, 0, 0, 0);
-                  const start = today.toISOString();
-                  const end = new Date(today.getTime() + 2 * 3600000).toISOString();
-                  openCreate("exam", start, end);
-                }}
-              >
-                Planifier un examen
               </Button>
               {canDelete ? (
                 <Button
@@ -731,51 +658,25 @@ export function CoursePlanningPage() {
                   disabled={saving}
                   onClick={() => void handleResetPlanning()}
                 >
-                  Réinitialiser le planning
+                  Annuler tous les créneaux
                 </Button>
               ) : null}
             </div>
           ) : null}
         </div>
 
-        {consistencyIssues.length ? (
-          <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950">
-            <div className="flex flex-wrap items-start justify-between gap-2">
-              <p className="font-semibold">{consistencyIssues.length} alerte(s) de cohérence</p>
-              {planningRepairAvailable && canUpdate ? (
-                <Button
-                  type="button"
-                  variant="secondary"
-                  size="sm"
-                  disabled={saving}
-                  onClick={() => void handleRepairPlanningData()}
-                >
-                  Corriger les données
-                </Button>
-              ) : null}
-            </div>
-            <ul className="mt-1 list-inside list-disc space-y-0.5 text-xs">
-              {consistencyIssues.slice(0, 5).map((issue) => (
-                <li key={`${issue.slotId}-${issue.message}`}>{issue.message}</li>
-              ))}
-              {consistencyIssues.length > 5 ? (
-                <li>… et {consistencyIssues.length - 5} autre(s)</li>
-              ) : null}
-            </ul>
-          </div>
-        ) : null}
-
         <div className="relative mt-4">
           <CoursePlanningCalendar
-            key={`${selectedClassName}__${selectedPeriodName}__${viewKindFilter}`}
+            key={`${selectedClassName}__${selectedPeriodName}`}
             className={selectedClassName || "—"}
-            events={selectedClassName ? events : []}
-            legendSubjects={selectedClassName ? subjectOptions : []}
+            events={selectedClassName ? calendarEvents : []}
+            legendSubjects={selectedClassName ? classCourses.map((row) => row.name) : []}
             editable={editable && Boolean(selectedClassName)}
             onSelectSlot={handleSelectSlot}
             onEventClick={handleEventClick}
             onEventMove={handleEventMoveStable}
             onEventResize={handleEventResizeStable}
+            onVisibleRangeChange={setVisibleRange}
           />
           {!selectedClassName ? (
             <div className="pointer-events-none absolute inset-0 flex items-center justify-center rounded-xl bg-white/85">
@@ -790,171 +691,71 @@ export function CoursePlanningPage() {
       {form ? (
         <Card className="p-6">
           <SectionHeader
-            title={
-              form.id
-                ? form.kind === "exam"
-                  ? "Modifier l'examen"
-                  : "Modifier le cours"
-                : form.kind === "exam"
-                  ? "Planifier un examen"
-                  : "Planifier un cours"
-            }
-            description={
-              form.kind === "exam"
-                ? `Session d'évaluation ponctuelle pour ${selectedClassName}.`
-                : `Cours récurrent sur une période pour ${selectedClassName}.`
-            }
+            title={form.id ? "Modifier le créneau hebdomadaire" : "Planifier un cours"}
+            description={`Règle weekly pour ${selectedClassName} — jour 1–7 et heures locales, rattachée au cours canonique.`}
           />
           <div className="mt-4 grid gap-4 md:grid-cols-2">
-            <Field label="Type de planification">
-              <Select
-                value={form.kind}
-                onChange={(event) =>
-                  setForm({
-                    ...form,
-                    kind: event.target.value as PlanningScheduleKind,
-                  })
-                }
-                options={[
-                  { value: "course", label: "Cours (récurrent chaque semaine)" },
-                  { value: "exam", label: "Examen (date unique)" },
-                ]}
-              />
-            </Field>
             <Field label="Classe">
               <Input value={selectedClassName} readOnly />
             </Field>
-            <Field label="Matière">
+            <Field label="Cours" hint="Identifiant school_courses, pas le libellé seul." required>
               <Select
-                value={form.subject}
-                onChange={(event) => applySubjectDefaults(event.target.value)}
-                options={subjectOptions.map((name) => ({ value: name, label: name }))}
+                data-testid="planning-course-select"
+                value={form.schoolCourseId}
+                onChange={(event) => applyCourseDefaults(event.target.value)}
+                options={classCourses.map((row) => ({ value: row.schoolCourseId, label: row.name }))}
               />
             </Field>
-            {form.kind === "exam" ? (
-              <>
-                <Field label="Type d'examen">
-                  <Select
-                    value={form.examType}
-                    onChange={(event) => setForm({ ...form, examType: event.target.value })}
-                    options={EXAM_TYPE_OPTIONS.map((value) => ({ value, label: value }))}
-                  />
-                </Field>
-                <Field label="Intitulé" hint="Optionnel — par défaut : type + matière.">
-                  <Input
-                    value={form.examName}
-                    onChange={(event) => setForm({ ...form, examName: event.target.value })}
-                    placeholder={`${form.examType} — ${form.subject || "Matière"}`}
-                  />
-                </Field>
-                <Field label="Date de l'examen">
-                  <Input
-                    type="date"
-                    value={periodDateToInput(form.examDate)}
-                    onChange={(event) =>
-                      setForm({ ...form, examDate: inputToPeriodDate(event.target.value) })
-                    }
-                  />
-                </Field>
-              </>
-            ) : (
-              <>
-                <Field label="Jour de la semaine">
-                  <Select
-                    value={String(form.weekday)}
-                    onChange={(event) =>
-                      setForm({ ...form, weekday: Number(event.target.value) })
-                    }
-                    options={PLANNING_WEEKDAYS.map((row) => ({
-                      value: String(row.value),
-                      label: row.label,
-                    }))}
-                  />
-                </Field>
-                <Field label="Période (modèle)" hint="Remplit les dates ci-dessous ; vous pouvez les ajuster.">
-                  <Select
-                    value={form.periodName}
-                    onChange={(event) => applyPeriodDefaults(event.target.value)}
-                    options={[
-                      ...schoolPeriods.map((row) => ({
-                        value: row.name,
-                        label: `${row.name} (${row.startDate} → ${row.endDate})`,
-                      })),
-                      ...(form.periodName && !schoolPeriods.some((row) => row.name === form.periodName)
-                        ? [{ value: form.periodName, label: form.periodName }]
-                        : []),
-                    ]}
-                  />
-                </Field>
-                <Field label="Du (inclus)" hint="Ex. 10-09-2026">
-                  <Input
-                    type="date"
-                    value={periodDateToInput(form.periodStart)}
-                    onChange={(event) =>
-                      setForm({ ...form, periodStart: inputToPeriodDate(event.target.value) })
-                    }
-                  />
-                </Field>
-                <Field label="Au (inclus)" hint="Ex. 23-12-2026">
-                  <Input
-                    type="date"
-                    value={periodDateToInput(form.periodEnd)}
-                    onChange={(event) =>
-                      setForm({ ...form, periodEnd: inputToPeriodDate(event.target.value) })
-                    }
-                  />
-                </Field>
-              </>
-            )}
-            <Field label="Heure de début">
+            <Field label="Jour de la semaine">
+              <Select
+                data-testid="planning-weekday"
+                value={String(form.weekday)}
+                onChange={(event) =>
+                  setForm({ ...form, weekday: Number(event.target.value) })
+                }
+                options={PLANNING_WEEKDAYS.map((row) => ({
+                  value: String(row.value),
+                  label: row.label,
+                }))}
+              />
+            </Field>
+            <Field label="Heure de début" required>
               <Input
                 type="time"
+                data-testid="planning-start-time"
                 value={form.startTime}
                 onChange={(event) => setForm({ ...form, startTime: event.target.value })}
               />
             </Field>
-            <Field label="Heure de fin">
+            <Field label="Heure de fin" required>
               <Input
                 type="time"
+                data-testid="planning-end-time"
                 value={form.endTime}
                 onChange={(event) => setForm({ ...form, endTime: event.target.value })}
               />
             </Field>
             <Field
               label="Enseignant"
-              hint={
-                resolvedFormTeacher?.fromCourse
-                  ? "Professeur affecté automatiquement à ce cours pour cette classe."
-                  : undefined
-              }
+              hint="Issu du cours canonique — non saisissable ici."
             >
-              {resolvedFormTeacher?.fromCourse ? (
-                <Input value={resolvedFormTeacher.teacherName} readOnly />
-              ) : (
-                <Select
-                  value={form.teacherId}
-                  onChange={(event) => {
-                    const teacher = teachers.find((row) => String(row.id) === event.target.value);
-                    setForm({
-                      ...form,
-                      teacherId: event.target.value,
-                      teacherName: String(
-                        teacher?.name ?? `${teacher?.firstName ?? ""} ${teacher?.lastName ?? ""}`.trim(),
-                      ),
-                    });
-                  }}
-                  options={[
-                    { value: "", label: "— Sélectionner —" },
-                    ...teachers.map((row) => ({
-                      value: String(row.id ?? ""),
-                      label: String((row.name ?? `${row.firstName ?? ""} ${row.lastName ?? ""}`.trim()) || row.id),
-                    })),
-                  ]}
-                />
-              )}
+              <Input value={resolvedFormTeacher?.teacherName || form.teacherName || "—"} readOnly />
             </Field>
-            <Field label="Salle">
-              <Input value={form.room} onChange={(event) => setForm({ ...form, room: event.target.value })} />
+            <Field label="Salle" hint="Salle canonique optionnelle. Aucune salle si l'établissement ne gère pas encore les locaux.">
+              <Select
+                data-testid="planning-room-select"
+                value={form.roomId}
+                onChange={(event) => setForm({ ...form, roomId: event.target.value })}
+                options={[
+                  { value: "", label: "Aucune salle" },
+                  ...rooms.map((room) => ({
+                    value: room.id,
+                    label: `${room.name}${room.capacity ? ` · ${room.capacity} places` : ""}${
+                      room.capacityWarning ? " · ⚠ capacité" : ""
+                    }`,
+                  })),
+                ]}
+              />
             </Field>
           </div>
           {buildSlotFromForm() ? (
@@ -963,16 +764,38 @@ export function CoursePlanningPage() {
             </p>
           ) : null}
           <div className="mt-4 flex flex-wrap gap-3">
-            <Button disabled={saving} onClick={() => void saveForm()}>
+            <Button
+              data-testid="planning-save-button"
+              disabled={saving || !(form.id ? canUpdate : canCreate)}
+              onClick={() => void saveForm()}
+            >
               {saving ? "Enregistrement…" : "Enregistrer"}
             </Button>
             {form.id && canDelete ? (
-              <Button variant="secondary" disabled={saving} onClick={() => void deleteForm()}>
-                Supprimer
+              <Button
+                variant="secondary"
+                data-testid="planning-cancel-slot-button"
+                disabled={saving}
+                onClick={() => void deleteForm()}
+              >
+                Annuler le créneau
+              </Button>
+            ) : null}
+            {form.id && form.occurrenceDate && replacements.canCreate ? (
+              <Button
+                variant="secondary"
+                data-testid="planning-program-replacement"
+                onClick={() =>
+                  navigate(
+                    `/planning/remplacements?weeklySlotId=${encodeURIComponent(form.id)}&occurrenceDate=${encodeURIComponent(form.occurrenceDate)}`,
+                  )
+                }
+              >
+                Programmer un remplacement
               </Button>
             ) : null}
             <Button variant="secondary" onClick={() => setForm(null)}>
-              Annuler
+              Fermer
             </Button>
           </div>
         </Card>

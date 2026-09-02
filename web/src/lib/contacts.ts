@@ -9,7 +9,7 @@ import {
 } from "./userAccounts";
 import { resolveCountryScopeFromSchool } from "./format";
 import { resolveEffectivePermissions } from "./permissions";
-import { generateStudentMatricule, generateTeacherIdentifiers, resolveStudentMatricule } from "./entityIdentifiers";
+import { generateTeacherIdentifiers, resolveStudentMatricule } from "./entityIdentifiers";
 import { findDuplicateLoginIdentifier } from "./userAccountRules";
 
 type Row = Record<string, unknown>;
@@ -201,6 +201,9 @@ export function promoteContactToUser(
 
   const role = String(contact.role ?? "").trim();
   const secondaryRole = String(contact.secondaryRole ?? "").trim();
+  if (/élève|eleve|étudiant|etudiant/i.test(role)) {
+    throw new Error("Le compte élève est créé à l'inscription (Classes). Matricule = identifiant de connexion.");
+  }
 
   const users = [...state.users];
   const existingIndex = users.findIndex(
@@ -337,13 +340,33 @@ export function getLinkableContactOptions(
 }
 
 /** Retrouve une fiche existante par contactId, sinon par nom + prénom (dans le même établissement). */
-function findFicheIndex(rows: Row[], contact: Row, contactId: string, schoolCode: string): number {
+function findFicheIndex(
+  rows: Row[],
+  contact: Row,
+  contactId: string,
+  schoolCode: string,
+  allowNameFallback = true,
+): number {
   if (contactId) {
-    const byContact = rows.findIndex(
-      (row) => normalize(String(row.contactId ?? "")) === normalize(contactId),
-    );
-    if (byContact >= 0) return byContact;
+    const byContact = rows
+      .map((row, index) => ({ row, index }))
+      .filter(
+        ({ row }) =>
+          normalize(String(row.contactId ?? "")) === normalize(contactId) &&
+          (allowNameFallback || normalize(String(row.schoolCode ?? "")) === normalize(schoolCode)),
+      );
+    if (byContact.length > 1) {
+      const error = new Error(
+        "Plusieurs fiches enseignant correspondent au même contact dans l'établissement",
+      ) as Error & { code?: string; statusCode?: number };
+      error.code = "TEACHER_CANON_AMBIGUOUS";
+      error.statusCode = 409;
+      throw error;
+    }
+    const match = byContact[0];
+    if (match) return match.index;
   }
+  if (!allowNameFallback) return -1;
   const lastName = normalize(String(contact.lastName ?? ""));
   const firstName = normalize(String(contact.firstName ?? ""));
   const school = normalize(schoolCode);
@@ -394,7 +417,7 @@ export function linkContactToOperationalRecord(
     const idx = findFicheIndex(students, contact, contactId, schoolCode);
     if (idx >= 0) {
       const existing = students[idx];
-      const matriculeInfo = resolveStudentMatricule(existing, schoolCode, students);
+      const matriculeInfo = resolveStudentMatricule(existing);
       students[idx] = {
         ...existing,
         name: existing.name || lastName,
@@ -404,8 +427,8 @@ export function linkContactToOperationalRecord(
         birthDate: existing.birthDate ?? contact.birthDate,
         phone: existing.phone ?? contact.phone,
         email: existing.email ?? contact.email,
-        matricule: matriculeInfo.matricule,
-        publicId: matriculeInfo.publicId,
+        matricule: matriculeInfo.matricule || existing.matricule,
+        publicId: matriculeInfo.publicId || existing.publicId,
         contactId,
       };
       return {
@@ -416,35 +439,14 @@ export function linkContactToOperationalRecord(
         created: false,
       };
     }
-    const id = newRecordId("STUDENTS");
-    const matricule = generateStudentMatricule(schoolCode, students);
-    const record: Row = {
-      id,
-      name: lastName,
-      firstName,
-      className: "",
-      schoolCode,
-      gender: contact.gender ?? "Non renseigné",
-      birthDate: contact.birthDate ?? "",
-      phone: contact.phone ?? "",
-      email: contact.email ?? "",
-      matricule,
-      publicId: matricule,
-      archived: false,
-      contactId,
-    };
-    return {
-      contact: { ...contact, studentId: id },
-      students: [record, ...students],
-      linkedType: "student",
-      linkedRecordId: id,
-      created: true,
-    };
+    // Pas de création locale : matricule = login, attribué par PostgreSQL à l'inscription.
+    return { contact };
   }
 
   if (TEACHER_CONTACT_TYPES.has(contactType)) {
     const teachers = [...((state.teachers ?? []) as Row[])];
-    const idx = findFicheIndex(teachers, contact, contactId, schoolCode);
+    // Un nom/prénom n'est jamais une clé canonique enseignant suffisante.
+    const idx = findFicheIndex(teachers, contact, contactId, schoolCode, false);
     if (idx >= 0) {
       const existing = teachers[idx];
       teachers[idx] = {

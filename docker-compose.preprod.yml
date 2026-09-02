@@ -1,6 +1,6 @@
 # Stack préproduction API Somafrik — PostgreSQL + backend API-only + Caddy (HTTPS)
-# Frontend web : Vercel (https://preprod.somafrik.app, branche develop)
-# API preprod hebergee : https://somafrik-api-preprod.onrender.com
+# Frontend web hébergé sur Render Static Site `somafrik-web-preprod` : https://preprod.somafrik.app
+# API préprod hébergée sur Render : https://somafrik-api-preprod.onrender.com
 # Usage : docker compose -f docker-compose.preprod.yml --env-file .env.preproduction up -d --build
 
 name: somafrik-preprod
@@ -42,6 +42,7 @@ services:
       DATABASE_URL: ${DATABASE_URL:-postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}}
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET requis}
       APP_ENV: ${APP_ENV:-preproduction}
+      SOMAFRIK_PUSH_SELFTEST_ENABLED: ${SOMAFRIK_PUSH_SELFTEST_ENABLED:-false}
       SOMAFRIK_API_ONLY: "true"
       SOMAFRIK_DB_REQUIRED: "true"
       SOMAFRIK_SKIP_DEMO_SEED: "true"
@@ -49,6 +50,10 @@ services:
       TRUST_PROXY_HOPS: ${TRUST_PROXY_HOPS:-1}
       JSON_BODY_LIMIT: ${JSON_BODY_LIMIT:-2mb}
       LOGIN_RATE_LIMIT_MAX: ${LOGIN_RATE_LIMIT_MAX:-15}
+      SOMAFRIK_COMMUNICATION_STORAGE: ${SOMAFRIK_COMMUNICATION_STORAGE:-/var/lib/somafrik/communication-storage}
+    volumes:
+      # Named volume must mount at the same path the API writes to.
+      - communication_storage:${SOMAFRIK_COMMUNICATION_STORAGE:-/var/lib/somafrik/communication-storage}
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:5000/api/health >/dev/null 2>&1 || exit 1"]
       interval: 15s
@@ -82,5 +87,6 @@ networks:
 
 volumes:
   postgres_preprod_data:
+  communication_storage:
   caddy_data:
   caddy_config:

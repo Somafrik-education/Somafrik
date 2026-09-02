@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <title>1ère A — Présence —</title>
+    <style>
+      body {
+        margin: 0;
+        font-family: Inter, system-ui, sans-serif;
+        background: #f8fafc;
+        padding: 32px;
+      }
+      .card {
+        background: #fff;
+        border-radius: 26px;
+        padding: 16px;
+        max-width: 420px;
+        display: flex;
+        align-items: center;
+        box-shadow: 0 8px 14px rgba(15, 23, 42, 0.06);
+      }
+      .icon {
+        width: 54px;
+        height: 54px;
+        border-radius: 18px;
+        background: #eff6ff;
+        margin-right: 14px;
+        flex-shrink: 0;
+      }
+      .name {
+        font-size: 18px;
+        font-weight: 900;
+        color: #0f172a;
+      }
+      .row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 8px;
+      }
+      .badge {
+        background: #ecfdf5;
+        padding: 5px 10px;
+        border-radius: 999px;
+        font-size: 12px;
+        font-weight: 900;
+        color: #16a34a;
+        white-space: nowrap;
+      }
+      .info {
+        margin-top: 6px;
+        font-size: 14px;
+        font-weight: 800;
+        color: #2563eb;
+      }
+      .caption {
+        margin-top: 16px;
+        color: #64748b;
+        font-size: 13px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="card" data-testid="class-card-1ere-a">
+      <div class="icon"></div>
+      <div>
+        <div class="row">
+          <div class="name">1ère A</div>
+          <div class="badge" data-testid="class-presence-badge">Présence —</div>
+        </div>
+        <div class="info">0 élève</div>
+      </div>
+    </div>
+    <p class="caption">P0 corrigé : classe vide → Présence —, jamais le taux global.</p>
+  </body>
+</html>

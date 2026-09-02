@@ -3,8 +3,8 @@ import { useAuth } from "../../context/AuthContext";
 import { useData } from "../../context/DataContext";
 import { scopedSchools, scopedSubscriptions } from "../../lib/scope";
 import { mergeSubscriptionsWithSchools } from "../../lib/subscriptions";
+import { platformApi } from "../../lib/platformApi";
 import {
-  appendSubscriptionAudit,
   createSubscriptionFromOffer,
   ensureSubscriptionOffers,
   enrichSubscription,
@@ -27,7 +27,7 @@ import type { School, Subscription } from "../../types";
 
 export function SubscriptionSchoolsPage() {
   const { session } = useAuth();
-  const { state, update } = useData();
+  const { state, refresh } = useData();
   const { showToast } = useToast();
   const [busy, setBusy] = useState(false);
   const [assignSchool, setAssignSchool] = useState("");
@@ -84,32 +84,10 @@ export function SubscriptionSchoolsPage() {
 
     setBusy(true);
     const created = createSubscriptionFromOffer(school, offer, { startTrial });
-    const next = [
-      ...state.subscriptions.filter((s) => normalize(s.schoolCode) !== normalize(school.code)),
-      created,
-    ];
 
     try {
-      await update({
-        subscriptions: next,
-        schools: state.schools.map((s) =>
-          normalize(s.code) === normalize(school.code)
-            ? {
-                ...s,
-                subscriptionPlan: offer.name,
-                subscriptionStatus: created.paymentStatus,
-                subscriptionEndDate: created.endDate,
-              }
-            : s,
-        ),
-        subscriptionAuditLog: appendSubscriptionAudit(state.subscriptionAuditLog, {
-          action: "Attribution abonnement",
-          schoolCode: school.code,
-          subscriptionId: created.id,
-          author: user?.identifier ?? user?.email,
-          details: `${offer.name}${startTrial ? " (essai)" : ""}`,
-        }),
-      });
+      await platformApi.upsertSubscription(created as unknown as Record<string, unknown>);
+      await refresh();
       setAssignSchool("");
       setAssignOfferId("");
       showToast("Abonnement attribué", "success");
@@ -125,22 +103,21 @@ export function SubscriptionSchoolsPage() {
     const nextYear = new Date();
     nextYear.setFullYear(nextYear.getFullYear() + 1);
     const endDate = nextYear.toLocaleDateString("fr-FR").replace(/\//g, "-");
-    const next = state.subscriptions.map((item) => {
-      if (normalize(String(item.schoolCode)) !== normalize(String(subscription.schoolCode))) {
-        return item;
-      }
-      return {
-        ...item,
-        lifecycleStatus: "Actif" as const,
+    try {
+      const target = state.subscriptions.find(
+        (item) => normalize(String(item.schoolCode)) === normalize(String(subscription.schoolCode)),
+      );
+      await platformApi.upsertSubscription({
+        ...(target ?? subscription),
+        schoolCode: subscription.schoolCode,
+        lifecycleStatus: "Actif",
         status: "Actif",
         paymentStatus: "À jour",
-        accessLevel: "full" as const,
+        accessLevel: "full",
         endDate,
         nextRenewalDate: endDate,
-      };
-    });
-    try {
-      await update({ subscriptions: next });
+      });
+      await refresh();
       showToast("Abonnement renouvelé", "success");
     } catch {
       showToast("Échec du renouvellement", "error");
@@ -151,28 +128,19 @@ export function SubscriptionSchoolsPage() {
 
   async function suspend(subscription: Subscription) {
     setBusy(true);
-    const next = state.subscriptions.map((item) => {
-      if (normalize(String(item.schoolCode)) !== normalize(String(subscription.schoolCode))) {
-        return item;
-      }
-      return {
-        ...item,
-        lifecycleStatus: "Suspendu" as const,
-        status: "Suspendu",
-        accessLevel: "blocked" as const,
-        suspensionReason: "Suspension manuelle",
-      };
-    });
     try {
-      await update({
-        subscriptions: next,
-        subscriptionAuditLog: appendSubscriptionAudit(state.subscriptionAuditLog, {
-          action: "Suspension",
-          schoolCode: subscription.schoolCode,
-          author: user?.identifier ?? user?.email,
-          details: "Suspension manuelle",
-        }),
+      const target = state.subscriptions.find(
+        (item) => normalize(String(item.schoolCode)) === normalize(String(subscription.schoolCode)),
+      );
+      await platformApi.upsertSubscription({
+        ...(target ?? subscription),
+        schoolCode: subscription.schoolCode,
+        lifecycleStatus: "Suspendu",
+        status: "Suspendu",
+        accessLevel: "blocked",
+        suspensionReason: "Suspension manuelle",
       });
+      await refresh();
       showToast("Abonnement suspendu", "success");
     } catch {
       showToast("Échec", "error");

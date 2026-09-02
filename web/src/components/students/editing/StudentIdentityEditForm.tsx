@@ -1,5 +1,6 @@
 import type { EditableStudentIdentity, StudentGender } from "../../../lib/studentEditing";
 import type { StudentEditValidationError } from "../../../lib/studentEditing";
+import { RequiredMark } from "../../../design-system/forms/RequiredMark";
 
 interface StudentIdentityEditFormProps {
   value: EditableStudentIdentity;
@@ -186,7 +187,7 @@ function Field({
         className="block text-xs font-semibold uppercase tracking-wide text-muted"
       >
         {label}
-        {required ? " *" : ""}
+        {required ? <RequiredMark /> : null}
       </label>
       <input
         id={id}

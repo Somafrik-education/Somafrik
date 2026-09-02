@@ -5,19 +5,6 @@ import { normalize } from "./format";
 
 export type PaymentRecord = Record<string, unknown>;
 
-export const FEE_TYPES = [
-  "Inscription",
-  "Réinscription",
-  "Minerval / scolarité",
-  "Frais d'examen",
-  "Frais de bulletin",
-  "Frais de transport",
-  "Frais de cantine",
-  "Autre frais",
-] as const;
-
-export type FeeType = (typeof FEE_TYPES)[number];
-
 export const PAYMENT_METHODS = [
   "Espèces",
   "Mobile money",
@@ -29,6 +16,8 @@ export const PAYMENT_METHODS = [
 
 export type PaymentMethod = (typeof PAYMENT_METHODS)[number];
 
+export type FeeType = string;
+
 export const QUICK_AMOUNT_SHORTCUTS = [5000, 10000, 25000, 50000, 100000] as const;
 
 export const OVERPAYMENT_ACTIONS = [
@@ -38,27 +27,48 @@ export const OVERPAYMENT_ACTIONS = [
   "Affecté à un autre frais",
 ] as const;
 
-/** Montants dus par défaut (MVP — remplacés par Frais & tarifs ultérieurement). */
-export const DEFAULT_FEE_AMOUNTS: Record<FeeType, number> = {
+/** Montants dus par défaut (MVP — soldes canoniques F4). Clés = labels catalogue F2. */
+export const DEFAULT_FEE_AMOUNTS: Record<string, number> = {
   Inscription: 50_000,
-  "Réinscription": 40_000,
-  "Minerval / scolarité": 100_000,
-  "Frais d'examen": 15_000,
-  "Frais de bulletin": 10_000,
-  "Frais de transport": 30_000,
-  "Frais de cantine": 25_000,
-  "Autre frais": 20_000,
+  Réinscription: 40_000,
+  Scolarité: 100_000,
+  Examen: 15_000,
+  Uniforme: 20_000,
+  Transport: 30_000,
+  Cantine: 25_000,
+  Autre: 20_000,
 };
 
 export interface StudentSearchResult {
   id: string;
   name: string;
   matricule: string;
+  classId?: string;
+  classCode?: string;
   className: string;
   schoolCode: string;
   schoolName: string;
   parentPhone: string;
   parentEmail: string;
+}
+
+export function collectStudentPaymentClasses(
+  studentId: string,
+  students: Array<Record<string, unknown> | StudentSearchResult>,
+): Array<{ classId: string; className: string }> {
+  const wanted = String(studentId ?? "").trim();
+  if (!wanted) return [];
+  const acc: Array<{ classId: string; className: string }> = [];
+  for (const student of students) {
+    if (String(student.id ?? "").trim() !== wanted) continue;
+    const classId = String(student.classId ?? "").trim();
+    if (!classId || acc.some((row) => row.classId === classId)) continue;
+    acc.push({
+      classId,
+      className: String(student.className ?? student.classCode ?? classId),
+    });
+  }
+  return acc;
 }
 
 export interface FeeBalance {
@@ -67,6 +77,38 @@ export interface FeeBalance {
   amountPaid: number;
   remaining: number;
   currency: string;
+}
+
+export interface QuickPaymentLine {
+  id: string;
+  obligationId: string;
+  amount: string;
+}
+
+export function createPaymentLine(obligationId = "__unallocated__"): QuickPaymentLine {
+  const rand = globalThis.crypto?.randomUUID?.() ?? `line-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  return { id: rand, obligationId, amount: "" };
+}
+
+export function parseLineAmount(value: string | number | undefined): number {
+  return Number(String(value ?? "").replace(/\s/g, "").replace(",", "."));
+}
+
+export function sumPaymentLines(lines: { amount?: string | number }[]): number {
+  return lines.reduce((sum, line) => {
+    const amount = parseLineAmount(line.amount ?? "");
+    return sum + (Number.isFinite(amount) ? amount : 0);
+  }, 0);
+}
+
+export function paymentItemsDetailLabel(items: unknown): string {
+  const list = Array.isArray(items) ? items : [];
+  if (!list.length) return "";
+  if (list.length === 1) {
+    const first = list[0] as { feeLabel?: string; feeType?: string } | undefined;
+    return String(first?.feeLabel || first?.feeType || "1 libellé");
+  }
+  return `${list.length} libellés`;
 }
 
 export interface QuickPaymentInput {
@@ -90,7 +132,7 @@ export function defaultPaymentDate(): string {
 }
 
 export function resolveSchoolCurrency(school?: School | null): string {
-  return String(school?.currency ?? "CDF").trim() || "CDF";
+  return String(school?.currency ?? "").trim().toUpperCase();
 }
 
 export function resolveSchoolYear(state: BackOfficeState, schoolCode: string): string {
@@ -133,10 +175,12 @@ export function searchStudentsForPayment(
         student.firstName,
         student.lastName,
         student.matricule,
+        student.studentCode,
         student.publicId,
         student.id,
-        student.parentPhone,
-        student.parentEmail,
+        student.studentId,
+        student.className,
+        student.classCode,
       ]
         .map((value) => normalize(value))
         .join(" ");
@@ -149,39 +193,29 @@ export function searchStudentsForPayment(
       return {
         id: String(student.id ?? ""),
         name: String(student.name ?? `${student.firstName ?? ""} ${student.lastName ?? ""}`.trim()),
-        matricule: String(student.matricule ?? student.publicId ?? student.id ?? ""),
+        matricule: String(student.matricule ?? student.studentCode ?? student.publicId ?? student.id ?? student.studentId ?? ""),
+        classId: String(student.classId ?? "").trim() || undefined,
+        classCode: String(student.classCode ?? "").trim() || undefined,
         className: String(student.className ?? ""),
         schoolCode: code,
         schoolName: String(school?.name ?? code),
-        parentPhone: String(student.parentPhone ?? ""),
-        parentEmail: String(student.parentEmail ?? ""),
+        parentPhone: "",
+        parentEmail: "",
       };
     });
 }
 
-function matchesPaymentFeeType(studentFee: StudentFee, feeType: FeeType): boolean {
-  const label = normalize(String(studentFee.label ?? ""));
+function isTuitionToken(value: string): boolean {
+  const token = normalize(value);
+  return token === "scolarite" || token === "mensualite" || token.includes("minerval");
+}
+
+function matchesPaymentFeeType(studentFee: StudentFee, feeType: string): boolean {
   const type = normalize(String(studentFee.feeType ?? ""));
-  switch (feeType) {
-    case "Inscription":
-      return type === "inscription";
-    case "Réinscription":
-      return label.includes("reinscription") || type === "inscription";
-    case "Minerval / scolarité":
-      return type === "mensualite" || label.includes("minerval") || label.includes("scolarite");
-    case "Frais d'examen":
-      return label.includes("examen");
-    case "Frais de bulletin":
-      return label.includes("bulletin");
-    case "Frais de transport":
-      return label.includes("transport");
-    case "Frais de cantine":
-      return label.includes("cantine");
-    case "Autre frais":
-      return type === "annexe";
-    default:
-      return false;
-  }
+  const wanted = normalize(feeType);
+  if (!wanted) return false;
+  if (type === wanted) return true;
+  return isTuitionToken(wanted) && isTuitionToken(type);
 }
 
 export function computeFeeBalance(
@@ -271,12 +305,18 @@ export function resolvePaymentStatus(
   amount: number,
   remainingBeforePayment: number,
   method: PaymentMethod,
+  leftover = Math.max(0, amount - remainingBeforePayment),
 ): string {
-  if (method === "Mobile money") {
-    return "En attente de confirmation";
+  void method;
+  const allocated = Math.max(0, amount - leftover);
+  if (amount > 0 && allocated === 0) {
+    return "Non imputé";
+  }
+  if (allocated > 0 && leftover > 0) {
+    return "Partiel";
   }
   if (remainingBeforePayment <= 0) {
-    return "Payé";
+    return "Non imputé";
   }
   if (amount >= remainingBeforePayment) {
     return "Payé";
@@ -307,7 +347,7 @@ export function buildQuickPaymentRecord(
   const now = new Date().toISOString();
   const remainingBefore = balance.remaining;
   const overpayment = Math.max(0, input.amount - remainingBefore);
-  const status = resolvePaymentStatus(input.amount, remainingBefore, input.method);
+  const status = resolvePaymentStatus(input.amount, remainingBefore, input.method, overpayment);
 
   return {
     id: reference,
@@ -401,6 +441,33 @@ export function validateQuickPaymentInput(input: Partial<QuickPaymentInput>): st
   const amount = Number(input.amount);
   if (!Number.isFinite(amount) || amount <= 0) return "Le montant doit être supérieur à zéro";
   if (!input.date?.trim()) return "La date du paiement est obligatoire";
+  return null;
+}
+
+export function validateMultiItemPaymentInput(input: {
+  student?: StudentSearchResult | null;
+  classId?: string;
+  classOptions?: Array<{ classId: string }>;
+  method?: string;
+  date?: string;
+  lines?: QuickPaymentLine[];
+}): string | null {
+  if (!input.student?.id) return "Veuillez sélectionner un élève";
+  const classOptions = input.classOptions ?? [];
+  if (!classOptions.length) return "Cet élève n'a aucune inscription active.";
+  if (!String(input.classId ?? "").trim()) return "Veuillez sélectionner une classe";
+  if (!classOptions.some((row) => row.classId === String(input.classId ?? "").trim())) {
+    return "Classe invalide pour cet élève.";
+  }
+  if (!input.method) return "Veuillez sélectionner le mode de paiement";
+  if (!input.date?.trim()) return "La date du paiement est obligatoire";
+  const lines = input.lines ?? [];
+  if (!lines.length) return "Ajoutez au moins un libellé";
+  for (const line of lines) {
+    if (!String(line.obligationId ?? "").trim()) return "Chaque ligne doit cibler une obligation ou Non imputé";
+    const amount = parseLineAmount(line.amount);
+    if (!Number.isFinite(amount) || amount <= 0) return "Chaque libellé doit avoir un montant strictement positif";
+  }
   return null;
 }
 

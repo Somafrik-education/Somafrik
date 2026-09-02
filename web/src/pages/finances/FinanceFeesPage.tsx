@@ -1,4 +1,4 @@
-import { useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { useAuth } from "../../context/AuthContext";
 import { useData } from "../../context/DataContext";
 import { useActiveSchool } from "../../context/ActiveSchoolContext";
@@ -11,23 +11,19 @@ import { Modal } from "../../components/ui/Modal";
 import { Field, Input, Select } from "../../components/ui/Field";
 import { useToast } from "../../components/ui/Toast";
 import { useConfirm } from "../../components/ui/ConfirmDialog";
-import type { FeeGrid, SchoolFeeItem, SchoolFeeType, StudentFee } from "../../types";
+import type { FeeGrid, SchoolFeeItem, StudentFee } from "../../types";
 import {
-  applyFeeGridToStudents,
-  canViewFeeGrids,
   classOptionsForSchool,
+  classChoicesForSchool,
   DEFAULT_MONTHLY_MONTHS,
   isGridEditable,
   itemsForGrid,
   newFeeId,
-  recordTariffHistory,
-  refreshStudentFeeStatuses,
   resolveAcademicYear,
   resolveSchoolCurrency,
   scopedFeeGrids,
   scopedSchoolFeeItems,
   scopedStudentFees,
-  SCHOOL_FEE_TYPES,
   studentFeeSummary,
   validateFeeGridInput,
 } from "../../lib/fees";
@@ -39,13 +35,16 @@ import {
 } from "../../lib/feePermissions";
 import { inputToPeriodDate, normalizePeriodDate, periodDateToInput } from "../../lib/dates";
 import { usePermissionContext } from "../../lib/usePermissionContext";
-import { appendAuditLog, auditActor, makeAuditEntry } from "../../lib/audit";
 import { normalize } from "../../lib/format";
 import { QuickFeeGridModal } from "../../components/fees/QuickFeeGridModal";
+import { financeApi } from "../../lib/financeApi";
+import { createFinanceIdempotencyKey } from "../../lib/financeIdempotency";
+import { formatFinanceAmount, resolveFinanceCurrency } from "../../lib/financeCurrency";
+import { EmptyState, ErrorState, LoadingState } from "../../design-system";
 
 interface DraftItem {
   id?: string;
-  feeType: SchoolFeeType;
+  feeType: string;
   label: string;
   amount: string;
   mandatory: boolean;
@@ -66,11 +65,12 @@ const EMPTY_ITEM: DraftItem = {
 
 export function FinanceFeesPage() {
   const { session } = useAuth();
-  const { state, update } = useData();
+  const { state, refresh } = useData();
   const { activeSchoolCode, activeSchool } = useActiveSchool();
   const ctx = usePermissionContext();
   const { showToast } = useToast();
   const { confirm } = useConfirm();
+  const applyIntentionRef = useRef(new Map<string, string>());
 
   const schoolCode = useMemo(() => {
     const raw =
@@ -82,7 +82,7 @@ export function FinanceFeesPage() {
     return String(raw).trim().toUpperCase();
   }, [activeSchoolCode, session?.user?.schoolCode, state.schools]);
 
-  const canRead = canReadFees(ctx) || canViewFeeGrids(session?.user ?? null);
+  const canRead = canReadFees(ctx);
   const canCreate = canCreateFees(ctx);
   const canUpdate = canUpdateFees(ctx);
   const canApply = canApplyFees(ctx);
@@ -94,6 +94,28 @@ export function FinanceFeesPage() {
   const [filterClass, setFilterClass] = useState("");
   const [filterYear, setFilterYear] = useState("");
   const [quickOpen, setQuickOpen] = useState(false);
+  const [feeTypeCatalog, setFeeTypeCatalog] = useState<Array<{ feeType: string; label: string }>>([
+    { feeType: "Inscription", label: "Inscription" },
+  ]);
+  const [catalogCurrency, setCatalogCurrency] = useState("");
+  const [catalogLoading, setCatalogLoading] = useState(true);
+  const [catalogError, setCatalogError] = useState("");
+
+  useEffect(() => {
+    setCatalogLoading(true);
+    setCatalogError("");
+    void financeApi
+      .getFinanceCatalog()
+      .then((catalog) => {
+        const rows = catalog.feeTypeCatalog ?? catalog.canonicalFeeTypes ?? [];
+        if (rows.length) setFeeTypeCatalog(rows);
+        if (catalog.currency) setCatalogCurrency(catalog.currency);
+      })
+      .catch((cause) => {
+        setCatalogError(cause instanceof Error ? cause.message : "Impossible de charger le catalogue financier.");
+      })
+      .finally(() => setCatalogLoading(false));
+  }, []);
 
   const grids = useMemo(() => {
     let rows = scopedFeeGrids(session?.user ?? null, state);
@@ -103,8 +125,10 @@ export function FinanceFeesPage() {
   }, [session?.user, state, filterClass, filterYear]);
 
   const allItems = scopedSchoolFeeItems(session?.user ?? null, state);
-  const studentFees = refreshStudentFeeStatuses(scopedStudentFees(session?.user ?? null, state));
+  const studentFees = scopedStudentFees(session?.user ?? null, state);
+  const currency = resolveFinanceCurrency(catalogCurrency, activeSchool?.currency, resolveSchoolCurrency(state, schoolCode));
   const classOptions = useMemo(() => classOptionsForSchool(state, schoolCode), [state, schoolCode]);
+  const classChoices = useMemo(() => classChoicesForSchool(state, schoolCode), [state, schoolCode]);
   const years = useMemo(
     () => [...new Set(grids.map((g) => g.academicYear))].sort().reverse(),
     [grids],
@@ -120,14 +144,15 @@ export function FinanceFeesPage() {
     );
   }
 
-  async function persist(patch: Parameters<typeof update>[0], message: string) {
+  async function persistFinance(action: () => Promise<unknown>, message: string) {
     setBusy(true);
     try {
-      await update(patch);
+      await action();
+      await refresh();
       showToast(message, "success");
-    } catch {
-      showToast("Échec de la synchronisation", "error");
-      throw new Error("sync failed");
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "Échec de la synchronisation", "error");
+      throw error;
     } finally {
       setBusy(false);
     }
@@ -138,8 +163,10 @@ export function FinanceFeesPage() {
       id: newFeeId("FEEGRID"),
       schoolCode,
       academicYear: resolveAcademicYear(state, schoolCode),
-      className: classOptions[0] ?? "",
-      currency: resolveSchoolCurrency(state, schoolCode),
+      classId: classChoices[0]?.classId ?? "",
+      classCode: classChoices[0]?.classCode ?? "",
+      className: classChoices[0]?.className ?? classOptions[0] ?? "",
+      currency: resolveFinanceCurrency(catalogCurrency, resolveSchoolCurrency(state, schoolCode)),
       status: "Brouillon",
       periodName: "",
       periodStart: "",
@@ -197,7 +224,7 @@ export function FinanceFeesPage() {
         amount: Number(item.amount),
         mandatory: item.mandatory,
         dueDate: item.dueDate ? normalizePeriodDate(item.dueDate) : undefined,
-        monthlyMonths: item.feeType === "Mensualité" ? item.monthlyMonths : undefined,
+        monthlyMonths: item.monthlyMonths?.length ? item.monthlyMonths : undefined,
         status: item.status,
       }));
 
@@ -207,54 +234,25 @@ export function FinanceFeesPage() {
       return;
     }
 
-    const nextGrids = exists
-      ? (state.feeGrids ?? []).map((g) =>
-          g.id === editing.id ? { ...editing, updatedAt: new Date().toISOString() } : g,
-        )
-      : [...(state.feeGrids ?? []), editing];
-
-    const otherItems = (state.schoolFeeItems ?? []).filter((item) => item.feeGridId !== editing.id);
-    const nextItems = [
-      ...otherItems,
-      ...(parsedItems as SchoolFeeItem[]),
-    ];
-
-    let history = state.feeTariffHistory ?? [];
-    if (exists) {
-      for (const item of parsedItems as SchoolFeeItem[]) {
-        const prior = (state.schoolFeeItems ?? []).find((row) => row.id === item.id);
-        if (prior && prior.amount !== item.amount) {
-          history = recordTariffHistory(history, {
-            schoolFeeItemId: item.id,
-            schoolCode: editing.schoolCode,
-            previousAmount: prior.amount,
-            newAmount: item.amount,
-            changedBy: session?.user?.identifier ?? session?.user?.firstName,
-            reason: "Modification tarif",
-          });
-        }
-      }
-    }
-
-    const auditEntries = [
-      makeAuditEntry({
-        ...auditActor(session?.user ?? null),
-        action: exists ? "fee.grid.update" : "fee.grid.create",
-        entityType: "fee_grid",
-        entityId: editing.id,
-        entityLabel: `${editing.className} · ${editing.academicYear}`,
-        schoolCode: editing.schoolCode,
-      }),
-    ];
+    const payload = {
+      classId: editing.classId,
+      classCode: editing.classCode,
+      className: editing.className,
+      academicYear: editing.academicYear,
+      periodName: editing.periodName,
+      periodStart: editing.periodStart,
+      periodEnd: editing.periodEnd,
+      currency: editing.currency,
+      name: editing.className,
+      items: parsedItems,
+    };
 
     try {
-      await persist(
-        {
-          feeGrids: nextGrids,
-          schoolFeeItems: nextItems,
-          feeTariffHistory: history,
-          auditLog: appendAuditLog(state.auditLog, ...auditEntries),
-        },
+      await persistFinance(
+        () =>
+          exists
+            ? financeApi.updateFeeGrid(editing.id, payload)
+            : financeApi.createFeeGrid(payload),
         exists ? "Grille tarifaire enregistrée" : "Grille tarifaire créée",
       );
       setEditing(null);
@@ -265,11 +263,15 @@ export function FinanceFeesPage() {
 
   async function activateGrid(grid: FeeGrid) {
     if (!canUpdate) return;
-    const next = (state.feeGrids ?? []).map((g) =>
-      g.id === grid.id ? { ...g, status: "Active" as const, updatedAt: new Date().toISOString() } : g,
-    );
-    await persist({ feeGrids: next }, `Grille activée pour ${grid.className}`);
-    setDetail(null);
+    try {
+      await persistFinance(
+        () => financeApi.activateFeeGrid(grid.id),
+        `Grille activée pour ${grid.className}`,
+      );
+      setDetail(null);
+    } catch {
+      /* toast */
+    }
   }
 
   async function deactivateGrid(grid: FeeGrid) {
@@ -281,39 +283,33 @@ export function FinanceFeesPage() {
       tone: "danger",
     });
     if (!confirmed) return;
-    const next = (state.feeGrids ?? []).map((g) =>
-      g.id === grid.id ? { ...g, status: "Désactivée" as const } : g,
-    );
-    await persist({ feeGrids: next }, "Grille désactivée");
-    setDetail(null);
+    try {
+      await persistFinance(() => financeApi.deactivateFeeGrid(grid.id), "Grille désactivée");
+      setDetail(null);
+    } catch {
+      /* toast */
+    }
   }
 
   async function applyGrid(grid: FeeGrid) {
     if (!canApply) return;
-    const result = applyFeeGridToStudents(state, grid.id);
-    const refreshed = refreshStudentFeeStatuses(result.studentFees);
-    if (!result.created) {
-      showToast(result.message ?? "Aucun frais généré", "error");
-      return;
+    try {
+      if (!applyIntentionRef.current.has(grid.id)) {
+        applyIntentionRef.current.set(grid.id, createFinanceIdempotencyKey());
+      }
+      const result = await financeApi.applyFeeGrid(grid.id, {}, {
+        idempotencyKey: applyIntentionRef.current.get(grid.id),
+      });
+      applyIntentionRef.current.set(grid.id, createFinanceIdempotencyKey());
+      await refresh();
+      if (!result.created) {
+        showToast("Aucun frais généré", "error");
+        return;
+      }
+      showToast(`${result.created} frais généré(s) pour la classe ${grid.className}`, "success");
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "Échec de l'application", "error");
     }
-    await persist(
-      {
-        studentFees: refreshed,
-        auditLog: appendAuditLog(
-          state.auditLog,
-          makeAuditEntry({
-            ...auditActor(session?.user ?? null),
-            action: "fee.grid.apply",
-            entityType: "fee_grid",
-            entityId: grid.id,
-            entityLabel: `${grid.className} · ${grid.academicYear}`,
-            schoolCode: grid.schoolCode,
-            details: `${result.created} frais généré(s), ${result.skipped} ignoré(s)`,
-          }),
-        ),
-      },
-      `${result.created} frais généré(s) pour la classe ${grid.className}`,
-    );
   }
 
   const columns: Column<FeeGrid>[] = [
@@ -335,11 +331,11 @@ export function FinanceFeesPage() {
     <>
       <Card className="p-6">
         <SectionHeader
-          title="Grilles tarifaires"
+          title="Référentiel des frais"
           description={
             activeSchool?.name
-              ? `${activeSchool.name} (${schoolCode}) — règles par classe et période, distinctes des dettes élève.`
-              : "Définissez inscription, mensualités et frais annexes par classe."
+              ? `${activeSchool.name} (${schoolCode}) — tarifs par classe, puis obligations élève, puis encaissement.`
+              : "Définissez les tarifs par classe (inscription, scolarité, examen…)."
           }
           actions={
             <>
@@ -359,9 +355,9 @@ export function FinanceFeesPage() {
         />
 
         <div className="mt-4 grid gap-3 sm:grid-cols-3">
-          <Kpi label="Grilles" value={grids.length} />
-          <Kpi label="Reste à payer" value={summary.totalBalance.toLocaleString("fr-FR")} />
-          <Kpi label="En retard" value={summary.overdue} />
+          <Kpi label="Tarifs" value={grids.length} />
+          <Kpi label="Reste à payer" value={formatFinanceAmount(summary.totalBalance, currency)} />
+          <Kpi label="Échéances dépassées" value={summary.overdue} />
         </div>
 
         <div className="mt-4 flex flex-wrap gap-3">
@@ -391,9 +387,34 @@ export function FinanceFeesPage() {
           </div>
         </div>
 
-        <div className="mt-4">
-          <Table columns={columns} rows={grids} rowKey={(g) => g.id} onRowClick={setDetail} />
-        </div>
+        {catalogLoading ? (
+          <LoadingState message="Chargement des tarifs…" />
+        ) : catalogError ? (
+          <div className="mt-4">
+            <ErrorState
+              message={catalogError}
+              action={<Button onClick={() => window.location.reload()}>Réessayer</Button>}
+            />
+          </div>
+        ) : !grids.length ? (
+          <div className="mt-4">
+            <EmptyState
+              title="Aucun tarif défini"
+              description="Créez une grille par classe pour générer les obligations des élèves."
+              action={
+                canCreate ? (
+                  <Button size="sm" onClick={openCreate} disabled={!schoolCode}>
+                    Nouvelle grille
+                  </Button>
+                ) : null
+              }
+            />
+          </div>
+        ) : (
+          <div className="mt-4">
+            <Table columns={columns} rows={grids} rowKey={(g) => g.id} onRowClick={setDetail} stackOnMobile />
+          </div>
+        )}
       </Card>
 
       <Modal
@@ -454,9 +475,22 @@ export function FinanceFeesPage() {
             <div className="grid gap-4 sm:grid-cols-2">
               <Field label="Classe" hint="Obligatoire" required>
                 <Select
-                  value={editing.className}
-                  onChange={(e) => setEditing({ ...editing, className: e.target.value })}
-                  options={classOptions.map((name) => ({ value: name, label: name }))}
+                  value={editing.classId || editing.className}
+                  onChange={(e) => {
+                    const next = e.target.value;
+                    const choice = classChoices.find((row) => row.classId === next);
+                    setEditing({
+                      ...editing,
+                      classId: choice?.classId ?? "",
+                      classCode: choice?.classCode ?? "",
+                      className: choice?.className ?? next,
+                    });
+                  }}
+                  options={
+                    classChoices.length
+                      ? classChoices.map((row) => ({ value: row.classId, label: row.className }))
+                      : classOptions.map((name) => ({ value: name, label: name }))
+                  }
                   required
                 />
               </Field>
@@ -474,12 +508,8 @@ export function FinanceFeesPage() {
                   placeholder="Trimestre 1, Semestre 2…"
                 />
               </Field>
-              <Field label="Devise" hint="Obligatoire" required>
-                <Input
-                  value={editing.currency}
-                  onChange={(e) => setEditing({ ...editing, currency: e.target.value.toUpperCase() })}
-                  required
-                />
+              <Field label="Devise" hint="Issue de l'établissement / du pays" required>
+                <Input value={editing.currency} readOnly />
               </Field>
               <Field label="Début période">
                 <Input
@@ -500,7 +530,7 @@ export function FinanceFeesPage() {
             <div className="border-t border-line pt-4">
               <p className="text-sm font-semibold text-ink">Lignes de frais</p>
               <p className="mt-1 text-xs text-muted">
-                Inscription, mensualités (avec mois) et frais annexes. Montants strictement positifs.
+                Inscription, scolarité (échéancier optionnel) et autres types du catalogue. Montants strictement positifs.
               </p>
               <div className="mt-3 space-y-3">
                 {draftItems.map((item, index) => (
@@ -510,16 +540,16 @@ export function FinanceFeesPage() {
                         <Select
                           value={item.feeType}
                           onChange={(e) => {
-                            const feeType = e.target.value as SchoolFeeType;
+                            const feeType = e.target.value;
                             const next = [...draftItems];
                             next[index] = {
                               ...item,
                               feeType,
-                              monthlyMonths: feeType === "Mensualité" ? DEFAULT_MONTHLY_MONTHS : [],
+                              monthlyMonths: feeType === "Scolarité" ? DEFAULT_MONTHLY_MONTHS : [],
                             };
                             setDraftItems(next);
                           }}
-                          options={SCHOOL_FEE_TYPES.map((t) => ({ value: t, label: t }))}
+                          options={feeTypeCatalog.map((t) => ({ value: t.feeType, label: t.label }))}
                         />
                       </Field>
                       <Field label="Libellé" required>
@@ -557,7 +587,7 @@ export function FinanceFeesPage() {
                         />
                       </Field>
                     </div>
-                    {item.feeType === "Mensualité" ? (
+                    {item.feeType === "Scolarité" || item.feeType === "Mensualité" || item.monthlyMonths.length > 0 ? (
                       <div className="mt-3">
                         <Field label="Mois concernés">
                         <Input
@@ -595,7 +625,7 @@ export function FinanceFeesPage() {
                 variant="secondary"
                 size="sm"
                 className="mt-3"
-                onClick={() => setDraftItems([...draftItems, { ...EMPTY_ITEM, label: "Frais annexe" }])}
+                onClick={() => setDraftItems([...draftItems, { ...EMPTY_ITEM, feeType: "Autre", label: "Autre" }])}
               >
                 Ajouter une ligne
               </Button>
@@ -641,7 +671,7 @@ function FeeGridDetail({
           <dd>{grid.periodName || "—"}</dd>
         </div>
         <div>
-          <dt className="text-xs font-semibold uppercase text-muted">Dettes générées</dt>
+          <dt className="text-xs font-semibold uppercase text-muted">Obligations générées</dt>
           <dd>{linked.length}</dd>
         </div>
       </dl>
@@ -654,15 +684,13 @@ function FeeGridDetail({
                 {item.feeType} — {item.label}
                 {!item.mandatory ? " (optionnel)" : ""}
               </span>
-              <span className="font-semibold">
-                {item.amount.toLocaleString("fr-FR")} {grid.currency}
-              </span>
+              <span className="font-semibold">{formatFinanceAmount(item.amount, grid.currency)}</span>
             </li>
           ))}
         </ul>
       </div>
       <p className="text-xs text-muted">
-        {paid} frais soldés sur {linked.length} dettes générées à partir de cette grille.
+        {paid} obligations soldées sur {linked.length} générées à partir de ce tarif.
       </p>
     </div>
   );

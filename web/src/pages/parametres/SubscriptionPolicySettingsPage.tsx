@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useData } from "../../context/DataContext";
 import { scopedCountries } from "../../lib/scope";
-import { syncSubscriptionsFromSchools } from "../../lib/subscriptions";
+import { platformApi } from "../../lib/platformApi";
 import {
   GLOBAL_SUBSCRIPTION_POLICY,
   SUBSCRIPTION_PLAN_NAMES,
@@ -25,7 +25,7 @@ import type { Country, CountrySubscriptionPolicy } from "../../types";
 
 export function SubscriptionPolicySettingsPage() {
   const ctx = usePermissionContext();
-  const { state, update } = useData();
+  const { state, refresh } = useData();
   const { showToast } = useToast();
   const [busy, setBusy] = useState(false);
   const [draft, setDraft] = useState<Country[]>([]);
@@ -74,10 +74,20 @@ export function SubscriptionPolicySettingsPage() {
         };
       });
 
-      await update({
-        countries: nextCountries,
-        subscriptions: syncSubscriptionsFromSchools(state.schools, state.subscriptions, nextCountries),
-      });
+      for (const country of nextCountries) {
+        const edited = draft.find((item) => item.code === country.code);
+        if (!edited?.subscriptionPolicy) continue;
+        await platformApi.updateCountry(country.code, {
+          subscriptionPolicy: {
+            currency:
+              edited.subscriptionPolicy.currency?.trim().toUpperCase() ||
+              edited.currency?.trim().toUpperCase() ||
+              GLOBAL_SUBSCRIPTION_POLICY.currency,
+            plans: edited.subscriptionPolicy.plans,
+          },
+        });
+      }
+      await refresh();
       showToast("Politique d'abonnement enregistrée", "success");
     } catch {
       showToast("Échec de l'enregistrement", "error");

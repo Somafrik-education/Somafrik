@@ -1,0 +1,22 @@
+{
+  "project_info": {
+    "project_number": "REPLACE_ME",
+    "project_id": "somafrik-REPLACE_ME",
+    "storage_bucket": "somafrik-REPLACE_ME.appspot.com"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:REPLACE_ME:android:REPLACE_ME",
+        "android_client_info": {
+          "package_name": "com.somafrik.app"
+        }
+      },
+      "api_key": [
+        {
+          "current_key": "REPLACE_ME_PUBLIC_API_KEY"
+        }
+      ]
+    }
+  ]
+}

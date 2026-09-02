@@ -7,13 +7,13 @@ const { isPaymentCounted, normalize } = require("../lib/dataIntegrityRules");
 
 const DEFAULT_FEE_AMOUNTS = {
   Inscription: 50_000,
-  "Réinscription": 40_000,
-  "Minerval / scolarité": 100_000,
-  "Frais d'examen": 15_000,
-  "Frais de bulletin": 10_000,
-  "Frais de transport": 30_000,
-  "Frais de cantine": 25_000,
-  "Autre frais": 20_000,
+  Réinscription: 40_000,
+  Scolarité: 100_000,
+  Examen: 15_000,
+  Uniforme: 20_000,
+  Transport: 30_000,
+  Cantine: 25_000,
+  Autre: 20_000,
 };
 
 function findStudent(students, studentId) {
@@ -77,11 +77,13 @@ function generatePaymentReference(schoolCode, payments = []) {
   return `${prefix}${String(max + 1).padStart(4, "0")}`;
 }
 
-function resolvePaymentStatus(amount, remainingBefore, method) {
-  if (method === "Mobile money") return "En attente de confirmation";
-  if (remainingBefore <= 0) return "Payé";
-  if (amount >= remainingBefore) return "Payé";
-  return "Partiel";
+function resolvePaymentStatus(amount, remainingBefore, method, leftover = 0) {
+  return require("../lib/financeUnallocatedCash").resolvePaymentStatus(
+    amount,
+    remainingBefore,
+    method,
+    leftover,
+  );
 }
 
 function applyPaymentToStudentFees(studentFees = [], payment) {
@@ -178,7 +180,7 @@ function applyAtomicPayment(state, payload, principal) {
     currency,
     method: payload.method,
     date: payload.date,
-    status: resolvePaymentStatus(amount, remainingBefore, payload.method),
+    status: resolvePaymentStatus(amount, remainingBefore, payload.method, Math.max(0, amount - remainingBefore)),
     comment: String(payload.comment ?? "").trim(),
     schoolYear: payload.schoolYear ?? "",
     verificationCode: `VF-${reference.replace(/[^A-Z0-9]/gi, "").slice(-12)}`,

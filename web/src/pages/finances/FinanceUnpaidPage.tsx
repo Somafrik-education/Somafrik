@@ -1,5 +1,4 @@
-import { useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { useMemo, useRef, useState } from "react";
 import { useAuth } from "../../context/AuthContext";
 import { useData } from "../../context/DataContext";
 import { Card, SectionHeader } from "../../components/ui/Card";
@@ -12,8 +11,6 @@ import { Field, Input, Select } from "../../components/ui/Field";
 import { useToast } from "../../components/ui/Toast";
 import { useConfirm } from "../../components/ui/ConfirmDialog";
 import type {
-  PaymentReminder,
-  PlatformNotification,
   ReminderChannel,
   ReminderRecipient,
   StudentUnpaidRow,
@@ -26,7 +23,6 @@ import {
   classOptionsFromUnpaid,
   getStudentUnpaidDetail,
   listUnpaidStudentFees,
-  newReminderId,
   periodOptionsFromFees,
   REMINDER_COOLDOWN_DAYS,
   scopedPaymentReminders,
@@ -38,7 +34,12 @@ import {
   isOwnUnpaidScopeOnly,
 } from "../../lib/unpaidPermissions";
 import { usePermissionContext } from "../../lib/usePermissionContext";
-import { appendAuditLog, auditActor, makeAuditEntry } from "../../lib/audit";
+import { financeApi } from "../../lib/financeApi";
+import { createFinanceIdempotencyKey } from "../../lib/financeIdempotency";
+import { ApiError } from "../../api/client";
+import { formatFinanceAmount, formatFinanceDate, resolveFinanceCurrency } from "../../lib/financeCurrency";
+import { financeObligationStatusLabel, financePaymentStatusLabel } from "../../lib/financeObligationStatus";
+import { EmptyState } from "../../design-system";
 
 const REMINDER_CHANNELS: { value: ReminderChannel; label: string }[] = [
   { value: "notification", label: "Notification application" },
@@ -51,7 +52,7 @@ const RECIPIENTS: ReminderRecipient[] = ["Parent", "Responsable", "Étudiant"];
 
 export function FinanceUnpaidPage() {
   const { session } = useAuth();
-  const { state, update } = useData();
+  const { state, refresh } = useData();
   const ctx = usePermissionContext();
   const { showToast } = useToast();
   const { confirm } = useConfirm();
@@ -69,6 +70,7 @@ export function FinanceUnpaidPage() {
   const [reminderRecipient, setReminderRecipient] = useState<ReminderRecipient>("Parent");
   const [reminderMessage, setReminderMessage] = useState("");
   const [busy, setBusy] = useState(false);
+  const reminderIntentionRef = useRef(createFinanceIdempotencyKey());
 
   const reminders = useMemo(
     () => scopedPaymentReminders(session?.user ?? null, state),
@@ -119,67 +121,34 @@ export function FinanceUnpaidPage() {
       return;
     }
 
+    let forceSend = force;
     const gate = canSendReminder(reminders, row.studentId);
-    if (!gate.allowed && !force) {
+    if (!gate.allowed && !forceSend) {
       const ok = await confirm({
         title: "Relance récente",
         description: gate.message ?? "Une relance a déjà été envoyée récemment.",
         confirmLabel: "Envoyer quand même",
       });
       if (!ok) return;
+      forceSend = true;
     }
 
     setBusy(true);
     try {
       const school = state.schools.find((item) => item.code === row.schoolCode);
       const message = reminderMessage.trim() || buildReminderMessage(row, school?.name);
-      const reminder: PaymentReminder = {
-        id: newReminderId(),
-        studentId: row.studentId,
-        schoolCode: row.schoolCode,
-        recipient: reminderRecipient,
-        channel: reminderChannel,
-        message,
-        summary: `Relance ${row.amountDue.toLocaleString("fr-FR")} ${row.currency} — ${row.periodLabel}`,
-        sentAt: new Date().toISOString(),
-        sendStatus: reminderChannel === "notification" ? "Envoyée" : "En attente",
-        triggeredBy: session?.user?.identifier,
-        triggeredByName: session?.user?.firstName ?? session?.user?.identifier,
-      };
-
-      const notification: PlatformNotification | null =
-        reminderChannel === "notification"
-          ? {
-              id: `NOTIF-${Date.now().toString(36).toUpperCase()}`,
-              title: "Relance de paiement",
-              message: reminder.summary ?? message.slice(0, 120),
-              type: "payment_reminder",
-              channels: ["app"],
-              status: "sent",
-              schoolCode: row.schoolCode,
-              audience: "Parent",
-              date: reminder.sentAt,
-            }
-          : null;
-
-      await update({
-        paymentReminders: [reminder, ...(state.paymentReminders ?? [])].slice(0, 500),
-        notifications: notification
-          ? [notification, ...(state.notifications ?? [])]
-          : state.notifications,
-        auditLog: appendAuditLog(
-          state.auditLog,
-          makeAuditEntry({
-            ...auditActor(session?.user ?? null),
-            action: "Relance impayé",
-            entityType: "student_fee",
-            entityId: row.studentId,
-            entityLabel: row.studentName,
-            schoolCode: row.schoolCode,
-            details: `${reminder.channel} — ${reminder.summary}`,
-          }),
-        ),
-      });
+      await financeApi.createReminder(
+        row.studentId,
+        {
+          channel: reminderChannel,
+          recipient: reminderRecipient,
+          message,
+          force: Boolean(forceSend),
+        },
+        { idempotencyKey: reminderIntentionRef.current },
+      );
+      reminderIntentionRef.current = createFinanceIdempotencyKey();
+      await refresh();
 
       showToast(
         reminderChannel === "notification"
@@ -189,8 +158,14 @@ export function FinanceUnpaidPage() {
       );
       setReminderRow(null);
       setReminderMessage("");
-    } catch {
-      showToast("Échec de l'enregistrement de la relance", "error");
+    } catch (error) {
+      const code = error instanceof ApiError ? error.code : undefined;
+      showToast(
+        code === "REMINDER_COOLDOWN"
+          ? error instanceof Error ? error.message : "Relance récente, cooldown actif"
+          : error instanceof Error ? error.message : "Échec de l'enregistrement de la relance",
+        "error",
+      );
     } finally {
       setBusy(false);
     }
@@ -222,7 +197,7 @@ export function FinanceUnpaidPage() {
       align: "right",
       render: (row) => (
         <span className="font-semibold">
-          {row.amountDue.toLocaleString("fr-FR")} {row.currency}
+          {formatFinanceAmount(row.amountDue, resolveFinanceCurrency(row.currency))}
         </span>
       ),
     },
@@ -274,16 +249,16 @@ export function FinanceUnpaidPage() {
           title="Impayés & restes à payer"
           description={
             ownScopeOnly
-              ? "Votre situation financière — montants dus après échéance."
-              : "Élèves en retard de paiement — calcul automatique depuis les grilles tarifaires (IMP-001 à IMP-003)."
+              ? "Votre situation financière : montant dû, déjà payé et reste à régler."
+              : "Élèves avec un reste à payer — lecture des obligations ouvertes après application des tarifs."
           }
           actions={<PrintButton documentTitle="Impayés — Somafrik" />}
         />
 
         <div className="no-print mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <Stat
-            label="Total impayés"
-            value={`${dashboard.totalAmountDue.toLocaleString("fr-FR")} ${dashboard.currency}`}
+            label="Total restant"
+            value={formatFinanceAmount(dashboard.totalAmountDue, resolveFinanceCurrency(dashboard.currency))}
           />
           <Stat label="Élèves en retard" value={dashboard.studentCount} />
           <Stat label="Lignes en retard" value={dashboard.overdueLineCount} />
@@ -291,15 +266,11 @@ export function FinanceUnpaidPage() {
         </div>
 
         {!fees.length ? (
-          <div className="mt-6 rounded-xl border border-dashed border-line bg-slate-50 p-6 text-sm text-muted">
-            <p className="font-semibold text-ink">Aucun impayé détecté pour le moment.</p>
-            <p className="mt-2">
-              Les impayés sont calculés à partir des{" "}
-              <Link to="/finances/frais" className="font-semibold text-brand underline">
-                grilles tarifaires
-              </Link>{" "}
-              appliquées aux élèves, dès qu&apos;une échéance est dépassée et qu&apos;un solde reste dû.
-            </p>
+          <div className="mt-6">
+            <EmptyState
+              title="Aucun reste à payer"
+              description="Les obligations ouvertes apparaissent ici dès qu'un tarif a été appliqué et qu'un solde demeure."
+            />
           </div>
         ) : null}
 
@@ -341,7 +312,7 @@ export function FinanceUnpaidPage() {
                 <div key={item.className} className="rounded-lg border border-line/70 px-3 py-2 text-sm">
                   <p className="font-semibold">{item.className}</p>
                   <p className="text-muted">
-                    {item.studentCount} élève(s) · {item.amountDue.toLocaleString("fr-FR")} {dashboard.currency}
+                    {item.studentCount} élève(s) · {formatFinanceAmount(item.amountDue, resolveFinanceCurrency(dashboard.currency))}
                   </p>
                 </div>
               ))}
@@ -350,7 +321,7 @@ export function FinanceUnpaidPage() {
         ) : null}
 
         <div className="mt-6">
-          <Table columns={columns} rows={rows} rowKey={(row) => row.studentId} emptyLabel="Aucun impayé" />
+          <Table columns={columns} rows={rows} rowKey={(row) => row.studentId} emptyLabel="Aucun reste à payer" stackOnMobile />
         </div>
       </Card>
 
@@ -367,20 +338,23 @@ export function FinanceUnpaidPage() {
               <Info label="Période" value={detail.row.periodLabel} />
               <Info
                 label="Reste à payer"
-                value={`${detail.row.amountDue.toLocaleString("fr-FR")} ${detail.row.currency}`}
+                value={formatFinanceAmount(detail.row.amountDue, resolveFinanceCurrency(detail.row.currency))}
               />
               <Info label="Criticité" value={detail.row.severity} />
             </div>
 
             <div>
-              <p className="font-semibold text-ink">Frais dus</p>
+              <p className="font-semibold text-ink">Obligations ouvertes</p>
               <ul className="mt-2 space-y-1">
                 {detail.fees.map((fee) => (
                   <li key={fee.id} className="flex justify-between gap-2 rounded border border-line/60 px-2 py-1">
-                    <span>{fee.label}</span>
                     <span>
-                      {fee.balance.toLocaleString("fr-FR")} {fee.currency}{" "}
-                      <StatusBadge status={fee.status} />
+                      {fee.label}
+                      {fee.className ? ` · ${fee.className}` : ""}
+                    </span>
+                    <span>
+                      {formatFinanceAmount(fee.balance, resolveFinanceCurrency(fee.currency, detail.row.currency))}{" "}
+                      <StatusBadge status={financeObligationStatusLabel(fee.status)} />
                     </span>
                   </li>
                 ))}
@@ -395,8 +369,10 @@ export function FinanceUnpaidPage() {
                     <li key={String(payment.id ?? index)} className="flex justify-between gap-2 text-muted">
                       <span>{String(payment.label ?? payment.feeType ?? "Paiement")}</span>
                       <span>
-                        {Number(payment.amount ?? 0).toLocaleString("fr-FR")}{" "}
-                        {String(payment.currency ?? detail.row.currency)}
+                      {formatFinanceAmount(Number(payment.amount ?? 0), String(payment.currency ?? detail.row.currency))}
+                      {" · "}
+                      {financePaymentStatusLabel(payment.status)}
+                      {payment.date ? ` · ${formatFinanceDate(String(payment.date))}` : ""}
                       </span>
                     </li>
                   ))}
@@ -413,7 +389,7 @@ export function FinanceUnpaidPage() {
                   {detail.reminders.map((item) => (
                     <li key={item.id} className="rounded border border-line/60 px-2 py-2">
                       <p className="font-medium">
-                        {new Date(item.sentAt).toLocaleString("fr-FR")} — {item.channel} — {item.sendStatus}
+                        {formatFinanceDate(item.sentAt)} — {item.channel} — {item.sendStatus}
                       </p>
                       <p className="text-muted">{item.summary ?? item.message.slice(0, 120)}</p>
                     </li>

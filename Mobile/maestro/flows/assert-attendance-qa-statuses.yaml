@@ -1,0 +1,31 @@
+# Preuve déterministe A/B/C/D — pas un simple texte « Statut : … » global.
+appId: com.somafrik.app
+---
+- assertVisible:
+    id: "attendance-current-status-${SOMAFRIK_E2E_ATTENDANCE_STUDENT_A}"
+- assertVisible:
+    id: "attendance-current-status-${SOMAFRIK_E2E_ATTENDANCE_STUDENT_A}-present"
+- copyTextFrom:
+    id: "attendance-current-status-${SOMAFRIK_E2E_ATTENDANCE_STUDENT_A}"
+- assertTrue: "${maestro.copiedText.includes('Statut : Présent')}"
+- assertVisible:
+    id: "attendance-current-status-${SOMAFRIK_E2E_ATTENDANCE_STUDENT_B}"
+- assertVisible:
+    id: "attendance-current-status-${SOMAFRIK_E2E_ATTENDANCE_STUDENT_B}-absent"
+- copyTextFrom:
+    id: "attendance-current-status-${SOMAFRIK_E2E_ATTENDANCE_STUDENT_B}"
+- assertTrue: "${maestro.copiedText.includes('Statut : Absent')}"
+- assertVisible:
+    id: "attendance-current-status-${SOMAFRIK_E2E_ATTENDANCE_STUDENT_C}"
+- assertVisible:
+    id: "attendance-current-status-${SOMAFRIK_E2E_ATTENDANCE_STUDENT_C}-late"
+- copyTextFrom:
+    id: "attendance-current-status-${SOMAFRIK_E2E_ATTENDANCE_STUDENT_C}"
+- assertTrue: "${maestro.copiedText.includes('Statut : Retard')}"
+- assertVisible:
+    id: "attendance-current-status-${SOMAFRIK_E2E_ATTENDANCE_STUDENT_D}"
+- assertVisible:
+    id: "attendance-current-status-${SOMAFRIK_E2E_ATTENDANCE_STUDENT_D}-excused"
+- copyTextFrom:
+    id: "attendance-current-status-${SOMAFRIK_E2E_ATTENDANCE_STUDENT_D}"
+- assertTrue: "${maestro.copiedText.includes('Statut : Justifié')}"

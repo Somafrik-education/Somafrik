@@ -1,0 +1,73 @@
+name: D revalidation Planning Presence Sync
+
+on:
+  pull_request:
+    branches: [develop]
+    paths:
+      - "backend/lib/planningSchoolScope.js"
+      - "backend/lib/planningTenant.http.pg.test.js"
+      - "backend/lib/presenceSchoolScope.js"
+      - "backend/lib/presenceTenant.http.pg.test.js"
+      - "backend/lib/mobileSyncSchoolScope.js"
+      - "backend/lib/mobileSyncTenant.http.pg.test.js"
+      - "backend/lib/mobileSyncClasses.js"
+      - "backend/lib/mobileSyncStudents.js"
+      - "backend/lib/mobileSyncAssignments.js"
+      - "backend/lib/mobileSyncSchoolCourses.js"
+      - "backend/lib/mobileSyncCourseSchedules.js"
+      - "backend/lib/mobileSyncScope.js"
+      - "backend/lib/pedagogyService.js"
+      - "backend/lib/dRevalidation.guard.test.js"
+      - "backend/lib/dRevalidation.findings.md"
+      - "backend/lib/dRevalidation.http.pg.test.js"
+      - "backend/scripts/verify-d-revalidation.js"
+      - "backend/scripts/verify-planning-tenant.js"
+      - "backend/scripts/verify-presence-tenant.js"
+      - "backend/scripts/verify-sync-l1-tenant.js"
+      - "backend/db/postgresRepository.js"
+      - "backend/db/pedagogyPgStore.js"
+      - "backend/server.js"
+      - "package.json"
+      - ".github/workflows/d-revalidation.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  d-revalidation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
+      NODE_ENV: test
+      JWT_SECRET: ci-test-secret-with-enough-length-for-production-checks
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.12.0"
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            backend/package-lock.json
+      - name: Install dependencies
+        run: |
+          npm ci
+          npm ci --prefix backend
+      - name: Verify D revalidation Planning / Présences / Sync
+        run: npm run verify:d-revalidation

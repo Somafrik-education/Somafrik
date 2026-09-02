@@ -1,7 +1,7 @@
 # Sécurité — Somafrik
 
 **Statut :** politique & contrôles de sécurité  
-**Dernière mise à jour :** 2026-07-26  
+**Dernière mise à jour :** 2026-09-01  
 **Liens :** [ARCHITECTURE.md](./ARCHITECTURE.md) · [DECISIONS.md](./DECISIONS.md) · [../ci-cd-security.md](../ci-cd-security.md)
 
 ---
@@ -24,11 +24,13 @@ Source : `backend/lib/backOfficeWritableEntities.js` (ADR-002).
 
 | Rôle | Exemples de clés autorisées |
 |------|-----------------------------|
-| Super Admin | Toutes sauf `auditLog` |
-| Admin Pays | schools, users, countries, subscriptions… |
-| Admin School | classes, teachers, students, notes, payments… |
-| Secrétaire | students, presences, payments, messages… |
-| Comptable | payments, studentFees… |
+| Super Admin | Toutes sauf `auditLog` et clés canoniques PG (écoles, élèves, enseignants/affectations, Finance, Pédagogie, **Plateforme**) |
+| Admin Pays | users, academicConfigs… (plus `schools`, **plus clés plateforme PUT**) |
+| Admin School | contacts, users, notes, documents… (plus Finance PUT, **plus plateforme PUT**) |
+| Secrétaire | presences, messages, documents… (paiements via APIs dédiées, plus PUT Finance) |
+| Comptable | **aucune** clé PUT state ; Finance exclusivement via `/api/payments` et `/api/finance/*` |
+| Pédagogie (cours, EDT, évaluations, notes, présences) | **aucune** clé PUT state ; exclusivement via `/api/courses`, `/api/course-schedules`, `/api/evaluations`, `/api/notes`, `/api/presences` |
+| Plateforme (pays, abonnements, notifications, RBAC graphiques) | **aucune** clé PUT state ; exclusivement via `/api/backoffice/countries`, `/subscriptions`, `/notifications`, `/role-permissions`, `/dashboard-chart-config`, collections abonnement |
 | Préfet / Proviseur / DA | pédagogie (notes, classes, teachers…) |
 | Enseignant | **uniquement** `evaluations` + `notes` (HOTFIX-SYNC-03) |
 
@@ -42,6 +44,20 @@ Source : `backend/lib/backOfficeWritableEntities.js` (ADR-002).
 - Web : `web/src/lib/permissions.ts`
 - Mobile : `Mobile/src/domain/security/permissions.ts`
 - UI : routes / actions masquées **et** refus serveur (jamais confiance UI seule).
+
+### 2.3 Attribution des rôles (Comptes V2)
+
+Le backend fait autorité. Ne jamais faire confiance à `schoolCode`, `schoolId`, `role`, `roles`, `permissions`, `userId` provenant du client sans résolution depuis le principal authentifié.
+
+| Règle | Détail |
+|-------|--------|
+| Création | Identité seule. `id` / `user_code` / `role` / `roles` client → 400 |
+| GRANT / REVOKE | `POST /api/backoffice/users/:userId/roles/grant` et `.../revoke` — une opération, une transaction, un audit |
+| Interdits Attribuer | `PARENT`, `STUDENT`, `SUPER_ADMIN`, rôles plateforme, tenant étranger, auto-promotion |
+| Permissions | Union RBAC des `user_roles` actifs — jamais déduites du classement UI |
+| Legacy | `PUT /api/backoffice/state` reste 410 / fail-closed ; aucun écriture `backoffice_state.users` |
+
+Tests : `npm run verify:user-role-lifecycle`
 
 ---
 
@@ -57,10 +73,14 @@ Source : `backend/lib/backOfficeWritableEntities.js` (ADR-002).
 
 ### Lockout
 
-- Fichier : `backend/lib/loginLockout.js`
-- Seuil : 5 échecs → verrouillage ~15 minutes
+- SoT : table PostgreSQL `login_lockouts` (`backend/lib/loginLockout.js` + `loginLockoutPgStore.js`)
+- Clé : `school_scope` (code établissement ou `*` plateforme) + identifiant normalisé (trim/lower)
+- Seuil : 5 échecs → verrouillage ~15 minutes (atomique `INSERT … ON CONFLICT`)
+- Succès → `DELETE` ; expiration → reset lazy
 - Interdit de désactiver le lockout en production (`SOMAFRIK_DISABLE_LOGIN_LOCKOUT`)
+- `POST /api/backoffice/e2e/clear-login-lockout` : **404** sauf `SOMAFRIK_E2E=true` et `NODE_ENV !== production`
 - Préprod : lockout **activé** + rate limits sur les routes login
+- Tests : `npm run verify:login-lockout-data`
 
 ---
 
@@ -73,6 +93,7 @@ Source : `backend/lib/backOfficeWritableEntities.js` (ADR-002).
 | **Serveur** | `AuditService.record` — `userId`, `schoolCode`, action, entity, IP, UA |
 | **Stockage** | Table `audit_logs` (JSONB old/new) |
 | **Collections critiques** | users, payments, bulletins, rolePermissions, classes, teachers, assignments… |
+| **Export établissement** | lectures dans une transaction PostgreSQL **`READ ONLY` + `REPEATABLE READ`** (snapshot unique) ; audit `export_school_data` après COMMIT (domaines + timestamp, **pas** le contenu) ; fail-closed si l’audit échoue |
 
 ---
 
@@ -128,7 +149,7 @@ Voir [../ci-cd-security.md](../ci-cd-security.md).
 | Check | Contenu |
 |-------|---------|
 | Secrets | Gitleaks |
-| Security | `verify:db-config` + `verify:mobile-security` |
+| Security | `verify:db-config` + `verify:mobile-security` + `verify:login-lockout-data` + `verify:data-export-safety` |
 | TypeScript / Lint | Qualité |
 | Tests | verify JWT, RBAC, sanitize, check… |
 | Audit | `npm audit` fail si **critical** |
@@ -137,11 +158,21 @@ Voir [../ci-cd-security.md](../ci-cd-security.md).
 
 ## 9. Politique de divulgation
 
-1. **Ne pas** ouvrir d’issue publique détaillant un exploit exploitable.
-2. Contacter le CTO / propriétaire du dépôt (`somafrik@outlook.fr` / canal privé équipe).
-3. Délai de remediation cible : critique ≤ 72 h, haute ≤ 7 j, moyenne planifiée.
-4. Hotfix via branche `hotfix/*` + gate préprod ([CONTRIBUTING.md](./CONTRIBUTING.md)).
-5. Après correctif : entrée CHANGELOG **Security** + ADR si règle durable.
+Canal public de signalement : **`security@somafrik.app`**.
+
+1. **Ne pas** ouvrir d’issue publique détaillant un exploit exploitable, ni publier un PoC avant correctif.
+2. Contacter **`security@somafrik.app`**. Ne pas utiliser une adresse interne, personnelle, ou une identité Git comme canal de signalement.
+3. Fournir uniquement les informations **minimales** nécessaires à la reproduction (produit, branche/version si connue, impact, étapes). **Ne pas** joindre de données personnelles inutiles (élèves, familles, secrets hors besoin de preuve).
+4. Respecter la **divulgation responsable** : attendre un correctif avant toute publication.
+5. Délai de remédiation **cible** (engagement d’effort, pas un SLA contractuel) : critique ≤ 72 h, haute ≤ 7 j, moyenne planifiée.
+6. Hotfix via branche `hotfix/*` + gate préprod ([CONTRIBUTING.md](./CONTRIBUTING.md)).
+7. Après correctif : entrée CHANGELOG **Security** + ADR si règle durable.
+
+Résumé GitHub : [SECURITY.md](../../SECURITY.md) à la racine du dépôt.
+
+Routage **security@somafrik.app** configuré et test de réception validé le **2026-09-01**. Canal hors dépôt (Cloudflare Email Routing). Ne pas documenter ici la destination interne.
+
+Identité Git des auteurs : voir [CONTRIBUTING.md](./CONTRIBUTING.md) §3.1 — distincte de `security@somafrik.app` et des adresses fonctionnelles Somafrik.
 
 ---
 

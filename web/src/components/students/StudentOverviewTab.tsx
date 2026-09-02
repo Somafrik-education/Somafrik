@@ -112,6 +112,39 @@ export function StudentOverviewTab({ workspace }: StudentOverviewTabProps) {
           ]}
         />
       </div>
+
+      <section aria-label="Accès pédagogiques et financiers" className="space-y-2">
+        <h3 className="text-sm font-semibold text-ink">Notes, présences et paiements</h3>
+        <p className="text-sm text-muted">
+          Accès en lecture aux modules liés à l&apos;élève (API PostgreSQL / métier existant).
+        </p>
+        <ul className="flex flex-wrap gap-3 text-sm font-semibold">
+          <li>
+            <a
+              className="text-brand underline-offset-2 hover:underline"
+              href={`/notes?student=${encodeURIComponent(workspace.studentId)}`}
+            >
+              Notes
+            </a>
+          </li>
+          <li>
+            <a
+              className="text-brand underline-offset-2 hover:underline"
+              href={`/presences?student=${encodeURIComponent(workspace.studentId)}`}
+            >
+              Présences
+            </a>
+          </li>
+          <li>
+            <a
+              className="text-brand underline-offset-2 hover:underline"
+              href={`/paiements?student=${encodeURIComponent(workspace.studentId)}`}
+            >
+              Paiements
+            </a>
+          </li>
+        </ul>
+      </section>
     </div>
   );
 }

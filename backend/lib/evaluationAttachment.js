@@ -32,17 +32,22 @@ const ERRORS = {
   SUBJECT_MISSING: (subjectName) =>
     attachmentError(
       "EVAL_ATTACHMENT_SUBJECT",
-      `Matiere introuvable pour l'évaluation${subjectName ? ` (« ${subjectName} »)` : ""}`,
+      `Cours introuvable pour l'évaluation${subjectName ? ` (« ${subjectName} »)` : ""}`,
     ),
   YEAR_MISSING: () =>
     attachmentError(
       "EVAL_ATTACHMENT_YEAR",
       "Annee scolaire introuvable pour l'évaluation",
     ),
+  TERM_MISSING: (periodName) =>
+    attachmentError(
+      "EVAL_ATTACHMENT_TERM",
+      `Période introuvable pour l'évaluation${periodName ? ` (« ${periodName} »)` : ""}`,
+    ),
   CLASS_NAME_REQUIRED: () =>
     attachmentError("EVAL_ATTACHMENT_CLASS", "Classe obligatoire pour l'évaluation"),
   SUBJECT_NAME_REQUIRED: () =>
-    attachmentError("EVAL_ATTACHMENT_SUBJECT", "Matiere obligatoire pour l'évaluation"),
+    attachmentError("EVAL_ATTACHMENT_SUBJECT", "Cours obligatoire pour l'évaluation"),
   TEACHER_REQUIRED: () =>
     attachmentError(
       "EVAL_TEACHER_REQUIRED",
@@ -105,7 +110,13 @@ async function resolveEvaluationAttachments(evaluation = {}, deps = {}, options 
   if (!academicYear) throw ERRORS.YEAR_MISSING();
 
   const periodName = String(evaluation.period ?? "Trimestre 1").trim() || "Trimestre 1";
-  const term = await deps.ensureTerm?.(academicYear.id, periodName);
+  let term;
+  if (ensure) {
+    term = await deps.ensureTerm?.(academicYear.id, periodName);
+  } else {
+    term = await deps.findTermByName?.(academicYear.id, periodName);
+    if (!term) throw ERRORS.TERM_MISSING(periodName);
+  }
 
   // FIX V2.1 IDENTITY §5.2 — lookup exact → matérialisation exacte → refus structuré.
   // Interdit : findAnyTeacher, ORDER BY created_at, choix par user_id seul.

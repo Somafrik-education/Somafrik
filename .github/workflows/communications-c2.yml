@@ -1,0 +1,87 @@
+name: Communications C2
+
+on:
+  pull_request:
+    branches: [develop]
+    paths:
+      - "backend/db/clientsSchema.js"
+      - "backend/db/clientsPgStore.js"
+      - "backend/db/clientsMemoryStore.js"
+      - "backend/db/clientsCanonicalBootstrap.js"
+      - "backend/db/communicationsMessagesSchema.js"
+      - "backend/db/migrations/20260828_communications_c2_messages.sql"
+      - "backend/lib/clientsService.js"
+      - "backend/lib/clientsManagement.js"
+      - "backend/lib/communicationsMessagesService.js"
+      - "backend/lib/communicationsAttachments.js"
+      - "backend/lib/communicationsAttachments.test.js"
+      - "backend/lib/communicationsC2.http.pg.test.js"
+      - "backend/scripts/verify-communications-c2.js"
+      - "backend/server.js"
+      - "backend/services/rbacService.js"
+      - "web/src/pages/MessagesConversationsPage.tsx"
+      - "web/src/lib/messagesApi.ts"
+      - "web/src/lib/clientsApi.ts"
+      - "web/src/lib/communicationSchoolScope.ts"
+      - "web/src/lib/communicationSchoolScope.test.ts"
+      - "Mobile/src/screens/MessagesScreen.tsx"
+      - "Mobile/src/lib/messageAttachments.ts"
+      - "Mobile/src/lib/messageAttachments.test.ts"
+      - "Mobile/src/lib/communicationSchoolScope.ts"
+      - "Mobile/src/lib/communicationSchoolScope.test.ts"
+      - "Mobile/src/lib/mobileCtaRbacAlignment.ts"
+      - "Mobile/src/services/api.ts"
+      - "Mobile/src/services/domainHydrationApi.ts"
+      - "Mobile/src/context/AdminDataContext.tsx"
+      - "docs/audits/communications-c2-messages-readiness-2026-08-28.md"
+      - ".github/workflows/communications-c2.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  communications-c2:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
+      NODE_ENV: test
+      JWT_SECRET: ci-test-secret-with-enough-length-for-production-checks
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Record exact HEAD
+        run: |
+          echo "EXACT_HEAD=$(git rev-parse HEAD)"
+          git log -1 --oneline
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.12.0"
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            backend/package-lock.json
+            web/package-lock.json
+      - name: Install dependencies
+        run: |
+          npm ci
+          npm ci --prefix backend
+          npm ci --prefix web
+      - name: Verify Communications C2 E2E
+        run: npm run verify:communications-c2

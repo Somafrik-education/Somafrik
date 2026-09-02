@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useAuth } from "../context/AuthContext";
 import { useData } from "../context/DataContext";
 import { useActiveSchool } from "../context/ActiveSchoolContext";
@@ -11,6 +11,8 @@ import { Modal } from "../components/ui/Modal";
 import { Field, Input, Select } from "../components/ui/Field";
 import { useToast } from "../components/ui/Toast";
 import { useConfirm } from "../components/ui/ConfirmDialog";
+import { useFeaturePermissions } from "../lib/usePermissionContext";
+import { ApiError } from "../api/client";
 import {
   EmptyState,
   ForbiddenState,
@@ -18,24 +20,29 @@ import {
   LoadingState,
   ToolLayout,
 } from "../design-system";
-import { useFeaturePermissions } from "../lib/usePermissionContext";
+import { pedagogyApi } from "../lib/pedagogyApi";
+import { reportCardsApi } from "../lib/reportCardsApi";
 import { classNamesMatch } from "../lib/classRules";
 import { scopedClasses, scopedStudents, listTeacherScopedClassLabels } from "../lib/establishment";
 import {
   allGrades,
   canDeleteEvaluation,
   canEditEvaluation,
+  canEnterGradesForEvaluation,
   correctValidatedGrade,
   deactivateEvaluation,
   buildEvaluationsFromExams,
   ensureEvaluationsSynced,
+  evaluationsEligibleForGradeEntry,
   gradesToLegacyNotes,
+  gradeSaveActorScope,
+  isTeacherSessionRole,
+  pedagogyNoteWritePayload,
   publishEvaluation,
   resolveGradesPeriod,
   scopedEvaluations,
   scopedGrades,
   syncBulletinsForClass,
-  teacherCanAccessEvaluation,
   updateEvaluation,
   validateEvaluationGrades,
 } from "../lib/evaluations";
@@ -44,6 +51,13 @@ import {
   canPublishGrades,
   canValidateGrades,
 } from "../lib/gradePermissions";
+import {
+  EVALUATION_STATUS_FILTER_OPTIONS,
+  evaluationsEmptyDescription,
+  filterEvaluationsForQueue,
+  periodFilterOptions,
+  resolveEvaluationsQueueDefaults,
+} from "../lib/evaluationQueue";
 import { downloadCsv, rowsToCsv } from "../lib/csv";
 import { EvaluationFormModal } from "../components/grades/EvaluationFormModal";
 import { GradeEntryGrid } from "../components/grades/GradeEntryGrid";
@@ -69,12 +83,13 @@ function uniqueClassNames(students: Record<string, unknown>[], classes: Record<s
 
 export function GradesEvaluationsPage() {
   const { session } = useAuth();
-  const { state, update, loading, error: syncError, retryFailedSync } = useData();
+  const { state, refresh, loading, error: syncError, retryFailedSync } = useData();
   const { scopedUser, activeSchoolCode } = useActiveSchool();
   const { showToast } = useToast();
   const { confirm } = useConfirm();
   const scopeUser = scopedUser ?? session?.user ?? null;
   const { canRead, canCreate, canUpdate } = useFeaturePermissions("Notes");
+  const canEnterGrades = canCreate || canUpdate;
 
   const students = scopedStudents(scopeUser, state) as Record<string, unknown>[];
   const classes = scopedClasses(scopeUser, state, students) as Record<string, unknown>[];
@@ -88,6 +103,7 @@ export function GradesEvaluationsPage() {
     () => resolveGradesPeriod(state, code, scopeUser),
     [state, code, scopeUser],
   );
+  const queueDefaults = useMemo(() => resolveEvaluationsQueueDefaults(scopeUser), [scopeUser]);
 
   const evaluations = useMemo(() => {
     const synced = ensureEvaluationsSynced(state, code);
@@ -97,7 +113,9 @@ export function GradesEvaluationsPage() {
   const grades = scopedGrades(scopeUser, state);
 
   const [tab, setTab] = useState<TabKey>("evaluations");
-  const [period, setPeriod] = useState("");
+  const [period, setPeriod] = useState(queueDefaults.periodFilter ?? "");
+  const [statusFilter, setStatusFilter] = useState(queueDefaults.statusFilter);
+  const [queueDefaultsKey, setQueueDefaultsKey] = useState("");
   const [selectedClass, setSelectedClass] = useState(classNames[0] ?? "");
   const [selectedStudentId, setSelectedStudentId] = useState("");
   const [selectedEvaluationId, setSelectedEvaluationId] = useState("");
@@ -107,17 +125,32 @@ export function GradesEvaluationsPage() {
   const [correctionValue, setCorrectionValue] = useState("");
   const [correctionReason, setCorrectionReason] = useState("");
   const [busy, setBusy] = useState(false);
+  const [gradeEntryDirty, setGradeEntryDirty] = useState(false);
+  const handleGradeEntryDirtyChange = useCallback((dirty: boolean) => {
+    setGradeEntryDirty(dirty);
+  }, []);
 
   useEffect(() => {
     if (!code) return;
     const imported = buildEvaluationsFromExams(state, code);
     if (!imported.length) return;
-    void update({ evaluations: [...(state.evaluations ?? []), ...imported] });
+    void (async () => {
+      for (const evaluation of imported) {
+        const exists = (state.evaluations ?? []).some((row) => row.id === evaluation.id);
+        if (exists) continue;
+        await pedagogyApi.createEvaluation(evaluation as unknown as Record<string, unknown>);
+      }
+      await refresh();
+    })();
   }, [code, state.exams?.length]);
 
   useEffect(() => {
-    setPeriod(defaultPeriod);
-  }, [defaultPeriod]);
+    const key = `${scopeUser?.id ?? ""}:${scopeUser?.role ?? ""}:${code}`;
+    if (queueDefaultsKey === key) return;
+    setPeriod(queueDefaults.periodFilter ?? defaultPeriod);
+    setStatusFilter(queueDefaults.statusFilter);
+    setQueueDefaultsKey(key);
+  }, [code, defaultPeriod, queueDefaults, queueDefaultsKey, scopeUser?.id, scopeUser?.role]);
 
   useEffect(() => {
     if (!classNames.length) return;
@@ -126,25 +159,82 @@ export function GradesEvaluationsPage() {
     );
   }, [classNames]);
 
-  const filteredEvaluations = evaluations.filter(
-    (evaluation) => !period || evaluation.period === period,
+  const filteredEvaluations = filterEvaluationsForQueue(evaluations, period, statusFilter);
+  const gradeEntryEvaluations = useMemo(
+    () =>
+      evaluationsEligibleForGradeEntry(scopeUser, evaluations, state).filter(
+        (evaluation) => !selectedClass || classNamesMatch(evaluation.className, selectedClass),
+      ),
+    [evaluations, scopeUser, selectedClass, state],
   );
+  const periodOptions = periodFilterOptions(state, code, evaluations);
 
   const selectedEvaluation =
     evaluations.find((evaluation) => evaluation.id === selectedEvaluationId) ?? null;
+
+  async function confirmDiscardUnsavedGrades() {
+    if (!gradeEntryDirty) return true;
+    return confirm({
+      title: "Notes non enregistrées",
+      description: "Des notes non enregistrées seront perdues. Continuer ?",
+      confirmLabel: "Continuer",
+    });
+  }
+
+  function requestContextChange(apply: () => void) {
+    if (!gradeEntryDirty) {
+      apply();
+      return;
+    }
+    void (async () => {
+      if (!(await confirmDiscardUnsavedGrades())) return;
+      apply();
+    })();
+  }
 
   async function persistState(patch: {
     evaluations?: Evaluation[];
     notes?: unknown[];
     bulletins?: unknown[];
+    evaluation?: Evaluation;
   }) {
     setBusy(true);
     try {
-      await update(patch);
+      if (patch.evaluation) {
+        const exists = (state.evaluations ?? []).some((row) => row.id === patch.evaluation?.id);
+        if (exists) {
+          await pedagogyApi.updateEvaluation(patch.evaluation.id, patch.evaluation as unknown as Record<string, unknown>);
+        } else {
+          await pedagogyApi.createEvaluation(patch.evaluation as unknown as Record<string, unknown>);
+        }
+      }
+      if (patch.notes?.length) {
+        const evaluations = state.evaluations ?? [];
+        for (const note of patch.notes) {
+          await pedagogyApi.upsertNote(
+            pedagogyNoteWritePayload(note, evaluations, {
+              teacherSession: isTeacherSessionRole(scopeUser?.role),
+            }),
+          );
+        }
+      }
+      if (patch.bulletins) {
+        for (const bulletin of patch.bulletins) {
+          const row = bulletin as Record<string, unknown>;
+          if (!row.studentId) continue;
+          await reportCardsApi.generate({
+            studentId: row.studentId,
+            period: row.period,
+            className: row.className,
+          });
+        }
+      }
+      await refresh();
       return { ok: true as const };
     } catch (err) {
       const message = err instanceof Error ? err.message : "Erreur de synchronisation";
-      showToast(message, "error");
+      const code = err instanceof ApiError ? err.code : undefined;
+      showToast(code ? `${message} (${code})` : message, "error");
       return { ok: false as const, message };
     } finally {
       setBusy(false);
@@ -169,7 +259,7 @@ export function GradesEvaluationsPage() {
 
     // HOTFIX-SYNC-03 : ne pas envoyer auditLog (non writable client → 403 RBAC).
     const persisted = await persistState({
-      evaluations: nextEvaluations,
+      evaluation: nextEvaluations.find((row) => row.id === evaluation.id) ?? evaluation,
     });
     if (!persisted.ok) {
       // Conservée localement (outbox failed) — ne pas afficher un succès trompeur.
@@ -196,7 +286,7 @@ export function GradesEvaluationsPage() {
       row.id === evaluation.id ? deactivateEvaluation(row, scopeUser) : row,
     );
     await persistState({
-      evaluations: next,
+      evaluation: next.find((row) => row.id === evaluation.id) ?? deactivateEvaluation(evaluation, scopeUser),
     });
     showToast("Évaluation désactivée");
   }
@@ -215,7 +305,7 @@ export function GradesEvaluationsPage() {
       row.id === evaluation.id ? validatedEval : row,
     );
     await persistState({
-      evaluations: nextEvaluations,
+      evaluation: nextEvaluations.find((row) => row.id === evaluation.id) ?? validatedEval,
       notes: gradesToLegacyNotes(nextGrades),
     });
     showToast("Notes validées");
@@ -239,14 +329,36 @@ export function GradesEvaluationsPage() {
       allGrades(state),
     );
     await persistState({
-      evaluations: nextEvaluations,
+      evaluation: nextEvaluations.find((row) => row.id === evaluation.id) ?? published,
       bulletins,
     });
     showToast("Évaluation publiée — bulletins mis à jour");
   }
 
-  async function handleGradesChange(nextGrades: StudentGrade[]) {
-    await persistState({ notes: gradesToLegacyNotes(nextGrades) });
+  async function handleSaveGrades(changedGrades: StudentGrade[]) {
+    const teacherSession = isTeacherSessionRole(scopeUser?.role);
+    const actorScope = gradeSaveActorScope(teacherSession, selectedEvaluation);
+    for (const grade of changedGrades) {
+      const [note] = gradesToLegacyNotes(
+        actorScope.teacherId ? [{ ...grade, teacherId: actorScope.teacherId }] : [grade],
+      );
+      const payload = pedagogyNoteWritePayload(
+        note,
+        selectedEvaluation ? [selectedEvaluation] : [],
+        { teacherSession },
+      );
+      if (actorScope.teacherId) payload.teacherId = actorScope.teacherId;
+      try {
+        await pedagogyApi.upsertNote(payload);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Erreur de synchronisation";
+        const code = err instanceof ApiError ? err.code : undefined;
+        const studentLabel = String(grade.studentName ?? grade.studentId ?? "Élève").trim() || "Élève";
+        throw new Error(code ? `${studentLabel} : ${message} (${code})` : `${studentLabel} : ${message}`);
+      }
+    }
+    await refresh(["notes"]);
+    showToast("Notes enregistrées");
   }
 
   async function handleCorrection() {
@@ -274,7 +386,7 @@ export function GradesEvaluationsPage() {
   function exportGrades() {
     const columns = [
       { key: "eleve", header: "Élève" },
-      { key: "matiere", header: "Matière" },
+      { key: "cours", header: "Cours" },
       { key: "periode", header: "Période" },
       { key: "note", header: "Note" },
       { key: "bareme", header: "Barème" },
@@ -285,7 +397,7 @@ export function GradesEvaluationsPage() {
       .filter((grade) => !period || grade.period === period)
       .map((grade) => ({
         eleve: grade.studentName,
-        matiere: grade.subject,
+        cours: grade.subject,
         periode: grade.period,
         note: grade.value ?? "",
         bareme: grade.scale,
@@ -300,7 +412,7 @@ export function GradesEvaluationsPage() {
   const evaluationColumns: Column<Evaluation>[] = [
     { key: "title", header: "Titre", render: (row) => row.title },
     { key: "className", header: "Classe", render: (row) => row.className },
-    { key: "subject", header: "Matière", render: (row) => row.subject },
+    { key: "subject", header: "Cours", render: (row) => row.subject },
     { key: "type", header: "Type", render: (row) => row.evaluationType },
     { key: "period", header: "Période", render: (row) => row.period },
     { key: "scale", header: "Barème", render: (row) => `/${row.scale}` },
@@ -345,7 +457,10 @@ export function GradesEvaluationsPage() {
               Modifier
             </Button>
           ) : null}
-          {canUpdate && row.status !== "Validée" && row.status !== "Publiée" ? (
+          {canUpdate &&
+          canValidateGrades(scopeUser) &&
+          row.status !== "Validée" &&
+          row.status !== "Publiée" ? (
             <Button variant="secondary" className="text-xs" onClick={() => void handleValidateEvaluation(row)}>
               Valider
             </Button>
@@ -426,7 +541,10 @@ export function GradesEvaluationsPage() {
               <Button
                 key={item.key}
                 variant={tab === item.key ? "primary" : "secondary"}
-                onClick={() => setTab(item.key)}
+                onClick={() => {
+                  if (item.key === tab) return;
+                  requestContextChange(() => setTab(item.key));
+                }}
                 aria-selected={tab === item.key}
               >
                 {item.label}
@@ -435,13 +553,36 @@ export function GradesEvaluationsPage() {
           </div>
           <div className="mt-3 grid gap-3 sm:grid-cols-3">
             <Field label="Période">
-              <Input value={period} onChange={(e) => setPeriod(e.target.value)} />
+              <Select
+                aria-label="Période"
+                value={period}
+                onChange={(e) => {
+                  const next = e.target.value;
+                  if (next === period) return;
+                  requestContextChange(() => setPeriod(next));
+                }}
+                options={periodOptions}
+              />
             </Field>
+            {queueDefaults.showStatusFilter ? (
+              <Field label="Statut">
+                <Select
+                  aria-label="Statut"
+                  value={statusFilter}
+                  onChange={(e) => setStatusFilter(e.target.value)}
+                  options={[...EVALUATION_STATUS_FILTER_OPTIONS]}
+                />
+              </Field>
+            ) : null}
             {tab !== "eleve" ? (
               <Field label="Classe">
                 <Select
                   value={selectedClass}
-                  onChange={(e) => setSelectedClass(e.target.value)}
+                  onChange={(e) => {
+                    const next = e.target.value;
+                    if (next === selectedClass) return;
+                    requestContextChange(() => setSelectedClass(next));
+                  }}
                   options={classNames.map((name) => ({ value: name, label: name }))}
                 />
               </Field>
@@ -468,11 +609,7 @@ export function GradesEvaluationsPage() {
             filteredEvaluations.length === 0 ? (
               <EmptyState
                 title="Aucune évaluation"
-                description={
-                  period
-                    ? `Aucune évaluation pour la période « ${period} ».`
-                    : "Créez une évaluation pour commencer la saisie des notes."
-                }
+                description={evaluationsEmptyDescription(period, statusFilter)}
                 action={
                   canCreate ? (
                     <Button
@@ -501,19 +638,19 @@ export function GradesEvaluationsPage() {
             <Card className="p-6">
               <Field label="Évaluation">
                 <Select
+                  aria-label="Évaluation"
                   value={selectedEvaluationId}
-                  onChange={(e) => setSelectedEvaluationId(e.target.value)}
+                  onChange={(e) => {
+                    const next = e.target.value;
+                    if (next === selectedEvaluationId) return;
+                    requestContextChange(() => setSelectedEvaluationId(next));
+                  }}
                   options={[
                     { value: "", label: "Choisir une évaluation…" },
-                    ...filteredEvaluations
-                      .filter(
-                        (evaluation) =>
-                          !selectedClass || classNamesMatch(evaluation.className, selectedClass),
-                      )
-                      .map((evaluation) => ({
-                        value: evaluation.id,
-                        label: `${evaluation.title} — ${evaluation.subject}`,
-                      })),
+                    ...gradeEntryEvaluations.map((evaluation) => ({
+                      value: evaluation.id,
+                      label: `${evaluation.title} — ${evaluation.subject}`,
+                    })),
                   ]}
                 />
               </Field>
@@ -523,21 +660,18 @@ export function GradesEvaluationsPage() {
                     evaluation={selectedEvaluation}
                     students={students}
                     grades={allGrades(state)}
-                    canEdit={
-                      canUpdate &&
-                      teacherCanAccessEvaluation(scopeUser, selectedEvaluation, state) &&
-                      canEditEvaluation(selectedEvaluation, state)
-                    }
+                    canEdit={canEnterGrades && canEnterGradesForEvaluation(scopeUser, selectedEvaluation, state)}
                     user={scopeUser}
-                    onChange={(next) => void handleGradesChange(next)}
+                    onSave={handleSaveGrades}
                     onError={(message) => showToast(message, "error")}
+                    onDirtyChange={handleGradeEntryDirtyChange}
                   />
                   {canCorrectValidatedGrades(scopeUser) ? (
                     <div className="mt-4">
                       <Button
                         variant="secondary"
                         onClick={() => {
-                          const validated = grades.find(
+                          const validated = allGrades(state).find(
                             (grade) =>
                               grade.evaluationId === selectedEvaluation.id &&
                               (grade.gradeStatus === "Validée" || grade.gradeStatus === "Corrigée"),

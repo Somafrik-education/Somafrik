@@ -6,6 +6,7 @@ const { normalize } = require("./e2e-api-helpers");
 const PROTECTED_SCHOOL_CODES = new Set(
   [
     process.env.SOMAFRIK_TEST_SCHOOL_CODE,
+    "CD-IN-26-001",
     "CD-2026-0001",
     "CG-2026-0001",
   ]

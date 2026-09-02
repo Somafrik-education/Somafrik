@@ -83,7 +83,7 @@ Write-Host "3. Expo Go (SDK 54) - mettre a jour depuis le Play Store / App Store
 Write-Host "   URL manuelle : $expoUrl" -ForegroundColor Cyan
 Write-Host "   Alternative  : $manifestUrl (ouvrir dans Expo Go si propose)"
 Write-Host ""
-Write-Host "4. Comptes demo : CD-2026-0001 | ELE-0001 ou ENS-0001 | PIN 1234"
+Write-Host "4. Comptes demo : CD-IN-26-001 | ELE-0001 ou ENS-0001 | PIN 1234"
 Write-Host ""
 Write-Host "Logs Expo : npm run docker:logs:mobile"
 Write-Host ""

@@ -1,49 +1,44 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { render, screen, within } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
+import { useCallback, useState } from "react";
+import type { SchoolStudent } from "../../lib/studentsApi";
 
-const permissions = vi.hoisted(() => ({
-  canRead: true,
-  canCreate: true,
-  canUpdate: true,
-  canDelete: true,
-}));
+const SCHOOL_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 
-const dataState = vi.hoisted(() => ({
-  current: {
-    schools: [{ code: "SCH-001", name: "Lycée Test" }],
-    classes: [{ id: "cls-1", name: "6ème A", schoolCode: "SCH-001" }],
-    students: [
-      {
-        id: "stu-1",
-        name: "Diop",
-        firstName: "Awa",
-        matricule: "MAT-001",
-        className: "6ème A",
-        schoolStatus: "Inscrit",
-        schoolCode: "SCH-001",
-      },
-      {
-        id: "stu-2",
-        name: "Fall",
-        firstName: "Ibrahima",
-        matricule: "MAT-002",
-        className: "5ème B",
-        schoolStatus: "Inscrit",
-        schoolCode: "SCH-001",
-      },
-    ],
-    teachers: [],
-    assignments: [],
-    courses: [],
-    contacts: [],
-    relations: [],
-    users: [],
-    academicConfigBySchool: {},
-    auditLog: [],
-  } as Record<string, unknown>,
+const permissions = vi.hoisted(() => ({ canRead: true, canCreate: true, canUpdate: true, canDelete: true }));
+const store = vi.hoisted(() => ({
+  students: [] as SchoolStudent[],
 }));
+const archiveMock = vi.hoisted(() =>
+  vi.fn(async (studentCode: string) => {
+    store.students = store.students.filter((row) => row.studentCode !== studentCode);
+    return { status: "archived" };
+  }),
+);
+const listMock = vi.hoisted(() => vi.fn(async () => store.students));
+
+function fixtureStudents(): SchoolStudent[] {
+  return [
+    {
+      id: "CD-IN-DA-26-00001", publicId: "CD-IN-DA-26-00001", studentCode: "CD-IN-DA-26-00001",
+      matricule: "CD-IN-DA-26-00001", loginCode: "CD-IN-DA-26-00001", identifier: "CD-IN-DA-26-00001",
+      firstName: "Awa", lastName: "Diop", name: "Awa Diop", gender: "Féminin", birthDate: "12-04-2012",
+      className: "6ème A", classCode: "CLS-1", schoolId: SCHOOL_ID, schoolCode: "CD-IN-26-001",
+      parentPhone: "", parentEmail: "",
+      status: "active", enrollmentId: "enr-1", enrollmentDate: "01-09-2025", academicYearName: "2025-2026",
+    },
+    {
+      id: "CD-IN-FI-26-00002", publicId: "CD-IN-FI-26-00002", studentCode: "CD-IN-FI-26-00002",
+      matricule: "CD-IN-FI-26-00002", loginCode: "CD-IN-FI-26-00002", identifier: "CD-IN-FI-26-00002",
+      firstName: "Ibrahima", lastName: "Fall", name: "Ibrahima Fall", gender: "Masculin", birthDate: "01-01-2011",
+      className: "5ème B", classCode: "CLS-2", schoolId: SCHOOL_ID, schoolCode: "CD-IN-26-001",
+      parentPhone: "", parentEmail: "",
+      status: "active", enrollmentId: "enr-2", enrollmentDate: "01-09-2025", academicYearName: "2025-2026",
+    },
+  ];
+}
 
 vi.mock("../../context/AuthContext", () => ({
   useAuth: () => ({
@@ -51,166 +46,122 @@ vi.mock("../../context/AuthContext", () => ({
       user: {
         id: "u1",
         role: "Admin School",
-        schoolCode: "SCH-001",
+        schoolCode: "CD-2026-0001",
+        schoolPublicCode: "CD-IN-26-001",
+        schoolId: SCHOOL_ID,
         name: "Admin",
       },
     },
   }),
 }));
-
-vi.mock("../../context/DataContext", () => ({
-  useData: () => ({
-    state: dataState.current,
-    loading: false,
-    error: null,
-    update: vi.fn(),
-    refresh: vi.fn(),
-  }),
-}));
-
 vi.mock("../../context/ActiveSchoolContext", () => ({
   useActiveSchool: () => ({
-    activeSchoolCode: "SCH-001",
     scopedUser: {
       id: "u1",
       role: "Admin School",
-      schoolCode: "SCH-001",
-      name: "Admin",
+      schoolCode: "CD-2026-0001",
+      schoolPublicCode: "CD-IN-26-001",
+      schoolId: SCHOOL_ID,
     },
+    activeSchoolCode: "CD-2026-0001",
   }),
 }));
-
 vi.mock("../../lib/usePermissionContext", () => ({
-  usePermissionContext: () => ({ user: { role: "Admin School", schoolCode: "SCH-001" } }),
+  usePermissionContext: () => ({
+    user: { role: "Admin School", schoolCode: "CD-2026-0001", schoolId: SCHOOL_ID },
+  }),
 }));
-
 vi.mock("../../lib/permissions", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../lib/permissions")>();
-  return {
-    ...actual,
-    getEntityFeaturePermissions: (_ctx: unknown, key: string) => {
-      if (key === "assignments") {
-        return { canRead: true, canCreate: false, canUpdate: false, canDelete: false };
-      }
-      return { ...permissions };
-    },
-  };
+  return { ...actual, getEntityFeaturePermissions: () => ({ ...permissions }) };
 });
-
-vi.mock("../../components/ui/Toast", () => ({
-  useToast: () => ({ showToast: vi.fn() }),
+vi.mock("../../lib/studentsApi", () => ({
+  studentsApi: { list: listMock, get: vi.fn(), update: vi.fn(), archive: archiveMock },
 }));
-
-vi.mock("../../components/ui/ConfirmDialog", () => ({
-  useConfirm: () => ({ confirm: vi.fn(async () => true) }),
-}));
-
-vi.mock("../../components/ui/PromptDialog", () => ({
-  usePrompt: () => ({ prompt: vi.fn() }),
-}));
-
-vi.mock("../../components/ui/PrintButton", () => ({
-  PrintButton: () => <button type="button">Imprimer</button>,
+vi.mock("../../context/DataContext", () => ({
+  useData: () => {
+    const [students, setStudents] = useState(store.students);
+    const refresh = useCallback(async () => {
+      const next = await listMock();
+      store.students = Array.isArray(next) ? next : [];
+      setStudents(store.students);
+    }, []);
+    return {
+      state: { students, schools: [], users: [], teachers: [], classes: [], assignments: [], rolePermissions: {} },
+      refresh,
+      loading: false,
+      error: null,
+      scopeError: null,
+    };
+  },
 }));
 
 import { StudentsListPage } from "./StudentsListPage";
 
 function renderPage() {
-  return render(
-    <MemoryRouter>
-      <StudentsListPage />
-    </MemoryRouter>,
-  );
+  return render(<MemoryRouter><StudentsListPage /></MemoryRouter>);
 }
 
-describe("StudentsListPage (D3.1b — consommation D2.7)", () => {
+describe("StudentsListPage — snapshot DataContext et archivage", () => {
   beforeEach(() => {
-    permissions.canRead = true;
-    permissions.canCreate = true;
-    permissions.canUpdate = true;
-    permissions.canDelete = true;
-    dataState.current = {
-      ...dataState.current,
-      students: [
-        {
-          id: "stu-1",
-          name: "Diop",
-          firstName: "Awa",
-          matricule: "MAT-001",
-          className: "6ème A",
-          schoolStatus: "Inscrit",
-          schoolCode: "SCH-001",
-        },
-        {
-          id: "stu-2",
-          name: "Fall",
-          firstName: "Ibrahima",
-          matricule: "MAT-002",
-          className: "5ème B",
-          schoolStatus: "Inscrit",
-          schoolCode: "SCH-001",
-        },
-      ],
-    };
+    permissions.canRead = true; permissions.canCreate = true; permissions.canUpdate = true; permissions.canDelete = true;
+    store.students = fixtureStudents();
+    listMock.mockImplementation(async () => store.students);
+    listMock.mockClear(); archiveMock.mockClear();
   });
 
-  it("rend le chrome D2.7 (ListLayout / EntityListShell) pour Élèves", () => {
+  it("affiche l'annuaire depuis le snapshot DataContext canonique", async () => {
     renderPage();
-
-    expect(screen.getByRole("heading", { level: 2, name: "Élèves" })).toBeInTheDocument();
-    expect(screen.getByRole("banner")).toBeInTheDocument();
-    expect(screen.getByLabelText("Filtres et recherche")).toBeInTheDocument();
-    expect(screen.getByLabelText("Liste")).toBeInTheDocument();
-    expect(
-      screen.getByRole("searchbox", { name: /Rechercher dans élèves/i }),
-    ).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { level: 2, name: "Élèves" })).toBeInTheDocument();
+    expect(await screen.findByText("Diop")).toBeInTheDocument();
+    expect(screen.getByText("Fall")).toBeInTheDocument();
   });
 
-  it("affiche le tableau nominal avec colonnes et actions existantes", () => {
-    renderPage();
-
-    const list = screen.getByLabelText("Liste");
-    expect(within(list).getByText("Diop")).toBeInTheDocument();
-    expect(within(list).getByText("Fall")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Ajouter" })).toBeInTheDocument();
-    expect(screen.getAllByRole("link", { name: "Dossier" }).length).toBeGreaterThan(0);
-    expect(screen.getAllByRole("button", { name: "Modifier" }).length).toBeGreaterThan(0);
+  it("n'expose aucun bouton Ajouter ni Modifier", async () => {
+    renderPage(); await screen.findByText("Diop");
+    expect(screen.queryByRole("button", { name: "Ajouter" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Modifier" })).not.toBeInTheDocument();
+    expect(screen.getAllByRole("link", { name: "Dossier" }).length).toBe(2);
   });
 
-  it("filtre la liste via EntityListSearch sans changer les données source", async () => {
-    const user = userEvent.setup();
-    renderPage();
+  it("lie le dossier via le matricule général", async () => {
+    renderPage(); await screen.findByText("Diop");
+    expect(screen.getAllByRole("link", { name: "Dossier" })[0]).toHaveAttribute(
+      "href",
+      "/etablissement/eleves/CD-IN-DA-26-00001",
+    );
+  });
 
-    const search = screen.getByRole("searchbox", { name: /Rechercher dans élèves/i });
-    await user.type(search, "Diop");
-
+  it("filtre la liste en local sans persistance locale", async () => {
+    const user = userEvent.setup(); renderPage(); await screen.findByText("Diop");
+    await user.type(screen.getByRole("searchbox", { name: /Rechercher dans élèves/i }), "Diop");
     expect(screen.getByText("Diop")).toBeInTheDocument();
     expect(screen.queryByText("Fall")).not.toBeInTheDocument();
   });
 
-  it("affiche EmptyState DS lorsque la liste est vide", () => {
-    dataState.current = { ...dataState.current, students: [] };
-    renderPage();
-
-    const empty = screen.getByRole("status");
-    expect(empty).toHaveTextContent("Liste vide");
-    expect(empty).toHaveTextContent("Aucun élément à afficher dans élèves.");
-  });
-
-  it("affiche ForbiddenState (EntityListForbidden) si accès refusé", () => {
-    permissions.canRead = false;
-    renderPage();
-
+  it("affiche Forbidden si lecture refusée", () => {
+    permissions.canRead = false; renderPage();
     expect(screen.getByRole("status")).toHaveTextContent("Accès non autorisé");
-    expect(screen.getByRole("status")).toHaveTextContent(
-      "Vous n'avez pas l'autorisation de consulter élèves.",
-    );
-    expect(screen.queryByRole("heading", { name: "Élèves" })).not.toBeInTheDocument();
   });
 
-  it("conserve les actions secondaires d’export", () => {
+  it("masque Archiver sans droit delete", async () => {
+    permissions.canDelete = false; renderPage(); await screen.findByText("Diop");
+    expect(screen.queryByRole("button", { name: "Archiver" })).not.toBeInTheDocument();
+  });
+
+  it("archive via le backend puis converge DataContext", async () => {
+    const user = userEvent.setup(); renderPage(); await screen.findByText("Diop");
+    await user.click(screen.getAllByRole("button", { name: "Archiver" })[0]);
+    expect(archiveMock).toHaveBeenCalledWith("CD-IN-DA-26-00001");
+    expect(listMock).toHaveBeenCalled();
+    expect(screen.queryByText("Diop")).not.toBeInTheDocument();
+  });
+
+  it("Actualiser recharge le domaine students du DataContext", async () => {
+    const user = userEvent.setup();
     renderPage();
-    expect(screen.getByRole("button", { name: "Exporter CSV" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Exporter Excel" })).toBeInTheDocument();
+    await screen.findByText("Diop");
+    await user.click(screen.getByRole("button", { name: "Actualiser" }));
+    expect(listMock).toHaveBeenCalled();
   });
 });

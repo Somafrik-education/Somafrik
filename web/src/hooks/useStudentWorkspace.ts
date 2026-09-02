@@ -1,118 +1,111 @@
-import { useMemo } from "react";
-import { useData } from "../context/DataContext";
-import type { StudentEnrollment } from "../lib/studentDomain";
+import { useEffect, useMemo, useState } from "react";
+import { ApiError } from "../api/client";
 import type { StudentEnrollmentRecord } from "../lib/studentEnrollment";
-import { buildStudentWorkspace } from "../lib/studentWorkspaceService";
+import { buildStudentWorkspaceFromDossier } from "../lib/studentDossierFromApi";
+import { applyEnrollmentOverrideToWorkspace } from "../lib/studentEnrollmentOverlay";
 import {
   buildStudentWorkspaceViewModel,
   type StudentWorkspaceViewModel,
 } from "../lib/studentWorkspaceViewModel";
+import { studentsApi, type SchoolStudent } from "../lib/studentsApi";
 
 export interface UseStudentWorkspaceResult {
   workspace: StudentWorkspaceViewModel | null;
+  dossier: SchoolStudent | null;
   loading: boolean;
   error: string | null;
+  refresh: () => Promise<void>;
 }
 
 export interface UseStudentWorkspaceOptions {
-  /** Remplace les inscriptions domaine (overlay C1.8a depuis le store d'édition). */
+  /** Overlay inscriptions (édition locale) — conserve la compatibilité C1.8a/C1.8b. */
   enrollmentOverride?: readonly StudentEnrollmentRecord[] | null;
 }
 
-function resolveAcademicYear(
-  studentId: string,
-  studentSchoolYear: unknown,
-  enrollments: readonly { studentId: string; academicYear: string }[],
-): string {
-  const matchingYears = enrollments
-    .filter((enrollment) => enrollment.studentId === studentId)
-    .map((enrollment) => enrollment.academicYear.trim())
-    .filter(Boolean)
-    .sort((left, right) => right.localeCompare(left));
-
-  return matchingYears[0] ?? String(studentSchoolYear ?? "").trim();
+function mapError(err: unknown): string {
+  if (err instanceof ApiError) {
+    if (err.status === 404) return "Élève introuvable.";
+    if (err.status === 403) return "Accès refusé à cette fiche élève.";
+    return err.message || "Impossible de charger la fiche élève.";
+  }
+  return "Impossible de charger la fiche élève.";
 }
 
-function toDomainEnrollment(
-  record: StudentEnrollmentRecord,
-): StudentEnrollment {
-  return {
-    id: record.id,
-    studentId: record.studentId,
-    schoolCode: record.schoolCode,
-    academicYear: record.academicYear,
-    classId: record.classId,
-    className: record.className,
-    programId: record.programId,
-    programName: record.programName,
-    status: record.status,
-    source: record.source,
-    applicationReference: record.applicationReference,
-    requestedAt: record.requestedAt,
-    enrolledAt: record.enrolledAt,
-    validatedAt: record.validatedAt,
-    endedAt: record.endedAt,
-    transferDate: record.transferDate,
-    destinationSchoolName: record.destinationSchoolName,
-    closureDate: record.closureDate,
-    previousSchool: record.previousSchoolName ?? undefined,
-    notes: record.notes,
-    enrollmentDate: record.enrolledAt ?? undefined,
-    createdAt: record.createdAt,
-    updatedAt: record.updatedAt,
-  };
-}
-
+/**
+ * Fiche élève — chargement canonique PostgreSQL par studentCode.
+ * L'overlay d'inscription ne touche que enrollments + history dérivé.
+ */
 export function useStudentWorkspace(
   studentId: string,
   options: UseStudentWorkspaceOptions = {},
 ): UseStudentWorkspaceResult {
-  const { state, loading, error } = useData();
+  const [dossier, setDossier] = useState<SchoolStudent | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [revision, setRevision] = useState(0);
+
+  const normalizedStudentId = studentId.trim();
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function load() {
+      if (!normalizedStudentId) {
+        setDossier(null);
+        setError(null);
+        setLoading(false);
+        return;
+      }
+
+      setLoading(true);
+      setError(null);
+      try {
+        const row = await studentsApi.get(normalizedStudentId);
+        if (!cancelled) {
+          setDossier(row);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setDossier(null);
+          setError(mapError(err));
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      }
+    }
+
+    void load();
+    return () => {
+      cancelled = true;
+    };
+  }, [normalizedStudentId, revision]);
 
   const workspace = useMemo(() => {
-    const normalizedStudentId = studentId.trim();
-    if (!normalizedStudentId) return null;
+    if (!dossier) return null;
 
-    const student = state.students.find(
-      (candidate) => candidate.id === normalizedStudentId,
-    );
-    if (!student) return null;
+    const baseWorkspace = buildStudentWorkspaceFromDossier(dossier);
+    if (!baseWorkspace) return null;
 
-    const baseEnrollments = state.studentEnrollments ?? [];
-    const enrollments =
+    const withOverlay =
       options.enrollmentOverride && options.enrollmentOverride.length > 0
-        ? options.enrollmentOverride.map(toDomainEnrollment)
-        : baseEnrollments;
+        ? applyEnrollmentOverrideToWorkspace(
+            baseWorkspace,
+            options.enrollmentOverride,
+          )
+        : baseWorkspace;
 
-    const academicYear = resolveAcademicYear(
-      student.id,
-      student.schoolYear,
-      enrollments,
-    );
-
-    const domainWorkspace = buildStudentWorkspace({
-      studentId: student.id,
-      academicYear,
-      data: {
-        students: state.students,
-        persons: state.persons,
-        schools: state.schools,
-        enrollments,
-        guardians: state.guardians,
-        guardianRelations: state.studentGuardianRelations,
-        documents: state.studentDocuments,
-        medicalProfiles: state.studentMedicalProfiles,
-      },
-    });
-
-    return domainWorkspace
-      ? buildStudentWorkspaceViewModel(domainWorkspace)
-      : null;
-  }, [studentId, state, options.enrollmentOverride]);
+    return buildStudentWorkspaceViewModel(withOverlay);
+  }, [dossier, options.enrollmentOverride]);
 
   return {
     workspace,
+    dossier,
     loading,
     error,
+    refresh: async () => {
+      setRevision((value) => value + 1);
+    },
   };
 }

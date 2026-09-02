@@ -2,6 +2,7 @@
  * Provisionnement compte utilisateur depuis un contact (aligné web/src/lib/contacts.ts).
  */
 const { rolePermissions } = require("../data");
+const { randomBytes } = require("crypto");
 const { findDuplicateLoginIdentifier } = require("./userAccountRules");
 
 const INTERNAL_ROLE_DEFAULT_PERMISSIONS = {
@@ -9,23 +10,30 @@ const INTERNAL_ROLE_DEFAULT_PERMISSIONS = {
     "Messages:READ",
     "Messages:CREATE",
     "Notifications:READ",
+    "Announcements:READ",
     "Présences:READ",
     "Notes:READ",
+    "Notes:CREATE",
+    "Notes:UPDATE",
+    "Affectations:READ",
     "Classes:READ",
     "Élèves:READ",
+    "Matières:READ",
   ],
   Parent: [
     "Messages:READ",
     "Notifications:READ",
+    "Announcements:READ",
     "Notes:READ",
     "Paiements:READ",
     "Élèves:READ",
   ],
-  Comptable: ["Paiements:READ", "Messages:READ", "Notifications:READ", "Élèves:READ"],
+  Comptable: ["Paiements:READ", "Messages:READ", "Notifications:READ", "Announcements:READ", "Élèves:READ"],
   Secrétaire: [
     "Utilisateurs:READ",
     "Messages:READ",
     "Notifications:READ",
+    "Announcements:READ",
     "Élèves:READ",
     "Paiements:READ",
   ],
@@ -52,6 +60,14 @@ function getUserIdentifierPrefix(role) {
 }
 
 function generateUserIdentifier(users = [], role) {
+  const key = normalize(role);
+  if (key.includes("eleve") || key.includes("etudiant") || key === "student") {
+    const error = new Error(
+      "L'identifiant élève est le matricule PostgreSQL (CD-IN-EL-26-001). Pas de générateur.",
+    );
+    error.code = "STUDENT_LOGIN_IDENTIFIER_SERVER_OWNED";
+    throw error;
+  }
   const prefix = getUserIdentifierPrefix(role);
   const pattern = new RegExp(`^${prefix}-(\\d+)$`, "i");
   let max = 0;
@@ -64,7 +80,8 @@ function generateUserIdentifier(users = [], role) {
 }
 
 function generateTemporaryPassword() {
-  return `SF-${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
+  const bytes = randomBytes(16);
+  return `SF-${bytes.toString("hex").toUpperCase()}-${String(bytes[0]).padStart(3, "0")}`;
 }
 
 function generateContactUserId(users = []) {
@@ -121,6 +138,14 @@ function provisionUserFromContact(contact, users = [], options = {}) {
 
   const defaults = getRoleDefaults(role, schoolCode);
   const contactIdentifier = String(contact.userIdentifier ?? "").trim();
+  if (/élève|eleve|étudiant|etudiant/i.test(role) && isNewUser && !contactIdentifier) {
+    return {
+      contact,
+      users: nextUsers,
+      created: false,
+      error: "Le compte élève est créé à l'inscription (Classes). Matricule = identifiant de connexion.",
+    };
+  }
   const identifier =
     existing?.identifier ?? (contactIdentifier || generateUserIdentifier(nextUsers, role));
   const duplicate = findDuplicateLoginIdentifier(nextUsers, {

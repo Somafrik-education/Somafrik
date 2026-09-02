@@ -1,14 +1,8 @@
 /**
- * HOTFIX-SYNC-02 — Preuve repository réelle (méthodes PostgresRepository),
- * pas une Map pgEvaluations reconstruite.
+ * HOTFIX-SYNC-02 / LOT 5 — Preuve repository réelle (méthodes PostgresRepository).
  *
- * Exercice :
- *   saveBackOfficeState
- *   → syncNotesDomainFromBackOffice
- *   → upsertEvaluationFromLegacy
- *   → INSERT evaluations
- *   → syncAck.accepted
- *   → getBackOfficeState (refresh)
+ * LOT 5 : `saveBackOfficeState` ne déclenche plus `syncNotesDomainFromBackOffice`.
+ * La synchronisation BO → PG reste testée via l'appel explicite de la méthode interne.
  */
 const assert = require("assert");
 const { PostgresRepository } = require("../db/postgresRepository");
@@ -52,8 +46,17 @@ function createInjectablePostgresRepository() {
     const text = String(sql).replace(/\s+/g, " ").trim();
     const upper = text.toUpperCase();
 
-    if (upper.startsWith("SELECT * FROM SCHOOLS WHERE SCHOOL_CODE")) {
-      return tables.schools.filter((row) => eq(row.school_code, params[0]));
+    if (
+      upper.includes("FROM SCHOOLS") &&
+      (upper.includes("WHERE UPPER(SCHOOL_CODE)") ||
+        upper.startsWith("SELECT * FROM SCHOOLS WHERE SCHOOL_CODE"))
+    ) {
+      const needle = String(params[0] ?? "").trim().toUpperCase();
+      return tables.schools.filter((row) => {
+        const schoolCode = String(row.school_code ?? "").trim().toUpperCase();
+        const loginCode = String(row.login_code ?? "").trim().toUpperCase();
+        return schoolCode === needle || loginCode === needle;
+      });
     }
     if (upper.includes("SELECT SCHOOL_CODE FROM SCHOOLS WHERE ID")) {
       return tables.schools.filter((row) => eq(row.id, params[0])).map((row) => ({
@@ -170,6 +173,11 @@ function createInjectablePostgresRepository() {
       return [row];
     }
 
+    if (upper.includes("FROM TERMS") && upper.includes("LOWER(BTRIM(NAME))")) {
+      return tables.terms.filter(
+        (row) => eq(row.academic_year_id, params[0]) && lower(row.name) === lower(params[1]),
+      );
+    }
     if (upper.includes("FROM TERMS") && upper.includes("NAME =")) {
       return tables.terms.filter(
         (row) => eq(row.academic_year_id, params[0]) && eq(row.name, params[1]),
@@ -211,6 +219,39 @@ function createInjectablePostgresRepository() {
         (row) => eq(row.school_id, params[0]) && eq(row.legacy_json_id, params[1]),
       );
     }
+    if (upper.includes("FROM EVALUATIONS WHERE ID = $1 AND SCHOOL_ID = $2")) {
+      return tables.evaluations.filter(
+        (row) => eq(row.id, params[0]) && eq(row.school_id, params[1]),
+      );
+    }
+    if (upper.includes("FROM EVALUATIONS WHERE ID = $1 AND SCHOOL_ID <> $2")) {
+      return tables.evaluations.filter(
+        (row) => eq(row.id, params[0]) && !eq(row.school_id, params[1]),
+      );
+    }
+    if (upper.includes("FROM EVALUATIONS WHERE LEGACY_JSON_ID = $1 AND SCHOOL_ID <> $2")) {
+      return tables.evaluations.filter(
+        (row) => eq(row.legacy_json_id, params[0]) && !eq(row.school_id, params[1]),
+      );
+    }
+    if (upper.includes("FROM EVALUATIONS E") && upper.includes("JOIN CLASSES C")) {
+      const evaluation = tables.evaluations.find((row) => eq(row.id, params[0]));
+      if (!evaluation) return [];
+      const klass = tables.classes.find((row) => eq(row.id, evaluation.class_id));
+      const subject = tables.subjects.find((row) => eq(row.id, evaluation.subject_id));
+      const term = tables.terms.find((row) => eq(row.id, evaluation.term_id));
+      const teacher = evaluation.teacher_id
+        ? tables.teachers.find((row) => eq(row.id, evaluation.teacher_id))
+        : null;
+      return [
+        {
+          class_name: klass?.name ?? null,
+          subject_name: subject?.name ?? null,
+          term_name: term?.name ?? null,
+          teacher_code: teacher?.teacher_code ?? null,
+        },
+      ];
+    }
     if (upper.includes("FROM EVALUATIONS WHERE LEGACY_JSON_ID")) {
       return tables.evaluations.filter((row) => eq(row.legacy_json_id, params[0]));
     }
@@ -227,12 +268,13 @@ function createInjectablePostgresRepository() {
         term_id: params[4],
         title: params[5],
         evaluation_type: params[6],
-        evaluation_date: params[7],
-        max_score: params[8],
-        coefficient: params[9],
-        status: params[10],
-        active: params[11],
-        legacy_json_id: params[12],
+        evaluation_type_id: params[7] ?? null,
+        evaluation_date: params[8],
+        max_score: params[9],
+        coefficient: params[10],
+        status: params[11],
+        active: params[12],
+        legacy_json_id: params[13],
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       };
@@ -240,7 +282,7 @@ function createInjectablePostgresRepository() {
       return [row];
     }
     if (upper.startsWith("UPDATE EVALUATIONS")) {
-      const id = params[12];
+      const id = params[13];
       const row = tables.evaluations.find((item) => eq(item.id, id));
       if (!row) return [];
       Object.assign(row, {
@@ -250,12 +292,13 @@ function createInjectablePostgresRepository() {
         term_id: params[3],
         title: params[4],
         evaluation_type: params[5],
-        evaluation_date: params[6],
-        max_score: params[7],
-        coefficient: params[8],
-        status: params[9],
-        active: params[10],
-        legacy_json_id: row.legacy_json_id ?? params[11],
+        evaluation_type_id: params[6] ?? null,
+        evaluation_date: params[7],
+        max_score: params[8],
+        coefficient: params[9],
+        status: params[10],
+        active: params[11],
+        legacy_json_id: row.legacy_json_id ?? params[12],
         updated_at: new Date().toISOString(),
       });
       return [];
@@ -288,7 +331,8 @@ function createInjectablePostgresRepository() {
       upper.includes("CREATE TABLE") ||
       upper.includes("CREATE UNIQUE INDEX") ||
       upper.includes("ALTER TABLE") ||
-      upper.includes("FROM GRADES")
+      upper.includes("FROM GRADES") ||
+      upper.includes("FROM EVALUATION_TYPES")
     ) {
       return [];
     }
@@ -312,9 +356,30 @@ async function run() {
     school_code: "SCH-001",
     name: "Lycée Test",
   });
-  // Aucune année / classe / matière initiale — l'ensure doit tout créer.
-  assert.strictEqual(repo.tables.academic_years.length, 0);
-  assert.strictEqual(repo.tables.classes.length, 0);
+  // Année + classe préexistantes — ensureClassForSchool est lookup-only (P0-B/C).
+  const existingYear = {
+    id: "00000000-0000-4000-8000-0000000000aa",
+    school_id: schoolId,
+    name: "2025-2026",
+    start_date: "2025-09-01",
+    end_date: "2026-08-31",
+    is_current: true,
+    status: "open",
+    created_at: new Date().toISOString(),
+  };
+  repo.tables.academic_years.push(existingYear);
+  repo.tables.classes.push({
+    id: "00000000-0000-4000-8000-0000000000c1",
+    school_id: schoolId,
+    academic_year_id: existingYear.id,
+    class_code: "CLS-SCH-001-6EA",
+    name: "6e A",
+    level: "6e",
+    section: "A",
+    status: "active",
+    created_at: new Date().toISOString(),
+  });
+  assert.strictEqual(repo.tables.classes.length, 1);
   assert.strictEqual(repo.tables.subjects.length, 0);
 
   const evaluation = {
@@ -333,30 +398,43 @@ async function run() {
     date: "2026-07-23",
   };
 
-  const saved = await repo.saveBackOfficeState({
+  await assert.rejects(
+    () =>
+      repo.saveBackOfficeState({
+        schools: [{ code: "SCH-001", name: "Lycée Test" }],
+        classes: [{ id: "c1", name: "6e A", schoolCode: "SCH-001" }],
+        courses: [{ id: "m1", name: "Mathématiques", schoolCode: "SCH-001" }],
+        evaluations: [evaluation],
+        notes: [],
+      }),
+    (error) => {
+      assert.equal(error.code, "BACKOFFICE_STATE_WRITE_REMOVED");
+      assert.equal(error.statusCode, 410);
+      return true;
+    },
+  );
+  assert.strictEqual(repo.tables.evaluations.length, 0, "LOT 8: PUT state supprimé, pas de sync via saveBackOfficeState");
+
+  const syncResult = await repo.syncNotesDomainFromBackOffice({
     schools: [{ code: "SCH-001", name: "Lycée Test" }],
     classes: [{ id: "c1", name: "6e A", schoolCode: "SCH-001" }],
     courses: [{ id: "m1", name: "Mathématiques", schoolCode: "SCH-001" }],
     evaluations: [evaluation],
     notes: [],
   });
+  assert.deepStrictEqual(syncResult.accepted.evaluations, ["EVAL-REPO-1"]);
+  assert.strictEqual(syncResult.rejected.length, 0);
 
-  assert.ok(saved.syncAck, "syncAck HTTP réel présent");
-  assert.deepStrictEqual(
-    saved.syncAck.accepted.map((item) => item.id),
-    ["EVAL-REPO-1"],
-  );
-  assert.strictEqual(saved.syncAck.rejected.length, 0);
-
-  // INSERT réel via upsertEvaluationFromLegacy
+  // INSERT réel via upsertEvaluationFromLegacy (chemin interne explicite)
   assert.strictEqual(repo.tables.evaluations.length, 1);
   assert.strictEqual(repo.tables.evaluations[0].legacy_json_id, "EVAL-REPO-1");
   assert.strictEqual(repo.tables.evaluations[0].title, "Devoir maison");
 
-  // Année créée par ensureCurrentAcademicYearForSchool
-  assert.ok(repo.tables.academic_years.length >= 1, "année scolaire créée");
+  // Année préexistante — ensure ne doit plus inventer de millésime.
+  assert.strictEqual(repo.tables.academic_years.length, 1);
   assert.strictEqual(repo.tables.academic_years[0].school_id, schoolId);
   assert.strictEqual(repo.tables.academic_years[0].status, "open");
+  assert.strictEqual(repo.tables.academic_years[0].id, existingYear.id);
 
   // Lecture SQL evaluations (refresh autre session)
   const pgRow = await repo.one(
@@ -366,9 +444,7 @@ async function run() {
   assert.ok(pgRow, "ligne lue depuis evaluations");
 
   const refreshed = await repo.getBackOfficeState();
-  assert.ok(refreshed, "getBackOfficeState après save");
-  // Strip des acceptés : evaluations absentes du JSON durable
-  assert.deepStrictEqual(refreshed.evaluations ?? [], []);
+  assert.equal(refreshed, null, "LOT 8: getBackOfficeState ne lit plus le snapshot durable");
 
   // Anti-doublon matière accentuée : Mathématiques déjà créée → Mathematiques ne crée pas
   const subjectCountBefore = repo.tables.subjects.length;
@@ -376,29 +452,40 @@ async function run() {
   assert.strictEqual(repo.tables.subjects.length, subjectCountBefore);
   assert.strictEqual(normalizeText(again.name), normalizeText("Mathématiques"));
 
-  // Deuxième sync idempotente → toujours 1 ligne evaluations
-  const second = await repo.saveBackOfficeState({
+  // Deuxième sync idempotente via méthode interne → toujours 1 ligne evaluations
+  const second = await repo.syncNotesDomainFromBackOffice({
     schools: [{ code: "SCH-001", name: "Lycée Test" }],
     evaluations: [{ ...evaluation, title: "Devoir maison (maj)" }],
     notes: [],
   });
-  assert.deepStrictEqual(
-    second.syncAck.accepted.map((item) => item.id),
-    ["EVAL-REPO-1"],
-  );
+  assert.strictEqual(second.rejected.length, 0, JSON.stringify(second.rejected));
+  assert.deepStrictEqual(second.accepted.evaluations, ["EVAL-REPO-1"]);
   assert.strictEqual(repo.tables.evaluations.length, 1);
   assert.strictEqual(repo.tables.evaluations[0].title, "Devoir maison (maj)");
 
-  // Preuve explicite ensure année seule
+  await assert.rejects(
+    () =>
+      repo.saveBackOfficeState({
+        schools: [{ code: "SCH-001", name: "Lycée Test" }],
+        evaluations: [{ ...evaluation, title: "Ignoré par PUT" }],
+        notes: [],
+      }),
+    (error) => {
+      assert.equal(error.code, "BACKOFFICE_STATE_WRITE_REMOVED");
+      return true;
+    },
+  );
+  assert.strictEqual(repo.tables.evaluations[0].title, "Devoir maison (maj)");
+
+  // Preuve explicite : ensure ne crée plus d'année 01/09–31/08
   const yearRepo = createInjectablePostgresRepository();
   yearRepo.tables.schools.push({ id: schoolId, school_code: "SCH-001", name: "Lycée Test" });
   assert.strictEqual(yearRepo.tables.academic_years.length, 0);
   const createdYear = await yearRepo.ensureCurrentAcademicYearForSchool(schoolId);
-  assert.ok(createdYear?.id);
-  assert.strictEqual(yearRepo.tables.academic_years.length, 1);
-  const sameYear = await yearRepo.ensureCurrentAcademicYearForSchool(schoolId);
-  assert.strictEqual(sameYear.id, createdYear.id);
-  assert.strictEqual(yearRepo.tables.academic_years.length, 1);
+  assert.equal(createdYear, null);
+  assert.strictEqual(yearRepo.tables.academic_years.length, 0);
+  const stillMissing = await yearRepo.getCurrentAcademicYear(schoolId);
+  assert.equal(stillMissing, null);
 
   console.log("evaluationSyncRepository.test.js : OK");
 }

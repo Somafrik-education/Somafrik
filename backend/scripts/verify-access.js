@@ -37,7 +37,7 @@ const accounts = {
   },
   studentWeb: {
     loginPath: "/backoffice/login",
-    payload: { schoolCode: "CD-2026-0001", identifier: "ELE-0001", password: "1234" },
+    payload: { schoolCode: "CD-2026-0001", identifier: "CD-IN-EL-26-001", password: "1234" },
   },
   teacher: {
     loginPath: "/login",
@@ -49,7 +49,7 @@ const accounts = {
   },
   student: {
     loginPath: "/login",
-    payload: { role: "student", schoolCode: "CD-2026-0001", identifier: "ELE-0001", pin: "1234" },
+    payload: { role: "student", schoolCode: "CD-2026-0001", identifier: "CD-IN-EL-26-001", pin: "1234" },
   },
 };
 
@@ -66,7 +66,7 @@ const routes = [
   { method: "GET", path: "/backoffice/notifications?page=1&limit=5", allow: ["superadmin", "countryAdmin", "countryAdminBi"] },
   { method: "GET", path: "/audit?page=1&limit=5", allow: ["superadmin", "countryAdmin", "countryAdminBi"] },
   { method: "GET", path: "/v2/subjects?page=1&limit=5", allow: ["superadmin", "countryAdmin", "countryAdminBi", "schoolAdmin", "prefet", "teacherWeb", "teacher"] },
-  { method: "GET", path: "/v2/academic-years?page=1&limit=5", allow: ["superadmin", "countryAdmin", "countryAdminBi", "schoolAdmin", "prefet", "teacherWeb", "teacher"] },
+  { method: "GET", path: "/v2/academic-years?page=1&limit=5", allow: ["superadmin", "schoolAdmin", "prefet", "teacherWeb", "teacher"] },
   { method: "GET", path: "/v2/exams?page=1&limit=5", allow: ["superadmin", "countryAdmin", "countryAdminBi", "schoolAdmin", "prefet", "teacherWeb", "teacher"] },
   { method: "GET", path: "/v2/documents?page=1&limit=5", allow: ["superadmin", "countryAdmin", "countryAdminBi", "schoolAdmin", "secretary", "prefet", "teacherWeb", "parentWeb", "studentWeb", "teacher", "parent", "student"] },
   { method: "GET", path: "/v2/reports/advanced", allow: ["superadmin", "countryAdmin", "countryAdminBi", "schoolAdmin", "secretary", "prefet", "teacherWeb", "parentWeb", "studentWeb", "teacher", "parent", "student"] },

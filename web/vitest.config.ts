@@ -7,6 +7,9 @@ export default defineConfig({
   resolve: {
     alias: {
       "@": fileURLToPath(new URL("./src", import.meta.url)),
+      "@somafrik/help-catalog": fileURLToPath(
+        new URL("../packages/help-catalog/src/index.js", import.meta.url),
+      ),
     },
   },
   test: {
@@ -16,8 +19,12 @@ export default defineConfig({
       "src/design-system/**/*.{test,spec}.{ts,tsx}",
       // Pages migrées D2.3+ (tests de structure / non-régression UI)
       "src/pages/**/*.{test,spec}.{ts,tsx}",
+      "src/components/**/*.{test,spec}.{ts,tsx}",
+      "src/context/**/*.{test,spec}.{ts,tsx}",
       // HOTFIX-SYNC-01 — outbox / merge non destructif
       "src/lib/**/*.{test,spec}.{ts,tsx}",
+      "src/data/**/*.{test,spec}.{ts,tsx}",
+      "src/help/**/*.{test,spec}.{ts,tsx}",
     ],
     css: false,
     globals: false,

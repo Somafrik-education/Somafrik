@@ -107,8 +107,11 @@ export class MessageService {
       role === "school_admin" ||
       role === "country_admin" ||
       role === "principal" ||
+      role === "proviseur" ||
       role === "prefet" ||
-      role === "secretary"
+      role === "secretary" ||
+      role === "accountant" ||
+      role === "adjoint"
     ) {
       return message.direction === "Parent vers école";
     }

@@ -7,7 +7,7 @@
     "icon": "./assets/somafrik-app-icon.png",
     "userInterfaceStyle": "light",
     "splash": {
-      "image": "./assets/somafrik-logo.png",
+      "image": "./assets/somafrik-splash.png",
       "resizeMode": "contain",
       "backgroundColor": "#FFFFFF"
     },
@@ -17,7 +17,8 @@
         "expo-image-picker",
         {
           "photosPermission": "Somafrik utilise vos photos pour ajouter la photo du compte.",
-          "cameraPermission": "Somafrik utilise l'appareil photo pour prendre la photo du compte."
+          "cameraPermission": "Somafrik utilise l'appareil photo pour prendre la photo du compte.",
+          "microphonePermission": false
         }
       ]
     ],
@@ -29,7 +30,7 @@
         "READ_MEDIA_IMAGES"
       ],
       "adaptiveIcon": {
-        "foregroundImage": "./assets/somafrik-app-icon.png",
+        "foregroundImage": "./assets/somafrik-android-adaptive-foreground.png",
         "backgroundColor": "#FFFFFF"
       }
     },

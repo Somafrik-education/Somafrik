@@ -166,7 +166,7 @@ export function validateAssignmentConflict(
   const resolvedSchoolCode = state ? resolveAssignmentSchoolCode(null, state, schoolCode) : schoolCode;
 
   if (!teacherId || !className || !subject) {
-    return "Veuillez sélectionner un enseignant, une classe et une matière.";
+    return "Veuillez sélectionner un enseignant, une classe et un cours.";
   }
 
   if (!teachers.some((teacher) => String(teacher.id) === teacherId)) {
@@ -182,7 +182,7 @@ export function validateAssignmentConflict(
   }
 
   if (state && !isKnownSubjectForClass(subject, className, courses, state, resolvedSchoolCode)) {
-    return `La matière « ${subject} » n'est pas configurée pour la classe ${className}. Ajoutez-la dans Configuration → Matières.`;
+    return `Le cours « ${subject} » n'est pas configuré pour la classe ${className}. Ajoutez-le dans Configuration → Cours.`;
   }
 
   if (
@@ -193,7 +193,7 @@ export function validateAssignmentConflict(
         normalize(String(course.className ?? "")) === normalize(className),
     )
   ) {
-    return `La matière « ${subject} » n'existe pas pour la classe ${className}.`;
+    return `Le cours « ${subject} » n'existe pas pour la classe ${className}.`;
   }
 
   const duplicate = assignments.find((assignment) => {

@@ -12,31 +12,28 @@ import {
 
   TouchableOpacity,
 
-  TextInput,
-
 } from "react-native";
 
 import { Ionicons } from "@expo/vector-icons";
 
 import { useCallback, useMemo, useState } from "react";
 
+import { useFocusEffect } from "@react-navigation/native";
+
 import { useAuth } from "../context/AuthContext";
 
 import { useAdminData } from "../context/AdminDataContext";
 
-import { getPaymentStats, getPresenceStats, normalizePresenceStatus } from "../domain/metrics/schoolMetrics";
+import { getPresenceStats, normalizePresenceStatus } from "../domain/metrics/schoolMetrics";
 
-import { canMutateEntity, canReadRoute } from "../domain/security/permissions";
-
-import { entityCreateViaContactsOnly } from "../lib/contactProvisioning";
+import { canReadRoute } from "../domain/security/permissions";
 
 import {
 
   filterStudentsByClassName,
 
-  scopedStudentsForSession,
-
 } from "../lib/establishment";
+import StudentsScopeAlert from "../components/StudentsScopeAlert";
 
 import { useFloatingTabBarLayout } from "../lib/screenLayout";
 
@@ -50,11 +47,23 @@ import {
 
 } from "../lib/classesStudentJourneySpec";
 
-import type { PresenceItem } from "../data/catalog";
+import { isMetricReady, metricLabelFromSnapshot } from "../lib/dataTruth";
+import { formatPaymentRateKpi } from "../lib/paymentRateKpi";
+import { shouldBlockUnsupportedMutations } from "../offline/l1/readModel";
+import { OFFLINE_COPY } from "../lib/offlineModeSpec";
+
+import { studentDisplayName } from "../lib/studentDisplayName";
+
+import { MIN_TOUCH_TARGET_DP } from "../lib/mobileUsability";
+
+import StudentMutationControls from "../components/StudentMutationControls";
+import FormField from "../components/FormField";
+
+import type { PresenceItem, Student } from "../data/catalog";
 
 
 
-type StudentRow = ReturnType<typeof scopedStudentsForSession>[number];
+type StudentRow = Student;
 
 
 
@@ -74,17 +83,31 @@ export default function StudentsScreen({ route, navigation }: any) {
 
   const scrollContentStyle = [styles.scrollContent, { paddingBottom: scrollContentPaddingBottom }];
 
-  const { session } = useAuth();
+  const { session, permissionsBootstrap } = useAuth();
 
-  const { studentsData, paymentsData, presencesData, teachersData, assignmentsData, classesData } = useAdminData();
+  const { presencesData, classesData, loadStudents, loadPresences, loadPayments, loadStudentFees, loadTeachers, loadClasses, loadAssignments, studentsSnapshot, presencesSnapshot, studentFeesSnapshot, resourceScopeKey, establishmentStudents, studentsProjection } = useAdminData();
 
   const className = route?.params?.className ?? "Toutes les classes";
 
   const [query, setQuery] = useState("");
+  const mutationsBlocked = shouldBlockUnsupportedMutations({
+    source: studentsSnapshot.source,
+    permissionsBootstrap,
+  });
 
-  const teacherScopeState = { teachers: teachersData, assignments: assignmentsData, classes: classesData };
+  useFocusEffect(
+    useCallback(() => {
+      void loadStudents();
+      void loadPresences();
+      void loadPayments();
+      void loadStudentFees();
+      void loadTeachers();
+      void loadClasses();
+      void loadAssignments();
+    }, [loadStudents, loadPresences, loadPayments, loadStudentFees, loadTeachers, loadClasses, loadAssignments, resourceScopeKey]),
+  );
 
-  const availableStudents = scopedStudentsForSession(session, studentsData, teacherScopeState);
+  const availableStudents = establishmentStudents;
 
 
 
@@ -158,13 +181,17 @@ export default function StudentsScreen({ route, navigation }: any) {
 
   );
 
-  const paymentStats = useMemo(
-
-    () => getPaymentStats(paymentsData, classStudentIds),
-
-    [paymentsData, classStudentIds],
-
+  const studentsCountLabel = metricLabelFromSnapshot(studentsSnapshot, () => String(filteredStudents.length));
+  const presenceRateLabel = metricLabelFromSnapshot(presencesSnapshot, () => `${presenceStats.rate}%`, "0%");
+  const paymentRateLabel = metricLabelFromSnapshot(
+    studentFeesSnapshot,
+    (rows) =>
+      formatPaymentRateKpi(
+        rows.filter((fee) => classStudentIds.includes(String(fee.studentId ?? ""))),
+      ).value,
+    "—",
   );
+  const studentsSubtitle = isMetricReady(studentsSnapshot) ? `${filteredStudents.length} élèves inscrits` : studentsCountLabel;
 
 
 
@@ -202,11 +229,15 @@ export default function StudentsScreen({ route, navigation }: any) {
 
 
 
-  const canManageStudents = canMutateEntity(session, "students", "CREATE");
-
-  const canCreateStudent =
-
-    canManageStudents && !entityCreateViaContactsOnly("students");
+  const renderStudentCreate = () => (
+    <StudentMutationControls
+      className={className}
+      classes={classesData}
+      createTestId={CLASSES_STUDENT_TEST_IDS.studentsAddButton}
+      networkRequired={mutationsBlocked}
+      onChanged={() => loadStudents()}
+    />
+  );
 
   const canOpenStudentDetail = canReadRoute(session, "StudentDetail");
 
@@ -256,11 +287,13 @@ export default function StudentsScreen({ route, navigation }: any) {
 
       return (
 
+        <View style={styles.studentRow}>
+
         <TouchableOpacity
 
           activeOpacity={0.85}
 
-          style={styles.studentRow}
+          style={styles.studentMain}
 
           testID={STUDENT_ROW_TEST_ID(student.id)}
 
@@ -276,7 +309,7 @@ export default function StudentsScreen({ route, navigation }: any) {
 
             <Text style={styles.studentName} numberOfLines={1} ellipsizeMode="tail">
 
-              {[student.firstName, student.name].filter(Boolean).join(" ").trim() || student.name}
+              {studentDisplayName(student)}
 
             </Text>
 
@@ -341,12 +374,20 @@ export default function StudentsScreen({ route, navigation }: any) {
           </View>
 
         </TouchableOpacity>
+          <StudentMutationControls
+            row={student}
+            className={className}
+            classes={classesData}
+            networkRequired={mutationsBlocked}
+            onChanged={() => loadStudents()}
+          />
+        </View>
 
       );
 
     },
 
-    [className, openStudentDetail, presenceByStudentId],
+    [className, classesData, loadStudents, mutationsBlocked, openStudentDetail, presenceByStudentId],
 
   );
 
@@ -390,6 +431,12 @@ export default function StudentsScreen({ route, navigation }: any) {
 
             onPress={() => navigation.goBack()}
 
+            accessibilityRole="button"
+
+            accessibilityLabel="Retour aux classes"
+
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+
           >
 
             <Ionicons name="arrow-back" size={24} color="#0F172A" />
@@ -408,67 +455,37 @@ export default function StudentsScreen({ route, navigation }: any) {
 
             <Text style={styles.subtitle} testID={CLASSES_STUDENT_TEST_IDS.studentsCount}>
 
-              {filteredStudents.length} élèves inscrits
+              {studentsSubtitle}
 
             </Text>
 
           </View>
 
-
-
-          {canManageStudents && (
-
-            <TouchableOpacity
-
-              activeOpacity={0.85}
-
-              style={styles.addButton}
-
-              testID={CLASSES_STUDENT_TEST_IDS.studentsAddButton}
-
-              onPress={() =>
-
-                navigation.navigate("AdminCrud", {
-
-                  entity: "students",
-
-                  ...(className !== "Toutes les classes" ? { className } : {}),
-
-                })
-
-              }
-
-            >
-
-              <Ionicons name="add" size={26} color="#FFFFFF" />
-
-            </TouchableOpacity>
-
-          )}
-
         </View>
 
+          {renderStudentCreate()}
 
+        <StudentsScopeAlert />
 
-        <View style={styles.searchBox}>
+        {mutationsBlocked ? (
+          <Text style={{ color: "#B91C1C", fontWeight: "700", marginBottom: 12 }} testID="l1-offline-banner">
+            {OFFLINE_COPY.l1ModeTitle}
+            {studentsSnapshot.cachedAt
+              ? ` — ${OFFLINE_COPY.l1LastSyncPrefix} : ${studentsSnapshot.cachedAt}`
+              : ""}
+          </Text>
+        ) : null}
 
-          <Ionicons name="search-outline" size={22} color="#94A3B8" />
-
-          <TextInput
-
-            placeholder="Rechercher un élève"
-
-            placeholderTextColor="#94A3B8"
-
-            value={query}
-
-            onChangeText={setQuery}
-
-            style={styles.searchInput}
-
-          />
-
-        </View>
+        <FormField
+          label="Recherche"
+          hideVisibleLabel
+          type="search"
+          leading={<Ionicons name="search-outline" size={22} color="#94A3B8" />}
+          placeholder="Ex. Esther Okito"
+          value={query}
+          onChangeText={setQuery}
+          accessibilityLabel="Rechercher un élève"
+        />
 
 
 
@@ -476,7 +493,7 @@ export default function StudentsScreen({ route, navigation }: any) {
 
           <View>
 
-            <Text style={styles.summaryValue}>{filteredStudents.length}</Text>
+            <Text style={styles.summaryValue}>{studentsCountLabel}</Text>
 
             <Text style={styles.summaryLabel}>Élèves</Text>
 
@@ -490,7 +507,7 @@ export default function StudentsScreen({ route, navigation }: any) {
 
           <View>
 
-            <Text style={styles.summaryValue}>{presenceStats.rate}%</Text>
+            <Text style={styles.summaryValue}>{presenceRateLabel}</Text>
 
             <Text style={styles.summaryLabel}>Présence</Text>
 
@@ -504,7 +521,7 @@ export default function StudentsScreen({ route, navigation }: any) {
 
           <View>
 
-            <Text style={styles.summaryValue}>{paymentStats.rate}%</Text>
+            <Text style={styles.summaryValue}>{paymentRateLabel}</Text>
 
             <Text style={styles.summaryLabel}>Paiements</Text>
 
@@ -526,7 +543,7 @@ export default function StudentsScreen({ route, navigation }: any) {
 
     [
 
-      canManageStudents,
+      renderStudentCreate,
 
       className,
 
@@ -534,9 +551,15 @@ export default function StudentsScreen({ route, navigation }: any) {
 
       navigation,
 
-      paymentStats.rate,
+      paymentRateLabel,
 
-      presenceStats.rate,
+      presenceRateLabel,
+
+      studentsCountLabel,
+
+      studentsProjection.error,
+
+      studentsSubtitle,
 
       query,
 
@@ -588,41 +611,11 @@ export default function StudentsScreen({ route, navigation }: any) {
 
         </Text>
 
-        {isClassEmpty && canManageStudents ? (
-
-          <TouchableOpacity
-
-            activeOpacity={0.85}
-
-            style={styles.emptyActionButton}
-
-            testID={CLASSES_STUDENT_TEST_IDS.studentsAddButton}
-
-            onPress={() =>
-
-              navigation.navigate("AdminCrud", {
-
-                entity: "students",
-
-                ...(className !== "Toutes les classes" ? { className } : {}),
-
-              })
-
-            }
-
-          >
-
-            <Text style={styles.emptyActionText}>{CLASSES_STUDENT_COPY.addStudentAction}</Text>
-
-          </TouchableOpacity>
-
-        ) : null}
-
       </View>
 
     ),
 
-    [canManageStudents, className, emptyMessage, isClassEmpty, navigation],
+    [className, emptyMessage, isClassEmpty],
 
   );
 
@@ -730,9 +723,13 @@ const styles = StyleSheet.create({
 
   backButton: {
 
-    width: 40,
+    minWidth: 44,
 
-    height: 40,
+    minHeight: 44,
+
+    width: 44,
+
+    height: 44,
 
     borderRadius: 14,
 
@@ -974,11 +971,9 @@ const styles = StyleSheet.create({
 
   studentRow: {
 
-    minHeight: 46,
+    minHeight: MIN_TOUCH_TARGET_DP,
 
-    paddingHorizontal: 10,
-
-    paddingVertical: 7,
+    paddingLeft: 10,
 
     borderTopWidth: 1,
 
@@ -989,6 +984,24 @@ const styles = StyleSheet.create({
     alignItems: "center",
 
     backgroundColor: "#FFFFFF",
+
+  },
+
+
+
+  studentMain: {
+
+    flex: 1,
+
+    minWidth: 0,
+
+    minHeight: MIN_TOUCH_TARGET_DP,
+
+    paddingVertical: 7,
+
+    flexDirection: "row",
+
+    alignItems: "center",
 
   },
 

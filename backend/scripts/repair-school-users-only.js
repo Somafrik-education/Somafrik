@@ -3,8 +3,8 @@
  *
  * Usage :
  *   node backend/scripts/repair-school-users-only.js
- *   node backend/scripts/repair-school-users-only.js CD-2026-0001
- *   docker compose exec backend node scripts/repair-school-users-only.js CD-2026-0001
+ *   node backend/scripts/repair-school-users-only.js CD-IN-26-001
+ *   docker compose exec backend node scripts/repair-school-users-only.js CD-IN-26-001
  */
 const path = require("path");
 require("dotenv").config({ path: path.join(__dirname, "..", "..", ".env") });
@@ -13,9 +13,9 @@ require("dotenv").config({ path: path.join(__dirname, "..", "..", ".env.local"),
 const { rolePermissions } = require("../data");
 const { initializeRepository } = require("../db/repositoryFactory");
 
-const SCHOOL_CODE = String(process.argv[2] ?? "CD-2026-0001").trim().toUpperCase();
+const SCHOOL_CODE = String(process.argv[2] ?? "CD-IN-26-001").trim().toUpperCase();
 
-/** 6 comptes utilisateurs — INSTITUT NURU (CD-2026-0001), sans couche Contacts. */
+/** 6 comptes utilisateurs — établissement démo (login_code V2), sans couche Contacts. */
 function buildSchoolUsers(schoolCode) {
   const base = {
     schoolCode,
@@ -80,7 +80,7 @@ function buildSchoolUsers(schoolCode) {
     {
       ...base,
       id: "USER-ELE-0001",
-      identifier: "ELE-0001",
+      identifier: "CD-IN-EL-26-001",
       role: "Élève / Étudiant",
       firstName: "Esther",
       lastName: "OKITO",
@@ -92,7 +92,7 @@ function buildSchoolUsers(schoolCode) {
     {
       ...base,
       id: "USER-ELE-0002",
-      identifier: "ELE-0002",
+      identifier: "CD-IN-EL-26-002",
       role: "Élève / Étudiant",
       firstName: "Hope Sabrina",
       lastName: "OKITO",

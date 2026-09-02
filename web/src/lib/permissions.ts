@@ -1,7 +1,7 @@
 import type { SessionUser, UserAccount } from "../types";
 import { canManageUserAccount } from "./userAccounts";
 import { isPendingValidationStatus } from "./orgHierarchy";
-import { VIEW_PERMISSION_FEATURES } from "./constants";
+import { PLANNING_WEB_UI_ENABLED, VIEW_PERMISSION_FEATURES } from "./constants";
 import { getInternalRoleDefaults } from "./internalRoleDefaults";
 import { isInternalSchoolRole, normalize, isSchoolAdminRole } from "./format";
 import { canSchoolAdminMutateTeachers } from "./pedagogyGovernance";
@@ -20,7 +20,6 @@ import {
   isSuperAdminAllowedFeature,
   isSuperAdminAllowedView,
 } from "./superAdminAccess";
-import { canManageFeeGrids, canViewFeeGrids, canViewStudentFees } from "./fees";
 import {
   isEstablishmentCommunicationUser,
   isPlatformCommunicationFeature,
@@ -105,6 +104,9 @@ export function canAccessSchoolBackOffice(role?: string): boolean {
 export interface PermissionContext {
   user: SessionUser | null;
   rolePermissions: Record<string, string[]>;
+  permissionsReady?: boolean;
+  permissionsBootstrap?: "idle" | "loading" | "ready" | "error";
+  permissionsBootstrapError?: string | null;
 }
 
 export interface FeaturePermissions {
@@ -121,10 +123,20 @@ export function resolveEffectivePermissions(
   userPermissions: string[] | undefined,
   rolePermissions: Record<string, string[]>,
 ): string[] {
-  const fromUser = userPermissions ?? [];
+  if (Array.isArray(userPermissions)) {
+    const merged = [...userPermissions];
+    if (isSuperAdminRole(role) && !merged.includes("ALL_PRIVILEGES")) {
+      merged.push("ALL_PRIVILEGES");
+    }
+    if (role === COUNTRY_ADMIN_ROLE) {
+      return merged.filter((permission) => permission !== "Pays:CREATE" && permission !== "Pays:DELETE");
+    }
+    return merged;
+  }
   const fromRole = role && Array.isArray(rolePermissions[role]) ? rolePermissions[role] : [];
-  const fromDefaults = getInternalRoleDefaults(role);
-  const merged = [...new Set([...fromUser, ...fromRole, ...fromDefaults])];
+  const hasCanonicalSource = fromRole.length > 0 || Object.keys(rolePermissions).length > 0;
+  const fromDefaults = hasCanonicalSource ? [] : getInternalRoleDefaults(role);
+  const merged = [...new Set([...fromRole, ...fromDefaults])];
   if (isSuperAdminRole(role) && !merged.includes("ALL_PRIVILEGES")) {
     merged.push("ALL_PRIVILEGES");
   }
@@ -140,7 +152,7 @@ export function getCurrentRolePermissions(ctx: PermissionContext): string[] {
   return resolveEffectivePermissions(ctx.user?.role, ctx.user?.permissions, ctx.rolePermissions);
 }
 
-const COUNTRY_PRIVILEGE_FEATURES = new Set(["pays", "etablissements", "abonnements", "utilisateurs", "rapports"]);
+const COUNTRY_PRIVILEGE_FEATURES = new Set(["pays", "etablissements", "abonnements", "utilisateurs", "rapports", "referentiels pedagogiques"]);
 
 function countryPrivilegeAllowsRead(normalizedFeature: string): boolean {
   return COUNTRY_PRIVILEGE_FEATURES.has(normalizedFeature);
@@ -170,7 +182,11 @@ function permissionMatchesFeature(
   ) {
     return true;
   }
-  if (!normalizedPermission.includes(normalizedFeature)) {
+  const featureTokens =
+    normalizedFeature === "announcements"
+      ? ["announcements", "annonces", "annonce"]
+      : [normalizedFeature];
+  if (!featureTokens.some((token) => normalizedPermission.includes(token))) {
     return false;
   }
   if (action === "READ") {
@@ -249,8 +265,7 @@ export function canDesignBulletins(ctx: PermissionContext): boolean {
 }
 
 export function canManageRolePermissions(ctx: PermissionContext): boolean {
-  if (isSuperAdminRole(ctx.user?.role)) return true;
-  return getCurrentRolePermissions(ctx).includes("ALL_PRIVILEGES");
+  return isSuperAdminRole(ctx.user?.role);
 }
 
 function superAdminAllowsFeature(features: string | (string | null)[] | null, action: string): boolean {
@@ -284,6 +299,37 @@ export function canManagePresences(ctx: PermissionContext): boolean {
     hasBackOfficePermission(ctx, "Présences", "UPDATE") ||
     hasBackOfficePermission(ctx, "Présences", "CREATE")
   );
+}
+
+/** Saisie notes = upsert POST /api/notes (CREATE ou UPDATE). */
+export function canManageNotes(ctx: PermissionContext): boolean {
+  return (
+    hasBackOfficePermission(ctx, "Notes", "UPDATE") ||
+    hasBackOfficePermission(ctx, "Notes", "CREATE")
+  );
+}
+
+/** Liaison parent : mêmes jetons que POST /api/parents/link — pas la whitelist CRM. */
+export function canLinkParent(ctx: PermissionContext): boolean {
+  if (!ctx.user) return false;
+  if (isSuperAdminRole(ctx.user.role)) return true;
+  if (ctx.user.role === COUNTRY_ADMIN_ROLE) return true;
+  const tokens = getCurrentRolePermissions(ctx).map((permission) => normalize(permission));
+  return tokens.some(
+    (permission) =>
+      permission === normalize("ALL_PRIVILEGES") ||
+      permission === normalize("COUNTRY_PRIVILEGES") ||
+      permission === normalize("Gérer utilisateurs") ||
+      permission === normalize("Relations:CREATE"),
+  );
+}
+
+/** Archivage relation parent-enfant : mêmes jetons que PATCH /api/parents/relations/:id. */
+export function canArchiveParentRelation(ctx: PermissionContext): boolean {
+  if (canLinkParent(ctx)) return true;
+  if (!ctx.user) return false;
+  const tokens = getCurrentRolePermissions(ctx).map((permission) => normalize(permission));
+  return tokens.some((permission) => permission === normalize("Relations:UPDATE"));
 }
 
 /** Admin établissement et rôles habilités peuvent réinitialiser un mot de passe utilisateur. */
@@ -367,16 +413,6 @@ export function hasBackOfficePermission(
     return false;
   }
 
-  if (featureList.some((feature) => feature === "Frais & tarifs")) {
-    if (normalizedAction === "READ") {
-      return canViewFeeGrids(ctx.user) || canViewStudentFees(ctx.user);
-    }
-    return (
-      canManageFeeGrids(ctx.user) &&
-      hasPermissionForFeature(ctx, "Frais & tarifs", normalizedAction)
-    );
-  }
-
   return featureList.some((feature) => {
     if (!feature) return true;
     return hasPermissionForFeature(ctx, feature, normalizedAction);
@@ -384,6 +420,9 @@ export function hasBackOfficePermission(
 }
 
 export function canReadView(ctx: PermissionContext, viewName: string): boolean {
+  if (viewName === "planning" && !PLANNING_WEB_UI_ENABLED) {
+    return false;
+  }
   // Accès au hub Paramètres : Super Admin, Admin School (établissement) et Admin Pays.
   // Le détail des cartes/pages reste filtré par les vues dédiées (configuration, subscriptions…).
   if (viewName === "settings") {
@@ -440,11 +479,10 @@ export function canReadView(ctx: PermissionContext, viewName: string): boolean {
     if (isSuperAdminRole(ctx.user?.role)) return true;
     return isSchoolAdminRole(ctx.user?.role);
   }
-  if (
-    viewName === "messages" ||
-    viewName === "notifications" ||
-    viewName === "announcements"
-  ) {
+  if (viewName === "announcements") {
+    return hasBackOfficePermission(ctx, "Announcements", "READ");
+  }
+  if (viewName === "messages" || viewName === "notifications") {
     if (hasBackOfficePermission(ctx, VIEW_PERMISSION_FEATURES[viewName] ?? null, "READ")) {
       return true;
     }

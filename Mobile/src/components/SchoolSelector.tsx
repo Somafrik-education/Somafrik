@@ -1,7 +1,7 @@
 import React from "react";
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from "react-native";
 import { useAdminData } from "../context/AdminDataContext";
-import { ALL_SCHOOLS_CODE } from "../lib/activeSchool";
+import { ALL_SCHOOLS_CODE, schoolSelectorChoice } from "../lib/activeSchool";
 
 export default function SchoolSelector() {
   const {
@@ -16,13 +16,13 @@ export default function SchoolSelector() {
   }
 
   const options = [
-    { code: ALL_SCHOOLS_CODE, label: "Tous les etablissements" },
-    ...availableSchools.map((school) => ({ code: school.code, label: `${school.name} (${school.code})` })),
+    { code: ALL_SCHOOLS_CODE, label: "Tous les établissements" },
+    ...availableSchools.map((school) => schoolSelectorChoice(school)),
   ];
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.label}>Etablissement actif</Text>
+    <View style={styles.container} testID="school-selector">
+      <Text style={styles.label}>Établissement actif</Text>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.row}>
         {options.map((option) => {
           const active = activeSchoolCode === option.code || (!activeSchoolCode && option.code === ALL_SCHOOLS_CODE);
@@ -31,6 +31,10 @@ export default function SchoolSelector() {
               key={option.code}
               style={[styles.chip, active && styles.chipActive]}
               onPress={() => setActiveSchoolCode(option.code)}
+              testID={option.code === ALL_SCHOOLS_CODE ? "school-selector-chip-all" : `school-selector-chip-${option.code}`}
+              accessibilityRole="button"
+              accessibilityState={{ selected: active }}
+              accessibilityLabel={option.label}
             >
               <Text style={[styles.chipText, active && styles.chipTextActive]} numberOfLines={1}>
                 {option.label}

@@ -1,76 +1,110 @@
-import { useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useAuth } from "../context/AuthContext";
 import { useData } from "../context/DataContext";
-import { CRUD_ACTIONS } from "../lib/constants";
-import {
-  canManageRolePermissions,
-  getSuperadminManagedRoles,
-  mergeSuperadminRolePermissions,
-} from "../lib/permissions";
-import {
-  COUNTRY_ADMIN_ROLE,
-  ROLE_GOVERNANCE_NOTES,
-  SCHOOL_ADMIN_ROLE,
-  getSuperadminPathModulesForRole,
-  normalizeManagedRolePermissions,
-} from "../lib/roleGovernance";
-import {
-  formatCountryOption,
-  formatSchoolOption,
-  schoolsForCountry,
-} from "../lib/superadminCrudPath";
+import { canManageRolePermissions } from "../lib/permissions";
+import { formatCountryOption, formatSchoolOption, schoolsForCountry } from "../lib/superadminCrudPath";
 import { scopedCountries, scopedSchools } from "../lib/scope";
 import { usePermissionContext } from "../lib/usePermissionContext";
+import { displayScopeName, displayStatusName } from "../lib/format";
 import { Card, SectionHeader } from "../components/ui/Card";
 import { Button } from "../components/ui/Button";
 import { PrintButton } from "../components/ui/PrintButton";
-import { Field, Select } from "../components/ui/Field";
+import { Field, Input, Select } from "../components/ui/Field";
 import { useToast } from "../components/ui/Toast";
+import { ApiError } from "../api/client";
+import {
+  rbacApi,
+  type RbacCatalog,
+  type RbacConfiguredMatrix,
+  type RbacCrudFlags,
+  type RbacCrudGrant,
+  type RbacRole,
+} from "../lib/rbacApi";
+import {
+  applyMandatoryOverlay,
+  describeActionLock,
+  lockTooltip,
+  mandatoryFlagsForModule,
+  toggleCrudFlag,
+  type RbacAction,
+} from "../lib/rbacLocks";
 
-type SuperadminDraftRole = typeof COUNTRY_ADMIN_ROLE | typeof SCHOOL_ADMIN_ROLE;
+const CRUD_ACTIONS = [
+  { key: "canCreate" as const, action: "create" as RbacAction, label: "Création" },
+  { key: "canRead" as const, action: "read" as RbacAction, label: "Lecture" },
+  { key: "canUpdate" as const, action: "update" as RbacAction, label: "Modification" },
+  { key: "canDelete" as const, action: "delete" as RbacAction, label: "Suppression" },
+];
 
-function cloneRolePermissionDrafts(rolePermissions: Record<string, string[]>) {
-  return {
-    [COUNTRY_ADMIN_ROLE]: new Set(rolePermissions[COUNTRY_ADMIN_ROLE] ?? []),
-    [SCHOOL_ADMIN_ROLE]: new Set(rolePermissions[SCHOOL_ADMIN_ROLE] ?? []),
-  } as Record<SuperadminDraftRole, Set<string>>;
+function LockIcon({ label }: { label: string }) {
+  return (
+    <span className="inline-flex text-slate-500" title={label} aria-hidden="true">
+      <svg viewBox="0 0 20 20" className="h-3.5 w-3.5" fill="currentColor">
+        <path d="M10 2a4 4 0 00-4 4v2H5a1 1 0 00-1 1v7a1 1 0 001 1h10a1 1 0 001-1V9a1 1 0 00-1-1h-1V6a4 4 0 00-4-4zm-2 6V6a2 2 0 114 0v2H8z" />
+      </svg>
+    </span>
+  );
 }
 
-const ROLE_HINTS: Record<SuperadminDraftRole, string> = {
-  [COUNTRY_ADMIN_ROLE]: "Périmètre pays : Pays, Établissements, Abonnements, Utilisateurs.",
-  [SCHOOL_ADMIN_ROLE]: "Périmètre établissement : scolarité, finance, communication…",
-};
+type TabKey = "permissions" | "roles";
+
+function emptyCrud(): RbacCrudFlags {
+  return { canCreate: false, canRead: false, canUpdate: false, canDelete: false };
+}
+
+function toCrudFlags(source?: Partial<RbacCrudFlags> | null): RbacCrudFlags {
+  return {
+    canCreate: source?.canCreate === true,
+    canRead: source?.canRead === true,
+    canUpdate: source?.canUpdate === true,
+    canDelete: source?.canDelete === true,
+  };
+}
+
+function toCrudGrant(moduleKey: string, source?: Partial<RbacCrudFlags> | null): RbacCrudGrant {
+  return {
+    moduleKey,
+    ...toCrudFlags(source),
+  };
+}
+
+function formatDate(value?: string | null) {
+  if (!value) return "—";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "—";
+  return date.toLocaleString("fr-FR");
+}
 
 export function PermissionsPage() {
   const { session } = useAuth();
-  const { state, update } = useData();
+  const { state } = useData();
   const ctx = usePermissionContext();
   const { showToast } = useToast();
-
   const canManage = canManageRolePermissions(ctx);
   const user = session?.user ?? null;
-  const managedRoles = useMemo(() => getSuperadminManagedRoles(), []);
 
   const countries = scopedCountries(user, state);
   const allSchools = scopedSchools(user, state);
 
+  const [tab, setTab] = useState<TabKey>("permissions");
+  const [catalog, setCatalog] = useState<RbacCatalog | null>(null);
   const [countryCode, setCountryCode] = useState("");
   const [schoolCode, setSchoolCode] = useState("");
-  const [selectedRole, setSelectedRole] = useState<SuperadminDraftRole | "">("");
-  const [selectedModule, setSelectedModule] = useState("");
-  const [draftByRole, setDraftByRole] = useState(() => cloneRolePermissionDrafts(state.rolePermissions));
+  const [selectedRoleKey, setSelectedRoleKey] = useState("");
+  const [selectedModuleKey, setSelectedModuleKey] = useState("");
+  const [matrix, setMatrix] = useState<RbacConfiguredMatrix | null>(null);
+  const [draft, setDraft] = useState(emptyCrud());
   const [busy, setBusy] = useState(false);
+  const [roleForm, setRoleForm] = useState({ roleName: "", roleCode: "" });
 
   const countryOptions = useMemo(
     () => [{ value: "", label: "Choisir un pays…" }, ...countries.map(formatCountryOption)],
     [countries],
   );
-
   const schoolsInCountry = useMemo(
     () => schoolsForCountry(allSchools, countryCode),
     [allSchools, countryCode],
   );
-
   const schoolOptions = useMemo(
     () => [
       { value: "", label: countryCode ? "Choisir un établissement…" : "Sélectionnez d'abord un pays" },
@@ -79,240 +113,420 @@ export function PermissionsPage() {
     [countryCode, schoolsInCountry],
   );
 
+  const roles = catalog?.roles ?? [];
+  const activeRoles = roles.filter((role) => role.status === "active");
   const roleOptions = useMemo(
     () => [
       {
         value: "",
         label: schoolCode ? "Choisir le rôle cible…" : "Sélectionnez d'abord un établissement",
       },
-      ...managedRoles.map((role) => ({ value: role, label: role })),
+      ...activeRoles.map((role) => ({
+        value: role.roleCode,
+        label: `${role.roleName} (${role.roleCode})`,
+      })),
     ],
-    [managedRoles, schoolCode],
+    [activeRoles, schoolCode],
   );
 
-  const modulesForRole = useMemo(
-    () => (selectedRole ? getSuperadminPathModulesForRole(selectedRole) : []),
-    [selectedRole],
-  );
-
+  const modules = matrix?.modules?.length ? matrix.modules : catalog?.modules ?? [];
   const moduleOptions = useMemo(
     () => [
       {
         value: "",
-        label: selectedRole ? "Choisir un module fonctionnel…" : "Sélectionnez d'abord un rôle",
+        label: selectedRoleKey ? "Choisir un module fonctionnel…" : "Sélectionnez d'abord un rôle",
       },
-      ...modulesForRole.map((module) => ({ value: module, label: module })),
+      ...modules.map((module) => ({ value: module.moduleKey, label: module.moduleName })),
     ],
-    [modulesForRole, selectedRole],
+    [modules, selectedRoleKey],
   );
 
   const selectedCountry = countries.find((country) => country.code === countryCode);
   const selectedSchool = schoolsInCountry.find((school) => school.code === schoolCode);
-  const pathComplete = Boolean(countryCode && schoolCode && selectedRole && selectedModule);
-  const activeDraft = selectedRole ? draftByRole[selectedRole] : new Set<string>();
-  const hasAllPrivileges = selectedRole ? activeDraft.has("ALL_PRIVILEGES") : false;
+  const selectedRole = roles.find((role) => role.roleCode === selectedRoleKey);
+  const selectedModule = modules.find((module) => module.moduleKey === selectedModuleKey);
+  const pathComplete = Boolean(countryCode && schoolCode && selectedRoleKey && selectedModuleKey);
 
   useEffect(() => {
-    setDraftByRole(cloneRolePermissionDrafts(state.rolePermissions));
-  }, [state.rolePermissions]);
+    if (!canManage) return;
+    let cancelled = false;
+    void rbacApi
+      .getCatalog()
+      .then((payload) => {
+        if (!cancelled) setCatalog(payload);
+      })
+      .catch(() => {
+        if (!cancelled) showToast("Impossible de charger le catalogue des rôles.", "error");
+      });
+    return () => {
+      cancelled = true;
+    };
+    // showToast est stable via ToastProvider ; exclu pour éviter une boucle de fetch.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [canManage]);
 
   useEffect(() => {
     setSchoolCode("");
-    setSelectedRole("");
-    setSelectedModule("");
+    setSelectedRoleKey("");
+    setSelectedModuleKey("");
+    setMatrix(null);
   }, [countryCode]);
 
   useEffect(() => {
-    setSelectedRole("");
-    setSelectedModule("");
+    setSelectedRoleKey("");
+    setSelectedModuleKey("");
+    setMatrix(null);
   }, [schoolCode]);
 
   useEffect(() => {
-    setSelectedModule("");
-  }, [selectedRole]);
+    setSelectedModuleKey("");
+  }, [selectedRoleKey]);
 
-  function toggle(module: string, action: string) {
-    if (!canManage || !selectedRole) return;
-    const key = `${module}:${action}`;
-    setDraftByRole((current) => {
-      const nextRoleSet = new Set(current[selectedRole]);
-      if (nextRoleSet.has(key)) nextRoleSet.delete(key);
-      else nextRoleSet.add(key);
-      return { ...current, [selectedRole]: nextRoleSet };
-    });
+  useEffect(() => {
+    if (!canManage || !selectedRoleKey || !countryCode || !schoolCode) return;
+    let cancelled = false;
+    setBusy(true);
+    void rbacApi
+      .getConfigured({ roleKey: selectedRoleKey, countryCode, schoolCode })
+      .then((payload) => {
+        if (cancelled) return;
+        setMatrix(payload);
+      })
+      .catch(() => {
+        if (!cancelled) showToast("Impossible de charger la matrice des droits.", "error");
+      })
+      .finally(() => {
+        if (!cancelled) setBusy(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [canManage, selectedRoleKey, countryCode, schoolCode]);
+
+  useEffect(() => {
+    if (!selectedModule) {
+      setDraft(emptyCrud());
+      return;
+    }
+    const mandatory = mandatoryFlagsForModule(
+      catalog?.mandatoryByRole,
+      selectedRoleKey,
+      selectedModule.moduleKey,
+    );
+    setDraft(applyMandatoryOverlay(toCrudFlags(selectedModule), mandatory));
+  }, [selectedModule, catalog?.mandatoryByRole, selectedRoleKey]);
+
+  const selectedMandatory = useMemo(
+    () => mandatoryFlagsForModule(catalog?.mandatoryByRole, selectedRoleKey, selectedModuleKey),
+    [catalog?.mandatoryByRole, selectedRoleKey, selectedModuleKey],
+  );
+
+  function toggle(field: keyof RbacCrudFlags) {
+    if (!canManage) return;
+    setDraft((current) => toggleCrudFlag(current, field, selectedMandatory));
   }
 
   async function save() {
+    if (!canManage || !selectedRoleKey || !selectedModuleKey) return;
     setBusy(true);
     try {
-      await update({
-        rolePermissions: mergeSuperadminRolePermissions(state.rolePermissions, {
-          ...state.rolePermissions,
-          [COUNTRY_ADMIN_ROLE]: normalizeManagedRolePermissions(
-            COUNTRY_ADMIN_ROLE,
-            draftByRole[COUNTRY_ADMIN_ROLE],
-          ),
-          [SCHOOL_ADMIN_ROLE]: normalizeManagedRolePermissions(
-            SCHOOL_ADMIN_ROLE,
-            draftByRole[SCHOOL_ADMIN_ROLE],
-          ),
-        }),
+      const saved = await rbacApi.patchPermissions({
+        roleKey: selectedRoleKey,
+        countryCode,
+        schoolCode,
+        expectedUpdatedAt: matrix?.updatedAt ?? null,
+        grants: [toCrudGrant(selectedModuleKey, applyMandatoryOverlay(draft, selectedMandatory))],
       });
-      showToast("Permissions enregistrées", "success");
-    } catch {
-      showToast("Échec de l'enregistrement", "error");
+      const next = await rbacApi.getConfigured({ roleKey: selectedRoleKey, countryCode, schoolCode });
+      setMatrix({ ...next, updatedAt: saved.updatedAt ?? next.updatedAt });
+      showToast("Droits enregistrés", "success");
+    } catch (error) {
+      const status = error instanceof ApiError ? error.status : 0;
+      const code = error instanceof ApiError ? error.code : undefined;
+      const message = error instanceof ApiError ? error.message : "";
+      showToast(
+        code === "MANDATORY_PERMISSION"
+          ? message || "Droit obligatoire : modification refusée."
+          : status === 409
+            ? "Conflit : la matrice a été modifiée. Rechargez avant d'enregistrer."
+            : message || "Échec de l'enregistrement",
+        "error",
+      );
     } finally {
       setBusy(false);
     }
   }
 
-  function reset() {
-    setDraftByRole(cloneRolePermissionDrafts(state.rolePermissions));
+  async function refreshCatalog() {
+    const next = await rbacApi.getCatalog();
+    setCatalog(next);
+  }
+
+  async function onCreateRole(event: FormEvent) {
+    event.preventDefault();
+    if (!canManage) return;
+    setBusy(true);
+    try {
+      await rbacApi.createRole({
+        roleName: roleForm.roleName.trim(),
+        roleCode: roleForm.roleCode.trim() || undefined,
+      });
+      setRoleForm({ roleName: "", roleCode: "" });
+      await refreshCatalog();
+      showToast("Rôle créé", "success");
+    } catch (error) {
+      showToast(error instanceof ApiError ? error.message : "Création impossible.", "error");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function onToggleRoleStatus(role: RbacRole) {
+    if (!canManage || role.systemProtected) return;
+    setBusy(true);
+    try {
+      if (role.status === "active") {
+        await rbacApi.archiveRole(role.id);
+        showToast("Rôle archivé. Les attributions existantes restent actives.", "success");
+      } else {
+        await rbacApi.updateRole(role.id, { status: "active" });
+      }
+      await refreshCatalog();
+    } catch (error) {
+      showToast(error instanceof ApiError ? error.message : "Action impossible.", "error");
+    } finally {
+      setBusy(false);
+    }
   }
 
   return (
     <Card className="p-6">
       <SectionHeader
-        title="Droits par rôle"
+        title="Rôles et droits"
         description={
           canManage
-            ? "Parcours : pays → établissement → rôle (Admin Pays / Admin School) → module → droits CRUD."
-            : "Consultation des droits plateforme (Admin Pays, Admin School)."
+            ? "Point canonique Super administrateur : pays → établissement → rôle → module → droits. PostgreSQL est la source d’autorité."
+            : "Consultation réservée. Seul le Super administrateur peut modifier les droits."
         }
         actions={
           <>
-            <PrintButton documentTitle="Droits par rôle — Somafrik" />
-            {canManage ? (
-              <>
-                <Button variant="secondary" size="sm" onClick={reset} disabled={busy}>
-                  Réinitialiser
-                </Button>
-                <Button size="sm" onClick={() => void save()} disabled={busy}>
-                  Enregistrer
-                </Button>
-              </>
+            <PrintButton documentTitle="Rôles et droits — Somafrik" />
+            {canManage && tab === "permissions" ? (
+              <Button size="sm" onClick={() => void save()} disabled={busy || !pathComplete}>
+                Enregistrer
+              </Button>
             ) : null}
           </>
         }
       />
 
-      <div className="mt-4 space-y-2 rounded-xl border border-line bg-slate-50/80 p-4 text-sm text-muted">
-        <p>
-          <span className="font-semibold text-ink">Niveaux hiérarchiques</span> (Pays, Établissement) ≠ rôles
-          métier.
-        </p>
-        <p>{ROLE_GOVERNANCE_NOTES.superadminMatrix}</p>
-        <p>{ROLE_GOVERNANCE_NOTES.localOperational}</p>
+      <div className="mt-4 flex gap-2">
+        <Button variant={tab === "permissions" ? "primary" : "secondary"} size="sm" onClick={() => setTab("permissions")}>
+          Droits
+        </Button>
+        <Button variant={tab === "roles" ? "primary" : "secondary"} size="sm" onClick={() => setTab("roles")}>
+          Rôles
+        </Button>
       </div>
 
-      <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <Field label="Pays" hint="Code et nom du pays (périmètre Admin Pays)">
-          <Select
-            value={countryCode}
-            onChange={(event) => setCountryCode(event.target.value)}
-            options={countryOptions}
-          />
-        </Field>
-
-        <Field label="Établissement" hint="Code et nom de l'école">
-          <Select
-            value={schoolCode}
-            onChange={(event) => setSchoolCode(event.target.value)}
-            options={schoolOptions}
-            disabled={!countryCode}
-          />
-        </Field>
-
-        <Field label="Rôle cible" hint="Admin Pays ou Admin School">
-          <Select
-            value={selectedRole}
-            onChange={(event) => setSelectedRole(event.target.value as SuperadminDraftRole | "")}
-            options={roleOptions}
-            disabled={!schoolCode}
-          />
-        </Field>
-
-        <Field label="Module fonctionnel" hint="Fonctionnalité à autoriser pour ce rôle">
-          <Select
-            value={selectedModule}
-            onChange={(event) => setSelectedModule(event.target.value)}
-            options={moduleOptions}
-            disabled={!selectedRole}
-          />
-        </Field>
-      </div>
-
-      {selectedCountry && selectedSchool && selectedRole ? (
-        <p className="mt-4 rounded-lg border border-line bg-white px-4 py-3 text-sm text-muted">
-          Périmètre :{" "}
-          <span className="font-semibold text-ink">
-            {selectedCountry.code} — {selectedCountry.name}
-          </span>
-          {" → "}
-          <span className="font-semibold text-ink">
-            {selectedSchool.code} — {selectedSchool.name}
-          </span>
-          {" · Rôle "}
-          <span className="font-semibold text-brand">{selectedRole}</span>
-        </p>
-      ) : null}
-
-      {!pathComplete ? (
-        <p className="mt-6 rounded-lg border border-dashed border-line px-4 py-8 text-center text-sm text-muted">
-          Sélectionnez un pays, un établissement, le rôle cible (Admin Pays ou Admin School), puis un module
-          fonctionnel pour afficher les droits CRUD.
-        </p>
-      ) : null}
-
-      {pathComplete && selectedRole ? (
-        <>
-          <p className="mt-4 rounded-lg bg-brand-50 px-4 py-3 text-sm font-medium text-brand">
-            Module « {selectedModule} » — droits appliqués au rôle{" "}
-            <span className="font-bold">{selectedRole}</span>. {ROLE_HINTS[selectedRole]}
-          </p>
-
-          {hasAllPrivileges ? (
-            <p className="mt-4 rounded-lg bg-brand-50 px-4 py-3 text-sm font-medium text-brand">
-              Ce rôle dispose de tous les privilèges (ALL_PRIVILEGES).
-            </p>
+      {tab === "roles" ? (
+        <div className="mt-6 space-y-6">
+          {canManage ? (
+            <form className="grid gap-4 md:grid-cols-3" onSubmit={(event) => void onCreateRole(event)}>
+              <Field label="Libellé du rôle métier" required>
+                <Input
+                  value={roleForm.roleName}
+                  onChange={(event) => setRoleForm((current) => ({ ...current, roleName: event.target.value }))}
+                  placeholder="Préfet des études"
+                  required
+                />
+              </Field>
+              <Field label="Code technique du rôle (role_key)">
+                <Input
+                  value={roleForm.roleCode}
+                  onChange={(event) => setRoleForm((current) => ({ ...current, roleCode: event.target.value }))}
+                  placeholder="PREFET_ETUDES"
+                />
+              </Field>
+              <div className="flex items-end">
+                <Button type="submit" size="sm" disabled={busy || !roleForm.roleName.trim()}>
+                  Créer le rôle
+                </Button>
+              </div>
+            </form>
           ) : null}
 
-          <div className="mt-4 overflow-x-auto">
+          <div className="overflow-x-auto">
             <table className="w-full border-collapse text-sm">
               <thead>
                 <tr className="border-b border-line text-xs uppercase tracking-wide text-muted">
-                  <th className="px-3 py-3 text-left font-semibold">Module</th>
-                  {CRUD_ACTIONS.map((action) => (
-                    <th key={action.key} className="px-3 py-3 text-center font-semibold">
-                      {action.label}
-                    </th>
-                  ))}
+                  <th className="px-3 py-3 text-left">Nom</th>
+                  <th className="px-3 py-3 text-left">Code technique</th>
+                  <th className="px-3 py-3 text-left">Portée</th>
+                  <th className="px-3 py-3 text-left">Statut</th>
+                  <th className="px-3 py-3 text-left">Utilisateurs actifs</th>
+                  <th className="px-3 py-3 text-left">Dernière modification</th>
+                  <th className="px-3 py-3 text-left">Action</th>
                 </tr>
               </thead>
               <tbody>
-                <tr className="border-b border-line/70 last:border-0">
-                  <td className="px-3 py-2.5 font-medium text-ink">{selectedModule}</td>
-                  {CRUD_ACTIONS.map((action) => {
-                    const key = `${selectedModule}:${action.key}`;
-                    const checked = hasAllPrivileges || activeDraft.has(key);
-                    return (
-                      <td key={action.key} className="px-3 py-2.5 text-center">
-                        <input
-                          type="checkbox"
-                          className="h-4 w-4 cursor-pointer accent-brand disabled:cursor-not-allowed"
-                          checked={checked}
-                          disabled={!canManage || hasAllPrivileges}
-                          onChange={() => toggle(selectedModule, action.key)}
-                        />
-                      </td>
-                    );
-                  })}
-                </tr>
+                {roles.map((role) => (
+                  <tr key={role.id} className="border-b border-line/70">
+                    <td className="px-3 py-2.5 font-medium">{role.roleName}</td>
+                    <td className="px-3 py-2.5 font-mono text-xs">{role.roleCode}</td>
+                    <td className="px-3 py-2.5">{displayScopeName(role.scope)}</td>
+                    <td className="px-3 py-2.5">{displayStatusName(role.status)}</td>
+                    <td className="px-3 py-2.5">{role.activeUserCount ?? 0}</td>
+                    <td className="px-3 py-2.5">{formatDate(role.updatedAt)}</td>
+                    <td className="px-3 py-2.5">
+                      {canManage && !role.systemProtected && role.status === "active" ? (
+                        <Button variant="secondary" size="sm" onClick={() => void onToggleRoleStatus(role)} disabled={busy}>
+                          Archiver
+                        </Button>
+                      ) : role.systemProtected ? (
+                        <span className="text-xs text-muted">Protégé</span>
+                      ) : (
+                        "—"
+                      )}
+                    </td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>
+        </div>
+      ) : (
+        <>
+          <div className="mt-4 space-y-2 rounded-xl border border-line bg-slate-50/80 p-4 text-sm text-muted">
+            <p>
+              <span className="font-semibold text-ink">A.</span> Rôles système protégés : SUPER_ADMIN, COUNTRY_ADMIN,
+              SCHOOL_ADMIN. <span className="font-semibold text-ink">B.</span> Rôles métier établissement (catalogue
+              PostgreSQL). <span className="font-semibold text-ink">C.</span> Droits par module.
+            </p>
+            <p>Résolution restrictive : établissement → pays → global → refus par défaut. Multi-rôle = union des rôles actifs.</p>
+          </div>
+
+          <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+            <Field label="Pays" hint="Pays canoniques">
+              <Select
+                id="rbac-country"
+                value={countryCode}
+                onChange={(event) => setCountryCode(event.target.value)}
+                options={countryOptions}
+              />
+            </Field>
+            <Field label="Établissement" hint="Établissements du pays">
+              <Select
+                id="rbac-school"
+                value={schoolCode}
+                onChange={(event) => setSchoolCode(event.target.value)}
+                options={schoolOptions}
+                disabled={!countryCode}
+              />
+            </Field>
+            <Field label="Rôle cible" hint="Rôles applicables à ce périmètre">
+              <Select
+                id="rbac-role"
+                value={selectedRoleKey}
+                onChange={(event) => setSelectedRoleKey(event.target.value)}
+                options={roleOptions}
+                disabled={!schoolCode}
+              />
+            </Field>
+            <Field label="Module fonctionnel" hint="Catalogue réel Web + mobile">
+              <Select
+                id="rbac-module"
+                value={selectedModuleKey}
+                onChange={(event) => setSelectedModuleKey(event.target.value)}
+                options={moduleOptions}
+                disabled={!selectedRoleKey}
+              />
+            </Field>
+          </div>
+
+          {selectedCountry && selectedSchool && selectedRole ? (
+            <p className="mt-4 rounded-lg border border-line bg-white px-4 py-3 text-sm text-muted">
+              Périmètre :{" "}
+              <span className="font-semibold text-ink">
+                {selectedCountry.code} — {selectedCountry.name}
+              </span>
+              {" → "}
+              <span className="font-semibold text-ink">
+                {selectedSchool.code} — {selectedSchool.name}
+              </span>
+              {" · Rôle "}
+              <span className="font-semibold text-brand">
+                {selectedRole.roleName} ({selectedRole.roleCode})
+              </span>
+            </p>
+          ) : null}
+
+          {!pathComplete ? (
+            <p className="mt-6 rounded-lg border border-dashed border-line px-4 py-8 text-center text-sm text-muted">
+              Sélectionnez un pays, un établissement, un rôle, puis un module pour afficher les droits.
+            </p>
+          ) : (
+            <>
+              <p className="mt-4 rounded-lg bg-brand-50 px-4 py-3 text-sm font-medium text-brand">
+                Module « {selectedModule?.moduleName} » — Création / Lecture / Modification / Suppression pour{" "}
+                {selectedRole?.roleName}.
+              </p>
+              <p className="mt-2 text-xs text-muted">
+                Case verrouillée (cadenas) : invariant de rôle ou prérequis de lecture tant qu’une action de
+                création, modification ou suppression est active. Impossible à décocher ici ; le serveur refuse
+                aussi toute modification contraire.
+              </p>
+              <div className="mt-4 overflow-x-auto">
+                <table className="w-full border-collapse text-sm">
+                  <thead>
+                    <tr className="border-b border-line text-xs uppercase tracking-wide text-muted">
+                      <th className="px-3 py-3 text-left font-semibold">Module</th>
+                      {CRUD_ACTIONS.map((action) => (
+                        <th key={action.key} className="px-3 py-3 text-center font-semibold">
+                          {action.label}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr className="border-b border-line/70">
+                      <td className="px-3 py-2.5 font-medium text-ink">{selectedModule?.moduleName}</td>
+                      {CRUD_ACTIONS.map((action) => {
+                        const lock = describeActionLock({
+                          action: action.action,
+                          flags: draft,
+                          mandatory: selectedMandatory,
+                        });
+                        const tooltip = lock.locked ? lockTooltip(lock.reason) : undefined;
+                        return (
+                          <td key={action.key} className="px-3 py-2.5 text-center">
+                            <label
+                              className="inline-flex items-center justify-center gap-1"
+                              title={tooltip}
+                            >
+                              <input
+                                type="checkbox"
+                                className="h-4 w-4 accent-brand disabled:cursor-not-allowed disabled:opacity-80"
+                                checked={Boolean(draft[action.key])}
+                                disabled={!canManage || busy || lock.locked}
+                                onChange={() => toggle(action.key)}
+                                aria-label={`${selectedModule?.moduleName} ${action.label}`}
+                                aria-disabled={lock.locked || undefined}
+                              />
+                              {lock.locked ? <LockIcon label={tooltip || ""} /> : null}
+                            </label>
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
         </>
-      ) : null}
+      )}
     </Card>
   );
 }

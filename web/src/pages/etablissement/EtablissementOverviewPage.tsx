@@ -1,5 +1,4 @@
-import { useMemo } from "react";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import {
   GraduationCap,
   Link2,
@@ -8,9 +7,14 @@ import {
   Users,
   type LucideIcon,
 } from "lucide-react";
+import { ErrorState, InlineAlert, LoadingState } from "@/design-system";
 import { Card, SectionHeader } from "../../components/ui/Card";
 import { useData } from "../../context/DataContext";
 import { useActiveSchool } from "../../context/ActiveSchoolContext";
+import {
+  buildDomainRouteHydrationKey,
+  useDomainRouteHydrationStatus,
+} from "../../lib/domainRouteHydration";
 import { canReadView } from "../../lib/permissions";
 import { usePermissionContext } from "../../lib/usePermissionContext";
 import {
@@ -21,8 +25,10 @@ import {
   scopedClasses,
   getEstablishmentMetrics,
 } from "../../lib/establishment";
+import { projectScopedStudents } from "../../lib/studentsScope";
 import { countUniqueParentsInRelations } from "../../lib/relations";
 import { scopedUsers } from "../../lib/scope";
+import { ACTIVE_USERS_KPI_LABEL } from "../../lib/format";
 
 type Row = Record<string, unknown>;
 
@@ -37,99 +43,121 @@ interface OverviewTile {
 
 /** WEB-ME-001 — Tableau de bord Mon établissement (compteurs + accès rapides + alertes). */
 export function EtablissementOverviewPage() {
-  const { state } = useData();
-  const { scopedUser } = useActiveSchool();
+  const location = useLocation();
+  const { state, error, scopeError } = useData();
+  const { scopedUser, activeSchoolCode } = useActiveSchool();
   const ctx = usePermissionContext();
+  const hydrationKey = buildDomainRouteHydrationKey(
+    location.key,
+    location.pathname,
+    activeSchoolCode,
+  );
+  const hydrationStatus = useDomainRouteHydrationStatus(hydrationKey);
 
-  const { tiles, alerts } = useMemo(() => {
-    const students = scopedStudents(scopedUser, state);
-    const teachers = scopedTeachers(scopedUser, state, students);
-    const classes = scopedClasses(scopedUser, state, students);
-    const assignments = scopedAssignments(scopedUser, state);
-    const relations = scopedRelations(scopedUser, state);
-    const users = scopedUsers(scopedUser, state);
-    const metrics = getEstablishmentMetrics(scopedUser, state, users);
+  if (hydrationStatus === "idle" || hydrationStatus === "loading") {
+    return <LoadingState message="Chargement des données de l’établissement…" />;
+  }
 
-    const allTiles: OverviewTile[] = [
-      {
-        key: "users",
-        label: "Comptes utilisateurs",
-        to: "/etablissement/comptes-utilisateurs",
-        view: "users",
-        icon: UserRound,
-        count: metrics.activeUsers,
-      },
-      {
-        key: "classes",
-        label: "Classes",
-        to: "/etablissement/classes",
-        view: "classes",
-        icon: School,
-        count: classes.length,
-      },
-      {
-        key: "students",
-        label: "Élèves",
-        to: "/etablissement/eleves",
-        view: "students",
-        icon: GraduationCap,
-        count: students.length,
-      },
-      {
-        key: "teachers",
-        label: "Enseignants",
-        to: "/etablissement/enseignants",
-        view: "teachers",
-        icon: Users,
-        count: teachers.length,
-      },
-      {
-        key: "relations",
-        label: "Parents & élèves",
-        to: "/etablissement/relations-parent-enfant",
-        view: "relations",
-        icon: Link2,
-        count: countUniqueParentsInRelations(relations),
-      },
-    ];
+  if (hydrationStatus === "error") {
+    return (
+      <ErrorState
+        title="Impossible de charger la vue d’ensemble."
+        message={error || "Une ou plusieurs données de l’établissement n’ont pas pu être chargées."}
+      />
+    );
+  }
 
-    const studentsWithoutClass = students.filter(
-      (student) => !String((student as Row).className ?? "").trim(),
-    ).length;
-    const teachersWithoutAssignment = teachers.filter((teacher) => {
-      const id = String((teacher as Row).id ?? "");
-      const name = String((teacher as Row).name ?? "");
-      return !assignments.some(
-        (assignment) =>
-          String((assignment as Row).teacherId ?? "") === id ||
-          String((assignment as Row).teacherName ?? "") === name,
-      );
-    }).length;
+  const studentsProjection = projectScopedStudents(scopedUser, state);
+  const visibleScopeError = scopeError || studentsProjection.error?.message || null;
+  const students = scopedStudents(scopedUser, state);
+  const teachers = scopedTeachers(scopedUser, state, students);
+  const classes = scopedClasses(scopedUser, state, students);
+  const assignments = scopedAssignments(scopedUser, state);
+  const relations = scopedRelations(scopedUser, state);
+  const users = scopedUsers(scopedUser, state);
+  const metrics = getEstablishmentMetrics(scopedUser, state, users);
 
-    const nextAlerts: { key: string; label: string; tone: "warn" | "info" }[] = [];
-    if (studentsWithoutClass > 0) {
-      nextAlerts.push({
-        key: "students-no-class",
-        label: `${studentsWithoutClass} élève(s) sans classe affectée`,
-        tone: "warn",
-      });
-    }
-    if (teachersWithoutAssignment > 0) {
-      nextAlerts.push({
-        key: "teachers-no-assignment",
-        label: `${teachersWithoutAssignment} enseignant(s) sans affectation`,
-        tone: "info",
-      });
-    }
+  const allTiles: OverviewTile[] = [
+    {
+      key: "users",
+      label: ACTIVE_USERS_KPI_LABEL,
+      to: "/etablissement/comptes-utilisateurs",
+      view: "users",
+      icon: UserRound,
+      count: metrics.activeUsers,
+    },
+    {
+      key: "classes",
+      label: "Classes",
+      to: "/etablissement/classes",
+      view: "classes",
+      icon: School,
+      count: classes.length,
+    },
+    {
+      key: "students",
+      label: "Élèves",
+      to: "/etablissement/eleves",
+      view: "students",
+      icon: GraduationCap,
+      count: students.length,
+    },
+    {
+      key: "teachers",
+      label: "Enseignants",
+      to: "/etablissement/enseignants",
+      view: "teachers",
+      icon: Users,
+      count: teachers.length,
+    },
+    {
+      key: "relations",
+      label: "Parents & élèves",
+      to: "/etablissement/relations-parent-enfant",
+      view: "relations",
+      icon: Link2,
+      count: countUniqueParentsInRelations(relations),
+    },
+  ];
 
-    return {
-      tiles: allTiles.filter((tile) => canReadView(ctx, tile.view)),
-      alerts: nextAlerts,
-    };
-  }, [scopedUser, state, ctx]);
+  const studentsWithoutClass = students.filter(
+    (student) => !String((student as Row).className ?? "").trim(),
+  ).length;
+  const teachersWithoutAssignment = teachers.filter((teacher) => {
+    const id = String((teacher as Row).id ?? "");
+    const name = String((teacher as Row).name ?? "");
+    return !assignments.some(
+      (assignment) =>
+        String((assignment as Row).teacherId ?? "") === id ||
+        String((assignment as Row).teacherName ?? "") === name,
+    );
+  }).length;
+
+  const alerts: { key: string; label: string; tone: "warn" | "info" }[] = [];
+  if (studentsWithoutClass > 0) {
+    alerts.push({
+      key: "students-no-class",
+      label: `${studentsWithoutClass} élève(s) sans classe affectée`,
+      tone: "warn",
+    });
+  }
+  if (teachersWithoutAssignment > 0) {
+    alerts.push({
+      key: "teachers-no-assignment",
+      label: `${teachersWithoutAssignment} enseignant(s) sans affectation`,
+      tone: "info",
+    });
+  }
+
+  const tiles = allTiles.filter((tile) => canReadView(ctx, tile.view));
 
   return (
     <div className="space-y-6">
+      {visibleScopeError ? (
+        <InlineAlert tone="danger" title="Périmètre">
+          {visibleScopeError}
+        </InlineAlert>
+      ) : null}
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
         {tiles.map((tile) => {
           const Icon = tile.icon;

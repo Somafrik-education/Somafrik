@@ -1,8 +1,5 @@
 import type { BackOfficeState } from "../types";
 
-export const DEFAULT_LEVELS = ["1ère", "2ème", "3ème", "4ème", "5ème", "6ème"];
-export const DEFAULT_TRACKS = ["Générale", "Sciences", "Lettres", "Technique", "Commerciale"];
-export const DEFAULT_CLASS_NAMES = DEFAULT_LEVELS.flatMap((level) => [`${level} A`, `${level} B`]);
 export const DEFAULT_SUBJECTS = [
   "Mathématiques",
   "Français",
@@ -61,10 +58,7 @@ export function resolveSubjectsByClass(
     return result;
   }
 
-  const flat =
-    Array.isArray(config.subjects) && config.subjects.length
-      ? (config.subjects as string[])
-      : DEFAULT_SUBJECTS;
+  const flat = Array.isArray(config.subjects) ? (config.subjects as string[]) : [];
   const migrated: Record<string, string[]> = {};
   classNames.forEach((className) => {
     migrated[className] = [...flat];
@@ -82,9 +76,9 @@ export function getSubjectsForClass(
   const classNames =
     Array.isArray(config.classNames) && config.classNames.length
       ? (config.classNames as string[])
-      : DEFAULT_CLASS_NAMES;
+      : [];
   const byClass = resolveSubjectsByClass(config, classNames);
-  return byClass[className] ?? [];
+  return byClass[className] ?? (Array.isArray(config.subjects) ? (config.subjects as string[]) : []);
 }
 
 export function getAllSchoolSubjects(subjectsByClass: Record<string, string[]>): string[] {
@@ -106,20 +100,14 @@ export function getSchoolAcademicLists(
   schoolCode?: string,
 ) {
   const config = (state.academicConfigs?.[schoolCode ?? ""] ?? {}) as Record<string, unknown>;
-  const levels =
-    Array.isArray(config.levels) && config.levels.length
-      ? (config.levels as string[])
-      : DEFAULT_LEVELS;
-  const tracks =
-    Array.isArray(config.tracks) && config.tracks.length
-      ? (config.tracks as string[])
-      : DEFAULT_TRACKS;
-  const classNames =
-    Array.isArray(config.classNames) && config.classNames.length
-      ? (config.classNames as string[])
-      : DEFAULT_CLASS_NAMES;
+  const levels = Array.isArray(config.levels) ? (config.levels as string[]) : [];
+  const tracks = Array.isArray(config.tracks) ? (config.tracks as string[]) : [];
+  const classNames = Array.isArray(config.classNames) ? (config.classNames as string[]) : [];
   const subjectsByClass = resolveSubjectsByClass(config, classNames);
-  const subjects = getAllSchoolSubjects(subjectsByClass);
+  const subjects =
+    Array.isArray(config.subjects) && config.subjects.length
+      ? (config.subjects as string[])
+      : getAllSchoolSubjects(subjectsByClass);
   const userRoles =
     Array.isArray(config.userRoles) && config.userRoles.length
       ? (config.userRoles as string[])

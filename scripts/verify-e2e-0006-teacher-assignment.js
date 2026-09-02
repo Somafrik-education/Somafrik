@@ -51,6 +51,17 @@ function check(label, fn) {
   }
 }
 
+async function checkAsync(label, fn) {
+  try {
+    await fn();
+    passed += 1;
+    console.log(`  \u2713 ${label}`);
+  } catch (error) {
+    failures.push({ label, message: error.message });
+    console.error(`  \u2717 ${label}\n      ${error.message}`);
+  }
+}
+
 /** Clé métier d'une affectation : établissement + classe + matière. */
 function assignmentKey(a) {
   return `${normalize(a.schoolCode)}|${normalize(a.className)}|${normalize(a.course ?? a.subject)}`;
@@ -97,7 +108,7 @@ function buildAuth(state, school) {
   });
 }
 
-function main() {
+async function main() {
   console.log("\n=== E2E 0006 : Création et affectation d'un enseignant ===\n");
 
   const schoolCode = "CD-2026-0001";
@@ -255,9 +266,9 @@ function main() {
 
   // ── 6) L'enseignant se connecte ──────────────────────────────────────────────
   let session;
-  check("6. L'enseignant se connecte avec son code établissement", () => {
+  await checkAsync("6. L'enseignant se connecte avec son code établissement", async () => {
     const auth = buildAuth(state, school);
-    session = auth.login({
+    session = await auth.login({
       role: "teacher",
       schoolCode,
       identifier: teacherUser.identifier,
@@ -309,7 +320,10 @@ function main() {
 }
 
 try {
-  main();
+  main().catch((error) => {
+    console.error("Erreur inattendue durant le test E2E 0006 :", error);
+    process.exit(1);
+  });
 } catch (error) {
   console.error("Erreur inattendue durant le test E2E 0006 :", error);
   process.exit(1);

@@ -8,8 +8,14 @@ require("dotenv").config();
 const { AuthService, BusinessError } = require("./services/authService");
 const { BackOfficeAccessService } = require("./services/backOfficeAccessService");
 const { hashSecret } = require("./services/credentialService");
-const { validatePasswordPolicy, validateAccountSecret, validateIntroducedAccountSecrets } = require("./lib/userAccountRules");
+const {
+  validatePasswordPolicy,
+  validateAccountSecret,
+  validateIntroducedAccountSecrets,
+  validateIntroducedCivilIdentityConflicts,
+} = require("./lib/userAccountRules");
 const { GradeBookService } = require("./services/gradeBookService");
+const { toPublicSchool } = require("./lib/publicSchool");
 const { MvpBusinessService } = require("./services/mvpBusinessService");
 const { ReportPdfService } = require("./services/reportPdfService");
 const { createPostgresRepository, initializeRepository } = require("./db/repositoryFactory");
@@ -19,23 +25,22 @@ const {
   DbConfigError,
 } = require("./db/connectionConfig");
 const { TokenService } = require("./services/tokenService");
-const { RbacService } = require("./services/rbacService");
+const { RbacService, PERMISSION_DENIED } = require("./services/rbacService");
+const { isFinanceLiveRbacRouteKey } = require("./lib/financeRbacRouteMatrix");
+const { mergeRolePermissions, normalizeBusinessPermission } = require("./lib/rolePermissionsResolution");
 const { PaginationService } = require("./services/paginationService");
 const { CacheService } = require("./services/cacheService");
 const { TenantScopeService } = require("./services/tenantScopeService");
 const { RoleGovernanceService } = require("./services/roleGovernanceService");
 const { PedagogyGovernanceService } = require("./services/pedagogyGovernanceService");
-const { UserTeacherSyncService } = require("./services/userTeacherSyncService");
 const { AuditService } = require("./services/auditService");
+const { auditMetaFromRequest } = require("./lib/teacherTransactionalAudit");
 const { mergeAcademicConfigs } = require("./lib/bulletinDesignAccess");
 const { resolveParentChildren } = require("./lib/parentChildren");
 const { classNamesMatch, normalizePresenceDay } = require("./lib/dataIntegrityRules");
 const { getCountryCodeFromScope, schoolMatchesCountryScope } = require("./lib/countryScope");
 const { buildDesignPreviewReport } = require("./lib/bulletinDesignPreview");
-const {
-  applyBulletinDesignToReport,
-  resolveBulletinDesignForStudent,
-} = require("./lib/bulletinDesignResolver");
+const { applyBulletinDesignToReport } = require("./lib/bulletinDesignResolver");
 const { renderReportCardPdf, renderReportCardPreviewHtml } = require("./services/bulletinPdfRenderer");
 const { dedupeBackOfficeState } = require("./lib/backofficeDedupe");
 const {
@@ -47,6 +52,11 @@ const { ensureSubscriptionModuleState } = require("./services/subscriptionModule
 const { EstablishmentService } = require("./services/establishmentService");
 const { UnpaidService } = require("./services/unpaidService");
 const { IdempotencyService, withIdempotency } = require("./services/idempotencyService");
+const internalNotificationsService = require("./lib/communicationsNotificationsService");
+const {
+  startCommunicationsNotificationsWorker,
+  stopCommunicationsNotificationsWorker,
+} = require("./lib/communicationsNotificationsWorker");
 const schoolSubscriptionAccessService = require("./services/schoolSubscriptionAccessService");
 const {
   assertProductionSecrets,
@@ -71,6 +81,11 @@ const {
 const { assertProductionSecurityConfiguration } = require("./lib/demoSeedPolicy");
 const { createRateLimiter, loginRateLimitKey } = require("./lib/rateLimit");
 const {
+  assertPushSelfTestAllowed,
+  skipPushSelfTestPermissionCheck,
+} = require("./lib/mobilePushDevicesService");
+const { startExpoPushReceiptsWorker } = require("./lib/expoPushReceiptsWorker");
+const {
   isTeacherNotesPrincipal,
   evaluateTeacherNotesTouchedKeys,
   prepareTeacherNotesWritePayload,
@@ -93,6 +108,28 @@ const loginRateLimiter = createRateLimiter({
   keyFn: loginRateLimitKey,
   message: "Trop de tentatives de connexion. Réessayez dans quelques minutes.",
 });
+const pushSelfTestRateLimiter = createRateLimiter({
+  windowMs: Number(process.env.SOMAFRIK_PUSH_SELFTEST_WINDOW_MS ?? 60_000),
+  max: Number(process.env.SOMAFRIK_PUSH_SELFTEST_RATE_MAX ?? 5),
+  keyFn: (req) => `push-selftest:${String(req.principal?.sub || req.ip || "unknown")}`,
+  message: "Trop de tests push. Réessayez dans une minute.",
+});
+function requirePushSelfTestEnvironment(_req, _res, next) {
+  try {
+    assertPushSelfTestAllowed();
+    next();
+  } catch (error) {
+    next(error instanceof BusinessError ? error : new BusinessError(403, error.message));
+  }
+}
+function requirePushSelfTestActor(req, res, next) {
+  try {
+    if (skipPushSelfTestPermissionCheck()) return next();
+    return requirePermission("POST /api/mobile/push-devices/test")(req, res, next);
+  } catch (error) {
+    next(error instanceof BusinessError ? error : new BusinessError(403, error.message));
+  }
+}
 let repository = createPostgresRepository();
 const tokenService = new TokenService();
 const rbacService = new RbacService();
@@ -101,7 +138,6 @@ const cacheService = new CacheService();
 const tenantScopeService = new TenantScopeService();
 const roleGovernanceService = new RoleGovernanceService();
 const pedagogyGovernanceService = new PedagogyGovernanceService();
-const userTeacherSyncService = new UserTeacherSyncService();
 let auditService = new AuditService(repository);
 let idempotencyService = new IdempotencyService(repository);
 app.locals.idempotencyService = idempotencyService;
@@ -110,6 +146,25 @@ app.disable("x-powered-by");
 app.use(appSecurityHeaders);
 app.use(cors(buildCorsOptions({ BusinessError })));
 app.use(express.json({ limit: process.env.JSON_BODY_LIMIT ?? "1mb" }));
+app.use((error, req, res, next) => {
+  if (
+    error instanceof SyntaxError &&
+    error.status === 400 &&
+    req.method === "PUT" &&
+    String(req.path ?? "").endsWith("/backoffice/state")
+  ) {
+    const {
+      BACKOFFICE_STATE_WRITE_REMOVED_CODE,
+      BACKOFFICE_STATE_WRITE_REMOVED_MESSAGE,
+      BACKOFFICE_STATE_WRITE_REMOVED_STATUS,
+    } = require("./lib/backofficeStateRemoval");
+    return res.status(BACKOFFICE_STATE_WRITE_REMOVED_STATUS).json({
+      code: BACKOFFICE_STATE_WRITE_REMOVED_CODE,
+      message: BACKOFFICE_STATE_WRITE_REMOVED_MESSAGE,
+    });
+  }
+  return next(error);
+});
 // S2.1 — JWT uniquement via Authorization: Bearer (jamais ?token= / ?access_token=).
 app.use("/api", rejectJwtInQueryString);
 app.use(
@@ -198,20 +253,27 @@ app.get("/", asyncHandler(async (req, res) => {
     mode: apiOnly ? "api-only" : "integrated",
     endpoints: [
       "/api/health",
-      "/api/schools",
       "/api/schools/:code",
       "/api/identify",
       "/api/login",
       "/api/auth/refresh",
       "/api/auth/logout",
       "/api/backoffice/login",
-      "/api/school",
       "/api/classes",
+      "/api/classes/:classCode/students",
       "/api/courses",
       "/api/academic-config",
       "/api/assignments",
+      "/api/mobile-sync/l1/classes",
+      "/api/mobile-sync/l1/students",
+      "/api/mobile-sync/l1/assignments",
       "/api/students",
       "/api/students/:id",
+      "/api/teachers",
+      "/api/teachers/:teacherCode",
+      "PATCH /api/teachers/:teacherCode",
+      "DELETE /api/teachers/:teacherCode",
+      "PATCH /api/students/:id",
       "/api/students/:id/notes",
       "/api/notes",
       "/api/presences",
@@ -221,13 +283,12 @@ app.get("/", asyncHandler(async (req, res) => {
       "/api/presences",
       "/api/students/:id/payments",
       "/api/teachers",
-      "/api/users",
       "/api/payments",
-      "/api/announcements",
       "/api/backoffice/countries",
       "/api/backoffice/subscriptions",
       "/api/backoffice/notifications",
       "/api/audit",
+      "/api/data-export",
       "/api/mvp/readiness",
       "/api/mvp/snapshot",
       "/api/mvp/dashboard",
@@ -243,21 +304,32 @@ app.get("/", asyncHandler(async (req, res) => {
 
 app.get("/api/health", asyncHandler(async (_req, res) => {
   await repository.init();
-  res.json({
-    status: "ok",
+  const { probeCommunicationStorageWritable } = require("./lib/communicationsAttachments");
+  const attachments = await probeCommunicationStorageWritable();
+  const payload = {
+    status: attachments.ready ? "ok" : "not_ready",
     database: repository.engine ?? "postgresql",
     version: process.env.npm_package_version ?? "1.0.0",
     timestamp: new Date().toISOString(),
-  });
+    attachments,
+  };
+  if (!attachments.ready) {
+    return res.status(503).json(payload);
+  }
+  res.json(payload);
 }));
 
-if (process.env.SOMAFRIK_E2E === "true" || process.env.SOMAFRIK_DISABLE_LOGIN_LOCKOUT === "true") {
-  const { clearAllFailedLoginAttempts } = require("./lib/loginLockout");
-  app.post("/api/backoffice/e2e/clear-login-lockout", asyncHandler(async (_req, res) => {
-    clearAllFailedLoginAttempts();
+app.post(
+  "/api/backoffice/e2e/clear-login-lockout",
+  asyncHandler(async (_req, res) => {
+    const { isE2eLoginLockoutEndpointEnabled, clearAllFailedLoginAttempts } = require("./lib/loginLockout");
+    if (!isE2eLoginLockoutEndpointEnabled()) {
+      return res.status(404).json({ message: "Not found" });
+    }
+    await clearAllFailedLoginAttempts();
     res.json({ ok: true, message: "Verrous de connexion E2E réinitialisés." });
-  }));
-}
+  }),
+);
 
 // Audit causalité Pré-E1 — exposé uniquement si SOMAFRIK_AUTHZ_TRACE=1 (≠ validation CTO).
 if (String(process.env.SOMAFRIK_AUTHZ_TRACE || "").trim() === "1") {
@@ -281,31 +353,25 @@ if (String(process.env.SOMAFRIK_AUTHZ_TRACE || "").trim() === "1") {
   );
 }
 
-app.get("/api/schools", asyncHandler(async (_req, res) => {
-  const { platformSchools } = await getRuntime();
-  res.json(platformSchools);
-}));
 
 app.get("/api/schools/:code", asyncHandler(async (req, res) => {
   const { platformSchools } = await getRuntime();
+  const { matchesSchoolLookup } = require("./lib/schoolCodeV2");
   const requestedCode = req.params.code.toUpperCase();
-  const foundSchool = platformSchools.find((item) =>
-    [item.code, item.publicId].some(
-      (value) => String(value ?? "").trim().toUpperCase() === requestedCode
-    )
-  );
+  // Lecture : login_code V2 canonique, plus alias interne school_code (legacy, lecture seule).
+  const foundSchool = platformSchools.find((item) => matchesSchoolLookup(item, requestedCode));
 
   if (!foundSchool) {
     return res.status(404).json({ message: "Code etablissement invalide" });
   }
 
-  res.json(foundSchool);
+  res.json(toPublicSchool(foundSchool));
 }));
 
 app.post("/api/backoffice/login", loginRateLimiter, asyncHandler(async (req, res) => {
   const { backOfficeAccessService } = await getRuntime();
-  const response = handleBusinessAction(() => backOfficeAccessService.login(req.body));
-  if (response?.user?.role === "Parent") {
+  const response = await handleBusinessAction(() => backOfficeAccessService.login(req.body));
+  if (response?.role === "parent_student" || response?.user?.role === "Parent") {
     const state = await getAuthoritativeBackOfficeState();
     const schoolCode =
       response.schoolContext?.code ??
@@ -316,42 +382,11 @@ app.post("/api/backoffice/login", loginRateLimiter, asyncHandler(async (req, res
     response.user = { ...response.user, children };
   }
   // HOTFIX-PRE-E1-02 : enrichir la session enseignant avec affectations BO (IDs stables),
-  // sans élargir les droits — alimente principal.classNames pour les gardes notes.
-  if (response?.user?.role === "Enseignant") {
+  // sans élargir les droits — affectations explicitement actives uniquement (fail-closed).
+  if (response?.role === "teacher" || response?.user?.role === "Enseignant") {
     const state = await getAuthoritativeBackOfficeState();
-    const {
-      resolveTeacherAssignments,
-      resolveTeacherAssignedClasses,
-    } = require("./services/authService");
-    const userId = String(response.user.id ?? "").trim();
-    const identifier = String(response.user.identifier ?? "").trim().toLowerCase();
-    const linkedTeachers = (state.teachers ?? []).filter((row) => {
-      const ids = [row.userId, row.id, row.publicId, row.contactId].map((value) =>
-        String(value ?? "").trim(),
-      );
-      if (userId && ids.includes(userId)) return true;
-      return identifier && String(row.identifier ?? "").trim().toLowerCase() === identifier;
-    });
-    const teacher =
-      linkedTeachers.find(
-        (row) => resolveTeacherAssignments(row, response.user, state.assignments ?? []).length > 0,
-      ) ??
-      linkedTeachers[0] ??
-      null;
-    if (teacher) {
-      const assignments = resolveTeacherAssignments(teacher, response.user, state.assignments ?? []);
-      const assignedClasses = resolveTeacherAssignedClasses(
-        teacher,
-        response.user,
-        state.assignments ?? [],
-      );
-      response.user = {
-        ...response.user,
-        assignments,
-        assignedClasses,
-        courses: [...new Set(assignments.map((item) => item.course).filter(Boolean))],
-      };
-    }
+    const { enrichTeacherUserWithActiveAssignments } = require("./lib/teacherSessionAssignments");
+    response.user = enrichTeacherUserWithActiveAssignments(response.user, state);
   }
   await sendAuthenticatedResponse(req, res, response, "backoffice_login");
 }));
@@ -363,8 +398,8 @@ app.post("/api/identify", loginRateLimiter, asyncHandler(async (req, res) => {
 
 app.post("/api/login", loginRateLimiter, asyncHandler(async (req, res) => {
   const { authService } = await getRuntime();
-  const response = handleBusinessAction(() => authService.login(req.body));
-  if (response?.user?.role === "Parent") {
+  const response = await handleBusinessAction(() => authService.login(req.body));
+  if (response?.role === "parent_student" || response?.user?.role === "Parent") {
     const state = await getAuthoritativeBackOfficeState();
     const schoolCode =
       response.school?.code ??
@@ -390,16 +425,55 @@ app.post("/api/auth/refresh", asyncHandler(async (req, res) => {
   }
 
   const rolePermissionsMap = await getRolePermissionsMap();
-  const permissions = mergeRolePermissions(
-    session.role,
-    [...new Set([...(payload.permissions ?? []), ...rbacService.permissionsFor(session.role)])],
-    rolePermissionsMap,
-  );
+  const { mergePermissionsForRoles, principalHasRole, toRoleKey } = require("./lib/userRoleLifecycle");
+  let roleKeys = session.role ? [toRoleKey(session.role)].filter(Boolean) : [];
+  if (typeof repository.listActiveUserRoleKeys === "function" && session.user_id) {
+    try {
+      const loaded = await repository.listActiveUserRoleKeys(session.user_id);
+      if (Array.isArray(loaded) && loaded.length) {
+        roleKeys = loaded;
+      } else if (Array.isArray(loaded) && (!session.role || session.role === "Sans affectation")) {
+        roleKeys = [];
+      }
+    } catch {
+      /* fail-closed: keep session.role */
+    }
+  }
+  let permissions = mergePermissionsForRoles(roleKeys, rolePermissionsMap);
+  if (typeof repository.resolveEffectivePermissions === "function") {
+    const live = await repository.resolveEffectivePermissions({
+      sub: session.user_id,
+      role: session.role,
+      roleKeys,
+      schoolCode: session.school_code ?? payload.schoolCode,
+      countryCode: session.country_code ?? payload.countryCode,
+    });
+    if (Array.isArray(live?.permissions)) permissions = live.permissions;
+  }
   const mustChangePassword = await principalMustChangePassword({
     sub: session.user_id,
     identifier: payload.identifier,
     publicId: payload.publicId,
   });
+
+  // Reconstruire les affectations depuis l'état autoritatif (pas depuis l'ancien jeton).
+  let assignmentFields = {};
+  if (principalHasRole({ role: session.role, roleKeys }, "Enseignant")) {
+    const state = await getAuthoritativeBackOfficeState();
+    const { teacherPrincipalAssignmentFields } = require("./lib/teacherSessionAssignments");
+    assignmentFields = teacherPrincipalAssignmentFields(
+      {
+        id: session.user_code ?? payload.sub ?? session.user_id,
+        sub: payload.sub ?? session.user_id,
+        identifier: payload.identifier,
+        publicId: payload.publicId,
+        schoolCode: session.school_code ?? payload.schoolCode,
+        role: "Enseignant",
+      },
+      state,
+    );
+  }
+
   const accessToken = tokenService.createAccessToken({
     sub: session.user_id,
     role: session.role,
@@ -411,6 +485,7 @@ app.post("/api/auth/refresh", asyncHandler(async (req, res) => {
     identifier: payload.identifier,
     publicId: payload.publicId,
     mustChangePassword,
+    ...assignmentFields,
   });
 
   res.json({
@@ -422,12 +497,18 @@ app.post("/api/auth/refresh", asyncHandler(async (req, res) => {
 }));
 
 app.get("/api/auth/effective-permissions", requireAuth, asyncHandler(async (req, res) => {
+  if (typeof repository.resolveEffectivePermissions === "function") {
+    const live = await repository.resolveEffectivePermissions(req.principal);
+    return res.json({
+      permissions: live.permissions,
+      modules: live.modules,
+      roleKeys: live.roleKeys,
+      source: live.source,
+      resolvedAt: live.resolvedAt,
+    });
+  }
   const rolePermissionsMap = await getRolePermissionsMap();
-  const permissions = mergeRolePermissions(
-    req.principal.role,
-    [...new Set([...(req.principal.permissions ?? []), ...rbacService.permissionsFor(req.principal.role)])],
-    rolePermissionsMap,
-  );
+  const permissions = mergeRolePermissions(req.principal.role, [], rolePermissionsMap);
   res.json({ permissions });
 }));
 
@@ -436,6 +517,40 @@ app.post("/api/auth/logout", requireAuth, asyncHandler(async (req, res) => {
   await auditService.record(req, "logout", "session", req.principal.sessionId);
   res.json({ message: "Déconnexion sécurisée effectuée" });
 }));
+
+app.post("/api/mobile/push-devices", requireAuth, asyncHandler(async (req, res) => {
+  const device = await repository.upsertMobilePushDevice(req.principal, req.body || {});
+  await auditService.record(req, "mobile_push_device_upsert", "push_device", device.id, {
+    platform: device.platform,
+    backendEnvironment: device.backendEnvironment,
+    appProfile: device.appProfile,
+  });
+  res.json(device);
+}));
+
+app.delete("/api/mobile/push-devices/current", requireAuth, asyncHandler(async (req, res) => {
+  const result = await repository.revokeCurrentMobilePushDevice(req.principal, req.body || {});
+  await auditService.record(req, "mobile_push_device_revoke", "push_device", result.id, {
+    revoked: result.revoked,
+  });
+  res.json(result);
+}));
+
+app.post(
+  "/api/mobile/push-devices/test",
+  requireAuth,
+  requirePushSelfTestEnvironment,
+  requirePushSelfTestActor,
+  pushSelfTestRateLimiter,
+  asyncHandler(async (req, res) => {
+    const result = await repository.sendMobilePushSelfTest(req.principal, req.body || {});
+    await auditService.record(req, "mobile_push_self_test", "push_device", req.principal.sub, {
+      sent: result.sent,
+      revoked: result.revoked,
+    });
+    res.json(result);
+  }),
+);
 
 app.post("/api/auth/change-password", requireAuth, asyncHandler(async (req, res) => {
   const newPassword = String(req.body?.newPassword ?? "").trim();
@@ -453,44 +568,41 @@ app.post("/api/auth/change-password", requireAuth, asyncHandler(async (req, res)
   await auditService.record(req, "change_own_password", "user", req.principal.sub, {
     oldTemporaryPasswordInvalidated: true,
   });
+  const sanitizedUpdatedUser = sanitizeUserForResponse(updatedUser);
   let safeUser = {
-    ...sanitizeUserForResponse(updatedUser),
+    ...sanitizedUpdatedUser,
+    schoolCode: sanitizedUpdatedUser?.schoolCode || req.principal.schoolCode || "",
+    countryCode: sanitizedUpdatedUser?.countryCode || req.principal.countryCode || "",
+    countryScope: sanitizedUpdatedUser?.countryScope || req.principal.countryScope || "",
     mustChangePassword: false,
   };
+  if (typeof repository.listActiveUserRoleKeys === "function" && (safeUser.id || updatedUser?.id)) {
+    try {
+      const loaded = await repository.listActiveUserRoleKeys(safeUser.id || updatedUser.id);
+      if (Array.isArray(loaded)) {
+        safeUser = { ...safeUser, roleKeys: loaded };
+      }
+    } catch {
+      /* fail-closed: keep updated user projection */
+    }
+  }
   // HOTFIX-PRE-E1-02 : ne pas perdre assignedClasses après change-password.
   if (safeUser.role === "Enseignant") {
     const state = await getAuthoritativeBackOfficeState();
-    const {
-      resolveTeacherAssignments,
-      resolveTeacherAssignedClasses,
-    } = require("./services/authService");
-    const userId = String(safeUser.id ?? req.principal.sub ?? "").trim();
-    const linkedTeachers = (state.teachers ?? []).filter((row) =>
-      [row.userId, row.id, row.publicId, row.contactId].some(
-        (value) => String(value ?? "").trim() === userId,
-      ),
-    );
-    const teacher =
-      linkedTeachers.find(
-        (row) => resolveTeacherAssignments(row, safeUser, state.assignments ?? []).length > 0,
-      ) ??
-      linkedTeachers[0] ??
-      null;
-    if (teacher) {
-      const assignments = resolveTeacherAssignments(teacher, safeUser, state.assignments ?? []);
-      safeUser = {
-        ...safeUser,
-        assignments,
-        assignedClasses: resolveTeacherAssignedClasses(teacher, safeUser, state.assignments ?? []),
-        courses: [...new Set(assignments.map((item) => item.course).filter(Boolean))],
-      };
-    }
+    const { enrichTeacherUserWithActiveAssignments } = require("./lib/teacherSessionAssignments");
+    safeUser = enrichTeacherUserWithActiveAssignments(safeUser, state);
   }
   const rolePermissionsMap = await getRolePermissionsMap();
   const principal = buildPrincipal(
     { user: safeUser },
     rolePermissionsMap,
   );
+  if (typeof repository.resolveEffectivePermissions === "function") {
+    const live = await repository.resolveEffectivePermissions(principal);
+    if (Array.isArray(live?.permissions)) {
+      principal.permissions = live.permissions;
+    }
+  }
   const accessToken = tokenService.createAccessToken({
     ...principal,
     authSource: req.principal.authSource ?? "mobile",
@@ -499,168 +611,1301 @@ app.post("/api/auth/change-password", requireAuth, asyncHandler(async (req, res)
   });
   res.json({
     message: "Mot de passe mis à jour.",
-    user: safeUser,
+    user: {
+      ...safeUser,
+      role: principal.role,
+      roles: principal.roles,
+      roleKeys: principal.roleKeys,
+      permissions: principal.permissions,
+    },
     accessToken,
     tokenType: "Bearer",
     expiresIn: tokenService.accessTokenTtlSeconds,
   });
 }));
 
-app.get("/api/school", requireAuth, asyncHandler(async (_req, res) => {
-  const { school } = await getRuntime();
-  res.json(school);
+
+app.get("/api/classes", requireAuth, requirePermission("GET /api/classes"), asyncHandler(async (req, res) => {
+  const schoolCode = String(req.principal?.schoolCode ?? "").trim();
+  if (!schoolCode || schoolCode === "*") {
+    throw new BusinessError(400, "schoolCode établissement requis.");
+  }
+  tenantScopeService.assertSchoolAccess(req.principal, schoolCode);
+  const rows = await repository.listSchoolClasses(schoolCode);
+  const { scopeSchoolClassesForPrincipal } = require("./lib/classStudentsAuthz");
+  res.json(scopeSchoolClassesForPrincipal(req.principal, rows));
 }));
 
-app.get("/api/classes", requireAuth, asyncHandler(async (req, res) => {
-  const state = await getAuthoritativeBackOfficeState();
-  const { classes, students, teachers, presences } = state;
-  const scope = deriveSchoolScope(req.principal, state);
-  const scopedClasses = tenantScopeService.filterRows(classes, req.principal, scope);
-  const scopedStudents = tenantScopeService.filterRows(students, req.principal, scope);
-  const result = scopedClasses.map((item) => {
-    const classStudents = scopedStudents.filter((student) => student.className === item.name);
-    const teacher = teachers.find((teacherItem) => teacherItem.id === item.teacherId);
-    const classPresences = presences.filter((presence) =>
-      classStudents.some((student) => student.id === presence.studentId)
-    );
-    const presentCount = classPresences.filter((presence) => presence.present || presence.status === "Retard").length;
-    const presenceRate = classPresences.length
-      ? Math.round((presentCount / classPresences.length) * 100)
-      : 0;
+app.get(
+  "/api/mobile-sync/l1/classes",
+  requireAuth,
+  requirePermission("GET /api/mobile-sync/l1/classes"),
+  asyncHandler(async (req, res) => {
+    const { handleMobileSyncL1Classes } = require("./lib/mobileSyncClasses");
+    const result = await handleMobileSyncL1Classes({
+      principal: req.principal,
+      cursor: req.query?.cursor,
+      limit: req.query?.limit,
+      tokenService,
+      repository,
+      tenantScopeService,
+    });
+    res.status(result.httpStatus).json(result.body);
+  }),
+);
 
-    return {
-      ...item,
-      teacher: teacher?.name ?? "Non assigne",
-      students: classStudents.length,
-      presenceRate,
-    };
+app.get(
+  "/api/mobile-sync/l1/students",
+  requireAuth,
+  requirePermission("GET /api/mobile-sync/l1/students"),
+  asyncHandler(async (req, res) => {
+    const { handleMobileSyncL1Students } = require("./lib/mobileSyncStudents");
+    const result = await handleMobileSyncL1Students({
+      principal: req.principal,
+      cursor: req.query?.cursor,
+      limit: req.query?.limit,
+      tokenService,
+      repository,
+      tenantScopeService,
+    });
+    res.status(result.httpStatus).json(result.body);
+  }),
+);
+
+app.get(
+  "/api/mobile-sync/l1/assignments",
+  requireAuth,
+  requirePermission("GET /api/mobile-sync/l1/assignments"),
+  asyncHandler(async (req, res) => {
+    const { handleMobileSyncL1Assignments } = require("./lib/mobileSyncAssignments");
+    const result = await handleMobileSyncL1Assignments({
+      principal: req.principal,
+      cursor: req.query?.cursor,
+      limit: req.query?.limit,
+      tokenService,
+      repository,
+      tenantScopeService,
+    });
+    res.status(result.httpStatus).json(result.body);
+  }),
+);
+
+app.get(
+  "/api/mobile-sync/l1/school-courses",
+  requireAuth,
+  requirePermission("GET /api/mobile-sync/l1/school-courses"),
+  asyncHandler(async (req, res) => {
+    const { handleMobileSyncL1SchoolCourses } = require("./lib/mobileSyncSchoolCourses");
+    const result = await handleMobileSyncL1SchoolCourses({
+      principal: req.principal,
+      cursor: req.query?.cursor,
+      limit: req.query?.limit,
+      tokenService,
+      repository,
+      tenantScopeService,
+    });
+    res.status(result.httpStatus).json(result.body);
+  }),
+);
+
+app.get(
+  "/api/mobile-sync/l1/course-schedules",
+  requireAuth,
+  requirePermission("GET /api/mobile-sync/l1/course-schedules"),
+  asyncHandler(async (req, res) => {
+    const { handleMobileSyncL1CourseSchedules } = require("./lib/mobileSyncCourseSchedules");
+    const result = await handleMobileSyncL1CourseSchedules({
+      principal: req.principal,
+      cursor: req.query?.cursor,
+      limit: req.query?.limit,
+      tokenService,
+      repository,
+      tenantScopeService,
+    });
+    res.status(result.httpStatus).json(result.body);
+  }),
+);
+
+app.post("/api/classes", requireAuth, requirePermission("POST /api/classes"), asyncHandler(async (req, res) => {
+  const schoolCode = String(req.principal?.schoolCode ?? "").trim();
+  if (!schoolCode || schoolCode === "*") {
+    throw new BusinessError(400, "schoolCode établissement requis.");
+  }
+  tenantScopeService.assertSchoolAccess(req.principal, schoolCode);
+  const { auditMetaFromRequest } = require("./lib/teacherTransactionalAudit");
+  const created = await repository.createSchoolClass(
+    req.body ?? {},
+    schoolCode,
+    req.principal,
+    auditMetaFromRequest(req),
+  );
+  res.status(201).json(created);
+}));
+
+app.patch("/api/classes/:classCode", requireAuth, requirePermission("PATCH /api/classes/:classCode"), asyncHandler(async (req, res) => {
+  const schoolCode = String(req.principal?.schoolCode ?? "").trim();
+  if (!schoolCode || schoolCode === "*") {
+    throw new BusinessError(400, "schoolCode établissement requis.");
+  }
+  tenantScopeService.assertSchoolAccess(req.principal, schoolCode);
+  const { auditMetaFromRequest } = require("./lib/teacherTransactionalAudit");
+  const updated = await repository.updateSchoolClass(
+    req.params.classCode,
+    schoolCode,
+    req.body ?? {},
+    req.principal,
+    auditMetaFromRequest(req),
+  );
+  res.json(updated);
+}));
+
+async function enrollmentHttpPrincipal(req) {
+  const {
+    attachEnrollmentMembershipScope,
+    attachEnrollmentFixtureScope,
+  } = require("./lib/enrollmentSchoolScope");
+  if (repository?.engine !== "memory" && typeof repository.one === "function") {
+    return attachEnrollmentMembershipScope(req.principal, repository.one.bind(repository));
+  }
+  return attachEnrollmentFixtureScope(req.principal);
+}
+
+function requireEnrollmentLoginCode(principal) {
+  const { assertEnrollmentSchoolCode } = require("./lib/enrollmentSchoolScope");
+  return assertEnrollmentSchoolCode(principal);
+}
+
+function enrollmentAuthzPrincipal(reqPrincipal, loginCode) {
+  return { ...reqPrincipal, schoolCode: loginCode };
+}
+
+function enrollmentApiStudent(row, loginCode) {
+  const { projectEnrollmentApiStudent } = require("./lib/enrollmentSchoolScope");
+  return sanitizeUserForResponse(projectEnrollmentApiStudent(row, loginCode));
+}
+
+function enrollmentApiStudents(rows, loginCode) {
+  return sanitizeUsersForResponse(
+    (Array.isArray(rows) ? rows : []).map((row) => {
+      const { projectEnrollmentApiStudent } = require("./lib/enrollmentSchoolScope");
+      return projectEnrollmentApiStudent(row, loginCode);
+    }),
+  );
+}
+
+app.get("/api/classes/:classCode/students", requireAuth, requirePermission("GET /api/classes/:classCode/students"), asyncHandler(async (req, res) => {
+  const principal = await enrollmentHttpPrincipal(req);
+  const schoolCode = requireEnrollmentLoginCode(principal);
+  const rows = await repository.listClassStudents(req.params.classCode, schoolCode);
+  const classes = await repository.listSchoolClasses(schoolCode);
+  const match = (classes ?? []).find(
+    (item) => String(item.classCode ?? "").trim() === String(req.params.classCode ?? "").trim(),
+  );
+  const classId = String(match?.classId ?? match?.id ?? rows[0]?.classId ?? "").trim();
+  const className = String(match?.name ?? match?.className ?? rows[0]?.className ?? "").trim();
+  const {
+    scopeClassStudentsForPrincipal,
+  } = require("./lib/classStudentsAuthz");
+  const scoped = scopeClassStudentsForPrincipal(
+    req.principal,
+    {
+      classCode: String(req.params.classCode ?? "").trim(),
+      classId,
+      className,
+    },
+    rows,
+    resolveAuthorizedStudentForPrincipal,
+  );
+  res.json(enrollmentApiStudents(scoped, schoolCode));
+}));
+
+app.post("/api/classes/:classCode/students", requireAuth, requirePermission("POST /api/classes/:classCode/students"), asyncHandler(async (req, res) => {
+  const { resolveEnrollmentWriteSchool } = require("./lib/enrollmentSchoolScope");
+  const principal = await enrollmentHttpPrincipal(req);
+  const writeSchool = await resolveEnrollmentWriteSchool(
+    principal,
+    req.body ?? {},
+    repository?.engine !== "memory" && typeof repository.one === "function" ? repository.one.bind(repository) : null,
+  );
+  const schoolCode = writeSchool.loginCode;
+  const created = await repository.enrollStudentInClass(req.params.classCode, schoolCode, req.body ?? {});
+  const student = enrollmentApiStudent(created.student, schoolCode);
+  const credentials = {
+    login: String(created.credentials?.login ?? student?.studentCode ?? "").trim(),
+    temporarySecret: String(created.credentials?.temporarySecret ?? "").trim(),
+  };
+  if (!student?.studentCode || !credentials.temporarySecret) {
+    throw new BusinessError(500, "Le secret temporaire d'inscription n'a pas pu être remis.");
+  }
+  await auditService.record(req, "enroll_student", "student", student.studentCode, student, {
+    schoolCode,
   });
-
-  res.json(result);
+  res.status(201).json({ student, credentials });
 }));
 
-app.get("/api/courses", requireAuth, asyncHandler(async (req, res) => {
+app.get("/api/courses", requireAuth, requirePermission("GET /api/courses"), asyncHandler(async (req, res) => {
   const state = await getAuthoritativeBackOfficeState();
   const scope = deriveSchoolScope(req.principal, state);
   res.json(tenantScopeService.filterRows(state.courses, req.principal, scope));
 }));
 
-app.get("/api/course-schedules", requireAuth, asyncHandler(async (req, res) => {
-  const state = await getAuthoritativeBackOfficeState();
-  const scope = deriveSchoolScope(req.principal, state);
-  let rows = tenantScopeService.filterRows(state.courseSchedules ?? [], req.principal, scope);
-
-  const normalizeKey = (value) =>
-    String(value ?? "")
-      .normalize("NFD")
-      .replace(/[\u0300-\u036f]/g, "")
-      .replace(/\s+/g, " ")
-      .trim()
-      .toLowerCase();
-
-  // Un enseignant ne voit que ses propres créneaux (par identifiant ou par nom).
-  if (req.principal.role === "Enseignant") {
-    const userId = String(req.principal.sub ?? "").trim();
-    const nameKeys = new Set(
-      [
-        req.principal.name,
-        req.principal.identifier,
-        [req.principal.firstName, req.principal.lastName].filter(Boolean).join(" "),
-        [req.principal.lastName, req.principal.firstName].filter(Boolean).join(" "),
-      ]
-        .map(normalizeKey)
-        .filter(Boolean),
-    );
-    const classNames = new Set((req.principal.classNames ?? []).map(normalizeKey));
-    rows = rows.filter((slot) => {
-      if (userId && String(slot.teacherId ?? "") === userId) return true;
-      if (nameKeys.size && nameKeys.has(normalizeKey(slot.teacherName))) return true;
-      if (classNames.size && classNames.has(normalizeKey(slot.className))) return true;
-      return false;
-    });
+async function planningHttpPrincipal(req) {
+  const { attachPlanningMembershipScope, attachPlanningFixtureScope } = require("./lib/planningSchoolScope");
+  if (typeof repository.one === "function") {
+    return attachPlanningMembershipScope(req.principal, repository.one.bind(repository));
   }
+  return attachPlanningFixtureScope(req.principal);
+}
 
+async function presenceHttpPrincipal(req) {
+  const { attachPresenceMembershipScope, attachPresenceFixtureScope } = require("./lib/presenceSchoolScope");
+  if (repository?.engine !== "memory" && typeof repository.one === "function") {
+    return attachPresenceMembershipScope(req.principal, repository.one.bind(repository));
+  }
+  return attachPresenceFixtureScope(req.principal);
+}
+
+app.get("/api/course-schedules", requireAuth, requirePermission("GET /api/course-schedules"), asyncHandler(async (req, res) => {
+  const { assertPlanningReadable } = require("./lib/planningSchoolScope");
+  const principal = await planningHttpPrincipal(req);
+  assertPlanningReadable(principal);
+  if (typeof repository.listCourseSchedules === "function") {
+    const result = await repository.listCourseSchedules(principal, req.query ?? {});
+    res.json(result);
+    return;
+  }
+  const state = await getAuthoritativeBackOfficeState();
+  const scope = deriveSchoolScope(principal, state);
+  const rows = tenantScopeService.filterRows(state.courseSchedules ?? [], principal, scope);
   res.json(rows);
 }));
 
-app.get("/api/assignments", requireAuth, requirePermission("GET /api/assignments"), asyncHandler(async (req, res) => {
-  const state = await getAuthoritativeBackOfficeState();
-  const scope = deriveSchoolScope(req.principal, state);
-  let rows = tenantScopeService.filterRows(state.assignments ?? [], req.principal, scope);
+app.post("/api/courses", requireAuth, requirePermission("POST /api/courses"), asyncHandler(async (req, res) => {
+  const { pedagogyAuditMetaFromRequest } = require("./lib/pedagogyManagement");
+  const created = await repository.createSchoolCourse(req.body ?? {}, req.principal, pedagogyAuditMetaFromRequest(req));
+  res.status(201).json(created);
+}));
 
-  if (req.principal.role === "Enseignant") {
-    const { assignmentMatchesTeacher } = require("./services/authService");
-    const normalizeTeacherKey = (value) =>
-      String(value ?? "")
-        .normalize("NFD")
-        .replace(/[\u0300-\u036f]/g, "")
-        .trim()
-        .toLowerCase();
-    const teacher = (state.teachers ?? []).find((item) => {
-      const userId = String(req.principal.sub ?? "").trim();
-      const identifier = normalizeTeacherKey(req.principal.identifier);
-      if (userId && String(item.userId ?? "") === userId) return true;
-      if (userId && String(item.id ?? "") === userId) return true;
-      if (identifier && normalizeTeacherKey(item.identifier) === identifier) return true;
-      return false;
-    });
+app.patch("/api/courses/:courseId", requireAuth, requirePermission("PATCH /api/courses/:courseId"), asyncHandler(async (req, res) => {
+  const { pedagogyAuditMetaFromRequest } = require("./lib/pedagogyManagement");
+  const updated = await repository.updateSchoolCourse(
+    req.params.courseId,
+    req.body ?? {},
+    req.principal,
+    pedagogyAuditMetaFromRequest(req),
+  );
+  res.json(updated);
+}));
 
-    if (teacher) {
-      rows = rows.filter((assignment) =>
-        assignmentMatchesTeacher(assignment, teacher, {
-          id: req.principal.sub,
-          firstName: req.principal.firstName,
-          lastName: req.principal.lastName,
-          name: req.principal.name,
-        }),
+app.delete("/api/courses/:courseId", requireAuth, requirePermission("DELETE /api/courses/:courseId"), asyncHandler(async (req, res) => {
+  const { pedagogyAuditMetaFromRequest } = require("./lib/pedagogyManagement");
+  const deleted = await repository.deleteSchoolCourse(
+    req.params.courseId,
+    req.principal,
+    pedagogyAuditMetaFromRequest(req),
+  );
+  res.json(deleted);
+}));
+
+app.post("/api/course-schedules", requireAuth, requirePermission("POST /api/course-schedules"), asyncHandler(async (req, res) => {
+  const { assertPlanningReadable } = require("./lib/planningSchoolScope");
+  const principal = await planningHttpPrincipal(req);
+  assertPlanningReadable(principal);
+  await withIdempotency({
+    req,
+    res,
+    routeKey: "POST /api/course-schedules",
+    principal,
+    handler: async () => {
+      const { pedagogyAuditMetaFromRequest } = require("./lib/pedagogyManagement");
+      const created = await repository.createCourseSchedule(
+        req.body ?? {},
+        principal,
+        pedagogyAuditMetaFromRequest(req),
       );
-    } else if ((req.principal.classNames ?? []).length) {
-      const classNames = new Set(req.principal.classNames);
-      rows = rows.filter((assignment) => classNames.has(assignment.className));
-    }
+      return { statusCode: 201, body: created };
+    },
+  });
+}));
+
+app.patch("/api/course-schedules/:scheduleId", requireAuth, requirePermission("PATCH /api/course-schedules/:scheduleId"), asyncHandler(async (req, res) => {
+  const { assertPlanningReadable } = require("./lib/planningSchoolScope");
+  const principal = await planningHttpPrincipal(req);
+  assertPlanningReadable(principal);
+  const { pedagogyAuditMetaFromRequest } = require("./lib/pedagogyManagement");
+  const updated = await repository.updateCourseSchedule(
+    req.params.scheduleId,
+    req.body ?? {},
+    principal,
+    pedagogyAuditMetaFromRequest(req),
+  );
+  res.json(updated);
+}));
+
+app.delete("/api/course-schedules/:scheduleId", requireAuth, requirePermission("DELETE /api/course-schedules/:scheduleId"), asyncHandler(async (req, res) => {
+  const { assertPlanningReadable } = require("./lib/planningSchoolScope");
+  const principal = await planningHttpPrincipal(req);
+  assertPlanningReadable(principal);
+  const { pedagogyAuditMetaFromRequest } = require("./lib/pedagogyManagement");
+  const deleted = await repository.deleteCourseSchedule(
+    req.params.scheduleId,
+    principal,
+    pedagogyAuditMetaFromRequest(req),
+  );
+  res.json(deleted);
+}));
+
+function requireCanonicalPg(res, methodName, label) {
+  if (typeof repository[methodName] === "function") return true;
+  res.status(501).json({ message: `${label} : PostgreSQL canonique requis.` });
+  return false;
+}
+
+app.get("/api/school-rooms", requireAuth, requirePermission("GET /api/school-rooms"), asyncHandler(async (req, res) => {
+  if (!requireCanonicalPg(res, "listSchoolRooms", "Salles")) return;
+  const result = await repository.listSchoolRooms(req.principal, req.query ?? {});
+  res.json(result);
+}));
+
+app.post("/api/school-rooms", requireAuth, requirePermission("POST /api/school-rooms"), asyncHandler(async (req, res) => {
+  if (!requireCanonicalPg(res, "createSchoolRoom", "Salles")) return;
+  const { pedagogyAuditMetaFromRequest } = require("./lib/pedagogyManagement");
+  const created = await repository.createSchoolRoom(req.body ?? {}, req.principal, pedagogyAuditMetaFromRequest(req));
+  res.status(201).json(created);
+}));
+
+app.patch("/api/school-rooms/:roomId", requireAuth, requirePermission("PATCH /api/school-rooms/:roomId"), asyncHandler(async (req, res) => {
+  if (!requireCanonicalPg(res, "updateSchoolRoom", "Salles")) return;
+  const { pedagogyAuditMetaFromRequest } = require("./lib/pedagogyManagement");
+  const updated = await repository.updateSchoolRoom(
+    req.params.roomId,
+    req.body ?? {},
+    req.principal,
+    pedagogyAuditMetaFromRequest(req),
+  );
+  res.json(updated);
+}));
+
+app.delete("/api/school-rooms/:roomId", requireAuth, requirePermission("DELETE /api/school-rooms/:roomId"), asyncHandler(async (req, res) => {
+  if (!requireCanonicalPg(res, "archiveSchoolRoom", "Salles")) return;
+  const { pedagogyAuditMetaFromRequest } = require("./lib/pedagogyManagement");
+  const archived = await repository.archiveSchoolRoom(
+    req.params.roomId,
+    req.principal,
+    pedagogyAuditMetaFromRequest(req),
+  );
+  res.json(archived);
+}));
+
+app.get("/api/course-schedule-replacements/options", requireAuth, requirePermission("GET /api/course-schedule-replacements/options"), asyncHandler(async (req, res) => {
+  if (!requireCanonicalPg(res, "listReplacementTeacherOptions", "Remplacements")) return;
+  const result = await repository.listReplacementTeacherOptions(req.principal, req.query ?? {});
+  res.json(result);
+}));
+
+app.get("/api/course-schedule-replacements", requireAuth, requirePermission("GET /api/course-schedule-replacements"), asyncHandler(async (req, res) => {
+  if (!requireCanonicalPg(res, "listCourseScheduleReplacements", "Remplacements")) return;
+  const result = await repository.listCourseScheduleReplacements(req.principal, req.query ?? {});
+  res.json(result);
+}));
+
+app.post("/api/course-schedule-replacements", requireAuth, requirePermission("POST /api/course-schedule-replacements"), asyncHandler(async (req, res) => {
+  if (!requireCanonicalPg(res, "createCourseScheduleReplacement", "Remplacements")) return;
+  await withIdempotency({
+    req,
+    res,
+    routeKey: "POST /api/course-schedule-replacements",
+    principal: req.principal,
+    handler: async () => {
+      const { pedagogyAuditMetaFromRequest } = require("./lib/pedagogyManagement");
+      const created = await repository.createCourseScheduleReplacement(
+        req.body ?? {},
+        req.principal,
+        pedagogyAuditMetaFromRequest(req),
+      );
+      return { statusCode: 201, body: created };
+    },
+  });
+}));
+
+app.patch("/api/course-schedule-replacements/:replacementId", requireAuth, requirePermission("PATCH /api/course-schedule-replacements/:replacementId"), asyncHandler(async (req, res) => {
+  if (!requireCanonicalPg(res, "updateCourseScheduleReplacement", "Remplacements")) return;
+  const { pedagogyAuditMetaFromRequest } = require("./lib/pedagogyManagement");
+  const updated = await repository.updateCourseScheduleReplacement(
+    req.params.replacementId,
+    req.body ?? {},
+    req.principal,
+    pedagogyAuditMetaFromRequest(req),
+  );
+  res.json(updated);
+}));
+
+app.delete("/api/course-schedule-replacements/:replacementId", requireAuth, requirePermission("DELETE /api/course-schedule-replacements/:replacementId"), asyncHandler(async (req, res) => {
+  if (!requireCanonicalPg(res, "cancelCourseScheduleReplacement", "Remplacements")) return;
+  const { pedagogyAuditMetaFromRequest } = require("./lib/pedagogyManagement");
+  const cancelled = await repository.cancelCourseScheduleReplacement(
+    req.params.replacementId,
+    req.principal,
+    pedagogyAuditMetaFromRequest(req),
+  );
+  res.json(cancelled);
+}));
+
+app.get("/api/evaluations", requireAuth, requirePermission("GET /api/evaluations"), asyncHandler(async (req, res) => {
+  const schoolCode = String(req.principal?.schoolCode ?? "").trim();
+  if (!schoolCode || schoolCode === "*") {
+    sendList(res, [], req.query, ["title", "className", "subject", "period", "course"]);
+    return;
   }
+  tenantScopeService.assertSchoolAccess(req.principal, schoolCode);
+  const rows = await repository.listSchoolEvaluations(schoolCode, req.principal);
+  sendList(res, rows, req.query, ["title", "className", "subject", "period", "course"]);
+}));
+
+app.post("/api/evaluations", requireAuth, requireSchoolSubscriptionFeature("write_notes"), requirePermission("POST /api/evaluations"), asyncHandler(async (req, res) => {
+  await withIdempotency({
+    req,
+    res,
+    routeKey: "POST /api/evaluations",
+    principal: req.principal,
+    handler: async () => {
+      const { pedagogyAuditMetaFromRequest, ignoreClientScope } = require("./lib/pedagogyManagement");
+      const saved = await repository.createSchoolEvaluation(
+        ignoreClientScope(req.body ?? {}),
+        req.principal,
+        pedagogyAuditMetaFromRequest(req),
+      );
+      return { statusCode: 201, body: saved };
+    },
+  });
+}));
+
+app.patch("/api/evaluations/:evaluationId", requireAuth, requireSchoolSubscriptionFeature("write_notes"), requirePermission("PATCH /api/evaluations/:evaluationId"), asyncHandler(async (req, res) => {
+  await withIdempotency({
+    req,
+    res,
+    routeKey: `PATCH /api/evaluations/${req.params.evaluationId}`,
+    principal: req.principal,
+    handler: async () => {
+      const { pedagogyAuditMetaFromRequest } = require("./lib/pedagogyManagement");
+      const saved = await repository.updateSchoolEvaluation(
+        req.params.evaluationId,
+        req.body ?? {},
+        req.principal,
+        pedagogyAuditMetaFromRequest(req),
+      );
+      return { statusCode: 200, body: saved };
+    },
+  });
+}));
+
+app.get("/api/assignments", requireAuth, requirePermission("GET /api/assignments"), asyncHandler(async (req, res) => {
+  const schoolCode = String(req.principal?.schoolCode ?? "").trim();
+  if (!schoolCode || schoolCode === "*") {
+    throw new BusinessError(400, "schoolCode établissement requis.");
+  }
+  tenantScopeService.assertSchoolAccess(req.principal, schoolCode);
+
+  const {
+    resolveLiveAssignmentsSyncSnapshot,
+    liveSnapshotHasAssignmentsRead,
+    logAssignmentsPrincipalIdentity,
+    buildAssignmentsPrincipalIdentityLog,
+  } = require("./lib/mobileSyncScope");
+  const { MOBILE_SYNC_ERROR } = require("./lib/mobileSyncErrors");
+
+  let school = null;
+  if (typeof repository.getSchoolByCode === "function") {
+    school = await repository.getSchoolByCode(schoolCode);
+  }
+  const schoolId = String(req.principal.effectiveSchoolId ?? school?.id ?? "").trim();
+  let snapshot;
+  try {
+    snapshot = await resolveLiveAssignmentsSyncSnapshot(repository, req.principal, {
+      schoolCode,
+      schoolId,
+    });
+  } catch (error) {
+    if (error?.code === MOBILE_SYNC_ERROR.LIVE_SCOPE_UNAVAILABLE && error.statusCode) {
+      throw error;
+    }
+    const unavailable = new Error("Impossible de résoudre le périmètre live des affectations.");
+    unavailable.statusCode = 503;
+    unavailable.code = MOBILE_SYNC_ERROR.LIVE_SCOPE_UNAVAILABLE;
+    throw unavailable;
+  }
+
+  if (snapshot.scope.scopeKind !== "none" && !liveSnapshotHasAssignmentsRead(snapshot.input)) {
+    throw denyPermission();
+  }
+
+  let rows;
+  if (snapshot.scope.scopeKind === "none") {
+    rows = [];
+  } else if (snapshot.scope.scopeKind === "assigned") {
+    rows = await repository.listSchoolTeacherAssignments(schoolCode, {
+      teacherId: snapshot.scope.teacherId,
+    });
+  } else {
+    rows = await repository.listSchoolTeacherAssignments(schoolCode);
+  }
+
+  logAssignmentsPrincipalIdentity(
+    buildAssignmentsPrincipalIdentityLog({
+      principal: req.principal,
+      schoolRef: { schoolCode, schoolId },
+      snapshot,
+      rawUserId: snapshot.principalTrace?.rawUserId,
+      canonicalUserId: snapshot.principalTrace?.canonicalUserId,
+      rowCount: Array.isArray(rows) ? rows.length : 0,
+    }),
+  );
 
   sendList(res, rows, req.query, ["className", "course", "teacherName", "teacherId"]);
 }));
 
-app.get("/api/academic-config", requireAuth, asyncHandler(async (req, res) => {
-  const config = await repository.getAcademicConfig(req.principal.schoolCode);
+app.post("/api/assignments", requireAuth, requirePermission("POST /api/assignments"), asyncHandler(async (req, res) => {
+  const schoolCode = String(req.principal?.schoolCode ?? "").trim();
+  if (!schoolCode || schoolCode === "*") {
+    throw new BusinessError(400, "schoolCode établissement requis.");
+  }
+  tenantScopeService.assertSchoolAccess(req.principal, schoolCode);
+  const created = await repository.createSchoolTeacherAssignment(
+    req.body ?? {},
+    schoolCode,
+    req.principal,
+    auditMetaFromRequest(req),
+  );
+  res.status(201).json(created);
+}));
+
+app.patch("/api/assignments/:assignmentId", requireAuth, requirePermission("PATCH /api/assignments/:assignmentId"), asyncHandler(async (req, res) => {
+  const schoolCode = String(req.principal?.schoolCode ?? "").trim();
+  if (!schoolCode || schoolCode === "*") {
+    throw new BusinessError(400, "schoolCode établissement requis.");
+  }
+  tenantScopeService.assertSchoolAccess(req.principal, schoolCode);
+  const updated = await repository.updateSchoolTeacherAssignment(
+    req.params.assignmentId,
+    req.body ?? {},
+    schoolCode,
+    req.principal,
+    auditMetaFromRequest(req),
+  );
+  res.json(updated);
+}));
+
+app.delete("/api/assignments/:assignmentId", requireAuth, requirePermission("DELETE /api/assignments/:assignmentId"), asyncHandler(async (req, res) => {
+  const schoolCode = String(req.principal?.schoolCode ?? "").trim();
+  if (!schoolCode || schoolCode === "*") {
+    throw new BusinessError(400, "schoolCode établissement requis.");
+  }
+  tenantScopeService.assertSchoolAccess(req.principal, schoolCode);
+  const result = await repository.deleteSchoolTeacherAssignment(
+    req.params.assignmentId,
+    schoolCode,
+    req.principal,
+    auditMetaFromRequest(req),
+  );
+  res.json(result);
+}));
+
+app.get("/api/academic-config", requireAuth, requirePermission("GET /api/academic-config"), asyncHandler(async (req, res) => {
+  const { resolvePrincipalSchoolCode } = require("./lib/principalSchoolScope");
+  const schoolCode = resolvePrincipalSchoolCode(req.principal);
+  tenantScopeService.assertSchoolAccess(req.principal, schoolCode);
+  const config = await repository.getAcademicConfig(schoolCode);
   res.json(config);
 }));
 
-app.put("/api/academic-config", requireAuth, asyncHandler(async (req, res) => {
-  if (!["Super Administrateur Somafrik", "Admin Pays", "Admin School"].includes(req.principal.role)) {
-    throw new BusinessError(403, "Seuls les administrateurs peuvent configurer la gestion académique.");
-  }
-  const saved = await repository.saveAcademicConfig(req.principal.schoolCode, req.body ?? {});
-  await auditService.record(req, "save_academic_config", "academic_config", saved.schoolCode, saved);
+app.get("/api/backoffice/establishments/:schoolCode/academic-config", requireAuth, requirePermission("GET /api/backoffice/establishments/:schoolCode/academic-config"), asyncHandler(async (req, res) => {
+  const schoolCode = String(req.params.schoolCode ?? "").trim().toUpperCase();
+  tenantScopeService.assertSchoolAccess(req.principal, schoolCode);
+  const config = await repository.getAcademicConfig(schoolCode);
+  res.json(config);
+}));
+
+app.put("/api/backoffice/establishments/:schoolCode/academic-config", requireAuth, requirePermission("PUT /api/backoffice/establishments/:schoolCode/academic-config"), asyncHandler(async (req, res) => {
+  const schoolCode = String(req.params.schoolCode ?? "").trim().toUpperCase();
+  tenantScopeService.assertSchoolAccess(req.principal, schoolCode);
+  const { stripClientSchoolCode } = require("./lib/principalSchoolScope");
+  const payload = stripClientSchoolCode(req.body ?? {});
+  const saved = await repository.withTransaction(async (tx) => {
+    const scope = repository.createTxScope(tx);
+    const result = await scope.saveAcademicConfig(schoolCode, payload, tx);
+    await scope.recordAudit(
+      {
+        schoolCode,
+        userId: req.principal?.sub,
+        action: "save_academic_config",
+        entityType: "academic_config",
+        entityId: schoolCode,
+        newValue: result,
+        ipAddress: req.ip ?? "",
+        userAgent: req.get("user-agent") ?? "",
+      },
+      tx,
+    );
+    if (typeof repository.invalidateCachedDataset === "function") {
+      repository.invalidateCachedDataset();
+    } else {
+      repository.cachedDataset = null;
+    }
+    return result;
+  });
   res.json(saved);
 }));
 
-app.get("/api/students", requireAuth, asyncHandler(async (req, res) => {
-  const { students } = await getAuthoritativeBackOfficeState();
-  const { className } = req.query;
-  const result = sanitizeUsersForResponse(
-    tenantScopeService.filterRows(students, req.principal)
-      .filter((student) => !className || student.className === className),
-  );
-
-  sendList(res, result, req.query, ["name", "matricule", "className", "parentPhone"]);
+app.put("/api/academic-config", requireAuth, requirePermission("PUT /api/academic-config"), asyncHandler(async (req, res) => {
+  const { resolvePrincipalSchoolCode, stripClientSchoolCode } = require("./lib/principalSchoolScope");
+  const schoolCode = resolvePrincipalSchoolCode(req.principal);
+  tenantScopeService.assertSchoolAccess(req.principal, schoolCode);
+  const payload = stripClientSchoolCode(req.body ?? {});
+  const saved = await repository.withTransaction(async (tx) => {
+    const scope = repository.createTxScope(tx);
+    const result = await scope.saveAcademicConfig(schoolCode, payload, tx);
+    await scope.recordAudit(
+      {
+        schoolCode,
+        userId: req.principal?.sub,
+        action: "save_academic_config",
+        entityType: "academic_config",
+        entityId: schoolCode,
+        newValue: result,
+        ipAddress: req.ip ?? "",
+        userAgent: req.get("user-agent") ?? "",
+      },
+      tx,
+    );
+    if (typeof repository.invalidateCachedDataset === "function") {
+      repository.invalidateCachedDataset();
+    } else {
+      repository.cachedDataset = null;
+    }
+    return result;
+  });
+  res.json(saved);
 }));
 
-app.get("/api/students/:id", requireAuth, asyncHandler(async (req, res) => {
-  const { students } = await getAuthoritativeBackOfficeState();
-  const student = resolveAuthorizedStudentForPrincipal(students, req.principal, req.params.id);
+app.get("/api/data-export", requireAuth, requirePermission("GET /api/data-export"), asyncHandler(async (req, res) => {
+  const { exportSchoolData } = require("./lib/dataExportService");
+  const { dataExportAuditMetaFromRequest } = require("./lib/dataExportManagement");
+  const payload = await exportSchoolData(
+    repository,
+    req.principal,
+    req.query?.schoolCode,
+    dataExportAuditMetaFromRequest(req),
+  );
+  res.json(payload);
+}));
 
-  if (!student) {
+app.get("/api/school-settings", requireAuth, requirePermission("GET /api/school-settings"), asyncHandler(async (req, res) => {
+  const { resolvePrincipalSchoolCode } = require("./lib/principalSchoolScope");
+  const { assertSchoolSettingsRead } = require("./lib/schoolSettingsManagement");
+  assertSchoolSettingsRead(req.principal);
+  const schoolCode = resolvePrincipalSchoolCode(req.principal);
+  tenantScopeService.assertSchoolAccess(req.principal, schoolCode);
+  const settings = await repository.getSchoolSettings(req.principal, schoolCode);
+  res.json(settings);
+}));
+
+app.patch("/api/school-settings", requireAuth, requirePermission("PATCH /api/school-settings"), asyncHandler(async (req, res) => {
+  const { resolvePrincipalSchoolCode, stripClientSchoolCode } = require("./lib/principalSchoolScope");
+  const { schoolSettingsAuditMetaFromRequest } = require("./lib/schoolSettingsManagement");
+  const schoolCode = resolvePrincipalSchoolCode(req.principal);
+  tenantScopeService.assertSchoolAccess(req.principal, schoolCode);
+  const saved = await repository.patchSchoolSettings(
+    stripClientSchoolCode(req.body ?? {}),
+    req.principal,
+    schoolSettingsAuditMetaFromRequest(req),
+    schoolCode,
+  );
+  res.json(saved);
+}));
+
+app.put("/api/academic-periods", requireAuth, requirePermission("PUT /api/academic-periods"), asyncHandler(async (req, res) => {
+  const { resolvePrincipalSchoolCode, stripClientSchoolCode } = require("./lib/principalSchoolScope");
+  const { schoolSettingsAuditMetaFromRequest } = require("./lib/schoolSettingsManagement");
+  const schoolCode = resolvePrincipalSchoolCode(req.principal);
+  tenantScopeService.assertSchoolAccess(req.principal, schoolCode);
+  const saved = await repository.replaceAcademicPeriods(
+    stripClientSchoolCode(req.body ?? {}),
+    req.principal,
+    schoolSettingsAuditMetaFromRequest(req),
+    schoolCode,
+  );
+  res.json(saved);
+}));
+
+app.get("/api/backoffice/establishments/:schoolCode/school-settings", requireAuth, requirePermission("GET /api/backoffice/establishments/:schoolCode/school-settings"), asyncHandler(async (req, res) => {
+  const { assertSchoolSettingsRead } = require("./lib/schoolSettingsManagement");
+  assertSchoolSettingsRead(req.principal);
+  const schoolCode = String(req.params.schoolCode ?? "").trim().toUpperCase();
+  tenantScopeService.assertSchoolAccess(req.principal, schoolCode);
+  const settings = await repository.getSchoolSettings(req.principal, schoolCode);
+  res.json(settings);
+}));
+
+app.patch("/api/backoffice/establishments/:schoolCode/school-settings", requireAuth, requirePermission("PATCH /api/backoffice/establishments/:schoolCode/school-settings"), asyncHandler(async (req, res) => {
+  const { stripClientSchoolCode } = require("./lib/principalSchoolScope");
+  const { schoolSettingsAuditMetaFromRequest } = require("./lib/schoolSettingsManagement");
+  const schoolCode = String(req.params.schoolCode ?? "").trim().toUpperCase();
+  tenantScopeService.assertSchoolAccess(req.principal, schoolCode);
+  const saved = await repository.patchSchoolSettings(
+    stripClientSchoolCode(req.body ?? {}),
+    req.principal,
+    schoolSettingsAuditMetaFromRequest(req),
+    schoolCode,
+  );
+  res.json(saved);
+}));
+
+app.put("/api/backoffice/establishments/:schoolCode/academic-periods", requireAuth, requirePermission("PUT /api/backoffice/establishments/:schoolCode/academic-periods"), asyncHandler(async (req, res) => {
+  const { stripClientSchoolCode } = require("./lib/principalSchoolScope");
+  const { schoolSettingsAuditMetaFromRequest } = require("./lib/schoolSettingsManagement");
+  const schoolCode = String(req.params.schoolCode ?? "").trim().toUpperCase();
+  tenantScopeService.assertSchoolAccess(req.principal, schoolCode);
+  const saved = await repository.replaceAcademicPeriods(
+    stripClientSchoolCode(req.body ?? {}),
+    req.principal,
+    schoolSettingsAuditMetaFromRequest(req),
+    schoolCode,
+  );
+  res.json(saved);
+}));
+
+app.get("/api/evaluation-types", requireAuth, requirePermission("GET /api/evaluation-types"), asyncHandler(async (req, res) => {
+  const { resolvePrincipalSchoolCode } = require("./lib/principalSchoolScope");
+  const { assertEvaluationTypesRead } = require("./lib/evaluationTypesManagement");
+  assertEvaluationTypesRead(req.principal);
+  const schoolCode = resolvePrincipalSchoolCode(req.principal);
+  tenantScopeService.assertSchoolAccess(req.principal, schoolCode);
+  const types = await repository.listEvaluationTypes(schoolCode, {
+    includeArchived: String(req.query.includeArchived ?? "") === "true",
+  });
+  res.json({ types });
+}));
+
+app.post("/api/evaluation-types", requireAuth, requirePermission("POST /api/evaluation-types"), asyncHandler(async (req, res) => {
+  const { resolvePrincipalSchoolCode, stripClientSchoolCode } = require("./lib/principalSchoolScope");
+  const { evaluationTypesAuditMetaFromRequest } = require("./lib/evaluationTypesManagement");
+  const schoolCode = resolvePrincipalSchoolCode(req.principal);
+  tenantScopeService.assertSchoolAccess(req.principal, schoolCode);
+  const created = await repository.createEvaluationType(
+    stripClientSchoolCode(req.body ?? {}),
+    req.principal,
+    evaluationTypesAuditMetaFromRequest(req),
+    schoolCode,
+  );
+  res.status(201).json(created);
+}));
+
+app.patch("/api/evaluation-types/:typeId", requireAuth, requirePermission("PATCH /api/evaluation-types/:typeId"), asyncHandler(async (req, res) => {
+  const { resolvePrincipalSchoolCode, stripClientSchoolCode } = require("./lib/principalSchoolScope");
+  const { evaluationTypesAuditMetaFromRequest } = require("./lib/evaluationTypesManagement");
+  const schoolCode = resolvePrincipalSchoolCode(req.principal);
+  tenantScopeService.assertSchoolAccess(req.principal, schoolCode);
+  const updated = await repository.updateEvaluationType(
+    req.params.typeId,
+    stripClientSchoolCode(req.body ?? {}),
+    req.principal,
+    evaluationTypesAuditMetaFromRequest(req),
+    schoolCode,
+  );
+  res.json(updated);
+}));
+
+app.post("/api/evaluation-types/:typeId/archive", requireAuth, requirePermission("POST /api/evaluation-types/:typeId/archive"), asyncHandler(async (req, res) => {
+  const { resolvePrincipalSchoolCode } = require("./lib/principalSchoolScope");
+  const { evaluationTypesAuditMetaFromRequest } = require("./lib/evaluationTypesManagement");
+  const schoolCode = resolvePrincipalSchoolCode(req.principal);
+  tenantScopeService.assertSchoolAccess(req.principal, schoolCode);
+  const archived = await repository.archiveEvaluationType(
+    req.params.typeId,
+    req.principal,
+    evaluationTypesAuditMetaFromRequest(req),
+    schoolCode,
+  );
+  res.json(archived);
+}));
+
+app.get("/api/backoffice/establishments/:schoolCode/evaluation-types", requireAuth, requirePermission("GET /api/backoffice/establishments/:schoolCode/evaluation-types"), asyncHandler(async (req, res) => {
+  const { assertEvaluationTypesRead } = require("./lib/evaluationTypesManagement");
+  assertEvaluationTypesRead(req.principal);
+  const schoolCode = String(req.params.schoolCode ?? "").trim().toUpperCase();
+  tenantScopeService.assertSchoolAccess(req.principal, schoolCode);
+  const types = await repository.listEvaluationTypes(schoolCode, {
+    includeArchived: String(req.query.includeArchived ?? "") === "true",
+  });
+  res.json({ types });
+}));
+
+app.post("/api/backoffice/establishments/:schoolCode/evaluation-types", requireAuth, requirePermission("POST /api/backoffice/establishments/:schoolCode/evaluation-types"), asyncHandler(async (req, res) => {
+  const { stripClientSchoolCode } = require("./lib/principalSchoolScope");
+  const { evaluationTypesAuditMetaFromRequest } = require("./lib/evaluationTypesManagement");
+  const schoolCode = String(req.params.schoolCode ?? "").trim().toUpperCase();
+  tenantScopeService.assertSchoolAccess(req.principal, schoolCode);
+  const created = await repository.createEvaluationType(
+    stripClientSchoolCode(req.body ?? {}),
+    req.principal,
+    evaluationTypesAuditMetaFromRequest(req),
+    schoolCode,
+  );
+  res.status(201).json(created);
+}));
+
+app.patch("/api/backoffice/establishments/:schoolCode/evaluation-types/:typeId", requireAuth, requirePermission("PATCH /api/backoffice/establishments/:schoolCode/evaluation-types/:typeId"), asyncHandler(async (req, res) => {
+  const { stripClientSchoolCode } = require("./lib/principalSchoolScope");
+  const { evaluationTypesAuditMetaFromRequest } = require("./lib/evaluationTypesManagement");
+  const schoolCode = String(req.params.schoolCode ?? "").trim().toUpperCase();
+  tenantScopeService.assertSchoolAccess(req.principal, schoolCode);
+  const updated = await repository.updateEvaluationType(
+    req.params.typeId,
+    stripClientSchoolCode(req.body ?? {}),
+    req.principal,
+    evaluationTypesAuditMetaFromRequest(req),
+    schoolCode,
+  );
+  res.json(updated);
+}));
+
+app.post("/api/backoffice/establishments/:schoolCode/evaluation-types/:typeId/archive", requireAuth, requirePermission("POST /api/backoffice/establishments/:schoolCode/evaluation-types/:typeId/archive"), asyncHandler(async (req, res) => {
+  const { evaluationTypesAuditMetaFromRequest } = require("./lib/evaluationTypesManagement");
+  const schoolCode = String(req.params.schoolCode ?? "").trim().toUpperCase();
+  tenantScopeService.assertSchoolAccess(req.principal, schoolCode);
+  const archived = await repository.archiveEvaluationType(
+    req.params.typeId,
+    req.principal,
+    evaluationTypesAuditMetaFromRequest(req),
+    schoolCode,
+  );
+  res.json(archived);
+}));
+
+app.get("/api/exams", requireAuth, requirePermission("GET /api/exams"), asyncHandler(async (req, res) => {
+  const exams = await repository.listExams(req.principal);
+  res.json({ exams });
+}));
+
+app.post("/api/exams", requireAuth, requirePermission("POST /api/exams"), asyncHandler(async (req, res) => {
+  const { documentsExamsAuditMetaFromRequest } = require("./lib/documentsExamsManagement");
+  const created = await repository.createExam(req.body ?? {}, req.principal, documentsExamsAuditMetaFromRequest(req));
+  res.status(201).json(created);
+}));
+
+app.get("/api/exams/:examId", requireAuth, requirePermission("GET /api/exams/:examId"), asyncHandler(async (req, res) => {
+  const exam = await repository.getExam(req.params.examId, req.principal);
+  res.json(exam);
+}));
+
+app.patch("/api/exams/:examId", requireAuth, requirePermission("PATCH /api/exams/:examId"), asyncHandler(async (req, res) => {
+  const { documentsExamsAuditMetaFromRequest } = require("./lib/documentsExamsManagement");
+  const updated = await repository.patchExam(req.params.examId, req.body ?? {}, req.principal, documentsExamsAuditMetaFromRequest(req));
+  res.json(updated);
+}));
+
+app.post("/api/exams/:examId/validate", requireAuth, requirePermission("POST /api/exams/:examId/validate"), asyncHandler(async (req, res) => {
+  const { documentsExamsAuditMetaFromRequest } = require("./lib/documentsExamsManagement");
+  const saved = await repository.validateExam(req.params.examId, req.principal, documentsExamsAuditMetaFromRequest(req));
+  res.json(saved);
+}));
+
+app.post("/api/exams/:examId/cancel", requireAuth, requirePermission("POST /api/exams/:examId/cancel"), asyncHandler(async (req, res) => {
+  const { documentsExamsAuditMetaFromRequest } = require("./lib/documentsExamsManagement");
+  const saved = await repository.cancelExam(req.params.examId, req.principal, documentsExamsAuditMetaFromRequest(req));
+  res.json(saved);
+}));
+
+app.post("/api/exams/:examId/archive", requireAuth, requirePermission("POST /api/exams/:examId/archive"), asyncHandler(async (req, res) => {
+  const { documentsExamsAuditMetaFromRequest } = require("./lib/documentsExamsManagement");
+  const saved = await repository.archiveExam(req.params.examId, req.principal, documentsExamsAuditMetaFromRequest(req));
+  res.json(saved);
+}));
+
+app.get("/api/report-cards", requireAuth, requirePermission("GET /api/report-cards"), asyncHandler(async (req, res) => {
+  const bulletins = await repository.listReportCards(req.principal);
+  res.json({ bulletins });
+}));
+
+app.post("/api/report-cards/generate", requireAuth, requirePermission("POST /api/report-cards/generate"), asyncHandler(async (req, res) => {
+  const { documentsExamsAuditMetaFromRequest } = require("./lib/documentsExamsManagement");
+  const saved = await repository.generateReportCard(req.body ?? {}, req.principal, documentsExamsAuditMetaFromRequest(req));
+  res.status(201).json(saved);
+}));
+
+app.post("/api/report-cards/:cardId/publish", requireAuth, requirePermission("POST /api/report-cards/:cardId/publish"), asyncHandler(async (req, res) => {
+  const { documentsExamsAuditMetaFromRequest } = require("./lib/documentsExamsManagement");
+  const saved = await repository.publishReportCard(req.params.cardId, req.principal, documentsExamsAuditMetaFromRequest(req));
+  res.json(saved);
+}));
+
+app.post("/api/report-cards/:cardId/archive", requireAuth, requirePermission("POST /api/report-cards/:cardId/archive"), asyncHandler(async (req, res) => {
+  const { documentsExamsAuditMetaFromRequest } = require("./lib/documentsExamsManagement");
+  const saved = await repository.archiveReportCard(req.params.cardId, req.principal, documentsExamsAuditMetaFromRequest(req));
+  res.json(saved);
+}));
+
+app.get("/api/report-card-templates", requireAuth, requirePermission("GET /api/report-card-templates"), asyncHandler(async (req, res) => {
+  const templates = await repository.listReportCardTemplates(req.principal);
+  res.json({ templates });
+}));
+
+app.put("/api/report-card-templates", requireAuth, requirePermission("PUT /api/report-card-templates"), asyncHandler(async (req, res) => {
+  const { documentsExamsAuditMetaFromRequest } = require("./lib/documentsExamsManagement");
+  const saved = await repository.upsertReportCardTemplate(req.body ?? {}, req.principal, documentsExamsAuditMetaFromRequest(req));
+  res.json(saved);
+}));
+
+app.post("/api/report-card-templates/:templateId/archive", requireAuth, requirePermission("POST /api/report-card-templates/:templateId/archive"), asyncHandler(async (req, res) => {
+  const { documentsExamsAuditMetaFromRequest } = require("./lib/documentsExamsManagement");
+  const saved = await repository.archiveReportCardTemplate(req.params.templateId, req.principal, documentsExamsAuditMetaFromRequest(req));
+  res.json(saved);
+}));
+
+app.get("/api/school-documents", requireAuth, requirePermission("GET /api/school-documents"), asyncHandler(async (req, res) => {
+  const documents = await repository.listSchoolDocuments(req.principal);
+  res.json({ documents });
+}));
+
+app.post("/api/school-documents", requireAuth, requirePermission("POST /api/school-documents"), asyncHandler(async (req, res) => {
+  const { documentsExamsAuditMetaFromRequest } = require("./lib/documentsExamsManagement");
+  const created = await repository.createSchoolDocument(req.body ?? {}, req.principal, documentsExamsAuditMetaFromRequest(req));
+  res.status(201).json(created);
+}));
+
+app.patch("/api/school-documents/:documentId", requireAuth, requirePermission("PATCH /api/school-documents/:documentId"), asyncHandler(async (req, res) => {
+  const { documentsExamsAuditMetaFromRequest } = require("./lib/documentsExamsManagement");
+  const saved = await repository.patchSchoolDocument(req.params.documentId, req.body ?? {}, req.principal, documentsExamsAuditMetaFromRequest(req));
+  res.json(saved);
+}));
+
+app.post("/api/school-documents/:documentId/archive", requireAuth, requirePermission("POST /api/school-documents/:documentId/archive"), asyncHandler(async (req, res) => {
+  const { documentsExamsAuditMetaFromRequest } = require("./lib/documentsExamsManagement");
+  const saved = await repository.archiveSchoolDocument(req.params.documentId, req.principal, documentsExamsAuditMetaFromRequest(req));
+  res.json(saved);
+}));
+
+app.get("/api/backoffice/education-levels", requireAuth, requirePermission("GET /api/backoffice/education-levels"), asyncHandler(async (req, res) => {
+  const { assertEducationReferenceCountryRead } = require("./lib/educationReferenceManagement");
+  const countryCode = String(req.query.countryCode ?? "").trim().toUpperCase();
+  if (!countryCode) {
+    return res.status(400).json({ message: "countryCode obligatoire." });
+  }
+  assertEducationReferenceCountryRead(req.principal, countryCode);
+  const levels = await repository.listEducationLevelsByCountry(countryCode, {
+    includeArchived: String(req.query.includeArchived ?? "") === "true",
+  });
+  res.json({ levels });
+}));
+
+app.post("/api/backoffice/education-levels", requireAuth, requirePermission("POST /api/backoffice/education-levels"), asyncHandler(async (req, res) => {
+  const { educationReferenceAuditMetaFromRequest } = require("./lib/educationReferenceManagement");
+  const created = await repository.createEducationLevel(req.body ?? {}, req.principal, educationReferenceAuditMetaFromRequest(req));
+  res.status(201).json(created);
+}));
+
+app.patch("/api/backoffice/education-levels/:levelId", requireAuth, requirePermission("PATCH /api/backoffice/education-levels/:levelId"), asyncHandler(async (req, res) => {
+  const { educationReferenceAuditMetaFromRequest } = require("./lib/educationReferenceManagement");
+  const updated = await repository.updateEducationLevel(req.params.levelId, req.body ?? {}, req.principal, educationReferenceAuditMetaFromRequest(req));
+  res.json(updated);
+}));
+
+app.post("/api/backoffice/education-levels/:levelId/archive", requireAuth, requirePermission("POST /api/backoffice/education-levels/:levelId/archive"), asyncHandler(async (req, res) => {
+  const { educationReferenceAuditMetaFromRequest } = require("./lib/educationReferenceManagement");
+  const archived = await repository.archiveEducationLevel(req.params.levelId, req.principal, educationReferenceAuditMetaFromRequest(req));
+  res.json(archived);
+}));
+
+app.get("/api/backoffice/education-streams", requireAuth, requirePermission("GET /api/backoffice/education-streams"), asyncHandler(async (req, res) => {
+  const { assertEducationReferenceCountryRead } = require("./lib/educationReferenceManagement");
+  const countryCode = String(req.query.countryCode ?? "").trim().toUpperCase();
+  if (!countryCode) {
+    return res.status(400).json({ message: "countryCode obligatoire." });
+  }
+  assertEducationReferenceCountryRead(req.principal, countryCode);
+  const streams = await repository.listEducationStreamsByCountry(countryCode, {
+    includeArchived: String(req.query.includeArchived ?? "") === "true",
+    streamType: req.query.streamType ? String(req.query.streamType) : null,
+    levelId: req.query.levelId ? String(req.query.levelId) : null,
+  });
+  res.json({ streams });
+}));
+
+app.post("/api/backoffice/education-streams", requireAuth, requirePermission("POST /api/backoffice/education-streams"), asyncHandler(async (req, res) => {
+  const { educationReferenceAuditMetaFromRequest } = require("./lib/educationReferenceManagement");
+  const created = await repository.createEducationStream(req.body ?? {}, req.principal, educationReferenceAuditMetaFromRequest(req));
+  res.status(201).json(created);
+}));
+
+app.patch("/api/backoffice/education-streams/:streamId", requireAuth, requirePermission("PATCH /api/backoffice/education-streams/:streamId"), asyncHandler(async (req, res) => {
+  const { educationReferenceAuditMetaFromRequest } = require("./lib/educationReferenceManagement");
+  const updated = await repository.updateEducationStream(req.params.streamId, req.body ?? {}, req.principal, educationReferenceAuditMetaFromRequest(req));
+  res.json(updated);
+}));
+
+app.post("/api/backoffice/education-streams/:streamId/archive", requireAuth, requirePermission("POST /api/backoffice/education-streams/:streamId/archive"), asyncHandler(async (req, res) => {
+  const { educationReferenceAuditMetaFromRequest } = require("./lib/educationReferenceManagement");
+  const archived = await repository.archiveEducationStream(req.params.streamId, req.principal, educationReferenceAuditMetaFromRequest(req));
+  res.json(archived);
+}));
+
+app.get("/api/backoffice/education-class-groups", requireAuth, requirePermission("GET /api/backoffice/education-class-groups"), asyncHandler(async (req, res) => {
+  const { assertEducationReferenceCountryRead } = require("./lib/educationReferenceManagement");
+  const countryCode = String(req.query.countryCode ?? "").trim().toUpperCase();
+  if (!countryCode) {
+    return res.status(400).json({ message: "countryCode obligatoire." });
+  }
+  assertEducationReferenceCountryRead(req.principal, countryCode);
+  const groups = await repository.listEducationClassGroupsByCountry(countryCode, {
+    includeArchived: String(req.query.includeArchived ?? "") === "true",
+  });
+  res.json({ groups });
+}));
+
+app.post("/api/backoffice/education-class-groups", requireAuth, requirePermission("POST /api/backoffice/education-class-groups"), asyncHandler(async (req, res) => {
+  const { educationReferenceAuditMetaFromRequest } = require("./lib/educationReferenceManagement");
+  const created = await repository.createEducationClassGroup(req.body ?? {}, req.principal, educationReferenceAuditMetaFromRequest(req));
+  res.status(201).json(created);
+}));
+
+app.patch("/api/backoffice/education-class-groups/:groupId", requireAuth, requirePermission("PATCH /api/backoffice/education-class-groups/:groupId"), asyncHandler(async (req, res) => {
+  const { educationReferenceAuditMetaFromRequest } = require("./lib/educationReferenceManagement");
+  const updated = await repository.updateEducationClassGroup(req.params.groupId, req.body ?? {}, req.principal, educationReferenceAuditMetaFromRequest(req));
+  res.json(updated);
+}));
+
+app.post("/api/backoffice/education-class-groups/:groupId/archive", requireAuth, requirePermission("POST /api/backoffice/education-class-groups/:groupId/archive"), asyncHandler(async (req, res) => {
+  const { educationReferenceAuditMetaFromRequest } = require("./lib/educationReferenceManagement");
+  const archived = await repository.archiveEducationClassGroup(req.params.groupId, req.principal, educationReferenceAuditMetaFromRequest(req));
+  res.json(archived);
+}));
+
+app.patch("/api/backoffice/education-reference/labels", requireAuth, requirePermission("PATCH /api/backoffice/education-reference/labels"), asyncHandler(async (req, res) => {
+  const { educationReferenceAuditMetaFromRequest } = require("./lib/educationReferenceManagement");
+  const saved = await repository.updateCountryPedagogicalLabels(req.body ?? {}, req.principal, educationReferenceAuditMetaFromRequest(req));
+  res.json(saved);
+}));
+
+app.get("/api/education-reference/catalog", requireAuth, requirePermission("GET /api/education-reference/catalog"), asyncHandler(async (req, res) => {
+  const { resolvePrincipalSchoolCode } = require("./lib/principalSchoolScope");
+  const schoolCode = resolvePrincipalSchoolCode(req.principal);
+  tenantScopeService.assertSchoolAccess(req.principal, schoolCode);
+  const catalog = await repository.getEducationSchoolCatalog(schoolCode);
+  res.json(catalog);
+}));
+
+app.put("/api/education-reference/school-activation", requireAuth, requirePermission("PUT /api/education-reference/school-activation"), asyncHandler(async (req, res) => {
+  const { resolvePrincipalSchoolCode } = require("./lib/principalSchoolScope");
+  const { educationReferenceAuditMetaFromRequest } = require("./lib/educationReferenceManagement");
+  const schoolCode = resolvePrincipalSchoolCode(req.principal);
+  tenantScopeService.assertSchoolAccess(req.principal, schoolCode);
+  const saved = await repository.saveSchoolEducationActivation(schoolCode, req.body ?? {}, req.principal, educationReferenceAuditMetaFromRequest(req));
+  res.json(saved);
+}));
+
+app.get("/api/backoffice/establishments/:schoolCode/education-reference/catalog", requireAuth, requirePermission("GET /api/backoffice/establishments/:schoolCode/education-reference/catalog"), asyncHandler(async (req, res) => {
+  const schoolCode = String(req.params.schoolCode ?? "").trim().toUpperCase();
+  tenantScopeService.assertSchoolAccess(req.principal, schoolCode);
+  const catalog = await repository.getEducationSchoolCatalog(schoolCode);
+  res.json(catalog);
+}));
+
+app.put("/api/backoffice/establishments/:schoolCode/education-reference/school-activation", requireAuth, requirePermission("PUT /api/backoffice/establishments/:schoolCode/education-reference/school-activation"), asyncHandler(async (req, res) => {
+  const schoolCode = String(req.params.schoolCode ?? "").trim().toUpperCase();
+  const { stripClientSchoolCode } = require("./lib/principalSchoolScope");
+  const { educationReferenceAuditMetaFromRequest } = require("./lib/educationReferenceManagement");
+  tenantScopeService.assertSchoolAccess(req.principal, schoolCode);
+  const payload = stripClientSchoolCode(req.body ?? {});
+  const saved = await repository.saveSchoolEducationActivation(schoolCode, payload, req.principal, educationReferenceAuditMetaFromRequest(req));
+  res.json(saved);
+}));
+
+app.get("/api/backoffice/establishment-roles", requireAuth, requirePermission("GET /api/backoffice/establishment-roles"), asyncHandler(async (req, res) => {
+  const roles = await repository.listEstablishmentRoles({
+    includeArchived: String(req.query.includeArchived ?? "") === "true",
+    schoolAssignableOnly: String(req.query.schoolAssignableOnly ?? "") === "true",
+  });
+  res.json({ roles });
+}));
+
+app.post("/api/backoffice/establishment-roles", requireAuth, requirePermission("POST /api/backoffice/establishment-roles"), asyncHandler(async (req, res) => {
+  const { establishmentRolesAuditMetaFromRequest } = require("./lib/establishmentRolesManagement");
+  const created = await repository.createEstablishmentRole(req.body ?? {}, req.principal, establishmentRolesAuditMetaFromRequest(req));
+  res.status(201).json(created);
+}));
+
+app.patch("/api/backoffice/establishment-roles/:roleId", requireAuth, requirePermission("PATCH /api/backoffice/establishment-roles/:roleId"), asyncHandler(async (req, res) => {
+  const { establishmentRolesAuditMetaFromRequest } = require("./lib/establishmentRolesManagement");
+  const updated = await repository.updateEstablishmentRole(req.params.roleId, req.body ?? {}, req.principal, establishmentRolesAuditMetaFromRequest(req));
+  res.json(updated);
+}));
+
+app.post("/api/backoffice/establishment-roles/:roleId/archive", requireAuth, requirePermission("POST /api/backoffice/establishment-roles/:roleId/archive"), asyncHandler(async (req, res) => {
+  const { establishmentRolesAuditMetaFromRequest } = require("./lib/establishmentRolesManagement");
+  const archived = await repository.archiveEstablishmentRole(req.params.roleId, req.principal, establishmentRolesAuditMetaFromRequest(req));
+  res.json(archived);
+}));
+
+app.get("/api/establishment-roles/assignable", requireAuth, requirePermission("GET /api/establishment-roles/assignable"), asyncHandler(async (req, res) => {
+  const roles = await repository.listEstablishmentRoles({ schoolAssignableOnly: true });
+  res.json({ roles });
+}));
+
+app.get("/api/backoffice/planning-exams", requireAuth, requirePermission("GET /api/backoffice/planning-exams"), asyncHandler(async (req, res) => {
+  const exams = await repository.listExams(req.principal);
+  res.json({ exams });
+}));
+
+app.put("/api/backoffice/planning-exams", requireAuth, requirePermission("PUT /api/backoffice/planning-exams"), asyncHandler(async () => {
+  const { assertLegacyResidualWriteForbidden } = require("./lib/documentsExamsManagement");
+  assertLegacyResidualWriteForbidden("exam"); // LEGACY_EXAMS_WRITE_FORBIDDEN
+}));
+
+app.get("/api/backoffice/report-cards", requireAuth, requirePermission("GET /api/backoffice/report-cards"), asyncHandler(async (req, res) => {
+  const bulletins = await repository.listReportCards(req.principal);
+  res.json({ bulletins });
+}));
+
+app.put("/api/backoffice/report-cards", requireAuth, requirePermission("PUT /api/backoffice/report-cards"), asyncHandler(async () => {
+  const { assertLegacyResidualWriteForbidden } = require("./lib/documentsExamsManagement");
+  assertLegacyResidualWriteForbidden("bulletin"); // LEGACY_REPORT_CARDS_WRITE_FORBIDDEN
+}));
+
+app.get("/api/backoffice/establishment-documents", requireAuth, requirePermission("GET /api/backoffice/establishment-documents"), asyncHandler(async (req, res) => {
+  const documents = await repository.listSchoolDocuments(req.principal);
+  res.json({ documents });
+}));
+
+app.put("/api/backoffice/establishment-documents", requireAuth, requirePermission("PUT /api/backoffice/establishment-documents"), asyncHandler(async () => {
+  const { assertLegacyResidualWriteForbidden } = require("./lib/documentsExamsManagement");
+  assertLegacyResidualWriteForbidden("document"); // LEGACY_DOCUMENTS_WRITE_FORBIDDEN
+}));
+
+app.get("/api/students", requireAuth, requirePermission("GET /api/students"), asyncHandler(async (req, res) => {
+  const principal = await enrollmentHttpPrincipal(req);
+  const schoolCode = requireEnrollmentLoginCode(principal);
+
+  if (typeof repository.listSchoolStudents !== "function") {
+    throw new BusinessError(503, "Liste élèves PostgreSQL indisponible.");
+  }
+
+  const rows = await repository.listSchoolStudents(schoolCode);
+  const { className } = req.query;
+  const filtered = (rows ?? []).filter((student) => !className || student.className === className);
+  const {
+    scopeSchoolStudentsForPrincipal,
+  } = require("./lib/classStudentsAuthz");
+  const scoped = scopeSchoolStudentsForPrincipal(
+    req.principal,
+    filtered,
+    resolveAuthorizedStudentForPrincipal,
+  );
+  const result = enrollmentApiStudents(scoped, schoolCode);
+  sendList(res, result, req.query, ["name", "matricule", "studentCode", "className", "parentPhone"]);
+}));
+
+app.get("/api/students/:id", requireAuth, requirePermission("GET /api/students/:id"), asyncHandler(async (req, res) => {
+  const { assertEnrollmentStudentAccess } = require("./lib/enrollmentSchoolScope");
+  const principal = await enrollmentHttpPrincipal(req);
+  const schoolCode = requireEnrollmentLoginCode(principal);
+
+  if (typeof repository.getSchoolStudentByCode !== "function") {
+    throw new BusinessError(503, "Fiche élève PostgreSQL indisponible.");
+  }
+
+  const pgStudent = enrollmentApiStudent(
+    await repository.getSchoolStudentByCode(req.params.id, schoolCode),
+    schoolCode,
+  );
+  assertEnrollmentStudentAccess(principal, pgStudent);
+  const {
+    authorizeStudentReadForPrincipal,
+  } = require("./lib/classStudentsAuthz");
+  const authorizedPg = authorizeStudentReadForPrincipal(
+    pgStudent,
+    enrollmentAuthzPrincipal(req.principal, schoolCode),
+    req.params.id,
+    resolveAuthorizedStudentForPrincipal,
+  );
+  if (!authorizedPg) {
+    return res.status(404).json({ message: "Eleve introuvable" });
+  }
+  return res.json(enrollmentApiStudent(authorizedPg, schoolCode));
+}));
+
+app.patch("/api/students/:id", requireAuth, requirePermission("PATCH /api/students/:id"), asyncHandler(async (req, res) => {
+  const { assertEnrollmentStudentAccess } = require("./lib/enrollmentSchoolScope");
+  const principal = await enrollmentHttpPrincipal(req);
+  const schoolCode = requireEnrollmentLoginCode(principal);
+
+  if (typeof repository.updateSchoolStudentByCode !== "function") {
+    throw new BusinessError(503, "Modification élève PostgreSQL indisponible.");
+  }
+
+  const existing = enrollmentApiStudent(
+    await repository.getSchoolStudentByCode(req.params.id, schoolCode),
+    schoolCode,
+  );
+  assertEnrollmentStudentAccess(principal, existing);
+  const {
+    authorizeStudentReadForPrincipal,
+  } = require("./lib/classStudentsAuthz");
+  const authorized = authorizeStudentReadForPrincipal(
+    existing,
+    enrollmentAuthzPrincipal(req.principal, schoolCode),
+    req.params.id,
+    resolveAuthorizedStudentForPrincipal,
+  );
+  if (!authorized) {
     return res.status(404).json({ message: "Eleve introuvable" });
   }
 
-  res.json(sanitizeUserForResponse(student));
+  const updated = await repository.updateSchoolStudentByCode(
+    req.params.id,
+    schoolCode,
+    req.body ?? {},
+  );
+  await auditService.record(req, "update_student", "student", updated.studentCode, {
+    studentCode: updated.studentCode,
+  }, { schoolCode });
+  res.json(enrollmentApiStudent(updated, schoolCode));
 }));
 
-app.get("/api/students/:id/notes", requireAuth, asyncHandler(async (req, res) => {
-  const { notes, students, evaluations } = await getAuthoritativeBackOfficeState();
+app.delete("/api/students/:id", requireAuth, requirePermission("DELETE /api/students/:id"), asyncHandler(async (req, res) => {
+  const { assertEnrollmentStudentAccess } = require("./lib/enrollmentSchoolScope");
+  const principal = await enrollmentHttpPrincipal(req);
+  const schoolCode = requireEnrollmentLoginCode(principal);
+  if (typeof repository.getSchoolStudentByCode !== "function") {
+    throw new BusinessError(503, "Suppression élève PostgreSQL indisponible.");
+  }
+  const existing = enrollmentApiStudent(
+    await repository.getSchoolStudentByCode(req.params.id, schoolCode),
+    schoolCode,
+  );
+  assertEnrollmentStudentAccess(principal, existing);
+  const { authorizeStudentReadForPrincipal } = require("./lib/classStudentsAuthz");
+  const authorized = authorizeStudentReadForPrincipal(
+    existing,
+    enrollmentAuthzPrincipal(req.principal, schoolCode),
+    req.params.id,
+    resolveAuthorizedStudentForPrincipal,
+  );
+  if (!authorized) {
+    return res.status(404).json({ message: "Eleve introuvable" });
+  }
+  if (typeof repository.archiveSchoolStudentByCode === "function") {
+    const archived = await repository.archiveSchoolStudentByCode(req.params.id, schoolCode, req.principal);
+    await auditService.record(req, "archive_student", "student", archived.studentCode || req.params.id, {
+      studentCode: archived.studentCode || req.params.id,
+    }, { schoolCode });
+    return res.json(enrollmentApiStudent(archived, schoolCode));
+  }
+  res.status(204).end();
+}));
+
+/** Lecture notes : Notes:READ live (Parent/Élève : seed « Voir notes » + matrice Notes:R). */
+app.get("/api/students/:id/notes", requireAuth, requirePermission("GET /api/students/:id/notes"), asyncHandler(async (req, res) => {
+  const { notes, students, evaluations } = await loadCanonicalPedagogyForPrincipal(req.principal);
   const student = resolveAuthorizedStudentForPrincipal(students, req.principal, req.params.id);
   if (!student) {
     return res.json([]);
@@ -670,8 +1915,8 @@ app.get("/api/students/:id/notes", requireAuth, asyncHandler(async (req, res) =>
   res.json(filterNotesForPrincipal(scopedNotes, evaluations, req.principal));
 }));
 
-app.get("/api/notes", requireAuth, asyncHandler(async (req, res) => {
-  const { notes, students, evaluations } = await getAuthoritativeBackOfficeState();
+app.get("/api/notes", requireAuth, requirePermission("GET /api/notes"), asyncHandler(async (req, res) => {
+  const { notes, students, evaluations } = await loadCanonicalPedagogyForPrincipal(req.principal);
   let scopedStudents = tenantScopeService.filterRows(students, req.principal);
   if (!scopedStudents.length && isParentOrStudentPrincipalRole(req.principal.role)) {
     const linkedIds = principalLinkedStudentIds(req.principal);
@@ -682,144 +1927,127 @@ app.get("/api/notes", requireAuth, asyncHandler(async (req, res) => {
   res.json(filterNotesForPrincipal(scopedNotes, evaluations, req.principal));
 }));
 
-app.get("/api/presences", requireAuth, asyncHandler(async (req, res) => {
-  const { presences, students } = await getAuthoritativeBackOfficeState();
+/** Lecture présences : Présences:READ live (Parent/Élève : seed « Voir présences »). */
+app.get("/api/presences", requireAuth, requirePermission("GET /api/presences"), asyncHandler(async (req, res) => {
+  const {
+    assertPresenceReadable,
+    filterPresenceRows,
+    presenceListStaysStudentScoped,
+  } = require("./lib/presenceSchoolScope");
+  const principal = await presenceHttpPrincipal(req);
+  const scope = assertPresenceReadable(principal);
+  const { presences, students } = await loadCanonicalPedagogyForPrincipal(principal);
   const { className, date } = req.query;
-  let scopedStudents = tenantScopeService.filterRows(students, req.principal)
+  let scopedPresences = filterPresenceRows(presences, scope);
+  let scopedStudents = tenantScopeService.filterRows(students, principal)
     .filter((student) => !className || student.className === className);
-  if (!scopedStudents.length && isParentOrStudentPrincipalRole(req.principal.role)) {
-    const linkedIds = principalLinkedStudentIds(req.principal);
-    scopedStudents = students
+  scopedStudents = filterPresenceRows(scopedStudents, scope)
+    .filter((student) => !className || student.className === className);
+  if (!scopedStudents.length && isParentOrStudentPrincipalRole(principal.role)) {
+    const linkedIds = principalLinkedStudentIds(principal);
+    scopedStudents = filterPresenceRows(students, scope)
       .filter((student) => linkedIds.has(String(student.id ?? "").trim()))
       .filter((student) => !className || student.className === className);
   }
   const studentIds = buildScopedStudentIdSet(scopedStudents);
-  res.json(
-    presences.filter((presence) =>
-      studentIds.has(String(presence.studentId ?? "")) &&
-      (!date || String(presence.date) === String(date))
-    )
+  const byStudents = scopedPresences.filter((presence) =>
+    studentIds.has(String(presence.studentId ?? "")) &&
+    (!date || String(presence.date) === String(date))
   );
+  if (studentIds.size) {
+    res.json(byStudents);
+    return;
+  }
+  if (presenceListStaysStudentScoped(principal)) {
+    res.json([]);
+    return;
+  }
+  res.json(scopedPresences.filter((presence) =>
+    (!className || presence.className === className) &&
+    (!date || String(presence.date) === String(date))
+  ));
 }));
 
-app.post("/api/notes", requireAuth, requireSchoolSubscriptionFeature("write_notes"), asyncHandler(async (req, res) => {
+app.post("/api/notes", requireAuth, requireSchoolSubscriptionFeature("write_notes"), requirePermission("POST /api/notes"), asyncHandler(async (req, res) => {
   await withIdempotency({
     req,
     res,
     routeKey: "POST /api/notes",
     principal: req.principal,
     handler: async () => {
-      assertCanManageNotes(req.principal);
-      const state = await getAuthoritativeBackOfficeState();
-      const body = req.body ?? {};
+      const state = await loadCanonicalPedagogyForPrincipal(req.principal);
+      const { pedagogyAuditMetaFromRequest, ignoreClientScope } = require("./lib/pedagogyManagement");
       const { assertNoteWrite } = require("./services/dataIntegrityService");
+      const body = ignoreClientScope(req.body ?? {});
+      const principalSchool = String(req.principal?.schoolCode ?? "").trim().toUpperCase();
+      const scopedState =
+        principalSchool && principalSchool !== "*"
+          ? {
+              ...state,
+              evaluations: (state.evaluations ?? []).filter(
+                (row) => String(row.schoolCode ?? "").trim().toUpperCase() === principalSchool,
+              ),
+            }
+          : state;
       // Unicité portée par PG upsert (school+evaluation+student) — comme D3.5b présences.
-      assertNoteWrite(state, body, {
-        enforceLockedEvaluation: false,
+      assertNoteWrite(scopedState, body, {
         skipDuplicateCheck: true,
       });
       let saved;
-      // D3.6b : PostgreSQL = autorité canonique. JSON BO seulement en moteur mémoire.
       const engine = String(repository.engine ?? "postgresql");
-      try {
-        await ensureRepositoryBackOfficeSnapshot(state);
+      if (engine === "postgresql" && typeof repository.upsertSchoolGrade === "function") {
+        saved = await repository.upsertSchoolGrade(body, req.principal, pedagogyAuditMetaFromRequest(req));
+      } else {
         saved = await repository.upsertGrade(body, req.principal);
-      } catch (error) {
-        const message = String(error?.message ?? "");
-        const status = error?.statusCode ?? error?.status;
-        const canUseTransientBoFallback =
-          engine === "memory" &&
-          (status === 404 || status === 400 || status === 403) &&
-          (message.includes("introuvable") ||
-            message.includes("Eleve") ||
-            message.includes("Matiere") ||
-            message.includes("Enseignant") ||
-            message.includes("Evaluation") ||
-            message.includes("évaluation") ||
-            message.includes("trimestre") ||
-            message.includes("Accès"));
-        if (canUseTransientBoFallback) {
-          saved = await saveNotesViaBackOfficeState(state, body, req.principal);
-        } else {
-          throw error;
-        }
+        await auditService.record(req, "upsert_grade", "grade", saved.id, saved);
       }
-      await auditService.record(req, "upsert_grade", "grade", saved.id, saved);
       return { statusCode: 201, body: saved };
     },
   });
 }));
 
-app.post("/api/presences", requireAuth, requireSchoolSubscriptionFeature("write_presence"), asyncHandler(async (req, res) => {
+app.post("/api/presences", requireAuth, requireSchoolSubscriptionFeature("write_presence"), requirePermission("POST /api/presences"), asyncHandler(async (req, res) => {
   await withIdempotency({
     req,
     res,
     routeKey: "POST /api/presences",
     principal: req.principal,
     handler: async () => {
-      assertCanManagePresences(req.principal);
-      const state = await getAuthoritativeBackOfficeState();
-      const body = req.body ?? {};
-      const batchClassName = String(body.className ?? "").trim();
-      const items = (Array.isArray(body.items) ? body.items : []).map((item) => {
-        const student = findStudent(state.students ?? [], item.studentId);
-        return {
-          ...item,
-          studentId: student?.matricule ?? student?.publicId ?? student?.id ?? item.studentId,
-          className: String(item.className ?? batchClassName ?? student?.className ?? "").trim(),
-          schoolCode: String(item.schoolCode ?? student?.schoolCode ?? req.principal.schoolCode ?? "")
-            .trim()
-            .toUpperCase(),
-        };
-      });
-
-      const { assertPresenceWrite } = require("./services/dataIntegrityService");
-      const normalizedItems = [];
-      for (const item of items) {
-        const student = findStudent(state.students ?? [], item.studentId);
-        const studentKeys = student ? buildScopedStudentIdSet([student]) : new Set();
-        // D3.5b : clé = établissement + élève + jour
-        const itemSchool = String(item.schoolCode ?? "").trim().toUpperCase();
-        const duplicate = (state.presences ?? []).find((row) => {
-          const rowSchool = String(row.schoolCode ?? "").trim().toUpperCase();
-          if (itemSchool && rowSchool && itemSchool !== rowSchool) return false;
-          return (
-            studentKeys.has(String(row.studentId ?? "")) &&
-            normalizePresenceDay(row.date) === normalizePresenceDay(item.date)
-          );
-        });
-        const nextItem = duplicate ? { ...duplicate, ...item, id: duplicate.id } : item;
-        assertPresenceWrite(state, nextItem, { skipDuplicateCheck: true });
-        normalizedItems.push(nextItem);
-      }
-
-      await ensureRepositoryBackOfficeSnapshot(state);
-
-      // D3.5b : PostgreSQL = autorité canonique. Le JSON BO n'est autorisé
-      // qu'en moteur mémoire (secours démo), jamais comme 2ᵉ source durable.
-      let saved;
+      const { assertPresenceReadable } = require("./lib/presenceSchoolScope");
+      const principal = await presenceHttpPrincipal(req);
+      assertPresenceReadable(principal);
+      const state = await loadCanonicalPedagogyForPrincipal(principal);
+      const { pedagogyAuditMetaFromRequest, ignoreClientScope } = require("./lib/pedagogyManagement");
+      const rawBody = req.body ?? {};
+      const body = Array.isArray(rawBody.items)
+        ? { ...rawBody, items: rawBody.items.map((item) => ignoreClientScope(item)) }
+        : ignoreClientScope(rawBody);
       const engine = String(repository.engine ?? "postgresql");
-      try {
-        saved = await repository.upsertAttendanceBatch({ ...body, items: normalizedItems }, req.principal);
-      } catch (error) {
-        const message = String(error?.message ?? "");
-        const status = error?.statusCode ?? error?.status;
-        const canUseTransientBoFallback =
-          engine === "memory" &&
-          (status === 404 || status === 400) &&
-          (message.includes("introuvable") || message.includes("Eleve") || message.includes("présence"));
-        if (canUseTransientBoFallback) {
-          saved = await savePresencesViaBackOfficeState(state, normalizedItems);
-        } else {
-          throw error;
+      const { mergeAttendanceClassIdentity } = require("./lib/presencesAttendanceAuthz");
+      const items = Array.isArray(body.items) ? body.items : [body];
+      const canonicalItems = items.map((item) => ({
+        ...item,
+        ...mergeAttendanceClassIdentity(item, body),
+      }));
+      if (engine !== "postgresql" || typeof repository.upsertSchoolAttendanceBatch !== "function") {
+        const { assertPresenceWrite } = require("./services/dataIntegrityService");
+        for (const item of canonicalItems) {
+          assertPresenceWrite(state, item);
         }
       }
-
-      await auditService.record(req, "upsert_attendance", "attendance", req.body?.className ?? "batch", {
-        count: saved.length,
-        className: req.body?.className,
-        date: req.body?.date,
-      });
+      let saved;
+      if (engine === "postgresql" && typeof repository.upsertSchoolAttendanceBatch === "function") {
+        saved = await repository.upsertSchoolAttendanceBatch(
+          { ...body, items: canonicalItems },
+          principal,
+          pedagogyAuditMetaFromRequest(req),
+        );
+      } else {
+        saved = await repository.upsertAttendanceBatch({ ...body, items: canonicalItems }, principal);
+        await auditService.record(req, "upsert_attendance", "attendance", body?.classCode ?? body?.className ?? "batch", {
+          count: saved.length,
+        });
+      }
       return { statusCode: 201, body: saved };
     },
   });
@@ -848,7 +2076,8 @@ app.get("/api/students/:id/report.pdf", requireAuth, asyncHandler(async (req, re
   }
 
   const period = req.query.period ? String(req.query.period) : "Trimestre 1";
-  const design = resolveBulletinDesignForStudent(backOfficeState, student);
+  const { resolveBulletinLayoutForStudent } = require("./lib/documentsExamsService");
+  const design = await resolveBulletinLayoutForStudent(repository, student);
   const baseReport = gradeBookService.generateReport(student.id, period, "Publié");
   const report = applyBulletinDesignToReport(baseReport, design);
   const pdf = await reportPdfService.generateReportCardPdf(report);
@@ -860,18 +2089,24 @@ app.get("/api/students/:id/report.pdf", requireAuth, asyncHandler(async (req, re
   res.send(pdf);
 }));
 
-app.get("/api/students/:id/presences", requireAuth, asyncHandler(async (req, res) => {
-  const { presences, students } = await getAuthoritativeBackOfficeState();
-  const student = resolveAuthorizedStudentForPrincipal(students, req.principal, req.params.id);
+/** Fiche élève : même jeton Présences:READ (parcours Parent E2E /students/:id/presences). */
+app.get("/api/students/:id/presences", requireAuth, requirePermission("GET /api/students/:id/presences"), asyncHandler(async (req, res) => {
+  const { assertPresenceReadable, filterPresenceRows } = require("./lib/presenceSchoolScope");
+  const principal = await presenceHttpPrincipal(req);
+  const scope = assertPresenceReadable(principal);
+  const { presences, students } = await loadCanonicalPedagogyForPrincipal(principal);
+  const student = resolveAuthorizedStudentForPrincipal(students, principal, req.params.id);
   if (!student) {
     return res.json([]);
   }
   const studentIds = buildScopedStudentIdSet([student]);
-  res.json(presences.filter((presence) => studentIds.has(String(presence.studentId ?? ""))));
+  res.json(
+    filterPresenceRows(presences, scope).filter((presence) => studentIds.has(String(presence.studentId ?? ""))),
+  );
 }));
 
 app.get("/api/students/:id/payments", requireAuth, asyncHandler(async (req, res) => {
-  const { payments, students } = await getAuthoritativeBackOfficeState();
+  const { payments, students } = await loadCanonicalFinanceForPrincipal(req.principal);
   const student = resolveAuthorizedStudentForPrincipal(students, req.principal, req.params.id);
   if (!student) {
     return res.json([]);
@@ -881,24 +2116,123 @@ app.get("/api/students/:id/payments", requireAuth, asyncHandler(async (req, res)
 }));
 
 app.get("/api/teachers", requireAuth, requirePermission("GET /api/teachers"), asyncHandler(async (req, res) => {
-  const state = await getAuthoritativeBackOfficeState();
-  const scope = deriveSchoolScope(req.principal, state);
-  const result = tenantScopeService.filterRows(state.teachers, req.principal, scope).map((teacher) => {
+  const schoolCode = String(req.principal?.schoolCode ?? "").trim();
+  if (!schoolCode || schoolCode === "*") {
+    throw new BusinessError(400, "schoolCode établissement requis.");
+  }
+  tenantScopeService.assertSchoolAccess(req.principal, schoolCode);
+  const rows = await repository.listSchoolTeachers(schoolCode);
+  const result = rows.map((teacher) => {
     const safeTeacher = sanitizeUserForResponse(teacher);
     return {
       ...safeTeacher,
-      assignedClasses: [...new Set((safeTeacher.assignments ?? []).map((item) => item.className))],
-      courses: [...new Set((safeTeacher.assignments ?? []).map((item) => item.course))],
+      assignedClasses: [
+        ...new Set(
+          (safeTeacher.assignedClasses?.length
+            ? safeTeacher.assignedClasses
+            : (safeTeacher.assignments ?? []).map((item) => item.className)
+          ).filter(Boolean),
+        ),
+      ],
+      courses: [
+        ...new Set(
+          (safeTeacher.courses?.length
+            ? safeTeacher.courses
+            : (safeTeacher.assignments ?? []).map((item) => item.course)
+          ).filter(Boolean),
+        ),
+      ],
     };
   });
-  sendList(res, result, req.query, ["name", "phone", "email", "mainSubject"]);
+  sendList(res, result, req.query, ["name", "phone", "email", "mainSubject", "firstName", "lastName"]);
 }));
 
-app.get("/api/users", requireAuth, requirePermission("GET /api/users"), asyncHandler(async (req, res) => {
-  const { users } = await getAuthoritativeBackOfficeState();
-  const result = sanitizeUsersForResponse(tenantScopeService.filterRows(users, req.principal));
-  sendList(res, result, req.query, ["firstName", "lastName", "identifier", "role", "schoolCode"]);
+app.get("/api/teachers/:teacherCode", requireAuth, requirePermission("GET /api/teachers/:teacherCode"), asyncHandler(async (req, res) => {
+  const schoolCode = String(req.principal?.schoolCode ?? "").trim();
+  if (!schoolCode || schoolCode === "*") {
+    throw new BusinessError(400, "schoolCode établissement requis.");
+  }
+  tenantScopeService.assertSchoolAccess(req.principal, schoolCode);
+  const teacher = await repository.getSchoolTeacherByCode(req.params.teacherCode, schoolCode);
+  const safeTeacher = sanitizeUserForResponse(teacher);
+  res.json({
+    ...safeTeacher,
+    assignedClasses: [
+      ...new Set(
+        (safeTeacher.assignedClasses?.length
+          ? safeTeacher.assignedClasses
+          : (safeTeacher.assignments ?? []).map((item) => item.className)
+        ).filter(Boolean),
+      ),
+    ],
+    courses: [
+      ...new Set(
+        (safeTeacher.courses?.length
+          ? safeTeacher.courses
+          : (safeTeacher.assignments ?? []).map((item) => item.course)
+        ).filter(Boolean),
+      ),
+    ],
+  });
 }));
+
+app.post("/api/teachers", requireAuth, requirePermission("POST /api/teachers"), asyncHandler(async (_req, res) => {
+  res.status(403).json({
+    error: "La création d'une identité utilisateur ne part plus du module Enseignants. Créez le compte dans Comptes utilisateurs puis attribuez le rôle Enseignant.",
+    code: "TEACHER_IDENTITY_MUST_COME_FROM_USERS",
+  });
+}));
+
+app.patch("/api/teachers/:teacherCode", requireAuth, requirePermission("PATCH /api/teachers/:teacherCode"), asyncHandler(async (req, res) => {
+  const schoolCode = String(req.principal?.schoolCode ?? "").trim();
+  if (!schoolCode || schoolCode === "*") {
+    throw new BusinessError(400, "schoolCode établissement requis.");
+  }
+  tenantScopeService.assertSchoolAccess(req.principal, schoolCode);
+  const updated = await repository.updateSchoolTeacher(
+    req.params.teacherCode,
+    req.body ?? {},
+    schoolCode,
+    req.principal,
+    auditMetaFromRequest(req),
+  );
+  const safeTeacher = sanitizeUserForResponse(updated);
+  res.json({
+    ...safeTeacher,
+    assignedClasses: [
+      ...new Set(
+        (safeTeacher.assignedClasses?.length
+          ? safeTeacher.assignedClasses
+          : (safeTeacher.assignments ?? []).map((item) => item.className)
+        ).filter(Boolean),
+      ),
+    ],
+    courses: [
+      ...new Set(
+        (safeTeacher.courses?.length
+          ? safeTeacher.courses
+          : (safeTeacher.assignments ?? []).map((item) => item.course)
+        ).filter(Boolean),
+      ),
+    ],
+  });
+}));
+
+app.delete("/api/teachers/:teacherCode", requireAuth, requirePermission("DELETE /api/teachers/:teacherCode"), asyncHandler(async (req, res) => {
+  const schoolCode = String(req.principal?.schoolCode ?? "").trim();
+  if (!schoolCode || schoolCode === "*") {
+    throw new BusinessError(400, "schoolCode établissement requis.");
+  }
+  tenantScopeService.assertSchoolAccess(req.principal, schoolCode);
+  const result = await repository.archiveSchoolTeacher(
+    req.params.teacherCode,
+    schoolCode,
+    req.principal,
+    auditMetaFromRequest(req),
+  );
+  res.json(result);
+}));
+
 
 function canResetUserPassword(principal) {
   const permissions = new Set(principal?.permissions ?? []);
@@ -910,25 +2244,61 @@ function canResetUserPassword(principal) {
   );
 }
 
+async function usersHttpPrincipal(req) {
+  const {
+    attachUsersMembershipScope,
+    attachUsersFixtureScope,
+    attachUsersMemoryMembership,
+  } = require("./lib/usersSchoolScope");
+  if (repository?.engine !== "memory" && typeof repository.one === "function") {
+    return attachUsersMembershipScope(req.principal, repository.one.bind(repository));
+  }
+  if (typeof repository.getClientsStore === "function") {
+    return attachUsersMemoryMembership(req.principal, repository.getClientsStore());
+  }
+  return attachUsersFixtureScope(req.principal);
+}
+
+function usersApiUser(user) {
+  const { projectUsersApiUser } = require("./lib/usersSchoolScope");
+  return sanitizeUserForResponse(projectUsersApiUser(user));
+}
+
+function usersApiUsers(users) {
+  const { projectUsersApiUser } = require("./lib/usersSchoolScope");
+  return sanitizeUsersForResponse((Array.isArray(users) ? users : []).map(projectUsersApiUser));
+}
+
 app.post("/api/users/:id/reset-password", requireAuth, asyncHandler(async (req, res) => {
   if (!canResetUserPassword(req.principal)) {
     throw new BusinessError(403, "Permission insuffisante pour réinitialiser le mot de passe.");
   }
 
-  const { users } = await getAuthoritativeBackOfficeState();
-  const scopedUsers = tenantScopeService.filterRows(users, req.principal);
+  const {
+    assertUsersReadable,
+    assertUsersTargetAccess,
+    filterUsersRows,
+  } = require("./lib/usersSchoolScope");
+  const principal = await usersHttpPrincipal(req);
+  const scope = assertUsersReadable(principal);
+  const canonicalUsers = await repository.listClientsUsers(scope);
+  const scopedUsers = filterUsersRows(canonicalUsers, scope);
+  const requested = String(req.params.id);
   const target = scopedUsers.find((user) =>
-    [user.id, user.publicId, user.identifier].some((value) => String(value ?? "") === String(req.params.id))
+    [user.id, user.publicId, user.identityCode, user.userCode, user.identifier].some(
+      (value) => String(value ?? "") === requested,
+    ),
   );
 
   if (!target) {
     throw new BusinessError(404, "Utilisateur introuvable dans votre établissement.");
   }
+  assertUsersTargetAccess(principal, target);
 
   if (isPendingValidationUser(target) && !isSuperAdminPrincipal(req.principal)) {
     throw new BusinessError(
       409,
-      "Compte en attente de validation par le Super Administrateur. Aucune action n'est possible avant validation."
+      "Compte en attente de validation par le Super Administrateur. Aucune action n'est possible avant validation.",
     );
   }
 
@@ -938,16 +2308,64 @@ app.post("/api/users/:id/reset-password", requireAuth, asyncHandler(async (req, 
     throw new BusinessError(400, passwordError);
   }
 
-  const updatedUser = await repository.resetUserPassword(
-    [target.id, target.publicId, target.identifier].filter(Boolean),
-    temporaryPassword,
-  );
+  const lookupAliases = [
+    target.id,
+    target.publicId,
+    target.identityCode,
+    target.userCode,
+    target.identifier,
+  ].filter(Boolean);
+  const lockoutAliases = [
+    target.publicId,
+    target.identityCode,
+    target.userCode,
+    target.identifier,
+    target.email,
+    target.phone,
+  ]
+    .map((value) => String(value ?? "").trim().toLowerCase())
+    .filter(Boolean);
+  const schoolScopes = [...new Set([
+    target.schoolCode,
+    req.principal?.schoolCode,
+    "*",
+  ]
+    .map((value) => String(value ?? "").trim().toUpperCase())
+    .filter(Boolean))];
+
+  // Reset + révocation sessions + déverrouillage dans la même transaction PostgreSQL.
+  const updatedUser = await repository.withTransaction(async (tx) => {
+    const txRepo = repository.createTxScope(tx);
+    const updated = await txRepo.resetUserPassword(lookupAliases, temporaryPassword);
+    if (!updated) {
+      throw new BusinessError(404, "Utilisateur introuvable dans votre établissement.");
+    }
+
+    await tx.query(
+      `UPDATE sessions
+       SET revoked_at = NOW(), revoke_reason = 'password_reset'
+       WHERE user_id = $1 AND revoked_at IS NULL`,
+      [target.id],
+    );
+
+    if (lockoutAliases.length && schoolScopes.length) {
+      await tx.query(
+        `DELETE FROM login_lockouts
+         WHERE identifier_normalized = ANY($1::text[])
+           AND school_scope = ANY($2::text[])`,
+        [lockoutAliases, schoolScopes],
+      );
+    }
+    return updated;
+  });
+
   await auditService.record(req, "reset_user_password", "user", target.id, {
-    user: target.identifier,
+    user: target.identifier ?? target.publicId,
     oldPasswordInvalidated: true,
+    sessionsRevoked: true,
+    loginLockoutCleared: true,
   });
   res.json({
-    // Mot de passe provisoire renvoyé uniquement au top-level (handoff admin).
     temporaryPassword,
     user: {
       ...sanitizeUserForResponse(updatedUser),
@@ -957,16 +2375,16 @@ app.post("/api/users/:id/reset-password", requireAuth, asyncHandler(async (req, 
 }));
 
 app.get("/api/payments", requireAuth, requirePermission("GET /api/payments"), asyncHandler(async (req, res) => {
-  const state = await getAuthoritativeBackOfficeState();
-  const { payments, students } = state;
-  const scope = deriveSchoolScope(req.principal, state);
-  let scopedPayments = tenantScopeService.filterRows(payments, req.principal, scope);
+  const principal = await financeHttpPrincipal(req);
+  const { payments, students } = await loadCanonicalFinanceForPrincipal(principal);
+  const scope = deriveSchoolScope(principal, { students });
+  let scopedPayments = tenantScopeService.filterRows(payments, principal, scope);
   const result = scopedPayments.map((payment) => {
-    const student = students.find((item) => item.id === payment.studentId);
+    const student = findStudent(students, payment.studentId);
     return {
       ...payment,
-      studentName: student?.name ?? "Eleve inconnu",
-      className: student?.className ?? "",
+      studentName: student?.name || payment.studentName || "Eleve inconnu",
+      className: student?.className || payment.className || "",
     };
   });
 
@@ -981,59 +2399,858 @@ app.post("/api/payments", requireAuth, requirePermission("POST /api/payments"), 
     principal: req.principal,
     handler: async () => {
       const body = req.body ?? {};
-      const required = ["studentId", "feeType", "amount", "method", "date"];
-      const missing = required.filter((field) => !String(body[field] ?? "").trim() && body[field] !== 0);
-      if (missing.length) {
-        throw new BusinessError(400, `Champs obligatoires manquants : ${missing.join(", ")}`);
-      }
-      const amount = Number(body.amount);
-      if (!Number.isFinite(amount) || amount <= 0) {
-        throw new BusinessError(400, "Le montant doit être strictement positif.");
-      }
-
-      const state = await getAuthoritativeBackOfficeState();
-      const { applyAtomicPayment } = require("./services/paymentTransactionService");
-      const { payment, nextState } = applyAtomicPayment(state, body, req.principal);
-      await ensureRepositoryBackOfficeSnapshot(state);
-      await repository.saveBackOfficeState(nextState);
-      await auditService.record(req, "create_payment", "payment", payment.id, payment);
+      const { financeAuditMetaFromRequest } = require("./lib/financeManagement");
+      const payment = await repository.createSchoolPayment(body, req.principal, financeAuditMetaFromRequest(req));
       return { statusCode: 201, body: payment };
     },
   });
 }));
 
-app.get("/api/announcements", requireAuth, asyncHandler(async (req, res) => {
-  const { announcements } = await getAuthoritativeBackOfficeState();
-  let result = tenantScopeService.filterRows(announcements, req.principal);
-  if (!result.length && req.principal?.role === "Parent" && req.principal?.schoolCode) {
-    const schoolCode = normalizeSchoolCodeKey(req.principal.schoolCode);
-    result = announcements.filter(
-      (row) => normalizeSchoolCodeKey(row.schoolCode) === schoolCode || tenantScopeService.isSystemBroadcast(row),
-    );
+app.get("/api/payments/:paymentId", requireAuth, requirePermission("GET /api/payments"), asyncHandler(async (req, res) => {
+  const payment = await repository.getSchoolPayment(req.params.paymentId, req.principal);
+  if (!payment) throw new BusinessError(404, "Paiement introuvable");
+  res.json(payment);
+}));
+
+app.post("/api/payments/:paymentId/cancel", requireAuth, requirePermission("POST /api/payments/:paymentId/cancel"), asyncHandler(async (req, res) => {
+  await withIdempotency({
+    req,
+    res,
+    routeKey: `POST /api/payments/${req.params.paymentId}/cancel`,
+    principal: req.principal,
+    handler: async () => {
+      const { financeAuditMetaFromRequest } = require("./lib/financeManagement");
+      const payment = await repository.cancelSchoolPayment(
+        req.params.paymentId,
+        req.body?.reason ?? req.body?.cancelReason,
+        req.principal,
+        financeAuditMetaFromRequest(req),
+      );
+      return { statusCode: 200, body: payment };
+    },
+  });
+}));
+
+app.get("/api/finance/payment-student-options", requireAuth, requirePermission("GET /api/finance/payment-student-options"), asyncHandler(async (req, res) => {
+  const rows = await repository.listPaymentStudentOptions(req.principal);
+  sendList(res, rows, req.query, ["studentCode", "firstName", "lastName", "className", "classCode"]);
+}));
+
+app.get("/api/finance/catalog", requireAuth, requirePermission("GET /api/finance/catalog"), asyncHandler(async (req, res) => {
+  const catalog = await repository.getFinanceCatalog(req.principal);
+  res.json(catalog);
+}));
+
+app.get("/api/finance/payment-methods", requireAuth, requirePermission("GET /api/finance/payment-methods"), asyncHandler(async (req, res) => {
+  const rows = await repository.listSchoolPaymentMethods(req.principal);
+  sendList(res, rows, req.query, ["methodCode", "label"]);
+}));
+
+app.put("/api/finance/payment-methods", requireAuth, requirePermission("PUT /api/finance/payment-methods"), asyncHandler(async (req, res) => {
+  assertCanManagePaymentMethods(req.principal);
+  const rows = await repository.replaceSchoolPaymentMethods(req.body?.methods ?? req.body ?? [], req.principal);
+  res.json(rows);
+}));
+
+app.get("/api/finance/payment-statuses", requireAuth, requirePermission("GET /api/finance/payment-statuses"), asyncHandler(async (req, res) => {
+  const principal = await financeHttpPrincipal(req);
+  const rows = await repository.listFinancePaymentStatuses(principal);
+  sendList(res, tenantScopeService.filterRows(rows, principal), req.query, ["code", "label", "status"]);
+}));
+
+app.post("/api/finance/payment-statuses", requireAuth, requirePermission("POST /api/finance/payment-statuses"), asyncHandler(async (req, res) => {
+  assertCanManagePaymentStatuses(req.principal);
+  const row = await repository.upsertFinancePaymentStatus(req.body ?? {}, req.principal);
+  res.status(201).json(row);
+}));
+
+app.patch("/api/finance/payment-statuses/:statusId", requireAuth, requirePermission("PATCH /api/finance/payment-statuses/:statusId"), asyncHandler(async (req, res) => {
+  assertCanManagePaymentStatuses(req.principal);
+  const row = await repository.upsertFinancePaymentStatus(
+    { ...(req.body ?? {}), code: req.params.statusId, id: req.params.statusId },
+    req.principal,
+  );
+  res.json(row);
+}));
+
+function assertCanManageFeeGrids(principal) {
+  const { canManageFeeGrids } = require("./lib/financeManagement");
+  if (canManageFeeGrids(principal)) return;
+  throw new BusinessError(403, "Permission insuffisante pour gérer les grilles tarifaires.");
+}
+
+function assertCanManagePaymentMethods(principal) {
+  const { canManagePaymentMethods } = require("./lib/financeManagement");
+  if (canManagePaymentMethods(principal)) return;
+  throw new BusinessError(403, "Permission insuffisante pour configurer les moyens de paiement.");
+}
+
+function assertCanManagePaymentStatuses(principal) {
+  const { canManagePaymentStatuses } = require("./lib/financeManagement");
+  if (canManagePaymentStatuses(principal)) return;
+  throw new BusinessError(403, "Permission insuffisante pour gérer les statuts de paiement.");
+}
+
+function assertCanAdjustStudentFee(principal) {
+  const { canAdjustStudentFee } = require("./lib/financeManagement");
+  if (canAdjustStudentFee(principal)) return;
+  throw new BusinessError(403, "Permission insuffisante pour ajuster une obligation.");
+}
+
+async function financeHttpPrincipal(req) {
+  const { attachFinanceMembershipScope, attachFinanceFixtureScope } = require("./lib/financeSchoolScope");
+  if (typeof repository.one === "function") {
+    return attachFinanceMembershipScope(req.principal, repository.one.bind(repository));
   }
+  return attachFinanceFixtureScope(req.principal);
+}
+
+app.get("/api/finance/fee-grids", requireAuth, requirePermission("GET /api/finance/fee-grids"), asyncHandler(async (req, res) => {
+  const principal = await financeHttpPrincipal(req);
+  const rows = await repository.listFinanceFeeGrids(principal);
+  sendList(res, tenantScopeService.filterRows(rows, principal, { countryField: "countryIso" }), req.query, ["className", "academicYear", "status"]);
+}));
+
+app.post("/api/finance/fee-grids", requireAuth, requirePermission("POST /api/finance/fee-grids"), asyncHandler(async (req, res) => {
+  assertCanManageFeeGrids(req.principal);
+  const grid = await repository.upsertFinanceFeeGrid(req.body ?? {}, req.principal);
+  res.status(201).json(grid);
+}));
+
+app.get("/api/finance/fee-grids/:gridId", requireAuth, requirePermission("GET /api/finance/fee-grids"), asyncHandler(async (req, res) => {
+  const principal = await financeHttpPrincipal(req);
+  const detail = await repository.getFinanceFeeGrid(req.params.gridId, principal);
+  if (!detail) throw new BusinessError(404, "Grille introuvable");
+  const { resolveFinanceSchoolScope, schoolRecordInFinanceScope } = require("./lib/financeSchoolScope");
+  if (!schoolRecordInFinanceScope(detail.grid, resolveFinanceSchoolScope(principal))) {
+    throw new BusinessError(404, "Grille introuvable");
+  }
+  res.json(detail);
+}));
+
+app.patch("/api/finance/fee-grids/:gridId", requireAuth, requirePermission("PATCH /api/finance/fee-grids/:gridId"), asyncHandler(async (req, res) => {
+  assertCanManageFeeGrids(req.principal);
+  const grid = await repository.upsertFinanceFeeGrid({ ...(req.body ?? {}), id: req.params.gridId }, req.principal);
+  res.json(grid);
+}));
+
+app.post("/api/finance/fee-grids/:gridId/activate", requireAuth, requirePermission("POST /api/finance/fee-grids/:gridId/activate"), asyncHandler(async (req, res) => {
+  assertCanManageFeeGrids(req.principal);
+  const grid = await repository.setFinanceFeeGridStatus(req.params.gridId, "Active", req.principal);
+  res.json(grid);
+}));
+
+app.post("/api/finance/fee-grids/:gridId/deactivate", requireAuth, requirePermission("POST /api/finance/fee-grids/:gridId/deactivate"), asyncHandler(async (req, res) => {
+  assertCanManageFeeGrids(req.principal);
+  const grid = await repository.setFinanceFeeGridStatus(req.params.gridId, "Désactivée", req.principal);
+  res.json(grid);
+}));
+
+app.post("/api/finance/fee-grids/:gridId/apply", requireAuth, requirePermission("POST /api/finance/fee-grids/:gridId/apply"), asyncHandler(async (req, res) => {
+  assertCanManageFeeGrids(req.principal);
+  await withIdempotency({
+    req,
+    res,
+    routeKey: `POST /api/finance/fee-grids/${req.params.gridId}/apply`,
+    principal: req.principal,
+    handler: async () => {
+      const result = await repository.applyFinanceFeeGrid(req.params.gridId, req.principal, req.body ?? {});
+      return { statusCode: 200, body: result };
+    },
+  });
+}));
+
+app.get("/api/finance/student-fees", requireAuth, requirePermission("GET /api/finance/student-fees"), asyncHandler(async (req, res) => {
+  const principal = await financeHttpPrincipal(req);
+  const rows = await repository.listFinanceStudentFees(principal);
+  sendList(res, tenantScopeService.filterRows(rows, principal, { countryField: "countryIso" }), req.query, ["studentName", "label", "status"]);
+}));
+
+app.post("/api/finance/reconcile-payment-allocations", requireAuth, requirePermission("POST /api/finance/reconcile-payment-allocations"), asyncHandler(async (req, res) => {
+  const { financeAuditMetaFromRequest } = require("./lib/financeManagement");
+  const result = await repository.reconcileFinancePaymentAllocations(
+    req.principal,
+    req.body ?? {},
+    financeAuditMetaFromRequest(req),
+  );
   res.json(result);
 }));
 
+app.get("/api/finance/student-fees/:obligationId", requireAuth, requirePermission("GET /api/finance/student-fees"), asyncHandler(async (req, res) => {
+  const row = await repository.getFinanceStudentFee(req.params.obligationId, req.principal);
+  if (!row) throw new BusinessError(404, "Obligation introuvable");
+  res.json(row);
+}));
+
+app.post("/api/finance/student-fees/:obligationId/adjust", requireAuth, requirePermission("POST /api/finance/student-fees/:obligationId/adjust"), asyncHandler(async (req, res) => {
+  assertCanAdjustStudentFee(req.principal);
+  const row = await repository.adjustFinanceStudentFee(req.params.obligationId, req.body ?? {}, req.principal);
+  res.json(row);
+}));
+
+
 app.get("/api/backoffice/countries", requireAuth, requirePermission("GET /api/backoffice/countries"), asyncHandler(async (req, res) => {
-  const { countries } = await getRuntime();
-  res.json(tenantScopeService.filterRows(countries, req.principal, { countryField: "code" }));
+  const platform = await repository.listPlatformProjection();
+  res.json(tenantScopeService.filterRows(platform.countries ?? [], req.principal, { countryField: "code" }));
 }));
 
 app.get("/api/backoffice/subscriptions", requireAuth, requirePermission("GET /api/backoffice/subscriptions"), asyncHandler(async (req, res) => {
-  const { subscriptions } = await getRuntime();
-  sendList(res, tenantScopeService.filterRows(subscriptions, req.principal), req.query, ["schoolCode", "country", "plan", "status"]);
+  const platform = await repository.listPlatformProjection();
+  sendList(res, tenantScopeService.filterRows(platform.subscriptions ?? [], req.principal), req.query, ["schoolCode", "country", "plan", "status"]);
 }));
 
 app.get("/api/backoffice/notifications", requireAuth, requirePermission("GET /api/backoffice/notifications"), asyncHandler(async (req, res) => {
-  const { platformNotifications } = await getRuntime();
-  sendList(res, tenantScopeService.filterRows(platformNotifications, req.principal), req.query, ["title", "message", "type", "status"]);
+  const platform = await repository.listPlatformProjection();
+  sendList(res, tenantScopeService.filterRows(platform.notifications ?? [], req.principal), req.query, ["title", "message", "type", "status"]);
 }));
 
-app.get("/api/backoffice/subscription-access", requireAuth, asyncHandler(async (req, res) => {
-  const schoolCode = req.query.schoolCode || req.principal?.schoolCode;
+app.post("/api/backoffice/countries", requireAuth, requirePermission("POST /api/backoffice/countries"), asyncHandler(async (req, res) => {
+  const { platformAuditMetaFromRequest } = require("./lib/platformManagement");
+  const created = await repository.createPlatformCountry(req.body ?? {}, req.principal, platformAuditMetaFromRequest(req));
+  res.status(201).json(created);
+}));
+
+app.patch("/api/backoffice/countries/:code", requireAuth, requirePermission("PATCH /api/backoffice/countries/:code"), asyncHandler(async (req, res) => {
+  const { platformAuditMetaFromRequest } = require("./lib/platformManagement");
+  const updated = await repository.updatePlatformCountry(req.params.code, req.body ?? {}, req.principal, platformAuditMetaFromRequest(req));
+  res.json(updated);
+}));
+
+app.post("/api/backoffice/subscriptions", requireAuth, requirePermission("POST /api/backoffice/subscriptions"), asyncHandler(async (req, res) => {
+  const { platformAuditMetaFromRequest } = require("./lib/platformManagement");
+  const saved = await repository.upsertPlatformSubscription(req.body ?? {}, req.principal, platformAuditMetaFromRequest(req));
+  res.status(201).json(saved);
+}));
+
+app.patch("/api/backoffice/subscriptions/:subscriptionId", requireAuth, requirePermission("PATCH /api/backoffice/subscriptions/:subscriptionId"), asyncHandler(async (req, res) => {
+  const { platformAuditMetaFromRequest } = require("./lib/platformManagement");
+  const saved = await repository.upsertPlatformSubscription({ ...req.body, id: req.params.subscriptionId }, req.principal, platformAuditMetaFromRequest(req));
+  res.json(saved);
+}));
+
+app.post("/api/backoffice/notifications", requireAuth, requirePermission("POST /api/backoffice/notifications"), asyncHandler(async (req, res) => {
+  const { platformAuditMetaFromRequest } = require("./lib/platformManagement");
+  const created = await repository.createPlatformNotification(req.body ?? {}, req.principal, platformAuditMetaFromRequest(req));
+  res.status(201).json(created);
+}));
+
+app.patch("/api/backoffice/notifications/:notificationId", requireAuth, requirePermission("PATCH /api/backoffice/notifications/:notificationId"), asyncHandler(async (req, res) => {
+  const { platformAuditMetaFromRequest } = require("./lib/platformManagement");
+  const updated = await repository.updatePlatformNotification(req.params.notificationId, req.body ?? {}, req.principal, platformAuditMetaFromRequest(req));
+  res.json(updated);
+}));
+
+app.get("/api/backoffice/role-permissions", requireAuth, requirePermission("GET /api/backoffice/role-permissions"), asyncHandler(async (req, res) => {
+  const map = (await repository.getRolePermissionsMap()) ?? {};
+  res.json(map);
+}));
+
+app.put("/api/backoffice/role-permissions", requireAuth, requirePermission("PUT /api/backoffice/role-permissions"), asyncHandler(async () => {
+  const { throwLegacyRolePermissionsWrite } = require("./lib/functionalRbacService");
+  throwLegacyRolePermissionsWrite();
+}));
+
+app.get("/api/backoffice/rbac/catalog", requireAuth, requirePermission("GET /api/backoffice/rbac/catalog"), asyncHandler(async (req, res) => {
+  const catalog = await repository.listRbacCatalog(req.principal);
+  res.json(catalog);
+}));
+
+app.get("/api/backoffice/rbac/permissions", requireAuth, requirePermission("GET /api/backoffice/rbac/permissions"), asyncHandler(async (req, res) => {
+  const configured = await repository.getConfiguredRolePermissions(req.query ?? {}, req.principal);
+  res.json(configured);
+}));
+
+app.get("/api/backoffice/rbac/permissions/effective", requireAuth, requirePermission("GET /api/backoffice/rbac/permissions/effective"), asyncHandler(async (req, res) => {
+  const effective = await repository.getEffectiveRolePermissions(req.query ?? {}, req.principal);
+  res.json(effective);
+}));
+
+app.patch("/api/backoffice/rbac/permissions", requireAuth, requirePermission("PATCH /api/backoffice/rbac/permissions"), asyncHandler(async (req, res) => {
+  const { functionalRbacAuditMetaFromRequest } = require("./lib/functionalRbacService");
+  const saved = await repository.patchConfiguredRolePermissions(
+    req.body ?? {},
+    req.principal,
+    functionalRbacAuditMetaFromRequest(req),
+  );
+  res.json(saved);
+}));
+
+app.post("/api/backoffice/rbac/roles", requireAuth, requirePermission("POST /api/backoffice/rbac/roles"), asyncHandler(async (req, res) => {
+  const { establishmentRolesAuditMetaFromRequest } = require("./lib/establishmentRolesManagement");
+  const created = await repository.createEstablishmentRole(
+    req.body ?? {},
+    req.principal,
+    establishmentRolesAuditMetaFromRequest(req),
+  );
+  res.status(201).json(created);
+}));
+
+app.patch("/api/backoffice/rbac/roles/:roleId", requireAuth, requirePermission("PATCH /api/backoffice/rbac/roles/:roleId"), asyncHandler(async (req, res) => {
+  const { establishmentRolesAuditMetaFromRequest } = require("./lib/establishmentRolesManagement");
+  const updated = await repository.updateEstablishmentRole(
+    req.params.roleId,
+    req.body ?? {},
+    req.principal,
+    establishmentRolesAuditMetaFromRequest(req),
+  );
+  res.json(updated);
+}));
+
+app.post("/api/backoffice/rbac/roles/:roleId/archive", requireAuth, requirePermission("POST /api/backoffice/rbac/roles/:roleId/archive"), asyncHandler(async (req, res) => {
+  const { archiveRbacRole, functionalRbacAuditMetaFromRequest } = require("./lib/functionalRbacService");
+  const archived = await archiveRbacRole(
+    repository,
+    req.params.roleId,
+    req.principal,
+    functionalRbacAuditMetaFromRequest(req),
+  );
+  res.json(archived);
+}));
+
+app.get("/api/backoffice/dashboard-chart-config", requireAuth, requirePermission("GET /api/backoffice/dashboard-chart-config"), asyncHandler(async (req, res) => {
+  const platform = await repository.listPlatformProjection();
+  res.json(sanitizeDashboardChartConfig(platform.dashboardChartConfig));
+}));
+
+app.put("/api/backoffice/dashboard-chart-config", requireAuth, requirePermission("PUT /api/backoffice/dashboard-chart-config"), asyncHandler(async (req, res) => {
+  const { platformAuditMetaFromRequest } = require("./lib/platformManagement");
+  const saved = await repository.savePlatformDashboardChartConfig(req.body ?? {}, req.principal, platformAuditMetaFromRequest(req));
+  res.json(saved);
+}));
+
+app.post("/api/backoffice/subscription-offers", requireAuth, requirePermission("POST /api/backoffice/subscription-offers"), asyncHandler(async (req, res) => {
+  const { platformAuditMetaFromRequest } = require("./lib/platformManagement");
+  const saved = await repository.upsertPlatformSubscriptionOffer(req.body ?? {}, req.principal, platformAuditMetaFromRequest(req));
+  res.status(201).json(saved);
+}));
+
+app.patch("/api/backoffice/subscription-offers/:offerId", requireAuth, requirePermission("PATCH /api/backoffice/subscription-offers/:offerId"), asyncHandler(async (req, res) => {
+  const { platformAuditMetaFromRequest } = require("./lib/platformManagement");
+  const saved = await repository.upsertPlatformSubscriptionOffer({ ...req.body, id: req.params.offerId }, req.principal, platformAuditMetaFromRequest(req));
+  res.json(saved);
+}));
+
+app.post("/api/backoffice/subscription-payments", requireAuth, requirePermission("POST /api/backoffice/subscription-payments"), asyncHandler(async (req, res) => {
+  const { platformAuditMetaFromRequest } = require("./lib/platformManagement");
+  const created = await repository.createPlatformSubscriptionPayment(req.body ?? {}, req.principal, platformAuditMetaFromRequest(req));
+  res.status(201).json(created);
+}));
+
+app.patch("/api/backoffice/subscription-payments/:paymentId", requireAuth, requirePermission("PATCH /api/backoffice/subscription-payments/:paymentId"), asyncHandler(async (req, res) => {
+  const { platformAuditMetaFromRequest } = require("./lib/platformManagement");
+  const updated = await repository.updatePlatformSubscriptionPayment(req.params.paymentId, req.body ?? {}, req.principal, platformAuditMetaFromRequest(req));
+  res.json(updated);
+}));
+
+app.post("/api/backoffice/subscription-discounts", requireAuth, requirePermission("POST /api/backoffice/subscription-discounts"), asyncHandler(async (req, res) => {
+  const { platformAuditMetaFromRequest } = require("./lib/platformManagement");
+  const created = await repository.createPlatformSubscriptionDiscount(req.body ?? {}, req.principal, platformAuditMetaFromRequest(req));
+  res.status(201).json(created);
+}));
+
+app.patch("/api/backoffice/subscription-discounts/:discountId", requireAuth, requirePermission("PATCH /api/backoffice/subscription-discounts/:discountId"), asyncHandler(async (req, res) => {
+  const { platformAuditMetaFromRequest } = require("./lib/platformManagement");
+  const updated = await repository.updatePlatformSubscriptionDiscount(req.params.discountId, req.body ?? {}, req.principal, platformAuditMetaFromRequest(req));
+  res.json(updated);
+}));
+
+const { clientsAuditMetaFromRequest } = require("./lib/clientsManagement");
+
+app.get("/api/backoffice/users", requireAuth, requirePermission("GET /api/backoffice/users"), asyncHandler(async (req, res) => {
+  const { assertUsersReadable, filterUsersRows } = require("./lib/usersSchoolScope");
+  const principal = await usersHttpPrincipal(req);
+  const scope = assertUsersReadable(principal);
+  const users = await repository.listClientsUsers(scope);
+  sendList(res, usersApiUsers(filterUsersRows(users, scope)), req.query, ["firstName", "lastName", "identifier", "role", "schoolCode"]);
+}));
+
+app.get("/api/backoffice/users/assignable-roles", requireAuth, requirePermission("GET /api/backoffice/users/assignable-roles"), asyncHandler(async (req, res) => {
+  const roles = await repository.listAssignableClientsUserRoles(req.principal);
+  res.json({ roles });
+}));
+
+app.post("/api/backoffice/users", requireAuth, requirePermission("POST /api/backoffice/users"), asyncHandler(async (req, res) => {
+  const principal = await usersHttpPrincipal(req);
+  const created = await repository.createClientsUser(req.body ?? {}, principal, clientsAuditMetaFromRequest(req));
+  res.status(201).json(usersApiUser(created));
+}));
+
+app.post("/api/backoffice/users/provision", requireAuth, requirePermission("POST /api/backoffice/users/provision"), asyncHandler(async (req, res) => {
+  const principal = await usersHttpPrincipal(req);
+  const created = await repository.provisionClientsUser(req.body ?? {}, principal, clientsAuditMetaFromRequest(req));
+  res.status(201).json(usersApiUser(created));
+}));
+
+app.post("/api/backoffice/users/create-teacher", requireAuth, requirePermission("POST /api/backoffice/users/create-teacher"), asyncHandler(async (req, res) => {
+  if (!rbacService.canAccess(req.principal, "POST /api/backoffice/users/:userId/roles/grant")) {
+    throw denyPermission("Utilisateurs:UPDATE requis pour attribuer le rôle Enseignant.");
+  }
+  const { createTeacherIdentityFromUsers } = require("./lib/createTeacherIdentityFromUsers");
+  const principal = await usersHttpPrincipal(req);
+  const created = await createTeacherIdentityFromUsers(
+    repository,
+    req.body ?? {},
+    principal,
+    clientsAuditMetaFromRequest(req),
+  );
+  res.status(201).json({
+    user: usersApiUser(created.user),
+    credentials: created.credentials,
+  });
+}));
+
+app.patch("/api/backoffice/users/:userId", requireAuth, requirePermission("PATCH /api/backoffice/users/:userId"), asyncHandler(async (req, res) => {
+  const principal = await usersHttpPrincipal(req);
+  const updated = await repository.updateClientsUser(req.params.userId, req.body ?? {}, principal, clientsAuditMetaFromRequest(req));
+  res.json(usersApiUser(updated));
+}));
+
+app.post("/api/backoffice/users/:userId/reassign-school", requireAuth, requirePermission("POST /api/backoffice/users/:userId/reassign-school"), asyncHandler(async (req, res) => {
+  const principal = await usersHttpPrincipal(req);
+  const updated = await repository.reassignClientsUserSchool(
+    req.params.userId,
+    req.body ?? {},
+    principal,
+    clientsAuditMetaFromRequest(req),
+  );
+  res.json(usersApiUser(updated));
+}));
+
+app.post("/api/backoffice/users/:userId/roles/grant", requireAuth, requirePermission("POST /api/backoffice/users/:userId/roles/grant"), asyncHandler(async (req, res) => {
+  const principal = await usersHttpPrincipal(req);
+  const updated = await repository.grantClientsUserRole(req.params.userId, req.body ?? {}, principal, clientsAuditMetaFromRequest(req));
+  res.json(usersApiUser(updated));
+}));
+
+app.post("/api/backoffice/users/:userId/roles/revoke", requireAuth, requirePermission("POST /api/backoffice/users/:userId/roles/revoke"), asyncHandler(async (req, res) => {
+  const principal = await usersHttpPrincipal(req);
+  const updated = await repository.revokeClientsUserRole(req.params.userId, req.body ?? {}, principal, clientsAuditMetaFromRequest(req));
+  res.json(usersApiUser(updated));
+}));
+
+app.get("/api/backoffice/contacts", requireAuth, requirePermission("GET /api/backoffice/contacts"), asyncHandler(async (req, res) => {
+  const clients = await repository.listClientsProjection();
+  sendList(res, tenantScopeService.filterRows(clients.contacts ?? [], req.principal), req.query, ["firstName", "lastName", "contactType", "phone", "email"]);
+}));
+
+app.post("/api/backoffice/contacts", requireAuth, requirePermission("POST /api/backoffice/contacts"), asyncHandler(async (req, res) => {
+  const created = await repository.createClientsContact(req.body ?? {}, req.principal, clientsAuditMetaFromRequest(req));
+  res.status(201).json(created);
+}));
+
+app.patch("/api/backoffice/contacts/:contactId", requireAuth, requirePermission("PATCH /api/backoffice/contacts/:contactId"), asyncHandler(async (req, res) => {
+  const updated = await repository.updateClientsContact(req.params.contactId, req.body ?? {}, req.principal, clientsAuditMetaFromRequest(req));
+  res.json(updated);
+}));
+
+app.post("/api/backoffice/contacts/:contactId/provision-account", requireAuth, requirePermission("POST /api/backoffice/contacts/:contactId/provision-account"), asyncHandler(async (req, res) => {
+  const result = await repository.provisionClientsContactAccount(req.params.contactId, req.body ?? {}, req.principal, clientsAuditMetaFromRequest(req));
+  res.status(result.created ? 201 : 200).json({
+    ...result,
+    user: sanitizeUserForResponse(result.user),
+  });
+}));
+
+app.get("/api/backoffice/relations", requireAuth, requirePermission("GET /api/backoffice/relations"), asyncHandler(async (req, res) => {
+  const clients = await repository.listClientsProjection();
+  sendList(res, tenantScopeService.filterRows(clients.relations ?? [], req.principal), req.query, ["relationType", "fromContactName", "toStudentName"]);
+}));
+
+app.post("/api/backoffice/relations", requireAuth, requirePermission("POST /api/backoffice/relations"), asyncHandler(async (req, res) => {
+  const result = await repository.createClientsRelation(req.body ?? {}, req.principal, clientsAuditMetaFromRequest(req));
+  const created = Boolean(result?.created);
+  const body = result?.relation ?? result;
+  res.status(created ? 201 : 200).json(body);
+}));
+
+app.get("/api/parents/identity", requireAuth, requirePermission("GET /api/parents/identity"), asyncHandler(async (req, res) => {
+  const result = await repository.lookupParentIdentity(req.query ?? {}, req.principal);
+  res.json({
+    ...result,
+    user: result.user ? sanitizeUserForResponse(result.user) : null,
+  });
+}));
+
+app.post("/api/parents/link", requireAuth, requirePermission("POST /api/parents/link"), asyncHandler(async (req, res) => {
+  const result = await repository.linkParent(req.body ?? {}, req.principal, clientsAuditMetaFromRequest(req));
+  res.status(result.created ? 201 : 200).json({
+    ...result,
+    user: sanitizeUserForResponse(result.user),
+  });
+}));
+
+app.patch("/api/parents/relations/:relationId", requireAuth, requirePermission("PATCH /api/parents/relations/:relationId"), asyncHandler(async (req, res) => {
+  const result = await repository.archiveParentRelation(
+    req.params.relationId,
+    req.body ?? {},
+    req.principal,
+    clientsAuditMetaFromRequest(req),
+  );
+  res.json(result);
+}));
+
+app.get("/api/backoffice/messages/unread-count", requireAuth, requirePermission("GET /api/backoffice/messages/unread-count"), asyncHandler(async (req, res) => {
+  const result = await repository.getClientMessagesUnreadCount(req.principal, req.query);
+  res.json(result);
+}));
+
+app.get("/api/backoffice/messages/recipients", requireAuth, requirePermission("GET /api/backoffice/messages/recipients"), asyncHandler(async (req, res) => {
+  const result = await repository.listClientMessageRecipients(req.principal, req.query);
+  res.json(result);
+}));
+
+app.get("/api/backoffice/messages/:messageId", requireAuth, requirePermission("GET /api/backoffice/messages/:messageId"), asyncHandler(async (req, res) => {
+  const row = await repository.getClientMessage(req.params.messageId, req.principal, req.query);
+  res.json(row);
+}));
+
+app.get("/api/backoffice/messages", requireAuth, requirePermission("GET /api/backoffice/messages"), asyncHandler(async (req, res) => {
+  const rows = await repository.listClientsMessages(req.principal, req.query);
+  sendList(res, rows, req.query, ["theme", "message", "status", "direction", "senderName"]);
+}));
+
+app.post("/api/backoffice/messages", requireAuth, requirePermission("POST /api/backoffice/messages"), asyncHandler(async (req, res) => {
+  await withIdempotency({
+    req,
+    res,
+    routeKey: "POST /api/backoffice/messages",
+    principal: req.principal,
+    handler: async () => {
+      const created = await repository.sendClientsMessage(
+        req.body ?? {},
+        req.principal,
+        clientsAuditMetaFromRequest(req),
+      );
+      return { statusCode: 201, body: created };
+    },
+  });
+}));
+
+app.patch("/api/backoffice/messages/:messageId/read", requireAuth, requirePermission("PATCH /api/backoffice/messages/:messageId/read"), asyncHandler(async (req, res) => {
+  const updated = await repository.markClientsMessageRead(
+    req.params.messageId,
+    req.principal,
+    clientsAuditMetaFromRequest(req),
+    req.query,
+  );
+  res.json(updated);
+}));
+
+app.get("/api/backoffice/conversations", requireAuth, requirePermission("GET /api/backoffice/conversations"), asyncHandler(async (req, res) => {
+  const result = await repository.listClientConversations(req.principal, req.query);
+  res.json(result);
+}));
+
+app.post("/api/backoffice/conversations", requireAuth, requirePermission("POST /api/backoffice/conversations"), asyncHandler(async (req, res) => {
+  await withIdempotency({
+    req,
+    res,
+    routeKey: "POST /api/backoffice/conversations",
+    principal: req.principal,
+    handler: async () => {
+      const created = await repository.createClientConversation(
+        req.body ?? {},
+        req.principal,
+        clientsAuditMetaFromRequest(req),
+      );
+      return { statusCode: 201, body: created };
+    },
+  });
+}));
+
+app.get("/api/backoffice/conversations/:conversationId", requireAuth, requirePermission("GET /api/backoffice/conversations/:conversationId"), asyncHandler(async (req, res) => {
+  const row = await repository.getClientConversation(req.params.conversationId, req.principal, req.query);
+  res.json(row);
+}));
+
+app.get("/api/backoffice/conversations/:conversationId/messages", requireAuth, requirePermission("GET /api/backoffice/conversations/:conversationId/messages"), asyncHandler(async (req, res) => {
+  const result = await repository.listClientConversationMessages(req.params.conversationId, req.principal, req.query);
+  res.json(result);
+}));
+
+app.post("/api/backoffice/conversations/:conversationId/messages", requireAuth, requirePermission("POST /api/backoffice/conversations/:conversationId/messages"), asyncHandler(async (req, res) => {
+  await withIdempotency({
+    req,
+    res,
+    routeKey: "POST /api/backoffice/conversations/:conversationId/messages",
+    principal: req.principal,
+    handler: async () => {
+      const created = await repository.replyClientConversationMessage(
+        req.params.conversationId,
+        req.body ?? {},
+        req.principal,
+        clientsAuditMetaFromRequest(req),
+      );
+      return { statusCode: 201, body: created };
+    },
+  });
+}));
+
+app.post(
+  "/api/backoffice/communications/attachments",
+  requireAuth,
+  requirePermission("POST /api/backoffice/communications/attachments"),
+  express.raw({ type: () => true, limit: "11mb" }),
+  asyncHandler(async (req, res) => {
+    const buffer = Buffer.isBuffer(req.body) ? req.body : Buffer.from(req.body ?? []);
+    const fileName = req.get("x-filename") || req.get("x-file-name") || "fichier";
+    const mimeType = req.get("x-mime-type") || req.get("content-type") || "";
+    const created = await repository.uploadCommunicationAttachment(req.principal, {
+      buffer,
+      fileName,
+      mimeType,
+    }, req.query);
+    res.status(201).json(created);
+  }),
+);
+
+app.get("/api/backoffice/communications/attachments/:attachmentId", requireAuth, requirePermission("GET /api/backoffice/communications/attachments/:attachmentId"), asyncHandler(async (req, res) => {
+  const file = await repository.downloadCommunicationAttachment(req.params.attachmentId, req.principal, req.query);
+  res.setHeader("Content-Type", file.mimeType || "application/octet-stream");
+  res.setHeader("Content-Disposition", `attachment; filename="${String(file.fileName).replace(/"/g, "")}"`);
+  res.send(file.bytes);
+}));
+
+app.get("/api/backoffice/announcements/unread-count", requireAuth, requirePermission("GET /api/backoffice/announcements/unread-count"), asyncHandler(async (req, res) => {
+  const result = await repository.getClientsAnnouncementsUnreadCount(req.principal, req.query);
+  res.json(result);
+}));
+
+app.get("/api/backoffice/announcements/audience-options", requireAuth, requirePermission("GET /api/backoffice/announcements/audience-options"), asyncHandler(async (req, res) => {
+  const result = await repository.listAnnouncementAudienceOptions(req.principal, req.query);
+  res.json(result);
+}));
+
+app.get("/api/backoffice/announcements", requireAuth, requirePermission("GET /api/backoffice/announcements"), asyncHandler(async (req, res) => {
+  const result = await repository.listClientsAnnouncements(req.principal, req.query);
+  res.json(result);
+}));
+
+app.post("/api/backoffice/announcements", requireAuth, requirePermission("POST /api/backoffice/announcements"), asyncHandler(async (req, res) => {
+  await withIdempotency({
+    req,
+    res,
+    routeKey: "POST /api/backoffice/announcements",
+    principal: req.principal,
+    handler: async () => {
+      const created = await repository.createClientsAnnouncement(req.body ?? {}, req.principal, clientsAuditMetaFromRequest(req));
+      return { statusCode: 201, body: created };
+    },
+  });
+}));
+
+app.post(
+  "/api/backoffice/announcements/attachments",
+  requireAuth,
+  requirePermission("POST /api/backoffice/announcements/attachments"),
+  express.raw({ type: () => true, limit: "11mb" }),
+  asyncHandler(async (req, res) => {
+    const buffer = Buffer.isBuffer(req.body) ? req.body : Buffer.from(req.body ?? []);
+    const fileName = req.get("x-filename") || req.get("x-file-name") || "fichier";
+    const mimeType = req.get("x-mime-type") || req.get("content-type") || "";
+    const created = await repository.uploadAnnouncementAttachment(req.principal, {
+      buffer,
+      fileName,
+      mimeType,
+    }, req.query);
+    res.status(201).json(created);
+  }),
+);
+
+app.get("/api/backoffice/announcements/:announcementId", requireAuth, requirePermission("GET /api/backoffice/announcements/:announcementId"), asyncHandler(async (req, res) => {
+  const row = await repository.getClientsAnnouncement(req.params.announcementId, req.principal, req.query);
+  res.json(row);
+}));
+
+app.patch("/api/backoffice/announcements/:announcementId/read", requireAuth, requirePermission("PATCH /api/backoffice/announcements/:announcementId/read"), asyncHandler(async (req, res) => {
+  const updated = await repository.markClientsAnnouncementRead(
+    req.params.announcementId,
+    req.principal,
+    clientsAuditMetaFromRequest(req),
+    req.query,
+  );
+  res.json(updated);
+}));
+
+app.patch("/api/backoffice/announcements/:announcementId", requireAuth, requirePermission("PATCH /api/backoffice/announcements/:announcementId"), asyncHandler(async (req, res) => {
+  const updated = await repository.updateClientsAnnouncement(req.params.announcementId, req.body ?? {}, req.principal, clientsAuditMetaFromRequest(req));
+  res.json(updated);
+}));
+
+app.post("/api/backoffice/announcements/:announcementId/archive", requireAuth, requirePermission("POST /api/backoffice/announcements/:announcementId/archive"), asyncHandler(async (req, res) => {
+  const archived = await repository.archiveClientsAnnouncement(
+    req.params.announcementId,
+    req.principal,
+    clientsAuditMetaFromRequest(req),
+    { ...(req.body ?? {}), ...(req.query ?? {}) },
+  );
+  res.json(archived);
+}));
+
+app.get("/api/backoffice/platform-announcements/unread-count", requireAuth, requirePermission("GET /api/backoffice/platform-announcements/unread-count"), asyncHandler(async (req, res) => {
+  const result = await repository.getPlatformAnnouncementsUnreadCount(req.principal);
+  res.json(result);
+}));
+
+app.get("/api/backoffice/platform-announcements", requireAuth, requirePermission("GET /api/backoffice/platform-announcements"), asyncHandler(async (req, res) => {
+  const result = await repository.listPlatformAnnouncements(req.principal, req.query);
+  res.json(result);
+}));
+
+app.post("/api/backoffice/platform-announcements", requireAuth, requirePermission("POST /api/backoffice/platform-announcements"), asyncHandler(async (req, res) => {
+  await withIdempotency({
+    req,
+    res,
+    routeKey: "POST /api/backoffice/platform-announcements",
+    principal: req.principal,
+    handler: async () => {
+      const created = await repository.createPlatformAnnouncement(
+        req.body ?? {},
+        req.principal,
+        clientsAuditMetaFromRequest(req),
+      );
+      return { statusCode: 201, body: created };
+    },
+  });
+}));
+
+app.post(
+  "/api/backoffice/platform-announcements/attachments",
+  requireAuth,
+  requirePermission("POST /api/backoffice/platform-announcements/attachments"),
+  express.raw({ type: () => true, limit: "11mb" }),
+  asyncHandler(async (req, res) => {
+    const buffer = Buffer.isBuffer(req.body) ? req.body : Buffer.from(req.body ?? []);
+    const fileName = req.get("x-filename") || req.get("x-file-name") || "fichier";
+    const mimeType = req.get("x-mime-type") || req.get("content-type") || "";
+    const created = await repository.uploadPlatformAnnouncementAttachment(req.principal, {
+      buffer,
+      fileName,
+      mimeType,
+    });
+    res.status(201).json(created);
+  }),
+);
+
+app.get("/api/backoffice/platform-announcements/attachments/:attachmentId", requireAuth, requirePermission("GET /api/backoffice/platform-announcements/attachments/:attachmentId"), asyncHandler(async (req, res) => {
+  const file = await repository.downloadPlatformAnnouncementAttachment(req.params.attachmentId, req.principal);
+  res.setHeader("Content-Type", file.mimeType || "application/octet-stream");
+  res.setHeader("Content-Disposition", `attachment; filename="${String(file.fileName).replace(/"/g, "")}"`);
+  res.send(file.bytes);
+}));
+
+app.get("/api/backoffice/platform-announcements/:announcementId", requireAuth, requirePermission("GET /api/backoffice/platform-announcements/:announcementId"), asyncHandler(async (req, res) => {
+  const row = await repository.getPlatformAnnouncement(req.params.announcementId, req.principal);
+  res.json(row);
+}));
+
+app.patch("/api/backoffice/platform-announcements/:announcementId/read", requireAuth, requirePermission("PATCH /api/backoffice/platform-announcements/:announcementId/read"), asyncHandler(async (req, res) => {
+  const updated = await repository.markPlatformAnnouncementRead(
+    req.params.announcementId,
+    req.principal,
+    clientsAuditMetaFromRequest(req),
+  );
+  res.json(updated);
+}));
+
+app.post("/api/backoffice/platform-announcements/:announcementId/archive", requireAuth, requirePermission("POST /api/backoffice/platform-announcements/:announcementId/archive"), asyncHandler(async (req, res) => {
+  const archived = await repository.archivePlatformAnnouncement(
+    req.params.announcementId,
+    req.principal,
+    clientsAuditMetaFromRequest(req),
+  );
+  res.json(archived);
+}));
+
+app.get("/api/backoffice/internal-notifications/unread-count", requireAuth, requirePermission("GET /api/backoffice/internal-notifications/unread-count"), asyncHandler(async (req, res) => {
+  const result = await internalNotificationsService.unreadCount(repository.getClientsStore(), req.principal, req.query);
+  res.json(result);
+}));
+
+app.get("/api/backoffice/internal-notifications", requireAuth, requirePermission("GET /api/backoffice/internal-notifications"), asyncHandler(async (req, res) => {
+  const result = await internalNotificationsService.list(repository.getClientsStore(), req.principal, req.query);
+  res.json(result);
+}));
+
+app.post("/api/backoffice/internal-notifications", requireAuth, requirePermission("POST /api/backoffice/internal-notifications"), asyncHandler(async (req, res) => {
+  const created = await internalNotificationsService.createManual(
+    repository.getClientsStore(),
+    req.body ?? {},
+    req.principal,
+    clientsAuditMetaFromRequest(req),
+    req.get("idempotency-key"),
+  );
+  res.status(201).json(created);
+}));
+
+app.post(
+  "/api/backoffice/internal-notifications/attachments",
+  requireAuth,
+  requirePermission("POST /api/backoffice/internal-notifications/attachments"),
+  express.raw({ type: () => true, limit: "11mb" }),
+  asyncHandler(async (req, res) => {
+    const buffer = Buffer.isBuffer(req.body) ? req.body : Buffer.from(req.body ?? []);
+    const fileName = req.get("x-filename") || req.get("x-file-name") || "fichier";
+    const mimeType = req.get("x-mime-type") || req.get("content-type") || "";
+    const created = await internalNotificationsService.uploadAttachment(
+      repository.getClientsStore(),
+      req.principal,
+      { buffer, fileName, mimeType },
+      req.query,
+    );
+    res.status(201).json(created);
+  }),
+);
+
+app.get("/api/backoffice/internal-notifications/attachments/:attachmentId", requireAuth, requirePermission("GET /api/backoffice/internal-notifications/attachments/:attachmentId"), asyncHandler(async (req, res) => {
+  const file = await internalNotificationsService.downloadAttachment(
+    repository.getClientsStore(),
+    req.params.attachmentId,
+    req.principal,
+    req.query,
+  );
+  const safeName = String(file.fileName || "fichier").replace(/["\\r\\n]/g, "_");
+  res.setHeader("Content-Type", file.mimeType || "application/octet-stream");
+  res.setHeader("Content-Disposition", `inline; filename="${safeName}"`);
+  res.setHeader("Content-Length", file.bytes.length);
+  res.send(file.bytes);
+}));
+
+app.get("/api/backoffice/internal-notifications/:notificationId", requireAuth, requirePermission("GET /api/backoffice/internal-notifications/:notificationId"), asyncHandler(async (req, res) => {
+  const row = await internalNotificationsService.get(
+    repository.getClientsStore(), req.params.notificationId, req.principal, req.query,
+  );
+  res.json(row);
+}));
+
+app.patch("/api/backoffice/internal-notifications/:notificationId/read", requireAuth, requirePermission("PATCH /api/backoffice/internal-notifications/:notificationId/read"), asyncHandler(async (req, res) => {
+  const row = await internalNotificationsService.markRead(
+    repository.getClientsStore(), req.params.notificationId, req.principal, clientsAuditMetaFromRequest(req), req.query,
+  );
+  res.json(row);
+}));
+
+app.patch("/api/backoffice/internal-notifications/:notificationId/archive", requireAuth, requirePermission("PATCH /api/backoffice/internal-notifications/:notificationId/archive"), asyncHandler(async (req, res) => {
+  const row = await internalNotificationsService.archive(
+    repository.getClientsStore(), req.params.notificationId, req.principal, clientsAuditMetaFromRequest(req), req.query,
+  );
+  res.json(row);
+}));
+
+app.get("/api/backoffice/subscription-access", requireAuth, requirePermission("GET /api/backoffice/subscription-access"), asyncHandler(async (req, res) => {
+  const { asTrimmed } = require("./lib/platformManagement");
+  const { assertSubscriptionAccessForPrincipal } = require("./lib/subscriptionAccessScope");
+  const requestedSchoolCode = asTrimmed(req.query.schoolCode).toUpperCase();
+  const principalSchoolCode = asTrimmed(req.principal?.schoolCode).toUpperCase();
+  const schoolCode = requestedSchoolCode || principalSchoolCode;
+
   if (!schoolCode || schoolCode === "*") {
     return res.json({ level: "full", message: "" });
   }
+
+  const school = await repository.getPlatformSchoolByCode(schoolCode);
+  assertSubscriptionAccessForPrincipal(req.principal, schoolCode, school);
+
   const state = await getAuthoritativeBackOfficeState();
   res.json(schoolSubscriptionAccessService.resolveSchoolAccess(schoolCode, state));
 }));
@@ -1042,11 +3259,6 @@ app.get("/api/backoffice/establishments", requireAuth, requirePermission("GET /a
   const state = await getAuthoritativeBackOfficeState();
   const rows = establishmentService.list(state, req.principal);
   sendList(res, rows, req.query, ["name", "code", "country", "city", "type", "status", "principalName"]);
-}));
-
-app.get("/api/backoffice/establishments/:code/users", requireAuth, requirePermission("GET /api/backoffice/establishments/:code"), asyncHandler(async (req, res) => {
-  const state = await getAuthoritativeBackOfficeState();
-  res.json(sanitizeUsersForResponse(establishmentService.getUsers(req.params.code, state, req.principal)));
 }));
 
 app.get("/api/backoffice/establishments/:code/subscription", requireAuth, requirePermission("GET /api/backoffice/establishments/:code"), asyncHandler(async (req, res) => {
@@ -1060,29 +3272,37 @@ app.get("/api/backoffice/establishments/:code", requireAuth, requirePermission("
 }));
 
 app.post("/api/backoffice/establishments", requireAuth, requirePermission("POST /api/backoffice/establishments"), asyncHandler(async (req, res) => {
+  const persisted = await repository.listEstablishments();
   const state = await getAuthoritativeBackOfficeState();
-  const { school, state: nextState } = establishmentService.create(req.body ?? {}, state, req.principal, {
+  const schools = persisted.length ? persisted : state.schools;
+  const { school } = establishmentService.create(req.body ?? {}, { ...state, schools }, req.principal, {
     force: Boolean(req.body?.force),
   });
-  const saved = await saveEstablishmentState(nextState, state, req.principal);
-  await auditService.record(req, "create_establishment", "school", school.code, { name: school.name });
-  res.status(201).json({ school, state: scopedBackOfficeStateForResponse(saved, req.principal) });
+  const savedSchool = await repository.persistEstablishment(school);
+  await auditService.record(req, "create_establishment", "school", savedSchool.code, { name: savedSchool.name });
+  const nextState = await getAuthoritativeBackOfficeState();
+  res.status(201).json({ school: savedSchool, state: scopedBackOfficeStateForResponse(nextState, req.principal) });
 }));
 
 app.post("/api/backoffice/establishments/import", requireAuth, requirePermission("POST /api/backoffice/establishments/import"), asyncHandler(async (req, res) => {
+  const persisted = await repository.listEstablishments();
   const state = await getAuthoritativeBackOfficeState();
-  const { created, errors, state: nextState } = establishmentService.importRows(
+  const schools = persisted.length ? persisted : state.schools;
+  const { created, errors } = establishmentService.importRows(
     req.body?.rows ?? [],
-    state,
+    { ...state, schools },
     req.principal,
     { force: Boolean(req.body?.force) },
   );
-  const saved = await saveEstablishmentState(nextState, state, req.principal);
+  const savedCreated = [];
+  for (const school of created) {
+    savedCreated.push(await repository.persistEstablishment(school));
+  }
   await auditService.record(req, "import_establishments", "school", "bulk", {
-    created: created.length,
+    created: savedCreated.length,
     errors: errors.length,
   });
-  res.status(201).json({ created, errors, count: created.length });
+  res.status(201).json({ created: savedCreated, errors, count: savedCreated.length });
 }));
 
 app.post("/api/backoffice/import/students/validate", requireAuth, requirePermission("POST /api/backoffice/import/students/validate"), asyncHandler(async (req, res) => {
@@ -1094,41 +3314,52 @@ app.post("/api/backoffice/import/students/validate", requireAuth, requirePermiss
 }));
 
 app.patch("/api/backoffice/establishments/:code", requireAuth, requirePermission("PATCH /api/backoffice/establishments/:code"), asyncHandler(async (req, res) => {
+  const persisted = await repository.listEstablishments();
   const state = await getAuthoritativeBackOfficeState();
-  const { school, state: nextState } = establishmentService.update(req.params.code, req.body ?? {}, state, req.principal);
-  const saved = await saveEstablishmentState(nextState, state, req.principal);
-  await auditService.record(req, "update_establishment", "school", school.code);
-  res.json({ school, state: scopedBackOfficeStateForResponse(saved, req.principal) });
+  const schools = persisted.length ? persisted : state.schools;
+  const { school } = establishmentService.update(req.params.code, req.body ?? {}, { ...state, schools }, req.principal);
+  const savedSchool = await repository.persistEstablishment(school);
+  await auditService.record(req, "update_establishment", "school", savedSchool.code);
+  const nextState = await getAuthoritativeBackOfficeState();
+  res.json({ school: savedSchool, state: scopedBackOfficeStateForResponse(nextState, req.principal) });
 }));
 
 app.patch("/api/backoffice/establishments/:code/activate", requireAuth, requirePermission("PATCH /api/backoffice/establishments/:code"), asyncHandler(async (req, res) => {
+  const persisted = await repository.listEstablishments();
   const state = await getAuthoritativeBackOfficeState();
-  const { school, state: nextState } = establishmentService.activate(req.params.code, state, req.principal);
-  const saved = await saveEstablishmentState(nextState, state, req.principal);
-  await auditService.record(req, "activate_establishment", "school", school.code);
-  res.json({ school });
+  const schools = persisted.length ? persisted : state.schools;
+  const { school } = establishmentService.activate(req.params.code, { ...state, schools }, req.principal);
+  const savedSchool = await repository.persistEstablishment(school);
+  await auditService.record(req, "activate_establishment", "school", savedSchool.code);
+  res.json({ school: savedSchool });
 }));
 
 app.patch("/api/backoffice/establishments/:code/suspend", requireAuth, requirePermission("PATCH /api/backoffice/establishments/:code"), asyncHandler(async (req, res) => {
+  const persisted = await repository.listEstablishments();
   const state = await getAuthoritativeBackOfficeState();
-  const { school, state: nextState } = establishmentService.suspend(req.params.code, state, req.principal);
-  const saved = await saveEstablishmentState(nextState, state, req.principal);
-  await auditService.record(req, "suspend_establishment", "school", school.code);
-  res.json({ school });
+  const schools = persisted.length ? persisted : state.schools;
+  const { school } = establishmentService.suspend(req.params.code, { ...state, schools }, req.principal);
+  const savedSchool = await repository.persistEstablishment(school);
+  await auditService.record(req, "suspend_establishment", "school", savedSchool.code);
+  res.json({ school: savedSchool });
 }));
 
 app.delete("/api/backoffice/establishments/:code", requireAuth, requirePermission("DELETE /api/backoffice/establishments/:code"), asyncHandler(async (req, res) => {
+  const persisted = await repository.listEstablishments();
   const state = await getAuthoritativeBackOfficeState();
-  const { school, state: nextState } = establishmentService.softDelete(req.params.code, state, req.principal);
-  const saved = await saveEstablishmentState(nextState, state, req.principal);
-  await auditService.record(req, "delete_establishment", "school", school.code);
-  res.json({ school, state: scopedBackOfficeStateForResponse(saved, req.principal) });
+  const schools = persisted.length ? persisted : state.schools;
+  const { school } = establishmentService.softDelete(req.params.code, { ...state, schools }, req.principal);
+  const savedSchool = await repository.persistEstablishment(school);
+  await auditService.record(req, "delete_establishment", "school", savedSchool.code);
+  const nextState = await getAuthoritativeBackOfficeState();
+  res.json({ school: savedSchool, state: scopedBackOfficeStateForResponse(nextState, req.principal) });
 }));
 
 app.get("/api/backoffice/finance/unpaid", requireAuth, requirePermission("GET /api/backoffice/finance/unpaid"), asyncHandler(async (req, res) => {
+  const principal = await financeHttpPrincipal(req);
   const state = await getAuthoritativeBackOfficeState();
   res.json(
-    unpaidService.list(state, req.principal, {
+    unpaidService.list(state, principal, {
       search: req.query.search,
       className: req.query.className,
       period: req.query.period,
@@ -1137,141 +3368,52 @@ app.get("/api/backoffice/finance/unpaid", requireAuth, requirePermission("GET /a
 }));
 
 app.get("/api/backoffice/finance/unpaid/:studentId", requireAuth, requirePermission("GET /api/backoffice/finance/unpaid"), asyncHandler(async (req, res) => {
+  const principal = await financeHttpPrincipal(req);
   const state = await getAuthoritativeBackOfficeState();
-  res.json(unpaidService.detail(state, req.principal, req.params.studentId));
+  res.json(unpaidService.detail(state, principal, req.params.studentId));
 }));
 
 app.get("/api/backoffice/finance/unpaid/:studentId/reminders", requireAuth, requirePermission("GET /api/backoffice/finance/unpaid"), asyncHandler(async (req, res) => {
+  const principal = await financeHttpPrincipal(req);
   const state = await getAuthoritativeBackOfficeState();
-  const detail = unpaidService.detail(state, req.principal, req.params.studentId);
+  const detail = unpaidService.detail(state, principal, req.params.studentId);
   res.json(detail.reminders);
 }));
 
 app.post("/api/backoffice/finance/unpaid/:studentId/reminders", requireAuth, requirePermission("POST /api/backoffice/finance/unpaid/reminders"), asyncHandler(async (req, res) => {
-  const state = await getAuthoritativeBackOfficeState();
-  const { reminder, state: nextState } = unpaidService.sendReminder(
-    state,
-    req.principal,
-    req.params.studentId,
-    req.body ?? {},
-    { force: Boolean(req.body?.force) },
-  );
-  const saved = await saveEstablishmentState(nextState, state, req.principal);
-  await auditService.record(req, "send_payment_reminder", "student_fee", req.params.studentId, {
-    channel: reminder.channel,
-    summary: reminder.summary,
+  await withIdempotency({
+    req,
+    res,
+    routeKey: `POST /api/backoffice/finance/unpaid/${req.params.studentId}/reminders`,
+    principal: req.principal,
+    handler: async () => {
+      const reminder = await repository.createFinanceReminder(
+        req.params.studentId,
+        req.body ?? {},
+        req.principal,
+        { force: Boolean(req.body?.force) },
+      );
+      await auditService.record(req, "send_payment_reminder", "student_fee", req.params.studentId, {
+        channel: reminder.channel,
+        summary: reminder.summary,
+      });
+      const nextState = await getAuthoritativeBackOfficeState();
+      return {
+        statusCode: 201,
+        body: { reminder, state: scopedBackOfficeStateForResponse(nextState, req.principal) },
+      };
+    },
   });
-  res.status(201).json({ reminder, state: scopedBackOfficeStateForResponse(saved, req.principal) });
 }));
 
-app.get("/api/backoffice/state", requireAuth, asyncHandler(async (req, res) => {
-  assertBackOfficeReader(req.principal);
-  const state = await getAuthoritativeBackOfficeState();
-  res.json(scopedBackOfficeStateForResponse(state, req.principal));
+app.get("/api/backoffice/state", requireAuth, asyncHandler(async (_req, res) => {
+  const { sendBackOfficeStateReadRemoved } = require("./lib/backofficeStateRemoval");
+  sendBackOfficeStateReadRemoved(res);
 }));
 
-app.put("/api/backoffice/state", requireAuth, asyncHandler(async (req, res) => {
-  const rawBody = req.body ?? {};
-  const touchedKeys = resolveTouchedBackOfficeKeys(rawBody);
-  assertBackOfficeWriter(req.principal, touchedKeys);
-  const currentState = await getAuthoritativeBackOfficeState();
-
-  // HOTFIX-SYNC-03 — Enseignant : evaluations/notes uniquement, teacherId session, affectation.
-  let effectiveBody = rawBody;
-  let effectiveTouchedKeys = touchedKeys;
-  if (isTeacherNotesPrincipal(req.principal)) {
-    const prepared = prepareTeacherNotesWritePayload(rawBody, req.principal, currentState);
-    if (!prepared.ok) {
-      throw new BusinessError(403, prepared.message ?? "Permission insuffisante pour modifier ces données.");
-    }
-    effectiveBody = prepared.payload;
-    effectiveTouchedKeys = Object.keys(prepared.payload);
-  }
-
-  const requestedState = sanitizeBackOfficeState(effectiveBody);
-  const { validateWritePayload } = require("./services/dataIntegrityService");
-  const integrityCheck = validateWritePayload(currentState, requestedState, effectiveTouchedKeys);
-  if (!integrityCheck.ok) {
-    throw new BusinessError(400, integrityCheck.errors[0]?.message ?? "Données incohérentes.");
-  }
-  const credentialErrors = validateIntroducedAccountSecrets(
-    currentState,
-    requestedState,
-    effectiveTouchedKeys,
-  );
-  if (credentialErrors.length) {
-    const first = credentialErrors[0];
-    throw new BusinessError(400, first.message);
-  }
-
-  let nextState;
-  if (isTeacherNotesPrincipal(req.principal)) {
-    // Fusion métier déjà réalisée (préserve les lignes des autres enseignants).
-    nextState = {
-      ...currentState,
-      ...(effectiveBody.evaluations ? { evaluations: effectiveBody.evaluations } : {}),
-      ...(effectiveBody.notes ? { notes: effectiveBody.notes } : {}),
-    };
-  } else {
-    nextState = mergeScopedBackOfficeState(
-      currentState,
-      requestedState,
-      req.principal,
-      effectiveTouchedKeys,
-    );
-  }
-  const hydratedCourses = pedagogyGovernanceService.hydrateCoursesFromAssignments(
-    nextState.courses ?? [],
-    nextState.assignments ?? [],
-  );
-  const nextStateWithCourses = { ...nextState, courses: hydratedCourses };
-  const changedCourses = pedagogyGovernanceService.listChangedCourses(
-    currentState.courses ?? [],
-    hydratedCourses,
-  );
-  const courseValidationError = changedCourses.length
-    ? pedagogyGovernanceService.validateCoursesCollection(
-        changedCourses,
-        nextStateWithCourses.assignments ?? [],
-      )
-    : null;
-  if (courseValidationError) {
-    throw new BusinessError(400, courseValidationError);
-  }
-
-  // Filet de sécurité serveur : refuser toute double réservation (enseignant /
-  // classe) introduite par cette requête sur les créneaux de planning.
-  const introducedScheduleConflicts = detectIntroducedConflicts(
-    nextStateWithCourses.courseSchedules ?? [],
-    changedScheduleIds(
-      currentState.courseSchedules ?? [],
-      nextStateWithCourses.courseSchedules ?? [],
-    ),
-  );
-  if (introducedScheduleConflicts.length) {
-    throw new BusinessError(409, introducedScheduleConflicts[0].message);
-  }
-
-  const saved = await saveEstablishmentState(nextStateWithCourses, currentState, req.principal);
-  await auditCriticalStateChanges(req, currentState, saved);
-  await auditService.record(req, "sync_backoffice_state", "backoffice_state", "default", {
-    schools: saved.schools?.length ?? 0,
-    users: saved.users?.length ?? 0,
-    countries: saved.countries?.length ?? 0,
-    subscriptions: saved.subscriptions?.length ?? 0,
-    notifications: saved.notifications?.length ?? 0,
-    students: saved.students?.length ?? 0,
-    teachers: saved.teachers?.length ?? 0,
-    classes: saved.classes?.length ?? 0,
-    roles: Object.keys(saved.rolePermissions ?? {}).length,
-  });
-  // HOTFIX-SYNC-01 / PRE-E1-02B : syncAck observable, strictement lié à cette requête.
-  // Ne jamais lire repository.lastSyncAck (état mutable partagé → fuite inter-requêtes).
-  const response = scopedBackOfficeStateForResponse(saved, req.principal);
-  if (saved?.syncAck && typeof saved.syncAck === "object") {
-    response.syncAck = saved.syncAck;
-  }
-  res.json(response);
+app.put("/api/backoffice/state", requireAuth, asyncHandler(async (_req, res) => {
+  const { sendBackOfficeStateWriteRemoved } = require("./lib/backofficeStateRemoval");
+  sendBackOfficeStateWriteRemoved(res);
 }));
 
 app.post("/api/backoffice/bulletin-design/preview", requireAuth, asyncHandler(async (req, res) => {
@@ -1325,13 +3467,41 @@ app.get("/api/audit", requireAuth, asyncHandler(async (req, res) => {
 }));
 
 app.get("/api/v2/subjects", requireAuth, requirePermission("GET /api/v2/subjects"), asyncHandler(async (req, res) => {
-  const rows = await cacheService.remember("v2:subjects", () => repository.getSubjectsV2());
-  sendList(res, tenantScopeService.filterRows(rows, req.principal), req.query, ["name", "code", "level", "status"]);
+  const schoolCode = String(req.principal?.schoolCode ?? "").trim();
+  const isPlatform =
+    req.principal?.role === "Super Administrateur Somafrik" ||
+    req.principal?.role === "Super Administrateur OKAFRIK" ||
+    req.principal?.role === "Admin Pays";
+  if (!isPlatform && (!schoolCode || schoolCode === "*")) {
+    console.error(JSON.stringify({
+      kind: "subjects_catalog_load_failure",
+      reason: "missing_school_scope",
+      role: req.principal?.role ?? null,
+    }));
+    throw new BusinessError(400, "schoolCode établissement requis.");
+  }
+  const query = isPlatform && (!schoolCode || schoolCode === "*") ? {} : { schoolCode };
+  const cacheKey = query.schoolCode ? `v2:subjects:${String(query.schoolCode).toUpperCase()}` : "v2:subjects";
+  try {
+    const rows = await cacheService.remember(cacheKey, () => repository.getSubjectsV2(query));
+    sendList(res, tenantScopeService.filterRows(rows, req.principal), req.query, ["name", "code", "level", "status"]);
+  } catch (error) {
+    console.error(JSON.stringify({
+      kind: "subjects_catalog_load_failure",
+      schoolCode: query.schoolCode || null,
+      message: error instanceof Error ? error.message : "unknown",
+    }));
+    throw error;
+  }
 }));
 
 app.post("/api/v2/subjects", requireAuth, requirePermission("POST /api/v2/subjects"), asyncHandler(async (req, res) => {
-  tenantScopeService.assertSchoolAccess(req.principal, req.body.schoolCode ?? req.principal.schoolCode);
-  const created = await repository.createSubject({ ...req.body, schoolCode: req.body.schoolCode ?? req.principal.schoolCode });
+  const schoolCode = req.principal.schoolCode;
+  if (!schoolCode || schoolCode === "*") {
+    throw new BusinessError(400, "schoolCode établissement requis.");
+  }
+  tenantScopeService.assertSchoolAccess(req.principal, schoolCode);
+  const created = await repository.createSubject({ ...req.body, schoolCode });
   cacheService.invalidate("v2:");
   await auditService.record(req, "create_subject", "subject", req.body.code, req.body);
   res.status(201).json(created);
@@ -1344,9 +3514,64 @@ app.delete("/api/v2/subjects/:code", requireAuth, requirePermission("DELETE /api
   res.json(deleted);
 }));
 
+async function academicYearHttpPrincipal(req) {
+  const { attachAcademicYearMembershipScope, attachAcademicYearFixtureScope } = require("./lib/academicYearSchoolScope");
+  if (typeof repository.one === "function") {
+    return attachAcademicYearMembershipScope(req.principal, repository.one.bind(repository));
+  }
+  return attachAcademicYearFixtureScope(req.principal);
+}
+
 app.get("/api/v2/academic-years", requireAuth, requirePermission("GET /api/v2/academic-years"), asyncHandler(async (req, res) => {
-  const rows = await cacheService.remember("v2:academic-years", () => repository.getAcademicYearsV2());
-  sendList(res, tenantScopeService.filterRows(rows, req.principal), req.query, ["name", "status"]);
+  const {
+    assertAcademicYearReadable,
+    academicYearCacheKey,
+    filterAcademicYearRows,
+  } = require("./lib/academicYearSchoolScope");
+  const principal = await academicYearHttpPrincipal(req);
+  const scope = assertAcademicYearReadable(principal);
+  const rows = await cacheService.remember(academicYearCacheKey(scope), () => repository.getAcademicYearsV2(scope));
+  sendList(res, filterAcademicYearRows(rows, scope), req.query, ["name", "status"]);
+}));
+
+app.post("/api/v2/academic-years", requireAuth, requirePermission("POST /api/v2/academic-years"), asyncHandler(async (req, res) => {
+  const { resolveAcademicYearWriteSchool } = require("./lib/academicYearSchoolScope");
+  const principal = await academicYearHttpPrincipal(req);
+  const writeSchool = await resolveAcademicYearWriteSchool(
+    principal,
+    req.body ?? {},
+    typeof repository.one === "function" ? repository.one.bind(repository) : null,
+  );
+  const created = await repository.createAcademicYearV2({
+    ...(req.body ?? {}),
+    schoolId: writeSchool.schoolId,
+    schoolCode: writeSchool.loginCode,
+  });
+  cacheService.invalidate("v2:academic-years");
+  await auditService.record(req, "academic_year_create", "academic_year", created.id, {
+    schoolCode: created.schoolCode,
+    name: created.name,
+    isCurrent: created.isCurrent,
+  });
+  res.status(201).json(created);
+}));
+
+app.patch("/api/v2/academic-years/:id", requireAuth, requirePermission("PATCH /api/v2/academic-years/:id"), asyncHandler(async (req, res) => {
+  const { assertAcademicYearPatchAccess } = require("./lib/academicYearSchoolScope");
+  const principal = await academicYearHttpPrincipal(req);
+  const current = await repository.getAcademicYearV2ById(req.params.id);
+  if (!current) {
+    throw new BusinessError(404, "Année scolaire introuvable.");
+  }
+  assertAcademicYearPatchAccess(principal, current);
+  const updated = await repository.updateAcademicYearV2(req.params.id, req.body ?? {});
+  cacheService.invalidate("v2:academic-years");
+  await auditService.record(req, "academic_year_update", "academic_year", updated.id, {
+    schoolCode: updated.schoolCode,
+    name: updated.name,
+    isCurrent: updated.isCurrent,
+  });
+  res.json(updated);
 }));
 
 app.get("/api/v2/exams", requireAuth, requirePermission("GET /api/v2/exams"), asyncHandler(async (req, res) => {
@@ -1384,13 +3609,13 @@ app.get("/api/mvp/dashboard", requireAuth, asyncHandler(async (req, res) => {
 
 async function getRuntime() {
   const dataset = await repository.getDataset();
-  const storedState = await repository.getBackOfficeState();
-  applyStoredStatusOverlay(dataset, storedState);
-  applyStoredSchoolOverlay(dataset, storedState);
-  applyStoredUserOverlay(dataset, storedState);
-  const mergedStudents = mergeRowsByIdentity(dataset.students ?? [], storedState?.students ?? []);
-  const mergedRelations = mergeRowsByIdentity([], storedState?.relations ?? []);
-  const mergedTeachers = mergeRowsByIdentity(dataset.teachers ?? [], storedState?.teachers ?? []);
+  // LOT 7 / PR-A — projection canonique clients (PG / mémoire), pas d'overlay backoffice_state.users JSON.
+  await applyClientsAuthOverlay(dataset);
+  // LOT 2 — aucune identité élève ne provient plus du snapshot JSON.
+  const mergedStudents = dataset.students ?? [];
+  const mergedRelations = [];
+  // LOT 3 — enseignants et affectations sont des projections PostgreSQL uniquement.
+  const mergedTeachers = dataset.teachers ?? [];
   const authService = new AuthService({
     school: dataset.school,
     schools: dataset.platformSchools,
@@ -1401,9 +3626,7 @@ async function getRuntime() {
     userAccounts: dataset.userAccounts,
     countries: dataset.countries,
     subscriptions: dataset.subscriptions ?? [],
-    assignments: storedState?.assignments?.length
-      ? storedState.assignments
-      : (dataset.teacherAssignments ?? []),
+    assignments: dataset.teacherAssignments ?? [],
   });
   const gradeBookService = new GradeBookService({
     students: dataset.students,
@@ -1484,55 +3707,8 @@ function applyStoredStatusOverlay(dataset, storedState) {
     return;
   }
 
-  if (Array.isArray(storedState.countries)) {
-    const statusByCode = new Map(
-      storedState.countries
-        .filter((country) => country && country.code)
-        .map((country) => [String(country.code).trim().toUpperCase(), country.status])
-    );
-    dataset.countries = (dataset.countries ?? []).map((country) => {
-      const status = statusByCode.get(String(country.code ?? "").trim().toUpperCase());
-      return status ? { ...country, status } : country;
-    });
-  }
-}
-
-// Superpose les comptes gérés depuis le state BackOffice persistant sur le dataset
-// de connexion : un Admin École créé/validé dans le BackOffice devient ainsi
-// authentifiable, et son statut (Actif / Suspendu / En attente de validation)
-// reflété au login. Le mot de passe temporaire sert de secret tant qu'aucun
-// hash n'est défini.
-function isDbUserUuid(value) {
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(value ?? ""));
-}
-
-function userOverlayKeys(user) {
-  const keys = [];
-  if (user?.id) keys.push(`id:${String(user.id)}`);
-  if (user?.publicId) keys.push(`public:${String(user.publicId).trim().toUpperCase()}`);
-  if (user?.identifier) {
-    const login = String(user.identifier).trim().toLowerCase();
-    const schoolCode = String(user.schoolCode ?? "").trim().toUpperCase();
-    if (schoolCode && schoolCode !== "*") {
-      keys.push(`login:${login}@${schoolCode}`);
-    } else {
-      keys.push(`login:${login}`);
-    }
-  }
-  return [...new Set(keys.filter(Boolean))];
-}
-
-function resolveUserOverlayPrimaryKey(user, aliasToPrimaryKey) {
-  const keys = userOverlayKeys(user);
-  for (const alias of keys) {
-    const match = aliasToPrimaryKey.get(alias);
-    if (match) {
-      return match;
-    }
-  }
-
-  const schoolScopedLogin = keys.find((alias) => alias.startsWith("login:") && alias.includes("@"));
-  return schoolScopedLogin ?? keys[0] ?? null;
+  // LOT 6 — le statut pays provient exclusivement de la projection plateforme PostgreSQL.
+  // Ne plus superposer l'ancien snapshot JSON sur dataset.countries.
 }
 
 function applyStoredUserCredentials(base = {}, stored = {}, merged = {}) {
@@ -1595,8 +3771,46 @@ function normalizeBackOfficeUserCredentials(user = {}) {
   return next;
 }
 
-function applyStoredUserOverlay(dataset, storedState) {
-  if (!dataset || !isPlainObject(storedState) || !Array.isArray(storedState.users)) {
+function isDbUserUuid(value) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(value ?? ""));
+}
+
+function userOverlayKeys(user) {
+  const keys = [];
+  if (user?.id) keys.push(`id:${String(user.id)}`);
+  if (user?.publicId) keys.push(`public:${String(user.publicId).trim().toUpperCase()}`);
+  if (user?.identifier) {
+    const login = String(user.identifier).trim().toLowerCase();
+    const schoolCode = String(user.schoolCode ?? "").trim().toUpperCase();
+    if (schoolCode && schoolCode !== "*") {
+      keys.push(`login:${login}@${schoolCode}`);
+    } else {
+      keys.push(`login:${login}`);
+    }
+  }
+  return [...new Set(keys.filter(Boolean))];
+}
+
+function resolveUserOverlayPrimaryKey(user, aliasToPrimaryKey) {
+  const keys = userOverlayKeys(user);
+  for (const alias of keys) {
+    const match = aliasToPrimaryKey.get(alias);
+    if (match) {
+      return match;
+    }
+  }
+
+  const schoolScopedLogin = keys.find((alias) => alias.startsWith("login:") && alias.includes("@"));
+  return schoolScopedLogin ?? keys[0] ?? null;
+}
+
+async function applyClientsAuthOverlay(dataset) {
+  if (!dataset || typeof repository.listClientsAuthAccounts !== "function") {
+    return;
+  }
+
+  const authAccounts = await repository.listClientsAuthAccounts();
+  if (!Array.isArray(authAccounts) || authAccounts.length === 0) {
     return;
   }
 
@@ -1617,51 +3831,13 @@ function applyStoredUserOverlay(dataset, storedState) {
     registerUser(user, resolveUserOverlayPrimaryKey(user, aliasToPrimaryKey));
   }
 
-  for (const stored of storedState.users) {
+  for (const stored of authAccounts) {
     const primaryKey = resolveUserOverlayPrimaryKey(stored, aliasToPrimaryKey);
     if (!primaryKey) {
       continue;
     }
-
     const base = byPrimaryKey.get(primaryKey) ?? {};
-    const merged = { ...base, ...stored };
-
-    const baseLoginId = String(base.identifier ?? "").trim();
-    const storedLoginId = String(stored.identifier ?? "").trim();
-    if (
-      baseLoginId &&
-      storedLoginId &&
-      baseLoginId !== storedLoginId &&
-      /^(ENS-\d+|ELE-\d+)$/i.test(baseLoginId) &&
-      /^USR-/i.test(storedLoginId)
-    ) {
-      merged.identifier = baseLoginId;
-    } else if (
-      baseLoginId &&
-      storedLoginId &&
-      baseLoginId !== storedLoginId &&
-      storedLoginId.toUpperCase() === String(stored.publicId ?? base.publicId ?? "").trim().toUpperCase()
-    ) {
-      // Instantané BackOffice : l'identifiant de connexion démo (admin, prefet…) prime sur le code technique.
-      merged.identifier = baseLoginId;
-    }
-
-    if (isDbUserUuid(base.id)) {
-      merged.id = base.id;
-    }
-    if (base.publicId) {
-      merged.publicId = base.publicId;
-    }
-
-    applyStoredUserCredentials(base, stored, merged);
-
-    if (!merged.passwordHash && !merged.pinHash && String(merged.password ?? "").trim()) {
-      const legacyHash = hashSecret(String(merged.password).trim());
-      merged.passwordHash = legacyHash;
-      merged.pinHash = legacyHash;
-      delete merged.password;
-    }
-
+    const merged = normalizeBackOfficeUserCredentials({ ...base, ...stored });
     registerUser(merged, primaryKey);
   }
 
@@ -1683,9 +3859,9 @@ function handleBusinessResponse(res, action) {
   }
 }
 
-function handleBusinessAction(action) {
+async function handleBusinessAction(action) {
   try {
-    return action();
+    return await action();
   } catch (error) {
     if (error instanceof BusinessError) {
       throw error;
@@ -1725,10 +3901,23 @@ function getWebPlatformWritableEntities(principal) {
   const allowed = new Set();
 
   if (permissions.has("ALL_PRIVILEGES") || permissions.has("COUNTRY_PRIVILEGES")) {
-    backOfficeDeletableEntities.forEach((entity) => allowed.add(entity));
-    allowed.add("rolePermissions");
+    backOfficeDeletableEntities.forEach((entity) => {
+      if (
+        entity !== "countries" &&
+        entity !== "subscriptions" &&
+        entity !== "subscriptionOffers" &&
+        entity !== "subscriptionPayments" &&
+        entity !== "subscriptionInvoices" &&
+        entity !== "subscriptionDiscounts" &&
+        entity !== "subscriptionAuditLog" &&
+        entity !== "notifications" &&
+        entity !== "rolePermissions" &&
+        entity !== "dashboardChartConfig"
+      ) {
+        allowed.add(entity);
+      }
+    });
     allowed.add("academicConfigs");
-    allowed.add("dashboardChartConfig");
     return allowed;
   }
 
@@ -1818,7 +4007,7 @@ async function getScopedMvpBusinessService(principal) {
       classes: state.classes ?? runtime.classes ?? [],
       courses: state.courses ?? runtime.courses ?? [],
       notes: state.notes ?? runtime.notes ?? [],
-      payments: state.payments ?? runtime.payments ?? [],
+      payments: state.payments ?? [],
     },
     principal,
     tenantScopeService,
@@ -1826,47 +4015,26 @@ async function getScopedMvpBusinessService(principal) {
   return new MvpBusinessService(scoped);
 }
 
-function assertCanManageNotes(principal) {
-  const permissions = new Set(principal?.permissions ?? []);
-  if (
-    permissions.has("ALL_PRIVILEGES") ||
-    permissions.has("COUNTRY_PRIVILEGES") ||
-    permissions.has("Modifier notes") ||
-    permissions.has("Modifier notes") ||
-    permissions.has("Notes:CREATE") ||
-    permissions.has("Notes:UPDATE") ||
-    permissions.has("Notes:CRUD") ||
-    permissions.has("Evaluations:CRUD")
-  ) {
-    return;
-  }
-
-  throw new BusinessError(403, "Permission insuffisante pour modifier les notes.");
+function denyPermission(message = "Permission insuffisante pour cette fonctionnalité.") {
+  const error = new BusinessError(403, message);
+  error.code = PERMISSION_DENIED;
+  return error;
 }
 
-function assertCanManagePresences(principal) {
-  const permissions = new Set(principal?.permissions ?? []);
-  if (
-    permissions.has("ALL_PRIVILEGES") ||
-    permissions.has("COUNTRY_PRIVILEGES") ||
-    permissions.has("Faire appel") ||
-    permissions.has("Gérer appels") ||
-    permissions.has("Présences:CREATE") ||
-    permissions.has("Présences:UPDATE")
-  ) {
-    return;
-  }
-
-  throw new BusinessError(403, "Permission insuffisante pour enregistrer l'appel.");
+async function saveEstablishmentState() {
+  const { createBackOfficeStateWriteRemovedError } = require("./lib/backofficeStateRemoval");
+  throw createBackOfficeStateWriteRemovedError();
 }
 
-async function saveEstablishmentState(nextState, currentState = null, principal = null) {
-  const current = currentState ?? (await getAuthoritativeBackOfficeState());
-  const { enrichStateWithValidationAlerts } = require("./lib/validationNotifications");
-  const enriched = enrichStateWithValidationAlerts(current, nextState, principal);
-  const sanitized = sanitizeBackOfficeState(enriched);
-  const hydrated = ensureSubscriptionModuleState(hydrateSubscriptionsFromSchools(sanitized));
-  return repository.saveBackOfficeState(hydrated);
+async function touchUserLastLogin(principal) {
+  if (!principal?.sub && !principal?.identifier) return;
+  const lookupKeys = [principal.sub, principal.identifier, principal.publicId]
+    .map((value) => String(value ?? "").trim())
+    .filter(Boolean);
+  if (!lookupKeys.length) return;
+  if (typeof repository.touchUserLastLogin === "function") {
+    await repository.touchUserLastLogin(lookupKeys);
+  }
 }
 
 function requireSchoolSubscriptionFeature(feature) {
@@ -1982,28 +4150,144 @@ const backOfficeDeletableEntities = [
   "messages",
 ];
 
+async function listCanonicalStudentsForPrincipal(principal) {
+  const schoolCode = String(principal?.schoolCode ?? "").trim();
+  if (schoolCode && schoolCode !== "*" && typeof repository.listSchoolStudents === "function") {
+    return repository.listSchoolStudents(schoolCode);
+  }
+  const runtime = await getRuntime();
+  return runtime.students ?? [];
+}
+
+async function loadCanonicalPedagogyForPrincipal(principal) {
+  const pedagogy =
+    typeof repository.listPedagogyProjection === "function"
+      ? await repository.listPedagogyProjection()
+      : { notes: [], presences: [], evaluations: [] };
+  const students = await listCanonicalStudentsForPrincipal(principal);
+  return {
+    notes: pedagogy.notes ?? [],
+    presences: pedagogy.presences ?? [],
+    evaluations: pedagogy.evaluations ?? [],
+    students,
+  };
+}
+
+async function loadCanonicalFinanceForPrincipal(principal) {
+  const finance =
+    typeof repository.listFinanceProjection === "function"
+      ? await repository.listFinanceProjection()
+      : { payments: [] };
+  const students = await listCanonicalStudentsForPrincipal(principal);
+  return {
+    payments: finance.payments ?? [],
+    students,
+  };
+}
+
 async function getAuthoritativeBackOfficeState() {
   const runtime = await getRuntime();
   const runtimeState = buildInitialBackOfficeState(runtime);
-  const storedState = await repository.getBackOfficeState();
-
-  if (!hasUserBackOfficeState(storedState)) {
-    return sanitizeBackOfficeState(runtimeState);
-  }
-
-  const merged = mergeBackOfficeRuntimeState(runtime, storedState);
-  const { state: withSchools, repaired: repairedSchools } = repairOrphanSchools(merged);
-  if (repairedSchools.length) {
-    await repository.saveBackOfficeState(withSchools);
-    console.info(`[backoffice] Établissements rétablis depuis références orphelines : ${repairedSchools.join(", ")}`);
-  }
-  const sanitized = sanitizeBackOfficeState(stripLegacyOrganizationFields(withSchools));
-  return {
-    ...sanitized,
+  const base = sanitizeBackOfficeState(runtimeState);
+  const nextState = {
+    ...base,
     courses: pedagogyGovernanceService.hydrateCoursesFromAssignments(
-      sanitized.courses ?? [],
-      sanitized.assignments ?? [],
+      base.courses ?? [],
+      base.assignments ?? [],
     ),
+    deletedRows: {},
+  };
+  return overlayResidualProjection(
+    await overlayClientsProjection(
+      await overlayPlatformProjection(
+        await overlayPedagogyProjection(await overlayFinanceProjection(nextState)),
+      ),
+    ),
+  );
+}
+
+async function listResidualDomainForPrincipal(principal, domain) {
+  if (typeof repository.listResidualProjection !== "function") {
+    return [];
+  }
+  const residual = await repository.listResidualProjection();
+  const rows = residual[domain] ?? [];
+  return tenantScopeService.filterRows(rows, principal);
+}
+
+async function overlayResidualProjection(state) {
+  const residual =
+    typeof repository.listResidualProjection === "function"
+      ? await repository.listResidualProjection()
+      : { academicConfigs: {} };
+  const canonical =
+    typeof repository.listDocumentsExamsProjection === "function"
+      ? await repository.listDocumentsExamsProjection()
+      : { exams: [], bulletins: [], documents: [] };
+  return {
+    ...state,
+    academicConfigs: {
+      ...(state.academicConfigs ?? {}),
+      ...(residual.academicConfigs ?? {}),
+    },
+    exams: canonical.exams ?? [],
+    bulletins: canonical.bulletins ?? [],
+    documents: canonical.documents ?? [],
+  };
+}
+
+async function overlayClientsProjection(state) {
+  const clients = await repository.listClientsProjection();
+  return {
+    ...state,
+    users: clients.users ?? [],
+    contacts: clients.contacts ?? [],
+    relations: clients.relations ?? [],
+    messages: clients.messages ?? [],
+    announcements: clients.announcements ?? [],
+  };
+}
+
+async function overlayPlatformProjection(state) {
+  const platform = await repository.listPlatformProjection();
+  return {
+    ...state,
+    countries: platform.countries ?? [],
+    subscriptions: platform.subscriptions ?? [],
+    notifications: platform.notifications ?? [],
+    subscriptionOffers: platform.subscriptionOffers ?? [],
+    subscriptionPayments: platform.subscriptionPayments ?? [],
+    subscriptionInvoices: platform.subscriptionInvoices ?? [],
+    subscriptionDiscounts: platform.subscriptionDiscounts ?? [],
+    subscriptionAuditLog: platform.subscriptionAuditLog ?? [],
+    rolePermissions: platform.rolePermissions ?? {},
+    dashboardChartConfig: platform.dashboardChartConfig ?? { platform: {}, establishment: {} },
+  };
+}
+
+async function overlayPedagogyProjection(state) {
+  const pedagogy = await repository.listPedagogyProjection();
+  return {
+    ...state,
+    courses: pedagogy.courses ?? [],
+    courseSchedules: pedagogy.courseSchedules ?? [],
+    evaluations: pedagogy.evaluations ?? [],
+    notes: pedagogy.notes ?? [],
+    presences: pedagogy.presences ?? [],
+  };
+}
+
+async function overlayFinanceProjection(state) {
+  const finance = await repository.listFinanceProjection();
+  return {
+    ...state,
+    payments: finance.payments ?? [],
+    paymentStatuses: finance.paymentStatuses ?? [],
+    feeGrids: finance.feeGrids ?? [],
+    schoolFeeItems: finance.schoolFeeItems ?? [],
+    studentFees: finance.studentFees ?? [],
+    feeTariffHistory: finance.feeTariffHistory ?? [],
+    paymentReminders: finance.paymentReminders ?? [],
   };
 }
 
@@ -2036,7 +4320,7 @@ function buildInitialBackOfficeState(runtime = {}) {
     courses: runtime.courses ?? [],
     assignments: runtime.teacherAssignments ?? [],
     courseSchedules: runtime.courseSchedules ?? [],
-    payments: runtime.payments ?? [],
+    payments: [],
     paymentStatuses: [],
     feeGrids: [],
     schoolFeeItems: [],
@@ -2074,12 +4358,13 @@ function mergeBackOfficeRuntimeState(runtime = {}, storedState = {}) {
     courses: runtime.courses ?? [],
     assignments: runtime.teacherAssignments ?? [],
     courseSchedules: storedState.courseSchedules ?? runtime.courseSchedules ?? [],
-    payments: runtime.payments ?? [],
-    feeGrids: storedState.feeGrids ?? [],
-    schoolFeeItems: storedState.schoolFeeItems ?? [],
-    studentFees: storedState.studentFees ?? [],
-    feeTariffHistory: storedState.feeTariffHistory ?? [],
-    paymentReminders: storedState.paymentReminders ?? [],
+    payments: [],
+    paymentStatuses: [],
+    feeGrids: [],
+    schoolFeeItems: [],
+    studentFees: [],
+    feeTariffHistory: [],
+    paymentReminders: [],
     presences: runtime.presences ?? [],
     notes: runtime.notes ?? [],
     evaluations: runtime.evaluations ?? [],
@@ -2113,24 +4398,23 @@ function mergeBackOfficeRuntimeState(runtime = {}, storedState = {}) {
     relations: mergeRowsByIdentity(runtimeState.relations, storedState.relations),
     subscriptions: mergeRowsByIdentity(runtimeState.subscriptions, storedState.subscriptions),
     notifications: mergeRowsByIdentity(runtimeState.notifications, storedState.notifications),
-    students: mergeRowsByIdentity(runtimeState.students, storedState.students),
-    teachers: mergeRowsByIdentity(runtimeState.teachers, storedState.teachers),
-    classes: mergeRowsByIdentity(runtimeState.classes, storedState.classes),
+    // LOT 2 — projection lecture exclusivement PostgreSQL/runtime.
+    // Les éventuelles lignes students historiques du JSON sont ignorées.
+    students: runtimeState.students ?? [],
+    // LOT 3 — projections lecture exclusivement PostgreSQL/runtime.
+    teachers: runtimeState.teachers ?? [],
+    // Projection lecture Classes / Établissements : PostgreSQL / runtime (plus de mutation JSON).
+    classes: runtimeState.classes ?? [],
     courses: mergeRowsByIdentity(runtimeState.courses, storedState.courses),
-    assignments: mergeRowsByIdentity(runtimeState.assignments ?? [], storedState.assignments ?? []),
+    assignments: runtimeState.assignments ?? [],
     courseSchedules: mergeRowsByIdentity(runtimeState.courseSchedules ?? [], storedState.courseSchedules ?? []),
-    payments: mergeRowsByIdentity(runtimeState.payments, storedState.payments),
-    feeGrids: mergeRowsByIdentity(runtimeState.feeGrids ?? [], storedState.feeGrids ?? []),
-    schoolFeeItems: mergeRowsByIdentity(runtimeState.schoolFeeItems ?? [], storedState.schoolFeeItems ?? []),
-    studentFees: mergeRowsByIdentity(runtimeState.studentFees ?? [], storedState.studentFees ?? []),
-    feeTariffHistory: mergeRowsByIdentity(
-      runtimeState.feeTariffHistory ?? [],
-      storedState.feeTariffHistory ?? [],
-    ),
-    paymentReminders: mergeRowsByIdentity(
-      runtimeState.paymentReminders ?? [],
-      storedState.paymentReminders ?? [],
-    ),
+    payments: [],
+    paymentStatuses: [],
+    feeGrids: runtimeState.feeGrids ?? [],
+    schoolFeeItems: runtimeState.schoolFeeItems ?? [],
+    studentFees: runtimeState.studentFees ?? [],
+    feeTariffHistory: runtimeState.feeTariffHistory ?? [],
+    paymentReminders: runtimeState.paymentReminders ?? [],
     presences: mergeRowsByIdentity(runtimeState.presences, storedState.presences),
     notes: mergeRowsByIdentity(runtimeState.notes, storedState.notes),
     evaluations: mergeRowsByIdentity(runtimeState.evaluations ?? [], storedState.evaluations ?? []),
@@ -2348,16 +4632,27 @@ function schoolRowKey(row = {}) {
 function mergeSchoolRows(dbSchools = [], storedSchools = []) {
   const rows = new Map();
 
-  dbSchools.forEach((school) => {
+  storedSchools.forEach((school) => {
     const key = schoolRowKey(school);
     if (key) rows.set(key, { ...school });
   });
 
-  storedSchools.forEach((school) => {
+  dbSchools.forEach((school) => {
     const key = schoolRowKey(school);
     if (!key) return;
     const existing = rows.get(key);
-    rows.set(key, existing ? { ...existing, ...school } : { ...school });
+    if (!existing) {
+      rows.set(key, { ...school });
+      return;
+    }
+    const merged = { ...existing, ...school };
+    for (const [field, value] of Object.entries(existing)) {
+      const next = merged[field];
+      if ((next === undefined || next === null || next === "") && value !== undefined && value !== null && value !== "") {
+        merged[field] = value;
+      }
+    }
+    rows.set(key, merged);
   });
 
   return [...rows.values()];
@@ -2695,54 +4990,59 @@ function mergeScopedBackOfficeState(
       return finalize ? finalize(mergedRows, current[entity] ?? [], principal) : mergedRows;
     };
 
-    return applyDeletedRows({
-      ...current,
-      ...requested,
-      schools: mergeEntity("schools", finalizeSuperAdminSchoolValidation),
-      users: mergeEntity("users", finalizeSuperAdminUserValidation),
-      countries: mergeEntity("countries"),
-      contacts: mergeEntity("contacts"),
-      relations: mergeEntity("relations"),
-      subscriptions: mergeEntity("subscriptions"),
-      notifications: mergeEntity("notifications"),
-      students: mergeEntity("students"),
-      teachers: mergeEntity("teachers"),
-      classes: mergeEntity("classes"),
-      courses: mergeEntity("courses"),
-      assignments: mergeEntity("assignments"),
-      courseSchedules: mergeEntity("courseSchedules"),
-      payments: mergeEntity("payments"),
-      paymentStatuses: mergeEntity("paymentStatuses"),
-      feeGrids: mergeEntity("feeGrids"),
-      schoolFeeItems: mergeEntity("schoolFeeItems"),
-      studentFees: mergeEntity("studentFees"),
-      feeTariffHistory: mergeEntity("feeTariffHistory"),
-      presences: mergeEntity("presences"),
-      notes: mergeEntity("notes"),
-      evaluations: mergeEntity("evaluations"),
-      exams: mergeEntity("exams"),
-      bulletins: mergeEntity("bulletins"),
-      documents: mergeEntity("documents"),
-      announcements: mergeEntity("announcements"),
-      messages: mergeEntity("messages"),
-      rolePermissions: {
-        ...current.rolePermissions,
-        ...(requested.rolePermissions ?? {}),
-      },
-      academicConfigs: mergeAcademicConfigs(
-        current.academicConfigs,
-        requested.academicConfigs ?? {},
-        true,
-      ),
-      dashboardChartConfig: sanitizeDashboardChartConfig(
-        requested.dashboardChartConfig ?? current.dashboardChartConfig,
-      ),
-      deletedRows: mergeDeletedRows(
-        current.deletedRows,
-        detectDeletedRows(current, requested, deletionScope),
-      ),
-      updatedAt: new Date().toISOString(),
-    });
+    return {
+      ...applyDeletedRows({
+        ...current,
+        ...requested,
+        schools: mergeEntity("schools", finalizeSuperAdminSchoolValidation),
+        users: mergeEntity("users", finalizeSuperAdminUserValidation),
+        countries: mergeEntity("countries"),
+        contacts: mergeEntity("contacts"),
+        relations: mergeEntity("relations"),
+        subscriptions: mergeEntity("subscriptions"),
+        notifications: mergeEntity("notifications"),
+        students: mergeEntity("students"),
+        teachers: mergeEntity("teachers"),
+        // Lecture seule — jamais fusionnée depuis le client.
+        classes: current.classes ?? [],
+        courses: mergeEntity("courses"),
+        assignments: mergeEntity("assignments"),
+        courseSchedules: mergeEntity("courseSchedules"),
+        payments: mergeEntity("payments"),
+        paymentStatuses: mergeEntity("paymentStatuses"),
+        feeGrids: mergeEntity("feeGrids"),
+        schoolFeeItems: mergeEntity("schoolFeeItems"),
+        studentFees: mergeEntity("studentFees"),
+        feeTariffHistory: mergeEntity("feeTariffHistory"),
+        presences: mergeEntity("presences"),
+        notes: mergeEntity("notes"),
+        evaluations: mergeEntity("evaluations"),
+        exams: mergeEntity("exams"),
+        bulletins: mergeEntity("bulletins"),
+        documents: mergeEntity("documents"),
+        announcements: mergeEntity("announcements"),
+        messages: mergeEntity("messages"),
+        rolePermissions: {
+          ...current.rolePermissions,
+          ...(requested.rolePermissions ?? {}),
+        },
+        academicConfigs: mergeAcademicConfigs(
+          current.academicConfigs,
+          requested.academicConfigs ?? {},
+          true,
+        ),
+        dashboardChartConfig: sanitizeDashboardChartConfig(
+          requested.dashboardChartConfig ?? current.dashboardChartConfig,
+        ),
+        deletedRows: mergeDeletedRows(
+          current.deletedRows,
+          detectDeletedRows(current, requested, deletionScope),
+        ),
+        updatedAt: new Date().toISOString(),
+      }),
+      // Lot 2 / T1 — ephemeral (non persisté par sanitizeBackOfficeState)
+      identitySyncAck: { skips: [] },
+    };
   }
 
   if (principal.role === "Admin Pays") {
@@ -2756,7 +5056,8 @@ function mergeScopedBackOfficeState(
       detectDeletedRows(scopedCurrent, scopedRequested, countryDeletionScope),
     );
 
-    return applyDeletedRows({
+    return {
+      ...applyDeletedRows({
       ...current,
       schools: applyCountryAdminSchoolValidation(
         mergeScopedEntityIfTouched("schools", current, scopedRequested, scopedCurrent, touchedKeys),
@@ -2799,7 +5100,10 @@ function mergeScopedBackOfficeState(
       rolePermissions: current.rolePermissions,
       deletedRows,
       updatedAt: new Date().toISOString(),
-    });
+    }),
+      // Lot 2 / T1 — ephemeral
+      identitySyncAck: { skips: [] },
+    };
   }
 
   const scopedCurrent = scopeBackOfficeState(current, principal);
@@ -2845,28 +5149,8 @@ function mergeScopedBackOfficeState(
     scopedCurrent,
     touchedKeys,
   );
-  const teacherSync =
-    usersTouched || teachersTouched
-      ? userTeacherSyncService.syncTeachersFromUserAccounts(
-          {
-            ...current,
-            users: mergedUsers,
-            teachers: mergedTeachers,
-            contacts: mergedContacts,
-            // §4.1 — départage multi-TEACHERS-* via affectations du même PUT
-            assignments: mergedAssignmentsForSync,
-          },
-          {
-            // §4.1.b — distinguer PUT étranger vs écriture identitaire
-            previousUsers: current.users ?? [],
-            previousTeachers: current.teachers ?? [],
-            usersTouched,
-            teachersTouched,
-          },
-        )
-      : null;
-  const syncedTeachers = teacherSync?.teachers ?? current.teachers;
-  const syncedContacts = teacherSync?.contacts ?? mergedContacts;
+  const syncedTeachers = mergedTeachers;
+  const syncedContacts = mergedContacts;
   const mergedCourses = mergeScopedEntityIfTouched(
     "courses",
     current,
@@ -2875,7 +5159,8 @@ function mergeScopedBackOfficeState(
     touchedKeys,
   );
 
-  return applyDeletedRows({
+  return {
+    ...applyDeletedRows({
     ...current,
     schools: mergeScopedEntityIfTouched("schools", current, scopedRequested, scopedCurrent, touchedKeys),
     users: mergedUsers,
@@ -2916,7 +5201,8 @@ function mergeScopedBackOfficeState(
             )
           : current.teachers
         : syncedTeachers,
-    classes: mergeScopedEntityIfTouched("classes", current, scopedRequested, scopedCurrent, touchedKeys),
+    // Lecture seule — jamais fusionnée depuis le client (CRUD via /api/classes).
+    classes: current.classes ?? [],
     courses: teachersTouched || touchedKeys.includes("courses")
       ? pedagogyGovernanceService.enforceCourseTeacherUniqueness(
           current.courses,
@@ -3019,7 +5305,8 @@ function mergeScopedBackOfficeState(
       : current.auditLog,
     deletedRows,
     updatedAt: new Date().toISOString(),
-  });
+  }),
+  };
 }
 
 /** Fusionne le journal d'audit (SEC-004) client + serveur, dédupliqué par id, plafonné à 200. */
@@ -3172,8 +5459,7 @@ const CRITICAL_AUDIT_COLLECTIONS = [
   { key: "payments", entityType: "payment", label: (row) => row.publicId ?? row.id },
   { key: "bulletins", entityType: "bulletin", label: (row) => row.studentName ?? row.id },
   { key: "rolePermissions", entityType: "role_permissions", label: (row) => row.role ?? row.id },
-  // HOTFIX-RBAC-ADMIN-01 — audit classes/enseignants/affectations côté serveur (jamais via auditLog client).
-  { key: "classes", entityType: "class", label: (row) => row.name ?? row.id },
+  // Classes : plus d'audit via state — mutations via /api/classes uniquement.
   {
     key: "teachers",
     entityType: "teacher",
@@ -3261,7 +5547,6 @@ const SCHOOL_SCOPED_DELETABLE_ENTITIES = new Set([
   "relations",
   "students",
   "teachers",
-  "classes",
   "courses",
   "assignments",
   "courseSchedules",
@@ -3494,34 +5779,26 @@ function isPlainObject(value) {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
-async function touchUserLastLogin(principal) {
-  if (!principal?.sub && !principal?.identifier) return;
-  const state = await getAuthoritativeBackOfficeState();
-  const now = new Date().toISOString();
-  let touched = false;
-  const users = (state.users ?? []).map((user) => {
-    const aliases = [user.id, user.publicId, user.identifier].map((value) => String(value ?? "").trim());
-    const principalKeys = [principal.sub, principal.identifier, principal.publicId]
-      .map((value) => String(value ?? "").trim())
-      .filter(Boolean);
-    if (!principalKeys.some((key) => aliases.includes(key))) return user;
-    touched = true;
-    return {
-      ...user,
-      lastLoginAt: now,
-      history: [
-        ...(Array.isArray(user.history) ? user.history : []),
-        `Connexion réussie le ${now.slice(0, 10)}`,
-      ],
-    };
-  });
-  if (!touched) return;
-  await saveEstablishmentState({ ...state, users, updatedAt: now });
-}
-
 async function sendAuthenticatedResponse(req, res, response, action) {
   const rolePermissionsMap = await getRolePermissionsMap();
+  const userId = response.user?.id ?? response.user?.userId;
+  if (typeof repository.listActiveUserRoleKeys === "function" && userId) {
+    try {
+      const loaded = await repository.listActiveUserRoleKeys(userId);
+      if (Array.isArray(loaded)) {
+        response.user = { ...response.user, roleKeys: loaded };
+      }
+    } catch {
+      /* fail-closed: keep the login projection */
+    }
+  }
   const principal = buildPrincipal(response, rolePermissionsMap);
+  if (typeof repository.resolveEffectivePermissions === "function") {
+    const live = await repository.resolveEffectivePermissions(principal);
+    if (Array.isArray(live?.permissions)) {
+      principal.permissions = live.permissions;
+    }
+  }
   if (principal.role === "Parent" && (!principal.studentIds?.length) && Array.isArray(response.user?.children)) {
     principal.studentIds = response.user.children
       .flatMap((child) => [child.id, child.publicId, child.matricule])
@@ -3568,7 +5845,13 @@ async function sendAuthenticatedResponse(req, res, response, action) {
   const safePayload = sanitizeAuthPayloadForResponse({
     ...response,
     user: response.user
-      ? { ...response.user, role: principal.role, permissions: principal.permissions }
+      ? {
+          ...response.user,
+          role: principal.role,
+          roles: principal.roles,
+          roleKeys: principal.roleKeys,
+          permissions: principal.permissions,
+        }
       : response.user,
   });
 
@@ -3584,25 +5867,54 @@ async function sendAuthenticatedResponse(req, res, response, action) {
 }
 
 function buildPrincipal(response, rolePermissionsMap = null) {
+  const { displayRoles, mergePermissionsForRoles, toRoleKey } = require("./lib/userRoleLifecycle");
+  const { resolvePrincipalSub } = require("./lib/principalIdentity");
   const user = response.user ?? {};
   const school = response.schoolContext ?? response.school ?? {};
   const rawRole = user.role ?? roleLabelFromMobileRole(response.role);
+  const loadedKeys = Array.isArray(user.roleKeys)
+    ? user.roleKeys.map(toRoleKey).filter(Boolean)
+    : null;
+  const roleKeys = loadedKeys?.length
+    ? loadedKeys
+    : loadedKeys && (!rawRole || rawRole === "Sans affectation")
+      ? []
+      : Array.isArray(user.roles) && user.roles.length
+        ? user.roles.map(toRoleKey)
+        : rawRole && rawRole !== "Sans affectation"
+          ? [toRoleKey(rawRole)].filter(Boolean)
+          : [];
+  const display = displayRoles(roleKeys);
+  const requestedLabel = roleLabelFromMobileRole(response.role);
+  const requestedKey = toRoleKey(requestedLabel);
+  const sessionMatchesGrant = requestedKey && roleKeys.includes(requestedKey);
   const role =
-    rawRole === "Super Administrateur OKAFRIK" ? "Super Administrateur Somafrik" : rawRole;
+    sessionMatchesGrant
+      ? requestedLabel
+      : display.role === "Super Administrateur OKAFRIK"
+        ? "Super Administrateur Somafrik"
+        : display.role;
   const schoolCode = role === "Admin Pays" ? "*" : user.schoolCode ?? school.code ?? "*";
-  const countryCode = user.countryCode ?? countryCodeFromScope(user.countryScope) ?? school.countryCode ?? countryCodeFromSchoolOrCountry(schoolCode, school.country);
-  const permissions = mergeRolePermissions(
-    role,
-    [...new Set([...(user.permissions ?? []), ...rbacService.permissionsFor(role)])],
-    rolePermissionsMap
+  const countryCode = user.countryCode || countryCodeFromScope(user.countryScope) || school.countryCode || countryCodeFromSchoolOrCountry(schoolCode, school.country);
+  const permissions = mergePermissionsForRoles(roleKeys, rolePermissionsMap);
+
+  const {
+    filterActiveTeacherAssignments,
+  } = require("./lib/classStudentsAuthz");
+  const activeAssignments = filterActiveTeacherAssignments(
+    Array.isArray(user.assignments) ? user.assignments : [],
   );
 
+  const principalSub = resolvePrincipalSub(user);
   return {
-    sub: user.id ?? user.publicId ?? user.matricule ?? "anonymous",
+    sub: principalSub,
+    userId: principalSub,
     identifier: user.identifier,
     publicId: user.publicId,
     contactId: user.contactId,
     role,
+    roles: display.roles,
+    roleKeys: display.roleKeys,
     schoolCode,
     countryCode,
     countryScope: user.countryScope ?? "",
@@ -3612,12 +5924,26 @@ function buildPrincipal(response, rolePermissionsMap = null) {
         ? false
         : Boolean(user.mustChangePassword) || Boolean(String(user.temporaryPassword ?? "").trim()),
     studentIds: getPrincipalStudentIds(response),
+    guardianStudentIds: getPrincipalGuardianStudentIds(response),
+    // Uniquement dérivé des affectations explicitement actives (fail-closed).
     classNames: [
-      ...new Set([
-        ...(user.assignedClasses ?? []),
-        ...((user.assignments ?? []).map((item) => item.className).filter(Boolean)),
-      ]),
+      ...new Set(activeAssignments.map((item) => item.className).filter(Boolean)),
     ],
+    classCodes: [
+      ...new Set(
+        activeAssignments
+          .map((item) => item.classCode ?? item.class_code)
+          .filter(Boolean),
+      ),
+    ],
+    classIds: [
+      ...new Set(
+        activeAssignments
+          .map((item) => item.classId ?? item.class_id)
+          .filter(Boolean),
+      ),
+    ],
+    assignments: activeAssignments,
   };
 }
 
@@ -3647,9 +5973,11 @@ async function resolveUserPasswordLookupKeys(principal) {
       return alias && keys.has(alias);
     });
 
-  const { users } = await getAuthoritativeBackOfficeState();
+  const { users: stateUsers } = await getAuthoritativeBackOfficeState();
   const runtime = await getRuntime();
-  const allAccounts = [...users, ...(runtime.userAccounts ?? [])];
+  const users = Array.isArray(stateUsers) ? stateUsers : [];
+  const runtimeAccounts = Array.isArray(runtime.userAccounts) ? runtime.userAccounts : [];
+  const allAccounts = [...users, ...runtimeAccounts];
 
   let changed = true;
   while (changed) {
@@ -3671,72 +5999,25 @@ async function resolveUserPasswordLookupKeys(principal) {
 
 // Récupère la matrice de droits par rôle (configurée par le Super Admin dans le BackOffice).
 async function getRolePermissionsMap() {
-  const storedState = await repository.getBackOfficeState();
-  return isPlainObject(storedState) && isPlainObject(storedState.rolePermissions)
-    ? storedState.rolePermissions
-    : null;
+  return repository.getRolePermissionsMap();
 }
 
-// Fusionne les droits de base (compte / RBAC) avec les droits accordés au rôle par le Super Admin.
-// Logique métier : un module accordé à un rôle devient visible (dashboard, onglets, menu) pour
-// tous les utilisateurs de ce rôle, sans jamais retirer un privilège déjà détenu par le compte.
-function mergeRolePermissions(role, basePermissions = [], rolePermissionsMap = null) {
-  const configured =
-    rolePermissionsMap && Array.isArray(rolePermissionsMap[role])
-      ? rolePermissionsMap[role]
-      : role === "Super Administrateur Somafrik" &&
-          Array.isArray(rolePermissionsMap?.["Super Administrateur OKAFRIK"])
-        ? rolePermissionsMap["Super Administrateur OKAFRIK"]
-        : null;
-
-  if (!configured || !configured.length) {
-    return enforceBusinessRolePermissions(role, basePermissions ?? []);
-  }
-
-  const merged = [...new Set([...(basePermissions ?? []), ...configured])];
-  return enforceBusinessRolePermissions(role, merged);
-}
-
-function enforceBusinessRolePermissions(role, permissions = []) {
-  let next = [...permissions];
-
-  if (role === "Admin Pays") {
-    next = next.filter((permission) => permission !== "Pays:CREATE" && permission !== "Pays:DELETE");
-  }
-
-  if (role !== "Admin School") {
-    return next;
-  }
-
-  const forbiddenFeatures = ["Établissements", "Abonnements"];
-  const forbiddenKeywords = ["abonnement", "etablissement", "établissement", "inscription", "tarif"];
-  return next.filter((permission) => {
-    if (String(permission).startsWith("Paramètres Établissement:")) {
-      return true;
-    }
-    if (String(permission).startsWith("Frais & tarifs:")) {
-      return true;
-    }
-
-    const normalizedPermission = normalizeBusinessPermission(permission);
-    if (normalizedPermission.startsWith("frais & tarifs")) return true;
-    return (
-      !forbiddenFeatures.some((feature) => String(permission).startsWith(feature)) &&
-      !forbiddenKeywords.some((keyword) => normalizedPermission.includes(keyword))
-    );
-  });
-}
-
-function normalizeBusinessPermission(permission) {
-  return String(permission ?? "")
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase();
+function getPrincipalGuardianStudentIds(response) {
+  const user = response.user ?? {};
+  const fromChildren = (user.children ?? [])
+    .flatMap((student) => [student.id, student.publicId, student.matricule])
+    .map((value) => String(value ?? "").trim())
+    .filter(Boolean);
+  const fromRelations = Array.isArray(user.guardianStudentIds) ? user.guardianStudentIds.map(String) : [];
+  return [...new Set([...fromChildren, ...fromRelations])];
 }
 
 function getPrincipalStudentIds(response) {
   const user = response.user ?? {};
-  const role = user.role ?? roleLabelFromMobileRole(response.role);
+  const sessionLabel = roleLabelFromMobileRole(response.role);
+  const role = sessionLabel === "Parent" || sessionLabel === "Élève / Étudiant"
+    ? sessionLabel
+    : user.role ?? sessionLabel;
 
   if (role === "Parent") {
     return (user.children ?? [])
@@ -3839,6 +6120,31 @@ async function hydrateParentPrincipal(principal) {
   };
 }
 
+async function lookupSchoolForEffectiveScope(code) {
+  const { matchesSchoolLookup } = require("./lib/schoolCodeV2");
+  const requested = String(code ?? "").trim().toUpperCase();
+  if (!requested) return null;
+
+  if (typeof repository.getSchoolsRepository === "function") {
+    const schoolsRepo = repository.getSchoolsRepository();
+    if (schoolsRepo && typeof schoolsRepo.getByCode === "function") {
+      const mapped = await schoolsRepo.getByCode(requested);
+      if (mapped) return mapped;
+    }
+  }
+
+  if (typeof repository.listEstablishments === "function") {
+    const list = await repository.listEstablishments();
+    const found = (list ?? []).find((row) => matchesSchoolLookup(row, requested));
+    if (found) return found;
+  }
+
+  if (typeof repository.getSchoolByCode === "function") {
+    return repository.getSchoolByCode(requested);
+  }
+  return null;
+}
+
 function rejectJwtInQueryString(req, res, next) {
   const query = req.query ?? {};
   if (query.token != null || query.access_token != null) {
@@ -3871,6 +6177,17 @@ function requireAuth(req, res, next) {
     }
 
     req.principal = await hydrateParentPrincipal(tokenService.verify(token, "access"));
+
+    const sessionId = String(req.principal?.sessionId ?? "").trim();
+    if (sessionId && typeof repository.findActiveAccessSession === "function") {
+      const activeSession = await repository.findActiveAccessSession(sessionId);
+      if (!activeSession) {
+        throw new BusinessError(401, "Session révoquée.");
+      }
+    }
+
+    const { applyEffectiveSchoolScope } = require("./lib/principalSchoolScope");
+    await applyEffectiveSchoolScope(req, lookupSchoolForEffectiveScope);
 
     const passwordChangeExemptPaths = new Set([
       "/api/auth/change-password",
@@ -3919,12 +6236,29 @@ async function principalMustChangePassword(principal = {}) {
 }
 
 function requirePermission(routeKey) {
-  return (req, _res, next) => {
-    if (!rbacService.canAccess(req.principal, routeKey)) {
-      return next(new BusinessError(403, "Permission insuffisante pour cette fonctionnalité."));
+  return async (req, _res, next) => {
+    try {
+      if (req.principal) {
+        if (isFinanceLiveRbacRouteKey(routeKey) && typeof repository.resolveFinanceLivePermissions === "function") {
+          const live = await repository.resolveFinanceLivePermissions(req.principal);
+          req.principal = {
+            ...req.principal,
+            permissions: Array.isArray(live?.permissions) ? live.permissions : [],
+          };
+        } else if (typeof repository.resolveEffectivePermissions === "function") {
+          const live = await repository.resolveEffectivePermissions(req.principal);
+          if (Array.isArray(live?.permissions)) {
+            req.principal = { ...req.principal, permissions: live.permissions };
+          }
+        }
+      }
+      if (!rbacService.canAccess(req.principal, routeKey)) {
+        return next(denyPermission());
+      }
+      next();
+    } catch (error) {
+      next(error);
     }
-
-    next();
   };
 }
 
@@ -4199,6 +6533,7 @@ app.use((error, _req, res, _next) => {
     return res.status(error.statusCode).json({
       message: error.message,
       ...(error.code ? { code: error.code } : {}),
+      ...(error.details ? { details: error.details } : {}),
     });
   }
 
@@ -4231,6 +6566,9 @@ initRepository()
         : sanitizeDbErrorMessage(error);
     console.error("Impossible d'initialiser le stockage Somafrik");
     console.error(safeMessage);
+    if (error?.domainCode) {
+      console.error(`Code domaine: ${error.domainCode}`);
+    }
     process.exit(1);
   });
 
@@ -4245,12 +6583,16 @@ async function initRepository() {
   auditService = new AuditService(repository);
   idempotencyService = new IdempotencyService(repository);
   app.locals.idempotencyService = idempotencyService;
+  startCommunicationsNotificationsWorker(repository);
+  startExpoPushReceiptsWorker(repository);
 }
 
 function warnIfUnsafeConfiguration() {
   assertDatabaseConfiguration();
   assertProductionSecrets();
   assertProductionSecurityConfiguration();
+  const { assertLoginLockoutProductionGuards } = require("./lib/loginLockout");
+  assertLoginLockoutProductionGuards();
   assertProductionCors();
   warnIfUnsafeDevelopmentSecrets();
 }

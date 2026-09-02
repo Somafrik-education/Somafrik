@@ -53,6 +53,9 @@ export default defineConfig(({ mode }) => {
     resolve: {
       alias: {
         "@": fileURLToPath(new URL("./src", import.meta.url)),
+        "@somafrik/help-catalog": fileURLToPath(
+          new URL("../packages/help-catalog/src/index.js", import.meta.url),
+        ),
       },
     },
     server: {
@@ -70,6 +73,12 @@ export default defineConfig(({ mode }) => {
       rollupOptions: {
         output: {
           manualChunks(id) {
+            // Uniquement le package catalogue. Ne pas y coller web/src/help :
+            // HelpHost importe AuthContext/cn, et un chunk partagé ferait
+            // télécharger le catalogue depuis la vitrine et /connexion.
+            if (id.includes("packages/help-catalog")) {
+              return "help-catalog";
+            }
             if (!id.includes("node_modules")) return;
 
             if (id.includes("react-router")) return "router";

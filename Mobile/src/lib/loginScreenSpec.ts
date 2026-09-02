@@ -5,9 +5,9 @@
 export const ROLE_SELECTION_COPY = {
   eyebrow: "Connexion établissement",
   title: "Entrez le code de votre école",
-  description:
-    "Utilisez le code fourni par l'administration pour ouvrir les espaces élève, parent, enseignant et direction.",
+  description: "Utilisez le code fourni par votre établissement pour accéder à votre espace.",
   codeLabel: "Code établissement",
+  placeholderExample: "CD-IN-26-001",
   verifyButton: "Vérifier le code",
   openLoginButton: "Ouvrir la connexion",
   successMessage: "Établissement trouvé. Vous pouvez continuer.",
@@ -17,12 +17,17 @@ export const ROLE_SELECTION_COPY = {
 
 export const LOGIN_SCREEN_COPY = {
   identifierHint: "Saisissez le téléphone, l'email ou l'identifiant enseignant lié à votre compte.",
-  identifierPlaceholder: "Téléphone, email ou identifiant",
+  identifierLabel: "Identifiant",
+  identifierPlaceholder: "Ex. +243 8xx xxx xxx",
   roleLabel: "Rôle détecté",
   rolePending: "En attente",
   loginButton: "Se connecter",
-  pinPlaceholder: "PIN",
-  passwordPlaceholder: "Mot de passe",
+  pinLabel: "PIN",
+  pinPlaceholder: "Ex. 1234",
+  passwordLabel: "Mot de passe",
+  passwordPlaceholder: "Ex. ••••••",
+  newPasswordLabel: "Nouveau mot de passe",
+  confirmPasswordLabel: "Confirmation",
   emptyFieldsError: "Veuillez saisir votre identifiant et votre code PIN.",
   accountNotFoundError: "Identifiant invalide.",
   loginFailedTitle: "Connexion impossible",
@@ -123,6 +128,7 @@ export const LOGIN_TEST_IDS = {
 export const HOME_TEST_IDS = {
   parentDashboard: "home-parent-dashboard",
   teacherDashboard: "home-teacher-dashboard",
+  /** Exposé uniquement si session.role === "school_admin". Superadmin / Admin Pays : school-selector. */
   adminDashboard: "home-admin-dashboard",
 } as const;
 
@@ -132,9 +138,15 @@ export const MENU_TEST_IDS = {
 
 export const TAB_TEST_IDS = {
   accueil: "tab-accueil",
-  menu: "tab-menu",
   classes: "tab-classes",
+  students: "tab-eleves",
+  attendance: "tab-presences",
   teachers: "tab-enseignants",
+  frais: "tab-frais",
+  comptes: "tab-comptes",
+  schools: "tab-ecoles",
+  subscriptions: "tab-offres",
+  notifications: "tab-notifs",
   tabBar: "mobile-tab-bar",
 } as const;
 

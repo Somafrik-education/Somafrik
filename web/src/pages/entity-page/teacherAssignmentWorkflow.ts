@@ -116,8 +116,8 @@ export function buildTeacherAssignmentDeleteConfirmCopy(assignment: EntityRow): 
     title: "Retirer cette affectation ?",
     description:
       className && subject
-        ? `Retirer la matière « ${subject} » pour la classe ${className} ?`
-        : "Retirer cette affectation enseignant ↔ classe ↔ matière ?",
+        ? `Retirer le cours « ${subject} » pour la classe ${className} ?`
+        : "Retirer cette affectation enseignant ↔ classe ↔ cours ?",
     confirmLabel: "Retirer",
     tone: "danger",
   };

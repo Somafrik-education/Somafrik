@@ -53,6 +53,23 @@ export function getMonthGridDays(anchor: Date): Date[] {
   return eachDayOfInterval({ start, end });
 }
 
+/** Date civile locale YYYY-MM-DD — contrat GET /course-schedules?from=&to=. */
+export function toCivilDate(date: Date): string {
+  const pad = (value: number) => String(value).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+
+/** Plage civile inclusive de la vue calendrier, sans expansion de récurrence. */
+export function visibleCivilRange(
+  view: PlanningCalendarView,
+  anchor: Date,
+): { from: string; to: string } {
+  const days = view === "month" ? getMonthGridDays(anchor) : getViewDays(view, anchor);
+  const start = days[0] ?? startOfDay(anchor);
+  const end = days[days.length - 1] ?? start;
+  return { from: toCivilDate(start), to: toCivilDate(end) };
+}
+
 export function formatRangeLabel(view: PlanningCalendarView, date: Date): string {
   if (view === "month") {
     return format(date, "MMMM yyyy", { locale: fr });

@@ -20,6 +20,8 @@ export interface TableProps<T> {
   sortable?: boolean;
   /** Active la pagination client avec la taille de page indiquée. */
   pageSize?: number;
+  /** Cartes empilées sous `md` (listes Finance / petits viewports). */
+  stackOnMobile?: boolean;
 }
 
 function alignClass(align?: "left" | "right" | "center") {
@@ -51,6 +53,7 @@ export function Table<T>({
   onRowClick,
   sortable = false,
   pageSize,
+  stackOnMobile = false,
 }: TableProps<T>) {
   const [sortKey, setSortKey] = useState<string | null>(null);
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
@@ -85,72 +88,115 @@ export function Table<T>({
     setPage(0);
   }
 
-  return (
-    <div className="space-y-3">
-      <div className="overflow-x-auto">
-        <table className="w-full border-collapse text-sm">
-          <thead>
-            <tr className="border-b border-line text-xs uppercase tracking-wide text-muted">
-              {columns.map((col) => {
-                const canSort = sortable && col.sortable !== false;
-                const active = sortKey === col.key;
-                return (
-                  <th
-                    key={col.key}
-                    scope="col"
-                    onClick={canSort ? () => toggleSort(col) : undefined}
-                    aria-sort={
-                      canSort && active ? (sortDir === "asc" ? "ascending" : "descending") : undefined
-                    }
-                    className={`px-4 py-3 font-semibold ${alignClass(col.align)} ${
-                      canSort ? "cursor-pointer select-none hover:text-ink" : ""
-                    } ${col.className ?? ""}`}
-                  >
-                    <span className="inline-flex items-center gap-1">
-                      {col.header}
-                      {canSort ? (
-                        <span className="text-[10px] text-muted" aria-hidden>
-                          {active ? (sortDir === "asc" ? "▲" : "▼") : "↕"}
-                        </span>
-                      ) : null}
+  const table = (
+    <table className="w-full border-collapse text-sm">
+      <thead>
+        <tr className="border-b border-line text-xs uppercase tracking-wide text-muted">
+          {columns.map((col) => {
+            const canSort = sortable && col.sortable !== false;
+            const active = sortKey === col.key;
+            return (
+              <th
+                key={col.key}
+                scope="col"
+                onClick={canSort ? () => toggleSort(col) : undefined}
+                aria-sort={
+                  canSort && active ? (sortDir === "asc" ? "ascending" : "descending") : undefined
+                }
+                className={`px-4 py-3 font-semibold ${alignClass(col.align)} ${
+                  canSort ? "cursor-pointer select-none hover:text-ink" : ""
+                } ${col.className ?? ""}`}
+              >
+                <span className="inline-flex items-center gap-1">
+                  {col.header}
+                  {canSort ? (
+                    <span className="text-[10px] text-muted" aria-hidden>
+                      {active ? (sortDir === "asc" ? "▲" : "▼") : "↕"}
                     </span>
-                  </th>
-                );
-              })}
-            </tr>
-          </thead>
-          <tbody>
-            {pagedRows.length === 0 ? (
-              <tr>
-                <td colSpan={columns.length} className="px-4 py-10 text-center text-muted">
-                  {emptyLabel}
-                </td>
-              </tr>
-            ) : (
-              pagedRows.map((row, index) => (
-                <tr
-                  key={rowKey(row, index)}
-                  onClick={onRowClick ? () => onRowClick(row) : undefined}
-                  className={`border-b border-line/70 last:border-0 ${
-                    onRowClick ? "cursor-pointer hover:bg-brand-50/40" : ""
-                  }`}
+                  ) : null}
+                </span>
+              </th>
+            );
+          })}
+        </tr>
+      </thead>
+      <tbody>
+        {pagedRows.length === 0 ? (
+          <tr>
+            <td colSpan={columns.length} className="px-4 py-10 text-center text-muted">
+              {emptyLabel}
+            </td>
+          </tr>
+        ) : (
+          pagedRows.map((row, index) => (
+            <tr
+              key={rowKey(row, index)}
+              onClick={onRowClick ? () => onRowClick(row) : undefined}
+              className={`border-b border-line/70 last:border-0 ${
+                onRowClick ? "cursor-pointer hover:bg-brand-50/40" : ""
+              }`}
+            >
+              {columns.map((col) => (
+                <td
+                  key={col.key}
+                  className={`px-4 py-3 text-ink ${alignClass(col.align)} ${col.className ?? ""}`}
                 >
-                  {columns.map((col) => (
-                    <td
-                      key={col.key}
-                      className={`px-4 py-3 text-ink ${alignClass(col.align)} ${col.className ?? ""}`}
-                    >
+                  {col.render
+                    ? col.render(row)
+                    : (((row as Record<string, unknown>)[col.key] as ReactNode) ?? "—")}
+                </td>
+              ))}
+            </tr>
+          ))
+        )}
+      </tbody>
+    </table>
+  );
+
+  const cards =
+    stackOnMobile && pagedRows.length ? (
+      <div className="space-y-3 md:hidden">
+        {pagedRows.map((row, index) => (
+          <article
+            key={rowKey(row, index)}
+            className={`rounded-xl border border-line bg-white p-4 ${
+              onRowClick ? "cursor-pointer hover:bg-brand-50/40" : ""
+            }`}
+            onClick={onRowClick ? () => onRowClick(row) : undefined}
+          >
+            <dl className="space-y-2 text-sm">
+              {columns
+                .filter((col) => col.key !== "actions")
+                .map((col) => (
+                  <div key={col.key} className="flex items-start justify-between gap-3">
+                    <dt className="text-xs font-semibold uppercase tracking-wide text-muted">
+                      {col.header}
+                    </dt>
+                    <dd className={`min-w-0 text-right font-semibold text-ink ${col.className ?? ""}`}>
                       {col.render
                         ? col.render(row)
                         : (((row as Record<string, unknown>)[col.key] as ReactNode) ?? "—")}
-                    </td>
-                  ))}
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
+                    </dd>
+                  </div>
+                ))}
+            </dl>
+            {columns.some((col) => col.key === "actions") ? (
+              <div className="mt-3 border-t border-line/70 pt-3">
+                {columns.find((col) => col.key === "actions")?.render?.(row)}
+              </div>
+            ) : null}
+          </article>
+        ))}
       </div>
+    ) : null;
+
+  return (
+    <div className="space-y-3">
+      {cards}
+      <div className={stackOnMobile ? "hidden overflow-x-auto md:block" : "overflow-x-auto"}>{table}</div>
+      {stackOnMobile && pagedRows.length === 0 ? (
+        <p className="px-4 py-10 text-center text-sm text-muted md:hidden">{emptyLabel}</p>
+      ) : null}
 
       {pageSize && sortedRows.length > pageSize ? (
         <div className="no-print flex items-center justify-between px-1 text-sm text-muted">

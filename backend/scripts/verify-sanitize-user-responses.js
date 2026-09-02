@@ -29,7 +29,7 @@ function assertNoSensitiveFields(payload, label, options = {}) {
   );
 }
 
-function runServiceLoginTests() {
+async function runServiceLoginTests() {
   const data = require("../data");
   const { BackOfficeAccessService } = require("../services/backOfficeAccessService");
   const { AuthService } = require("../services/authService");
@@ -61,12 +61,11 @@ function runServiceLoginTests() {
     notifications: data.platformNotifications ?? [],
   });
 
-  const login = backOffice.login({
+  const login = await backOffice.login({
     identifier: "superadmin@somafrik.app",
     password: "1234",
   });
   assertNoSensitiveFields(login.user, "BackOfficeAccessService.login.user");
-  assertNoSensitiveFields(login.users, "BackOfficeAccessService.login.users");
   assert.ok(login.user?.role, "role présent après sanitization");
 
   const auth = new AuthService({
@@ -80,7 +79,7 @@ function runServiceLoginTests() {
     countries: data.countries ?? [],
     subscriptions: data.subscriptions ?? [],
   });
-  const mobile = auth.login({
+  const mobile = await auth.login({
     role: "school_admin",
     schoolCode: school.code,
     identifier: "admin",
@@ -98,6 +97,7 @@ function runUnitTests() {
     role: "Admin School",
     password: "plain",
     temporaryPassword: "tmp-1234",
+    temporarySecret: "Tmp-should-strip",
     passwordHash: "scrypt$salt$hash",
     pin: "1234",
     pinHash: "scrypt$salt$pin",
@@ -202,7 +202,6 @@ async function runHttpTestsIfAvailable() {
   assert.ok(login?.accessToken, "login accessToken attendu");
   assert.ok(login.refreshToken, "refreshToken top-level attendu");
   assertNoSensitiveFields(login.user, "HTTP login.user");
-  assertNoSensitiveFields(login.users, "HTTP login.users");
   // refreshToken / accessToken top-level autorisés (contrat auth), jamais dans user.
   assertNoSensitiveFields(login, "HTTP login payload", {
     ignoreTopLevelKeys: ["refreshToken", "accessToken"],
@@ -249,7 +248,7 @@ async function runHttpTestsIfAvailable() {
 
 async function main() {
   runUnitTests();
-  runServiceLoginTests();
+  await runServiceLoginTests();
   await runHttpTestsIfAvailable();
   console.log("verify-sanitize-user-responses: SUCCESS");
 }

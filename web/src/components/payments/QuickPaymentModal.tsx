@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState, type FormEvent } from "react";
-import { Zap } from "lucide-react";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { Plus, Trash2, Zap } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
 import { useData } from "../../context/DataContext";
 import { useActiveSchool } from "../../context/ActiveSchoolContext";
@@ -7,35 +7,36 @@ import { Modal } from "../ui/Modal";
 import { Field, Input, Select } from "../ui/Field";
 import { Button } from "../ui/Button";
 import { useToast } from "../ui/Toast";
-import { useConfirm } from "../ui/ConfirmDialog";
-import { getCurrentSchool, scopedPayments, scopedStudents } from "../../lib/establishment";
-import { scopedStudentFees } from "../../lib/fees";
-import { formatMetric } from "../../lib/format";
+import { getCurrentSchool } from "../../lib/establishment";
+import { formatFinanceAmount, resolveFinanceCurrency } from "../../lib/financeCurrency";
 import {
-  buildQuickPaymentRecord,
-  computeFeeBalance,
+  collectStudentPaymentClasses,
+  createPaymentLine,
   defaultPaymentDate,
-  detectDuplicatePayment,
-  FEE_TYPES,
-  OVERPAYMENT_ACTIONS,
-  PAYMENT_METHODS,
   paymentDateFromInput,
   paymentDateToInput,
-  QUICK_AMOUNT_SHORTCUTS,
-  resolveSchoolCurrency,
-  resolveSchoolYear,
+  parseLineAmount,
   searchStudentsForPayment,
-  validateQuickPaymentInput,
-  type FeeType,
-  type PaymentMethod,
+  sumPaymentLines,
+  validateMultiItemPaymentInput,
   type PaymentRecord,
+  type QuickPaymentLine,
   type StudentSearchResult,
 } from "../../lib/quickPayment";
+import { buildPaymentReceiptPrintPlan } from "../../pages/entity-page/paymentWorkflow";
+import { financeApi } from "../../lib/financeApi";
+import { createFinanceIdempotencyKey } from "../../lib/financeIdempotency";
 import {
-  buildPaymentCreatePersistPlan,
-  buildPaymentReceiptPrintPlan,
-} from "../../pages/entity-page/paymentWorkflow";
+  UNALLOCATED_FEE_TYPE,
+  UNALLOCATED_TARGET,
+  buildFinancePaymentWritePayload,
+  collectOpenObligationsFromProjection,
+  draftLineCash,
+  presentPaymentCashFromProjection,
+  type FinanceObligationProjection,
+} from "../../lib/financePaymentWrite";
 import { PaymentReceipt } from "./PaymentReceipt";
+import { OpenObligationCards } from "./OpenObligationCards";
 
 interface QuickPaymentModalProps {
   open: boolean;
@@ -45,35 +46,33 @@ interface QuickPaymentModalProps {
 
 export function QuickPaymentModal({ open, onClose, onSaved }: QuickPaymentModalProps) {
   const { session } = useAuth();
-  const { state, update } = useData();
+  const { state, update, refresh } = useData();
   const { activeSchoolCode: schoolCode, scopedUser } = useActiveSchool();
   const { showToast } = useToast();
-  const { confirm } = useConfirm();
   const scopeUser = scopedUser ?? session?.user ?? null;
 
   const [search, setSearch] = useState("");
   const [selectedStudent, setSelectedStudent] = useState<StudentSearchResult | null>(null);
-  const [feeType, setFeeType] = useState<FeeType>("Minerval / scolarité");
-  const [amount, setAmount] = useState("");
-  const [method, setMethod] = useState<PaymentMethod>("Espèces");
+  const [classId, setClassId] = useState("");
+  const [lines, setLines] = useState<QuickPaymentLine[]>([createPaymentLine(UNALLOCATED_TARGET)]);
+  const [method, setMethod] = useState("");
   const [dateInput, setDateInput] = useState(paymentDateToInput(defaultPaymentDate()));
   const [comment, setComment] = useState("");
-  const [overpaymentAction, setOverpaymentAction] = useState<string>(OVERPAYMENT_ACTIONS[0]);
   const [busy, setBusy] = useState(false);
+  const busyRef = useRef(false);
+  const paymentIntentionRef = useRef(createFinanceIdempotencyKey());
   const [savedPayment, setSavedPayment] = useState<PaymentRecord | null>(null);
   const [showReceipt, setShowReceipt] = useState(false);
+  const [optionStudents, setOptionStudents] = useState<PaymentRecord[]>([]);
+  const [catalogMethods, setCatalogMethods] = useState<string[]>([]);
+  const [catalogCurrency, setCatalogCurrency] = useState("");
+  const [catalogError, setCatalogError] = useState("");
+  const [catalogLoading, setCatalogLoading] = useState(false);
+  const [studentFees, setStudentFees] = useState<FinanceObligationProjection[]>([]);
 
   const students = useMemo(
-    () => scopedStudents(scopeUser, state) as PaymentRecord[],
-    [scopeUser, state],
-  );
-  const payments = useMemo(
-    () => scopedPayments(scopeUser, state) as PaymentRecord[],
-    [scopeUser, state],
-  );
-  const studentFees = useMemo(
-    () => scopedStudentFees(scopeUser, state),
-    [scopeUser, state],
+    () => (optionStudents.length ? optionStudents : []),
+    [optionStudents],
   );
   const school = useMemo(
     () =>
@@ -95,128 +94,190 @@ export function QuickPaymentModal({ open, onClose, onSaved }: QuickPaymentModalP
     [search, students, state.schools, schoolCode],
   );
 
-  const balance = useMemo(() => {
-    if (!selectedStudent) return null;
-    return computeFeeBalance(
-      selectedStudent.id,
-      feeType,
-      payments,
-      resolveSchoolCurrency(school),
-      studentFees,
-    );
-  }, [selectedStudent, feeType, payments, school, studentFees]);
-
-  const parsedAmount = Number(amount.replace(/\s/g, "").replace(",", "."));
-  const overpayment =
-    balance && Number.isFinite(parsedAmount) ? Math.max(0, parsedAmount - balance.remaining) : 0;
+  const classOptions = useMemo(
+    () => (selectedStudent ? collectStudentPaymentClasses(selectedStudent.id, students) : []),
+    [selectedStudent, students],
+  );
+  const openObligations = useMemo(
+    () => (selectedStudent ? collectOpenObligationsFromProjection(selectedStudent.id, studentFees) : []),
+    [selectedStudent, studentFees],
+  );
+  const obligationSelectOptions = useMemo(
+    () => [
+      { value: UNALLOCATED_TARGET, label: UNALLOCATED_FEE_TYPE },
+      ...openObligations.map((row) => ({
+        value: row.obligationId,
+        label: `${row.label}${row.periodLabel ? ` · ${row.periodLabel}` : ""} · reste ${formatFinanceAmount(row.balance, row.currency || catalogCurrency)}`,
+      })),
+    ],
+    [openObligations, catalogCurrency],
+  );
+  const draftCash = draftLineCash(lines);
+  const total = sumPaymentLines(lines);
+  const currency = resolveFinanceCurrency(catalogCurrency, school?.currency);
 
   useEffect(() => {
     if (!open) return;
     setSearch("");
     setSelectedStudent(null);
-    setFeeType("Minerval / scolarité");
-    setAmount("");
-    setMethod("Espèces");
+    setClassId("");
+    setLines([createPaymentLine(UNALLOCATED_TARGET)]);
+    setMethod("");
     setDateInput(paymentDateToInput(defaultPaymentDate()));
     setComment("");
-    setOverpaymentAction(OVERPAYMENT_ACTIONS[0]);
     setSavedPayment(null);
     setShowReceipt(false);
-  }, [open]);
+    setCatalogError("");
+    setCatalogLoading(true);
+    void (async () => {
+      try {
+        const [options, catalog, fees] = await Promise.all([
+          financeApi.listPaymentStudentOptions(),
+          financeApi.getFinanceCatalog(),
+          financeApi.listStudentFees(),
+        ]);
+        const rows = Array.isArray(options) ? options : [];
+        const flattened: PaymentRecord[] = [];
+        for (const option of rows) {
+          const classes = option.classes?.length
+            ? option.classes
+            : option.classId
+              ? [{ classId: option.classId, classCode: option.classCode, className: option.className }]
+              : [];
+          for (const klass of classes) {
+            flattened.push({
+              id: option.studentId,
+              studentId: option.studentId,
+              firstName: option.firstName,
+              lastName: option.lastName,
+              name: `${option.firstName} ${option.lastName}`.trim(),
+              matricule: option.studentCode,
+              studentCode: option.studentCode,
+              classId: klass.classId,
+              classCode: klass.classCode,
+              className: klass.className,
+              schoolCode: schoolCode && schoolCode !== "*" ? schoolCode : option.studentCode.slice(0, 11),
+            });
+          }
+        }
+        setOptionStudents(flattened);
+        setStudentFees(Array.isArray(fees) ? fees : []);
+        const activeMethods = (catalog.paymentMethods ?? []).filter((row) => row.active).map((row) => row.label);
+        if (!activeMethods.length) {
+          setCatalogMethods([]);
+          setMethod("");
+          setCatalogError("Aucun moyen de paiement actif pour cet établissement.");
+          if (catalog.currency) setCatalogCurrency(catalog.currency);
+          return;
+        }
+        setCatalogMethods(activeMethods);
+        setMethod(activeMethods[0]);
+        if (catalog.currency) setCatalogCurrency(catalog.currency);
+      } catch (cause) {
+        setCatalogError(cause instanceof Error ? cause.message : "Catalogue financier indisponible.");
+        setOptionStudents([]);
+        setCatalogMethods([]);
+        setCatalogCurrency("");
+        setStudentFees([]);
+      } finally {
+        setCatalogLoading(false);
+      }
+    })();
+  }, [open, schoolCode]);
 
   function selectStudent(student: StudentSearchResult) {
     setSelectedStudent(student);
     setSearch(student.name);
+    const options = collectStudentPaymentClasses(student.id, students);
+    setClassId(options.length === 1 ? options[0].classId : "");
+    const open = collectOpenObligationsFromProjection(student.id, studentFees);
+    setLines([createPaymentLine(open.length === 1 ? open[0].obligationId : UNALLOCATED_TARGET)]);
   }
 
-  async function persistPayment(payment: PaymentRecord, printAfter = false) {
-    const plan = buildPaymentCreatePersistPlan(
-      { scopeUser, state, showToast },
-      { payment, student: selectedStudent },
-    );
-    if (!plan.ok) return;
+  function updateLine(id: string, patch: Partial<QuickPaymentLine>) {
+    setLines((current) => current.map((line) => (line.id === id ? { ...line, ...patch } : line)));
+  }
 
+  function removeLine(id: string) {
+    setLines((current) => (current.length <= 1 ? current : current.filter((line) => line.id !== id)));
+  }
+
+  async function persistPayment(printAfter = false) {
+    if (!selectedStudent || busyRef.current) return;
+    busyRef.current = true;
     setBusy(true);
     try {
-      await update(plan.patch);
-      setSavedPayment(plan.payment);
-      onSaved?.(plan.payment);
-      showToast(plan.successMessage, "success");
+      const payload = buildFinancePaymentWritePayload({
+        studentId: selectedStudent.id,
+        classId,
+        paymentMethod: method,
+        paidAt: paymentDateFromInput(dateInput),
+        comment,
+        lines: lines.map((line) => {
+          const obligation = openObligations.find((row) => row.obligationId === line.obligationId);
+          return {
+            obligationId: line.obligationId,
+            amount: parseLineAmount(line.amount),
+            feeType: obligation?.feeType,
+            label: obligation?.label,
+          };
+        }),
+      });
+      const created = await financeApi.createPayment(payload, {
+        idempotencyKey: paymentIntentionRef.current,
+      });
+      paymentIntentionRef.current = createFinanceIdempotencyKey();
+      await refresh();
+      setSavedPayment(created as unknown as PaymentRecord);
+      onSaved?.(created as unknown as PaymentRecord);
+      showToast("Paiement enregistré", "success");
       if (printAfter) {
         setShowReceipt(true);
         window.setTimeout(() => window.print(), 300);
       } else {
         onClose();
       }
-    } catch {
-      showToast("Échec de l'enregistrement du paiement", "error");
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "Échec de l'enregistrement du paiement", "error");
     } finally {
+      busyRef.current = false;
       setBusy(false);
     }
   }
 
   async function handleSubmit(event: FormEvent, printAfter = false) {
     event.preventDefault();
-    if (!selectedStudent) {
-      showToast("Veuillez sélectionner un élève", "error");
+    if (busyRef.current) return;
+    if (catalogError || !catalogMethods.length) {
+      showToast(catalogError || "Catalogue financier indisponible.", "error");
       return;
     }
-
-    const input = {
+    if (!catalogMethods.includes(method)) {
+      showToast("Moyen de paiement non autorisé pour cet établissement.", "error");
+      return;
+    }
+    const validationError = validateMultiItemPaymentInput({
       student: selectedStudent,
-      feeType,
-      amount: parsedAmount,
+      classId,
+      classOptions,
       method,
       date: paymentDateFromInput(dateInput),
-      comment,
-      overpaymentAction: overpayment > 0 ? overpaymentAction : undefined,
-      schoolYear: resolveSchoolYear(state, selectedStudent.schoolCode),
-    };
-
-    const validationError = validateQuickPaymentInput(input);
+      lines,
+    });
     if (validationError) {
       showToast(validationError, "error");
       return;
     }
-
-    const duplicate = detectDuplicatePayment(input, payments, scopeUser?.id ?? scopeUser?.identifier);
-    if (duplicate.duplicate) {
-      const proceed = await confirm({
-        title: "Doublon potentiel",
-        description:
-          "Un paiement similaire existe déjà pour cet élève (même montant, type de frais, date et mode). Confirmer l'enregistrement ?",
-        confirmLabel: "Enregistrer quand même",
-        tone: "danger",
-      });
-      if (!proceed) return;
-    }
-
-    if (overpayment > 0) {
-      const proceed = await confirm({
-        title: "Trop-perçu détecté",
-        description: `Le montant dépasse le solde dû de ${formatMetric(overpayment, balance?.currency)}. Action : ${overpaymentAction}. Confirmer l'enregistrement ?`,
-        confirmLabel: "Confirmer",
-      });
-      if (!proceed) return;
-    }
-
-    const payment = buildQuickPaymentRecord(input, {
-      payments,
-      studentFees,
-      school,
-      user: scopeUser,
-      schoolYear: input.schoolYear ?? resolveSchoolYear(state, selectedStudent.schoolCode),
-    });
-
-    await persistPayment(payment, printAfter);
+    await persistPayment(printAfter);
   }
 
   if (showReceipt && savedPayment) {
+    const cash = presentPaymentCashFromProjection(savedPayment as { amount?: number; allocatedAmount?: number; unallocatedAmount?: number });
     return (
       <Modal
         open={open}
         title="Reçu de paiement"
-        description="Paiement enregistré avec succès."
+        description={`Montant reçu ${formatFinanceAmount(cash.received, currency)} · imputé ${formatFinanceAmount(cash.allocated, currency)} · non imputé ${formatFinanceAmount(cash.unallocated, currency)}`}
         onClose={() => {
           setShowReceipt(false);
           onClose();
@@ -256,8 +317,8 @@ export function QuickPaymentModal({ open, onClose, onSaved }: QuickPaymentModalP
   return (
     <Modal
       open={open}
-      title="Saisie rapide paiement"
-      description="Enregistrez un paiement scolaire en quelques secondes."
+      title="Enregistrer un encaissement"
+      description="Choisissez l'élève, ses frais ouverts, puis le montant. L'affectation suit le serveur."
       onClose={onClose}
       size="lg"
       footer={
@@ -267,19 +328,32 @@ export function QuickPaymentModal({ open, onClose, onSaved }: QuickPaymentModalP
           </Button>
           <Button
             variant="secondary"
-            disabled={busy}
+            disabled={busy || catalogLoading || Boolean(catalogError) || !catalogMethods.length}
             onClick={(event) => void handleSubmit(event, true)}
           >
-            Enregistrer et imprimer
+            {busy ? "Enregistrement…" : "Enregistrer et imprimer"}
           </Button>
-          <Button disabled={busy} onClick={(event) => void handleSubmit(event, false)}>
-            Enregistrer
+          <Button
+            disabled={busy || catalogLoading || Boolean(catalogError) || !catalogMethods.length}
+            onClick={(event) => void handleSubmit(event, false)}
+          >
+            {busy ? "Enregistrement…" : "Enregistrer l'encaissement"}
           </Button>
         </div>
       }
     >
-      <form className="space-y-5" onSubmit={(event) => void handleSubmit(event, false)}>
-        <Field label="Rechercher élève" hint="Nom, matricule, téléphone parent ou code élève">
+      <form className="space-y-5" aria-busy={busy || catalogLoading} onSubmit={(event) => void handleSubmit(event, false)}>
+        {catalogLoading ? (
+          <p className="rounded-xl border border-line bg-slate-50 px-4 py-3 text-sm text-muted" role="status">
+            Chargement du catalogue financier…
+          </p>
+        ) : null}
+        {catalogError ? (
+          <p className="rounded-xl border border-danger/30 bg-danger/10 px-4 py-3 text-sm text-danger" role="alert">
+            {catalogError}
+          </p>
+        ) : null}
+        <Field label="Élève" required>
           <Input
             value={search}
             onChange={(event) => {
@@ -288,10 +362,15 @@ export function QuickPaymentModal({ open, onClose, onSaved }: QuickPaymentModalP
                 setSelectedStudent(null);
               }
             }}
-            placeholder="Ex. Mukendi, ELE-0001, +243..."
+            placeholder="Nom, matricule ou code élève"
             autoFocus
+            aria-describedby="payment-student-help"
+            data-testid="payment-student-search"
           />
         </Field>
+        <p id="payment-student-help" className="text-xs text-muted">
+          Saisissez au moins 2 caractères pour retrouver un élève inscrit.
+        </p>
 
         {search.length >= 2 && !selectedStudent ? (
           <div className="max-h-44 overflow-y-auto rounded-xl border border-line bg-slate-50">
@@ -318,103 +397,137 @@ export function QuickPaymentModal({ open, onClose, onSaved }: QuickPaymentModalP
         {selectedStudent ? (
           <div className="rounded-xl border border-brand/20 bg-brand-50/40 p-4 text-sm">
             <p className="font-bold text-ink">{selectedStudent.name}</p>
-            <p className="mt-1 text-muted">
-              Classe : {selectedStudent.className || "—"} · Matricule : {selectedStudent.matricule}
-            </p>
-            <p className="text-muted">Établissement : {selectedStudent.schoolName}</p>
-            {balance ? (
-              <div className="mt-3 grid gap-2 sm:grid-cols-3">
-                <div className="rounded-lg bg-white px-3 py-2">
-                  <p className="text-xs text-muted">Montant dû</p>
-                  <p className="font-bold">{formatMetric(balance.amountDue, balance.currency)}</p>
-                </div>
-                <div className="rounded-lg bg-white px-3 py-2">
-                  <p className="text-xs text-muted">Déjà payé</p>
-                  <p className="font-bold">{formatMetric(balance.amountPaid, balance.currency)}</p>
-                </div>
-                <div className="rounded-lg bg-white px-3 py-2">
-                  <p className="text-xs text-muted">Solde restant</p>
-                  <p className="font-bold text-brand">{formatMetric(balance.remaining, balance.currency)}</p>
-                </div>
-              </div>
-            ) : null}
+            <p className="mt-1 text-muted">Matricule : {selectedStudent.matricule}</p>
+            <div className="mt-3">
+              <Field label="Classe" required>
+                <Select
+                  value={classId}
+                  onChange={(event) => setClassId(event.target.value)}
+                  options={
+                    classOptions.length
+                      ? classOptions.map((item) => ({ value: item.classId, label: item.className }))
+                      : [{ value: "", label: "Aucune inscription active" }]
+                  }
+                />
+              </Field>
+            </div>
           </div>
         ) : null}
 
-        <div className="grid gap-4 sm:grid-cols-2">
-          <Field label="Type de frais">
-            <Select
-              value={feeType}
-              onChange={(event) => setFeeType(event.target.value as FeeType)}
-              options={FEE_TYPES.map((value) => ({ value, label: value }))}
+        {selectedStudent ? (
+          <div className="space-y-2">
+            <p className="text-sm font-semibold text-ink">Frais encore dus</p>
+            <OpenObligationCards
+              currency={currency}
+              obligations={openObligations.map((row) => ({
+                obligationId: row.obligationId,
+                label: row.label,
+                periodLabel: row.periodLabel,
+                className: row.className,
+                balance: row.balance,
+                amountDue: row.amountDue,
+                amountPaid: row.amountPaid,
+                dueDate: row.dueDate,
+                status: row.status,
+                currency: row.currency || currency,
+              }))}
             />
-          </Field>
-          <Field label="Mode de paiement">
+          </div>
+        ) : null}
+
+        <div className="space-y-3">
+          <p className="text-sm font-semibold text-ink">Affectation de l'encaissement</p>
+          {lines.map((line, index) => (
+            <div
+              key={line.id}
+              className="grid gap-3 rounded-xl border border-line bg-slate-50 p-3 sm:grid-cols-[1fr_8rem_auto]"
+              data-testid={`payment-line-${index}`}
+            >
+              <Field label="Frais concerné" required>
+                <Select
+                  value={line.obligationId}
+                  onChange={(event) => updateLine(line.id, { obligationId: event.target.value })}
+                  options={obligationSelectOptions}
+                />
+              </Field>
+              <Field label="Montant à encaisser" required>
+                <Input
+                  type="number"
+                  min={1}
+                  step="0.01"
+                  value={line.amount}
+                  onChange={(event) => updateLine(line.id, { amount: event.target.value })}
+                  placeholder="0"
+                />
+              </Field>
+              <div className="flex items-end">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  disabled={lines.length <= 1}
+                  onClick={() => removeLine(line.id)}
+                  aria-label="Supprimer la ligne"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+          ))}
+          <Button
+            type="button"
+            variant="secondary"
+            data-testid="payment-add-line"
+            disabled={Boolean(catalogError)}
+            onClick={() =>
+              setLines((current) => [...current, createPaymentLine(UNALLOCATED_TARGET)])
+            }
+          >
+            <Plus className="mr-1 h-4 w-4" />
+            Ajouter une ligne de frais
+          </Button>
+        </div>
+
+        <div className="rounded-xl border border-line bg-white px-4 py-3">
+          <div className="grid gap-2 text-sm sm:grid-cols-3">
+            <div>
+              <p className="text-xs uppercase tracking-wide text-muted">Montant reçu</p>
+              <p className="font-black text-ink" data-testid="payment-received">
+                {formatFinanceAmount(draftCash.received, currency)}
+              </p>
+            </div>
+            <div>
+              <p className="text-xs uppercase tracking-wide text-muted">Montant imputé</p>
+              <p className="font-black text-ink" data-testid="payment-allocated">
+                {formatFinanceAmount(draftCash.allocated, currency)}
+              </p>
+            </div>
+            <div>
+              <p className="text-xs uppercase tracking-wide text-muted">Montant non imputé</p>
+              <p className="font-black text-brand" data-testid="payment-unallocated">
+                {formatFinanceAmount(draftCash.unallocated, currency)}
+              </p>
+            </div>
+          </div>
+          <p className="mt-3 text-right text-xs uppercase tracking-wide text-muted">Total</p>
+          <p className="text-right text-2xl font-black text-brand" data-testid="payment-total">
+            {formatFinanceAmount(total, currency)}
+          </p>
+        </div>
+
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field label="Mode de paiement" required>
             <Select
               value={method}
-              onChange={(event) => setMethod(event.target.value as PaymentMethod)}
-              options={PAYMENT_METHODS.map((value) => ({ value, label: value }))}
+              onChange={(event) => setMethod(event.target.value)}
+              options={catalogMethods.map((value) => ({ value, label: value }))}
             />
+          </Field>
+          <Field label="Date d'encaissement" required>
+            <Input type="date" value={dateInput} onChange={(event) => setDateInput(event.target.value)} />
           </Field>
         </div>
 
-        <Field label={`Montant payé (${resolveSchoolCurrency(school)})`}>
-          <Input
-            type="number"
-            min={1}
-            step={1}
-            value={amount}
-            onChange={(event) => setAmount(event.target.value)}
-            placeholder="Ex. 25000"
-          />
-          <div className="mt-2 flex flex-wrap gap-2">
-            {QUICK_AMOUNT_SHORTCUTS.map((shortcut) => (
-              <button
-                key={shortcut}
-                type="button"
-                className="rounded-lg border border-line bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:border-brand/40 hover:text-brand"
-                onClick={() => setAmount(String(shortcut))}
-              >
-                {formatMetric(shortcut)}
-              </button>
-            ))}
-          </div>
-        </Field>
-
-        {overpayment > 0 ? (
-          <Field label="Trop-perçu — action">
-            <Select
-              value={overpaymentAction}
-              onChange={(event) => setOverpaymentAction(event.target.value)}
-              options={OVERPAYMENT_ACTIONS.map((value) => ({ value, label: value }))}
-            />
-            <p className="mt-1 text-xs text-amber-700">
-              Trop-perçu : {formatMetric(overpayment, balance?.currency)}
-            </p>
-          </Field>
-        ) : null}
-
-        <div className="grid gap-4 sm:grid-cols-2">
-          <Field label="Date du paiement">
-            <Input
-              type="date"
-              value={dateInput}
-              onChange={(event) => setDateInput(event.target.value)}
-            />
-          </Field>
-          <Field label="Année scolaire">
-            <Input
-              readOnly
-              value={
-                selectedStudent
-                  ? resolveSchoolYear(state, selectedStudent.schoolCode)
-                  : resolveSchoolYear(state, schoolCode ?? "")
-              }
-            />
-          </Field>
-        </div>
-
-        <Field label="Commentaire (facultatif)">
+        <Field label="Commentaire">
           <textarea
             value={comment}
             onChange={(event) => setComment(event.target.value)}
@@ -426,7 +539,7 @@ export function QuickPaymentModal({ open, onClose, onSaved }: QuickPaymentModalP
 
         <p className="flex items-center gap-2 text-xs text-muted">
           <Zap className="h-3.5 w-3.5 text-brand" aria-hidden="true" />
-          Saisie tracée · référence unique · notification interne au parent
+          Un reçu est disponible après enregistrement. Les soldes affichés viennent du serveur.
         </p>
       </form>
     </Modal>

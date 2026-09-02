@@ -1,14 +1,9 @@
-import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import {
   Announcement,
   AcademicManagementConfig,
   CountryProfile,
   Course,
-  CourseScheduleSlot,
-  DEFAULT_CLASS_NAMES,
-  DEFAULT_LEVELS,
-  DEFAULT_SUBJECTS,
-  DEFAULT_TRACKS,
   NoteItem,
   PaymentItem,
   PaymentStatus,
@@ -22,19 +17,80 @@ import {
   TeacherAssignment,
   UserAccount,
 } from "../data/catalog";
-import { enrichSessionPermissions } from "../domain/security/permissions";
-import { removeSchoolClassFromState } from "../lib/classRules";
 import {
   ALL_SCHOOLS_CODE,
+  clearStoredSchoolCode,
   pickInitialSchoolCode,
   userRequiresSchoolSelection,
   writeStoredSchoolCode,
 } from "../lib/activeSchool";
+import { noteConnectivityFailure, noteConnectivitySuccess } from "../lib/connectivity";
+import { clearRequestSchoolScope, setRequestSchoolScope } from "../lib/requestSchoolScope";
 import { normalize } from "../lib/format";
+import { hasPlatformBackofficePrivilege } from "../domain/security/permissions";
 import { scopeBackOfficeForSession, scopedSchools, type PlatformNotification } from "../lib/scope";
-import { getAcademicConfig, getAssignments, getBackOfficeState, getClasses, getCourses, getCourseSchedules, getNotes, getPresences, getStudents, saveBackOfficeState, BackOfficeStatePayload } from "../services/api";
-import { SYNC_INTERVAL_MS } from "../config/env";
+import {
+  applyCreatedPlatformNotification,
+  applyReadPlatformNotification,
+  buildPlatformNotificationCreatePayload,
+  buildPlatformNotificationReadPatch,
+  isUnreadNotification,
+} from "../lib/platformNotificationSync";
+import { getAcademicConfig, getAssignments, getClasses, getCourses, getPlanningWeekly, getPlanningCourseOptions, getSchoolRooms, getCourseScheduleReplacements, getEvaluations, getNotes, getPayments, getStudentFees, getPresences, getReportCards, getStudents, getSubjects, createPlatformNotification, updatePlatformNotification, createClientsAnnouncement, updateClientsAnnouncement, sendClientsMessage, createClientsUser, updateClientsUser, BackOfficeStatePayload, type CanonicalReportCard, type CanonicalStudentFee } from "../services/api";
+import {
+  getCanonicalAnnouncements,
+  getCanonicalCountries,
+  getCanonicalMessages,
+  getCanonicalNotifications,
+  getCanonicalSchools,
+  getCanonicalSubscriptions,
+  getCanonicalTeachers,
+  getCanonicalUsers,
+  type CanonicalAnnouncement,
+  type CanonicalSchoolMessage,
+  type CanonicalTeacher,
+  type CanonicalUserAccount,
+} from "../services/domainHydrationApi";
+import {
+  buildPrincipalScopeKey,
+  buildResourceScopeKey,
+  classifyLoadFailure,
+  emptyResourceSnapshot,
+  scopeHydrationPlan,
+  snapshotFromFailure,
+  snapshotFromSuccess,
+  withScopedSnapshotData,
+  type ResourceSnapshot,
+} from "../lib/dataTruth";
+import { mergeConfirmedPresences } from "../lib/attendanceDraft";
+import { createIdempotencyKey } from "../lib/networkResilience";
+import {
+  gradesForEvaluation,
+  type CanonicalEvaluation,
+  type CanonicalGrade,
+} from "../lib/evaluationsV2";
+import {
+  type CanonicalReplacement,
+  type CanonicalSchoolRoom,
+  type CanonicalWeeklySlot,
+  type PlanningCourseOption,
+} from "../lib/planningV2";
 import { useAuth } from "./AuthContext";
+import { filterL1AssignmentsForTeacherSession, scopedStudentsForSession } from "../lib/establishment";
+import {
+  projectScopedStudentsForSession,
+  type StudentScopeProjection,
+} from "../lib/studentsScope";
+import { loadL1BackedSnapshot } from "../offline/l1/readModel";
+import {
+  classRowsForJoin,
+  projectL1Assignments,
+  projectL1Classes,
+  projectL1CourseSchedules,
+  projectL1SchoolCourses,
+  projectL1Students,
+} from "../offline/l1/uiProjection";
+import { listSchoolClassCourses, type SchoolClassCourseRecord } from "../services/schoolSettingsApi";
 
 export type AdminEntity =
   | "students"
@@ -60,8 +116,57 @@ type AdminDataContextValue = {
   countriesData: CountryProfile[];
   coursesData: Course[];
   assignmentsData: TeacherAssignment[];
-  courseSchedulesData: CourseScheduleSlot[];
+  courseSchedulesData: CanonicalWeeklySlot[];
   paymentsData: PaymentItem[];
+  paymentsSnapshot: ResourceSnapshot<PaymentItem>;
+  studentFeesData: CanonicalStudentFee[];
+  studentFeesSnapshot: ResourceSnapshot<CanonicalStudentFee>;
+  usersSnapshot: ResourceSnapshot<CanonicalUserAccount>;
+  teachersSnapshot: ResourceSnapshot<CanonicalTeacher>;
+  studentsSnapshot: ResourceSnapshot<Student>;
+  studentsProjection: StudentScopeProjection;
+  studentsScopeError: string | null;
+  establishmentStudents: Student[];
+  classesSnapshot: ResourceSnapshot<SchoolClass>;
+  assignmentsSnapshot: ResourceSnapshot<TeacherAssignment>;
+  schoolCoursesSnapshot: ResourceSnapshot<SchoolClassCourseRecord>;
+  presencesSnapshot: ResourceSnapshot<PresenceItem>;
+  announcementsSnapshot: ResourceSnapshot<CanonicalAnnouncement>;
+  messagesSnapshot: ResourceSnapshot<CanonicalSchoolMessage>;
+  schoolsSnapshot: ResourceSnapshot<SchoolProfile>;
+  courseSchedulesSnapshot: ResourceSnapshot<CanonicalWeeklySlot>;
+  planningCourseOptionsSnapshot: ResourceSnapshot<PlanningCourseOption>;
+  roomsSnapshot: ResourceSnapshot<CanonicalSchoolRoom>;
+  replacementsSnapshot: ResourceSnapshot<CanonicalReplacement>;
+  reportCardsSnapshot: ResourceSnapshot<CanonicalReportCard>;
+  loadPayments: () => Promise<void>;
+  loadStudentFees: () => Promise<void>;
+  loadUsers: () => Promise<void>;
+  loadTeachers: () => Promise<void>;
+  loadStudents: () => Promise<void>;
+  loadClasses: () => Promise<void>;
+  loadAssignments: () => Promise<void>;
+  loadSchoolCourses: () => Promise<void>;
+  loadAnnouncements: () => Promise<void>;
+  loadMessages: () => Promise<void>;
+  loadSchools: () => Promise<void>;
+  loadCountries: () => Promise<void>;
+  loadSubscriptions: () => Promise<void>;
+  loadNotifications: () => Promise<void>;
+  loadCourseSchedules: () => Promise<void>;
+  loadPlanningWeekly: () => Promise<void>;
+  loadPlanningCourseOptions: () => Promise<void>;
+  loadRooms: () => Promise<void>;
+  loadReplacements: () => Promise<void>;
+  loadReportCards: () => Promise<void>;
+  evaluationsSnapshot: ResourceSnapshot<CanonicalEvaluation>;
+  notesSnapshot: ResourceSnapshot<CanonicalGrade>;
+  loadEvaluations: () => Promise<void>;
+  loadEvaluation: (evaluationId: string) => Promise<CanonicalEvaluation | null>;
+  loadNotes: () => Promise<void>;
+  loadEvaluationGrades: (evaluationId: string) => Promise<CanonicalGrade[]>;
+  loadPresences: () => Promise<boolean>;
+  applyConfirmedPresences: (rows: unknown[]) => void;
   subscriptionsData: SubscriptionItem[];
   paymentStatusesData: PaymentStatus[];
   presencesData: PresenceItem[];
@@ -74,6 +179,7 @@ type AdminDataContextValue = {
   rolePermissionsData: Record<string, string[]>;
   academicConfigData: AcademicManagementConfig;
   activeSchoolCode: string;
+  resourceScopeKey: string;
   availableSchools: SchoolProfile[];
   requiresSchoolSelection: boolean;
   setActiveSchoolCode: (code: string) => void;
@@ -87,33 +193,47 @@ type AdminDataContextValue = {
   upsertNoteItem: (item: NoteItem) => void;
   updateRoleFeatureAccess: (role: string, feature: string, permissions: string[], enabled: boolean) => void;
   upsertNotification: (item: PlatformNotification) => void;
-  updateNotifications: (items: PlatformNotification[]) => void;
+  updateNotification: (item: PlatformNotification) => void;
+  markNotificationsRead: (items: PlatformNotification[]) => void;
 };
 
 const AdminDataContext = createContext<AdminDataContextValue | undefined>(undefined);
 
+/** P0 CRUD parity: screens canoniques appellent les APIs PostgreSQL. Ce garde-fou refuse tout commitEntity local. */
+const LOCAL_WRITE_FORBIDDEN_ENTITIES = new Set([
+  "classes",
+  "schools",
+  "students",
+  "teachers",
+  "assignments",
+  "payments",
+  "paymentStatuses",
+  "courses",
+]);
+
 const emptyAcademicConfig: AcademicManagementConfig = {
   schoolCode: "",
-  periodMode: "trimestre",
+  periodMode: "",
   periods: [],
   evaluationTypes: [],
-  defaultScale: 20,
-  reportCardMode: "period",
-  levels: DEFAULT_LEVELS,
-  tracks: DEFAULT_TRACKS,
-  classNames: DEFAULT_CLASS_NAMES,
-  subjects: DEFAULT_SUBJECTS,
+  defaultScale: 0,
+  reportCardMode: "",
+  levels: [],
+  tracks: [],
+  classNames: [],
+  subjects: [],
 };
 
 export function AdminDataProvider({ children }: { children: React.ReactNode }) {
-  const { session, setSession } = useAuth();
+  // L8 : AuthContext reste l'autorité unique du bootstrap et du refresh foreground.
+  // AdminDataContext ne fetch pas effective-permissions et ne modifie pas session.permissions.
+  const { session, permissionsBootstrap } = useAuth();
   const [studentsData, setStudentsData] = useState<Student[]>([]);
   const [teachersData, setTeachersData] = useState<Teacher[]>([]);
   const [classesData, setClassesData] = useState<SchoolClass[]>([]);
   const [countriesData, setCountriesData] = useState<CountryProfile[]>([]);
   const [coursesData, setCoursesData] = useState<Course[]>([]);
   const [assignmentsData, setAssignmentsData] = useState<TeacherAssignment[]>([]);
-  const [courseSchedulesData, setCourseSchedulesData] = useState<CourseScheduleSlot[]>([]);
   const [paymentsData, setPaymentsData] = useState<PaymentItem[]>([]);
   const [subscriptionsData, setSubscriptionsData] = useState<SubscriptionItem[]>([]);
   const [paymentStatusesData, setPaymentStatusesData] = useState<PaymentStatus[]>([]);
@@ -128,6 +248,175 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
   const [academicConfigData, setAcademicConfigData] = useState<AcademicManagementConfig>(emptyAcademicConfig);
   const [syncStatus, setSyncStatus] = useState<"idle" | "syncing" | "synced" | "offline">("idle");
   const [activeSchoolCode, setActiveSchoolCodeState] = useState("");
+  const [paymentsSnapshot, setPaymentsSnapshot] = useState<ResourceSnapshot<PaymentItem>>({
+    status: "idle",
+    data: [],
+  });
+  const [studentFeesData, setStudentFeesData] = useState<CanonicalStudentFee[]>([]);
+  const [studentFeesSnapshot, setStudentFeesSnapshot] = useState<ResourceSnapshot<CanonicalStudentFee>>({
+    status: "idle",
+    data: [],
+  });
+  const [courseSchedulesSnapshot, setCourseSchedulesSnapshot] = useState<ResourceSnapshot<CanonicalWeeklySlot>>({
+    status: "idle",
+    data: [],
+  });
+  const [planningCourseOptionsSnapshot, setPlanningCourseOptionsSnapshot] = useState<ResourceSnapshot<PlanningCourseOption>>({
+    status: "idle",
+    data: [],
+  });
+  const [roomsSnapshot, setRoomsSnapshot] = useState<ResourceSnapshot<CanonicalSchoolRoom>>({
+    status: "idle",
+    data: [],
+  });
+  const [replacementsSnapshot, setReplacementsSnapshot] = useState<ResourceSnapshot<CanonicalReplacement>>({
+    status: "idle",
+    data: [],
+  });
+  const [reportCardsSnapshot, setReportCardsSnapshot] = useState<ResourceSnapshot<CanonicalReportCard>>({
+    status: "idle",
+    data: [],
+  });
+  const [evaluationsSnapshot, setEvaluationsSnapshot] = useState<ResourceSnapshot<CanonicalEvaluation>>({
+    status: "idle",
+    data: [],
+  });
+  const [notesSnapshot, setNotesSnapshot] = useState<ResourceSnapshot<CanonicalGrade>>({
+    status: "idle",
+    data: [],
+  });
+  const [usersSnapshot, setUsersSnapshot] = useState<ResourceSnapshot<CanonicalUserAccount>>({
+    status: "idle",
+    data: [],
+  });
+  const [teachersSnapshot, setTeachersSnapshot] = useState<ResourceSnapshot<CanonicalTeacher>>({
+    status: "idle",
+    data: [],
+  });
+  const [studentsSnapshot, setStudentsSnapshot] = useState<ResourceSnapshot<Student>>({
+    status: "idle",
+    data: [],
+  });
+  const [classesSnapshot, setClassesSnapshot] = useState<ResourceSnapshot<SchoolClass>>({
+    status: "idle",
+    data: [],
+  });
+  const [assignmentsSnapshot, setAssignmentsSnapshot] = useState<ResourceSnapshot<TeacherAssignment>>({
+    status: "idle",
+    data: [],
+  });
+  const [schoolCoursesSnapshot, setSchoolCoursesSnapshot] = useState<ResourceSnapshot<SchoolClassCourseRecord>>({
+    status: "idle",
+    data: [],
+  });
+  const [presencesSnapshot, setPresencesSnapshot] = useState<ResourceSnapshot<PresenceItem>>({
+    status: "idle",
+    data: [],
+  });
+  const [announcementsSnapshot, setAnnouncementsSnapshot] = useState<ResourceSnapshot<CanonicalAnnouncement>>({
+    status: "idle",
+    data: [],
+  });
+  const [messagesSnapshot, setMessagesSnapshot] = useState<ResourceSnapshot<CanonicalSchoolMessage>>({
+    status: "idle",
+    data: [],
+  });
+  const [schoolsSnapshot, setSchoolsSnapshot] = useState<ResourceSnapshot<SchoolProfile>>({
+    status: "idle",
+    data: [],
+  });
+
+  const requiresSchoolSelection = userRequiresSchoolSelection(
+    session
+      ? {
+          role: session.role,
+          schoolCode: session.user.schoolCode ?? session.school?.code,
+        }
+      : null,
+  );
+
+  const principalScopeKey = useMemo(
+    () =>
+      buildPrincipalScopeKey({
+        hasSession: Boolean(session),
+        userId: session?.user?.id,
+        role: session?.role,
+        schoolCode: session?.user?.schoolCode ?? session?.school?.code,
+        countryScope: session?.user?.countryScope ?? session?.user?.countryCode,
+      }),
+    [session],
+  );
+  const resourceScopeKey = useMemo(
+    () =>
+      buildResourceScopeKey({
+        hasSession: Boolean(session),
+        userId: session?.user?.id,
+        role: session?.role,
+        schoolCode: session?.user?.schoolCode ?? session?.school?.code,
+        countryScope: session?.user?.countryScope ?? session?.user?.countryCode,
+        activeSchoolCode: requiresSchoolSelection
+          ? activeSchoolCode
+          : session?.user?.schoolCode ?? session?.school?.code,
+      }),
+    [session, activeSchoolCode, requiresSchoolSelection],
+  );
+  const resourceScopeKeyRef = useRef(resourceScopeKey);
+  resourceScopeKeyRef.current = resourceScopeKey;
+  const principalScopeKeyRef = useRef(principalScopeKey);
+  principalScopeKeyRef.current = principalScopeKey;
+  const previousPrincipalKeyRef = useRef<string | null>(null);
+
+  const resetTenantResourceCaches = useCallback(() => {
+    setStudentsData([]);
+    setTeachersData([]);
+    setClassesData([]);
+    setCoursesData([]);
+    setAssignmentsData([]);
+    setPaymentsData([]);
+    setStudentFeesData([]);
+    setPaymentStatusesData([]);
+    setPresencesData([]);
+    setNotesData([]);
+    setUsersData([]);
+    setAnnouncementsData([]);
+    setMessagesData([]);
+    setAcademicConfigData(emptyAcademicConfig);
+    setSyncStatus("idle");
+    setPaymentsSnapshot(emptyResourceSnapshot());
+    setStudentFeesSnapshot(emptyResourceSnapshot());
+    setCourseSchedulesSnapshot(emptyResourceSnapshot());
+    setPlanningCourseOptionsSnapshot(emptyResourceSnapshot());
+    setRoomsSnapshot(emptyResourceSnapshot());
+    setReplacementsSnapshot(emptyResourceSnapshot());
+    setReportCardsSnapshot(emptyResourceSnapshot());
+    setEvaluationsSnapshot(emptyResourceSnapshot());
+    setNotesSnapshot(emptyResourceSnapshot());
+    setUsersSnapshot(emptyResourceSnapshot());
+    setTeachersSnapshot(emptyResourceSnapshot());
+    setStudentsSnapshot(emptyResourceSnapshot());
+    setClassesSnapshot(emptyResourceSnapshot());
+    setAssignmentsSnapshot(emptyResourceSnapshot());
+    setSchoolCoursesSnapshot(emptyResourceSnapshot());
+    setPresencesSnapshot(emptyResourceSnapshot());
+    setAnnouncementsSnapshot(emptyResourceSnapshot());
+    setMessagesSnapshot(emptyResourceSnapshot());
+  }, []);
+
+  const resetPrincipalResourceCaches = useCallback(() => {
+    resetTenantResourceCaches();
+    setSchoolsData([]);
+    setSchoolsSnapshot(emptyResourceSnapshot());
+    setCountriesData([]);
+    setSubscriptionsData([]);
+    setNotificationsData([]);
+    setRolePermissionsData({});
+  }, [resetTenantResourceCaches]);
+
+  useEffect(() => {
+    if (syncStatus === "synced") noteConnectivitySuccess();
+  }, [syncStatus]);
+
+  const resetResourceCaches = resetPrincipalResourceCaches;
 
   const scopeUser = useMemo(
     () =>
@@ -135,7 +424,7 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
         ? {
             role: session.role,
             countryScope: session.user.countryScope ?? session.user.countryCode,
-            schoolCode: session.user.schoolCode ?? session.school.code,
+            schoolCode: session.user.schoolCode ?? session.school?.code,
           }
         : null,
     [session],
@@ -165,9 +454,12 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
   const setActiveSchoolCode = (code: string) => {
     setActiveSchoolCodeState(code);
     writeStoredSchoolCode(code);
+    setRequestSchoolScope(code);
   };
 
-  const requiresSchoolSelection = userRequiresSchoolSelection(scopeUser);
+  useEffect(() => {
+    setRequestSchoolScope(activeSchoolCode);
+  }, [activeSchoolCode]);
 
   const stateSnapshot = useMemo(
     () => ({
@@ -221,89 +513,6 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
     [session, stateSnapshot, activeSchoolCode, requiresSchoolSelection]
   );
 
-  useEffect(() => {
-    if (!canSyncBackOfficeState(session?.role, session)) {
-      return;
-    }
-
-    let mounted = true;
-    setSyncStatus("syncing");
-
-    const refresh = () => getBackOfficeState()
-      .then((payload) => {
-        if (!mounted) return;
-        applySyncedState(payload);
-        setSyncStatus("synced");
-      })
-      .catch(() => {
-        if (!mounted) return;
-        setSyncStatus("offline");
-      });
-    refresh();
-    const intervalId = setInterval(refresh, SYNC_INTERVAL_MS);
-
-    return () => {
-      mounted = false;
-      clearInterval(intervalId);
-    };
-  }, [session, session?.role]);
-
-  useEffect(() => {
-    if (!session) {
-      return;
-    }
-
-    if (canSyncBackOfficeState(session.role, session)) {
-      return;
-    }
-
-    let mounted = true;
-    const refresh = () =>
-      Promise.all([
-        getStudents(),
-        getClasses(),
-        getCourses(),
-        getNotes(),
-        getPresences(),
-        getAcademicConfig(),
-        getAssignments(),
-        getCourseSchedules().catch(() => [] as unknown[]),
-      ])
-        .then(
-          ([
-            studentPayload,
-            classPayload,
-            coursePayload,
-            notePayload,
-            presencePayload,
-            academicConfigPayload,
-            assignmentPayload,
-            courseSchedulePayload,
-          ]) => {
-        if (mounted) {
-          applyArray(studentPayload, setStudentsData);
-          applyArray(classPayload, setClassesData);
-          applyArray(coursePayload, setCoursesData);
-          applyArray(notePayload, setNotesData);
-          applyArray(presencePayload, setPresencesData);
-          applyArray(assignmentPayload, setAssignmentsData);
-          applyArray(courseSchedulePayload, setCourseSchedulesData);
-          setAcademicConfigData(academicConfigPayload as AcademicManagementConfig);
-          setSyncStatus("synced");
-        }
-      })
-      .catch(() => {
-        if (mounted) setSyncStatus("offline");
-      });
-    refresh();
-    const intervalId = setInterval(refresh, SYNC_INTERVAL_MS);
-
-    return () => {
-      mounted = false;
-      clearInterval(intervalId);
-    };
-  }, [session]);
-
   const applySyncedState = (payload: BackOfficeStatePayload) => {
     applyArray(payload.students, setStudentsData);
     applyArray(payload.teachers, setTeachersData);
@@ -311,7 +520,6 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
     applyArray(payload.countries, setCountriesData);
     applyArray(payload.courses, setCoursesData);
     applyArray(payload.assignments, setAssignmentsData);
-    applyArray(payload.courseSchedules, setCourseSchedulesData);
     applyArray(payload.payments, setPaymentsData);
     applyArray(payload.subscriptions, setSubscriptionsData);
     applyArray(payload.paymentStatuses, setPaymentStatusesData);
@@ -332,7 +540,7 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
           ? activeSchoolCode
           : session?.user?.schoolCode ?? session?.school?.code;
       const config = (targetCode && configs[targetCode]) || Object.values(configs)[0];
-      if (config) setAcademicConfigData(config);
+      if (config) setAcademicConfigData({ ...config, subjects: [] });
     }
   };
 
@@ -340,17 +548,11 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
     if (!session) {
       return;
     }
+    const scope = resourceScopeKeyRef.current;
 
     setSyncStatus("syncing");
 
     try {
-      if (canSyncBackOfficeState(session.role, session)) {
-        const payload = await getBackOfficeState();
-        applySyncedState(payload);
-        setSyncStatus("synced");
-        return;
-      }
-
       const [
         studentPayload,
         classPayload,
@@ -359,7 +561,7 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
         presencePayload,
         academicConfigPayload,
         assignmentPayload,
-        courseSchedulePayload,
+        subjectPayload,
       ] = await Promise.all([
         getStudents(),
         getClasses(),
@@ -368,23 +570,532 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
         getPresences(),
         getAcademicConfig(),
         getAssignments(),
-        getCourseSchedules().catch(() => [] as unknown[]),
+        getSubjects(),
       ]);
+
+      if (resourceScopeKeyRef.current !== scope) return;
 
       applyArray(studentPayload, setStudentsData);
       applyArray(classPayload, setClassesData);
       applyArray(coursePayload, setCoursesData);
-      applyArray(notePayload, setNotesData);
+      const studentRows = Array.isArray(studentPayload) ? (studentPayload as Student[]) : [];
+      const classRows = Array.isArray(classPayload) ? (classPayload as SchoolClass[]) : [];
+      const presenceRows = Array.isArray(presencePayload) ? (presencePayload as PresenceItem[]) : [];
+      setStudentsSnapshot(snapshotFromSuccess(studentRows, { source: "network" }));
+      setClassesSnapshot(snapshotFromSuccess(classRows, { source: "network" }));
+      const canonicalNotes = Array.isArray(notePayload) ? notePayload : [];
+      setNotesSnapshot(snapshotFromSuccess(canonicalNotes));
+      setNotesData(canonicalNotes.map(canonicalGradeToNoteItem));
       applyArray(presencePayload, setPresencesData);
+      setPresencesSnapshot(snapshotFromSuccess(presenceRows));
       applyArray(assignmentPayload, setAssignmentsData);
-      applyArray(courseSchedulePayload, setCourseSchedulesData);
-      setAcademicConfigData(academicConfigPayload as AcademicManagementConfig);
+      setAssignmentsSnapshot(
+        snapshotFromSuccess(Array.isArray(assignmentPayload) ? assignmentPayload : [], { source: "network" }),
+      );
+      const subjectRows = Array.isArray(subjectPayload)
+        ? subjectPayload
+        : subjectPayload && typeof subjectPayload === "object" && Array.isArray((subjectPayload as { items?: unknown[] }).items)
+          ? (subjectPayload as { items: unknown[] }).items
+          : [];
+      const subjectNames = subjectRows
+        .map((row) => String((row as { name?: string }).name ?? "").trim())
+        .filter(Boolean);
+      setAcademicConfigData({
+        ...(academicConfigPayload as AcademicManagementConfig),
+        subjects: subjectNames,
+      });
       setSyncStatus("synced");
-    } catch {
-      setSyncStatus("offline");
+    } catch (error) {
+      if (resourceScopeKeyRef.current !== scope) return;
+      if (classifyLoadFailure(error).status === "offline") {
+        setSyncStatus("offline");
+        noteConnectivityFailure(error);
+      }
       throw new Error("Synchronisation impossible");
     }
-  }, [session, session?.role, activeSchoolCode, session?.user?.schoolCode, session?.school?.code]);
+  }, [session]);
+
+  const loadPayments = useCallback(async () => {
+    if (!session) return;
+    const scope = resourceScopeKeyRef.current;
+    setPaymentsSnapshot((current) => ({ ...current, status: "loading" }));
+    try {
+      const rows = (await getPayments()) as PaymentItem[];
+      if (resourceScopeKeyRef.current !== scope) return;
+      setPaymentsData(rows);
+      setPaymentsSnapshot(snapshotFromSuccess(rows));
+    } catch (error) {
+      if (resourceScopeKeyRef.current !== scope) return;
+      setPaymentsSnapshot((current) => snapshotFromFailure(error, current.data));
+    }
+  }, [session]);
+
+  const loadStudentFees = useCallback(async () => {
+    if (!session) return;
+    const scope = resourceScopeKeyRef.current;
+    setStudentFeesSnapshot((current) => ({ ...current, status: "loading" }));
+    try {
+      const rows = await getStudentFees();
+      if (resourceScopeKeyRef.current !== scope) return;
+      setStudentFeesData(rows);
+      setStudentFeesSnapshot(snapshotFromSuccess(rows));
+    } catch (error) {
+      if (resourceScopeKeyRef.current !== scope) return;
+      setStudentFeesSnapshot((current) => snapshotFromFailure(error, current.data));
+    }
+  }, [session]);
+
+  const loadUsers = useCallback(async () => {
+    if (!session) return;
+    const scope = resourceScopeKeyRef.current;
+    setUsersSnapshot((current) => ({ ...current, status: "loading" }));
+    try {
+      const rows = await getCanonicalUsers();
+      if (resourceScopeKeyRef.current !== scope) return;
+      setUsersData(rows);
+      setUsersSnapshot(snapshotFromSuccess(rows));
+    } catch (error) {
+      if (resourceScopeKeyRef.current !== scope) return;
+      setUsersSnapshot((current) => snapshotFromFailure(error, current.data));
+    }
+  }, [session]);
+
+  const loadTeachers = useCallback(async () => {
+    if (!session) return;
+    const scope = resourceScopeKeyRef.current;
+    setTeachersSnapshot((current) => ({ ...current, status: "loading" }));
+    try {
+      const rows = await getCanonicalTeachers();
+      if (resourceScopeKeyRef.current !== scope) return;
+      setTeachersData(rows);
+      setTeachersSnapshot(snapshotFromSuccess(rows));
+    } catch (error) {
+      if (resourceScopeKeyRef.current !== scope) return;
+      setTeachersSnapshot((current) => snapshotFromFailure(error, current.data));
+    }
+  }, [session]);
+
+  const loadStudents = useCallback(async () => {
+    if (!session) return;
+    const scope = resourceScopeKeyRef.current;
+    setStudentsSnapshot((current) => ({ ...current, status: "loading" }));
+    try {
+      const snapshot = await loadL1BackedSnapshot({
+        session,
+        permissionsBootstrap,
+        resource: "students",
+        fetchNetwork: async () => (await getStudents()) as Student[],
+        project: async (read) => projectL1Students(read, await classRowsForJoin(session)),
+      });
+      if (resourceScopeKeyRef.current !== scope) return;
+      setStudentsData(snapshot.data);
+      setStudentsSnapshot(snapshot);
+    } catch (error) {
+      if (resourceScopeKeyRef.current !== scope) return;
+      setStudentsSnapshot((current) => snapshotFromFailure(error, current.data));
+    }
+  }, [session, permissionsBootstrap]);
+
+  const loadClasses = useCallback(async () => {
+    if (!session) return;
+    const scope = resourceScopeKeyRef.current;
+    setClassesSnapshot((current) => ({ ...current, status: "loading" }));
+    try {
+      const snapshot = await loadL1BackedSnapshot({
+        session,
+        permissionsBootstrap,
+        resource: "classes",
+        fetchNetwork: async () => (await getClasses()) as SchoolClass[],
+        project: (read) => projectL1Classes(read),
+      });
+      if (resourceScopeKeyRef.current !== scope) return;
+      setClassesData(snapshot.data);
+      setClassesSnapshot(snapshot);
+    } catch (error) {
+      if (resourceScopeKeyRef.current !== scope) return;
+      setClassesSnapshot((current) => snapshotFromFailure(error, current.data));
+    }
+  }, [session, permissionsBootstrap]);
+
+  const loadAssignments = useCallback(async () => {
+    if (!session) return;
+    const scope = resourceScopeKeyRef.current;
+    setAssignmentsSnapshot((current) => ({ ...current, status: "loading" }));
+    try {
+      const snapshot = await loadL1BackedSnapshot({
+        session,
+        permissionsBootstrap,
+        resource: "assignments",
+        fetchNetwork: async () => getAssignments(),
+        project: async (read) =>
+          filterL1AssignmentsForTeacherSession(
+            projectL1Assignments(read, await classRowsForJoin(session)),
+            session,
+          ),
+      });
+      if (resourceScopeKeyRef.current !== scope) return;
+      setAssignmentsData(snapshot.data);
+      setAssignmentsSnapshot(snapshot);
+    } catch (error) {
+      if (resourceScopeKeyRef.current !== scope) return;
+      setAssignmentsSnapshot((current) => snapshotFromFailure(error, current.data));
+    }
+  }, [session, permissionsBootstrap]);
+
+  const loadSchoolCourses = useCallback(async () => {
+    if (!session) return;
+    const scope = resourceScopeKeyRef.current;
+    setSchoolCoursesSnapshot((current) => ({ ...current, status: "loading" }));
+    try {
+      const snapshot = await loadL1BackedSnapshot({
+        session,
+        permissionsBootstrap,
+        resource: "school-courses",
+        fetchNetwork: async () => listSchoolClassCourses(),
+        project: async (read) => projectL1SchoolCourses(read, await classRowsForJoin(session)),
+      });
+      if (resourceScopeKeyRef.current !== scope) return;
+      setSchoolCoursesSnapshot(snapshot);
+    } catch (error) {
+      if (resourceScopeKeyRef.current !== scope) return;
+      setSchoolCoursesSnapshot((current) => snapshotFromFailure(error, current.data));
+    }
+  }, [session, permissionsBootstrap]);
+
+  const loadAnnouncements = useCallback(async () => {
+    if (!session) return;
+    const scope = resourceScopeKeyRef.current;
+    setAnnouncementsSnapshot((current) => ({ ...current, status: "loading" }));
+    try {
+      const rows = await getCanonicalAnnouncements(activeSchoolCode);
+      if (resourceScopeKeyRef.current !== scope) return;
+      setAnnouncementsData(rows);
+      setAnnouncementsSnapshot(snapshotFromSuccess(rows));
+    } catch (error) {
+      if (resourceScopeKeyRef.current !== scope) return;
+      setAnnouncementsSnapshot((current) => snapshotFromFailure(error, current.data));
+    }
+  }, [session, activeSchoolCode]);
+
+  const loadMessages = useCallback(async () => {
+    if (!session) return;
+    const scope = resourceScopeKeyRef.current;
+    setMessagesSnapshot((current) => ({ ...current, status: "loading" }));
+    try {
+      const rows = await getCanonicalMessages(activeSchoolCode);
+      if (resourceScopeKeyRef.current !== scope) return;
+      setMessagesData(rows);
+      setMessagesSnapshot(snapshotFromSuccess(rows));
+    } catch (error) {
+      if (resourceScopeKeyRef.current !== scope) return;
+      setMessagesSnapshot((current) => snapshotFromFailure(error, current.data));
+    }
+  }, [session, activeSchoolCode]);
+
+  const loadSchools = useCallback(async () => {
+    if (!session) return;
+    const scope = principalScopeKeyRef.current;
+    setSchoolsSnapshot((current) => ({ ...current, status: "loading" }));
+    try {
+      const rows = await getCanonicalSchools(session);
+      if (principalScopeKeyRef.current !== scope) return;
+      setSchoolsData(rows);
+      setSchoolsSnapshot(snapshotFromSuccess(rows));
+    } catch (error) {
+      if (principalScopeKeyRef.current !== scope) return;
+      setSchoolsSnapshot((current) => snapshotFromFailure(error, current.data));
+    }
+  }, [session]);
+
+  const loadCountries = useCallback(async () => {
+    if (!session) return;
+    const scope = principalScopeKeyRef.current;
+    try {
+      const rows = await getCanonicalCountries();
+      if (principalScopeKeyRef.current !== scope) return;
+      setCountriesData(rows);
+    } catch {
+      if (principalScopeKeyRef.current !== scope) return;
+    }
+  }, [session]);
+
+  const loadSubscriptions = useCallback(async () => {
+    if (!session) return;
+    const scope = principalScopeKeyRef.current;
+    try {
+      const rows = await getCanonicalSubscriptions();
+      if (principalScopeKeyRef.current !== scope) return;
+      setSubscriptionsData(rows);
+    } catch {
+      if (principalScopeKeyRef.current !== scope) return;
+    }
+  }, [session]);
+
+  const loadNotifications = useCallback(async () => {
+    if (!session) return;
+    if (!hasPlatformBackofficePrivilege(session)) return;
+    const scope = principalScopeKeyRef.current;
+    try {
+      const rows = await getCanonicalNotifications();
+      if (principalScopeKeyRef.current !== scope) return;
+      setNotificationsData(rows);
+    } catch {
+      if (principalScopeKeyRef.current !== scope) return;
+    }
+  }, [session]);
+
+  const loadPlanningWeekly = useCallback(async () => {
+    if (!session) return;
+    const scope = resourceScopeKeyRef.current;
+    setCourseSchedulesSnapshot((current) => ({ ...current, status: "loading" }));
+    try {
+      const snapshot = await loadL1BackedSnapshot({
+        session,
+        permissionsBootstrap,
+        resource: "course-schedules",
+        fetchNetwork: async () => getPlanningWeekly(),
+        project: async (read) => projectL1CourseSchedules(read, await classRowsForJoin(session)),
+      });
+      if (resourceScopeKeyRef.current !== scope) return;
+      setCourseSchedulesSnapshot(snapshot);
+    } catch (error) {
+      if (resourceScopeKeyRef.current !== scope) return;
+      setCourseSchedulesSnapshot((current) => snapshotFromFailure(error, current.data));
+    }
+  }, [session, permissionsBootstrap]);
+
+  const loadPlanningCourseOptions = useCallback(async () => {
+    if (!session) return;
+    const scope = resourceScopeKeyRef.current;
+    setPlanningCourseOptionsSnapshot((current) => ({ ...current, status: "loading" }));
+    try {
+      const rows = await getPlanningCourseOptions();
+      if (resourceScopeKeyRef.current !== scope) return;
+      setPlanningCourseOptionsSnapshot(snapshotFromSuccess(rows));
+    } catch (error) {
+      if (resourceScopeKeyRef.current !== scope) return;
+      setPlanningCourseOptionsSnapshot((current) => snapshotFromFailure(error, current.data));
+    }
+  }, [session]);
+
+  const loadRooms = useCallback(async () => {
+    if (!session) return;
+    const scope = resourceScopeKeyRef.current;
+    setRoomsSnapshot((current) => ({ ...current, status: "loading" }));
+    try {
+      const rows = await getSchoolRooms();
+      if (resourceScopeKeyRef.current !== scope) return;
+      setRoomsSnapshot(snapshotFromSuccess(rows));
+    } catch (error) {
+      if (resourceScopeKeyRef.current !== scope) return;
+      setRoomsSnapshot((current) => snapshotFromFailure(error, current.data));
+    }
+  }, [session]);
+
+  const loadReplacements = useCallback(async () => {
+    if (!session) return;
+    const scope = resourceScopeKeyRef.current;
+    setReplacementsSnapshot((current) => ({ ...current, status: "loading" }));
+    try {
+      const rows = await getCourseScheduleReplacements();
+      if (resourceScopeKeyRef.current !== scope) return;
+      setReplacementsSnapshot(snapshotFromSuccess(rows));
+    } catch (error) {
+      if (resourceScopeKeyRef.current !== scope) return;
+      setReplacementsSnapshot((current) => snapshotFromFailure(error, current.data));
+    }
+  }, [session]);
+
+  const loadReportCards = useCallback(async () => {
+    if (!session) return;
+    const scope = resourceScopeKeyRef.current;
+    setReportCardsSnapshot((current) => ({ ...current, status: "loading" }));
+    try {
+      const rows = await getReportCards();
+      if (resourceScopeKeyRef.current !== scope) return;
+      setReportCardsSnapshot(snapshotFromSuccess(rows));
+    } catch (error) {
+      if (resourceScopeKeyRef.current !== scope) return;
+      setReportCardsSnapshot((current) => snapshotFromFailure(error, current.data));
+    }
+  }, [session]);
+
+  const loadEvaluations = useCallback(async () => {
+    if (!session) return;
+    const scope = resourceScopeKeyRef.current;
+    setEvaluationsSnapshot((current) => ({ ...current, status: "loading" }));
+    try {
+      const rows = await getEvaluations();
+      if (resourceScopeKeyRef.current !== scope) return;
+      setEvaluationsSnapshot(snapshotFromSuccess(rows));
+    } catch (error) {
+      if (resourceScopeKeyRef.current !== scope) return;
+      setEvaluationsSnapshot((current) => snapshotFromFailure(error, current.data));
+    }
+  }, [session]);
+
+  const loadEvaluation = useCallback(
+    async (evaluationId: string) => {
+      const key = String(evaluationId ?? "").trim();
+      if (!session || !key) return null;
+      const scope = resourceScopeKeyRef.current;
+      setEvaluationsSnapshot((current) => ({ ...current, status: "loading" }));
+      try {
+        const rows = await getEvaluations();
+        if (resourceScopeKeyRef.current !== scope) return null;
+        setEvaluationsSnapshot(snapshotFromSuccess(rows));
+        return (
+          rows.find(
+            (row) =>
+              row.evaluationId === key || row.id === key || row.pgId === key || String(row.publicId ?? "") === key,
+          ) ?? null
+        );
+      } catch (error) {
+        if (resourceScopeKeyRef.current !== scope) return null;
+        setEvaluationsSnapshot((current) => snapshotFromFailure(error, current.data));
+        throw error;
+      }
+    },
+    [session],
+  );
+
+  const loadNotes = useCallback(async () => {
+    if (!session) return;
+    const scope = resourceScopeKeyRef.current;
+    setNotesSnapshot((current) => ({ ...current, status: "loading" }));
+    try {
+      const rows = await getNotes();
+      if (resourceScopeKeyRef.current !== scope) return;
+      setNotesSnapshot(snapshotFromSuccess(rows));
+      setNotesData(rows.map(canonicalGradeToNoteItem));
+    } catch (error) {
+      if (resourceScopeKeyRef.current !== scope) return;
+      setNotesSnapshot((current) => snapshotFromFailure(error, current.data));
+    }
+  }, [session]);
+
+  const applyConfirmedPresences = useCallback((rows: unknown[]) => {
+    if (!Array.isArray(rows) || !rows.length) return;
+    const saved = rows as PresenceItem[];
+    setPresencesData((current) => mergeConfirmedPresences(current, saved));
+    setPresencesSnapshot((current) => snapshotFromSuccess(mergeConfirmedPresences(current.data, saved)));
+  }, []);
+
+  const loadPresences = useCallback(async () => {
+    if (!session) return false;
+    const scope = resourceScopeKeyRef.current;
+    setPresencesSnapshot((current) => ({ ...current, status: "loading" }));
+    try {
+      const rows = (await getPresences()) as PresenceItem[];
+      if (resourceScopeKeyRef.current !== scope) return false;
+      applyArray(rows, setPresencesData);
+      setPresencesSnapshot(snapshotFromSuccess(rows));
+      return true;
+    } catch (error) {
+      if (resourceScopeKeyRef.current !== scope) return false;
+      setPresencesSnapshot((current) => snapshotFromFailure(error, current.data));
+      return false;
+    }
+  }, [session]);
+
+  const loadEvaluationGrades = useCallback(
+    async (evaluationId: string) => {
+      if (!session) return [];
+      const scope = resourceScopeKeyRef.current;
+      setNotesSnapshot((current) => ({ ...current, status: "loading" }));
+      try {
+        const rows = await getNotes();
+        if (resourceScopeKeyRef.current !== scope) return [];
+        setNotesSnapshot(snapshotFromSuccess(rows));
+        setNotesData(rows.map(canonicalGradeToNoteItem));
+        return gradesForEvaluation(rows, evaluationId);
+      } catch (error) {
+        if (resourceScopeKeyRef.current !== scope) return [];
+        setNotesSnapshot((current) => snapshotFromFailure(error, current.data));
+        throw error;
+      }
+    },
+    [session],
+  );
+
+  const scopedLoadersRef = useRef({
+    refreshBackOfficeState,
+    loadUsers,
+    loadTeachers,
+    loadPayments,
+    loadStudentFees,
+    loadAnnouncements,
+    loadMessages,
+    loadSchools,
+    loadCountries,
+    loadSubscriptions,
+    loadNotifications,
+  });
+  scopedLoadersRef.current = {
+    refreshBackOfficeState,
+    loadUsers,
+    loadTeachers,
+    loadPayments,
+    loadStudentFees,
+    loadAnnouncements,
+    loadMessages,
+    loadSchools,
+    loadCountries,
+    loadSubscriptions,
+    loadNotifications,
+  };
+
+  useEffect(() => {
+    const plan = scopeHydrationPlan({
+      previousPrincipalKey: previousPrincipalKeyRef.current,
+      nextPrincipalKey: principalScopeKey,
+      nextResourceKey: resourceScopeKey,
+    });
+    previousPrincipalKeyRef.current = principalScopeKey;
+    if (plan.resetKind === "principal") {
+      resetResourceCaches();
+      clearRequestSchoolScope();
+      if (requiresSchoolSelection) {
+        setActiveSchoolCodeState("");
+        clearStoredSchoolCode();
+      }
+    } else {
+      resetTenantResourceCaches();
+    }
+    if (!plan.loadPrincipal && !plan.loadTenant) {
+      setActiveSchoolCodeState("");
+      clearStoredSchoolCode();
+      clearRequestSchoolScope();
+      return;
+    }
+    const loaders = scopedLoadersRef.current;
+    if (plan.loadPrincipal) {
+      void loaders.loadSchools();
+      void loaders.loadCountries();
+      void loaders.loadSubscriptions();
+      void loaders.loadNotifications();
+    }
+    const tenantReady =
+      !requiresSchoolSelection || Boolean(activeSchoolCode && activeSchoolCode !== ALL_SCHOOLS_CODE);
+    const skipTenantUntilSchoolChosen = requiresSchoolSelection && plan.resetKind === "principal";
+    if (plan.loadTenant && tenantReady && !skipTenantUntilSchoolChosen) {
+      void loaders.refreshBackOfficeState().catch(() => null);
+      void loaders.loadUsers();
+      void loaders.loadTeachers();
+      void loaders.loadPayments();
+      void loaders.loadStudentFees();
+      void loaders.loadAnnouncements();
+      void loaders.loadMessages();
+    }
+  }, [
+    principalScopeKey,
+    resourceScopeKey,
+    requiresSchoolSelection,
+    activeSchoolCode,
+    resetResourceCaches,
+    resetPrincipalResourceCaches,
+    resetTenantResourceCaches,
+  ]);
 
   useEffect(() => {
     if (!session) {
@@ -403,35 +1114,37 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
     return undefined;
   }, [session, refreshBackOfficeState]);
 
-  useEffect(() => {
-    if (!session) {
-      return;
-    }
-
-    const enriched = enrichSessionPermissions(session, rolePermissionsData);
-    if (!enriched) return;
-
-    const currentPermissions = session.permissions ?? session.user.permissions ?? [];
-    if (sameStringSet(currentPermissions, enriched.permissions ?? [])) {
-      return;
-    }
-
-    setSession(enriched);
-  }, [rolePermissionsData, session, session?.role]);
-
-  const persistSyncedState = (nextState: BackOfficeStatePayload) => {
-    if (!canSyncBackOfficeState(session?.role, session)) {
-      return;
-    }
-
-    setSyncStatus("syncing");
-    saveBackOfficeState(nextState)
-      .then(() => setSyncStatus("synced"))
-      .catch(() => setSyncStatus("offline"));
+  const persistSyncedState = (_nextState: BackOfficeStatePayload) => {
+    throw Object.assign(
+      new Error("La synchronisation globale BackOffice State a été supprimée. Utilisez les API dédiées."),
+      { code: "BACKOFFICE_STATE_WRITE_REMOVED" },
+    );
   };
 
   const value = useMemo<AdminDataContextValue>(() => {
     const state = scopedStateSnapshot;
+    const tenantFilterCode = requiresSchoolSelection ? activeSchoolCode : undefined;
+    const presentScopedSnapshot = <T,>(snapshot: ResourceSnapshot<T>, entity: string): ResourceSnapshot<T> => {
+      const sourceRows =
+        snapshot.status === "idle"
+          ? (((state as Record<string, unknown>)[entity] as T[] | undefined) ?? [])
+          : snapshot.data;
+      const scoped = scopeBackOfficeForSession(
+        { ...stateSnapshot, [entity]: sourceRows },
+        session,
+        tenantFilterCode,
+      );
+      const rows = ((scoped as Record<string, unknown>)[entity] as T[] | undefined) ?? [];
+      return withScopedSnapshotData(snapshot, rows);
+    };
+    const presentedUsersSnapshot = presentScopedSnapshot(usersSnapshot, "users");
+    const presentedTeachersSnapshot = presentScopedSnapshot(teachersSnapshot, "teachers");
+    const presentedStudentsSnapshot = presentScopedSnapshot(studentsSnapshot, "students");
+    const presentedClassesSnapshot = presentScopedSnapshot(classesSnapshot, "classes");
+    const presentedPresencesSnapshot = presentScopedSnapshot(presencesSnapshot, "presences");
+    const presentedPaymentsSnapshot = presentScopedSnapshot(paymentsSnapshot, "payments");
+    const presentedAnnouncementsSnapshot = presentScopedSnapshot(announcementsSnapshot, "announcements");
+    const presentedMessagesSnapshot = presentScopedSnapshot(messagesSnapshot, "messages");
 
     const setters = {
       students: setStudentsData,
@@ -450,6 +1163,15 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
     };
 
     const commitEntity = (entity: AdminEntity, updater: (items: any[]) => any[]) => {
+      if (entity === "countries" || entity === "subscriptions") {
+        return;
+      }
+      if (entity === "users" || entity === "announcements" || entity === "messages") {
+        setters[entity]((items: any[]) =>
+          enforceEntityScope(entity, updater(items), session, state),
+        );
+        return;
+      }
       setters[entity]((items: any[]) => {
         const nextItems = enforceEntityScope(entity, updater(items), session, state);
         persistSyncedState({ ...state, [entity]: nextItems });
@@ -484,106 +1206,269 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
         );
 
         setUsersData(nextUsers as UserAccount[]);
-        persistSyncedState({
-          ...state,
-          users: nextUsers,
-          rolePermissions: nextPermissions,
-        });
-
         return nextPermissions;
       });
     };
 
+    const presentedStudents = presentedStudentsSnapshot.data as Student[];
+    const studentsProjection = projectScopedStudentsForSession(session, presentedStudents);
+    const establishmentStudents = scopedStudentsForSession(session, presentedStudents, {
+      teachers: presentedTeachersSnapshot.data as Teacher[],
+      assignments: (state.assignments ?? []) as TeacherAssignment[],
+      classes: presentedClassesSnapshot.data as SchoolClass[],
+      assignmentsSource: assignmentsSnapshot.source,
+    });
+    const studentsScopeError = studentsProjection.error?.message ?? null;
+
     return {
-      studentsData: (state.students ?? []) as Student[],
-      teachersData: (state.teachers ?? []) as Teacher[],
-      classesData: (state.classes ?? []) as SchoolClass[],
+      studentsData: presentedStudentsSnapshot.data as Student[],
+      studentsProjection,
+      studentsScopeError,
+      establishmentStudents,
+      teachersData: presentedTeachersSnapshot.data as Teacher[],
+      classesData: presentedClassesSnapshot.data as SchoolClass[],
       countriesData: (state.countries ?? []) as CountryProfile[],
       coursesData: (state.courses ?? []) as Course[],
       assignmentsData: (state.assignments ?? []) as TeacherAssignment[],
-      courseSchedulesData,
-      paymentsData: (state.payments ?? []) as PaymentItem[],
+      courseSchedulesData: courseSchedulesSnapshot.data,
+      paymentsData: presentedPaymentsSnapshot.data as PaymentItem[],
+      paymentsSnapshot: presentedPaymentsSnapshot,
+      studentFeesData,
+      studentFeesSnapshot,
+      usersSnapshot: presentedUsersSnapshot,
+      teachersSnapshot: presentedTeachersSnapshot,
+      studentsSnapshot: presentedStudentsSnapshot,
+      classesSnapshot: presentedClassesSnapshot,
+      assignmentsSnapshot,
+      schoolCoursesSnapshot,
+      presencesSnapshot: presentedPresencesSnapshot,
+      announcementsSnapshot: presentedAnnouncementsSnapshot,
+      messagesSnapshot: presentedMessagesSnapshot,
+      schoolsSnapshot,
+      courseSchedulesSnapshot,
+      planningCourseOptionsSnapshot,
+      roomsSnapshot,
+      replacementsSnapshot,
+      reportCardsSnapshot,
+      evaluationsSnapshot,
+      notesSnapshot,
+      loadPayments,
+      loadStudentFees,
+      loadUsers,
+      loadTeachers,
+      loadStudents,
+      loadClasses,
+      loadAssignments,
+      loadSchoolCourses,
+      loadAnnouncements,
+      loadMessages,
+      loadSchools,
+      loadCountries,
+      loadSubscriptions,
+      loadNotifications,
+      loadCourseSchedules: loadPlanningWeekly,
+      loadPlanningWeekly,
+      loadPlanningCourseOptions,
+      loadRooms,
+      loadReplacements,
+      loadReportCards,
+      loadEvaluations,
+      loadEvaluation,
+      loadNotes,
+      loadEvaluationGrades,
+      loadPresences,
+      applyConfirmedPresences,
       subscriptionsData: (state.subscriptions ?? []) as SubscriptionItem[],
       paymentStatusesData: (state.paymentStatuses ?? []) as PaymentStatus[],
-      presencesData: (state.presences ?? []) as PresenceItem[],
+      presencesData: presentedPresencesSnapshot.data as PresenceItem[],
       notesData: (state.notes ?? []) as NoteItem[],
       schoolsData: (state.schools ?? []) as SchoolProfile[],
-      usersData: (state.users ?? []) as UserAccount[],
-      announcementsData: (state.announcements ?? []) as Announcement[],
-      messagesData: (state.messages ?? []) as SchoolMessage[],
+      usersData: presentedUsersSnapshot.data as UserAccount[],
+      announcementsData: presentedAnnouncementsSnapshot.data as Announcement[],
+      messagesData: presentedMessagesSnapshot.data as SchoolMessage[],
       notificationsData: (state.notifications ?? []) as PlatformNotification[],
       rolePermissionsData,
       academicConfigData,
       activeSchoolCode,
+      resourceScopeKey,
       availableSchools,
       requiresSchoolSelection,
       setActiveSchoolCode,
       syncStatus,
       refreshBackOfficeState,
-      getItems: (entity) => state[entity],
-      createItem: (entity, item) => commitEntity(entity, (items) => [applyItemScope(entity, item, session, state), ...items]),
-      updateItem: (entity, item) =>
-        commitEntity(entity, (items) => items.map((row) => (row.id === item.id ? applyItemScope(entity, item, session, state) : row))),
-      deleteItem: (entity, id) => {
-        if (entity === "classes") {
-          const item = classesData.find((row) => row.id === id);
-          if (!item) return;
-          const schoolCode = session?.user?.schoolCode ?? session?.school?.code;
-          const result = removeSchoolClassFromState(stateSnapshot, item, schoolCode);
-          if (!result.ok) return;
-          const nextClasses = (result.patch.classes ?? []) as SchoolClass[];
-          setClassesData(nextClasses);
-          if (result.patch.academicConfigs && schoolCode) {
-            const nextConfig = (result.patch.academicConfigs as Record<string, AcademicManagementConfig>)[schoolCode];
-            if (nextConfig) setAcademicConfigData(nextConfig);
-          }
-          persistSyncedState({
-            ...stateSnapshot,
-            classes: nextClasses,
-            academicConfigs: (result.patch.academicConfigs as Record<string, AcademicManagementConfig>) ?? stateSnapshot.academicConfigs,
-          });
+      getItems: (entity) => {
+        if (entity === "users") return presentedUsersSnapshot.data;
+        if (entity === "teachers") return presentedTeachersSnapshot.data;
+        if (entity === "students") return presentedStudentsSnapshot.data;
+        if (entity === "classes") return presentedClassesSnapshot.data;
+        if (entity === "payments") return presentedPaymentsSnapshot.data;
+        if (entity === "announcements") return presentedAnnouncementsSnapshot.data;
+        if (entity === "messages") return presentedMessagesSnapshot.data;
+        return state[entity];
+      },
+      createItem: (entity, item) => {
+        if (LOCAL_WRITE_FORBIDDEN_ENTITIES.has(entity)) return;
+        if (entity === "announcements") {
+          void createClientsAnnouncement(item as Record<string, unknown>)
+            .then((created) => {
+              const row = created as CanonicalAnnouncement;
+              setAnnouncementsData((current) => [row, ...current]);
+              setAnnouncementsSnapshot((current) => snapshotFromSuccess([row, ...current.data]));
+            })
+            .catch((error) => {
+              if (classifyLoadFailure(error).status === "offline") setSyncStatus("offline");
+            });
           return;
         }
-
+        if (entity === "messages") {
+          void sendClientsMessage(item as Record<string, unknown>, { idempotencyKey: createIdempotencyKey() })
+            .then((created) => {
+              const row = created as CanonicalSchoolMessage;
+              setMessagesData((current) => [row, ...current]);
+              setMessagesSnapshot((current) => snapshotFromSuccess([row, ...current.data]));
+            })
+            .catch((error) => {
+              if (classifyLoadFailure(error).status === "offline") setSyncStatus("offline");
+            });
+          return;
+        }
+        if (entity === "users") {
+          void createClientsUser(item as Record<string, unknown>)
+            .then((created) => {
+              const row = created as CanonicalUserAccount;
+              setUsersData((current) => [row, ...current]);
+              setUsersSnapshot((current) => snapshotFromSuccess([row, ...current.data]));
+            })
+            .catch((error) => {
+              if (classifyLoadFailure(error).status === "offline") setSyncStatus("offline");
+            });
+          return;
+        }
+        commitEntity(entity, (items) => [applyItemScope(entity, item, session, state), ...items]);
+      },
+      updateItem: (entity, item) => {
+        if (LOCAL_WRITE_FORBIDDEN_ENTITIES.has(entity)) return;
+        if (entity === "announcements") {
+          void updateClientsAnnouncement(String(item.id), item as Record<string, unknown>)
+            .then((updated) =>
+              setAnnouncementsData((current) =>
+                current.map((row) => (row.id === item.id ? (updated as Announcement) : row)),
+              ),
+            )
+            .catch((error) => {
+              if (classifyLoadFailure(error).status === "offline") setSyncStatus("offline");
+            });
+          return;
+        }
+        if (entity === "users") {
+          void updateClientsUser(String(item.id), item as Record<string, unknown>)
+            .then((updated) =>
+              setUsersData((current) =>
+                current.map((row) => (row.id === item.id ? (updated as UserAccount) : row)),
+              ),
+            )
+            .catch((error) => {
+              if (classifyLoadFailure(error).status === "offline") setSyncStatus("offline");
+            });
+          return;
+        }
+        commitEntity(entity, (items) => items.map((row) => (row.id === item.id ? applyItemScope(entity, item, session, state) : row)));
+      },
+      deleteItem: (entity, id) => {
+        if (LOCAL_WRITE_FORBIDDEN_ENTITIES.has(entity)) return;
         commitEntity(entity, (items) => items.filter((row) => row.id !== id));
       },
-      upsertPresenceItems: (items) =>
+      upsertPresenceItems: (items) => {
         setPresencesData((current) => {
           const scopedItems = items.map((item) => applyItemScope("presences", item, session, state));
           const keys = new Set(scopedItems.map((item) => `${item.studentId}-${item.date}`));
-          const nextItems = enforceEntityScope(
+          const next = enforceEntityScope(
             "presences",
             [...scopedItems, ...current.filter((item) => !keys.has(`${item.studentId}-${item.date}`))],
             session,
-            state
+            state,
           );
-          persistSyncedState({ ...state, presences: nextItems });
-          return nextItems;
-        }),
+          setPresencesSnapshot(snapshotFromSuccess(next));
+          return next;
+        });
+      },
       upsertNoteItem: (item) =>
         setNotesData((current) => {
           const scopedItem = applyItemScope("notes", item, session, state);
           const exists = current.some((row) => row.id === scopedItem.id);
-          const nextItems = enforceEntityScope(
+          return enforceEntityScope(
             "notes",
             exists ? current.map((row) => (row.id === scopedItem.id ? scopedItem : row)) : [scopedItem, ...current],
             session,
-            state
+            state,
           );
-          persistSyncedState({ ...state, notes: nextItems });
-          return nextItems;
         }),
       updateRoleFeatureAccess,
       upsertNotification: (item) => {
-        setNotificationsData((current) => {
-          const next = [item, ...current.filter((row) => row.id !== item.id)];
-          persistSyncedState({ ...stateSnapshot, notifications: next });
-          return next;
-        });
+        const clientId = item.id;
+        const payload = buildPlatformNotificationCreatePayload(item);
+        void createPlatformNotification(payload)
+          .then((created) => {
+            const saved = created as PlatformNotification;
+            setNotificationsData((current) =>
+              applyCreatedPlatformNotification(current, saved, clientId),
+            );
+            setSyncStatus("synced");
+          })
+          .catch((error) => {
+              if (classifyLoadFailure(error).status === "offline") setSyncStatus("offline");
+            });
       },
-      updateNotifications: (items) => {
-        setNotificationsData(items);
-        persistSyncedState({ ...stateSnapshot, notifications: items });
+      updateNotification: (item) => {
+        let patchTarget: { id: string; patch: Record<string, unknown> };
+        try {
+          patchTarget = buildPlatformNotificationReadPatch(item);
+        } catch {
+          return;
+        }
+        setNotificationsData((current) =>
+          current.map((row) => (row.id === item.id ? { ...row, ...item } : row)),
+        );
+        void updatePlatformNotification(patchTarget.id, patchTarget.patch)
+          .then((updated) => {
+            setNotificationsData((current) =>
+              applyReadPlatformNotification(current, updated as PlatformNotification),
+            );
+            setSyncStatus("synced");
+          })
+          .catch((error) => {
+              if (classifyLoadFailure(error).status === "offline") setSyncStatus("offline");
+            });
+      },
+      markNotificationsRead: (items) => {
+        const targets = items.filter((item) => item.id && isUnreadNotification(item));
+        if (!targets.length) return;
+
+        const targetIds = new Set(targets.map((item) => String(item.id)));
+        setNotificationsData((current) =>
+          current.map((row) =>
+            targetIds.has(String(row.id ?? "")) ? { ...row, status: "Lu" } : row,
+          ),
+        );
+
+        void Promise.all(
+          targets.map((item) => {
+            const { id, patch } = buildPlatformNotificationReadPatch(item);
+            return updatePlatformNotification(id, patch);
+          }),
+        )
+          .then((updatedRows) => {
+            const byId = new Map(
+              updatedRows.map((row) => [String((row as PlatformNotification).id), row as PlatformNotification]),
+            );
+            setNotificationsData((current) =>
+              current.map((row) => byId.get(String(row.id ?? "")) ?? row),
+            );
+            setSyncStatus("synced");
+          })
+          .catch((error) => {
+              if (classifyLoadFailure(error).status === "offline") setSyncStatus("offline");
+            });
       },
     };
   }, [
@@ -593,7 +1478,6 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
     classesData,
     countriesData,
     coursesData,
-    courseSchedulesData,
     messagesData,
     notesData,
     paymentsData,
@@ -606,30 +1490,90 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
     usersData,
     rolePermissionsData,
     activeSchoolCode,
+    resourceScopeKey,
     availableSchools,
     requiresSchoolSelection,
     session,
     session?.role,
-    session?.school.code,
+    session?.school?.code,
     session?.user.schoolCode,
     scopedStateSnapshot,
     stateSnapshot,
     syncStatus,
     refreshBackOfficeState,
+    paymentsSnapshot,
+    studentFeesData,
+    studentFeesSnapshot,
+    courseSchedulesSnapshot,
+    planningCourseOptionsSnapshot,
+    roomsSnapshot,
+    replacementsSnapshot,
+    reportCardsSnapshot,
+    evaluationsSnapshot,
+    notesSnapshot,
+    usersSnapshot,
+    teachersSnapshot,
+    studentsSnapshot,
+    classesSnapshot,
+    assignmentsSnapshot,
+    schoolCoursesSnapshot,
+    presencesSnapshot,
+    announcementsSnapshot,
+    messagesSnapshot,
+    schoolsSnapshot,
+    loadPayments,
+    loadStudentFees,
+    loadUsers,
+    loadTeachers,
+    loadStudents,
+    loadClasses,
+    loadAssignments,
+    loadSchoolCourses,
+    loadAnnouncements,
+    loadMessages,
+    loadSchools,
+    loadCountries,
+    loadSubscriptions,
+    loadNotifications,
+    loadPlanningWeekly,
+    loadPlanningCourseOptions,
+    loadRooms,
+    loadReplacements,
+    loadReportCards,
+    loadEvaluations,
+    loadEvaluation,
+    loadNotes,
+    loadEvaluationGrades,
+    loadPresences,
+    applyConfirmedPresences,
   ]);
 
   return <AdminDataContext.Provider value={value}>{children}</AdminDataContext.Provider>;
-}
-
-function canSyncBackOfficeState(role?: string, authenticated?: unknown) {
-  if (!authenticated) return false;
-  return ["super_admin", "country_admin", "school_admin", "principal", "prefet", "secretary"].includes(role ?? "");
 }
 
 function applyArray<T>(value: unknown, setter: React.Dispatch<React.SetStateAction<T[]>>) {
   if (Array.isArray(value)) {
     setter(value as T[]);
   }
+}
+
+function canonicalGradeToNoteItem(grade: CanonicalGrade): NoteItem {
+  return {
+    id: grade.id,
+    studentId: grade.studentId,
+    subject: grade.subject ?? "",
+    value: Number(grade.value ?? grade.score ?? 0),
+    coefficient: grade.evaluationCoefficient,
+    date: grade.date ?? "",
+    period: grade.period,
+    evaluationId: grade.evaluationId,
+    evaluationTitle: grade.evaluationTitle,
+    evaluationType: grade.evaluationType,
+    scale: grade.scale,
+    evaluationCoefficient: grade.evaluationCoefficient,
+    gradeStatus: grade.gradeStatus,
+    status: grade.status,
+  };
 }
 
 function getSessionSchoolCode(session: any) {
@@ -643,7 +1587,16 @@ function filterBySchool(value: unknown, schoolCode: string) {
 }
 
 function applyItemScope(entity: ScopedEntity, item: any, session: any, state: BackOfficeStatePayload) {
-  const establishmentRoles = new Set(["school_admin", "principal", "prefet", "secretary"]);
+  const establishmentRoles = new Set([
+    "school_admin",
+    "principal",
+    "proviseur",
+    "prefet",
+    "secretary",
+    "accountant",
+    "adjoint",
+    "supervisor",
+  ]);
   if (!item || !establishmentRoles.has(String(session?.role ?? ""))) {
     return item;
   }
@@ -677,7 +1630,16 @@ function applyItemScope(entity: ScopedEntity, item: any, session: any, state: Ba
 }
 
 function enforceEntityScope(entity: ScopedEntity, items: any[], session: any, state: BackOfficeStatePayload) {
-  const establishmentRoles = new Set(["school_admin", "principal", "prefet", "secretary"]);
+  const establishmentRoles = new Set([
+    "school_admin",
+    "principal",
+    "proviseur",
+    "prefet",
+    "secretary",
+    "accountant",
+    "adjoint",
+    "supervisor",
+  ]);
   if (!establishmentRoles.has(String(session?.role ?? ""))) {
     return items;
   }
@@ -742,12 +1704,6 @@ function filterAcademicConfigs(value: unknown, schoolCode: string) {
 
   const config = (value as Record<string, AcademicManagementConfig>)[schoolCode];
   return config ? { [schoolCode]: config } : {};
-}
-
-function sameStringSet(left: string[], right: string[]) {
-  if (left.length !== right.length) return false;
-  const values = new Set(left);
-  return right.every((item) => values.has(item));
 }
 
 export function useAdminData() {

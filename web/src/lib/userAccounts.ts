@@ -1,8 +1,8 @@
-import type { BackOfficeState, Country, School, Session, SessionUser, UserAccount } from "../types";
+import type { BackOfficeState, Country, Session, SessionUser, UserAccount } from "../types";
 import { getSchoolAcademicLists, mergeSelectOptions } from "./academicConfig";
 import {
   canonicalCountryScope,
-  countryScopeMatches,
+  getCountryCodeFromScope,
   isInternalSchoolRole,
   isSchoolAdminRole,
   normalize,
@@ -14,11 +14,9 @@ import {
   isPendingValidationStatus,
   isSuperAdminRole,
   normalizePlatformRole,
-  PENDING_VALIDATION_STATUS,
   SCHOOL_ADMIN_ROLE,
   SUPER_ADMIN_ROLE,
 } from "./orgHierarchy";
-import { isTeacherUserRole } from "./userTeacherSync";
 import { resolveEffectivePermissions } from "./permissions";
 import { api } from "../api/client";
 import { findDuplicateLoginIdentifier } from "./userAccountRules";
@@ -41,8 +39,24 @@ export function isPlatformUserRole(role?: string): boolean {
   return [...PLATFORM_ROLES].some((platformRole) => normalizedPlatformRoleKey(platformRole) === key);
 }
 
-/** Comptes plateforme gérables par le Superadmin (dont ceux créés par un Admin Pays). */
-export function isSuperadminManagedUser(user: Pick<UserAccount, "role">): boolean {
+export function isUnassignedUserAccount(
+  user: Pick<UserAccount, "role" | "roles" | "assignmentStatus">,
+): boolean {
+  const role = normalize(String(user.role ?? ""));
+  const roles = Array.isArray(user.roles) ? user.roles.filter((item) => normalize(item)) : [];
+  const assignmentStatus = normalize(String(user.assignmentStatus ?? ""));
+  return (
+    roles.length === 0 &&
+    (!role || role === "sans affectation") &&
+    (!assignmentStatus || assignmentStatus === "sans affectation")
+  );
+}
+
+/** Comptes plateforme gérables par le Superadmin (dont les identités encore sans rôle). */
+export function isSuperadminManagedUser(
+  user: Pick<UserAccount, "role" | "roles" | "assignmentStatus">,
+): boolean {
+  if (isUnassignedUserAccount(user)) return true;
   const key = normalizedPlatformRoleKey(user.role);
   return (
     normalizedPlatformRoleKey(COUNTRY_ADMIN_ROLE) === key ||
@@ -77,7 +91,8 @@ export function canManageUserAccount(
   }
   if (actor.role === COUNTRY_ADMIN_ROLE) {
     return (
-      normalizedPlatformRoleKey(target.role) === normalizedPlatformRoleKey(SCHOOL_ADMIN_ROLE) &&
+      (normalizedPlatformRoleKey(target.role) === normalizedPlatformRoleKey(SCHOOL_ADMIN_ROLE) ||
+        isUnassignedUserAccount(target)) &&
       (action === "READ" || action === "CREATE" || action === "UPDATE" || action === "SUSPEND")
     );
   }
@@ -130,51 +145,104 @@ export interface UserFormFieldPolicy {
   accessChannel: "hidden" | "readonly" | "select";
 }
 
-/** Champs modifiables selon le créateur et le rôle cible. */
+/** Champs modifiables selon le créateur, le rôle cible, et le mode create vs edit. */
 export function getUserFormFieldPolicy(
   creator: SessionUser | null | undefined,
   targetRole: string,
+  options: { mode?: "create" | "edit" } = {},
 ): UserFormFieldPolicy {
+  let policy: UserFormFieldPolicy;
   if (isSuperAdminRole(creator?.role)) {
     if (targetRole === COUNTRY_ADMIN_ROLE) {
-      return {
+      policy = {
         countryScope: "select",
         scopeLevel: "readonly",
         schoolCode: "readonly",
         accessChannel: "readonly",
       };
-    }
-    if (targetRole === SCHOOL_ADMIN_ROLE) {
-      return {
+    } else if (targetRole === SCHOOL_ADMIN_ROLE) {
+      policy = {
+        countryScope: "select",
+        scopeLevel: "readonly",
+        schoolCode: "select",
+        accessChannel: "readonly",
+      };
+    } else {
+      policy = {
         countryScope: "select",
         scopeLevel: "readonly",
         schoolCode: "select",
         accessChannel: "readonly",
       };
     }
-    return {
-      countryScope: "hidden",
-      scopeLevel: "readonly",
-      schoolCode: "readonly",
-      accessChannel: "readonly",
-    };
-  }
-
-  if (creator?.role === COUNTRY_ADMIN_ROLE) {
-    return {
+  } else if (creator?.role === COUNTRY_ADMIN_ROLE) {
+    policy = {
       countryScope: "readonly",
       scopeLevel: "readonly",
       schoolCode: "select",
       accessChannel: "readonly",
     };
+  } else {
+    policy = {
+      countryScope: "readonly",
+      scopeLevel: "readonly",
+      schoolCode: "readonly",
+      accessChannel: "select",
+    };
   }
 
-  return {
-    countryScope: "readonly",
-    scopeLevel: "readonly",
-    schoolCode: "readonly",
-    accessChannel: "select",
-  };
+  if (options.mode === "edit") {
+    return {
+      ...policy,
+      countryScope: "readonly",
+      schoolCode: "readonly",
+    };
+  }
+  return policy;
+}
+
+const IDENTITY_UPDATE_ALLOWLIST = [
+  "firstName",
+  "lastName",
+  "email",
+  "phone",
+  "gender",
+  "status",
+  "birthDate",
+  "validationStatus",
+  "validationRequestedBy",
+  "validationRequestedAt",
+  "validatedBy",
+  "validatedAt",
+] as const;
+
+/** PATCH identité : allowlist stricte. Jamais userCode / schoolCode / countryCode / role. */
+export function toUpdateUserIdentityPayload(user: Partial<UserAccount>): Record<string, unknown> {
+  const payload: Record<string, unknown> = {};
+  for (const key of IDENTITY_UPDATE_ALLOWLIST) {
+    if (user[key] !== undefined) payload[key] = user[key];
+  }
+  return payload;
+}
+
+export function canReassignUserTenant(
+  actor: SessionUser | null | undefined,
+  target: UserAccount | null | undefined,
+): boolean {
+  if (!actor || !target?.id) return false;
+  if (isSuperAdminRole(target.role) || target.role === COUNTRY_ADMIN_ROLE) return false;
+  const keys = target.roleKeys ?? [];
+  if (keys.includes("SUPER_ADMIN") || keys.includes("COUNTRY_ADMIN")) return false;
+  return isSuperAdminRole(actor.role) || actor.role === COUNTRY_ADMIN_ROLE;
+}
+
+const PARENT_STUDENT_ROLE_LABELS = new Set(["Parent", "Élève / Étudiant"]);
+
+export function formatUserRolesDisplay(user: Pick<UserAccount, "role" | "roles" | "assignmentStatus">): string {
+  if (user.assignmentStatus) return user.assignmentStatus;
+  if (Array.isArray(user.roles) && user.roles.length) return user.roles.join(", ");
+  if (user.role && user.role !== "Sans affectation") return user.role;
+  return "Sans affectation";
 }
 
 /** Rôles disponibles pour créer un compte (liste établissement + rôles déjà utilisés). */
@@ -197,9 +265,9 @@ export function getCreatableUserRoles(
     const { userRoles } = getSchoolAcademicLists(state, schoolCode);
     const inUse = state.users
       .filter((user) => normalize(user.schoolCode) === normalize(schoolCode ?? currentUser.schoolCode))
-      .map((user) => user.role)
-      .filter(Boolean);
-    return mergeSelectOptions(userRoles, inUse);
+      .flatMap((user) => (user.roles?.length ? user.roles : [user.role]))
+      .filter((role): role is string => Boolean(role));
+    return mergeSelectOptions(userRoles, inUse).filter((role) => !PARENT_STUDENT_ROLE_LABELS.has(role));
   }
 
   return [];
@@ -242,6 +310,12 @@ function nextSequence(values: string[], pattern: RegExp): number {
 }
 
 export function generateUserIdentifier(users: UserAccount[], role?: string): string {
+  const key = normalize(role);
+  if (key.includes("eleve") || key.includes("etudiant") || key === "student") {
+    throw new Error(
+      "L'identifiant élève est le matricule PostgreSQL (CD-IN-EL-26-001). Pas de générateur Web.",
+    );
+  }
   const prefix = getUserIdentifierPrefix(role);
   const identifiers = users.map((user) => String(user.identifier ?? user.publicId ?? ""));
   const next = nextSequence(identifiers, new RegExp(`^${prefix}-(\\d+)$`, "i"));
@@ -249,106 +323,89 @@ export function generateUserIdentifier(users: UserAccount[], role?: string): str
 }
 
 export function generateTemporaryPassword(): string {
-  return `SF-${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
-}
-
-function generateUserRecordId(users: UserAccount[]): string {
-  const existing = new Set(users.map((user) => String(user.id ?? "").trim()).filter(Boolean));
-  let attempt =
-    typeof crypto !== "undefined" && "randomUUID" in crypto
-      ? crypto.randomUUID()
-      : `usr-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-  while (existing.has(attempt)) {
-    attempt =
-      typeof crypto !== "undefined" && "randomUUID" in crypto
-        ? crypto.randomUUID()
-        : `usr-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-  }
-  return attempt;
+  const bytes = new Uint8Array(16);
+  globalThis.crypto.getRandomValues(bytes);
+  const token = Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0"))
+    .join("")
+    .toUpperCase();
+  return `SF-${token}-${String(bytes[0]).padStart(3, "0")}`;
 }
 
 function findSchoolInScope(state: BackOfficeState, session: Session, schoolCode?: string) {
-  const code = schoolCode ?? getDefaultSchoolCode(session, state);
+  const code = schoolCode ?? getDefaultSchoolCode(session);
   return state.schools.find((item) => normalize(item.code) === normalize(code));
 }
 
-export function getDefaultSchoolCode(session: Session | null, state: BackOfficeState): string {
+export function getDefaultSchoolCode(session: Session | null): string {
   const fromUser = session?.user?.schoolCode;
   if (fromUser && fromUser !== "*") return fromUser;
-  if (session?.user?.role === COUNTRY_ADMIN_ROLE) {
-    const school = state.schools.find((item) =>
-      schoolMatchesCountryScope(item, session.user.countryScope),
-    );
-    if (school?.code) return school.code;
-  }
-  return state.schools[0]?.code ?? "";
+  return "";
 }
 
 function resolveCountryScopeForRole(
   role: string,
   session: Session,
   school?: { country?: string; countryCode?: string },
+  currentCountryScope = "",
 ): string {
-  if (role === COUNTRY_ADMIN_ROLE) {
-    return "";
-  }
   if (isSuperAdminRole(session.user.role)) {
     if (role === SCHOOL_ADMIN_ROLE && school) {
-      return resolveCountryScopeFromSchool(school, "");
+      return resolveCountryScopeFromSchool(school, currentCountryScope);
     }
-    return "";
+    return currentCountryScope;
+  }
+  if (role === COUNTRY_ADMIN_ROLE) {
+    return currentCountryScope || session.user.countryScope || "";
   }
   if (session.user.role === COUNTRY_ADMIN_ROLE) {
-    return session.user.countryScope ?? resolveCountryScopeFromSchool(school ?? {}, "");
+    return session.user.countryScope ?? resolveCountryScopeFromSchool(school ?? {}, currentCountryScope);
   }
   if (school) {
-    return resolveCountryScopeFromSchool(school, session.user.countryScope ?? "");
+    return resolveCountryScopeFromSchool(school, session.user.countryScope ?? currentCountryScope);
   }
-  return session.user.countryScope ?? "";
+  return session.user.countryScope ?? currentCountryScope;
 }
 
-function resolveSchoolCodeForRole(role: string, session: Session, state: BackOfficeState, current?: string) {
-  const defaults = getRoleDefaults(role, getDefaultSchoolCode(session, state));
-  if (role === SCHOOL_ADMIN_ROLE && current && current !== "*") {
+function resolveSchoolCodeForRole(role: string, session: Session, current?: string) {
+  if (role === SUPER_ADMIN_ROLE || role === COUNTRY_ADMIN_ROLE) {
+    return "*";
+  }
+  if (current && current !== "*") {
     return current;
   }
-  return defaults.schoolCode;
+  const fromUser = session.user.schoolCode;
+  if (fromUser && fromUser !== "*") return fromUser;
+  return "";
 }
 
 export function buildNewUserDraft(
-  role: string,
+  _role: string,
   session: Session,
   state: BackOfficeState,
 ): UserAccount {
-  const schoolCode = resolveSchoolCodeForRole(role, session, state);
-  const defaults = getRoleDefaults(role, schoolCode);
-  const school = findSchoolInScope(state, session, defaults.schoolCode);
+  const schoolCode = getDefaultSchoolCode(session);
+  const defaults = getRoleDefaults("", schoolCode);
+  const school = schoolCode ? findSchoolInScope(state, session, schoolCode) : undefined;
   const temporaryPassword = generateTemporaryPassword();
-
-  // Règle métier : un Admin École créé par un Admin Pays doit être validé par le
-  // Super Admin avant d'être utilisable. Il naît donc « En attente de validation ».
-  const requiresSuperAdminValidation =
-    session.user.role === COUNTRY_ADMIN_ROLE && role === SCHOOL_ADMIN_ROLE;
+  const countryScope = isSuperAdminRole(session.user.role)
+    ? ""
+    : resolveCountryScopeForRole("", session, school, session.user.countryScope ?? "");
 
   return {
-    id: generateUserRecordId(state.users),
     firstName: "",
     lastName: "",
-    role,
-    identifier: generateUserIdentifier(state.users, role),
+    role: "",
+    roles: [],
+    assignmentStatus: "Sans affectation",
+    identifier: "",
     email: "",
     phone: "",
     gender: "Non renseigné",
-    schoolCode: defaults.schoolCode,
-    countryScope: resolveCountryScopeForRole(role, session, school),
+    schoolCode: schoolCode || defaults.schoolCode || "",
+    countryScope,
     scopeLevel: defaults.scopeLevel,
     accessChannel: defaults.accessChannel,
-    status: requiresSuperAdminValidation ? PENDING_VALIDATION_STATUS : "Actif",
-    validationStatus: requiresSuperAdminValidation ? PENDING_VALIDATION_STATUS : undefined,
-    validationRequestedBy: requiresSuperAdminValidation
-      ? session.user.identifier ?? session.user.firstName ?? "Admin Pays"
-      : undefined,
-    permissions: resolveEffectivePermissions(role, undefined, state.rolePermissions),
+    status: "Actif",
     temporaryPassword,
     hasTemporaryPassword: true,
     mustChangePassword: true,
@@ -362,16 +419,16 @@ export function applyRoleChangeToUser(
   session: Session,
   state: BackOfficeState,
 ): UserAccount {
-  const schoolCode = resolveSchoolCodeForRole(role, session, state, user.schoolCode);
+  const schoolCode = resolveSchoolCodeForRole(role, session, user.schoolCode);
   const defaults = getRoleDefaults(role, schoolCode);
-  const school = findSchoolInScope(state, session, defaults.schoolCode);
+  const school = schoolCode && schoolCode !== "*" ? findSchoolInScope(state, session, schoolCode) : undefined;
   const isNew = !user.id;
 
   return {
     ...user,
     role,
     schoolCode: defaults.schoolCode,
-    countryScope: resolveCountryScopeForRole(role, session, school),
+    countryScope: resolveCountryScopeForRole(role, session, school, user.countryScope ?? ""),
     scopeLevel: defaults.scopeLevel,
     accessChannel: defaults.accessChannel,
     permissions: resolveEffectivePermissions(role, undefined, state.rolePermissions),
@@ -386,7 +443,7 @@ export function applyRoleChangeToUser(
  *  - Admin Pays   → tous les établissements de son pays ;
  *  - Admin École / rôles internes → l'établissement rattaché.
  */
-export function getUserEstablishmentLabel(user: UserAccount, schools: School[] = []): string {
+export function getUserEstablishmentLabel(user: UserAccount): string {
   const hasGlobalScope = !user.schoolCode || user.schoolCode === "*";
 
   if (hasGlobalScope) {
@@ -401,8 +458,10 @@ export function getUserEstablishmentLabel(user: UserAccount, schools: School[] =
     return "Périmètre non défini";
   }
 
-  const school = schools.find((item) => normalize(item.code) === normalize(user.schoolCode));
-  return school ? `${school.name} (${school.code})` : (user.schoolCode as string);
+  const publicCode = String(user.schoolPublicCode ?? "").trim().toUpperCase();
+  if (!publicCode) return "—";
+  const schoolName = String(user.schoolName ?? "").trim();
+  return schoolName ? `${schoolName} (${publicCode})` : publicCode;
 }
 
 export function getCountryScopeOptions(countries: Country[]) {
@@ -412,10 +471,60 @@ export function getCountryScopeOptions(countries: Country[]) {
   }));
 }
 
+export function schoolsMatchingCountryScope<T extends { country?: string; countryCode?: string; code?: string }>(
+  schools: T[],
+  countryScope?: string,
+): T[] {
+  if (!String(countryScope ?? "").trim()) return [];
+  return schools.filter((school) => schoolMatchesCountryScope(school, countryScope));
+}
+
+export function toCreateUserApiPayload(user: UserAccount): Record<string, unknown> {
+  const schoolCode = String(user.schoolCode ?? "").trim();
+  const countryCode = getCountryCodeFromScope(user.countryScope);
+  return {
+    firstName: user.firstName,
+    lastName: user.lastName,
+    email: user.email,
+    phone: user.phone,
+    gender: user.gender,
+    status: user.status,
+    temporaryPassword: user.temporaryPassword,
+    schoolCode: schoolCode && schoolCode !== "*" ? schoolCode : "",
+    ...(countryCode ? { countryCode } : {}),
+    ...(user.countryScope ? { countryScope: user.countryScope } : {}),
+  };
+}
+
+/** Superadmin : création atomique identité + rôle (COUNTRY_ADMIN / SCHOOL_ADMIN). */
+export function toProvisionUserApiPayload(user: UserAccount): Record<string, unknown> {
+  const countryCode = getCountryCodeFromScope(user.countryScope);
+  const roleKey =
+    user.role === COUNTRY_ADMIN_ROLE ? "COUNTRY_ADMIN" : user.role === SCHOOL_ADMIN_ROLE ? "SCHOOL_ADMIN" : "";
+  const payload: Record<string, unknown> = {
+    firstName: user.firstName,
+    lastName: user.lastName,
+    email: user.email,
+    phone: user.phone,
+    gender: user.gender,
+    status: user.status,
+    temporaryPassword: user.temporaryPassword,
+    roleKey,
+    ...(countryCode ? { countryCode } : {}),
+    ...(user.countryScope ? { countryScope: user.countryScope } : {}),
+  };
+  if (roleKey === "SCHOOL_ADMIN") {
+    const schoolCode = String(user.schoolCode ?? "").trim();
+    payload.schoolCode = schoolCode && schoolCode !== "*" ? schoolCode : "";
+  }
+  return payload;
+}
+
 export interface ValidateUserAccountOptions {
   creator?: SessionUser | null;
   allowedSchoolCodes?: string[];
   teachers?: unknown[];
+  schools?: Array<{ code?: string; country?: string; countryCode?: string }>;
 }
 
 export function validateUserAccount(
@@ -424,77 +533,46 @@ export function validateUserAccount(
   creatableRoles: string[],
   options: ValidateUserAccountOptions = {},
 ): string | null {
-  const { creator, allowedSchoolCodes } = options;
+  const { creator, allowedSchoolCodes, schools } = options;
 
   if (!user.firstName?.trim() || !user.lastName?.trim()) {
     return "Prénom et nom sont obligatoires.";
   }
-  if (!user.role?.trim()) {
-    return "Choisissez un rôle.";
+  const requestedRole = String(user.role ?? "").trim();
+  if (
+    !user.id &&
+    requestedRole &&
+    requestedRole !== "Sans affectation" &&
+    creatableRoles.length > 0 &&
+    !creatableRoles.includes(requestedRole)
+  ) {
+    return "Ce rôle n'est pas attribuable à la création depuis Comptes utilisateurs.";
   }
-  if (!creatableRoles.includes(user.role)) {
-    return "Ce rôle n'est pas autorisé pour votre périmètre.";
-  }
-  if (!user.identifier?.trim()) {
-    return "Identifiant obligatoire.";
-  }
-  const identifier = user.identifier.trim();
-  const duplicate = findDuplicateLoginIdentifier(users, user);
-  if (duplicate) {
-    return `L'identifiant « ${identifier} » est déjà utilisé dans cet établissement.`;
-  }
-
-  if (isTeacherUserRole(user.role)) {
-    const teachers = (options.teachers ?? []) as Array<{ id?: string; userId?: string; identifier?: string }>;
-    const teacherConflict = teachers.find(
-      (teacher) =>
-        normalize(String(teacher.identifier ?? "")) === normalize(identifier) &&
-        teacher.userId &&
-        teacher.userId !== user.id,
-    );
-    if (teacherConflict) {
-      return `L'identifiant « ${identifier} » est déjà attribué à un autre enseignant.`;
+  if (user.email?.trim()) {
+    const duplicate = findDuplicateLoginIdentifier(users, user);
+    if (duplicate) {
+      return `L'email « ${user.email.trim()} » est déjà utilisé dans cet établissement.`;
     }
   }
-
-  const defaults = getRoleDefaults(user.role, user.schoolCode ?? "");
-  if (user.scopeLevel !== defaults.scopeLevel) {
-    return `Le périmètre doit être « ${defaults.scopeLevel} » pour le rôle ${user.role}.`;
-  }
-  if (user.accessChannel !== defaults.accessChannel) {
-    return `Le canal d'accès doit être « ${defaults.accessChannel} » pour ce rôle.`;
-  }
-
-  if (user.role === COUNTRY_ADMIN_ROLE && !user.countryScope?.trim()) {
-    return "Pays obligatoire pour un admin pays.";
-  }
-  if (user.role === SCHOOL_ADMIN_ROLE) {
-    if (!user.countryScope?.trim()) {
-      return "Pays obligatoire pour un admin école.";
-    }
-    if (!user.schoolCode?.trim() || user.schoolCode === "*") {
-      return "Sélectionnez l'établissement à administrer.";
-    }
-  }
-  if (!isPlatformUserRole(user.role) && !user.schoolCode?.trim()) {
-    return "Code établissement obligatoire pour ce rôle.";
-  }
-
   if (creator?.role === COUNTRY_ADMIN_ROLE) {
-    if (user.role !== SCHOOL_ADMIN_ROLE) {
-      return "Un admin pays ne peut gérer que des comptes Admin School.";
+    if (user.role === SCHOOL_ADMIN_ROLE || !user.id) {
+      if (!user.schoolCode?.trim() || user.schoolCode === "*") {
+        return "Sélectionnez l'établissement à administrer.";
+      }
     }
-    if (!countryScopeMatches(user.countryScope, creator.countryScope)) {
-      return "Le pays du compte doit correspondre à votre périmètre.";
-    }
-    if (allowedSchoolCodes?.length && !allowedSchoolCodes.includes(normalize(user.schoolCode))) {
+    if (allowedSchoolCodes?.length && user.schoolCode && !allowedSchoolCodes.includes(normalize(user.schoolCode))) {
       return "Cet établissement n'appartient pas à votre pays.";
     }
   }
 
   if (isSuperAdminRole(creator?.role) && isSuperadminManagedUser(user)) {
-    if (user.role === COUNTRY_ADMIN_ROLE && user.schoolCode !== "*") {
-      return "Un admin pays doit avoir l'établissement « * ».";
+    if (user.role === COUNTRY_ADMIN_ROLE) {
+      if (!user.countryScope?.trim()) {
+        return "Pays obligatoire pour un admin pays.";
+      }
+      if (user.schoolCode && user.schoolCode !== "*") {
+        return "Un admin pays doit avoir l'établissement « * ».";
+      }
     }
     if (user.role === SCHOOL_ADMIN_ROLE) {
       if (!user.countryScope?.trim()) {
@@ -506,8 +584,24 @@ export function validateUserAccount(
       if (allowedSchoolCodes?.length && !allowedSchoolCodes.includes(normalize(user.schoolCode))) {
         return "Cet établissement n'est pas disponible dans votre périmètre.";
       }
+      const selectedSchool = schools?.find((item) => normalize(item.code) === normalize(user.schoolCode));
+      if (selectedSchool && !schoolMatchesCountryScope(selectedSchool, user.countryScope)) {
+        return "L'établissement n'appartient pas au pays sélectionné.";
+      }
+    }
+    if (user.schoolCode && user.schoolCode !== "*" && !user.countryScope?.trim()) {
+      return "Pays obligatoire lorsque un établissement est sélectionné.";
     }
     return null;
+  }
+
+  if (isSuperAdminRole(creator?.role) && !user.id) {
+    if (user.schoolCode && user.schoolCode !== "*" && !user.countryScope?.trim()) {
+      return "Pays obligatoire lorsque un établissement est sélectionné.";
+    }
+    if (user.role === SCHOOL_ADMIN_ROLE) {
+      return "Pays et établissement obligatoires pour un admin école.";
+    }
   }
 
   return null;

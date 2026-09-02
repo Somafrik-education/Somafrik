@@ -1,18 +1,20 @@
 import { useMemo } from "react";
 import { useAuth } from "../context/AuthContext";
-import { useData } from "../context/DataContext";
 import type { FeaturePermissions, PermissionContext } from "./permissions";
 import { getFeaturePermissions } from "./permissions";
 
 export function usePermissionContext(): PermissionContext {
-  const { session } = useAuth();
-  const { state } = useData();
+  const { session, permissionsReady, permissionsBootstrap, permissionsBootstrapError } = useAuth();
+
   return useMemo(
     () => ({
       user: session?.user ?? null,
-      rolePermissions: state.rolePermissions ?? {},
+      rolePermissions: {},
+      permissionsReady,
+      permissionsBootstrap,
+      permissionsBootstrapError,
     }),
-    [session?.user, state.rolePermissions],
+    [session?.user, permissionsReady, permissionsBootstrap, permissionsBootstrapError],
   );
 }
 

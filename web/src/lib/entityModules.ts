@@ -257,7 +257,7 @@ export const SCHOOL_ENTITY_MODULES = ([
     label: "Élèves",
     feature: "Élèves",
     group: "utilisateurs",
-    description: "Effectifs, classes et dossiers élèves. Matricule généré automatiquement (ex. ELE-0001-0001-000001).",
+    description: "Effectifs, classes et dossiers élèves. Matricule = identifiant de connexion (ex. CD-IN-EL-26-001).",
     fields: [
       { key: "name", label: "Nom complet", placeholder: "Nom de l'élève" },
       { key: "firstName", label: "Prénom", placeholder: "Prénom" },
@@ -265,7 +265,7 @@ export const SCHOOL_ENTITY_MODULES = ([
         key: "matricule",
         label: "Matricule",
         readOnly: true,
-        hint: "Identifiant scolaire généré automatiquement.",
+        hint: "Matricule = identifiant de connexion, attribué par PostgreSQL (ex. CD-IN-EL-26-001).",
       },
       {
         key: "className",
@@ -313,7 +313,7 @@ export const SCHOOL_ENTITY_MODULES = ([
     feature: "Enseignants",
     group: "utilisateurs",
     description:
-      "Équipe pédagogique et affectations classe ↔ matière. Fiche créée automatiquement depuis Comptes utilisateurs.",
+      "Équipe pédagogique et affectations classe ↔ cours. Fiche créée automatiquement depuis Comptes utilisateurs.",
     fields: [
       { key: "name", label: "Nom", placeholder: "Nom de famille", required: true },
       { key: "firstName", label: "Prénom", placeholder: "Prénom", required: true },
@@ -321,7 +321,7 @@ export const SCHOOL_ENTITY_MODULES = ([
         key: "publicId",
         label: "Identifiant unique",
         readOnly: true,
-        hint: "Format : code pays-année-n° établissement-ENS-n° (ex. CD-2026-0001-ENS-0001).",
+        hint: "Format : identifiant enseignant (ex. ENS-0001). Le code établissement public est du type CD-IN-26-001.",
       },
       {
         key: "identifier",
@@ -393,53 +393,9 @@ export const SCHOOL_ENTITY_MODULES = ([
     label: "Classes",
     feature: "Classes",
     group: "pedagogie",
-    description: "Organisation des classes et niveaux.",
-    fields: [
-      {
-        key: "name",
-        label: "Nom de classe",
-        placeholder: "Choisir une classe",
-        inputType: "select",
-        optionsKey: "classNames",
-      },
-      {
-        key: "level",
-        label: "Niveau",
-        placeholder: "Choisir un niveau",
-        inputType: "select",
-        optionsKey: "levels",
-      },
-      {
-        key: "track",
-        label: "Filière",
-        placeholder: "Choisir une filière",
-        inputType: "select",
-        optionsKey: "tracks",
-      },
-      {
-        key: "cycle",
-        label: "Cycle",
-        inputType: "select",
-        selectOptions: [
-          { value: "Maternelle", label: "Maternelle" },
-          { value: "Primaire", label: "Primaire" },
-          { value: "Secondaire", label: "Secondaire" },
-          { value: "Supérieur", label: "Supérieur" },
-        ],
-      },
-      { key: "schoolYear", label: "Année scolaire", placeholder: "2025-2026" },
-      { key: "capacity", label: "Capacité maximale", placeholder: "Ex. 40" },
-      { key: "mainRoom", label: "Salle principale", placeholder: "Ex. Salle 12" },
-      {
-        key: "status",
-        label: "Statut",
-        inputType: "select",
-        selectOptions: [
-          { value: "Active", label: "Active" },
-          { value: "Archivée", label: "Archivée" },
-        ],
-      },
-    ],
+    description: "Organisation des classes et niveaux (API /api/classes).",
+    // Formulaire EntityPage retiré — CRUD métier via ClassesListPage.
+    fields: [],
     columns: ["name", "level", "track", "status"],
     columnLabels: { status: "Statut" },
   },
@@ -447,11 +403,11 @@ export const SCHOOL_ENTITY_MODULES = ([
     key: "courses",
     view: "courses",
     path: "/parametres/configuration",
-    label: "Matières",
+    label: "Cours",
     feature: "Matières",
     group: "pedagogie",
     description:
-      "Catalogue des matières par classe (paramètres établissement). Les affectations enseignant se gèrent dans Mon établissement → Enseignants.",
+      "Catalogue des cours par classe (paramètres établissement). Les affectations enseignant se gèrent dans Mon établissement → Enseignants.",
     fields: [
       {
         key: "className",
@@ -462,8 +418,8 @@ export const SCHOOL_ENTITY_MODULES = ([
       },
       {
         key: "name",
-        label: "Matière",
-        placeholder: "Choisir une matière",
+        label: "Cours",
+        placeholder: "Choisir un cours",
         inputType: "select",
         optionsKey: "subjects",
         required: true,
@@ -487,7 +443,7 @@ export const SCHOOL_ENTITY_MODULES = ([
     feature: "Affectations",
     group: "pedagogie",
     description:
-      "Affectation enseignant ↔ classe ↔ matière (gérée depuis Enseignants). Le catalogue des matières se configure dans Paramètres ; l'horaire se définit dans Emploi du temps.",
+      "Affectation enseignant ↔ classe ↔ cours (gérée depuis Enseignants). Le catalogue des cours se configure dans Paramètres ; l'horaire se définit dans Emploi du temps.",
     fields: [
       {
         key: "className",
@@ -499,8 +455,8 @@ export const SCHOOL_ENTITY_MODULES = ([
       },
       {
         key: "subject",
-        label: "Matière",
-        placeholder: "Choisir une matière",
+        label: "Cours",
+        placeholder: "Choisir un cours",
         inputType: "select",
         optionsKey: "assignmentSubjects",
         required: true,
@@ -556,7 +512,7 @@ export const SCHOOL_ENTITY_MODULES = ([
     description: "Évaluations et résultats scolaires.",
     fields: [
       { key: "studentName", label: "Élève", placeholder: "Nom élève" },
-      { key: "subject", label: "Matière", placeholder: "Mathématiques" },
+      { key: "subject", label: "Cours", placeholder: "Mathématiques" },
       { key: "value", label: "Note", placeholder: "15" },
       { key: "period", label: "Période", placeholder: "Trimestre 1" },
     ],
@@ -575,7 +531,7 @@ export const SCHOOL_ENTITY_MODULES = ([
     fields: [
       { key: "name", label: "Intitulé", placeholder: "Contrôle T1 — Mathématiques", readOnly: true },
       { key: "className", label: "Classe", placeholder: "6ème A", readOnly: true },
-      { key: "subject", label: "Matière", placeholder: "Mathématiques", readOnly: true },
+      { key: "subject", label: "Cours", placeholder: "Mathématiques", readOnly: true },
       { key: "examType", label: "Type", placeholder: "Contrôle / Devoir / Examen", readOnly: true },
       { key: "date", label: "Date", inputType: "date", readOnly: true },
       { key: "period", label: "Période", placeholder: "Trimestre 1", readOnly: true },
@@ -584,10 +540,12 @@ export const SCHOOL_ENTITY_MODULES = ([
         label: "Statut",
         inputType: "select",
         selectOptions: [
+          { value: "Brouillon", label: "Brouillon" },
           { value: "Programmé", label: "Programmé" },
-          { value: "En cours", label: "En cours" },
-          { value: "Publié", label: "Publié" },
           { value: "Validé", label: "Validé" },
+          { value: "Publié", label: "Publié" },
+          { value: "Annulé", label: "Annulé" },
+          { value: "Archivé", label: "Archivé" },
         ],
       },
     ],
@@ -640,8 +598,8 @@ export const SCHOOL_ENTITY_MODULES = ([
     description: "Frais scolaires et encaissements.",
     fields: [
       { key: "studentName", label: "Élève", placeholder: "Nom élève" },
-      { key: "feeType", label: "Type de frais", placeholder: "Scolarité" },
-      { key: "amount", label: "Montant", placeholder: "25000" },
+      { key: "itemsDetail", label: "Détail", placeholder: "3 libellés" },
+      { key: "amount", label: "Total", placeholder: "541" },
       { key: "method", label: "Mode de paiement", placeholder: "Espèces" },
       { key: "date", label: "Date", inputType: "date" },
       { key: "status", label: "Statut", placeholder: "Payé / Partiel / Annulé" },
@@ -649,12 +607,12 @@ export const SCHOOL_ENTITY_MODULES = ([
       { key: "comment", label: "Commentaire", placeholder: "Facultatif" },
       { key: "cancellationReason", label: "Motif d'annulation", placeholder: "Obligatoire si annulé" },
     ],
-    columns: ["reference", "studentName", "feeType", "amount", "method", "date", "status"],
+    columns: ["reference", "studentName", "itemsDetail", "amount", "method", "date", "status"],
     columnLabels: {
       reference: "Référence",
       studentName: "Élève",
-      feeType: "Type de frais",
-      amount: "Montant",
+      itemsDetail: "Détail",
+      amount: "Total",
       method: "Mode",
       date: "Date",
       status: "Statut",
@@ -665,7 +623,7 @@ export const SCHOOL_ENTITY_MODULES = ([
     view: "announcements",
     path: "/annonces",
     label: "Annonces",
-    feature: "Notifications",
+    feature: "Announcements",
     group: "communication",
     description: "Communications publiées à l'établissement.",
     fields: [

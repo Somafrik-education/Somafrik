@@ -1,4 +1,5 @@
 import type { Course, NoteItem, PaymentItem, PresenceItem, Student } from "../../data/catalog";
+import { isCancelledStatus, isPaidStatus, isUnallocatedStatus, paymentTotal } from "../../lib/dataTruth";
 import { GradeBookService } from "../academics/GradeBookService";
 
 export type PresenceStatus = "Présent" | "Absent" | "Retard" | "Justifié";
@@ -17,8 +18,10 @@ export type PaymentStats = {
   total: number;
   paid: number;
   pending: number;
+  unallocated: number;
   paidAmount: number;
   pendingAmount: number;
+  unallocatedAmount: number;
   rate: number;
 };
 
@@ -34,9 +37,14 @@ export function normalizePresenceStatus(presence?: Pick<PresenceItem, "present" 
   return presence.present ? "Présent" : "Absent";
 }
 
-/** Statut initial pour un appel : présent par défaut si aucune saisie du jour. */
-export function rollCallInitialStatus(presence?: Pick<PresenceItem, "present" | "status">): PresenceStatus {
-  if (!presence) return "Présent";
+/**
+ * Hydratation d'un appel : aucune ligne du jour ≠ Présent confirmé.
+ * Le bouton « Tout présent » reste l'action explicite.
+ */
+export function rollCallInitialStatus(
+  presence?: Pick<PresenceItem, "present" | "status">,
+): PresenceStatus | null {
+  if (!presence) return null;
   return normalizePresenceStatus(presence);
 }
 
@@ -45,10 +53,24 @@ export function isAttendedPresence(presence: Pick<PresenceItem, "present" | "sta
   return status === "Présent" || status === "Retard";
 }
 
+/**
+ * Scope élève : `undefined` = dataset global autorisé ;
+ * `[]` = zéro ligne (jamais un fallback global) ;
+ * `[...]` = uniquement ces élèves.
+ */
+export const EMPTY_SCOPED_IDS_MUST_NOT_FALLBACK_TO_GLOBAL =
+  "empty scoped ids MUST NOT fallback to global dataset";
+
+export function scopeRowsByStudentIds<T extends { studentId: string }>(
+  rows: T[],
+  studentIds?: string[],
+): T[] {
+  if (studentIds === undefined) return rows;
+  return rows.filter((row) => studentIds.includes(row.studentId));
+}
+
 export function getPresenceStats(presences: PresenceItem[], studentIds?: string[]): PresenceStats {
-  const scopedRows = studentIds?.length
-    ? presences.filter((presence) => studentIds.includes(presence.studentId))
-    : presences;
+  const scopedRows = scopeRowsByStudentIds(presences, studentIds);
   const present = scopedRows.filter((presence) => normalizePresenceStatus(presence) === "Présent").length;
   const absent = scopedRows.filter((presence) => normalizePresenceStatus(presence) === "Absent").length;
   const late = scopedRows.filter((presence) => normalizePresenceStatus(presence) === "Retard").length;
@@ -67,23 +89,40 @@ export function getPresenceStats(presences: PresenceItem[], studentIds?: string[
 }
 
 export function isPaidPayment(payment: Pick<PaymentItem, "status">) {
-  return payment.status === "PAYE";
+  return isPaidStatus(payment.status);
 }
 
+export function isCancelledPayment(payment: Pick<PaymentItem, "status">) {
+  return isCancelledStatus(payment.status);
+}
+
+export function isUnallocatedPayment(payment: Pick<PaymentItem, "status">) {
+  return isUnallocatedStatus(payment.status);
+}
+
+/**
+ * Cartes Payés / Impayés = reçus encore dans le cycle d'encaissement.
+ * Un reçu Annulé n'est ni payé ni impayé — ce n'est plus une créance.
+ * Un reçu Non imputé n'est pas Payé : l'argent est en caisse sans dette affectée.
+ */
 export function getPaymentStats(payments: PaymentItem[], studentIds?: string[]): PaymentStats {
-  const scopedRows = studentIds?.length
-    ? payments.filter((payment) => studentIds.includes(payment.studentId))
-    : payments;
-  const paidRows = scopedRows.filter(isPaidPayment);
-  const pendingRows = scopedRows.filter((payment) => !isPaidPayment(payment));
+  const scopedRows = scopeRowsByStudentIds(payments, studentIds);
+  const countableRows = scopedRows.filter((payment) => !isCancelledPayment(payment));
+  const paidRows = countableRows.filter(isPaidPayment);
+  const unallocatedRows = countableRows.filter(isUnallocatedPayment);
+  const pendingRows = countableRows.filter(
+    (payment) => !isPaidPayment(payment) && !isUnallocatedPayment(payment),
+  );
 
   return {
-    total: scopedRows.length,
+    total: countableRows.length,
     paid: paidRows.length,
     pending: pendingRows.length,
-    paidAmount: paidRows.reduce((sum, payment) => sum + Number(payment.amount || 0), 0),
-    pendingAmount: pendingRows.reduce((sum, payment) => sum + Number(payment.amount || 0), 0),
-    rate: scopedRows.length ? Math.round((paidRows.length / scopedRows.length) * 100) : 0,
+    unallocated: unallocatedRows.length,
+    paidAmount: paidRows.reduce((sum, payment) => sum + paymentTotal(payment), 0),
+    pendingAmount: pendingRows.reduce((sum, payment) => sum + paymentTotal(payment), 0),
+    unallocatedAmount: unallocatedRows.reduce((sum, payment) => sum + paymentTotal(payment), 0),
+    rate: countableRows.length ? Math.round((paidRows.length / countableRows.length) * 100) : 0,
   };
 }
 

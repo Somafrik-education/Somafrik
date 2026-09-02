@@ -41,19 +41,32 @@ function validateWritePayload(state = {}, payload = {}, touchedKeys = []) {
   };
 }
 
+function httpStatusForIntegrityMessage(message) {
+  if (!message) return 400;
+  if (/non validée|non validee|publiée|annulée|inactive/i.test(message)) return 409;
+  if (/même établissement|hors périmètre/i.test(message)) return 403;
+  if (/introuvable/i.test(message)) return 404;
+  return 400;
+}
+
 function assertNoteWrite(state, note, options = {}) {
   const message = validateNoteWrite(state, note, options);
-  if (message) throw new BusinessError(400, message);
+  if (!message) return;
+  if (/non validée|non validee|publiée|annulée|inactive/i.test(message)) {
+    const { createPedagogyError, PEDAGOGY_ERROR } = require("../lib/pedagogyManagement");
+    throw createPedagogyError(409, message, PEDAGOGY_ERROR.EVALUATION_NOT_VALIDATED);
+  }
+  throw new BusinessError(httpStatusForIntegrityMessage(message), message);
 }
 
 function assertPresenceWrite(state, presence, options = {}) {
   const message = validatePresenceWrite(state, presence, options);
-  if (message) throw new BusinessError(400, message);
+  if (message) throw new BusinessError(httpStatusForIntegrityMessage(message), message);
 }
 
 function assertPaymentWrite(state, payment, options = {}) {
   const message = validatePaymentWrite(state, payment, options);
-  if (message) throw new BusinessError(400, message);
+  if (message) throw new BusinessError(httpStatusForIntegrityMessage(message), message);
 }
 
 module.exports = {

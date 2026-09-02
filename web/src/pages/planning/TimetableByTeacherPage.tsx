@@ -9,11 +9,12 @@ import { PrintButton } from "../../components/ui/PrintButton";
 import { DataTable } from "../../components/ui/DataTable";
 import { scopedTeachers } from "../../lib/establishment";
 import {
-  extractTimeFromIso,
   isExamSchedule,
   PLANNING_WEEKDAYS,
   scopedCourseSchedules,
-  weekdayFromIso,
+  slotEndHm,
+  slotIsoWeekday,
+  slotStartHm,
   type CourseScheduleSlot,
 } from "../../lib/coursePlanning";
 
@@ -25,18 +26,18 @@ const columns: ColumnDef<CourseScheduleSlot>[] = [
   {
     id: "day",
     header: "Jour",
-    accessorFn: (row) => weekdayFromIso(row.start),
+    accessorFn: (row) => slotIsoWeekday(row),
     cell: ({ getValue }) => weekdayLabel(getValue<number>()),
   },
   {
     id: "time",
     header: "Horaire",
-    accessorFn: (row) => extractTimeFromIso(row.start),
+    accessorFn: (row) => slotStartHm(row),
     cell: ({ row }) =>
-      `${extractTimeFromIso(row.original.start)} – ${extractTimeFromIso(row.original.end)}`,
+      `${slotStartHm(row.original)} – ${slotEndHm(row.original)}`,
   },
   { accessorKey: "className", header: "Classe" },
-  { accessorKey: "subject", header: "Matière" },
+  { accessorKey: "subject", header: "Cours" },
   { id: "room", header: "Salle", accessorFn: (row) => row.room || "—" },
   {
     id: "kind",

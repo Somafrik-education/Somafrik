@@ -52,6 +52,52 @@ function twinOnlyLinked(teachers: Row[], user: UserAccount, schoolCode: string):
   return hasTwin && !hasTeachers;
 }
 
+function uniqueByTeacherId(rows: Row[]): Row[] {
+  const byId = new Map<string, Row>();
+  for (const row of rows) {
+    const id = String(row.id ?? "").trim();
+    if (id && !byId.has(id)) byId.set(id, row);
+  }
+  return [...byId.values()];
+}
+
+function reliableCandidates(
+  teachers: Row[],
+  user: UserAccount,
+  schoolCode: string,
+  key: "contactId" | "identifier",
+): Row[] {
+  const scoped = teachers.filter((teacher) => sameSchool(teacher.schoolCode, schoolCode));
+  if (key === "contactId") {
+    const contactId = normalize(String(user.contactId ?? ""));
+    if (!contactId) return [];
+    return uniqueByTeacherId(
+      scoped.filter((teacher) => normalize(String(teacher.contactId ?? "")) === contactId),
+    );
+  }
+  const identifiers = new Set(
+    [user.identifier, user.publicId].map((value) => normalize(String(value ?? ""))).filter(Boolean),
+  );
+  if (!identifiers.size) return [];
+  return uniqueByTeacherId(
+    scoped.filter((teacher) =>
+      [teacher.identifier, teacher.publicId]
+        .map((value) => normalize(String(value ?? "")))
+        .some((value) => identifiers.has(value)),
+    ),
+  );
+}
+
+function requireUniqueCandidate(candidates: Row[], resolutionKey: string): Row | null {
+  if (candidates.length <= 1) return candidates[0] ?? null;
+  const error = new Error(
+    `Plusieurs fiches enseignant correspondent par ${resolutionKey} dans l'établissement`,
+  ) as Error & { code?: string; statusCode?: number };
+  error.code = "TEACHER_CANON_AMBIGUOUS";
+  error.statusCode = 409;
+  throw error;
+}
+
 /**
  * Canon TEACHERS-* : userId + établissement, puis affectation active unique.
  * Ambiguïté → erreur structurée (pas de created_at / premier élément).
@@ -62,45 +108,35 @@ export function resolveCanonicalTeachersRow(
   schoolCode: string,
   assignments: Row[] = [],
 ): Row | null {
-  const candidates = teachersCodeLinked(teachers, user, schoolCode);
-  // Même id répété dans le tableau ≠ pluralité d'identités
-  const byId = new Map<string, Row>();
-  for (const teacher of candidates) {
-    const id = String(teacher.id ?? "").trim();
-    if (!id) continue;
-    if (!byId.has(id)) byId.set(id, teacher);
+  void assignments;
+  const byUserId = requireUniqueCandidate(
+    uniqueByTeacherId(teachersCodeLinked(teachers, user, schoolCode)),
+    "userId",
+  );
+  if (byUserId) return byUserId;
+  const byContactId = requireUniqueCandidate(
+    reliableCandidates(teachers, user, schoolCode, "contactId"),
+    "contactId",
+  );
+  if (byContactId) return byContactId;
+  const byIdentifierCandidates = reliableCandidates(teachers, user, schoolCode, "identifier");
+  if (
+    byIdentifierCandidates.length > 1 &&
+    byIdentifierCandidates.every((teacher) =>
+      isTeacherTwinCode(teacher.id) && String(teacher.userId ?? "") === String(user.id ?? ""),
+    )
+  ) {
+    return null;
   }
-  const unique = [...byId.values()];
-  if (unique.length === 0) return null;
-  if (unique.length === 1) return unique[0] ?? null;
-
-  const activeTeacherIds = new Set(
-    assignments
-      .filter((assignment) => {
-        if (!sameSchool(assignment.schoolCode, schoolCode)) return false;
-        const status = normalize(String(assignment.status ?? "active"));
-        return status === "" || status === "active" || status === "actif";
-      })
-      .map((assignment) => String(assignment.teacherId ?? "").trim())
-      .filter(Boolean),
+  return requireUniqueCandidate(
+    byIdentifierCandidates,
+    "identifiant métier",
   );
-
-  const viaAssignment = unique.filter((teacher) =>
-    activeTeacherIds.has(String(teacher.id ?? "").trim()),
-  );
-  if (viaAssignment.length === 1) return viaAssignment[0] ?? null;
-
-  const error = new Error(
-    "Plusieurs identités pédagogiques TEACHERS-* pour ce compte ; impossible de choisir un canon sans ambiguïté",
-  ) as Error & { code?: string; statusCode?: number };
-  error.code = "TEACHER_CANON_AMBIGUOUS";
-  error.statusCode = 409;
-  throw error;
 }
 
-function buildTeacherRow(user: UserAccount, existing?: Row): Row {
+function buildTeacherRow(user: UserAccount, existing?: Row, existingTeachers: Row[] = []): Row {
   const schoolCode = String(user.schoolCode ?? "").trim();
-  const teachersForIds = existing ? [existing] : [];
+  const teachersForIds = existing ? [existing] : existingTeachers;
   const ids = resolveTeacherIdentifiers(
     {
       publicId: user.publicId,
@@ -190,7 +226,7 @@ export function upsertTeacherFromUser(
   }
   const linked = [...linkedById.values()];
   if (linked.length === 0) {
-    return [buildTeacherRow(user), ...teachers];
+    return [buildTeacherRow(user, undefined, teachers), ...teachers];
   }
   if (linked.length === 1 && linked[0]) {
     return replaceTeacher(teachers, linked[0].id, buildTeacherRow(user, linked[0]));

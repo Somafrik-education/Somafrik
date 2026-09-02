@@ -235,6 +235,79 @@ function findDuplicateLoginIdentifier(users = [], candidate = {}, options = {}) 
   });
 }
 
+function findDuplicateCivilIdentity(users = [], candidate = {}) {
+  const normalizePersonName = (value) => normalizeKey(value).replace(/\s+/g, " ");
+  const firstName = normalizePersonName(candidate.firstName);
+  const lastName = normalizePersonName(candidate.lastName);
+  const schoolCode = normalizeKey(candidate.schoolCode);
+  const role = normalizeKey(candidate.role);
+  const birthDate = String(candidate.birthDate ?? "").trim();
+  if (!firstName || !lastName || !schoolCode || !role) return undefined;
+
+  return users.find((user) => {
+    if (!user || String(user.id ?? "") === String(candidate.id ?? "") || isUserAccountDeleted(user)) {
+      return false;
+    }
+    if (
+      normalizePersonName(user.firstName) !== firstName ||
+      normalizePersonName(user.lastName) !== lastName ||
+      normalizeKey(user.schoolCode) !== schoolCode ||
+      normalizeKey(user.role) !== role
+    ) {
+      return false;
+    }
+    const existingBirthDate = String(user.birthDate ?? "").trim();
+    return !birthDate || !existingBirthDate || birthDate === existingBirthDate;
+  });
+}
+
+function validateIntroducedCivilIdentityConflicts(currentState = {}, nextState = {}, touchedKeys = []) {
+  const errors = [];
+
+  if (touchedKeys.includes("users")) {
+    const currentIds = new Set((currentState.users ?? []).map((user) => String(user.id ?? "")));
+    const accepted = [...(currentState.users ?? [])];
+    for (const user of nextState.users ?? []) {
+      if (currentIds.has(String(user.id ?? ""))) continue;
+      const duplicate = findDuplicateCivilIdentity(accepted, user);
+      if (duplicate) {
+        errors.push({
+          entity: "users",
+          id: String(user.id ?? user.identifier ?? ""),
+          message:
+            "Un compte portant les mêmes nom, prénom et rôle existe déjà dans cet établissement. Modifiez le compte existant ou renseignez des dates de naissance différentes s'il s'agit d'homonymes.",
+        });
+        continue;
+      }
+      accepted.push(user);
+    }
+  }
+
+  if (touchedKeys.includes("teachers")) {
+    const currentIds = new Set((currentState.teachers ?? []).map((teacher) => String(teacher.id ?? "")));
+    const acceptedAsUsers = (currentState.teachers ?? []).map((teacher) => ({
+      ...teacher,
+      lastName: teacher.name,
+      role: "Enseignant",
+    }));
+    for (const teacher of nextState.teachers ?? []) {
+      if (currentIds.has(String(teacher.id ?? ""))) continue;
+      const candidate = { ...teacher, lastName: teacher.name, role: "Enseignant" };
+      if (findDuplicateCivilIdentity(acceptedAsUsers, candidate)) {
+        errors.push({
+          entity: "teachers",
+          id: String(teacher.id ?? teacher.identifier ?? ""),
+          message:
+            "Une fiche enseignant portant les mêmes nom et prénom existe déjà dans cet établissement. Modifiez la fiche existante ou renseignez des dates de naissance différentes s'il s'agit d'homonymes.",
+        });
+        continue;
+      }
+      acceptedAsUsers.push(candidate);
+    }
+  }
+  return errors;
+}
+
 function softDeleteUserAccount(user = {}, actor = "Administrateur") {
   const now = new Date().toISOString();
   return {
@@ -259,6 +332,8 @@ module.exports = {
   isWeakPin,
   validateAccountSecret,
   validateIntroducedAccountSecrets,
+  validateIntroducedCivilIdentityConflicts,
   findDuplicateLoginIdentifier,
+  findDuplicateCivilIdentity,
   softDeleteUserAccount,
 };

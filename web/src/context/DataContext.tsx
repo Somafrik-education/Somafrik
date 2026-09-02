@@ -8,13 +8,35 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { api } from "../api/client";
 import { useAuth } from "./AuthContext";
-import { SYNC_INTERVAL_MS } from "../lib/constants";
-import { applyPartialSave, mergeRemoteSnapshot } from "../lib/backofficeStateMerge";
-import { resolveEffectivePermissions } from "../lib/permissions";
-import { applyClientScopeToState } from "../lib/scope";
-import { stripClientAuditLogFromPutPayload } from "../lib/stripClientAuditLog";
+import { mergeRemoteSnapshot, purgeInactiveSchoolFromState } from "../lib/backofficeStateMerge";
+import { SCHOOL_SCOPED_CANONICAL_KEYS } from "../lib/canonicalDomains";
+import { assertNoStrippedCanonicalWrites } from "../lib/canonicalStateWriteGuard";
+import { domainsFromPatch, domainCacheKey, loadDomains, type DomainKey } from "../lib/domainLoaders";
+import { logDomainSync } from "../lib/domainSyncTelemetry";
+import { getAccessToken } from "../api/client";
+import { applyClientScopeToState, projectScopedUsers } from "../lib/scope";
+import { logUserScopeTrace } from "../lib/schoolCanonicalIdentity";
+import { logStudentScopeTrace, projectScopedStudents } from "../lib/studentsScope";
+import {
+  combinedScopeError,
+  EMPTY_DOMAIN_SCOPE_ERRORS,
+  mergeDomainScopeErrors,
+  scopeErrorPatchFromLoadedDomains,
+  type DomainScopeErrors,
+} from "../lib/scopeErrorState";
+import { stripClientFinanceFromPutPayload } from "../lib/stripClientFinance";
+import { stripClientSchoolsFromPutPayload } from "../lib/stripClientSchools";
+import { stripClientStudentsFromPutPayload } from "../lib/stripClientStudents";
+import { stripClientPedagogyStaffFromPutPayload } from "../lib/stripClientPedagogyStaff";
+import { stripClientPedagogyFromPutPayload } from "../lib/stripClientPedagogy";
+import { stripClientPlatformFromPutPayload } from "../lib/stripClientPlatform";
+import { stripClientClientsFromPutPayload } from "../lib/stripClientClients";
+import {
+  extractResidualPatch,
+  hasResidualPatch,
+  syncResidualBackOfficePatch,
+} from "../lib/residualBackOfficeSync";
 import {
   enqueuePatchMutations,
   formatOutboxFailureMessage,
@@ -23,19 +45,39 @@ import {
   reapplyOutboxToState,
   saveSyncOutbox,
   settleOutboxAfterHttpSave,
-  type SyncAck,
   type SyncOutboxEntry,
 } from "../lib/syncOutbox";
 import type { BackOfficeState, Session } from "../types";
+
+interface UpdateOptions {
+  sync?: boolean;
+  partial?: boolean;
+  /** École cible pour la synchronisation résiduelle (configuration multi-établissement). */
+  schoolCode?: string;
+}
+
+interface EnsureDomainsOptions {
+  schoolCode?: string;
+  force?: boolean;
+}
 
 interface DataContextValue {
   state: BackOfficeState;
   loading: boolean;
   error: string | null;
+  /** Erreur de projection périmètre (identité canonique absente / mismatch / fuite). */
+  scopeError: string | null;
   /** HOTFIX-SYNC-01 — journal des mutations non synchronisées. */
   syncJournal: SyncOutboxEntry[];
-  refresh: () => Promise<void>;
-  update: (patch: Partial<BackOfficeState>, options?: { sync?: boolean; partial?: boolean }) => Promise<void>;
+  /** Recharge les domaines déjà chargés, ou ceux passés en argument. */
+  refresh: (domains?: DomainKey[], options?: EnsureDomainsOptions) => Promise<void>;
+  /** Charge les domaines demandés s'ils ne le sont pas encore. */
+  ensureDomains: (domains: DomainKey[], options?: EnsureDomainsOptions) => Promise<void>;
+  /** Invalide le cache de domaines (ex. changement d'établissement actif). */
+  invalidateDomains: (domains: DomainKey[], options?: EnsureDomainsOptions) => void;
+  /** Purge les données scopées d'un établissement inactif (changement d'établissement). */
+  purgeSchoolScopedState: (inactiveSchoolCode: string) => void;
+  update: (patch: Partial<BackOfficeState>, options?: UpdateOptions) => Promise<void>;
   retryFailedSync: () => Promise<void>;
 }
 
@@ -76,11 +118,6 @@ const EMPTY_STATE: BackOfficeState = {
 function stateFromSession(session: Session): BackOfficeState {
   const base: BackOfficeState = {
     ...EMPTY_STATE,
-    schools: session.schools ?? [],
-    users: session.users ?? [],
-    countries: session.countries ?? [],
-    subscriptions: session.subscriptions ?? [],
-    notifications: session.notifications ?? [],
     rolePermissions: session.rolePermissions ?? {},
     academicConfigs: (session.academicConfigs as Record<string, unknown>) ?? {},
     auditLog: session.auditLog ?? [],
@@ -88,20 +125,10 @@ function stateFromSession(session: Session): BackOfficeState {
   return applyClientScopeToState(base, session.user);
 }
 
-function samePermissionSet(left: string[], right: string[]) {
-  if (left.length !== right.length) return false;
-  const values = new Set(left);
-  return right.every((item) => values.has(item));
-}
-
-function extractSyncAck(saved: Partial<BackOfficeState> & { syncAck?: SyncAck }): SyncAck | null {
-  return saved.syncAck ?? null;
-}
-
 const DataContext = createContext<DataContextValue | null>(null);
 
 export function DataProvider({ children }: { children: ReactNode }) {
-  const { session, setSession } = useAuth();
+  const { session } = useAuth();
   const [state, setState] = useState<BackOfficeState>(() =>
     session ? stateFromSession(session) : EMPTY_STATE,
   );
@@ -109,9 +136,21 @@ export function DataProvider({ children }: { children: ReactNode }) {
   stateRef.current = state;
   const sessionUserRef = useRef(session?.user ?? null);
   sessionUserRef.current = session?.user ?? null;
+  const loadedDomainsRef = useRef<Set<string>>(new Set());
+  const activeSchoolCodeRef = useRef("");
+  const domainFetchGenerationRef = useRef(new Map<string, number>());
+
+  const rememberSchoolCode = useCallback((schoolCode?: string) => {
+    const normalized = String(schoolCode ?? "").trim().toUpperCase();
+    if (normalized && normalized !== "*") {
+      activeSchoolCodeRef.current = normalized;
+    }
+  }, []);
   const syncPausedRef = useRef(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [scopeErrors, setScopeErrors] = useState<DomainScopeErrors>(EMPTY_DOMAIN_SCOPE_ERRORS);
+  const scopeError = combinedScopeError(scopeErrors);
   const [syncJournal, setSyncJournal] = useState<SyncOutboxEntry[]>(() => listActiveOutboxEntries());
 
   const persistJournal = useCallback((entries: SyncOutboxEntry[]) => {
@@ -119,72 +158,226 @@ export function DataProvider({ children }: { children: ReactNode }) {
     setSyncJournal(listActiveOutboxEntries(entries));
   }, []);
 
-  const refresh = useCallback(async () => {
-    if (!session || syncPausedRef.current) return;
-    setLoading(true);
-    try {
-      const remote = await api.get<Partial<BackOfficeState>>("/backoffice/state");
-      const outbox = loadSyncOutbox();
+  const cacheKeysForDomains = useCallback((domains: DomainKey[], schoolCode?: string) => {
+    return domains.map((domain) => domainCacheKey(domain, schoolCode));
+  }, []);
+
+  const mergeLoadedDomains = useCallback(
+    (
+      remote: Partial<BackOfficeState>,
+      cacheKeys: string[],
+      loadedKeys: DomainKey[],
+      schoolCode?: string,
+      expectedGenerations?: Map<string, number>,
+    ) => {
+      if (expectedGenerations) {
+        for (const key of cacheKeys) {
+          if (domainFetchGenerationRef.current.get(key) !== expectedGenerations.get(key)) {
+            return false;
+          }
+        }
+      }
+
+      for (const key of cacheKeys) loadedDomainsRef.current.add(key);
+      const sessionUser = sessionUserRef.current;
+      // Projection sur le payload GET, hors updater setState (#457) : après
+      // applyClientScopeToState les lignes incomplètes ont disparu, mais
+      // l'alerte fail-closed doit rester. Le patch ne touche que les
+      // domaines réellement rechargés (un GET users propre n'efface pas
+      // une fuite students encore valide).
+      let scopePatch: Partial<DomainScopeErrors> | undefined;
+      if (sessionUser && (loadedKeys.includes("users") || loadedKeys.includes("students"))) {
+        if (loadedKeys.includes("users")) {
+          logUserScopeTrace(
+            projectScopedUsers(sessionUser, {
+              users: remote.users ?? [],
+              schools: [],
+              countries: [],
+              subscriptions: [],
+              notifications: [],
+            }).trace,
+          );
+        }
+        if (loadedKeys.includes("students")) {
+          logStudentScopeTrace(projectScopedStudents(sessionUser, { students: remote.students ?? [] }).trace);
+        }
+        scopePatch = scopeErrorPatchFromLoadedDomains(loadedKeys, sessionUser, {
+          users: remote.users ?? [],
+          students: remote.students ?? [],
+        });
+      }
       setState((prev) => {
-        const merged = mergeRemoteSnapshot(prev, remote);
-        const withPending = reapplyOutboxToState(merged, listActiveOutboxEntries(outbox));
-        return session?.user ? applyClientScopeToState(withPending, session.user) : withPending;
+        const merged = mergeRemoteSnapshot(prev, remote, {
+          activeSchoolCode: schoolCode ?? activeSchoolCodeRef.current,
+          loadedKeys,
+        });
+        logDomainSync("DOMAIN_SERVER_REPLACE", {
+          domains: loadedKeys,
+          schoolCode,
+          count: loadedKeys.length,
+        });
+        const withPending = reapplyOutboxToState(merged, listActiveOutboxEntries());
+        return sessionUser ? applyClientScopeToState(withPending, sessionUser) : withPending;
       });
-      const failure = formatOutboxFailureMessage(outbox);
-      if (failure) setError(failure);
-      else setError(null);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Erreur de chargement");
-    } finally {
-      setLoading(false);
+      if (scopePatch && Object.keys(scopePatch).length) {
+        setScopeErrors((previous) => mergeDomainScopeErrors(previous, scopePatch));
+      }
+      return true;
+    },
+    [],
+  );
+
+  const invalidateDomains = useCallback((domains: DomainKey[], options: EnsureDomainsOptions = {}) => {
+    for (const domain of domains) {
+      const cacheKey = domainCacheKey(domain, options.schoolCode);
+      loadedDomainsRef.current.delete(cacheKey);
+      logDomainSync("DOMAIN_INVALIDATED", { domain, schoolCode: options.schoolCode });
     }
-  }, [session]);
+  }, []);
+
+  const purgeSchoolScopedState = useCallback((inactiveSchoolCode: string) => {
+    const normalized = String(inactiveSchoolCode ?? "").trim().toUpperCase();
+    if (!normalized || normalized === "*") return;
+    setState((prev) => purgeInactiveSchoolFromState(prev, normalized));
+    const domains = [...SCHOOL_SCOPED_CANONICAL_KEYS, "academicConfigs"] as DomainKey[];
+    invalidateDomains(domains, { schoolCode: normalized });
+  }, [invalidateDomains]);
+
+  const refreshDomains = useCallback(
+    async (domains?: DomainKey[], options: EnsureDomainsOptions = {}) => {
+      if (!session || !getAccessToken() || syncPausedRef.current) return;
+      const sessionMembership = String(session.user?.schoolCode ?? "").trim();
+      const schoolCode =
+        options.schoolCode ||
+        activeSchoolCodeRef.current ||
+        (sessionMembership && sessionMembership !== "*" ? sessionMembership : "");
+      rememberSchoolCode(schoolCode);
+
+      let keys = domains;
+      if (!keys?.length) {
+        keys = [...new Set(
+          [...loadedDomainsRef.current].map((cacheKey) => cacheKey.split(":")[0] as DomainKey),
+        )];
+      }
+      if (!keys.length) return;
+
+      setLoading(true);
+      try {
+        const cacheKeys = cacheKeysForDomains(keys, schoolCode);
+        const expectedGenerations = new Map<string, number>();
+        for (const key of cacheKeys) {
+          const nextGen = (domainFetchGenerationRef.current.get(key) ?? 0) + 1;
+          domainFetchGenerationRef.current.set(key, nextGen);
+          expectedGenerations.set(key, nextGen);
+        }
+        logDomainSync("DOMAIN_FETCH_START", { domains: keys, schoolCode });
+
+        const result = await loadDomains(keys, { schoolCode, role: session.user?.role });
+        if (result.loaded.length) {
+          const applied = mergeLoadedDomains(
+            result.data,
+            cacheKeysForDomains(result.loaded, schoolCode),
+            result.loaded,
+            schoolCode,
+            expectedGenerations,
+          );
+          if (applied) {
+            logDomainSync("DOMAIN_FETCH_SUCCESS", { domains: result.loaded, schoolCode });
+          }
+        }
+        if (result.serverErrors.length) {
+          for (const entry of result.serverErrors) {
+            logDomainSync("DOMAIN_FETCH_ERROR", { domain: entry.domain, error: entry.message });
+          }
+        }
+        const failure = formatOutboxFailureMessage(loadSyncOutbox());
+        const loadError = result.serverErrors.map((entry) => `${entry.domain}: ${entry.message}`).join(" ; ");
+        setError(failure || loadError || null);
+        if (result.serverErrors.length) {
+          throw new Error(loadError);
+        }
+      } catch (err) {
+        if (err instanceof Error && err.message) setError(err.message);
+        else setError("Erreur de chargement");
+        throw err;
+      } finally {
+        setLoading(false);
+      }
+    },
+    [session, mergeLoadedDomains, cacheKeysForDomains, rememberSchoolCode],
+  );
+
+  const ensureDomains = useCallback(
+    async (domains: DomainKey[], options: EnsureDomainsOptions = {}) => {
+      if (!session || !getAccessToken()) return;
+      const sessionMembership = String(session.user?.schoolCode ?? "").trim();
+      const schoolCode =
+        options.schoolCode ||
+        activeSchoolCodeRef.current ||
+        (sessionMembership && sessionMembership !== "*" ? sessionMembership : "");
+      rememberSchoolCode(schoolCode);
+      const pending = domains.filter((domain) => {
+        const cacheKey = domainCacheKey(domain, schoolCode);
+        if (options.force) return true;
+        return !loadedDomainsRef.current.has(cacheKey);
+      });
+      if (!pending.length) return;
+      if (options.force) {
+        invalidateDomains(pending, { schoolCode });
+      }
+      await refreshDomains(pending, { schoolCode });
+    },
+    [session, refreshDomains, invalidateDomains, rememberSchoolCode],
+  );
 
   useEffect(() => {
     if (session) {
+      loadedDomainsRef.current = new Set();
+      setScopeErrors(EMPTY_DOMAIN_SCOPE_ERRORS);
       const seeded = reapplyOutboxToState(stateFromSession(session), listActiveOutboxEntries());
       setState(seeded);
-      void refresh();
     } else {
+      loadedDomainsRef.current = new Set();
+      setScopeErrors(EMPTY_DOMAIN_SCOPE_ERRORS);
       setState(EMPTY_STATE);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session?.accessToken]);
 
-  useEffect(() => {
-    if (!session?.accessToken) return;
-    const timer = window.setInterval(() => {
-      void refresh();
-    }, SYNC_INTERVAL_MS);
-    return () => window.clearInterval(timer);
-  }, [session?.accessToken, refresh]);
-
-  useEffect(() => {
-    if (!session?.user?.role || !session.accessToken) return;
-    const merged = resolveEffectivePermissions(
-      session.user.role,
-      session.user.permissions,
-      state.rolePermissions,
-    );
-    const current = session.permissions ?? session.user.permissions ?? [];
-    if (samePermissionSet(current, merged)) return;
-    setSession({
-      ...session,
-      permissions: merged,
-      user: { ...session.user, permissions: merged },
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state.rolePermissions, session?.accessToken, session?.user?.role, setSession]);
-
   const update = useCallback(
-    async (patch: Partial<BackOfficeState>, options: { sync?: boolean; partial?: boolean } = {}) => {
+    async (patch: Partial<BackOfficeState>, options: UpdateOptions = {}) => {
+      if (options.partial === false) {
+        throw new Error("La restauration complète n'est pas disponible.");
+      }
+      if ("exams" in patch || "bulletins" in patch || "documents" in patch) {
+        throw new Error(
+          "Les examens, bulletins et documents ne sont plus enregistrables via le JSON résiduel. Utilisez les APIs canoniques.",
+        );
+      }
+
+      const canonicalPatch = stripClientClientsFromPutPayload(
+        stripClientPlatformFromPutPayload(
+          stripClientPedagogyFromPutPayload(
+            stripClientFinanceFromPutPayload(
+              stripClientPedagogyStaffFromPutPayload(
+                stripClientStudentsFromPutPayload(
+                  stripClientSchoolsFromPutPayload(patch as Record<string, unknown>),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ) as Partial<BackOfficeState>;
+      assertNoStrippedCanonicalWrites(patch, canonicalPatch);
+      if (Object.keys(canonicalPatch).length === 0) {
+        return;
+      }
       syncPausedRef.current = true;
-      const usePartial = options.partial !== false;
 
       const currentOutbox = loadSyncOutbox();
       const { entries: enqueued, annotatedPatch } = enqueuePatchMutations(
         currentOutbox,
-        patch as Record<string, unknown>,
+        canonicalPatch as Record<string, unknown>,
       );
       let workingOutbox = enqueued;
       persistJournal(workingOutbox);
@@ -212,38 +405,51 @@ export function DataProvider({ children }: { children: ReactNode }) {
       persistJournal(workingOutbox);
 
       try {
-        const rawPayload = usePartial
-          ? (annotatedPatch as Partial<BackOfficeState>)
-          : { ...stateRef.current, ...(annotatedPatch as Partial<BackOfficeState>) };
-        // HOTFIX-RBAC-ADMIN-01 : jamais envoyer auditLog (non writable client → 403).
-        const payload = stripClientAuditLogFromPutPayload(
-          rawPayload as Record<string, unknown>,
-        ) as Partial<BackOfficeState>;
-        const saved = await api.put<Partial<BackOfficeState> & { syncAck?: SyncAck }>(
-          "/backoffice/state",
-          payload,
-        );
-        const ack = extractSyncAck(saved);
-        // ACK Notes explicite + ACK implicite des domaines snapshot BO (presences/exams/payments).
+        const residualPatch = extractResidualPatch(annotatedPatch as Partial<BackOfficeState>);
+        if (!hasResidualPatch(residualPatch)) {
+          workingOutbox = settleOutboxAfterHttpSave(workingOutbox, {
+            ack: { accepted: [], rejected: [] },
+            annotatedPatch,
+          });
+          persistJournal(workingOutbox);
+          syncPausedRef.current = false;
+          return;
+        }
+
+        const sessionSchool = String(sessionUserRef.current?.schoolCode ?? "").trim().toUpperCase();
+        const targetSchool =
+          String(options.schoolCode ?? sessionSchool).trim().toUpperCase() || sessionSchool;
+        await syncResidualBackOfficePatch(residualPatch, targetSchool);
+
+        const refreshKeys = domainsFromPatch(residualPatch);
+        if (refreshKeys.length) {
+          const targetSchool =
+            String(options.schoolCode ?? sessionUserRef.current?.schoolCode ?? "").trim().toUpperCase() || undefined;
+          const result = await loadDomains(refreshKeys, {
+            schoolCode: targetSchool,
+            role: sessionUserRef.current?.role,
+          });
+          if (result.loaded.length) {
+            mergeLoadedDomains(
+              result.data,
+              cacheKeysForDomains(result.loaded, targetSchool),
+              result.loaded,
+              targetSchool,
+            );
+          }
+        }
+
         workingOutbox = settleOutboxAfterHttpSave(workingOutbox, {
-          ack,
+          ack: {
+            accepted: Object.keys(residualPatch).map((entity) => ({ entity })),
+            rejected: [],
+          },
           annotatedPatch,
         });
         persistJournal(workingOutbox);
 
-        setState((prev) => {
-          const base = usePartial
-            ? applyPartialSave(prev, saved, annotatedPatch as Partial<BackOfficeState>)
-            : mergeRemoteSnapshot(prev, saved);
-          const withPending = reapplyOutboxToState(base, listActiveOutboxEntries(workingOutbox));
-          return sessionUserRef.current
-            ? applyClientScopeToState(withPending, sessionUserRef.current)
-            : withPending;
-        });
-
         const failure = formatOutboxFailureMessage(workingOutbox);
         setError(failure);
-        // HOTFIX-SYNC-02 : un rejet métier (ex. rattachement) doit remonter à l'UI.
         if (failure) {
           syncPausedRef.current = false;
           throw new Error(failure);
@@ -271,7 +477,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
         }, 1500);
       }
     },
-    [persistJournal],
+    [mergeLoadedDomains, persistJournal, cacheKeysForDomains],
   );
 
   const retryFailedSync = useCallback(async () => {
@@ -293,8 +499,20 @@ export function DataProvider({ children }: { children: ReactNode }) {
   }, [update]);
 
   const value = useMemo<DataContextValue>(
-    () => ({ state, loading, error, syncJournal, refresh, update, retryFailedSync }),
-    [state, loading, error, syncJournal, refresh, update, retryFailedSync],
+    () => ({
+      state,
+      loading,
+      error,
+      scopeError,
+      syncJournal,
+      refresh: refreshDomains,
+      ensureDomains,
+      invalidateDomains,
+      purgeSchoolScopedState,
+      update,
+      retryFailedSync,
+    }),
+    [state, loading, error, scopeError, syncJournal, refreshDomains, ensureDomains, invalidateDomains, purgeSchoolScopedState, update, retryFailedSync],
   );
 
   return <DataContext.Provider value={value}>{children}</DataContext.Provider>;

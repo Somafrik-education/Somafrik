@@ -14,6 +14,7 @@ export function AppNavContent({ onNavigate }: AppNavContentProps) {
       <NavLink
         key={item.view}
         to={item.path}
+        data-testid={`nav-${item.view}`}
         end={item.path === "/tableau-de-bord"}
         onClick={() => onNavigate?.()}
         className={({ isActive }) =>

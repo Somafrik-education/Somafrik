@@ -5,6 +5,15 @@ const { Pool } = require("pg");
 const { hashSecret } = require("../services/credentialService");
 const { shouldSeedDemoData } = require("../lib/demoSeedPolicy");
 const seedData = require("../data");
+const { createTxAdapter } = require("./txAdapter");
+const { mapAssignment } = require("./teacherAssignmentsRepository");
+const {
+  sqlTeacherIdentityEquals,
+  sqlTeacherIdentityEqualsAny,
+  sqlTeacherPublicCodeEquals,
+} = require("../lib/teacherCodeAllocation");
+const { lockInt } = require("../services/idempotencyService");
+const { getIdempotencyTx, runWithIdempotencyTx } = require("../lib/idempotencyTxContext");
 
 const roleToDb = {
   "Super Administrateur Somafrik": "SUPER_ADMIN",
@@ -80,8 +89,46 @@ class PostgresRepository {
 
     const schema = fs.readFileSync(path.join(__dirname, "schema.sql"), "utf8");
     await this.query(schema);
+    await this.ensureIdempotencySchema();
+    await this.ensureLoginLockoutsCanonicalSchema();
+    this.attachLoginLockoutStore();
+    await this.ensureSchoolsCanonicalColumns();
     await this.ensureAttendanceCanonicalUniqueness();
     await this.ensureNotesCanonicalPersistence();
+    await this.ensureClassesDomainConstraints();
+    await this.ensureTeachersDomainConstraints();
+    await this.ensureTeacherAssignmentsActiveUniqueness();
+    await this.ensureUsersLoginIdentityConstraints();
+    await this.ensureFinanceCanonicalSchema();
+    await this.ensurePedagogyCanonicalSchema();
+    await this.ensureTeacherCourseCanonicalReconcile();
+    await this.ensurePlatformCanonicalSchema();
+    await this.ensurePlatformRolePermissionsBootstrap();
+    // Tables Clients PUIS inventaire fail-safe PUIS index parent-linking
+    // (helper partagé avec les tests PG — jamais d'index dans CLIENTS_SCHEMA_SQL).
+    await this.ensureClientsCanonicalSchema();
+    await this.ensureUserRolesCanonicalSchema();
+    await this.ensureResidualCanonicalSchema();
+    await this.ensureEducationReferencePreflight();
+    await this.ensureEducationReferenceConstraints();
+    await this.ensureEducationReferenceCanonicalSchema();
+    await this.ensureClassesStructuralOffering();
+    await this.stripLegacyAcademicReferencePayloads();
+    await this.ensureEstablishmentRolesPreflight();
+    await this.ensureEstablishmentRolesConstraints();
+    await this.ensureEstablishmentRolesCanonicalSchema();
+    await this.stripLegacyUserRolesPayloads();
+    await this.ensureEstablishmentRolesBootstrap();
+    await this.ensureFunctionalRbacPreflight();
+    await this.ensureFunctionalRbacCanonicalSchema();
+    await this.ensureFunctionalRbacBootstrap();
+    await this.ensureEvaluationTypesPreflight();
+    await this.ensureEvaluationTypesConstraints();
+    await this.ensureEvaluationTypesCanonicalSchema();
+    await this.stripLegacyEvaluationTypesPayloads();
+    await this.ensureEvaluationTypesBootstrap();
+    await this.runSchoolSettingsCanonicalBoot();
+    await this.runDocumentsExamsCanonicalBoot();
     if (shouldSeedDemoData()) {
       await this.seedIfEmpty();
       await this.ensurePlatformReferenceData();
@@ -93,12 +140,11 @@ class PostgresRepository {
   }
 
   /**
-   * D3.6b — Ordre : schéma déjà appliqué → inventaire/migration JSON → dédup → UNIQUE.
+   * D3.6b — Ordre : schéma déjà appliqué → dédup PG → UNIQUE → normalisation → contraintes.
+   * J2A : plus aucun import evaluations/notes depuis backoffice_state au boot.
+   * PostgreSQL canonique est la seule source de vérité runtime.
    */
   async ensureNotesCanonicalPersistence() {
-    // Ordre D3.6b : inventaire/rattachement → anomalies → dédup → UNIQUE → normalisation → contraintes.
-    await this.migrateEvaluationsFromBackOffice();
-    await this.migrateNotesFromBackOffice();
     await this.ensureGradeCanonicalUniqueness();
     await this.normalizeLegacyGradeContractRows();
     await this.ensureGradeContractConstraints();
@@ -172,18 +218,71 @@ class PostgresRepository {
     }
   }
 
+  async ensureLoginLockoutsCanonicalSchema() {
+    const { LOGIN_LOCKOUTS_SCHEMA_SQL } = require("./loginLockoutSchema");
+    await this.query(LOGIN_LOCKOUTS_SCHEMA_SQL);
+  }
+
+  attachLoginLockoutStore() {
+    const { attachPostgresLoginLockoutStore } = require("../lib/loginLockout");
+    attachPostgresLoginLockoutStore(this);
+  }
+
   async query(sql, params = []) {
-    const runner = this._txClient ?? this.pool;
-    return runner.query(sql, params);
+    const current = getIdempotencyTx();
+    if (current?.tx) {
+      return current.tx.query(sql, params);
+    }
+    return this.pool.query(sql, params);
+  }
+
+  /**
+   * Proxy transactionnel : les méthodes du dépôt utilisent le client tx passé explicitement.
+   * @param {ReturnType<typeof createTxAdapter>} tx
+   */
+  createTxScope(tx) {
+    if (!tx || typeof tx.query !== "function") {
+      return this;
+    }
+    const self = this;
+    // Bind methods to the Proxy (receiver), not the raw repository: otherwise
+    // internal this.query / this.one / this.all bypass tx and hit the pool.
+    return new Proxy(self, {
+      get(target, prop, receiver) {
+        if (prop === "query") {
+          return (sql, params) => tx.query(sql, params);
+        }
+        if (prop === "one") {
+          return (sql, params) => tx.one(sql, params);
+        }
+        if (prop === "all") {
+          return (sql, params) => tx.all(sql, params);
+        }
+        if (prop === "withTransaction") {
+          return async (fn) => fn(tx);
+        }
+        if (prop === "withReadOnlyRepeatableRead") {
+          return async (fn) => fn(receiver, tx);
+        }
+        const value = Reflect.get(target, prop, receiver);
+        if (typeof value === "function") {
+          return value.bind(receiver);
+        }
+        return value;
+      },
+    });
   }
 
   async withTransaction(fn) {
+    const current = getIdempotencyTx();
+    if (current?.tx) {
+      return fn(current.tx);
+    }
     const client = await this.pool.connect();
-    const previous = this._txClient;
-    this._txClient = client;
+    const tx = createTxAdapter(client);
     try {
       await client.query("BEGIN");
-      const result = await fn(client);
+      const result = await fn(tx);
       await client.query("COMMIT");
       return result;
     } catch (error) {
@@ -194,7 +293,58 @@ class PostgresRepository {
       }
       throw error;
     } finally {
-      this._txClient = previous;
+      client.release();
+    }
+  }
+
+  /**
+   * Une seule transaction : claim/lock clé + mutation métier + audit + résultat idempotence.
+   * Toute panne avant COMMIT rollback l'ensemble (y compris un paiement déjà INSERT).
+   */
+  async withIdempotencyTransaction(cacheId, fn) {
+    await this.init();
+    const client = await this.pool.connect();
+    const tx = createTxAdapter(client);
+    const lockKey = lockInt(cacheId);
+    try {
+      await client.query("BEGIN");
+      await client.query("SELECT pg_advisory_xact_lock($1)", [lockKey]);
+      const result = await runWithIdempotencyTx({ tx, client }, fn);
+      await client.query("COMMIT");
+      return result;
+    } catch (error) {
+      try {
+        await client.query("ROLLBACK");
+      } catch (_rollbackError) {
+        // conserve l'erreur métier d'origine
+      }
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  /**
+   * Snapshot lecture LOT 6 : une seule connexion, READ ONLY + REPEATABLE READ.
+   * Toutes les lectures d'export doivent passer par le scoped repo (createTxScope).
+   */
+  async withReadOnlyRepeatableRead(fn) {
+    const client = await this.pool.connect();
+    const tx = createTxAdapter(client);
+    try {
+      await client.query("BEGIN READ ONLY ISOLATION LEVEL REPEATABLE READ");
+      const scoped = this.createTxScope(tx);
+      const result = await fn(scoped, tx);
+      await client.query("COMMIT");
+      return result;
+    } catch (error) {
+      try {
+        await client.query("ROLLBACK");
+      } catch (_rollbackError) {
+        // conserve l'erreur métier d'origine
+      }
+      throw error;
+    } finally {
       client.release();
     }
   }
@@ -234,90 +384,28 @@ class PostgresRepository {
     await this.query(CREATE_GRADE_UNIQUE_INDEX_SQL);
   }
 
+  /**
+   * Tombstone J2A — plus de lecture/écriture depuis backoffice_state.
+   * Les données historiques restent en table pour audit ; aucun backfill, aucune purge.
+   */
   async migrateEvaluationsFromBackOffice() {
-    const {
-      toEvaluationStatus,
-      validateEvaluationContract,
-    } = require("../lib/gradesCanonical");
-    const row = await this.one("SELECT state_payload FROM backoffice_state WHERE state_key = 'default'");
-    const state = row?.state_payload ?? {};
-    const evaluations = Array.isArray(state.evaluations) ? state.evaluations : [];
-    for (const evaluation of evaluations) {
-      try {
-        await this.upsertEvaluationFromLegacy(evaluation, { skipCacheClear: true });
-      } catch (error) {
-        const contractError = validateEvaluationContract({
-          maxScore: evaluation.scale ?? evaluation.max_score ?? 20,
-          coefficient: evaluation.coefficient ?? 1,
-          status: toEvaluationStatus(evaluation.status, "draft"),
-        });
-        console.warn(
-          `[D3.6b] Évaluation legacy non migrée (${evaluation.id ?? "?"}): ${error.message || contractError || "erreur"}`,
-        );
-      }
-    }
+    const error = new Error(
+      "LEGACY_BACKOFFICE_RUNTIME_MIGRATION_REMOVED: evaluations ne sont plus importées depuis backoffice_state. PostgreSQL canonique est la seule source.",
+    );
+    error.code = "LEGACY_BACKOFFICE_RUNTIME_MIGRATION_REMOVED";
+    throw error;
   }
 
+  /**
+   * Tombstone J2A — plus de lecture/écriture depuis backoffice_state.
+   * Les données historiques restent en table pour audit ; aucun backfill, aucune purge.
+   */
   async migrateNotesFromBackOffice() {
-    const { toGradeStatus } = require("../lib/gradesCanonical");
-    const row = await this.one("SELECT state_payload FROM backoffice_state WHERE state_key = 'default'");
-    const state = row?.state_payload ?? {};
-    const notes = Array.isArray(state.notes) ? state.notes : [];
-    let anomalyCount = 0;
-    for (const note of notes) {
-      const evaluationId = String(note.evaluationId ?? "").trim();
-      if (!evaluationId) {
-        anomalyCount += 1;
-        console.warn(`[D3.6b] Anomalie note sans evaluation_id: ${note.id ?? note.studentId ?? "?"}`);
-        continue;
-      }
-      const evaluation = await this.resolveEvaluationRow(evaluationId, note.schoolCode);
-      if (!evaluation) {
-        anomalyCount += 1;
-        console.warn(
-          `[D3.6b] Anomalie note evaluation_id non résoluble: ${note.id ?? "?"} → ${evaluationId}`,
-        );
-        continue;
-      }
-      const student = await this.one(
-        `SELECT st.id FROM students st
-         WHERE st.school_id = $1 AND (st.student_code = $2 OR st.id::text = $2)
-         LIMIT 1`,
-        [evaluation.school_id, String(note.studentId ?? "")],
-      );
-      if (!student) {
-        anomalyCount += 1;
-        console.warn(`[D3.6b] Anomalie note élève introuvable: ${note.studentId ?? "?"}`);
-        continue;
-      }
-      const already = await this.one(
-        `SELECT id FROM grades
-         WHERE school_id = $1 AND evaluation_id = $2 AND student_id = $3
-         LIMIT 1`,
-        [evaluation.school_id, evaluation.id, student.id],
-      );
-      // Idempotent : ne pas re-upsert (évite bump version à chaque démarrage).
-      if (already) continue;
-      try {
-        await this.upsertGrade(
-          {
-            ...note,
-            evaluationId: evaluation.legacy_json_id || evaluation.id,
-            gradeStatus: toGradeStatus(note.gradeStatus ?? note.status, note.value != null),
-            scale: note.scale ?? evaluation.max_score,
-            evaluationCoefficient: note.evaluationCoefficient ?? evaluation.coefficient,
-          },
-          { role: "Admin School", sub: note.authorId },
-          { allowMissingTeacher: true, skipCacheClear: true },
-        );
-      } catch (error) {
-        anomalyCount += 1;
-        console.warn(`[D3.6b] Anomalie migration note ${note.id ?? "?"}: ${error.message}`);
-      }
-    }
-    if (anomalyCount > 0) {
-      console.warn(`[D3.6b] Migration notes: ${anomalyCount} anomalie(s) explicite(s)`);
-    }
+    const error = new Error(
+      "LEGACY_BACKOFFICE_RUNTIME_MIGRATION_REMOVED: notes ne sont plus importées depuis backoffice_state. PostgreSQL canonique est la seule source.",
+    );
+    error.code = "LEGACY_BACKOFFICE_RUNTIME_MIGRATION_REMOVED";
+    throw error;
   }
 
   /**
@@ -348,6 +436,1366 @@ class PostgresRepository {
     }
 
     await this.query(CREATE_ATTENDANCE_UNIQUE_INDEX_SQL);
+  }
+
+  /**
+   * Classes — unicité atomique (école + année + nom normalisé) + statut active|inactive.
+   * Ordre : normaliser statuts → détecter doublons (fail-safe) → index unique → CHECK.
+   * Interdit : suppression silencieuse des classes en doublon.
+   */
+  async ensureClassesDomainConstraints() {
+    const {
+      COUNT_CLASSES_NAME_DUPLICATE_GROUPS_SQL,
+      LIST_CLASSES_NAME_DUPLICATE_GROUPS_SQL,
+      CREATE_CLASSES_NAME_UNIQUE_INDEX_SQL,
+      ENSURE_CLASSES_STATUS_CHECK_SQL,
+      NORMALIZE_CLASSES_STATUS_SQL,
+      formatClassesNameDuplicateDiagnostic,
+    } = require("../lib/classesUniqueness");
+
+    await this.query(NORMALIZE_CLASSES_STATUS_SQL);
+
+    const before = await this.one(COUNT_CLASSES_NAME_DUPLICATE_GROUPS_SQL);
+    const duplicateGroups = Number(before?.duplicate_groups ?? 0);
+    if (duplicateGroups > 0) {
+      const groups = await this.all(LIST_CLASSES_NAME_DUPLICATE_GROUPS_SQL);
+      throw new Error(formatClassesNameDuplicateDiagnostic(groups, duplicateGroups));
+    }
+
+    await this.query(CREATE_CLASSES_NAME_UNIQUE_INDEX_SQL);
+    await this.query(ENSURE_CLASSES_STATUS_CHECK_SQL);
+  }
+
+  /**
+   * Colonnes structurelles classes (level_id / stream_id / group_code) + unicité d'offre.
+   * Doit s'exécuter après education_levels / education_streams.
+   */
+  async ensureClassesStructuralOffering() {
+    const {
+      ADD_CLASSES_STRUCTURAL_COLUMNS_SQL,
+      replaceClassesStructuralUniqueIndex,
+    } = require("../lib/classesUniqueness");
+    await this.query(ADD_CLASSES_STRUCTURAL_COLUMNS_SQL);
+    await this.withTransaction((tx) => replaceClassesStructuralUniqueIndex(tx));
+  }
+
+  /**
+   * Teachers — unicité atomique (school_id, user_id) pour fiche canonique liée.
+   * Ordre : inventaire doublons read-only (fail-safe) → index unique partiel → re-vérification.
+   * Interdit : suppression / fusion / choix automatique de canon.
+   */
+  async ensureFinanceCanonicalSchema() {
+    const { FINANCE_SCHEMA_SQL } = require("./financeSchema");
+    await this.query(FINANCE_SCHEMA_SQL);
+  }
+
+  async ensurePedagogyCanonicalSchema() {
+    const { PEDAGOGY_SCHEMA_SQL } = require("./pedagogySchema");
+    await this.query(PEDAGOGY_SCHEMA_SQL);
+    await this.ensurePlanningWeeklyPreflight();
+  }
+
+  /**
+   * Réconciliation idempotente : teacher_code legacy ENS-#### + school_courses
+   * manquants depuis teacher_assignments. Jamais de recréation d'enseignant/classe.
+   */
+  async ensureTeacherCourseCanonicalReconcile() {
+    const { ensureTeacherCourseCanonicalReconcile } = require("../lib/teacherCourseCanonicalReconcile");
+    this.teacherCourseCanonicalReconcile = await ensureTeacherCourseCanonicalReconcile(this, console);
+    return this.teacherCourseCanonicalReconcile;
+  }
+
+  /**
+   * Inventaire des lignes datées course_schedule_slots.
+   * Aucun backfill vers course_schedule_weekly_slots.
+   * STOP si SOMAFRIK_PLANNING_WEEKLY_BACKFILL est activé.
+   */
+  async ensurePlanningWeeklyPreflight() {
+    const {
+      inventoryPlanningWeeklyLegacy,
+      assertPlanningWeeklyNoAutomaticBackfill,
+      formatPlanningWeeklyPreflightLog,
+    } = require("../lib/planningWeeklyMigrationPreflight");
+    const report = await inventoryPlanningWeeklyLegacy(this);
+    this.planningWeeklyPreflight = {
+      skipped: report.skipped === true,
+      legacyCount: report.legacyCount,
+      summary: report.summary,
+    };
+    if (report.legacyCount > 0 || report.skipped) {
+      console.info(formatPlanningWeeklyPreflightLog(report));
+    }
+    assertPlanningWeeklyNoAutomaticBackfill(report);
+    return report;
+  }
+
+  async ensurePlatformCanonicalSchema() {
+    const { PLATFORM_SCHEMA_SQL, assertPlatformSchemaPreflight } = require("./platformSchema");
+    await assertPlatformSchemaPreflight(this);
+    await this.query(PLATFORM_SCHEMA_SQL);
+  }
+
+  async ensurePlatformRolePermissionsBootstrap() {
+    const seedData = require("../data");
+    const platformRoles = [
+      "Super Administrateur Somafrik",
+      "Super Administrateur OKAFRIK",
+      "Admin Pays",
+      "Admin School",
+    ];
+    for (const roleName of platformRoles) {
+      const existing = await this.one(`SELECT role_name FROM role_permissions WHERE role_name = $1`, [roleName]);
+      if (existing) continue;
+      await this.query(
+        `INSERT INTO role_permissions (role_name, permissions, updated_at)
+         VALUES ($1, $2::jsonb, NOW())`,
+        [roleName, JSON.stringify(seedData.rolePermissions?.[roleName] ?? [])],
+      );
+    }
+  }
+
+  async ensureClientsCanonicalSchema() {
+    const { ensureClientsCanonicalBootstrap } = require("./clientsCanonicalBootstrap");
+    await ensureClientsCanonicalBootstrap(
+      {
+        query: (sql, params) => this.query(sql, params),
+        one: (sql, params) => this.one(sql, params),
+        all: (sql, params) => this.all(sql, params),
+      },
+      console,
+    );
+  }
+
+  async ensureUserRolesCanonicalSchema() {
+    const {
+      USER_ROLES_SCHEMA_SQL,
+      USER_ROLES_MIGRATION_AMBIGUOUS,
+      NORMALIZE_ROLE_CODE_FUNCTION_SQL,
+      inventoryUnknownUsersRoleSql,
+      inventoryUnknownSecondaryRolesSql,
+      backfillFromUsersRoleSql,
+      backfillFromSecondaryRolesSql,
+    } = require("./userRolesSchema");
+    await this.query(NORMALIZE_ROLE_CODE_FUNCTION_SQL);
+    // Boot : cette étape précède ensureEstablishmentRolesCanonicalSchema.
+    // Si la table n'existe pas encore (base neuve), seul le référentiel statique
+    // est reconnu ; un rôle dynamique reste fail-closed. Base existante : le
+    // catalogue actif scope=school résout un role_code unique uniquement si
+    // users.school_id IS NOT NULL (jamais de rôle établissement en scope plateforme).
+    const catalogRel = await this.all(`SELECT to_regclass('public.establishment_roles') AS ref`);
+    const catalogAvailable = Boolean(catalogRel[0]?.ref);
+    const unknownRoles = await this.all(inventoryUnknownUsersRoleSql(catalogAvailable));
+    const profilePayloadColumns = await this.all(
+      `SELECT 1
+       FROM information_schema.columns
+       WHERE table_schema = 'public'
+         AND table_name = 'users'
+         AND column_name = 'profile_payload'`,
+    );
+    const hasProfilePayload = profilePayloadColumns.length > 0;
+    const unknownSecondary = hasProfilePayload
+      ? await this.all(inventoryUnknownSecondaryRolesSql(catalogAvailable))
+      : [];
+    if (unknownRoles.length || unknownSecondary.length) {
+      const error = new Error(
+        "USER_ROLES_MIGRATION_AMBIGUOUS: rôles utilisateurs non déterministes. Conversion refusée.",
+      );
+      error.code = USER_ROLES_MIGRATION_AMBIGUOUS;
+      error.details = { unknownRoles, unknownSecondary };
+      throw error;
+    }
+    await this.query(USER_ROLES_SCHEMA_SQL);
+    await this.query(backfillFromUsersRoleSql(catalogAvailable));
+    if (hasProfilePayload) {
+      await this.query(backfillFromSecondaryRolesSql(catalogAvailable));
+    }
+  }
+
+  async ensureResidualCanonicalSchema() {
+    const { RESIDUAL_STATE_SCHEMA_SQL } = require("./residualStateSchema");
+    await this.query(RESIDUAL_STATE_SCHEMA_SQL);
+  }
+
+  async ensureEducationReferencePreflight() {
+    const { assertEducationReferenceSchemaPreflight } = require("./educationReferenceSchema");
+    await assertEducationReferenceSchemaPreflight(this);
+  }
+
+  async ensureEducationReferenceCanonicalSchema() {
+    const { EDUCATION_REFERENCE_SCHEMA_SQL } = require("./educationReferenceSchema");
+    await this.query(EDUCATION_REFERENCE_SCHEMA_SQL);
+  }
+
+  async stripLegacyAcademicReferencePayloads() {
+    const { stripLegacyAcademicReferencePayloads } = require("../lib/educationReferenceService");
+    await stripLegacyAcademicReferencePayloads(this);
+  }
+
+  async ensureEducationReferenceConstraints() {
+    const { ensureEducationReferenceConstraints } = require("../lib/educationReferenceService");
+    await ensureEducationReferenceConstraints(this, console);
+  }
+
+  getEducationReferenceStore() {
+    if (!this._educationReferenceStore) {
+      const { createEducationReferencePgStore } = require("./educationReferencePgStore");
+      this._educationReferenceStore = createEducationReferencePgStore(this);
+    }
+    return this._educationReferenceStore;
+  }
+
+  getSchoolEducationActiveLists(schoolCode) {
+    return this.getEducationReferenceStore().getSchoolActiveLists(schoolCode);
+  }
+
+  listEducationLevelsByCountry(countryCode, options) {
+    return this.getEducationReferenceStore().listLevelsByCountry(countryCode, options);
+  }
+
+  listEducationStreamsByCountry(countryCode, options) {
+    return this.getEducationReferenceStore().listStreamsByCountry(countryCode, options);
+  }
+
+  listEducationClassGroupsByCountry(countryCode, options) {
+    return this.getEducationReferenceStore().listGroupsByCountry(countryCode, options);
+  }
+
+  getEducationSchoolCatalog(schoolCode) {
+    return this.getEducationReferenceStore().getSchoolCatalog(schoolCode);
+  }
+
+  createEducationLevel(payload, principal, auditMeta) {
+    const { createLevel } = require("../lib/educationReferenceService");
+    return createLevel(this, payload, principal, auditMeta);
+  }
+
+  updateEducationLevel(levelId, patch, principal, auditMeta) {
+    const { updateLevel } = require("../lib/educationReferenceService");
+    return updateLevel(this, levelId, patch, principal, auditMeta);
+  }
+
+  archiveEducationLevel(levelId, principal, auditMeta) {
+    const { archiveLevel } = require("../lib/educationReferenceService");
+    return archiveLevel(this, levelId, principal, auditMeta);
+  }
+
+  createEducationStream(payload, principal, auditMeta) {
+    const { createStream } = require("../lib/educationReferenceService");
+    return createStream(this, payload, principal, auditMeta);
+  }
+
+  updateEducationStream(streamId, patch, principal, auditMeta) {
+    const { updateStream } = require("../lib/educationReferenceService");
+    return updateStream(this, streamId, patch, principal, auditMeta);
+  }
+
+  archiveEducationStream(streamId, principal, auditMeta) {
+    const { archiveStream } = require("../lib/educationReferenceService");
+    return archiveStream(this, streamId, principal, auditMeta);
+  }
+
+  createEducationClassGroup(payload, principal, auditMeta) {
+    const { createGroup } = require("../lib/educationReferenceService");
+    return createGroup(this, payload, principal, auditMeta);
+  }
+
+  updateEducationClassGroup(groupId, patch, principal, auditMeta) {
+    const { updateGroup } = require("../lib/educationReferenceService");
+    return updateGroup(this, groupId, patch, principal, auditMeta);
+  }
+
+  archiveEducationClassGroup(groupId, principal, auditMeta) {
+    const { archiveGroup } = require("../lib/educationReferenceService");
+    return archiveGroup(this, groupId, principal, auditMeta);
+  }
+
+  saveSchoolEducationActivation(schoolCode, activation, principal, auditMeta) {
+    const { saveSchoolActivation } = require("../lib/educationReferenceService");
+    return saveSchoolActivation(this, schoolCode, activation, principal, auditMeta);
+  }
+
+  updateCountryPedagogicalLabels(payload, principal, auditMeta) {
+    const { updateCountryPedagogicalLabels } = require("../lib/educationReferenceService");
+    return updateCountryPedagogicalLabels(this, payload, principal, auditMeta);
+  }
+
+  async ensureEstablishmentRolesPreflight() {
+    const { assertEstablishmentRolesSchemaPreflight } = require("./establishmentRolesSchema");
+    await assertEstablishmentRolesSchemaPreflight(this);
+  }
+
+  async ensureEstablishmentRolesCanonicalSchema() {
+    const { ESTABLISHMENT_ROLES_SCHEMA_SQL } = require("./establishmentRolesSchema");
+    await this.query(ESTABLISHMENT_ROLES_SCHEMA_SQL);
+  }
+
+  async stripLegacyUserRolesPayloads() {
+    const { stripLegacyUserRolesPayloads } = require("../lib/establishmentRolesService");
+    await stripLegacyUserRolesPayloads(this);
+  }
+
+  async ensureEstablishmentRolesConstraints() {
+    const { ensureEstablishmentRolesConstraints } = require("../lib/establishmentRolesService");
+    await ensureEstablishmentRolesConstraints(this, console);
+  }
+
+  async ensureEstablishmentRolesBootstrap() {
+    const { ensureEstablishmentRolesBootstrap } = require("../lib/establishmentRolesService");
+    await ensureEstablishmentRolesBootstrap(this);
+  }
+
+  async ensureFunctionalRbacPreflight() {
+    const { assertFunctionalRbacSchemaPreflight } = require("./functionalRbacSchema");
+    await assertFunctionalRbacSchemaPreflight(this);
+  }
+
+  async ensureFunctionalRbacCanonicalSchema() {
+    const { FUNCTIONAL_RBAC_SCHEMA_SQL } = require("./functionalRbacSchema");
+    await this.query(FUNCTIONAL_RBAC_SCHEMA_SQL);
+  }
+
+  async ensureFunctionalRbacBootstrap() {
+    const { ensureFunctionalRbacBootstrap } = require("../lib/functionalRbacService");
+    await ensureFunctionalRbacBootstrap(this);
+  }
+
+  getFunctionalRbacStore() {
+    const { createFunctionalRbacPgStore } = require("./functionalRbacPgStore");
+    return createFunctionalRbacPgStore(this);
+  }
+
+  resolveEffectivePermissions(principal) {
+    const { resolveEffectivePermissionsForPrincipal } = require("../lib/functionalRbacService");
+    return resolveEffectivePermissionsForPrincipal(this, principal);
+  }
+
+  listRbacCatalog(principal) {
+    const { listRbacCatalog } = require("../lib/functionalRbacService");
+    return listRbacCatalog(this, principal);
+  }
+
+  getConfiguredRolePermissions(query, principal) {
+    const { getConfiguredPermissions } = require("../lib/functionalRbacService");
+    return getConfiguredPermissions(this, query, principal);
+  }
+
+  getEffectiveRolePermissions(query, principal) {
+    const { getEffectivePermissionsConfigured } = require("../lib/functionalRbacService");
+    return getEffectivePermissionsConfigured(this, query, principal);
+  }
+
+  patchConfiguredRolePermissions(payload, principal, auditMeta) {
+    const { patchConfiguredPermissions } = require("../lib/functionalRbacService");
+    return patchConfiguredPermissions(this, payload, principal, auditMeta);
+  }
+
+  getEstablishmentRolesStore() {
+    if (!this._establishmentRolesStore) {
+      const { createEstablishmentRolesPgStore } = require("./establishmentRolesPgStore");
+      this._establishmentRolesStore = createEstablishmentRolesPgStore(this);
+    }
+    return this._establishmentRolesStore;
+  }
+
+  listEstablishmentRoles(options) {
+    return this.getEstablishmentRolesStore().listRoles(options);
+  }
+
+  createEstablishmentRole(payload, principal, auditMeta) {
+    const { createRole } = require("../lib/establishmentRolesService");
+    return createRole(this, payload, principal, auditMeta);
+  }
+
+  updateEstablishmentRole(roleId, patch, principal, auditMeta) {
+    const { updateRole } = require("../lib/establishmentRolesService");
+    return updateRole(this, roleId, patch, principal, auditMeta);
+  }
+
+  archiveEstablishmentRole(roleId, principal, auditMeta) {
+    const { archiveRole } = require("../lib/establishmentRolesService");
+    return archiveRole(this, roleId, principal, auditMeta);
+  }
+
+  assertEstablishmentRoleAssignable(roleLabel, principal) {
+    const { assertEstablishmentRoleAssignable } = require("../lib/establishmentRolesService");
+    return assertEstablishmentRoleAssignable(this, roleLabel, principal);
+  }
+
+  async ensureEvaluationTypesPreflight() {
+    const { assertEvaluationTypesSchemaPreflight } = require("./evaluationTypesSchema");
+    await assertEvaluationTypesSchemaPreflight(this);
+  }
+
+  async ensureEvaluationTypesCanonicalSchema() {
+    const { EVALUATION_TYPES_SCHEMA_SQL } = require("./evaluationTypesSchema");
+    await this.query(EVALUATION_TYPES_SCHEMA_SQL);
+  }
+
+  async stripLegacyEvaluationTypesPayloads() {
+    const { stripLegacyEvaluationTypesPayloads } = require("../lib/evaluationTypesService");
+    await stripLegacyEvaluationTypesPayloads(this);
+  }
+
+  async ensureEvaluationTypesConstraints() {
+    const { ensureEvaluationTypesConstraints } = require("../lib/evaluationTypesService");
+    await ensureEvaluationTypesConstraints(this, console);
+  }
+
+  async ensureEvaluationTypesBootstrap() {
+    const { ensureEvaluationTypesBootstrap } = require("../lib/evaluationTypesService");
+    await ensureEvaluationTypesBootstrap(this);
+  }
+
+  getEvaluationTypesStore() {
+    const { createEvaluationTypesPgStore } = require("./evaluationTypesPgStore");
+    return createEvaluationTypesPgStore(this);
+  }
+
+  async runSchoolSettingsCanonicalBoot() {
+    const { runSchoolSettingsCanonicalBoot } = require("../lib/schoolSettingsService");
+    return runSchoolSettingsCanonicalBoot(this, console);
+  }
+
+  async ensureSchoolSettingsPreflight() {
+    const { assertSchoolSettingsSchemaPreflight } = require("./schoolSettingsSchema");
+    await assertSchoolSettingsSchemaPreflight(this);
+  }
+
+  async ensureSchoolSettingsCanonicalSchema() {
+    const { SCHOOL_SETTINGS_SCHEMA_SQL } = require("./schoolSettingsSchema");
+    await this.query(SCHOOL_SETTINGS_SCHEMA_SQL);
+  }
+
+  async stripLegacySchoolSettingsPayloads() {
+    const { stripLegacySchoolSettingsPayloads } = require("../lib/schoolSettingsService");
+    await stripLegacySchoolSettingsPayloads(this);
+  }
+
+  async ensureSchoolSettingsConstraints() {
+    const { ensureSchoolSettingsConstraints } = require("../lib/schoolSettingsService");
+    return ensureSchoolSettingsConstraints(this, console);
+  }
+
+  async ensureSchoolSettingsBootstrap(captured) {
+    const { ensureSchoolSettingsBootstrap } = require("../lib/schoolSettingsService");
+    await ensureSchoolSettingsBootstrap(this, captured);
+  }
+
+  async verifySchoolSettingsMaterialized(captured) {
+    const { verifySchoolSettingsMaterialized } = require("../lib/schoolSettingsService");
+    await verifySchoolSettingsMaterialized(this, captured);
+  }
+
+  getSchoolSettingsStore() {
+    const { createSchoolSettingsPgStore } = require("./schoolSettingsPgStore");
+    return createSchoolSettingsPgStore(this);
+  }
+
+  getSchoolSettings(principal, schoolCode) {
+    const { getSchoolSettings } = require("../lib/schoolSettingsService");
+    return getSchoolSettings(this, principal, schoolCode);
+  }
+
+  patchSchoolSettings(payload, principal, auditMeta, schoolCode) {
+    const { patchSchoolSettings } = require("../lib/schoolSettingsService");
+    return patchSchoolSettings(this, payload, principal, auditMeta, schoolCode);
+  }
+
+  replaceAcademicPeriods(payload, principal, auditMeta, schoolCode) {
+    const { replaceAcademicPeriods } = require("../lib/schoolSettingsService");
+    return replaceAcademicPeriods(this, payload, principal, auditMeta, schoolCode);
+  }
+
+  async runDocumentsExamsCanonicalBoot() {
+    const { runDocumentsExamsCanonicalBoot } = require("../lib/documentsExamsService");
+    return runDocumentsExamsCanonicalBoot(this, console);
+  }
+
+  getDocumentsExamsStore() {
+    const { createDocumentsExamsPgStore } = require("./documentsExamsPgStore");
+    return createDocumentsExamsPgStore(this);
+  }
+
+  async listDocumentsExamsProjection() {
+    const schools = await this.all(`SELECT id, school_code FROM schools`);
+    const exams = [];
+    const bulletins = [];
+    const documents = [];
+    const store = this.getDocumentsExamsStore();
+    for (const school of schools) {
+      exams.push(...(await store.listExams(school.id)));
+      bulletins.push(...(await store.listReportCards(school.id)));
+      documents.push(...(await store.listSchoolDocuments(school.id)));
+    }
+    return { exams, bulletins, documents };
+  }
+
+  listExams(principal, schoolCode) {
+    const { listExams } = require("../lib/documentsExamsService");
+    return listExams(this, principal, schoolCode);
+  }
+
+  getExam(examId, principal, schoolCode) {
+    const { getExam } = require("../lib/documentsExamsService");
+    return getExam(this, principal, examId, schoolCode);
+  }
+
+  createExam(payload, principal, auditMeta, schoolCode) {
+    const { createExam } = require("../lib/documentsExamsService");
+    return createExam(this, payload, principal, auditMeta, schoolCode);
+  }
+
+  patchExam(examId, payload, principal, auditMeta, schoolCode) {
+    const { patchExam } = require("../lib/documentsExamsService");
+    return patchExam(this, examId, payload, principal, auditMeta, schoolCode);
+  }
+
+  validateExam(examId, principal, auditMeta, schoolCode) {
+    const { validateExam } = require("../lib/documentsExamsService");
+    return validateExam(this, examId, principal, auditMeta, schoolCode);
+  }
+
+  cancelExam(examId, principal, auditMeta, schoolCode) {
+    const { cancelExam } = require("../lib/documentsExamsService");
+    return cancelExam(this, examId, principal, auditMeta, schoolCode);
+  }
+
+  archiveExam(examId, principal, auditMeta, schoolCode) {
+    const { archiveExam } = require("../lib/documentsExamsService");
+    return archiveExam(this, examId, principal, auditMeta, schoolCode);
+  }
+
+  listReportCards(principal, schoolCode) {
+    const { listReportCards } = require("../lib/documentsExamsService");
+    return listReportCards(this, principal, schoolCode);
+  }
+
+  generateReportCard(payload, principal, auditMeta, schoolCode) {
+    const { generateReportCard } = require("../lib/documentsExamsService");
+    return generateReportCard(this, payload, principal, auditMeta, schoolCode);
+  }
+
+  publishReportCard(cardId, principal, auditMeta, schoolCode) {
+    const { publishReportCard } = require("../lib/documentsExamsService");
+    return publishReportCard(this, cardId, principal, auditMeta, schoolCode);
+  }
+
+  archiveReportCard(cardId, principal, auditMeta, schoolCode) {
+    const { archiveReportCard } = require("../lib/documentsExamsService");
+    return archiveReportCard(this, cardId, principal, auditMeta, schoolCode);
+  }
+
+  listReportCardTemplates(principal, schoolCode) {
+    const { listTemplates } = require("../lib/documentsExamsService");
+    return listTemplates(this, principal, schoolCode);
+  }
+
+  upsertReportCardTemplate(payload, principal, auditMeta, schoolCode) {
+    const { upsertTemplate } = require("../lib/documentsExamsService");
+    return upsertTemplate(this, payload, principal, auditMeta, schoolCode);
+  }
+
+  archiveReportCardTemplate(templateId, principal, auditMeta, schoolCode) {
+    const { archiveTemplate } = require("../lib/documentsExamsService");
+    return archiveTemplate(this, templateId, principal, auditMeta, schoolCode);
+  }
+
+  listSchoolDocuments(principal, schoolCode) {
+    const { listSchoolDocuments } = require("../lib/documentsExamsService");
+    return listSchoolDocuments(this, principal, schoolCode);
+  }
+
+  createSchoolDocument(payload, principal, auditMeta, schoolCode) {
+    const { createSchoolDocument } = require("../lib/documentsExamsService");
+    return createSchoolDocument(this, payload, principal, auditMeta, schoolCode);
+  }
+
+  patchSchoolDocument(documentId, payload, principal, auditMeta, schoolCode) {
+    const { patchSchoolDocument } = require("../lib/documentsExamsService");
+    return patchSchoolDocument(this, documentId, payload, principal, auditMeta, schoolCode);
+  }
+
+  archiveSchoolDocument(documentId, principal, auditMeta, schoolCode) {
+    const { archiveSchoolDocument } = require("../lib/documentsExamsService");
+    return archiveSchoolDocument(this, documentId, principal, auditMeta, schoolCode);
+  }
+
+  listEvaluationTypes(schoolCode, options) {
+    return this.getEvaluationTypesStore().listBySchool(schoolCode, options);
+  }
+
+  listEvaluationTypeNames(schoolCode) {
+    return this.getEvaluationTypesStore().listActiveNames(schoolCode);
+  }
+
+  createEvaluationType(payload, principal, auditMeta, schoolCode) {
+    const { createEvaluationType } = require("../lib/evaluationTypesService");
+    return createEvaluationType(this, payload, principal, auditMeta, schoolCode);
+  }
+
+  updateEvaluationType(typeId, patch, principal, auditMeta, schoolCode) {
+    const { updateEvaluationType } = require("../lib/evaluationTypesService");
+    return updateEvaluationType(this, typeId, patch, principal, auditMeta, schoolCode);
+  }
+
+  archiveEvaluationType(typeId, principal, auditMeta, schoolCode) {
+    const { archiveEvaluationType } = require("../lib/evaluationTypesService");
+    return archiveEvaluationType(this, typeId, principal, auditMeta, schoolCode);
+  }
+
+  getResidualStore() {
+    if (!this._residualStore) {
+      const { createResidualPgStore } = require("./residualPgStore");
+      this._residualStore = createResidualPgStore(this);
+    }
+    return this._residualStore;
+  }
+
+  listResidualProjection() {
+    return this.getResidualStore().listProjection();
+  }
+
+  replaceResidualExams() {
+    const { assertLegacyResidualWriteForbidden } = require("../lib/documentsExamsManagement");
+    assertLegacyResidualWriteForbidden("exam");
+  }
+
+  replaceResidualBulletins() {
+    const { assertLegacyResidualWriteForbidden } = require("../lib/documentsExamsManagement");
+    assertLegacyResidualWriteForbidden("bulletin");
+  }
+
+  replaceResidualDocuments() {
+    const { assertLegacyResidualWriteForbidden } = require("../lib/documentsExamsManagement");
+    assertLegacyResidualWriteForbidden("document");
+  }
+
+  async withResidualReplace(domain, schoolCode, items, principal, auditMeta) {
+    const { recordResidualReplace } = require("../lib/residualStateManagement");
+    return recordResidualReplace(this, domain, schoolCode, items, principal, auditMeta);
+  }
+
+  getPlatformStore() {
+    if (!this._platformStore) {
+      const { createPlatformPgStore } = require("./platformPgStore");
+      this._platformStore = createPlatformPgStore(this);
+    }
+    return this._platformStore;
+  }
+
+  listPlatformProjection() {
+    return this.getPlatformStore().listProjection();
+  }
+
+  getPlatformSchoolByCode(code) {
+    return this.getPlatformStore().getSchoolByCode(code);
+  }
+
+  async getRolePermissionsMap() {
+    const { mergeRolePermissionMaps } = require("../lib/functionalRbacService");
+    const seedMap = require("../data").rolePermissions ?? {};
+    const platformMap = (await this.getPlatformStore().getRolePermissionsMap()) ?? {};
+    const establishmentMap = await this.getEstablishmentRolesStore().getPermissionsMap();
+    return mergeRolePermissionMaps(seedMap, platformMap, establishmentMap);
+  }
+
+  createPlatformCountry(payload, principal, auditMeta) {
+    return this.getPlatformStore().createCountry(payload, principal, auditMeta);
+  }
+
+  updatePlatformCountry(code, patch, principal, auditMeta) {
+    return this.getPlatformStore().updateCountry(code, patch, principal, auditMeta);
+  }
+
+  upsertPlatformSubscription(payload, principal, auditMeta) {
+    return this.getPlatformStore().upsertSubscription(payload, principal, auditMeta);
+  }
+
+  createPlatformNotification(payload, principal, auditMeta) {
+    return this.getPlatformStore().createNotification(payload, principal, auditMeta);
+  }
+
+  updatePlatformNotification(id, patch, principal, auditMeta) {
+    return this.getPlatformStore().updateNotification(id, patch, principal, auditMeta);
+  }
+
+  replacePlatformRolePermissions(map, principal, auditMeta) {
+    return this.getPlatformStore().replaceRolePermissions(map, principal, auditMeta);
+  }
+
+  savePlatformDashboardChartConfig(config, principal, auditMeta) {
+    return this.getPlatformStore().saveDashboardChartConfig(config, principal, auditMeta);
+  }
+
+  upsertPlatformSubscriptionOffer(payload, principal, auditMeta) {
+    return this.getPlatformStore().upsertSubscriptionOffer(payload, principal, auditMeta);
+  }
+
+  createPlatformSubscriptionPayment(payload, principal, auditMeta) {
+    return this.getPlatformStore().createSubscriptionPayment(payload, principal, auditMeta);
+  }
+
+  updatePlatformSubscriptionPayment(id, patch, principal, auditMeta) {
+    return this.getPlatformStore().updateSubscriptionPayment(id, patch, principal, auditMeta);
+  }
+
+  createPlatformSubscriptionDiscount(payload, principal, auditMeta) {
+    return this.getPlatformStore().createSubscriptionDiscount(payload, principal, auditMeta);
+  }
+
+  updatePlatformSubscriptionDiscount(id, patch, principal, auditMeta) {
+    return this.getPlatformStore().updateSubscriptionDiscount(id, patch, principal, auditMeta);
+  }
+
+  getClientsStore() {
+    if (!this._clientsStore) {
+      const { createClientsPgStore } = require("./clientsPgStore");
+      this._clientsStore = createClientsPgStore(this);
+    }
+    return this._clientsStore;
+  }
+
+  getMobilePushStore() {
+    if (!this._mobilePushStore) {
+      const { createMobilePushDevicesStore } = require("./mobilePushDevicesStore");
+      this._mobilePushStore = createMobilePushDevicesStore(this);
+    }
+    return this._mobilePushStore;
+  }
+
+  upsertMobilePushDevice(principal, payload) {
+    const service = require("../lib/mobilePushDevicesService");
+    return service.upsertFromSession(this.getMobilePushStore(), principal, payload);
+  }
+
+  revokeCurrentMobilePushDevice(principal, payload) {
+    const service = require("../lib/mobilePushDevicesService");
+    return service.revokeCurrentFromSession(this.getMobilePushStore(), principal, payload);
+  }
+
+  sendMobilePushSelfTest(principal, payload) {
+    const { createExpoPushService } = require("../lib/expoPushService");
+    const service = require("../lib/mobilePushDevicesService");
+    const store = this.getMobilePushStore();
+    const pushClient = createExpoPushService({ store });
+    return service.sendSelfTest(store, principal, payload, pushClient);
+  }
+
+  /**
+   * Store clients lié au client PostgreSQL de la transaction courante.
+   * withTransaction du store rejoint ce scope (pas de second BEGIN/COMMIT).
+   */
+  createTransactionalClientsStore(tx) {
+    const { createClientsPgStore } = require("./clientsPgStore");
+    return createClientsPgStore(this.createTxScope(tx));
+  }
+
+  listClientsProjection() {
+    return this.getClientsStore().listProjection();
+  }
+
+  listClientsUsers(scope) {
+    return this.getClientsStore().listUsers(scope);
+  }
+
+  async listClientsAuthAccounts() {
+    await this.init();
+    const rows = await this.all(
+      `SELECT u.*, s.school_code, c.iso_code AS country_code, c.name AS country_name
+       FROM users u
+       LEFT JOIN schools s ON s.id = u.school_id
+       LEFT JOIN countries c ON c.id = s.country_id
+       WHERE COALESCE(u.status, 'active') NOT IN ('deleted', 'archived')`,
+    );
+    const roleRows = rows.length
+      ? await this.all(
+          `SELECT user_id, role_key FROM user_roles
+           WHERE status = 'active' AND revoked_at IS NULL AND user_id = ANY($1::uuid[])`,
+          [rows.map((row) => row.id)],
+        ).catch(() => [])
+      : [];
+    const rolesByUser = new Map();
+    for (const row of roleRows) {
+      const list = rolesByUser.get(String(row.user_id)) ?? [];
+      list.push(row.role_key);
+      rolesByUser.set(String(row.user_id), list);
+    }
+    const teacherRows = rows.length
+      ? await this.all(
+          `SELECT user_id, teacher_code FROM teachers
+           WHERE user_id = ANY($1::uuid[])
+             AND COALESCE(status, 'active') NOT IN ('deleted', 'archived')`,
+          [rows.map((row) => row.id)],
+        ).catch(() => [])
+      : [];
+    const teacherLoginByUserId = new Map(
+      teacherRows
+        .filter((row) => row.user_id)
+        .map((row) => [row.user_id, this.extractTeacherLoginId(row.teacher_code)]),
+    );
+    const schoolRows = await this.all(`
+      SELECT s.*, c.name AS country_name, c.iso_code
+      FROM schools s
+      LEFT JOIN countries c ON c.id = s.country_id
+    `);
+    const schoolByCode = new Map(schoolRows.map((school) => [school.school_code, school]));
+    return rows.map((row) => this.mapUser(row, schoolByCode, teacherLoginByUserId, rolesByUser.get(String(row.id)) ?? []));
+  }
+
+  createClientsUser(payload, principal, auditMeta) {
+    this.cachedDataset = null;
+    return this.getClientsStore().createUser(payload, principal, auditMeta);
+  }
+
+  provisionClientsUser(payload, principal, auditMeta) {
+    this.cachedDataset = null;
+    return this.getClientsStore().provisionUser(payload, principal, auditMeta);
+  }
+
+  updateClientsUser(id, patch, principal, auditMeta) {
+    this.cachedDataset = null;
+    return this.getClientsStore().updateUser(id, patch, principal, auditMeta);
+  }
+
+  reassignClientsUserSchool(id, payload, principal, auditMeta) {
+    this.cachedDataset = null;
+    return this.getClientsStore().reassignUserSchool(id, payload, principal, auditMeta);
+  }
+
+  grantClientsUserRole(userId, payload, principal, auditMeta) {
+    this.cachedDataset = null;
+    return this.getClientsStore().grantUserRole(userId, payload, principal, auditMeta);
+  }
+
+  revokeClientsUserRole(userId, payload, principal, auditMeta) {
+    this.cachedDataset = null;
+    return this.getClientsStore().revokeUserRole(userId, payload, principal, auditMeta);
+  }
+
+  listAssignableClientsUserRoles(principal) {
+    return this.getClientsStore().listAssignableUserRoles(principal);
+  }
+
+  listActiveUserRoleKeys(userId) {
+    const store = this.getClientsStore();
+    if (typeof store.bind === "function") {
+      return store.bind({}).listActiveUserRoleKeys(userId);
+    }
+    if (typeof store.listActiveUserRoleKeys === "function") {
+      return store.listActiveUserRoleKeys(userId);
+    }
+    return Promise.resolve([]);
+  }
+
+  listActiveUserRoleKeysForSchool(userId, schoolId) {
+    const uid = String(userId ?? "").trim();
+    const sid = String(schoolId ?? "").trim();
+    if (!uid || !sid) return Promise.resolve([]);
+    const store = this.getClientsStore();
+    const bound = typeof store.bind === "function" ? store.bind({}) : store;
+    if (typeof bound?.listActiveUserRoleKeysForSchool !== "function") {
+      return Promise.resolve([]);
+    }
+    return bound.listActiveUserRoleKeysForSchool(uid, sid);
+  }
+
+  createClientsContact(payload, principal, auditMeta) {
+    return this.getClientsStore().createContact(payload, principal, auditMeta);
+  }
+
+  updateClientsContact(id, patch, principal, auditMeta) {
+    return this.getClientsStore().updateContact(id, patch, principal, auditMeta);
+  }
+
+  provisionClientsContactAccount(contactId, payload, principal, auditMeta) {
+    this.cachedDataset = null;
+    return this.getClientsStore().provisionContactAccount(contactId, payload, principal, auditMeta);
+  }
+
+  createClientsRelation(payload, principal, auditMeta) {
+    return this.getClientsStore().createRelation(payload, principal, auditMeta);
+  }
+
+  linkParent(payload, principal, auditMeta) {
+    this.cachedDataset = null;
+    return this.getClientsStore().linkParent(payload, principal, auditMeta);
+  }
+
+  lookupParentIdentity(query, principal) {
+    return this.getClientsStore().lookupParentIdentity(query, principal);
+  }
+
+  archiveParentRelation(relationId, payload, principal, auditMeta) {
+    this.cachedDataset = null;
+    return this.getClientsStore().archiveParentRelation(relationId, payload, principal, auditMeta);
+  }
+
+  sendClientsMessage(payload, principal, auditMeta) {
+    return this.getClientsStore().sendMessage(payload, principal, auditMeta);
+  }
+
+  markClientsMessageRead(messageId, principal, auditMeta, query) {
+    return this.getClientsStore().markMessageRead(messageId, principal, auditMeta, query);
+  }
+
+  listClientsMessages(principal, query) {
+    return this.getClientsStore().listMessagesForPrincipal(principal, query);
+  }
+
+  listClientConversations(principal, query) {
+    return this.getClientsStore().listConversationsForPrincipal(principal, query);
+  }
+
+  getClientConversation(conversationId, principal, query) {
+    return this.getClientsStore().getConversationForPrincipal(conversationId, principal, query);
+  }
+
+  listClientConversationMessages(conversationId, principal, query) {
+    return this.getClientsStore().listConversationMessagesForPrincipal(conversationId, principal, query);
+  }
+
+  getClientMessage(messageId, principal, query) {
+    return this.getClientsStore().getMessageForPrincipal(messageId, principal, query);
+  }
+
+  createClientConversation(payload, principal, auditMeta) {
+    return this.getClientsStore().createConversationForPrincipal(payload, principal, auditMeta);
+  }
+
+  replyClientConversationMessage(conversationId, payload, principal, auditMeta) {
+    return this.getClientsStore().replyToConversationForPrincipal(conversationId, payload, principal, auditMeta);
+  }
+
+  getClientMessagesUnreadCount(principal, query) {
+    return this.getClientsStore().unreadCountForPrincipal(principal, query);
+  }
+
+  listClientMessageRecipients(principal, query) {
+    return this.getClientsStore().listMessageRecipientsForPrincipal(principal, query);
+  }
+
+  uploadCommunicationAttachment(principal, file, query) {
+    return this.getClientsStore().uploadCommunicationAttachment(principal, file, query);
+  }
+
+  downloadCommunicationAttachment(attachmentId, principal, query) {
+    return this.getClientsStore().downloadCommunicationAttachment(attachmentId, principal, query);
+  }
+
+  createClientsAnnouncement(payload, principal, auditMeta) {
+    return this.getClientsStore().createAnnouncement(payload, principal, auditMeta);
+  }
+
+  updateClientsAnnouncement(id, patch, principal, auditMeta) {
+    return this.getClientsStore().updateAnnouncement(id, patch, principal, auditMeta);
+  }
+
+  archiveClientsAnnouncement(id, principal, auditMeta, query) {
+    return this.getClientsStore().archiveAnnouncement(id, principal, auditMeta, query);
+  }
+
+  listClientsAnnouncements(principal, query) {
+    return this.getClientsStore().listAnnouncementsForPrincipal(principal, query);
+  }
+
+  getClientsAnnouncement(id, principal, query) {
+    return this.getClientsStore().getAnnouncementForPrincipal(id, principal, query);
+  }
+
+  markClientsAnnouncementRead(id, principal, auditMeta, query) {
+    return this.getClientsStore().markAnnouncementRead(id, principal, auditMeta, query);
+  }
+
+  getClientsAnnouncementsUnreadCount(principal, query) {
+    return this.getClientsStore().unreadAnnouncementCountForPrincipal(principal, query);
+  }
+
+  listAnnouncementAudienceOptions(principal, query) {
+    return this.getClientsStore().announcementAudienceOptionsForPrincipal(principal, query);
+  }
+
+  uploadAnnouncementAttachment(principal, file, query) {
+    return this.getClientsStore().uploadAnnouncementAttachment(principal, file, query);
+  }
+
+  createPlatformAnnouncement(payload, principal, auditMeta) {
+    return this.getClientsStore().createPlatformAnnouncement(payload, principal, auditMeta);
+  }
+
+  listPlatformAnnouncements(principal, query) {
+    return this.getClientsStore().listPlatformAnnouncementsForPrincipal(principal, query);
+  }
+
+  getPlatformAnnouncement(id, principal) {
+    return this.getClientsStore().getPlatformAnnouncementForPrincipal(id, principal);
+  }
+
+  markPlatformAnnouncementRead(id, principal, auditMeta) {
+    return this.getClientsStore().markPlatformAnnouncementRead(id, principal, auditMeta);
+  }
+
+  archivePlatformAnnouncement(id, principal, auditMeta) {
+    return this.getClientsStore().archivePlatformAnnouncementForPrincipal(id, principal, auditMeta);
+  }
+
+  getPlatformAnnouncementsUnreadCount(principal) {
+    return this.getClientsStore().unreadPlatformAnnouncementCountForPrincipal(principal);
+  }
+
+  uploadPlatformAnnouncementAttachment(principal, file) {
+    return this.getClientsStore().uploadPlatformAnnouncementAttachment(principal, file);
+  }
+
+  downloadPlatformAnnouncementAttachment(attachmentId, principal) {
+    return this.getClientsStore().downloadPlatformAnnouncementAttachment(attachmentId, principal);
+  }
+
+  getPedagogyStore() {
+    if (!this._pedagogyStore) {
+      const { createPedagogyPgStore } = require("./pedagogyPgStore");
+      this._pedagogyStore = createPedagogyPgStore(this);
+    }
+    return this._pedagogyStore;
+  }
+
+  listPedagogyProjection() {
+    return this.getPedagogyStore().listProjection();
+  }
+
+  createSchoolCourse(payload, principal, auditMeta) {
+    return this.getPedagogyStore().createSchoolCourse(payload, principal, auditMeta);
+  }
+
+  updateSchoolCourse(id, patch, principal, auditMeta) {
+    return this.getPedagogyStore().updateSchoolCourse(id, patch, principal, auditMeta);
+  }
+
+  deleteSchoolCourse(id, principal, auditMeta) {
+    return this.getPedagogyStore().deleteSchoolCourse(id, principal, auditMeta);
+  }
+
+  getSchoolCourse(id, principal) {
+    return this.getPedagogyStore().getSchoolCourse(id, principal);
+  }
+
+  createCourseSchedule(payload, principal, auditMeta) {
+    return this.getPedagogyStore().createCourseSchedule(payload, principal, auditMeta);
+  }
+
+  updateCourseSchedule(id, patch, principal, auditMeta) {
+    return this.getPedagogyStore().updateCourseSchedule(id, patch, principal, auditMeta);
+  }
+
+  deleteCourseSchedule(id, principal, auditMeta) {
+    return this.getPedagogyStore().deleteCourseSchedule(id, principal, auditMeta);
+  }
+
+  getCourseSchedule(id, principal) {
+    return this.getPedagogyStore().getCourseSchedule(id, principal);
+  }
+
+  listCourseSchedules(principal, query) {
+    return this.getPedagogyStore().listCourseSchedules(principal, query);
+  }
+
+  listSchoolRooms(principal, query) {
+    return this.getPedagogyStore().listSchoolRooms(principal, query);
+  }
+
+  createSchoolRoom(payload, principal, auditMeta) {
+    return this.getPedagogyStore().createSchoolRoom(payload, principal, auditMeta);
+  }
+
+  updateSchoolRoom(id, patch, principal, auditMeta) {
+    return this.getPedagogyStore().updateSchoolRoom(id, patch, principal, auditMeta);
+  }
+
+  archiveSchoolRoom(id, principal, auditMeta) {
+    return this.getPedagogyStore().archiveSchoolRoom(id, principal, auditMeta);
+  }
+
+  listCourseScheduleReplacements(principal, query) {
+    return this.getPedagogyStore().listCourseScheduleReplacements(principal, query);
+  }
+
+  listReplacementTeacherOptions(principal, query) {
+    return this.getPedagogyStore().listReplacementTeacherOptions(principal, query);
+  }
+
+  createCourseScheduleReplacement(payload, principal, auditMeta) {
+    return this.getPedagogyStore().createCourseScheduleReplacement(payload, principal, auditMeta);
+  }
+
+  updateCourseScheduleReplacement(id, patch, principal, auditMeta) {
+    return this.getPedagogyStore().updateCourseScheduleReplacement(id, patch, principal, auditMeta);
+  }
+
+  cancelCourseScheduleReplacement(id, principal, auditMeta) {
+    return this.getPedagogyStore().cancelCourseScheduleReplacement(id, principal, auditMeta);
+  }
+
+  createSchoolEvaluation(payload, principal, auditMeta) {
+    return this.getPedagogyStore().createEvaluation(payload, principal, auditMeta);
+  }
+
+  updateSchoolEvaluation(id, patch, principal, auditMeta) {
+    return this.getPedagogyStore().updateEvaluation(id, patch, principal, auditMeta);
+  }
+
+  async listSchoolEvaluations(schoolCode, principal = {}) {
+    const code = String(schoolCode ?? "").trim().toUpperCase();
+    if (!code || code === "*") return [];
+    const school = await this.getSchoolByCode(code);
+    if (!school?.id) return [];
+
+    const role = String(principal?.role ?? "")
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .trim()
+      .toLowerCase();
+    const isTeacher = role === "enseignant" || role === "teacher" || role.includes("prof");
+    const isParentOrStudent =
+      role.includes("parent") || role.includes("eleve") || role.includes("etudiant");
+
+    const sql = [
+      `SELECT e.*, s.school_code,
+              c.name AS class_name, c.class_code,
+              sub.name AS subject_name,
+              t.teacher_code,
+              NULLIF(TRIM(CONCAT(COALESCE(u.first_name, ''), ' ', COALESCE(u.last_name, ''))), '') AS teacher_name,
+              tm.name AS term_name, tm.academic_year_id,
+              ay.name AS academic_year_name,
+              et.name AS evaluation_type_name, et.code AS evaluation_type_code
+       FROM evaluations e
+       JOIN schools s ON s.id = e.school_id
+       JOIN classes c ON c.id = e.class_id
+       JOIN subjects sub ON sub.id = e.subject_id
+       JOIN terms tm ON tm.id = e.term_id
+       LEFT JOIN academic_years ay ON ay.id = tm.academic_year_id
+       LEFT JOIN teachers t ON t.id = e.teacher_id
+       LEFT JOIN users u ON u.id = t.user_id
+       LEFT JOIN evaluation_types et ON et.id = e.evaluation_type_id
+       WHERE e.school_id = $1`,
+    ];
+    const params = [school.id];
+
+    if (isTeacher) {
+      const lookupKeys = await this.collectTeacherLookupKeysForPrincipal(principal, school.id);
+      if (!lookupKeys.length) return [];
+      params.push(lookupKeys);
+      sql.push(`AND EXISTS (
+        SELECT 1
+        FROM teacher_assignments ta
+        JOIN teachers te ON te.id = ta.teacher_id
+        LEFT JOIN users tu ON tu.id = te.user_id
+        WHERE ta.school_id = e.school_id
+          AND ta.class_id = e.class_id
+          AND ta.subject_id = e.subject_id
+          AND ta.status = 'active'
+          AND (
+            te.user_id::text = ANY($${params.length}::text[])
+            OR ${sqlTeacherIdentityEqualsAny("te", "tu", `$${params.length}::text[]`)}
+          )
+      )`);
+    } else if (isParentOrStudent) {
+      sql.push(`AND e.active = TRUE AND e.status = 'published'`);
+    }
+
+    sql.push("ORDER BY e.created_at DESC");
+    const rows = await this.all(sql.join("\n"), params);
+    return rows.map((row) => this.mapEvaluation(row));
+  }
+
+  upsertSchoolGrade(payload, principal, auditMeta) {
+    return this.getPedagogyStore().upsertSchoolGrade(payload, principal, auditMeta);
+  }
+
+  upsertSchoolAttendanceBatch(payload, principal, auditMeta) {
+    return this.getPedagogyStore().upsertSchoolAttendanceBatch(payload, principal, auditMeta);
+  }
+
+  getFinanceStore() {
+    if (!this._financeStore) {
+      const { createFinancePgStore } = require("./financePgStore");
+      this._financeStore = createFinancePgStore(this);
+    }
+    return this._financeStore;
+  }
+
+  listFinanceProjection() {
+    return this.getFinanceStore().listProjection();
+  }
+
+  createSchoolPayment(payload, principal, auditMeta) {
+    return this.getFinanceStore().createSchoolPayment(payload, principal, auditMeta);
+  }
+
+  getSchoolPayment(id, principal) {
+    return this.getFinanceStore().getSchoolPayment(id, principal);
+  }
+
+  cancelSchoolPayment(id, reason, principal, auditMeta) {
+    return this.getFinanceStore().cancelSchoolPayment(id, reason, principal, auditMeta);
+  }
+
+  listFinancePaymentStatuses(principal) {
+    return this.getFinanceStore().listFinancePaymentStatuses(principal);
+  }
+
+  upsertFinancePaymentStatus(payload, principal) {
+    return this.getFinanceStore().upsertFinancePaymentStatus(payload, principal);
+  }
+
+  listFinanceFeeGrids(principal) {
+    return this.getFinanceStore().listFinanceFeeGrids(principal);
+  }
+
+  getFinanceFeeGrid(id, principal) {
+    return this.getFinanceStore().getFinanceFeeGrid(id, principal);
+  }
+
+  upsertFinanceFeeGrid(payload, principal) {
+    return this.getFinanceStore().upsertFinanceFeeGrid(payload, principal);
+  }
+
+  setFinanceFeeGridStatus(id, status, principal) {
+    return this.getFinanceStore().setFinanceFeeGridStatus(id, status, principal);
+  }
+
+  applyFinanceFeeGrid(id, principal, options) {
+    return this.getFinanceStore().applyFinanceFeeGrid(id, principal, options);
+  }
+
+  ensureEnrollmentObligations(input, principal, auditMeta) {
+    return this.getFinanceStore().ensureEnrollmentObligations(input, principal, auditMeta);
+  }
+
+  async syncEnrollmentFinanceObligations(input = {}, principal) {
+    const {
+      isUnswallowableFinanceSyncError,
+      FINANCE_OBLIGATION_SYNC_FAILED,
+    } = require("../lib/financeObligationLifecycle");
+    const actor = principal || {
+      role: "system",
+      schoolCode: input.schoolCode || "*",
+      financeLoginCode: String(input.schoolCode || "").trim(),
+      sub: "finance-obligation-lifecycle",
+    };
+    try {
+      return await this.ensureEnrollmentObligations(input, actor);
+    } catch (error) {
+      const failure = {
+        created: 0,
+        skipped: 0,
+        superseded: 0,
+        reason: FINANCE_OBLIGATION_SYNC_FAILED,
+        error: error?.code || error?.message,
+        enrollmentId: input.enrollmentId || null,
+      };
+      if (isUnswallowableFinanceSyncError(error)) {
+        error.financeSync = failure;
+        throw error;
+      }
+      return failure;
+    }
+  }
+
+  listFinanceStudentFees(principal) {
+    return this.getFinanceStore().listFinanceStudentFees(principal);
+  }
+
+  reconcileFinancePaymentAllocations(principal, options, auditMeta) {
+    return this.getFinanceStore().reconcileFinancePaymentAllocations(principal, options, auditMeta);
+  }
+
+  getFinanceStudentFee(id, principal) {
+    return this.getFinanceStore().getFinanceStudentFee(id, principal);
+  }
+
+  adjustFinanceStudentFee(id, patch, principal) {
+    return this.getFinanceStore().adjustFinanceStudentFee(id, patch, principal);
+  }
+
+  createFinanceReminder(studentId, payload, principal, options) {
+    return this.getFinanceStore().createFinanceReminder(studentId, payload, principal, options);
+  }
+
+  listPaymentStudentOptions(principal) {
+    return this.getFinanceStore().listPaymentStudentOptions(principal);
+  }
+
+  listSchoolPaymentMethods(principal) {
+    return this.getFinanceStore().listSchoolPaymentMethods(principal);
+  }
+
+  replaceSchoolPaymentMethods(methods, principal) {
+    return this.getFinanceStore().replaceSchoolPaymentMethods(methods, principal);
+  }
+
+  listCatalogFeeTypes(principal) {
+    return this.getFinanceStore().listCatalogFeeTypes(principal);
+  }
+
+  getFinanceCatalog(principal) {
+    return this.getFinanceStore().getFinanceCatalog(principal);
+  }
+
+  async ensureUsersLoginIdentityConstraints() {
+    const { ensureUsersLoginIdentityConstraints } = require("../lib/usersLoginIdentity");
+    await ensureUsersLoginIdentityConstraints(
+      {
+        one: (sql, params) => this.one(sql, params),
+        all: (sql, params) => this.all(sql, params),
+        query: (sql, params) => this.query(sql, params),
+      },
+      console,
+    );
+  }
+
+  async ensureParentLinkingConstraints() {
+    const { ensureParentLinkingConstraints } = require("../lib/parentLinkingConstraints");
+    await ensureParentLinkingConstraints(
+      {
+        one: (sql, params) => this.one(sql, params),
+        all: (sql, params) => this.all(sql, params),
+        query: (sql, params) => this.query(sql, params),
+      },
+      console,
+    );
+  }
+
+  async ensureTeachersDomainConstraints() {
+    const { ensureTeachersDomainConstraints } = require("../lib/teachersUniqueness");
+    await ensureTeachersDomainConstraints(
+      {
+        one: (sql, params) => this.one(sql, params),
+        all: (sql, params) => this.all(sql, params),
+        query: (sql, params) => this.query(sql, params),
+      },
+      console,
+    );
+  }
+
+  async ensureTeacherAssignmentsActiveUniqueness() {
+    const { ensureTeacherAssignmentsActiveUniqueness } = require("../lib/teacherAssignmentsUniqueness");
+    await ensureTeacherAssignmentsActiveUniqueness(
+      {
+        one: (sql, params) => this.one(sql, params),
+        all: (sql, params) => this.all(sql, params),
+        query: (sql, params) => this.query(sql, params),
+      },
+      console,
+    );
+  }
+
+  /**
+   * LOT 1 — colonnes canoniques établissements (idempotent pour bases déjà créées).
+   */
+  async ensureSchoolsCanonicalColumns() {
+    await this.query(
+      `ALTER TABLE schools ADD COLUMN IF NOT EXISTS profile_payload JSONB NOT NULL DEFAULT '{}'::jsonb`,
+    );
+    await this.query(`ALTER TABLE schools ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ`);
   }
 
   async getDataset() {
@@ -406,18 +1854,28 @@ class PostgresRepository {
       `),
       this.all("SELECT * FROM subjects ORDER BY created_at, subject_code"),
       this.all(`
-        SELECT t.*, s.school_code, u.first_name, u.last_name, u.email, u.phone, u.password_hash, u.pin_hash
+        SELECT t.*, s.school_code, u.first_name, u.last_name, u.email, u.phone,
+               u.password_hash, u.pin_hash, u.birth_date, u.gender, u.must_change_password
         FROM teachers t
         JOIN schools s ON s.id = t.school_id
         LEFT JOIN users u ON u.id = t.user_id
         ORDER BY t.created_at, t.teacher_code
       `),
       this.all(`
-        SELECT t.teacher_code, cl.name AS class_name, sub.name AS subject_name
+        SELECT ta.id, ta.school_id, ta.teacher_id, ta.class_id, ta.subject_id,
+               ta.academic_year_id, ta.assignment_role, ta.status,
+               ta.created_at, ta.updated_at,
+               s.school_code, t.teacher_code, u.first_name, u.last_name,
+               cl.class_code, cl.name AS class_name,
+               sub.subject_code, sub.name AS subject_name,
+               ay.name AS academic_year_name
         FROM teacher_assignments ta
+        JOIN schools s ON s.id = ta.school_id
         JOIN teachers t ON t.id = ta.teacher_id
+        LEFT JOIN users u ON u.id = t.user_id
         JOIN classes cl ON cl.id = ta.class_id
         JOIN subjects sub ON sub.id = ta.subject_id
+        JOIN academic_years ay ON ay.id = ta.academic_year_id
         WHERE ta.status = 'active'
         ORDER BY t.teacher_code, cl.name, sub.name
       `),
@@ -431,14 +1889,20 @@ class PostgresRepository {
         ORDER BY st.created_at, st.student_code
       `),
       this.all(`
-        SELECT ev.*, s.school_code, cl.name AS class_name, sub.name AS subject_name,
-               t.teacher_code, term.name AS term_name
+        SELECT ev.*, s.school_code, cl.name AS class_name, cl.class_code, sub.name AS subject_name,
+               t.teacher_code, term.name AS term_name, term.academic_year_id,
+               ay.name AS academic_year_name,
+               NULLIF(TRIM(CONCAT(COALESCE(u.first_name, ''), ' ', COALESCE(u.last_name, ''))), '') AS teacher_name,
+               et.name AS evaluation_type_name, et.code AS evaluation_type_code
         FROM evaluations ev
         JOIN schools s ON s.id = ev.school_id
         JOIN classes cl ON cl.id = ev.class_id
         JOIN subjects sub ON sub.id = ev.subject_id
         JOIN terms term ON term.id = ev.term_id
+        LEFT JOIN academic_years ay ON ay.id = term.academic_year_id
         LEFT JOIN teachers t ON t.id = ev.teacher_id
+        LEFT JOIN users u ON u.id = t.user_id
+        LEFT JOIN evaluation_types et ON et.id = ev.evaluation_type_id
         ORDER BY ev.created_at
       `),
       this.all(`
@@ -447,7 +1911,8 @@ class PostgresRepository {
                ev.id AS evaluation_uuid, ev.legacy_json_id AS evaluation_legacy_id,
                ev.title AS evaluation_title, ev.status AS evaluation_status,
                ev.max_score AS evaluation_max_score, ev.coefficient AS evaluation_coefficient,
-               ev.evaluation_type AS evaluation_type_pg
+               ev.evaluation_type AS evaluation_type_pg,
+               et.name AS evaluation_type_name, et.code AS evaluation_type_code
         FROM grades g
         JOIN schools s ON s.id = g.school_id
         JOIN students st ON st.id = g.student_id
@@ -456,10 +1921,11 @@ class PostgresRepository {
         JOIN teachers t ON t.id = g.teacher_id
         JOIN terms term ON term.id = g.term_id
         LEFT JOIN evaluations ev ON ev.id = g.evaluation_id
+        LEFT JOIN evaluation_types et ON et.id = ev.evaluation_type_id
         ORDER BY g.created_at
       `),
       this.all(`
-        SELECT a.*, st.student_code, s.school_code, cl.name AS class_name
+        SELECT a.*, st.student_code, s.login_code, cl.name AS class_name, cl.class_code
         FROM attendance a
         JOIN schools s ON s.id = a.school_id
         JOIN students st ON st.id = a.student_id
@@ -486,6 +1952,24 @@ class PostgresRepository {
         ORDER BY n.created_at DESC
       `),
     ]);
+
+    const rolesByUser = new Map();
+    if (userRows.length) {
+      try {
+        const roleRows = await this.all(
+          `SELECT user_id, role_key FROM user_roles
+           WHERE status = 'active' AND revoked_at IS NULL AND user_id = ANY($1::uuid[])`,
+          [userRows.map((row) => row.id)],
+        );
+        for (const row of roleRows) {
+          const list = rolesByUser.get(String(row.user_id)) ?? [];
+          list.push(row.role_key);
+          rolesByUser.set(String(row.user_id), list);
+        }
+      } catch {
+        /* user_roles peut être absent au tout premier boot */
+      }
+    }
 
     const schoolByCode = new Map(schoolRows.map((school) => [school.school_code, school]));
     const students = studentRows.map((student) => this.mapStudent(student));
@@ -525,8 +2009,11 @@ class PostgresRepository {
       platformSchools: schoolRows.map((row) => this.mapSchool(row, subscriptionRows.find((sub) => sub.school_code === row.school_code))),
       countries: countryRows.map((country) => this.mapCountry(country)),
       subscriptions: subscriptionRows.map((subscription) => this.mapSubscription(subscription)),
-      userAccounts: userRows.map((user) => this.mapUser(user, schoolByCode, teacherLoginByUserId)),
+      userAccounts: userRows.map((user) =>
+        this.mapUser(user, schoolByCode, teacherLoginByUserId, rolesByUser.get(String(user.id)) ?? []),
+      ),
       teachers,
+      teacherAssignments: teacherAssignmentRows.map(mapAssignment),
       classes,
       courses,
       students,
@@ -597,6 +2084,20 @@ class PostgresRepository {
     );
   }
 
+  async findActiveAccessSession(sessionId) {
+    await this.init();
+    const code = String(sessionId ?? "").trim();
+    if (!code) return null;
+    return this.one(
+      `SELECT session_code, user_id, revoked_at, expires_at
+       FROM sessions
+       WHERE session_code = $1
+         AND revoked_at IS NULL
+         AND expires_at > NOW()`,
+      [code],
+    );
+  }
+
   async revokeSession(sessionId, reason = "logout") {
     await this.init();
     await this.query(
@@ -605,11 +2106,21 @@ class PostgresRepository {
     );
   }
 
-  async recordAudit({ schoolCode, userId, action, entityType, entityId, oldValue, newValue, ipAddress, userAgent }) {
+  async recordAudit(
+    { schoolCode, userId, action, entityType, entityId, oldValue, newValue, ipAddress, userAgent },
+    tx = null,
+  ) {
     await this.init();
+    if (!String(action ?? "").trim()) {
+      const error = new Error("audit_logs.action is required");
+      error.code = "AUDIT_ACTION_REQUIRED";
+      error.statusCode = 500;
+      throw error;
+    }
+    const executor = tx && typeof tx.query === "function" ? tx : this;
     const school = schoolCode && schoolCode !== "*" ? await this.getSchoolByCode(schoolCode) : null;
     const dbUserId = await this.resolveDbUserId(userId);
-    await this.query(
+    await executor.query(
       `INSERT INTO audit_logs (school_id, user_id, action, entity_type, entity_id, old_value, new_value, ip_address, user_agent)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
       [
@@ -622,7 +2133,7 @@ class PostgresRepository {
         newValue ? JSON.stringify(newValue) : null,
         ipAddress ?? "",
         userAgent ?? "",
-      ]
+      ],
     );
   }
 
@@ -672,191 +2183,40 @@ class PostgresRepository {
   }
 
   async getBackOfficeState() {
-    await this.init();
-    const row = await this.one("SELECT state_payload FROM backoffice_state WHERE state_key = 'default'");
-    return row?.state_payload ?? null;
+    // LOT 8 — plus de lecture du snapshot JSON global.
+    return null;
   }
 
-  async saveBackOfficeState(payload) {
-    await this.init();
-    const { persistBackOfficeAfterNotesSync } = require("../lib/gradesBoPersistence");
-    const { mergePreE1SyncAck } = require("../lib/pedagogyStaffBoPersistence");
-    // HOTFIX-PRE-E1-01 : élèves/inscriptions PG avant sync notes.
-    // HOTFIX-PRE-E1-02 : enseignants/affectations PG avant évaluations/notes.
-    // HOTFIX-SYNC-01 : sync PG par enregistrement + ACK ; strip uniquement les acceptés.
-    // Échec infra (throw) ⇒ ROLLBACK. Rejets métier ⇒ conservés en JSON (sync_failed).
-    let syncAck = { accepted: [], rejected: [] };
-    await this.withTransaction(async () => {
-      const studentSync = await this.syncStudentsDomainFromBackOffice(payload ?? {});
-      const staffSync = await this.syncPedagogyStaffDomainFromBackOffice(payload ?? {});
-      const syncResult = await persistBackOfficeAfterNotesSync({
-        payload: payload ?? {},
-        syncFn: async (body) => this.syncNotesDomainFromBackOffice(body),
-        persistFn: async (durablePayload) => {
-          await this.query(
-            `INSERT INTO backoffice_state (state_key, state_payload, updated_at)
-             VALUES ('default', $1, NOW())
-             ON CONFLICT (state_key) DO UPDATE SET
-               state_payload = EXCLUDED.state_payload,
-               updated_at = NOW()`,
-            [JSON.stringify(durablePayload)],
-          );
-        },
-      });
-      syncAck = mergePreE1SyncAck(studentSync, staffSync, syncResult);
-    });
-    this.cachedDataset = null;
-    // syncAck est retourné avec le résultat de cette opération uniquement —
-    // ne pas le stocker sur l'instance (fuite inter-requêtes / cross-tenant).
-    const state = await this.getBackOfficeState();
-    return { ...state, syncAck };
+  async saveBackOfficeState(_payload) {
+    // LOT 8 — écriture snapshot interdite ; compatibilité tests internes uniquement.
+    const { createBackOfficeStateWriteRemovedError } = require("../lib/backofficeStateRemoval");
+    throw createBackOfficeStateWriteRemovedError();
   }
 
   async getAcademicConfig(schoolCode) {
     await this.init();
-    const normalizedSchoolCode = String(schoolCode && schoolCode !== "*" ? schoolCode : seedData.school.code).trim().toUpperCase();
-    const state = (await this.getBackOfficeState()) ?? {};
-    const storedConfig = state.academicConfigs?.[normalizedSchoolCode];
-    const school = await this.getSchoolByCode(normalizedSchoolCode);
-    const termRows = school
-      ? await this.all(
-          `SELECT t.*
-           FROM terms t
-           JOIN academic_years ay ON ay.id = t.academic_year_id
-           WHERE ay.school_id = $1
-           ORDER BY t.start_date NULLS LAST, t.created_at`,
-          [school.id]
-        )
-      : [];
-    const periods = termRows.length
-      ? termRows.map((term, index) => ({
-          name: term.name,
-          type: term.name.toLowerCase().includes("semestre") ? "Semestre" : term.name.toLowerCase().includes("trimestre") ? "Trimestre" : "Période",
-          startDate: this.formatDate(term.start_date),
-          endDate: this.formatDate(term.end_date),
-          active: index === 0,
-        }))
-      : defaultAcademicPeriods();
-
-    return withSystemActivePeriods({
-      schoolCode: normalizedSchoolCode,
-      periodMode: storedConfig?.periodMode ?? inferPeriodMode(periods),
-      periods: Array.isArray(storedConfig?.periods) && storedConfig.periods.length ? storedConfig.periods : periods,
-      evaluationTypes: Array.isArray(storedConfig?.evaluationTypes) && storedConfig.evaluationTypes.length
-        ? storedConfig.evaluationTypes
-        : ["Interrogation", "Devoir", "Examen", "Travail pratique", "Projet"],
-      defaultScale: Number(storedConfig?.defaultScale ?? 20),
-      reportCardMode: storedConfig?.reportCardMode ?? "period",
-      allowCustomClasses: storedConfig?.allowCustomClasses !== false,
-      allowCustomCourses: storedConfig?.allowCustomCourses !== false,
-      allowCustomReportCards: storedConfig?.allowCustomReportCards !== false,
-      levels: Array.isArray(storedConfig?.levels) && storedConfig.levels.length
-        ? storedConfig.levels
-        : seedData.demoLevels,
-      tracks: Array.isArray(storedConfig?.tracks) && storedConfig.tracks.length
-        ? storedConfig.tracks
-        : seedData.demoTracks,
-      classNames: Array.isArray(storedConfig?.classNames) && storedConfig.classNames.length
-        ? storedConfig.classNames
-        : seedData.demoClassNames,
-      subjects: Array.isArray(storedConfig?.subjects) && storedConfig.subjects.length
-        ? storedConfig.subjects
-        : seedData.demoSubjects,
-    });
+    return this.getResidualStore().getAcademicConfig(schoolCode);
   }
 
-  async saveAcademicConfig(schoolCode, config) {
+  async saveAcademicConfig(schoolCode, config, tx = null) {
     await this.init();
-    const normalizedSchoolCode = String(config.schoolCode ?? (schoolCode && schoolCode !== "*" ? schoolCode : seedData.school.code)).trim().toUpperCase();
-    const currentState = (await this.getBackOfficeState()) ?? {};
-    const academicConfigs = currentState.academicConfigs && typeof currentState.academicConfigs === "object"
-      ? currentState.academicConfigs
-      : {};
-    const savedConfig = withSystemActivePeriods({
-      schoolCode: normalizedSchoolCode,
-      periodMode: config.periodMode ?? "trimestre",
-      periods: Array.isArray(config.periods) && config.periods.length ? config.periods : defaultAcademicPeriods(),
-      evaluationTypes: Array.isArray(config.evaluationTypes) && config.evaluationTypes.length
-        ? config.evaluationTypes
-        : ["Interrogation", "Devoir", "Examen", "Travail pratique", "Projet"],
-      defaultScale: Number(config.defaultScale ?? 20),
-      reportCardMode: config.reportCardMode ?? "period",
-      allowCustomClasses: config.allowCustomClasses !== false,
-      allowCustomCourses: config.allowCustomCourses !== false,
-      allowCustomReportCards: config.allowCustomReportCards !== false,
-      levels: Array.isArray(config.levels) && config.levels.length ? config.levels : seedData.demoLevels,
-      tracks: Array.isArray(config.tracks) && config.tracks.length ? config.tracks : seedData.demoTracks,
-      classNames: Array.isArray(config.classNames) && config.classNames.length ? config.classNames : seedData.demoClassNames,
-      subjects: Array.isArray(config.subjects) && config.subjects.length ? config.subjects : seedData.demoSubjects,
-    });
-    await this.saveBackOfficeState({
-      ...currentState,
-      academicConfigs: {
-        ...academicConfigs,
-        [normalizedSchoolCode]: savedConfig,
-      },
-    });
-    return savedConfig;
+    return this.getResidualStore().saveAcademicConfig(schoolCode, config, tx);
   }
 
-  async findPasswordAccountTargets(lookupKeys) {
-    const state = (await this.getBackOfficeState()) ?? {};
-    const storedUsers = Array.isArray(state.users) ? state.users : [];
-    const dataset = await this.getDataset();
-    const runtimeUsers = dataset.userAccounts ?? [];
-    const targets = [];
-    const seen = new Set();
-
-    const register = (account) => {
-      const key = [account?.id, account?.publicId, account?.identifier]
-        .map((value) => String(value ?? "").trim().toLowerCase())
-        .filter(Boolean)
-        .join("|");
-      if (!key || seen.has(key)) {
-        return;
-      }
-      seen.add(key);
-      targets.push(account);
-    };
-
-    for (const account of [...storedUsers, ...runtimeUsers]) {
-      if (userMatchesLookup(account, lookupKeys)) {
-        register(account);
-      }
-    }
-
-    return { state, storedUsers, targets };
-  }
-
-  async persistBackOfficeUserPasswordUpdates(lookupKeys, transformAccount) {
-    const { state, storedUsers, targets } = await this.findPasswordAccountTargets(lookupKeys);
-    if (!targets.length) {
-      return null;
-    }
-
-    const users = [...storedUsers];
-    let updatedAccount = null;
-
-    for (const target of targets) {
-      const nextAccount = transformAccount(target);
-      updatedAccount = nextAccount;
-      const index = users.findIndex((account) =>
-        userMatchesLookup(account, [target.id, target.publicId, target.identifier]),
+  async touchUserLastLogin(lookupKeys = []) {
+    await this.init();
+    const keys = (Array.isArray(lookupKeys) ? lookupKeys : [lookupKeys])
+      .map((value) => String(value ?? "").trim())
+      .filter(Boolean);
+    for (const key of keys) {
+      await this.query(
+        `UPDATE users
+         SET last_login_at = NOW(), updated_at = NOW()
+         WHERE id::text = $1 OR user_code = $1`,
+        [key],
       );
-      if (index >= 0) {
-        users[index] = nextAccount;
-      } else {
-        users.unshift(nextAccount);
-      }
     }
-
-    await this.saveBackOfficeState({
-      ...state,
-      users,
-      updatedAt: new Date().toISOString(),
-    });
     this.cachedDataset = null;
-    return updatedAccount;
   }
 
   async resetUserPassword(userRef, temporaryPassword) {
@@ -893,18 +2253,9 @@ class PostgresRepository {
       }
     }
 
-    const updatedAccount = await this.persistBackOfficeUserPasswordUpdates(
-      lookupKeys,
-      (account) => buildResetPasswordUser(account, secretHash, temporaryPassword),
-    );
-
-    if (!updatedAccount) {
-      const error = new Error("Utilisateur introuvable");
-      error.statusCode = 404;
-      throw error;
-    }
-
-    return updatedAccount;
+    const error = new Error("Utilisateur introuvable");
+    error.statusCode = 404;
+    throw error;
   }
 
   async changeUserPassword(userRef, newPassword) {
@@ -924,20 +2275,6 @@ class PostgresRepository {
       );
       if (updated) {
         this.cachedDataset = null;
-        await this.persistBackOfficeUserPasswordUpdates(lookupKeys, (account) => {
-          const next = {
-            ...account,
-            passwordHash: secretHash,
-            pinHash: secretHash,
-            temporaryPassword: "",
-            mustChangePassword: false,
-            hasTemporaryPassword: false,
-          };
-          delete next.password;
-          delete next.pin;
-          return next;
-        });
-
         const row = await this.one(
           `SELECT u.*, s.school_code
            FROM users u
@@ -949,30 +2286,9 @@ class PostgresRepository {
       }
     }
 
-    const updatedAccount = await this.persistBackOfficeUserPasswordUpdates(
-      lookupKeys,
-      (account) => {
-        const next = {
-          ...account,
-          passwordHash: secretHash,
-          pinHash: secretHash,
-          temporaryPassword: "",
-          mustChangePassword: false,
-          hasTemporaryPassword: false,
-        };
-        delete next.password;
-        delete next.pin;
-        return next;
-      },
-    );
-
-    if (!updatedAccount) {
-      const error = new Error("Utilisateur introuvable");
-      error.statusCode = 404;
-      throw error;
-    }
-
-    return updatedAccount;
+    const error = new Error("Utilisateur introuvable");
+    error.statusCode = 404;
+    throw error;
   }
 
   /**
@@ -993,11 +2309,30 @@ class PostgresRepository {
       throw error;
     }
 
-    const evaluation = await this.resolveEvaluationRow(evaluationKey, payload.schoolCode);
+    const evaluationLookupSchool =
+      String(payload.schoolCode ?? "").trim() || String(principal?.schoolCode ?? "").trim();
+    const evaluation = await this.resolveEvaluationRow(evaluationKey, evaluationLookupSchool);
     if (!evaluation) {
+      const scopedSchool =
+        evaluationLookupSchool && evaluationLookupSchool !== "*"
+          ? await this.getSchoolByCode(evaluationLookupSchool)
+          : null;
+      if (scopedSchool) {
+        const foreign = await this.findForeignEvaluationRow(evaluationKey, scopedSchool.id);
+        if (foreign) {
+          const denied = new Error("Accès refusé: établissement hors périmètre.");
+          denied.statusCode = 403;
+          throw denied;
+        }
+      }
       const error = new Error("Evaluation introuvable");
       error.statusCode = 404;
       throw error;
+    }
+
+    const { assertEvaluationAllowsGradeEntry, assertStudentEnrolledInEvaluationClass, isTeacherPrincipal, assertTeacherGradeMutationPermission } = require("../lib/evaluationGradeEntry");
+    if (!options.allowUnvalidatedEvaluation) {
+      assertEvaluationAllowsGradeEntry(evaluation);
     }
 
     const gradeStatus = toGradeStatus(
@@ -1026,11 +2361,13 @@ class PostgresRepository {
     const evaluationSchool = await this.one(`SELECT school_code FROM schools WHERE id = $1`, [
       evaluation.school_id,
     ]);
-    const lookupSchoolCode = String(
-      payload.schoolCode ?? evaluationSchool?.school_code ?? "",
-    )
+    const principalSchool = String(principal?.schoolCode ?? "")
       .trim()
       .toUpperCase();
+    const lookupSchoolCode =
+      principalSchool && principalSchool !== "*"
+        ? principalSchool
+        : String(evaluationSchool?.school_code ?? "").trim().toUpperCase();
     const student = await this.resolveStudentForGrade(payload.studentId, lookupSchoolCode);
     if (!student) {
       const error = new Error("Eleve introuvable");
@@ -1042,6 +2379,7 @@ class PostgresRepository {
       error.statusCode = 400;
       throw error;
     }
+    assertStudentEnrolledInEvaluationClass(student, evaluation);
 
     // HOTFIX-PRE-E1-02 : gardes enseignant — établissement + classe + matière/affectation.
     // Ne pas affaiblir le RBAC.
@@ -1059,7 +2397,7 @@ class PostgresRepository {
     this._activeNotesAuthzTrace = authzTrace;
     let classAccessVia = null;
     let evaluationAccessVia = null;
-    if (principal.role === "Enseignant" && !options.allowMissingTeacher) {
+    if (isTeacherPrincipal(principal) && !options.allowMissingTeacher) {
       const principalSchool = String(principal.schoolCode ?? "")
         .trim()
         .toUpperCase();
@@ -1124,7 +2462,7 @@ class PostgresRepository {
         this.lastNotesAuthzTrace = denied;
         persistTrace(denied);
         this._activeNotesAuthzTrace = null;
-        const error = new Error("Accès refusé: matière non affectée.");
+        const error = new Error("Accès refusé: cours non affecté.");
         error.statusCode = 403;
         throw error;
       }
@@ -1143,25 +2481,49 @@ class PostgresRepository {
       this._activeNotesAuthzTrace = null;
     }
 
-    const teacher =
-      (await this.findTeacherForGrade(
+    // Lot 2 — auteur pédagogique déterministe (jamais inventé via created_at / premier de l'école).
+    // Rôle d'abord : admin/direction exige TOUJOURS une clé explicite (même si evaluation.teacher_id).
+    // Enseignant : résolution par affectation ; evaluation.teacher_id reste source déterministe si déjà présent.
+    const teacherSession = isTeacherPrincipal(principal);
+    let teacherId = null;
+    if (!teacherSession) {
+      const explicitKey = this.extractExplicitTeacherKey(payload);
+      if (!explicitKey) {
+        throw this.teacherUnresolvedError(
+          "GRADE_TEACHER_UNRESOLVED",
+          "Clé enseignant explicite requise pour attribuer une note (admin/direction).",
+        );
+      }
+      const explicitTeacher = await this.resolveUniqueTeacherInSchool(
         evaluation.school_id,
-        principal.sub,
-        evaluation.class_id,
-        evaluation.subject_id,
-        principal.role,
-      )) ??
-      (options.allowMissingTeacher
-        ? await this.one("SELECT * FROM teachers WHERE school_id = $1 ORDER BY created_at LIMIT 1", [
-            evaluation.school_id,
-          ])
-        : null);
-    if (!teacher && !evaluation.teacher_id) {
-      const error = new Error("Enseignant introuvable");
-      error.statusCode = 400;
-      throw error;
+        explicitKey,
+      );
+      if (!explicitTeacher) {
+        throw this.teacherUnresolvedError(
+          "GRADE_TEACHER_UNRESOLVED",
+          "Enseignant introuvable ou ambigu pour la note.",
+        );
+      }
+      if (
+        evaluation.teacher_id &&
+        String(evaluation.teacher_id) !== String(explicitTeacher.id)
+      ) {
+        throw this.teacherUnresolvedError(
+          "GRADE_TEACHER_UNRESOLVED",
+          "Clé enseignant divergente de l'enseignant de l'évaluation.",
+        );
+      }
+      teacherId = explicitTeacher.id;
+    } else {
+      const sessionTeacherId = await this.resolveTeacherPgIdForPrincipal(principal, evaluation.school_id);
+      if (!sessionTeacherId) {
+        throw this.teacherUnresolvedError(
+          "GRADE_TEACHER_UNRESOLVED",
+          "Enseignant introuvable ou ambigu pour la note.",
+        );
+      }
+      teacherId = sessionTeacherId;
     }
-    const teacherId = evaluation.teacher_id ?? teacher.id;
 
     let existing = await this.one(
       `SELECT * FROM grades
@@ -1172,6 +2534,8 @@ class PostgresRepository {
     if (!existing && isUuid(payload.id)) {
       existing = await this.one("SELECT * FROM grades WHERE id = $1", [payload.id]);
     }
+
+    assertTeacherGradeMutationPermission(principal, existing);
 
     if (existing) {
       assertNoteOptimisticLock(
@@ -1253,24 +2617,52 @@ class PostgresRepository {
     };
   }
 
-  async resolveEvaluationRow(evaluationKey, schoolCode) {
+  async resolveEvaluationRow(evaluationKey, schoolCode, options = {}) {
     const key = String(evaluationKey ?? "").trim();
     if (!key) return null;
-    if (isUuid(key)) {
-      const byId = await this.one("SELECT * FROM evaluations WHERE id = $1", [key]);
-      if (byId) return byId;
-    }
-    if (schoolCode && schoolCode !== "*") {
+
+    const scoped = Boolean(schoolCode && schoolCode !== "*");
+    let schoolId = null;
+    if (scoped) {
       const school = await this.getSchoolByCode(schoolCode);
-      if (school) {
-        const byLegacySchool = await this.one(
-          `SELECT * FROM evaluations WHERE school_id = $1 AND legacy_json_id = $2 LIMIT 1`,
-          [school.id, key],
-        );
-        if (byLegacySchool) return byLegacySchool;
-      }
+      if (!school) return null;
+      schoolId = school.id;
     }
-    return this.one(`SELECT * FROM evaluations WHERE legacy_json_id = $1 LIMIT 1`, [key]);
+
+    if (isUuid(key)) {
+      if (schoolId) {
+        return this.one("SELECT * FROM evaluations WHERE id = $1 AND school_id = $2", [key, schoolId]);
+      }
+      return this.one("SELECT * FROM evaluations WHERE id = $1", [key]);
+    }
+
+    if (schoolId) {
+      return this.one(
+        `SELECT * FROM evaluations WHERE school_id = $1 AND legacy_json_id = $2 LIMIT 1`,
+        [schoolId, key],
+      );
+    }
+
+    if (options.allowGlobalLegacyFallback === true) {
+      return this.one(`SELECT * FROM evaluations WHERE legacy_json_id = $1 LIMIT 1`, [key]);
+    }
+
+    return null;
+  }
+
+  async findForeignEvaluationRow(evaluationKey, schoolId) {
+    const key = String(evaluationKey ?? "").trim();
+    if (!key || !schoolId) return null;
+    if (isUuid(key)) {
+      return this.one("SELECT * FROM evaluations WHERE id = $1 AND school_id <> $2 LIMIT 1", [
+        key,
+        schoolId,
+      ]);
+    }
+    return this.one(
+      `SELECT * FROM evaluations WHERE legacy_json_id = $1 AND school_id <> $2 LIMIT 1`,
+      [key, schoolId],
+    );
   }
 
   async findSubjectByNormalizedName(schoolId, subjectName) {
@@ -1370,36 +2762,98 @@ class PostgresRepository {
       validateEvaluationContract,
     } = require("../lib/gradesCanonical");
     const { resolveEvaluationAttachments } = require("../lib/evaluationAttachment");
+    const { asTrimmed, createPedagogyError, PEDAGOGY_ERROR } = require("../lib/pedagogyManagement");
+
+    const principal = options.principal;
+    if (principal) {
+      const tenantCode = asTrimmed(principal.schoolCode).toUpperCase();
+      if (!tenantCode || tenantCode === "*") {
+        throw createPedagogyError(400, "Établissement requis.", PEDAGOGY_ERROR.TENANT_MISMATCH);
+      }
+      evaluation = { ...evaluation, schoolCode: tenantCode };
+    }
 
     const legacyId = String(evaluation.id ?? evaluation.legacy_json_id ?? "").trim();
     const context = options.context ?? {};
+    const ensure = options.ensure !== false;
+    const scopedSchoolCode = asTrimmed(evaluation.schoolCode).toUpperCase();
+    const schoolRecord = scopedSchoolCode ? await this.getSchoolByCode(scopedSchoolCode) : null;
+    if (principal && !schoolRecord) {
+      throw createPedagogyError(404, "Établissement introuvable.", PEDAGOGY_ERROR.TENANT_MISMATCH);
+    }
 
-    const {
-      school,
-      schoolClass,
-      subject,
-      academicYear,
-      term,
-      teacher,
-      periodName,
-      schoolCode,
-    } = await resolveEvaluationAttachments(
-      evaluation,
-      {
+    let existing = null;
+    if (legacyId && scopedSchoolCode) {
+      existing = await this.resolveEvaluationRow(legacyId, scopedSchoolCode);
+      if (!existing && principal && schoolRecord) {
+        const foreign = await this.findForeignEvaluationRow(legacyId, schoolRecord.id);
+        if (foreign) {
+          throw createPedagogyError(404, "Évaluation introuvable.", PEDAGOGY_ERROR.EVALUATION_NOT_FOUND);
+        }
+      }
+    }
+    if (!existing && isUuid(evaluation.id) && schoolRecord) {
+      existing = await this.one("SELECT * FROM evaluations WHERE id = $1 AND school_id = $2", [
+        evaluation.id,
+        schoolRecord.id,
+      ]);
+      if (!existing && principal) {
+        const foreign = await this.findForeignEvaluationRow(evaluation.id, schoolRecord.id);
+        if (foreign) {
+          throw createPedagogyError(404, "Évaluation introuvable.", PEDAGOGY_ERROR.EVALUATION_NOT_FOUND);
+        }
+      }
+    }
+
+    if (options.requireExisting && !existing) {
+      throw createPedagogyError(404, "Évaluation introuvable.", PEDAGOGY_ERROR.EVALUATION_NOT_FOUND);
+    }
+
+    if (existing && principal && schoolRecord && String(existing.school_id) !== String(schoolRecord.id)) {
+      throw createPedagogyError(403, "Accès refusé : évaluation hors périmètre.", PEDAGOGY_ERROR.TENANT_MISMATCH);
+    }
+
+    let attachmentEvaluation = { ...evaluation };
+    if (existing) {
+      const refs = await this.one(
+        `SELECT c.name AS class_name, sub.name AS subject_name, tm.name AS term_name, t.teacher_code
+         FROM evaluations e
+         JOIN classes c ON c.id = e.class_id
+         JOIN subjects sub ON sub.id = e.subject_id
+         JOIN terms tm ON tm.id = e.term_id
+         LEFT JOIN teachers t ON t.id = e.teacher_id
+         WHERE e.id = $1`,
+        [existing.id],
+      );
+      attachmentEvaluation = {
+        ...attachmentEvaluation,
+        className: attachmentEvaluation.className ?? attachmentEvaluation.class_name ?? refs?.class_name,
+        subject:
+          attachmentEvaluation.subject ??
+          attachmentEvaluation.subjectName ??
+          refs?.subject_name,
+        period: attachmentEvaluation.period ?? refs?.term_name,
+        teacherId: attachmentEvaluation.teacherId ?? refs?.teacher_code,
+      };
+    }
+
+    const attachmentDeps = {
         getSchoolByCode: (code) => this.getSchoolByCode(code),
-        ensureSchool: (code) => this.ensureSchoolFromBackOfficeRecord(code),
+        ensureSchool: ensure ? (code) => this.ensureSchoolFromBackOfficeRecord(code) : undefined,
         findClassById: (schoolId, id) =>
           this.one(`SELECT * FROM classes WHERE school_id = $1 AND (id::text = $2 OR class_code = $2) LIMIT 1`, [
             schoolId,
             id,
           ]),
         findClassByName: (schoolId, name) => this.findClassByNormalizedName(schoolId, name),
-        ensureClass: async (schoolId, name) => {
-          const classId = await this.ensureClassForSchool(schoolId, name);
-          return classId
-            ? this.one(`SELECT * FROM classes WHERE id = $1`, [classId])
-            : null;
-        },
+        ensureClass: ensure
+          ? async (schoolId, name) => {
+              const classId = await this.ensureClassForSchool(schoolId, name);
+              return classId
+                ? this.one(`SELECT * FROM classes WHERE id = $1`, [classId])
+                : null;
+            }
+          : undefined,
         findSubjectById: (schoolId, id) =>
           this.one(
             `SELECT * FROM subjects WHERE school_id = $1 AND (id::text = $2 OR subject_code = $2) LIMIT 1`,
@@ -1411,79 +2865,100 @@ class PostgresRepository {
             [schoolId, code],
           ),
         findSubjectByName: (schoolId, name) => this.findSubjectByNormalizedName(schoolId, name),
-        ensureSubject: (schoolId, name) => this.ensureSubjectForSchool(schoolId, name, context),
-        getCurrentAcademicYear: (schoolId) => this.getCurrentAcademicYear(schoolId),
-        ensureAcademicYear: (schoolId) => this.ensureCurrentAcademicYearForSchool(schoolId),
-        ensureTerm: async (academicYearId, name) =>
-          (await this.one(
-            `SELECT * FROM terms WHERE academic_year_id = $1 AND name = $2 LIMIT 1`,
+        ensureSubject: ensure ? (schoolId, name) => this.ensureSubjectForSchool(schoolId, name, context) : undefined,
+        getCurrentAcademicYear: ensure
+          ? (schoolId) => this.getCurrentAcademicYear(schoolId)
+          : (schoolId) => this.findOpenAcademicYear(schoolId),
+        ensureAcademicYear: ensure ? (schoolId) => this.ensureCurrentAcademicYearForSchool(schoolId) : undefined,
+        findTermByName: (academicYearId, name) =>
+          this.one(
+            `SELECT * FROM terms WHERE academic_year_id = $1 AND lower(btrim(name)) = lower(btrim($2)) LIMIT 1`,
             [academicYearId, name],
-          )) ??
-          (await this.one(
-            `INSERT INTO terms (academic_year_id, name, status)
-             VALUES ($1, $2, 'open')
-             ON CONFLICT (academic_year_id, name) DO UPDATE SET name = EXCLUDED.name
-             RETURNING *`,
-            [academicYearId, name],
-          )),
+          ),
+        ensureTerm: ensure
+          ? async (academicYearId, name) =>
+              (await this.one(
+                `SELECT * FROM terms WHERE academic_year_id = $1 AND name = $2 LIMIT 1`,
+                [academicYearId, name],
+              )) ??
+              (await this.one(
+                `INSERT INTO terms (academic_year_id, name, status)
+                 VALUES ($1, $2, 'open')
+                 ON CONFLICT (academic_year_id, name) DO UPDATE SET name = EXCLUDED.name
+                 RETURNING *`,
+                [academicYearId, name],
+              ))
+          : undefined,
         findTeacherByCode: (schoolId, code) =>
           this.one(
-            `SELECT * FROM teachers WHERE school_id = $1 AND teacher_code = $2 LIMIT 1`,
+            `SELECT * FROM teachers WHERE school_id = $1 AND (${sqlTeacherPublicCodeEquals("teachers", "$2")} OR id::text = $2) LIMIT 1`,
             [schoolId, code],
           ),
-        ensureTeacher: async (schoolId, code, ctx) => {
-          const teachers = Array.isArray(ctx?.teachers) ? ctx.teachers : [];
-          const state = (await this.getBackOfficeState()) ?? {};
-          // Matérialisation exacte de LA même fiche (même id / teacher_code) — pas un jumeau.
-          const boTeacher =
-            teachers.find(
-              (row) =>
-                String(row.id ?? "").trim() === String(code) ||
-                String(row.publicId ?? "").trim() === String(code),
-            ) ??
-            (state.teachers ?? []).find(
-              (row) =>
-                String(row.id ?? "").trim() === String(code) ||
-                String(row.publicId ?? "").trim() === String(code),
-            );
-          if (!boTeacher) return null;
-          if (
-            String(boTeacher.id ?? "").trim() !== String(code) &&
-            String(boTeacher.publicId ?? "").trim() !== String(code)
-          ) {
-            return null;
-          }
-          const school = await this.one(`SELECT school_code FROM schools WHERE id = $1`, [schoolId]);
-          const materialized = await this.materializeBackOfficeTeacher(
-            {
-              ...boTeacher,
-              schoolCode: boTeacher.schoolCode ?? school?.school_code,
-            },
-            ctx,
-          );
-          return materialized?.teacherId
-            ? this.one(`SELECT * FROM teachers WHERE id = $1`, [materialized.teacherId])
-            : null;
-        },
-        // FIX V2.1 §5.2 — uniquement teacher_code explicite + affectation ; pas de filet opportuniste.
-        findTeacherByExactAssignment: (schoolId, classId, subjectId, preferredTeacherCode) => {
-          if (!preferredTeacherCode) return null;
-          return this.one(
-            `SELECT t.*
-             FROM teachers t
-             JOIN teacher_assignments ta ON ta.teacher_id = t.id
-             WHERE t.school_id = $1
-               AND t.teacher_code = $2
-               AND ta.class_id = $3
-               AND ta.subject_id = $4
-               AND ta.status = 'active'
-             LIMIT 1`,
-            [schoolId, preferredTeacherCode, classId, subjectId],
-          );
-        },
-      },
-      {
-        ensure: options.ensure !== false,
+        ensureTeacher: ensure
+          ? async (schoolId, code, ctx) => {
+              const teachers = Array.isArray(ctx?.teachers) ? ctx.teachers : [];
+              const state = (await this.getBackOfficeState()) ?? {};
+              const boTeacher =
+                teachers.find(
+                  (row) =>
+                    String(row.id ?? "").trim() === String(code) ||
+                    String(row.publicId ?? "").trim() === String(code),
+                ) ??
+                (state.teachers ?? []).find(
+                  (row) =>
+                    String(row.id ?? "").trim() === String(code) ||
+                    String(row.publicId ?? "").trim() === String(code),
+                );
+              if (!boTeacher) return null;
+              if (
+                String(boTeacher.id ?? "").trim() !== String(code) &&
+                String(boTeacher.publicId ?? "").trim() !== String(code)
+              ) {
+                return null;
+              }
+              const schoolRow = await this.one(`SELECT school_code FROM schools WHERE id = $1`, [schoolId]);
+              const materialized = await this.materializeBackOfficeTeacher(
+                {
+                  ...boTeacher,
+                  schoolCode: boTeacher.schoolCode ?? schoolRow?.school_code,
+                },
+                ctx,
+              );
+              return materialized?.teacherId
+                ? this.one(`SELECT * FROM teachers WHERE id = $1`, [materialized.teacherId])
+                : null;
+            }
+          : undefined,
+        findTeacherByExactAssignment: ensure
+          ? (schoolId, classId, subjectId, preferredTeacherCode) => {
+              if (!preferredTeacherCode) return null;
+              return this.one(
+                `SELECT t.*
+                 FROM teachers t
+                 JOIN teacher_assignments ta ON ta.teacher_id = t.id
+                 WHERE t.school_id = $1
+                   AND ${sqlTeacherPublicCodeEquals("t", "$2")}
+                   AND ta.class_id = $3
+                   AND ta.subject_id = $4
+                   AND ta.status = 'active'
+                 LIMIT 1`,
+                [schoolId, preferredTeacherCode, classId, subjectId],
+              );
+            }
+          : undefined,
+    };
+
+    const {
+      school,
+      schoolClass,
+      subject,
+      academicYear,
+      term,
+      teacher,
+      periodName,
+      schoolCode,
+    } = await resolveEvaluationAttachments(attachmentEvaluation, attachmentDeps, {
+        ensure,
         context,
         requireTeacher: options.requireTeacher === true,
       },
@@ -1493,9 +2968,168 @@ class PostgresRepository {
     void academicYear;
     void periodName;
 
-    const maxScore = Number(evaluation.scale ?? evaluation.max_score ?? 20);
-    const coefficient = Number(evaluation.coefficient ?? 1);
-    const status = toEvaluationStatus(evaluation.status, "draft");
+    const patchTouches = (keys) => evaluationPatchTouches(evaluation, keys);
+
+    let maxScore;
+    let coefficient;
+    let status;
+    let evaluationType;
+    let evaluationTypeId;
+    let evaluationDate;
+    let active;
+    let title;
+    let classId;
+    let subjectId;
+    let termId;
+    let teacherId;
+
+    const typeFieldsTouched = patchTouches([
+      "evaluationType",
+      "type",
+      "evaluation_type",
+      "evaluationTypeId",
+      "evaluation_type_id",
+      "evaluationTypeCode",
+    ]);
+
+    const { resolveEvaluationTypeForWrite } = require("../lib/evaluationTypesService");
+    const requireCanonicalType = Boolean(principal) && (!existing || typeFieldsTouched);
+    const hasExplicitType = Boolean(
+      asTrimmed(evaluation.evaluationTypeId) ||
+        asTrimmed(evaluation.evaluation_type_id) ||
+        asTrimmed(evaluation.evaluationType) ||
+        asTrimmed(evaluation.type) ||
+        asTrimmed(evaluation.evaluation_type) ||
+        asTrimmed(evaluation.evaluationTypeCode),
+    );
+    let resolvedType = null;
+    if (requireCanonicalType || typeFieldsTouched || !existing) {
+      const lookupPayload = { ...evaluation };
+      if (hasExplicitType || requireCanonicalType) {
+        if (requireCanonicalType) {
+          resolvedType = await resolveEvaluationTypeForWrite(this, school.id, lookupPayload, {
+            required: true,
+          });
+        } else {
+          try {
+            resolvedType = await resolveEvaluationTypeForWrite(this, school.id, lookupPayload, {
+              required: false,
+            });
+          } catch (_error) {
+            resolvedType = null;
+          }
+        }
+      }
+    }
+
+    if (existing) {
+      maxScore = patchTouches(["scale", "max_score", "maxScore"])
+        ? Number(evaluation.scale ?? evaluation.max_score ?? evaluation.maxScore ?? 20)
+        : Number(existing.max_score ?? 20);
+      coefficient = patchTouches(["coefficient"])
+        ? Number(evaluation.coefficient ?? 1)
+        : Number(existing.coefficient ?? 1);
+      status = patchTouches(["status"])
+        ? toEvaluationStatus(evaluation.status, String(existing.status ?? "draft"))
+        : String(existing.status ?? "draft");
+      evaluationType = resolvedType
+        ? resolvedType.code
+        : typeFieldsTouched
+          ? toDbEvaluationType(evaluation.evaluationType ?? evaluation.type)
+          : String(existing.evaluation_type ?? "devoir");
+      evaluationTypeId = resolvedType
+        ? resolvedType.id
+        : typeFieldsTouched
+          ? null
+          : existing.evaluation_type_id ?? null;
+      evaluationDate = patchTouches(["date", "evaluation_date"])
+        ? this.parseDate(evaluation.date ?? evaluation.evaluation_date)
+        : existing.evaluation_date ?? null;
+      active = patchTouches(["active"]) ? evaluation.active !== false : existing.active !== false;
+      title = patchTouches(["title"])
+        ? String(evaluation.title ?? "Évaluation").trim() || "Évaluation"
+        : String(existing.title ?? "Évaluation").trim() || "Évaluation";
+      classId = patchTouches(["className", "class_name", "classId", "class_id"])
+        ? schoolClass.id
+        : existing.class_id;
+      subjectId = patchTouches(["subject", "subjectName", "subjectCode", "subjectId", "subject_id"])
+        ? subject.id
+        : existing.subject_id;
+      termId = patchTouches(["period", "termName", "term_id"])
+        ? term.id
+        : existing.term_id;
+      teacherId = patchTouches(["teacherId", "teacher_code"])
+        ? teacher?.id ?? null
+        : existing.teacher_id ?? null;
+    } else {
+      maxScore = Number(evaluation.scale ?? evaluation.max_score ?? evaluation.maxScore ?? 20);
+      coefficient = Number(evaluation.coefficient ?? 1);
+      status = toEvaluationStatus(evaluation.status, "draft");
+      evaluationType = resolvedType ? resolvedType.code : toDbEvaluationType(evaluation.evaluationType ?? evaluation.type);
+      evaluationTypeId = resolvedType ? resolvedType.id : null;
+      evaluationDate = this.parseDate(evaluation.date ?? evaluation.evaluation_date);
+      active = evaluation.active !== false;
+      title = String(evaluation.title ?? "Évaluation").trim() || "Évaluation";
+      classId = schoolClass.id;
+      subjectId = subject.id;
+      termId = term.id;
+      teacherId = teacher?.id ?? null;
+    }
+
+    if (principal) {
+      const { isTeacherPrincipal } = require("../lib/evaluationGradeEntry");
+      if (isTeacherPrincipal(principal)) {
+        const teacherPgId = await this.resolveTeacherPgIdForPrincipal(principal, school.id);
+        if (!teacherPgId) {
+          const error = new Error("Enseignant introuvable pour cette session.");
+          error.statusCode = 403;
+          error.code = "GRADE_TEACHER_UNRESOLVED";
+          throw error;
+        }
+        const yearId = schoolClass.academic_year_id ?? academicYear?.id ?? null;
+        const assignment = await this.findActiveTeacherAssignmentRow({
+          teacherId: teacherPgId,
+          classId,
+          subjectId,
+          academicYearId: yearId,
+        });
+        if (!assignment) {
+          const { createPedagogyError, PEDAGOGY_ERROR } = require("../lib/pedagogyManagement");
+          throw createPedagogyError(
+            403,
+            "Affectation enseignant active requise pour cette classe et ce cours.",
+            PEDAGOGY_ERROR.TEACHER_ASSIGNMENT_REQUIRED,
+          );
+        }
+        if (!existing) teacherId = teacherPgId;
+      }
+    }
+
+    if (principal && !existing) {
+      const { assertTeacherCannotValidateEvaluation } = require("../lib/evaluationGradeEntry");
+      assertTeacherCannotValidateEvaluation(principal, status);
+    }
+
+    if (existing && patchTouches(["status"])) {
+      const previousStatus = toEvaluationStatus(existing.status, "draft");
+      if (previousStatus !== status) {
+        const { assertTeacherCannotValidateEvaluation } = require("../lib/evaluationGradeEntry");
+        assertTeacherCannotValidateEvaluation(principal, status);
+      }
+    }
+
+    if (principal && !existing && !evaluationTypeId) {
+      const { createEvaluationTypesError, EVALUATION_TYPES_ERROR } = require("../lib/evaluationTypesManagement");
+      if (!hasExplicitType) {
+        throw createEvaluationTypesError(
+          400,
+          "Type d'évaluation canonique obligatoire (evaluationTypeId).",
+          EVALUATION_TYPES_ERROR.EVALUATION_TYPE_REQUIRED,
+        );
+      }
+      throw createEvaluationTypesError(404, "Type d'évaluation introuvable.", EVALUATION_TYPES_ERROR.TYPE_NOT_FOUND);
+    }
+
     const contractError = validateEvaluationContract({ maxScore, coefficient, status });
     if (contractError) {
       const error = new Error(contractError);
@@ -1503,39 +3137,28 @@ class PostgresRepository {
       throw error;
     }
 
-    const title = String(evaluation.title ?? "Évaluation").trim() || "Évaluation";
-    const evaluationType = toDbEvaluationType(evaluation.evaluationType ?? evaluation.type);
-    const evaluationDate = this.parseDate(evaluation.date ?? evaluation.evaluation_date);
-
-    let existing = null;
-    if (legacyId) {
-      existing = await this.resolveEvaluationRow(legacyId, schoolCode);
-    }
-    if (!existing && isUuid(evaluation.id)) {
-      existing = await this.one("SELECT * FROM evaluations WHERE id = $1", [evaluation.id]);
-    }
-
     if (existing) {
       await this.query(
         `UPDATE evaluations
          SET class_id = $1, subject_id = $2, teacher_id = $3, term_id = $4,
-             title = $5, evaluation_type = $6, evaluation_date = $7,
-             max_score = $8, coefficient = $9, status = $10,
-             active = $11, legacy_json_id = COALESCE(legacy_json_id, $12),
+             title = $5, evaluation_type = $6, evaluation_type_id = $7, evaluation_date = $8,
+             max_score = $9, coefficient = $10, status = $11,
+             active = $12, legacy_json_id = COALESCE(legacy_json_id, $13),
              updated_at = NOW()
-         WHERE id = $13`,
+         WHERE id = $14`,
         [
-          schoolClass.id,
-          subject.id,
-          teacher?.id ?? null,
-          term.id,
+          classId,
+          subjectId,
+          teacherId,
+          termId,
           title,
           evaluationType,
+          evaluationTypeId,
           evaluationDate,
           maxScore,
           coefficient,
           status,
-          evaluation.active !== false,
+          active,
           legacyId || null,
           existing.id,
         ],
@@ -1547,18 +3170,19 @@ class PostgresRepository {
     const inserted = await this.one(
       `INSERT INTO evaluations (
          school_id, class_id, subject_id, teacher_id, term_id,
-         title, evaluation_type, evaluation_date, max_score, coefficient,
+         title, evaluation_type, evaluation_type_id, evaluation_date, max_score, coefficient,
          status, active, legacy_json_id
-       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
        RETURNING *`,
       [
         school.id,
         schoolClass.id,
         subject.id,
-        teacher?.id ?? null,
+        teacherId,
         term.id,
         title,
         evaluationType,
+        evaluationTypeId,
         evaluationDate,
         maxScore,
         coefficient,
@@ -1701,20 +3325,24 @@ class PostgresRepository {
     return [...keys];
   }
 
-  async queryStudentWithClass(studentKey, schoolCode) {
+  async queryStudentWithClass(studentKey, schoolCode, options = {}) {
     const backOfficeStudent = await this.findBackOfficeStudentRecord(studentKey);
     const lookupKeys = this.collectStudentLookupKeys(studentKey, backOfficeStudent);
+    const schoolId = String(options.schoolId ?? "").trim();
 
     for (const key of lookupKeys) {
       const params = [key];
       let sql = `
-        SELECT st.*, s.school_code, e.class_id, cl.name AS class_name
+        SELECT st.*, s.school_code, e.class_id, cl.name AS class_name, cl.class_code
         FROM students st
         JOIN schools s ON s.id = st.school_id
         LEFT JOIN enrollments e ON e.student_id = st.id AND e.status = 'active'
         LEFT JOIN classes cl ON cl.id = e.class_id
         WHERE (st.student_code = $1 OR st.id::text = $1)`;
-      if (schoolCode && schoolCode !== "*") {
+      if (schoolId) {
+        sql += ` AND st.school_id = $2::uuid`;
+        params.push(schoolId);
+      } else if (schoolCode && schoolCode !== "*") {
         sql += ` AND s.school_code = $2`;
         params.push(String(schoolCode).trim().toUpperCase());
       }
@@ -1726,8 +3354,8 @@ class PostgresRepository {
     return { row: null, backOfficeStudent };
   }
 
-  async getCurrentAcademicYear(schoolId) {
-    const current = await this.one(
+  async findOpenAcademicYear(schoolId) {
+    return this.one(
       `SELECT *
        FROM academic_years
        WHERE school_id = $1 AND status IN ('active', 'open')
@@ -1735,91 +3363,154 @@ class PostgresRepository {
        LIMIT 1`,
       [schoolId],
     );
-    if (current) return current;
+  }
 
-    // HOTFIX-SYNC-02 : lecture miss ⇒ création idempotente (ensure).
-    return this.ensureCurrentAcademicYearForSchool(schoolId);
+  async getCurrentAcademicYear(schoolId) {
+    return this.findOpenAcademicYear(schoolId);
   }
 
   /**
-   * HOTFIX-SYNC-02 — Crée une année scolaire active si absente (idempotent).
-   * Séparé de la lecture pour rendre l'ensure explicite dans les tests/revue.
+   * Lookup-only : année ouverte/active existante, ou null.
+   * N'invente jamais de millésime ni de dates 01/09–31/08.
+   * Une école sans année configurée reste explicitement non configurée.
    */
   async ensureCurrentAcademicYearForSchool(schoolId) {
-    const existing = await this.one(
-      `SELECT *
-       FROM academic_years
-       WHERE school_id = $1 AND status IN ('active', 'open')
-       ORDER BY is_current DESC, created_at DESC
-       LIMIT 1`,
-      [schoolId],
-    );
-    if (existing) return existing;
-
-    const year = new Date().getFullYear();
-    return this.one(
-      `INSERT INTO academic_years (school_id, name, start_date, end_date, is_current, status)
-       VALUES ($1, $2, $3, $4, TRUE, 'open')
-       ON CONFLICT (school_id, name) DO UPDATE SET
-         is_current = TRUE,
-         status = 'open'
-       RETURNING *`,
-      [schoolId, `${year}-${year + 1}`, `${year}-09-01`, `${year + 1}-08-31`],
-    );
+    return this.findOpenAcademicYear(schoolId);
   }
 
-  async ensureClassForSchool(schoolId, className, context = {}) {
+  async ensureClassForSchool(schoolId, className, _context = {}) {
     const normalizedClassName = String(className ?? "").trim();
     if (!normalizedClassName) return null;
 
     const existing = await this.findClassByNormalizedName(schoolId, normalizedClassName);
-    if (existing?.id) return existing.id;
-
-    const state = (await this.getBackOfficeState()) ?? {};
-    const contextClasses = Array.isArray(context.classes) ? context.classes : [];
-    const stateClasses = Array.isArray(state.classes) ? state.classes : [];
-    const backOfficeClass = [...contextClasses, ...stateClasses].find(
-      (row) => this.normalizeComparableText(row.name) === this.normalizeComparableText(normalizedClassName),
-    );
-    const academicYear = await this.getCurrentAcademicYear(schoolId);
-    if (!academicYear) return null;
-
-    const classCode = String(
-      backOfficeClass?.publicId ??
-        backOfficeClass?.id ??
-        `${String((await this.one("SELECT school_code FROM schools WHERE id = $1", [schoolId]))?.school_code ?? schoolId)
-          .trim()
-          .toUpperCase()}-${normalizedClassName.replace(/\s+/g, "-").toUpperCase()}`,
-    ).trim();
-    const inserted = await this.one(
-      `INSERT INTO classes (school_id, academic_year_id, class_code, name, level, section, status)
-       VALUES ($1, $2, $3, $4, $5, $6, 'active')
-       ON CONFLICT (class_code) DO UPDATE SET name = EXCLUDED.name
-       RETURNING id`,
-      [
-        schoolId,
-        academicYear.id,
-        classCode,
-        normalizedClassName,
-        backOfficeClass?.level ?? "",
-        backOfficeClass?.track ?? backOfficeClass?.section ?? "",
-      ],
-    );
-    return inserted?.id ?? null;
+    return existing?.id ?? null;
   }
 
-  async ensureActiveEnrollment(schoolId, studentDbId, classId) {
+  async ensureActiveEnrollment(schoolId, studentDbId, classId, options = {}) {
     if (!studentDbId || !classId) return;
     const academicYear = await this.getCurrentAcademicYear(schoolId);
     if (!academicYear) return;
-    await this.query(
-      `INSERT INTO enrollments (school_id, student_id, class_id, academic_year_id, enrollment_date, status)
-       VALUES ($1, $2, $3, $4, CURRENT_DATE, 'active')
-       ON CONFLICT (student_id, academic_year_id) DO UPDATE SET
-         class_id = EXCLUDED.class_id,
-         status = 'active'`,
-      [schoolId, studentDbId, classId, academicYear.id],
+    const requestedEffectiveDate = String(options.effectiveDate ?? "").trim() || null;
+    const school = await this.one("SELECT login_code FROM schools WHERE id = $1", [schoolId]);
+    const student = await this.one(
+      `SELECT st.student_code, st.first_name, st.last_name, st.id
+       FROM students st WHERE st.id = $1`,
+      [studentDbId],
     );
+    const klass = await this.one(
+      `SELECT id, class_code, name FROM classes WHERE id = $1`,
+      [classId],
+    );
+    if (!school || !student || !klass) return;
+    const financeLoginCode = String(school.login_code ?? "").trim();
+    const { createFinanceError, FINANCE_ERROR } = require("../lib/financeManagement");
+    const {
+      persistObligationSyncFailure,
+      FINANCE_OBLIGATION_SYNC_FAILED,
+    } = require("../lib/financeObligationLifecycle");
+    const actor = options.principal || {
+      role: "system",
+      schoolCode: financeLoginCode,
+      financeLoginCode,
+      sub: "finance-obligation-lifecycle",
+    };
+    let financeInput = {
+      reason: "enrollment_active",
+      schoolCode: financeLoginCode,
+      studentKey: student.student_code,
+      student: {
+        id: student.student_code,
+        dbId: student.id,
+        publicId: student.student_code,
+        studentCode: student.student_code,
+        firstName: student.first_name,
+        lastName: student.last_name,
+        schoolCode: financeLoginCode,
+        classId: klass.id,
+        classCode: klass.class_code,
+        className: klass.name,
+        academicYear: academicYear.name,
+      },
+      academicYear: academicYear.name,
+      classId: klass.id,
+      previousClass: null,
+      effectiveDate: requestedEffectiveDate,
+    };
+    try {
+      const outcome = await this.withTransaction(async (tx) => {
+        const scoped = this.createTxScope(tx);
+        const lockSql = `SELECT class_id, class_effective_date, enrollment_date
+           FROM enrollments
+           WHERE student_id = $1 AND academic_year_id = $2
+           FOR UPDATE`;
+        let previous = await scoped.one(lockSql, [studentDbId, academicYear.id]);
+        if (!previous) {
+          await scoped.query(
+            `INSERT INTO enrollments (
+               school_id, student_id, class_id, academic_year_id, enrollment_date, class_effective_date, status
+             )
+             VALUES ($1, $2, $3, $4, CURRENT_DATE, COALESCE($5::date, CURRENT_DATE), 'active')
+             ON CONFLICT (student_id, academic_year_id) DO NOTHING`,
+            [schoolId, studentDbId, classId, academicYear.id, requestedEffectiveDate],
+          );
+          previous = await scoped.one(lockSql, [studentDbId, academicYear.id]);
+        }
+        if (!previous) return { classChanged: false };
+        const classChanged = Boolean(previous?.class_id && String(previous.class_id) !== String(classId));
+        if (classChanged && !requestedEffectiveDate) {
+          throw createFinanceError(
+            409,
+            "Date effective du changement de classe obligatoire : aucune obligation n'a été annulée.",
+            FINANCE_ERROR.NEEDS_EFFECTIVE_DATE,
+          );
+        }
+        const previousClass = classChanged
+          ? await scoped.one(`SELECT id, class_code, name FROM classes WHERE id = $1`, [previous.class_id])
+          : null;
+        await scoped.query(
+          `UPDATE enrollments SET
+             class_id = $3,
+             status = 'active',
+             class_effective_date = CASE
+               WHEN enrollments.class_id IS DISTINCT FROM $3
+                 THEN COALESCE($4::date, enrollments.class_effective_date)
+               ELSE COALESCE(enrollments.class_effective_date, enrollments.enrollment_date)
+             END,
+             updated_at = NOW()
+           WHERE student_id = $1 AND academic_year_id = $2`,
+          [studentDbId, academicYear.id, classId, requestedEffectiveDate],
+        );
+        financeInput = {
+          ...financeInput,
+          reason: classChanged ? "class_transfer" : "enrollment_active",
+          previousClass: previousClass
+            ? { classId: previousClass.id, classCode: previousClass.class_code, className: previousClass.name }
+            : null,
+        };
+        if (!classChanged) return { classChanged: false };
+        const financeSync = await this.getFinanceStore().ensureEnrollmentObligationsInTx(tx, financeInput, actor);
+        return { classChanged: true, financeSync, previousClass };
+      });
+      if (outcome.classChanged) return outcome.financeSync;
+      return this.syncEnrollmentFinanceObligations(financeInput, options.principal);
+    } catch (error) {
+      if (error?.code === FINANCE_ERROR.NEEDS_EFFECTIVE_DATE) throw error;
+      await persistObligationSyncFailure(this.getFinanceStore(), financeInput, actor, null, error);
+      error.financeSync = {
+        created: 0,
+        skipped: 0,
+        superseded: 0,
+        reason: FINANCE_OBLIGATION_SYNC_FAILED,
+        error: error?.code || error?.message,
+        previousClassId: financeInput.previousClass?.classId || null,
+        targetClassId: klass.id,
+        effectiveDate: requestedEffectiveDate,
+        academicYear: academicYear.name,
+        studentId: student.student_code,
+        retryStatus: "pending",
+      };
+      throw error;
+    }
   }
 
   async ensureSchoolFromBackOfficeRecord(schoolCode, context = {}) {
@@ -1837,22 +3528,24 @@ class PostgresRepository {
     );
     if (!backOfficeSchool) return null;
 
-    const rawCountryCode = String(backOfficeSchool.countryCode ?? backOfficeSchool.country ?? "CD").trim().toUpperCase();
-    const isoCode = rawCountryCode === "RDC" ? "CD" : rawCountryCode.slice(0, 2);
-    let country = await this.one("SELECT id FROM countries WHERE iso_code = $1 LIMIT 1", [isoCode]);
-    if (!country) {
-      country = await this.one(
-        `INSERT INTO countries (name, iso_code, phone_code, currency, is_active, created_at, updated_at)
-         VALUES ($1, $2, '+243', 'CDF', TRUE, NOW(), NOW())
-         ON CONFLICT (iso_code) DO UPDATE SET name = EXCLUDED.name
-         RETURNING id`,
-        [backOfficeSchool.country ?? "République Démocratique du Congo", isoCode],
-      );
+    const { extractProfilePayload, toSchoolDbStatus, normalizeCountryIso } = require("../lib/schoolsManagement");
+    const isoCode = normalizeCountryIso(backOfficeSchool.countryCode, backOfficeSchool.country);
+    let country = null;
+    if (isoCode) {
+      country = await this.one("SELECT id FROM countries WHERE iso_code = $1 LIMIT 1", [isoCode]);
     }
-
+    if (!country && backOfficeSchool.country) {
+      country = await this.one("SELECT id FROM countries WHERE lower(name) = lower($1) LIMIT 1", [
+        String(backOfficeSchool.country).trim(),
+      ]);
+    }
+    if (!country) {
+      return null;
+    }
+    const profile = extractProfilePayload({ ...backOfficeSchool, code: normalized });
     return this.one(
-      `INSERT INTO schools (country_id, school_code, name, logo_url, address, city, phone, email, school_type, status, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW(), NOW())
+      `INSERT INTO schools (country_id, school_code, name, logo_url, address, city, phone, email, school_type, status, profile_payload, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, NOW(), NOW())
        ON CONFLICT (school_code) DO UPDATE SET name = EXCLUDED.name
        RETURNING *`,
       [
@@ -1865,7 +3558,8 @@ class PostgresRepository {
         backOfficeSchool.phone ?? "",
         backOfficeSchool.email ?? "",
         backOfficeSchool.type ?? "Établissement",
-        this.toDbStatus(backOfficeSchool.status ?? "Actif"),
+        toSchoolDbStatus(backOfficeSchool.status ?? "Actif"),
+        JSON.stringify(profile),
       ],
     );
   }
@@ -2277,7 +3971,7 @@ class PostgresRepository {
     }
 
     let teacher = await this.one(
-      `SELECT * FROM teachers WHERE school_id = $1 AND teacher_code = $2 LIMIT 1`,
+      `SELECT * FROM teachers WHERE school_id = $1 AND (${sqlTeacherPublicCodeEquals("teachers", "$2")} OR id::text = $2) LIMIT 1`,
       [school.id, validation.teacherCode],
     );
     if (!teacher) {
@@ -2319,7 +4013,7 @@ class PostgresRepository {
 
     const subject = await this.ensureSubjectForSchool(school.id, validation.subjectName, context);
     if (!subject?.id) {
-      const error = new Error(`Matière introuvable pour l'affectation (${validation.subjectName})`);
+      const error = new Error(`Cours introuvable pour l'affectation (${validation.subjectName})`);
       error.statusCode = 400;
       error.code = "ASSIGNMENT_SYNC_SUBJECT_MISSING";
       throw error;
@@ -2450,8 +4144,11 @@ class PostgresRepository {
     const className = String(record.className ?? "").trim();
     const classId = await this.ensureClassForSchool(school.id, className, context);
     let enrollment = false;
+    let financeSync = null;
     if (classId) {
-      await this.ensureActiveEnrollment(school.id, row.id, classId);
+      financeSync = await this.ensureActiveEnrollment(school.id, row.id, classId, {
+        principal: context.principal,
+      });
       enrollment = true;
     }
     return {
@@ -2459,36 +4156,87 @@ class PostgresRepository {
       schoolId: school.id,
       classId: classId ?? null,
       enrollment,
+      financeSync,
     };
   }
 
-  async resolveStudentForAttendance(payload, principal = {}) {
-    const schoolCode = String(payload.schoolCode ?? principal.schoolCode ?? "").trim().toUpperCase();
+  async assertPrincipalStudentTenant(principal, student) {
+    const membershipId = String(principal?.presenceSchoolId ?? "").trim();
+    if (membershipId) {
+      if (String(student?.school_id ?? "") !== membershipId) {
+        const error = new Error("Accès refusé : élève hors périmètre établissement.");
+        error.statusCode = 403;
+        error.code = "TENANT_MISMATCH";
+        throw error;
+      }
+      return;
+    }
+    const schoolCode = String(principal?.schoolCode ?? "")
+      .trim()
+      .toUpperCase();
+    if (!schoolCode || schoolCode === "*") return;
+    const school = await this.getSchoolByCode(schoolCode);
+    if (!school || String(student?.school_id) !== String(school.id)) {
+      const error = new Error("Accès refusé : élève hors périmètre établissement.");
+      error.statusCode = 403;
+      error.code = "TENANT_MISMATCH";
+      throw error;
+    }
+  }
+
+  async resolveStudentForAttendance(payload, principal = {}, options = {}) {
+    const membershipId = String(principal.presenceSchoolId ?? "").trim();
+    const schoolCode = membershipId
+      ? ""
+      : String(payload.schoolCode ?? principal.schoolCode ?? "")
+          .trim()
+          .toUpperCase();
+    const tenantScoped = Boolean(membershipId) || Boolean(schoolCode && schoolCode !== "*");
+    const pedagogyStrict = options.pedagogyStrict === true || tenantScoped;
     const className = String(payload.className ?? "").trim();
 
-    if (schoolCode && schoolCode !== "*") {
+    if (!membershipId && tenantScoped && !options.skipSchoolEnsure) {
       await this.ensureSchoolFromBackOfficeRecord(schoolCode);
     }
 
-    let { row: student, backOfficeStudent } = await this.queryStudentWithClass(payload.studentId, schoolCode);
+    let { row: student, backOfficeStudent } = await this.queryStudentWithClass(
+      payload.studentId,
+      schoolCode,
+      { schoolId: membershipId },
+    );
 
-    if (!student && !backOfficeStudent) {
+    if (!student && !backOfficeStudent && !pedagogyStrict) {
       ({ row: student, backOfficeStudent } = await this.queryStudentWithClass(payload.studentId, ""));
     }
 
-    if (!student && backOfficeStudent) {
+    if (!student && backOfficeStudent && !pedagogyStrict) {
       const materialized = await this.materializeBackOfficeStudent(backOfficeStudent);
       if (materialized?.studentId) {
         ({ row: student, backOfficeStudent } = await this.queryStudentWithClass(
           payload.studentId,
           schoolCode,
+          { schoolId: membershipId },
         ));
       }
     }
 
     if (!student) return null;
 
+    if (membershipId) {
+      if (String(student.school_id) !== membershipId) {
+        return null;
+      }
+    } else if (tenantScoped) {
+      const tenantSchool = await this.getSchoolByCode(schoolCode);
+      if (!tenantSchool || String(student.school_id) !== String(tenantSchool.id)) {
+        return null;
+      }
+    }
+
     if (!student.class_id) {
+      if (pedagogyStrict) {
+        return null;
+      }
       const targetClassName =
         className ||
         String(backOfficeStudent?.className ?? "").trim() ||
@@ -2496,7 +4244,7 @@ class PostgresRepository {
       if (targetClassName) {
         const classId = await this.ensureClassForSchool(student.school_id, targetClassName);
         if (classId) {
-          await this.ensureActiveEnrollment(student.school_id, student.id, classId);
+          await this.ensureActiveEnrollment(student.school_id, student.id, classId, { principal });
           student = { ...student, class_id: classId, class_name: targetClassName };
         }
       }
@@ -2603,109 +4351,111 @@ class PostgresRepository {
     return jwtHit;
   }
 
+  /**
+   * GP-001 — identité enseignant Notes : session canonique uniquement.
+   * principal.sub → users.id → teachers.user_id → teachers.id
+   * Pas de publicId / identifier, pas de BackOffice (collectTeacherLookupKeysForPrincipal reste hors Notes).
+   */
+  async resolveTeacherPgIdForPrincipal(principal, schoolId) {
+    const userId = String(principal?.sub ?? "").trim();
+    if (!userId || !schoolId) return null;
+    const teacher = await this.one(
+      `SELECT t.id
+       FROM users u
+       INNER JOIN teachers t ON t.user_id = u.id AND t.school_id = u.school_id
+       WHERE t.school_id = $1
+         AND u.id::text = $2
+       LIMIT 1`,
+      [schoolId, userId],
+    );
+    return teacher?.id ?? null;
+  }
+
+  async resolveAcademicYearIdForEvaluation(evaluation) {
+    const fromRow = String(evaluation?.academic_year_id ?? "").trim();
+    if (fromRow) return fromRow;
+    if (evaluation?.term_id) {
+      const term = await this.one(
+        `SELECT academic_year_id FROM terms WHERE id = $1 LIMIT 1`,
+        [evaluation.term_id],
+      );
+      if (term?.academic_year_id) return term.academic_year_id;
+    }
+    if (evaluation?.class_id) {
+      const klass = await this.one(
+        `SELECT academic_year_id FROM classes WHERE id = $1 LIMIT 1`,
+        [evaluation.class_id],
+      );
+      if (klass?.academic_year_id) return klass.academic_year_id;
+    }
+    return null;
+  }
+
+  async findActiveTeacherAssignmentRow({ teacherId, classId, subjectId, academicYearId }) {
+    if (!teacherId || !classId || !subjectId || !academicYearId) return null;
+    return this.one(
+      `SELECT 1 AS ok
+       FROM teacher_assignments ta
+       WHERE ta.teacher_id = $1
+         AND ta.class_id = $2
+         AND ta.subject_id = $3
+         AND ta.academic_year_id = $4
+         AND lower(ta.status) = 'active'
+       LIMIT 1`,
+      [teacherId, classId, subjectId, academicYearId],
+    );
+  }
+
   async teacherCanAccessStudentClass(principal, student) {
     const { pushStep } = require("../lib/notesAuthzTrace");
+    const { isTeacherPrincipal } = require("../lib/evaluationGradeEntry");
     const trace = this._activeNotesAuthzTrace;
     this._lastTeacherClassAccessVia = null;
-    if (principal.role !== "Enseignant") {
+    if (!isTeacherPrincipal(principal)) {
       this._lastTeacherClassAccessVia = "non_teacher";
       return true;
     }
-    if (this.classNamesInclude(principal.classNames, student.class_name)) {
-      this._lastTeacherClassAccessVia = "jwt_classNames";
+    const teacherId = await this.resolveTeacherPgIdForPrincipal(principal, student.school_id);
+    pushStep(trace, { gate: "pg_teacher_lookup", teacherId: teacherId || null });
+    if (!teacherId || !student.class_id) {
+      this._lastTeacherClassAccessVia = null;
+      return false;
+    }
+    const assignment = await this.one(
+      `SELECT 1 AS ok
+       FROM teacher_assignments ta
+       WHERE ta.teacher_id = $1
+         AND ta.class_id = $2
+         AND lower(ta.status) = 'active'
+       LIMIT 1`,
+      [teacherId, student.class_id],
+    );
+    if (assignment) {
+      this._lastTeacherClassAccessVia = "pg_teacher_assignment";
       pushStep(trace, {
-        gate: "pg_or_jwt_class",
+        gate: "pg_teacher_assignment",
         result: "allow",
-        via: "jwt_classNames",
-        jwtClassNames: principal.classNames ?? [],
-        studentClassName: student.class_name,
+        via: "pg_teacher_assignment",
+        teacherId,
+        classId: student.class_id,
       });
       return true;
     }
-    pushStep(trace, {
-      gate: "jwt_classNames",
-      result: "miss",
-      jwtClassNames: principal.classNames ?? [],
-      studentClassName: student.class_name,
-    });
-
-    const lookupKeys = await this.collectTeacherLookupKeysForPrincipal(principal, student.school_id);
-    pushStep(trace, { gate: "pg_teacher_lookup", lookupValues: lookupKeys });
-    let pgTeacherFound = false;
-    for (const lookupValue of lookupKeys) {
-      const teacher = await this.one(
-        `SELECT t.id, t.teacher_code
-         FROM teachers t
-         LEFT JOIN users u ON u.id = t.user_id
-         WHERE t.school_id = $1
-           AND (
-             t.teacher_code = $2
-             OR u.user_code = $2
-             OR u.id::text = $2
-             OR t.id::text = $2
-           )
-         LIMIT 1`,
-        [student.school_id, lookupValue],
-      );
-      if (!teacher?.id) continue;
-      pgTeacherFound = true;
-      pushStep(trace, {
-        gate: "pg_teacher_lookup",
-        result: "hit",
-        lookupValue,
-        teacherId: teacher.id,
-        teacherCode: teacher.teacher_code,
-      });
-      if (teacher?.id && student.class_id) {
-        const assignment = await this.one(
-          `SELECT 1 AS ok
-           FROM teacher_assignments ta
-           WHERE ta.teacher_id = $1
-             AND ta.class_id = $2
-             AND ta.status = 'active'
-           LIMIT 1`,
-          [teacher.id, student.class_id],
-        );
-        if (assignment) {
-          this._lastTeacherClassAccessVia = "pg_teacher_assignment";
-          pushStep(trace, {
-            gate: "pg_teacher_assignment",
-            result: "allow",
-            via: "pg_teacher_assignment",
-            teacherId: teacher.id,
-            classId: student.class_id,
-          });
-          return true;
-        }
-        pushStep(trace, {
-          gate: "pg_teacher_assignment",
-          result: "miss",
-          teacherId: teacher.id,
-          classId: student.class_id,
-        });
-      }
-    }
-    if (!pgTeacherFound) {
-      pushStep(trace, {
-        gate: "pg_teacher_lookup",
-        result: "miss",
-        lookupValues: lookupKeys,
-      });
-    }
-
-    pushStep(trace, { gate: "fallback_bo_class", entering: true });
-    return this.teacherCanAccessClassFromBackOffice(principal, student);
+    pushStep(trace, { gate: "pg_teacher_assignment", result: "deny", teacherId, classId: student.class_id });
+    return false;
   }
 
   /**
-   * HOTFIX-PRE-E1-02 — Enseignant autorisé sur l'évaluation (classe + matière).
-   * PG teacher_assignments, sinon affectation BO, sinon teacher_id évaluation.
+   * NOTES-P1 — écriture notes : teacher_assignments PostgreSQL actives
+   * (teacher / class / subject / academic_year).
+   * Identité : principal.sub → users.id → teachers.user_id. Pas de JWT classNames, pas de BO.
    */
   async teacherCanAccessEvaluation(principal, evaluation, student) {
     const { pushStep } = require("../lib/notesAuthzTrace");
+    const { isTeacherPrincipal } = require("../lib/evaluationGradeEntry");
     const trace = this._activeNotesAuthzTrace;
     this._lastTeacherEvaluationAccessVia = null;
-    if (principal.role !== "Enseignant") {
+    if (!isTeacherPrincipal(principal)) {
       this._lastTeacherEvaluationAccessVia = "non_teacher";
       return true;
     }
@@ -2739,133 +4489,50 @@ class PostgresRepository {
       }
     }
 
-    const lookupKeys = await this.collectTeacherLookupKeysForPrincipal(
-      principal,
-      evaluation.school_id,
-    );
-    pushStep(trace, {
-      gate: "pg_teacher_lookup_for_evaluation",
-      lookupValues: lookupKeys,
-    });
-    let pgTeacherFound = false;
-    for (const lookupValue of lookupKeys) {
-      const teacher = await this.one(
-        `SELECT t.id, t.teacher_code
-         FROM teachers t
-         LEFT JOIN users u ON u.id = t.user_id
-         WHERE t.school_id = $1
-           AND (
-             t.teacher_code = $2
-             OR u.user_code = $2
-             OR u.id::text = $2
-             OR t.id::text = $2
-           )
-         LIMIT 1`,
-        [evaluation.school_id, lookupValue],
-      );
-      if (!teacher?.id) continue;
-      pgTeacherFound = true;
-      pushStep(trace, {
-        gate: "pg_teacher_lookup_for_evaluation",
-        result: "hit",
-        lookupValue,
-        teacherId: teacher.id,
-        teacherCode: teacher.teacher_code,
-      });
-      // Exiger l'affectation classe+matière (ne pas se fier seul à evaluation.teacher_id).
-      const assignment = await this.one(
-        `SELECT 1 AS ok
-         FROM teacher_assignments ta
-         WHERE ta.teacher_id = $1
-           AND ta.class_id = $2
-           AND ta.subject_id = $3
-           AND ta.status = 'active'
-         LIMIT 1`,
-        [teacher.id, evaluation.class_id, evaluation.subject_id],
-      );
-      if (assignment) {
-        this._lastTeacherEvaluationAccessVia = "pg_teacher_assignment";
-        pushStep(trace, {
-          gate: "pg_teacher_assignment_subject",
-          result: "allow",
-          via: "pg_teacher_assignment",
-          teacherId: teacher.id,
-          classId: evaluation.class_id,
-          subjectId: evaluation.subject_id,
-        });
-        return true;
-      }
+    const teacherId = await this.resolveTeacherPgIdForPrincipal(principal, evaluation.school_id);
+    if (!teacherId) {
+      pushStep(trace, { gate: "pg_teacher_lookup_for_evaluation", result: "miss" });
+      return false;
+    }
+    const academicYearId = await this.resolveAcademicYearIdForEvaluation(evaluation);
+    if (!academicYearId) {
       pushStep(trace, {
         gate: "pg_teacher_assignment_subject",
-        result: "miss",
-        teacherId: teacher.id,
+        result: "deny",
+        reason: "missing_academic_year",
+        teacherId,
         classId: evaluation.class_id,
         subjectId: evaluation.subject_id,
       });
-    }
-    if (!pgTeacherFound) {
-      pushStep(trace, {
-        gate: "pg_teacher_lookup_for_evaluation",
-        result: "miss",
-        lookupValues: lookupKeys,
-      });
-    }
-
-    // Fallback BO : affectation classe + matière (ID enseignant stable), même école.
-    const state = (await this.getBackOfficeState()) ?? {};
-    const className = String(student?.class_name ?? "").trim();
-    const subjectRow = await this.one(`SELECT name FROM subjects WHERE id = $1`, [
-      evaluation.subject_id,
-    ]);
-    const subjectName = String(subjectRow?.name ?? "").trim();
-    if (!className || !subjectName) {
-      pushStep(trace, {
-        gate: "fallback_bo_evaluation",
-        result: "deny",
-        reason: "missing_class_or_subject_name",
-      });
       return false;
     }
-
-    const { resolveTeacherAssignments } = require("../services/authService");
-    const principalSub = String(principal.sub ?? "").trim();
-    const linkedTeachers = (state.teachers ?? []).filter((row) =>
-      [row.userId, row.id, row.publicId].some((value) => String(value ?? "").trim() === principalSub),
-    );
-    const schoolCode = String(principal.schoolCode ?? "").trim().toUpperCase();
-    pushStep(trace, {
-      gate: "fallback_bo_evaluation",
-      entering: true,
-      linkedTeacherIds: linkedTeachers.map((row) => row.id),
-      className,
-      subjectName,
+    const assignment = await this.findActiveTeacherAssignmentRow({
+      teacherId,
+      classId: evaluation.class_id,
+      subjectId: evaluation.subject_id,
+      academicYearId,
     });
-    for (const teacher of linkedTeachers) {
-      const assignments = resolveTeacherAssignments(teacher, principal, state.assignments ?? []);
-      const matched = assignments.find((assignment) => {
-        const assignmentSchool = String(assignment.schoolCode ?? "").trim().toUpperCase();
-        if (schoolCode && assignmentSchool && schoolCode !== "*" && schoolCode !== assignmentSchool) {
-          return false;
-        }
-        return (
-          this.classNamesInclude([assignment.className], className) &&
-          this.normalizeComparableText(assignment.course ?? assignment.subject) ===
-            this.normalizeComparableText(subjectName)
-        );
+    if (assignment) {
+      this._lastTeacherEvaluationAccessVia = "pg_teacher_assignment";
+      pushStep(trace, {
+        gate: "pg_teacher_assignment_subject",
+        result: "allow",
+        via: "pg_teacher_assignment",
+        teacherId,
+        classId: evaluation.class_id,
+        subjectId: evaluation.subject_id,
+        academicYearId,
       });
-      if (matched) {
-        this._lastTeacherEvaluationAccessVia = "bo_assignment";
-        pushStep(trace, {
-          gate: "fallback_bo_evaluation",
-          result: "allow",
-          via: "bo_assignment",
-          teacherId: teacher.id,
-          assignmentId: matched.id ?? null,
-        });
-        return true;
-      }
+      return true;
     }
-    pushStep(trace, { gate: "fallback_bo_evaluation", result: "deny" });
+    pushStep(trace, {
+      gate: "pg_teacher_assignment_subject",
+      result: "deny",
+      teacherId,
+      classId: evaluation.class_id,
+      subjectId: evaluation.subject_id,
+      academicYearId,
+    });
     return false;
   }
 
@@ -2907,7 +4574,7 @@ class PostgresRepository {
          FROM teachers t
          LEFT JOIN users u ON u.id = t.user_id
          WHERE t.school_id = $1
-           AND (u.id::text = $2 OR u.user_code = $2 OR t.teacher_code = $2)
+           AND ${sqlTeacherIdentityEquals("t", "u", "$2")}
          LIMIT 1`,
         [schoolId, principalSub],
       );
@@ -2917,6 +4584,95 @@ class PostgresRepository {
     return [...keys];
   }
 
+  /**
+   * Résout la classe d'appel par classId / classCode uniquement — jamais par className.
+   */
+  async resolveAttendanceTargetClass(payload, principal, student) {
+    const {
+      requestedClassIdentity,
+      classRowMatchesRequestedIdentity,
+    } = require("../lib/presencesAttendanceAuthz");
+    const requested = requestedClassIdentity(payload);
+    const membershipId = String(principal.presenceSchoolId ?? "").trim();
+    const schoolCode = String(principal.presenceLoginCode ?? principal.schoolCode ?? payload.schoolCode ?? "")
+      .trim()
+      .toUpperCase();
+
+    if (requested.classId || requested.classCode) {
+      const params = [];
+      let sql = `SELECT cl.id, cl.class_code, cl.name, cl.school_id
+         FROM classes cl
+         JOIN schools s ON s.id = cl.school_id
+         WHERE 1=1`;
+      if (membershipId) {
+        sql += ` AND cl.school_id = $${params.length + 1}::uuid`;
+        params.push(membershipId);
+      } else if (schoolCode && schoolCode !== "*") {
+        sql += ` AND s.school_code = $${params.length + 1}`;
+        params.push(schoolCode);
+      }
+      if (requested.classId && requested.classCode) {
+        sql += ` AND cl.id::text = $${params.length + 1} AND cl.class_code = $${params.length + 2}`;
+        params.push(requested.classId, requested.classCode);
+      } else if (requested.classId) {
+        sql += ` AND cl.id::text = $${params.length + 1}`;
+        params.push(requested.classId);
+      } else {
+        sql += ` AND cl.class_code = $${params.length + 1}`;
+        params.push(requested.classCode);
+      }
+      sql += ` LIMIT 1`;
+      const row = await this.one(sql, params);
+      if (!classRowMatchesRequestedIdentity(row, requested)) {
+        return null;
+      }
+      return row;
+    }
+
+    if (student?.class_id) {
+      return this.one(
+        `SELECT cl.id, cl.class_code, cl.name, cl.school_id
+         FROM classes cl WHERE cl.id = $1 LIMIT 1`,
+        [student.class_id],
+      );
+    }
+    return null;
+  }
+
+  async teacherHasActiveAssignmentForClassId(principal, classId, schoolId) {
+    if (principal.role !== "Enseignant") {
+      return true;
+    }
+    const targetClassId = String(classId ?? "").trim();
+    if (!targetClassId) {
+      return false;
+    }
+    const lookupKeys = await this.collectTeacherLookupKeysForPrincipal(principal, schoolId);
+    for (const lookupValue of lookupKeys) {
+      const teacher = await this.one(
+        `SELECT t.id
+         FROM teachers t
+         LEFT JOIN users u ON u.id = t.user_id
+         WHERE t.school_id = $1
+           AND ${sqlTeacherIdentityEquals("t", "u", "$2")}
+         LIMIT 1`,
+        [schoolId, lookupValue],
+      );
+      if (!teacher?.id) continue;
+      const assignment = await this.one(
+        `SELECT 1 AS ok
+         FROM teacher_assignments ta
+         WHERE ta.teacher_id = $1
+           AND ta.class_id::text = $2
+           AND ta.status = 'active'
+         LIMIT 1`,
+        [teacher.id, targetClassId],
+      );
+      if (assignment) return true;
+    }
+    return false;
+  }
+
   async upsertAttendanceBatch(payload = {}, principal = {}) {
     await this.init();
     const items = Array.isArray(payload.items) ? payload.items : [];
@@ -2924,9 +4680,19 @@ class PostgresRepository {
       return [];
     }
 
+    const { mergeAttendanceClassIdentity, mergeAttendanceTeacherKey } = require("../lib/presencesAttendanceAuthz");
     const saved = [];
     for (const item of items) {
-      saved.push(await this.upsertAttendance(item, principal));
+      saved.push(
+        await this.upsertAttendance(
+          {
+            ...item,
+            ...mergeAttendanceClassIdentity(item, payload),
+            ...mergeAttendanceTeacherKey(item, payload),
+          },
+          principal,
+        ),
+      );
     }
 
     this.cachedDataset = null;
@@ -2941,20 +4707,70 @@ class PostgresRepository {
       throw error;
     }
 
-    const student = await this.resolveStudentForAttendance(payload, principal);
-    if (!student || !student.class_id) {
+    const student = await this.resolveStudentForAttendance(payload, principal, { pedagogyStrict: true });
+    if (!student) {
       const error = new Error("Élève ou classe introuvable pour l'appel");
       error.statusCode = 404;
       throw error;
     }
 
-    if (!(await this.teacherCanAccessStudentClass(principal, student))) {
+    await this.assertPrincipalStudentTenant(principal, student);
+
+    const targetClass = await this.resolveAttendanceTargetClass(payload, principal, student);
+    if (!targetClass?.id) {
+      const error = new Error("Classe introuvable pour l'appel");
+      error.statusCode = 404;
+      throw error;
+    }
+
+    const { activeEnrollmentMatchesRequestedClass } = require("../lib/presencesAttendanceAuthz");
+    const enrolledHere = activeEnrollmentMatchesRequestedClass(
+      {
+        classId: student.class_id,
+        classCode: student.class_code,
+        status: "active",
+      },
+      {
+        classId: targetClass.id,
+        classCode: targetClass.class_code,
+      },
+    );
+    if (!enrolledHere) {
+      const error = new Error("Accès refusé: élève non inscrit dans cette classe.");
+      error.statusCode = 403;
+      throw error;
+    }
+
+    if (!(await this.teacherHasActiveAssignmentForClassId(principal, targetClass.id, student.school_id))) {
       const error = new Error("Accès refusé: élève hors classe affectée.");
       error.statusCode = 403;
       throw error;
     }
 
-    const teacher = await this.findTeacherForAttendance(student.school_id, principal.sub, student.class_id, principal.role);
+    const isEnseignant = principal.role === "Enseignant";
+    const teacherKey = isEnseignant
+      ? String(principal.sub ?? "").trim()
+      : this.extractExplicitTeacherKey(payload);
+    if (!isEnseignant && !teacherKey) {
+      throw this.teacherUnresolvedError(
+        "ATTENDANCE_TEACHER_UNRESOLVED",
+        "Clé enseignant explicite requise pour attribuer une présence (admin/direction).",
+      );
+    }
+    const teacher = await this.findTeacherForAttendance(
+      student.school_id,
+      teacherKey,
+      targetClass.id,
+      principal.role,
+    );
+    // Enseignant : parcours inchangé (teacher_id nullable si pas de match fiche).
+    // Admin/direction : refus 409 si non résolu / ambigu — jamais d'auteur inventé.
+    if (!isEnseignant && !teacher) {
+      throw this.teacherUnresolvedError(
+        "ATTENDANCE_TEACHER_UNRESOLVED",
+        "Enseignant introuvable, ambigu ou non affecté à cette classe.",
+      );
+    }
     const status = this.toAttendanceStatus(payload.status, payload.present);
     // D3.5b : Justifié = absence justifiée (pas de justificatif documentaire)
     const reason =
@@ -2973,7 +4789,7 @@ class PostgresRepository {
       [
         student.school_id,
         student.id,
-        student.class_id,
+        targetClass.id,
         teacher?.id ?? null,
         attendanceDate,
         status,
@@ -2986,7 +4802,7 @@ class PostgresRepository {
 
   async getAttendanceById(id) {
     const attendance = await this.one(
-      `SELECT a.*, st.student_code, s.school_code, cl.name AS class_name
+      `SELECT a.*, st.student_code, s.login_code, cl.name AS class_name, cl.class_code, a.class_id
        FROM attendance a
        JOIN schools s ON s.id = a.school_id
        JOIN students st ON st.id = a.student_id
@@ -3197,7 +5013,7 @@ class PostgresRepository {
         `INSERT INTO students (school_id, student_code, first_name, last_name, gender, birth_date, birth_place, photo_url, parent_phone, parent_email, status)
          VALUES ($1, $2, $3, $4, $5, $6, '', '', $7, $8, $9)
          ON CONFLICT (student_code) DO UPDATE SET first_name = EXCLUDED.first_name
-         RETURNING id`,
+         RETURNING id, student_code`,
         [
           schoolId,
           student.matricule,
@@ -3212,6 +5028,7 @@ class PostgresRepository {
       );
       studentIds.set(student.id, row.id);
       studentIds.set(student.matricule, row.id);
+      studentIds.set(row.student_code, row.id);
 
       await client.query(
         `INSERT INTO users (school_id, user_code, first_name, last_name, email, phone, password_hash, pin_hash, role, status)
@@ -3219,7 +5036,7 @@ class PostgresRepository {
          ON CONFLICT (user_code) DO UPDATE SET pin_hash = EXCLUDED.pin_hash`,
         [
           schoolId,
-          student.matricule,
+          row.student_code,
           student.firstName ?? firstName,
           lastNameParts.join(" ") || student.name,
           student.parentEmail,
@@ -3260,7 +5077,8 @@ class PostgresRepository {
       const studentId = studentIds.get(note.studentId);
       const classId = student ? classIds.get(student.className) : null;
       const subjectId = subjectIds.get(note.subject);
-      const teacherId = teacherIds.get(note.authorId) ?? [...teacherIds.values()][0];
+      // Lot 2 — seed démo : pas d'auteur inventé (premier teacher) si authorId absent/non mappé.
+      const teacherId = teacherIds.get(note.authorId);
       if (!studentId || !classId || !subjectId || !teacherId) continue;
       await client.query(
         `INSERT INTO grades (school_id, student_id, class_id, subject_id, teacher_id, term_id, grade_type, score, max_score, coefficient, comment)
@@ -3406,7 +5224,7 @@ class PostgresRepository {
     const demoPasswordHash = hashSecret("1234");
     const schoolRows = await this.all("SELECT school_code, id FROM schools");
     const schoolIds = new Map(schoolRows.map((school) => [school.school_code, school.id]));
-    const demoRoles = new Set(["Enseignant", "Parent", "Élève / Étudiant"]);
+    const demoRoles = new Set(["Enseignant", "Parent"]);
 
     for (const user of seedData.userAccounts.filter((item) => demoRoles.has(item.role))) {
       const schoolId = user.schoolCode === "*" ? null : schoolIds.get(user.schoolCode);
@@ -3512,7 +5330,7 @@ class PostgresRepository {
           `${["Interrogation", "Examen blanc", "Examen final"][index]} - ${subject.name}`,
           ["Interrogation", "Examen blanc", "Examen final"][index],
           `2026-06-${String(10 + index).padStart(2, "0")}`,
-          index === 0 ? "published" : "validated",
+          index === 0 ? "completed" : "validated",
           adminUser?.id ?? null,
         ]
       );
@@ -3599,9 +5417,11 @@ class PostgresRepository {
     );
   }
 
-  async getSubjectsV2() {
+  async getSubjectsV2(query = {}) {
     await this.init();
-    const rows = await this.all(`
+    const schoolCode = String(query.schoolCode ?? "").trim().toUpperCase();
+    const params = [];
+    let sql = `
       SELECT sub.*, s.school_code, c.iso_code AS country_code,
              COUNT(DISTINCT sca.class_id) AS class_count,
              COUNT(DISTINCT ta.teacher_id) AS teacher_count,
@@ -3617,9 +5437,16 @@ class PostgresRepository {
       LEFT JOIN teachers t ON t.id = ta.teacher_id
       LEFT JOIN users u ON u.id = t.user_id
       LEFT JOIN grades g ON g.subject_id = sub.id
+    `;
+    if (schoolCode && schoolCode !== "*") {
+      params.push(schoolCode);
+      sql += ` WHERE upper(s.school_code) = $1`;
+    }
+    sql += `
       GROUP BY sub.id, s.school_code, c.iso_code
       ORDER BY sub.created_at, sub.subject_code
-    `);
+    `;
+    const rows = await this.all(sql, params);
     return rows.map((row) => ({
       id: row.id,
       schoolId: row.school_id,
@@ -3678,16 +5505,16 @@ class PostgresRepository {
       entityId: String(payload.code).trim().toUpperCase(),
       newValue: payload,
     });
-    return { id: row.id, message: "Matière enregistrée" };
+    return { id: row.id, message: "Cours enregistré" };
   }
 
   async deleteSubject(subjectCode) {
     await this.init();
     const subject = await this.one("SELECT id, subject_code FROM subjects WHERE subject_code = $1", [String(subjectCode).trim().toUpperCase()]);
-    if (!subject) throw new Error("Matière introuvable");
+    if (!subject) throw new Error("Cours introuvable");
     const usage = await this.one("SELECT COUNT(*)::int AS count FROM grades WHERE subject_id = $1", [subject.id]);
     if (usage.count > 0) {
-      const error = new Error("Suppression refusée: la matière possède déjà des notes");
+      const error = new Error("Suppression refusée: le cours possède déjà des notes");
       error.statusCode = 409;
       throw error;
     }
@@ -3698,13 +5525,52 @@ class PostgresRepository {
       entityType: "subject",
       entityId: subject.subject_code,
     });
-    return { message: "Matière supprimée" };
+    return { message: "Cours supprimé" };
   }
 
-  async getAcademicYearsV2() {
+  async resolveAcademicYearSchoolRecord(input = {}) {
+    const schoolId = String(input.schoolId ?? "").trim();
+    if (schoolId) {
+      return this.one(
+        `SELECT s.id, s.login_code, c.iso_code AS country_code
+         FROM schools s
+         JOIN countries c ON c.id = s.country_id
+         WHERE s.id::text = $1
+         LIMIT 1`,
+        [schoolId],
+      );
+    }
+    const schoolCode = String(input.schoolCode ?? "").trim().toUpperCase();
+    if (!schoolCode) return null;
+    const byLogin = await this.one(
+      `SELECT s.id, s.login_code, c.iso_code AS country_code
+       FROM schools s
+       JOIN countries c ON c.id = s.country_id
+       WHERE upper(btrim(s.login_code)) = $1
+       LIMIT 1`,
+      [schoolCode],
+    );
+    if (byLogin) return byLogin;
+    const school = await this.ensureSchoolFromBackOfficeRecord(schoolCode);
+    if (!school) return null;
+    return this.one(
+      `SELECT s.id, s.login_code, c.iso_code AS country_code
+       FROM schools s
+       JOIN countries c ON c.id = s.country_id
+       WHERE s.id::text = $1
+       LIMIT 1`,
+      [school.id],
+    );
+  }
+
+  async getAcademicYearsV2(scope = { mode: "all" }) {
     await this.init();
-    const rows = await this.all(`
-      SELECT ay.*, s.school_code, c.iso_code AS country_code,
+    const { sqlAcademicYearScope } = require("../lib/academicYearSchoolScope");
+    const params = [];
+    const where = sqlAcademicYearScope(scope, params);
+    const rows = await this.all(
+      `
+      SELECT ay.*, s.login_code, c.iso_code AS country_code,
              COUNT(DISTINCT e.id) AS enrollment_count,
              COUNT(DISTINCT g.id) AS grade_count,
              COUNT(DISTINCT pd.id) AS decision_count
@@ -3715,24 +5581,200 @@ class PostgresRepository {
       LEFT JOIN terms tm ON tm.academic_year_id = ay.id
       LEFT JOIN grades g ON g.term_id = tm.id
       LEFT JOIN promotion_decisions pd ON pd.academic_year_id = ay.id
-      GROUP BY ay.id, s.school_code, c.iso_code
+      WHERE ${where}
+      GROUP BY ay.id, s.login_code, c.iso_code
       ORDER BY ay.start_date DESC NULLS LAST, ay.created_at DESC
-    `);
-    return rows.map((row) => ({
+    `,
+      params,
+    );
+    return rows.map((row) => this.mapAcademicYearV2(row));
+  }
+
+  async createAcademicYearV2(input = {}) {
+    await this.init();
+    const schoolIdInput = String(input.schoolId ?? "").trim();
+    const schoolCode = String(input.schoolCode ?? "").trim().toUpperCase();
+    const name = String(input.name ?? "").trim();
+    const startDate = String(input.startDate ?? "").trim();
+    const endDate = String(input.endDate ?? "").trim();
+    const isCurrent = input.isCurrent !== false;
+    if (
+      (!schoolIdInput && !schoolCode) ||
+      !name ||
+      !/^\d{4}-\d{2}-\d{2}$/.test(startDate) ||
+      !/^\d{4}-\d{2}-\d{2}$/.test(endDate)
+    ) {
+      const error = new Error("Établissement, nom, date de début et date de fin sont requis.");
+      error.statusCode = 400;
+      throw error;
+    }
+    if (startDate >= endDate) {
+      const error = new Error("La date de fin doit être postérieure à la date de début.");
+      error.statusCode = 400;
+      throw error;
+    }
+    const school = await this.resolveAcademicYearSchoolRecord(input);
+    if (!school) {
+      const error = new Error("Établissement introuvable.");
+      error.statusCode = 404;
+      throw error;
+    }
+    const loginCode = String(school.login_code ?? "").trim().toUpperCase();
+    if (!loginCode) {
+      const error = new Error("Établissement sans code public canonique.");
+      error.statusCode = 403;
+      throw error;
+    }
+    const duplicate = await this.one(
+      "SELECT id FROM academic_years WHERE school_id = $1 AND lower(btrim(name)) = lower(btrim($2))",
+      [school.id, name],
+    );
+    if (duplicate) {
+      const error = new Error(`L'année scolaire « ${name} » existe déjà pour cet établissement.`);
+      error.statusCode = 409;
+      throw error;
+    }
+    if (isCurrent) {
+      await this.query("UPDATE academic_years SET is_current = FALSE, updated_at = NOW() WHERE school_id = $1", [school.id]);
+    }
+    const row = await this.one(
+      `INSERT INTO academic_years (school_id, name, start_date, end_date, is_current, status)
+       VALUES ($1, $2, $3, $4, $5, 'open') RETURNING *`,
+      [school.id, name, startDate, endDate, isCurrent],
+    );
+    return this.mapAcademicYearV2({
+      ...row,
+      login_code: loginCode,
+      country_code: school.country_code ?? null,
+    });
+  }
+
+  async getAcademicYearV2ById(id) {
+    await this.init();
+    const yearId = String(id ?? "").trim();
+    if (!yearId) return null;
+    const row = await this.one(
+      `SELECT ay.*, s.login_code, c.iso_code AS country_code
+       FROM academic_years ay
+       JOIN schools s ON s.id = ay.school_id
+       JOIN countries c ON c.id = s.country_id
+       WHERE ay.id::text = $1
+       LIMIT 1`,
+      [yearId],
+    );
+    return row ? this.mapAcademicYearV2(row) : null;
+  }
+
+  async updateAcademicYearV2(id, input = {}) {
+    await this.init();
+    const yearId = String(id ?? "").trim();
+    if (!yearId) {
+      const error = new Error("Identifiant d'année scolaire requis.");
+      error.statusCode = 400;
+      throw error;
+    }
+    if (Object.prototype.hasOwnProperty.call(input, "status")) {
+      const error = new Error("La clôture et l'archivage d'une année scolaire ne sont pas encore disponibles.");
+      error.statusCode = 400;
+      throw error;
+    }
+    return this.withTransaction(async (tx) => {
+      const db = this.createTxScope(tx);
+      const existing = await db.one(
+        `SELECT ay.*, s.login_code, c.iso_code AS country_code
+         FROM academic_years ay
+         JOIN schools s ON s.id = ay.school_id
+         JOIN countries c ON c.id = s.country_id
+         WHERE ay.id::text = $1
+         LIMIT 1`,
+        [yearId],
+      );
+      if (!existing) {
+        const error = new Error("Année scolaire introuvable.");
+        error.statusCode = 404;
+        throw error;
+      }
+      await db.query(
+        `SELECT id FROM academic_years WHERE school_id = $1 ORDER BY id FOR UPDATE`,
+        [existing.school_id],
+      );
+      const locked = await db.one(
+        `SELECT ay.*, s.login_code, c.iso_code AS country_code
+         FROM academic_years ay
+         JOIN schools s ON s.id = ay.school_id
+         JOIN countries c ON c.id = s.country_id
+         WHERE ay.id::text = $1
+         LIMIT 1`,
+        [yearId],
+      );
+      if (!locked) {
+        const error = new Error("Année scolaire introuvable.");
+        error.statusCode = 404;
+        throw error;
+      }
+      const name = input.name !== undefined ? String(input.name ?? "").trim() : String(locked.name ?? "").trim();
+      const startDate = input.startDate !== undefined
+        ? String(input.startDate ?? "").trim()
+        : this.formatIsoDate(locked.start_date);
+      const endDate = input.endDate !== undefined
+        ? String(input.endDate ?? "").trim()
+        : this.formatIsoDate(locked.end_date);
+      const isCurrent = input.isCurrent !== undefined ? Boolean(input.isCurrent) : Boolean(locked.is_current);
+      if (!name || !/^\d{4}-\d{2}-\d{2}$/.test(startDate) || !/^\d{4}-\d{2}-\d{2}$/.test(endDate)) {
+        const error = new Error("Nom, date de début et date de fin sont requis.");
+        error.statusCode = 400;
+        throw error;
+      }
+      if (startDate >= endDate) {
+        const error = new Error("La date de fin doit être postérieure à la date de début.");
+        error.statusCode = 400;
+        throw error;
+      }
+      const duplicate = await db.one(
+        "SELECT id FROM academic_years WHERE school_id = $1 AND lower(btrim(name)) = lower(btrim($2)) AND id::text <> $3",
+        [locked.school_id, name, yearId],
+      );
+      if (duplicate) {
+        const error = new Error(`L'année scolaire « ${name} » existe déjà pour cet établissement.`);
+        error.statusCode = 409;
+        throw error;
+      }
+      if (isCurrent) {
+        await db.query("UPDATE academic_years SET is_current = FALSE, updated_at = NOW() WHERE school_id = $1", [
+          locked.school_id,
+        ]);
+      }
+      const row = await db.one(
+        `UPDATE academic_years
+         SET name = $2, start_date = $3, end_date = $4, is_current = $5, updated_at = NOW()
+         WHERE id::text = $1
+         RETURNING *`,
+        [yearId, name, startDate, endDate, isCurrent],
+      );
+      return this.mapAcademicYearV2({
+        ...row,
+        login_code: locked.login_code,
+        country_code: locked.country_code ?? null,
+      });
+    });
+  }
+
+  mapAcademicYearV2(row, extras = {}) {
+    return {
       id: row.id,
       schoolId: row.school_id,
-      schoolCode: row.school_code,
-      countryCode: row.country_code,
+      schoolCode: String(row.login_code ?? "").trim().toUpperCase() || null,
+      countryCode: row.country_code ?? extras.countryCode ?? null,
       name: row.name,
       startDate: this.formatIsoDate(row.start_date),
       endDate: this.formatIsoDate(row.end_date),
       status: this.fromYearStatus(row.status),
       isCurrent: row.is_current,
-      enrollmentCount: Number(row.enrollment_count),
-      gradeCount: Number(row.grade_count),
-      promotionDecisionCount: Number(row.decision_count),
+      enrollmentCount: Number(extras.enrollmentCount ?? row.enrollment_count ?? 0),
+      gradeCount: Number(extras.gradeCount ?? row.grade_count ?? 0),
+      promotionDecisionCount: Number(extras.promotionDecisionCount ?? extras.decisionCount ?? row.decision_count ?? 0),
       notesLocked: row.status === "closed" || row.status === "archived",
-    }));
+    };
   }
 
   async getExamsV2() {
@@ -3760,7 +5802,7 @@ class PostgresRepository {
       name: row.name,
       type: row.exam_type,
       className: row.class_name,
-      subject: row.subject_name ?? "Toutes matières",
+      subject: row.subject_name ?? "Tous les cours",
       date: this.formatIsoDate(row.exam_date),
       status: this.fromExamStatus(row.status),
       resultCount: Number(row.result_count),
@@ -3888,41 +5930,21 @@ class PostgresRepository {
       status: country.is_active ? "Actif" : "Suspendu",
       administratorId: "",
       createdAt: this.formatDate(country.created_at),
+      ...require("../lib/educationReferenceManagement").pedagogicalLabelsFromCountryRow(country),
     };
   }
 
   mapSchool(school, subscription) {
-    return {
-      id: school.id,
-      countryId: school.country_id,
-      countryCode: school.iso_code,
-      publicId: school.school_code,
-      code: school.school_code,
-      name: school.name,
-      type: school.school_type,
-      city: school.city,
-      country: school.country_name === "République Démocratique du Congo" ? "RDC" : school.country_name,
-      address: school.address,
-      phone: school.phone,
-      email: school.email,
-      website: "",
-      currency: school.country_currency,
-      slogan: "Excellence et Innovation",
-      status: this.fromDbStatus(school.status),
-      logoUrl: school.logo_url ?? "",
-      schoolYear: "2025-2026",
-      timezone: "Africa/Kinshasa",
-      language: "Français",
-      dateFormat: "JJ-MM-AAAA",
-      primaryColor: "#2563EB",
-      subscriptionPlan: subscription?.plan_name ?? "Essentiel",
-      subscriptionStartDate: this.formatDate(subscription?.start_date),
-      subscriptionEndDate: this.formatDate(subscription?.end_date),
-      subscriptionStatus: this.fromSubscriptionStatus(subscription?.status),
-      maxStudents: 1200,
-      maxTeachers: 120,
-      createdAt: this.formatDate(school.created_at),
-    };
+    const { mapEstablishmentRow } = require("../lib/schoolsManagement");
+    const mapped = mapEstablishmentRow(school, subscription);
+    if (!mapped.subscriptionPlan) mapped.subscriptionPlan = subscription?.plan_name ?? "Essentiel";
+    if (!mapped.subscriptionStatus && subscription?.status) {
+      mapped.subscriptionStatus = this.fromSubscriptionStatus(subscription.status);
+    }
+    if (mapped.maxStudents == null) mapped.maxStudents = 1200;
+    if (mapped.maxTeachers == null) mapped.maxTeachers = 120;
+    if (!mapped.slogan) mapped.slogan = "Excellence et Innovation";
+    return mapped;
   }
 
   mapSubscription(subscription) {
@@ -3944,25 +5966,50 @@ class PostgresRepository {
     };
   }
 
-  mapUser(user, schoolByCode, teacherLoginByUserId = new Map()) {
-    const role = roleFromDb[user.role] ?? user.role;
+  mapUser(user, schoolByCode, teacherLoginByUserId = new Map(), roleKeys = []) {
+    const { displayRoles, toRoleKey } = require("../lib/userRoleLifecycle");
+    const inferredKeys =
+      Array.isArray(roleKeys) && roleKeys.length > 0
+        ? roleKeys
+        : user.role
+          ? [toRoleKey(user.role)].filter(Boolean)
+          : [];
+    const display = displayRoles(inferredKeys);
+    const role = display.role;
     const school = role === "Admin Pays" ? null : user.school_code ? schoolByCode.get(user.school_code) : null;
     const teacherLoginId = teacherLoginByUserId.get(user.id) ?? "";
     const identifier = this.getUserIdentifier(user, role, teacherLoginId);
-    const countryCode = school?.iso_code ?? this.getCountryCodeForUser(user, role);
-    const countryScope = this.getCountryScopeForUser(school, countryCode);
+    let profilePayload = {};
+    if (user.profile_payload && typeof user.profile_payload === "object") {
+      profilePayload = user.profile_payload;
+    } else if (typeof user.profile_payload === "string" && user.profile_payload.trim()) {
+      try {
+        profilePayload = JSON.parse(user.profile_payload);
+      } catch {
+        profilePayload = {};
+      }
+    }
+    const countryCode = school?.iso_code ?? this.getCountryCodeForUser(user, role, profilePayload);
+    const countryScope = this.getCountryScopeForUser(school, countryCode, profilePayload);
+    const identityCode = String(user.identity_code ?? profilePayload.identityCode ?? "").trim();
 
     return {
       id: user.id,
       schoolId: user.school_id,
-      publicId: user.user_code,
+      publicId: identityCode || user.user_code,
+      identityCode: identityCode || user.user_code,
+      userCode: user.user_code,
       lastName: user.last_name,
       firstName: user.first_name,
-      gender: "",
+      gender: user.gender ?? "",
+      birthDate: this.formatDate(user.birth_date),
       phone: user.phone,
       email: user.email,
       role,
-      secondaryRoles: [],
+      roles: display.roles,
+      roleKeys: display.roleKeys,
+      secondaryRoles: display.roles.slice(1),
+      assignmentStatus: display.assignmentStatus,
       scopeLevel: role === "Super Administrateur Somafrik" ? "Global" : role === "Admin Pays" ? "Pays" : "Établissement",
       countryScope,
       countryCode,
@@ -3972,7 +6019,7 @@ class PostgresRepository {
       passwordHash: user.password_hash,
       pinHash: user.pin_hash,
       status: this.fromDbStatus(user.status),
-      permissions: seedData.rolePermissions[role] ?? ["Voir tableau de bord"],
+      permissions: [],
       temporaryPassword: "",
       mustChangePassword: Boolean(user.must_change_password),
       photoUrl: "",
@@ -3983,30 +6030,34 @@ class PostgresRepository {
     };
   }
 
-  getCountryCodeForUser(user, role) {
+  getCountryCodeForUser(user, role, profilePayload = {}) {
+    const fromProfile = String(profilePayload.countryCode ?? "").trim().toUpperCase();
+    if (/^[A-Z]{2}$/.test(fromProfile)) return fromProfile;
+    const { getCountryCodeFromScope } = require("../lib/countryScope");
+    const fromScope = String(getCountryCodeFromScope(profilePayload.countryScope)).trim().toUpperCase();
+    if (fromScope) return fromScope;
     if (role === "Admin Pays") {
       const match = String(user.user_code ?? "").match(/^ADM-([A-Z]{2})-/i);
       if (match) return match[1].toUpperCase();
     }
-
-    return "";
+    return String(user.country_code ?? "").trim().toUpperCase();
   }
 
-  getCountryScopeForUser(school, countryCode) {
+  getCountryScopeForUser(school, countryCode, profilePayload = {}) {
     if (school?.country_name) {
       return school.country_name === "République Démocratique du Congo" ? "RDC" : school.country_name;
     }
-
+    const fromProfile = String(profilePayload.countryScope ?? "").trim();
+    if (fromProfile) return fromProfile;
     if (countryCode === "CD") {
       return "RDC";
     }
-
     return countryCode;
   }
 
   extractTeacherLoginId(code) {
-    const match = String(code ?? "").match(/(ENS-\d+)$/i);
-    return match ? match[1].toUpperCase() : "";
+    const { extractTeacherLoginId } = require("../lib/teacherCodeAllocation");
+    return extractTeacherLoginId(code);
   }
 
   getUserIdentifier(user, role, teacherLoginId = "") {
@@ -4016,7 +6067,7 @@ class PostgresRepository {
       "ADM-CD-2026-0001": "admin-rdc",
       "USR-PREFET-0001": "prefet",
       "USR-SECRETARY-0001": "secretaire",
-      // Jeu bulk : comptes démo de CD-2026-0001 (voir bulkPlatformSeed.buildSchoolRoleUser)
+      // Jeu bulk : alias user_code historiques (school_code interne, pas login_code V2)
       "ADMIN-CD-2026-0001-01": "admin",
       "ADMIN-CG-2026-0001-01": "admin-cg",
       "ADMIN-BI-2026-0001-01": "admin-bi",
@@ -4053,13 +6104,17 @@ class PostgresRepository {
     }
 
     if (["Élève / Étudiant", "Élève", "Étudiant"].includes(role)) {
-      const match = String(user.user_code ?? "").match(/(ELE-\d+)$/i);
-      if (match) {
-        return match[1].toUpperCase();
+      const canonical = String(user.login_code || user.identity_code || user.user_code || "")
+        .trim()
+        .toUpperCase();
+      if (/^[A-Z]{2}-[A-Z0-9]{2,5}-EL-[0-9]{2}-[0-9]{3}$/.test(canonical)) {
+        return canonical;
       }
-      if (/^ELE-\d+$/i.test(String(user.user_code))) {
-        return String(user.user_code).toUpperCase();
+      const legacy = String(user.user_code ?? "").match(/(ELE-\d+)$/i);
+      if (legacy) {
+        return legacy[1].toUpperCase();
       }
+      if (canonical) return canonical;
     }
 
     return user.user_code || user.phone || user.email;
@@ -4082,23 +6137,32 @@ class PostgresRepository {
       identifier: this.extractTeacherLoginId(teacher.teacher_code),
       name: [teacher.first_name, teacher.last_name].filter(Boolean).join(" ") || teacher.teacher_code,
       firstName: teacher.first_name,
-      gender: "",
+      lastName: teacher.last_name ?? "",
+      gender: teacher.gender ?? "",
+      birthDate: this.formatDate(teacher.birth_date),
+      entryDate: this.formatDate(teacher.hire_date),
       phone: teacher.phone,
       email: teacher.email,
       mainSubject: teacher.speciality,
+      speciality: teacher.speciality,
+      mustChangePassword: Boolean(teacher.must_change_password),
       passwordHash: teacher.pin_hash ?? teacher.password_hash,
       assignments,
     };
   }
 
   mapStudent(student) {
+    const canonical = student.login_code || student.identity_code || student.student_code;
     return {
-      id: student.student_code,
+      id: canonical,
       schoolId: student.school_id,
-      publicId: student.student_code,
+      publicId: canonical,
+      identifier: canonical,
+      loginCode: canonical,
+      identityCode: canonical,
       name: `${student.first_name} ${student.last_name}`.trim(),
       firstName: student.first_name,
-      matricule: student.student_code,
+      matricule: canonical,
       gender: student.gender,
       birthDate: this.formatDate(student.birth_date),
       className: student.class_name,
@@ -4113,18 +6177,31 @@ class PostgresRepository {
 
   mapEvaluation(evaluation) {
     const { fromEvaluationStatus } = require("../lib/gradesCanonical");
+    const subjectName = evaluation.subject_name;
+    const periodName = evaluation.term_name;
     return {
       id: evaluation.legacy_json_id || evaluation.id,
       publicId: evaluation.legacy_json_id || evaluation.id,
       pgId: evaluation.id,
+      dbId: evaluation.id,
       schoolId: evaluation.school_id,
       schoolCode: evaluation.school_code,
+      classId: evaluation.class_id,
+      classCode: evaluation.class_code,
       className: evaluation.class_name,
-      subject: evaluation.subject_name,
+      subjectId: evaluation.subject_id,
+      subject: subjectName,
+      course: subjectName,
       teacherId: evaluation.teacher_code,
-      period: evaluation.term_name,
+      teacherName: evaluation.teacher_name || undefined,
+      academicYearId: evaluation.academic_year_id,
+      academicYear: evaluation.academic_year_name,
+      termId: evaluation.term_id,
+      period: periodName,
       title: evaluation.title,
-      evaluationType: this.fromEvaluationType(evaluation.evaluation_type),
+      evaluationType: evaluation.evaluation_type_name || this.fromEvaluationType(evaluation.evaluation_type),
+      evaluationTypeId: evaluation.evaluation_type_id || undefined,
+      evaluationTypeCode: evaluation.evaluation_type_code || evaluation.evaluation_type,
       date: this.formatDate(evaluation.evaluation_date),
       scale: Number(evaluation.max_score ?? 20),
       coefficient: Number(evaluation.coefficient ?? 1),
@@ -4154,7 +6231,8 @@ class PostgresRepository {
       date: this.formatDate(grade.created_at),
       evaluationId,
       evaluationTitle: grade.evaluation_title || grade.comment || this.fromEvaluationType(grade.grade_type),
-      evaluationType: this.fromEvaluationType(grade.evaluation_type_pg || grade.grade_type),
+      evaluationType: grade.evaluation_type_name || this.fromEvaluationType(grade.evaluation_type_pg || grade.grade_type),
+      evaluationTypeId: grade.evaluation_type_id || undefined,
       period: grade.term_name,
       scale: Number(grade.evaluation_max_score ?? grade.max_score ?? 20),
       evaluationCoefficient: Number(grade.evaluation_coefficient ?? grade.coefficient ?? 1),
@@ -4162,11 +6240,12 @@ class PostgresRepository {
       status: gradeStatus,
       comment: grade.comment ?? "",
       version: Number(grade.version ?? 1),
-      authorId: grade.teacher_code,
+      teacherId: grade.teacher_code,
+      authorId: grade.updated_by || grade.created_by || undefined,
       enteredAt: this.formatDate(grade.created_at),
       audit: [
         {
-          authorId: grade.teacher_code,
+          authorId: grade.updated_by || grade.created_by || undefined,
           newValue: score,
           date: this.formatDate(grade.created_at),
         },
@@ -4176,12 +6255,15 @@ class PostgresRepository {
 
   mapAttendance(attendance) {
     const status = this.fromAttendanceStatus(attendance.status);
+    const loginCode = String(attendance.login_code ?? "").trim();
     return {
       id: attendance.id,
       schoolId: attendance.school_id,
-      schoolCode: attendance.school_code,
+      schoolCode: loginCode || undefined,
       publicId: attendance.id,
       studentId: attendance.student_code,
+      classId: attendance.class_id ?? null,
+      classCode: attendance.class_code ?? "",
       className: attendance.class_name,
       date: this.formatIsoDate(attendance.attendance_date),
       savedAt: this.formatIsoDateTime(attendance.updated_at ?? attendance.created_at),
@@ -4291,7 +6373,325 @@ class PostgresRepository {
   }
 
   getSchoolByCode(code) {
-    return this.one("SELECT * FROM schools WHERE school_code = $1", [String(code ?? "").trim().toUpperCase()]);
+    const normalized = String(code ?? "").trim().toUpperCase();
+    if (!normalized) return null;
+    return this.one(
+      `SELECT * FROM schools
+       WHERE upper(school_code) = $1
+          OR upper(coalesce(login_code, '')) = $1
+       LIMIT 1`,
+      [normalized],
+    );
+  }
+
+  getSchoolsRepository() {
+    if (!this._schoolsRepository) {
+      const { createSchoolsRepository } = require("./schoolsRepository");
+      this._schoolsRepository = createSchoolsRepository({
+        one: (sql, params) => this.one(sql, params),
+        all: (sql, params) => this.all(sql, params),
+        query: (sql, params) => this.query(sql, params),
+      });
+    }
+    return this._schoolsRepository;
+  }
+
+  listEstablishments() {
+    return this.getSchoolsRepository().listAll();
+  }
+
+  async persistEstablishment(record) {
+    const saved = await this.getSchoolsRepository().persist(record);
+    this.cachedDataset = null;
+    try {
+      const store = this.getSchoolSettingsStore();
+      if (saved?.id && typeof store.seedDefaultSettingsIfEmpty === "function") {
+        await store.seedDefaultSettingsIfEmpty(saved.id);
+      }
+    } catch (error) {
+      if (error?.code !== "42P01") throw error;
+    }
+    return saved;
+  }
+
+  /**
+   * Classes métier — délégation au repository PostgreSQL dédié.
+   */
+  getClassesRepository() {
+    if (!this._classesRepository) {
+      const { createClassesRepository } = require("./classesRepository");
+      this._classesRepository = createClassesRepository({
+        one: (sql, params) => this.one(sql, params),
+        all: (sql, params) => this.all(sql, params),
+        query: (sql, params) => this.query(sql, params),
+        getSchoolByCode: (code) => this.getSchoolByCode(code),
+        withTransaction: (fn) => this.withTransaction(fn),
+        createTxScope: (tx) => this.createTxScope(tx),
+        recordAudit: (payload, tx) => this.recordAudit(payload, tx),
+      });
+    }
+    return this._classesRepository;
+  }
+
+  listSchoolClasses(schoolCode) {
+    return this.getClassesRepository().listBySchoolCode(schoolCode);
+  }
+
+  listSchoolClassesForMobileSync(schoolCode, options) {
+    return this.getClassesRepository().listForMobileSync(schoolCode, options);
+  }
+
+  listLiveTeacherClassAssignmentsForSync(userId, schoolId) {
+    return this.getClassesRepository().listLiveTeacherClassAssignmentsForSync(userId, schoolId);
+  }
+
+  listSchoolStudentsForMobileSync(schoolCode, options) {
+    return this.getClassStudentsRepository().listForMobileSync(schoolCode, options);
+  }
+
+  listLiveAssignedStudentIdsForSync(schoolId, refs) {
+    return this.getClassStudentsRepository().listLiveAssignedStudentIdsForSync(schoolId, refs);
+  }
+
+  listLiveParentLinkedStudentIdsForSync(userId, schoolId) {
+    return this.getClassStudentsRepository().listLiveParentLinkedStudentIdsForSync(userId, schoolId);
+  }
+
+  listLiveSelfStudentIdForSync(userId, schoolId) {
+    return this.getClassStudentsRepository().listLiveSelfStudentIdForSync(userId, schoolId);
+  }
+
+  async createSchoolClass(body, schoolCode, principal, auditMeta) {
+    const created = await this.getClassesRepository().create(body, schoolCode, principal, auditMeta);
+    this.cachedDataset = null;
+    return created;
+  }
+
+  async updateSchoolClass(classCode, schoolCode, body, principal, auditMeta) {
+    const updated = await this.getClassesRepository().update(classCode, schoolCode, body, principal, auditMeta);
+    this.cachedDataset = null;
+    return updated;
+  }
+
+  getClassStudentsRepository() {
+    if (!this._classStudentsRepository) {
+      const { createClassStudentsRepository } = require("./classStudentsRepository");
+      this._classStudentsRepository = createClassStudentsRepository({
+        one: (sql, params) => this.one(sql, params),
+        all: (sql, params) => this.all(sql, params),
+        query: (sql, params) => this.query(sql, params),
+        getSchoolByCode: (code) => this.getSchoolByCode(code),
+        withTransaction: (fn) => this.withTransaction(fn),
+      });
+    }
+    return this._classStudentsRepository;
+  }
+
+  listClassStudents(classCode, schoolCode) {
+    return this.getClassStudentsRepository().listByClassCode(classCode, schoolCode);
+  }
+
+  listSchoolStudents(schoolCode) {
+    return this.getClassStudentsRepository().listBySchoolCode(schoolCode);
+  }
+
+  async enrollStudentInClass(classCode, schoolCode, body) {
+    const created = await this.getClassStudentsRepository().enroll(classCode, schoolCode, body);
+    this.cachedDataset = null;
+    const student = created?.student;
+    let financeSync = null;
+    if (student?.studentCode) {
+      const school = await this.getSchoolByCode(schoolCode);
+      const financeLoginCode = String(school?.login_code ?? "").trim();
+      financeSync = await this.syncEnrollmentFinanceObligations(
+        {
+          reason: "enrollment_active",
+          schoolCode: financeLoginCode,
+          studentKey: student.studentCode,
+          academicYear: student.academicYearName || student.academicYear,
+          classId: student.classId,
+        },
+        { role: "system", schoolCode: financeLoginCode, financeLoginCode, sub: "finance-obligation-lifecycle" },
+      );
+    }
+    return { ...created, financeSync };
+  }
+
+  getSchoolStudentByCode(studentCode, schoolCode) {
+    return this.getClassStudentsRepository().getByStudentCode(studentCode, schoolCode);
+  }
+
+  async updateSchoolStudentByCode(studentCode, schoolCode, body) {
+    const updated = await this.getClassStudentsRepository().updateByStudentCode(
+      studentCode,
+      schoolCode,
+      body,
+    );
+    this.cachedDataset = null;
+    return updated;
+  }
+
+  getTeachersRepository() {
+    if (!this._teachersRepository) {
+      const { createTeachersRepository } = require("./teachersRepository");
+      this._teachersRepository = createTeachersRepository({
+        one: (sql, params) => this.one(sql, params),
+        all: (sql, params) => this.all(sql, params),
+        query: (sql, params) => this.query(sql, params),
+        getSchoolByCode: (code) => this.getSchoolByCode(code),
+        withTransaction: (fn) => this.withTransaction(fn),
+        createTxScope: (tx) => this.createTxScope(tx),
+        recordAudit: (payload, tx) => this.recordAudit(payload, tx),
+        onTeacherCreated: async () => {
+          this.cachedDataset = null;
+        },
+      });
+    }
+    return this._teachersRepository;
+  }
+
+  listSchoolTeachers(schoolCode) {
+    return this.getTeachersRepository().listBySchoolCode(schoolCode);
+  }
+
+  getSchoolTeacherByCode(teacherCode, schoolCode) {
+    return this.getTeachersRepository().getByTeacherCode(teacherCode, schoolCode);
+  }
+
+  createSchoolTeacher(body, schoolCode, principal, auditMeta) {
+    return this.getTeachersRepository().create(body, schoolCode, principal, auditMeta);
+  }
+
+  getTeacherLifecycleRepository() {
+    if (!this._teacherLifecycleRepository) {
+      const { createTeacherLifecycleRepository } = require("./teacherLifecycleRepository");
+      this._teacherLifecycleRepository = createTeacherLifecycleRepository(this);
+    }
+    return this._teacherLifecycleRepository;
+  }
+
+  async updateSchoolTeacher(teacherCode, body, schoolCode, principal, auditMeta) {
+    await this.getTeacherLifecycleRepository().update(
+      teacherCode,
+      body,
+      schoolCode,
+      principal,
+      auditMeta,
+    );
+    this.cachedDataset = null;
+    return this.getSchoolTeacherByCode(teacherCode, schoolCode);
+  }
+
+  async archiveSchoolTeacher(teacherCode, schoolCode, principal, auditMeta) {
+    const result = await this.getTeacherLifecycleRepository().archive(
+      teacherCode,
+      schoolCode,
+      principal,
+      auditMeta,
+    );
+    this.cachedDataset = null;
+    return result;
+  }
+
+  getTeacherAssignmentsRepository() {
+    if (!this._teacherAssignmentsRepository) {
+      const { createTeacherAssignmentsRepository } = require("./teacherAssignmentsRepository");
+      this._teacherAssignmentsRepository = createTeacherAssignmentsRepository({
+        one: (sql, params) => this.one(sql, params),
+        all: (sql, params) => this.all(sql, params),
+        query: (sql, params) => this.query(sql, params),
+        getSchoolByCode: (code) => this.getSchoolByCode(code),
+        withTransaction: (fn) => this.withTransaction(fn),
+        createTxScope: (tx) => this.createTxScope(tx),
+        recordAudit: (payload, tx) => this.recordAudit(payload, tx),
+      });
+    }
+    return this._teacherAssignmentsRepository;
+  }
+
+  listSchoolTeacherAssignments(schoolCode, options) {
+    return this.getTeacherAssignmentsRepository().listBySchoolCode(schoolCode, options);
+  }
+
+  listSchoolTeacherAssignmentsForMobileSync(schoolCode, options) {
+    return this.getTeacherAssignmentsRepository().listForMobileSync(schoolCode, options);
+  }
+
+  getLiveTeacherIdentityForSchool(userId, schoolId) {
+    return this.getTeacherAssignmentsRepository().getLiveTeacherIdentityForSchool(userId, schoolId);
+  }
+
+  resolveCanonicalUserIdForSchool(principalRef, schoolId) {
+    return this.getTeacherAssignmentsRepository().resolveCanonicalUserIdForSchool(principalRef, schoolId);
+  }
+
+  listLiveTeacherAssignmentIdsForSync(schoolId, teacherId) {
+    return this.getTeacherAssignmentsRepository().listLiveTeacherAssignmentIdsForSync(schoolId, teacherId);
+  }
+
+  listLiveTeacherAssignmentPairsForSync(schoolId, teacherId) {
+    return this.getTeacherAssignmentsRepository().listLiveTeacherAssignmentPairsForSync(schoolId, teacherId);
+  }
+
+  createSchoolTeacherAssignment(body, schoolCode, principal, auditMeta) {
+    return this.getTeacherAssignmentsRepository()
+      .create(body, schoolCode, principal, auditMeta)
+      .then((created) => {
+        this.cachedDataset = null;
+        return created;
+      });
+  }
+
+  updateSchoolTeacherAssignment(assignmentId, body, schoolCode, principal, auditMeta) {
+    return this.getTeacherAssignmentsRepository()
+      .update(assignmentId, body, schoolCode, principal, auditMeta)
+      .then((updated) => {
+        this.cachedDataset = null;
+        return updated;
+      });
+  }
+
+  deleteSchoolTeacherAssignment(assignmentId, schoolCode, principal, auditMeta) {
+    return this.getTeacherAssignmentsRepository()
+      .remove(assignmentId, schoolCode, principal, auditMeta)
+      .then((result) => {
+        this.cachedDataset = null;
+        return result;
+      });
+  }
+
+  getSchoolCoursesRepository() {
+    if (!this._schoolCoursesRepository) {
+      const { createSchoolCoursesRepository } = require("./schoolCoursesRepository");
+      this._schoolCoursesRepository = createSchoolCoursesRepository({
+        one: (sql, params) => this.one(sql, params),
+        all: (sql, params) => this.all(sql, params),
+        query: (sql, params) => this.query(sql, params),
+        getSchoolByCode: (code) => this.getSchoolByCode(code),
+      });
+    }
+    return this._schoolCoursesRepository;
+  }
+
+  listSchoolCoursesForMobileSync(schoolCode, options) {
+    return this.getSchoolCoursesRepository().listForMobileSync(schoolCode, options);
+  }
+
+  getCourseSchedulesRepository() {
+    if (!this._courseSchedulesRepository) {
+      const { createCourseSchedulesRepository } = require("./courseSchedulesRepository");
+      this._courseSchedulesRepository = createCourseSchedulesRepository({
+        one: (sql, params) => this.one(sql, params),
+        all: (sql, params) => this.all(sql, params),
+        query: (sql, params) => this.query(sql, params),
+        getSchoolByCode: (code) => this.getSchoolByCode(code),
+      });
+    }
+    return this._courseSchedulesRepository;
+  }
+
+  listCourseSchedulesForMobileSync(schoolCode, options) {
+    return this.getCourseSchedulesRepository().listForMobileSync(schoolCode, options);
   }
 
   async getGradeById(id) {
@@ -4301,7 +6701,8 @@ class PostgresRepository {
               ev.id AS evaluation_uuid, ev.legacy_json_id AS evaluation_legacy_id,
               ev.title AS evaluation_title, ev.status AS evaluation_status,
               ev.max_score AS evaluation_max_score, ev.coefficient AS evaluation_coefficient,
-              ev.evaluation_type AS evaluation_type_pg
+              ev.evaluation_type AS evaluation_type_pg, ev.evaluation_type_id,
+              et.name AS evaluation_type_name, et.code AS evaluation_type_code
        FROM grades g
        JOIN schools s ON s.id = g.school_id
        JOIN students st ON st.id = g.student_id
@@ -4310,13 +6711,62 @@ class PostgresRepository {
        JOIN teachers t ON t.id = g.teacher_id
        JOIN terms term ON term.id = g.term_id
        LEFT JOIN evaluations ev ON ev.id = g.evaluation_id
+       LEFT JOIN evaluation_types et ON et.id = ev.evaluation_type_id
        WHERE g.id = $1`,
       [id],
     );
     return grade ? this.mapGrade(grade) : null;
   }
 
+  /**
+   * Lot 2 — erreur structurée attribution enseignant (notes / présences).
+   * HTTP 409 : conflit d'état/résolution métier (contrat CTO).
+   */
+  teacherUnresolvedError(code, message) {
+    const error = new Error(message);
+    error.statusCode = 409;
+    error.code = code;
+    return error;
+  }
+
+  /**
+   * Clé enseignant pédagogique explicite depuis payload (admin/direction).
+   * Jamais la clé d'acteur JWT (Préfet/Admin) : ce n'est pas l'enseignant du cours.
+   */
+  extractExplicitTeacherKey(payload = {}) {
+    return String(
+      payload.teacherId ??
+        payload.teacher_code ??
+        payload.teacherCode ??
+        "",
+    ).trim();
+  }
+
+  /**
+   * Lot 2 — résolution unique scopée école (0 ou >1 → null = unresolved/ambiguous).
+   * Aucun ORDER BY created_at / premier de l'école.
+   */
+  async resolveUniqueTeacherInSchool(schoolId, teacherKey) {
+    const key = String(teacherKey ?? "").trim();
+    if (!key || !schoolId) return null;
+    const rows = await this.all(
+      `SELECT t.*
+       FROM teachers t
+       LEFT JOIN users u ON u.id = t.user_id
+       WHERE t.school_id = $1
+         AND ${sqlTeacherIdentityEquals("t", "u", "$2")}`,
+      [schoolId, key],
+    );
+    if (!rows || rows.length !== 1) return null;
+    return rows[0];
+  }
+
   async findTeacherForGrade(schoolId, teacherCode, classId, subjectId, principalRole) {
+    // Lot 2 — admin/direction : clé explicite unique scopée école uniquement.
+    if (principalRole !== "Enseignant") {
+      return this.resolveUniqueTeacherInSchool(schoolId, teacherCode);
+    }
+
     // HOTFIX-PRE-E1-02 : tenter toutes les clés stables du principal (userId, teacher_code BO…).
     const lookupKeys = new Set();
     const add = (value) => {
@@ -4324,13 +6774,11 @@ class PostgresRepository {
       if (text) lookupKeys.add(text);
     };
     add(teacherCode);
-    if (principalRole === "Enseignant") {
-      for (const key of await this.collectTeacherLookupKeysForPrincipal(
-        { sub: teacherCode, role: principalRole },
-        schoolId,
-      )) {
-        add(key);
-      }
+    for (const key of await this.collectTeacherLookupKeysForPrincipal(
+      { sub: teacherCode, role: principalRole },
+      schoolId,
+    )) {
+      add(key);
     }
 
     let assignedTeacher = null;
@@ -4341,12 +6789,7 @@ class PostgresRepository {
          JOIN teacher_assignments ta ON ta.teacher_id = t.id
          LEFT JOIN users u ON u.id = t.user_id
          WHERE t.school_id = $1
-           AND (
-             t.teacher_code = $2
-             OR u.user_code = $2
-             OR u.id::text = $2
-             OR t.id::text = $2
-           )
+           AND ${sqlTeacherIdentityEquals("t", "u", "$2")}
            AND ta.class_id = $3
            AND ta.subject_id = $4
            AND ta.status = 'active'
@@ -4356,42 +6799,43 @@ class PostgresRepository {
       if (assignedTeacher) break;
     }
 
-    if (principalRole === "Enseignant") {
-      return assignedTeacher;
-    }
-
-    return (
-      assignedTeacher ??
-      this.one("SELECT * FROM teachers WHERE school_id = $1 ORDER BY created_at LIMIT 1", [schoolId])
-    );
+    return assignedTeacher;
   }
 
   async findTeacherForAttendance(schoolId, teacherCode, classId, principalRole) {
     const lookupCode = String(teacherCode ?? "").trim();
-    const assignedTeacher = lookupCode
-      ? await this.one(
-          `SELECT t.*
-           FROM teachers t
-           LEFT JOIN users u ON u.id = t.user_id
-           LEFT JOIN teacher_assignments ta ON ta.teacher_id = t.id AND ta.class_id = $3
-           WHERE t.school_id = $1
-             AND (
-               t.teacher_code = $2
-               OR u.user_code = $2
-               OR u.id::text = $2
-               OR t.id::text = $2
-             )
-           ORDER BY CASE WHEN ta.id IS NULL THEN 1 ELSE 0 END, t.created_at
-           LIMIT 1`,
-          [schoolId, lookupCode, classId],
-        )
-      : null;
-
-    if (principalRole === "Enseignant") {
-      return assignedTeacher;
+    const targetClassId = String(classId ?? "").trim();
+    // Lot 2 — admin/direction : enseignant unique de l'école ET affectation active
+    // sur la classe demandée. Jamais un autre enseignant du même établissement.
+    if (principalRole !== "Enseignant") {
+      if (!lookupCode || !targetClassId) return null;
+      const teacher = await this.resolveUniqueTeacherInSchool(schoolId, lookupCode);
+      if (!teacher?.id) return null;
+      const assigned = await this.one(
+        `SELECT 1 AS ok
+         FROM teacher_assignments ta
+         WHERE ta.teacher_id = $1
+           AND ta.class_id::text = $2
+           AND ta.status = 'active'
+         LIMIT 1`,
+        [teacher.id, targetClassId],
+      );
+      return assigned ? teacher : null;
     }
 
-    return assignedTeacher ?? this.one("SELECT * FROM teachers WHERE school_id = $1 ORDER BY created_at LIMIT 1", [schoolId]);
+    if (!lookupCode) return null;
+    // Parcours Enseignant inchangé : match par clé + préférence affectation classe.
+    return this.one(
+      `SELECT t.*
+       FROM teachers t
+       LEFT JOIN users u ON u.id = t.user_id
+       LEFT JOIN teacher_assignments ta ON ta.teacher_id = t.id AND ta.class_id = $3
+       WHERE t.school_id = $1
+         AND ${sqlTeacherIdentityEquals("t", "u", "$2")}
+       ORDER BY CASE WHEN ta.id IS NULL THEN 1 ELSE 0 END, t.created_at
+       LIMIT 1`,
+      [schoolId, lookupCode, classId],
+    );
   }
 
   mentionForScore(score) {
@@ -4424,8 +6868,11 @@ class PostgresRepository {
 
   fromExamStatus(status) {
     if (status === "draft") return "Brouillon";
+    if (status === "scheduled") return "Programmé";
     if (status === "validated") return "Validé";
-    if (status === "published") return "Publié";
+    if (status === "completed" || status === "published") return "Publié";
+    if (status === "cancelled") return "Annulé";
+    if (status === "archived") return "Archivé";
     return status;
   }
 
@@ -4540,33 +6987,83 @@ class PostgresRepository {
     return "pending";
   }
 
+  async ensureIdempotencySchema() {
+    await this.query(`ALTER TABLE idempotency_keys ADD COLUMN IF NOT EXISTS school_scope TEXT NOT NULL DEFAULT ''`);
+    await this.query(`ALTER TABLE idempotency_keys ADD COLUMN IF NOT EXISTS request_hash TEXT NOT NULL DEFAULT ''`);
+    await this.query(`CREATE INDEX IF NOT EXISTS idx_idempotency_school_scope ON idempotency_keys(school_scope)`);
+    await this.query(
+      `CREATE INDEX IF NOT EXISTS idx_idempotency_principal_route ON idempotency_keys(principal_id, route_key)`,
+    );
+  }
+
   async findIdempotencyRecord(cacheId) {
-    await this.init();
+    if (!getIdempotencyTx()) await this.init();
     const row = await this.query(
-      "SELECT cache_id, status_code, response_body, expires_at FROM idempotency_keys WHERE cache_id = $1 LIMIT 1",
+      `SELECT cache_id, route_key, principal_id, school_scope, request_hash, status_code, response_body, expires_at
+       FROM idempotency_keys WHERE cache_id = $1 LIMIT 1`,
       [String(cacheId ?? "")],
     );
     return row.rows[0] ?? null;
   }
 
-  async saveIdempotencyRecord({ cacheId, routeKey, principalId, statusCode, responseBody, expiresAt }) {
-    await this.init();
+  async saveIdempotencyRecord({
+    cacheId,
+    routeKey,
+    principalId,
+    schoolScope,
+    requestHash,
+    statusCode,
+    responseBody,
+    expiresAt,
+  }) {
+    if (!getIdempotencyTx()) await this.init();
     await this.query(
-      `INSERT INTO idempotency_keys (cache_id, route_key, principal_id, status_code, response_body, expires_at)
-       VALUES ($1, $2, $3, $4, $5::jsonb, $6)
+      `INSERT INTO idempotency_keys (
+         cache_id, route_key, principal_id, school_scope, request_hash, status_code, response_body, expires_at
+       )
+       VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8)
        ON CONFLICT (cache_id) DO UPDATE SET
          status_code = EXCLUDED.status_code,
          response_body = EXCLUDED.response_body,
-         expires_at = EXCLUDED.expires_at`,
+         expires_at = EXCLUDED.expires_at,
+         school_scope = EXCLUDED.school_scope,
+         request_hash = EXCLUDED.request_hash
+       WHERE idempotency_keys.request_hash = ''
+          OR idempotency_keys.request_hash = EXCLUDED.request_hash`,
       [
         String(cacheId ?? ""),
         String(routeKey ?? ""),
         String(principalId ?? ""),
+        String(schoolScope ?? "").toUpperCase(),
+        String(requestHash ?? ""),
         Number(statusCode ?? 200),
         JSON.stringify(responseBody ?? {}),
         expiresAt ?? new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
       ],
     );
+  }
+
+  async purgeExpiredIdempotencyRecords() {
+    if (getIdempotencyTx()) return;
+    await this.init();
+    await this.query(`DELETE FROM idempotency_keys WHERE expires_at < NOW()`);
+  }
+
+  async withIdempotencyLock(cacheId, fn) {
+    await this.init();
+    const client = await this.pool.connect();
+    const lockKey = lockInt(cacheId);
+    try {
+      await client.query("SELECT pg_advisory_lock($1)", [lockKey]);
+      return await fn();
+    } finally {
+      try {
+        await client.query("SELECT pg_advisory_unlock($1)", [lockKey]);
+      } catch {
+        // conserve l'erreur métier d'origine
+      }
+      client.release();
+    }
   }
 }
 
@@ -4583,6 +7080,10 @@ function toDbEvaluationType(type) {
   if (normalized.includes("travail") || normalized === "tp") return "tp";
   if (normalized.includes("projet")) return "projet";
   return "devoir";
+}
+
+function evaluationPatchTouches(evaluation = {}, keys = []) {
+  return keys.some((key) => Object.prototype.hasOwnProperty.call(evaluation, key));
 }
 
 function defaultAcademicPeriods() {

@@ -1,6 +1,6 @@
 import type { AuditEntry } from "./audit";
 import type { BackOfficeState, School, UserAccount } from "../types";
-import { normalize } from "./format";
+import { getCountryCodeFromScope, normalize } from "./format";
 import { SCHOOL_ADMIN_ROLE } from "./orgHierarchy";
 
 /** Types d'établissement Somafrik (liste contrôlée ETB-F01). */
@@ -22,19 +22,15 @@ export const SCHOOL_STATUSES = [
   "Supprimé",
 ] as const;
 
-/** Génère un code unique au format CodePays-AAAA-0001 (ETB-F02). */
-export function generateSchoolCode(countryCode: string, schools: School[]): string {
-  const code = String(countryCode ?? "").trim().toUpperCase();
-  if (!code) return "";
-  const year = new Date().getFullYear();
-  const prefix = `${code}-${year}-`;
-  const maxNum = schools.reduce((max, school) => {
-    const value = String(school.code ?? "").trim().toUpperCase();
-    if (!value.startsWith(prefix)) return max;
-    const match = value.match(/-(\d{4})$/);
-    return match ? Math.max(max, Number.parseInt(match[1], 10)) : max;
-  }, 0);
-  return `${prefix}${String(maxNum + 1).padStart(4, "0")}`;
+/**
+ * Compatibilité d'appel uniquement.
+ * Le navigateur ne génère plus de code établissement : PostgreSQL est l'unique
+ * propriétaire de `login_code` via `somafrik_prepare_school_login_code()`.
+ */
+export function generateSchoolCode(_countryCode: string, _schools: School[]): string {
+  void _countryCode;
+  void _schools;
+  return "";
 }
 
 export function isSchoolDeleted(school: School): boolean {
@@ -66,40 +62,143 @@ export function validateSchoolForm(
   if (!String(school.principalName ?? "").trim()) return "Le responsable principal est obligatoire.";
 
   const code = String(school.code ?? "").trim().toUpperCase();
-  if (!code) return "Le code établissement est obligatoire.";
-  const duplicateCode = options.isNew
-    ? schools.some((item) => normalize(item.code) === normalize(code))
-    : schools.some(
-        (item) => normalize(item.code) === normalize(code) && item.code !== school.code,
-      );
-  if (duplicateCode) return "Ce code établissement existe déjà.";
+  if (!options.isNew && !code) return "Le code établissement est obligatoire.";
+  if (code) {
+    const duplicateCode = options.isNew
+      ? schools.some((item) => normalize(item.code) === normalize(code))
+      : schools.some(
+          (item) => normalize(item.code) === normalize(code) && item.code !== school.code,
+        );
+    if (duplicateCode) return "Ce code établissement existe déjà.";
+  }
 
   return null;
 }
 
-/** Doublons potentiels (ETB-S04). */
-export function findPotentialDuplicates(school: School, schools: School[]): School[] {
+export const DUPLICATE_STRONG = "DUPLICATE_STRONG";
+export const DUPLICATE_CONTACT = "DUPLICATE_CONTACT";
+export const CROSS_COUNTRY_CONTACT_MATCH = "CROSS_COUNTRY_CONTACT_MATCH";
+
+export type SchoolDuplicateLevel =
+  | typeof DUPLICATE_STRONG
+  | typeof DUPLICATE_CONTACT
+  | typeof CROSS_COUNTRY_CONTACT_MATCH;
+
+export interface SchoolDuplicateMatch {
+  school: School;
+  level: SchoolDuplicateLevel;
+  reasons: string[];
+}
+
+const GENERIC_EMAILS = new Set([
+  "contact@somafrik.app",
+  "info@somafrik.app",
+  "hello@somafrik.app",
+  "admin@somafrik.app",
+]);
+
+const GENERIC_PHONES = new Set(["9090909", "0000000", "1111111", "1234567", "0123456789"]);
+
+function schoolIdentityKeys(school: { code?: string; publicId?: string; loginCode?: string }): string[] {
+  return [school.code, school.publicId, school.loginCode]
+    .map((value) => normalize(value))
+    .filter(Boolean);
+}
+
+function schoolCountryIso(school: { country?: string; countryCode?: string }): string {
+  return getCountryCodeFromScope(school.countryCode) || getCountryCodeFromScope(school.country);
+}
+
+function phoneDigits(value: unknown): string {
+  return String(value ?? "").replace(/\D/g, "");
+}
+
+export function isGenericSchoolEmail(email?: string): boolean {
+  const value = normalize(email);
+  if (!value) return true;
+  if (GENERIC_EMAILS.has(value)) return true;
+  return /^(contact|info|hello|admin)@somafrik\./.test(value);
+}
+
+export function isGenericSchoolPhone(phone?: string): boolean {
+  const digits = phoneDigits(phone);
+  if (!digits) return true;
+  if (GENERIC_PHONES.has(digits)) return true;
+  return digits.length <= 7 && /^(\d)\1+$/.test(digits);
+}
+
+/**
+ * Classification pays-aware.
+ * Ancien algorithme dangereux : email OR phone OR (name AND city), sans country_id.
+ */
+export function classifySchoolDuplicates(school: School, schools: School[]): SchoolDuplicateMatch[] {
   const name = normalize(school.name);
   const city = normalize(school.city);
   const email = normalize(school.email);
-  const phone = normalize(school.phone);
-  const code = normalize(school.code);
+  const phone = phoneDigits(school.phone);
+  const identity = new Set(schoolIdentityKeys(school));
+  const country = schoolCountryIso(school);
+  const genericEmail = isGenericSchoolEmail(school.email);
+  const genericPhone = isGenericSchoolPhone(school.phone);
 
-  return schools.filter((item) => {
-    if (code && normalize(item.code) === code) return false;
-    if (email && normalize(item.email) === email) return true;
-    if (phone && normalize(item.phone) === phone) return true;
-    if (name && city && normalize(item.name) === name && normalize(item.city) === city) return true;
-    return false;
-  });
+  const matches: SchoolDuplicateMatch[] = [];
+  for (const item of schools) {
+    if (identity.size && schoolIdentityKeys(item).some((key) => identity.has(key))) continue;
+    const itemCountry = schoolCountryIso(item);
+    const sameCountry = Boolean(country && itemCountry && country === itemCountry);
+    const sameNameCity = Boolean(name && city && normalize(item.name) === name && normalize(item.city) === city);
+    const sameEmail = Boolean(email && normalize(item.email) === email);
+    const samePhone = Boolean(phone && phoneDigits(item.phone) === phone);
+    const contactEmail = sameEmail && !genericEmail && !isGenericSchoolEmail(item.email);
+    const contactPhone = samePhone && !genericPhone && !isGenericSchoolPhone(item.phone);
+
+    if (sameCountry && sameNameCity) {
+      matches.push({
+        school: item,
+        level: DUPLICATE_STRONG,
+        reasons: ["Même nom et ville dans ce pays"],
+      });
+      continue;
+    }
+    if (sameCountry && (contactEmail || contactPhone)) {
+      const reasons = [
+        contactEmail ? "Même email dans ce pays" : "",
+        contactPhone ? "Même téléphone dans ce pays" : "",
+      ].filter(Boolean);
+      matches.push({ school: item, level: DUPLICATE_CONTACT, reasons });
+      continue;
+    }
+    if (!sameCountry && (contactEmail || contactPhone)) {
+      const reasons = [
+        contactEmail ? "Même email dans un autre pays" : "",
+        contactPhone ? "Même téléphone dans un autre pays" : "",
+      ].filter(Boolean);
+      matches.push({ school: item, level: CROSS_COUNTRY_CONTACT_MATCH, reasons });
+    }
+  }
+  return matches;
+}
+
+/** Doublons bloquants : même pays uniquement. Le contact cross-country n'est pas un doublon métier. */
+export function findPotentialDuplicates(school: School, schools: School[]): SchoolDuplicateMatch[] {
+  return classifySchoolDuplicates(school, schools).filter(
+    (match) => match.level === DUPLICATE_STRONG || match.level === DUPLICATE_CONTACT,
+  );
 }
 
 export function countSchoolStudents(state: BackOfficeState, schoolCode: string): number {
   const code = normalize(schoolCode);
+  const school = (state.schools as Array<School & { studentCount?: number }>).find(
+    (row) => normalize(row.code) === code || normalize(row.publicId) === code,
+  );
+  if (school && Number.isFinite(Number(school.studentCount))) {
+    return Math.max(0, Math.trunc(Number(school.studentCount)));
+  }
+
   return (state.students as { schoolCode?: string; status?: string }[]).filter((row) => {
     if (normalize(String(row.schoolCode ?? "")) !== code) return false;
     const status = normalize(row.status);
-    return !["inactif", "archive", "archivé"].includes(status);
+    return !["inactive", "inactif", "archived", "archive", "archivé", "deleted", "supprime", "supprimé"].includes(status);
   }).length;
 }
 

@@ -24,9 +24,9 @@ function record(name, ok, detail) {
 }
 
 /** Vérifie qu'une action lève une BusinessError 403 dont le message contient `fragment`. */
-function expectBlocked(name, fragment, action) {
+async function expectBlocked(name, fragment, action) {
   try {
-    action();
+    await action();
     record(name, false, "Aucune erreur levée alors qu'un blocage 403 était attendu");
   } catch (error) {
     const is403 = error instanceof BusinessError && error.statusCode === 403;
@@ -36,9 +36,9 @@ function expectBlocked(name, fragment, action) {
 }
 
 /** Vérifie qu'une action réussit (aucune erreur). */
-function expectAllowed(name, action) {
+async function expectAllowed(name, action) {
   try {
-    const value = action();
+    const value = await action();
     record(name, true, summarize(value));
   } catch (error) {
     record(name, false, `${error.statusCode ?? "?"} ${error.message}`);
@@ -132,65 +132,72 @@ function buildFixtures({ suspendedCountry = null, suspendedSchool = null } = {})
   return { authService, backOffice };
 }
 
-console.log("\n=== Vérification: suspension Pays & Établissement par le Super Admin ===\n");
+async function main() {
+  console.log("\n=== Vérification: suspension Pays & Établissement par le Super Admin ===\n");
 
-// --- Référence: rien n'est suspendu ---
-{
-  const { authService, backOffice } = buildFixtures();
-  expectAllowed("Base | Connexion Web/Mobile école RDC active", () =>
-    authService.assertSchoolCanConnect("CD-2026-0001")
-  );
-  expectAllowed("Base | Connexion BackOffice Super Admin", () =>
-    backOffice.login({ identifier: "superadmin@somafrik.app", password: "1234" })
-  );
-  expectAllowed("Base | Connexion BackOffice Admin Pays RDC", () =>
-    backOffice.login({ identifier: "adminpays.cd@somafrik.app", password: "1234" })
-  );
-  expectAllowed("Base | Connexion BackOffice Admin École RDC", () =>
-    backOffice.login({ identifier: "admin.cd1@somafrik.app", password: "1234", schoolCode: "CD-2026-0001" })
-  );
+  // --- Référence: rien n'est suspendu ---
+  {
+    const { authService, backOffice } = buildFixtures();
+    await expectAllowed("Base | Connexion Web/Mobile école RDC active", () =>
+      authService.assertSchoolCanConnect("CD-2026-0001")
+    );
+    await expectAllowed("Base | Connexion BackOffice Super Admin", () =>
+      backOffice.login({ identifier: "superadmin@somafrik.app", password: "1234" })
+    );
+    await expectAllowed("Base | Connexion BackOffice Admin Pays RDC", () =>
+      backOffice.login({ identifier: "adminpays.cd@somafrik.app", password: "1234" })
+    );
+    await expectAllowed("Base | Connexion BackOffice Admin École RDC", () =>
+      backOffice.login({ identifier: "admin.cd1@somafrik.app", password: "1234", schoolCode: "CD-2026-0001" })
+    );
+  }
+
+  // --- Scénario 1: le Super Admin suspend le PAYS RDC ---
+  {
+    const { authService, backOffice } = buildFixtures({ suspendedCountry: "CD" });
+    await expectBlocked("Pays suspendu | Connexion Web/Mobile école RDC", "pays suspendu", () =>
+      authService.assertSchoolCanConnect("CD-2026-0001")
+    );
+    await expectBlocked("Pays suspendu | Connexion BackOffice Admin Pays RDC", "pays suspendu", () =>
+      backOffice.login({ identifier: "adminpays.cd@somafrik.app", password: "1234" })
+    );
+    await expectBlocked("Pays suspendu | Connexion BackOffice Admin École RDC", "pays suspendu", () =>
+      backOffice.login({ identifier: "admin.cd1@somafrik.app", password: "1234", schoolCode: "CD-2026-0001" })
+    );
+    await expectAllowed("Pays suspendu | Super Admin garde l'accès (peut réactiver)", () =>
+      backOffice.login({ identifier: "superadmin@somafrik.app", password: "1234" })
+    );
+    await expectAllowed("Pays suspendu | Autre pays (Sénégal) reste accessible", () =>
+      authService.assertSchoolCanConnect("SN-2026-0001")
+    );
+  }
+
+  // --- Scénario 2: le Super Admin suspend l'ÉTABLISSEMENT CD-2026-0001 ---
+  {
+    const { authService, backOffice } = buildFixtures({ suspendedSchool: "CD-2026-0001" });
+    await expectBlocked("École suspendue | Connexion Web/Mobile", "etablissement suspendu", () =>
+      authService.assertSchoolCanConnect("CD-2026-0001")
+    );
+    await expectBlocked("École suspendue | Connexion BackOffice ciblant l'école", "suspendu", () =>
+      backOffice.login({ identifier: "admin.cd1@somafrik.app", password: "1234", schoolCode: "CD-2026-0001" })
+    );
+    await expectAllowed("École suspendue | Autre école du pays reste accessible", () =>
+      authService.assertSchoolCanConnect("SN-2026-0001")
+    );
+    await expectAllowed("École suspendue | Super Admin garde l'accès (peut réactiver)", () =>
+      backOffice.login({ identifier: "superadmin@somafrik.app", password: "1234" })
+    );
+  }
+
+  console.table(results);
+  console.log(`\nRésultat: ${passed} réussite(s), ${failed} échec(s).\n`);
+
+  if (failed > 0) {
+    process.exit(1);
+  }
 }
 
-// --- Scénario 1: le Super Admin suspend le PAYS RDC ---
-{
-  const { authService, backOffice } = buildFixtures({ suspendedCountry: "CD" });
-  expectBlocked("Pays suspendu | Connexion Web/Mobile école RDC", "pays suspendu", () =>
-    authService.assertSchoolCanConnect("CD-2026-0001")
-  );
-  expectBlocked("Pays suspendu | Connexion BackOffice Admin Pays RDC", "pays suspendu", () =>
-    backOffice.login({ identifier: "adminpays.cd@somafrik.app", password: "1234" })
-  );
-  expectBlocked("Pays suspendu | Connexion BackOffice Admin École RDC", "pays suspendu", () =>
-    backOffice.login({ identifier: "admin.cd1@somafrik.app", password: "1234", schoolCode: "CD-2026-0001" })
-  );
-  expectAllowed("Pays suspendu | Super Admin garde l'accès (peut réactiver)", () =>
-    backOffice.login({ identifier: "superadmin@somafrik.app", password: "1234" })
-  );
-  expectAllowed("Pays suspendu | Autre pays (Sénégal) reste accessible", () =>
-    authService.assertSchoolCanConnect("SN-2026-0001")
-  );
-}
-
-// --- Scénario 2: le Super Admin suspend l'ÉTABLISSEMENT CD-2026-0001 ---
-{
-  const { authService, backOffice } = buildFixtures({ suspendedSchool: "CD-2026-0001" });
-  expectBlocked("École suspendue | Connexion Web/Mobile", "etablissement suspendu", () =>
-    authService.assertSchoolCanConnect("CD-2026-0001")
-  );
-  expectBlocked("École suspendue | Connexion BackOffice ciblant l'école", "suspendu", () =>
-    backOffice.login({ identifier: "admin.cd1@somafrik.app", password: "1234", schoolCode: "CD-2026-0001" })
-  );
-  expectAllowed("École suspendue | Autre école du pays reste accessible", () =>
-    authService.assertSchoolCanConnect("SN-2026-0001")
-  );
-  expectAllowed("École suspendue | Super Admin garde l'accès (peut réactiver)", () =>
-    backOffice.login({ identifier: "superadmin@somafrik.app", password: "1234" })
-  );
-}
-
-console.table(results);
-console.log(`\nRésultat: ${passed} réussite(s), ${failed} échec(s).\n`);
-
-if (failed > 0) {
+main().catch((error) => {
+  console.error(error);
   process.exit(1);
-}
+});

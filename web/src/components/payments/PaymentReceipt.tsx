@@ -1,15 +1,39 @@
 import type { PaymentRecord } from "../../lib/quickPayment";
 import type { School } from "../../types";
-import { formatMetric } from "../../lib/format";
+import { formatFinanceAmount, formatFinanceDate, resolveFinanceCurrency } from "../../lib/financeCurrency";
+import { financePaymentStatusLabel } from "../../lib/financeObligationStatus";
 
 interface PaymentReceiptProps {
   payment: PaymentRecord;
   school?: School | null;
 }
 
+function receiptItems(payment: PaymentRecord): { label: string; amount: number }[] {
+  const items = Array.isArray(payment.items) ? payment.items : [];
+  if (items.length) {
+    return items.map((item) => {
+      const row = item as { feeLabel?: string; feeType?: string; amount?: number };
+      return {
+        label: String(row.feeLabel || row.feeType || "Libellé"),
+        amount: Number(row.amount ?? 0),
+      };
+    });
+  }
+  return [
+    {
+      label: String(payment.feeType ?? payment.label ?? "Libellé"),
+      amount: Number(payment.totalAmount ?? payment.amount ?? 0),
+    },
+  ];
+}
+
 export function PaymentReceipt({ payment, school }: PaymentReceiptProps) {
-  const amount = Number(payment.amount ?? 0);
-  const currency = String(payment.currency ?? school?.currency ?? "CDF");
+  const items = receiptItems(payment);
+  const total = items.reduce((sum, item) => sum + item.amount, 0);
+  const currency = resolveFinanceCurrency(
+    typeof payment.currency === "string" ? payment.currency : undefined,
+    school?.currency,
+  );
 
   return (
     <div className="payment-receipt mx-auto max-w-md rounded-2xl border border-line bg-white p-8 text-sm text-ink print:border-0 print:shadow-none">
@@ -39,27 +63,61 @@ export function PaymentReceipt({ payment, school }: PaymentReceiptProps) {
           <dt className="text-muted">Classe</dt>
           <dd>{String(payment.className ?? "—")}</dd>
         </div>
+      </dl>
+
+      <table className="mt-5 w-full text-sm">
+        <thead>
+          <tr className="border-b border-line text-left text-xs uppercase tracking-wide text-muted">
+            <th className="py-2 font-semibold">Libellé</th>
+            <th className="py-2 text-right font-semibold">Montant</th>
+          </tr>
+        </thead>
+        <tbody>
+          {items.map((item, index) => (
+            <tr key={`${item.label}-${index}`} className="border-b border-line/70">
+              <td className="py-2">{item.label}</td>
+              <td className="py-2 text-right font-semibold">{formatFinanceAmount(item.amount, currency)}</td>
+            </tr>
+          ))}
+        </tbody>
+        <tfoot>
+          <tr>
+            <td className="pt-3 font-black">Total</td>
+            <td className="pt-3 text-right text-lg font-black text-brand">
+              {formatFinanceAmount(total, currency)}
+            </td>
+          </tr>
+        </tfoot>
+      </table>
+
+      <dl className="mt-5 space-y-2">
         <div className="flex justify-between gap-4">
-          <dt className="text-muted">Type de frais</dt>
-          <dd>{String(payment.feeType ?? payment.label ?? "—")}</dd>
-        </div>
-        <div className="flex justify-between gap-4">
-          <dt className="text-muted">Montant</dt>
-          <dd className="text-lg font-black text-brand">
-            {formatMetric(amount, currency)}
+          <dt className="text-muted">Montant reçu</dt>
+          <dd className="font-semibold">
+            {formatFinanceAmount(Number(payment.amount ?? payment.totalAmount ?? total), currency)}
           </dd>
         </div>
         <div className="flex justify-between gap-4">
-          <dt className="text-muted">Date</dt>
-          <dd>{String(payment.date ?? "—")}</dd>
+          <dt className="text-muted">Montant imputé</dt>
+          <dd className="font-semibold">{formatFinanceAmount(Number(payment.allocatedAmount ?? 0), currency)}</dd>
         </div>
         <div className="flex justify-between gap-4">
-          <dt className="text-muted">Mode</dt>
+          <dt className="text-muted">Montant non imputé</dt>
+          <dd className="font-semibold">
+            {formatFinanceAmount(Number(payment.unallocatedAmount ?? payment.overpaymentAmount ?? 0), currency)}
+          </dd>
+        </div>
+        <div className="flex justify-between gap-4">
+          <dt className="text-muted">Date d'encaissement</dt>
+          <dd>{formatFinanceDate(String(payment.date ?? payment.paidAt ?? ""))}</dd>
+        </div>
+        <div className="flex justify-between gap-4">
+          <dt className="text-muted">Mode de paiement</dt>
           <dd>{String(payment.method ?? "—")}</dd>
         </div>
         <div className="flex justify-between gap-4">
           <dt className="text-muted">Statut</dt>
-          <dd className="font-semibold">{String(payment.status ?? "—")}</dd>
+          <dd className="font-semibold">{financePaymentStatusLabel(payment.status)}</dd>
         </div>
         <div className="flex justify-between gap-4">
           <dt className="text-muted">Saisi par</dt>

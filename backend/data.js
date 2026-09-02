@@ -1,14 +1,19 @@
 const { buildSchoolBulletinBundle } = require("./lib/bulletinSeedData");
 const { buildSchoolPlanningSlots, buildAcademicConfigForSchool } = require("./lib/planningSeedData");
 
+// Seed mémoire : `code` = alias interne school_code (tests / lecture legacy).
+// Code public canonique = `loginCode` / `publicId` = CD-IN-26-001.
+// Aucune nouvelle création ne doit réutiliser CD-YYYY-NNNN.
 const school = {
   id: "550e8400-e29b-41d4-a716-446655440001",
-  publicId: "CD-2026-0001",
+  publicId: "CD-IN-26-001",
   code: "CD-2026-0001",
+  loginCode: "CD-IN-26-001",
   name: "Universite de Kinshasa",
   type: "Universite",
   city: "Kinshasa",
   country: "RDC",
+  countryCode: "CD",
   address: "Avenue de l'Universite, Kinshasa",
   phone: "+243 810 000 000",
   email: "contact@unikin.somafrik",
@@ -108,18 +113,50 @@ const rolePermissions = {
   "Préfet des études": [
     "Voir élèves",
     "Voir enseignants",
+    "Enseignants:UPDATE",
+    "Enseignants:DELETE",
+    "Affectations:READ",
+    "Affectations:CREATE",
+    "Affectations:UPDATE",
+    "Affectations:DELETE",
     "Voir classes",
     "Voir notes",
+    "Créer notes",
+    "Modifier notes",
     "Voir présences",
     "Organiser examens",
     "Modifier présences",
+    "Planning de cours:READ",
+    "Planning de cours:CREATE",
+    "Planning de cours:UPDATE",
+    "Planning de cours:DELETE",
+    "Salles:READ",
+    "Salles:CREATE",
+    "Salles:UPDATE",
+    "Salles:DELETE",
+    "Remplacements:READ",
+    "Remplacements:CREATE",
+    "Remplacements:UPDATE",
+    "Remplacements:DELETE",
     "Gérer planning académique",
     "Créer rapports disciplinaires",
   ],
   Directeur: ["Voir élèves", "Modifier notes", "Gérer paiements", "Gérer utilisateurs", "Voir rapports"],
   Secrétaire: ["Voir élèves", "Gérer élèves", "Gérer paiements", "Gérer appels"],
-  Enseignant: ["Voir élèves", "Modifier notes", "Faire appel", "Messages parents"],
-  Parent: ["Voir enfant", "Voir paiements", "Messages école"],
+  Enseignant: [
+    "Voir élèves",
+    "Modifier notes",
+    "Créer notes",
+    "Faire appel",
+    "Messages parents",
+    "Voir examens",
+    "Voir bulletins",
+    "Voir documents",
+    "Planning de cours:READ",
+    "Salles:READ",
+    "Remplacements:READ",
+  ],
+  Parent: ["Voir enfant", "Voir notes", "Voir présences", "Voir paiements", "Messages école"],
   "Élève / Étudiant": ["Voir notes", "Voir présences", "Voir paiements"],
   Comptable: ["Gérer paiements", "Voir rapports financiers"],
   Surveillant: ["Voir élèves", "Gérer appels", "Gérer discipline"],
@@ -206,6 +243,16 @@ const securityMatrix = {
     Parent: "-",
     "Élève / Étudiant": "-",
   },
+  Affectations: {
+    "Super Administrateur Somafrik": "CRUD",
+    "Admin Pays": "-",
+    "Admin School": "CRUD",
+    "Préfet des études": "CRUD",
+    Enseignant: "R",
+    Secrétaire: "R",
+    Parent: "-",
+    "Élève / Étudiant": "-",
+  },
   Présences: {
     "Super Administrateur Somafrik": "R",
     "Admin Pays": "-",
@@ -286,6 +333,16 @@ const securityMatrix = {
     Parent: "R",
     "Élève / Étudiant": "R",
   },
+  Announcements: {
+    "Super Administrateur Somafrik": "CRUD",
+    "Admin Pays": "CRUD",
+    "Admin School": "CRUD",
+    "Préfet des études": "CRUD",
+    Enseignant: "R",
+    Secrétaire: "CRUD",
+    Parent: "R",
+    "Élève / Étudiant": "R",
+  },
   Messages: {
     "Super Administrateur Somafrik": "CRUD",
     "Admin Pays": "CRUD",
@@ -356,6 +413,36 @@ const securityMatrix = {
     Parent: "-",
     "Élève / Étudiant": "-",
   },
+  "Planning de cours": {
+    "Super Administrateur Somafrik": "-",
+    "Admin Pays": "-",
+    "Admin School": "CRUD",
+    "Préfet des études": "CRUD",
+    Enseignant: "R",
+    Secrétaire: "-",
+    Parent: "-",
+    "Élève / Étudiant": "-",
+  },
+  Salles: {
+    "Super Administrateur Somafrik": "-",
+    "Admin Pays": "-",
+    "Admin School": "CRUD",
+    "Préfet des études": "CRUD",
+    Enseignant: "R",
+    Secrétaire: "-",
+    Parent: "-",
+    "Élève / Étudiant": "-",
+  },
+  Remplacements: {
+    "Super Administrateur Somafrik": "-",
+    "Admin Pays": "-",
+    "Admin School": "CRUD",
+    "Préfet des études": "CRUD",
+    Enseignant: "R",
+    Secrétaire: "-",
+    Parent: "-",
+    "Élève / Étudiant": "-",
+  },
 };
 
 function permissionsFromSecurityMatrix(role) {
@@ -367,6 +454,18 @@ function permissionsFromSecurityMatrix(role) {
     return actions.map((action) => `${feature}:${action}`);
   });
 }
+
+/** Listes métier déclarées, avant union avec la matrice dashboard (UI). */
+const rolePermissionsDeclared = Object.fromEntries(
+  Object.entries(rolePermissions).map(([role, permissions]) => [role, [...permissions]]),
+);
+
+const PLATFORM_LIVE_RBAC_ROLES = new Set([
+  "Super Administrateur Somafrik",
+  "Super Administrateur OKAFRIK",
+  "Admin Pays",
+  "Admin School",
+]);
 
 for (const role of Object.keys(rolePermissions)) {
   rolePermissions[role] = [...new Set([...(rolePermissions[role] ?? []), ...permissionsFromSecurityMatrix(role)])];
@@ -380,6 +479,21 @@ const { PedagogyGovernanceService } = require("./services/pedagogyGovernanceServ
 const pedagogyGovernance = new PedagogyGovernanceService();
 const sanitizedSchoolPermissions = pedagogyGovernance.sanitizeSchoolAdminRolePermissions(rolePermissions);
 rolePermissions["Admin School"] = sanitizedSchoolPermissions["Admin School"];
+
+/**
+ * Carte utilisée par le backfill CRUD live uniquement (seed/bootstrap).
+ * Après bootstrap, l'autorité est role_module_permissions PostgreSQL.
+ * Ne pas servir cette carte comme source runtime des écrans métier.
+ */
+function rolePermissionsForLiveRbac() {
+  const map = {};
+  for (const [role, permissions] of Object.entries(rolePermissions)) {
+    map[role] = PLATFORM_LIVE_RBAC_ROLES.has(role)
+      ? [...permissions]
+      : [...(rolePermissionsDeclared[role] ?? permissions)];
+  }
+  return map;
+}
 
 const countries = [
   {
@@ -667,6 +781,31 @@ const userAccounts = [
     history: ["Compte initial créé le 01-09-2025"],
   },
   {
+    id: "USER-ADMIN-BI-SCHOOL",
+    publicId: "USR-2026-000010",
+    lastName: "Administrateur",
+    firstName: "Bujumbura",
+    gender: "Masculin",
+    phone: "+257 710 000 010",
+    email: "admin@bujumbura.somafrik",
+    role: "Admin School",
+    secondaryRoles: [],
+    scopeLevel: "Établissement",
+    countryScope: "BI",
+    schoolCode: "BI-2026-0002",
+    accessChannel: "Application",
+    identifier: "admin",
+    password: "1234",
+    status: "Actif",
+    permissions: rolePermissions["Admin School"],
+    temporaryPassword: "",
+    photoUrl: "",
+    createdAt: "01-09-2025",
+    lastLoginAt: "01-06-2026",
+    createdBy: "Super Administrateur Somafrik",
+    history: ["Compte admin établissement BI créé pour isolation multi-écoles"],
+  },
+  {
     id: "USER-SUPERADMIN",
     publicId: "USR-2026-000002",
     lastName: "Somafrik",
@@ -843,7 +982,9 @@ const userAccounts = [
   },
   {
     id: "USER-STUDENT-0001",
-    publicId: "USR-2026-000006",
+    publicId: "CD-IN-EL-26-001",
+    identityCode: "CD-IN-EL-26-001",
+    loginCode: "CD-IN-EL-26-001",
     lastName: "Dupont",
     firstName: "Jean",
     gender: "Masculin",
@@ -855,7 +996,7 @@ const userAccounts = [
     countryScope: "RDC",
     schoolCode: "CD-2026-0001",
     accessChannel: "Application",
-    identifier: "ELE-0001",
+    identifier: "CD-IN-EL-26-001",
     password: "1234",
     status: "Actif",
     permissions: rolePermissions["Élève / Étudiant"],
@@ -883,9 +1024,9 @@ const teachers = [
     mainSubject: "Mathematiques",
     password: "1234",
     assignments: [
-      { className: "6ème A", course: "Mathématiques" },
-      { className: "6ème B", course: "Mathématiques" },
-      { className: "5ème A", course: "Physique" },
+      { className: "6ème A", course: "Mathématiques" , status: "active" },
+      { className: "6ème B", course: "Mathématiques" , status: "active" },
+      { className: "5ème A", course: "Physique" , status: "active" },
     ],
   },
   {
@@ -901,8 +1042,8 @@ const teachers = [
     mainSubject: "Francais",
     password: "1234",
     assignments: [
-      { className: "6ème A", course: "Français" },
-      { className: "5ème B", course: "Français" },
+      { className: "6ème A", course: "Français" , status: "active" },
+      { className: "5ème B", course: "Français" , status: "active" },
     ],
   },
   {
@@ -918,8 +1059,8 @@ const teachers = [
     mainSubject: "Sciences",
     password: "1234",
     assignments: [
-      { className: "6ème B", course: "Sciences" },
-      { className: "5ème A", course: "Sciences" },
+      { className: "6ème B", course: "Sciences" , status: "active" },
+      { className: "5ème A", course: "Sciences" , status: "active" },
     ],
   },
   {
@@ -935,8 +1076,8 @@ const teachers = [
     mainSubject: "Histoire",
     password: "1234",
     assignments: [
-      { className: "5ème A", course: "Histoire" },
-      { className: "5ème B", course: "Histoire" },
+      { className: "5ème A", course: "Histoire" , status: "active" },
+      { className: "5ème B", course: "Histoire" , status: "active" },
     ],
   },
 ];
@@ -967,10 +1108,10 @@ const courses = [
 ];
 
 const students = [
-  { id: "1", publicId: "ELE-0001", name: "Jean Dupont", firstName: "Jean", matricule: "ELE-0001", gender: "Masculin", birthDate: "12-04-2012", className: "6ème A", schoolCode: "CD-2026-0001", pin: "1234", parentName: "Parent Dupont", parentPhone: "+243 820 000 001", parentEmail: "parent.dupont@example.com", archived: false },
-  { id: "2", publicId: "ELE-0002", name: "Marie Martin", firstName: "Marie", matricule: "ELE-0002", gender: "Féminin", birthDate: "18-09-2012", className: "6ème A", schoolCode: "CD-2026-0001", pin: "1234", parentName: "Parent Martin", parentPhone: "+243 820 000 001", parentEmail: "parent.martin@example.com", archived: false },
-  { id: "3", publicId: "ELE-0003", name: "Paul Bernard", firstName: "Paul", matricule: "ELE-0003", gender: "Masculin", birthDate: "03-02-2011", className: "6ème B", schoolCode: "CD-2026-0001", pin: "1234", parentName: "Parent Bernard", parentPhone: "+243 820 000 003", parentEmail: "parent.bernard@example.com", archived: false },
-  { id: "4", publicId: "ELE-0004", name: "Sarah Mbala", firstName: "Sarah", matricule: "ELE-0004", gender: "Féminin", birthDate: "21-07-2011", className: "5ème A", schoolCode: "CD-2026-0001", pin: "1234", parentName: "Parent Mbala", parentPhone: "+243 820 000 004", parentEmail: "parent.mbala@example.com", archived: false },
+  { id: "1", publicId: "CD-IN-EL-26-001", name: "Jean Dupont", firstName: "Jean", matricule: "CD-IN-EL-26-001", loginCode: "CD-IN-EL-26-001", identifier: "CD-IN-EL-26-001", gender: "Masculin", birthDate: "12-04-2012", className: "6ème A", schoolCode: "CD-2026-0001", pin: "1234", parentName: "Parent Dupont", parentPhone: "+243 820 000 001", parentEmail: "parent.dupont@example.com", archived: false },
+  { id: "2", publicId: "CD-IN-EL-26-002", name: "Marie Martin", firstName: "Marie", matricule: "CD-IN-EL-26-002", loginCode: "CD-IN-EL-26-002", identifier: "CD-IN-EL-26-002", gender: "Féminin", birthDate: "18-09-2012", className: "6ème A", schoolCode: "CD-2026-0001", pin: "1234", parentName: "Parent Martin", parentPhone: "+243 820 000 001", parentEmail: "parent.martin@example.com", archived: false },
+  { id: "3", publicId: "CD-IN-EL-26-003", name: "Paul Bernard", firstName: "Paul", matricule: "CD-IN-EL-26-003", loginCode: "CD-IN-EL-26-003", identifier: "CD-IN-EL-26-003", gender: "Masculin", birthDate: "03-02-2011", className: "6ème B", schoolCode: "CD-2026-0001", pin: "1234", parentName: "Parent Bernard", parentPhone: "+243 820 000 003", parentEmail: "parent.bernard@example.com", archived: false },
+  { id: "4", publicId: "CD-IN-EL-26-004", name: "Sarah Mbala", firstName: "Sarah", matricule: "CD-IN-EL-26-004", loginCode: "CD-IN-EL-26-004", identifier: "CD-IN-EL-26-004", gender: "Féminin", birthDate: "21-07-2011", className: "5ème A", schoolCode: "CD-2026-0001", pin: "1234", parentName: "Parent Mbala", parentPhone: "+243 820 000 004", parentEmail: "parent.mbala@example.com", archived: false },
 ];
 
 const presences = [
@@ -1082,10 +1223,12 @@ const burundiSchool = {
   id: "SCHOOL-BI-2026-0002",
   publicId: "BI-2026-0002",
   code: "BI-2026-0002",
+  loginCode: "BI-ESB-26-001",
   name: "Établissement Somafrik Burundi",
   type: "Université",
   city: "Bujumbura",
   country: "Burundi",
+  countryCode: "BI",
   address: "Avenue de l'Indépendance, Bujumbura",
   phone: "+257 710 000 000",
   email: "contact.bi@somafrik.demo",
@@ -1104,16 +1247,18 @@ const platformSchools = [school, burundiSchool];
 while (platformSchools.length < 50) {
   const index = platformSchools.length + 1;
   const country = countries[index % countries.length];
-  const code = `${country.code}-2026-${String(index).padStart(4, "0")}`;
+  const code = `SCH-DEMO-${String(index).padStart(4, "0")}`;
   platformSchools.push({
     ...school,
     id: `SCHOOL-${String(index).padStart(4, "0")}`,
     publicId: code,
+    loginCode: "",
     code,
     name: `Établissement Somafrik ${index}`,
     type: ["École primaire", "Collège", "Lycée", "Université", "Institut"][index % 5],
     city: demoCities[index % demoCities.length],
     country: country.name.includes("République Démocratique") ? "RDC" : country.name,
+    countryCode: country.code,
     phone: `${country.phonePrefix} 810 ${String(index).padStart(3, "0")} ${String(index + 100).padStart(3, "0")}`,
     email: `contact-${index}@somafrik.demo`,
     currency: country.currency,
@@ -1200,7 +1345,7 @@ courses.forEach((course, index) => {
     (assignment) => assignment.className === course.className && assignment.course === course.name
   );
   if (!exists) {
-    teacher.assignments.push({ className: course.className, course: course.name });
+    teacher.assignments.push({ className: course.className, course: course.name, status: "active" });
   }
 });
 
@@ -1211,10 +1356,10 @@ while (students.length < 50) {
   const classItem = classes[index % classes.length];
   students.push({
     id: String(index),
-    publicId: `ELE-${String(index).padStart(4, "0")}`,
+    publicId: `CD-IN-EL-26-${String(index).padStart(3, "0")}`,
     name: `${firstName} ${lastName}`,
     firstName,
-    matricule: `ELE-${String(index).padStart(4, "0")}`,
+    matricule: `CD-IN-EL-26-${String(index).padStart(3, "0")}`,
     gender: index % 2 === 0 ? "Féminin" : "Masculin",
     birthDate: `${String((index % 27) + 1).padStart(2, "0")}-${String((index % 12) + 1).padStart(2, "0")}-2012`,
     className: classItem.name,
@@ -1277,6 +1422,7 @@ const teacherAssignments = teachers.flatMap((teacher) =>
     className: assignment.className,
     subject: assignment.course,
     course: assignment.course,
+    status: assignment.status,
   })),
 );
 
@@ -1388,6 +1534,8 @@ module.exports = {
   documents,
   teacherAssignments,
   rolePermissions,
+  rolePermissionsDeclared,
+  rolePermissionsForLiveRbac,
   userAccounts,
   countries,
   subscriptions,

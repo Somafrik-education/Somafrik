@@ -38,7 +38,7 @@ export class SubjectRules {
 
   canDeleteSubject(subjectName: string) {
     const used = this.notes.some((note) => note.subject === subjectName);
-    return { allowed: !used, reason: used ? "Matière déjà utilisée dans des notes" : "" };
+    return { allowed: !used, reason: used ? "Cours déjà utilisé dans des notes" : "" };
   }
 
   getSubjectsByClass(className: string) {
@@ -84,7 +84,7 @@ export class MvpBusinessRules {
     return [
       this.module("Élèves / étudiants", "Partiel", ["CRUD", "Affectation classe", "Historique", "Transfert", "Archivage"]),
       this.module("Classes", "Partiel", ["Paramétrage", "Niveaux", "Effectifs", "Année scolaire"]),
-      this.module("Matières", "Partiel", ["Création", "Coefficients", "Affectation", "Protection suppression"]),
+      this.module("Cours", "Partiel", ["Création", "Coefficients", "Affectation", "Protection suppression"]),
       this.module("Emplois du temps", "À formaliser", ["Salles", "Conflits horaires", "Consultation par rôle"]),
       this.module("Finances", "Partiel", ["Échéances", "Encaissements", "Historique", "Rapports"]),
       this.module("Parents / tuteurs", "Partiel", ["Liaison enfant", "Résultats", "Présences", "Paiements", "Messages"]),

@@ -12,11 +12,19 @@ import {
   saveTokens,
 } from "./secureStorage";
 import {
+  assertUnrestrictedApiPath,
+  clearRestrictedSession,
+  getRestrictedAccessToken,
+  getRestrictedRefreshToken,
+} from "../lib/restrictedSession";
+import { applyAuthenticatedSchoolScopeHeader, clearRequestSchoolScope } from "../lib/requestSchoolScope";
+import {
   isDevelopmentRuntime,
   resolveApiBaseUrl,
   resolveApiRootUrl,
   validateApiRootUrl,
 } from "../config/env";
+import { noteConnectivityFailure, noteConnectivitySuccess } from "../lib/connectivity";
 import {
   assertSecureUploadFile,
   DEFAULT_ALLOWED_UPLOAD_MIME_TYPES,
@@ -32,10 +40,14 @@ type Json = Record<string, unknown> | unknown[] | string | number | boolean | nu
 
 export class ApiClientError extends Error {
   status?: number;
-  constructor(message: string, status?: number) {
+  code?: string;
+  details?: unknown;
+  constructor(message: string, status?: number, code?: string, details?: unknown) {
     super(message);
     this.name = "ApiClientError";
     this.status = status;
+    this.code = code;
+    this.details = details;
   }
 }
 
@@ -84,18 +96,68 @@ async function fetchWithTimeout(
       signal: controller.signal,
     });
   } catch (error) {
+    const thrownName = error instanceof Error ? error.name : "";
+    const thrownCode =
+      error && typeof error === "object" && "code" in error
+        ? String((error as { code?: string }).code ?? "")
+        : "";
     if (error instanceof Error && error.name === "AbortError") {
-      throw new ApiClientError("Délai de requête dépassé. Vérifiez votre réseau.");
+      const timeoutError = new ApiClientError(
+        "Délai de requête dépassé. Vérifiez votre réseau.",
+        undefined,
+        "TIMEOUT",
+      );
+      safeLogger.info("http_audit", {
+        endpoint: url.replace(/\?.*$/, ""),
+        method: String(init.method ?? "GET").toUpperCase(),
+        status: null,
+        errorCode: "TIMEOUT",
+        errorName: thrownName || "AbortError",
+        classification: "timeout",
+        outbox: null,
+        idempotencyKeyPresent: null,
+        retry: false,
+      });
+      throw timeoutError;
     }
     const message = error instanceof Error ? error.message : String(error);
     if (/network request failed|failed to fetch|offline|internet/i.test(message)) {
-      throw new ApiClientError(
+      const offlineError = new ApiClientError(
         "Connexion Internet indisponible. Réessayez lorsque le réseau sera rétabli.",
+        0,
+        "NETWORK_UNAVAILABLE",
       );
+      noteConnectivityFailure(offlineError);
+      safeLogger.info("http_audit", {
+        endpoint: url.replace(/\?.*$/, ""),
+        method: String(init.method ?? "GET").toUpperCase(),
+        status: 0,
+        errorCode: "NETWORK_UNAVAILABLE",
+        errorName: thrownName || thrownCode || "NetworkError",
+        classification: "device_offline",
+        outbox: null,
+        idempotencyKeyPresent: null,
+        retry: false,
+      });
+      throw offlineError;
     }
-    throw new ApiClientError(
+    const unreachable = new ApiClientError(
       sanitizeUserFacingError(error, "Impossible de joindre le serveur Somafrik."),
+      undefined,
+      "BACKEND_UNREACHABLE",
     );
+    safeLogger.info("http_audit", {
+      endpoint: url.replace(/\?.*$/, ""),
+      method: String(init.method ?? "GET").toUpperCase(),
+      status: null,
+      errorCode: "BACKEND_UNREACHABLE",
+      errorName: thrownName || "Error",
+      classification: "backend_unreachable",
+      outbox: null,
+      idempotencyKeyPresent: null,
+      retry: false,
+    });
+    throw unreachable;
   } finally {
     clearTimeout(timer);
   }
@@ -105,7 +167,7 @@ async function refreshAccessTokenOnce(): Promise<string | null> {
   if (refreshPromise) return refreshPromise;
 
   refreshPromise = (async () => {
-    const refreshToken = await getRefreshToken();
+    const refreshToken = (await getRefreshToken()) || getRestrictedRefreshToken();
     if (!refreshToken) return null;
 
     const root = resolveApiRootUrl();
@@ -149,6 +211,8 @@ export type HttpRequestOptions = RequestInit & {
   raw?: boolean;
   skipAuth?: boolean;
   timeoutMs?: number;
+  /** UUID d'intention — rejoué tel quel après timeout / refresh. */
+  idempotencyKey?: string;
   /** Interne : requête déjà rejouée après refresh. */
   _retried?: boolean;
 };
@@ -161,6 +225,7 @@ export async function httpRequest<T = Json>(
     raw = false,
     skipAuth = false,
     timeoutMs = REQUEST_TIMEOUT_MS,
+    idempotencyKey,
     _retried = false,
     headers: inputHeaders,
     ...rest
@@ -176,11 +241,25 @@ export async function httpRequest<T = Json>(
     headers.set("Content-Type", "application/json");
   }
 
+  const method = String(rest.method ?? "GET").toUpperCase();
+  if (idempotencyKey && method !== "GET" && method !== "HEAD") {
+    headers.set("Idempotency-Key", idempotencyKey);
+  }
+
   if (!skipAuth && !isAuthPublicPath(path)) {
-    const token = await getAccessToken();
+    try {
+      assertUnrestrictedApiPath(path);
+    } catch (error) {
+      throw new ApiClientError(
+        error instanceof Error ? error.message : "Changement de mot de passe obligatoire.",
+        403,
+      );
+    }
+    const token = (await getAccessToken()) || getRestrictedAccessToken();
     if (token) {
       headers.set("Authorization", `Bearer ${token}`);
     }
+    applyAuthenticatedSchoolScopeHeader(headers, path);
   }
 
   const response = await fetchWithTimeout(
@@ -191,6 +270,9 @@ export async function httpRequest<T = Json>(
     },
     timeoutMs,
   );
+  if (response.ok) {
+    noteConnectivitySuccess();
+  }
 
   if (response.status === 401 && !skipAuth && !isAuthPublicPath(path) && !_retried) {
     const nextToken = await refreshAccessTokenOnce();
@@ -198,6 +280,8 @@ export async function httpRequest<T = Json>(
       return httpRequest<T>(path, { ...options, _retried: true });
     }
     await clearSecureSession();
+    clearRestrictedSession();
+    clearRequestSchoolScope();
     notifySessionExpired();
     throw new ApiClientError("Session expirée. Veuillez vous reconnecter.", 401);
   }
@@ -221,13 +305,26 @@ export async function httpRequest<T = Json>(
   }
 
   if (!response.ok) {
+    const payload = data && typeof data === "object" ? (data as Record<string, unknown>) : {};
     const message =
-      data && typeof data === "object" && data !== null && "message" in data
-        ? String((data as { message: unknown }).message)
-        : "La requête a échoué.";
+      payload && "message" in payload ? String(payload.message) : "La requête a échoué.";
+    const code = payload.code ? String(payload.code) : undefined;
+    safeLogger.info("http_audit", {
+      endpoint: (path.split("?")[0] ?? path).trim(),
+      method,
+      status: response.status,
+      errorCode: code ?? null,
+      errorName: "ApiClientError",
+      classification: response.status >= 500 ? "backend_5xx" : "http_error",
+      outbox: null,
+      idempotencyKeyPresent: Boolean(idempotencyKey),
+      retry: false,
+    });
     throw new ApiClientError(
       sanitizeUserFacingError(message, "La requête a échoué."),
       response.status,
+      code,
+      payload.details,
     );
   }
 

@@ -1,39 +1,57 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Alert,
   Image,
+  KeyboardAvoidingView,
   Modal,
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
+import FormField from "../components/FormField";
+import { FieldLabel } from "../components/FieldLabel";
+import { type FormFieldType } from "../lib/formFieldTokens";
+import { hasFieldErrors, trimField, validateAmount, validateEmail, validatePhone } from "../lib/formFieldValidation";
 import { Ionicons } from "@expo/vector-icons";
+import * as Crypto from "expo-crypto";
 import * as ImagePicker from "expo-image-picker";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
+import { useFocusEffect } from "@react-navigation/native";
 import { RootStackParamList } from "../navigation/AppNavigator";
 import { AdminEntity, useAdminData } from "../context/AdminDataContext";
-import { messageThemes, rolePermissions, DEFAULT_CLASS_NAMES, DEFAULT_LEVELS, DEFAULT_SUBJECTS, DEFAULT_TRACKS, UserAccount } from "../data/catalog";
+import { messageThemes, rolePermissions } from "../data/catalog";
 import { useAuth } from "../context/AuthContext";
 import { canMutateEntity, canReadEntity, hasSecurityPermission, isSuperAdminRole, SecurityAction } from "../domain/security/permissions";
-import { resetUserPassword as resetUserPasswordOnBackend } from "../services/api";
-import { removeSchoolClassFromState } from "../lib/classRules";
+import {
+  createTeacherAssignment,
+  createCourse,
+  deleteCourse,
+  deleteTeacherAssignment,
+  resetUserPassword as resetUserPasswordOnBackend,
+  updateCourse,
+  updateTeacherAssignment,
+  upsertFinancePaymentStatus,
+} from "../services/api";
+import QueryStateView from "../components/QueryStateView";
+import { DATA_TRUTH_COPY, DATA_TRUTH_TEST_IDS, paymentItemsDetail, paymentMethodLabel, paymentReference, paymentStatusLabel, paymentTotal } from "../lib/dataTruth";
+import { formatFinanceAmount } from "../lib/financeCurrency";
 import { formatTeacherClasses } from "../lib/teacherClasses";
 import { validateCourseTeacherRule } from "../lib/pedagogyGovernance";
 import { PENDING_VALIDATION_STATUS } from "../lib/orgHierarchy";
 import { CONTACT_PROVISIONING_HINT, entityCreateViaContactsOnly } from "../lib/contactProvisioning";
 import { useFloatingTabBarLayout } from "../lib/screenLayout";
-import {
-  applyTeacherSyncUiAfterUserSave,
-  createTeacherRecordId,
-  isTeacherUserRole,
-  upsertTeacherFromUser,
-  type TeacherIdentitySkip,
-} from "../lib/userTeacherSync";
+import { createTeacherRecordId, isTeacherUserRole } from "../lib/userTeacherSync";
+import { isActiveUserAccount } from "../lib/format";
 
 type Props = NativeStackScreenProps<RootStackParamList, "AdminCrud">;
+
+const LEGACY_CLASSES_CRUD_RETIRED_MESSAGE =
+  "Le CRUD Classes via AdminCrud est retiré. Utilisez l'écran Classes (POST/PATCH /api/classes).";
+const LEGACY_SCHOOLS_CRUD_RETIRED_MESSAGE =
+  "Le CRUD Établissements via AdminCrud est retiré. Utilisez le web /etablissements (API PostgreSQL).";
 
 type Field = {
   key: string;
@@ -42,6 +60,52 @@ type Field = {
   keyboardType?: "default" | "numeric";
   type?: "text" | "select" | "date" | "photo";
 };
+
+function inferAdminFormFieldType(field: Field): FormFieldType {
+  const key = field.key.toLowerCase();
+  if (key.includes("email")) return "email";
+  if (key.includes("phone")) return "phone";
+  if (key.includes("password") || key.includes("secret")) return "password";
+  if (field.keyboardType === "numeric") return "amount";
+  if (key.includes("date")) return "date";
+  if (key === "message" || key === "address" || key === "slogan") return "multiline";
+  if (key.includes("firstname") || key.includes("lastname") || key === "name" || key === "parentname") return "name";
+  if (key.includes("url") || key.includes("website")) return "url";
+  return "text";
+}
+
+function isOptionalAdminField(field: Field): boolean {
+  const key = field.key.toLowerCase();
+  return (
+    key.includes("phone") ||
+    key.includes("email") ||
+    key.includes("website") ||
+    key.includes("slogan") ||
+    key.includes("attachment") ||
+    key.includes("logo") ||
+    key.includes("parent")
+  );
+}
+
+const ADMIN_REQUIRED_FIELD_KEYS: Partial<Record<AdminEntity, ReadonlySet<string>>> = {
+  students: new Set(["name", "className"]),
+  teachers: new Set(["name", "phone"]),
+  classes: new Set(["name"]),
+  countries: new Set(["name", "code", "phonePrefix", "currency"]),
+  courses: new Set(["className", "name", "teacherId"]),
+  assignments: new Set(["teacherId", "className", "course"]),
+  payments: new Set(["studentId", "amount"]),
+  subscriptions: new Set(["schoolCode", "plan"]),
+  paymentStatuses: new Set(["label", "value"]),
+  schools: new Set(["name", "type", "country", "city", "address", "phone", "email"]),
+  users: new Set(["lastName", "firstName", "schoolCode"]),
+  announcements: new Set(["title", "message"]),
+  messages: new Set(["parentPhone", "theme", "message"]),
+};
+
+function isRequiredAdminField(entity: AdminEntity, field: Field): boolean {
+  return ADMIN_REQUIRED_FIELD_KEYS[entity]?.has(field.key) ?? false;
+}
 
 const teacherCourseAssignmentType = "Professeur → cours";
 const studentClassAssignmentType = "Élève → classe";
@@ -84,26 +148,26 @@ const configs: Record<
     title: "Gestion des élèves",
     addLabel: "Ajouter un élève",
     fields: [
-      { key: "name", label: "Nom", placeholder: "Nom complet" },
-      { key: "firstName", label: "Prénom", placeholder: "Prénom" },
+      { key: "name", label: "Nom", placeholder: "Ex. Okito" },
+      { key: "firstName", label: "Prénom", placeholder: "Ex. Esther" },
       { key: "gender", label: "Sexe", placeholder: "Choisir le sexe", type: "select" },
       { key: "birthDate", label: "Date de naissance", placeholder: "JJ-MM-AAAA", type: "date" },
       { key: "className", label: "Classe", placeholder: "Choisir une classe", type: "select" },
       { key: "parentName", label: "Nom du parent", placeholder: "Nom complet du parent" },
-      { key: "parentPhone", label: "Téléphone parent", placeholder: "+243 ..." },
-      { key: "parentEmail", label: "Email parent", placeholder: "parent@email.com" },
+      { key: "parentPhone", label: "Téléphone parent", placeholder: "Ex. +243 8xx xxx xxx" },
+      { key: "parentEmail", label: "Email parent", placeholder: "Ex. parent@email.com" },
     ],
   },
   teachers: {
     title: "Gestion des enseignants",
     addLabel: "Ajouter un enseignant",
     fields: [
-      { key: "name", label: "Nom", placeholder: "Nom complet" },
-      { key: "firstName", label: "Prénom", placeholder: "Prénom" },
+      { key: "name", label: "Nom", placeholder: "Ex. Kabila" },
+      { key: "firstName", label: "Prénom", placeholder: "Ex. Amina" },
       { key: "gender", label: "Sexe", placeholder: "Choisir le sexe", type: "select" },
-      { key: "phone", label: "Téléphone", placeholder: "+243 ..." },
-      { key: "email", label: "Email", placeholder: "enseignant@email.com" },
-      { key: "mainSubject", label: "Matière principale", placeholder: "Choisir une matière", type: "select" },
+      { key: "phone", label: "Téléphone", placeholder: "Ex. +243 8xx xxx xxx" },
+      { key: "email", label: "Email", placeholder: "Ex. amina@ecole.cd" },
+      { key: "mainSubject", label: "Cours principal", placeholder: "Choisir un cours", type: "select" },
     ],
   },
   classes: {
@@ -126,7 +190,7 @@ const configs: Record<
       { key: "currency", label: "Devise", placeholder: "CDF" },
       { key: "timezone", label: "Fuseau horaire", placeholder: "Africa/Kinshasa" },
       { key: "status", label: "Statut", placeholder: "Choisir le statut", type: "select" },
-      { key: "administratorId", label: "Admin pays", placeholder: "Choisir un utilisateur", type: "select" },
+      { key: "administratorId", label: "Administrateur pays", placeholder: "Choisir un utilisateur", type: "select" },
     ],
   },
   courses: {
@@ -134,7 +198,7 @@ const configs: Record<
     addLabel: "Ajouter un cours",
     fields: [
       { key: "className", label: "Classe", placeholder: "Choisir une classe", type: "select" },
-      { key: "name", label: "Nom du cours", placeholder: "Choisir une matière", type: "select" },
+      { key: "name", label: "Nom du cours", placeholder: "Choisir un cours", type: "select" },
       { key: "teacherId", label: "Enseignant", placeholder: "Choisir un enseignant", type: "select" },
       { key: "coefficient", label: "Coefficient", placeholder: "2", keyboardType: "numeric" },
     ],
@@ -192,7 +256,7 @@ const configs: Record<
     addLabel: "Ajouter un établissement",
     fields: [
       { key: "name", label: "Nom", placeholder: "Nom de l'établissement" },
-      { key: "code", label: "Code unique", placeholder: "Auto : CD-2026-0001" },
+      { key: "code", label: "Code unique", placeholder: "Auto : CD-IN-26-001" },
       { key: "type", label: "Type", placeholder: "Choisir le type", type: "select" },
       { key: "country", label: "Pays", placeholder: "RDC" },
       { key: "city", label: "Ville", placeholder: "Kinshasa" },
@@ -220,11 +284,10 @@ const configs: Record<
     title: "Gestion des utilisateurs",
     addLabel: "Créer un utilisateur",
     fields: [
-      { key: "lastName", label: "Nom", placeholder: "Nom" },
-      { key: "firstName", label: "Prénom", placeholder: "Prénom" },
+      { key: "lastName", label: "Nom", placeholder: "Ex. Okito" },
+      { key: "firstName", label: "Prénom", placeholder: "Ex. Esther" },
       { key: "gender", label: "Sexe", placeholder: "Choisir le sexe", type: "select" },
-      { key: "phone", label: "Téléphone", placeholder: "+243 ..." },
-      { key: "role", label: "Rôle", placeholder: "Choisir le rôle", type: "select" },
+      { key: "phone", label: "Téléphone", placeholder: "Ex. +243 8xx xxx xxx" },
       { key: "schoolCode", label: "Établissement", placeholder: "Choisir l'établissement", type: "select" },
       { key: "accessChannel", label: "Canal d'accès", placeholder: "Plateforme ou Application", type: "select" },
       { key: "identifier", label: "Identifiant unique", placeholder: "Généré par le système" },
@@ -236,7 +299,7 @@ const configs: Record<
     title: "Gestion des annonces",
     addLabel: "Ajouter une annonce",
     fields: [
-      { key: "title", label: "Titre", placeholder: "Réunion des parents" },
+      { key: "title", label: "Titre", placeholder: "Ex. Réunion des parents" },
       { key: "message", label: "Message", placeholder: "Votre message" },
       { key: "date", label: "Date", placeholder: "JJ-MM-AAAA", type: "date" },
     ],
@@ -257,7 +320,7 @@ const configs: Record<
   },
 };
 
-export default function AdminCrudScreen({ route }: Props) {
+export default function AdminCrudScreen({ route, navigation }: Props) {
   const { scrollContentPaddingBottom } = useFloatingTabBarLayout();
   const contentStyle = [styles.content, { paddingBottom: scrollContentPaddingBottom }];
   const { entity, filter, className: scopedClassName } = route.params;
@@ -282,11 +345,20 @@ export default function AdminCrudScreen({ route }: Props) {
     rolePermissionsData,
     updateRoleFeatureAccess,
     academicConfigData,
+    refreshBackOfficeState,
+    loadPayments,
+    loadUsers,
+    loadTeachers,
+    loadAnnouncements,
+    loadStudents,
+    paymentsSnapshot,
   } = useAdminData();
   const config = configs[entity];
-  const items = getItems(entity);
+  const items = entity === "payments" ? paymentsSnapshot.data : getItems(entity);
   const [editingItem, setEditingItem] = useState<any | null>(null);
   const [form, setForm] = useState<Record<string, string>>({});
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  const [formSaving, setFormSaving] = useState(false);
   const [visible, setVisible] = useState(false);
   const [selectField, setSelectField] = useState<Field | null>(null);
   const [selectedCourseClass, setSelectedCourseClass] = useState("");
@@ -300,10 +372,17 @@ export default function AdminCrudScreen({ route }: Props) {
   const [calendarStep, setCalendarStep] = useState<"year" | "month" | "day">("year");
   const [selectedPermissionRole, setSelectedPermissionRole] = useState("");
   const [selectedPermissionFeature, setSelectedPermissionFeature] = useState("");
-  const canCreate = canMutateEntity(session, entity, "CREATE") && !entityCreateViaContactsOnly(entity);
+  const isStudentsEntity = entity === "students";
+  // PR1 : création élèves uniquement via Classes → Inscrire (API PG).
+  const canCreate =
+    !isStudentsEntity &&
+    entity !== "payments" &&
+    canMutateEntity(session, entity, "CREATE") &&
+    !entityCreateViaContactsOnly(entity);
   const canRead = canReadEntity(session, entity);
-  const canUpdate = canMutateEntity(session, entity, "UPDATE");
-  const canDelete = canMutateEntity(session, entity, "DELETE");
+  const canUpdate =
+    !isStudentsEntity && entity !== "teachers" && canMutateEntity(session, entity, "UPDATE");
+  const canDelete = !isStudentsEntity && canMutateEntity(session, entity, "DELETE");
   const delegableFeatures = useMemo(
     () => schoolPilotageFeatures.filter((feature) => getDelegablePermissionsForFeature(session, feature).length > 0),
     [session?.permissions, session?.user.permissions]
@@ -317,6 +396,16 @@ export default function AdminCrudScreen({ route }: Props) {
       setDateField(null);
     }
   }, [canRead]);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (entity === "payments") void loadPayments();
+      if (entity === "users") void loadUsers();
+      if (entity === "teachers") void loadTeachers();
+      if (entity === "announcements") void loadAnnouncements();
+      if (entity === "students") void loadStudents();
+    }, [entity, loadPayments, loadUsers, loadTeachers, loadAnnouncements, loadStudents]),
+  );
 
   useEffect(() => {
     if (entity === "courses" && !selectedCourseClass && classesData.length > 0) {
@@ -405,6 +494,10 @@ export default function AdminCrudScreen({ route }: Props) {
   }, [entity, filter, visibleItems]);
 
   const openCreate = () => {
+    if (entity === "payments") {
+      Alert.alert("Saisie indisponible", DATA_TRUTH_COPY.writePaymentsWebOnly);
+      return;
+    }
     if (entityCreateViaContactsOnly(entity)) {
       Alert.alert("Création via Contacts", CONTACT_PROVISIONING_HINT);
       return;
@@ -425,8 +518,10 @@ export default function AdminCrudScreen({ route }: Props) {
       ...(entity === "courses" && selectedCourseClass
         ? { className: selectedCourseClass }
         : {}),
-      ...(entity === "students" && lockedClassName ? { className: lockedClassName } : {}),
+      // Création élèves désactivée (canCreate=false pour students) — pas de préremplissage classe.
     });
+    setFieldErrors({});
+    setFormSaving(false);
     setVisible(true);
   };
 
@@ -438,44 +533,36 @@ export default function AdminCrudScreen({ route }: Props) {
 
     setEditingItem(item);
     setForm(itemToForm(entity, item));
+    setFieldErrors({});
+    setFormSaving(false);
     if (entity === "courses") {
       setSelectedCourseClass(item.className);
     }
     setVisible(true);
   };
 
-  const save = () => {
+  const save = async () => {
+    if (formSaving) return;
     if (editingItem && !canUpdate) {
       Alert.alert("Accès refusé", "Votre rôle ne permet pas de modifier cet élément.");
       return;
     }
 
     if (!editingItem && !canCreate) {
-      Alert.alert("Accès refusé", "Votre rôle ne permet pas de créer cet élément.");
+      Alert.alert(
+        "Accès refusé",
+        isStudentsEntity
+          ? "La création d'élèves passe par Classes → Inscrire un élève."
+          : "Votre rôle ne permet pas de créer cet élément.",
+      );
       return;
     }
 
     if (entity === "assignments" && form.assignmentType === studentClassAssignmentType) {
-      const studentId = parseSelectId(form.studentId);
-      const className = form.className;
-      const student = studentsData.find((item) => matchesEntityId(item, studentId));
-      const classExists = classesData.some((schoolClass) => normalize(schoolClass.name) === normalize(className));
-
-      if (!studentId || !className || !student || !classExists) {
-        Alert.alert("Affectation impossible", "Choisissez un élève et une classe de votre établissement.");
-        return;
-      }
-
-      updateItem("students", {
-        ...student,
-        className,
-        history: [
-          ...((student as any).history ?? []),
-          `Affecté à la classe ${className} le ${formatDate(new Date())}`,
-        ],
-      });
-      setVisible(false);
-      Alert.alert("Affectation enregistrée", `${student.name} est maintenant dans la classe ${className}.`);
+      Alert.alert(
+        "Affectation élèves retirée",
+        "Utilisez Classes → Inscrire un élève. La fiche élève est désormais gérée uniquement par l'API PostgreSQL.",
+      );
       return;
     }
 
@@ -484,7 +571,33 @@ export default function AdminCrudScreen({ route }: Props) {
         ? { ...form, className: lockedClassName }
         : form;
 
-    const nextItem = formToItem(entity, workingForm, editingItem?.id, {
+    const nextFieldErrors: Record<string, string> = {};
+    for (const field of config.fields) {
+      if (shouldHideField(entity, workingForm, field)) continue;
+      const value = workingForm[field.key];
+      if (isRequiredAdminField(entity, field) && !trimField(value)) {
+        nextFieldErrors[field.key] = `${field.label} est obligatoire.`;
+        continue;
+      }
+      if (field.type === "select" || field.type === "date" || field.type === "photo") continue;
+      const type = inferAdminFormFieldType(field);
+      let fieldError = "";
+      if (type === "email") fieldError = validateEmail(value, field.label, false);
+      else if (type === "phone") fieldError = validatePhone(value, field.label, false);
+      else if (type === "amount" && trimField(value)) fieldError = validateAmount(value, field.label, false);
+      if (fieldError) nextFieldErrors[field.key] = fieldError;
+    }
+    if (hasFieldErrors(nextFieldErrors)) {
+      setFieldErrors(nextFieldErrors);
+      return;
+    }
+    setFieldErrors({});
+
+    const normalizedWorkingForm = Object.fromEntries(
+      Object.entries(workingForm).map(([key, value]) => [key, trimField(value)]),
+    );
+
+    const nextItem = formToItem(entity, normalizedWorkingForm, editingItem?.id, {
       studentsData,
       teachersData,
       classesData,
@@ -498,7 +611,7 @@ export default function AdminCrudScreen({ route }: Props) {
     });
 
     if (!nextItem) {
-      Alert.alert("Formulaire incomplet", "Veuillez remplir les champs principaux.");
+      Alert.alert("Formulaire invalide", "Vérifiez les valeurs saisies avant de réessayer.");
       return;
     }
 
@@ -522,101 +635,85 @@ export default function AdminCrudScreen({ route }: Props) {
       return;
     }
 
+    if (entity === "payments") {
+      Alert.alert("Saisie indisponible", DATA_TRUTH_COPY.writePaymentsWebOnly);
+      return;
+    }
+
+    if (entity === "paymentStatuses") {
+      setFormSaving(true);
+      try {
+        await upsertFinancePaymentStatus(
+          {
+            label: nextItem.label,
+            code: nextItem.value || nextItem.code,
+            status: nextItem.status,
+          },
+          editingItem ? String(nextItem.value || nextItem.id) : undefined,
+        );
+        await refreshBackOfficeState();
+        setVisible(false);
+      } catch (error) {
+        Alert.alert(
+          "Statut impossible",
+          error instanceof Error ? error.message : "Erreur de synchronisation PostgreSQL.",
+        );
+      } finally {
+        setFormSaving(false);
+      }
+      return;
+    }
+
+    if (entity === "assignments") {
+      setFormSaving(true);
+      try {
+        if (editingItem?.id) {
+          await updateTeacherAssignment(String(editingItem.id), nextItem);
+        } else {
+          await createTeacherAssignment(nextItem);
+        }
+        await refreshBackOfficeState();
+        setVisible(false);
+      } catch (error) {
+        Alert.alert(
+          "Affectation impossible",
+          error instanceof Error ? error.message : "Erreur de synchronisation PostgreSQL.",
+        );
+      } finally {
+        setFormSaving(false);
+      }
+      return;
+    }
+
+    if (entity === "courses") {
+      setFormSaving(true);
+      try {
+        if (editingItem?.id) {
+          await updateCourse(String(editingItem.id ?? nextItem.id), nextItem);
+        } else {
+          await createCourse(nextItem);
+        }
+        setSelectedCourseClass(String(nextItem.className ?? ""));
+        await refreshBackOfficeState();
+        setVisible(false);
+      } catch (error) {
+        Alert.alert(
+          "Cours impossible",
+          error instanceof Error ? error.message : "Erreur de synchronisation PostgreSQL.",
+        );
+      } finally {
+        setFormSaving(false);
+      }
+      return;
+    }
+
     if (editingItem) {
       updateItem(entity as any, nextItem as any);
     } else {
       createItem(entity as any, nextItem as any);
     }
 
-    if (entity === "users") {
-      const userItem = nextItem as UserAccount;
-      if (isTeacherUserRole(userItem.role)) {
-        const skips: TeacherIdentitySkip[] = [];
-        let syncedTeachers;
-        try {
-          syncedTeachers = upsertTeacherFromUser(teachersData, userItem, {
-            assignments: assignmentsData,
-            skips,
-          });
-        } catch (error: any) {
-          if (error?.code === "TEACHER_CANON_AMBIGUOUS") {
-            Alert.alert(
-              "Ambiguïté enseignant",
-              `${String(error.message)}\n\nCode: TEACHER_CANON_AMBIGUOUS`,
-            );
-            return;
-          }
-          throw error;
-        }
-
-        const uiResult = applyTeacherSyncUiAfterUserSave({
-          teachersBefore: teachersData,
-          user: userItem,
-          syncedTeachers,
-          skips,
-          createTeacher: (teacher) => createItem("teachers", teacher as any),
-          updateTeacher: (teacher) => updateItem("teachers", teacher as any),
-        });
-
-        // AC-M7 UI : skip multi-twin → alerte + arrêt immédiat (0 create/update fiche)
-        if (uiResult.stopped) {
-          Alert.alert("Identité enseignant", uiResult.operatorMessage ?? "Mutation enseignant bloquée.");
-          setVisible(false);
-          return;
-        }
-      }
-    }
-
-    if (entity === "assignments") {
-      syncTeacherCourseAssignment(nextItem, editingItem);
-    }
-
-    if (entity === "courses") {
-      setSelectedCourseClass(String(nextItem.className ?? ""));
-      syncCourseTeacherAssignment(nextItem, editingItem);
-    }
-
     setVisible(false);
-  };
-
-  const syncCourseTeacherAssignment = (course: any, previousCourse?: any) => {
-    if (previousCourse?.teacherId) {
-      removeTeacherCourseAssignment({
-        teacherId: previousCourse.teacherId,
-        className: previousCourse.className,
-        course: previousCourse.name,
-      });
-      const previousAssignment = assignmentsData.find(
-        (assignment: any) =>
-          normalize(assignment.className) === normalize(previousCourse.className) &&
-          normalize(assignment.course) === normalize(previousCourse.name)
-      );
-      if (previousAssignment?.id) {
-        deleteItem("assignments", String(previousAssignment.id));
-      }
-    }
-
-    const existingAssignment = assignmentsData.find(
-      (assignment: any) =>
-        normalize(assignment.className) === normalize(course.className) &&
-        normalize(assignment.course) === normalize(course.name)
-    );
-
-    const assignmentPayload = {
-      id: existingAssignment?.id ?? createInternalId("ASSIGN"),
-      schoolCode: course.schoolCode,
-      teacherId: course.teacherId,
-      className: course.className,
-      course: course.name,
-    };
-
-    if (existingAssignment) {
-      updateItem("assignments", assignmentPayload);
-    } else {
-      createItem("assignments", assignmentPayload);
-    }
-
-    syncTeacherCourseAssignment(assignmentPayload, existingAssignment);
   };
 
   const confirmDelete = (item: any) => {
@@ -631,72 +728,32 @@ export default function AdminCrudScreen({ route }: Props) {
         text: "Supprimer",
         style: "destructive",
         onPress: () => {
-          if (entity === "classes") {
-            const schoolCode = session?.user?.schoolCode ?? session?.school?.code;
-            const stateForDelete = {
-              students: studentsData,
-              courses: coursesData,
-              assignments: assignmentsData,
-              classes: classesData,
-              academicConfigs: academicConfigData?.schoolCode
-                ? { [academicConfigData.schoolCode]: academicConfigData }
-                : {},
-            };
-            const result = removeSchoolClassFromState(stateForDelete, item, schoolCode);
-            if (!result.ok) {
-              Alert.alert("Suppression refusée", result.error);
-              return;
-            }
-          }
-
-          deleteItem(entity, item.id);
           if (entity === "assignments") {
-            removeTeacherCourseAssignment(item);
+            void deleteTeacherAssignment(String(item.id))
+              .then(() => refreshBackOfficeState())
+              .catch((error) =>
+                Alert.alert(
+                  "Retrait impossible",
+                  error instanceof Error ? error.message : "Erreur de synchronisation PostgreSQL.",
+                ),
+              );
+            return;
           }
+          if (entity === "courses") {
+            void deleteCourse(String(item.id))
+              .then(() => refreshBackOfficeState())
+              .catch((error) =>
+                Alert.alert(
+                  "Suppression impossible",
+                  error instanceof Error ? error.message : "Erreur de synchronisation PostgreSQL.",
+                ),
+              );
+            return;
+          }
+          deleteItem(entity, item.id);
         },
       },
     ]);
-  };
-
-  const syncTeacherCourseAssignment = (assignment: any, previousAssignment?: any) => {
-    if (previousAssignment) {
-      removeTeacherCourseAssignment(previousAssignment);
-    }
-
-    const teacher = teachersData.find((item) => matchesEntityId(item, assignment.teacherId));
-    if (!teacher) return;
-
-    const nextTeacherAssignments = [
-      ...(teacher.assignments ?? []).filter(
-        (item: any) =>
-          normalize(item.className) !== normalize(assignment.className) ||
-          normalize(item.course) !== normalize(assignment.course)
-      ),
-      { className: assignment.className, course: assignment.course, teacherId: teacher.id },
-    ];
-
-    updateItem("teachers", {
-      ...teacher,
-      assignments: nextTeacherAssignments,
-      assignedClasses: [...new Set(nextTeacherAssignments.map((item: any) => item.className))],
-    });
-  };
-
-  const removeTeacherCourseAssignment = (assignment: any) => {
-    const teacher = teachersData.find((item) => matchesEntityId(item, assignment.teacherId));
-    if (!teacher) return;
-
-    const nextTeacherAssignments = (teacher.assignments ?? []).filter(
-      (item: any) =>
-        normalize(item.className) !== normalize(assignment.className) ||
-        normalize(item.course) !== normalize(assignment.course)
-    );
-
-    updateItem("teachers", {
-      ...teacher,
-      assignments: nextTeacherAssignments,
-      assignedClasses: [...new Set(nextTeacherAssignments.map((item: any) => item.className))],
-    });
   };
 
   const resetUserPassword = async (item: any) => {
@@ -805,6 +862,35 @@ export default function AdminCrudScreen({ route }: Props) {
       enabled
     );
   };
+
+  if (entity === "classes") {
+    return (
+      <View style={[styles.screen, { padding: 24, justifyContent: "center" }]}>
+        <Text style={styles.title}>Classes</Text>
+        <Text style={[styles.subtitle, { marginTop: 12, marginBottom: 20 }]}>
+          {LEGACY_CLASSES_CRUD_RETIRED_MESSAGE}
+        </Text>
+        <TouchableOpacity
+          activeOpacity={0.85}
+          style={styles.addButton}
+          onPress={() => navigation.navigate("Classes")}
+        >
+          <Text style={{ color: "#FFFFFF", fontWeight: "600" }}>Ouvrir Classes (lecture)</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
+  if (entity === "schools") {
+    return (
+      <View style={[styles.screen, { padding: 24, justifyContent: "center" }]}>
+        <Text style={styles.title}>Établissements</Text>
+        <Text style={[styles.subtitle, { marginTop: 12, marginBottom: 20 }]}>
+          {LEGACY_SCHOOLS_CRUD_RETIRED_MESSAGE}
+        </Text>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.screen}>
@@ -916,61 +1002,18 @@ export default function AdminCrudScreen({ route }: Props) {
           </View>
         )}
 
-        {entity === "schools" && (
-          <View style={styles.filtersCard}>
-            <View style={styles.searchBox}>
-              <Ionicons name="search-outline" size={18} color="#64748B" />
-              <TextInput
-                value={searchQuery}
-                onChangeText={setSearchQuery}
-                placeholder="Rechercher nom, code, ville ou pays"
-                style={styles.searchInput}
-              />
-            </View>
-
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterRow}>
-              {["Tous", ...new Set(schoolsData.map((item) => item.type).filter(Boolean))].map((type) => (
-                <TouchableOpacity
-                  key={`type-${type}`}
-                  activeOpacity={0.85}
-                  style={[styles.filterPill, schoolTypeFilter === type && styles.filterPillActive]}
-                  onPress={() => setSchoolTypeFilter(type)}
-                >
-                  <Text style={[styles.filterText, schoolTypeFilter === type && styles.filterTextActive]}>
-                    {type}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterRow}>
-              {["Tous", ...new Set(schoolsData.map((item) => item.country).filter(Boolean))].map((country) => (
-                <TouchableOpacity
-                  key={`country-${country}`}
-                  activeOpacity={0.85}
-                  style={[styles.filterPill, schoolCountryFilter === country && styles.filterPillActive]}
-                  onPress={() => setSchoolCountryFilter(country)}
-                >
-                  <Text style={[styles.filterText, schoolCountryFilter === country && styles.filterTextActive]}>
-                    {country}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-          </View>
-        )}
-
         {entity === "users" && (
           <View style={styles.filtersCard}>
-            <View style={styles.searchBox}>
-              <Ionicons name="search-outline" size={18} color="#64748B" />
-              <TextInput
-                value={searchQuery}
-                onChangeText={setSearchQuery}
-                placeholder="Rechercher nom, téléphone ou identifiant"
-                style={styles.searchInput}
-              />
-            </View>
+            <FormField
+              label="Recherche"
+              hideVisibleLabel
+              type="search"
+              leading={<Ionicons name="search-outline" size={18} color="#64748B" />}
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+              placeholder="Ex. nom, téléphone ou identifiant"
+              accessibilityLabel="Rechercher nom, téléphone ou identifiant"
+            />
 
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterRow}>
               {["Tous", ...getManageableSchoolUserRoles()].map((role) => (
@@ -1096,6 +1139,20 @@ export default function AdminCrudScreen({ route }: Props) {
               </View>
             ))}
           </View>
+        ) : entity === "payments" && (paymentsSnapshot.status !== "success" || visibleItems.length === 0) ? (
+          <QueryStateView
+            snapshot={
+              paymentsSnapshot.status === "success" && visibleItems.length === 0
+                ? { status: "empty", data: [] }
+                : paymentsSnapshot
+            }
+            emptyMessage={DATA_TRUTH_COPY.emptyPayments}
+            errorMessage={DATA_TRUTH_COPY.errorPayments}
+            offlineMessage={DATA_TRUTH_COPY.offlinePayments}
+            emptyTestId={DATA_TRUTH_TEST_IDS.paymentsEmpty}
+            errorTestId={DATA_TRUTH_TEST_IDS.paymentsError}
+            onRetry={() => void loadPayments()}
+          />
         ) : (
           visibleItems.map((item: any) => (
             <View key={item.id} style={styles.card}>
@@ -1128,24 +1185,30 @@ export default function AdminCrudScreen({ route }: Props) {
       </ScrollView>
 
       <Modal visible={visible} transparent animationType="slide" onRequestClose={() => setVisible(false)}>
-        <View style={styles.modalBackdrop}>
+        <KeyboardAvoidingView style={styles.modalBackdrop} behavior={Platform.OS === "ios" ? "padding" : "padding"}>
           <View style={styles.modalCard}>
             <Text style={styles.modalTitle}>{editingItem ? "Modifier" : config.addLabel}</Text>
 
-            <ScrollView style={styles.formScroll} showsVerticalScrollIndicator={false}>
+            <ScrollView style={styles.formScroll} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
               {config.fields.map((field) => (
                 shouldHideField(entity, form, field) ? null : (
                 <View key={field.key} style={styles.fieldGroup}>
-                  <Text style={styles.fieldLabel}>{field.label}</Text>
+                  {field.type === "select" || field.type === "date" || field.type === "photo" ? (
+                    <FieldLabel
+                      label={field.label}
+                      required={isRequiredAdminField(entity, field)}
+                      optional={isOptionalAdminField(field) && !isRequiredAdminField(entity, field)}
+                    />
+                  ) : null}
                   {field.type === "select" ? (
                     entity === "students" && lockedClassName && field.key === "className" ? (
-                      <View style={[styles.selectInput, styles.selectInputLocked]}>
+                      <View style={[styles.selectInput, styles.selectInputLocked, fieldErrors[field.key] && styles.selectInputInvalid]}>
                         <Text style={styles.selectText}>{lockedClassName}</Text>
                         <Ionicons name="lock-closed-outline" size={16} color="#94A3B8" />
                       </View>
                     ) : (
                       <TouchableOpacity
-                        style={styles.selectInput}
+                        style={[styles.selectInput, fieldErrors[field.key] && styles.selectInputInvalid]}
                         activeOpacity={0.85}
                         onPress={() => setSelectField(field)}
                       >
@@ -1162,7 +1225,7 @@ export default function AdminCrudScreen({ route }: Props) {
                     )
                   ) : field.type === "date" ? (
                     <TouchableOpacity
-                      style={styles.selectInput}
+                      style={[styles.selectInput, fieldErrors[field.key] && styles.selectInputInvalid]}
                       activeOpacity={0.85}
                       onPress={() => {
                         setCalendarMonth(getInitialCalendarDate(field, form[field.key]));
@@ -1181,7 +1244,7 @@ export default function AdminCrudScreen({ route }: Props) {
                       <Ionicons name="calendar-outline" size={18} color="#64748B" />
                     </TouchableOpacity>
                   ) : field.type === "photo" ? (
-                    <View style={styles.photoField}>
+                    <View style={[styles.photoField, fieldErrors[field.key] && styles.selectInputInvalid]}>
                       {form[field.key] ? (
                         <View style={styles.photoPreviewRow}>
                           <Image source={{ uri: form[field.key] }} style={styles.photoPreview} />
@@ -1195,6 +1258,8 @@ export default function AdminCrudScreen({ route }: Props) {
                             style={styles.photoRemoveButton}
                             activeOpacity={0.85}
                             onPress={() => setForm((current) => ({ ...current, [field.key]: "" }))}
+                            accessibilityRole="button"
+                            accessibilityLabel="Retirer la photo"
                           >
                             <Ionicons name="close" size={18} color="#DC2626" />
                           </TouchableOpacity>
@@ -1213,29 +1278,57 @@ export default function AdminCrudScreen({ route }: Props) {
                       </TouchableOpacity>
                     </View>
                   ) : (
-                    <TextInput
+                    <FormField
+                      label={field.label}
+                      required={isRequiredAdminField(entity, field)}
+                      optional={isOptionalAdminField(field) && !isRequiredAdminField(entity, field)}
+                      type={inferAdminFormFieldType(field)}
                       value={form[field.key] ?? ""}
-                      onChangeText={(value) => setForm((current) => ({ ...current, [field.key]: value }))}
+                      onChangeText={(value) => {
+                        setForm((current) => ({ ...current, [field.key]: value }));
+                        setFieldErrors((current) => {
+                          if (!current[field.key]) return current;
+                          const next = { ...current };
+                          delete next[field.key];
+                          return next;
+                        });
+                      }}
                       placeholder={field.placeholder}
-                      keyboardType={field.keyboardType ?? "default"}
-                      style={styles.input}
+                      error={fieldErrors[field.key]}
                     />
                   )}
+                  {fieldErrors[field.key] && (field.type === "select" || field.type === "date" || field.type === "photo") ? (
+                    <Text style={styles.fieldError} accessibilityRole="alert">
+                      {fieldErrors[field.key]}
+                    </Text>
+                  ) : null}
                 </View>
                 )
               ))}
             </ScrollView>
 
             <View style={styles.modalActions}>
-              <TouchableOpacity style={styles.cancelButton} onPress={() => setVisible(false)}>
+              <TouchableOpacity
+                style={styles.cancelButton}
+                onPress={() => setVisible(false)}
+                accessibilityRole="button"
+                accessibilityLabel="Fermer le formulaire"
+              >
                 <Text style={styles.cancelText}>Annuler</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={styles.saveButton} onPress={save}>
+              <TouchableOpacity
+                style={[styles.saveButton, formSaving && styles.disabledButton]}
+                onPress={() => void save()}
+                disabled={formSaving}
+                accessibilityRole="button"
+                accessibilityLabel={editingItem ? "Enregistrer les modifications" : "Enregistrer"}
+                accessibilityState={{ busy: formSaving, disabled: formSaving }}
+              >
                 <Text style={styles.saveText}>Enregistrer</Text>
               </TouchableOpacity>
             </View>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       <Modal
@@ -1269,24 +1362,31 @@ export default function AdminCrudScreen({ route }: Props) {
                   activeOpacity={0.85}
                   onPress={() => {
                     if (selectField) {
+                      const selectedKey = selectField.key;
                       setForm((current) => ({
                         ...current,
-                        [selectField.key]: option,
-        ...(entity === "assignments" && selectField.key === "assignmentType"
+                        [selectedKey]: option,
+        ...(entity === "assignments" && selectedKey === "assignmentType"
           ? option === studentClassAssignmentType
             ? { teacherId: "", course: "" }
             : { studentId: "" }
           : {}),
-        ...(entity === "users" && selectField.key === "role"
+        ...(entity === "users" && selectedKey === "role"
           ? {
               ...getRoleDefaults(option, form.schoolCode || getDefaultSchoolCode(schoolsData, session)),
               identifier: generateUserIdentifier(usersData, option),
             }
           : {}),
-                        ...(entity === "assignments" && selectField.key === "className"
+                        ...(entity === "assignments" && selectedKey === "className"
                           ? { course: "" }
                           : {}),
                       }));
+                      setFieldErrors((current) => {
+                        if (!current[selectedKey]) return current;
+                        const next = { ...current };
+                        delete next[selectedKey];
+                        return next;
+                      });
                     }
                     setSelectField(null);
                   }}
@@ -1334,6 +1434,9 @@ export default function AdminCrudScreen({ route }: Props) {
               <TouchableOpacity
                 style={styles.calendarNav}
                 onPress={() => setDateField(null)}
+                accessibilityRole="button"
+                accessibilityLabel="Fermer le calendrier"
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
               >
                 <Ionicons name="close" size={20} color="#64748B" />
               </TouchableOpacity>
@@ -1406,7 +1509,14 @@ export default function AdminCrudScreen({ route }: Props) {
                         style={[styles.dayCell, !day && styles.dayCellEmpty]}
                         onPress={() => {
                           if (day && dateField) {
-                            setForm((current) => ({ ...current, [dateField.key]: formatDate(day) }));
+                            const selectedKey = dateField.key;
+                            setForm((current) => ({ ...current, [selectedKey]: formatDate(day) }));
+                            setFieldErrors((current) => {
+                              if (!current[selectedKey]) return current;
+                              const next = { ...current };
+                              delete next[selectedKey];
+                              return next;
+                            });
                           }
                           setDateField(null);
                         }}
@@ -1463,14 +1573,10 @@ function getInitialForm(entity: AdminEntity, context?: any): Record<string, stri
 
   if (entity === "users") {
     const schoolCode = getDefaultSchoolCode(context?.schoolsData ?? [], context?.session);
-    const role = "Secrétaire";
     return {
       gender: "Non renseigné",
-      role,
-      ...getRoleDefaults(role, schoolCode),
       schoolCode,
       accessChannel: "Application",
-      identifier: generateUserIdentifier(context?.usersData ?? [], role),
       status: "Actif",
       temporaryPassword: generateTemporaryPassword(),
       createdBy: context?.session?.user?.name ?? "Administrateur",
@@ -1483,11 +1589,16 @@ function getInitialForm(entity: AdminEntity, context?: any): Record<string, stri
 function formToItem(entity: AdminEntity, form: Record<string, string>, id?: string, context?: any) {
   const nextId = id ?? createInternalId(entity);
   const year = String(new Date().getFullYear());
-  const schoolCode = context?.schoolsData?.[0]?.code ?? "CD-2026-0001";
+  const schoolCode = context?.schoolsData?.[0]?.code ?? context?.schoolsData?.[0]?.loginCode ?? "";
 
   if (entity === "students") {
+    // PR1 : pas de création AdminCrud — inscription via Classes uniquement.
+    if (!id) {
+      return null;
+    }
     if (!form.name || !form.className) return null;
-    const publicId = form.matricule || generateLearnerPublicId(schoolCode, context?.studentsData ?? []);
+    const publicId = String(form.matricule ?? "").trim();
+    if (!publicId) return null;
     return {
       id: nextId,
       publicId,
@@ -1586,13 +1697,13 @@ function formToItem(entity: AdminEntity, form: Record<string, string>, id?: stri
     if (!form.studentId || !form.amount) return null;
     return {
       id: nextId,
-      publicId: form.publicId || generatePublicId("PAY", year, context?.paymentsData ?? [], 6),
       schoolCode,
       studentId: form.studentId,
       amount: Number(form.amount) || 0,
       date: form.date || formatDate(new Date()),
       status: form.status || "PAYE",
       method: form.method || "Mobile Money",
+      feeType: form.feeType || "Inscription",
     };
   }
 
@@ -1680,52 +1791,26 @@ function formToItem(entity: AdminEntity, form: Record<string, string>, id?: stri
 
   if (entity === "users") {
     const userSchoolCode = form.schoolCode || schoolCodeFromContext(context);
-    const defaults = getRoleDefaults(form.role, userSchoolCode);
     const isCreating = !id;
     const generatedTemporaryPassword = isCreating ? form.temporaryPassword || generateTemporaryPassword() : "";
-    if (
-      !form.lastName ||
-      !form.firstName ||
-      !form.role ||
-      isPlatformUserRole(form.role) ||
-      !userSchoolCode
-    ) {
+    if (!form.lastName || !form.firstName || !userSchoolCode) {
       return null;
     }
 
-    const permissions = rolePermissions[form.role] ?? [];
-    const publicId = form.publicId || generatePublicId("USR", year, context?.usersData ?? [], 6);
-    const identifier = form.identifier?.trim() || generateUserIdentifier(context?.usersData ?? [], form.role);
-
     return {
-      id: id ?? `USER-${Date.now()}`,
-      publicId,
       lastName: form.lastName,
       firstName: form.firstName,
       gender: form.gender,
       phone: form.phone,
-      email: "",
-      role: form.role,
-      secondaryRoles: splitList(form.secondaryRoles),
-      scopeLevel: form.scopeLevel || defaults.scopeLevel,
-      countryScope: form.countryScope ?? "",
+      email: form.email ?? "",
       schoolCode: userSchoolCode,
-      accessChannel: form.accessChannel || defaults.accessChannel,
-      identifier,
+      accessChannel: form.accessChannel || "Application",
       status: form.status || "Actif",
-      permissions,
       temporaryPassword: isCreating ? generatedTemporaryPassword : form.temporaryPassword ?? "",
       ...(isCreating
-        ? { password: generatedTemporaryPassword, pin: generatedTemporaryPassword, mustChangePassword: true }
+        ? { mustChangePassword: true }
         : { mustChangePassword: form.mustChangePassword === "true" }),
       photoUrl: form.photoUrl ?? "",
-      createdAt: form.createdAt || formatDate(new Date()),
-      lastLoginAt: form.lastLoginAt ?? "",
-      createdBy: form.createdBy || context?.session?.user?.name || "Administrateur",
-      history: [
-        ...(splitList(form.history).length ? splitList(form.history) : []),
-        `${id ? "Compte modifié" : `Compte créé avec identifiant ${identifier} et mot de passe temporaire ${generatedTemporaryPassword}`} le ${formatDate(new Date())}`,
-      ],
     };
   }
 
@@ -1768,7 +1853,11 @@ function formToItem(entity: AdminEntity, form: Record<string, string>, id?: stri
 function getPrimaryText(entity: AdminEntity, item: any) {
   if (entity === "countries") return `${item.name} • ${item.code}`;
   if (entity === "subscriptions") return `${item.schoolCode} • ${item.plan}`;
-  if (entity === "payments") return `${item.amount?.toLocaleString?.() ?? item.amount} FC`;
+  if (entity === "payments") {
+    const total = paymentTotal(item);
+    const reference = paymentReference(item);
+    return `${reference} · ${item.studentName || item.studentId} · ${formatFinanceAmount(total, item.currency)}`;
+  }
   if (entity === "paymentStatuses") return item.label;
   if (entity === "schools") return `${item.name} • ${item.publicId ?? item.code}`;
   if (entity === "users") return `${item.firstName} ${item.lastName}`;
@@ -1795,7 +1884,7 @@ function getSecondaryText(
       assignments: context?.assignmentsData ?? [],
       classes: context?.classesData ?? [],
     });
-    return `ID : ${item.publicId ?? item.id} • ${item.mainSubject ?? "Matière non renseignée"} • Classes : ${classes} • ${item.phone}`;
+    return `ID : ${item.publicId ?? item.id} • ${item.mainSubject ?? "Cours non renseigné"} • Classes : ${classes} • ${item.phone}`;
   }
   if (entity === "classes") return `${item.publicId ?? item.id} • ${item.level ?? "Niveau non renseigné"} • ${item.track ?? "Filière non renseignée"} • Responsable : ${item.teacherId || "Non assigné"}`;
   if (entity === "countries") return `${item.phonePrefix} • ${item.currency} • ${item.timezone} • ${item.status}`;
@@ -1809,7 +1898,9 @@ function getSecondaryText(
   if (entity === "users") {
     return `${item.role} • ${item.accessChannel} • ${item.status} • Identifiant : ${item.identifier}${item.temporaryPassword ? ` • Mot de passe temporaire : ${item.temporaryPassword}` : ""}`;
   }
-  if (entity === "payments") return `${item.publicId ?? item.id} • Élève ${item.studentId} • ${item.date} • ${item.status} • ${item.method ?? "Mode non renseigné"}`;
+  if (entity === "payments") {
+    return `${paymentItemsDetail(item)} • ${paymentMethodLabel(item)} • ${paymentStatusLabel(item.status)}`;
+  }
   if (entity === "messages") {
     return `${item.direction} • ${item.parentPhone} • ${item.status} • ${item.date}`;
   }
@@ -2109,26 +2200,9 @@ function generateTeacherPublicId(schoolCode: string, teachersData: any[]) {
   return `${normalizedSchool}-${identifier}`;
 }
 
-function generateLearnerPublicId(
-  schoolCode: string,
-  studentsData: any[],
-  profile: "ELE" | "ETU" = "ELE"
-) {
-  const next = getNextSequence(
-    studentsData,
-    new RegExp(`^(?:${escapeRegExp(schoolCode)}-)?${profile}-(\\d+)$`, "i")
-  );
-  return `${profile}-${String(next).padStart(4, "0")}`;
-}
-
-function generateSchoolCode(country: string, year: string, schoolsData: any[]) {
-  const countryCode = getCountryCode(country);
-  const next = getNextSequence(
-    schoolsData,
-    new RegExp(`^${countryCode}-${year}-(\\d+)$`, "i"),
-    "code"
-  );
-  return `${countryCode}-${year}-${String(next).padStart(4, "0")}`;
+/** Le client ne génère plus de code établissement. PostgreSQL alloue login_code V2. */
+function generateSchoolCode(_country: string, _year: string, _schoolsData: any[]) {
+  return "";
 }
 
 function getNextSequence(items: any[], pattern: RegExp, field = "publicId") {
@@ -2238,13 +2312,6 @@ function getDelegablePermissionsForFeature(session: any, feature: string) {
     .map((action) => `${feature}:${action.key}`);
 }
 
-function isActiveUserAccount(item: any) {
-  const status = normalize(item?.status)
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "");
-  return !["suspendu", "desactive", "disabled", "inactive", "inactif"].includes(status);
-}
-
 function getUserInitials(item: any) {
   const firstName = String(item?.firstName ?? "").trim();
   const lastName = String(item?.lastName ?? "").trim();
@@ -2265,7 +2332,11 @@ function getRoleDefaults(role?: string, schoolCode = "") {
 }
 
 function generateTemporaryPassword() {
-  return `SF-${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
+  const bytes = Crypto.getRandomValues(new Uint8Array(16));
+  const token = Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0"))
+    .join("")
+    .toUpperCase();
+  return `SF-${token}-${String(bytes[0]).padStart(3, "0")}`;
 }
 
 function generateUserIdentifier(usersData: any[], role?: string) {
@@ -2288,13 +2359,13 @@ function getDefaultSchoolCode(schoolsData: any[], session?: any) {
   const sessionSchool = session?.user?.schoolCode && session.user.schoolCode !== "*"
     ? session.user.schoolCode
     : session?.school?.code;
-  return sessionSchool || schoolsData[0]?.code || "CD-2026-0001";
+  return sessionSchool || schoolsData[0]?.code || schoolsData[0]?.loginCode || "";
 }
 
 function schoolCodeFromContext(context?: any) {
   return context?.session
     ? getDefaultSchoolCode(context?.schoolsData ?? [], context.session)
-    : context?.schoolsData?.[0]?.code ?? "CD-2026-0001";
+    : context?.schoolsData?.[0]?.code ?? context?.schoolsData?.[0]?.loginCode ?? "";
 }
 
 function formatSelectOptionLabel(key: string, option: string): string {
@@ -2308,7 +2379,7 @@ function getSelectOptions(
   studentsData: any[],
   teachersData: any[],
   classesData: any[],
-  coursesData: any[],
+  _coursesData: any[],
   paymentStatusesData: any[],
   schoolsData: any[],
   usersData: any[],
@@ -2318,24 +2389,15 @@ function getSelectOptions(
   editingId?: string
 ) {
   if (key === "level") {
-    return academicConfigData?.levels?.length ? academicConfigData.levels : DEFAULT_LEVELS;
+    return Array.isArray(academicConfigData?.levels) ? academicConfigData.levels : [];
   }
 
   if (key === "track") {
-    return academicConfigData?.tracks?.length ? academicConfigData.tracks : DEFAULT_TRACKS;
+    return Array.isArray(academicConfigData?.tracks) ? academicConfigData.tracks : [];
   }
 
   if (key === "mainSubject" || (key === "name" && entity === "courses") || (key === "course" && entity === "assignments")) {
-    const configured = academicConfigData?.subjects?.length ? academicConfigData.subjects : DEFAULT_SUBJECTS;
-    if (entity === "assignments" && key === "course") {
-      const selectedClass = normalize(form.className);
-      const fromCourses = coursesData
-        .filter((course) => !selectedClass || normalize(course.className) === selectedClass)
-        .map((course) => course.name)
-        .filter(Boolean);
-      return [...new Set([...configured, ...fromCourses])].sort((a, b) => a.localeCompare(b, "fr"));
-    }
-    return configured;
+    return Array.isArray(academicConfigData?.subjects) ? academicConfigData.subjects : [];
   }
 
   if (key === "gender") {
@@ -2439,7 +2501,7 @@ function getSelectOptions(
   }
 
   if (key === "name" && entity === "classes") {
-    const configured = academicConfigData?.classNames?.length ? academicConfigData.classNames : DEFAULT_CLASS_NAMES;
+    const configured = Array.isArray(academicConfigData?.classNames) ? academicConfigData.classNames : [];
     const taken = new Set(
       classesData
         .filter((schoolClass) => String(schoolClass.id ?? "") !== String(editingId ?? ""))
@@ -2463,7 +2525,7 @@ function getSelectOptions(
   }
 
   if (key === "className") {
-    const configured = academicConfigData?.classNames?.length ? academicConfigData.classNames : DEFAULT_CLASS_NAMES;
+    const configured = Array.isArray(academicConfigData?.classNames) ? academicConfigData.classNames : [];
     const fromClasses = classesData.map((schoolClass) => schoolClass.name).filter(Boolean);
     return [...new Set([...configured, ...fromClasses])].sort((a, b) => a.localeCompare(b, "fr"));
   }
@@ -3043,6 +3105,7 @@ const styles = StyleSheet.create({
   },
   fieldGroup: { marginBottom: 12 },
   fieldLabel: { color: "#334155", fontSize: 12, fontWeight: "900", marginBottom: 6 },
+  fieldError: { color: "#B91C1C", fontWeight: "800", marginTop: 6 },
   input: {
     borderWidth: 1,
     borderColor: "#E2E8F0",
@@ -3066,6 +3129,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#F8FAFC",
     borderColor: "#CBD5E1",
   },
+  selectInputInvalid: { borderColor: "#DC2626" },
   selectText: {
     color: "#0F172A",
     fontWeight: "800",
@@ -3148,6 +3212,7 @@ const styles = StyleSheet.create({
   },
   cancelText: { color: "#334155", fontWeight: "900" },
   saveText: { color: "#FFFFFF", fontWeight: "900" },
+  disabledButton: { opacity: 0.5 },
   selectorBackdrop: {
     flex: 1,
     backgroundColor: "rgba(15, 23, 42, 0.45)",
@@ -3184,8 +3249,10 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
   calendarNav: {
-    width: 38,
-    height: 38,
+    minWidth: 44,
+    minHeight: 44,
+    width: 44,
+    height: 44,
     borderRadius: 14,
     backgroundColor: "#F1F5F9",
     alignItems: "center",

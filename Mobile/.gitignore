@@ -1,4 +1,17 @@
 .expo/
 .env.local
+.env*
+!.env.example
 release.keystore
+*.jks
+*.keystore
+credentials.json
+dist/
+*.aab
+*.apk
+android/
+ios/
+*-firebase-adminsdk-*.json
+fcm-service-account*.json
 android/keystore.properties
+artifacts/

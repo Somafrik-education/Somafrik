@@ -1,11 +1,26 @@
 const { BusinessError } = require("./authService");
+const {
+  findCanonicalCountry,
+  COUNTRY_NOT_FOUND_CODE,
+  COUNTRY_NOT_FOUND_MESSAGE,
+} = require("../lib/schoolsManagement");
 const { schoolMatchesCountryScope } = require("../lib/countryScope");
 const {
-  generateSchoolCode,
+  allocateNextSchoolLoginCode,
+  generateInternalSchoolAlias,
+  isLegacySchoolCodeFormat,
+  matchesSchoolLookup,
+  publicSchoolCodeFromRecord,
+} = require("../lib/schoolCodeV2");
+const {
   filterActiveSchools,
+  withActiveStudentCounts,
   validateSchoolPayload,
   findPotentialDuplicates,
+  classifySchoolDuplicates,
   isSchoolDeleted,
+  DUPLICATE_STRONG,
+  DUPLICATE_CONTACT,
 } = require("../lib/schoolModule");
 
 const SUPER_ADMIN_ROLES = new Set(["Super Administrateur Somafrik", "Super Administrateur OKAFRIK"]);
@@ -34,7 +49,7 @@ function scopeEstablishments(state, principal) {
     return schools.filter((school) => schoolMatchesCountryScope(school, scope));
   }
   const code = String(principal.schoolCode ?? "").trim().toUpperCase();
-  return schools.filter((school) => String(school.code ?? "").trim().toUpperCase() === code);
+  return schools.filter((school) => matchesSchoolLookup(school, code));
 }
 
 function assertCanAccessEstablishment(principal, school) {
@@ -116,30 +131,49 @@ function appendAudit(state, entry) {
   return [row, ...log].slice(0, 200);
 }
 
-function findCountryByName(state, countryName) {
-  const name = String(countryName ?? "").trim().toLowerCase();
-  return (state.countries ?? []).find(
-    (country) => String(country.name ?? "").trim().toLowerCase() === name,
-  );
+function assertCanonicalCountry(school, state) {
+  const canonical = findCanonicalCountry(state.countries, school.countryCode, school.country);
+  if (!canonical) {
+    const error = new BusinessError(400, COUNTRY_NOT_FOUND_MESSAGE);
+    error.code = COUNTRY_NOT_FOUND_CODE;
+    throw error;
+  }
+  school.country = canonical.name;
+  school.countryCode = canonical.code;
+  return canonical;
 }
 
 function hydrateSchoolPayload(payload, state, { isNew = false } = {}) {
   const schools = state.schools ?? [];
-  let country = payload.country;
-  let countryCode = payload.countryCode;
-  const countryRow = findCountryByName(state, country);
-  if (countryRow) {
-    country = countryRow.name;
-    countryCode = countryRow.code;
+  const canonical = findCanonicalCountry(state.countries, payload.countryCode, payload.country);
+  const country = canonical?.name ?? payload.country;
+  const countryCode = canonical?.code ?? payload.countryCode;
+  const requested = String(payload.code ?? "").trim().toUpperCase();
+  const name = String(payload.name ?? "").trim();
+
+  let code = requested;
+  let loginCode = String(payload.loginCode ?? payload.login_code ?? payload.publicId ?? "").trim().toUpperCase();
+  if (isNew) {
+    // Client/Web/Mobile n'allouent plus. En mémoire (E2E / fallback) on
+    // reflète le trigger PG : SCH-* interne + login_code V2. Jamais CC-YYYY-NNNN.
+    code = generateInternalSchoolAlias();
+    if (!isLegacySchoolCodeFormat(requested)) {
+      loginCode = allocateNextSchoolLoginCode(schools, {
+        countryIso: countryCode,
+        schoolName: name,
+      });
+    }
+  } else if (!code) {
+    code = String(payload.legacySchoolCode ?? "").trim().toUpperCase();
   }
-  const code =
-    payload.code?.trim().toUpperCase() ||
-    (countryCode && isNew ? generateSchoolCode(countryCode, schools) : "");
 
   return {
     ...payload,
+    requestedCode: requested,
     code,
-    name: String(payload.name ?? "").trim(),
+    loginCode,
+    publicId: loginCode || payload.publicId || code,
+    name,
     type: payload.type ?? "Collège",
     country,
     countryCode,
@@ -158,13 +192,12 @@ function hydrateSchoolPayload(payload, state, { isNew = false } = {}) {
 
 class EstablishmentService {
   list(state, principal) {
-    return scopeEstablishments(state, principal);
+    const visibleSchools = scopeEstablishments(state, principal);
+    return withActiveStudentCounts(visibleSchools, state.students ?? []);
   }
 
   get(code, state, principal) {
-    const school = (state.schools ?? []).find(
-      (item) => String(item.code ?? "").trim().toUpperCase() === String(code).trim().toUpperCase(),
-    );
+    const school = (state.schools ?? []).find((item) => matchesSchoolLookup(item, code));
     assertCanReadEstablishment(principal, school);
     return school;
   }
@@ -196,13 +229,36 @@ class EstablishmentService {
   create(payload, state, principal, { force = false } = {}) {
     assertCanManageEstablishments(principal);
     const school = hydrateSchoolPayload(payload, state, { isNew: true });
+    assertCanonicalCountry(school, state);
     const error = validateSchoolPayload(school, state.schools ?? [], { isNew: true });
     if (error) throw new BusinessError(400, error);
 
     if (!force) {
       const duplicates = findPotentialDuplicates(school, state.schools ?? []);
-      if (duplicates.length) {
-        throw new BusinessError(409, "Doublon potentiel détecté", { duplicates });
+      const strong = duplicates.filter((match) => match.level === DUPLICATE_STRONG);
+      const contact = duplicates.filter((match) => match.level === DUPLICATE_CONTACT);
+      if (strong.length) {
+        const error = new BusinessError(409, "Établissement déjà existant dans ce pays (même nom et ville).", {
+          duplicates: strong,
+        });
+        error.code = "SCHOOL_DUPLICATE_STRONG";
+        throw error;
+      }
+      if (contact.length) {
+        const error = new BusinessError(409, "Doublon potentiel détecté", { duplicates: contact });
+        error.code = "SCHOOL_DUPLICATE_CONTACT";
+        throw error;
+      }
+    } else {
+      const strong = classifySchoolDuplicates(school, state.schools ?? []).filter(
+        (match) => match.level === DUPLICATE_STRONG,
+      );
+      if (strong.length) {
+        const error = new BusinessError(409, "Établissement déjà existant dans ce pays (même nom et ville).", {
+          duplicates: strong,
+        });
+        error.code = "SCHOOL_DUPLICATE_STRONG";
+        throw error;
       }
     }
 
@@ -215,15 +271,16 @@ class EstablishmentService {
 
     school.createdAt = new Date().toISOString();
     school.updatedAt = school.createdAt;
+    delete school.requestedCode;
 
     const nextState = {
       ...state,
       schools: [school, ...(state.schools ?? [])],
       auditLog: appendAudit(state, {
         action: "Création établissement",
-        entityId: school.code,
+        entityId: publicSchoolCodeFromRecord(school) || school.code,
         entityLabel: school.name,
-        schoolCode: school.code,
+        schoolCode: publicSchoolCodeFromRecord(school) || school.code,
         actorId: principal.sub,
         actorName: principal.identifier,
         actorRole: principal.role,
@@ -234,9 +291,7 @@ class EstablishmentService {
   }
 
   update(code, patch, state, principal) {
-    const existing = (state.schools ?? []).find(
-      (item) => String(item.code ?? "").trim().toUpperCase() === String(code).trim().toUpperCase(),
-    );
+    const existing = (state.schools ?? []).find((item) => matchesSchoolLookup(item, code));
     assertCanAccessEstablishment(principal, existing);
     const updateMode = assertCanUpdateEstablishment(principal, patch);
     const effectivePatch = updateMode === "profile" ? filterEstablishmentProfilePatch(patch) : patch ?? {};
@@ -258,8 +313,10 @@ class EstablishmentService {
 
     const error = validateSchoolPayload(merged, state.schools ?? [], { isNew: false });
     if (error) throw new BusinessError(400, error);
+    assertCanonicalCountry(merged, state);
 
     merged.updatedAt = new Date().toISOString();
+    delete merged.requestedCode;
 
     const nextState = {
       ...state,

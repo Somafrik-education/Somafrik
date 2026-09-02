@@ -19,6 +19,7 @@ export interface PromptOptions {
   confirmLabel?: string;
   cancelLabel?: string;
   inputType?: "text" | "password";
+  required?: boolean;
   validate?: (value: string) => string | null;
 }
 
@@ -66,6 +67,7 @@ export function PromptProvider({ children }: { children: ReactNode }) {
         confirmLabel: options.confirmLabel ?? "Valider",
         cancelLabel: options.cancelLabel ?? "Annuler",
         inputType: options.inputType ?? "text",
+        required: options.required,
         value: options.defaultValue ?? "",
         error: "",
       });
@@ -103,11 +105,12 @@ export function PromptProvider({ children }: { children: ReactNode }) {
         }
       >
         <form id="app-prompt-form" onSubmit={handleSubmit} className="space-y-3">
-          <Field label={state.placeholder ?? "Saisie"}>
+          <Field label={state.placeholder ?? "Saisie"} required={state.required}>
             <Input
               type={state.inputType ?? "text"}
               value={state.value}
               autoFocus
+              required={state.required}
               onChange={(event) =>
                 setState((prev) => ({ ...prev, value: event.target.value, error: "" }))
               }

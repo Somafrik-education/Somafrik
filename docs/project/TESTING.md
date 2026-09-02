@@ -1,7 +1,7 @@
 # Stratégie de tests — Somafrik
 
 **Statut :** référence qualité & gates  
-**Dernière mise à jour :** 2026-07-26  
+**Dernière mise à jour :** 2026-08-14
 **Liens :** [RELEASES.md](./RELEASES.md) · [CONTRIBUTING.md](./CONTRIBUTING.md) · [../ci-cd-security.md](../ci-cd-security.md)
 
 ---
@@ -75,8 +75,32 @@ node backend/lib/teacherNotesWriteAccess.test.js
 | `npm run verify:sanitize-user-responses` | Pas de secrets dans les réponses |
 | `npm run verify:db-config` | Config DB prod/préprod |
 | `npm run verify:runtime-bootstrap` | `init` → health → login 401 |
+| `npm run verify:classes-legacy-cleanup` | PUT `classes` interdit ; `/api/classes` + projection lecture |
+| `npm run verify:schools-legacy-cleanup` | PUT `schools` interdit (seul, mixte `{schools,users}` / `{schools,subscriptions}`, snapshot) sans mutation partielle ; pays hors référentiel (`FR`) refusé ; `/api/backoffice/establishments` + projection lecture |
+| `npm run verify:students-legacy-cleanup` | PUT `students` interdit (toute valeur, seul, mixte, snapshot) sans mutation partielle ; inscription/liste/fiche/PATCH via APIs PG ; projection `state.students` read-only ; writers Web/Mobile/BackOffice retirés |
+| `npm run verify:finance-legacy-cleanup` | PUT Finance interdit (clés `payments`, `paymentStatuses`, `feeGrids`, `schoolFeeItems`, `studentFees`, `feeTariffHistory`, `paymentReminders` — vide, null, mixte, snapshot) sans mutation partielle ; projection GET depuis PostgreSQL uniquement ; writers Web/Mobile/BackOffice retirés |
+| `npm run verify:finance-management` | Paiement/allocation atomiques, annulation/réversion, application concurrente de grille, cooldown reminders, isolation tenant, RBAC Super Admin / Admin School / Comptable / Secrétaire / Directeur / rôles non autorisés |
+| `npm run verify:finance-multi-item-payment` | Reçu unique multi-libellés : `payments` parent + `payment_items`, total serveur `SUM(items)`, pas de fusion historique élève+date, Esther 500+1+40 → +1 reçu / +3 lignes / 541, rollback item #3, annulation du reçu complet |
+| `npm run verify:pedagogy-legacy-cleanup` | PUT Pédagogie interdit (`courses`, `courseSchedules`, `evaluations`, `notes`, `presences` — vide, null, mixte) sans mutation partielle ; `rejectedKeys` déterministes |
+| `npm run verify:pedagogy-management` | Routes canoniques `/api/courses`, `/api/course-schedules`, `/api/evaluations`, `/api/notes`, `/api/presences` ; intégration PG (`pedagogyRepository.pg.test.js` si `DATABASE_URL`) |
+| `npm run verify:platform-legacy-cleanup` | PUT Plateforme interdit (10 clés — vide, null, mixte) sans mutation partielle ; writers Web/Mobile/BackOffice retirés |
+| `npm run verify:platform-management` | APIs `/api/backoffice/countries`, `/subscriptions`, `/notifications`, `/role-permissions`, collections abonnement ; isolation tenant HTTP ; `getRolePermissionsMap()` PostgreSQL ; audit transactionnel (`platformRepository.pg.test.js` si `DATABASE_URL`) |
+| `npm run verify:clients-legacy-cleanup` | PUT Clients interdit (5 clés) ; writers Web/Mobile/BackOffice retirés |
+| `npm run verify:clients-management` | APIs `/api/backoffice/users`, `/contacts`, `/relations`, `/messages`, `/announcements` ; provisionnement contact/parent ; isolation tenant ; pas de fuite `password_hash` (`clientsRepository.pg.test.js` si `DATABASE_URL`) |
+| `npm run verify:parent-linking` | Liaison parent canonique : `POST /api/parents/link` transactionnelle (identité fail-closed, GRANT PARENT, relation active), 409 `PARENT_IDENTITY_AMBIGUOUS`, dual-rôle TEACHER+PARENT, idempotence 200, isolation tenant, archivage PATCH, aucune écriture `DataContext`/`state.relations` (`parentLinking.pg.test.js` si `DATABASE_URL`) |
+| `npm run verify:presences-roster` | Présences P0 : roster par `enrollments.class_id` + `status='active'` (jamais `student.className`), DTO `classId` UUID / `classCode` / `className` affichage, scope enseignant `teacher_assignments.class_id`, POST `/api/presences` fail-closed (inscription + affectation, ignore `className` client), cartes homonymes distinctes, suppression du chemin mort `assignStudentToClass` (`presencesRoster.pg.test.js` si `DATABASE_URL`) |
+| `npm run verify:user-role-lifecycle` | Comptes V2 : création sans rôle, UUID/`user_code` backend, GRANT/REVOKE transactionnels, PARENT/STUDENT/plateforme interdits, concurrence, audit rollback, enseignant-parent un seul `users`, module Enseignants sans Créer (`userRoleLifecycle.pg.test.js` si `DATABASE_URL`) |
+| `npm run verify:education-reference-data` | Référentiels pédagogiques canoniques PG : CRUD Superadmin niveaux/filières, activation établissement, unicité par pays, cross-country, rejet `levels`/`tracks` sur `PUT /api/academic-config` (`LEGACY_ACADEMIC_LEVELS_WRITE_FORBIDDEN` / `LEGACY_ACADEMIC_STREAMS_WRITE_FORBIDDEN`) ; audit transactionnel (`educationReference.pg.test.js` si `DATABASE_URL`) |
+| `npm run verify:establishment-roles-data` | Rôles établissement canoniques PG : CRUD Superadmin catalogue, affectation Admin School, rejet `userRoles` sur `PUT /api/academic-config` (`LEGACY_USER_ROLES_WRITE_FORBIDDEN`), escalade 403, rôle archivé non affectable, JWT depuis matrice PG (`establishmentRoles.pg.test.js` si `DATABASE_URL`) |
+| `npm run verify:evaluation-types-data` | Types d’évaluation canoniques PG : CRUD établissement, unicité par école, isolation tenant, archivage, rejet `evaluationTypes` sur `PUT /api/academic-config` (`LEGACY_EVALUATION_TYPES_WRITE_FORBIDDEN`), boot fail-closed si legacy ambigu, création d’évaluation avec `evaluationTypeId`, refus type étranger/inventé/archivé (`evaluationTypes.pg.test.js` si `DATABASE_URL`) |
+| `npm run verify:school-settings-data` | Paramètres établissement canoniques PG (LOT 4) : `school_settings` + projection `terms`/`classes`/`subjects`, `GET/PATCH /api/school-settings`, `PUT /api/academic-periods`, isolation tenant, spoof JWT, rôle enseignant 403, rollback audit, inventaire legacy fail-closed, conservation scalaires B sur séquence boot réelle (capture → bootstrap → verify → strip), trigger INSERT `schools`, matérialisation GET, `PUT /api/academic-config` clés LOT 4 interdites, projection GET, bootstrap idempotent (`schoolSettings.pg.test.js` si `DATABASE_URL`) |
+| `npm run verify:documents-exams-data` | LOT 5 examens/bulletins/documents : CRUD `exams` / `report_cards` / `report_card_templates` / `school_documents`, PUT residual interdit (`LEGACY_*_WRITE_FORBIDDEN`), tenant JWT, UUID étranger 404, 409, audit rollback, residual exact → strip, residual ambigu → boot STOP **sans mutation** (`LEGACY_EXAMS_AMBIGUOUS`), statut exam inconnu → boot STOP (`LEGACY_EXAM_STATUS_AMBIGUOUS`), `published` → `completed` uniquement après inventaire propre (`documentsExams.pg.test.js` si `DATABASE_URL`) |
+| `npm run verify:login-lockout-data` | LOT 6 lockout PostgreSQL : première erreur, compteur, seuil 5 / 15 min, lock actif, expiration lazy, succès → DELETE, restart (nouvelle instance store), multi-instance 3+2, concurrence +2, isolation tenant, plateforme `school_scope=*`, identifiant normalisé, E2E 404 hors flag, disable interdit prod (`loginLockout.pg.test.js` + HTTP si `DATABASE_URL`) |
+| `npm run verify:data-export-safety` | LOT 6 export : 401/403, tenant JWT, enveloppe `somafrik-export` v1, **snapshot PostgreSQL `READ ONLY` + `REPEATABLE READ`** (mutation concurrente ≠ mélange ancien/nouveau), pas de secrets, `includedDomains` exact, audit `export_school_data` hors snapshot (fail-closed), PUT state 410, aucun bouton Restaurer / input file / `partial: false` (`dataExport.pg.test.js` si `DATABASE_URL`) |
 | `npm run verify:notes-sync` | Sync Notes / outbox / rattachement |
 | `npm run verify:mobile-security` | SecureStore / HTTPS / client mobile |
+| `npm run verify:v2-foundation` | Structure V2, frontières legacy, invariants domaine et auth V2.1a |
+| `npm run test:v2-auth` | Rôles canoniques, `AuthPrincipal` immuable et `can()` fail-closed |
 | `npm run typecheck` · `npm run lint` | Qualité statique |
 | `npm run audit:ci` | Vulnérabilités **critical** |
 
@@ -111,13 +135,43 @@ Après déploiement Render + Vercel (`develop`) :
 - [ ] Login faux → **401** (jamais 500)
 - [ ] Login valide → session + state
 
-### Gate Classes / Enseignants (RBAC-ADMIN-01)
+### Gate Enseignants / affectations (LOT 3)
 
-- [ ] Admin établissement : créer classe → PUT **200**, payload **sans** `auditLog`
-- [ ] Reload complet → classe toujours présente (PG)
-- [ ] Modifier / supprimer une classe → 200 + persistance
-- [ ] Créer enseignant + affectation → 200, sans `auditLog`, persiste
-- [ ] Nettoyage localStorage suffit pour les fantômes optimistes (pas de delete serveur)
+- [ ] Créer enseignant via `POST /api/teachers` → 201 + relecture PG
+- [ ] Créer/modifier/retirer une affectation via `POST/PATCH/DELETE /api/assignments`
+- [ ] Conflit classe + matière + année → 409 `ASSIGNMENT_COURSE_CONFLICT`
+- [ ] Référence d'un autre établissement → rejet, sans mutation
+- [ ] PUT state avec clé `teachers` ou `assignments`, seule/mixte/snapshot → 400 avec code stable
+- [ ] `GET state.teachers` / `state.assignments` reflète PostgreSQL sans ligne JSON fantôme
+
+### Gate Élèves (LOT 2)
+
+- [ ] Inscrire depuis une classe → 201 et matricule canonique
+- [ ] Liste/fiche/PATCH via `/api/students` → persistance après reload
+- [ ] PUT state avec clé `students` seule, mixte ou snapshot → 400 `LEGACY_STUDENTS_STATE_WRITE_FORBIDDEN`
+- [ ] `GET state.students` reflète PostgreSQL sans ligne JSON fantôme
+
+### Gate Finance (LOT 4)
+
+- [ ] Créer un paiement via `POST /api/payments` → 201, référence générée serveur, allocations et soldes atomiques
+- [ ] Annuler via `POST /api/payments/:id/cancel` avec motif → réversion des soldes, idempotente, jamais hard delete ; `cancelled_by` persisté
+- [ ] Paiement / annulation + audit `audit_logs` dans **le même commit** PostgreSQL ; échec d'écriture d'audit → rollback complet
+- [ ] Annulation concurrente → une seule réversion et un seul événement `cancel_payment`
+- [ ] Appliquer une grille via `POST /api/finance/fee-grids/:id/apply` sans obligation en double sous concurrence
+- [ ] Relance unpaid : cooldown serveur, `force` réservé Super Admin / Admin School
+- [ ] PUT state avec une clé Finance, seule, mixte ou snapshot → 400 `LEGACY_FINANCE_STATE_WRITE_FORBIDDEN`
+- [ ] `GET state` Finance reflète PostgreSQL sans fusion des anciennes lignes JSON
+- [ ] E2E 0001 / 0009 / 0011 exécutés contre un backend PostgreSQL
+
+### Gate Plateforme (LOT 6)
+
+- [ ] Créer un pays via `POST /api/backoffice/countries` → 201, pas d'auto-création implicite
+- [ ] Upsert abonnement via `POST /api/backoffice/subscriptions` → scope établissement/pays depuis principal uniquement
+- [ ] Admin Pays hors pays → 403 `TENANT_MISMATCH`, zéro audit
+- [ ] `GET /api/backoffice/subscription-access` protégé par `requirePermission` (403 sans droit, 401 sans token)
+- [ ] `GET state.rolePermissions` projeté depuis PostgreSQL (`getRolePermissionsMap`)
+- [ ] PUT state avec une clé plateforme, seule, mixte ou snapshot → 400 `LEGACY_PLATFORM_STATE_WRITE_FORBIDDEN`
+- [ ] Persistance après redémarrage (`platformRepository.pg.test.js`)
 
 ### Gate Notes / sync enseignant
 

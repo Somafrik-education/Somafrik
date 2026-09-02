@@ -7,10 +7,14 @@ const API_BASE_URL = `${API_URL.replace(/\/$/, "")}/api`;
 
 export class ApiError extends Error {
   status: number;
-  constructor(message: string, status: number) {
+  code?: string;
+  details?: unknown;
+  constructor(message: string, status: number, code?: string, details?: unknown) {
     super(message);
     this.name = "ApiError";
     this.status = status;
+    this.code = code;
+    this.details = details;
   }
 }
 
@@ -18,6 +22,10 @@ let accessTokenProvider: () => string | null = () => null;
 
 export function setAccessTokenProvider(provider: () => string | null) {
   accessTokenProvider = provider;
+}
+
+export function getAccessToken() {
+  return accessTokenProvider();
 }
 
 export async function request<T = unknown>(
@@ -45,11 +53,15 @@ export async function request<T = unknown>(
   }
 
   if (!response.ok) {
+    const payload = data && typeof data === "object" ? (data as { message?: unknown; code?: unknown; details?: unknown }) : null;
     const message =
-      (data && typeof data === "object" && "message" in data
-        ? String((data as { message: unknown }).message)
-        : null) ?? "Erreur plateforme";
-    throw new ApiError(message, response.status);
+      (payload?.message != null ? String(payload.message) : null) ?? "Erreur plateforme";
+    throw new ApiError(
+      message,
+      response.status,
+      payload?.code != null ? String(payload.code) : undefined,
+      payload?.details,
+    );
   }
 
   return data as T;
@@ -90,8 +102,16 @@ export async function requestBlob(path: string, options: RequestInit = {}): Prom
 
 export const api = {
   get: <T>(path: string) => request<T>(path),
-  post: <T>(path: string, body?: unknown) =>
-    request<T>(path, { method: "POST", body: body ? JSON.stringify(body) : undefined }),
+  post: <T>(path: string, body?: unknown, init: RequestInit = {}) =>
+    request<T>(path, {
+      method: "POST",
+      body: body ? JSON.stringify(body) : undefined,
+      ...init,
+      headers: {
+        "Content-Type": "application/json",
+        ...(init.headers ?? {}),
+      },
+    }),
   postBlob: (path: string, body?: unknown) => requestBlob(path, { method: "POST", body: body ? JSON.stringify(body) : undefined }),
   put: <T>(path: string, body?: unknown) =>
     request<T>(path, { method: "PUT", body: body ? JSON.stringify(body) : undefined }),

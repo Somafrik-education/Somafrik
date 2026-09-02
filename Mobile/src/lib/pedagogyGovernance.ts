@@ -22,7 +22,7 @@ export function validateCourseTeacherRule(
   const teacherId = String(item.teacherId ?? "").trim();
   const teacherName = String(item.teacherName ?? "").trim();
 
-  if (!className || !subject) return "Classe et matière sont obligatoires.";
+  if (!className || !subject) return "Classe et cours sont obligatoires.";
   if (!teacherId && !teacherName) {
     return "Sélectionnez l'enseignant responsable de ce cours pour cette classe.";
   }
@@ -54,6 +54,10 @@ export function validateCourseTeacherRule(
   return null;
 }
 
+/**
+ * Seed Admin School (aligné Web / pedagogyGovernanceService) : READ, CREATE, UPDATE.
+ * Ce n'est pas un hard-deny client. Les CTA suivent les jetons live PostgreSQL.
+ */
 export function canSchoolAdminMutateTeachers(action: string): boolean {
-  return action === "READ" || action === "CREATE";
+  return action === "READ" || action === "CREATE" || action === "UPDATE";
 }

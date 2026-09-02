@@ -1,100 +1,170 @@
-import React from "react";
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from "react-native";
+import { useCallback, useState } from "react";
+import { FlatList, StyleSheet, Text, View } from "react-native";
+import { useFocusEffect } from "@react-navigation/native";
+import QueryStateView from "../components/QueryStateView";
+import PaymentReceiptCard from "../components/PaymentReceiptCard";
+import PaymentMutationControls from "../components/PaymentMutationControls";
+import PaymentCancelControls from "../components/PaymentCancelControls";
 import { useAdminData } from "../context/AdminDataContext";
 import { getPaymentStats } from "../domain/metrics/schoolMetrics";
-import { useAuth } from "../context/AuthContext";
-import { canMutateEntity, canReadEntity } from "../domain/security/permissions";
+import { DATA_TRUTH_COPY, DATA_TRUTH_TEST_IDS } from "../lib/dataTruth";
+import { getPaymentCashKpi } from "../lib/paymentCashKpi";
+import { getPaymentRateKpi } from "../lib/paymentRateKpi";
 import { useFloatingTabBarLayout } from "../lib/screenLayout";
+import { getFinanceCatalog, getPaymentStudentOptions } from "../services/api";
+import { formatFinanceAmount, resolveFinanceCurrency } from "../lib/financeCurrency";
+import { paymentStudentsFromOptions, type PaymentStudent } from "../lib/paymentEnrollment";
+
+function moneyLabel(amount: number, ready: boolean, currency: string) {
+  if (!ready) return "—";
+  return formatFinanceAmount(amount, currency);
+}
 
 export default function PaymentsScreen({ navigation }: any) {
   const { scrollContentPaddingBottom } = useFloatingTabBarLayout();
   const contentStyle = [styles.content, { paddingBottom: scrollContentPaddingBottom }];
-  const { session } = useAuth();
-  const { paymentsData, studentsData } = useAdminData();
+  const {
+    paymentsData,
+    paymentsSnapshot,
+    studentFeesData,
+    studentFeesSnapshot,
+    loadPayments,
+    loadStudentFees,
+  } = useAdminData();
+  const [paymentStudents, setPaymentStudents] = useState<PaymentStudent[]>([]);
+  const [paymentMethods, setPaymentMethods] = useState<string[]>([]);
+  const [catalogCurrency, setCatalogCurrency] = useState("");
   const paymentStats = getPaymentStats(paymentsData);
-  const canCreate = canMutateEntity(session, "payments", "CREATE");
-  const canUpdate = canMutateEntity(session, "payments", "UPDATE");
-  const canReadPayments = canReadEntity(session, "payments");
-  const canOpenPaymentAdmin = canReadPayments || canCreate || canUpdate;
+  const paymentRateKpi = getPaymentRateKpi(studentFeesData);
+  const cashKpi = getPaymentCashKpi(paymentsData);
+  const feesReady =
+    studentFeesSnapshot.status === "success" || studentFeesSnapshot.status === "empty";
+  const paymentsReady = paymentsSnapshot.status === "success" || paymentsSnapshot.status === "empty";
+
+  const refreshFinance = useCallback(async () => {
+    await Promise.all([
+      loadPayments(),
+      loadStudentFees(),
+      getPaymentStudentOptions()
+        .then((rows) => {
+          setPaymentStudents(paymentStudentsFromOptions(rows));
+        })
+        .catch(() => {
+          setPaymentStudents([]);
+        }),
+      getFinanceCatalog()
+        .then((catalog) => {
+          setPaymentMethods((catalog.paymentMethods ?? []).filter((row) => row.active).map((row) => row.label));
+          setCatalogCurrency(resolveFinanceCurrency(catalog.currency));
+        })
+        .catch(() => {
+          setPaymentMethods([]);
+        }),
+    ]);
+  }, [loadPayments, loadStudentFees]);
+
+  useFocusEffect(
+    useCallback(() => {
+      void refreshFinance();
+    }, [refreshFinance]),
+  );
+
+  const showQueryState = paymentsSnapshot.status !== "success";
+  const expectedLabel =
+    feesReady && paymentRateKpi.expectedAmount > 0
+      ? formatFinanceAmount(paymentRateKpi.expectedAmount, catalogCurrency)
+      : "—";
+  const remaining = Math.max(0, paymentRateKpi.expectedAmount - paymentRateKpi.collectedAmount);
+  const remainingLabel =
+    feesReady && paymentRateKpi.expectedAmount > 0
+      ? formatFinanceAmount(remaining, catalogCurrency)
+      : "—";
+  const rateLabel = feesReady ? paymentRateKpi.value : "—";
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={contentStyle}>
-      <Text style={styles.title}>Paiements</Text>
+    <FlatList
+      style={styles.container}
+      contentContainerStyle={contentStyle}
+      data={showQueryState ? [] : paymentsData}
+      keyExtractor={(payment) => String(payment.id)}
+      keyboardShouldPersistTaps="handled"
+      ListHeaderComponent={
+        <>
+          <Text style={styles.title}>Paiements</Text>
+          {showQueryState ? (
+            <QueryStateView
+              snapshot={paymentsSnapshot}
+              emptyMessage={DATA_TRUTH_COPY.emptyPayments}
+              errorMessage={DATA_TRUTH_COPY.errorPayments}
+              offlineMessage={DATA_TRUTH_COPY.offlinePayments}
+              emptyTestId={DATA_TRUTH_TEST_IDS.paymentsEmpty}
+              errorTestId={DATA_TRUTH_TEST_IDS.paymentsError}
+              onRetry={() => void refreshFinance()}
+            />
+          ) : (
+            <View testID={DATA_TRUTH_TEST_IDS.paymentsList}>
+              <PaymentMutationControls
+                students={paymentStudents}
+                studentFees={studentFeesData}
+                paymentMethods={paymentMethods}
+                currency={catalogCurrency}
+                onChanged={() => refreshFinance()}
+              />
+              <View style={styles.summaryCard}>
+                <Text style={styles.summaryLabel}>Montant attendu</Text>
+                <Text style={styles.summaryAmount}>{expectedLabel}</Text>
+                <Text style={styles.summarySub}>Reste à payer : {remainingLabel}</Text>
+                <Text style={styles.summarySub}>{rateLabel}</Text>
+              </View>
 
-      <TouchableOpacity
-        activeOpacity={0.85}
-        style={styles.summaryCard}
-        onPress={() => canOpenPaymentAdmin && navigation.navigate("AdminCrud", { entity: "payments" })}
-      >
-        <Text style={styles.summaryLabel}>Frais de scolarité estimés</Text>
-        <Text style={styles.summaryAmount}>{(paymentStats.paidAmount + paymentStats.pendingAmount).toLocaleString()} FC</Text>
-        <Text style={styles.summarySub}>Reste estimé : {paymentStats.pendingAmount.toLocaleString()} FC</Text>
-      </TouchableOpacity>
+              <View style={styles.summaryCardSecondary}>
+                <Text style={styles.summaryLabelDark}>Montant encaissé</Text>
+                <Text style={styles.summaryAmountDark}>{moneyLabel(cashKpi.collectedAmount, paymentsReady, catalogCurrency)}</Text>
+                <Text style={styles.summarySubDark}>
+                  Imputé {moneyLabel(cashKpi.allocatedAmount, paymentsReady, catalogCurrency)} · Non imputé{" "}
+                  {moneyLabel(cashKpi.unallocatedAmount, paymentsReady, catalogCurrency)}
+                </Text>
+              </View>
 
-      <View style={styles.summaryCardSecondary}>
-        <Text style={styles.summaryLabelDark}>Montant encaissé</Text>
-        <Text style={styles.summaryAmountDark}>{paymentStats.paidAmount.toLocaleString()} FC</Text>
-        <Text style={styles.summarySubDark}>{paymentStats.rate}% des paiements réglés</Text>
-      </View>
+              <View style={styles.row}>
+                <View style={styles.smallCard}>
+                  <Text style={styles.smallNumber}>{paymentStats.paid}</Text>
+                  <Text style={styles.smallLabel}>Payés</Text>
+                </View>
 
-      <View style={styles.row}>
-        <TouchableOpacity
-          activeOpacity={0.85}
-          style={styles.smallCard}
-          onPress={() => canOpenPaymentAdmin && navigation.navigate("AdminCrud", { entity: "payments", filter: "paid" })}
-        >
-          <Text style={styles.smallNumber}>{paymentStats.paid}</Text>
-          <Text style={styles.smallLabel}>Payés</Text>
-        </TouchableOpacity>
+                <View style={styles.smallCard}>
+                  <Text style={styles.smallNumber}>{paymentStats.unallocated}</Text>
+                  <Text style={styles.smallLabel}>Non imputés</Text>
+                </View>
 
-        <TouchableOpacity
-          activeOpacity={0.85}
-          style={styles.smallCard}
-          onPress={() => canOpenPaymentAdmin && navigation.navigate("AdminCrud", { entity: "payments", filter: "pending" })}
-        >
-          <Text style={styles.smallNumber}>{paymentStats.pending}</Text>
-          <Text style={styles.smallLabel}>Impayés</Text>
-        </TouchableOpacity>
-      </View>
+                <View style={styles.smallCard}>
+                  <Text style={styles.smallNumber}>{paymentStats.pending}</Text>
+                  <Text style={styles.smallLabel}>Impayés</Text>
+                </View>
+              </View>
 
-      <Text style={styles.sectionTitle}>Paiements récents</Text>
-
-      {paymentsData.map((payment) => {
-        const student = studentsData.find((item) => item.id === payment.studentId);
-        const isPending = payment.status === "EN_ATTENTE";
-
-        return (
-          <TouchableOpacity
-            key={payment.id}
-            style={styles.paymentCard}
-            activeOpacity={0.85}
-            onPress={() => navigation.navigate("StudentPayments", { studentId: payment.studentId })}
-          >
-            <View style={styles.paymentContent}>
-              <Text style={styles.name}>{student?.name ?? "Élève inconnu"}</Text>
-              <Text style={styles.subtitle}>Montant : {payment.amount.toLocaleString()} FC</Text>
-              <Text style={styles.subtitle}>Date : {payment.date} • Mode : {payment.method ?? "Non renseigné"}</Text>
-              <Text style={styles.subtitle}>Référence : {payment.publicId ?? payment.id}</Text>
-              <Text style={styles.historyHint}>Ouvrir l'historique et le reste à payer</Text>
+              <Text style={styles.sectionTitle}>Paiements récents</Text>
             </View>
-
-            <Text style={[styles.badge, isPending && styles.badgeDanger]}>
-              {isPending ? "En attente" : "Payé"}
-            </Text>
-          </TouchableOpacity>
+          )}
+        </>
+      }
+      renderItem={({ item: payment }) => {
+        const student = paymentStudents.find((row) => row.id === payment.studentId);
+        return (
+          <>
+            <PaymentReceiptCard
+              payment={payment}
+              studentName={student?.name}
+              currency={catalogCurrency}
+              onPress={() => navigation.navigate("StudentPayments", { studentId: payment.studentId })}
+              showItems={false}
+            />
+            <PaymentCancelControls payment={payment} onChanged={() => refreshFinance()} />
+          </>
         );
-      })}
-
-      {canCreate && (
-        <TouchableOpacity
-          activeOpacity={0.85}
-          style={styles.button}
-          onPress={() => navigation.navigate("AdminCrud", { entity: "payments" })}
-        >
-          <Text style={styles.buttonText}>Enregistrer un paiement</Text>
-        </TouchableOpacity>
-      )}
-    </ScrollView>
+      }}
+      ListFooterComponent={null}
+    />
   );
 }
 
@@ -118,49 +188,24 @@ const styles = StyleSheet.create({
     padding: 24,
     marginBottom: 18,
   },
-  summaryLabelDark: { color: "#64748B", fontSize: 15, fontWeight: "700" },
+  summaryLabelDark: { color: "#64748B", fontSize: 15 },
   summarySubDark: { color: "#64748B", marginTop: 8 },
-  row: { flexDirection: "row", justifyContent: "space-between" },
+  row: { flexDirection: "row", gap: 12, marginBottom: 18 },
   smallCard: {
-    width: "48%",
+    flex: 1,
     backgroundColor: "#FFFFFF",
-    borderRadius: 18,
-    padding: 20,
-    alignItems: "center",
-  },
-  smallNumber: { fontSize: 26, fontWeight: "800", color: "#2563EB" },
-  smallLabel: { color: "#6B7280", marginTop: 6 },
-  sectionTitle: { fontSize: 20, fontWeight: "700", marginTop: 24, marginBottom: 14 },
-  paymentCard: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 18,
-    padding: 18,
-    marginBottom: 14,
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "flex-start",
-    gap: 12,
-  },
-  paymentContent: { flex: 1, minWidth: 0 },
-  name: { fontSize: 16, fontWeight: "700", color: "#111827" },
-  subtitle: { marginTop: 5, color: "#6B7280" },
-  historyHint: { marginTop: 8, color: "#2563EB", fontWeight: "800" },
-  badge: {
-    backgroundColor: "#DCFCE7",
-    color: "#166534",
-    paddingHorizontal: 10,
-    paddingVertical: 6,
     borderRadius: 20,
-    fontWeight: "700",
-    overflow: "hidden",
-  },
-  badgeDanger: { backgroundColor: "#FEE2E2", color: "#991B1B" },
-  button: {
-    backgroundColor: "#2563EB",
-    borderRadius: 18,
     padding: 18,
-    alignItems: "center",
-    marginTop: 10,
   },
-  buttonText: { color: "#FFFFFF", fontWeight: "800", fontSize: 16 },
+  smallNumber: { fontSize: 28, fontWeight: "800", color: "#0F172A" },
+  smallLabel: { color: "#64748B", fontWeight: "700", marginTop: 6 },
+  sectionTitle: { fontSize: 18, fontWeight: "800", color: "#0F172A", marginBottom: 12 },
+  button: {
+    marginTop: 8,
+    backgroundColor: "#0F172A",
+    borderRadius: 16,
+    padding: 16,
+    alignItems: "center",
+  },
+  buttonText: { color: "#FFFFFF", fontWeight: "800" },
 });

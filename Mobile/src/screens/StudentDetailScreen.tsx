@@ -6,6 +6,8 @@ import {
   TouchableOpacity,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import { useCallback } from "react";
+import { useFocusEffect } from "@react-navigation/native";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { RootStackParamList } from "../navigation/AppNavigator";
 import { useAuth } from "../context/AuthContext";
@@ -17,6 +19,8 @@ import {
   CLASSES_STUDENT_TEST_IDS,
 } from "../lib/classesStudentJourneySpec";
 import { STUDENT_SUB_SCREENS_TEST_IDS } from "../lib/studentSubScreensSpec";
+import { metricLabelFromSnapshot } from "../lib/dataTruth";
+import { studentDisplayName } from "../lib/studentDisplayName";
 import { normalizePresenceStatus } from "../domain/metrics/schoolMetrics";
 
 type Props = NativeStackScreenProps<
@@ -31,18 +35,33 @@ export default function StudentDetailScreen({
   const { scrollContentPaddingBottom } = useFloatingTabBarLayout();
   const containerStyle = [styles.container, { paddingBottom: scrollContentPaddingBottom }];
   const { session, selectedStudentId } = useAuth();
-  const { studentsData, notesData, presencesData, paymentsData } = useAdminData();
+  const { studentsData, notesData, presencesData, paymentsData, loadStudents, loadPresences, loadNotes, loadPayments, studentsSnapshot, notesSnapshot, presencesSnapshot, paymentsSnapshot, resourceScopeKey } = useAdminData();
   const studentId = route?.params?.studentId ?? selectedStudentId;
   const canSeeNotes = canReadRoute(session, "StudentNotes");
   const canSeePresences = canReadRoute(session, "StudentPresences");
   const canSeePayments = canReadRoute(session, "StudentPayments");
+
+  useFocusEffect(
+    useCallback(() => {
+      void loadStudents();
+      void loadPresences();
+      void loadNotes();
+      void loadPayments();
+    }, [loadStudents, loadPresences, loadNotes, loadPayments, resourceScopeKey]),
+  );
 
   const student = studentId ? studentsData.find((item) => item.id === studentId) : undefined;
 
   if (!student) {
     return (
       <View style={styles.container} testID={CLASSES_STUDENT_TEST_IDS.studentDetailScreen}>
-        <Text>Élève introuvable</Text>
+        <Text>
+          {studentsSnapshot.status === "idle" || studentsSnapshot.status === "loading"
+            ? "Chargement…"
+            : studentsSnapshot.status === "error" || studentsSnapshot.status === "offline"
+              ? "Indisponible"
+              : "Élève introuvable"}
+        </Text>
       </View>
     );
   }
@@ -56,7 +75,10 @@ export default function StudentDetailScreen({
     },
   ).length;
   const studentPayments = paymentsData.filter((item) => item.studentId === student.id);
-  const displayName = [student.firstName, student.name].filter(Boolean).join(" ").trim() || student.name;
+  const notesValue = metricLabelFromSnapshot(notesSnapshot, () => String(studentNotes.length));
+  const presencesValue = metricLabelFromSnapshot(presencesSnapshot, () => String(presentCount));
+  const paymentsDetail = metricLabelFromSnapshot(paymentsSnapshot, () => `${studentPayments.length} opération(s)`);
+  const displayName = studentDisplayName(student);
 
   const openSubScreen = (screen: "StudentNotes" | "StudentPresences" | "StudentPayments") => {
     navigation?.navigate(screen, { studentId: student.id });
@@ -72,6 +94,9 @@ export default function StudentDetailScreen({
         style={styles.backButton}
         testID={CLASSES_STUDENT_TEST_IDS.studentDetailBackButton}
         onPress={() => navigation?.goBack()}
+        accessibilityRole="button"
+        accessibilityLabel={`Retour depuis la fiche de ${displayName}`}
+        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
       >
         <Ionicons name="arrow-back" size={24} color="#0F172A" />
       </TouchableOpacity>
@@ -88,7 +113,7 @@ export default function StudentDetailScreen({
             {displayName}
           </Text>
           <Text style={styles.info}>Matricule : {student.matricule}</Text>
-          <Text style={styles.info}>Sexe : {student.gender ?? "Non renseigné"}</Text>
+          <Text style={styles.info}>Sexe : {String(student.gender ?? "").trim() || "Non renseigné"}</Text>
           <Text style={styles.info} testID={CLASSES_STUDENT_TEST_IDS.studentDetailClass}>
             Classe : {student.className}
           </Text>
@@ -104,7 +129,9 @@ export default function StudentDetailScreen({
             testID="student-detail-notes-stat"
             onPress={() => openSubScreen("StudentNotes")}
           >
-            <Text style={styles.statValue}>{studentNotes.length}</Text>
+            <Text style={styles.statValue}>
+              {notesValue}
+            </Text>
             <Text style={styles.statLabel}>Notes</Text>
           </TouchableOpacity>
         )}
@@ -116,7 +143,9 @@ export default function StudentDetailScreen({
             testID="student-detail-presences-stat"
             onPress={() => openSubScreen("StudentPresences")}
           >
-            <Text style={styles.statValue}>{presentCount}</Text>
+            <Text style={styles.statValue}>
+              {presencesValue}
+            </Text>
             <Text style={styles.statLabel}>Présences</Text>
           </TouchableOpacity>
         )}
@@ -146,7 +175,7 @@ export default function StudentDetailScreen({
         <StudentAction
           icon="card-outline"
           label="Paiements"
-          detail={`${studentPayments.length} opération(s)`}
+          detail={paymentsDetail}
           testID={STUDENT_SUB_SCREENS_TEST_IDS.openPaymentsButton}
           onPress={() => openSubScreen("StudentPayments")}
         />
@@ -190,8 +219,10 @@ const styles = StyleSheet.create({
     backgroundColor: "#F8FAFC",
   },
   backButton: {
-    width: 40,
-    height: 40,
+    minWidth: 44,
+    minHeight: 44,
+    width: 44,
+    height: 44,
     borderRadius: 14,
     backgroundColor: "#FFFFFF",
     alignItems: "center",

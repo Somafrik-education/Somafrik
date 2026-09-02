@@ -1,0 +1,27 @@
+name: HELP-V1A Catalogue
+
+on:
+  pull_request:
+    branches: [develop]
+    paths:
+      - "packages/help-catalog/**"
+      - "scripts/verify-help-v1a-catalogue.js"
+      - ".github/workflows/help-v1a.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  help-v1a-catalogue:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.12.0"
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - name: Verify HELP-V1A catalogue
+        run: npm run verify:help-v1a-catalogue

@@ -133,7 +133,7 @@ export function EstablishmentProfilePage() {
         {!canEdit ? (
           <FormLayout.Alerts>
             <InlineAlert tone="warning" title="Lecture seule">
-              Vous disposez d&apos;un accès en lecture seule. Seul l&apos;Admin School peut modifier le profil.
+              Vous disposez d&apos;un accès en lecture seule. Seul l’administrateur de l’établissement peut modifier le profil.
             </InlineAlert>
           </FormLayout.Alerts>
         ) : null}

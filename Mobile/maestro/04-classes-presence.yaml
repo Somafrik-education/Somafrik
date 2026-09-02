@@ -1,0 +1,37 @@
+appId: com.somafrik.app
+---
+- runFlow: flows/login-admin-school.yaml
+- tapOn:
+    id: "tab-classes"
+- extendedWaitUntil:
+    visible:
+      id: "classes-screen"
+    timeout: 20000
+- extendedWaitUntil:
+    visible:
+      id: "classes-list"
+    timeout: 20000
+- retry:
+    maxRetries: 8
+    commands:
+      - assertVisible:
+          id: "class-card-.*"
+- tapOn:
+    id: "class-card-.*"
+- extendedWaitUntil:
+    visible:
+      id: "students-screen"
+    timeout: 20000
+- retry:
+    maxRetries: 8
+    commands:
+      - assertVisible:
+          id: "students-list"
+- tapOn:
+    id: "student-row-.*"
+- extendedWaitUntil:
+    visible:
+      id: "student-detail-screen"
+    timeout: 15000
+- assertVisible:
+    id: "student-detail-name"

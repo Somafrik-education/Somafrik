@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { render, screen, within } from "@testing-library/react";
+import { render, screen, within, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 
@@ -10,42 +10,31 @@ const permissions = vi.hoisted(() => ({
   canDelete: true,
 }));
 
-const dataState = vi.hoisted(() => ({
-  current: {
-    schools: [{ code: "SCH-001", name: "Lycée Test" }],
-    classes: [
-      { id: "cls-1", name: "6ème A", schoolCode: "SCH-001" },
-      { id: "cls-2", name: "5ème B", schoolCode: "SCH-001" },
-    ],
-    students: [
-      {
-        id: "stu-1",
-        name: "Diop",
-        firstName: "Awa",
-        matricule: "MAT-001",
-        className: "6ème A",
-        schoolStatus: "Inscrit",
-        schoolCode: "SCH-001",
-      },
-      {
-        id: "stu-2",
-        name: "Fall",
-        firstName: "Ibrahima",
-        matricule: "MAT-002",
-        className: "5ème B",
-        schoolStatus: "Inscrit",
-        schoolCode: "SCH-001",
-      },
-    ],
-    teachers: [],
-    assignments: [],
-    courses: [],
-    contacts: [],
-    relations: [],
-    users: [],
-    academicConfigBySchool: {},
-    auditLog: [],
-  } as Record<string, unknown>,
+const apiState = vi.hoisted(() => ({
+  classCode: "CLS-SCH-A-1",
+  className: "6ème A",
+  students: [
+    {
+      id: "ELE-SCH-A-000001",
+      publicId: "ELE-SCH-A-000001",
+      studentCode: "ELE-SCH-A-000001",
+      matricule: "ELE-SCH-A-000001",
+      firstName: "Awa",
+      lastName: "Diop",
+      name: "Awa Diop",
+      gender: "Féminin",
+      className: "6ème A",
+      classCode: "CLS-SCH-A-1",
+      schoolCode: "SCH-001",
+      status: "active",
+      enrollmentId: "enr-1",
+      enrollmentDate: "12-08-2026",
+      academicYearName: "2025-2026",
+      birthDate: "",
+      parentPhone: "",
+      parentEmail: "",
+    },
+  ] as Array<Record<string, unknown>>,
 }));
 
 vi.mock("../../context/AuthContext", () => ({
@@ -58,16 +47,6 @@ vi.mock("../../context/AuthContext", () => ({
         name: "Admin",
       },
     },
-  }),
-}));
-
-vi.mock("../../context/DataContext", () => ({
-  useData: () => ({
-    state: dataState.current,
-    loading: false,
-    error: null,
-    update: vi.fn(),
-    refresh: vi.fn(),
   }),
 }));
 
@@ -91,186 +70,162 @@ vi.mock("../../lib/permissions", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../lib/permissions")>();
   return {
     ...actual,
-    getEntityFeaturePermissions: (_ctx: unknown, key: string) => {
-      if (key === "assignments") {
-        return { canRead: true, canCreate: false, canUpdate: false, canDelete: false };
-      }
-      return { ...permissions };
-    },
+    getEntityFeaturePermissions: () => ({ ...permissions }),
   };
 });
+
+vi.mock("../../lib/classesApi", () => ({
+  classesApi: {
+    list: vi.fn(async () => [
+      {
+        classCode: apiState.classCode,
+        name: apiState.className,
+        status: "active",
+        academicYearName: "2025-2026",
+        schoolCode: "SCH-001",
+      },
+    ]),
+  },
+}));
+
+vi.mock("../../lib/classStudentsApi", () => ({
+  classStudentsApi: {
+    list: vi.fn(async () => apiState.students),
+    enroll: vi.fn(async (_classCode: string, payload: Record<string, string>) => ({
+      student: {
+        id: "CD-IN-EL-26-002",
+        publicId: "CD-IN-EL-26-002",
+        studentCode: "CD-IN-EL-26-002",
+        matricule: "CD-IN-EL-26-002",
+        firstName: payload.firstName,
+        lastName: payload.lastName,
+        name: `${payload.firstName} ${payload.lastName}`,
+        gender: payload.gender ?? "",
+        className: apiState.className,
+        classCode: apiState.classCode,
+        schoolCode: "SCH-001",
+        status: "active",
+        enrollmentId: "enr-2",
+        enrollmentDate: "12-08-2026",
+        academicYearName: "2025-2026",
+        birthDate: "",
+        parentPhone: "",
+        parentEmail: "",
+      },
+      credentials: {
+        login: "CD-IN-EL-26-002",
+        temporarySecret: "Tmp-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      },
+    })),
+  },
+}));
 
 vi.mock("../../components/ui/Toast", () => ({
   useToast: () => ({ showToast: vi.fn() }),
 }));
 
-vi.mock("../../components/ui/ConfirmDialog", () => ({
-  useConfirm: () => ({ confirm: vi.fn(async () => true) }),
-}));
-
-vi.mock("../../components/ui/PromptDialog", () => ({
-  usePrompt: () => ({ prompt: vi.fn() }),
-}));
-
-vi.mock("../../components/ui/PrintButton", () => ({
-  PrintButton: () => <button type="button">Imprimer</button>,
-}));
-
 import { ClassStudentsPage } from "./ClassStudentsPage";
+import { classStudentsApi } from "../../lib/classStudentsApi";
 
-function renderPage(className = "6ème A") {
-  const encoded = encodeURIComponent(className);
+function renderPage(classCode = "CLS-SCH-A-1") {
+  const encoded = encodeURIComponent(classCode);
   return render(
     <MemoryRouter initialEntries={[`/etablissement/classes/${encoded}/eleves`]}>
       <Routes>
         <Route path="/etablissement/classes" element={<div>Liste classes</div>} />
-        <Route
-          path="/etablissement/classes/:className/eleves"
-          element={<ClassStudentsPage />}
-        />
+        <Route path="/etablissement/classes/:classCode/eleves" element={<ClassStudentsPage />} />
       </Routes>
     </MemoryRouter>,
   );
 }
 
-describe("ClassStudentsPage (D3.2c — membres / conso D2.7)", () => {
+describe("ClassStudentsPage — inscription depuis une classe", () => {
   beforeEach(() => {
     permissions.canRead = true;
     permissions.canCreate = true;
-    permissions.canUpdate = true;
-    permissions.canDelete = true;
-    dataState.current = {
-      ...dataState.current,
-      students: [
-        {
-          id: "stu-1",
-          name: "Diop",
-          firstName: "Awa",
-          matricule: "MAT-001",
-          className: "6ème A",
-          schoolStatus: "Inscrit",
-          schoolCode: "SCH-001",
-        },
-        {
-          id: "stu-2",
-          name: "Fall",
-          firstName: "Ibrahima",
-          matricule: "MAT-002",
-          className: "5ème B",
-          schoolStatus: "Inscrit",
-          schoolCode: "SCH-001",
-        },
-      ],
-    };
+    apiState.students = [
+      {
+        id: "ELE-SCH-A-000001",
+        publicId: "ELE-SCH-A-000001",
+        studentCode: "ELE-SCH-A-000001",
+        matricule: "ELE-SCH-A-000001",
+        firstName: "Awa",
+        lastName: "Diop",
+        name: "Awa Diop",
+        gender: "Féminin",
+        className: "6ème A",
+        classCode: "CLS-SCH-A-1",
+        schoolCode: "SCH-001",
+        status: "active",
+        enrollmentId: "enr-1",
+        enrollmentDate: "12-08-2026",
+        academicYearName: "2025-2026",
+        birthDate: "",
+        parentPhone: "",
+        parentEmail: "",
+      },
+    ];
+    vi.clearAllMocks();
   });
 
-  it("rend le chrome D2.7 (ListLayout) avec titre de classe et orientation", () => {
-    renderPage("6ème A");
-
-    expect(screen.getByRole("heading", { level: 2, name: "Élèves — 6ème A" })).toBeInTheDocument();
-    expect(screen.getByRole("navigation", { name: "Orientation" })).toHaveTextContent(
-      "← Retour aux classes",
-    );
-    expect(screen.getByRole("banner")).toBeInTheDocument();
-    expect(screen.getByLabelText("Filtres et recherche")).toBeInTheDocument();
-    expect(screen.getByLabelText("Liste")).toBeInTheDocument();
-    expect(
-      screen.getByRole("searchbox", { name: /Rechercher dans élèves/i }),
-    ).toBeInTheDocument();
-  });
-
-  it("affiche uniquement les élèves de la classe (classScope)", () => {
-    renderPage("6ème A");
-
+  it("affiche les élèves de la classe via l'API PostgreSQL", async () => {
+    renderPage();
+    expect(await screen.findByRole("heading", { level: 2, name: "Élèves — 6ème A" })).toBeInTheDocument();
     const list = screen.getByLabelText("Liste");
     expect(within(list).getByText("Diop")).toBeInTheDocument();
-    expect(within(list).queryByText("Fall")).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Ajouter" })).toBeInTheDocument();
-    expect(screen.getAllByRole("link", { name: "Dossier" }).length).toBeGreaterThan(0);
+    expect(screen.getByRole("button", { name: "Inscrire un élève" })).toBeInTheDocument();
   });
 
-  it("filtre via EntityListSearch dans le périmètre de la classe", async () => {
-    dataState.current = {
-      ...dataState.current,
-      students: [
-        {
-          id: "stu-1",
-          name: "Diop",
-          firstName: "Awa",
-          matricule: "MAT-001",
-          className: "6ème A",
-          schoolStatus: "Inscrit",
-          schoolCode: "SCH-001",
-        },
-        {
-          id: "stu-3",
-          name: "Sow",
-          firstName: "Fatou",
-          matricule: "MAT-003",
-          className: "6ème A",
-          schoolStatus: "Inscrit",
-          schoolCode: "SCH-001",
-        },
-      ],
-    };
+  it("inscrit un élève sans exposer de champ classCode", async () => {
     const user = userEvent.setup();
-    renderPage("6ème A");
+    renderPage();
+    await screen.findByRole("button", { name: "Inscrire un élève" });
+    await user.click(screen.getByRole("button", { name: "Inscrire un élève" }));
 
-    const search = screen.getByRole("searchbox", { name: /Rechercher dans élèves/i });
-    await user.type(search, "Diop");
+    expect(screen.getByText(/CLS-SCH-A-1/)).toBeInTheDocument();
+    expect(screen.queryByLabelText(/classCode/i)).not.toBeInTheDocument();
 
-    expect(screen.getByText("Diop")).toBeInTheDocument();
-    expect(screen.queryByText("Sow")).not.toBeInTheDocument();
+    await user.type(document.getElementById("enroll-first-name")!, "Ibra");
+    await user.type(document.getElementById("enroll-last-name")!, "Fall");
+    await user.click(screen.getByRole("button", { name: "Inscrire" }));
+
+    await waitFor(() => {
+      expect(classStudentsApi.enroll).toHaveBeenCalledWith("CLS-SCH-A-1", {
+        firstName: "Ibra",
+        lastName: "Fall",
+        gender: undefined,
+        birthDate: undefined,
+        parentPhone: undefined,
+        parentEmail: undefined,
+      });
+    });
+
+    expect(await screen.findByRole("heading", { name: "Identifiants de connexion" })).toBeInTheDocument();
+    expect(screen.getAllByText("CD-IN-EL-26-002").length).toBeGreaterThan(0);
+    expect(screen.getByText("Tmp-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")).toBeInTheDocument();
+    expect(screen.getByText("Fall")).toBeInTheDocument();
   });
 
-  it("affiche EmptyState DS lorsque la classe n’a aucun élève", () => {
-    dataState.current = {
-      ...dataState.current,
-      students: [
-        {
-          id: "stu-2",
-          name: "Fall",
-          firstName: "Ibrahima",
-          matricule: "MAT-002",
-          className: "5ème B",
-          schoolStatus: "Inscrit",
-          schoolCode: "SCH-001",
-        },
-      ],
-    };
-    renderPage("6ème A");
-
-    const empty = screen.getByRole("status");
-    expect(empty).toHaveTextContent("Liste vide");
-    expect(empty).toHaveTextContent("Aucun élément à afficher dans élèves.");
+  it("refuse un téléphone parent alphabétique sans appeler l'API", async () => {
+    const user = userEvent.setup();
+    renderPage();
+    await screen.findByRole("button", { name: "Inscrire un élève" });
+    await user.click(screen.getByRole("button", { name: "Inscrire un élève" }));
+    await user.type(document.getElementById("enroll-first-name")!, "ESTHER");
+    await user.type(document.getElementById("enroll-last-name")!, "OKITO");
+    await user.type(document.getElementById("enroll-parent-phone")!, "Baudouin OKITO");
+    await user.click(screen.getByRole("button", { name: "Inscrire" }));
+    await waitFor(() => {
+      expect(classStudentsApi.enroll).not.toHaveBeenCalled();
+    });
   });
 
-  it("affiche ForbiddenState si accès élèves refusé", () => {
-    permissions.canRead = false;
-    renderPage("6ème A");
-
-    expect(screen.getByRole("status")).toHaveTextContent("Accès non autorisé");
-    expect(screen.getByRole("status")).toHaveTextContent(
-      "Vous n'avez pas l'autorisation de consulter élèves.",
-    );
-    expect(screen.queryByRole("heading", { name: /Élèves —/ })).not.toBeInTheDocument();
-  });
-
-  it("conserve les actions secondaires d’export", () => {
-    renderPage("6ème A");
-    expect(screen.getByRole("button", { name: "Exporter CSV" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Exporter Excel" })).toBeInTheDocument();
-  });
-
-  it("redirige vers la liste Classes si className vide", () => {
+  it("redirige vers la liste Classes si classCode vide", () => {
     render(
       <MemoryRouter initialEntries={["/etablissement/classes/%20/eleves"]}>
         <Routes>
           <Route path="/etablissement/classes" element={<div>Liste classes</div>} />
-          <Route
-            path="/etablissement/classes/:className/eleves"
-            element={<ClassStudentsPage />}
-          />
+          <Route path="/etablissement/classes/:classCode/eleves" element={<ClassStudentsPage />} />
         </Routes>
       </MemoryRouter>,
     );

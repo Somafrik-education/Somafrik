@@ -16,6 +16,7 @@ export interface QuickFeeGridInput {
   academicYear: string;
   currency: string;
   classNames: string[];
+  selectedClasses?: Array<{ classId: string; classCode: string; className: string }>;
   periodName?: string;
   activateImmediately: boolean;
   applyToStudents: boolean;
@@ -73,8 +74,8 @@ function buildItemsForGrid(
       feeGridId: grid.id,
       schoolCode: grid.schoolCode,
       className: grid.className,
-      feeType: "Mensualité",
-      label: "Minerval / scolarité",
+      feeType: "Scolarité",
+      label: "Scolarité",
       amount: monthly,
       mandatory: true,
       monthlyMonths: [...DEFAULT_MONTHLY_MONTHS],
@@ -88,8 +89,8 @@ function buildItemsForGrid(
       feeGridId: grid.id,
       schoolCode: grid.schoolCode,
       className: grid.className,
-      feeType: "Annexe",
-      label: String(input.annexLabel ?? "").trim() || "Frais annexe",
+      feeType: "Autre",
+      label: String(input.annexLabel ?? "").trim() || "Autre",
       amount: annex,
       mandatory: false,
       status: "Actif",
@@ -121,14 +122,18 @@ export function buildQuickFeeGrids(
     return { grids, items, skippedClasses, auditEntries };
   }
 
-  for (const className of input.classNames) {
-    const trimmedClass = className.trim();
+  for (const choice of input.selectedClasses?.length
+    ? input.selectedClasses
+    : input.classNames.map((className) => ({ classId: "", classCode: "", className }))) {
+    const trimmedClass = choice.className.trim();
     if (!trimmedClass) continue;
 
     const candidate: FeeGrid = {
       id: newFeeId("FEEGRID"),
       schoolCode: input.schoolCode,
       academicYear: input.academicYear,
+      classId: choice.classId || undefined,
+      classCode: choice.classCode || undefined,
       className: trimmedClass,
       currency: input.currency,
       status: input.activateImmediately ? "Active" : "Brouillon",
@@ -174,7 +179,7 @@ export function buildQuickFeeGrids(
 
 export function validateQuickFeeGridInput(input: QuickFeeGridInput): string | null {
   if (!input.schoolCode?.trim()) return "Établissement requis";
-  if (!input.classNames.length) return "Sélectionnez au moins une classe";
+  if (!input.classNames.length && !input.selectedClasses?.length) return "Sélectionnez au moins une classe";
   if (!input.academicYear?.trim()) return "Année scolaire requise";
   if (!input.currency?.trim()) return "Devise requise";
 
@@ -182,7 +187,7 @@ export function validateQuickFeeGridInput(input: QuickFeeGridInput): string | nu
     Number(input.inscriptionAmount ?? 0) > 0 ||
     Number(input.monthlyAmount ?? 0) > 0 ||
     Number(input.annexAmount ?? 0) > 0;
-  if (!hasAmount) return "Saisissez au moins un montant (inscription, mensualité ou annexe)";
+  if (!hasAmount) return "Saisissez au moins un montant (inscription, scolarité ou autre)";
 
   for (const key of ["inscriptionAmount", "monthlyAmount", "annexAmount"] as const) {
     const value = Number(input[key] ?? 0);
@@ -207,6 +212,7 @@ export function defaultQuickFeeGridInput(
     academicYear: resolveAcademicYear(state, schoolCode),
     currency: resolveSchoolCurrency(state, schoolCode),
     classNames: [],
+    selectedClasses: [],
     activateImmediately: true,
     applyToStudents: true,
     inscriptionAmount: 50_000,

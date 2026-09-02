@@ -25,8 +25,8 @@ import { DEMO_ACCOUNT_GROUPS, DEMO_SCHOOL_CODE, type DemoAccount } from "../lib/
 import type { LoginProfile } from "../types";
 
 const PROFILES: { id: LoginProfile; label: string }[] = [
-  { id: "superadmin", label: "Super Admin" },
-  { id: "country", label: "Admin Pays" },
+  { id: "superadmin", label: "Super administrateur" },
+  { id: "country", label: "Administrateur pays" },
   { id: "school", label: "Établissement" },
 ];
 
@@ -73,7 +73,7 @@ export function LoginPage() {
   const form = useForm<LoginValues>({
     resolver: zodResolver(loginSchema),
     defaultValues: {
-      profile: "superadmin",
+      profile: "school",
       schoolCode: DEMO_SCHOOL_CODE,
       identifier: "",
       password: "",
@@ -101,6 +101,11 @@ export function LoginPage() {
       password: account.password,
       schoolCode: account.schoolCode ?? DEMO_SCHOOL_CODE,
     });
+    setServerError("");
+  }
+
+  function selectProfile(nextProfile: LoginProfile) {
+    form.setValue("profile", nextProfile, { shouldValidate: true });
     setServerError("");
   }
 
@@ -149,48 +154,38 @@ export function LoginPage() {
   }
 
   return (
-    <div className="grid min-h-screen lg:grid-cols-2">
-      <section className="relative hidden flex-col justify-between bg-gradient-to-br from-brand to-brand-700 p-12 text-white lg:flex">
-        <BrandLogo variant="onDark" size="hero" />
-        <div className="max-w-md space-y-4">
-          <h2 className="text-3xl font-black leading-tight">
-            La plateforme qui simplifie la gestion de votre établissement scolaire
-          </h2>
-          <p className="text-white/80">
-            Établissements, utilisateurs, droits, élèves, enseignants, présences, notes, paiements,
-            communications et rapports — pilotés depuis une plateforme unique et sécurisée.
-          </p>
-        </div>
-        <p className="text-sm text-white/60">© {new Date().getFullYear()} Somafrik</p>
-      </section>
-
-      <section className="flex items-center justify-center p-6 sm:p-12">
-        <div className="w-full max-w-md space-y-6">
-          <BrandLogo className="mb-4 lg:hidden" size="xl" />
-          <div>
-            <Link
-              to="/"
-              className="mb-4 inline-flex items-center gap-1 text-sm font-semibold text-muted transition hover:text-brand"
-            >
-              <span aria-hidden>←</span> Retour à l’accueil
-            </Link>
-            <h1 className="text-2xl font-black text-ink">Connexion plateforme</h1>
-            <p className="mt-1 text-sm text-muted">
-              Sélectionnez un compte démo ou saisissez vos identifiants.
+    <div className="relative min-h-dvh overflow-x-hidden bg-[#1e3a5f] md:overflow-hidden">
+      <main className="relative z-10 flex min-h-dvh items-center justify-center px-3 py-3 sm:px-4">
+        <section
+          aria-labelledby="login-title"
+          className="w-full max-w-[400px] rounded-2xl border border-white/70 bg-white/95 px-3.5 py-3 shadow-[0_18px_50px_-22px_rgba(15,23,42,0.55)] backdrop-blur-md sm:px-4 sm:py-3.5"
+        >
+          <div className="text-center">
+            <BrandLogo
+              className="justify-center"
+              imageClassName="h-14 w-14 object-contain"
+            />
+            <p className="mt-2 text-[10px] font-black uppercase tracking-[0.16em] text-brand">
+              Accès sécurisé
             </p>
+            <h1 id="login-title" className="mt-1 text-lg font-black tracking-tight text-ink">
+              Connexion plateforme
+            </h1>
           </div>
 
-          <div className="grid grid-cols-3 gap-2">
+          <div className="mt-3 grid grid-cols-3 overflow-hidden rounded-lg border border-line bg-slate-50 p-0.5 shadow-inner">
             {PROFILES.map((option) => (
               <button
                 key={option.id}
                 type="button"
-                onClick={() => form.setValue("profile", option.id, { shouldValidate: true })}
+                aria-pressed={profile === option.id}
+                data-testid={`login-profile-${option.id}`}
+                onClick={() => selectProfile(option.id)}
                 className={cn(
-                  "rounded-xl border px-2 py-3 text-center text-xs font-bold transition",
+                  "min-h-[44px] rounded-md px-1 py-1.5 text-center text-[11px] font-bold leading-tight transition sm:px-1.5",
                   profile === option.id
-                    ? "border-brand bg-brand-50 text-brand"
-                    : "border-line bg-white text-slate-600 hover:border-brand/40",
+                    ? "bg-brand text-white shadow-brand"
+                    : "text-slate-600 hover:bg-white hover:text-brand",
                 )}
               >
                 {option.label}
@@ -199,19 +194,22 @@ export function LoginPage() {
           </div>
 
           <Form {...form}>
-            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+            <form onSubmit={form.handleSubmit(onSubmit)} className="mt-3 space-y-2.5">
               {profile === "school" ? (
                 <FormField
                   control={form.control}
                   name="schoolCode"
                   render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>
-                        Code établissement
-                        <span className="text-danger"> *</span>
-                      </FormLabel>
+                    <FormItem className="space-y-1">
+                      <FormLabel required>Code établissement</FormLabel>
                       <FormControl>
-                        <Input placeholder="ex. CD-2026-0001" {...field} value={field.value ?? ""} />
+                        <Input
+                          className="h-[38px] bg-white"
+                          placeholder="ex. CD-IN-26-001"
+                          data-testid="login-school-code"
+                          {...field}
+                          value={field.value ?? ""}
+                        />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -223,13 +221,16 @@ export function LoginPage() {
                 control={form.control}
                 name="identifier"
                 render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>
-                      Identifiant
-                      <span className="text-danger"> *</span>
-                    </FormLabel>
+                  <FormItem className="space-y-1">
+                    <FormLabel required>Identifiant</FormLabel>
                     <FormControl>
-                      <Input placeholder="ex. superadmin" autoComplete="username" {...field} />
+                      <Input
+                        className="h-[38px] bg-white"
+                        placeholder="Entrez votre identifiant"
+                        autoComplete="username"
+                        data-testid="login-identifier"
+                        {...field}
+                      />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -240,16 +241,15 @@ export function LoginPage() {
                 control={form.control}
                 name="password"
                 render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>
-                      Mot de passe
-                      <span className="text-danger"> *</span>
-                    </FormLabel>
+                  <FormItem className="space-y-1">
+                    <FormLabel required>Mot de passe</FormLabel>
                     <FormControl>
                       <Input
+                        className="h-[38px] bg-white"
                         type="password"
-                        placeholder="••••"
+                        placeholder="Entrez votre mot de passe"
                         autoComplete="current-password"
+                        data-testid="login-password"
                         {...field}
                       />
                     </FormControl>
@@ -259,52 +259,70 @@ export function LoginPage() {
               />
 
               {serverError ? (
-                <p className="rounded-lg bg-danger/10 px-3 py-2 text-sm font-medium text-danger">
+                <p
+                  role="alert"
+                  className="rounded-lg border border-danger/15 bg-danger/10 px-3 py-2 text-sm font-medium text-danger"
+                >
                   {serverError}
                 </p>
               ) : null}
 
-              <Button type="submit" className="w-full" disabled={submitting}>
+              <Button
+                type="submit"
+                className="h-[38px] w-full rounded-lg bg-brand-gradient font-bold text-white shadow-brand hover:bg-brand-gradient hover:opacity-95"
+                disabled={submitting}
+                data-testid="login-submit"
+              >
                 {submitting ? "Connexion…" : "Se connecter"}
               </Button>
             </form>
           </Form>
 
           {showDemoAccounts ? (
-          <div className="rounded-xl border border-dashed border-line bg-slate-50 p-4">
-            <p className="mb-3 text-xs font-bold uppercase tracking-wide text-muted">
-              Comptes de démonstration
-            </p>
-            <div className="space-y-3">
-              {DEMO_ACCOUNT_GROUPS.map((group) => (
-                <div key={group.title}>
-                  <p className="mb-1.5 text-[11px] font-bold uppercase tracking-wide text-brand">
-                    {group.title}
-                  </p>
-                  <div className="flex flex-wrap gap-2">
-                    {group.accounts.map((account) => (
-                      <button
-                        key={`${group.title}-${account.label}`}
-                        type="button"
-                        onClick={() => applyDemo(account)}
-                        title={`${account.role} · ${account.identifier}`}
-                        className="rounded-lg border border-line bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 hover:border-brand/40 hover:text-brand"
-                      >
-                        {account.label}
-                      </button>
-                    ))}
+            <div className="mt-3 rounded-lg border border-dashed border-line bg-slate-50/90 p-2.5">
+              <p className="mb-1.5 text-[10px] font-bold uppercase tracking-wide text-muted">
+                Comptes de démonstration
+              </p>
+              <div className="space-y-2">
+                {DEMO_ACCOUNT_GROUPS.map((group) => (
+                  <div key={group.title}>
+                    <p className="mb-1 text-[10px] font-bold uppercase tracking-wide text-brand">
+                      {group.title}
+                    </p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {group.accounts.map((account) => (
+                        <button
+                          key={`${group.title}-${account.label}`}
+                          type="button"
+                          onClick={() => applyDemo(account)}
+                          title={`${account.role} · ${account.identifier}`}
+                          className="rounded-md border border-line bg-white px-2 py-0.5 text-[11px] font-semibold text-slate-600 transition hover:border-brand/40 hover:text-brand"
+                        >
+                          {account.label}
+                        </button>
+                      ))}
+                    </div>
                   </div>
-                </div>
-              ))}
+                ))}
+              </div>
+              <p className="mt-2 text-[10px] text-muted">
+                Mot de passe démo : <strong>1234</strong> · Code établissement :{" "}
+                <strong>{DEMO_SCHOOL_CODE}</strong>
+              </p>
             </div>
-            <p className="mt-3 text-[11px] text-muted">
-              Mot de passe démo : <strong>1234</strong> · Code établissement :{" "}
-              <strong>{DEMO_SCHOOL_CODE}</strong>
-            </p>
-          </div>
           ) : null}
-        </div>
-      </section>
+
+          <div className="mt-2.5 border-t border-line pt-2.5 text-center">
+            <Link
+              to="/"
+              className="inline-flex items-center gap-1.5 text-xs font-bold text-brand transition hover:text-brand-700"
+            >
+              <span aria-hidden>←</span>
+              Retour à l’accueil
+            </Link>
+          </div>
+        </section>
+      </main>
 
       <Modal
         open={passwordChangeOpen}
@@ -333,10 +351,7 @@ export function LoginPage() {
               name="newPassword"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>
-                    Nouveau mot de passe
-                    <span className="text-danger"> *</span>
-                  </FormLabel>
+                  <FormLabel required>Nouveau mot de passe</FormLabel>
                   <FormControl>
                     <Input type="password" autoFocus {...field} />
                   </FormControl>
@@ -349,10 +364,7 @@ export function LoginPage() {
               name="confirmPassword"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>
-                    Confirmation
-                    <span className="text-danger"> *</span>
-                  </FormLabel>
+                  <FormLabel required>Confirmation</FormLabel>
                   <FormControl>
                     <Input type="password" {...field} />
                   </FormControl>
@@ -360,9 +372,7 @@ export function LoginPage() {
                 </FormItem>
               )}
             />
-            {passwordChangeError ? (
-              <p className="text-sm text-danger">{passwordChangeError}</p>
-            ) : null}
+            {passwordChangeError ? <p className="text-sm text-danger">{passwordChangeError}</p> : null}
           </form>
         </Form>
       </Modal>

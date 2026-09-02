@@ -40,7 +40,7 @@ function renderActions(columns: ReturnType<typeof buildEntityColumns>, row: Reco
 }
 
 describe("entityColumns (D2.8a)", () => {
-  it("construit les colonnes standard Classes + Effectif", () => {
+  it("construit les colonnes metadata Classes (sans Effectif legacy)", () => {
     const module = getEntityModule("classes")!;
     const columns = buildEntityColumns(
       baseCtx({
@@ -57,13 +57,10 @@ describe("entityColumns (D2.8a)", () => {
       "level",
       "track",
       "status",
-      "studentCount",
       "actions",
     ]);
     expect(columns.find((column) => column.key === "status")?.header).toBe("Statut");
-    expect(columns.find((column) => column.key === "studentCount")?.render?.({ name: "6ème A" })).toBe(
-      "2",
-    );
+    expect(columns.find((column) => column.key === "studentCount")).toBeUndefined();
   });
 
   it("construit les colonnes standard Enseignants", () => {
@@ -124,17 +121,56 @@ describe("entityColumns (D2.8a)", () => {
     expect(screen.queryByRole("button", { name: "Supprimer" })).not.toBeInTheDocument();
   });
 
-  it("masque le lien Élèves sur Classes sans permission students", () => {
+  it("n’expose plus le lien Élèves legacy sur Classes (CRUD retiré)", () => {
     const module = getEntityModule("classes")!;
     const columns = buildEntityColumns(
       baseCtx({
         module,
-        studentsCanRead: false,
+        studentsCanRead: true,
       }),
     );
     renderActions(columns, { id: "c1", name: "6ème A" });
     expect(screen.queryByRole("link", { name: "Élèves" })).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Modifier" })).toBeInTheDocument();
+  });
+
+  it("liste paiements : une ligne par reçu, Détail cliquable et action Reçu", () => {
+    const module = getEntityModule("payments")!;
+    const columns = buildEntityColumns(baseCtx({ module }));
+    expect(columns.map((column) => column.key)).toEqual([
+      "reference",
+      "studentName",
+      "itemsDetail",
+      "amount",
+      "method",
+      "date",
+      "status",
+      "actions",
+    ]);
+    expect(columns.find((column) => column.key === "itemsDetail")?.header).toBe("Détail");
+    expect(columns.find((column) => column.key === "amount")?.header).toBe("Total");
+    const detail = columns.find((column) => column.key === "itemsDetail");
+    render(
+      <MemoryRouter>
+        {detail!.render!({
+          items: [
+            { feeLabel: "Minerval", amount: 500 },
+            { feeLabel: "Examen", amount: 1 },
+            { feeLabel: "Cantine", amount: 40 },
+          ],
+        })}
+      </MemoryRouter>,
+    );
+    expect(screen.getByTestId("payment-items-detail")).toHaveTextContent("3 libellés");
+    renderActions(columns, { id: "p1", reference: "PAY-0004", status: "Payé" });
+    expect(screen.getByRole("button", { name: "Reçu" })).toBeInTheDocument();
+  });
+
+  it("n'offre pas Annuler sans Paiements:UPDATE", () => {
+    const module = getEntityModule("payments")!;
+    const columns = buildEntityColumns(baseCtx({ module, canUpdate: false }));
+    renderActions(columns, { id: "p1", reference: "PAY-0004", status: "Payé" });
+    expect(screen.getByRole("button", { name: "Reçu" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Annuler" })).not.toBeInTheDocument();
   });
 
   it("rend les noms d’élèves séparés pour les cellules multi-valeurs", () => {

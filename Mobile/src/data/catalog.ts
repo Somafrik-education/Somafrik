@@ -3,15 +3,25 @@ export type Student = {
   publicId: string;
   name: string;
   firstName: string;
+  lastName?: string;
   matricule: string;
+  studentCode?: string;
   gender: "Masculin" | "Féminin" | string;
   birthDate: string;
+  classId?: string | null;
+  classCode?: string;
   className: string;
+  academicYearId?: string;
+  schoolId?: string;
+  schoolPublicCode?: string;
   schoolCode: string;
   parentName: string;
   parentPhone: string;
   parentEmail: string;
   archived?: boolean;
+  status?: string;
+  /** Jeton de conflit PATCH (`expectedUpdatedAt`). Source PostgreSQL `updated_at`. */
+  updatedAt?: string;
 };
 
 export type Teacher = {
@@ -26,6 +36,7 @@ export type Teacher = {
   phone: string;
   email: string;
   mainSubject: string;
+  schoolCode?: string;
   assignments?: TeacherAssignment[];
   assignedClasses?: string[];
   courses?: string[];
@@ -34,9 +45,19 @@ export type Teacher = {
 export type TeacherAssignment = {
   id?: string;
   teacherId?: string;
+  teacherCode?: string;
+  teacherUserId?: string;
   teacherName?: string;
+  classId?: string | null;
+  classCode?: string;
   className: string;
   course: string;
+  subject?: string;
+  subjectId?: string;
+  subjectCode?: string;
+  academicYearId?: string;
+  assignmentRole?: string;
+  status?: string;
 };
 
 /** Créneau de planning réel synchronisé depuis le back-office (jour/heure). */
@@ -69,10 +90,17 @@ export type Course = {
 export type SchoolClass = {
   id: string;
   publicId: string;
+  classCode?: string;
   name: string;
   level: string;
   track: string;
   teacherId: string;
+  academicYearId?: string;
+  levelId?: string | null;
+  streamId?: string | null;
+  groupId?: string | null;
+  status?: string;
+  schoolCode?: string;
 };
 
 export type NoteItem = {
@@ -88,6 +116,8 @@ export type NoteItem = {
   evaluationType?: string;
   scale?: number;
   evaluationCoefficient?: number;
+  gradeStatus?: string;
+  status?: string;
   authorId?: string;
   enteredAt?: string;
   audit?: {
@@ -102,6 +132,10 @@ export type PresenceItem = {
   id: string;
   publicId: string;
   studentId: string;
+  schoolId?: string;
+  schoolCode?: string;
+  classId?: string | null;
+  classCode?: string;
   className?: string;
   date: string;
   savedAt?: string;
@@ -110,11 +144,13 @@ export type PresenceItem = {
 };
 
 export type AcademicPeriodConfig = {
+  id?: string;
   name: string;
   type: "Trimestre" | "Semestre" | "Période" | string;
   startDate: string;
   endDate: string;
   active?: boolean;
+  status?: string;
 };
 
 export type AcademicManagementConfig = {
@@ -130,9 +166,10 @@ export type AcademicManagementConfig = {
   subjects?: string[];
 };
 
-export const DEFAULT_LEVELS = ["1ère", "2ème", "3ème", "4ème", "5ème", "6ème"];
-export const DEFAULT_TRACKS = ["Générale", "Sciences", "Lettres", "Technique", "Commerciale"];
-export const DEFAULT_CLASS_NAMES = DEFAULT_LEVELS.flatMap((level) => [`${level} A`, `${level} B`]);
+/** Plus aucun catalogue pédagogique local. Liste vide = vide (fail-closed multi-pays). */
+export const DEFAULT_LEVELS: string[] = [];
+export const DEFAULT_TRACKS: string[] = [];
+export const DEFAULT_CLASS_NAMES: string[] = [];
 export const DEFAULT_SUBJECTS = [
   "Mathématiques",
   "Français",
@@ -146,14 +183,34 @@ export const DEFAULT_SUBJECTS = [
   "Informatique",
 ];
 
+export type PaymentLine = {
+  id?: string;
+  feeTypeId?: string | null;
+  feeType?: string;
+  feeLabel?: string;
+  amount: number;
+};
+
 export type PaymentItem = {
   id: string;
-  publicId: string;
+  publicId?: string;
+  reference?: string;
   studentId: string;
+  studentName?: string;
   amount: number;
-  date: string;
+  totalAmount?: number;
+  date?: string;
+  paidAt?: string;
   status: string;
-  method: string;
+  method?: string;
+  paymentMethod?: string;
+  items?: PaymentLine[];
+  itemCount?: number;
+  itemsDetail?: string;
+  feeType?: string;
+  allocatedAmount?: number;
+  unallocatedAmount?: number;
+  overpaymentAmount?: number;
 };
 
 export type PaymentStatus = {
@@ -169,6 +226,9 @@ export type Announcement = {
   date: string;
   scope?: string;
   systemBroadcast?: boolean;
+  schoolCode?: string;
+  schoolId?: string;
+  countryCode?: string;
 };
 
 export type TimetableItem = {
@@ -200,6 +260,8 @@ export type SchoolMessage = {
   parentPhone: string;
   studentId?: string;
   teacherId?: string;
+  schoolCode?: string;
+  schoolId?: string;
   theme: string;
   direction:
     | "École vers parent"
@@ -210,6 +272,10 @@ export type SchoolMessage = {
   message: string;
   status: "Envoyé" | "Distribué" | "Lu" | "Archivé" | "Nouveau" | "En cours" | "Traité" | string;
   date: string;
+  conversationId?: string;
+  senderUserId?: string;
+  senderName?: string;
+  attachments?: Array<{ id: string; fileName: string; mimeType?: string }>;
   attachmentUrl?: string;
   priority?: "Faible" | "Moyenne" | "Haute" | "Critique" | string;
   sentAt?: string;
@@ -255,6 +321,7 @@ export type SchoolProfile = {
   type: string;
   city: string;
   country: string;
+  countryCode?: string;
   address: string;
   phone: string;
   email: string;
@@ -306,8 +373,8 @@ export type SubscriptionItem = {
 
 export const school: SchoolProfile = {
   id: "550e8400-e29b-41d4-a716-446655440001",
-  publicId: "CD-2026-0001",
-  code: "CD-2026-0001",
+  publicId: "CD-IN-26-001",
+  code: "CD-IN-26-001",
   name: "Université de Kinshasa",
   type: "Université",
   city: "Kinshasa",
@@ -337,9 +404,9 @@ export const schools: SchoolProfile[] = [
   school,
   {
     ...school,
-    id: "SCHOOL-BI-2026-0002",
-    publicId: "BI-2026-0002",
-    code: "BI-2026-0002",
+    id: "SCHOOL-BI-ESB-26-001",
+    publicId: "BI-ESB-26-001",
+    code: "BI-ESB-26-001",
     name: "Établissement Somafrik Burundi",
     type: "Université",
     city: "Bujumbura",
@@ -394,8 +461,8 @@ export const countries: CountryProfile[] = [
 
 export const subscriptions: SubscriptionItem[] = [
   {
-    id: "SUB-CD-2026-0001",
-    schoolCode: "CD-2026-0001",
+    id: "SUB-CD-IN-26-001",
+    schoolCode: "CD-IN-26-001",
     countryCode: "CD",
     country: "RDC",
     plan: "Premium",
@@ -543,19 +610,19 @@ export const rolePermissions: Record<string, string[]> = {
 };
 
 export const defaultAcademicConfig: AcademicManagementConfig = {
-  schoolCode: "CD-2026-0001",
+  schoolCode: "CD-IN-26-001",
   periodMode: "trimestre",
   periods: [
     { name: "Trimestre 1", type: "Trimestre", startDate: "01-09-2025", endDate: "31-12-2025", active: true },
     { name: "Trimestre 2", type: "Trimestre", startDate: "01-01-2026", endDate: "31-03-2026" },
     { name: "Trimestre 3", type: "Trimestre", startDate: "01-04-2026", endDate: "30-06-2026" },
   ],
-  evaluationTypes: ["Interrogation", "Devoir", "Examen", "Travail pratique", "Projet"],
+  evaluationTypes: [],
   defaultScale: 20,
   reportCardMode: "period",
-  levels: DEFAULT_LEVELS,
-  tracks: DEFAULT_TRACKS,
-  classNames: DEFAULT_CLASS_NAMES,
+  levels: [],
+  tracks: [],
+  classNames: [],
   subjects: DEFAULT_SUBJECTS,
 };
 
@@ -572,6 +639,7 @@ const securityMatrix: Record<string, Record<string, "R" | "CRUD" | "-">> = {
   Paiements: { "Super Administrateur Somafrik": "R", "Admin Pays": "R", "Admin School": "R", "Préfet des études": "R", Enseignant: "-", Secrétaire: "CRUD", Parent: "R", "Élève / Étudiant": "R" },
   Abonnements: { "Super Administrateur Somafrik": "CRUD", "Admin Pays": "CRUD", "Admin School": "-", "Préfet des études": "-", Enseignant: "-", Secrétaire: "R", Parent: "-", "Élève / Étudiant": "-" },
   Notifications: { "Super Administrateur Somafrik": "CRUD", "Admin Pays": "CRUD", "Admin School": "CRUD", "Préfet des études": "CRUD", Enseignant: "R", Secrétaire: "CRUD", Parent: "R", "Élève / Étudiant": "R" },
+  Announcements: { "Super Administrateur Somafrik": "CRUD", "Admin Pays": "CRUD", "Admin School": "CRUD", "Préfet des études": "CRUD", Enseignant: "R", Secrétaire: "CRUD", Parent: "R", "Élève / Étudiant": "R" },
   Messages: { "Super Administrateur Somafrik": "CRUD", "Admin Pays": "CRUD", "Admin School": "CRUD", "Préfet des études": "CRUD", Enseignant: "CRUD", Secrétaire: "CRUD", Parent: "CRUD", "Élève / Étudiant": "CRUD" },
   Documents: { "Super Administrateur Somafrik": "CRUD", "Admin Pays": "CRUD", "Admin School": "CRUD", "Préfet des études": "CRUD", Enseignant: "R", Secrétaire: "CRUD", Parent: "R", "Élève / Étudiant": "R" },
   Rapports: { "Super Administrateur Somafrik": "CRUD", "Admin Pays": "CRUD", "Admin School": "CRUD", "Préfet des études": "CRUD", Enseignant: "R", Secrétaire: "R", Parent: "R", "Élève / Étudiant": "R" },
@@ -583,9 +651,8 @@ const securityMatrix: Record<string, Record<string, "R" | "CRUD" | "-">> = {
 };
 
 function permissionsFromSecurityMatrix(role: string) {
-  const matrixRole = role === "Proviseur" || role === "Directeur" ? "Préfet des études" : role;
   return Object.entries(securityMatrix).flatMap(([feature, grants]) => {
-    const access = grants[matrixRole] ?? "-";
+    const access = grants[role] ?? "-";
     if (access === "-") return [];
     const actions = access === "CRUD" ? ["READ", "CREATE", "UPDATE", "DELETE", "SUSPEND"] : ["READ"];
     return actions.map((action) => `${feature}:${action}`);
@@ -602,11 +669,12 @@ rolePermissions["Super Administrateur Somafrik"] = [
 
 {
   const schoolPerms = new Set(rolePermissions["Admin School"] ?? []);
-  ["Enseignants:UPDATE", "Enseignants:DELETE", "Enseignants:SUSPEND", "Gérer enseignants"].forEach((token) =>
+  ["Enseignants:DELETE", "Enseignants:SUSPEND", "Gérer enseignants"].forEach((token) =>
     schoolPerms.delete(token),
   );
   schoolPerms.add("Enseignants:READ");
   schoolPerms.add("Enseignants:CREATE");
+  schoolPerms.add("Enseignants:UPDATE");
   schoolPerms.add("Ajouter enseignants");
   schoolPerms.add("Voir enseignants");
   rolePermissions["Admin School"] = [...schoolPerms].sort((a, b) => a.localeCompare(b, "fr"));
@@ -625,12 +693,12 @@ export const userAccounts: UserAccount[] = [
     secondaryRoles: [],
     scopeLevel: "Établissement",
     countryScope: "RDC",
-    schoolCode: "CD-2026-0001",
+    schoolCode: "CD-IN-26-001",
     accessChannel: "Application",
     identifier: "admin",
     status: "Actif",
     permissions: rolePermissions["Admin School"],
-    temporaryPassword: "1234",
+    temporaryPassword: "",
     photoUrl: "",
     createdAt: "01-09-2025",
     lastLoginAt: "01-06-2026",
@@ -654,7 +722,7 @@ export const userAccounts: UserAccount[] = [
     identifier: "superadmin",
     status: "Actif",
     permissions: rolePermissions["Super Administrateur Somafrik"],
-    temporaryPassword: "1234",
+    temporaryPassword: "",
     photoUrl: "",
     createdAt: "01-09-2025",
     lastLoginAt: "01-06-2026",
@@ -678,7 +746,7 @@ export const userAccounts: UserAccount[] = [
     identifier: "admin-rdc",
     status: "Actif",
     permissions: rolePermissions["Admin Pays"],
-    temporaryPassword: "1234",
+    temporaryPassword: "",
     photoUrl: "",
     createdAt: "01-09-2025",
     lastLoginAt: "01-06-2026",
@@ -702,7 +770,7 @@ export const userAccounts: UserAccount[] = [
     identifier: "admin-bi",
     status: "Actif",
     permissions: rolePermissions["Admin Pays"],
-    temporaryPassword: "1234",
+    temporaryPassword: "",
     photoUrl: "",
     createdAt: "15-05-2026",
     lastLoginAt: "",
@@ -721,12 +789,12 @@ export const userAccounts: UserAccount[] = [
     secondaryRoles: [],
     scopeLevel: "Établissement",
     countryScope: "RDC",
-    schoolCode: "CD-2026-0001",
+    schoolCode: "CD-IN-26-001",
     accessChannel: "Application",
     identifier: "prefet",
     status: "Actif",
     permissions: rolePermissions["Préfet des études"],
-    temporaryPassword: "1234",
+    temporaryPassword: "",
     photoUrl: "",
     createdAt: "01-09-2025",
     lastLoginAt: "",
@@ -745,12 +813,12 @@ export const userAccounts: UserAccount[] = [
     secondaryRoles: [],
     scopeLevel: "Établissement",
     countryScope: "RDC",
-    schoolCode: "CD-2026-0001",
+    schoolCode: "CD-IN-26-001",
     accessChannel: "Application",
     identifier: "secretaire",
     status: "Actif",
     permissions: rolePermissions.Secrétaire,
-    temporaryPassword: "1234",
+    temporaryPassword: "",
     photoUrl: "",
     createdAt: "01-09-2025",
     lastLoginAt: "",
@@ -769,7 +837,7 @@ export const userAccounts: UserAccount[] = [
     secondaryRoles: [],
     scopeLevel: "Établissement",
     countryScope: "RDC",
-    schoolCode: "CD-2026-0001",
+    schoolCode: "CD-IN-26-001",
     accessChannel: "Application",
     identifier: "T1",
     status: "Actif",
@@ -793,7 +861,7 @@ export const userAccounts: UserAccount[] = [
     secondaryRoles: [],
     scopeLevel: "Établissement",
     countryScope: "RDC",
-    schoolCode: "CD-2026-0001",
+    schoolCode: "CD-IN-26-001",
     accessChannel: "Application",
     identifier: "+243 820 000 001",
     status: "Actif",
@@ -894,10 +962,10 @@ export const classes: SchoolClass[] = [
 ];
 
 export const students: Student[] = [
-  { id: "1", publicId: "ELE-0001", name: "Jean Dupont", firstName: "Jean", matricule: "ELE-0001", gender: "Masculin", birthDate: "12-04-2012", className: "6ème A", schoolCode: "CD-2026-0001", parentName: "Parent Dupont", parentPhone: "+243 820 000 001", parentEmail: "parent.dupont@example.com", archived: false },
-  { id: "2", publicId: "ELE-0002", name: "Marie Martin", firstName: "Marie", matricule: "ELE-0002", gender: "Féminin", birthDate: "18-09-2012", className: "6ème A", schoolCode: "CD-2026-0001", parentName: "Parent Martin", parentPhone: "+243 820 000 001", parentEmail: "parent.martin@example.com", archived: false },
-  { id: "3", publicId: "ELE-0003", name: "Paul Bernard", firstName: "Paul", matricule: "ELE-0003", gender: "Masculin", birthDate: "03-02-2011", className: "6ème B", schoolCode: "CD-2026-0001", parentName: "Parent Bernard", parentPhone: "+243 820 000 003", parentEmail: "parent.bernard@example.com", archived: false },
-  { id: "4", publicId: "ELE-0004", name: "Sarah Mbala", firstName: "Sarah", matricule: "ELE-0004", gender: "Féminin", birthDate: "21-07-2011", className: "5ème A", schoolCode: "CD-2026-0001", parentName: "Parent Mbala", parentPhone: "+243 820 000 004", parentEmail: "parent.mbala@example.com", archived: false },
+  { id: "1", publicId: "CD-IN-EL-26-001", name: "Jean Dupont", firstName: "Jean", matricule: "CD-IN-EL-26-001", gender: "Masculin", birthDate: "12-04-2012", className: "6ème A", schoolCode: "CD-IN-26-001", parentName: "Parent Dupont", parentPhone: "+243 820 000 001", parentEmail: "parent.dupont@example.com", archived: false },
+  { id: "2", publicId: "CD-IN-EL-26-002", name: "Marie Martin", firstName: "Marie", matricule: "CD-IN-EL-26-002", gender: "Féminin", birthDate: "18-09-2012", className: "6ème A", schoolCode: "CD-IN-26-001", parentName: "Parent Martin", parentPhone: "+243 820 000 001", parentEmail: "parent.martin@example.com", archived: false },
+  { id: "3", publicId: "CD-IN-EL-26-003", name: "Paul Bernard", firstName: "Paul", matricule: "CD-IN-EL-26-003", gender: "Masculin", birthDate: "03-02-2011", className: "6ème B", schoolCode: "CD-IN-26-001", parentName: "Parent Bernard", parentPhone: "+243 820 000 003", parentEmail: "parent.bernard@example.com", archived: false },
+  { id: "4", publicId: "CD-IN-EL-26-004", name: "Sarah Mbala", firstName: "Sarah", matricule: "CD-IN-EL-26-004", gender: "Féminin", birthDate: "21-07-2011", className: "5ème A", schoolCode: "CD-IN-26-001", parentName: "Parent Mbala", parentPhone: "+243 820 000 004", parentEmail: "parent.mbala@example.com", archived: false },
 ];
 
 export const notes: NoteItem[] = [
@@ -1186,14 +1254,14 @@ while (students.length < 50) {
 
   students.push({
     id: String(index),
-    publicId: `ELE-${String(index).padStart(4, "0")}`,
+    publicId: `CD-IN-EL-26-${String(index).padStart(3, "0")}`,
     name: `${firstName} ${lastName}`,
     firstName,
-    matricule: `ELE-${String(index).padStart(4, "0")}`,
+    matricule: `CD-IN-EL-26-${String(index).padStart(3, "0")}`,
     gender: index % 2 === 0 ? "Féminin" : "Masculin",
     birthDate: `${String((index % 27) + 1).padStart(2, "0")}-${String((index % 12) + 1).padStart(2, "0")}-2012`,
     className: classItem.name,
-    schoolCode: "CD-2026-0001",
+    schoolCode: "CD-IN-26-001",
     parentName: `Parent ${lastName}`,
     parentPhone: `+243 820 100 ${String(Math.ceil(index / 2)).padStart(3, "0")}`,
     parentEmail: `parent-${index}@example.com`,
@@ -1346,7 +1414,7 @@ while (userAccounts.length < 50) {
             : `USR-${String(index).padStart(5, "0")}`,
     status: index % 13 === 0 ? "Suspendu" : "Actif",
     permissions: rolePermissions[role] ?? ["Voir tableau de bord"],
-    temporaryPassword: "1234",
+    temporaryPassword: "",
     photoUrl: "",
     createdAt: `${String((index % 27) + 1).padStart(2, "0")}-01-2026`,
     lastLoginAt: `${String((index % 27) + 1).padStart(2, "0")}-06-2026`,

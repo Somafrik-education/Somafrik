@@ -5,7 +5,6 @@ import type {
   FeeGridStatus,
   FeeTariffHistory,
   SchoolFeeItem,
-  SchoolFeeType,
   SessionUser,
   StudentFee,
   StudentFeeStatus,
@@ -13,11 +12,8 @@ import type {
 import { getSchoolAcademicLists } from "./academicConfig";
 import { scopedStudents } from "./establishment";
 import { normalize } from "./format";
-import { isSchoolAdminRole } from "./format";
-import { COUNTRY_ADMIN_ROLE, isSuperAdminRole } from "./orgHierarchy";
 
 export const FEE_GRID_STATUSES: FeeGridStatus[] = ["Brouillon", "Active", "Désactivée", "Clôturée"];
-export const SCHOOL_FEE_TYPES: SchoolFeeType[] = ["Inscription", "Mensualité", "Annexe"];
 export const STUDENT_FEE_STATUSES: StudentFeeStatus[] = [
   "À payer",
   "Partiellement payé",
@@ -61,7 +57,7 @@ export function resolveSchoolCurrency(state: BackOfficeState, schoolCode: string
   if (school?.currency) return String(school.currency).trim().toUpperCase();
   const countryCode = String(school?.countryCode ?? school?.code ?? "").slice(0, 2).toUpperCase();
   const country = state.countries.find((item) => normalize(item.code) === normalize(countryCode));
-  return String(country?.currency ?? "USD").trim().toUpperCase() || "USD";
+  return String(country?.currency ?? school?.currency ?? "").trim().toUpperCase();
 }
 
 function scopedSchoolCode(user: SessionUser | null): string | null {
@@ -91,25 +87,24 @@ export function scopedStudentFees(user: SessionUser | null, state: BackOfficeSta
   return rows.filter((row) => normalize(row.schoolCode) === normalize(code));
 }
 
-/** EXG-FRAIS-020 / EXG-FRAIS-021 — gestion des grilles tarifaires. */
+/** Gestion des grilles — permissions effectives uniquement (F7). */
 export function canManageFeeGrids(user: SessionUser | null): boolean {
   if (!user) return false;
-  if (isSuperAdminRole(user.role)) return true;
-  const role = normalize(user.role);
-  return isSchoolAdminRole(user.role) || role === "comptable";
+  const permissions = Array.isArray(user.permissions) ? user.permissions : [];
+  return permissions.includes("Frais & tarifs:CREATE") || permissions.includes("Frais & tarifs:UPDATE");
 }
 
 export function canViewFeeGrids(user: SessionUser | null): boolean {
   if (!user) return false;
-  if (isSuperAdminRole(user.role) || user.role === COUNTRY_ADMIN_ROLE) return true;
-  return canManageFeeGrids(user) || normalize(user.role) === "secretaire";
+  const permissions = Array.isArray(user.permissions) ? user.permissions : [];
+  return permissions.includes("Frais & tarifs:READ") || canManageFeeGrids(user);
 }
 
 export function canViewStudentFees(user: SessionUser | null): boolean {
   if (!user) return false;
   if (canViewFeeGrids(user)) return true;
-  const role = normalize(user.role);
-  return role === "parent" || role.includes("eleve") || role.includes("etudiant");
+  const permissions = Array.isArray(user.permissions) ? user.permissions : [];
+  return permissions.includes("Paiements:READ") || permissions.includes("Impayés:READ");
 }
 
 export function feeGridKey(grid: Pick<FeeGrid, "schoolCode" | "className" | "academicYear" | "periodName">): string {
@@ -171,7 +166,7 @@ export function validateFeeGridInput(
   }
   const activeItems = items.filter((item) => item.status !== "Désactivé");
   if (!activeItems.length) {
-    return { ok: false, error: "Ajoutez au moins un frais (inscription, mensualité ou annexe)." };
+    return { ok: false, error: "Ajoutez au moins un frais canonique (inscription, scolarité, …)." };
   }
   for (const item of activeItems) {
     const amount = Number(item.amount ?? 0);
@@ -180,12 +175,6 @@ export function validateFeeGridInput(
     }
     if (!String(item.label ?? "").trim()) {
       return { ok: false, error: "Chaque frais doit avoir un libellé." };
-    }
-    if (item.feeType === "Mensualité") {
-      const months = item.monthlyMonths ?? [];
-      if (!months.length) {
-        return { ok: false, error: "Sélectionnez au moins un mois pour la mensualité." };
-      }
     }
   }
   return { ok: true };
@@ -298,8 +287,8 @@ export function applyFeeGridToStudents(
 
   for (const student of students) {
     for (const item of items) {
-      if (item.feeType === "Mensualité") {
-        const months = item.monthlyMonths?.length ? item.monthlyMonths : DEFAULT_MONTHLY_MONTHS;
+      if (Array.isArray(item.monthlyMonths) && item.monthlyMonths.length) {
+        const months = item.monthlyMonths;
         for (const month of months) {
           const key = studentFeeDedupeKey(String(student.id ?? ""), item.id, month);
           if (existingKeys.has(key)) {
@@ -418,6 +407,35 @@ export function classOptionsForSchool(state: BackOfficeState, schoolCode: string
       .filter(Boolean),
   );
   return [...new Set([...classNames, ...fromStudents])].sort((a, b) => a.localeCompare(b, "fr"));
+}
+
+export type SchoolClassChoice = {
+  classId: string;
+  classCode: string;
+  className: string;
+};
+
+/** Identité canonique de classe pour une grille tarifaire. className n'est qu'un libellé. */
+export function classChoicesForSchool(state: BackOfficeState, schoolCode: string): SchoolClassChoice[] {
+  const rows = ((state.classes ?? []) as Record<string, unknown>[]).filter((row) => {
+    const code = String(row.schoolCode ?? "").trim();
+    if (schoolCode && code && normalize(code) !== normalize(schoolCode)) return false;
+    const status = normalize(String(row.status ?? ""));
+    return status !== "archivee" && status !== "inactive" && status !== "inactivee";
+  });
+  const choices: SchoolClassChoice[] = [];
+  const seen = new Set<string>();
+  for (const row of rows) {
+    const classId = String(row.id ?? row.classId ?? "").trim();
+    if (!classId || seen.has(classId)) continue;
+    seen.add(classId);
+    choices.push({
+      classId,
+      classCode: String(row.classCode ?? row.code ?? "").trim(),
+      className: String(row.name ?? row.className ?? "").trim() || classId,
+    });
+  }
+  return choices.sort((a, b) => a.className.localeCompare(b.className, "fr"));
 }
 
 export function isGridEditable(grid: FeeGrid): boolean {

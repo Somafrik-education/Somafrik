@@ -1,7 +1,7 @@
 # Roadmap produit — Somafrik
 
 **Statut :** source de vérité officielle des développements  
-**Dernière mise à jour :** 2026-07-26  
+**Dernière mise à jour :** 2026-08-13
 **Branche de référence :** `develop`  
 **Suivi Design System granulaire :** [../ux/design-system/SUIVI-MIGRATIONS.md](../ux/design-system/SUIVI-MIGRATIONS.md)
 
@@ -42,6 +42,7 @@ La plateforme unifie :
 4. **PostgreSQL canonique** — les domaines critiques (présences, notes) migrent vers des tables PG avec contrats explicites.
 5. **Hotfix avant roadmap** — un incident préprod bloque la phase suivante jusqu’à clôture CTO.
 6. **Git Flow** — `develop` → Draft PR → CI/Security → review CTO → merge → préprod → production ([CONTRIBUTING.md](./CONTRIBUTING.md)).
+7. **Reconstruction contrôlée** — V2 est construite en parallèle et migre une capacité à la fois ; aucun cutover sans parité et Go CTO ([V2-RECONSTRUCTION.md](./V2-RECONSTRUCTION.md)).
 
 ---
 
@@ -57,7 +58,10 @@ La plateforme unifie :
 | Notes (PG + ToolLayout + sync enseignant) | ✅ Stabilisé · Bulletins 🔒 |
 | Sync outbox | ✅ SYNC-01/02/03 · SYNC-04 isolé |
 | Hotfix Admin auditLog | ✅ RBAC-ADMIN-01 mergé |
-| Finance opérations / RH | 🔒 Verrouillé |
+| Reconstruction V2 | 🚧 V2.0 fondation et frontières |
+| Finance opérations / RH | 🔒 Verrouillé (persistance LOT 4 ✅) |
+| Pédagogie (cours, EDT, notes, présences) | 🔒 Verrouillé (persistance LOT 5 ✅) |
+| Plateforme (pays, abonnements, notifications, RBAC) | 🔒 Verrouillé (persistance LOT 6 ✅) |
 | Mobile production / IA / i18n | 📋 Planifié |
 
 ---
@@ -78,11 +82,13 @@ La plateforme unifie :
 
 | Item | Statut | Phase |
 |------|--------|-------|
+| V2.0 (structure, frontières, tenant scope) | En cours | Transverse A–E |
 | SYNC-04 (SAVEPOINT / codes `GRADE_*`) | Isolé | D / E |
 | Fiches Classe / Enseignant / Parent | 🔒 produit | E |
 | Chrome DS Présences (`ToolLayout`) | 🔒 | E |
 | Bulletins D3.7 | 🔒 après Notes | E |
-| Finance opérations | 🔒 | F |
+| Finance persistance PostgreSQL (LOT 4) | ✅ | F (persistance) |
+| Finance opérations produit (reporting, RH, extras) | 🔒 | F |
 
 ## 7. Modules planifiés
 
@@ -92,7 +98,8 @@ Voir phases F → J ci-dessous.
 
 | Dette | Sévérité | Mitigation |
 |-------|----------|------------|
-| Workflows encore porteurs d’`auditLog` client (Finance / Contacts) | Moyenne | Filet DataContext + strip ; migration progressive |
+| Snapshot `backoffice_state` partagé entre domaines | Haute | Migration V2 progressive vers API métier + PostgreSQL canonique (LOTS 1–4 : PUT `schools` / `students` / `teachers` / `assignments` / Finance retirés) |
+| Workflows encore porteurs d’`auditLog` client (Contacts) | Moyenne | Filet DataContext + strip ; migration progressive |
 | SYNC-04 non livré | Moyenne | Isoler après validation préprod Notes |
 | Monolithes UI (`ConfigurationPage`, modales EntityPage) | Basse | Extractions D2.8 pattern |
 | Expo / audit npm Mobile | Basse | Migration Expo ciblée |
@@ -180,7 +187,7 @@ Sous réserve de validation préprod post-RBAC-ADMIN-01 :
 | **Préconditions** | Vie scolaire stabilisée ; instruction CTO |
 | **Fonctionnalités** | Grilles tarifaires, paiements, relances, reporting financier |
 | **Critères de validation** | RBAC Comptable/Secrétaire ; audit serveur ; pas d’`auditLog` client |
-| **Statut** | 🔒 Verrouillé |
+| **Statut** | ✅ Persistance LOT 6 (PostgreSQL SoT plateforme) · ✅ LOT 7 Clients/comptes (PostgreSQL SoT users/contacts/relations/messages/announcements) · ✅ Comptes V2 identité ≠ rôle (`user_roles`, GRANT/REVOKE) · LOT 8 bloqué |
 
 ### Phase G — Communication
 

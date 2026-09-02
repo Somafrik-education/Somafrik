@@ -17,12 +17,12 @@ export { COUNTRY_ADMIN_ROLE, SCHOOL_ADMIN_ROLE } from "./orgHierarchy";
  * Rôles plateforme : Admin Pays, Admin School (matrice Superadmin).
  */
 export const ROLE_GOVERNANCE_NOTES = {
-  superadminMatrix: `Parcours obligatoire : pays (code + nom) → établissement (code + nom) → rôle cible (${COUNTRY_ADMIN_ROLE} ou ${SCHOOL_ADMIN_ROLE}) → module fonctionnel → droits CRUD.`,
-  localOperational: "Les rôles métier d'établissement (Secrétaire, Préfet, Enseignant…) se pilotent dans Configuration.",
+  superadminMatrix: `Parcours obligatoire : pays (code + nom) → établissement (code + nom) → rôle cible (catalogue PostgreSQL) → module fonctionnel → droits CRUD.`,
+  localOperational: "Les rôles métier d'établissement se gèrent dans Administration → Rôles et droits (plus dans Configuration).",
 } as const;
 
 /** Modules pilotés au niveau pays (droits Admin Pays). */
-export const COUNTRY_SCOPE_MODULES = new Set(["Pays", "Établissements", "Abonnements", "Utilisateurs"]);
+export const COUNTRY_SCOPE_MODULES = new Set(["Pays", "Établissements", "Abonnements", "Utilisateurs", "Référentiels pédagogiques"]);
 
 export function resolveSuperadminPermissionRole(module: string): typeof COUNTRY_ADMIN_ROLE | typeof SCHOOL_ADMIN_ROLE {
   return COUNTRY_SCOPE_MODULES.has(module) ? COUNTRY_ADMIN_ROLE : SCHOOL_ADMIN_ROLE;

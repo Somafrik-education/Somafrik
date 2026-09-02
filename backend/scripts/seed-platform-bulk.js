@@ -593,11 +593,11 @@ async function main() {
     console.log("\nComptes de démonstration (mot de passe / PIN : 1234) :");
     console.log("  Super admin : superadmin");
     console.log("  Admins pays : admin-rdc | admin-cg | admin-bi");
-    console.log("  Admin école démo : admin (CD-2026-0001)");
-    console.log("  Préfet démo : prefet (CD-2026-0001)");
-    console.log("  Secrétaire démo : secretaire (CD-2026-0001)");
-    console.log("  Enseignant démo : ENS-0001 (CD-2026-0001)");
-    console.log("  Élève démo : ELE-0001 (CD-2026-0001)");
+    console.log("  Admin école démo : admin (CD-IN-26-001)");
+    console.log("  Préfet démo : prefet (CD-IN-26-001)");
+    console.log("  Secrétaire démo : secretaire (CD-IN-26-001)");
+    console.log("  Enseignant démo : ENS-0001 (CD-IN-26-001)");
+    console.log("  Élève démo : CD-IN-EL-26-001 (CD-IN-26-001)");
   } finally {
     await pool.end();
   }

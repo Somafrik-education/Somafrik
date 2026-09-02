@@ -1,0 +1,62 @@
+import type { BackOfficeState } from "../types";
+import { api } from "../api/client";
+import { normalize } from "./format";
+
+export async function syncResidualBackOfficePatch(
+  patch: Partial<BackOfficeState>,
+  schoolCode: string,
+): Promise<void> {
+  const scopedSchool = String(schoolCode ?? "").trim().toUpperCase();
+  if (!scopedSchool || scopedSchool === "*") {
+    throw new Error("Sélectionnez un établissement actif avant d'enregistrer la configuration.");
+  }
+
+  if (patch.academicConfigs && typeof patch.academicConfigs === "object") {
+    const entries = Object.entries(patch.academicConfigs);
+    const scopedEntries = entries.filter(([code]) => normalize(code) === normalize(scopedSchool));
+    const foreignEntries = entries.filter(([code]) => normalize(code) !== normalize(scopedSchool));
+
+    if (foreignEntries.length) {
+      throw new Error(
+        `Configuration hors périmètre : ${foreignEntries.map(([code]) => code).join(", ")}.`,
+      );
+    }
+
+    if (scopedEntries.length > 1) {
+      throw new Error("Une seule configuration établissement peut être synchronisée à la fois.");
+    }
+
+    if (scopedEntries.length === 1) {
+      const [, config] = scopedEntries[0];
+      const payload = { ...((config && typeof config === "object" ? config : {}) as Record<string, unknown>) };
+      delete payload.evaluationTypes;
+      delete payload.levels;
+      delete payload.tracks;
+      delete payload.userRoles;
+      delete payload.schoolId;
+      delete payload.schoolCode;
+      delete payload.countryCode;
+      // LOT 4 : ne pas retirer silencieusement periods/classNames/subjects/settings — l'API refuse (400).
+      await api.put(
+        `/backoffice/establishments/${encodeURIComponent(scopedSchool)}/academic-config`,
+        payload,
+      );
+    }
+  }
+
+  if (Array.isArray(patch.exams) || Array.isArray(patch.bulletins) || Array.isArray(patch.documents)) {
+    throw new Error(
+      "Les examens, bulletins et documents ne sont plus enregistrables via le JSON résiduel. Utilisez les APIs canoniques.",
+    );
+  }
+}
+
+export function extractResidualPatch(patch: Partial<BackOfficeState>): Partial<BackOfficeState> {
+  const residual: Partial<BackOfficeState> = {};
+  if (patch.academicConfigs) residual.academicConfigs = patch.academicConfigs;
+  return residual;
+}
+
+export function hasResidualPatch(patch: Partial<BackOfficeState>): boolean {
+  return Object.keys(extractResidualPatch(patch)).length > 0;
+}

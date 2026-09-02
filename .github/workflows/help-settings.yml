@@ -1,0 +1,30 @@
+name: HELP-SETTINGS-02 Catalogue
+
+on:
+  pull_request:
+    branches: [develop]
+    paths:
+      - "packages/help-catalog/**"
+      - "docs/audits/settings-functional-matrix.json"
+      - "scripts/verify-help-settings.js"
+      - "scripts/verify-help-v1a-catalogue.js"
+      - "package.json"
+      - ".github/workflows/help-settings.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  help-settings:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.12.0"
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - name: Verify HELP-SETTINGS-02 catalogue
+        run: npm run verify:help-settings

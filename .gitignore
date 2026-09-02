@@ -11,8 +11,8 @@ web/dist/
 **/dist/
 Mobile/.expo/
 Mobile/web-build/
-Mobile/android/app/build/
-Mobile/ios/build/
+Mobile/android/
+Mobile/ios/
 
 # Environment
 .env
@@ -23,6 +23,13 @@ Mobile/ios/build/
 Mobile/.env.local
 web/.env.local
 
+# Firebase FCM V1 private service account — never commit
+**/firebase-adminsdk*.json
+**/fcm-service-account*.json
+**/google-fcm-service-account*.json
+Mobile/*-firebase-adminsdk-*.json
+backend/*-firebase-adminsdk-*.json
+
 # Logs
 *.log
 npm-debug.log*
@@ -30,12 +37,21 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 
+# Dumps live pédagogiques — identifiants opérationnels, jamais committer
+docs/audits/evidence/pedagogical-reference-inventory*
+**/pedagogical-reference-inventory.json
+**/pedagogical-reference-inventory.md
+
 # Local tooling / artifacts
 local.properties
 **/local.properties
 *.keystore
+*.jks
+credentials.json
+*.aab
 test-results/
 tmp/
+Mobile/artifacts/
 
 # Caches / tooling
 .cache/

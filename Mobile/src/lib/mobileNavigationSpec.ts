@@ -1,15 +1,19 @@
 /**
  * Contrat UI/UX — navigation principale mobile (bottom tabs).
+ * V1.2 : plus d’onglet Menu. Les modules secondaires sont dans le drawer.
  */
 
 export const NAVIGATION_COPY = {
   tabAccueil: "Accueil",
   tabClasses: "Classes",
-  tabTeachers: "Enseignants",
-  tabMenu: "Menu",
+  tabStudents: "Élèves",
+  tabAttendance: "Présence",
+  tabPayments: "Paiement",
+  tabTeachers: "Profs",
+  tabFrais: "Paiement",
+  tabComptes: "Comptes",
   homeOverview: "Vue d'ensemble",
   teachersTitle: "Enseignants",
-  menuTitle: "Menu",
 } as const;
 
 export const NAVIGATION_TEST_IDS = {
@@ -18,8 +22,8 @@ export const NAVIGATION_TEST_IDS = {
   homeOverviewTitle: "home-overview-title",
   teachersScreen: "teachers-screen",
   teachersTitle: "teachers-title",
-  menuScreen: "menu-screen",
-  menuTitle: "menu-title",
+  headerMenu: "mobile-header-menu",
+  roleDrawer: "mobile-role-drawer",
   activeTabIndicator: "tab-active-indicator",
 } as const;
 
@@ -33,9 +37,32 @@ export function tabTestIdForTabName(tabName: string): string | undefined {
     case "Classes":
       return "tab-classes";
     case "Enseignants":
+    case "Profs":
       return "tab-enseignants";
-    case "Menu":
-      return "tab-menu";
+    case "TeacherStudents":
+    case "Students":
+    case "Élèves":
+      return "tab-eleves";
+    case "TeacherAttendance":
+    case "Présence":
+    case "Présences":
+      return "tab-presences";
+    case "Paiements":
+    case "Paiement":
+    case "Frais":
+      return "tab-frais";
+    case "Utilisateurs":
+    case "Comptes":
+      return "tab-comptes";
+    case "Schools":
+    case "Écoles":
+      return "tab-ecoles";
+    case "Subscriptions":
+    case "Offres":
+      return "tab-offres";
+    case "PlatformNotifications":
+    case "Notifs":
+      return "tab-notifs";
     default:
       return undefined;
   }

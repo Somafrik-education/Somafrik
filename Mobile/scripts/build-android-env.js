@@ -94,10 +94,32 @@ function ensurePrerequisites() {
   ensureLocalProperties(sdkDir);
 }
 
-function loadBuildEnv() {
+function loadBuildEnv(requestedProfile) {
   loadEnvFile(path.join(workspaceRoot, ".env"));
   loadEnvFile(path.join(mobileRoot, ".env.local"));
   ensurePrerequisites();
+
+  const {
+    HTTPS_ONLY_PROFILES,
+    assertReleaseApiUrl,
+    resolveApiUrlForProfile,
+    resolveReleaseProfile,
+  } = require("../config/releaseEnvironments");
+
+  if (requestedProfile) {
+    process.env.EXPO_PUBLIC_RELEASE_PROFILE = requestedProfile;
+    process.env.EAS_BUILD_PROFILE = requestedProfile;
+  }
+  const profile = resolveReleaseProfile(process.env);
+
+  if (HTTPS_ONLY_PROFILES.includes(profile)) {
+    const apiUrl = assertReleaseApiUrl(profile, resolveApiUrlForProfile(profile, process.env));
+    process.env.EXPO_PUBLIC_API_URL = apiUrl;
+    process.env.EXPO_PUBLIC_RELEASE_PROFILE = profile;
+    process.env.EXPO_PUBLIC_DEMO_MODE = "false";
+    process.env.EXPO_PUBLIC_DEMO_PIN = "";
+    return apiUrl;
+  }
 
   const apiUrl = process.env.EXPO_PUBLIC_API_URL;
   if (!apiUrl || /localhost|127\.0\.0\.1/i.test(apiUrl)) {
@@ -126,7 +148,9 @@ function runGradle(task) {
     env: {
       ...process.env,
       EXPO_PUBLIC_API_URL: process.env.EXPO_PUBLIC_API_URL,
+      EXPO_PUBLIC_RELEASE_PROFILE: process.env.EXPO_PUBLIC_RELEASE_PROFILE ?? "",
       EXPO_PUBLIC_DEMO_MODE: process.env.EXPO_PUBLIC_DEMO_MODE ?? "false",
+      EXPO_PUBLIC_DEMO_PIN: process.env.EXPO_PUBLIC_DEMO_PIN ?? "",
     },
   });
 

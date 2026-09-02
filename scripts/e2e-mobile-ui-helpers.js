@@ -247,16 +247,20 @@ const HOME_TEST_IDS = {
 const NAVIGATION_TEST_IDS = {
   teachersScreen: "teachers-screen",
   teachersTitle: "teachers-title",
-  menuScreen: "menu-screen",
-  menuTitle: "menu-title",
   homeOverviewTitle: "home-overview-title",
+  headerMenu: "mobile-header-menu",
+  roleDrawer: "mobile-role-drawer",
+  drawerLogout: "mobile-role-drawer-logout",
 };
 
 const TAB_TEST_IDS = {
   accueil: "tab-accueil",
-  menu: "tab-menu",
   classes: "tab-classes",
+  students: "tab-eleves",
+  attendance: "tab-presences",
   teachers: "tab-enseignants",
+  frais: "tab-frais",
+  comptes: "tab-comptes",
   tabBar: "mobile-tab-bar",
 };
 
@@ -475,12 +479,16 @@ async function clickTab(page, tabTestId, label) {
 }
 
 async function logoutFromMenu(page) {
-  await clickTab(page, TAB_TEST_IDS.menu, "Menu");
-  await page.waitForSelector(testIdSelector(MENU_TEST_IDS.logoutButton), {
+  await page.locator(testIdSelector(NAVIGATION_TEST_IDS.headerMenu)).click();
+  await page.waitForSelector(testIdSelector(NAVIGATION_TEST_IDS.roleDrawer), {
     state: "visible",
     timeout: LOGIN_MAX_MS,
   });
-  await page.locator(testIdSelector(MENU_TEST_IDS.logoutButton)).click();
+  await page.waitForSelector(testIdSelector(NAVIGATION_TEST_IDS.drawerLogout), {
+    state: "visible",
+    timeout: LOGIN_MAX_MS,
+  });
+  await page.locator(testIdSelector(NAVIGATION_TEST_IDS.drawerLogout)).click();
   await page.waitForSelector(testIdSelector(WELCOME_TEST_IDS.loginButton), {
     state: "visible",
     timeout: LOGIN_MAX_MS,
@@ -589,7 +597,7 @@ async function waitForSchoolAdminHome(page) {
 }
 
 async function assertTabBarVisible(page, results, stepLabel) {
-  const tabs = [TAB_TEST_IDS.accueil, TAB_TEST_IDS.classes, TAB_TEST_IDS.teachers, TAB_TEST_IDS.menu];
+  const tabs = [TAB_TEST_IDS.accueil, TAB_TEST_IDS.students, TAB_TEST_IDS.attendance, TAB_TEST_IDS.frais, TAB_TEST_IDS.classes];
   let visibleCount = 0;
   for (const tabId of tabs) {
     const locator = page.locator(testIdSelector(tabId));
@@ -1854,7 +1862,7 @@ async function assertResponsiveAuthenticatedUi(page, viewport, results, stepPref
 
   await assertElementsWithinViewportWidth(
     page,
-    [CLASSES_STUDENT_TEST_IDS.classesTitle, CLASSES_LOADING_TEST_IDS.addClassButton],
+    [CLASSES_STUDENT_TEST_IDS.classesTitle],
     viewport,
     results,
     `${prefix}Classes — en-tête sans débordement`,

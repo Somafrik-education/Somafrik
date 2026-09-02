@@ -7,12 +7,14 @@ import * as SecureStore from "expo-secure-store";
 const ACCESS_TOKEN_KEY = "somafrik.accessToken";
 const REFRESH_TOKEN_KEY = "somafrik.refreshToken";
 const SESSION_PROFILE_KEY = "somafrik.sessionProfile";
+const EFFECTIVE_PERMISSIONS_SNAPSHOT_KEY = "somafrik.effectivePermissionsSnapshotV1";
 
 export type SessionProfile = {
   role: string;
+  roleKeys?: string[];
   permissions?: string[];
   user: Record<string, unknown>;
-  school: Record<string, unknown>;
+  school?: Record<string, unknown>;
 };
 
 async function setItem(key: string, value: string | null) {
@@ -60,11 +62,26 @@ export async function getSessionProfile(): Promise<SessionProfile | null> {
   }
 }
 
-/** Supprime tokens + profil session (logout complet). */
+export async function saveEffectivePermissionsSnapshot(raw: string | null) {
+  if (!raw) {
+    await SecureStore.deleteItemAsync(EFFECTIVE_PERMISSIONS_SNAPSHOT_KEY);
+    return;
+  }
+  await SecureStore.setItemAsync(EFFECTIVE_PERMISSIONS_SNAPSHOT_KEY, raw, {
+    keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
+  });
+}
+
+export async function getEffectivePermissionsSnapshotRaw(): Promise<string | null> {
+  return SecureStore.getItemAsync(EFFECTIVE_PERMISSIONS_SNAPSHOT_KEY);
+}
+
+/** Supprime tokens + profil session + snapshot permissions (logout / 401). */
 export async function clearSecureSession() {
   await Promise.all([
     SecureStore.deleteItemAsync(ACCESS_TOKEN_KEY),
     SecureStore.deleteItemAsync(REFRESH_TOKEN_KEY),
     SecureStore.deleteItemAsync(SESSION_PROFILE_KEY),
+    SecureStore.deleteItemAsync(EFFECTIVE_PERMISSIONS_SNAPSHOT_KEY),
   ]);
 }

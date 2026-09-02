@@ -17,8 +17,75 @@ export function getInitials(firstName?: string, lastName?: string): string {
   return `${firstName?.[0] ?? ""}${lastName?.[0] ?? ""}`.toUpperCase() || "·";
 }
 
+const ROLE_LABELS: Record<string, string> = {
+  "super_admin": "Super administrateur",
+  "super admin": "Super administrateur",
+  "super administrateur somafrik": "Super administrateur Somafrik",
+  "country_admin": "Administrateur pays",
+  "admin pays": "Administrateur pays",
+  "school_admin": "Administrateur d’établissement",
+  "admin school": "Administrateur d’établissement",
+  "administrateur ecole": "Administrateur d’établissement",
+  "administrateur etablissement": "Administrateur d’établissement",
+  teacher: "Enseignant",
+  student: "Élève / Étudiant",
+  parent_student: "Parent",
+  principal: "Directeur",
+  prefet: "Préfet des études",
+  secretary: "Secrétaire",
+  accountant: "Comptable",
+  adjoint: "Directeur adjoint",
+  supervisor: "Surveillant",
+};
+
+const STATUS_LABELS: Record<string, string> = {
+  active: "Actif",
+  actif: "Actif",
+  inactive: "Inactif",
+  inactif: "Inactif",
+  disabled: "Désactivé",
+  desactive: "Désactivé",
+  enabled: "Activé",
+  archived: "Archivé",
+  archive: "Archivé",
+  pending: "En attente",
+  approved: "Approuvé",
+  validated: "Validé",
+  rejected: "Refusé",
+  suspended: "Suspendu",
+  suspendu: "Suspendu",
+  cancelled: "Annulé",
+  canceled: "Annulé",
+  paid: "Payé",
+  unpaid: "Impayé",
+  overdue: "En retard",
+  draft: "Brouillon",
+  read: "Lu",
+  unread: "Non lu",
+};
+
+const SCOPE_LABELS: Record<string, string> = {
+  global: "Global",
+  country: "Pays",
+  pays: "Pays",
+  school: "Établissement",
+  establishment: "Établissement",
+  etablissement: "Établissement",
+};
+
 export function displayRoleName(role?: string): string {
-  return role ?? "Utilisateur";
+  if (!role) return "Utilisateur";
+  return ROLE_LABELS[normalize(role)] ?? role;
+}
+
+export function displayStatusName(status?: string): string {
+  if (!status) return "—";
+  return STATUS_LABELS[normalize(status)] ?? status;
+}
+
+export function displayScopeName(scope?: string): string {
+  if (!scope) return "—";
+  return SCOPE_LABELS[normalize(scope)] ?? scope;
 }
 
 export function isPastDate(value?: string): boolean {
@@ -28,8 +95,57 @@ export function isPastDate(value?: string): boolean {
   return date.getTime() < Date.now();
 }
 
-export function isActiveUserAccount(user: { status?: string }): boolean {
-  return normalize(user.status) !== "suspendu";
+/** Champs d'activité d'un compte. SoT PostgreSQL = `users.status`. */
+export type UserAccountActivityFields = {
+  status?: string | null;
+  deletedAt?: string | null;
+  archived?: boolean | null;
+  archivedAt?: string | null;
+  archived_at?: string | null;
+  disabled?: boolean | null;
+  revoked?: boolean | null;
+};
+
+/** Libellé KPI : comptes utilisables actuellement, jamais les archivés. */
+export const ACTIVE_USERS_KPI_LABEL = "Utilisateurs actifs";
+
+export const PAYMENT_RATE_KPI_LABEL = "Taux de paiement";
+
+/**
+ * Statuts non utilisables (API FR + codes DB). `normalize()` retire les accents :
+ * Archivé → archive, Désactivé → desactive, Supprimé → supprime.
+ * Aligné login PG : COALESCE(status, 'active') NOT IN ('deleted', 'archived'),
+ * plus suspendu / désactivé / inactif.
+ */
+const INACTIVE_USER_ACCOUNT_STATUSES = new Set([
+  "archived",
+  "archive",
+  "archivee",
+  "suspendu",
+  "suspended",
+  "desactive",
+  "disabled",
+  "inactive",
+  "inactif",
+  "deleted",
+  "supprime",
+]);
+
+function hasInactiveUserAccountFlag(user: UserAccountActivityFields): boolean {
+  if (user.archived === true || user.disabled === true || user.revoked === true) return true;
+  if (user.deletedAt || user.archivedAt || user.archived_at) return true;
+  return false;
+}
+
+export function isActiveUserAccount(user: UserAccountActivityFields): boolean {
+  if (hasInactiveUserAccountFlag(user)) return false;
+  const status = normalize(user.status);
+  if (!status) return true;
+  return !INACTIVE_USER_ACCOUNT_STATUSES.has(status);
+}
+
+export function countActiveUserAccounts(users: readonly UserAccountActivityFields[]): number {
+  return users.filter(isActiveUserAccount).length;
 }
 
 const COUNTRY_CODES: Record<string, string> = {
@@ -44,8 +160,14 @@ const COUNTRY_CODES: Record<string, string> = {
 };
 
 export function getCountryCodeFromScope(countryScope?: string): string {
-  const normalized = String(countryScope ?? "").trim().toUpperCase();
-  return COUNTRY_CODES[normalized] ?? (/^[A-Z]{2}$/.test(normalized) ? normalized : "");
+  const normalized = String(countryScope ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .toUpperCase();
+  if (!normalized) return "";
+  if (COUNTRY_CODES[normalized]) return COUNTRY_CODES[normalized];
+  return /^[A-Z]{2}$/.test(normalized) ? normalized : "";
 }
 
 /** Valeur canonique de countryScope pour un compte utilisateur (ex. RDC, BI, CG). */
@@ -68,11 +190,11 @@ export function resolveCountryScopeFromSchool(
   school: { country?: string; countryCode?: string },
   fallback = "",
 ): string {
-  const country = String(school.country ?? "").trim();
-  if (country) return country;
-  const code = getCountryCodeFromScope(school.countryCode);
+  const code =
+    getCountryCodeFromScope(school.countryCode) || getCountryCodeFromScope(school.country);
   if (code === "CD") return "RDC";
-  return String(school.countryCode ?? fallback).trim() || fallback;
+  if (code) return code;
+  return fallback;
 }
 
 export function schoolMatchesCountryScope(

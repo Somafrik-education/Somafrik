@@ -53,6 +53,8 @@ export interface School {
   principalName?: string;
   principalEmail?: string;
   principalPhone?: string;
+  /** Fuseau civil de l'établissement (profil PostgreSQL). */
+  timezone?: string;
   createdAt?: string;
   updatedAt?: string;
   deletedAt?: string;
@@ -71,6 +73,10 @@ export interface Country {
   createdAt?: string;
   /** Barème d'abonnement propre au pays (repli sur le barème global Somafrik). */
   subscriptionPolicy?: CountrySubscriptionPolicy;
+  /** Libellés UI du référentiel pédagogique (configurables, jamais un défaut RDC). */
+  levelLabel?: string;
+  trackLabel?: string;
+  groupLabel?: string;
 }
 
 export type SubscriptionPlanName = "Essentiel" | "Standard" | "Premium" | "Essai gratuit";
@@ -251,11 +257,20 @@ export interface UserAccount {
   gender?: string;
   phone?: string;
   email?: string;
-  role: string;
+  role?: string;
+  roles?: string[];
+  roleKeys?: string[];
+  assignmentStatus?: string;
   secondaryRoles?: string[];
   scopeLevel?: string;
   countryScope?: string;
+  /** Alias tenant historique = schools.school_code. Ne pas afficher comme code public. */
   schoolCode?: string;
+  /** UUID établissement = schools.id. Autorité membership, pas leftover schoolCode. */
+  schoolId?: string;
+  /** Code public canonique = schools.login_code. */
+  schoolPublicCode?: string;
+  schoolName?: string;
   accessChannel?: string;
   identifier?: string;
   status?: string;
@@ -280,6 +295,11 @@ export interface UserAccount {
 
 export interface SessionUser extends UserAccount {
   mustChangePassword?: boolean;
+  /** Affectations pédagogiques projetées depuis le JWT (#248). */
+  assignments?: Record<string, unknown>[];
+  assignedClassIds?: string[];
+  assignedClassCodes?: string[];
+  teacherCode?: string;
 }
 
 export interface SessionScope {
@@ -294,11 +314,6 @@ export interface Session {
   refreshToken?: string;
   permissions?: string[];
   menus?: string[];
-  schools: School[];
-  users: UserAccount[];
-  countries?: Country[];
-  subscriptions?: Subscription[];
-  notifications?: PlatformNotification[];
   rolePermissions?: Record<string, string[]>;
   academicConfigs?: Record<string, unknown>;
   auditLog?: unknown[];
@@ -361,8 +376,8 @@ export interface Relation {
 /** Statut d'une grille tarifaire (EXG-FRAIS-001). */
 export type FeeGridStatus = "Brouillon" | "Active" | "Désactivée" | "Clôturée";
 
-/** Type de frais scolaire dans la grille (EXG-FRAIS-004 à 006). */
-export type SchoolFeeType = "Inscription" | "Mensualité" | "Annexe";
+/** Type de frais : identité catalogue (Inscription, Scolarité, …). Mensualité/Annexe = legacy. */
+export type SchoolFeeType = string;
 
 /** Statut d'un frais généré pour un élève (EXG-FRAIS-017). */
 export type StudentFeeStatus =
@@ -378,6 +393,8 @@ export interface FeeGrid {
   id: string;
   schoolCode: string;
   academicYear: string;
+  classId?: string;
+  classCode?: string;
   className: string;
   currency: string;
   status: FeeGridStatus;
@@ -548,13 +565,21 @@ export interface GradeAuditEntry {
 export interface Evaluation {
   id: string;
   schoolCode: string;
+  schoolId?: string;
   academicYear?: string;
+  academicYearId?: string;
+  classId?: string;
+  classCode?: string;
   className: string;
+  subjectId?: string;
   subject: string;
+  course?: string;
   teacherId?: string;
   teacherName?: string;
+  termId?: string;
   period: string;
-  evaluationType: EvaluationType;
+  evaluationType: string;
+  evaluationTypeId?: string;
   title: string;
   date?: string;
   scale: number;
@@ -584,6 +609,7 @@ export interface StudentGrade {
   coefficient?: number;
   gradeStatus: GradeStatus;
   comment?: string;
+  teacherId?: string;
   authorId?: string;
   authorName?: string;
   enteredAt?: string;

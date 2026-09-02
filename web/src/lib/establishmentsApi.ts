@@ -18,8 +18,10 @@ export interface SubscriptionAccessInfo {
 }
 
 export const establishmentsApi = {
+  /** Catalogue plateforme (Superadmin / Admin Pays). Interdit à SCHOOL_ADMIN. */
   list: () => api.get<School[]>("/backoffice/establishments"),
 
+  /** Profil mono-tenant. SCHOOL_ADMIN : uniquement son membership. */
   get: (code: string) => api.get<School>(`/backoffice/establishments/${encodeURIComponent(code)}`),
 
   create: (payload: Partial<School>, force = false) =>

@@ -1,11 +1,13 @@
 import { View, Text, FlatList, TouchableOpacity } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import { useCallback } from "react";
+import { useFocusEffect } from "@react-navigation/native";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { RootStackParamList } from "../navigation/AppNavigator";
 import { useAuth } from "../context/AuthContext";
 import StudentSwitcher from "../components/StudentSwitcher";
-import { GradeBookService } from "../domain/academics/GradeBookService";
 import { useAdminData } from "../context/AdminDataContext";
+import QueryStateView from "../components/QueryStateView";
 import { useFloatingTabBarLayout } from "../lib/screenLayout";
 import {
   NOTE_ROW_TEST_ID,
@@ -13,6 +15,13 @@ import {
   STUDENT_SUB_SCREENS_TEST_IDS,
 } from "../lib/studentSubScreensSpec";
 import { studentSubScreenStyles as styles } from "../lib/studentSubScreenLayout";
+import { DATA_TRUTH_TEST_IDS } from "../lib/dataTruth";
+import {
+  canonicalWeightedAverage,
+  EVALUATIONS_V2_COPY,
+  EVALUATIONS_V2_TEST_IDS,
+  notesForStudent,
+} from "../lib/evaluationsV2";
 
 type Props = NativeStackScreenProps<RootStackParamList, "StudentNotes">;
 
@@ -20,12 +29,18 @@ export default function StudentNotesScreen({ route, navigation }: Partial<Props>
   const { scrollContentPaddingBottom } = useFloatingTabBarLayout();
   const listContentStyle = [styles.listContent, { paddingBottom: scrollContentPaddingBottom }];
   const { selectedStudentId } = useAuth();
-  const { studentsData, notesData, coursesData } = useAdminData();
+  const { studentsData, notesSnapshot, loadNotes } = useAdminData();
   const studentId = route?.params?.studentId ?? selectedStudentId;
   const student = studentId ? studentsData.find((item) => item.id === studentId) : undefined;
-  const gradeBook = new GradeBookService(studentsData, notesData, coursesData);
-  const studentNotes = notesData.filter((note) => note.studentId === studentId);
-  const report = studentId ? gradeBook.generateReport(studentId, "Trimestre 1", "Publié") : undefined;
+
+  useFocusEffect(
+    useCallback(() => {
+      void loadNotes();
+    }, [loadNotes]),
+  );
+
+  const studentNotes = studentId ? notesForStudent(notesSnapshot.data, studentId) : [];
+  const average = canonicalWeightedAverage(studentNotes);
 
   return (
     <View style={styles.container} testID={STUDENT_SUB_SCREENS_TEST_IDS.notesScreen}>
@@ -44,89 +59,65 @@ export default function StudentNotesScreen({ route, navigation }: Partial<Props>
       </Text>
       <Text style={styles.subtitle}>{student?.name ?? "Élève"}</Text>
 
-      <TouchableOpacity
-        activeOpacity={0.85}
-        style={[styles.summaryCard, { backgroundColor: "#2563EB" }]}
-        onPress={() => studentId && navigation?.navigate("StudentDetail", { studentId })}
-      >
+      <View style={[styles.summaryCard, { backgroundColor: "#2563EB" }]}>
         <Text style={[styles.summaryLabel, { color: "#DBEAFE" }]}>Moyenne générale</Text>
-        <Text style={[styles.summaryValue, { color: "#FFFFFF" }]}>
-          {(report?.average ?? 0).toFixed(1)}/20
+        <Text
+          style={[styles.summaryValue, { color: "#FFFFFF" }]}
+          testID={EVALUATIONS_V2_TEST_IDS.average}
+        >
+          {average.available ? `${average.average?.toFixed(1)}/20` : EVALUATIONS_V2_COPY.averageUnavailable}
         </Text>
         <Text style={[styles.summaryMeta, { color: "#DBEAFE" }]}>
-          {report?.rankLabel ?? "-"} • {report?.appreciation ?? "Aucune appréciation"}
+          {average.available ? `Coef. ${average.totalCoefficients}` : "Notes publiées uniquement"}
         </Text>
-      </TouchableOpacity>
-
-      <View style={localStyles.reportRow}>
-        <View style={localStyles.reportPill}>
-          <Text style={localStyles.reportValue}>{(report?.totalPoints ?? 0).toFixed(1)}</Text>
-          <Text style={localStyles.reportLabel}>Points</Text>
-        </View>
-        <View style={localStyles.reportPill}>
-          <Text style={localStyles.reportValue}>{report?.totalCoefficients ?? 0}</Text>
-          <Text style={localStyles.reportLabel}>Coefficients</Text>
-        </View>
-        <View style={localStyles.reportPill}>
-          <Text style={localStyles.reportValue}>{report?.status ?? "Brouillon"}</Text>
-          <Text style={localStyles.reportLabel}>Bulletin</Text>
-        </View>
       </View>
 
-      <FlatList
-        data={studentNotes}
-        keyExtractor={(item) => item.id}
-        testID={STUDENT_SUB_SCREENS_TEST_IDS.notesList}
-        contentContainerStyle={listContentStyle}
-        ListEmptyComponent={
-          <Text style={styles.empty} testID={STUDENT_SUB_SCREENS_TEST_IDS.notesEmpty}>
-            {STUDENT_SUB_SCREENS_COPY.notesEmpty}
-          </Text>
-        }
-        renderItem={({ item }) => (
-          <TouchableOpacity
-            activeOpacity={0.85}
-            style={styles.card}
-            testID={NOTE_ROW_TEST_ID(item.id)}
-            onPress={() => studentId && navigation?.navigate("StudentDetail", { studentId })}
-          >
-            <View>
-              <Text style={styles.cardTitle}>{item.subject}</Text>
-              <Text style={styles.cardMeta}>
-                Période {item.period ?? "Non renseignée"} • Coef. {item.coefficient} • {item.date}
+      {notesSnapshot.status !== "success" ? (
+        <QueryStateView
+          snapshot={notesSnapshot}
+          emptyMessage={STUDENT_SUB_SCREENS_COPY.notesEmpty}
+          errorMessage={EVALUATIONS_V2_COPY.errorNotes}
+          offlineMessage={EVALUATIONS_V2_COPY.offlineNotes}
+          emptyTestId={DATA_TRUTH_TEST_IDS.notesEmpty}
+          errorTestId={DATA_TRUTH_TEST_IDS.notesError}
+          onRetry={() => void loadNotes()}
+        />
+      ) : (
+        <FlatList
+          data={studentNotes}
+          keyExtractor={(item) => item.id || `${item.evaluationId}-${item.studentId}`}
+          testID={STUDENT_SUB_SCREENS_TEST_IDS.notesList}
+          contentContainerStyle={listContentStyle}
+          ListEmptyComponent={
+            <Text style={styles.empty} testID={STUDENT_SUB_SCREENS_TEST_IDS.notesEmpty}>
+              {STUDENT_SUB_SCREENS_COPY.notesEmpty}
+            </Text>
+          }
+          renderItem={({ item }) => (
+            <TouchableOpacity
+              activeOpacity={0.85}
+              style={styles.card}
+              testID={NOTE_ROW_TEST_ID(item.id)}
+              onPress={() => studentId && navigation?.navigate("StudentDetail", { studentId })}
+            >
+              <View>
+                <Text style={styles.cardTitle}>{item.evaluationTitle || item.subject || "Évaluation"}</Text>
+                <Text style={styles.cardMeta}>
+                  {item.period ?? "Période"} • {item.status} • /{item.scale}
+                </Text>
+              </View>
+              <Text style={localStyles.grade}>
+                {item.value != null ? `${item.value}/${item.scale}` : item.status}
               </Text>
-            </View>
-            <Text style={localStyles.grade}>{item.value}/20</Text>
-          </TouchableOpacity>
-        )}
-      />
+            </TouchableOpacity>
+          )}
+        />
+      )}
     </View>
   );
 }
 
 const localStyles = {
-  reportRow: {
-    flexDirection: "row" as const,
-    gap: 8,
-    marginBottom: 16,
-  },
-  reportPill: {
-    flex: 1,
-    backgroundColor: "#FFFFFF",
-    borderRadius: 16,
-    padding: 12,
-  },
-  reportValue: {
-    color: "#0F172A",
-    fontWeight: "900" as const,
-    fontSize: 16,
-  },
-  reportLabel: {
-    color: "#64748B",
-    fontWeight: "800" as const,
-    fontSize: 11,
-    marginTop: 4,
-  },
   grade: {
     fontSize: 22,
     fontWeight: "900" as const,

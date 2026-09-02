@@ -33,15 +33,30 @@ export interface CourseScheduleSlot {
   kind?: PlanningScheduleKind;
   /** Intitulé affiché pour un examen planifié. */
   examName?: string;
-  /** Type d'évaluation (Contrôle, Devoir, …). */
   examType?: string;
-  /** Identifiant lié dans `state.exams` pour les examens planifiés. */
   examId?: string;
-  /** Période académique (ex. Trimestre 1). */
   periodName?: string;
-  /** Dates inclusives au format JJ-MM-AAAA. */
   periodStart?: string;
   periodEnd?: string;
+  /** UUID membership — autorité tenant, distinct du schoolCode leftover. */
+  schoolId?: string;
+  /** DTO canonique Planning V2 — projection, jamais autorité locale. */
+  schoolCourseId?: string;
+  academicYearId?: string;
+  classId?: string;
+  subjectId?: string;
+  /** 1 = lundi … 7 = dimanche. */
+  dayOfWeek?: number;
+  startTime?: string;
+  endTime?: string;
+  status?: string;
+  courseName?: string;
+  roomId?: string;
+  originalTeacher?: string;
+  originalTeacherId?: string;
+  replacement?: boolean;
+  replacementId?: string;
+  occurrenceDate?: string;
 }
 
 export interface PlanningCalendarEvent {
@@ -358,7 +373,54 @@ export function scopedCourseSchedules(user: SessionUser | null, state: BackOffic
   const schoolCode = user?.schoolCode;
   const rows = (state.courseSchedules ?? []) as CourseScheduleSlot[];
   if (!schoolCode || schoolCode === "*") return rows;
-  return rows.filter((row) => normalize(row.schoolCode) === normalize(schoolCode));
+  const leftover = normalize(schoolCode);
+  const publicCode = normalize(user?.schoolPublicCode);
+  const userSchoolId = String(user?.schoolId ?? "").trim();
+  const matched = rows.filter((row) => {
+    if (userSchoolId && String(row.schoolId ?? "").trim() === userSchoolId) return true;
+    const projected = normalize(row.schoolCode);
+    return projected === leftover || (publicCode && projected === publicCode);
+  });
+  // GET /api/course-schedules is already tenant-scoped. leftover JWT ≠ login_code
+  // projection must not empty the planning UI (GP-014).
+  if (matched.length === 0 && rows.length > 0) return rows;
+  return matched;
+}
+
+export type PlanningWriteSchoolIdentity = {
+  schoolId: string;
+  publicCode: string;
+};
+
+/**
+ * Identité d'écriture Planning : schools.id uniquement.
+ * schoolPublicCode / login_code = projection seulement. Jamais leftover JWT,
+ * jamais UUID déduit des rows (fuite A+B), jamais « tous les rows ».
+ */
+export function resolvePlanningWriteSchoolIdentity(input: {
+  user: SessionUser | null;
+  activeSchool?: { id?: string; publicId?: string } | null;
+}): PlanningWriteSchoolIdentity | null {
+  const schoolId =
+    String(input.activeSchool?.id ?? "").trim() || String(input.user?.schoolId ?? "").trim();
+  if (!schoolId) return null;
+  const publicCode = String(input.user?.schoolPublicCode ?? input.activeSchool?.publicId ?? "").trim();
+  return { schoolId, publicCode };
+}
+
+/** Filtre d'écriture établissement : schoolId, sinon projection login_code. Jamais leftover. */
+export function filterSlotsForPlanningWrite(
+  slots: CourseScheduleSlot[],
+  identity: PlanningWriteSchoolIdentity,
+): CourseScheduleSlot[] {
+  const list = Array.isArray(slots) ? slots : [];
+  const schoolId = String(identity.schoolId ?? "").trim();
+  if (schoolId) {
+    return list.filter((row) => String(row.schoolId ?? "").trim() === schoolId);
+  }
+  const publicCode = normalize(identity.publicCode);
+  if (!publicCode) return [];
+  return list.filter((row) => normalize(row.schoolCode) === publicCode);
 }
 
 const OCCURRENCE_ID_SUFFIX = "__";
@@ -366,6 +428,12 @@ const OCCURRENCE_ID_SUFFIX = "__";
 export function getMasterScheduleId(eventId: string): string {
   const marker = eventId.indexOf(OCCURRENCE_ID_SUFFIX);
   return marker >= 0 ? eventId.slice(0, marker) : eventId;
+}
+
+export function getOccurrenceDateFromEventId(eventId: string): string {
+  const marker = eventId.indexOf(OCCURRENCE_ID_SUFFIX);
+  if (marker < 0) return "";
+  return eventId.slice(marker + OCCURRENCE_ID_SUFFIX.length).slice(0, 10);
 }
 
 export function hasSchedulePeriod(slot: CourseScheduleSlot): boolean {
@@ -472,52 +540,51 @@ export function expandScheduleOccurrences(
     return [{ id: slot.id, start: slot.start, end: slot.end }];
   }
 
-  if (!hasSchedulePeriod(slot)) {
-    return [{ id: slot.id, start: slot.start, end: slot.end }];
-  }
-
-  const periodStart = parsePeriodDate(slot.periodStart);
-  const periodEnd = parsePeriodDate(slot.periodEnd);
-  const templateStart = new Date(slot.start);
-  const templateEnd = new Date(slot.end);
-  if (!periodStart || !periodEnd || Number.isNaN(templateStart.getTime()) || Number.isNaN(templateEnd.getTime())) {
-    return [{ id: slot.id, start: slot.start, end: slot.end }];
-  }
-
-  const durationMs = Math.max(templateEnd.getTime() - templateStart.getTime(), 30 * 60 * 1000);
-  const targetDay = templateStart.getDay();
-  let cursor = startOfDay(periodStart);
-  cursor = addDays(cursor, (targetDay - cursor.getDay() + 7) % 7);
-  cursor.setHours(templateStart.getHours(), templateStart.getMinutes(), templateStart.getSeconds(), 0);
-
-  const lastDay = endOfDay(periodEnd);
-  const occurrences: Array<{ id: string; start: string; end: string }> = [];
-  const maxWeeks = Math.min(
-    54,
-    Math.max(1, Math.ceil((lastDay.getTime() - periodStart.getTime()) / (7 * 24 * 60 * 60 * 1000)) + 2),
-  );
-  let guard = 0;
-
-  while (cursor <= lastDay && guard < maxWeeks) {
-    guard += 1;
-    const occStart = new Date(cursor);
-    const occEnd = new Date(occStart.getTime() + durationMs);
-    const overlapsView =
-      !bounds?.viewStart ||
-      !bounds?.viewEnd ||
-      (occEnd >= bounds.viewStart && occStart <= bounds.viewEnd);
-
-    if (overlapsView) {
-      occurrences.push({
-        id: `${slot.id}${OCCURRENCE_ID_SUFFIX}${occStart.toISOString().slice(0, 10)}`,
-        start: occStart.toISOString(),
-        end: occEnd.toISOString(),
-      });
+  const dayOfWeek = Number(slot.dayOfWeek);
+  const startTime = String(slot.startTime ?? "").trim();
+  const endTime = String(slot.endTime ?? "").trim();
+  if (dayOfWeek >= 1 && dayOfWeek <= 7 && startTime && endTime) {
+    const periodStart = parsePeriodDate(slot.periodStart) ?? bounds?.viewStart ?? null;
+    const periodEnd = parsePeriodDate(slot.periodEnd) ?? bounds?.viewEnd ?? null;
+    if (!periodStart || !periodEnd) {
+      return slot.start && slot.end ? [{ id: slot.id, start: slot.start, end: slot.end }] : [];
     }
-    cursor = addDays(cursor, 7);
+    const [startHour, startMinute] = startTime.split(":").map((part) => Number(part));
+    const [endHour, endMinute] = endTime.split(":").map((part) => Number(part));
+    const isoWeekdayOf = (date: Date) => {
+      const js = date.getDay();
+      return js === 0 ? 7 : js;
+    };
+    const occurrences: Array<{ id: string; start: string; end: string }> = [];
+    let cursor = startOfDay(periodStart);
+    const lastDay = endOfDay(periodEnd);
+    while (cursor <= lastDay) {
+      if (isoWeekdayOf(cursor) === dayOfWeek) {
+        const occStart = new Date(cursor);
+        occStart.setHours(startHour || 0, startMinute || 0, 0, 0);
+        const occEnd = new Date(cursor);
+        occEnd.setHours(endHour || 0, endMinute || 0, 0, 0);
+        const overlapsView =
+          !bounds?.viewStart ||
+          !bounds?.viewEnd ||
+          (occEnd >= bounds.viewStart && occStart <= bounds.viewEnd);
+        if (overlapsView) {
+          occurrences.push({
+            id: `${slot.id}${OCCURRENCE_ID_SUFFIX}${occStart.toISOString().slice(0, 10)}`,
+            start: occStart.toISOString(),
+            end: occEnd.toISOString(),
+          });
+        }
+      }
+      cursor = addDays(cursor, 1);
+    }
+    return occurrences;
   }
 
-  return occurrences.length ? occurrences : [{ id: slot.id, start: slot.start, end: slot.end }];
+  if (slot.start && slot.end) {
+    return [{ id: slot.id, start: slot.start, end: slot.end }];
+  }
+  return [];
 }
 
 export function formatPeriodLabel(slot: Pick<CourseScheduleSlot, "periodName" | "periodStart" | "periodEnd">): string {
@@ -540,12 +607,19 @@ export const PLANNING_WEEKDAYS = [
   { value: 4, label: "Jeudi" },
   { value: 5, label: "Vendredi" },
   { value: 6, label: "Samedi" },
-  { value: 0, label: "Dimanche" },
+  { value: 7, label: "Dimanche" },
 ] as const;
 
 export function weekdayLabelFromDate(date: Date): string {
-  const weekday = PLANNING_WEEKDAYS.find((row) => row.value === date.getDay());
+  const iso = date.getUTCDay() === 0 ? 7 : date.getUTCDay();
+  const weekday = PLANNING_WEEKDAYS.find((row) => row.value === iso);
   return weekday?.label ?? "";
+}
+
+/** Jour métier 1–7 depuis une date locale de calendrier. Dimanche = 7, jamais 0. */
+export function isoWeekdayFromLocalDate(date: Date): number {
+  const js = date.getDay();
+  return js === 0 ? 7 : js;
 }
 
 export function extractTimeFromIso(iso: string): string {
@@ -557,19 +631,39 @@ export function extractTimeFromIso(iso: string): string {
 
 export function weekdayFromIso(iso: string): number {
   const date = new Date(iso);
-  return Number.isNaN(date.getTime()) ? 1 : date.getDay();
+  if (Number.isNaN(date.getTime())) return 1;
+  const js = date.getUTCDay();
+  return js === 0 ? 7 : js;
 }
 
-/** Construit le modèle horaire (jour + heures) ancré sur le début de période. */
+export function slotIsoWeekday(slot: CourseScheduleSlot): number {
+  const day = Number(slot.dayOfWeek);
+  if (day >= 1 && day <= 7) return day;
+  return weekdayFromIso(slot.start);
+}
+
+export function slotStartHm(slot: CourseScheduleSlot): string {
+  const time = String(slot.startTime ?? "").trim();
+  return time ? time.slice(0, 5) : extractTimeFromIso(slot.start);
+}
+
+export function slotEndHm(slot: CourseScheduleSlot): string {
+  const time = String(slot.endTime ?? "").trim();
+  return time ? time.slice(0, 5) : extractTimeFromIso(slot.end);
+}
+
+/** Construit un ancrage visuel. Le jour métier est 1–7 (7 = dimanche), pas Date.getDay(). */
 export function buildSlotTemplateTimes(
   weekday: number,
   startTime: string,
   endTime: string,
   periodStart?: string,
 ): { start: string; end: string } {
+  const isoWeekday = weekday === 0 ? 7 : weekday;
+  const jsWeekday = isoWeekday === 7 ? 0 : isoWeekday;
   const anchor = parsePeriodDate(periodStart) ?? new Date();
   let cursor = startOfDay(anchor);
-  cursor = addDays(cursor, (weekday - cursor.getDay() + 7) % 7);
+  cursor = addDays(cursor, (jsWeekday - cursor.getDay() + 7) % 7);
 
   const [startHour, startMinute] = startTime.split(":").map((part) => Number(part));
   const [endHour, endMinute] = endTime.split(":").map((part) => Number(part));
@@ -589,12 +683,12 @@ export function buildSlotTemplateTimes(
 export function formatScheduleRecurrenceSummary(slot: CourseScheduleSlot): string {
   if (isExamSchedule(slot)) return formatExamScheduleSummary(slot);
 
-  const weekday = weekdayLabelFromDate(new Date(slot.start));
-  const startTime = extractTimeFromIso(slot.start);
-  const endTime = extractTimeFromIso(slot.end);
-  const period = formatPeriodLabel(slot);
-  const parts = [`${slot.subject}`, weekday ? `chaque ${weekday.toLowerCase()}` : "", `${startTime}–${endTime}`];
-  if (period) parts.push(`du ${slot.periodStart} au ${slot.periodEnd}`);
+  const weekdayValue = slotIsoWeekday(slot);
+  const weekday = PLANNING_WEEKDAYS.find((row) => row.value === weekdayValue)?.label ?? "";
+  const startTime = slotStartHm(slot);
+  const endTime = slotEndHm(slot);
+  const course = String(slot.courseName ?? slot.subject ?? "").trim();
+  const parts = [course, weekday ? `chaque ${weekday.toLowerCase()}` : "", `${startTime}–${endTime}`];
   return parts.filter(Boolean).join(" · ");
 }
 
@@ -767,6 +861,77 @@ export function slotsToClassCalendarEvents(
   return events;
 }
 
+function asOccurrenceRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" ? (value as Record<string, unknown>) : null;
+}
+
+/**
+ * Mappe la projection serveur GET /course-schedules?from=&to= vers le calendrier.
+ * Aucune expansion de récurrence : start/end ISO viennent du serveur.
+ */
+export function mapServerOccurrencesToCalendarEvents(
+  items: unknown,
+  className?: string,
+): PlanningCalendarEvent[] {
+  const rows = Array.isArray(items) ? items : [];
+  const events: PlanningCalendarEvent[] = [];
+
+  for (const row of rows) {
+    const item = asOccurrenceRecord(row);
+    if (!item) continue;
+    const status = String(item.status ?? "active").trim().toLowerCase();
+    if (status === "cancelled") continue;
+    const start = String(item.start ?? "").trim();
+    const end = String(item.end ?? "").trim();
+    if (!start || !end) continue;
+
+    const subject = String(item.courseName ?? item.subject ?? "").trim();
+    const slot: CourseScheduleSlot = {
+      id: String(item.scheduleId ?? getMasterScheduleId(String(item.id ?? ""))),
+      schoolCode: String(item.schoolCode ?? ""),
+      className: String(item.className ?? ""),
+      subject,
+      courseName: String(item.courseName ?? subject),
+      teacherId: item.teacherId != null ? String(item.teacherId) : undefined,
+      teacherName: item.teacherName != null ? String(item.teacherName) : undefined,
+      start,
+      end,
+      room: item.room != null ? String(item.room) : undefined,
+      roomId: item.roomId != null ? String(item.roomId) : undefined,
+      originalTeacher: item.originalTeacher != null ? String(item.originalTeacher) : undefined,
+      originalTeacherId: item.originalTeacherId != null ? String(item.originalTeacherId) : undefined,
+      replacement: Boolean(item.replacement),
+      replacementId: item.replacementId != null ? String(item.replacementId) : undefined,
+      occurrenceDate: item.occurrenceDate != null ? String(item.occurrenceDate) : undefined,
+      kind: "course",
+      schoolCourseId: item.schoolCourseId != null ? String(item.schoolCourseId) : undefined,
+      academicYearId: item.academicYearId != null ? String(item.academicYearId) : undefined,
+      classId: item.classId != null ? String(item.classId) : undefined,
+      subjectId: item.subjectId != null ? String(item.subjectId) : undefined,
+      dayOfWeek: item.dayOfWeek != null ? Number(item.dayOfWeek) : undefined,
+      startTime: item.startTime != null ? String(item.startTime).slice(0, 5) : undefined,
+      endTime: item.endTime != null ? String(item.endTime).slice(0, 5) : undefined,
+      status: String(item.status ?? "active"),
+    };
+
+    if (isExamSchedule(slot)) continue;
+    if (className && !planningLabelsMatch(slot.className, className)) continue;
+
+    const color = getScheduleColor(slot);
+    events.push({
+      id: String(item.id ?? `${slot.id}${OCCURRENCE_ID_SUFFIX}${String(item.occurrenceDate ?? "")}`),
+      title: formatPlanningEventLabel(slot),
+      start,
+      end,
+      extendedProps: { ...slot, subject },
+      backgroundColor: color,
+      borderColor: color,
+    });
+  }
+
+  return events;
+}
+
 /** Nom court enseignant (nom de famille) pour les cartes compactes. */
 export function formatPlanningTeacherShortName(teacherName?: string): string {
   const name = String(teacherName ?? "").trim();
@@ -853,7 +1018,7 @@ export function detectDuplicateCoursePlanning(
 
     if (samePeriodName || overlappingDates) {
       const periodLabel = candidate.periodName || `${candidate.periodStart} → ${candidate.periodEnd}`;
-      return `La matière « ${candidate.subject} » est déjà planifiée pour ${candidate.className} (${periodLabel}). Modifiez le créneau existant.`;
+      return `Le cours « ${candidate.subject} » est déjà planifié pour ${candidate.className} (${periodLabel}). Modifiez le créneau existant.`;
     }
   }
 
@@ -1378,24 +1543,29 @@ export function auditSchoolPlanningConsistency(
 
   for (const slot of scoped) {
     if (!slot.subject?.trim()) {
-      issues.push({ slotId: slot.id, message: "Créneau sans matière." });
+      issues.push({ slotId: slot.id, message: "Créneau sans cours." });
     }
 
     if (isCourseSchedule(slot) && !hasSchedulePeriod(slot)) {
-      const displaySubject = resolveCanonicalLabel(slot.subject, collectPlanningSubjectCandidates(
-        state,
-        user,
-        resolveCanonicalLabel(slot.className, classCandidates),
-        schoolCode,
-      ));
-      const displayClass = resolveCanonicalLabel(slot.className, classCandidates);
-      const key = `${normalize(displayClass)}|${normalize(displaySubject)}`;
-      const message = `Cours « ${displaySubject} » (${displayClass}) sans période — une seule occurrence affichée.`;
-      const existing = noPeriodCounts.get(key);
-      if (existing) {
-        existing.count += 1;
-      } else {
-        noPeriodCounts.set(key, { slotId: slot.id, count: 1, message });
+      const weeklyDay = Number(slot.dayOfWeek);
+      const weeklyStart = String(slot.startTime ?? "").trim();
+      const isWeeklyRule = weeklyDay >= 1 && weeklyDay <= 7 && Boolean(weeklyStart);
+      if (!isWeeklyRule) {
+        const displaySubject = resolveCanonicalLabel(slot.subject, collectPlanningSubjectCandidates(
+          state,
+          user,
+          resolveCanonicalLabel(slot.className, classCandidates),
+          schoolCode,
+        ));
+        const displayClass = resolveCanonicalLabel(slot.className, classCandidates);
+        const key = `${normalize(displayClass)}|${normalize(displaySubject)}`;
+        const message = `Cours « ${displaySubject} » (${displayClass}) sans période — une seule occurrence affichée.`;
+        const existing = noPeriodCounts.get(key);
+        if (existing) {
+          existing.count += 1;
+        } else {
+          noPeriodCounts.set(key, { slotId: slot.id, count: 1, message });
+        }
       }
     }
 
@@ -1434,7 +1604,7 @@ export function auditSchoolPlanningConsistency(
     for (const link of collectPedagogyLinksForSchool(state, user, schoolCode)) {
       if (hasPlanningSlotForSubject(scoped, link.className, link.subject)) continue;
       const key = courseRecordKey(link.className, link.subject);
-      const message = `Matière « ${link.subject} » (${link.className}) sans créneau planning — absente du calendrier.`;
+      const message = `Cours « ${link.subject} » (${link.className}) sans créneau planning — absent du calendrier.`;
       const existing = unplannedCounts.get(key);
       if (existing) {
         existing.count += 1;
@@ -1501,8 +1671,14 @@ export function validatePlanningSlotBusinessRules(
   const duplicate = detectDuplicateCoursePlanning(slots, normalized, options.ignoreId);
   if (duplicate) issues.push(duplicate);
 
-  if (isCourseSchedule(normalized) && !hasSchedulePeriod(normalized)) {
-    issues.push("Un cours récurrent doit avoir une période (dates de début et de fin).");
+  if (isCourseSchedule(normalized)) {
+    const weeklyDay = Number(normalized.dayOfWeek);
+    const weeklyStart = String(normalized.startTime ?? "").trim();
+    const weeklyEnd = String(normalized.endTime ?? "").trim();
+    const isWeeklyRule = weeklyDay >= 1 && weeklyDay <= 7 && Boolean(weeklyStart) && Boolean(weeklyEnd);
+    if (!isWeeklyRule && !hasSchedulePeriod(normalized)) {
+      issues.push("Un cours récurrent doit avoir un jour 1–7 et des heures, ou une période.");
+    }
   }
 
   if (options.allowedSubjects?.length) {
@@ -1511,7 +1687,7 @@ export function validatePlanningSlotBusinessRules(
     );
     if (!allowed) {
       issues.push(
-        `La matière « ${normalized.subject} » n'est pas configurée pour la classe ${normalized.className}.`,
+        `Le cours « ${normalized.subject} » n'est pas configuré pour la classe ${normalized.className}.`,
       );
     }
   }
@@ -1531,6 +1707,37 @@ export function detectScheduleConflicts(
   candidate: CourseScheduleSlot,
   ignoreId?: string,
 ): string[] {
+  const candidateDay = Number(candidate.dayOfWeek);
+  const candidateStart = String(candidate.startTime ?? "").trim();
+  const candidateEnd = String(candidate.endTime ?? "").trim();
+  if (candidateDay >= 1 && candidateDay <= 7 && candidateStart && candidateEnd) {
+    if (candidateEnd <= candidateStart) {
+      return ["L'heure de fin doit être postérieure à l'heure de début."];
+    }
+    const ignoreMaster = ignoreId ? getMasterScheduleId(ignoreId) : "";
+    const issues: string[] = [];
+    for (const slot of slots) {
+      if (ignoreMaster && getMasterScheduleId(slot.id) === ignoreMaster) continue;
+      if (normalize(slot.schoolCode) !== normalize(candidate.schoolCode)) continue;
+      const slotDay = Number(slot.dayOfWeek);
+      const slotStart = String(slot.startTime ?? "").trim();
+      const slotEnd = String(slot.endTime ?? "").trim();
+      if (!(slotDay >= 1 && slotDay <= 7 && slotStart && slotEnd)) continue;
+      if (slotDay !== candidateDay) continue;
+      const overlaps = candidateStart < slotEnd && candidateEnd > slotStart;
+      if (!overlaps) continue;
+      if (candidate.teacherId && slot.teacherId && candidate.teacherId === slot.teacherId) {
+        const teacherLabel = slot.teacherName ? ` ${slot.teacherName}` : "";
+        issues.push(
+          `Conflit enseignant${teacherLabel} : déjà « ${slot.subject} » (${slot.className}) ${slotStart}–${slotEnd}.`,
+        );
+      }
+      if (planningLabelsMatch(candidate.className, slot.className)) {
+        issues.push(`Conflit sur ${slot.className} : « ${slot.subject} » ${slotStart}–${slotEnd}.`);
+      }
+    }
+    return [...new Set(issues)];
+  }
   const start = new Date(candidate.start).getTime();
   const end = new Date(candidate.end).getTime();
   if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) {

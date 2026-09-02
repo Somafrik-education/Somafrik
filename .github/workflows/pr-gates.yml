@@ -1,0 +1,382 @@
+name: PR Gates
+
+on:
+  pull_request:
+    branches: [develop, main]
+
+concurrency:
+  group: pr-gates-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: "22.12.0"
+  DATABASE_URL: postgresql://somafrik:somafrik123@localhost:5432/somafrik
+  GITLEAKS_VERSION: "8.24.3"
+
+jobs:
+  scope:
+    name: Scope
+    runs-on: ubuntu-latest
+    outputs:
+      code: ${{ steps.detect.outputs.code }}
+      workflows: ${{ steps.detect.outputs.workflows }}
+      db: ${{ steps.detect.outputs.db }}
+      auth: ${{ steps.detect.outputs.auth }}
+      sync: ${{ steps.detect.outputs.sync }}
+      classes: ${{ steps.detect.outputs.classes }}
+      students: ${{ steps.detect.outputs.students }}
+      teachers: ${{ steps.detect.outputs.teachers }}
+      finance: ${{ steps.detect.outputs.finance }}
+      pedagogy: ${{ steps.detect.outputs.pedagogy }}
+      planning: ${{ steps.detect.outputs.planning }}
+      users: ${{ steps.detect.outputs.users }}
+      platform: ${{ steps.detect.outputs.platform }}
+      web: ${{ steps.detect.outputs.web }}
+      mobile: ${{ steps.detect.outputs.mobile }}
+      dependencies: ${{ steps.detect.outputs.dependencies }}
+      targeted: ${{ steps.detect.outputs.targeted }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - id: detect
+        name: Classify changed paths
+        shell: bash
+        run: |
+          set -euo pipefail
+          base="${{ github.event.pull_request.base.sha }}"
+          head="${{ github.event.pull_request.head.sha }}"
+          changed="$(git diff --name-only "$base" "$head")"
+          printf '%s\n' "$changed"
+
+          code=false
+          workflows=false
+          db=false
+          auth=false
+          sync=false
+          classes=false
+          students=false
+          teachers=false
+          finance=false
+          pedagogy=false
+          planning=false
+          users=false
+          platform=false
+          web=false
+          mobile=false
+          dependencies=false
+
+          while IFS= read -r file; do
+            [ -z "$file" ] && continue
+            lower="${file,,}"
+
+            case "$lower" in
+              backend/*|web/*|mobile/*|scripts/*|packages/*|apps/*|package.json|package-lock.json)
+                code=true
+                ;;
+            esac
+            case "$lower" in
+              .github/workflows/*) workflows=true ;;
+            esac
+            case "$lower" in
+              package.json|package-lock.json|backend/package*.json|web/package*.json|mobile/package*.json)
+                dependencies=true
+                ;;
+            esac
+            case "$lower" in
+              backend/db/*|backend/migrations/*|backend/*migration*|backend/*schema*)
+                db=true
+                ;;
+            esac
+            case "$lower" in
+              web/*) web=true ;;
+              mobile/*) mobile=true ;;
+            esac
+
+            if [[ "$lower" =~ (auth|jwt|session|permission|rbac|role|login|identity|principal) ]]; then auth=true; fi
+            if [[ "$lower" =~ (sync|canonical-state|outbox|legacy.*state|backoffice-state) ]]; then sync=true; fi
+            if [[ "$lower" =~ (class|academic-year|academicyear) ]]; then classes=true; fi
+            if [[ "$lower" =~ (student|enrollment|parent-link|presence|attendance) ]]; then students=true; fi
+            if [[ "$lower" =~ (teacher|subject|assignment) ]]; then teachers=true; fi
+            if [[ "$lower" =~ (finance|payment|fee|cash|receipt) ]]; then finance=true; fi
+            if [[ "$lower" =~ (pedagog|evaluation|grade|note|presence|attendance|reference) ]]; then pedagogy=true; fi
+            if [[ "$lower" =~ (planning|schedule|room|replacement|course) ]]; then planning=true; fi
+            if [[ "$lower" =~ (user|client|parent|role|permission|identity) ]]; then users=true; fi
+            if [[ "$lower" =~ (platform|school|country|notification|subscription|setting|document|exam|lockout|export) ]]; then platform=true; fi
+          done <<< "$changed"
+
+          targeted=false
+          for flag in db auth sync classes students teachers finance pedagogy planning users platform web mobile dependencies; do
+            if [ "${!flag}" = "true" ]; then targeted=true; fi
+          done
+
+          for flag in code workflows db auth sync classes students teachers finance pedagogy planning users platform web mobile dependencies targeted; do
+            printf '%s=%s\n' "$flag" "${!flag}" >> "$GITHUB_OUTPUT"
+          done
+
+  quality:
+    name: Quality
+    needs: scope
+    if: needs.scope.outputs.code == 'true' || needs.scope.outputs.workflows == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            backend/package-lock.json
+            web/package-lock.json
+            Mobile/package-lock.json
+      - name: Install dependencies
+        run: npm run ci:install
+      - name: Lint
+        run: npm run lint
+      - name: TypeScript
+        run: npm run typecheck
+      - name: Build Web
+        env:
+          VITE_API_URL: https://api.somafrik.app
+        run: npm run build
+
+  secrets:
+    name: Secrets
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Install Gitleaks
+        run: |
+          set -euo pipefail
+          curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" \
+            | tar -xz gitleaks
+          sudo install -m 0755 gitleaks /usr/local/bin/gitleaks
+      - name: Scan repository
+        run: gitleaks detect --source . --verbose --redact --exit-code 1
+
+  core:
+    name: Core tests
+    needs: scope
+    if: needs.scope.outputs.code == 'true' || needs.scope.outputs.workflows == 'true'
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: somafrik
+          POSTGRES_USER: somafrik
+          POSTGRES_PASSWORD: somafrik123
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U somafrik -d somafrik"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            backend/package-lock.json
+            web/package-lock.json
+            Mobile/package-lock.json
+      - name: Install dependencies
+        run: npm run ci:install
+      - name: Foundation
+        run: npm run verify:v2-foundation
+      - name: Security baseline
+        run: |
+          set -euo pipefail
+          npm run verify:jwt-header
+          npm run verify:rbac-s1-4
+          npm run verify:sanitize-user-responses
+          npm run verify:db-config
+
+  targeted:
+    name: Risk-targeted
+    needs: scope
+    if: needs.scope.outputs.targeted == 'true'
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: somafrik
+          POSTGRES_USER: somafrik
+          POSTGRES_PASSWORD: somafrik123
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U somafrik -d somafrik"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            backend/package-lock.json
+            web/package-lock.json
+            Mobile/package-lock.json
+      - name: Install dependencies
+        run: npm run ci:install
+
+      - name: Dependency audit
+        if: needs.scope.outputs.dependencies == 'true'
+        run: npm run audit:ci
+
+      - name: PostgreSQL and bootstrap
+        if: needs.scope.outputs.db == 'true'
+        env:
+          NODE_ENV: test
+          JWT_SECRET: ci-test-secret-with-enough-length-for-production-checks
+          SOMAFRIK_DB_REQUIRED: "true"
+          SOMAFRIK_SKIP_DEMO_SEED: "true"
+          SOMAFRIK_BOOTSTRAP_REQUIRED: "true"
+          SOMAFRIK_BOOTSTRAP_PORT: "5056"
+        run: |
+          set -euo pipefail
+          npm run verify:db-config
+          npm run verify:runtime-bootstrap
+
+      - name: Auth and RBAC
+        if: needs.scope.outputs.auth == 'true'
+        run: |
+          set -euo pipefail
+          npm run verify:functional-rbac
+          npm run verify:user-role-lifecycle
+          npm run verify:users-login-identity
+
+      - name: Classes
+        if: needs.scope.outputs.classes == 'true'
+        run: |
+          set -euo pipefail
+          npm run verify:classes-management
+          npm run verify:academic-year-tenant
+
+      - name: Students and attendance
+        if: needs.scope.outputs.students == 'true'
+        run: |
+          set -euo pipefail
+          npm run verify:class-student-enrollment
+          npm run verify:students-fiche-consolidation
+          npm run verify:presences-roster
+          npm run verify:mobile-sync-l1-students
+
+      - name: Teachers
+        if: needs.scope.outputs.teachers == 'true'
+        run: |
+          set -euo pipefail
+          npm run verify:teacher-account-creation
+          npm run verify:teachers-lifecycle
+          npm run verify:teacher-login-scope
+          npm run verify:mobile-sync-l1-assignments
+
+      - name: Finance
+        if: needs.scope.outputs.finance == 'true'
+        run: |
+          set -euo pipefail
+          npm run verify:finance-domain-invariants
+          npm run verify:finance-fee-type-canonical
+          npm run verify:finance-obligation-lifecycle
+          npm run verify:finance-management
+          npm run verify:finance-multi-item-payment
+          npm run verify:finance-web-mobile-convergence
+          npm run verify:finance-rbac
+
+      - name: Pedagogy
+        if: needs.scope.outputs.pedagogy == 'true'
+        run: |
+          set -euo pipefail
+          npm run verify:pedagogy-management
+          npm run verify:education-reference-data
+          npm run verify:evaluation-types-data
+          npm run verify:mobile-sync-l1-school-courses
+
+      - name: Planning
+        if: needs.scope.outputs.planning == 'true'
+        run: |
+          set -euo pipefail
+          npm run verify:planning-v2-weekly
+          npm run verify:planning-v2-web
+          npm run verify:planning-rooms
+          npm run verify:planning-replacements
+          npm run verify:planning-course-options
+          npm run verify:mobile-sync-l1-course-schedules
+
+      - name: Users
+        if: needs.scope.outputs.users == 'true'
+        run: |
+          set -euo pipefail
+          npm run verify:clients-management
+          npm run verify:user-role-lifecycle
+          npm run verify:parent-linking
+          npm run verify:users-tenant
+
+      - name: Platform and school settings
+        if: needs.scope.outputs.platform == 'true'
+        run: |
+          set -euo pipefail
+          npm run verify:platform-management
+          npm run verify:school-settings-data
+          npm run verify:login-lockout-data
+
+      - name: Web tests
+        if: needs.scope.outputs.web == 'true'
+        run: npm --prefix web test
+
+      - name: Mobile safety
+        if: needs.scope.outputs.mobile == 'true'
+        run: |
+          set -euo pipefail
+          npm run verify:mobile-security
+          npm run verify:mobile-data-truth
+          npm run verify:mobile-live-permissions-refresh
+          npm run verify:mobile-cta-rbac-alignment
+          npm run verify:mobile-network-resilience
+          npm run verify:mobile-l1-sqlite-cache
+          npm run verify:mobile-l1-offline-reads
+          npm run verify:mobile-rc2-offline-read-smoke
+          npx --yes tsx Mobile/src/lib/roleSelectionLayout.test.ts
+
+      - name: Canonical sync
+        if: needs.scope.outputs.sync == 'true'
+        run: |
+          set -euo pipefail
+          npm run verify:canonical-state-convergence
+          npm run verify:sync-end-to-end
+          node scripts/verify-remove-legacy-sync-core.js
+
+  required:
+    name: Required
+    if: always()
+    needs: [scope, quality, secrets, core, targeted]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Enforce required PR gates
+        env:
+          SCOPE: ${{ needs.scope.result }}
+          QUALITY: ${{ needs.quality.result }}
+          SECRETS: ${{ needs.secrets.result }}
+          CORE: ${{ needs.core.result }}
+          TARGETED: ${{ needs.targeted.result }}
+        run: |
+          set -euo pipefail
+          for result in "$SCOPE" "$QUALITY" "$SECRETS" "$CORE" "$TARGETED"; do
+            case "$result" in
+              success|skipped) ;;
+              *) echo "Required gate failed: $result" >&2; exit 1 ;;
+            esac
+          done

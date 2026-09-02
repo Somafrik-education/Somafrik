@@ -25,7 +25,7 @@ export function StudentGradesPanel({ student, state, user, period }: StudentGrad
   const averages = studentId ? gradeBook.getStudentAverage(studentId, period) : null;
 
   const columns: Column<StudentGrade>[] = [
-    { key: "subject", header: "Matière", render: (row) => row.subject },
+    { key: "subject", header: "Cours", render: (row) => row.subject },
     { key: "period", header: "Période", render: (row) => row.period },
     { key: "value", header: "Note", render: (row) => (row.value != null ? `${row.value}/${row.scale}` : row.gradeStatus) },
     { key: "status", header: "Statut", render: (row) => row.gradeStatus },
@@ -58,7 +58,7 @@ export function StudentGradesPanel({ student, state, user, period }: StudentGrad
               <p className="text-sm font-semibold text-ink">{averages.appreciation}</p>
             </div>
             <div className="rounded-lg border border-line bg-surface px-3 py-2">
-              <p className="text-xs text-muted">Matières notées</p>
+              <p className="text-xs text-muted">Cours notés</p>
               <p className="text-xl font-semibold text-ink">{averages.subjects.length}</p>
             </div>
           </div>
@@ -74,7 +74,7 @@ export function StudentGradesPanel({ student, state, user, period }: StudentGrad
 
       {averages?.subjects.length ? (
         <Card className="p-4">
-          <SectionHeader title="Moyennes par matière" />
+          <SectionHeader title="Moyennes par cours" />
           <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
             {averages.subjects.map((row) => (
               <div key={row.subject} className="rounded-lg border border-line px-3 py-2">

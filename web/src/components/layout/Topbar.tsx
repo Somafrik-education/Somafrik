@@ -7,7 +7,8 @@ import { useActiveSchool } from "../../context/ActiveSchoolContext";
 import { displayRoleName, getInitials } from "../../lib/format";
 import { scopedNotifications } from "../../lib/scope";
 import { scopedMessages } from "../../lib/establishment";
-import { countUnreadAnnouncements, useAnnouncementsReadListener } from "../../lib/announcementsRead";
+import { useAnnouncementsUnreadCount } from "../../lib/announcementsRead";
+import { useInternalNotificationsUnreadCount } from "../../lib/internalNotificationsRead";
 import { canReadView } from "../../lib/permissions";
 import { usePermissionContext } from "../../lib/usePermissionContext";
 import { Button } from "../ui/Button";
@@ -49,15 +50,22 @@ function TopbarIcon({
 export function Topbar({ title, onMenuOpen }: { title: string; onMenuOpen?: () => void }) {
   const { session, logout } = useAuth();
   const { state, loading, error, refresh } = useData();
-  const { scopedUser } = useActiveSchool();
+  const { scopedUser, activeSchoolCode } = useActiveSchool();
   const ctx = usePermissionContext();
   const user = session?.user;
   const scopeUser = scopedUser ?? user ?? null;
 
   const canReadNotifications = canReadView(ctx, "notifications");
-  const unreadCount = canReadNotifications
-    ? scopedNotifications(user ?? null, state).filter((n) => n.status !== "Lu").length
-    : 0;
+  const hasInternalNotificationScope = Boolean(activeSchoolCode && activeSchoolCode !== "*");
+  const internalUnreadCount = useInternalNotificationsUnreadCount(
+    canReadNotifications && hasInternalNotificationScope,
+    activeSchoolCode,
+  );
+  const unreadCount = hasInternalNotificationScope
+    ? internalUnreadCount
+    : canReadNotifications
+      ? scopedNotifications(user ?? null, state).filter((n) => n.status !== "Lu").length
+      : 0;
 
   const canReadMessages = canReadView(ctx, "messages");
   const unreadMessages = canReadMessages
@@ -65,10 +73,7 @@ export function Topbar({ title, onMenuOpen }: { title: string; onMenuOpen?: () =
     : 0;
 
   const canReadAnnouncements = canReadView(ctx, "announcements");
-  useAnnouncementsReadListener();
-  const unreadAnnouncements = canReadAnnouncements
-    ? countUnreadAnnouncements(scopeUser, state)
-    : 0;
+  const unreadAnnouncements = useAnnouncementsUnreadCount(canReadAnnouncements, activeSchoolCode);
 
   return (
     <header className="no-print sticky top-0 z-20 flex items-center justify-between gap-3 border-b border-line bg-white/90 px-4 py-3 backdrop-blur sm:gap-4 sm:px-6">
@@ -140,6 +145,7 @@ export function Topbar({ title, onMenuOpen }: { title: string; onMenuOpen?: () =
           size="sm"
           onClick={logout}
           aria-label="Déconnexion"
+          data-testid="logout-button"
           className="px-2.5 sm:px-3"
         >
           <LogOut className="h-4 w-4 sm:hidden" />

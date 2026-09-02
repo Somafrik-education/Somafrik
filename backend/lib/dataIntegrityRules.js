@@ -3,19 +3,12 @@
  * Utilisé par l'API, les audits et les tests E2E d'intégrité.
  */
 
-const LOCKED_EVALUATION_STATUSES = new Set([
-  "Validée",
-  "Publiée",
-  "Annulée",
-  "locked",
-  "published",
-  "archived",
-]);
 const ARCHIVED_STUDENT_STATUSES = new Set(["archivé", "archive", "inactif", "suspendu"]);
 const {
   validateGradeContract,
   toGradeStatus,
-  isLockedEvaluationStatus,
+  toEvaluationStatus,
+  isPublishedEvaluationStatus,
 } = require("./gradesCanonical");
 
 function normalize(value) {
@@ -140,7 +133,14 @@ function findStudent(state, studentId) {
 function findEvaluation(state, evaluationId) {
   const key = String(evaluationId ?? "").trim();
   if (!key) return null;
-  return (state.evaluations ?? []).find((item) => String(item.id ?? "") === key) ?? null;
+  return (
+    (state.evaluations ?? []).find(
+      (item) =>
+        String(item.id ?? "") === key ||
+        String(item.publicId ?? "") === key ||
+        String(item.pgId ?? "") === key,
+    ) ?? null
+  );
 }
 
 function findSchool(state, schoolCode) {
@@ -250,25 +250,28 @@ function validateNoteWrite(state = {}, note = {}, options = {}) {
   if (evaluationId) {
     const evaluation = findEvaluation(state, evaluationId);
     if (!evaluation) return "Évaluation introuvable : note orpheline refusée.";
-    if (evaluation.active === false) return "Évaluation inactive : saisie refusée.";
-    const locked =
-      LOCKED_EVALUATION_STATUSES.has(evaluation.status) ||
-      isLockedEvaluationStatus(evaluation.status);
-    if (locked && options.enforceLockedEvaluation !== false) {
-      return `Évaluation ${evaluation.status} : modification de note refusée.`;
-    }
-    scale = Number(evaluation.scale ?? evaluation.max_score ?? scale);
-    coefficient = Number(evaluation.coefficient ?? coefficient);
     const evalSchool = normalizeSchoolCode(evaluation.schoolCode);
     const studentSchool = normalizeSchoolCode(student.schoolCode);
     if (evalSchool && studentSchool && evalSchool !== studentSchool) {
       return "L'élève et l'évaluation doivent appartenir au même établissement.";
     }
+    if (evaluation.active === false) return "Évaluation inactive : saisie refusée.";
+    if (options.requireValidatedEvaluation !== false) {
+      const canonical = toEvaluationStatus(evaluation.status, "");
+      if (isPublishedEvaluationStatus(evaluation.status) || canonical === "archived") {
+        return `Évaluation ${evaluation.status} : modification de note refusée.`;
+      }
+      if (canonical !== "draft" && canonical !== "open" && canonical !== "locked") {
+        return "Évaluation non saisissable : saisie des notes refusée.";
+      }
+    }
+    scale = Number(evaluation.scale ?? evaluation.max_score ?? scale);
+    coefficient = Number(evaluation.coefficient ?? coefficient);
     if (note.className && evaluation.className && !classNamesMatch(note.className, evaluation.className)) {
       return "La note ne correspond pas à la classe de l'évaluation.";
     }
     if (note.subject && evaluation.subject && normalize(note.subject) !== normalize(evaluation.subject)) {
-      return "La note ne correspond pas à la matière de l'évaluation.";
+      return "La note ne correspond pas au cours de l'évaluation.";
     }
   }
 
@@ -427,7 +430,7 @@ function validateAssignmentWrite(state = {}, assignment = {}) {
 
   if (!String(assignment.className ?? "").trim()) return "La classe est obligatoire pour une affectation.";
   if (!String(assignment.subject ?? assignment.course ?? "").trim()) {
-    return "La matière est obligatoire pour une affectation.";
+    return "Le cours est obligatoire pour une affectation.";
   }
 
   return null;

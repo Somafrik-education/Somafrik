@@ -16,6 +16,7 @@ export const CRUD_PERMISSION_MODULES = [
   "Contacts",
   "Relations",
   "Utilisateurs",
+  "Référentiels pédagogiques",
   "Classes",
   "Élèves",
   "Enseignants",
@@ -27,6 +28,7 @@ export const CRUD_PERMISSION_MODULES = [
   "Frais & tarifs",
   "Impayés",
   "Notifications",
+  "Announcements",
   "Messages",
   "Documents",
   "Rapports",
@@ -37,12 +39,20 @@ export const CRUD_PERMISSION_MODULES = [
   "Planning de cours",
 ] as const;
 
+/**
+ * Réexposition contrôlée du menu / de la route Web `/planning`.
+ * Le garde `canReadView("planning")` reste branché : false masque encore le module.
+ * RBAC `Planning de cours:READ` + schoolOnly restent exigés. Salles / remplacements / Mobile hors lot.
+ */
+export const PLANNING_WEB_UI_ENABLED = true;
+
 // view -> fonctionnalité requise (null = toujours accessible)
 export const VIEW_PERMISSION_FEATURES: Record<string, string | null> = {
   overview: null,
   establishment: null,
   configuration: "Paramètres Établissement",
   countries: "Pays",
+  educationReference: "Référentiels pédagogiques",
   schools: "Établissements",
   subscriptions: "Abonnements",
   mySubscription: "Mon abonnement",
@@ -64,7 +74,7 @@ export const VIEW_PERMISSION_FEATURES: Record<string, string | null> = {
   payments: "Paiements",
   fees: "Frais & tarifs",
   unpaid: "Frais & tarifs",
-  announcements: "Notifications",
+  announcements: "Announcements",
   messages: "Messages",
   presences: "Présences",
   notes: "Notes",
@@ -108,6 +118,7 @@ export const NAV_ITEMS: NavItem[] = [
 
   // Paramétrage plateforme (Super Admin / Admin Pays)
   { view: "countries", path: "/pays", label: "Pays", group: "plateforme" },
+  { view: "educationReference", path: "/referentiels-pedagogiques", label: "Référentiels pédagogiques", group: "plateforme" },
   { view: "schools", path: "/etablissements", label: "Établissements", group: "plateforme" },
   { view: "subscriptions", path: "/abonnements", label: "Abonnements", group: "plateforme" },
 
@@ -127,7 +138,7 @@ export const NAV_ITEMS: NavItem[] = [
   // Communication : Messages, Annonces et Notifications sont accessibles via les icônes
   // en haut à droite (voir Topbar), pas dans le menu latéral.
 
-  // Administration (module à onglets : Utilisateurs, Rôles & permissions, Documents, Conformité)
+  // Administration (module à onglets : Utilisateurs, Rôles et droits, Documents, Conformité)
   { view: "users", path: "/administration", label: "Administration", group: "administration" },
 
   // Paramètres (module à onglets : Établissement, Graphiques, Conception bulletins)
@@ -144,7 +155,7 @@ export const MVP_COVERAGE = [
   ["Notes simples", "Web / Mobile", "Couvert", "P0"],
   ["Paiements scolaires", "Web / Mobile", "Couvert", "P0"],
   ["Notifications", "Web / Mobile", "Couvert", "P1"],
-  ["Dashboards", "Web / Mobile", "Couvert", "P1"],
-  ["Super Admin / Admin Pays", "Plateforme", "Couvert", "P1"],
+  ["Tableaux de bord", "Web / Mobile", "Couvert", "P1"],
+  ["Super administrateur / Administrateur pays", "Plateforme", "Couvert", "P1"],
   ["Séparation de données", "SaaS", "Couvert", "P0"],
 ].map(([module, scope, status, priority]) => ({ module, scope, status, priority }));

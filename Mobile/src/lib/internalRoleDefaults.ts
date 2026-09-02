@@ -9,6 +9,7 @@ export const INTERNAL_ROLE_DEFAULT_PERMISSIONS: Record<string, string[]> = {
     "Affectations:READ", "Affectations:CREATE", "Affectations:UPDATE",
     "Présences:READ", "Présences:CREATE", "Présences:UPDATE", "Notes:READ", "Bulletins:READ", "Paiements:READ",
     "Notifications:READ", "Notifications:CREATE", "Notifications:UPDATE",
+    "Announcements:READ", "Announcements:CREATE", "Announcements:UPDATE",
     "Messages:READ", "Messages:CREATE", "Messages:UPDATE",
     "Documents:READ", "Documents:CREATE", "Documents:UPDATE", "Rapports:READ",
     "Paramètres Établissement:READ", "Paramètres Établissement:UPDATE",
@@ -20,7 +21,7 @@ export const INTERNAL_ROLE_DEFAULT_PERMISSIONS: Record<string, string[]> = {
     "Utilisateurs:READ", "Classes:READ", "Élèves:READ", "Élèves:CREATE", "Élèves:UPDATE",
     "Enseignants:READ", "Affectations:READ", "Présences:READ", "Présences:CREATE", "Présences:UPDATE",
     "Paiements:READ", "Paiements:CREATE", "Paiements:UPDATE",
-    "Notifications:READ", "Notifications:CREATE", "Messages:READ", "Messages:CREATE", "Messages:UPDATE",
+    "Notifications:READ", "Notifications:CREATE", "Announcements:READ", "Announcements:CREATE", "Messages:READ", "Messages:CREATE", "Messages:UPDATE",
     "Documents:READ", "Documents:CREATE", "Documents:UPDATE", "Bulletins:READ", "Rapports:READ",
   ],
   "Préfet des études": [
@@ -33,13 +34,14 @@ export const INTERNAL_ROLE_DEFAULT_PERMISSIONS: Record<string, string[]> = {
     "Matières:READ", "Matières:CREATE", "Matières:UPDATE",
     "Examens:READ", "Examens:CREATE", "Examens:UPDATE", "Rapports:READ",
     "Notifications:READ", "Notifications:CREATE", "Notifications:UPDATE",
+    "Announcements:READ", "Announcements:CREATE", "Announcements:UPDATE",
     "Messages:READ", "Messages:CREATE", "Messages:UPDATE",
     "Paramètres Établissement:READ",
   ],
   Proviseur: [
     "Utilisateurs:READ", "Classes:READ", "Élèves:READ", "Enseignants:READ",
     "Affectations:READ", "Présences:READ", "Présences:CREATE", "Présences:UPDATE", "Notes:READ", "Bulletins:READ",
-    "Paiements:READ", "Messages:READ", "Notifications:READ", "Documents:READ", "Rapports:READ",
+    "Paiements:READ", "Messages:READ", "Notifications:READ", "Announcements:READ", "Documents:READ", "Rapports:READ",
     "Paramètres Établissement:READ",
   ],
   Directeur: [
@@ -47,30 +49,30 @@ export const INTERNAL_ROLE_DEFAULT_PERMISSIONS: Record<string, string[]> = {
     "Élèves:READ", "Élèves:UPDATE", "Enseignants:READ",
     "Affectations:READ", "Affectations:CREATE", "Affectations:UPDATE",
     "Présences:READ", "Présences:CREATE", "Présences:UPDATE", "Notes:READ", "Bulletins:READ", "Paiements:READ",
-    "Messages:READ", "Notifications:READ", "Documents:READ", "Rapports:READ", "Paramètres Établissement:READ",
+    "Messages:READ", "Notifications:READ", "Announcements:READ", "Documents:READ", "Rapports:READ", "Paramètres Établissement:READ",
   ],
   "Directeur adjoint": [
     "Utilisateurs:READ", "Classes:READ", "Élèves:READ", "Enseignants:READ",
     "Affectations:READ", "Présences:READ", "Présences:CREATE", "Présences:UPDATE", "Notes:READ", "Bulletins:READ",
-    "Messages:READ", "Notifications:READ", "Documents:READ", "Rapports:READ",
+    "Messages:READ", "Notifications:READ", "Announcements:READ", "Documents:READ", "Rapports:READ",
   ],
   Comptable: [
     "Élèves:READ", "Paiements:READ", "Paiements:CREATE", "Paiements:UPDATE",
-    "Documents:READ", "Rapports:READ", "Messages:READ", "Notifications:READ",
+    "Documents:READ", "Rapports:READ", "Messages:READ", "Notifications:READ", "Announcements:READ",
   ],
   Enseignant: [
     "Classes:READ", "Élèves:READ", "Affectations:READ",
     "Présences:READ", "Présences:CREATE", "Présences:UPDATE",
     "Notes:READ", "Notes:CREATE", "Notes:UPDATE",
-    "Messages:READ", "Messages:CREATE", "Notifications:READ", "Documents:READ", "Matières:READ", "Examens:READ",
+    "Messages:READ", "Messages:CREATE", "Notifications:READ", "Announcements:READ", "Documents:READ", "Matières:READ", "Examens:READ",
   ],
   Parent: [
     "Élèves:READ", "Notes:READ", "Bulletins:READ", "Présences:READ", "Paiements:READ",
-    "Messages:READ", "Notifications:READ", "Documents:READ",
+    "Messages:READ", "Notifications:READ", "Announcements:READ", "Documents:READ",
   ],
   "Élève / Étudiant": [
     "Notes:READ", "Bulletins:READ", "Présences:READ", "Messages:READ",
-    "Notifications:READ", "Documents:READ", "Examens:READ",
+    "Notifications:READ", "Announcements:READ", "Documents:READ", "Examens:READ",
   ],
 };
 

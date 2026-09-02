@@ -7,14 +7,22 @@ CREATE TABLE IF NOT EXISTS countries (
   phone_code VARCHAR(16) NOT NULL,
   currency VARCHAR(16) NOT NULL,
   is_active BOOLEAN NOT NULL DEFAULT TRUE,
+  pedagogical_level_label TEXT NOT NULL DEFAULT 'Niveau',
+  pedagogical_track_label TEXT NOT NULL DEFAULT 'Filière',
+  pedagogical_group_label TEXT NOT NULL DEFAULT 'Groupe',
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+ALTER TABLE countries ADD COLUMN IF NOT EXISTS pedagogical_level_label TEXT NOT NULL DEFAULT 'Niveau';
+ALTER TABLE countries ADD COLUMN IF NOT EXISTS pedagogical_track_label TEXT NOT NULL DEFAULT 'Filière';
+ALTER TABLE countries ADD COLUMN IF NOT EXISTS pedagogical_group_label TEXT NOT NULL DEFAULT 'Groupe';
 
 CREATE TABLE IF NOT EXISTS schools (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   country_id UUID NOT NULL REFERENCES countries(id),
   school_code VARCHAR(32) NOT NULL UNIQUE,
+  login_code TEXT,
   name TEXT NOT NULL,
   logo_url TEXT,
   address TEXT,
@@ -23,6 +31,8 @@ CREATE TABLE IF NOT EXISTS schools (
   email TEXT,
   school_type TEXT,
   status TEXT NOT NULL DEFAULT 'active',
+  profile_payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+  deleted_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -52,7 +62,7 @@ CREATE TABLE IF NOT EXISTS users (
   password_hash TEXT,
   pin_hash TEXT,
   must_change_password BOOLEAN NOT NULL DEFAULT FALSE,
-  role TEXT NOT NULL,
+  role TEXT,
   status TEXT NOT NULL DEFAULT 'active',
   last_login_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -60,6 +70,51 @@ CREATE TABLE IF NOT EXISTS users (
 );
 
 ALTER TABLE users ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS birth_date DATE;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS gender TEXT;
+ALTER TABLE users ALTER COLUMN role DROP NOT NULL;
+
+CREATE TABLE IF NOT EXISTS user_roles (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES users(id),
+  school_id UUID REFERENCES schools(id),
+  role_key TEXT NOT NULL,
+  granted_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  granted_by UUID REFERENCES users(id),
+  revoked_at TIMESTAMPTZ,
+  revoked_by UUID REFERENCES users(id),
+  status TEXT NOT NULL DEFAULT 'active',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT user_roles_status_check CHECK (status IN ('active', 'revoked')),
+  CONSTRAINT user_roles_revoked_consistency CHECK (
+    (status = 'active' AND revoked_at IS NULL AND revoked_by IS NULL)
+    OR (status = 'revoked' AND revoked_at IS NOT NULL)
+  )
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS user_roles_active_school_unique
+  ON user_roles (user_id, school_id, role_key)
+  WHERE status = 'active' AND revoked_at IS NULL AND school_id IS NOT NULL;
+
+CREATE UNIQUE INDEX IF NOT EXISTS user_roles_active_platform_unique
+  ON user_roles (user_id, role_key)
+  WHERE status = 'active' AND revoked_at IS NULL AND school_id IS NULL;
+
+CREATE INDEX IF NOT EXISTS idx_user_roles_user ON user_roles (user_id);
+CREATE INDEX IF NOT EXISTS idx_user_roles_school ON user_roles (school_id);
+CREATE INDEX IF NOT EXISTS idx_user_roles_role_key ON user_roles (role_key);
+
+CREATE TABLE IF NOT EXISTS user_code_counters (
+  year INTEGER PRIMARY KEY,
+  last_value INTEGER NOT NULL DEFAULT 0,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Unicité identité de connexion (email / téléphone) : index créés APRÈS inventaire fail-safe
+-- dans postgresRepository.ensureUsersLoginIdentityConstraints() /
+-- migration 20260814_users_login_identity_uniqueness.sql (bases legacy avec doublons).
+-- Ne pas créer les index ici : schema.sql s'exécute avant la migration contrôlée.
 
 CREATE TABLE IF NOT EXISTS academic_years (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -94,10 +149,20 @@ CREATE TABLE IF NOT EXISTS classes (
   name TEXT NOT NULL,
   level TEXT,
   section TEXT,
-  status TEXT NOT NULL DEFAULT 'active',
+  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'inactive')),
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+-- level_id / stream_id / group_id / group_code : ajoutés APRÈS education_levels
+-- (boot ensureClassesStructuralOffering + migrations 20260817 / 20260826).
+-- group_id nullable jusqu'au lot E. Aucun backfill silencieux.
+-- Unicité structurelle PR-1A : NULLS NOT DISTINCT (boot ensureClassesStructuralOffering).
+
+-- Unicité métier (école + année + nom normalisé) : index créé APRÈS contrôle
+-- fail-safe dans postgresRepository.ensureClassesDomainConstraints() /
+-- migration 20260811_classes_name_uniqueness.sql (bases legacy avec doublons).
+-- Ne pas créer l'index ici : schema.sql s'exécute avant la migration contrôlée.
 
 CREATE TABLE IF NOT EXISTS subjects (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -150,6 +215,18 @@ CREATE TABLE IF NOT EXISTS teachers (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- Alias de login temporaire (ENS-####) après réconciliation du code public.
+-- Non unique globalement : deux établissements peuvent avoir eu ENS-0001.
+ALTER TABLE teachers ADD COLUMN IF NOT EXISTS legacy_teacher_code VARCHAR(64);
+CREATE INDEX IF NOT EXISTS idx_teachers_school_legacy_code
+  ON teachers (school_id, legacy_teacher_code)
+  WHERE legacy_teacher_code IS NOT NULL;
+
+-- Unicité (school_id, user_id) : index créé APRÈS inventaire fail-safe dans
+-- postgresRepository.ensureTeachersDomainConstraints() /
+-- migration 20260812_teachers_school_user_uniqueness.sql (bases legacy avec doublons).
+-- Ne pas créer l'index ici : schema.sql s'exécute avant la migration contrôlée.
+
 CREATE TABLE IF NOT EXISTS students (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   school_id UUID NOT NULL REFERENCES schools(id),
@@ -180,6 +257,8 @@ CREATE TABLE IF NOT EXISTS enrollments (
   UNIQUE (student_id, academic_year_id)
 );
 
+ALTER TABLE enrollments ADD COLUMN IF NOT EXISTS class_effective_date DATE;
+
 CREATE TABLE IF NOT EXISTS teacher_assignments (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   school_id UUID NOT NULL REFERENCES schools(id),
@@ -190,13 +269,70 @@ CREATE TABLE IF NOT EXISTS teacher_assignments (
   assignment_role TEXT NOT NULL DEFAULT 'primary',
   status TEXT NOT NULL DEFAULT 'active',
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  UNIQUE (teacher_id, class_id, subject_id, academic_year_id, assignment_role)
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 ALTER TABLE teacher_assignments ADD COLUMN IF NOT EXISTS assignment_role TEXT NOT NULL DEFAULT 'primary';
 
+-- Unicité des affectations ACTIVES uniquement : index partiel créé APRÈS inventaire fail-safe
+-- dans postgresRepository.ensureTeacherAssignmentsActiveUniqueness() /
+-- migration 20260814_teacher_assignments_active_uniqueness.sql.
+-- Ne pas recréer UNIQUE (teacher_id, class_id, subject_id, academic_year_id, assignment_role)
+-- ici : une contrainte globale empêcherait la réaffectation après status='deleted'.
+
+-- LOT 3 : catalogue canonique des types d'évaluation (scopé établissement)
+CREATE TABLE IF NOT EXISTS evaluation_types (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  school_id UUID NOT NULL REFERENCES schools(id),
+  code TEXT NOT NULL,
+  name TEXT NOT NULL,
+  display_order INTEGER NOT NULL DEFAULT 0,
+  status TEXT NOT NULL DEFAULT 'active',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT evaluation_types_status_check CHECK (status IN ('active', 'archived')),
+  CONSTRAINT evaluation_types_school_code_unique UNIQUE (school_id, code)
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_evaluation_types_school_name_norm
+  ON evaluation_types (school_id, lower(btrim(name)));
+
+CREATE INDEX IF NOT EXISTS idx_evaluation_types_school_status
+  ON evaluation_types (school_id, status, display_order);
+
+-- LOT 4 : paramètres établissement scalaires (périodes = terms)
+CREATE TABLE IF NOT EXISTS school_settings (
+  school_id UUID PRIMARY KEY REFERENCES schools(id) ON DELETE CASCADE,
+  period_mode TEXT NOT NULL DEFAULT 'trimestre',
+  default_scale NUMERIC(6,2) NOT NULL DEFAULT 20,
+  report_card_mode TEXT NOT NULL DEFAULT 'period',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT school_settings_period_mode_check CHECK (period_mode IN ('trimestre', 'semestre', 'periode')),
+  CONSTRAINT school_settings_report_card_mode_check CHECK (report_card_mode IN ('period', 'annual', 'custom')),
+  CONSTRAINT school_settings_default_scale_check CHECK (default_scale > 0 AND default_scale <= 100)
+);
+
+CREATE OR REPLACE FUNCTION ensure_school_settings_for_school()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  INSERT INTO school_settings (school_id)
+  VALUES (NEW.id)
+  ON CONFLICT (school_id) DO NOTHING;
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_schools_ensure_school_settings ON schools;
+CREATE TRIGGER trg_schools_ensure_school_settings
+AFTER INSERT ON schools
+FOR EACH ROW
+EXECUTE FUNCTION ensure_school_settings_for_school();
+
 -- D3.6b : évaluations pédagogiques (entité distincte des notes)
+-- evaluation_type_id = source de vérité ; evaluation_type TEXT = projection/compatibilité
 CREATE TABLE IF NOT EXISTS evaluations (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   school_id UUID NOT NULL REFERENCES schools(id),
@@ -206,6 +342,7 @@ CREATE TABLE IF NOT EXISTS evaluations (
   term_id UUID NOT NULL REFERENCES terms(id),
   title TEXT NOT NULL,
   evaluation_type TEXT NOT NULL DEFAULT 'devoir',
+  evaluation_type_id UUID REFERENCES evaluation_types(id),
   evaluation_date DATE,
   max_score NUMERIC(8, 2) NOT NULL DEFAULT 20,
   coefficient NUMERIC(8, 2) NOT NULL DEFAULT 1,
@@ -224,9 +361,22 @@ CREATE TABLE IF NOT EXISTS evaluations (
   )
 );
 
+-- D3.6b / LOT 3 : compatibilité boot sur bases existantes.
+-- CREATE TABLE IF NOT EXISTS ne fait pas évoluer une table déjà présente ; les colonnes
+-- canoniques doivent donc exister avant les index et les migrations runtime.
+ALTER TABLE evaluations ADD COLUMN IF NOT EXISTS evaluation_type_id UUID REFERENCES evaluation_types(id);
+ALTER TABLE evaluations ADD COLUMN IF NOT EXISTS active BOOLEAN NOT NULL DEFAULT TRUE;
+ALTER TABLE evaluations ADD COLUMN IF NOT EXISTS linked_exam_id UUID;
+ALTER TABLE evaluations ADD COLUMN IF NOT EXISTS legacy_json_id TEXT;
+ALTER TABLE evaluations ADD COLUMN IF NOT EXISTS created_by UUID REFERENCES users(id);
+ALTER TABLE evaluations ADD COLUMN IF NOT EXISTS updated_by UUID REFERENCES users(id);
+
 CREATE UNIQUE INDEX IF NOT EXISTS uq_evaluations_school_legacy_json_id
   ON evaluations (school_id, legacy_json_id)
   WHERE legacy_json_id IS NOT NULL;
+
+CREATE INDEX IF NOT EXISTS idx_evaluations_evaluation_type_id
+  ON evaluations (evaluation_type_id);
 
 CREATE TABLE IF NOT EXISTS grades (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -278,15 +428,20 @@ CREATE TABLE IF NOT EXISTS exams (
   class_id UUID NOT NULL REFERENCES classes(id),
   subject_id UUID REFERENCES subjects(id),
   term_id UUID REFERENCES terms(id),
+  academic_year_id UUID REFERENCES academic_years(id),
+  evaluation_type_id UUID REFERENCES evaluation_types(id),
   exam_code VARCHAR(64) NOT NULL UNIQUE,
   name TEXT NOT NULL,
   exam_type TEXT NOT NULL,
   exam_date DATE NOT NULL,
+  starts_at TIMESTAMPTZ,
+  ends_at TIMESTAMPTZ,
   status TEXT NOT NULL DEFAULT 'draft',
   created_by UUID REFERENCES users(id),
   published_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT exams_status_check CHECK (status IN ('draft', 'scheduled', 'validated', 'completed', 'cancelled', 'archived'))
 );
 
 CREATE TABLE IF NOT EXISTS exam_results (
@@ -322,6 +477,60 @@ CREATE TABLE IF NOT EXISTS student_documents (
   metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS report_cards (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  school_id UUID NOT NULL REFERENCES schools(id) ON DELETE CASCADE,
+  student_id UUID NOT NULL REFERENCES students(id),
+  class_id UUID REFERENCES classes(id),
+  academic_year_id UUID NOT NULL REFERENCES academic_years(id),
+  term_id UUID NOT NULL REFERENCES terms(id),
+  status TEXT NOT NULL DEFAULT 'generated',
+  generated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  published_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT report_cards_status_check CHECK (status IN ('draft', 'generated', 'published', 'archived')),
+  CONSTRAINT report_cards_student_term_unique UNIQUE (school_id, student_id, academic_year_id, term_id)
+);
+
+CREATE TABLE IF NOT EXISTS report_card_templates (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  school_id UUID NOT NULL REFERENCES schools(id) ON DELETE CASCADE,
+  class_id UUID REFERENCES classes(id),
+  academic_year_id UUID REFERENCES academic_years(id),
+  template_type TEXT NOT NULL DEFAULT 'bulletin',
+  layout JSONB NOT NULL DEFAULT '{}'::jsonb,
+  status TEXT NOT NULL DEFAULT 'active',
+  version INTEGER NOT NULL DEFAULT 1,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT report_card_templates_status_check CHECK (status IN ('active', 'archived')),
+  CONSTRAINT report_card_templates_type_check CHECK (template_type IN ('bulletin', 'attestation', 'certificate'))
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_report_card_templates_school_class
+  ON report_card_templates (school_id, class_id, template_type)
+  WHERE class_id IS NOT NULL AND status = 'active';
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_report_card_templates_school_default
+  ON report_card_templates (school_id, template_type)
+  WHERE class_id IS NULL AND status = 'active';
+
+CREATE TABLE IF NOT EXISTS school_documents (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  school_id UUID NOT NULL REFERENCES schools(id) ON DELETE CASCADE,
+  student_id UUID REFERENCES students(id),
+  document_type TEXT NOT NULL,
+  title TEXT NOT NULL,
+  storage_key TEXT,
+  mime_type TEXT,
+  status TEXT NOT NULL DEFAULT 'available',
+  created_by UUID REFERENCES users(id),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT school_documents_status_check CHECK (status IN ('available', 'generating', 'archived'))
 );
 
 CREATE TABLE IF NOT EXISTS promotion_decisions (
@@ -415,6 +624,26 @@ CREATE TABLE IF NOT EXISTS audit_logs (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- LOT 6 — Lockout de connexion (SoT PostgreSQL, pas de Map processus)
+CREATE TABLE IF NOT EXISTS login_lockouts (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  school_id UUID REFERENCES schools(id) ON DELETE CASCADE,
+  school_scope TEXT NOT NULL,
+  identifier_normalized TEXT NOT NULL,
+  failed_attempts INTEGER NOT NULL DEFAULT 0,
+  first_failed_at TIMESTAMPTZ,
+  last_failed_at TIMESTAMPTZ,
+  locked_until TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT login_lockouts_scope_identifier_unique UNIQUE (school_scope, identifier_normalized),
+  CONSTRAINT login_lockouts_failed_attempts_nonneg CHECK (failed_attempts >= 0)
+);
+
+CREATE INDEX IF NOT EXISTS idx_login_lockouts_locked_until
+  ON login_lockouts (locked_until)
+  WHERE locked_until IS NOT NULL;
+
 CREATE TABLE IF NOT EXISTS backoffice_state (
   state_key TEXT PRIMARY KEY,
   state_payload JSONB NOT NULL,
@@ -466,6 +695,98 @@ CREATE TABLE IF NOT EXISTS payment_reminders (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- LOT 4 — Finance canonique (statuts, grilles, allocations). Ensures runtime ajoutent les colonnes manquantes.
+CREATE TABLE IF NOT EXISTS payment_statuses (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  school_id UUID REFERENCES schools(id),
+  status_code TEXT NOT NULL,
+  label TEXT NOT NULL,
+  is_active BOOLEAN NOT NULL DEFAULT TRUE,
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  profile_payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS school_payment_methods (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  school_id UUID NOT NULL REFERENCES schools(id),
+  method_code TEXT NOT NULL,
+  label TEXT NOT NULL,
+  is_active BOOLEAN NOT NULL DEFAULT TRUE,
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (school_id, method_code)
+);
+
+CREATE TABLE IF NOT EXISTS fee_grids (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  school_id UUID NOT NULL REFERENCES schools(id),
+  grid_code TEXT NOT NULL,
+  name TEXT NOT NULL DEFAULT '',
+  class_name TEXT NOT NULL,
+  academic_year TEXT NOT NULL,
+  period_name TEXT NOT NULL DEFAULT '',
+  currency VARCHAR(16) NOT NULL DEFAULT 'CDF',
+  status TEXT NOT NULL DEFAULT 'Brouillon',
+  profile_payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (school_id, grid_code)
+);
+
+CREATE TABLE IF NOT EXISTS school_fee_items (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  school_id UUID NOT NULL REFERENCES schools(id),
+  fee_grid_id UUID NOT NULL REFERENCES fee_grids(id) ON DELETE CASCADE,
+  item_code TEXT NOT NULL,
+  fee_type TEXT NOT NULL,
+  label TEXT NOT NULL,
+  amount NUMERIC(12, 2) NOT NULL CHECK (amount > 0),
+  due_date DATE,
+  period_label TEXT,
+  monthly_months JSONB NOT NULL DEFAULT '[]'::jsonb,
+  mandatory BOOLEAN NOT NULL DEFAULT TRUE,
+  status TEXT NOT NULL DEFAULT 'Actif',
+  profile_payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (fee_grid_id, item_code)
+);
+
+CREATE TABLE IF NOT EXISTS fee_tariff_history (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  school_id UUID NOT NULL REFERENCES schools(id),
+  fee_grid_id UUID REFERENCES fee_grids(id),
+  action TEXT NOT NULL,
+  actor_id TEXT,
+  payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS payment_allocations (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  school_id UUID NOT NULL REFERENCES schools(id),
+  payment_id UUID NOT NULL REFERENCES payments(id),
+  obligation_id UUID NOT NULL REFERENCES student_fee_obligations(id),
+  amount NUMERIC(12, 2) NOT NULL CHECK (amount > 0),
+  reversed_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS payment_items (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  school_id UUID NOT NULL REFERENCES schools(id),
+  payment_id UUID NOT NULL REFERENCES payments(id) ON DELETE CASCADE,
+  school_fee_item_id UUID REFERENCES school_fee_items(id),
+  fee_type TEXT NOT NULL,
+  fee_label TEXT NOT NULL,
+  amount NUMERIC(12, 2) NOT NULL CHECK (amount > 0),
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 CREATE TABLE IF NOT EXISTS sessions (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id UUID REFERENCES users(id),
@@ -485,6 +806,8 @@ CREATE TABLE IF NOT EXISTS idempotency_keys (
   cache_id TEXT PRIMARY KEY,
   route_key TEXT NOT NULL,
   principal_id TEXT NOT NULL DEFAULT '',
+  school_scope TEXT NOT NULL DEFAULT '',
+  request_hash TEXT NOT NULL DEFAULT '',
   status_code INTEGER NOT NULL,
   response_body JSONB NOT NULL DEFAULT '{}'::jsonb,
   expires_at TIMESTAMPTZ NOT NULL,
@@ -492,11 +815,22 @@ CREATE TABLE IF NOT EXISTS idempotency_keys (
 );
 
 CREATE INDEX IF NOT EXISTS idx_idempotency_expires ON idempotency_keys(expires_at);
+CREATE INDEX IF NOT EXISTS idx_idempotency_school_scope ON idempotency_keys(school_scope);
+CREATE INDEX IF NOT EXISTS idx_idempotency_principal_route ON idempotency_keys(principal_id, route_key);
 
 CREATE INDEX IF NOT EXISTS idx_schools_country_id ON schools(country_id);
 CREATE INDEX IF NOT EXISTS idx_users_school_id ON users(school_id);
 CREATE INDEX IF NOT EXISTS idx_students_school_id ON students(school_id);
 CREATE INDEX IF NOT EXISTS idx_students_school_search ON students(school_id, student_code, first_name, last_name);
+-- Mobile-sync L1 Students : horloge inscriptions pour
+-- GREATEST(students.updated_at, MAX(enrollments.updated_at)).
+-- Un index students(school_id, updated_at, id) ne couvre pas cette expression.
+-- idx_students_school_id filtre déjà le tenant. Les index enrollments évitent
+-- un seq scan non maîtrisé de toutes les inscriptions à chaque sync.
+CREATE INDEX IF NOT EXISTS idx_enrollments_school_student_updated_at
+  ON enrollments (school_id, student_id, updated_at);
+CREATE INDEX IF NOT EXISTS idx_enrollments_school_class_status_student
+  ON enrollments (school_id, class_id, status, student_id);
 CREATE INDEX IF NOT EXISTS idx_grades_student_id ON grades(student_id);
 CREATE INDEX IF NOT EXISTS idx_grades_school_id ON grades(school_id);
 CREATE INDEX IF NOT EXISTS idx_grades_evaluation_id ON grades(evaluation_id);
@@ -507,8 +841,22 @@ CREATE INDEX IF NOT EXISTS idx_attendance_student_date ON attendance(student_id,
 -- dans postgresRepository.ensureAttendanceCanonicalUniqueness() (bases legacy sûres).
 -- D3.6b : l'index unique uq_grades_school_evaluation_student est créé APRÈS migration/dédup
 -- dans postgresRepository.ensureGradeCanonicalUniqueness() (bases legacy sûres).
+-- Classes : uq_classes_school_year_normalized_name est créé APRÈS contrôle fail-safe
+-- dans postgresRepository.ensureClassesDomainConstraints() (pas de suppression silencieuse).
+-- Mobile-sync L1 keyset : WHERE school_id AND (updated_at, id) > (?, ?) ORDER BY updated_at, id.
+-- Index existants (PK id, UNIQUE class_code, unicité nom/structure) ne couvrent pas ce chemin.
+CREATE INDEX IF NOT EXISTS idx_classes_school_updated_at_id
+  ON classes (school_id, updated_at, id);
+-- Mobile-sync L1 Assignments : keyset school-wide (school_id, updated_at, id)
+-- et assigned (school_id, teacher_id, updated_at, id). Une FK n'est pas un index.
+CREATE INDEX IF NOT EXISTS idx_teacher_assignments_school_updated_at_id
+  ON teacher_assignments (school_id, updated_at, id);
+CREATE INDEX IF NOT EXISTS idx_teacher_assignments_school_teacher_updated_at_id
+  ON teacher_assignments (school_id, teacher_id, updated_at, id);
 CREATE INDEX IF NOT EXISTS idx_payments_student_id ON payments(student_id);
 CREATE INDEX IF NOT EXISTS idx_payments_school_id ON payments(school_id);
+CREATE INDEX IF NOT EXISTS idx_payment_items_payment ON payment_items(payment_id);
+CREATE INDEX IF NOT EXISTS idx_payment_items_school ON payment_items(school_id);
 CREATE INDEX IF NOT EXISTS idx_student_fee_obligations_school_student ON student_fee_obligations(school_id, student_id);
 CREATE INDEX IF NOT EXISTS idx_student_fee_obligations_status_due ON student_fee_obligations(school_id, status, due_date);
 CREATE INDEX IF NOT EXISTS idx_payment_reminders_student ON payment_reminders(school_id, student_id, sent_at DESC);
@@ -517,4 +865,5 @@ CREATE INDEX IF NOT EXISTS idx_exams_school_date ON exams(school_id, exam_date);
 CREATE INDEX IF NOT EXISTS idx_exam_results_exam_id ON exam_results(exam_id);
 CREATE INDEX IF NOT EXISTS idx_student_documents_student_id ON student_documents(student_id);
 CREATE INDEX IF NOT EXISTS idx_audit_logs_filters ON audit_logs(school_id, user_id, action, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_login_lockouts_scope_identifier ON login_lockouts(school_scope, identifier_normalized);
 CREATE INDEX IF NOT EXISTS idx_sessions_active ON sessions(user_id, session_code) WHERE revoked_at IS NULL;

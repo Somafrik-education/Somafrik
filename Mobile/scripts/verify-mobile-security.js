@@ -189,7 +189,9 @@ function main() {
   assert.ok(/https:\/\//.test(env) && /production/i.test(env), "HTTPS production requis");
   const appConfig = read(path.join(MOBILE, "app.config.js"));
   assert.ok(appConfig.includes("usesCleartextTraffic"), "cleartext configuré");
-  assert.ok(/!isProdProfile|isProdProfile/.test(appConfig), "cleartext limité hors prod");
+  assert.ok(appConfig.includes("expo-build-properties"), "cleartext via expo-build-properties, pas le schéma android Expo");
+  assert.ok(/profileAllowsCleartext|isProdProfile/.test(appConfig), "cleartext limité hors store");
+  assert.doesNotMatch(read(path.join(MOBILE, "app.json")), /usesCleartextTraffic/);
   console.log("OK: validation URL / HTTPS production");
 
   // 6) Téléchargement sécurisé + adaptateur documenté
@@ -248,11 +250,13 @@ function main() {
   const authCtx = read(path.join(SRC, "context", "AuthContext.tsx"));
   assert.ok(authCtx.includes("logout"), "logout AuthContext");
   assert.ok(api.includes("clearSecureSession"), "logout clearSecureSession");
+  assert.ok(api.includes("revokeCurrentPushDevice"), "logout révoque le jeton push");
   console.log("OK: nettoyage déconnexion");
 
   // 12) Package deps
   const pkg = JSON.parse(read(path.join(MOBILE, "package.json")));
   assert.ok(pkg.dependencies["expo-secure-store"], "dépendance expo-secure-store");
+  assert.ok(pkg.dependencies["expo-notifications"], "dépendance expo-notifications");
   assert.ok(!pkg.dependencies["axios"], "pas d'axios requis (fetch client unique)");
   console.log("OK: dépendances sécurité");
 

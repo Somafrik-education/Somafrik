@@ -43,6 +43,8 @@ export function scopedSchools(user: ScopeUser | null, state: ScopeState) {
   if (user.role === "country_admin" || user.role === COUNTRY_ADMIN_ROLE) {
     return state.schools.filter((school) => schoolMatchesCountryScope(school, user.countryScope));
   }
+  // Audit #456 : SCHOOL_ADMIN ne passe pas par ici (scopeBackOfficeForSession
+  // retourne le payload serveur). Comparateur leftover conservé Superadmin/Pays.
   return state.schools.filter((school) => normalize(school.code) === normalize(user.schoolCode));
 }
 
@@ -75,6 +77,7 @@ export function scopedSubscriptions(user: ScopeUser | null, state: ScopeState) {
         normalize(subscription.countryCode) === normalize(countryCode),
     );
   }
+  // Audit #456 : SCHOOL_ADMIN ne passe pas par ici (trust serveur).
   return state.subscriptions.filter(
     (subscription) => normalize(subscription.schoolCode) === normalize(user.schoolCode),
   );
@@ -93,6 +96,7 @@ export function scopedNotifications(user: ScopeUser | null, state: ScopeState) {
         normalize(notification.audience).includes("admin pays"),
     );
   }
+  // Audit #456 : SCHOOL_ADMIN ne passe pas par ici (trust serveur).
   return state.notifications.filter(
     (notification) =>
       normalize(notification.schoolCode) === normalize(user.schoolCode) ||
@@ -118,6 +122,10 @@ export function scopedUsers(user: ScopeUser | null, state: ScopeState) {
           countrySchoolCodes.has(normalize(account.schoolCode))),
     );
   }
+  // SCHOOL_ADMIN ne passe plus par ici (scopeBackOfficeForSession fait confiance
+  // au tenant serveur). Ce comparateur leftover reste pour Superadmin / Admin Pays.
+  // Ne pas l'utiliser pour masquer une réponse /backoffice/users déjà scopée :
+  // leftover JWT (CC-YYYY-NNNN) ≠ login_code projeté (CC-IN-YY-SEQ) vide la liste.
   return state.users.filter((account) => normalize(account.schoolCode) === normalize(user.schoolCode));
 }
 
@@ -190,6 +198,26 @@ export function scopeSchoolEntityData<T extends Record<string, unknown>>(
   };
 }
 
+/**
+ * Quand un rôle plateforme a choisi un établissement, les routes tenant sont déjà
+ * limitées côté backend via X-Somafrik-School-Code + requireAuth. Le client ne doit
+ * pas refaire un filtrage SCH-* === login_code V2 qui pourrait transformer une
+ * réponse PostgreSQL valide en tableau vide. Les collections de contexte plateforme
+ * restent, elles, scopées au principal afin de conserver le sélecteur et les droits.
+ */
+export function trustServerScopedPlatformTenant<T extends Record<string, unknown>>(
+  payload: T,
+  principalScoped: T,
+): T {
+  return {
+    ...payload,
+    countries: principalScoped.countries,
+    schools: principalScoped.schools,
+    subscriptions: principalScoped.subscriptions,
+    notifications: principalScoped.notifications,
+  } as T;
+}
+
 export function scopeBackOfficeForSession<T extends Record<string, unknown>>(
   payload: T,
   session: any,
@@ -219,11 +247,11 @@ export function scopeBackOfficeForSession<T extends Record<string, unknown>>(
       subscriptions: scopedSubscriptions(user, scopeState),
       users: scopedUsers(user, scopeState),
       notifications: scopedNotifications(user, scopeState),
-    };
+    } as T;
     if (activeSchoolCode && !isAllSchoolsSelection(activeSchoolCode)) {
-      return scopeSchoolEntityData(scoped, activeSchoolCode);
+      return trustServerScopedPlatformTenant(payload, scoped);
     }
-    return scoped as T;
+    return scoped;
   }
 
   if (session.role === "super_admin") {
@@ -234,16 +262,18 @@ export function scopeBackOfficeForSession<T extends Record<string, unknown>>(
       subscriptions: scopedSubscriptions(user, scopeState),
       users: scopedUsers(user, scopeState),
       notifications: scopedNotifications(user, scopeState),
-    };
+    } as T;
     if (activeSchoolCode && !isAllSchoolsSelection(activeSchoolCode)) {
-      return scopeSchoolEntityData(scoped, activeSchoolCode);
+      return trustServerScopedPlatformTenant(payload, scoped);
     }
-    return scoped as T;
+    return scoped;
   }
 
-  const schoolCode = String(session.user?.schoolCode || session.school?.code || "").trim();
-  if (session.role === "school_admin" && schoolCode) {
-    return scopeSchoolEntityData(payload, schoolCode);
+  // Pour les comptes établissement, le JWT et les repositories PostgreSQL sont déjà
+  // tenant-scoped. Ne pas refaire côté UI un contrôle d'identité pouvant comparer
+  // l'alias interne de session à un schoolCode public V2 normalisé.
+  if (session.role === "school_admin") {
+    return payload;
   }
 
   return payload;

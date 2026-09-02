@@ -1,5 +1,6 @@
 /**
- * HOTFIX-RBAC-ADMIN-01 — Création classes/enseignants sans auditLog client.
+ * HOTFIX-RBAC-ADMIN-01 — Création enseignants sans auditLog client.
+ * Classes : plus d'écriture via /api/backoffice/state (clôture /api/classes).
  *
  * Usage:
  *   node backend/scripts/verify-rbac-admin-01.js
@@ -7,6 +8,7 @@
  */
 const assert = require("assert");
 const path = require("path");
+const { assertBackOfficeStateWriteRemoved } = require("../lib/backofficeStatePutExpectation");
 
 const {
   ADMIN_SCHOOL_WRITABLE_ENTITIES,
@@ -23,14 +25,14 @@ function runUnitTests() {
   const teacher = { role: "Enseignant", schoolCode: "CD-2026-0001", authSource: "backoffice" };
   const superadmin = { role: "Super Administrateur Somafrik", schoolCode: "*" };
 
-  assert.ok(ADMIN_SCHOOL_WRITABLE_ENTITIES.includes("classes"));
+  assert.ok(!ADMIN_SCHOOL_WRITABLE_ENTITIES.includes("classes"));
   assert.ok(ADMIN_SCHOOL_WRITABLE_ENTITIES.includes("teachers"));
   assert.ok(!ADMIN_SCHOOL_WRITABLE_ENTITIES.includes("auditLog"));
 
   assert.strictEqual(
     evaluateBackOfficeWriteAccess(schoolAdmin, ["classes"]).ok,
-    true,
-    "Admin School + classes",
+    false,
+    "Admin School + classes → refusé (legacy fermé)",
   );
   assert.strictEqual(
     evaluateBackOfficeWriteAccess(schoolAdmin, ["teachers"]).ok,
@@ -38,7 +40,7 @@ function runUnitTests() {
     "Admin School + teachers",
   );
   assert.strictEqual(
-    evaluateBackOfficeWriteAccess(schoolAdmin, ["classes", "auditLog"]).ok,
+    evaluateBackOfficeWriteAccess(schoolAdmin, ["teachers", "auditLog"]).ok,
     false,
     "Admin School + auditLog client → refusé",
   );
@@ -70,11 +72,12 @@ function runUnitTests() {
     "teachers",
     "auditLog",
   ]);
-  assert.ok(superWritable.includes("classes"));
+  // Superadmin matrice théorique peut encore lister la clé, mais le serveur
+  // strip/rejette toute écriture classes via state (voir HTTP ci-dessous).
   assert.ok(superWritable.includes("teachers"));
   assert.ok(!superWritable.includes("auditLog"), "Superadmin ne peut pas écrire auditLog client");
 
-  console.log("OK unit: HOTFIX-RBAC-ADMIN-01 matrice classes/teachers/auditLog");
+  console.log("OK unit: HOTFIX-RBAC-ADMIN-01 matrice teachers/auditLog (+ classes legacy fermé)");
 }
 
 async function runHttpTestsIfAvailable() {
@@ -153,18 +156,19 @@ async function runHttpTestsIfAvailable() {
     capacity: 40,
   };
 
-  // A1 — Admin établissement + classes (sans auditLog) → 200
-  const classOk = await request("/backoffice/state", {
+  // A1 — Admin établissement + classes seul → 400 legacy fermé
+  const classForbidden = await request("/backoffice/state", {
     method: "PUT",
     token: schoolAdmin.accessToken,
     body: {
       classes: [...(state.classes ?? []).filter((row) => row.id !== classId), classRow],
     },
   });
-  assert.ok(classOk.status >= 200 && classOk.status < 300, `Admin classes: ${classOk.status}`);
-  assert.ok(
-    (classOk.data.classes ?? []).some((row) => row.id === classId),
-    "classe persistée dans la réponse",
+  assert.strictEqual(classForbidden.status, 400, `Admin classes legacy: ${classForbidden.status}`);
+  assert.strictEqual(
+    classForbidden.data?.code,
+    "LEGACY_CLASSES_STATE_WRITE_FORBIDDEN",
+    "code legacy classes",
   );
 
   // A2 — Admin établissement + enseignants (sans auditLog) → 200
@@ -191,8 +195,8 @@ async function runHttpTestsIfAvailable() {
     method: "PUT",
     token: schoolAdmin.accessToken,
     body: {
-      classes: classOk.data.classes ?? [classRow],
-      auditLog: [{ id: "AUD-TAMPER", action: "classes.create" }],
+      teachers: teacherOk.data.teachers ?? [teacherRow],
+      auditLog: [{ id: "AUD-TAMPER", action: "teachers.create" }],
     },
   });
   assert.strictEqual(auditForbidden.status, 403, "Admin + auditLog client doit être 403");
@@ -201,28 +205,7 @@ async function runHttpTestsIfAvailable() {
     /Permission insuffisante/i,
   );
 
-  // A4 — Admin + autre école → ligne étrangère non persistée (scope)
-  const foreignClass = {
-    id: `CLS-FOREIGN-${stamp}`,
-    name: "Foreign",
-    schoolCode: "BI-2026-0001",
-  };
-  const crossPut = await request("/backoffice/state", {
-    method: "PUT",
-    token: schoolAdmin.accessToken,
-    body: {
-      classes: [...(classOk.data.classes ?? []), foreignClass],
-    },
-  });
-  assert.ok(crossPut.status >= 200 && crossPut.status < 300, "cross put status");
-  const afterCross = await request("/backoffice/state", { token: schoolAdmin.accessToken });
-  assert.strictEqual(
-    (afterCross.data.classes ?? []).some((row) => row.id === foreignClass.id),
-    false,
-    "classe autre école non accessible (scoped)",
-  );
-
-  // A5 — Enseignant + classes/enseignants → 403
+  // A4 — Enseignant + teachers → 403 ; classes → 400 ou 403
   for (const [label, body] of [
     ["classes", { classes: [classRow] }],
     ["teachers", { teachers: [teacherRow] }],
@@ -232,24 +215,30 @@ async function runHttpTestsIfAvailable() {
       token: teacherToken,
       body,
     });
-    assert.strictEqual(forbidden.status, 403, `Enseignant + ${label} doit être 403`);
+    if (label === "classes") {
+      assert.ok(
+        forbidden.status === 400 || forbidden.status === 403,
+        `Enseignant + classes doit être 400/403 (reçu ${forbidden.status})`,
+      );
+    } else {
+      assert.strictEqual(forbidden.status, 403, `Enseignant + ${label} doit être 403`);
+    }
   }
 
-  // A6 — Superadmin + classes → 200
-  const superClassId = `CLS-SUPER-${stamp}`;
-  const superOk = await request("/backoffice/state", {
+  // A5 — Superadmin + classes seul → 400 legacy fermé
+  const superForbidden = await request("/backoffice/state", {
     method: "PUT",
     token: superadmin.accessToken,
     body: {
       classes: [
-        ...(afterCross.data.classes ?? []),
-        { id: superClassId, name: `Super ${stamp}`, schoolCode },
+        ...(state.classes ?? []),
+        { id: `CLS-SUPER-${stamp}`, name: `Super ${stamp}`, schoolCode },
       ],
     },
   });
-  assert.ok(superOk.status >= 200 && superOk.status < 300, `Superadmin classes: ${superOk.status}`);
+  assert.strictEqual(superForbidden.status, 400, `Superadmin classes legacy: ${superForbidden.status}`);
 
-  console.log("OK http: HOTFIX-RBAC-ADMIN-01 classes/teachers/auditLog");
+  console.log("OK http: HOTFIX-RBAC-ADMIN-01 teachers/auditLog + classes legacy fermé");
 }
 
 async function main() {

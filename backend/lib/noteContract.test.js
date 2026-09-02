@@ -36,7 +36,7 @@ function baseState() {
         subject: "Maths",
         scale: 20,
         coefficient: 2,
-        status: "Ouverte",
+        status: "Validée",
         active: true,
       },
       {
@@ -118,7 +118,7 @@ function run() {
   });
   assert.ok(duplicate && duplicate.includes("existe déjà"));
 
-  // Autre évaluation ouverte OK
+  // Autre évaluation validée OK
   state.evaluations.push({
     id: "EVAL-2",
     schoolCode: "SCH-001",
@@ -126,7 +126,7 @@ function run() {
     subject: "Maths",
     scale: 20,
     coefficient: 1,
-    status: "Ouverte",
+    status: "Validée",
     active: true,
   });
   const otherEval = validateNoteWrite(state, {
@@ -163,6 +163,27 @@ function run() {
     gradeStatus: "Saisie",
   });
   assert.ok(publishedLocked && publishedLocked.includes("Publiée"));
+
+  state.evaluations.push({
+    id: "EVAL-DRAFT",
+    schoolCode: "SCH-001",
+    className: "6ème A",
+    subject: "Maths",
+    scale: 20,
+    coefficient: 1,
+    status: "Brouillon",
+    active: true,
+  });
+  const draftAllowed = validateNoteWrite(state, {
+    studentId: "STU-1",
+    schoolCode: "SCH-001",
+    evaluationId: "EVAL-DRAFT",
+    subject: "Maths",
+    className: "6ème A",
+    value: 14,
+    gradeStatus: "Saisie",
+  });
+  assert.equal(draftAllowed, null, "NOTES-P1 : brouillon saisissable");
 
   // Calcul pondéré canonique — exclusions
   const { average } = weightedAverage(

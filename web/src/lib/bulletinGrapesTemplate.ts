@@ -47,7 +47,7 @@ export const DEFAULT_BULLETIN_BODY_HTML = `
   <table class="results">
     <thead>
       <tr>
-        <th>Matière</th>
+        <th>Cours</th>
         <th style="width:18%">Moyenne /20</th>
         <th style="width:12%">Coeff.</th>
       </tr>

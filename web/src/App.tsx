@@ -18,16 +18,22 @@ import {
   TeachersListPage,
   ConfigurationPage,
   CountriesPage,
+  EducationReferencePage,
   CoursePlanningPage,
   DashboardEntryPage,
   MarketplacePage,
-  EtablissementOverviewPage,  EntityPage,
+  EtablissementOverviewPage,
+  EntityPage,
+  MessagesConversationsPage,
+  AnnouncementsPage,
   FinanceFeesPage,
   FinanceUnpaidPage,
   FinancesLayout,
   GradesEvaluationsPage,
   LandingPage,
   LoginPage,
+  PrivacyPolicyPage,
+  AccountDeletionPage,
   MonAbonnementInvoicesPage,
   MonAbonnementLayout,
   MonAbonnementPage,
@@ -76,6 +82,8 @@ export default function App() {
       <Routes>
       <Route path="/" element={<LandingPage />} />
       <Route path="/connexion" element={<LoginPage />} />
+      <Route path="/confidentialite" element={<PrivacyPolicyPage />} />
+      <Route path="/suppression-compte" element={<AccountDeletionPage />} />
       <Route
         element={
           <ProtectedRoute>
@@ -126,7 +134,7 @@ export default function App() {
             }
           />
           <Route
-            path="classes/:className/eleves"
+            path="classes/:classCode/eleves"
             element={
               <PermissionRoute view="students">
                 <ClassStudentsPage />
@@ -249,7 +257,7 @@ export default function App() {
           path="/messages"
           element={
             <PermissionRoute view="messages">
-              <EntityPage entity="messages" />
+              <MessagesConversationsPage />
             </PermissionRoute>
           }
         />
@@ -257,7 +265,7 @@ export default function App() {
           path="/annonces"
           element={
             <PermissionRoute view="announcements">
-              <EntityPage entity="announcements" />
+              <AnnouncementsPage />
             </PermissionRoute>
           }
         />
@@ -308,6 +316,14 @@ export default function App() {
           }
         />
         <Route
+          path="/referentiels-pedagogiques"
+          element={
+            <PermissionRoute view="educationReference">
+              <EducationReferencePage />
+            </PermissionRoute>
+          }
+        />
+        <Route
           path="/etablissements"
           element={
             <PermissionRoute view="schools">
@@ -348,7 +364,7 @@ export default function App() {
             </PermissionRoute>
           }
         />
-        {/* Module Administration (onglets : Utilisateurs, Rôles & permissions, Documents, Conformité) */}
+        {/* Module Administration (onglets : Utilisateurs, Rôles et droits, Documents, Conformité) */}
         <Route
           path="/administration"
           element={

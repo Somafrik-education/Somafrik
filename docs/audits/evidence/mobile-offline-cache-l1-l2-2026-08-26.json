@@ -1,0 +1,208 @@
+{
+  "auditId": "mobile-offline-cache-l1-l2-2026-08-26",
+  "type": "architecture-audit-only",
+  "productImplementation": false,
+  "baseBranch": "develop",
+  "baseSha": "5a69383903e8e51ccd7f08ab793ec53adbd97126",
+  "baseShaNote": "develop after #333 merge (Mobile Payments UI). Includes #339, #342 e7c5dbc095aa89f91c462b73e16aa3bd0fe61e51 and #340",
+  "verdict": "GO_SOUS_CONDITIONS",
+  "ctoAmendments341": [
+    "expo-sqlite SDK54 useSQLCipher before op-sqlite",
+    "scopeHash mandatory and bound to cursor; mini-cold on grant/revoke",
+    "blocked_authorization instead of silent outbox drop",
+    "expired cursor/tombstones force full resource reconciliation"
+  ],
+  "rc1Separated": true,
+  "pr339Untouched": true,
+  "pr340Untouched": true,
+  "pr342Impact": {
+    "mergedAt": "e7c5dbc095aa89f91c462b73e16aa3bd0fe61e51",
+    "addsOfflineCache": false,
+    "l1AddsSchoolCourses": true,
+    "v2SubjectsInMetierCache": false,
+    "getCoursesStillInternalBackofficeProjection": true,
+    "postCoursesWritesPostgres": true
+  },
+  "pr333Impact": {
+    "mergedAt": "5a69383903e8e51ccd7f08ab793ec53adbd97126",
+    "domain": "Mobile Payments UI density",
+    "l1L2ArchitecturalImpact": false,
+    "inCacheScope": false
+  },
+  "backofficeState": "NO-GO",
+  "storageRecommendation": "expo-sqlite SDK 54 + useSQLCipher true (native build, not Expo Go); key in SecureStore/Keystore; evaluate before op-sqlite",
+  "deltaStrategy": "opaque keyset cursor (updated_at, id) bound to mandatory scopeHash/scopeVersion; in-band terminal-status tombstones; expired cursor forces full resource reconciliation",
+  "scopeHash": {
+    "mandatory": true,
+    "boundToCursor": true,
+    "onGrantOrRevoke": "mini-cold sync of the resource (warm delta cannot fetch history with updated_at < old cursor)"
+  },
+  "cursorExpiry": {
+    "serverForcesFullReconciliation": true,
+    "cursorStatus": ["ok", "scope_changed", "expired"],
+    "ignoreExpiredWarmDelta": "P0 bug (local zombies)"
+  },
+  "tenantPolicy": "partition userId+schoolId AND purge on logout",
+  "syncOrder": "auth/RBAC → blocked_authorization (no silent drop) → pull delta or mini-cold or full resync → replay pending outbox → pull delta final",
+  "outboxRevocation": {
+    "status": "blocked_authorization",
+    "replay": false,
+    "silentDrop": false,
+    "notifyUser": true,
+    "purgeSensitivePayload": true,
+    "retainAuditMetadata": ["id", "domain", "path", "createdAt", "userId", "schoolScope", "intentionId", "blockedAt", "reason"]
+  },
+  "encryption": {
+    "expoSqliteInstalledToday": false,
+    "sdk54UseSQLCipher": true,
+    "expoGo": false,
+    "preferOverOpSqlite": true,
+    "keyStore": "SecureStore/Keystore/Keychain"
+  },
+  "mobileDurableToday": {
+    "secureStore": [
+      "somafrik.accessToken",
+      "somafrik.refreshToken",
+      "somafrik.sessionProfile",
+      "somafrik.effectivePermissionsSnapshotV1"
+    ],
+    "fileSystem": ["somafrik-mutation-outbox.json"],
+    "asyncStorage": false,
+    "expoSqlite": false,
+    "domainL1L2Persisted": false
+  },
+  "resources": [
+    {
+      "resource": "Classes",
+      "layer": "L1",
+      "mobileFn": "getClasses",
+      "get": "GET /api/classes",
+      "memory": true,
+      "persisted": false,
+      "offlineColdBoot": false,
+      "outbox": false,
+      "updatedAt": true,
+      "deleteSignalOnList": "inactive still listed",
+      "pagination": false,
+      "deltaReady": false,
+      "backendChangeNeeded": true
+    },
+    {
+      "resource": "Students",
+      "layer": "L1",
+      "mobileFn": "getStudents",
+      "get": "GET /api/students",
+      "memory": true,
+      "persisted": false,
+      "offlineColdBoot": false,
+      "outbox": false,
+      "updatedAt": true,
+      "deleteSignalOnList": "archived omitted",
+      "pagination": "opt-in unused by Mobile",
+      "deltaReady": false,
+      "backendChangeNeeded": true
+    },
+    {
+      "resource": "Assignments",
+      "layer": "L1",
+      "mobileFn": "getAssignments",
+      "get": "GET /api/assignments",
+      "memory": true,
+      "persisted": false,
+      "offlineColdBoot": false,
+      "outbox": false,
+      "updatedAt": true,
+      "deleteSignalOnList": "deleted omitted",
+      "pagination": "opt-in unused by Mobile",
+      "deltaReady": false,
+      "backendChangeNeeded": true
+    },
+    {
+      "resource": "CourseSchedules",
+      "layer": "L1",
+      "mobileFn": "getPlanningWeekly",
+      "get": "GET /api/course-schedules",
+      "memory": true,
+      "persisted": false,
+      "offlineColdBoot": false,
+      "outbox": false,
+      "updatedAt": "backend yes, Mobile drops",
+      "deleteSignalOnList": "cancelled omitted",
+      "pagination": false,
+      "deltaReady": false,
+      "backendChangeNeeded": true
+    },
+    {
+      "resource": "SchoolCourses",
+      "layer": "L1",
+      "addedAfter": "#342",
+      "mobileFn": "getCourses / listSchoolClassCourses / createSchoolClassCourse",
+      "get": "GET /api/courses",
+      "post": "POST /api/courses (PG school_courses)",
+      "memory": true,
+      "persisted": false,
+      "offlineColdBoot": false,
+      "outbox": false,
+      "updatedAt": "GET currently via internal backoffice projection state.courses, not delta-ready",
+      "deleteSignalOnList": "archived/inactive excluded client-side (#342)",
+      "pagination": false,
+      "deltaReady": false,
+      "backendChangeNeeded": true,
+      "note": "Needed for planning schoolCourseId. /v2/subjects catalogue stays out of L1/L2 métier cache."
+    },
+    {
+      "resource": "Presences",
+      "layer": "L2",
+      "mobileFn": "getPresences / savePresences",
+      "get": "GET /api/presences",
+      "memory": true,
+      "persisted": false,
+      "offlineColdBoot": false,
+      "outbox": "domain presences",
+      "updatedAt": "exposed as savedAt",
+      "deleteSignalOnList": "upsert only, no delete API",
+      "pagination": false,
+      "deltaReady": false,
+      "backendChangeNeeded": true,
+      "occ": "last-write-wins ON CONFLICT"
+    },
+    {
+      "resource": "Evaluations",
+      "layer": "L2",
+      "mobileFn": "getEvaluations",
+      "get": "GET /api/evaluations",
+      "memory": true,
+      "persisted": false,
+      "offlineColdBoot": false,
+      "outbox": false,
+      "updatedAt": true,
+      "deleteSignalOnList": "archived remains for staff",
+      "pagination": "opt-in unused by Mobile",
+      "deltaReady": false,
+      "backendChangeNeeded": true
+    },
+    {
+      "resource": "Grades",
+      "layer": "L2",
+      "mobileFn": "getNotes / saveNote",
+      "get": "GET /api/notes",
+      "memory": true,
+      "persisted": false,
+      "offlineColdBoot": false,
+      "outbox": "domain notes",
+      "updatedAt": "SQL yes, Mobile strips version",
+      "deleteSignalOnList": "upsert only, no delete API",
+      "pagination": false,
+      "deltaReady": false,
+      "backendChangeNeeded": true,
+      "occ": "grades.version exists; Mobile does not send it"
+    }
+  ],
+  "volumeOrderOfMagnitudeBytes": {
+    "assumptions": "no images/documents; L1 academic year; planning weekly slots; presences 8 weeks; grades current year",
+    "students100": { "l1": "1e5", "l2": "5e5", "total": "<1MB" },
+    "students500": { "l1": "4e5", "l2": "2.5e6", "total": "2-4MB" },
+    "students1000": { "l1": "8e5", "l2": "5e6", "total": "4-8MB" },
+    "students5000": { "l1": "4e6", "l2": "2.5e7", "total": "20-40MB" }
+  }
+}

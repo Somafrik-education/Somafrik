@@ -2,6 +2,14 @@
 
 Somafrik unifie la gestion éducative, du pays à la classe. Stack Docker : PostgreSQL, API backend, plateforme web (Vite) et Expo mobile.
 
+## Guides utilisateurs
+
+Les procédures officielles (V1, PR #311, pas encore sur `develop`) sont ici :
+
+- [Index des guides](docs/user-guides/README.md)
+- [Guide utilisateur Web](docs/user-guides/GUIDE-UTILISATEUR-WEB.md)
+- [Guide utilisateur Mobile](docs/user-guides/GUIDE-UTILISATEUR-MOBILE.md)
+
 ## Prérequis
 
 - [Docker Desktop](https://www.docker.com/products/docker-desktop/) (Windows)
@@ -75,7 +83,9 @@ powershell -ExecutionPolicy Bypass -File scripts\docker-up.ps1
 | PostgreSQL (hôte) | localhost:5433 |
 | Expo Metro (mobile) | port 8083 — QR dans les logs |
 
-### Production / préproduction (Vercel + API séparée)
+### Hébergement Render — production / préproduction
+
+**Render est l'unique fournisseur d'hébergement Web/API de Somafrik.**
 
 | Service | Production | Préproduction |
 |---------|------------|---------------|
@@ -83,7 +93,7 @@ powershell -ExecutionPolicy Bypass -File scripts\docker-up.ps1
 | Connexion | https://somafrik.app/connexion | https://preprod.somafrik.app/connexion |
 | API | https://api.somafrik.app/api/health | https://somafrik-api-preprod.onrender.com/api/health |
 
-Déploiement : `docs/preproduction.md` (API) + `docs/vercel.md` (frontend Vercel).
+En préproduction, les services Render sont `somafrik-web-preprod` (Static Site) et `somafrik-api-preprod` (Node). Déploiement et source de vérité : `docs/render.md` et `docs/preproduction.md`.
 
 ```powershell
 npm run docker:logs:mobile   # QR Code Expo
@@ -144,17 +154,17 @@ Plateforme web (`http://localhost:5173/` ou `http://localhost:5000/web/`) — mo
 | Plateforme | Super Admin | `superadmin` | — |
 | Plateforme | Admin Pays RDC | `admin-rdc` | — |
 | Plateforme | Admin Pays BI | `admin-bi` | — |
-| Établissement | Admin école | `admin` | `CD-2026-0001` |
-| Établissement | Secrétaire | `secretaire` | `CD-2026-0001` |
-| Établissement | Préfet | `prefet` | `CD-2026-0001` |
-| Métier | Enseignant | `ENS-0001` | `CD-2026-0001` |
-| Métier | Parent | `+243 820 000 001` | `CD-2026-0001` |
-| Métier | Élève | `ELE-0001` | `CD-2026-0001` |
+| Établissement | Admin école | `admin` | `CD-IN-26-001` |
+| Établissement | Secrétaire | `secretaire` | `CD-IN-26-001` |
+| Établissement | Préfet | `prefet` | `CD-IN-26-001` |
+| Métier | Enseignant | `ENS-0001` | `CD-IN-26-001` |
+| Métier | Parent | `+243 820 000 001` | `CD-IN-26-001` |
+| Métier | Élève | `ELE-0001` | `CD-IN-26-001` |
 
 Mobile (API `/api/login`) :
 
 ```text
-Code établissement : CD-2026-0001
+Code établissement : CD-IN-26-001
 Enseignant : ENS-0001 / PIN 1234
 Parent : +243 820 000 001 / PIN 1234
 Élève : ELE-0001 / PIN 1234

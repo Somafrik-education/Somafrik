@@ -3,6 +3,15 @@ import { Link, Navigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { useData } from "../context/DataContext";
 import { useActiveSchool } from "../context/ActiveSchoolContext";
+import { financeApi } from "../lib/financeApi";
+import { createFinanceIdempotencyKey } from "../lib/financeIdempotency";
+import { pedagogyApi } from "../lib/pedagogyApi";
+import { examsApi } from "../lib/examsApi";
+import { reportCardsApi } from "../lib/reportCardsApi";
+import { schoolDocumentsApi } from "../lib/schoolDocumentsApi";
+import { clientsApi } from "../lib/clientsApi";
+import { parentsApi } from "../lib/parentsApi";
+import { prepareContactForSave } from "../lib/contacts";
 import {
   Button,
   EmptyState,
@@ -27,7 +36,6 @@ import {
   ENTITY_OUT_OF_SCOPE_SAVE_MESSAGE,
   entityMutationSuccessMessage,
   mergeEntityIntoState,
-  newEntityId,
   persistEntityPatch,
   prepareEntityRowForSave,
 } from "./entity-page/entityCrudCore";
@@ -38,37 +46,33 @@ import {
 import {
   buildContactDeleteAuditEntry,
   buildContactImportPlan,
-  buildContactMutationAuditEntries,
   buildContactPasswordResetGate,
-  buildContactPostMergePlan,
   buildContactPreSubmitPlan,
   buildCreateFicheFromSelectionPlan,
   defaultNewContactDraft,
 } from "./entity-page/contactAccountWorkflow";
 import {
-  addParentChildStudentId,
-  applyParentContactChange,
-  buildParentChildBundleDeletePlan,
-  buildParentChildBundleSubmitPlan,
   buildRelationDeleteAuditEntry,
-  buildRelationPostMergePlan,
   buildRelationPreSubmitPlan,
   defaultNewRelationDraft,
-  filterAvailableParentStudentOptions,
-  removeParentChildStudentId,
-  resolveSelectedParentStudentIds,
-  resolveSelectedParentStudentLabels,
 } from "./entity-page/parentChildRelationWorkflow";
 import {
-  buildPaymentCancelPlan,
+  buildLinkParentPayload,
+  defaultLinkParentDraft,
+  parentLinkErrorMessage,
+  relationIdsFromParentChildRow,
+  validateLinkParentDraft,
+} from "./entity-page/linkParentWorkflow";
+import {
   buildPaymentReceiptPrintPlan,
+  PAYMENT_CANCEL_REASON_REQUIRED_MESSAGE,
+  PAYMENT_CANCEL_SUCCESS_MESSAGE,
 } from "./entity-page/paymentWorkflow";
 import {
   buildTeacherAssignmentDeleteConfirmCopy,
   buildTeacherAssignmentDeletePlan,
   buildTeacherAssignmentSubmitPlan,
   emptyEditingAssignment,
-  reapplyAssignmentPeriodRoom,
 } from "./entity-page/teacherAssignmentWorkflow";
 import { PrintButton } from "../components/ui/PrintButton";
 import { Field, Input, Select } from "../components/ui/Field";
@@ -77,19 +81,16 @@ import { useToast } from "../components/ui/Toast";
 import { useConfirm } from "../components/ui/ConfirmDialog";
 import { usePrompt } from "../components/ui/PromptDialog";
 import { usePermissionContext } from "../lib/usePermissionContext";
-import { getEntityFeaturePermissions, canResetTargetUserPassword } from "../lib/permissions";
+import { getEntityFeaturePermissions, canResetTargetUserPassword, canLinkParent, canArchiveParentRelation } from "../lib/permissions";
 import {
   getEntityModule,
   getScopedEntityRows,
   entityCreateViaContactsOnly,
   type SchoolEntityKey,
 } from "../lib/entityModules";
-import { applyActiveGridsToStudent } from "../lib/fees";
-import { adaptLegacyStudents } from "../lib/studentDomain";
 import {
   getTeacherProvisioningOptions,
   syncSingleUserToTeachers,
-  syncTeacherProfileToUser,
 } from "../lib/userTeacherSync";
 import {
   getAssignmentSelectOptions,
@@ -105,22 +106,22 @@ import {
 } from "../lib/userAccounts";
 import { validatePasswordPolicy } from "../lib/userAccountRules";
 import {
-  getRelationParentUserOptions,
   getRelationStudentOptions,
   groupParentChildRelations,
   isParentChildBundleRow,
-  parentChildBundleToForm,
 } from "../lib/relations";
 import { csvToObjects, downloadCsv, downloadExcel, rowsToCsv } from "../lib/csv";
-import { validateTeacherDeletion, validateTeacherSchoolEntry } from "../lib/teacherRules";
-import { markAllAnnouncementsRead } from "../lib/announcementsRead";
-import { normalize, isSchoolAdminRole } from "../lib/format";
+import { normalize } from "../lib/format";
 import { isSuperAdminRole } from "../lib/orgHierarchy";
 import { inputToPeriodDate, normalizePeriodDate, periodDateToInput } from "../lib/dates";
 import { subscriptionFeatureBlocked, type SubscriptionFeature } from "../lib/subscriptionAccessClient";
 import { appendAuditLog } from "../lib/audit";
 import { validateCourseTeacherRule } from "../lib/pedagogyGovernance";
 import { QuickPaymentModal } from "../components/payments/QuickPaymentModal";
+import { FinancePaymentsOverview } from "../components/payments/FinancePaymentsOverview";
+import { getPaymentRateKpi } from "../lib/paymentRateKpi";
+import { resolveFinanceCurrency } from "../lib/financeCurrency";
+import { resolveFinanceUiActions } from "../lib/financeActionPermissions";
 import { PaymentReceipt } from "../components/payments/PaymentReceipt";
 import { type PaymentRecord } from "../lib/quickPayment";
 import {
@@ -140,19 +141,13 @@ import {
 } from "../lib/pedagogySync";
 import type { BackOfficeState, SessionUser } from "../types";
 import { getSchoolAcademicLists } from "../lib/academicConfig";
+import { teacherAssignmentsApi } from "../lib/teacherAssignmentsApi";
 import {
   generateTeacherIdentifiers,
   getTeacherLoginIdentifier,
-  resolveStudentMatricule,
-  resolveTeacherIdentifiers,
 } from "../lib/entityIdentifiers";
-import {
-  filterSchoolClassRecords,
-  removeSchoolClassFromState,
-  validateUniqueClassName,
-} from "../lib/classRules";
 
-function normalizeTeacherFormRow(row: Record<string, unknown>): Record<string, unknown> {
+function normalizeTeacherFormProps(row: Record<string, unknown>): Record<string, unknown> {
   const next = { ...row };
   if (!String(next.identifier ?? "").trim() && String(next.publicId ?? "").trim()) {
     next.identifier = getTeacherLoginIdentifier(String(next.publicId));
@@ -168,6 +163,10 @@ const STUDENT_LINKED_KEYS = new Set<SchoolEntityKey>([
   "bulletins",
   "documents",
 ]);
+
+function isStudentsEntityKey(key: SchoolEntityKey): boolean {
+  return key === "students";
+}
 
 function linkStudentFromName(
   key: SchoolEntityKey,
@@ -195,12 +194,24 @@ interface EntityPageProps {
   mode?: "parentChildRelations";
   /** Limite la liste et la création à une classe (gestion depuis Classes). */
   classScope?: string;
+  /** Masque le bouton d'ajout (ex. liste générale élèves en consultation). */
+  disableCreate?: boolean;
 }
 
-export function EntityPage({ entity, mode, classScope }: EntityPageProps) {
+/**
+ * Clôture CRUD legacy Classes : redirection hors EntityPage, sans Hooks conditionnels.
+ */
+export function EntityPage(props: EntityPageProps) {
+  if (props.entity === "classes") {
+    return <Navigate to="/etablissement/classes" replace />;
+  }
+  return <EntityPageContent {...props} />;
+}
+
+function EntityPageContent({ entity, mode, classScope, disableCreate = false }: EntityPageProps) {
   const module = getEntityModule(entity);
   const { session } = useAuth();
-  const { state, update } = useData();
+  const { state, update, refresh } = useData();
   const { showToast } = useToast();
   const { confirm } = useConfirm();
   const { prompt } = usePrompt();
@@ -227,16 +238,24 @@ export function EntityPage({ entity, mode, classScope }: EntityPageProps) {
   const [receiptPayment, setReceiptPayment] = useState<PaymentRecord | null>(null);
   const [cancellingPayment, setCancellingPayment] = useState<PaymentRecord | null>(null);
   const [cancelReason, setCancelReason] = useState("");
+  const cancelIntentionRef = useRef("");
   const [linkContactOpen, setLinkContactOpen] = useState(false);
   const [linkContactId, setLinkContactId] = useState("");
   const [teacherAssignmentContext, setTeacherAssignmentContext] = useState<Record<string, unknown> | null>(
     null,
   );
   const [editingAssignment, setEditingAssignment] = useState<Record<string, unknown> | null>(null);
-  const [pendingParentStudentId, setPendingParentStudentId] = useState("");
+  const [parentIdentityLookup, setParentIdentityLookup] = useState<{
+    found: boolean;
+    reuse?: boolean;
+    message?: string;
+    user?: Record<string, unknown> | null;
+  } | null>(null);
+  const [parentIdentityError, setParentIdentityError] = useState<string | null>(null);
   const importInputRef = useRef<HTMLInputElement>(null);
 
   const ctx = usePermissionContext();
+  const financeActions = useMemo(() => resolveFinanceUiActions(ctx), [ctx]);
   const entityPermissions = useMemo(
     () =>
       getEntityFeaturePermissions(ctx, module?.key ?? "", module?.feature ?? "Élèves", {
@@ -254,16 +273,27 @@ export function EntityPage({ entity, mode, classScope }: EntityPageProps) {
     [ctx],
   );
   const assignmentModule = useMemo(() => getEntityModule("assignments"), []);
-  const allowCreate =
-    canCreate &&
-    !module?.planningManaged &&
-    module?.key !== "payments" &&
-    !entityCreateViaContactsOnly(module?.key ?? "");
-  const allowDelete = canDelete && !module?.planningManaged && module?.key !== "payments";
+  const isParentChildMode = mode === "parentChildRelations" && module?.key === "relations";
+  const canLinkParentAction = canLinkParent(ctx);
+  const canArchiveParentAction = canArchiveParentRelation(ctx);
+  const allowCreate = isParentChildMode
+    ? canLinkParentAction && !disableCreate
+    : canCreate &&
+      module?.key !== "students" &&
+      !disableCreate &&
+      !module?.planningManaged &&
+      module?.key !== "payments" &&
+      !entityCreateViaContactsOnly(module?.key ?? "");
+  const allowDelete = isParentChildMode
+    ? canArchiveParentAction
+    : canDelete &&
+      module?.key !== "students" &&
+      !module?.planningManaged &&
+      module?.key !== "payments";
 
   // ELEVE-001 / ENS-001 : créer une fiche à partir d'un contact existant.
   const linkableContactKind: "student" | "teacher" | null =
-    module?.key === "students" ? "student" : module?.key === "teachers" ? "teacher" : null;
+    module?.key === "teachers" ? "teacher" : null;
   const linkableContactOptions = useMemo(
     () =>
       linkableContactKind
@@ -308,8 +338,6 @@ export function EntityPage({ entity, mode, classScope }: EntityPageProps) {
     [scopeUser, state],
   );
 
-  const isParentChildMode = mode === "parentChildRelations" && module?.key === "relations";
-
   const school = getCurrentSchool(scopeUser, state);
 
   const rows = useMemo(() => {
@@ -321,7 +349,9 @@ export function EntityPage({ entity, mode, classScope }: EntityPageProps) {
       );
     }
     if (isParentChildMode) {
-      scoped = groupParentChildRelations(scoped);
+      scoped = groupParentChildRelations(
+        scoped.filter((row) => normalize(String(row.status ?? "")) !== "archive"),
+      );
     }
     const q = search.trim().toLowerCase();
     if (!q) return scoped;
@@ -338,30 +368,76 @@ export function EntityPage({ entity, mode, classScope }: EntityPageProps) {
     () => (isParentChildMode ? getRelationStudentOptions(scopeUser, state) : []),
     [isParentChildMode, scopeUser, state],
   );
-  const selectedParentStudentIds = useMemo(
-    () => resolveSelectedParentStudentIds(editing),
-    [editing],
-  );
-  const availableParentStudentOptions = useMemo(
-    () => filterAvailableParentStudentOptions(parentStudentOptions, selectedParentStudentIds),
-    [parentStudentOptions, selectedParentStudentIds],
-  );
-  const selectedParentStudentLabels = useMemo(
-    () => resolveSelectedParentStudentLabels(selectedParentStudentIds, parentStudentOptions),
-    [selectedParentStudentIds, parentStudentOptions],
-  );
 
   useEffect(() => {
     if (!editing) {
-      setPendingParentStudentId("");
+      setParentIdentityLookup(null);
+      setParentIdentityError(null);
     }
   }, [editing]);
 
   useEffect(() => {
-    if (module?.key === "announcements") {
-      markAllAnnouncementsRead(scopeUser, state);
+    if (!isParentChildMode || !editing) return;
+    const phone = String(editing.phone ?? "").trim();
+    const email = String(editing.email ?? "").trim();
+    if (!phone && !email) {
+      setParentIdentityLookup(null);
+      setParentIdentityError(null);
+      return;
     }
-  }, [module?.key, scopeUser, state]);
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      void parentsApi
+        .lookupIdentity({ phone, email })
+        .then((result) => {
+          if (cancelled) return;
+          setParentIdentityError(null);
+          setParentIdentityLookup(result);
+          if (result.found && result.user) {
+            setEditing((current) => {
+              if (!current) return current;
+              const next = { ...current };
+              if (!String(next.firstName ?? "").trim()) {
+                next.firstName = String(result.user?.firstName ?? "");
+              }
+              if (!String(next.lastName ?? "").trim()) {
+                next.lastName = String(result.user?.lastName ?? "");
+              }
+              return next;
+            });
+          }
+        })
+        .catch((error) => {
+          if (cancelled) return;
+          setParentIdentityLookup(null);
+          setParentIdentityError(parentLinkErrorMessage(error));
+        });
+    }, 350);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [isParentChildMode, editing?.phone, editing?.email]);
+
+  const paymentOverview = useMemo(() => {
+    if (module?.key !== "payments") return null;
+    const fees = Array.isArray(state.studentFees) ? state.studentFees : [];
+    const kpi = getPaymentRateKpi(fees);
+    const remaining = Math.max(0, kpi.expectedAmount - kpi.collectedAmount);
+    const currency = resolveFinanceCurrency(
+      school?.currency,
+      fees.find((fee) => fee.currency)?.currency,
+      (rows[0] as { currency?: string } | undefined)?.currency,
+    );
+    return {
+      expectedAmount: kpi.expectedAmount,
+      collectedAmount: kpi.collectedAmount,
+      remainingAmount: remaining,
+      obligationCount: fees.filter((fee) => String(fee.status ?? "") !== "Annulé").length,
+      recentPaymentCount: rows.length,
+      currency,
+    };
+  }, [module?.key, state.studentFees, school?.currency, rows]);
 
   if (!module) {
     return <Navigate to="/etablissement" replace />;
@@ -387,9 +463,98 @@ export function EntityPage({ entity, mode, classScope }: EntityPageProps) {
     }
   }
 
+  async function persistFinanceMutation(
+    action: () => Promise<unknown>,
+    successMessage: string,
+    onSuccess?: () => void,
+  ) {
+    setBusy(true);
+    try {
+      await action();
+      await refresh();
+      showToast(successMessage, "success");
+      onSuccess?.();
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "Échec de l'opération Finance", "error");
+      throw error;
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function persistAssignmentMutation(
+    action: () => Promise<unknown>,
+    successMessage: string,
+    onSuccess?: () => void,
+  ) {
+    setBusy(true);
+    try {
+      await action();
+      await refresh();
+      showToast(successMessage, "success");
+      onSuccess?.();
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "Échec de l'affectation", "error");
+      throw error;
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function persistPedagogyMutation(
+    action: () => Promise<unknown>,
+    successMessage: string,
+    onSuccess?: () => void,
+  ) {
+    setBusy(true);
+    try {
+      await action();
+      await refresh();
+      showToast(successMessage, "success");
+      onSuccess?.();
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "Échec de l'opération pédagogique", "error");
+      throw error;
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function persistClientsMutation(
+    action: () => Promise<unknown>,
+    successMessage: string,
+    onSuccess?: () => void,
+  ) {
+    setBusy(true);
+    try {
+      const result = await action();
+      await refresh();
+      if (
+        result &&
+        typeof result === "object" &&
+        "temporaryPassword" in result &&
+        String((result as { temporaryPassword?: string }).temporaryPassword ?? "").trim()
+      ) {
+        showToast(
+          `${successMessage} · mot de passe provisoire : ${(result as { temporaryPassword: string }).temporaryPassword}`,
+          "success",
+        );
+      } else {
+        showToast(successMessage, "success");
+      }
+      onSuccess?.();
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "Échec de l'opération Clients", "error");
+      throw error;
+    } finally {
+      setBusy(false);
+    }
+  }
+
   function closeCancelModal() {
     setCancellingPayment(null);
     setCancelReason("");
+    cancelIntentionRef.current = "";
   }
 
   async function handleResetContactPassword() {
@@ -408,6 +573,7 @@ export function EntityPage({ entity, mode, classScope }: EntityPageProps) {
       placeholder: "Mot de passe (min. 6 caractères)",
       inputType: "password",
       confirmLabel: "Réinitialiser",
+      required: true,
       validate: (value) => validatePasswordPolicy(value),
     });
     if (!temporaryPassword) return;
@@ -548,22 +714,42 @@ export function EntityPage({ entity, mode, classScope }: EntityPageProps) {
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
     if (!editing || !module) return;
+    if (isStudentsEntityKey(module.key)) {
+      showToast(
+        "Utilisez Classes → Inscrire un élève ou la fiche élève PostgreSQL.",
+        "error",
+      );
+      return;
+    }
+    if (module.key === "teachers") {
+      showToast("Utilisez la page Enseignants reliée à l'API PostgreSQL.", "error");
+      return;
+    }
 
     if (module.key === "relations" && isParentChildMode) {
-      const plan = buildParentChildBundleSubmitPlan(
-        {
-          scopeUser,
-          state,
-          showToast,
-          createRelationId: () => newEntityId("RELATIONS"),
-        },
-        {
-          editing,
-          permissions: { canCreate, canUpdate },
-        },
-      );
-      if (!plan.ok) return;
-      await applyPlan(plan, () => setEditing(null));
+      const identityFound = Boolean(parentIdentityLookup?.found);
+      const validationError = validateLinkParentDraft(editing, identityFound);
+      if (validationError) {
+        showToast(validationError, "error");
+        return;
+      }
+      setBusy(true);
+      try {
+        const result = (await parentsApi.linkParent(buildLinkParentPayload(editing))) as {
+          created?: boolean;
+          message?: string;
+        };
+        await refresh(["relations", "users", "contacts"]);
+        showToast(
+          result?.created === false ? "Relation déjà existante" : "Parent lié à l'élève",
+          "success",
+        );
+        setEditing(null);
+      } catch (error) {
+        showToast(parentLinkErrorMessage(error), "error");
+      } finally {
+        setBusy(false);
+      }
       return;
     }
 
@@ -610,21 +796,13 @@ export function EntityPage({ entity, mode, classScope }: EntityPageProps) {
       return;
     }
 
-    if (module.key === "teachers") {
-      const entryError = validateTeacherSchoolEntry(workingItem);
-      if (entryError) {
-        showToast(entryError, "error");
-        return;
-      }
-    }
-
     if (module.key === "courses") {
       const teachers = scopedTeachers(scopeUser, state);
       const teacherName = String(workingItem.teacherName ?? "").trim();
       const teacher = findTeacherByName(teachers, teacherName);
       if (teacherName && !teacher && !String(workingItem.teacherId ?? "").trim()) {
         showToast(
-          "Enseignant introuvable dans les fiches : créez d'abord la fiche enseignant pour relier la matière à sa classe.",
+          "Enseignant introuvable dans les fiches : créez d'abord la fiche enseignant pour relier le cours à sa classe.",
           "error",
         );
         return;
@@ -662,18 +840,6 @@ export function EntityPage({ entity, mode, classScope }: EntityPageProps) {
       );
       if (conflict) {
         showToast(conflict, "error");
-        return;
-      }
-    }
-
-    if (module.key === "classes") {
-      const classConflict = validateUniqueClassName(
-        String(workingItem.name ?? ""),
-        filterSchoolClassRecords((state.classes ?? []) as Record<string, unknown>[], effectiveSchoolCode),
-        editing.id ? String(editing.id) : undefined,
-      );
-      if (classConflict) {
-        showToast(classConflict, "error");
         return;
       }
     }
@@ -725,17 +891,98 @@ export function EntityPage({ entity, mode, classScope }: EntityPageProps) {
       current.some((row) => String(row.id) === String(linkedItem.id));
 
     if (exists && !canUpdate) {
-      showToast(
-        module.key === "teachers"
-          ? "Modification des enseignants réservée au préfet des études ou à un rôle habilité."
-          : "Modification non autorisée pour votre rôle.",
-        "error",
-      );
+      showToast("Modification non autorisée pour votre rôle.", "error");
       return;
     }
 
     if (!exists && !canCreate) {
       showToast("Création non autorisée pour votre rôle.", "error");
+      return;
+    }
+
+    if (module.key === "assignments") {
+      const assignmentPayload = workingItem;
+      try {
+        await persistAssignmentMutation(
+          () =>
+            exists
+              ? teacherAssignmentsApi.update(String(linkedItem.id), assignmentPayload)
+              : teacherAssignmentsApi.create(assignmentPayload),
+          exists ? "Affectation modifiée" : "Affectation créée",
+          () => setEditing(null),
+        );
+      } catch {
+        /* toast déjà affiché */
+      }
+      return;
+    }
+
+    if (module.key === "contacts") {
+      const payload = prepareContactForSave(workingItem, state);
+      const exists = Boolean(editing.id);
+      try {
+        await persistClientsMutation(
+          async () => {
+            const saved = (exists
+              ? await clientsApi.updateContact(String(editing.id), payload)
+              : await clientsApi.createContact(payload)) as Record<string, unknown>;
+            if (String(saved.hasAccess ?? payload.hasAccess ?? "") === "Oui") {
+              return clientsApi.provisionContactAccount(String(saved.id), {
+                role: saved.role ?? payload.role,
+                studentId: payload.studentId,
+              });
+            }
+            return saved;
+          },
+          exists ? "Contact modifié" : "Contact créé",
+          () => setEditing(null),
+        );
+      } catch {
+        /* toast */
+      }
+      return;
+    }
+
+    if (module.key === "relations") {
+      try {
+        await persistClientsMutation(
+          () => clientsApi.createRelation(workingItem),
+          "Relation enregistrée",
+          () => setEditing(null),
+        );
+      } catch {
+        /* toast */
+      }
+      return;
+    }
+
+    if (module.key === "announcements") {
+      const exists = Boolean(editing.id);
+      try {
+        await persistClientsMutation(
+          () =>
+            exists
+              ? clientsApi.updateAnnouncement(String(editing.id), workingItem)
+              : clientsApi.createAnnouncement(workingItem),
+          entityMutationSuccessMessage(module.label, exists),
+          () => setEditing(null),
+        );
+      } catch {
+        /* toast */
+      }
+      return;
+    }
+
+    if (module.key === "messages") {
+      try {
+        await persistClientsMutation(
+          () => clientsApi.sendMessage(workingItem),
+          "Message envoyé",
+          () => setEditing(null),
+        );
+      } catch {
+        /* toast */
+      }
       return;
     }
 
@@ -755,45 +1002,132 @@ export function EntityPage({ entity, mode, classScope }: EntityPageProps) {
       }
     }
 
-    let preparedItem = { ...linkedItem };
+    const preparedItem = { ...linkedItem };
 
     // Annonce/message créé par le Super Admin : diffusion système (aucun périmètre).
     if (isSuperadminSystemComm) {
       preparedItem.systemBroadcast = true;
     }
 
-    if (module.key === "teachers") {
-      const code = String(effectiveSchoolCode ?? preparedItem.schoolCode ?? "").trim();
-      if (!code || code === "*") {
-        showToast("Code établissement requis pour générer l'identifiant enseignant", "error");
+    if (module.key === "payments") {
+      if (exists) {
+        showToast("La modification générique d'un paiement est retirée. Utilisez l'annulation dédiée.", "error");
         return;
       }
-      preparedItem = {
-        ...preparedItem,
-        ...resolveTeacherIdentifiers(
-          preparedItem,
-          code,
-          (state.teachers ?? []) as Record<string, unknown>[],
-        ),
-      };
+      try {
+        showToast("Utilisez Enregistrer un encaissement. Chaque montant vise un frais ouvert, sinon il reste non imputé.", "error");
+      } catch {
+        /* toast */
+      }
+      return;
+    }
+
+    if (String(module.key) === "paymentStatuses") {
+      try {
+        await persistFinanceMutation(
+          () =>
+            exists
+              ? financeApi.patchPaymentStatus(String(preparedItem.id ?? preparedItem.code), preparedItem)
+              : financeApi.createPaymentStatus(preparedItem),
+          entityMutationSuccessMessage(module.label, exists),
+          () => setEditing(null),
+        );
+      } catch {
+        /* toast */
+      }
+      return;
+    }
+
+    if (module.key === "courses") {
+      try {
+        await persistPedagogyMutation(
+          () =>
+            exists
+              ? pedagogyApi.updateCourse(String(preparedItem.id ?? preparedItem.publicId), preparedItem)
+              : pedagogyApi.createCourse(preparedItem),
+          entityMutationSuccessMessage(module.label, exists),
+          () => setEditing(null),
+        );
+      } catch {
+        /* toast */
+      }
+      return;
+    }
+
+    if (module.key === "exams") {
+      try {
+        await persistPedagogyMutation(
+          () =>
+            exists
+              ? examsApi.patch(String(preparedItem.id), {
+                  status: preparedItem.status,
+                  name: preparedItem.name,
+                  className: preparedItem.className,
+                  subject: preparedItem.subject,
+                  examType: preparedItem.examType,
+                  date: preparedItem.date,
+                  period: preparedItem.period,
+                })
+              : examsApi.create(preparedItem),
+          entityMutationSuccessMessage(module.label, exists),
+          () => setEditing(null),
+        );
+      } catch {
+        /* toast */
+      }
+      return;
+    }
+
+    if (module.key === "bulletins") {
+      try {
+        await persistPedagogyMutation(
+          async () => {
+            if (!exists) {
+              return reportCardsApi.generate({
+                studentId: preparedItem.studentId,
+                period: preparedItem.period,
+                className: preparedItem.className,
+              });
+            }
+            const status = String(preparedItem.status ?? "").toLowerCase();
+            if (status.includes("publi")) return reportCardsApi.publish(String(preparedItem.id));
+            if (status.includes("archiv")) return reportCardsApi.archive(String(preparedItem.id));
+            return reportCardsApi.generate({
+              studentId: preparedItem.studentId,
+              period: preparedItem.period,
+              className: preparedItem.className,
+            });
+          },
+          entityMutationSuccessMessage(module.label, exists),
+          () => setEditing(null),
+        );
+      } catch {
+        /* toast */
+      }
+      return;
+    }
+
+    if (module.key === "documents") {
+      try {
+        await persistPedagogyMutation(
+          () =>
+            exists
+              ? schoolDocumentsApi.patch(String(preparedItem.id), preparedItem)
+              : schoolDocumentsApi.create(preparedItem),
+          entityMutationSuccessMessage(module.label, exists),
+          () => setEditing(null),
+        );
+      } catch {
+        /* toast */
+      }
+      return;
     }
 
     if (module.key === "students") {
-      const code = String(effectiveSchoolCode ?? preparedItem.schoolCode ?? "").trim();
-      if (!code || code === "*") {
-        showToast("Code établissement requis pour générer le matricule élève", "error");
+      if (!exists) {
+        showToast("La création d'élèves passe par Classes → Inscrire.", "error");
         return;
       }
-      const matriculeInfo = resolveStudentMatricule(
-        preparedItem,
-        code,
-        (state.students ?? []) as Record<string, unknown>[],
-      );
-      preparedItem = {
-        ...preparedItem,
-        matricule: matriculeInfo.matricule,
-        publicId: matriculeInfo.publicId,
-      };
     }
 
     const withId = prepareEntityRowForSave(
@@ -814,82 +1148,7 @@ export function EntityPage({ entity, mode, classScope }: EntityPageProps) {
     const nextAllRows = mergeResult.rows;
     const patch: Partial<BackOfficeState> = buildPedagogyPatch(module.key, nextItem, nextAllRows);
 
-    if (module.key === "teachers" && patch.teachers) {
-      const savedTeacher = (patch.teachers as Record<string, unknown>[]).find(
-        (row) => String(row.id ?? "") === String(nextItem.id ?? ""),
-      );
-      if (savedTeacher) {
-        patch.users = syncTeacherProfileToUser(state.users, savedTeacher);
-      }
-    }
-
-    // La synchro pédagogique reconstruit certaines affectations : on réapplique
-    // les champs métier (période, salle) sur la ligne enregistrée (AFF-001).
-    if (module.key === "assignments" && patch.assignments) {
-      const targetId = String(nextItem.id ?? "");
-      const period = String((nextItem as Record<string, unknown>).period ?? "");
-      const room = String((nextItem as Record<string, unknown>).room ?? "");
-      patch.assignments = reapplyAssignmentPeriodRoom(
-        patch.assignments as Record<string, unknown>[],
-        targetId,
-        period,
-        room,
-      ) as BackOfficeState["assignments"];
-    }
-
-    let successMessage = entityMutationSuccessMessage(module.label, exists);
-
-    // RB-003 / CONTACT-004 : aucun compte utilisateur n'est créé hors du
-    // sous-module Contacts. Les fiches enseignant se provisionnent uniquement
-    // depuis un contact (linkContactToOperationalRecord).
-
-    if (module.key === "contacts") {
-      const contactPlan = buildContactPostMergePlan(
-        {
-          scopeUser,
-          state,
-          showToast,
-          syncSingleUserToTeachers,
-        },
-        {
-          nextContact: nextItem as Record<string, unknown>,
-          nextAllRows,
-          basePatch: patch,
-          linkSchoolCode: schoolCode,
-          defaultSuccessMessage: successMessage,
-        },
-      );
-      if (!contactPlan.ok) return;
-      Object.assign(patch, contactPlan.patch);
-      successMessage = contactPlan.successMessage;
-      patch.auditLog = appendAuditLog(
-        state.auditLog,
-        ...buildContactMutationAuditEntries({
-          scopeUser,
-          nextContact: nextItem as Record<string, unknown>,
-          exists,
-          promotion: contactPlan.promotion,
-          ficheLink: contactPlan.ficheLink,
-        }),
-      );
-    }
-
-    if (module.key === "relations") {
-      const nextRelation = nextItem as Record<string, unknown>;
-      const currentRelations =
-        (patch.relations as unknown as Record<string, unknown>[] | undefined) ?? nextAllRows;
-      const relationPlan = buildRelationPostMergePlan(
-        { scopeUser },
-        {
-          nextRelation,
-          nextAllRows,
-          baseRelations: currentRelations,
-          exists,
-        },
-      );
-      patch.relations = relationPlan.relations as unknown as BackOfficeState["relations"];
-      patch.auditLog = appendAuditLog(state.auditLog, relationPlan.auditEntry);
-    }
+    const successMessage = entityMutationSuccessMessage(module.label, exists);
 
     const genericAudit = appendGenericMutationAudit(
       state.auditLog,
@@ -903,10 +1162,8 @@ export function EntityPage({ entity, mode, classScope }: EntityPageProps) {
     }
 
     if (module.key === "students" && !exists) {
-      patch.studentFees = applyActiveGridsToStudent(
-        { ...state, ...patch, students: adaptLegacyStudents(nextAllRows) },
-        nextItem as Record<string, unknown>,
-      );
+      showToast("La création d'élèves passe par Classes → Inscrire.", "error");
+      return;
     }
 
     await applyPlan({ patch, successMessage }, () => setEditing(null));
@@ -914,36 +1171,73 @@ export function EntityPage({ entity, mode, classScope }: EntityPageProps) {
 
   async function submitCancelPayment() {
     if (!cancellingPayment) return;
-    const plan = buildPaymentCancelPlan(
-      { scopeUser, state, showToast },
-      { payment: cancellingPayment, reason: cancelReason },
-    );
-    if (!plan.ok) return;
-    await applyPlan(plan, closeCancelModal);
+    const reason = String(cancelReason ?? "").trim();
+    if (!reason) {
+      showToast(PAYMENT_CANCEL_REASON_REQUIRED_MESSAGE, "error");
+      return;
+    }
+    try {
+      if (!cancelIntentionRef.current) {
+        cancelIntentionRef.current = createFinanceIdempotencyKey();
+      }
+      await persistFinanceMutation(
+        () =>
+          financeApi.cancelPayment(String(cancellingPayment.reference ?? cancellingPayment.id), reason, {
+            idempotencyKey: cancelIntentionRef.current,
+          }),
+        PAYMENT_CANCEL_SUCCESS_MESSAGE,
+        closeCancelModal,
+      );
+    } catch {
+      /* toast */
+    }
   }
 
   async function handleDelete(row: Record<string, unknown>) {
     if (!module || !row.id) return;
+    if (module.key === "students") {
+      showToast("La suppression legacy des élèves est retirée.", "error");
+      return;
+    }
     if (module.planningManaged) {
       showToast("Supprimez la session depuis Planning de cours.", "error");
       return;
     }
 
     if (module.key === "teachers") {
-      if (!canDelete) {
-        showToast(
-          isSchoolAdminRole(scopeUser?.role)
-            ? "Suppression réservée : accordez le droit « Enseignants — Supprimer » (Superadmin) ou confiez l'action au préfet des études."
-            : "Suppression non autorisée pour votre rôle.",
-          "error",
-        );
+      showToast("La suppression legacy des enseignants est retirée.", "error");
+      return;
+    }
+
+    if (module.key === "relations" && isParentChildMode && isParentChildBundleRow(row)) {
+      if (!canArchiveParentAction) {
+        showToast("Archivage non autorisé pour votre rôle.", "error");
         return;
       }
-      const linkError = validateTeacherDeletion(state, row);
-      if (linkError) {
-        showToast(linkError, "error");
+      const ids = relationIdsFromParentChildRow(row);
+      if (!ids.length) {
+        showToast("Relation introuvable.", "error");
         return;
       }
+      const archiveConfirmed = await confirm({
+        title: "Archiver la liaison parent-enfant ?",
+        description: "La relation sera archivée. Aucune suppression physique n'est effectuée.",
+        confirmLabel: "Archiver",
+      });
+      if (!archiveConfirmed) return;
+      setBusy(true);
+      try {
+        for (const relationId of ids) {
+          await parentsApi.archiveRelation(relationId);
+        }
+        await refresh(["relations", "users", "contacts"]);
+        showToast("Liaisons parent-enfant archivées", "success");
+      } catch (error) {
+        showToast(parentLinkErrorMessage(error), "error");
+      } finally {
+        setBusy(false);
+      }
+      return;
     }
 
     const confirmed = await confirm({
@@ -954,20 +1248,54 @@ export function EntityPage({ entity, mode, classScope }: EntityPageProps) {
     });
     if (!confirmed) return;
 
-    if (module.key === "relations" && isParentChildMode && isParentChildBundleRow(row)) {
-      const plan = buildParentChildBundleDeletePlan({ scopeUser, state }, { row });
-      await applyPlan(plan);
+    if (module.key === "assignments") {
+      try {
+        await persistAssignmentMutation(
+          () => teacherAssignmentsApi.remove(String(row.id)),
+          "Affectation retirée",
+        );
+      } catch {
+        /* toast déjà affiché */
+      }
       return;
     }
 
-    if (module.key === "classes") {
-      const result = removeSchoolClassFromState(state, row, schoolCode);
-      if (!result.ok) {
-        showToast(result.error, "error");
-        return;
+    if (module.key === "courses") {
+      try {
+        await persistPedagogyMutation(
+          () => pedagogyApi.deleteCourse(String(row.id ?? row.publicId)),
+          ENTITY_DELETED_MESSAGE,
+        );
+      } catch {
+        /* toast */
       }
-      // HOTFIX-RBAC-ADMIN-01 : pas d'auditLog client (audit serveur uniquement).
-      await applyPlan({ patch: result.patch, successMessage: "Classe supprimée" });
+      return;
+    }
+
+    if (module.key === "exams") {
+      try {
+        await persistPedagogyMutation(() => examsApi.archive(String(row.id)), ENTITY_DELETED_MESSAGE);
+      } catch {
+        /* toast */
+      }
+      return;
+    }
+
+    if (module.key === "bulletins") {
+      try {
+        await persistPedagogyMutation(() => reportCardsApi.archive(String(row.id)), ENTITY_DELETED_MESSAGE);
+      } catch {
+        /* toast */
+      }
+      return;
+    }
+
+    if (module.key === "documents") {
+      try {
+        await persistPedagogyMutation(() => schoolDocumentsApi.archive(String(row.id)), ENTITY_DELETED_MESSAGE);
+      } catch {
+        /* toast */
+      }
       return;
     }
 
@@ -1008,6 +1336,10 @@ export function EntityPage({ entity, mode, classScope }: EntityPageProps) {
 
   async function handleCreateFicheFromContact() {
     if (!module || !linkContactId) return;
+    if (module.key === "teachers") {
+      showToast("Créez l'enseignant depuis la page Enseignants PostgreSQL.", "error");
+      return;
+    }
     const plan = buildCreateFicheFromSelectionPlan(
       {
         scopeUser,
@@ -1053,10 +1385,33 @@ export function EntityPage({ entity, mode, classScope }: EntityPageProps) {
     );
     if (!plan.ok) return;
 
-    await applyPlan(plan, () => {
-      setTeacherAssignmentContext(plan.refreshTeacherContext);
-      setEditingAssignment(plan.resetEditingAssignment);
-    });
+    const assignmentPayload = prepareAssignmentForSave(
+      {
+        ...editingAssignment,
+        teacherId: String(
+          plan.linkedTeacher.id ?? teacherAssignmentContext.id ?? "",
+        ),
+      },
+      scopedTeachers(scopeUser, state),
+      effectiveSchoolCode,
+      state,
+      scopeUser,
+    );
+    try {
+      await persistAssignmentMutation(
+        () =>
+          editingAssignment.id
+            ? teacherAssignmentsApi.update(String(editingAssignment.id), assignmentPayload)
+            : teacherAssignmentsApi.create(assignmentPayload),
+        plan.successMessage,
+        () => {
+          setTeacherAssignmentContext(plan.refreshTeacherContext);
+          setEditingAssignment(plan.resetEditingAssignment);
+        },
+      );
+    } catch {
+      /* toast déjà affiché */
+    }
   }
 
   async function handleDeleteAssignment(assignment: Record<string, unknown>) {
@@ -1088,16 +1443,24 @@ export function EntityPage({ entity, mode, classScope }: EntityPageProps) {
     );
     if (!plan.ok) return;
 
-    await applyPlan(plan, () => {
-      if (
-        plan.clearEditingIfId &&
-        String(editingAssignment?.id ?? "") === plan.clearEditingIfId
-      ) {
-        setEditingAssignment(
-          emptyEditingAssignment(String(teacherAssignmentContext?.id ?? "")),
-        );
-      }
-    });
+    try {
+      await persistAssignmentMutation(
+        () => teacherAssignmentsApi.remove(String(assignment.id)),
+        plan.successMessage,
+        () => {
+          if (
+            plan.clearEditingIfId &&
+            String(editingAssignment?.id ?? "") === plan.clearEditingIfId
+          ) {
+            setEditingAssignment(
+              emptyEditingAssignment(String(teacherAssignmentContext?.id ?? "")),
+            );
+          }
+        },
+      );
+    } catch {
+      /* toast déjà affiché */
+    }
   }
 
   const displayFields = isParentChildMode
@@ -1108,7 +1471,7 @@ export function EntityPage({ entity, mode, classScope }: EntityPageProps) {
     module,
     isParentChildMode,
     busy,
-    canUpdate,
+    canUpdate: module.key === "students" ? false : isParentChildMode ? canLinkParentAction : canUpdate,
     allowDelete,
     studentsCanRead: studentsPermissions.canRead,
     assignmentCanCreateOrUpdate:
@@ -1122,9 +1485,9 @@ export function EntityPage({ entity, mode, classScope }: EntityPageProps) {
         module.key === "assignments"
           ? normalizeAssignmentForm({ ...row }, scopedTeachers(scopeUser, state))
           : module.key === "relations" && isParentChildMode
-            ? parentChildBundleToForm(row)
+            ? defaultLinkParentDraft()
             : module.key === "teachers"
-              ? normalizeTeacherFormRow({ ...row })
+              ? normalizeTeacherFormProps({ ...row })
               : { ...row };
       setEditing(next);
     },
@@ -1155,6 +1518,10 @@ export function EntityPage({ entity, mode, classScope }: EntityPageProps) {
       ? school
         ? `Liez un parent à un ou plusieurs élèves. Périmètre : ${school.name} (${school.code})`
         : "Liez un parent à un ou plusieurs élèves de l'établissement."
+      : module.key === "payments"
+        ? school
+          ? `Encaissements de ${school.name} (${school.code}) — référence, élève, montant, moyen et statut.`
+          : "Historique des encaissements : référence, élève, montant, moyen de paiement et statut."
       : school
         ? `${module.description} · Périmètre : ${school.name} (${school.code})`
         : module.description;
@@ -1208,9 +1575,9 @@ export function EntityPage({ entity, mode, classScope }: EntityPageProps) {
 
   const primaryActions = (
     <>
-      {module.key === "payments" && canCreate ? (
+        {module.key === "payments" && financeActions.canCreatePayment ? (
         <Button size="sm" onClick={() => setQuickPaymentOpen(true)}>
-          Saisie rapide
+          Enregistrer un encaissement
         </Button>
       ) : null}
       {linkableContactKind && canUpdate ? (
@@ -1236,7 +1603,7 @@ export function EntityPage({ entity, mode, classScope }: EntityPageProps) {
               return;
             }
             if (module.key === "relations") {
-              setEditing(defaultNewRelationDraft(isParentChildMode));
+              setEditing(isParentChildMode ? defaultLinkParentDraft() : defaultNewRelationDraft(false));
               return;
             }
             if (module.key === "assignments") {
@@ -1324,13 +1691,24 @@ export function EntityPage({ entity, mode, classScope }: EntityPageProps) {
           />
         }
       >
+        {module.key === "payments" && paymentOverview ? (
+          <FinancePaymentsOverview {...paymentOverview} />
+        ) : null}
         {rows.length === 0 ? (
           <EmptyState
-            title={search.trim() ? "Aucun résultat" : "Liste vide"}
+            title={
+              search.trim()
+                ? "Aucun résultat"
+                : module.key === "payments"
+                  ? "Aucun encaissement"
+                  : "Liste vide"
+            }
             description={
               search.trim()
                 ? "Aucun élément ne correspond à votre recherche."
-                : `Aucun élément à afficher dans ${module.label.toLowerCase()}.`
+                : module.key === "payments"
+                  ? "Les paiements enregistrés apparaissent ici avec la référence, l'élève, le montant et le moyen utilisé."
+                  : `Aucun élément à afficher dans ${module.label.toLowerCase()}.`
             }
           />
         ) : (
@@ -1338,6 +1716,7 @@ export function EntityPage({ entity, mode, classScope }: EntityPageProps) {
             columns={columns}
             rows={rows}
             rowKey={(row, index) => String(row.id ?? index)}
+            stackOnMobile={module.key === "payments"}
           />
         )}
       </EntityListShell>
@@ -1399,10 +1778,10 @@ export function EntityPage({ entity, mode, classScope }: EntityPageProps) {
         open={Boolean(editing)}
         onClose={() => setEditing(null)}
         title={
-          editing?.id
-            ? `Modifier — ${isParentChildMode ? "liaison parent-enfant" : module.label}`
-            : isParentChildMode
-              ? "Lier un parent à ses élèves"
+          isParentChildMode
+            ? "Lier un parent"
+            : editing?.id
+              ? `Modifier — ${module.label}`
               : `Nouveau — ${module.label}`
         }
         footer={
@@ -1422,7 +1801,7 @@ export function EntityPage({ entity, mode, classScope }: EntityPageProps) {
             <Button
               form={`entity-form-${entity}`}
               type="submit"
-              disabled={busy || (editing?.id ? !canUpdate : !allowCreate)}
+              disabled={busy || (isParentChildMode ? !allowCreate : editing?.id ? !canUpdate : !allowCreate)}
             >
               Enregistrer
             </Button>
@@ -1431,7 +1810,72 @@ export function EntityPage({ entity, mode, classScope }: EntityPageProps) {
       >
         {editing ? (
           <form id={`entity-form-${entity}`} onSubmit={handleSubmit} className="grid gap-4">
-            {displayFields.map((field) => {
+            {isParentChildMode ? (
+              <>
+                <Field label="Élève" htmlFor="studentId" required>
+                  <Select
+                    id="studentId"
+                    value={String(editing.studentId ?? "")}
+                    required
+                    onChange={(e) => setEditing({ ...editing, studentId: e.target.value })}
+                    options={[
+                      { value: "", label: "Choisir un élève…" },
+                      ...parentStudentOptions,
+                    ]}
+                  />
+                </Field>
+                <Field label="Téléphone" htmlFor="phone">
+                  <Input
+                    id="phone"
+                    value={String(editing.phone ?? "")}
+                    placeholder="+243…"
+                    onChange={(e) => setEditing({ ...editing, phone: e.target.value })}
+                  />
+                </Field>
+                <Field label="Email" htmlFor="email">
+                  <Input
+                    id="email"
+                    type="email"
+                    value={String(editing.email ?? "")}
+                    placeholder="parent@ecole.local"
+                    onChange={(e) => setEditing({ ...editing, email: e.target.value })}
+                  />
+                </Field>
+                <Field label="Nom" htmlFor="lastName" required={!parentIdentityLookup?.found}>
+                  <Input
+                    id="lastName"
+                    value={String(editing.lastName ?? "")}
+                    onChange={(e) => setEditing({ ...editing, lastName: e.target.value })}
+                  />
+                </Field>
+                <Field label="Prénom" htmlFor="firstName" required={!parentIdentityLookup?.found}>
+                  <Input
+                    id="firstName"
+                    value={String(editing.firstName ?? "")}
+                    onChange={(e) => setEditing({ ...editing, firstName: e.target.value })}
+                  />
+                </Field>
+                <Field label="Type de relation" htmlFor="relationType">
+                  <Select
+                    id="relationType"
+                    value={String(editing.relationType ?? "parent_student")}
+                    onChange={(e) => setEditing({ ...editing, relationType: e.target.value })}
+                    options={[{ value: "parent_student", label: "Parent → Élève" }]}
+                  />
+                </Field>
+                {parentIdentityError ? (
+                  <p className="text-sm text-danger">{parentIdentityError}</p>
+                ) : parentIdentityLookup?.found ? (
+                  <p className="text-sm text-brand">
+                    Identité existante : {String(parentIdentityLookup.user?.firstName ?? "")}{" "}
+                    {String(parentIdentityLookup.user?.lastName ?? "")}. Ce compte sera réutilisé.
+                  </p>
+                ) : parentIdentityLookup && !parentIdentityLookup.found ? (
+                  <p className="text-sm text-muted">Aucun compte trouvé. Un parent sera créé.</p>
+                ) : null}
+              </>
+            ) : (
+            displayFields.map((field) => {
               const fieldLabel =
                 isParentChildMode && field.key === "fromContactId"
                   ? "Parent"
@@ -1460,21 +1904,6 @@ export function EntityPage({ entity, mode, classScope }: EntityPageProps) {
                           className: value,
                           ...(module.key === "assignments" ? { subject: "" } : { name: "" }),
                         });
-                        return;
-                      }
-                      if (
-                        isParentChildMode &&
-                        module.key === "relations" &&
-                        field.key === "fromContactId"
-                      ) {
-                        setEditing(
-                          applyParentContactChange(
-                            editing,
-                            value,
-                            (state.relations ?? []) as unknown as Record<string, unknown>[],
-                          ),
-                        );
-                        setPendingParentStudentId("");
                         return;
                       }
                       setEditing({ ...editing, [field.key]: value });
@@ -1517,92 +1946,12 @@ export function EntityPage({ entity, mode, classScope }: EntityPageProps) {
                 )}
               </Field>
               );
-            })}
-            {isParentChildMode ? (
-              <Field
-                label="Élève(s)"
-                htmlFor="parent-child-student-picker"
-                hint="Choisissez un élève dans la liste, puis cliquez sur Ajouter. Répétez pour lier plusieurs enfants au même parent."
-                required
-              >
-                {!String(editing.fromContactId ?? "").trim() ? (
-                  <p className="text-sm text-muted">Sélectionnez d&apos;abord un parent.</p>
-                ) : parentStudentOptions.length === 0 ? (
-                  <p className="text-sm text-muted">Aucun élève disponible dans cet établissement.</p>
-                ) : (
-                  <div id="parent-child-students" className="space-y-3">
-                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-                      <Select
-                        id="parent-child-student-picker"
-                        className="min-w-0 flex-1"
-                        value={pendingParentStudentId}
-                        disabled={availableParentStudentOptions.length === 0}
-                        onChange={(event) => setPendingParentStudentId(event.target.value)}
-                        options={[
-                          {
-                            value: "",
-                            label:
-                              availableParentStudentOptions.length === 0
-                                ? "Tous les élèves sont déjà liés"
-                                : "Choisir un élève…",
-                          },
-                          ...availableParentStudentOptions,
-                        ]}
-                      />
-                      <Button
-                        type="button"
-                        variant="secondary"
-                        disabled={!pendingParentStudentId}
-                        onClick={() => {
-                          if (!pendingParentStudentId) return;
-                          setEditing(addParentChildStudentId(editing, pendingParentStudentId));
-                          setPendingParentStudentId("");
-                        }}
-                      >
-                        Ajouter
-                      </Button>
-                    </div>
-                    {selectedParentStudentLabels.length > 0 ? (
-                      <ul className="max-h-40 divide-y divide-line overflow-y-auto rounded-xl border border-line bg-slate-50/60">
-                        {selectedParentStudentLabels.map((student) => (
-                          <li
-                            key={student.id}
-                            className="flex items-center justify-between gap-3 px-3 py-2.5 text-sm font-medium text-ink"
-                          >
-                            <span>{student.label}</span>
-                            <Button
-                              type="button"
-                              variant="secondary"
-                              size="sm"
-                              onClick={() => {
-                                setEditing(removeParentChildStudentId(editing, student.id));
-                              }}
-                            >
-                              Retirer
-                            </Button>
-                          </li>
-                        ))}
-                      </ul>
-                    ) : (
-                      <p className="text-sm text-muted">Aucun élève lié pour le moment.</p>
-                    )}
-                  </div>
-                )}
-              </Field>
-            ) : null}
-            {isParentChildMode && getRelationParentUserOptions(scopeUser, state).length === 0 ? (
-              <p className="text-xs text-muted">
-                Aucun compte parent. Créez d&apos;abord un compte Parent dans{" "}
-                <Link to="/etablissement/comptes-utilisateurs" className="font-semibold text-brand underline">
-                  Mon établissement → Comptes utilisateurs
-                </Link>
-                .
-              </p>
-            ) : null}
+            })
+            )}
             {(module.key === "assignments" || module.key === "courses") &&
             !String(editing.className ?? "") ? (
               <p className="text-xs text-muted">
-                Sélectionnez d'abord une classe pour voir les matières disponibles.
+                Sélectionnez d'abord une classe pour voir les cours disponibles.
               </p>
             ) : null}
           </form>
@@ -1621,7 +1970,7 @@ export function EntityPage({ entity, mode, classScope }: EntityPageProps) {
               ? `Affectations — ${getTeacherDisplayName(teacherAssignmentContext)}`
               : "Affectations"
           }
-          description="Associez cet enseignant à une ou plusieurs classes et matières."
+          description="Associez cet enseignant à une ou plusieurs classes et cours."
           footer={
             <>
               <Button
@@ -1771,7 +2120,7 @@ export function EntityPage({ entity, mode, classScope }: EntityPageProps) {
                     ))}
                   {!String(editingAssignment?.className ?? "") ? (
                     <p className="text-xs text-muted">
-                      Sélectionnez d'abord une classe pour voir les matières disponibles.
+                      Sélectionnez d'abord une classe pour voir les cours disponibles.
                     </p>
                   ) : null}
                   {editingAssignment?.id && assignmentPermissions.canCreate ? (

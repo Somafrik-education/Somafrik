@@ -10,6 +10,7 @@ import {
   type FieldValues,
 } from "react-hook-form";
 import { cn } from "@/lib/utils";
+import { RequiredMark } from "@/design-system/forms/RequiredMark";
 import { Label } from "./label";
 
 const Form = FormProvider;
@@ -77,10 +78,14 @@ const FormItem = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivEl
 );
 FormItem.displayName = "FormItem";
 
+type FormLabelProps = React.ComponentPropsWithoutRef<typeof LabelPrimitive.Root> & {
+  required?: boolean;
+};
+
 const FormLabel = React.forwardRef<
   React.ElementRef<typeof LabelPrimitive.Root>,
-  React.ComponentPropsWithoutRef<typeof LabelPrimitive.Root>
->(({ className, ...props }, ref) => {
+  FormLabelProps
+>(({ className, required, children, ...props }, ref) => {
   const { error, formItemId } = useFormField();
   return (
     <Label
@@ -88,7 +93,10 @@ const FormLabel = React.forwardRef<
       className={cn(error && "text-destructive", className)}
       htmlFor={formItemId}
       {...props}
-    />
+    >
+      {children}
+      {required ? <RequiredMark /> : null}
+    </Label>
   );
 });
 FormLabel.displayName = "FormLabel";

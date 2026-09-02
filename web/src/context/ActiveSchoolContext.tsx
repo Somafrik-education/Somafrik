@@ -4,10 +4,13 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
 import type { School } from "../types";
+import { SCHOOL_SCOPED_CANONICAL_KEYS } from "../lib/canonicalDomains";
+import type { DomainKey } from "../lib/domainLoaders";
 import {
   pickInitialSchoolCode,
   userRequiresSchoolSelection,
@@ -16,6 +19,7 @@ import {
 } from "../lib/activeSchool";
 import { normalize } from "../lib/format";
 import { scopedSchools } from "../lib/scope";
+import { getAccessToken } from "../api/client";
 import { useAuth } from "./AuthContext";
 import { useData } from "./DataContext";
 
@@ -32,7 +36,7 @@ const ActiveSchoolContext = createContext<ActiveSchoolContextValue | null>(null)
 
 export function ActiveSchoolProvider({ children }: { children: ReactNode }) {
   const { session } = useAuth();
-  const { state } = useData();
+  const { state, ensureDomains, invalidateDomains, purgeSchoolScopedState } = useData();
   const user = session?.user ?? null;
 
   const availableSchools = useMemo(() => scopedSchools(user, state), [user, state]);
@@ -41,6 +45,35 @@ export function ActiveSchoolProvider({ children }: { children: ReactNode }) {
   const [activeSchoolCode, setActiveSchoolCodeState] = useState(() =>
     pickInitialSchoolCode(user, availableCodes),
   );
+
+  const previousSchoolRef = useRef(activeSchoolCode);
+
+  useEffect(() => {
+    if (!session?.accessToken || !getAccessToken()) return;
+    const membership = String(user?.schoolCode ?? "").trim();
+    if (membership && membership !== "*") {
+      void ensureDomains(["schools"], { schoolCode: membership }).catch(() => undefined);
+      return;
+    }
+    void ensureDomains(["schools"]).catch(() => undefined);
+  }, [session?.accessToken, user?.schoolCode, ensureDomains]);
+
+  useEffect(() => {
+    const previous = previousSchoolRef.current;
+    if (previous && previous !== activeSchoolCode && previous !== "*") {
+      purgeSchoolScopedState(previous);
+      const scopedDomains = [...SCHOOL_SCOPED_CANONICAL_KEYS, "academicConfigs"] as DomainKey[];
+      invalidateDomains(scopedDomains);
+    }
+    previousSchoolRef.current = activeSchoolCode;
+    writeStoredSchoolCode(activeSchoolCode);
+
+    invalidateDomains(["academicConfigs"], { schoolCode: activeSchoolCode });
+    if (!activeSchoolCode || activeSchoolCode === "*") return;
+    void ensureDomains(["academicConfigs"], { schoolCode: activeSchoolCode, force: true }).catch(
+      () => undefined,
+    );
+  }, [activeSchoolCode, ensureDomains, invalidateDomains, purgeSchoolScopedState]);
 
   useEffect(() => {
     setActiveSchoolCodeState((current) => {

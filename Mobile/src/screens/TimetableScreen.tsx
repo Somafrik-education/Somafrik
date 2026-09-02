@@ -1,155 +1,677 @@
-import { useMemo } from "react";
-import { ScrollView, StyleSheet, Text, View } from "react-native";
+import { useCallback, useMemo, useRef, useState } from "react";
+import {
+  ActivityIndicator,
+  Alert,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from "react-native";
+import FormField from "../components/FormField";
 import { Ionicons } from "@expo/vector-icons";
-import { getTeacherById, timetable, type CourseScheduleSlot } from "../data/catalog";
+import { useFocusEffect } from "@react-navigation/native";
 import { useAuth } from "../context/AuthContext";
 import { useAdminData } from "../context/AdminDataContext";
-import { classNameMatches, teacherScopedClassNames } from "../lib/establishment";
-import { normalize } from "../lib/format";
-import {
-  detectConflicts,
-  groupSlotsByDay,
-  isExamSlot,
-  scopeSlots,
-  slotTimeRange,
-} from "../lib/coursePlanning";
+import QueryStateView from "../components/QueryStateView";
+import { hasSecurityPermission } from "../domain/security/permissions";
+import { DATA_TRUTH_TEST_IDS } from "../lib/dataTruth";
+import { OFFLINE_COPY } from "../lib/offlineModeSpec";
+import { shouldBlockUnsupportedMutations, shouldSkipMetierGet } from "../offline/l1/readModel";
+import { useResponsiveLayout } from "../hooks/useResponsiveLayout";
 import { useStackScreenBottomPadding } from "../lib/screenLayout";
+import {
+  createCourseSchedule,
+  createCourseScheduleReplacement,
+  deleteCourseSchedule,
+  getReplacementTeacherOptions,
+  updateCourseSchedule,
+} from "../services/api";
+import {
+  displayedOccurrencesForDay,
+  mapPlanningConflictMessage,
+  nearestOccurrenceDate,
+  PLANNING_V2_COPY,
+  PLANNING_V2_TEST_IDS,
+  PLANNING_WEEKDAY_CHIPS,
+  resolveReplacementProjection,
+  selectableRooms,
+  type CanonicalReplacement,
+  type CanonicalWeeklySlot,
+  type DisplayedOccurrence,
+  type PlanningCourseOption,
+  type ReplacementTeacherOption,
+} from "../lib/planningV2";
+import { createInFlightLock, createIntentionStore } from "../lib/mutationGuard";
+import { NETWORK_COPY, executeMutation } from "../lib/networkResilience";
 
-const days = ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi"];
+type Mode = "list" | "create" | "edit" | "replace";
+
+function todayDayOfWeek(): number {
+  const js = new Date().getDay();
+  return js === 0 ? 7 : js;
+}
 
 export default function TimetableScreen() {
   const stackPaddingBottom = useStackScreenBottomPadding();
-  const contentStyle = [styles.content, { paddingBottom: stackPaddingBottom }];
-  const { session, selectedStudentId } = useAuth();
-  const { studentsData, teachersData, assignmentsData, classesData, courseSchedulesData, activeSchoolCode } =
-    useAdminData();
-  const teacherScopeState = { teachers: teachersData, assignments: assignmentsData, classes: classesData };
+  const { isTablet, horizontalPadding, contentMaxWidth } = useResponsiveLayout();
+  const contentStyle = [
+    styles.content,
+    {
+      paddingBottom: stackPaddingBottom,
+      paddingHorizontal: horizontalPadding,
+      maxWidth: contentMaxWidth,
+      alignSelf: "center" as const,
+      width: "100%" as const,
+    },
+  ];
+  const { session, permissionsBootstrap } = useAuth();
+  const {
+    courseSchedulesSnapshot,
+    planningCourseOptionsSnapshot,
+    roomsSnapshot,
+    replacementsSnapshot,
+    loadPlanningWeekly,
+    loadPlanningCourseOptions,
+    loadRooms,
+    loadReplacements,
+  } = useAdminData();
 
-  const schoolCode = session?.user?.schoolCode || session?.school?.code || activeSchoolCode || "";
+  const canWrite = hasSecurityPermission(session, "Planning de cours", "CREATE");
+  const canUpdate = hasSecurityPermission(session, "Planning de cours", "UPDATE");
+  const canDelete = hasSecurityPermission(session, "Planning de cours", "DELETE");
+  const canReplace = hasSecurityPermission(session, "Remplacements", "CREATE");
+  const canReadRooms = hasSecurityPermission(session, "Salles", "READ");
+  const canReadReplacements = hasSecurityPermission(session, "Remplacements", "READ");
+  const mutationsBlocked = shouldBlockUnsupportedMutations({
+    source: courseSchedulesSnapshot.source,
+    permissionsBootstrap,
+  });
+  const l1ReadOnly = mutationsBlocked || courseSchedulesSnapshot.source === "l1-cache";
 
-  // Créneaux réels synchronisés depuis le back-office (jour/heure), scopés au rôle.
-  const scopedSlots = useMemo<CourseScheduleSlot[]>(() => {
-    let slots = scopeSlots(courseSchedulesData, { schoolCode });
+  const [selectedDay, setSelectedDay] = useState(todayDayOfWeek() === 7 ? 1 : todayDayOfWeek());
+  const [mode, setMode] = useState<Mode>("list");
+  const [editing, setEditing] = useState<CanonicalWeeklySlot | null>(null);
+  const [schoolCourseId, setSchoolCourseId] = useState("");
+  const [dayOfWeek, setDayOfWeek] = useState(1);
+  const [startTime, setStartTime] = useState("08:00");
+  const [endTime, setEndTime] = useState("09:00");
+  const [roomId, setRoomId] = useState<string | null>(null);
+  const [occurrenceDate, setOccurrenceDate] = useState("");
+  const [substituteTeacherId, setSubstituteTeacherId] = useState("");
+  const [substituteOptions, setSubstituteOptions] = useState<ReplacementTeacherOption[]>([]);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState("");
+  const [optionsError, setOptionsError] = useState("");
+  const saveLockRef = useRef(createInFlightLock());
+  const intentionRef = useRef(createIntentionStore());
 
-    if (session?.role === "teacher") {
-      const scopedClasses = teacherScopedClassNames(session, teacherScopeState);
-      const teacherId = String(session.user?.id ?? "");
-      slots = slots.filter((slot) => {
-        if (teacherId && String(slot.teacherId ?? "") === teacherId) return true;
-        if (scopedClasses) return scopedClasses.has(normalize(slot.className));
-        return true;
+  const refreshPlanning = useCallback(async () => {
+    await loadPlanningWeekly();
+    if (shouldSkipMetierGet(permissionsBootstrap) || l1ReadOnly) return;
+    if (canReadReplacements) await loadReplacements();
+    if (canWrite || canUpdate) await loadPlanningCourseOptions();
+    if (canReadRooms && (canWrite || canUpdate)) await loadRooms();
+  }, [
+    canReadReplacements,
+    canReadRooms,
+    canUpdate,
+    canWrite,
+    l1ReadOnly,
+    loadPlanningCourseOptions,
+    loadPlanningWeekly,
+    loadReplacements,
+    loadRooms,
+    permissionsBootstrap,
+  ]);
+
+  useFocusEffect(
+    useCallback(() => {
+      void refreshPlanning();
+    }, [refreshPlanning]),
+  );
+
+  const occurrenceDateForDay = nearestOccurrenceDate(selectedDay);
+  const replacementProjection = l1ReadOnly
+    ? {
+        replacements: [] as CanonicalReplacement[],
+        overlay: false,
+        unverified: true,
+        confirmedEmpty: false,
+        showUnavailableWarning: true,
+      }
+    : resolveReplacementProjection(replacementsSnapshot, canReadReplacements);
+  const occurrences = useMemo(
+    () =>
+      displayedOccurrencesForDay({
+        slots: courseSchedulesSnapshot.data,
+        replacements: replacementProjection.replacements,
+        dayOfWeek: selectedDay,
+        occurrenceDate: occurrenceDateForDay,
+        unverified: replacementProjection.unverified,
+      }),
+    [
+      courseSchedulesSnapshot.data,
+      replacementProjection.replacements,
+      replacementProjection.unverified,
+      selectedDay,
+      occurrenceDateForDay,
+    ],
+  );
+
+  const roomsForForm = selectableRooms(roomsSnapshot.data, editing?.roomId);
+  const courseOptions = planningCourseOptionsSnapshot.data;
+  const selectedOption = courseOptions.find((row) => row.schoolCourseId === schoolCourseId) ?? null;
+
+  const showQueryState =
+    courseSchedulesSnapshot.status === "idle" ||
+    courseSchedulesSnapshot.status === "loading" ||
+    courseSchedulesSnapshot.status === "error" ||
+    courseSchedulesSnapshot.status === "offline" ||
+    courseSchedulesSnapshot.status === "empty" ||
+    (courseSchedulesSnapshot.status === "success" && occurrences.length === 0 && mode === "list");
+
+  const refuseMutation = () => {
+    Alert.alert("Hors ligne", OFFLINE_COPY.mutationRequiresConnection);
+  };
+
+  const openCreate = () => {
+    if (mutationsBlocked) {
+      refuseMutation();
+      return;
+    }
+    setMode("create");
+    setEditing(null);
+    setSchoolCourseId(courseOptions[0]?.schoolCourseId ?? "");
+    setDayOfWeek(selectedDay === 7 ? 1 : selectedDay);
+    setStartTime("08:00");
+    setEndTime("09:00");
+    setRoomId(null);
+    setSaveError("");
+  };
+
+  const openEdit = (slot: CanonicalWeeklySlot) => {
+    if (mutationsBlocked) {
+      refuseMutation();
+      return;
+    }
+    if (!canUpdate) return;
+    setMode("edit");
+    setEditing(slot);
+    setSchoolCourseId(slot.schoolCourseId);
+    setDayOfWeek(slot.dayOfWeek);
+    setStartTime(slot.startTime);
+    setEndTime(slot.endTime);
+    setRoomId(slot.roomId);
+    setSaveError("");
+  };
+
+  const openReplace = async (slot: CanonicalWeeklySlot) => {
+    if (mutationsBlocked) {
+      refuseMutation();
+      return;
+    }
+    if (!canReplace) return;
+    const date = nearestOccurrenceDate(slot.dayOfWeek);
+    setMode("replace");
+    setEditing(slot);
+    setOccurrenceDate(date);
+    setSubstituteTeacherId("");
+    setSaveError("");
+    setOptionsError("");
+    try {
+      const options = await getReplacementTeacherOptions(slot.id, date);
+      setSubstituteOptions(options);
+      setSubstituteTeacherId(options.find((row) => row.selectable)?.teacherId ?? "");
+    } catch (error) {
+      setSubstituteOptions([]);
+      setOptionsError(mapPlanningConflictMessage(error));
+    }
+  };
+
+  const handleSaveSlot = async () => {
+    if (mutationsBlocked) {
+      refuseMutation();
+      return;
+    }
+    if (!saveLockRef.current.tryBegin()) return;
+    const option = selectedOption;
+    if (!option && mode === "create") {
+      saveLockRef.current.end();
+      setSaveError("Choisissez un cours planifiable.");
+      return;
+    }
+    setSaving(true);
+    setSaveError("");
+    const intentionId =
+      mode === "create"
+        ? `planning:${option?.schoolCourseId}:${dayOfWeek}:${startTime}:${endTime}`
+        : `planning-edit:${editing?.id}:${dayOfWeek}:${startTime}:${endTime}`;
+    const idempotencyKey = intentionRef.current.getOrCreate(intentionId);
+    try {
+      if (mode === "create" && option) {
+        await executeMutation({
+          request: () =>
+            createCourseSchedule(
+              {
+                schoolCourseId: option.schoolCourseId,
+                academicYearId: option.academicYearId,
+                dayOfWeek,
+                startTime,
+                endTime,
+                roomId,
+              },
+              { idempotencyKey },
+            ),
+        });
+      } else if (mode === "edit" && editing) {
+        await updateCourseSchedule(editing.id, {
+          schoolCourseId: schoolCourseId || editing.schoolCourseId,
+          academicYearId: option?.academicYearId || editing.academicYearId,
+          dayOfWeek,
+          startTime,
+          endTime,
+          roomId,
+        });
+      }
+      intentionRef.current.rotate(intentionId);
+      setMode("list");
+      setEditing(null);
+      await loadPlanningWeekly();
+    } catch (error) {
+      setSaveError(mapPlanningConflictMessage(error));
+    } finally {
+      setSaving(false);
+      saveLockRef.current.end();
+    }
+  };
+
+  const handleDelete = async () => {
+    if (mutationsBlocked) {
+      refuseMutation();
+      return;
+    }
+    if (!editing || !canDelete || saving) return;
+    setSaving(true);
+    setSaveError("");
+    try {
+      await deleteCourseSchedule(editing.id);
+      setMode("list");
+      setEditing(null);
+      await loadPlanningWeekly();
+    } catch (error) {
+      setSaveError(mapPlanningConflictMessage(error));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleSaveReplacement = async () => {
+    if (mutationsBlocked) {
+      refuseMutation();
+      return;
+    }
+    if (!saveLockRef.current.tryBegin() || !editing) return;
+    if (!substituteTeacherId) {
+      saveLockRef.current.end();
+      setSaveError("Choisissez un remplaçant.");
+      return;
+    }
+    setSaving(true);
+    setSaveError("");
+    const intentionId = `replacement:${editing.id}:${occurrenceDate}:${substituteTeacherId}`;
+    const idempotencyKey = intentionRef.current.getOrCreate(intentionId);
+    try {
+      await executeMutation({
+        request: () =>
+          createCourseScheduleReplacement(
+            {
+              weeklySlotId: editing.id,
+              occurrenceDate,
+              substituteTeacherId,
+            },
+            { idempotencyKey },
+          ),
       });
-    } else if ((session?.role === "parent_student" || session?.role === "student") && selectedStudentId) {
-      const student = studentsData.find((item) => item.id === selectedStudentId);
-      slots = slots.filter((slot) => classNameMatches(slot.className, student?.className));
+      intentionRef.current.rotate(intentionId);
+      setMode("list");
+      setEditing(null);
+      await loadPlanningWeekly();
+      await loadReplacements();
+    } catch (error) {
+      setSaveError(mapPlanningConflictMessage(error));
+    } finally {
+      setSaving(false);
+      saveLockRef.current.end();
     }
+  };
 
-    return slots;
-  }, [courseSchedulesData, schoolCode, session, selectedStudentId, studentsData, teachersData, assignmentsData, classesData]);
+  const renderDayChips = (value: number, onChange: (day: number) => void) => (
+    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipRow}>
+      {PLANNING_WEEKDAY_CHIPS.map((chip) => {
+        const active = chip.dayOfWeek === value;
+        return (
+          <TouchableOpacity
+            key={chip.dayOfWeek}
+            style={[styles.chip, active && styles.chipActive]}
+            onPress={() => onChange(chip.dayOfWeek)}
+            testID={`${PLANNING_V2_TEST_IDS.dayChip}-${chip.dayOfWeek}`}
+            accessibilityRole="button"
+            accessibilityLabel={chip.short}
+            accessibilityState={{ selected: active }}
+          >
+            <Text style={[styles.chipText, active && styles.chipTextActive]}>{chip.short}</Text>
+          </TouchableOpacity>
+        );
+      })}
+    </ScrollView>
+  );
 
-  const dayGroups = useMemo(() => groupSlotsByDay(scopedSlots), [scopedSlots]);
-  const conflicts = useMemo(() => detectConflicts(scopedSlots), [scopedSlots]);
-  const hasRealPlanning = scopedSlots.length > 0;
+  const renderSlotCard = (item: DisplayedOccurrence, compact = false) => (
+    <TouchableOpacity
+      key={item.id}
+      style={styles.card}
+      onPress={() => (canUpdate && !mutationsBlocked ? openEdit(item) : undefined)}
+      disabled={!canUpdate || mutationsBlocked}
+      testID={PLANNING_V2_TEST_IDS.slotCard}
+    >
+      <View style={styles.timeBox}>
+        <Text style={styles.time}>{item.startTime}</Text>
+        <Text style={styles.timeMuted}>{item.endTime}</Text>
+      </View>
+      <View style={styles.cardBody}>
+        <Text style={styles.course} numberOfLines={3}>{item.courseName || "Cours"}</Text>
+        <Text style={styles.meta} numberOfLines={2}>Classe : {item.className || item.classCode || "—"}</Text>
+        <Text style={styles.meta} numberOfLines={2}>Enseignant : {item.isReplacement ? item.originalTeacherName : item.teacherName || "—"}</Text>
+        <Text style={styles.meta} numberOfLines={2}>Salle : {item.roomName || "Sans salle"}</Text>
+        {item.replacementsUnverified ? (
+          <Text style={styles.unverified} testID={PLANNING_V2_TEST_IDS.usualTeacherUnverified}>
+            {PLANNING_V2_COPY.usualTeacherUnverified} : {item.teacherName}
+          </Text>
+        ) : item.isReplacement ? (
+          <Text style={styles.replacement} testID={PLANNING_V2_TEST_IDS.replacementBadge}>
+            {PLANNING_V2_COPY.usualTeacher} : {item.originalTeacherName}. {PLANNING_V2_COPY.replacedBy} {item.substituteTeacherName}
+          </Text>
+        ) : null}
+      </View>
+      {canReplace && !compact && !mutationsBlocked ? (
+        <TouchableOpacity
+          onPress={() => void openReplace(item)}
+          accessibilityRole="button"
+          accessibilityLabel={`Remplacer le cours ${item.courseName || ""} de ${item.className || ""}`}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          style={{ minWidth: 44, minHeight: 44, alignItems: "center", justifyContent: "center" }}
+        >
+          <Ionicons name="swap-horizontal-outline" size={20} color="#2563EB" />
+        </TouchableOpacity>
+      ) : (
+        <Ionicons name="calendar-outline" size={22} color="#2563EB" />
+      )}
+    </TouchableOpacity>
+  );
 
-  // Repli sur les données de démonstration si aucun créneau réel n'est disponible.
-  const demoRows = useMemo(() => {
-    if (hasRealPlanning) return [];
-    if (session?.role === "teacher") {
-      const scopedClasses = teacherScopedClassNames(session, teacherScopeState);
-      if (!scopedClasses) return timetable;
-      return timetable.filter((item) => scopedClasses.has(normalize(item.className)));
-    }
-    if ((session?.role === "parent_student" || session?.role === "student") && selectedStudentId) {
-      const student = studentsData.find((item) => item.id === selectedStudentId);
-      return timetable.filter((item) => classNameMatches(item.className, student?.className));
-    }
-    return timetable;
-  }, [hasRealPlanning, assignmentsData, classesData, selectedStudentId, session, studentsData, teachersData]);
+  const renderWeekColumns = () => (
+    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.weekRow}>
+      {PLANNING_WEEKDAY_CHIPS.map((chip) => {
+        const items = displayedOccurrencesForDay({
+          slots: courseSchedulesSnapshot.data,
+          replacements: replacementProjection.replacements,
+          dayOfWeek: chip.dayOfWeek,
+          occurrenceDate: nearestOccurrenceDate(chip.dayOfWeek),
+          unverified: replacementProjection.unverified,
+        });
+        return (
+          <View key={chip.dayOfWeek} style={styles.weekCol}>
+            <Text style={styles.dayTitle}>{chip.short}</Text>
+            {items.length === 0 ? (
+              <Text style={styles.muted}>—</Text>
+            ) : (
+              items.map((item) => renderSlotCard(item, true))
+            )}
+          </View>
+        );
+      })}
+    </ScrollView>
+  );
+
+  if (mode === "create" || mode === "edit") {
+    return (
+      <ScrollView style={styles.screen} contentContainerStyle={contentStyle}>
+        <Text style={styles.title}>{mode === "create" ? "Nouveau créneau" : "Modifier le créneau"}</Text>
+        <Text style={styles.subtitle}>Cours, jour, horaires et salle canoniques. Aucun texte libre.</Text>
+
+        <Text style={styles.label}>Cours</Text>
+        {courseOptions.length === 0 ? (
+          <Text style={styles.errorText}>Aucun cours planifiable n'est visible pour ce compte.</Text>
+        ) : (
+          courseOptions.map((option: PlanningCourseOption) => {
+            const active = option.schoolCourseId === schoolCourseId;
+            return (
+              <TouchableOpacity
+                key={option.schoolCourseId}
+                style={[styles.option, active && styles.optionActive]}
+                onPress={() => setSchoolCourseId(option.schoolCourseId)}
+                disabled={saving}
+              >
+                <Text style={styles.optionTitle}>{option.courseName}</Text>
+                <Text style={styles.meta}>
+                  {option.className} · {option.teacherName || option.teacherCode}
+                </Text>
+              </TouchableOpacity>
+            );
+          })
+        )}
+
+        <Text style={styles.label}>Jour</Text>
+        {renderDayChips(dayOfWeek, setDayOfWeek)}
+
+        <FormField
+          label="Début"
+          required
+          type="time"
+          value={startTime}
+          onChangeText={setStartTime}
+          editable={!saving}
+          placeholder="Ex. 08:00"
+          accessibilityLabel="Heure de début"
+        />
+        <FormField
+          label="Fin"
+          required
+          type="time"
+          value={endTime}
+          onChangeText={setEndTime}
+          editable={!saving}
+          placeholder="Ex. 09:00"
+          accessibilityLabel="Heure de fin"
+        />
+
+        <Text style={styles.label}>Salle</Text>
+        <TouchableOpacity
+          style={[styles.option, !roomId && styles.optionActive]}
+          onPress={() => setRoomId(null)}
+          disabled={saving}
+        >
+          <Text style={styles.optionTitle}>Sans salle</Text>
+        </TouchableOpacity>
+        {roomsForForm.map((room) => {
+          const active = room.id === roomId;
+          const archived = room.status === "archived";
+          return (
+            <TouchableOpacity
+              key={room.id}
+              style={[styles.option, active && styles.optionActive, archived && !active && styles.disabled]}
+              onPress={() => setRoomId(room.id)}
+              disabled={saving || (archived && !active)}
+            >
+              <Text style={styles.optionTitle}>{room.name}</Text>
+              {archived ? <Text style={styles.meta}>Archivée — affichage uniquement</Text> : null}
+            </TouchableOpacity>
+          );
+        })}
+
+        {saveError ? (
+          <Text style={styles.errorText} testID={PLANNING_V2_TEST_IDS.conflictError}>
+            {saveError}
+          </Text>
+        ) : null}
+
+        <TouchableOpacity
+          style={[styles.primaryButton, saving && styles.disabled]}
+          onPress={() => void handleSaveSlot()}
+          disabled={saving}
+          testID={PLANNING_V2_TEST_IDS.saveButton}
+        >
+          {saving ? (
+            <>
+              <ActivityIndicator color="#FFFFFF" />
+              <Text style={styles.primaryText}>{NETWORK_COPY.recording}</Text>
+            </>
+          ) : (
+            <Text style={styles.primaryText}>{saveError ? PLANNING_V2_COPY.retry : "Enregistrer"}</Text>
+          )}
+        </TouchableOpacity>
+        {mode === "edit" && canDelete ? (
+          <TouchableOpacity style={styles.dangerButton} onPress={() => void handleDelete()} disabled={saving}>
+            <Text style={styles.primaryText}>Supprimer</Text>
+          </TouchableOpacity>
+        ) : null}
+        <TouchableOpacity style={styles.secondaryButton} onPress={() => setMode("list")} disabled={saving}>
+          <Text style={styles.secondaryText}>Annuler</Text>
+        </TouchableOpacity>
+      </ScrollView>
+    );
+  }
+
+  if (mode === "replace" && editing) {
+    return (
+      <ScrollView style={styles.screen} contentContainerStyle={contentStyle}>
+        <Text style={styles.title}>Remplacement daté</Text>
+        <Text style={styles.subtitle}>
+          {editing.courseName} · {editing.startTime}–{editing.endTime}. Le créneau maître n'est pas modifié.
+        </Text>
+        <Text style={styles.meta}>
+          {PLANNING_V2_COPY.usualTeacher} : {editing.teacherName}
+        </Text>
+        <FormField
+          label="Date d'occurrence"
+          required
+          type="date"
+          value={occurrenceDate}
+          onChangeText={setOccurrenceDate}
+          editable={!saving}
+          placeholder="Ex. 2026-08-22"
+          accessibilityLabel="Date d'occurrence"
+        />
+        <Text style={styles.label}>Remplaçant</Text>
+        {optionsError ? <Text style={styles.errorText}>{optionsError}</Text> : null}
+        {substituteOptions.map((option) => {
+          const active = option.teacherId === substituteTeacherId;
+          return (
+            <TouchableOpacity
+              key={option.teacherId}
+              style={[styles.option, active && styles.optionActive, !option.selectable && styles.disabled]}
+              onPress={() => option.selectable && setSubstituteTeacherId(option.teacherId)}
+              disabled={saving || !option.selectable}
+            >
+              <Text style={styles.optionTitle}>{option.name || option.teacherCode}</Text>
+            </TouchableOpacity>
+          );
+        })}
+        {saveError ? (
+          <Text style={styles.errorText} testID={PLANNING_V2_TEST_IDS.conflictError}>
+            {saveError}
+          </Text>
+        ) : null}
+        <TouchableOpacity
+          style={[styles.primaryButton, saving && styles.disabled]}
+          onPress={() => void handleSaveReplacement()}
+          disabled={saving}
+        >
+          {saving ? (
+            <>
+              <ActivityIndicator color="#FFFFFF" />
+              <Text style={styles.primaryText}>{NETWORK_COPY.recording}</Text>
+            </>
+          ) : (
+            <Text style={styles.primaryText}>{saveError ? PLANNING_V2_COPY.retry : "Enregistrer le remplacement"}</Text>
+          )}
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.secondaryButton} onPress={() => setMode("list")} disabled={saving}>
+          <Text style={styles.secondaryText}>Annuler</Text>
+        </TouchableOpacity>
+      </ScrollView>
+    );
+  }
 
   return (
     <ScrollView style={styles.screen} contentContainerStyle={contentStyle}>
       <Text style={styles.title}>Emploi du temps</Text>
       <Text style={styles.subtitle}>
-        {hasRealPlanning ? `${scopedSlots.length} créneau(x) planifié(s)` : `${demoRows.length} créneau(x) planifié(s)`}
+        {courseSchedulesSnapshot.status === "success"
+          ? `${courseSchedulesSnapshot.data.length} créneau(x) hebdomadaire(s)`
+          : "Planning établissement"}
       </Text>
 
-      {conflicts.length > 0 && (
-        <View style={styles.conflictBanner}>
-          <View style={styles.conflictHeader}>
-            <Ionicons name="warning-outline" size={18} color="#B45309" />
-            <Text style={styles.conflictTitle}>
-              {conflicts.length} conflit(s) d'horaire détecté(s)
-            </Text>
-          </View>
-          {conflicts.slice(0, 4).map((conflict, index) => (
-            <Text key={`${conflict.slotId}-${index}`} style={styles.conflictText}>
-              • {conflict.message}
-            </Text>
-          ))}
-          {conflicts.length > 4 && (
-            <Text style={styles.conflictText}>… et {conflicts.length - 4} autre(s).</Text>
-          )}
+      {l1ReadOnly ? (
+        <View style={styles.warningBanner} testID="l1-offline-banner">
+          <Text style={styles.warningTitle}>{OFFLINE_COPY.l1ModeTitle}</Text>
+          <Text style={styles.warningText}>
+            {OFFLINE_COPY.l1LastSyncPrefix} : {courseSchedulesSnapshot.cachedAt || "—"}
+          </Text>
+        </View>
+      ) : null}
+
+      {canWrite && !mutationsBlocked ? (
+        <TouchableOpacity style={styles.primaryButton} onPress={openCreate} testID={PLANNING_V2_TEST_IDS.createButton}>
+          <Text style={styles.primaryText}>Ajouter un créneau</Text>
+        </TouchableOpacity>
+      ) : null}
+
+      {!isTablet ? renderDayChips(selectedDay, setSelectedDay) : null}
+
+      {replacementProjection.showUnavailableWarning ? (
+        <View style={styles.warningBanner} testID={PLANNING_V2_TEST_IDS.replacementsWarning} accessibilityRole="alert">
+          <Text style={styles.warningTitle}>⚠ {PLANNING_V2_COPY.replacementsUnavailable}</Text>
+          <Text style={styles.warningText}>{PLANNING_V2_COPY.replacementsUnverifiedHint}</Text>
+          {!l1ReadOnly ? (
+            <TouchableOpacity
+              style={styles.retry}
+              onPress={() => void loadReplacements()}
+              testID={PLANNING_V2_TEST_IDS.replacementsRetry}
+              accessibilityRole="button"
+              accessibilityLabel={PLANNING_V2_COPY.retry}
+            >
+              <Text style={styles.retryText}>{PLANNING_V2_COPY.retry}</Text>
+            </TouchableOpacity>
+          ) : null}
+        </View>
+      ) : null}
+
+      {showQueryState && !(isTablet && courseSchedulesSnapshot.status === "success") ? (
+        <QueryStateView
+          snapshot={
+            courseSchedulesSnapshot.status === "success" && occurrences.length === 0
+              ? { status: "empty", data: [] }
+              : courseSchedulesSnapshot
+          }
+          emptyMessage={PLANNING_V2_COPY.empty}
+          errorMessage={PLANNING_V2_COPY.error}
+          offlineMessage={PLANNING_V2_COPY.error}
+          emptyTestId={DATA_TRUTH_TEST_IDS.planningEmpty}
+          errorTestId={DATA_TRUTH_TEST_IDS.planningError}
+          onRetry={() => void refreshPlanning()}
+        />
+      ) : isTablet && courseSchedulesSnapshot.status === "success" ? (
+        <View testID={DATA_TRUTH_TEST_IDS.planningList}>{renderWeekColumns()}</View>
+      ) : (
+        <View testID={DATA_TRUTH_TEST_IDS.planningList}>
+          <Text style={styles.dayTitle}>
+            {PLANNING_WEEKDAY_CHIPS.find((chip) => chip.dayOfWeek === selectedDay)?.short ?? ""} · {occurrenceDateForDay}
+          </Text>
+          {occurrences.map((item) => renderSlotCard(item))}
         </View>
       )}
-
-      {hasRealPlanning
-        ? dayGroups.map((group) => (
-            <View key={group.weekday} style={styles.dayBlock}>
-              <Text style={styles.dayTitle}>{group.label}</Text>
-              {group.slots.map((slot) => {
-                const exam = isExamSlot(slot);
-                return (
-                  <View key={slot.id} style={[styles.card, exam && styles.examCard]}>
-                    <View style={[styles.timeBox, exam && styles.examTimeBox]}>
-                      <Text style={[styles.time, exam && styles.examTime]}>{slotTimeRange(slot).split("–")[0]}</Text>
-                      <Text style={styles.timeMuted}>{slotTimeRange(slot).split("–")[1]}</Text>
-                    </View>
-                    <View style={styles.cardBody}>
-                      <Text style={styles.course}>
-                        {exam ? `${slot.examType || "Examen"} · ${slot.examName || slot.subject}` : slot.subject}
-                      </Text>
-                      <Text style={styles.meta}>
-                        {slot.className}
-                        {slot.room ? ` • ${slot.room}` : ""}
-                      </Text>
-                      <Text style={styles.meta}>{slot.teacherName || "Enseignant à affecter"}</Text>
-                    </View>
-                    <Ionicons
-                      name={exam ? "clipboard-outline" : "calendar-outline"}
-                      size={22}
-                      color={exam ? "#C2410C" : "#2563EB"}
-                    />
-                  </View>
-                );
-              })}
-            </View>
-          ))
-        : days.map((day) => {
-            const dayRows = demoRows.filter((item) => item.day === day);
-            if (!dayRows.length) return null;
-            return (
-              <View key={day} style={styles.dayBlock}>
-                <Text style={styles.dayTitle}>{day}</Text>
-                {dayRows.map((item) => {
-                  const teacher = getTeacherById(item.teacherId);
-                  return (
-                    <View key={item.id} style={styles.card}>
-                      <View style={styles.timeBox}>
-                        <Text style={styles.time}>{item.startTime}</Text>
-                        <Text style={styles.timeMuted}>{item.endTime}</Text>
-                      </View>
-                      <View style={styles.cardBody}>
-                        <Text style={styles.course}>{item.course}</Text>
-                        <Text style={styles.meta}>{item.className} • {item.room}</Text>
-                        <Text style={styles.meta}>{teacher?.name ?? "Enseignant à affecter"}</Text>
-                      </View>
-                      <Ionicons name="calendar-outline" size={22} color="#2563EB" />
-                    </View>
-                  );
-                })}
-              </View>
-            );
-          })}
     </ScrollView>
   );
 }
@@ -159,18 +681,20 @@ const styles = StyleSheet.create({
   content: { padding: 20 },
   title: { color: "#0F172A", fontSize: 28, fontWeight: "900" },
   subtitle: { color: "#64748B", fontWeight: "800", marginTop: 4, marginBottom: 18 },
-  conflictBanner: {
-    backgroundColor: "#FEF3C7",
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: "#FCD34D",
-    padding: 14,
-    marginBottom: 18,
+  chipRow: { gap: 8, marginBottom: 16 },
+  chip: {
+    backgroundColor: "#E2E8F0",
+    borderRadius: 999,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    minHeight: 44,
+    minWidth: 44,
+    alignItems: "center",
+    justifyContent: "center",
   },
-  conflictHeader: { flexDirection: "row", alignItems: "center", marginBottom: 8 },
-  conflictTitle: { color: "#B45309", fontWeight: "900", fontSize: 14, marginLeft: 8 },
-  conflictText: { color: "#92400E", fontSize: 12, fontWeight: "700", marginTop: 3 },
-  dayBlock: { marginBottom: 18 },
+  chipActive: { backgroundColor: "#2563EB" },
+  chipText: { color: "#334155", fontWeight: "800" },
+  chipTextActive: { color: "#FFFFFF" },
   dayTitle: { color: "#0F172A", fontSize: 18, fontWeight: "900", marginBottom: 10 },
   card: {
     backgroundColor: "#FFFFFF",
@@ -182,7 +706,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#E2E8F0",
   },
-  examCard: { borderColor: "#FDBA74", backgroundColor: "#FFF7ED" },
   timeBox: {
     width: 72,
     borderRadius: 14,
@@ -190,11 +713,75 @@ const styles = StyleSheet.create({
     padding: 10,
     marginRight: 12,
   },
-  examTimeBox: { backgroundColor: "#FFEDD5" },
   time: { color: "#2563EB", fontWeight: "900", textAlign: "center" },
-  examTime: { color: "#C2410C" },
   timeMuted: { color: "#64748B", fontSize: 12, fontWeight: "800", textAlign: "center", marginTop: 3 },
   cardBody: { flex: 1, minWidth: 0 },
   course: { color: "#0F172A", fontSize: 16, fontWeight: "900" },
   meta: { color: "#64748B", fontSize: 12, fontWeight: "700", marginTop: 4 },
+  replacement: { color: "#B45309", fontSize: 12, fontWeight: "800", marginTop: 6 },
+  unverified: { color: "#B45309", fontSize: 12, fontWeight: "800", marginTop: 6 },
+  warningBanner: {
+    backgroundColor: "#FEF3C7",
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "#FCD34D",
+    padding: 14,
+    marginBottom: 16,
+  },
+  warningTitle: { color: "#B45309", fontWeight: "900", fontSize: 14 },
+  warningText: { color: "#92400E", fontSize: 12, fontWeight: "700", marginTop: 6 },
+  retry: {
+    marginTop: 10,
+    alignSelf: "flex-start",
+    backgroundColor: "#B45309",
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  retryText: { color: "#FFFFFF", fontWeight: "800" },
+  muted: { color: "#94A3B8", fontWeight: "700" },
+  label: { color: "#0F172A", fontWeight: "800", marginTop: 12, marginBottom: 6 },
+  input: {
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontWeight: "700",
+  },
+  option: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    padding: 12,
+    marginBottom: 8,
+  },
+  optionActive: { borderColor: "#2563EB", backgroundColor: "#EFF6FF" },
+  optionTitle: { color: "#0F172A", fontWeight: "800" },
+  errorText: { color: "#B91C1C", fontWeight: "800", marginTop: 12 },
+  primaryButton: {
+    backgroundColor: "#2563EB",
+    borderRadius: 14,
+    paddingVertical: 14,
+    alignItems: "center",
+    marginBottom: 12,
+    flexDirection: "row",
+    justifyContent: "center",
+    gap: 8,
+  },
+  dangerButton: {
+    backgroundColor: "#B91C1C",
+    borderRadius: 14,
+    paddingVertical: 14,
+    alignItems: "center",
+    marginBottom: 12,
+  },
+  secondaryButton: { paddingVertical: 12, alignItems: "center" },
+  primaryText: { color: "#FFFFFF", fontWeight: "900" },
+  secondaryText: { color: "#334155", fontWeight: "800" },
+  disabled: { opacity: 0.5 },
+  weekRow: { gap: 12 },
+  weekCol: { width: 220 },
 });

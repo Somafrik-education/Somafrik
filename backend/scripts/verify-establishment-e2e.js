@@ -25,13 +25,18 @@ const assert = require("assert");
 
 const { EstablishmentService } = require("../services/establishmentService");
 const { AuthService, BusinessError } = require("../services/authService");
+const {
+  isV2SchoolLoginCode,
+  matchesSchoolLookup,
+  publicSchoolCodeFromRecord,
+} = require("../lib/schoolCodeV2");
 
 let passed = 0;
 const failures = [];
 
-function check(label, fn) {
+async function check(label, fn) {
   try {
-    fn();
+    await fn();
     passed += 1;
     console.log(`  \u2713 ${label}`);
   } catch (error) {
@@ -41,10 +46,10 @@ function check(label, fn) {
 }
 
 /** Vérifie qu'un appel lève bien une BusinessError avec le code/message attendu. */
-function expectBusinessError(fn, { statusCode, messageIncludes } = {}) {
+async function expectBusinessError(fn, { statusCode, messageIncludes } = {}) {
   let thrown = null;
   try {
-    fn();
+    await fn();
   } catch (error) {
     thrown = error;
   }
@@ -66,9 +71,7 @@ function expectBusinessError(fn, { statusCode, messageIncludes } = {}) {
 }
 
 function buildAuthService(state, schoolCode) {
-  const school = (state.schools ?? []).find(
-    (item) => String(item.code ?? "").trim().toUpperCase() === String(schoolCode).trim().toUpperCase(),
-  );
+  const school = (state.schools ?? []).find((item) => matchesSchoolLookup(item, schoolCode));
   return new AuthService({
     school,
     schools: state.schools ?? [],
@@ -81,7 +84,7 @@ function buildAuthService(state, schoolCode) {
   });
 }
 
-function main() {
+async function main() {
   const service = new EstablishmentService();
 
   // ---------------------------------------------------------------------------
@@ -131,7 +134,7 @@ function main() {
   //   pas activé.
   // ---------------------------------------------------------------------------
   let created;
-  check("1. Le superadmin crée un établissement avec les infos obligatoires", () => {
+  await check("1. Le superadmin crée un établissement avec les infos obligatoires", () => {
     const result = service.create(
       {
         name: "Lycée Somafrik Test",
@@ -155,17 +158,18 @@ function main() {
     assert.ok(created, "Établissement non créé.");
   });
 
-  check("2. Le système génère un code établissement unique et bien formé", () => {
-    assert.match(
-      String(created.code),
-      /^CD-\d{4}-0001$/,
-      `Code généré inattendu : ${created.code}`,
+  await check("2. Le système génère un code établissement unique et bien formé", () => {
+    const publicCode = publicSchoolCodeFromRecord(created);
+    assert.ok(
+      isV2SchoolLoginCode(publicCode),
+      `Code généré inattendu : ${JSON.stringify({ code: created.code, loginCode: created.loginCode, publicId: created.publicId })}`,
     );
+    assert.match(String(created.code), /^SCH-[A-Z0-9]+$/);
   });
 
-  const schoolCode = created.code;
+  const schoolCode = publicSchoolCodeFromRecord(created);
 
-  check("2b. Le contact principal et le logo sont conservés", () => {
+  await check("2b. Le contact principal et le logo sont conservés", () => {
     assert.strictEqual(created.principalName, "Awa Kabila");
     assert.strictEqual(created.logoUrl, "https://cdn.somafrik.test/logo.png");
     assert.strictEqual(created.country, "RDC");
@@ -175,10 +179,10 @@ function main() {
   // ---------------------------------------------------------------------------
   // Étape 3 — L'établissement apparaît dans la liste (pour le superadmin).
   // ---------------------------------------------------------------------------
-  check("3. L'établissement apparaît dans la liste du superadmin", () => {
+  await check("3. L'établissement apparaît dans la liste du superadmin", () => {
     const list = service.list(state, superAdmin);
     assert.ok(
-      list.some((school) => school.code === schoolCode),
+      list.some((school) => matchesSchoolLookup(school, schoolCode)),
       "Établissement absent de la liste du superadmin.",
     );
   });
@@ -186,8 +190,8 @@ function main() {
   // ---------------------------------------------------------------------------
   // Vérification métier — Le code établissement est unique.
   // ---------------------------------------------------------------------------
-  check("MÉTIER. Un code établissement en doublon est rejeté (400)", () => {
-    expectBusinessError(
+  await check("MÉTIER. Un code établissement en doublon est rejeté (400)", async () => {
+    await expectBusinessError(
       () =>
         service.create(
           {
@@ -208,8 +212,8 @@ function main() {
     );
   });
 
-  check("MÉTIER. Un doublon potentiel (même email/téléphone) est signalé (409)", () => {
-    expectBusinessError(
+  await check("MÉTIER. Un doublon potentiel (même email/téléphone) est signalé (409)", async () => {
+    await expectBusinessError(
       () =>
         service.create(
           {
@@ -228,30 +232,94 @@ function main() {
     );
   });
 
+  await check("MÉTIER. Un contact générique cross-country n'est pas un doublon fort", () => {
+    const withBurundi = {
+      ...state,
+      countries: [
+        ...(state.countries ?? []),
+        { name: "Burundi", code: "BI", status: "Actif" },
+      ],
+      schools: [
+        ...(state.schools ?? []),
+        {
+          code: "BI-2026-0001",
+          publicId: "BI-EK-26-001",
+          name: "Ecole Kanyosha",
+          country: "Burundi",
+          countryCode: "BI",
+          city: "Muha",
+          type: "École primaire",
+          phone: "9090909",
+          email: "contact@somafrik.app",
+          principalName: "Directeur Kanyosha",
+          status: "Actif",
+        },
+      ],
+    };
+    const result = service.create(
+      {
+        name: "Institut Baraka",
+        country: "RDC",
+        countryCode: "CD",
+        city: "Bukavu",
+        type: "Institut",
+        phone: "9090909",
+        email: "contact@somafrik.app",
+        principalName: "Apotre Baraka",
+      },
+      withBurundi,
+      superAdmin,
+    );
+    assert.ok(result.school);
+    assert.equal(result.school.countryCode, "CD");
+  });
+
+  await check("MÉTIER. Même nom et ville dans le même pays est un doublon fort (409)", async () => {
+    await expectBusinessError(
+      () =>
+        service.create(
+          {
+            name: created.name,
+            country: "RDC",
+            countryCode: "CD",
+            city: created.city,
+            type: "Lycée",
+            phone: "+243 990 111 999",
+            email: "autre-fort@ecole.cd",
+            principalName: "Clone Fort",
+          },
+          state,
+          superAdmin,
+          { force: true },
+        ),
+      { statusCode: 409, messageIncludes: "même nom et ville" },
+    );
+  });
+
   // ---------------------------------------------------------------------------
   // Vérification métier — Visibilité restreinte aux utilisateurs autorisés.
   // ---------------------------------------------------------------------------
-  check("MÉTIER. Invisible pour un admin pays d'un autre pays (BI)", () => {
+  await check("MÉTIER. Invisible pour un admin pays d'un autre pays (BI)", () => {
     const list = service.list(state, countryAdminBI);
     assert.ok(
-      !list.some((school) => school.code === schoolCode),
+      !list.some((school) => matchesSchoolLookup(school, schoolCode)),
       "L'établissement RDC ne doit pas être visible pour l'admin pays BI.",
     );
   });
 
-  check("MÉTIER. Invisible pour l'admin d'un autre établissement", () => {
+  await check("MÉTIER. Invisible pour l'admin d'un autre établissement", async () => {
     const list = service.list(state, foreignSchoolAdmin);
     assert.ok(
-      !list.some((school) => school.code === schoolCode),
+      !list.some((school) => matchesSchoolLookup(school, schoolCode)),
       "L'établissement ne doit pas être visible pour l'admin d'une autre école.",
     );
-    expectBusinessError(() => service.get(schoolCode, state, foreignSchoolAdmin), {
+    await expectBusinessError(() => service.get(schoolCode, state, foreignSchoolAdmin), {
       statusCode: 403,
     });
   });
 
-  check("MÉTIER. Un admin établissement ne peut pas créer d'établissement (403)", () => {
-    expectBusinessError(
+  await check("MÉTIER. Un admin établissement ne peut pas créer d'établissement (403)", async () => {
+    await expectBusinessError(
       () =>
         service.create(
           { name: "École Interdite", country: "RDC", city: "Goma", type: "Collège", phone: "1", email: "a@b.cd", principalName: "X" },
@@ -288,9 +356,9 @@ function main() {
   // ---------------------------------------------------------------------------
   // Vérification métier — Établissement inactif ⇒ connexion impossible.
   // ---------------------------------------------------------------------------
-  check("MÉTIER. Établissement en attente : la connexion de l'admin est refusée (403)", () => {
+  await check("MÉTIER. Établissement en attente : la connexion de l'admin est refusée (403)", async () => {
     const auth = buildAuthService(state, schoolCode);
-    expectBusinessError(
+    await expectBusinessError(
       () => auth.login({ role: "school_admin", schoolCode, identifier: "admin", pin: "1234" }),
       { statusCode: 403, messageIncludes: "attente de validation" },
     );
@@ -299,7 +367,7 @@ function main() {
   // ---------------------------------------------------------------------------
   // Étape 4 — Le superadmin active l'établissement.
   // ---------------------------------------------------------------------------
-  check("4. Le superadmin active l'établissement", () => {
+  await check("4. Le superadmin active l'établissement", () => {
     const result = service.activate(schoolCode, state, superAdmin);
     state = result.state;
     assert.strictEqual(result.school.status, "Actif");
@@ -309,17 +377,21 @@ function main() {
   // ---------------------------------------------------------------------------
   // Étape 5 — L'admin établissement peut se connecter avec le code.
   // ---------------------------------------------------------------------------
-  check("5. Après activation, l'admin établissement peut se connecter", () => {
+  await check("5. Après activation, l'admin établissement peut se connecter", async () => {
     const auth = buildAuthService(state, schoolCode);
-    const session = auth.login({ role: "school_admin", schoolCode, identifier: "admin", pin: "1234" });
+    const session = await auth.login({ role: "school_admin", schoolCode, identifier: "admin", pin: "1234" });
     assert.strictEqual(session.role, "school_admin");
-    assert.strictEqual(session.school.code, schoolCode);
-    assert.strictEqual(session.user.schoolCode, schoolCode);
+    assert.strictEqual(publicSchoolCodeFromRecord(session.school), schoolCode);
+    assert.ok(
+      matchesSchoolLookup(session.school, session.user.schoolCode) ||
+        String(session.user.schoolCode ?? "").trim().toUpperCase() === schoolCode,
+      "Le compte admin doit rester rattaché à l'établissement créé.",
+    );
   });
 
-  check("5b. Un code établissement inconnu est rejeté à la connexion (401)", () => {
+  await check("5b. Un code établissement inconnu est rejeté à la connexion (401)", async () => {
     const auth = buildAuthService(state, schoolCode);
-    expectBusinessError(
+    await expectBusinessError(
       () => auth.login({ role: "school_admin", schoolCode: "CD-2026-0404", identifier: "admin", pin: "1234" }),
       { statusCode: 401 },
     );
@@ -328,11 +400,11 @@ function main() {
   // ---------------------------------------------------------------------------
   // Vérification métier — Suspension ⇒ connexion de nouveau bloquée.
   // ---------------------------------------------------------------------------
-  check("MÉTIER. Établissement suspendu : la connexion est de nouveau refusée (403)", () => {
+  await check("MÉTIER. Établissement suspendu : la connexion est de nouveau refusée (403)", async () => {
     const result = service.suspend(schoolCode, state, superAdmin);
     const suspendedState = result.state;
     const auth = buildAuthService(suspendedState, schoolCode);
-    expectBusinessError(
+    await expectBusinessError(
       () => auth.login({ role: "school_admin", schoolCode, identifier: "admin", pin: "1234" }),
       { statusCode: 403, messageIncludes: "suspendu" },
     );
@@ -348,7 +420,10 @@ function main() {
 }
 
 try {
-  main();
+  main().catch((error) => {
+    console.error("Erreur inattendue durant le test E2E :", error);
+    process.exit(1);
+  });
 } catch (error) {
   console.error("Erreur inattendue durant le test E2E :", error);
   process.exit(1);

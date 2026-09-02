@@ -8,6 +8,12 @@
 const { PostgresRepository } = require("./postgresRepository");
 const { FallbackRepository } = require("./fallbackRepository");
 const {
+  attachStudentLifecyclePg,
+  ensureStudentLifecyclePgSchema,
+} = require("./studentLifecyclePg");
+const { ensureStudentGeneralIdentityPg } = require("./studentGeneralIdentityPg");
+const { attachLiveRbacAuthority } = require("../lib/liveRbacPrincipalAuthority");
+const {
   resolveDatabaseConfig,
   isDatabaseRequired,
   isMemoryFallbackAllowed,
@@ -25,6 +31,23 @@ function hasResolvableDatabaseConfig(env = process.env) {
   } catch {
     return false;
   }
+}
+
+/**
+ * J2B — plus de monkey-patch silencieux.
+ * Les tombstones PostgresRepository (LEGACY_BACKOFFICE_RUNTIME_MIGRATION_REMOVED)
+ * restent fail-closed y compris après initializeRepository().
+ * Conservé comme no-op exporté pour ne pas casser les appelants historiques.
+ */
+function disableLegacyBackOfficeRuntimeMigrations(repository) {
+  return repository;
+}
+
+function attachLiveRbacIfPostgres(repository) {
+  if ((repository?.engine ?? "postgresql") === "postgresql") {
+    attachLiveRbacAuthority(repository);
+  }
+  return repository;
 }
 
 /**
@@ -53,6 +76,8 @@ function createPostgresRepository(databaseConfig, env = process.env) {
   }
   const repository = new PostgresRepository(config);
   repository.engine = "postgresql";
+  attachStudentLifecyclePg(repository);
+  attachLiveRbacAuthority(repository);
   return assertRepositoryContract(repository, "postgresql");
 }
 
@@ -119,11 +144,19 @@ async function initializeRepository({
   }
 
   // Laisser createPostgresRepository gérer le mode mémoire (placeholder si besoin).
-  const primary = repository ?? createPostgresRepository(databaseUrl, env);
+  const primary = attachLiveRbacIfPostgres(repository ?? createPostgresRepository(databaseUrl, env));
+  disableLegacyBackOfficeRuntimeMigrations(primary);
+  if ((primary.engine ?? "postgresql") === "postgresql") {
+    attachStudentLifecyclePg(primary);
+  }
 
   try {
     await primary.init();
-    if (isProductionEnvironment(env) && (primary.engine ?? "postgresql") === "memory") {
+    if ((primary.engine ?? "postgresql") === "postgresql") {
+      await ensureStudentLifecyclePgSchema(primary);
+      await ensureStudentGeneralIdentityPg(primary);
+    }
+    if (isProductionEnvironment(env) && (primary.engine ?? "") === "memory") {
       throw new DbConfigError("Base mémoire détectée en production.");
     }
     return {
@@ -135,14 +168,28 @@ async function initializeRepository({
     if (error instanceof DbConfigError) {
       throw error;
     }
+
+    // Toujours journaliser la cause réelle (sanitisée) — y compris contraintes domaine Teachers.
+    const cause = sanitizeDbErrorMessage(error);
+    const domainCode = error && error.code ? String(error.code) : "";
+
     if (mustUsePostgres || isProductionEnvironment(env)) {
-      throw new DbConfigError(
-        "Connexion PostgreSQL obligatoire impossible.",
+      logger.error(`Échec initialisation PostgreSQL: ${cause}`);
+      if (domainCode) {
+        logger.error(`Code domaine: ${domainCode}`);
+      }
+      const wrapped = new DbConfigError(
+        `Connexion PostgreSQL obligatoire impossible. Cause: ${cause}`,
       );
+      wrapped.cause = error;
+      if (domainCode) {
+        wrapped.domainCode = domainCode;
+      }
+      throw wrapped;
     }
 
     logger.warn("PostgreSQL indisponible, démarrage en mode démo mémoire.");
-    logger.warn(`Cause: ${sanitizeDbErrorMessage(error)}`);
+    logger.warn(`Cause: ${cause}`);
 
     const fallback = createFallbackRepository(env);
     await fallback.init();
@@ -158,4 +205,6 @@ module.exports = {
   createPostgresRepository,
   createFallbackRepository,
   initializeRepository,
+  disableLegacyBackOfficeRuntimeMigrations,
+  attachLiveRbacIfPostgres,
 };

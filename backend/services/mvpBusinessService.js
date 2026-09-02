@@ -104,7 +104,7 @@ class SubjectManagementService {
 
     return {
       allowed: !used,
-      reason: used ? "Matière déjà utilisée dans des notes" : "",
+      reason: used ? "Cours déjà utilisé dans des notes" : "",
       subjectName,
       className,
     };

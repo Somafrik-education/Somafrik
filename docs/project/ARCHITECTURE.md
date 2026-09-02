@@ -1,7 +1,7 @@
 # Architecture — Somafrik
 
 **Statut :** référence technique officielle  
-**Dernière mise à jour :** 2026-07-26  
+**Dernière mise à jour :** 2026-08-13
 **Compléments :** [../preproduction.md](../preproduction.md) · [../ci-cd-security.md](../ci-cd-security.md) · [../ux/design-system/README.md](../ux/design-system/README.md)
 
 ---
@@ -16,6 +16,12 @@ Somafrik est un monorepo :
 | `backend/` | API HTTP | Express + PostgreSQL |
 | `Mobile/` | Applications métier | Expo / React Native |
 | `BackOffice/` | Legacy servi par l’API | HTML/JS (dépréciation progressive) |
+
+### 1.1 Architecture V2 en transition
+
+La reconstruction contrôlée ajoute `apps/`, `packages/` et `tests/v2/` à côté du runtime actuel. Ces modules restent isolés du legacy et ne deviennent actifs qu'après migration par capacité, preuve de parité et gate CTO.
+
+Le contrat complet, l'ordre des lots et les interdictions figurent dans [V2-RECONSTRUCTION.md](./V2-RECONSTRUCTION.md). L'architecture existante décrite ci-dessous reste le runtime officiel tant qu'aucun cutover n'est validé.
 
 ```mermaid
 flowchart LR
@@ -128,6 +134,7 @@ Matrice d’écriture `PUT /backoffice/state` :
 - `lib/backOfficeWritableEntities.js` — Admin School, Secrétaire, Comptable, Préfet, Directeur, Admin Pays, Super Admin
 - `lib/teacherNotesWriteAccess.js` — Enseignant : **uniquement** `evaluations` + `notes`
 - `auditLog` **jamais** dans les entités writables client (S1.4)
+- `schools`, `classes`, `students`, `teachers`, `assignments` et les clés Finance (`payments`, `paymentStatuses`, `feeGrids`, `schoolFeeItems`, `studentFees`, `feeTariffHistory`, `paymentReminders`) sont des projections read-only dans ce PUT ; leurs APIs métier PostgreSQL sont obligatoires.
 
 ```mermaid
 flowchart TD
@@ -166,8 +173,8 @@ flowchart TD
 ## 4. Database
 
 - **PostgreSQL** obligatoire en préprod/prod (`SOMAFRIK_DB_REQUIRED=true`)
-- Tables canoniques : `schools`, `classes`, `subjects`, `teachers`, `students`, `evaluations`, `grades`, `attendance`, audit logs, …
-- Snapshot JSON BO encore utilisé pour de nombreux domaines — migration progressive domaine par domaine
+- Tables canoniques : `schools` (LOT 1, `profile_payload`), `classes`, `subjects`, `teachers`, `teacher_assignments`, `students`, `evaluations`, `grades`, `attendance`, `payments`, `student_fee_obligations`, `payment_allocations`, `payment_reminders`, `fee_grids`, `school_fee_items`, `fee_tariff_history`, `payment_statuses`, audit logs, …
+- Snapshot JSON BO encore utilisé pour de nombreux domaines — migration progressive domaine par domaine (`PUT state.schools`, `classes`, `students`, `teachers`, `assignments` et Finance retirés)
 - Préprod : Render Postgres et/ou Supabase (`DATABASE_URL`)
 
 ---

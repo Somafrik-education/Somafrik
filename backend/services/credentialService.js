@@ -2,6 +2,14 @@ const crypto = require("crypto");
 
 const HASH_PREFIX = "scrypt";
 
+/**
+ * Secret temporaire élève — contrat Somafrik (Tmp- + octets CSPRNG).
+ * Jamais dérivé du matricule. Hash seul en base. Clair uniquement dans la réponse CREATE.
+ */
+function generateTemporarySecret() {
+  return `Tmp-${crypto.randomBytes(16).toString("hex")}`;
+}
+
 function hashSecret(secret) {
   if (!secret) {
     return null;
@@ -28,4 +36,4 @@ function verifySecret(secret, storedHash) {
   return expected.length === hash.length && crypto.timingSafeEqual(expected, hash);
 }
 
-module.exports = { hashSecret, verifySecret };
+module.exports = { generateTemporarySecret, hashSecret, verifySecret };

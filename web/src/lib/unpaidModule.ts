@@ -12,7 +12,7 @@ import { scopedStudents } from "./establishment";
 import { daysLateFromPeriodDate, isPeriodDateBefore } from "./dates";
 import { normalize } from "./format";
 import { isPaymentCounted } from "./quickPayment";
-import { refreshStudentFeeStatuses, scopedStudentFees } from "./fees";
+import { scopedStudentFees } from "./fees";
 import { COUNTRY_ADMIN_ROLE, isSuperAdminRole } from "./orgHierarchy";
 
 /** Délai minimum entre deux relances pour le même élève (IMP-013). */
@@ -101,7 +101,7 @@ export function listUnpaidStudentFees(
   const parentStudentIds = resolveParentStudentIds(user, state);
   const isOwnScopeOnly = parentStudentIds.length > 0;
 
-  let fees = refreshStudentFeeStatuses(scopedStudentFees(user, state), now).filter((fee) => {
+  let fees = scopedStudentFees(user, state).filter((fee) => {
     if (filters.includeSettled) return fee.status !== "Annulé" && fee.status !== "Exonéré";
     if (!UNPAID_FEE_STATUSES.has(fee.status) || fee.balance <= 0) return false;
     return isOverdueStudentFee(fee, now) || fee.status === "En retard" || fee.status === "Partiellement payé";
@@ -212,7 +212,7 @@ export function buildUnpaidDashboard(rows: StudentUnpaidRow[]): UnpaidDashboardS
     totalAmountDue: rows.reduce((sum, row) => sum + row.amountDue, 0),
     studentCount: rows.length,
     overdueLineCount: rows.filter((row) => row.daysLate > 0).length,
-    currency: rows[0]?.currency ?? "USD",
+    currency: rows[0]?.currency ? String(rows[0].currency).trim().toUpperCase() : "",
     byClass: [...byClassMap.entries()]
       .map(([className, stats]) => ({
         className,

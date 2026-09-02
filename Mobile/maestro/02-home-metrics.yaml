@@ -1,0 +1,36 @@
+appId: com.somafrik.app
+---
+- runFlow: flows/login-admin-school.yaml
+- waitForAnimationToEnd
+- extendedWaitUntil:
+    visible:
+      id: "home-users-value"
+    timeout: 25000
+- extendedWaitUntil:
+    visible:
+      id: "home-presence-value"
+    timeout: 25000
+- extendedWaitUntil:
+    visible:
+      id: "home-payments-value"
+    timeout: 25000
+# 0 est une valeur métier légitime. Interdit : assertNotVisible "0".
+# loading (—) et erreur (Indisponible) ne sont pas un succès hydraté.
+- retry:
+    maxRetries: 8
+    commands:
+      - copyTextFrom:
+          id: "home-users-value"
+      - assertTrue: "${!maestro.copiedText.startsWith('—') && !maestro.copiedText.includes('Indisponible')}"
+- retry:
+    maxRetries: 8
+    commands:
+      - copyTextFrom:
+          id: "home-presence-value"
+      - assertTrue: "${!maestro.copiedText.startsWith('—') && !maestro.copiedText.includes('Indisponible')}"
+- retry:
+    maxRetries: 8
+    commands:
+      - copyTextFrom:
+          id: "home-payments-value"
+      - assertTrue: "${!maestro.copiedText.startsWith('—') && !maestro.copiedText.includes('Indisponible')}"

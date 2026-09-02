@@ -1,21 +1,25 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, type ComponentType } from "react";
 import {
   ActivityIndicator,
-  Alert,
   Image,
+  KeyboardAvoidingView,
   Modal,
+  Platform,
+  ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
+import FormField from "../components/FormField";
 import { Ionicons } from "@expo/vector-icons";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { RootStackParamList } from "../navigation/AppNavigator";
-import { IdentifyResponse, changePassword, identifyAccount, login, LoginResponse } from "../services/api";
+import { IdentifyResponse, changePassword, identifyAccount, login, persistAuthenticatedSession, LoginResponse } from "../services/api";
 import { useAuth } from "../context/AuthContext";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { shouldShowDemoLogin } from "../config/env";
+import { DATA_TRUTH_TEST_IDS } from "../lib/dataTruth";
 import {
   LOGIN_SCREEN_COPY,
   LOGIN_TEST_IDS,
@@ -26,13 +30,33 @@ import {
   resolveIdentifierKeyboardType,
   resolveSecretKeyboardType,
 } from "../lib/loginScreenSpec";
+import {
+  buildMobileLoginPayload,
+  isPlatformMobileRole,
+  platformLoginSubtitle,
+  platformLoginTitle,
+} from "../lib/platformLogin";
 import { MOBILE_ACCESSIBILITY_COPY } from "../lib/mobileAccessibilitySpec";
+import KeyboardAwareScreen from "../components/KeyboardAwareScreen";
+import { USABILITY_TEST_IDS } from "../lib/mobileUsability";
 
 type Props = NativeStackScreenProps<RootStackParamList, "Login">;
 const somafrikLogo = require("../../assets/somafrik-logo.png");
 
+type DemoLoginButtonsComponent = ComponentType<{
+  accessRole?: string;
+  onFill: (identifier: string, pin: string) => void;
+}>;
+
+/** Metro DCE production : ce require disparaît quand `__DEV__` est false. */
+let DemoLoginButtons: DemoLoginButtonsComponent | null = null;
+if (__DEV__) {
+  DemoLoginButtons = require("../components/DemoLoginButtons").default;
+}
+
 export default function LoginScreen({ navigation, route }: Props) {
-  const { school, accessIdentifier, accessRole, accessRoleLabel } = route.params;
+  const { school, platformContext, accessIdentifier, accessRole, accessRoleLabel } = route.params;
+  const isPlatformLogin = Boolean(platformContext) || isPlatformMobileRole(accessRole);
   const [identifier, setIdentifier] = useState(accessIdentifier ?? "");
   const [password, setPassword] = useState("");
   const [identity, setIdentity] = useState<IdentifyResponse | null>(
@@ -45,6 +69,8 @@ export default function LoginScreen({ navigation, route }: Props) {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [isChangingPassword, setIsChangingPassword] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [passwordChangeError, setPasswordChangeError] = useState<string | null>(null);
+  const [passwordFieldErrors, setPasswordFieldErrors] = useState<Record<string, string>>({});
   const { setSession } = useAuth();
 
   useEffect(() => {
@@ -57,7 +83,7 @@ export default function LoginScreen({ navigation, route }: Props) {
     setIdentity(null);
     setErrorMessage(null);
 
-    if (normalizedIdentifier.length < 3) {
+    if (normalizedIdentifier.length < 3 || isPlatformLogin || !school) {
       return;
     }
 
@@ -82,7 +108,7 @@ export default function LoginScreen({ navigation, route }: Props) {
     }, 450);
 
     return () => clearTimeout(timeout);
-  }, [accessRole, accessRoleLabel, identifier, school.code]);
+  }, [accessRole, accessRoleLabel, identifier, isPlatformLogin, school]);
 
   const handleLogin = async () => {
     if (!identifier.trim() || !password.trim()) {
@@ -99,21 +125,26 @@ export default function LoginScreen({ navigation, route }: Props) {
     setErrorMessage(null);
 
     try {
-      const session = await login({
-        role: identity.role,
-        schoolCode: school.code,
-        identifier: identifier.trim(),
-        pin: password.trim(),
-      });
+      const session = await login(
+        buildMobileLoginPayload({
+          role: identity.role,
+          identifier: identifier.trim(),
+          pin: password.trim(),
+          schoolCode: school?.code,
+          platformContext,
+        }),
+      );
 
       if (session.user.mustChangePassword) {
         setPendingSession(session);
         setNewPassword("");
         setConfirmPassword("");
+        setPasswordFieldErrors({});
+        setPasswordChangeError(null);
         return;
       }
 
-      completeLogin(session);
+      await completeLogin(session);
     } catch (error) {
       setErrorMessage(
         mapLoginApiError(error instanceof Error ? error.message : "", identity?.role),
@@ -123,45 +154,55 @@ export default function LoginScreen({ navigation, route }: Props) {
     }
   };
 
-  const fillDemo = (demo: "country_admin" | "school_admin" | "prefet" | "secretary" | "teacher" = "teacher") => {
-    if (!accessRole) {
-      setIdentifier(
-        demo === "country_admin"
-          ? "admin-rdc"
-          : demo === "school_admin"
-            ? "admin"
-            : demo === "prefet"
-              ? "prefet"
-              : demo === "secretary"
-                ? "secretaire"
-                : "ENS-0001"
-      );
-    }
-    setPassword("1234");
+  const completeLogin = async (session: LoginResponse) => {
+    const safe = await persistAuthenticatedSession({
+      ...session,
+      user: {
+        ...session.user,
+        mustChangePassword: false,
+      },
+    });
+    setSession(safe);
+    navigation.navigate("Home", {
+      role: safe.role,
+    });
   };
 
-  const completeLogin = (session: LoginResponse) => {
-    setSession(session);
-    navigation.navigate("Home", {
-      role: session.role,
+  const clearPasswordFieldError = (key: string) => {
+    setPasswordFieldErrors((current) => {
+      if (!current[key]) return current;
+      const next = { ...current };
+      delete next[key];
+      return next;
     });
   };
 
   const submitNewPassword = async () => {
-    if (!pendingSession) return;
-    if (newPassword.trim().length < 6) {
-      Alert.alert("Mot de passe trop court", "Le nouveau mot de passe doit contenir au moins 6 caractères.");
-      return;
+    if (!pendingSession || isChangingPassword) return;
+
+    const nextPassword = newPassword.trim();
+    const confirmation = confirmPassword.trim();
+    const nextErrors: Record<string, string> = {};
+    if (nextPassword.length < 6) {
+      nextErrors.newPassword = "Le nouveau mot de passe doit contenir au moins 6 caractères.";
     }
-    if (newPassword.trim() !== confirmPassword.trim()) {
-      Alert.alert("Confirmation incorrecte", "Les deux mots de passe ne correspondent pas.");
+    if (!confirmation) {
+      nextErrors.confirmPassword = "La confirmation du mot de passe est obligatoire.";
+    } else if (nextPassword && nextPassword !== confirmation) {
+      nextErrors.confirmPassword = "Les deux mots de passe ne correspondent pas.";
+    }
+    if (Object.keys(nextErrors).length) {
+      setPasswordFieldErrors(nextErrors);
+      setPasswordChangeError(null);
       return;
     }
 
     setIsChangingPassword(true);
+    setPasswordFieldErrors({});
+    setPasswordChangeError(null);
     try {
-      const response = await changePassword(newPassword.trim());
-      completeLogin({
+      const response = await changePassword(nextPassword);
+      await completeLogin({
         ...pendingSession,
         user: {
           ...pendingSession.user,
@@ -170,8 +211,9 @@ export default function LoginScreen({ navigation, route }: Props) {
         },
       });
       setPendingSession(null);
+      setPasswordFieldErrors({});
     } catch (error) {
-      Alert.alert("Modification impossible", error instanceof Error ? error.message : "Veuillez réessayer.");
+      setPasswordChangeError(error instanceof Error ? error.message : "Modification impossible. Réessayez.");
     } finally {
       setIsChangingPassword(false);
     }
@@ -183,27 +225,37 @@ export default function LoginScreen({ navigation, route }: Props) {
 
   return (
     <SafeAreaView
-      style={styles.container}
+      style={styles.safe}
       edges={["top", "bottom"]}
       testID={LOGIN_TEST_IDS.screen}
       accessible
       accessibilityLabel={MOBILE_ACCESSIBILITY_COPY.loginScreenLabel}
     >
+      <KeyboardAwareScreen
+        testID={USABILITY_TEST_IDS.loginKeyboardScroll}
+        contentContainerStyle={styles.container}
+      >
       <View style={styles.schoolLogo} testID={LOGIN_TEST_IDS.schoolLogo}>
-        {school.logoUrl ? (
+        {school?.logoUrl ? (
           <Image source={{ uri: school.logoUrl }} style={styles.schoolLogoImage} />
         ) : (
           <Image source={somafrikLogo} style={styles.schoolLogoImage} />
         )}
       </View>
-      <Text style={styles.title} testID={LOGIN_TEST_IDS.schoolName}>{school.name}</Text>
-      <Text style={styles.subtitle}>{school.city} • {school.code}</Text>
+      <Text style={styles.title} testID={LOGIN_TEST_IDS.schoolName}>
+        {school?.name ?? platformLoginTitle(platformContext)}
+      </Text>
+      <Text style={styles.subtitle}>
+        {school ? `${school.city} • ${school.code}` : platformLoginSubtitle(platformContext)}
+      </Text>
 
       <Text style={styles.instructionText} testID={LOGIN_TEST_IDS.instructionText}>
         {LOGIN_SCREEN_COPY.identifierHint}
       </Text>
 
-      <TextInput
+      <FormField
+        label={LOGIN_SCREEN_COPY.identifierLabel}
+        required
         placeholder={LOGIN_SCREEN_COPY.identifierPlaceholder}
         value={identifier}
         onChangeText={(value) => {
@@ -214,10 +266,11 @@ export default function LoginScreen({ navigation, route }: Props) {
         keyboardType={identifierKeyboard}
         textContentType={identifierKeyboard === "email-address" ? "emailAddress" : "username"}
         autoComplete={identifierKeyboard === "email-address" ? "email" : "username"}
-        style={styles.input}
+        returnKeyType="next"
         editable={!accessRole}
         testID={LOGIN_TEST_IDS.identifierInput}
-        accessibilityLabel={LOGIN_SCREEN_COPY.identifierPlaceholder}
+        accessibilityLabel={LOGIN_SCREEN_COPY.identifierLabel}
+        containerStyle={styles.field}
       />
 
       <View style={styles.roleRow}>
@@ -240,7 +293,14 @@ export default function LoginScreen({ navigation, route }: Props) {
       </View>
 
       {identity && (
-        <TextInput
+        <FormField
+          label={
+            identity.role === "parent_student" || identity.role === "student"
+              ? LOGIN_SCREEN_COPY.pinLabel
+              : LOGIN_SCREEN_COPY.passwordLabel
+          }
+          required
+          type="password"
           placeholder={
             identity.role === "parent_student" || identity.role === "student"
               ? LOGIN_SCREEN_COPY.pinPlaceholder
@@ -251,17 +311,20 @@ export default function LoginScreen({ navigation, route }: Props) {
             setPassword(value);
             setErrorMessage(null);
           }}
-          secureTextEntry
           keyboardType={secretKeyboard}
           textContentType="password"
           autoComplete="password"
-          style={styles.input}
+          returnKeyType="go"
+          onSubmitEditing={() => {
+            if (loginReady) void handleLogin();
+          }}
           testID={LOGIN_TEST_IDS.passwordInput}
           accessibilityLabel={
             identity.role === "parent_student" || identity.role === "student"
-              ? LOGIN_SCREEN_COPY.pinPlaceholder
-              : LOGIN_SCREEN_COPY.passwordPlaceholder
+              ? LOGIN_SCREEN_COPY.pinLabel
+              : LOGIN_SCREEN_COPY.passwordLabel
           }
+          containerStyle={styles.field}
         />
       )}
 
@@ -276,7 +339,7 @@ export default function LoginScreen({ navigation, route }: Props) {
         style={[styles.loginButton, !loginReady && styles.loginButtonDisabled]}
         onPress={handleLogin}
         disabled={!loginReady}
-        testID={LOGIN_TEST_IDS.loginButton}
+        testID={USABILITY_TEST_IDS.loginSubmit}
         accessibilityRole="button"
         accessibilityLabel={LOGIN_SCREEN_COPY.loginButton}
         accessibilityState={{ disabled: !loginReady, busy: isLoading }}
@@ -288,63 +351,101 @@ export default function LoginScreen({ navigation, route }: Props) {
         )}
       </TouchableOpacity>
 
-      <TouchableOpacity style={styles.demoButton} onPress={() => fillDemo("teacher")}>
-        <Text style={styles.demoButtonText}>Remplir un compte enseignant demo</Text>
-      </TouchableOpacity>
-      <TouchableOpacity style={styles.demoButton} onPress={() => fillDemo("school_admin")}>
-        <Text style={styles.demoButtonText}>Remplir admin établissement demo</Text>
-      </TouchableOpacity>
-      <TouchableOpacity style={styles.demoButton} onPress={() => fillDemo("prefet")}>
-        <Text style={styles.demoButtonText}>Remplir préfet des études demo</Text>
-      </TouchableOpacity>
-      <TouchableOpacity style={styles.demoButton} onPress={() => fillDemo("secretary")}>
-        <Text style={styles.demoButtonText}>Remplir secrétaire demo</Text>
-      </TouchableOpacity>
-      <TouchableOpacity style={styles.demoButton} onPress={() => fillDemo("country_admin")}>
-        <Text style={styles.demoButtonText}>Remplir admin pays demo</Text>
-      </TouchableOpacity>
+      {__DEV__ && DemoLoginButtons && shouldShowDemoLogin() ? (
+        <DemoLoginButtons
+          accessRole={accessRole}
+          onFill={(identifier, pin) => {
+            if (identifier) setIdentifier(identifier);
+            setPassword(pin);
+          }}
+        />
+      ) : null}
+      </KeyboardAwareScreen>
 
       <Modal visible={Boolean(pendingSession)} transparent animationType="fade">
-        <View style={styles.modalBackdrop}>
-          <View style={styles.passwordCard} testID="login-password-change-modal">
-            <Text style={styles.passwordTitle}>Nouveau mot de passe</Text>
-            <Text style={styles.passwordHint}>
-              Votre mot de passe temporaire a été accepté. Choisissez maintenant votre mot de passe personnel.
-            </Text>
-            <TextInput
-              placeholder="Nouveau mot de passe"
-              value={newPassword}
-              onChangeText={setNewPassword}
-              secureTextEntry
-              style={styles.input}
-            />
-            <TextInput
-              placeholder="Confirmer le mot de passe"
-              value={confirmPassword}
-              onChangeText={setConfirmPassword}
-              secureTextEntry
-              style={styles.input}
-            />
-            <TouchableOpacity
-              style={[styles.loginButton, isChangingPassword && styles.loginButtonDisabled]}
-              onPress={submitNewPassword}
-              disabled={isChangingPassword}
-            >
-              {isChangingPassword ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.loginButtonText}>Valider</Text>}
-            </TouchableOpacity>
-          </View>
-        </View>
+        <KeyboardAvoidingView
+          style={styles.modalBackdrop}
+          behavior={Platform.OS === "ios" ? "padding" : "padding"}
+        >
+          <ScrollView
+            keyboardShouldPersistTaps="handled"
+            contentContainerStyle={styles.modalScroll}
+          >
+            <View style={styles.passwordCard} testID={DATA_TRUTH_TEST_IDS.passwordChangeModal}>
+              <Text style={styles.passwordTitle}>Nouveau mot de passe</Text>
+              <Text style={styles.passwordHint}>
+                Votre mot de passe temporaire a été accepté. Choisissez maintenant votre mot de passe personnel.
+              </Text>
+              <FormField
+                label={LOGIN_SCREEN_COPY.newPasswordLabel}
+                required
+                type="password"
+                placeholder="Ex. mot de passe personnel"
+                value={newPassword}
+                onChangeText={(value) => {
+                  setNewPassword(value);
+                  clearPasswordFieldError("newPassword");
+                  setPasswordChangeError(null);
+                }}
+                error={passwordFieldErrors.newPassword}
+                textContentType="newPassword"
+                autoComplete="password-new"
+                editable={!isChangingPassword}
+                accessibilityLabel={LOGIN_SCREEN_COPY.newPasswordLabel}
+              />
+              <FormField
+                label={LOGIN_SCREEN_COPY.confirmPasswordLabel}
+                required
+                type="password"
+                placeholder="Ex. retaper le mot de passe"
+                value={confirmPassword}
+                onChangeText={(value) => {
+                  setConfirmPassword(value);
+                  clearPasswordFieldError("confirmPassword");
+                  setPasswordChangeError(null);
+                }}
+                error={passwordFieldErrors.confirmPassword}
+                textContentType="password"
+                editable={!isChangingPassword}
+                accessibilityLabel={LOGIN_SCREEN_COPY.confirmPasswordLabel}
+              />
+              {passwordChangeError ? (
+                <View style={styles.errorBanner} accessibilityRole="alert">
+                  <Text style={styles.errorText}>{passwordChangeError}</Text>
+                </View>
+              ) : null}
+              <TouchableOpacity
+                style={[styles.loginButton, isChangingPassword && styles.loginButtonDisabled]}
+                onPress={() => void submitNewPassword()}
+                disabled={isChangingPassword}
+                accessibilityRole="button"
+                accessibilityLabel="Valider le nouveau mot de passe"
+                accessibilityState={{ busy: isChangingPassword, disabled: isChangingPassword }}
+              >
+                {isChangingPassword ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.loginButtonText}>Valider</Text>}
+              </TouchableOpacity>
+            </View>
+          </ScrollView>
+        </KeyboardAvoidingView>
       </Modal>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  safe: {
     flex: 1,
-    justifyContent: "center",
+    backgroundColor: "#FFFFFF",
+  },
+  container: {
+    flexGrow: 1,
+    justifyContent: "flex-start",
     alignItems: "center",
+    alignSelf: "center",
+    width: "100%",
+    maxWidth: 480,
     padding: 20,
+    paddingTop: 24,
     backgroundColor: "#FFFFFF",
   },
   schoolLogo: {
@@ -387,16 +488,9 @@ const styles = StyleSheet.create({
     marginBottom: 14,
     textAlign: "center",
   },
-  input: {
+  field: {
     width: "100%",
-    minHeight: MIN_TOUCH_TARGET,
-    borderWidth: 1,
-    borderColor: "#E2E8F0",
-    borderRadius: 14,
-    padding: 13,
     marginBottom: 14,
-    color: "#0F172A",
-    fontWeight: "800",
   },
   roleRow: {
     width: "100%",
@@ -486,6 +580,9 @@ const styles = StyleSheet.create({
   modalBackdrop: {
     flex: 1,
     backgroundColor: "rgba(15, 23, 42, 0.45)",
+  },
+  modalScroll: {
+    flexGrow: 1,
     justifyContent: "center",
     padding: 24,
   },

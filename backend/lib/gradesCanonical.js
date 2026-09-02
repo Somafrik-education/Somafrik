@@ -100,6 +100,21 @@ function isLockedEvaluationStatus(value) {
   return status === "locked" || status === "published" || status === "archived";
 }
 
+/** UI « Validée » = PostgreSQL `locked`. La validation direction n'ouvre plus la saisie. */
+function isValidatedEvaluationStatus(value) {
+  return toEvaluationStatus(value, "") === "locked";
+}
+
+/**
+ * NOTES-P1 : l'enseignant saisit sur brouillon / ouverte / validée (locked).
+ * Publiée et annulée restent fermées. Créer une note ≠ valider / publier.
+ */
+function evaluationStatusAllowsGradeWrite(status, active = true) {
+  if (active === false || active === 0) return false;
+  const canonical = toEvaluationStatus(status, "");
+  return canonical === "draft" || canonical === "open" || canonical === "locked";
+}
+
 /**
  * Valide score / statut / barème / coefficient.
  * @returns {string|null} message d'erreur ou null
@@ -241,6 +256,8 @@ module.exports = {
   fromGradeStatus,
   isPublishedEvaluationStatus,
   isLockedEvaluationStatus,
+  isValidatedEvaluationStatus,
+  evaluationStatusAllowsGradeWrite,
   validateGradeContract,
   validateEvaluationContract,
   normalizedScore,

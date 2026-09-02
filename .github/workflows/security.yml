@@ -1,122 +1,24 @@
-name: Security
+name: Security Nightly
 
 on:
-  pull_request:
-    branches: [develop, main]
-  push:
-    branches: [develop, main]
+  schedule:
+    - cron: "15 3 * * *"
+  workflow_dispatch:
 
 concurrency:
-  group: security-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: security-nightly
+  cancel-in-progress: false
 
 env:
   NODE_VERSION: "22.12.0"
+  DATABASE_URL: postgresql://somafrik:somafrik123@localhost:5432/somafrik
   GITLEAKS_VERSION: "8.24.3"
 
 jobs:
-  secrets:
-    name: Secrets
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Install Gitleaks ${{ env.GITLEAKS_VERSION }}
-        run: |
-          set -euo pipefail
-          curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" \
-            | tar -xz gitleaks
-          sudo install -m 0755 gitleaks /usr/local/bin/gitleaks
-          gitleaks version
-
-      - name: Scan repository for secrets
-        run: gitleaks detect --source . --verbose --redact --exit-code 1
-
   security:
-    name: Security
+    name: Security deep scan
     runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Node ${{ env.NODE_VERSION }}
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: npm
-          cache-dependency-path: |
-            package-lock.json
-            backend/package-lock.json
-            web/package-lock.json
-            Mobile/package-lock.json
-
-      - name: Install dependencies (npm ci)
-        run: npm run ci:install
-
-      - name: verify:db-config
-        run: npm run verify:db-config
-
-      - name: verify:mobile-security
-        run: npm run verify:mobile-security
-
-  typescript:
-    name: TypeScript
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Node ${{ env.NODE_VERSION }}
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: npm
-          cache-dependency-path: |
-            package-lock.json
-            backend/package-lock.json
-            web/package-lock.json
-            Mobile/package-lock.json
-
-      - name: Install dependencies (npm ci)
-        run: npm run ci:install
-
-      - name: Backend + Web + Mobile typecheck
-        run: npm run typecheck
-
-      - name: Mobile tsc --noEmit
-        working-directory: Mobile
-        run: npx tsc --noEmit
-
-  lint:
-    name: Lint
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Node ${{ env.NODE_VERSION }}
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: npm
-          cache-dependency-path: |
-            package-lock.json
-            backend/package-lock.json
-            web/package-lock.json
-            Mobile/package-lock.json
-
-      - name: Install dependencies (npm ci)
-        run: npm run ci:install
-
-      - name: Lint (fail on error)
-        run: npm run lint
-
-  tests:
-    name: Tests
-    runs-on: ubuntu-latest
+    timeout-minutes: 45
     services:
       postgres:
         image: postgres:16
@@ -132,11 +34,19 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Node ${{ env.NODE_VERSION }}
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@v4
+        with:
+          ref: develop
+          fetch-depth: 0
+      - name: Install Gitleaks
+        run: |
+          set -euo pipefail
+          curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" \
+            | tar -xz gitleaks
+          sudo install -m 0755 gitleaks /usr/local/bin/gitleaks
+      - name: Full secrets scan
+        run: gitleaks detect --source . --verbose --redact --exit-code 1
+      - uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
@@ -145,56 +55,27 @@ jobs:
             backend/package-lock.json
             web/package-lock.json
             Mobile/package-lock.json
-
-      - name: Install dependencies (npm ci)
+      - name: Install dependencies
         run: npm run ci:install
-
-      - name: Existing automated verify suite (fail-fast)
+      - name: Dependency audit
+        run: npm run audit:ci
+      - name: Security invariants
         run: |
           set -euo pipefail
+          npm run verify:v2-foundation
           npm run verify:jwt-header
           npm run verify:rbac-s1-4
           npm run verify:sanitize-user-responses
           npm run verify:db-config
+          npm run verify:sync-contacts-removed
           npm run verify:mobile-security
-          npm run verify:notes-sync
-          npm run verify:students-sync
-          npm run verify:pre-e1-hotfix-02
-          node backend/lib/backofficeDedupe.teachers.test.js
-          npm run check
-          npm --prefix web test -- --run src/lib/syncOutbox.test.ts src/lib/backofficeStateMerge.test.ts
-
-      - name: Bootstrap runtime guard (PostgreSQL préprod-like)
+          npm run verify:functional-rbac
+      - name: Runtime bootstrap security
         env:
           NODE_ENV: test
           JWT_SECRET: ci-test-secret-with-enough-length-for-production-checks
-          DATABASE_URL: postgresql://somafrik:somafrik123@localhost:5432/somafrik
           SOMAFRIK_DB_REQUIRED: "true"
           SOMAFRIK_SKIP_DEMO_SEED: "true"
           SOMAFRIK_BOOTSTRAP_REQUIRED: "true"
           SOMAFRIK_BOOTSTRAP_PORT: "5058"
         run: npm run verify:runtime-bootstrap
-
-  audit:
-    name: Audit
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Node ${{ env.NODE_VERSION }}
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: npm
-          cache-dependency-path: |
-            package-lock.json
-            backend/package-lock.json
-            web/package-lock.json
-            Mobile/package-lock.json
-
-      - name: Install dependencies (npm ci)
-        run: npm run ci:install
-
-      - name: npm audit (report + fail on critical)
-        run: npm run audit:ci

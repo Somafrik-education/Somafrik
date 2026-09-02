@@ -31,13 +31,19 @@ const baseCourse: CourseScheduleSlot = {
   periodName: "Trimestre 1",
   periodStart: "10-09-2026",
   periodEnd: "23-12-2026",
+  dayOfWeek: 1,
+  startTime: "10:00",
+  endTime: "11:00",
 };
 
 function testWeeklyRecurrence() {
   const occurrences = expandScheduleOccurrences(baseCourse);
   assert(occurrences.length >= 10, `Récurrence hebdo : attendu ≥10 occurrences, reçu ${occurrences.length}`);
-  const mondays = occurrences.filter((row) => new Date(row.start).getDay() === 1);
-  assert(mondays.length === occurrences.length, "Toutes les occurrences doivent être un lundi");
+  const mondays = occurrences.filter((row) => {
+    const js = new Date(row.start).getDay();
+    return js === 1;
+  });
+  assert(mondays.length === occurrences.length, "Toutes les occurrences doivent être un lundi (dayOfWeek canonique)");
   const first = new Date(occurrences[0].start);
   assert(first >= new Date("2026-09-10"), "Première occurrence après le début de période");
   const last = new Date(occurrences[occurrences.length - 1].start);
@@ -135,18 +141,36 @@ function testExamSingleOccurrence() {
   assert(occurrences.length === 1, "Examen = une seule occurrence");
 }
 
-function testValidationRequiresPeriodForCourse() {
-  const noPeriod: CourseScheduleSlot = {
+function testValidationRequiresWeeklyOrPeriod() {
+  const weeklyOk: CourseScheduleSlot = {
     ...baseCourse,
     periodStart: undefined,
     periodEnd: undefined,
   };
-  const issues = validatePlanningSlotBusinessRules([], noPeriod, {
+  const weeklyIssues = validatePlanningSlotBusinessRules([], weeklyOk, {
     allowedSubjects: ["Mathématiques"],
   });
   assert(
-    issues.some((row) => row.includes("période")),
-    "Cours sans période doit être refusé",
+    !weeklyIssues.some((row) => row.includes("période") || row.includes("jour 1–7")),
+    "Un créneau weekly dayOfWeek+TIME ne doit pas exiger une période",
+  );
+
+  const neither: CourseScheduleSlot = {
+    ...baseCourse,
+    periodStart: undefined,
+    periodEnd: undefined,
+    dayOfWeek: undefined,
+    startTime: undefined,
+    endTime: undefined,
+    start: "",
+    end: "",
+  };
+  const issues = validatePlanningSlotBusinessRules([], neither, {
+    allowedSubjects: ["Mathématiques"],
+  });
+  assert(
+    issues.some((row) => row.includes("jour 1–7") || row.includes("période")),
+    "Cours sans règle weekly ni période doit être refusé",
   );
 }
 
@@ -354,7 +378,7 @@ const checks = [
   ["Conflit horaire même classe", testClassTimeConflict],
   ["Chevauchement enseignant (double réservation)", testTeacherTimeConflict],
   ["Examen ponctuel", testExamSingleOccurrence],
-  ["Cours sans période refusé", testValidationRequiresPeriodForCourse],
+  ["Cours sans règle weekly ni période refusé", testValidationRequiresWeeklyOrPeriod],
   ["Réparation encodage UTF-8", testEncodingRepair],
   ["Réparation legacy (période + dédoublonnage)", testRepairLegacySlots],
   ["Import affectations → planning", testImportPedagogyLinks],

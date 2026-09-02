@@ -24,6 +24,7 @@ const {
   scopeMvpDatasetForPrincipal,
 } = require("../lib/mvpAccess");
 const { TenantScopeService } = require("../services/tenantScopeService");
+const { assertBackOfficeStateWriteRemoved } = require("../lib/backofficeStatePutExpectation");
 
 function runMatrixUnitTests() {
   const admin = { role: "Admin School", schoolCode: "CD-2026-0001" };
@@ -31,10 +32,19 @@ function runMatrixUnitTests() {
   const accountant = { role: "Comptable", schoolCode: "CD-2026-0001" };
   const allEntities = ["students", "users", "notes", "payments", "auditLog"];
 
-  assert.ok(ADMIN_SCHOOL_WRITABLE_ENTITIES.includes("users"));
-  assert.ok(ADMIN_SCHOOL_WRITABLE_ENTITIES.includes("notes"));
-  assert.ok(SECRETARY_WRITABLE_ENTITIES.includes("students"));
-  assert.ok(SECRETARY_WRITABLE_ENTITIES.includes("payments"));
+  assert.ok(!ADMIN_SCHOOL_WRITABLE_ENTITIES.includes("users"));
+  assert.ok(!ADMIN_SCHOOL_WRITABLE_ENTITIES.includes("contacts"));
+  assert.ok(!ADMIN_SCHOOL_WRITABLE_ENTITIES.includes("relations"));
+  assert.ok(!ADMIN_SCHOOL_WRITABLE_ENTITIES.includes("messages"));
+  assert.ok(!ADMIN_SCHOOL_WRITABLE_ENTITIES.includes("announcements"));
+  assert.ok(!ADMIN_SCHOOL_WRITABLE_ENTITIES.includes("notes"));
+  assert.ok(!ADMIN_SCHOOL_WRITABLE_ENTITIES.includes("presences"));
+  assert.ok(!ADMIN_SCHOOL_WRITABLE_ENTITIES.includes("courses"));
+  assert.ok(!ADMIN_SCHOOL_WRITABLE_ENTITIES.includes("evaluations"));
+  assert.ok(!ADMIN_SCHOOL_WRITABLE_ENTITIES.includes("students"));
+  assert.ok(!SECRETARY_WRITABLE_ENTITIES.includes("students"));
+  assert.ok(!PREFET_WRITABLE_ENTITIES.includes("students"));
+  assert.ok(!SECRETARY_WRITABLE_ENTITIES.includes("payments"));
   assert.ok(!SECRETARY_WRITABLE_ENTITIES.includes("notes"));
   assert.ok(!SECRETARY_WRITABLE_ENTITIES.includes("users"));
   assert.ok(!SECRETARY_WRITABLE_ENTITIES.includes("feeGrids"));
@@ -74,7 +84,11 @@ function runMatrixUnitTests() {
 
   assert.deepStrictEqual(
     evaluateBackOfficeWriteAccess(secretary, ["students", "payments"]).ok,
-    true,
+    false,
+  );
+  assert.deepStrictEqual(
+    evaluateBackOfficeWriteAccess(secretary, ["payments"]).ok,
+    false,
   );
   assert.deepStrictEqual(
     evaluateBackOfficeWriteAccess(secretary, ["notes"]).ok,
@@ -82,7 +96,7 @@ function runMatrixUnitTests() {
   );
   assert.deepStrictEqual(
     evaluateBackOfficeWriteAccess(accountant, ["payments", "studentFees"]).ok,
-    true,
+    false,
   );
   assert.deepStrictEqual(
     evaluateBackOfficeWriteAccess(accountant, ["users"]).ok,
@@ -94,7 +108,7 @@ function runMatrixUnitTests() {
   );
   assert.deepStrictEqual(
     evaluateBackOfficeWriteAccess(admin, ["users", "notes", "feeGrids"]).ok,
-    true,
+    false,
   );
 
   // Pas d'élargissement Secrétaire / Comptable vs Admin School
@@ -261,38 +275,48 @@ async function runHttpTestsIfAvailable() {
     mustChangePassword: false,
     permissions: ["Gérer paiements", "Voir rapports financiers", "Paiements:CREATE", "Paiements:UPDATE"],
   };
-  const putComptable = await request("/backoffice/state", {
-    method: "PUT",
+  const createComptable = await request("/backoffice/users", {
+    method: "POST",
     token: schoolAdmin.accessToken,
     body: {
-      users: [...(state.users ?? []).filter((u) => u.id !== comptableUser.id), comptableUser],
+      firstName: comptableUser.firstName,
+      lastName: comptableUser.lastName,
+      email: comptableUser.email,
+      status: comptableUser.status,
+      temporaryPassword: comptableUser.temporaryPassword,
     },
   });
-  assert.ok(putComptable.status >= 200 && putComptable.status < 300, `create comptable: ${putComptable.status}`);
-
-  const accountant = await login("comptable-s14", "Soma1234", "CD-2026-0001");
-
-  // A1 — Admin School : modification autorisée (students)
-  const adminOk = await request("/backoffice/state", {
-    method: "PUT",
+  assert.strictEqual(createComptable.status, 201, `create comptable: ${createComptable.status}`);
+  const grantComptable = await request(`/backoffice/users/${createComptable.data.id}/roles/grant`, {
+    method: "POST",
     token: schoolAdmin.accessToken,
-    body: {
-      students: state.students ?? [],
-    },
+    body: { role: comptableUser.role },
   });
-  assert.ok(adminOk.status >= 200 && adminOk.status < 300, `Admin School students write: ${adminOk.status}`);
+  assert.strictEqual(grantComptable.status, 200, `grant comptable: ${JSON.stringify(grantComptable.data)}`);
 
-  // A2 — Secrétaire : domaine autorisé (students)
-  const secOk = await request("/backoffice/state", {
-    method: "PUT",
-    token: secretary.accessToken,
-    body: {
-      students: state.students ?? [],
-    },
-  });
-  assert.ok(secOk.status >= 200 && secOk.status < 300, `Secrétaire students write: ${secOk.status}`);
+  const accountant = await login(comptableUser.email, "Soma1234", "CD-2026-0001");
 
-  // A3 — Secrétaire : domaine interdit (notes) → 403
+  // A1/A2 — LOT 2 : toute présence de students est refusée avant la matrice RBAC.
+  for (const [label, token] of [
+    ["Admin School", schoolAdmin.accessToken],
+    ["Secrétaire", secretary.accessToken],
+  ]) {
+    const legacyStudentsPut = await request("/backoffice/state", {
+      method: "PUT",
+      token,
+      body: {
+        students: state.students ?? [],
+      },
+    });
+    assert.strictEqual(legacyStudentsPut.status, 400, `${label} students legacy doit être 400`);
+    assert.strictEqual(
+      legacyStudentsPut.data?.code,
+      "LEGACY_STUDENTS_STATE_WRITE_FORBIDDEN",
+      `${label} students legacy code stable`,
+    );
+  }
+
+  // A3 — Secrétaire : notes via PUT state fail-closed (LOT 5)
   const secForbidden = await request("/backoffice/state", {
     method: "PUT",
     token: secretary.accessToken,
@@ -300,9 +324,10 @@ async function runHttpTestsIfAvailable() {
       notes: [{ id: "NOTE-FORBIDDEN", studentId: "1", value: 10, schoolCode: "CD-2026-0001" }],
     },
   });
-  assert.strictEqual(secForbidden.status, 403, "Secrétaire notes doit être 403");
+  assert.strictEqual(secForbidden.status, 400, "Secrétaire notes legacy doit être 400");
+  assert.strictEqual(secForbidden.data?.code, "LEGACY_PEDAGOGY_STATE_WRITE_FORBIDDEN");
 
-  // A4 — Comptable : paiements OK
+  // A4 — Comptable : paiements via PUT state désormais fail-closed (LOT 4)
   const accOk = await request("/backoffice/state", {
     method: "PUT",
     token: accountant.accessToken,
@@ -310,9 +335,10 @@ async function runHttpTestsIfAvailable() {
       payments: state.payments ?? [],
     },
   });
-  assert.ok(accOk.status >= 200 && accOk.status < 300, `Comptable payments write: ${accOk.status}`);
+  assert.strictEqual(accOk.status, 400, `Comptable payments write: ${accOk.status}`);
+  assert.strictEqual(accOk.data?.code, "LEGACY_FINANCE_STATE_WRITE_FORBIDDEN");
 
-  // A5 — Comptable : users interdit → 403
+  // A5 — Comptable : users interdit → 400 LEGACY_CLIENTS (LOT 7)
   const accForbidden = await request("/backoffice/state", {
     method: "PUT",
     token: accountant.accessToken,
@@ -320,7 +346,8 @@ async function runHttpTestsIfAvailable() {
       users: state.users ?? [],
     },
   });
-  assert.strictEqual(accForbidden.status, 403, "Comptable users doit être 403");
+  assert.strictEqual(accForbidden.status, 400, "Comptable users doit être 400 LEGACY_CLIENTS");
+  assert.strictEqual(accForbidden.data?.code, "LEGACY_CLIENTS_STATE_WRITE_FORBIDDEN");
 
   // A5b — auditLog interdit pour les rôles métier
   for (const [label, token] of [
@@ -357,7 +384,12 @@ async function runHttpTestsIfAvailable() {
       students: [...(state.students ?? []), foreignStudent],
     },
   });
-  assert.ok(crossPut.status >= 200 && crossPut.status < 300, "cross put status");
+  assert.strictEqual(crossPut.status, 400, "cross put students legacy doit être refusé");
+  assert.strictEqual(
+    crossPut.data?.code,
+    "LEGACY_STUDENTS_STATE_WRITE_FORBIDDEN",
+    "cross put students legacy code stable",
+  );
 
   // Lecture scoped secrétaire
   const afterCrossScoped = await request("/backoffice/state", { token: secretary.accessToken });
@@ -426,3 +458,4 @@ main().catch((error) => {
   console.error(error);
   process.exit(1);
 });
+

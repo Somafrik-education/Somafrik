@@ -7,7 +7,7 @@ import { usePermissionContext } from "../../lib/usePermissionContext";
 import { canReadView } from "../../lib/permissions";
 import { scopedSchools, scopedUsers } from "../../lib/scope";
 import { scopedStudents } from "../../lib/establishment";
-import { normalize } from "../../lib/format";
+import { displayRoleName, normalize } from "../../lib/format";
 
 interface SearchHit {
   id: string;
@@ -80,7 +80,7 @@ export function GlobalSearch() {
             label:
               `${String(u.firstName ?? "")} ${String(u.lastName ?? "")}`.trim() ||
               String(u.identifier ?? ""),
-            sub: [String(u.identifier ?? ""), String(u.role ?? "")].filter(Boolean).join(" · "),
+            sub: [String(u.identifier ?? ""), displayRoleName(String(u.role ?? ""))].filter(Boolean).join(" · "),
             to: "/etablissement/comptes-utilisateurs",
           }),
         );
@@ -89,7 +89,7 @@ export function GlobalSearch() {
     if (canStudents) {
       (scopedStudents(user, state) as Record<string, unknown>[])
         .filter((s) =>
-          [s.name, s.firstName, s.matricule, s.publicId].some((v) =>
+          [s.name, s.firstName, s.matricule, s.publicId, s.studentCode, s.loginCode, s.identifier].some((v) =>
             normalize(String(v ?? "")).includes(q),
           ),
         )

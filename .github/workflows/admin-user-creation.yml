@@ -1,0 +1,70 @@
+name: Admin User Creation E2E
+
+on:
+  pull_request:
+    branches: [develop]
+    paths:
+      - "backend/server.js"
+      - "backend/db/**"
+      - "backend/lib/*user*"
+      - "backend/lib/*User*"
+      - "backend/lib/*client*"
+      - "backend/lib/*Client*"
+      - "backend/lib/*role*"
+      - "backend/lib/*Role*"
+      - "backend/lib/*identity*"
+      - "backend/lib/*Identity*"
+      - "backend/lib/*login*"
+      - "backend/lib/*Login*"
+      - "backend/scripts/verify-admin-user-creation.js"
+      - "package.json"
+      - "package-lock.json"
+      - "backend/package.json"
+      - "backend/package-lock.json"
+      - ".github/workflows/admin-user-creation.yml"
+  workflow_dispatch:
+
+env:
+  NODE_VERSION: "22.12.0"
+
+jobs:
+  postgres-e2e:
+    name: Admin Pays / Admin School / Utilisateur
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: somafrik
+          POSTGRES_USER: somafrik
+          POSTGRES_PASSWORD: somafrik123
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U somafrik -d somafrik"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            backend/package-lock.json
+
+      - name: Install backend dependencies
+        run: |
+          npm ci
+          npm ci --prefix backend
+
+      - name: Verify admin and user creation against PostgreSQL
+        env:
+          DATABASE_URL: postgresql://somafrik:somafrik123@localhost:5432/somafrik
+          JWT_SECRET: ci-admin-user-e2e-secret-with-enough-length
+        run: node backend/scripts/verify-admin-user-creation.js

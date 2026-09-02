@@ -25,6 +25,7 @@ const managedMobileRoles = {
   Directeur: { role: "principal", roleLabel: "Proviseur" },
   "Préfet des études": { role: "prefet", roleLabel: "Préfet des études" },
   Secrétaire: { role: "secretary", roleLabel: "Secrétaire" },
+  Comptable: { role: "accountant", roleLabel: "Comptable" },
   Enseignant: { role: "teacher", roleLabel: "Enseignant" },
   Parent: { role: "parent_student", roleLabel: "Parent" },
   "Élève / Étudiant": { role: "student", roleLabel: "Élève" },
@@ -82,22 +83,172 @@ function assignmentMatchesTeacher(assignment = {}, teacher = {}, user = {}) {
   return nameKeys.size > 0 && nameKeys.has(normalizeText(assignment.teacherName));
 }
 
+function asAssignmentRef(value) {
+  return String(value ?? "").trim();
+}
+
+function readAssignmentClassId(assignment = {}) {
+  return asAssignmentRef(assignment.classId ?? assignment.class_id);
+}
+
+function readAssignmentClassCode(assignment = {}) {
+  return asAssignmentRef(assignment.classCode ?? assignment.class_code);
+}
+
+function readAssignmentStatus(assignment = {}) {
+  if (Object.hasOwn(assignment, "status")) return assignment.status;
+  if (Object.hasOwn(assignment, "assignmentStatus")) return assignment.assignmentStatus;
+  if (Object.hasOwn(assignment, "assignment_status")) return assignment.assignment_status;
+  return undefined;
+}
+
+function readAssignmentRowId(assignment = {}) {
+  return asAssignmentRef(assignment.id ?? assignment.assignmentId ?? assignment.assignment_id);
+}
+
+function readSubjectIdentity(assignment = {}) {
+  return (
+    asAssignmentRef(assignment.subjectId ?? assignment.subject_id) ||
+    asAssignmentRef(assignment.subjectCode ?? assignment.subject_code) ||
+    asAssignmentRef(assignment.course ?? assignment.subject)
+  );
+}
+
+function readAcademicYearIdentity(assignment = {}) {
+  return asAssignmentRef(
+    assignment.academicYearId ??
+      assignment.academic_year_id ??
+      assignment.academicYear ??
+      assignment.academic_year_name,
+  );
+}
+
+function readAssignmentRoleIdentity(assignment = {}) {
+  return asAssignmentRef(assignment.assignmentRole ?? assignment.assignment_role);
+}
+
+function readClassIdentityKey(assignment = {}) {
+  const classId = readAssignmentClassId(assignment);
+  if (classId) return `id:${classId}`;
+  const classCode = readAssignmentClassCode(assignment);
+  if (classCode) return `code:${classCode}`;
+  return "";
+}
+
+/**
+ * Clé d'affectation sans id : classe + matière + année + rôle
+ * (aligné sur uq_teacher_assignments_active_tuple). Jamais className seul.
+ */
+function assignmentCompositeKey(assignment = {}) {
+  const classKey = readClassIdentityKey(assignment);
+  if (!classKey) return "";
+  return [
+    `cls:${classKey}`,
+    `subj:${normalizeText(readSubjectIdentity(assignment))}`,
+    `year:${normalizeText(readAcademicYearIdentity(assignment))}`,
+    `role:${normalizeText(readAssignmentRoleIdentity(assignment))}`,
+  ].join("|");
+}
+
+function assignmentCanonicalRichness(assignment = {}) {
+  let score = 0;
+  if (readAssignmentRowId(assignment)) score += 16;
+  if (readAssignmentClassId(assignment)) score += 8;
+  if (readAssignmentClassCode(assignment)) score += 4;
+  if (readSubjectIdentity(assignment)) score += 2;
+  if (readAssignmentStatus(assignment) !== undefined) score += 2;
+  return score;
+}
+
+function mergeCanonicalAssignment(current, incoming) {
+  const incomingRicher =
+    assignmentCanonicalRichness(incoming) > assignmentCanonicalRichness(current);
+  const winner = incomingRicher ? incoming : current;
+  const other = incomingRicher ? current : incoming;
+  const rowId = readAssignmentRowId(winner) || readAssignmentRowId(other);
+  const classId = readAssignmentClassId(winner) || readAssignmentClassId(other);
+  const classCode = readAssignmentClassCode(winner) || readAssignmentClassCode(other);
+  const className = asAssignmentRef(winner.className) || asAssignmentRef(other.className);
+  const course =
+    asAssignmentRef(winner.course ?? winner.subject) ||
+    asAssignmentRef(other.course ?? other.subject);
+  const subjectCode =
+    asAssignmentRef(winner.subjectCode ?? winner.subject_code) ||
+    asAssignmentRef(other.subjectCode ?? other.subject_code);
+  const status = readAssignmentStatus(winner);
+  const merged = {
+    ...other,
+    ...winner,
+    className,
+    course,
+  };
+  if (rowId) merged.id = rowId;
+  if (classId) merged.classId = classId;
+  if (classCode) merged.classCode = classCode;
+  if (subjectCode) merged.subjectCode = subjectCode;
+  if (status !== undefined) merged.status = status;
+  return merged;
+}
+
+function normalizeResolvedAssignment(assignment = {}) {
+  const className = asAssignmentRef(assignment.className);
+  const course = asAssignmentRef(assignment.course ?? assignment.subject);
+  return { className, course, ...assignment };
+}
+
+/**
+ * Déduplique des projections d'une même affectation (embed vs ligne PG).
+ * Deux matières actives dans la même classe restent deux assignments.
+ * Le scope classe (classIds/classCodes uniques) se dérive ensuite, pas ici.
+ */
 function dedupeAssignments(assignments = []) {
-  const seen = new Set();
-  const rows = [];
+  const byId = new Map();
+  const byComposite = new Map();
+  const displayOnly = [];
+
+  const forget = (row) => {
+    if (!row) return;
+    const rowId = readAssignmentRowId(row);
+    const composite = assignmentCompositeKey(row);
+    if (rowId && byId.get(rowId) === row) byId.delete(rowId);
+    if (composite && byComposite.get(composite) === row) byComposite.delete(composite);
+  };
+
+  const remember = (row) => {
+    const rowId = readAssignmentRowId(row);
+    const composite = assignmentCompositeKey(row);
+    if (rowId) byId.set(rowId, row);
+    if (composite) byComposite.set(composite, row);
+  };
 
   for (const assignment of assignments) {
-    const className = String(assignment.className ?? "").trim();
-    const course = String(assignment.course ?? assignment.subject ?? "").trim();
-    const key = `${normalizeText(className)}|${normalizeText(course)}`;
-    if (!className || !course || seen.has(key)) {
+    if (!assignment || typeof assignment !== "object") continue;
+    const rowId = readAssignmentRowId(assignment);
+    const composite = assignmentCompositeKey(assignment);
+    if (!rowId && !composite) {
+      displayOnly.push(normalizeResolvedAssignment(assignment));
       continue;
     }
-    seen.add(key);
-    rows.push({ className, course, ...assignment });
+
+    const existing =
+      (rowId && byId.get(rowId)) || (composite && byComposite.get(composite)) || null;
+    if (!existing) {
+      remember(normalizeResolvedAssignment(assignment));
+      continue;
+    }
+    const merged = mergeCanonicalAssignment(existing, assignment);
+    forget(existing);
+    remember(merged);
   }
 
-  return rows;
+  const canonical = [];
+  const seen = new Set();
+  for (const row of [...byId.values(), ...byComposite.values()]) {
+    if (seen.has(row)) continue;
+    seen.add(row);
+    canonical.push(row);
+  }
+  return [...canonical, ...displayOnly];
 }
 
 function resolveTeacherAssignments(teacher, user, globalAssignments = []) {
@@ -117,7 +268,8 @@ function resolveTeacherAssignments(teacher, user, globalAssignments = []) {
     return assignmentMatchesTeacher(assignment, teacher, user);
   });
 
-  return dedupeAssignments([...embedded, ...matchedGlobal]);
+  // Source JWT : affectations canoniques (PG / table globale) avant l'embed historique.
+  return dedupeAssignments([...matchedGlobal, ...embedded]);
 }
 
 function resolveTeacherAssignedClasses(teacher, user, globalAssignments = []) {
@@ -160,10 +312,25 @@ class AuthService {
   }
 
   identify({ schoolCode, identifier }) {
-    this.assertRequiredFields({ schoolCode, identifier }, "Champs manquants");
-    this.assertSchoolCanConnect(schoolCode);
+    this.assertRequiredFields({ identifier }, "Champs manquants");
+    const requestedSchool = String(schoolCode ?? "").trim();
+    if (!requestedSchool) {
+      const platformUser = this.findPlatformManagedUser(identifier);
+      if (!platformUser) {
+        throw new BusinessError(400, "Champs manquants");
+      }
+      this.assertManagedUserCanUseMobile(platformUser);
+      const managedMobileRole = this.getManagedMobileRole(platformUser);
+      if (!managedMobileRole || !this.isPlatformMobileRole(managedMobileRole.role)) {
+        throw new BusinessError(400, "Champs manquants");
+      }
+      return managedMobileRole;
+    }
 
-    const managedUser = this.findManagedUser(identifier, schoolCode);
+    const schoolContext = this.assertSchoolCanConnect(requestedSchool);
+    const accountSchoolCode = this.resolveSchoolAccountCode(schoolContext);
+
+    const managedUser = this.findManagedUser(identifier, accountSchoolCode);
     if (!managedUser) {
       throw new BusinessError(
         404,
@@ -184,45 +351,130 @@ class AuthService {
     return managedMobileRole;
   }
 
-  login({ role, schoolCode, identifier, pin }) {
-    this.assertRequiredFields({ role, schoolCode, identifier, pin }, "Champs manquants");
-    const schoolContext = this.assertSchoolCanConnect(schoolCode);
-
-    const loginKey = getLoginAttemptKey(schoolCode, identifier);
-    try {
-      assertLoginNotLocked(loginKey);
-    } catch {
-      throw new BusinessError(
-        423,
-        "Compte temporairement verrouillé après plusieurs tentatives. Réessayez dans 15 minutes.",
-      );
+  async login({ role, schoolCode, identifier, pin }) {
+    this.assertRequiredFields({ role, identifier, pin }, "Champs manquants");
+    const requestedSchool = String(schoolCode ?? "").trim();
+    if (!requestedSchool) {
+      return this.loginPlatformAccount({ role, identifier, pin });
     }
 
-    const managedUser = this.findManagedUser(identifier, schoolCode, role);
+    const schoolContext = this.assertSchoolCanConnect(requestedSchool);
+    const accountSchoolCode = this.resolveSchoolAccountCode(schoolContext);
+    const canonicalSchoolCode = schoolContext.loginCode || requestedSchool;
+
+    const loginKey = getLoginAttemptKey(canonicalSchoolCode, identifier);
+    try {
+      await assertLoginNotLocked(loginKey);
+    } catch (error) {
+      if (error?.code === "LOGIN_LOCKED" || error?.message === "LOCKED") {
+        throw new BusinessError(
+          423,
+          "Compte temporairement verrouillé après plusieurs tentatives. Réessayez dans 15 minutes.",
+        );
+      }
+      throw error;
+    }
+
+    const managedUser = this.findManagedUser(identifier, accountSchoolCode, role);
     if (!managedUser) {
-      recordFailedLoginAttempt(loginKey);
+      await recordFailedLoginAttempt(loginKey);
       throw new BusinessError(401, GENERIC_AUTH_ERROR);
     }
 
     this.assertManagedUserCanUseMobile(managedUser);
 
-    const managedMobileRole = this.getManagedMobileRole(managedUser);
+    const managedMobileRole = this.getManagedMobileRole(managedUser, role);
     if (!managedMobileRole || managedMobileRole.role !== role) {
-      recordFailedLoginAttempt(loginKey);
+      await recordFailedLoginAttempt(loginKey);
       throw new BusinessError(401, GENERIC_AUTH_ERROR);
     }
 
     if (!this.verifyUserSecret(managedUser, pin)) {
-      recordFailedLoginAttempt(loginKey);
+      await recordFailedLoginAttempt(loginKey);
       throw new BusinessError(401, GENERIC_AUTH_ERROR);
     }
 
-    clearFailedLoginAttempts(loginKey);
+    await clearFailedLoginAttempts(loginKey);
     return {
       role,
-      user: this.buildManagedMobileUser(managedUser),
+      user: this.buildManagedMobileUser(managedUser, role),
       school: schoolContext,
     };
+  }
+
+  async loginPlatformAccount({ role, identifier, pin }) {
+    if (!this.isPlatformMobileRole(role)) {
+      throw new BusinessError(400, "Champs manquants");
+    }
+
+    const loginKey = getLoginAttemptKey("*", identifier);
+    try {
+      await assertLoginNotLocked(loginKey);
+    } catch (error) {
+      if (error?.code === "LOGIN_LOCKED" || error?.message === "LOCKED") {
+        throw new BusinessError(
+          423,
+          "Compte temporairement verrouillé après plusieurs tentatives. Réessayez dans 15 minutes.",
+        );
+      }
+      throw error;
+    }
+
+    const managedUser = this.findPlatformManagedUser(identifier, role);
+    if (!managedUser || !this.isPlatformAccount(managedUser)) {
+      await recordFailedLoginAttempt(loginKey);
+      throw new BusinessError(400, "Champs manquants");
+    }
+
+    this.assertManagedUserCanUseMobile(managedUser);
+
+    const managedMobileRole = this.getManagedMobileRole(managedUser, role);
+    if (!managedMobileRole || managedMobileRole.role !== role || !this.isPlatformMobileRole(managedMobileRole.role)) {
+      await recordFailedLoginAttempt(loginKey);
+      throw new BusinessError(401, GENERIC_AUTH_ERROR);
+    }
+
+    if (!this.verifyUserSecret(managedUser, pin)) {
+      await recordFailedLoginAttempt(loginKey);
+      throw new BusinessError(401, GENERIC_AUTH_ERROR);
+    }
+
+    await clearFailedLoginAttempts(loginKey);
+    const countryCode =
+      this.getCountryCode(managedUser.countryScope) ||
+      this.getCountryCode(managedUser.countryCode) ||
+      "";
+    return {
+      role,
+      user: this.buildManagedMobileUser(managedUser, role),
+      platformContext: {
+        kind: role === "super_admin" ? "global" : "country",
+        countryCode: role === "country_admin" ? countryCode : "",
+      },
+    };
+  }
+
+  isPlatformMobileRole(role) {
+    return role === "super_admin" || role === "country_admin";
+  }
+
+  isPlatformAccount(user) {
+    if (!user) return false;
+    const granted = this.userGrantedMobileRoles(user);
+    return granted.some((item) => this.isPlatformMobileRole(item.role));
+  }
+
+  findPlatformManagedUser(identifier, preferredMobileRole = null) {
+    const matches = this.userAccounts.filter(
+      (user) => this.userMatchesIdentifier(user, identifier) && this.isPlatformAccount(user),
+    );
+    if (matches.length > 1 && preferredMobileRole) {
+      const preferred = matches.find(
+        (user) => this.getManagedMobileRole(user, preferredMobileRole)?.role === preferredMobileRole,
+      );
+      if (preferred) return preferred;
+    }
+    return matches[0] || null;
   }
 
   userMatchesIdentifier(user, identifier) {
@@ -245,17 +497,30 @@ class AuthService {
   }
 
   findManagedUser(identifier, schoolCode, preferredMobileRole = null) {
-    const normalizedSchoolCode = String(schoolCode).trim().toUpperCase();
-
-    const matches = this.userAccounts.filter(
-      (user) =>
-        (user.schoolCode === "*" || user.schoolCode === normalizedSchoolCode) &&
-        this.userMatchesIdentifier(user, identifier)
+    const school = this.findSchoolByCode(schoolCode);
+    const tenantKeys = new Set(
+      [
+        schoolCode,
+        school?.code,
+        school?.loginCode,
+        school?.publicId,
+        school?.legacySchoolCode,
+      ]
+        .map((value) => String(value ?? "").trim().toUpperCase())
+        .filter(Boolean),
     );
+
+    const matches = this.userAccounts.filter((user) => {
+      const userSchool = String(user.schoolCode ?? "").trim().toUpperCase();
+      return (
+        (userSchool === "*" || tenantKeys.has(userSchool)) &&
+        this.userMatchesIdentifier(user, identifier)
+      );
+    });
 
     if (matches.length > 1 && preferredMobileRole) {
       const preferred = matches.find(
-        (user) => this.getManagedMobileRole(user)?.role === preferredMobileRole
+        (user) => this.getManagedMobileRole(user, preferredMobileRole)?.role === preferredMobileRole
       );
       if (preferred) {
         return preferred;
@@ -275,7 +540,7 @@ class AuthService {
 
     const teacher = this.teachers.find(
       (item) =>
-        (!item.schoolCode || normalizeText(item.schoolCode) === normalizeText(normalizedSchoolCode)) &&
+        (!item.schoolCode || tenantKeys.has(String(item.schoolCode).trim().toUpperCase())) &&
         [item.identifier, item.publicId, item.id].some(
           (value) => normalizeText(value) === normalizeText(identifier)
         )
@@ -284,11 +549,13 @@ class AuthService {
       return undefined;
     }
 
-    return this.userAccounts.find(
-      (user) =>
-        (user.schoolCode === "*" || user.schoolCode === normalizedSchoolCode) &&
+    return this.userAccounts.find((user) => {
+      const userSchool = String(user.schoolCode ?? "").trim().toUpperCase();
+      return (
+        (userSchool === "*" || tenantKeys.has(userSchool)) &&
         String(user.id) === String(teacher.userId)
-    );
+      );
+    });
   }
 
   findLinkedTeacher(user) {
@@ -322,21 +589,25 @@ class AuthService {
     return resolveParentChildren(user, { students: this.students, relations: this.relations }, schoolCode);
   }
 
-  buildManagedMobileUser(user) {
+  buildManagedMobileUser(user, requestedMobileRole = null) {
+    const sessionRole = this.sessionRoleLabel(requestedMobileRole, user);
     const base = {
       id: user.id,
       publicId: user.publicId,
       contactId: user.contactId,
+      identifier: user.identifier,
       name: `${user.firstName ?? ""} ${user.lastName ?? ""}`.trim() || user.identifier,
       firstName: user.firstName,
       lastName: user.lastName,
       phone: user.phone,
       email: user.email,
-      role: user.role,
+      role: sessionRole,
+      roles: user.roles,
+      roleKeys: user.roleKeys,
       scopeLevel: user.scopeLevel,
       countryScope: user.countryScope,
       countryCode: user.countryCode,
-      schoolCode: user.role === "Admin Pays" ? "*" : user.schoolCode,
+      schoolCode: user.role === "Admin Pays" || sessionRole === "Admin Pays" ? "*" : user.schoolCode,
       permissions: user.permissions,
       mustChangePassword:
         user.mustChangePassword === false
@@ -346,7 +617,7 @@ class AuthService {
             : Boolean(user.temporaryPassword),
     };
 
-    if (isTeacherRole(user.role)) {
+    if (requestedMobileRole === "teacher" || isTeacherRole(sessionRole)) {
       const teacher = this.findLinkedTeacher(user);
       if (teacher) {
         const assignments = resolveTeacherAssignments(teacher, user, this.assignments);
@@ -356,6 +627,16 @@ class AuthService {
         return {
           ...base,
           ...safeTeacher,
+          // La fiche teacher ne doit jamais écraser users.id : sinon JWT.sub
+          // devient teachers.id et GET /assignments résout 0 rôle live.
+          id: base.id,
+          publicId: base.publicId,
+          identifier: base.identifier,
+          contactId: base.contactId,
+          schoolCode: base.schoolCode,
+          role: sessionRole,
+          roles: user.roles,
+          roleKeys: user.roleKeys,
           assignments,
           assignedClasses,
           courses,
@@ -363,7 +644,7 @@ class AuthService {
       }
     }
 
-    if (user.role === "Parent") {
+    if (requestedMobileRole === "parent_student" || sessionRole === "Parent") {
       return {
         ...base,
         children: sanitizeUsersForResponse(this.findLinkedParentChildren(user, user.schoolCode)),
@@ -386,8 +667,36 @@ class AuthService {
     return base;
   }
 
-  getManagedMobileRole(user) {
-    return user ? managedMobileRoles[user.role] : null;
+  userGrantedMobileRoles(user) {
+    const { toRoleKey, toRoleLabel } = require("../lib/userRoleLifecycle");
+    const keys = [];
+    if (Array.isArray(user?.roleKeys)) {
+      keys.push(...user.roleKeys.map(toRoleKey));
+    }
+    if (Array.isArray(user?.roles)) {
+      keys.push(...user.roles.map(toRoleKey));
+    }
+    if (user?.role) {
+      keys.push(toRoleKey(user.role));
+    }
+    const unique = [...new Set(keys.filter(Boolean))];
+    return unique.map((key) => managedMobileRoles[toRoleLabel(key)]).filter(Boolean);
+  }
+
+  getManagedMobileRole(user, requestedRole = null) {
+    if (!user) return null;
+    const granted = this.userGrantedMobileRoles(user);
+    if (requestedRole) {
+      return granted.find((item) => item.role === requestedRole) || null;
+    }
+    if (managedMobileRoles[user.role]) return managedMobileRoles[user.role];
+    return granted[0] || null;
+  }
+
+  sessionRoleLabel(requestedMobileRole, user) {
+    if (!requestedMobileRole) return user.role;
+    const match = Object.entries(managedMobileRoles).find(([, value]) => value.role === requestedMobileRole);
+    return match?.[0] || user.role;
   }
 
   assertRequiredFields(fields, message) {
@@ -421,7 +730,7 @@ class AuthService {
     }
 
     const { assertSchoolCanConnect } = require("./schoolSubscriptionAccessService");
-    assertSchoolCanConnect(schoolCode, {
+    assertSchoolCanConnect(this.resolveSchoolAccountCode(school), {
       schools: this.schools,
       subscriptions: this.subscriptions,
     });
@@ -494,6 +803,10 @@ class AuthService {
     return String(user.password ?? "") === normalizedSecret || String(user.pin ?? "") === normalizedSecret;
   }
 
+  resolveSchoolAccountCode(school) {
+    return String(school?.code ?? school?.legacySchoolCode ?? school?.publicId ?? "").trim().toUpperCase();
+  }
+
   matchesSchoolCode(schoolCode) {
     return Boolean(this.findSchoolByCode(schoolCode));
   }
@@ -501,7 +814,7 @@ class AuthService {
   findSchoolByCode(schoolCode) {
     const normalizedCode = String(schoolCode).trim().toUpperCase();
     return this.schools.find((school) =>
-      [school.code, school.publicId].some(
+      [school.loginCode, school.code, school.publicId, school.legacySchoolCode].some(
         (value) => String(value ?? "").trim().toUpperCase() === normalizedCode
       )
     );

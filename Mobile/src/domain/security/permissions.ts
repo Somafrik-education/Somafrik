@@ -1,13 +1,13 @@
-import { normalize, isInternalSchoolRole, isSchoolAdminRole } from "../../lib/format";
+import { normalize, isSchoolAdminRole } from "../../lib/format";
 import { getInternalRoleDefaults } from "../../lib/internalRoleDefaults";
-import { canSchoolAdminMutateTeachers } from "../../lib/pedagogyGovernance";
+import { attachCanonicalRoleIdentity, resolveCanonicalRoleIdentity } from "../../lib/canonicalRoleIdentity";
 import {
   isSuperAdminRole,
-  COUNTRY_ADMIN_ROLE,
   sessionRoleToPlatformRole,
 } from "../../lib/orgHierarchy";
 import { COUNTRY_SCOPE_MODULES } from "../../lib/roleGovernance";
 import { SCHOOL_ENTITY_VIEWS, VIEW_PERMISSION_FEATURES, ENTITY_VIEW_MAP } from "../../lib/constants";
+import { isSchoolSettingsOperator, isSchoolSettingsView } from "../../lib/schoolSettingsAccess";
 
 export type SecurityAction = "READ" | "CREATE" | "UPDATE" | "DELETE" | "SUSPEND";
 
@@ -20,29 +20,61 @@ export function isSuperAdminSessionRole(role?: string) {
 
 const schoolAdminForbiddenFeatures = new Set(["Établissements", "Abonnements"]);
 
-const PARENT_STUDENT_SESSION_ROLES = new Set(["parent_student", "student"]);
+/**
+ * Parité Web `superAdminAccess.ts` : ALL_PRIVILEGES n'ouvre pas les modules
+ * opérationnels d'un établissement dans les interfaces clientes.
+ */
+export const SUPER_ADMIN_ALLOWED_FEATURES = new Set([
+  "Pays",
+  "Établissements",
+  "Abonnements",
+  "Contacts",
+  "Relations",
+  "Utilisateurs",
+  "Référentiels pédagogiques",
+  "Notifications",
+  "Announcements",
+  "Messages",
+  "Paramètres Établissement",
+  "Paramètres graphiques",
+  "Droits par rôle",
+  "Conception bulletins",
+]);
 
-function isPlatformCommunicationSession(session: any): boolean {
-  const role = session?.role;
-  const platformRole = sessionRoleToPlatformRole(role);
-  return (
-    isSuperAdminSessionRole(role) ||
-    role === "country_admin" ||
-    platformRole === COUNTRY_ADMIN_ROLE
-  );
-}
-
-function isEstablishmentCommunicationSession(session: any): boolean {
-  const schoolCode = String(session?.user?.schoolCode ?? session?.school?.code ?? "").trim();
-  if (!schoolCode || schoolCode === "*") return false;
-  const role = session?.role;
-  const platformRole = sessionRoleToPlatformRole(role);
-  return (
-    isInternalSchoolRole(role) ||
-    isInternalSchoolRole(platformRole) ||
-    PARENT_STUDENT_SESSION_ROLES.has(role)
-  );
-}
+/**
+ * Vues Mobile explicitement admises pour le Super Admin. Cette liste est
+ * volontairement stricte : on ne déduit jamais une vue opérationnelle depuis
+ * un alias de feature (ex. Audit -> Utilisateurs, Support -> Messages).
+ */
+const SUPER_ADMIN_ALLOWED_VIEWS = new Set([
+  "overview",
+  "countries",
+  "educationReference",
+  "schools",
+  "SchoolManagement",
+  "subscriptions",
+  "contacts",
+  "relations",
+  "users",
+  "Users",
+  "permissions",
+  "Permissions",
+  "chartSettings",
+  "notifications",
+  "PlatformNotifications",
+  "InternalNotifications",
+  "messages",
+  "Messages",
+  "announcements",
+  "Announcements",
+  "configuration",
+  "Configuration",
+  "EstablishmentProfile",
+  "SchoolYearSettings",
+  "SchoolPedagogicalStructure",
+  "SchoolAssignableRoles",
+  "bulletinDesign",
+]);
 
 export const entityFeatureMap: Record<string, string> = {
   schools: "Établissements",
@@ -55,7 +87,8 @@ export const entityFeatureMap: Record<string, string> = {
   subscriptions: "Abonnements",
   paymentStatuses: "Paramètres Établissement",
   messages: "Messages",
-  announcements: "Notifications",
+  announcements: "Announcements",
+  notifications: "Notifications",
   courses: "Matières",
   assignments: "Affectations",
 };
@@ -80,8 +113,8 @@ export const routeFeatureMap: Record<string, string> = {
   Payments: "Paiements",
   Paiements: "Paiements",
   Messages: "Messages",
-  Announcements: "Notifications",
-  Timetable: "Années Académiques",
+  Announcements: "Announcements",
+  Timetable: "Planning de cours",
   ReportCards: "Bulletins",
   Documents: "Documents",
   Reports: "Rapports",
@@ -91,11 +124,16 @@ export const routeFeatureMap: Record<string, string> = {
   OfflineMode: "Documents",
   Synchronization: "Documents",
   Configuration: "Paramètres Établissement",
+  EstablishmentProfile: "Paramètres Établissement",
+  SchoolYearSettings: "Paramètres Établissement",
+  SchoolPedagogicalStructure: "Paramètres Établissement",
+  SchoolAssignableRoles: "Paramètres Établissement",
   PlatformNotifications: "Notifications",
+  InternalNotifications: "Notifications",
   Permissions: "Droits par rôle",
 };
 
-const COUNTRY_PRIVILEGE_FEATURES = new Set(["pays", "etablissements", "abonnements", "utilisateurs", "rapports"]);
+const COUNTRY_PRIVILEGE_FEATURES = new Set(["pays", "etablissements", "abonnements", "utilisateurs", "rapports", "referentiels pedagogiques"]);
 
 function countryPrivilegeAllows(normalizedFeature: string, action: SecurityAction) {
   if (!COUNTRY_PRIVILEGE_FEATURES.has(normalizedFeature)) return false;
@@ -125,7 +163,11 @@ function permissionMatchesFeature(
   ) {
     return true;
   }
-  if (!normalizedPermission.includes(normalizedFeature)) return false;
+  const featureTokens =
+    normalizedFeature === "announcements"
+      ? ["announcements", "annonces", "annonce"]
+      : [normalizedFeature];
+  if (!featureTokens.some((token) => normalizedPermission.includes(token))) return false;
   if (action === "READ") {
     return (
       normalizedPermission.includes("voir") ||
@@ -163,10 +205,17 @@ export function resolveEffectivePermissions(
   userPermissions: string[] | undefined,
   rolePermissions: Record<string, string[]> = {},
 ): string[] {
-  const fromUser = userPermissions ?? [];
+  if (Array.isArray(userPermissions)) {
+    const merged = [...userPermissions];
+    if (isSuperAdminRole(role) && !merged.includes("ALL_PRIVILEGES")) {
+      merged.push("ALL_PRIVILEGES");
+    }
+    return merged;
+  }
   const fromRole = role && Array.isArray(rolePermissions[role]) ? rolePermissions[role] : [];
-  const fromDefaults = getInternalRoleDefaults(role);
-  const merged = [...new Set([...fromUser, ...fromRole, ...fromDefaults])];
+  const hasCanonicalSource = fromRole.length > 0 || Object.keys(rolePermissions).length > 0;
+  const fromDefaults = hasCanonicalSource ? [] : getInternalRoleDefaults(role);
+  const merged = [...new Set([...fromRole, ...fromDefaults])];
   if (isSuperAdminRole(role) && !merged.includes("ALL_PRIVILEGES")) {
     merged.push("ALL_PRIVILEGES");
   }
@@ -182,9 +231,9 @@ export function getEffectivePermissionsForSession(
   rolePermissions: Record<string, string[]> = {},
 ): string[] {
   if (!session) return [];
-  const roleLabel = roleLabelFromSessionRole(session.role) || session.user?.role;
+  const identity = resolveCanonicalRoleIdentity(session);
   return resolveEffectivePermissions(
-    roleLabel,
+    identity.roleLabel || session.user?.role,
     session.permissions ?? session.user?.permissions,
     session.rolePermissions ?? rolePermissions,
   );
@@ -192,28 +241,30 @@ export function getEffectivePermissionsForSession(
 
 export function enrichSessionPermissions(session: any, rolePermissions: Record<string, string[]> = {}) {
   if (!session) return null;
-  const permissions = getEffectivePermissionsForSession(session, rolePermissions);
+  const identified = attachCanonicalRoleIdentity(session);
+  const permissions = getEffectivePermissionsForSession(identified, rolePermissions);
   return {
-    ...session,
+    ...identified,
     permissions,
     user: {
-      ...session.user,
+      ...identified.user,
       permissions,
     },
   };
 }
 
 export function buildPermissionSession(session: any) {
-  const roleLabel = roleLabelFromSessionRole(session?.role);
+  const identified = attachCanonicalRoleIdentity(session) ?? session;
+  const identity = resolveCanonicalRoleIdentity(identified);
   const permissions = resolveEffectivePermissions(
-    roleLabel,
-    session?.permissions ?? session?.user?.permissions,
-    session?.rolePermissions ?? {},
+    identity.roleLabel,
+    identified?.permissions ?? identified?.user?.permissions,
+    identified?.rolePermissions ?? {},
   );
   return {
-    ...session,
+    ...identified,
     permissions,
-    platformRole: roleLabel,
+    platformRole: identity.roleLabel,
   };
 }
 
@@ -240,26 +291,15 @@ function hasSecurityPermissionInternal(
 
 export function hasSecurityPermission(session: any, feature: string | undefined, action: SecurityAction = "READ") {
   if (!feature) return true;
-  if (isSuperAdminSessionRole(session?.role)) return true;
-  if (
-    isPlatformCommunicationSession(session) &&
-    (feature === "Messages" || feature === "Notifications")
-  ) {
-    return true;
+  if (isSuperAdminSessionRole(session?.role)) {
+    return SUPER_ADMIN_ALLOWED_FEATURES.has(feature);
   }
 
-  const platformRole = roleLabelFromSessionRole(session?.role);
+  const identity = resolveCanonicalRoleIdentity(session);
+  const platformRole = identity.roleLabel;
   if (
-    (session?.role === "school_admin" || isSchoolAdminRole(platformRole)) &&
+    (identity.sessionRole === "school_admin" || isSchoolAdminRole(platformRole)) &&
     schoolAdminForbiddenFeatures.has(feature)
-  ) {
-    return false;
-  }
-
-  if (
-    (session?.role === "school_admin" || isSchoolAdminRole(platformRole)) &&
-    feature === "Enseignants" &&
-    !canSchoolAdminMutateTeachers(action)
   ) {
     return false;
   }
@@ -289,40 +329,55 @@ export function canManagePresences(session: any): boolean {
   );
 }
 
+/**
+ * GET/POST/PATCH `/api/backoffice/notifications` exigent ALL_PRIVILEGES ou
+ * COUNTRY_PRIVILEGES. Notifications:READ établissement n'ouvre pas la plateforme.
+ */
+export function hasPlatformBackofficePrivilege(session: any): boolean {
+  if (!session) return false;
+  const live = getEffectivePermissionsForSession(session);
+  return live.includes("ALL_PRIVILEGES") || live.includes("COUNTRY_PRIVILEGES");
+}
+
 export function canReadView(session: any, viewName: string): boolean {
-  if (isSuperAdminSessionRole(session?.role)) return true;
+  if (isSuperAdminSessionRole(session?.role)) {
+    return SUPER_ADMIN_ALLOWED_VIEWS.has(viewName);
+  }
+  if (viewName === "PlatformNotifications") {
+    return hasPlatformBackofficePrivilege(session);
+  }
   if (viewName === "overview") return true;
 
   if (viewName === "Permissions") {
-    return isSuperAdminSessionRole(session?.role);
+    return false;
   }
 
   if (session?.role === "country_admin") {
-    if (SCHOOL_ENTITY_VIEWS.has(viewName) || viewName === "establishment" || viewName === "Configuration") {
+    const countryFeature = VIEW_PERMISSION_FEATURES[viewName] ?? routeFeatureMap[viewName];
+    if (countryFeature === "Messages" || countryFeature === "Notifications" || countryFeature === "Announcements") {
+      return hasSecurityPermission(session, countryFeature, "READ");
+    }
+    if (
+      SCHOOL_ENTITY_VIEWS.has(viewName) ||
+      viewName === "establishment" ||
+      viewName === "SchoolManagement" ||
+      isSchoolSettingsView(viewName)
+    ) {
       return false;
     }
-    const feature = VIEW_PERMISSION_FEATURES[viewName];
+    const feature = countryFeature;
     if (feature && !COUNTRY_SCOPE_MODULES.has(feature) && feature !== "Rapports") {
       return false;
     }
   }
 
   if (viewName === "establishment" || viewName === "SchoolManagement") {
-    return isInternalSchoolRole(session?.role) || isInternalSchoolRole(sessionRoleToPlatformRole(session?.role));
+    return hasSecurityPermission(session, "Établissements", "READ");
   }
 
-  if (viewName === "Configuration") {
-    if (isSuperAdminSessionRole(session?.role)) return true;
-    const platformRole = sessionRoleToPlatformRole(session?.role);
-    if (!isInternalSchoolRole(session?.role) && !isInternalSchoolRole(platformRole)) return false;
-    return (
-      hasSecurityPermission(session, "Paramètres Établissement", "READ") ||
-      session?.role === "school_admin" ||
-      isSchoolAdminRole(platformRole) ||
-      hasSecurityPermission(session, "Élèves", "READ") ||
-      hasSecurityPermission(session, "Enseignants", "READ") ||
-      hasSecurityPermission(session, "Utilisateurs", "READ")
-    );
+  if (isSchoolSettingsView(viewName)) {
+    if (!isSchoolSettingsOperator(session)) return false;
+    return hasSecurityPermission(session, "Paramètres Établissement", "READ");
   }
 
   const communicationViews = new Set([
@@ -331,12 +386,11 @@ export function canReadView(session: any, viewName: string): boolean {
     "notifications",
     "announcements",
     "Announcements",
-    "PlatformNotifications",
+    "InternalNotifications",
   ]);
   if (communicationViews.has(viewName)) {
     const feature = VIEW_PERMISSION_FEATURES[viewName] ?? routeFeatureMap[viewName];
-    if (feature && hasSecurityPermission(session, feature, "READ")) return true;
-    return isPlatformCommunicationSession(session) || isEstablishmentCommunicationSession(session);
+    return Boolean(feature) && hasSecurityPermission(session, feature, "READ");
   }
 
   const feature = VIEW_PERMISSION_FEATURES[viewName];
@@ -355,23 +409,19 @@ export function canReadEntity(session: any, entity?: string) {
 
 export function canMutateEntity(session: any, entity: string, action: Exclude<SecurityAction, "READ">) {
   const feature = entityFeatureMap[entity];
-  if (
-    (session?.role === "school_admin" || isSchoolAdminRole(sessionRoleToPlatformRole(session?.role))) &&
-    entity === "teachers" &&
-    action !== "CREATE"
-  ) {
-    return false;
-  }
-  if (
-    isPlatformCommunicationSession(session) &&
-    (entity === "messages" || entity === "announcements")
-  ) {
-    return true;
-  }
   return Boolean(feature) && hasSecurityPermission(session, feature, action);
 }
 
 export function canReadRoute(session: any, routeName?: string) {
+  if (isSuperAdminSessionRole(session?.role)) {
+    return Boolean(routeName) && SUPER_ADMIN_ALLOWED_VIEWS.has(routeName as string);
+  }
+  if (routeName === "PlatformNotifications") {
+    return hasPlatformBackofficePrivilege(session);
+  }
+  if (isSchoolSettingsView(routeName)) {
+    return canReadView(session, routeName);
+  }
   if (routeName && canReadView(session, routeName)) return true;
   const feature = routeName ? routeFeatureMap[routeName] : undefined;
   return Boolean(feature) && hasSecurityPermission(session, feature, "READ");

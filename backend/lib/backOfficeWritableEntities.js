@@ -15,33 +15,10 @@ const {
 
 /** Entités établissement historiquement accessibles à Admin School (liste actuelle). */
 const ADMIN_SCHOOL_WRITABLE_ENTITIES = Object.freeze([
-  "contacts",
-  "relations",
-  "users",
-  "students",
-  "teachers",
-  "classes",
-  "courses",
-  "assignments",
-  "courseSchedules",
-  "payments",
-  "paymentStatuses",
-  "feeGrids",
-  "schoolFeeItems",
-  "studentFees",
-  "feeTariffHistory",
-  "presences",
-  "notes",
-  "evaluations",
   "exams",
   "bulletins",
   "documents",
-  "announcements",
-  "messages",
-  "notifications",
-  "rolePermissions",
   "academicConfigs",
-  "dashboardChartConfig",
 ]);
 
 /**
@@ -50,45 +27,21 @@ const ADMIN_SCHOOL_WRITABLE_ENTITIES = Object.freeze([
  * (Utilisateurs/Contacts/Notes/Frais = lecture seule ou « - »)
  */
 const SECRETARY_WRITABLE_ENTITIES = Object.freeze([
-  "students",
-  "presences",
-  "payments",
-  "paymentStatuses",
-  "notifications",
-  "announcements",
-  "messages",
   "documents",
 ]);
 
 /**
- * Comptable — seed « Gérer paiements » (+ suivi frais élèves opérationnels).
- * Pas de configuration tarifaire (feeGrids / schoolFeeItems / feeTariffHistory).
+ * Comptable — plus d'écriture Finance via PUT state (LOT 4 : APIs dédiées).
  */
-const ACCOUNTANT_WRITABLE_ENTITIES = Object.freeze([
-  "payments",
-  "paymentStatuses",
-  "studentFees",
-]);
+const ACCOUNTANT_WRITABLE_ENTITIES = Object.freeze([]);
 
 /**
  * Préfet / Proviseur / Directeur adjoint — pédagogie (matrix Préfet CRUD).
  */
 const PREFET_WRITABLE_ENTITIES = Object.freeze([
-  "students",
-  "classes",
-  "teachers",
-  "courses",
-  "assignments",
-  "courseSchedules",
-  "presences",
-  "notes",
-  "evaluations",
   "exams",
   "bulletins",
   "documents",
-  "announcements",
-  "messages",
-  "notifications",
   "academicConfigs",
 ]);
 
@@ -96,18 +49,10 @@ const PREFET_WRITABLE_ENTITIES = Object.freeze([
  * Directeur — seed : Gérer utilisateurs, Modifier notes, Gérer paiements + socle préfet.
  */
 const DIRECTOR_WRITABLE_ENTITIES = Object.freeze([
-  ...new Set([...PREFET_WRITABLE_ENTITIES, "users", "payments", "paymentStatuses", "contacts", "relations"]),
+  ...new Set([...PREFET_WRITABLE_ENTITIES]),
 ]);
 
-const COUNTRY_ADMIN_WRITABLE_ENTITIES = Object.freeze([
-  "schools",
-  "users",
-  "countries",
-  "contacts",
-  "relations",
-  "subscriptions",
-  "notifications",
-]);
+const COUNTRY_ADMIN_WRITABLE_ENTITIES = Object.freeze([]);
 
 const ROLE_WRITABLE_ENTITIES = Object.freeze({
   "Admin School": ADMIN_SCHOOL_WRITABLE_ENTITIES,
@@ -141,11 +86,45 @@ function getWritableBackOfficeEntitiesForPrincipal(principal, allEntities = []) 
 
   if (isSuperAdminRole(role)) {
     // auditLog volontairement exclu : journal serveur uniquement.
+    // Entités canoniques volontairement exclues : APIs PostgreSQL dédiées
+    // (LOT 1 établissements, LOT 2 élèves, LOT 3 enseignants/affectations).
     return [
-      ...allEntities.filter((entity) => entity !== "auditLog"),
-      "rolePermissions",
+      ...allEntities.filter(
+        (entity) =>
+          entity !== "auditLog" &&
+          entity !== "schools" &&
+          entity !== "students" &&
+          entity !== "teachers" &&
+          entity !== "assignments" &&
+          entity !== "payments" &&
+          entity !== "paymentStatuses" &&
+          entity !== "feeGrids" &&
+          entity !== "schoolFeeItems" &&
+          entity !== "studentFees" &&
+          entity !== "feeTariffHistory" &&
+          entity !== "paymentReminders" &&
+          entity !== "courses" &&
+          entity !== "courseSchedules" &&
+          entity !== "evaluations" &&
+          entity !== "notes" &&
+          entity !== "presences" &&
+          entity !== "countries" &&
+          entity !== "subscriptions" &&
+          entity !== "subscriptionOffers" &&
+          entity !== "subscriptionPayments" &&
+          entity !== "subscriptionInvoices" &&
+          entity !== "subscriptionDiscounts" &&
+          entity !== "subscriptionAuditLog" &&
+          entity !== "notifications" &&
+          entity !== "rolePermissions" &&
+          entity !== "dashboardChartConfig" &&
+          entity !== "users" &&
+          entity !== "contacts" &&
+          entity !== "relations" &&
+          entity !== "messages" &&
+          entity !== "announcements",
+      ),
       "academicConfigs",
-      "dashboardChartConfig",
     ];
   }
 

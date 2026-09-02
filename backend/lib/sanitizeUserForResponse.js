@@ -6,6 +6,7 @@
 const SENSITIVE_USER_FIELDS = Object.freeze([
   "password",
   "temporaryPassword",
+  "temporarySecret",
   "passwordHash",
   "pin",
   "pinHash",
@@ -31,6 +32,7 @@ function sanitizeUserForResponse(user) {
   const {
     password: _password,
     temporaryPassword,
+    temporarySecret,
     passwordHash: _passwordHash,
     pin: _pin,
     pinHash: _pinHash,
@@ -41,8 +43,8 @@ function sanitizeUserForResponse(user) {
 
   if (
     safeUser.hasTemporaryPassword == null &&
-    temporaryPassword != null &&
-    String(temporaryPassword).trim()
+    ((temporaryPassword != null && String(temporaryPassword).trim()) ||
+      (temporarySecret != null && String(temporarySecret).trim()))
   ) {
     safeUser.hasTemporaryPassword = true;
   }
@@ -136,9 +138,9 @@ function stripSensitiveFieldsDeepInternal(value, preserveTopLevel, isRoot) {
 
   if (
     next.hasTemporaryPassword == null &&
-    value.temporaryPassword != null &&
-    String(value.temporaryPassword).trim() &&
-    !(isRoot && preserveTopLevel.has("temporaryPassword"))
+    ((value.temporaryPassword != null && String(value.temporaryPassword).trim()) ||
+      (value.temporarySecret != null && String(value.temporarySecret).trim())) &&
+    !(isRoot && (preserveTopLevel.has("temporaryPassword") || preserveTopLevel.has("temporarySecret")))
   ) {
     next.hasTemporaryPassword = true;
   }

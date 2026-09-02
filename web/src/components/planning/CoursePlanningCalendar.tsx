@@ -9,6 +9,7 @@ import {
   getDefaultPlanningCalendarView,
   getViewDays,
   shiftAnchorDate,
+  visibleCivilRange,
   VIEW_LABELS,
   VIEW_ORDER,
   type PlanningCalendarView,
@@ -28,6 +29,7 @@ interface CoursePlanningCalendarProps {
   onEventClick: (eventId: string) => void;
   onEventMove: (eventId: string, start: string, end: string) => void;
   onEventResize: (eventId: string, start: string, end: string) => void;
+  onVisibleRangeChange?: (range: { from: string; to: string }) => void;
 }
 
 function eventInstant(value: string): number {
@@ -58,6 +60,7 @@ function CoursePlanningCalendarInner({
   onEventClick,
   onEventMove,
   onEventResize,
+  onVisibleRangeChange,
 }: CoursePlanningCalendarProps) {
   const [view, setView] = useState<PlanningCalendarView>(() => getDefaultPlanningCalendarView());
   const [date, setDate] = useState(() => initialAnchorDate ?? new Date());
@@ -76,6 +79,12 @@ function CoursePlanningCalendarInner({
   onEventMoveRef.current = onEventMove;
   const onEventResizeRef = useRef(onEventResize);
   onEventResizeRef.current = onEventResize;
+  const onVisibleRangeChangeRef = useRef(onVisibleRangeChange);
+  onVisibleRangeChangeRef.current = onVisibleRangeChange;
+
+  useEffect(() => {
+    onVisibleRangeChangeRef.current?.(visibleCivilRange(view, date));
+  }, [view, date]);
 
   const gridEvents = useMemo(
     () => mapPlanningGridEvents(events),
@@ -196,7 +205,7 @@ function CoursePlanningCalendarInner({
       </div>
 
       <p className="mt-2 px-2 text-xs text-muted">
-        Emploi du temps — {className} · créneaux répétés sur la période · glisser-déposer et redimensionnement{" "}
+        Emploi du temps — {className} · occurrences serveur (from/to) · glisser-déposer et redimensionnement{" "}
         {editable ? "activés" : "désactivés"}
       </p>
     </div>

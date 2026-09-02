@@ -43,24 +43,10 @@ export function readBulletinDesignByClass(
   className: string,
   subjects: string[],
 ): BulletinClassDesign {
-  const stored = academicConfig.bulletinDesignByClass;
-  if (!stored || typeof stored !== "object" || Array.isArray(stored)) {
-    return defaultBulletinClassDesign(className, subjects);
-  }
-  const row = (stored as Record<string, unknown>)[className];
-  if (!row || typeof row !== "object" || Array.isArray(row)) {
-    return defaultBulletinClassDesign(className, subjects);
-  }
-  const design = row as Partial<BulletinClassDesign>;
-  const enabledSubjects = Array.isArray(design.enabledSubjects)
-    ? design.enabledSubjects.filter((item): item is string => typeof item === "string")
-    : subjects;
-  return {
-    ...defaultBulletinClassDesign(className, subjects),
-    ...design,
-    className,
-    enabledSubjects: enabledSubjects.length ? enabledSubjects : [...subjects],
-  };
+  // LOT 5 : le layout canonique est chargé via GET /api/report-card-templates.
+  // academicConfig.bulletinDesignByClass n'est plus une source de vérité.
+  void academicConfig;
+  return defaultBulletinClassDesign(className, subjects);
 }
 
 export function listClassNamesForSchool(

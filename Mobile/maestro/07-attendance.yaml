@@ -1,0 +1,11 @@
+# Lecture seule. Mutation : 12-attendance-mutation.yaml + fixture QA.
+# MUTATION_ATTENDANCE_BLOCKED_NO_QA_FIXTURE si le fixture QA-APPEL / QA-ATT- est absent.
+appId: com.somafrik.app
+---
+- runFlow: flows/login-admin-school.yaml
+- tapOn:
+    id: "home-presence-value"
+- extendedWaitUntil:
+    visible: "Présences"
+    timeout: 20000
+- assertVisible: "Mes classes"

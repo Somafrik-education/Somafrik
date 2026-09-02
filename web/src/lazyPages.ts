@@ -14,11 +14,17 @@ function lazyPage(
 
 export const LandingPage = lazyPage(() => import("./pages/LandingPage"), "LandingPage");
 export const LoginPage = lazyPage(() => import("./pages/LoginPage"), "LoginPage");
+export const PrivacyPolicyPage = lazyPage(() => import("./pages/LegalPages"), "PrivacyPolicyPage");
+export const AccountDeletionPage = lazyPage(() => import("./pages/LegalPages"), "AccountDeletionPage");
 export const DashboardEntryPage = lazyPage(() => import("./pages/DashboardEntryPage"), "DashboardEntryPage");
 /** Alias explicite (ex. lazy routes type DashboardPage). */
 export const DashboardPage = DashboardEntryPage;
 export const MarketplacePage = lazyPage(() => import("./pages/MarketplacePage"), "MarketplacePage");
 export const CountriesPage = lazyPage(() => import("./pages/CountriesPage"), "CountriesPage");
+export const EducationReferencePage = lazyPage(
+  () => import("./pages/EducationReferencePage"),
+  "EducationReferencePage",
+);
 export const SchoolsPage = lazyPage(() => import("./pages/SchoolsPage"), "SchoolsPage");
 export const SubscriptionsLayout = lazyPage(
   () => import("./pages/abonnements/SubscriptionsLayout"),
@@ -80,6 +86,14 @@ export const ChartSettingsPage = lazyPage(() => import("./pages/ChartSettingsPag
 export const ReportsPage = lazyPage(() => import("./pages/ReportsPage"), "ReportsPage");
 export const ConfigurationPage = lazyPage(() => import("./pages/ConfigurationPage"), "ConfigurationPage");
 export const EntityPage = lazyPage(() => import("./pages/EntityPage"), "EntityPage");
+export const MessagesConversationsPage = lazyPage(
+  () => import("./pages/MessagesConversationsPage"),
+  "MessagesConversationsPage",
+);
+export const AnnouncementsPage = lazyPage(
+  () => import("./pages/AnnouncementsPage"),
+  "AnnouncementsPage",
+);
 export const CoursePlanningPage = lazyPage(() => import("./pages/CoursePlanningPage"), "CoursePlanningPage");
 export const PlanningLayout = lazyPage(() => import("./pages/planning/PlanningLayout"), "PlanningLayout");
 export const TimetableLayout = lazyPage(() => import("./pages/planning/TimetableLayout"), "TimetableLayout");
@@ -92,11 +106,11 @@ export const TimetableByTeacherPage = lazyPage(
   "TimetableByTeacherPage",
 );
 export const PlanningRoomsPage = lazyPage(
-  () => import("./pages/planning/PlanningPlaceholders"),
+  () => import("./pages/planning/PlanningRoomsPage"),
   "PlanningRoomsPage",
 );
 export const PlanningSubstitutionsPage = lazyPage(
-  () => import("./pages/planning/PlanningPlaceholders"),
+  () => import("./pages/planning/PlanningSubstitutionsPage"),
   "PlanningSubstitutionsPage",
 );
 export const TimetableByRoomPage = lazyPage(
@@ -161,7 +175,7 @@ export const SettingsDataPage = lazyPage(
   "SettingsDataPage",
 );
 export const SettingsFinancePage = lazyPage(
-  () => import("./pages/parametres/SettingsPlaceholders"),
+  () => import("./pages/parametres/SettingsFinancePage"),
   "SettingsFinancePage",
 );
 export const SettingsIntegrationsPage = lazyPage(

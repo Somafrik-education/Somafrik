@@ -1,0 +1,106 @@
+name: Communications C4
+
+on:
+  pull_request:
+    branches: [develop]
+    paths:
+      - "backend/db/clientsCanonicalBootstrap.js"
+      - "backend/db/communicationsC4.bootstrap.pg.test.js"
+      - "backend/db/communicationsNotificationsSchema.js"
+      - "backend/db/migrations/20260828_communications_c4_internal_notifications.sql"
+      - "backend/lib/communicationsNotificationsService.js"
+      - "backend/lib/communicationsNotificationsWorker.js"
+      - "backend/lib/communicationsC4.http.pg.test.js"
+      - "backend/scripts/verify-communications-c4.js"
+      - "backend/server.js"
+      - "backend/services/rbacService.js"
+      - "web/src/components/communications/InternalNotificationsCenter.tsx"
+      - "web/src/components/layout/Topbar.tsx"
+      - "web/src/lib/internalNotificationsApi.ts"
+      - "web/src/lib/internalNotificationsRead.ts"
+      - "web/src/lib/internalNotificationsC4.test.ts"
+      - "web/src/pages/NotificationsPage.tsx"
+      - "web/src/pages/parametres/SettingsPlaceholders.tsx"
+      - "Mobile/src/components/CommunicationHeaderIcons.tsx"
+      - "Mobile/src/components/MobileAppHeader.tsx"
+      - "Mobile/src/domain/security/permissions.ts"
+      - "Mobile/src/lib/internalNotificationsRead.ts"
+      - "Mobile/src/lib/internalNotificationsC4.test.ts"
+      - "Mobile/src/navigation/AppNavigator.tsx"
+      - "Mobile/src/navigation/roleDrawerPreferences.ts"
+      - "Mobile/src/screens/InternalNotificationsScreen.tsx"
+      - "Mobile/src/screens/HomeScreen.tsx"
+      - "Mobile/src/screens/MenuScreen.tsx"
+      - "Mobile/src/services/internalNotificationsApi.ts"
+      - "docs/audits/communications-c4-internal-notifications-readiness-2026-08-28.md"
+      - "package.json"
+      - ".github/workflows/communications-c4.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  communications-c4:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
+      NODE_ENV: test
+      JWT_SECRET: ci-test-secret-with-enough-length-for-production-checks
+      COMMUNICATION_NOTIFICATIONS_WORKER: disabled
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Record exact HEAD
+        run: |
+          echo "EXACT_HEAD=$(git rev-parse HEAD)"
+          git log -1 --oneline
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.12.0"
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            backend/package-lock.json
+            web/package-lock.json
+            Mobile/package-lock.json
+      - name: Install dependencies
+        run: |
+          npm ci
+          npm ci --prefix backend
+          npm ci --prefix web
+          npm ci --prefix Mobile
+      - name: Verify Communications C4 E2E
+        shell: bash
+        run: |
+          set -o pipefail
+          npm run verify:communications-c4 2>&1 | tee communications-c4.log
+      - name: Preserve C4 verification log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: communications-c4-verification
+          path: communications-c4.log
+          if-no-files-found: error
+          retention-days: 7
+      - name: Build Web
+        run: npm --prefix web run build
+      - name: Typecheck Mobile
+        working-directory: Mobile
+        run: npx tsc --noEmit --project tsconfig.json
