@@ -32,6 +32,8 @@ import {
   GradesEvaluationsPage,
   LandingPage,
   LoginPage,
+  PrivacyPolicyPage,
+  AccountDeletionPage,
   MonAbonnementInvoicesPage,
   MonAbonnementLayout,
   MonAbonnementPage,
@@ -80,6 +82,8 @@ export default function App() {
       <Routes>
       <Route path="/" element={<LandingPage />} />
       <Route path="/connexion" element={<LoginPage />} />
+      <Route path="/confidentialite" element={<PrivacyPolicyPage />} />
+      <Route path="/suppression-compte" element={<AccountDeletionPage />} />
       <Route
         element={
           <ProtectedRoute>
