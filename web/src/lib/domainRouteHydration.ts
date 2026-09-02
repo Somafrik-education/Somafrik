@@ -1,4 +1,4 @@
-import { useSyncExternalStore } from "react";
+import { useCallback, useSyncExternalStore } from "react";
 
 export type DomainRouteHydrationStatus = "idle" | "loading" | "ready" | "error";
 
@@ -44,10 +44,20 @@ function getSnapshot(key: string): DomainRouteHydrationStatus {
   return statuses.get(key) ?? "idle";
 }
 
+function getServerSnapshot(): DomainRouteHydrationStatus {
+  return "idle";
+}
+
 export function useDomainRouteHydrationStatus(key: string): DomainRouteHydrationStatus {
+  const subscribeForKey = useCallback(
+    (listener: () => void) => subscribe(key, listener),
+    [key],
+  );
+  const getSnapshotForKey = useCallback(() => getSnapshot(key), [key]);
+
   return useSyncExternalStore(
-    (listener) => subscribe(key, listener),
-    () => getSnapshot(key),
-    () => "idle",
+    subscribeForKey,
+    getSnapshotForKey,
+    getServerSnapshot,
   );
 }
