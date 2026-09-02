@@ -55,7 +55,7 @@ for (const viewport of ROLE_SELECTION_VIEWPORTS) {
     assert.ok(layout.button >= 16 && layout.button <= 20);
     assert.ok(layout.buttonMinHeight >= 48);
     assert.ok(layout.screenPaddingTop <= 12);
-    assert.ok(layout.screenPaddingHorizontal > 0 && layout.screenPaddingHorizontal <= 20);
+    assert.equal(layout.screenPaddingHorizontal > 0 && layout.screenPaddingHorizontal <= 20, true);
 
     const before = measureRoleSelectionScreen(viewport, { schoolResolved: false, fontScale, ...copy });
     const after = measureRoleSelectionScreen(viewport, { schoolResolved: true, fontScale, ...copy });
