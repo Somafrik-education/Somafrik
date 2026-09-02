@@ -32,5 +32,6 @@ jobs:
       - name: Git identity on PR commits only
         env:
           PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_BASE_REF: ${{ github.event.pull_request.base.ref }}
           PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: node scripts/verify-pr-git-identity.js
