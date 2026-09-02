@@ -1,5 +1,5 @@
 import React from "react";
-import { Alert, ScrollView, View, Text, TouchableOpacity, StyleSheet } from "react-native";
+import { Alert, Linking, ScrollView, View, Text, TouchableOpacity, StyleSheet } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import { useAuth } from "../context/AuthContext";
 import StudentSwitcher from "../components/StudentSwitcher";
@@ -13,6 +13,7 @@ import { MENU_TEST_IDS } from "../lib/loginScreenSpec";
 import { getReleaseProfile } from "../config/env";
 import { sendControlledPushTest } from "../services/pushNotifications";
 import { ENTITY_VIEW_MAP } from "../lib/constants";
+import { ACCOUNT_DELETION_URL, LEGAL_COPY, PRIVACY_POLICY_URL } from "../lib/legalCompliance";
 import {
   resolveTeacherAssignmentsForSession,
   teacherScopedClassLabels,
@@ -215,6 +216,15 @@ export default function MenuScreen() {
         ))}
       </View>
 
+      <View style={styles.legalSection}>
+        <TouchableOpacity accessibilityRole="link" onPress={() => void Linking.openURL(PRIVACY_POLICY_URL)} testID="menu-privacy-policy">
+          <Text style={styles.legalText}>{LEGAL_COPY.privacy}</Text>
+        </TouchableOpacity>
+        <TouchableOpacity accessibilityRole="link" onPress={() => void Linking.openURL(ACCOUNT_DELETION_URL)} testID="menu-account-deletion">
+          <Text style={styles.legalText}>{LEGAL_COPY.deletion}</Text>
+        </TouchableOpacity>
+      </View>
+
       <TouchableOpacity
         style={styles.logout}
         onPress={handleLogout}
@@ -292,6 +302,8 @@ const styles = StyleSheet.create({
     marginLeft: 8,
   },
   chevron: { fontSize: 28, color: "#9CA3AF" },
+  legalSection: { gap: 14, marginTop: 12, alignItems: "center" },
+  legalText: { color: "#1D4ED8", fontWeight: "700", textDecorationLine: "underline", paddingVertical: 8 },
   logout: {
     backgroundColor: "#EF4444",
     padding: 18,

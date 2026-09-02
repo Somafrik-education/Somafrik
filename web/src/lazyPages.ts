@@ -14,6 +14,8 @@ function lazyPage(
 
 export const LandingPage = lazyPage(() => import("./pages/LandingPage"), "LandingPage");
 export const LoginPage = lazyPage(() => import("./pages/LoginPage"), "LoginPage");
+export const PrivacyPolicyPage = lazyPage(() => import("./pages/LegalPages"), "PrivacyPolicyPage");
+export const AccountDeletionPage = lazyPage(() => import("./pages/LegalPages"), "AccountDeletionPage");
 export const DashboardEntryPage = lazyPage(() => import("./pages/DashboardEntryPage"), "DashboardEntryPage");
 /** Alias explicite (ex. lazy routes type DashboardPage). */
 export const DashboardPage = DashboardEntryPage;

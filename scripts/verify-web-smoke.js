@@ -478,6 +478,11 @@ async function browserSmoke(tokenIgnored) {
     page.on("console", (msg) => {
       if (msg.type() === "error") console.log("browser console", msg.text());
     });
+    page.on("response", (response) => {
+      if (response.status() >= 400) {
+        console.log(`browser response ${response.status()} ${response.url()}`);
+      }
+    });
     await page.click('[data-testid="login-submit"]');
     await page.waitForFunction(
       () => !window.location.pathname.includes("/connexion") || Boolean(document.querySelector('[role="alert"]')),
@@ -496,8 +501,16 @@ async function browserSmoke(tokenIgnored) {
         url = page.url();
       }
     }
-    const loginSnap = await collectSnapshot(page, LOGIN_SPEC);
-    const loginProof = evaluateProof(loginSnap, LOGIN_SPEC);
+    let loginSnap = await collectSnapshot(page, LOGIN_SPEC);
+    let loginProof = evaluateProof(loginSnap, LOGIN_SPEC);
+    for (let attempt = 0; !loginProof.ok && attempt < 20; attempt += 1) {
+      await wait(250);
+      loginSnap = await collectSnapshot(page, LOGIN_SPEC);
+      loginProof = evaluateProof(loginSnap, LOGIN_SPEC);
+    }
+    if (!loginProof.ok) {
+      console.log(`WS-UI-login diagnostic pathname=${loginSnap.pathname} reason=${loginProof.reason} main=${loginSnap.mainText}`);
+    }
     results.push({
       id: "WS-UI-login",
       status: loginProof.ok ? 200 : 500,

@@ -3564,6 +3564,10 @@ class FallbackRepository {
     return this.getClientsStore().uploadAnnouncementAttachment(principal, file, query);
   }
 
+  getPlatformAnnouncementsUnreadCount(principal) {
+    return this.getClientsStore().unreadPlatformAnnouncementCountForPrincipal(principal);
+  }
+
   getEducationReferenceStore() {
     if (!this._educationReferenceStore) {
       const { createEducationReferenceMemoryStore } = require("./educationReferenceMemoryStore");

@@ -103,8 +103,9 @@ describe("LandingPage — vitrine publique", () => {
     for (const pattern of FORBIDDEN_PUBLIC_COPY) {
       expect(text).not.toMatch(pattern);
     }
-    expect(marketingLegalRoutes).toHaveLength(0);
-    expect(screen.queryByRole("link", { name: /Mentions légales|Confidentialité|Conditions/i })).not.toBeInTheDocument();
+    expect(marketingLegalRoutes).toHaveLength(2);
+    expect(screen.getByRole("link", { name: /Politique de confidentialité/i })).toHaveAttribute("href", "/confidentialite");
+    expect(screen.getByRole("link", { name: /Suppression de compte/i })).toHaveAttribute("href", "/suppression-compte");
     expect(screen.queryByText(/support@somafrik\.app/i)).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /ouvrir l.aide/i })).not.toBeInTheDocument();
     expect(screen.queryByText(/besoin d.aide/i)).not.toBeInTheDocument();
@@ -118,7 +119,7 @@ describe("LandingPage — vitrine publique", () => {
       if (href.startsWith("#")) {
         expect(ids.has(href.slice(1)), `ancre manquante : ${href}`).toBe(true);
       } else {
-        expect(["/", "/connexion"]).toContain(href);
+        expect(["/", "/connexion", "/confidentialite", "/suppression-compte"]).toContain(href);
       }
     }
     for (const link of marketingNav) {

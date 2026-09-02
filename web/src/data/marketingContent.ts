@@ -323,5 +323,8 @@ export const marketingSkipLink = {
   label: "Aller au contenu",
 } as const;
 
-/** Routes légales publiques : aucune n’existe aujourd’hui. Ne pas afficher de faux liens. */
-export const marketingLegalRoutes: readonly string[] = [];
+/** Routes légales publiques, stables et accessibles sans authentification. */
+export const marketingLegalRoutes = [
+  { href: "/confidentialite", label: "Politique de confidentialité" },
+  { href: "/suppression-compte", label: "Suppression de compte" },
+] as const;
