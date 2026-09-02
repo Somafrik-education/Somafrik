@@ -7,7 +7,6 @@ import {
   LoadingState,
   RecordLayout,
 } from "../../design-system";
-import { useStudentEditingContext } from "../../hooks/useStudentEditingContext";
 import { useStudentWorkspace } from "../../hooks/useStudentWorkspace";
 import { usePermissionContext } from "../../lib/usePermissionContext";
 import {
@@ -22,15 +21,13 @@ import { getStudentWorkspaceModule } from "../../lib/studentWorkspace";
 
 /**
  * Fiche élève — workspace (D3.1).
- * Layout RecordLayout + feedback DS ; logique métier inchangée.
+ * PostgreSQL `/api/students/:studentCode` est l'autorité de lecture.
+ * Les stores d'édition locaux ne doivent jamais écraser l'inscription canonique.
  */
 export function StudentWorkspacePage() {
   const { studentId = "", section } = useParams();
   const normalizedStudentId = studentId.trim();
-  const editing = useStudentEditingContext(normalizedStudentId);
-  const { workspace, loading, error } = useStudentWorkspace(normalizedStudentId, {
-    enrollmentOverride: editing.enrollmentRecords,
-  });
+  const { workspace, loading, error } = useStudentWorkspace(normalizedStudentId);
   const permissionCtx = usePermissionContext();
 
   if (!normalizedStudentId) {
