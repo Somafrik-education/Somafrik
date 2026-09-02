@@ -503,6 +503,9 @@ async function browserSmoke(tokenIgnored) {
     }
     const loginSnap = await collectSnapshot(page, LOGIN_SPEC);
     const loginProof = evaluateProof(loginSnap, LOGIN_SPEC);
+    if (!loginProof.ok) {
+      console.log(`WS-UI-login diagnostic pathname=${loginSnap.pathname} reason=${loginProof.reason} main=${loginSnap.mainText}`);
+    }
     results.push({
       id: "WS-UI-login",
       status: loginProof.ok ? 200 : 500,
