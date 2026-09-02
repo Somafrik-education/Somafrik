@@ -7,7 +7,9 @@ import {
   LoadingState,
   RecordLayout,
 } from "../../design-system";
+import { useStudentEditingContext } from "../../hooks/useStudentEditingContext";
 import { useStudentWorkspace } from "../../hooks/useStudentWorkspace";
+import type { StudentEnrollmentRecord } from "../../lib/studentEnrollment";
 import { usePermissionContext } from "../../lib/usePermissionContext";
 import {
   getStudentWorkspaceNavigationModules,
@@ -20,14 +22,37 @@ import {
 import { getStudentWorkspaceModule } from "../../lib/studentWorkspace";
 
 /**
+ * Overlay C1.8 (validate / assign / close / transfer) uniquement.
+ * Un fallback MIGRATION du store d'édition mock ne doit jamais écraser
+ * l'inscription PostgreSQL canonique (#469).
+ */
+function enrollmentOverrideForCanonicalWorkspace(
+  records: readonly StudentEnrollmentRecord[],
+): readonly StudentEnrollmentRecord[] | undefined {
+  if (records.length === 0) {
+    return undefined;
+  }
+  if (records.some((record) => record.source === "MIGRATION")) {
+    return undefined;
+  }
+  return records;
+}
+
+/**
  * Fiche élève — workspace (D3.1).
  * PostgreSQL `/api/students/:studentCode` est l'autorité de lecture.
- * Les stores d'édition locaux ne doivent jamais écraser l'inscription canonique.
+ * L'overlay local n'est accepté que pour une inscription C1.8 réelle,
+ * jamais pour un fallback MIGRATION incomplet.
  */
 export function StudentWorkspacePage() {
   const { studentId = "", section } = useParams();
   const normalizedStudentId = studentId.trim();
-  const { workspace, loading, error } = useStudentWorkspace(normalizedStudentId);
+  const editing = useStudentEditingContext(normalizedStudentId);
+  const { workspace, loading, error } = useStudentWorkspace(normalizedStudentId, {
+    enrollmentOverride: enrollmentOverrideForCanonicalWorkspace(
+      editing.enrollmentRecords,
+    ),
+  });
   const permissionCtx = usePermissionContext();
 
   if (!normalizedStudentId) {

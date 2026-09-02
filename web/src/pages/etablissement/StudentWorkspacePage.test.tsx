@@ -32,9 +32,15 @@ const workspace = {
 };
 
 const useStudentWorkspaceMock = vi.hoisted(() => vi.fn());
+const useStudentEditingContextMock = vi.hoisted(() => vi.fn());
 
 vi.mock("../../hooks/useStudentWorkspace", () => ({
   useStudentWorkspace: (...args: unknown[]) => useStudentWorkspaceMock(...args),
+}));
+
+vi.mock("../../hooks/useStudentEditingContext", () => ({
+  useStudentEditingContext: (...args: unknown[]) =>
+    useStudentEditingContextMock(...args),
 }));
 
 vi.mock("../../lib/usePermissionContext", () => ({
@@ -60,10 +66,13 @@ describe("StudentWorkspacePage (D3.1)", () => {
       loading: false,
       error: null,
     });
+    useStudentEditingContextMock.mockReturnValue({
+      enrollmentRecords: [],
+    });
   });
 
-  it("renders RecordLayout with student header from the canonical workspace", () => {
-    render(
+  function renderPage() {
+    return render(
       <MemoryRouter initialEntries={["/etablissement/eleves/stu-1"]}>
         <Routes>
           <Route path="/etablissement/eleves/:studentId" element={<StudentWorkspacePage />} />
@@ -74,13 +83,42 @@ describe("StudentWorkspacePage (D3.1)", () => {
         </Routes>
       </MemoryRouter>,
     );
+  }
 
-    expect(useStudentWorkspaceMock).toHaveBeenCalledWith("stu-1");
+  it("renders RecordLayout with student header from the canonical workspace", () => {
+    renderPage();
+
+    expect(useStudentWorkspaceMock).toHaveBeenCalledWith("stu-1", {
+      enrollmentOverride: undefined,
+    });
     expect(screen.getByRole("heading", { name: "Awa Diop" })).toBeInTheDocument();
     expect(screen.getByText(/Matricule : MAT-001/)).toBeInTheDocument();
     expect(screen.getByText("2026-2027")).toBeInTheDocument();
     expect(screen.getByText("Lycée Test")).toBeInTheDocument();
     expect(screen.getByLabelText("Contenu")).toBeInTheDocument();
     expect(screen.getByTestId("tabs")).toBeInTheDocument();
+  });
+
+  it("does not overlay a MIGRATION fallback onto the canonical dossier", () => {
+    useStudentEditingContextMock.mockReturnValue({
+      enrollmentRecords: [{ source: "MIGRATION" }],
+    });
+
+    renderPage();
+
+    expect(useStudentWorkspaceMock).toHaveBeenCalledWith("stu-1", {
+      enrollmentOverride: undefined,
+    });
+  });
+
+  it("overlays a C1.8 school-administration enrollment after local mutation", () => {
+    const enrollmentRecords = [{ source: "SCHOOL_ADMINISTRATION" }];
+    useStudentEditingContextMock.mockReturnValue({ enrollmentRecords });
+
+    renderPage();
+
+    expect(useStudentWorkspaceMock).toHaveBeenCalledWith("stu-1", {
+      enrollmentOverride: enrollmentRecords,
+    });
   });
 });
