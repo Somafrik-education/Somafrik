@@ -102,6 +102,14 @@ vi.mock("../../lib/studentsApi", () => ({
   studentsApi: { list: listMock, get: vi.fn(), update: vi.fn(), archive: archiveMock },
 }));
 
+// Ce fichier teste la convergence d'un snapshot DataContext déjà fourni à la page.
+// Le bootstrap réel et l'attente d'hydratation sont couverts séparément par
+// EtablissementOverviewPage.bootstrap.test.tsx.
+vi.mock("../../lib/domainRouteHydration", () => ({
+  buildDomainRouteHydrationKey: () => "overview-canonical-test",
+  useDomainRouteHydrationStatus: () => "ready",
+}));
+
 vi.mock("../../context/DataContext", () => ({
   useData: () => {
     const [students, setStudents] = useState(store.students);

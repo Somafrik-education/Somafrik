@@ -14,6 +14,13 @@ const store = vi.hoisted(() => ({
   students: [] as Record<string, unknown>[],
   users: [] as Record<string, unknown>[],
   classes: [] as Record<string, unknown>[],
+  teachers: [] as Record<string, unknown>[],
+  assignments: [] as Record<string, unknown>[],
+  relations: [] as Record<string, unknown>[],
+}));
+
+const asyncState = vi.hoisted(() => ({
+  assignmentsPromise: null as Promise<unknown> | null,
 }));
 
 const apiGetMock = vi.hoisted(() =>
@@ -113,6 +120,9 @@ function seedFifteen() {
   store.students = Array.from({ length: 15 }, (_, index) => pgStudent(index));
   store.classes = [{ id: "cls-1", name: "6ème A", classCode: "CLS-1", schoolCode: LEFTOVER_A, schoolId: SCHOOL_ID_A }];
   store.users = [];
+  store.teachers = [];
+  store.assignments = [];
+  store.relations = [];
 }
 
 function studentGetCalls(): number {
@@ -148,13 +158,18 @@ describe("EtablissementOverviewPage — bootstrap DataProvider + DomainRouteBoot
     localStorage.clear();
     apiGetMock.mockReset();
     apiDeleteMock.mockReset();
+    asyncState.assignmentsPromise = null;
     seedFifteen();
     apiGetMock.mockImplementation(async (path: string) => {
       const url = String(path);
       if (url === "/students") return store.students;
       if (url === "/backoffice/users") return store.users;
       if (url === "/classes") return store.classes;
-      if (url === "/teachers") return [];
+      if (url === "/teachers") return store.teachers;
+      if (url === "/assignments") {
+        return asyncState.assignmentsPromise ?? store.assignments;
+      }
+      if (url === "/backoffice/relations") return store.relations;
       if (url.startsWith("/backoffice/establishments/")) {
         return {
           id: SCHOOL_ID_A,
@@ -190,6 +205,50 @@ describe("EtablissementOverviewPage — bootstrap DataProvider + DomainRouteBoot
       expect(studentGetCalls()).toBeGreaterThan(callsAfterFirstMount);
       expect(tileCount("Élèves")).toBe("15");
     });
+  });
+
+  it("connexion à froid : attend assignments avant KPI/alertes et ne rend jamais de fausse alerte", async () => {
+    let resolveAssignments: (value: unknown) => void = () => undefined;
+    asyncState.assignmentsPromise = new Promise((resolve) => {
+      resolveAssignments = resolve;
+    });
+    store.teachers = [
+      {
+        id: "teacher-kilombo",
+        publicId: "ENS-0001",
+        identifier: "ENS-0001",
+        firstName: "KILOMBO",
+        lastName: "SEKE",
+        name: "KILOMBO SEKE",
+        schoolCode: LEFTOVER_A,
+        schoolId: SCHOOL_ID_A,
+      },
+    ];
+    store.assignments = [
+      {
+        id: "assignment-1",
+        teacherId: "teacher-kilombo",
+        teacherName: "KILOMBO SEKE",
+        className: "6ème A",
+        schoolCode: LEFTOVER_A,
+        schoolId: SCHOOL_ID_A,
+      },
+    ];
+
+    renderEstablishmentTree("/etablissement/vue-ensemble");
+
+    expect(await screen.findByText("Chargement des données de l’établissement…")).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Enseignants" })).not.toBeInTheDocument();
+    expect(screen.queryByText(/enseignant\(s\) sans affectation/i)).not.toBeInTheDocument();
+    expect(apiGetMock).toHaveBeenCalledWith("/assignments");
+
+    resolveAssignments(store.assignments);
+
+    await waitFor(() => {
+      expect(tileCount("Enseignants")).toBe("1");
+      expect(screen.getByText("Aucune alerte. Les données sont cohérentes.")).toBeInTheDocument();
+    });
+    expect(screen.queryByText(/enseignant\(s\) sans affectation/i)).not.toBeInTheDocument();
   });
 
   it("archive + refresh students → N−1 sur l'annuaire et la vue d'ensemble", async () => {

@@ -22,7 +22,10 @@ const ROUTE_DOMAIN_RULES: { prefix: string; domains: DomainKey[] }[] = [
   },
   {
     prefix: "/etablissement/vue-ensemble",
-    domains: ["schools", "students", "teachers", "classes", "users", "payments", "studentFees", "presences", "notes"],
+    // Dépendances réellement lues par EtablissementOverviewPage. Les alertes
+    // enseignants et le KPI Parents & élèves ne doivent jamais être calculés
+    // avant le chargement de assignments / relations.
+    domains: ["schools", "students", "teachers", "classes", "users", "assignments", "relations"],
   },
   { prefix: "/etablissement/comptes-utilisateurs", domains: ["users", "contacts", "schools"] },
   { prefix: "/etablissement/relations-parent-enfant", domains: ["relations", "students", "contacts", "users"] },
