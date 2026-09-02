@@ -10,7 +10,7 @@ const workspace = {
   activeStatusLabel: "Actif",
   enrollmentStatusLabel: "Inscrit",
   classLabel: "6ème A",
-  academicYearLabel: "2025-2026",
+  academicYearLabel: "2026-2027",
   schoolNameLabel: "Lycée Test",
   alerts: [],
   genderLabel: "F",
@@ -18,7 +18,7 @@ const workspace = {
   birthDateLabel: "01/01/2014",
   phoneLabel: "—",
   nationalityLabel: "SN",
-  enrollmentDateLabel: "01/09/2025",
+  enrollmentDateLabel: "01/09/2026",
   guardiansCountLabel: "2",
   primaryGuardianLabel: "M. Diop",
   documentsCompleteLabel: "Complet",
@@ -31,18 +31,10 @@ const workspace = {
   pickupAuthorizations: [],
 };
 
-vi.mock("../../hooks/useStudentWorkspace", () => ({
-  useStudentWorkspace: () => ({
-    workspace,
-    loading: false,
-    error: null,
-  }),
-}));
+const useStudentWorkspaceMock = vi.hoisted(() => vi.fn());
 
-vi.mock("../../hooks/useStudentEditingContext", () => ({
-  useStudentEditingContext: () => ({
-    enrollmentRecords: [],
-  }),
+vi.mock("../../hooks/useStudentWorkspace", () => ({
+  useStudentWorkspace: (...args: unknown[]) => useStudentWorkspaceMock(...args),
 }));
 
 vi.mock("../../lib/usePermissionContext", () => ({
@@ -63,9 +55,14 @@ import { StudentWorkspacePage } from "./StudentWorkspacePage";
 describe("StudentWorkspacePage (D3.1)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    useStudentWorkspaceMock.mockReturnValue({
+      workspace,
+      loading: false,
+      error: null,
+    });
   });
 
-  it("renders RecordLayout with student header", () => {
+  it("renders RecordLayout with student header from the canonical workspace", () => {
     render(
       <MemoryRouter initialEntries={["/etablissement/eleves/stu-1"]}>
         <Routes>
@@ -78,8 +75,11 @@ describe("StudentWorkspacePage (D3.1)", () => {
       </MemoryRouter>,
     );
 
+    expect(useStudentWorkspaceMock).toHaveBeenCalledWith("stu-1");
     expect(screen.getByRole("heading", { name: "Awa Diop" })).toBeInTheDocument();
     expect(screen.getByText(/Matricule : MAT-001/)).toBeInTheDocument();
+    expect(screen.getByText("2026-2027")).toBeInTheDocument();
+    expect(screen.getByText("Lycée Test")).toBeInTheDocument();
     expect(screen.getByLabelText("Contenu")).toBeInTheDocument();
     expect(screen.getByTestId("tabs")).toBeInTheDocument();
   });
