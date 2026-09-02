@@ -15,22 +15,35 @@ export function periodTypeLabel(mode: PeriodMode): string {
   return "Trimestre";
 }
 
-function buildDefaultRows(mode: PeriodMode): AcademicPeriodRow[] {
+function schoolYearStartYear(now: Date): number {
+  // Somafrik : l'année scolaire canonique démarre au second semestre civil
+  // (ex. 2026-2027). De janvier à juin, on reste donc sur l'année démarrée
+  // l'année civile précédente.
+  return now.getMonth() >= 6 ? now.getFullYear() : now.getFullYear() - 1;
+}
+
+function periodDate(day: number, month: number, year: number): string {
+  return `${String(day).padStart(2, "0")}-${String(month).padStart(2, "0")}-${year}`;
+}
+
+function buildDefaultRows(mode: PeriodMode, now: Date): AcademicPeriodRow[] {
+  const startYear = schoolYearStartYear(now);
+  const endYear = startYear + 1;
   if (mode === "semestre") {
     return [
       {
         name: "Semestre 1",
         type: "Semestre",
-        startDate: "01-09-2025",
-        endDate: "31-01-2026",
+        startDate: periodDate(1, 9, startYear),
+        endDate: periodDate(31, 1, endYear),
         active: false,
         order: 1,
       },
       {
         name: "Semestre 2",
         type: "Semestre",
-        startDate: "01-02-2026",
-        endDate: "30-06-2026",
+        startDate: periodDate(1, 2, endYear),
+        endDate: periodDate(30, 6, endYear),
         active: false,
         order: 2,
       },
@@ -41,8 +54,8 @@ function buildDefaultRows(mode: PeriodMode): AcademicPeriodRow[] {
       {
         name: "Période 1",
         type: "Période",
-        startDate: "01-09-2025",
-        endDate: "31-10-2025",
+        startDate: periodDate(1, 9, startYear),
+        endDate: periodDate(31, 10, startYear),
         active: false,
         order: 1,
       },
@@ -52,24 +65,24 @@ function buildDefaultRows(mode: PeriodMode): AcademicPeriodRow[] {
     {
       name: "Trimestre 1",
       type: "Trimestre",
-      startDate: "01-09-2025",
-      endDate: "31-12-2025",
+      startDate: periodDate(1, 9, startYear),
+      endDate: periodDate(31, 12, startYear),
       active: false,
       order: 1,
     },
     {
       name: "Trimestre 2",
       type: "Trimestre",
-      startDate: "01-01-2026",
-      endDate: "31-03-2026",
+      startDate: periodDate(1, 1, endYear),
+      endDate: periodDate(31, 3, endYear),
       active: false,
       order: 2,
     },
     {
       name: "Trimestre 3",
       type: "Trimestre",
-      startDate: "01-04-2026",
-      endDate: "30-06-2026",
+      startDate: periodDate(1, 4, endYear),
+      endDate: periodDate(30, 6, endYear),
       active: false,
       order: 3,
     },
@@ -77,7 +90,7 @@ function buildDefaultRows(mode: PeriodMode): AcademicPeriodRow[] {
 }
 
 export function defaultPeriodsForMode(mode: PeriodMode, now: Date = new Date()): AcademicPeriodRow[] {
-  return applySystemActivePeriod(buildDefaultRows(mode), now);
+  return applySystemActivePeriod(buildDefaultRows(mode, now), now);
 }
 
 export function coercePeriodMode(value: unknown): PeriodMode {
