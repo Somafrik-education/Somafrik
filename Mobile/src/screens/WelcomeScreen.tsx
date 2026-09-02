@@ -1,4 +1,4 @@
-import { Animated, Image, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { Animated, Image, Linking, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { useEffect, useRef } from "react";
@@ -6,6 +6,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { RootStackParamList } from "../navigation/AppNavigator";
 import { WELCOME_SCREEN_COPY, WELCOME_TEST_IDS } from "../lib/welcomeScreenSpec";
 import { MIN_TOUCH_TARGET } from "../lib/mobileAccessibilitySpec";
+import { LEGAL_COPY, PRIVACY_POLICY_URL } from "../lib/legalCompliance";
 
 type Props = NativeStackScreenProps<RootStackParamList, "Welcome">;
 const somafrikLogo = require("../../assets/somafrik-logo.png");
@@ -69,6 +70,15 @@ export default function WelcomeScreen({ navigation }: Props) {
           <Ionicons name="arrow-forward" size={18} color="#FFFFFF" />
         </TouchableOpacity>
       </Animated.View>
+      <TouchableOpacity
+        accessibilityRole="link"
+        accessibilityLabel={LEGAL_COPY.privacy}
+        onPress={() => void Linking.openURL(PRIVACY_POLICY_URL)}
+        style={styles.legalLink}
+        testID="welcome-privacy-policy"
+      >
+        <Text style={styles.legalLinkText}>{LEGAL_COPY.privacy}</Text>
+      </TouchableOpacity>
     </SafeAreaView>
   );
 }
@@ -120,4 +130,6 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   buttonText: { color: "#FFFFFF", fontWeight: "900", fontSize: 16 },
+  legalLink: { marginTop: 22, minHeight: MIN_TOUCH_TARGET, justifyContent: "center", paddingHorizontal: 8 },
+  legalLinkText: { color: "#1D4ED8", fontWeight: "700", textDecorationLine: "underline" },
 });
