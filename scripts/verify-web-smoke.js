@@ -501,8 +501,13 @@ async function browserSmoke(tokenIgnored) {
         url = page.url();
       }
     }
-    const loginSnap = await collectSnapshot(page, LOGIN_SPEC);
-    const loginProof = evaluateProof(loginSnap, LOGIN_SPEC);
+    let loginSnap = await collectSnapshot(page, LOGIN_SPEC);
+    let loginProof = evaluateProof(loginSnap, LOGIN_SPEC);
+    for (let attempt = 0; !loginProof.ok && attempt < 20; attempt += 1) {
+      await wait(250);
+      loginSnap = await collectSnapshot(page, LOGIN_SPEC);
+      loginProof = evaluateProof(loginSnap, LOGIN_SPEC);
+    }
     if (!loginProof.ok) {
       console.log(`WS-UI-login diagnostic pathname=${loginSnap.pathname} reason=${loginProof.reason} main=${loginSnap.mainText}`);
     }
