@@ -28,7 +28,16 @@ describe("marketingContent", () => {
     expect(marketingHero.primaryCta.href).toBe("/connexion");
     expect(marketingFinalCta.cta.href).toBe("/connexion");
     expect(marketingLogin.href).toBe("/connexion");
-    expect(marketingLegalRoutes).toEqual([]);
+    expect(marketingLegalRoutes).toEqual([
+      {
+        label: "Politique de confidentialité",
+        href: "/confidentialite",
+      },
+      {
+        label: "Suppression de compte",
+        href: "/suppression-compte",
+      },
+    ]);
   });
 
   it("garde des identifiants de section stables", () => {
