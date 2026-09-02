@@ -74,6 +74,11 @@ vi.mock("../../context/DataContext", () => ({
   }),
 }));
 
+vi.mock("../../lib/domainRouteHydration", () => ({
+  buildDomainRouteHydrationKey: () => "overview-test",
+  useDomainRouteHydrationStatus: () => "ready",
+}));
+
 vi.mock("../../lib/usePermissionContext", () => ({
   usePermissionContext: () => ({
     user: schoolAdmin.user,
