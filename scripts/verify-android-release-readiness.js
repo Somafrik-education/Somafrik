@@ -235,7 +235,7 @@ async function main() {
   assert.match(appConfig, /profileAllowsCleartext/);
   assert.doesNotMatch(appConfig, /http:\/\/localhost:5000/);
   assert.equal(CANONICAL_API_URLS.production, "https://api.somafrik.app");
-  assert.equal(CANONICAL_API_URLS.preproduction, "https://somafrik-api-preprod.onrender.com");
+  assert.equal(CANONICAL_API_URLS.preproduction, "https://api-preprod.somafrik.app");
   console.log("PASS AR-API-binding production≠preprod HTTPS fail-closed");
   console.log("PASS AR-EAS preview=apk/internal store=aab remote versionCode pas de submit");
 
