@@ -5,6 +5,7 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
+import "./legalCompliance.test";
 import { ROLE_SELECTION_COPY, ROLE_SELECTION_TEST_IDS } from "./loginScreenSpec";
 import {
   ROLE_SELECTION_NAV_TITLE,
