@@ -5,6 +5,7 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
+import "./legalCompliance.test";
 import { ROLE_SELECTION_COPY, ROLE_SELECTION_TEST_IDS } from "./loginScreenSpec";
 import {
   ROLE_SELECTION_NAV_TITLE,
@@ -54,7 +55,7 @@ for (const viewport of ROLE_SELECTION_VIEWPORTS) {
     assert.ok(layout.button >= 16 && layout.button <= 20);
     assert.ok(layout.buttonMinHeight >= 48);
     assert.ok(layout.screenPaddingTop <= 12);
-    assert.equal(layout.screenPaddingHorizontal > 0 && layout.screenPaddingHorizontal <= 20, true);
+    assert.ok(layout.screenPaddingHorizontal > 0 && layout.screenPaddingHorizontal <= 20);
 
     const before = measureRoleSelectionScreen(viewport, { schoolResolved: false, fontScale, ...copy });
     const after = measureRoleSelectionScreen(viewport, { schoolResolved: true, fontScale, ...copy });
