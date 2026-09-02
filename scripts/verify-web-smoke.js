@@ -478,6 +478,11 @@ async function browserSmoke(tokenIgnored) {
     page.on("console", (msg) => {
       if (msg.type() === "error") console.log("browser console", msg.text());
     });
+    page.on("response", (response) => {
+      if (response.status() >= 400) {
+        console.log(`browser response ${response.status()} ${response.url()}`);
+      }
+    });
     await page.click('[data-testid="login-submit"]');
     await page.waitForFunction(
       () => !window.location.pathname.includes("/connexion") || Boolean(document.querySelector('[role="alert"]')),
