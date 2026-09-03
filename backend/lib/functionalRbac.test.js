@@ -675,7 +675,7 @@ test("POST /api/assignments exige Affectations:CREATE, pas Matières:CREATE", ()
   );
 });
 
-test("live CRUD : révoquer Comptable retire Rapports:READ hors liste métier Secrétaire", async () => {
+test("live CRUD : Impayés:READ reste propre au Comptable, pas à la Secrétaire", async () => {
   const rbac = createFunctionalRbacMemoryStore();
   const repo = {
     getFunctionalRbacStore: () => rbac,
@@ -692,8 +692,8 @@ test("live CRUD : révoquer Comptable retire Rapports:READ hors liste métier Se
   const secretaryGrants = await rbac.listGrantsForRoles(["SECRETARY"]);
   const both = resolveEffectivePermissionSet(["SECRETARY", "ACCOUNTANT"], bothGrants);
   const secretary = resolveEffectivePermissionSet(["SECRETARY"], secretaryGrants);
-  assert.ok(both.permissions.includes("Rapports:READ"), JSON.stringify(both.permissions));
-  assert.equal(secretary.permissions.includes("Rapports:READ"), false, JSON.stringify(secretary.permissions));
+  assert.ok(both.permissions.includes("Impayés:READ"), JSON.stringify(both.permissions));
+  assert.equal(secretary.permissions.includes("Impayés:READ"), false, JSON.stringify(secretary.permissions));
   assert.notDeepEqual(both.permissions, secretary.permissions);
 });
 

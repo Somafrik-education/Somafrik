@@ -138,10 +138,11 @@ test("bootstrap J3 ajoute Affectations:READ enseignant et Affectations CRUD pré
     false,
   );
   assert.equal(
-    rbac.canAccess({ role: "Enseignant", permissions: teacher.permissions }, "GET /api/courses"),
+    rbac.canAccess({ role: "Enseignant", permissions: teacher.permissions }, "POST /api/courses"),
     false,
-    "Affectations:READ ne doit pas ouvrir le catalogue global des cours",
+    "Affectations:READ n'ouvre pas l'écriture du catalogue cours",
   );
+  assert.equal(teacher.permissions.includes("Affectations:CREATE"), false);
 
   const prefet = await resolveEffectivePermissionsForPrincipal(repo, {
     role: "Préfet des études",
