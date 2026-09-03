@@ -38,7 +38,15 @@ function withDatabaseName(databaseUrl, databaseName) {
   return parsed.toString();
 }
 
-async function ensureDatabase(databaseUrl, databaseName) {
+function loadPgPool() {
+  try {
+    return require("pg").Pool;
+  } catch {
+    return null;
+  }
+}
+
+async function ensureDatabase(Pool, databaseUrl, databaseName) {
   const maintenance = withDatabaseName(databaseUrl, "postgres");
   const pool = new Pool({ connectionString: maintenance });
   try {
@@ -100,15 +108,13 @@ async function main() {
     console.log("systemRolesReconciliation.pg.test.js SKIP (DATABASE_URL absent)");
     return;
   }
-  let Pool;
-  try {
-    ({ Pool } = require("pg"));
-  } catch {
+  const Pool = loadPgPool();
+  if (!Pool) {
     console.log("systemRolesReconciliation.pg.test.js SKIP (module pg absent)");
     return;
   }
 
-  const url = await ensureDatabase(DATABASE_URL, IT_DB);
+  const url = await ensureDatabase(Pool, DATABASE_URL, IT_DB);
   const pool = new Pool({ connectionString: url });
   const repo = createRepo(pool);
   const rbac = new RbacService();
