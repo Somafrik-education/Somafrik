@@ -146,6 +146,18 @@ describe("Superadmin / Admin Pays — filtre fail-closed schoolId", () => {
   });
 });
 
+describe("garde source ClassesListPage — leftover n'est plus une autorité", () => {
+  const page = readFileSync(resolve(__dirname, "../pages/etablissement/ClassesListPage.tsx"), "utf8");
+
+  it("réutilise scopeAcademicYearsForConfiguration et refuse year.schoolCode === activeSchoolCode", () => {
+    expect(page).toMatch(/scopeAcademicYearsForConfiguration/);
+    expect(page).not.toMatch(/year\.schoolCode\s*===\s*activeSchoolCode/);
+    expect(page).not.toMatch(/year\.schoolCode\s*===\s*.*schoolCode/);
+    expect(page).toMatch(/selectedSchoolForYears/);
+    expect(page).toMatch(/sessionSchoolId/);
+  });
+});
+
 describe("garde source ConfigurationPage — leftover n'est plus une autorité", () => {
   const page = readFileSync(resolve(__dirname, "../pages/ConfigurationPage.tsx"), "utf8");
 

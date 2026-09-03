@@ -331,7 +331,7 @@ async function main() {
       },
       "SCH-A",
     );
-    assert.equal(created.name, "6ème");
+    assert.equal(created.name, "6ème A");
     assert.equal(created.status, "active");
     assert.equal(created.groupCode, "A");
     assert.match(created.classCode, /^CLS-/);
@@ -347,10 +347,10 @@ async function main() {
       status: "inactive",
     });
     assert.equal(updated.status, "inactive");
-    assert.equal(updated.name, "6ème");
+    assert.equal(updated.name, "6ème A");
 
     const reread = await repo.listBySchoolCode("SCH-A");
-    assert.equal(reread[0].name, "6ème");
+    assert.equal(reread[0].name, "6ème A");
     assert.equal(reread[0].status, "inactive");
 
     await assert.rejects(
@@ -393,7 +393,21 @@ async function main() {
       "SCH-B",
     );
     assert.equal(inOtherSchool.schoolCode, "SCH-B");
-    assert.equal(inOtherSchool.name, "5ème");
+    assert.equal(inOtherSchool.name, "5ème A");
+
+    await assert.rejects(
+      () =>
+        repo.create(
+          {
+            academicYearId: ids.yearB,
+            levelId: ids.levelA,
+            groupId: ids.groupA,
+            status: "active",
+          },
+          "SCH-A",
+        ),
+      (error) => error.statusCode === 400 && /introuvable pour cet établissement/.test(error.message),
+    );
 
     const listB = await repo.listBySchoolCode("SCH-B");
     assert.equal(listB.length, 1);

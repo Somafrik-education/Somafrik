@@ -213,7 +213,7 @@ async function main() {
     "SCH-A",
   );
   assert.equal(created.schoolCode, "SCH-A");
-  assert.equal(created.name, "6ème Générale");
+  assert.equal(created.name, "6ème Générale A");
   assert.equal(created.groupCode, "A");
   assert.equal(created.track, "Générale");
   assert.match(created.classCode, /^CLS-/);
@@ -232,7 +232,7 @@ async function main() {
     },
     "SCH-A",
   );
-  assert.equal(sameNameOtherGroup.name, created.name);
+  assert.equal(sameNameOtherGroup.name, "6ème Générale B");
   assert.equal(sameNameOtherGroup.groupCode, "B");
   assert.notEqual(sameNameOtherGroup.classCode, created.classCode);
 
@@ -261,7 +261,21 @@ async function main() {
 
   const updated = await repo.update(created.classCode, "SCH-A", { status: "inactive" });
   assert.equal(updated.status, "inactive");
-  assert.equal(updated.name, "6ème Générale");
+  assert.equal(updated.name, "6ème Générale A");
+
+  await assert.rejects(
+    () =>
+      repo.create(
+        {
+          academicYearId: "ay-b",
+          levelId: "level-a",
+          groupId: "group-a",
+          status: "active",
+        },
+        "SCH-A",
+      ),
+    (error) => error.statusCode === 400 && /introuvable pour cet établissement/.test(error.message),
+  );
 
   await assert.rejects(
     () => repo.update(created.classCode, "SCH-B", { status: "active" }),

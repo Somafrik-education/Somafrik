@@ -17,9 +17,32 @@ test("generateClassCode produces immutable CLS-* codes", () => {
   assert.ok(code.length <= 64);
 });
 
-test("composeClassDisplayName joint niveau et filière, sans code groupe", () => {
-  assert.equal(composeClassDisplayName({ levelName: "4ème", streamName: "Scientifique", groupCode: "A" }), "4ème Scientifique");
-  assert.equal(composeClassDisplayName({ levelName: "6ème", streamName: null, groupCode: "A" }), "6ème");
+test("composeClassDisplayName joint niveau, filière et série métier", () => {
+  assert.equal(
+    composeClassDisplayName({ levelName: "4ème", streamName: "Scientifique", groupCode: "A" }),
+    "4ème Scientifique A",
+  );
+  assert.equal(composeClassDisplayName({ levelName: "6ème", streamName: null, groupCode: "A" }), "6ème A");
+  assert.equal(
+    composeClassDisplayName({ levelName: "1ère Primaire", streamName: null, groupCode: "A" }),
+    "1ère Primaire A",
+  );
+  assert.equal(
+    composeClassDisplayName({
+      levelName: "1ère Humanité",
+      streamName: "Scientifique",
+      groupCode: "A",
+    }),
+    "1ère Humanité Scientifique A",
+  );
+  assert.equal(
+    composeClassDisplayName({
+      levelName: "2ème Humanité",
+      streamName: "Commerciale et Gestion",
+      groupCode: "B",
+    }),
+    "2ème Humanité Commerciale et Gestion B",
+  );
 });
 
 test("validateCreateClassInput n'accepte plus le texte libre", () => {
