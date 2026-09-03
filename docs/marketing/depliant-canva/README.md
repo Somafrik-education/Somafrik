@@ -4,6 +4,20 @@ Kit de présentation officielle : **captures runtime** de l’application web et
 
 Aucune maquette reconstruite, aucun faux iPhone / Android. Les écrans viennent de `docs/user-guides/assets/` et de `web/public/marketing/`.
 
+## Téléchargement (un clic)
+
+Sur GitHub, ouvrir le lien puis **clic droit → Enregistrer sous…**, ou le bouton **Download raw file**.
+
+| Fichier | Lien direct |
+|---|---|
+| **Kit complet (ZIP)** | [Somafrik-kit-Canva.zip](https://github.com/Somafrik-education/Somafrik/raw/cursor/depliant-canva-somafrik-0b46/docs/marketing/depliant-canva/Somafrik-kit-Canva.zip) |
+| Dépliant Canva (PPTX) | [Somafrik-depliant-3-volets-Canva.pptx](https://github.com/Somafrik-education/Somafrik/raw/cursor/depliant-canva-somafrik-0b46/docs/marketing/depliant-canva/Somafrik-depliant-3-volets-Canva.pptx) |
+| Présentation Canva (PPTX) | [Somafrik-presentation-Canva.pptx](https://github.com/Somafrik-education/Somafrik/raw/cursor/depliant-canva-somafrik-0b46/docs/marketing/depliant-canva/Somafrik-presentation-Canva.pptx) |
+| Dépliant PDF | [Somafrik-depliant-3-volets.pdf](https://github.com/Somafrik-education/Somafrik/raw/cursor/depliant-canva-somafrik-0b46/docs/marketing/depliant-canva/Somafrik-depliant-3-volets.pdf) |
+| Présentation PDF | [Somafrik-presentation.pdf](https://github.com/Somafrik-education/Somafrik/raw/cursor/depliant-canva-somafrik-0b46/docs/marketing/depliant-canva/Somafrik-presentation.pdf) |
+
+Il faut être connecté à GitHub sur le compte qui a accès au dépôt. L’onglet *Files changed* de la PR n’offre pas de bouton de téléchargement pour les binaires : utiliser les liens ci-dessus.
+
 ## Fichiers à ouvrir
 
 | Fichier | Usage |
