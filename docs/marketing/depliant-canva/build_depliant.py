@@ -8,6 +8,7 @@ Le PPTX conserve textes et formes éditables : Fichier → Importer dans Canva.
 from __future__ import annotations
 
 from pathlib import Path
+from zipfile import ZIP_DEFLATED, ZipFile, ZipInfo
 
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 from pptx import Presentation
@@ -48,10 +49,37 @@ PIL_LINE = (226, 232, 240)
 PIL_WHITE = (255, 255, 255)
 PIL_NAVY = (11, 18, 32)
 
-FONT_REG = "/usr/share/fonts/truetype/macos/Inter-Regular.ttf"
-FONT_MED = "/usr/share/fonts/truetype/macos/Inter-Medium.ttf"
-FONT_SEMI = "/usr/share/fonts/truetype/macos/Inter-SemiBold.ttf"
-FONT_BOLD = "/usr/share/fonts/truetype/macos/Inter-Bold.ttf"
+FONT_CANDIDATES = {
+    "regular": (
+        "/usr/share/fonts/truetype/macos/Inter-Regular.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+    ),
+    "medium": (
+        "/usr/share/fonts/truetype/macos/Inter-Medium.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+    ),
+    "semibold": (
+        "/usr/share/fonts/truetype/macos/Inter-SemiBold.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+    ),
+    "bold": (
+        "/usr/share/fonts/truetype/macos/Inter-Bold.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+    ),
+}
+
+
+def resolve_font(weight: str) -> str:
+    for candidate in FONT_CANDIDATES[weight]:
+        if Path(candidate).is_file():
+            return candidate
+    raise FileNotFoundError(f"Aucune police compatible trouvée pour {weight}")
+
+
+FONT_REG = resolve_font("regular")
+FONT_MED = resolve_font("medium")
+FONT_SEMI = resolve_font("semibold")
+FONT_BOLD = resolve_font("bold")
 
 WEB = {
     "login": ASSETS / "web" / "01-connexion-etablissement.png",
@@ -1213,6 +1241,86 @@ def build_pdf(preview_paths: list[Path], dest: Path) -> Path:
     return dest
 
 
+def build_country_admin_business_card() -> Path:
+    """Crée un modèle recto/verso 85 × 55 mm, entièrement éditable."""
+    prs = Presentation()
+    prs.slide_width = Inches(3.34646)
+    prs.slide_height = Inches(2.16535)
+
+    front = blank(prs)
+    add_rect(front, 0, 0, prs.slide_width, prs.slide_height, NAVY)
+    add_rect(front, 0, 0, Inches(0.08), prs.slide_height, BRAND)
+    add_pic(front, ICON, Inches(0.20), Inches(0.18), Inches(0.43))
+    add_text(front, Inches(0.72), Inches(0.20), Inches(2.35), Inches(0.25), "SOMAFRIK", size=14, bold=True, color=WHITE)
+    add_text(front, Inches(0.72), Inches(0.43), Inches(2.35), Inches(0.18), "Transformer l’éducation, renforcer l’impact", size=6.5, color=LINE)
+    add_text(front, Inches(0.20), Inches(0.83), Inches(2.85), Inches(0.31), "[PRÉNOM NOM]", size=17, bold=True, color=WHITE)
+    add_text(front, Inches(0.20), Inches(1.16), Inches(2.85), Inches(0.22), "Administrateur pays · [PAYS]", size=9.5, bold=True, color=RGBColor(0x93, 0xC5, 0xFD))
+    add_text(front, Inches(0.20), Inches(1.52), Inches(2.90), Inches(0.42), "[prenom.nom]@somafrik.app\n[TÉLÉPHONE PROFESSIONNEL]", size=8, color=WHITE)
+
+    back = blank(prs)
+    add_rect(back, 0, 0, prs.slide_width, prs.slide_height, CANVAS)
+    add_rect(back, Inches(2.97), 0, Inches(0.38), prs.slide_height, BRAND)
+    add_pic(back, LOGO, Inches(0.26), Inches(0.34), Inches(1.65))
+    add_text(back, Inches(0.28), Inches(1.16), Inches(2.35), Inches(0.25), "Gestion scolaire · Web & Mobile", size=10, bold=True, color=INK)
+    add_text(back, Inches(0.28), Inches(1.48), Inches(2.35), Inches(0.20), "somafrik.app", size=11, bold=True, color=BRAND)
+    add_text(back, Inches(0.28), Inches(1.76), Inches(2.45), Inches(0.18), "Direction · Scolarité · Pédagogie · Finances", size=6.8, color=MUTED)
+
+    out = DIST / "Somafrik-carte-visite-administrateur-pays-Canva.pptx"
+    prs.save(out)
+    return out
+
+
+def render_country_admin_business_card_previews() -> list[Path]:
+    """Rendus 85 × 55 mm à environ 300 dpi (1004 × 650 px)."""
+    PREVIEWS.mkdir(parents=True, exist_ok=True)
+    width, height = 1004, 650
+    paths: list[Path] = []
+
+    front = Image.new("RGBA", (width, height), (*PIL_NAVY, 255))
+    d = ImageDraw.Draw(front)
+    d.rectangle((0, 0, 24, height), fill=PIL_BRAND)
+    icon = Image.open(ICON).convert("RGBA").resize((120, 120), Image.Resampling.LANCZOS)
+    front.alpha_composite(icon, (60, 55))
+    _t(d, (205, 62), "SOMAFRIK", font(FONT_BOLD, 42), PIL_WHITE)
+    _t(d, (205, 118), "Transformer l’éducation, renforcer l’impact", font(FONT_REG, 18), (203, 213, 225))
+    _t(d, (60, 260), "[PRÉNOM NOM]", font(FONT_BOLD, 54), PIL_WHITE)
+    _t(d, (60, 335), "Administrateur pays · [PAYS]", font(FONT_BOLD, 28), (147, 197, 253))
+    _t(d, (60, 470), "[prenom.nom]@somafrik.app", font(FONT_REG, 23), PIL_WHITE)
+    _t(d, (60, 515), "[TÉLÉPHONE PROFESSIONNEL]", font(FONT_REG, 23), PIL_WHITE)
+    front_path = PREVIEWS / "carte-visite-administrateur-pays-recto.png"
+    front.convert("RGB").save(front_path, "PNG", optimize=True)
+    paths.append(front_path)
+
+    back = Image.new("RGBA", (width, height), (*PIL_CANVAS, 255))
+    d = ImageDraw.Draw(back)
+    d.rectangle((890, 0, width, height), fill=PIL_BRAND)
+    logo = Image.open(LOGO).convert("RGBA")
+    logo.thumbnail((500, 170), Image.Resampling.LANCZOS)
+    back.alpha_composite(logo, (75, 85))
+    _t(d, (75, 350), "Gestion scolaire · Web & Mobile", font(FONT_BOLD, 30), PIL_INK)
+    _t(d, (75, 430), "somafrik.app", font(FONT_BOLD, 34), PIL_BRAND)
+    _t(d, (75, 520), "Direction · Scolarité · Pédagogie · Finances", font(FONT_REG, 19), PIL_MUTED)
+    back_path = PREVIEWS / "carte-visite-administrateur-pays-verso.png"
+    back.convert("RGB").save(back_path, "PNG", optimize=True)
+    paths.append(back_path)
+    return paths
+
+
+def build_kit_zip(files: list[Path]) -> Path:
+    """Construit une archive stable depuis les artefacts réellement régénérés."""
+    dest = DIST / "Somafrik-kit-Canva.zip"
+    members = files + [ROOT / "README.md", ASSETS / "README.md"]
+    members.extend(sorted(p for p in ASSETS.rglob("*") if p.is_file() and p.name != "README.md"))
+    with ZipFile(dest, "w", compression=ZIP_DEFLATED, compresslevel=9) as archive:
+        for source in members:
+            relative = source.relative_to(ROOT)
+            info = ZipInfo(f"somafrik-kit/{relative.as_posix()}", date_time=(2026, 1, 1, 0, 0, 0))
+            info.compress_type = ZIP_DEFLATED
+            info.external_attr = 0o100644 << 16
+            archive.writestr(info, source.read_bytes())
+    return dest
+
+
 def main() -> None:
     Path("/tmp/somafrik-depliant").mkdir(parents=True, exist_ok=True)
     PREVIEWS.mkdir(parents=True, exist_ok=True)
@@ -1222,8 +1330,12 @@ def main() -> None:
     folds = render_leaflet_previews()
     pdf_pres = build_pdf(slides, DIST / "Somafrik-presentation.pdf")
     pdf_leaf = build_pdf(folds, DIST / "Somafrik-depliant-3-volets.pdf")
+    card = build_country_admin_business_card()
+    card_previews = render_country_admin_business_card_previews()
+    card_pdf = build_pdf(card_previews, DIST / "Somafrik-carte-visite-administrateur-pays.pdf")
+    kit = build_kit_zip([pres, leaflet, pdf_pres, pdf_leaf, card, card_pdf, *slides, *folds, *card_previews])
     print("OK")
-    for p in (pres, leaflet, pdf_pres, pdf_leaf, *slides, *folds):
+    for p in (pres, leaflet, pdf_pres, pdf_leaf, card, card_pdf, *slides, *folds, *card_previews, kit):
         print(f"  {p}  ({p.stat().st_size // 1024}K)")
 
 

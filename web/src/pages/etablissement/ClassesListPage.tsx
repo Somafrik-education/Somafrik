@@ -16,6 +16,7 @@ import { useActiveSchool } from "../../context/ActiveSchoolContext";
 import { ApiError } from "../../api/client";
 import { classesApi, type ClassStatus, type SchoolClass } from "../../lib/classesApi";
 import { academicYearsApi } from "../../lib/academicYearsApi";
+import { scopeAcademicYearsForConfiguration } from "../../lib/academicYearsScope";
 import { educationReferenceApi, type EducationSchoolCatalog } from "../../lib/educationReferenceApi";
 import { usePermissionContext } from "../../lib/usePermissionContext";
 import { getEntityFeaturePermissions } from "../../lib/permissions";
@@ -66,7 +67,7 @@ export function ClassesListPage() {
   const { showToast } = useToast();
   const permissionCtx = usePermissionContext();
   const permissions = getEntityFeaturePermissions(permissionCtx, "classes", "Classes");
-  const { activeSchoolCode } = useActiveSchool();
+  const { activeSchool } = useActiveSchool();
 
   const [rows, setRows] = useState<SchoolClass[]>([]);
   const [years, setYears] = useState<AcademicYearOption[]>([]);
@@ -90,9 +91,11 @@ export function ClassesListPage() {
         educationReferenceApi.getSchoolCatalog().catch(() => null),
       ]);
       setRows(Array.isArray(classes) ? classes : []);
-      const scopedYears = (Array.isArray(academicYears) ? academicYears : []).filter((year) => {
-        if (!activeSchoolCode || activeSchoolCode === "*") return true;
-        return !year.schoolCode || year.schoolCode === activeSchoolCode;
+      const scopedYears = scopeAcademicYearsForConfiguration({
+        role: permissionCtx.user?.role,
+        rows: academicYears,
+        selectedSchool: activeSchool,
+        sessionSchoolId: permissionCtx.user?.schoolId,
       });
       setYears(scopedYears);
       setCatalog(schoolCatalog);
@@ -103,7 +106,7 @@ export function ClassesListPage() {
     } finally {
       setLoading(false);
     }
-  }, [activeSchoolCode]);
+  }, [activeSchool, permissionCtx.user?.role, permissionCtx.user?.schoolId]);
 
   useEffect(() => {
     if (!permissions.canRead) {
