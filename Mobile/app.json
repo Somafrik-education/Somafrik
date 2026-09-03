@@ -26,8 +26,7 @@
       "package": "com.somafrik.app",
       "versionCode": 13,
       "permissions": [
-        "CAMERA",
-        "READ_MEDIA_IMAGES"
+        "CAMERA"
       ],
       "adaptiveIcon": {
         "foregroundImage": "./assets/somafrik-android-adaptive-foreground.png",
