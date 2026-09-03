@@ -99,8 +99,18 @@ function createRepo(pool) {
 async function resetSchema(pool) {
   await pool.query("DROP SCHEMA public CASCADE");
   await pool.query("CREATE SCHEMA public");
+  // Schémas de production versionnés : countries/schools existent avant le FK RBAC.
   await pool.query(fs.readFileSync(path.join(__dirname, "../db/schema.sql"), "utf8"));
   await pool.query(ESTABLISHMENT_ROLES_SCHEMA_SQL);
+  const country = await pool.query(
+    `INSERT INTO countries (name, iso_code, phone_code, currency)
+     VALUES ('RDC', 'CD', '+243', 'CDF') RETURNING id`,
+  );
+  await pool.query(
+    `INSERT INTO schools (country_id, school_code, name, status)
+     VALUES ($1, 'CD-2026-0001', 'INSTITUT NURU', 'active')`,
+    [country.rows[0].id],
+  );
   await pool.query(FUNCTIONAL_RBAC_SCHEMA_SQL);
 }
 
