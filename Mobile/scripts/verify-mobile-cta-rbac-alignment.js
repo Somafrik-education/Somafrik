@@ -170,13 +170,15 @@ function main() {
   }
 
   const rbac = fs.readFileSync(path.join(ROOT, "backend", "services", "rbacService.js"), "utf8");
+  assert.match(rbac, /const MESSAGE_READ_ALIASES = \["Messages parents", "Messages école"\];/);
+  assert.match(rbac, /const MESSAGE_WRITE_ALIASES = \["Messages parents", "Messages école"\];/);
   assert.match(
     rbac,
-    /"GET \/api\/backoffice\/messages":\s*\["Messages:READ",\s*"Gérer messages",\s*"COUNTRY_PRIVILEGES",\s*"ALL_PRIVILEGES"\]/,
+    /"GET \/api\/backoffice\/messages":\s*\["Messages:READ",\s*\.\.\.MESSAGE_READ_ALIASES,\s*"Gérer messages",\s*"COUNTRY_PRIVILEGES",\s*"ALL_PRIVILEGES"\]/,
   );
   assert.match(
     rbac,
-    /"GET \/api\/backoffice\/messages\/recipients":\s*\["Messages:READ",\s*"Messages:CREATE",\s*"Gérer messages",\s*"COUNTRY_PRIVILEGES",\s*"ALL_PRIVILEGES"\]/,
+    /"GET \/api\/backoffice\/messages\/recipients":\s*\["Messages:READ",\s*"Messages:CREATE",\s*\.\.\.MESSAGE_READ_ALIASES,\s*\.\.\.MESSAGE_WRITE_ALIASES,\s*"Gérer messages",\s*"COUNTRY_PRIVILEGES",\s*"ALL_PRIVILEGES"\]/,
   );
   assert.match(
     rbac,
