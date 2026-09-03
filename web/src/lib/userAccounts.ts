@@ -20,6 +20,10 @@ import {
 import { resolveEffectivePermissions } from "./permissions";
 import { api } from "../api/client";
 import { findDuplicateLoginIdentifier } from "./userAccountRules";
+import {
+  accountMatchesSchoolIdentity,
+  resolveSessionSchoolIdentity,
+} from "./schoolCanonicalIdentity";
 
 const PLATFORM_ROLES = new Set([SUPER_ADMIN_ROLE, COUNTRY_ADMIN_ROLE, SCHOOL_ADMIN_ROLE]);
 
@@ -96,7 +100,11 @@ export function canManageUserAccount(
       (action === "READ" || action === "CREATE" || action === "UPDATE" || action === "SUSPEND")
     );
   }
-  return normalize(actor.schoolCode) === normalize(target.schoolCode);
+  // L'ancien JWT peut encore porter schools.school_code (SCH-…), tandis que
+  // GET /users projette schools.login_code (CD-…): ces codes ne sont pas une
+  // autorité de tenant. Comparer exclusivement l'UUID membership canonique.
+  const identity = resolveSessionSchoolIdentity(actor);
+  return Boolean(identity && accountMatchesSchoolIdentity(target, identity));
 }
 
 export function findUserAccountForContact(

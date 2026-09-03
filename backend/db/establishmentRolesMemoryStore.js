@@ -116,6 +116,32 @@ function createEstablishmentRolesMemoryStore(seed = {}) {
       }
       return map;
     },
+    async addMissingPermissions(roleId, nextPermissions = []) {
+      const current = permissions.get(roleId) ?? [];
+      const have = new Set(current);
+      const added = [];
+      for (const permission of sanitizePermissionList(nextPermissions)) {
+        if (have.has(permission)) continue;
+        have.add(permission);
+        added.push(permission);
+      }
+      if (added.length) permissions.set(roleId, [...have].sort((left, right) => left.localeCompare(right, "fr")));
+      return added;
+    },
+    async addMissingDelegationPermissions(roleId, nextPermissions = []) {
+      const current = delegationPermissions.get(roleId) ?? [];
+      const have = new Set(current);
+      const added = [];
+      for (const permission of sanitizePermissionList(nextPermissions)) {
+        if (have.has(permission)) continue;
+        have.add(permission);
+        added.push(permission);
+      }
+      if (added.length) {
+        delegationPermissions.set(roleId, [...have].sort((left, right) => left.localeCompare(right, "fr")));
+      }
+      return added;
+    },
     async inventoryLegacyUserRolesPayloads() {
       return [];
     },
