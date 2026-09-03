@@ -242,6 +242,27 @@ describe("ClassesListPage (CRUD /api/classes)", () => {
     expect(screen.getByText("C")).toBeInTheDocument();
   });
 
+  it("garde l'année canonique si le schoolCode session leftover diffère du login_code projeté", async () => {
+    const user = userEvent.setup();
+    academicYearsApiMock.list.mockResolvedValueOnce([
+      {
+        id: "ay-2026",
+        schoolId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        schoolCode: "CD-IN-26-001",
+        name: "2026-2027",
+        isCurrent: true,
+      },
+    ]);
+
+    renderPage();
+    await screen.findAllByText("6ème");
+    await user.click(screen.getByRole("button", { name: "Ajouter" }));
+
+    expect(screen.queryByText(/Aucune année scolaire n'est configurée/)).not.toBeInTheDocument();
+    expect(screen.getByLabelText(/Année scolaire/i)).toHaveValue("ay-2026");
+    expect(screen.getByRole("option", { name: "2026-2027" })).toBeInTheDocument();
+  });
+
   it("oriente vers Paramètres quand aucune année n'est configurée", async () => {
     const user = userEvent.setup();
     academicYearsApiMock.list.mockResolvedValueOnce([]);
