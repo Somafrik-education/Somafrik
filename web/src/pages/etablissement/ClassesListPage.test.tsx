@@ -35,7 +35,6 @@ const sessionStore = vi.hoisted(() => ({
     schoolCode: "CD-2026-0001",
     schoolPublicCode: "CD-IN-26-001",
     schoolId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
-    name: "Admin",
   } as SessionUser,
 }));
 
@@ -204,7 +203,6 @@ describe("ClassesListPage (CRUD /api/classes)", () => {
       schoolCode: LEFTOVER_A,
       schoolPublicCode: LOGIN_A,
       schoolId: SCHOOL_ID_A,
-      name: "Admin",
     };
     schoolStore.activeSchoolCode = LEFTOVER_A;
     schoolStore.activeSchool = {
