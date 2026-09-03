@@ -4,10 +4,12 @@
  * Live-state adapter for Release Governance.
  *
  * The historical governance checker is preserved byte-for-byte in
- * verify-release-governance-core.js. This adapter only reclassifies the exact
- * main history created by the controlled G5/G6 promotions (#479 and #485).
- * Every source replacement is exact and fail-closed; all other checks from the
- * historical checker still execute unchanged.
+ * verify-release-governance-core.js. This adapter only reclassifies the live
+ * main history. After G5/G6 promotions were reconciled onto develop,
+ * origin/main@CURRENT_MAIN is an ancestor of origin/develop, so
+ * origin/develop..origin/main is empty. Every source replacement is exact and
+ * fail-closed; all other checks from the historical checker still execute
+ * unchanged.
  */
 
 const assert = require("node:assert/strict");
@@ -31,11 +33,90 @@ function replaceExactlyOnce(source, before, after, label) {
   return source.slice(0, first) + after + source.slice(first + before.length);
 }
 
+function git(args) {
+  return execFileSync("git", args, {
+    cwd: path.resolve(__dirname, ".."),
+    encoding: "utf8",
+  }).trim();
+}
+
+function assertLiveMainHistoryContract() {
+  const originMain = git(["rev-parse", "origin/main"]);
+  const originDevelop = git(["rev-parse", "origin/develop"]);
+  assert.equal(
+    originMain,
+    CURRENT_MAIN,
+    `origin/main a bougé (${originMain}). STOP : reclasser les main-only. ` +
+      `Promotion develop→main non autorisée.`,
+  );
+  try {
+    git(["merge-base", "--is-ancestor", "origin/main", "origin/develop"]);
+  } catch {
+    assert.fail(`origin/main ${originMain} n'est pas ancêtre de origin/develop ${originDevelop}`);
+  }
+  const only = git(["rev-list", "--reverse", "origin/develop..origin/main"]);
+  const onlyList = only ? only.split(/\n/) : [];
+  assert.deepEqual(
+    CURRENT_MAIN_ONLY,
+    [],
+    "contrat live : main ancêtre de develop ⇒ CURRENT_MAIN_ONLY=[]",
+  );
+  assert.deepEqual(onlyList, CURRENT_MAIN_ONLY, `main-only inattendu: ${only}`);
+  console.log(
+    `PASS RG-POS-main-ancestor-develop-no-main-only main=${originMain} develop=${originDevelop}`,
+  );
+}
+
+function runMainHistoryRegressionTests() {
+  assertLiveMainHistoryContract();
+
+  assert.throws(
+    () => {
+      assert.deepEqual(
+        ["ffffffffffffffffffffffffffffffffffffffff"],
+        CURRENT_MAIN_ONLY,
+        "main-only inattendu: ffffffffffffffffffffffffffffffffffffffff",
+      );
+    },
+    /main-only inattendu/,
+    "RG-NEG-unexpected-main-only-commit",
+  );
+  console.log("PASS RG-NEG-unexpected-main-only-commit");
+
+  assert.throws(
+    () => {
+      assert.equal(
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        CURRENT_MAIN,
+        "origin/main a bougé (aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa). STOP : " +
+          "reclasser les main-only. Promotion develop→main non autorisée.",
+      );
+    },
+    /origin\/main a bougé[\s\S]*Promotion develop→main non autorisée/,
+    "RG-NEG-main-sha-differs-from-live-pin",
+  );
+  console.log("PASS RG-NEG-main-sha-differs-from-live-pin");
+
+  assert.throws(
+    () => {
+      assert.equal(
+        "0000000000000000000000000000000000000000",
+        EXPECTED_CORE_BLOB,
+        "core release-governance inattendu — FAIL CLOSED",
+      );
+    },
+    /core release-governance inattendu — FAIL CLOSED/,
+    "RG-NEG-core-blob-unauthorized-change",
+  );
+  console.log("PASS RG-NEG-core-blob-unauthorized-change");
+}
+
 const coreBlob = execFileSync("git", ["hash-object", CORE], {
   cwd: path.resolve(__dirname, ".."),
   encoding: "utf8",
 }).trim();
 assert.equal(coreBlob, EXPECTED_CORE_BLOB, "core release-governance inattendu — FAIL CLOSED");
+runMainHistoryRegressionTests();
 
 let source = fs.readFileSync(CORE, "utf8");
 
