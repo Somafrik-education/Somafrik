@@ -20,14 +20,9 @@ const CORE = path.join(__dirname, "verify-release-governance-core.js");
 const EXPECTED_CORE_BLOB = "3d7b2381b5412bbc7395b61592ed2199a2ca3035";
 const CURRENT_MAIN = "41ce090a2dca57d19ee08f74059afeff871ad2f5";
 
-const CURRENT_MAIN_ONLY = [
-  "6ff6110643d4cfdd349162d66b6dd590daf4c902",
-  "b5074565b08472217702d8ff848f5a398d08831c",
-  "991b9c7695f5e64da9b5da25415e259cc016f88a",
-  "26d82bf2528abc910c03b61d297738fc0e881ef1",
-  "c4dd750de6199192d2e04bf05ea20b3daee19336",
-  CURRENT_MAIN,
-];
+// Après la réconciliation d'historique, CURRENT_MAIN et ses promotions G5/G6
+// sont désormais ancêtres de develop : origin/develop..origin/main est vide.
+const CURRENT_MAIN_ONLY = [];
 
 function replaceExactlyOnce(source, before, after, label) {
   const first = source.indexOf(before);
@@ -79,7 +74,7 @@ source = replaceExactlyOnce(
 source = replaceExactlyOnce(
   source,
   '    console.log("PASS RG-MAIN-ONLY 2 commits stale (6ff61106, b5074565) ; tree #109 ⊂ develop");',
-  '    console.log("PASS RG-MAIN-ONLY 6 commits classés : 2 stale historiques + promotions contrôlées G5/G6 (#479, #485)");',
+  '    console.log("PASS RG-MAIN-ONLY reconciled : origin/main est ancêtre de develop ; aucun commit main-only");',
   "main-only log",
 );
 
