@@ -1,7 +1,7 @@
 # P0 — Réconciliation RBAC production (parité préprod)
 
-**PR :** #490 (DRAFT — NON READY — NON MERGÉE)  
-**Branche :** `fix/p0-production-rbac-parity`  
+**PR :** #490 (DRAFT — NON READY — NON MERGÉE)
+**Branche :** `fix/p0-production-rbac-parity`
 **Gouvernance :** aucun apply production sans GO CTO explicite.
 
 ## Cause racine confirmée

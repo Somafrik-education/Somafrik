@@ -3,7 +3,6 @@
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
-const { Pool } = require("pg");
 const { ESTABLISHMENT_ROLES_SCHEMA_SQL } = require("../db/establishmentRolesSchema");
 const { FUNCTIONAL_RBAC_SCHEMA_SQL } = require("../db/functionalRbacSchema");
 const { createEstablishmentRolesPgStore } = require("../db/establishmentRolesPgStore");
@@ -99,6 +98,13 @@ async function resetSchema(pool) {
 async function main() {
   if (!DATABASE_URL) {
     console.log("systemRolesReconciliation.pg.test.js SKIP (DATABASE_URL absent)");
+    return;
+  }
+  let Pool;
+  try {
+    ({ Pool } = require("pg"));
+  } catch {
+    console.log("systemRolesReconciliation.pg.test.js SKIP (module pg absent)");
     return;
   }
 
