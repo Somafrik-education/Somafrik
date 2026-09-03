@@ -428,7 +428,7 @@ export function ClassesListPage() {
             <Select
               id="class-group"
               value={form.groupId}
-              onChange={(event) => setForm((current) => ({ ...current, groupId: event.target.value }))
+              onChange={(event) => setForm((current) => ({ ...current, groupId: event.target.value }))}
               required
               options={[
                 { value: "", label: `Choisir un ${labels.groupLabel.toLowerCase()}` },
