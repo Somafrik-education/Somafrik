@@ -99,6 +99,7 @@ function createRepo(pool) {
 async function resetSchema(pool) {
   await pool.query("DROP SCHEMA public CASCADE");
   await pool.query("CREATE SCHEMA public");
+  await pool.query(fs.readFileSync(path.join(__dirname, "../db/schema.sql"), "utf8"));
   await pool.query(ESTABLISHMENT_ROLES_SCHEMA_SQL);
   await pool.query(FUNCTIONAL_RBAC_SCHEMA_SQL);
 }
