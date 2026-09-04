@@ -76,6 +76,7 @@ const FORBIDDEN_PATHS = [
   "/data-export",
   `/data-export?schoolCode=${encodeURIComponent(SCHOOL)}`,
   "/audit",
+  "/privacy/erasure-requests",
 ];
 
 const PLATFORM_PATHS = ["/backoffice/countries", "/backoffice/establishments"];

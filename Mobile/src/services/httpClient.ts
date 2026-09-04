@@ -190,9 +190,9 @@ async function refreshAccessTokenOnce(): Promise<string | null> {
       return null;
     }
 
-    const data = (await response.json()) as { accessToken?: string };
+    const data = (await response.json()) as { accessToken?: string; refreshToken?: string };
     if (!data.accessToken) return null;
-    await saveTokens(data.accessToken, refreshToken);
+    await saveTokens(data.accessToken, data.refreshToken || refreshToken);
     return data.accessToken;
   })()
     .catch((error) => {

@@ -1,15 +1,24 @@
 const crypto = require("crypto");
+const {
+  resolveAccessTokenTtlSeconds,
+  resolveRefreshTokenTtlSeconds,
+} = require("../lib/authTokenPolicy");
 
 class TokenService {
   constructor({
     issuer = "somafrik-api",
-    accessTokenTtlSeconds = Number(process.env.JWT_ACCESS_TTL_SECONDS || 8 * 60 * 60),
-    refreshTokenTtlSeconds = 7 * 24 * 60 * 60,
+    accessTokenTtlSeconds,
+    refreshTokenTtlSeconds,
     secret = process.env.JWT_SECRET || "somafrik-dev-secret-change-me",
+    env = process.env,
   } = {}) {
     this.issuer = issuer;
-    this.accessTokenTtlSeconds = Number(accessTokenTtlSeconds);
-    this.refreshTokenTtlSeconds = Number(refreshTokenTtlSeconds);
+    this.accessTokenTtlSeconds = Number.isFinite(Number(accessTokenTtlSeconds))
+      ? Number(accessTokenTtlSeconds)
+      : resolveAccessTokenTtlSeconds(env);
+    this.refreshTokenTtlSeconds = Number.isFinite(Number(refreshTokenTtlSeconds))
+      ? Number(refreshTokenTtlSeconds)
+      : resolveRefreshTokenTtlSeconds(env);
     this.secret = secret;
   }
 
@@ -23,18 +32,19 @@ class TokenService {
     );
   }
 
-  createRefreshToken(subject) {
-    const sessionId = crypto.randomUUID();
+  createRefreshToken(subject, { sessionId } = {}) {
+    const resolvedSessionId = sessionId || crypto.randomUUID();
     const token = this.sign(
       {
         sub: subject.sub,
-        sessionId,
+        sessionId: resolvedSessionId,
         role: subject.role,
         schoolCode: subject.schoolCode,
         countryCode: subject.countryCode,
         authSource: subject.authSource,
         identifier: subject.identifier,
         publicId: subject.publicId,
+        jti: crypto.randomUUID(),
         typ: "refresh",
       },
       this.refreshTokenTtlSeconds
@@ -42,7 +52,7 @@ class TokenService {
 
     return {
       token,
-      sessionId,
+      sessionId: resolvedSessionId,
       expiresAt: new Date(Date.now() + this.refreshTokenTtlSeconds * 1000),
     };
   }

@@ -29,6 +29,9 @@ function expectClient(route, client) {
 expectClassification("GET /", "INFRASTRUCTURE_ROUTE");
 expectClassification("GET /web", "INFRASTRUCTURE_ROUTE");
 expectClassification("POST /auth/refresh", "AUTH_SESSION_ROUTE");
+expectClassification("POST /auth/logout", "AUTH_SESSION_ROUTE");
+expectClassification("POST /auth/revoke-all", "AUTH_SESSION_ROUTE");
+expectClassification("POST /privacy/erasure-requests/self/execute", "AUTH_SESSION_ROUTE");
 expectClassification("POST /backoffice/e2e/clear-login-lockout", "TEST_ONLY_ROUTE");
 expectClassification("GET /debug/notes-authz-trace", "DEBUG_ONLY_ROUTE");
 expectClassification("GET /mvp/readiness", "LEGACY_REVIEW_CANDIDATE");

@@ -66,6 +66,8 @@ const routePermissions = {
   "GET /api/students/:id/payments": ["Paiements:READ", "Gérer paiements", "Voir paiements", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
   "PATCH /api/students/:id": ["Élèves:UPDATE", "Gérer élèves", "ALL_PRIVILEGES"],
   "GET /api/audit": ["Audit:READ", "ALL_PRIVILEGES", "COUNTRY_PRIVILEGES"],
+  "GET /api/privacy/erasure-requests": ["Utilisateurs:READ", "Gérer utilisateurs"],
+  "POST /api/privacy/erasure-requests/:requestId/execute": ["Utilisateurs:UPDATE", "Gérer utilisateurs"],
   "GET /api/assignments": [
     "Affectations:READ",
     "Enseignants:READ",

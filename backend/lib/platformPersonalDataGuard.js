@@ -199,6 +199,8 @@ const SCHOOL_PERSONAL_DATA_FORBIDDEN_FOR_PLATFORM = Object.freeze([
   "GET /api/backoffice/planning-exams",
   "GET /api/v2/reports/advanced",
   "GET /api/audit",
+  "GET /api/privacy/erasure-requests",
+  "POST /api/privacy/erasure-requests/:requestId/execute",
 ]);
 
 const FORBIDDEN_ROUTE_SET = new Set(SCHOOL_PERSONAL_DATA_FORBIDDEN_FOR_PLATFORM);

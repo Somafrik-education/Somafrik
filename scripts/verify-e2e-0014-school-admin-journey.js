@@ -405,7 +405,13 @@ async function main() {
   };
 
   const auditBeforeRes = await request("/audit", { token: superToken });
-  const auditBefore = extractListRows(auditBeforeRes);
+  pushResult(
+    results,
+    "6a. Journal d'audit établissement interdit au Superadmin (#503)",
+    "403",
+    String(auditBeforeRes.status),
+    auditBeforeRes.status === 403,
+  );
 
   state = await putStatePatch(adminToken, {
     payments: [payment, ...(state.payments ?? [])],
@@ -519,21 +525,12 @@ async function main() {
   );
 
   const superAuditRes = await request("/audit", { token: superToken });
-  const auditRows = extractListRows(superAuditRes);
-  const newAuditRows = auditRows.filter(
-    (row) => !auditBefore.some((before) => String(before.id) === String(row.id)),
-  );
-  const hasPaymentAudit = newAuditRows.some((row) =>
-    ["create_payment", "sync_backoffice_state", "logout", "send_payment_reminder"].includes(
-      String(row.action ?? ""),
-    ),
-  );
   pushResult(
     results,
-    "16. Actions sensibles tracées (audit)",
-    ">=1 trace",
-    hasPaymentAudit ? `${newAuditRows.length} nouvelle(s)` : `${newAuditRows.length}/${auditRows.length}`,
-    superAuditRes.status === 200 && (hasPaymentAudit || newAuditRows.length >= 1),
+    "16. Superadmin GET /audit reste 403 (#503 P0-2, données perso établissement)",
+    "403",
+    String(superAuditRes.status),
+    superAuditRes.status === 403,
   );
 
   // 17) Déconnexion

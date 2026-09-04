@@ -81,9 +81,11 @@ Les clients n’utilisent pas PostgREST. Migration `20260904_p0_supabase_data_ap
 |-------|--------|
 | Transport | `Authorization: Bearer <accessToken>` uniquement (S2.1) |
 | Interdit | `?token=` / `?access_token=` sur `/api/*` |
-| Refresh | Session serveur + refresh token hashé |
-| Mobile | SecureStore ; HTTPS en production |
-| Tests | `npm run verify:jwt-header` |
+| Access TTL | Défaut **900 s** (`JWT_ACCESS_TTL_SECONDS`) ; **max 900 s en production** |
+| Refresh | Rotatif, hashé (`sessions.refresh_token_hash`), expiration, grâce anti-race 15 s, reuse → revoke-all |
+| Logout / revoke-all | `POST /api/auth/logout`, `POST /api/auth/revoke-all` |
+| Mobile / Web | Persistance du **nouveau** refresh après rotation |
+| Tests | `npm run verify:jwt-header` · `npm run verify:auth-sessions` |
 
 ### Lockout
 
@@ -104,7 +106,7 @@ Les clients n’utilisent pas PostgREST. Migration `20260904_p0_supabase_data_ap
 |--|--|
 | **Décision** | ADR-003 / ADR-004 |
 | **Client** | Ne jamais envoyer `auditLog` (strip DataContext + 403 si présent) |
-| **Serveur** | `AuditService.record` — `userId`, `schoolCode`, action, entity, IP, UA |
+| **Lecture HTTP** | `GET /api/audit` : **403** Superadmin / Admin Pays (#503 P0-2) ; pas de dump `auditLog` au login plateforme |
 | **Stockage** | Table `audit_logs` (JSONB old/new) |
 | **Collections critiques** | users, payments, bulletins, rolePermissions, classes, teachers, assignments… |
 | **Export établissement** | lectures dans une transaction PostgreSQL **`READ ONLY` + `REPEATABLE READ`** (snapshot unique) ; audit `export_school_data` après COMMIT (domaines + timestamp, **pas** le contenu) ; fail-closed si l’audit échoue |

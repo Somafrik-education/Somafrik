@@ -196,6 +196,8 @@ jobs:
         run: |
           set -euo pipefail
           npm run verify:jwt-header
+          npm run verify:auth-sessions
+          npm run verify:privacy-erasure
           npm run verify:rbac-s1-4
           npm run verify:sanitize-user-responses
           npm run verify:db-config

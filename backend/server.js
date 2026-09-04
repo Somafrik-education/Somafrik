@@ -258,6 +258,7 @@ app.get("/", asyncHandler(async (req, res) => {
       "/api/login",
       "/api/auth/refresh",
       "/api/auth/logout",
+      "/api/auth/revoke-all",
       "/api/backoffice/login",
       "/api/classes",
       "/api/classes/:classCode/students",
@@ -417,79 +418,16 @@ app.post("/api/login", loginRateLimiter, asyncHandler(async (req, res) => {
 
 app.post("/api/auth/refresh", asyncHandler(async (req, res) => {
   const { refreshToken } = req.body ?? {};
-  const payload = tokenService.verify(refreshToken, "refresh");
-  const session = await repository.findActiveSession(payload.sessionId, tokenService.hashToken(refreshToken));
-
-  if (!session) {
-    throw new BusinessError(401, "Session expirée ou révoquée");
-  }
-
-  const rolePermissionsMap = await getRolePermissionsMap();
-  const { mergePermissionsForRoles, principalHasRole, toRoleKey } = require("./lib/userRoleLifecycle");
-  let roleKeys = session.role ? [toRoleKey(session.role)].filter(Boolean) : [];
-  if (typeof repository.listActiveUserRoleKeys === "function" && session.user_id) {
-    try {
-      const loaded = await repository.listActiveUserRoleKeys(session.user_id);
-      if (Array.isArray(loaded) && loaded.length) {
-        roleKeys = loaded;
-      } else if (Array.isArray(loaded) && (!session.role || session.role === "Sans affectation")) {
-        roleKeys = [];
-      }
-    } catch {
-      /* fail-closed: keep session.role */
-    }
-  }
-  let permissions = mergePermissionsForRoles(roleKeys, rolePermissionsMap);
-  if (typeof repository.resolveEffectivePermissions === "function") {
-    const live = await repository.resolveEffectivePermissions({
-      sub: session.user_id,
-      role: session.role,
-      roleKeys,
-      schoolCode: session.school_code ?? payload.schoolCode,
-      countryCode: session.country_code ?? payload.countryCode,
-    });
-    if (Array.isArray(live?.permissions)) permissions = live.permissions;
-  }
-  const mustChangePassword = await principalMustChangePassword({
-    sub: session.user_id,
-    identifier: payload.identifier,
-    publicId: payload.publicId,
+  const { rotateRefreshSession } = require("./lib/sessionRefreshService");
+  const rotated = await rotateRefreshSession({
+    repository,
+    tokenService,
+    refreshToken,
   });
-
-  // Reconstruire les affectations depuis l'état autoritatif (pas depuis l'ancien jeton).
-  let assignmentFields = {};
-  if (principalHasRole({ role: session.role, roleKeys }, "Enseignant")) {
-    const state = await getAuthoritativeBackOfficeState();
-    const { teacherPrincipalAssignmentFields } = require("./lib/teacherSessionAssignments");
-    assignmentFields = teacherPrincipalAssignmentFields(
-      {
-        id: session.user_code ?? payload.sub ?? session.user_id,
-        sub: payload.sub ?? session.user_id,
-        identifier: payload.identifier,
-        publicId: payload.publicId,
-        schoolCode: session.school_code ?? payload.schoolCode,
-        role: "Enseignant",
-      },
-      state,
-    );
-  }
-
-  const accessToken = tokenService.createAccessToken({
-    sub: session.user_id,
-    role: session.role,
-    schoolCode: session.school_code ?? "*",
-    countryCode: session.country_code ?? payload.countryCode ?? "",
-    authSource: payload.authSource ?? "mobile",
-    sessionId: payload.sessionId,
-    permissions,
-    identifier: payload.identifier,
-    publicId: payload.publicId,
-    mustChangePassword,
-    ...assignmentFields,
-  });
-
+  const { permissions, accessToken } = await issueRefreshedAccessToken(rotated.session, rotated.payload);
   res.json({
     accessToken,
+    refreshToken: rotated.refreshToken,
     tokenType: "Bearer",
     expiresIn: tokenService.accessTokenTtlSeconds,
     permissions,
@@ -516,6 +454,60 @@ app.post("/api/auth/logout", requireAuth, asyncHandler(async (req, res) => {
   await repository.revokeSession(req.principal.sessionId, "logout");
   await auditService.record(req, "logout", "session", req.principal.sessionId);
   res.json({ message: "Déconnexion sécurisée effectuée" });
+}));
+
+app.post("/api/auth/revoke-all", requireAuth, asyncHandler(async (req, res) => {
+  const revoked = await repository.revokeAllSessionsForUser(req.principal.sub, "revoke_all");
+  await auditService.record(req, "revoke_all_sessions", "user", req.principal.sub, { revoked });
+  res.json({ message: "Toutes les sessions ont été révoquées.", revoked });
+}));
+
+app.post("/api/privacy/erasure-requests", loginRateLimiter, asyncHandler(async (req, res) => {
+  const { createErasureRequest } = require("./lib/privacyErasure");
+  let principal = null;
+  const header = req.get("authorization") ?? "";
+  const match = header.match(/^Bearer\s+(.+)$/i);
+  if (match?.[1]) {
+    try {
+      principal = tokenService.verify(match[1], "access");
+    } catch {
+      principal = null;
+    }
+  }
+  const created = await createErasureRequest(repository, req.body ?? {}, principal);
+  await repository.recordAudit({
+    schoolCode: created.schoolCode,
+    userId: principal?.sub,
+    action: "privacy_erasure_request",
+    entityType: "privacy_request",
+    entityId: created.id,
+    ipAddress: req.ip,
+    userAgent: req.get("user-agent"),
+    newValue: { requestCode: created.requestCode, status: created.status },
+  });
+  res.status(201).json(created);
+}));
+
+app.get("/api/privacy/erasure-requests", requireAuth, requirePermission("GET /api/privacy/erasure-requests"), asyncHandler(async (req, res) => {
+  const { sanitizePrivacyRequest } = require("./lib/privacyErasure");
+  const schoolCode = String(req.principal.schoolCode ?? "").trim().toUpperCase();
+  if (!schoolCode || schoolCode === "*") {
+    throw new BusinessError(403, "Périmètre établissement insuffisant.");
+  }
+  const rows = await repository.listPrivacyRequests({ schoolCode });
+  res.json(rows.map(sanitizePrivacyRequest));
+}));
+
+app.post("/api/privacy/erasure-requests/self/execute", requireAuth, asyncHandler(async (req, res) => {
+  const { executeSelfErasure } = require("./lib/privacyErasure");
+  const result = await executeSelfErasure(repository, req.principal);
+  res.json(result);
+}));
+
+app.post("/api/privacy/erasure-requests/:requestId/execute", requireAuth, requirePermission("POST /api/privacy/erasure-requests/:requestId/execute"), asyncHandler(async (req, res) => {
+  const { executeErasureRequest } = require("./lib/privacyErasure");
+  const result = await executeErasureRequest(repository, req.params.requestId, req.principal);
+  res.json(result);
 }));
 
 app.post("/api/mobile/push-devices", requireAuth, asyncHandler(async (req, res) => {
@@ -3449,6 +3441,8 @@ app.post("/api/backoffice/bulletin-design/preview", requireAuth, asyncHandler(as
 }));
 
 app.get("/api/audit", requireAuth, requirePermission("GET /api/audit"), asyncHandler(async (req, res) => {
+  // P0-2 : Superadmin / Admin Pays sont déjà 403 dans requireAuth (données perso établissement).
+  // Ce filtre refuse les autres profils : GET /api/audit n'est pas un journal plateforme.
   if (!["Super Administrateur Somafrik", "Admin Pays"].includes(req.principal.role)) {
     throw new BusinessError(403, "Seuls les administrateurs habilités peuvent consulter l'audit.");
   }
@@ -5779,6 +5773,72 @@ function isPlainObject(value) {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
+async function issueRefreshedAccessToken(session, payload) {
+  const rolePermissionsMap = await getRolePermissionsMap();
+  const { mergePermissionsForRoles, principalHasRole, toRoleKey } = require("./lib/userRoleLifecycle");
+  let roleKeys = session.role ? [toRoleKey(session.role)].filter(Boolean) : [];
+  if (typeof repository.listActiveUserRoleKeys === "function" && session.user_id) {
+    try {
+      const loaded = await repository.listActiveUserRoleKeys(session.user_id);
+      if (Array.isArray(loaded) && loaded.length) {
+        roleKeys = loaded;
+      } else if (Array.isArray(loaded) && (!session.role || session.role === "Sans affectation")) {
+        roleKeys = [];
+      }
+    } catch {
+      /* fail-closed: keep session.role */
+    }
+  }
+  let permissions = mergePermissionsForRoles(roleKeys, rolePermissionsMap);
+  if (typeof repository.resolveEffectivePermissions === "function") {
+    const live = await repository.resolveEffectivePermissions({
+      sub: session.user_id,
+      role: session.role,
+      roleKeys,
+      schoolCode: session.school_code ?? payload.schoolCode,
+      countryCode: session.country_code ?? payload.countryCode,
+    });
+    if (Array.isArray(live?.permissions)) permissions = live.permissions;
+  }
+  const mustChangePassword = await principalMustChangePassword({
+    sub: session.user_id,
+    identifier: payload.identifier,
+    publicId: payload.publicId,
+  });
+
+  let assignmentFields = {};
+  if (principalHasRole({ role: session.role, roleKeys }, "Enseignant")) {
+    const state = await getAuthoritativeBackOfficeState();
+    const { teacherPrincipalAssignmentFields } = require("./lib/teacherSessionAssignments");
+    assignmentFields = teacherPrincipalAssignmentFields(
+      {
+        id: session.user_code ?? payload.sub ?? session.user_id,
+        sub: payload.sub ?? session.user_id,
+        identifier: payload.identifier,
+        publicId: payload.publicId,
+        schoolCode: session.school_code ?? payload.schoolCode,
+        role: "Enseignant",
+      },
+      state,
+    );
+  }
+
+  const accessToken = tokenService.createAccessToken({
+    sub: session.user_id,
+    role: session.role,
+    schoolCode: session.school_code ?? "*",
+    countryCode: session.country_code ?? payload.countryCode ?? "",
+    authSource: payload.authSource ?? "mobile",
+    sessionId: payload.sessionId,
+    permissions,
+    identifier: payload.identifier,
+    publicId: payload.publicId,
+    mustChangePassword,
+    ...assignmentFields,
+  });
+  return { accessToken, permissions };
+}
+
 async function sendAuthenticatedResponse(req, res, response, action) {
   const rolePermissionsMap = await getRolePermissionsMap();
   const userId = response.user?.id ?? response.user?.userId;
@@ -5805,10 +5865,7 @@ async function sendAuthenticatedResponse(req, res, response, action) {
       .map((value) => String(value ?? "").trim())
       .filter(Boolean);
   }
-  if (action === "backoffice_login" && ["Super Administrateur Somafrik", "Admin Pays"].includes(principal.role)) {
-    const auditRows = await repository.getAuditLogs({ limit: 100 });
-    response.auditLog = tenantScopeService.filterRows(auditRows, principal);
-  }
+  // P0-2 : ne pas embarquer le journal d'audit établissement dans le login Superadmin / Admin Pays.
   const refreshSession = tokenService.createRefreshToken({
     ...principal,
     authSource: action === "backoffice_login" ? "backoffice" : "mobile",
@@ -6176,7 +6233,12 @@ function requireAuth(req, res, next) {
       throw new BusinessError(401, "Authentification JWT requise");
     }
 
-    req.principal = await hydrateParentPrincipal(tokenService.verify(token, "access"));
+    try {
+      req.principal = await hydrateParentPrincipal(tokenService.verify(token, "access"));
+    } catch (error) {
+      if (error.statusCode) throw error;
+      throw new BusinessError(401, "Authentification JWT requise");
+    }
 
     const sessionId = String(req.principal?.sessionId ?? "").trim();
     if (sessionId && typeof repository.findActiveAccessSession === "function") {
@@ -6211,7 +6273,9 @@ function requireAuth(req, res, next) {
     const passwordChangeExemptPaths = new Set([
       "/api/auth/change-password",
       "/api/auth/logout",
+      "/api/auth/revoke-all",
       "/api/auth/effective-permissions",
+      "/api/privacy/erasure-requests/self/execute",
     ]);
     if (!passwordChangeExemptPaths.has(req.path) && await principalMustChangePassword(req.principal)) {
       throw new BusinessError(

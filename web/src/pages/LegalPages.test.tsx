@@ -8,6 +8,8 @@ describe("pages légales publiques", () => {
     render(<MemoryRouter><PrivacyPolicyPage /></MemoryRouter>);
     expect(screen.getByRole("heading", { level: 1, name: "Politique de confidentialité" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "contact@somafrik.app" })).toHaveAttribute("href", "mailto:contact@somafrik.app");
+    expect(screen.getAllByText(/Baudouin Okito/).length).toBeGreaterThan(0);
+    expect(screen.getByRole("link", { name: /cnil\.fr/i })).toHaveAttribute("href", expect.stringContaining("cnil.fr"));
     expect(screen.getByRole("link", { name: "Suppression de compte" })).toHaveAttribute("href", "/suppression-compte");
   });
 
