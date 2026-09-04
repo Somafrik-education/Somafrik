@@ -136,6 +136,8 @@ class PostgresRepository {
       await this.ensureDemoWebAccounts();
       await this.ensureV2Data();
     }
+    await this.ensurePlatformPersonalDataDeny();
+    await this.ensureSupabaseDataApiLockdown();
     this.ready = true;
   }
 
@@ -757,6 +759,16 @@ class PostgresRepository {
   async ensureFunctionalRbacBootstrap() {
     const { ensureFunctionalRbacBootstrap } = require("../lib/functionalRbacService");
     await ensureFunctionalRbacBootstrap(this);
+  }
+
+  async ensurePlatformPersonalDataDeny() {
+    const { applyPlatformPersonalDataDeny } = require("./platformPersonalDataDeny");
+    await applyPlatformPersonalDataDeny(this);
+  }
+
+  async ensureSupabaseDataApiLockdown() {
+    const { applySupabaseDataApiLockdown } = require("./supabaseDataApiLockdown");
+    await applySupabaseDataApiLockdown(this);
   }
 
   getFunctionalRbacStore() {

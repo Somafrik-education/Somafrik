@@ -1,7 +1,7 @@
 # Sécurité — Somafrik
 
 **Statut :** politique & contrôles de sécurité  
-**Dernière mise à jour :** 2026-09-01  
+**Dernière mise à jour :** 2026-09-04  
 **Liens :** [ARCHITECTURE.md](./ARCHITECTURE.md) · [DECISIONS.md](./DECISIONS.md) · [../ci-cd-security.md](../ci-cd-security.md)
 
 ---
@@ -58,6 +58,20 @@ Le backend fait autorité. Ne jamais faire confiance à `schoolCode`, `schoolId`
 | Legacy | `PUT /api/backoffice/state` reste 410 / fail-closed ; aucun écriture `backoffice_state.users` |
 
 Tests : `npm run verify:user-role-lifecycle`
+
+### 2.4 P0-2 — Deny plateforme / données personnelles (#503)
+
+`requireAuth` refuse les routes `SCHOOL_PERSONAL_DATA_FORBIDDEN_FOR_PLATFORM` **avant** le scope établissement (header `schoolCode`). `RbacService.canAccess` refuse ensuite **avant** `requiredPermissions.some(...)` si le principal est Super Administrateur Somafrik ou Admin Pays.
+
+`ALL_PRIVILEGES` / `COUNTRY_PRIVILEGES` et un `schoolCode` (valide, invalide, query ou header) **ne contournent pas** ce deny. `GET /api/data-export` → **403** pour ces rôles.
+
+Fonctions plateforme conservées : pays, métadonnées établissement, comptes admin établissement, abonnements, référentiels, RBAC, annonces plateforme.
+
+Tests : `npm run verify:platform-personal-data-deny` · `npm run verify:functional-rbac`
+
+### 2.5 P0-1 — Data API Supabase
+
+Les clients n’utilisent pas PostgREST. Migration `20260904_p0_supabase_data_api_lockdown.sql` : 0 grant métier `anon` / `authenticated` / `PUBLIC` sur `public`. Boot : `ensureSupabaseDataApiLockdown()`. Procédure dashboard : [../compliance/supabase-data-api-lockdown.md](../compliance/supabase-data-api-lockdown.md). Tests : `npm run verify:supabase-data-api-lockdown`
 
 ---
 

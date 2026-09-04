@@ -2053,7 +2053,7 @@ app.post("/api/presences", requireAuth, requireSchoolSubscriptionFeature("write_
   });
 }));
 
-app.get("/api/students/:id/report", requireAuth, asyncHandler(async (req, res) => {
+app.get("/api/students/:id/report", requireAuth, requirePermission("GET /api/students/:id/report"), asyncHandler(async (req, res) => {
   const { gradeBookService } = await getRuntime();
   const { students } = await getAuthoritativeBackOfficeState();
   const student = findStudent(tenantScopeService.filterRows(students, req.principal), req.params.id);
@@ -2065,7 +2065,7 @@ app.get("/api/students/:id/report", requireAuth, asyncHandler(async (req, res) =
   res.json(stripSensitiveFieldsDeep(gradeBookService.generateReport(student.id)));
 }));
 
-app.get("/api/students/:id/report.pdf", requireAuth, asyncHandler(async (req, res) => {
+app.get("/api/students/:id/report.pdf", requireAuth, requirePermission("GET /api/students/:id/report.pdf"), asyncHandler(async (req, res) => {
   const { gradeBookService, reportPdfService } = await getRuntime();
   const backOfficeState = await getAuthoritativeBackOfficeState();
   const { students } = backOfficeState;
@@ -2105,7 +2105,7 @@ app.get("/api/students/:id/presences", requireAuth, requirePermission("GET /api/
   );
 }));
 
-app.get("/api/students/:id/payments", requireAuth, asyncHandler(async (req, res) => {
+app.get("/api/students/:id/payments", requireAuth, requirePermission("GET /api/students/:id/payments"), asyncHandler(async (req, res) => {
   const { payments, students } = await loadCanonicalFinanceForPrincipal(req.principal);
   const student = resolveAuthorizedStudentForPrincipal(students, req.principal, req.params.id);
   if (!student) {
@@ -3448,7 +3448,7 @@ app.post("/api/backoffice/bulletin-design/preview", requireAuth, asyncHandler(as
   res.send(html);
 }));
 
-app.get("/api/audit", requireAuth, asyncHandler(async (req, res) => {
+app.get("/api/audit", requireAuth, requirePermission("GET /api/audit"), asyncHandler(async (req, res) => {
   if (!["Super Administrateur Somafrik", "Admin Pays"].includes(req.principal.role)) {
     throw new BusinessError(403, "Seuls les administrateurs habilités peuvent consulter l'audit.");
   }
@@ -6184,6 +6184,25 @@ function requireAuth(req, res, next) {
       if (!activeSession) {
         throw new BusinessError(401, "Session révoquée.");
       }
+    }
+
+    const {
+      isPlatformPersonalDataForbiddenHttp,
+      PLATFORM_PERSONAL_DATA_DENY,
+    } = require("./lib/platformPersonalDataGuard");
+    if (
+      isPlatformPersonalDataForbiddenHttp(
+        req.principal,
+        req.method,
+        req.originalUrl || req.path,
+      )
+    ) {
+      const denied = new BusinessError(
+        403,
+        "Accès aux données personnelles établissement interdit pour un administrateur plateforme.",
+      );
+      denied.code = PLATFORM_PERSONAL_DATA_DENY;
+      throw denied;
     }
 
     const { applyEffectiveSchoolScope } = require("./lib/principalSchoolScope");

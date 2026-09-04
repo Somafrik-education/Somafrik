@@ -11,6 +11,11 @@ et ce projet adhère au [Versioning sémantique](https://semver.org/lang/fr/) po
 
 ## [Unreleased]
 
+### Security
+
+- **#503 P0-1** : migration idempotente de verrouillage Data API (`anon` / `authenticated` / `PUBLIC` sans SELECT/INSERT/UPDATE/DELETE métier) ; boot `ensureSupabaseDataApiLockdown` ; gate `verify:supabase-data-api-lockdown` (permission denied PG). Procédure dashboard CTO : `docs/compliance/supabase-data-api-lockdown.md`.
+- **#503 P0-2** : deny serveur **avant** `requiredPermissions.some(...)` pour Superadmin / Admin Pays sur les routes de données personnelles établissement ; deny HTTP **avant** le scope `X-Somafrik-School-Code` (403 même si le code est invalide) ; `GET /api/data-export` → 403 ; nettoyage matrice seed + SQL `20260904_p0_platform_personal_data_deny.sql`. Gate `verify:platform-personal-data-deny`.
+
 ### Added
 
 - **P0 Finance — paiement multi-libellés / reçu unique** : un encaissement (`payments`) porte N lignes (`payment_items`) ; total serveur `SUM(items)` (le total client est ignoré) ; écriture transactionnelle sans reçu partiel ; liste `/finances/paiements` = une ligne par reçu (`3 libellés`) ; PDF/reçu avec toutes les lignes ; backfill historique 1:1 sans fusion élève+date ; `verify:finance-multi-item-payment` (CI + Security).

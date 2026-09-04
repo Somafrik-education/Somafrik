@@ -1,5 +1,6 @@
 const seedData = require("../data");
 const { COURSE_ROUTE_PERMISSIONS } = require("../lib/coursesRbacPolicy");
+const { isPlatformPersonalDataForbidden } = require("../lib/platformPersonalDataGuard");
 
 const roleAliases = {
   super_admin: "Super Administrateur Somafrik",
@@ -60,7 +61,11 @@ const routePermissions = {
   "POST /api/classes/:classCode/students": ["Élèves:CREATE", "Gérer élèves", "ALL_PRIVILEGES"],
   "GET /api/students": ["Élèves:READ", "Voir élèves", "Gérer élèves", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
   "GET /api/students/:id": ["Élèves:READ", "Voir élèves", "Gérer élèves", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
+  "GET /api/students/:id/report": ["Élèves:READ", "Notes:READ", "Bulletins:READ", "Voir bulletins", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
+  "GET /api/students/:id/report.pdf": ["Élèves:READ", "Notes:READ", "Bulletins:READ", "Voir bulletins", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
+  "GET /api/students/:id/payments": ["Paiements:READ", "Gérer paiements", "Voir paiements", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
   "PATCH /api/students/:id": ["Élèves:UPDATE", "Gérer élèves", "ALL_PRIVILEGES"],
+  "GET /api/audit": ["Audit:READ", "ALL_PRIVILEGES", "COUNTRY_PRIVILEGES"],
   "GET /api/assignments": [
     "Affectations:READ",
     "Enseignants:READ",
@@ -527,6 +532,12 @@ class RbacService {
     }
 
     if (!principal) {
+      return false;
+    }
+
+    // P0-2 : deny plateforme AVANT requiredPermissions.some(...)
+    // (ALL_PRIVILEGES / COUNTRY_PRIVILEGES ne doivent jamais ouvrir les données perso).
+    if (isPlatformPersonalDataForbidden(principal, routeKey)) {
       return false;
     }
 

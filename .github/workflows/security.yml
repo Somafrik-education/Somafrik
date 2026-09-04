@@ -70,6 +70,8 @@ jobs:
           npm run verify:sync-contacts-removed
           npm run verify:mobile-security
           npm run verify:functional-rbac
+          npm run verify:supabase-data-api-lockdown
+          npm run verify:platform-personal-data-deny
       - name: Runtime bootstrap security
         env:
           NODE_ENV: test
