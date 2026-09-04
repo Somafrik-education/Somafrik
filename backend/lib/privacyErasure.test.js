@@ -97,6 +97,8 @@ test("exécution d'une demande publique cible l'identifiant, pas l'acteur", asyn
     assert.ok(targetSession.revoked_at);
     assert.equal(actor.status, actorSnap.status);
     assert.equal(target.status, "Supprimé");
+    const { canUserAccountLogin } = require("./userAccountRules");
+    assert.equal(canUserAccountLogin(target), false);
   } finally {
     Object.assign(actor, actorSnap);
     Object.assign(target, targetSnap);

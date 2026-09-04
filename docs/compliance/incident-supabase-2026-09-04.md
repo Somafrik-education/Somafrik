@@ -27,6 +27,10 @@ L’application elle-même n’utilise pas la Data API : Web/Mobile → API Node
 - Gate : `npm run verify:supabase-data-api-lockdown`
 - Procédure dashboard : [supabase-data-api-lockdown.md](./supabase-data-api-lockdown.md)
 
+## Suite P1 (sessions / droits)
+
+Depuis le lot P1 sur la même PR #504 : access JWT ≤ 15 min, refresh rotatif, `revoke-all`, workflow `/suppression-compte` → `privacy_requests`. Cela **réduit** la fenêtre d’une session volée ; cela **ne prouve pas** l’absence d’accès historique via PostgREST avant le lockdown.
+
 ## Ce qui n’est **pas** clos par ce fichier
 
 - Preuve dashboard « Data API disabled »

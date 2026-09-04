@@ -16,8 +16,10 @@
 | Demande d’effacement tracée | `privacy_requests` + `/api/privacy/erasure-requests` |
 | Anonymisation compte + révocation sessions | `executePrivacyErasure` — **ne supprime pas** notes/paiements/bulletins |
 | Purge sessions / push | `retentionPolicy.js` — **pas** d’auto-purge audit ni dossier scolaire |
-| Pages `/confidentialite` et `/suppression-compte` | Publiques Web + liens Mobile |
+| Pages `/confidentialite` et `/suppression-compte` | Publiques Web + liens Mobile (accueil, menu, drawer) |
 | Login Superadmin sans dump `auditLog` | P0-2 leftover : plus de journal établissement au login |
+| Chemin auth réel / vars JWT | `docs/compliance/auth-sessions-p1.md` |
+| Sauvegardes / restore | `docs/compliance/sauvegardes-restauration.md` (hébergeur, pas de job app) |
 
 ## Non clos par ce fichier
 

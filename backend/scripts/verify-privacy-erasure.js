@@ -105,6 +105,12 @@ async function main() {
     assert.equal(executed.data.request?.status, "processed");
     assert.equal(executed.data.schoolRecordsRetained, true);
 
+    const reconnect = await request("/backoffice/login", {
+      method: "POST",
+      body: { identifier: "secretaire", password: "1234", schoolCode: "CD-2026-0001" },
+    });
+    assert.notEqual(reconnect.status, 200, JSON.stringify(reconnect.data));
+
     const replay = await request(`/privacy/erasure-requests/${created.data.id}/execute`, {
       method: "POST",
       token: schoolLogin.data.accessToken,

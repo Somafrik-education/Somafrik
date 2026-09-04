@@ -2325,7 +2325,7 @@ app.post("/api/users/:id/reset-password", requireAuth, asyncHandler(async (req, 
     .map((value) => String(value ?? "").trim().toUpperCase())
     .filter(Boolean))];
 
-  // Reset + révocation sessions + déverrouillage dans la même transaction PostgreSQL.
+  // Reset + révocation sessions (+ déverrouillage PG si transaction SQL).
   const updatedUser = await repository.withTransaction(async (tx) => {
     const txRepo = repository.createTxScope(tx);
     const updated = await txRepo.resetUserPassword(lookupAliases, temporaryPassword);
@@ -2333,14 +2333,19 @@ app.post("/api/users/:id/reset-password", requireAuth, asyncHandler(async (req, 
       throw new BusinessError(404, "Utilisateur introuvable dans votre établissement.");
     }
 
-    await tx.query(
-      `UPDATE sessions
-       SET revoked_at = NOW(), revoke_reason = 'password_reset'
-       WHERE user_id = $1 AND revoked_at IS NULL`,
-      [target.id],
-    );
+    const revokeId = updated.id ?? updated.userId ?? target.id;
+    if (typeof txRepo.revokeAllSessionsForUser === "function") {
+      await txRepo.revokeAllSessionsForUser(revokeId, "password_reset");
+    } else if (tx && typeof tx.query === "function") {
+      await tx.query(
+        `UPDATE sessions
+         SET revoked_at = NOW(), revoke_reason = 'password_reset'
+         WHERE user_id = $1 AND revoked_at IS NULL`,
+        [revokeId],
+      );
+    }
 
-    if (lockoutAliases.length && schoolScopes.length) {
+    if (lockoutAliases.length && schoolScopes.length && tx && typeof tx.query === "function") {
       await tx.query(
         `DELETE FROM login_lockouts
          WHERE identifier_normalized = ANY($1::text[])

@@ -38,6 +38,7 @@ function sanitizePrivacyRequest(row) {
     requestType: row.request_type ?? row.requestType ?? "erasure",
     status: row.status,
     reason: row.reason ?? "",
+    actorUserId: row.actor_user_id ?? row.actorUserId ?? null,
     processedAt: row.processed_at ?? row.processedAt ?? null,
     createdAt: row.created_at ?? row.createdAt,
   };
