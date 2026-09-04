@@ -97,7 +97,7 @@ async function main() {
     assert.match(createdCd.data.classCode, /^CLS-/);
     assert.equal(createdCd.data.status, "active");
     assert.equal(createdCd.data.schoolCode, "CD-2026-0001");
-    assert.equal(createdCd.data.name, "6ème");
+    assert.equal(createdCd.data.name, "6ème A");
 
     const createdBi = await postCanonicalClass(request, bi.schoolToken, {
       academicYearId: bi.academicYear.id,
@@ -154,7 +154,8 @@ async function main() {
     });
     assert.equal(createdCdB.status, 201, JSON.stringify(createdCdB.data));
     assert.equal(createdCdB.data.groupCode, "B");
-    assert.equal(createdCdB.data.name, createdCd.data.name);
+    assert.equal(createdCdB.data.name, "6ème B");
+    assert.notEqual(createdCdB.data.name, createdCd.data.name);
 
     const freeGroupCode = await request("/classes", {
       method: "POST",
@@ -168,6 +169,19 @@ async function main() {
     });
     assert.equal(freeGroupCode.status, 400, JSON.stringify(freeGroupCode.data));
     assert.equal(freeGroupCode.data?.code, "CLASS_FREE_TEXT_FORBIDDEN");
+
+    const crossYear = await request("/classes", {
+      method: "POST",
+      token: cd.schoolToken,
+      body: {
+        academicYearId: bi.academicYear.id,
+        levelId: cd.level.id,
+        groupId: cd.group.id,
+        status: "active",
+      },
+    });
+    assert.ok([400, 403].includes(crossYear.status), JSON.stringify(crossYear.data));
+    assert.match(String(crossYear.data?.message ?? crossYear.data?.error ?? ""), /introuvable pour cet établissement|Accès refusé/i);
 
     const unknownGroup = await request("/classes", {
       method: "POST",

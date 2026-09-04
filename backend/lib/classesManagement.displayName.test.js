@@ -21,3 +21,14 @@ test("composeClassDisplayName fonctionne sans filière", () => {
     "1ère",
   );
 });
+
+test("composeClassDisplayName conserve la série métier A/B/C", () => {
+  assert.equal(
+    composeClassDisplayName({ levelName: "1ère Primaire", streamName: null, groupCode: "A" }),
+    "1ère Primaire A",
+  );
+  assert.equal(
+    composeClassDisplayName({ levelName: "6ème Primaire", streamName: null, groupCode: "B" }),
+    "6ème Primaire B",
+  );
+});
