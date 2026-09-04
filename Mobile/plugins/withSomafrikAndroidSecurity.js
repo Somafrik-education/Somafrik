@@ -64,13 +64,61 @@ function writeXml(modRequest, relativePath, contents) {
   fs.writeFileSync(filePath, contents);
 }
 
-function stripBlockedPermissions(manifest) {
-  const permissions = manifest.manifest["uses-permission"];
-  if (!Array.isArray(permissions)) return;
-  manifest.manifest["uses-permission"] = permissions.filter((entry) => {
-    const name = entry?.$?.["android:name"];
-    return !BLOCKED_PERMISSIONS.has(name);
-  });
+function permissionName(entry) {
+  return entry?.$?.["android:name"] || "";
+}
+
+function removeNode(name) {
+  return {
+    $: {
+      "android:name": name,
+      "tools:node": "remove",
+    },
+  };
+}
+
+function rewritePermissionList(list) {
+  if (!Array.isArray(list)) return [];
+  const rewritten = [];
+  const seenBlocked = new Set();
+  for (const entry of list) {
+    const name = permissionName(entry);
+    if (!BLOCKED_PERMISSIONS.has(name)) {
+      rewritten.push(entry);
+      continue;
+    }
+    if (seenBlocked.has(name)) continue;
+    seenBlocked.add(name);
+    rewritten.push(removeNode(name));
+  }
+  return rewritten;
+}
+
+/**
+ * Keep tools:node="remove" in the *app* manifest so Gradle merger drops
+ * library grants. Stripping the nodes (previous behavior) lets
+ * expo-file-system's AAR re-inject READ/WRITE_EXTERNAL_STORAGE into the
+ * final merged AAB.
+ */
+function ensureBlockedPermissionsRemoved(manifestDoc) {
+  const root = manifestDoc.manifest.$ || (manifestDoc.manifest.$ = {});
+  if (!root["xmlns:tools"]) {
+    root["xmlns:tools"] = "http://schemas.android.com/tools";
+  }
+
+  const man = manifestDoc.manifest;
+  man["uses-permission"] = rewritePermissionList(man["uses-permission"]);
+  if (Array.isArray(man["uses-permission-sdk-23"])) {
+    man["uses-permission-sdk-23"] = rewritePermissionList(man["uses-permission-sdk-23"]);
+  }
+
+  const existing = new Set((man["uses-permission"] || []).map(permissionName));
+  man["uses-permission"] = man["uses-permission"] || [];
+  for (const name of BLOCKED_PERMISSIONS) {
+    if (existing.has(name)) continue;
+    man["uses-permission"].push(removeNode(name));
+    existing.add(name);
+  }
 }
 
 function withSomafrikAndroidSecurity(config) {
@@ -92,7 +140,7 @@ function withSomafrikAndroidSecurity(config) {
   ]);
 
   config = withAndroidManifest(config, (cfg) => {
-    stripBlockedPermissions(cfg.modResults);
+    ensureBlockedPermissionsRemoved(cfg.modResults);
     const app = AndroidConfig.Manifest.getMainApplicationOrThrow(cfg.modResults);
     app.$["android:allowBackup"] = "false";
     app.$["android:fullBackupContent"] = "@xml/backup_rules";
