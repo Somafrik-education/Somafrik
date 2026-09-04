@@ -257,9 +257,11 @@ async function main() {
   assert.match(appConfig, /blockedPermissions/);
   assert.match(appConfig, /android\.permission\.READ_MEDIA_IMAGES/);
   assert.match(plugin, /android\.permission\.READ_MEDIA_IMAGES/);
+  assert.match(plugin, /tools:node": "remove"/);
+  assert.match(plugin, /ensureBlockedPermissionsRemoved/);
   assert.ok(!permissions.includes("READ_EXTERNAL_STORAGE"));
   assert.ok(!permissions.includes("WRITE_EXTERNAL_STORAGE"));
-  console.log("PASS AR-PERMS CAMERA only ; READ_MEDIA_IMAGES bloqué ; RECORD_AUDIO bloqué ; backup off");
+  console.log("PASS AR-PERMS CAMERA only ; READ_MEDIA_IMAGES + READ/WRITE_EXTERNAL_STORAGE tools:node=remove ; RECORD_AUDIO bloqué ; backup off");
 
   const icon = pngInfo(path.join(MOBILE, "assets", "somafrik-app-icon.png"));
   const androidForeground = pngInfo(path.join(MOBILE, "assets", "somafrik-android-adaptive-foreground.png"));
