@@ -215,7 +215,8 @@ async function main() {
   assert.equal(APP_SCHEME, "somafrik");
   assert.ok(!appJson.expo.android.intentFilters, "pas d'intentFilters HTTPS App Links versionnés (scheme custom seulement)");
   const permissions = [...(appJson.expo.android.permissions || [])].sort();
-  assert.deepEqual(permissions, ["CAMERA", "READ_MEDIA_IMAGES"].sort());
+  assert.deepEqual(permissions, ["CAMERA"]);
+  assert.ok(!permissions.includes("READ_MEDIA_IMAGES"), "AR-PERMS: READ_MEDIA_IMAGES interdit dans app.json");
   assert.equal(appJson.expo.extra?.demoMode, false);
   assert.doesNotMatch(JSON.stringify(appJson), /usesCleartextTraffic/);
   console.log(`PASS AR-CONFIG package=${ANDROID_PACKAGE} scheme=${APP_SCHEME}`);
@@ -254,7 +255,11 @@ async function main() {
   assert.doesNotMatch(plugin, /POST_NOTIFICATIONS/);
   assert.match(appConfig, /withSomafrikAndroidSecurity/);
   assert.match(appConfig, /blockedPermissions/);
-  console.log("PASS AR-PERMS CAMERA+READ_MEDIA_IMAGES ; RECORD_AUDIO bloqué ; backup off");
+  assert.match(appConfig, /android\.permission\.READ_MEDIA_IMAGES/);
+  assert.match(plugin, /android\.permission\.READ_MEDIA_IMAGES/);
+  assert.ok(!permissions.includes("READ_EXTERNAL_STORAGE"));
+  assert.ok(!permissions.includes("WRITE_EXTERNAL_STORAGE"));
+  console.log("PASS AR-PERMS CAMERA only ; READ_MEDIA_IMAGES bloqué ; RECORD_AUDIO bloqué ; backup off");
 
   const icon = pngInfo(path.join(MOBILE, "assets", "somafrik-app-icon.png"));
   const androidForeground = pngInfo(path.join(MOBILE, "assets", "somafrik-android-adaptive-foreground.png"));

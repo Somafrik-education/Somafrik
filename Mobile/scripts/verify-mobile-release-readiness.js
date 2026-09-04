@@ -138,8 +138,9 @@ function main() {
   assert.doesNotMatch(JSON.stringify(appJson), /usesCleartextTraffic/);
   assert.doesNotMatch(JSON.stringify(appJson), /SchoolLink|schoollink/i);
   const permissions = appJson.expo.android.permissions || [];
-  assert.deepStrictEqual(permissions.sort(), ["CAMERA", "READ_MEDIA_IMAGES"].sort());
-  console.log("OK: app.json package/version/permissions/schema");
+  assert.deepStrictEqual(permissions, ["CAMERA"]);
+  assert.ok(!permissions.includes("READ_MEDIA_IMAGES"), "app.json ne doit plus déclarer READ_MEDIA_IMAGES");
+  console.log("OK: app.json package/version/permissions/schema (CAMERA only)");
 
   const appConfig = read(path.join(MOBILE, "app.config.js"));
   assert.match(appConfig, /expo-build-properties/);
@@ -147,7 +148,10 @@ function main() {
   assert.match(appConfig, /profileAllowsCleartext/);
   assert.doesNotMatch(appConfig, /http:\/\/localhost:5000/);
   assert.match(appConfig, /withSomafrikAndroidSecurity/);
-  console.log("OK: app.config fail-closed + cleartext hors schéma Expo");
+  assert.match(appConfig, /android\.permission\.READ_MEDIA_IMAGES/);
+  const plugin = read(path.join(MOBILE, "plugins", "withSomafrikAndroidSecurity.js"));
+  assert.match(plugin, /android\.permission\.READ_MEDIA_IMAGES/);
+  console.log("OK: app.config fail-closed + cleartext hors schéma Expo + READ_MEDIA_IMAGES bloqué");
 
   const pkg = JSON.parse(read(path.join(MOBILE, "package.json")));
   assert.ok(pkg.dependencies["react-native-worklets"], "react-native-worklets manquant");
@@ -183,7 +187,6 @@ function main() {
   assert.equal((trackedSecrets.stdout || "").trim(), "", "keystore / credentials.json suivis par git");
   console.log("OK: gitignore release secrets");
 
-  const plugin = read(path.join(MOBILE, "plugins", "withSomafrikAndroidSecurity.js"));
   assert.match(plugin, /allowBackup/);
   assert.match(plugin, /cleartextTrafficPermitted="false"/);
   assert.match(plugin, /allowCleartext \? NETWORK_SECURITY_DEV : NETWORK_SECURITY_RELEASE/);
