@@ -86,7 +86,7 @@ export function PrivacyPolicyPage() {
       <section>
         <h2 className="text-xl font-bold text-slate-950">Conservation</h2>
         <p>
-          Comptes : durée d’utilisation puis suppression ou anonymisation. Sessions / refresh : expiration courte + purge.
+          Comptes : durée d’utilisation puis suppression ou anonymisation. Sessions et jetons de rafraîchissement : expiration courte puis purge.
           Jetons push inactifs : purge configurable. Journaux d’audit, dossier scolaire et pièces comptables :
           conservés selon les obligations de l’établissement ; ils ne sont pas auto-supprimés par le job applicatif.
           Matrice : <code>docs/compliance/matrice-conservation.md</code>.
@@ -116,9 +116,10 @@ export function PrivacyPolicyPage() {
       <section>
         <h2 className="text-xl font-bold text-slate-950">Sécurité</h2>
         <p>
-          API unique (pas d’accès client aux tables Supabase). Deny serveur pour Superadmin / Admin Pays sur les données
-          personnelles établissement. Access token ≤ 15 min en production, refresh rotatif hashé, révocation logout / revoke-all.
-          Chiffrement en transit (HTTPS). Pièces jointes : types, taille, magic bytes, pas d’URL publique anonyme.
+          Une seule API (pas d’accès client aux tables Supabase). Interdiction serveur pour les administrateurs
+          plateforme sur les données personnelles d’établissement. Jeton d’accès ≤ 15 min en production, jeton de
+          rafraîchissement rotatif et haché, révocation à la déconnexion ou de toutes les sessions. Chiffrement en
+          transit (HTTPS). Pièces jointes : types, taille, octets magiques, pas d’adresse publique anonyme.
         </p>
       </section>
     </LegalLayout>
@@ -172,7 +173,7 @@ export function AccountDeletionPage() {
       </section>
       <section>
         <h2 className="text-xl font-bold text-slate-950">Enregistrer la demande dans Somafrik</h2>
-        <p>Une demande tracée (statut pending) est créée. Elle n’efface pas immédiatement le dossier scolaire.</p>
+        <p>Une demande tracée (statut « en attente ») est créée. Elle n’efface pas immédiatement le dossier scolaire.</p>
         <form className="mt-4 space-y-3" onSubmit={onSubmit}>
           <input name="schoolCode" required placeholder="Code établissement" className="w-full rounded-lg border px-3 py-2" />
           <input name="identifier" required placeholder="Identifiant" className="w-full rounded-lg border px-3 py-2" />
