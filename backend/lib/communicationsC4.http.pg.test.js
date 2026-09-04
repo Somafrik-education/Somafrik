@@ -582,31 +582,31 @@ async function main() {
     assert.ok([403,404].includes(viaAnnouncements.status), "C4-11 Announcements:READ ne débloque pas PJ notification");
     await setRoleModuleGrant(pool, "PARENT", "notifications", { read: true, create: false, update: false });
 
-    // C4-12 — Superadmin request-scoped sur list/get/read/archive/upload/download.
+    // C4-12 — Superadmin : deny #503 (notifications internes = données établissement).
     const superBare = await request("/backoffice/internal-notifications", { token: superSa });
-    assert.equal(superBare.status, 400, "C4-12 super * sans établissement");
+    assert.equal(superBare.status, 403, "C4-12 super * sans établissement");
     const superBareGet = await request(`/backoffice/internal-notifications/${messageN.id}`, { token: superSa });
-    assert.equal(superBareGet.status, 400, "C4-12 get sans scope");
+    assert.equal(superBareGet.status, 403, "C4-12 get sans scope");
     const superBareRead = await request(`/backoffice/internal-notifications/${messageN.id}/read`, { method: "PATCH", token: superSa });
-    assert.equal(superBareRead.status, 400, "C4-12 read sans scope");
+    assert.equal(superBareRead.status, 403, "C4-12 read sans scope");
     const superBareArchive = await request(`/backoffice/internal-notifications/${announcementRow.id}/archive`, { method: "PATCH", token: superSa });
-    assert.equal(superBareArchive.status, 400, "C4-12 archive sans scope");
+    assert.equal(superBareArchive.status, 403, "C4-12 archive sans scope");
     const superBareUpload = await uploadNotificationFile(superSa, { fileName: "c4-sa.pdf", mimeType: "application/pdf", body: pdfBuffer() });
-    assert.equal(superBareUpload.status, 400, "C4-12 upload sans scope");
+    assert.equal(superBareUpload.status, 403, "C4-12 upload sans scope");
     const superA = await request("/backoffice/internal-notifications?effectiveSchoolCode=SCH-C4-A", { token: superSa });
-    assert.equal(superA.status, 200, "C4-12 super scoped A");
+    assert.equal(superA.status, 403, "C4-12 super scoped A interdit");
     const superGetA = await request(`/backoffice/internal-notifications/${manual.data.id}?effectiveSchoolCode=SCH-C4-A`, { token: superSa });
-    assert.equal(superGetA.status, 200, "C4-12 get scoped A");
+    assert.equal(superGetA.status, 403, "C4-12 get scoped A interdit");
     const superUpload = await uploadNotificationFile(superSa, {
       fileName: "c4-sa.pdf", mimeType: "application/pdf", body: pdfBuffer(), query: "?effectiveSchoolCode=SCH-C4-A",
     });
-    assert.equal(superUpload.status, 201, `C4-12 upload scoped: ${JSON.stringify(superUpload.data)}`);
+    assert.equal(superUpload.status, 403, `C4-12 upload scoped interdit: ${JSON.stringify(superUpload.data)}`);
     const superDownload = await downloadNotificationFile(superSa, upload.data.id, "?effectiveSchoolCode=SCH-C4-A");
-    assert.equal(superDownload.status, 200, "C4-12 download scoped A");
+    assert.equal(superDownload.status, 403, "C4-12 download scoped A interdit");
     const superWrong = await request(`/backoffice/internal-notifications/${messageN.id}?effectiveSchoolCode=SCH-C4-B`, { token: superSa });
-    assert.ok([403,404].includes(superWrong.status), "C4-12 ressource A sous scope B refusée");
+    assert.equal(superWrong.status, 403, "C4-12 ressource A sous scope B refusée");
     const superWrongDownload = await downloadNotificationFile(superSa, upload.data.id, "?effectiveSchoolCode=SCH-C4-B");
-    assert.ok([403,404].includes(superWrongDownload.status), "C4-12 download A sous scope B");
+    assert.equal(superWrongDownload.status, 403, "C4-12 download A sous scope B");
 
     // C4-13 — concurrence dispatcher : deux drains du même event → 1 notification.
     const concurrentAttendance = randomUUID();

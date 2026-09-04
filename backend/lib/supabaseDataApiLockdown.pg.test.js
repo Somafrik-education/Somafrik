@@ -11,6 +11,8 @@ const path = require("node:path");
 const {
   SUPABASE_DATA_API_LOCKDOWN_SQL,
   SENSITIVE_BUSINESS_TABLES,
+  DATA_API_PRIVILEGES,
+  LOCKDOWN_GRANTEES,
   applySupabaseDataApiLockdown,
   listSensitiveDataApiGrants,
   EXPOSED_FUNCTION_INVENTORY_SQL,
@@ -152,6 +154,42 @@ async function main() {
     } finally {
       await pool.query("RESET ROLE");
     }
+
+    await pool.query(`
+      CREATE TABLE p0_lockdown_future_probe (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        payload TEXT
+      )
+    `);
+    const futureGrants = await pool.query(
+      `SELECT grantee, privilege_type
+       FROM information_schema.role_table_grants
+       WHERE table_schema = 'public'
+         AND table_name = 'p0_lockdown_future_probe'
+         AND privilege_type = ANY($1::text[])
+         AND grantee = ANY($2::text[])`,
+      [DATA_API_PRIVILEGES, LOCKDOWN_GRANTEES],
+    );
+    assert.deepEqual(
+      futureGrants.rows,
+      [],
+      `table créée après lockdown par le rôle applicatif : ${JSON.stringify(futureGrants.rows)}`,
+    );
+    for (const role of ["anon", "authenticated"]) {
+      let denied = false;
+      try {
+        await pool.query(`SET ROLE ${role}`);
+        await pool.query("SELECT * FROM p0_lockdown_future_probe LIMIT 1");
+      } catch (error) {
+        denied = isPermissionDenied(error);
+        if (!denied) throw error;
+      } finally {
+        await pool.query("RESET ROLE");
+      }
+      assert.equal(denied, true, `${role} SELECT p0_lockdown_future_probe doit être permission denied`);
+    }
+    await pool.query("SELECT * FROM p0_lockdown_future_probe LIMIT 1");
+    await pool.query("DROP TABLE p0_lockdown_future_probe");
 
     const functions = await pool.query(EXPOSED_FUNCTION_INVENTORY_SQL);
     const definer = (functions.rows ?? []).filter((row) => row.security === "SECURITY DEFINER");

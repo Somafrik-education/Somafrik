@@ -20,6 +20,7 @@ test("P0-1 : migration idempotente révoque anon / authenticated / PUBLIC", () =
   assert.match(sql, /REVOKE ALL ON ALL SEQUENCES IN SCHEMA public FROM %I/);
   assert.match(sql, /REVOKE ALL ON ALL FUNCTIONS IN SCHEMA public FROM %I/);
   assert.match(sql, /ALTER DEFAULT PRIVILEGES FOR ROLE %I IN SCHEMA public REVOKE ALL ON TABLES FROM %I/);
+  assert.match(sql, /WHEN insufficient_privilege THEN/);
   assert.match(sql, /REVOKE ALL ON ALL TABLES IN SCHEMA public FROM PUBLIC/);
   assert.match(sql, /GRANT ALL ON ALL TABLES IN SCHEMA public TO service_role/);
   assert.match(sql, /Ne touche pas service_role/);

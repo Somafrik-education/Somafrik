@@ -23,7 +23,9 @@ Le nettoyage de `role_permissions` / `securityMatrix` / SQL `20260904_p0_platfor
 
 ## Conservé (fonctions plateforme)
 
-Pays, métadonnées établissement, comptes admin établissement (`/api/backoffice/users` hors create-teacher), abonnements, référentiels, RBAC catalogue, annonces **plateforme**, paramètres globaux / structure (classes, matières, planning).
+Pays, métadonnées établissement, comptes admin établissement (`/api/backoffice/users` hors create-teacher), abonnements, référentiels, RBAC catalogue, annonces **plateforme**, paramètres globaux / structure (classes, matières, planning, grilles de frais), `POST /api/mobile/push-devices/test` (diagnostic push, pas une fiche élève).
+
+Contrats historiques **200/400 Superadmin** sur `GET /api/students`, messages école, notifications internes et paiements élève étaient incompatibles avec l’invariant #503. Les gates Enrollment / Communications / Finance attendent désormais **403**.
 
 ## Tests
 

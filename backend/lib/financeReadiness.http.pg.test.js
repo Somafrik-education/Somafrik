@@ -966,8 +966,8 @@ async function main() {
     });
     assert.equal(
       scopedSuperGetA.status,
-      200,
-      `F8-P0-004 Superadmin scoped lit A: ${JSON.stringify(scopedSuperGetA.data)}`,
+      403,
+      `F8-P0-004 Superadmin scoped lit A interdit (#503): ${JSON.stringify(scopedSuperGetA.data)}`,
     );
 
     const countryAdminToken = mintAccess(
@@ -991,7 +991,7 @@ async function main() {
     const countryGetA = await request(`/payments/${encodeURIComponent(unalloc1.data.id)}`, {
       token: countryAdminToken,
     });
-    assert.equal(countryGetA.status, 200, `F8-P0-004 Admin Pays CI lit A: ${JSON.stringify(countryGetA.data)}`);
+    assert.equal(countryGetA.status, 403, `F8-P0-004 Admin Pays CI lit A interdit (#503): ${JSON.stringify(countryGetA.data)}`);
     const countryPayB = await request("/payments", {
       method: "POST",
       token: countryAdminToken,
@@ -1019,8 +1019,8 @@ async function main() {
     });
     assert.equal(
       countryPayA.status,
-      201,
-      `F8-P1-006 Admin Pays CI paie A (school_code sans préfixe CI): ${JSON.stringify(countryPayA.data)}`,
+      403,
+      `F8-P1-006 Admin Pays CI ne paie pas A (#503 paiements élève): ${JSON.stringify(countryPayA.data)}`,
     );
 
     const countryGridA = await request("/finance/fee-grids", {
@@ -1095,8 +1095,8 @@ async function main() {
     const globalGetB = await request(`/payments/${encodeURIComponent(paymentBId)}`, { token: globalSuperToken });
     assert.equal(
       globalGetB.status,
-      200,
-      `F8-P0-004 Superadmin global conserve l'accès B: ${JSON.stringify(globalGetB.data)}`,
+      403,
+      `F8-P0-004 Superadmin global n'accède pas aux paiements élève (#503): ${JSON.stringify(globalGetB.data)}`,
     );
 
     const raceBody = {

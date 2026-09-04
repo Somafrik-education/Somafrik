@@ -13,7 +13,7 @@ et ce projet adhère au [Versioning sémantique](https://semver.org/lang/fr/) po
 
 ### Security
 
-- **#503 P0-1** : migration idempotente de verrouillage Data API (`anon` / `authenticated` / `PUBLIC` sans SELECT/INSERT/UPDATE/DELETE métier) ; boot `ensureSupabaseDataApiLockdown` ; gate `verify:supabase-data-api-lockdown` (permission denied PG). Procédure dashboard CTO : `docs/compliance/supabase-data-api-lockdown.md`.
+- **#503 P0-1** : migration idempotente de verrouillage Data API (`anon` / `authenticated` / `PUBLIC` sans SELECT/INSERT/UPDATE/DELETE métier) ; `ALTER DEFAULT PRIVILEGES` de `supabase_admin` best-effort (`insufficient_privilege` ignoré) ; boot `ensureSupabaseDataApiLockdown` ; gate `verify:supabase-data-api-lockdown` (permission denied PG + table future sans grant). Procédure dashboard CTO : `docs/compliance/supabase-data-api-lockdown.md`.
 - **#503 P0-2** : deny serveur **avant** `requiredPermissions.some(...)` pour Superadmin / Admin Pays sur les routes de données personnelles établissement ; deny HTTP **avant** le scope `X-Somafrik-School-Code` (403 même si le code est invalide) ; `GET /api/data-export` → 403 ; nettoyage matrice seed + SQL `20260904_p0_platform_personal_data_deny.sql`. Gate `verify:platform-personal-data-deny`.
 
 ### Added

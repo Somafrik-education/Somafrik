@@ -2406,7 +2406,7 @@ app.post("/api/payments", requireAuth, requirePermission("POST /api/payments"), 
   });
 }));
 
-app.get("/api/payments/:paymentId", requireAuth, requirePermission("GET /api/payments"), asyncHandler(async (req, res) => {
+app.get("/api/payments/:paymentId", requireAuth, requirePermission("GET /api/payments/:paymentId"), asyncHandler(async (req, res) => {
   const payment = await repository.getSchoolPayment(req.params.paymentId, req.principal);
   if (!payment) throw new BusinessError(404, "Paiement introuvable");
   res.json(payment);

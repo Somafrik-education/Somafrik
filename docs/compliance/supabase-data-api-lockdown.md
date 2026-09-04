@@ -61,6 +61,7 @@ Si aucune dépendance applicative n’existe (constat ci-dessus) :
 
 ## Risques résiduels
 
+- `ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin` : **best-effort**. Si la session n’est pas propriétaire de ce rôle (Supabase managé), l’erreur `insufficient_privilege` (42501) est ignorée ; le boot reste idempotent. Le contrôle des default privileges porte sur `postgres` (si accessible) et le **rôle applicatif courant**. Les objets déjà créés sont couverts par `REVOKE ALL ON ALL TABLES`.
 - Un rôle custom autre que `anon`/`authenticated` avec grants métier n’est pas couvert (hors constat CTO).
 - Schémas `auth`, `storage`, `extensions` : non modifiés.
 - Désactivation Data API dashboard : **non vérifiable depuis le dépôt**.

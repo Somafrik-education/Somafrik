@@ -123,6 +123,7 @@ const SCHOOL_PERSONAL_DATA_FORBIDDEN_FOR_PLATFORM = Object.freeze([
   "GET /api/students/:id/presences",
   "POST /api/presences",
   "GET /api/payments",
+  "GET /api/payments/:paymentId",
   "POST /api/payments",
   "POST /api/payments/:paymentId/cancel",
   "GET /api/finance/payment-student-options",
@@ -197,7 +198,6 @@ const SCHOOL_PERSONAL_DATA_FORBIDDEN_FOR_PLATFORM = Object.freeze([
   "PUT /api/backoffice/planning-exams",
   "GET /api/backoffice/planning-exams",
   "GET /api/v2/reports/advanced",
-  "POST /api/mobile/push-devices/test",
   "GET /api/audit",
 ]);
 

@@ -923,15 +923,15 @@ async function main() {
     const schoolBMsgDl = await downloadFile(adminB, msgPdf.data.id);
     assert.ok([403, 404].includes(schoolBMsgDl.status), `P1-017 école B PJ Message: ${schoolBMsgDl.status}`);
     const superMsgBare = await downloadFile(superSa, msgPdf.data.id);
-    assert.equal(superMsgBare.status, 400, "P1-017 Superadmin download message sans école");
+    assert.equal(superMsgBare.status, 403, "P1-017 Superadmin download message = deny perso #503");
     const superAnnBare = await downloadFile(superSa, pdfUp.data.id);
-    assert.equal(superAnnBare.status, 400, "P1-017 Superadmin download annonce sans école");
+    assert.equal(superAnnBare.status, 403, "P1-017 Superadmin download annonce = deny perso #503");
     const superAnnScoped = await downloadFile(superSa, pdfUp.data.id, "?effectiveSchoolCode=SCH-COM-A");
-    assert.equal(superAnnScoped.status, 200, "P1-017 Superadmin request-scoped A PJ Annonce");
+    assert.equal(superAnnScoped.status, 403, "P1-017 Superadmin request-scoped A PJ Annonce interdit");
     const superAnnWrong = await downloadFile(superSa, pdfUp.data.id, "?effectiveSchoolCode=SCH-COM-B");
-    assert.ok([403, 404].includes(superAnnWrong.status), `P1-017 Superadmin B sur PJ Annonce A: ${superAnnWrong.status}`);
+    assert.equal(superAnnWrong.status, 403, `P1-017 Superadmin B sur PJ Annonce A: ${superAnnWrong.status}`);
     const superMsgWrong = await downloadFile(superSa, msgPdf.data.id, "?effectiveSchoolCode=SCH-COM-B");
-    assert.ok([403, 404].includes(superMsgWrong.status), `P1-017 Superadmin B sur PJ Message A: ${superMsgWrong.status}`);
+    assert.equal(superMsgWrong.status, 403, `P1-017 Superadmin B sur PJ Message A: ${superMsgWrong.status}`);
 
     await pool.query(`UPDATE enrollments SET class_id = $1 WHERE student_id = $2`, [CLASS_B, fixtures.studentA]);
     const afterMove = idsIn((await request("/backoffice/announcements", { token: parentA })).data);

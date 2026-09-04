@@ -85,6 +85,7 @@ const routePermissions = {
     "ALL_PRIVILEGES",
   ],
   "GET /api/payments": ["Paiements:READ", "Gérer paiements", "Voir paiements", "Voir rapports financiers", "Suivre abonnements pays", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
+  "GET /api/payments/:paymentId": ["Paiements:READ", "Gérer paiements", "Voir paiements", "Voir rapports financiers", "Suivre abonnements pays", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
   "GET /api/finance/payment-student-options": ["Paiements:READ", "Gérer paiements", "Voir paiements", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
   "GET /api/finance/catalog": ["Paiements:READ", "Gérer paiements", "Voir paiements", "Frais & tarifs:READ", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
   "GET /api/finance/payment-methods": ["Paiements:READ", "Gérer paiements", "Voir paiements", "Frais & tarifs:READ", "Paramètres Établissement:READ", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],

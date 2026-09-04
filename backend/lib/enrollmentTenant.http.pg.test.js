@@ -503,10 +503,22 @@ async function main() {
     );
 
     const getSuper = await request("/students", { token: tokenSuper });
-    assert.ok(getSuper.status === 200 || getSuper.status === 400, `P0-9 Superadmin status=${getSuper.status}`);
+    assert.equal(
+      getSuper.status,
+      403,
+      `P0-9 Superadmin GET /students = donnée personnelle établissement (#503) status=${getSuper.status} ${JSON.stringify(getSuper.data)}`,
+    );
+    assert.ok(
+      getSuper.data?.code === "PLATFORM_PERSONAL_DATA_DENIED" || getSuper.data?.code === "PERMISSION_DENIED",
+      `P0-9 Superadmin code deny: ${JSON.stringify(getSuper.data)}`,
+    );
 
     const getPays = await request("/students", { token: tokenPaysCd });
-    assert.ok(!unwrapList(getPays.data).some(isStudentB), "P0-10 Admin Pays CD ne voit pas BI");
+    assert.equal(
+      getPays.status,
+      403,
+      `P0-10 Admin Pays GET /students = donnée personnelle (#503) status=${getPays.status} ${JSON.stringify(getPays.data)}`,
+    );
 
     console.log("OK enrollmentTenant.http.pg.test.js — ENR-01…ENR-07 invariants dual-identity");
   } finally {

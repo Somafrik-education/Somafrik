@@ -37,10 +37,18 @@ BEGIN
   REVOKE ALL ON ALL SEQUENCES IN SCHEMA public FROM PUBLIC;
   REVOKE ALL ON ALL FUNCTIONS IN SCHEMA public FROM PUBLIC;
 
-  -- Default privileges : futures tables/séquences/fonctions.
+  -- Default privileges des rôles que la session peut réellement contrôler :
+  -- current_user (rôle applicatif / owner) et postgres si accessible.
+  -- supabase_admin : best-effort. En Supabase managé, ALTER DEFAULT PRIVILEGES
+  -- FOR ROLE supabase_admin lève insufficient_privilege (42501). On ignore
+  -- ce cas pour rester idempotent ; le REVOKE ALL ON ALL TABLES ci-dessus
+  -- et le boot apply à chaque démarrage couvrent les objets déjà créés.
   FOREACH owner_role IN ARRAY ARRAY['postgres', 'supabase_admin', current_user::text]
   LOOP
-    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = owner_role) THEN
+    IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = owner_role) THEN
+      CONTINUE;
+    END IF;
+    BEGIN
       EXECUTE format(
         'ALTER DEFAULT PRIVILEGES FOR ROLE %I IN SCHEMA public REVOKE ALL ON TABLES FROM PUBLIC',
         owner_role
@@ -73,7 +81,10 @@ BEGIN
           );
         END IF;
       END LOOP;
-    END IF;
+    EXCEPTION
+      WHEN insufficient_privilege THEN
+        RAISE NOTICE 'P0-1: ALTER DEFAULT PRIVILEGES FOR ROLE % ignoré (insufficient_privilege)', owner_role;
+    END;
   END LOOP;
 
   -- service_role : ne pas casser le rôle interne Supabase (bypass RLS).
