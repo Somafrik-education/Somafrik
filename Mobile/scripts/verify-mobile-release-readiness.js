@@ -151,7 +151,11 @@ function main() {
   assert.match(appConfig, /android\.permission\.READ_MEDIA_IMAGES/);
   const plugin = read(path.join(MOBILE, "plugins", "withSomafrikAndroidSecurity.js"));
   assert.match(plugin, /android\.permission\.READ_MEDIA_IMAGES/);
-  console.log("OK: app.config fail-closed + cleartext hors schéma Expo + READ_MEDIA_IMAGES bloqué");
+  assert.match(plugin, /android\.permission\.READ_EXTERNAL_STORAGE/);
+  assert.match(plugin, /android\.permission\.WRITE_EXTERNAL_STORAGE/);
+  assert.match(plugin, /tools:node": "remove"/);
+  assert.match(plugin, /ensureBlockedPermissionsRemoved/);
+  console.log("OK: app.config fail-closed + cleartext hors schéma Expo + storage/media bloqués via tools:node=remove");
 
   const pkg = JSON.parse(read(path.join(MOBILE, "package.json")));
   assert.ok(pkg.dependencies["react-native-worklets"], "react-native-worklets manquant");

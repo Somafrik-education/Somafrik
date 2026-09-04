@@ -90,29 +90,35 @@ function inspectGeneratedAndroid(profile) {
   const granted = permissions.filter((attr) => !isRemovedPermission(attr)).map(permissionName);
   assert.ok(names.includes("android.permission.INTERNET") || granted.includes("android.permission.INTERNET"), `${profile}: INTERNET manquant`);
   assert.ok(granted.includes("android.permission.CAMERA"), `${profile}: CAMERA manquant`);
-  assert.ok(
-    !granted.includes("android.permission.READ_MEDIA_IMAGES"),
-    `${profile}: READ_MEDIA_IMAGES accordé dans le manifeste généré (interdit Play Photos/Vidéos)`,
-  );
-  assert.ok(
-    !granted.includes("android.permission.READ_EXTERNAL_STORAGE"),
-    `${profile}: READ_EXTERNAL_STORAGE accordé (interdit)`,
-  );
-  assert.ok(
-    !granted.includes("android.permission.WRITE_EXTERNAL_STORAGE"),
-    `${profile}: WRITE_EXTERNAL_STORAGE accordé (interdit)`,
-  );
+
+  const mustRemove = [
+    "android.permission.READ_MEDIA_IMAGES",
+    "android.permission.READ_EXTERNAL_STORAGE",
+    "android.permission.WRITE_EXTERNAL_STORAGE",
+  ];
+  for (const name of mustRemove) {
+    const matching = permissions.filter((attr) => permissionName(attr) === name);
+    assert.ok(
+      matching.length > 0,
+      `${profile}: ${name} doit rester tools:node=remove dans le manifeste app `
+        + "(sinon le merge Gradle réinjecte le grant expo-file-system / libs)",
+    );
+    assert.ok(
+      matching.every(isRemovedPermission),
+      `${profile}: ${name} accordé dans le manifeste app (interdit)`,
+    );
+    assert.ok(!granted.includes(name), `${profile}: ${name} accordé (interdit)`);
+  }
 
   for (const attr of permissions) {
     const name = permissionName(attr);
     if (
       name === "android.permission.RECORD_AUDIO"
-      || name === "android.permission.READ_MEDIA_IMAGES"
-      || name === "android.permission.READ_EXTERNAL_STORAGE"
-      || name === "android.permission.WRITE_EXTERNAL_STORAGE"
+      || mustRemove.includes(name)
     ) {
-      assert.ok(isRemovedPermission(attr), `${profile}: ${name} doit être tools:node=remove ou absent`);
+      assert.ok(isRemovedPermission(attr), `${profile}: ${name} doit être tools:node=remove`);
     }
+    if (isRemovedPermission(attr)) continue;
     if (name === "android.permission.POST_NOTIFICATIONS" || name === "android.permission.VIBRATE") {
       continue;
     }
@@ -126,14 +132,17 @@ function inspectGeneratedAndroid(profile) {
     const extraGranted = permissionLines(extraManifest)
       .filter((attr) => !isRemovedPermission(attr))
       .map(permissionName);
-    assert.ok(
-      !extraGranted.includes("android.permission.READ_MEDIA_IMAGES"),
-      `${profile}: READ_MEDIA_IMAGES accordé dans ${path.relative(MOBILE, extra)}`,
-    );
+    for (const name of mustRemove) {
+      assert.ok(
+        !extraGranted.includes(name),
+        `${profile}: ${name} accordé dans ${path.relative(MOBILE, extra)}`,
+      );
+    }
   }
 
   console.log(
-    `PROOF ${profile}: CAMERA granted ; READ_MEDIA_IMAGES not granted`
+    `PROOF ${profile}: CAMERA granted ; READ_MEDIA_IMAGES not granted ; `
+      + `READ/WRITE_EXTERNAL_STORAGE tools:node=remove`
       + ` (${ANDROID_PACKAGE} / ${expectedName} / versionCode ${versionCode} / HTTPS / backup off)`,
   );
   console.log(`OK: prebuild ${profile} — ${ANDROID_PACKAGE} / ${expectedName} / versionCode ${versionCode} / HTTPS / backup off`);
@@ -224,8 +233,19 @@ function bundleReleaseAab(label) {
       !granted.includes("android.permission.READ_MEDIA_IMAGES"),
       `${label}: READ_MEDIA_IMAGES encore accordé après merge Gradle (${path.relative(MOBILE, file)})`,
     );
+    assert.ok(
+      !granted.includes("android.permission.READ_EXTERNAL_STORAGE"),
+      `${label}: READ_EXTERNAL_STORAGE encore accordé après merge Gradle (${path.relative(MOBILE, file)})`,
+    );
+    assert.ok(
+      !granted.includes("android.permission.WRITE_EXTERNAL_STORAGE"),
+      `${label}: WRITE_EXTERNAL_STORAGE encore accordé après merge Gradle (${path.relative(MOBILE, file)})`,
+    );
     if (granted.includes("android.permission.CAMERA")) {
-      console.log(`PROOF ${label} merged: CAMERA granted ; READ_MEDIA_IMAGES absent ${path.relative(MOBILE, file)}`);
+      console.log(
+        `PROOF ${label} merged: CAMERA granted ; READ_MEDIA_IMAGES absent ; `
+          + `READ/WRITE_EXTERNAL_STORAGE absent ${path.relative(MOBILE, file)}`,
+      );
     }
   }
 
