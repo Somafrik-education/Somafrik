@@ -138,15 +138,28 @@ function requireGroupId(value) {
 }
 
 /**
- * Nom d'affichage déterministe : `{niveau} {filière?}`.
- * Le code technique du groupe reste exposé séparément et ne fait jamais partie du nom.
+ * Série métier pédagogique (A, B, C…) — fait partie du nom.
+ * Les codes techniques legacy (ex. CD02) restent exclus du nom.
+ * @param {unknown} value
+ * @returns {boolean}
+ */
+function isPedagogicalSeriesCode(value) {
+  return /^[A-Z]$/i.test(asTrimmedString(value));
+}
+
+/**
+ * Nom d'affichage déterministe : `{niveau} {filière?} {série?}`.
+ * La série métier A/B/C participe au nom pédagogique.
+ * Un suffixe technique legacy (ex. CD02) n'est jamais concaténé.
  * @param {{ levelName: string, streamName?: string | null, groupCode?: string | null }} parts
  * @returns {string}
  */
 function composeClassDisplayName(parts) {
   const levelName = asTrimmedString(parts?.levelName);
   const streamName = asTrimmedString(parts?.streamName);
-  const composed = [levelName, streamName].filter(Boolean).join(" ");
+  const groupCode = asTrimmedString(parts?.groupCode);
+  const series = isPedagogicalSeriesCode(groupCode) ? groupCode.toUpperCase() : "";
+  const composed = [levelName, streamName, series].filter(Boolean).join(" ");
   if (!composed) {
     throw createHttpError(500, "Impossible de composer le nom de classe.");
   }
@@ -276,6 +289,7 @@ module.exports = {
   validateUpdateClassInput,
   requireClassCodeParam,
   composeClassDisplayName,
+  isPedagogicalSeriesCode,
   createHttpError,
   asTrimmedString,
 };

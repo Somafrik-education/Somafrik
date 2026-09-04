@@ -3,8 +3,8 @@
 /**
  * Unicité Classes V2.
  *
- * Le nom est une projection d'affichage (niveau + filière) et n'est PAS une clé
- * métier : plusieurs groupes distincts peuvent donc porter le même nom affiché.
+ * Le nom est une projection d'affichage (niveau + filière + série métier) et
+ * n'est PAS une clé métier. L'unicité reste structurelle.
  * L'unicité canonique est structurelle : établissement + année + niveau +
  * filière + groupe. PR-1A : NULLS NOT DISTINCT (PG16) — group_id/stream_id NULL
  * sont des valeurs d'unicité. L'API continue d'exiger groupId.

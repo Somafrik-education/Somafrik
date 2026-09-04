@@ -44,15 +44,62 @@ type AcademicYearOption = {
   isCurrent?: boolean;
 };
 
+/** Série métier A/B/C — visible dans le nom. Les codes techniques (CD02…) ne le sont pas. */
+export function isPedagogicalSeriesCode(value: unknown): boolean {
+  return /^[A-Z]$/i.test(String(value ?? "").trim());
+}
+
+function pedagogicalSeriesToken(groupCode?: string | null, groupName?: string | null): string {
+  const code = String(groupCode ?? "").trim();
+  if (isPedagogicalSeriesCode(code)) return code.toLocaleUpperCase("fr");
+  const name = String(groupName ?? "").trim();
+  if (isPedagogicalSeriesCode(name)) return name.toLocaleUpperCase("fr");
+  return "";
+}
+
 /**
- * Compatibilité d'affichage pour les classes historiques dont class_name contient
- * encore le code technique de groupe en suffixe (ex. "1ère A CD02").
- * Les nouvelles écritures backend n'incluent plus ce code dans le nom.
+ * Aperçu / nom canonique : Niveau + Filière éventuelle + Série métier.
+ * Ex. « 1ère Primaire A », « 1ère Humanité Scientifique A ».
+ */
+export function composeClassPreviewName(parts: {
+  levelName?: string | null;
+  streamName?: string | null;
+  groupCode?: string | null;
+  groupName?: string | null;
+}): string {
+  return [
+    String(parts.levelName ?? "").trim(),
+    String(parts.streamName ?? "").trim(),
+    pedagogicalSeriesToken(parts.groupCode, parts.groupName),
+  ]
+    .filter(Boolean)
+    .join(" ");
+}
+
+const MASCULINE_PEDAGOGICAL_LABELS = new Set(["groupe", "niveau"]);
+
+export function chooseFrenchIndefiniteArticle(label: string): "un" | "une" {
+  const lower = String(label ?? "").trim().toLocaleLowerCase("fr");
+  if (!lower) return "un";
+  if (MASCULINE_PEDAGOGICAL_LABELS.has(lower)) return "un";
+  if (lower.endsWith("e") || lower.endsWith("é")) return "une";
+  return "un";
+}
+
+export function chooseLabeledOption(label: string): string {
+  const noun = String(label ?? "").trim().toLocaleLowerCase("fr") || "élément";
+  return `Choisir ${chooseFrenchIndefiniteArticle(label)} ${noun}`;
+}
+
+/**
+ * Affichage liste : conserve la série métier A/B/C dans le nom.
+ * Retire uniquement un suffixe technique legacy (ex. « 1ère A CD02 » → « 1ère A »).
  */
 export function getClassDisplayName(row: Pick<SchoolClass, "name" | "groupCode">): string {
   const name = String(row.name ?? "").trim();
   const groupCode = String(row.groupCode ?? "").trim();
   if (!name || !groupCode) return name;
+  if (isPedagogicalSeriesCode(groupCode)) return name;
   const suffix = ` ${groupCode}`;
   return name.toLocaleLowerCase("fr").endsWith(suffix.toLocaleLowerCase("fr"))
     ? name.slice(0, -suffix.length).trim()
@@ -68,6 +115,10 @@ export function ClassesListPage() {
   const permissionCtx = usePermissionContext();
   const permissions = getEntityFeaturePermissions(permissionCtx, "classes", "Classes");
   const { activeSchool } = useActiveSchool();
+  const selectedSchoolForYears = useMemo(() => {
+    const id = String(activeSchool?.id ?? "").trim();
+    return id ? { id } : null;
+  }, [activeSchool?.id]);
 
   const [rows, setRows] = useState<SchoolClass[]>([]);
   const [years, setYears] = useState<AcademicYearOption[]>([]);
@@ -94,7 +145,7 @@ export function ClassesListPage() {
       const scopedYears = scopeAcademicYearsForConfiguration({
         role: permissionCtx.user?.role,
         rows: academicYears,
-        selectedSchool: activeSchool,
+        selectedSchool: selectedSchoolForYears,
         sessionSchoolId: permissionCtx.user?.schoolId,
       });
       setYears(scopedYears);
@@ -106,7 +157,7 @@ export function ClassesListPage() {
     } finally {
       setLoading(false);
     }
-  }, [activeSchool, permissionCtx.user?.role, permissionCtx.user?.schoolId]);
+  }, [permissionCtx.user?.role, permissionCtx.user?.schoolId, selectedSchoolForYears]);
 
   useEffect(() => {
     if (!permissions.canRead) {
@@ -145,7 +196,13 @@ export function ClassesListPage() {
   const activeGroups = (catalog?.groups ?? []).filter((row) => row.schoolActive);
   const selectedLevel = activeLevels.find((row) => row.id === form.levelId);
   const selectedStream = activeStreams.find((row) => row.id === form.streamId);
-  const previewName = [selectedLevel?.name, selectedStream?.name].filter(Boolean).join(" ");
+  const selectedGroup = activeGroups.find((row) => row.id === form.groupId);
+  const previewName = composeClassPreviewName({
+    levelName: selectedLevel?.name,
+    streamName: selectedStream?.name,
+    groupCode: selectedGroup?.code,
+    groupName: selectedGroup?.name,
+  });
   const labels = catalog?.labels ?? { levelLabel: "Niveau", trackLabel: "Filière", groupLabel: "Groupe" };
 
   function openCreate() {
@@ -390,11 +447,11 @@ export function ClassesListPage() {
                 Aucun {labels.groupLabel.toLowerCase()} n'est configuré pour cet établissement.
               </p>
               <p className="text-sm text-amber-900">
-                Configurez le catalogue pays puis activez les groupes dans{" "}
+                Configurez le catalogue pays puis activez « {labels.groupLabel} » dans{" "}
                 <Link className="underline" to="/configuration">
                   Paramètres / Référentiel
                 </Link>
-                . Aucun groupe A–E n'est proposé par défaut.
+                . Aucun {labels.groupLabel.toLowerCase()} n'est proposé par défaut.
               </p>
             </div>
           ) : null}
@@ -408,7 +465,7 @@ export function ClassesListPage() {
               }
               required={!editing}
               options={[
-                { value: "", label: `Choisir un ${labels.levelLabel.toLowerCase()}` },
+                { value: "", label: chooseLabeledOption(labels.levelLabel) },
                 ...activeLevels.map((level) => ({ value: level.id, label: level.name })),
               ]}
             />
@@ -431,7 +488,7 @@ export function ClassesListPage() {
               onChange={(event) => setForm((current) => ({ ...current, groupId: event.target.value }))}
               required
               options={[
-                { value: "", label: `Choisir un ${labels.groupLabel.toLowerCase()}` },
+                { value: "", label: chooseLabeledOption(labels.groupLabel) },
                 ...activeGroups.map((group) => ({ value: group.id, label: group.name || group.code })),
               ]}
             />
