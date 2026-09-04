@@ -481,9 +481,38 @@ const sanitizedSchoolPermissions = pedagogyGovernance.sanitizeSchoolAdminRolePer
 rolePermissions["Admin School"] = sanitizedSchoolPermissions["Admin School"];
 
 /**
+ * Jetons canoniques absents de securityMatrix (rôle absent de la grille)
+ * mais requis par les routes Web/API. Union additive uniquement.
+ */
+const CANONICAL_ROLE_PERMISSION_EXTRAS = {
+  Comptable: [
+    "Paiements:READ",
+    "Paiements:CREATE",
+    "Paiements:UPDATE",
+    "Impayés:READ",
+    "Frais & tarifs:READ",
+    "Rapports:READ",
+    "Voir paiements",
+  ],
+  Surveillant: [
+    "Élèves:READ",
+    "Présences:READ",
+    "Présences:CREATE",
+    "Présences:UPDATE",
+    "Classes:READ",
+  ],
+};
+
+for (const [role, extras] of Object.entries(CANONICAL_ROLE_PERMISSION_EXTRAS)) {
+  rolePermissions[role] = [...new Set([...(rolePermissions[role] ?? []), ...extras])];
+}
+
+/**
  * Carte utilisée par le backfill CRUD live uniquement (seed/bootstrap).
  * Après bootstrap, l'autorité est role_module_permissions PostgreSQL.
- * Ne pas servir cette carte comme source runtime des écrans métier.
+ * Les rôles établissement gardent la liste déclarée ici pour ne pas
+ * réintroduire un grant révoqué via le fallback synthétique.
+ * La réconciliation P0 utilise canonicalSystemRoles, pas cette carte.
  */
 function rolePermissionsForLiveRbac() {
   const map = {};

@@ -90,6 +90,8 @@ async function ensureFunctionalRbacBootstrap(repo) {
   await reconcileCanonicalCriticalParityGrants(store);
   const { reconcileCanonicalAnnouncementsGrants } = require("./announcementsRbacCanonical");
   await reconcileCanonicalAnnouncementsGrants(store, repo);
+  const { reconcileCanonicalSystemRoles } = require("./systemRolesReconciliation");
+  await reconcileCanonicalSystemRoles(repo);
 }
 
 async function ensurePlatformRolesInCatalog(repo) {
@@ -729,4 +731,6 @@ module.exports = {
   backfillMissingGlobalModuleGrants,
   reconcileCanonicalPlanningGrants,
   reconcileCanonicalRoomsReplacementsGrants,
+  reconcileCanonicalSystemRoles: (...args) =>
+    require("./systemRolesReconciliation").reconcileCanonicalSystemRoles(...args),
 };

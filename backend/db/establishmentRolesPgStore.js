@@ -88,6 +88,36 @@ function createEstablishmentRolesPgStore(repo) {
     }
   }
 
+  async function addMissingPermissions(roleId, permissions = []) {
+    const added = [];
+    for (const permission of sanitizePermissionList(permissions)) {
+      const row = await one(
+        `INSERT INTO establishment_role_permissions (role_id, permission)
+         VALUES ($1::uuid, $2)
+         ON CONFLICT (role_id, permission) DO NOTHING
+         RETURNING permission`,
+        [roleId, permission],
+      );
+      if (row?.permission) added.push(row.permission);
+    }
+    return added;
+  }
+
+  async function addMissingDelegationPermissions(roleId, permissions = []) {
+    const added = [];
+    for (const permission of sanitizePermissionList(permissions)) {
+      const row = await one(
+        `INSERT INTO establishment_role_delegation_permissions (role_id, permission)
+         VALUES ($1::uuid, $2)
+         ON CONFLICT (role_id, permission) DO NOTHING
+         RETURNING permission`,
+        [roleId, permission],
+      );
+      if (row?.permission) added.push(row.permission);
+    }
+    return added;
+  }
+
   async function insertRole(input) {
     const row = await one(
       `INSERT INTO establishment_roles (role_code, role_name, scope, display_order, status, school_assignable)
@@ -224,6 +254,8 @@ function createEstablishmentRolesPgStore(repo) {
     getPermissionsMap,
     inventoryLegacyUserRolesPayloads,
     seedDefaultRolesIfEmpty,
+    addMissingPermissions,
+    addMissingDelegationPermissions,
   };
 }
 

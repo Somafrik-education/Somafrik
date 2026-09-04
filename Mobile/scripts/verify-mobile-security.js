@@ -228,12 +228,14 @@ function main() {
   // 8) Permissions minimales
   const appJson = JSON.parse(read(path.join(MOBILE, "app.json")));
   const permissions = appJson?.expo?.android?.permissions ?? [];
-  const allowed = new Set(["CAMERA", "READ_MEDIA_IMAGES"]);
+  const allowed = new Set(["CAMERA"]);
   const unexpected = permissions.filter((p) => !allowed.has(p));
   assert.deepStrictEqual(unexpected, [], `permissions inattendues: ${unexpected.join(", ")}`);
-  // Pas de localisation
-  assert.ok(!permissions.some((p) => /LOCATION|ACCESS_FINE|ACCESS_COARSE/i.test(p)));
-  console.log("OK: permissions minimales");
+  assert.ok(!permissions.includes("READ_MEDIA_IMAGES"), "READ_MEDIA_IMAGES doit être absent de app.json");
+  assert.ok(!permissions.includes("android.permission.READ_MEDIA_IMAGES"), "READ_MEDIA_IMAGES doit être absent de app.json");
+  // Pas de localisation ni galerie large
+  assert.ok(!permissions.some((p) => /LOCATION|ACCESS_FINE|ACCESS_COARSE|READ_EXTERNAL|WRITE_EXTERNAL|READ_MEDIA/i.test(p)));
+  console.log("OK: permissions minimales (CAMERA uniquement, pas de READ_MEDIA_IMAGES)");
 
   // 9) Variables d'environnement
   assert.ok(env.includes("EXPO_PUBLIC_API_URL"), "EXPO_PUBLIC_API_URL utilisé");

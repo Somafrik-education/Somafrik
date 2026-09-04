@@ -12,6 +12,12 @@ const roleAliases = {
   parent_student: "Parent",
 };
 
+// Compatibilité des rôles métier historiques. Ces jetons restent produits par
+// le catalogue live pour Enseignant/Parent ; les routes conservent ensuite leur
+// contrôle tenant et leur filtrage de destinataires.
+const MESSAGE_READ_ALIASES = ["Messages parents", "Messages école"];
+const MESSAGE_WRITE_ALIASES = ["Messages parents", "Messages école"];
+
 const routePermissions = {
   ...COURSE_ROUTE_PERMISSIONS,
   "POST /api/mobile/push-devices/test": ["Push:TEST", "ALL_PRIVILEGES"],
@@ -34,7 +40,7 @@ const routePermissions = {
   "DELETE /api/teachers/:teacherCode": ["Enseignants:DELETE", "Gérer enseignants", "ALL_PRIVILEGES"],
   "GET /api/classes": ["Classes:READ", "Voir classes", "Gérer classes", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
   "GET /api/mobile-sync/l1/classes": ["Classes:READ", "Voir classes", "Gérer classes", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
-  "GET /api/mobile-sync/l1/students": ["Élèves:READ", "Gérer élèves", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
+  "GET /api/mobile-sync/l1/students": ["Élèves:READ", "Voir élèves", "Gérer élèves", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
   "GET /api/mobile-sync/l1/assignments": [
     "Affectations:READ",
     "Enseignants:READ",
@@ -50,10 +56,10 @@ const routePermissions = {
   "GET /api/mobile-sync/l1/course-schedules": ["Planning de cours:READ", "ALL_PRIVILEGES"],
   "POST /api/classes": ["Classes:CREATE", "Gérer classes", "ALL_PRIVILEGES"],
   "PATCH /api/classes/:classCode": ["Classes:UPDATE", "Gérer classes", "ALL_PRIVILEGES"],
-  "GET /api/classes/:classCode/students": ["Élèves:READ", "Gérer élèves", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
+  "GET /api/classes/:classCode/students": ["Élèves:READ", "Voir élèves", "Gérer élèves", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
   "POST /api/classes/:classCode/students": ["Élèves:CREATE", "Gérer élèves", "ALL_PRIVILEGES"],
-  "GET /api/students": ["Élèves:READ", "Gérer élèves", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
-  "GET /api/students/:id": ["Élèves:READ", "Gérer élèves", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
+  "GET /api/students": ["Élèves:READ", "Voir élèves", "Gérer élèves", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
+  "GET /api/students/:id": ["Élèves:READ", "Voir élèves", "Gérer élèves", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
   "PATCH /api/students/:id": ["Élèves:UPDATE", "Gérer élèves", "ALL_PRIVILEGES"],
   "GET /api/assignments": [
     "Affectations:READ",
@@ -184,20 +190,20 @@ const routePermissions = {
   "GET /api/parents/identity": ["Relations:CREATE", "Gérer utilisateurs", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
   "POST /api/parents/link": ["Relations:CREATE", "Gérer utilisateurs", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
   "PATCH /api/parents/relations/:relationId": ["Relations:UPDATE", "Relations:CREATE", "Gérer utilisateurs", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
-  "GET /api/backoffice/messages": ["Messages:READ", "Gérer messages", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
-  "GET /api/backoffice/messages/unread-count": ["Messages:READ", "Gérer messages", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
-  "GET /api/backoffice/messages/recipients": ["Messages:READ", "Messages:CREATE", "Gérer messages", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
-  "GET /api/backoffice/messages/:messageId": ["Messages:READ", "Gérer messages", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
-  "POST /api/backoffice/messages": ["Messages:CREATE", "Gérer messages", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
-  "PATCH /api/backoffice/messages/:messageId/read": ["Messages:UPDATE", "Gérer messages", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
-  "GET /api/backoffice/conversations": ["Messages:READ", "Gérer messages", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
-  "POST /api/backoffice/conversations": ["Messages:CREATE", "Gérer messages", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
-  "GET /api/backoffice/conversations/:conversationId": ["Messages:READ", "Gérer messages", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
-  "GET /api/backoffice/conversations/:conversationId/messages": ["Messages:READ", "Gérer messages", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
-  "POST /api/backoffice/conversations/:conversationId/messages": ["Messages:CREATE", "Gérer messages", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
-  "POST /api/backoffice/communications/attachments": ["Messages:CREATE", "Gérer messages", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
-  "GET /api/backoffice/communications/attachments/:attachmentId": ["Messages:READ", "Announcements:READ", "Gérer messages", "Gérer annonces", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
-  "GET /api/backoffice/messages/attachments/:attachmentId": ["Messages:READ", "Gérer messages", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
+  "GET /api/backoffice/messages": ["Messages:READ", ...MESSAGE_READ_ALIASES, "Gérer messages", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
+  "GET /api/backoffice/messages/unread-count": ["Messages:READ", ...MESSAGE_READ_ALIASES, "Gérer messages", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
+  "GET /api/backoffice/messages/recipients": ["Messages:READ", "Messages:CREATE", ...MESSAGE_READ_ALIASES, ...MESSAGE_WRITE_ALIASES, "Gérer messages", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
+  "GET /api/backoffice/messages/:messageId": ["Messages:READ", ...MESSAGE_READ_ALIASES, "Gérer messages", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
+  "POST /api/backoffice/messages": ["Messages:CREATE", ...MESSAGE_WRITE_ALIASES, "Gérer messages", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
+  "PATCH /api/backoffice/messages/:messageId/read": ["Messages:UPDATE", ...MESSAGE_READ_ALIASES, "Gérer messages", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
+  "GET /api/backoffice/conversations": ["Messages:READ", ...MESSAGE_READ_ALIASES, "Gérer messages", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
+  "POST /api/backoffice/conversations": ["Messages:CREATE", ...MESSAGE_WRITE_ALIASES, "Gérer messages", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
+  "GET /api/backoffice/conversations/:conversationId": ["Messages:READ", ...MESSAGE_READ_ALIASES, "Gérer messages", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
+  "GET /api/backoffice/conversations/:conversationId/messages": ["Messages:READ", ...MESSAGE_READ_ALIASES, "Gérer messages", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
+  "POST /api/backoffice/conversations/:conversationId/messages": ["Messages:CREATE", ...MESSAGE_WRITE_ALIASES, "Gérer messages", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
+  "POST /api/backoffice/communications/attachments": ["Messages:CREATE", ...MESSAGE_WRITE_ALIASES, "Gérer messages", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
+  "GET /api/backoffice/communications/attachments/:attachmentId": ["Messages:READ", "Announcements:READ", ...MESSAGE_READ_ALIASES, "Gérer messages", "Gérer annonces", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
+  "GET /api/backoffice/messages/attachments/:attachmentId": ["Messages:READ", ...MESSAGE_READ_ALIASES, "Gérer messages", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
   "GET /api/backoffice/announcements/attachments/:attachmentId": ["Announcements:READ", "Gérer annonces", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
   "GET /api/backoffice/announcements": ["Announcements:READ", "Gérer annonces", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
   "GET /api/backoffice/announcements/unread-count": ["Announcements:READ", "Gérer annonces", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],

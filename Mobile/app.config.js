@@ -79,11 +79,18 @@ module.exports = ({ config }) => {
       ...config.android,
       package: ANDROID_PACKAGE,
       versionCode: ANDROID_VERSION_CODE,
+      // Google Play Photos & Videos policy: Somafrik only needs one-shot photo
+      // selection for the account picture. Do not request broad gallery access.
+      permissions: (config.android?.permissions ?? []).filter(
+        (permission) => permission !== "READ_MEDIA_IMAGES"
+          && permission !== "android.permission.READ_MEDIA_IMAGES",
+      ),
       blockedPermissions: [
         "android.permission.RECORD_AUDIO",
         "android.permission.SYSTEM_ALERT_WINDOW",
         "android.permission.WRITE_EXTERNAL_STORAGE",
         "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.READ_MEDIA_IMAGES",
         "android.permission.ACCESS_FINE_LOCATION",
         "android.permission.ACCESS_COARSE_LOCATION",
         "android.permission.NFC",

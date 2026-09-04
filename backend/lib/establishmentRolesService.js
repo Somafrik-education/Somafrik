@@ -1,7 +1,5 @@
 "use strict";
 
-const seedData = require("../data");
-const { ROLE_FROM_DB } = require("./clientsManagement");
 const {
   ESTABLISHMENT_ROLES_ERROR,
   asTrimmed,
@@ -13,13 +11,6 @@ const {
   isSuperAdminPrincipal,
 } = require("./establishmentRolesManagement");
 const { createEstablishmentRolesPgStore } = require("../db/establishmentRolesPgStore");
-
-const PLATFORM_ROLE_NAMES = new Set([
-  "Super Administrateur Somafrik",
-  "Super Administrateur OKAFRIK",
-  "Admin Pays",
-  "Admin School",
-]);
 
 function rolesStore(repo) {
   if (typeof repo.getEstablishmentRolesStore === "function") {
@@ -49,24 +40,15 @@ async function writeEstablishmentRolesAudit(tx, principal, auditMeta, entry) {
 }
 
 function buildSeedRolesFromData() {
-  const entries = [];
-  const source = seedData.rolePermissionsDeclared ?? seedData.rolePermissions ?? {};
-  for (const [roleName, permissions] of Object.entries(source)) {
-    if (PLATFORM_ROLE_NAMES.has(roleName)) continue;
-    entries.push({
-      roleName,
-      roleCode: ROLE_FROM_DB[roleName] ?? normalizeRoleCode(roleName),
-      permissions,
-      delegationPermissions: permissions,
-      schoolAssignable: !["Parent", "Élève / Étudiant", "Élève", "Étudiant"].includes(roleName),
-    });
-  }
-  return entries;
+  const { listCanonicalEstablishmentSeedRoles } = require("./canonicalSystemRoles");
+  return listCanonicalEstablishmentSeedRoles();
 }
 
 async function ensureEstablishmentRolesBootstrap(repo) {
   const store = rolesStore(repo);
   await store.seedDefaultRolesIfEmpty(buildSeedRolesFromData());
+  const { reconcileCanonicalSystemRoles } = require("./systemRolesReconciliation");
+  await reconcileCanonicalSystemRoles(repo, { includeFunctionalGrants: false });
 }
 
 async function createRole(repo, rawPayload, principal, auditMeta) {

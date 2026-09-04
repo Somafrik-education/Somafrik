@@ -46,7 +46,7 @@ function run(command, args, options = {}) {
 }
 
 function permissionLines(manifest) {
-  return [...manifest.matchAll(/<uses-permission\b([^>]*)\/?>/g)].map((match) => match[1] || "");
+  return [...manifest.matchAll(/<uses-permission(?:-sdk-23)?\b([^>]*)\/?>/g)].map((match) => match[1] || "");
 }
 
 function permissionName(attrBlock) {
@@ -87,14 +87,31 @@ function inspectGeneratedAndroid(profile) {
 
   const permissions = permissionLines(manifest);
   const names = permissions.map(permissionName);
-  assert.ok(names.includes("android.permission.INTERNET"), `${profile}: INTERNET manquant`);
-  assert.ok(names.includes("android.permission.CAMERA"), `${profile}: CAMERA manquant`);
-  assert.ok(names.includes("android.permission.READ_MEDIA_IMAGES"), `${profile}: READ_MEDIA_IMAGES manquant`);
+  const granted = permissions.filter((attr) => !isRemovedPermission(attr)).map(permissionName);
+  assert.ok(names.includes("android.permission.INTERNET") || granted.includes("android.permission.INTERNET"), `${profile}: INTERNET manquant`);
+  assert.ok(granted.includes("android.permission.CAMERA"), `${profile}: CAMERA manquant`);
+  assert.ok(
+    !granted.includes("android.permission.READ_MEDIA_IMAGES"),
+    `${profile}: READ_MEDIA_IMAGES accordé dans le manifeste généré (interdit Play Photos/Vidéos)`,
+  );
+  assert.ok(
+    !granted.includes("android.permission.READ_EXTERNAL_STORAGE"),
+    `${profile}: READ_EXTERNAL_STORAGE accordé (interdit)`,
+  );
+  assert.ok(
+    !granted.includes("android.permission.WRITE_EXTERNAL_STORAGE"),
+    `${profile}: WRITE_EXTERNAL_STORAGE accordé (interdit)`,
+  );
 
   for (const attr of permissions) {
     const name = permissionName(attr);
-    if (name === "android.permission.RECORD_AUDIO") {
-      assert.ok(isRemovedPermission(attr), `${profile}: RECORD_AUDIO doit être tools:node=remove`);
+    if (
+      name === "android.permission.RECORD_AUDIO"
+      || name === "android.permission.READ_MEDIA_IMAGES"
+      || name === "android.permission.READ_EXTERNAL_STORAGE"
+      || name === "android.permission.WRITE_EXTERNAL_STORAGE"
+    ) {
+      assert.ok(isRemovedPermission(attr), `${profile}: ${name} doit être tools:node=remove ou absent`);
     }
     if (name === "android.permission.POST_NOTIFICATIONS" || name === "android.permission.VIBRATE") {
       continue;
@@ -103,8 +120,44 @@ function inspectGeneratedAndroid(profile) {
     assert.notEqual(name, "android.permission.ACCESS_FINE_LOCATION", `${profile}: localisation présente`);
   }
 
+  const extraManifests = collectAndroidManifests(ANDROID).filter((file) => file !== manifestPath);
+  for (const extra of extraManifests) {
+    const extraManifest = read(extra);
+    const extraGranted = permissionLines(extraManifest)
+      .filter((attr) => !isRemovedPermission(attr))
+      .map(permissionName);
+    assert.ok(
+      !extraGranted.includes("android.permission.READ_MEDIA_IMAGES"),
+      `${profile}: READ_MEDIA_IMAGES accordé dans ${path.relative(MOBILE, extra)}`,
+    );
+  }
+
+  console.log(
+    `PROOF ${profile}: CAMERA granted ; READ_MEDIA_IMAGES not granted`
+      + ` (${ANDROID_PACKAGE} / ${expectedName} / versionCode ${versionCode} / HTTPS / backup off)`,
+  );
   console.log(`OK: prebuild ${profile} — ${ANDROID_PACKAGE} / ${expectedName} / versionCode ${versionCode} / HTTPS / backup off`);
   return { versionCode };
+}
+
+function collectAndroidManifests(root) {
+  const found = [];
+  if (!fs.existsSync(root)) return found;
+  const stack = [root];
+  while (stack.length) {
+    const current = stack.pop();
+    const entries = fs.readdirSync(current, { withFileTypes: true });
+    for (const entry of entries) {
+      const full = path.join(current, entry.name);
+      if (entry.isDirectory()) {
+        if (entry.name === "build" || entry.name === ".gradle") continue;
+        stack.push(full);
+      } else if (entry.name === "AndroidManifest.xml") {
+        found.push(full);
+      }
+    }
+  }
+  return found;
 }
 
 function prebuildProfile(profile) {
@@ -159,6 +212,22 @@ function bundleReleaseAab(label) {
   run(process.platform === "win32" ? "gradlew.bat" : "./gradlew", ["bundleRelease", "--no-daemon"], {
     cwd: ANDROID,
   });
+
+  const mergedManifests = collectAndroidManifests(path.join(ANDROID, "app", "build")).concat(
+    collectAndroidManifests(path.join(ANDROID, "app", "src")),
+  );
+  for (const file of mergedManifests) {
+    const granted = permissionLines(read(file))
+      .filter((attr) => !isRemovedPermission(attr))
+      .map(permissionName);
+    assert.ok(
+      !granted.includes("android.permission.READ_MEDIA_IMAGES"),
+      `${label}: READ_MEDIA_IMAGES encore accordé après merge Gradle (${path.relative(MOBILE, file)})`,
+    );
+    if (granted.includes("android.permission.CAMERA")) {
+      console.log(`PROOF ${label} merged: CAMERA granted ; READ_MEDIA_IMAGES absent ${path.relative(MOBILE, file)}`);
+    }
+  }
 
   const aabs = listAabs();
   assert.ok(aabs.length > 0, `${label}: aucun .aab sous android/app/build/outputs/bundle/release/`);
