@@ -1551,6 +1551,14 @@ function createClientsMemoryStore(seed = {}) {
           revoked_at: null,
         });
       }
+      const studentRow = tables.students.find(
+        (item) =>
+          String(item.school_id) === String(schoolId) &&
+          [item.student_code, item.studentCode, item.identity_code].includes(studentCode),
+      );
+      if (studentRow && !studentRow.user_id) {
+        studentRow.user_id = user.id;
+      }
       return user;
     },
     touchUserLastLogin(lookupKeys = []) {
