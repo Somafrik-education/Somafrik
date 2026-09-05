@@ -21,7 +21,7 @@ function LegalLayout({ title, children }: { title: string; children: React.React
       <main className="mx-auto max-w-4xl px-5 py-10">
         <article className="rounded-2xl bg-white p-6 shadow-sm sm:p-10">
           <h1 className="text-3xl font-extrabold text-slate-950">{title}</h1>
-          <p className="mt-2 text-sm text-slate-500">Dernière mise à jour : 4 septembre 2026</p>
+          <p className="mt-2 text-sm text-slate-500">Dernière mise à jour : 5 septembre 2026</p>
           <div className="mt-8 space-y-7 leading-7 text-slate-700">{children}</div>
         </article>
       </main>
@@ -70,19 +70,19 @@ export function PrivacyPolicyPage() {
       <section>
         <h2 className="text-xl font-bold text-slate-950">Destinataires et sous-traitants</h2>
         <p>
-          Personnes habilitées de l’établissement ; API Somafrik ; hébergement Render (Oregon, États-Unis) ;
-          base PostgreSQL fournie par Supabase (région AWS du projet) ; notifications Expo Push (États-Unis).
-          Les données ne sont pas vendues. Aucun prestataire de publicité, d’analytique, de SMS ou de messagerie
-          n’est branché sur l’application.
+          Personnes habilitées de l’établissement ; API Somafrik ; hébergement API Render en région Francfort (Allemagne) ;
+          base PostgreSQL Supabase production en région AWS eu-west-1 (Irlande) ; notifications Expo Push avec traitement
+          aux États-Unis. Les données ne sont pas vendues. Aucun prestataire de publicité, d’analytique, de SMS ou de
+          messagerie n’est branché sur l’application.
         </p>
       </section>
       <section>
         <h2 className="text-xl font-bold text-slate-950">Transferts hors EEE</h2>
         <p>
-          Render, Supabase et Expo impliquent des traitements aux États-Unis ou, pour la base, dans la région AWS
-          du projet. Les garanties applicables sont les accords de sous-traitance des prestataires, les clauses
-          contractuelles types et, le cas échéant, le Data Privacy Framework. Aucun transfert supplémentaire n’est
-          activé par l’application (pas de SMS, WhatsApp ou e-mail transactionnel embarqué).
+          L’API Render et la base Supabase production sont actuellement hébergées dans l’Espace économique européen.
+          Le service Expo Push implique un traitement aux États-Unis. Les garanties applicables comprennent les accords
+          de sous-traitance des prestataires, les clauses contractuelles types et, le cas échéant, le Data Privacy Framework.
+          Aucun transfert supplémentaire n’est activé par l’application (pas de SMS, WhatsApp ou e-mail transactionnel embarqué).
         </p>
       </section>
       <section>
