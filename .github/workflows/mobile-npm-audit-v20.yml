@@ -1,0 +1,55 @@
+name: Mobile npm audit v20
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/workflows/mobile-npm-audit-v20.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit-mobile:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.12.0
+          cache: npm
+          cache-dependency-path: Mobile/package-lock.json
+      - name: Install exact Mobile lockfile
+        working-directory: Mobile
+        run: npm ci
+      - name: Capture npm audit JSON
+        working-directory: Mobile
+        shell: bash
+        run: |
+          set +e
+          npm audit --json > npm-audit-v20.json
+          CODE=$?
+          set -e
+          node - <<'NODE'
+          const fs = require('fs');
+          const a = JSON.parse(fs.readFileSync('npm-audit-v20.json','utf8'));
+          const vulns = a.vulnerabilities || {};
+          const rows = Object.entries(vulns).map(([name,v]) => ({name, severity:v.severity, direct:!!v.isDirect, range:v.range, via:(v.via||[]).map(x=>typeof x==='string'?x:{source:x.source,name:x.name,title:x.title,url:x.url,severity:x.severity,range:x.range}), effects:v.effects||[], fixAvailable:v.fixAvailable}));
+          rows.sort((a,b)=>({critical:0,high:1,moderate:2,low:3,info:4}[a.severity]??9)-({critical:0,high:1,moderate:2,low:3,info:4}[b.severity]??9)||a.name.localeCompare(b.name));
+          const out = {metadata:a.metadata, vulnerabilities:rows};
+          fs.writeFileSync('npm-audit-v20-summary.json', JSON.stringify(out,null,2));
+          console.log(JSON.stringify(a.metadata?.vulnerabilities||{},null,2));
+          for (const r of rows) console.log(`${r.severity.toUpperCase()} | ${r.name} | direct=${r.direct} | range=${r.range}`);
+          NODE
+          exit 0
+      - name: Upload audit evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: mobile-npm-audit-v20-${{ github.sha }}
+          path: |
+            Mobile/npm-audit-v20.json
+            Mobile/npm-audit-v20-summary.json
+          retention-days: 30
+          if-no-files-found: error
