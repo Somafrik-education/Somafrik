@@ -15,13 +15,14 @@ const path = require("node:path");
 
 const FORBIDDEN_FLAGS = new Set(["--apply", "--write", "--fix", "--mutate", "--delete"]);
 
+/** SELECT-only. identity_code / login_code via to_jsonb (schémas IT sans ces colonnes). */
 const AUDIT_SQL = `
 SELECT
   u.id AS user_id,
   s.school_code,
   u.user_code,
-  u.identity_code,
-  u.login_code,
+  NULLIF(to_jsonb(u)->>'identity_code', '') AS identity_code,
+  NULLIF(to_jsonb(u)->>'login_code', '') AS login_code,
   u.first_name,
   u.last_name,
   st.id AS student_id,
@@ -36,15 +37,15 @@ JOIN students st
   ON st.school_id = u.school_id
  AND (
    st.student_code = u.user_code
-   OR st.student_code = u.identity_code
-   OR st.student_code = u.login_code
+   OR st.student_code = NULLIF(to_jsonb(u)->>'identity_code', '')
+   OR st.student_code = NULLIF(to_jsonb(u)->>'login_code', '')
  )
 JOIN teachers t
   ON t.school_id = u.school_id
  AND t.user_id = u.id
 WHERE COALESCE(st.status, 'active') NOT IN ('inactive', 'deleted', 'archived', 'closed', 'transferred')
   AND COALESCE(t.status, 'active') NOT IN ('inactive', 'deleted', 'archived')
-ORDER BY s.school_code, u.identity_code, u.user_code
+ORDER BY s.school_code, NULLIF(to_jsonb(u)->>'identity_code', ''), u.user_code
 `;
 
 function assertReadOnlySource() {

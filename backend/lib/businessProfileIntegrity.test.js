@@ -104,10 +104,12 @@ describe("businessProfileIntegrity", () => {
       SELECT_ACTIVE_TEACHER_OCCUPYING_CODE_SQL,
       isOptionalProfileLookupError,
     } = require("./businessProfileIntegrity");
+    const { AUDIT_SQL } = require("../scripts/audit-student-teacher-dual-profiles");
     for (const sql of [
       SELECT_ACTIVE_STUDENT_FOR_USER_SQL,
       SELECT_STUDENT_PROFILES_FOR_USERS_SQL,
       SELECT_ACTIVE_TEACHER_OCCUPYING_CODE_SQL,
+      AUDIT_SQL,
     ]) {
       assert.match(sql, /to_jsonb\(u\)->>'identity_code'/);
       assert.match(sql, /to_jsonb\(u\)->>'login_code'/);
@@ -117,5 +119,25 @@ describe("businessProfileIntegrity", () => {
     assert.equal(isOptionalProfileLookupError({ code: "42703" }), true);
     assert.equal(isOptionalProfileLookupError({ code: "42P01" }), true);
     assert.equal(isOptionalProfileLookupError({ code: "23505" }), false);
+  });
+
+  it("audit dual profils : SELECT-only, to_jsonb, aucun write", async () => {
+    const { AUDIT_SQL, runAudit, parseArgs } = require("../scripts/audit-student-teacher-dual-profiles");
+    assert.throws(() => parseArgs(["--apply"]), (error) => error.code === "AUDIT_WRITE_FORBIDDEN");
+    assert.match(AUDIT_SQL.trim(), /^SELECT\b/);
+    const queries = [];
+    const report = await runAudit({
+      query: async (sql) => {
+        queries.push(sql);
+        return { rows: [] };
+      },
+    });
+    assert.equal(queries.length, 1);
+    assert.equal(queries[0], AUDIT_SQL);
+    assert.doesNotMatch(queries[0], /\b(UPDATE|DELETE|INSERT)\b/i);
+    assert.match(queries[0], /to_jsonb\(u\)->>'identity_code'/);
+    assert.doesNotMatch(queries[0], /u\.identity_code/);
+    assert.equal(report.productionWrites, false);
+    assert.equal(report.dualProfileCount, 0);
   });
 });

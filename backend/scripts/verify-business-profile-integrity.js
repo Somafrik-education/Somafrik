@@ -19,6 +19,11 @@ assert.match(AUDIT_SQL, /JOIN students/i);
 assert.match(AUDIT_SQL, /JOIN teachers/i);
 assert.doesNotMatch(AUDIT_SQL, /\bUPDATE\b/i);
 assert.doesNotMatch(AUDIT_SQL, /\bDELETE\b/i);
+assert.doesNotMatch(AUDIT_SQL, /\bINSERT\b/i);
+assert.match(AUDIT_SQL, /to_jsonb\(u\)->>'identity_code'/);
+assert.match(AUDIT_SQL, /to_jsonb\(u\)->>'login_code'/);
+assert.doesNotMatch(AUDIT_SQL, /u\.identity_code/);
+assert.doesNotMatch(AUDIT_SQL, /u\.login_code/);
 
 const lifecycle = fs.readFileSync(path.join(__dirname, "../lib/userRoleLifecycleService.js"), "utf8");
 assert.match(lifecycle, /BUSINESS_PROFILE_CONFLICT/);
