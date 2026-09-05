@@ -162,6 +162,49 @@ describe("UsersPage — SCHOOL_ADMIN périmètre canonique", () => {
     permissions.canUpdate = false;
   });
 
+  it("payload GET unassigned (capture préprod) : Type métier Sans affectation, accès Aucun rôle d'accès", () => {
+    schoolAdmin.user = {
+      id: "admin-nuru",
+      role: "Admin School",
+      schoolCode: "CD-2026-0001",
+      schoolPublicCode: "CD-IN-26-001",
+      schoolId: "school-nuru",
+      permissions: ["Utilisateurs:READ"],
+    };
+    dataState.scopeError = null;
+    dataState.users = [
+      {
+        id: "usr-capture",
+        firstName: "Test",
+        lastName: "Nouveau",
+        publicId: "CD-ITS-MR-26-00099",
+        role: "Sans affectation",
+        assignmentStatus: "Sans affectation",
+        roles: [],
+        roleKeys: [],
+        accountKind: "unassigned",
+        businessProfileLabel: "Sans affectation",
+        linkedStudent: null,
+        linkedTeacher: null,
+        schoolCode: "CD-IN-26-001",
+        schoolPublicCode: "CD-IN-26-001",
+        schoolId: "school-nuru",
+        status: "Actif",
+      } as UserAccount,
+    ];
+
+    render(
+      <MemoryRouter>
+        <UsersPage />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByText("Test Nouveau")).toBeInTheDocument();
+    expect(screen.getAllByText("Sans affectation").length).toBeGreaterThan(0);
+    expect(screen.getByText("Aucun rôle d'accès")).toBeInTheDocument();
+    expect(screen.queryByText("Compte lié à un élève")).not.toBeInTheDocument();
+  });
+
   it("B. API vide → 0 réel, sans alerte de mismatch", () => {
     schoolAdmin.user = {
       id: "admin-nuru",

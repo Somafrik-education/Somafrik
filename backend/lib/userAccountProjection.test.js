@@ -36,6 +36,33 @@ describe("user account projection — type métier vs rôle d'accès", () => {
     assert.equal(ACCESS_ROLES_NONE_LABEL, "Aucun rôle d'accès");
   });
 
+  it("codes divergents : students.user_id relie quand même le type métier élève", () => {
+    const profile = buildBusinessProfile({
+      studentRow: {
+        id: "stu-1",
+        student_code: SAMPLE_IDENTITY,
+        user_id: "user-div",
+        status: "active",
+      },
+      roleKeys: [],
+    });
+    const hydrated = hydrateUser(
+      {
+        id: "user-div",
+        first_name: "Marc",
+        last_name: "Rumba",
+        user_code: "CD-ITS-MR-26-00099",
+        identity_code: "CD-ITS-MR-26-00099",
+      },
+      [],
+      profile,
+    );
+    assert.equal(hydrated.accountKind, "student_login");
+    assert.equal(hydrated.linkedStudent.studentCode, SAMPLE_IDENTITY);
+    assert.notEqual(hydrated.businessProfileLabel, "Sans affectation");
+    assert.deepEqual(hydrated.roleKeys, []);
+  });
+
   it("élève lié + STUDENT : type métier élève, accès Élève / Étudiant", () => {
     const profile = buildBusinessProfile({
       studentRow: { id: "stu-1", student_code: SAMPLE_IDENTITY, status: "active" },
