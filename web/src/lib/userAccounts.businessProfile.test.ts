@@ -95,6 +95,13 @@ describe("userAccounts business profile", () => {
     expect(formatBusinessProfileKind(studentHydratedSansAffectation)).toBe("Compte lié à un élève");
     expect(formatAccessRolesDisplay(studentHydratedSansAffectation)).toBe(ACCESS_ROLES_NONE_LABEL);
     expect(isUnassignedUserAccount(studentHydratedSansAffectation)).toBe(false);
+
+    expect(
+      formatBusinessProfileKind({
+        ...studentHydratedSansAffectation,
+        businessProfileLabel: "Sans affectation",
+      }),
+    ).toBe("Compte lié à un élève");
   });
 
   it("élève lié + rôle STUDENT : type et accès cohérents", () => {

@@ -67,11 +67,20 @@ export function isTeacherLinkedAccount(row: BusinessProfileUser): boolean {
 
 /** Type métier. Un élève lié n'est jamais « Sans affectation ». */
 export function formatBusinessProfileKind(row: BusinessProfileUser): string {
-  if (row.businessProfileLabel) return row.businessProfileLabel;
+  const keys = accessRoleKeysOf(row);
+  const studentLinked =
+    row.accountKind === "student_login" ||
+    Boolean(row.linkedStudent?.studentId || row.linkedStudent?.studentCode) ||
+    keys.includes("STUDENT");
+  if (row.businessProfileLabel) {
+    if (studentLinked && isEmptyAccessLabel(row.businessProfileLabel)) {
+      return BUSINESS_PROFILE_KIND_LABELS.student_login;
+    }
+    return row.businessProfileLabel;
+  }
   if (row.accountKind === "conflict" || row.businessProfileConflict) {
     return BUSINESS_PROFILE_KIND_LABELS.conflict;
   }
-  const keys = accessRoleKeysOf(row);
   if (
     row.accountKind === "student_login" ||
     row.linkedStudent?.studentId ||

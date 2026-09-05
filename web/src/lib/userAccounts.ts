@@ -273,11 +273,20 @@ function isEmptyAccessLabel(value?: string | null): boolean {
 export function formatBusinessProfileKind(
   user: Pick<UserAccount, "accountKind" | "linkedStudent" | "linkedTeacher" | "businessProfileLabel" | "businessProfileConflict" | "roleKeys">,
 ): string {
-  if (user.businessProfileLabel) return user.businessProfileLabel;
+  const keys = accessRoleKeysOf(user);
+  const studentLinked =
+    user.accountKind === "student_login" ||
+    Boolean(user.linkedStudent?.studentId || user.linkedStudent?.studentCode) ||
+    keys.includes("STUDENT");
+  if (user.businessProfileLabel) {
+    if (studentLinked && isEmptyAccessLabel(user.businessProfileLabel)) {
+      return BUSINESS_PROFILE_KIND_LABELS.student_login;
+    }
+    return user.businessProfileLabel;
+  }
   if (user.accountKind === "conflict" || user.businessProfileConflict) {
     return BUSINESS_PROFILE_KIND_LABELS.conflict;
   }
-  const keys = accessRoleKeysOf(user);
   if (
     user.accountKind === "student_login" ||
     user.linkedStudent?.studentId ||

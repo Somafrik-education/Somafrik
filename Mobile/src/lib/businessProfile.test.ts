@@ -37,6 +37,10 @@ assert.equal(formatBusinessProfileKind(studentNoAccess), BUSINESS_PROFILE_KIND_L
 assert.equal(formatAccessRolesDisplay(studentNoAccess), ACCESS_ROLES_NONE_LABEL);
 assert.notEqual(formatBusinessProfileKind(studentNoAccess), "Sans affectation");
 assert.equal(accountKindLabel(studentNoAccess), "Compte lié à un élève");
+assert.equal(
+  formatBusinessProfileKind({ ...studentNoAccess, businessProfileLabel: "Sans affectation" }),
+  "Compte lié à un élève",
+);
 
 const staffUnassigned = {
   accountKind: "unassigned" as const,
