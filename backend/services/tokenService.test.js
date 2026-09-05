@@ -7,7 +7,7 @@ const { TokenService } = require("../services/tokenService");
 
 function service() {
   return new TokenService({
-    secret: "p1-jwt-header-test-secret-with-enough-length",
+    secret: "a".repeat(48),
     accessTokenTtlSeconds: 60,
     refreshTokenTtlSeconds: 3600,
   });
