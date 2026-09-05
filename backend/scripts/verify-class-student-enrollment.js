@@ -257,6 +257,9 @@ async function main() {
     );
     assert.ok(studentAccount, `compte technique élève attendu pour ${studentCode}`);
     assert.equal(studentAccount.accountKind, "student_login");
+    assert.equal(studentAccount.businessProfileLabel, "Compte lié à un élève");
+    assert.equal(studentAccount.linkedStudent?.studentCode, studentCode);
+    assert.notEqual(studentAccount.businessProfileLabel, "Sans affectation");
     assert.equal(studentAccount.linkedTeacher, null);
     const blockedTeacher = await request(`/backoffice/users/${encodeURIComponent(studentAccount.id)}/roles/grant`, {
       method: "POST",

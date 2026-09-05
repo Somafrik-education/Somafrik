@@ -276,6 +276,14 @@ function createMemoryDb() {
       if (text.startsWith("INSERT INTO USER_ROLES")) {
         return { rows: [] };
       }
+      if (text.startsWith("UPDATE STUDENTS SET USER_ID")) {
+        const userId = params[0];
+        const studentId = params[1];
+        const schoolId = params[2];
+        const student = students.find((row) => row.id === studentId && row.school_id === schoolId);
+        if (student) student.user_id = userId;
+        return { rows: student ? [student] : [] };
+      }
       throw new Error(`Unhandled query(): ${text}`);
     },
     seedClass(schoolCode, overrides = {}) {

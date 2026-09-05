@@ -346,7 +346,7 @@ function createClassStudentsRepository(db) {
         }
       }
       if (error?.statusCode) throw error;
-      if (String(error.code) === "42P01") return null;
+      if (String(error.code) === "42P01" || String(error.code) === "42703") return null;
       throw error;
     }
   }
@@ -387,6 +387,12 @@ function createClassStudentsRepository(db) {
     );
     const userId = inserted?.rows?.[0]?.id ?? inserted?.id ?? null;
     if (userId) {
+      await runIgnoringUndefinedRelation(tx, () =>
+        tx.query(
+          `UPDATE students SET user_id = $1, updated_at = NOW() WHERE id = $2 AND school_id = $3`,
+          [userId, student.id, school.id],
+        ),
+      );
       await runIgnoringUndefinedRelation(tx, () =>
         tx.query(
           `INSERT INTO user_roles (user_id, school_id, role_key, granted_at, status)

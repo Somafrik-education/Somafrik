@@ -217,6 +217,29 @@ async function main() {
   assert.equal(listedStudent.assignmentStatus, "Sans affectation");
   assert.notEqual(listedStudent.businessProfileLabel, "Sans affectation");
 
+  const divergedUser = await store.createUser(
+    { firstName: "Lina", lastName: "Orpheline", email: "lina.orpheline@test.local" },
+    schoolAdmin,
+    auditMeta,
+  );
+  const divergedRow = store._tables.users.find((row) => row.id === divergedUser.id);
+  divergedRow.user_code = "CD-ITS-MR-26-00099";
+  divergedRow.identity_code = "CD-ITS-MR-26-00099";
+  divergedRow.login_code = "MR-26-00099";
+  store._tables.students.push({
+    id: "student-diverged",
+    school_id: "school-cd",
+    student_code: "CD-ITS-MR-26-00003-orphan",
+    first_name: "Lina",
+    last_name: "Orpheline",
+    status: "active",
+    user_id: divergedUser.id,
+  });
+  const listedDiverged = store.listProjection().users.find((row) => row.id === divergedUser.id);
+  assert.equal(listedDiverged.accountKind, "student_login");
+  assert.equal(listedDiverged.linkedStudent.studentCode, "CD-ITS-MR-26-00003-orphan");
+  assert.notEqual(listedDiverged.businessProfileLabel, "Sans affectation");
+
   const teacherCountBefore = store._tables.teachers.filter((row) => row.user_id === studentUser.id).length;
   await expectRejection(
     store.grantUserRole(studentUser.id, { role: "Enseignant" }, schoolAdmin, auditMeta),

@@ -45,6 +45,14 @@ function studentCodeOf(row = {}) {
   return asTrimmed(row.student_code ?? row.studentCode ?? row.identity_code ?? row.identityCode);
 }
 
+function studentIdentityKeys(student = {}) {
+  return [
+    asTrimmed(student.student_code ?? student.studentCode),
+    asTrimmed(student.identity_code ?? student.identityCode),
+    asTrimmed(student.login_code ?? student.loginCode),
+  ].filter(Boolean);
+}
+
 function userIdentityKeys(user = {}) {
   return [
     asTrimmed(user.user_code ?? user.userCode),
@@ -57,6 +65,14 @@ function userMatchesStudentCode(user, studentCode) {
   const wanted = asTrimmed(studentCode);
   if (!wanted) return false;
   return userIdentityKeys(user).includes(wanted);
+}
+
+function userMatchesStudent(user, student) {
+  const uid = asTrimmed(user?.id ?? user?.userId);
+  const studentUserId = asTrimmed(student?.user_id ?? student?.userId);
+  if (uid && studentUserId && uid === studentUserId) return true;
+  const userKeys = new Set(userIdentityKeys(user));
+  return studentIdentityKeys(student).some((key) => userKeys.has(key));
 }
 
 function sameSchoolId(left, right) {
@@ -74,7 +90,7 @@ function findActiveStudentProfileForUser(students = [], user = {}, schoolId) {
     (students ?? []).find((student) => {
       if (!sameSchoolId(student.school_id ?? student.schoolId, sid)) return false;
       if (!isActiveStudentStatus(student.status)) return false;
-      return userMatchesStudentCode(user, studentCodeOf(student));
+      return userMatchesStudent(user, student);
     }) ?? null
   );
 }
@@ -207,9 +223,14 @@ const ACTIVE_TEACHER_SQL = `
 
 const STUDENT_USER_MATCH_SQL = `
   (
-    st.student_code = u.user_code
+    NULLIF(to_jsonb(st)->>'user_id', '') = u.id::text
+    OR st.student_code = u.user_code
     OR st.student_code = NULLIF(to_jsonb(u)->>'identity_code', '')
     OR st.student_code = NULLIF(to_jsonb(u)->>'login_code', '')
+    OR NULLIF(to_jsonb(st)->>'identity_code', '') = u.user_code
+    OR NULLIF(to_jsonb(st)->>'login_code', '') = u.user_code
+    OR NULLIF(to_jsonb(st)->>'identity_code', '') = NULLIF(to_jsonb(u)->>'identity_code', '')
+    OR NULLIF(to_jsonb(st)->>'login_code', '') = NULLIF(to_jsonb(u)->>'login_code', '')
   )
 `;
 
@@ -270,6 +291,7 @@ module.exports = {
   studentCodeOf,
   userIdentityKeys,
   userMatchesStudentCode,
+  userMatchesStudent,
   findActiveStudentProfileForUser,
   findActiveTeacherProfileForUser,
   resolveAccountKind,

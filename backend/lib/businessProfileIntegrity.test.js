@@ -41,6 +41,18 @@ describe("businessProfileIntegrity", () => {
 
     const inactiveUser = { id: "user-x", school_id: "school-a", user_code: "CD-ITS-XX-26-00001" };
     assert.equal(findActiveStudentProfileForUser(students, inactiveUser, "school-a"), null);
+
+    const diverged = {
+      id: "user-div",
+      school_id: "school-a",
+      user_code: "CD-ITS-MR-26-00099",
+      identity_code: "CD-ITS-MR-26-00099",
+    };
+    assert.equal(findActiveStudentProfileForUser(students, diverged, "school-a"), null);
+    const linkedByUserId = [
+      { id: "stu-a", school_id: "school-a", student_code: SAMPLE_IDENTITY, status: "active", user_id: "user-div" },
+    ];
+    assert.equal(findActiveStudentProfileForUser(linkedByUserId, diverged, "school-a")?.id, "stu-a");
   });
 
   it("détecte un enseignant actif du même tenant seulement", () => {
