@@ -9,6 +9,7 @@ import {
   isTeacherLinkedAccount,
   STUDENT_TEACHER_GRANT_BLOCKED_MESSAGE,
 } from "./businessProfile";
+import { normalizeUser } from "./canonicalResourceNormalize";
 
 const sample = {
   publicId: "CD-ITS-MR-26-00003",
@@ -78,5 +79,25 @@ assert.equal(formatBusinessProfileKind(inactiveNoLink), "Sans affectation");
 
 const studentRoleOnly = { roleKeys: ["STUDENT"] };
 assert.equal(formatBusinessProfileKind(studentRoleOnly), "Compte lié à un élève");
+
+const apiStudentLogin = {
+  id: "user-student",
+  publicId: "CD-ITS-MR-26-00003",
+  accountKind: "student_login" as const,
+  businessProfileLabel: "Compte lié à un élève",
+  linkedStudent: { studentId: "stu-1", studentCode: "CD-ITS-MR-26-00003", status: "active" },
+  role: "Sans affectation",
+  assignmentStatus: "Sans affectation",
+  roles: [] as string[],
+  roleKeys: [] as string[],
+  activeRoles: [] as string[],
+};
+const hydratedMobile = normalizeUser(apiStudentLogin);
+assert.equal(hydratedMobile?.accountKind, "student_login");
+assert.equal(hydratedMobile?.linkedStudent?.studentCode, "CD-ITS-MR-26-00003");
+assert.equal(formatBusinessProfileKind(hydratedMobile || {}), "Compte lié à un élève");
+assert.notEqual(formatBusinessProfileKind(hydratedMobile || {}), "Sans affectation");
+assert.equal(formatAccessRolesDisplay(hydratedMobile || {}), ACCESS_ROLES_NONE_LABEL);
+assert.equal(isStudentLinkedAccount(hydratedMobile || {}), true);
 
 console.log("businessProfile.test.ts OK");

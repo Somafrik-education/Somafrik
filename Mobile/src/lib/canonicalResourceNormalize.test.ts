@@ -11,6 +11,11 @@ import {
   readTenantScopeFields,
 } from "./canonicalResourceNormalize";
 import { pickInitialSchoolCode, schoolSelectorChoice } from "./activeSchool";
+import {
+  ACCESS_ROLES_NONE_LABEL,
+  formatAccessRolesDisplay,
+  formatBusinessProfileKind,
+} from "./businessProfile";
 
 function run() {
   const tenant = readTenantScopeFields({
@@ -45,6 +50,65 @@ function run() {
   });
   assert.equal(user?.schoolCode, "CD-IN-26-001");
   assert.notEqual(user?.schoolCode, "SCH-ABC123");
+
+  const apiStudent = {
+    id: "user-student",
+    publicId: "CD-ITS-MR-26-00003",
+    firstName: "Marc",
+    lastName: "Rumba",
+    accountKind: "student_login",
+    businessProfileLabel: "Compte lié à un élève",
+    linkedStudent: { studentId: "stu-1", studentCode: "CD-ITS-MR-26-00003", status: "active" },
+    linkedTeacher: null,
+    businessProfileConflict: false,
+    role: "Sans affectation",
+    assignmentStatus: "Sans affectation",
+    roles: [] as string[],
+    roleKeys: [] as string[],
+    activeRoles: [] as string[],
+  };
+  assert.equal(formatBusinessProfileKind(apiStudent), "Compte lié à un élève");
+  const normalizedStudent = normalizeUser(apiStudent);
+  assert.equal(normalizedStudent?.accountKind, "student_login");
+  assert.equal(normalizedStudent?.businessProfileLabel, "Compte lié à un élève");
+  assert.equal(normalizedStudent?.linkedStudent?.studentCode, "CD-ITS-MR-26-00003");
+  assert.equal(normalizedStudent?.linkedTeacher, null);
+  assert.equal(normalizedStudent?.assignmentStatus, "Sans affectation");
+  assert.deepEqual(normalizedStudent?.roleKeys, []);
+  assert.equal(formatBusinessProfileKind(normalizedStudent || {}), "Compte lié à un élève");
+  assert.notEqual(formatBusinessProfileKind(normalizedStudent || {}), "Sans affectation");
+  assert.equal(formatAccessRolesDisplay(normalizedStudent || {}), ACCESS_ROLES_NONE_LABEL);
+
+  const normalizedStaff = normalizeUser({
+    id: "user-staff",
+    accountKind: "unassigned",
+    role: "Sans affectation",
+    assignmentStatus: "Sans affectation",
+    roleKeys: [],
+  });
+  assert.equal(formatBusinessProfileKind(normalizedStaff || {}), "Sans affectation");
+  assert.equal(formatAccessRolesDisplay(normalizedStaff || {}), ACCESS_ROLES_NONE_LABEL);
+
+  const normalizedTeacher = normalizeUser({
+    id: "user-teacher",
+    accountKind: "teacher",
+    linkedTeacher: { teacherId: "t1", teacherCode: "ENS-1", status: "active" },
+    roleKeys: ["TEACHER"],
+    activeRoles: ["Enseignant"],
+    assignmentStatus: "Enseignant",
+  });
+  assert.equal(normalizedTeacher?.accountKind, "teacher");
+  assert.deepEqual(normalizedTeacher?.roleKeys, ["TEACHER"]);
+  assert.equal(formatBusinessProfileKind(normalizedTeacher || {}), "Profil enseignant");
+
+  const normalizedConflict = normalizeUser({
+    id: "user-conflict",
+    accountKind: "conflict",
+    linkedStudent: { studentCode: "CD-ITS-MR-26-00003" },
+    linkedTeacher: { teacherCode: "ENS-X" },
+    businessProfileConflict: true,
+  });
+  assert.equal(formatBusinessProfileKind(normalizedConflict || {}), "Conflit élève + enseignant");
 
   const announcement = normalizeAnnouncement({
     id: "ann-pg",
