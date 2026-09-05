@@ -40,4 +40,10 @@ assert.match(drawer, /Linking\.openURL/);
 assert.match(drawer, /accessibilityRole="link"/);
 assert.doesNotMatch(drawer, /api-preprod|preprod\.somafrik|localhost/);
 
+const welcome = fs.readFileSync(path.join(ROOT, "Mobile/src/screens/WelcomeScreen.tsx"), "utf8");
+assert.match(welcome, /welcome-privacy-policy/);
+assert.match(welcome, /welcome-account-deletion/);
+assert.match(welcome, /ACCOUNT_DELETION_URL/);
+assert.match(welcome, /PRIVACY_POLICY_URL/);
+
 console.log("OK legalCompliance #482: drawer réel + URLs prod HTTPS + fail-closed");

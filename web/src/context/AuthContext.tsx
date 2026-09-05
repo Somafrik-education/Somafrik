@@ -8,7 +8,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { api, ApiError, setAccessTokenProvider } from "../api/client";
+import { api, ApiError, setAccessTokenProvider, setRefreshTokenProvider, setRotatedTokenPersister } from "../api/client";
 import { normalizePlatformRole } from "../lib/orgHierarchy";
 import type { LoginProfile, Session } from "../types";
 
@@ -67,10 +67,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // Provider de jeton synchrone : aucun fetch métier ne doit partir avant le 1er paint.
   setAccessTokenProvider(() => sessionRef.current?.accessToken ?? null);
+  setRefreshTokenProvider(() => sessionRef.current?.refreshToken ?? null);
+  setRotatedTokenPersister((tokens) => {
+    const current = sessionRef.current;
+    if (!current) return;
+    const next: Session = {
+      ...current,
+      accessToken: tokens.accessToken,
+      refreshToken: tokens.refreshToken ?? current.refreshToken,
+    };
+    sessionRef.current = next;
+    setAccessTokenProvider(() => sessionRef.current?.accessToken ?? null);
+    setRefreshTokenProvider(() => sessionRef.current?.refreshToken ?? null);
+    try {
+      sessionStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+    } catch {
+      /* stockage indisponible */
+    }
+    setSessionState(next);
+  });
 
   const setSession = useCallback((next: Session | null) => {
     sessionRef.current = next;
     setAccessTokenProvider(() => sessionRef.current?.accessToken ?? null);
+    setRefreshTokenProvider(() => sessionRef.current?.refreshToken ?? null);
     setSessionState(next);
     try {
       if (next) sessionStorage.setItem(STORAGE_KEY, JSON.stringify(next));

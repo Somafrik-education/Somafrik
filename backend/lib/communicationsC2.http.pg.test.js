@@ -502,15 +502,15 @@ async function main() {
     assert.ok(!bRecipientIds.includes(PARENT_A) && !bRecipientIds.includes(ADMIN_A), "C2-13 école B isolée");
 
     const superNoSchool = await request("/backoffice/conversations", { token: superSa });
-    assert.equal(superNoSchool.status, 400, `C2-14 Superadmin * sans école: ${superNoSchool.status}`);
+    assert.equal(superNoSchool.status, 403, `C2-14 Superadmin * sans école (deny #503): ${superNoSchool.status}`);
     const superScoped = await request("/backoffice/conversations?effectiveSchoolCode=SCH-COM-A", { token: superSa });
-    assert.equal(superScoped.status, 200, `C2-14 Superadmin scoped: ${JSON.stringify(superScoped.data)}`);
+    assert.equal(superScoped.status, 403, `C2-14 Superadmin scoped conversations interdit: ${JSON.stringify(superScoped.data)}`);
     const superCreateBare = await request("/backoffice/messages", {
       method: "POST",
       token: superSa,
       body: { message: "global fantôme", participantUserIds: [PARENT_A] },
     });
-    assert.equal(superCreateBare.status, 400, "C2-14 création sans école refusée");
+    assert.equal(superCreateBare.status, 403, "C2-14 création Superadmin sans école = deny perso");
     const superCreate = await request("/backoffice/messages", {
       method: "POST",
       token: superSa,
@@ -520,33 +520,32 @@ async function main() {
         effectiveSchoolCode: "SCH-COM-A",
       },
     });
-    assert.equal(superCreate.status, 201, `C2-14 Superadmin crée dans A: ${JSON.stringify(superCreate.data)}`);
+    assert.equal(superCreate.status, 403, `C2-14 Superadmin ne crée pas de message école: ${JSON.stringify(superCreate.data)}`);
     const superWrongSchool = await request(
-      `/backoffice/conversations/${superCreate.data.conversationId}?effectiveSchoolCode=SCH-COM-B`,
+      `/backoffice/conversations/${conversationId}?effectiveSchoolCode=SCH-COM-B`,
       { token: superSa },
     );
-    assert.ok([403, 404].includes(superWrongSchool.status), `C2-14 Superadmin B sur fil A: ${superWrongSchool.status}`);
+    assert.equal(superWrongSchool.status, 403, `C2-14 Superadmin B sur fil A: ${superWrongSchool.status}`);
     const superRightSchool = await request(
-      `/backoffice/conversations/${superCreate.data.conversationId}?effectiveSchoolCode=SCH-COM-A`,
+      `/backoffice/conversations/${conversationId}?effectiveSchoolCode=SCH-COM-A`,
       { token: superSa },
     );
-    assert.equal(superRightSchool.status, 200, "C2-14 Superadmin A voit son fil");
-    const superMessageId = superCreate.data.id;
-    const superReadBare = await request(`/backoffice/messages/${superMessageId}/read`, {
+    assert.equal(superRightSchool.status, 403, "C2-14 Superadmin A ne lit pas le fil établissement");
+    const superReadBare = await request(`/backoffice/messages/${message1Id}/read`, {
       method: "PATCH",
       token: superSa,
     });
-    assert.equal(superReadBare.status, 400, "C2-14 Superadmin mark-read sans école");
+    assert.equal(superReadBare.status, 403, "C2-14 Superadmin mark-read sans école");
     const superReadA = await request(
-      `/backoffice/messages/${superMessageId}/read?effectiveSchoolCode=SCH-COM-A`,
+      `/backoffice/messages/${message1Id}/read?effectiveSchoolCode=SCH-COM-A`,
       { method: "PATCH", token: superSa },
     );
-    assert.equal(superReadA.status, 200, `C2-14 Superadmin mark-read A: ${JSON.stringify(superReadA.data)}`);
+    assert.equal(superReadA.status, 403, `C2-14 Superadmin mark-read A interdit: ${JSON.stringify(superReadA.data)}`);
     const superReadB = await request(
-      `/backoffice/messages/${superMessageId}/read?effectiveSchoolCode=SCH-COM-B`,
+      `/backoffice/messages/${message1Id}/read?effectiveSchoolCode=SCH-COM-B`,
       { method: "PATCH", token: superSa },
     );
-    assert.ok([403, 404].includes(superReadB.status), `C2-14 Superadmin mark-read B: ${superReadB.status}`);
+    assert.equal(superReadB.status, 403, `C2-14 Superadmin mark-read B: ${superReadB.status}`);
     const adminReadOwn = await request(`/backoffice/messages/${message1Id}/read`, {
       method: "PATCH",
       token: adminA,

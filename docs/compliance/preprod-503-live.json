@@ -1,0 +1,120 @@
+{
+  "ok": true,
+  "mode": "remote",
+  "destructive": {
+    "reuse": false,
+    "erasure": false
+  },
+  "candidateSha": "e79c3b56daa3c6e383c89b12ae03f22e5bb5fa5a",
+  "render": {
+    "apiSha": null,
+    "webSha": null,
+    "match": "unknown",
+    "note": "Le /api/health public n’expose pas le SHA Render. Coller les SHA dashboard ops."
+  },
+  "probes": [
+    {
+      "id": "health",
+      "ok": true,
+      "status": 200,
+      "database": "postgresql",
+      "healthStatus": "ok",
+      "shaExposed": false
+    },
+    {
+      "id": "erasure_route",
+      "ok": true,
+      "status": 400,
+      "code": "PRIVACY_REQUEST_INVALID"
+    },
+    {
+      "id": "revoke_all_route",
+      "ok": true,
+      "status": 401
+    },
+    {
+      "id": "students_unauth",
+      "ok": true,
+      "status": 401
+    },
+    {
+      "id": "audit_unauth",
+      "ok": true,
+      "status": 401
+    },
+    {
+      "id": "legal_confidentialite",
+      "ok": true,
+      "status": 200
+    },
+    {
+      "id": "legal_suppression",
+      "ok": true,
+      "status": 200
+    },
+    {
+      "id": "legal_copy",
+      "ok": true,
+      "chunk": "LegalPages-D7LM86qb.js",
+      "hasOregon": true,
+      "hasOperator": true
+    },
+    {
+      "id": "legal_no_internal_paths",
+      "ok": true,
+      "internalPaths": []
+    },
+    {
+      "id": "superadmin_students_403",
+      "ok": true,
+      "skipped": "credentials_absent"
+    },
+    {
+      "id": "superadmin_audit_403",
+      "ok": true,
+      "skipped": "credentials_absent"
+    },
+    {
+      "id": "country_admin_students_403",
+      "ok": true,
+      "skipped": "credentials_absent"
+    },
+    {
+      "id": "country_admin_audit_403",
+      "ok": true,
+      "skipped": "credentials_absent"
+    },
+    {
+      "id": "school_admin_students",
+      "ok": true,
+      "skipped": "credentials_absent"
+    },
+    {
+      "id": "refresh_rotation",
+      "ok": true,
+      "skipped": "credentials_absent"
+    },
+    {
+      "id": "refresh_grace",
+      "ok": true,
+      "skipped": "credentials_absent"
+    },
+    {
+      "id": "refresh_reuse",
+      "ok": true,
+      "skipped": "credentials_absent"
+    },
+    {
+      "id": "erasure_execute",
+      "ok": true,
+      "skipped": "non_destructive_default"
+    }
+  ],
+  "residual": [
+    "superadmin: credentials absents — 403 non prouvé en live",
+    "country_admin: credentials absents — 403 non prouvé en live",
+    "Admin School: credentials absents — parcours nominal non prouvé en live",
+    "effacement recette non exécuté (ajouter --apply-erasure + identifiant recette)"
+  ],
+  "generatedAt": "2026-09-05T12:44:59.146Z"
+}

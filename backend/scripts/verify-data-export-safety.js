@@ -125,12 +125,11 @@ async function runExportHttpSuite(port, { admin, otherAdmin, teacher, superadmin
   if (superadmin) {
     const superToken = await login(port, superadmin.identifier, superadmin.password);
     const missingSchool = await request(port, "/data-export", { token: superToken });
-    assert.equal(missingSchool.status, 400);
+    assert.equal(missingSchool.status, 403, JSON.stringify(missingSchool.data));
     const superExport = await request(port, `/data-export?schoolCode=${encodeURIComponent(admin.schoolCode)}`, {
       token: superToken,
     });
-    assert.equal(superExport.status, 200, JSON.stringify(superExport.data));
-    assertExportEnvelope(superExport.data, admin.schoolCode);
+    assert.equal(superExport.status, 403, JSON.stringify(superExport.data));
   }
 
   const gone = await request(port, "/backoffice/state", { method: "PUT", token: adminToken, body: { students: [] } });

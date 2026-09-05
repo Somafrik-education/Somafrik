@@ -196,9 +196,15 @@ jobs:
         run: |
           set -euo pipefail
           npm run verify:jwt-header
+          npm run verify:auth-sessions
+          npm run verify:privacy-erasure
           npm run verify:rbac-s1-4
           npm run verify:sanitize-user-responses
           npm run verify:db-config
+          npm run verify:supabase-data-api-lockdown
+          npm run verify:function-search-path
+          npm run verify:platform-personal-data-deny
+          npm run verify:preprod-503-local
 
   targeted:
     name: Risk-targeted
@@ -250,6 +256,7 @@ jobs:
           set -euo pipefail
           npm run verify:db-config
           npm run verify:runtime-bootstrap
+          npm run verify:supabase-data-api-lockdown
 
       - name: Auth and RBAC
         if: needs.scope.outputs.auth == 'true'
@@ -258,6 +265,7 @@ jobs:
           npm run verify:functional-rbac
           npm run verify:user-role-lifecycle
           npm run verify:users-login-identity
+          npm run verify:platform-personal-data-deny
 
       - name: Classes
         if: needs.scope.outputs.classes == 'true'

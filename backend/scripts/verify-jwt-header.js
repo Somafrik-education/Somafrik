@@ -139,6 +139,20 @@ function runStaticAudit() {
     /JWT dans l'URL interdit/.test(serverSource),
     "message de rejet JWT-in-URL attendu",
   );
+  const tokenPolicy = readUtf8(path.join(BACKEND_DIR, "lib", "authTokenPolicy.js"));
+  assert.match(tokenPolicy, /DEFAULT_ACCESS_TTL_SECONDS = 15 \* 60/);
+  assert.match(tokenPolicy, /MAX_PRODUCTION_ACCESS_TTL_SECONDS = 15 \* 60/);
+  const tokenService = readUtf8(path.join(BACKEND_DIR, "services", "tokenService.js"));
+  assert.match(tokenService, /resolveAccessTokenTtlSeconds/);
+  assert.match(tokenService, /alg: "HS256"/);
+  assert.match(tokenService, /header\.alg !== "HS256"/);
+  assert.match(tokenService, /header\.typ !== "JWT"/);
+  assert.ok(
+    !/\bJWT_EXPIRES\b/.test(tokenService) && !/\bJWT_ALGORITHM\b/.test(tokenService),
+    "seuls JWT_SECRET / JWT_ACCESS_TTL_SECONDS / JWT_REFRESH_TTL_SECONDS sont lus pour la signature",
+  );
+  const httpClient = readUtf8(path.join(MOBILE_DIR, "src", "services", "httpClient.ts"));
+  assert.match(httpClient, /data\.refreshToken \|\| refreshToken/);
 
   const mobileApi = readUtf8(path.join(MOBILE_DIR, "src", "services", "api.ts"));
   assert.ok(

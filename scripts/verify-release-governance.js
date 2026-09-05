@@ -5,11 +5,12 @@
  *
  * The historical governance checker is preserved byte-for-byte in
  * verify-release-governance-core.js. This adapter only reclassifies the live
- * main history. After G5/G6 promotions were reconciled onto develop,
- * origin/main@CURRENT_MAIN is an ancestor of origin/develop, so
- * origin/develop..origin/main is empty. Every source replacement is exact and
- * fail-closed; all other checks from the historical checker still execute
- * unchanged.
+ * main history. origin/main is pinned to CURRENT_MAIN and the three merge
+ * commits that exist on main but not on develop are pinned in
+ * CURRENT_MAIN_ONLY. develop is allowed to advance ahead of main between
+ * promotions; rev-list develop..main still proves that no unexpected commit
+ * has appeared on main. Every source replacement is exact and fail-closed;
+ * all other checks from the historical checker still execute unchanged.
  */
 
 const assert = require("node:assert/strict");
@@ -20,11 +21,14 @@ const path = require("node:path");
 
 const CORE = path.join(__dirname, "verify-release-governance-core.js");
 const EXPECTED_CORE_BLOB = "3d7b2381b5412bbc7395b61592ed2199a2ca3035";
-const CURRENT_MAIN = "41ce090a2dca57d19ee08f74059afeff871ad2f5";
+const CURRENT_MAIN = "f0cda3c3c64f21c320053e4c88bdf3fb15e39d8d";
 
-// Après la réconciliation d'historique, CURRENT_MAIN et ses promotions G5/G6
-// sont désormais ancêtres de develop : origin/develop..origin/main est vide.
-const CURRENT_MAIN_ONLY = [];
+// Promotions develop→main déjà sur origin/main (#500, #501, #502).
+const CURRENT_MAIN_ONLY = [
+  "33d4ddc31a83fcb1b9ddbd715d59214c6a4ad38b",
+  "fb37b9c3a4617f81e33b090824fd009fff1cbf63",
+  "f0cda3c3c64f21c320053e4c88bdf3fb15e39d8d",
+];
 
 function replaceExactlyOnce(source, before, after, label) {
   const first = source.indexOf(before);
@@ -49,21 +53,11 @@ function assertLiveMainHistoryContract() {
     `origin/main a bougé (${originMain}). STOP : reclasser les main-only. ` +
       `Promotion develop→main non autorisée.`,
   );
-  try {
-    git(["merge-base", "--is-ancestor", "origin/main", "origin/develop"]);
-  } catch {
-    assert.fail(`origin/main ${originMain} n'est pas ancêtre de origin/develop ${originDevelop}`);
-  }
   const only = git(["rev-list", "--reverse", "origin/develop..origin/main"]);
   const onlyList = only ? only.split(/\n/) : [];
-  assert.deepEqual(
-    CURRENT_MAIN_ONLY,
-    [],
-    "contrat live : main ancêtre de develop ⇒ CURRENT_MAIN_ONLY=[]",
-  );
   assert.deepEqual(onlyList, CURRENT_MAIN_ONLY, `main-only inattendu: ${only}`);
   console.log(
-    `PASS RG-POS-main-ancestor-develop-no-main-only main=${originMain} develop=${originDevelop}`,
+    `PASS RG-POS-main-pinned-main-only develop-may-be-ahead main=${originMain} develop=${originDevelop}`,
   );
 }
 
@@ -155,7 +149,7 @@ source = replaceExactlyOnce(
 source = replaceExactlyOnce(
   source,
   '    console.log("PASS RG-MAIN-ONLY 2 commits stale (6ff61106, b5074565) ; tree #109 ⊂ develop");',
-  '    console.log("PASS RG-MAIN-ONLY reconciled : origin/main est ancêtre de develop ; aucun commit main-only");',
+  '    console.log("PASS RG-MAIN-ONLY live pin f0cda3c3 ; 3 merges #500/#501/#502 hors develop");',
   "main-only log",
 );
 

@@ -51,6 +51,7 @@ class FallbackRepository {
     this.engine = "memory";
     this.ready = false;
     this.sessions = new Map();
+    this.privacyRequests = new Map();
     this.auditLogs = [];
     this.idempotencyRecords = new Map();
     this.backOfficeState = null;
@@ -191,6 +192,9 @@ class FallbackRepository {
       ip_address: ipAddress,
       user_agent: userAgent,
       revoked_at: null,
+      previous_refresh_token_hash: null,
+      refresh_rotated_at: null,
+      refresh_token_grace: null,
     });
   }
 
@@ -221,6 +225,128 @@ class FallbackRepository {
       session.revoked_at = new Date();
       session.revoke_reason = reason;
     }
+  }
+
+  async findSessionByCode(sessionId) {
+    return this.sessions.get(sessionId) ?? null;
+  }
+
+  async rotateSessionRefresh({
+    sessionId,
+    newHash,
+    previousHash,
+    expiresAt,
+    refreshTokenGrace,
+    expectedCurrentHash,
+  }) {
+    const session = this.sessions.get(sessionId);
+    const expected = String(expectedCurrentHash ?? "").trim();
+    if (!session || session.revoked_at || !expected) return false;
+    if (String(session.refresh_token_hash ?? "") !== expected) return false;
+    session.previous_refresh_token_hash = previousHash;
+    session.refresh_token_hash = newHash;
+    session.refresh_token_grace = refreshTokenGrace ?? null;
+    session.refresh_rotated_at = new Date();
+    if (expiresAt) session.expires_at = expiresAt;
+    return true;
+  }
+
+  async revokeAllSessionsForUser(userId, reason = "revoke_all") {
+    let count = 0;
+    const wanted = String(userId ?? "");
+    for (const session of this.sessions.values()) {
+      if (String(session.user_id ?? "") === wanted && !session.revoked_at) {
+        session.revoked_at = new Date();
+        session.revoke_reason = reason;
+        count += 1;
+      }
+    }
+    return count;
+  }
+
+  async createPrivacyRequest(row) {
+    const stored = {
+      id: row.id,
+      request_code: row.requestCode,
+      school_code: row.schoolCode,
+      user_id: row.userId,
+      identifier: row.identifier,
+      contact_email: row.contactEmail,
+      role_label: row.roleLabel,
+      request_type: row.requestType || "erasure",
+      status: row.status || "pending",
+      reason: row.reason || "",
+      created_at: new Date().toISOString(),
+    };
+    this.privacyRequests.set(stored.id, stored);
+    return stored;
+  }
+
+  async getPrivacyRequest(requestId) {
+    if (this.privacyRequests.has(requestId)) return this.privacyRequests.get(requestId);
+    for (const row of this.privacyRequests.values()) {
+      if (row.request_code === requestId) return row;
+    }
+    return null;
+  }
+
+  async listPrivacyRequests({ schoolCode, status } = {}) {
+    return [...this.privacyRequests.values()].filter((row) => {
+      if (schoolCode && String(row.school_code ?? "").toUpperCase() !== String(schoolCode).toUpperCase()) {
+        return false;
+      }
+      if (status && row.status !== status) return false;
+      return true;
+    });
+  }
+
+  async executePrivacyErasure({ requestId, actorUserId, userId, identifier, schoolCode }) {
+    const { anonymizeAccountFields } = require("../lib/privacyErasure");
+    const request = await this.getPrivacyRequest(requestId);
+    const accounts = seedData.userAccounts ?? [];
+    const candidates = [userId, identifier].map((value) => String(value ?? "").trim()).filter(Boolean);
+    const account = accounts.find((user) =>
+      candidates.some((wanted) =>
+        [user.id, user.userId, user.identifier, user.publicId, user.email].some(
+          (value) => String(value ?? "") === wanted,
+        ),
+      ),
+    );
+    const wanted = String(account?.id ?? account?.userId ?? userId ?? identifier ?? "").trim();
+    const sessionsRevoked = wanted ? await this.revokeAllSessionsForUser(wanted, "privacy_erasure") : 0;
+    if (account) {
+      Object.assign(account, anonymizeAccountFields(account));
+    }
+    if (request) {
+      request.status = "processed";
+      request.processed_at = new Date().toISOString();
+      request.actor_user_id = actorUserId;
+      request.user_id = request.user_id || wanted;
+    }
+    await this.recordAudit({
+      schoolCode,
+      userId: actorUserId,
+      action: "privacy_erasure",
+      entityType: "user",
+      entityId: wanted || requestId,
+      newValue: { requestId, sessionsRevoked, schoolRecordsRetained: true },
+    });
+    return { request, sessionsRevoked, accountAnonymized: Boolean(account) };
+  }
+
+  async purgeRetention({ now, sessionsCutoff }) {
+    let sessionsDeleted = 0;
+    if (sessionsCutoff) {
+      for (const [id, session] of this.sessions.entries()) {
+        const expires = new Date(session.expires_at).getTime();
+        const cutoff = new Date(sessionsCutoff).getTime();
+        if (expires < cutoff && (session.revoked_at || expires < now.getTime())) {
+          this.sessions.delete(id);
+          sessionsDeleted += 1;
+        }
+      }
+    }
+    return { sessionsDeleted, pushDevicesRevoked: 0, pushReceiptsDeleted: 0 };
   }
 
   async recordAudit({ schoolCode, userId, action, entityType, entityId, oldValue, newValue, ipAddress, userAgent }, _tx = null) {

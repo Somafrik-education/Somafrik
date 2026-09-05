@@ -138,15 +138,13 @@ async function login(identifier, password, schoolCode) {
   return result.data.accessToken || result.data.token;
 }
 
-async function countAuditRows(token, { action, schoolCode } = {}) {
-  const params = new URLSearchParams();
-  if (action) params.set("action", action);
-  if (schoolCode) params.set("schoolCode", schoolCode);
-  const suffix = params.toString() ? `?${params.toString()}` : "";
-  const audit = await request(`/audit${suffix}`, { token });
-  assert.equal(audit.status, 200, JSON.stringify(audit.data));
-  const rows = Array.isArray(audit.data?.items) ? audit.data.items : audit.data ?? [];
-  return rows.length;
+async function assertPlatformAuditDenied(token, label) {
+  const audit = await request("/audit", { token });
+  assert.equal(
+    audit.status,
+    403,
+    `${label} GET /audit doit rester 403 (#503 P0-2): ${JSON.stringify(audit.data)}`,
+  );
 }
 
 async function runResidualGuards(superToken) {
@@ -171,17 +169,12 @@ async function runResidualGuards(superToken) {
     ],
   ];
 
+  await assertPlatformAuditDenied(superToken, "Superadmin");
+
   for (const [roleLabel, token] of forbiddenTokens) {
     for (const [route, body] of residualRoutes) {
-      const auditBefore = await countAuditRows(superToken, {
-        action: `replace_residual_${route.includes("planning") ? "exam" : route.includes("report") ? "bulletin" : "document"}`,
-      });
       const denied = await request(route, { method: "PUT", token, body });
       assert.equal(denied.status, 403, `${roleLabel} ${route}`);
-      const auditAfter = await countAuditRows(superToken, {
-        action: `replace_residual_${route.includes("planning") ? "exam" : route.includes("report") ? "bulletin" : "document"}`,
-      });
-      assert.equal(auditAfter, auditBefore, `${roleLabel} ${route} ne doit pas auditer`);
     }
   }
 

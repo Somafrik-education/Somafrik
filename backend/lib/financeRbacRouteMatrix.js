@@ -180,11 +180,7 @@ const FINANCE_RBAC_ROUTE_MATRIX = [
   },
   {
     method: "GET",
-    path: "/api/payments/:paymentId",
-    action: "Lire un encaissement",
-    resource: "Paiements",
-    permission: "Paiements:READ",
-    routeKey: "GET /api/payments",
+    routeKey: "GET /api/payments/:paymentId",
     secondaryGuard: "",
   },
   {

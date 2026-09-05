@@ -136,6 +136,10 @@ class PostgresRepository {
       await this.ensureDemoWebAccounts();
       await this.ensureV2Data();
     }
+    await this.ensurePlatformPersonalDataDeny();
+    await this.ensureP1RgpdSchema();
+    await this.ensureSupabaseDataApiLockdown();
+    await this.ensureFunctionSearchPath();
     this.ready = true;
   }
 
@@ -757,6 +761,26 @@ class PostgresRepository {
   async ensureFunctionalRbacBootstrap() {
     const { ensureFunctionalRbacBootstrap } = require("../lib/functionalRbacService");
     await ensureFunctionalRbacBootstrap(this);
+  }
+
+  async ensurePlatformPersonalDataDeny() {
+    const { applyPlatformPersonalDataDeny } = require("./platformPersonalDataDeny");
+    await applyPlatformPersonalDataDeny(this);
+  }
+
+  async ensureP1RgpdSchema() {
+    const { applyP1RgpdSchema } = require("./p1RgpdSchema");
+    await applyP1RgpdSchema(this);
+  }
+
+  async ensureSupabaseDataApiLockdown() {
+    const { applySupabaseDataApiLockdown } = require("./supabaseDataApiLockdown");
+    await applySupabaseDataApiLockdown(this);
+  }
+
+  async ensureFunctionSearchPath() {
+    const { applyFunctionSearchPath } = require("./functionSearchPath");
+    await applyFunctionSearchPath(this);
   }
 
   getFunctionalRbacStore() {
@@ -2104,6 +2128,225 @@ class PostgresRepository {
       "UPDATE sessions SET revoked_at = NOW(), revoke_reason = $2 WHERE session_code = $1 AND revoked_at IS NULL",
       [sessionId, reason]
     );
+  }
+
+  async findSessionByCode(sessionId) {
+    await this.init();
+    const code = String(sessionId ?? "").trim();
+    if (!code) return null;
+    return this.one(
+      `SELECT sess.*, u.user_code, u.role, s.school_code, c.iso_code AS country_code
+       FROM sessions sess
+       LEFT JOIN users u ON u.id = sess.user_id
+       LEFT JOIN schools s ON s.id = sess.school_id
+       LEFT JOIN countries c ON c.id = s.country_id
+       WHERE sess.session_code = $1`,
+      [code],
+    );
+  }
+
+  async rotateSessionRefresh({
+    sessionId,
+    newHash,
+    previousHash,
+    expiresAt,
+    refreshTokenGrace,
+    expectedCurrentHash,
+  }) {
+    await this.init();
+    const expected = String(expectedCurrentHash ?? "").trim();
+    if (!expected) return false;
+    const result = await this.query(
+      `UPDATE sessions
+       SET previous_refresh_token_hash = $2,
+           refresh_token_hash = $3,
+           refresh_token_grace = $4,
+           refresh_rotated_at = NOW(),
+           expires_at = $5
+       WHERE session_code = $1
+         AND refresh_token_hash = $6
+         AND revoked_at IS NULL`,
+      [sessionId, previousHash, newHash, refreshTokenGrace ?? null, expiresAt, expected],
+    );
+    return (result.rowCount ?? 0) > 0;
+  }
+
+  async revokeAllSessionsForUser(userId, reason = "revoke_all") {
+    await this.init();
+    const dbUserId = await this.resolveDbUserId(userId);
+    if (!dbUserId) return 0;
+    const result = await this.query(
+      `UPDATE sessions SET revoked_at = NOW(), revoke_reason = $2
+       WHERE user_id = $1 AND revoked_at IS NULL`,
+      [dbUserId, reason],
+    );
+    return result.rowCount ?? 0;
+  }
+
+  async createPrivacyRequest(row) {
+    await this.init();
+    const school = row.schoolCode ? await this.getSchoolByCode(row.schoolCode) : null;
+    const dbUserId = row.userId ? await this.resolveDbUserId(row.userId) : null;
+    const inserted = await this.one(
+      `INSERT INTO privacy_requests (
+         id, request_code, school_id, user_id, school_code, identifier, contact_email,
+         role_label, request_type, status, reason
+       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+       RETURNING *`,
+      [
+        row.id,
+        row.requestCode,
+        school?.id ?? null,
+        dbUserId,
+        row.schoolCode || null,
+        row.identifier || null,
+        row.contactEmail || null,
+        row.roleLabel || null,
+        row.requestType || "erasure",
+        row.status || "pending",
+        row.reason || null,
+      ],
+    );
+    return inserted;
+  }
+
+  async getPrivacyRequest(requestId) {
+    await this.init();
+    const key = String(requestId ?? "").trim();
+    if (!key) return null;
+    // id est uuid : comparer en texte évite l'erreur PG « uuid = text » (500)
+    // quand le client passe un request_code (PRV-…) ou un identifiant mixte.
+    return this.one(
+      "SELECT * FROM privacy_requests WHERE id::text = $1 OR request_code = $1",
+      [key],
+    );
+  }
+
+  async listPrivacyRequests({ schoolCode, status } = {}) {
+    await this.init();
+    const school = schoolCode ? await this.getSchoolByCode(schoolCode) : null;
+    if (schoolCode && !school) return [];
+    const params = [];
+    const clauses = [];
+    if (school) {
+      params.push(school.id);
+      clauses.push(`school_id = $${params.length}`);
+    }
+    if (status) {
+      params.push(status);
+      clauses.push(`status = $${params.length}`);
+    }
+    const where = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
+    return this.all(
+      `SELECT * FROM privacy_requests ${where} ORDER BY created_at DESC LIMIT 200`,
+      params,
+    );
+  }
+
+  async executePrivacyErasure({ requestId, actorUserId, userId, identifier, schoolCode }) {
+    await this.init();
+    let dbUserId = await this.resolveDbUserId(userId);
+    if (!dbUserId && identifier) {
+      dbUserId = await this.resolveDbUserId(identifier);
+    }
+    if (!dbUserId && identifier) {
+      const ident = String(identifier).trim();
+      const school = schoolCode ? await this.getSchoolByCode(schoolCode) : null;
+      const row = await this.one(
+        `SELECT id FROM users
+         WHERE (user_code = $1 OR LOWER(TRIM(COALESCE(email, ''))) = LOWER($1) OR phone = $1)
+           AND ($2::uuid IS NULL OR school_id = $2)
+         LIMIT 1`,
+        [ident, school?.id ?? null],
+      );
+      dbUserId = row?.id ?? null;
+    }
+    let sessionsRevoked = 0;
+    if (dbUserId) {
+      sessionsRevoked = await this.revokeAllSessionsForUser(dbUserId, "privacy_erasure");
+      await this.query(
+        `UPDATE users
+         SET status = 'deleted',
+             email = NULL,
+             phone = NULL,
+             password_hash = NULL,
+             pin_hash = NULL,
+             first_name = 'Anonymisé',
+             last_name = 'Anonymisé',
+             must_change_password = TRUE,
+             updated_at = NOW()
+         WHERE id = $1`,
+        [dbUserId],
+      );
+      try {
+        await this.query(
+          `UPDATE mobile_push_devices SET revoked_at = NOW(), updated_at = NOW()
+           WHERE user_id = $1 AND revoked_at IS NULL`,
+          [dbUserId],
+        );
+      } catch {
+        /* table optionnelle selon le boot */
+      }
+    }
+    const actorId = actorUserId ? await this.resolveDbUserId(actorUserId) : null;
+    const request = await this.one(
+      `UPDATE privacy_requests
+       SET status = 'processed', actor_user_id = $2, processed_at = NOW(), updated_at = NOW(),
+           user_id = COALESCE(user_id, $3)
+       WHERE id = $1
+       RETURNING *`,
+      [requestId, actorId, dbUserId],
+    );
+    await this.recordAudit({
+      schoolCode,
+      userId: actorUserId,
+      action: "privacy_erasure",
+      entityType: "user",
+      entityId: String(dbUserId ?? identifier ?? requestId),
+      newValue: { requestId, sessionsRevoked, schoolRecordsRetained: true },
+    });
+    return { request, sessionsRevoked, accountAnonymized: Boolean(dbUserId) };
+  }
+
+  async purgeRetention({ now, sessionsCutoff, pushDevicesCutoff, pushReceiptsCutoff }) {
+    await this.init();
+    let sessionsDeleted = 0;
+    let pushDevicesRevoked = 0;
+    let pushReceiptsDeleted = 0;
+    if (sessionsCutoff) {
+      const sessions = await this.query(
+        `DELETE FROM sessions
+         WHERE expires_at < $1
+           AND (revoked_at IS NOT NULL OR expires_at < $2)`,
+        [sessionsCutoff, now],
+      );
+      sessionsDeleted = sessions.rowCount ?? 0;
+    }
+    if (pushDevicesCutoff) {
+      try {
+        const devices = await this.query(
+          `UPDATE mobile_push_devices
+           SET revoked_at = COALESCE(revoked_at, $1), updated_at = $1
+           WHERE revoked_at IS NULL AND last_seen_at < $2`,
+          [now, pushDevicesCutoff],
+        );
+        pushDevicesRevoked = devices.rowCount ?? 0;
+      } catch {
+        pushDevicesRevoked = 0;
+      }
+    }
+    if (pushReceiptsCutoff) {
+      try {
+        const receipts = await this.query(
+          `DELETE FROM mobile_push_receipts WHERE expires_at < $1 OR created_at < $1`,
+          [pushReceiptsCutoff],
+        );
+        pushReceiptsDeleted = receipts.rowCount ?? 0;
+      } catch {
+        pushReceiptsDeleted = 0;
+      }
+    }
+    return { sessionsDeleted, pushDevicesRevoked, pushReceiptsDeleted };
   }
 
   async recordAudit(
@@ -6923,6 +7166,7 @@ class PostgresRepository {
     if (status === "Suspendu") return "suspended";
     if (status === "Désactivé") return "inactive";
     if (status === "Archivé") return "archived";
+    if (status === "Supprimé") return "deleted";
     return "active";
   }
 
@@ -6930,6 +7174,7 @@ class PostgresRepository {
     if (status === "suspended") return "Suspendu";
     if (status === "inactive") return "Désactivé";
     if (status === "archived") return "Archivé";
+    if (status === "deleted") return "Supprimé";
     return "Actif";
   }
 
