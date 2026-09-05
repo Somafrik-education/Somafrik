@@ -7,6 +7,7 @@ Ce dossier est la source de vérité versionnée pour la déclaration **Sécurit
 - `somafrik_google_play_data_safety.csv` : fichier **versionné** à importer dans **Play Console → Contenu de l'application → Sécurité des données → Importer depuis le fichier CSV**.
 - `CURRENT.sha256` : empreintes SHA-256 du CSV (CRLF d’import Play, et équivalent LF).
 - `generate_data_safety_csv.py` : générateur déterministe du CSV. Les réponses métier doivent être modifiées dans ce script puis le CSV doit être régénéré **et** `CURRENT.sha256` recalculé.
+- `audit-aab-v20-2026-09-05.md` : réaudit du binaire Android production v20 réellement construit.
 
 ## Règle de maintenance
 
@@ -39,7 +40,7 @@ python3 docs/compliance/google-play/data-safety/generate_data_safety_csv.py
 
 ## État déclaré au 5 septembre 2026
 
-CSV régénéré et versionné dans git. **Réaudit Android final et nouvel AAB** restent dus avant import Play Console / GO store (mandat CTO #503). Ne pas traiter ce CSV comme une déclaration déjà contrôlée en Console.
+Le candidat Android production a été réaudité : AAB v20, EAS build `5998c352-cefe-4d95-b86d-ceceac7b1d2b`, package `com.somafrik.app`, source `main@17a9bfbad8a19bcf1c4a29e5dd56fe91759c09f6`. L’audit final est consigné dans `audit-aab-v20-2026-09-05.md`.
 
 - collecte de données : **oui** ;
 - chiffrement en transit : **oui** ;
@@ -47,6 +48,9 @@ CSV régénéré et versionné dans git. **Réaudit Android final et nouvel AAB*
 - comptes créés/provisionnés par l’établissement ou Somafrik ;
 - demande de suppression : `https://somafrik.app/suppression-compte` ;
 - aucune finalité publicité/marketing déclarée ;
-- notifications Android : token Expo Push, collecte facultative car dépendante de l’autorisation de notification.
+- notifications Android : token Expo Push, collecte facultative car dépendante de l’autorisation de notification ;
+- aucun changement des réponses CSV requis par l’audit du binaire v20.
+
+Avant envoi Google Play : importer le CSV puis relire l’aperçu généré dans Play Console afin de détecter une éventuelle évolution du modèle Google ou une divergence d’interface.
 
 > Important : ce fichier est une déclaration de conformité, pas une configuration runtime. Toute modification doit être basée sur le comportement réel de la version Android publiée.
