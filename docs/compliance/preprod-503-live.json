@@ -5,7 +5,7 @@
     "reuse": false,
     "erasure": false
   },
-  "candidateSha": "8db54176c9ffdacc0fafdd4e0c86fdc7829315a2",
+  "candidateSha": "e79c3b56daa3c6e383c89b12ae03f22e5bb5fa5a",
   "render": {
     "apiSha": null,
     "webSha": null,
@@ -116,5 +116,5 @@
     "Admin School: credentials absents — parcours nominal non prouvé en live",
     "effacement recette non exécuté (ajouter --apply-erasure + identifiant recette)"
   ],
-  "generatedAt": "2026-09-05T12:44:36.034Z"
+  "generatedAt": "2026-09-05T12:44:59.146Z"
 }
