@@ -174,6 +174,11 @@ function isBusinessProfileConflictError(error) {
   return String(error.message ?? "").includes(BUSINESS_PROFILE_CONFLICT);
 }
 
+function isOptionalProfileLookupError(error) {
+  const code = String(error?.code ?? "");
+  return code === "42P01" || code === "42703";
+}
+
 const ACTIVE_STUDENT_SQL = `
   COALESCE(st.status, 'active') NOT IN ('inactive', 'deleted', 'archived', 'closed', 'transferred')
 `;
@@ -185,8 +190,8 @@ const ACTIVE_TEACHER_SQL = `
 const STUDENT_USER_MATCH_SQL = `
   (
     st.student_code = u.user_code
-    OR st.student_code = u.identity_code
-    OR st.student_code = u.login_code
+    OR st.student_code = NULLIF(to_jsonb(u)->>'identity_code', '')
+    OR st.student_code = NULLIF(to_jsonb(u)->>'login_code', '')
   )
 `;
 
@@ -217,8 +222,8 @@ const SELECT_ACTIVE_TEACHER_OCCUPYING_CODE_SQL = `
     AND ${ACTIVE_TEACHER_SQL}
     AND (
       u.user_code = $2
-      OR u.identity_code = $2
-      OR u.login_code = $2
+      OR NULLIF(to_jsonb(u)->>'identity_code', '') = $2
+      OR NULLIF(to_jsonb(u)->>'login_code', '') = $2
     )
   LIMIT 1
 `;
@@ -255,6 +260,7 @@ module.exports = {
   studentToTeacherConflict,
   teacherToStudentConflict,
   isBusinessProfileConflictError,
+  isOptionalProfileLookupError,
   SELECT_ACTIVE_STUDENT_FOR_USER_SQL,
   SELECT_ACTIVE_TEACHER_FOR_USER_SQL,
   SELECT_ACTIVE_TEACHER_OCCUPYING_CODE_SQL,

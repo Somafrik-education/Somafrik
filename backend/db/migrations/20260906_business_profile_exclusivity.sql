@@ -35,8 +35,8 @@ BEGIN
     JOIN users u ON u.school_id = st.school_id
       AND (
         st.student_code = u.user_code
-        OR st.student_code = u.identity_code
-        OR st.student_code = u.login_code
+        OR st.student_code = NULLIF(to_jsonb(u)->>'identity_code', '')
+        OR st.student_code = NULLIF(to_jsonb(u)->>'login_code', '')
       )
     WHERE u.id = NEW.user_id
       AND st.school_id = NEW.school_id
@@ -72,8 +72,8 @@ BEGIN
       JOIN users u ON u.school_id = st.school_id
         AND (
           st.student_code = u.user_code
-          OR st.student_code = u.identity_code
-          OR st.student_code = u.login_code
+          OR st.student_code = NULLIF(to_jsonb(u)->>'identity_code', '')
+          OR st.student_code = NULLIF(to_jsonb(u)->>'login_code', '')
         )
       WHERE u.id = target_user_id
         AND st.school_id = target_school_id

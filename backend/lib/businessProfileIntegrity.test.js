@@ -96,4 +96,26 @@ describe("businessProfileIntegrity", () => {
     assert.equal(isBusinessProfileConflictError({ message: "BUSINESS_PROFILE_CONFLICT: dual" }), true);
     assert.equal(isBusinessProfileConflictError({ code: "OTHER" }), false);
   });
+
+  it("ne référence pas les colonnes identity_code / login_code en SQL nu (schémas IT sans ces colonnes)", () => {
+    const {
+      SELECT_ACTIVE_STUDENT_FOR_USER_SQL,
+      SELECT_STUDENT_PROFILES_FOR_USERS_SQL,
+      SELECT_ACTIVE_TEACHER_OCCUPYING_CODE_SQL,
+      isOptionalProfileLookupError,
+    } = require("./businessProfileIntegrity");
+    for (const sql of [
+      SELECT_ACTIVE_STUDENT_FOR_USER_SQL,
+      SELECT_STUDENT_PROFILES_FOR_USERS_SQL,
+      SELECT_ACTIVE_TEACHER_OCCUPYING_CODE_SQL,
+    ]) {
+      assert.match(sql, /to_jsonb\(u\)->>'identity_code'/);
+      assert.match(sql, /to_jsonb\(u\)->>'login_code'/);
+      assert.doesNotMatch(sql, /u\.identity_code/);
+      assert.doesNotMatch(sql, /u\.login_code/);
+    }
+    assert.equal(isOptionalProfileLookupError({ code: "42703" }), true);
+    assert.equal(isOptionalProfileLookupError({ code: "42P01" }), true);
+    assert.equal(isOptionalProfileLookupError({ code: "23505" }), false);
+  });
 });

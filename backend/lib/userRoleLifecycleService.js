@@ -41,6 +41,7 @@ const {
   buildBusinessProfile,
   emptyBusinessProfile,
   isBusinessProfileConflictError,
+  isOptionalProfileLookupError,
   studentToTeacherConflict,
   teacherToStudentConflict,
 } = require("./businessProfileIntegrity");
@@ -88,17 +89,35 @@ function mapGrantPgError(error) {
   throw error;
 }
 
+async function listOptionalProfiles(loader, ids) {
+  if (typeof loader !== "function") return [];
+  try {
+    return (await loader(ids)) ?? [];
+  } catch (error) {
+    if (isOptionalProfileLookupError(error)) return [];
+    throw error;
+  }
+}
+
+async function loadOptionalProfile(loader, userId, schoolId) {
+  if (typeof loader !== "function") return null;
+  try {
+    return (await loader(userId, schoolId)) ?? null;
+  } catch (error) {
+    if (isOptionalProfileLookupError(error)) return null;
+    throw error;
+  }
+}
+
 async function loadBusinessProfile(tx, user, roleKeys = []) {
   if (!user) return emptyBusinessProfile(roleKeys);
   const schoolId = user.school_id ?? user.schoolId ?? null;
-  let studentRow = null;
-  let teacherRow = null;
-  if (schoolId && typeof tx.getActiveStudentProfileByUser === "function") {
-    studentRow = await tx.getActiveStudentProfileByUser(user.id, schoolId);
-  }
-  if (schoolId && typeof tx.getActiveTeacherProfileByUser === "function") {
-    teacherRow = await tx.getActiveTeacherProfileByUser(user.id, schoolId);
-  }
+  const studentRow = schoolId
+    ? await loadOptionalProfile(tx.getActiveStudentProfileByUser, user.id, schoolId)
+    : null;
+  const teacherRow = schoolId
+    ? await loadOptionalProfile(tx.getActiveTeacherProfileByUser, user.id, schoolId)
+    : null;
   return buildBusinessProfile({ studentRow, teacherRow, roleKeys });
 }
 
@@ -107,14 +126,8 @@ async function loadBusinessProfilesByUserIds(tx, userIds = [], roleKeysByUser = 
   const ids = [...new Set((userIds ?? []).map((id) => String(id ?? "").trim()).filter(Boolean))];
   if (!ids.length) return map;
 
-  const studentRows =
-    typeof tx.listActiveStudentProfilesByUserIds === "function"
-      ? await tx.listActiveStudentProfilesByUserIds(ids)
-      : [];
-  const teacherRows =
-    typeof tx.listActiveTeacherProfilesByUserIds === "function"
-      ? await tx.listActiveTeacherProfilesByUserIds(ids)
-      : [];
+  const studentRows = await listOptionalProfiles(tx.listActiveStudentProfilesByUserIds, ids);
+  const teacherRows = await listOptionalProfiles(tx.listActiveTeacherProfilesByUserIds, ids);
 
   const studentsByUser = new Map();
   for (const row of studentRows ?? []) {
@@ -150,15 +163,15 @@ async function assertBusinessProfileGrantAllowed(tx, user, school, roleKey) {
   const schoolId = school?.id ?? user.school_id ?? null;
   if (!schoolId) return;
 
-  if (roleKey === TEACHER_KEY && typeof tx.getActiveStudentProfileByUser === "function") {
-    const studentProfile = await tx.getActiveStudentProfileByUser(user.id, schoolId);
+  if (roleKey === TEACHER_KEY) {
+    const studentProfile = await loadOptionalProfile(tx.getActiveStudentProfileByUser, user.id, schoolId);
     if (studentProfile) {
       throwBusinessProfileConflict(studentToTeacherConflict(studentProfile));
     }
   }
 
-  if (roleKey === STUDENT_KEY && typeof tx.getActiveTeacherProfileByUser === "function") {
-    const teacherProfile = await tx.getActiveTeacherProfileByUser(user.id, schoolId);
+  if (roleKey === STUDENT_KEY) {
+    const teacherProfile = await loadOptionalProfile(tx.getActiveTeacherProfileByUser, user.id, schoolId);
     if (teacherProfile) {
       throwBusinessProfileConflict(teacherToStudentConflict(teacherProfile));
     }
