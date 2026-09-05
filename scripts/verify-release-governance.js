@@ -5,12 +5,12 @@
  *
  * The historical governance checker is preserved byte-for-byte in
  * verify-release-governance-core.js. This adapter only reclassifies the live
- * main history. origin/main is pinned to CURRENT_MAIN and the three merge
- * commits that exist on main but not on develop are pinned in
- * CURRENT_MAIN_ONLY. develop is allowed to advance ahead of main between
- * promotions; rev-list develop..main still proves that no unexpected commit
- * has appeared on main. Every source replacement is exact and fail-closed;
- * all other checks from the historical checker still execute unchanged.
+ * main history. origin/main is pinned to CURRENT_MAIN and every commit that
+ * exists on main but not on develop is pinned in CURRENT_MAIN_ONLY. develop is
+ * allowed to advance ahead of main between promotions; rev-list develop..main
+ * still proves that no unexpected commit has appeared on main. Every source
+ * replacement is exact and fail-closed; all other checks from the historical
+ * checker still execute unchanged.
  */
 
 const assert = require("node:assert/strict");
@@ -21,13 +21,24 @@ const path = require("node:path");
 
 const CORE = path.join(__dirname, "verify-release-governance-core.js");
 const EXPECTED_CORE_BLOB = "3d7b2381b5412bbc7395b61592ed2199a2ca3035";
-const CURRENT_MAIN = "f0cda3c3c64f21c320053e4c88bdf3fb15e39d8d";
+const CURRENT_MAIN = "ff5ae38857d6693b2724c12bbbf293d7441f543b";
 
-// Promotions develop→main déjà sur origin/main (#500, #501, #502).
+// Historique explicitement autorisé présent sur origin/main mais absent de develop.
+// Inclut les anciennes promotions (#500/#501/#502), la promotion sécurité #506,
+// le workflow AAB #507 et la correction documentaire/conformité #509.
 const CURRENT_MAIN_ONLY = [
   "33d4ddc31a83fcb1b9ddbd715d59214c6a4ad38b",
   "fb37b9c3a4617f81e33b090824fd009fff1cbf63",
   "f0cda3c3c64f21c320053e4c88bdf3fb15e39d8d",
+  "b91cf514dc7bd9d6a618a6baa8f508dc4fb5dd90",
+  "94da32bd46889898ed77d5269e0c6cde16425458",
+  "17a9bfbad8a19bcf1c4a29e5dd56fe91759c09f6",
+  "8c337c4798130ed7e8c1fa24c07630f6319f8c36",
+  "8056569f10420a0aecb57cf95dc569e61723f7ea",
+  "fa37ece5694d3eba22863c3379845c0491120bb9",
+  "14920f68fb5db77cbdf97fd1b11434ca71d57c2d",
+  "48e47f47648eec28c4ea804953dda875fd3bee92",
+  "ff5ae38857d6693b2724c12bbbf293d7441f543b",
 ];
 
 function replaceExactlyOnce(source, before, after, label) {
@@ -149,7 +160,7 @@ source = replaceExactlyOnce(
 source = replaceExactlyOnce(
   source,
   '    console.log("PASS RG-MAIN-ONLY 2 commits stale (6ff61106, b5074565) ; tree #109 ⊂ develop");',
-  '    console.log("PASS RG-MAIN-ONLY live pin f0cda3c3 ; 3 merges #500/#501/#502 hors develop");',
+  '    console.log("PASS RG-MAIN-ONLY live pin ff5ae388 ; 12 commits main-only explicitement autorisés");',
   "main-only log",
 );
 
