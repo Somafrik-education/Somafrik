@@ -318,6 +318,39 @@ function createClassStudentsRepository(db) {
    * @param {{ firstName: string, lastName: string, parentEmail?: string, parentPhone?: string }} input
    * @returns {Promise<string>} secret temporaire en clair (one-shot)
    */
+  /**
+   * Tables optionnelles (teachers / user_roles) : un 42P01 ne doit pas abort la
+   * transaction d'inscription. SAVEPOINT puis ROLLBACK TO si relation absente.
+   * @param {ReturnType<typeof createClassStudentsDb>} tx
+   * @param {() => Promise<T>} fn
+   * @returns {Promise<T | null>}
+   * @template T
+   */
+  async function runIgnoringUndefinedRelation(tx, fn) {
+    const savepoint = "somafrik_optional_rel";
+    if (typeof tx.query === "function") {
+      await tx.query(`SAVEPOINT ${savepoint}`);
+    }
+    try {
+      const result = await fn();
+      if (typeof tx.query === "function") {
+        await tx.query(`RELEASE SAVEPOINT ${savepoint}`);
+      }
+      return result;
+    } catch (error) {
+      if (typeof tx.query === "function") {
+        try {
+          await tx.query(`ROLLBACK TO SAVEPOINT ${savepoint}`);
+        } catch {
+          // adapter mémoire : SAVEPOINT no-op
+        }
+      }
+      if (error?.statusCode) throw error;
+      if (String(error.code) === "42P01") return null;
+      throw error;
+    }
+  }
+
   async function ensureStudentLoginUser(tx, school, student, input) {
     const {
       SELECT_ACTIVE_TEACHER_OCCUPYING_CODE_SQL,
@@ -325,18 +358,12 @@ function createClassStudentsRepository(db) {
     } = require("../lib/businessProfileIntegrity");
 
     if (typeof tx.one === "function") {
-      try {
-        const occupyingTeacher = await tx.one(SELECT_ACTIVE_TEACHER_OCCUPYING_CODE_SQL, [
-          school.id,
-          student.student_code,
-        ]);
-        if (occupyingTeacher) {
-          const conflict = teacherToStudentConflict(occupyingTeacher);
-          throw createHttpError(conflict.status, conflict.message, conflict.code);
-        }
-      } catch (error) {
-        if (error?.statusCode) throw error;
-        if (String(error.code) !== "42P01") throw error;
+      const occupyingTeacher = await runIgnoringUndefinedRelation(tx, () =>
+        tx.one(SELECT_ACTIVE_TEACHER_OCCUPYING_CODE_SQL, [school.id, student.student_code]),
+      );
+      if (occupyingTeacher) {
+        const conflict = teacherToStudentConflict(occupyingTeacher);
+        throw createHttpError(conflict.status, conflict.message, conflict.code);
       }
     }
 
@@ -360,15 +387,13 @@ function createClassStudentsRepository(db) {
     );
     const userId = inserted?.rows?.[0]?.id ?? inserted?.id ?? null;
     if (userId) {
-      try {
-        await tx.query(
+      await runIgnoringUndefinedRelation(tx, () =>
+        tx.query(
           `INSERT INTO user_roles (user_id, school_id, role_key, granted_at, status)
            VALUES ($1, $2, 'STUDENT', NOW(), 'active')`,
           [userId, school.id],
-        );
-      } catch (error) {
-        if (String(error.code) !== "42P01") throw error;
-      }
+        ),
+      );
     }
     return temporarySecret;
   }

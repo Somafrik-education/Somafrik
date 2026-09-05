@@ -1752,7 +1752,12 @@ class FallbackRepository {
         },
         async query(sql, params = []) {
           const text = String(sql).replace(/\s+/g, " ").trim().toUpperCase();
-          if (text.startsWith("SELECT PG_ADVISORY_XACT_LOCK")) {
+          if (
+            text.startsWith("SELECT PG_ADVISORY_XACT_LOCK") ||
+            text.startsWith("SAVEPOINT ") ||
+            text.startsWith("RELEASE SAVEPOINT ") ||
+            text.startsWith("ROLLBACK TO SAVEPOINT ")
+          ) {
             return { rows: [] };
           }
           if (text.startsWith("INSERT INTO USERS")) {
@@ -2191,7 +2196,12 @@ class FallbackRepository {
         },
         async query(sql, params = []) {
           const text = String(sql).replace(/\s+/g, " ").trim().toUpperCase();
-          if (text.startsWith("SELECT PG_ADVISORY_XACT_LOCK")) {
+          if (
+            text.startsWith("SELECT PG_ADVISORY_XACT_LOCK") ||
+            text.startsWith("SAVEPOINT ") ||
+            text.startsWith("RELEASE SAVEPOINT ") ||
+            text.startsWith("ROLLBACK TO SAVEPOINT ")
+          ) {
             return { rows: [] };
           }
           if (text.startsWith("UPDATE TEACHER_ASSIGNMENTS") && text.includes("SET STATUS = 'DELETED'")) {
