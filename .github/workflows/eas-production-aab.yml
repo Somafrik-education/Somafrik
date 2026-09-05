@@ -1,0 +1,95 @@
+name: EAS Production AAB
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/eas-production-aab.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: eas-production-aab
+  cancel-in-progress: false
+
+jobs:
+  build-aab:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 75
+    env:
+      EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+    steps:
+      - name: Checkout exact main SHA
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify source and auth preconditions
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${GITHUB_REF_NAME}" = "main"
+          test -n "${EXPO_TOKEN:-}" || { echo "EXPO_TOKEN secret absent" >&2; exit 1; }
+          SHA="$(git rev-parse HEAD)"
+          test "$SHA" = "$GITHUB_SHA"
+          echo "SOURCE_SHA=$SHA" >> "$GITHUB_ENV"
+          echo "Source SHA: $SHA" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Setup Node 22.12.0
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.12.0
+          cache: npm
+          cache-dependency-path: Mobile/package-lock.json
+
+      - name: Install Mobile dependencies
+        working-directory: Mobile
+        run: npm ci
+
+      - name: Verify production release contract
+        working-directory: Mobile
+        shell: bash
+        run: |
+          set -euo pipefail
+          node -e 'const a=require("./app.json").expo; if(a.android.package!=="com.somafrik.app") process.exit(2); if((a.android.permissions||[]).join(",")!=="CAMERA") process.exit(3);'
+          node -e 'const e=require("./eas.json"); const p=e.build.production; if(p.android.buildType!=="app-bundle") process.exit(4); if(p.env.EXPO_PUBLIC_API_URL!=="https://api.somafrik.app") process.exit(5); if(p.env.EXPO_PUBLIC_RELEASE_PROFILE!=="production") process.exit(6);'
+          if grep -R --line-number -E 'READ_MEDIA_IMAGES|READ_EXTERNAL_STORAGE|WRITE_EXTERNAL_STORAGE|com.google.android.gms.permission.AD_ID' app.json eas.json android 2>/dev/null; then
+            echo "Forbidden Android permission detected" >&2
+            exit 7
+          fi
+
+      - name: Build signed production AAB on EAS
+        working-directory: Mobile
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx --yes eas-cli@23.2.0 whoami
+          npx --yes eas-cli@23.2.0 build --platform android --profile production --non-interactive --json | tee eas-build.json
+          test -s eas-build.json
+          BUILD_URL="$(jq -r 'if type=="array" then .[0].artifacts.buildUrl else .artifacts.buildUrl end // empty' eas-build.json)"
+          BUILD_ID="$(jq -r 'if type=="array" then .[0].id else .id end // empty' eas-build.json)"
+          VERSION_CODE="$(jq -r 'if type=="array" then .[0].appBuildVersion else .appBuildVersion end // empty' eas-build.json)"
+          test -n "$BUILD_URL"
+          test -n "$BUILD_ID"
+          curl --fail --location --retry 3 "$BUILD_URL" --output somafrik-production.aab
+          test -s somafrik-production.aab
+          sha256sum somafrik-production.aab | tee somafrik-production.aab.sha256
+          {
+            echo "EAS build ID: $BUILD_ID"
+            echo "Android versionCode: $VERSION_CODE"
+            echo "Source SHA: $SOURCE_SHA"
+            echo "Artifact: somafrik-production.aab"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload AAB evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: somafrik-production-aab-${{ github.sha }}
+          path: |
+            Mobile/somafrik-production.aab
+            Mobile/somafrik-production.aab.sha256
+            Mobile/eas-build.json
+          if-no-files-found: error
+          retention-days: 30
