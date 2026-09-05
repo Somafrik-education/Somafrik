@@ -18,6 +18,16 @@ test("matrice de rétention : sessions/push configurables, audit non auto-purgé
   assert.equal(policy.backupsDays, null);
 });
 
+test("purge-retention.js transmet la config PostgreSQL au dépôt", () => {
+  const fs = require("node:fs");
+  const path = require("node:path");
+  const src = fs.readFileSync(path.join(__dirname, "../scripts/purge-retention.js"), "utf8");
+  assert.match(src, /createPostgresRepository/);
+  assert.match(src, /resolveDatabaseConfig/);
+  assert.match(src, /config\.poolConfig/);
+  assert.doesNotMatch(src, /new PostgresRepository\s*\(\s*\)/);
+});
+
 test("purge sessions expirées/révoquées au-delà du cutoff", async () => {
   const repo = new FallbackRepository();
   const now = new Date("2026-09-04T12:00:00Z");

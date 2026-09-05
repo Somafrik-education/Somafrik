@@ -4,6 +4,9 @@
  * Purge de rétention (sessions / push). Idempotente.
  * INTERDIT d'exécuter contre Somafrik-prod depuis Cursor.
  * Production : exiger SOMAFRIK_ALLOW_RETENTION_PURGE=true (GO ops).
+ *
+ * PostgreSQL : passer par createPostgresRepository + resolveDatabaseConfig
+ * (le constructeur PostgresRepository exige une config de pool).
  */
 
 const { purgeRetention } = require("../lib/retentionPolicy");
@@ -18,8 +21,10 @@ async function main() {
 
   let repository;
   if (env.DATABASE_URL) {
-    const { PostgresRepository } = require("../db/postgresRepository");
-    repository = new PostgresRepository();
+    const { createPostgresRepository } = require("../db/repositoryFactory");
+    const { resolveDatabaseConfig } = require("../db/connectionConfig");
+    const config = resolveDatabaseConfig(env);
+    repository = createPostgresRepository(config.poolConfig, env);
     await repository.init();
   } else {
     const { FallbackRepository } = require("../db/fallbackRepository");

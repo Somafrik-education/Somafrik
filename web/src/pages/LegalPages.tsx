@@ -70,17 +70,19 @@ export function PrivacyPolicyPage() {
       <section>
         <h2 className="text-xl font-bold text-slate-950">Destinataires et sous-traitants</h2>
         <p>
-          Personnes habilitées de l’établissement ; API Somafrik ; hébergement Render ; base PostgreSQL Supabase ;
-          notifications Expo Push. Les données ne sont pas vendues. Détail : documentation interne
-          <code className="mx-1">docs/compliance/sous-traitants-transferts.md</code>.
+          Personnes habilitées de l’établissement ; API Somafrik ; hébergement Render (Oregon, États-Unis) ;
+          base PostgreSQL fournie par Supabase (région AWS du projet) ; notifications Expo Push (États-Unis).
+          Les données ne sont pas vendues. Aucun prestataire de publicité, d’analytique, de SMS ou de messagerie
+          n’est branché sur l’application.
         </p>
       </section>
       <section>
         <h2 className="text-xl font-bold text-slate-950">Transferts hors EEE</h2>
         <p>
-          Render, Supabase et Expo peuvent impliquer des traitements hors EEE selon leur infrastructure.
-          Les garanties applicables (DPA / SCC des prestataires) sont listées dans le registre des sous-traitants.
-          Aucun transfert supplémentaire n’est activé par l’application (pas de SMS, WhatsApp ou e-mail transactionnel embarqué).
+          Render, Supabase et Expo impliquent des traitements aux États-Unis ou, pour la base, dans la région AWS
+          du projet. Les garanties applicables sont les accords de sous-traitance des prestataires, les clauses
+          contractuelles types et, le cas échéant, le Data Privacy Framework. Aucun transfert supplémentaire n’est
+          activé par l’application (pas de SMS, WhatsApp ou e-mail transactionnel embarqué).
         </p>
       </section>
       <section>
@@ -88,8 +90,7 @@ export function PrivacyPolicyPage() {
         <p>
           Comptes : durée d’utilisation puis suppression ou anonymisation. Sessions et jetons de rafraîchissement : expiration courte puis purge.
           Jetons push inactifs : purge configurable. Journaux d’audit, dossier scolaire et pièces comptables :
-          conservés selon les obligations de l’établissement ; ils ne sont pas auto-supprimés par le job applicatif.
-          Matrice : <code>docs/compliance/matrice-conservation.md</code>.
+          conservés selon les obligations de l’établissement ; ils ne sont pas auto-supprimés par l’application.
         </p>
       </section>
       <section>

@@ -145,6 +145,8 @@ function runStaticAudit() {
   const tokenService = readUtf8(path.join(BACKEND_DIR, "services", "tokenService.js"));
   assert.match(tokenService, /resolveAccessTokenTtlSeconds/);
   assert.match(tokenService, /alg: "HS256"/);
+  assert.match(tokenService, /header\.alg !== "HS256"/);
+  assert.match(tokenService, /header\.typ !== "JWT"/);
   assert.ok(
     !/\bJWT_EXPIRES\b/.test(tokenService) && !/\bJWT_ALGORITHM\b/.test(tokenService),
     "seuls JWT_SECRET / JWT_ACCESS_TTL_SECONDS / JWT_REFRESH_TTL_SECONDS sont lus pour la signature",

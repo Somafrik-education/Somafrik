@@ -145,7 +145,7 @@
     "verify:rbac-s1-4": "npm --prefix backend run verify:rbac-s1-4",
     "verify:rbac-admin-01": "npm --prefix backend run verify:rbac-admin-01",
     "verify:jwt-header": "npm --prefix backend run verify:jwt-header",
-    "verify:auth-sessions": "node --test backend/lib/authTokenPolicy.test.js backend/lib/sessionRefreshService.test.js backend/lib/passwordResetSessions.test.js && node backend/scripts/verify-auth-sessions.js",
+    "verify:auth-sessions": "node --test backend/lib/authTokenPolicy.test.js backend/lib/sessionRefreshService.test.js backend/lib/passwordResetSessions.test.js backend/services/tokenService.test.js && node backend/scripts/verify-auth-sessions.js",
     "verify:privacy-erasure": "node --test backend/lib/privacyErasure.test.js backend/lib/retentionPolicy.test.js && node backend/scripts/verify-privacy-erasure.js",
     "verify:db-config": "npm --prefix backend run verify:db-config",
     "verify:sync-contacts-removed": "node --test backend/scripts/sync-contacts-registry.test.js",

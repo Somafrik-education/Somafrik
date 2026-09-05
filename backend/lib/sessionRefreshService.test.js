@@ -70,7 +70,7 @@ test("logout puis refresh → 401 sans reuse-all si déjà révoqué", async () 
   );
 });
 
-test("refresh concurrent dans la fenêtre de grâce n'est pas traité comme reuse", async () => {
+test("refresh concurrent dans la fenêtre de grâce renvoie le jeton courant, jamais l'ancien", async () => {
   const repo = new FallbackRepository();
   const service = tokens();
   const first = await seededSession(repo, service);
@@ -86,6 +86,37 @@ test("refresh concurrent dans la fenêtre de grâce n'est pas traité comme reus
     now: Date.now() + 1_000,
   });
   assert.equal(raced.rotated, false);
-  assert.equal(raced.refreshToken, first.token);
-  assert.ok(rotated.refreshToken);
+  assert.equal(raced.refreshToken, rotated.refreshToken);
+  assert.notEqual(raced.refreshToken, first.token);
+
+  const followUp = await rotateRefreshSession({
+    repository: repo,
+    tokenService: service,
+    refreshToken: raced.refreshToken,
+  });
+  assert.equal(followUp.rotated, true);
+  assert.notEqual(followUp.refreshToken, rotated.refreshToken);
+});
+
+test("grâce sans jeton courant reconstitutable ne redonne pas l'ancien refresh", async () => {
+  const repo = new FallbackRepository();
+  const service = tokens();
+  const first = await seededSession(repo, service);
+  await rotateRefreshSession({
+    repository: repo,
+    tokenService: service,
+    refreshToken: first.token,
+  });
+  const session = await repo.findSessionByCode(first.sessionId);
+  session.refresh_token_grace = "v1.corrupt";
+  await assert.rejects(
+    () =>
+      rotateRefreshSession({
+        repository: repo,
+        tokenService: service,
+        refreshToken: first.token,
+        now: Date.now() + 1_000,
+      }),
+    (error) => error.statusCode === 401 && error.code === "SESSION_REVOKED",
+  );
 });

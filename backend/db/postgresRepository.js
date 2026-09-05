@@ -2139,16 +2139,17 @@ class PostgresRepository {
     );
   }
 
-  async rotateSessionRefresh({ sessionId, newHash, previousHash, expiresAt }) {
+  async rotateSessionRefresh({ sessionId, newHash, previousHash, expiresAt, refreshTokenGrace }) {
     await this.init();
     await this.query(
       `UPDATE sessions
        SET previous_refresh_token_hash = $2,
            refresh_token_hash = $3,
+           refresh_token_grace = $4,
            refresh_rotated_at = NOW(),
-           expires_at = $4
+           expires_at = $5
        WHERE session_code = $1 AND revoked_at IS NULL`,
-      [sessionId, previousHash, newHash, expiresAt],
+      [sessionId, previousHash, newHash, refreshTokenGrace ?? null, expiresAt],
     );
   }
 

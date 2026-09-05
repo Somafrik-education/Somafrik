@@ -30,6 +30,22 @@ function isExpired(session, nowMs) {
   return new Date(expires).getTime() <= nowMs;
 }
 
+function sealedCurrentRefresh(session) {
+  return session?.refresh_token_grace ?? session?.refreshTokenGrace ?? "";
+}
+
+function currentRefreshForGrace(tokenService, session, currentHash) {
+  try {
+    const opened = tokenService.openRefreshToken(sealedCurrentRefresh(session));
+    if (opened && tokenService.hashToken(opened) === currentHash) {
+      return opened;
+    }
+  } catch {
+    // Grâce sans jeton courant reconstitutable : ne jamais renvoyer l'ancien.
+  }
+  return null;
+}
+
 async function rotateRefreshSession({
   repository,
   tokenService,
@@ -81,8 +97,12 @@ async function rotateRefreshSession({
   }
 
   if (inGrace) {
+    const currentToken = currentRefreshForGrace(tokenService, session, currentHash);
+    if (!currentToken) {
+      throw unauthorized("Session expirée ou révoquée", "SESSION_REVOKED");
+    }
     return {
-      refreshToken,
+      refreshToken: currentToken,
       rotated: false,
       session,
       payload,
@@ -107,6 +127,7 @@ async function rotateRefreshSession({
     newHash: tokenService.hashToken(nextRefresh.token),
     previousHash: presentedHash,
     expiresAt: nextRefresh.expiresAt,
+    refreshTokenGrace: tokenService.sealRefreshToken(nextRefresh.token),
   });
 
   return {

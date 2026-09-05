@@ -75,7 +75,15 @@ class TokenService {
       throw new Error("Signature JWT invalide");
     }
 
-    const payload = JSON.parse(Buffer.from(encodedPayload, "base64url").toString("utf8"));
+    const header = this.decodeJwtJson(encodedHeader, "En-tête");
+    if (!Object.prototype.hasOwnProperty.call(header, "alg") || header.alg !== "HS256") {
+      throw new Error("Algorithme JWT invalide");
+    }
+    if (!Object.prototype.hasOwnProperty.call(header, "typ") || header.typ !== "JWT") {
+      throw new Error("Type d'en-tête JWT invalide");
+    }
+
+    const payload = this.decodeJwtJson(encodedPayload, "Charge");
 
     if (payload.iss !== this.issuer) {
       throw new Error("Emetteur JWT invalide");
@@ -92,8 +100,44 @@ class TokenService {
     return payload;
   }
 
+  decodeJwtJson(encoded, label) {
+    let parsed;
+    try {
+      parsed = JSON.parse(Buffer.from(encoded, "base64url").toString("utf8"));
+    } catch {
+      throw new Error(`${label} JWT invalide`);
+    }
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      throw new Error(`${label} JWT invalide`);
+    }
+    return parsed;
+  }
+
   hashToken(token) {
     return crypto.createHash("sha256").update(String(token)).digest("hex");
+  }
+
+  sealRefreshToken(token) {
+    const key = crypto.createHash("sha256").update(this.secret).digest();
+    const iv = crypto.randomBytes(12);
+    const cipher = crypto.createCipheriv("aes-256-gcm", key, iv);
+    const encrypted = Buffer.concat([cipher.update(String(token), "utf8"), cipher.final()]);
+    const tag = cipher.getAuthTag();
+    return `v1.${this.base64Url(iv)}.${this.base64Url(encrypted)}.${this.base64Url(tag)}`;
+  }
+
+  openRefreshToken(sealed) {
+    const parts = String(sealed ?? "").split(".");
+    if (parts.length !== 4 || parts[0] !== "v1") {
+      throw new Error("Jeton de grâce invalide");
+    }
+    const key = crypto.createHash("sha256").update(this.secret).digest();
+    const iv = Buffer.from(parts[1], "base64url");
+    const encrypted = Buffer.from(parts[2], "base64url");
+    const tag = Buffer.from(parts[3], "base64url");
+    const decipher = crypto.createDecipheriv("aes-256-gcm", key, iv);
+    decipher.setAuthTag(tag);
+    return Buffer.concat([decipher.update(encrypted), decipher.final()]).toString("utf8");
   }
 
   sign(payload, ttlSeconds) {

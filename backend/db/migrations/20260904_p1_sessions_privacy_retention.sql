@@ -5,6 +5,8 @@ ALTER TABLE IF EXISTS sessions
   ADD COLUMN IF NOT EXISTS previous_refresh_token_hash TEXT;
 ALTER TABLE IF EXISTS sessions
   ADD COLUMN IF NOT EXISTS refresh_rotated_at TIMESTAMPTZ;
+ALTER TABLE IF EXISTS sessions
+  ADD COLUMN IF NOT EXISTS refresh_token_grace TEXT;
 
 CREATE INDEX IF NOT EXISTS idx_sessions_user_active
   ON sessions (user_id)

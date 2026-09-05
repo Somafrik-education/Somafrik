@@ -84,7 +84,7 @@ Les clients n’utilisent pas PostgREST. Migration `20260904_p0_supabase_data_ap
 | Access TTL | Défaut **900 s** (`JWT_ACCESS_TTL_SECONDS`) ; **max 900 s en production** |
 | Algorithme | **HS256** uniquement (`tokenService.js`) |
 | Env JWT lus | `JWT_SECRET`, `JWT_ACCESS_TTL_SECONDS`, `JWT_REFRESH_TTL_SECONDS` |
-| Refresh | Rotatif, hashé (`sessions.refresh_token_hash`), expiration, grâce anti-race 15 s, reuse → revoke-all |
+| Refresh | Rotatif, hashé, grâce 15 s **renvoie le jeton courant** (jamais l’ancien), reuse hors grâce → revoke-all |
 | Logout / revoke-all | `POST /api/auth/logout`, `POST /api/auth/revoke-all` |
 | Mobile / Web | Persistance du **nouveau** refresh après rotation |
 | Tests | `npm run verify:jwt-header` · `npm run verify:auth-sessions` |

@@ -194,6 +194,7 @@ class FallbackRepository {
       revoked_at: null,
       previous_refresh_token_hash: null,
       refresh_rotated_at: null,
+      refresh_token_grace: null,
     });
   }
 
@@ -230,11 +231,12 @@ class FallbackRepository {
     return this.sessions.get(sessionId) ?? null;
   }
 
-  async rotateSessionRefresh({ sessionId, newHash, previousHash, expiresAt }) {
+  async rotateSessionRefresh({ sessionId, newHash, previousHash, expiresAt, refreshTokenGrace }) {
     const session = this.sessions.get(sessionId);
     if (!session || session.revoked_at) return;
     session.previous_refresh_token_hash = previousHash;
     session.refresh_token_hash = newHash;
+    session.refresh_token_grace = refreshTokenGrace ?? null;
     session.refresh_rotated_at = new Date();
     if (expiresAt) session.expires_at = expiresAt;
   }

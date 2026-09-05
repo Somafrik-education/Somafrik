@@ -36,7 +36,7 @@ Depuis le lot P1 sur la même PR #504 : access JWT ≤ 15 min, refresh rotatif, 
 - Preuve dashboard « Data API disabled »
 - Preuve curl production/préprod avec la vraie clé `anon`
 - Analyse forensique des logs PostgREST
-- Notification CNIL / établissements (décision CTO, hors ce lot)
+- Notification : pour les données scolaires, informer **l’établissement responsable** sans délai injustifié ; la saisine CNIL appartient au responsable (décision CTO, hors ce lot)
 
 ## Contact
 

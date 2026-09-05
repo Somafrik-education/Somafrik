@@ -24,9 +24,11 @@
 ## Non clos par ce fichier
 
 - Preuve dashboard Supabase « Data API disabled »
-- DPA signés avec Render / Supabase / Expo
-- Notification CNIL / établissements sur l’incident Data API (décision CTO)
-- Promotion `main`, rebuild EAS AAB, import Play Data Safety
+- DPA **signés** avec Render / Supabase / Expo et avec chaque établissement
+- Hostname pooler Supabase live (région AWS) collé au registre — extraction ops, pas dans git
+- AIPD **signée CTO** (`aipd-somafrik.md` est rédigée, pas close)
+- Notification CNIL : pour les données scolaires, **l’établissement** notifie ; Somafrik notifie d’abord le responsable (`procedure-violation-donnees.md`)
+- Promotion `main`, rebuild EAS AAB, import Play Data Safety en Console
 - SMS / WhatsApp / e-mail transactionnel (non implémentés)
 
 ## Contact

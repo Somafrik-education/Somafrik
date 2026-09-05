@@ -86,7 +86,10 @@ async function main() {
       method: "POST",
       body: { refreshToken: session.refreshToken },
     });
-    // Fenêtre de grâce 15s : 401 reuse seulement hors grâce. On force un 2e refresh du nouveau jeton.
+    // Grâce 15 s : l'ancien refresh n'est pas un reuse ; le serveur renvoie le jeton **courant**, jamais l'ancien.
+    assert.equal(reuse.status, 200, JSON.stringify(reuse.data));
+    assert.equal(reuse.data.refreshToken, refreshed.data.refreshToken);
+    assert.notEqual(reuse.data.refreshToken, session.refreshToken);
     const second = await request("/auth/refresh", {
       method: "POST",
       body: { refreshToken: refreshed.data.refreshToken },

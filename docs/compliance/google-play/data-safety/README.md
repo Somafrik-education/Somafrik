@@ -4,8 +4,9 @@ Ce dossier est la source de vérité versionnée pour la déclaration **Sécurit
 
 ## Fichiers
 
-- `somafrik_google_play_data_safety.csv` : fichier à importer dans **Play Console → Contenu de l'application → Sécurité des données → Importer depuis le fichier CSV**.
-- `generate_data_safety_csv.py` : générateur déterministe du CSV. Les réponses métier doivent être modifiées dans ce script puis le CSV doit être régénéré.
+- `somafrik_google_play_data_safety.csv` : fichier **versionné** à importer dans **Play Console → Contenu de l'application → Sécurité des données → Importer depuis le fichier CSV**.
+- `CURRENT.sha256` : empreintes SHA-256 du CSV (CRLF d’import Play, et équivalent LF).
+- `generate_data_safety_csv.py` : générateur déterministe du CSV. Les réponses métier doivent être modifiées dans ce script puis le CSV doit être régénéré **et** `CURRENT.sha256` recalculé.
 
 ## Règle de maintenance
 
@@ -36,7 +37,9 @@ python3 docs/compliance/google-play/data-safety/generate_data_safety_csv.py
 6. Importer le CSV dans Play Console puis relire l’aperçu de la fiche Store avant envoi.
 7. Avant tout merge de la PR de mise à jour, effectuer un **diff GitHub indépendant** et vérifier qu’aucune réponse de conformité n’a changé sans justification.
 
-## État déclaré au 3 septembre 2026
+## État déclaré au 5 septembre 2026
+
+CSV régénéré et versionné dans git. **Réaudit Android final et nouvel AAB** restent dus avant import Play Console / GO store (mandat CTO #503). Ne pas traiter ce CSV comme une déclaration déjà contrôlée en Console.
 
 - collecte de données : **oui** ;
 - chiffrement en transit : **oui** ;

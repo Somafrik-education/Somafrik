@@ -801,11 +801,13 @@ CREATE TABLE IF NOT EXISTS sessions (
   revoke_reason TEXT,
   previous_refresh_token_hash TEXT,
   refresh_rotated_at TIMESTAMPTZ,
+  refresh_token_grace TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 ALTER TABLE sessions ADD COLUMN IF NOT EXISTS previous_refresh_token_hash TEXT;
 ALTER TABLE sessions ADD COLUMN IF NOT EXISTS refresh_rotated_at TIMESTAMPTZ;
+ALTER TABLE sessions ADD COLUMN IF NOT EXISTS refresh_token_grace TEXT;
 
 CREATE INDEX IF NOT EXISTS idx_sessions_expires_at ON sessions (expires_at);
 

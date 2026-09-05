@@ -11,6 +11,7 @@ describe("pages légales publiques", () => {
     expect(screen.getAllByText(/Baudouin Okito/).length).toBeGreaterThan(0);
     expect(screen.getByRole("link", { name: /cnil\.fr/i })).toHaveAttribute("href", expect.stringContaining("cnil.fr"));
     expect(screen.getByRole("link", { name: "Suppression de compte" })).toHaveAttribute("href", "/suppression-compte");
+    expect(document.body.textContent).not.toMatch(/docs\/compliance/);
   });
 
   it("expose une demande de suppression sans mot de passe et décrit la rétention", () => {

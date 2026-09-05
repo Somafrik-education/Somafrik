@@ -9,6 +9,7 @@
 | | |
 |---|---|
 | Algorithme | **HS256** (HMAC-SHA256), en-tête JWT `{ alg: "HS256", typ: "JWT" }` |
+| Contrôle verify | signature HMAC-SHA256 **puis** `header.alg === "HS256"` et `header.typ === "JWT"` (refus même si HMAC valide) |
 | Issuer | `somafrik-api` |
 | Types | `typ=access` / `typ=refresh` |
 
@@ -28,7 +29,7 @@ Aucune autre bibliothèque JWT n’est utilisée pour l’API Express.
 
 1. `POST /api/login` ou `POST /api/backoffice/login` → access + refresh ; hash SHA-256 du refresh en `sessions.refresh_token_hash` ; audit `mobile_login` / `backoffice_login` **sans** jeton.
 2. Access Bearer uniquement (`requireAuth`). JWT en query → 401.
-3. `POST /api/auth/refresh` → rotation in-place + `jti` ; grâce 15 s ; hors grâce / reuse → `revokeAllSessionsForUser` + 401 `REFRESH_REUSE_DETECTED`.
+3. `POST /api/auth/refresh` → rotation in-place + `jti`. Pendant **15 s**, une requête concurrente qui présente l’**ancien** refresh n’est pas un reuse : le serveur renvoie le **jeton courant** (celui qui a remplacé l’ancien), jamais l’ancien. Ce jeton courant est stocké chiffré (`refresh_token_grace`, AES-256-GCM dérivé de `JWT_SECRET`) le temps de la grâce. Hors grâce / reuse → `revokeAllSessionsForUser` + 401 `REFRESH_REUSE_DETECTED`.
 4. `POST /api/auth/logout` → révoque la session courante.
 5. `POST /api/auth/revoke-all` → toutes les sessions du `sub`.
 6. `POST /api/auth/change-password` → nouvel access sur la **même** `sessionId` ; **ne révoque pas** les autres appareils (écart documenté).

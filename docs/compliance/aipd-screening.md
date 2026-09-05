@@ -1,7 +1,8 @@
-# AIPD — screening (pas une AIPD complète)
+# AIPD — screening (annexe, pas une AIPD)
 
-**Date :** 2026-09-04  
-**Conclusion de ce screening :** une analyse d’impact formelle reste à **valider par le CTO** pour le traitement « plateforme scolaire multi-établissements contenant des données d’enfants ».
+**Date :** 2026-09-04, mis à jour 2026-09-05  
+**Ce fichier n’est pas une AIPD.** L’analyse formelle est `aipd-somafrik.md`.  
+**Décision CTO (5 septembre 2026) :** ne pas clore le sujet sur un screening. Enfants / personnes vulnérables + dimension multi-établissements → **AIPD formelle obligatoire** avant GO final.
 
 ## Critères CNIL (indicatif)
 
@@ -19,4 +20,4 @@
 
 **Mesures déjà dans le code :** cloisonnement établissement, deny Superadmin/Admin Pays, pas de Data API client, TTL court, refresh rotatif, workflow d’effacement partiel (compte, pas le dossier scolaire).
 
-Ce fichier n’est **pas** une AIPD signée. Il ne clôt pas l’obligation d’AIPD si le CTO la juge requise.
+Ce screening **ne remplace pas** `aipd-somafrik.md` et n’a **pas** de signature.
