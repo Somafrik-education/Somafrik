@@ -266,6 +266,32 @@ function createClientsPgStore(repo) {
           [schoolId, userId],
         );
       },
+      async getActiveStudentProfileByUser(userId, schoolId) {
+        const {
+          SELECT_ACTIVE_STUDENT_FOR_USER_SQL,
+        } = require("../lib/businessProfileIntegrity");
+        return one(SELECT_ACTIVE_STUDENT_FOR_USER_SQL, [userId, schoolId]);
+      },
+      async getActiveTeacherProfileByUser(userId, schoolId) {
+        const {
+          SELECT_ACTIVE_TEACHER_FOR_USER_SQL,
+        } = require("../lib/businessProfileIntegrity");
+        return one(SELECT_ACTIVE_TEACHER_FOR_USER_SQL, [userId, schoolId]);
+      },
+      async listActiveStudentProfilesByUserIds(userIds = []) {
+        if (!userIds.length) return [];
+        const {
+          SELECT_STUDENT_PROFILES_FOR_USERS_SQL,
+        } = require("../lib/businessProfileIntegrity");
+        return all(SELECT_STUDENT_PROFILES_FOR_USERS_SQL, [userIds]);
+      },
+      async listActiveTeacherProfilesByUserIds(userIds = []) {
+        if (!userIds.length) return [];
+        const {
+          SELECT_TEACHER_PROFILES_FOR_USERS_SQL,
+        } = require("../lib/businessProfileIntegrity");
+        return all(SELECT_TEACHER_PROFILES_FOR_USERS_SQL, [userIds]);
+      },
       async findAmbiguousTeacherIdentity(schoolId, identity) {
         const { isExactTeacherCivilIdentity } = require("../lib/teachersManagement");
         const { formatIsoDate } = require("./teachersRepository");
@@ -1514,8 +1540,17 @@ function createClientsPgStore(repo) {
         list.push(row.role_key);
         rolesByUser.set(String(row.user_id), list);
       }
+      const profiles = await userRoleLifecycleService.loadBusinessProfilesByUserIds(
+        bind({}),
+        users.map((row) => row.id),
+        rolesByUser,
+      );
       return users.map((row) =>
-        userRoleLifecycleService.hydrateUser(row, rolesByUser.get(String(row.id)) ?? []),
+        userRoleLifecycleService.hydrateUser(
+          row,
+          rolesByUser.get(String(row.id)) ?? [],
+          profiles.get(String(row.id)),
+        ),
       );
     },
     async listProjection() {
@@ -1539,6 +1574,11 @@ function createClientsPgStore(repo) {
         list.push(row.role_key);
         rolesByUser.set(String(row.user_id), list);
       }
+      const profiles = await userRoleLifecycleService.loadBusinessProfilesByUserIds(
+        bind({}),
+        users.map((row) => row.id),
+        rolesByUser,
+      );
       const contacts = await repo.all(
         `SELECT c.*, s.school_code, s.name AS school_name
          FROM contacts c
@@ -1572,7 +1612,11 @@ function createClientsPgStore(repo) {
       );
       return {
         users: users.map((row) =>
-          userRoleLifecycleService.hydrateUser(row, rolesByUser.get(String(row.id)) ?? []),
+          userRoleLifecycleService.hydrateUser(
+            row,
+            rolesByUser.get(String(row.id)) ?? [],
+            profiles.get(String(row.id)),
+          ),
         ),
         contacts: contacts.map(mapContactRow),
         relations: relations.map(mapRelationRow),

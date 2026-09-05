@@ -319,13 +319,35 @@ function createClassStudentsRepository(db) {
    * @returns {Promise<string>} secret temporaire en clair (one-shot)
    */
   async function ensureStudentLoginUser(tx, school, student, input) {
+    const {
+      SELECT_ACTIVE_TEACHER_OCCUPYING_CODE_SQL,
+      teacherToStudentConflict,
+    } = require("../lib/businessProfileIntegrity");
+
+    if (typeof tx.one === "function") {
+      try {
+        const occupyingTeacher = await tx.one(SELECT_ACTIVE_TEACHER_OCCUPYING_CODE_SQL, [
+          school.id,
+          student.student_code,
+        ]);
+        if (occupyingTeacher) {
+          const conflict = teacherToStudentConflict(occupyingTeacher);
+          throw createHttpError(conflict.status, conflict.message, conflict.code);
+        }
+      } catch (error) {
+        if (error?.statusCode) throw error;
+        if (String(error.code) !== "42P01") throw error;
+      }
+    }
+
     const temporarySecret = generateTemporarySecret();
     const secretHash = hashSecret(temporarySecret);
-    await tx.query(
+    const inserted = await tx.query(
       `INSERT INTO users (
          school_id, user_code, first_name, last_name, email, phone,
          password_hash, pin_hash, must_change_password, role, status
-       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $7, TRUE, 'STUDENT', 'active')`,
+       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $7, TRUE, 'STUDENT', 'active')
+       RETURNING id`,
       [
         school.id,
         student.student_code,
@@ -336,6 +358,18 @@ function createClassStudentsRepository(db) {
         secretHash,
       ],
     );
+    const userId = inserted?.rows?.[0]?.id ?? inserted?.id ?? null;
+    if (userId) {
+      try {
+        await tx.query(
+          `INSERT INTO user_roles (user_id, school_id, role_key, granted_at, status)
+           VALUES ($1, $2, 'STUDENT', NOW(), 'active')`,
+          [userId, school.id],
+        );
+      } catch (error) {
+        if (String(error.code) !== "42P01") throw error;
+      }
+    }
     return temporarySecret;
   }
 

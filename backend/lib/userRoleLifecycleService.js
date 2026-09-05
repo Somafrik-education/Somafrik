@@ -37,18 +37,27 @@ const {
   isUserRolesUniqueViolation,
   isUserCodeUniqueViolation,
 } = require("./userRoleLifecycle");
+const {
+  buildBusinessProfile,
+  emptyBusinessProfile,
+  isBusinessProfileConflictError,
+  studentToTeacherConflict,
+  teacherToStudentConflict,
+} = require("./businessProfileIntegrity");
 
 const SCHOOL_ADMIN_KEY = "SCHOOL_ADMIN";
 const TEACHER_KEY = "TEACHER";
+const STUDENT_KEY = "STUDENT";
 const PENDING_VALIDATION_STATUS = "En attente de validation";
 
 function actorUserId(principal) {
   return asTrimmed(principal?.sub || principal?.id || principal?.userId);
 }
 
-function hydrateUser(row, roleKeys = []) {
+function hydrateUser(row, roleKeys = [], businessProfile = null) {
   const mapped = mapUserRow(row);
   const display = displayRoles(roleKeys);
+  const profile = businessProfile || emptyBusinessProfile(roleKeys);
   return {
     ...mapped,
     role: display.role,
@@ -56,7 +65,104 @@ function hydrateUser(row, roleKeys = []) {
     roleKeys: display.roleKeys,
     secondaryRoles: display.roles.slice(1),
     assignmentStatus: display.assignmentStatus,
+    accountKind: profile.accountKind,
+    linkedStudent: profile.linkedStudent,
+    linkedTeacher: profile.linkedTeacher,
+    businessProfileConflict: Boolean(profile.businessProfileConflict),
   };
+}
+
+function throwBusinessProfileConflict(conflict) {
+  throw createUserRoleError(conflict.status, conflict.message, conflict.code, conflict.details);
+}
+
+function mapGrantPgError(error) {
+  if (isBusinessProfileConflictError(error)) {
+    const message = String(error.message ?? "");
+    const conflict =
+      message.includes("cannot receive STUDENT") || (message.includes("teacher") && message.includes("STUDENT"))
+        ? teacherToStudentConflict()
+        : studentToTeacherConflict();
+    throw createUserRoleError(conflict.status, conflict.message, USER_ROLE_ERROR.BUSINESS_PROFILE_CONFLICT, conflict.details);
+  }
+  throw error;
+}
+
+async function loadBusinessProfile(tx, user, roleKeys = []) {
+  if (!user) return emptyBusinessProfile(roleKeys);
+  const schoolId = user.school_id ?? user.schoolId ?? null;
+  let studentRow = null;
+  let teacherRow = null;
+  if (schoolId && typeof tx.getActiveStudentProfileByUser === "function") {
+    studentRow = await tx.getActiveStudentProfileByUser(user.id, schoolId);
+  }
+  if (schoolId && typeof tx.getActiveTeacherProfileByUser === "function") {
+    teacherRow = await tx.getActiveTeacherProfileByUser(user.id, schoolId);
+  }
+  return buildBusinessProfile({ studentRow, teacherRow, roleKeys });
+}
+
+async function loadBusinessProfilesByUserIds(tx, userIds = [], roleKeysByUser = new Map()) {
+  const map = new Map();
+  const ids = [...new Set((userIds ?? []).map((id) => String(id ?? "").trim()).filter(Boolean))];
+  if (!ids.length) return map;
+
+  const studentRows =
+    typeof tx.listActiveStudentProfilesByUserIds === "function"
+      ? await tx.listActiveStudentProfilesByUserIds(ids)
+      : [];
+  const teacherRows =
+    typeof tx.listActiveTeacherProfilesByUserIds === "function"
+      ? await tx.listActiveTeacherProfilesByUserIds(ids)
+      : [];
+
+  const studentsByUser = new Map();
+  for (const row of studentRows ?? []) {
+    studentsByUser.set(String(row.user_id), {
+      id: row.student_id ?? row.id,
+      student_code: row.student_code,
+      status: row.status,
+    });
+  }
+  const teachersByUser = new Map();
+  for (const row of teacherRows ?? []) {
+    teachersByUser.set(String(row.user_id), {
+      id: row.teacher_id ?? row.id,
+      teacher_code: row.teacher_code,
+      status: row.status,
+    });
+  }
+
+  for (const id of ids) {
+    map.set(
+      id,
+      buildBusinessProfile({
+        studentRow: studentsByUser.get(id) ?? null,
+        teacherRow: teachersByUser.get(id) ?? null,
+        roleKeys: roleKeysByUser.get(id) ?? [],
+      }),
+    );
+  }
+  return map;
+}
+
+async function assertBusinessProfileGrantAllowed(tx, user, school, roleKey) {
+  const schoolId = school?.id ?? user.school_id ?? null;
+  if (!schoolId) return;
+
+  if (roleKey === TEACHER_KEY && typeof tx.getActiveStudentProfileByUser === "function") {
+    const studentProfile = await tx.getActiveStudentProfileByUser(user.id, schoolId);
+    if (studentProfile) {
+      throwBusinessProfileConflict(studentToTeacherConflict(studentProfile));
+    }
+  }
+
+  if (roleKey === STUDENT_KEY && typeof tx.getActiveTeacherProfileByUser === "function") {
+    const teacherProfile = await tx.getActiveTeacherProfileByUser(user.id, schoolId);
+    if (teacherProfile) {
+      throwBusinessProfileConflict(teacherToStudentConflict(teacherProfile));
+    }
+  }
 }
 
 async function loadRoleKeys(tx, userId) {
@@ -70,7 +176,8 @@ async function loadRoleKeys(tx, userId) {
 async function hydrateUserRow(tx, row) {
   if (!row) return null;
   const roleKeys = await loadRoleKeys(tx, row.id);
-  return hydrateUser(row, roleKeys);
+  const businessProfile = await loadBusinessProfile(tx, row, roleKeys);
+  return hydrateUser(row, roleKeys, businessProfile);
 }
 
 async function allocateUserCode(tx) {
@@ -282,6 +389,8 @@ async function grantRole(store, userId, rawPayload, principal, auditMeta) {
       );
     }
 
+    await assertBusinessProfileGrantAllowed(tx, locked, school, roleKey);
+
     let teacherEffect = null;
     try {
       await tx.insertUserRole({
@@ -294,14 +403,18 @@ async function grantRole(store, userId, rawPayload, principal, auditMeta) {
       if (isUserRolesUniqueViolation(error)) {
         throw createUserRoleError(409, "Ce rôle est déjà attribué.", USER_ROLE_ERROR.ROLE_ALREADY_GRANTED);
       }
-      throw error;
+      mapGrantPgError(error);
     }
 
     if (roleKey === TEACHER_KEY) {
       if (!school) {
         throw createUserRoleError(400, "Établissement requis pour le profil enseignant.");
       }
-      teacherEffect = await activateTeacherProfile(tx, locked, school, principal);
+      try {
+        teacherEffect = await activateTeacherProfile(tx, locked, school, principal);
+      } catch (error) {
+        mapGrantPgError(error);
+      }
     }
 
     const afterKeys = await loadRoleKeys(tx, locked.id);
@@ -328,7 +441,8 @@ async function grantRole(store, userId, rawPayload, principal, auditMeta) {
     }
 
     const saved = await tx.getUserById(locked.id);
-    const hydrated = hydrateUser(saved, afterKeys);
+    const businessProfile = await loadBusinessProfile(tx, saved, afterKeys);
+    const hydrated = hydrateUser(saved, afterKeys, businessProfile);
 
     await tx.recordClientsAudit({
       schoolCode,
@@ -425,7 +539,8 @@ async function revokeRole(store, userId, rawPayload, principal, auditMeta) {
     const afterKeys = await loadRoleKeys(tx, locked.id);
     await syncPrimaryRole(tx, locked.id, afterKeys);
     const saved = await tx.getUserById(locked.id);
-    const hydrated = hydrateUser(saved, afterKeys);
+    const businessProfile = await loadBusinessProfile(tx, saved, afterKeys);
+    const hydrated = hydrateUser(saved, afterKeys, businessProfile);
 
     await tx.recordClientsAudit({
       schoolCode,
@@ -483,6 +598,7 @@ async function listAssignableRolesForPrincipal(store, principal) {
 module.exports = {
   hydrateUser,
   hydrateUserRow,
+  loadBusinessProfilesByUserIds,
   allocateUserCode,
   syncPrimaryRole,
   grantRole,

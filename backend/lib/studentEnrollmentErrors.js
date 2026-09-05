@@ -62,6 +62,15 @@ function mapStudentEnrollmentPgError(error) {
   if (message.includes("STUDENT_CANONICAL_IDENTIFIER_REQUIRED")) {
     return createHttpError(409, "Le compte élève doit reprendre le matricule PostgreSQL.", "STUDENT_CANONICAL_IDENTIFIER_REQUIRED");
   }
+  if (message.includes("BUSINESS_PROFILE_CONFLICT")) {
+    return createHttpError(
+      409,
+      message.includes("teacher")
+        ? "Ce compte est lié à un enseignant actif. Il ne peut pas être inscrit comme élève. Fermez d'abord le profil enseignant via un workflow de conversion explicite."
+        : "Ce compte est lié à un élève actif. Le rôle Enseignant ne peut pas lui être attribué.",
+      "BUSINESS_PROFILE_CONFLICT",
+    );
+  }
 
   if (code === "23505") {
     if (constraint === "uq_users_school_phone" || detail.includes("(phone)")) {

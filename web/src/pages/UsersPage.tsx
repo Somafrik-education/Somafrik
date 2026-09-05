@@ -22,6 +22,11 @@ import {
   getUserEstablishmentLabel,
   getUserFormFieldPolicy,
   isCountryAdminProvisionedUser,
+  isStudentLinkedAccount,
+  canAssignRoleToUserAccount,
+  accountKindLabel,
+  isTeacherRoleLabel,
+  STUDENT_TEACHER_ROLE_CONFLICT_MESSAGE,
   schoolsMatchingCountryScope,
   toCreateUserApiPayload,
   toProvisionUserApiPayload,
@@ -348,6 +353,10 @@ export function UsersPage() {
     try {
       for (const role of next) {
         if (!current.has(role)) {
+          if (!canAssignRoleToUserAccount(assigning, role)) {
+            showToast(STUDENT_TEACHER_ROLE_CONFLICT_MESSAGE, "error");
+            return;
+          }
           await clientsApi.grantUserRole(String(assigning.id), role);
         }
       }
@@ -443,6 +452,11 @@ export function UsersPage() {
               {u.firstName} {u.lastName}
             </p>
             <p className="text-xs text-muted">{u.publicId ?? u.identifier}</p>
+            {accountKindLabel(u) ? (
+              <p className={`text-xs font-semibold ${u.accountKind === "conflict" ? "text-red-700" : "text-brand"}`}>
+                {accountKindLabel(u)}
+              </p>
+            ) : null}
           </div>
         </div>
       ),
@@ -702,7 +716,11 @@ export function UsersPage() {
             ) : null}
             <dl className="grid grid-cols-2 gap-4 text-sm">
               <Row label="Identifiant" value={detail.publicId ?? detail.identifier} />
+              <Row label="Type de compte" value={accountKindLabel(detail) ?? "Compte staff"} />
               <Row label="Rôle(s)" value={formatUserRolesDisplay(detail)} />
+              {detail.linkedStudent?.studentCode ? (
+                <Row label="Profil élève" value={detail.linkedStudent.studentCode} />
+              ) : null}
               <Row label="Email" value={detail.email} />
               <Row label="Téléphone" value={detail.phone} />
               <Row label="Périmètre" value={detail.scopeLevel} />
@@ -981,15 +999,24 @@ export function UsersPage() {
         }
       >
         <div className="grid gap-2">
+          {assigning && isStudentLinkedAccount(assigning) ? (
+            <p className="rounded-lg border border-amber/30 bg-amber/10 px-3 py-2 text-sm text-ink">
+              {STUDENT_TEACHER_ROLE_CONFLICT_MESSAGE}
+            </p>
+          ) : null}
           {assignableRoles.length === 0 ? (
             <p className="text-sm text-muted">Aucun rôle attribuable pour votre périmètre.</p>
           ) : (
-            assignableRoles.map((role) => (
+            assignableRoles.map((role) => {
+              const incompatible = assigning ? !canAssignRoleToUserAccount(assigning, role.roleName) : false;
+              return (
               <label key={role.roleKey} className="flex items-center gap-2 rounded-lg border border-line px-3 py-2 text-sm">
                 <input
                   type="checkbox"
                   checked={selectedRoles.includes(role.roleName)}
+                  disabled={incompatible}
                   onChange={(event) => {
+                    if (incompatible) return;
                     setSelectedRoles((current) =>
                       event.target.checked
                         ? [...current, role.roleName]
@@ -998,8 +1025,12 @@ export function UsersPage() {
                   }}
                 />
                 {role.roleName}
+                {incompatible && isTeacherRoleLabel(role.roleName) ? (
+                  <span className="text-xs text-muted">incompatible avec un profil élève</span>
+                ) : null}
               </label>
-            ))
+              );
+            })
           )}
         </div>
       </Modal>

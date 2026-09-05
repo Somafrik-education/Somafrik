@@ -29,6 +29,13 @@ function main() {
   assert.equal(phone.statusCode, 409);
   assert.equal(phone.code, "PARENT_PHONE_TAKEN");
 
+  const dual = mapStudentEnrollmentPgError(
+    new Error("BUSINESS_PROFILE_CONFLICT: teacher ENS-1 cannot receive STUDENT role"),
+  );
+  assert.equal(dual.statusCode, 409);
+  assert.equal(dual.code, "BUSINESS_PROFILE_CONFLICT");
+  assert.match(dual.message, /enseignant actif/i);
+
   console.log("studentEnrollmentErrors.test.js: OK");
 }
 

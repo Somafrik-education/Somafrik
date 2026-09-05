@@ -253,6 +253,55 @@ export function formatUserRolesDisplay(user: Pick<UserAccount, "role" | "roles" 
   return "Sans affectation";
 }
 
+export function isStudentLinkedAccount(
+  user: Pick<UserAccount, "accountKind" | "linkedStudent" | "role" | "roles" | "roleKeys">,
+): boolean {
+  if (user.accountKind === "student_login" || user.accountKind === "conflict") return true;
+  if (user.linkedStudent?.studentId || user.linkedStudent?.studentCode) return true;
+  const tokens = [
+    user.role,
+    ...(user.roles ?? []),
+    ...(user.roleKeys ?? []),
+  ]
+    .map((value) => normalize(String(value ?? "")))
+    .filter(Boolean);
+  return tokens.some((value) => value === "eleve / etudiant" || value === "student" || value === "eleve");
+}
+
+export function isTeacherRoleLabel(role: string | undefined | null): boolean {
+  const value = normalize(String(role ?? ""));
+  return value === "enseignant" || value === "teacher";
+}
+
+export function canAssignRoleToUserAccount(
+  user: Pick<UserAccount, "accountKind" | "linkedStudent" | "linkedTeacher" | "role" | "roles" | "roleKeys">,
+  roleName: string,
+): boolean {
+  if (isStudentLinkedAccount(user) && isTeacherRoleLabel(roleName)) return false;
+  if ((user.linkedTeacher || user.accountKind === "teacher" || user.accountKind === "conflict") && normalize(roleName) === "eleve / etudiant") {
+    return false;
+  }
+  return true;
+}
+
+export function accountKindLabel(
+  user: Pick<UserAccount, "accountKind" | "linkedStudent" | "businessProfileConflict">,
+): string | null {
+  if (user.accountKind === "conflict" || user.businessProfileConflict) {
+    return "Conflit élève + enseignant";
+  }
+  if (user.accountKind === "student_login" || user.linkedStudent) {
+    return "Compte lié à un élève";
+  }
+  if (user.accountKind === "teacher") {
+    return "Profil enseignant";
+  }
+  return null;
+}
+
+export const STUDENT_TEACHER_ROLE_CONFLICT_MESSAGE =
+  "Ce compte est lié à un élève actif. Le rôle Enseignant n'est pas compatible. Un compte utilisateur n'est pas un profil métier.";
+
 /** Rôles disponibles pour créer un compte (liste établissement + rôles déjà utilisés). */
 export function getCreatableUserRoles(
   currentUser: SessionUser | null | undefined,

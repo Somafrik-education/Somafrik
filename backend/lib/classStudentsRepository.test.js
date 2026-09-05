@@ -65,6 +65,10 @@ function createMemoryDb() {
     async one(sql, params = []) {
       const text = String(sql).replace(/\s+/g, " ").trim().toUpperCase();
 
+      if (text.includes("FROM TEACHERS T")) {
+        return null;
+      }
+
       if (text.includes("FROM CLASSES CL") && text.includes("WHERE CL.CLASS_CODE")) {
         const classCode = params[0];
         const schoolId = params[1];
@@ -243,6 +247,7 @@ function createMemoryDb() {
         return { rows: [] };
       }
       if (text.startsWith("INSERT INTO USERS")) {
+        const { randomUUID } = require("node:crypto");
         const userCode = params[1];
         if (users.some((row) => row.user_code === userCode)) {
           const error = new Error(
@@ -252,6 +257,7 @@ function createMemoryDb() {
           throw error;
         }
         const row = {
+          id: randomUUID(),
           user_code: userCode,
           school_id: params[0],
           password_hash: params[6],
@@ -260,6 +266,9 @@ function createMemoryDb() {
           role: "STUDENT",
         };
         users.push(row);
+        return { rows: [row] };
+      }
+      if (text.startsWith("INSERT INTO USER_ROLES")) {
         return { rows: [] };
       }
       throw new Error(`Unhandled query(): ${text}`);
@@ -499,6 +508,25 @@ async function main() {
   assert.equal(verifySecret("1234", storedAwa.password_hash), false);
   assertStudentProjectionHasNoSecret(enrolled.student);
   assertStudentProjectionHasNoSecret(enrolledBi.student);
+  assert.equal(storedAwa.role, "STUDENT");
+
+  const previousOne = db.one.bind(db);
+  db.one = async (sql, params = []) => {
+    const text = String(sql).replace(/\s+/g, " ").trim().toUpperCase();
+    if (text.includes("FROM TEACHERS T")) {
+      return { id: "teacher-block", teacher_code: "ENS-BLOCK", status: "active" };
+    }
+    return previousOne(sql, params);
+  };
+  await assert.rejects(
+    () =>
+      repo.enroll(activeClass.class_code, "CD-2026-0001", {
+        firstName: "Prof",
+        lastName: "Converti",
+      }),
+    (error) => error.statusCode === 409 && error.code === "BUSINESS_PROFILE_CONFLICT",
+  );
+  db.one = previousOne;
 
   const generated = new Set(Array.from({ length: 32 }, () => generateTemporarySecret()));
   assert.equal(generated.size, 32);

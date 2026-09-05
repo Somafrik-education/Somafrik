@@ -87,6 +87,9 @@ function assertStaticGuards() {
   assert.match(createTeacher, /createTransactionalClientsStore/);
   assert.match(createTeacher, /withTransaction/);
   assert.doesNotMatch(createTeacher, /sans rôle Enseignant/);
+  const integrity = fs.readFileSync(path.join(ROOT, "backend/lib/userRoleLifecycleService.js"), "utf8");
+  assert.match(integrity, /BUSINESS_PROFILE_CONFLICT/);
+  assert.match(integrity, /assertBusinessProfileGrantAllowed/);
 }
 
 async function main() {

@@ -187,6 +187,86 @@ async function main() {
   assert.notEqual(createA.id, createB.id);
   assert.notEqual(createA.publicId, createB.publicId);
 
+  const studentIdentity = "CD-ITS-MR-26-00003";
+  assert.match(studentIdentity, /^[A-Z]{2}-[A-Z0-9]{2,5}-[A-Z0-9]{1,5}-\d{2}-\d{5}$/);
+  const studentUser = await store.createUser(
+    { firstName: "Marc", lastName: "Rumba", email: "marc.rumba.student@test.local" },
+    schoolAdmin,
+    auditMeta,
+  );
+  const studentUserRow = store._tables.users.find((row) => row.id === studentUser.id);
+  studentUserRow.user_code = studentIdentity;
+  studentUserRow.identity_code = studentIdentity;
+  studentUserRow.login_code = studentIdentity;
+  store._tables.students.push({
+    id: "student-its-mr",
+    school_id: "school-cd",
+    student_code: studentIdentity,
+    studentCode: studentIdentity,
+    first_name: "Marc",
+    last_name: "Rumba",
+    status: "active",
+  });
+
+  const listedStudent = store.listProjection().users.find((row) => row.id === studentUser.id);
+  assert.equal(listedStudent.accountKind, "student_login");
+  assert.equal(listedStudent.linkedStudent.studentCode, studentIdentity);
+  assert.equal(listedStudent.linkedTeacher, null);
+
+  const teacherCountBefore = store._tables.teachers.filter((row) => row.user_id === studentUser.id).length;
+  await expectRejection(
+    store.grantUserRole(studentUser.id, { role: "Enseignant" }, schoolAdmin, auditMeta),
+    { status: 409, code: USER_ROLE_ERROR.BUSINESS_PROFILE_CONFLICT },
+  );
+  assert.equal(
+    store._tables.teachers.filter((row) => row.user_id === studentUser.id).length,
+    teacherCountBefore,
+    "aucune ligne teacher créée (atomicité)",
+  );
+  assert.equal(
+    store._tables.userRoles.filter(
+      (row) => row.user_id === studentUser.id && row.role_key === "TEACHER" && row.status === "active",
+    ).length,
+    0,
+  );
+
+  const staffTeacher = await store.createUser(
+    { firstName: "Sarah", lastName: "Kalala", email: "sarah.kalala@test.local" },
+    schoolAdmin,
+    auditMeta,
+  );
+  const staffGranted = await store.grantUserRole(staffTeacher.id, { role: "Enseignant" }, schoolAdmin, auditMeta);
+  assert.deepEqual(staffGranted.roleKeys, ["TEACHER"]);
+  assert.equal(staffGranted.accountKind, "teacher");
+  assert.ok(store._tables.teachers.some((row) => row.user_id === staffTeacher.id));
+
+  await expectRejection(
+    store.grantUserRole(staffTeacher.id, { role: "STUDENT" }, schoolAdmin, auditMeta),
+    { status: 403, code: USER_ROLE_ERROR.STUDENT_ROLE_FORBIDDEN },
+  );
+  assert.equal(
+    store._tables.students.filter((row) => (row.student_code || row.studentCode) === staffGranted.identityCode).length,
+    0,
+    "grant STUDENT interdit : aucun profil élève fabriqué",
+  );
+
+  const otherTenantStudent = {
+    id: "student-bi",
+    school_id: "school-bi",
+    student_code: studentIdentity,
+    studentCode: studentIdentity,
+    status: "active",
+  };
+  store._tables.students.push(otherTenantStudent);
+  const isolated = await store.createUser(
+    { firstName: "Isolé", lastName: "Tenant", email: "isole.tenant@test.local", schoolCode: "BI-2026-0001" },
+    biAdmin,
+    auditMeta,
+  );
+  const isolatedGranted = await store.grantUserRole(isolated.id, { role: "Enseignant" }, biAdmin, auditMeta);
+  assert.deepEqual(isolatedGranted.roleKeys, ["TEACHER"]);
+  assert.ok(store._tables.teachers.some((row) => row.user_id === isolated.id));
+
   console.log("userRoleLifecycle.test.js OK");
 }
 
