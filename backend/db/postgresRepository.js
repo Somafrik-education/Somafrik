@@ -2139,18 +2139,30 @@ class PostgresRepository {
     );
   }
 
-  async rotateSessionRefresh({ sessionId, newHash, previousHash, expiresAt, refreshTokenGrace }) {
+  async rotateSessionRefresh({
+    sessionId,
+    newHash,
+    previousHash,
+    expiresAt,
+    refreshTokenGrace,
+    expectedCurrentHash,
+  }) {
     await this.init();
-    await this.query(
+    const expected = String(expectedCurrentHash ?? "").trim();
+    if (!expected) return false;
+    const result = await this.query(
       `UPDATE sessions
        SET previous_refresh_token_hash = $2,
            refresh_token_hash = $3,
            refresh_token_grace = $4,
            refresh_rotated_at = NOW(),
            expires_at = $5
-       WHERE session_code = $1 AND revoked_at IS NULL`,
-      [sessionId, previousHash, newHash, refreshTokenGrace ?? null, expiresAt],
+       WHERE session_code = $1
+         AND refresh_token_hash = $6
+         AND revoked_at IS NULL`,
+      [sessionId, previousHash, newHash, refreshTokenGrace ?? null, expiresAt, expected],
     );
+    return (result.rowCount ?? 0) > 0;
   }
 
   async revokeAllSessionsForUser(userId, reason = "revoke_all") {
@@ -2194,7 +2206,14 @@ class PostgresRepository {
 
   async getPrivacyRequest(requestId) {
     await this.init();
-    return this.one("SELECT * FROM privacy_requests WHERE id = $1 OR request_code = $1", [requestId]);
+    const key = String(requestId ?? "").trim();
+    if (!key) return null;
+    // id est uuid : comparer en texte évite l'erreur PG « uuid = text » (500)
+    // quand le client passe un request_code (PRV-…) ou un identifiant mixte.
+    return this.one(
+      "SELECT * FROM privacy_requests WHERE id::text = $1 OR request_code = $1",
+      [key],
+    );
   }
 
   async listPrivacyRequests({ schoolCode, status } = {}) {

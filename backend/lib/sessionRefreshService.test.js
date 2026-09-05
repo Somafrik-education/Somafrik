@@ -98,6 +98,72 @@ test("refresh concurrent dans la fenêtre de grâce renvoie le jeton courant, ja
   assert.notEqual(followUp.refreshToken, rotated.refreshToken);
 });
 
+test("rotateSessionRefresh refuse un hash qui n'est plus courant (CAS)", async () => {
+  const repo = new FallbackRepository();
+  const service = tokens();
+  const first = await seededSession(repo, service);
+  const rotated = await rotateRefreshSession({
+    repository: repo,
+    tokenService: service,
+    refreshToken: first.token,
+  });
+  const lost = await repo.rotateSessionRefresh({
+    sessionId: first.sessionId,
+    newHash: "attacker-hash",
+    previousHash: service.hashToken(first.token),
+    expiresAt: new Date(Date.now() + 60_000),
+    refreshTokenGrace: "v1.forged",
+    expectedCurrentHash: service.hashToken(first.token),
+  });
+  assert.equal(lost, false);
+  const session = await repo.findSessionByCode(first.sessionId);
+  assert.equal(session.refresh_token_hash, service.hashToken(rotated.refreshToken));
+  assert.notEqual(session.refresh_token_hash, "attacker-hash");
+});
+
+test("deux workers voient le même hash : un seul rotate, l'autre reçoit le jeton courant", async () => {
+  const repo = new FallbackRepository();
+  const service = tokens();
+  const first = await seededSession(repo, service);
+  const originalRotate = repo.rotateSessionRefresh.bind(repo);
+  let entered = 0;
+  let releaseBoth;
+  const bothEntered = new Promise((resolve) => {
+    releaseBoth = resolve;
+  });
+  repo.rotateSessionRefresh = async (args) => {
+    entered += 1;
+    if (entered === 2) releaseBoth();
+    await bothEntered;
+    return originalRotate(args);
+  };
+
+  const [a, b] = await Promise.all([
+    rotateRefreshSession({ repository: repo, tokenService: service, refreshToken: first.token }),
+    rotateRefreshSession({ repository: repo, tokenService: service, refreshToken: first.token }),
+  ]);
+
+  assert.equal(a.refreshToken, b.refreshToken, "les deux clients doivent converger sur le jeton courant");
+  assert.notEqual(a.refreshToken, first.token);
+  assert.equal(Number(a.rotated) + Number(b.rotated), 1, "un seul worker doit gagner le CAS");
+
+  const followUp = await rotateRefreshSession({
+    repository: repo,
+    tokenService: service,
+    refreshToken: a.refreshToken,
+  });
+  assert.equal(followUp.rotated, true);
+  assert.notEqual(followUp.refreshToken, a.refreshToken);
+});
+
+test("rotateSessionRefresh PostgreSQL compare-and-swap sur le hash présenté", () => {
+  const fs = require("node:fs");
+  const path = require("node:path");
+  const src = fs.readFileSync(path.join(__dirname, "../db/postgresRepository.js"), "utf8");
+  assert.match(src, /AND refresh_token_hash = \$6/);
+  assert.match(src, /expectedCurrentHash/);
+});
+
 test("grâce sans jeton courant reconstitutable ne redonne pas l'ancien refresh", async () => {
   const repo = new FallbackRepository();
   const service = tokens();

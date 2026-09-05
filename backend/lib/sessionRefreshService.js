@@ -46,6 +46,29 @@ function currentRefreshForGrace(tokenService, session, currentHash) {
   return null;
 }
 
+function graceReplay(tokenService, session, currentHash, payload) {
+  const currentToken = currentRefreshForGrace(tokenService, session, currentHash);
+  if (!currentToken) {
+    throw unauthorized("Session expirée ou révoquée", "SESSION_REVOKED");
+  }
+  return {
+    refreshToken: currentToken,
+    rotated: false,
+    session,
+    payload,
+  };
+}
+
+function inGraceWindow(session, presentedHash, now, graceMs) {
+  const previousHash = hashOf(session, "previous_refresh_token_hash");
+  return Boolean(
+    previousHash &&
+      previousHash === presentedHash &&
+      rotatedAtMs(session) > 0 &&
+      now - rotatedAtMs(session) < graceMs,
+  );
+}
+
 async function rotateRefreshSession({
   repository,
   tokenService,
@@ -77,11 +100,7 @@ async function rotateRefreshSession({
   const currentHash = hashOf(session, "refresh_token_hash");
   const previousHash = hashOf(session, "previous_refresh_token_hash");
   const matchesCurrent = currentHash && currentHash === presentedHash;
-  const inGrace =
-    previousHash &&
-    previousHash === presentedHash &&
-    rotatedAtMs(session) > 0 &&
-    now - rotatedAtMs(session) < graceMs;
+  const inGrace = inGraceWindow(session, presentedHash, now, graceMs);
 
   if (!matchesCurrent && previousHash === presentedHash && !inGrace) {
     if (typeof repository.revokeAllSessionsForUser === "function") {
@@ -97,16 +116,7 @@ async function rotateRefreshSession({
   }
 
   if (inGrace) {
-    const currentToken = currentRefreshForGrace(tokenService, session, currentHash);
-    if (!currentToken) {
-      throw unauthorized("Session expirée ou révoquée", "SESSION_REVOKED");
-    }
-    return {
-      refreshToken: currentToken,
-      rotated: false,
-      session,
-      payload,
-    };
+    return graceReplay(tokenService, session, currentHash, payload);
   }
 
   const nextRefresh = tokenService.createRefreshToken(
@@ -122,13 +132,35 @@ async function rotateRefreshSession({
     { sessionId },
   );
 
-  await repository.rotateSessionRefresh({
+  const claimed = await repository.rotateSessionRefresh({
     sessionId,
     newHash: tokenService.hashToken(nextRefresh.token),
     previousHash: presentedHash,
     expiresAt: nextRefresh.expiresAt,
     refreshTokenGrace: tokenService.sealRefreshToken(nextRefresh.token),
+    expectedCurrentHash: presentedHash,
   });
+
+  if (!claimed) {
+    const latest = await repository.findSessionByCode(sessionId);
+    if (!latest || latest.revoked_at || isExpired(latest, now)) {
+      throw unauthorized("Session expirée ou révoquée", "SESSION_REVOKED");
+    }
+    const latestCurrent = hashOf(latest, "refresh_token_hash");
+    const latestPrevious = hashOf(latest, "previous_refresh_token_hash");
+    if (inGraceWindow(latest, presentedHash, now, graceMs)) {
+      return graceReplay(tokenService, latest, latestCurrent, payload);
+    }
+    if (latestPrevious === presentedHash) {
+      if (typeof repository.revokeAllSessionsForUser === "function") {
+        await repository.revokeAllSessionsForUser(sessionUserId(latest), "refresh_reuse");
+      } else {
+        await repository.revokeSession(sessionId, "refresh_reuse");
+      }
+      throw unauthorized("Session expirée ou révoquée", "REFRESH_REUSE_DETECTED");
+    }
+    throw unauthorized("Session expirée ou révoquée", "SESSION_REVOKED");
+  }
 
   return {
     refreshToken: nextRefresh.token,
