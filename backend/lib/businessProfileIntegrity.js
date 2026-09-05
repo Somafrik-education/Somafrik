@@ -121,9 +121,26 @@ function resolveAccountKind({ linkedStudent, linkedTeacher, roleKeys = [] } = {}
   return "unassigned";
 }
 
+const BUSINESS_PROFILE_KIND_LABELS = Object.freeze({
+  student_login: "Compte lié à un élève",
+  teacher: "Profil enseignant",
+  staff: "Compte staff",
+  unassigned: "Sans affectation",
+  conflict: "Conflit élève + enseignant",
+});
+
+const ACCESS_ROLES_NONE_LABEL = "Aucun rôle d'accès";
+
+function businessProfileKindLabel(kind) {
+  const key = asTrimmed(kind);
+  return BUSINESS_PROFILE_KIND_LABELS[key] || BUSINESS_PROFILE_KIND_LABELS.unassigned;
+}
+
 function emptyBusinessProfile(roleKeys = []) {
+  const accountKind = resolveAccountKind({ roleKeys });
   return {
-    accountKind: resolveAccountKind({ roleKeys }),
+    accountKind,
+    businessProfileLabel: businessProfileKindLabel(accountKind),
     linkedStudent: null,
     linkedTeacher: null,
     businessProfileConflict: false,
@@ -136,6 +153,7 @@ function buildBusinessProfile({ studentRow, teacherRow, roleKeys = [] } = {}) {
   const accountKind = resolveAccountKind({ linkedStudent, linkedTeacher, roleKeys });
   return {
     accountKind,
+    businessProfileLabel: businessProfileKindLabel(accountKind),
     linkedStudent,
     linkedTeacher,
     businessProfileConflict: accountKind === "conflict",
@@ -255,6 +273,9 @@ module.exports = {
   findActiveStudentProfileForUser,
   findActiveTeacherProfileForUser,
   resolveAccountKind,
+  businessProfileKindLabel,
+  BUSINESS_PROFILE_KIND_LABELS,
+  ACCESS_ROLES_NONE_LABEL,
   emptyBusinessProfile,
   buildBusinessProfile,
   studentToTeacherConflict,

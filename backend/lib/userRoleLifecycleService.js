@@ -40,6 +40,7 @@ const {
 const {
   buildBusinessProfile,
   emptyBusinessProfile,
+  businessProfileKindLabel,
   isBusinessProfileConflictError,
   isOptionalProfileLookupError,
   studentToTeacherConflict,
@@ -67,6 +68,7 @@ function hydrateUser(row, roleKeys = [], businessProfile = null) {
     secondaryRoles: display.roles.slice(1),
     assignmentStatus: display.assignmentStatus,
     accountKind: profile.accountKind,
+    businessProfileLabel: profile.businessProfileLabel || businessProfileKindLabel(profile.accountKind),
     linkedStudent: profile.linkedStudent,
     linkedTeacher: profile.linkedTeacher,
     businessProfileConflict: Boolean(profile.businessProfileConflict),

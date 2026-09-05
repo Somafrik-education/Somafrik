@@ -77,6 +77,15 @@ describe("businessProfileIntegrity", () => {
     });
     assert.equal(conflict.accountKind, "conflict");
     assert.equal(conflict.businessProfileConflict, true);
+    assert.equal(conflict.businessProfileLabel, "Conflit élève + enseignant");
+    assert.equal(
+      buildBusinessProfile({
+        studentRow: { id: "s1", student_code: SAMPLE_IDENTITY, status: "active" },
+        roleKeys: [],
+      }).businessProfileLabel,
+      "Compte lié à un élève",
+    );
+    assert.equal(buildBusinessProfile({ roleKeys: [] }).businessProfileLabel, "Sans affectation");
   });
 
   it("expose un code métier stable 409 dans les deux directions", () => {

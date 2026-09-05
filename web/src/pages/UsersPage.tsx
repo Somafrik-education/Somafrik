@@ -17,7 +17,8 @@ import {
   canSuperadminManageUser,
   formatAccessChannelLabel,
   getCountryScopeOptions,
-  formatUserRolesDisplay,
+  formatAccessRolesDisplay,
+  formatBusinessProfileKind,
   getCreatableUserRoles,
   getUserEstablishmentLabel,
   getUserFormFieldPolicy,
@@ -58,10 +59,10 @@ import { usePrompt } from "../components/ui/PromptDialog";
 import type { UserAccount } from "../types";
 
 function toCsv(users: UserAccount[]): string {
-  const headers = ["Prénom", "Nom", "Identifiant", "Rôle(s)", "Email", "Téléphone", "Établissement", "Pays", "Statut"];
+  const headers = ["Prénom", "Nom", "Identifiant", "Type métier", "Rôle(s) d'accès", "Email", "Téléphone", "Établissement", "Pays", "Statut"];
   const escape = (v: unknown) => `"${String(v ?? "").replace(/"/g, '""')}"`;
   const lines = users.map((u) =>
-    [u.firstName, u.lastName, u.publicId ?? u.identifier, formatUserRolesDisplay(u), u.email, u.phone, getUserEstablishmentLabel(u), u.countryScope, u.status]
+    [u.firstName, u.lastName, u.publicId ?? u.identifier, formatBusinessProfileKind(u), formatAccessRolesDisplay(u), u.email, u.phone, getUserEstablishmentLabel(u), u.countryScope, u.status]
       .map(escape)
       .join(","),
   );
@@ -146,12 +147,13 @@ export function UsersPage() {
     return allUsers.filter((u) => {
       const matchesQuery =
         !q ||
-        [u.firstName, u.lastName, u.identifier, u.publicId, formatUserRolesDisplay(u), u.schoolCode, u.email].some((v) =>
+        [u.firstName, u.lastName, u.identifier, u.publicId, formatBusinessProfileKind(u), formatAccessRolesDisplay(u), u.schoolCode, u.email].some((v) =>
           normalize(v).includes(q),
         );
       const matchesRole =
         !roleFilter ||
-        formatUserRolesDisplay(u) === roleFilter ||
+        formatAccessRolesDisplay(u) === roleFilter ||
+        formatBusinessProfileKind(u) === roleFilter ||
         (u.roles ?? []).includes(roleFilter) ||
         u.role === roleFilter;
       const matchesStatus = !statusFilter || String(u.status ?? "Actif") === statusFilter;
@@ -463,7 +465,8 @@ export function UsersPage() {
     },
     { key: "publicId", header: "Identifiant", render: (u) => u.publicId ?? u.identifier ?? "—" },
     { key: "status", header: "Statut", render: (u) => <StatusBadge status={u.status} /> },
-    { key: "roles", header: "Rôle(s)", render: (u) => formatUserRolesDisplay(u) },
+    { key: "accountKind", header: "Type métier", render: (u) => formatBusinessProfileKind(u) },
+    { key: "roles", header: "Rôle(s) d'accès", render: (u) => formatAccessRolesDisplay(u) },
     {
       key: "actions",
       header: "Actions",
@@ -612,7 +615,7 @@ export function UsersPage() {
         open={Boolean(detail)}
         onClose={() => setDetail(null)}
         title={detail ? `${detail.firstName ?? ""} ${detail.lastName ?? ""}`.trim() : ""}
-        description={detail ? formatUserRolesDisplay(detail) : undefined}
+        description={detail ? `${formatBusinessProfileKind(detail)} · ${formatAccessRolesDisplay(detail)}` : undefined}
         footer={
           detail ? (
             (() => {
@@ -716,8 +719,8 @@ export function UsersPage() {
             ) : null}
             <dl className="grid grid-cols-2 gap-4 text-sm">
               <Row label="Identifiant" value={detail.publicId ?? detail.identifier} />
-              <Row label="Type de compte" value={accountKindLabel(detail) ?? "Compte staff"} />
-              <Row label="Rôle(s)" value={formatUserRolesDisplay(detail)} />
+              <Row label="Type métier" value={formatBusinessProfileKind(detail)} />
+              <Row label="Rôle(s) d'accès" value={formatAccessRolesDisplay(detail)} />
               {detail.linkedStudent?.studentCode ? (
                 <Row label="Profil élève" value={detail.linkedStudent.studentCode} />
               ) : null}
