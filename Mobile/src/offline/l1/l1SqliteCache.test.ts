@@ -17,7 +17,7 @@ import {
 } from "./lifecycle";
 import { createMemoryL1Bucket, createMemoryL1Store } from "./memoryStore";
 import { applyL1PageAtomically } from "./repository";
-import { FORBIDDEN_L1_COLUMNS, SCHEMA_MIGRATION_V1 } from "./schema";
+import { FORBIDDEN_L1_COLUMNS, SCHEMA_MIGRATION_V1, SCHEMA_MIGRATION_V2 } from "./schema";
 import { validateL1Page } from "./syncApi";
 import { syncL1Cache } from "./syncEngine";
 import { L1_DB_FILENAME, L1_ERROR, L1_LOCAL_SCHEMA_VERSION, L1_RESOURCES, type L1Api, type L1Page, type L1Partition, type L1Resource } from "./types";
@@ -265,8 +265,11 @@ async function run() {
   assert.doesNotMatch(src, /\.withExclusiveTransactionAsync\s*\(/);
   assert.doesNotMatch(src, /withTransactionAsync/);
   assert.doesNotMatch(SCHEMA_MIGRATION_V1, /REFERENCES l1_/);
+  assert.doesNotMatch(SCHEMA_MIGRATION_V2, /REFERENCES l1_/);
   for (const forbidden of FORBIDDEN_L1_COLUMNS) {
     assert.equal(SCHEMA_MIGRATION_V1.includes(forbidden), false, forbidden);
+    assert.equal(SCHEMA_MIGRATION_V2.includes(` ${forbidden}`), false, `v2 ${forbidden}`);
+    assert.equal(SCHEMA_MIGRATION_V2.includes(`\n  ${forbidden}`), false, `v2 col ${forbidden}`);
   }
 
   const keyStore = new Map<string, string>();
