@@ -1,6 +1,7 @@
 "use strict";
 
 const { BusinessError } = require("../services/authService");
+const { isPlatformAdminPrincipal } = require("./platformPersonalDataGuard");
 const { stripSensitiveFieldsDeep } = require("./sanitizeUserForResponse");
 
 const DATA_EXPORT_FORMAT = "somafrik-export";
@@ -53,7 +54,9 @@ function createDataExportError(status, message, code, details) {
 }
 
 function assertDataExportRead(principal) {
-  if (isSuperAdminPrincipal(principal) || isCountryAdminPrincipal(principal)) return;
+  if (isPlatformAdminPrincipal(principal) || isSuperAdminPrincipal(principal) || isCountryAdminPrincipal(principal)) {
+    throw createDataExportError(403, "Accès refusé à l'export des données.", DATA_EXPORT_ERROR.FORBIDDEN);
+  }
   if (principalHasAnyPermission(principal, DATA_EXPORT_READ_PERMISSIONS)) return;
   throw createDataExportError(403, "Accès refusé à l'export des données.", DATA_EXPORT_ERROR.FORBIDDEN);
 }

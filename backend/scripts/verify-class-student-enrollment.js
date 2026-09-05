@@ -392,16 +392,14 @@ async function main() {
       `/audit?action=enroll_student&schoolCode=${encodeURIComponent("CD-2026-0001")}`,
       { token: superToken },
     );
-    assert.equal(audit.status, 200, JSON.stringify(audit.data));
-    const auditRows = Array.isArray(audit.data) ? audit.data : [];
-    const enrollAudit = auditRows.find((row) => String(row.entityId ?? "") === studentCode);
-    assert.ok(enrollAudit, "audit enroll_student introuvable");
-    assertNoSecretLeak(enrollAudit, "audit enroll_student");
-    assertNoSecretLeak(enrollAudit.newValue, "audit.newValue");
-    const serializedAudit = JSON.stringify(enrollAudit);
-    assert.doesNotMatch(
-      serializedAudit,
-      new RegExp(temporarySecret.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")),
+    assert.equal(
+      audit.status,
+      403,
+      `GET /audit établissement interdit au Superadmin (#503): ${JSON.stringify(audit.data)}`,
+    );
+    assert.ok(
+      audit.data?.code === "PLATFORM_PERSONAL_DATA_DENIED" || audit.data?.code === "PERMISSION_DENIED",
+      JSON.stringify(audit.data),
     );
 
     const enrolledOther = await request(

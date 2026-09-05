@@ -432,8 +432,8 @@ test("non-régression autorités : SUPER_ADMIN global, COUNTRY_ADMIN et SCHOOL_A
     role: "Enseignant",
     roleKeys: ["TEACHER"],
   });
-  assert.equal(rbac.canAccess({ role: "Super Administrateur Somafrik", permissions: superAdmin.permissions }, "GET /api/students"), true);
-  assert.equal(rbac.canAccess({ role: "Admin Pays", permissions: country.permissions }, "GET /api/students"), true);
+  assert.equal(rbac.canAccess({ role: "Super Administrateur Somafrik", permissions: superAdmin.permissions }, "GET /api/students"), false);
+  assert.equal(rbac.canAccess({ role: "Admin Pays", permissions: country.permissions }, "GET /api/students"), false);
   assert.equal(rbac.canAccess({ role: "Admin School", permissions: school.permissions }, "GET /api/students"), true);
   assert.equal(rbac.canAccess({ role: "Enseignant", permissions: teacher.permissions }, "POST /api/users/:id/reset-password"), false);
   assert.equal(teacher.permissions.includes("Utilisateurs:UPDATE"), false);

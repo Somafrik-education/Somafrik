@@ -194,8 +194,8 @@ const securityMatrix = {
     "Élève / Étudiant": "-",
   },
   Contacts: {
-    "Super Administrateur Somafrik": "CRUD",
-    "Admin Pays": "R",
+    "Super Administrateur Somafrik": "-",
+    "Admin Pays": "-",
     "Admin School": "CRUD",
     "Préfet des études": "R",
     Enseignant: "-",
@@ -204,7 +204,7 @@ const securityMatrix = {
     "Élève / Étudiant": "-",
   },
   Relations: {
-    "Super Administrateur Somafrik": "CRUD",
+    "Super Administrateur Somafrik": "-",
     "Admin Pays": "-",
     "Admin School": "CRUD",
     "Préfet des études": "R",
@@ -224,7 +224,7 @@ const securityMatrix = {
     "Élève / Étudiant": "R",
   },
   Élèves: {
-    "Super Administrateur Somafrik": "CRUD",
+    "Super Administrateur Somafrik": "-",
     "Admin Pays": "-",
     "Admin School": "CRUD",
     "Préfet des études": "CRUD",
@@ -234,7 +234,7 @@ const securityMatrix = {
     "Élève / Étudiant": "R",
   },
   Enseignants: {
-    "Super Administrateur Somafrik": "CRUD",
+    "Super Administrateur Somafrik": "-",
     "Admin Pays": "-",
     "Admin School": "R",
     "Préfet des études": "R",
@@ -244,7 +244,7 @@ const securityMatrix = {
     "Élève / Étudiant": "-",
   },
   Affectations: {
-    "Super Administrateur Somafrik": "CRUD",
+    "Super Administrateur Somafrik": "-",
     "Admin Pays": "-",
     "Admin School": "CRUD",
     "Préfet des études": "CRUD",
@@ -254,7 +254,7 @@ const securityMatrix = {
     "Élève / Étudiant": "-",
   },
   Présences: {
-    "Super Administrateur Somafrik": "R",
+    "Super Administrateur Somafrik": "-",
     "Admin Pays": "-",
     "Admin School": "R",
     "Préfet des études": "CRUD",
@@ -264,7 +264,7 @@ const securityMatrix = {
     "Élève / Étudiant": "R",
   },
   Notes: {
-    "Super Administrateur Somafrik": "R",
+    "Super Administrateur Somafrik": "-",
     "Admin Pays": "-",
     "Admin School": "R",
     "Préfet des études": "CRUD",
@@ -274,7 +274,7 @@ const securityMatrix = {
     "Élève / Étudiant": "R",
   },
   Bulletins: {
-    "Super Administrateur Somafrik": "R",
+    "Super Administrateur Somafrik": "-",
     "Admin Pays": "-",
     "Admin School": "R",
     "Préfet des études": "CRUD",
@@ -284,7 +284,7 @@ const securityMatrix = {
     "Élève / Étudiant": "R",
   },
   Paiements: {
-    "Super Administrateur Somafrik": "R",
+    "Super Administrateur Somafrik": "-",
     "Admin Pays": "-",
     "Admin School": "R",
     "Préfet des études": "R",
@@ -334,8 +334,8 @@ const securityMatrix = {
     "Élève / Étudiant": "R",
   },
   Announcements: {
-    "Super Administrateur Somafrik": "CRUD",
-    "Admin Pays": "CRUD",
+    "Super Administrateur Somafrik": "-",
+    "Admin Pays": "-",
     "Admin School": "CRUD",
     "Préfet des études": "CRUD",
     Enseignant: "R",
@@ -344,8 +344,8 @@ const securityMatrix = {
     "Élève / Étudiant": "R",
   },
   Messages: {
-    "Super Administrateur Somafrik": "CRUD",
-    "Admin Pays": "CRUD",
+    "Super Administrateur Somafrik": "-",
+    "Admin Pays": "-",
     "Admin School": "CRUD",
     "Préfet des études": "CRUD",
     Enseignant: "CRUD",
@@ -354,7 +354,7 @@ const securityMatrix = {
     "Élève / Étudiant": "CRUD",
   },
   Documents: {
-    "Super Administrateur Somafrik": "CRUD",
+    "Super Administrateur Somafrik": "-",
     "Admin Pays": "-",
     "Admin School": "CRUD",
     "Préfet des études": "CRUD",
@@ -404,7 +404,7 @@ const securityMatrix = {
     "Élève / Étudiant": "-",
   },
   Examens: {
-    "Super Administrateur Somafrik": "CRUD",
+    "Super Administrateur Somafrik": "-",
     "Admin Pays": "-",
     "Admin School": "CRUD",
     "Préfet des études": "CRUD",
@@ -505,6 +505,11 @@ const CANONICAL_ROLE_PERMISSION_EXTRAS = {
 
 for (const [role, extras] of Object.entries(CANONICAL_ROLE_PERMISSION_EXTRAS)) {
   rolePermissions[role] = [...new Set([...(rolePermissions[role] ?? []), ...extras])];
+}
+
+const { stripPersonalDataPermissions } = require("./lib/platformPersonalDataGuard");
+for (const role of ["Super Administrateur Somafrik", "Admin Pays"]) {
+  rolePermissions[role] = stripPersonalDataPermissions(rolePermissions[role]);
 }
 
 /**

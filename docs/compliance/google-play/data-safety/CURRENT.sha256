@@ -1,4 +1,5 @@
-# Current generated artifact reviewed 2026-09-03
+# Current generated artifact reviewed 2026-09-05
+# CSV versionné dans git. Recalculer ces empreintes après chaque régénération.
 # CRLF CSV (Google Play import artifact):
 a4817fc093096a5f73d753699f37f0699b1caac8c00d063ad0f29820fa1df11c  somafrik_google_play_data_safety.csv
 

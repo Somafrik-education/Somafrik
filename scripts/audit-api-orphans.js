@@ -13,6 +13,9 @@ const SPECIAL_ROUTE_CLASSIFICATIONS = new Map([
   ["GET /", "INFRASTRUCTURE_ROUTE"],
   ["GET /web", "INFRASTRUCTURE_ROUTE"],
   ["POST /auth/refresh", "AUTH_SESSION_ROUTE"],
+  ["POST /auth/logout", "AUTH_SESSION_ROUTE"],
+  ["POST /auth/revoke-all", "AUTH_SESSION_ROUTE"],
+  ["POST /privacy/erasure-requests/self/execute", "AUTH_SESSION_ROUTE"],
   ["POST /backoffice/e2e/clear-login-lockout", "TEST_ONLY_ROUTE"],
   ["GET /debug/notes-authz-trace", "DEBUG_ONLY_ROUTE"],
 ]);

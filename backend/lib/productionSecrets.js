@@ -8,6 +8,8 @@ const KNOWN_WEAK_JWT_SECRETS = new Set([
 const KNOWN_WEAK_POSTGRES_PASSWORDS = new Set([
   Buffer.from("c29tYWZyaWsxMjM=", "base64").toString("utf8"),
 ]);
+const { collectAccessTtlProductionViolations } = require("./authTokenPolicy");
+
 const MIN_JWT_SECRET_LENGTH = 32;
 
 /**
@@ -82,6 +84,8 @@ function collectProductionSecretViolations(env = process.env) {
   if (env.SOMAFRIK_E2E === "true") {
     violations.push("SOMAFRIK_E2E=true est interdit en production.");
   }
+
+  violations.push(...collectAccessTtlProductionViolations(env));
 
   return violations;
 }

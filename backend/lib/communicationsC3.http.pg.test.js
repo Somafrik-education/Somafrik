@@ -923,15 +923,15 @@ async function main() {
     const schoolBMsgDl = await downloadFile(adminB, msgPdf.data.id);
     assert.ok([403, 404].includes(schoolBMsgDl.status), `P1-017 école B PJ Message: ${schoolBMsgDl.status}`);
     const superMsgBare = await downloadFile(superSa, msgPdf.data.id);
-    assert.equal(superMsgBare.status, 400, "P1-017 Superadmin download message sans école");
+    assert.equal(superMsgBare.status, 403, "P1-017 Superadmin download message = deny perso #503");
     const superAnnBare = await downloadFile(superSa, pdfUp.data.id);
-    assert.equal(superAnnBare.status, 400, "P1-017 Superadmin download annonce sans école");
+    assert.equal(superAnnBare.status, 403, "P1-017 Superadmin download annonce = deny perso #503");
     const superAnnScoped = await downloadFile(superSa, pdfUp.data.id, "?effectiveSchoolCode=SCH-COM-A");
-    assert.equal(superAnnScoped.status, 200, "P1-017 Superadmin request-scoped A PJ Annonce");
+    assert.equal(superAnnScoped.status, 403, "P1-017 Superadmin request-scoped A PJ Annonce interdit");
     const superAnnWrong = await downloadFile(superSa, pdfUp.data.id, "?effectiveSchoolCode=SCH-COM-B");
-    assert.ok([403, 404].includes(superAnnWrong.status), `P1-017 Superadmin B sur PJ Annonce A: ${superAnnWrong.status}`);
+    assert.equal(superAnnWrong.status, 403, `P1-017 Superadmin B sur PJ Annonce A: ${superAnnWrong.status}`);
     const superMsgWrong = await downloadFile(superSa, msgPdf.data.id, "?effectiveSchoolCode=SCH-COM-B");
-    assert.ok([403, 404].includes(superMsgWrong.status), `P1-017 Superadmin B sur PJ Message A: ${superMsgWrong.status}`);
+    assert.equal(superMsgWrong.status, 403, `P1-017 Superadmin B sur PJ Message A: ${superMsgWrong.status}`);
 
     await pool.query(`UPDATE enrollments SET class_id = $1 WHERE student_id = $2`, [CLASS_B, fixtures.studentA]);
     const afterMove = idsIn((await request("/backoffice/announcements", { token: parentA })).data);
@@ -1040,45 +1040,44 @@ async function main() {
     assert.equal(afterB, 0, "C3-13 aucune mutation");
 
     const superNoSchool = await request("/backoffice/announcements", { token: superSa });
-    assert.equal(superNoSchool.status, 400, "C3-14 Superadmin * sans école list");
+    assert.equal(superNoSchool.status, 403, "C3-14 Superadmin * sans école list");
     const superCreateBare = await request("/backoffice/announcements", {
       method: "POST",
       token: superSa,
       headers: { "Idempotency-Key": randomUUID() },
       body: { title: "global fantôme", message: "x", audience: "Tous" },
     });
-    assert.equal(superCreateBare.status, 400, "C3-14 création sans école");
+    assert.equal(superCreateBare.status, 403, "C3-14 création sans école");
     const superUnreadBare = await request("/backoffice/announcements/unread-count", { token: superSa });
-    assert.equal(superUnreadBare.status, 400, "C3-14 unread sans école");
+    assert.equal(superUnreadBare.status, 403, "C3-14 unread sans école");
     const superOptionsBare = await request("/backoffice/announcements/audience-options", { token: superSa });
-    assert.equal(superOptionsBare.status, 400, "C3-14 audience-options sans école");
+    assert.equal(superOptionsBare.status, 403, "C3-14 audience-options sans école");
     const superUploadBare = await uploadAnnouncementFile(superSa, {
       fileName: "x.pdf",
       mimeType: "application/pdf",
       body: pdfBuffer(),
     });
-    assert.equal(superUploadBare.status, 400, "C3-14 upload sans école");
+    assert.equal(superUploadBare.status, 403, "C3-14 upload sans école");
     const superGetBare = await request(`/backoffice/announcements/${schoolWideId}`, { token: superSa });
-    assert.equal(superGetBare.status, 400, "C3-14 GET sans école");
+    assert.equal(superGetBare.status, 403, "C3-14 GET sans école");
     const superReadBare = await request(`/backoffice/announcements/${schoolWideId}/read`, {
       method: "PATCH",
       token: superSa,
     });
-    assert.equal(superReadBare.status, 400, "C3-14 mark-read sans école");
+    assert.equal(superReadBare.status, 403, "C3-14 mark-read sans école");
     const superDlBare = await downloadFile(superSa, pdfUp.data.id);
-    assert.equal(superDlBare.status, 400, "C3-14 download sans école");
+    assert.equal(superDlBare.status, 403, "C3-14 download sans école");
 
     const superScoped = await request("/backoffice/announcements?effectiveSchoolCode=SCH-COM-A", { token: superSa });
-    assert.equal(superScoped.status, 200, `C3-14 Superadmin scoped A: ${JSON.stringify(superScoped.data)}`);
-    assert.ok(idsIn(superScoped.data).includes(schoolWideId), "C3-14 Superadmin voit A");
+    assert.equal(superScoped.status, 403, `C3-14 Superadmin scoped A interdit: ${JSON.stringify(superScoped.data)}`);
     const superWrong = await request(`/backoffice/announcements/${schoolWideId}?effectiveSchoolCode=SCH-COM-B`, {
       token: superSa,
     });
-    assert.ok([403, 404].includes(superWrong.status), `C3-14 Superadmin B sur A: ${superWrong.status}`);
+    assert.equal(superWrong.status, 403, `C3-14 Superadmin B sur A: ${superWrong.status}`);
     const superRight = await request(`/backoffice/announcements/${schoolWideId}?effectiveSchoolCode=SCH-COM-A`, {
       token: superSa,
     });
-    assert.equal(superRight.status, 200, "C3-14 Superadmin A GET");
+    assert.equal(superRight.status, 403, "C3-14 Superadmin A GET interdit");
     const superCreate = await request("/backoffice/announcements", {
       method: "POST",
       token: superSa,
@@ -1090,7 +1089,7 @@ async function main() {
         effectiveSchoolCode: "SCH-COM-A",
       },
     });
-    assert.equal(superCreate.status, 201, `C3-14 Superadmin crée dans A: ${JSON.stringify(superCreate.data)}`);
+    assert.equal(superCreate.status, 403, `C3-14 Superadmin ne crée pas d'annonce école: ${JSON.stringify(superCreate.data)}`);
 
     const options = await request("/backoffice/announcements/audience-options", { token: adminA });
     assert.equal(options.status, 200);

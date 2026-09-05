@@ -1,7 +1,7 @@
 # Sécurité — Somafrik
 
 **Statut :** politique & contrôles de sécurité  
-**Dernière mise à jour :** 2026-09-01  
+**Dernière mise à jour :** 2026-09-04  
 **Liens :** [ARCHITECTURE.md](./ARCHITECTURE.md) · [DECISIONS.md](./DECISIONS.md) · [../ci-cd-security.md](../ci-cd-security.md)
 
 ---
@@ -59,6 +59,20 @@ Le backend fait autorité. Ne jamais faire confiance à `schoolCode`, `schoolId`
 
 Tests : `npm run verify:user-role-lifecycle`
 
+### 2.4 P0-2 — Deny plateforme / données personnelles (#503)
+
+`requireAuth` refuse les routes `SCHOOL_PERSONAL_DATA_FORBIDDEN_FOR_PLATFORM` **avant** le scope établissement (header `schoolCode`). `RbacService.canAccess` refuse ensuite **avant** `requiredPermissions.some(...)` si le principal est Super Administrateur Somafrik ou Admin Pays.
+
+`ALL_PRIVILEGES` / `COUNTRY_PRIVILEGES` et un `schoolCode` (valide, invalide, query ou header) **ne contournent pas** ce deny. `GET /api/data-export` → **403** pour ces rôles.
+
+Fonctions plateforme conservées : pays, métadonnées établissement, comptes admin établissement, abonnements, référentiels, RBAC, annonces plateforme.
+
+Tests : `npm run verify:platform-personal-data-deny` · `npm run verify:functional-rbac`
+
+### 2.5 P0-1 — Data API Supabase
+
+Les clients n’utilisent pas PostgREST. Migration `20260904_p0_supabase_data_api_lockdown.sql` : 0 grant métier `anon` / `authenticated` / `PUBLIC` sur `public`. Boot : `ensureSupabaseDataApiLockdown()`. Procédure dashboard : [../compliance/supabase-data-api-lockdown.md](../compliance/supabase-data-api-lockdown.md). Tests : `npm run verify:supabase-data-api-lockdown`
+
 ---
 
 ## 3. JWT & authentification
@@ -67,9 +81,13 @@ Tests : `npm run verify:user-role-lifecycle`
 |-------|--------|
 | Transport | `Authorization: Bearer <accessToken>` uniquement (S2.1) |
 | Interdit | `?token=` / `?access_token=` sur `/api/*` |
-| Refresh | Session serveur + refresh token hashé |
-| Mobile | SecureStore ; HTTPS en production |
-| Tests | `npm run verify:jwt-header` |
+| Access TTL | Défaut **900 s** (`JWT_ACCESS_TTL_SECONDS`) ; **max 900 s en production** |
+| Algorithme | **HS256** uniquement (`tokenService.js`) |
+| Env JWT lus | `JWT_SECRET`, `JWT_ACCESS_TTL_SECONDS`, `JWT_REFRESH_TTL_SECONDS` |
+| Refresh | Rotatif, hashé, grâce 15 s **renvoie le jeton courant** (jamais l’ancien), reuse hors grâce → revoke-all |
+| Logout / revoke-all | `POST /api/auth/logout`, `POST /api/auth/revoke-all` |
+| Mobile / Web | Persistance du **nouveau** refresh après rotation |
+| Tests | `npm run verify:jwt-header` · `npm run verify:auth-sessions` |
 
 ### Lockout
 
@@ -90,7 +108,7 @@ Tests : `npm run verify:user-role-lifecycle`
 |--|--|
 | **Décision** | ADR-003 / ADR-004 |
 | **Client** | Ne jamais envoyer `auditLog` (strip DataContext + 403 si présent) |
-| **Serveur** | `AuditService.record` — `userId`, `schoolCode`, action, entity, IP, UA |
+| **Lecture HTTP** | `GET /api/audit` : **403** Superadmin / Admin Pays (#503 P0-2) ; pas de dump `auditLog` au login plateforme |
 | **Stockage** | Table `audit_logs` (JSONB old/new) |
 | **Collections critiques** | users, payments, bulletins, rolePermissions, classes, teachers, assignments… |
 | **Export établissement** | lectures dans une transaction PostgreSQL **`READ ONLY` + `REPEATABLE READ`** (snapshot unique) ; audit `export_school_data` après COMMIT (domaines + timestamp, **pas** le contenu) ; fail-closed si l’audit échoue |

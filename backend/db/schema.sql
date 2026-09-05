@@ -799,8 +799,40 @@ CREATE TABLE IF NOT EXISTS sessions (
   expires_at TIMESTAMPTZ NOT NULL,
   revoked_at TIMESTAMPTZ,
   revoke_reason TEXT,
+  previous_refresh_token_hash TEXT,
+  refresh_rotated_at TIMESTAMPTZ,
+  refresh_token_grace TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+ALTER TABLE sessions ADD COLUMN IF NOT EXISTS previous_refresh_token_hash TEXT;
+ALTER TABLE sessions ADD COLUMN IF NOT EXISTS refresh_rotated_at TIMESTAMPTZ;
+ALTER TABLE sessions ADD COLUMN IF NOT EXISTS refresh_token_grace TEXT;
+
+CREATE INDEX IF NOT EXISTS idx_sessions_expires_at ON sessions (expires_at);
+
+CREATE TABLE IF NOT EXISTS privacy_requests (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  request_code TEXT NOT NULL UNIQUE,
+  school_id UUID REFERENCES schools(id),
+  user_id UUID REFERENCES users(id),
+  school_code TEXT,
+  identifier TEXT,
+  contact_email TEXT,
+  role_label TEXT,
+  request_type TEXT NOT NULL DEFAULT 'erasure',
+  status TEXT NOT NULL DEFAULT 'pending',
+  reason TEXT,
+  actor_user_id UUID REFERENCES users(id),
+  processed_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT privacy_requests_type_check CHECK (request_type IN ('erasure', 'access', 'rectification')),
+  CONSTRAINT privacy_requests_status_check CHECK (status IN ('pending', 'processed', 'rejected'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_privacy_requests_school_status
+  ON privacy_requests (school_id, status, created_at DESC);
 
 CREATE TABLE IF NOT EXISTS idempotency_keys (
   cache_id TEXT PRIMARY KEY,

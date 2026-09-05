@@ -159,8 +159,8 @@ function sourceGuards() {
   assert.match(httpTest, /F8-P0-004 compteur paiements B inchangé/);
   assert.match(httpTest, /F8-P0-004 aucune payment_reminders B créée/);
   assert.match(httpTest, /F8-P0-004 Superadmin request-scoped A ne paie pas B/);
-  assert.match(httpTest, /F8-P0-004 Superadmin global conserve l'accès B/);
-  assert.match(httpTest, /F8-P1-006 Admin Pays CI paie A/);
+  assert.match(httpTest, /F8-P0-004 Superadmin global n'accède pas aux paiements élève/);
+  assert.match(httpTest, /F8-P1-006 Admin Pays CI ne paie pas A/);
   assert.match(httpTest, /F8-P1-006 Admin Pays CI crée grille A/);
   assert.match(httpTest, /F8-P1-006 Admin Pays CI refuse grille B/);
   assert.match(httpTest, /CI-TRAP-26-001/);

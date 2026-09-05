@@ -26,4 +26,8 @@
 85f1bab4ed210abfb2d18ac0746d936deece7d7c:backend/lib/financeReadiness.http.pg.test.js:generic-api-key:562
 2ca061035ed4c67543b7204d6ffed3fb33ee8056:backend/lib/financeReadiness.http.pg.test.js:generic-api-key:535
 2ca061035ed4c67543b7204d6ffed3fb33ee8056:backend/lib/financeReadiness.http.pg.test.js:generic-api-key:562
+#
+# 5) Test HMAC JWT (faux secret, non fonctionnel) introduit au commit 7153829f.
+#    HEAD utilise "a".repeat(48) ; le littéral ne subsiste que dans cet historique.
+7153829f8672924edbbafba110af7e5a9efd8029:backend/services/tokenService.test.js:generic-api-key:10
 

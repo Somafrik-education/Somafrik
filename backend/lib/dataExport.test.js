@@ -26,14 +26,14 @@ test("assertDataExportRead refuse un enseignant", () => {
   );
 });
 
-test("Superadmin / Admin Pays exigent un schoolCode explicite", () => {
+test("Superadmin / Admin Pays sont refusés (export établissement interdit)", () => {
   assert.throws(
-    () => resolveExportSchoolCode({ role: "Super Administrateur Somafrik", schoolCode: "*" }, ""),
-    (error) => error.statusCode === 400 && error.code === DATA_EXPORT_ERROR.SCHOOL_REQUIRED,
+    () => assertDataExportRead({ role: "Super Administrateur Somafrik", schoolCode: "*" }),
+    (error) => error instanceof BusinessError && error.statusCode === 403 && error.code === DATA_EXPORT_ERROR.FORBIDDEN,
   );
-  assert.equal(
-    resolveExportSchoolCode({ role: "Admin Pays", countryCode: "CD" }, "CD-2026-0001"),
-    "CD-2026-0001",
+  assert.throws(
+    () => assertDataExportRead({ role: "Admin Pays", countryCode: "CD", schoolCode: "CD-2026-0001" }),
+    (error) => error.statusCode === 403 && error.code === DATA_EXPORT_ERROR.FORBIDDEN,
   );
 });
 

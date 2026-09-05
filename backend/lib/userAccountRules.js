@@ -18,7 +18,9 @@ function normalizeKey(value) {
 }
 
 function isUserAccountDeleted(user = {}) {
-  return Boolean(user.deletedAt) || user.status === USER_ACCOUNT_STATUSES.DELETED;
+  if (Boolean(user.deletedAt)) return true;
+  const status = normalizeKey(user.status);
+  return status === "supprime" || status === "deleted";
 }
 
 function canUserAccountLogin(user = {}) {

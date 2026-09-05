@@ -6,7 +6,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { RootStackParamList } from "../navigation/AppNavigator";
 import { WELCOME_SCREEN_COPY, WELCOME_TEST_IDS } from "../lib/welcomeScreenSpec";
 import { MIN_TOUCH_TARGET } from "../lib/mobileAccessibilitySpec";
-import { LEGAL_COPY, PRIVACY_POLICY_URL } from "../lib/legalCompliance";
+import { LEGAL_COPY, PRIVACY_POLICY_URL, ACCOUNT_DELETION_URL } from "../lib/legalCompliance";
 
 type Props = NativeStackScreenProps<RootStackParamList, "Welcome">;
 const somafrikLogo = require("../../assets/somafrik-logo.png");
@@ -78,6 +78,15 @@ export default function WelcomeScreen({ navigation }: Props) {
         testID="welcome-privacy-policy"
       >
         <Text style={styles.legalLinkText}>{LEGAL_COPY.privacy}</Text>
+      </TouchableOpacity>
+      <TouchableOpacity
+        accessibilityRole="link"
+        accessibilityLabel={LEGAL_COPY.deletion}
+        onPress={() => void Linking.openURL(ACCOUNT_DELETION_URL)}
+        style={styles.legalLink}
+        testID="welcome-account-deletion"
+      >
+        <Text style={styles.legalLinkText}>{LEGAL_COPY.deletion}</Text>
       </TouchableOpacity>
     </SafeAreaView>
   );
