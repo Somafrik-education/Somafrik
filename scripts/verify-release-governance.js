@@ -5,11 +5,12 @@
  *
  * The historical governance checker is preserved byte-for-byte in
  * verify-release-governance-core.js. This adapter only reclassifies the live
- * main history. After promotions #500 / #501 / #502, origin/develop is an
- * ancestor of origin/main@CURRENT_MAIN. The three merge commits on main that
- * are not on develop are pinned in CURRENT_MAIN_ONLY. Every source replacement
- * is exact and fail-closed; all other checks from the historical checker still
- * execute unchanged.
+ * main history. origin/main is pinned to CURRENT_MAIN and the three merge
+ * commits that exist on main but not on develop are pinned in
+ * CURRENT_MAIN_ONLY. develop is allowed to advance ahead of main between
+ * promotions; rev-list develop..main still proves that no unexpected commit
+ * has appeared on main. Every source replacement is exact and fail-closed;
+ * all other checks from the historical checker still execute unchanged.
  */
 
 const assert = require("node:assert/strict");
@@ -52,16 +53,11 @@ function assertLiveMainHistoryContract() {
     `origin/main a bougé (${originMain}). STOP : reclasser les main-only. ` +
       `Promotion develop→main non autorisée.`,
   );
-  try {
-    git(["merge-base", "--is-ancestor", "origin/develop", "origin/main"]);
-  } catch {
-    assert.fail(`origin/develop ${originDevelop} n'est pas ancêtre de origin/main ${originMain}`);
-  }
   const only = git(["rev-list", "--reverse", "origin/develop..origin/main"]);
   const onlyList = only ? only.split(/\n/) : [];
   assert.deepEqual(onlyList, CURRENT_MAIN_ONLY, `main-only inattendu: ${only}`);
   console.log(
-    `PASS RG-POS-develop-ancestor-main-pinned-main-only main=${originMain} develop=${originDevelop}`,
+    `PASS RG-POS-main-pinned-main-only develop-may-be-ahead main=${originMain} develop=${originDevelop}`,
   );
 }
 

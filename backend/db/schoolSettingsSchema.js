@@ -25,6 +25,7 @@ const SCHOOL_SETTINGS_TRIGGER_SQL = `
 CREATE OR REPLACE FUNCTION ensure_school_settings_for_school()
 RETURNS trigger
 LANGUAGE plpgsql
+SET search_path TO pg_catalog, public, pg_temp
 AS $$
 BEGIN
   INSERT INTO school_settings (school_id)

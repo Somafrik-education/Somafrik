@@ -114,6 +114,7 @@ jobs:
           npm run verify:establishment-roles-data
           npm run verify:functional-rbac
           npm run verify:supabase-data-api-lockdown
+          npm run verify:function-search-path
           npm run verify:platform-personal-data-deny
           npm run verify:planning-rbac-reconcile
           npm run verify:evaluation-types-data

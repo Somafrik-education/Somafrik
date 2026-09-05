@@ -44,6 +44,7 @@ RETURNS text
 LANGUAGE sql
 IMMUTABLE
 PARALLEL SAFE
+SET search_path TO pg_catalog, public, pg_temp
 AS $$
   SELECT CASE
     WHEN src IS NULL OR btrim(src) = '' THEN ''

@@ -202,7 +202,9 @@ jobs:
           npm run verify:sanitize-user-responses
           npm run verify:db-config
           npm run verify:supabase-data-api-lockdown
+          npm run verify:function-search-path
           npm run verify:platform-personal-data-deny
+          npm run verify:preprod-503-local
 
   targeted:
     name: Risk-targeted

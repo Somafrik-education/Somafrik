@@ -231,14 +231,24 @@ class FallbackRepository {
     return this.sessions.get(sessionId) ?? null;
   }
 
-  async rotateSessionRefresh({ sessionId, newHash, previousHash, expiresAt, refreshTokenGrace }) {
+  async rotateSessionRefresh({
+    sessionId,
+    newHash,
+    previousHash,
+    expiresAt,
+    refreshTokenGrace,
+    expectedCurrentHash,
+  }) {
     const session = this.sessions.get(sessionId);
-    if (!session || session.revoked_at) return;
+    const expected = String(expectedCurrentHash ?? "").trim();
+    if (!session || session.revoked_at || !expected) return false;
+    if (String(session.refresh_token_hash ?? "") !== expected) return false;
     session.previous_refresh_token_hash = previousHash;
     session.refresh_token_hash = newHash;
     session.refresh_token_grace = refreshTokenGrace ?? null;
     session.refresh_rotated_at = new Date();
     if (expiresAt) session.expires_at = expiresAt;
+    return true;
   }
 
   async revokeAllSessionsForUser(userId, reason = "revoke_all") {

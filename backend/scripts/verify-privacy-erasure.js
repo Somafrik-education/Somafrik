@@ -97,7 +97,7 @@ async function main() {
     assert.ok(Array.isArray(listed.data));
     assert.ok(listed.data.some((row) => row.id === created.data.id));
 
-    const executed = await request(`/privacy/erasure-requests/${created.data.id}/execute`, {
+    const executed = await request(`/privacy/erasure-requests/${created.data.requestCode}/execute`, {
       method: "POST",
       token: schoolLogin.data.accessToken,
     });

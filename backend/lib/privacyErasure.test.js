@@ -159,6 +159,37 @@ test("Superadmin ne peut pas exécuter un effacement établissement", async () =
   );
 });
 
+test("exécution par request_code (pas seulement UUID)", async () => {
+  const repo = new FallbackRepository();
+  const seedData = require("../data");
+  const account = seedData.userAccounts.find((row) => row.id === "USER-ADMIN1");
+  const snapshot = { ...account, history: [...(account.history ?? [])] };
+  try {
+    const created = await createErasureRequest(repo, {
+      schoolCode: "CD-2026-0001",
+      identifier: "admin",
+    });
+    const executed = await executeErasureRequest(repo, created.requestCode, {
+      sub: "USER-ADMIN1",
+      role: "Admin School",
+      schoolCode: "CD-2026-0001",
+      roleKeys: ["SCHOOL_ADMIN"],
+    });
+    assert.equal(executed.request.status, "processed");
+    assert.equal(account.status, "Supprimé");
+  } finally {
+    Object.assign(account, snapshot);
+  }
+});
+
+test("getPrivacyRequest PostgreSQL compare l'UUID en texte", () => {
+  const fs = require("node:fs");
+  const path = require("node:path");
+  const src = fs.readFileSync(path.join(__dirname, "../db/postgresRepository.js"), "utf8");
+  assert.match(src, /id::text = \$1 OR request_code = \$1/);
+  assert.equal(src.includes("WHERE id = $1 OR request_code = $1"), false);
+});
+
 test("self-execute anonymise le compte authentifié", async () => {
   const repo = new FallbackRepository();
   const seedData = require("../data");

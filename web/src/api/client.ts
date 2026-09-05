@@ -63,7 +63,8 @@ async function refreshAccessTokenOnce(): Promise<string | null> {
 }
 
 function isAuthRefreshPath(path: string) {
-  return path.startsWith("/auth/refresh") || path.startsWith("/auth/logout") || path.startsWith("/backoffice/login");
+  // Logout is authenticated: a 401 on expired access must refresh once, then revoke.
+  return path.startsWith("/auth/refresh") || path.startsWith("/backoffice/login");
 }
 
 export async function request<T = unknown>(
@@ -110,7 +111,7 @@ export async function request<T = unknown>(
   return data as T;
 }
 
-export async function requestBlob(path: string, options: RequestInit = {}): Promise<Blob> {
+export async function requestBlob(path: string, options: RequestInit = {}, retried = false): Promise<Blob> {
   const token = accessTokenProvider();
   const response = await fetch(`${API_BASE_URL}${path}`, {
     ...options,
@@ -122,6 +123,10 @@ export async function requestBlob(path: string, options: RequestInit = {}): Prom
   });
 
   if (!response.ok) {
+    if (response.status === 401 && !retried && !isAuthRefreshPath(path)) {
+      const next = await refreshAccessTokenOnce();
+      if (next) return requestBlob(path, options, true);
+    }
     const text = await response.text();
     let message = "Erreur plateforme";
     if (text) {
