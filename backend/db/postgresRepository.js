@@ -139,6 +139,7 @@ class PostgresRepository {
     await this.ensurePlatformPersonalDataDeny();
     await this.ensureP1RgpdSchema();
     await this.ensureSupabaseDataApiLockdown();
+    await this.ensureFunctionSearchPath();
     this.ready = true;
   }
 
@@ -775,6 +776,11 @@ class PostgresRepository {
   async ensureSupabaseDataApiLockdown() {
     const { applySupabaseDataApiLockdown } = require("./supabaseDataApiLockdown");
     await applySupabaseDataApiLockdown(this);
+  }
+
+  async ensureFunctionSearchPath() {
+    const { applyFunctionSearchPath } = require("./functionSearchPath");
+    await applyFunctionSearchPath(this);
   }
 
   getFunctionalRbacStore() {

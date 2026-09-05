@@ -160,7 +160,7 @@ BEGIN
 
   RETURN NEW;
 END;
-$$ LANGUAGE plpgsql;
+$$ LANGUAGE plpgsql SET search_path TO pg_catalog, public, pg_temp;
 
 DROP TRIGGER IF EXISTS trg_c4_message_event ON school_messages;
 CREATE TRIGGER trg_c4_message_event
