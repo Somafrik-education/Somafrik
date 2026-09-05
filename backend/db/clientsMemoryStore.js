@@ -385,6 +385,53 @@ function createClientsMemoryStore(seed = {}) {
       async getTeacherBySchoolUser(schoolId, userId) {
         return tables.teachers.find((row) => row.school_id === schoolId && row.user_id === userId) ?? null;
       },
+      async getActiveStudentProfileByUser(userId, schoolId) {
+        const { findActiveStudentProfileForUser } = require("../lib/businessProfileIntegrity");
+        const user = tables.users.find((row) => String(row.id) === String(userId));
+        if (!user) return null;
+        return findActiveStudentProfileForUser(tables.students, user, schoolId);
+      },
+      async getActiveTeacherProfileByUser(userId, schoolId) {
+        const { findActiveTeacherProfileForUser } = require("../lib/businessProfileIntegrity");
+        return findActiveTeacherProfileForUser(tables.teachers, userId, schoolId);
+      },
+      async listActiveStudentProfilesByUserIds(userIds = []) {
+        const { findActiveStudentProfileForUser } = require("../lib/businessProfileIntegrity");
+        const ids = new Set((userIds ?? []).map((id) => String(id)));
+        const rows = [];
+        for (const user of tables.users) {
+          if (!ids.has(String(user.id))) continue;
+          const student = findActiveStudentProfileForUser(tables.students, user, user.school_id);
+          if (!student) continue;
+          rows.push({
+            user_id: user.id,
+            student_id: student.id,
+            student_code: student.student_code ?? student.studentCode,
+            status: student.status,
+            school_id: student.school_id,
+          });
+        }
+        return rows;
+      },
+      async listActiveTeacherProfilesByUserIds(userIds = []) {
+        const { findActiveTeacherProfileForUser } = require("../lib/businessProfileIntegrity");
+        const ids = new Set((userIds ?? []).map((id) => String(id)));
+        const rows = [];
+        for (const id of ids) {
+          const user = tables.users.find((row) => String(row.id) === id);
+          if (!user) continue;
+          const teacher = findActiveTeacherProfileForUser(tables.teachers, user.id, user.school_id);
+          if (!teacher) continue;
+          rows.push({
+            user_id: user.id,
+            teacher_id: teacher.id,
+            teacher_code: teacher.teacher_code,
+            status: teacher.status,
+            school_id: teacher.school_id,
+          });
+        }
+        return rows;
+      },
       async findAmbiguousTeacherIdentity(schoolId, identity) {
         const { isExactTeacherCivilIdentity } = require("../lib/teachersManagement");
         return (
@@ -1122,11 +1169,21 @@ function createClientsMemoryStore(seed = {}) {
       return filterUsersRows(this.listProjection().users, scope);
     },
     listProjection() {
+      const {
+        findActiveStudentProfileForUser,
+        findActiveTeacherProfileForUser,
+        buildBusinessProfile,
+      } = require("../lib/businessProfileIntegrity");
       const users = tables.users.map((row) => {
         const school = tables.schools.find((item) => item.id === row.school_id);
         const roleKeys = tables.userRoles
           .filter((item) => item.user_id === row.id && item.status === "active" && !item.revoked_at)
           .map((item) => item.role_key);
+        const businessProfile = buildBusinessProfile({
+          studentRow: findActiveStudentProfileForUser(tables.students, row, row.school_id),
+          teacherRow: findActiveTeacherProfileForUser(tables.teachers, row.id, row.school_id),
+          roleKeys,
+        });
         return userRoleLifecycleService.hydrateUser(
           {
             ...row,
@@ -1134,6 +1191,7 @@ function createClientsMemoryStore(seed = {}) {
             ...userCountryProjection(row, school),
           },
           roleKeys,
+          businessProfile,
         );
       });
       const contacts = tables.contacts.map((row) => {
@@ -1431,6 +1489,69 @@ function createClientsMemoryStore(seed = {}) {
       };
       tables.students.push(saved);
       return saved;
+    },
+    ensureStudentLoginUserRecord(row = {}) {
+      const studentCode = asTrimmed(row.student_code || row.studentCode || row.matricule);
+      const schoolId = row.school_id || row.schoolId;
+      if (!studentCode || !schoolId) return null;
+      const passwordHash = row.password_hash || row.passwordHash || "";
+      const pinHash = row.pin_hash || row.pinHash || passwordHash;
+      let user = tables.users.find(
+        (item) =>
+          String(item.school_id) === String(schoolId) &&
+          [item.user_code, item.identity_code, item.login_code].includes(studentCode),
+      );
+      if (!user) {
+        user = {
+          id: row.userId || row.user_id || randomUUID(),
+          school_id: schoolId,
+          user_code: studentCode,
+          identity_code: studentCode,
+          login_code: studentCode,
+          first_name: row.first_name || row.firstName || "",
+          last_name: row.last_name || row.lastName || "",
+          email: row.email || row.parentEmail || "",
+          phone: row.phone || row.parentPhone || "",
+          password_hash: passwordHash,
+          pin_hash: pinHash,
+          must_change_password:
+            row.must_change_password != null ? Boolean(row.must_change_password) : true,
+          role: "STUDENT",
+          status: "active",
+          profile_payload: {
+            identifier: studentCode,
+            identityCode: studentCode,
+          },
+          created_at: new Date(),
+          updated_at: new Date(),
+        };
+        tables.users.push(user);
+      } else if (passwordHash && !user.password_hash) {
+        user.password_hash = passwordHash;
+        user.pin_hash = pinHash || user.pin_hash;
+        if (row.must_change_password != null) {
+          user.must_change_password = Boolean(row.must_change_password);
+        }
+      }
+      const hasStudentRole = tables.userRoles.some(
+        (item) =>
+          String(item.user_id) === String(user.id) &&
+          item.role_key === "STUDENT" &&
+          item.status === "active" &&
+          !item.revoked_at,
+      );
+      if (!hasStudentRole) {
+        tables.userRoles.push({
+          id: randomUUID(),
+          user_id: user.id,
+          school_id: schoolId,
+          role_key: "STUDENT",
+          granted_at: new Date(),
+          status: "active",
+          revoked_at: null,
+        });
+      }
+      return user;
     },
     touchUserLastLogin(lookupKeys = []) {
       const keys = new Set(

@@ -118,6 +118,45 @@ describe("UsersPage — SCHOOL_ADMIN périmètre canonique", () => {
     expect(screen.queryByText(/Périmètre établissement incomplet/i)).not.toBeInTheDocument();
   });
 
+  it("distingue un compte technique lié à un élève dans la liste", () => {
+    schoolAdmin.user = {
+      id: "admin-nuru",
+      role: "Admin School",
+      schoolCode: "CD-2026-0001",
+      schoolPublicCode: "CD-IN-26-001",
+      schoolId: "school-nuru",
+      permissions: ["Utilisateurs:READ", "Utilisateurs:UPDATE"],
+    };
+    permissions.canUpdate = true;
+    dataState.scopeError = null;
+    dataState.users = [
+      {
+        id: "usr-student",
+        firstName: "Marc",
+        lastName: "Rumba",
+        publicId: "CD-ITS-MR-26-00003",
+        role: "Élève / Étudiant",
+        assignmentStatus: "Élève / Étudiant",
+        accountKind: "student_login",
+        linkedStudent: { studentId: "stu-1", studentCode: "CD-ITS-MR-26-00003", status: "active" },
+        schoolCode: "CD-IN-26-001",
+        schoolPublicCode: "CD-IN-26-001",
+        schoolId: "school-nuru",
+        status: "Actif",
+      } as UserAccount,
+    ];
+
+    render(
+      <MemoryRouter>
+        <UsersPage />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByText("Marc Rumba")).toBeInTheDocument();
+    expect(screen.getAllByText("Compte lié à un élève").length).toBeGreaterThan(0);
+    permissions.canUpdate = false;
+  });
+
   it("B. API vide → 0 réel, sans alerte de mismatch", () => {
     schoolAdmin.user = {
       id: "admin-nuru",

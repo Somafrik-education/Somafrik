@@ -262,6 +262,11 @@ export interface UserAccount {
   roleKeys?: string[];
   assignmentStatus?: string;
   secondaryRoles?: string[];
+  /** Compte utilisateur vs profil métier (élève / enseignant). */
+  accountKind?: "student_login" | "teacher" | "staff" | "unassigned" | "conflict";
+  linkedStudent?: { studentId?: string; studentCode?: string; status?: string } | null;
+  linkedTeacher?: { teacherId?: string; teacherCode?: string; status?: string } | null;
+  businessProfileConflict?: boolean;
   scopeLevel?: string;
   countryScope?: string;
   /** Alias tenant historique = schools.school_code. Ne pas afficher comme code public. */

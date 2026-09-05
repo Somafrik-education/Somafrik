@@ -1752,11 +1752,17 @@ class FallbackRepository {
         },
         async query(sql, params = []) {
           const text = String(sql).replace(/\s+/g, " ").trim().toUpperCase();
-          if (text.startsWith("SELECT PG_ADVISORY_XACT_LOCK")) {
+          if (
+            text.startsWith("SELECT PG_ADVISORY_XACT_LOCK") ||
+            text.startsWith("SAVEPOINT ") ||
+            text.startsWith("RELEASE SAVEPOINT ") ||
+            text.startsWith("ROLLBACK TO SAVEPOINT ")
+          ) {
             return { rows: [] };
           }
           if (text.startsWith("INSERT INTO USERS")) {
             if (!self._managedStudentUsers) self._managedStudentUsers = [];
+            const { randomUUID } = require("node:crypto");
             const userCode = params[1];
             if (self._managedStudentUsers.some((row) => row.user_code === userCode)) {
               const error = new Error(
@@ -1765,8 +1771,8 @@ class FallbackRepository {
               error.code = "23505";
               throw error;
             }
-            self._managedStudentUsers.push({
-              id: userCode,
+            const row = {
+              id: randomUUID(),
               user_code: userCode,
               school_id: params[0],
               first_name: params[2],
@@ -1777,7 +1783,11 @@ class FallbackRepository {
               pin_hash: params[6],
               must_change_password: true,
               role: "STUDENT",
-            });
+            };
+            self._managedStudentUsers.push(row);
+            return { rows: [row] };
+          }
+          if (text.startsWith("INSERT INTO USER_ROLES")) {
             return { rows: [] };
           }
           return { rows: [] };
@@ -1817,6 +1827,24 @@ class FallbackRepository {
         studentCode: created.student.studentCode,
         status: "active",
       });
+      if (typeof this.getClientsStore().ensureStudentLoginUserRecord === "function") {
+        const managedUser = (this._managedStudentUsers ?? []).find(
+          (row) => row.user_code === created.student.studentCode,
+        );
+        this.getClientsStore().ensureStudentLoginUserRecord({
+          id: created.student.id,
+          school_id: school?.id ?? created.student.schoolId,
+          firstName: created.student.firstName,
+          lastName: created.student.lastName,
+          studentCode: created.student.studentCode,
+          email: created.student.parentEmail,
+          phone: created.student.parentPhone,
+          userId: managedUser?.id,
+          password_hash: managedUser?.password_hash,
+          pin_hash: managedUser?.pin_hash,
+          must_change_password: managedUser?.must_change_password ?? true,
+        });
+      }
     }
     return created;
   }
@@ -2168,7 +2196,12 @@ class FallbackRepository {
         },
         async query(sql, params = []) {
           const text = String(sql).replace(/\s+/g, " ").trim().toUpperCase();
-          if (text.startsWith("SELECT PG_ADVISORY_XACT_LOCK")) {
+          if (
+            text.startsWith("SELECT PG_ADVISORY_XACT_LOCK") ||
+            text.startsWith("SAVEPOINT ") ||
+            text.startsWith("RELEASE SAVEPOINT ") ||
+            text.startsWith("ROLLBACK TO SAVEPOINT ")
+          ) {
             return { rows: [] };
           }
           if (text.startsWith("UPDATE TEACHER_ASSIGNMENTS") && text.includes("SET STATUS = 'DELETED'")) {

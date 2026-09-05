@@ -16,6 +16,7 @@ const USER_ROLES_SCHEMA_SQL = [
   // Les suffixes d'unicité du short_code restent internes ; les initiales publiques
   // conservent le segment métier tout en permettant un override sémantique contrôlé.
   fs.readFileSync(path.join(__dirname, "migrations/20260902_school_login_code_public_initials.sql"), "utf8"),
+  fs.readFileSync(path.join(__dirname, "migrations/20260906_business_profile_exclusivity.sql"), "utf8"),
 ].join("\n");
 
 const USER_ROLES_MIGRATION_AMBIGUOUS = "USER_ROLES_MIGRATION_AMBIGUOUS";

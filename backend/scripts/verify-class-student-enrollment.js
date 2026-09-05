@@ -247,6 +247,32 @@ async function main() {
       new RegExp(`^CD-IN-${studentIdentityInitials("Diop", "Awa")}-\\d{2}-\\d{5}$`),
     );
 
+    const usersAfterEnroll = await request("/backoffice/users", { token: tokenCd });
+    assert.equal(usersAfterEnroll.status, 200, JSON.stringify(usersAfterEnroll.data));
+    const studentAccount = (usersAfterEnroll.data ?? []).find(
+      (row) =>
+        String(row.publicId ?? "") === studentCode ||
+        String(row.identityCode ?? "") === studentCode ||
+        String(row.linkedStudent?.studentCode ?? "") === studentCode,
+    );
+    assert.ok(studentAccount, `compte technique élève attendu pour ${studentCode}`);
+    assert.equal(studentAccount.accountKind, "student_login");
+    assert.equal(studentAccount.linkedTeacher, null);
+    const blockedTeacher = await request(`/backoffice/users/${encodeURIComponent(studentAccount.id)}/roles/grant`, {
+      method: "POST",
+      token: tokenCd,
+      body: { role: "Enseignant" },
+    });
+    assert.equal(blockedTeacher.status, 409, JSON.stringify(blockedTeacher.data));
+    assert.equal(blockedTeacher.data.code, "BUSINESS_PROFILE_CONFLICT");
+    const teachersAfterBlock = await request("/teachers", { token: tokenCd });
+    assert.equal(teachersAfterBlock.status, 200);
+    assert.equal(
+      (teachersAfterBlock.data ?? []).some((row) => String(row.userId) === String(studentAccount.id)),
+      false,
+      "aucune fiche enseignant créée pour le compte élève",
+    );
+
     const alphaPhone = await request(
       `/classes/${encodeURIComponent(activeClass.classCode)}/students`,
       {

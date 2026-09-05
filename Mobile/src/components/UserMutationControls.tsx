@@ -11,6 +11,7 @@ import {
   validateUserIdentityDraft,
 } from "../lib/formFieldValidation";
 import { canGrantUserRole, resolveEntityCrudAccess } from "../lib/mobileCrudParity";
+import { isStudentLinkedAccount, STUDENT_TEACHER_GRANT_BLOCKED_MESSAGE } from "../lib/businessProfile";
 import { MIN_TOUCH_TARGET_DP } from "../lib/mobileUsability";
 import { createClientsUser, grantClientsUserRole, revokeClientsUserRole, updateClientsUser } from "../services/api";
 
@@ -28,6 +29,8 @@ type UserRow = {
   activeRoles?: string[];
   roleKeys?: string[];
   secondaryRoles?: string[];
+  accountKind?: string;
+  linkedStudent?: { studentId?: string; studentCode?: string } | null;
 };
 
 function hasTeacherRole(row: UserRow): boolean {
@@ -160,6 +163,10 @@ export default function UserMutationControls({
 
   const grantTeacher = () => {
     if (!row || !canGrant || hasTeacherRole(row) || granting) return;
+    if (isStudentLinkedAccount(row)) {
+      Alert.alert("Attribution impossible", STUDENT_TEACHER_GRANT_BLOCKED_MESSAGE);
+      return;
+    }
     Alert.alert("Attribuer le rôle Enseignant", "Le profil enseignant sera créé côté serveur à partir de ce compte.", [
       { text: "Annuler", style: "cancel" },
       {
@@ -288,7 +295,7 @@ export default function UserMutationControls({
           editable={!saving}
         />
       ) : null}
-      <Text style={styles.hint}>La matrice des droits reste disponible uniquement sur le Web. L'attribution du rôle Enseignant à un compte est autorisée.</Text>
+      <Text style={styles.hint}>La matrice des droits reste disponible uniquement sur le Web. L'attribution du rôle Enseignant est refusée pour un compte lié à un élève actif.</Text>
     </CanonicalMutationModal>
   );
 
@@ -310,7 +317,7 @@ export default function UserMutationControls({
             <Text style={styles.smallText}>Modifier</Text>
           </TouchableOpacity>
         ) : null}
-        {canGrant && !hasTeacherRole(row) ? (
+        {canGrant && !hasTeacherRole(row) && !isStudentLinkedAccount(row) ? (
           <TouchableOpacity
             style={styles.small}
             onPress={grantTeacher}
@@ -321,6 +328,9 @@ export default function UserMutationControls({
           >
             <Text style={styles.smallText}>{granting ? "Attribution…" : "Attribuer Enseignant"}</Text>
           </TouchableOpacity>
+        ) : null}
+        {canGrant && isStudentLinkedAccount(row) && !hasTeacherRole(row) ? (
+          <Text style={styles.hint}>{STUDENT_TEACHER_GRANT_BLOCKED_MESSAGE}</Text>
         ) : null}
         {canGrant && hasTeacherRole(row) ? (
           <TouchableOpacity

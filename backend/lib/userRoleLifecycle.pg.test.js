@@ -358,6 +358,73 @@ async function main() {
       0,
     );
 
+    const studentIdentity = student.rows[0].student_code;
+    assert.match(studentIdentity, /^[A-Z]{2}-[A-Z0-9]{2,5}-[A-Z0-9]{1,5}-\d{2}-\d{5}$/);
+    const studentLogin = await pool.query(
+      `INSERT INTO users (school_id, user_code, first_name, last_name, email, role, status)
+       VALUES ($1, $2, 'Marc', 'Rumba', 'marc.student.pg@test.local', 'STUDENT', 'active')
+       RETURNING id, user_code, identity_code, login_code`,
+      [schoolRow.rows[0].id, studentIdentity],
+    );
+    assert.equal(studentLogin.rows[0].user_code, studentIdentity);
+    assert.equal(studentLogin.rows[0].identity_code, studentIdentity);
+
+    await assert.rejects(
+      () => store.grantUserRole(studentLogin.rows[0].id, { role: "Enseignant" }, principal, auditMeta),
+      (error) =>
+        error.statusCode === 409 &&
+        error.code === USER_ROLE_ERROR.BUSINESS_PROFILE_CONFLICT,
+    );
+    assert.equal(
+      (
+        await pool.query(
+          `SELECT COUNT(*)::int AS count FROM teachers WHERE user_id = $1`,
+          [studentLogin.rows[0].id],
+        )
+      ).rows[0].count,
+      0,
+      "aucune ligne teacher après BUSINESS_PROFILE_CONFLICT",
+    );
+    assert.equal(
+      (
+        await pool.query(
+          `SELECT COUNT(*)::int AS count FROM user_roles WHERE user_id = $1 AND role_key = 'TEACHER' AND status = 'active'`,
+          [studentLogin.rows[0].id],
+        )
+      ).rows[0].count,
+      0,
+    );
+
+    await assert.rejects(
+      () =>
+        pool.query(
+          `INSERT INTO teachers (school_id, user_id, teacher_code, status)
+           VALUES ($1, $2, 'ENS-DUAL-BLOCK', 'active')`,
+          [schoolRow.rows[0].id, studentLogin.rows[0].id],
+        ),
+      /BUSINESS_PROFILE_CONFLICT/,
+    );
+
+    const teacherStaff = await store.createUser(
+      { firstName: "Paul", lastName: "Moke", email: "paul.moke.teacher@test.local" },
+      principal,
+      auditMeta,
+    );
+    await store.grantUserRole(teacherStaff.id, { role: "Enseignant" }, principal, auditMeta);
+    await assert.rejects(
+      () =>
+        pool.query(
+          `INSERT INTO user_roles (user_id, school_id, role_key, status)
+           VALUES ($1, $2, 'STUDENT', 'active')`,
+          [teacherStaff.id, schoolRow.rows[0].id],
+        ),
+      /BUSINESS_PROFILE_CONFLICT/,
+    );
+    await assert.rejects(
+      () => store.grantUserRole(teacherStaff.id, { role: "STUDENT" }, principal, auditMeta),
+      (error) => error.statusCode === 403 && error.code === USER_ROLE_ERROR.STUDENT_ROLE_FORBIDDEN,
+    );
+
     console.log("userRoleLifecycle.pg.test.js OK");
   } finally {
     await pool.end();
