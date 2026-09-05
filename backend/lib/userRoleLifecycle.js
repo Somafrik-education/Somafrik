@@ -3,6 +3,7 @@
 const { ROLE_TO_DB, ROLE_FROM_DB, asTrimmed, createClientsError, CLIENTS_ERROR } = require("./clientsManagement");
 const { mergeRolePermissions } = require("./rolePermissionsResolution");
 
+/** Libellé d'accès vide. Ne pas l'utiliser comme type métier (voir businessProfileLabel / accountKind). */
 const UNAFFECTED_LABEL = "Sans affectation";
 
 const USER_ROLE_ERROR = Object.freeze({

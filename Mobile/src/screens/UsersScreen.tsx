@@ -6,7 +6,7 @@ import QueryStateView from "../components/QueryStateView";
 import UserMutationControls from "../components/UserMutationControls";
 import { useAdminData } from "../context/AdminDataContext";
 import { displayRoleName, displayStatusName } from "../lib/format";
-import { accountKindLabel } from "../lib/businessProfile";
+import { formatAccessRolesDisplay, formatBusinessProfileKind } from "../lib/businessProfile";
 import { useStackScreenBottomPadding } from "../lib/screenLayout";
 
 export default function UsersScreen() {
@@ -49,9 +49,7 @@ export default function UsersScreen() {
         </>
       }
       renderItem={({ item: user }) => {
-        const roles = user.activeRoles?.length
-          ? user.activeRoles
-          : [user.role, ...(user.secondaryRoles ?? [])].filter(Boolean);
+        const accessRoles = formatAccessRolesDisplay(user);
         return (
           <View style={styles.card}>
             <View style={styles.iconBox}>
@@ -62,12 +60,12 @@ export default function UsersScreen() {
                 {[user.firstName, user.lastName].filter(Boolean).join(" ") || user.identifier}
               </Text>
               <Text style={styles.identifier}>{user.identifier || user.publicId}</Text>
-              <Text style={styles.meta}>Rôles actifs : {roles.map((role) => displayRoleName(String(role))).join(", ") || "Aucun rôle actif"}</Text>
-              {accountKindLabel(user) ? (
-                <Text style={styles.meta} testID="user-account-kind">
-                  {accountKindLabel(user)}
-                </Text>
-              ) : null}
+              <Text style={styles.meta} testID="user-business-kind">
+                Type métier : {formatBusinessProfileKind(user)}
+              </Text>
+              <Text style={styles.meta} testID="user-access-roles">
+                Rôle(s) d'accès : {accessRoles.split(" · ").map((role) => displayRoleName(role)).join(" · ")}
+              </Text>
               <Text style={styles.meta}>Statut : {displayStatusName(user.status)}</Text>
               {user.schoolCode ? (
                 <Text style={styles.meta} testID={`user-school-${user.schoolCode}`}>

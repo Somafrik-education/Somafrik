@@ -247,6 +247,28 @@ export interface PlatformNotification {
   createdBy?: string;
 }
 
+export type BusinessProfileKind = "student_login" | "teacher" | "staff" | "unassigned" | "conflict";
+
+/** Clés d'accès applicatif connues. Distinctes du type métier `BusinessProfileKind`. */
+export type KnownAccessRoleKey =
+  | "SUPER_ADMIN"
+  | "COUNTRY_ADMIN"
+  | "SCHOOL_ADMIN"
+  | "PROVISEUR"
+  | "PRINCIPAL"
+  | "PREFET_ETUDES"
+  | "ACCOUNTANT"
+  | "SECRETARY"
+  | "SUPERVISOR"
+  | "TEACHER"
+  | "PARENT"
+  | "STUDENT";
+
+export type AccessRoleKey = KnownAccessRoleKey | (string & {});
+
+/** Cycle de vie du compte (Actif / Suspendu / …), pas le type métier. */
+export type AccountLifecycleStatus = "Actif" | "Suspendu" | "Archivé" | (string & {});
+
 export interface UserAccount {
   id?: string;
   publicId?: string;
@@ -257,13 +279,19 @@ export interface UserAccount {
   gender?: string;
   phone?: string;
   email?: string;
+  /** Libellé du rôle d'accès primaire (pas le type métier). */
   role?: string;
+  /** Libellés des rôles d'accès. */
   roles?: string[];
-  roleKeys?: string[];
+  /** Clés canoniques des rôles d'accès (TEACHER, SECRETARY, …). */
+  roleKeys?: AccessRoleKey[];
+  /** Projection des rôles d'accès. « Sans affectation » = aucun rôle d'accès, pas l'absence de profil métier. */
   assignmentStatus?: string;
   secondaryRoles?: string[];
-  /** Compte utilisateur vs profil métier (élève / enseignant). */
-  accountKind?: "student_login" | "teacher" | "staff" | "unassigned" | "conflict";
+  /** Type métier (élève lié, enseignant, staff, non affecté, conflit). Distinct des rôles d'accès. */
+  accountKind?: BusinessProfileKind;
+  /** Libellé API du type métier. Jamais « Sans affectation » pour un élève lié. */
+  businessProfileLabel?: string;
   linkedStudent?: { studentId?: string; studentCode?: string; status?: string } | null;
   linkedTeacher?: { teacherId?: string; teacherCode?: string; status?: string } | null;
   businessProfileConflict?: boolean;
@@ -278,7 +306,8 @@ export interface UserAccount {
   schoolName?: string;
   accessChannel?: string;
   identifier?: string;
-  status?: string;
+  /** Cycle de vie du compte (Actif / Suspendu / …), pas le type métier. */
+  status?: AccountLifecycleStatus;
   validationStatus?: string;
   validationRequestedBy?: string;
   validationRequestedAt?: string;

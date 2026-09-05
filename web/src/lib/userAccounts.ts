@@ -44,8 +44,11 @@ export function isPlatformUserRole(role?: string): boolean {
 }
 
 export function isUnassignedUserAccount(
-  user: Pick<UserAccount, "role" | "roles" | "assignmentStatus">,
+  user: Pick<UserAccount, "role" | "roles" | "assignmentStatus" | "accountKind" | "linkedStudent" | "linkedTeacher" | "businessProfileLabel" | "businessProfileConflict" | "roleKeys">,
 ): boolean {
+  if (formatBusinessProfileKind(user) !== BUSINESS_PROFILE_KIND_LABELS.unassigned) {
+    return false;
+  }
   const role = normalize(String(user.role ?? ""));
   const roles = Array.isArray(user.roles) ? user.roles.filter((item) => normalize(item)) : [];
   const assignmentStatus = normalize(String(user.assignmentStatus ?? ""));
@@ -246,11 +249,76 @@ export function canReassignUserTenant(
 
 const PARENT_STUDENT_ROLE_LABELS = new Set(["Parent", "Élève / Étudiant"]);
 
-export function formatUserRolesDisplay(user: Pick<UserAccount, "role" | "roles" | "assignmentStatus">): string {
-  if (user.assignmentStatus) return user.assignmentStatus;
+export const ACCESS_ROLES_NONE_LABEL = "Aucun rôle d'accès";
+export const BUSINESS_PROFILE_KIND_LABELS = {
+  student_login: "Compte lié à un élève",
+  teacher: "Profil enseignant",
+  staff: "Compte staff",
+  unassigned: "Sans affectation",
+  conflict: "Conflit élève + enseignant",
+} as const;
+
+function accessRoleKeysOf(
+  user: Pick<UserAccount, "roleKeys">,
+): string[] {
+  return (user.roleKeys ?? []).map((key) => String(key ?? "").trim().toUpperCase()).filter(Boolean);
+}
+
+function isEmptyAccessLabel(value?: string | null): boolean {
+  const status = String(value ?? "").trim();
+  return !status || status.toLowerCase() === "sans affectation";
+}
+
+/** Type métier. Un élève lié n'est jamais « Sans affectation ». */
+export function formatBusinessProfileKind(
+  user: Pick<UserAccount, "accountKind" | "linkedStudent" | "linkedTeacher" | "businessProfileLabel" | "businessProfileConflict" | "roleKeys">,
+): string {
+  if (user.businessProfileLabel) return user.businessProfileLabel;
+  if (user.accountKind === "conflict" || user.businessProfileConflict) {
+    return BUSINESS_PROFILE_KIND_LABELS.conflict;
+  }
+  const keys = accessRoleKeysOf(user);
+  if (
+    user.accountKind === "student_login" ||
+    user.linkedStudent?.studentId ||
+    user.linkedStudent?.studentCode ||
+    keys.includes("STUDENT")
+  ) {
+    return BUSINESS_PROFILE_KIND_LABELS.student_login;
+  }
+  if (
+    user.accountKind === "teacher" ||
+    user.linkedTeacher?.teacherId ||
+    user.linkedTeacher?.teacherCode ||
+    keys.includes("TEACHER")
+  ) {
+    return BUSINESS_PROFILE_KIND_LABELS.teacher;
+  }
+  if (user.accountKind === "staff" || keys.length) {
+    return BUSINESS_PROFILE_KIND_LABELS.staff;
+  }
+  return BUSINESS_PROFILE_KIND_LABELS.unassigned;
+}
+
+/** Rôles d'accès uniquement. Distinct du type métier. */
+export function formatAccessRolesDisplay(
+  user: Pick<UserAccount, "role" | "roles" | "roleKeys" | "assignmentStatus">,
+): string {
+  const keys = accessRoleKeysOf(user);
+  if (keys.length) {
+    if (!isEmptyAccessLabel(user.assignmentStatus)) return String(user.assignmentStatus).trim();
+    if (Array.isArray(user.roles) && user.roles.length) return user.roles.join(", ");
+    if (!isEmptyAccessLabel(user.role)) return String(user.role).trim();
+    return keys.join(", ");
+  }
+  if (!isEmptyAccessLabel(user.assignmentStatus)) return String(user.assignmentStatus).trim();
   if (Array.isArray(user.roles) && user.roles.length) return user.roles.join(", ");
-  if (user.role && user.role !== "Sans affectation") return user.role;
-  return "Sans affectation";
+  if (!isEmptyAccessLabel(user.role)) return String(user.role).trim();
+  return ACCESS_ROLES_NONE_LABEL;
+}
+
+export function formatUserRolesDisplay(user: Pick<UserAccount, "role" | "roles" | "assignmentStatus" | "accountKind" | "linkedStudent" | "linkedTeacher" | "businessProfileLabel" | "businessProfileConflict" | "roleKeys">): string {
+  return formatAccessRolesDisplay(user);
 }
 
 export function isStudentLinkedAccount(
@@ -285,18 +353,12 @@ export function canAssignRoleToUserAccount(
 }
 
 export function accountKindLabel(
-  user: Pick<UserAccount, "accountKind" | "linkedStudent" | "businessProfileConflict">,
+  user: Pick<UserAccount, "accountKind" | "linkedStudent" | "businessProfileConflict" | "businessProfileLabel">,
 ): string | null {
-  if (user.accountKind === "conflict" || user.businessProfileConflict) {
-    return "Conflit élève + enseignant";
-  }
-  if (user.accountKind === "student_login" || user.linkedStudent) {
-    return "Compte lié à un élève";
-  }
-  if (user.accountKind === "teacher") {
-    return "Profil enseignant";
-  }
-  return null;
+  const kind = formatBusinessProfileKind(user);
+  if (kind === BUSINESS_PROFILE_KIND_LABELS.unassigned) return null;
+  if (kind === BUSINESS_PROFILE_KIND_LABELS.staff) return null;
+  return kind;
 }
 
 export const STUDENT_TEACHER_ROLE_CONFLICT_MESSAGE =

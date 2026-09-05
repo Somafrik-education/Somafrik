@@ -135,8 +135,10 @@ describe("UsersPage — SCHOOL_ADMIN périmètre canonique", () => {
         firstName: "Marc",
         lastName: "Rumba",
         publicId: "CD-ITS-MR-26-00003",
-        role: "Élève / Étudiant",
-        assignmentStatus: "Élève / Étudiant",
+        role: "Sans affectation",
+        assignmentStatus: "Sans affectation",
+        roles: [],
+        roleKeys: [],
         accountKind: "student_login",
         linkedStudent: { studentId: "stu-1", studentCode: "CD-ITS-MR-26-00003", status: "active" },
         schoolCode: "CD-IN-26-001",
@@ -154,6 +156,9 @@ describe("UsersPage — SCHOOL_ADMIN périmètre canonique", () => {
 
     expect(screen.getByText("Marc Rumba")).toBeInTheDocument();
     expect(screen.getAllByText("Compte lié à un élève").length).toBeGreaterThan(0);
+    expect(screen.getByText("Type métier")).toBeInTheDocument();
+    expect(screen.getByText("Aucun rôle d'accès")).toBeInTheDocument();
+    expect(screen.queryByText("Sans affectation")).not.toBeInTheDocument();
     permissions.canUpdate = false;
   });
 

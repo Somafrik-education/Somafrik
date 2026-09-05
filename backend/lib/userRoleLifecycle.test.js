@@ -210,8 +210,12 @@ async function main() {
 
   const listedStudent = store.listProjection().users.find((row) => row.id === studentUser.id);
   assert.equal(listedStudent.accountKind, "student_login");
+  assert.equal(listedStudent.businessProfileLabel, "Compte lié à un élève");
   assert.equal(listedStudent.linkedStudent.studentCode, studentIdentity);
   assert.equal(listedStudent.linkedTeacher, null);
+  assert.deepEqual(listedStudent.roleKeys, []);
+  assert.equal(listedStudent.assignmentStatus, "Sans affectation");
+  assert.notEqual(listedStudent.businessProfileLabel, "Sans affectation");
 
   const teacherCountBefore = store._tables.teachers.filter((row) => row.user_id === studentUser.id).length;
   await expectRejection(
