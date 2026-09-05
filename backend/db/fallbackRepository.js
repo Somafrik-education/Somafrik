@@ -1823,6 +1823,9 @@ class FallbackRepository {
         status: "active",
       });
       if (typeof this.getClientsStore().ensureStudentLoginUserRecord === "function") {
+        const managedUser = (this._managedStudentUsers ?? []).find(
+          (row) => row.user_code === created.student.studentCode,
+        );
         this.getClientsStore().ensureStudentLoginUserRecord({
           id: created.student.id,
           school_id: school?.id ?? created.student.schoolId,
@@ -1831,9 +1834,10 @@ class FallbackRepository {
           studentCode: created.student.studentCode,
           email: created.student.parentEmail,
           phone: created.student.parentPhone,
-          userId: (this._managedStudentUsers ?? []).find(
-            (row) => row.user_code === created.student.studentCode,
-          )?.id,
+          userId: managedUser?.id,
+          password_hash: managedUser?.password_hash,
+          pin_hash: managedUser?.pin_hash,
+          must_change_password: managedUser?.must_change_password ?? true,
         });
       }
     }

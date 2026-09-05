@@ -1494,6 +1494,8 @@ function createClientsMemoryStore(seed = {}) {
       const studentCode = asTrimmed(row.student_code || row.studentCode || row.matricule);
       const schoolId = row.school_id || row.schoolId;
       if (!studentCode || !schoolId) return null;
+      const passwordHash = row.password_hash || row.passwordHash || "";
+      const pinHash = row.pin_hash || row.pinHash || passwordHash;
       let user = tables.users.find(
         (item) =>
           String(item.school_id) === String(schoolId) &&
@@ -1510,6 +1512,10 @@ function createClientsMemoryStore(seed = {}) {
           last_name: row.last_name || row.lastName || "",
           email: row.email || row.parentEmail || "",
           phone: row.phone || row.parentPhone || "",
+          password_hash: passwordHash,
+          pin_hash: pinHash,
+          must_change_password:
+            row.must_change_password != null ? Boolean(row.must_change_password) : true,
           role: "STUDENT",
           status: "active",
           profile_payload: {
@@ -1520,6 +1526,12 @@ function createClientsMemoryStore(seed = {}) {
           updated_at: new Date(),
         };
         tables.users.push(user);
+      } else if (passwordHash && !user.password_hash) {
+        user.password_hash = passwordHash;
+        user.pin_hash = pinHash || user.pin_hash;
+        if (row.must_change_password != null) {
+          user.must_change_password = Boolean(row.must_change_password);
+        }
       }
       const hasStudentRole = tables.userRoles.some(
         (item) =>
