@@ -56,9 +56,13 @@ const userIdMigration = fs.readFileSync(
   path.join(__dirname, "../db/migrations/20260907_student_user_id.sql"),
   "utf8",
 );
-assert.match(userIdMigration, /students_canonical_identifier_format_check/);
-assert.match(userIdMigration, /to_jsonb\(st\) \? 'login_code'/);
+assert.match(userIdMigration, /check_violation/);
 assert.doesNotMatch(userIdMigration, /DROP CONSTRAINT/i);
 assert.doesNotMatch(userIdMigration, /VALIDATE CONSTRAINT/i);
+const canonical23 = fs.readFileSync(
+  path.join(__dirname, "../db/migrations/20260823_student_canonical_identifier.sql"),
+  "utf8",
+);
+assert.doesNotMatch(canonical23, /DROP CONSTRAINT students_canonical_identifier_format_check/);
 
 console.log("audit-student-teacher-dual-profiles static OK");

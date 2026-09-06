@@ -3,22 +3,27 @@
 const fs = require("node:fs");
 const path = require("node:path");
 
-const USER_ROLES_SCHEMA_SQL = [
-  fs.readFileSync(path.join(__dirname, "migrations/20260820_user_roles_canonical.sql"), "utf8"),
-  fs.readFileSync(path.join(__dirname, "migrations/20260821_permanent_student_identifiers.sql"), "utf8"),
-  fs.readFileSync(path.join(__dirname, "migrations/20260822_school_login_code.sql"), "utf8"),
+const USER_ROLES_SCHEMA_PARTS = [
+  "20260820_user_roles_canonical.sql",
+  "20260821_permanent_student_identifiers.sql",
+  "20260822_school_login_code.sql",
   // Schéma + triggers uniquement. Le backfill legacy est opt-in :
   // migrations/20260824_student_canonical_identifier_backfill.sql
-  fs.readFileSync(path.join(__dirname, "migrations/20260823_student_canonical_identifier.sql"), "utf8"),
+  "20260823_student_canonical_identifier.sql",
   // Compteur login_code établissement : (country_id, year) global.
   // Backfill rewrite opt-in : 20260825_school_login_code_seq_backfill.sql (jamais au boot).
-  fs.readFileSync(path.join(__dirname, "migrations/20260825_school_login_code_country_year.sql"), "utf8"),
+  "20260825_school_login_code_country_year.sql",
   // Les suffixes d'unicité du short_code restent internes ; les initiales publiques
   // conservent le segment métier tout en permettant un override sémantique contrôlé.
-  fs.readFileSync(path.join(__dirname, "migrations/20260902_school_login_code_public_initials.sql"), "utf8"),
-  fs.readFileSync(path.join(__dirname, "migrations/20260906_business_profile_exclusivity.sql"), "utf8"),
-  fs.readFileSync(path.join(__dirname, "migrations/20260907_student_user_id.sql"), "utf8"),
-].join("\n");
+  "20260902_school_login_code_public_initials.sql",
+  "20260906_business_profile_exclusivity.sql",
+  "20260907_student_user_id.sql",
+].map((file) => ({
+  file,
+  sql: fs.readFileSync(path.join(__dirname, "migrations", file), "utf8"),
+}));
+
+const USER_ROLES_SCHEMA_SQL = USER_ROLES_SCHEMA_PARTS.map((part) => part.sql).join("\n");
 
 const USER_ROLES_MIGRATION_AMBIGUOUS = "USER_ROLES_MIGRATION_AMBIGUOUS";
 
@@ -220,6 +225,7 @@ const BACKFILL_FROM_SECONDARY_ROLES_SQL = backfillFromSecondaryRolesSql(false);
 
 module.exports = {
   USER_ROLES_SCHEMA_SQL,
+  USER_ROLES_SCHEMA_PARTS,
   USER_ROLES_MIGRATION_AMBIGUOUS,
   KNOWN_ROLE_KEYS_SQL,
   KNOWN_ROLE_LABELS_SQL,
