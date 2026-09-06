@@ -2,6 +2,7 @@
 
 const fs = require("node:fs");
 const path = require("node:path");
+const { execFileSync } = require("node:child_process");
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
 const {
@@ -183,4 +184,17 @@ test("boot PostgreSQL conserve ensureTeacherCourseCanonicalReconcile", () => {
   const pkg = fs.readFileSync(path.join(__dirname, "../../package.json"), "utf8");
   assert.match(pkg, /inventory:school-course-ambiguity/);
   assert.match(pkg, /verify:school-course-ambiguity-inventory/);
+});
+
+test("repair SQL teacher_id NULL : UUID-safe, idempotent et fail-closed", () => {
+  const sql = fs.readFileSync(
+    path.join(__dirname, "../db/repair_school_course_teacher_from_assignment.sql"),
+    "utf8",
+  );
+  assert.doesNotMatch(sql, /MIN\s*\(\s*ta\.teacher_id\s*\)/i);
+  assert.match(sql, /COUNT\(\*\) OVER \(PARTITION BY sc\.id\)/i);
+  execFileSync(process.execPath, [path.join(__dirname, "schoolCourseTeacherRepair.pg.test.js")], {
+    stdio: "inherit",
+    env: process.env,
+  });
 });
