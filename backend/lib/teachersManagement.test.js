@@ -53,6 +53,16 @@ function main() {
 
   expectStatus(() => validateCreateTeacherInput(validBody({ firstName: "" }), "CD-2026-0001"), 400);
   expectStatus(() => validateCreateTeacherInput(validBody({ lastName: "" }), "CD-2026-0001"), 400);
+  expectStatus(() => validateCreateTeacherInput(validBody({ firstName: 123 }), "CD-2026-0001"), 400);
+  expectStatus(() => validateCreateTeacherInput(validBody({ lastName: 456 }), "CD-2026-0001"), 400);
+  expectStatus(() => validateCreateTeacherInput(validBody({ firstName: "123" }), "CD-2026-0001"), 400);
+  expectStatus(() => validateCreateTeacherInput(validBody({ lastName: " 456 " }), "CD-2026-0001"), 400);
+  const punctuation = validateCreateTeacherInput(
+    validBody({ firstName: " Élodie ", lastName: "O'Connor-Smith" }),
+    "CD-2026-0001",
+  );
+  assert.equal(punctuation.firstName, "Élodie");
+  assert.equal(punctuation.lastName, "O'Connor-Smith");
   expectStatus(
     () => validateCreateTeacherInput(validBody({ phone: undefined, email: undefined }), "CD-2026-0001"),
     400,
