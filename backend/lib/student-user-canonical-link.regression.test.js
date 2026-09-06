@@ -745,9 +745,18 @@ describe("P0 — garde-fou DROP SCHEMA PostgreSQL", () => {
       databaseNameFromUrl,
       hostFromUrl,
       isolationRefusal,
+      isLoopbackHost,
+      connectionOverrideRefusal,
     } = require("./student-user-canonical-link.pg.test.js");
     assert.equal(databaseNameFromUrl("postgres://localhost:5432/somafrik_prod"), "somafrik_prod");
     assert.equal(hostFromUrl("postgres://127.0.0.1:5432/somafrik_canonical_link_it"), "127.0.0.1");
+    assert.equal(hostFromUrl("postgres://[::1]:5432/somafrik_canonical_link_it"), "::1");
+    assert.equal(
+      hostFromUrl("postgres://localhost/somafrik_canonical_link_it?host=remote.example"),
+      "remote.example",
+    );
+    assert.ok(isLoopbackHost("[::1]"));
+    assert.ok(isLoopbackHost("::1"));
     const credentialUri = /postgres(?:ql)?:\/\/[^/\s"'`]+?:[^/\s"'`]+?@/i;
     assert.doesNotMatch(src, credentialUri);
     assert.doesNotMatch(fs.readFileSync(__filename, "utf8"), credentialUri);
@@ -778,6 +787,26 @@ describe("P0 — garde-fou DROP SCHEMA PostgreSQL", () => {
         host: "localhost",
       }),
     );
+    assert.ok(
+      connectionOverrideRefusal("postgres://localhost/somafrik_canonical_link_it?host=remote.example"),
+    );
+    assert.ok(
+      isolationRefusal({
+        itDb: "somafrik_canonical_link_it",
+        sourceDb: "somafrik_canonical_link_it",
+        host: "localhost",
+        databaseUrl: "postgres://localhost/somafrik_canonical_link_it?host=remote.example",
+      }),
+      "override ?host= distant refuse le DROP",
+    );
+    assert.ok(
+      isolationRefusal({
+        itDb: "somafrik_canonical_link_it",
+        sourceDb: "somafrik_canonical_link_it",
+        host: "localhost",
+        databaseUrl: "postgres://localhost/somafrik_canonical_link_it?hostaddr=8.8.8.8",
+      }),
+    );
     assert.equal(
       isolationRefusal({
         itDb: "somafrik_canonical_link_it",
@@ -794,6 +823,14 @@ describe("P0 — garde-fou DROP SCHEMA PostgreSQL", () => {
       }),
       null,
     );
+    assert.equal(
+      isolationRefusal({
+        itDb: "somafrik_canonical_link_it",
+        sourceDb: "somafrik_canonical_link_it",
+        host: hostFromUrl("postgres://[::1]:5432/somafrik_canonical_link_it"),
+      }),
+      null,
+    );
     assert.doesNotMatch(src, /CREATE DATABASE \$\{/);
     assert.doesNotMatch(src, /query\(`CREATE DATABASE/);
     assert.doesNotMatch(src, /withDatabaseName|ensureDatabase/);
@@ -802,6 +839,10 @@ describe("P0 — garde-fou DROP SCHEMA PostgreSQL", () => {
     assert.ok(guardIndex >= 0, "garde current_database avant DROP");
     assert.ok(dropIndex > guardIndex, "DROP SCHEMA public seulement après preuve d'isolation");
     assert.match(src, /current_database\(\)/);
+    assert.match(src, /inet_server_addr\(\)/);
+    assert.ok(src.indexOf("inet_server_addr") < dropIndex, "inet_server_addr avant DROP");
+    assert.match(src, /SELECT_ACTIVE_STUDENT_FOR_USER_UNBOUNDED_SQL/);
+    assert.match(src, /pas d'assert sur l'ordre physique/);
     const pkg = require("../../package.json");
     assert.doesNotMatch(
       pkg.scripts["verify:user-role-lifecycle"],
