@@ -755,7 +755,6 @@ describe("P1 — destination effective avant DROP SCHEMA public", () => {
     sourceDb: IT,
     host: "localhost",
     databaseUrl: "postgres://localhost/somafrik_canonical_link_it",
-    env: {},
   };
 
   it("URL localhost + current_database IT + inet 127.0.0.1 → DDL autorisé", () => {
@@ -829,7 +828,7 @@ describe("P1 — destination effective avant DROP SCHEMA public", () => {
   });
 
   it("/postgres → refus", () => {
-    assert.ok(isolationRefusal({ itDb: IT, sourceDb: "postgres", host: "localhost", env: {} }));
+    assert.ok(isolationRefusal({ itDb: IT, sourceDb: "postgres", host: "localhost" }));
     assert.equal(
       mayDropPublicSchema({
         ...allowedUrl,
@@ -902,6 +901,34 @@ describe("P1 — destination effective avant DROP SCHEMA public", () => {
       }).allowed,
       false,
     );
+  });
+
+  it("PGHOST / PGHOSTADDR distants n'empêchent pas DROP si URI + inet loopback", () => {
+    const previousHost = process.env.PGHOST;
+    const previousHostAddr = process.env.PGHOSTADDR;
+    process.env.PGHOST = "db.prod.example";
+    process.env.PGHOSTADDR = "203.0.113.10";
+    try {
+      assert.equal(isolationRefusal(allowedUrl), null);
+      const decision = mayDropPublicSchema({
+        ...allowedUrl,
+        currentDatabase: IT,
+        inetServerAddr: "127.0.0.1",
+        env: { PGHOST: "db.prod.example", PGHOSTADDR: "203.0.113.10" },
+      });
+      assert.equal(decision.allowed, true);
+      assert.equal(decision.reason, null);
+    } finally {
+      if (previousHost === undefined) delete process.env.PGHOST;
+      else process.env.PGHOST = previousHost;
+      if (previousHostAddr === undefined) delete process.env.PGHOSTADDR;
+      else process.env.PGHOSTADDR = previousHostAddr;
+    }
+
+    const src = sourceOf("lib", "student-user-canonical-link.pg.test.js");
+    assert.doesNotMatch(src, /function environmentOverrideRefusal/);
+    assert.doesNotMatch(src, /envRefusal/);
+    assert.doesNotMatch(src, /env: process\.env/);
   });
 
   it("DROP SCHEMA public n'apparaît qu'après mayDropPublicSchema", () => {

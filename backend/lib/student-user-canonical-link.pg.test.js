@@ -10,6 +10,10 @@
  *   - current_database() = base IT autorisée
  *   - inet_server_addr() ∈ {127.0.0.1, ::1}
  *
+ * PGHOST / PGHOSTADDR ne sont pas consultés : Pool({ connectionString })
+ * parse l'hôte de l'URI ; node-postgres n'applique pas PGHOSTADDR ici.
+ * Un PGHOST distant résiduel ne doit pas SKIP avant connect.
+ *
  * Pas de création de base. Pas de réécriture d'URL vers une base générique.
  * SKIP sinon (y compris DATABASE_URL=.../somafrik ou .../postgres).
  */
@@ -73,23 +77,11 @@ function connectionOverrideRefusal(databaseUrl) {
   return null;
 }
 
-function environmentOverrideRefusal(env = process.env) {
-  for (const key of ["PGHOST", "PGHOSTADDR"]) {
-    const value = String(env[key] ?? "").trim();
-    if (!value) continue;
-    if (value.startsWith("/")) continue;
-    if (!isLoopbackUrlHost(value)) {
-      return `${key} overrides connection destination (${value}) — refusing DROP`;
-    }
-  }
-  return null;
-}
-
 function hostFromUrl(databaseUrl) {
   return normalizeHost(new URL(databaseUrl).hostname);
 }
 
-function isolationRefusal({ itDb, sourceDb, host, databaseUrl, env } = {}) {
+function isolationRefusal({ itDb, sourceDb, host, databaseUrl } = {}) {
   if (!itDb) return "IT database name empty after sanitization";
   if (FORBIDDEN_DATABASES.has(itDb)) return `IT database name forbidden (${itDb})`;
   if (!/^[a-z][a-z0-9_]*_it$/.test(itDb)) return `IT database must match *_it (got ${itDb})`;
@@ -105,8 +97,6 @@ function isolationRefusal({ itDb, sourceDb, host, databaseUrl, env } = {}) {
     const overrideRefusal = connectionOverrideRefusal(databaseUrl);
     if (overrideRefusal) return overrideRefusal;
   }
-  const envRefusal = environmentOverrideRefusal(env);
-  if (envRefusal) return envRefusal;
   if (!isLoopbackUrlHost(host)) {
     return `DATABASE_URL host is not a loopback test host (${host || "empty"})`;
   }
@@ -125,9 +115,8 @@ function mayDropPublicSchema({
   databaseUrl,
   currentDatabase,
   inetServerAddr,
-  env,
 } = {}) {
-  const urlRefusal = isolationRefusal({ itDb, sourceDb, host, databaseUrl, env });
+  const urlRefusal = isolationRefusal({ itDb, sourceDb, host, databaseUrl });
   if (urlRefusal) return { allowed: false, reason: urlRefusal };
   const current = String(currentDatabase ?? "").trim();
   if (!current || current !== itDb || current !== sourceDb) {
@@ -159,7 +148,6 @@ async function assertConnectedToIsolatedItDatabase(pool, { itDb, sourceDb, host,
     databaseUrl,
     currentDatabase: rows[0]?.name,
     inetServerAddr: rows[0]?.addr,
-    env: process.env,
   });
   if (!decision.allowed) {
     throw new Error(
@@ -189,7 +177,6 @@ async function main() {
     sourceDb,
     host,
     databaseUrl: DATABASE_URL,
-    env: process.env,
   });
   if (refusal) {
     console.log(`student-user-canonical-link.pg.test.js SKIP (${refusal})`);
@@ -354,7 +341,6 @@ module.exports = {
   isLoopbackUrlHost,
   isLoopbackServerAddr,
   connectionOverrideRefusal,
-  environmentOverrideRefusal,
   isolationRefusal,
   mayDropPublicSchema,
   FORBIDDEN_DATABASES,
