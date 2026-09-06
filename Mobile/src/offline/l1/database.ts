@@ -7,6 +7,8 @@ import { applyL1Migrations } from "./migrations";
 import { L1_RESOURCE_COLUMNS, L1_TABLE_BY_RESOURCE } from "./schema";
 import type { L1Partition, L1Resource, L1SyncMeta, SqlValue } from "./types";
 import { safeLogger } from "../../services/safeLogger";
+import { createSqliteOutboxStore, type OutboxRawSql } from "../outbox/sqliteStore";
+import type { OutboxStore } from "../outbox/types";
 
 /** Marqueur logcat — jamais la clé SQLCipher. */
 export const L1_SQLCIPHER_SMOKE_TAG = "L1_SQLCIPHER_SMOKE";
@@ -70,6 +72,26 @@ function enqueueWrite<T>(tail: { current: Promise<void> }, fn: () => Promise<T>)
     () => undefined,
   );
   return run;
+}
+
+const outboxByL1Store = new WeakMap<L1Store, OutboxStore>();
+
+export function outboxStoreFor(store: L1Store): OutboxStore | null {
+  return outboxByL1Store.get(store) ?? null;
+}
+
+function createRawSql(handle: L1SqliteLike): OutboxRawSql {
+  return {
+    async run(sql, params = []) {
+      await handle.runAsync(sql, params);
+    },
+    async get(sql, params = []) {
+      return (await handle.getFirstAsync(sql, params)) ?? undefined;
+    },
+    async all(sql, params = []) {
+      return handle.getAllAsync(sql, params);
+    },
+  };
 }
 
 export async function generateL1DbKeyHex(getRandomBytes: (size: number) => Uint8Array | Promise<Uint8Array>): Promise<string> {
@@ -272,7 +294,7 @@ function createSqliteStore(
   const writeTail = { current: Promise.resolve() };
   const root = createSqliteOps(db);
 
-  return {
+  const store: L1Store = {
     kind: "sqlcipher",
     cipherVersion,
     async migrate() {
@@ -315,6 +337,35 @@ function createSqliteStore(
       await db.closeAsync();
     },
   };
+
+  const withRawExclusive = <T,>(fn: (sql: OutboxRawSql) => Promise<T>): Promise<T> =>
+    enqueueWrite(writeTail, async () => {
+      const txnDb = await openDatabase(L1_DB_FILENAME, { useNewConnection: true });
+      try {
+        await applySqlCipherKey(txnDb, key);
+        await txnDb.execAsync("BEGIN EXCLUSIVE TRANSACTION");
+        try {
+          const result = await fn(createRawSql(txnDb));
+          await txnDb.execAsync("COMMIT");
+          return result;
+        } catch (error) {
+          await txnDb.execAsync("ROLLBACK").catch(() => undefined);
+          throw error;
+        }
+      } finally {
+        await txnDb.closeAsync().catch(() => undefined);
+      }
+    });
+
+  outboxByL1Store.set(
+    store,
+    createSqliteOutboxStore({
+      cipherVersion,
+      main: createRawSql(db),
+      withExclusive: withRawExclusive,
+    }),
+  );
+  return store;
 }
 
 export async function openEncryptedL1Database(deps: {

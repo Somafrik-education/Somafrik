@@ -357,6 +357,8 @@ jobs:
           npm run verify:mobile-l1-sqlite-cache
           npm run verify:mobile-l1-offline-reads
           npm run verify:mobile-rc2-offline-read-smoke
+          npm run verify:mobile-sqlite-outbox
+          npm run test:mobile-sqlite-outbox
           npx --yes tsx Mobile/src/lib/roleSelectionLayout.test.ts
 
       - name: Canonical sync
