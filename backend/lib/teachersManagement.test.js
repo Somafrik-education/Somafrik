@@ -103,6 +103,7 @@ function main() {
     false,
   );
 
+  // pg DATE → Date JS : String(date).slice(0, 10) n'est pas YYYY-MM-DD.
   const pgDate = new Date("1990-05-01T00:00:00.000Z");
   assert.notEqual(String(pgDate).slice(0, 10), "1990-05-01");
   assert.equal(toIsoDate(pgDate), "1990-05-01");
