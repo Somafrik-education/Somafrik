@@ -81,6 +81,9 @@ function requireNonEmptyString(value, field, maxLength) {
   if (trimmed.length > maxLength) {
     throw createTeacherHttpError(400, `${field} trop long (max ${maxLength}).`);
   }
+  if (/^\d+$/u.test(trimmed)) {
+    throw createTeacherHttpError(400, `${field} doit contenir du texte.`);
+  }
   return trimmed;
 }
 
