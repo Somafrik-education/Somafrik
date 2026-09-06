@@ -258,6 +258,11 @@ function resolveUserIdentifier({ role, phone, email, userCode }) {
   return asTrimmed(userCode);
 }
 
+/**
+ * Projection établissement pour un compte : school_code reste l'alias tenant,
+ * school_login_code / school_name portent le code public et le nom.
+ * Ne jamais lire users.login_code ici (identité personne).
+ */
 function schoolPublicProjectionFromSchool(school, fallbackSchoolCode = "*") {
   if (!school) {
     return {
