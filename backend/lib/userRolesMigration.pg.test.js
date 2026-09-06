@@ -443,6 +443,104 @@ async function main() {
     );
     assert.equal(teacherStill.rows[0].role_key, "TEACHER", "rôle statique historique inchangé");
 
+    const legacyDirector = await insertUser(pool, {
+      schoolId: schoolA,
+      userCode: "USR-2026-00021",
+      firstName: "Directeur",
+      lastName: "Lie",
+      role: "Directeur",
+    });
+    const linkedFiche = await pool.query(
+      `INSERT INTO students (school_id, student_code, first_name, last_name, status)
+       VALUES ($1, 'CD-IN-DL-26-00099', 'Directeur', 'Lie', 'active')
+       RETURNING id`,
+      [schoolA],
+    );
+    await pool.query(`UPDATE students SET user_id = $1 WHERE id = $2`, [
+      legacyDirector.id,
+      linkedFiche.rows[0].id,
+    ]);
+    await applyUserRolesCanonical(pool);
+    const skippedStaff = await pool.query(
+      `SELECT role_key FROM user_roles WHERE user_id = $1 AND status = 'active' ORDER BY role_key`,
+      [legacyDirector.id],
+    );
+    assert.deepEqual(
+      skippedStaff.rows.map((row) => row.role_key),
+      [],
+      "backfill n'ajoute pas Directeur sur un compte lié (pas de remediation, pas de nouvel anomalie)",
+    );
+    assert.equal(
+      (await pool.query(`SELECT role FROM users WHERE id = $1`, [legacyDirector.id])).rows[0].role,
+      "Directeur",
+      "users.role legacy inchangé",
+    );
+
+    await pool.query(`DROP TRIGGER IF EXISTS user_roles_student_role_lock ON user_roles`);
+    await pool.query(
+      `INSERT INTO user_roles (user_id, school_id, role_key, status)
+       VALUES ($1, $2, 'PRINCIPAL', 'active')`,
+      [legacyDirector.id, schoolA],
+    );
+    await applyUserRolesCanonical(pool);
+    const keptAnomaly = await pool.query(
+      `SELECT role_key FROM user_roles WHERE user_id = $1 AND status = 'active' ORDER BY role_key`,
+      [legacyDirector.id],
+    );
+    assert.deepEqual(
+      keptAnomaly.rows.map((row) => row.role_key),
+      ["PRINCIPAL"],
+      "anomalie user_roles existante conservée ; boot ne lève pas STUDENT_ROLE_LOCKED",
+    );
+    const triggerOn = await pool.query(
+      `SELECT 1 FROM pg_trigger WHERE tgname = 'user_roles_student_role_lock'`,
+    );
+    assert.equal(triggerOn.rowCount, 1, "trigger repose après backfill");
+    await assert.rejects(
+      () =>
+        pool.query(
+          `INSERT INTO user_roles (user_id, school_id, role_key, status)
+           VALUES ($1, $2, 'TEACHER', 'active')`,
+          [legacyDirector.id, schoolA],
+        ),
+      /STUDENT_ROLE_LOCKED/,
+    );
+
+    const receiver = await insertUser(pool, {
+      schoolId: schoolA,
+      userCode: "USR-2026-00022",
+      firstName: "Staff",
+      lastName: "Cible",
+      role: null,
+    });
+    await assert.rejects(
+      () =>
+        pool.query(`UPDATE user_roles SET user_id = $1 WHERE user_id = $2 AND role_key = 'PRINCIPAL'`, [
+          receiver.id,
+          legacyDirector.id,
+        ]),
+      /STUDENT_ROLE_LOCKED/,
+      "transfert de rôle hors du compte lié interdit",
+    );
+    assert.equal(
+      (
+        await pool.query(
+          `SELECT COUNT(*)::int AS count FROM user_roles WHERE user_id = $1 AND role_key = 'PRINCIPAL' AND status = 'active'`,
+          [legacyDirector.id],
+        )
+      ).rows[0].count,
+      1,
+    );
+    assert.equal(
+      (
+        await pool.query(
+          `SELECT COUNT(*)::int AS count FROM user_roles WHERE user_id = $1`,
+          [receiver.id],
+        )
+      ).rows[0].count,
+      0,
+    );
+
     console.log("userRolesMigration.pg.test.js OK");
   } finally {
     await pool.end();
