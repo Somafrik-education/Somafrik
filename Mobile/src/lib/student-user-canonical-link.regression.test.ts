@@ -6,8 +6,7 @@
  * Invariants : linkedStudent.studentId / students.id = identité métier.
  * Role STUDENT, student_code, user_code ne prouvent pas la fiche.
  *
- * Les it.skip FAIL sont des contrats révélateurs : ne jamais affirmer le
- * comportement incorrect (ex. roleKeys STUDENT → student_login).
+ * Role STUDENT, student_code, user_code ne prouvent pas la fiche.
  */
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
@@ -21,6 +20,7 @@ import {
 } from "./businessProfile";
 import { notesForStudent } from "./evaluationsV2";
 import { normalizeUser } from "./canonicalResourceNormalize";
+import { resolveSessionStudentId } from "./canonicalStudentIdentity";
 import { projectL1Student } from "../offline/l1/uiProjection";
 import type { L1Partition } from "../offline/l1/types";
 
@@ -76,19 +76,13 @@ describe("M2 — rôle STUDENT sans fiche students", () => {
     assert.deepEqual(roleOnly.roleKeys, ["STUDENT"]);
   });
 
-  it(
-    "M2 contract : roleKeys STUDENT + linkedStudent null + accountKind unassigned ≠ student_login",
-    {
-      skip: "FAIL — businessProfile.ts:51,74,88 : roleKeys STUDENT fabrique student_login sans linkedStudent. Isolé comme Web it.skip / Backend skip. Lot ultérieur : formatters uniquement via linkedStudent / accountKind.",
-    },
-    () => {
+  it("M2 contract : roleKeys STUDENT + linkedStudent null + accountKind unassigned ≠ student_login", () => {
       assert.notEqual(
         formatBusinessProfileKind(roleOnly),
         BUSINESS_PROFILE_KIND_LABELS.student_login,
       );
       assert.equal(isStudentLinkedAccount(roleOnly), false);
-    },
-  );
+    });
 });
 
 describe("M4 — pédagogie filtrée par student.id", () => {
@@ -129,35 +123,33 @@ describe("M5 — session / switcher", () => {
     assert.doesNotMatch(switcherSrc, /student_code|login_code|identity_code/);
   });
 
-  it("caractérise le fallback session actuel vs contrat linkedStudent", () => {
+  it("session utilise linkedStudent.studentId, jamais users.id comme clé métier", () => {
     const authSrc = source("src/context/AuthContext.tsx");
-    assert.match(authSrc, /next\?\.user\.children\?\.\[0\]\?\.id \?\? next\?\.user\.id/);
-    assert.doesNotMatch(authSrc, /linkedStudent/);
-
-    function resolveCanonicalSessionStudentId(user: {
-      children?: Array<{ id: string }>;
-      id?: string;
-      linkedStudent?: { studentId?: string } | null;
-    }) {
-      if (user.linkedStudent?.studentId) return user.linkedStudent.studentId;
-      if (user.children?.[0]?.id) return user.children[0].id;
-      return null;
-    }
+    assert.match(authSrc, /resolveSessionStudentId/);
+    const identitySrc = source("src/lib/canonicalStudentIdentity.ts");
+    assert.match(identitySrc, /linkedStudent/);
 
     assert.equal(
-      resolveCanonicalSessionStudentId({
+      resolveSessionStudentId({
         id: U1,
         children: [],
         linkedStudent: { studentId: S1 },
       }),
       S1,
     );
-    const currentSessionFallback = (user: { children?: Array<{ id: string }>; id?: string }) =>
-      user.children?.[0]?.id ?? user.id ?? null;
-    assert.equal(currentSessionFallback({ id: U1, children: [] }), U1, "FAIL latent M5 : fallback user.id ≠ students.id");
+    assert.equal(resolveSessionStudentId({ id: U1, children: [] }), null);
+    assert.equal(
+      resolveSessionStudentId({
+        id: U1,
+        children: [{ id: S1 }],
+      }),
+      S1,
+    );
 
     const mvpSrc = source("src/screens/MvpUtilityScreens.tsx");
-    assert.match(mvpSrc, /selectedStudentId \?\? session\.user\.id/);
+    assert.match(mvpSrc, /selectedStudentId/);
+    assert.doesNotMatch(mvpSrc, /selectedStudentId \?\? session\.user\.id/);
+    assert.doesNotMatch(mvpSrc, /session\?\.role === "student"\s*\n\s*\? \[session\.user\.id\]/);
   });
 });
 
@@ -186,8 +178,8 @@ describe("M6 — L1 conserve students.id", () => {
     assert.notEqual(projected.id, CODE_B);
   });
 
-  it("normalizeUser drop accountKind et linkedStudent (caractérisé)", () => {
-    const normalizeDropped = normalizeUser({
+  it("normalizeUser conserve accountKind et linkedStudent", () => {
+    const normalized = normalizeUser({
       id: U1,
       userCode: CODE_A,
       firstName: "Marc",
@@ -197,8 +189,32 @@ describe("M6 — L1 conserve students.id", () => {
       roleKeys: [],
       schoolPublicCode: "CD-IN-26-001",
     });
-    assert.equal(normalizeDropped?.id, U1);
-    assert.equal("linkedStudent" in (normalizeDropped ?? {}), false);
-    assert.equal("accountKind" in (normalizeDropped ?? {}), false);
+    assert.equal(normalized?.id, U1);
+    assert.equal(normalized?.linkedStudent?.studentId, S1);
+    assert.equal(normalized?.linkedStudent?.studentCode, CODE_B);
+    assert.equal(normalized?.accountKind, "student_login");
+    assert.notEqual(normalized?.id, S1);
+    assert.notEqual(normalized?.linkedStudent?.studentId, CODE_A);
+  });
+
+  it("cas réel 6654 1324 / CD-IN-61-26-00017 : studentId survit à normalizeUser", () => {
+    const normalized = normalizeUser({
+      id: "17171717-1717-4717-8717-171717171717",
+      identifier: "6654 1324",
+      userCode: "6654 1324",
+      firstName: "Marc",
+      lastName: "Rumba",
+      accountKind: "student_login",
+      linkedStudent: {
+        studentId: "18181818-1818-4818-8818-181818181818",
+        studentCode: "CD-IN-61-26-00017",
+      },
+      roleKeys: ["STUDENT"],
+    });
+    assert.equal(normalized?.id, "17171717-1717-4717-8717-171717171717");
+    assert.equal(normalized?.linkedStudent?.studentId, "18181818-1818-4818-8818-181818181818");
+    assert.equal(normalized?.linkedStudent?.studentCode, "CD-IN-61-26-00017");
+    assert.equal(resolveSessionStudentId(normalized), "18181818-1818-4818-8818-181818181818");
+    assert.notEqual(normalized?.identifier, normalized?.linkedStudent?.studentCode);
   });
 });

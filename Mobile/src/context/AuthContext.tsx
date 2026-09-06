@@ -9,6 +9,7 @@ import {
 } from "../services/api";
 import { enrichSessionPermissions } from "../domain/security/permissions";
 import { attachCanonicalRoleIdentity } from "../lib/canonicalRoleIdentity";
+import { resolveSessionStudentId } from "../lib/canonicalStudentIdentity";
 import { canRestorePersistedSession } from "../lib/dataTruth";
 import { dismissPendingPushNavigation } from "../lib/pushNotificationTap";
 import { blockOutboxOnLogout } from "../lib/outbox";
@@ -109,7 +110,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       : enrichSessionPermissions(stripped);
     sessionRef.current = next;
     setSessionState(next);
-    setSelectedStudentId(next?.user.children?.[0]?.id ?? next?.user.id ?? null);
+    setSelectedStudentId(resolveSessionStudentId(next?.user));
     return next;
   }, []);
 

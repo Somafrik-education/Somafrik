@@ -77,6 +77,7 @@ const inactiveNoLink = {
 assert.equal(formatBusinessProfileKind(inactiveNoLink), "Sans affectation");
 
 const studentRoleOnly = { roleKeys: ["STUDENT"] };
-assert.equal(formatBusinessProfileKind(studentRoleOnly), "Compte lié à un élève");
+assert.notEqual(formatBusinessProfileKind(studentRoleOnly), BUSINESS_PROFILE_KIND_LABELS.student_login);
+assert.equal(isStudentLinkedAccount(studentRoleOnly), false);
 
 console.log("businessProfile.test.ts OK");

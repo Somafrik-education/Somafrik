@@ -1907,7 +1907,11 @@ class PostgresRepository {
         SELECT st.*, s.school_code, e.class_id, cl.name AS class_name, u.pin_hash AS student_pin_hash
         FROM students st
         JOIN schools s ON s.id = st.school_id
-        LEFT JOIN users u ON u.school_id = st.school_id AND u.user_code = st.student_code
+        LEFT JOIN users u ON u.school_id = st.school_id
+         AND (
+           st.user_id = u.id
+           OR (st.user_id IS NULL AND u.user_code = st.student_code)
+         )
         LEFT JOIN enrollments e ON e.student_id = st.id AND e.status = 'active'
         LEFT JOIN classes cl ON cl.id = e.class_id
         ORDER BY st.created_at, st.student_code
@@ -6398,6 +6402,8 @@ class PostgresRepository {
     const canonical = student.login_code || student.identity_code || student.student_code;
     return {
       id: canonical,
+      studentUuid: student.id,
+      userId: student.user_id ?? student.userId ?? null,
       schoolId: student.school_id,
       publicId: canonical,
       identifier: canonical,

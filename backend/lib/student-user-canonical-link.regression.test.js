@@ -11,8 +11,9 @@
  * 5. users.id = identité d'authentification
  * 6. student_code = identifiant public, pas FK métier
  *
- * Les cas marqués `{ skip: "FAIL — ..." }` sont des tests révélateurs isolés :
- * le code actuel échoue l'autorité students.user_id. Ne pas affaiblir l'assertion.
+ * Les contrats P0/P1 de liaison canonique sont exécutés (plus de skip FAIL
+ * sur le matcher, self-sync, auth, rôle ≠ fiche). Fallback legacy code
+ * seulement si students.user_id IS NULL.
  */
 
 const { describe, it } = require("node:test");
@@ -39,9 +40,13 @@ const { TenantScopeService } = require("../services/tenantScopeService");
 const CODE_A = "CD-ITS-MR-26-00099";
 const CODE_B = "CD-ITS-MR-26-00003";
 const CODE_C = "CD-ITS-MR-26-00007";
+const LOGIN_REAL = "6654 1324";
+const MATRICULE_REAL = "CD-IN-61-26-00017";
 const U1 = "11111111-1111-4111-8111-111111111111";
 const S1 = "22222222-2222-4222-8222-222222222222";
 const S2 = "33333333-3333-4333-8333-333333333333";
+const U17 = "17171717-1717-4717-8717-171717171717";
+const S17 = "18181818-1818-4818-8818-181818181818";
 const SCHOOL_A = "school-a";
 const SCHOOL_B = "school-b";
 
@@ -187,7 +192,7 @@ describe("B2 — collision de matricule/code", () => {
       user_id: null,
     });
     assert.equal(userMatchesStudent(user, s1), true, "FK S1.user_id = U1");
-    assert.equal(userMatchesStudent(user, s2), true, "FAIL latent : S2 matche encore par code");
+    assert.equal(userMatchesStudent(user, s2), true, "legacy : S2.user_id NULL + code = U1.user_code");
   });
 
   it("quand S1 est trouvé en premier, le FK gagne", () => {
@@ -203,12 +208,7 @@ describe("B2 — collision de matricule/code", () => {
     assert.equal(found?.id, S1);
   });
 
-  it(
-    "B2 contract : S2 listé avant S1 ne doit jamais remplacer le FK",
-    {
-      skip: "FAIL — findActiveStudentProfileForUser .find() : premier match code gagne si S2 précède S1. businessProfileIntegrity.js:70-96. Correction lot ultérieur : préférer students.user_id.",
-    },
-    () => {
+  it("B2 contract : S2 listé avant S1 ne doit jamais remplacer le FK", () => {
       const user = userFixture();
       const found = findActiveStudentProfileForUser(
         [
@@ -225,8 +225,7 @@ describe("B2 — collision de matricule/code", () => {
         SCHOOL_A,
       );
       assert.equal(found?.id, S1, "U1 → S1, jamais S2");
-    },
-  );
+    });
 });
 
 describe("B3 — rôle STUDENT sans fiche students", () => {
@@ -235,12 +234,7 @@ describe("B3 — rôle STUDENT sans fiche students", () => {
     assert.equal(profile.linkedStudent, null);
   });
 
-  it(
-    "ne sélectionne pas un élève déjà lié à un autre user.id malgré un code identique",
-    {
-      skip: "FAIL — userMatchesStudent (businessProfileIntegrity.js:70-76) matche encore par code même si students.user_id pointe vers un autre users.id.",
-    },
-    () => {
+  it("ne sélectionne pas un élève déjà lié à un autre user.id malgré un code identique", () => {
       const user = userFixture({
         id: "user-orphan",
         user_code: CODE_B,
@@ -253,8 +247,7 @@ describe("B3 — rôle STUDENT sans fiche students", () => {
         SCHOOL_A,
       );
       assert.equal(found, null, "le code égal à un autre élève déjà lié par FK ne doit pas être réutilisé");
-    },
-  );
+    });
 
   it("listProjection : GRANT STUDENT n'existe pas ; unassigned sans students.user_id", async () => {
     const store = buildStore();
@@ -274,20 +267,14 @@ describe("B3 — rôle STUDENT sans fiche students", () => {
     assert.ok(!store._tables.students.some((row) => String(row.user_id) === String(created.id)));
   });
 
-  it(
-    "B3 contract : roleKeys STUDENT sans fiche ≠ student_login",
-    {
-      skip: "FAIL — resolveAccountKind (businessProfileIntegrity.js:133-134) mappe STUDENT → student_login sans students.user_id. Correction : unassigned/staff tant que linkedStudent est null.",
-    },
-    () => {
+  it("B3 contract : roleKeys STUDENT sans fiche ≠ student_login", () => {
       assert.notEqual(resolveAccountKind({ roleKeys: ["STUDENT"] }), "student_login");
       assert.equal(buildBusinessProfile({ studentRow: null, roleKeys: ["STUDENT"] }).linkedStudent, null);
       assert.notEqual(
         buildBusinessProfile({ studentRow: null, roleKeys: ["STUDENT"] }).accountKind,
         "student_login",
       );
-    },
-  );
+    });
 });
 
 describe("B4 — fiche élève sans rôle STUDENT", () => {
@@ -485,30 +472,25 @@ describe("B8 — mobile sync self student", () => {
     assert.deepEqual(result.body.items, []);
   });
 
-  it("SQL self actuel ignore students.user_id (autorité concurrente caractérisée)", () => {
+  it("SQL self-student joint students.user_id = users.id, fallback code si user_id IS NULL", () => {
     const src = sourceOf("db", "classStudentsRepository.js");
     assert.match(src, /async listLiveSelfStudentIdForSync/);
-    assert.match(src, /u\.user_code = st\.student_code/);
     const fn = src.slice(src.indexOf("async listLiveSelfStudentIdForSync"));
     const body = fn.slice(0, fn.indexOf("async listByClassCode"));
-    assert.doesNotMatch(body, /st\.user_id/);
+    assert.match(body, /st\.user_id::text = u\.id::text/);
+    assert.match(body, /st\.user_id IS NULL/);
+    assert.match(body, /u\.user_code = st\.student_code/);
   });
 
-  it(
-    "B8 contract : listLiveSelfStudentIdForSync doit joindre students.user_id = users.id",
-    {
-      skip: "FAIL — classStudentsRepository.js:699-714 joint uniquement u.user_code = st.student_code. Impact Mobile sync self P0. Correction : JOIN st.user_id = u.id, fallback code si user_id IS NULL.",
-    },
-    () => {
+  it("B8 contract : listLiveSelfStudentIdForSync doit joindre students.user_id = users.id", () => {
       const src = sourceOf("db", "classStudentsRepository.js");
       const fn = src.slice(src.indexOf("async listLiveSelfStudentIdForSync"));
       const body = fn.slice(0, fn.indexOf("async listByClassCode"));
       assert.match(body, /st\.user_id/);
       assert.match(body, /u\.id/);
-    },
-  );
+    });
 
-  it("auth findLinkedStudent ignore students.user_id (autorité concurrente caractérisée)", () => {
+  it("auth findLinkedStudent : sans FK, fallback matricule legacy user_id NULL", () => {
     attachMemoryLoginLockoutStore();
     const school = {
       id: SCHOOL_A,
@@ -548,15 +530,10 @@ describe("B8 — mobile sync self student", () => {
       subscriptions: [],
     });
     const linked = service.findLinkedStudent(service.userAccounts[0], school.code);
-    assert.equal(linked?.id, S2, "comportement actuel : matricule CODE-A → S2, pas le FK S1");
+    assert.equal(linked?.id, S2, "legacy user_id NULL : matricule CODE-A → S2");
   });
 
-  it(
-    "B8-auth contract : findLinkedStudent doit suivre students.user_id pas le matricule",
-    {
-      skip: "FAIL — authService.js:577-585 matche matricule/publicId/student.id===user.id, jamais students.user_id. P0 session Mobile.",
-    },
-    () => {
+  it("B8-auth contract : findLinkedStudent doit suivre students.user_id pas le matricule", () => {
       attachMemoryLoginLockoutStore();
       const school = {
         id: SCHOOL_A,
@@ -595,8 +572,12 @@ describe("B8 — mobile sync self student", () => {
         subscriptions: [],
       });
       assert.equal(service.findLinkedStudent(service.userAccounts[0], school.code)?.id, S1);
-    },
-  );
+      const managed = service.buildManagedMobileUser(service.userAccounts[0], "student");
+      assert.equal(managed.id, U1, "users.id reste l'identité d'auth");
+      assert.equal(managed.linkedStudent.studentId, S1);
+      assert.equal(managed.linkedStudent.studentCode, CODE_B);
+      assert.notEqual(managed.id, S1);
+    });
 });
 
 describe("B9 — projection /users", () => {
@@ -719,12 +700,7 @@ describe("matrice négative d'identité", () => {
     });
   }
 
-  it(
-    "collision : FK prioritaire même si S2 précède",
-    {
-      skip: "FAIL — même gap B2. Matrice : code pointe ailleurs, FK doit gagner. Isolé jusqu'au lot matcher.",
-    },
-    () => {
+  it("collision : FK prioritaire même si S2 précède", () => {
       const found = findActiveStudentProfileForUser(
         [
           studentFixture({ id: S2, student_code: CODE_A, user_id: null }),
@@ -734,8 +710,7 @@ describe("matrice négative d'identité", () => {
         SCHOOL_A,
       );
       assert.equal(found?.id, S1);
-    },
-  );
+    });
 });
 
 describe("P1 — destination effective avant DROP SCHEMA public", () => {
@@ -916,21 +891,20 @@ describe("P1 — destination effective avant DROP SCHEMA public", () => {
     const pkg = require("../../package.json");
     assert.doesNotMatch(pkg.scripts["verify:user-role-lifecycle"], /student-user-canonical-link\.pg\.test\.js/);
   });
-  it("collision SQL unbounded, pas d'assert sur l'ordre LIMIT 1", () => {
+  it("collision SQL : LIMIT 1 priorise le FK, unbounded peut encore voir le legacy", () => {
     const src = sourceOf("lib", "student-user-canonical-link.pg.test.js");
     assert.match(src, /SELECT_ACTIVE_STUDENT_FOR_USER_UNBOUNDED_SQL/);
-    assert.match(src, /pas d'assert sur l'ordre physique/);
-    assert.doesNotMatch(src, /assert\.equal\(active\.rowCount, 1, "B1 : un seul élève actif pour U1"\)/);
+    assert.match(src, /LIMIT 1 priorise le FK/);
   });
 });
 
 describe("P1 — contrat Mobile M2 isolé", () => {
-  it("Mobile M2 isole le contrat architectural sans encoder student_login", () => {
+  it("Mobile M2 : rôle STUDENT sans fiche ≠ student_login", () => {
     const mobile = fs.readFileSync(
       path.join(ROOT, "..", "Mobile", "src", "lib", "student-user-canonical-link.regression.test.ts"),
       "utf8",
     );
-    assert.match(mobile, /skip:\s*"FAIL — businessProfile\.ts:51,74,88/);
+    assert.doesNotMatch(mobile, /skip:\s*"FAIL — businessProfile\.ts:51,74,88/);
     assert.match(mobile, /formatBusinessProfileKind\(roleOnly\)/);
     assert.match(mobile, /isStudentLinkedAccount\(roleOnly\)/);
     assert.doesNotMatch(
@@ -944,22 +918,57 @@ describe("P1 — contrat Mobile M2 isolé", () => {
   });
 });
 
-describe("SQL matcher — autorité concurrente caractérisée", () => {
-  it("SELECT_ACTIVE_STUDENT_FOR_USER_SQL contient le FK ET les égalités de codes", () => {
+describe("SQL matcher — FK prioritaire, fallback code borné", () => {
+  it("SELECT_ACTIVE_STUDENT_FOR_USER_SQL contient le FK ET les égalités de codes en fallback", () => {
     assert.match(SELECT_ACTIVE_STUDENT_FOR_USER_SQL, /user_id/);
     assert.match(SELECT_ACTIVE_STUDENT_FOR_USER_SQL, /st\.student_code = u\.user_code/);
     assert.match(SELECT_STUDENT_PROFILES_FOR_USERS_SQL, /st\.student_code = u\.user_code/);
     const pgStore = sourceOf("db", "clientsPgStore.js");
+    assert.match(pgStore, /st\.user_id = u\.id/);
     assert.match(pgStore, /u\.user_code = st\.student_code/);
   });
 
-  it(
-    "SQL contract : match code seulement si students.user_id IS NULL",
-    {
-      skip: "FAIL — STUDENT_USER_MATCH_SQL OR-match les codes même quand user_id est renseigné (businessProfileIntegrity.js:224-234).",
-    },
-    () => {
-      assert.match(SELECT_ACTIVE_STUDENT_FOR_USER_SQL, /user_id IS NULL/i);
-    },
-  );
+  it("SQL contract : match code seulement si students.user_id IS NULL", () => {
+      assert.match(SELECT_ACTIVE_STUDENT_FOR_USER_SQL, /->>'user_id', ''\) IS NULL/);
+    });
+});
+
+describe("cas réel — login 6654 1324 / matricule CD-IN-61-26-00017", () => {
+  const user = userFixture({
+    id: U17,
+    user_code: LOGIN_REAL,
+    identity_code: LOGIN_REAL,
+    login_code: LOGIN_REAL,
+  });
+  const student = studentFixture({
+    id: S17,
+    student_code: MATRICULE_REAL,
+    user_id: U17,
+  });
+  const colliding = studentFixture({
+    id: S2,
+    student_code: LOGIN_REAL,
+    user_id: null,
+    first_name: "Collision",
+    last_name: "Login",
+  });
+
+  it("U17 → S17 malgré login ≠ matricule et collision de code", () => {
+    const found = findActiveStudentProfileForUser([colliding, student], user, SCHOOL_A);
+    assert.equal(found?.id, S17);
+    assert.notEqual(user.user_code, found.student_code);
+    const hydrated = hydrateUser(user, ["STUDENT"], buildBusinessProfile({ studentRow: found, roleKeys: ["STUDENT"] }));
+    assert.equal(hydrated.id, U17);
+    assert.equal(hydrated.linkedStudent.studentId, S17);
+    assert.equal(hydrated.linkedStudent.studentCode, MATRICULE_REAL);
+    assert.equal(hydrated.accountKind, "student_login");
+  });
+
+  it("roster classe → users suit students.user_id, pas student_code = user_code", () => {
+    const src = sourceOf("db", "clientsPgStore.js");
+    const fn = src.slice(src.indexOf("async listClassStudentUserIds"));
+    const body = fn.slice(0, fn.indexOf("async listClassParentUserIds"));
+    assert.match(body, /st\.user_id = u\.id/);
+    assert.match(body, /st\.user_id IS NULL/);
+  });
 });

@@ -109,7 +109,7 @@ describe("user account projection — type métier vs rôle d'accès", () => {
     assert.equal(profile.businessProfileConflict, true);
   });
 
-  it("élève inactif : pas de lien métier ; STUDENT roleKeys reste student_login", () => {
+  it("élève inactif : pas de lien métier ; rôle STUDENT sans fiche ≠ student_login", () => {
     const students = [
       { id: "stu-off", school_id: "school-a", student_code: SAMPLE_IDENTITY, status: "inactive" },
     ];
@@ -120,10 +120,10 @@ describe("user account projection — type métier vs rôle d'accès", () => {
       buildBusinessProfile({ studentRow: null, roleKeys: [] }).businessProfileLabel,
       "Sans affectation",
     );
-    assert.equal(resolveAccountKind({ roleKeys: ["STUDENT"] }), "student_login");
-    assert.equal(
-      buildBusinessProfile({ studentRow: null, roleKeys: ["STUDENT"] }).businessProfileLabel,
-      "Compte lié à un élève",
+    assert.notEqual(resolveAccountKind({ roleKeys: ["STUDENT"] }), "student_login");
+    assert.notEqual(
+      buildBusinessProfile({ studentRow: null, roleKeys: ["STUDENT"] }).accountKind,
+      "student_login",
     );
   });
 });

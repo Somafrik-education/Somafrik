@@ -269,15 +269,19 @@ function isEmptyAccessLabel(value?: string | null): boolean {
   return !status || status.toLowerCase() === "sans affectation";
 }
 
-/** Type métier. Un élève lié n'est jamais « Sans affectation ». */
+function isStudentLinkedByProfile(
+  user: Pick<UserAccount, "accountKind" | "linkedStudent">,
+): boolean {
+  if (user.accountKind === "student_login" || user.accountKind === "conflict") return true;
+  return Boolean(user.linkedStudent?.studentId || user.linkedStudent?.studentCode);
+}
+
+/** Type métier. Un élève lié n'est jamais « Sans affectation ». Le rôle STUDENT n'est pas une fiche. */
 export function formatBusinessProfileKind(
   user: Pick<UserAccount, "accountKind" | "linkedStudent" | "linkedTeacher" | "businessProfileLabel" | "businessProfileConflict" | "roleKeys">,
 ): string {
   const keys = accessRoleKeysOf(user);
-  const studentLinked =
-    user.accountKind === "student_login" ||
-    Boolean(user.linkedStudent?.studentId || user.linkedStudent?.studentCode) ||
-    keys.includes("STUDENT");
+  const studentLinked = isStudentLinkedByProfile(user);
   if (user.businessProfileLabel) {
     if (studentLinked && isEmptyAccessLabel(user.businessProfileLabel)) {
       return BUSINESS_PROFILE_KIND_LABELS.student_login;
@@ -287,12 +291,7 @@ export function formatBusinessProfileKind(
   if (user.accountKind === "conflict" || user.businessProfileConflict) {
     return BUSINESS_PROFILE_KIND_LABELS.conflict;
   }
-  if (
-    user.accountKind === "student_login" ||
-    user.linkedStudent?.studentId ||
-    user.linkedStudent?.studentCode ||
-    keys.includes("STUDENT")
-  ) {
+  if (studentLinked) {
     return BUSINESS_PROFILE_KIND_LABELS.student_login;
   }
   if (
@@ -334,15 +333,7 @@ export function isStudentLinkedAccount(
   user: Pick<UserAccount, "accountKind" | "linkedStudent" | "role" | "roles" | "roleKeys">,
 ): boolean {
   if (user.accountKind === "student_login" || user.accountKind === "conflict") return true;
-  if (user.linkedStudent?.studentId || user.linkedStudent?.studentCode) return true;
-  const tokens = [
-    user.role,
-    ...(user.roles ?? []),
-    ...(user.roleKeys ?? []),
-  ]
-    .map((value) => normalize(String(value ?? "")))
-    .filter(Boolean);
-  return tokens.some((value) => value === "eleve / etudiant" || value === "student" || value === "eleve");
+  return Boolean(user.linkedStudent?.studentId || user.linkedStudent?.studentCode);
 }
 
 export function isTeacherRoleLabel(role: string | undefined | null): boolean {

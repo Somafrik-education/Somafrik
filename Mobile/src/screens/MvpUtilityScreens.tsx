@@ -98,7 +98,7 @@ export function DocumentsScreen({ navigation }: any) {
         onPress={
           session?.role === "student" || session?.role === "parent_student"
             ? canOpenStudentDetail
-              ? () => navigation.navigate("StudentDetail", { studentId: selectedStudentId ?? session.user.id })
+              ? () => navigation.navigate("StudentDetail", { studentId: selectedStudentId })
               : undefined
             : canOpenStudents
               ? () => navigation.navigate("Students", { className: "Toutes les classes" })
@@ -182,7 +182,7 @@ export function MobilePaymentScreen({ navigation }: any) {
   const canOpenStudentPayments = canReadRoute(session, "StudentPayments");
   const studentIds =
     session?.role === "student"
-      ? [session.user.id]
+      ? [selectedStudentId].filter((id): id is string => Boolean(id))
       : (session?.user.children ?? []).map((child) => child.id);
   const scopedPayments = paymentsData.filter((payment) =>
     studentIds.length ? studentIds.includes(payment.studentId) : true
@@ -199,7 +199,7 @@ export function MobilePaymentScreen({ navigation }: any) {
         actionLabel={canOpenStudentPayments ? "Voir les frais" : undefined}
         onPress={
           canOpenStudentPayments
-            ? () => navigation.navigate("StudentPayments", { studentId: selectedStudentId ?? session?.user.id })
+            ? () => navigation.navigate("StudentPayments", { studentId: selectedStudentId })
             : undefined
         }
       />

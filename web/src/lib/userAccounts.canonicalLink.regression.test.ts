@@ -2,7 +2,7 @@
  * student-user-canonical-link.regression — Web
  *
  * Distingue profil métier (linkedStudent / accountKind) et rôle d'accès (roleKeys).
- * W3 contract is isolated: current formatters still treat STUDENT as métier.
+ * W3 : rôle STUDENT sans fiche ≠ Compte lié à un élève.
  */
 import { describe, expect, it } from "vitest";
 import type { UserAccount } from "../types";
@@ -75,13 +75,10 @@ describe("W3 — rôle STUDENT sans fiche students", () => {
     expect(Boolean(roleOnly.linkedStudent)).not.toBe(Boolean(linkedNoAccess.linkedStudent));
   });
 
-  it.skip(
-    "W3 contract : roleKeys STUDENT + linkedStudent null + accountKind unassigned ≠ Compte lié à un élève",
-    () => {
+  it("W3 contract : roleKeys STUDENT + linkedStudent null + accountKind unassigned ≠ Compte lié à un élève", () => {
       expect(formatBusinessProfileKind(roleOnly)).not.toBe(BUSINESS_PROFILE_KIND_LABELS.student_login);
       expect(isStudentLinkedAccount(roleOnly)).toBe(false);
-    },
-  );
+    });
 });
 
 describe("W4 — studentCode divergent de l'identifiant compte", () => {
@@ -92,5 +89,22 @@ describe("W4 — studentCode divergent de l'identifiant compte", () => {
     expect(isStudentLinkedAccount(linkedNoAccess)).toBe(true);
     expect(linkedNoAccess.linkedStudent?.studentId).toBe(S1);
     expect(linkedNoAccess.linkedStudent?.studentCode).toBe(CODE_B);
+  });
+
+  it("cas réel 6654 1324 / CD-IN-61-26-00017 : linkedStudent.studentId, jamais égalité de codes", () => {
+    const row: UserAccount = {
+      ...linkedNoAccess,
+      id: "17171717-1717-4717-8717-171717171717",
+      publicId: "6654 1324",
+      identifier: "6654 1324",
+      linkedStudent: {
+        studentId: "18181818-1818-4818-8818-181818181818",
+        studentCode: "CD-IN-61-26-00017",
+        status: "active",
+      },
+    };
+    expect(formatBusinessProfileKind(row)).toBe("Compte lié à un élève");
+    expect(row.linkedStudent?.studentId).toBe("18181818-1818-4818-8818-181818181818");
+    expect(row.identifier).not.toBe(row.linkedStudent?.studentCode);
   });
 });

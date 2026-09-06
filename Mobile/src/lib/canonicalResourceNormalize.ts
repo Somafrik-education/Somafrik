@@ -18,6 +18,11 @@ export type CanonicalTeacher = Teacher & {
 export type CanonicalUserAccount = UserAccount & {
   activeRoles?: string[];
   roleKeys?: string[];
+  accountKind?: string;
+  businessProfileLabel?: string;
+  businessProfileConflict?: boolean;
+  linkedStudent?: { studentId?: string; studentCode?: string; status?: string } | null;
+  linkedTeacher?: { teacherId?: string; teacherCode?: string; status?: string } | null;
 };
 
 export type CanonicalAnnouncement = Announcement & {
@@ -120,13 +125,42 @@ export function normalizeTeacher(value: unknown): CanonicalTeacher | null {
   };
 }
 
+function optionalLinkedStudent(row: Record<string, unknown>) {
+  const linked = record(row.linkedStudent ?? row.linked_student);
+  const studentId = text(linked.studentId ?? linked.student_id);
+  const studentCode = text(linked.studentCode ?? linked.student_code);
+  if (!studentId && !studentCode) return undefined;
+  return {
+    studentId: studentId || undefined,
+    studentCode: studentCode || undefined,
+    ...(text(linked.status) ? { status: text(linked.status) } : {}),
+  };
+}
+
+function optionalLinkedTeacher(row: Record<string, unknown>) {
+  const linked = record(row.linkedTeacher ?? row.linked_teacher);
+  const teacherId = text(linked.teacherId ?? linked.teacher_id);
+  const teacherCode = text(linked.teacherCode ?? linked.teacher_code);
+  if (!teacherId && !teacherCode) return undefined;
+  return {
+    teacherId: teacherId || undefined,
+    teacherCode: teacherCode || undefined,
+    ...(text(linked.status) ? { status: text(linked.status) } : {}),
+  };
+}
+
 export function normalizeUser(value: unknown): CanonicalUserAccount | null {
   const row = record(value);
   const id = text(row.id);
   if (!id) return null;
-  const activeRoles = stringList(row.activeRoles ?? row.active_roles ?? row.roleKeys ?? row.role_keys ?? row.roles);
+  const roleKeysExplicit = stringList(row.roleKeys ?? row.role_keys);
+  const activeRoles = stringList(row.activeRoles ?? row.active_roles ?? row.roles);
   const secondaryRoles = stringList(row.secondaryRoles ?? row.secondary_roles);
   const tenant = readTenantScopeFields(row);
+  const accountKind = optionalText(row.accountKind ?? row.account_kind);
+  const linkedStudent = optionalLinkedStudent(row);
+  const linkedTeacher = optionalLinkedTeacher(row);
+  const businessProfileLabel = optionalText(row.businessProfileLabel ?? row.business_profile_label);
   return {
     id,
     publicId: text(row.publicId ?? row.public_id ?? row.userCode ?? row.user_code),
@@ -136,8 +170,8 @@ export function normalizeUser(value: unknown): CanonicalUserAccount | null {
     phone: text(row.phone),
     email: text(row.email) || undefined,
     role: activeRoles[0] || text(row.role),
-    activeRoles,
-    roleKeys: activeRoles,
+    activeRoles: activeRoles.length ? activeRoles : roleKeysExplicit,
+    roleKeys: roleKeysExplicit.length ? roleKeysExplicit : activeRoles,
     secondaryRoles: secondaryRoles.length ? secondaryRoles : activeRoles.slice(1),
     scopeLevel: text(row.scopeLevel ?? row.scope_level),
     countryScope: tenant.countryScope || tenant.countryCode,
@@ -151,6 +185,13 @@ export function normalizeUser(value: unknown): CanonicalUserAccount | null {
     lastLoginAt: text(row.lastLoginAt ?? row.last_login_at) || undefined,
     createdBy: text(row.createdBy ?? row.created_by),
     history: stringList(row.history),
+    ...(accountKind ? { accountKind } : {}),
+    ...(businessProfileLabel ? { businessProfileLabel } : {}),
+    ...(row.businessProfileConflict === true || row.business_profile_conflict === true
+      ? { businessProfileConflict: true }
+      : {}),
+    ...(linkedStudent ? { linkedStudent } : {}),
+    ...(linkedTeacher ? { linkedTeacher } : {}),
   };
 }
 

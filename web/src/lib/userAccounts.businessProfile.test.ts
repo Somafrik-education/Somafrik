@@ -133,13 +133,13 @@ describe("userAccounts business profile", () => {
     expect(isUnassignedUserAccount(conflict)).toBe(false);
   });
 
-  it("élève inactif sans lien : type métier Sans affectation ; STUDENT roleKeys reste élève", () => {
+  it("élève inactif sans lien : type métier Sans affectation ; rôle STUDENT sans fiche ≠ élève", () => {
     const inactive: UserAccount = { accountKind: "unassigned", roleKeys: [], assignmentStatus: "Sans affectation" };
     expect(formatBusinessProfileKind(inactive)).toBe("Sans affectation");
     expect(isUnassignedUserAccount(inactive)).toBe(true);
 
     const studentKeyOnly: UserAccount = { roleKeys: ["STUDENT"] };
-    expect(formatBusinessProfileKind(studentKeyOnly)).toBe("Compte lié à un élève");
-    expect(isUnassignedUserAccount(studentKeyOnly)).toBe(false);
+    expect(formatBusinessProfileKind(studentKeyOnly)).not.toBe(BUSINESS_PROFILE_KIND_LABELS.student_login);
+    expect(isStudentLinkedAccount(studentKeyOnly)).toBe(false);
   });
 });
