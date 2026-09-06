@@ -307,6 +307,12 @@ function createMemoryDb() {
     users() {
       return users.slice();
     },
+    students() {
+      return students.slice();
+    },
+    enrollments() {
+      return enrollments.slice();
+    },
   };
   memory.withTransaction = async (fn) =>
     fn({
@@ -362,6 +368,18 @@ async function main() {
   assert.equal(enrolled.student.loginCode, enrolled.student.studentCode);
   assert.equal(enrolled.student.classCode, activeClass.class_code);
   assert.equal(enrolled.student.classId, activeClass.id);
+
+  const storedStudent = db.students().find((row) => row.student_code === enrolled.student.studentCode);
+  const storedLogin = db.users().find((row) => row.user_code === enrolled.student.studentCode);
+  assert.ok(storedStudent, "fiche students créée");
+  assert.ok(storedLogin, "compte users créé");
+  assert.equal(storedStudent.user_id, storedLogin.id, "B10 students.user_id === users.id");
+  const enrollment = db.enrollments().find((row) => row.student_id === storedStudent.id);
+  assert.equal(enrollment?.student_id, storedStudent.id, "B10 enrollments.student_id === students.id");
+  storedLogin.user_code = "CD-ITS-MR-26-00099";
+  assert.notEqual(storedLogin.user_code, storedStudent.student_code);
+  assert.equal(storedStudent.user_id, storedLogin.id, "B10 la liaison survit à la divergence des codes");
+  storedLogin.user_code = enrolled.student.studentCode;
   assert.equal(enrolled.student.className, "6ème A");
 
   const listed = await repo.listByClassCode(activeClass.class_code, "CD-2026-0001");

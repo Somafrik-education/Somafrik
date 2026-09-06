@@ -90,6 +90,27 @@ const apiStudentLoginEmptyAccess: UserAccount = {
   assignmentStatus: "Sans affectation",
 };
 
+/** W5 — UUID lié, codes divergents (user identifier ≠ studentCode). */
+const apiStudentLoginDivergedCodes: UserAccount = {
+  id: "user-student-div",
+  publicId: "CD-ITS-MR-26-00099",
+  identifier: "CD-ITS-MR-26-00099",
+  firstName: "Marc",
+  lastName: "Rumba",
+  accountKind: "student_login",
+  businessProfileLabel: "Compte lié à un élève",
+  linkedStudent: {
+    studentId: "22222222-2222-4222-8222-222222222222",
+    studentCode: "CD-ITS-MR-26-00003",
+    status: "active",
+  },
+  linkedTeacher: null,
+  roleKeys: [],
+  roles: [],
+  role: "",
+  assignmentStatus: "",
+};
+
 describe("#514 web-runtime — GET /backoffice/users → formatters UsersPage", () => {
   it("capture préprod : payload unassigned → Type métier Sans affectation (fidèle à l'API)", () => {
     expect(formatBusinessProfileKind(captureUnassigned)).toBe(BUSINESS_PROFILE_KIND_LABELS.unassigned);
@@ -118,6 +139,18 @@ describe("#514 web-runtime — domainLoaders + scope ne jettent pas le profil m�
     expect(row.linkedStudent?.studentCode).toBe("CD-ITS-MR-26-00003");
     expect(row.businessProfileLabel).toBe("Compte lié à un élève");
     expect(row.roleKeys).toEqual([]);
+    expect(formatBusinessProfileKind(row)).toBe("Compte lié à un élève");
+  });
+
+  it("W5 loadDomains : linkedStudent UUID conservé si studentCode ≠ identifier", async () => {
+    listUsers.mockResolvedValue([apiStudentLoginDivergedCodes]);
+    const result = await loadDomains(["users"]);
+    const row = result.data.users?.[0] as UserAccount;
+    expect(row.accountKind).toBe("student_login");
+    expect(row.linkedStudent?.studentId).toBe("22222222-2222-4222-8222-222222222222");
+    expect(row.linkedStudent?.studentCode).toBe("CD-ITS-MR-26-00003");
+    expect(row.publicId).toBe("CD-ITS-MR-26-00099");
+    expect(row.linkedStudent?.studentCode).not.toBe(row.publicId);
     expect(formatBusinessProfileKind(row)).toBe("Compte lié à un élève");
   });
 
