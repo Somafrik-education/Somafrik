@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { UsersPage } from "./UsersPage";
@@ -142,5 +142,52 @@ describe("W5 — GET /users → UsersPage codes divergents", () => {
     expect(screen.getByRole("dialog")).toHaveTextContent(CODE_A);
     expect(screen.getByRole("dialog")).toHaveTextContent(CODE_B);
     expect(screen.getByRole("dialog")).toHaveTextContent("Compte lié à un élève");
+    expect(screen.getByRole("dialog")).toHaveTextContent("Élève / Étudiant");
+    expect(screen.getByRole("dialog")).toHaveTextContent("Verrouillés — profil élève");
+  });
+
+  it("P0 : Attribuer masqué, rôles verrouillés", async () => {
+    permissions.canRead = true;
+    permissions.canUpdate = true;
+    schoolAdmin.user = {
+      id: "admin-nuru",
+      role: "Admin School",
+      schoolCode: "CD-2026-0001",
+      schoolPublicCode: "CD-IN-26-001",
+      schoolId: "school-nuru",
+      permissions: ["Utilisateurs:READ", "Utilisateurs:UPDATE"],
+    };
+    dataState.scopeError = null;
+    dataState.users = [divergedLinked];
+
+    render(
+      <MemoryRouter>
+        <UsersPage />
+      </MemoryRouter>,
+    );
+
+    expect(screen.queryByRole("button", { name: "Attribuer" })).not.toBeInTheDocument();
+    expect(screen.getAllByText("Verrouillés — profil élève").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Élève / Étudiant").length).toBeGreaterThan(0);
+
+    await userEvent.click(screen.getByRole("button", { name: "Modifier" }));
+    const editor = screen.getByRole("dialog", { name: /Modifier l'utilisateur/i });
+    expect(editor).toHaveTextContent("Type métier");
+    expect(within(editor).getByDisplayValue("Compte lié à un élève")).toBeInTheDocument();
+    expect(editor).toHaveTextContent("Rôle d'accès");
+    expect(within(editor).getByDisplayValue("Élève / Étudiant")).toBeInTheDocument();
+    expect(within(editor).getByDisplayValue("Verrouillés — profil élève")).toBeInTheDocument();
+    expect(editor).toHaveTextContent("Les rôles d'un compte lié à un élève ne peuvent pas être modifiés.");
+    expect(within(editor).queryByText("Sans affectation (plus tard)")).not.toBeInTheDocument();
+    await userEvent.click(within(editor).getByRole("button", { name: "Fermer" }));
+
+    await userEvent.click(screen.getByText("Marc Rumba"));
+    const detail = screen.getByRole("dialog", { name: /Marc Rumba/i });
+    expect(detail).toHaveTextContent("Type métier");
+    expect(detail).toHaveTextContent("Compte lié à un élève");
+    expect(detail).toHaveTextContent("Rôle d'accès");
+    expect(detail).toHaveTextContent("Élève / Étudiant");
+    expect(detail).toHaveTextContent("Verrouillés — profil élève");
+    expect(within(detail).queryByRole("button", { name: "Attribuer" })).not.toBeInTheDocument();
   });
 });

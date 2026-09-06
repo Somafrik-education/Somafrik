@@ -7,6 +7,10 @@ import {
   formatBusinessProfileKind,
   isStudentLinkedAccount,
   isTeacherLinkedAccount,
+  areStudentRolesLocked,
+  STUDENT_ACCESS_ROLE_LABEL,
+  STUDENT_ROLES_LOCKED_LABEL,
+  STUDENT_ROLE_LOCKED_MESSAGE,
   STUDENT_TEACHER_GRANT_BLOCKED_MESSAGE,
 } from "./businessProfile";
 
@@ -34,7 +38,11 @@ const studentNoAccess = {
   activeRoles: [] as string[],
 };
 assert.equal(formatBusinessProfileKind(studentNoAccess), BUSINESS_PROFILE_KIND_LABELS.student_login);
-assert.equal(formatAccessRolesDisplay(studentNoAccess), ACCESS_ROLES_NONE_LABEL);
+assert.equal(formatAccessRolesDisplay(studentNoAccess), "Élève / Étudiant");
+assert.equal(areStudentRolesLocked(studentNoAccess), true);
+assert.equal(formatAccessRolesDisplay(studentNoAccess), STUDENT_ACCESS_ROLE_LABEL);
+assert.equal(STUDENT_ROLES_LOCKED_LABEL, "Verrouillés — profil élève");
+assert.match(STUDENT_ROLE_LOCKED_MESSAGE, /ne peuvent pas être modifiés/);
 assert.notEqual(formatBusinessProfileKind(studentNoAccess), "Sans affectation");
 assert.equal(accountKindLabel(studentNoAccess), "Compte lié à un élève");
 assert.equal(

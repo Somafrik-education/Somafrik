@@ -263,6 +263,36 @@ async function main() {
     { status: 403, code: CLIENTS_ERROR.TENANT_MISMATCH },
   );
 
+  const linkedStudentUser = await store.createUser(
+    {
+      firstName: "Marc",
+      lastName: "Lock",
+      email: "marc.reassign.lock@test.local",
+      schoolCode: "CD-2026-0001",
+    },
+    superAdmin,
+    auditMeta,
+  );
+  store._tables.students.push({
+    id: "st-reassign-lock",
+    school_id: "school-cd",
+    student_code: "CD-IN-61-26-00017",
+    status: "active",
+    user_id: linkedStudentUser.id,
+  });
+  store._tables.userRoles.push({
+    user_id: linkedStudentUser.id,
+    school_id: "school-cd",
+    role_key: "STUDENT",
+    status: "active",
+    revoked_at: null,
+  });
+  await expectRejection(
+    store.reassignUserSchool(linkedStudentUser.id, { schoolCode: "BI-2026-0001", countryCode: "BI" }, superAdmin, auditMeta),
+    { status: 409, code: USER_ROLE_ERROR.STUDENT_ROLE_LOCKED },
+  );
+  assert.equal((await store.getUserById(linkedStudentUser.id)).school_id, "school-cd");
+
   console.log("clientsUserReassign.test.js OK");
 }
 

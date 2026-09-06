@@ -157,8 +157,11 @@ describe("UsersPage — SCHOOL_ADMIN périmètre canonique", () => {
     expect(screen.getByText("Marc Rumba")).toBeInTheDocument();
     expect(screen.getAllByText("Compte lié à un élève").length).toBeGreaterThan(0);
     expect(screen.getByText("Type métier")).toBeInTheDocument();
-    expect(screen.getByText("Aucun rôle d'accès")).toBeInTheDocument();
+    expect(screen.getAllByText("Élève / Étudiant").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Verrouillés — profil élève").length).toBeGreaterThan(0);
+    expect(screen.queryByText("Aucun rôle d'accès")).not.toBeInTheDocument();
     expect(screen.queryByText("Sans affectation")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Attribuer" })).not.toBeInTheDocument();
     permissions.canUpdate = false;
   });
 

@@ -11,8 +11,13 @@ import {
   BUSINESS_PROFILE_KIND_LABELS,
   formatAccessRolesDisplay,
   formatBusinessProfileKind,
+  formatLockedRolesDisplay,
+  areStudentRolesLocked,
+  canAssignRoleToUserAccount,
   isStudentLinkedAccount,
   isUnassignedUserAccount,
+  STUDENT_ROLES_LOCKED_LABEL,
+  STUDENT_ACCESS_ROLE_LABEL,
 } from "./userAccounts";
 
 const CODE_A = "CD-ITS-MR-26-00099";
@@ -40,7 +45,7 @@ describe("W1 — accountKind student_login + linkedStudent + roleKeys=[]", () =>
     expect(formatBusinessProfileKind(linkedNoAccess)).toBe(BUSINESS_PROFILE_KIND_LABELS.student_login);
     expect(formatBusinessProfileKind(linkedNoAccess)).not.toBe("Sans affectation");
     expect(isUnassignedUserAccount(linkedNoAccess)).toBe(false);
-    expect(formatAccessRolesDisplay(linkedNoAccess)).toBe(ACCESS_ROLES_NONE_LABEL);
+    expect(formatAccessRolesDisplay(linkedNoAccess)).toBe("Élève / Étudiant");
   });
 });
 
@@ -106,5 +111,11 @@ describe("W4 — studentCode divergent de l'identifiant compte", () => {
     expect(formatBusinessProfileKind(row)).toBe("Compte lié à un élève");
     expect(row.linkedStudent?.studentId).toBe("18181818-1818-4818-8818-181818181818");
     expect(row.identifier).not.toBe(row.linkedStudent?.studentCode);
+    expect(areStudentRolesLocked(row)).toBe(true);
+    expect(formatAccessRolesDisplay(row)).toBe(STUDENT_ACCESS_ROLE_LABEL);
+    expect(formatLockedRolesDisplay(row)).toBe(STUDENT_ROLES_LOCKED_LABEL);
+    expect(canAssignRoleToUserAccount(row, "Directeur")).toBe(false);
+    expect(canAssignRoleToUserAccount(row, "Enseignant")).toBe(false);
+    expect(canAssignRoleToUserAccount(row, "Admin School")).toBe(false);
   });
 });

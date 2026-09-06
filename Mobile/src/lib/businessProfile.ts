@@ -23,6 +23,10 @@ export const BUSINESS_PROFILE_KIND_LABELS: Record<BusinessProfileKind, string> =
 };
 
 export const ACCESS_ROLES_NONE_LABEL = "Aucun rôle d'accès";
+export const STUDENT_ACCESS_ROLE_LABEL = "Élève / Étudiant";
+export const STUDENT_ROLES_LOCKED_LABEL = "Verrouillés — profil élève";
+export const STUDENT_ROLE_LOCKED_MESSAGE =
+  "Les rôles d'un compte lié à un élève ne peuvent pas être modifiés.";
 
 function tokensOf(row: BusinessProfileUser): string[] {
   return [
@@ -48,6 +52,10 @@ function isEmptyAccessLabel(value?: string | null): boolean {
 export function isStudentLinkedAccount(row: BusinessProfileUser): boolean {
   if (row.accountKind === "student_login" || row.accountKind === "conflict") return true;
   return Boolean(row.linkedStudent?.studentId || row.linkedStudent?.studentCode);
+}
+
+export function areStudentRolesLocked(row: BusinessProfileUser): boolean {
+  return isStudentLinkedAccount(row);
 }
 
 export function isTeacherLinkedAccount(row: BusinessProfileUser): boolean {
@@ -89,6 +97,7 @@ export function formatBusinessProfileKind(row: BusinessProfileUser): string {
 
 /** Rôles d'accès uniquement. Distinct du type métier. */
 export function formatAccessRolesDisplay(row: BusinessProfileUser): string {
+  if (isStudentLinkedAccount(row)) return STUDENT_ACCESS_ROLE_LABEL;
   const labels = [
     ...(Array.isArray(row.activeRoles) ? row.activeRoles : []),
     ...(Array.isArray(row.roles) ? row.roles : []),

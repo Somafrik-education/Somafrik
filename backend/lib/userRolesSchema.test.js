@@ -48,3 +48,18 @@ test("inventaire avec catalogue exige une correspondance unique active school et
   const catalogSql = backfillFromUsersRoleSql(true);
   assert.match(catalogSql, /u\.school_id IS NULL THEN NULL/);
 });
+
+test("schéma user_roles inclut le verrou FK students.user_id", () => {
+  const fs = require("node:fs");
+  const path = require("node:path");
+  const schema = fs.readFileSync(path.join(__dirname, "../db/userRolesSchema.js"), "utf8");
+  assert.match(schema, /20260908_student_role_lock\.sql/);
+  const migration = fs.readFileSync(
+    path.join(__dirname, "../db/migrations/20260908_student_role_lock.sql"),
+    "utf8",
+  );
+  assert.match(migration, /st\.user_id = target_user_id/);
+  assert.match(migration, /STUDENT_ROLE_LOCKED/);
+  assert.match(migration, /BEFORE INSERT OR DELETE OR UPDATE/);
+  assert.doesNotMatch(migration, /student_code\s*=/);
+});

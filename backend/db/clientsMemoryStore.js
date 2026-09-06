@@ -253,6 +253,8 @@ function createClientsMemoryStore(seed = {}) {
         return this.getUserById(id);
       },
       async reassignActiveUserRolesSchool(userId, _fromSchoolId, toSchoolId) {
+        const { assertCanonicalStudentRolesLocked } = require("../lib/studentRoleLock");
+        await assertCanonicalStudentRolesLocked(this, userId, { operation: "reassign" });
         tables.userRoles = tables.userRoles.map((row) => {
           if (row.user_id !== userId || row.status !== "active" || row.revoked_at) return row;
           return { ...row, school_id: toSchoolId, updated_at: new Date() };
@@ -328,6 +330,11 @@ function createClientsMemoryStore(seed = {}) {
         return formatUserCode(year, next);
       },
       async insertUserRole(row) {
+        const { assertCanonicalStudentRolesLocked } = require("../lib/studentRoleLock");
+        await assertCanonicalStudentRolesLocked(this, row.userId, {
+          operation: "grant",
+          roleKey: row.roleKey,
+        });
         const { randomUUID } = require("node:crypto");
         const exists = tables.userRoles.find(
           (item) =>
@@ -358,6 +365,11 @@ function createClientsMemoryStore(seed = {}) {
         return saved;
       },
       async revokeUserRole(row) {
+        const { assertCanonicalStudentRolesLocked } = require("../lib/studentRoleLock");
+        await assertCanonicalStudentRolesLocked(this, row.userId, {
+          operation: "revoke",
+          roleKey: row.roleKey,
+        });
         const index = tables.userRoles.findIndex(
           (item) =>
             item.user_id === row.userId &&
@@ -384,6 +396,10 @@ function createClientsMemoryStore(seed = {}) {
       },
       async getTeacherBySchoolUser(schoolId, userId) {
         return tables.teachers.find((row) => row.school_id === schoolId && row.user_id === userId) ?? null;
+      },
+      async getCanonicalLinkedStudentByUserId(userId) {
+        const { findCanonicalLinkedStudent } = require("../lib/studentRoleLock");
+        return findCanonicalLinkedStudent(tables.students, userId);
       },
       async getActiveStudentProfileByUser(userId, schoolId) {
         const { findActiveStudentProfileForUser } = require("../lib/businessProfileIntegrity");
@@ -1181,6 +1197,7 @@ function createClientsMemoryStore(seed = {}) {
     getSchoolById: (id) => txApi.getSchoolById(id),
     getCountryByCode: (code) => txApi.getCountryByCode(code),
     getUserById: (id) => txApi.getUserById(id),
+    getCanonicalLinkedStudentByUserId: (id) => txApi.getCanonicalLinkedStudentByUserId(id),
     async withTransaction(fn) {
       if (transactionDepth > 0) {
         return fn(txApi);

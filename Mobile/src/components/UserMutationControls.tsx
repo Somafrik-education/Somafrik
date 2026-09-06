@@ -11,7 +11,7 @@ import {
   validateUserIdentityDraft,
 } from "../lib/formFieldValidation";
 import { canGrantUserRole, resolveEntityCrudAccess } from "../lib/mobileCrudParity";
-import { isStudentLinkedAccount, STUDENT_TEACHER_GRANT_BLOCKED_MESSAGE } from "../lib/businessProfile";
+import { isStudentLinkedAccount, STUDENT_ROLE_LOCKED_MESSAGE } from "../lib/businessProfile";
 import { MIN_TOUCH_TARGET_DP } from "../lib/mobileUsability";
 import { createClientsUser, grantClientsUserRole, revokeClientsUserRole, updateClientsUser } from "../services/api";
 
@@ -164,7 +164,7 @@ export default function UserMutationControls({
   const grantTeacher = () => {
     if (!row || !canGrant || hasTeacherRole(row) || granting) return;
     if (isStudentLinkedAccount(row)) {
-      Alert.alert("Attribution impossible", STUDENT_TEACHER_GRANT_BLOCKED_MESSAGE);
+      Alert.alert("Attribution impossible", STUDENT_ROLE_LOCKED_MESSAGE);
       return;
     }
     Alert.alert("Attribuer le rôle Enseignant", "Le profil enseignant sera créé côté serveur à partir de ce compte.", [
@@ -188,6 +188,10 @@ export default function UserMutationControls({
 
   const revokeTeacher = () => {
     if (!row || !canGrant || !hasTeacherRole(row) || revoking) return;
+    if (isStudentLinkedAccount(row)) {
+      Alert.alert("Retrait impossible", STUDENT_ROLE_LOCKED_MESSAGE);
+      return;
+    }
     Alert.alert(
       "Retirer le rôle Enseignant",
       "Le rôle sera retiré côté serveur. Aucun succès local si l'API refuse (403/409).",
@@ -295,7 +299,7 @@ export default function UserMutationControls({
           editable={!saving}
         />
       ) : null}
-      <Text style={styles.hint}>La matrice des droits reste disponible uniquement sur le Web. L'attribution du rôle Enseignant est refusée pour un compte lié à un élève actif.</Text>
+      <Text style={styles.hint}>La matrice des droits reste disponible uniquement sur le Web. Les rôles d'un compte lié à un élève sont verrouillés.</Text>
     </CanonicalMutationModal>
   );
 
@@ -329,10 +333,10 @@ export default function UserMutationControls({
             <Text style={styles.smallText}>{granting ? "Attribution…" : "Attribuer Enseignant"}</Text>
           </TouchableOpacity>
         ) : null}
-        {canGrant && isStudentLinkedAccount(row) && !hasTeacherRole(row) ? (
-          <Text style={styles.hint}>{STUDENT_TEACHER_GRANT_BLOCKED_MESSAGE}</Text>
+        {canGrant && isStudentLinkedAccount(row) ? (
+          <Text style={styles.hint}>{STUDENT_ROLE_LOCKED_MESSAGE}</Text>
         ) : null}
-        {canGrant && hasTeacherRole(row) ? (
+        {canGrant && hasTeacherRole(row) && !isStudentLinkedAccount(row) ? (
           <TouchableOpacity
             style={styles.smallDanger}
             onPress={revokeTeacher}
