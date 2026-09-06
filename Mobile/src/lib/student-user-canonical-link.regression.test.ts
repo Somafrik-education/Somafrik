@@ -250,7 +250,6 @@ describe("M8 — DTO online student_code vs selectedStudentId UUID", () => {
       selectedStudentId: S1,
       user: {
         id: U1,
-        identifier: CODE_A,
         matricule: CODE_B,
         linkedStudent: { studentId: S1, studentCode: CODE_B },
       },
