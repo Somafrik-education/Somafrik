@@ -15,6 +15,7 @@
     "lint": "eslint . --ext .ts,.tsx",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:hydration-red": "vitest run --config vitest.hydration.config.ts",
 
     "verify:student-workspace-shell": "VITE_API_URL=${VITE_API_URL:-https://api.somafrik.app} npx --yes vite-node scripts/verify-student-workspace-shell.ts",
     "verify:student-enrollment": "VITE_API_URL=${VITE_API_URL:-https://api.somafrik.app} npx --yes vite-node scripts/verify-student-enrollment.ts",

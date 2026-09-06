@@ -66,6 +66,7 @@
     "test:release-environments": "node config/releaseEnvironments.test.js",
     "test:network-resilience": "npx --yes tsx src/lib/networkResilience.test.ts && npx --yes tsx src/lib/mutationGuard.test.ts && npx --yes tsx src/lib/outbox.test.ts && npx --yes tsx src/lib/connectivity.test.ts && npx --yes tsx src/lib/attendanceClassIdentity.test.ts && npx --yes tsx src/lib/attendanceOffline.test.ts && npx --yes tsx src/lib/offlineClassification.test.ts",
     "test:l1-sqlite-cache": "npx --yes tsx src/offline/l1/l1SqliteCache.test.ts",
+    "test:l1-hydration-red": "npx --yes tsx src/offline/l1/syncEngine.hydration.red.test.ts",
     "test:l1-offline-reads": "npx --yes tsx src/offline/l1/l1OfflineReads.test.ts",
     "verify:mobile-l1-sqlite-cache": "node scripts/verify-mobile-l1-sqlite-cache.js",
     "verify:mobile-l1-offline-reads": "node scripts/verify-mobile-l1-offline-reads.js",

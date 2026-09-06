@@ -9,5 +9,8 @@
     "**/*.ts",
     "**/*.tsx",
     "nativewind-env.d.ts"
+  ],
+  "exclude": [
+    "**/*.hydration.red.test.tsx"
   ]
 }
