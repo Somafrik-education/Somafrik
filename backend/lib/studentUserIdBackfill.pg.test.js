@@ -76,8 +76,28 @@ async function main() {
     const schema = fs.readFileSync(path.join(__dirname, "../db/schema.sql"), "utf8");
     await pool.query(schema);
 
-    const withoutUserId = USER_ROLES_SCHEMA_PARTS.filter((part) => part.file !== "20260907_student_user_id.sql");
-    for (const part of withoutUserId) {
+    const country = await pool.query(
+      `INSERT INTO countries (name, iso_code, phone_code, currency)
+       VALUES ('RDC', 'CD', '+243', 'CDF') RETURNING id`,
+    );
+    const school = await pool.query(
+      `INSERT INTO schools (country_id, school_code, name, status)
+       VALUES ($1, 'CD-BOOT-0001', 'Nuru Boot', 'active') RETURNING id`,
+      [country.rows[0].id],
+    );
+    const schoolId = school.rows[0].id;
+
+    let legacy;
+    for (const part of USER_ROLES_SCHEMA_PARTS) {
+      if (part.file === "20260907_student_user_id.sql") continue;
+      if (part.file === "20260823_student_canonical_identifier.sql") {
+        legacy = await pool.query(
+          `INSERT INTO students (school_id, student_code, first_name, last_name, identity_code, login_code)
+           VALUES ($1, 'LEGACY-STU-1', 'Awa', 'Diop', 'OLD', 'OLD')
+           RETURNING id, student_code, identity_code, login_code`,
+          [schoolId],
+        );
+      }
       await pool.query(part.sql);
     }
     await pool.query(STUDENT_GENERAL_IDENTITY_SQL);
@@ -89,28 +109,7 @@ async function main() {
     assert.equal(liveCheck.convalidated, false);
     console.log(`CHECK exacte pré-boot: ${liveCheck.def}`);
 
-    const country = await pool.query(`SELECT id FROM countries LIMIT 1`);
-    let countryId = country.rows[0]?.id;
-    if (!countryId) {
-      const inserted = await pool.query(
-        `INSERT INTO countries (name, iso_code, phone_code, currency)
-         VALUES ('RDC', 'CD', '+243', 'CDF') RETURNING id`,
-      );
-      countryId = inserted.rows[0].id;
-    }
-    const school = await pool.query(
-      `INSERT INTO schools (country_id, school_code, name, status)
-       VALUES ($1, 'CD-BOOT-0001', 'Nuru Boot', 'active') RETURNING id`,
-      [countryId],
-    );
-    const schoolId = school.rows[0].id;
-
     await pool.query("ALTER TABLE students DISABLE TRIGGER USER");
-    const legacy = await pool.query(
-      `INSERT INTO students (school_id, student_code, first_name, last_name, identity_code, login_code)
-       VALUES ($1, 'LEGACY-STU-1', 'Awa', 'Diop', 'OLD', 'OLD') RETURNING id, student_code, identity_code, login_code`,
-      [schoolId],
-    );
     const canonical = await pool.query(
       `INSERT INTO students (school_id, student_code, first_name, last_name, identity_code, login_code)
        VALUES ($1, 'CD-IN-AD-26-00001', 'Esther', 'Okito', 'CD-IN-AD-26-00001', 'CD-IN-AD-26-00001')
@@ -118,6 +117,7 @@ async function main() {
       [schoolId],
     );
     await pool.query("ALTER TABLE students ENABLE TRIGGER USER");
+    assert.ok(legacy?.rows?.[0]?.id, "ligne legacy absente");
 
     await pool.query("ALTER TABLE users DISABLE TRIGGER USER");
     const canonicalUser = await pool.query(
