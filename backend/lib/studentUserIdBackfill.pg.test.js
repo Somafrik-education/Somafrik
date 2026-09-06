@@ -62,6 +62,18 @@ async function applyParts(pool, label) {
   }
 }
 
+async function insertIgnoringUserTriggers(pool, table, sql, params) {
+  if (table !== "students" && table !== "users") {
+    throw new Error(`table fixture inattendue: ${table}`);
+  }
+  await pool.query(`ALTER TABLE ${table} DISABLE TRIGGER USER`);
+  try {
+    return await pool.query(sql, params);
+  } finally {
+    await pool.query(`ALTER TABLE ${table} ENABLE TRIGGER USER`);
+  }
+}
+
 async function main() {
   if (!DATABASE_URL) {
     console.log("studentUserIdBackfill.pg.test.js SKIP (DATABASE_URL absent)");
@@ -91,7 +103,14 @@ async function main() {
     for (const part of USER_ROLES_SCHEMA_PARTS) {
       if (part.file === "20260907_student_user_id.sql") continue;
       if (part.file === "20260823_student_canonical_identifier.sql") {
-        legacy = await pool.query(
+        // Historique préprod : la ligne existe déjà avant la CHECK.
+        // INSERT est toujours évalué (même NOT VALID). 20260821 a déjà
+        // somafrik_assign_permanent_student_identity → CLIENT_STUDENT_IDENTITY_CODE_FORBIDDEN
+        // si identity_code/login_code sont fournis. DISABLE TRIGGER USER = même
+        // mécanique que le fixture SEQ5 plus bas, pas un correctif boot.
+        legacy = await insertIgnoringUserTriggers(
+          pool,
+          "students",
           `INSERT INTO students (school_id, student_code, first_name, last_name, identity_code, login_code)
            VALUES ($1, 'LEGACY-STU-1', 'Awa', 'Diop', 'OLD', 'OLD')
            RETURNING id, student_code, identity_code, login_code`,
@@ -109,28 +128,30 @@ async function main() {
     assert.equal(liveCheck.convalidated, false);
     console.log(`CHECK exacte pré-boot: ${liveCheck.def}`);
 
-    await pool.query("ALTER TABLE students DISABLE TRIGGER USER");
-    const canonical = await pool.query(
+    const canonical = await insertIgnoringUserTriggers(
+      pool,
+      "students",
       `INSERT INTO students (school_id, student_code, first_name, last_name, identity_code, login_code)
        VALUES ($1, 'CD-IN-AD-26-00001', 'Esther', 'Okito', 'CD-IN-AD-26-00001', 'CD-IN-AD-26-00001')
        RETURNING id`,
       [schoolId],
     );
-    await pool.query("ALTER TABLE students ENABLE TRIGGER USER");
     assert.ok(legacy?.rows?.[0]?.id, "ligne legacy absente");
 
-    await pool.query("ALTER TABLE users DISABLE TRIGGER USER");
-    const canonicalUser = await pool.query(
+    const canonicalUser = await insertIgnoringUserTriggers(
+      pool,
+      "users",
       `INSERT INTO users (school_id, user_code, first_name, last_name, role, status)
        VALUES ($1, 'CD-IN-AD-26-00001', 'Esther', 'Okito', 'STUDENT', 'active') RETURNING id`,
       [schoolId],
     );
-    await pool.query(
+    await insertIgnoringUserTriggers(
+      pool,
+      "users",
       `INSERT INTO users (school_id, user_code, first_name, last_name, role, status)
        VALUES ($1, 'LEGACY-STU-1', 'Awa', 'Diop', 'STUDENT', 'active')`,
       [schoolId],
     );
-    await pool.query("ALTER TABLE users ENABLE TRIGGER USER");
 
     await applyParts(pool, "boot complet USER_ROLES_SCHEMA_SQL");
 
