@@ -3,9 +3,14 @@
 /**
  * student-user-canonical-link.regression — PostgreSQL
  *
- * Fail-closed : aucun DROP SCHEMA public tant que current_database() n'est pas
- * une base IT dédiée `*_it` DISTINCTE de la base de DATABASE_URL.
- * SKIP si DATABASE_URL absent, nom IT invalide, ou isolation non prouvée.
+ * Fail-closed : aucune création de base, aucun DROP SCHEMA public tant que
+ * DATABASE_URL n'EST PAS déjà l'environnement IT autorisé :
+ *   - host loopback
+ *   - nom de base = IT configuré, suffixe *_it, hors postgres/template*
+ *   - current_database() prouve la même base avant tout DROP SCHEMA public
+ *
+ * Pas de création de base. Pas de réécriture d'URL vers une base générique.
+ * SKIP sinon (y compris DATABASE_URL=.../somafrik ou .../postgres).
  */
 const assert = require("node:assert/strict");
 const {
@@ -19,6 +24,7 @@ const IT_DB = String(process.env.SOMAFRIK_CANONICAL_LINK_IT_DATABASE ?? "somafri
   .replace(/[^a-zA-Z0-9_]/g, "");
 
 const FORBIDDEN_DATABASES = new Set(["", "postgres", "template0", "template1"]);
+const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "::1"]);
 const CODE_A = "CD-ITS-MR-26-00099";
 const CODE_B = "CD-ITS-MR-26-00003";
 
@@ -27,39 +33,35 @@ function databaseNameFromUrl(databaseUrl) {
   return decodeURIComponent(String(parsed.pathname ?? "").replace(/^\//, "")).trim();
 }
 
-function isolationRefusal(itDb, sourceDb) {
+function hostFromUrl(databaseUrl) {
+  return String(new URL(databaseUrl).hostname ?? "").trim().toLowerCase();
+}
+
+function isolationRefusal({ itDb, sourceDb, host } = {}) {
   if (!itDb) return "IT database name empty after sanitization";
   if (FORBIDDEN_DATABASES.has(itDb)) return `IT database name forbidden (${itDb})`;
   if (!/^[a-z][a-z0-9_]*_it$/.test(itDb)) return `IT database must match *_it (got ${itDb})`;
-  if (sourceDb && itDb === sourceDb) return "IT database equals DATABASE_URL database — refusing DROP";
+  if (!sourceDb) return "DATABASE_URL database empty";
+  if (FORBIDDEN_DATABASES.has(sourceDb)) return `DATABASE_URL database forbidden (${sourceDb})`;
+  if (!/^[a-z][a-z0-9_]*_it$/.test(sourceDb)) {
+    return `DATABASE_URL database is not an authorized *_it test database (got ${sourceDb})`;
+  }
+  if (sourceDb !== itDb) {
+    return `DATABASE_URL database ${sourceDb} is not the authorized IT database ${itDb}`;
+  }
+  if (!LOOPBACK_HOSTS.has(String(host ?? "").toLowerCase())) {
+    return `DATABASE_URL host is not a loopback test host (${host || "empty"})`;
+  }
   return null;
 }
 
-function withDatabaseName(databaseUrl, databaseName) {
-  const parsed = new URL(databaseUrl);
-  parsed.pathname = `/${databaseName}`;
-  return parsed.toString();
-}
-
-async function ensureDatabase(Pool, databaseUrl, databaseName) {
-  const maintenance = withDatabaseName(databaseUrl, "postgres");
-  const pool = new Pool({ connectionString: maintenance });
-  try {
-    const existing = await pool.query("SELECT 1 FROM pg_database WHERE datname = $1", [databaseName]);
-    if (!existing.rowCount) await pool.query(`CREATE DATABASE ${databaseName}`);
-  } finally {
-    await pool.end();
-  }
-  return withDatabaseName(databaseUrl, databaseName);
-}
-
-async function assertConnectedToIsolatedItDatabase(pool, itDb, sourceDb) {
+async function assertConnectedToIsolatedItDatabase(pool, { itDb, sourceDb, host }) {
   const { rows } = await pool.query("SELECT current_database() AS name");
   const current = String(rows[0]?.name ?? "");
-  const refusal = isolationRefusal(current, sourceDb);
-  if (refusal || current !== itDb) {
+  const refusal = isolationRefusal({ itDb: current, sourceDb, host }) || isolationRefusal({ itDb, sourceDb, host });
+  if (refusal || current !== itDb || current !== sourceDb) {
     throw new Error(
-      `Refusing DROP SCHEMA public: current_database=${current} expected isolated ${itDb} (source=${sourceDb || "empty"}). ${refusal ?? ""}`.trim(),
+      `Refusing DROP SCHEMA public: current_database=${current} expected authorized IT ${itDb} (url=${sourceDb}, host=${host}). ${refusal ?? ""}`.trim(),
     );
   }
 }
@@ -71,14 +73,16 @@ async function main() {
   }
 
   let sourceDb;
+  let host;
   try {
     sourceDb = databaseNameFromUrl(DATABASE_URL);
+    host = hostFromUrl(DATABASE_URL);
   } catch {
     console.log("student-user-canonical-link.pg.test.js SKIP (DATABASE_URL unparseable)");
     return;
   }
 
-  const refusal = isolationRefusal(IT_DB, sourceDb);
+  const refusal = isolationRefusal({ itDb: IT_DB, sourceDb, host });
   if (refusal) {
     console.log(`student-user-canonical-link.pg.test.js SKIP (${refusal})`);
     return;
@@ -92,18 +96,9 @@ async function main() {
     return;
   }
 
-  const url = await ensureDatabase(Pool, DATABASE_URL, IT_DB);
-  const isolatedName = databaseNameFromUrl(url);
-  if (isolatedName !== IT_DB || isolatedName === sourceDb) {
-    console.log(
-      `student-user-canonical-link.pg.test.js SKIP (isolated URL database ${isolatedName} is not a distinct ${IT_DB})`,
-    );
-    return;
-  }
-
-  const pool = new Pool({ connectionString: url });
+  const pool = new Pool({ connectionString: DATABASE_URL });
   try {
-    await assertConnectedToIsolatedItDatabase(pool, IT_DB, sourceDb);
+    await assertConnectedToIsolatedItDatabase(pool, { itDb: IT_DB, sourceDb, host });
     await pool.query("DROP SCHEMA public CASCADE");
     await pool.query("CREATE SCHEMA public");
     await pool.query(`CREATE EXTENSION IF NOT EXISTS pgcrypto`);
@@ -239,7 +234,10 @@ async function main() {
 
 module.exports = {
   databaseNameFromUrl,
+  hostFromUrl,
   isolationRefusal,
+  FORBIDDEN_DATABASES,
+  LOOPBACK_HOSTS,
 };
 
 if (require.main === module) {

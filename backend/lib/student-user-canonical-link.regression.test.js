@@ -739,20 +739,62 @@ describe("matrice négative d'identité", () => {
 });
 
 describe("P0 — garde-fou DROP SCHEMA PostgreSQL", () => {
-  it("refuse DROP sur la base de DATABASE_URL et exige current_database() = *_it isolé", () => {
+  it("refuse toute écriture hors URL déjà égale à la base IT loopback autorisée", () => {
     const src = sourceOf("lib", "student-user-canonical-link.pg.test.js");
     const {
       databaseNameFromUrl,
+      hostFromUrl,
       isolationRefusal,
     } = require("./student-user-canonical-link.pg.test.js");
     assert.equal(databaseNameFromUrl("postgres://u:p@localhost:5432/somafrik_prod"), "somafrik_prod");
-    assert.ok(isolationRefusal("somafrik_prod", "somafrik_prod"));
-    assert.ok(isolationRefusal("postgres", "app"));
-    assert.ok(isolationRefusal("", "app"));
-    assert.ok(isolationRefusal("not_it_suffix", "app"));
-    assert.ok(isolationRefusal("somafrik_canonical_link_it", "somafrik_canonical_link_it"));
-    assert.equal(isolationRefusal("somafrik_canonical_link_it", "somafrik_prod"), null);
-    const dropIndex = src.indexOf('DROP SCHEMA public CASCADE');
+    assert.equal(hostFromUrl("postgres://u:p@127.0.0.1:5432/somafrik_canonical_link_it"), "127.0.0.1");
+    assert.ok(
+      isolationRefusal({
+        itDb: "somafrik_canonical_link_it",
+        sourceDb: "somafrik",
+        host: "localhost",
+      }),
+      "CI DATABASE_URL=/somafrik doit SKIP, pas CREATE/DROP",
+    );
+    assert.ok(isolationRefusal({ itDb: "somafrik_prod", sourceDb: "somafrik_prod", host: "localhost" }));
+    assert.ok(isolationRefusal({ itDb: "postgres", sourceDb: "app", host: "localhost" }));
+    assert.ok(isolationRefusal({ itDb: "", sourceDb: "app", host: "localhost" }));
+    assert.ok(isolationRefusal({ itDb: "not_it_suffix", sourceDb: "app", host: "localhost" }));
+    assert.ok(
+      isolationRefusal({
+        itDb: "somafrik_canonical_link_it",
+        sourceDb: "somafrik_canonical_link_it",
+        host: "db.prod.example",
+      }),
+      "host non loopback refusé",
+    );
+    assert.ok(
+      isolationRefusal({
+        itDb: "somafrik_canonical_link_it",
+        sourceDb: "other_it",
+        host: "localhost",
+      }),
+    );
+    assert.equal(
+      isolationRefusal({
+        itDb: "somafrik_canonical_link_it",
+        sourceDb: "somafrik_canonical_link_it",
+        host: "localhost",
+      }),
+      null,
+    );
+    assert.equal(
+      isolationRefusal({
+        itDb: "somafrik_canonical_link_it",
+        sourceDb: "somafrik_canonical_link_it",
+        host: "127.0.0.1",
+      }),
+      null,
+    );
+    assert.doesNotMatch(src, /CREATE DATABASE \$\{/);
+    assert.doesNotMatch(src, /query\(`CREATE DATABASE/);
+    assert.doesNotMatch(src, /withDatabaseName|ensureDatabase/);
+    const dropIndex = src.indexOf("DROP SCHEMA public CASCADE");
     const guardIndex = src.indexOf("assertConnectedToIsolatedItDatabase");
     assert.ok(guardIndex >= 0, "garde current_database avant DROP");
     assert.ok(dropIndex > guardIndex, "DROP SCHEMA public seulement après preuve d'isolation");
@@ -764,6 +806,24 @@ describe("P0 — garde-fou DROP SCHEMA PostgreSQL", () => {
       "verify:user-role-lifecycle ne doit pas enchaîner le DROP SCHEMA",
     );
     assert.match(pkg.scripts["verify:student-user-canonical-link"], /student-user-canonical-link\.pg\.test\.js/);
+  });
+
+  it("Mobile M2 isole le contrat architectural sans encoder student_login", () => {
+    const mobile = fs.readFileSync(
+      path.join(ROOT, "..", "Mobile", "src", "lib", "student-user-canonical-link.regression.test.ts"),
+      "utf8",
+    );
+    assert.match(mobile, /skip:\s*"FAIL — businessProfile\.ts:51,74,88/);
+    assert.match(mobile, /formatBusinessProfileKind\(roleOnly\)/);
+    assert.match(mobile, /isStudentLinkedAccount\(roleOnly\)/);
+    assert.doesNotMatch(
+      mobile,
+      /assert\.equal\(\s*formatBusinessProfileKind\(roleOnly\),\s*BUSINESS_PROFILE_KIND_LABELS\.student_login/,
+    );
+    assert.doesNotMatch(
+      mobile,
+      /assert\.equal\(\s*isStudentLinkedAccount\(roleOnly\),\s*true/,
+    );
   });
 });
 
