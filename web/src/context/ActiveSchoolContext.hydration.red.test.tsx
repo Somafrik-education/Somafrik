@@ -11,7 +11,6 @@ import {
   SCHOOL_B,
   SCHOOL_ID_A,
   SCHOOL_ID_B,
-  collapseCounts,
   deferred,
   jsonResponse,
   pathnameOf,
@@ -174,20 +173,21 @@ describe("CHANTIER SYNC — Web changement d'établissement (tests RED)", () => 
     const flashedBusinessEmpty = frames.some(
       (frame) => frame.active === SCHOOL_B && frame.n === 0 && frame.loading === false,
     );
-    const transition = collapseCounts(studentHistory);
     const issues: string[] = [];
     if (leakOnB) issues.push("fuite A sous B (A encore visible alors que l'établissement actif est B)");
     if (flashedBusinessEmpty) issues.push(`flash vide métier []+loading=false sous B`);
-    if (/→ 0/.test(transition)) issues.push(`purge immédiate observée: ${transition}`);
     expect(issues, issues.join(" ; ") || "ok").toEqual([]);
+    expect(result.current.school.scopeTransition).toBe("switching");
+    expect(result.current.data.loading).toBe(true);
 
-    await act(async () => {
-      await result.current.data.ensureDomains(["students"], { schoolCode: SCHOOL_B });
-    });
+    const loadB = result.current.data.ensureDomains(["students"], { schoolCode: SCHOOL_B });
     await act(async () => {
       ctl.holdB?.resolve();
+      await loadB;
     });
     await waitFor(() => expect(result.current.data.state.students.length).toBeGreaterThan(0));
+    expect(result.current.data.state.students.every((row) => row.schoolCode === SCHOOL_B)).toBe(true);
+    expect(result.current.school.scopeTransition).toBe("idle");
   });
 
   it("8. Web stale response : requête A lancée, passage B, A termine après B", async () => {

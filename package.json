@@ -24,7 +24,7 @@
     "lint": "npm --prefix web run lint",
     "build": "npm --prefix web run build",
     "typecheck": "npm run typecheck:backend && npm run typecheck:web && npm run typecheck:mobile",
-    "test:hydration-red": "npm --prefix web run test:hydration-red; npm --prefix Mobile run test:l1-hydration-red; node --test backend/lib/mobileSyncContracts.hydration.guard.test.js",
+    "test:hydration-red": "npm --prefix web run test:hydration-red && npm --prefix Mobile run test:l1-hydration-red && node --test backend/lib/mobileSyncContracts.hydration.guard.test.js",
     "test:v2-domain": "npm --prefix packages/domain test",
     "test:v2-auth": "npm --prefix packages/auth test",
     "test:help-catalog": "npm --prefix packages/help-catalog test",

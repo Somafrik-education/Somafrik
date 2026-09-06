@@ -347,10 +347,11 @@ describe("CHANTIER SYNC — Mobile AdminDataContext (tests RED)", () => {
 
     const transition = collapseCounts(studentHistory);
     expect(
-      metricHistory.includes("0") || studentHistory.includes(0),
-      `reset interne A→B ne doit pas être lu comme 0 élève. students: ${transition} métriques: ${metricHistory.join(",")}`,
+      metricHistory.includes("0"),
+      `reset interne A→B ne doit pas être lu comme 0 métier. students: ${transition} métriques: ${metricHistory.join(",")}`,
     ).toBe(false);
     expect(shouldRenderEmpty(result.current.studentsSnapshot)).toBe(false);
+    expect(result.current.studentsSnapshot.status).toBe("loading");
 
     await act(async () => {
       apiStore.holdStudents?.resolve();

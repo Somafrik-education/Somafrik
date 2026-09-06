@@ -117,11 +117,13 @@ async function assertNoPrematurePurge(
   const store = await seedReadyStudents();
   const holdReplacement = deferred<void>();
   const history: number[] = [(await store.listRows("students", partitionA)).length];
+  let replacementFetchStarted = false;
   const syncPromise = syncL1Cache({
     store,
     api: apiFor({
       students: async (cursor) => {
         if (cursor === "ready-cursor") return firstPage(cursor);
+        replacementFetchStarted = true;
         return delayedFullPage(holdReplacement, { scopeHash: cursor ? "scope-next" : "scope-a" });
       },
     }),
@@ -129,10 +131,11 @@ async function assertNoPrematurePurge(
     isCurrent: () => true,
   });
   try {
-    await waitFor(async () => (await store.getMeta(partitionA, "students"))?.state === "reconciling");
+    await waitFor(async () => replacementFetchStarted);
     const during = (await store.listRows("students", partitionA)).length;
     history.push(during);
     const transition = collapseCounts(history);
+    assert.equal((await store.getMeta(partitionA, "students"))?.state, "ready");
     assert.equal(
       during,
       READY_COUNT,
@@ -261,7 +264,7 @@ async function run() {
     process.exitCode = 1;
     return;
   }
-  console.log("syncEngine.hydration.red.test.ts: unexpected GREEN for premature-purge cases");
+  console.log("syncEngine.hydration.red.test.ts: all hydration cases GREEN");
 }
 
 run().catch((error) => {

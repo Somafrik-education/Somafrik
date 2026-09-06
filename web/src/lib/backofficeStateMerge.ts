@@ -366,6 +366,32 @@ export function purgeSchoolScopedRowsForCode<T extends Row>(
   return (rows ?? []).filter((row) => normalizeSchoolCode(row.schoolCode) !== scope);
 }
 
+/** Présentation : n'expose jamais les lignes d'un autre établissement que l'actif. L'état interne peut conserver A. */
+export function presentActiveSchoolState(
+  state: BackOfficeState,
+  activeSchoolCode: string,
+): BackOfficeState {
+  const scope = normalizeSchoolCode(activeSchoolCode);
+  if (!scope || scope === "*") return state;
+
+  const next: BackOfficeState = { ...state };
+  for (const key of SCHOOL_SCOPED_CANONICAL_KEYS) {
+    const list = state[key];
+    if (Array.isArray(list)) {
+      (next as unknown as Record<string, unknown>)[key] = (list as Row[]).filter(
+        (row) => normalizeSchoolCode(row.schoolCode) === scope,
+      );
+    }
+  }
+
+  const configs: Record<string, (typeof state.academicConfigs)[string]> = {};
+  for (const [code, value] of Object.entries(state.academicConfigs ?? {})) {
+    if (normalizeSchoolCode(code) === scope) configs[code] = value;
+  }
+  next.academicConfigs = configs;
+  return next;
+}
+
 export function purgeInactiveSchoolFromState(
   state: BackOfficeState,
   inactiveSchoolCode: string,
