@@ -323,6 +323,7 @@ jobs:
           npm run verify:planning-replacements
           npm run verify:planning-course-options
           npm run verify:mobile-sync-l1-course-schedules
+          npm run verify:school-course-ambiguity-inventory
 
       - name: Users
         if: needs.scope.outputs.users == 'true'
