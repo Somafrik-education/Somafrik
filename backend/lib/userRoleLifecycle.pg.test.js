@@ -488,6 +488,30 @@ async function main() {
       stillStudent.rows.map((row) => row.role_key),
       ["STUDENT"],
     );
+    const roleReceiver = await store.createUser(
+      { firstName: "Lina", lastName: "Cible", email: "lina.cible.pg@test.local" },
+      principal,
+      auditMeta,
+    );
+    await store.grantUserRole(roleReceiver.id, { role: "Secrétaire" }, principal, auditMeta);
+    await assert.rejects(
+      () =>
+        pool.query(
+          `UPDATE user_roles SET user_id = $1 WHERE user_id = $2 AND role_key = 'STUDENT'`,
+          [roleReceiver.id, lockedUser.id],
+        ),
+      /STUDENT_ROLE_LOCKED/,
+      "UPDATE user_id hors du compte lié interdit",
+    );
+    await assert.rejects(
+      () =>
+        pool.query(
+          `UPDATE user_roles SET user_id = $1 WHERE user_id = $2 AND role_key = 'SECRETARY'`,
+          [lockedUser.id, roleReceiver.id],
+        ),
+      /STUDENT_ROLE_LOCKED/,
+      "UPDATE user_id vers un compte lié interdit",
+    );
 
     console.log("userRoleLifecycle.pg.test.js OK");
   } finally {
