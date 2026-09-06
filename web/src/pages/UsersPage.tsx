@@ -543,6 +543,7 @@ export function UsersPage() {
     Boolean(editing) &&
     isEditingExisting &&
     canUpdate &&
+    editing != null &&
     !areStudentRolesLocked(editing) &&
     canReassignUserTenant(scopeUser, editing);
 

@@ -88,8 +88,10 @@ test("grant STUDENT sur fiche liée autorisé (bootstrap) ; autre rôle 409", ()
   );
 });
 
-test("SQL canonique : user_id = $1, pas de student_code / login_code", () => {
-  assert.match(SELECT_CANONICAL_LINKED_STUDENT_SQL, /st\.user_id = \$1/);
+test("SQL canonique : user_id via to_jsonb, pas de student_code / login_code", () => {
+  assert.match(SELECT_CANONICAL_LINKED_STUDENT_SQL, /to_jsonb\(st\)->>'user_id'/);
+  assert.match(SELECT_CANONICAL_LINKED_STUDENT_SQL, /\$1::text/);
+  assert.doesNotMatch(SELECT_CANONICAL_LINKED_STUDENT_SQL, /st\.user_id = \$1/);
   assert.doesNotMatch(SELECT_CANONICAL_LINKED_STUDENT_SQL, /student_code\s*=\s*u\.user_code/);
   assert.doesNotMatch(SELECT_CANONICAL_LINKED_STUDENT_SQL, /login_code/);
   assert.doesNotMatch(SELECT_CANONICAL_LINKED_STUDENT_SQL, /identity_code/);

@@ -23,9 +23,10 @@ const STUDENT_ROLE_LOCKED_MESSAGE =
   "Les rôles d'un compte lié à un élève ne peuvent pas être modifiés.";
 
 const SELECT_CANONICAL_LINKED_STUDENT_SQL = `
-  SELECT st.id, st.student_code, st.status, st.school_id, st.user_id
+  SELECT st.id, st.student_code, st.status, st.school_id,
+         NULLIF(to_jsonb(st)->>'user_id', '') AS user_id
   FROM students st
-  WHERE st.user_id = $1
+  WHERE NULLIF(to_jsonb(st)->>'user_id', '') = $1::text
     AND COALESCE(st.status, 'active') NOT IN ('inactive', 'deleted', 'archived', 'closed', 'transferred')
   ORDER BY st.id::text
   LIMIT 1

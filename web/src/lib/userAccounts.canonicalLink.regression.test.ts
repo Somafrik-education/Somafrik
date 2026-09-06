@@ -7,7 +7,6 @@
 import { describe, expect, it } from "vitest";
 import type { UserAccount } from "../types";
 import {
-  ACCESS_ROLES_NONE_LABEL,
   BUSINESS_PROFILE_KIND_LABELS,
   formatAccessRolesDisplay,
   formatBusinessProfileKind,
