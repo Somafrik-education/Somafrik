@@ -57,6 +57,8 @@ const schema = fs.readFileSync(path.join(__dirname, "../db/userRolesSchema.js"),
 assert.match(schema, /20260906_business_profile_exclusivity\.sql/);
 assert.match(schema, /20260907_student_user_id\.sql/);
 assert.match(schema, /20260908_student_role_lock\.sql/);
+assert.match(schema, /20260909_student_role_lock_trigger\.sql/);
+assert.match(schema, /USER_ROLES_PRELOCK_SCHEMA_SQL/);
 
 const userIdMigration = fs.readFileSync(
   path.join(__dirname, "../db/migrations/20260907_student_user_id.sql"),

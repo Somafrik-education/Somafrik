@@ -572,7 +572,8 @@ class PostgresRepository {
 
   async ensureUserRolesCanonicalSchema() {
     const {
-      USER_ROLES_SCHEMA_SQL,
+      USER_ROLES_PRELOCK_SCHEMA_SQL,
+      STUDENT_ROLE_LOCK_TRIGGER_SQL,
       USER_ROLES_MIGRATION_AMBIGUOUS,
       NORMALIZE_ROLE_CODE_FUNCTION_SQL,
       inventoryUnknownUsersRoleSql,
@@ -608,11 +609,15 @@ class PostgresRepository {
       error.details = { unknownRoles, unknownSecondary };
       throw error;
     }
-    await this.query(USER_ROLES_SCHEMA_SQL);
+    // 20260908 DROP le trigger ; le backfill tourne ensuite ; 20260909 le repose.
+    // Sinon un INSERT staff héritée sur un élève lié abort le boot (STUDENT_ROLE_LOCKED)
+    // avant ON CONFLICT DO NOTHING. Aucune suppression des lignes anomaliques existantes.
+    await this.query(USER_ROLES_PRELOCK_SCHEMA_SQL);
     await this.query(backfillFromUsersRoleSql(catalogAvailable));
     if (hasProfilePayload) {
       await this.query(backfillFromSecondaryRolesSql(catalogAvailable));
     }
+    await this.query(STUDENT_ROLE_LOCK_TRIGGER_SQL);
   }
 
   async ensureResidualCanonicalSchema() {

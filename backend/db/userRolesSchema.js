@@ -3,7 +3,7 @@
 const fs = require("node:fs");
 const path = require("node:path");
 
-const USER_ROLES_SCHEMA_SQL = [
+const USER_ROLES_PRELOCK_SCHEMA_SQL = [
   fs.readFileSync(path.join(__dirname, "migrations/20260820_user_roles_canonical.sql"), "utf8"),
   fs.readFileSync(path.join(__dirname, "migrations/20260821_permanent_student_identifiers.sql"), "utf8"),
   fs.readFileSync(path.join(__dirname, "migrations/20260822_school_login_code.sql"), "utf8"),
@@ -20,6 +20,13 @@ const USER_ROLES_SCHEMA_SQL = [
   fs.readFileSync(path.join(__dirname, "migrations/20260907_student_user_id.sql"), "utf8"),
   fs.readFileSync(path.join(__dirname, "migrations/20260908_student_role_lock.sql"), "utf8"),
 ].join("\n");
+
+const STUDENT_ROLE_LOCK_TRIGGER_SQL = fs.readFileSync(
+  path.join(__dirname, "migrations/20260909_student_role_lock_trigger.sql"),
+  "utf8",
+);
+
+const USER_ROLES_SCHEMA_SQL = [USER_ROLES_PRELOCK_SCHEMA_SQL, STUDENT_ROLE_LOCK_TRIGGER_SQL].join("\n");
 
 const USER_ROLES_MIGRATION_AMBIGUOUS = "USER_ROLES_MIGRATION_AMBIGUOUS";
 
@@ -177,28 +184,44 @@ LIMIT 50
 `;
 }
 
+function linkedActiveStudentExistsSql(userIdExpr) {
+  return `EXISTS (
+    SELECT 1
+    FROM students st
+    WHERE NULLIF(to_jsonb(st)->>'user_id', '') = (${userIdExpr})::text
+      AND COALESCE(NULLIF(to_jsonb(st)->>'status', ''), 'active')
+        NOT IN ('inactive', 'deleted', 'archived', 'closed', 'transferred')
+  )`;
+}
+
 function backfillFromUsersRoleSql(catalogAvailable) {
+  const mappedRole = mapLegacyRoleKeySql("u.role", catalogAvailable);
   return `
 INSERT INTO user_roles (user_id, school_id, role_key, granted_at, status)
 SELECT
   u.id,
   u.school_id,
-  ${mapLegacyRoleKeySql("u.role", catalogAvailable)},
+  ${mappedRole},
   COALESCE(u.created_at, NOW()),
   'active'
 FROM users u
 WHERE u.role IS NOT NULL AND btrim(u.role) <> ''
+  AND (
+    (${mappedRole}) = 'STUDENT'
+    OR NOT ${linkedActiveStudentExistsSql("u.id")}
+  )
 ON CONFLICT DO NOTHING
 `;
 }
 
 function backfillFromSecondaryRolesSql(catalogAvailable) {
+  const mappedRole = mapLegacyRoleKeySql("elem", catalogAvailable);
   return `
 INSERT INTO user_roles (user_id, school_id, role_key, granted_at, status)
 SELECT
   u.id,
   u.school_id,
-  ${mapLegacyRoleKeySql("elem", catalogAvailable)},
+  ${mappedRole},
   COALESCE(u.created_at, NOW()),
   'active'
 FROM users u
@@ -210,6 +233,10 @@ CROSS JOIN LATERAL jsonb_array_elements_text(
   END
 ) AS elem
 WHERE btrim(elem) <> ''
+  AND (
+    (${mappedRole}) = 'STUDENT'
+    OR NOT ${linkedActiveStudentExistsSql("u.id")}
+  )
 ON CONFLICT DO NOTHING
 `;
 }
@@ -220,6 +247,8 @@ const BACKFILL_FROM_USERS_ROLE_SQL = backfillFromUsersRoleSql(false);
 const BACKFILL_FROM_SECONDARY_ROLES_SQL = backfillFromSecondaryRolesSql(false);
 
 module.exports = {
+  USER_ROLES_PRELOCK_SCHEMA_SQL,
+  STUDENT_ROLE_LOCK_TRIGGER_SQL,
   USER_ROLES_SCHEMA_SQL,
   USER_ROLES_MIGRATION_AMBIGUOUS,
   KNOWN_ROLE_KEYS_SQL,
@@ -234,6 +263,7 @@ module.exports = {
   catalogRoleCodeSql,
   inventoryUnknownUsersRoleSql,
   inventoryUnknownSecondaryRolesSql,
+  linkedActiveStudentExistsSql,
   backfillFromUsersRoleSql,
   backfillFromSecondaryRolesSql,
 };
