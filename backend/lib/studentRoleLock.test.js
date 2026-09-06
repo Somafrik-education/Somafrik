@@ -231,12 +231,14 @@ test("garde branchée sur grantRole / revokeRole", () => {
   const clients = fs.readFileSync(path.join(__dirname, "clientsService.js"), "utf8");
   const reassignAt = clients.indexOf("async function reassignUserSchool");
   assert.match(clients.slice(reassignAt), /assertCanonicalStudentRolesLocked/);
-  const migration = fs.readFileSync(
-    path.join(__dirname, "../db/migrations/20260908_student_role_lock.sql"),
-    "utf8",
-  );
-  assert.match(migration, /BEFORE INSERT OR DELETE OR UPDATE/);
-  assert.doesNotMatch(migration, /student_code\s*=/);
+  const lockSql = [
+    fs.readFileSync(path.join(__dirname, "../db/migrations/20260908_student_role_lock.sql"), "utf8"),
+    fs.readFileSync(path.join(__dirname, "../db/migrations/20260909_student_role_lock_trigger.sql"), "utf8"),
+  ].join("\n");
+  assert.match(lockSql, /BEFORE INSERT OR DELETE OR UPDATE/);
+  assert.match(lockSql, /somafrik_linked_active_student_id\(OLD\.user_id\)/);
+  assert.match(lockSql, /somafrik_linked_active_student_id\(NEW\.user_id\)/);
+  assert.doesNotMatch(lockSql, /student_code\s*=/);
 });
 
 test("sans FK user_id : attribution Directeur conservée (codes égaux ne verrouillent pas)", async () => {
