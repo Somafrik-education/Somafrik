@@ -3,8 +3,9 @@
 /**
  * student-user-canonical-link.regression — PostgreSQL
  *
- * Exécute SELECT_ACTIVE_STUDENT_FOR_USER_SQL (B1, B2, B5, B7) sur un schéma isolé.
- * SKIP si DATABASE_URL absent. Aucune écriture hors base IT dédiée.
+ * Fail-closed : aucun DROP SCHEMA public tant que current_database() n'est pas
+ * une base IT dédiée `*_it` DISTINCTE de la base de DATABASE_URL.
+ * SKIP si DATABASE_URL absent, nom IT invalide, ou isolation non prouvée.
  */
 const assert = require("node:assert/strict");
 const {
@@ -17,8 +18,22 @@ const IT_DB = String(process.env.SOMAFRIK_CANONICAL_LINK_IT_DATABASE ?? "somafri
   .trim()
   .replace(/[^a-zA-Z0-9_]/g, "");
 
+const FORBIDDEN_DATABASES = new Set(["", "postgres", "template0", "template1"]);
 const CODE_A = "CD-ITS-MR-26-00099";
 const CODE_B = "CD-ITS-MR-26-00003";
+
+function databaseNameFromUrl(databaseUrl) {
+  const parsed = new URL(databaseUrl);
+  return decodeURIComponent(String(parsed.pathname ?? "").replace(/^\//, "")).trim();
+}
+
+function isolationRefusal(itDb, sourceDb) {
+  if (!itDb) return "IT database name empty after sanitization";
+  if (FORBIDDEN_DATABASES.has(itDb)) return `IT database name forbidden (${itDb})`;
+  if (!/^[a-z][a-z0-9_]*_it$/.test(itDb)) return `IT database must match *_it (got ${itDb})`;
+  if (sourceDb && itDb === sourceDb) return "IT database equals DATABASE_URL database — refusing DROP";
+  return null;
+}
 
 function withDatabaseName(databaseUrl, databaseName) {
   const parsed = new URL(databaseUrl);
@@ -26,7 +41,7 @@ function withDatabaseName(databaseUrl, databaseName) {
   return parsed.toString();
 }
 
-async function ensureDatabase(databaseUrl, databaseName) {
+async function ensureDatabase(Pool, databaseUrl, databaseName) {
   const maintenance = withDatabaseName(databaseUrl, "postgres");
   const pool = new Pool({ connectionString: maintenance });
   try {
@@ -38,9 +53,34 @@ async function ensureDatabase(databaseUrl, databaseName) {
   return withDatabaseName(databaseUrl, databaseName);
 }
 
+async function assertConnectedToIsolatedItDatabase(pool, itDb, sourceDb) {
+  const { rows } = await pool.query("SELECT current_database() AS name");
+  const current = String(rows[0]?.name ?? "");
+  const refusal = isolationRefusal(current, sourceDb);
+  if (refusal || current !== itDb) {
+    throw new Error(
+      `Refusing DROP SCHEMA public: current_database=${current} expected isolated ${itDb} (source=${sourceDb || "empty"}). ${refusal ?? ""}`.trim(),
+    );
+  }
+}
+
 async function main() {
   if (!DATABASE_URL) {
     console.log("student-user-canonical-link.pg.test.js SKIP (DATABASE_URL absent)");
+    return;
+  }
+
+  let sourceDb;
+  try {
+    sourceDb = databaseNameFromUrl(DATABASE_URL);
+  } catch {
+    console.log("student-user-canonical-link.pg.test.js SKIP (DATABASE_URL unparseable)");
+    return;
+  }
+
+  const refusal = isolationRefusal(IT_DB, sourceDb);
+  if (refusal) {
+    console.log(`student-user-canonical-link.pg.test.js SKIP (${refusal})`);
     return;
   }
 
@@ -52,9 +92,18 @@ async function main() {
     return;
   }
 
-  const url = await ensureDatabase(DATABASE_URL, IT_DB);
+  const url = await ensureDatabase(Pool, DATABASE_URL, IT_DB);
+  const isolatedName = databaseNameFromUrl(url);
+  if (isolatedName !== IT_DB || isolatedName === sourceDb) {
+    console.log(
+      `student-user-canonical-link.pg.test.js SKIP (isolated URL database ${isolatedName} is not a distinct ${IT_DB})`,
+    );
+    return;
+  }
+
   const pool = new Pool({ connectionString: url });
   try {
+    await assertConnectedToIsolatedItDatabase(pool, IT_DB, sourceDb);
     await pool.query("DROP SCHEMA public CASCADE");
     await pool.query("CREATE SCHEMA public");
     await pool.query(`CREATE EXTENSION IF NOT EXISTS pgcrypto`);
@@ -188,7 +237,14 @@ async function main() {
   }
 }
 
-main().catch((error) => {
-  console.error(error);
-  process.exit(1);
-});
+module.exports = {
+  databaseNameFromUrl,
+  isolationRefusal,
+};
+
+if (require.main === module) {
+  main().catch((error) => {
+    console.error(error);
+    process.exit(1);
+  });
+}

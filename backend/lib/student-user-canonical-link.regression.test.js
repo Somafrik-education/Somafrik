@@ -738,6 +738,35 @@ describe("matrice négative d'identité", () => {
   );
 });
 
+describe("P0 — garde-fou DROP SCHEMA PostgreSQL", () => {
+  it("refuse DROP sur la base de DATABASE_URL et exige current_database() = *_it isolé", () => {
+    const src = sourceOf("lib", "student-user-canonical-link.pg.test.js");
+    const {
+      databaseNameFromUrl,
+      isolationRefusal,
+    } = require("./student-user-canonical-link.pg.test.js");
+    assert.equal(databaseNameFromUrl("postgres://u:p@localhost:5432/somafrik_prod"), "somafrik_prod");
+    assert.ok(isolationRefusal("somafrik_prod", "somafrik_prod"));
+    assert.ok(isolationRefusal("postgres", "app"));
+    assert.ok(isolationRefusal("", "app"));
+    assert.ok(isolationRefusal("not_it_suffix", "app"));
+    assert.ok(isolationRefusal("somafrik_canonical_link_it", "somafrik_canonical_link_it"));
+    assert.equal(isolationRefusal("somafrik_canonical_link_it", "somafrik_prod"), null);
+    const dropIndex = src.indexOf('DROP SCHEMA public CASCADE');
+    const guardIndex = src.indexOf("assertConnectedToIsolatedItDatabase");
+    assert.ok(guardIndex >= 0, "garde current_database avant DROP");
+    assert.ok(dropIndex > guardIndex, "DROP SCHEMA public seulement après preuve d'isolation");
+    assert.match(src, /current_database\(\)/);
+    const pkg = require("../../package.json");
+    assert.doesNotMatch(
+      pkg.scripts["verify:user-role-lifecycle"],
+      /student-user-canonical-link\.pg\.test\.js/,
+      "verify:user-role-lifecycle ne doit pas enchaîner le DROP SCHEMA",
+    );
+    assert.match(pkg.scripts["verify:student-user-canonical-link"], /student-user-canonical-link\.pg\.test\.js/);
+  });
+});
+
 describe("SQL matcher — autorité concurrente caractérisée", () => {
   it("SELECT_ACTIVE_STUDENT_FOR_USER_SQL contient le FK ET les égalités de codes", () => {
     assert.match(SELECT_ACTIVE_STUDENT_FOR_USER_SQL, /user_id/);
