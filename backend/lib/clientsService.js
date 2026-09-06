@@ -549,6 +549,9 @@ async function reassignUserSchool(store, userId, rawPayload, principal, auditMet
       );
     }
 
+    const { assertCanonicalStudentRolesLocked } = require("./studentRoleLock");
+    await assertCanonicalStudentRolesLocked(tx, locked.id, { operation: "reassign" });
+
     if (typeof tx.updateUserSchoolId !== "function" || typeof tx.reassignActiveUserRolesSchool !== "function") {
       throw createClientsError(500, "Réaffectation tenant indisponible dans la transaction.");
     }

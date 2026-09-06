@@ -329,6 +329,8 @@ module.exports = {
   isActiveStudentStatus,
   isActiveTeacherStatus,
   studentCodeOf,
+  studentCanonicalUserId,
+  userCanonicalId,
   userIdentityKeys,
   userMatchesStudentCode,
   userMatchesStudent,

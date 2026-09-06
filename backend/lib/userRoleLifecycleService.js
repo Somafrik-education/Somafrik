@@ -46,6 +46,10 @@ const {
   studentToTeacherConflict,
   teacherToStudentConflict,
 } = require("./businessProfileIntegrity");
+const {
+  assertCanonicalStudentRolesLocked,
+  isStudentRoleLockedError,
+} = require("./studentRoleLock");
 
 const SCHOOL_ADMIN_KEY = "SCHOOL_ADMIN";
 const TEACHER_KEY = "TEACHER";
@@ -80,6 +84,13 @@ function throwBusinessProfileConflict(conflict) {
 }
 
 function mapGrantPgError(error) {
+  if (isStudentRoleLockedError(error)) {
+    throw createUserRoleError(
+      409,
+      require("./studentRoleLock").STUDENT_ROLE_LOCKED_MESSAGE,
+      USER_ROLE_ERROR.STUDENT_ROLE_LOCKED,
+    );
+  }
   if (isBusinessProfileConflictError(error)) {
     const message = String(error.message ?? "");
     const conflict =
@@ -355,14 +366,18 @@ async function deactivateTeacherProfile(tx, teacher) {
 }
 
 async function grantRole(store, userId, rawPayload, principal, auditMeta) {
-  assertSingleRoleOperation(rawPayload);
-  const payload = ignoreClientScope(rawPayload);
-  const { roleKey, label } = await assertGrantableRole(store, principal, payload.role ?? payload.roleKey);
-
   const existing = await store.getUserById(userId);
   if (!existing) {
     throw createUserRoleError(404, "Utilisateur introuvable.", USER_ROLE_ERROR.USER_NOT_FOUND);
   }
+  await assertCanonicalStudentRolesLocked(store, existing.id, {
+    operation: "grant",
+    roleKey: rawPayload?.role ?? rawPayload?.roleKey,
+    payload: rawPayload,
+  });
+  assertSingleRoleOperation(rawPayload);
+  const payload = ignoreClientScope(rawPayload);
+  const { roleKey, label } = await assertGrantableRole(store, principal, payload.role ?? payload.roleKey);
 
   const attached = await attachUsersStorePrincipal(principal, store);
   assertUsersTargetAccess(attached, targetFromUserRow(existing));
@@ -404,6 +419,11 @@ async function grantRole(store, userId, rawPayload, principal, auditMeta) {
       );
     }
 
+    await assertCanonicalStudentRolesLocked(tx, locked.id, {
+      operation: "grant",
+      roleKey,
+      payload: rawPayload,
+    });
     await assertBusinessProfileGrantAllowed(tx, locked, school, roleKey);
 
     let teacherEffect = null;
@@ -485,6 +505,15 @@ async function grantRole(store, userId, rawPayload, principal, auditMeta) {
 }
 
 async function revokeRole(store, userId, rawPayload, principal, auditMeta) {
+  const existing = await store.getUserById(userId);
+  if (!existing) {
+    throw createUserRoleError(404, "Utilisateur introuvable.", USER_ROLE_ERROR.USER_NOT_FOUND);
+  }
+  await assertCanonicalStudentRolesLocked(store, existing.id, {
+    operation: "revoke",
+    roleKey: rawPayload?.role ?? rawPayload?.roleKey,
+    payload: rawPayload,
+  });
   assertSingleRoleOperation(rawPayload);
   const payload = ignoreClientScope(rawPayload);
   const roleKey = toRoleKey(payload.role ?? payload.roleKey);
@@ -495,11 +524,6 @@ async function revokeRole(store, userId, rawPayload, principal, auditMeta) {
     const code =
       roleKey === "PARENT" ? USER_ROLE_ERROR.PARENT_ROLE_FORBIDDEN : USER_ROLE_ERROR.STUDENT_ROLE_FORBIDDEN;
     throw createUserRoleError(403, "Ce rôle ne peut pas être retiré depuis Attribuer.", code);
-  }
-
-  const existing = await store.getUserById(userId);
-  if (!existing) {
-    throw createUserRoleError(404, "Utilisateur introuvable.", USER_ROLE_ERROR.USER_NOT_FOUND);
   }
 
   const attached = await attachUsersStorePrincipal(principal, store);
@@ -525,6 +549,12 @@ async function revokeRole(store, userId, rawPayload, principal, auditMeta) {
       throw createUserRoleError(404, "Ce rôle n'est pas attribué.", USER_ROLE_ERROR.ROLE_NOT_GRANTED);
     }
 
+    await assertCanonicalStudentRolesLocked(tx, locked.id, {
+      operation: "revoke",
+      roleKey,
+      payload: rawPayload,
+    });
+
     let school = null;
     if (locked.school_id && typeof tx.getSchoolById === "function") {
       school = await tx.getSchoolById(locked.school_id);
@@ -537,12 +567,17 @@ async function revokeRole(store, userId, rawPayload, principal, auditMeta) {
       teacher = await assertTeacherRevokeAllowed(tx, locked, school);
     }
 
-    const revoked = await tx.revokeUserRole({
-      userId: locked.id,
-      schoolId: school?.id ?? locked.school_id ?? null,
-      roleKey,
-      revokedBy: actorUserId(principal) || null,
-    });
+    let revoked;
+    try {
+      revoked = await tx.revokeUserRole({
+        userId: locked.id,
+        schoolId: school?.id ?? locked.school_id ?? null,
+        roleKey,
+        revokedBy: actorUserId(principal) || null,
+      });
+    } catch (error) {
+      mapGrantPgError(error);
+    }
     if (!revoked) {
       throw createUserRoleError(404, "Ce rôle n'est pas attribué.", USER_ROLE_ERROR.ROLE_NOT_GRANTED);
     }

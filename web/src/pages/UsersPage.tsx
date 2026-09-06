@@ -24,9 +24,14 @@ import {
   getUserFormFieldPolicy,
   isCountryAdminProvisionedUser,
   isStudentLinkedAccount,
+  areStudentRolesLocked,
   canAssignRoleToUserAccount,
   accountKindLabel,
   isTeacherRoleLabel,
+  formatLockedRolesDisplay,
+  STUDENT_ACCESS_ROLE_LABEL,
+  STUDENT_ROLES_LOCKED_LABEL,
+  STUDENT_ROLE_LOCKED_MESSAGE,
   STUDENT_TEACHER_ROLE_CONFLICT_MESSAGE,
   schoolsMatchingCountryScope,
   toCreateUserApiPayload,
@@ -59,10 +64,10 @@ import { usePrompt } from "../components/ui/PromptDialog";
 import type { UserAccount } from "../types";
 
 function toCsv(users: UserAccount[]): string {
-  const headers = ["Prénom", "Nom", "Identifiant", "Type métier", "Rôle(s) d'accès", "Email", "Téléphone", "Établissement", "Pays", "Statut"];
+  const headers = ["Prénom", "Nom", "Identifiant", "Type métier", "Rôle d'accès", "Rôles", "Email", "Téléphone", "Établissement", "Pays", "Statut"];
   const escape = (v: unknown) => `"${String(v ?? "").replace(/"/g, '""')}"`;
   const lines = users.map((u) =>
-    [u.firstName, u.lastName, u.publicId ?? u.identifier, formatBusinessProfileKind(u), formatAccessRolesDisplay(u), u.email, u.phone, getUserEstablishmentLabel(u), u.countryScope, u.status]
+    [u.firstName, u.lastName, u.publicId ?? u.identifier, formatBusinessProfileKind(u), formatAccessRolesDisplay(u), formatLockedRolesDisplay(u) ?? "—", u.email, u.phone, getUserEstablishmentLabel(u), u.countryScope, u.status]
       .map(escape)
       .join(","),
   );
@@ -330,6 +335,7 @@ export function UsersPage() {
   }
 
   async function openAssignFlow(user: UserAccount) {
+    if (areStudentRolesLocked(user)) return;
     setAssigning(user);
     setDetail(null);
     setSelectedRoles(user.roles?.length ? [...user.roles] : user.role && user.role !== "Sans affectation" ? [user.role] : []);
@@ -349,6 +355,10 @@ export function UsersPage() {
 
   async function submitAssign() {
     if (!assigning?.id) return;
+    if (areStudentRolesLocked(assigning)) {
+      showToast(STUDENT_ROLE_LOCKED_MESSAGE, "error");
+      return;
+    }
     const current = new Set(assigning.roles?.length ? assigning.roles : assigning.role && assigning.role !== "Sans affectation" ? [assigning.role] : []);
     const next = new Set(selectedRoles);
     setBusy(true);
@@ -466,7 +476,12 @@ export function UsersPage() {
     { key: "publicId", header: "Identifiant", render: (u) => u.publicId ?? u.identifier ?? "—" },
     { key: "status", header: "Statut", render: (u) => <StatusBadge status={u.status} /> },
     { key: "accountKind", header: "Type métier", render: (u) => formatBusinessProfileKind(u) },
-    { key: "roles", header: "Rôle(s) d'accès", render: (u) => formatAccessRolesDisplay(u) },
+    { key: "roles", header: "Rôle d'accès", render: (u) => formatAccessRolesDisplay(u) },
+    {
+      key: "roleLock",
+      header: "Rôles",
+      render: (u) => formatLockedRolesDisplay(u) ?? "—",
+    },
     {
       key: "actions",
       header: "Actions",
@@ -487,9 +502,13 @@ export function UsersPage() {
                 >
                   Modifier
                 </Button>
-                <Button variant="secondary" size="sm" onClick={() => void openAssignFlow(u)}>
-                  Attribuer
-                </Button>
+                {areStudentRolesLocked(u) ? (
+                  <span className="text-xs text-muted">{STUDENT_ROLES_LOCKED_LABEL}</span>
+                ) : (
+                  <Button variant="secondary" size="sm" onClick={() => void openAssignFlow(u)}>
+                    Attribuer
+                  </Button>
+                )}
               </>
             ) : null}
           </div>
@@ -524,6 +543,8 @@ export function UsersPage() {
     Boolean(editing) &&
     isEditingExisting &&
     canUpdate &&
+    editing != null &&
+    !areStudentRolesLocked(editing) &&
     canReassignUserTenant(scopeUser, editing);
 
   const usersDescription = visibleScopeError
@@ -678,9 +699,11 @@ export function UsersPage() {
                       >
                         Modifier
                       </Button>
-                      <Button variant="secondary" onClick={() => void openAssignFlow(detail)}>
-                        Attribuer
-                      </Button>
+                      {areStudentRolesLocked(detail) ? null : (
+                        <Button variant="secondary" onClick={() => void openAssignFlow(detail)}>
+                          Attribuer
+                        </Button>
+                      )}
                     </>
                   ) : null}
                   {canResetTarget ? (
@@ -720,7 +743,12 @@ export function UsersPage() {
             <dl className="grid grid-cols-2 gap-4 text-sm">
               <Row label="Identifiant" value={detail.publicId ?? detail.identifier} />
               <Row label="Type métier" value={formatBusinessProfileKind(detail)} />
-              <Row label="Rôle(s) d'accès" value={formatAccessRolesDisplay(detail)} />
+              <Row label="Rôle d'accès" value={formatAccessRolesDisplay(detail)} />
+              {areStudentRolesLocked(detail) ? (
+                <Row label="Rôles" value={STUDENT_ROLES_LOCKED_LABEL} />
+              ) : (
+                <Row label="Rôles" value={formatAccessRolesDisplay(detail)} />
+              )}
               {detail.linkedStudent?.studentCode ? (
                 <Row label="Profil élève" value={detail.linkedStudent.studentCode} />
               ) : null}
@@ -798,6 +826,19 @@ export function UsersPage() {
             <Field label="Email">
               <Input type="email" value={editing.email ?? ""} onChange={(e) => setEditing({ ...editing, email: e.target.value })} />
             </Field>
+            {isEditingExisting && areStudentRolesLocked(editing) ? (
+              <>
+                <Field label="Type métier">
+                  <Input value={formatBusinessProfileKind(editing)} readOnly />
+                </Field>
+                <Field label="Rôle d'accès">
+                  <Input value={STUDENT_ACCESS_ROLE_LABEL} readOnly />
+                </Field>
+                <Field label="Rôles" hint={STUDENT_ROLE_LOCKED_MESSAGE}>
+                  <Input value={STUDENT_ROLES_LOCKED_LABEL} readOnly />
+                </Field>
+              </>
+            ) : null}
             {!isEditingExisting ? (
               <Field
                 label="Rôle"
@@ -1002,7 +1043,11 @@ export function UsersPage() {
         }
       >
         <div className="grid gap-2">
-          {assigning && isStudentLinkedAccount(assigning) ? (
+          {assigning && areStudentRolesLocked(assigning) ? (
+            <p className="rounded-lg border border-amber/30 bg-amber/10 px-3 py-2 text-sm text-ink">
+              {STUDENT_ROLE_LOCKED_MESSAGE}
+            </p>
+          ) : assigning && isStudentLinkedAccount(assigning) ? (
             <p className="rounded-lg border border-amber/30 bg-amber/10 px-3 py-2 text-sm text-ink">
               {STUDENT_TEACHER_ROLE_CONFLICT_MESSAGE}
             </p>

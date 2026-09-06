@@ -425,6 +425,70 @@ async function main() {
       (error) => error.statusCode === 403 && error.code === USER_ROLE_ERROR.STUDENT_ROLE_FORBIDDEN,
     );
 
+    const lockedUser = await store.createUser(
+      { firstName: "Marc", lastName: "Lock", email: "marc.lock.pg@test.local" },
+      principal,
+      auditMeta,
+    );
+    const lockedStudent = await pool.query(
+      `INSERT INTO students (school_id, student_code, first_name, last_name, status)
+       VALUES ($1, 'PENDING', 'Marc', 'Lock', 'active')
+       RETURNING id, student_code`,
+      [schoolRow.rows[0].id],
+    );
+    await pool.query(`UPDATE students SET user_id = $1 WHERE id = $2`, [
+      lockedUser.id,
+      lockedStudent.rows[0].id,
+    ]);
+    await pool.query(
+      `INSERT INTO user_roles (user_id, school_id, role_key, status)
+       VALUES ($1, $2, 'STUDENT', 'active')`,
+      [lockedUser.id, schoolRow.rows[0].id],
+    );
+    const lockedCodes = await pool.query(`SELECT user_code FROM users WHERE id = $1`, [lockedUser.id]);
+    assert.notEqual(lockedCodes.rows[0].user_code, lockedStudent.rows[0].student_code);
+    await assert.rejects(
+      () => store.grantUserRole(lockedUser.id, { role: "Directeur" }, principal, auditMeta),
+      (error) =>
+        error.statusCode === 409 &&
+        error.code === USER_ROLE_ERROR.STUDENT_ROLE_LOCKED &&
+        String(error.message).includes("ne peuvent pas être modifiés"),
+    );
+    await assert.rejects(
+      () => store.grantUserRole(lockedUser.id, { role: "Enseignant" }, principal, auditMeta),
+      (error) => error.statusCode === 409 && error.code === USER_ROLE_ERROR.STUDENT_ROLE_LOCKED,
+    );
+    await assert.rejects(
+      () => store.revokeUserRole(lockedUser.id, { role: "Élève / Étudiant" }, principal, auditMeta),
+      (error) => error.statusCode === 409 && error.code === USER_ROLE_ERROR.STUDENT_ROLE_LOCKED,
+    );
+    await assert.rejects(
+      () =>
+        pool.query(
+          `INSERT INTO user_roles (user_id, school_id, role_key, status)
+           VALUES ($1, $2, 'SECRETARY', 'active')`,
+          [lockedUser.id, schoolRow.rows[0].id],
+        ),
+      /STUDENT_ROLE_LOCKED/,
+    );
+    await assert.rejects(
+      () =>
+        pool.query(`DELETE FROM user_roles WHERE user_id = $1 AND role_key = 'STUDENT'`, [lockedUser.id]),
+      /STUDENT_ROLE_LOCKED/,
+    );
+    await assert.rejects(
+      () => store.grantUserRole(lockedUser.id, { role: "Admin School" }, principal, auditMeta),
+      (error) => error.statusCode === 409 && error.code === USER_ROLE_ERROR.STUDENT_ROLE_LOCKED,
+    );
+    const stillStudent = await pool.query(
+      `SELECT role_key FROM user_roles WHERE user_id = $1 AND status = 'active' AND revoked_at IS NULL`,
+      [lockedUser.id],
+    );
+    assert.deepEqual(
+      stillStudent.rows.map((row) => row.role_key),
+      ["STUDENT"],
+    );
+
     console.log("userRoleLifecycle.pg.test.js OK");
   } finally {
     await pool.end();

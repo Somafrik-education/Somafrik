@@ -60,7 +60,7 @@ describe("M1 — accountKind student_login + linkedStudent + roleKeys=[]", () =>
     assert.equal(formatBusinessProfileKind(apiStudentLogin), BUSINESS_PROFILE_KIND_LABELS.student_login);
     assert.equal(isStudentLinkedAccount(apiStudentLogin), true);
     assert.notEqual(formatBusinessProfileKind(apiStudentLogin), "Sans affectation");
-    assert.equal(formatAccessRolesDisplay(apiStudentLogin), "Aucun rôle d'accès");
+    assert.equal(formatAccessRolesDisplay(apiStudentLogin), "Élève / Étudiant");
   });
 });
 
@@ -369,3 +369,13 @@ describe("M6 — L1 conserve students.id", () => {
     assert.notEqual(normalized?.identifier, normalized?.linkedStudent?.studentCode);
   });
 });
+
+describe("P0 — mutation rôles élève verrouillée", () => {
+  it("UserMutationControls refuse grant/revoke sur linkedStudent", () => {
+    const src = source("src/components/UserMutationControls.tsx");
+    assert.match(src, /STUDENT_ROLE_LOCKED_MESSAGE/);
+    assert.match(src, /isStudentLinkedAccount\(row\)/);
+    assert.match(src, /Retrait impossible/);
+  });
+});
+

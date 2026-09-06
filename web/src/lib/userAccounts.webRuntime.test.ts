@@ -121,7 +121,7 @@ describe("#514 web-runtime — GET /backoffice/users → formatters UsersPage", 
     expect(formatBusinessProfileKind(apiStudentLoginEmptyAccess)).toBe(
       BUSINESS_PROFILE_KIND_LABELS.student_login,
     );
-    expect(formatAccessRolesDisplay(apiStudentLoginEmptyAccess)).toBe(ACCESS_ROLES_NONE_LABEL);
+    expect(formatAccessRolesDisplay(apiStudentLoginEmptyAccess)).toBe("Élève / Étudiant");
     expect(formatBusinessProfileKind(apiStudentLoginEmptyAccess)).not.toBe("Sans affectation");
   });
 });

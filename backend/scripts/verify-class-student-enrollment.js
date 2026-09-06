@@ -261,13 +261,16 @@ async function main() {
     assert.equal(studentAccount.linkedStudent?.studentCode, studentCode);
     assert.notEqual(studentAccount.businessProfileLabel, "Sans affectation");
     assert.equal(studentAccount.linkedTeacher, null);
+    // Inscription pose students.user_id : grant Enseignant = STUDENT_ROLE_LOCKED
+    // (BUSINESS_PROFILE_CONFLICT reste le cas code-match sans FK).
     const blockedTeacher = await request(`/backoffice/users/${encodeURIComponent(studentAccount.id)}/roles/grant`, {
       method: "POST",
       token: tokenCd,
       body: { role: "Enseignant" },
     });
     assert.equal(blockedTeacher.status, 409, JSON.stringify(blockedTeacher.data));
-    assert.equal(blockedTeacher.data.code, "BUSINESS_PROFILE_CONFLICT");
+    assert.equal(blockedTeacher.data.code, "STUDENT_ROLE_LOCKED");
+    assert.match(String(blockedTeacher.data.message ?? ""), /ne peuvent pas être modifiés/);
     const teachersAfterBlock = await request("/teachers", { token: tokenCd });
     assert.equal(teachersAfterBlock.status, 200);
     assert.equal(

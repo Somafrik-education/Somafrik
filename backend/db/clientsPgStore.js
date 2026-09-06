@@ -147,6 +147,8 @@ function createClientsPgStore(repo) {
         );
       },
       async reassignActiveUserRolesSchool(userId, _fromSchoolId, toSchoolId) {
+        const { assertCanonicalStudentRolesLocked } = require("../lib/studentRoleLock");
+        await assertCanonicalStudentRolesLocked(this, userId, { operation: "reassign" });
         await query(
           `UPDATE user_roles
            SET school_id = $2, updated_at = NOW()
@@ -231,6 +233,11 @@ function createClientsPgStore(repo) {
         return formatUserCode(year, nextValue);
       },
       async insertUserRole(row) {
+        const { assertCanonicalStudentRolesLocked } = require("../lib/studentRoleLock");
+        await assertCanonicalStudentRolesLocked(this, row.userId, {
+          operation: "grant",
+          roleKey: row.roleKey,
+        });
         return one(
           `INSERT INTO user_roles (user_id, school_id, role_key, granted_by, granted_at, status)
            VALUES ($1, $2, $3, $4, NOW(), 'active')
@@ -239,6 +246,11 @@ function createClientsPgStore(repo) {
         );
       },
       async revokeUserRole(row) {
+        const { assertCanonicalStudentRolesLocked } = require("../lib/studentRoleLock");
+        await assertCanonicalStudentRolesLocked(this, row.userId, {
+          operation: "revoke",
+          roleKey: row.roleKey,
+        });
         return one(
           `UPDATE user_roles
            SET status = 'revoked', revoked_at = NOW(), revoked_by = $4, updated_at = NOW()
@@ -265,6 +277,10 @@ function createClientsPgStore(repo) {
           `SELECT * FROM teachers WHERE school_id = $1 AND user_id = $2 LIMIT 1`,
           [schoolId, userId],
         );
+      },
+      async getCanonicalLinkedStudentByUserId(userId) {
+        const { SELECT_CANONICAL_LINKED_STUDENT_SQL } = require("../lib/studentRoleLock");
+        return one(SELECT_CANONICAL_LINKED_STUDENT_SQL, [userId]);
       },
       async getActiveStudentProfileByUser(userId, schoolId) {
         const {
@@ -1520,6 +1536,7 @@ function createClientsPgStore(repo) {
     getSchoolById: (id) => bind({}).getSchoolById(id),
     getCountryByCode: (code) => bind({}).getCountryByCode(code),
     getUserById: (id) => bind({}).getUserById(id),
+    getCanonicalLinkedStudentByUserId: (id) => bind({}).getCanonicalLinkedStudentByUserId(id),
     withTransaction(fn) {
       return repo.withTransaction((tx) => fn(bind(tx)));
     },

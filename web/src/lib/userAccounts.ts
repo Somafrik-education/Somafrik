@@ -250,6 +250,10 @@ export function canReassignUserTenant(
 const PARENT_STUDENT_ROLE_LABELS = new Set(["Parent", "Élève / Étudiant"]);
 
 export const ACCESS_ROLES_NONE_LABEL = "Aucun rôle d'accès";
+export const STUDENT_ACCESS_ROLE_LABEL = "Élève / Étudiant";
+export const STUDENT_ROLES_LOCKED_LABEL = "Verrouillés — profil élève";
+export const STUDENT_ROLE_LOCKED_MESSAGE =
+  "Les rôles d'un compte lié à un élève ne peuvent pas être modifiés.";
 export const BUSINESS_PROFILE_KIND_LABELS = {
   student_login: "Compte lié à un élève",
   teacher: "Profil enseignant",
@@ -310,8 +314,9 @@ export function formatBusinessProfileKind(
 
 /** Rôles d'accès uniquement. Distinct du type métier. */
 export function formatAccessRolesDisplay(
-  user: Pick<UserAccount, "role" | "roles" | "roleKeys" | "assignmentStatus">,
+  user: Pick<UserAccount, "role" | "roles" | "roleKeys" | "assignmentStatus" | "accountKind" | "linkedStudent">,
 ): string {
+  if (isStudentLinkedAccount(user)) return STUDENT_ACCESS_ROLE_LABEL;
   const keys = accessRoleKeysOf(user);
   if (keys.length) {
     if (!isEmptyAccessLabel(user.assignmentStatus)) return String(user.assignmentStatus).trim();
@@ -336,16 +341,29 @@ export function isStudentLinkedAccount(
   return Boolean(user.linkedStudent?.studentId || user.linkedStudent?.studentCode);
 }
 
+export function areStudentRolesLocked(
+  user: Pick<UserAccount, "accountKind" | "linkedStudent" | "role" | "roles" | "roleKeys">,
+): boolean {
+  return isStudentLinkedAccount(user);
+}
+
 export function isTeacherRoleLabel(role: string | undefined | null): boolean {
   const value = normalize(String(role ?? ""));
   return value === "enseignant" || value === "teacher";
+}
+
+export function formatLockedRolesDisplay(
+  user: Pick<UserAccount, "accountKind" | "linkedStudent" | "role" | "roles" | "roleKeys">,
+): string | null {
+  if (!areStudentRolesLocked(user)) return null;
+  return STUDENT_ROLES_LOCKED_LABEL;
 }
 
 export function canAssignRoleToUserAccount(
   user: Pick<UserAccount, "accountKind" | "linkedStudent" | "linkedTeacher" | "role" | "roles" | "roleKeys">,
   roleName: string,
 ): boolean {
-  if (isStudentLinkedAccount(user) && isTeacherRoleLabel(roleName)) return false;
+  if (areStudentRolesLocked(user)) return false;
   if ((user.linkedTeacher || user.accountKind === "teacher" || user.accountKind === "conflict") && normalize(roleName) === "eleve / etudiant") {
     return false;
   }

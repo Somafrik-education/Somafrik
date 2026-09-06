@@ -76,7 +76,8 @@ describe("userAccounts business profile", () => {
   it("refuse le rôle Enseignant sur un compte lié à un élève, pas sur un staff", () => {
     expect(isTeacherRoleLabel("Enseignant")).toBe(true);
     expect(canAssignRoleToUserAccount(studentLogin, "Enseignant")).toBe(false);
-    expect(canAssignRoleToUserAccount(studentLogin, "Secrétaire")).toBe(true);
+    expect(canAssignRoleToUserAccount(studentLogin, "Secrétaire")).toBe(false);
+    expect(canAssignRoleToUserAccount(studentLogin, "Directeur")).toBe(false);
     expect(canAssignRoleToUserAccount(staff, "Enseignant")).toBe(true);
     expect(STUDENT_TEACHER_ROLE_CONFLICT_MESSAGE).toMatch(/élève actif/i);
   });
@@ -88,12 +89,12 @@ describe("userAccounts business profile", () => {
 
   it("élève lié sans rôle d'accès : type métier Élève, jamais Sans affectation", () => {
     expect(formatBusinessProfileKind(studentLoginNoAccessRole)).toBe(BUSINESS_PROFILE_KIND_LABELS.student_login);
-    expect(formatAccessRolesDisplay(studentLoginNoAccessRole)).toBe(ACCESS_ROLES_NONE_LABEL);
+    expect(formatAccessRolesDisplay(studentLoginNoAccessRole)).toBe("Élève / Étudiant");
     expect(formatBusinessProfileKind(studentLoginNoAccessRole)).not.toBe("Sans affectation");
     expect(isUnassignedUserAccount(studentLoginNoAccessRole)).toBe(false);
 
     expect(formatBusinessProfileKind(studentHydratedSansAffectation)).toBe("Compte lié à un élève");
-    expect(formatAccessRolesDisplay(studentHydratedSansAffectation)).toBe(ACCESS_ROLES_NONE_LABEL);
+    expect(formatAccessRolesDisplay(studentHydratedSansAffectation)).toBe("Élève / Étudiant");
     expect(isUnassignedUserAccount(studentHydratedSansAffectation)).toBe(false);
 
     expect(
