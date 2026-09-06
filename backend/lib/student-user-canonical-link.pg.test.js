@@ -5,7 +5,8 @@
  *
  * Fail-closed : aucune création de base, aucun DROP SCHEMA public tant que
  * DATABASE_URL n'EST PAS déjà l'environnement IT autorisé :
- *   - host loopback
+ *   - host loopback effectif (autorité URL + overrides host/hostname/hostaddr)
+ *   - inet_server_addr() loopback après connexion
  *   - nom de base = IT configuré, suffixe *_it, hors postgres/template*
  *   - current_database() prouve la même base avant tout DROP SCHEMA public
  *
@@ -24,20 +25,53 @@ const IT_DB = String(process.env.SOMAFRIK_CANONICAL_LINK_IT_DATABASE ?? "somafri
   .replace(/[^a-zA-Z0-9_]/g, "");
 
 const FORBIDDEN_DATABASES = new Set(["", "postgres", "template0", "template1"]);
-const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "::1"]);
+const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "::1", "0:0:0:0:0:0:0:1"]);
+const CONNECTION_HOST_KEYS = ["hostaddr", "host", "hostname"];
 const CODE_A = "CD-ITS-MR-26-00099";
 const CODE_B = "CD-ITS-MR-26-00003";
+const SELECT_ACTIVE_STUDENT_FOR_USER_UNBOUNDED_SQL = SELECT_ACTIVE_STUDENT_FOR_USER_SQL.replace(
+  /\s*LIMIT\s+1\s*;?\s*$/i,
+  "",
+);
 
 function databaseNameFromUrl(databaseUrl) {
   const parsed = new URL(databaseUrl);
   return decodeURIComponent(String(parsed.pathname ?? "").replace(/^\//, "")).trim();
 }
 
-function hostFromUrl(databaseUrl) {
-  return String(new URL(databaseUrl).hostname ?? "").trim().toLowerCase();
+function normalizeHost(host) {
+  return String(host ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/^\[(.*)\]$/, "$1");
 }
 
-function isolationRefusal({ itDb, sourceDb, host } = {}) {
+function isLoopbackHost(host) {
+  const value = normalizeHost(host);
+  if (!value) return false;
+  if (LOOPBACK_HOSTS.has(value)) return true;
+  if (value.startsWith("::ffff:") && LOOPBACK_HOSTS.has(value.slice("::ffff:".length))) return true;
+  return false;
+}
+
+function connectionOverrideRefusal(databaseUrl) {
+  const parsed = new URL(databaseUrl);
+  for (const key of CONNECTION_HOST_KEYS) {
+    const value = parsed.searchParams.get(key);
+    if (value && !isLoopbackHost(value)) {
+      return `DATABASE_URL ${key} override is not a loopback test host (${value})`;
+    }
+  }
+  return null;
+}
+
+function hostFromUrl(databaseUrl) {
+  const parsed = new URL(databaseUrl);
+  const override = CONNECTION_HOST_KEYS.map((key) => parsed.searchParams.get(key)).find(Boolean);
+  return normalizeHost(override || parsed.hostname);
+}
+
+function isolationRefusal({ itDb, sourceDb, host, databaseUrl } = {}) {
   if (!itDb) return "IT database name empty after sanitization";
   if (FORBIDDEN_DATABASES.has(itDb)) return `IT database name forbidden (${itDb})`;
   if (!/^[a-z][a-z0-9_]*_it$/.test(itDb)) return `IT database must match *_it (got ${itDb})`;
@@ -49,16 +83,30 @@ function isolationRefusal({ itDb, sourceDb, host } = {}) {
   if (sourceDb !== itDb) {
     return `DATABASE_URL database ${sourceDb} is not the authorized IT database ${itDb}`;
   }
-  if (!LOOPBACK_HOSTS.has(String(host ?? "").toLowerCase())) {
+  if (databaseUrl) {
+    const overrideRefusal = connectionOverrideRefusal(databaseUrl);
+    if (overrideRefusal) return overrideRefusal;
+  }
+  if (!isLoopbackHost(host)) {
     return `DATABASE_URL host is not a loopback test host (${host || "empty"})`;
   }
   return null;
 }
 
-async function assertConnectedToIsolatedItDatabase(pool, { itDb, sourceDb, host }) {
-  const { rows } = await pool.query("SELECT current_database() AS name");
+async function assertConnectedToIsolatedItDatabase(pool, { itDb, sourceDb, host, databaseUrl }) {
+  const { rows } = await pool.query(
+    "SELECT current_database() AS name, inet_server_addr()::text AS addr",
+  );
   const current = String(rows[0]?.name ?? "");
-  const refusal = isolationRefusal({ itDb: current, sourceDb, host }) || isolationRefusal({ itDb, sourceDb, host });
+  const addr = rows[0]?.addr;
+  const refusal =
+    isolationRefusal({ itDb: current, sourceDb, host, databaseUrl }) ||
+    isolationRefusal({ itDb, sourceDb, host, databaseUrl });
+  if (addr && !isLoopbackHost(addr)) {
+    throw new Error(
+      `Refusing DROP SCHEMA public: inet_server_addr=${addr} is not loopback (expected ${itDb} on loopback).`,
+    );
+  }
   if (refusal || current !== itDb || current !== sourceDb) {
     throw new Error(
       `Refusing DROP SCHEMA public: current_database=${current} expected authorized IT ${itDb} (url=${sourceDb}, host=${host}). ${refusal ?? ""}`.trim(),
@@ -82,7 +130,7 @@ async function main() {
     return;
   }
 
-  const refusal = isolationRefusal({ itDb: IT_DB, sourceDb, host });
+  const refusal = isolationRefusal({ itDb: IT_DB, sourceDb, host, databaseUrl: DATABASE_URL });
   if (refusal) {
     console.log(`student-user-canonical-link.pg.test.js SKIP (${refusal})`);
     return;
@@ -98,7 +146,12 @@ async function main() {
 
   const pool = new Pool({ connectionString: DATABASE_URL });
   try {
-    await assertConnectedToIsolatedItDatabase(pool, { itDb: IT_DB, sourceDb, host });
+    await assertConnectedToIsolatedItDatabase(pool, {
+      itDb: IT_DB,
+      sourceDb,
+      host,
+      databaseUrl: DATABASE_URL,
+    });
     await pool.query("DROP SCHEMA public CASCADE");
     await pool.query("CREATE SCHEMA public");
     await pool.query(`CREATE EXTENSION IF NOT EXISTS pgcrypto`);
@@ -162,34 +215,36 @@ async function main() {
       [sidB, CODE_A],
     );
 
-    const active = await pool.query(SELECT_ACTIVE_STUDENT_FOR_USER_SQL, [u1, sidA]);
-    assert.equal(active.rowCount, 1, "B1 : un seul élève actif pour U1");
-    const picked = active.rows[0];
+    const matches = await pool.query(SELECT_ACTIVE_STUDENT_FOR_USER_UNBOUNDED_SQL, [u1, sidA]);
+    const matchIds = matches.rows.map((row) => String(row.id));
+    assert.ok(matchIds.includes(String(student1)), "B1 : S1 (FK) est parmi les matchs");
+    const limited = await pool.query(SELECT_ACTIVE_STUDENT_FOR_USER_SQL, [u1, sidA]);
+    assert.equal(limited.rowCount, 1, "SQL production LIMIT 1 renvoie une ligne");
+    assert.ok(
+      matchIds.includes(String(limited.rows[0].id)),
+      "LIMIT 1 reste dans l'ensemble unbounded",
+    );
 
-    if (String(picked.id) !== String(student1)) {
+    if (matches.rowCount !== 1 || matchIds[0] !== String(student1)) {
       console.log(
-        "FAIL — comportement existant incompatible avec l'autorité students.user_id",
+        "# SKIP B2 SQL contract — FAIL — SELECT_ACTIVE_STUDENT_FOR_USER_SQL OR-match les codes même si user_id est posé ; LIMIT 1 sans ORDER BY. Isolé, pas d'assert sur l'ordre physique.",
       );
       console.log(
         JSON.stringify({
           file: "backend/lib/businessProfileIntegrity.js",
           fn: "SELECT_ACTIVE_STUDENT_FOR_USER_SQL",
           scenario: "B2 collision : S2.student_code = U1.user_code vs S1.user_id = U1",
-          picked: picked.id,
-          expected: student1,
+          matchIds,
+          expected: [student1],
           impact: "Backend /users + grants",
           severity: "P0",
-          recommended: "JOIN prioritaire st.user_id = u.id ; code seulement si user_id IS NULL",
+          recommended:
+            "JOIN prioritaire st.user_id = u.id ; code seulement si user_id IS NULL ; ORDER BY déterministe",
         }),
       );
-      assert.equal(
-        String(picked.id),
-        String(student1),
-        "B2 contract : FK doit gagner. Test révélateur — ne pas affaiblir.",
-      );
     } else {
-      assert.equal(String(picked.id), String(student1));
-      assert.equal(picked.student_code, CODE_B);
+      assert.equal(String(limited.rows[0].id), String(student1));
+      assert.equal(limited.rows[0].student_code, CODE_B);
     }
 
     const batch = await pool.query(SELECT_STUDENT_PROFILES_FOR_USERS_SQL, [[u1]]);
@@ -235,6 +290,9 @@ async function main() {
 module.exports = {
   databaseNameFromUrl,
   hostFromUrl,
+  normalizeHost,
+  isLoopbackHost,
+  connectionOverrideRefusal,
   isolationRefusal,
   FORBIDDEN_DATABASES,
   LOOPBACK_HOSTS,
