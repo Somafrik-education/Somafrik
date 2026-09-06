@@ -9,7 +9,7 @@ import {
   type ReactNode,
 } from "react";
 import { useAuth } from "./AuthContext";
-import { mergeRemoteSnapshot, purgeInactiveSchoolFromState } from "../lib/backofficeStateMerge";
+import { mergeRemoteSnapshot, presentActiveSchoolState, purgeInactiveSchoolFromState } from "../lib/backofficeStateMerge";
 import { SCHOOL_SCOPED_CANONICAL_KEYS } from "../lib/canonicalDomains";
 import { assertNoStrippedCanonicalWrites } from "../lib/canonicalStateWriteGuard";
 import { domainsFromPatch, domainCacheKey, loadDomains, type DomainKey } from "../lib/domainLoaders";
@@ -77,6 +77,10 @@ interface DataContextValue {
   invalidateDomains: (domains: DomainKey[], options?: EnsureDomainsOptions) => void;
   /** Purge les données scopées d'un établissement inactif (changement d'établissement). */
   purgeSchoolScopedState: (inactiveSchoolCode: string) => void;
+  /** Bascule d'établissement : loading/switching immédiat, sans vider le snapshot interne. */
+  beginScopeTransition: (schoolCode: string) => void;
+  /** True tant que le snapshot du nouvel établissement n'est pas encore présentable. */
+  scopeSwitching: boolean;
   update: (patch: Partial<BackOfficeState>, options?: UpdateOptions) => Promise<void>;
   retryFailedSync: () => Promise<void>;
 }
@@ -115,6 +119,20 @@ const EMPTY_STATE: BackOfficeState = {
   auditLog: [],
 };
 
+function sessionPrincipalKey(session: Session | null): string {
+  const user = session?.user;
+  if (!user) return "";
+  return [
+    String(user.id ?? "").trim(),
+    String(user.role ?? "").trim(),
+    String(user.schoolId ?? "").trim(),
+    String(user.schoolCode ?? "").trim().toUpperCase(),
+    String(user.schoolPublicCode ?? "").trim().toUpperCase(),
+  ].join("|");
+}
+
+const SCOPE_COMMIT_DOMAINS: DomainKey[] = ["students", "users", "classes", "teachers"];
+
 function stateFromSession(session: Session): BackOfficeState {
   const base: BackOfficeState = {
     ...EMPTY_STATE,
@@ -146,8 +164,14 @@ export function DataProvider({ children }: { children: ReactNode }) {
       activeSchoolCodeRef.current = normalized;
     }
   }, []);
+  const presentationSchoolCodeRef = useRef("");
+  const scopeSwitchingRef = useRef(false);
+  const previousPrincipalKeyRef = useRef<string | undefined>(undefined);
   const syncPausedRef = useRef(false);
-  const [loading, setLoading] = useState(false);
+  const [fetchLoading, setFetchLoading] = useState(false);
+  const [scopeSwitching, setScopeSwitching] = useState(false);
+  const [presentationSchoolCode, setPresentationSchoolCode] = useState("");
+  const loading = fetchLoading || scopeSwitching;
   const [error, setError] = useState<string | null>(null);
   const [scopeErrors, setScopeErrors] = useState<DomainScopeErrors>(EMPTY_DOMAIN_SCOPE_ERRORS);
   const scopeError = combinedScopeError(scopeErrors);
@@ -222,6 +246,16 @@ export function DataProvider({ children }: { children: ReactNode }) {
       if (scopePatch && Object.keys(scopePatch).length) {
         setScopeErrors((previous) => mergeDomainScopeErrors(previous, scopePatch));
       }
+      if (scopeSwitchingRef.current && schoolCode) {
+        const incoming = String(schoolCode).trim().toUpperCase();
+        if (
+          incoming === presentationSchoolCodeRef.current &&
+          loadedKeys.some((key) => SCOPE_COMMIT_DOMAINS.includes(key))
+        ) {
+          scopeSwitchingRef.current = false;
+          setScopeSwitching(false);
+        }
+      }
       return true;
     },
     [],
@@ -261,7 +295,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       }
       if (!keys.length) return;
 
-      setLoading(true);
+      setFetchLoading(true);
       try {
         const cacheKeys = cacheKeysForDomains(keys, schoolCode);
         const expectedGenerations = new Map<string, number>();
@@ -301,7 +335,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
         else setError("Erreur de chargement");
         throw err;
       } finally {
-        setLoading(false);
+        setFetchLoading(false);
       }
     },
     [session, mergeLoadedDomains, cacheKeysForDomains, rememberSchoolCode],
@@ -330,19 +364,37 @@ export function DataProvider({ children }: { children: ReactNode }) {
     [session, refreshDomains, invalidateDomains, rememberSchoolCode],
   );
 
+  const beginScopeTransition = useCallback((schoolCode: string) => {
+    const normalized = String(schoolCode ?? "").trim().toUpperCase();
+    if (!normalized || normalized === "*") {
+      presentationSchoolCodeRef.current = "";
+      scopeSwitchingRef.current = false;
+      setPresentationSchoolCode("");
+      setScopeSwitching(false);
+      return;
+    }
+    presentationSchoolCodeRef.current = normalized;
+    scopeSwitchingRef.current = true;
+    rememberSchoolCode(normalized);
+    setPresentationSchoolCode(normalized);
+    setScopeSwitching(true);
+  }, [rememberSchoolCode]);
+
+  const principalKey = sessionPrincipalKey(session);
   useEffect(() => {
-    if (session) {
-      loadedDomainsRef.current = new Set();
-      setScopeErrors(EMPTY_DOMAIN_SCOPE_ERRORS);
-      const seeded = reapplyOutboxToState(stateFromSession(session), listActiveOutboxEntries());
-      setState(seeded);
+    const previousKey = previousPrincipalKeyRef.current;
+    previousPrincipalKeyRef.current = principalKey;
+    if (previousKey === principalKey) return;
+    loadedDomainsRef.current = new Set();
+    setScopeErrors(EMPTY_DOMAIN_SCOPE_ERRORS);
+    scopeSwitchingRef.current = false;
+    setScopeSwitching(false);
+    if (session && principalKey) {
+      setState(reapplyOutboxToState(stateFromSession(session), listActiveOutboxEntries()));
     } else {
-      loadedDomainsRef.current = new Set();
-      setScopeErrors(EMPTY_DOMAIN_SCOPE_ERRORS);
       setState(EMPTY_STATE);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [session?.accessToken]);
+  }, [principalKey, session]);
 
   const update = useCallback(
     async (patch: Partial<BackOfficeState>, options: UpdateOptions = {}) => {
@@ -498,9 +550,14 @@ export function DataProvider({ children }: { children: ReactNode }) {
     await update(patch);
   }, [update]);
 
+  const presentedState = useMemo(
+    () => presentActiveSchoolState(state, presentationSchoolCode),
+    [state, presentationSchoolCode],
+  );
+
   const value = useMemo<DataContextValue>(
     () => ({
-      state,
+      state: presentedState,
       loading,
       error,
       scopeError,
@@ -509,10 +566,26 @@ export function DataProvider({ children }: { children: ReactNode }) {
       ensureDomains,
       invalidateDomains,
       purgeSchoolScopedState,
+      beginScopeTransition,
+      scopeSwitching,
       update,
       retryFailedSync,
     }),
-    [state, loading, error, scopeError, syncJournal, refreshDomains, ensureDomains, invalidateDomains, purgeSchoolScopedState, update, retryFailedSync],
+    [
+      presentedState,
+      loading,
+      error,
+      scopeError,
+      syncJournal,
+      refreshDomains,
+      ensureDomains,
+      invalidateDomains,
+      purgeSchoolScopedState,
+      beginScopeTransition,
+      scopeSwitching,
+      update,
+      retryFailedSync,
+    ],
   );
 
   return <DataContext.Provider value={value}>{children}</DataContext.Provider>;

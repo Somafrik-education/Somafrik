@@ -30,6 +30,41 @@ export function mapItemToRow(resource: L1Resource, item: L1Item): Record<string,
   return row;
 }
 
+export async function replaceResourceSnapshotAtomically(
+  store: L1Store,
+  partition: L1Partition,
+  resource: L1Resource,
+  page: Pick<L1Page, "items" | "nextCursor" | "scopeHash">,
+  state: L1SyncState,
+  isCurrent: () => boolean = () => true,
+): Promise<void> {
+  await store.withExclusiveTransaction(async (txn) => {
+    if (!isCurrent()) return;
+    await txn.purgeResource(partition, resource);
+    for (const item of page.items) {
+      const id = String(item.id ?? "").trim();
+      if (!id || item.tombstone === true) continue;
+      await txn.upsertRow(resource, partition, mapItemToRow(resource, item));
+    }
+    await txn.putMeta({
+      userId: partition.userId,
+      schoolId: partition.schoolId,
+      schoolCode: partition.schoolCode,
+      resource,
+      cursor: page.nextCursor || null,
+      scopeHash: page.scopeHash,
+      state,
+      schemaVersion: L1_LOCAL_SCHEMA_VERSION,
+      lastSuccessAt: new Date().toISOString(),
+    });
+    if (!isCurrent()) {
+      const error = new Error(L1_TX_STALE) as Error & { code: string };
+      error.code = L1_TX_STALE;
+      throw error;
+    }
+  });
+}
+
 export async function applyL1PageAtomically(
   store: L1Store,
   partition: L1Partition,

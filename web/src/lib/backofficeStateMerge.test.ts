@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   mergeRemoteSnapshot,
+  presentActiveSchoolState,
   purgeInactiveSchoolFromState,
   replaceGlobalRows,
   replaceScopedSchoolRows,
@@ -160,5 +161,17 @@ describe("backofficeStateMerge (P0 SYNC-CANONICAL-STATE)", () => {
     ];
     const merged = replaceGlobalRows(prev, [], { domainKey: "evaluations" });
     expect(merged.map((row) => row.id)).toEqual(["C2"]);
+  });
+
+  it("presentActiveSchoolState n'expose jamais A sous B (mémoire interne conservée)", () => {
+    const prev = baseState({
+      students: [
+        { id: "A1", schoolCode: "CD-IN-26-001" },
+        { id: "B1", schoolCode: "BI-EC-26-001" },
+      ] as never,
+    });
+    const presented = presentActiveSchoolState(prev, "BI-EC-26-001");
+    expect(presented.students.map((row) => row.id)).toEqual(["B1"]);
+    expect(prev.students.map((row) => row.id)).toEqual(["A1", "B1"]);
   });
 });
