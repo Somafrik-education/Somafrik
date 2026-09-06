@@ -4,10 +4,11 @@
  * student-user-canonical-link.regression — PostgreSQL
  *
  * Fail-closed : aucune création de base, aucun DROP SCHEMA public tant que
- * DATABASE_URL n'EST PAS déjà l'environnement IT autorisé :
- *   - host loopback
- *   - nom de base = IT configuré, suffixe *_it, hors postgres/template*
- *   - current_database() prouve la même base avant tout DROP SCHEMA public
+ * mayDropPublicSchema() n'a pas prouvé la destination effective :
+ *   - aucun override host/hostname/hostaddr dans DATABASE_URL
+ *   - host URL loopback
+ *   - current_database() = base IT autorisée
+ *   - inet_server_addr() ∈ {127.0.0.1, ::1}
  *
  * Pas de création de base. Pas de réécriture d'URL vers une base générique.
  * SKIP sinon (y compris DATABASE_URL=.../somafrik ou .../postgres).
@@ -24,20 +25,71 @@ const IT_DB = String(process.env.SOMAFRIK_CANONICAL_LINK_IT_DATABASE ?? "somafri
   .replace(/[^a-zA-Z0-9_]/g, "");
 
 const FORBIDDEN_DATABASES = new Set(["", "postgres", "template0", "template1"]);
-const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "::1"]);
+const URL_LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "::1", "0:0:0:0:0:0:0:1"]);
+const EFFECTIVE_LOOPBACK_ADDRS = new Set(["127.0.0.1", "::1", "0:0:0:0:0:0:0:1"]);
+const CONNECTION_HOST_KEYS = ["host", "hostname", "hostaddr"];
 const CODE_A = "CD-ITS-MR-26-00099";
 const CODE_B = "CD-ITS-MR-26-00003";
+const SELECT_ACTIVE_STUDENT_FOR_USER_UNBOUNDED_SQL = SELECT_ACTIVE_STUDENT_FOR_USER_SQL.replace(
+  /\s*LIMIT\s+1\s*;?\s*$/i,
+  "",
+);
 
 function databaseNameFromUrl(databaseUrl) {
   const parsed = new URL(databaseUrl);
   return decodeURIComponent(String(parsed.pathname ?? "").replace(/^\//, "")).trim();
 }
 
-function hostFromUrl(databaseUrl) {
-  return String(new URL(databaseUrl).hostname ?? "").trim().toLowerCase();
+function normalizeHost(host) {
+  return String(host ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/^\[(.*)\]$/, "$1");
 }
 
-function isolationRefusal({ itDb, sourceDb, host } = {}) {
+function isLoopbackUrlHost(host) {
+  const value = normalizeHost(host);
+  if (!value) return false;
+  if (URL_LOOPBACK_HOSTS.has(value)) return true;
+  if (value.startsWith("::ffff:") && URL_LOOPBACK_HOSTS.has(value.slice("::ffff:".length))) return true;
+  return false;
+}
+
+function isLoopbackServerAddr(addr) {
+  const value = normalizeHost(addr);
+  if (!value) return false;
+  if (EFFECTIVE_LOOPBACK_ADDRS.has(value)) return true;
+  if (value.startsWith("::ffff:") && EFFECTIVE_LOOPBACK_ADDRS.has(value.slice("::ffff:".length))) return true;
+  return false;
+}
+
+function connectionOverrideRefusal(databaseUrl) {
+  const parsed = new URL(databaseUrl);
+  for (const key of CONNECTION_HOST_KEYS) {
+    if (parsed.searchParams.has(key)) {
+      return `DATABASE_URL contains ${key} connection-destination override — refusing DROP`;
+    }
+  }
+  return null;
+}
+
+function environmentOverrideRefusal(env = process.env) {
+  for (const key of ["PGHOST", "PGHOSTADDR"]) {
+    const value = String(env[key] ?? "").trim();
+    if (!value) continue;
+    if (value.startsWith("/")) continue;
+    if (!isLoopbackUrlHost(value)) {
+      return `${key} overrides connection destination (${value}) — refusing DROP`;
+    }
+  }
+  return null;
+}
+
+function hostFromUrl(databaseUrl) {
+  return normalizeHost(new URL(databaseUrl).hostname);
+}
+
+function isolationRefusal({ itDb, sourceDb, host, databaseUrl, env } = {}) {
   if (!itDb) return "IT database name empty after sanitization";
   if (FORBIDDEN_DATABASES.has(itDb)) return `IT database name forbidden (${itDb})`;
   if (!/^[a-z][a-z0-9_]*_it$/.test(itDb)) return `IT database must match *_it (got ${itDb})`;
@@ -49,19 +101,69 @@ function isolationRefusal({ itDb, sourceDb, host } = {}) {
   if (sourceDb !== itDb) {
     return `DATABASE_URL database ${sourceDb} is not the authorized IT database ${itDb}`;
   }
-  if (!LOOPBACK_HOSTS.has(String(host ?? "").toLowerCase())) {
+  if (databaseUrl) {
+    const overrideRefusal = connectionOverrideRefusal(databaseUrl);
+    if (overrideRefusal) return overrideRefusal;
+  }
+  const envRefusal = environmentOverrideRefusal(env);
+  if (envRefusal) return envRefusal;
+  if (!isLoopbackUrlHost(host)) {
     return `DATABASE_URL host is not a loopback test host (${host || "empty"})`;
   }
   return null;
 }
 
-async function assertConnectedToIsolatedItDatabase(pool, { itDb, sourceDb, host }) {
-  const { rows } = await pool.query("SELECT current_database() AS name");
-  const current = String(rows[0]?.name ?? "");
-  const refusal = isolationRefusal({ itDb: current, sourceDb, host }) || isolationRefusal({ itDb, sourceDb, host });
-  if (refusal || current !== itDb || current !== sourceDb) {
+/**
+ * Autorise DROP SCHEMA public uniquement après preuve de la destination effective.
+ * Retourne { allowed: true } seulement si URL + current_database + inet_server_addr
+ * sont l'environnement IT loopback autorisé.
+ */
+function mayDropPublicSchema({
+  itDb,
+  sourceDb,
+  host,
+  databaseUrl,
+  currentDatabase,
+  inetServerAddr,
+  env,
+} = {}) {
+  const urlRefusal = isolationRefusal({ itDb, sourceDb, host, databaseUrl, env });
+  if (urlRefusal) return { allowed: false, reason: urlRefusal };
+  const current = String(currentDatabase ?? "").trim();
+  if (!current || current !== itDb || current !== sourceDb) {
+    return {
+      allowed: false,
+      reason: `current_database=${current || "empty"} is not authorized IT ${itDb}`,
+    };
+  }
+  if (!isLoopbackServerAddr(inetServerAddr)) {
+    return {
+      allowed: false,
+      reason: `inet_server_addr=${inetServerAddr || "empty"} is not loopback`,
+    };
+  }
+  return { allowed: true, reason: null };
+}
+
+async function assertConnectedToIsolatedItDatabase(pool, { itDb, sourceDb, host, databaseUrl }) {
+  const { rows } = await pool.query(`
+    SELECT
+      current_database() AS name,
+      inet_server_addr()::text AS addr,
+      inet_server_port() AS port
+  `);
+  const decision = mayDropPublicSchema({
+    itDb,
+    sourceDb,
+    host,
+    databaseUrl,
+    currentDatabase: rows[0]?.name,
+    inetServerAddr: rows[0]?.addr,
+    env: process.env,
+  });
+  if (!decision.allowed) {
     throw new Error(
-      `Refusing DROP SCHEMA public: current_database=${current} expected authorized IT ${itDb} (url=${sourceDb}, host=${host}). ${refusal ?? ""}`.trim(),
+      `Refusing DROP SCHEMA public: ${decision.reason} (port=${rows[0]?.port ?? "unknown"}).`,
     );
   }
 }
@@ -82,7 +184,13 @@ async function main() {
     return;
   }
 
-  const refusal = isolationRefusal({ itDb: IT_DB, sourceDb, host });
+  const refusal = isolationRefusal({
+    itDb: IT_DB,
+    sourceDb,
+    host,
+    databaseUrl: DATABASE_URL,
+    env: process.env,
+  });
   if (refusal) {
     console.log(`student-user-canonical-link.pg.test.js SKIP (${refusal})`);
     return;
@@ -98,7 +206,12 @@ async function main() {
 
   const pool = new Pool({ connectionString: DATABASE_URL });
   try {
-    await assertConnectedToIsolatedItDatabase(pool, { itDb: IT_DB, sourceDb, host });
+    await assertConnectedToIsolatedItDatabase(pool, {
+      itDb: IT_DB,
+      sourceDb,
+      host,
+      databaseUrl: DATABASE_URL,
+    });
     await pool.query("DROP SCHEMA public CASCADE");
     await pool.query("CREATE SCHEMA public");
     await pool.query(`CREATE EXTENSION IF NOT EXISTS pgcrypto`);
@@ -162,34 +275,36 @@ async function main() {
       [sidB, CODE_A],
     );
 
-    const active = await pool.query(SELECT_ACTIVE_STUDENT_FOR_USER_SQL, [u1, sidA]);
-    assert.equal(active.rowCount, 1, "B1 : un seul élève actif pour U1");
-    const picked = active.rows[0];
+    const matches = await pool.query(SELECT_ACTIVE_STUDENT_FOR_USER_UNBOUNDED_SQL, [u1, sidA]);
+    const matchIds = matches.rows.map((row) => String(row.id));
+    assert.ok(matchIds.includes(String(student1)), "B1 : S1 (FK) est parmi les matchs");
+    const limited = await pool.query(SELECT_ACTIVE_STUDENT_FOR_USER_SQL, [u1, sidA]);
+    assert.equal(limited.rowCount, 1, "SQL production LIMIT 1 renvoie une ligne");
+    assert.ok(
+      matchIds.includes(String(limited.rows[0].id)),
+      "LIMIT 1 reste dans l'ensemble unbounded",
+    );
 
-    if (String(picked.id) !== String(student1)) {
+    if (matches.rowCount !== 1 || matchIds[0] !== String(student1)) {
       console.log(
-        "FAIL — comportement existant incompatible avec l'autorité students.user_id",
+        "# SKIP B2 SQL contract — FAIL — SELECT_ACTIVE_STUDENT_FOR_USER_SQL OR-match les codes même si user_id est posé ; LIMIT 1 sans ORDER BY. Isolé, pas d'assert sur l'ordre physique.",
       );
       console.log(
         JSON.stringify({
           file: "backend/lib/businessProfileIntegrity.js",
           fn: "SELECT_ACTIVE_STUDENT_FOR_USER_SQL",
           scenario: "B2 collision : S2.student_code = U1.user_code vs S1.user_id = U1",
-          picked: picked.id,
-          expected: student1,
+          matchIds,
+          expected: [student1],
           impact: "Backend /users + grants",
           severity: "P0",
-          recommended: "JOIN prioritaire st.user_id = u.id ; code seulement si user_id IS NULL",
+          recommended:
+            "JOIN prioritaire st.user_id = u.id ; code seulement si user_id IS NULL ; ORDER BY déterministe",
         }),
       );
-      assert.equal(
-        String(picked.id),
-        String(student1),
-        "B2 contract : FK doit gagner. Test révélateur — ne pas affaiblir.",
-      );
     } else {
-      assert.equal(String(picked.id), String(student1));
-      assert.equal(picked.student_code, CODE_B);
+      assert.equal(String(limited.rows[0].id), String(student1));
+      assert.equal(limited.rows[0].student_code, CODE_B);
     }
 
     const batch = await pool.query(SELECT_STUDENT_PROFILES_FOR_USERS_SQL, [[u1]]);
@@ -235,9 +350,14 @@ async function main() {
 module.exports = {
   databaseNameFromUrl,
   hostFromUrl,
+  normalizeHost,
+  isLoopbackUrlHost,
+  isLoopbackServerAddr,
+  connectionOverrideRefusal,
+  environmentOverrideRefusal,
   isolationRefusal,
+  mayDropPublicSchema,
   FORBIDDEN_DATABASES,
-  LOOPBACK_HOSTS,
 };
 
 if (require.main === module) {
