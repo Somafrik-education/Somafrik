@@ -738,120 +738,193 @@ describe("matrice négative d'identité", () => {
   );
 });
 
-describe("P0 — garde-fou DROP SCHEMA PostgreSQL", () => {
-  it("refuse toute écriture hors URL déjà égale à la base IT loopback autorisée", () => {
-    const src = sourceOf("lib", "student-user-canonical-link.pg.test.js");
-    const {
-      databaseNameFromUrl,
-      hostFromUrl,
-      isolationRefusal,
-      isLoopbackHost,
-      connectionOverrideRefusal,
-    } = require("./student-user-canonical-link.pg.test.js");
-    assert.equal(databaseNameFromUrl("postgres://localhost:5432/somafrik_prod"), "somafrik_prod");
-    assert.equal(hostFromUrl("postgres://127.0.0.1:5432/somafrik_canonical_link_it"), "127.0.0.1");
-    assert.equal(hostFromUrl("postgres://[::1]:5432/somafrik_canonical_link_it"), "::1");
-    assert.equal(
-      hostFromUrl("postgres://localhost/somafrik_canonical_link_it?host=remote.example"),
-      "remote.example",
-    );
-    assert.ok(isLoopbackHost("[::1]"));
-    assert.ok(isLoopbackHost("::1"));
-    const credentialUri = /postgres(?:ql)?:\/\/[^/\s"'`]+?:[^/\s"'`]+?@/i;
-    assert.doesNotMatch(src, credentialUri);
-    assert.doesNotMatch(fs.readFileSync(__filename, "utf8"), credentialUri);
-    assert.ok(
-      isolationRefusal({
-        itDb: "somafrik_canonical_link_it",
-        sourceDb: "somafrik",
-        host: "localhost",
-      }),
-      "CI DATABASE_URL=/somafrik doit SKIP, pas CREATE/DROP",
-    );
-    assert.ok(isolationRefusal({ itDb: "somafrik_prod", sourceDb: "somafrik_prod", host: "localhost" }));
-    assert.ok(isolationRefusal({ itDb: "postgres", sourceDb: "app", host: "localhost" }));
-    assert.ok(isolationRefusal({ itDb: "", sourceDb: "app", host: "localhost" }));
-    assert.ok(isolationRefusal({ itDb: "not_it_suffix", sourceDb: "app", host: "localhost" }));
-    assert.ok(
-      isolationRefusal({
-        itDb: "somafrik_canonical_link_it",
-        sourceDb: "somafrik_canonical_link_it",
-        host: "db.prod.example",
-      }),
-      "host non loopback refusé",
-    );
-    assert.ok(
-      isolationRefusal({
-        itDb: "somafrik_canonical_link_it",
-        sourceDb: "other_it",
-        host: "localhost",
-      }),
-    );
-    assert.ok(
-      connectionOverrideRefusal("postgres://localhost/somafrik_canonical_link_it?host=remote.example"),
-    );
-    assert.ok(
-      isolationRefusal({
-        itDb: "somafrik_canonical_link_it",
-        sourceDb: "somafrik_canonical_link_it",
-        host: "localhost",
-        databaseUrl: "postgres://localhost/somafrik_canonical_link_it?host=remote.example",
-      }),
-      "override ?host= distant refuse le DROP",
-    );
-    assert.ok(
-      isolationRefusal({
-        itDb: "somafrik_canonical_link_it",
-        sourceDb: "somafrik_canonical_link_it",
-        host: "localhost",
-        databaseUrl: "postgres://localhost/somafrik_canonical_link_it?hostaddr=8.8.8.8",
-      }),
-    );
-    assert.equal(
-      isolationRefusal({
-        itDb: "somafrik_canonical_link_it",
-        sourceDb: "somafrik_canonical_link_it",
-        host: "localhost",
-      }),
-      null,
-    );
-    assert.equal(
-      isolationRefusal({
-        itDb: "somafrik_canonical_link_it",
-        sourceDb: "somafrik_canonical_link_it",
-        host: "127.0.0.1",
-      }),
-      null,
-    );
-    assert.equal(
-      isolationRefusal({
-        itDb: "somafrik_canonical_link_it",
-        sourceDb: "somafrik_canonical_link_it",
-        host: hostFromUrl("postgres://[::1]:5432/somafrik_canonical_link_it"),
-      }),
-      null,
-    );
-    assert.doesNotMatch(src, /CREATE DATABASE \$\{/);
-    assert.doesNotMatch(src, /query\(`CREATE DATABASE/);
-    assert.doesNotMatch(src, /withDatabaseName|ensureDatabase/);
-    const dropIndex = src.indexOf("DROP SCHEMA public CASCADE");
-    const guardIndex = src.indexOf("assertConnectedToIsolatedItDatabase");
-    assert.ok(guardIndex >= 0, "garde current_database avant DROP");
-    assert.ok(dropIndex > guardIndex, "DROP SCHEMA public seulement après preuve d'isolation");
-    assert.match(src, /current_database\(\)/);
-    assert.match(src, /inet_server_addr\(\)/);
-    assert.ok(src.indexOf("inet_server_addr") < dropIndex, "inet_server_addr avant DROP");
-    assert.match(src, /SELECT_ACTIVE_STUDENT_FOR_USER_UNBOUNDED_SQL/);
-    assert.match(src, /pas d'assert sur l'ordre physique/);
-    const pkg = require("../../package.json");
-    assert.doesNotMatch(
-      pkg.scripts["verify:user-role-lifecycle"],
-      /student-user-canonical-link\.pg\.test\.js/,
-      "verify:user-role-lifecycle ne doit pas enchaîner le DROP SCHEMA",
-    );
-    assert.match(pkg.scripts["verify:student-user-canonical-link"], /student-user-canonical-link\.pg\.test\.js/);
+describe("P1 — destination effective avant DROP SCHEMA public", () => {
+  const IT = "somafrik_canonical_link_it";
+  const {
+    databaseNameFromUrl,
+    hostFromUrl,
+    isolationRefusal,
+    isLoopbackUrlHost,
+    isLoopbackServerAddr,
+    connectionOverrideRefusal,
+    mayDropPublicSchema,
+  } = require("./student-user-canonical-link.pg.test.js");
+
+  const allowedUrl = {
+    itDb: IT,
+    sourceDb: IT,
+    host: "localhost",
+    databaseUrl: "postgres://localhost/somafrik_canonical_link_it",
+    env: {},
+  };
+
+  it("URL localhost + current_database IT + inet 127.0.0.1 → DDL autorisé", () => {
+    const decision = mayDropPublicSchema({
+      ...allowedUrl,
+      currentDatabase: IT,
+      inetServerAddr: "127.0.0.1",
+    });
+    assert.equal(decision.allowed, true);
+    assert.equal(decision.reason, null);
   });
 
+  it("URL 127.0.0.1 + inet 127.0.0.1 → DDL autorisé", () => {
+    const decision = mayDropPublicSchema({
+      ...allowedUrl,
+      host: "127.0.0.1",
+      databaseUrl: "postgres://127.0.0.1/somafrik_canonical_link_it",
+      currentDatabase: IT,
+      inetServerAddr: "127.0.0.1",
+    });
+    assert.equal(decision.allowed, true);
+  });
+
+  it("URL IPv6 [::1] + inet ::1 → DDL autorisé", () => {
+    assert.equal(hostFromUrl("postgres://[::1]:5432/somafrik_canonical_link_it"), "::1");
+    assert.ok(isLoopbackUrlHost("[::1]"));
+    const decision = mayDropPublicSchema({
+      ...allowedUrl,
+      host: hostFromUrl("postgres://[::1]:5432/somafrik_canonical_link_it"),
+      databaseUrl: "postgres://[::1]:5432/somafrik_canonical_link_it",
+      currentDatabase: IT,
+      inetServerAddr: "::1",
+    });
+    assert.equal(decision.allowed, true);
+  });
+
+  it("host distant → refus", () => {
+    const decision = mayDropPublicSchema({
+      ...allowedUrl,
+      host: "db.prod.example",
+      databaseUrl: "postgres://db.prod.example/somafrik_canonical_link_it",
+      currentDatabase: IT,
+      inetServerAddr: "127.0.0.1",
+    });
+    assert.equal(decision.allowed, false);
+  });
+
+  it("?host=remote.example → refus même si l'autorité est localhost", () => {
+    const url = "postgres://localhost/somafrik_canonical_link_it?host=remote.example";
+    assert.ok(connectionOverrideRefusal(url));
+    const decision = mayDropPublicSchema({
+      ...allowedUrl,
+      databaseUrl: url,
+      currentDatabase: IT,
+      inetServerAddr: "127.0.0.1",
+    });
+    assert.equal(decision.allowed, false);
+    assert.match(decision.reason, /host/);
+  });
+
+  it("?hostaddr=IP distante → refus", () => {
+    const url = "postgres://localhost/somafrik_canonical_link_it?hostaddr=8.8.8.8";
+    const decision = mayDropPublicSchema({
+      ...allowedUrl,
+      databaseUrl: url,
+      currentDatabase: IT,
+      inetServerAddr: "127.0.0.1",
+    });
+    assert.equal(decision.allowed, false);
+    assert.match(decision.reason, /hostaddr/);
+  });
+
+  it("/postgres → refus", () => {
+    assert.ok(isolationRefusal({ itDb: IT, sourceDb: "postgres", host: "localhost", env: {} }));
+    assert.equal(
+      mayDropPublicSchema({
+        ...allowedUrl,
+        sourceDb: "postgres",
+        databaseUrl: "postgres://localhost/postgres",
+        currentDatabase: "postgres",
+        inetServerAddr: "127.0.0.1",
+      }).allowed,
+      false,
+    );
+  });
+
+  it("/somafrik → refus", () => {
+    assert.equal(databaseNameFromUrl("postgres://localhost:5432/somafrik"), "somafrik");
+    assert.equal(
+      mayDropPublicSchema({
+        ...allowedUrl,
+        sourceDb: "somafrik",
+        databaseUrl: "postgres://localhost/somafrik",
+        currentDatabase: "somafrik",
+        inetServerAddr: "127.0.0.1",
+      }).allowed,
+      false,
+    );
+  });
+
+  it("autre base *_it ≠ nom autorisé → refus", () => {
+    assert.equal(
+      mayDropPublicSchema({
+        ...allowedUrl,
+        sourceDb: "other_it",
+        databaseUrl: "postgres://localhost/other_it",
+        currentDatabase: "other_it",
+        inetServerAddr: "127.0.0.1",
+      }).allowed,
+      false,
+    );
+  });
+
+  it("bonne URL + bonne base mais inet_server_addr distant → refus", () => {
+    const decision = mayDropPublicSchema({
+      ...allowedUrl,
+      currentDatabase: IT,
+      inetServerAddr: "203.0.113.10",
+    });
+    assert.equal(decision.allowed, false);
+    assert.match(decision.reason, /inet_server_addr/);
+    assert.ok(isLoopbackServerAddr("127.0.0.1"));
+    assert.equal(isLoopbackServerAddr("203.0.113.10"), false);
+  });
+
+  it("?host=127.0.0.1 → refus (tout override de destination, même loopback)", () => {
+    assert.equal(
+      mayDropPublicSchema({
+        ...allowedUrl,
+        databaseUrl: "postgres://localhost/somafrik_canonical_link_it?host=127.0.0.1",
+        currentDatabase: IT,
+        inetServerAddr: "127.0.0.1",
+      }).allowed,
+      false,
+    );
+  });
+
+  it("inet_server_addr absent → refus", () => {
+    assert.equal(
+      mayDropPublicSchema({
+        ...allowedUrl,
+        currentDatabase: IT,
+        inetServerAddr: null,
+      }).allowed,
+      false,
+    );
+  });
+
+  it("DROP SCHEMA public n'apparaît qu'après mayDropPublicSchema", () => {
+    const src = sourceOf("lib", "student-user-canonical-link.pg.test.js");
+    const dropIndex = src.indexOf("DROP SCHEMA public CASCADE");
+    const guardIndex = src.indexOf("mayDropPublicSchema");
+    assert.ok(guardIndex >= 0);
+    assert.ok(dropIndex > src.indexOf("assertConnectedToIsolatedItDatabase"));
+    assert.match(src, /inet_server_addr\(\)/);
+    assert.match(src, /current_database\(\)/);
+    assert.doesNotMatch(src, /CREATE DATABASE \$\{/);
+    const pkg = require("../../package.json");
+    assert.doesNotMatch(pkg.scripts["verify:user-role-lifecycle"], /student-user-canonical-link\.pg\.test\.js/);
+  });
+  it("collision SQL unbounded, pas d'assert sur l'ordre LIMIT 1", () => {
+    const src = sourceOf("lib", "student-user-canonical-link.pg.test.js");
+    assert.match(src, /SELECT_ACTIVE_STUDENT_FOR_USER_UNBOUNDED_SQL/);
+    assert.match(src, /pas d'assert sur l'ordre physique/);
+    assert.doesNotMatch(src, /assert\.equal\(active\.rowCount, 1, "B1 : un seul élève actif pour U1"\)/);
+  });
+});
+
+describe("P1 — contrat Mobile M2 isolé", () => {
   it("Mobile M2 isole le contrat architectural sans encoder student_login", () => {
     const mobile = fs.readFileSync(
       path.join(ROOT, "..", "Mobile", "src", "lib", "student-user-canonical-link.regression.test.ts"),

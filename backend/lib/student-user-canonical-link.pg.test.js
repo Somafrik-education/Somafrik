@@ -4,11 +4,11 @@
  * student-user-canonical-link.regression — PostgreSQL
  *
  * Fail-closed : aucune création de base, aucun DROP SCHEMA public tant que
- * DATABASE_URL n'EST PAS déjà l'environnement IT autorisé :
- *   - host loopback effectif (autorité URL + overrides host/hostname/hostaddr)
- *   - inet_server_addr() loopback après connexion
- *   - nom de base = IT configuré, suffixe *_it, hors postgres/template*
- *   - current_database() prouve la même base avant tout DROP SCHEMA public
+ * mayDropPublicSchema() n'a pas prouvé la destination effective :
+ *   - aucun override host/hostname/hostaddr dans DATABASE_URL
+ *   - host URL loopback
+ *   - current_database() = base IT autorisée
+ *   - inet_server_addr() ∈ {127.0.0.1, ::1}
  *
  * Pas de création de base. Pas de réécriture d'URL vers une base générique.
  * SKIP sinon (y compris DATABASE_URL=.../somafrik ou .../postgres).
@@ -25,8 +25,9 @@ const IT_DB = String(process.env.SOMAFRIK_CANONICAL_LINK_IT_DATABASE ?? "somafri
   .replace(/[^a-zA-Z0-9_]/g, "");
 
 const FORBIDDEN_DATABASES = new Set(["", "postgres", "template0", "template1"]);
-const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "::1", "0:0:0:0:0:0:0:1"]);
-const CONNECTION_HOST_KEYS = ["hostaddr", "host", "hostname"];
+const URL_LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "::1", "0:0:0:0:0:0:0:1"]);
+const EFFECTIVE_LOOPBACK_ADDRS = new Set(["127.0.0.1", "::1", "0:0:0:0:0:0:0:1"]);
+const CONNECTION_HOST_KEYS = ["host", "hostname", "hostaddr"];
 const CODE_A = "CD-ITS-MR-26-00099";
 const CODE_B = "CD-ITS-MR-26-00003";
 const SELECT_ACTIVE_STUDENT_FOR_USER_UNBOUNDED_SQL = SELECT_ACTIVE_STUDENT_FOR_USER_SQL.replace(
@@ -46,32 +47,49 @@ function normalizeHost(host) {
     .replace(/^\[(.*)\]$/, "$1");
 }
 
-function isLoopbackHost(host) {
+function isLoopbackUrlHost(host) {
   const value = normalizeHost(host);
   if (!value) return false;
-  if (LOOPBACK_HOSTS.has(value)) return true;
-  if (value.startsWith("::ffff:") && LOOPBACK_HOSTS.has(value.slice("::ffff:".length))) return true;
+  if (URL_LOOPBACK_HOSTS.has(value)) return true;
+  if (value.startsWith("::ffff:") && URL_LOOPBACK_HOSTS.has(value.slice("::ffff:".length))) return true;
+  return false;
+}
+
+function isLoopbackServerAddr(addr) {
+  const value = normalizeHost(addr);
+  if (!value) return false;
+  if (EFFECTIVE_LOOPBACK_ADDRS.has(value)) return true;
+  if (value.startsWith("::ffff:") && EFFECTIVE_LOOPBACK_ADDRS.has(value.slice("::ffff:".length))) return true;
   return false;
 }
 
 function connectionOverrideRefusal(databaseUrl) {
   const parsed = new URL(databaseUrl);
   for (const key of CONNECTION_HOST_KEYS) {
-    const value = parsed.searchParams.get(key);
-    if (value && !isLoopbackHost(value)) {
-      return `DATABASE_URL ${key} override is not a loopback test host (${value})`;
+    if (parsed.searchParams.has(key)) {
+      return `DATABASE_URL contains ${key} connection-destination override — refusing DROP`;
+    }
+  }
+  return null;
+}
+
+function environmentOverrideRefusal(env = process.env) {
+  for (const key of ["PGHOST", "PGHOSTADDR"]) {
+    const value = String(env[key] ?? "").trim();
+    if (!value) continue;
+    if (value.startsWith("/")) continue;
+    if (!isLoopbackUrlHost(value)) {
+      return `${key} overrides connection destination (${value}) — refusing DROP`;
     }
   }
   return null;
 }
 
 function hostFromUrl(databaseUrl) {
-  const parsed = new URL(databaseUrl);
-  const override = CONNECTION_HOST_KEYS.map((key) => parsed.searchParams.get(key)).find(Boolean);
-  return normalizeHost(override || parsed.hostname);
+  return normalizeHost(new URL(databaseUrl).hostname);
 }
 
-function isolationRefusal({ itDb, sourceDb, host, databaseUrl } = {}) {
+function isolationRefusal({ itDb, sourceDb, host, databaseUrl, env } = {}) {
   if (!itDb) return "IT database name empty after sanitization";
   if (FORBIDDEN_DATABASES.has(itDb)) return `IT database name forbidden (${itDb})`;
   if (!/^[a-z][a-z0-9_]*_it$/.test(itDb)) return `IT database must match *_it (got ${itDb})`;
@@ -87,29 +105,65 @@ function isolationRefusal({ itDb, sourceDb, host, databaseUrl } = {}) {
     const overrideRefusal = connectionOverrideRefusal(databaseUrl);
     if (overrideRefusal) return overrideRefusal;
   }
-  if (!isLoopbackHost(host)) {
+  const envRefusal = environmentOverrideRefusal(env);
+  if (envRefusal) return envRefusal;
+  if (!isLoopbackUrlHost(host)) {
     return `DATABASE_URL host is not a loopback test host (${host || "empty"})`;
   }
   return null;
 }
 
-async function assertConnectedToIsolatedItDatabase(pool, { itDb, sourceDb, host, databaseUrl }) {
-  const { rows } = await pool.query(
-    "SELECT current_database() AS name, inet_server_addr()::text AS addr",
-  );
-  const current = String(rows[0]?.name ?? "");
-  const addr = rows[0]?.addr;
-  const refusal =
-    isolationRefusal({ itDb: current, sourceDb, host, databaseUrl }) ||
-    isolationRefusal({ itDb, sourceDb, host, databaseUrl });
-  if (addr && !isLoopbackHost(addr)) {
-    throw new Error(
-      `Refusing DROP SCHEMA public: inet_server_addr=${addr} is not loopback (expected ${itDb} on loopback).`,
-    );
+/**
+ * Autorise DROP SCHEMA public uniquement après preuve de la destination effective.
+ * Retourne { allowed: true } seulement si URL + current_database + inet_server_addr
+ * sont l'environnement IT loopback autorisé.
+ */
+function mayDropPublicSchema({
+  itDb,
+  sourceDb,
+  host,
+  databaseUrl,
+  currentDatabase,
+  inetServerAddr,
+  env,
+} = {}) {
+  const urlRefusal = isolationRefusal({ itDb, sourceDb, host, databaseUrl, env });
+  if (urlRefusal) return { allowed: false, reason: urlRefusal };
+  const current = String(currentDatabase ?? "").trim();
+  if (!current || current !== itDb || current !== sourceDb) {
+    return {
+      allowed: false,
+      reason: `current_database=${current || "empty"} is not authorized IT ${itDb}`,
+    };
   }
-  if (refusal || current !== itDb || current !== sourceDb) {
+  if (!isLoopbackServerAddr(inetServerAddr)) {
+    return {
+      allowed: false,
+      reason: `inet_server_addr=${inetServerAddr || "empty"} is not loopback`,
+    };
+  }
+  return { allowed: true, reason: null };
+}
+
+async function assertConnectedToIsolatedItDatabase(pool, { itDb, sourceDb, host, databaseUrl }) {
+  const { rows } = await pool.query(`
+    SELECT
+      current_database() AS name,
+      inet_server_addr()::text AS addr,
+      inet_server_port() AS port
+  `);
+  const decision = mayDropPublicSchema({
+    itDb,
+    sourceDb,
+    host,
+    databaseUrl,
+    currentDatabase: rows[0]?.name,
+    inetServerAddr: rows[0]?.addr,
+    env: process.env,
+  });
+  if (!decision.allowed) {
     throw new Error(
-      `Refusing DROP SCHEMA public: current_database=${current} expected authorized IT ${itDb} (url=${sourceDb}, host=${host}). ${refusal ?? ""}`.trim(),
+      `Refusing DROP SCHEMA public: ${decision.reason} (port=${rows[0]?.port ?? "unknown"}).`,
     );
   }
 }
@@ -130,7 +184,13 @@ async function main() {
     return;
   }
 
-  const refusal = isolationRefusal({ itDb: IT_DB, sourceDb, host, databaseUrl: DATABASE_URL });
+  const refusal = isolationRefusal({
+    itDb: IT_DB,
+    sourceDb,
+    host,
+    databaseUrl: DATABASE_URL,
+    env: process.env,
+  });
   if (refusal) {
     console.log(`student-user-canonical-link.pg.test.js SKIP (${refusal})`);
     return;
@@ -291,11 +351,13 @@ module.exports = {
   databaseNameFromUrl,
   hostFromUrl,
   normalizeHost,
-  isLoopbackHost,
+  isLoopbackUrlHost,
+  isLoopbackServerAddr,
   connectionOverrideRefusal,
+  environmentOverrideRefusal,
   isolationRefusal,
+  mayDropPublicSchema,
   FORBIDDEN_DATABASES,
-  LOOPBACK_HOSTS,
 };
 
 if (require.main === module) {
