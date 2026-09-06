@@ -280,32 +280,12 @@ async function main() {
     assert.ok(matchIds.includes(String(student1)), "B1 : S1 (FK) est parmi les matchs");
     const limited = await pool.query(SELECT_ACTIVE_STUDENT_FOR_USER_SQL, [u1, sidA]);
     assert.equal(limited.rowCount, 1, "SQL production LIMIT 1 renvoie une ligne");
+    assert.equal(String(limited.rows[0].id), String(student1), "LIMIT 1 priorise le FK");
+    assert.equal(limited.rows[0].student_code, CODE_B);
     assert.ok(
       matchIds.includes(String(limited.rows[0].id)),
       "LIMIT 1 reste dans l'ensemble unbounded",
     );
-
-    if (matches.rowCount !== 1 || matchIds[0] !== String(student1)) {
-      console.log(
-        "# SKIP B2 SQL contract — FAIL — SELECT_ACTIVE_STUDENT_FOR_USER_SQL OR-match les codes même si user_id est posé ; LIMIT 1 sans ORDER BY. Isolé, pas d'assert sur l'ordre physique.",
-      );
-      console.log(
-        JSON.stringify({
-          file: "backend/lib/businessProfileIntegrity.js",
-          fn: "SELECT_ACTIVE_STUDENT_FOR_USER_SQL",
-          scenario: "B2 collision : S2.student_code = U1.user_code vs S1.user_id = U1",
-          matchIds,
-          expected: [student1],
-          impact: "Backend /users + grants",
-          severity: "P0",
-          recommended:
-            "JOIN prioritaire st.user_id = u.id ; code seulement si user_id IS NULL ; ORDER BY déterministe",
-        }),
-      );
-    } else {
-      assert.equal(String(limited.rows[0].id), String(student1));
-      assert.equal(limited.rows[0].student_code, CODE_B);
-    }
 
     const batch = await pool.query(SELECT_STUDENT_PROFILES_FOR_USERS_SQL, [[u1]]);
     const linked = batch.rows.filter((row) => String(row.user_id) === String(u1));
@@ -318,17 +298,22 @@ async function main() {
       SELECT st.id::text AS student_id
       FROM students st
       JOIN users u ON u.school_id = st.school_id
-       AND u.user_code = st.student_code
+       AND (
+         st.user_id::text = u.id::text
+         OR (
+           st.user_id IS NULL
+           AND u.user_code = st.student_code
+         )
+       )
       WHERE u.id::text = $1
         AND st.school_id::text = $2
         AND u.school_id::text = $2
+      ORDER BY CASE WHEN st.user_id IS NOT NULL THEN 0 ELSE 1 END, st.id::text
       LIMIT 1
     `;
     const selfByCode = await pool.query(selfSql, [u1, sidA]);
-    if (!selfByCode.rowCount || String(selfByCode.rows[0].student_id) === String(student1)) {
-      assert.ok(true, "self-by-code n'a pas volé S1 (codes divergents : 0 row attendu)");
-      assert.equal(selfByCode.rowCount, 0, "B8 current SQL : codes divergents → self introuvable (ignore FK)");
-    }
+    assert.equal(selfByCode.rowCount, 1, "self-student via FK même si codes divergents");
+    assert.equal(String(selfByCode.rows[0].student_id), String(student1));
 
     const selfByFk = await pool.query(
       `SELECT st.id::text AS student_id

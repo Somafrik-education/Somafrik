@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Link, MemoryRouter, Route, Routes } from "react-router-dom";
 import type { SessionUser } from "../../types";
@@ -259,7 +259,9 @@ describe("EtablissementOverviewPage — bootstrap DataProvider + DomainRouteBoot
       expect(tileCount("Élèves")).toBe("15");
     });
 
-    await user.click(screen.getByRole("link", { name: /Élèves/ }));
+    const elevesTile = screen.getByRole("heading", { name: "Élèves" }).closest("a");
+    expect(elevesTile).toHaveAttribute("href", "/etablissement/eleves");
+    fireEvent.click(elevesTile!);
     expect(await screen.findByText("Nom1")).toBeInTheDocument();
     expect(screen.getAllByRole("link", { name: "Dossier" })).toHaveLength(15);
 
@@ -271,7 +273,7 @@ describe("EtablissementOverviewPage — bootstrap DataProvider + DomainRouteBoot
       expect(screen.getAllByRole("link", { name: "Dossier" })).toHaveLength(14);
     });
 
-    await user.click(screen.getByRole("link", { name: "Aller vue-ensemble" }));
+    fireEvent.click(screen.getByRole("link", { name: "Aller vue-ensemble" }));
     await waitFor(() => {
       expect(tileCount("Élèves")).toBe("14");
     });

@@ -690,8 +690,9 @@ function createClassStudentsRepository(db) {
     },
 
     /**
-     * Identité élève self : users.id → users.user_code = students.student_code
-     * du même établissement. Jamais un studentId client.
+     * Identité élève self : students.user_id = users.id du même établissement.
+     * Fallback legacy : codes égaux seulement si students.user_id IS NULL.
+     * Jamais un studentId client.
      *
      * @param {string} userId
      * @param {string} schoolId
@@ -704,10 +705,17 @@ function createClassStudentsRepository(db) {
         `SELECT st.id::text AS student_id
          FROM students st
          JOIN users u ON u.school_id = st.school_id
-          AND u.user_code = st.student_code
+          AND (
+            st.user_id::text = u.id::text
+            OR (
+              st.user_id IS NULL
+              AND u.user_code = st.student_code
+            )
+          )
          WHERE u.id::text = $1
            AND st.school_id::text = $2
            AND u.school_id::text = $2
+         ORDER BY CASE WHEN st.user_id IS NOT NULL THEN 0 ELSE 1 END, st.id::text
          LIMIT 1`,
         [uid, sid],
       );

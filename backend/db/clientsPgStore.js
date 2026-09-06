@@ -1433,12 +1433,20 @@ function createClientsPgStore(repo) {
           `SELECT DISTINCT u.id AS user_id
            FROM enrollments e
            JOIN students st ON st.id = e.student_id AND st.school_id = e.school_id
-           JOIN users u ON u.school_id = st.school_id AND u.user_code = st.student_code
+           JOIN users u ON u.school_id = st.school_id
+            AND (
+              st.user_id = u.id
+              OR (
+                st.user_id IS NULL
+                AND u.user_code = st.student_code
+              )
+            )
            WHERE e.school_id = $1
              AND e.class_id = ANY($2::uuid[])
              AND e.status = 'active'
              AND COALESCE(st.status, 'active') = 'active'
-             AND COALESCE(u.status, 'active') = 'active'`,
+             AND COALESCE(u.status, 'active') = 'active'
+           ORDER BY u.id`,
           [schoolId, classIds],
         );
       },

@@ -245,6 +245,13 @@ function assertPermissionDenied(result, label) {
   assert.equal(result.data?.code, "PERMISSION_DENIED", `${label} code ${result.data?.code}`);
 }
 
+function assertCoursesReadAllowed(result, label) {
+  // Lecture catalogue : Matières:READ (matrice Enseignant). L'écriture reste 403.
+  // Contrat unitaire : routePermissionsCoverage.test.js « lecture seule enseignant ».
+  assert.equal(result.status, 200, `${label}: ${JSON.stringify(result.data)}`);
+  assert.ok(Array.isArray(result.data), `${label} doit renvoyer un tableau`);
+}
+
 function assertSessionTeacherCode(actual, message) {
   assert.equal(extractTeacherLoginId(actual), "ENS-0001", message);
 }
@@ -369,7 +376,7 @@ async function runMemoryHttpGuards() {
     );
 
     const teacherCoursesRead = await request(MEMORY_PORT, "/courses", { token: teacherToken });
-    assertPermissionDenied(teacherCoursesRead, "enseignant GET /courses memory");
+    assertCoursesReadAllowed(teacherCoursesRead, "enseignant GET /courses memory");
     assertPermissionDenied(
       await request(MEMORY_PORT, "/courses", {
         method: "POST",
@@ -599,7 +606,7 @@ async function runPostgresHttpGuards(databaseUrl) {
       "parent GET /courses",
     );
     const teacherCoursesRead = await request(PG_PORT, "/courses", { token: teacherToken });
-    assertPermissionDenied(teacherCoursesRead, "enseignant GET /courses");
+    assertCoursesReadAllowed(teacherCoursesRead, "enseignant GET /courses");
 
     // NOTES-P1 : POST /evaluations = Notes:CREATE + affectation PG.
     // Admin School n'a que « Modifier notes » (UPDATE) — ne pas l'utiliser ici.

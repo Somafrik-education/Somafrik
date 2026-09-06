@@ -5,6 +5,10 @@ import { useAdminData } from "../context/AdminDataContext";
 import { getPaymentStats, getPresenceStats } from "../domain/metrics/schoolMetrics";
 import { canReadRoute } from "../domain/security/permissions";
 import { displayRoleName, displayStatusName } from "../lib/format";
+import {
+  filterRowsByStudentScope,
+  resolveMobileStudentScope,
+} from "../lib/canonicalStudentIdentity";
 import { useStackScreenBottomPadding } from "../lib/screenLayout";
 
 function ScreenShell({
@@ -98,7 +102,7 @@ export function DocumentsScreen({ navigation }: any) {
         onPress={
           session?.role === "student" || session?.role === "parent_student"
             ? canOpenStudentDetail
-              ? () => navigation.navigate("StudentDetail", { studentId: selectedStudentId ?? session.user.id })
+              ? () => navigation.navigate("StudentDetail", { studentId: selectedStudentId })
               : undefined
             : canOpenStudents
               ? () => navigation.navigate("Students", { className: "Toutes les classes" })
@@ -180,14 +184,18 @@ export function MobilePaymentScreen({ navigation }: any) {
   const { session, selectedStudentId } = useAuth();
   const { paymentsData, studentsData } = useAdminData();
   const canOpenStudentPayments = canReadRoute(session, "StudentPayments");
-  const studentIds =
-    session?.role === "student"
-      ? [session.user.id]
-      : (session?.user.children ?? []).map((child) => child.id);
-  const scopedPayments = paymentsData.filter((payment) =>
-    studentIds.length ? studentIds.includes(payment.studentId) : true
+  const studentScope = resolveMobileStudentScope({
+    role: session?.role,
+    selectedStudentId,
+    children: session?.user.children,
+    linkedStudent: session?.user.linkedStudent,
+    user: session?.user,
+  });
+  const scopedPayments = filterRowsByStudentScope(paymentsData, studentScope);
+  const paymentStats = getPaymentStats(
+    scopedPayments,
+    studentScope.unscoped ? undefined : studentScope.studentIds,
   );
-  const paymentStats = getPaymentStats(scopedPayments, studentIds);
 
   return (
     <ScreenShell title="Paiement mobile" subtitle="Suivi MVP des paiements et recus.">
@@ -199,7 +207,7 @@ export function MobilePaymentScreen({ navigation }: any) {
         actionLabel={canOpenStudentPayments ? "Voir les frais" : undefined}
         onPress={
           canOpenStudentPayments
-            ? () => navigation.navigate("StudentPayments", { studentId: selectedStudentId ?? session?.user.id })
+            ? () => navigation.navigate("StudentPayments", { studentId: selectedStudentId })
             : undefined
         }
       />
@@ -212,7 +220,7 @@ export function MobilePaymentScreen({ navigation }: any) {
       <InfoCard
         icon="people-outline"
         title="Eleves lies"
-        value={`${studentIds.length || studentsData.length} eleve(s)`}
+        value={`${studentScope.unscoped ? studentsData.length : studentScope.identityCount} eleve(s)`}
         detail="Le parent voit les paiements de ses enfants ; l'administration voit le suivi global."
       />
     </ScreenShell>

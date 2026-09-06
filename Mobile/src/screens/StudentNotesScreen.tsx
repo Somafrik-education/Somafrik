@@ -22,16 +22,22 @@ import {
   EVALUATIONS_V2_TEST_IDS,
   notesForStudent,
 } from "../lib/evaluationsV2";
+import { findStudentByIdentity, sessionStudentAliasKeys } from "../lib/canonicalStudentIdentity";
 
 type Props = NativeStackScreenProps<RootStackParamList, "StudentNotes">;
 
 export default function StudentNotesScreen({ route, navigation }: Partial<Props>) {
   const { scrollContentPaddingBottom } = useFloatingTabBarLayout();
   const listContentStyle = [styles.listContent, { paddingBottom: scrollContentPaddingBottom }];
-  const { selectedStudentId } = useAuth();
+  const { session, selectedStudentId } = useAuth();
   const { studentsData, notesSnapshot, loadNotes } = useAdminData();
   const studentId = route?.params?.studentId ?? selectedStudentId;
-  const student = studentId ? studentsData.find((item) => item.id === studentId) : undefined;
+  const studentAliasKeys = sessionStudentAliasKeys({
+    role: session?.role,
+    selectedStudentId: studentId,
+    user: session?.user,
+  });
+  const student = findStudentByIdentity(studentsData, studentAliasKeys);
 
   useFocusEffect(
     useCallback(() => {
@@ -39,7 +45,9 @@ export default function StudentNotesScreen({ route, navigation }: Partial<Props>
     }, [loadNotes]),
   );
 
-  const studentNotes = studentId ? notesForStudent(notesSnapshot.data, studentId) : [];
+  const studentNotes = studentAliasKeys.length
+    ? notesForStudent(notesSnapshot.data, studentAliasKeys)
+    : [];
   const average = canonicalWeightedAverage(studentNotes);
 
   return (

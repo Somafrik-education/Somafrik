@@ -27,6 +27,12 @@ import {
 import { countActiveUserAccounts } from "../lib/format";
 import { TODAY_PRESENCE_KPI_LABEL, getTodayEstablishmentPresenceKpi } from "../lib/todayPresenceKpi";
 import { canonicalWeightedAverage, notesForStudent } from "../lib/evaluationsV2";
+import {
+  filterRowsByStudentScope,
+  findStudentByIdentity,
+  resolveMobileStudentScope,
+  sessionStudentAliasKeys,
+} from "../lib/canonicalStudentIdentity";
 import { useFloatingTabBarLayout } from "../lib/screenLayout";
 import { useResponsiveLayout } from "../hooks/useResponsiveLayout";
 import {
@@ -164,19 +170,33 @@ export default function HomeScreen({ navigation }: any) {
     .filter(Boolean);
   const courses = [...new Set([...sessionCourses, ...assignmentCourses])];
 
-  const linkedChild = session?.user?.children?.find((child: { id: string }) => child.id === selectedStudentId);
+  const studentAliasKeys = sessionStudentAliasKeys({
+    role: session?.role,
+    selectedStudentId,
+    user: session?.user,
+  });
+  const linkedChild = session?.user?.children?.find((child: { id: string }) =>
+    studentAliasKeys.includes(child.id),
+  );
   const selectedStudent =
-    studentsData.find((item) => item.id === selectedStudentId) ??
+    findStudentByIdentity(studentsData, studentAliasKeys) ??
     (linkedChild ? { id: linkedChild.id, name: linkedChild.name, className: linkedChild.className } : undefined);
-  const studentNotes = selectedStudentId ? notesForStudent(notesSnapshot.data, selectedStudentId) : [];
+  const studentNotes = studentAliasKeys.length
+    ? notesForStudent(notesSnapshot.data, studentAliasKeys)
+    : [];
   const canonicalAverage = canonicalWeightedAverage(studentNotes);
   const averageDisplay = parentAverageDisplay({
     notesReady: notesSnapshot.status === "success" || notesSnapshot.status === "empty",
     notesForStudent: studentNotes,
     average: canonicalAverage.available ? canonicalAverage.average ?? undefined : undefined,
   });
-  const studentPresences = presencesData.filter((presence) => presence.studentId === selectedStudentId);
-  const studentPayments = paymentsReady ? paymentsData.filter((payment) => payment.studentId === selectedStudentId) : [];
+  const studentScope = resolveMobileStudentScope({
+    role: session?.role,
+    selectedStudentId,
+    user: session?.user,
+  });
+  const studentPresences = filterRowsByStudentScope(presencesData, studentScope);
+  const studentPayments = paymentsReady ? filterRowsByStudentScope(paymentsData, studentScope) : [];
   const studentPresenceStats = getPresenceStats(studentPresences);
   const studentPaymentStats = getPaymentStats(studentPayments);
 

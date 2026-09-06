@@ -12,6 +12,10 @@ import {
   DATA_TRUTH_TEST_IDS,
   isPublishedBulletin,
 } from "../lib/dataTruth";
+import {
+  filterRowsByStudentScope,
+  resolveMobileStudentScope,
+} from "../lib/canonicalStudentIdentity";
 import { useStackScreenBottomPadding } from "../lib/screenLayout";
 
 export default function ReportCardsScreen() {
@@ -26,25 +30,27 @@ export default function ReportCardsScreen() {
     }, [loadReportCards]),
   );
 
-  const visibleStudentIds = useMemo(() => {
-    if (session?.role === "parent_student") {
-      return session.user.children?.map((child) => child.id) ?? [];
-    }
-    if (session?.role === "student" && selectedStudentId) {
-      return [selectedStudentId];
-    }
-    return studentsData.map((student) => student.id);
-  }, [session, selectedStudentId, studentsData]);
-
-  const rows = useMemo(
+  const studentScope = useMemo(
     () =>
-      reportCardsSnapshot.status === "success"
-        ? reportCardsSnapshot.data.filter((card) =>
-            visibleStudentIds.length ? visibleStudentIds.includes(card.studentId) : true,
-          )
-        : [],
-    [reportCardsSnapshot, visibleStudentIds],
+      resolveMobileStudentScope({
+        role: session?.role,
+        selectedStudentId,
+        children: session?.user.children,
+        linkedStudent: session?.user.linkedStudent,
+        user: session?.user,
+      }),
+    [session, selectedStudentId],
   );
+
+  const rows = useMemo(() => {
+    if (reportCardsSnapshot.status !== "success") return [];
+    if (studentScope.unscoped) {
+      const allowed = new Set(studentsData.map((student) => student.id).filter(Boolean));
+      if (!allowed.size) return reportCardsSnapshot.data;
+      return reportCardsSnapshot.data.filter((card) => allowed.has(card.studentId));
+    }
+    return filterRowsByStudentScope(reportCardsSnapshot.data, studentScope);
+  }, [reportCardsSnapshot, studentScope, studentsData]);
 
   const openPdf = async (studentId: string, period: string) => {
     try {

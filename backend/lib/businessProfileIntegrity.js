@@ -67,12 +67,29 @@ function userMatchesStudentCode(user, studentCode) {
   return userIdentityKeys(user).includes(wanted);
 }
 
-function userMatchesStudent(user, student) {
-  const uid = asTrimmed(user?.id ?? user?.userId);
-  const studentUserId = asTrimmed(student?.user_id ?? student?.userId);
-  if (uid && studentUserId && uid === studentUserId) return true;
+function studentCanonicalUserId(student = {}) {
+  return asTrimmed(student?.user_id ?? student?.userId);
+}
+
+function userCanonicalId(user = {}) {
+  return asTrimmed(user?.id ?? user?.userId);
+}
+
+function userMatchesStudentLegacyCode(user, student) {
   const userKeys = new Set(userIdentityKeys(user));
   return studentIdentityKeys(student).some((key) => userKeys.has(key));
+}
+
+/**
+ * Autorité : students.user_id = users.id.
+ * Fallback code uniquement si students.user_id IS NULL (legacy, tenant-scoped ailleurs).
+ * Un élève déjà lié à un autre user.id ne peut jamais matcher par code.
+ */
+function userMatchesStudent(user, student) {
+  const uid = userCanonicalId(user);
+  const studentUserId = studentCanonicalUserId(student);
+  if (studentUserId) return Boolean(uid) && uid === studentUserId;
+  return userMatchesStudentLegacyCode(user, student);
 }
 
 function sameSchoolId(left, right) {
@@ -81,18 +98,28 @@ function sameSchoolId(left, right) {
   return Boolean(a) && Boolean(b) && a === b;
 }
 
+function compareStudentIdentity(left, right) {
+  return asTrimmed(left?.id ?? left?.student_id).localeCompare(asTrimmed(right?.id ?? right?.student_id));
+}
+
 function findActiveStudentProfileForUser(students = [], user = {}, schoolId) {
   const sid = asTrimmed(schoolId ?? user.school_id ?? user.schoolId);
   if (!sid || !user) return null;
   const userSchool = asTrimmed(user.school_id ?? user.schoolId);
   if (userSchool && !sameSchoolId(userSchool, sid)) return null;
-  return (
-    (students ?? []).find((student) => {
-      if (!sameSchoolId(student.school_id ?? student.schoolId, sid)) return false;
-      if (!isActiveStudentStatus(student.status)) return false;
-      return userMatchesStudent(user, student);
-    }) ?? null
-  );
+  const candidates = (students ?? []).filter((student) => {
+    if (!sameSchoolId(student.school_id ?? student.schoolId, sid)) return false;
+    if (!isActiveStudentStatus(student.status)) return false;
+    return userMatchesStudent(user, student);
+  });
+  if (!candidates.length) return null;
+  const uid = userCanonicalId(user);
+  const byFk = uid
+    ? candidates.filter((student) => studentCanonicalUserId(student) === uid)
+    : [];
+  const pool = byFk.length ? byFk : candidates;
+  pool.sort(compareStudentIdentity);
+  return pool[0];
 }
 
 function findActiveTeacherProfileForUser(teachers = [], userId, schoolId) {
@@ -131,7 +158,7 @@ function resolveAccountKind({ linkedStudent, linkedTeacher, roleKeys = [] } = {}
   if (linkedStudent) return "student_login";
   if (linkedTeacher) return "teacher";
   const keys = (roleKeys ?? []).map((key) => asTrimmed(key).toUpperCase());
-  if (keys.includes("STUDENT")) return "student_login";
+  // Rôle STUDENT = droit d'accès, pas une preuve de fiche students.
   if (keys.includes("TEACHER")) return "teacher";
   if (keys.length) return "staff";
   return "unassigned";
@@ -221,16 +248,28 @@ const ACTIVE_TEACHER_SQL = `
   COALESCE(t.status, 'active') NOT IN ('inactive', 'deleted', 'archived')
 `;
 
-const STUDENT_USER_MATCH_SQL = `
+const STUDENT_USER_FK_SQL = `NULLIF(to_jsonb(st)->>'user_id', '') = u.id::text`;
+
+const STUDENT_USER_LEGACY_CODE_SQL = `
   (
-    NULLIF(to_jsonb(st)->>'user_id', '') = u.id::text
-    OR st.student_code = u.user_code
+    st.student_code = u.user_code
     OR st.student_code = NULLIF(to_jsonb(u)->>'identity_code', '')
     OR st.student_code = NULLIF(to_jsonb(u)->>'login_code', '')
     OR NULLIF(to_jsonb(st)->>'identity_code', '') = u.user_code
     OR NULLIF(to_jsonb(st)->>'login_code', '') = u.user_code
     OR NULLIF(to_jsonb(st)->>'identity_code', '') = NULLIF(to_jsonb(u)->>'identity_code', '')
     OR NULLIF(to_jsonb(st)->>'login_code', '') = NULLIF(to_jsonb(u)->>'login_code', '')
+  )
+`;
+
+// FK exact, sinon fallback code seulement si students.user_id IS NULL.
+const STUDENT_USER_MATCH_SQL = `
+  (
+    ${STUDENT_USER_FK_SQL}
+    OR (
+      NULLIF(to_jsonb(st)->>'user_id', '') IS NULL
+      AND ${STUDENT_USER_LEGACY_CODE_SQL}
+    )
   )
 `;
 
@@ -241,6 +280,7 @@ const SELECT_ACTIVE_STUDENT_FOR_USER_SQL = `
   WHERE u.id = $1
     AND st.school_id = $2
     AND ${ACTIVE_STUDENT_SQL}
+  ORDER BY CASE WHEN ${STUDENT_USER_FK_SQL} THEN 0 ELSE 1 END, st.id::text
   LIMIT 1
 `;
 

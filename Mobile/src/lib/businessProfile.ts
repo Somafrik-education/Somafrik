@@ -47,15 +47,7 @@ function isEmptyAccessLabel(value?: string | null): boolean {
 
 export function isStudentLinkedAccount(row: BusinessProfileUser): boolean {
   if (row.accountKind === "student_login" || row.accountKind === "conflict") return true;
-  if (row.linkedStudent?.studentId || row.linkedStudent?.studentCode) return true;
-  if (accessRoleKeysOf(row).includes("STUDENT")) return true;
-  return tokensOf(row).some(
-    (value) =>
-      value === "student" ||
-      value === "élève / étudiant" ||
-      value.includes("élève") ||
-      value.includes("eleve"),
-  );
+  return Boolean(row.linkedStudent?.studentId || row.linkedStudent?.studentCode);
 }
 
 export function isTeacherLinkedAccount(row: BusinessProfileUser): boolean {
@@ -65,13 +57,10 @@ export function isTeacherLinkedAccount(row: BusinessProfileUser): boolean {
   return tokensOf(row).some((value) => value === "enseignant" || value === "teacher");
 }
 
-/** Type métier. Un élève lié n'est jamais « Sans affectation ». */
+/** Type métier. Un élève lié n'est jamais « Sans affectation ». Le rôle STUDENT n'est pas une fiche. */
 export function formatBusinessProfileKind(row: BusinessProfileUser): string {
   const keys = accessRoleKeysOf(row);
-  const studentLinked =
-    row.accountKind === "student_login" ||
-    Boolean(row.linkedStudent?.studentId || row.linkedStudent?.studentCode) ||
-    keys.includes("STUDENT");
+  const studentLinked = isStudentLinkedAccount(row);
   if (row.businessProfileLabel) {
     if (studentLinked && isEmptyAccessLabel(row.businessProfileLabel)) {
       return BUSINESS_PROFILE_KIND_LABELS.student_login;
@@ -81,12 +70,7 @@ export function formatBusinessProfileKind(row: BusinessProfileUser): string {
   if (row.accountKind === "conflict" || row.businessProfileConflict) {
     return BUSINESS_PROFILE_KIND_LABELS.conflict;
   }
-  if (
-    row.accountKind === "student_login" ||
-    row.linkedStudent?.studentId ||
-    row.linkedStudent?.studentCode ||
-    keys.includes("STUDENT")
-  ) {
+  if (studentLinked) {
     return BUSINESS_PROFILE_KIND_LABELS.student_login;
   }
   if (

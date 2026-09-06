@@ -182,6 +182,8 @@ export type LoginResponse = {
     assignments?: TeacherAssignment[];
     assignedClasses?: string[];
     courses?: string[];
+    accountKind?: string;
+    linkedStudent?: { studentId?: string; studentCode?: string; status?: string } | null;
   };
   school?: SchoolInfo;
   platformContext?: {

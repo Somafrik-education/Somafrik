@@ -1105,8 +1105,44 @@ function createClientsMemoryStore(seed = {}) {
       async listSchoolUserIdsByRecipientKind() {
         return [];
       },
-      async listClassStudentUserIds() {
-        return [];
+      async listClassStudentUserIds(schoolId, classIds) {
+        if (!classIds?.length) return [];
+        const classSet = new Set(classIds.map((id) => String(id)));
+        const enrolledStudentIds = new Set(
+          tables.enrollments
+            .filter(
+              (row) =>
+                String(row.school_id) === String(schoolId) &&
+                classSet.has(String(row.class_id)) &&
+                String(row.status ?? "active") === "active",
+            )
+            .map((row) => String(row.student_id)),
+        );
+        const seen = new Set();
+        const rows = [];
+        for (const student of tables.students) {
+          if (!enrolledStudentIds.has(String(student.id))) continue;
+          if (String(student.school_id) !== String(schoolId)) continue;
+          if (String(student.status ?? "active") !== "active") continue;
+          const linkedUserId = String(student.user_id ?? student.userId ?? "").trim();
+          let user = null;
+          if (linkedUserId) {
+            user = tables.users.find(
+              (item) => String(item.id) === linkedUserId && String(item.school_id) === String(schoolId),
+            );
+          } else {
+            user = tables.users.find(
+              (item) =>
+                String(item.school_id) === String(schoolId) &&
+                String(item.user_code) === String(student.student_code ?? student.studentCode ?? ""),
+            );
+          }
+          if (!user || String(user.status ?? "active") !== "active") continue;
+          if (seen.has(String(user.id))) continue;
+          seen.add(String(user.id));
+          rows.push({ user_id: user.id });
+        }
+        return rows;
       },
       async listClassParentUserIds() {
         return [];

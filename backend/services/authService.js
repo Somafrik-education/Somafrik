@@ -576,13 +576,21 @@ class AuthService {
 
   findLinkedStudent(user, schoolCode) {
     const accountIdentifier = new AccountIdentifier(schoolCode, user.identifier);
-    return this.students.find(
-      (student) =>
-        student.schoolCode === accountIdentifier.schoolCode &&
-        (accountIdentifier.matches(student.matricule) ||
-          accountIdentifier.matches(student.publicId) ||
-          String(student.id) === String(user.id))
+    const uid = String(user?.id ?? user?.userId ?? "").trim();
+    const inSchool = this.students.filter(
+      (student) => student.schoolCode === accountIdentifier.schoolCode,
     );
+    if (uid) {
+      const byFk = inSchool
+        .filter((student) => String(student.userId ?? student.user_id ?? "").trim() === uid)
+        .sort((left, right) => String(left.id).localeCompare(String(right.id)));
+      if (byFk.length) return byFk[0];
+    }
+    return inSchool.find((student) => {
+      const studentUserId = String(student.userId ?? student.user_id ?? "").trim();
+      if (studentUserId) return false;
+      return accountIdentifier.matches(student.matricule) || accountIdentifier.matches(student.publicId);
+    });
   }
 
   findLinkedParentChildren(user, schoolCode) {
@@ -652,16 +660,22 @@ class AuthService {
       };
     }
 
-    if (isStudentRole(user.role)) {
-      const student = this.findLinkedStudent(user, user.schoolCode);
-      if (student) {
-        const safeStudent = sanitizeUserForResponse(student);
-        return {
-          ...base,
-          ...safeStudent,
-          matricule: safeStudent.matricule ?? user.identifier,
-        };
-      }
+    const student = this.findLinkedStudent(user, user.schoolCode);
+    if (student) {
+      const studentId = String(student.studentUuid ?? student.id ?? "").trim();
+      const studentCode = String(student.matricule ?? student.publicId ?? student.studentCode ?? "").trim();
+      return {
+        ...base,
+        id: base.id,
+        publicId: base.publicId,
+        identifier: base.identifier,
+        accountKind: "student_login",
+        linkedStudent: {
+          studentId,
+          studentCode,
+        },
+        matricule: studentCode || user.identifier,
+      };
     }
 
     return base;

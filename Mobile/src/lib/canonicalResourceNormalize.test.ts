@@ -42,9 +42,14 @@ function run() {
     lastName: "Mbuyi",
     schoolCode: "SCH-ABC123",
     schoolPublicCode: "CD-IN-26-001",
+    accountKind: "student_login",
+    linkedStudent: { studentId: "stu-uuid", studentCode: "CD-IN-61-26-00017" },
   });
   assert.equal(user?.schoolCode, "CD-IN-26-001");
   assert.notEqual(user?.schoolCode, "SCH-ABC123");
+  assert.equal(user?.accountKind, "student_login");
+  assert.equal(user?.linkedStudent?.studentId, "stu-uuid");
+  assert.equal(user?.linkedStudent?.studentCode, "CD-IN-61-26-00017");
 
   const announcement = normalizeAnnouncement({
     id: "ann-pg",
