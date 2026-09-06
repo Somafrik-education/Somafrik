@@ -5,6 +5,10 @@ import { useAdminData } from "../context/AdminDataContext";
 import { getPaymentStats, getPresenceStats } from "../domain/metrics/schoolMetrics";
 import { canReadRoute } from "../domain/security/permissions";
 import { displayRoleName, displayStatusName } from "../lib/format";
+import {
+  filterRowsByStudentScope,
+  resolveMobileStudentScope,
+} from "../lib/canonicalStudentIdentity";
 import { useStackScreenBottomPadding } from "../lib/screenLayout";
 
 function ScreenShell({
@@ -180,14 +184,16 @@ export function MobilePaymentScreen({ navigation }: any) {
   const { session, selectedStudentId } = useAuth();
   const { paymentsData, studentsData } = useAdminData();
   const canOpenStudentPayments = canReadRoute(session, "StudentPayments");
-  const studentIds =
-    session?.role === "student"
-      ? [selectedStudentId].filter((id): id is string => Boolean(id))
-      : (session?.user.children ?? []).map((child) => child.id);
-  const scopedPayments = paymentsData.filter((payment) =>
-    studentIds.length ? studentIds.includes(payment.studentId) : true
+  const studentScope = resolveMobileStudentScope({
+    role: session?.role,
+    selectedStudentId,
+    children: session?.user.children,
+  });
+  const scopedPayments = filterRowsByStudentScope(paymentsData, studentScope);
+  const paymentStats = getPaymentStats(
+    scopedPayments,
+    studentScope.unscoped ? undefined : studentScope.studentIds,
   );
-  const paymentStats = getPaymentStats(scopedPayments, studentIds);
 
   return (
     <ScreenShell title="Paiement mobile" subtitle="Suivi MVP des paiements et recus.">
@@ -212,7 +218,7 @@ export function MobilePaymentScreen({ navigation }: any) {
       <InfoCard
         icon="people-outline"
         title="Eleves lies"
-        value={`${studentIds.length || studentsData.length} eleve(s)`}
+        value={`${studentScope.unscoped ? studentsData.length : studentScope.studentIds.length} eleve(s)`}
         detail="Le parent voit les paiements de ses enfants ; l'administration voit le suivi global."
       />
     </ScreenShell>

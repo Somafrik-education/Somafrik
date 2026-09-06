@@ -20,7 +20,11 @@ import {
 } from "./businessProfile";
 import { notesForStudent } from "./evaluationsV2";
 import { normalizeUser } from "./canonicalResourceNormalize";
-import { resolveSessionStudentId } from "./canonicalStudentIdentity";
+import {
+  filterRowsByStudentScope,
+  resolveMobileStudentScope,
+  resolveSessionStudentId,
+} from "./canonicalStudentIdentity";
 import { projectL1Student } from "../offline/l1/uiProjection";
 import type { L1Partition } from "../offline/l1/types";
 
@@ -150,6 +154,76 @@ describe("M5 — session / switcher", () => {
     assert.match(mvpSrc, /selectedStudentId/);
     assert.doesNotMatch(mvpSrc, /selectedStudentId \?\? session\.user\.id/);
     assert.doesNotMatch(mvpSrc, /session\?\.role === "student"\s*\n\s*\? \[session\.user\.id\]/);
+  });
+});
+
+describe("M7 — paiements fail-closed sans fiche students", () => {
+  const otherStudentId = "33333333-3333-4333-8333-333333333333";
+  const paymentsData = [
+    { studentId: S1, amount: 50_000 },
+    { studentId: otherStudentId, amount: 80_000 },
+    { studentId: U1, amount: 12_000 },
+  ];
+
+  it("role student + selectedStudentId null → 0 paiement, même si le dataset est chargé", () => {
+    const scope = resolveMobileStudentScope({
+      role: "student",
+      selectedStudentId: null,
+      children: [{ id: S1 }],
+    });
+    assert.equal(scope.unscoped, false);
+    assert.deepEqual(scope.studentIds, []);
+    const scoped = filterRowsByStudentScope(paymentsData, scope);
+    assert.equal(scoped.length, 0);
+    assert.deepEqual(scoped, []);
+  });
+
+  it("élève lié ne voit que ses paiements students.id", () => {
+    const scope = resolveMobileStudentScope({
+      role: "student",
+      selectedStudentId: S1,
+      children: [],
+    });
+    const scoped = filterRowsByStudentScope(paymentsData, scope);
+    assert.equal(scoped.length, 1);
+    assert.equal(scoped[0]?.studentId, S1);
+    assert.ok(scoped.every((row) => row.studentId === S1));
+  });
+
+  it("parent sans enfants → 0 paiement ; staff unscoped conserve le dataset", () => {
+    const parentEmpty = resolveMobileStudentScope({
+      role: "parent_student",
+      selectedStudentId: null,
+      children: [],
+    });
+    assert.equal(filterRowsByStudentScope(paymentsData, parentEmpty).length, 0);
+
+    const staff = resolveMobileStudentScope({
+      role: "school_admin",
+      selectedStudentId: null,
+      children: [],
+    });
+    assert.equal(staff.unscoped, true);
+    assert.equal(filterRowsByStudentScope(paymentsData, staff).length, paymentsData.length);
+  });
+
+  it("source: écran paiements fail-closed, jamais : true si studentIds est vide", () => {
+    const mvpSrc = source("src/screens/MvpUtilityScreens.tsx");
+    assert.match(mvpSrc, /resolveMobileStudentScope/);
+    assert.match(mvpSrc, /filterRowsByStudentScope/);
+    assert.doesNotMatch(
+      mvpSrc,
+      /studentIds\.length \? studentIds\.includes\(payment\.studentId\) : true/,
+    );
+    assert.doesNotMatch(mvpSrc, /studentIds\.length \|\| studentsData\.length/);
+    assert.doesNotMatch(mvpSrc, /selectedStudentId \?\? session\.user\.id/);
+
+    const reportSrc = source("src/screens/ReportCardsScreen.tsx");
+    assert.match(reportSrc, /filterRowsByStudentScope/);
+    assert.doesNotMatch(
+      reportSrc,
+      /visibleStudentIds\.length \? visibleStudentIds\.includes\(card\.studentId\) : true/,
+    );
   });
 });
 
