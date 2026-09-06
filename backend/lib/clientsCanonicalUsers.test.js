@@ -3,7 +3,13 @@
 const assert = require("node:assert/strict");
 const { test } = require("node:test");
 const { mergeUserProfileForUpdate } = require("./clientsRolePolicy");
-const { fromDbStatus, toDbStatus, mapUserRow, validatePersonName } = require("./clientsManagement");
+const {
+  fromDbStatus,
+  toDbStatus,
+  mapUserRow,
+  validatePersonName,
+  ignoreClientScope,
+} = require("./clientsManagement");
 
 test("mergeUserProfileForUpdate persiste les champs de validation", () => {
   const merged = mergeUserProfileForUpdate(
@@ -37,6 +43,20 @@ test("nom/prénom utilisateur refusent number et chaîne uniquement numérique",
       `lastName numérique doit être refusé: ${JSON.stringify(value)}`,
     );
   }
+});
+
+test("ignoreClientScope applique la validation aux mutations utilisateurs/contacts", () => {
+  assert.throws(
+    () => ignoreClientScope({ firstName: 123, lastName: "Okito" }),
+    (error) => error.statusCode === 400,
+  );
+  assert.throws(
+    () => ignoreClientScope({ firstName: "Awa", lastName: "456" }),
+    (error) => error.statusCode === 400,
+  );
+  const normalized = ignoreClientScope({ firstName: " Élodie ", lastName: " O'Connor-Smith " });
+  assert.equal(normalized.firstName, "Élodie");
+  assert.equal(normalized.lastName, "O'Connor-Smith");
 });
 
 test("nom/prénom utilisateur conservent accents, espaces, apostrophes et tirets", () => {
