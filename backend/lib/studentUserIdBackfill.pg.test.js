@@ -4,6 +4,9 @@
  * Boot 20260907 : un UPDATE students SET user_id réévalue
  * students_canonical_identifier_format_check (même NOT VALID).
  * Une ligne historique hors format ne doit pas faire échouer le démarrage.
+ *
+ * Régression couverte en plus : le bloc CHECK de 20260823 ne doit pas
+ * rétrograder une CHECK runtime plus large (SEQ5 | EL) en EL-only.
  */
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
@@ -17,6 +20,10 @@ const IT_DB = String(process.env.SOMAFRIK_STUDENT_USER_ID_BACKFILL_IT_DATABASE ?
 
 const MIGRATION_SQL = fs.readFileSync(
   path.join(__dirname, "../db/migrations/20260907_student_user_id.sql"),
+  "utf8",
+);
+const MIGRATION_23_SQL = fs.readFileSync(
+  path.join(__dirname, "../db/migrations/20260823_student_canonical_identifier.sql"),
   "utf8",
 );
 
@@ -36,6 +43,25 @@ async function ensureDatabase(databaseUrl, databaseName) {
     await pool.end();
   }
   return withDatabaseName(databaseUrl, databaseName);
+}
+
+async function getConstraintDef(pool) {
+  const result = await pool.query(
+    `SELECT pg_get_constraintdef(oid) AS def, convalidated
+     FROM pg_constraint
+     WHERE conname = 'students_canonical_identifier_format_check'`,
+  );
+  return result.rows[0] ?? null;
+}
+
+function checkOnlyBlock(sql) {
+  const marker = "-- CHECK NOT VALID";
+  const markerAt = sql.lastIndexOf(marker);
+  assert.ok(markerAt >= 0, "bloc CHECK 20260823 introuvable");
+  const block = sql.slice(markerAt);
+  const doAt = block.indexOf("DO $$");
+  assert.ok(doAt >= 0, "DO CHECK 20260823 introuvable");
+  return block.slice(doAt);
 }
 
 async function main() {
@@ -110,10 +136,9 @@ async function main() {
        RETURNING id`,
       [schoolId],
     );
-    const canonicalStudent = await pool.query(
+    await pool.query(
       `INSERT INTO students (school_id, student_code, first_name, last_name, identity_code, login_code)
-       VALUES ($1, 'CD-IN-AD-26-00001', 'Esther', 'Okito', 'CD-IN-AD-26-00001', 'CD-IN-AD-26-00001')
-       RETURNING id`,
+       VALUES ($1, 'CD-IN-AD-26-00001', 'Esther', 'Okito', 'CD-IN-AD-26-00001', 'CD-IN-AD-26-00001')`,
       [schoolId],
     );
     const canonicalUser = await pool.query(
@@ -146,11 +171,17 @@ async function main() {
       ) NOT VALID
     `);
 
-    const checkState = await pool.query(
-      `SELECT convalidated FROM pg_constraint
-       WHERE conname = 'students_canonical_identifier_format_check'`,
-    );
-    assert.equal(checkState.rows[0].convalidated, false, "CHECK doit rester NOT VALID");
+    const before23 = await getConstraintDef(pool);
+    assert.ok(before23);
+    assert.equal(before23.convalidated, false);
+    assert.match(before23.def, /\{1,5\}.*\{5\}/, "CHECK runtime doit accepter SEQ5");
+
+    await pool.query(checkOnlyBlock(MIGRATION_23_SQL));
+
+    const after23 = await getConstraintDef(pool);
+    assert.ok(after23);
+    assert.equal(after23.convalidated, false);
+    assert.equal(after23.def, before23.def, "20260823 ne doit pas rétrograder la CHECK runtime");
 
     await pool.query(MIGRATION_SQL);
 
@@ -167,11 +198,6 @@ async function main() {
     assert.equal(legacyUser.rows[0].id.length > 0, true);
     assert.equal(unsyncedStudent.rows[0].id.length > 0, true);
 
-    const stillNotValid = await pool.query(
-      `SELECT convalidated FROM pg_constraint
-       WHERE conname = 'students_canonical_identifier_format_check'`,
-    );
-    assert.equal(stillNotValid.rows[0].convalidated, false);
     const identity = await pool.query(
       `SELECT student_code, identity_code, login_code FROM students WHERE student_code = 'LEGACY-STU-1'`,
     );
