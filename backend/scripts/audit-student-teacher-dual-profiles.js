@@ -114,6 +114,23 @@ async function main() {
   const { Pool } = require("pg");
   const pool = new Pool({ connectionString: databaseUrl });
   try {
+    const probe = await pool.query("SELECT to_regclass('public.users') AS rel");
+    if (!probe.rows[0]?.rel) {
+      console.log(
+        JSON.stringify(
+          {
+            generatedAt: new Date().toISOString(),
+            skipped: true,
+            reason: "relation public.users absente — lecture seule impossible, audit SQL prêt, aucune écriture.",
+            dualProfileCount: null,
+            productionWrites: false,
+          },
+          null,
+          2,
+        ),
+      );
+      return;
+    }
     const report = await runAudit(pool);
     console.log(JSON.stringify(report, null, 2));
   } finally {

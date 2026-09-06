@@ -746,8 +746,11 @@ describe("P0 — garde-fou DROP SCHEMA PostgreSQL", () => {
       hostFromUrl,
       isolationRefusal,
     } = require("./student-user-canonical-link.pg.test.js");
-    assert.equal(databaseNameFromUrl("postgres://u:p@localhost:5432/somafrik_prod"), "somafrik_prod");
-    assert.equal(hostFromUrl("postgres://u:p@127.0.0.1:5432/somafrik_canonical_link_it"), "127.0.0.1");
+    assert.equal(databaseNameFromUrl("postgres://localhost:5432/somafrik_prod"), "somafrik_prod");
+    assert.equal(hostFromUrl("postgres://127.0.0.1:5432/somafrik_canonical_link_it"), "127.0.0.1");
+    const credentialUri = /postgres(?:ql)?:\/\/[^/\s"'`]+?:[^/\s"'`]+?@/i;
+    assert.doesNotMatch(src, credentialUri);
+    assert.doesNotMatch(fs.readFileSync(__filename, "utf8"), credentialUri);
     assert.ok(
       isolationRefusal({
         itDb: "somafrik_canonical_link_it",
