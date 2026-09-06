@@ -53,6 +53,16 @@ function main() {
 
   expectStatus(() => validateCreateTeacherInput(validBody({ firstName: "" }), "CD-2026-0001"), 400);
   expectStatus(() => validateCreateTeacherInput(validBody({ lastName: "" }), "CD-2026-0001"), 400);
+  expectStatus(() => validateCreateTeacherInput(validBody({ firstName: 123 }), "CD-2026-0001"), 400);
+  expectStatus(() => validateCreateTeacherInput(validBody({ lastName: 456 }), "CD-2026-0001"), 400);
+  expectStatus(() => validateCreateTeacherInput(validBody({ firstName: "123" }), "CD-2026-0001"), 400);
+  expectStatus(() => validateCreateTeacherInput(validBody({ lastName: " 456 " }), "CD-2026-0001"), 400);
+  const punctuation = validateCreateTeacherInput(
+    validBody({ firstName: " Élodie ", lastName: "O'Connor-Smith" }),
+    "CD-2026-0001",
+  );
+  assert.equal(punctuation.firstName, "Élodie");
+  assert.equal(punctuation.lastName, "O'Connor-Smith");
   expectStatus(
     () => validateCreateTeacherInput(validBody({ phone: undefined, email: undefined }), "CD-2026-0001"),
     400,
@@ -93,7 +103,6 @@ function main() {
     false,
   );
 
-  // pg DATE → Date JS : String(date).slice(0, 10) n'est pas YYYY-MM-DD.
   const pgDate = new Date("1990-05-01T00:00:00.000Z");
   assert.notEqual(String(pgDate).slice(0, 10), "1990-05-01");
   assert.equal(toIsoDate(pgDate), "1990-05-01");
