@@ -69,6 +69,17 @@ function createClientsError(status, message, code, details) {
   return error;
 }
 
+function validatePersonName(value, field = "name", maxLength = 120) {
+  if (typeof value !== "string") {
+    throw createClientsError(400, `${field} doit être un texte.`);
+  }
+  const normalized = value.trim();
+  if (!normalized || normalized.length > maxLength || /^\d+$/u.test(normalized)) {
+    throw createClientsError(400, `${field} invalide.`);
+  }
+  return normalized;
+}
+
 function isSuperAdminPrincipal(principal) {
   return SUPER_ADMIN_ROLES.has(asTrimmed(principal?.role));
 }
@@ -152,6 +163,12 @@ function relationEndpointsFromPayload(payload = {}) {
 
 function ignoreClientScope(payload = {}) {
   const next = { ...payload };
+  if (Object.prototype.hasOwnProperty.call(next, "firstName")) {
+    next.firstName = validatePersonName(next.firstName, "firstName");
+  }
+  if (Object.prototype.hasOwnProperty.call(next, "lastName")) {
+    next.lastName = validatePersonName(next.lastName, "lastName");
+  }
   delete next.schoolId;
   delete next.schoolCode;
   delete next.countryCode;
@@ -241,11 +258,6 @@ function resolveUserIdentifier({ role, phone, email, userCode }) {
   return asTrimmed(userCode);
 }
 
-/**
- * Projection établissement pour un compte : school_code reste l'alias tenant,
- * school_login_code / school_name portent le code public et le nom.
- * Ne jamais lire users.login_code ici (identité personne).
- */
 function schoolPublicProjectionFromSchool(school, fallbackSchoolCode = "*") {
   if (!school) {
     return {
@@ -434,6 +446,7 @@ module.exports = {
   ROLE_FROM_DB,
   asTrimmed,
   createClientsError,
+  validatePersonName,
   isSuperAdminPrincipal,
   isCountryAdminPrincipal,
   resolvePrincipalCountryCode,
