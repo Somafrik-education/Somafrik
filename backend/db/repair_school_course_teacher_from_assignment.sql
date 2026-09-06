@@ -8,11 +8,11 @@
 -- vérifier le RETURNING;
 -- COMMIT; -- ou ROLLBACK si besoin
 
-WITH candidate AS (
+WITH candidates AS (
   SELECT
     sc.id AS school_course_id,
-    MIN(ta.teacher_id) AS teacher_id,
-    COUNT(*) AS assignment_count
+    ta.teacher_id,
+    COUNT(*) OVER (PARTITION BY sc.id) AS assignment_count
   FROM school_courses sc
   JOIN teacher_assignments ta
     ON ta.school_id = sc.school_id
@@ -35,11 +35,10 @@ WITH candidate AS (
   WHERE sc.status = 'active'
     AND sc.teacher_id IS NULL
     AND lower(COALESCE(t.status, 'active')) NOT IN ('deleted', 'archived')
-  GROUP BY sc.id
 ),
 repairable AS (
   SELECT school_course_id, teacher_id
-  FROM candidate
+  FROM candidates
   WHERE assignment_count = 1
 )
 UPDATE school_courses sc
