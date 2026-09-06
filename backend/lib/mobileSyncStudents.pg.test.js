@@ -154,6 +154,7 @@ async function setupFixture(pool) {
       first_name TEXT NOT NULL,
       last_name TEXT NOT NULL,
       status TEXT NOT NULL DEFAULT 'active',
+      user_id UUID REFERENCES users(id),
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
@@ -200,6 +201,9 @@ async function setupFixture(pool) {
       ON enrollments (school_id, class_id, status, student_id);
     CREATE INDEX IF NOT EXISTS idx_contact_relations_school_contact_status_student
       ON contact_relations (school_id, contact_id, status, student_id);
+  `);
+  await pool.query(`
+    ALTER TABLE students ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES users(id);
   `);
   await pool.query(`
     TRUNCATE contact_relations, contacts, enrollments, students, teacher_assignments,
@@ -494,10 +498,11 @@ async function main() {
        VALUES
          ($1, $3, 'TEACH-STU-1', 'Tana', 'Kabila', 'Enseignant', 'active'),
          ($2, $3, 'PARENT-STU-1', 'Paula', 'Ngo', 'Parent', 'active'),
-         ($4, $3, 'STU-A', 'Ada', 'Test', 'Élève / Étudiant', 'active'),
+         ($4, $3, 'LOGIN-STU-A', 'Ada', 'Test', 'Élève / Étudiant', 'active'),
          ($5, $3, 'DUAL-STU-1', 'Dina', 'Mwamba', 'Enseignant', 'active')`,
       [TEACHER_USER_ID, PARENT_USER_ID, ids.schoolA, STUDENT_USER_ID, DUAL_USER_ID],
     );
+    await pool.query(`UPDATE students SET user_id = $1 WHERE id = $2`, [STUDENT_USER_ID, STU_A]);
     await pool.query(
       `INSERT INTO user_roles (user_id, school_id, role_key, status)
        VALUES
