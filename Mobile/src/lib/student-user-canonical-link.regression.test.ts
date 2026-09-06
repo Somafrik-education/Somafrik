@@ -22,8 +22,10 @@ import { notesForStudent } from "./evaluationsV2";
 import { normalizeUser } from "./canonicalResourceNormalize";
 import {
   filterRowsByStudentScope,
+  findStudentByIdentity,
   resolveMobileStudentScope,
   resolveSessionStudentId,
+  sessionStudentAliasKeys,
 } from "./canonicalStudentIdentity";
 import { projectL1Student } from "../offline/l1/uiProjection";
 import type { L1Partition } from "../offline/l1/types";
@@ -104,16 +106,15 @@ describe("M4 — pédagogie filtrée par student.id", () => {
 
   it("écrans détail/notes/présences/paiements filtrent par studentId (complément source)", () => {
     const detailSrc = source("src/screens/StudentDetailScreen.tsx");
-    assert.match(detailSrc, /item\.studentId === student\.id/);
-    assert.match(detailSrc, /const student = studentId \? studentsData\.find\(\(item\) => item\.id === studentId\)/);
+    assert.match(detailSrc, /findStudentByIdentity/);
     assert.doesNotMatch(detailSrc, /item\.studentId === student\.studentCode/);
     assert.doesNotMatch(detailSrc, /item\.studentId === session\.user\.id/);
 
     const notesSrc = source("src/screens/StudentNotesScreen.tsx");
-    assert.match(notesSrc, /notesForStudent\(notesSnapshot\.data, studentId\)/);
+    assert.match(notesSrc, /notesForStudent\(notesSnapshot\.data, studentAliasKeys\)/);
 
     const presencesSrc = source("src/screens/StudentPresencesScreen.tsx");
-    assert.match(presencesSrc, /studentId/);
+    assert.match(presencesSrc, /studentAliasKeys/);
 
     const paymentsSrc = source("src/screens/StudentPaymentsScreen.tsx");
     assert.match(paymentsSrc, /studentId/);
@@ -224,6 +225,83 @@ describe("M7 — paiements fail-closed sans fiche students", () => {
       reportSrc,
       /visibleStudentIds\.length \? visibleStudentIds\.includes\(card\.studentId\) : true/,
     );
+  });
+});
+
+describe("M8 — DTO online student_code vs selectedStudentId UUID", () => {
+  const onlineStudents = [
+    { id: CODE_B, studentCode: CODE_B, matricule: CODE_B, publicId: CODE_B, name: "Marc" },
+    { id: "other-code", studentCode: "other-code", matricule: "other-code", name: "Autre" },
+  ];
+  const onlineNotes = [
+    { studentId: CODE_B, evaluationId: "e1", value: 12 },
+    { studentId: U1, evaluationId: "e1", value: 20 },
+    { studentId: "other-code", evaluationId: "e1", value: 8 },
+  ];
+  const onlinePayments = [
+    { studentId: CODE_B, amount: 50_000 },
+    { studentId: U1, amount: 12_000 },
+    { studentId: "other-code", amount: 80_000 },
+  ];
+
+  it("login ≠ matricule : notes/paiements student_code matchent l'UUID de session, jamais users.id", () => {
+    const keys = sessionStudentAliasKeys({
+      role: "student",
+      selectedStudentId: S1,
+      user: {
+        id: U1,
+        identifier: CODE_A,
+        matricule: CODE_B,
+        linkedStudent: { studentId: S1, studentCode: CODE_B },
+      },
+    });
+    assert.ok(keys.includes(S1));
+    assert.ok(keys.includes(CODE_B));
+    assert.ok(!keys.includes(U1));
+    assert.ok(!keys.includes(CODE_A));
+
+    const student = findStudentByIdentity(onlineStudents, keys);
+    assert.equal(student?.id, CODE_B);
+
+    const notes = notesForStudent(onlineNotes as never, keys);
+    assert.equal(notes.length, 1);
+    assert.equal(notes[0]?.studentId, CODE_B);
+
+    const scope = resolveMobileStudentScope({
+      role: "student",
+      selectedStudentId: S1,
+      user: {
+        id: U1,
+        linkedStudent: { studentId: S1, studentCode: CODE_B },
+        matricule: CODE_B,
+      },
+    });
+    const payments = filterRowsByStudentScope(onlinePayments, scope);
+    assert.equal(payments.length, 1);
+    assert.equal(payments[0]?.studentId, CODE_B);
+    assert.ok(!payments.some((row) => row.studentId === U1));
+  });
+
+  it("écrans détail/notes/présences/accueil/paiements utilisent les alias d'identité", () => {
+    const homeSrc = source("src/screens/HomeScreen.tsx");
+    assert.match(homeSrc, /sessionStudentAliasKeys/);
+    assert.match(homeSrc, /findStudentByIdentity/);
+    assert.doesNotMatch(homeSrc, /presence\.studentId === selectedStudentId/);
+    assert.doesNotMatch(homeSrc, /payment\.studentId === selectedStudentId/);
+
+    const detailSrc = source("src/screens/StudentDetailScreen.tsx");
+    assert.match(detailSrc, /findStudentByIdentity/);
+    assert.doesNotMatch(detailSrc, /item\.studentId === student\.id/);
+
+    const notesSrc = source("src/screens/StudentNotesScreen.tsx");
+    assert.match(notesSrc, /sessionStudentAliasKeys/);
+    assert.match(notesSrc, /notesForStudent\(notesSnapshot\.data, studentAliasKeys\)/);
+
+    const presencesSrc = source("src/screens/StudentPresencesScreen.tsx");
+    assert.match(presencesSrc, /studentAliasKeys/);
+
+    const paymentsSrc = source("src/screens/StudentPaymentsScreen.tsx");
+    assert.match(paymentsSrc, /studentAliasKeys/);
   });
 });
 

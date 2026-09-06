@@ -36,6 +36,8 @@ export default function ReportCardsScreen() {
         role: session?.role,
         selectedStudentId,
         children: session?.user.children,
+        linkedStudent: session?.user.linkedStudent,
+        user: session?.user,
       }),
     [session, selectedStudentId],
   );

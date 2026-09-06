@@ -472,9 +472,15 @@ export function gradesForEvaluation(grades: CanonicalGrade[], evaluationId: stri
   return grades.filter((grade) => asText(grade.evaluationId) === key);
 }
 
-export function notesForStudent(grades: CanonicalGrade[], studentId: string): CanonicalGrade[] {
-  const key = asText(studentId);
-  return grades.filter((grade) => asText(grade.studentId) === key);
+export function notesForStudent(
+  grades: CanonicalGrade[],
+  studentId: string | readonly string[],
+): CanonicalGrade[] {
+  const keys = new Set(
+    (Array.isArray(studentId) ? studentId : [studentId]).map((value) => asText(value)).filter(Boolean),
+  );
+  if (!keys.size) return [];
+  return grades.filter((grade) => keys.has(asText(grade.studentId)));
 }
 
 function gradeCountsInAverage(note: CanonicalGrade): boolean {

@@ -91,6 +91,10 @@ const {
   prepareTeacherNotesWritePayload,
   teacherHasNotesWritePermission,
 } = require("./lib/teacherNotesWriteAccess");
+const {
+  getPrincipalStudentIds,
+  getPrincipalGuardianStudentIds,
+} = require("./lib/principalStudentIds");
 
 const establishmentService = new EstablishmentService();
 const unpaidService = new UnpaidService();
@@ -6062,37 +6066,6 @@ async function resolveUserPasswordLookupKeys(principal) {
 // Récupère la matrice de droits par rôle (configurée par le Super Admin dans le BackOffice).
 async function getRolePermissionsMap() {
   return repository.getRolePermissionsMap();
-}
-
-function getPrincipalGuardianStudentIds(response) {
-  const user = response.user ?? {};
-  const fromChildren = (user.children ?? [])
-    .flatMap((student) => [student.id, student.publicId, student.matricule])
-    .map((value) => String(value ?? "").trim())
-    .filter(Boolean);
-  const fromRelations = Array.isArray(user.guardianStudentIds) ? user.guardianStudentIds.map(String) : [];
-  return [...new Set([...fromChildren, ...fromRelations])];
-}
-
-function getPrincipalStudentIds(response) {
-  const user = response.user ?? {};
-  const sessionLabel = roleLabelFromMobileRole(response.role);
-  const role = sessionLabel === "Parent" || sessionLabel === "Élève / Étudiant"
-    ? sessionLabel
-    : user.role ?? sessionLabel;
-
-  if (role === "Parent") {
-    return (user.children ?? [])
-      .flatMap((student) => [student.id, student.publicId, student.matricule])
-      .map((value) => String(value ?? "").trim())
-      .filter(Boolean);
-  }
-
-  if (role === "Élève / Étudiant") {
-    return [user.id].filter(Boolean);
-  }
-
-  return [];
 }
 
 function roleLabelFromMobileRole(role) {

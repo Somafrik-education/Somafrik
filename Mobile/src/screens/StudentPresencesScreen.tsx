@@ -16,16 +16,22 @@ import {
 } from "../lib/studentSubScreensSpec";
 import { metricLabelFromSnapshot } from "../lib/dataTruth";
 import { studentSubScreenStyles as styles } from "../lib/studentSubScreenLayout";
+import { findStudentByIdentity, sessionStudentAliasKeys } from "../lib/canonicalStudentIdentity";
 
 type Props = NativeStackScreenProps<RootStackParamList, "StudentPresences">;
 
 export default function StudentPresencesScreen({ route, navigation }: Partial<Props>) {
   const { scrollContentPaddingBottom } = useFloatingTabBarLayout();
   const listContentStyle = [styles.listContent, { paddingBottom: scrollContentPaddingBottom }];
-  const { selectedStudentId } = useAuth();
+  const { session, selectedStudentId } = useAuth();
   const { studentsData, presencesData, loadPresences, loadStudents, presencesSnapshot, resourceScopeKey } = useAdminData();
   const studentId = route?.params?.studentId ?? selectedStudentId;
-  const student = studentId ? studentsData.find((item) => item.id === studentId) : undefined;
+  const studentAliasKeys = sessionStudentAliasKeys({
+    role: session?.role,
+    selectedStudentId: studentId,
+    user: session?.user,
+  });
+  const student = findStudentByIdentity(studentsData, studentAliasKeys);
 
   useFocusEffect(
     useCallback(() => {
@@ -34,7 +40,9 @@ export default function StudentPresencesScreen({ route, navigation }: Partial<Pr
     }, [loadStudents, loadPresences, resourceScopeKey]),
   );
 
-  const presencesEleve = presencesData.filter((presence) => presence.studentId === studentId);
+  const presencesEleve = presencesData.filter((presence) =>
+    studentAliasKeys.includes(String(presence.studentId ?? "")),
+  );
   const presenceStats = getPresenceStats(presencesEleve);
   const presenceRateLabel = metricLabelFromSnapshot(presencesSnapshot, () => `${presenceStats.rate}%`, "0%");
   const presenceMetaLabel = metricLabelFromSnapshot(

@@ -188,6 +188,8 @@ export function MobilePaymentScreen({ navigation }: any) {
     role: session?.role,
     selectedStudentId,
     children: session?.user.children,
+    linkedStudent: session?.user.linkedStudent,
+    user: session?.user,
   });
   const scopedPayments = filterRowsByStudentScope(paymentsData, studentScope);
   const paymentStats = getPaymentStats(
@@ -218,7 +220,7 @@ export function MobilePaymentScreen({ navigation }: any) {
       <InfoCard
         icon="people-outline"
         title="Eleves lies"
-        value={`${studentScope.unscoped ? studentsData.length : studentScope.studentIds.length} eleve(s)`}
+        value={`${studentScope.unscoped ? studentsData.length : studentScope.identityCount} eleve(s)`}
         detail="Le parent voit les paiements de ses enfants ; l'administration voit le suivi global."
       />
     </ScreenShell>

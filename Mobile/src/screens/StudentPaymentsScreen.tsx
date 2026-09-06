@@ -24,13 +24,14 @@ import {
   STUDENT_SUB_SCREENS_TEST_IDS,
 } from "../lib/studentSubScreensSpec";
 import { studentSubScreenStyles as styles } from "../lib/studentSubScreenLayout";
+import { findStudentByIdentity, sessionStudentAliasKeys } from "../lib/canonicalStudentIdentity";
 
 type Props = NativeStackScreenProps<RootStackParamList, "StudentPayments">;
 
 export default function StudentPaymentsScreen({ route, navigation }: Partial<Props>) {
   const { scrollContentPaddingBottom } = useFloatingTabBarLayout();
   const listContentStyle = [styles.listContent, { paddingBottom: scrollContentPaddingBottom }];
-  const { selectedStudentId } = useAuth();
+  const { session, selectedStudentId } = useAuth();
   const {
     paymentsData,
     paymentsSnapshot,
@@ -43,8 +44,14 @@ export default function StudentPaymentsScreen({ route, navigation }: Partial<Pro
   const [paymentMethods, setPaymentMethods] = useState<string[]>([]);
   const [catalogCurrency, setCatalogCurrency] = useState("");
   const studentId = route?.params?.studentId ?? selectedStudentId;
+  const studentAliasKeys = sessionStudentAliasKeys({
+    role: session?.role,
+    selectedStudentId: studentId,
+    user: session?.user,
+  });
+  const aliasKeySet = new Set(studentAliasKeys.map((key) => normalizeId(key)));
   const pickerStudents: PaymentStudent[] = paymentStudents;
-  const student = studentId ? pickerStudents.find((item) => item.id === studentId) : undefined;
+  const student = findStudentByIdentity(pickerStudents, studentAliasKeys);
 
   const refreshFinance = useCallback(async () => {
     await Promise.all([
@@ -73,16 +80,14 @@ export default function StudentPaymentsScreen({ route, navigation }: Partial<Pro
   const paiementsEleve = useMemo(
     () =>
       paymentsSnapshot.status === "success"
-        ? paymentsData.filter((paiement) => normalizeId(paiement.studentId) === normalizeId(studentId))
+        ? paymentsData.filter((paiement) => aliasKeySet.has(normalizeId(paiement.studentId)))
         : [],
-    [paymentsData, paymentsSnapshot.status, studentId],
+    [paymentsData, paymentsSnapshot.status, studentAliasKeys],
   );
   const sortedPayments = [...paiementsEleve].sort(
     (left, right) => parsePaymentDate(paymentPaidAt(right) || right.date) - parsePaymentDate(paymentPaidAt(left) || left.date),
   );
-  const studentFees = studentFeesData.filter(
-    (fee) => normalizeId(fee.studentId) === normalizeId(studentId),
-  );
+  const studentFees = studentFeesData.filter((fee) => aliasKeySet.has(normalizeId(fee.studentId)));
   const paymentRateKpi = getPaymentRateKpi(studentFees);
   const cashKpi = getPaymentCashKpi(paiementsEleve);
   const feesReady =

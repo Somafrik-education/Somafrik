@@ -22,6 +22,11 @@ import { STUDENT_SUB_SCREENS_TEST_IDS } from "../lib/studentSubScreensSpec";
 import { metricLabelFromSnapshot } from "../lib/dataTruth";
 import { studentDisplayName } from "../lib/studentDisplayName";
 import { normalizePresenceStatus } from "../domain/metrics/schoolMetrics";
+import {
+  filterRowsByStudentScope,
+  findStudentByIdentity,
+  sessionStudentAliasKeys,
+} from "../lib/canonicalStudentIdentity";
 
 type Props = NativeStackScreenProps<
   RootStackParamList,
@@ -37,6 +42,17 @@ export default function StudentDetailScreen({
   const { session, selectedStudentId } = useAuth();
   const { studentsData, notesData, presencesData, paymentsData, loadStudents, loadPresences, loadNotes, loadPayments, studentsSnapshot, notesSnapshot, presencesSnapshot, paymentsSnapshot, resourceScopeKey } = useAdminData();
   const studentId = route?.params?.studentId ?? selectedStudentId;
+  const studentAliasKeys = sessionStudentAliasKeys({
+    role: session?.role,
+    selectedStudentId: studentId,
+    user: session?.user,
+  });
+  const studentScope = {
+    role: session?.role ?? null,
+    studentIds: studentAliasKeys,
+    identityCount: studentAliasKeys.length ? 1 : 0,
+    unscoped: false,
+  };
   const canSeeNotes = canReadRoute(session, "StudentNotes");
   const canSeePresences = canReadRoute(session, "StudentPresences");
   const canSeePayments = canReadRoute(session, "StudentPayments");
@@ -50,7 +66,7 @@ export default function StudentDetailScreen({
     }, [loadStudents, loadPresences, loadNotes, loadPayments, resourceScopeKey]),
   );
 
-  const student = studentId ? studentsData.find((item) => item.id === studentId) : undefined;
+  const student = findStudentByIdentity(studentsData, studentAliasKeys);
 
   if (!student) {
     return (
@@ -66,15 +82,15 @@ export default function StudentDetailScreen({
     );
   }
 
-  const studentNotes = notesData.filter((item) => item.studentId === student.id);
-  const studentPresences = presencesData.filter((item) => item.studentId === student.id);
+  const studentNotes = filterRowsByStudentScope(notesData, studentScope);
+  const studentPresences = filterRowsByStudentScope(presencesData, studentScope);
   const presentCount = studentPresences.filter(
     (item) => {
       const status = normalizePresenceStatus(item);
       return status === "Présent" || status === "Retard";
     },
   ).length;
-  const studentPayments = paymentsData.filter((item) => item.studentId === student.id);
+  const studentPayments = filterRowsByStudentScope(paymentsData, studentScope);
   const notesValue = metricLabelFromSnapshot(notesSnapshot, () => String(studentNotes.length));
   const presencesValue = metricLabelFromSnapshot(presencesSnapshot, () => String(presentCount));
   const paymentsDetail = metricLabelFromSnapshot(paymentsSnapshot, () => `${studentPayments.length} opération(s)`);
