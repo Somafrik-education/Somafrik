@@ -52,4 +52,13 @@ const schema = fs.readFileSync(path.join(__dirname, "../db/userRolesSchema.js"),
 assert.match(schema, /20260906_business_profile_exclusivity\.sql/);
 assert.match(schema, /20260907_student_user_id\.sql/);
 
+const userIdMigration = fs.readFileSync(
+  path.join(__dirname, "../db/migrations/20260907_student_user_id.sql"),
+  "utf8",
+);
+assert.match(userIdMigration, /students_canonical_identifier_format_check/);
+assert.match(userIdMigration, /to_jsonb\(st\) \? 'login_code'/);
+assert.doesNotMatch(userIdMigration, /DROP CONSTRAINT/i);
+assert.doesNotMatch(userIdMigration, /VALIDATE CONSTRAINT/i);
+
 console.log("audit-student-teacher-dual-profiles static OK");
