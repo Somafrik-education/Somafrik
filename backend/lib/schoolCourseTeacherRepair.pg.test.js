@@ -85,20 +85,34 @@ async function main() {
       );
     `);
 
+    // node-postgres refuse plusieurs commandes dans une requête préparée paramétrée.
+    // Chaque fixture paramétrée reste donc une commande SQL unique.
     await client.query(
-      `INSERT INTO teachers (id, school_id, status) VALUES ($1,$2,'active'),($3,$2,'active');
-       INSERT INTO classes (id, school_id, academic_year_id) VALUES ($4,$2,$5);
-       INSERT INTO subjects (id, school_id) VALUES ($6,$2);
-       INSERT INTO academic_years (id, school_id) VALUES ($5,$2);`,
-      [ids.teacher1, ids.school, ids.teacher2, ids.klass, ids.year, ids.subject],
+      "INSERT INTO academic_years (id, school_id) VALUES ($1,$2)",
+      [ids.year, ids.school],
+    );
+    await client.query(
+      "INSERT INTO teachers (id, school_id, status) VALUES ($1,$2,'active'),($3,$2,'active')",
+      [ids.teacher1, ids.school, ids.teacher2],
+    );
+    await client.query(
+      "INSERT INTO classes (id, school_id, academic_year_id) VALUES ($1,$2,$3)",
+      [ids.klass, ids.school, ids.year],
+    );
+    await client.query(
+      "INSERT INTO subjects (id, school_id) VALUES ($1,$2)",
+      [ids.subject, ids.school],
     );
 
     await client.query(
       `INSERT INTO school_courses (id, school_id, class_id, subject_id, teacher_id, course_code, status)
-       VALUES ($1,$2,$3,$4,NULL,'CRS-NULL','active');
-       INSERT INTO teacher_assignments (id, school_id, teacher_id, class_id, subject_id, academic_year_id, status)
-       VALUES ($5,$2,$6,$3,$4,$7,'active');`,
-      [ids.course, ids.school, ids.klass, ids.subject, ids.assignment1, ids.teacher1, ids.year],
+       VALUES ($1,$2,$3,$4,NULL,'CRS-NULL','active')`,
+      [ids.course, ids.school, ids.klass, ids.subject],
+    );
+    await client.query(
+      `INSERT INTO teacher_assignments (id, school_id, teacher_id, class_id, subject_id, academic_year_id, status)
+       VALUES ($1,$2,$3,$4,$5,$6,'active')`,
+      [ids.assignment1, ids.school, ids.teacher1, ids.klass, ids.subject, ids.year],
     );
 
     const repaired = await client.query(repairSql);
