@@ -32,4 +32,6 @@ export const platformApi = {
   createSubscriptionDiscount: (payload: Record<string, unknown>) => api.post("/backoffice/subscription-discounts", payload),
   patchSubscriptionDiscount: (discountId: string, payload: Record<string, unknown>) =>
     api.patch(`/backoffice/subscription-discounts/${encodeURIComponent(discountId)}`, payload),
+
+  listTrialRequests: () => api.get<unknown[]>("/backoffice/trial-requests"),
 };

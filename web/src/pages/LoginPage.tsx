@@ -19,6 +19,7 @@ import {
   FormMessage,
 } from "../components/ui/shadcn/form";
 import { getDefaultAppPath } from "../lib/superAdminAccess";
+import { marketingTrial } from "../data/marketingContent";
 import { showDemoAccounts } from "../lib/featureFlags";
 import { cn } from "../lib/utils";
 import { DEMO_ACCOUNT_GROUPS, DEMO_SCHOOL_CODE, type DemoAccount } from "../lib/demoAccounts";
@@ -277,6 +278,15 @@ export function LoginPage() {
               </Button>
             </form>
           </Form>
+
+          <p className="mt-3 text-center text-sm">
+            <Link
+              to={marketingTrial.href}
+              className="font-bold text-brand transition hover:text-brand-700"
+            >
+              {marketingTrial.label}
+            </Link>
+          </p>
 
           {showDemoAccounts ? (
             <div className="mt-3 rounded-lg border border-dashed border-line bg-slate-50/90 p-2.5">

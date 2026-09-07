@@ -67,6 +67,8 @@ import {
   SubscriptionReportsPage,
   SubscriptionSchoolsPage,
   SubscriptionsLayout,
+  TrialRequestPage,
+  TrialRequestsPage,
   StudentWorkspacePage,
   TimetableByClassPage,
   TimetableByRoomPage,
@@ -82,6 +84,7 @@ export default function App() {
       <Routes>
       <Route path="/" element={<LandingPage />} />
       <Route path="/connexion" element={<LoginPage />} />
+      <Route path="/demande-essai" element={<TrialRequestPage />} />
       <Route path="/confidentialite" element={<PrivacyPolicyPage />} />
       <Route path="/suppression-compte" element={<AccountDeletionPage />} />
       <Route
@@ -368,6 +371,7 @@ export default function App() {
           <Route path="remises" element={<SubscriptionDiscountsPage />} />
           <Route path="retards" element={<SubscriptionDelinquencyPage />} />
           <Route path="rapports" element={<SubscriptionReportsPage />} />
+          <Route path="demandes-essai" element={<TrialRequestsPage />} />
           <Route
             path="tarifs-pays"
             element={

@@ -43,7 +43,14 @@ function loginRateLimitKey(req) {
   return `${ip}|${schoolCode}|${identifier}`;
 }
 
+function trialRequestRateLimitKey(req) {
+  const email = String(req.body?.email ?? "").trim().toLowerCase();
+  const ip = req.ip || "unknown";
+  return `trial-request:${ip}|${email}`;
+}
+
 module.exports = {
   createRateLimiter,
   loginRateLimitKey,
+  trialRequestRateLimitKey,
 };

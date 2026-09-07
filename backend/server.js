@@ -79,7 +79,7 @@ const {
   scopeMvpDatasetForPrincipal,
 } = require("./lib/mvpAccess");
 const { assertProductionSecurityConfiguration } = require("./lib/demoSeedPolicy");
-const { createRateLimiter, loginRateLimitKey } = require("./lib/rateLimit");
+const { createRateLimiter, loginRateLimitKey, trialRequestRateLimitKey } = require("./lib/rateLimit");
 const {
   assertPushSelfTestAllowed,
   skipPushSelfTestPermissionCheck,
@@ -117,6 +117,12 @@ const pushSelfTestRateLimiter = createRateLimiter({
   max: Number(process.env.SOMAFRIK_PUSH_SELFTEST_RATE_MAX ?? 5),
   keyFn: (req) => `push-selftest:${String(req.principal?.sub || req.ip || "unknown")}`,
   message: "Trop de tests push. Réessayez dans une minute.",
+});
+const trialRequestRateLimiter = createRateLimiter({
+  windowMs: Number(process.env.TRIAL_REQUEST_RATE_LIMIT_WINDOW_MS ?? 60_000),
+  max: Number(process.env.TRIAL_REQUEST_RATE_LIMIT_MAX ?? 5),
+  keyFn: trialRequestRateLimitKey,
+  message: "Trop de demandes d'essai. Réessayez dans quelques minutes.",
 });
 function requirePushSelfTestEnvironment(_req, _res, next) {
   try {
@@ -489,6 +495,12 @@ app.post("/api/privacy/erasure-requests", loginRateLimiter, asyncHandler(async (
     userAgent: req.get("user-agent"),
     newValue: { requestCode: created.requestCode, status: created.status },
   });
+  res.status(201).json(created);
+}));
+
+app.post("/api/public/trial-requests", trialRequestRateLimiter, asyncHandler(async (req, res) => {
+  const { createTrialAccessRequest } = require("./lib/trialAccessRequests");
+  const created = await createTrialAccessRequest(repository, req.body ?? {});
   res.status(201).json(created);
 }));
 
@@ -2598,6 +2610,11 @@ app.get("/api/backoffice/countries", requireAuth, requirePermission("GET /api/ba
 app.get("/api/backoffice/subscriptions", requireAuth, requirePermission("GET /api/backoffice/subscriptions"), asyncHandler(async (req, res) => {
   const platform = await repository.listPlatformProjection();
   sendList(res, tenantScopeService.filterRows(platform.subscriptions ?? [], req.principal), req.query, ["schoolCode", "country", "plan", "status"]);
+}));
+
+app.get("/api/backoffice/trial-requests", requireAuth, requirePermission("GET /api/backoffice/trial-requests"), asyncHandler(async (req, res) => {
+  const { listTrialAccessRequests } = require("./lib/trialAccessRequests");
+  res.json(await listTrialAccessRequests(repository, req.principal));
 }));
 
 app.get("/api/backoffice/notifications", requireAuth, requirePermission("GET /api/backoffice/notifications"), asyncHandler(async (req, res) => {

@@ -130,6 +130,7 @@ const routePermissions = {
   "POST /api/backoffice/countries": ["Contrôler tous les pays", "ALL_PRIVILEGES"],
   "PATCH /api/backoffice/countries/:code": ["Contrôler tous les pays", "ALL_PRIVILEGES"],
   "GET /api/backoffice/subscriptions": ["Gérer abonnements", "Suivre abonnements pays", "ALL_PRIVILEGES"],
+  "GET /api/backoffice/trial-requests": ["ALL_PRIVILEGES"],
   "POST /api/backoffice/subscriptions": ["Gérer abonnements", "ALL_PRIVILEGES", "COUNTRY_PRIVILEGES"],
   "PATCH /api/backoffice/subscriptions/:subscriptionId": ["Gérer abonnements", "ALL_PRIVILEGES", "COUNTRY_PRIVILEGES"],
   "GET /api/backoffice/notifications": ["ALL_PRIVILEGES", "COUNTRY_PRIVILEGES"],

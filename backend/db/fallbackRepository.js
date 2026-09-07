@@ -52,6 +52,7 @@ class FallbackRepository {
     this.ready = false;
     this.sessions = new Map();
     this.privacyRequests = new Map();
+    this.trialAccessRequests = new Map();
     this.auditLogs = [];
     this.idempotencyRecords = new Map();
     this.backOfficeState = null;
@@ -298,6 +299,50 @@ class FallbackRepository {
       if (status && row.status !== status) return false;
       return true;
     });
+  }
+
+  async createTrialAccessRequest(row) {
+    const { randomUUID } = require("node:crypto");
+    const stored = {
+      id: randomUUID(),
+      publicRef: row.publicRef || `TRIAL-${randomUUID().slice(0, 8).toUpperCase()}`,
+      requesterName: row.requesterName || "",
+      role: row.role || "",
+      schoolName: row.schoolName || "",
+      countryIso: row.countryIso || "",
+      city: row.city || "",
+      phone: row.phone || "",
+      email: row.email || "",
+      studentBand: row.studentBand || "",
+      status: row.status || "nouvelle",
+      consentAt: row.consentAt || new Date().toISOString(),
+      createdAt: new Date().toISOString(),
+      schoolId: row.schoolId || null,
+    };
+    this.trialAccessRequests.set(stored.id, stored);
+    return stored;
+  }
+
+  async findOpenTrialRequest(email, schoolName) {
+    const wantedEmail = String(email ?? "").trim().toLowerCase();
+    const wantedSchool = String(schoolName ?? "").trim().toLowerCase();
+    const open = new Set(["nouvelle", "contactee", "qualifiee", "essai_active"]);
+    for (const row of this.trialAccessRequests.values()) {
+      if (
+        String(row.email).toLowerCase() === wantedEmail &&
+        String(row.schoolName).toLowerCase() === wantedSchool &&
+        open.has(String(row.status))
+      ) {
+        return row;
+      }
+    }
+    return null;
+  }
+
+  async listTrialAccessRequests() {
+    return [...this.trialAccessRequests.values()].sort((a, b) =>
+      String(b.createdAt).localeCompare(String(a.createdAt)),
+    );
   }
 
   async executePrivacyErasure({ requestId, actorUserId, userId, identifier, schoolCode }) {

@@ -5,6 +5,7 @@ import {
   Building2,
   CreditCard,
   FileText,
+  Inbox,
   Package,
   Percent,
   Receipt,
@@ -19,6 +20,7 @@ const SUBSCRIPTION_TABS: TabItem[] = [
   { to: "/abonnements/remises", label: "Remises", icon: Percent },
   { to: "/abonnements/retards", label: "Retards & suspensions", icon: AlertTriangle },
   { to: "/abonnements/rapports", label: "Rapports", icon: BarChart3 },
+  { to: "/abonnements/demandes-essai", label: "Demandes d'essai", icon: Inbox },
   { to: "/abonnements/tarifs-pays", label: "Tarifs pays", icon: FileText },
 ];
 
