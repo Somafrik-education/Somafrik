@@ -8,7 +8,8 @@
  *   - refuse NODE_ENV/SOMAFRIK_ENV=production
  *   - refuse un hôte non loopback (Supabase, Render, AWS, somafrik.app, …)
  *   - CREATE DATABASE uniquement vers `*_it`, puis DROP SCHEMA public
- *     seulement si current_database() = cette base IT et inet_server_addr() loopback
+ *     seulement si current_database() = cette base IT et l'hôte URL est loopback
+ *     (inet_server_addr loopback, ou IPv4 privée Docker si l'URL est localhost)
  *
  * `verify:finance-management` enchaîne la suite mémoire avec `&&` : tant que les
  * RED mémoire échouent, ce fichier n'est pas exécuté en CI. La parité PG n'est
@@ -57,12 +58,30 @@ function isLoopbackUrlHost(host) {
   return false;
 }
 
+function normalizeInetAddr(addr) {
+  return normalizeHost(addr)
+    .replace(/^::ffff:/, "")
+    .replace(/\/\d+$/, "");
+}
+
 function isLoopbackServerAddr(addr) {
-  const value = normalizeHost(addr);
+  const value = normalizeInetAddr(addr);
   if (!value) return false;
-  if (EFFECTIVE_LOOPBACK_ADDRS.has(value)) return true;
-  if (value.startsWith("::ffff:") && EFFECTIVE_LOOPBACK_ADDRS.has(value.slice("::ffff:".length))) return true;
+  return EFFECTIVE_LOOPBACK_ADDRS.has(value);
+}
+
+function isPrivateIpv4(addr) {
+  const value = normalizeInetAddr(addr);
+  const parts = value.split(".").map((part) => Number(part));
+  if (parts.length !== 4 || parts.some((n) => !Number.isInteger(n) || n < 0 || n > 255)) return false;
+  if (parts[0] === 10) return true;
+  if (parts[0] === 192 && parts[1] === 168) return true;
+  if (parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31) return true;
   return false;
+}
+
+function hostFromUrl(databaseUrl) {
+  return normalizeHost(new URL(databaseUrl).hostname);
 }
 
 function looksLikeProductionHost(host) {
@@ -106,7 +125,7 @@ function sourceUrlRefusal(databaseUrl, env = process.env) {
   return null;
 }
 
-function mayDropPublicSchema({ itDb, currentDatabase, inetServerAddr } = {}) {
+function mayDropPublicSchema({ itDb, currentDatabase, inetServerAddr, urlHost } = {}) {
   const current = String(currentDatabase ?? "").trim();
   const isolated = String(itDb ?? "").trim();
   if (!isolated || !/^[a-z][a-z0-9_]*_it$/.test(isolated)) {
@@ -121,13 +140,15 @@ function mayDropPublicSchema({ itDb, currentDatabase, inetServerAddr } = {}) {
   if (FORBIDDEN_DROP_DATABASES.has(current)) {
     return { allowed: false, reason: `current_database ${current} is forbidden as DROP target` };
   }
-  if (!isLoopbackServerAddr(inetServerAddr)) {
-    return {
-      allowed: false,
-      reason: `inet_server_addr=${inetServerAddr || "empty"} is not loopback`,
-    };
+  if (isLoopbackServerAddr(inetServerAddr)) return { allowed: true, reason: null };
+  // GitHub Actions : le client parle à localhost, Postgres Docker répond 172.18.0.2/32.
+  if (isLoopbackUrlHost(urlHost) && isPrivateIpv4(inetServerAddr)) {
+    return { allowed: true, reason: null };
   }
-  return { allowed: true, reason: null };
+  return {
+    allowed: false,
+    reason: `inet_server_addr=${inetServerAddr || "empty"} is not loopback`,
+  };
 }
 
 function isolatedDatabaseRefusal(databaseName) {
@@ -239,6 +260,28 @@ describe("FIN-CALC-RED PostgreSQL — garde-fou DROP SCHEMA", () => {
       mayDropPublicSchema({ itDb, currentDatabase: itDb, inetServerAddr: "127.0.0.1" }).allowed,
       true,
     );
+    assert.equal(
+      mayDropPublicSchema({ itDb, currentDatabase: itDb, inetServerAddr: "127.0.0.1/32" }).allowed,
+      true,
+    );
+    assert.equal(
+      mayDropPublicSchema({
+        itDb,
+        currentDatabase: itDb,
+        inetServerAddr: "172.18.0.2/32",
+        urlHost: "localhost",
+      }).allowed,
+      true,
+    );
+    assert.equal(
+      mayDropPublicSchema({
+        itDb,
+        currentDatabase: itDb,
+        inetServerAddr: "172.18.0.2/32",
+        urlHost: "db.prod.example",
+      }).allowed,
+      false,
+    );
   });
 });
 
@@ -256,6 +299,7 @@ describe("FIN-CALC-RED PostgreSQL", { skip: !DATABASE_URL }, () => {
         itDb: IT_DATABASE,
         currentDatabase: identity.rows[0]?.name,
         inetServerAddr: identity.rows[0]?.addr,
+        urlHost: hostFromUrl(DATABASE_URL),
       });
       assert.equal(decision.allowed, true, decision.reason || "isolated IT drop target");
       await pool.query("DROP SCHEMA public CASCADE");
@@ -378,6 +422,8 @@ module.exports = {
   sourceUrlRefusal,
   mayDropPublicSchema,
   isolatedDatabaseRefusal,
+  hostFromUrl,
+  isPrivateIpv4,
   looksLikeProductionHost,
   isLoopbackUrlHost,
   isLoopbackServerAddr,
