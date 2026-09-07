@@ -42,9 +42,33 @@ interface QuickPaymentModalProps {
   open: boolean;
   onClose: () => void;
   onSaved?: (payment: PaymentRecord) => void;
+  /** Préselectionne l'élève après chargement du catalogue (Impayés → encaissement). */
+  initialStudentId?: string;
 }
 
-export function QuickPaymentModal({ open, onClose, onSaved }: QuickPaymentModalProps) {
+function studentSearchResultFromOption(
+  row: PaymentRecord,
+  schools: Array<{ code?: string; name?: string }>,
+): StudentSearchResult {
+  const code = String(row.schoolCode ?? "");
+  const school = schools.find(
+    (item) => String(item.code ?? "").trim().toUpperCase() === code.trim().toUpperCase(),
+  );
+  return {
+    id: String(row.id ?? row.studentId ?? ""),
+    name: String(row.name ?? `${row.firstName ?? ""} ${row.lastName ?? ""}`.trim()),
+    matricule: String(row.matricule ?? row.studentCode ?? row.publicId ?? row.id ?? row.studentId ?? ""),
+    classId: String(row.classId ?? "").trim() || undefined,
+    classCode: String(row.classCode ?? "").trim() || undefined,
+    className: String(row.className ?? ""),
+    schoolCode: code,
+    schoolName: String(school?.name ?? code),
+    parentPhone: "",
+    parentEmail: "",
+  };
+}
+
+export function QuickPaymentModal({ open, onClose, onSaved, initialStudentId }: QuickPaymentModalProps) {
   const { session } = useAuth();
   const { state, update, refresh } = useData();
   const { activeSchoolCode: schoolCode, scopedUser } = useActiveSchool();
@@ -173,6 +197,20 @@ export function QuickPaymentModal({ open, onClose, onSaved }: QuickPaymentModalP
         setCatalogMethods(activeMethods);
         setMethod(activeMethods[0]);
         if (catalog.currency) setCatalogCurrency(catalog.currency);
+
+        const wanted = String(initialStudentId ?? "").trim();
+        if (wanted) {
+          const match = flattened.find(
+            (row) => String(row.id ?? "").trim() === wanted || String(row.studentId ?? "").trim() === wanted,
+          );
+          if (match) {
+            applySelectedStudent(
+              studentSearchResultFromOption(match, state.schools),
+              flattened,
+              Array.isArray(fees) ? fees : [],
+            );
+          }
+        }
       } catch (cause) {
         setCatalogError(cause instanceof Error ? cause.message : "Catalogue financier indisponible.");
         setOptionStudents([]);
@@ -183,15 +221,23 @@ export function QuickPaymentModal({ open, onClose, onSaved }: QuickPaymentModalP
         setCatalogLoading(false);
       }
     })();
-  }, [open, schoolCode]);
+  }, [open, schoolCode, initialStudentId]);
 
-  function selectStudent(student: StudentSearchResult) {
+  function applySelectedStudent(
+    student: StudentSearchResult,
+    roster: PaymentRecord[],
+    fees: FinanceObligationProjection[],
+  ) {
     setSelectedStudent(student);
     setSearch(student.name);
-    const options = collectStudentPaymentClasses(student.id, students);
+    const options = collectStudentPaymentClasses(student.id, roster);
     setClassId(options.length === 1 ? options[0].classId : "");
-    const open = collectOpenObligationsFromProjection(student.id, studentFees);
-    setLines([createPaymentLine(open.length === 1 ? open[0].obligationId : UNALLOCATED_TARGET)]);
+    const openRows = collectOpenObligationsFromProjection(student.id, fees);
+    setLines([createPaymentLine(openRows.length === 1 ? openRows[0].obligationId : UNALLOCATED_TARGET)]);
+  }
+
+  function selectStudent(student: StudentSearchResult) {
+    applySelectedStudent(student, students, studentFees);
   }
 
   function updateLine(id: string, patch: Partial<QuickPaymentLine>) {
@@ -342,7 +388,12 @@ export function QuickPaymentModal({ open, onClose, onSaved }: QuickPaymentModalP
         </div>
       }
     >
-      <form className="space-y-5" aria-busy={busy || catalogLoading} onSubmit={(event) => void handleSubmit(event, false)}>
+      <form
+        className="space-y-5"
+        aria-busy={busy || catalogLoading}
+        data-testid="quick-payment-modal"
+        onSubmit={(event) => void handleSubmit(event, false)}
+      >
         {catalogLoading ? (
           <p className="rounded-xl border border-line bg-slate-50 px-4 py-3 text-sm text-muted" role="status">
             Chargement du catalogue financier…
@@ -395,7 +446,10 @@ export function QuickPaymentModal({ open, onClose, onSaved }: QuickPaymentModalP
         ) : null}
 
         {selectedStudent ? (
-          <div className="rounded-xl border border-brand/20 bg-brand-50/40 p-4 text-sm">
+          <div
+            className="rounded-xl border border-brand/20 bg-brand-50/40 p-4 text-sm"
+            data-testid="quick-payment-selected-student"
+          >
             <p className="font-bold text-ink">{selectedStudent.name}</p>
             <p className="mt-1 text-muted">Matricule : {selectedStudent.matricule}</p>
             <div className="mt-3">

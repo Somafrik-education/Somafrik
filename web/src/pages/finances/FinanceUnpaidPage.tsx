@@ -34,6 +34,8 @@ import {
   isOwnUnpaidScopeOnly,
 } from "../../lib/unpaidPermissions";
 import { usePermissionContext } from "../../lib/usePermissionContext";
+import { resolveFinanceUiActions } from "../../lib/financeActionPermissions";
+import { QuickPaymentModal } from "../../components/payments/QuickPaymentModal";
 import { financeApi } from "../../lib/financeApi";
 import { createFinanceIdempotencyKey } from "../../lib/financeIdempotency";
 import { ApiError } from "../../api/client";
@@ -60,11 +62,15 @@ export function FinanceUnpaidPage() {
   const canAccess = canAccessUnpaidModule(ctx);
   const canRemind = canSendUnpaidReminder(ctx);
   const ownScopeOnly = isOwnUnpaidScopeOnly(ctx);
+  const financeActions = resolveFinanceUiActions(ctx);
+  /** Modal d'encaissement : CREATE|UPDATE + READ (GET payment-student-options). */
+  const canRegisterPayment = financeActions.canConsultPayments && financeActions.canCreatePayment;
 
   const [search, setSearch] = useState("");
   const [className, setClassName] = useState("");
   const [period, setPeriod] = useState("");
   const [detailStudentId, setDetailStudentId] = useState<string | null>(null);
+  const [paymentStudentId, setPaymentStudentId] = useState<string | null>(null);
   const [reminderRow, setReminderRow] = useState<StudentUnpaidRow | null>(null);
   const [reminderChannel, setReminderChannel] = useState<ReminderChannel>("notification");
   const [reminderRecipient, setReminderRecipient] = useState<ReminderRecipient>("Parent");
@@ -232,6 +238,16 @@ export function FinanceUnpaidPage() {
           <Button variant="secondary" size="sm" onClick={() => setDetailStudentId(row.studentId)}>
             Détail
           </Button>
+          {canRegisterPayment ? (
+            <Button
+              variant="secondary"
+              size="sm"
+              data-testid={`unpaid-register-payment-${row.studentId}`}
+              onClick={() => setPaymentStudentId(row.studentId)}
+            >
+              Enregistrer un paiement
+            </Button>
+          ) : null}
           {canRemind && !ownScopeOnly ? (
             <Button size="sm" onClick={() => openReminderModal(row)}>
               Relancer
@@ -402,6 +418,15 @@ export function FinanceUnpaidPage() {
           </div>
         ) : null}
       </Modal>
+
+      <QuickPaymentModal
+        open={Boolean(paymentStudentId)}
+        initialStudentId={paymentStudentId ?? undefined}
+        onClose={() => setPaymentStudentId(null)}
+        onSaved={() => {
+          void refresh();
+        }}
+      />
 
       <Modal
         open={Boolean(reminderRow)}
