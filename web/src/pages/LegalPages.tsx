@@ -73,8 +73,10 @@ export function PrivacyPolicyPage() {
           Les demandes d’essai (nom du demandeur, rôle, nom de l’établissement, pays, ville, téléphone,
           e-mail et effectif) sont traitées pour qu’un responsable Somafrik contacte le prospect et active
           un essai Standard de 30 jours. Aucun compte n’est créé automatiquement depuis le formulaire public.
-          Après enregistrement, un e-mail de notification est envoyé à contact@somafrik.app (champs du prospect
-          uniquement, sans pièce jointe). Une indisponibilité du transport e-mail ne supprime pas la demande.
+          Après enregistrement, si le transport SMTP est configuré, un e-mail de notification peut être
+          envoyé à contact@somafrik.app (destinataire canonique, modifiable par l’opérateur ; champs du
+          prospect uniquement, sans pièce jointe). Sans transport configuré, ou en cas d’indisponibilité,
+          la demande reste enregistrée.
           Les leads non convertis sont conservés 24 mois au maximum, puis supprimés ou anonymisés.
           Contact : {CONTACT_EMAIL}.
         </p>
