@@ -14,6 +14,7 @@ Les secrets (`DATABASE_URL`, clés) ne sont **pas** recopiés. Pour Supabase, la
 | **Supabase** | PostgreSQL | Données métier | **AWS**, hostname `aws-0-<région>.pooler.supabase.com` (modèle officiel). La région **live** est ce `<région>` (ex. `eu-central-1` = Francfort). Elle **n’est pas** dans git (l’exemple d’env utilise le marqueur `REGION` ; l’agent DEV n’a vu que `127.0.0.1`). Ops : extraire `new URL(DATABASE_URL).hostname` sur Render et coller **uniquement le hostname** ci-dessous. | [DPA Supabase](https://supabase.com/downloads/docs/Supabase+DPA+260317.pdf) (SCC modules processeur, UK Addendum) ; résidence primaire = région projet choisie au dashboard | révocation Data API ; dumps = politique backup prestataire | `.env.preproduction.example` (schéma d’hôte) ; extraction hostname live **à coller** : `_pooler hostname redacted — ops_` |
 | **Expo** | Push Android + EAS | Jeton push, métadonnées d’appareil / build | **États-Unis, GCP** — documentation Expo : le service de push exige la connectivité vers GCP **United States** ([docs.expo.dev — sending notifications](https://docs.expo.dev/push-notifications/sending-notifications/)) | Conditions Expo : SCC module 2 (responsable → sous-traitant) pour les données d’usage du service ; [Trust / DPF](https://expo.dev/trust) ; DPA entreprise sur demande | révocation du jeton / rebuild | doc prestataire 5 sept. 2026 ; code `Mobile/` push devices |
 | **GitHub** | CI / dépôt | Code, journaux CI (**pas** le dossier scolaire) | États-Unis + CDN (github.com) | [DPA GitHub](https://docs.github.com/en/site-policy/privacy-policies/github-dpa) | rétention logs CI | `.github/workflows/` |
+| **SMTP transactionnel (opérateur)** | Notification e-mail des demandes d’essai vers `contact@somafrik.app` | Champs prospect uniquement (nom, rôle, établissement, pays, ville, téléphone, e-mail, effectif, référence publique) — **pas** le dossier scolaire | Région du prestataire SMTP choisi par l’opérateur (transport générique `nodemailer` ; ex. Resend, Amazon SES, SendGrid SMTP) | DPA / SCC du prestataire retenu ; pas de secret SMTP dans git | logs et rétention du prestataire | `backend/lib/trialAccessRequestNotification.js` ; variables `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASSWORD`, `MAIL_FROM`, `TRIAL_REQUEST_NOTIFY_TO` |
 
 **Hostname Supabase live (à renseigner par ops, sans mot de passe) :**
 
@@ -23,7 +24,9 @@ Les secrets (`DATABASE_URL`, clés) ne sont **pas** recopiés. Pour Supabase, la
 
 ## Non utilisés dans le backend actuel
 
-Twilio, WhatsApp Cloud, SMTP/SendGrid, Firebase, publicité, analytics SDK.
+Twilio, WhatsApp Cloud, Firebase, publicité, analytics SDK.
+
+Aucun fournisseur e-mail n’est figé dans le code : le transport est SMTP générique (`nodemailer`). SendGrid / Resend / SES ne sont **pas** des dépendances npm ; ils n’entrent dans le traitement que si l’opérateur renseigne `SMTP_HOST`.
 
 Anciens documents mentionnent Vercel pour le frontend ; la SoT hébergement Web+API est **Render** (preuve DNS ci-dessus). À aligner ops si un DNS legacy subsiste.
 

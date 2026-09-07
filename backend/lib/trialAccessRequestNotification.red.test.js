@@ -140,6 +140,22 @@ test("le module de notification ne crée ni school, ni user, ni subscription", (
   assert.doesNotMatch(src, /upsertSubscription|insertSubscription/);
 });
 
+test("notifyTrialAccessRequest ne jette pas si SMTP est absent", async () => {
+  const prevHost = process.env.SMTP_HOST;
+  const prevFrom = process.env.MAIL_FROM;
+  delete process.env.SMTP_HOST;
+  delete process.env.MAIL_FROM;
+  const { notifyTrialAccessRequest } = require("./trialAccessRequestNotification");
+  await notifyTrialAccessRequest({
+    ...VALID,
+    publicRef: "ESS-00000001",
+  });
+  if (prevHost === undefined) delete process.env.SMTP_HOST;
+  else process.env.SMTP_HOST = prevHost;
+  if (prevFrom === undefined) delete process.env.MAIL_FROM;
+  else process.env.MAIL_FROM = prevFrom;
+});
+
 test("Mobile inchangé pour la notification e-mail", () => {
   const walk = (dir, acc = []) => {
     if (!fs.existsSync(dir)) return acc;

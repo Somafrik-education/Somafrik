@@ -43,7 +43,7 @@ Personnes : élèves (souvent mineurs), représentants légaux, personnel scolai
 
 Données : identité, identifiants, coordonnées, rôles, connexion/sécurité, scolarité (inscriptions, classes, présences, notes, bulletins), communications et PJ, paiements de scolarité, jetons push.
 
-**Pas** de publicité, analytics SDK, SMS, WhatsApp ou e-mail transactionnel embarqués dans le backend actuel.
+**Pas** de publicité, analytics SDK, SMS ou WhatsApp embarqués. Un e-mail transactionnel peut notifier `contact@somafrik.app` après une demande d’essai (champs prospect uniquement ; transport SMTP optionnel).
 
 ### 2.3 Destinataires et sous-traitants ultérieurs
 

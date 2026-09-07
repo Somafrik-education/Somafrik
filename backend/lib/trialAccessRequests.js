@@ -16,7 +16,7 @@ function asTrimmed(value) {
   return String(value ?? "").trim();
 }
 
-async function createTrialAccessRequest(repo, payload = {}) {
+async function createTrialAccessRequest(repo, payload = {}, options = {}) {
   if (!payload.consent) {
     throw createHttpError(400, "Le consentement est obligatoire.");
   }
@@ -48,7 +48,20 @@ async function createTrialAccessRequest(repo, payload = {}) {
     status: "nouvelle",
   };
 
-  return repo.createTrialAccessRequest(row);
+  const created = await repo.createTrialAccessRequest(row);
+  const notify =
+    typeof options.notifyTrialRequest === "function"
+      ? options.notifyTrialRequest
+      : require("./trialAccessRequestNotification").notifyTrialAccessRequest;
+  try {
+    await notify(created);
+  } catch (error) {
+    console.error(
+      `[trial-request] notification failed (publicRef=${created.publicRef || ""}):`,
+      error && error.message ? error.message : error,
+    );
+  }
+  return created;
 }
 
 async function listTrialAccessRequests(repo, principal) {

@@ -2,6 +2,7 @@ import { FormEvent, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { API_URL } from "../lib/apiUrl";
 import { marketingSkipLink } from "../data/marketingContent";
+import { FRANCOPHONE_AFRICA_COUNTRIES } from "../data/francophoneAfricaCountries";
 import { MarketingHeader } from "../components/marketing/MarketingHeader";
 import { MarketingFooter } from "../components/marketing/MarketingFooter";
 
@@ -12,19 +13,6 @@ const ROLES = [
   { value: "promoteur", label: "Promoteur" },
   { value: "directeur", label: "Directeur" },
   { value: "administrateur", label: "Administrateur" },
-] as const;
-
-const COUNTRIES = [
-  { iso: "CD", label: "RDC" },
-  { iso: "CG", label: "Congo" },
-  { iso: "CI", label: "Côte d'Ivoire" },
-  { iso: "CM", label: "Cameroun" },
-  { iso: "SN", label: "Sénégal" },
-  { iso: "BJ", label: "Bénin" },
-  { iso: "TG", label: "Togo" },
-  { iso: "GA", label: "Gabon" },
-  { iso: "ML", label: "Mali" },
-  { iso: "BF", label: "Burkina Faso" },
 ] as const;
 
 const STUDENT_BANDS = ["1-50", "50-100", "100-300", "300-800", "800+"] as const;
@@ -143,7 +131,7 @@ export function TrialRequestPage() {
           <div className="grid gap-4 sm:grid-cols-2">
             <Field label="Pays" htmlFor="countryIso">
               <select id="countryIso" name="countryIso" required className={inputClass} defaultValue="CD">
-                {COUNTRIES.map((country) => (
+                {FRANCOPHONE_AFRICA_COUNTRIES.map((country) => (
                   <option key={country.iso} value={country.iso}>
                     {country.label}
                   </option>

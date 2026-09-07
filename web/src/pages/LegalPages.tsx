@@ -21,7 +21,7 @@ function LegalLayout({ title, children }: { title: string; children: React.React
       <main className="mx-auto max-w-4xl px-5 py-10">
         <article className="rounded-2xl bg-white p-6 shadow-sm sm:p-10">
           <h1 className="text-3xl font-extrabold text-slate-950">{title}</h1>
-          <p className="mt-2 text-sm text-slate-500">Dernière mise à jour : 4 septembre 2026</p>
+          <p className="mt-2 text-sm text-slate-500">Dernière mise à jour : 7 septembre 2026</p>
           <div className="mt-8 space-y-7 leading-7 text-slate-700">{children}</div>
         </article>
       </main>
@@ -73,6 +73,8 @@ export function PrivacyPolicyPage() {
           Les demandes d’essai (nom du demandeur, rôle, nom de l’établissement, pays, ville, téléphone,
           e-mail et effectif) sont traitées pour qu’un responsable Somafrik contacte le prospect et active
           un essai Standard de 30 jours. Aucun compte n’est créé automatiquement depuis le formulaire public.
+          Après enregistrement, un e-mail de notification est envoyé à contact@somafrik.app (champs du prospect
+          uniquement, sans pièce jointe). Une indisponibilité du transport e-mail ne supprime pas la demande.
           Les leads non convertis sont conservés 24 mois au maximum, puis supprimés ou anonymisés.
           Contact : {CONTACT_EMAIL}.
         </p>
@@ -81,8 +83,9 @@ export function PrivacyPolicyPage() {
         <h2 className="text-xl font-bold text-slate-950">Destinataires et sous-traitants</h2>
         <p>
           Personnes habilitées de l’établissement ; API Somafrik ; hébergement Render (Oregon, États-Unis) ;
-          base PostgreSQL fournie par Supabase (région AWS du projet) ; notifications Expo Push (États-Unis).
-          Les données ne sont pas vendues. Aucun prestataire de publicité, d’analytique, de SMS ou de messagerie
+          base PostgreSQL fournie par Supabase (région AWS du projet) ; notifications Expo Push (États-Unis) ;
+          transport SMTP transactionnel configuré par l’opérateur (notification des demandes d’essai uniquement).
+          Les données ne sont pas vendues. Aucun prestataire de publicité, d’analytique, de SMS ou de WhatsApp
           n’est branché sur l’application.
         </p>
       </section>
@@ -90,9 +93,10 @@ export function PrivacyPolicyPage() {
         <h2 className="text-xl font-bold text-slate-950">Transferts hors EEE</h2>
         <p>
           Render, Supabase et Expo impliquent des traitements aux États-Unis ou, pour la base, dans la région AWS
-          du projet. Les garanties applicables sont les accords de sous-traitance des prestataires, les clauses
-          contractuelles types et, le cas échéant, le Data Privacy Framework. Aucun transfert supplémentaire n’est
-          activé par l’application (pas de SMS, WhatsApp ou e-mail transactionnel embarqué).
+          du projet. Un e-mail transactionnel de notification des demandes d’essai peut transiter par le prestataire
+          SMTP configuré (région selon l’opérateur). Les garanties applicables sont les accords de sous-traitance
+          des prestataires, les clauses contractuelles types et, le cas échéant, le Data Privacy Framework.
+          Pas de SMS ni WhatsApp embarqués.
         </p>
       </section>
       <section>
