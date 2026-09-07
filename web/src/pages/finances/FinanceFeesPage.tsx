@@ -148,7 +148,7 @@ export function FinanceFeesPage() {
     setBusy(true);
     try {
       await action();
-      await refresh();
+      await refresh(["feeGrids"]);
       showToast(message, "success");
     } catch (error) {
       showToast(error instanceof Error ? error.message : "Échec de la synchronisation", "error");
@@ -301,7 +301,7 @@ export function FinanceFeesPage() {
         idempotencyKey: applyIntentionRef.current.get(grid.id),
       });
       applyIntentionRef.current.set(grid.id, createFinanceIdempotencyKey());
-      await refresh();
+      await refresh(["feeGrids", "studentFees"]);
       if (!result.created) {
         showToast("Aucun frais généré", "error");
         return;

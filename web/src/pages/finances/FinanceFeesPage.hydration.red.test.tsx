@@ -401,6 +401,51 @@ describe("FinanceFeesPage — création grille vs lecture (RED)", () => {
     expect(rows[0]?.className).toBe(CLASS_A);
   });
 
+  it("même schoolId, codes établissement différents → grille visible", () => {
+    const rows = scopedFeeGrids(sessionActor.user, {
+      feeGrids: [
+        {
+          id: "FEEGRID-ALIAS",
+          schoolId: SCHOOL_ID_A,
+          schoolCode: LOGIN_A,
+          className: CLASS_A,
+          academicYear: ACADEMIC_YEAR,
+          currency: "CDF",
+          status: "Brouillon",
+        },
+      ],
+    } as never);
+    expect(sessionActor.user.schoolCode).toBe(LEFTOVER_A);
+    expect(sessionActor.user.schoolCode).not.toBe(LOGIN_A);
+    expect(rows).toHaveLength(1);
+  });
+
+  it("schoolId différent même si le code ressemble à un alias → jamais visible", () => {
+    const rows = scopedFeeGrids(sessionActor.user, {
+      feeGrids: [
+        {
+          id: "FEEGRID-SPOOF",
+          schoolId: SCHOOL_ID_B,
+          schoolCode: LOGIN_A,
+          className: CLASS_A,
+          academicYear: ACADEMIC_YEAR,
+          currency: "CDF",
+          status: "Brouillon",
+        },
+        {
+          id: "FEEGRID-LEFTOVER-SPOOF",
+          schoolId: SCHOOL_ID_B,
+          schoolCode: LEFTOVER_A,
+          className: "6ème Bravo",
+          academicYear: ACADEMIC_YEAR,
+          currency: "BIF",
+          status: "Brouillon",
+        },
+      ],
+    } as never);
+    expect(rows).toHaveLength(0);
+  });
+
   it("création d'une grille pour 1ère Primaire A : succès API puis visibilité dans le référentiel", async () => {
     renderFeesTree();
     await createGridViaUi();

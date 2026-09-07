@@ -12,6 +12,7 @@ import type {
 import { getSchoolAcademicLists } from "./academicConfig";
 import { scopedStudents } from "./establishment";
 import { normalize } from "./format";
+import { isSchoolScopedRole, resolveSessionSchoolIdentity, sameSchoolId } from "./schoolCanonicalIdentity";
 
 export const FEE_GRID_STATUSES: FeeGridStatus[] = ["Brouillon", "Active", "Désactivée", "Clôturée"];
 export const STUDENT_FEE_STATUSES: StudentFeeStatus[] = [
@@ -60,31 +61,48 @@ export function resolveSchoolCurrency(state: BackOfficeState, schoolCode: string
   return String(country?.currency ?? school?.currency ?? "").trim().toUpperCase();
 }
 
-function scopedSchoolCode(user: SessionUser | null): string | null {
-  const code = String(user?.schoolCode ?? "").trim();
-  if (!code || code === "*") return null;
-  return code;
+type FinanceTenantRow = {
+  schoolId?: string;
+  schoolCode?: string;
+};
+
+function sessionSchoolCodeAliases(user: SessionUser): Set<string> {
+  const aliases = new Set<string>();
+  for (const value of [user.schoolCode, user.schoolPublicCode]) {
+    const next = normalize(value);
+    if (next && next !== "*") aliases.add(next);
+  }
+  return aliases;
+}
+
+/** Tenant Finance : schoolId membership d'abord. Les codes leftover/login_code ne sont que des alias. */
+export function financeRowMatchesTenant(row: FinanceTenantRow, user: SessionUser): boolean {
+  const identity = resolveSessionSchoolIdentity(user);
+  const rowSchoolId = String(row.schoolId ?? "").trim();
+  if (identity?.schoolId) {
+    if (rowSchoolId) return sameSchoolId(rowSchoolId, identity.schoolId);
+    const rowCode = normalize(row.schoolCode);
+    return Boolean(rowCode && sessionSchoolCodeAliases(user).has(rowCode));
+  }
+  return false;
+}
+
+function scopedFinanceRows<T extends FinanceTenantRow>(user: SessionUser | null, rows: T[]): T[] {
+  if (!user) return [];
+  if (!isSchoolScopedRole(user.role)) return rows;
+  return rows.filter((row) => financeRowMatchesTenant(row, user));
 }
 
 export function scopedFeeGrids(user: SessionUser | null, state: BackOfficeState): FeeGrid[] {
-  const rows = state.feeGrids ?? [];
-  const code = scopedSchoolCode(user);
-  if (!code) return rows;
-  return rows.filter((row) => normalize(row.schoolCode) === normalize(code));
+  return scopedFinanceRows(user, state.feeGrids ?? []);
 }
 
 export function scopedSchoolFeeItems(user: SessionUser | null, state: BackOfficeState): SchoolFeeItem[] {
-  const rows = state.schoolFeeItems ?? [];
-  const code = scopedSchoolCode(user);
-  if (!code) return rows;
-  return rows.filter((row) => normalize(row.schoolCode) === normalize(code));
+  return scopedFinanceRows(user, state.schoolFeeItems ?? []);
 }
 
 export function scopedStudentFees(user: SessionUser | null, state: BackOfficeState): StudentFee[] {
-  const rows = state.studentFees ?? [];
-  const code = scopedSchoolCode(user);
-  if (!code) return rows;
-  return rows.filter((row) => normalize(row.schoolCode) === normalize(code));
+  return scopedFinanceRows(user, state.studentFees ?? []);
 }
 
 /** Gestion des grilles — permissions effectives uniquement (F7). */
