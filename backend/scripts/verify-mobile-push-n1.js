@@ -118,6 +118,8 @@ function sourceGuards() {
   assert.match(httpTest, /preview → backend preproduction : accepté/);
   assert.match(httpTest, /preview → backend production : rejeté/);
   assert.match(httpTest, /self-test préprod protégé par permission/);
+  assert.match(httpTest, /JWT Push:TEST ignoré ; RBAC live enseignant sans Push:TEST/);
+  assert.match(httpTest, /même user \+ même école → token ciblé/);
   assert.match(httpTest, /préprod sans flag interdit le self-test/);
   assert.match(httpTest, /SOMAFRIK_PUSH_SELFTEST_ENABLED: "false"/);
   assert.match(httpTest, /delete env\.SOMAFRIK_PUSH_SELFTEST_ENABLED/);

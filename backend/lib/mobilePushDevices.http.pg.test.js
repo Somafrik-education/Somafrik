@@ -218,6 +218,13 @@ async function main() {
       roleKeys: ["TEACHER"],
       permissions: [],
     });
+    const tokenAJwtPushTest = mintAccess(tokens, {
+      sub: USER_A,
+      schoolCode: "SCH-PUSH-A",
+      role: "Enseignant",
+      roleKeys: ["TEACHER"],
+      permissions: ["Push:TEST"],
+    });
     const tokenB = mintAccess(tokens, {
       sub: USER_B,
       schoolCode: "SCH-PUSH-A",
@@ -367,6 +374,16 @@ async function main() {
     });
     assert.equal(teacherDenied.status, 403, "self-test préprod protégé par permission");
     assert.equal(mock.state.sends.length, 0, "enseignant : aucun appel Expo");
+
+    // Cause 65f13644 L438 : JWT Push:TEST n'est pas l'autorité (requirePermission overlaye le RBAC live).
+    // Ne pas élargir TEACHER. Le 200 ci-dessous reste l'acteur SUPER_ADMIN déjà autorisé.
+    const jwtPushTestDenied = await request("/mobile/push-devices/test", {
+      method: "POST",
+      token: tokenAJwtPushTest,
+      body: { confirm: TEST_CONFIRM },
+    });
+    assert.equal(jwtPushTestDenied.status, 403, "JWT Push:TEST ignoré ; RBAC live enseignant sans Push:TEST");
+    assert.equal(mock.state.sends.length, 0, "JWT Push:TEST : aucun appel Expo");
 
     const activeA = await pool.query(
       `SELECT expo_push_token, user_id, backend_environment, revoked_at FROM mobile_push_devices WHERE user_id = $1 ORDER BY created_at`,
