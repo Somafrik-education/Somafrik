@@ -38,7 +38,7 @@ function sessionUserMatchesCreator(user: SessionUser | null | undefined, created
   const creator = normalizeIdentity(createdBy);
   if (!creator) return false;
   const row = user as SessionUser & { userCode?: string };
-  return [row.publicId, row.permanentId, row.id, row.identifier, row.userCode]
+  return [row.publicId, row.id, row.identifier, row.userCode]
     .map(normalizeIdentity)
     .filter(Boolean)
     .includes(creator);
