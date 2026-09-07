@@ -27,6 +27,7 @@ import {
   MessagesConversationsPage,
   AnnouncementsPage,
   FinanceFeesPage,
+  FinanceIndexRedirect,
   FinanceUnpaidPage,
   FinancesLayout,
   GradesEvaluationsPage,
@@ -241,15 +242,36 @@ export default function App() {
         <Route
           path="/finances"
           element={
-            <PermissionRoute view="payments">
+            <PermissionRoute view={["payments", "fees", "unpaid"]}>
               <FinancesLayout />
             </PermissionRoute>
           }
         >
-          <Route index element={<Navigate to="paiements" replace />} />
-          <Route path="paiements" element={<EntityPage entity="payments" />} />
-          <Route path="frais" element={<FinanceFeesPage />} />
-          <Route path="impayes" element={<FinanceUnpaidPage />} />
+          <Route index element={<FinanceIndexRedirect />} />
+          <Route
+            path="paiements"
+            element={
+              <PermissionRoute view="payments">
+                <EntityPage entity="payments" />
+              </PermissionRoute>
+            }
+          />
+          <Route
+            path="frais"
+            element={
+              <PermissionRoute view="fees">
+                <FinanceFeesPage />
+              </PermissionRoute>
+            }
+          />
+          <Route
+            path="impayes"
+            element={
+              <PermissionRoute view="unpaid">
+                <FinanceUnpaidPage />
+              </PermissionRoute>
+            }
+          />
         </Route>
         {/* Communication : pages autonomes accessibles via les icônes du Topbar */}
         <Route
