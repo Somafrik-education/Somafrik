@@ -32,6 +32,7 @@ export const DOMAIN_KEYS = [
   "payments",
   "paymentStatuses",
   "feeGrids",
+  "schoolFeeItems",
   "studentFees",
   "notes",
   "evaluations",
@@ -120,6 +121,9 @@ function createDomainLoaders(options: LoadDomainsOptions = {}): Record<DomainKey
       paymentStatuses: (await financeApi.listPaymentStatuses()) as BackOfficeState["paymentStatuses"],
     }),
     feeGrids: async () => ({ feeGrids: (await financeApi.listFeeGrids()) as BackOfficeState["feeGrids"] }),
+    schoolFeeItems: async () => ({
+      schoolFeeItems: (await financeApi.listSchoolFeeItems()) as BackOfficeState["schoolFeeItems"],
+    }),
     studentFees: async () => ({
       studentFees: (await financeApi.listStudentFees()) as BackOfficeState["studentFees"],
     }),
