@@ -107,6 +107,9 @@ run("npm", ["--prefix", "web", "run", "test", "--",
   "src/lib/financeRouteAccess.test.ts",
   "src/pages/finances/financeRoutes.rbac.test.tsx",
   "src/pages/finances/FinanceUnpaidPage.registerPayment.test.tsx",
+  "src/lib/financePaymentWrite.studentIdentity.test.ts",
+  "src/pages/finances/FinanceUnpaidPage.fastPayment.test.tsx",
+  "src/components/payments/QuickPaymentModal.fastStudent.test.tsx",
 ], "web F7 UX tests");
 
 console.log("verify-finance-ux OK");
