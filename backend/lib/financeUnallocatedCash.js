@@ -8,6 +8,8 @@
  * leftover === amount → statut « Non imputé », jamais « Payé ».
  * 0 < imputé < encaissé (dette ciblée soldée + trop-perçu) → « Trop-perçu »,
  *   jamais « Partiel » ni le vocabulaire de créance « Partiellement payé ».
+ * leftover > 0 n'arrive au call-site createPayment que si allocateAmount a
+ *   déjà soldé toutes les obligations ciblées (min(open, remaining) jusqu'à épuisement).
  * leftover === 0 → « Payé » ou « Partiel » selon la dette couverte.
  */
 

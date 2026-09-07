@@ -117,4 +117,10 @@ describe("FIN-CALC-RED-015 — projections Web d'une obligation soldée", () => 
     expect(financePaymentStatusLabel(payment.status)).not.toBe("Partiellement payé");
     expect(financePaymentStatusLabel("Partiel")).not.toBe(financeObligationStatusLabel("Partiellement payé"));
   });
+
+  it("FIN-CALC-GREEN-016 Partiel UI = Partiellement imputé, jamais Trop-perçu", () => {
+    expect(financePaymentStatusLabel("Partiel")).toBe("Partiellement imputé");
+    expect(financePaymentStatusLabel("Trop-perçu")).toBe("Trop-perçu");
+    expect(financePaymentStatusLabel("Partiel")).not.toBe("Trop-perçu");
+  });
 });

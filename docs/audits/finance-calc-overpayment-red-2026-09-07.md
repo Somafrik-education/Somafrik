@@ -155,7 +155,7 @@ Autorisée par le CTO après HOLD merge. Runtime modifié uniquement pour sépar
 2. `resolvePaymentStatus` / `presentPaymentStatus` : leftover après solde des cibles → **« Trop-perçu »**, jamais « Partiel ».  
 3. Web/Mobile : `financePaymentStatusLabel("Partiel")` → **« Partiellement imputé »**, plus « Partiellement payé ».  
 4. `mapBoStatusToDb("Trop-perçu")` → `paid` (F4 exige `payment_status=paid` pour imputer).  
-5. **RED-006** : contrat ajusté → **409** `FINANCE_OBLIGATION_NOT_OPEN` si `obligationId` cible une dette soldée.
+6. **FIN-CALC-GREEN-016** : leftover + dette *ciblée* encore ouverte est **impossible** dans `allocateAmount` (`min(open, remaining)` jusqu'à épuisement). 50 reçu / dette ciblée 100 → imputé 50, leftover 0, reste 50, paiement **Partiel** (UI « Partiellement imputé »), pas Trop-perçu. Pendant : 50 reçu / dette ciblée 30 → Trop-perçu.
 
 Règles nettes :
 

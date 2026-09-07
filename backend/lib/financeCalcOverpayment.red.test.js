@@ -7,6 +7,8 @@
  */
 const { describe, it } = require("node:test");
 const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const path = require("path");
 const { createFinanceMemoryStore } = require("../db/financeMemoryStore");
 const { studentMatchesClassScope, money } = require("./financeManagement");
 const {
@@ -19,6 +21,7 @@ const {
   presentPaymentStatus,
   projectPaymentCash,
   PARTIAL_STATUS,
+  OVERPAYMENT_STATUS,
 } = require("./financeUnallocatedCash");
 const { withIdempotency, IdempotencyService } = require("../services/idempotencyService");
 
@@ -545,5 +548,64 @@ describe("FIN-CALC-RED — trop-perçu / imputation / statuts", () => {
     assert.equal(money(after.balance), 0);
     assert.equal(after.status, "Payé");
     assert.notEqual(payment.status, PARTIAL_STATUS);
+  });
+
+  it("FIN-CALC-GREEN-016 leftover+dette ciblée ouverte est impossible : 50/100 impute tout, Partiel, pas Trop-perçu", async () => {
+    const store = createStore();
+    const before = await seedObligation(store, { amount: 100 });
+    const payment = await store.createSchoolPayment(
+      {
+        studentId: STUDENT,
+        items: [{ obligationId: before.id, amount: 50 }],
+        method: "Espèces",
+        date: "2026-09-07",
+      },
+      admin,
+    );
+    assertCashIdentity(payment, { received: 50, allocated: 50, unallocated: 0 });
+    const after = (await store.listFinanceStudentFees(admin)).find((row) => row.id === before.id);
+    assert.equal(money(after.balance), 50);
+    assert.notEqual(after.status, "Payé");
+    assert.equal(after.status, "Partiellement payé");
+    assert.equal(payment.status, PARTIAL_STATUS);
+    assert.notEqual(payment.status, OVERPAYMENT_STATUS);
+    assert.notEqual(money(payment.allocatedAmount), 30);
+    assert.notEqual(money(payment.unallocatedAmount), 20);
+    assert.notEqual(money(after.balance), 70);
+  });
+
+  it("FIN-CALC-GREEN-016 pendant : 50 reçu / dette ciblée 30 → imputé 30, leftover 20, Trop-perçu", async () => {
+    const store = createStore();
+    const before = await seedObligation(store, { amount: 30 });
+    const payment = await store.createSchoolPayment(
+      {
+        studentId: STUDENT,
+        items: [{ obligationId: before.id, amount: 50 }],
+        method: "Espèces",
+        date: "2026-09-07",
+      },
+      admin,
+    );
+    assertCashIdentity(payment, { received: 50, allocated: 30, unallocated: 20 });
+    const after = (await store.listFinanceStudentFees(admin)).find((row) => row.id === before.id);
+    assert.equal(money(after.balance), 0);
+    assert.equal(after.status, "Payé");
+    assert.equal(payment.status, OVERPAYMENT_STATUS);
+    assert.notEqual(payment.status, PARTIAL_STATUS);
+  });
+
+  it("FIN-CALC-GREEN-016 call-site : leftover allocateAmount seulement après solde des cibles", () => {
+    const src = fs.readFileSync(path.join(__dirname, "financeService.js"), "utf8");
+    const allocateStart = src.indexOf("function allocateAmount(");
+    const allocateEnd = src.indexOf("function reverseAllocationsOnFees(");
+    assert.ok(allocateStart >= 0 && allocateEnd > allocateStart);
+    const allocate = src.slice(allocateStart, allocateEnd);
+    assert.match(allocate, /const applied = Math\.min\(open, remaining\)/);
+    assert.match(allocate, /leftover: remaining/);
+    assert.doesNotMatch(allocate, /skip|partialAlloc|capAlloc/i);
+    assert.match(
+      src,
+      /resolveUnallocatedPaymentStatus\(totalAmount, remainingBefore, method, conservation\.unallocated\)/,
+    );
   });
 });
