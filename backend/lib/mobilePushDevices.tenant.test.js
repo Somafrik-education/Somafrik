@@ -155,12 +155,13 @@ test("self-test utilise l'école de session ; spoof client et session * refusés
   );
   assert.deepEqual(targeted, [TOKEN_A], "session * : pas de fan-out multi-écoles");
 
+  const spoofSchoolId = await store.resolveSchoolId("SCH-B");
   await assert.rejects(
     () =>
       sendSelfTest(
         store,
         principalA,
-        { confirm: TEST_CONFIRM, schoolId: await store.resolveSchoolId("SCH-B") },
+        { confirm: TEST_CONFIRM, schoolId: spoofSchoolId },
         pushClient,
         env,
       ),
