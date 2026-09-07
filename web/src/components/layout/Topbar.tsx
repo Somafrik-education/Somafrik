@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { NavLink } from "react-router-dom";
+import { NavLink, useLocation } from "react-router-dom";
 import { Bell, LogOut, Mail, Megaphone, Menu, RefreshCw } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
 import { useData } from "../../context/DataContext";
@@ -11,6 +11,7 @@ import { useAnnouncementsUnreadCount } from "../../lib/announcementsRead";
 import { useInternalNotificationsUnreadCount } from "../../lib/internalNotificationsRead";
 import { canReadView } from "../../lib/permissions";
 import { usePermissionContext } from "../../lib/usePermissionContext";
+import { domainsForPath } from "../../lib/routeDomainMap";
 import { Button } from "../ui/Button";
 import { GlobalSearch } from "./GlobalSearch";
 
@@ -48,6 +49,7 @@ function TopbarIcon({
 }
 
 export function Topbar({ title, onMenuOpen }: { title: string; onMenuOpen?: () => void }) {
+  const location = useLocation();
   const { session, logout } = useAuth();
   const { state, loading, error, refresh } = useData();
   const { scopedUser, activeSchoolCode } = useActiveSchool();
@@ -106,7 +108,10 @@ export function Topbar({ title, onMenuOpen }: { title: string; onMenuOpen?: () =
         <Button
           variant="secondary"
           size="sm"
-          onClick={() => void refresh()}
+          onClick={() => {
+            const domains = domainsForPath(location.pathname, ctx);
+            void refresh(domains.length > 0 ? domains : undefined);
+          }}
           disabled={loading}
           aria-label={loading ? "Synchronisation en cours" : "Rafraîchir les données"}
           className="px-2.5 sm:px-3"

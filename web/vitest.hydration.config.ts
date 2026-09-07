@@ -38,6 +38,7 @@ export default defineConfig({
     setupFiles: ["./src/design-system/test/setup.ts"],
     include: [
       "src/context/*.hydration.red.test.tsx",
+      "src/pages/UsersPage.hydration.red.test.tsx",
       "../Mobile/src/context/AdminDataContext.hydration.red.test.tsx",
     ],
     css: false,

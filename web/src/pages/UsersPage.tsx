@@ -1,4 +1,4 @@
-import { useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { useAuth } from "../context/AuthContext";
 import { useActiveSchool } from "../context/ActiveSchoolContext";
 import { useData } from "../context/DataContext";
@@ -77,7 +77,7 @@ function toCsv(users: UserAccount[]): string {
 export function UsersPage() {
   const { session } = useAuth();
   const { scopedUser, activeSchoolCode } = useActiveSchool();
-  const { state, refresh, error: dataError, scopeError } = useData();
+  const { state, refresh, ensureDomains, loading, error: dataError, scopeError } = useData();
   const ctx = usePermissionContext();
   const scopeUser = scopedUser ?? session?.user ?? null;
   const { showToast } = useToast();
@@ -96,6 +96,10 @@ export function UsersPage() {
   const school = getCurrentSchool(scopeUser, state);
   const schoolCode = activeSchoolCode || scopeUser?.schoolCode;
   const { canCreate, canUpdate, canSuspend } = useFeaturePermissions("Utilisateurs");
+
+  useEffect(() => {
+    void ensureDomains(["users"], { schoolCode: schoolCode || undefined }).catch(() => undefined);
+  }, [ensureDomains, schoolCode]);
 
   const [search, setSearch] = useState("");
   const [roleFilter, setRoleFilter] = useState("");
@@ -178,7 +182,7 @@ export function UsersPage() {
         throw error;
       }
       try {
-        await refresh();
+        await refresh(["users"]);
       } catch (error) {
         showToast(formatCaughtApiError(error, "Échec du rechargement après enregistrement"), "error");
         throw error;
@@ -223,7 +227,7 @@ export function UsersPage() {
         }
       }
       try {
-        await refresh();
+        await refresh(["users"]);
       } catch (error) {
         showToast(formatCaughtApiError(error, "Échec du rechargement après enregistrement"), "error");
         throw error;
@@ -377,7 +381,7 @@ export function UsersPage() {
           await clientsApi.revokeUserRole(String(assigning.id), role);
         }
       }
-      await refresh();
+      await refresh(["users"]);
       showToast("Rôles mis à jour.", "success");
       setAssigning(null);
     } catch (error) {
@@ -424,7 +428,7 @@ export function UsersPage() {
         throw error;
       }
       try {
-        await refresh();
+        await refresh(["users"]);
       } catch (error) {
         showToast(formatCaughtApiError(error, "Échec du rechargement après réaffectation"), "error");
         throw error;
@@ -547,13 +551,16 @@ export function UsersPage() {
     !areStudentRolesLocked(editing) &&
     canReassignUserTenant(scopeUser, editing);
 
+  const usersLoading = Boolean(loading) && allUsers.length === 0 && !visibleScopeError;
   const usersDescription = visibleScopeError
     ? "Les comptes ne peuvent pas être affichés tant que le périmètre établissement n'est pas cohérent."
-    : isSuperadminView
-      ? `${filtered.length} compte(s) plateforme. Le Super administrateur valide et gère les Administrateurs établissement créés par les Administrateurs pays.`
-      : isCountryAdminView
-        ? `${filtered.length} administrateur(s) d’établissement dans votre pays. Les comptes métier (secrétaire, enseignant…) se gèrent dans Configuration établissement.`
-        : `${filtered.length} compte(s) accessibles.`;
+    : usersLoading
+      ? "Chargement des utilisateurs…"
+      : isSuperadminView
+        ? `${filtered.length} compte(s) plateforme. Le Super administrateur valide et gère les Administrateurs établissement créés par les Administrateurs pays.`
+        : isCountryAdminView
+          ? `${filtered.length} administrateur(s) d’établissement dans votre pays. Les comptes métier (secrétaire, enseignant…) se gèrent dans Configuration établissement.`
+          : `${filtered.length} compte(s) accessibles.`;
 
   return (
     <>
@@ -572,7 +579,8 @@ export function UsersPage() {
           <p className="text-xs font-bold uppercase tracking-wide text-brand">Périmètre établissement</p>
           <p className="mt-1 text-lg font-black text-ink">{school.name}</p>
           <p className="text-sm text-muted">
-            {school.code} • {school.city ?? "Ville non renseignée"} • {allUsers.length} compte(s) visible(s)
+            {school.code} • {school.city ?? "Ville non renseignée"} •{" "}
+            {usersLoading ? "chargement des utilisateurs…" : `${allUsers.length} compte(s) visible(s)`}
           </p>
         </Card>
       ) : null}
