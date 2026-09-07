@@ -170,3 +170,4 @@ STOP RED validé sur #542, sans modification de la PR au moment de l'audit.
 - CI rouge conforme : F7 = FIN-CALC-RED-015 ; Risk-targeted Finance = RED-001, 004, 005, 006, 014. Conservation, plafonnement, solde non négatif, annulation, idempotence restent verts.  
 - Diagnostic Oscar confirmé : le moteur d'imputation est correct ; le P1 est la confusion **statut de créance** / **statut d'imputation du paiement**.  
 - **Aucun GREEN autorisé. NO MERGE.**
+- CI `534e622e` : Core tests a échoué (`verify:db-config`) à cause d'une URI de fixture avec mot de passe embarqué dans le garde-fou PG. Corrigé sans runtime produit. F7 / Risk-targeted restent les RED attendus.

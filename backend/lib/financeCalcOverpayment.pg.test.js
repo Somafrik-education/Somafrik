@@ -193,15 +193,12 @@ function createRepo(pool) {
 
 describe("FIN-CALC-RED PostgreSQL — garde-fou DROP SCHEMA", () => {
   it("refuse une DATABASE_URL de cluster distant / production avant tout DDL", () => {
-    assert.ok(sourceUrlRefusal("postgresql://u:p@db.xxx.supabase.co:5432/postgres"));
-    assert.ok(sourceUrlRefusal("postgresql://u:p@localhost:5432/somafrik", { NODE_ENV: "production" }));
-    assert.ok(sourceUrlRefusal("postgresql://u:p@localhost:5432/somafrik", { SOMAFRIK_ENV: "production" }));
-    assert.ok(sourceUrlRefusal("postgresql://u:p@api.somafrik.app:5432/somafrik_finance_calc_red_it"));
-    assert.ok(sourceUrlRefusal("postgresql://u:p@localhost:5432/somafrik?host=db.prod.example"));
-    assert.equal(
-      sourceUrlRefusal("postgresql://somafrik:somafrik123@localhost:5432/somafrik", { NODE_ENV: "test" }),
-      null,
-    );
+    assert.ok(sourceUrlRefusal("postgresql://db.xxx.supabase.co:5432/postgres"));
+    assert.ok(sourceUrlRefusal("postgresql://localhost:5432/somafrik", { NODE_ENV: "production" }));
+    assert.ok(sourceUrlRefusal("postgresql://localhost:5432/somafrik", { SOMAFRIK_ENV: "production" }));
+    assert.ok(sourceUrlRefusal("postgresql://api.somafrik.app:5432/somafrik_finance_calc_red_it"));
+    assert.ok(sourceUrlRefusal("postgresql://localhost:5432/somafrik?host=db.prod.example"));
+    assert.equal(sourceUrlRefusal("postgresql://localhost:5432/somafrik", { NODE_ENV: "test" }), null);
   });
 
   it("refuse DROP SCHEMA si current_database n'est pas la base IT isolée", () => {
