@@ -103,7 +103,7 @@ async function seed(pool) {
   );
   await pool.query(
     `INSERT INTO schools (country_id, school_code, name, status)
-     VALUES ($1, 'SCH-PUSH-A', 'École Push A', 'active')`,
+     VALUES ($1, 'SCH-PUSH-A', 'École Push A', 'active'), ($1, 'SCH-PUSH-B', 'École Push B', 'active')`,
     [country.rows[0].id],
   );
   const school = (await pool.query(`SELECT id FROM schools WHERE school_code = 'SCH-PUSH-A'`)).rows[0];
@@ -227,10 +227,31 @@ async function main() {
     });
     const tokenSa = mintAccess(tokens, {
       sub: USER_SA,
+      schoolCode: "SCH-PUSH-A",
+      role: "Super Administrateur Somafrik",
+      roleKeys: ["SUPER_ADMIN"],
+      permissions: ["ALL_PRIVILEGES"],
+    });
+    const tokenSaStar = mintAccess(tokens, {
+      sub: USER_SA,
       schoolCode: "*",
       role: "Super Administrateur Somafrik",
       roleKeys: ["SUPER_ADMIN"],
       permissions: ["ALL_PRIVILEGES"],
+    });
+    const tokenATest = mintAccess(tokens, {
+      sub: USER_A,
+      schoolCode: "SCH-PUSH-A",
+      role: "Enseignant",
+      roleKeys: ["TEACHER"],
+      permissions: ["Push:TEST"],
+    });
+    const tokenASchoolB = mintAccess(tokens, {
+      sub: USER_A,
+      schoolCode: "SCH-PUSH-B",
+      role: "Enseignant",
+      roleKeys: ["TEACHER"],
+      permissions: ["Push:TEST"],
     });
 
     const unauth = await request("/mobile/push-devices", {
@@ -256,6 +277,18 @@ async function main() {
       },
     });
     assert.equal(clientId.status, 400, "userId client rejeté");
+
+    const clientSchool = await request("/mobile/push-devices", {
+      method: "POST",
+      token: tokenA,
+      body: {
+        expoPushToken: TOKEN_A,
+        platform: "android",
+        appProfile: "preview",
+        school_id: String(fixtures.schoolId),
+      },
+    });
+    assert.equal(clientSchool.status, 400, "school_id client rejeté");
 
     const ios = await request("/mobile/push-devices", {
       method: "POST",
@@ -379,6 +412,40 @@ async function main() {
       `SELECT receipt_id, status FROM mobile_push_receipts WHERE status = 'pending'`,
     );
     assert.ok(pendingReceipts.rowCount >= 1, "ticket OK persiste receipt ID");
+
+    const starScope = await request("/mobile/push-devices/test", {
+      method: "POST",
+      token: tokenSaStar,
+      body: { confirm: TEST_CONFIRM },
+    });
+    assert.equal(starScope.status, 400, "session * : pas de ciblage multi-écoles");
+    assert.equal(mock.state.sends.length, 1, "session * : aucun appel Expo supplémentaire");
+
+    const spoofSelfTest = await request("/mobile/push-devices/test", {
+      method: "POST",
+      token: tokenSa,
+      body: { confirm: TEST_CONFIRM, school_id: String(fixtures.schoolId) },
+    });
+    assert.equal(spoofSelfTest.status, 400, "school_id client refusé au self-test");
+    assert.equal(mock.state.sends.length, 1, "spoof school_id : aucun appel Expo");
+
+    const expoBeforeTenant = mock.state.sends.length;
+    const sameSchoolTest = await request("/mobile/push-devices/test", {
+      method: "POST",
+      token: tokenATest,
+      body: { confirm: TEST_CONFIRM },
+    });
+    assert.equal(sameSchoolTest.status, 200, JSON.stringify(sameSchoolTest.data));
+    assert.ok(sameSchoolTest.data.sent >= 1, "même user + même école → token ciblé");
+    assert.equal(mock.state.sends.length, expoBeforeTenant + 1);
+
+    const otherSchoolTest = await request("/mobile/push-devices/test", {
+      method: "POST",
+      token: tokenASchoolB,
+      body: { confirm: TEST_CONFIRM },
+    });
+    assert.equal(otherSchoolTest.status, 404, "même user + autre école → token exclu");
+    assert.equal(mock.state.sends.length, expoBeforeTenant + 1, "école B : aucun appel Expo");
 
     const deadToken = "ExponentPushToken[dead-device]";
     await request("/mobile/push-devices", {

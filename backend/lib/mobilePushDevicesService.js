@@ -126,6 +126,14 @@ function sessionUserId(principal) {
   return userId;
 }
 
+async function sessionSchoolId(store, principal) {
+  const schoolId = uuidOrNull(await store.resolveSchoolId(principal?.schoolCode));
+  if (!schoolId) {
+    throw new BusinessError(400, "École de session requise.");
+  }
+  return schoolId;
+}
+
 function publicDevice(row) {
   if (!row) return null;
   return {
@@ -179,7 +187,8 @@ async function sendSelfTest(store, principal, body, pushClient, env = process.en
   const backendEnvironment = assertPushSelfTestAllowed(env);
   assertPushSelfTestActor(principal, env);
   const userId = sessionUserId(principal);
-  const devices = await store.listActiveForUser({ userId, backendEnvironment });
+  const schoolId = await sessionSchoolId(store, principal);
+  const devices = await store.listActiveForUser({ userId, schoolId, backendEnvironment });
   if (!devices.length) {
     throw new BusinessError(404, "Aucun appareil push actif pour cette session.");
   }

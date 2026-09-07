@@ -11,6 +11,7 @@ on:
       - "backend/db/mobilePushDevicesSchema.upgrade.pg.test.js"
       - "backend/lib/mobilePushDevicesService.js"
       - "backend/lib/mobilePushDevicesService.test.js"
+      - "backend/lib/mobilePushDevices.tenant.test.js"
       - "backend/lib/expoPushService.js"
       - "backend/lib/expoPushService.test.js"
       - "backend/lib/expoPushReceiptsWorker.js"

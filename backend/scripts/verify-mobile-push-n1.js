@@ -102,6 +102,11 @@ function sourceGuards() {
   assert.match(store, /ON CONFLICT \(expo_push_token\) DO UPDATE/);
   assert.match(store, /backend_environment/);
   assert.match(store, /enqueuePushReceipts/);
+  const pgList = store.slice(store.indexOf("async listActiveForUser"));
+  const sqlBlock = pgList.slice(0, pgList.indexOf("async getByToken"));
+  assert.match(sqlBlock, /school_id\s*=\s*\$/);
+  assert.match(service, /listActiveForUser\(\{ userId, schoolId, backendEnvironment \}\)/);
+  assert.match(service, /École de session requise/);
   assert.match(expo, /DeviceNotRegistered/);
   assert.match(expo, /enqueuePushReceipts/);
   assert.match(expo, /ticket ≠ livraison/);
@@ -118,6 +123,8 @@ function sourceGuards() {
   assert.match(httpTest, /delete env\.SOMAFRIK_PUSH_SELFTEST_ENABLED/);
   assert.match(httpTest, /aucun getReceipts immédiat/);
   assert.match(httpTest, /rate limit/);
+  assert.match(httpTest, /session \* : pas de ciblage multi-écoles/);
+  assert.match(httpTest, /même user \+ autre école → token exclu/);
 
   assert.match(appConfig, /expo-notifications/);
   assert.match(appConfig, /somafrik-default/);
@@ -158,6 +165,7 @@ function sourceGuards() {
 function main() {
   sourceGuards();
   run(process.execPath, ["backend/lib/mobilePushDevicesService.test.js"], "push devices unit");
+  run(process.execPath, ["--test", "backend/lib/mobilePushDevices.tenant.test.js"], "push tenant school_id");
   run(process.execPath, ["backend/lib/expoPushService.test.js"], "expo push unit");
   run(process.execPath, ["backend/lib/expoPushReceiptsWorker.test.js"], "expo receipts différés");
   run(process.execPath, ["backend/lib/rateLimit.push-selftest.test.js"], "rate limit self-test");
