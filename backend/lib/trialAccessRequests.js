@@ -53,6 +53,19 @@ async function createTrialAccessRequest(repo, payload = {}, options = {}) {
     typeof options.notifyTrialRequest === "function"
       ? options.notifyTrialRequest
       : require("./trialAccessRequestNotification").notifyTrialAccessRequest;
+  if (options.deferNotification) {
+    setImmediate(() => {
+      Promise.resolve()
+        .then(() => notify(created))
+        .catch((error) => {
+          console.error(
+            `[trial-request] notification failed (publicRef=${created.publicRef || ""}):`,
+            error && error.message ? error.message : error,
+          );
+        });
+    });
+    return created;
+  }
   try {
     await notify(created);
   } catch (error) {
