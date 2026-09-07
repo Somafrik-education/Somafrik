@@ -12,12 +12,14 @@ export function PermissionRoute({
   children,
   fallbackPath,
 }: {
-  view: string;
+  /** Une vue, ou plusieurs vues en OU (ex. shell Finances : payments | fees | unpaid). */
+  view: string | readonly string[];
   children: ReactNode;
   fallbackPath?: string;
 }) {
   const ctx = usePermissionContext();
   const { session } = useAuth();
+  const views = typeof view === "string" ? [view] : view;
 
   if (ctx.permissionsBootstrap === "loading" || ctx.permissionsBootstrap === "idle") {
     if (session?.accessToken) {
@@ -35,7 +37,7 @@ export function PermissionRoute({
     );
   }
 
-  if (!canReadView(ctx, view)) {
+  if (!views.some((item) => canReadView(ctx, item))) {
     return <Navigate to={fallbackPath ?? getDefaultAppPath(session?.user?.role)} replace />;
   }
 

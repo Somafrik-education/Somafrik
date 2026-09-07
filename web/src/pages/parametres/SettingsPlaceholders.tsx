@@ -4,7 +4,6 @@ import { ComingSoonState } from "../../design-system";
 export { EstablishmentProfilePage as SettingsProfilePage } from "./EstablishmentProfilePage";
 export { SettingsSecurityPage } from "./SecuritySettingsPage";
 export { SettingsDataPage } from "./DataBackupSettingsPage";
-export { SettingsFinancePage } from "./SettingsFinancePage";
 
 export function SettingsNotificationsPage() {
   return (

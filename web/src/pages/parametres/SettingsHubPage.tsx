@@ -13,7 +13,6 @@ import {
   Network,
   Palette,
   PlugZap,
-  Wallet,
 } from "lucide-react";
 import { Badge, DashboardLayout } from "../../design-system";
 import { canReadView } from "../../lib/permissions";
@@ -94,14 +93,6 @@ const SETTING_CARDS: SettingCard[] = [
     title: "Données et sauvegarde",
     description: "Export CSV d'extrait affiché et export JSON versionné. La restauration complète n'est pas disponible.",
     icon: DatabaseBackup,
-    status: "available",
-    view: "configuration",
-  },
-  {
-    to: "/parametres/finances",
-    title: "Finances",
-    description: "Types de frais, échéances, moyens de paiement et pénalités.",
-    icon: Wallet,
     status: "available",
     view: "configuration",
   },

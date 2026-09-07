@@ -27,6 +27,7 @@ import {
   MessagesConversationsPage,
   AnnouncementsPage,
   FinanceFeesPage,
+  FinanceIndexRedirect,
   FinanceUnpaidPage,
   FinancesLayout,
   GradesEvaluationsPage,
@@ -52,7 +53,6 @@ import {
   SchoolsPage,
   SettingsAppearancePage,
   SettingsDataPage,
-  SettingsFinancePage,
   SettingsHubPage,
   SettingsIntegrationsPage,
   SettingsNotificationsPage,
@@ -242,15 +242,36 @@ export default function App() {
         <Route
           path="/finances"
           element={
-            <PermissionRoute view="payments">
+            <PermissionRoute view={["payments", "fees", "unpaid"]}>
               <FinancesLayout />
             </PermissionRoute>
           }
         >
-          <Route index element={<Navigate to="paiements" replace />} />
-          <Route path="paiements" element={<EntityPage entity="payments" />} />
-          <Route path="frais" element={<FinanceFeesPage />} />
-          <Route path="impayes" element={<FinanceUnpaidPage />} />
+          <Route index element={<FinanceIndexRedirect />} />
+          <Route
+            path="paiements"
+            element={
+              <PermissionRoute view="payments">
+                <EntityPage entity="payments" />
+              </PermissionRoute>
+            }
+          />
+          <Route
+            path="frais"
+            element={
+              <PermissionRoute view="fees">
+                <FinanceFeesPage />
+              </PermissionRoute>
+            }
+          />
+          <Route
+            path="impayes"
+            element={
+              <PermissionRoute view="unpaid">
+                <FinanceUnpaidPage />
+              </PermissionRoute>
+            }
+          />
         </Route>
         {/* Communication : pages autonomes accessibles via les icônes du Topbar */}
         <Route
@@ -458,14 +479,7 @@ export default function App() {
             }
           />
           <Route path="utilisateurs" element={<Navigate to="/parametres/roles-droits" replace />} />
-          <Route
-            path="finances"
-            element={
-              <PermissionRoute view="configuration">
-                <SettingsFinancePage />
-              </PermissionRoute>
-            }
-          />
+          <Route path="finances" element={<Navigate to="/finances/frais" replace />} />
           <Route
             path="abonnements"
             element={

@@ -327,48 +327,6 @@
       "backupCompleteAvailable": false
     },
     {
-      "id": "finances",
-      "title": "Finances",
-      "route": "/parametres/finances",
-      "hubStatus": "available",
-      "scope": "school",
-      "status": "ACTUEL_PARTIEL",
-      "web": true,
-      "mobile": "partial",
-      "parity": false,
-      "roles": ["Admin School", "Comptable (Frais & tarifs si permission)"],
-      "permissions": [
-        "Frais & tarifs:READ",
-        "Frais & tarifs:CREATE",
-        "Frais & tarifs:UPDATE"
-      ],
-      "permissionRead": "Frais & tarifs:READ / Paiements:READ (catalogue)",
-      "permissionCreate": "Frais & tarifs:CREATE",
-      "permissionUpdate": "Frais & tarifs:UPDATE (grilles, moyens de paiement)",
-      "permissionDelete": "Frais & tarifs:DELETE (si exposé) ; désactivation grille",
-      "mutations": true,
-      "apis": [
-        "GET /api/finance/catalog",
-        "GET/POST/PATCH /api/finance/fee-grids",
-        "PUT /api/finance/payment-methods"
-      ],
-      "postgres": true,
-      "prerequisites": ["Établissement", "Année (libellé grille, pas toujours FK)"],
-      "dependencies": ["Encaissement = module Paiements, pas cette carte"],
-      "limitations": [
-        "Devise = canonique établissement/pays, pas de valeur libre client",
-        "Pénalités de retard NON opérationnelles (alerte différées V1)",
-        "Réductions/exonérations au niveau obligation élève, pas référentiel établissement",
-        "Mobile Money opérateur ≠ configuration Paramètres"
-      ],
-      "knownIssues": ["TYPE A — hub mentionne pénalités"],
-      "helpEligible": true,
-      "helpWriteEligible": true,
-      "verdict": ["GO_HELP_READ", "GO_HELP_WRITE", "GO_HELP_NAVIGATION"],
-      "coherenceClass": "TYPE A",
-      "penaltiesOperational": false
-    },
-    {
       "id": "notifications",
       "title": "Notifications",
       "route": "/parametres/notifications",

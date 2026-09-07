@@ -1,4 +1,5 @@
 import { NAV_ITEMS, type NavItem } from "../../lib/constants";
+import { canReadFinanceModule } from "../../lib/financeRouteAccess";
 import { isInternalSchoolRole } from "../../lib/format";
 import { canReadView, canAccessSchoolBackOffice } from "../../lib/permissions";
 import { usePermissionContext } from "../../lib/usePermissionContext";
@@ -14,6 +15,7 @@ export function useVisibleNavItems() {
   const visible = NAV_ITEMS.filter((item) => {
     if (item.schoolOnly && !schoolBackOffice) return false;
     if (internalSchool && (item.view === "users" || item.view === "permissions")) return false;
+    if (item.path === "/finances") return canReadFinanceModule(ctx);
     return canReadView(ctx, item.view);
   });
 
