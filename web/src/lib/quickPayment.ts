@@ -313,7 +313,7 @@ export function resolvePaymentStatus(
     return "Non imputé";
   }
   if (allocated > 0 && leftover > 0) {
-    return "Partiel";
+    return "Trop-perçu";
   }
   if (remainingBeforePayment <= 0) {
     return "Non imputé";

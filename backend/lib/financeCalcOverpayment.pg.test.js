@@ -130,6 +130,17 @@ function mayDropPublicSchema({ itDb, currentDatabase, inetServerAddr } = {}) {
   return { allowed: true, reason: null };
 }
 
+function isolatedDatabaseRefusal(databaseName) {
+  const name = String(databaseName ?? "").trim();
+  if (!name || !/^[a-z][a-z0-9_]*_it$/.test(name)) {
+    return `IT database must match *_it (got ${name || "empty"})`;
+  }
+  if (FORBIDDEN_DROP_DATABASES.has(name)) {
+    return `IT database name forbidden (${name})`;
+  }
+  return null;
+}
+
 function withDatabaseName(databaseUrl, databaseName) {
   const parsed = new URL(databaseUrl);
   parsed.pathname = `/${databaseName}`;
@@ -139,6 +150,8 @@ function withDatabaseName(databaseUrl, databaseName) {
 async function ensureIsolatedDatabase(databaseUrl, databaseName) {
   const refusal = sourceUrlRefusal(databaseUrl);
   if (refusal) throw new Error(refusal);
+  const nameRefusal = isolatedDatabaseRefusal(databaseName);
+  if (nameRefusal) throw new Error(nameRefusal);
   const pool = new Pool({ connectionString: withDatabaseName(databaseUrl, "postgres") });
   try {
     const existing = await pool.query("SELECT 1 FROM pg_database WHERE datname = $1", [databaseName]);
@@ -199,6 +212,13 @@ describe("FIN-CALC-RED PostgreSQL — garde-fou DROP SCHEMA", () => {
     assert.ok(sourceUrlRefusal("postgresql://api.somafrik.app:5432/somafrik_finance_calc_red_it"));
     assert.ok(sourceUrlRefusal("postgresql://localhost:5432/somafrik?host=db.prod.example"));
     assert.equal(sourceUrlRefusal("postgresql://localhost:5432/somafrik", { NODE_ENV: "test" }), null);
+  });
+
+  it("refuse CREATE DATABASE si le nom n'est pas une base IT *_it", () => {
+    assert.ok(isolatedDatabaseRefusal("finance_scratch"));
+    assert.ok(isolatedDatabaseRefusal("postgres"));
+    assert.ok(isolatedDatabaseRefusal("somafrik"));
+    assert.equal(isolatedDatabaseRefusal("somafrik_finance_calc_red_it"), null);
   });
 
   it("refuse DROP SCHEMA si current_database n'est pas la base IT isolée", () => {
@@ -347,7 +367,7 @@ describe("FIN-CALC-RED PostgreSQL", { skip: !DATABASE_URL }, () => {
       assert.equal(String(persisted.rows[0].status), "Payé");
 
       assert.notEqual(payment.status, PARTIAL_STATUS);
-      assert.notMatch(String(payment.status), /partiel/i);
+      assert.doesNotMatch(String(payment.status), /partiel/i);
     } finally {
       await pool.end();
     }
@@ -357,6 +377,7 @@ describe("FIN-CALC-RED PostgreSQL", { skip: !DATABASE_URL }, () => {
 module.exports = {
   sourceUrlRefusal,
   mayDropPublicSchema,
+  isolatedDatabaseRefusal,
   looksLikeProductionHost,
   isLoopbackUrlHost,
   isLoopbackServerAddr,

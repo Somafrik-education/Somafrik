@@ -112,4 +112,46 @@ describe("PaymentReceipt multi-libellés", () => {
     expect(screen.getByText("Comptable Amina")).toBeInTheDocument();
     expect(screen.queryByText("USR-2026-00999")).not.toBeInTheDocument();
   });
+
+  it("n'affiche pas « Partiellement payé » pour un trop-perçu Oscar", () => {
+    render(
+      <PaymentReceipt
+        payment={{
+          reference: "CD-IN-26-001-2026-PAY-0006",
+          studentName: "Oscar Mukwege",
+          className: "6ème A",
+          items: [{ feeLabel: "Frais scolaire — Septembre", amount: 2 }],
+          amount: 2,
+          allocatedAmount: 1,
+          unallocatedAmount: 1,
+          method: "Espèces",
+          date: "2026-09-07",
+          status: "Trop-perçu",
+          currency: "CDF",
+        }}
+      />,
+    );
+    expect(screen.getByText("Trop-perçu")).toBeInTheDocument();
+    expect(screen.queryByText("Partiellement payé")).not.toBeInTheDocument();
+  });
+
+  it("traduit un statut historique Partiel en imputation, pas en créance", () => {
+    render(
+      <PaymentReceipt
+        payment={{
+          reference: "CD-IN-26-001-2026-PAY-0006",
+          studentName: "Oscar Mukwege",
+          className: "6ème A",
+          items: [{ feeLabel: "Frais scolaire — Septembre", amount: 2 }],
+          amount: 2,
+          method: "Espèces",
+          date: "2026-09-07",
+          status: "Partiel",
+          currency: "CDF",
+        }}
+      />,
+    );
+    expect(screen.getByText("Partiellement imputé")).toBeInTheDocument();
+    expect(screen.queryByText("Partiellement payé")).not.toBeInTheDocument();
+  });
 });

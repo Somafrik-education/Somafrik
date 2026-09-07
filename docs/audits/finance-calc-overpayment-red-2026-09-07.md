@@ -4,8 +4,8 @@ Date : 2026-09-07
 Base : `develop@b1c904b27527efe5a04f64cb3ba46eb7c71b1edc`  
 Incident : `CD-IN-26-001-2026-PAY-0006` / Oscar Mukwege / 2 CDF / statut UI « Partiellement payé »
 
-**Aucun runtime modifié.** Lecture seule. Aucune donnée de production touchée (`DATABASE_URL` absent dans cet environnement).  
-Suivi CTO 2026-09-07 : correction du **rapport** (parité PG non démontrée) + garde-fou `DROP SCHEMA` dans le test PG. Toujours **aucun GREEN**.
+**Aucun runtime modifié dans le commit RED.** GREEN 2026-09-07 : séparation statut d'imputation / statut de créance.  
+Aucune donnée de production touchée.
 
 ---
 
@@ -147,27 +147,28 @@ Aucun constaté dans cet audit RED :
 
 ---
 
-## 7. Proposition de correction (ne pas implémenter — aucun GREEN autorisé)
+## 7. Correction GREEN (2026-09-07)
 
-1. Conserver `allocateAmount` (plafond déjà correct).  
-2. Introduire un statut d'imputation distinct (`Partiellement imputé`) sans écraser `obligation.status = Payé`.  
-3. `presentPaymentStatus` : leftover après solde intégral des cibles ≠ « obligation partielle ».  
-4. Web : ne plus traduire `Partiel` par `Partiellement payé`.  
-5. **RED-006 tranché : conserver le 409** si `obligationId` cible une dette déjà soldée. Ajuster le contrat du test séparément du GREEN Oscar. Règles nettes :  
-   - obligation ouverte 1 CDF + paiement 2 CDF → 1 imputé + 1 non imputé, obligation **Payé** ;  
-   - obligation déjà soldée + paiement explicitement ciblé dessus → **409** ;  
-   - encaissement volontaire sans obligation → **Non imputé**.
+Autorisée par le CTO après HOLD merge. Runtime modifié uniquement pour séparer les plans de statut.
+
+1. `allocateAmount` inchangé (plafond déjà correct).  
+2. `resolvePaymentStatus` / `presentPaymentStatus` : leftover après solde des cibles → **« Trop-perçu »**, jamais « Partiel ».  
+3. Web/Mobile : `financePaymentStatusLabel("Partiel")` → **« Partiellement imputé »**, plus « Partiellement payé ».  
+4. `mapBoStatusToDb("Trop-perçu")` → `paid` (F4 exige `payment_status=paid` pour imputer).  
+5. **RED-006** : contrat ajusté → **409** `FINANCE_OBLIGATION_NOT_OPEN` si `obligationId` cible une dette soldée.
+
+Règles nettes :
+
+- obligation ouverte 1 CDF + paiement 2 CDF → 1 imputé + 1 non imputé, obligation **Payé**, paiement **Trop-perçu** ;  
+- obligation déjà soldée + paiement explicitement ciblé dessus → **409** ;  
+- encaissement volontaire sans obligation → **Non imputé**.
 
 ---
 
 ## 8. Audit GitHub indépendant CTO (2026-09-07)
 
-STOP RED validé sur #542, sans modification de la PR au moment de l'audit.
+STOP RED validé sur #542, puis HOLD merge, puis GREEN autorisé.
 
-- Draft, ouverte, non mergée.  
-- Commit RED : `37743a6c98676f0fe8e82c2ed907769973d3e375` — 7 fichiers, +1093 / −1, aucun runtime Finance / API / DB / Web / Mobile.  
-- Base `develop@b1c904b27527efe5a04f64cb3ba46eb7c71b1edc`, 1 ahead / 0 behind.  
-- CI rouge conforme : F7 = FIN-CALC-RED-015 ; Risk-targeted Finance = RED-001, 004, 005, 006, 014. Conservation, plafonnement, solde non négatif, annulation, idempotence restent verts.  
+- Commit RED : `37743a6c98676f0fe8e82c2ed907769973d3e375` — tests + docs, aucun runtime.  
 - Diagnostic Oscar confirmé : le moteur d'imputation est correct ; le P1 est la confusion **statut de créance** / **statut d'imputation du paiement**.  
-- **Aucun GREEN autorisé. NO MERGE.**
-- CI `534e622e` : Core tests a échoué (`verify:db-config`) à cause d'une URI de fixture avec mot de passe embarqué dans le garde-fou PG. Corrigé sans runtime produit. F7 / Risk-targeted restent les RED attendus.
+- Garde-fou PG : `CREATE DATABASE` refusé si le nom n'est pas `*_it` ; `DROP SCHEMA` seulement sur la base IT loopback.

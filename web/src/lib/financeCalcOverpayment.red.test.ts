@@ -113,8 +113,7 @@ describe("FIN-CALC-RED-015 — projections Web d'une obligation soldée", () => 
     const unpaidRows = aggregateUnpaidByStudent(unpaidFees, [], state);
     expect(unpaidRows.find((row) => row.studentId === obligation.studentId)).toBeUndefined();
 
-    // Table Paiements : aujourd'hui financePaymentStatusLabel("Partiel") = "Partiellement payé"
-    // alors que l'obligation est Payé. Le trop-perçu ne doit pas usurper le vocabulaire de créance.
+    // Table Paiements : « Partiel » est un statut d'imputation, pas de créance.
     expect(financePaymentStatusLabel(payment.status)).not.toBe("Partiellement payé");
     expect(financePaymentStatusLabel("Partiel")).not.toBe(financeObligationStatusLabel("Partiellement payé"));
   });

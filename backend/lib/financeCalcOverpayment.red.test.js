@@ -188,7 +188,7 @@ describe("FIN-CALC-RED — trop-perçu / imputation / statuts", () => {
       presentPaymentStatus(payment, allocs.map((row) => ({ amount: row.amount }))),
       PARTIAL_STATUS,
     );
-    assert.notMatch(String(payment.status), /partiel/i);
+    assert.doesNotMatch(String(payment.status), /partiel/i);
   });
 
   it("FIN-CALC-RED-002 paiement exact 100/100", async () => {
@@ -265,11 +265,9 @@ describe("FIN-CALC-RED — trop-perçu / imputation / statuts", () => {
     assert.notEqual(payment.status, PARTIAL_STATUS);
   });
 
-  // Contrat RED actuel : attend un encaissement Non imputé. Décision métier CTO
-  // 2026-09-07 : conserver 409 si obligationId cible une dette déjà soldée.
-  // Ne pas rendre ce cas GREEN avec l'assertion ci-dessous ; l'ajuster
-  // séparément du bug Oscar (statut « Partiellement payé »).
-  it("FIN-CALC-RED-006 obligation déjà soldée → imputé 0, non imputé 10, amountPaid inchangé", async () => {
+  // Décision métier CTO 2026-09-07 : conserver 409 si obligationId cible une dette
+  // déjà soldée. L'encaissement volontaire sans dette = Non imputé sans obligationId.
+  it("FIN-CALC-RED-006 obligation déjà soldée → 409 OBLIGATION_NOT_OPEN, amountPaid inchangé", async () => {
     const store = createStore();
     const before = await seedObligation(store, { amount: 10 });
     await store.createSchoolPayment(
@@ -285,16 +283,19 @@ describe("FIN-CALC-RED — trop-perçu / imputation / statuts", () => {
     const paidBefore = money(settled.amountPaid);
     assert.equal(money(settled.balance), 0);
 
-    const extra = await store.createSchoolPayment(
-      {
-        studentId: STUDENT,
-        items: [{ obligationId: before.id, amount: 10 }],
-        method: "Espèces",
-        date: "2026-09-07",
-      },
-      admin,
+    await assert.rejects(
+      () =>
+        store.createSchoolPayment(
+          {
+            studentId: STUDENT,
+            items: [{ obligationId: before.id, amount: 10 }],
+            method: "Espèces",
+            date: "2026-09-07",
+          },
+          admin,
+        ),
+      (error) => error?.statusCode === 409 && error?.code === "FINANCE_OBLIGATION_NOT_OPEN",
     );
-    assertCashIdentity(extra, { received: 10, allocated: 0, unallocated: 10 });
     const after = (await store.listFinanceStudentFees(admin)).find((row) => row.id === before.id);
     assert.equal(money(after.amountPaid), paidBefore, "aucune modification artificielle de amountPaid");
     assert.equal(money(after.balance), 0);
