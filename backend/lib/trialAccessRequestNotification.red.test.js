@@ -129,6 +129,11 @@ test("source: POST public persiste puis notifie, sans rollback", () => {
   const src = fs.readFileSync(path.join(__dirname, "./trialAccessRequests.js"), "utf8");
   assert.match(src, /notifyTrialRequest/);
   assert.match(src, /createTrialAccessRequest\(/);
+  assert.match(src, /deferNotification/);
+  const server = fs.readFileSync(path.join(__dirname, "../server.js"), "utf8");
+  const start = server.indexOf('app.post("/api/public/trial-requests"');
+  const snippet = server.slice(start, start + 500);
+  assert.match(snippet, /deferNotification:\s*true/);
 });
 
 test("le module de notification ne crée ni school, ni user, ni subscription", () => {
@@ -154,6 +159,57 @@ test("notifyTrialAccessRequest ne jette pas si SMTP est absent", async () => {
   else process.env.SMTP_HOST = prevHost;
   if (prevFrom === undefined) delete process.env.MAIL_FROM;
   else process.env.MAIL_FROM = prevFrom;
+});
+
+test("deferNotification renvoie le lead sans attendre SMTP", async () => {
+  const repo = memoryRepo();
+  let started = false;
+  let finished = false;
+  let resolveNotify;
+  const gate = new Promise((resolve) => {
+    resolveNotify = resolve;
+  });
+  const created = await createTrialAccessRequest(repo, VALID, {
+    deferNotification: true,
+    notifyTrialRequest: async () => {
+      started = true;
+      await gate;
+      finished = true;
+    },
+  });
+  assert.equal(repo.rows.length, 1);
+  assert.equal(created.status, "nouvelle");
+  assert.equal(started, false);
+  assert.equal(finished, false);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(started, true);
+  assert.equal(finished, false);
+  resolveNotify();
+  await Promise.resolve();
+  await Promise.resolve();
+  assert.equal(finished, true);
+});
+
+test("Compose transmet SMTP_HOST et MAIL_FROM au backend", () => {
+  const root = path.join(__dirname, "../..");
+  for (const file of [
+    "docker-compose.yml",
+    "docker-compose.preprod.yml",
+    "docker-compose.production.yml",
+  ]) {
+    const src = fs.readFileSync(path.join(root, file), "utf8");
+    assert.match(src, /SMTP_HOST:/, `${file} sans SMTP_HOST`);
+    assert.match(src, /MAIL_FROM:/, `${file} sans MAIL_FROM`);
+    assert.match(src, /TRIAL_REQUEST_NOTIFY_TO:/, `${file} sans TRIAL_REQUEST_NOTIFY_TO`);
+  }
+});
+
+test("la clé de rate limit des demandes d'essai est l'IP, pas l'e-mail", () => {
+  const { trialRequestRateLimitKey } = require("./rateLimit");
+  const sameIpA = trialRequestRateLimitKey({ ip: "203.0.113.8", body: { email: "a@ecole.sn" } });
+  const sameIpB = trialRequestRateLimitKey({ ip: "203.0.113.8", body: { email: "b@lycee.ci" } });
+  assert.equal(sameIpA, "trial-request:203.0.113.8");
+  assert.equal(sameIpA, sameIpB);
 });
 
 test("Mobile inchangé pour la notification e-mail", () => {

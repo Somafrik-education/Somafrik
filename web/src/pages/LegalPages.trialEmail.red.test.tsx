@@ -12,7 +12,7 @@ describe("RED — politique : notification e-mail des demandes d’essai", () =>
     );
     const text = document.body.textContent ?? "";
     expect(text).toMatch(
-      /un e-mail de notification est envoyé à contact@somafrik\.app/i,
+      /e-mail de notification peut être envoyé à contact@somafrik\.app/i,
     );
     expect(text).not.toMatch(
       /pas de SMS, WhatsApp ou e-mail transactionnel embarqué/i,

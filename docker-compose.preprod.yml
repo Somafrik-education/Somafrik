@@ -51,6 +51,13 @@ services:
       JSON_BODY_LIMIT: ${JSON_BODY_LIMIT:-2mb}
       LOGIN_RATE_LIMIT_MAX: ${LOGIN_RATE_LIMIT_MAX:-15}
       SOMAFRIK_COMMUNICATION_STORAGE: ${SOMAFRIK_COMMUNICATION_STORAGE:-/var/lib/somafrik/communication-storage}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_SECURE: ${SMTP_SECURE:-false}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      MAIL_FROM: ${MAIL_FROM:-}
+      TRIAL_REQUEST_NOTIFY_TO: ${TRIAL_REQUEST_NOTIFY_TO:-contact@somafrik.app}
     volumes:
       # Named volume must mount at the same path the API writes to.
       - communication_storage:${SOMAFRIK_COMMUNICATION_STORAGE:-/var/lib/somafrik/communication-storage}

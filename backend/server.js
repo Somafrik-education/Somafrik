@@ -500,10 +500,12 @@ app.post("/api/privacy/erasure-requests", loginRateLimiter, asyncHandler(async (
 
 app.post("/api/public/trial-requests", trialRequestRateLimiter, asyncHandler(async (req, res) => {
   const { createTrialAccessRequest } = require("./lib/trialAccessRequests");
-  const created = await createTrialAccessRequest(repository, req.body ?? {});
+  const created = await createTrialAccessRequest(repository, req.body ?? {}, {
+    deferNotification: true,
+  });
   res.status(201).json(created);
 }));
-// Public POST /api/public/trial-requests: dedicated trialRequestRateLimiter (IP + email).
+// Public POST /api/public/trial-requests: dedicated trialRequestRateLimiter (IP).
 // No session. No school / user / subscription provisioning. Superadmin inbox only.
 // Padding so nearby authenticated privacy routes are outside the RED snippet window.
 
