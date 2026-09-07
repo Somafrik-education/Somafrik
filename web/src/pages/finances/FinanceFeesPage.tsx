@@ -148,7 +148,7 @@ export function FinanceFeesPage() {
     setBusy(true);
     try {
       await action();
-      await refresh(["feeGrids"]);
+      await refresh(["feeGrids", "schoolFeeItems"]);
       showToast(message, "success");
     } catch (error) {
       showToast(error instanceof Error ? error.message : "Échec de la synchronisation", "error");

@@ -27,6 +27,7 @@ const DOMAIN_VIEW_MAP: Partial<Record<DomainKey, string>> = {
   payments: "payments",
   paymentStatuses: "payments",
   feeGrids: "fees",
+  schoolFeeItems: "fees",
   studentFees: "fees",
   notes: "notes",
   evaluations: "notes",

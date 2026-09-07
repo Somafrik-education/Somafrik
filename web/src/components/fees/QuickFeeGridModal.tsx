@@ -145,7 +145,7 @@ export function QuickFeeGridModal({ open, onClose, schoolCode, onSaved }: QuickF
           }
         }
       }
-      await refresh(["feeGrids", "studentFees"]);
+      await refresh(["feeGrids", "schoolFeeItems", "studentFees"]);
       const skipped = built.skippedClasses.length;
       const message =
         `${built.grids.length} grille(s) créée(s)` +
