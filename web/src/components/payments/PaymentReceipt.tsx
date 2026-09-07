@@ -6,6 +6,7 @@ import { financePaymentStatusLabel } from "../../lib/financeObligationStatus";
 interface PaymentReceiptProps {
   payment: PaymentRecord;
   school?: School | null;
+  enteredByName?: string;
 }
 
 function receiptItems(payment: PaymentRecord): { label: string; amount: number }[] {
@@ -27,13 +28,22 @@ function receiptItems(payment: PaymentRecord): { label: string; amount: number }
   ];
 }
 
-export function PaymentReceipt({ payment, school }: PaymentReceiptProps) {
+function resolveEnteredByName(payment: PaymentRecord, enteredByName?: string): string {
+  const persistedName = String(payment.createdByName ?? "").trim();
+  if (persistedName) return persistedName;
+  const currentActorName = String(enteredByName ?? "").trim();
+  if (currentActorName) return currentActorName;
+  return String(payment.createdBy ?? "—");
+}
+
+export function PaymentReceipt({ payment, school, enteredByName }: PaymentReceiptProps) {
   const items = receiptItems(payment);
   const total = items.reduce((sum, item) => sum + item.amount, 0);
   const currency = resolveFinanceCurrency(
     typeof payment.currency === "string" ? payment.currency : undefined,
     school?.currency,
   );
+  const enteredBy = resolveEnteredByName(payment, enteredByName);
 
   return (
     <div className="payment-receipt mx-auto max-w-md rounded-2xl border border-line bg-white p-8 text-sm text-ink print:border-0 print:shadow-none">
@@ -121,7 +131,7 @@ export function PaymentReceipt({ payment, school }: PaymentReceiptProps) {
         </div>
         <div className="flex justify-between gap-4">
           <dt className="text-muted">Saisi par</dt>
-          <dd>{String(payment.createdByName ?? payment.createdBy ?? "—")}</dd>
+          <dd>{enteredBy}</dd>
         </div>
         {payment.comment ? (
           <div className="flex justify-between gap-4">
