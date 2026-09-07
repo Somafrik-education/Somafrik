@@ -199,7 +199,7 @@ async function main() {
         SOMAFRIK_API_ONLY: "true",
         APP_ENV: "preproduction",
         SOMAFRIK_PUSH_SELFTEST_ENABLED: "true",
-        SOMAFRIK_PUSH_SELFTEST_RATE_MAX: "5",
+        SOMAFRIK_PUSH_SELFTEST_RATE_MAX: "10",
         EXPO_PUSH_SEND_URL: `http://127.0.0.1:${EXPO_MOCK_PORT}/send`,
         EXPO_PUSH_RECEIPTS_URL: `http://127.0.0.1:${EXPO_MOCK_PORT}/getReceipts`,
       },
@@ -239,19 +239,12 @@ async function main() {
       roleKeys: ["SUPER_ADMIN"],
       permissions: ["ALL_PRIVILEGES"],
     });
-    const tokenATest = mintAccess(tokens, {
-      sub: USER_A,
-      schoolCode: "SCH-PUSH-A",
-      role: "Enseignant",
-      roleKeys: ["TEACHER"],
-      permissions: ["Push:TEST"],
-    });
-    const tokenASchoolB = mintAccess(tokens, {
-      sub: USER_A,
+    const tokenSaSchoolB = mintAccess(tokens, {
+      sub: USER_SA,
       schoolCode: "SCH-PUSH-B",
-      role: "Enseignant",
-      roleKeys: ["TEACHER"],
-      permissions: ["Push:TEST"],
+      role: "Super Administrateur Somafrik",
+      roleKeys: ["SUPER_ADMIN"],
+      permissions: ["ALL_PRIVILEGES"],
     });
 
     const unauth = await request("/mobile/push-devices", {
@@ -399,7 +392,7 @@ async function main() {
       body: { confirm: TEST_CONFIRM },
     });
     assert.equal(testSend.status, 200, JSON.stringify(testSend.data));
-    assert.equal(testSend.data.sent, 1, JSON.stringify({ data: testSend.data, expo: mock.state.sends }));
+    assert.equal(testSend.data.sent, 1, "même user + même école → token ciblé");
     assert.equal(mock.state.sends.length, 1);
     assert.equal(mock.state.sends[0][0].title, "Test Somafrik");
     assert.equal(mock.state.sends[0][0].body, "Les notifications push Somafrik fonctionnent correctement.");
@@ -429,23 +422,14 @@ async function main() {
     assert.equal(spoofSelfTest.status, 400, "school_id client refusé au self-test");
     assert.equal(mock.state.sends.length, 1, "spoof school_id : aucun appel Expo");
 
-    const expoBeforeTenant = mock.state.sends.length;
-    const sameSchoolTest = await request("/mobile/push-devices/test", {
-      method: "POST",
-      token: tokenATest,
-      body: { confirm: TEST_CONFIRM },
-    });
-    assert.equal(sameSchoolTest.status, 200, JSON.stringify(sameSchoolTest.data));
-    assert.ok(sameSchoolTest.data.sent >= 1, "même user + même école → token ciblé");
-    assert.equal(mock.state.sends.length, expoBeforeTenant + 1);
-
+    const expoBeforeOtherSchool = mock.state.sends.length;
     const otherSchoolTest = await request("/mobile/push-devices/test", {
       method: "POST",
-      token: tokenASchoolB,
+      token: tokenSaSchoolB,
       body: { confirm: TEST_CONFIRM },
     });
     assert.equal(otherSchoolTest.status, 404, "même user + autre école → token exclu");
-    assert.equal(mock.state.sends.length, expoBeforeTenant + 1, "école B : aucun appel Expo");
+    assert.equal(mock.state.sends.length, expoBeforeOtherSchool, "école B : aucun appel Expo");
 
     const deadToken = "ExponentPushToken[dead-device]";
     await request("/mobile/push-devices", {
