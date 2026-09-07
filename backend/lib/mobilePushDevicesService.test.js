@@ -62,9 +62,13 @@ async function main() {
     async getByToken(token) {
       return devices.find((item) => item.expo_push_token === token) || null;
     },
-    async listActiveForUser({ userId, backendEnvironment }) {
+    async listActiveForUser({ userId, schoolId, backendEnvironment }) {
       return devices.filter(
-        (item) => item.user_id === userId && item.backend_environment === backendEnvironment && !item.revoked_at,
+        (item) =>
+          item.user_id === userId &&
+          item.school_id === schoolId &&
+          item.backend_environment === backendEnvironment &&
+          !item.revoked_at,
       );
     },
   };
@@ -146,6 +150,14 @@ async function main() {
   assert.equal(revoked.revoked, true);
 
   await upsertFromSession(store, principal, { expoPushToken: token, platform: "android", appProfile: "preview" }, env);
+  await throwsStatusAsync(
+    () => sendSelfTest(store, principal, { confirm: TEST_CONFIRM, schoolId: "22222222-2222-4222-8222-222222222222" }, { async sendToTokens() { throw new Error("spoof"); } }, env),
+    400,
+  );
+  await throwsStatusAsync(
+    () => sendSelfTest(store, principal, { confirm: TEST_CONFIRM, school_id: "SCH-B" }, { async sendToTokens() { throw new Error("spoof"); } }, env),
+    400,
+  );
   let expoCalled = 0;
   const pushClient = {
     async sendToTokens(tokens, message) {

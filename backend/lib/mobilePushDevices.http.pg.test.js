@@ -103,7 +103,7 @@ async function seed(pool) {
   );
   await pool.query(
     `INSERT INTO schools (country_id, school_code, name, status)
-     VALUES ($1, 'SCH-PUSH-A', 'École Push A', 'active')`,
+     VALUES ($1, 'SCH-PUSH-A', 'École Push A', 'active'), ($1, 'SCH-PUSH-B', 'École Push B', 'active')`,
     [country.rows[0].id],
   );
   const school = (await pool.query(`SELECT id FROM schools WHERE school_code = 'SCH-PUSH-A'`)).rows[0];
@@ -199,7 +199,7 @@ async function main() {
         SOMAFRIK_API_ONLY: "true",
         APP_ENV: "preproduction",
         SOMAFRIK_PUSH_SELFTEST_ENABLED: "true",
-        SOMAFRIK_PUSH_SELFTEST_RATE_MAX: "5",
+        SOMAFRIK_PUSH_SELFTEST_RATE_MAX: "10",
         EXPO_PUSH_SEND_URL: `http://127.0.0.1:${EXPO_MOCK_PORT}/send`,
         EXPO_PUSH_RECEIPTS_URL: `http://127.0.0.1:${EXPO_MOCK_PORT}/getReceipts`,
       },
@@ -218,6 +218,13 @@ async function main() {
       roleKeys: ["TEACHER"],
       permissions: [],
     });
+    const tokenAJwtPushTest = mintAccess(tokens, {
+      sub: USER_A,
+      schoolCode: "SCH-PUSH-A",
+      role: "Enseignant",
+      roleKeys: ["TEACHER"],
+      permissions: ["Push:TEST"],
+    });
     const tokenB = mintAccess(tokens, {
       sub: USER_B,
       schoolCode: "SCH-PUSH-A",
@@ -227,7 +234,21 @@ async function main() {
     });
     const tokenSa = mintAccess(tokens, {
       sub: USER_SA,
+      schoolCode: "SCH-PUSH-A",
+      role: "Super Administrateur Somafrik",
+      roleKeys: ["SUPER_ADMIN"],
+      permissions: ["ALL_PRIVILEGES"],
+    });
+    const tokenSaStar = mintAccess(tokens, {
+      sub: USER_SA,
       schoolCode: "*",
+      role: "Super Administrateur Somafrik",
+      roleKeys: ["SUPER_ADMIN"],
+      permissions: ["ALL_PRIVILEGES"],
+    });
+    const tokenSaSchoolB = mintAccess(tokens, {
+      sub: USER_SA,
+      schoolCode: "SCH-PUSH-B",
       role: "Super Administrateur Somafrik",
       roleKeys: ["SUPER_ADMIN"],
       permissions: ["ALL_PRIVILEGES"],
@@ -256,6 +277,18 @@ async function main() {
       },
     });
     assert.equal(clientId.status, 400, "userId client rejeté");
+
+    const clientSchool = await request("/mobile/push-devices", {
+      method: "POST",
+      token: tokenA,
+      body: {
+        expoPushToken: TOKEN_A,
+        platform: "android",
+        appProfile: "preview",
+        school_id: String(fixtures.schoolId),
+      },
+    });
+    assert.equal(clientSchool.status, 400, "school_id client rejeté");
 
     const ios = await request("/mobile/push-devices", {
       method: "POST",
@@ -342,6 +375,16 @@ async function main() {
     assert.equal(teacherDenied.status, 403, "self-test préprod protégé par permission");
     assert.equal(mock.state.sends.length, 0, "enseignant : aucun appel Expo");
 
+    // Cause 65f13644 L438 : JWT Push:TEST n'est pas l'autorité (requirePermission overlaye le RBAC live).
+    // Ne pas élargir TEACHER. Le 200 ci-dessous reste l'acteur SUPER_ADMIN déjà autorisé.
+    const jwtPushTestDenied = await request("/mobile/push-devices/test", {
+      method: "POST",
+      token: tokenAJwtPushTest,
+      body: { confirm: TEST_CONFIRM },
+    });
+    assert.equal(jwtPushTestDenied.status, 403, "JWT Push:TEST ignoré ; RBAC live enseignant sans Push:TEST");
+    assert.equal(mock.state.sends.length, 0, "JWT Push:TEST : aucun appel Expo");
+
     const activeA = await pool.query(
       `SELECT expo_push_token, user_id, backend_environment, revoked_at FROM mobile_push_devices WHERE user_id = $1 ORDER BY created_at`,
       [USER_A],
@@ -366,7 +409,7 @@ async function main() {
       body: { confirm: TEST_CONFIRM },
     });
     assert.equal(testSend.status, 200, JSON.stringify(testSend.data));
-    assert.equal(testSend.data.sent, 1, JSON.stringify({ data: testSend.data, expo: mock.state.sends }));
+    assert.equal(testSend.data.sent, 1, "même user + même école → token ciblé");
     assert.equal(mock.state.sends.length, 1);
     assert.equal(mock.state.sends[0][0].title, "Test Somafrik");
     assert.equal(mock.state.sends[0][0].body, "Les notifications push Somafrik fonctionnent correctement.");
@@ -379,6 +422,31 @@ async function main() {
       `SELECT receipt_id, status FROM mobile_push_receipts WHERE status = 'pending'`,
     );
     assert.ok(pendingReceipts.rowCount >= 1, "ticket OK persiste receipt ID");
+
+    const starScope = await request("/mobile/push-devices/test", {
+      method: "POST",
+      token: tokenSaStar,
+      body: { confirm: TEST_CONFIRM },
+    });
+    assert.equal(starScope.status, 400, "session * : pas de ciblage multi-écoles");
+    assert.equal(mock.state.sends.length, 1, "session * : aucun appel Expo supplémentaire");
+
+    const spoofSelfTest = await request("/mobile/push-devices/test", {
+      method: "POST",
+      token: tokenSa,
+      body: { confirm: TEST_CONFIRM, school_id: String(fixtures.schoolId) },
+    });
+    assert.equal(spoofSelfTest.status, 400, "school_id client refusé au self-test");
+    assert.equal(mock.state.sends.length, 1, "spoof school_id : aucun appel Expo");
+
+    const expoBeforeOtherSchool = mock.state.sends.length;
+    const otherSchoolTest = await request("/mobile/push-devices/test", {
+      method: "POST",
+      token: tokenSaSchoolB,
+      body: { confirm: TEST_CONFIRM },
+    });
+    assert.equal(otherSchoolTest.status, 404, "même user + autre école → token exclu");
+    assert.equal(mock.state.sends.length, expoBeforeOtherSchool, "école B : aucun appel Expo");
 
     const deadToken = "ExponentPushToken[dead-device]";
     await request("/mobile/push-devices", {
