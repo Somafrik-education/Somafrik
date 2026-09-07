@@ -3,7 +3,16 @@
 /**
  * Parité PostgreSQL de FIN-CALC-RED-001 (Oscar 1+1).
  * Si DATABASE_URL est absent : SKIP explicite (pas un vert artificiel du scénario).
- * La CI Finance qui possède DATABASE_URL doit exécuter ce fichier.
+ *
+ * Fail-closed avant tout DDL :
+ *   - refuse NODE_ENV/SOMAFRIK_ENV=production
+ *   - refuse un hôte non loopback (Supabase, Render, AWS, somafrik.app, …)
+ *   - CREATE DATABASE uniquement vers `*_it`, puis DROP SCHEMA public
+ *     seulement si current_database() = cette base IT et inet_server_addr() loopback
+ *
+ * `verify:finance-management` enchaîne la suite mémoire avec `&&` : tant que les
+ * RED mémoire échouent, ce fichier n'est pas exécuté en CI. La parité PG n'est
+ * donc pas démontrée tant que le harness n'a pas atteint ce fichier.
  */
 const { describe, it } = require("node:test");
 const assert = require("node:assert/strict");
@@ -21,6 +30,106 @@ const IT_DATABASE = String(process.env.SOMAFRIK_FINANCE_CALC_RED_IT_DATABASE ?? 
   .trim()
   .replace(/[^a-zA-Z0-9_]/g, "");
 
+const FORBIDDEN_DROP_DATABASES = new Set(["", "postgres", "template0", "template1", "somafrik"]);
+const URL_LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "::1", "0:0:0:0:0:0:0:1"]);
+const EFFECTIVE_LOOPBACK_ADDRS = new Set(["127.0.0.1", "::1", "0:0:0:0:0:0:0:1"]);
+const CONNECTION_HOST_KEYS = ["host", "hostname", "hostaddr"];
+const PRODUCTION_HOST_MARKERS = Object.freeze([
+  "supabase.co",
+  "supabase.com",
+  "amazonaws.com",
+  "render.com",
+  "somafrik.app",
+]);
+
+function normalizeHost(host) {
+  return String(host ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/^\[(.*)\]$/, "$1");
+}
+
+function isLoopbackUrlHost(host) {
+  const value = normalizeHost(host);
+  if (!value) return false;
+  if (URL_LOOPBACK_HOSTS.has(value)) return true;
+  if (value.startsWith("::ffff:") && URL_LOOPBACK_HOSTS.has(value.slice("::ffff:".length))) return true;
+  return false;
+}
+
+function isLoopbackServerAddr(addr) {
+  const value = normalizeHost(addr);
+  if (!value) return false;
+  if (EFFECTIVE_LOOPBACK_ADDRS.has(value)) return true;
+  if (value.startsWith("::ffff:") && EFFECTIVE_LOOPBACK_ADDRS.has(value.slice("::ffff:".length))) return true;
+  return false;
+}
+
+function looksLikeProductionHost(host) {
+  const value = normalizeHost(host);
+  if (!value) return true;
+  return PRODUCTION_HOST_MARKERS.some((marker) => value === marker || value.endsWith(`.${marker}`));
+}
+
+function sourceUrlRefusal(databaseUrl, env = process.env) {
+  const nodeEnv = String(env.NODE_ENV ?? "").trim().toLowerCase();
+  const appEnv = String(env.SOMAFRIK_ENV ?? "").trim().toLowerCase();
+  if (nodeEnv === "production" || appEnv === "production") {
+    return "NODE_ENV/SOMAFRIK_ENV=production — refusing CREATE DATABASE / DROP SCHEMA";
+  }
+  let parsed;
+  try {
+    parsed = new URL(databaseUrl);
+  } catch {
+    return "DATABASE_URL unparseable — refusing DDL";
+  }
+  for (const key of CONNECTION_HOST_KEYS) {
+    if (parsed.searchParams.has(key)) {
+      return `DATABASE_URL contains ${key} connection-destination override — refusing DDL`;
+    }
+  }
+  for (const key of ["PGHOST", "PGHOSTADDR"]) {
+    const value = String(env[key] ?? "").trim();
+    if (!value) continue;
+    if (value.startsWith("/")) continue;
+    if (!isLoopbackUrlHost(value)) {
+      return `${key} overrides connection destination — refusing DDL`;
+    }
+  }
+  const host = normalizeHost(parsed.hostname);
+  if (looksLikeProductionHost(host)) {
+    return `DATABASE_URL host looks like production (${host}) — refusing DDL`;
+  }
+  if (!isLoopbackUrlHost(host)) {
+    return `DATABASE_URL host is not a loopback test host (${host || "empty"}) — refusing DDL`;
+  }
+  return null;
+}
+
+function mayDropPublicSchema({ itDb, currentDatabase, inetServerAddr } = {}) {
+  const current = String(currentDatabase ?? "").trim();
+  const isolated = String(itDb ?? "").trim();
+  if (!isolated || !/^[a-z][a-z0-9_]*_it$/.test(isolated)) {
+    return { allowed: false, reason: `IT database must match *_it (got ${isolated || "empty"})` };
+  }
+  if (!current || current !== isolated) {
+    return {
+      allowed: false,
+      reason: `current_database=${current || "empty"} is not isolated IT ${isolated}`,
+    };
+  }
+  if (FORBIDDEN_DROP_DATABASES.has(current)) {
+    return { allowed: false, reason: `current_database ${current} is forbidden as DROP target` };
+  }
+  if (!isLoopbackServerAddr(inetServerAddr)) {
+    return {
+      allowed: false,
+      reason: `inet_server_addr=${inetServerAddr || "empty"} is not loopback`,
+    };
+  }
+  return { allowed: true, reason: null };
+}
+
 function withDatabaseName(databaseUrl, databaseName) {
   const parsed = new URL(databaseUrl);
   parsed.pathname = `/${databaseName}`;
@@ -28,6 +137,8 @@ function withDatabaseName(databaseUrl, databaseName) {
 }
 
 async function ensureIsolatedDatabase(databaseUrl, databaseName) {
+  const refusal = sourceUrlRefusal(databaseUrl);
+  if (refusal) throw new Error(refusal);
   const pool = new Pool({ connectionString: withDatabaseName(databaseUrl, "postgres") });
   try {
     const existing = await pool.query("SELECT 1 FROM pg_database WHERE datname = $1", [databaseName]);
@@ -80,11 +191,56 @@ function createRepo(pool) {
   };
 }
 
+describe("FIN-CALC-RED PostgreSQL — garde-fou DROP SCHEMA", () => {
+  it("refuse une DATABASE_URL de cluster distant / production avant tout DDL", () => {
+    assert.ok(sourceUrlRefusal("postgresql://u:p@db.xxx.supabase.co:5432/postgres"));
+    assert.ok(sourceUrlRefusal("postgresql://u:p@localhost:5432/somafrik", { NODE_ENV: "production" }));
+    assert.ok(sourceUrlRefusal("postgresql://u:p@localhost:5432/somafrik", { SOMAFRIK_ENV: "production" }));
+    assert.ok(sourceUrlRefusal("postgresql://u:p@api.somafrik.app:5432/somafrik_finance_calc_red_it"));
+    assert.ok(sourceUrlRefusal("postgresql://u:p@localhost:5432/somafrik?host=db.prod.example"));
+    assert.equal(
+      sourceUrlRefusal("postgresql://somafrik:somafrik123@localhost:5432/somafrik", { NODE_ENV: "test" }),
+      null,
+    );
+  });
+
+  it("refuse DROP SCHEMA si current_database n'est pas la base IT isolée", () => {
+    const itDb = "somafrik_finance_calc_red_it";
+    assert.equal(
+      mayDropPublicSchema({ itDb, currentDatabase: "somafrik", inetServerAddr: "127.0.0.1" }).allowed,
+      false,
+    );
+    assert.equal(
+      mayDropPublicSchema({ itDb, currentDatabase: "postgres", inetServerAddr: "127.0.0.1" }).allowed,
+      false,
+    );
+    assert.equal(
+      mayDropPublicSchema({ itDb, currentDatabase: itDb, inetServerAddr: "203.0.113.10" }).allowed,
+      false,
+    );
+    assert.equal(
+      mayDropPublicSchema({ itDb, currentDatabase: itDb, inetServerAddr: "127.0.0.1" }).allowed,
+      true,
+    );
+  });
+});
+
 describe("FIN-CALC-RED PostgreSQL", { skip: !DATABASE_URL }, () => {
   it("FIN-CALC-RED-001 PG overpayment 1 CDF settles obligation and preserves 1 CDF unallocated", async () => {
+    const sourceRefusal = sourceUrlRefusal(DATABASE_URL);
+    assert.equal(sourceRefusal, null, sourceRefusal || "source DATABASE_URL accepted for isolated IT");
     const isolatedUrl = await ensureIsolatedDatabase(DATABASE_URL, IT_DATABASE);
     const pool = new Pool({ connectionString: isolatedUrl });
     try {
+      const identity = await pool.query(`
+        SELECT current_database() AS name, inet_server_addr()::text AS addr
+      `);
+      const decision = mayDropPublicSchema({
+        itDb: IT_DATABASE,
+        currentDatabase: identity.rows[0]?.name,
+        inetServerAddr: identity.rows[0]?.addr,
+      });
+      assert.equal(decision.allowed, true, decision.reason || "isolated IT drop target");
       await pool.query("DROP SCHEMA public CASCADE");
       await pool.query("CREATE SCHEMA public");
       const schema = fs.readFileSync(path.join(__dirname, "../db/schema.sql"), "utf8");
@@ -200,3 +356,12 @@ describe("FIN-CALC-RED PostgreSQL", { skip: !DATABASE_URL }, () => {
     }
   });
 });
+
+module.exports = {
+  sourceUrlRefusal,
+  mayDropPublicSchema,
+  looksLikeProductionHost,
+  isLoopbackUrlHost,
+  isLoopbackServerAddr,
+  FORBIDDEN_DROP_DATABASES,
+};

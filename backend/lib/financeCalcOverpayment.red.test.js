@@ -265,6 +265,10 @@ describe("FIN-CALC-RED — trop-perçu / imputation / statuts", () => {
     assert.notEqual(payment.status, PARTIAL_STATUS);
   });
 
+  // Contrat RED actuel : attend un encaissement Non imputé. Décision métier CTO
+  // 2026-09-07 : conserver 409 si obligationId cible une dette déjà soldée.
+  // Ne pas rendre ce cas GREEN avec l'assertion ci-dessous ; l'ajuster
+  // séparément du bug Oscar (statut « Partiellement payé »).
   it("FIN-CALC-RED-006 obligation déjà soldée → imputé 0, non imputé 10, amountPaid inchangé", async () => {
     const store = createStore();
     const before = await seedObligation(store, { amount: 10 });

@@ -4,7 +4,8 @@ Date : 2026-09-07
 Base : `develop@b1c904b27527efe5a04f64cb3ba46eb7c71b1edc`  
 Incident : `CD-IN-26-001-2026-PAY-0006` / Oscar Mukwege / 2 CDF / statut UI « Partiellement payé »
 
-**Aucun runtime modifié.** Lecture seule. Aucune donnée de production touchée (`DATABASE_URL` absent dans cet environnement).
+**Aucun runtime modifié.** Lecture seule. Aucune donnée de production touchée (`DATABASE_URL` absent dans cet environnement).  
+Suivi CTO 2026-09-07 : correction du **rapport** (parité PG non démontrée) + garde-fou `DROP SCHEMA` dans le test PG. Toujours **aucun GREEN**.
 
 ---
 
@@ -124,8 +125,9 @@ Aucun constaté dans cet audit RED :
    - cause : `openObligationsForItem` refuse `status === Payé`  
    - fichier : `financeService.js` `isOpenObligation` / `openObligationsForItem`  
    - test : FIN-CALC-RED-006  
-   - impact : impossible d'encaisser 10 CDF en non imputé sur une dette soldée si l'UI renvoie encore l'`obligationId`  
-   - correction envisagée : si balance = 0, traiter le montant comme Non imputé (imputé 0) au lieu de rejeter, **ou** forcer l'UI à envoyer `Non imputé` sans `obligationId`
+   - **hors périmètre Oscar.** Décision métier CTO 2026-09-07 : **conserver le 409** lorsqu'un client cible explicitement une obligation déjà soldée. Transformer silencieusement `obligationId soldé + 10 CDF` → `10 CDF Non imputé` masquerait une UI obsolète, une concurrence ou une erreur de sélection.  
+   - encaissement volontaire sans dette ouverte = Non imputé **sans** `obligationId`  
+   - **RED-006 ne doit pas devenir GREEN avec son assertion actuelle** (imputé 0 / non imputé 10). Le contrat du test sera ajusté séparément (attendre 409), après le bug Oscar.
 
 ### P2
 
@@ -135,16 +137,36 @@ Aucun constaté dans cet audit RED :
 
 ## 6. Memory vs PostgreSQL
 
-- Mémoire : suite FIN-CALC-RED-001..014 exécutée.  
-- PostgreSQL HTTP : `DATABASE_URL` absent → `financeCalcOverpayment.pg.test.js` SKIP. Fichier ajouté pour la CI qui a une base.  
-- Oscar prod : non lu.
+- Mémoire : suite FIN-CALC-RED-001..014 exécutée localement et en CI (`verify:finance-management`).  
+- **Parité PostgreSQL : NON démontrée à ce stade.**  
+  La CI Risk-targeted possède bien un PostgreSQL et un `DATABASE_URL` (`localhost:5432/somafrik`), mais `verify:finance-management` lance d'abord la suite mémoire avec `&&`. Les 5 RED mémoire échouent → l'exécution s'arrête **avant** `financeCalcOverpayment.pg.test.js`. Ne pas annoncer que la CI a confirmé PostgreSQL.  
+- Agent local : `DATABASE_URL` absent → SKIP (pas un vert artificiel).  
+- Oscar prod : non lu (`audit-finance-oscar-readonly.js`).
+
+`financeCalcOverpayment.pg.test.js` crée une base isolée `somafrik_finance_calc_red_it` puis exécute `DROP SCHEMA public CASCADE` **dans cette base de test**. Ce n'est pas une mutation production dans l'exécution actuelle, mais le fichier **refuse désormais** une `DATABASE_URL` de cluster distant / `NODE_ENV=production` avant tout DDL. Ne jamais lui passer une URL pointant vers la production.
 
 ---
 
-## 7. Proposition de correction (ne pas implémenter)
+## 7. Proposition de correction (ne pas implémenter — aucun GREEN autorisé)
 
 1. Conserver `allocateAmount` (plafond déjà correct).  
 2. Introduire un statut d'imputation distinct (`Partiellement imputé`) sans écraser `obligation.status = Payé`.  
 3. `presentPaymentStatus` : leftover après solde intégral des cibles ≠ « obligation partielle ».  
 4. Web : ne plus traduire `Partiel` par `Partiellement payé`.  
-5. Décider RED-006 (409 vs non imputé automatique) avant le GREEN.
+5. **RED-006 tranché : conserver le 409** si `obligationId` cible une dette déjà soldée. Ajuster le contrat du test séparément du GREEN Oscar. Règles nettes :  
+   - obligation ouverte 1 CDF + paiement 2 CDF → 1 imputé + 1 non imputé, obligation **Payé** ;  
+   - obligation déjà soldée + paiement explicitement ciblé dessus → **409** ;  
+   - encaissement volontaire sans obligation → **Non imputé**.
+
+---
+
+## 8. Audit GitHub indépendant CTO (2026-09-07)
+
+STOP RED validé sur #542, sans modification de la PR au moment de l'audit.
+
+- Draft, ouverte, non mergée.  
+- Commit RED : `37743a6c98676f0fe8e82c2ed907769973d3e375` — 7 fichiers, +1093 / −1, aucun runtime Finance / API / DB / Web / Mobile.  
+- Base `develop@b1c904b27527efe5a04f64cb3ba46eb7c71b1edc`, 1 ahead / 0 behind.  
+- CI rouge conforme : F7 = FIN-CALC-RED-015 ; Risk-targeted Finance = RED-001, 004, 005, 006, 014. Conservation, plafonnement, solde non négatif, annulation, idempotence restent verts.  
+- Diagnostic Oscar confirmé : le moteur d'imputation est correct ; le P1 est la confusion **statut de créance** / **statut d'imputation du paiement**.  
+- **Aucun GREEN autorisé. NO MERGE.**
