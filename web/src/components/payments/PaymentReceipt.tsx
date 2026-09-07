@@ -1,11 +1,13 @@
 import type { PaymentRecord } from "../../lib/quickPayment";
-import type { School } from "../../types";
+import type { School, SessionUser } from "../../types";
+import { useAuth } from "../../context/AuthContext";
 import { formatFinanceAmount, formatFinanceDate, resolveFinanceCurrency } from "../../lib/financeCurrency";
 import { financePaymentStatusLabel } from "../../lib/financeObligationStatus";
 
 interface PaymentReceiptProps {
   payment: PaymentRecord;
   school?: School | null;
+  enteredByName?: string;
 }
 
 function receiptItems(payment: PaymentRecord): { label: string; amount: number }[] {
@@ -27,13 +29,57 @@ function receiptItems(payment: PaymentRecord): { label: string; amount: number }
   ];
 }
 
-export function PaymentReceipt({ payment, school }: PaymentReceiptProps) {
+function normalizeIdentity(value: unknown): string {
+  return String(value ?? "").trim().toLocaleLowerCase("fr");
+}
+
+function sessionUserMatchesCreator(user: SessionUser | null | undefined, createdBy: unknown): boolean {
+  if (!user) return false;
+  const creator = normalizeIdentity(createdBy);
+  if (!creator) return false;
+  const row = user as SessionUser & { userCode?: string };
+  return [row.publicId, row.id, row.identifier, row.userCode]
+    .map(normalizeIdentity)
+    .filter(Boolean)
+    .includes(creator);
+}
+
+function sessionUserDisplayName(user: SessionUser | null | undefined): string {
+  if (!user) return "";
+  return [user.firstName, user.lastName]
+    .map((value) => String(value ?? "").trim())
+    .filter(Boolean)
+    .join(" ");
+}
+
+function resolveEnteredByName(
+  payment: PaymentRecord,
+  sessionUser: SessionUser | null | undefined,
+  enteredByName?: string,
+): string {
+  const persistedName = String(payment.createdByName ?? "").trim();
+  if (persistedName) return persistedName;
+
+  const explicitName = String(enteredByName ?? "").trim();
+  if (explicitName) return explicitName;
+
+  if (sessionUserMatchesCreator(sessionUser, payment.createdBy)) {
+    const sessionName = sessionUserDisplayName(sessionUser);
+    if (sessionName) return sessionName;
+  }
+
+  return String(payment.createdBy ?? "—");
+}
+
+export function PaymentReceipt({ payment, school, enteredByName }: PaymentReceiptProps) {
+  const { session } = useAuth();
   const items = receiptItems(payment);
   const total = items.reduce((sum, item) => sum + item.amount, 0);
   const currency = resolveFinanceCurrency(
     typeof payment.currency === "string" ? payment.currency : undefined,
     school?.currency,
   );
+  const enteredBy = resolveEnteredByName(payment, session?.user, enteredByName);
 
   return (
     <div className="payment-receipt mx-auto max-w-md rounded-2xl border border-line bg-white p-8 text-sm text-ink print:border-0 print:shadow-none">
@@ -121,7 +167,7 @@ export function PaymentReceipt({ payment, school }: PaymentReceiptProps) {
         </div>
         <div className="flex justify-between gap-4">
           <dt className="text-muted">Saisi par</dt>
-          <dd>{String(payment.createdByName ?? payment.createdBy ?? "—")}</dd>
+          <dd>{enteredBy}</dd>
         </div>
         {payment.comment ? (
           <div className="flex justify-between gap-4">

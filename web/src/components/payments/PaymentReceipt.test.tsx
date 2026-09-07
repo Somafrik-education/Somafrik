@@ -1,5 +1,21 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
+
+vi.mock("../../context/AuthContext", () => ({
+  useAuth: () => ({
+    session: {
+      user: {
+        id: "user-admin-nuru",
+        publicId: "USR-2026-00005",
+        permanentId: "USR-2026-00005",
+        identifier: "admin.nuru",
+        firstName: "Administrateur",
+        lastName: "Nuru",
+      },
+    },
+  }),
+}));
+
 import { PaymentReceipt } from "./PaymentReceipt";
 
 describe("PaymentReceipt multi-libellés", () => {
@@ -27,5 +43,73 @@ describe("PaymentReceipt multi-libellés", () => {
     expect(screen.getByText("Frais de cantine")).toBeInTheDocument();
     expect(screen.getByText("Total")).toBeInTheDocument();
     expect(screen.getByText("CD-2026-0001-2026-PAY-0004")).toBeInTheDocument();
+  });
+
+  it("affiche le nom du saisissant plutôt que son code utilisateur quand le créateur est l'utilisateur connecté", () => {
+    render(
+      <PaymentReceipt
+        payment={{
+          reference: "CD-2026-0001-2026-PAY-0007",
+          studentName: "Maeva O'gulgune",
+          className: "2ème A",
+          items: [{ feeLabel: "Scolarité", amount: 150 }],
+          amount: 150,
+          method: "Espèces",
+          date: "2026-08-24",
+          status: "Non imputé",
+          currency: "CDF",
+          createdBy: "USR-2026-00005",
+        }}
+      />,
+    );
+
+    expect(screen.getByText("Saisi par")).toBeInTheDocument();
+    expect(screen.getByText("Administrateur Nuru")).toBeInTheDocument();
+    expect(screen.queryByText("USR-2026-00005")).not.toBeInTheDocument();
+  });
+
+  it("ne réattribue jamais un paiement historique créé par un autre utilisateur", () => {
+    render(
+      <PaymentReceipt
+        payment={{
+          reference: "CD-2026-0001-2026-PAY-0008",
+          studentName: "Maeva O'gulgune",
+          className: "2ème A",
+          items: [{ feeLabel: "Scolarité", amount: 150 }],
+          amount: 150,
+          method: "Espèces",
+          date: "2026-08-24",
+          status: "Payé",
+          currency: "CDF",
+          createdBy: "USR-2026-00999",
+        }}
+      />,
+    );
+
+    expect(screen.getByText("USR-2026-00999")).toBeInTheDocument();
+    expect(screen.queryByText("Administrateur Nuru")).not.toBeInTheDocument();
+  });
+
+  it("préfère le nom canonique persisté quand il est fourni par l'API", () => {
+    render(
+      <PaymentReceipt
+        payment={{
+          reference: "CD-2026-0001-2026-PAY-0009",
+          studentName: "Maeva O'gulgune",
+          className: "2ème A",
+          items: [{ feeLabel: "Scolarité", amount: 150 }],
+          amount: 150,
+          method: "Espèces",
+          date: "2026-08-24",
+          status: "Payé",
+          currency: "CDF",
+          createdBy: "USR-2026-00999",
+          createdByName: "Comptable Amina",
+        }}
+      />,
+    );
+
+    expect(screen.getByText("Comptable Amina")).toBeInTheDocument();
+    expect(screen.queryByText("USR-2026-00999")).not.toBeInTheDocument();
   });
 });
