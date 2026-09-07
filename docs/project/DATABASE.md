@@ -222,7 +222,7 @@ Clés PUT `/api/backoffice/state` interdites : `courses`, `courseSchedules`, `ev
 |-------|------|----------------------|
 | `countries` | Référentiel pays (SoT) | UNIQUE `iso_code` · `profile_payload` (politique abonnement, fuseau) |
 | `subscriptions` | Abonnement établissement | FK `school_id` · `profile_payload` (offre, cycle, accès) |
-| `trial_access_requests` | Demandes d'essai publiques (V1 sans SMTP) | `consent_at` · statut `nouvelle` par défaut · UNIQUE partiel email+établissement tant que la demande est ouverte · aucun auto-provision |
+| `trial_access_requests` | Demandes d'essai publiques | `consent_at` · statut `nouvelle` par défaut · UNIQUE partiel email+établissement tant que la demande est ouverte · aucun auto-provision · notification e-mail SMTP après insert (optionnelle, sans rollback) |
 | `subscription_offers` | Offres commerciales | `offer_code` · pays cibles JSONB |
 | `subscription_payments` / `subscription_invoices` / `subscription_discounts` | Collections abonnement | FK établissement · audit dédié `subscription_audit_log` |
 | `notifications` | Notifications plateforme | FK école optionnelle · statut lu/archivé |

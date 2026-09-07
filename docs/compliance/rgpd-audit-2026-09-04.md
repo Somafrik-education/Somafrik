@@ -29,7 +29,8 @@
 - AIPD **signée CTO** (`aipd-somafrik.md` est rédigée, pas close)
 - Notification CNIL : pour les données scolaires, **l’établissement** notifie ; Somafrik notifie d’abord le responsable (`procedure-violation-donnees.md`)
 - Promotion `main`, rebuild EAS AAB, import Play Data Safety en Console
-- SMS / WhatsApp / e-mail transactionnel (non implémentés)
+- SMS / WhatsApp (non implémentés)
+- E-mail transactionnel : **uniquement** notification des demandes d’essai (SMTP optionnel, pas de pièce jointe, pas de rollback du lead)
 
 ## Contact
 
