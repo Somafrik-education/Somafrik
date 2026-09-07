@@ -98,7 +98,7 @@ export function TrialRequestsPage() {
     <Card className="p-6">
       <SectionHeader
         title="Demandes d'essai"
-        description="Inbox Superadmin. Le formulaire public ne crée pas d'établissement, d'utilisateur ni d'abonnement."
+        description="File des demandes d’essai. Le formulaire public ne crée pas d’établissement, d’utilisateur ni d’abonnement."
       />
       {loading ? (
         <p className="text-sm text-muted">Chargement…</p>
