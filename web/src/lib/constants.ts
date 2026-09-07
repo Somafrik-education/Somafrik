@@ -73,7 +73,7 @@ export const VIEW_PERMISSION_FEATURES: Record<string, string | null> = {
   planning: "Planning de cours",
   payments: "Paiements",
   fees: "Frais & tarifs",
-  unpaid: "Frais & tarifs",
+  unpaid: "Impayés",
   announcements: "Announcements",
   messages: "Messages",
   presences: "Présences",

@@ -1,6 +1,6 @@
 import { describe, expect, it, beforeEach, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
-import { MemoryRouter, Navigate, Outlet, Route, Routes, useLocation } from "react-router-dom";
+import { MemoryRouter, Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -32,7 +32,7 @@ vi.mock("../../context/AuthContext", () => ({
 }));
 
 import { PermissionRoute } from "../../components/PermissionRoute";
-import { FinanceIndexRedirect } from "./FinancesLayout";
+import { FinanceIndexRedirect, FinancesLayout } from "./FinancesLayout";
 
 function PathProbe() {
   const loc = useLocation();
@@ -49,7 +49,7 @@ function renderFinanceRoutes(initialPath: string) {
           path="/finances"
           element={
             <PermissionRoute view={["payments", "fees", "unpaid"]}>
-              <Outlet />
+              <FinancesLayout />
             </PermissionRoute>
           }
         >
@@ -120,6 +120,58 @@ describe("P1 RBAC Finances — Frais & tarifs sans Paiements", () => {
     expect(screen.getByText("FRAIS_OK")).toBeInTheDocument();
     expect(screen.getByTestId("path")).toHaveTextContent("/finances/frais");
   });
+
+  it("B. Frais seul : onglet Impayés masqué et /finances/impayes refusé", () => {
+    const { unmount } = renderFinanceRoutes("/finances/frais");
+    expect(screen.getByRole("link", { name: "Frais & tarifs" })).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Impayés" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Paiements" })).not.toBeInTheDocument();
+    unmount();
+    renderFinanceRoutes("/finances/impayes");
+    expect(screen.queryByText("IMPAYES_OK")).not.toBeInTheDocument();
+    expect(screen.getByText("HOME_ETABLISSEMENT")).toBeInTheDocument();
+    expect(screen.getByTestId("path")).toHaveTextContent("/etablissement");
+  });
+});
+
+describe("P1 RBAC Finances — Impayés:READ seul", () => {
+  beforeEach(() => {
+    asUser("Admin School", ["Impayés:READ"]);
+  });
+
+  it("A. /finances et /finances/impayes accessibles, index atterrit sur impayés", () => {
+    const { unmount } = renderFinanceRoutes("/finances");
+    expect(screen.getByText("IMPAYES_OK")).toBeInTheDocument();
+    expect(screen.getByTestId("path")).toHaveTextContent("/finances/impayes");
+    expect(screen.getByRole("link", { name: "Impayés" })).toBeInTheDocument();
+    unmount();
+    renderFinanceRoutes("/finances/impayes");
+    expect(screen.getByText("IMPAYES_OK")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Impayés" })).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Frais & tarifs" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Paiements" })).not.toBeInTheDocument();
+  });
+});
+
+describe("P1 RBAC Finances — Paiements:READ seul", () => {
+  beforeEach(() => {
+    asUser("Admin School", ["Paiements:READ"]);
+  });
+
+  it("C. Paiements seul : /finances/paiements OK, Frais et Impayés refusés", () => {
+    const first = renderFinanceRoutes("/finances/paiements");
+    expect(screen.getByText("PAIEMENTS_OK")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Paiements" })).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Frais & tarifs" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Impayés" })).not.toBeInTheDocument();
+    first.unmount();
+    const index = renderFinanceRoutes("/finances");
+    expect(screen.getByTestId("path")).toHaveTextContent("/finances/paiements");
+    index.unmount();
+    renderFinanceRoutes("/finances/frais");
+    expect(screen.queryByText("FRAIS_OK")).not.toBeInTheDocument();
+    expect(screen.getByText("HOME_ETABLISSEMENT")).toBeInTheDocument();
+  });
 });
 
 describe("P1 RBAC Finances — pas de régression Admin School / Comptable", () => {
@@ -146,6 +198,7 @@ describe("P1 RBAC Finances — pas de régression Admin School / Comptable", () 
     expect(app).toMatch(/view=\{\["payments", "fees", "unpaid"\]\}/);
     expect(app).toMatch(/path="frais"[\s\S]{0,180}?PermissionRoute view="fees"/);
     expect(app).toMatch(/path="paiements"[\s\S]{0,180}?PermissionRoute view="payments"/);
+    expect(app).toMatch(/path="impayes"[\s\S]{0,180}?PermissionRoute view="unpaid"/);
     expect(app).toMatch(/path="finances"[\s\S]{0,250}?Navigate to="\/finances\/frais"/);
   });
 });
