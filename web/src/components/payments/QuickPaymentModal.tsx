@@ -29,11 +29,14 @@ import { createFinanceIdempotencyKey } from "../../lib/financeIdempotency";
 import {
   UNALLOCATED_FEE_TYPE,
   UNALLOCATED_TARGET,
+  OPEN_OBLIGATION_RESOLVE_ERROR,
   buildFinancePaymentWritePayload,
   collectOpenObligationsFromProjection,
   draftLineCash,
+  findFinanceStudentOption,
   presentPaymentCashFromProjection,
   type FinanceObligationProjection,
+  type FinanceStudentIdentity,
 } from "../../lib/financePaymentWrite";
 import { PaymentReceipt } from "./PaymentReceipt";
 import { OpenObligationCards } from "./OpenObligationCards";
@@ -44,6 +47,23 @@ interface QuickPaymentModalProps {
   onSaved?: (payment: PaymentRecord) => void;
   /** Préselectionne l'élève après chargement du catalogue (Impayés → encaissement). */
   initialStudentId?: string;
+  /**
+   * Parcours Impayés : élève déjà connu, pas de recherche manuelle.
+   * Le mode par défaut (Paiements) reste inchangé.
+   */
+  mode?: "default" | "quick-student";
+  unpaidRemaining?: number;
+  unpaidFeeIds?: string[];
+}
+
+function studentIdentityFromSearch(student: StudentSearchResult): FinanceStudentIdentity {
+  return {
+    id: student.id,
+    studentId: student.id,
+    studentCode: student.matricule,
+    matricule: student.matricule,
+    publicId: student.matricule,
+  };
 }
 
 function studentSearchResultFromOption(
@@ -68,7 +88,15 @@ function studentSearchResultFromOption(
   };
 }
 
-export function QuickPaymentModal({ open, onClose, onSaved, initialStudentId }: QuickPaymentModalProps) {
+export function QuickPaymentModal({
+  open,
+  onClose,
+  onSaved,
+  initialStudentId,
+  mode = "default",
+  unpaidRemaining,
+  unpaidFeeIds,
+}: QuickPaymentModalProps) {
   const { session } = useAuth();
   const { state, update, refresh } = useData();
   const { activeSchoolCode: schoolCode, scopedUser } = useActiveSchool();
@@ -122,20 +150,33 @@ export function QuickPaymentModal({ open, onClose, onSaved, initialStudentId }: 
     () => (selectedStudent ? collectStudentPaymentClasses(selectedStudent.id, students) : []),
     [selectedStudent, students],
   );
+  const studentIdentity = selectedStudent ? studentIdentityFromSearch(selectedStudent) : null;
   const openObligations = useMemo(
-    () => (selectedStudent ? collectOpenObligationsFromProjection(selectedStudent.id, studentFees) : []),
-    [selectedStudent, studentFees],
+    () => (studentIdentity ? collectOpenObligationsFromProjection(studentIdentity, studentFees) : []),
+    [studentIdentity, studentFees],
   );
-  const obligationSelectOptions = useMemo(
-    () => [
-      { value: UNALLOCATED_TARGET, label: UNALLOCATED_FEE_TYPE },
-      ...openObligations.map((row) => ({
-        value: row.obligationId,
-        label: `${row.label}${row.periodLabel ? ` · ${row.periodLabel}` : ""} · reste ${formatFinanceAmount(row.balance, row.currency || catalogCurrency)}`,
-      })),
-    ],
-    [openObligations, catalogCurrency],
-  );
+  const isQuickStudent = mode === "quick-student";
+  const unpaidHasOpenBalance = Number(unpaidRemaining) > 0 || (unpaidFeeIds?.length ?? 0) > 0;
+  const obligationResolveError =
+    isQuickStudent &&
+    Boolean(selectedStudent) &&
+    !catalogLoading &&
+    openObligations.length === 0 &&
+    unpaidHasOpenBalance;
+  const obligationSelectOptions = useMemo(() => {
+    const obligationOptions = openObligations.map((row) => ({
+      value: row.obligationId,
+      label: `${row.label}${row.periodLabel ? ` · ${row.periodLabel}` : ""} · reste ${formatFinanceAmount(row.balance, row.currency || catalogCurrency)}`,
+    }));
+    if (!isQuickStudent) {
+      return [{ value: UNALLOCATED_TARGET, label: UNALLOCATED_FEE_TYPE }, ...obligationOptions];
+    }
+    if (obligationResolveError) return [];
+    if (openObligations.length > 1) {
+      return [{ value: "", label: "Sélectionner un frais" }, ...obligationOptions];
+    }
+    return obligationOptions;
+  }, [openObligations, catalogCurrency, isQuickStudent, obligationResolveError]);
   const draftCash = draftLineCash(lines);
   const total = sumPaymentLines(lines);
   const currency = resolveFinanceCurrency(catalogCurrency, school?.currency);
@@ -177,6 +218,7 @@ export function QuickPaymentModal({ open, onClose, onSaved, initialStudentId }: 
               name: `${option.firstName} ${option.lastName}`.trim(),
               matricule: option.studentCode,
               studentCode: option.studentCode,
+              publicId: option.studentCode,
               classId: klass.classId,
               classCode: klass.classCode,
               className: klass.className,
@@ -200,9 +242,7 @@ export function QuickPaymentModal({ open, onClose, onSaved, initialStudentId }: 
 
         const wanted = String(initialStudentId ?? "").trim();
         if (wanted) {
-          const match = flattened.find(
-            (row) => String(row.id ?? "").trim() === wanted || String(row.studentId ?? "").trim() === wanted,
-          );
+          const match = findFinanceStudentOption(flattened, wanted);
           if (match) {
             applySelectedStudent(
               studentSearchResultFromOption(match, state.schools),
@@ -232,8 +272,16 @@ export function QuickPaymentModal({ open, onClose, onSaved, initialStudentId }: 
     setSearch(student.name);
     const options = collectStudentPaymentClasses(student.id, roster);
     setClassId(options.length === 1 ? options[0].classId : "");
-    const openRows = collectOpenObligationsFromProjection(student.id, fees);
-    setLines([createPaymentLine(openRows.length === 1 ? openRows[0].obligationId : UNALLOCATED_TARGET)]);
+    const openRows = collectOpenObligationsFromProjection(studentIdentityFromSearch(student), fees);
+    if (openRows.length === 1) {
+      setLines([createPaymentLine(openRows[0].obligationId)]);
+      return;
+    }
+    if (mode === "quick-student") {
+      setLines([createPaymentLine("")]);
+      return;
+    }
+    setLines([createPaymentLine(UNALLOCATED_TARGET)]);
   }
 
   function selectStudent(student: StudentSearchResult) {
@@ -250,6 +298,19 @@ export function QuickPaymentModal({ open, onClose, onSaved, initialStudentId }: 
 
   async function persistPayment(printAfter = false) {
     if (!selectedStudent || busyRef.current) return;
+    if (mode === "quick-student" && (obligationResolveError || (openObligations.length === 0 && unpaidHasOpenBalance))) {
+      showToast(OPEN_OBLIGATION_RESOLVE_ERROR, "error");
+      return;
+    }
+    if (
+      mode === "quick-student" &&
+      unpaidHasOpenBalance &&
+      lines.some((line) => String(line.obligationId ?? "").trim() === UNALLOCATED_TARGET) &&
+      openObligations.length === 0
+    ) {
+      showToast(OPEN_OBLIGATION_RESOLVE_ERROR, "error");
+      return;
+    }
     busyRef.current = true;
     setBusy(true);
     try {
@@ -296,6 +357,10 @@ export function QuickPaymentModal({ open, onClose, onSaved, initialStudentId }: 
     if (busyRef.current) return;
     if (catalogError || !catalogMethods.length) {
       showToast(catalogError || "Catalogue financier indisponible.", "error");
+      return;
+    }
+    if (mode === "quick-student" && obligationResolveError) {
+      showToast(OPEN_OBLIGATION_RESOLVE_ERROR, "error");
       return;
     }
     if (!catalogMethods.includes(method)) {
@@ -374,13 +439,13 @@ export function QuickPaymentModal({ open, onClose, onSaved, initialStudentId }: 
           </Button>
           <Button
             variant="secondary"
-            disabled={busy || catalogLoading || Boolean(catalogError) || !catalogMethods.length}
+            disabled={busy || catalogLoading || Boolean(catalogError) || !catalogMethods.length || obligationResolveError}
             onClick={(event) => void handleSubmit(event, true)}
           >
             {busy ? "Enregistrement…" : "Enregistrer et imprimer"}
           </Button>
           <Button
-            disabled={busy || catalogLoading || Boolean(catalogError) || !catalogMethods.length}
+            disabled={busy || catalogLoading || Boolean(catalogError) || !catalogMethods.length || obligationResolveError}
             onClick={(event) => void handleSubmit(event, false)}
           >
             {busy ? "Enregistrement…" : "Enregistrer l'encaissement"}
@@ -404,48 +469,52 @@ export function QuickPaymentModal({ open, onClose, onSaved, initialStudentId }: 
             {catalogError}
           </p>
         ) : null}
-        <Field label="Élève" required>
-          <Input
-            value={search}
-            onChange={(event) => {
-              setSearch(event.target.value);
-              if (selectedStudent && event.target.value !== selectedStudent.name) {
-                setSelectedStudent(null);
-              }
-            }}
-            placeholder="Nom, matricule ou code élève"
-            autoFocus
-            aria-describedby="payment-student-help"
-            data-testid="payment-student-search"
-          />
-        </Field>
-        <p id="payment-student-help" className="text-xs text-muted">
-          Saisissez au moins 2 caractères pour retrouver un élève inscrit.
-        </p>
+        {isQuickStudent ? null : (
+          <>
+            <Field label="Élève" required>
+              <Input
+                value={search}
+                onChange={(event) => {
+                  setSearch(event.target.value);
+                  if (selectedStudent && event.target.value !== selectedStudent.name) {
+                    setSelectedStudent(null);
+                  }
+                }}
+                placeholder="Nom, matricule ou code élève"
+                autoFocus
+                aria-describedby="payment-student-help"
+                data-testid="payment-student-search"
+              />
+            </Field>
+            <p id="payment-student-help" className="text-xs text-muted">
+              Saisissez au moins 2 caractères pour retrouver un élève inscrit.
+            </p>
 
-        {search.length >= 2 && !selectedStudent ? (
-          <div className="max-h-44 overflow-y-auto rounded-xl border border-line bg-slate-50">
-            {searchResults.length ? (
-              searchResults.map((student) => (
-                <button
-                  key={student.id}
-                  type="button"
-                  className="flex w-full flex-col items-start border-b border-line px-4 py-3 text-left last:border-b-0 hover:bg-white"
-                  onClick={() => selectStudent(student)}
-                >
-                  <span className="font-semibold text-ink">{student.name}</span>
-                  <span className="text-xs text-muted">
-                    {student.className} · {student.matricule} · {student.schoolName}
-                  </span>
-                </button>
-              ))
-            ) : (
-              <p className="px-4 py-3 text-sm text-muted">Aucun élève trouvé</p>
-            )}
-          </div>
-        ) : null}
+            {search.length >= 2 && !selectedStudent ? (
+              <div className="max-h-44 overflow-y-auto rounded-xl border border-line bg-slate-50">
+                {searchResults.length ? (
+                  searchResults.map((student) => (
+                    <button
+                      key={student.id}
+                      type="button"
+                      className="flex w-full flex-col items-start border-b border-line px-4 py-3 text-left last:border-b-0 hover:bg-white"
+                      onClick={() => selectStudent(student)}
+                    >
+                      <span className="font-semibold text-ink">{student.name}</span>
+                      <span className="text-xs text-muted">
+                        {student.className} · {student.matricule} · {student.schoolName}
+                      </span>
+                    </button>
+                  ))
+                ) : (
+                  <p className="px-4 py-3 text-sm text-muted">Aucun élève trouvé</p>
+                )}
+              </div>
+            ) : null}
+          </>
+        )}
 
-        {selectedStudent ? (
+        {selectedStudent && !isQuickStudent ? (
           <div
             className="rounded-xl border border-brand/20 bg-brand-50/40 p-4 text-sm"
             data-testid="quick-payment-selected-student"
@@ -468,78 +537,126 @@ export function QuickPaymentModal({ open, onClose, onSaved, initialStudentId }: 
           </div>
         ) : null}
 
-        {selectedStudent ? (
-          <div className="space-y-2">
-            <p className="text-sm font-semibold text-ink">Frais encore dus</p>
-            <OpenObligationCards
-              currency={currency}
-              obligations={openObligations.map((row) => ({
-                obligationId: row.obligationId,
-                label: row.label,
-                periodLabel: row.periodLabel,
-                className: row.className,
-                balance: row.balance,
-                amountDue: row.amountDue,
-                amountPaid: row.amountPaid,
-                dueDate: row.dueDate,
-                status: row.status,
-                currency: row.currency || currency,
-              }))}
-            />
+        {selectedStudent && isQuickStudent ? (
+          <div
+            className="rounded-xl border border-brand/20 bg-brand-50/40 p-4 text-sm"
+            data-testid="quick-payment-selected-student"
+          >
+            <dl className="grid gap-3 sm:grid-cols-3">
+              <div>
+                <dt className="text-xs font-semibold uppercase tracking-wide text-muted">Nom</dt>
+                <dd className="mt-1 font-bold text-ink">{selectedStudent.name}</dd>
+              </div>
+              <div>
+                <dt className="text-xs font-semibold uppercase tracking-wide text-muted">Matricule</dt>
+                <dd className="mt-1 font-semibold text-ink">{selectedStudent.matricule}</dd>
+              </div>
+              <div>
+                <dt className="text-xs font-semibold uppercase tracking-wide text-muted">Classe</dt>
+                <dd className="mt-1">
+                  {classOptions.length <= 1 ? (
+                    <span className="font-semibold text-ink">
+                      {classOptions[0]?.className || selectedStudent.className || "—"}
+                    </span>
+                  ) : (
+                    <Select
+                      value={classId}
+                      onChange={(event) => setClassId(event.target.value)}
+                      options={classOptions.map((item) => ({ value: item.classId, label: item.className }))}
+                    />
+                  )}
+                </dd>
+              </div>
+            </dl>
           </div>
         ) : null}
 
-        <div className="space-y-3">
-          <p className="text-sm font-semibold text-ink">Affectation de l'encaissement</p>
-          {lines.map((line, index) => (
-            <div
-              key={line.id}
-              className="grid gap-3 rounded-xl border border-line bg-slate-50 p-3 sm:grid-cols-[1fr_8rem_auto]"
-              data-testid={`payment-line-${index}`}
-            >
-              <Field label="Frais concerné" required>
-                <Select
-                  value={line.obligationId}
-                  onChange={(event) => updateLine(line.id, { obligationId: event.target.value })}
-                  options={obligationSelectOptions}
-                />
-              </Field>
-              <Field label="Montant à encaisser" required>
-                <Input
-                  type="number"
-                  min={1}
-                  step="0.01"
-                  value={line.amount}
-                  onChange={(event) => updateLine(line.id, { amount: event.target.value })}
-                  placeholder="0"
-                />
-              </Field>
-              <div className="flex items-end">
-                <Button
-                  type="button"
-                  variant="secondary"
-                  disabled={lines.length <= 1}
-                  onClick={() => removeLine(line.id)}
-                  aria-label="Supprimer la ligne"
-                >
-                  <Trash2 className="h-4 w-4" />
-                </Button>
+        {selectedStudent ? (
+          <div className="space-y-2">
+            <p className="text-sm font-semibold text-ink">Frais encore dus</p>
+            {obligationResolveError ? (
+              <p
+                className="rounded-xl border border-danger/30 bg-danger/10 px-4 py-3 text-sm text-danger"
+                role="alert"
+                data-testid="quick-payment-obligation-mismatch"
+              >
+                {OPEN_OBLIGATION_RESOLVE_ERROR}
+              </p>
+            ) : (
+              <OpenObligationCards
+                currency={currency}
+                obligations={openObligations.map((row) => ({
+                  obligationId: row.obligationId,
+                  label: row.label,
+                  periodLabel: row.periodLabel,
+                  className: row.className,
+                  balance: row.balance,
+                  amountDue: row.amountDue,
+                  amountPaid: row.amountPaid,
+                  dueDate: row.dueDate,
+                  status: row.status,
+                  currency: row.currency || currency,
+                }))}
+              />
+            )}
+          </div>
+        ) : null}
+
+        {obligationResolveError ? null : (
+          <div className="space-y-3">
+            <p className="text-sm font-semibold text-ink">Affectation de l'encaissement</p>
+            {lines.map((line, index) => (
+              <div
+                key={line.id}
+                className="grid gap-3 rounded-xl border border-line bg-slate-50 p-3 sm:grid-cols-[1fr_8rem_auto]"
+                data-testid={`payment-line-${index}`}
+              >
+                <Field label="Frais concerné" required>
+                  <Select
+                    value={line.obligationId}
+                    onChange={(event) => updateLine(line.id, { obligationId: event.target.value })}
+                    options={obligationSelectOptions}
+                  />
+                </Field>
+                <Field label="Montant à encaisser" required>
+                  <Input
+                    type="number"
+                    min={1}
+                    step="0.01"
+                    value={line.amount}
+                    onChange={(event) => updateLine(line.id, { amount: event.target.value })}
+                    placeholder="0"
+                  />
+                </Field>
+                <div className="flex items-end">
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    disabled={lines.length <= 1}
+                    onClick={() => removeLine(line.id)}
+                    aria-label="Supprimer la ligne"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </div>
               </div>
-            </div>
-          ))}
-          <Button
-            type="button"
-            variant="secondary"
-            data-testid="payment-add-line"
-            disabled={Boolean(catalogError)}
-            onClick={() =>
-              setLines((current) => [...current, createPaymentLine(UNALLOCATED_TARGET)])
-            }
-          >
-            <Plus className="mr-1 h-4 w-4" />
-            Ajouter une ligne de frais
-          </Button>
-        </div>
+            ))}
+            {isQuickStudent ? null : (
+              <Button
+                type="button"
+                variant="secondary"
+                data-testid="payment-add-line"
+                disabled={Boolean(catalogError)}
+                onClick={() =>
+                  setLines((current) => [...current, createPaymentLine(UNALLOCATED_TARGET)])
+                }
+              >
+                <Plus className="mr-1 h-4 w-4" />
+                Ajouter une ligne de frais
+              </Button>
+            )}
+          </div>
+        )}
 
         <div className="rounded-xl border border-line bg-white px-4 py-3">
           <div className="grid gap-2 text-sm sm:grid-cols-3">

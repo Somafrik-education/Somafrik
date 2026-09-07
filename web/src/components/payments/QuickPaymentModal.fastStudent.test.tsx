@@ -7,7 +7,6 @@ import {
   OBLIGATION_SCO_ID,
   OPEN_BALANCE_CDF,
   SCHOOL_CODE,
-  SCHOOL_ID,
   STUDENT_CODE,
   STUDENT_NAME,
   STUDENT_UUID,
@@ -149,5 +148,17 @@ describe("IMP-FAST — QuickPaymentModal contrat UUID ↔ code public", () => {
     expect(selected).toHaveTextContent(STUDENT_NAME);
     expect(selected).toHaveTextContent(STUDENT_CODE);
     expect(selected).toHaveTextContent(CLASS_NAME);
+  });
+
+  it("IMP-FAST-GREEN-11 — QuickPaymentModal standard (Paiements) conserve la recherche élève", async () => {
+    render(<QuickPaymentModal open onClose={() => undefined} />);
+    const modal = await screen.findByTestId("quick-payment-modal");
+    await waitFor(() => expect(screen.queryByText(/Chargement du catalogue financier/i)).not.toBeInTheDocument());
+    expect(screen.getByTestId("payment-student-search")).toBeInTheDocument();
+    expect(screen.getByPlaceholderText(/Nom, matricule ou code élève/i)).toBeInTheDocument();
+    expect(screen.getByText(/Saisissez au moins 2 caractères pour retrouver un élève inscrit/i)).toBeInTheDocument();
+    expect(screen.queryByTestId("quick-payment-selected-student")).not.toBeInTheDocument();
+    expect(modal).toHaveTextContent("Affectation de l'encaissement");
+    expect(screen.getByTestId("payment-add-line")).toBeInTheDocument();
   });
 });

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { collectOpenObligationsFromProjection } from "./financePaymentWrite";
 import {
+  CLASS_NAME,
   FOREIGN_TENANT_CODE,
   FOREIGN_TENANT_UUID,
   OBLIGATION_INSC_ID,
@@ -76,5 +77,21 @@ describe("IMP-FAST — identité UUID PostgreSQL ↔ code élève public", () =>
     );
     expect(open.some((row) => row.label.includes("autre élève"))).toBe(false);
     expect(open.some((row) => row.label.includes("tenant B"))).toBe(false);
+  });
+
+  it("IMP-FAST-GREEN-09 — le rapprochement ignore nom / prénom / classe", () => {
+    const fees = [
+      postgresObligationRow({
+        studentId: "HOMONYME-CODE",
+        studentDbId: "dddddddd-4444-4444-8444-dddddddddddd",
+        label: "Scolarité homonyme",
+        className: CLASS_NAME,
+      }),
+    ];
+    const open = collectOpenObligationsFromProjection(
+      { studentId: STUDENT_UUID, studentCode: STUDENT_CODE, matricule: STUDENT_CODE },
+      fees,
+    );
+    expect(open).toEqual([]);
   });
 });

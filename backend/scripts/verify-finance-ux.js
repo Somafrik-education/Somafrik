@@ -92,6 +92,13 @@ assert.doesNotMatch(webUnpaid, /financeApi\.createPayment/);
 assert.match(webModal, /initialStudentId/);
 assert.match(webModal, /financeApi\.createPayment/);
 assert.match(webModal, /idempotencyKey: paymentIntentionRef\.current/);
+assert.match(webModal, /quick-student/);
+assert.match(webModal, /OPEN_OBLIGATION_RESOLVE_ERROR/);
+assert.match(webModal, /findFinanceStudentOption/);
+assert.match(webUnpaid, /mode="quick-student"/);
+assert.match(read("web/src/lib/financePaymentWrite.ts"), /studentDbId/);
+assert.match(read("web/src/lib/financePaymentWrite.ts"), /obligationBelongsToStudent/);
+assert.doesNotMatch(read("web/src/pages/EntityPage.tsx"), /mode=["']quick-student["']/);
 
 run("npx", ["--yes", "tsx", "Mobile/src/lib/financeCurrency.test.ts"], "mobile financeCurrency");
 run("npx", ["--yes", "tsx", "Mobile/src/lib/mobileCrudParity.test.ts"], "mobile F6 payment OR");

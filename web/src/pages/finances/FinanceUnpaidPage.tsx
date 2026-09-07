@@ -421,7 +421,10 @@ export function FinanceUnpaidPage() {
 
       <QuickPaymentModal
         open={Boolean(paymentStudentId)}
+        mode="quick-student"
         initialStudentId={paymentStudentId ?? undefined}
+        unpaidRemaining={rows.find((row) => row.studentId === paymentStudentId)?.amountDue}
+        unpaidFeeIds={rows.find((row) => row.studentId === paymentStudentId)?.feeIds}
         onClose={() => setPaymentStudentId(null)}
         onSaved={() => {
           void refresh();

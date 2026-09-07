@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { BackOfficeState, SessionUser, StudentFee } from "../../types";
 import { FinanceUnpaidPage } from "./FinanceUnpaidPage";
@@ -354,5 +354,125 @@ describe("IMP-FAST — enregistrement rapide Impayés (contrat UUID ↔ code pub
     expect(createPayment).not.toHaveBeenCalled();
     expect(JSON.stringify(createPayment.mock.calls)).not.toMatch(/Non imputé/);
     expect(BLOCKING_OBLIGATION_MISMATCH_MESSAGE.length).toBeGreaterThan(20);
+  });
+
+  it("IMP-FAST-GREEN-07 — paiement partiel sur obligation sélectionnée → obligationId, allocatedAmount, reste recalculé", async () => {
+    refresh.mockImplementation(async () => {
+      dataState.current = emptyState([
+        overlayFee({
+          id: OBLIGATION_SCO_ID,
+          studentId: STUDENT_CODE,
+          label: "Scolarité T1",
+          amountPaid: 40_000,
+          balance: 100_000,
+          status: "Partiellement payé",
+        }),
+      ]);
+    });
+    createPayment.mockResolvedValue({
+      id: "pay-partial",
+      amount: 40_000,
+      allocatedAmount: 40_000,
+      unallocatedAmount: 0,
+    });
+    const view = render(<FinanceUnpaidPage />);
+    const user = await openPaymentFromUnpaidRow();
+    const feeSelect = screen.getByLabelText(/Frais concerné/i) as HTMLSelectElement;
+    expect(feeSelect.value).toBe(OBLIGATION_SCO_ID);
+    const amount = screen.getByLabelText(/Montant à encaisser/i);
+    await user.clear(amount);
+    await user.type(amount, "40000");
+    await user.click(screen.getByRole("button", { name: "Enregistrer l'encaissement" }));
+    await waitFor(() => expect(createPayment).toHaveBeenCalledTimes(1));
+    expect(createPayment.mock.calls[0][0]).toMatchObject({
+      studentId: STUDENT_UUID,
+      items: [expect.objectContaining({ obligationId: OBLIGATION_SCO_ID, amount: 40_000 })],
+    });
+    expect(JSON.stringify(createPayment.mock.calls[0][0])).not.toMatch(/Non imputé/);
+    await waitFor(() => expect(refresh).toHaveBeenCalled());
+    view.rerender(<FinanceUnpaidPage />);
+    expect(screen.getAllByText(STUDENT_NAME).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/100[\s\u202f\u00a0]?000 CDF/).length).toBeGreaterThan(0);
+  });
+
+  it("IMP-FAST-GREEN-08 — paiement intégral → obligation soldée, élève absent des Impayés après refresh", async () => {
+    refresh.mockImplementation(async () => {
+      dataState.current = emptyState([
+        overlayFee({
+          id: OBLIGATION_SCO_ID,
+          studentId: STUDENT_CODE,
+          label: "Scolarité T1",
+          amountPaid: OPEN_BALANCE_CDF,
+          balance: 0,
+          status: "Payé",
+        }),
+      ]);
+    });
+    createPayment.mockResolvedValue({
+      id: "pay-full",
+      amount: OPEN_BALANCE_CDF,
+      allocatedAmount: OPEN_BALANCE_CDF,
+      unallocatedAmount: 0,
+    });
+    const view = render(<FinanceUnpaidPage />);
+    const user = await openPaymentFromUnpaidRow();
+    const amount = screen.getByLabelText(/Montant à encaisser/i);
+    await user.clear(amount);
+    await user.type(amount, String(OPEN_BALANCE_CDF));
+    await user.click(screen.getByRole("button", { name: "Enregistrer l'encaissement" }));
+    await waitFor(() => expect(createPayment).toHaveBeenCalledTimes(1));
+    expect(createPayment.mock.calls[0][0]).toMatchObject({
+      studentId: STUDENT_UUID,
+      items: [expect.objectContaining({ obligationId: OBLIGATION_SCO_ID, amount: OPEN_BALANCE_CDF })],
+    });
+    await waitFor(() => expect(refresh).toHaveBeenCalled());
+    view.rerender(<FinanceUnpaidPage />);
+    expect(screen.queryAllByText(STUDENT_NAME)).toHaveLength(0);
+    expect(screen.queryAllByTestId(`unpaid-register-payment-${STUDENT_CODE}`)).toHaveLength(0);
+    expect(screen.getAllByText("Aucun reste à payer").length).toBeGreaterThan(0);
+  });
+
+  it("IMP-FAST-GREEN-09 — aucune obligation d'un autre tenant n'apparaît dans le parcours Impayés", async () => {
+    listStudentFees.mockResolvedValue([
+      postgresObligationRow(),
+      postgresObligationRow({
+        id: "obl-foreign",
+        obligationId: "obl-foreign",
+        studentId: FOREIGN_TENANT_CODE,
+        studentDbId: FOREIGN_TENANT_UUID,
+        label: "Scolarité tenant B",
+        balance: 99_000,
+        amountDue: 99_000,
+      }),
+    ]);
+    render(<FinanceUnpaidPage />);
+    await openPaymentFromUnpaidRow();
+    const modal = screen.getByTestId("quick-payment-modal");
+    expect(within(modal).getByText("Scolarité T1")).toBeInTheDocument();
+    expect(within(modal).queryByText("Scolarité tenant B")).not.toBeInTheDocument();
+  });
+
+  it("IMP-FAST-GREEN-10 — double clic → une seule intention, Idempotency-Key conservée", async () => {
+    let release: () => void = () => undefined;
+    createPayment.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          release = () => resolve({ id: "pay-1", amount: 40_000, allocatedAmount: 40_000 });
+        }),
+    );
+    render(<FinanceUnpaidPage />);
+    const user = await openPaymentFromUnpaidRow();
+    const amount = screen.getByLabelText(/Montant à encaisser/i);
+    await user.clear(amount);
+    await user.type(amount, "40000");
+    const submit = screen.getByRole("button", { name: "Enregistrer l'encaissement" });
+    fireEvent.click(submit);
+    fireEvent.click(submit);
+    await waitFor(() => expect(createPayment).toHaveBeenCalledTimes(1));
+    const options = createPayment.mock.calls[0][1] as { idempotencyKey?: string };
+    expect(options.idempotencyKey).toEqual(expect.any(String));
+    expect(String(options.idempotencyKey).length).toBeGreaterThan(8);
+    release();
+    await waitFor(() => expect(showToast).toHaveBeenCalledWith("Paiement enregistré", "success"));
   });
 });
