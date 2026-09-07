@@ -1,6 +1,7 @@
 "use strict";
 
 const { drainOutbox } = require("./communicationsNotificationsService");
+const { fanOutNotificationChannels } = require("./communicationChannelFanout");
 
 let timer = null;
 let running = false;
@@ -16,7 +17,16 @@ async function runOnce(repository, logger = console) {
   if (!store || typeof store.withTransaction !== "function") return [];
   running = true;
   try {
-    return await drainOutbox(store, { limit: Number(process.env.COMMUNICATION_NOTIFICATIONS_BATCH || 50) });
+    const processed = await drainOutbox(store, {
+      limit: Number(process.env.COMMUNICATION_NOTIFICATIONS_BATCH || 50),
+    });
+    await fanOutNotificationChannels({
+      store,
+      repository,
+      processed,
+      logger,
+    });
+    return processed;
   } catch (error) {
     logger.error?.("[communications-c4] outbox dispatch failed", {
       message: String(error?.message || error).slice(0, 300),

@@ -54,9 +54,12 @@ function sourceGuards() {
   assert.match(schema, /communication_event_outbox/);
   assert.match(schema, /communication_notifications/);
   assert.match(schema, /notification_recipients/);
+  assert.match(schema, /communication_channel_deliveries/);
   assert.match(migration, /communication_event_outbox/);
   assert.match(migration, /communication_notifications/);
   assert.match(migration, /notification_recipients/);
+  const channelMigration = read("backend/db/migrations/20260907_communication_channel_deliveries.sql");
+  assert.match(channelMigration, /communication_channel_deliveries/);
   assert.match(bootstrap, /applyCommunicationsC4Schema/);
 
   // 4 event_key UNIQUE
@@ -148,9 +151,11 @@ function sourceGuards() {
   assert.doesNotMatch(service, /DELETE FROM notification_recipients/);
   assert.doesNotMatch(httpTest, /DELETE FROM communication_notifications/);
 
-  // 20 aucun fournisseur externe
+  // 20 persist C4 sans fournisseur ; fan-out PUSH/EMAIL après drain
   assert.doesNotMatch(service, /twilio|whatsapp|firebase|expo push|fcm|smtp|sendgrid/i);
-  assert.doesNotMatch(worker, /twilio|whatsapp|firebase|expo push|fcm/i);
+  assert.doesNotMatch(service, /communicationChannelFanout|fanOutNotificationChannels/);
+  assert.doesNotMatch(worker, /twilio|whatsapp|firebase|expoPushService|nodemailer/i);
+  assert.match(worker, /fanOutNotificationChannels/);
   assert.match(worker, /COMMUNICATION_NOTIFICATIONS_WORKER/);
   assert.match(worker, /stopCommunicationsNotificationsWorker/);
   assert.match(server, /stopCommunicationsNotificationsWorker/);
@@ -225,6 +230,9 @@ function main() {
   sourceGuards();
   run(process.execPath, ["--check", "backend/lib/communicationsNotificationsService.js"], "syntax notifications service");
   run(process.execPath, ["--check", "backend/lib/communicationsNotificationsWorker.js"], "syntax notifications worker");
+  run(process.execPath, ["--check", "backend/lib/communicationChannelFanout.js"], "syntax channel fanout");
+  run(process.execPath, ["--test", "backend/lib/communicationsChannelFanout.red-com-01.test.js"], "RED-COM-01 / 01b");
+  run(process.execPath, ["--test", "backend/lib/communicationChannelFanout.test.js"], "channel fanout unit");
   run(process.execPath, ["--check", "backend/server.js"], "syntax server");
   run(process.execPath, ["backend/lib/communicationsAttachments.test.js"], "communicationsAttachments unit");
   run("npm", ["--prefix", "web", "run", "test", "--", "src/lib/internalNotificationsC4.test.ts"], "web internal notifications C4");
