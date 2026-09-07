@@ -52,7 +52,6 @@ import {
   SchoolsPage,
   SettingsAppearancePage,
   SettingsDataPage,
-  SettingsFinancePage,
   SettingsHubPage,
   SettingsIntegrationsPage,
   SettingsNotificationsPage,
@@ -458,14 +457,7 @@ export default function App() {
             }
           />
           <Route path="utilisateurs" element={<Navigate to="/parametres/roles-droits" replace />} />
-          <Route
-            path="finances"
-            element={
-              <PermissionRoute view="configuration">
-                <SettingsFinancePage />
-              </PermissionRoute>
-            }
-          />
+          <Route path="finances" element={<Navigate to="/finances/frais" replace />} />
           <Route
             path="abonnements"
             element={

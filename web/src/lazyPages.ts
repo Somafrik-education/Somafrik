@@ -174,10 +174,6 @@ export const SettingsDataPage = lazyPage(
   () => import("./pages/parametres/SettingsPlaceholders"),
   "SettingsDataPage",
 );
-export const SettingsFinancePage = lazyPage(
-  () => import("./pages/parametres/SettingsFinancePage"),
-  "SettingsFinancePage",
-);
 export const SettingsIntegrationsPage = lazyPage(
   () => import("./pages/parametres/SettingsPlaceholders"),
   "SettingsIntegrationsPage",

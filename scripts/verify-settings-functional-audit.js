@@ -29,7 +29,7 @@ function extractSettingCards(hubSource) {
       status: match.groups.status,
     });
   }
-  assert.ok(cards.length >= 14, `attendu ≥ 14 cartes hub, obtenu ${cards.length}`);
+  assert.ok(cards.length >= 13, `attendu ≥ 13 cartes hub, obtenu ${cards.length}`);
   return cards;
 }
 
@@ -43,7 +43,7 @@ function main() {
   const hubSource = readRepo("web/src/pages/parametres/SettingsHubPage.tsx");
   const appSource = readRepo("web/src/App.tsx");
   const placeholders = readRepo("web/src/pages/parametres/SettingsPlaceholders.tsx");
-  const financePage = readRepo("web/src/pages/parametres/SettingsFinancePage.tsx");
+  const financeCatalogConfig = readRepo("web/src/pages/finances/FinanceCatalogConfig.tsx");
   const dataPage = readRepo("web/src/pages/parametres/DataBackupSettingsPage.tsx");
   const configPage = readRepo("web/src/pages/ConfigurationPage.tsx");
   const knownIssues = readRepo("docs/user-guides/KNOWN-ISSUES.md");
@@ -102,13 +102,12 @@ function main() {
   assert.ok(roles.verdict.includes("GO_HELP_READ"));
   assert.ok(!roles.verdict.includes("GO_HELP_WRITE"));
 
-  // 9. Finances ne prétend pas que les pénalités sont opérationnelles
-  const finances = matrix.cards.find((card) => card.id === "finances");
-  assert.equal(finances.penaltiesOperational, false);
+  // 9. Finances consolidé dans /finances/frais — pénalités toujours différées V1
   assert.equal(matrix.penaltiesOperational, false);
-  assert.match(financePage, /Réductions et pénalités — différées V1/);
-  assert.match(financePage, /Les pénalités de retard ne sont pas un référentiel/);
-  assert.doesNotMatch(JSON.stringify(finances), /pénalités opérationnelles/i);
+  assert.doesNotMatch(hubSource, /to:\s*"\/parametres\/finances"/);
+  assert.match(financeCatalogConfig, /Réductions et pénalités — différées V1/);
+  assert.match(financeCatalogConfig, /Les pénalités de retard ne sont pas un référentiel/);
+  assert.match(appSource, /path="finances"[\s\S]{0,250}?Navigate to="\/finances\/frais"/);
 
   // 10. Restore complet non déclaré disponible
   const dataCard = matrix.cards.find((card) => card.id === "donnees");
@@ -164,10 +163,13 @@ function main() {
       (card) => card.route === route || route.startsWith(`${card.route}/`),
     );
     assert.ok(
-      cardMatch || route === "/parametres",
+      cardMatch || route === "/parametres" || route === "/parametres/finances",
       `route knownParametresRoutes non rattachée à une carte : ${route}`,
     );
   }
+  assert.match(parametresBlock, /path="finances"/);
+  assert.match(parametresBlock, /Navigate to="\/finances\/frais"/);
+  assert.doesNotMatch(parametresBlock, /SettingsFinancePage/);
 
   assert.match(auditMd, /## 1\. Executive summary/);
   assert.match(auditMd, /## 2\. Matrice des cartes/);

@@ -12,7 +12,6 @@ on:
       - "web/src/lib/permissions.ts"
       - "web/src/components/payments/**"
       - "web/src/pages/finances/**"
-      - "web/src/pages/parametres/SettingsFinancePage.tsx"
       - "web/src/pages/EntityPage.tsx"
       - "web/src/pages/entity-page/entityColumns.tsx"
       - "web/src/design-system/data-display/Table.tsx"
