@@ -425,6 +425,7 @@ export type StudentFeeStatus =
 /** Grille tarifaire : règles par classe, année et période (séparée des dettes élève). */
 export interface FeeGrid {
   id: string;
+  schoolId?: string;
   schoolCode: string;
   academicYear: string;
   classId?: string;
@@ -444,6 +445,7 @@ export interface FeeGrid {
 export interface SchoolFeeItem {
   id: string;
   feeGridId: string;
+  schoolId?: string;
   schoolCode: string;
   className: string;
   feeType: SchoolFeeType;
@@ -462,6 +464,7 @@ export interface StudentFee {
   id: string;
   studentId: string;
   studentName?: string;
+  schoolId?: string;
   schoolCode: string;
   className: string;
   schoolFeeItemId: string;

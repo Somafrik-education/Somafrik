@@ -39,6 +39,7 @@ export default defineConfig({
     include: [
       "src/context/*.hydration.red.test.tsx",
       "src/pages/UsersPage.hydration.red.test.tsx",
+      "src/pages/finances/FinanceFeesPage.hydration.red.test.tsx",
       "../Mobile/src/context/AdminDataContext.hydration.red.test.tsx",
     ],
     css: false,
