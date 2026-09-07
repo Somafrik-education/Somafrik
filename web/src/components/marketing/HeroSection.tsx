@@ -1,6 +1,6 @@
 import { Link } from "react-router-dom";
 import { Button } from "../ui/shadcn/button";
-import { marketingHero } from "../../data/marketingContent";
+import { marketingHero, marketingTrial } from "../../data/marketingContent";
 import { ProductVisual } from "./ProductVisual";
 
 export function HeroSection() {
@@ -19,6 +19,13 @@ export function HeroSection() {
               className="h-auto min-h-11 rounded-xl bg-brand-gradient px-6 py-3 text-base font-bold text-white shadow-brand hover:bg-brand-gradient hover:opacity-95"
             >
               <Link to={marketingHero.primaryCta.href}>{marketingHero.primaryCta.label}</Link>
+            </Button>
+            <Button
+              asChild
+              variant="outline"
+              className="h-auto min-h-11 rounded-xl border-brand-100 bg-white px-6 py-3 text-base font-bold text-brand hover:bg-brand-50 hover:text-brand"
+            >
+              <Link to={marketingTrial.href}>{marketingTrial.label}</Link>
             </Button>
             <Button
               asChild

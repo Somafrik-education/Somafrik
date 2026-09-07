@@ -1825,6 +1825,7 @@ class PostgresRepository {
       `ALTER TABLE schools ADD COLUMN IF NOT EXISTS profile_payload JSONB NOT NULL DEFAULT '{}'::jsonb`,
     );
     await this.query(`ALTER TABLE schools ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ`);
+    await this.query(`ALTER TABLE schools ADD COLUMN IF NOT EXISTS trial_used BOOLEAN NOT NULL DEFAULT FALSE`);
   }
 
   async getDataset() {
@@ -2250,6 +2251,55 @@ class PostgresRepository {
       `SELECT * FROM privacy_requests ${where} ORDER BY created_at DESC LIMIT 200`,
       params,
     );
+  }
+
+  async createTrialAccessRequest(row) {
+    await this.init();
+    const { randomUUID } = require("node:crypto");
+    const publicRef = row.publicRef || `TRIAL-${randomUUID().slice(0, 8).toUpperCase()}`;
+    const inserted = await this.one(
+      `INSERT INTO trial_access_requests (
+         public_ref, requester_name, role, school_name, country_iso, city, phone, email,
+         student_band, status, consent_at
+       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+       RETURNING *`,
+      [
+        publicRef,
+        row.requesterName || "",
+        row.role || "",
+        row.schoolName || "",
+        row.countryIso || "",
+        row.city || null,
+        row.phone || null,
+        row.email || "",
+        row.studentBand || null,
+        row.status || "nouvelle",
+        row.consentAt || new Date().toISOString(),
+      ],
+    );
+    return mapTrialAccessRequest(inserted);
+  }
+
+  async findOpenTrialRequest(email, schoolName) {
+    await this.init();
+    const row = await this.one(
+      `SELECT * FROM trial_access_requests
+       WHERE lower(email) = lower($1)
+         AND lower(school_name) = lower($2)
+         AND status IN ('nouvelle', 'contactee', 'qualifiee', 'essai_active')
+       ORDER BY created_at DESC
+       LIMIT 1`,
+      [String(email ?? "").trim(), String(schoolName ?? "").trim()],
+    );
+    return mapTrialAccessRequest(row);
+  }
+
+  async listTrialAccessRequests() {
+    await this.init();
+    const rows = await this.all(
+      `SELECT * FROM trial_access_requests ORDER BY created_at DESC LIMIT 500`,
+    );
+    return rows.map(mapTrialAccessRequest);
   }
 
   async executePrivacyErasure({ requestId, actorUserId, userId, identifier, schoolCode }) {
@@ -7328,6 +7378,26 @@ module.exports = { PostgresRepository };
 
 function isUuid(value) {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value ?? ""));
+}
+
+function mapTrialAccessRequest(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    publicRef: row.public_ref,
+    requesterName: row.requester_name,
+    role: row.role,
+    schoolName: row.school_name,
+    countryIso: row.country_iso,
+    city: row.city,
+    phone: row.phone,
+    email: row.email,
+    studentBand: row.student_band,
+    status: row.status,
+    consentAt: row.consent_at,
+    createdAt: row.created_at,
+    schoolId: row.school_id,
+  };
 }
 
 function toDbEvaluationType(type) {

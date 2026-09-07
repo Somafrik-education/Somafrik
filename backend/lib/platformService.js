@@ -23,6 +23,7 @@ const {
   mapSubscriptionPaymentRow,
   mapSubscriptionDiscountRow,
   mapSubscriptionAuditRow,
+  parsePayload,
 } = require("./platformManagement");
 
 async function writePlatformAudit(tx, principal, auditMeta, entry) {
@@ -115,6 +116,21 @@ async function updateCountry(store, code, rawPatch, principal, auditMeta) {
   });
 }
 
+function isStartingSchoolTrial(payload) {
+  return asTrimmed(payload.lifecycleStatus) === "Essai";
+}
+
+async function assertSchoolTrialNotAlreadyUsed(tx, school, payload, existing) {
+  if (!isStartingSchoolTrial(payload)) return;
+  const existingProfile = existing ? parsePayload(existing.profile_payload) : {};
+  if (asTrimmed(existingProfile.lifecycleStatus) === "Essai") return;
+  const schoolUsed = school.trial_used === true || school.trialUsed === true;
+  const existingUsed = existingProfile.trialUsed === true;
+  if (schoolUsed || existingUsed) {
+    throw createPlatformError(409, "TRIAL_ALREADY_USED: essai déjà utilisé pour cet établissement");
+  }
+}
+
 async function upsertSubscription(store, rawPayload, principal, auditMeta) {
   const payload = ignoreClientScope(rawPayload);
   let schoolCode = asTrimmed(principal?.schoolCode);
@@ -139,6 +155,7 @@ async function upsertSubscription(store, rawPayload, principal, auditMeta) {
       throw createPlatformError(404, "Établissement introuvable.", PLATFORM_ERROR.SCHOOL_NOT_FOUND);
     }
     const existing = await tx.getSubscriptionBySchoolId(school.id);
+    await assertSchoolTrialNotAlreadyUsed(tx, school, payload, existing);
     const profile = {
       offerId: payload.offerId,
       plan: payload.plan,
@@ -203,6 +220,9 @@ async function upsertSubscription(store, rawPayload, principal, auditMeta) {
         subscriptionId: saved.id,
       },
     });
+    if (isStartingSchoolTrial(payload) && typeof tx.markSchoolTrialUsed === "function") {
+      await tx.markSchoolTrialUsed(school.id);
+    }
     return mapSubscriptionRow({ ...saved, school_code: schoolCode, country_code: school.country_code, country_name: school.country_name });
   });
 }

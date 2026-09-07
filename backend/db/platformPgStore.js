@@ -33,6 +33,9 @@ function createPlatformPgStore(repo) {
         );
         return row || null;
       },
+      async markSchoolTrialUsed(schoolId) {
+        await query(`UPDATE schools SET trial_used = TRUE, updated_at = NOW() WHERE id = $1`, [schoolId]);
+      },
       async getCountryByCode(code) {
         return one("SELECT * FROM countries WHERE iso_code = $1", [asTrimmed(code).toUpperCase()]);
       },

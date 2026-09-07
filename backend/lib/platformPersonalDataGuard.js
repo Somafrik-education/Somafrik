@@ -230,6 +230,7 @@ const PLATFORM_ADMIN_ALLOWED = Object.freeze([
   "GET /api/backoffice/users/assignable-roles",
   "POST /api/users/:id/reset-password",
   "GET /api/backoffice/subscriptions",
+  "GET /api/backoffice/trial-requests",
   "POST /api/backoffice/subscriptions",
   "PATCH /api/backoffice/subscriptions/:subscriptionId",
   "GET /api/backoffice/subscription-access",

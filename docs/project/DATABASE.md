@@ -1,7 +1,7 @@
 # Base de données — Somafrik
 
 **Statut :** référence schéma & conventions  
-**Dernière mise à jour :** 2026-08-14  
+**Dernière mise à jour :** 2026-09-07  
 **Sources :** `backend/db/schema.sql` · `backend/db/postgresRepository.js` · [ARCHITECTURE.md](./ARCHITECTURE.md)
 
 ---
@@ -50,7 +50,7 @@ Helper annexe : `backend/scripts/migrate-test-data.js`.
 | Table | Rôle | Contraintes notables |
 |-------|------|----------------------|
 | `countries` | Référentiel pays canonique | UNIQUE `iso_code` — pas d’auto-création d’un ISO inconnu (refus `COUNTRY_NOT_FOUND`) |
-| `schools` | Établissements (SoT LOT 1) | UNIQUE `school_code` · FK country · `profile_payload` JSONB · `deleted_at` |
+| `schools` | Établissements (SoT LOT 1) | UNIQUE `school_code` · FK country · `profile_payload` JSONB · `deleted_at` · `trial_used` (un seul essai gratuit) |
 | `users` | Comptes / identité | `role` nullable (dénormalisation du rôle primaire) · `user_code` UNIQUE généré backend |
 | `user_roles` | Rôles actifs / révoqués | UNIQUE partiel actif `(user_id, school_id, role_key)` et plateforme `(user_id, role_key)` |
 | `user_code_counters` | Séquence atomique `USR-{année}-{n}` | PK `year` + advisory lock |
@@ -222,6 +222,7 @@ Clés PUT `/api/backoffice/state` interdites : `courses`, `courseSchedules`, `ev
 |-------|------|----------------------|
 | `countries` | Référentiel pays (SoT) | UNIQUE `iso_code` · `profile_payload` (politique abonnement, fuseau) |
 | `subscriptions` | Abonnement établissement | FK `school_id` · `profile_payload` (offre, cycle, accès) |
+| `trial_access_requests` | Demandes d'essai publiques (V1 sans SMTP) | `consent_at` · statut `nouvelle` par défaut · UNIQUE partiel email+établissement tant que la demande est ouverte · aucun auto-provision |
 | `subscription_offers` | Offres commerciales | `offer_code` · pays cibles JSONB |
 | `subscription_payments` / `subscription_invoices` / `subscription_discounts` | Collections abonnement | FK établissement · audit dédié `subscription_audit_log` |
 | `notifications` | Notifications plateforme | FK école optionnelle · statut lu/archivé |
@@ -286,6 +287,8 @@ erDiagram
 | UNIQUE fee_grids (école, classe, année, période) | Une grille naturelle par tenant |
 | UNIQUE grades (school, evaluation, student) | Une note / élève / évaluation (D3.6b) |
 | UNIQUE evaluations (school, legacy_json_id) | Pont anti-doublon JSON→PG |
+| UNIQUE partiel `trial_access_requests` (email, établissement) ouvertes | Anti-doublon des demandes d'essai en cours |
+| `schools.trial_used` | Un seul essai Standard 30 jours par établissement |
 | Index FK usuels | Jointures sync / lectures scoped |
 
 Les index uniques « post-dédup » peuvent être créés en runtime après nettoyage (voir repository).

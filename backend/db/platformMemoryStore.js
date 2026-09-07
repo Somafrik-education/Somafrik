@@ -123,6 +123,8 @@ function createPlatformMemoryStore({ getSchoolByCode, getCountryByCode, seed } =
     bootstrapPlatformMemoryFromSeed(tables, seed);
   }
 
+  const trialUsedSchoolIds = new Set();
+
   function txApi() {
     return {
       async getSchoolByCode(code) {
@@ -134,13 +136,18 @@ function createPlatformMemoryStore({ getSchoolByCode, getCountryByCode, seed } =
           school.countryCode ??
           getCountryCodeFromScope(school.country) ??
           String(school.school_code ?? school.code ?? school.schoolCode ?? "").slice(0, 2).toUpperCase();
+        const id = school.id || school.school_code || school.code || school.schoolCode || randomUUID();
         return {
-          id: school.id || school.school_code || school.code || school.schoolCode || randomUUID(),
+          id,
           school_code: school.school_code ?? school.code ?? school.schoolCode,
           country_code: countryCode,
           country_name: school.country_name ?? school.country,
           currency: school.currency || "USD",
+          trial_used: trialUsedSchoolIds.has(String(id)) || school.trial_used === true || school.trialUsed === true,
         };
+      },
+      async markSchoolTrialUsed(schoolId) {
+        trialUsedSchoolIds.add(String(schoolId));
       },
       async getCountryByCode(code) {
         const row = tables.countries.find((c) => asTrimmed(c.iso_code).toUpperCase() === asTrimmed(code).toUpperCase());

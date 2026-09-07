@@ -42,6 +42,11 @@ export const marketingLogin = {
   ctaLabel: "Se connecter",
 } as const;
 
+export const marketingTrial = {
+  href: "/demande-essai",
+  label: "Demander 1 mois d'essai gratuit",
+} as const;
+
 export const marketingHero = {
   eyebrow: "Gestion scolaire moderne",
   title: "Pilotez votre établissement depuis un seul endroit",

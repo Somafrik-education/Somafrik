@@ -68,6 +68,16 @@ export function PrivacyPolicyPage() {
         </p>
       </section>
       <section>
+        <h2 className="text-xl font-bold text-slate-950">Demandes d’essai gratuit</h2>
+        <p>
+          Les demandes d’essai (nom du demandeur, rôle, nom de l’établissement, pays, ville, téléphone,
+          e-mail et effectif) sont traitées pour qu’un responsable Somafrik contacte le prospect et active
+          un essai Standard de 30 jours. Aucun compte n’est créé automatiquement depuis le formulaire public.
+          Les leads non convertis sont conservés 24 mois au maximum, puis supprimés ou anonymisés.
+          Contact : {CONTACT_EMAIL}.
+        </p>
+      </section>
+      <section>
         <h2 className="text-xl font-bold text-slate-950">Destinataires et sous-traitants</h2>
         <p>
           Personnes habilitées de l’établissement ; API Somafrik ; hébergement Render (Oregon, États-Unis) ;

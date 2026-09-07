@@ -14,6 +14,7 @@ function lazyPage(
 
 export const LandingPage = lazyPage(() => import("./pages/LandingPage"), "LandingPage");
 export const LoginPage = lazyPage(() => import("./pages/LoginPage"), "LoginPage");
+export const TrialRequestPage = lazyPage(() => import("./pages/TrialRequestPage"), "TrialRequestPage");
 export const PrivacyPolicyPage = lazyPage(() => import("./pages/LegalPages"), "PrivacyPolicyPage");
 export const AccountDeletionPage = lazyPage(() => import("./pages/LegalPages"), "AccountDeletionPage");
 export const DashboardEntryPage = lazyPage(() => import("./pages/DashboardEntryPage"), "DashboardEntryPage");
@@ -57,6 +58,10 @@ export const SubscriptionDelinquencyPage = lazyPage(
 export const SubscriptionReportsPage = lazyPage(
   () => import("./pages/abonnements/SubscriptionReportsPage"),
   "SubscriptionReportsPage",
+);
+export const TrialRequestsPage = lazyPage(
+  () => import("./pages/abonnements/TrialRequestsPage"),
+  "TrialRequestsPage",
 );
 export const MonAbonnementLayout = lazyPage(
   () => import("./pages/abonnements/MonAbonnementLayout"),
