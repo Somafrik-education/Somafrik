@@ -118,7 +118,16 @@ function mapDbStatusToBo(status) {
 
 function mapBoStatusToDb(status) {
   const key = normalizeKey(status);
-  if (key === "paye" || key === "payé" || key === "partiel" || key === "non impute" || key === "a imputer") {
+  if (
+    key === "paye" ||
+    key === "payé" ||
+    key === "partiel" ||
+    key === "non impute" ||
+    key === "a imputer" ||
+    key === "trop-percu" ||
+    key === "trop percu" ||
+    key === "partiellement impute"
+  ) {
     return "paid";
   }
   if (key === "annule" || key === "annulé") return "cancelled";

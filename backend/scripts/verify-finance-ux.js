@@ -117,6 +117,7 @@ run("npm", ["--prefix", "web", "run", "test", "--",
   "src/lib/financePaymentWrite.studentIdentity.test.ts",
   "src/pages/finances/FinanceUnpaidPage.fastPayment.test.tsx",
   "src/components/payments/QuickPaymentModal.fastStudent.test.tsx",
+  "src/lib/financeCalcOverpayment.red.test.ts",
 ], "web F7 UX tests");
 
 console.log("verify-finance-ux OK");

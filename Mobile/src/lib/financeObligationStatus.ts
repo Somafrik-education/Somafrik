@@ -37,7 +37,8 @@ export function financePaymentStatusLabel(status: unknown): string {
   if (value.includes("annul") || value === "cancelled" || value === "canceled") return "Annulé";
   if (value.includes("attente") || value === "pending") return "En attente";
   if (value.includes("refus") || value.includes("echou") || value === "failed") return "Refusé";
-  if (value.includes("partiel")) return "Partiellement payé";
+  if (value.includes("trop-percu") || value.includes("trop percu")) return "Trop-perçu";
+  if (value.includes("partiel")) return "Partiellement imputé";
   if (value === "paye" || value === "paid" || value === "confirme" || value === "enregistre") {
     return "Payé";
   }

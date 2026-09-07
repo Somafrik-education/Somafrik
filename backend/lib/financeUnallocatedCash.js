@@ -6,7 +6,10 @@
  * Imputé    = money affecté via payment_allocations
  * Non imputé = encaissé − imputé
  * leftover === amount → statut « Non imputé », jamais « Payé ».
- * 0 < imputé < encaissé → « Partiel », jamais « Payé ».
+ * 0 < imputé < encaissé (dette ciblée soldée + trop-perçu) → « Trop-perçu »,
+ *   jamais « Partiel » ni le vocabulaire de créance « Partiellement payé ».
+ * leftover > 0 n'arrive au call-site createPayment que si allocateAmount a
+ *   déjà soldé toutes les obligations ciblées (min(open, remaining) jusqu'à épuisement).
  * leftover === 0 → « Payé » ou « Partiel » selon la dette couverte.
  */
 
@@ -18,6 +21,7 @@ const {
 
 const UNALLOCATED_STATUS = "Non imputé";
 const PARTIAL_STATUS = "Partiel";
+const OVERPAYMENT_STATUS = "Trop-perçu";
 
 function allocatedAmountFrom(allocations = []) {
   return computeAllocatedAmount(allocations);
@@ -45,7 +49,7 @@ function resolvePaymentStatus(amount, remainingBefore, method, leftover = 0) {
   const rest = money(leftover);
   const allocated = money(total - rest);
   if (total > 0 && allocated === 0) return UNALLOCATED_STATUS;
-  if (allocated > 0 && rest > 0) return PARTIAL_STATUS;
+  if (allocated > 0 && rest > 0) return OVERPAYMENT_STATUS;
   if (money(remainingBefore) <= 0) return UNALLOCATED_STATUS;
   if (total >= money(remainingBefore)) return "Payé";
   return PARTIAL_STATUS;
@@ -57,7 +61,7 @@ function presentPaymentStatus(payment, allocated) {
   const leftover = unallocatedAmount(payment?.amount, allocated);
   const total = money(payment?.amount);
   if (total > 0 && leftover === total) return UNALLOCATED_STATUS;
-  if (total > 0 && leftover > 0) return PARTIAL_STATUS;
+  if (total > 0 && leftover > 0) return OVERPAYMENT_STATUS;
   return payment?.status;
 }
 
@@ -121,6 +125,7 @@ function cashBucketsFromPayments(payments = []) {
 module.exports = {
   UNALLOCATED_STATUS,
   PARTIAL_STATUS,
+  OVERPAYMENT_STATUS,
   allocatedAmountFrom,
   unallocatedAmount,
   isUnallocatedStatus,
