@@ -6,6 +6,24 @@ function isProductionEnvironment(env = process.env) {
   return env.NODE_ENV === "production";
 }
 
+function normalizeDemoRole(role) {
+  return String(role ?? "")
+    .trim()
+    .normalize("NFD")
+    .replace(/\p{M}/gu, "")
+    .toUpperCase();
+}
+
+/**
+ * Les comptes Élève du seed ne peuvent pas être insérés dans `users` avant les
+ * lignes `students` : le trigger d'identité lève STUDENT_CANONICAL_IDENTIFIER_REQUIRED.
+ * `ensureStudentUsers()` les crée ensuite depuis le matricule PostgreSQL.
+ */
+function isStudentDemoAccount(user) {
+  const normalized = normalizeDemoRole(user?.role);
+  return normalized === "STUDENT" || normalized === "ELEVE / ETUDIANT";
+}
+
 function prepareDemoSeedIntegrity() {
   if (demoSeedIntegrityPrepared) return;
 
@@ -60,6 +78,7 @@ function assertProductionSecurityConfiguration(env = process.env) {
 
 module.exports = {
   isProductionEnvironment,
+  isStudentDemoAccount,
   shouldSeedDemoData,
   assertProductionSecurityConfiguration,
 };

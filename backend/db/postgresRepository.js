@@ -3,7 +3,7 @@ const fs = require("fs");
 const path = require("path");
 const { Pool } = require("pg");
 const { hashSecret } = require("../services/credentialService");
-const { shouldSeedDemoData } = require("../lib/demoSeedPolicy");
+const { shouldSeedDemoData, isStudentDemoAccount } = require("../lib/demoSeedPolicy");
 const seedData = require("../data");
 const { createTxAdapter } = require("./txAdapter");
 const { mapAssignment } = require("./teacherAssignmentsRepository");
@@ -5153,6 +5153,7 @@ class PostgresRepository {
     }
 
     for (const user of seedData.userAccounts) {
+      if (isStudentDemoAccount(user)) continue;
       const schoolId = user.schoolCode === "*" ? null : schoolIds.get(user.schoolCode);
       const row = await this.insertOne(
         client,

@@ -62,9 +62,22 @@ async function request(port, pathname, { method = "GET", token, body } = {}) {
   return { status: response.status, data };
 }
 
-async function waitForHealth(child, port) {
-  for (let attempt = 0; attempt < 50; attempt += 1) {
-    if (child.exitCode !== null) throw new Error(`Backend exited early with code ${child.exitCode}`);
+function attachChildLogs(child) {
+  let logs = "";
+  const append = (chunk) => {
+    logs += String(chunk);
+    if (logs.length > 12000) logs = logs.slice(-12000);
+  };
+  child.stdout?.on("data", append);
+  child.stderr?.on("data", append);
+  return () => logs;
+}
+
+async function waitForHealth(child, port, getLogs = () => "") {
+  for (let attempt = 0; attempt < 120; attempt += 1) {
+    if (child.exitCode !== null) {
+      throw new Error(`Backend exited early with code ${child.exitCode}\n--- backend logs ---\n${getLogs()}`);
+    }
     try {
       const response = await fetch(`${baseUrl(port)}/health`);
       if (response.ok) return;
@@ -73,7 +86,8 @@ async function waitForHealth(child, port) {
     }
     await wait(250);
   }
-  throw new Error("Backend health timeout");
+  const extra = child.exitCode !== null ? ` (exit ${child.exitCode})` : "";
+  throw new Error(`Backend health timeout${extra}\n--- backend logs ---\n${getLogs()}`);
 }
 
 async function login(port, identifier, password, schoolCode) {
@@ -93,11 +107,18 @@ function assertLegacyForbidden(result, expectedCode) {
 async function runMemorySuite() {
   const child = spawn("node", ["backend/scripts/dev-memory.js"], {
     cwd: ROOT,
-    env: { ...process.env, PORT: String(MEMORY_PORT), NODE_ENV: "development", SOMAFRIK_DB_REQUIRED: "false" },
+    env: {
+      ...process.env,
+      PORT: String(MEMORY_PORT),
+      NODE_ENV: "development",
+      SOMAFRIK_DB_REQUIRED: "false",
+      DATABASE_URL: "",
+    },
     stdio: ["ignore", "pipe", "pipe"],
   });
+  const getLogs = attachChildLogs(child);
   try {
-    await waitForHealth(child, MEMORY_PORT);
+    await waitForHealth(child, MEMORY_PORT, getLogs);
     const unauth = await request(MEMORY_PORT, "/school-settings");
     assert.equal(unauth.status, 401);
 
@@ -297,8 +318,9 @@ async function runPgSuite(databaseUrl) {
     },
     stdio: ["ignore", "pipe", "pipe"],
   });
+  const getLogs = attachChildLogs(child);
   try {
-    await waitForHealth(child, PG_PORT);
+    await waitForHealth(child, PG_PORT, getLogs);
     const adminToken = await login(PG_PORT, "admin-http@test.cd", "1234", "CD-2026-0001");
     const adminBi = await login(PG_PORT, "admin-bi@test.bi", "1234", "BI-2026-0002");
     const teacherToken = await login(PG_PORT, "ens-http@test.cd", "1234", "CD-2026-0001");
