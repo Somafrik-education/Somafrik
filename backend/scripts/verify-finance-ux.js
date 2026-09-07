@@ -84,6 +84,14 @@ assert.match(webModal, /Enregistrer l'encaissement/);
 assert.match(webModal, /Chargement du catalogue financier/);
 assert.match(webFees, /EmptyState/);
 assert.match(webUnpaid, /Aucun reste à payer/);
+assert.match(webUnpaid, /QuickPaymentModal/);
+assert.match(webUnpaid, /resolveFinanceUiActions\(ctx\)\.canCreatePayment/);
+assert.match(webUnpaid, /Enregistrer un paiement/);
+assert.doesNotMatch(webUnpaid, />Payer</);
+assert.doesNotMatch(webUnpaid, /financeApi\.createPayment/);
+assert.match(webModal, /initialStudentId/);
+assert.match(webModal, /financeApi\.createPayment/);
+assert.match(webModal, /idempotencyKey: paymentIntentionRef\.current/);
 
 run("npx", ["--yes", "tsx", "Mobile/src/lib/financeCurrency.test.ts"], "mobile financeCurrency");
 run("npx", ["--yes", "tsx", "Mobile/src/lib/mobileCrudParity.test.ts"], "mobile F6 payment OR");
@@ -98,6 +106,7 @@ run("npm", ["--prefix", "web", "run", "test", "--",
   "src/pages/finances/FinanceCatalogConfig.test.tsx",
   "src/lib/financeRouteAccess.test.ts",
   "src/pages/finances/financeRoutes.rbac.test.tsx",
+  "src/pages/finances/FinanceUnpaidPage.registerPayment.test.tsx",
 ], "web F7 UX tests");
 
 console.log("verify-finance-ux OK");
