@@ -168,6 +168,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const scopeSwitchingRef = useRef(false);
   const previousPrincipalKeyRef = useRef<string | undefined>(undefined);
   const syncPausedRef = useRef(false);
+  const fetchInFlightCountRef = useRef(0);
+  const inFlightEnsureRef = useRef(new Map<string, Promise<void>>());
   const [fetchLoading, setFetchLoading] = useState(false);
   const [scopeSwitching, setScopeSwitching] = useState(false);
   const [presentationSchoolCode, setPresentationSchoolCode] = useState("");
@@ -295,6 +297,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       }
       if (!keys.length) return;
 
+      fetchInFlightCountRef.current += 1;
       setFetchLoading(true);
       try {
         const cacheKeys = cacheKeysForDomains(keys, schoolCode);
@@ -335,7 +338,10 @@ export function DataProvider({ children }: { children: ReactNode }) {
         else setError("Erreur de chargement");
         throw err;
       } finally {
-        setFetchLoading(false);
+        fetchInFlightCountRef.current = Math.max(0, fetchInFlightCountRef.current - 1);
+        if (fetchInFlightCountRef.current === 0) {
+          setFetchLoading(false);
+        }
       }
     },
     [session, mergeLoadedDomains, cacheKeysForDomains, rememberSchoolCode],
@@ -359,7 +365,33 @@ export function DataProvider({ children }: { children: ReactNode }) {
       if (options.force) {
         invalidateDomains(pending, { schoolCode });
       }
-      await refreshDomains(pending, { schoolCode });
+
+      const waits: Promise<void>[] = [];
+      const fresh: DomainKey[] = [];
+      for (const domain of pending) {
+        const cacheKey = domainCacheKey(domain, schoolCode);
+        const inflight = inFlightEnsureRef.current.get(cacheKey);
+        if (inflight && !options.force) {
+          waits.push(inflight);
+        } else {
+          fresh.push(domain);
+        }
+      }
+      if (fresh.length) {
+        const promise = refreshDomains(fresh, { schoolCode }).finally(() => {
+          for (const domain of fresh) {
+            const cacheKey = domainCacheKey(domain, schoolCode);
+            if (inFlightEnsureRef.current.get(cacheKey) === promise) {
+              inFlightEnsureRef.current.delete(cacheKey);
+            }
+          }
+        });
+        for (const domain of fresh) {
+          inFlightEnsureRef.current.set(domainCacheKey(domain, schoolCode), promise);
+        }
+        waits.push(promise);
+      }
+      await Promise.all(waits);
     },
     [session, refreshDomains, invalidateDomains, rememberSchoolCode],
   );
@@ -386,6 +418,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     previousPrincipalKeyRef.current = principalKey;
     if (previousKey === principalKey) return;
     loadedDomainsRef.current = new Set();
+    inFlightEnsureRef.current = new Map();
     setScopeErrors(EMPTY_DOMAIN_SCOPE_ERRORS);
     scopeSwitchingRef.current = false;
     setScopeSwitching(false);

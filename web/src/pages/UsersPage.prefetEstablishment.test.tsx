@@ -66,6 +66,7 @@ vi.mock("../context/DataContext", () => ({
       rolePermissions: {},
     },
     refresh: vi.fn(),
+    ensureDomains: vi.fn(async () => undefined),
   }),
 }));
 

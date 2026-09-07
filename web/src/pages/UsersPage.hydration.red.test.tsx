@@ -256,13 +256,16 @@ describe("UsersPage — hydratation / hard refresh (RED)", () => {
   it("bouton Rafraîchir recharge users même si aucun domaine n'est encore marqué chargé", async () => {
     renderUsersTree("/etablissement/comptes-utilisateurs", { bootstrap: false });
 
-    expect(usersGetCalls()).toBe(0);
-    expect(screen.getByText("0 compte(s) accessibles.")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(usersGetCalls()).toBeGreaterThanOrEqual(1);
+      expect(screen.getByText(`${USER_COUNT_A} compte(s) accessibles.`)).toBeInTheDocument();
+    });
+    const getsAfterMount = usersGetCalls();
 
     await userEvent.click(screen.getByRole("button", { name: "Rafraîchir les données" }));
 
     await waitFor(() => {
-      expect(usersGetCalls()).toBeGreaterThanOrEqual(1);
+      expect(usersGetCalls()).toBeGreaterThan(getsAfterMount);
       expect(screen.getByText(`${USER_COUNT_A} compte(s) accessibles.`)).toBeInTheDocument();
     });
   });
