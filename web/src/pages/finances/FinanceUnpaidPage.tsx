@@ -62,7 +62,9 @@ export function FinanceUnpaidPage() {
   const canAccess = canAccessUnpaidModule(ctx);
   const canRemind = canSendUnpaidReminder(ctx);
   const ownScopeOnly = isOwnUnpaidScopeOnly(ctx);
-  const canRegisterPayment = resolveFinanceUiActions(ctx).canCreatePayment;
+  const financeActions = resolveFinanceUiActions(ctx);
+  /** Modal d'encaissement : CREATE|UPDATE + READ (GET payment-student-options). */
+  const canRegisterPayment = financeActions.canConsultPayments && financeActions.canCreatePayment;
 
   const [search, setSearch] = useState("");
   const [className, setClassName] = useState("");

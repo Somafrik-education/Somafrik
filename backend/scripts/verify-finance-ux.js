@@ -85,7 +85,7 @@ assert.match(webModal, /Chargement du catalogue financier/);
 assert.match(webFees, /EmptyState/);
 assert.match(webUnpaid, /Aucun reste à payer/);
 assert.match(webUnpaid, /QuickPaymentModal/);
-assert.match(webUnpaid, /resolveFinanceUiActions\(ctx\)\.canCreatePayment/);
+assert.match(webUnpaid, /financeActions\.canConsultPayments && financeActions\.canCreatePayment/);
 assert.match(webUnpaid, /Enregistrer un paiement/);
 assert.doesNotMatch(webUnpaid, />Payer</);
 assert.doesNotMatch(webUnpaid, /financeApi\.createPayment/);

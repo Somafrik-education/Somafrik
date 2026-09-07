@@ -234,6 +234,22 @@ describe("IMP-PAY — Enregistrer un paiement depuis Impayés", () => {
     expect(screen.getAllByRole("button", { name: "Détail" }).length).toBeGreaterThan(0);
   });
 
+  it("IMP-PAY-09 — Paiements:CREATE sans Paiements:READ → bouton absent", () => {
+    asUser("Comptable", ["Impayés:READ", "Paiements:CREATE"]);
+    render(<FinanceUnpaidPage />);
+    expect(screen.getAllByText("Awa Diop").length).toBeGreaterThan(0);
+    expect(screen.queryAllByTestId(`unpaid-register-payment-${STUDENT_A}`)).toHaveLength(0);
+    expect(screen.queryByRole("button", { name: "Enregistrer un paiement" })).not.toBeInTheDocument();
+  });
+
+  it("IMP-PAY-10 — Impayés:READ + Paiements:READ + Paiements:UPDATE → bouton visible", () => {
+    asUser("Comptable", ["Impayés:READ", "Paiements:READ", "Paiements:UPDATE"]);
+    render(<FinanceUnpaidPage />);
+    expect(screen.getAllByTestId(`unpaid-register-payment-${STUDENT_A}`)[0]).toHaveTextContent(
+      "Enregistrer un paiement",
+    );
+  });
+
   it("IMP-PAY-03 — clic → modal d'encaissement existant + élève préselectionné", async () => {
     listStudentFees.mockResolvedValue([
       {
