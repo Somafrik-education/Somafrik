@@ -11,6 +11,8 @@ import { useToast } from "../../components/ui/Toast";
 import { ApiError } from "../../api/client";
 import { normalize } from "../../lib/format";
 
+/** Consomme GET /api/backoffice/trial-requests. */
+
 type TrialRequestRow = {
   id: string;
   publicRef?: string;

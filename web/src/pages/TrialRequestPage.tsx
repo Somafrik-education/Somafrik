@@ -1,7 +1,7 @@
 import { FormEvent, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { API_URL } from "../lib/apiUrl";
-import { marketingSkipLink, marketingTrial } from "../data/marketingContent";
+import { marketingSkipLink } from "../data/marketingContent";
 import { MarketingHeader } from "../components/marketing/MarketingHeader";
 import { MarketingFooter } from "../components/marketing/MarketingFooter";
 
@@ -87,7 +87,7 @@ export function TrialRequestPage() {
       <main id="contenu" className="mx-auto max-w-2xl px-4 py-10 sm:px-6 sm:py-14">
         <p className="text-xs font-bold uppercase tracking-wide text-brand">Essai 30 jours</p>
         <h1 className="mt-2 text-3xl font-black tracking-tight text-ink">
-          {marketingTrial.label}
+          Demander 1 mois d'essai gratuit
         </h1>
         <p className="mt-3 text-base leading-relaxed text-slate-600">
           Décrivez votre établissement. Aucun compte, aucun tenant et aucun abonnement ne sont créés
@@ -203,7 +203,7 @@ export function TrialRequestPage() {
             disabled={status === "sending"}
             className="inline-flex min-h-11 w-full items-center justify-center rounded-xl bg-brand-gradient px-6 py-3 text-base font-bold text-white shadow-brand disabled:opacity-70"
           >
-            {status === "sending" ? "Envoi…" : marketingTrial.label}
+            {status === "sending" ? "Envoi…" : "Demander 1 mois d'essai gratuit"}
           </button>
         </form>
 

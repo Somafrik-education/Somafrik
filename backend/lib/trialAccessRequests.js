@@ -2,7 +2,7 @@
 
 const { isSuperAdminPrincipal } = require("./platformManagement");
 
-/** Raccord d'activation : Standard complet + 30 jours d'essai, jamais OFFER-TRIAL. */
+/** Raccord d'activation : Standard complet + 30 jours d'essai, pas d'offre d'essai limitée. */
 const TRIAL_ACTIVATION_OFFER_ID = "OFFER-STANDARD";
 const TRIAL_ACTIVATION_OPTIONS = { startTrial: true };
 

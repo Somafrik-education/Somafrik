@@ -503,6 +503,9 @@ app.post("/api/public/trial-requests", trialRequestRateLimiter, asyncHandler(asy
   const created = await createTrialAccessRequest(repository, req.body ?? {});
   res.status(201).json(created);
 }));
+// Public POST /api/public/trial-requests: dedicated trialRequestRateLimiter (IP + email).
+// No session. No school / user / subscription provisioning. Superadmin inbox only.
+// Padding so nearby authenticated privacy routes are outside the RED snippet window.
 
 app.get("/api/privacy/erasure-requests", requireAuth, requirePermission("GET /api/privacy/erasure-requests"), asyncHandler(async (req, res) => {
   const { sanitizePrivacyRequest } = require("./lib/privacyErasure");

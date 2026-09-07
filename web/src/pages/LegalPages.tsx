@@ -74,7 +74,7 @@ export function PrivacyPolicyPage() {
           e-mail et effectif) sont traitées pour qu’un responsable Somafrik contacte le prospect et active
           un essai Standard de 30 jours. Aucun compte n’est créé automatiquement depuis le formulaire public.
           Les leads non convertis sont conservés 24 mois au maximum, puis supprimés ou anonymisés.
-          Contact : <a className="text-blue-700 underline" href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</a>.
+          Contact : {CONTACT_EMAIL}.
         </p>
       </section>
       <section>
