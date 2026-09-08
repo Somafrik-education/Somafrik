@@ -212,8 +212,8 @@ CREATE TABLE IF NOT EXISTS communication_channel_deliveries (
   delivery_key TEXT NOT NULL UNIQUE,
   event_key TEXT NOT NULL,
   notification_id UUID REFERENCES communication_notifications(id),
-  school_id UUID NOT NULL REFERENCES schools(id),
-  user_id UUID NOT NULL REFERENCES users(id),
+  school_id UUID REFERENCES schools(id),
+  user_id UUID REFERENCES users(id),
   channel TEXT NOT NULL CHECK (channel IN ('PUSH', 'EMAIL')),
   status TEXT NOT NULL DEFAULT 'pending',
   attempts INTEGER NOT NULL DEFAULT 0,
@@ -230,6 +230,34 @@ CREATE TABLE IF NOT EXISTS communication_channel_deliveries (
 CREATE INDEX IF NOT EXISTS idx_communication_channel_deliveries_pending
   ON communication_channel_deliveries (status, available_at, channel)
   WHERE status IN ('pending', 'failed');
+
+-- EMAIL opérationnel (demande d'essai) : school_id/user_id nuls + payload.to.
+-- PUSH et EMAIL tenant conservent school_id + user_id (isolation).
+ALTER TABLE communication_channel_deliveries
+  ALTER COLUMN school_id DROP NOT NULL,
+  ALTER COLUMN user_id DROP NOT NULL;
+
+DO $deliveries_recipient$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conname = 'communication_channel_deliveries_recipient_chk'
+  ) THEN
+    ALTER TABLE communication_channel_deliveries
+      ADD CONSTRAINT communication_channel_deliveries_recipient_chk
+      CHECK (
+        (school_id IS NOT NULL AND user_id IS NOT NULL)
+        OR (
+          channel = 'EMAIL'
+          AND notification_id IS NULL
+          AND school_id IS NULL
+          AND user_id IS NULL
+          AND COALESCE(btrim(payload->>'to'), '') <> ''
+        )
+      );
+  END IF;
+END
+$deliveries_recipient$;
 
 CREATE TABLE IF NOT EXISTS user_communication_preferences (
   user_id UUID NOT NULL REFERENCES users(id),

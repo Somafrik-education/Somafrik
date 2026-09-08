@@ -402,14 +402,25 @@ async function dispatchPush(row, { pushStore, pushClient, env = process.env }) {
   return { sent: result?.sent ?? devices.length, providerRef: `expo:${row.delivery_key}` };
 }
 
+function operationalTrialEmailTo(row, payload) {
+  if (uuidOrNull(row.user_id) && uuidOrNull(row.school_id)) return "";
+  if (asTrimmed(payload.kind) !== "trial.access.request") return "";
+  return asTrimmed(payload.to);
+}
+
 async function dispatchEmail(row, { adapter, mailer, env = process.env }) {
   if (!smtpConfigured(env)) return { skipped: "smtp_not_configured" };
+  const payload = asPayload(row.payload);
   const userId = uuidOrNull(row.user_id);
   const schoolId = uuidOrNull(row.school_id);
-  if (!userId || !schoolId) return { skipped: "missing_school_or_user" };
-  const to = await adapter.getUserEmail(userId, schoolId);
-  if (!to) return { skipped: "no_recipient_email" };
-  const payload = asPayload(row.payload);
+  let to = "";
+  if (userId && schoolId) {
+    to = await adapter.getUserEmail(userId, schoolId);
+    if (!to) return { skipped: "no_recipient_email" };
+  } else {
+    to = operationalTrialEmailTo(row, payload);
+    if (!to) return { skipped: "missing_school_or_user" };
+  }
   const send = mailer?.sendMail
     ? mailer.sendMail.bind(mailer)
     : async (message) => {

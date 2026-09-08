@@ -198,7 +198,28 @@ function sourceGuards() {
   assert.doesNotMatch(resetBlock, /processOneEvent|communication_event_outbox/);
   const resetEmail = read("backend/lib/passwordResetNotification.js");
   assert.doesNotMatch(resetEmail, /temporaryPassword|SMTP_PASSWORD|brevo/i);
+  const trialHandler = read("backend/server.js");
+  const trialBlock = trialHandler.slice(
+    trialHandler.indexOf('app.post("/api/public/trial-requests"'),
+    trialHandler.indexOf('app.get("/api/privacy/erasure-requests"'),
+  );
+  assert.doesNotMatch(trialBlock, /deferNotification|sendMail|nodemailer|setImmediate/);
+  const trialCreate = read("backend/lib/trialAccessRequests.js");
+  assert.match(trialCreate, /enqueueTrialAccessRequestNotification/);
+  assert.match(trialCreate, /withTransaction/);
+  assert.doesNotMatch(trialCreate, /notifyTrialAccessRequest|setImmediate|nodemailer/);
+  const trialNotify = read("backend/lib/trialAccessRequestNotification.js");
+  assert.match(trialNotify, /trial\.access\.request:/);
+  assert.match(trialNotify, /ensureDelivery/);
+  assert.doesNotMatch(trialNotify, /nodemailer|sendMail|createTransport/);
+  assert.doesNotMatch(trialNotify, /processOneEvent|fanOutNotificationChannels/);
+  assert.match(schema, /communication_channel_deliveries_recipient_chk/);
+  const trialMigration = read("backend/db/migrations/20260911_trial_operational_email_deliveries.sql");
+  assert.match(trialMigration, /communication_channel_deliveries_recipient_chk/);
+  assert.match(trialMigration, /payload->>'to'/);
   const fanout = read("backend/lib/communicationChannelFanout.js");
+  assert.match(fanout, /function operationalTrialEmailTo/);
+  assert.match(fanout, /trial\.access\.request/);
   const enqueueFn = fanout.slice(fanout.indexOf("async function enqueueChannelDeliveries"));
   assert.match(enqueueFn, /preference lookup failed, enqueue policy channels/);
   assert.match(fanout, /stale_processing_no_redelivery/);
@@ -209,6 +230,8 @@ function sourceGuards() {
   const fanoutTests = read("backend/lib/communicationChannelFanout.test.js");
   assert.match(fanoutTests, /crash après succès Expo avant markSent n'envoie pas une seconde fois/);
   assert.match(fanoutTests, /crash après succès SMTP avant markSent n'envoie pas une seconde fois/);
+  assert.match(fanoutTests, /payload.to n'override pas l'email tenant scoped user\+school/);
+  assert.match(fanoutTests, /EMAIL opérationnel trial.access.request utilise payload.to sans user\/school/);
   assert.match(worker, /COMMUNICATION_NOTIFICATIONS_WORKER/);
   assert.match(worker, /stopCommunicationsNotificationsWorker/);
   assert.match(server, /stopCommunicationsNotificationsWorker/);
@@ -305,6 +328,9 @@ function main() {
   run(process.execPath, ["--test", "backend/lib/communicationsPreferences.red.test.js"], "RED-COM-05 preferences audit");
   run(process.execPath, ["--test", "backend/lib/communicationsLegacy.audit.test.js"], "PR F legacy inventory");
   run(process.execPath, ["--test", "backend/lib/communicationsLegacy.red.test.js"], "RED-COM-06 legacy consolidation");
+  // PR G — SMTP essai → delivery EMAIL. Ne pas SKIP.
+  run(process.execPath, ["--test", "backend/lib/communicationsTrialSmtp.red.test.js"], "RED-COM-07 trial SMTP durable");
+  run(process.execPath, ["--test", "backend/lib/trialAccessRequestNotification.red.test.js"], "trial EMAIL durable unit");
   console.log("verify-communications-c4: GO");
 }
 

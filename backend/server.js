@@ -500,9 +500,7 @@ app.post("/api/privacy/erasure-requests", loginRateLimiter, asyncHandler(async (
 
 app.post("/api/public/trial-requests", trialRequestRateLimiter, asyncHandler(async (req, res) => {
   const { createTrialAccessRequest } = require("./lib/trialAccessRequests");
-  const created = await createTrialAccessRequest(repository, req.body ?? {}, {
-    deferNotification: true,
-  });
+  const created = await createTrialAccessRequest(repository, req.body ?? {});
   res.status(201).json(created);
 }));
 // Public POST /api/public/trial-requests: dedicated trialRequestRateLimiter (IP).

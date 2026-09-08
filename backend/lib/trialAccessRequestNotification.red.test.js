@@ -6,7 +6,17 @@ const fs = require("node:fs");
 const path = require("node:path");
 
 const { createTrialAccessRequest } = require("./trialAccessRequests");
+const {
+  buildTrialRequestNotificationEmail,
+  buildTrialRequestDeliveryPayload,
+  enqueueTrialAccessRequestNotification,
+  trialAccessRequestDeliveryKey,
+} = require("./trialAccessRequestNotification");
 const { EXPECTED_TRIAL_REQUEST_EMAIL } = require("./trialAccessRequestNotification.emailCopy");
+const {
+  createMemoryDeliveryAdapter,
+  drainChannelDeliveries,
+} = require("./communicationChannelFanout");
 
 function memoryRepo() {
   const rows = [];
@@ -38,33 +48,25 @@ const VALID = {
   consent: true,
 };
 
-test("createTrialAccessRequest tente une notification vers contact@somafrik.app après persistance", async () => {
+test("createTrialAccessRequest enqueue une delivery EMAIL vers contact@somafrik.app après persistance", async () => {
   const repo = memoryRepo();
-  const calls = [];
-  const created = await createTrialAccessRequest(repo, VALID, {
-    notifyTrialRequest: async (payload) => {
-      calls.push(payload);
-    },
-  });
+  const deliveries = [];
+  repo.ensureDelivery = async (row) => {
+    deliveries.push(row);
+    return row;
+  };
+  const created = await createTrialAccessRequest(repo, VALID);
 
   assert.equal(repo.rows.length, 1);
   assert.equal(created.status, "nouvelle");
-  assert.equal(calls.length, 1, "la notification doit être tentée après l'insert");
-  assert.equal(calls[0].publicRef, created.publicRef);
-  assert.equal(calls[0].requesterName, VALID.requesterName);
-  assert.equal(calls[0].role, VALID.role);
-  assert.equal(calls[0].schoolName, VALID.schoolName);
-  assert.equal(calls[0].countryIso, VALID.countryIso);
-  assert.equal(calls[0].city, VALID.city);
-  assert.equal(calls[0].phone, VALID.phone);
-  assert.equal(calls[0].email, VALID.email);
-  assert.equal(calls[0].studentBand, VALID.studentBand);
+  assert.equal(deliveries.length, 1);
+  assert.equal(deliveries[0].channel, "EMAIL");
+  assert.equal(deliveries[0].payload.to, "contact@somafrik.app");
+  assert.equal(deliveries[0].deliveryKey, trialAccessRequestDeliveryKey(created.id));
+  assert.equal(deliveries[0].payload.kind, "trial.access.request");
 });
 
 test("l’e-mail de notification contient les champs prospect et la référence publique", () => {
-  const {
-    buildTrialRequestNotificationEmail,
-  } = require("./trialAccessRequestNotification");
   const mail = buildTrialRequestNotificationEmail({
     publicRef: "ESS-00000042",
     requesterName: VALID.requesterName,
@@ -93,47 +95,51 @@ test("l’e-mail de notification contient les champs prospect et la référence 
   assert.equal(mail.attachments, undefined);
 });
 
-test("une panne du mailer ne rollback pas la demande PostgreSQL", async () => {
+test("une panne SMTP au drain ne rollback pas la demande déjà persistée", async () => {
+  const adapter = createMemoryDeliveryAdapter({ users: [] });
   const repo = memoryRepo();
-  let attempted = false;
-  const created = await createTrialAccessRequest(repo, VALID, {
-    notifyTrialRequest: async () => {
-      attempted = true;
-      throw new Error("SMTP down");
-    },
-  });
-
-  assert.equal(attempted, true, "la notification doit être tentée même si le transport échoue");
+  repo.ensureDelivery = adapter.ensureDelivery.bind(adapter);
+  const created = await createTrialAccessRequest(repo, VALID);
   assert.equal(repo.rows.length, 1);
   assert.equal(created.status, "nouvelle");
-  assert.ok(created.publicRef);
+
+  await drainChannelDeliveries(adapter, {
+    mailer: {
+      async sendMail() {
+        throw new Error("SMTP down");
+      },
+    },
+    env: {
+      SMTP_HOST: "smtp.test.local",
+      MAIL_FROM: "notifications@somafrik.app",
+    },
+  });
+  assert.equal(repo.rows.length, 1);
+  assert.equal(adapter.deliveries[0].status, "failed");
 });
 
 test("honeypot / spam : aucune notification e-mail", async () => {
   const repo = memoryRepo();
-  const calls = [];
-  await createTrialAccessRequest(
-    repo,
-    { ...VALID, website: "https://spam.example" },
-    {
-      notifyTrialRequest: async (payload) => {
-        calls.push(payload);
-      },
-    },
-  );
+  const deliveries = [];
+  repo.ensureDelivery = async (row) => {
+    deliveries.push(row);
+    return row;
+  };
+  await createTrialAccessRequest(repo, { ...VALID, website: "https://spam.example" });
   assert.equal(repo.rows.length, 0);
-  assert.equal(calls.length, 0);
+  assert.equal(deliveries.length, 0);
 });
 
-test("source: POST public persiste puis notifie, sans rollback", () => {
+test("source: POST public persiste une intention EMAIL durable, sans SMTP HTTP", () => {
   const src = fs.readFileSync(path.join(__dirname, "./trialAccessRequests.js"), "utf8");
-  assert.match(src, /notifyTrialRequest/);
-  assert.match(src, /createTrialAccessRequest\(/);
-  assert.match(src, /deferNotification/);
+  assert.match(src, /enqueueTrialAccessRequestNotification/);
+  assert.match(src, /withTransaction/);
+  assert.doesNotMatch(src, /notifyTrialRequest|deferNotification|setImmediate/);
   const server = fs.readFileSync(path.join(__dirname, "../server.js"), "utf8");
   const start = server.indexOf('app.post("/api/public/trial-requests"');
   const snippet = server.slice(start, start + 500);
-  assert.match(snippet, /deferNotification:\s*true/);
+  assert.doesNotMatch(snippet, /deferNotification/);
+  assert.match(snippet, /res\.status\(201\)/);
 });
 
 test("le module de notification ne crée ni school, ni user, ni subscription", () => {
@@ -143,51 +149,47 @@ test("le module de notification ne crée ni school, ni user, ni subscription", (
   assert.doesNotMatch(src, /persistEstablishment|insertSchool|createSchool\(/);
   assert.doesNotMatch(src, /insertUser|createUser|provisionUser/);
   assert.doesNotMatch(src, /upsertSubscription|insertSubscription/);
+  assert.doesNotMatch(src, /nodemailer|sendMail|createTransport/);
 });
 
-test("notifyTrialAccessRequest ne jette pas si SMTP est absent", async () => {
-  const prevHost = process.env.SMTP_HOST;
-  const prevFrom = process.env.MAIL_FROM;
-  delete process.env.SMTP_HOST;
-  delete process.env.MAIL_FROM;
-  const { notifyTrialAccessRequest } = require("./trialAccessRequestNotification");
-  await notifyTrialAccessRequest({
-    ...VALID,
+test("le payload de delivery n'embarque aucun secret SMTP", () => {
+  const payload = buildTrialRequestDeliveryPayload({
+    id: "tar_1",
     publicRef: "ESS-00000001",
+    ...VALID,
   });
-  if (prevHost === undefined) delete process.env.SMTP_HOST;
-  else process.env.SMTP_HOST = prevHost;
-  if (prevFrom === undefined) delete process.env.MAIL_FROM;
-  else process.env.MAIL_FROM = prevFrom;
+  const blob = JSON.stringify(payload);
+  assert.doesNotMatch(blob, /SMTP_PASSWORD|SMTP_USER|SMTP_HOST|MAIL_FROM/i);
+  assert.equal(payload.to, "contact@somafrik.app");
+  assert.equal(payload.kind, "trial.access.request");
 });
 
-test("deferNotification renvoie le lead sans attendre SMTP", async () => {
-  const repo = memoryRepo();
-  let started = false;
-  let finished = false;
-  let resolveNotify;
-  const gate = new Promise((resolve) => {
-    resolveNotify = resolve;
-  });
-  const created = await createTrialAccessRequest(repo, VALID, {
-    deferNotification: true,
-    notifyTrialRequest: async () => {
-      started = true;
-      await gate;
-      finished = true;
+test("enqueue + drain EMAIL une seule fois vers contact@somafrik.app", async () => {
+  const adapter = createMemoryDeliveryAdapter({ users: [] });
+  const request = { id: "tar_99", publicRef: "ESS-00000099", ...VALID };
+  const first = await enqueueTrialAccessRequestNotification(adapter, request);
+  const second = await enqueueTrialAccessRequestNotification(adapter, request);
+  assert.ok(first);
+  assert.equal(second, null);
+  assert.equal(adapter.deliveries.length, 1);
+
+  const mails = [];
+  const deps = {
+    mailer: {
+      async sendMail(message) {
+        mails.push(message);
+      },
     },
-  });
-  assert.equal(repo.rows.length, 1);
-  assert.equal(created.status, "nouvelle");
-  assert.equal(started, false);
-  assert.equal(finished, false);
-  await new Promise((resolve) => setImmediate(resolve));
-  assert.equal(started, true);
-  assert.equal(finished, false);
-  resolveNotify();
-  await Promise.resolve();
-  await Promise.resolve();
-  assert.equal(finished, true);
+    env: {
+      SMTP_HOST: "smtp.test.local",
+      MAIL_FROM: "notifications@somafrik.app",
+    },
+  };
+  await drainChannelDeliveries(adapter, deps);
+  await drainChannelDeliveries(adapter, deps);
+  assert.equal(mails.length, 1);
+  assert.equal(mails[0].to, "contact@somafrik.app");
+  assert.equal(adapter.deliveries[0].status, "sent");
 });
 
 test("Compose transmet SMTP_HOST et MAIL_FROM au backend", () => {
