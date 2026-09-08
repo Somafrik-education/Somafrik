@@ -25,4 +25,17 @@ Crash après succès fournisseur avant `markSent` : **pas de second send** (cons
 Compteurs `pending|processing|sent|failed|dead_letter|skipped` par canal, `attempts`, `last_error` sanitizé.  
 Aucun email, token Expo, payload, `delivery_key`, secret SMTP.
 
-RBAC : `Notifications:READ` + `ALL_PRIVILEGES` / `COUNTRY_PRIVILEGES`. Handler : Superadmin, Admin Pays, Admin School uniquement.
+RBAC : `Notifications:READ` + `ALL_PRIVILEGES` / `COUNTRY_PRIVILEGES`. Handler :
+
+| Rôle | Scope |
+|---|---|
+| Superadmin | global (`mode: all`) |
+| Admin Pays / `COUNTRY_ADMIN` | **iso_code pays uniquement** (`countryCode` / `countryScope` / `platformContext.kind=country`). Ambigu ou absent → **403** |
+| Admin School | `school_id` de session. Absent → **403** |
+
+Un Admin Pays CD ne lit aucune delivery d’un établissement d’un autre pays. Les EMAIL opérationnels sans `school_id` (essai) restent hors scope pays (INNER JOIN schools).
+
+## P2 — fenêtre `dispatch_started_at` (non bloquant)
+
+Entre `markDispatchStarted()` et l’appel Expo/SMTP, un crash worker pose `dispatch_started_at` puis le reclaim stale ferme en `skipped` / `stale_processing_no_redelivery`. **Pas de double envoi.** Résidu : **envoi éventuellement perdu**. Compromis at-most-once explicite. À reporter dans l’audit final Communications avant GO production.
+

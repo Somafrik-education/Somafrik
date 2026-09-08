@@ -223,22 +223,44 @@ function createSqlDeliveryAdapter(store) {
       );
     },
 
-    async listDeliveryHealth({ schoolId } = {}) {
+    async listDeliveryHealth(scope = { mode: "none" }) {
       if (typeof all !== "function") return summarizeChannelDeliveryHealth([]);
-      const scoped = uuidOrNull(schoolId);
-      const rows = scoped
-        ? await all(
-            `SELECT channel, status, attempts, last_error, updated_at, available_at
-             FROM communication_channel_deliveries
-             WHERE school_id = $1`,
-            [scoped],
-          )
-        : await all(
-            `SELECT channel, status, attempts, last_error, updated_at, available_at
-             FROM communication_channel_deliveries`,
-            [],
-          );
-      return summarizeChannelDeliveryHealth(rows);
+      const mode = String(scope?.mode || "none");
+      if (mode === "none") return summarizeChannelDeliveryHealth([]);
+      const selectCols = "d.channel, d.status, d.attempts, d.last_error, d.updated_at, d.available_at";
+      if (mode === "school") {
+        const scoped = uuidOrNull(scope.schoolId);
+        if (!scoped) return summarizeChannelDeliveryHealth([]);
+        const rows = await all(
+          `SELECT ${selectCols}
+           FROM communication_channel_deliveries d
+           WHERE d.school_id = $1`,
+          [scoped],
+        );
+        return summarizeChannelDeliveryHealth(rows);
+      }
+      if (mode === "country") {
+        const iso = asTrimmed(scope.countryCode).toUpperCase();
+        if (!/^[A-Z]{2}$/.test(iso)) return summarizeChannelDeliveryHealth([]);
+        const rows = await all(
+          `SELECT ${selectCols}
+           FROM communication_channel_deliveries d
+           INNER JOIN schools s ON s.id = d.school_id
+           INNER JOIN countries c ON c.id = s.country_id
+           WHERE upper(btrim(c.iso_code)) = $1`,
+          [iso],
+        );
+        return summarizeChannelDeliveryHealth(rows);
+      }
+      if (mode === "all") {
+        const rows = await all(
+          `SELECT ${selectCols}
+           FROM communication_channel_deliveries d`,
+          [],
+        );
+        return summarizeChannelDeliveryHealth(rows);
+      }
+      return summarizeChannelDeliveryHealth([]);
     },
 
     async getUserEmail(userId, schoolId) {
@@ -253,7 +275,7 @@ function createSqlDeliveryAdapter(store) {
   };
 }
 
-function createMemoryDeliveryAdapter({ notifications = [], recipients = [], users = [], preferences = [] } = {}) {
+function createMemoryDeliveryAdapter({ notifications = [], recipients = [], users = [], preferences = [], schools = [] } = {}) {
   const deliveries = [];
   return {
     notifications,
@@ -261,6 +283,7 @@ function createMemoryDeliveryAdapter({ notifications = [], recipients = [], user
     users,
     deliveries,
     preferences,
+    schools,
     async listEnabledChannels({ userId, schoolId }) {
       const rows = preferences.filter(
         (row) => String(row.user_id) === String(userId) && String(row.school_id) === String(schoolId),
@@ -387,11 +410,29 @@ function createMemoryDeliveryAdapter({ notifications = [], recipients = [], user
       ).toISOString();
       return { ...row };
     },
-    async listDeliveryHealth({ schoolId } = {}) {
-      const scoped = uuidOrNull(schoolId);
-      const rows = scoped
-        ? deliveries.filter((item) => String(item.school_id) === String(scoped))
-        : deliveries;
+    async listDeliveryHealth(scope = { mode: "none" }) {
+      const mode = String(scope?.mode || "none");
+      if (mode === "none") return summarizeChannelDeliveryHealth([]);
+      let rows = deliveries;
+      if (mode === "school") {
+        const scoped = uuidOrNull(scope.schoolId);
+        if (!scoped) return summarizeChannelDeliveryHealth([]);
+        rows = deliveries.filter((item) => String(item.school_id) === String(scoped));
+      } else if (mode === "country") {
+        const iso = asTrimmed(scope.countryCode).toUpperCase();
+        if (!/^[A-Z]{2}$/.test(iso)) return summarizeChannelDeliveryHealth([]);
+        const schoolIds = new Set(
+          (schools || [])
+            .filter((school) => {
+              const code = asTrimmed(school.countryCode || school.country_code || school.iso_code).toUpperCase();
+              return code === iso;
+            })
+            .map((school) => String(school.id)),
+        );
+        rows = deliveries.filter((item) => schoolIds.has(String(item.school_id)));
+      } else if (mode !== "all") {
+        return summarizeChannelDeliveryHealth([]);
+      }
       return summarizeChannelDeliveryHealth(rows);
     },
     async getUserEmail(userId, schoolId) {

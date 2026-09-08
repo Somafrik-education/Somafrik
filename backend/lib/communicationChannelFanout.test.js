@@ -226,6 +226,44 @@ test("crash après succès SMTP avant markSent n'envoie pas une seconde fois", a
   assert.equal(stuck.last_error, STALE_PROCESSING_REASON);
 });
 
+test("P2 — crash entre markDispatchStarted et Expo skip sans second send (envoi éventuellement perdu)", async () => {
+  const adapter = createMemoryDeliveryAdapter({
+    notifications: [baseNote()],
+    recipients: [{ notification_id: NOTE_ID, school_id: SCHOOL_A, user_id: USER_A }],
+  });
+  let sent = 0;
+  const deps = {
+    pushStore: createPushStore([
+      {
+        user_id: USER_A,
+        school_id: SCHOOL_A,
+        expo_push_token: TOKEN_A,
+        backend_environment: "preproduction",
+      },
+    ]),
+    pushClient: {
+      async sendToTokens(tokens) {
+        sent += 1;
+        assert.deepEqual(tokens, [TOKEN_A]);
+        return { sent: 1 };
+      },
+    },
+    mailer: { async sendMail() {} },
+    env: envPreprod(),
+  };
+  await enqueueChannelDeliveries(adapter, [{ event_key: EVENT_KEY }]);
+  adapter.deliveries.find((row) => row.channel === "EMAIL").status = "skipped";
+  const claimed = await adapter.claimDue();
+  assert.equal(claimed.channel, "PUSH");
+  await adapter.markDispatchStarted(claimed.id);
+  const later = new Date(Date.now() + STALE_LEASE_MS + 1000);
+  await drainChannelDeliveries(adapter, { ...deps, now: () => later });
+  assert.equal(sent, 0, "fournisseur jamais appelé : at-most-once skip, envoi éventuellement perdu");
+  const push = adapter.deliveries.find((row) => row.channel === "PUSH");
+  assert.equal(push.status, "skipped");
+  assert.equal(push.last_error, STALE_PROCESSING_REASON);
+});
+
 test("échec Expo reste retryable et n'envoie qu'une fois au succès", async () => {
   const adapter = createMemoryDeliveryAdapter({
     notifications: [baseNote()],
