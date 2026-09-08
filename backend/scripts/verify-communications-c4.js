@@ -255,6 +255,7 @@ function main() {
   run(process.execPath, ["--check", "backend/lib/communicationChannelFanout.js"], "syntax channel fanout");
   run(process.execPath, ["--check", "backend/lib/passwordResetNotification.js"], "syntax password reset email");
   run(process.execPath, ["--test", "backend/lib/communicationsChannelFanout.red-com-01.test.js"], "RED-COM-01 / 01b");
+  run(process.execPath, ["--test", "backend/lib/communicationsDispatcher.red.test.js"], "RED-COM-04 dispatcher audit");
   run(process.execPath, ["--test", "backend/lib/communicationChannelFanout.test.js"], "channel fanout unit");
   run(process.execPath, ["--test", "backend/lib/communicationsPasswordReset.red.test.js"], "PR C reset email source");
   run(process.execPath, ["--test", "backend/lib/passwordResetNotification.test.js"], "password reset email unit");
