@@ -21,7 +21,7 @@ function between(source, start, end) {
 
 test("I-P1-01 — dispatcher : erreur de politique établissement = fail-closed, jamais défaut tout autorisé", () => {
   const source = read("backend/lib/communicationsDispatcher.js");
-  const loadPolicy = between(source, "async function loadSchoolPolicyEvents", "async function loadEnabledChannels");
+  const loadPolicy = between(source, "async function loadSchoolPolicyEvents", "async function resolveTargetPolicyInput");
   assert.doesNotMatch(
     loadPolicy,
     /catch\s*\{[\s\S]*getDefaultSchoolNotificationSettings\(\)\.events/,
@@ -31,8 +31,8 @@ test("I-P1-01 — dispatcher : erreur de politique établissement = fail-closed,
 
 test("I-P1-02 — centre IN_APP : erreurs préférences/politique = fail-closed", () => {
   const source = read("backend/lib/communicationsNotificationsService.js");
-  const userVisibility = between(source, "async function isInAppVisible", "async function allowsInAppForRow");
-  const schoolVisibility = between(source, "async function allowsInAppForRow", "async function list(");
+  const userVisibility = between(source, "async function isInAppVisible", "function rowAllowsInApp");
+  const schoolVisibility = between(source, "async function allowsInAppForRow", "async function fetchRecipientPage");
   assert.match(userVisibility, /catch\s*\{\s*return false;\s*\}/, "préférences indisponibles : IN_APP doit être refusé");
   assert.match(schoolVisibility, /catch\s*\{\s*return false;\s*\}/, "politique établissement indisponible : IN_APP doit être refusé");
 });
@@ -44,5 +44,28 @@ test("I-P1-03 — markRead ne retourne pas une notification masquée par la poli
     markRead,
     /allowsInAppForRow/,
     "markRead doit réappliquer la politique IN_APP avant de retourner le contenu de la notification",
+  );
+});
+
+test("I-P1-04 — panne de lecture des préférences personnelles = fail-closed pour PUSH/EMAIL", () => {
+  const dispatcher = read("backend/lib/communicationsDispatcher.js");
+  const loadEnabled = between(dispatcher, "async function loadEnabledChannels", "async function schoolPolicyForTarget");
+  assert.match(
+    loadEnabled,
+    /if\s*\(isMissingPrefsTable\(error\)\)\s*return defaultEnabledChannels\(\)/,
+    "seule l'absence de table de préférences peut conserver le défaut historique",
+  );
+  assert.match(
+    loadEnabled,
+    /COMMUNICATION_PREFS_UNAVAILABLE/,
+    "une autre erreur de lecture doit être marquée fail-closed",
+  );
+
+  const fanout = read("backend/lib/communicationChannelFanout.js");
+  const catchBlock = between(fanout, "} catch (error) {", "logger.error?.(\"[communications-c4] preference lookup failed");
+  assert.match(
+    catchBlock,
+    /communication_preferences_unavailable/,
+    "le fan-out doit propager l'indisponibilité des préférences au lieu de réactiver les canaux",
   );
 });
