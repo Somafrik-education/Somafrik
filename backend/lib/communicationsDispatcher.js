@@ -14,11 +14,15 @@ const { fanOutNotificationChannels } = require("./communicationChannelFanout");
 const {
   defaultEnabledChannels,
   enabledChannelsForUser,
+  isMissingPrefsTable,
 } = require("./communicationsPreferences");
 const {
   resolveAllowedChannels,
   getDefaultSchoolNotificationSettings,
   getSchoolPolicyEventsBySchoolId,
+  isSchoolWideRecipientKind,
+  resolveUserRecipientCategories,
+  SCHOOL_POLICY_UNAVAILABLE,
 } = require("./schoolNotificationPolicy");
 
 const SUPPORTED_CHANNELS = Object.freeze(["IN_APP", "PUSH", "EMAIL"]);
@@ -145,6 +149,19 @@ async function loadSchoolPolicyEvents({ adapter, store, schoolId }) {
   return getDefaultSchoolNotificationSettings().events;
 }
 
+async function resolveTargetPolicyInput({ adapter, store, target, schoolId }) {
+  const kind = target.recipient_kind;
+  if (isSchoolWideRecipientKind(kind)) {
+    const recipientCategories = await resolveUserRecipientCategories(store, {
+      userId: target.user_id,
+      schoolId: target.school_id || schoolId,
+      adapter,
+    });
+    return { recipient: kind, recipientCategories };
+  }
+  return { recipient: kind };
+}
+
 async function loadEnabledChannels({ adapter, store, userId, schoolId }) {
   try {
     if (typeof adapter?.listEnabledChannels === "function") {
@@ -154,6 +171,19 @@ async function loadEnabledChannels({ adapter, store, userId, schoolId }) {
     return defaultEnabledChannels();
   } catch {
     return defaultEnabledChannels();
+  }
+}
+
+async function schoolPolicyForTarget({ adapter, store, schoolId }) {
+  try {
+    return await loadSchoolPolicyEvents({ adapter, store, schoolId });
+  } catch (error) {
+    if (isMissingPrefsTable(error)) return getDefaultSchoolNotificationSettings().events;
+    if (error?.code === SCHOOL_POLICY_UNAVAILABLE) throw error;
+    const wrapped = new Error(String(error?.message || SCHOOL_POLICY_UNAVAILABLE));
+    wrapped.code = SCHOOL_POLICY_UNAVAILABLE;
+    wrapped.cause = error;
+    throw wrapped;
   }
 }
 
@@ -201,16 +231,22 @@ async function dispatchCommunication({
         userId: target.user_id,
         schoolId: target.school_id || schoolId,
       });
-      const schoolPolicy = await loadSchoolPolicyEvents({
+      const schoolPolicy = await schoolPolicyForTarget({
         adapter,
         store,
         schoolId: target.school_id || schoolId,
       });
+      const recipientInput = await resolveTargetPolicyInput({
+        adapter,
+        store,
+        target,
+        schoolId,
+      });
       return resolveAllowedChannels({
         eventType: resolvedType,
-        recipient: target.recipient_kind,
         schoolPolicy,
         userPreferences: enabled,
+        ...recipientInput,
       }).filter((channel) => EXTERNAL_CHANNELS.includes(channel) && resolved.includes(channel));
     },
   });
@@ -251,16 +287,22 @@ async function dispatchProcessedEvents({
         userId: target.user_id,
         schoolId: target.school_id,
       });
-      const schoolPolicy = await loadSchoolPolicyEvents({
+      const schoolPolicy = await schoolPolicyForTarget({
         adapter,
         store,
         schoolId: target.school_id,
       });
+      const recipientInput = await resolveTargetPolicyInput({
+        adapter,
+        store,
+        target,
+        schoolId: target.school_id,
+      });
       return resolveAllowedChannels({
         eventType,
-        recipient: target.recipient_kind,
         schoolPolicy,
         userPreferences: enabled,
+        ...recipientInput,
       }).filter((channel) => EXTERNAL_CHANNELS.includes(channel) && policyChannels.includes(channel));
     },
   });

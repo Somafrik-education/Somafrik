@@ -190,6 +190,16 @@ function createMemoryDeliveryAdapter({ notifications = [], recipients = [], user
       );
       return enabledChannelsFromRows(rows);
     },
+    async listUserRoleKeys({ userId, schoolId }) {
+      const row = users.find(
+        (item) => String(item.id) === String(userId) && String(item.school_id) === String(schoolId),
+      );
+      if (!row) return [];
+      if (Array.isArray(row.roles)) return row.roles;
+      if (row.role) return [row.role];
+      if (row.role_key) return [row.role_key];
+      return [];
+    },
     async loadFanoutTargets(eventKey) {
       const key = asTrimmed(eventKey);
       const notes = notifications.filter((row) => asTrimmed(row.event_key || row.eventKey) === key);
@@ -319,6 +329,7 @@ async function enqueueChannelDeliveries(adapter, processed = [], channels = CHAN
             await resolveRecipientChannels(target, providerChannels),
           );
         } catch (error) {
+          if (error?.code === "school_notification_policy_unavailable") throw error;
           logger.error?.("[communications-c4] preference lookup failed, enqueue policy channels", {
             eventKey,
             userId,

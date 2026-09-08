@@ -98,6 +98,8 @@ export function SettingsNotificationsPage() {
     }
     let active = true;
     setLoading(true);
+    setSettings(null);
+    setSavingKey("");
     setError("");
     void getSchoolNotificationSettings(schoolCode)
       .then((result) => {
@@ -119,7 +121,7 @@ export function SettingsNotificationsPage() {
   const rows = useMemo(() => rowsFromSettings(settings), [settings]);
 
   async function toggle(event: SchoolNotificationEvent, recipient: SchoolNotificationRecipient, channel: SchoolNotificationChannel) {
-    if (!settings || !canEdit || savingKey) return;
+    if (!settings || !canEdit || savingKey || loading) return;
     const previous = settings;
     const nextValue = !channelOf(settings.events[event], recipient, channel);
     const next: SchoolNotificationSettings = {
@@ -204,7 +206,7 @@ export function SettingsNotificationsPage() {
                                 <Switch
                                   checked={checked}
                                   aria-label={label}
-                                  disabled={!canEdit || Boolean(savingKey)}
+                                  disabled={!canEdit || Boolean(savingKey) || loading}
                                   onCheckedChange={() => void toggle(row.event, row.recipient, channel.key)}
                                 />
                               </td>

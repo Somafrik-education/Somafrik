@@ -61,13 +61,21 @@ const KIND_TO_CATEGORY = Object.freeze({
   parents: "PARENT",
   student: "STUDENT",
   students: "STUDENT",
+  eleve: "STUDENT",
+  eleves: "STUDENT",
   teacher: "TEACHER",
   teachers: "TEACHER",
+  enseignant: "TEACHER",
+  enseignants: "TEACHER",
   staff: "SCHOOL_ADMIN",
+  personnel: "SCHOOL_ADMIN",
   school_admin: "SCHOOL_ADMIN",
   admin: "SCHOOL_ADMIN",
   administration: "SCHOOL_ADMIN",
 });
+
+const SCHOOL_WIDE_KINDS = Object.freeze(new Set(["school", "school_wide", "tous"]));
+const SCHOOL_POLICY_UNAVAILABLE = "school_notification_policy_unavailable";
 
 function cloneChannelFlags(flags = {}) {
   return {
@@ -108,11 +116,88 @@ function mapDispatcherEventToLotI(eventType) {
   return match ? C4_TO_LOT_I[match] : null;
 }
 
+function canonicalizeKindToken(kind) {
+  return asTrimmed(kind)
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+}
+
+function isSchoolWideRecipientKind(kind) {
+  return SCHOOL_WIDE_KINDS.has(canonicalizeKindToken(kind));
+}
+
 function mapRecipientKindToCategory(kind) {
   const raw = asTrimmed(kind).toUpperCase();
   if (RECIPIENT_CATEGORIES.includes(raw)) return raw;
-  const mapped = KIND_TO_CATEGORY[asTrimmed(kind).toLowerCase()];
-  return mapped || null;
+  return KIND_TO_CATEGORY[canonicalizeKindToken(kind)] || null;
+}
+
+function categoriesFromRoleKeys(roleKeys = []) {
+  const cats = new Set();
+  for (const raw of roleKeys || []) {
+    const mapped = mapRecipientKindToCategory(raw);
+    if (mapped) {
+      cats.add(mapped);
+      continue;
+    }
+    if (asTrimmed(raw)) cats.add("SCHOOL_ADMIN");
+  }
+  return [...cats];
+}
+
+function wrapSchoolPolicyError(error) {
+  const wrapped = new Error(String(error?.message || SCHOOL_POLICY_UNAVAILABLE));
+  wrapped.code = SCHOOL_POLICY_UNAVAILABLE;
+  wrapped.cause = error;
+  return wrapped;
+}
+
+async function loadUserRoleKeys(store, { userId, schoolId, adapter } = {}) {
+  if (typeof adapter?.listUserRoleKeys === "function") {
+    return adapter.listUserRoleKeys({ userId, schoolId });
+  }
+  const db = resolveQueryable(store);
+  if (typeof db?.listActiveUserRoleKeysForSchool === "function") {
+    return db.listActiveUserRoleKeysForSchool(userId, schoolId);
+  }
+  if (typeof adapter?.listActiveUserRoleKeysForSchool === "function") {
+    return adapter.listActiveUserRoleKeysForSchool(userId, schoolId);
+  }
+  if (typeof db?.listActiveUserRoleKeys === "function") {
+    return db.listActiveUserRoleKeys(userId);
+  }
+  const users = adapter?.users;
+  if (Array.isArray(users)) {
+    const row = users.find(
+      (item) => String(item.id) === String(userId) && String(item.school_id || item.schoolId) === String(schoolId),
+    );
+    if (Array.isArray(row?.roles)) return row.roles;
+    if (row?.role) return [row.role];
+    if (row?.role_key) return [row.role_key];
+    return [];
+  }
+  const scopedUserId = uuidOrNull(userId);
+  const scopedSchoolId = uuidOrNull(schoolId);
+  if (!scopedUserId || !scopedSchoolId || typeof db?.all !== "function") return [];
+  try {
+    const rows = await db.all(
+      `SELECT role_key
+         FROM user_roles
+        WHERE user_id = $1 AND school_id = $2
+          AND status = 'active' AND revoked_at IS NULL`,
+      [scopedUserId, scopedSchoolId],
+    );
+    return (rows || []).map((row) => row.role_key || row.roleKey).filter(Boolean);
+  } catch (error) {
+    if (isMissingPrefsTable(error)) return [];
+    throw wrapSchoolPolicyError(error);
+  }
+}
+
+async function resolveUserRecipientCategories(store, { userId, schoolId, adapter } = {}) {
+  const roleKeys = await loadUserRoleKeys(store, { userId, schoolId, adapter });
+  return categoriesFromRoleKeys(roleKeys);
 }
 
 function userChannelSet(userPreferences) {
@@ -134,6 +219,7 @@ function resolveAllowedChannels({
   event,
   eventType,
   recipient,
+  recipientCategories,
   schoolPolicy,
   userPreferences,
 } = {}) {
@@ -149,11 +235,23 @@ function resolveAllowedChannels({
     return CHANNELS.filter((channel) => user.has(channel));
   }
 
-  const recipientCat = mapRecipientKindToCategory(recipient);
   const allowed = CANONICAL_ALLOWED_RECIPIENTS[lotI] || [];
   const events = eventsFromPolicy(schoolPolicy);
+  const explicitCats = Array.isArray(recipientCategories)
+    ? recipientCategories.map(mapRecipientKindToCategory).filter((item) => item && allowed.includes(item))
+    : null;
+  if (explicitCats) {
+    if (!explicitCats.length) return [];
+    return CHANNELS.filter((channel) => {
+      if (!user.has(channel)) return false;
+      return explicitCats.some((cat) => events[lotI]?.[cat]?.[channel] !== false);
+    });
+  }
+
+  const recipientCat = mapRecipientKindToCategory(recipient);
   if (!recipientCat || !allowed.includes(recipientCat)) {
     if (!recipientCat) {
+      if (isSchoolWideRecipientKind(recipient)) return [];
       return CHANNELS.filter((channel) => {
         if (!user.has(channel)) return false;
         return allowed.some((item) => events[lotI]?.[item]?.[channel] !== false);
@@ -401,10 +499,13 @@ module.exports = {
   getDefaultSchoolNotificationSettings,
   mapDispatcherEventToLotI,
   mapRecipientKindToCategory,
+  isSchoolWideRecipientKind,
+  resolveUserRecipientCategories,
   resolveAllowedChannels,
   getSchoolPolicyEventsBySchoolId,
   getSchoolNotificationSettings,
   patchSchoolNotificationSettings,
   putSchoolNotificationSettings,
   createMemorySchoolNotificationStore,
+  SCHOOL_POLICY_UNAVAILABLE,
 };

@@ -21,7 +21,12 @@ const {
   mapAttachmentRow,
 } = require("./communicationsAttachments");
 const { enabledChannelsForUser } = require("./communicationsPreferences");
-const { resolveAllowedChannels, getSchoolPolicyEventsBySchoolId } = require("./schoolNotificationPolicy");
+const {
+  resolveAllowedChannels,
+  getSchoolPolicyEventsBySchoolId,
+  isSchoolWideRecipientKind,
+  resolveUserRecipientCategories,
+} = require("./schoolNotificationPolicy");
 
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 100;
@@ -192,39 +197,41 @@ async function isInAppVisible(store, { userId, schoolId } = {}) {
   }
 }
 
-async function allowsInAppForRow(store, schoolId, row, userVisible) {
+function rowAllowsInApp(row, schoolPolicy, viewerCategories) {
+  const schoolWide = isSchoolWideRecipientKind(row.recipient_kind);
+  const channels = resolveAllowedChannels({
+    eventType: row.event_type,
+    recipient: row.recipient_kind,
+    recipientCategories: schoolWide ? viewerCategories : undefined,
+    schoolPolicy,
+    userPreferences: { IN_APP: true, PUSH: true, EMAIL: true },
+  });
+  return channels.includes("IN_APP");
+}
+
+async function allowsInAppForRow(store, schoolId, row, userVisible, viewerCategories) {
   if (!userVisible) return false;
   try {
     const schoolPolicy = await getSchoolPolicyEventsBySchoolId(store, schoolId);
-    const channels = resolveAllowedChannels({
-      eventType: row.event_type,
-      recipient: row.recipient_kind,
-      schoolPolicy,
-      userPreferences: { IN_APP: true, PUSH: true, EMAIL: true },
-    });
-    return channels.includes("IN_APP");
+    const categories = viewerCategories
+      || (isSchoolWideRecipientKind(row.recipient_kind)
+        ? await resolveUserRecipientCategories(store, { userId: row.user_id, schoolId })
+        : undefined);
+    return rowAllowsInApp(row, schoolPolicy, categories);
   } catch {
     return false;
   }
 }
 
-async function list(store, principal, query = {}) {
-  const userId = actorUserId(principal);
-  if (!userId) throw createClientsError(403, "Non authentifié.", CLIENTS_ERROR.FORBIDDEN);
-  const { school, schoolCode, tx } = await requireSchool(store, principal, query);
-  if (!(await isInAppVisible(tx, { userId, schoolId: school.id }))) {
-    return { items: [], nextCursor: null };
-  }
-  const limit = parseLimit(query);
-  const cursor = parseCursor(query.cursor);
-  const params = [school.id, userId];
+async function fetchRecipientPage(tx, { schoolId, userId, cursor, limit }) {
+  const params = [schoolId, userId];
   let cursorSql = "";
   if (cursor?.at && cursor?.id) {
     params.push(cursor.at, cursor.id);
     cursorSql = `AND (n.created_at, n.id) < ($3::timestamptz, $4::uuid)`;
   }
   params.push(limit + 1);
-  const rows = await tx.all(
+  return tx.all(
     `SELECT n.*, n.school_id::text AS scoped_school_id, s.school_code,
             r.read_at, r.archived_at AS recipient_archived_at, r.recipient_kind
      FROM notification_recipients r
@@ -236,16 +243,44 @@ async function list(store, principal, query = {}) {
      LIMIT $${params.length}`,
     params,
   );
+}
+
+async function list(store, principal, query = {}) {
+  const userId = actorUserId(principal);
+  if (!userId) throw createClientsError(403, "Non authentifié.", CLIENTS_ERROR.FORBIDDEN);
+  const { school, schoolCode, tx } = await requireSchool(store, principal, query);
+  if (!(await isInAppVisible(tx, { userId, schoolId: school.id }))) {
+    return { items: [], nextCursor: null };
+  }
+  const limit = parseLimit(query);
+  let scanCursor = parseCursor(query.cursor);
   const schoolPolicy = await getSchoolPolicyEventsBySchoolId(tx, school.id);
+  const viewerCategories = await resolveUserRecipientCategories(tx, { userId, schoolId: school.id });
   const visible = [];
-  for (const row of rows) {
-    const allowed = resolveAllowedChannels({
-      eventType: row.event_type,
-      recipient: row.recipient_kind,
-      schoolPolicy,
-      userPreferences: { IN_APP: true, PUSH: true, EMAIL: true },
+  let rawExhausted = false;
+  while (visible.length <= limit && !rawExhausted) {
+    const rows = await fetchRecipientPage(tx, {
+      schoolId: school.id,
+      userId,
+      cursor: scanCursor,
+      limit,
     });
-    if (allowed.includes("IN_APP")) visible.push(row);
+    if (rows.length < limit + 1) rawExhausted = true;
+    if (!rows.length) break;
+    const last = rows.at(-1);
+    scanCursor = { at: last.created_at, id: last.id };
+    for (const row of rows) {
+      const allowed = resolveAllowedChannels({
+        eventType: row.event_type,
+        recipient: row.recipient_kind,
+        recipientCategories: isSchoolWideRecipientKind(row.recipient_kind) ? viewerCategories : undefined,
+        schoolPolicy,
+        userPreferences: { IN_APP: true, PUSH: true, EMAIL: true },
+      });
+      if (!allowed.includes("IN_APP")) continue;
+      visible.push(row);
+      if (visible.length > limit) break;
+    }
   }
   const page = visible.slice(0, limit);
   const attachments = await hydrateAttachments(tx, page.map((row) => row.id));
@@ -261,7 +296,8 @@ async function get(store, notificationId, principal, query = {}) {
   const { school, schoolCode, tx } = await requireSchool(store, principal, query);
   if (!(await isInAppVisible(tx, { userId, schoolId: school.id }))) throw notFound();
   const row = await loadVisible(tx, notificationId, school.id, userId, canManage(principal));
-  if (!(await allowsInAppForRow(tx, school.id, row, true))) throw notFound();
+  const viewerCategories = await resolveUserRecipientCategories(tx, { userId, schoolId: school.id });
+  if (!(await allowsInAppForRow(tx, school.id, row, true, viewerCategories))) throw notFound();
   const attachments = (await hydrateAttachments(tx, [row.id])).get(String(row.id)) ?? [];
   return mapNotification(row, { schoolCode, attachments });
 }
@@ -279,11 +315,13 @@ async function unreadCount(store, principal, query = {}) {
     [school.id, userId],
   );
   const schoolPolicy = await getSchoolPolicyEventsBySchoolId(tx, school.id);
+  const viewerCategories = await resolveUserRecipientCategories(tx, { userId, schoolId: school.id });
   let count = 0;
   for (const row of rows) {
     const allowed = resolveAllowedChannels({
       eventType: row.event_type,
       recipient: row.recipient_kind,
+      recipientCategories: isSchoolWideRecipientKind(row.recipient_kind) ? viewerCategories : undefined,
       schoolPolicy,
       userPreferences: { IN_APP: true, PUSH: true, EMAIL: true },
     });
@@ -319,7 +357,8 @@ async function markRead(store, notificationId, principal, auditMeta, query = {})
     }
     const row = await loadVisible(tx, notificationId, school.id, userId, false);
     const userVisible = await isInAppVisible(tx, { userId, schoolId: school.id });
-    if (!(await allowsInAppForRow(tx, school.id, row, userVisible))) throw notFound();
+    const viewerCategories = await resolveUserRecipientCategories(tx, { userId, schoolId: school.id });
+    if (!(await allowsInAppForRow(tx, school.id, row, userVisible, viewerCategories))) throw notFound();
     const attachments = (await hydrateAttachments(tx, [row.id])).get(String(row.id)) ?? [];
     return mapNotification(row, { schoolCode, attachments });
   });

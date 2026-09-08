@@ -20,6 +20,7 @@ const {
   resolveEffectiveChannels,
   mandatoryChannelsForEvent,
 } = require("./communicationsDispatcher");
+const { list: listPersonalNotifications } = require("./communicationsNotificationsService");
 const {
   PREFERENCE_CHANNELS,
   getOwnCommunicationPreferences,
@@ -694,6 +695,202 @@ test("catalogue Lot I : mapping C4 sans inventer d'événements", () => {
   assert.equal(policy.mapRecipientKindToCategory("student"), "STUDENT");
   assert.equal(policy.mapRecipientKindToCategory("teacher"), "TEACHER");
   assert.equal(policy.mapRecipientKindToCategory("staff"), "SCHOOL_ADMIN");
+});
+
+test("P1 — recipient_kind school applique la catégorie réelle, pas l'union des règles", async () => {
+  const policy = requirePolicy();
+  const schoolPolicy = defaultPolicyWith({
+    ANNOUNCEMENT_PUBLISHED: {
+      PARENT: { EMAIL: false, PUSH: true },
+      STUDENT: { EMAIL: true, PUSH: true },
+      TEACHER: { EMAIL: true, PUSH: true },
+    },
+  }).events;
+
+  assert.equal(
+    policy.resolveAllowedChannels({
+      event: "ANNOUNCEMENT_PUBLISHED",
+      recipient: "school",
+      schoolPolicy,
+      userPreferences: { IN_APP: true, PUSH: true, EMAIL: true },
+    }).includes("EMAIL"),
+    false,
+    "kind school sans catégorie résolue doit fail-closed",
+  );
+  assert.equal(
+    policy.resolveAllowedChannels({
+      event: "ANNOUNCEMENT_PUBLISHED",
+      recipient: "school",
+      recipientCategories: ["PARENT"],
+      schoolPolicy,
+      userPreferences: { IN_APP: true, PUSH: true, EMAIL: true },
+    }).includes("EMAIL"),
+    false,
+  );
+  assert.equal(
+    policy.resolveAllowedChannels({
+      event: "ANNOUNCEMENT_PUBLISHED",
+      recipient: "school",
+      recipientCategories: ["STUDENT"],
+      schoolPolicy,
+      userPreferences: { IN_APP: true, PUSH: true, EMAIL: true },
+    }).includes("EMAIL"),
+    true,
+  );
+
+  const announceKey = "communication.announcement.published:eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee1";
+  const adapter = createMemoryDeliveryAdapter({
+    notifications: [
+      {
+        id: NOTE_ID,
+        event_key: announceKey,
+        event_type: "communication.announcement.published",
+        school_id: SCHOOL_A,
+        title: "Annonce établissement",
+        body: "Message à tous.",
+      },
+    ],
+    recipients: [
+      {
+        notification_id: NOTE_ID,
+        school_id: SCHOOL_A,
+        user_id: USER_A,
+        recipient_kind: "school",
+      },
+    ],
+    users: [{ id: USER_A, school_id: SCHOOL_A, email: "parent-a@test.local", role: "parent" }],
+  });
+  adapter.schoolNotificationPolicy = schoolPolicy;
+  await dispatchCommunication({
+    eventKey: announceKey,
+    eventType: "communication.announcement.published",
+    schoolId: SCHOOL_A,
+    channels: ["PUSH", "EMAIL"],
+    adapter,
+    pushStore: { async listActiveForUser() { return []; } },
+    mailer: { async sendMail() { throw new Error("EMAIL parent interdit pour l'annonce"); } },
+    env: envPreprod(),
+  });
+  assert.equal(adapter.deliveries.some((row) => row.channel === "EMAIL"), false);
+  assert.equal(adapter.deliveries.some((row) => row.channel === "PUSH"), true);
+});
+
+test("P1 — lecture politique 42501 n'enqueue pas les canaux établissement", async () => {
+  const adapter = adapterWithParent();
+  adapter.loadSchoolNotificationPolicy = async () => {
+    const error = new Error("permission denied for table school_notification_settings");
+    error.code = "42501";
+    throw error;
+  };
+  await dispatchCommunication({
+    eventKey: EVENT_KEY,
+    eventType: "attendance.student.absent",
+    schoolId: SCHOOL_A,
+    channels: ["PUSH", "EMAIL"],
+    adapter,
+    logger: { error() {} },
+    pushStore: { async listActiveForUser() { return []; } },
+    mailer: { async sendMail() { throw new Error("EMAIL ne doit pas partir si la politique est illisible"); } },
+    env: envPreprod(),
+  });
+  assert.equal(adapter.deliveries.some((row) => row.channel === "EMAIL"), false);
+  assert.equal(adapter.deliveries.length, 0);
+
+  const missingTable = adapterWithParent();
+  missingTable.loadSchoolNotificationPolicy = async () => {
+    const error = new Error("relation school_notification_settings does not exist");
+    error.code = "42P01";
+    throw error;
+  };
+  await dispatchCommunication({
+    eventKey: EVENT_KEY,
+    eventType: "attendance.student.absent",
+    schoolId: SCHOOL_A,
+    channels: ["PUSH", "EMAIL"],
+    adapter: missingTable,
+    pushStore: { async listActiveForUser() { return []; } },
+    mailer: { async sendMail() {} },
+    env: envPreprod(),
+  });
+  assert.deepEqual(missingTable.deliveries.map((row) => row.channel).sort(), ["EMAIL", "PUSH"]);
+});
+
+test("P1 — list() continue de paginer après filtrage IN_APP masqué", async () => {
+  const hiddenSettings = [
+    {
+      school_id: SCHOOL_A,
+      event_key: "STUDENT_ABSENT",
+      recipient_category: "PARENT",
+      channel: "IN_APP",
+      enabled: false,
+    },
+  ];
+  const rows = [
+    { seq: 6, hidden: true },
+    { seq: 5, hidden: true },
+    { seq: 4, hidden: false, title: "visible-A" },
+    { seq: 3, hidden: true },
+    { seq: 2, hidden: false, title: "visible-B" },
+    { seq: 1, hidden: false, title: "visible-C" },
+  ].map((item) => ({
+    id: `cccccccc-cccc-4ccc-8ccc-${String(item.seq).padStart(12, "0")}`,
+    school_id: SCHOOL_A,
+    school_code: "SCH-A",
+    event_type: item.hidden ? "attendance.student.absent" : "pedagogy.grade.published",
+    title: item.title || `hidden-${item.seq}`,
+    body: "body",
+    created_at: `2026-09-08T12:00:${String(item.seq).padStart(2, "0")}.000Z`,
+    recipient_kind: "parent",
+    read_at: null,
+    recipient_archived_at: null,
+    navigation_target: {},
+    metadata: {},
+  }));
+  const sorted = [...rows].sort((left, right) => {
+    if (left.created_at === right.created_at) return String(right.id).localeCompare(String(left.id));
+    return String(right.created_at).localeCompare(String(left.created_at));
+  });
+
+  const store = {
+    async getSchoolByCode() {
+      return { id: SCHOOL_A, school_code: "SCH-A" };
+    },
+    async listActiveUserRoleKeysForSchool() {
+      return ["PARENT"];
+    },
+    async all(sql, params = []) {
+      const text = String(sql);
+      if (/school_notification_settings/i.test(text)) return hiddenSettings;
+      if (/user_communication_preferences/i.test(text)) return [];
+      if (/user_roles/i.test(text)) return [{ role_key: "PARENT" }];
+      let filtered = sorted;
+      if (params.length >= 4) {
+        const at = String(params[2]);
+        const id = String(params[3]);
+        filtered = sorted.filter((row) => {
+          if (String(row.created_at) < at) return true;
+          if (String(row.created_at) > at) return false;
+          return String(row.id) < id;
+        });
+      }
+      const limit = Number(params[params.length - 1]);
+      return filtered.slice(0, limit);
+    },
+  };
+
+  const principal = {
+    sub: USER_A,
+    schoolCode: "SCH-A",
+    role: "Parent",
+    permissions: ["Notifications:READ"],
+  };
+  const page1 = await listPersonalNotifications(store, principal, { limit: 2 });
+  assert.deepEqual(page1.items.map((item) => item.title), ["visible-A", "visible-B"]);
+  assert.ok(page1.nextCursor, "les notifications visibles plus anciennes doivent rester atteignables");
+
+  const page2 = await listPersonalNotifications(store, principal, { limit: 2, cursor: page1.nextCursor });
+  assert.deepEqual(page2.items.map((item) => item.title), ["visible-C"]);
+  assert.equal(page2.nextCursor, null);
 });
 
 test("Lot I n'importe aucun SDK provider et n'utilise pas backoffice_state", () => {

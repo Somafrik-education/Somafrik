@@ -88,6 +88,7 @@ const FIXTURE = {
 
 describe("Lot I — Paramètres → Notifications", () => {
   beforeEach(() => {
+    school.code = "SCH-001";
     getSettings.mockReset();
     patchSettings.mockReset();
     getSettings.mockResolvedValue(FIXTURE);
@@ -163,6 +164,43 @@ describe("Lot I — Paramètres → Notifications", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent(/refus|impossible|enregistr/i);
     expect(emailSwitch).toHaveAttribute("aria-checked", "true");
     expect(screen.queryByText(/enregistré|sauvegardé/i)).not.toBeInTheDocument();
+  });
+
+  it("I-T21 — changement d'établissement : interrupteurs périmés masqués, aucun PATCH croisé", async () => {
+    const fixtureB = structuredClone(FIXTURE);
+    fixtureB.schoolCode = "SCH-002";
+    fixtureB.events.STUDENT_ABSENT.PARENT.PUSH = false;
+
+    let resolveB!: (value: typeof FIXTURE) => void;
+    getSettings.mockImplementation((code: string) => {
+      if (code === "SCH-002") {
+        return new Promise((resolve) => {
+          resolveB = resolve;
+        });
+      }
+      return Promise.resolve(FIXTURE);
+    });
+
+    const { rerender } = render(<SettingsNotificationsPage />);
+    const pushSwitch = await screen.findByRole("switch", {
+      name: /Absence d'un élève.*Parents.*Push/i,
+    });
+    expect(pushSwitch).toHaveAttribute("aria-checked", "true");
+
+    school.code = "SCH-002";
+    rerender(<SettingsNotificationsPage />);
+
+    expect(screen.getByRole("status")).toBeInTheDocument();
+    expect(screen.queryByRole("switch")).not.toBeInTheDocument();
+    expect(patchSettings).not.toHaveBeenCalled();
+
+    resolveB(fixtureB);
+    const nextSwitch = await screen.findByRole("switch", {
+      name: /Absence d'un élève.*Parents.*Push/i,
+    });
+    expect(nextSwitch).toHaveAttribute("aria-checked", "false");
+    expect(getSettings).toHaveBeenCalledWith("SCH-002");
+    expect(patchSettings).not.toHaveBeenCalled();
   });
 
   it("aucun vocabulaire technique provider dans l'écran", async () => {
