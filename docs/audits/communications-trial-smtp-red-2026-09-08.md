@@ -280,7 +280,7 @@ Mobile : **aucun** fichier (0 occurrence `trial-requests` aujourd’hui).
 |---|---|---|
 | 11 | PR Draft URL | https://github.com/Somafrik-education/Somafrik/pull/554 |
 | 12 | Base SHA | `9d9d4ffb6264308a0e8378c5ff404579b3d72914` (`origin/develop` merge #553) |
-| 13 | HEAD SHA | `2e7b14e1b017c499d38baa231806eecca8fa0be9` |
+| 13 | HEAD SHA | `98ce59c9b1b68561599c93fce9f534a35badae53` |
 | 14 | ahead / behind | **2 ahead / 0 behind** `origin/develop` |
 | 15 | diffstat | 4 files, +556 / −0 |
 
