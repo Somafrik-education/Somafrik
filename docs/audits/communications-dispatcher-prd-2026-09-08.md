@@ -444,10 +444,10 @@ Le GREEN devra en plus : unique caller dispatcher, 04F fail-closed, 04J sans SDK
 
 | Item | Valeur |
 |---|---|
-| 20. Draft PR URL | renseignée dans la description GitHub de cette Draft |
+| 20. Draft PR URL | https://github.com/Somafrik-education/Somafrik/pull/548 |
 | 21. Base SHA `origin/develop` | `da7f2590e559f12e0e1d195f4b1ee3d2fb423413` (merge #547) |
-| 22. HEAD SHA | tip de `cursor/communications-dispatcher-audit-7fd4` (voir PR ; commit d'audit initial `2858f9cec8addee85621b962162211dc21828086`) |
-| 23. Ahead / behind | **ahead 1 / behind 0** vs `origin/develop` au commit d'audit |
+| 22. HEAD SHA | `a8f1d85ddb36031d6693dad39c20a3ab9038e571` (commit d’audit RED ; un commit docs ultérieur peut avancer le tip) |
+| 23. Ahead / behind | **ahead 1 / behind 0** vs `origin/develop` au commit d’audit |
 | 24. Diffstat exact vs `origin/develop` | 4 files changed, 610 insertions(+) : `communicationsDispatcher.red.test.js`, `communications-dispatcher-prd-2026-09-08.md`, `verify-communications-c4.js` (+1), `communications-c4.yml` (+2) |
 
 Diff autorisé : tests RED + document d’audit + câblage CI pour exécuter les RED. Aucun secret. Aucun runtime métier. Aucun fichier hors périmètre Communications / audit.
