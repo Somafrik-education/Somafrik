@@ -156,6 +156,19 @@ function sourceGuards() {
   assert.doesNotMatch(service, /communicationChannelFanout|fanOutNotificationChannels/);
   assert.doesNotMatch(worker, /twilio|whatsapp|firebase|expoPushService|nodemailer/i);
   assert.match(worker, /fanOutNotificationChannels/);
+  const resetHandler = read("backend/server.js");
+  const resetBlock = resetHandler.slice(
+    resetHandler.indexOf('app.post("/api/users/:id/reset-password"'),
+    resetHandler.indexOf('app.get("/api/payments"'),
+  );
+  assert.match(resetBlock, /enqueuePasswordResetNotification/);
+  assert.match(resetBlock, /auth\.password\.reset/);
+  assert.match(resetBlock, /if\s*\(\s*!temporaryPassword\s*\)/);
+  const resetTx = resetBlock.slice(resetBlock.indexOf("repository.withTransaction"), resetBlock.indexOf("await auditService.record"));
+  assert.doesNotMatch(resetTx, /sendMail|nodemailer|setImmediate/);
+  assert.doesNotMatch(resetBlock, /processOneEvent|communication_event_outbox/);
+  const resetEmail = read("backend/lib/passwordResetNotification.js");
+  assert.doesNotMatch(resetEmail, /temporaryPassword|SMTP_PASSWORD|brevo/i);
   const fanout = read("backend/lib/communicationChannelFanout.js");
   assert.match(fanout, /stale_processing_no_redelivery/);
   assert.match(fanout, /recoverStaleProcessing/);
@@ -240,8 +253,11 @@ function main() {
   run(process.execPath, ["--check", "backend/lib/communicationsNotificationsService.js"], "syntax notifications service");
   run(process.execPath, ["--check", "backend/lib/communicationsNotificationsWorker.js"], "syntax notifications worker");
   run(process.execPath, ["--check", "backend/lib/communicationChannelFanout.js"], "syntax channel fanout");
+  run(process.execPath, ["--check", "backend/lib/passwordResetNotification.js"], "syntax password reset email");
   run(process.execPath, ["--test", "backend/lib/communicationsChannelFanout.red-com-01.test.js"], "RED-COM-01 / 01b");
   run(process.execPath, ["--test", "backend/lib/communicationChannelFanout.test.js"], "channel fanout unit");
+  run(process.execPath, ["--test", "backend/lib/communicationsPasswordReset.red.test.js"], "PR C reset email source");
+  run(process.execPath, ["--test", "backend/lib/passwordResetNotification.test.js"], "password reset email unit");
   run(process.execPath, ["--check", "backend/server.js"], "syntax server");
   run(process.execPath, ["backend/lib/communicationsAttachments.test.js"], "communicationsAttachments unit");
   run("npm", ["--prefix", "web", "run", "test", "--", "src/lib/internalNotificationsC4.test.ts"], "web internal notifications C4");
