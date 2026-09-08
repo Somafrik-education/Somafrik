@@ -58,7 +58,7 @@ export function PlatformNotificationsPage() {
   if (!isPlatformCommunicationUser(ctx)) {
     return (
       <Card className="p-6">
-        <SectionHeader title="Notifications plateforme" description="Catalogue Superadmin / Admin Pays." />
+        <SectionHeader title="Notifications plateforme" description="Catalogue Super Administrateur / Administrateur Pays." />
         <p className="mt-4 text-sm text-muted">Accès réservé aux privilèges plateforme.</p>
       </Card>
     );
