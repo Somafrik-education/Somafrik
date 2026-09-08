@@ -3626,6 +3626,18 @@ class FallbackRepository {
     return this._communicationPrefsQueryable;
   }
 
+  getSchoolNotificationSettingsStore() {
+    if (!this._schoolNotificationQueryable) {
+      const { createMemorySchoolNotificationStore } = require("../lib/schoolNotificationPolicy");
+      if (!this._schoolNotificationRows) this._schoolNotificationRows = [];
+      this._schoolNotificationQueryable = createMemorySchoolNotificationStore({
+        rows: this._schoolNotificationRows,
+        schoolLookup: (code) => this.getClientsStore().getSchoolByCode(code),
+      });
+    }
+    return this._schoolNotificationQueryable;
+  }
+
   upsertMobilePushDevice(principal, payload) {
     const service = require("../lib/mobilePushDevicesService");
     return service.upsertFromSession(this.getMobilePushStore(), principal, payload);

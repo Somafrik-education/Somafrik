@@ -21,6 +21,7 @@ const {
   getDefaultSchoolNotificationSettings,
   getSchoolPolicyEventsBySchoolId,
   isSchoolWideRecipientKind,
+  recipientCategoriesFromContext,
   resolveUserRecipientCategories,
   SCHOOL_POLICY_UNAVAILABLE,
 } = require("./schoolNotificationPolicy");
@@ -152,6 +153,12 @@ async function loadSchoolPolicyEvents({ adapter, store, schoolId }) {
 
 async function resolveTargetPolicyInput({ adapter, store, target, schoolId }) {
   const kind = target.recipient_kind;
+  const fromSnapshot = recipientCategoriesFromContext(
+    target.recipient_context || target.recipientContext,
+  );
+  if (fromSnapshot.length) {
+    return { recipient: kind, recipientCategories: fromSnapshot };
+  }
   if (isSchoolWideRecipientKind(kind)) {
     const recipientCategories = await resolveUserRecipientCategories(store, {
       userId: target.user_id,

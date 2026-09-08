@@ -893,6 +893,92 @@ test("P1 — list() continue de paginer après filtrage IN_APP masqué", async (
   assert.equal(page2.nextCursor, null);
 });
 
+test("P2 — FallbackRepository mémoire persiste PATCH notification-settings", async () => {
+  const { FallbackRepository } = require("../db/fallbackRepository");
+  const repo = new FallbackRepository();
+  const policy = requirePolicy();
+  assert.equal(typeof repo.getSchoolNotificationSettingsStore, "function");
+  const fallback = read("backend/db/fallbackRepository.js");
+  assert.match(fallback, /getSchoolNotificationSettingsStore/);
+  const schoolCode = "CD-2026-0001";
+  const principal = adminPrincipal(schoolCode);
+  const after = await policy.patchSchoolNotificationSettings(repo, principal, schoolCode, {
+    events: { STUDENT_ABSENT: { PARENT: { EMAIL: false } } },
+  });
+  assert.equal(after.events.STUDENT_ABSENT.PARENT.EMAIL, false);
+  const again = await policy.getSchoolNotificationSettings(repo, principal, schoolCode);
+  assert.equal(again.events.STUDENT_ABSENT.PARENT.EMAIL, false, "GET mémoire doit relire le PATCH, pas les défauts");
+});
+
+test("P2 — destinataire multi-rôles : toutes les catégories snapshottées, ordre indifférent", async () => {
+  const policy = requirePolicy();
+  const schoolPolicy = defaultPolicyWith({
+    ANNOUNCEMENT_PUBLISHED: {
+      PARENT: { EMAIL: false, PUSH: true },
+      TEACHER: { EMAIL: true, PUSH: true },
+    },
+  }).events;
+
+  assert.deepEqual(
+    policy.recipientCategoriesFromContext({ kinds: ["teacher", "parent"] }).sort(),
+    ["PARENT", "TEACHER"],
+  );
+
+  async function dispatchWithKinds(kinds, recipientKind) {
+    const announceKey = `communication.announcement.published:${NOTE_ID}`;
+    const adapter = createMemoryDeliveryAdapter({
+      notifications: [
+        {
+          id: NOTE_ID,
+          event_key: announceKey,
+          event_type: "communication.announcement.published",
+          school_id: SCHOOL_A,
+          title: "Annonce",
+          body: "Message",
+        },
+      ],
+      recipients: [
+        {
+          notification_id: NOTE_ID,
+          school_id: SCHOOL_A,
+          user_id: USER_A,
+          recipient_kind: recipientKind,
+          recipient_context: { kinds },
+        },
+      ],
+      users: [{ id: USER_A, school_id: SCHOOL_A, email: "dual@test.local", roles: ["PARENT", "TEACHER"] }],
+    });
+    adapter.schoolNotificationPolicy = schoolPolicy;
+    await dispatchCommunication({
+      eventKey: announceKey,
+      eventType: "communication.announcement.published",
+      schoolId: SCHOOL_A,
+      channels: ["PUSH", "EMAIL"],
+      adapter,
+      pushStore: { async listActiveForUser() { return []; } },
+      mailer: { async sendMail() {} },
+      env: envPreprod(),
+    });
+    return adapter.deliveries.map((row) => row.channel).sort();
+  }
+
+  const teacherFirst = await dispatchWithKinds(["teacher", "parent"], "teacher");
+  const parentFirst = await dispatchWithKinds(["parent", "teacher"], "parent");
+  assert.deepEqual(teacherFirst, ["EMAIL", "PUSH"]);
+  assert.deepEqual(parentFirst, ["EMAIL", "PUSH"], "l'ordre de recipientKinds ne doit pas changer le fan-out");
+
+  const parentOnly = await dispatchWithKinds(["parent"], "parent");
+  assert.deepEqual(parentOnly, ["PUSH"], "un parent-enseignant ciblé seulement comme parent suit la règle PARENT");
+
+  const service = read("backend/lib/communicationsNotificationsService.js");
+  const eventSpecFn = service.slice(
+    service.indexOf("async function eventSpec"),
+    service.indexOf("async function processOneEvent"),
+  );
+  assert.match(eventSpecFn, /audience_reason/, "le snapshot C4 doit recopier audience_reason.kinds");
+  assert.match(eventSpecFn, /kinds/, "le snapshot C4 doit recopier audience_reason.kinds");
+});
+
 test("Lot I n'importe aucun SDK provider et n'utilise pas backoffice_state", () => {
   const policy = requirePolicy();
   void policy;
