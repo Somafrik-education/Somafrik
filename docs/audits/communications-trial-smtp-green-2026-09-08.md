@@ -3,7 +3,11 @@
 **Date :** 8 septembre 2026  
 **Branche :** `cursor/trial-smtp-delivery-green-3171`  
 **Base :** `origin/develop` après merge #553 (`9d9d4ffb6264308a0e8378c5ff404579b3d72914`)  
-**RED correspondant :** Draft #554 HEAD `3f9c07feb74493f0c24351632aa7d0d621e40b18` — **pas un ancêtre** de cette branche.
+**RED correspondant :** Draft #554 HEAD `3f9c07feb74493f0c24351632aa7d0d621e40b18` — **pas un ancêtre** de cette branche (`git merge-base --is-ancestor` → false).
+
+**PR GREEN :** https://github.com/Somafrik-education/Somafrik/pull/555  
+**HEAD :** `6812e2d1466818ca5b55ea0e3abce5f286be18f0`  
+**ahead / behind :** 1 ahead / 0 behind `origin/develop`
 
 STOP merge / Ready / `main` / Render / production tant que le CTO n’a pas GO.
 
