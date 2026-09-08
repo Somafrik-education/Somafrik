@@ -332,6 +332,10 @@ Le GREEN devra préserver :
 
 ## 17–21. Gouvernance git
 
-Renseignés dans la description de PR après push (URL Draft, base SHA, HEAD SHA, ahead/behind, diffstat).
+| | |
+|---|---|
+| 17. PR Draft | https://github.com/Somafrik-education/Somafrik/pull/550 |
+| 18. Base SHA | `b62de1afff114a221b1620cad3960c4321acc7c2` (`develop` après #549) |
+| 19–21. HEAD / ahead / diffstat | voir la description de #550 (HEAD change à chaque commit de cette branche) |
 
 **Interdit sur cette PR :** Ready, merge, `main`, Render, production, migration, code métier GREEN.
