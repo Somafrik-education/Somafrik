@@ -6,9 +6,15 @@
  * Unique caller C4 : communicationsNotificationsWorker.runOnce, après drainOutbox.
  * Délègue PUSH/EMAIL à communicationChannelFanout (aucun SDK provider ici).
  * IN_APP n'est pas re-persisté : le propriétaire reste processOneEvent.
+ *
+ * Préférences = canaux (IN_APP | PUSH | EMAIL), jamais des fournisseurs.
  */
 
 const { fanOutNotificationChannels } = require("./communicationChannelFanout");
+const {
+  defaultEnabledChannels,
+  enabledChannelsForUser,
+} = require("./communicationsPreferences");
 
 const SUPPORTED_CHANNELS = Object.freeze(["IN_APP", "PUSH", "EMAIL"]);
 const EXTERNAL_CHANNELS = Object.freeze(["PUSH", "EMAIL"]);
@@ -19,6 +25,10 @@ const EVENT_EXTERNAL_CHANNEL_POLICY = Object.freeze({
   "attendance.student.absent": ["PUSH", "EMAIL"],
   "pedagogy.grade.published": ["PUSH", "EMAIL"],
   "finance.payment.recorded": ["PUSH", "EMAIL"],
+});
+
+const EVENT_MANDATORY_CHANNEL_POLICY = Object.freeze({
+  "auth.password.reset": ["EMAIL"],
 });
 
 function asTrimmed(value) {
@@ -65,10 +75,68 @@ function policyChannelsForEventType(eventType) {
   return [...policy];
 }
 
-function resolveChannels({ channels, eventType } = {}) {
+function mandatoryChannelsForEvent(eventType) {
+  const key = asTrimmed(eventType);
+  const mandatory = EVENT_MANDATORY_CHANNEL_POLICY[key];
+  return mandatory ? [...mandatory] : [];
+}
+
+function eventTypeFromKey(eventKey) {
+  const key = asTrimmed(eventKey);
+  if (!key) return "";
+  const known = [
+    ...Object.keys(EVENT_EXTERNAL_CHANNEL_POLICY),
+    ...Object.keys(EVENT_MANDATORY_CHANNEL_POLICY),
+  ].sort((left, right) => right.length - left.length);
+  return known.find((type) => key === type || key.startsWith(`${type}:`)) || "";
+}
+
+function resolvePolicyChannels({ channels, eventType, eventPolicyChannels } = {}) {
+  if (eventPolicyChannels !== undefined) return normalizeChannels(eventPolicyChannels);
   if (channels !== undefined) return normalizeChannels(channels);
-  if (eventType) return normalizeChannels(policyChannelsForEventType(eventType));
+  const key = asTrimmed(eventType);
+  if (EVENT_EXTERNAL_CHANNEL_POLICY[key]) return policyChannelsForEventType(key);
+  const mandatory = mandatoryChannelsForEvent(key);
+  if (mandatory.length) return [...mandatory];
+  if (eventType) return policyChannelsForEventType(eventType);
   throw unsupportedChannel("undefined");
+}
+
+function resolveUserEnabledChannels(userEnabledChannels) {
+  if (userEnabledChannels == null) return defaultEnabledChannels();
+  if (!Array.isArray(userEnabledChannels)) throw unsupportedChannel("malformed");
+  if (!userEnabledChannels.length) return [];
+  return normalizeChannels(userEnabledChannels);
+}
+
+function resolveEffectiveChannels({
+  eventType,
+  eventPolicyChannels,
+  userEnabledChannels,
+  channels,
+} = {}) {
+  const policy = resolvePolicyChannels({ channels, eventType, eventPolicyChannels });
+  const mandatory = mandatoryChannelsForEvent(eventType);
+  const enabled = new Set(resolveUserEnabledChannels(userEnabledChannels));
+  const optional = policy.filter((channel) => enabled.has(channel));
+  const effective = [];
+  for (const channel of [...mandatory, ...optional]) {
+    if (!SUPPORTED_CHANNELS.includes(channel)) continue;
+    if (!effective.includes(channel)) effective.push(channel);
+  }
+  return effective;
+}
+
+function resolveChannels({ channels, eventType } = {}) {
+  return resolvePolicyChannels({ channels, eventType });
+}
+
+async function loadEnabledChannels({ adapter, store, userId, schoolId }) {
+  if (typeof adapter?.listEnabledChannels === "function") {
+    return adapter.listEnabledChannels({ userId, schoolId });
+  }
+  if (store) return enabledChannelsForUser(store, { userId, schoolId });
+  return defaultEnabledChannels();
 }
 
 async function dispatchCommunication({
@@ -90,8 +158,6 @@ async function dispatchCommunication({
 } = {}) {
   const resolved = resolveChannels({ channels, eventType });
   const providerChannels = resolved.filter((channel) => EXTERNAL_CHANNELS.includes(channel));
-  void schoolId;
-  void recipients;
   void payload;
   if (!providerChannels.length) {
     return { channels: resolved, enqueued: 0, drained: [] };
@@ -109,7 +175,21 @@ async function dispatchCommunication({
     now,
     logger,
     channels: providerChannels,
+    resolveRecipientChannels: async (target) => {
+      const enabled = await loadEnabledChannels({
+        adapter,
+        store,
+        userId: target.user_id,
+        schoolId: target.school_id || schoolId,
+      });
+      return resolveEffectiveChannels({
+        eventType: target.event_type || eventType || eventTypeFromKey(target.event_key),
+        eventPolicyChannels: resolved,
+        userEnabledChannels: enabled,
+      }).filter((channel) => EXTERNAL_CHANNELS.includes(channel));
+    },
   });
+  void recipients;
   return { channels: resolved, drained };
 }
 
@@ -125,7 +205,7 @@ async function dispatchProcessedEvents({
   now,
   logger = console,
 } = {}) {
-  const channels = externalChannelsOf(["PUSH", "EMAIL"]);
+  const policyChannels = externalChannelsOf(["PUSH", "EMAIL"]);
   return fanOutNotificationChannels({
     store,
     repository,
@@ -137,7 +217,21 @@ async function dispatchProcessedEvents({
     env,
     now,
     logger,
-    channels,
+    channels: policyChannels,
+    resolveRecipientChannels: async (target) => {
+      const eventType = target.event_type || eventTypeFromKey(target.event_key);
+      const enabled = await loadEnabledChannels({
+        adapter,
+        store,
+        userId: target.user_id,
+        schoolId: target.school_id,
+      });
+      return resolveEffectiveChannels({
+        eventType,
+        eventPolicyChannels: policyChannels,
+        userEnabledChannels: enabled,
+      }).filter((channel) => EXTERNAL_CHANNELS.includes(channel));
+    },
   });
 }
 
@@ -145,8 +239,11 @@ module.exports = {
   SUPPORTED_CHANNELS,
   EXTERNAL_CHANNELS,
   EVENT_EXTERNAL_CHANNEL_POLICY,
+  EVENT_MANDATORY_CHANNEL_POLICY,
   normalizeChannels,
   policyChannelsForEventType,
+  mandatoryChannelsForEvent,
+  resolveEffectiveChannels,
   dispatchCommunication,
   dispatchProcessedEvents,
 };

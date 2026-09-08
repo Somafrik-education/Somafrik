@@ -3,9 +3,8 @@
 /**
  * PR E — préférences utilisateur par canal (TESTS FIRST).
  *
- * Trois trous réellement démontrés ; aucun GREEN.
- * Ne pas étendre ce fichier à Expo/FCM, tenant PUSH, idempotence,
- * isolation des pannes ou dispatcher unique (déjà GREEN #544/#545/#549).
+ * Contrats PR E (GREEN) : persistance user+school+channel, resolveEffectiveChannels,
+ * mandatory EMAIL pour auth.password.reset.
  *
  * PUSH = Expo + FCM (infrastructure). EMAIL = SMTP / Brevo-as-SMTP.
  * Les préférences sont par CANAL, jamais par fournisseur.

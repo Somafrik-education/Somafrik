@@ -2346,6 +2346,12 @@ class PostgresRepository {
       } catch {
         /* table optionnelle selon le boot */
       }
+      try {
+        const { deletePreferencesForUser } = require("../lib/communicationsPreferences");
+        await deletePreferencesForUser(this, dbUserId);
+      } catch {
+        /* table optionnelle selon le boot */
+      }
     }
     const actorId = actorUserId ? await this.resolveDbUserId(actorUserId) : null;
     const request = await this.one(

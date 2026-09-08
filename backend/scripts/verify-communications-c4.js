@@ -163,6 +163,18 @@ function sourceGuards() {
     dispatcherSrc,
     /nodemailer|expoPushService|createExpoPushService|expo-server-sdk|@getbrevo|brevo|twilio|sendgrid|createSmtpTransport/i,
   );
+  assert.match(dispatcherSrc, /function resolveEffectiveChannels/);
+  assert.match(dispatcherSrc, /function mandatoryChannelsForEvent/);
+  assert.match(dispatcherSrc, /auth\.password\.reset/);
+  const prefsSrc = read("backend/lib/communicationsPreferences.js");
+  assert.doesNotMatch(prefsSrc, /require\(["'][^"']*(nodemailer|expo-server-sdk|@getbrevo)/);
+  assert.doesNotMatch(prefsSrc, /mobile_push_devices|expo_push_token/);
+  const prefsSchema = read("backend/db/communicationsNotificationsSchema.js");
+  assert.match(prefsSchema, /user_communication_preferences/);
+  assert.match(prefsSchema, /PRIMARY KEY \(user_id, school_id, channel\)/);
+  const prefsMigration = read("backend/db/migrations/20260910_user_communication_preferences.sql");
+  assert.match(prefsMigration, /user_communication_preferences/);
+  assert.doesNotMatch(prefsMigration, /preferred_provider|push_provider|expo_push_token/i);
   const resetHandler = read("backend/server.js");
   const resetBlock = resetHandler.slice(
     resetHandler.indexOf('app.post("/api/users/:id/reset-password"'),
@@ -265,6 +277,7 @@ function main() {
   run(process.execPath, ["--test", "backend/lib/communicationsChannelFanout.red-com-01.test.js"], "RED-COM-01 / 01b");
   run(process.execPath, ["--test", "backend/lib/communicationsDispatcher.red.test.js"], "RED-COM-04 dispatcher audit");
   run(process.execPath, ["--test", "backend/lib/communicationsDispatcher.test.js"], "dispatcher unit");
+  run(process.execPath, ["--test", "backend/lib/communicationsPreferences.test.js"], "preferences unit");
   run(process.execPath, ["--test", "backend/lib/communicationsGlobalArchitecture.audit.test.js"], "architecture audit unique caller");
   run(process.execPath, ["--test", "backend/lib/communicationChannelFanout.test.js"], "channel fanout unit");
   run(process.execPath, ["--test", "backend/lib/communicationsPasswordReset.red.test.js"], "PR C reset email source");

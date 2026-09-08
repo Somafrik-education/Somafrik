@@ -20,6 +20,7 @@ const {
   readAttachmentBytes,
   mapAttachmentRow,
 } = require("./communicationsAttachments");
+const { enabledChannelsForUser } = require("./communicationsPreferences");
 
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 100;
@@ -549,6 +550,17 @@ async function processOneEvent(store) {
              spec.title,spec.body,SYSTEM_SENDER_NAME,JSON.stringify(spec.navigationTarget),JSON.stringify(spec.metadata)],
           );
           for (const recipient of spec.recipients) {
+            let allowInApp = true;
+            try {
+              const enabled = await enabledChannelsForUser(tx, {
+                userId: recipient.userId,
+                schoolId: currentEvent.school_id,
+              });
+              allowInApp = enabled.includes("IN_APP");
+            } catch {
+              allowInApp = true;
+            }
+            if (!allowInApp) continue;
             await tx.query(
               `INSERT INTO notification_recipients (notification_id,school_id,user_id,recipient_kind,recipient_context,created_at)
                VALUES ($1,$2,$3,$4,$5::jsonb,NOW()) ON CONFLICT (notification_id,user_id) DO NOTHING`,

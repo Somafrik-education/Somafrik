@@ -531,6 +531,20 @@ app.post("/api/privacy/erasure-requests/:requestId/execute", requireAuth, requir
   res.json(result);
 }));
 
+app.get("/api/me/communication-preferences", requireAuth, asyncHandler(async (req, res) => {
+  const { getOwnCommunicationPreferences } = require("./lib/communicationsPreferences");
+  res.json(await getOwnCommunicationPreferences(repository, req.principal));
+}));
+
+app.put("/api/me/communication-preferences", requireAuth, asyncHandler(async (req, res) => {
+  const { putOwnCommunicationPreferences } = require("./lib/communicationsPreferences");
+  const result = await putOwnCommunicationPreferences(repository, req.principal, req.body || {});
+  await auditService.record(req, "communication_preferences_update", "user", req.principal?.sub, {
+    channels: result.channels,
+  });
+  res.json(result);
+}));
+
 app.post("/api/mobile/push-devices", requireAuth, asyncHandler(async (req, res) => {
   const device = await repository.upsertMobilePushDevice(req.principal, req.body || {});
   await auditService.record(req, "mobile_push_device_upsert", "push_device", device.id, {
