@@ -1,7 +1,7 @@
 "use strict";
 
 const { drainOutbox } = require("./communicationsNotificationsService");
-const { fanOutNotificationChannels } = require("./communicationChannelFanout");
+const { dispatchProcessedEvents } = require("./communicationsDispatcher");
 
 let timer = null;
 let running = false;
@@ -20,7 +20,7 @@ async function runOnce(repository, logger = console) {
     const processed = await drainOutbox(store, {
       limit: Number(process.env.COMMUNICATION_NOTIFICATIONS_BATCH || 50),
     });
-    await fanOutNotificationChannels({
+    await dispatchProcessedEvents({
       store,
       repository,
       processed,

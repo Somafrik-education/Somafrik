@@ -24,11 +24,12 @@ test("AUDIT-COM-01 — fan-out PUSH/EMAIL après persist C4, jamais dans process
   const worker = read("backend/lib/communicationsNotificationsWorker.js");
   const runOnce = worker.slice(worker.indexOf("async function runOnce"));
   const drainCall = runOnce.indexOf("await drainOutbox");
-  const fanoutCall = runOnce.indexOf("await fanOutNotificationChannels");
-  assert.ok(drainCall >= 0 && fanoutCall > drainCall, "fan-out doit rester après drainOutbox");
+  const dispatchCall = runOnce.indexOf("await dispatchProcessedEvents");
+  assert.ok(drainCall >= 0 && dispatchCall > drainCall, "dispatcher doit rester après drainOutbox");
+  assert.doesNotMatch(runOnce, /fanOutNotificationChannels/);
 
   const service = read("backend/lib/communicationsNotificationsService.js");
-  assert.doesNotMatch(service, /communicationChannelFanout|fanOutNotificationChannels/);
+  assert.doesNotMatch(service, /communicationChannelFanout|fanOutNotificationChannels|communicationsDispatcher/);
   assert.doesNotMatch(service, /expoPushService|nodemailer|sendMail|twilio/i);
 });
 
@@ -52,7 +53,11 @@ test("AUDIT-COM-03 — un processing périmé n'est jamais redispatché", () => 
   assert.match(fanout, /recoverStaleProcessing/);
   const sqlClaim = fanout.slice(fanout.indexOf("async claimDue"), fanout.indexOf("async markSent"));
   assert.match(sqlClaim, /status IN \('pending','failed'\)/);
-  assert.doesNotMatch(sqlClaim, /status\s*=\s*'processing'.*claimed_at/s);
+  assert.doesNotMatch(
+    sqlClaim,
+    /status\s*=\s*'processing'\s+AND\s+claimed_at/,
+    "claimDue ne doit pas SELECT les lignes processing pour un second envoi",
+  );
 });
 
 test("AUDIT-COM-04 — delivery_key reste unique pour l'idempotence de fan-out", () => {

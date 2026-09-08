@@ -1,19 +1,9 @@
 "use strict";
 
 /**
- * PR D — RED dispatcher commun IN_APP | PUSH | EMAIL.
- * STOP après audit : aucun GREEN, aucun runtime métier.
- *
- * 04A / 04J : il n'existe pas encore de façade mince capable de router
- * explicitement les canaux sans importer Nodemailer / Expo.
- * 04F : drainChannelDeliveries n'est pas fail-closed — un canal inconnu
- * est traité comme PUSH (ternaire EMAIL ? email : push).
- *
- * Déjà GREEN ailleurs, donc NON reproduits ici :
- * 04B/04H idempotence delivery_key (communicationChannelFanout.test.js)
- * 04C/04E isolation processOneEvent / pannes (RED-COM-01b, fanout unit)
- * 04G tenant PUSH (RED-COM-02, AUDIT-COM-02)
- * 04I reset EMAIL-only (GREEN-COM-03-c4, passwordResetNotification.test.js)
+ * PR D — contrats dispatcher commun IN_APP | PUSH | EMAIL.
+ * GREEN D′ : 04A / 04F / 04J doivent rester verts. AUDIT-COM-05 interdit
+ * un second caller de fanOutNotificationChannels hors du dispatcher.
  */
 
 const { test } = require("node:test");
@@ -128,19 +118,26 @@ test("RED-COM-04J — le dispatcher ne contient aucun SDK / provider spécifique
   );
 });
 
-test("AUDIT-COM-05 — unique caller runtime de fanOutNotificationChannels = worker C4", () => {
+test("AUDIT-COM-05 — unique caller runtime de fanOutNotificationChannels = dispatcher", () => {
   const runtimeFiles = [
     "backend/lib/communicationsNotificationsWorker.js",
     "backend/lib/communicationsNotificationsService.js",
+    "backend/lib/communicationsDispatcher.js",
     "backend/lib/passwordResetNotification.js",
     "backend/lib/trialAccessRequestNotification.js",
     "backend/lib/trialAccessRequests.js",
     "backend/server.js",
   ];
-  const callers = runtimeFiles.filter((rel) => /await\s+fanOutNotificationChannels\s*\(/.test(read(rel)));
+  const fanoutCallers = runtimeFiles.filter((rel) => /await\s+fanOutNotificationChannels\s*\(/.test(read(rel)));
   assert.deepEqual(
-    callers,
-    ["backend/lib/communicationsNotificationsWorker.js"],
+    fanoutCallers,
+    ["backend/lib/communicationsDispatcher.js"],
     "un second caller runtime de fanOutNotificationChannels créerait un double fan-out PUSH/EMAIL",
+  );
+  const dispatcherCallers = runtimeFiles.filter((rel) => /await\s+dispatchProcessedEvents\s*\(/.test(read(rel)));
+  assert.deepEqual(
+    dispatcherCallers,
+    ["backend/lib/communicationsNotificationsWorker.js"],
+    "runOnce doit rester l'unique caller de dispatchProcessedEvents",
   );
 });
