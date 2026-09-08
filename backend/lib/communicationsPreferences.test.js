@@ -10,7 +10,11 @@ const {
   enabledChannelsFromRows,
   enabledChannelsForUser,
   upsertUserCommunicationPreferences,
+  putOwnCommunicationPreferences,
   rejectProviderFields,
+  parseEnabledFlag,
+  isMissingPrefsTable,
+  createMemoryPreferencesQueryable,
 } = require("./communicationsPreferences");
 
 const ROOT = path.resolve(__dirname, "../..");
@@ -118,4 +122,56 @@ test("schéma UNIQUE(user_id, school_id, channel) sans colonne provider", () => 
     assert.match(src, /channel IN \('IN_APP', 'PUSH', 'EMAIL'\)/);
     assert.doesNotMatch(src, /preferred_provider|push_provider|expo_push_token/i);
   }
+});
+
+test("permission denied n'est pas traité comme table absente", async () => {
+  assert.equal(isMissingPrefsTable({ code: "42P01" }), true);
+  assert.equal(
+    isMissingPrefsTable({
+      code: "42501",
+      message: "permission denied for table user_communication_preferences",
+    }),
+    false,
+  );
+  const store = {
+    async all() {
+      const error = new Error("permission denied for table user_communication_preferences");
+      error.code = "42501";
+      throw error;
+    },
+  };
+  await assert.rejects(
+    () => enabledChannelsForUser(store, { userId: USER_A, schoolId: SCHOOL_A }),
+    (error) => error.code === "42501",
+  );
+});
+
+test('parseEnabledFlag("false") reste false', () => {
+  assert.equal(parseEnabledFlag("false"), false);
+  assert.equal(parseEnabledFlag(false), false);
+  assert.equal(parseEnabledFlag("true"), true);
+  assert.equal(parseEnabledFlag(true), true);
+  assert.throws(() => parseEnabledFlag("maybe"), (error) => error.code === "invalid_channel_flag");
+});
+
+test("PUT mémoire persiste EMAIL=false même si string", async () => {
+  const rows = [];
+  const store = {
+    getSchoolByCode: async () => ({ id: SCHOOL_A }),
+    getCommunicationPreferencesStore: () => createMemoryPreferencesQueryable(rows),
+  };
+  const result = await putOwnCommunicationPreferences(
+    store,
+    { sub: USER_A, schoolCode: "SCH-A" },
+    { channels: { EMAIL: "false" } },
+  );
+  assert.equal(result.channels.EMAIL, false);
+  assert.equal(result.channels.PUSH, true);
+  assert.equal(result.channels.IN_APP, true);
+  const again = await upsertUserCommunicationPreferences(store, {
+    userId: USER_A,
+    schoolId: SCHOOL_A,
+    channels: { PUSH: "false" },
+  });
+  assert.deepEqual(again, ["IN_APP"]);
 });

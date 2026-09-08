@@ -302,6 +302,7 @@ async function enqueueChannelDeliveries(adapter, processed = [], channels = CHAN
   const keys = [...new Set((processed || []).map(eventKeyOf).filter(Boolean))];
   const providerChannels = providerChannelsOf(channels);
   const resolveRecipientChannels = options.resolveRecipientChannels;
+  const logger = options.logger || console;
   let created = 0;
   for (const eventKey of keys) {
     const targets = await adapter.loadFanoutTargets(eventKey);
@@ -311,9 +312,19 @@ async function enqueueChannelDeliveries(adapter, processed = [], channels = CHAN
       if (!schoolId || !userId) continue;
       let recipientChannels = providerChannels;
       if (typeof resolveRecipientChannels === "function") {
-        recipientChannels = providerChannelsOf(
-          await resolveRecipientChannels(target, providerChannels),
-        );
+        try {
+          recipientChannels = providerChannelsOf(
+            await resolveRecipientChannels(target, providerChannels),
+          );
+        } catch (error) {
+          logger.error?.("[communications-c4] preference lookup failed, enqueue policy channels", {
+            eventKey,
+            userId,
+            schoolId,
+            message: String(error?.message || error).slice(0, 300),
+          });
+          recipientChannels = providerChannels;
+        }
       }
       for (const channel of recipientChannels) {
         const inserted = await adapter.ensureDelivery({
@@ -497,6 +508,7 @@ async function fanOutNotificationChannels({
   try {
     await enqueueChannelDeliveries(deliveryAdapter, processed, channels || CHANNELS, {
       resolveRecipientChannels,
+      logger,
     });
     return await drainChannelDeliveries(deliveryAdapter, {
       ...pushDeps,

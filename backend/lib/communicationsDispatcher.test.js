@@ -258,3 +258,46 @@ test("dispatchProcessedEvents drain même sans event C4 (reset EMAIL)", async ()
   assert.equal(sent, 1);
   assert.equal(adapter.deliveries[0].status, "sent");
 });
+
+test("IN_APP=false n'empêche pas le fan-out PUSH+EMAIL", async () => {
+  const adapter = createMemoryDeliveryAdapter({
+    notifications: [
+      {
+        id: NOTE_ID,
+        event_key: EVENT_KEY,
+        event_type: "attendance.student.absent",
+        school_id: SCHOOL_A,
+        title: "Absence",
+        body: "body",
+      },
+    ],
+    recipients: [{ notification_id: NOTE_ID, school_id: SCHOOL_A, user_id: USER_A }],
+    users: [{ id: USER_A, school_id: SCHOOL_A, email: "parent-a@test.local" }],
+    preferences: [{ user_id: USER_A, school_id: SCHOOL_A, channel: "IN_APP", enabled: false }],
+  });
+  await dispatchCommunication({
+    eventKey: EVENT_KEY,
+    eventType: "attendance.student.absent",
+    schoolId: SCHOOL_A,
+    channels: ["IN_APP", "PUSH", "EMAIL"],
+    adapter,
+    pushStore: { async listActiveForUser() { return []; } },
+    mailer: { async sendMail() {} },
+    env: envPreprod(),
+  });
+  assert.deepEqual(adapter.deliveries.map((row) => row.channel).sort(), ["EMAIL", "PUSH"]);
+});
+
+test("processOneEvent insère toujours notification_recipients (IN_APP n'est pas un continue)", () => {
+  const fs = require("node:fs");
+  const path = require("node:path");
+  const src = fs.readFileSync(path.join(__dirname, "communicationsNotificationsService.js"), "utf8");
+  const processFn = src.slice(src.indexOf("async function processOneEvent"));
+  const loop = processFn.slice(
+    processFn.indexOf("for (const recipient of spec.recipients)"),
+    processFn.indexOf("UPDATE communication_event_outbox SET status='processed'"),
+  );
+  assert.match(loop, /INSERT INTO notification_recipients/);
+  assert.doesNotMatch(loop, /continue/);
+  assert.doesNotMatch(loop, /allowInApp|enabledChannelsForUser/);
+});

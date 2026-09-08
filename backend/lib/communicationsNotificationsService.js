@@ -182,10 +182,22 @@ async function loadVisible(tx, notificationId, schoolId, userId, management = fa
   return row;
 }
 
+async function isInAppVisible(store, { userId, schoolId } = {}) {
+  try {
+    const enabled = await enabledChannelsForUser(store, { userId, schoolId });
+    return enabled.includes("IN_APP");
+  } catch {
+    return true;
+  }
+}
+
 async function list(store, principal, query = {}) {
   const userId = actorUserId(principal);
   if (!userId) throw createClientsError(403, "Non authentifié.", CLIENTS_ERROR.FORBIDDEN);
   const { school, schoolCode, tx } = await requireSchool(store, principal, query);
+  if (!(await isInAppVisible(tx, { userId, schoolId: school.id }))) {
+    return { items: [], nextCursor: null };
+  }
   const limit = parseLimit(query);
   const cursor = parseCursor(query.cursor);
   const params = [school.id, userId];
@@ -219,6 +231,7 @@ async function get(store, notificationId, principal, query = {}) {
   const userId = actorUserId(principal);
   if (!userId) throw createClientsError(403, "Non authentifié.", CLIENTS_ERROR.FORBIDDEN);
   const { school, schoolCode, tx } = await requireSchool(store, principal, query);
+  if (!(await isInAppVisible(tx, { userId, schoolId: school.id }))) throw notFound();
   const row = await loadVisible(tx, notificationId, school.id, userId, canManage(principal));
   const attachments = (await hydrateAttachments(tx, [row.id])).get(String(row.id)) ?? [];
   return mapNotification(row, { schoolCode, attachments });
@@ -228,6 +241,7 @@ async function unreadCount(store, principal, query = {}) {
   const userId = actorUserId(principal);
   if (!userId) throw createClientsError(403, "Non authentifié.", CLIENTS_ERROR.FORBIDDEN);
   const { school, tx } = await requireSchool(store, principal, query);
+  if (!(await isInAppVisible(tx, { userId, schoolId: school.id }))) return { count: 0 };
   const row = await tx.one(
     `SELECT count(*)::int AS c
      FROM notification_recipients r
@@ -550,17 +564,6 @@ async function processOneEvent(store) {
              spec.title,spec.body,SYSTEM_SENDER_NAME,JSON.stringify(spec.navigationTarget),JSON.stringify(spec.metadata)],
           );
           for (const recipient of spec.recipients) {
-            let allowInApp = true;
-            try {
-              const enabled = await enabledChannelsForUser(tx, {
-                userId: recipient.userId,
-                schoolId: currentEvent.school_id,
-              });
-              allowInApp = enabled.includes("IN_APP");
-            } catch {
-              allowInApp = true;
-            }
-            if (!allowInApp) continue;
             await tx.query(
               `INSERT INTO notification_recipients (notification_id,school_id,user_id,recipient_kind,recipient_context,created_at)
                VALUES ($1,$2,$3,$4,$5::jsonb,NOW()) ON CONFLICT (notification_id,user_id) DO NOTHING`,

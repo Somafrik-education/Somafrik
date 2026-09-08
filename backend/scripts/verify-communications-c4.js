@@ -154,6 +154,13 @@ function sourceGuards() {
   // 20 persist C4 sans fournisseur ; fan-out PUSH/EMAIL après drain
   assert.doesNotMatch(service, /twilio|whatsapp|firebase|expo push|fcm|smtp|sendgrid/i);
   assert.doesNotMatch(service, /communicationChannelFanout|fanOutNotificationChannels|communicationsDispatcher/);
+  const processFn = service.slice(service.indexOf("async function processOneEvent"));
+  const recipientLoop = processFn.slice(
+    processFn.indexOf("for (const recipient of spec.recipients)"),
+    processFn.indexOf("UPDATE communication_event_outbox SET status='processed'"),
+  );
+  assert.match(recipientLoop, /INSERT INTO notification_recipients/);
+  assert.doesNotMatch(recipientLoop, /continue/);
   assert.doesNotMatch(worker, /twilio|whatsapp|firebase|expoPushService|nodemailer/i);
   assert.match(worker, /dispatchProcessedEvents|communicationsDispatcher/);
   assert.doesNotMatch(worker, /fanOutNotificationChannels/);
@@ -189,6 +196,8 @@ function sourceGuards() {
   const resetEmail = read("backend/lib/passwordResetNotification.js");
   assert.doesNotMatch(resetEmail, /temporaryPassword|SMTP_PASSWORD|brevo/i);
   const fanout = read("backend/lib/communicationChannelFanout.js");
+  const enqueueFn = fanout.slice(fanout.indexOf("async function enqueueChannelDeliveries"));
+  assert.match(enqueueFn, /preference lookup failed, enqueue policy channels/);
   assert.match(fanout, /stale_processing_no_redelivery/);
   assert.match(fanout, /recoverStaleProcessing/);
   const sqlClaim = fanout.slice(fanout.indexOf("async claimDue"), fanout.indexOf("async markSent"));

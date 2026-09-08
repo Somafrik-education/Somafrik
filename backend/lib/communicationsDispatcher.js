@@ -132,11 +132,15 @@ function resolveChannels({ channels, eventType } = {}) {
 }
 
 async function loadEnabledChannels({ adapter, store, userId, schoolId }) {
-  if (typeof adapter?.listEnabledChannels === "function") {
-    return adapter.listEnabledChannels({ userId, schoolId });
+  try {
+    if (typeof adapter?.listEnabledChannels === "function") {
+      return adapter.listEnabledChannels({ userId, schoolId });
+    }
+    if (store) return enabledChannelsForUser(store, { userId, schoolId });
+    return defaultEnabledChannels();
+  } catch {
+    return defaultEnabledChannels();
   }
-  if (store) return enabledChannelsForUser(store, { userId, schoolId });
-  return defaultEnabledChannels();
 }
 
 async function dispatchCommunication({

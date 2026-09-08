@@ -3563,6 +3563,15 @@ class FallbackRepository {
     return this._mobilePushStore;
   }
 
+  getCommunicationPreferencesStore() {
+    if (!this._communicationPrefsQueryable) {
+      const { createMemoryPreferencesQueryable } = require("../lib/communicationsPreferences");
+      if (!this._communicationPrefsRows) this._communicationPrefsRows = [];
+      this._communicationPrefsQueryable = createMemoryPreferencesQueryable(this._communicationPrefsRows);
+    }
+    return this._communicationPrefsQueryable;
+  }
+
   upsertMobilePushDevice(principal, payload) {
     const service = require("../lib/mobilePushDevicesService");
     return service.upsertFromSession(this.getMobilePushStore(), principal, payload);
