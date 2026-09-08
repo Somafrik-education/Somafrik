@@ -25,6 +25,13 @@ on:
       - "backend/lib/communicationsPreferences.test.js"
       - "backend/lib/communicationsPreferences.red.test.js"
       - "docs/audits/communications-preferences-red-2026-09-08.md"
+      - "backend/lib/schoolNotificationPolicy.js"
+      - "backend/lib/schoolNotificationSettings.test.js"
+      - "backend/lib/schoolNotificationSafety.test.js"
+      - "backend/db/migrations/20260912_school_notification_settings.sql"
+      - "web/src/lib/schoolNotificationSettingsApi.ts"
+      - "web/src/pages/parametres/SettingsNotificationsPage.tsx"
+      - "web/src/pages/parametres/SettingsNotificationsPage.test.tsx"
       - "backend/lib/communicationsLegacy.audit.test.js"
       - "backend/lib/communicationsLegacy.red.test.js"
       - "docs/audits/communications-legacy-green-2026-09-08.md"
@@ -116,6 +123,8 @@ jobs:
           npm ci --prefix backend
           npm ci --prefix web
           npm ci --prefix Mobile
+      - name: Verify Lot I safety guards
+        run: node --test backend/lib/schoolNotificationSafety.test.js
       - name: Verify Communications C4 E2E
         shell: bash
         run: |

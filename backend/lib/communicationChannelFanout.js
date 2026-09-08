@@ -63,7 +63,7 @@ function createSqlDeliveryAdapter(store) {
       if (!key || typeof all !== "function") return [];
       return all(
         `SELECT n.id AS notification_id, n.event_key, n.event_type, n.school_id, n.title, n.body, n.navigation_target,
-                r.user_id
+                r.user_id, r.recipient_kind
          FROM communication_notifications n
          JOIN notification_recipients r
            ON r.notification_id = n.id AND r.school_id = n.school_id
@@ -190,6 +190,16 @@ function createMemoryDeliveryAdapter({ notifications = [], recipients = [], user
       );
       return enabledChannelsFromRows(rows);
     },
+    async listUserRoleKeys({ userId, schoolId }) {
+      const row = users.find(
+        (item) => String(item.id) === String(userId) && String(item.school_id) === String(schoolId),
+      );
+      if (!row) return [];
+      if (Array.isArray(row.roles)) return row.roles;
+      if (row.role) return [row.role];
+      if (row.role_key) return [row.role_key];
+      return [];
+    },
     async loadFanoutTargets(eventKey) {
       const key = asTrimmed(eventKey);
       const notes = notifications.filter((row) => asTrimmed(row.event_key || row.eventKey) === key);
@@ -207,6 +217,7 @@ function createMemoryDeliveryAdapter({ notifications = [], recipients = [], user
             body: note.body,
             navigation_target: note.navigation_target || note.navigationTarget || {},
             user_id: recipient.user_id,
+            recipient_kind: recipient.recipient_kind || recipient.recipientKind || recipient.kind,
           });
         }
       }
@@ -318,6 +329,10 @@ async function enqueueChannelDeliveries(adapter, processed = [], channels = CHAN
             await resolveRecipientChannels(target, providerChannels),
           );
         } catch (error) {
+          if (
+            error?.code === "school_notification_policy_unavailable"
+            || error?.code === "communication_preferences_unavailable"
+          ) throw error;
           logger.error?.("[communications-c4] preference lookup failed, enqueue policy channels", {
             eventKey,
             userId,

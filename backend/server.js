@@ -1385,6 +1385,32 @@ app.patch("/api/backoffice/establishments/:schoolCode/school-settings", requireA
   res.json(saved);
 }));
 
+app.get("/api/backoffice/establishments/:schoolCode/notification-settings", requireAuth, requirePermission("GET /api/backoffice/establishments/:schoolCode/notification-settings"), asyncHandler(async (req, res) => {
+  const { assertSchoolSettingsRead } = require("./lib/schoolSettingsManagement");
+  const { getSchoolNotificationSettings } = require("./lib/schoolNotificationPolicy");
+  assertSchoolSettingsRead(req.principal);
+  const schoolCode = String(req.params.schoolCode ?? "").trim().toUpperCase();
+  tenantScopeService.assertSchoolAccess(req.principal, schoolCode);
+  const settings = await getSchoolNotificationSettings(repository, req.principal, schoolCode);
+  res.json(settings);
+}));
+
+app.patch("/api/backoffice/establishments/:schoolCode/notification-settings", requireAuth, requirePermission("PATCH /api/backoffice/establishments/:schoolCode/notification-settings"), asyncHandler(async (req, res) => {
+  const { patchSchoolNotificationSettings } = require("./lib/schoolNotificationPolicy");
+  const schoolCode = String(req.params.schoolCode ?? "").trim().toUpperCase();
+  tenantScopeService.assertSchoolAccess(req.principal, schoolCode);
+  const saved = await patchSchoolNotificationSettings(repository, req.principal, schoolCode, req.body ?? {});
+  res.json(saved);
+}));
+
+app.put("/api/backoffice/establishments/:schoolCode/notification-settings", requireAuth, requirePermission("PUT /api/backoffice/establishments/:schoolCode/notification-settings"), asyncHandler(async (req, res) => {
+  const { putSchoolNotificationSettings } = require("./lib/schoolNotificationPolicy");
+  const schoolCode = String(req.params.schoolCode ?? "").trim().toUpperCase();
+  tenantScopeService.assertSchoolAccess(req.principal, schoolCode);
+  const saved = await putSchoolNotificationSettings(repository, req.principal, schoolCode, req.body ?? {});
+  res.json(saved);
+}));
+
 app.put("/api/backoffice/establishments/:schoolCode/academic-periods", requireAuth, requirePermission("PUT /api/backoffice/establishments/:schoolCode/academic-periods"), asyncHandler(async (req, res) => {
   const { stripClientSchoolCode } = require("./lib/principalSchoolScope");
   const { schoolSettingsAuditMetaFromRequest } = require("./lib/schoolSettingsManagement");
