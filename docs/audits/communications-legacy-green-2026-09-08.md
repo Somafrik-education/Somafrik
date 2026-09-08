@@ -1,11 +1,10 @@
-# PR F GREEN — consolidation progressive lecteurs notifications (06A/06B/06C/06E)
+# Lot J / GREEN F — consolidation progressive notifications legacy → C4
 
 **Date :** 8 septembre 2026  
-**Branche :** `cursor/communications-legacy-green-3171`  
-**PR :** https://github.com/Somafrik-education/Somafrik/pull/553 (Draft)  
-**HEAD :** `c62d49927811be6aff5e425f1176f444ebebb19a`  
-**Base :** `origin/develop` `0c2cba7509fefd2eee593bdf45c0968d8aa94e56` (#551)  
-**RED non mergée :** #552 HEAD `8348b75102982428129b77048e963ace210bda59` — **ne pas merger, ne pas rebaser dessus**
+**Branche :** `cursor/lot-j-communications-green-3171`  
+**Base :** `origin/develop` `db2721cf9b47f92f9ebf94871666424611aa4bef` (#559)  
+**RED non mergée :** #552 HEAD `8348b75102982428129b77048e963ace210bda59` — **ne pas merger, ne pas rebaser dessus**  
+**GREEN F historique :** #553 déjà mergée dans develop — cette PR continue le lot, sans réécrire #553.
 
 ## Contrôle d’ascendance (obligatoire avant merge)
 
@@ -14,29 +13,31 @@ git merge-base --is-ancestor 8348b75102982428129b77048e963ace210bda59 HEAD
 # attendu : exit 1 (HEAD #552 n'est pas ancêtre)
 ```
 
-Cette GREEN a été créée par `git checkout -b … origin/develop`. Aucun cherry-pick / merge de #552.
+Cette GREEN a été créée par `git checkout -b … origin/develop`. Aucun cherry-pick / merge de #552. Hors périmètre : #554 SMTP demande d’essai.
 
-## Périmètre corrigé
+## Périmètre Lot J
 
-| RED | Correction |
+| ID | Correction |
 |---|---|
-| **06A** | `paymentWorkflow` n’injecte plus `state.notifications`. `buildParentPaymentNotification` retiré. L’inbox paiement reste C4 `finance.payment.recorded`. |
-| **06B** | `/notifications` = `InternalNotificationsCenter` uniquement. Catalogue famille B déplacé vers `/notifications-plateforme`. KPI école ne lit plus le dataset legacy. |
-| **06C** | Home Mobile : CTA Notifications → `InternalNotifications` dès que la route C4 est lisible. |
-| **06E** | KPI « Alertes à traiter » = comptes inactifs uniquement. Unread école = cloche C4 (`unread-count`). Plus de `status === "Non lu"` legacy dans `getLiveKpis`. |
+| **J-01** | `paymentWorkflow` / `quickPayment` déjà C4. **Nouveau :** `paymentTransactionService.applyAtomicPayment` n’injecte plus `state.notifications`. Inbox paiement = `finance.payment.recorded` uniquement. |
+| **J-02** | `/notifications` = `InternalNotificationsCenter`. Catalogue B = `/notifications-plateforme` + `platformApi`. |
+| **J-03** | Home / cloche Mobile : `resolveNotificationsInboxRoute(session, activeSchoolCode)`. Un privilège plateforme **ne** route **pas** vers `PlatformNotifications` dans un contexte établissement. |
+| **J-04** | KPI « Alertes à traiter » = `schoolUnreadCount` (C4 `notification_recipients.read_at` / `archived_at`, Lots H+I). Plus de `status === "Non lu"` ni de comptes inactifs. |
+| **J-04b P1** | `Notifications:READ` n’ouvre plus `operations` / `operations-default`. « Alertes à traiter » n’est exposé qu’avec `Notifications:READ`, sans élargir les autres agrégats. |
 
-**Non touché :** C3, `platform_announcements`, table `notifications` + API `/backoffice/notifications`, #544–#551, dispatcher, fan-out, prefs.
+## Conservé (consommateurs encore réels)
 
-## Conservation UI
-
-- Cloche école → `/notifications` + unread C4
-- Cloche plateforme (pas d’école) → `/notifications-plateforme` + dataset B
-- Mobile `PlatformNotificationsScreen` et drawer Superadmin inchangés
-- Liste `/annonces` toujours C3 + D tagués
+- Table `notifications` + API `/backoffice/notifications` (catalogue plateforme)
+- `scopedNotifications` pour le catalogue B et Topbar hors école
+- `announcements` / `announcement_recipients` (C3)
+- `platform_announcements`
+- Relances impayés `unpaidService` → `state.notifications` (pas `finance.payment.recorded`)
+- Lot H prefs, Lot I policy, snapshot `recipient_context.kinds`, store mémoire partagé, EMAIL reset obligatoire
 
 ## Hors périmètre
 
 - Drop table `notifications`
 - Fusion C3 ↔ D
-- PR G SMTP demande d’essai
+- PR G / #554 SMTP demande d’essai
 - Ready / merge de #552
+- SMS / WhatsApp / nouveau provider

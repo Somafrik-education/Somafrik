@@ -9,7 +9,7 @@ import { scopedNotifications } from "../../lib/scope";
 import { scopedMessages } from "../../lib/establishment";
 import { useAnnouncementsUnreadCount } from "../../lib/announcementsRead";
 import { useInternalNotificationsUnreadCount } from "../../lib/internalNotificationsRead";
-import { canReadView } from "../../lib/permissions";
+import { canReadView, hasBackOfficePermission } from "../../lib/permissions";
 import { isPlatformCommunicationUser } from "../../lib/establishmentCommunication";
 import { usePermissionContext } from "../../lib/usePermissionContext";
 import { domainsForPath } from "../../lib/routeDomainMap";
@@ -62,8 +62,9 @@ export function Topbar({ title, onMenuOpen }: { title: string; onMenuOpen?: () =
 
   const canReadNotifications = canReadView(ctx, "notifications");
   const hasInternalNotificationScope = Boolean(activeSchoolCode && activeSchoolCode !== "*");
+  const canPollC4Unread = hasBackOfficePermission(ctx, "Notifications", "READ") && hasInternalNotificationScope;
   const internalUnreadCount = useInternalNotificationsUnreadCount(
-    canReadNotifications && hasInternalNotificationScope,
+    canPollC4Unread,
     activeSchoolCode,
   );
   const unreadCount = hasInternalNotificationScope

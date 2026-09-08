@@ -2,8 +2,9 @@ import { View, Text, TouchableOpacity, StyleSheet } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "../context/AuthContext";
 import { useAdminData } from "../context/AdminDataContext";
-import { canReadRoute, canReadView } from "../domain/security/permissions";
+import { canReadRoute } from "../domain/security/permissions";
 import { canAccessMessagesRoute } from "../lib/mobileCtaRbacAlignment";
+import { resolveNotificationsInboxRoute } from "../lib/notificationInboxRoute";
 import { useAnnouncementsUnreadCount } from "../lib/announcementsRead";
 import { useInternalNotificationsUnreadCount } from "../lib/internalNotificationsRead";
 import { ICON_HIT_SLOP, MIN_TOUCH_TARGET_DP } from "../lib/mobileUsability";
@@ -58,13 +59,13 @@ export default function CommunicationHeaderIcons({
 
   const canMessages = canAccessMessagesRoute(session);
   const canAnnouncements = canReadRoute(session, "Announcements");
-  const hasInternalNotificationScope = Boolean(activeSchoolCode && activeSchoolCode !== "*");
-  const canInternalNotifications = canReadRoute(session, "InternalNotifications") && hasInternalNotificationScope;
-  const canPlatformNotifications = canReadView(session, "PlatformNotifications") && !hasInternalNotificationScope;
+  const notificationsInboxRoute = resolveNotificationsInboxRoute(session, activeSchoolCode);
+  const canInternalNotifications = notificationsInboxRoute === "InternalNotifications";
+  const canPlatformNotifications = notificationsInboxRoute === "PlatformNotifications";
   const { count: internalUnreadNotifications } = useInternalNotificationsUnreadCount(
     canInternalNotifications, activeSchoolCode,
   );
-  const canNotifications = canInternalNotifications || canPlatformNotifications;
+  const canNotifications = Boolean(notificationsInboxRoute);
 
   if (!canMessages && !canAnnouncements && !canNotifications) {
     return null;
@@ -98,7 +99,7 @@ export default function CommunicationHeaderIcons({
           icon="notifications-outline"
           label="Notifications"
           count={unreadNotifications}
-          onPress={() => navigation.navigate(canInternalNotifications ? "InternalNotifications" : "PlatformNotifications")}
+          onPress={() => navigation.navigate(notificationsInboxRoute ?? "InternalNotifications")}
         />
       ) : null}
     </View>
