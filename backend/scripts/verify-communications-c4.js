@@ -305,6 +305,8 @@ function main() {
   run(process.execPath, ["--test", "backend/lib/communicationsPreferences.red.test.js"], "RED-COM-05 preferences audit");
   run(process.execPath, ["--test", "backend/lib/communicationsLegacy.audit.test.js"], "PR F legacy inventory");
   run(process.execPath, ["--test", "backend/lib/communicationsLegacy.red.test.js"], "RED-COM-06 legacy consolidation");
+  // PR G — SMTP essai → delivery EMAIL. Ne pas SKIP. Draft attendu rouge sur 07A–07D.
+  run(process.execPath, ["--test", "backend/lib/communicationsTrialSmtp.red.test.js"], "RED-COM-07 trial SMTP durable");
   console.log("verify-communications-c4: GO");
 }
 
