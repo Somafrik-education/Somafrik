@@ -48,8 +48,8 @@ Les autres surfaces restent séparées :
 - **C — reset mot de passe transactionnel** : le reset persiste et révoque les sessions mais n’envoie pas encore d’e-mail transactionnel dédié.
 - **D — dispatcher mince** : pas encore de façade unique `IN_APP | PUSH | EMAIL` au-dessus des adaptateurs.
 - **E — préférences utilisateur** : aucune table canonique de préférences de canal.
-- **F — consolidation legacy / UI** : anciennes surfaces notifications et annonces plateforme restent séparées.
-- **G — SMTP demande d’essai** : `setImmediate` reste hors outbox orchestrée.
+- **F — consolidation legacy / UI** : RED dédié `docs/audits/communications-legacy-red-2026-09-08.md` (branche indépendante). Quatre trous réels (06A/06B/06C/06E). 06D/06F non-RED. GREEN F devra repartir de `develop`.
+- **G — SMTP demande d’essai** : `setImmediate` reste hors outbox orchestrée (après F).
 
 Ces écarts ne sont plus matérialisés par des tests volontairement rouges dans #543 afin de ne pas garder une PR d’audit impossible à intégrer. Ils doivent recevoir leurs propres RED tests dans les PR GREEN correspondantes avant implémentation.
 
