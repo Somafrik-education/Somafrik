@@ -84,6 +84,24 @@ describe("KPI Web Utilisateurs actifs", () => {
     ).toBe(16);
   });
 
+  it("Alertes à traiter n'ajoute plus l'unread legacy (C4 = cloche)", () => {
+    const emptyState = {
+      schools: [],
+      users: [user({ id: "u-1", status: "Suspendu" })],
+      countries: [],
+      subscriptions: [],
+      notifications: [{ id: "n1", status: "Non lu" } as never],
+    };
+    const kpis = getLiveKpis(schoolAdmin(), emptyState);
+    expect(kpis.find((item) => item.label === "Alertes à traiter")?.value).toBe(1);
+    expect(
+      getLiveKpis(schoolAdmin(), {
+        ...emptyState,
+        users: [user({ id: "u-1", status: "Actif" })],
+      }).find((item) => item.label === "Alertes à traiter")?.value,
+    ).toBe(0);
+  });
+
   it("garde-fou source : KPIs actifs nommés Utilisateurs actifs, jamais Utilisateurs", () => {
     const dashboardCharts = readFileSync(join(here, "dashboardCharts.ts"), "utf8");
     expect(dashboardCharts).toContain("label: ACTIVE_USERS_KPI_LABEL, value: formatMetric(metrics.activeUsers)");

@@ -156,7 +156,7 @@ describe("paymentWorkflow (D2.8d4)", () => {
     expect(showToast).toHaveBeenCalledWith(PAYMENT_CREATE_OUT_OF_SCOPE_MESSAGE, "error");
   });
 
-  it("create persist : patch payments + audit create + notification parent + immutabilité source", () => {
+  it("create persist : patch payments + audit create, sans injection legacy notifications (C4)", () => {
     const state = baseState();
     const snapshot = structuredClone(state.payments);
     const newPayment = payment({
@@ -186,7 +186,7 @@ describe("paymentWorkflow (D2.8d4)", () => {
     expect(plan.successMessage).toContain("SCH-001-2026-PAY-0002");
     expect((plan.patch.payments as unknown[]).length).toBe(3);
     expect((plan.patch.auditLog as Array<{ action: string }>)[0]?.action).toBe("payment.create");
-    expect((plan.patch.notifications as unknown[]).length).toBe(1);
+    expect(plan.patch.notifications).toBeUndefined();
     expect(state.payments).toEqual(snapshot);
     expect(newPayment.amount).toBe(10_000);
   });

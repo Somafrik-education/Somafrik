@@ -61,6 +61,16 @@ assert.match(headerSrc, /useInternalNotificationsUnreadCount/);
 const navSrc = fs.readFileSync(path.join(ROOT, "src/navigation/AppNavigator.tsx"), "utf8");
 assert.match(navSrc, /InternalNotifications/);
 
+const homeSrc = fs.readFileSync(path.join(ROOT, "src/screens/HomeScreen.tsx"), "utf8");
+const homeStart = homeSrc.indexOf("platformNotifications:");
+const homeCta = homeSrc.slice(homeStart, homeSrc.indexOf("announcements:", homeStart));
+assert.ok(
+  homeCta.indexOf('navigate("InternalNotifications")') >= 0 &&
+    (homeCta.indexOf('navigate("PlatformNotifications")') < 0 ||
+      homeCta.indexOf('navigate("InternalNotifications")') < homeCta.indexOf('navigate("PlatformNotifications")')),
+  "Home CTA Notifications privilégie InternalNotifications (C4)",
+);
+
 const placeholders = fs.readFileSync(
   path.join(ROOT, "../web/src/pages/parametres/SettingsPlaceholders.tsx"),
   "utf8",

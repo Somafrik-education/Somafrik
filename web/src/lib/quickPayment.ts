@@ -1,4 +1,4 @@
-import type { BackOfficeState, PlatformNotification, School, SessionUser, StudentFee } from "../types";
+import type { BackOfficeState, School, SessionUser, StudentFee } from "../types";
 import { inputToPeriodDate, todayPeriodDate } from "./dates";
 import { auditActor, makeAuditEntry, type AuditEntry } from "./audit";
 import { normalize } from "./format";
@@ -394,28 +394,6 @@ export function buildPaymentAuditEntry(
     schoolCode: String(payment.schoolCode ?? ""),
     details,
   });
-}
-
-export function buildParentPaymentNotification(
-  payment: PaymentRecord,
-  student: StudentSearchResult,
-): PlatformNotification {
-  const amount = Number(payment.amount ?? 0);
-  const currency = String(payment.currency ?? "CDF");
-  const formatted = new Intl.NumberFormat("fr-FR").format(amount);
-  return {
-    id: `NOTIF-PAY-${String(payment.id ?? Date.now())}`,
-    audience: "Parents",
-    schoolCode: student.schoolCode,
-    title: "Paiement enregistré",
-    message: `Paiement de ${formatted} ${currency} (${String(payment.feeType ?? payment.label ?? "frais")}) enregistré pour ${student.name}. Réf. ${String(payment.reference ?? payment.publicId ?? "")}.`,
-    type: "Paiement",
-    priority: "Normal",
-    channels: ["Somafrik"],
-    status: "Non lu",
-    date: String(payment.date ?? defaultPaymentDate()),
-    createdBy: String(payment.createdByName ?? "Système"),
-  };
 }
 
 export function cancelPaymentRecord(
