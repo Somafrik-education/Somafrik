@@ -188,7 +188,7 @@ async function isInAppVisible(store, { userId, schoolId } = {}) {
     const enabled = await enabledChannelsForUser(store, { userId, schoolId });
     return enabled.includes("IN_APP");
   } catch {
-    return true;
+    return false;
   }
 }
 
@@ -204,7 +204,7 @@ async function allowsInAppForRow(store, schoolId, row, userVisible) {
     });
     return channels.includes("IN_APP");
   } catch {
-    return true;
+    return false;
   }
 }
 
@@ -318,6 +318,8 @@ async function markRead(store, notificationId, principal, auditMeta, query = {})
       });
     }
     const row = await loadVisible(tx, notificationId, school.id, userId, false);
+    const userVisible = await isInAppVisible(tx, { userId, schoolId: school.id });
+    if (!(await allowsInAppForRow(tx, school.id, row, userVisible))) throw notFound();
     const attachments = (await hydrateAttachments(tx, [row.id])).get(String(row.id)) ?? [];
     return mapNotification(row, { schoolCode, attachments });
   });
