@@ -10,6 +10,7 @@ import { scopedMessages } from "../../lib/establishment";
 import { useAnnouncementsUnreadCount } from "../../lib/announcementsRead";
 import { useInternalNotificationsUnreadCount } from "../../lib/internalNotificationsRead";
 import { canReadView } from "../../lib/permissions";
+import { isPlatformCommunicationUser } from "../../lib/establishmentCommunication";
 import { usePermissionContext } from "../../lib/usePermissionContext";
 import { domainsForPath } from "../../lib/routeDomainMap";
 import { Button } from "../ui/Button";
@@ -68,6 +69,11 @@ export function Topbar({ title, onMenuOpen }: { title: string; onMenuOpen?: () =
     : canReadNotifications
       ? scopedNotifications(user ?? null, state).filter((n) => n.status !== "Lu").length
       : 0;
+  const notificationsHref = hasInternalNotificationScope
+    ? "/notifications"
+    : isPlatformCommunicationUser(ctx)
+      ? "/notifications-plateforme"
+      : "/notifications";
 
   const canReadMessages = canReadView(ctx, "messages");
   const unreadMessages = canReadMessages
@@ -130,7 +136,7 @@ export function Topbar({ title, onMenuOpen }: { title: string; onMenuOpen?: () =
           </TopbarIcon>
         ) : null}
         {canReadNotifications ? (
-          <TopbarIcon to="/notifications" label="Notifications" count={unreadCount}>
+          <TopbarIcon to={notificationsHref} label="Notifications" count={unreadCount}>
             <Bell className="h-5 w-5" strokeWidth={1.8} />
           </TopbarIcon>
         ) : null}

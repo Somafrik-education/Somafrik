@@ -44,6 +44,7 @@ import {
   ParametresLayout,
   ParentChildRelationsPage,
   PermissionsPage,
+  PlatformNotificationsPage,
   PlanningConflictsPage,
   PlanningLayout,
   PlanningRoomsPage,
@@ -386,6 +387,14 @@ export default function App() {
           element={
             <PermissionRoute view="notifications">
               <NotificationsPage />
+            </PermissionRoute>
+          }
+        />
+        <Route
+          path="/notifications-plateforme"
+          element={
+            <PermissionRoute view="notifications">
+              <PlatformNotificationsPage />
             </PermissionRoute>
           }
         />

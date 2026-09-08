@@ -85,6 +85,10 @@ export const CancellationRequestPage = lazyPage(
   "CancellationRequestPage",
 );
 export const NotificationsPage = lazyPage(() => import("./pages/NotificationsPage"), "NotificationsPage");
+export const PlatformNotificationsPage = lazyPage(
+  () => import("./pages/PlatformNotificationsPage"),
+  "PlatformNotificationsPage",
+);
 export const UsersPage = lazyPage(() => import("./pages/UsersPage"), "UsersPage");
 export const PermissionsPage = lazyPage(() => import("./pages/PermissionsPage"), "PermissionsPage");
 export const ChartSettingsPage = lazyPage(() => import("./pages/ChartSettingsPage"), "ChartSettingsPage");

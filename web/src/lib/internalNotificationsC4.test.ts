@@ -58,6 +58,10 @@ describe("internal notifications C4 web", () => {
     expect(center).toMatch(/notifyInternalNotificationsChanged/);
     expect(topbar).toMatch(/useInternalNotificationsUnreadCount/);
     expect(page).toMatch(/InternalNotificationsCenter/);
+    expect(page).not.toMatch(/platformApi/);
+    expect(topbar).toMatch(/notifications-plateforme/);
+    const catalog = readFileSync(join(ROOT, "../pages/PlatformNotificationsPage.tsx"), "utf8");
+    expect(catalog).toMatch(/platformApi\.createNotification/);
     expect(placeholders).toMatch(/ComingSoonState/);
     expect(hub).toMatch(/status: "soon"/);
     expect(hub).toMatch(/\/parametres\/notifications/);

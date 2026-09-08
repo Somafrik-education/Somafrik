@@ -227,7 +227,6 @@ export function getLiveKpis(user: SessionUser | null, state: ScopeState): Kpi[] 
   const schools = scopedSchools(user, state);
   const users = scopedUsers(user, state);
   const subscriptions = scopedSubscriptions(user, state);
-  const notifications = scopedNotifications(user, state);
   const countries = scopedCountries(user, state);
   const activeUsers = users.filter(isActiveUserAccount);
   const suspendedSchools = schools.filter((school) => school.status === "Suspendu").length;
@@ -249,9 +248,8 @@ export function getLiveKpis(user: SessionUser | null, state: ScopeState): Kpi[] 
       { label: "Enseignants", value: countUsersByRole(users, ["Enseignant"]) },
       {
         label: "Alertes à traiter",
-        value:
-          users.filter((u) => !isActiveUserAccount(u)).length +
-          notifications.filter((n) => n.status === "Non lu").length,
+        // Unread inbox = cloche C4, jamais le dataset plateforme `notifications`.
+        value: users.filter((u) => !isActiveUserAccount(u)).length,
       },
     ];
   }

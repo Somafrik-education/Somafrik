@@ -45,6 +45,7 @@ const PAGE_NAV_ITEMS = [
     label: CONFIGURATION_USER_ACCOUNTS.label,
   },
   // Notifications retirées du menu latéral (accès via la cloche du Topbar) mais gardent leur titre de page.
+  { view: "notifications", path: "/notifications-plateforme", label: "Notifications plateforme" },
   { view: "notifications", path: "/notifications", label: "Notifications" },
 ];
 

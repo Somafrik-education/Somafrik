@@ -8,7 +8,6 @@
  */
 import { appendAuditLog } from "../../lib/audit";
 import {
-  buildParentPaymentNotification,
   buildPaymentAuditEntry,
   cancelPaymentRecord,
   isPaymentCancelled,
@@ -133,11 +132,6 @@ export function buildPaymentCreatePersistPlan(
     return { ok: false };
   }
 
-  const notification =
-    input.student != null
-      ? buildParentPaymentNotification(input.payment, input.student)
-      : null;
-
   return {
     ok: true,
     payment: input.payment,
@@ -148,9 +142,6 @@ export function buildPaymentCreatePersistPlan(
         state.auditLog,
         buildPaymentAuditEntry(input.payment, scopeUser, "payment.create"),
       ),
-      notifications: notification
-        ? [notification, ...(state.notifications ?? [])]
-        : state.notifications,
     },
   };
 }
