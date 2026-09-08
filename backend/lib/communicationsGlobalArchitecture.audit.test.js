@@ -42,7 +42,7 @@ test("AUDIT-COM-02 — ciblage Expo reste scoped user + school + environnement",
 
   const service = read("backend/lib/mobilePushDevicesService.js");
   const selfTest = service.slice(service.indexOf("async function sendSelfTest"));
-  assert.match(selfTest, /resolveSchoolId/);
+  assert.match(selfTest, /sessionSchoolId/);
   assert.match(selfTest, /listActiveForUser\(\{[\s\S]*schoolId/);
 });
 
