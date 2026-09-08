@@ -99,9 +99,9 @@ const SETTING_CARDS: SettingCard[] = [
   {
     to: "/parametres/notifications",
     title: "Notifications",
-    description: "Canaux (push, e-mail, SMS, WhatsApp), modèles et rappels automatiques.",
+    description: "Événements, destinataires et canaux autorisés pour l'établissement.",
     icon: BellRing,
-    status: "soon",
+    status: "available",
     view: "configuration",
   },
   {

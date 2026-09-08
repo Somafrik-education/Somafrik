@@ -21,6 +21,7 @@ const {
   mapAttachmentRow,
 } = require("./communicationsAttachments");
 const { enabledChannelsForUser } = require("./communicationsPreferences");
+const { resolveAllowedChannels, getSchoolPolicyEventsBySchoolId } = require("./schoolNotificationPolicy");
 
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 100;
@@ -165,7 +166,7 @@ function mapNotification(row, extras = {}) {
 
 async function loadVisible(tx, notificationId, schoolId, userId, management = false) {
   const row = await tx.one(
-    `SELECT n.*, s.school_code, r.read_at, r.archived_at AS recipient_archived_at
+    `SELECT n.*, s.school_code, r.read_at, r.archived_at AS recipient_archived_at, r.recipient_kind
      FROM communication_notifications n
      JOIN schools s ON s.id = n.school_id
      LEFT JOIN notification_recipients r ON r.notification_id = n.id AND r.user_id = $2
@@ -191,6 +192,22 @@ async function isInAppVisible(store, { userId, schoolId } = {}) {
   }
 }
 
+async function allowsInAppForRow(store, schoolId, row, userVisible) {
+  if (!userVisible) return false;
+  try {
+    const schoolPolicy = await getSchoolPolicyEventsBySchoolId(store, schoolId);
+    const channels = resolveAllowedChannels({
+      eventType: row.event_type,
+      recipient: row.recipient_kind,
+      schoolPolicy,
+      userPreferences: { IN_APP: true, PUSH: true, EMAIL: true },
+    });
+    return channels.includes("IN_APP");
+  } catch {
+    return true;
+  }
+}
+
 async function list(store, principal, query = {}) {
   const userId = actorUserId(principal);
   if (!userId) throw createClientsError(403, "Non authentifié.", CLIENTS_ERROR.FORBIDDEN);
@@ -209,7 +226,7 @@ async function list(store, principal, query = {}) {
   params.push(limit + 1);
   const rows = await tx.all(
     `SELECT n.*, n.school_id::text AS scoped_school_id, s.school_code,
-            r.read_at, r.archived_at AS recipient_archived_at
+            r.read_at, r.archived_at AS recipient_archived_at, r.recipient_kind
      FROM notification_recipients r
      JOIN communication_notifications n ON n.id = r.notification_id AND n.school_id = r.school_id
      JOIN schools s ON s.id = n.school_id
@@ -219,11 +236,22 @@ async function list(store, principal, query = {}) {
      LIMIT $${params.length}`,
     params,
   );
-  const page = rows.slice(0, limit);
+  const schoolPolicy = await getSchoolPolicyEventsBySchoolId(tx, school.id);
+  const visible = [];
+  for (const row of rows) {
+    const allowed = resolveAllowedChannels({
+      eventType: row.event_type,
+      recipient: row.recipient_kind,
+      schoolPolicy,
+      userPreferences: { IN_APP: true, PUSH: true, EMAIL: true },
+    });
+    if (allowed.includes("IN_APP")) visible.push(row);
+  }
+  const page = visible.slice(0, limit);
   const attachments = await hydrateAttachments(tx, page.map((row) => row.id));
   return {
     items: page.map((row) => mapNotification(row, { schoolCode, attachments: attachments.get(String(row.id)) ?? [] })),
-    nextCursor: rows.length > limit ? makeCursor(page.at(-1)?.created_at, page.at(-1)?.id) : null,
+    nextCursor: visible.length > limit ? makeCursor(page.at(-1)?.created_at, page.at(-1)?.id) : null,
   };
 }
 
@@ -233,6 +261,7 @@ async function get(store, notificationId, principal, query = {}) {
   const { school, schoolCode, tx } = await requireSchool(store, principal, query);
   if (!(await isInAppVisible(tx, { userId, schoolId: school.id }))) throw notFound();
   const row = await loadVisible(tx, notificationId, school.id, userId, canManage(principal));
+  if (!(await allowsInAppForRow(tx, school.id, row, true))) throw notFound();
   const attachments = (await hydrateAttachments(tx, [row.id])).get(String(row.id)) ?? [];
   return mapNotification(row, { schoolCode, attachments });
 }
@@ -242,14 +271,25 @@ async function unreadCount(store, principal, query = {}) {
   if (!userId) throw createClientsError(403, "Non authentifié.", CLIENTS_ERROR.FORBIDDEN);
   const { school, tx } = await requireSchool(store, principal, query);
   if (!(await isInAppVisible(tx, { userId, schoolId: school.id }))) return { count: 0 };
-  const row = await tx.one(
-    `SELECT count(*)::int AS c
+  const rows = await tx.all(
+    `SELECT n.event_type, r.recipient_kind
      FROM notification_recipients r
      JOIN communication_notifications n ON n.id = r.notification_id AND n.school_id = r.school_id
      WHERE r.school_id = $1::uuid AND r.user_id = $2::uuid AND r.read_at IS NULL AND r.archived_at IS NULL`,
     [school.id, userId],
   );
-  return { count: Number(row?.c || 0) };
+  const schoolPolicy = await getSchoolPolicyEventsBySchoolId(tx, school.id);
+  let count = 0;
+  for (const row of rows) {
+    const allowed = resolveAllowedChannels({
+      eventType: row.event_type,
+      recipient: row.recipient_kind,
+      schoolPolicy,
+      userPreferences: { IN_APP: true, PUSH: true, EMAIL: true },
+    });
+    if (allowed.includes("IN_APP")) count += 1;
+  }
+  return { count };
 }
 
 async function markRead(store, notificationId, principal, auditMeta, query = {}) {

@@ -39,7 +39,7 @@ describe("internal notifications C4 web", () => {
     );
   });
 
-  it("API + centre : unread-count serveur, pas de localStorage, ComingSoon paramètres", () => {
+  it("API + centre : unread-count serveur, pas de localStorage, ComingSoon apparence", () => {
     const api = readFileSync(join(ROOT, "internalNotificationsApi.ts"), "utf8");
     const read = readFileSync(join(ROOT, "internalNotificationsRead.ts"), "utf8");
     const center = readFileSync(join(ROOT, "../components/communications/InternalNotificationsCenter.tsx"), "utf8");
@@ -63,7 +63,14 @@ describe("internal notifications C4 web", () => {
     const catalog = readFileSync(join(ROOT, "../pages/PlatformNotificationsPage.tsx"), "utf8");
     expect(catalog).toMatch(/platformApi\.createNotification/);
     expect(placeholders).toMatch(/ComingSoonState/);
-    expect(hub).toMatch(/status: "soon"/);
     expect(hub).toMatch(/\/parametres\/notifications/);
+    const notificationsCard = hub.slice(
+      hub.indexOf('to: "/parametres/notifications"'),
+      hub.indexOf('to: "/parametres/apparence"'),
+    );
+    expect(notificationsCard).toMatch(/status:\s*"available"/);
+    expect(hub.slice(hub.indexOf('to: "/parametres/apparence"'), hub.indexOf('to: "/parametres/integrations"'))).toMatch(
+      /status:\s*"soon"/,
+    );
   });
 });

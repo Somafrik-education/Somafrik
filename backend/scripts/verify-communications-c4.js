@@ -130,11 +130,20 @@ function sourceGuards() {
   assert.doesNotMatch(service, /FROM notifications /);
   assert.doesNotMatch(service, /INTO notifications /);
 
-  // 16 /parametres/notifications ComingSoon
+  // 16 /parametres/notifications = config établissement Lot I ; Apparence/Intégrations restent ComingSoon
   assert.match(placeholders, /ComingSoonState/);
-  assert.match(placeholders, /Paramètres Notifications/);
+  assert.match(placeholders, /function SettingsAppearancePage/);
+  assert.match(placeholders, /export \{ SettingsNotificationsPage \}/);
   assert.match(settingsHub, /\/parametres\/notifications/);
-  assert.match(settingsHub, /status: "soon"/);
+  const notificationsCard = settingsHub.slice(
+    settingsHub.indexOf('to: "/parametres/notifications"'),
+    settingsHub.indexOf('to: "/parametres/apparence"'),
+  );
+  assert.match(notificationsCard, /status: "available"/);
+  assert.match(
+    settingsHub.slice(settingsHub.indexOf('to: "/parametres/apparence"'), settingsHub.indexOf('to: "/parametres/integrations"')),
+    /status: "soon"/,
+  );
 
   // 17-18 badges unread-count
   assert.match(webRead, /\.unreadCount\(/);
@@ -334,6 +343,8 @@ function main() {
   // PR G — SMTP essai → delivery EMAIL. Ne pas SKIP.
   run(process.execPath, ["--test", "backend/lib/communicationsTrialSmtp.red.test.js"], "RED-COM-07 trial SMTP durable");
   run(process.execPath, ["--test", "backend/lib/trialAccessRequestNotification.red.test.js"], "trial EMAIL durable unit");
+  run(process.execPath, ["--test", "backend/lib/schoolNotificationSettings.test.js"], "Lot I school notification settings");
+  run("npm", ["--prefix", "web", "run", "test", "--", "src/pages/parametres/SettingsNotificationsPage.test.tsx"], "web Lot I notification settings");
   console.log("verify-communications-c4: GO");
 }
 

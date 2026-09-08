@@ -91,12 +91,14 @@ describe("Lot I — Paramètres → Notifications", () => {
     getSettings.mockReset();
     patchSettings.mockReset();
     getSettings.mockResolvedValue(FIXTURE);
-    patchSettings.mockImplementation(async (_code: string, patch: { events: typeof FIXTURE.events }) => {
+    patchSettings.mockImplementation(async (_code: string, patch: { events?: Record<string, Record<string, Record<string, boolean>>> }) => {
       const next = structuredClone(FIXTURE);
-      const eventKey = Object.keys(patch.events)[0] as keyof typeof FIXTURE.events;
-      const recipient = Object.keys(patch.events[eventKey])[0];
-      const channels = patch.events[eventKey][recipient as "PARENT"];
-      Object.assign(next.events[eventKey][recipient as "PARENT"], channels);
+      for (const [event, recipients] of Object.entries(patch.events || {})) {
+        const eventRule = (next.events as Record<string, Record<string, unknown>>)[event];
+        for (const [recipient, channels] of Object.entries(recipients || {})) {
+          Object.assign(eventRule[recipient] as Record<string, boolean>, channels);
+        }
+      }
       return next;
     });
   });

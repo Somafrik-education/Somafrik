@@ -75,18 +75,25 @@ function main() {
     assert.equal(matrixByRoute.get(hub.to).status, "BIENTOT", `${hub.to} soon doit être BIENTOT`);
   }
 
-  // 4–6. Notifications / Apparence / Intégrations = BIENTOT
-  for (const id of ["notifications", "apparence", "integrations"]) {
+  // 4–6. Apparence / Intégrations = BIENTOT ; Notifications = Lot I disponible
+  for (const id of ["apparence", "integrations"]) {
     const card = matrix.cards.find((item) => item.id === id);
     assert.ok(card, `carte ${id} manquante`);
     assert.equal(card.status, "BIENTOT");
     assert.equal(card.verdict.includes("FUTURE") || card.verdict.every((v) => v === "FUTURE"), true);
     assert.equal(card.helpWriteEligible, false);
   }
-  assert.match(placeholders, /function SettingsNotificationsPage/);
+  const notifications = matrix.cards.find((item) => item.id === "notifications");
+  assert.ok(notifications, "carte notifications manquante");
+  assert.equal(notifications.status, "ACTUEL");
+  assert.equal(notifications.hubStatus, "available");
+  assert.equal(notifications.web, true);
+  assert.equal(notifications.mutations, true);
+  assert.equal(notifications.postgres, true);
+  assert.match(placeholders, /export \{ SettingsNotificationsPage \}/);
   assert.match(placeholders, /function SettingsAppearancePage/);
   assert.match(placeholders, /function SettingsIntegrationsPage/);
-  assert.equal([...placeholders.matchAll(/ComingSoonState/g)].length >= 3, true);
+  assert.equal([...placeholders.matchAll(/ComingSoonState/g)].length >= 2, true);
 
   // 7–8. Rôles établissement lecture seule ; Superadmin configurable
   const roles = matrix.cards.find((card) => card.id === "roles-droits");

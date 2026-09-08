@@ -381,6 +381,23 @@ const routePermissions = {
     "Gérer planning académique",
     "ALL_PRIVILEGES",
   ],
+  "GET /api/backoffice/establishments/:schoolCode/notification-settings": [
+    "Paramètres Établissement:READ",
+    "Paramètres Établissement:UPDATE",
+    "Gérer planning académique",
+    "ALL_PRIVILEGES",
+    "COUNTRY_PRIVILEGES",
+  ],
+  "PATCH /api/backoffice/establishments/:schoolCode/notification-settings": [
+    "Paramètres Établissement:UPDATE",
+    "Gérer planning académique",
+    "ALL_PRIVILEGES",
+  ],
+  "PUT /api/backoffice/establishments/:schoolCode/notification-settings": [
+    "Paramètres Établissement:UPDATE",
+    "Gérer planning académique",
+    "ALL_PRIVILEGES",
+  ],
   "PUT /api/backoffice/establishments/:schoolCode/academic-periods": [
     "Paramètres Établissement:UPDATE",
     "Gérer planning académique",
