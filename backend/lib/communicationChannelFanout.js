@@ -329,7 +329,10 @@ async function enqueueChannelDeliveries(adapter, processed = [], channels = CHAN
             await resolveRecipientChannels(target, providerChannels),
           );
         } catch (error) {
-          if (error?.code === "school_notification_policy_unavailable") throw error;
+          if (
+            error?.code === "school_notification_policy_unavailable"
+            || error?.code === "communication_preferences_unavailable"
+          ) throw error;
           logger.error?.("[communications-c4] preference lookup failed, enqueue policy channels", {
             eventKey,
             userId,
