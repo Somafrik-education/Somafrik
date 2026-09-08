@@ -274,15 +274,23 @@ Mobile : **aucun** fichier (0 occurrence `trial-requests` aujourd’hui).
 
 ---
 
-## 11–15. Git / PR (à compléter après push)
+## 11–15. Git / PR
 
 | # | Champ | Valeur |
 |---|---|---|
-| 11 | PR Draft URL | *renseigné après `ManagePullRequest`* |
-| 12 | Base SHA | `9d9d4ffb6264308a0e8378c5ff404579b3d72914` (`origin/develop` #553) |
-| 13 | HEAD SHA | *après commit* |
-| 14 | ahead/behind | *après push* |
-| 15 | diffstat | *après commit* |
+| 11 | PR Draft URL | https://github.com/Somafrik-education/Somafrik/pull/554 |
+| 12 | Base SHA | `9d9d4ffb6264308a0e8378c5ff404579b3d72914` (`origin/develop` merge #553) |
+| 13 | HEAD SHA | `2e7b14e1b017c499d38baa231806eecca8fa0be9` |
+| 14 | ahead / behind | **2 ahead / 0 behind** `origin/develop` |
+| 15 | diffstat | 4 files, +556 / −0 |
+
+```text
+ .github/workflows/communications-c4.yml            |   4 +
+ backend/lib/communicationsTrialSmtp.red.test.js    | 249 +++++++++++++++++
+ backend/scripts/verify-communications-c4.js        |   2 +
+ .../communications-trial-smtp-red-2026-09-08.md    | 301 +++++++++++++++++++++
+ 4 files changed, 556 insertions(+)
+```
 
 Gouvernance :
 
