@@ -284,8 +284,14 @@ function createMemoryDeliveryAdapter({ notifications = [], recipients = [], user
   };
 }
 
-async function enqueueChannelDeliveries(adapter, processed = []) {
+function providerChannelsOf(channels = CHANNELS) {
+  const requested = [...new Set((channels || CHANNELS).map((item) => asTrimmed(item).toUpperCase()))];
+  return requested.filter((channel) => CHANNELS.includes(channel));
+}
+
+async function enqueueChannelDeliveries(adapter, processed = [], channels = CHANNELS) {
   const keys = [...new Set((processed || []).map(eventKeyOf).filter(Boolean))];
+  const providerChannels = providerChannelsOf(channels);
   let created = 0;
   for (const eventKey of keys) {
     const targets = await adapter.loadFanoutTargets(eventKey);
@@ -293,7 +299,7 @@ async function enqueueChannelDeliveries(adapter, processed = []) {
       const schoolId = uuidOrNull(target.school_id);
       const userId = uuidOrNull(target.user_id);
       if (!schoolId || !userId) continue;
-      for (const channel of CHANNELS) {
+      for (const channel of providerChannels) {
         const inserted = await adapter.ensureDelivery({
           deliveryKey: deliveryKey(eventKey, userId, channel),
           eventKey,
@@ -413,14 +419,19 @@ async function drainChannelDeliveries(adapter, deps = {}) {
     const row = await adapter.claimDue({ now });
     if (!row) break;
     try {
-      const outcome =
-        row.channel === "EMAIL"
-          ? await dispatchEmail(row, { adapter, mailer: deps.mailer, env: deps.env })
-          : await dispatchPush(row, {
-              pushStore: deps.pushStore,
-              pushClient: deps.pushClient,
-              env: deps.env,
-            });
+      const channel = asTrimmed(row.channel).toUpperCase();
+      let outcome;
+      if (channel === "EMAIL") {
+        outcome = await dispatchEmail(row, { adapter, mailer: deps.mailer, env: deps.env });
+      } else if (channel === "PUSH") {
+        outcome = await dispatchPush(row, {
+          pushStore: deps.pushStore,
+          pushClient: deps.pushClient,
+          env: deps.env,
+        });
+      } else {
+        outcome = { skipped: "unsupported_channel" };
+      }
       if (outcome?.skipped) {
         await adapter.markSkipped(row.id, outcome.skipped);
         results.push({ id: row.id, status: "skipped", reason: outcome.skipped });
@@ -459,6 +470,7 @@ async function fanOutNotificationChannels({
   env = process.env,
   now,
   logger = console,
+  channels,
 } = {}) {
   const deliveryAdapter = adapter || createSqlDeliveryAdapter(store);
   const pushDeps =
@@ -466,7 +478,7 @@ async function fanOutNotificationChannels({
       ? { pushStore, pushClient }
       : defaultPushDeps(repository);
   try {
-    await enqueueChannelDeliveries(deliveryAdapter, processed);
+    await enqueueChannelDeliveries(deliveryAdapter, processed, channels || CHANNELS);
     return await drainChannelDeliveries(deliveryAdapter, {
       ...pushDeps,
       mailer,

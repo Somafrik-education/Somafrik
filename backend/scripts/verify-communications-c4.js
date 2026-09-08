@@ -153,9 +153,16 @@ function sourceGuards() {
 
   // 20 persist C4 sans fournisseur ; fan-out PUSH/EMAIL après drain
   assert.doesNotMatch(service, /twilio|whatsapp|firebase|expo push|fcm|smtp|sendgrid/i);
-  assert.doesNotMatch(service, /communicationChannelFanout|fanOutNotificationChannels/);
+  assert.doesNotMatch(service, /communicationChannelFanout|fanOutNotificationChannels|communicationsDispatcher/);
   assert.doesNotMatch(worker, /twilio|whatsapp|firebase|expoPushService|nodemailer/i);
-  assert.match(worker, /fanOutNotificationChannels/);
+  assert.match(worker, /dispatchProcessedEvents|communicationsDispatcher/);
+  assert.doesNotMatch(worker, /fanOutNotificationChannels/);
+  const dispatcherSrc = read("backend/lib/communicationsDispatcher.js");
+  assert.match(dispatcherSrc, /function dispatchCommunication/);
+  assert.doesNotMatch(
+    dispatcherSrc,
+    /nodemailer|expoPushService|createExpoPushService|expo-server-sdk|@getbrevo|brevo|twilio|sendgrid|createSmtpTransport/i,
+  );
   const resetHandler = read("backend/server.js");
   const resetBlock = resetHandler.slice(
     resetHandler.indexOf('app.post("/api/users/:id/reset-password"'),
@@ -253,8 +260,12 @@ function main() {
   run(process.execPath, ["--check", "backend/lib/communicationsNotificationsService.js"], "syntax notifications service");
   run(process.execPath, ["--check", "backend/lib/communicationsNotificationsWorker.js"], "syntax notifications worker");
   run(process.execPath, ["--check", "backend/lib/communicationChannelFanout.js"], "syntax channel fanout");
+  run(process.execPath, ["--check", "backend/lib/communicationsDispatcher.js"], "syntax dispatcher");
   run(process.execPath, ["--check", "backend/lib/passwordResetNotification.js"], "syntax password reset email");
   run(process.execPath, ["--test", "backend/lib/communicationsChannelFanout.red-com-01.test.js"], "RED-COM-01 / 01b");
+  run(process.execPath, ["--test", "backend/lib/communicationsDispatcher.red.test.js"], "RED-COM-04 dispatcher audit");
+  run(process.execPath, ["--test", "backend/lib/communicationsDispatcher.test.js"], "dispatcher unit");
+  run(process.execPath, ["--test", "backend/lib/communicationsGlobalArchitecture.audit.test.js"], "architecture audit unique caller");
   run(process.execPath, ["--test", "backend/lib/communicationChannelFanout.test.js"], "channel fanout unit");
   run(process.execPath, ["--test", "backend/lib/communicationsPasswordReset.red.test.js"], "PR C reset email source");
   run(process.execPath, ["--test", "backend/lib/passwordResetNotification.test.js"], "password reset email unit");
