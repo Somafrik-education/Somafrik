@@ -1,14 +1,29 @@
 "use strict";
 
-const nodemailer = require("nodemailer");
+/**
+ * Intention EMAIL durable pour une demande d'essai.
+ * Aucun SMTP ici : le drain C4 existant envoie via MAIL_FROM.
+ */
+
+const { createSqlDeliveryAdapter } = require("./communicationChannelFanout");
 const {
   TRIAL_REQUEST_NOTIFY_TO,
   EXPECTED_TRIAL_REQUEST_EMAIL,
 } = require("./trialAccessRequestNotification.emailCopy");
 
+const TRIAL_ACCESS_REQUEST_KIND = "trial.access.request";
+
+function asTrimmed(value) {
+  return String(value ?? "").trim();
+}
+
 function notifyTo() {
   const configured = String(process.env.TRIAL_REQUEST_NOTIFY_TO || "").trim();
   return configured || TRIAL_REQUEST_NOTIFY_TO;
+}
+
+function trialAccessRequestDeliveryKey(trialId) {
+  return `trial.access.request:${asTrimmed(trialId)}:EMAIL`;
 }
 
 function buildTrialRequestNotificationEmail(request = {}) {
@@ -19,51 +34,46 @@ function buildTrialRequestNotificationEmail(request = {}) {
   };
 }
 
-function smtpConfigured() {
-  return Boolean(
-    String(process.env.SMTP_HOST || "").trim() && String(process.env.MAIL_FROM || "").trim(),
-  );
-}
-
-function createTransport() {
-  const port = Number(process.env.SMTP_PORT || 587);
-  const secure =
-    String(process.env.SMTP_SECURE || "").toLowerCase() === "true" || port === 465;
-  const user = String(process.env.SMTP_USER || "").trim();
-  const options = {
-    host: process.env.SMTP_HOST,
-    port,
-    secure,
-  };
-  if (user) {
-    options.auth = {
-      user,
-      pass: process.env.SMTP_PASSWORD || "",
-    };
-  }
-  return nodemailer.createTransport(options);
-}
-
-async function notifyTrialAccessRequest(request = {}) {
+function buildTrialRequestDeliveryPayload(request = {}) {
   const mail = buildTrialRequestNotificationEmail(request);
-  if (!smtpConfigured()) {
-    console.warn(
-      `[trial-request] notification not sent: SMTP_HOST or MAIL_FROM missing (publicRef=${request.publicRef || ""})`,
-    );
-    return { skipped: true, reason: "smtp_not_configured" };
-  }
-  const transporter = createTransport();
-  await transporter.sendMail({
-    from: process.env.MAIL_FROM,
+  return {
+    kind: TRIAL_ACCESS_REQUEST_KIND,
     to: mail.to,
-    subject: mail.subject,
-    text: mail.text,
+    title: mail.subject,
+    body: mail.text,
+  };
+}
+
+function resolveDeliveryAdapter(store, adapter) {
+  if (adapter && typeof adapter.ensureDelivery === "function") return adapter;
+  if (store && typeof store.ensureDelivery === "function") return store;
+  if (store && typeof store.one === "function") return createSqlDeliveryAdapter(store);
+  return null;
+}
+
+async function enqueueTrialAccessRequestNotification(store, request = {}, { adapter } = {}) {
+  const deliveryAdapter = resolveDeliveryAdapter(store, adapter);
+  if (!deliveryAdapter) return null;
+  const trialId = asTrimmed(request.id);
+  if (!trialId || trialId === "honeypot") return null;
+  const payload = buildTrialRequestDeliveryPayload(request);
+  const key = trialAccessRequestDeliveryKey(trialId);
+  return deliveryAdapter.ensureDelivery({
+    deliveryKey: key,
+    eventKey: key,
+    notificationId: null,
+    schoolId: null,
+    userId: null,
+    channel: "EMAIL",
+    payload,
   });
-  return { skipped: false };
 }
 
 module.exports = {
-  buildTrialRequestNotificationEmail,
-  notifyTrialAccessRequest,
+  TRIAL_ACCESS_REQUEST_KIND,
   TRIAL_REQUEST_NOTIFY_TO,
+  trialAccessRequestDeliveryKey,
+  buildTrialRequestNotificationEmail,
+  buildTrialRequestDeliveryPayload,
+  enqueueTrialAccessRequestNotification,
 };

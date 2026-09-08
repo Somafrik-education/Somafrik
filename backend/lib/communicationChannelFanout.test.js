@@ -380,7 +380,9 @@ test("événement sans canal externe reste traité (skipped)", async () => {
   });
   assert.equal(notifications.length, 1);
   assert.equal(adapter.deliveries.find((row) => row.channel === "PUSH").status, "skipped");
-  assert.equal(adapter.deliveries.find((row) => row.channel === "EMAIL").status, "skipped");
+  const email = adapter.deliveries.find((row) => row.channel === "EMAIL");
+  assert.equal(email.status, "failed");
+  assert.match(String(email.last_error), /smtp_not_configured/);
 });
 
 test("erreur fournisseur n'échoue pas le fan-out global", async () => {
@@ -440,4 +442,145 @@ test("échec de lecture prefs d'un destinataire n'abort pas l'enqueue des suivan
   };
   assert.deepEqual(byUser[USER_A], ["EMAIL", "PUSH"]);
   assert.deepEqual(byUser[USER_B], ["EMAIL"]);
+});
+
+test("payload.to n'override pas l'email tenant scoped user+school", async () => {
+  const adapter = createMemoryDeliveryAdapter({
+    users: [{ id: USER_A, school_id: SCHOOL_A, email: "parent-a@test.local" }],
+  });
+  await adapter.ensureDelivery({
+    deliveryKey: "c4.tenant.email:1",
+    eventKey: EVENT_KEY,
+    notificationId: NOTE_ID,
+    schoolId: SCHOOL_A,
+    userId: USER_A,
+    channel: "EMAIL",
+    payload: {
+      title: "Absence",
+      body: "Un élève est absent.",
+      to: "attacker@evil.test",
+      kind: "trial.access.request",
+    },
+  });
+  const mails = [];
+  await drainChannelDeliveries(adapter, {
+    pushStore: createPushStore([]),
+    pushClient: { async sendToTokens() { return { sent: 0 }; } },
+    mailer: {
+      async sendMail(message) {
+        mails.push(message);
+      },
+    },
+    env: envPreprod(),
+  });
+  assert.equal(mails.length, 1);
+  assert.equal(mails[0].to, "parent-a@test.local");
+  assert.notEqual(mails[0].to, "attacker@evil.test");
+});
+
+test("EMAIL opérationnel trial.access.request utilise payload.to sans user/school", async () => {
+  const adapter = createMemoryDeliveryAdapter({ users: [] });
+  await adapter.ensureDelivery({
+    deliveryKey: "trial.access.request:tar_1:EMAIL",
+    eventKey: "trial.access.request:tar_1:EMAIL",
+    notificationId: null,
+    schoolId: null,
+    userId: null,
+    channel: "EMAIL",
+    payload: {
+      kind: "trial.access.request",
+      to: "contact@somafrik.app",
+      title: "[Somafrik] Nouvelle demande d'essai — Horizon",
+      body: "Nouvelle demande d'essai Somafrik",
+    },
+  });
+  const mails = [];
+  await drainChannelDeliveries(adapter, {
+    pushStore: createPushStore([]),
+    pushClient: { async sendToTokens() { throw new Error("PUSH interdit pour essai"); } },
+    mailer: {
+      async sendMail(message) {
+        mails.push(message);
+      },
+    },
+    env: envPreprod(),
+  });
+  assert.equal(mails.length, 1);
+  assert.equal(mails[0].to, "contact@somafrik.app");
+  await drainChannelDeliveries(adapter, {
+    mailer: {
+      async sendMail() {
+        throw new Error("ne doit pas renvoyer");
+      },
+    },
+    env: envPreprod(),
+  });
+  assert.equal(mails.length, 1);
+});
+
+test("payload.to sans kind trial.access.request ne bypasse pas l'isolation tenant", async () => {
+  const adapter = createMemoryDeliveryAdapter({ users: [] });
+  await adapter.ensureDelivery({
+    deliveryKey: "orphan.email:1",
+    eventKey: "orphan.email:1",
+    notificationId: null,
+    schoolId: null,
+    userId: null,
+    channel: "EMAIL",
+    payload: { to: "stranger@example.test", title: "x", body: "y" },
+  });
+  const mails = [];
+  await drainChannelDeliveries(adapter, {
+    mailer: {
+      async sendMail(message) {
+        mails.push(message);
+      },
+    },
+    env: envPreprod(),
+  });
+  assert.equal(mails.length, 0);
+  assert.equal(adapter.deliveries[0].status, "skipped");
+});
+
+test("smtp_not_configured laisse la delivery EMAIL retryable", async () => {
+  const adapter = createMemoryDeliveryAdapter({ users: [] });
+  await adapter.ensureDelivery({
+    deliveryKey: "trial.access.request:tar_smtp:EMAIL",
+    eventKey: "trial.access.request:tar_smtp:EMAIL",
+    notificationId: null,
+    schoolId: null,
+    userId: null,
+    channel: "EMAIL",
+    payload: {
+      kind: "trial.access.request",
+      to: "contact@somafrik.app",
+      title: "essai",
+      body: "body",
+    },
+  });
+  const mails = [];
+  await drainChannelDeliveries(adapter, {
+    mailer: {
+      async sendMail(message) {
+        mails.push(message);
+      },
+    },
+    env: { NODE_ENV: "test" },
+  });
+  assert.equal(mails.length, 0);
+  assert.equal(adapter.deliveries[0].status, "failed");
+  assert.match(String(adapter.deliveries[0].last_error), /smtp_not_configured/);
+  const afterBackoff = new Date(Date.now() + 60 * 1000);
+  await drainChannelDeliveries(adapter, {
+    mailer: {
+      async sendMail(message) {
+        mails.push(message);
+      },
+    },
+    env: envPreprod(),
+    now: () => afterBackoff,
+  });
+  assert.equal(mails.length, 1);
+  assert.equal(mails[0].to, "contact@somafrik.app");
+  assert.equal(adapter.deliveries[0].status, "sent");
 });

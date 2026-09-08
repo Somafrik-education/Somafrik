@@ -18,6 +18,7 @@ const RETRY_BASE_MS = 5000;
 const RETRY_CAP_MS = 15 * 60 * 1000;
 const STALE_LEASE_MS = 2 * 60 * 1000;
 const STALE_PROCESSING_REASON = "stale_processing_no_redelivery";
+const SMTP_NOT_CONFIGURED = "smtp_not_configured";
 
 function asTrimmed(value) {
   return String(value ?? "").trim();
@@ -402,14 +403,25 @@ async function dispatchPush(row, { pushStore, pushClient, env = process.env }) {
   return { sent: result?.sent ?? devices.length, providerRef: `expo:${row.delivery_key}` };
 }
 
+function operationalTrialEmailTo(row, payload) {
+  if (uuidOrNull(row.user_id) && uuidOrNull(row.school_id)) return "";
+  if (asTrimmed(payload.kind) !== "trial.access.request") return "";
+  return asTrimmed(payload.to);
+}
+
 async function dispatchEmail(row, { adapter, mailer, env = process.env }) {
-  if (!smtpConfigured(env)) return { skipped: "smtp_not_configured" };
+  if (!smtpConfigured(env)) return { skipped: SMTP_NOT_CONFIGURED };
+  const payload = asPayload(row.payload);
   const userId = uuidOrNull(row.user_id);
   const schoolId = uuidOrNull(row.school_id);
-  if (!userId || !schoolId) return { skipped: "missing_school_or_user" };
-  const to = await adapter.getUserEmail(userId, schoolId);
-  if (!to) return { skipped: "no_recipient_email" };
-  const payload = asPayload(row.payload);
+  let to = "";
+  if (userId && schoolId) {
+    to = await adapter.getUserEmail(userId, schoolId);
+    if (!to) return { skipped: "no_recipient_email" };
+  } else {
+    to = operationalTrialEmailTo(row, payload);
+    if (!to) return { skipped: "missing_school_or_user" };
+  }
   const send = mailer?.sendMail
     ? mailer.sendMail.bind(mailer)
     : async (message) => {
@@ -459,7 +471,13 @@ async function drainChannelDeliveries(adapter, deps = {}) {
       } else {
         outcome = { skipped: "unsupported_channel" };
       }
-      if (outcome?.skipped) {
+      if (outcome?.skipped === SMTP_NOT_CONFIGURED) {
+        await adapter.markFailed(row.id, new Error(SMTP_NOT_CONFIGURED), {
+          attempts: row.attempts,
+          now: deps.now ? new Date(deps.now()) : new Date(),
+        });
+        results.push({ id: row.id, status: "failed", reason: SMTP_NOT_CONFIGURED });
+      } else if (outcome?.skipped) {
         await adapter.markSkipped(row.id, outcome.skipped);
         results.push({ id: row.id, status: "skipped", reason: outcome.skipped });
       } else {
@@ -486,6 +504,18 @@ function defaultPushDeps(repository) {
   };
 }
 
+function resolveFanoutDeliveryAdapter(store, adapter) {
+  if (adapter && typeof adapter.ensureDelivery === "function") return adapter;
+  if (
+    store &&
+    typeof store.ensureDelivery === "function" &&
+    typeof store.claimDue === "function"
+  ) {
+    return store;
+  }
+  return createSqlDeliveryAdapter(store);
+}
+
 async function fanOutNotificationChannels({
   store,
   repository,
@@ -500,7 +530,7 @@ async function fanOutNotificationChannels({
   channels,
   resolveRecipientChannels,
 } = {}) {
-  const deliveryAdapter = adapter || createSqlDeliveryAdapter(store);
+  const deliveryAdapter = resolveFanoutDeliveryAdapter(store, adapter);
   const pushDeps =
     pushStore || pushClient
       ? { pushStore, pushClient }
@@ -529,6 +559,7 @@ module.exports = {
   MAX_ATTEMPTS,
   STALE_LEASE_MS,
   STALE_PROCESSING_REASON,
+  SMTP_NOT_CONFIGURED,
   deliveryKey,
   smtpConfigured,
   createSqlDeliveryAdapter,

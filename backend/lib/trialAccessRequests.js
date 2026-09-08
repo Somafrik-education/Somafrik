@@ -1,6 +1,7 @@
 "use strict";
 
 const { isSuperAdminPrincipal } = require("./platformManagement");
+const { enqueueTrialAccessRequestNotification } = require("./trialAccessRequestNotification");
 
 /** Raccord d'activation : Standard complet + 30 jours d'essai, pas d'offre d'essai limitée. */
 const TRIAL_ACTIVATION_OFFER_ID = "OFFER-STANDARD";
@@ -16,7 +17,25 @@ function asTrimmed(value) {
   return String(value ?? "").trim();
 }
 
-async function createTrialAccessRequest(repo, payload = {}, options = {}) {
+function resolveTxStore(repo, tx) {
+  if (typeof repo.createTxScope === "function") return repo.createTxScope(tx);
+  if (tx && typeof tx.createTrialAccessRequest === "function") return tx;
+  return repo;
+}
+
+async function persistLeadAndEmailIntent(repo, row) {
+  const run = async (store) => {
+    const created = await store.createTrialAccessRequest(row);
+    await enqueueTrialAccessRequestNotification(store, created);
+    return created;
+  };
+  if (typeof repo.withTransaction === "function") {
+    return repo.withTransaction(async (tx) => run(resolveTxStore(repo, tx)));
+  }
+  return run(repo);
+}
+
+async function createTrialAccessRequest(repo, payload = {}) {
   if (!payload.consent) {
     throw createHttpError(400, "Le consentement est obligatoire.");
   }
@@ -48,33 +67,7 @@ async function createTrialAccessRequest(repo, payload = {}, options = {}) {
     status: "nouvelle",
   };
 
-  const created = await repo.createTrialAccessRequest(row);
-  const notify =
-    typeof options.notifyTrialRequest === "function"
-      ? options.notifyTrialRequest
-      : require("./trialAccessRequestNotification").notifyTrialAccessRequest;
-  if (options.deferNotification) {
-    setImmediate(() => {
-      Promise.resolve()
-        .then(() => notify(created))
-        .catch((error) => {
-          console.error(
-            `[trial-request] notification failed (publicRef=${created.publicRef || ""}):`,
-            error && error.message ? error.message : error,
-          );
-        });
-    });
-    return created;
-  }
-  try {
-    await notify(created);
-  } catch (error) {
-    console.error(
-      `[trial-request] notification failed (publicRef=${created.publicRef || ""}):`,
-      error && error.message ? error.message : error,
-    );
-  }
-  return created;
+  return persistLeadAndEmailIntent(repo, row);
 }
 
 async function listTrialAccessRequests(repo, principal) {
