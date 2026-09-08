@@ -3,7 +3,7 @@
 /**
  * Lot K — diagnostic deliveries PUSH/EMAIL sans PII.
  * Superadmin : vue globale.
- * Admin Pays : iso_code du pays uniquement (fail-closed si scope absent).
+ * Admin Pays : un seul iso_code distinct (countryCode / countryScope / platformContext).
  * Admin School : school_id de session uniquement.
  */
 
@@ -42,15 +42,17 @@ function canReadDeliveryHealth(principal) {
 }
 
 function resolvePrincipalCountryIso(principal) {
-  const fromCode = getCountryCodeFromScope(principal?.countryCode);
-  if (fromCode) return fromCode;
-  const fromScope = getCountryCodeFromScope(principal?.countryScope);
-  if (fromScope) return fromScope;
   const ctx = principal?.platformContext;
-  if (ctx && String(ctx.kind || "").trim() === "country") {
-    return getCountryCodeFromScope(ctx.countryCode);
-  }
-  return "";
+  const distinct = [
+    ...new Set(
+      [
+        getCountryCodeFromScope(principal?.countryCode),
+        getCountryCodeFromScope(principal?.countryScope),
+        getCountryCodeFromScope(ctx?.countryCode),
+      ].filter(Boolean),
+    ),
+  ];
+  return distinct.length === 1 ? distinct[0] : "";
 }
 
 function resolveDeliveryHealthScope(principal) {

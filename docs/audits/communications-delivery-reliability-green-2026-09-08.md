@@ -30,7 +30,7 @@ RBAC : `Notifications:READ` + `ALL_PRIVILEGES` / `COUNTRY_PRIVILEGES`. Handler :
 | Rôle | Scope |
 |---|---|
 | Superadmin | global (`mode: all`) |
-| Admin Pays / `COUNTRY_ADMIN` | **iso_code pays uniquement** (`countryCode` / `countryScope` / `platformContext.kind=country`). Ambigu ou absent → **403** |
+| Admin Pays / `COUNTRY_ADMIN` | **un seul** iso_code distinct parmi `countryCode` / `countryScope` / `platformContext.countryCode`. `0` ou `>1` (ex. `CD` + `BI`) → **403** |
 | Admin School | `school_id` de session. Absent → **403** |
 
 Un Admin Pays CD ne lit aucune delivery d’un établissement d’un autre pays. Les EMAIL opérationnels sans `school_id` (essai) restent hors scope pays (INNER JOIN schools).

@@ -37,6 +37,32 @@ test("Superadmin et Admin School peuvent diagnostiquer ; Parent non", () => {
   );
 });
 
+test("Admin Pays countryCode=CD et countryScope=BI est 403 fail-closed", async () => {
+  const principal = {
+    role: "Admin Pays",
+    roleKeys: ["COUNTRY_ADMIN"],
+    countryCode: "CD",
+    countryScope: "BI",
+  };
+  assert.deepEqual(resolveDeliveryHealthScope(principal), { mode: "none" });
+  await assert.rejects(
+    () => readDeliveryHealth({ async listDeliveryHealth() { return { counts: {} }; } }, principal),
+    (error) => error.statusCode === 403,
+  );
+});
+
+test("Admin Pays countryCode=CD et platformContext BI est 403 fail-closed", async () => {
+  assert.deepEqual(
+    resolveDeliveryHealthScope({
+      role: "Admin Pays",
+      roleKeys: ["COUNTRY_ADMIN"],
+      countryCode: "CD",
+      platformContext: { kind: "country", countryCode: "BI" },
+    }),
+    { mode: "none" },
+  );
+});
+
 test("Admin Pays sans countryCode/countryScope est fail-closed 403", async () => {
   assert.deepEqual(
     resolveDeliveryHealthScope({ role: "Admin Pays", roleKeys: ["COUNTRY_ADMIN"] }),
