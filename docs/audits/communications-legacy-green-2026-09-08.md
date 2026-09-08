@@ -2,6 +2,8 @@
 
 **Date :** 8 septembre 2026  
 **Branche :** `cursor/communications-legacy-green-3171`  
+**PR :** https://github.com/Somafrik-education/Somafrik/pull/553 (Draft)  
+**HEAD :** `c62d49927811be6aff5e425f1176f444ebebb19a`  
 **Base :** `origin/develop` `0c2cba7509fefd2eee593bdf45c0968d8aa94e56` (#551)  
 **RED non mergée :** #552 HEAD `8348b75102982428129b77048e963ace210bda59` — **ne pas merger, ne pas rebaser dessus**
 
