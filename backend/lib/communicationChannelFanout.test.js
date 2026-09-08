@@ -411,3 +411,33 @@ test("enqueue est idempotent par event_key + recipient + channel", async () => {
   assert.equal(second, 0);
   assert.equal(adapter.deliveries.length, 2);
 });
+
+test("échec de lecture prefs d'un destinataire n'abort pas l'enqueue des suivants", async () => {
+  const USER_B = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa2";
+  const adapter = createMemoryDeliveryAdapter({
+    notifications: [baseNote()],
+    recipients: [
+      { notification_id: NOTE_ID, school_id: SCHOOL_A, user_id: USER_A },
+      { notification_id: NOTE_ID, school_id: SCHOOL_A, user_id: USER_B },
+    ],
+  });
+  const created = await enqueueChannelDeliveries(
+    adapter,
+    [{ event_key: EVENT_KEY }],
+    ["PUSH", "EMAIL"],
+    {
+      logger: { error() {} },
+      async resolveRecipientChannels(target) {
+        if (String(target.user_id) === USER_A) throw new Error("prefs down");
+        return ["EMAIL"];
+      },
+    },
+  );
+  assert.equal(created, 3);
+  const byUser = {
+    [USER_A]: adapter.deliveries.filter((row) => row.user_id === USER_A).map((row) => row.channel).sort(),
+    [USER_B]: adapter.deliveries.filter((row) => row.user_id === USER_B).map((row) => row.channel).sort(),
+  };
+  assert.deepEqual(byUser[USER_A], ["EMAIL", "PUSH"]);
+  assert.deepEqual(byUser[USER_B], ["EMAIL"]);
+});

@@ -9,6 +9,7 @@ const nodemailer = require("nodemailer");
 const { uuidOrNull } = require("./principalIdentity");
 const { resolvePushBackendEnvironment } = require("./mobilePushDevicesService");
 const { createExpoPushService } = require("./expoPushService");
+const { enabledChannelsFromRows } = require("./communicationsPreferences");
 
 const CHANNELS = Object.freeze(["PUSH", "EMAIL"]);
 const MAX_ATTEMPTS = 8;
@@ -60,7 +61,7 @@ function createSqlDeliveryAdapter(store) {
       const key = asTrimmed(eventKey);
       if (!key || typeof all !== "function") return [];
       return all(
-        `SELECT n.id AS notification_id, n.event_key, n.school_id, n.title, n.body, n.navigation_target,
+        `SELECT n.id AS notification_id, n.event_key, n.event_type, n.school_id, n.title, n.body, n.navigation_target,
                 r.user_id
          FROM communication_notifications n
          JOIN notification_recipients r
@@ -174,13 +175,20 @@ function createSqlDeliveryAdapter(store) {
   };
 }
 
-function createMemoryDeliveryAdapter({ notifications = [], recipients = [], users = [] } = {}) {
+function createMemoryDeliveryAdapter({ notifications = [], recipients = [], users = [], preferences = [] } = {}) {
   const deliveries = [];
   return {
     notifications,
     recipients,
     users,
     deliveries,
+    preferences,
+    async listEnabledChannels({ userId, schoolId }) {
+      const rows = preferences.filter(
+        (row) => String(row.user_id) === String(userId) && String(row.school_id) === String(schoolId),
+      );
+      return enabledChannelsFromRows(rows);
+    },
     async loadFanoutTargets(eventKey) {
       const key = asTrimmed(eventKey);
       const notes = notifications.filter((row) => asTrimmed(row.event_key || row.eventKey) === key);
@@ -192,6 +200,7 @@ function createMemoryDeliveryAdapter({ notifications = [], recipients = [], user
           rows.push({
             notification_id: note.id,
             event_key: note.event_key || note.eventKey,
+            event_type: note.event_type || note.eventType,
             school_id: note.school_id,
             title: note.title,
             body: note.body,
@@ -289,9 +298,11 @@ function providerChannelsOf(channels = CHANNELS) {
   return requested.filter((channel) => CHANNELS.includes(channel));
 }
 
-async function enqueueChannelDeliveries(adapter, processed = [], channels = CHANNELS) {
+async function enqueueChannelDeliveries(adapter, processed = [], channels = CHANNELS, options = {}) {
   const keys = [...new Set((processed || []).map(eventKeyOf).filter(Boolean))];
   const providerChannels = providerChannelsOf(channels);
+  const resolveRecipientChannels = options.resolveRecipientChannels;
+  const logger = options.logger || console;
   let created = 0;
   for (const eventKey of keys) {
     const targets = await adapter.loadFanoutTargets(eventKey);
@@ -299,7 +310,23 @@ async function enqueueChannelDeliveries(adapter, processed = [], channels = CHAN
       const schoolId = uuidOrNull(target.school_id);
       const userId = uuidOrNull(target.user_id);
       if (!schoolId || !userId) continue;
-      for (const channel of providerChannels) {
+      let recipientChannels = providerChannels;
+      if (typeof resolveRecipientChannels === "function") {
+        try {
+          recipientChannels = providerChannelsOf(
+            await resolveRecipientChannels(target, providerChannels),
+          );
+        } catch (error) {
+          logger.error?.("[communications-c4] preference lookup failed, enqueue policy channels", {
+            eventKey,
+            userId,
+            schoolId,
+            message: String(error?.message || error).slice(0, 300),
+          });
+          recipientChannels = providerChannels;
+        }
+      }
+      for (const channel of recipientChannels) {
         const inserted = await adapter.ensureDelivery({
           deliveryKey: deliveryKey(eventKey, userId, channel),
           eventKey,
@@ -471,6 +498,7 @@ async function fanOutNotificationChannels({
   now,
   logger = console,
   channels,
+  resolveRecipientChannels,
 } = {}) {
   const deliveryAdapter = adapter || createSqlDeliveryAdapter(store);
   const pushDeps =
@@ -478,7 +506,10 @@ async function fanOutNotificationChannels({
       ? { pushStore, pushClient }
       : defaultPushDeps(repository);
   try {
-    await enqueueChannelDeliveries(deliveryAdapter, processed, channels || CHANNELS);
+    await enqueueChannelDeliveries(deliveryAdapter, processed, channels || CHANNELS, {
+      resolveRecipientChannels,
+      logger,
+    });
     return await drainChannelDeliveries(deliveryAdapter, {
       ...pushDeps,
       mailer,

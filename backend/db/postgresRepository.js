@@ -1192,6 +1192,10 @@ class PostgresRepository {
     return this._mobilePushStore;
   }
 
+  getCommunicationPreferencesStore() {
+    return this;
+  }
+
   upsertMobilePushDevice(principal, payload) {
     const service = require("../lib/mobilePushDevicesService");
     return service.upsertFromSession(this.getMobilePushStore(), principal, payload);
@@ -2343,6 +2347,12 @@ class PostgresRepository {
            WHERE user_id = $1 AND revoked_at IS NULL`,
           [dbUserId],
         );
+      } catch {
+        /* table optionnelle selon le boot */
+      }
+      try {
+        const { deletePreferencesForUser } = require("../lib/communicationsPreferences");
+        await deletePreferencesForUser(this, dbUserId);
       } catch {
         /* table optionnelle selon le boot */
       }

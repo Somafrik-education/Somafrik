@@ -230,6 +230,19 @@ CREATE TABLE IF NOT EXISTS communication_channel_deliveries (
 CREATE INDEX IF NOT EXISTS idx_communication_channel_deliveries_pending
   ON communication_channel_deliveries (status, available_at, channel)
   WHERE status IN ('pending', 'failed');
+
+CREATE TABLE IF NOT EXISTS user_communication_preferences (
+  user_id UUID NOT NULL REFERENCES users(id),
+  school_id UUID NOT NULL REFERENCES schools(id),
+  channel TEXT NOT NULL CHECK (channel IN ('IN_APP', 'PUSH', 'EMAIL')),
+  enabled BOOLEAN NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (user_id, school_id, channel)
+);
+
+CREATE INDEX IF NOT EXISTS idx_user_communication_preferences_school_user
+  ON user_communication_preferences (school_id, user_id);
 `;
 
 module.exports = {

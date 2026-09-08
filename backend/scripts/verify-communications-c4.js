@@ -154,6 +154,13 @@ function sourceGuards() {
   // 20 persist C4 sans fournisseur ; fan-out PUSH/EMAIL après drain
   assert.doesNotMatch(service, /twilio|whatsapp|firebase|expo push|fcm|smtp|sendgrid/i);
   assert.doesNotMatch(service, /communicationChannelFanout|fanOutNotificationChannels|communicationsDispatcher/);
+  const processFn = service.slice(service.indexOf("async function processOneEvent"));
+  const recipientLoop = processFn.slice(
+    processFn.indexOf("for (const recipient of spec.recipients)"),
+    processFn.indexOf("UPDATE communication_event_outbox SET status='processed'"),
+  );
+  assert.match(recipientLoop, /INSERT INTO notification_recipients/);
+  assert.doesNotMatch(recipientLoop, /continue/);
   assert.doesNotMatch(worker, /twilio|whatsapp|firebase|expoPushService|nodemailer/i);
   assert.match(worker, /dispatchProcessedEvents|communicationsDispatcher/);
   assert.doesNotMatch(worker, /fanOutNotificationChannels/);
@@ -163,6 +170,18 @@ function sourceGuards() {
     dispatcherSrc,
     /nodemailer|expoPushService|createExpoPushService|expo-server-sdk|@getbrevo|brevo|twilio|sendgrid|createSmtpTransport/i,
   );
+  assert.match(dispatcherSrc, /function resolveEffectiveChannels/);
+  assert.match(dispatcherSrc, /function mandatoryChannelsForEvent/);
+  assert.match(dispatcherSrc, /auth\.password\.reset/);
+  const prefsSrc = read("backend/lib/communicationsPreferences.js");
+  assert.doesNotMatch(prefsSrc, /require\(["'][^"']*(nodemailer|expo-server-sdk|@getbrevo)/);
+  assert.doesNotMatch(prefsSrc, /mobile_push_devices|expo_push_token/);
+  const prefsSchema = read("backend/db/communicationsNotificationsSchema.js");
+  assert.match(prefsSchema, /user_communication_preferences/);
+  assert.match(prefsSchema, /PRIMARY KEY \(user_id, school_id, channel\)/);
+  const prefsMigration = read("backend/db/migrations/20260910_user_communication_preferences.sql");
+  assert.match(prefsMigration, /user_communication_preferences/);
+  assert.doesNotMatch(prefsMigration, /preferred_provider|push_provider|expo_push_token/i);
   const resetHandler = read("backend/server.js");
   const resetBlock = resetHandler.slice(
     resetHandler.indexOf('app.post("/api/users/:id/reset-password"'),
@@ -177,6 +196,8 @@ function sourceGuards() {
   const resetEmail = read("backend/lib/passwordResetNotification.js");
   assert.doesNotMatch(resetEmail, /temporaryPassword|SMTP_PASSWORD|brevo/i);
   const fanout = read("backend/lib/communicationChannelFanout.js");
+  const enqueueFn = fanout.slice(fanout.indexOf("async function enqueueChannelDeliveries"));
+  assert.match(enqueueFn, /preference lookup failed, enqueue policy channels/);
   assert.match(fanout, /stale_processing_no_redelivery/);
   assert.match(fanout, /recoverStaleProcessing/);
   const sqlClaim = fanout.slice(fanout.indexOf("async claimDue"), fanout.indexOf("async markSent"));
@@ -265,6 +286,7 @@ function main() {
   run(process.execPath, ["--test", "backend/lib/communicationsChannelFanout.red-com-01.test.js"], "RED-COM-01 / 01b");
   run(process.execPath, ["--test", "backend/lib/communicationsDispatcher.red.test.js"], "RED-COM-04 dispatcher audit");
   run(process.execPath, ["--test", "backend/lib/communicationsDispatcher.test.js"], "dispatcher unit");
+  run(process.execPath, ["--test", "backend/lib/communicationsPreferences.test.js"], "preferences unit");
   run(process.execPath, ["--test", "backend/lib/communicationsGlobalArchitecture.audit.test.js"], "architecture audit unique caller");
   run(process.execPath, ["--test", "backend/lib/communicationChannelFanout.test.js"], "channel fanout unit");
   run(process.execPath, ["--test", "backend/lib/communicationsPasswordReset.red.test.js"], "PR C reset email source");
@@ -276,6 +298,8 @@ function main() {
   assert.ok(String(process.env.DATABASE_URL ?? "").trim(), "DATABASE_URL requis pour COM-C4");
   run(process.execPath, ["backend/db/communicationsC4.bootstrap.pg.test.js"], "bootstrap payments cancelled_at CAS A/B");
   run(process.execPath, ["backend/lib/communicationsC4.http.pg.test.js"], "parcours HTTP PostgreSQL COM-C4");
+  // PR E RED — attendu rouge jusqu'au GREEN préférences (05A / 05B / 05F-G). Ne pas SKIP.
+  run(process.execPath, ["--test", "backend/lib/communicationsPreferences.red.test.js"], "RED-COM-05 preferences audit");
   console.log("verify-communications-c4: GO");
 }
 
