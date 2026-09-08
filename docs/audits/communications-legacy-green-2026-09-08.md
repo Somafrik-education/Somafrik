@@ -23,6 +23,7 @@ Cette GREEN a été créée par `git checkout -b … origin/develop`. Aucun cher
 | **J-02** | `/notifications` = `InternalNotificationsCenter`. Catalogue B = `/notifications-plateforme` + `platformApi`. |
 | **J-03** | Home / cloche Mobile : `resolveNotificationsInboxRoute(session, activeSchoolCode)`. Un privilège plateforme **ne** route **pas** vers `PlatformNotifications` dans un contexte établissement. |
 | **J-04** | KPI « Alertes à traiter » = `schoolUnreadCount` (C4 `notification_recipients.read_at` / `archived_at`, Lots H+I). Plus de `status === "Non lu"` ni de comptes inactifs. |
+| **J-04b P1** | `Notifications:READ` n’ouvre plus `operations` / `operations-default`. « Alertes à traiter » n’est exposé qu’avec `Notifications:READ`, sans élargir les autres agrégats. |
 
 ## Conservé (consommateurs encore réels)
 

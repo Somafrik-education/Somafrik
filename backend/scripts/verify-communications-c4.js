@@ -333,6 +333,7 @@ function main() {
   run(process.execPath, ["backend/lib/communicationsAttachments.test.js"], "communicationsAttachments unit");
   run("npm", ["--prefix", "web", "run", "test", "--", "src/lib/internalNotificationsC4.test.ts"], "web internal notifications C4");
   run("npm", ["--prefix", "web", "run", "test", "--", "src/lib/dashboardKpiTruth.test.ts"], "web KPI Alertes C4");
+  run("npm", ["--prefix", "web", "run", "test", "--", "src/lib/dashboardPermissions.test.ts"], "web Lot J P1 RBAC operations");
   run("npx", ["--yes", "tsx", "Mobile/src/lib/internalNotificationsC4.test.ts"], "mobile internal notifications C4");
   run("npx", ["--yes", "tsx", "Mobile/src/lib/notificationInboxRoute.test.ts"], "mobile inbox routing context");
   assert.ok(String(process.env.DATABASE_URL ?? "").trim(), "DATABASE_URL requis pour COM-C4");

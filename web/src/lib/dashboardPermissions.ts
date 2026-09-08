@@ -32,6 +32,17 @@ const KPI_LABEL_FEATURES: Record<string, string | null> = {
   "Taux de paiement": "Paiements",
 };
 
+const OPERATIONS_CHART_IDS = new Set(["operations", "operations-default"]);
+
+/** Segments mixtes : chaque barre a son module. Notifications n'ouvre pas le graphique. */
+const OPERATIONS_SEGMENT_FEATURES: Record<string, string> = {
+  "Utilisateurs actifs": "Utilisateurs",
+  Documents: "Documents",
+  Présences: "Présences",
+  Messages: "Messages",
+  "Alertes à traiter": "Notifications",
+};
+
 const ESTABLISHMENT_CHART_FEATURES: Record<string, string | string[]> = {
   scolarite: ["Élèves", "Enseignants", "Classes"],
   "scolarite-finance": ["Élèves", "Classes"],
@@ -45,8 +56,8 @@ const ESTABLISHMENT_CHART_FEATURES: Record<string, string | string[]> = {
   "payments-status": "Paiements",
   "payments-amount": "Paiements",
   payments: "Paiements",
-  operations: ["Utilisateurs", "Documents", "Présences", "Messages", "Notifications"],
-  "operations-default": ["Utilisateurs", "Documents", "Présences", "Notifications"],
+  operations: ["Utilisateurs", "Documents", "Présences", "Messages"],
+  "operations-default": ["Utilisateurs", "Documents", "Présences"],
   "class-sizes": "Élèves",
   classes: "Élèves",
 };
@@ -95,15 +106,31 @@ export function filterPlatformDashboardCharts(
     .filter((chart): chart is PlatformChart => chart !== null);
 }
 
+export function filterOperationsChartData<T extends { name: string; value: number }>(
+  data: T[],
+  ctx: PermissionContext | null | undefined,
+): T[] {
+  if (!ctx?.user) {
+    return data.filter((item) => item.name !== "Alertes à traiter");
+  }
+  return filterChartDataByLabels(data, OPERATIONS_SEGMENT_FEATURES, ctx);
+}
+
 export function filterEstablishmentDashboardCharts(
   charts: EstablishmentChart[],
   ctx: PermissionContext,
 ): EstablishmentChart[] {
-  return charts.filter((chart) => {
-    const rule = ESTABLISHMENT_CHART_FEATURES[chart.id];
-    if (!rule) return true;
-    return canReadAny(ctx, rule);
-  });
+  return charts
+    .map((chart) => {
+      const rule = ESTABLISHMENT_CHART_FEATURES[chart.id];
+      if (rule && !canReadAny(ctx, rule)) return null;
+      if (OPERATIONS_CHART_IDS.has(chart.id)) {
+        const data = filterOperationsChartData(chart.data, ctx);
+        return data.length ? { ...chart, data } : null;
+      }
+      return chart;
+    })
+    .filter((chart): chart is EstablishmentChart => chart !== null);
 }
 
 export function describeDashboardAccess(ctx: PermissionContext) {

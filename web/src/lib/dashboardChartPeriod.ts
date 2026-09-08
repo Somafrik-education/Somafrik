@@ -9,6 +9,8 @@ import {
   type ChartPeriod,
 } from "./chartPeriod";
 import type { EstablishmentChart, PlatformChart } from "./dashboardCharts";
+import { filterOperationsChartData } from "./dashboardPermissions";
+import type { PermissionContext } from "./permissions";
 import {
   scopedAnnouncements,
   scopedBulletins,
@@ -40,6 +42,7 @@ export interface DashboardPeriodContext {
   state: BackOfficeState;
   scope: "platform" | "establishment";
   schoolUnreadCount?: number;
+  permissionCtx?: PermissionContext | null;
 }
 
 function countByField(rows: Row[], field: string, labels?: Record<string, string>): ChartDatum[] {
@@ -376,7 +379,10 @@ function applyEstablishmentChartPeriod(
       return withPeriodDescription({ ...chart, data: paymentAmountData(payments) }, period);
     case "operations":
     case "operations-default":
-      return withPeriodDescription({ ...chart, data: operationsBar }, period);
+      return withPeriodDescription(
+        { ...chart, data: filterOperationsChartData(operationsBar, context.permissionCtx) },
+        period,
+      );
     case "class-sizes":
     case "classes":
       return withPeriodDescription(

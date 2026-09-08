@@ -61,8 +61,9 @@ export function OverviewPage() {
       state,
       scope: orderScope,
       schoolUnreadCount,
+      permissionCtx: ctx,
     }),
-    [internalSchool, scopedUser, user, state, orderScope, schoolUnreadCount],
+    [internalSchool, scopedUser, user, state, orderScope, schoolUnreadCount, ctx],
   );
 
   return (

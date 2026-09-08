@@ -134,3 +134,19 @@ test("J-04 / RED-COM-06E — KPI Alertes à traiter = unread C4", () => {
   assert.match(overview, /useInternalNotificationsUnreadCount/);
   assert.match(overview, /schoolUnreadCount/);
 });
+
+test("J-04b — Notifications:READ n'ouvre pas le graphique operations multi-module", () => {
+  const src = read("web/src/lib/dashboardPermissions.ts");
+  const features = src.slice(
+    src.indexOf("const ESTABLISHMENT_CHART_FEATURES"),
+    src.indexOf("function canReadAny"),
+  );
+  assert.doesNotMatch(
+    features,
+    /"Notifications"/,
+    "Notifications:READ ne doit pas figurer dans le gate d'ouverture operations / operations-default",
+  );
+  assert.match(src, /"Alertes à traiter": "Notifications"/);
+  assert.match(src, /filterOperationsChartData/);
+  assert.match(read("web/src/lib/dashboardChartPeriod.ts"), /filterOperationsChartData/);
+});
