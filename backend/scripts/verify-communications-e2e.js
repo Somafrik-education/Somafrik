@@ -51,8 +51,13 @@ function sourceGuards() {
   assert.doesNotMatch(financeRbac, /backoffice\/messages/);
   assert.doesNotMatch(financeRbac, /backoffice\/announcements/);
 
-  assert.match(placeholders, /Paramètres Notifications/);
+  assert.match(placeholders, /export \{ SettingsNotificationsPage \}/);
   assert.match(placeholders, /ComingSoonState/);
+  assert.match(placeholders, /function SettingsAppearancePage/);
+  const notificationsPage = read("web/src/pages/parametres/SettingsNotificationsPage.tsx");
+  assert.match(notificationsPage, /title="Notifications"/);
+  assert.match(notificationsPage, /Événement/);
+  assert.match(notificationsPage, /patchSchoolNotificationSettings/);
   assert.match(outbox, /OUTBOX_ALLOWED_DOMAINS = \["messages"/);
 
   assert.match(httpTest, /COM-C1 E2E1 Parent A voit le message/);
