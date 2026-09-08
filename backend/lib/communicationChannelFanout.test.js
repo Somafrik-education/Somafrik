@@ -380,7 +380,9 @@ test("événement sans canal externe reste traité (skipped)", async () => {
   });
   assert.equal(notifications.length, 1);
   assert.equal(adapter.deliveries.find((row) => row.channel === "PUSH").status, "skipped");
-  assert.equal(adapter.deliveries.find((row) => row.channel === "EMAIL").status, "skipped");
+  const email = adapter.deliveries.find((row) => row.channel === "EMAIL");
+  assert.equal(email.status, "failed");
+  assert.match(String(email.last_error), /smtp_not_configured/);
 });
 
 test("erreur fournisseur n'échoue pas le fan-out global", async () => {
@@ -538,4 +540,47 @@ test("payload.to sans kind trial.access.request ne bypasse pas l'isolation tenan
   });
   assert.equal(mails.length, 0);
   assert.equal(adapter.deliveries[0].status, "skipped");
+});
+
+test("smtp_not_configured laisse la delivery EMAIL retryable", async () => {
+  const adapter = createMemoryDeliveryAdapter({ users: [] });
+  await adapter.ensureDelivery({
+    deliveryKey: "trial.access.request:tar_smtp:EMAIL",
+    eventKey: "trial.access.request:tar_smtp:EMAIL",
+    notificationId: null,
+    schoolId: null,
+    userId: null,
+    channel: "EMAIL",
+    payload: {
+      kind: "trial.access.request",
+      to: "contact@somafrik.app",
+      title: "essai",
+      body: "body",
+    },
+  });
+  const mails = [];
+  await drainChannelDeliveries(adapter, {
+    mailer: {
+      async sendMail(message) {
+        mails.push(message);
+      },
+    },
+    env: { NODE_ENV: "test" },
+  });
+  assert.equal(mails.length, 0);
+  assert.equal(adapter.deliveries[0].status, "failed");
+  assert.match(String(adapter.deliveries[0].last_error), /smtp_not_configured/);
+  const afterBackoff = new Date(Date.now() + 60 * 1000);
+  await drainChannelDeliveries(adapter, {
+    mailer: {
+      async sendMail(message) {
+        mails.push(message);
+      },
+    },
+    env: envPreprod(),
+    now: () => afterBackoff,
+  });
+  assert.equal(mails.length, 1);
+  assert.equal(mails[0].to, "contact@somafrik.app");
+  assert.equal(adapter.deliveries[0].status, "sent");
 });

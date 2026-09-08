@@ -94,6 +94,59 @@ class FallbackRepository {
     this.ready = false;
   }
 
+  _channelDeliveryAdapter() {
+    if (!this._channelDeliveries) {
+      const { createMemoryDeliveryAdapter } = require("../lib/communicationChannelFanout");
+      this._channelDeliveries = createMemoryDeliveryAdapter({ users: [] });
+    }
+    return this._channelDeliveries;
+  }
+
+  _bindChannelDeliveryAdapter(target) {
+    if (!target || typeof target.ensureDelivery === "function") return;
+    const adapter = this._channelDeliveryAdapter();
+    target.ensureDelivery = (...args) => adapter.ensureDelivery(...args);
+    target.claimDue = (...args) => adapter.claimDue(...args);
+    target.markSent = (...args) => adapter.markSent(...args);
+    target.markSkipped = (...args) => adapter.markSkipped(...args);
+    target.markFailed = (...args) => adapter.markFailed(...args);
+    target.recoverStaleProcessing = (...args) => adapter.recoverStaleProcessing(...args);
+    target.getUserEmail = (...args) => adapter.getUserEmail(...args);
+    target.loadFanoutTargets = (...args) => adapter.loadFanoutTargets(...args);
+  }
+
+  async ensureDelivery(row) {
+    return this._channelDeliveryAdapter().ensureDelivery(row);
+  }
+
+  async claimDue(opts) {
+    return this._channelDeliveryAdapter().claimDue(opts);
+  }
+
+  async markSent(id, opts) {
+    return this._channelDeliveryAdapter().markSent(id, opts);
+  }
+
+  async markSkipped(id, reason) {
+    return this._channelDeliveryAdapter().markSkipped(id, reason);
+  }
+
+  async markFailed(id, error, opts) {
+    return this._channelDeliveryAdapter().markFailed(id, error, opts);
+  }
+
+  async recoverStaleProcessing(opts) {
+    return this._channelDeliveryAdapter().recoverStaleProcessing(opts);
+  }
+
+  async getUserEmail(userId, schoolId) {
+    return this._channelDeliveryAdapter().getUserEmail(userId, schoolId);
+  }
+
+  async loadFanoutTargets(eventKey) {
+    return this._channelDeliveryAdapter().loadFanoutTargets(eventKey);
+  }
+
   async getDataset() {
     await this.init();
     const seeded = shouldSeedDemoData();
@@ -3551,6 +3604,7 @@ class FallbackRepository {
         backfillMemoryUserRolesFromSeedAccounts(store._tables, seedData.userAccounts);
       }
       this._clientsStore = store;
+      this._bindChannelDeliveryAdapter(store);
     }
     return this._clientsStore;
   }

@@ -230,3 +230,34 @@ test("Mobile inchangé pour la notification e-mail", () => {
   });
   assert.equal(hits.length, 0);
 });
+
+test("FallbackRepository mémoire enqueue une delivery EMAIL drainable", async () => {
+  const { FallbackRepository } = require("../db/fallbackRepository");
+  const { dispatchProcessedEvents } = require("./communicationsDispatcher");
+  const repo = new FallbackRepository();
+  const created = await createTrialAccessRequest(repo, VALID);
+  assert.ok(created.id);
+  assert.notEqual(created.id, "honeypot");
+  const adapter = repo._channelDeliveryAdapter();
+  assert.equal(adapter.deliveries.length, 1);
+  assert.equal(adapter.deliveries[0].channel, "EMAIL");
+  assert.equal(adapter.deliveries[0].payload.to, "contact@somafrik.app");
+
+  const mails = [];
+  await dispatchProcessedEvents({
+    store: repo.getClientsStore(),
+    repository: repo,
+    processed: [],
+    mailer: {
+      async sendMail(message) {
+        mails.push(message);
+      },
+    },
+    env: {
+      SMTP_HOST: "smtp.test.local",
+      MAIL_FROM: "notifications@somafrik.app",
+    },
+  });
+  assert.equal(mails.length, 1);
+  assert.equal(mails[0].to, "contact@somafrik.app");
+});

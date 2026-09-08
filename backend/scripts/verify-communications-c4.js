@@ -232,6 +232,9 @@ function sourceGuards() {
   assert.match(fanoutTests, /crash après succès SMTP avant markSent n'envoie pas une seconde fois/);
   assert.match(fanoutTests, /payload.to n'override pas l'email tenant scoped user\+school/);
   assert.match(fanoutTests, /EMAIL opérationnel trial.access.request utilise payload.to sans user\/school/);
+  assert.match(fanoutTests, /smtp_not_configured laisse la delivery EMAIL retryable/);
+  assert.match(fanout, /SMTP_NOT_CONFIGURED/);
+  assert.match(fanout.slice(fanout.indexOf("async function drainChannelDeliveries")), /markFailed/);
   assert.match(worker, /COMMUNICATION_NOTIFICATIONS_WORKER/);
   assert.match(worker, /stopCommunicationsNotificationsWorker/);
   assert.match(server, /stopCommunicationsNotificationsWorker/);
