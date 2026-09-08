@@ -101,8 +101,8 @@ function filterEstablishmentCharts(role, permissions) {
     "presence-donut": ["Présences"],
     "payments-status": ["Paiements"],
     payments: ["Paiements"],
-    operations: ["Utilisateurs", "Documents", "Présences", "Messages"],
-    "operations-default": ["Utilisateurs", "Documents", "Présences"],
+    operations: ["Utilisateurs", "Documents", "Présences", "Messages", "Notifications"],
+    "operations-default": ["Utilisateurs", "Documents", "Présences", "Notifications"],
     "class-sizes": ["Élèves"],
     classes: ["Élèves"],
   };

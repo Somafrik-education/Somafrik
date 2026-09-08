@@ -3,9 +3,10 @@ import { useAuth } from "../context/AuthContext";
 import { useData } from "../context/DataContext";
 import { useActiveSchool } from "../context/ActiveSchoolContext";
 import { isInternalSchoolRole } from "../lib/format";
-import { canManageRolePermissions } from "../lib/permissions";
+import { canManageRolePermissions, canReadView } from "../lib/permissions";
 import { usePermissionContext } from "../lib/usePermissionContext";
 import { scopedUsers } from "../lib/scope";
+import { useInternalNotificationsUnreadCount } from "../lib/internalNotificationsRead";
 import { buildEstablishmentDashboardCharts, buildPlatformDashboardCharts } from "../lib/dashboardCharts";
 import {
   filterEstablishmentDashboardCharts,
@@ -22,25 +23,31 @@ export function OverviewPage() {
   const internalSchool = isInternalSchoolRole(user?.role);
   const {
     scopedUser,
+    activeSchoolCode,
   } = useActiveSchool();
+  const hasInternalNotificationScope = Boolean(activeSchoolCode && activeSchoolCode !== "*");
+  const schoolUnreadCount = useInternalNotificationsUnreadCount(
+    Boolean(internalSchool && canReadView(ctx, "notifications") && hasInternalNotificationScope),
+    activeSchoolCode,
+  );
 
   const users = scopedUsers(scopedUser, state);
 
   const platformCharts = useMemo(() => {
     if (internalSchool) return [];
     return filterPlatformDashboardCharts(
-      buildPlatformDashboardCharts(user, state, state.dashboardChartConfig).charts,
+      buildPlatformDashboardCharts(user, state, state.dashboardChartConfig, { schoolUnreadCount }).charts,
       ctx,
     );
-  }, [internalSchool, user, state, ctx]);
+  }, [internalSchool, user, state, ctx, schoolUnreadCount]);
 
   const establishmentCharts = useMemo(() => {
     if (!internalSchool) return [];
     return filterEstablishmentDashboardCharts(
-      buildEstablishmentDashboardCharts(scopedUser, state, users).charts,
+      buildEstablishmentDashboardCharts(scopedUser, state, users, { schoolUnreadCount }).charts,
       ctx,
     );
-  }, [internalSchool, scopedUser, state, users, ctx]);
+  }, [internalSchool, scopedUser, state, users, ctx, schoolUnreadCount]);
 
   const charts = internalSchool ? establishmentCharts : platformCharts;
   const canConfigureCharts = canManageRolePermissions(ctx);
@@ -53,8 +60,9 @@ export function OverviewPage() {
       user: internalSchool ? scopedUser : user,
       state,
       scope: orderScope,
+      schoolUnreadCount,
     }),
-    [internalSchool, scopedUser, user, state, orderScope],
+    [internalSchool, scopedUser, user, state, orderScope, schoolUnreadCount],
   );
 
   return (

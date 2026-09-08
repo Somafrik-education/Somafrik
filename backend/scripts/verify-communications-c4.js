@@ -332,7 +332,9 @@ function main() {
   run(process.execPath, ["--check", "backend/server.js"], "syntax server");
   run(process.execPath, ["backend/lib/communicationsAttachments.test.js"], "communicationsAttachments unit");
   run("npm", ["--prefix", "web", "run", "test", "--", "src/lib/internalNotificationsC4.test.ts"], "web internal notifications C4");
+  run("npm", ["--prefix", "web", "run", "test", "--", "src/lib/dashboardKpiTruth.test.ts"], "web KPI Alertes C4");
   run("npx", ["--yes", "tsx", "Mobile/src/lib/internalNotificationsC4.test.ts"], "mobile internal notifications C4");
+  run("npx", ["--yes", "tsx", "Mobile/src/lib/notificationInboxRoute.test.ts"], "mobile inbox routing context");
   assert.ok(String(process.env.DATABASE_URL ?? "").trim(), "DATABASE_URL requis pour COM-C4");
   run(process.execPath, ["backend/db/communicationsC4.bootstrap.pg.test.js"], "bootstrap payments cancelled_at CAS A/B");
   run(process.execPath, ["backend/lib/communicationsC4.http.pg.test.js"], "parcours HTTP PostgreSQL COM-C4");

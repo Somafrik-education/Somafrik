@@ -39,6 +39,7 @@ export interface DashboardPeriodContext {
   user: SessionUser | null;
   state: BackOfficeState;
   scope: "platform" | "establishment";
+  schoolUnreadCount?: number;
 }
 
 function countByField(rows: Row[], field: string, labels?: Record<string, string>): ChartDatum[] {
@@ -318,6 +319,7 @@ function applyEstablishmentChartPeriod(
     return status === "en validation" || status === "brouillon";
   }).length;
   const unreadMessages = messages.filter((row) => normalize(String(row.status ?? "")) === "non lu").length;
+  const schoolUnreadCount = Math.max(0, Math.floor(Number(context.schoolUnreadCount) || 0));
   const presence = presenceData(presences);
 
   const scolariteBar: ChartDatum[] = [
@@ -339,6 +341,7 @@ function applyEstablishmentChartPeriod(
     { name: "Présences", value: presences.length, fill: CHART_COLORS.emerald },
     { name: "Messages", value: unreadMessages, fill: CHART_COLORS.amber },
     { name: "Annonces", value: announcements.length, fill: CHART_COLORS.violet },
+    { name: "Alertes à traiter", value: schoolUnreadCount, fill: CHART_COLORS.rose },
   ];
 
   switch (chart.id) {

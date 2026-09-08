@@ -45,8 +45,8 @@ const ESTABLISHMENT_CHART_FEATURES: Record<string, string | string[]> = {
   "payments-status": "Paiements",
   "payments-amount": "Paiements",
   payments: "Paiements",
-  operations: ["Utilisateurs", "Documents", "Présences", "Messages"],
-  "operations-default": ["Utilisateurs", "Documents", "Présences"],
+  operations: ["Utilisateurs", "Documents", "Présences", "Messages", "Notifications"],
+  "operations-default": ["Utilisateurs", "Documents", "Présences", "Notifications"],
   "class-sizes": "Élèves",
   classes: "Élèves",
 };

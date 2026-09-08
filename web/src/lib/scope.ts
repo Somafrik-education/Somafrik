@@ -222,7 +222,18 @@ export interface Kpi {
   suffix?: string;
 }
 
-export function getLiveKpis(user: SessionUser | null, state: ScopeState): Kpi[] {
+export const SCHOOL_UNREAD_KPI_LABEL = "Alertes à traiter";
+
+export type LiveKpiOptions = {
+  /** Compteur C4 `notification_recipients` (read_at / archived_at) via unread-count. */
+  schoolUnreadCount?: number;
+};
+
+export function getLiveKpis(
+  user: SessionUser | null,
+  state: ScopeState,
+  options?: LiveKpiOptions,
+): Kpi[] {
   if (!user) return [];
   const schools = scopedSchools(user, state);
   const users = scopedUsers(user, state);
@@ -239,6 +250,7 @@ export function getLiveKpis(user: SessionUser | null, state: ScopeState): Kpi[] 
     .reduce((total, s) => total + Number(s.monthlyPrice ?? 0), 0);
 
   if (isInternalSchoolRole(user.role)) {
+    const schoolUnreadCount = Math.max(0, Math.floor(Number(options?.schoolUnreadCount) || 0));
     return [
       { label: ACTIVE_USERS_KPI_LABEL, value: activeUsers.length },
       {
@@ -247,9 +259,8 @@ export function getLiveKpis(user: SessionUser | null, state: ScopeState): Kpi[] 
       },
       { label: "Enseignants", value: countUsersByRole(users, ["Enseignant"]) },
       {
-        label: "Alertes à traiter",
-        // Unread inbox = cloche C4, jamais le dataset plateforme `notifications`.
-        value: users.filter((u) => !isActiveUserAccount(u)).length,
+        label: SCHOOL_UNREAD_KPI_LABEL,
+        value: schoolUnreadCount,
       },
     ];
   }

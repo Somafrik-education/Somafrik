@@ -4,8 +4,9 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "../context/AuthContext";
 import { useAdminData } from "../context/AdminDataContext";
-import { canReadRoute, canReadView } from "../domain/security/permissions";
+import { canReadRoute } from "../domain/security/permissions";
 import { canAccessMessagesRoute } from "../lib/mobileCtaRbacAlignment";
+import { resolveNotificationsInboxRoute } from "../lib/notificationInboxRoute";
 import { useInternalNotificationsUnreadCount } from "../lib/internalNotificationsRead";
 import { MIN_TOUCH_TARGET_DP } from "../lib/mobileUsability";
 import { COMPACT_HEADER_ROW_DP, HEADER_ACTIONS_SLOT_DP, HEADER_BADGE_BAND_DP, HEADER_MENU_SLOT_DP } from "../lib/mobileUxV1Layout";
@@ -18,8 +19,8 @@ export default function MobileAppHeader({ navigation }: { navigation: any }) {
   const [drawerOpen, setDrawerOpen] = useState(false);
 
   const schoolName = session?.school?.name ?? session?.user?.schoolCode ?? "Somafrik";
-  const hasInternalNotificationScope = Boolean(activeSchoolCode && activeSchoolCode !== "*");
-  const canInternalNotifications = canReadRoute(session, "InternalNotifications") && hasInternalNotificationScope;
+  const notificationsInboxRoute = resolveNotificationsInboxRoute(session, activeSchoolCode);
+  const canInternalNotifications = notificationsInboxRoute === "InternalNotifications";
   const { count: internalUnread } = useInternalNotificationsUnreadCount(
     canInternalNotifications,
     activeSchoolCode,
@@ -39,15 +40,12 @@ export default function MobileAppHeader({ navigation }: { navigation: any }) {
     return null;
   }, [session]);
 
-  const notificationsRoute = canInternalNotifications
-    ? "InternalNotifications"
-    : canReadView(session, "PlatformNotifications")
-      ? "PlatformNotifications"
-      : canReadRoute(session, "Announcements")
-        ? "Announcements"
-        : canAccessMessagesRoute(session)
-          ? "Messages"
-          : null;
+  const notificationsRoute = notificationsInboxRoute
+    ?? (canReadRoute(session, "Announcements")
+      ? "Announcements"
+      : canAccessMessagesRoute(session)
+        ? "Messages"
+        : null);
 
   const rootNavigation = navigation.getParent?.() ?? navigation;
   const openRootRoute = (route: string) => rootNavigation.navigate(route);
