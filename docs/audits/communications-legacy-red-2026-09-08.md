@@ -328,11 +328,11 @@ Hors F : SMTP demande d’essai = **PR G** (delivery EMAIL durable, pas `setImme
 
 | # | Champ | Valeur |
 |---|---|---|
-| 16 | PR Draft URL | à compléter après `create_pr` |
+| 16 | PR Draft URL | https://github.com/Somafrik-education/Somafrik/pull/552 |
 | 17 | Base SHA | `0c2cba7509fefd2eee593bdf45c0968d8aa94e56` (#551) |
-| 18 | HEAD SHA | à compléter après commit |
-| 19 | ahead/behind | à compléter vs `origin/develop` |
-| 20 | diffstat | à compléter après commit |
+| 18 | HEAD SHA | `a049a01e4e1f28defcd3e9a7594cf48188e6700b` (commit d’audit ; un SHA docs peut suivre) |
+| 19 | ahead/behind | `origin/develop...HEAD` = **ahead 1 / behind 0** au premier commit |
+| 20 | diffstat | 6 files, **558 insertions, 3 deletions** |
 
 **Rappel #548 / #550 :** cette branche RED reste indépendante. GREEN F = `git checkout -b cursor/communications-legacy-green-3171 origin/develop` puis rejouer tests/docs utiles. Vérifier qu’aucun HEAD RED n’est ancêtre du HEAD GREEN.
 
