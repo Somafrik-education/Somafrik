@@ -1196,6 +1196,10 @@ class PostgresRepository {
     return this;
   }
 
+  getSchoolNotificationSettingsStore() {
+    return this;
+  }
+
   upsertMobilePushDevice(principal, payload) {
     const service = require("../lib/mobilePushDevicesService");
     return service.upsertFromSession(this.getMobilePushStore(), principal, payload);

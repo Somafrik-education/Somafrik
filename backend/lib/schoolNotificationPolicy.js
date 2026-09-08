@@ -438,7 +438,30 @@ function putSchoolNotificationSettings(store, principal, schoolCode, body = {}) 
   return patchSchoolNotificationSettings(store, principal, schoolCode, body);
 }
 
-function createMemorySchoolNotificationStore({ schools = [], rows = [] } = {}) {
+function parseJsonish(value) {
+  if (value == null) return {};
+  if (typeof value === "string") {
+    try {
+      return JSON.parse(value || "{}");
+    } catch {
+      return {};
+    }
+  }
+  return typeof value === "object" ? value : {};
+}
+
+function recipientCategoriesFromContext(context) {
+  const parsed = parseJsonish(context);
+  const raw = Array.isArray(parsed.kinds) ? parsed.kinds : [];
+  const cats = [];
+  for (const item of raw) {
+    const mapped = mapRecipientKindToCategory(item);
+    if (mapped && !cats.includes(mapped)) cats.push(mapped);
+  }
+  return cats;
+}
+
+function createMemorySchoolNotificationStore({ schools = [], rows = [], schoolLookup } = {}) {
   const table = rows.map((row) => ({ ...row }));
   const schoolByCode = new Map(
     schools.map((school) => [asTrimmed(school.school_code || school.code).toUpperCase(), school]),
@@ -446,6 +469,16 @@ function createMemorySchoolNotificationStore({ schools = [], rows = [] } = {}) {
   return {
     rows: table,
     async requireSchoolByCode(code) {
+      if (typeof schoolLookup === "function") {
+        const school = await schoolLookup(code);
+        if (!school) {
+          throw createSchoolSettingsError(404, "Établissement introuvable.", SCHOOL_SETTINGS_ERROR.SCHOOL_NOT_FOUND);
+        }
+        return {
+          id: school.id,
+          school_code: school.school_code || school.code || asTrimmed(code).toUpperCase(),
+        };
+      }
       const school = schoolByCode.get(asTrimmed(code).toUpperCase());
       if (!school) {
         throw createSchoolSettingsError(404, "Établissement introuvable.", SCHOOL_SETTINGS_ERROR.SCHOOL_NOT_FOUND);
@@ -500,6 +533,7 @@ module.exports = {
   mapDispatcherEventToLotI,
   mapRecipientKindToCategory,
   isSchoolWideRecipientKind,
+  recipientCategoriesFromContext,
   resolveUserRecipientCategories,
   resolveAllowedChannels,
   getSchoolPolicyEventsBySchoolId,

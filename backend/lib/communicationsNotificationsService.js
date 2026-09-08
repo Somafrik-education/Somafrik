@@ -25,6 +25,7 @@ const {
   resolveAllowedChannels,
   getSchoolPolicyEventsBySchoolId,
   isSchoolWideRecipientKind,
+  recipientCategoriesFromContext,
   resolveUserRecipientCategories,
 } = require("./schoolNotificationPolicy");
 
@@ -171,7 +172,7 @@ function mapNotification(row, extras = {}) {
 
 async function loadVisible(tx, notificationId, schoolId, userId, management = false) {
   const row = await tx.one(
-    `SELECT n.*, s.school_code, r.read_at, r.archived_at AS recipient_archived_at, r.recipient_kind
+    `SELECT n.*, s.school_code, r.read_at, r.archived_at AS recipient_archived_at, r.recipient_kind, r.recipient_context
      FROM communication_notifications n
      JOIN schools s ON s.id = n.school_id
      LEFT JOIN notification_recipients r ON r.notification_id = n.id AND r.user_id = $2
@@ -197,12 +198,18 @@ async function isInAppVisible(store, { userId, schoolId } = {}) {
   }
 }
 
+function rowPolicyCategories(row, viewerCategories) {
+  const fromSnapshot = recipientCategoriesFromContext(row.recipient_context);
+  if (fromSnapshot.length) return fromSnapshot;
+  if (isSchoolWideRecipientKind(row.recipient_kind)) return viewerCategories;
+  return undefined;
+}
+
 function rowAllowsInApp(row, schoolPolicy, viewerCategories) {
-  const schoolWide = isSchoolWideRecipientKind(row.recipient_kind);
   const channels = resolveAllowedChannels({
     eventType: row.event_type,
     recipient: row.recipient_kind,
-    recipientCategories: schoolWide ? viewerCategories : undefined,
+    recipientCategories: rowPolicyCategories(row, viewerCategories),
     schoolPolicy,
     userPreferences: { IN_APP: true, PUSH: true, EMAIL: true },
   });
@@ -233,7 +240,7 @@ async function fetchRecipientPage(tx, { schoolId, userId, cursor, limit }) {
   params.push(limit + 1);
   return tx.all(
     `SELECT n.*, n.school_id::text AS scoped_school_id, s.school_code,
-            r.read_at, r.archived_at AS recipient_archived_at, r.recipient_kind
+            r.read_at, r.archived_at AS recipient_archived_at, r.recipient_kind, r.recipient_context
      FROM notification_recipients r
      JOIN communication_notifications n ON n.id = r.notification_id AND n.school_id = r.school_id
      JOIN schools s ON s.id = n.school_id
@@ -273,7 +280,7 @@ async function list(store, principal, query = {}) {
       const allowed = resolveAllowedChannels({
         eventType: row.event_type,
         recipient: row.recipient_kind,
-        recipientCategories: isSchoolWideRecipientKind(row.recipient_kind) ? viewerCategories : undefined,
+        recipientCategories: rowPolicyCategories(row, viewerCategories),
         schoolPolicy,
         userPreferences: { IN_APP: true, PUSH: true, EMAIL: true },
       });
@@ -308,7 +315,7 @@ async function unreadCount(store, principal, query = {}) {
   const { school, tx } = await requireSchool(store, principal, query);
   if (!(await isInAppVisible(tx, { userId, schoolId: school.id }))) return { count: 0 };
   const rows = await tx.all(
-    `SELECT n.event_type, r.recipient_kind
+    `SELECT n.event_type, r.recipient_kind, r.recipient_context
      FROM notification_recipients r
      JOIN communication_notifications n ON n.id = r.notification_id AND n.school_id = r.school_id
      WHERE r.school_id = $1::uuid AND r.user_id = $2::uuid AND r.read_at IS NULL AND r.archived_at IS NULL`,
@@ -321,7 +328,7 @@ async function unreadCount(store, principal, query = {}) {
     const allowed = resolveAllowedChannels({
       eventType: row.event_type,
       recipient: row.recipient_kind,
-      recipientCategories: isSchoolWideRecipientKind(row.recipient_kind) ? viewerCategories : undefined,
+      recipientCategories: rowPolicyCategories(row, viewerCategories),
       schoolPolicy,
       userPreferences: { IN_APP: true, PUSH: true, EMAIL: true },
     });
@@ -561,8 +568,25 @@ async function eventSpec(tx, event) {
   } else if (eventType === "communication.announcement.published") {
     const announcement = await tx.one(`SELECT id, title FROM announcements WHERE id = $1 AND school_id = $2`, [sourceId, schoolId]);
     if (!announcement) throw new Error("Annonce source introuvable");
-    const rows = await tx.all(`SELECT user_id, recipient_kind FROM announcement_recipients WHERE announcement_id = $1 AND school_id = $2`, [sourceId, schoolId]);
-    for (const row of rows) addExact(row.user_id, row.recipient_kind, { announcementId: sourceId });
+    const rows = await tx.all(
+      `SELECT user_id, recipient_kind, audience_reason FROM announcement_recipients WHERE announcement_id = $1 AND school_id = $2`,
+      [sourceId, schoolId],
+    );
+    for (const row of rows) {
+      const parsed = typeof row.audience_reason === "string"
+        ? (() => {
+          try {
+            return JSON.parse(row.audience_reason || "{}");
+          } catch {
+            return {};
+          }
+        })()
+        : (row.audience_reason || {});
+      const kinds = Array.isArray(parsed.kinds) && parsed.kinds.length
+        ? parsed.kinds
+        : [row.recipient_kind].filter(Boolean);
+      addExact(row.user_id, row.recipient_kind, { announcementId: sourceId, kinds });
+    }
     title = "Nouvelle annonce";
     body = announcement.title ? `Une nouvelle annonce est disponible : ${announcement.title}` : "Une nouvelle annonce est disponible.";
     navigationTarget = { type: "announcement", announcementId: sourceId };

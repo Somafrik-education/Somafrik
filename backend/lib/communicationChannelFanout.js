@@ -63,7 +63,7 @@ function createSqlDeliveryAdapter(store) {
       if (!key || typeof all !== "function") return [];
       return all(
         `SELECT n.id AS notification_id, n.event_key, n.event_type, n.school_id, n.title, n.body, n.navigation_target,
-                r.user_id, r.recipient_kind
+                r.user_id, r.recipient_kind, r.recipient_context
          FROM communication_notifications n
          JOIN notification_recipients r
            ON r.notification_id = n.id AND r.school_id = n.school_id
@@ -218,6 +218,7 @@ function createMemoryDeliveryAdapter({ notifications = [], recipients = [], user
             navigation_target: note.navigation_target || note.navigationTarget || {},
             user_id: recipient.user_id,
             recipient_kind: recipient.recipient_kind || recipient.recipientKind || recipient.kind,
+            recipient_context: recipient.recipient_context || recipient.recipientContext || {},
           });
         }
       }
