@@ -900,6 +900,7 @@ test("P2 — FallbackRepository mémoire persiste PATCH notification-settings", 
   assert.equal(typeof repo.getSchoolNotificationSettingsStore, "function");
   const fallback = read("backend/db/fallbackRepository.js");
   assert.match(fallback, /getSchoolNotificationSettingsStore/);
+  assert.match(fallback, /_bindSchoolNotificationSettingsStore/);
   const schoolCode = "CD-2026-0001";
   const principal = adminPrincipal(schoolCode);
   const after = await policy.patchSchoolNotificationSettings(repo, principal, schoolCode, {
@@ -908,6 +909,12 @@ test("P2 — FallbackRepository mémoire persiste PATCH notification-settings", 
   assert.equal(after.events.STUDENT_ABSENT.PARENT.EMAIL, false);
   const again = await policy.getSchoolNotificationSettings(repo, principal, schoolCode);
   assert.equal(again.events.STUDENT_ABSENT.PARENT.EMAIL, false, "GET mémoire doit relire le PATCH, pas les défauts");
+
+  const clients = repo.getClientsStore();
+  assert.equal(typeof clients.getSchoolNotificationSettingsStore, "function");
+  const school = await clients.getSchoolByCode(schoolCode);
+  const runtime = await policy.getSchoolPolicyEventsBySchoolId(clients, school.id);
+  assert.equal(runtime.STUDENT_ABSENT.PARENT.EMAIL, false, "list/unread/fan-out mémoire doivent voir le même PATCH");
 });
 
 test("P2 — destinataire multi-rôles : toutes les catégories snapshottées, ordre indifférent", async () => {
