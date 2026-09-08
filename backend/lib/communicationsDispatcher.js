@@ -137,15 +137,11 @@ function resolveChannels({ channels, eventType } = {}) {
 }
 
 async function loadSchoolPolicyEvents({ adapter, store, schoolId }) {
-  try {
-    if (adapter?.schoolNotificationPolicy) return adapter.schoolNotificationPolicy;
-    if (typeof adapter?.loadSchoolNotificationPolicy === "function") {
-      return adapter.loadSchoolNotificationPolicy({ schoolId });
-    }
-    if (store) return getSchoolPolicyEventsBySchoolId(store, schoolId);
-  } catch {
-    return getDefaultSchoolNotificationSettings().events;
+  if (adapter?.schoolNotificationPolicy) return adapter.schoolNotificationPolicy;
+  if (typeof adapter?.loadSchoolNotificationPolicy === "function") {
+    return adapter.loadSchoolNotificationPolicy({ schoolId });
   }
+  if (store) return getSchoolPolicyEventsBySchoolId(store, schoolId);
   return getDefaultSchoolNotificationSettings().events;
 }
 
