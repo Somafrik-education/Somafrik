@@ -3,7 +3,7 @@ import { useAuth } from "../context/AuthContext";
 import { useData } from "../context/DataContext";
 import { useActiveSchool } from "../context/ActiveSchoolContext";
 import { isInternalSchoolRole } from "../lib/format";
-import { canManageRolePermissions, canReadView } from "../lib/permissions";
+import { canManageRolePermissions, hasBackOfficePermission } from "../lib/permissions";
 import { usePermissionContext } from "../lib/usePermissionContext";
 import { scopedUsers } from "../lib/scope";
 import { useInternalNotificationsUnreadCount } from "../lib/internalNotificationsRead";
@@ -27,7 +27,11 @@ export function OverviewPage() {
   } = useActiveSchool();
   const hasInternalNotificationScope = Boolean(activeSchoolCode && activeSchoolCode !== "*");
   const schoolUnreadCount = useInternalNotificationsUnreadCount(
-    Boolean(internalSchool && canReadView(ctx, "notifications") && hasInternalNotificationScope),
+    Boolean(
+      internalSchool &&
+        hasBackOfficePermission(ctx, "Notifications", "READ") &&
+        hasInternalNotificationScope,
+    ),
     activeSchoolCode,
   );
 

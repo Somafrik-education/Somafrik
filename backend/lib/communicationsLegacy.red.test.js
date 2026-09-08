@@ -133,6 +133,13 @@ test("J-04 / RED-COM-06E — KPI Alertes à traiter = unread C4", () => {
   );
   assert.match(overview, /useInternalNotificationsUnreadCount/);
   assert.match(overview, /schoolUnreadCount/);
+  assert.match(overview, /hasBackOfficePermission\(ctx, "Notifications", "READ"\)/);
+  assert.doesNotMatch(
+    overview,
+    /canReadView\(ctx, "notifications"\)/,
+    "le poll unread C4 ne doit pas s'appuyer sur le fallback canReadView(notifications)",
+  );
+  assert.match(topbar, /hasBackOfficePermission\(ctx, "Notifications", "READ"\)/);
 });
 
 test("J-04b — Notifications:READ n'ouvre pas le graphique operations multi-module", () => {

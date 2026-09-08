@@ -6,6 +6,7 @@ import {
 } from "./dashboardPermissions";
 import type { EstablishmentChart } from "./dashboardCharts";
 import type { PermissionContext } from "./permissions";
+import { canReadView, hasBackOfficePermission } from "./permissions";
 import { applyPeriodToDashboardChart } from "./dashboardChartPeriod";
 
 function ctx(permissions: string[]): PermissionContext {
@@ -95,5 +96,11 @@ describe("Lot J P1 — RBAC graphiques operations mixtes", () => {
     const names = applied.data.map((item) => item.name);
     expect(names).not.toContain("Alertes à traiter");
     expect(names).toContain("Utilisateurs actifs");
+  });
+
+  it("canReadView(notifications) reste true sans Notifications:READ — le poll C4 doit utiliser hasBackOfficePermission", () => {
+    const teacher = ctx(["Présences:READ"]);
+    expect(canReadView(teacher, "notifications")).toBe(true);
+    expect(hasBackOfficePermission(teacher, "Notifications", "READ")).toBe(false);
   });
 });

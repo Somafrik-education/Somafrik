@@ -57,12 +57,15 @@ describe("internal notifications C4 web", () => {
     expect(center).not.toMatch(/localStorage/);
     expect(center).toMatch(/notifyInternalNotificationsChanged/);
     expect(topbar).toMatch(/useInternalNotificationsUnreadCount/);
-    expect(page).toMatch(/InternalNotificationsCenter/);
-    expect(page).not.toMatch(/platformApi/);
-    expect(topbar).toMatch(/notifications-plateforme/);
+    expect(topbar).toMatch(/hasBackOfficePermission\(ctx, "Notifications", "READ"\)/);
     const overview = readFileSync(join(ROOT, "../pages/OverviewPage.tsx"), "utf8");
     expect(overview).toMatch(/useInternalNotificationsUnreadCount/);
     expect(overview).toMatch(/schoolUnreadCount/);
+    expect(overview).toMatch(/hasBackOfficePermission\(ctx, "Notifications", "READ"\)/);
+    expect(overview).not.toMatch(/canReadView\(ctx, "notifications"\)/);
+    expect(page).toMatch(/InternalNotificationsCenter/);
+    expect(page).not.toMatch(/platformApi/);
+    expect(topbar).toMatch(/notifications-plateforme/);
     const catalog = readFileSync(join(ROOT, "../pages/PlatformNotificationsPage.tsx"), "utf8");
     expect(catalog).toMatch(/platformApi\.createNotification/);
     expect(placeholders).toMatch(/ComingSoonState/);
