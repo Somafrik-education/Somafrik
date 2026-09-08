@@ -276,6 +276,8 @@ function main() {
   assert.ok(String(process.env.DATABASE_URL ?? "").trim(), "DATABASE_URL requis pour COM-C4");
   run(process.execPath, ["backend/db/communicationsC4.bootstrap.pg.test.js"], "bootstrap payments cancelled_at CAS A/B");
   run(process.execPath, ["backend/lib/communicationsC4.http.pg.test.js"], "parcours HTTP PostgreSQL COM-C4");
+  // PR E RED — attendu rouge jusqu'au GREEN préférences (05A / 05B / 05F-G). Ne pas SKIP.
+  run(process.execPath, ["--test", "backend/lib/communicationsPreferences.red.test.js"], "RED-COM-05 preferences audit");
   console.log("verify-communications-c4: GO");
 }
 
