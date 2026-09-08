@@ -1,9 +1,10 @@
-import React from "react";
+import React, { useState } from "react";
 import { Alert, Linking, ScrollView, View, Text, TouchableOpacity, StyleSheet } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import { useAuth } from "../context/AuthContext";
 import StudentSwitcher from "../components/StudentSwitcher";
 import SchoolSelector from "../components/SchoolSelector";
+import CommunicationPreferencesSheet from "../components/CommunicationPreferencesSheet";
 import { AdminEntity, useAdminData } from "../context/AdminDataContext";
 import StudentsScopeAlert from "../components/StudentsScopeAlert";
 import { canReadEntity, canReadRoute, canReadView, isSuperAdminSessionRole } from "../domain/security/permissions";
@@ -124,10 +125,14 @@ export default function MenuScreen() {
   };
   const { scrollContentPaddingBottom } = useFloatingTabBarLayout();
   const { isTablet, horizontalPadding, contentMaxWidth, columns } = useResponsiveLayout();
+  const [communicationPreferencesOpen, setCommunicationPreferencesOpen] = useState(false);
   const isParentStudent = session?.role === "parent_student";
   const isStudent = session?.role === "student";
   const isTeacher = session?.role === "teacher";
   const isPlatformAdmin = session?.role === "super_admin" || session?.role === "country_admin";
+  const canOpenPersonalPreferences = Boolean(
+    session?.user?.schoolCode && session.user.schoolCode !== "*",
+  );
   const menuItems = isStudent
     ? filterMenuItemsByPermission(session, studentMenuItems)
     : isParentStudent
@@ -159,6 +164,21 @@ export default function MenuScreen() {
       </Text>
       <StudentsScopeAlert />
       <Text style={styles.userName}>{session?.user.name ?? "Utilisateur"}</Text>
+
+      {canOpenPersonalPreferences ? (
+        <TouchableOpacity
+          style={styles.accountPreferences}
+          onPress={() => setCommunicationPreferencesOpen(true)}
+          accessibilityRole="button"
+          accessibilityLabel="Préférences de communication"
+          testID="menu-communication-preferences"
+        >
+          <View style={styles.itemLabelBox}>
+            <Text style={styles.itemText}>🔔 Préférences de communication</Text>
+          </View>
+          <Text style={styles.chevron}>›</Text>
+        </TouchableOpacity>
+      ) : null}
 
       {isPlatformAdmin && <SchoolSelector />}
 
@@ -252,6 +272,11 @@ export default function MenuScreen() {
           <Text style={styles.logoutText}>Tester les notifications push</Text>
         </TouchableOpacity>
       ) : null}
+
+      <CommunicationPreferencesSheet
+        visible={communicationPreferencesOpen}
+        onClose={() => setCommunicationPreferencesOpen(false)}
+      />
     </ScrollView>
   );
 }
@@ -278,6 +303,18 @@ const styles = StyleSheet.create({
     padding: 18,
     borderRadius: 18,
     marginBottom: 14,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  accountPreferences: {
+    backgroundColor: "#EFF6FF",
+    borderWidth: 1,
+    borderColor: "#BFDBFE",
+    padding: 16,
+    borderRadius: 18,
+    marginTop: -4,
+    marginBottom: 16,
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",

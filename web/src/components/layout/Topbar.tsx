@@ -1,6 +1,6 @@
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { NavLink, useLocation } from "react-router-dom";
-import { Bell, LogOut, Mail, Megaphone, Menu, RefreshCw } from "lucide-react";
+import { Bell, LogOut, Mail, Megaphone, Menu, RefreshCw, Settings2 } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
 import { useData } from "../../context/DataContext";
 import { useActiveSchool } from "../../context/ActiveSchoolContext";
@@ -14,6 +14,7 @@ import { isPlatformCommunicationUser } from "../../lib/establishmentCommunicatio
 import { usePermissionContext } from "../../lib/usePermissionContext";
 import { domainsForPath } from "../../lib/routeDomainMap";
 import { Button } from "../ui/Button";
+import { CommunicationPreferencesPanel } from "../account/CommunicationPreferencesPanel";
 import { GlobalSearch } from "./GlobalSearch";
 
 /** Icône d'accès rapide (haut à droite) avec pastille rouge de comptage optionnelle. */
@@ -57,6 +58,7 @@ export function Topbar({ title, onMenuOpen }: { title: string; onMenuOpen?: () =
   const ctx = usePermissionContext();
   const user = session?.user;
   const scopeUser = scopedUser ?? user ?? null;
+  const [preferencesOpen, setPreferencesOpen] = useState(false);
 
   const canReadNotifications = canReadView(ctx, "notifications");
   const hasInternalNotificationScope = Boolean(activeSchoolCode && activeSchoolCode !== "*");
@@ -82,6 +84,7 @@ export function Topbar({ title, onMenuOpen }: { title: string; onMenuOpen?: () =
 
   const canReadAnnouncements = canReadView(ctx, "announcements");
   const unreadAnnouncements = useAnnouncementsUnreadCount(canReadAnnouncements, activeSchoolCode);
+  const canOpenPersonalPreferences = Boolean(user?.schoolCode && user.schoolCode !== "*");
 
   return (
     <header className="no-print sticky top-0 z-20 flex items-center justify-between gap-3 border-b border-line bg-white/90 px-4 py-3 backdrop-blur sm:gap-4 sm:px-6">
@@ -140,6 +143,16 @@ export function Topbar({ title, onMenuOpen }: { title: string; onMenuOpen?: () =
             <Bell className="h-5 w-5" strokeWidth={1.8} />
           </TopbarIcon>
         ) : null}
+        {canOpenPersonalPreferences ? (
+          <button
+            type="button"
+            onClick={() => setPreferencesOpen(true)}
+            aria-label="Préférences de communication"
+            className="flex h-9 w-9 items-center justify-center rounded-full text-slate-500 transition hover:bg-slate-50 hover:text-ink"
+          >
+            <Settings2 className="h-5 w-5" strokeWidth={1.8} />
+          </button>
+        ) : null}
         <div className="hidden items-center gap-3 sm:flex">
           <div className="text-right">
             <p className="text-sm font-semibold leading-tight text-ink">
@@ -163,6 +176,10 @@ export function Topbar({ title, onMenuOpen }: { title: string; onMenuOpen?: () =
           <span className="hidden sm:inline">Déconnexion</span>
         </Button>
       </div>
+      <CommunicationPreferencesPanel
+        open={preferencesOpen}
+        onClose={() => setPreferencesOpen(false)}
+      />
     </header>
   );
 }
