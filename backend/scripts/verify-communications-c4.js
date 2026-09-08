@@ -345,6 +345,8 @@ function main() {
   run(process.execPath, ["--test", "backend/lib/communicationsLegacy.red.test.js"], "RED-COM-06 legacy consolidation");
   // PR G — SMTP essai → delivery EMAIL. Ne pas SKIP.
   run(process.execPath, ["--test", "backend/lib/communicationsTrialSmtp.red.test.js"], "RED-COM-07 trial SMTP durable");
+  // Lot K — Delivery Reliability & Retry. Ne pas SKIP.
+  run(process.execPath, ["--test", "backend/lib/communicationsDeliveryReliability.red.test.js"], "RED-COM-08 delivery reliability");
   run(process.execPath, ["--test", "backend/lib/trialAccessRequestNotification.red.test.js"], "trial EMAIL durable unit");
   run(process.execPath, ["--test", "backend/lib/schoolNotificationSettings.test.js"], "Lot I school notification settings");
   run("npm", ["--prefix", "web", "run", "test", "--", "src/pages/parametres/SettingsNotificationsPage.test.tsx"], "web Lot I notification settings");
