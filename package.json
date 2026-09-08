@@ -149,7 +149,7 @@
     "verify:rbac-s1-4": "npm --prefix backend run verify:rbac-s1-4",
     "verify:rbac-admin-01": "npm --prefix backend run verify:rbac-admin-01",
     "verify:jwt-header": "npm --prefix backend run verify:jwt-header",
-    "verify:auth-sessions": "node --test backend/lib/authTokenPolicy.test.js backend/lib/sessionRefreshService.test.js backend/lib/passwordResetSessions.test.js backend/services/tokenService.test.js && node backend/scripts/verify-auth-sessions.js",
+    "verify:auth-sessions": "node --test backend/lib/authTokenPolicy.test.js backend/lib/sessionRefreshService.test.js backend/lib/passwordResetSessions.test.js backend/lib/communicationsPasswordReset.red.test.js backend/lib/passwordResetNotification.test.js backend/services/tokenService.test.js && node backend/scripts/verify-auth-sessions.js",
     "verify:privacy-erasure": "node --test backend/lib/privacyErasure.test.js backend/lib/retentionPolicy.test.js && node backend/scripts/verify-privacy-erasure.js",
     "verify:function-search-path": "node --test backend/lib/functionSearchPath.test.js && node backend/lib/functionSearchPath.pg.test.js && node backend/scripts/verify-function-search-path.js",
     "verify:preprod-503": "node backend/scripts/verify-preprod-503.js",

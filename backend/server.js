@@ -2316,6 +2316,9 @@ app.post("/api/users/:id/reset-password", requireAuth, asyncHandler(async (req, 
   }
 
   const temporaryPassword = String(req.body?.temporaryPassword ?? "").trim();
+  if (!temporaryPassword) {
+    throw new BusinessError(400, "Le mot de passe temporaire est obligatoire.");
+  }
   const passwordError = validateAccountSecret(temporaryPassword);
   if (passwordError) {
     throw new BusinessError(400, passwordError);
@@ -2374,6 +2377,16 @@ app.post("/api/users/:id/reset-password", requireAuth, asyncHandler(async (req, 
         [lockoutAliases, schoolScopes],
       );
     }
+
+    const { randomUUID } = require("node:crypto");
+    const { enqueuePasswordResetNotification } = require("./lib/passwordResetNotification");
+    const resetId = randomUUID();
+    const deliveryKey = `auth.password.reset:${updated.id}:${resetId}`;
+    await enqueuePasswordResetNotification(txRepo, {
+      user: updated,
+      deliveryKey,
+      schoolName: target.schoolName || target.schoolCode,
+    });
     return updated;
   });
 
