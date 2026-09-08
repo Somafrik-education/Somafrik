@@ -47,10 +47,12 @@ test("AUDIT-COM-02 — ciblage Expo reste scoped user + school + environnement",
   assert.match(selfTest, /listActiveForUser\(\{[\s\S]*schoolId/);
 });
 
-test("AUDIT-COM-03 — un processing périmé n'est jamais redispatché", () => {
+test("AUDIT-COM-03 — claimDue ne SELECT jamais processing ; reclaim seulement sans dispatch_started_at", () => {
   const fanout = read("backend/lib/communicationChannelFanout.js");
   assert.match(fanout, /stale_processing_no_redelivery/);
+  assert.match(fanout, /stale_lease_reclaimed/);
   assert.match(fanout, /recoverStaleProcessing/);
+  assert.match(fanout, /dispatch_started_at/);
   const sqlClaim = fanout.slice(fanout.indexOf("async claimDue"), fanout.indexOf("async markSent"));
   assert.match(sqlClaim, /status IN \('pending','failed'\)/);
   assert.doesNotMatch(

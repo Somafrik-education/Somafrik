@@ -144,6 +144,7 @@ const routePermissions = {
   "PATCH /api/backoffice/internal-notifications/:notificationId/archive": ["Notifications:READ", "Gérer notifications", "ALL_PRIVILEGES", "COUNTRY_PRIVILEGES"],
   "POST /api/backoffice/internal-notifications/attachments": ["Notifications:CREATE", "Gérer notifications", "ALL_PRIVILEGES", "COUNTRY_PRIVILEGES"],
   "GET /api/backoffice/internal-notifications/attachments/:attachmentId": ["Notifications:READ", "Gérer notifications", "ALL_PRIVILEGES", "COUNTRY_PRIVILEGES"],
+  "GET /api/backoffice/communications/deliveries/health": ["Notifications:READ", "ALL_PRIVILEGES", "COUNTRY_PRIVILEGES"],
   "GET /api/backoffice/role-permissions": ["ALL_PRIVILEGES"],
   "PUT /api/backoffice/role-permissions": ["ALL_PRIVILEGES"],
   "GET /api/backoffice/rbac/catalog": ["ALL_PRIVILEGES"],

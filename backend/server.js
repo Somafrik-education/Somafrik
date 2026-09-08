@@ -53,6 +53,7 @@ const { EstablishmentService } = require("./services/establishmentService");
 const { UnpaidService } = require("./services/unpaidService");
 const { IdempotencyService, withIdempotency } = require("./services/idempotencyService");
 const internalNotificationsService = require("./lib/communicationsNotificationsService");
+const { readDeliveryHealth } = require("./lib/communicationsDeliveryHealth");
 const {
   startCommunicationsNotificationsWorker,
   stopCommunicationsNotificationsWorker,
@@ -3239,6 +3240,18 @@ app.post("/api/backoffice/platform-announcements/:announcementId/archive", requi
 app.get("/api/backoffice/internal-notifications/unread-count", requireAuth, requirePermission("GET /api/backoffice/internal-notifications/unread-count"), asyncHandler(async (req, res) => {
   const result = await internalNotificationsService.unreadCount(repository.getClientsStore(), req.principal, req.query);
   res.json(result);
+}));
+
+app.get("/api/backoffice/communications/deliveries/health", requireAuth, requirePermission("GET /api/backoffice/communications/deliveries/health"), asyncHandler(async (req, res) => {
+  try {
+    const snapshot = await readDeliveryHealth(repository.getClientsStore(), req.principal);
+    res.json(snapshot);
+  } catch (error) {
+    if (Number(error.statusCode) === 403) {
+      return res.status(403).json({ message: "Forbidden" });
+    }
+    throw error;
+  }
 }));
 
 app.get("/api/backoffice/internal-notifications", requireAuth, requirePermission("GET /api/backoffice/internal-notifications"), asyncHandler(async (req, res) => {
