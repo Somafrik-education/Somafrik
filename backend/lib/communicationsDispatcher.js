@@ -27,6 +27,7 @@ const {
 
 const SUPPORTED_CHANNELS = Object.freeze(["IN_APP", "PUSH", "EMAIL"]);
 const EXTERNAL_CHANNELS = Object.freeze(["PUSH", "EMAIL"]);
+const COMMUNICATION_PREFS_UNAVAILABLE = "communication_preferences_unavailable";
 
 const EVENT_EXTERNAL_CHANNEL_POLICY = Object.freeze({
   "communication.message.created": ["PUSH", "EMAIL"],
@@ -169,8 +170,13 @@ async function loadEnabledChannels({ adapter, store, userId, schoolId }) {
     }
     if (store) return enabledChannelsForUser(store, { userId, schoolId });
     return defaultEnabledChannels();
-  } catch {
-    return defaultEnabledChannels();
+  } catch (error) {
+    if (isMissingPrefsTable(error)) return defaultEnabledChannels();
+    if (error?.code === COMMUNICATION_PREFS_UNAVAILABLE) throw error;
+    const wrapped = new Error(String(error?.message || COMMUNICATION_PREFS_UNAVAILABLE));
+    wrapped.code = COMMUNICATION_PREFS_UNAVAILABLE;
+    wrapped.cause = error;
+    throw wrapped;
   }
 }
 
@@ -313,6 +319,7 @@ module.exports = {
   EXTERNAL_CHANNELS,
   EVENT_EXTERNAL_CHANNEL_POLICY,
   EVENT_MANDATORY_CHANNEL_POLICY,
+  COMMUNICATION_PREFS_UNAVAILABLE,
   normalizeChannels,
   policyChannelsForEventType,
   mandatoryChannelsForEvent,
