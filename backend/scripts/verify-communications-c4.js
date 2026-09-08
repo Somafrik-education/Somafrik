@@ -60,6 +60,8 @@ function sourceGuards() {
   assert.match(migration, /notification_recipients/);
   const channelMigration = read("backend/db/migrations/20260907_communication_channel_deliveries.sql");
   assert.match(channelMigration, /communication_channel_deliveries/);
+  const reliabilityMigration = read("backend/db/migrations/20260908_communication_channel_deliveries_reliability.sql");
+  assert.match(reliabilityMigration, /dispatch_started_at/);
   assert.match(bootstrap, /applyCommunicationsC4Schema/);
 
   // 4 event_key UNIQUE
@@ -254,6 +256,9 @@ function sourceGuards() {
   assert.doesNotMatch(service, /Messages:READ[\s\S]{0,80}Announcements:READ[\s\S]{0,80}Notifications:READ/);
 
   assert.match(server, /GET \/api\/backoffice\/internal-notifications\/unread-count/);
+  assert.match(server, /GET \/api\/backoffice\/communications\/deliveries\/health/);
+  assert.match(rbac, /GET \/api\/backoffice\/communications\/deliveries\/health/);
+  assert.match(schema, /dispatch_started_at/);
   assert.match(server, /GET \/api\/backoffice\/internal-notifications/);
   assert.match(server, /POST \/api\/backoffice\/internal-notifications/);
   assert.match(server, /PATCH \/api\/backoffice\/internal-notifications\/:notificationId\/read/);
@@ -345,6 +350,8 @@ function main() {
   run(process.execPath, ["--test", "backend/lib/communicationsLegacy.red.test.js"], "RED-COM-06 legacy consolidation");
   // PR G — SMTP essai → delivery EMAIL. Ne pas SKIP.
   run(process.execPath, ["--test", "backend/lib/communicationsTrialSmtp.red.test.js"], "RED-COM-07 trial SMTP durable");
+  run(process.execPath, ["--test", "backend/lib/communicationsDeliveryReliability.red.test.js"], "RED-COM-08 delivery reliability");
+  run(process.execPath, ["--test", "backend/lib/communicationsDeliveryHealth.test.js"], "Lot K delivery health");
   run(process.execPath, ["--test", "backend/lib/trialAccessRequestNotification.red.test.js"], "trial EMAIL durable unit");
   run(process.execPath, ["--test", "backend/lib/schoolNotificationSettings.test.js"], "Lot I school notification settings");
   run("npm", ["--prefix", "web", "run", "test", "--", "src/pages/parametres/SettingsNotificationsPage.test.tsx"], "web Lot I notification settings");

@@ -231,6 +231,13 @@ CREATE INDEX IF NOT EXISTS idx_communication_channel_deliveries_pending
   ON communication_channel_deliveries (status, available_at, channel)
   WHERE status IN ('pending', 'failed');
 
+ALTER TABLE communication_channel_deliveries
+  ADD COLUMN IF NOT EXISTS dispatch_started_at TIMESTAMPTZ;
+
+CREATE INDEX IF NOT EXISTS idx_communication_channel_deliveries_processing
+  ON communication_channel_deliveries (status, claimed_at)
+  WHERE status = 'processing';
+
 -- EMAIL opérationnel (demande d'essai) : school_id/user_id nuls + payload.to.
 -- PUSH et EMAIL tenant conservent school_id + user_id (isolation).
 ALTER TABLE communication_channel_deliveries

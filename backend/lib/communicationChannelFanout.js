@@ -18,7 +18,54 @@ const RETRY_BASE_MS = 5000;
 const RETRY_CAP_MS = 15 * 60 * 1000;
 const STALE_LEASE_MS = 2 * 60 * 1000;
 const STALE_PROCESSING_REASON = "stale_processing_no_redelivery";
+const STALE_LEASE_RECLAIMED = "stale_lease_reclaimed";
+const DEAD_LETTER_STATUS = "dead_letter";
 const SMTP_NOT_CONFIGURED = "smtp_not_configured";
+
+function emptyDeliveryCounts() {
+  return {
+    pending: 0,
+    processing: 0,
+    sent: 0,
+    failed: 0,
+    dead_letter: 0,
+    skipped: 0,
+  };
+}
+
+function sanitizeDeliveryLastError(value) {
+  return String(value || "")
+    .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, "[redacted-email]")
+    .replace(/ExponentPushToken\[[^\]]+\]/gi, "[redacted-token]")
+    .replace(/Bearer\s+\S+/gi, "[redacted-token]")
+    .replace(/SMTP_PASSWORD|SMTP_USER|SMTP_HOST/gi, "[redacted]")
+    .slice(0, 200);
+}
+
+function summarizeChannelDeliveryHealth(deliveries = []) {
+  const counts = emptyDeliveryCounts();
+  const byChannel = { PUSH: emptyDeliveryCounts(), EMAIL: emptyDeliveryCounts() };
+  const recentErrors = [];
+  for (const row of deliveries || []) {
+    const status = String(row.status || "pending");
+    const channel = String(row.channel || "").toUpperCase();
+    if (Object.prototype.hasOwnProperty.call(counts, status)) counts[status] += 1;
+    if (byChannel[channel] && Object.prototype.hasOwnProperty.call(byChannel[channel], status)) {
+      byChannel[channel][status] += 1;
+    }
+    if (row.last_error) {
+      recentErrors.push({
+        channel,
+        status,
+        attempts: Number(row.attempts || 0),
+        lastError: sanitizeDeliveryLastError(row.last_error),
+        updatedAt: row.updated_at || row.available_at || null,
+      });
+    }
+  }
+  recentErrors.sort((a, b) => String(b.updatedAt || "").localeCompare(String(a.updatedAt || "")));
+  return { counts, byChannel, recentErrors: recentErrors.slice(0, 20) };
+}
 
 function asTrimmed(value) {
   return String(value ?? "").trim();
@@ -96,7 +143,10 @@ function createSqlDeliveryAdapter(store) {
       if (typeof all !== "function") return [];
       return all(
         `UPDATE communication_channel_deliveries
-         SET status='skipped', last_error=$2, updated_at=NOW()
+         SET status = CASE WHEN dispatch_started_at IS NULL THEN 'failed' ELSE 'skipped' END,
+             last_error = CASE WHEN dispatch_started_at IS NULL THEN 'stale_lease_reclaimed' ELSE $2 END,
+             available_at = CASE WHEN dispatch_started_at IS NULL THEN $1::timestamptz ELSE available_at END,
+             updated_at=NOW()
          WHERE status='processing'
            AND claimed_at < $1::timestamptz - INTERVAL '2 minutes'
          RETURNING *`,
@@ -150,18 +200,45 @@ function createSqlDeliveryAdapter(store) {
       );
     },
 
-    async markFailed(id, error, { attempts = 0, now = new Date() } = {}) {
-      const exhausted = Number(attempts) >= MAX_ATTEMPTS;
-      const next = exhausted
-        ? new Date(now.getTime() + 365 * 24 * 60 * 60 * 1000)
-        : new Date(now.getTime() + retryDelayMs(attempts));
+    async markDispatchStarted(id, { now = new Date() } = {}) {
       return one(
         `UPDATE communication_channel_deliveries
-         SET status='failed', last_error=$2, available_at=$3, updated_at=NOW()
+         SET dispatch_started_at=$2, updated_at=NOW()
          WHERE id=$1
          RETURNING *`,
-        [id, String(error?.message || error).slice(0, 500), next.toISOString()],
+        [id, now.toISOString()],
       );
+    },
+
+    async markFailed(id, error, { attempts = 0, now = new Date() } = {}) {
+      const exhausted = Number(attempts) >= MAX_ATTEMPTS;
+      const status = exhausted ? DEAD_LETTER_STATUS : "failed";
+      const next = exhausted ? now : new Date(now.getTime() + retryDelayMs(attempts));
+      return one(
+        `UPDATE communication_channel_deliveries
+         SET status=$4, last_error=$2, available_at=$3, updated_at=NOW()
+         WHERE id=$1
+         RETURNING *`,
+        [id, String(error?.message || error).slice(0, 500), next.toISOString(), status],
+      );
+    },
+
+    async listDeliveryHealth({ schoolId } = {}) {
+      if (typeof all !== "function") return summarizeChannelDeliveryHealth([]);
+      const scoped = uuidOrNull(schoolId);
+      const rows = scoped
+        ? await all(
+            `SELECT channel, status, attempts, last_error, updated_at, available_at
+             FROM communication_channel_deliveries
+             WHERE school_id = $1`,
+            [scoped],
+          )
+        : await all(
+            `SELECT channel, status, attempts, last_error, updated_at, available_at
+             FROM communication_channel_deliveries`,
+            [],
+          );
+      return summarizeChannelDeliveryHealth(rows);
     },
 
     async getUserEmail(userId, schoolId) {
@@ -241,6 +318,7 @@ function createMemoryDeliveryAdapter({ notifications = [], recipients = [], user
         payload: row.payload || {},
         last_error: null,
         sent_at: null,
+        dispatch_started_at: null,
       };
       deliveries.push(saved);
       return { ...saved };
@@ -250,8 +328,14 @@ function createMemoryDeliveryAdapter({ notifications = [], recipients = [], user
       const recovered = [];
       for (const item of deliveries) {
         if (item.status !== "processing" || !item.claimed_at || item.claimed_at >= stale) continue;
-        item.status = "skipped";
-        item.last_error = STALE_PROCESSING_REASON;
+        if (item.dispatch_started_at) {
+          item.status = "skipped";
+          item.last_error = STALE_PROCESSING_REASON;
+        } else {
+          item.status = "failed";
+          item.last_error = STALE_LEASE_RECLAIMED;
+          item.available_at = now.toISOString();
+        }
         recovered.push({ ...item });
       }
       return recovered;
@@ -286,16 +370,29 @@ function createMemoryDeliveryAdapter({ notifications = [], recipients = [], user
       row.last_error = asTrimmed(reason).slice(0, 500);
       return { ...row };
     },
+    async markDispatchStarted(id, { now = new Date() } = {}) {
+      const row = deliveries.find((item) => item.id === id);
+      if (!row) return null;
+      row.dispatch_started_at = now.toISOString();
+      return { ...row };
+    },
     async markFailed(id, error, { attempts = 0, now = new Date() } = {}) {
       const row = deliveries.find((item) => item.id === id);
       if (!row) return null;
-      row.status = "failed";
-      row.last_error = String(error?.message || error).slice(0, 500);
       const exhausted = Number(attempts) >= MAX_ATTEMPTS;
+      row.status = exhausted ? DEAD_LETTER_STATUS : "failed";
+      row.last_error = String(error?.message || error).slice(0, 500);
       row.available_at = new Date(
-        now.getTime() + (exhausted ? 365 * 24 * 60 * 60 * 1000 : retryDelayMs(attempts)),
+        now.getTime() + (exhausted ? 0 : retryDelayMs(attempts)),
       ).toISOString();
       return { ...row };
+    },
+    async listDeliveryHealth({ schoolId } = {}) {
+      const scoped = uuidOrNull(schoolId);
+      const rows = scoped
+        ? deliveries.filter((item) => String(item.school_id) === String(scoped))
+        : deliveries;
+      return summarizeChannelDeliveryHealth(rows);
     },
     async getUserEmail(userId, schoolId) {
       const row = users.find(
@@ -464,8 +561,8 @@ async function dispatchEmail(row, { adapter, mailer, env = process.env }) {
 
 async function drainChannelDeliveries(adapter, deps = {}) {
   const now = deps.now ? new Date(deps.now()) : new Date();
-  // At-most-once: a stale processing lease is closed as skipped, never redispatched.
-  // Residual: crash after claim and before the provider call also skips (lost send).
+  // Recover a dead worker only if the provider call never started.
+  // If dispatch_started_at is set, skip (at-most-once) — crash after Expo/SMTP must not resend.
   if (typeof adapter.recoverStaleProcessing === "function") {
     await adapter.recoverStaleProcessing({ now });
   }
@@ -474,6 +571,10 @@ async function drainChannelDeliveries(adapter, deps = {}) {
     const row = await adapter.claimDue({ now });
     if (!row) break;
     try {
+      if (typeof adapter.markDispatchStarted === "function") {
+        await adapter.markDispatchStarted(row.id, { now });
+        row.dispatch_started_at = now.toISOString();
+      }
       const channel = asTrimmed(row.channel).toUpperCase();
       let outcome;
       if (channel === "EMAIL") {
@@ -575,9 +676,13 @@ module.exports = {
   MAX_ATTEMPTS,
   STALE_LEASE_MS,
   STALE_PROCESSING_REASON,
+  STALE_LEASE_RECLAIMED,
+  DEAD_LETTER_STATUS,
   SMTP_NOT_CONFIGURED,
   deliveryKey,
   smtpConfigured,
+  sanitizeDeliveryLastError,
+  summarizeChannelDeliveryHealth,
   createSqlDeliveryAdapter,
   createMemoryDeliveryAdapter,
   enqueueChannelDeliveries,

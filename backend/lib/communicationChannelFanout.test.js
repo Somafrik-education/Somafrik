@@ -179,6 +179,7 @@ test("crash après succès Expo avant markSent n'envoie pas une seconde fois", a
   const claimed = await adapter.claimDue();
   assert.equal(claimed.channel, "PUSH");
   assert.equal(claimed.status, "processing");
+  await adapter.markDispatchStarted(claimed.id);
   await deps.pushClient.sendToTokens([TOKEN_A], { title: "Absence enregistrée" });
   const stuck = adapter.deliveries.find((row) => row.channel === "PUSH");
   assert.equal(stuck.status, "processing");
@@ -214,6 +215,7 @@ test("crash après succès SMTP avant markSent n'envoie pas une seconde fois", a
   adapter.deliveries.find((row) => row.channel === "PUSH").status = "skipped";
   const claimed = await adapter.claimDue();
   assert.equal(claimed.channel, "EMAIL");
+  await adapter.markDispatchStarted(claimed.id);
   await deps.mailer.sendMail({ to: "parent-a@test.local" });
   const stuck = adapter.deliveries.find((row) => row.channel === "EMAIL");
   assert.equal(stuck.status, "processing");
