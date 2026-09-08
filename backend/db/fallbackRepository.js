@@ -102,6 +102,11 @@ class FallbackRepository {
     return this._channelDeliveries;
   }
 
+  _bindSchoolNotificationSettingsStore(target) {
+    if (!target || typeof target.getSchoolNotificationSettingsStore === "function") return;
+    target.getSchoolNotificationSettingsStore = () => this.getSchoolNotificationSettingsStore();
+  }
+
   _bindChannelDeliveryAdapter(target) {
     if (!target || typeof target.ensureDelivery === "function") return;
     const adapter = this._channelDeliveryAdapter();
@@ -3605,6 +3610,7 @@ class FallbackRepository {
       }
       this._clientsStore = store;
       this._bindChannelDeliveryAdapter(store);
+      this._bindSchoolNotificationSettingsStore(store);
     }
     return this._clientsStore;
   }
