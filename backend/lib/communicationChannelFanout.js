@@ -15,6 +15,8 @@ const MAX_ATTEMPTS = 8;
 const DRAIN_LIMIT = 50;
 const RETRY_BASE_MS = 5000;
 const RETRY_CAP_MS = 15 * 60 * 1000;
+const STALE_LEASE_MS = 2 * 60 * 1000;
+const STALE_PROCESSING_REASON = "stale_processing_no_redelivery";
 
 function asTrimmed(value) {
   return String(value ?? "").trim();
@@ -88,15 +90,25 @@ function createSqlDeliveryAdapter(store) {
       );
     },
 
+    async recoverStaleProcessing({ now = new Date() } = {}) {
+      if (typeof all !== "function") return [];
+      return all(
+        `UPDATE communication_channel_deliveries
+         SET status='skipped', last_error=$2, updated_at=NOW()
+         WHERE status='processing'
+           AND claimed_at < $1::timestamptz - INTERVAL '2 minutes'
+         RETURNING *`,
+        [now.toISOString(), STALE_PROCESSING_REASON],
+      );
+    },
+
     async claimDue({ now = new Date() } = {}) {
       const claim = async (tx) => {
         const row = await tx.one(
           `SELECT * FROM communication_channel_deliveries
            WHERE attempts < $2
-             AND (
-               (status IN ('pending','failed') AND available_at <= $1)
-               OR (status = 'processing' AND claimed_at < $1::timestamptz - INTERVAL '2 minutes')
-             )
+             AND status IN ('pending','failed')
+             AND available_at <= $1
            ORDER BY available_at, id
            FOR UPDATE SKIP LOCKED LIMIT 1`,
           [now.toISOString(), MAX_ATTEMPTS],
@@ -211,14 +223,24 @@ function createMemoryDeliveryAdapter({ notifications = [], recipients = [], user
       deliveries.push(saved);
       return { ...saved };
     },
+    async recoverStaleProcessing({ now = new Date() } = {}) {
+      const stale = new Date(now.getTime() - STALE_LEASE_MS).toISOString();
+      const recovered = [];
+      for (const item of deliveries) {
+        if (item.status !== "processing" || !item.claimed_at || item.claimed_at >= stale) continue;
+        item.status = "skipped";
+        item.last_error = STALE_PROCESSING_REASON;
+        recovered.push({ ...item });
+      }
+      return recovered;
+    },
     async claimDue({ now = new Date() } = {}) {
       const ts = now.toISOString();
-      const stale = new Date(now.getTime() - 2 * 60 * 1000).toISOString();
       const row = deliveries.find(
         (item) =>
           item.attempts < MAX_ATTEMPTS &&
-          ((["pending", "failed"].includes(item.status) && item.available_at <= ts) ||
-            (item.status === "processing" && item.claimed_at && item.claimed_at < stale)),
+          ["pending", "failed"].includes(item.status) &&
+          item.available_at <= ts,
       );
       if (!row) return null;
       row.status = "processing";
@@ -380,9 +402,15 @@ async function dispatchEmail(row, { adapter, mailer, env = process.env }) {
 }
 
 async function drainChannelDeliveries(adapter, deps = {}) {
+  const now = deps.now ? new Date(deps.now()) : new Date();
+  // At-most-once: a stale processing lease is closed as skipped, never redispatched.
+  // Residual: crash after claim and before the provider call also skips (lost send).
+  if (typeof adapter.recoverStaleProcessing === "function") {
+    await adapter.recoverStaleProcessing({ now });
+  }
   const results = [];
   for (let i = 0; i < DRAIN_LIMIT; i += 1) {
-    const row = await adapter.claimDue({ now: deps.now ? new Date(deps.now()) : new Date() });
+    const row = await adapter.claimDue({ now });
     if (!row) break;
     try {
       const outcome =
@@ -456,6 +484,8 @@ async function fanOutNotificationChannels({
 module.exports = {
   CHANNELS,
   MAX_ATTEMPTS,
+  STALE_LEASE_MS,
+  STALE_PROCESSING_REASON,
   deliveryKey,
   smtpConfigured,
   createSqlDeliveryAdapter,

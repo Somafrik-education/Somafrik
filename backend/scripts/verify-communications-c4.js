@@ -156,6 +156,15 @@ function sourceGuards() {
   assert.doesNotMatch(service, /communicationChannelFanout|fanOutNotificationChannels/);
   assert.doesNotMatch(worker, /twilio|whatsapp|firebase|expoPushService|nodemailer/i);
   assert.match(worker, /fanOutNotificationChannels/);
+  const fanout = read("backend/lib/communicationChannelFanout.js");
+  assert.match(fanout, /stale_processing_no_redelivery/);
+  assert.match(fanout, /recoverStaleProcessing/);
+  const sqlClaim = fanout.slice(fanout.indexOf("async claimDue"), fanout.indexOf("async markSent"));
+  assert.match(sqlClaim, /status IN \('pending','failed'\)/);
+  assert.doesNotMatch(sqlClaim, /status = 'processing' AND claimed_at/);
+  const fanoutTests = read("backend/lib/communicationChannelFanout.test.js");
+  assert.match(fanoutTests, /crash après succès Expo avant markSent n'envoie pas une seconde fois/);
+  assert.match(fanoutTests, /crash après succès SMTP avant markSent n'envoie pas une seconde fois/);
   assert.match(worker, /COMMUNICATION_NOTIFICATIONS_WORKER/);
   assert.match(worker, /stopCommunicationsNotificationsWorker/);
   assert.match(server, /stopCommunicationsNotificationsWorker/);

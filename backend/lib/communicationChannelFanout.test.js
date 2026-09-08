@@ -8,6 +8,8 @@ const {
   drainChannelDeliveries,
   fanOutNotificationChannels,
   deliveryKey,
+  STALE_LEASE_MS,
+  STALE_PROCESSING_REASON,
 } = require("./communicationChannelFanout");
 
 const SCHOOL_A = "11111111-1111-4111-8111-111111111111";
@@ -145,6 +147,123 @@ test("retry PUSH n'envoie pas deux fois un succès", async () => {
   assert.equal(sent, 1);
   assert.equal(adapter.deliveries.find((row) => row.channel === "PUSH").status, "sent");
   assert.equal(deliveryKey(EVENT_KEY, USER_A, "PUSH"), `${EVENT_KEY}:${USER_A}:PUSH`);
+});
+
+test("crash après succès Expo avant markSent n'envoie pas une seconde fois", async () => {
+  const adapter = createMemoryDeliveryAdapter({
+    notifications: [baseNote()],
+    recipients: [{ notification_id: NOTE_ID, school_id: SCHOOL_A, user_id: USER_A }],
+  });
+  let sent = 0;
+  const deps = {
+    pushStore: createPushStore([
+      {
+        user_id: USER_A,
+        school_id: SCHOOL_A,
+        expo_push_token: TOKEN_A,
+        backend_environment: "preproduction",
+      },
+    ]),
+    pushClient: {
+      async sendToTokens(tokens) {
+        sent += 1;
+        assert.deepEqual(tokens, [TOKEN_A]);
+        return { sent: 1 };
+      },
+    },
+    mailer: { async sendMail() {} },
+    env: envPreprod(),
+  };
+  await enqueueChannelDeliveries(adapter, [{ event_key: EVENT_KEY }]);
+  adapter.deliveries.find((row) => row.channel === "EMAIL").status = "skipped";
+  const claimed = await adapter.claimDue();
+  assert.equal(claimed.channel, "PUSH");
+  assert.equal(claimed.status, "processing");
+  await deps.pushClient.sendToTokens([TOKEN_A], { title: "Absence enregistrée" });
+  const stuck = adapter.deliveries.find((row) => row.channel === "PUSH");
+  assert.equal(stuck.status, "processing");
+  const later = new Date(Date.now() + STALE_LEASE_MS + 1000);
+  await drainChannelDeliveries(adapter, { ...deps, now: () => later });
+  assert.equal(sent, 1);
+  assert.equal(stuck.status, "skipped");
+  assert.equal(stuck.last_error, STALE_PROCESSING_REASON);
+});
+
+test("crash après succès SMTP avant markSent n'envoie pas une seconde fois", async () => {
+  const adapter = createMemoryDeliveryAdapter({
+    notifications: [baseNote()],
+    recipients: [{ notification_id: NOTE_ID, school_id: SCHOOL_A, user_id: USER_A }],
+    users: [{ id: USER_A, school_id: SCHOOL_A, email: "parent-a@test.local" }],
+  });
+  let sent = 0;
+  const deps = {
+    pushStore: createPushStore([]),
+    pushClient: {
+      async sendToTokens() {
+        throw new Error("ne doit pas renvoyer PUSH");
+      },
+    },
+    mailer: {
+      async sendMail() {
+        sent += 1;
+      },
+    },
+    env: envPreprod(),
+  };
+  await enqueueChannelDeliveries(adapter, [{ event_key: EVENT_KEY }]);
+  adapter.deliveries.find((row) => row.channel === "PUSH").status = "skipped";
+  const claimed = await adapter.claimDue();
+  assert.equal(claimed.channel, "EMAIL");
+  await deps.mailer.sendMail({ to: "parent-a@test.local" });
+  const stuck = adapter.deliveries.find((row) => row.channel === "EMAIL");
+  assert.equal(stuck.status, "processing");
+  const later = new Date(Date.now() + STALE_LEASE_MS + 1000);
+  await drainChannelDeliveries(adapter, { ...deps, now: () => later });
+  assert.equal(sent, 1);
+  assert.equal(stuck.status, "skipped");
+  assert.equal(stuck.last_error, STALE_PROCESSING_REASON);
+});
+
+test("échec Expo reste retryable et n'envoie qu'une fois au succès", async () => {
+  const adapter = createMemoryDeliveryAdapter({
+    notifications: [baseNote()],
+    recipients: [{ notification_id: NOTE_ID, school_id: SCHOOL_A, user_id: USER_A }],
+  });
+  let calls = 0;
+  const deps = {
+    pushStore: createPushStore([
+      {
+        user_id: USER_A,
+        school_id: SCHOOL_A,
+        expo_push_token: TOKEN_A,
+        backend_environment: "preproduction",
+      },
+    ]),
+    pushClient: {
+      async sendToTokens() {
+        calls += 1;
+        if (calls === 1) throw new Error("Expo 503");
+        return { sent: 1 };
+      },
+    },
+    mailer: { async sendMail() {} },
+    env: envPreprod(),
+  };
+  await enqueueChannelDeliveries(adapter, [{ event_key: EVENT_KEY }]);
+  adapter.deliveries.find((row) => row.channel === "EMAIL").status = "skipped";
+  await drainChannelDeliveries(adapter, deps);
+  const push = adapter.deliveries.find((row) => row.channel === "PUSH");
+  assert.equal(push.status, "failed");
+  assert.equal(calls, 1);
+  const afterBackoff = new Date(Date.now() + 60 * 1000);
+  await drainChannelDeliveries(adapter, { ...deps, now: () => afterBackoff });
+  assert.equal(calls, 2);
+  assert.equal(push.status, "sent");
+  await drainChannelDeliveries(adapter, {
+    ...deps,
+    now: () => new Date(afterBackoff.getTime() + 60 * 1000),
+  });
+  assert.equal(calls, 2);
 });
 
 test("retry EMAIL n'envoie pas deux fois un succès", async () => {
