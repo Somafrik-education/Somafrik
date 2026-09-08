@@ -124,7 +124,7 @@ test("AUDIT-COM-FINAL-01 — architecture : quatre familles séparées", () => {
   assert.match(server, /\/api\/backoffice\/communications\/deliveries\/health/);
 });
 
-test("AUDIT-COM-FINAL-01b — matrice événements : écarts producteurs figés (P1 connu)", () => {
+test("AUDIT-COM-FINAL-01b — matrice événements : 4/9 Lot I câblés, 5/9 sans producteur (P1 connu)", () => {
   const wired = outboxEventTypesFromSchema();
   assert.deepEqual(wired, [
     "attendance.student.absent",
@@ -138,6 +138,8 @@ test("AUDIT-COM-FINAL-01b — matrice événements : écarts producteurs figés 
     .map((eventType) => mapDispatcherEventToLotI(eventType))
     .filter(Boolean)
     .sort();
+  assert.equal(LOT_I_EVENTS.length, 9, "Lot I canonique = 9 événements (LOT_I_EVENTS + CHECK PostgreSQL)");
+  assert.equal(mappedPolicy.length, 4, "4/9 événements Lot I ont un producteur outbox");
   assert.deepEqual(mappedPolicy, [
     "ANNOUNCEMENT_PUBLISHED",
     "GRADE_PUBLISHED",

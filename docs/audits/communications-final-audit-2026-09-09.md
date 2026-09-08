@@ -4,6 +4,8 @@
 **Mandat :** audit final H→K avant décision GO production  
 **Base Git auditée :** `develop@a9400c26acd89d102b551edad8025df37efc325e` (merge #562 — Lot K Delivery Reliability & Retry)  
 **Branche audit :** `cursor/audit-com-final-d98a`  
+**HEAD audit :** `f9feb8c0eb48d2f2e70ef85fefda49701bb08908` (#564)  
+**Contrôle CTO indépendant :** 8 septembre 2026 — HOLD confirmé ; errata documentaire Lot I (9 événements, non 10) corrigé dans ce commit.  
 **RED historiques exclus :** #552 (`8348b751`), #554 (`3f9c07fe`), #561 (`888cafd7`)
 
 ---
@@ -12,12 +14,12 @@
 
 **Verdict CTO recommandé : HOLD**
 
-La chaîne Communications H→K est **cohérente, sécurisée, isolée et observable** pour les événements **effectivement câblés** (C4 outbox + fan-out PUSH/EMAIL + Lot I prefs + Lot K reliability). En revanche, **cinq événements Lot I** figurent dans la politique établissement et l’UI Paramètres sans **producteur outbox** ni handler C4 : la promesse fonctionnelle affichée à l’administrateur est incomplète. Tant que ces producteurs ne sont pas livrés dans des PR GREEN dédiées, le GO production Communications global doit rester en attente.
+La chaîne Communications H→K est **cohérente, sécurisée, isolée et observable** pour les événements **effectivement câblés** (C4 outbox + fan-out PUSH/EMAIL + Lot I prefs + Lot K reliability). En revanche, sur le **contrat produit Lot I (9 événements canoniques)**, seuls **4/9** sont câblés aujourd’hui ; **5/9** figurent dans la politique établissement et l’UI Paramètres sans **producteur outbox** ni handler C4. Tant que ces producteurs ne sont pas livrés dans des PR GREEN dédiées, le GO production Communications global doit rester en attente.
 
 | Classe | Ouverts |
 |---|---|
 | **P0** | 0 |
-| **P1** | 1 (matrice événements incomplète — 5/10 sans producteur) |
+| **P1** | 1 (matrice événements incomplète — **4/9 câblés, 5/9 sans producteur**) |
 | **P2** | 2 (résidu at-most-once ; legacy catalogue B conservé) |
 | **Dette acceptée** | Relances impayés `unpaidService` → `state.notifications` ; SMTP essai opérationnel hors outbox C4 |
 
@@ -63,7 +65,9 @@ C4 n’écrit pas la table `notifications`. Brevo n’est **pas** utilisé comme
 
 ## 4. Events
 
-### Matrice événements Lot I (politique établissement)
+### Matrice événements Lot I (9 événements — `LOT_I_EVENTS` + contrainte PostgreSQL `school_notification_settings`)
+
+**Bilan : 4/9 câblés (producteur outbox + handler C4), 5/9 sans producteur.**
 
 | Événement | Producteur outbox | C4 créé | Destinataires (policy) | IN_APP | PUSH | EMAIL | Double-write legacy |
 |---|---|---|---|---|---|---|---|
@@ -88,7 +92,7 @@ C4 n’écrit pas la table `notifications`. Brevo n’est **pas** utilisé comme
 
 ### Écarts
 
-- **P1 — AUDIT-FINAL-P1-01 :** cinq événements Lot I configurables en UI (`SettingsNotificationsPage`) sans producteur outbox ni `processOneEvent`.
+- **P1 — AUDIT-FINAL-P1-01 :** **5/9** événements Lot I configurables en UI (`SettingsNotificationsPage`) sans producteur outbox ni `processOneEvent` (`STUDENT_LATE`, `REPORT_CARD_PUBLISHED`, `PAYMENT_DUE`, `TIMETABLE_CHANGED`, `TEACHER_REPLACEMENT`).
 - Aucun double envoi détecté sur les événements câblés (idempotence `event_key` outbox + `delivery_key` fan-out).
 
 ---
@@ -286,13 +290,13 @@ markDispatchStarted() → crash worker → Expo/SMTP jamais appelé
 | Classe | Détail |
 |---|---|
 | **P0 ouverts** | 0 |
-| **P1 ouverts** | 1 — matrice événements incomplète (5 producteurs manquants) |
+| **P1 ouverts** | 1 — matrice Lot I incomplète (**4/9 câblés, 5/9 producteurs manquants**) |
 | **P2 ouverts** | 2 — at-most-once window ; legacy catalogue conservé |
 | **Dettes acceptées** | relances impayés legacy ; SMTP essai opérationnel |
 
 **Verdict : HOLD**
 
-**COMMUNICATIONS HOLD** — la stack est production-ready **techniquement** pour les 5 événements outbox + reset password, mais le **contrat produit Lot I (10 événements)** n’est pas encore honoré intégralement.
+**COMMUNICATIONS HOLD** — la stack est production-ready **techniquement** pour les **4/9** événements Lot I câblés (+ `communication.message.created` et `auth.password.reset` hors Lot I), mais le **contrat produit Lot I (9 événements)** n’est pas encore honoré intégralement.
 
 ---
 
