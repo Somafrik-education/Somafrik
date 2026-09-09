@@ -778,9 +778,8 @@ export function GradesEvaluationsPage() {
                 student={selectedChild}
                 grades={parentGrades}
                 evaluations={evaluations}
-                state={state}
-                user={scopeUser}
                 period={period}
+                courseFilter={selectedCourse}
                 highlightGradeId={deepLinkGradeId}
               />
             ) : (
@@ -797,9 +796,8 @@ export function GradesEvaluationsPage() {
                 student={selectedChild}
                 grades={parentGrades}
                 evaluations={evaluations}
-                state={state}
-                user={scopeUser}
                 period={period}
+                courseFilter={selectedCourse}
                 highlightGradeId={deepLinkGradeId}
               />
             ) : (

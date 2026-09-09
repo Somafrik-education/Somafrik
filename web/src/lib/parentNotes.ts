@@ -97,6 +97,45 @@ export function parentCourseOptions(grades: StudentGrade[], evaluations: Evaluat
   return [{ value: ALL_COURSES_FILTER, label: "Tous les cours" }, ...unique.map((subject) => ({ value: subject, label: subject }))];
 }
 
+const EXCLUDED_PARENT_GRADE_STATUSES = new Set([
+  "Absente",
+  "Justifiée",
+  "Dispensée",
+  "En attente",
+  "Non justifiée",
+  "absent",
+  "excused",
+  "not_submitted",
+  "exempt",
+]);
+
+function gradeCountsInParentAverage(grade: StudentGrade) {
+  if (EXCLUDED_PARENT_GRADE_STATUSES.has(String(grade.gradeStatus ?? ""))) return false;
+  return typeof grade.value === "number" && !Number.isNaN(grade.value);
+}
+
+export function parentGradesKpis(grades: StudentGrade[], courseFilter = "") {
+  const countable = grades.filter(gradeCountsInParentAverage);
+  const subjects = [
+    ...new Set(countable.map((grade) => asRef(grade.subject)).filter(Boolean)),
+  ];
+  let weighted = 0;
+  let coefficients = 0;
+  for (const grade of countable) {
+    const scale = Number(grade.scale ?? 20) || 20;
+    const coefficient = Number(grade.evaluationCoefficient ?? 1) || 1;
+    weighted += (Number(grade.value) / scale) * 20 * coefficient;
+    coefficients += coefficient;
+  }
+  const course = asRef(courseFilter);
+  return {
+    average: coefficients ? weighted / coefficients : null,
+    evaluationCount: grades.length,
+    courseCount: subjects.length,
+    averageLabel: course ? `Moyenne ${course}` : "Moyenne générale",
+  };
+}
+
 export function filterParentGrades(
   grades: StudentGrade[],
   studentId: string,

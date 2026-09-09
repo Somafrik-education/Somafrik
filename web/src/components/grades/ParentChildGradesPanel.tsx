@@ -1,10 +1,8 @@
-import { useMemo } from "react";
 import type { Evaluation, StudentGrade } from "../../types";
 import { Card, SectionHeader } from "../ui/Card";
 import { Table, type Column } from "../ui/Table";
 import { formatStudentName } from "../../lib/gradeBook";
-import { buildGradeBook } from "../../lib/evaluations";
-import type { BackOfficeState, SessionUser } from "../../types";
+import { parentGradesKpis } from "../../lib/parentNotes";
 
 type StudentRow = Record<string, unknown>;
 
@@ -12,9 +10,8 @@ interface ParentChildGradesPanelProps {
   student: StudentRow | null;
   grades: StudentGrade[];
   evaluations: Evaluation[];
-  state: BackOfficeState;
-  user: SessionUser | null;
   period: string;
+  courseFilter?: string;
   highlightGradeId?: string;
 }
 
@@ -32,19 +29,20 @@ function formatScore(value: number | undefined) {
   return String(value).replace(".", ",");
 }
 
+function formatAverage(value: number | null) {
+  if (value == null || Number.isNaN(value)) return "—";
+  return `${value.toFixed(1).replace(".", ",")} / 20`;
+}
+
 export function ParentChildGradesPanel({
   student,
   grades,
   evaluations,
-  state,
-  user,
   period,
+  courseFilter = "",
   highlightGradeId = "",
 }: ParentChildGradesPanelProps) {
-  const studentId = String(student?.id ?? "");
-  const gradeBook = useMemo(() => buildGradeBook(state, user, period), [state, user, period]);
-  const averages = studentId ? gradeBook.getStudentAverage(studentId, period) : null;
-  const subjects = averages?.subjects ?? [];
+  const kpis = parentGradesKpis(grades, courseFilter);
 
   const columns: Column<StudentGrade>[] = [
     { key: "subject", header: "Cours", render: (row) => row.subject },
@@ -83,18 +81,16 @@ export function ParentChildGradesPanel({
         />
         <div className="mt-4 grid gap-3 sm:grid-cols-3">
           <div className="rounded-lg border border-line bg-surface px-3 py-2">
-            <p className="text-xs text-muted">Moyenne générale</p>
-            <p className="text-xl font-semibold text-ink">
-              {averages ? `${averages.average.toFixed(1).replace(".", ",")} / 20` : "—"}
-            </p>
+            <p className="text-xs text-muted">{kpis.averageLabel}</p>
+            <p className="text-xl font-semibold text-ink">{formatAverage(kpis.average)}</p>
           </div>
           <div className="rounded-lg border border-line bg-surface px-3 py-2">
             <p className="text-xs text-muted">Évaluations</p>
-            <p className="text-xl font-semibold text-ink">{grades.length}</p>
+            <p className="text-xl font-semibold text-ink">{kpis.evaluationCount}</p>
           </div>
           <div className="rounded-lg border border-line bg-surface px-3 py-2">
             <p className="text-xs text-muted">Cours évalués</p>
-            <p className="text-xl font-semibold text-ink">{subjects.length}</p>
+            <p className="text-xl font-semibold text-ink">{kpis.courseCount}</p>
           </div>
         </div>
       </Card>

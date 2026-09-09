@@ -178,6 +178,18 @@ describe("GradesEvaluationsPage — parcours Parent", () => {
         date: "2026-09-01",
       },
       {
+        id: "grade-a-fr",
+        studentId: "stu-a",
+        evaluationId: "EVAL-FR",
+        subject: "Français",
+        period: "Trimestre 1",
+        value: 10,
+        scale: 20,
+        gradeStatus: "Validée",
+        schoolCode: "SCH-001",
+        date: "2026-09-02",
+      },
+      {
         id: "grade-b",
         studentId: "stu-b",
         evaluationId: "EVAL-1",
@@ -250,6 +262,16 @@ describe("GradesEvaluationsPage — parcours Parent", () => {
     renderPage();
     expect(screen.getByText("1ère A CD02")).toBeInTheDocument();
     expect(screen.queryByLabelText("Classe")).not.toBeInTheDocument();
+  });
+
+  it("filtre Cours aligne la moyenne sur la matière choisie", () => {
+    renderPage();
+    expect(screen.getByText("Moyenne générale")).toBeInTheDocument();
+    expect(screen.getByText("13,0 / 20")).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("Cours"), { target: { value: "Mathématiques" } });
+    expect(screen.getByText("Moyenne Mathématiques")).toBeInTheDocument();
+    expect(screen.getByText("16,0 / 20")).toBeInTheDocument();
+    expect(screen.queryByText("13,0 / 20")).not.toBeInTheDocument();
   });
 
   it("studentId enfant B dans l'URL ne sélectionne pas B", () => {

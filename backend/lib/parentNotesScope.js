@@ -126,6 +126,16 @@ function assertParentNotesReadOnly(principal) {
   );
 }
 
+/** Après requireAuth, avant write_notes / RBAC d'écriture : le Parent reçoit le code domaine. */
+function requireParentNotesReadOnly(req, _res, next) {
+  try {
+    assertParentNotesReadOnly(req.principal);
+    return next();
+  } catch (error) {
+    return next(error);
+  }
+}
+
 function filterStudentsForGuardianNotes(students, principal) {
   if (!isGuardianNotesPrincipal(principal)) return students ?? [];
   const linkedIds = linkedStudentIdSet(principal);
@@ -152,6 +162,7 @@ module.exports = {
   findStudentByRef,
   assertParentNotesStudentAccess,
   assertParentNotesReadOnly,
+  requireParentNotesReadOnly,
   filterStudentsForGuardianNotes,
   filterNotesForGuardianStudents,
 };

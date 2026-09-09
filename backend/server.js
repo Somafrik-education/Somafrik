@@ -2045,7 +2045,7 @@ app.get("/api/presences", requireAuth, requirePermission("GET /api/presences"), 
   ));
 }));
 
-app.post("/api/notes", requireAuth, requireSchoolSubscriptionFeature("write_notes"), requirePermission("POST /api/notes"), asyncHandler(async (req, res) => {
+app.post("/api/notes", requireAuth, requireParentNotesReadOnly, requireSchoolSubscriptionFeature("write_notes"), requirePermission("POST /api/notes"), asyncHandler(async (req, res) => {
   await withIdempotency({
     req,
     res,
@@ -4135,6 +4135,10 @@ function denyPermission(message = "Permission insuffisante pour cette fonctionna
   const error = new BusinessError(403, message);
   error.code = PERMISSION_DENIED;
   return error;
+}
+
+function requireParentNotesReadOnly(req, res, next) {
+  return require("./lib/parentNotesScope").requireParentNotesReadOnly(req, res, next);
 }
 
 async function saveEstablishmentState() {

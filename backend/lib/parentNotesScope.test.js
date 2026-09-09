@@ -10,6 +10,7 @@ const {
   linkedStudentIdSet,
   assertParentNotesStudentAccess,
   assertParentNotesReadOnly,
+  requireParentNotesReadOnly,
   filterStudentsForGuardianNotes,
   filterNotesForGuardianStudents,
 } = require("./parentNotesScope");
@@ -133,6 +134,23 @@ test("Teacher/Admin : assertParentNotesReadOnly no-op", () => {
   assert.doesNotThrow(() => assertParentNotesReadOnly({ role: "Admin School" }));
 });
 
+test("requireParentNotesReadOnly : Parent → 403 PARENT_NOTES_READ_ONLY sans next vide", () => {
+  let captured;
+  requireParentNotesReadOnly({ principal: parentA }, {}, (error) => {
+    captured = error;
+  });
+  assert.equal(captured?.statusCode, 403);
+  assert.equal(captured?.code, PARENT_NOTES_ERROR.READ_ONLY);
+});
+
+test("requireParentNotesReadOnly : Teacher → next() sans erreur", () => {
+  let errorArg = "unset";
+  requireParentNotesReadOnly({ principal: teacher }, {}, (error) => {
+    errorArg = error;
+  });
+  assert.equal(errorArg, undefined);
+});
+
 test("Notes filtrées : Parent A ne reçoit pas les notes de B", () => {
   const notes = [
     { id: "n-a", studentId: "stu-a", value: 16 },
@@ -176,6 +194,15 @@ test("contrat source : GET notes élève et POST notes branchent le garde Parent
   const postNotes = server.slice(
     server.indexOf('app.post("/api/notes"'),
     server.indexOf('app.post("/api/presences"'),
+  );
+  const authIdx = postNotes.indexOf("requireAuth");
+  const parentIdx = postNotes.indexOf("requireParentNotesReadOnly");
+  const subIdx = postNotes.indexOf('requireSchoolSubscriptionFeature("write_notes")');
+  const rbacIdx = postNotes.indexOf('requirePermission("POST /api/notes")');
+  assert.ok(parentIdx >= 0, "middleware requireParentNotesReadOnly sur POST /api/notes");
+  assert.ok(
+    authIdx >= 0 && parentIdx > authIdx && parentIdx < subIdx && parentIdx < rbacIdx,
+    "Parent READ ONLY après requireAuth et avant write_notes / RBAC écriture",
   );
   assert.match(postNotes, /assertParentNotesReadOnly\(req\.principal\)/);
 });

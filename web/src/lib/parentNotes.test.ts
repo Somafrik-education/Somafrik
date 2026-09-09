@@ -6,6 +6,7 @@ import {
   isParentLinkedStudentId,
   isParentNotesRole,
   parentCourseOptions,
+  parentGradesKpis,
   parentLinkedStudents,
 } from "./parentNotes";
 import type { SessionUser, StudentGrade } from "../types";
@@ -151,5 +152,44 @@ describe("parentNotes — portée enfants", () => {
     expect(filterParentGrades(grades, "stu-a", "Trimestre 1", "Mathématiques").map((row) => row.id)).toEqual([
       "g-a-math",
     ]);
+  });
+
+  it("KPI : moyenne générale toutes matières, moyenne du cours filtré", () => {
+    const grades: StudentGrade[] = [
+      {
+        id: "g-math",
+        schoolCode: "SCH-001",
+        studentId: "stu-a",
+        evaluationId: "e1",
+        subject: "Mathématiques",
+        period: "Trimestre 1",
+        value: 16,
+        scale: 20,
+        gradeStatus: "Validée",
+      },
+      {
+        id: "g-fr",
+        schoolCode: "SCH-001",
+        studentId: "stu-a",
+        evaluationId: "e2",
+        subject: "Français",
+        period: "Trimestre 1",
+        value: 10,
+        scale: 20,
+        gradeStatus: "Validée",
+      },
+    ];
+    const allCourses = parentGradesKpis(grades, ALL_COURSES_FILTER);
+    expect(allCourses.averageLabel).toBe("Moyenne générale");
+    expect(allCourses.average).toBe(13);
+    expect(allCourses.courseCount).toBe(2);
+    const mathOnly = parentGradesKpis(
+      filterParentGrades(grades, "stu-a", "Trimestre 1", "Mathématiques"),
+      "Mathématiques",
+    );
+    expect(mathOnly.averageLabel).toBe("Moyenne Mathématiques");
+    expect(mathOnly.average).toBe(16);
+    expect(mathOnly.courseCount).toBe(1);
+    expect(mathOnly.evaluationCount).toBe(1);
   });
 });
