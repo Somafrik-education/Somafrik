@@ -15,6 +15,7 @@ import {
   type PlatformAudienceKey,
 } from "../lib/platformAnnouncementsApi";
 import { hasCommunicationSchoolScope } from "../lib/communicationSchoolScope";
+import { useDeepLinkId } from "../lib/notificationDeepLink";
 import { isSuperAdminRole } from "../lib/orgHierarchy";
 import { Card, SectionHeader } from "../components/ui/Card";
 import { Button } from "../components/ui/Button";
@@ -81,9 +82,11 @@ export function AnnouncementsPage() {
   const isGlobalSuperadmin = isSuperAdminRole(session?.user?.role);
   const schoolScope = hasCommunicationSchoolScope(activeSchoolCode) ? activeSchoolCode : undefined;
   const scopeReady = isGlobalSuperadmin || !requiresSelection || Boolean(schoolScope);
+  const deepLinkAnnouncementId = useDeepLinkId("announcementId");
   const [items, setItems] = useState<UnifiedAnnouncement[]>([]);
   const [selectedId, setSelectedId] = useState("");
   const [detail, setDetail] = useState<UnifiedAnnouncement | null>(null);
+  const [listLoaded, setListLoaded] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [title, setTitle] = useState("");
@@ -126,6 +129,7 @@ export function AnnouncementsPage() {
       setItems([]);
     } finally {
       setLoading(false);
+      setListLoaded(true);
     }
   }, [canRead, schoolScope, scopeReady]);
 
@@ -195,6 +199,13 @@ export function AnnouncementsPage() {
       cancelled = true;
     };
   }, [selectedId, schoolScope, scopeReady, canRead, showToast]);
+
+  // Deep-link notification : sélectionner l'annonce désignée par l'URL. On
+  // attend le chargement de la liste, dont dépend l'aiguillage plateforme/école.
+  useEffect(() => {
+    if (!deepLinkAnnouncementId || !canRead || !scopeReady || !listLoaded) return;
+    setSelectedId(deepLinkAnnouncementId);
+  }, [deepLinkAnnouncementId, canRead, scopeReady, listLoaded]);
 
   const selected = useMemo(
     () => items.find((row) => row.id === selectedId) ?? detail,
@@ -550,6 +561,9 @@ export function AnnouncementsPage() {
             <li key={`${row.source ?? "row"}-${row.id}`}>
               <button
                 type="button"
+                data-testid="announcement-item"
+                data-announcement-id={row.id}
+                aria-selected={selectedId === row.id}
                 className={`w-full rounded-xl border px-3 py-3 text-left ${
                   selectedId === row.id ? "border-brand bg-brand-50" : "border-line bg-white"
                 }`}
@@ -574,7 +588,7 @@ export function AnnouncementsPage() {
           ))}
         </ul>
       </div>
-      <div>
+      <div data-testid="announcement-detail" data-announcement-id={viewed?.id || undefined}>
         {viewed ? (
           <Card>
             <p className="text-xs font-semibold uppercase tracking-wide text-muted">{originLabel}</p>
