@@ -10,6 +10,13 @@
   "productionCodeChanged": false,
   "backendTouched": false,
   "criteriaInvented": false,
+  "uxContract": "docs/audits/parite-l0-l1-ux-maquette.md",
+  "verifierRequiresExactIds": {
+    "L0": ["L0-01", "L0-02", "L0-03", "L0-04", "L0-05", "L0-06", "L0-07", "L0-08", "L0-09", "L0-10", "L0-11", "L0-12"],
+    "L1": ["L1-01", "L1-02", "L1-03", "L1-04", "L1-05", "L1-06", "L1-07", "L1-08", "L1-09", "L1-10"]
+  },
+  "l1SolutionNeutral": true,
+  "ctoRecommendationL1": "wire-canonical-unpaid-ledger",
   "lotsInThisPass": [
     "L0-hygiene-hide-fail-closed-and-mvp",
     "L1-unpaid-ledger-or-remove-kpi"

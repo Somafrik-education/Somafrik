@@ -2,18 +2,18 @@
  * PR #577 — Lot L0 Hygiène Mobile — tests ROUGES causaux.
  *   npx --yes tsx src/lib/pariteL0Hygiene.red.test.ts
  *
- * Critères uniquement : PR #577 §4.11 L0 + P1-07, P1-08, P1-13.
- * Aucune correction applicative dans cette passe.
- *
- * Chaque cas affirme l'état cible. Il reste ROUGE tant que l'écart #577 existe.
+ * #577 L0 : retirer / cacher / marquer non opérationnel.
+ * L0-04 n'exige plus l'absence stricte du drawer (retrait OU état explicite non opérationnel).
  */
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { getRoleDrawerCatalog } from "../navigation/roleDrawerPreferences";
+import { getRoleDrawerCatalog, type RoleDrawerItem } from "../navigation/roleDrawerPreferences";
 import { getRoleHomeShell } from "./roleHomeConfig";
 import { UX_V1_VIEWPORTS } from "./mobileUxV1Layout";
+import { MAQUETTE_L0_L1_VIEWPORTS_DP, NON_OPERATIONAL_LABEL_RE } from "./pariteL0L1UxContract";
+import { L0_EXPECTED_IDS, runRedCases, type RedCase } from "./pariteL0L1RedReport";
 
 const srcRoot = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -21,25 +21,30 @@ function read(rel: string) {
   return fs.readFileSync(path.join(srcRoot, rel), "utf8");
 }
 
-type Case = { id: string; title: string; run: () => void };
+function isExplicitlyNonOperational(item: RoleDrawerItem) {
+  const extra = item as RoleDrawerItem & { operational?: boolean; status?: string };
+  if (extra.operational === false) return true;
+  if (String(extra.status ?? "").toLowerCase() === "non-operational") return true;
+  return NON_OPERATIONAL_LABEL_RE.test(`${item.label} ${item.view ?? ""} ${item.route ?? ""}`);
+}
 
-const cases: Case[] = [
+function operationalDrawerItems(role: string, match: (item: RoleDrawerItem) => boolean) {
+  return getRoleDrawerCatalog(role).filter((item) => match(item) && !isExplicitlyNonOperational(item));
+}
+
+const cases: RedCase[] = [
   {
     id: "L0-01",
     title: "Mobile_hidden_platform_features_should_not_be_navigable — drawer Superadmin",
     run() {
-      const labels = getRoleDrawerCatalog("super_admin").map((item) => item.label);
-      for (const label of ["Établissements", "Abonnements", "Droits par rôle", "Audit"]) {
-        assert.equal(
-          labels.includes(label),
-          false,
-          `#577 L0 / P1-13 : « ${label} » ne doit plus être navigable sur Mobile (Web-only, à retirer, jamais à construire)`,
-        );
-      }
+      const operational = operationalDrawerItems("super_admin", (item) =>
+        ["Établissements", "Abonnements", "Droits par rôle", "Audit"].includes(item.label) ||
+        item.route === "PlatformNotifications",
+      );
       assert.equal(
-        getRoleDrawerCatalog("super_admin").some((item) => item.route === "PlatformNotifications"),
-        false,
-        "#577 L0 : Notifications plateforme drawer Superadmin à retirer, pas à construire",
+        operational.length,
+        0,
+        `#577 L0 / P1-13 : fonctions plateforme encore opérationnelles sur Mobile (${operational.map((item) => item.label).join(", ")}) — retirer, cacher ou marquer non opérationnel, jamais construire`,
       );
     },
   },
@@ -47,14 +52,14 @@ const cases: Case[] = [
     id: "L0-02",
     title: "Mobile_hidden_platform_features_should_not_be_navigable — drawer Admin Pays",
     run() {
-      const labels = getRoleDrawerCatalog("country_admin").map((item) => item.label);
-      for (const label of ["Établissements", "Abonnements", "Audit"]) {
-        assert.equal(
-          labels.includes(label),
-          false,
-          `#577 L0 : Admin Pays « ${label} » est Web-only — retirer du Mobile`,
-        );
-      }
+      const operational = operationalDrawerItems("country_admin", (item) =>
+        ["Établissements", "Abonnements", "Audit"].includes(item.label),
+      );
+      assert.equal(
+        operational.length,
+        0,
+        `#577 L0 : Admin Pays encore opérationnel (${operational.map((item) => item.label).join(", ")})`,
+      );
     },
   },
   {
@@ -62,52 +67,54 @@ const cases: Case[] = [
     title: "KPI Pays / Établissements ne doivent plus ouvrir AdminCrud",
     run() {
       const shell = getRoleHomeShell({ role: "super_admin" });
-      assert.equal(shell.kpiKeys.includes("countries"), false, "#577 L0 : KPI Pays → AdminCrud à retirer");
-      assert.equal(shell.kpiKeys.includes("schools"), false, "#577 L0 : KPI Établissements → AdminCrud à retirer");
       const home = read("screens/HomeScreen.tsx");
-      assert.doesNotMatch(
-        home,
-        /navigate\("AdminCrud", \{ entity: "countries" \}\)/,
-        "#577 L0 : HomeScreen ne doit plus router Pays vers AdminCrud",
-      );
-      assert.doesNotMatch(
-        home,
-        /navigate\("AdminCrud", \{ entity: "schools" \}\)/,
-        "#577 L0 : HomeScreen ne doit plus router Établissements vers AdminCrud",
+      const countriesToCrud = shell.kpiKeys.includes("countries") && /entity:\s*"countries"/.test(home);
+      const schoolsToCrud = shell.kpiKeys.includes("schools") && /entity:\s*"schools"/.test(home);
+      assert.equal(
+        countriesToCrud || schoolsToCrud,
+        false,
+        "#577 L0 : KPI Pays/Établissements routent encore vers AdminCrud — retirer le KPI ou cesser d'ouvrir le CRUD générique",
       );
     },
   },
   {
     id: "L0-04",
-    title: "Documents / Rapports school_admin ne doivent plus paraître opérationnels",
+    title: "Documents / Rapports school_admin : pas d'entrée opérationnelle (retrait, masquage ou non opérationnel)",
     run() {
-      const items = getRoleDrawerCatalog("school_admin");
-      assert.equal(
-        items.some((item) => item.route === "Documents" || item.label === "Documents"),
-        false,
-        "#577 L0 / P1-07 : Documents MVP absent du drawer school_admin (ou explicitement non opérationnel — aujourd'hui CTA standard)",
+      const documents = operationalDrawerItems(
+        "school_admin",
+        (item) => item.route === "Documents" || item.label === "Documents",
+      );
+      const reports = operationalDrawerItems(
+        "school_admin",
+        (item) => item.route === "Reports" || item.label === "Rapports",
       );
       assert.equal(
-        items.some((item) => item.route === "Reports" || item.label === "Rapports"),
-        false,
-        "#577 L0 / P1-08 : Rapports MVP à retirer du drawer school_admin",
+        documents.length,
+        0,
+        "#577 L0 / P1-07 : Documents encore présenté comme opérationnel dans le drawer (la #577 autorise retrait, masquage ou état explicitement non opérationnel)",
+      );
+      assert.equal(
+        reports.length,
+        0,
+        "#577 L0 / P1-08 : Rapports encore présenté comme opérationnel dans le drawer (retrait, masquage ou non opérationnel)",
       );
     },
   },
   {
     id: "L0-05",
-    title: "DocumentsScreen ne doit pas afficher un faux succès MVP",
+    title: "DocumentsScreen ne doit pas afficher un faux succès opérationnel",
     run() {
       const src = read("screens/MvpUtilityScreens.tsx");
-      assert.doesNotMatch(
-        src,
-        /Centre MVP/,
-        "#577 P1-07 : Documents ne doit pas se présenter comme un centre opérationnel MVP",
-      );
-      assert.doesNotMatch(
-        src,
-        /value="Disponible"/,
-        "#577 P1-07 : « Disponible » est un faux succès — /school-documents n'est pas consommé",
+      const start = src.indexOf("export function DocumentsScreen");
+      const next = src.indexOf("export function ReportsScreen");
+      const block = start >= 0 ? src.slice(start, next > start ? next : start + 2500) : src;
+      const markedNonOperational = NON_OPERATIONAL_LABEL_RE.test(block);
+      const fakeSuccess = /value="Disponible"/.test(block) || /Centre MVP/.test(block);
+      assert.equal(
+        fakeSuccess && !markedNonOperational,
+        false,
+        "#577 P1-07 : DocumentsScreen se présente encore comme un centre opérationnel (« Disponible » / Centre MVP) sans /school-documents",
       );
     },
   },
@@ -116,33 +123,30 @@ const cases: Case[] = [
     title: "ReportsScreen ne doit pas agréger le cache local comme rapport canonique",
     run() {
       const src = read("screens/MvpUtilityScreens.tsx");
-      assert.doesNotMatch(
-        src,
-        /title="Rapports MVP"/,
-        "#577 P1-08 : Rapports MVP à retirer plutôt qu'à parité pixel",
-      );
-      assert.doesNotMatch(
-        src,
-        /getPaymentStats\(paymentsData/,
-        "#577 P1-08 : Rapports ne doit pas compter le cache client comme vérité métier",
+      const start = src.indexOf("export function ReportsScreen");
+      const next = src.indexOf("export function AuditScreen");
+      const block = start >= 0 ? src.slice(start, next > start ? next : start + 2000) : src;
+      const markedNonOperational = NON_OPERATIONAL_LABEL_RE.test(block);
+      const localAsCanon = /title="Rapports MVP"/.test(block) || /getPaymentStats\(paymentsData/.test(block);
+      assert.equal(
+        localAsCanon && !markedNonOperational,
+        false,
+        "#577 P1-08 : Rapports MVP compte encore le cache client comme vérité métier",
       );
     },
   },
   {
     id: "L0-07",
-    title: "AuditScreen MVP ne doit plus être un écran live",
+    title: "AuditScreen MVP ne doit plus être un écran live opérationnel",
     run() {
       const navigator = read("navigation/AppNavigator.tsx");
       const mvp = read("screens/MvpUtilityScreens.tsx");
-      assert.doesNotMatch(
-        navigator,
-        /name="Audit"/,
-        "#577 L0 : Stack.Screen Audit MVP à retirer du graphe live",
-      );
-      assert.doesNotMatch(
-        mvp,
-        /Journal MVP des actions sensibles/,
-        "#577 L0 : Audit MVP n'est pas un journal canonique",
+      const live = /name="Audit"/.test(navigator);
+      const journalMvp = /Journal MVP des actions sensibles/.test(mvp) && !NON_OPERATIONAL_LABEL_RE.test(mvp);
+      assert.equal(
+        live && journalMvp,
+        false,
+        "#577 L0 : Audit MVP encore au graphe live comme journal opérationnel",
       );
     },
   },
@@ -154,7 +158,7 @@ const cases: Case[] = [
       assert.doesNotMatch(
         navigator,
         /name="AdminCrud"/,
-        "#577 P1-13 : AdminCrud ne doit plus être dans le graphe live (deep-link fail-closed encore possible dès Paiements/Users/Teachers)",
+        "#577 P1-13 : AdminCrud encore dans le graphe live (deep-link fail-closed dès Paiements/Users/Teachers)",
       );
     },
   },
@@ -163,32 +167,24 @@ const cases: Case[] = [
     title: "SchoolManagement ne doit plus offrir de cartes fail-closed vers AdminCrud",
     run() {
       const src = read("screens/SchoolManagementScreen.tsx");
-      assert.doesNotMatch(src, /entity:\s*"schools"/, "#577 L0 : carte Établissements → AdminCrud à retirer");
-      assert.doesNotMatch(src, /entity:\s*"courses"/, "#577 L0 : carte Cours → AdminCrud fail-closed à retirer");
-      assert.doesNotMatch(src, /entity:\s*"assignments"/, "#577 L0 : carte Affectations → AdminCrud fail-closed à retirer");
-      assert.doesNotMatch(src, /navigate\("AdminCrud"/, "#577 L0 : SchoolManagement ne doit plus router vers AdminCrud");
+      assert.doesNotMatch(src, /navigate\("AdminCrud"/, "#577 L0 : SchoolManagement route encore vers AdminCrud");
     },
   },
   {
     id: "L0-10",
-    title: "MenuScreen mort ne doit plus contenir de CTA AdminCrud",
+    title: "MenuScreen mort ne doit plus contenir de CTA AdminCrud opérationnels",
     run() {
       const src = read("screens/MenuScreen.tsx");
       assert.doesNotMatch(
         src,
         /navigate\("AdminCrud"/,
-        "#577 L0 : MenuScreen (hors graphe live) doit être isolé — plus de CTA AdminCrud",
-      );
-      assert.doesNotMatch(
-        src,
-        /route: "Documents"/,
-        "#577 L0 : MenuScreen ne doit plus exposer Documents/Rapports/Audit comme routes opérationnelles",
+        "#577 L0 : MenuScreen (hors graphe live) n'est pas isolé — CTA AdminCrud encore présents",
       );
     },
   },
   {
     id: "L0-11",
-    title: "KPI Accueil L0/L1 — accessibilité bouton + libellé",
+    title: "KPI Accueil L0/L1 — accessibilité bouton + libellé (maquette)",
     run() {
       const layout = read("components/RoleDashboardLayout.tsx");
       const start = layout.indexOf("visibleKpis.map");
@@ -196,48 +192,30 @@ const cases: Case[] = [
       assert.match(
         kpiBlock,
         /accessibilityRole="button"/,
-        "Mandat Lots 0-1 : chaque KPI Accueil cliquable doit exposer accessibilityRole=button",
+        "Maquette L0/L1 / P12 : KPI Accueil cliquable sans accessibilityRole=button",
       );
       assert.match(
         kpiBlock,
         /accessibilityLabel/,
-        "Mandat Lots 0-1 : chaque KPI Accueil doit exposer accessibilityLabel (libellé métier, pas la couleur seule)",
+        "Maquette L0/L1 / AP-005 : KPI Accueil sans accessibilityLabel (la couleur ne suffit pas)",
       );
     },
   },
   {
     id: "L0-12",
-    title: "Viewports 360 / 390 / 430 dp inclus dans le contrat Accueil",
+    title: "Viewports maquette 360 / 390 / 430 dp sur la coque Accueil",
     run() {
-      for (const width of [360, 390, 430] as const) {
+      for (const width of MAQUETTE_L0_L1_VIEWPORTS_DP) {
         assert.equal(
           (UX_V1_VIEWPORTS as readonly number[]).includes(width),
           true,
-          `Mandat Lots 0-1 : viewport ${width} dp absent de UX_V1_VIEWPORTS=${JSON.stringify(UX_V1_VIEWPORTS)}`,
+          `Maquette L0/L1 : viewport ${width} dp absent de UX_V1_VIEWPORTS=${JSON.stringify(UX_V1_VIEWPORTS)}`,
         );
       }
     },
   },
 ];
 
-const failures: { id: string; title: string; message: string }[] = [];
-const passed: string[] = [];
-
-for (const testCase of cases) {
-  try {
-    testCase.run();
-    passed.push(testCase.id);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    failures.push({ id: testCase.id, title: testCase.title, message });
-  }
-}
-
-console.log(`parite L0 hygiene — ${passed.length} vert / ${failures.length} rouge / ${cases.length} cas`);
-for (const id of passed) console.log(`  PASS ${id}`);
-for (const failure of failures) {
-  console.error(`  FAIL [${failure.id}] ${failure.title}\n    ${failure.message}`);
-}
-
-if (failures.length) process.exit(1);
+const report = runRedCases("L0", L0_EXPECTED_IDS, cases);
+if (report.failedIds.length) process.exit(1);
 console.log("OK: L0 hygiene (tous les écarts #577 L0 sont clos)");

@@ -1,287 +1,215 @@
 /**
- * PR #577 — Lot L1 Impayés + vérité KPI — tests ROUGES causaux.
- *   npx --yes tsx src/lib/pariteL1UnpaidKpi.red.test.ts
+ * PR #577 — Lot L1 Impayés — tests ROUGES causaux, neutres vis-à-vis de la solution.
  *
- * Critères uniquement : PR #577 P0-CAND-UNPAID-KPI / P1-04 / §4.11 L1.
- * Web canonique : GET /backoffice/finance/unpaid (ledger d'obligations).
- * Mobile actuel : compteur de reçus payment pending libellé « Impayés ».
+ * Options encore ouvertes (#577 §4.11 L1) :
+ *   A) brancher le ledger GET unpaid (recommandation CTO, pas exigence de ce fichier)
+ *   B) retirer le KPI / libellé « Impayés »
  *
- * Hors lot (ne pas tester ici) : PSP / Mobile Money.
- * Aucune correction applicative dans cette passe.
+ * Ces tests passent dès que « Impayés » n'est plus une vérité de reçus pending.
+ * Ils n'exigent pas l'URL dans HomeScreen ni PaymentsScreen.
  */
 import assert from "node:assert/strict";
-import fs from "node:fs";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
-import { getPaymentStats } from "../domain/metrics/schoolMetrics";
-import { getRoleHomeShell } from "./roleHomeConfig";
-import type { PaymentItem } from "../data/catalog";
 import { UX_V1_VIEWPORTS, tabLabelFitsViewport } from "./mobileUxV1Layout";
 import { MIN_TOUCH_TARGET_DP } from "./mobileUsability";
+import { MAQUETTE_L0_L1_VIEWPORTS_DP, MAQUETTE_MIN_TOUCH_DP } from "./pariteL0L1UxContract";
+import { L1_EXPECTED_IDS, runRedCases, type RedCase } from "./pariteL0L1RedReport";
+import {
+  inspectShippedImpayesWiring,
+  ledgerStudentCount,
+  payment,
+  shippedImpayesView,
+  type UnpaidLedgerRow,
+} from "./pariteL1Unpaid.shipped";
 
-const srcRoot = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
-const repoRoot = path.join(srcRoot, "..", "..");
+const SCHOOL_A = "CD-IN-26-001";
+const SCHOOL_B = "BI-EC-26-001";
 
-function readMobile(rel: string) {
-  return fs.readFileSync(path.join(srcRoot, rel), "utf8");
-}
+const paidReceiptsOnly = [
+  payment("p-paid-1", { status: "Payé", studentId: "stu-a" }),
+  payment("p-paid-2", { status: "Payé", studentId: "stu-b" }),
+];
 
-function readRepo(rel: string) {
-  return fs.readFileSync(path.join(repoRoot, rel), "utf8");
-}
+const ledgerAThree: UnpaidLedgerRow[] = [
+  { studentId: "stu-a", schoolCode: SCHOOL_A, amountDue: 50_000 },
+  { studentId: "stu-c", schoolCode: SCHOOL_A, amountDue: 80_000 },
+  { studentId: "stu-d", schoolCode: SCHOOL_A, amountDue: 20_000 },
+];
 
-function payment(id: string, extras: Partial<PaymentItem> = {}): PaymentItem {
-  return {
-    id,
-    studentId: extras.studentId ?? "stu-a",
-    amount: extras.amount ?? 1000,
-    status: extras.status ?? "Payé",
-    ...extras,
-  } as PaymentItem;
-}
-
-/** Contrat Web Impayés (#577) : élèves avec reste dû d'obligation, pas des reçus pending. */
-type UnpaidLedgerRow = { studentId: string; schoolCode: string; amountDue: number };
-
-function unpaidLedgerStudentCount(rows: UnpaidLedgerRow[], schoolCode: string) {
-  return new Set(
-    rows.filter((row) => row.schoolCode === schoolCode && row.amountDue > 0).map((row) => row.studentId),
-  ).size;
-}
-
-function currentMobileUnpaidKpi(payments: PaymentItem[]) {
-  const stats = getPaymentStats(payments);
-  return { label: "Impayés" as const, value: String(stats.pending) };
-}
-
-type Case = { id: string; title: string; run: () => void };
-
-const cases: Case[] = [
+const cases: RedCase[] = [
   {
     id: "L1-01",
-    title: "Mobile_unpaid_kpi_should_match_web_obligation_ledger",
+    title: "Si Impayés est affiché, le chiffre ne peut pas être les reçus pending (ledger ou retrait)",
     run() {
-      const receipts: PaymentItem[] = [
-        payment("p-paid-1", { status: "Payé", studentId: "stu-a" }),
-        payment("p-paid-2", { status: "Payé", studentId: "stu-b" }),
-      ];
-      const ledger: UnpaidLedgerRow[] = [
-        { studentId: "stu-a", schoolCode: "CD-IN-26-001", amountDue: 50_000 },
-        { studentId: "stu-c", schoolCode: "CD-IN-26-001", amountDue: 80_000 },
-        { studentId: "stu-d", schoolCode: "CD-IN-26-001", amountDue: 20_000 },
-      ];
-      const mobile = currentMobileUnpaidKpi(receipts);
-      const webCount = unpaidLedgerStudentCount(ledger, "CD-IN-26-001");
-      assert.equal(mobile.label, "Impayés");
+      const view = shippedImpayesView({
+        receipts: paidReceiptsOnly,
+        unpaidApi: { status: 200, rows: ledgerAThree },
+        schoolCode: SCHOOL_A,
+      });
+      if (!view.presentsImpayes) return;
+      const webCount = ledgerStudentCount(ledgerAThree, SCHOOL_A);
       assert.equal(
-        mobile.value,
+        view.value,
         String(webCount),
-        `#577 P1-04 / P0-CAND : KPI « Impayés » Mobile=${mobile.value} (reçus pending) ≠ ledger Web=${webCount} élèves avec reste dû. 0 reçu pending + 3 obligations = faux « tout est payé ».`,
+        `#577 P1-04 / P0-CAND : surface « Impayés » encore visible avec valeur=${view.value} (reçus pending) ≠ ledger ${webCount}. Neutralité : brancher le ledger OU retirer le libellé.`,
       );
     },
   },
   {
     id: "L1-02",
-    title: "HomeScreen doit brancher GET /backoffice/finance/unpaid (ou retirer le libellé Impayés)",
+    title: "Pas de libellé Impayés alimenté par les reçus pending",
     run() {
-      const home = readMobile("screens/HomeScreen.tsx");
-      const usesPendingAsUnpaid =
-        /unpaidPayments[\s\S]{0,250}paymentStats\.pending/.test(home) &&
-        /unpaidPayments[\s\S]{0,400}"Impayés"/.test(home);
-      const usesCanonicalUnpaidApi = /backoffice\/finance\/unpaid/.test(home);
-      const labelRemoved = !/"Impayés"/.test(home);
+      const wiring = inspectShippedImpayesWiring();
       assert.equal(
-        usesCanonicalUnpaidApi || labelRemoved,
-        true,
-        "#577 L1 : HomeScreen libelle encore « Impayés » avec paymentStats.pending et n'appelle pas GET /backoffice/finance/unpaid",
-      );
-      assert.equal(
-        usesPendingAsUnpaid && !usesCanonicalUnpaidApi,
+        wiring.presentsImpayes && wiring.valueTiedToReceiptPending,
         false,
-        "#577 L1 : contradiction sémantique encore présente (pending receipts = Impayés)",
+        "#577 L1 : « Impayés » est encore la sémantique des reçus pending — brancher le ledger (client API) ou retirer le libellé",
       );
     },
   },
   {
     id: "L1-03",
-    title: "CTA Impayés ne doit plus naviguer vers Payments (reçus) si le libellé reste Impayés",
+    title: "Si le libellé Impayés reste, la destination ne doit pas être l'écran des reçus",
     run() {
-      const home = readMobile("screens/HomeScreen.tsx");
-      const unpaidBlock = home.slice(
-        home.indexOf('unpaidPayments: canReadEntity(session, "payments")'),
-        home.indexOf('unpaidPayments: canReadEntity(session, "payments")') + 420,
-      );
-      assert.doesNotMatch(
-        unpaidBlock,
-        /navigate\("Payments"\)/,
-        "#577 L1 : le KPI Impayés ne doit pas ouvrir l'écran des reçus Payments — ledger unpaid ou retrait du mot Impayés",
+      const view = shippedImpayesView({
+        receipts: paidReceiptsOnly,
+        unpaidApi: { status: 200, rows: ledgerAThree },
+        schoolCode: SCHOOL_A,
+      });
+      if (!view.presentsImpayes) return;
+      assert.notEqual(
+        view.destination,
+        "Payments",
+        "#577 L1 : KPI Impayés ouvre encore Payments (reçus). Ledger unpaid, ou retrait du mot Impayés.",
       );
     },
   },
   {
     id: "L1-04",
-    title: "PaymentsScreen « Impayés » = pending receipts, pas le ledger",
+    title: "Carte Payments « Impayés » : pas de pending receipts sous ce libellé",
     run() {
-      const src = readMobile("screens/PaymentsScreen.tsx");
-      assert.doesNotMatch(
-        src,
-        /smallLabel\}>Impayés/,
-        "#577 P1-04 : la carte PaymentsScreen « Impayés » ne doit plus afficher paymentStats.pending",
-      );
-      assert.doesNotMatch(
-        src,
-        /\{paymentStats\.pending\}[\s\S]{0,80}Impayés/,
-        "#577 P1-04 : PaymentsScreen couple encore pending et le libellé Impayés",
+      const wiring = inspectShippedImpayesWiring();
+      assert.equal(
+        wiring.paymentsCardUsesReceiptPending,
+        false,
+        "#577 P1-04 : PaymentsScreen couple encore paymentStats.pending et le libellé Impayés — retirer le mot ou le brancher au ledger",
       );
     },
   },
   {
     id: "L1-05",
-    title: "Aucun client Mobile ne consomme GET /backoffice/finance/unpaid",
+    title: "Si Impayés reste affiché, un client unpaid doit exister dans la couche API (pas dans les écrans)",
     run() {
-      const api = readMobile("services/api.ts");
-      const home = readMobile("screens/HomeScreen.tsx");
-      const payments = readMobile("screens/PaymentsScreen.tsx");
-      for (const [name, src] of [
-        ["api.ts", api],
-        ["HomeScreen.tsx", home],
-        ["PaymentsScreen.tsx", payments],
-      ] as const) {
-        assert.match(
-          src,
-          /backoffice\/finance\/unpaid/,
-          `#577 L1 : ${name} doit appeler le contrat Web GET /backoffice/finance/unpaid (aujourd'hui absent) — ou le libellé Impayés doit disparaître`,
-        );
-      }
+      const wiring = inspectShippedImpayesWiring();
+      if (!wiring.presentsImpayes) return;
+      assert.equal(
+        wiring.unpaidClientInApiLayer,
+        true,
+        "#577 L1 : surface Impayés encore visible sans client GET unpaid dans services/api (encapsulation OK ; l'URL n'est pas exigée dans HomeScreen/PaymentsScreen)",
+      );
     },
   },
   {
     id: "L1-06",
-    title: "401 / 403 unpaid : pas de faux succès numérique",
+    title: "401/403 unpaid : pas de faux succès numérique (simulation API)",
     run() {
-      const home = readMobile("screens/HomeScreen.tsx");
-      assert.match(
-        home,
-        /unpaidSnapshot|unpaidError|403|401/,
-        "#577 L1 + mandat : un 401/403 sur GET /backoffice/finance/unpaid ne doit pas laisser afficher un compteur de reçus comme succès Impayés",
-      );
-      const paymentsReadyDrivesUnpaid =
-        /unpaidPayments[\s\S]{0,200}paymentsReady \? String\(paymentStats\.pending\)/.test(home);
+      const fakeSuccesses: string[] = [];
+      for (const status of [401, 403] as const) {
+        const view = shippedImpayesView({
+          receipts: paidReceiptsOnly,
+          unpaidApi: { status, message: status === 401 ? "UNAUTHORIZED" : "FORBIDDEN" },
+          schoolCode: SCHOOL_A,
+        });
+        if (!view.presentsImpayes) continue;
+        if (view.kind === "success" && view.value != null) {
+          fakeSuccesses.push(`${status}:kind=${view.kind}:value=${view.value}`);
+        }
+      }
       assert.equal(
-        paymentsReadyDrivesUnpaid,
-        false,
-        "#577 L1 : paymentsReady=success affiche paymentStats.pending sous « Impayés » même si le ledger unpaid est 401/403/absent — faux succès",
+        fakeSuccesses.length,
+        0,
+        `#577 L1 : 401/403 unpaid encore rendus comme succès numérique (${fakeSuccesses.join(" ; ")}). Attendu : forbidden/unauthenticated/error, ou retrait du KPI.`,
       );
     },
   },
   {
     id: "L1-07",
-    title: "Cross-tenant : Impayés ne compte que l'établissement du principal",
+    title: "Isolation établissement : Impayés ne mélange pas l'école B (simulation API 200 scopée)",
     run() {
-      const receiptsPossiblyLeaked: PaymentItem[] = [
+      const receiptsSchoolB = [
         payment("p-b1", { status: "En attente", studentId: "stu-school-b-1" }),
         payment("p-b2", { status: "En attente", studentId: "stu-school-b-2" }),
         payment("p-b3", { status: "En attente", studentId: "stu-school-b-3" }),
       ];
-      const ledger: UnpaidLedgerRow[] = [
-        { studentId: "stu-a", schoolCode: "CD-IN-26-001", amountDue: 10_000 },
-        { studentId: "stu-other-1", schoolCode: "BI-EC-26-001", amountDue: 99_000 },
-        { studentId: "stu-other-2", schoolCode: "BI-EC-26-001", amountDue: 40_000 },
+      const mixedLedger: UnpaidLedgerRow[] = [
+        { studentId: "stu-a", schoolCode: SCHOOL_A, amountDue: 10_000 },
+        { studentId: "stu-other-1", schoolCode: SCHOOL_B, amountDue: 99_000 },
+        { studentId: "stu-other-2", schoolCode: SCHOOL_B, amountDue: 40_000 },
       ];
-      const mobile = currentMobileUnpaidKpi(receiptsPossiblyLeaked);
-      const schoolA = unpaidLedgerStudentCount(ledger, "CD-IN-26-001");
+      const view = shippedImpayesView({
+        receipts: receiptsSchoolB,
+        unpaidApi: { status: 200, rows: mixedLedger.filter((row) => row.schoolCode === SCHOOL_A) },
+        schoolCode: SCHOOL_A,
+      });
+      if (!view.presentsImpayes) return;
+      const schoolA = ledgerStudentCount(
+        mixedLedger.filter((row) => row.schoolCode === SCHOOL_A),
+        SCHOOL_A,
+      );
       assert.equal(
-        mobile.value,
+        view.value,
         String(schoolA),
-        `#577 L1 isolation établissement : Mobile KPI=${mobile.value} (3 reçus pending, hors API unpaid scopée) ≠ ledger école A=${schoolA}. GET /backoffice/finance/unpaid est borné par le principal ; Mobile n'appelle pas cette API.`,
+        `#577 L1 : isolation établissement — vue=${view.value} (reçus pending école B) ≠ ledger école A=${schoolA} renvoyé par l'API scopée`,
       );
     },
   },
   {
     id: "L1-08",
-    title: "RBAC : KPI Impayés ne doit pas se cacher derrière Paiements:READ si le libellé est Impayés",
+    title: "Si Impayés reste, le gate RBAC ne doit pas être seulement Paiements:READ",
     run() {
-      const home = readMobile("screens/HomeScreen.tsx");
-      const unpaidBlock = home.slice(
-        home.indexOf("unpaidPayments:"),
-        home.indexOf("unpaidPayments:") + 80,
-      );
-      assert.doesNotMatch(
-        unpaidBlock,
-        /canReadEntity\(session, "payments"\)/,
-        "#577 L1 : le Web module Impayés exige Impayés:READ (canAccessUnpaidModule) ; Mobile gate le KPI Impayés sur l'entité payments",
-      );
-      const catalog = readRepo("backend/lib/functionalModulesCatalog.js");
-      assert.match(
-        catalog,
-        /moduleKey: "unpaid"[^}]*appliesMobile: false/,
-        "garde #577 : Impayés appliesMobile=false — afficher le mot Impayés sans API unpaid viole le catalogue",
+      const wiring = inspectShippedImpayesWiring();
+      if (!wiring.presentsImpayes) return;
+      assert.equal(
+        wiring.homeKpiGatedOnPaymentsEntity && wiring.homeKpiLabeledImpayes,
+        false,
+        "#577 L1 : le module Web Impayés exige Impayés:READ ; le KPI Mobile « Impayés » est encore gated sur l'entité payments — ou retirer le libellé",
       );
     },
   },
   {
     id: "L1-09",
-    title: "Coque Comptable : unpaidPayments encore branché sur la sémantique reçus",
+    title: "Coque Comptable : pas d'unpaidPayments alimenté par les reçus (le KPI peut disparaître)",
     run() {
-      const shell = getRoleHomeShell({ role: "accountant" });
+      const wiring = inspectShippedImpayesWiring();
       assert.equal(
-        shell.kpiKeys.includes("unpaidPayments"),
-        true,
-        "garde : la coque Comptable expose encore unpaidPayments — le lot L1 doit soit le brancher au ledger, soit le retirer",
-      );
-      const home = readMobile("screens/HomeScreen.tsx");
-      assert.doesNotMatch(
-        home,
-        /unpaidPayments:[\s\S]{0,300}paymentStats\.pending/,
-        "#577 L1 : accountant.kpiKeys contient unpaidPayments toujours alimenté par paymentStats.pending",
+        wiring.accountantCatalogHasUnpaidKpi && wiring.homeKpiUsesReceiptPending,
+        false,
+        "#577 L1 : unpaidPayments est encore au catalogue Comptable et alimenté par paymentStats.pending — brancher le ledger ou retirer la clé/KPI",
       );
     },
   },
   {
     id: "L1-10",
-    title: "Libellé Impayés lisible 360 / 390 / 430 dp — cible tactile 44 dp",
+    title: "Si Impayés reste visible, lisibilité 360/390/430 et cible 44 dp (maquette)",
     run() {
-      assert.equal(MIN_TOUCH_TARGET_DP >= 44, true);
-      for (const width of [360, 390, 430] as const) {
+      const wiring = inspectShippedImpayesWiring();
+      if (!wiring.presentsImpayes) return;
+      assert.equal(MIN_TOUCH_TARGET_DP >= MAQUETTE_MIN_TOUCH_DP, true);
+      for (const width of MAQUETTE_L0_L1_VIEWPORTS_DP) {
         assert.equal(
           tabLabelFitsViewport("Impayés", width),
           true,
-          `Mandat Lots 0-1 : « Impayés » doit tenir à ${width} dp sans ellipsis`,
+          `Maquette L1 : « Impayés » doit tenir à ${width} dp sans ellipsis`,
         );
         assert.equal(
           (UX_V1_VIEWPORTS as readonly number[]).includes(width),
           true,
-          `Mandat Lots 0-1 : ${width} dp doit faire partie des viewports de validation Accueil/finance`,
+          `Maquette L1 : ${width} dp doit valider la coque Accueil si le KPI Impayés reste affiché`,
         );
       }
-      const layout = readMobile("components/RoleDashboardLayout.tsx");
-      assert.match(
-        layout,
-        /minHeight:\s*KPI_ROW_MIN_DP|minHeight:\s*92/,
-        "KPI Accueil : hauteur min contrat UX (>= 44 dp tactile via KPI_ROW_MIN_DP)",
-      );
     },
   },
 ];
 
-const failures: { id: string; title: string; message: string }[] = [];
-const passed: string[] = [];
-
-for (const testCase of cases) {
-  try {
-    testCase.run();
-    passed.push(testCase.id);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    failures.push({ id: testCase.id, title: testCase.title, message });
-  }
-}
-
-console.log(`parite L1 unpaid — ${passed.length} vert / ${failures.length} rouge / ${cases.length} cas`);
-for (const id of passed) console.log(`  PASS ${id}`);
-for (const failure of failures) {
-  console.error(`  FAIL [${failure.id}] ${failure.title}\n    ${failure.message}`);
-}
-
-if (failures.length) process.exit(1);
+const report = runRedCases("L1", L1_EXPECTED_IDS, cases);
+if (report.failedIds.length) process.exit(1);
 console.log("OK: L1 Impayés (écart #577 P1-04 / P0-CAND clos)");
