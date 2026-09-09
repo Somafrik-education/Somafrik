@@ -1,6 +1,7 @@
 import {
-  resolvePushDestination,
+  resolvePushNavigationData,
   type AllowedPushDestination,
+  type AllowedPushNavigationParams,
 } from "./pushNotificationDestinations";
 
 export type PushTapResponse = {
@@ -18,12 +19,22 @@ export type PushTapGate = {
   isAuthenticated: () => boolean;
 };
 
+type PushNavigationTarget = {
+  destination: AllowedPushDestination;
+  params?: AllowedPushNavigationParams;
+};
+
+type NavigatePush = (
+  destination: AllowedPushDestination,
+  params?: AllowedPushNavigationParams,
+) => void;
+
 const consumedIds = new Set<string>();
-let pendingDestination: AllowedPushDestination | null = null;
+let pendingNavigation: PushNavigationTarget | null = null;
 
 export function resetPushTapStateForTests() {
   consumedIds.clear();
-  pendingDestination = null;
+  pendingNavigation = null;
 }
 
 export function identityOfPushResponse(response: PushTapResponse): string {
@@ -32,10 +43,13 @@ export function identityOfPushResponse(response: PushTapResponse): string {
   ).trim();
 }
 
-export function destinationFromPushResponse(response: PushTapResponse): AllowedPushDestination {
+export function navigationFromPushResponse(response: PushTapResponse): PushNavigationTarget {
   const data = response?.notification?.request?.content?.data;
-  const record = data && typeof data === "object" ? (data as Record<string, unknown>) : {};
-  return resolvePushDestination(record.somafrikDestination);
+  return resolvePushNavigationData(data);
+}
+
+export function destinationFromPushResponse(response: PushTapResponse): AllowedPushDestination {
+  return navigationFromPushResponse(response).destination;
 }
 
 function canNavigate(gate: PushTapGate) {
@@ -44,40 +58,40 @@ function canNavigate(gate: PushTapGate) {
 
 export function consumePushTapResponse(
   response: PushTapResponse,
-  navigate: (destination: AllowedPushDestination) => void,
+  navigate: NavigatePush,
   gate: PushTapGate,
 ): "navigated" | "queued" | "ignored" {
   if (!response) return "ignored";
   const identity = identityOfPushResponse(response);
   if (identity && consumedIds.has(identity)) return "ignored";
   if (identity) consumedIds.add(identity);
-  const destination = destinationFromPushResponse(response);
+  const target = navigationFromPushResponse(response);
   if (canNavigate(gate)) {
-    navigate(destination);
-    pendingDestination = null;
+    navigate(target.destination, target.params);
+    pendingNavigation = null;
     return "navigated";
   }
-  pendingDestination = destination;
+  pendingNavigation = target;
   return "queued";
 }
 
 export function flushPendingPushNavigation(
-  navigate: (destination: AllowedPushDestination) => void,
+  navigate: NavigatePush,
   gate: PushTapGate,
 ): boolean {
-  if (!pendingDestination || !canNavigate(gate)) return false;
-  navigate(pendingDestination);
-  pendingDestination = null;
+  if (!pendingNavigation || !canNavigate(gate)) return false;
+  navigate(pendingNavigation.destination, pendingNavigation.params);
+  pendingNavigation = null;
   return true;
 }
 
 export function dismissPendingPushNavigation() {
-  pendingDestination = null;
+  pendingNavigation = null;
 }
 
 export async function consumeInitialPushResponse(
   readLast: () => Promise<PushTapResponse> | PushTapResponse,
-  navigate: (destination: AllowedPushDestination) => void,
+  navigate: NavigatePush,
   gate: PushTapGate,
 ) {
   const last = await readLast();

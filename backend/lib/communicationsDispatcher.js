@@ -38,6 +38,7 @@ const EVENT_EXTERNAL_CHANNEL_POLICY = Object.freeze({
   "pedagogy.grade.published": ["PUSH", "EMAIL"],
   "pedagogy.report_card.published": ["PUSH", "EMAIL"],
   "finance.payment.recorded": ["PUSH", "EMAIL"],
+  "finance.payment.due": ["PUSH", "EMAIL"],
 });
 
 const EVENT_MANDATORY_CHANNEL_POLICY = Object.freeze({

@@ -9,6 +9,7 @@ import {
   type PushTapGate,
   type PushTapResponse,
 } from "../lib/pushNotificationTap";
+import type { AllowedPushNavigationParams } from "../lib/pushNotificationDestinations";
 import { registerAuthenticatedPushDevice } from "../services/pushNotifications";
 import { navigationRef } from "../navigation/rootNavigation";
 
@@ -22,8 +23,8 @@ Notifications.setNotificationHandler({
   }),
 });
 
-function navigateTo(destination: string) {
-  navigationRef.navigate(destination as never);
+function navigateTo(destination: string, params?: AllowedPushNavigationParams) {
+  navigationRef.navigate({ name: destination, params } as never);
 }
 
 function isNavigationReady() {

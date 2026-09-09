@@ -21,6 +21,7 @@ const {
   mapAttachmentRow,
 } = require("./communicationsAttachments");
 const { enabledChannelsForUser } = require("./communicationsPreferences");
+const { isPaymentDueEligible } = require("./communicationsPaymentDueEligibility");
 const {
   resolveAllowedChannels,
   getSchoolPolicyEventsBySchoolId,
@@ -665,6 +666,34 @@ async function eventSpec(tx, event) {
     body = `Un paiement a été enregistré pour ${payment.student_name || "l'élève"}.`;
     navigationTarget = { type: "payment", studentId: payment.student_id, paymentId: sourceId };
     metadata = { paymentCode: payment.payment_code, paymentDate: payment.payment_date };
+  } else if (eventType === "finance.payment.due") {
+    const obligation = await tx.one(
+      `SELECT o.*, trim(concat(st.first_name,' ',st.last_name)) AS student_name
+       FROM student_fee_obligations o JOIN students st ON st.id = o.student_id
+       WHERE o.id = $1 AND o.school_id = $2
+       FOR UPDATE OF o`, [sourceId, schoolId]);
+    if (!isPaymentDueEligible(obligation)) {
+      return { title: "", body: "", navigationTarget: {}, metadata: {}, recipients: [] };
+    }
+    const parentIds = await tx.listParentUserIdsForStudent(schoolId, obligation.student_id);
+    for (const id of parentIds) add(id, "parent", { studentId: obligation.student_id });
+    if (typeof tx.listSchoolAdminUserIds === "function") {
+      for (const id of await tx.listSchoolAdminUserIds(schoolId)) {
+        add(id, "school_admin", { studentId: obligation.student_id });
+      }
+    }
+    title = "Paiement arrivé à échéance";
+    body = "Un paiement scolaire est arrivé à échéance.";
+    navigationTarget = {
+      type: "finance_obligation",
+      studentId: obligation.student_id,
+      obligationId: sourceId,
+    };
+    metadata = {
+      dueDate: obligation.due_date,
+      feeType: obligation.fee_type,
+      periodLabel: obligation.period_label,
+    };
   } else {
     throw new Error(`Type d'événement C4 non supporté: ${eventType}`);
   }

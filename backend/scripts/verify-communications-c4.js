@@ -117,6 +117,7 @@ function sourceGuards() {
   assert.match(schema, /pedagogy\.grade\.published/);
   assert.match(schema, /pedagogy\.report_card\.published/);
   assert.match(schema, /finance\.payment\.recorded/);
+  assert.match(read("backend/lib/communicationsPaymentDueSweep.js"), /finance\.payment\.due/);
   assert.match(schema, /CREATE TRIGGER trg_c4_message_event/);
   assert.match(schema, /CREATE TRIGGER trg_c4_announcement_event/);
   assert.match(schema, /CREATE TRIGGER trg_c4_attendance_event/);
@@ -179,6 +180,7 @@ function sourceGuards() {
   assert.doesNotMatch(recipientLoop, /continue/);
   assert.doesNotMatch(worker, /twilio|whatsapp|firebase|expoPushService|nodemailer/i);
   assert.match(worker, /dispatchProcessedEvents|communicationsDispatcher/);
+  assert.match(worker, /sweepPaymentDueOutbox/);
   assert.doesNotMatch(worker, /fanOutNotificationChannels/);
   const dispatcherSrc = read("backend/lib/communicationsDispatcher.js");
   assert.match(dispatcherSrc, /function dispatchCommunication/);
@@ -357,6 +359,7 @@ function main() {
   run(process.execPath, ["--test", "backend/lib/communicationsFinal.audit.test.js"], "AUDIT-COM-FINAL audit H-K");
   run(process.execPath, ["--test", "backend/lib/communicationsStudentLate.red.test.js"], "Lot L1 STUDENT_LATE RED/GREEN");
   run(process.execPath, ["--test", "backend/lib/communicationsReportCardPublished.red.test.js"], "Lot L2 REPORT_CARD_PUBLISHED RED/GREEN");
+  run(process.execPath, ["--test", "backend/lib/communicationsPaymentDue.red.test.js"], "Lot L3 PAYMENT_DUE RED/GREEN");
   run(process.execPath, ["--test", "backend/lib/trialAccessRequestNotification.red.test.js"], "trial EMAIL durable unit");
   run(process.execPath, ["--test", "backend/lib/schoolNotificationSettings.test.js"], "Lot I school notification settings");
   run("npm", ["--prefix", "web", "run", "test", "--", "src/pages/parametres/SettingsNotificationsPage.test.tsx"], "web Lot I notification settings");

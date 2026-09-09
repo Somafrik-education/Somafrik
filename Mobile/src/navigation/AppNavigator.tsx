@@ -247,7 +247,7 @@ export default function AppNavigator() {
       key={session ? "authenticated" : "public"}
       onReady={() => {
         flushPendingPushNavigation(
-          (destination) => navigationRef.navigate(destination as never),
+          (destination, params) => navigationRef.navigate({ name: destination, params } as never),
           {
             isReady: () => navigationRef.isReady(),
             isAuthenticated: () => Boolean(session) && canPersistFullSession(session),

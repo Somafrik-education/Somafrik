@@ -51,6 +51,7 @@ const C4_TO_LOT_I = Object.freeze({
   "pedagogy.grade.published": "GRADE_PUBLISHED",
   "pedagogy.report_card.published": "REPORT_CARD_PUBLISHED",
   "finance.payment.recorded": "PAYMENT_RECEIVED",
+  "finance.payment.due": "PAYMENT_DUE",
   "communication.announcement.published": "ANNOUNCEMENT_PUBLISHED",
 });
 

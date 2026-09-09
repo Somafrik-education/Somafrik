@@ -514,6 +514,19 @@ function asPayload(raw) {
   return raw && typeof raw === "object" ? raw : {};
 }
 
+function mobilePushDataForDelivery(row, payload) {
+  const data = { somafrikDestination: "Home", eventKey: row.event_key };
+  const navigationTarget = asPayload(payload?.navigationTarget);
+  if (asTrimmed(navigationTarget.type) === "finance_obligation") {
+    const studentId = asTrimmed(navigationTarget.studentId);
+    if (studentId) {
+      data.somafrikDestination = "StudentPayments";
+      data.somafrikStudentId = studentId;
+    }
+  }
+  return data;
+}
+
 function scopedDevices(devices, { userId, schoolId, backendEnvironment }) {
   return (devices || []).filter((row) => {
     return (
@@ -550,7 +563,7 @@ async function dispatchPush(row, { pushStore, pushClient, env = process.env }) {
     {
       title: payload.title || "Somafrik",
       body: payload.body || "",
-      data: { somafrikDestination: "Home", eventKey: row.event_key },
+      data: mobilePushDataForDelivery(row, payload),
       channelId: "somafrik-default",
     },
   );
@@ -727,6 +740,7 @@ module.exports = {
   createSqlDeliveryAdapter,
   createMemoryDeliveryAdapter,
   enqueueChannelDeliveries,
+  mobilePushDataForDelivery,
   drainChannelDeliveries,
   fanOutNotificationChannels,
 };
