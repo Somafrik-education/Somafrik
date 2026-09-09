@@ -550,7 +550,7 @@ test("RED-PD-15 — non-régression PAYMENT_RECEIVED", async () => {
   });
 });
 
-test("RED-PD-16 — matrice Lot I 7/9 inclut PAYMENT_DUE", () => {
+test("RED-PD-16 — matrice Lot I 8/9 inclut PAYMENT_DUE", () => {
   const schema = read("backend/db/communicationsNotificationsSchema.js");
   const sweep = read("backend/lib/communicationsPaymentDueSweep.js");
   const triggerTypes = [...schema.slice(schema.indexOf("somafrik_enqueue_communication_event"), schema.indexOf("$$ LANGUAGE plpgsql"))
@@ -559,9 +559,14 @@ test("RED-PD-16 — matrice Lot I 7/9 inclut PAYMENT_DUE", () => {
   const wired = [...new Set([...triggerTypes, ...sweepTypes])];
   const mapped = wired.map((eventType) => mapDispatcherEventToLotI(eventType)).filter(Boolean).sort();
   assert.equal(LOT_I_EVENTS.length, 9);
-  assert.equal(mapped.length, 7);
+  assert.equal(mapped.length, 8);
   assert.ok(mapped.includes("PAYMENT_DUE"));
   assert.ok(mapped.includes("PAYMENT_RECEIVED"));
+  assert.ok(mapped.includes("TIMETABLE_CHANGED"));
+  assert.deepEqual(
+    LOT_I_EVENTS.filter((key) => !mapped.includes(key)).sort(),
+    ["TEACHER_REPLACEMENT"],
+  );
 });
 
 test("RED-PD-17 — sweep puis paiement complet → drainOutbox sans notification", async () => {
