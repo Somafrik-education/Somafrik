@@ -112,6 +112,7 @@ import {
 } from "../lib/relations";
 import { csvToObjects, downloadCsv, downloadExcel, rowsToCsv } from "../lib/csv";
 import { normalize } from "../lib/format";
+import { useDeepLinkIds } from "../lib/notificationDeepLink";
 import { isSuperAdminRole } from "../lib/orgHierarchy";
 import { inputToPeriodDate, normalizePeriodDate, periodDateToInput } from "../lib/dates";
 import { subscriptionFeatureBlocked, type SubscriptionFeature } from "../lib/subscriptionAccessClient";
@@ -230,6 +231,9 @@ function EntityPageContent({ entity, mode, classScope, disableCreate = false }: 
     if (fromContext && fromContext !== "*") return fromContext;
     return String(scopeUser?.schoolCode ?? "").trim();
   }, [isSuperadminSystemComm, schoolCode, scopeUser?.schoolCode]);
+
+  const deepLinkEntity = useDeepLinkIds(["paymentId", "reportCardId"] as const);
+  const appliedDeepLinkRowRef = useRef("");
 
   const [search, setSearch] = useState("");
   const [editing, setEditing] = useState<Record<string, unknown> | null>(null);
@@ -359,6 +363,28 @@ function EntityPageContent({ entity, mode, classScope, disableCreate = false }: 
       Object.values(row).some((value) => String(value ?? "").toLowerCase().includes(q)),
     );
   }, [module, search, scopeUser, state, isParentChildMode, classScope]);
+
+  // Deep-link notification : ouvrir la fiche exacte (reçu de paiement, bulletin)
+  // désignée par l'URL, une fois la ligne présente dans le périmètre autorisé.
+  useEffect(() => {
+    if (!module || !canRead) return;
+    const targetId =
+      module.key === "payments"
+        ? deepLinkEntity.paymentId
+        : module.key === "bulletins"
+          ? deepLinkEntity.reportCardId
+          : "";
+    if (!targetId || appliedDeepLinkRowRef.current === targetId) return;
+    const row = rows.find((item) =>
+      [item.id, item.publicId, item.reference].some(
+        (value) => value !== undefined && value !== null && String(value) === targetId,
+      ),
+    );
+    if (!row) return;
+    appliedDeepLinkRowRef.current = targetId;
+    if (module.key === "payments") setReceiptPayment(row as unknown as PaymentRecord);
+    else setEditing({ ...row });
+  }, [module, canRead, rows, deepLinkEntity.paymentId, deepLinkEntity.reportCardId]);
 
   const scopedStudentsList = useMemo(
     () => scopedStudents(scopeUser, state),
@@ -1809,7 +1835,13 @@ function EntityPageContent({ entity, mode, classScope, disableCreate = false }: 
         }
       >
         {editing ? (
-          <form id={`entity-form-${entity}`} onSubmit={handleSubmit} className="grid gap-4">
+          <form
+            id={`entity-form-${entity}`}
+            onSubmit={handleSubmit}
+            className="grid gap-4"
+            data-testid="entity-edit-form"
+            data-record-id={String(editing.id ?? "") || undefined}
+          >
             {isParentChildMode ? (
               <>
                 <Field label="Élève" htmlFor="studentId" required>
@@ -2175,14 +2207,16 @@ function EntityPageContent({ entity, mode, classScope, disableCreate = false }: 
             }
           >
             {receiptPayment ? (
-              <PaymentReceipt
-                payment={receiptPayment}
-                school={
-                  state.schools.find(
-                    (item) => item.code === String(receiptPayment.schoolCode ?? schoolCode ?? ""),
-                  ) ?? getCurrentSchool(scopeUser, state)
-                }
-              />
+              <div data-testid="payment-receipt" data-payment-id={String(receiptPayment.id ?? "")}>
+                <PaymentReceipt
+                  payment={receiptPayment}
+                  school={
+                    state.schools.find(
+                      (item) => item.code === String(receiptPayment.schoolCode ?? schoolCode ?? ""),
+                    ) ?? getCurrentSchool(scopeUser, state)
+                  }
+                />
+              </div>
             ) : null}
           </Modal>
           <Modal
