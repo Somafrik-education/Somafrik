@@ -1,0 +1,117 @@
+{
+  "audit": "parite-web-mobile-l0-l1-red",
+  "date": "2026-09-09",
+  "sourcePr": 577,
+  "sourceAudit": "docs/audits/parite-web-mobile-etablissement-2026-09-09.md",
+  "sourceMatrix": "docs/audits/parite-web-mobile-etablissement-matrix.json",
+  "developSha": "ec2b232e8cb0e6aae27ddac5b1b99a3c9c3596c3",
+  "sourceAuditDevelopSha": "1f0ff39aa02bd0adb09dd4cadfeb9cec4caaca82",
+  "scope": "lots-L0-L1-only",
+  "productionCodeChanged": false,
+  "backendTouched": false,
+  "criteriaInvented": false,
+  "lotsInThisPass": [
+    "L0-hygiene-hide-fail-closed-and-mvp",
+    "L1-unpaid-ledger-or-remove-kpi"
+  ],
+  "lotsExcluded": [
+    "L2-fee-grids",
+    "L3-parent-relations",
+    "L4-exams",
+    "L5-report-cards-write",
+    "L6-student-dossier",
+    "L7-rooms-replacements-appliesMobile",
+    "L8-notification-deeplink",
+    "L9-school-documents-or-remove"
+  ],
+  "screens": [
+    {
+      "lot": "L0",
+      "screen": "RoleNavigationDrawer/super_admin",
+      "capability": "platform-schools-subscriptions-permissions-audit",
+      "gap": "retirer-mobile",
+      "priority": "P1",
+      "source": "P1-13"
+    },
+    {
+      "lot": "L0",
+      "screen": "HomeScreen/platform",
+      "capability": "kpi-countries-schools-admincrud",
+      "gap": "retirer-mobile",
+      "priority": "P1",
+      "source": "P1-13"
+    },
+    {
+      "lot": "L0",
+      "screen": "SchoolManagementScreen",
+      "capability": "fail-closed-admincrud-cards",
+      "gap": "fail-closed",
+      "priority": "P1",
+      "source": "P1-13"
+    },
+    {
+      "lot": "L0",
+      "screen": "DocumentsScreen",
+      "capability": "school-documents",
+      "gap": "fail-closed",
+      "priority": "P1",
+      "source": "P1-07"
+    },
+    {
+      "lot": "L0",
+      "screen": "ReportsScreen",
+      "capability": "canonical-reports",
+      "gap": "retirer-mobile",
+      "priority": "P1",
+      "source": "P1-08"
+    },
+    {
+      "lot": "L0",
+      "screen": "AuditScreen",
+      "capability": "audit-journal",
+      "gap": "retirer-mobile",
+      "priority": "P1",
+      "source": "L0"
+    },
+    {
+      "lot": "L0",
+      "screen": "AppNavigator",
+      "capability": "AdminCrud-live-graph",
+      "gap": "fail-closed",
+      "priority": "P1",
+      "source": "P1-13"
+    },
+    {
+      "lot": "L0",
+      "screen": "MenuScreen",
+      "capability": "dead-navigator-isolation",
+      "gap": "retirer-mobile",
+      "priority": "P1",
+      "source": "L0"
+    },
+    {
+      "lot": "L1",
+      "screen": "HomeScreen/accountant",
+      "capability": "unpaid-kpi",
+      "gap": "absent-mobile",
+      "priority": "P1",
+      "p0Candidate": "P0-CAND-UNPAID-KPI",
+      "source": "P1-04"
+    },
+    {
+      "lot": "L1",
+      "screen": "PaymentsScreen",
+      "capability": "unpaid-summary-card",
+      "gap": "absent-mobile",
+      "priority": "P1",
+      "source": "P1-04"
+    }
+  ],
+  "redTests": [
+    "Mobile/src/lib/pariteL0Hygiene.red.test.ts",
+    "Mobile/src/lib/pariteL1UnpaidKpi.red.test.ts"
+  ],
+  "stop": true,
+  "readyForbidden": true,
+  "mergeForbidden": true
+}
