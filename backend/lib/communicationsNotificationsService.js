@@ -602,6 +602,18 @@ async function eventSpec(tx, event) {
     body = `${attendance.student_name || "Un élève"} a été signalé(e) absent(e).`;
     navigationTarget = { type: "attendance", studentId: attendance.student_id, attendanceId: sourceId };
     metadata = { attendanceDate: attendance.attendance_date };
+  } else if (eventType === "attendance.student.late") {
+    const attendance = await tx.one(
+      `SELECT a.*, trim(concat(st.first_name,' ',st.last_name)) AS student_name
+       FROM attendance a JOIN students st ON st.id = a.student_id
+       WHERE a.id = $1 AND a.school_id = $2`, [sourceId, schoolId]);
+    if (!attendance) throw new Error("Présence source introuvable");
+    const parentIds = await tx.listParentUserIdsForStudent(schoolId, attendance.student_id);
+    for (const id of parentIds) add(id, "parent", { studentId: attendance.student_id });
+    title = "Retard enregistré";
+    body = "Un retard a été enregistré pour votre enfant.";
+    navigationTarget = { type: "attendance", studentId: attendance.student_id, attendanceId: sourceId };
+    metadata = { attendanceDate: attendance.attendance_date };
   } else if (eventType === "pedagogy.grade.published") {
     const grade = await tx.one(
       `SELECT g.*, st.student_code, trim(concat(st.first_name,' ',st.last_name)) AS student_name
