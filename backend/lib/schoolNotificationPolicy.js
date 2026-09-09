@@ -54,6 +54,7 @@ const C4_TO_LOT_I = Object.freeze({
   "finance.payment.due": "PAYMENT_DUE",
   "communication.announcement.published": "ANNOUNCEMENT_PUBLISHED",
   "planning.timetable.changed": "TIMETABLE_CHANGED",
+  "planning.teacher.replacement": "TEACHER_REPLACEMENT",
 });
 
 const MANDATORY_EVENT_CHANNELS = Object.freeze({

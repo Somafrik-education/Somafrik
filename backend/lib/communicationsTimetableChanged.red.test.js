@@ -509,7 +509,7 @@ test("RED-TT-14 — plusieurs champs modifiés → 1 seul event", async () => {
   });
 });
 
-test("RED-TT-15 — aucune production TEACHER_REPLACEMENT", async () => {
+test("RED-TT-15 — changement weekly slot ne produit pas TEACHER_REPLACEMENT", async () => {
   await withIsolatedPg(async (pool) => {
     await seedTimetableFixtures(pool);
     await insertWeeklySlot(pool, { id: SLOT_A });
@@ -518,11 +518,11 @@ test("RED-TT-15 — aucune production TEACHER_REPLACEMENT", async () => {
     assert.equal(rows.length, 1);
     assert.equal(rows.every((row) => row.event_type === TT_EVENT), true);
     const replacement = await pool.query(
-      `SELECT count(*)::int c FROM communication_event_outbox WHERE event_type ILIKE '%replacement%'`,
+      `SELECT count(*)::int c FROM communication_event_outbox WHERE event_type = $1`,
+      ["planning.teacher.replacement"],
     );
     assert.equal(replacement.rows[0].c, 0);
   });
-  assert.doesNotMatch(read("backend/db/communicationsNotificationsSchema.js"), /teacher\.replacement/);
 });
 
 test("RED-TT-17 — cycle A→B→A→B produit 3 événements distincts", async () => {
@@ -601,16 +601,15 @@ test("RED-TT-19 — boot canonique sans migrations L4 manuelles", async () => {
   });
 });
 
-test("RED-TT-16 — AUDIT-COM-FINAL matrice 8/9", () => {
+test("RED-TT-16 — AUDIT-COM-FINAL matrice 9/9", () => {
   const schema = read("backend/db/communicationsNotificationsSchema.js");
+  const teacherOutbox = read("backend/db/teacherReplacementOutbox.sql");
   const block = schema.slice(schema.indexOf("somafrik_enqueue_communication_event"), schema.indexOf("$$ LANGUAGE plpgsql"));
-  const wired = [...new Set([...block.matchAll(/v_event_type := '([^']+)'/g)].map((m) => m[1]))].sort();
+  const wired = [...new Set([...block.matchAll(/v_event_type := '([^']+)'/g)].map((m) => m[1]))];
+  wired.push(...[...teacherOutbox.matchAll(/v_event_type(?:\s+TEXT)?\s*:=\s*'([^']+)'/g)].map((m) => m[1]));
   const sweep = read("backend/lib/communicationsPaymentDueSweep.js");
   wired.push(...[...sweep.matchAll(/PD_EVENT = "([^"]+)"/g)].map((m) => m[1]));
   const mapped = [...new Set(wired)].map((t) => mapDispatcherEventToLotI(t)).filter(Boolean).sort();
-  assert.equal(mapped.length, 8);
-  assert.deepEqual(
-    LOT_I_EVENTS.filter((key) => !mapped.includes(key)).sort(),
-    ["TEACHER_REPLACEMENT"],
-  );
+  assert.equal(mapped.length, 9);
+  assert.deepEqual(LOT_I_EVENTS.filter((key) => !mapped.includes(key)).sort(), []);
 });
