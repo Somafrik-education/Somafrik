@@ -6,7 +6,7 @@
 |---|---|
 | Base SHA | `25c3d8367502294256c4798d22fc21bda66eb395` |
 | Branche | `cursor/communications-timetable-changed-d98a` |
-| HEAD SHA | _(commit P1 fix)_ |
+| HEAD SHA | `6f1f686f6b600d83c7f31722549af1b33a0b4390` |
 
 ## Correctifs P1 CTO (#568)
 
@@ -119,6 +119,7 @@ Moteur commun : `school policy AND user preference` via `resolveAllowedChannels`
 ## Migration / bootstrap
 
 - `backend/db/migrations/20260916_communication_timetable_changed_outbox.sql`
+- `backend/db/migrations/20260917_communication_timetable_changed_revision.sql`
 - `backend/db/communicationsNotificationsSchema.js` (bootstrap canonique)
 - Trigger `trg_c4_timetable_changed_event` sur `course_schedule_weekly_slots`
 - Fonction `somafrik_enqueue_communication_event()` — non-régression L1/L2/L3 préservée
