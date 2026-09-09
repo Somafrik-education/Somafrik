@@ -6,7 +6,7 @@
 |---|---|
 | Base SHA | `0c79ed4099b6148df97e27e076fb7aa17d155f00` |
 | Branche | `cursor/communications-teacher-replacement-d98a` |
-| HEAD SHA | _(voir commit final de la PR)_ |
+| HEAD SHA | `6f750761` |
 
 ## SoT replacement
 
