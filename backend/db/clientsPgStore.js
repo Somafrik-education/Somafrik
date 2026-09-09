@@ -1468,11 +1468,24 @@ function createClientsPgStore(repo) {
       },
       async listClassParentUserIds(schoolId, classIds) {
         if (!classIds?.length) return [];
+        // Fail-closed tenant : contact ET compte utilisateur doivent appartenir
+        // à l'école de l'inscription. Aucune contrainte PostgreSQL ne garantit
+        // contacts.user_id -> users.school_id, la jointure la rend obligatoire.
         return all(
-          `SELECT DISTINCT c.user_id
+          `SELECT DISTINCT u.id AS user_id
            FROM enrollments e
-           JOIN contact_relations r ON r.student_id = e.student_id AND r.status = 'active' AND r.school_id = e.school_id
-           JOIN contacts c ON c.id = r.contact_id AND c.status = 'active' AND c.user_id IS NOT NULL
+           JOIN contact_relations r
+             ON r.student_id = e.student_id
+            AND r.school_id = e.school_id
+            AND r.status = 'active'
+           JOIN contacts c
+             ON c.id = r.contact_id
+            AND c.school_id = e.school_id
+            AND c.status = 'active'
+           JOIN users u
+             ON u.id = c.user_id
+            AND u.school_id = e.school_id
+            AND COALESCE(u.status, 'active') = 'active'
            WHERE e.school_id = $1
              AND e.class_id = ANY($2::uuid[])
              AND e.status = 'active'`,

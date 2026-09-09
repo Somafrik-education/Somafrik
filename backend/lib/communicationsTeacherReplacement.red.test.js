@@ -45,6 +45,9 @@ const TEACHER_B = "e8000000-0000-4000-8000-000000000031";
 const TEACHER_C = "e8000000-0000-4000-8000-000000000032";
 const TEACHER_D = "e8000000-0000-4000-8000-000000000033";
 const TEACHER_OTHER = "e8000000-0000-4000-8000-000000000034";
+const TEACHER_CROSS = "e8000000-0000-4000-8000-000000000035";
+const CROSS_PARENT_USER = "e8000000-0000-4000-8000-000000000024";
+const CROSS_TEACHER_USER = "e8000000-0000-4000-8000-000000000017";
 const CLASS_A = "e8000000-0000-4000-8000-000000000040";
 const CLASS_B = "e8000000-0000-4000-8000-000000000041";
 const CLASS_OTHER = "e8000000-0000-4000-8000-000000000042";
@@ -800,19 +803,128 @@ test("RED-TR — cancel+changement remplaçant atomique → cancelled, pas assig
   });
 });
 
-test("RED-TR — concurrence réaffectations → revisions 2 et 3 distinctes", async () => {
+test("RED-TR-30 — concurrence réelle : deux transactions simultanées sérialisées par PostgreSQL", async () => {
   await withIsolatedPg(async (pool) => {
     await seedReplacementFixtures(pool);
     await withRepo(pool, async (repo) => {
       const store = createPedagogyPgStore(repo);
       const created = await createReplacement(store, TEACHER_B);
-      await store.updateCourseScheduleReplacement(created.id, { substituteTeacherId: TEACHER_C }, adminPrincipal(), auditMeta);
-      await store.updateCourseScheduleReplacement(created.id, { substituteTeacherId: TEACHER_D }, adminPrincipal(), auditMeta);
+      assert.equal((await outboxForReplacement(pool, created.id)).length, 1);
+
+      const clientA = await pool.connect();
+      const clientB = await pool.connect();
+      try {
+        await clientA.query("BEGIN");
+        await clientB.query("BEGIN");
+        await clientA.query(
+          `UPDATE course_schedule_replacements SET substitute_teacher_id = $2, updated_at = NOW() WHERE id = $1`,
+          [created.id, TEACHER_C],
+        );
+        // TX B démarre pendant que TX A détient encore le verrou ligne : elle
+        // reste bloquée jusqu'au COMMIT de A, puis rejoue sur la version validée.
+        const blocked = clientB.query(
+          `UPDATE course_schedule_replacements SET substitute_teacher_id = $2, updated_at = NOW() WHERE id = $1`,
+          [created.id, TEACHER_D],
+        );
+        const stillBlocked = await Promise.race([
+          blocked.then(() => false),
+          new Promise((resolve) => setTimeout(() => resolve(true), 750)),
+        ]);
+        assert.equal(stillBlocked, true, "TX B doit attendre le verrou ligne de TX A");
+        await clientA.query("COMMIT");
+        await blocked;
+        await clientB.query("COMMIT");
+      } finally {
+        clientA.release();
+        clientB.release();
+      }
+
       const rows = await outboxForReplacement(pool, created.id);
-      assert.equal(rows.length, 3);
+      assert.equal(rows.length, 3, "aucun event perdu après sérialisation");
+      assert.equal(new Set(rows.map((row) => row.event_key)).size, 3, "aucune clé dupliquée");
       assert.equal(rows[1].event_key, `${TR_EVENT}:${created.id}:2`);
       assert.equal(rows[2].event_key, `${TR_EVENT}:${created.id}:3`);
+      assert.equal(String(parseOutboxPayload(rows[1]).substituteTeacherId), TEACHER_C);
+      assert.equal(String(parseOutboxPayload(rows[2]).substituteTeacherId), TEACHER_D);
+      assert.equal(String(parseOutboxPayload(rows[2]).previousSubstituteTeacherId), TEACHER_C);
+      const revision = await pool.query(
+        `SELECT change_revision FROM course_schedule_replacements WHERE id = $1`,
+        [created.id],
+      );
+      assert.equal(Number(revision.rows[0].change_revision), 3, "aucune révision perdue");
     });
+  });
+});
+
+test("RED-TR-28 — parent dont le compte appartient à une autre école n'est jamais recipient", async () => {
+  await withIsolatedPg(async (pool) => {
+    await seedReplacementFixtures(pool);
+    const countryB = (await pool.query(`SELECT country_id FROM schools WHERE id = $1`, [SCHOOL_B])).rows[0].country_id;
+    // Liaison incohérente tolérée par le schéma : contact école A -> compte école B.
+    await pool.query(
+      `INSERT INTO users (id,school_id,user_code,first_name,last_name,email,role,status)
+       VALUES ($1,$2,'PAR-TR-CROSS','Parent','Cross','par-cross-tr@test.local','Parent','active')`,
+      [CROSS_PARENT_USER, SCHOOL_B],
+    );
+    const crossContact = (await pool.query(
+      `INSERT INTO contacts (school_id,country_id,first_name,last_name,contact_type,phone,status,user_id)
+       VALUES ($1,$2,'Parent','Cross','Parent','+2250104','active',$3) RETURNING id`,
+      [SCHOOL_A, countryB, CROSS_PARENT_USER],
+    )).rows[0].id;
+    await pool.query(
+      `INSERT INTO contact_relations (school_id,country_id,relation_type,contact_id,student_id,status)
+       VALUES ($1,$2,'parent_student',$3,$4,'active')`,
+      [SCHOOL_A, countryB, crossContact, STUDENT_A1],
+    );
+
+    await withRepo(pool, async (repo) => {
+      const store = createPedagogyPgStore(repo);
+      const created = await createReplacement(store, TEACHER_B);
+      const row = (await outboxForReplacement(pool, created.id))[0];
+      await drainReplacement(pool, created.id);
+      const recipients = await recipientsForEventKey(pool, row.event_key);
+      assert.equal(recipients.includes(CROSS_PARENT_USER), false, "compte parent hors tenant exclu");
+      assert.ok(recipients.includes(PARENT_A), "parents canoniques toujours notifiés");
+    });
+
+    const crossRows = await pool.query(
+      `SELECT count(*)::int c FROM notification_recipients WHERE user_id = $1`,
+      [CROSS_PARENT_USER],
+    );
+    assert.equal(crossRows.rows[0].c, 0);
+  });
+});
+
+test("RED-TR-29 — enseignant dont le compte appartient à une autre école n'est jamais recipient", async () => {
+  await withIsolatedPg(async (pool) => {
+    await seedReplacementFixtures(pool);
+    // Liaison incohérente tolérée par le schéma : teacher école A -> compte école B.
+    await pool.query(
+      `INSERT INTO users (id,school_id,user_code,first_name,last_name,email,role,status)
+       VALUES ($1,$2,'ENS-TR-CROSS','Teacher','Cross','ens-cross-tr@test.local','Teacher','active')`,
+      [CROSS_TEACHER_USER, SCHOOL_B],
+    );
+    await pool.query(
+      `INSERT INTO teachers (id,school_id,user_id,teacher_code,status) VALUES ($1,$2,$3,'ENS-CROSS','active')`,
+      [TEACHER_CROSS, SCHOOL_A, CROSS_TEACHER_USER],
+    );
+
+    await withRepo(pool, async (repo) => {
+      const store = createPedagogyPgStore(repo);
+      const created = await createReplacement(store, TEACHER_CROSS);
+      const row = (await outboxForReplacement(pool, created.id))[0];
+      assert.equal(String(parseOutboxPayload(row).substituteTeacherId), TEACHER_CROSS);
+      await drainReplacement(pool, created.id);
+      const recipients = await recipientsForEventKey(pool, row.event_key);
+      assert.equal(recipients.includes(CROSS_TEACHER_USER), false, "compte enseignant hors tenant exclu");
+      assert.ok(recipients.includes(TEACHER_USER_A), "titulaire canonique toujours notifié");
+    });
+
+    const crossRows = await pool.query(
+      `SELECT count(*)::int c FROM notification_recipients WHERE user_id = $1`,
+      [CROSS_TEACHER_USER],
+    );
+    assert.equal(crossRows.rows[0].c, 0);
   });
 });
 

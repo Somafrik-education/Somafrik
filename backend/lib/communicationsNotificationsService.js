@@ -765,10 +765,20 @@ async function eventSpec(tx, event) {
     const originalTeacherId = String(payload.originalTeacherId ?? "").trim();
     const substituteTeacherId = String(payload.substituteTeacherId ?? "").trim();
     const previousSubstituteTeacherId = String(payload.previousSubstituteTeacherId ?? "").trim();
+    // Fail-closed tenant : le compte utilisateur de l'enseignant doit lui aussi
+    // appartenir à l'école de l'événement (teachers.user_id n'est pas contraint).
     const resolveTeacherUser = async (tid) => {
       if (!tid) return null;
       const row = await tx.one(
-        `SELECT user_id FROM teachers WHERE id = $1 AND school_id = $2`,
+        `SELECT u.id AS user_id
+         FROM teachers t
+         JOIN users u
+           ON u.id = t.user_id
+          AND u.school_id = t.school_id
+          AND COALESCE(u.status, 'active') = 'active'
+         WHERE t.id = $1
+           AND t.school_id = $2
+           AND COALESCE(t.status, 'active') = 'active'`,
         [tid, schoolId],
       );
       return row?.user_id ?? null;
