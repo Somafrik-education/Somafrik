@@ -12,6 +12,7 @@ on:
       - "backend/lib/communicationsNotificationsWorker.js"
       - "backend/lib/communicationChannelFanout.js"
       - "backend/lib/communicationChannelFanout.test.js"
+      - "backend/lib/communicationsFinanceMobileNavigation.test.js"
       - "backend/lib/communicationsChannelFanout.red-com-01.test.js"
       - "backend/lib/communicationsDispatcher.red.test.js"
       - "backend/lib/communicationsDispatcher.js"
@@ -48,6 +49,10 @@ on:
       - "backend/services/paymentTransactionService.js"
       - "Mobile/src/lib/notificationInboxRoute.ts"
       - "Mobile/src/lib/notificationInboxRoute.test.ts"
+      - "Mobile/src/lib/pushNotificationDestinations.ts"
+      - "Mobile/src/lib/pushNotificationTap.ts"
+      - "Mobile/src/lib/financeNotificationNavigation.test.ts"
+      - "Mobile/src/components/PushNotificationsRuntime.tsx"
       - "backend/lib/communicationsTrialSmtp.red.test.js"
       - "backend/lib/communicationsDeliveryReliability.red.test.js"
       - "backend/lib/communicationsDeliveryHealth.js"
@@ -155,6 +160,10 @@ jobs:
           npm ci --prefix Mobile
       - name: Verify Lot I safety guards
         run: node --test backend/lib/schoolNotificationSafety.test.js
+      - name: Verify finance Mobile notification navigation
+        run: |
+          node --test backend/lib/communicationsFinanceMobileNavigation.test.js
+          npx --yes tsx Mobile/src/lib/financeNotificationNavigation.test.ts
       - name: Verify Communications C4 E2E
         shell: bash
         run: |
