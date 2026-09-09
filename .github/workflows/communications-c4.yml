@@ -52,6 +52,8 @@ on:
       - "backend/lib/communicationsDeliveryReliability.red.test.js"
       - "backend/lib/communicationsDeliveryHealth.js"
       - "backend/lib/communicationsDeliveryHealth.test.js"
+      - "backend/lib/communicationsFinal.audit.test.js"
+      - "docs/audits/communications-final-audit-2026-09-09.md"
       - "backend/db/migrations/20260908_communication_channel_deliveries_reliability.sql"
       - "docs/audits/communications-delivery-reliability-red-2026-09-08.md"
       - "docs/audits/communications-delivery-reliability-green-2026-09-08.md"

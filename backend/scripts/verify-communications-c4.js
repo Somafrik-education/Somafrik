@@ -352,6 +352,7 @@ function main() {
   run(process.execPath, ["--test", "backend/lib/communicationsTrialSmtp.red.test.js"], "RED-COM-07 trial SMTP durable");
   run(process.execPath, ["--test", "backend/lib/communicationsDeliveryReliability.red.test.js"], "RED-COM-08 delivery reliability");
   run(process.execPath, ["--test", "backend/lib/communicationsDeliveryHealth.test.js"], "Lot K delivery health");
+  run(process.execPath, ["--test", "backend/lib/communicationsFinal.audit.test.js"], "AUDIT-COM-FINAL audit H-K");
   run(process.execPath, ["--test", "backend/lib/trialAccessRequestNotification.red.test.js"], "trial EMAIL durable unit");
   run(process.execPath, ["--test", "backend/lib/schoolNotificationSettings.test.js"], "Lot I school notification settings");
   run("npm", ["--prefix", "web", "run", "test", "--", "src/pages/parametres/SettingsNotificationsPage.test.tsx"], "web Lot I notification settings");
