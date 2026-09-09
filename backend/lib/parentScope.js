@@ -86,18 +86,93 @@ function mergeLinkedStudentKeys(principal, students = []) {
   return uniqueKeys([...seed, ...linked.flatMap((row) => expandStudentIdentityKeys(row))]);
 }
 
+const CANONICAL_LOOKUP_OK = "ok";
+const CANONICAL_LOOKUP_UNAVAILABLE = "unavailable";
+const CANONICAL_LOOKUP_ERROR = "error";
+
+function emptyParentLinkedHydration() {
+  return { studentIds: [], linked: [], classCodes: [], classIds: [] };
+}
+
 /**
- * Quand des enfants canoniques existent (contact_relations), le JWT ne peut
- * qu'ajouter des alias d'identité de ces enfants — jamais un camarade.
+ * Autorité contact_relations : le JWT ne peut qu'ajouter des alias d'identité
+ * des enfants canoniques. 0 enfant canonique ⇒ [] — jamais un studentId JWT.
  */
 function restrictStudentIdsToCanonicalChildren(studentIds, canonicalChildren = []) {
   const canonicalKeys = uniqueKeys((canonicalChildren ?? []).flatMap((row) => expandStudentIdentityKeys(row)));
   if (!canonicalKeys.length) {
-    return uniqueKeys(studentIds ?? []);
+    return [];
   }
   const allowed = new Set(canonicalKeys);
   const jwtWithin = (studentIds ?? []).filter((value) => allowed.has(trim(value)));
   return uniqueKeys([...canonicalKeys, ...jwtWithin]);
+}
+
+async function lookupCanonicalParentLinkedStudents({ repository, principal, schoolStudents } = {}) {
+  if (!repository || typeof repository.listLiveParentLinkedStudentIdsForSync !== "function") {
+    return { status: CANONICAL_LOOKUP_UNAVAILABLE, students: [] };
+  }
+  const userId = String(principal?.sub ?? "").trim();
+  if (!userId) {
+    return { status: CANONICAL_LOOKUP_ERROR, students: [] };
+  }
+  let schoolId = String(principal.effectiveSchoolId ?? principal.schoolId ?? "").trim();
+  if (!schoolId && typeof repository.getSchoolByCode === "function") {
+    try {
+      const school = await repository.getSchoolByCode(String(principal.schoolCode ?? "").trim());
+      schoolId = String(school?.id ?? school?.school_id ?? "").trim();
+    } catch (error) {
+      return { status: CANONICAL_LOOKUP_ERROR, students: [], error };
+    }
+  }
+  if (!schoolId) {
+    return { status: CANONICAL_LOOKUP_ERROR, students: [] };
+  }
+  try {
+    const rows = await repository.listLiveParentLinkedStudentIdsForSync(userId, schoolId);
+    const ids = new Set(
+      (rows ?? [])
+        .map((row) => String(row?.studentId ?? row?.id ?? "").trim())
+        .filter(Boolean),
+    );
+    const students = ids.size
+      ? (schoolStudents ?? []).filter((student) =>
+          expandStudentIdentityKeys(student).some((key) => ids.has(key)),
+        )
+      : [];
+    return { status: CANONICAL_LOOKUP_OK, students };
+  } catch (error) {
+    return { status: CANONICAL_LOOKUP_ERROR, students: [], error };
+  }
+}
+
+/**
+ * ok + 0 relation, ou error : jamais de repli JWT / state.
+ * unavailable (store mémoire sans table live) : JWT ∩ élèves, fixtures only.
+ */
+function resolveParentLinkedHydration(lookup, options = {}) {
+  const jwtStudentIds = options.jwtStudentIds ?? [];
+  const schoolStudents = options.schoolStudents ?? [];
+  const fallbackChildren = options.fallbackChildren ?? [];
+
+  if (!lookup || lookup.status === CANONICAL_LOOKUP_ERROR) {
+    return emptyParentLinkedHydration();
+  }
+  if (lookup.status === CANONICAL_LOOKUP_OK) {
+    const studentIds = restrictStudentIdsToCanonicalChildren(jwtStudentIds, lookup.students);
+    const linked = (lookup.students ?? []).filter((row) => studentMatchesLinkedKeys(row, studentIds));
+    const refs = classRefsFromStudents(linked);
+    return { studentIds, linked, classCodes: refs.classCodes, classIds: refs.classIds };
+  }
+  const seed = uniqueKeys([
+    ...jwtStudentIds,
+    ...fallbackChildren.flatMap((child) => expandStudentIdentityKeys(child)),
+  ]);
+  const pool = schoolStudents.length ? schoolStudents : fallbackChildren;
+  const studentIds = mergeLinkedStudentKeys({ studentIds: seed }, pool);
+  const linked = linkedStudentsFromRows(pool, { studentIds });
+  const refs = classRefsFromStudents(linked);
+  return { studentIds, linked, classCodes: refs.classCodes, classIds: refs.classIds };
 }
 
 function classRefsFromStudents(students = []) {
@@ -151,6 +226,11 @@ module.exports = {
   linkedStudentsFromRows,
   mergeLinkedStudentKeys,
   restrictStudentIdsToCanonicalChildren,
+  lookupCanonicalParentLinkedStudents,
+  resolveParentLinkedHydration,
   classRefsFromStudents,
   scopeSchoolClassesForLinkedStudents,
+  CANONICAL_LOOKUP_OK,
+  CANONICAL_LOOKUP_UNAVAILABLE,
+  CANONICAL_LOOKUP_ERROR,
 };

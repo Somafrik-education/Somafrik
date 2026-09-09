@@ -6203,56 +6203,26 @@ function countryCodeFromScope(countryScope) {
   return codes[normalized] ?? (/^[A-Z]{2}$/.test(normalized) ? normalized : "");
 }
 
-async function loadCanonicalParentLinkedStudents(principal, schoolStudents) {
-  const { expandStudentIdentityKeys } = require("./lib/parentScope");
-  const userId = String(principal?.sub ?? "").trim();
-  if (!userId || typeof repository.listLiveParentLinkedStudentIdsForSync !== "function") {
-    return [];
-  }
-  let schoolId = String(principal.effectiveSchoolId ?? principal.schoolId ?? "").trim();
-  if (!schoolId && typeof repository.getSchoolByCode === "function") {
-    const school = await repository.getSchoolByCode(String(principal.schoolCode ?? "").trim());
-    schoolId = String(school?.id ?? school?.school_id ?? "").trim();
-  }
-  if (!schoolId) {
-    return [];
-  }
-  let rows = [];
-  try {
-    rows = await repository.listLiveParentLinkedStudentIdsForSync(userId, schoolId);
-  } catch {
-    return [];
-  }
-  const ids = new Set(
-    (rows ?? [])
-      .map((row) => String(row?.studentId ?? row?.id ?? "").trim())
-      .filter(Boolean),
-  );
-  if (!ids.size) {
-    return [];
-  }
-  return (schoolStudents ?? []).filter((student) =>
-    expandStudentIdentityKeys(student).some((key) => ids.has(key)),
-  );
-}
-
 async function hydrateParentPrincipal(principal) {
   const {
     principalIsParentOrStudent,
     principalIsParent,
-    expandStudentIdentityKeys,
-    mergeLinkedStudentKeys,
-    restrictStudentIdsToCanonicalChildren,
     linkedStudentsFromRows,
-    classRefsFromStudents,
+    lookupCanonicalParentLinkedStudents,
+    resolveParentLinkedHydration,
+    CANONICAL_LOOKUP_UNAVAILABLE,
   } = require("./lib/parentScope");
   if (!principal || !principalIsParentOrStudent(principal)) {
     return principal;
   }
   const students = await listCanonicalStudentsForPrincipal(principal);
-  const canonicalChildren = await loadCanonicalParentLinkedStudents(principal, students);
-  let children = canonicalChildren;
-  if (!children.length) {
+  const lookup = await lookupCanonicalParentLinkedStudents({
+    repository,
+    principal,
+    schoolStudents: students,
+  });
+  let fallbackChildren = [];
+  if (lookup.status === CANONICAL_LOOKUP_UNAVAILABLE) {
     try {
       const state = await getAuthoritativeBackOfficeState();
       const principalKeys = new Set(
@@ -6268,7 +6238,7 @@ async function hydrateParentPrincipal(principal) {
       const schoolCode = String(
         principal.schoolCode ?? parentUser?.schoolCode ?? "",
       ).trim();
-      children = resolveParentChildren(
+      fallbackChildren = resolveParentChildren(
         parentUser ?? {
           contactId: principal.contactId,
           identifier: principal.identifier,
@@ -6278,37 +6248,26 @@ async function hydrateParentPrincipal(principal) {
         state,
         schoolCode,
       );
-      if (!children.length) {
-        children = linkedStudentsFromRows(state.students ?? students, principal);
+      if (!fallbackChildren.length) {
+        fallbackChildren = linkedStudentsFromRows(state.students ?? students, principal);
       }
     } catch {
-      children = linkedStudentsFromRows(students, principal);
+      fallbackChildren = linkedStudentsFromRows(students, principal);
     }
   }
-  const seedIds = canonicalChildren.length
-    ? restrictStudentIdsToCanonicalChildren(principal.studentIds, canonicalChildren)
-    : [
-        ...(principal.studentIds ?? []),
-        ...children.flatMap((child) => expandStudentIdentityKeys(child)),
-      ];
-  const pool = students.length ? students : children;
-  const studentIds = mergeLinkedStudentKeys(
-    { ...principal, studentIds: seedIds },
-    canonicalChildren.length ? canonicalChildren : pool,
-  );
-  const linked = linkedStudentsFromRows(canonicalChildren.length ? canonicalChildren : pool, {
-    ...principal,
-    studentIds,
+  const hydrated = resolveParentLinkedHydration(lookup, {
+    jwtStudentIds: principal.studentIds,
+    schoolStudents: students,
+    fallbackChildren,
   });
-  const refs = classRefsFromStudents(linked);
   return {
     ...principal,
     role: principal.role || (principalIsParent(principal) ? "Parent" : principal.role),
     schoolCode: principal.schoolCode,
     contactId: principal.contactId,
-    studentIds,
-    classCodes: [...new Set([...(principal.classCodes ?? []), ...refs.classCodes])],
-    classIds: [...new Set([...(principal.classIds ?? []), ...refs.classIds])],
+    studentIds: hydrated.studentIds,
+    classCodes: [...new Set([...(principal.classCodes ?? []), ...hydrated.classCodes])],
+    classIds: [...new Set([...(principal.classIds ?? []), ...hydrated.classIds])],
   };
 }
 

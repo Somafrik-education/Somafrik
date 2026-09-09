@@ -7,7 +7,7 @@ Preuve RED conservée : PR #574 (`b2752435`), Draft, **HOLD — ne pas merger**.
 ## Correctifs
 
 1. **`role` et `roleKeys`** — `principalIsParentOrStudent` (`backend/lib/parentScope.js`) reconnaît Parent/Élève par libellé **et** `PARENT` / `STUDENT`. Utilisé par `classStudentsAuthz`, `TenantScopeService`, `hydrateParentPrincipal`, `presenceListStaysStudentScoped`.
-2. **Rattachement canonique** — `contacts.user_id` → `contact_relations.student_id` (via `listLiveParentLinkedStudentIdsForSync`). Si des enfants canoniques existent, le JWT ne peut qu’ajouter des alias d’identité de ces enfants — jamais un camarade. Sans relation : repli JWT ∩ élèves de l’établissement (fixtures / legacy). `mapStudentRow` expose `studentUuid`.
+2. **Rattachement canonique** — `contacts.user_id` → `contact_relations.student_id`. Le lookup distingue `ok` / `unavailable` / `error`. Dès que PostgreSQL est l’autorité (`ok` ou `error`) : **aucun repli JWT ni back-office**. `ok` + 0 relation (y compris relation supprimée) ⇒ 0 donnée. Erreur de lecture ⇒ fail-closed. Le JWT ne sert que d’alias d’identité des enfants canoniques. Repli JWT uniquement si le store mémoire n’expose pas le lookup live (`unavailable`).
 3. **`GET /api/classes`** — Parent : uniquement les classes des enfants liés, `students` = nombre d’enfants liés dans la classe (pas l’effectif camarades). Sans enfant → `[]`.
 4. **Roster** — `scopeClassStudentsForPrincipal` + resolveur fail-closed sur les clés liées. `roleKeys` sans `role` ne retombe plus sur `return rows`.
 5. **Présences** — même jeu de clés ; liste student-scoped si Parent via `role` ou `roleKeys`.
@@ -16,7 +16,7 @@ Preuve RED conservée : PR #574 (`b2752435`), Draft, **HOLD — ne pas merger**.
 
 ## Matrice
 
-HTTP PG (`parentAttendanceIsolation.http.pg.test.js`) : 4 GET + Teacher/Admin/cross-school + `contact_relations` sans JWT `studentIds` + JWT camarade rejeté + `roleKeys` seul.
+HTTP PG : 4 GET + Teacher/Admin/cross-school + `contact_relations` sans JWT + JWT camarade rejeté + `roleKeys` seul + **relation supprimée + JWT stale = 0** + **erreur `contact_relations` = fail-closed**.
 
 ## Hors périmètre
 

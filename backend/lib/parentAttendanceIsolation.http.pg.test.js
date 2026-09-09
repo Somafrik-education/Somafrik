@@ -49,6 +49,7 @@ const USER_PARENT_A = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa13";
 const USER_PARENT_TWO = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa14";
 const USER_PARENT_EMPTY = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa15";
 const USER_PARENT_B = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa16";
+const USER_PARENT_STALE = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa17";
 
 const PRES_MAEVA = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeee11";
 const PRES_AISHA = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeee12";
@@ -280,8 +281,9 @@ async function seed(pool) {
        ($3, $7, 'PAR-MAEVA', 'Papa', 'Maeve', 'papa-maeve@iso.test', 'Parent', 'active', FALSE),
        ($4, $7, 'PAR-TWO', 'Parent', 'Deux', 'par-two@iso.test', 'Parent', 'active', FALSE),
        ($5, $7, 'PAR-EMPTY', 'Parent', 'Vide', 'par-empty@iso.test', 'Parent', 'active', FALSE),
-       ($6, $8, 'PAR-B', 'Parent', 'Buj', 'par-b@iso.test', 'Parent', 'active', FALSE)`,
-    [USER_ADMIN, USER_TEACHER, USER_PARENT_A, USER_PARENT_TWO, USER_PARENT_EMPTY, USER_PARENT_B, schoolAId, schoolBId],
+       ($6, $8, 'PAR-B', 'Parent', 'Buj', 'par-b@iso.test', 'Parent', 'active', FALSE),
+       ($9, $7, 'PAR-STALE', 'Parent', 'Stale', 'par-stale@iso.test', 'Parent', 'active', FALSE)`,
+    [USER_ADMIN, USER_TEACHER, USER_PARENT_A, USER_PARENT_TWO, USER_PARENT_EMPTY, USER_PARENT_B, schoolAId, schoolBId, USER_PARENT_STALE],
   );
   await pool.query(
     `INSERT INTO user_roles (user_id, school_id, role_key, status)
@@ -291,8 +293,9 @@ async function seed(pool) {
        ($3, $5, 'PARENT', 'active'),
        ($4, $5, 'PARENT', 'active'),
        ($6, $5, 'PARENT', 'active'),
-       ($7, $8, 'PARENT', 'active')`,
-    [USER_ADMIN, USER_TEACHER, USER_PARENT_A, USER_PARENT_TWO, schoolAId, USER_PARENT_EMPTY, USER_PARENT_B, schoolBId],
+       ($7, $8, 'PARENT', 'active'),
+       ($9, $5, 'PARENT', 'active')`,
+    [USER_ADMIN, USER_TEACHER, USER_PARENT_A, USER_PARENT_TWO, schoolAId, USER_PARENT_EMPTY, USER_PARENT_B, schoolBId, USER_PARENT_STALE],
   );
 
   const teacher = await pool.query(
@@ -326,13 +329,19 @@ async function seed(pool) {
      VALUES ($1, $2, 'Parent', 'Buj', 'parent', 'active', $3) RETURNING id`,
     [schoolBId, bi.id, USER_PARENT_B],
   );
+  const contactStale = await pool.query(
+    `INSERT INTO contacts (school_id, country_id, first_name, last_name, contact_type, status, user_id)
+     VALUES ($1, $2, 'Parent', 'Stale', 'parent', 'active', $3) RETURNING id`,
+    [schoolAId, cd.id, USER_PARENT_STALE],
+  );
   await pool.query(
     `INSERT INTO contact_relations (school_id, country_id, relation_type, contact_id, student_id, status)
      VALUES
        ($1, $3, 'parent_student', $5, $8, 'active'),
        ($1, $3, 'parent_student', $6, $8, 'active'),
        ($1, $3, 'parent_student', $6, $9, 'active'),
-       ($2, $4, 'parent_student', $7, $10, 'active')`,
+       ($2, $4, 'parent_student', $7, $10, 'active'),
+       ($1, $3, 'parent_student', $11, $8, 'active')`,
     [
       schoolAId,
       schoolBId,
@@ -344,7 +353,13 @@ async function seed(pool) {
       maeva.rows[0].id,
       sibling.rows[0].id,
       studentB.rows[0].id,
+      contactStale.rows[0].id,
     ],
+  );
+  await pool.query(
+    `UPDATE contact_relations SET status = 'deleted', updated_at = NOW()
+     WHERE contact_id = $1 AND student_id = $2`,
+    [contactStale.rows[0].id, maeva.rows[0].id],
   );
 
   await pool.query(
@@ -547,6 +562,14 @@ async function main() {
       schoolCode: LOGIN_A,
       permissions: PARENT_PERMS,
       studentIds: [],
+    });
+    const tokenParentStale = mint({
+      sub: USER_PARENT_STALE,
+      role: "Parent",
+      roleKeys: ["PARENT"],
+      schoolCode: LOGIN_A,
+      permissions: PARENT_PERMS,
+      studentIds: maevaKeys,
     });
     const tokenTeacher = mint({
       sub: USER_TEACHER,
@@ -784,6 +807,46 @@ async function main() {
       const ids = presenceStudentIds(presencesRoleKeys.data);
       assert.ok(ids.some((id) => maevaKeys.includes(id)), JSON.stringify(presencesRoleKeys.data));
       assert.ok(ids.every((id) => maevaKeys.includes(id)), JSON.stringify(presencesRoleKeys.data));
+    });
+
+    const classesStale = await request("/classes", { token: tokenParentStale });
+    const rosterStale = await request(`/classes/${CLASS_2A}/students`, { token: tokenParentStale });
+    const presencesStale = await request("/presences", { token: tokenParentStale });
+
+    check("P0-13-classes", "relation canonique supprimée + JWT stale — GET /classes = 0", () => {
+      assert.equal(unwrapList(classesStale.data).length, 0, JSON.stringify(classesStale.data));
+    });
+    check("P0-13-roster", "relation canonique supprimée + JWT stale — roster 403 ou []", () => {
+      const codes = studentCodes(rosterStale.data);
+      assert.ok(rosterStale.status === 403 || codes.length === 0, JSON.stringify(rosterStale.data));
+      assert.equal(codes.some((code) => maevaKeys.includes(code)), false);
+    });
+    check("P0-13-presences", "relation canonique supprimée + JWT stale — GET /presences = []", () => {
+      assert.deepEqual(unwrapList(presencesStale.data), []);
+    });
+
+    let classesLookupError;
+    let rosterLookupError;
+    let presencesLookupError;
+    await pool.query(`ALTER TABLE contact_relations RENAME TO contact_relations_offline_p014`);
+    try {
+      classesLookupError = await request("/classes", { token: tokenParentA });
+      rosterLookupError = await request(`/classes/${CLASS_2A}/students`, { token: tokenParentA });
+      presencesLookupError = await request("/presences", { token: tokenParentA });
+    } finally {
+      await pool.query(`ALTER TABLE contact_relations_offline_p014 RENAME TO contact_relations`);
+    }
+
+    check("P0-14-classes", "erreur lecture contact_relations — GET /classes = 0, pas de fallback JWT", () => {
+      assert.equal(unwrapList(classesLookupError.data).length, 0, JSON.stringify(classesLookupError.data));
+    });
+    check("P0-14-roster", "erreur lecture contact_relations — roster 403 ou [], jamais Maeva", () => {
+      const codes = studentCodes(rosterLookupError.data);
+      assert.ok(rosterLookupError.status === 403 || codes.length === 0, JSON.stringify(rosterLookupError.data));
+      assert.equal(codes.some((code) => maevaKeys.includes(code)), false);
+    });
+    check("P0-14-presences", "erreur lecture contact_relations — GET /presences = [], jamais fallback JWT", () => {
+      assert.deepEqual(unwrapList(presencesLookupError.data), []);
     });
 
     const red = results.filter((row) => row.status === "RED");
