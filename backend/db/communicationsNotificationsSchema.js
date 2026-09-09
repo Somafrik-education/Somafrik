@@ -136,6 +136,21 @@ BEGIN
     should_emit := lower(trim(COALESCE(NEW.publication_status, ''))) = 'published'
       AND (TG_OP = 'INSERT' OR lower(trim(COALESCE(OLD.publication_status, ''))) <> 'published');
 
+  ELSIF TG_TABLE_NAME = 'report_cards' THEN
+    v_event_type := 'pedagogy.report_card.published';
+    v_source_type := 'report_card';
+    v_source_id := NEW.id;
+    v_school_id := NEW.school_id;
+    v_actor := NULL;
+    v_event_key := v_event_type || ':' || NEW.id::text;
+    v_payload := jsonb_build_object(
+      'studentId', NEW.student_id,
+      'academicYearId', NEW.academic_year_id,
+      'termId', NEW.term_id
+    );
+    should_emit := lower(trim(COALESCE(NEW.status, ''))) = 'published'
+      AND (TG_OP = 'INSERT' OR lower(trim(COALESCE(OLD.status, ''))) <> 'published');
+
   ELSIF TG_TABLE_NAME = 'payments' THEN
     v_event_type := 'finance.payment.recorded';
     v_source_type := 'payment';
@@ -213,6 +228,17 @@ BEGIN
   END IF;
 END
 $c4_payment_trigger$;
+
+DO $c4_report_card_trigger$
+BEGIN
+  IF to_regclass('public.report_cards') IS NOT NULL THEN
+    EXECUTE 'DROP TRIGGER IF EXISTS trg_c4_report_card_event ON report_cards';
+    EXECUTE 'CREATE TRIGGER trg_c4_report_card_event
+      AFTER INSERT OR UPDATE OF status ON report_cards
+      FOR EACH ROW EXECUTE FUNCTION somafrik_enqueue_communication_event()';
+  END IF;
+END
+$c4_report_card_trigger$;
 
 CREATE TABLE IF NOT EXISTS communication_channel_deliveries (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
