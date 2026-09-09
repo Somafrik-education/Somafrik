@@ -6,7 +6,7 @@
 |---|---|
 | Base SHA | `25c3d8367502294256c4798d22fc21bda66eb395` |
 | Branche | `cursor/communications-timetable-changed-d98a` |
-| HEAD SHA | _(voir commit bootstrap P1)_ |
+| HEAD SHA | `13a049f56e34ebee17f48e182d7053b4505e51c3` |
 
 ## Correctifs P1 CTO (#568)
 
