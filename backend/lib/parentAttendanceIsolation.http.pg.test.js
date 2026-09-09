@@ -503,9 +503,11 @@ async function main() {
     check("P0-1-presences", "Parent 1 enfant — GET /presences = Maeva seule", () => {
       assert.equal(presencesA.status, 200, `GET /presences status=${presencesA.status}`);
       const ids = presenceStudentIds(presencesA.data);
+      assert.ok(ids.includes("STU-MAEVA"), `Maeva absente de /presences: ${JSON.stringify(presencesA.data)}`);
       assert.ok(ids.every((id) => id === "STU-MAEVA"), `presences=${JSON.stringify(presencesA.data)}`);
       assert.equal(ids.includes("STU-AISHA") || ids.includes("STU-JEAN") || ids.includes("STU-LUC"), false);
       assert.equal(presenceIds(presencesA.data).includes(PRES_AISHA), false);
+      assert.equal(presenceIds(presencesA.data).includes(PRES_MAEVA), true);
     });
 
     check("P0-3", "Parent ne lit jamais la présence d'un autre élève par studentId", () => {
@@ -542,6 +544,8 @@ async function main() {
     });
     check("P0-2-presences", "Parent 2 enfants — présences Maeva + Sibling uniquement", () => {
       const ids = new Set(presenceStudentIds(presencesTwo.data));
+      assert.ok(ids.has("STU-MAEVA"), `Maeva absente: ${JSON.stringify(presencesTwo.data)}`);
+      assert.ok(ids.has("STU-SIB"), `Sibling absent: ${JSON.stringify(presencesTwo.data)}`);
       assert.equal(ids.has("STU-AISHA") || ids.has("STU-JEAN") || ids.has("STU-LUC"), false);
       assert.equal(ids.has("STU-B1"), false);
     });
