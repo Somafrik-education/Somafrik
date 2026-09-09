@@ -50,6 +50,10 @@ const SLOT_A = "a8000000-0000-4000-8000-000000000070";
 const SLOT_B = "a8000000-0000-4000-8000-000000000071";
 const SLOT_OTHER = "b8000000-0000-4000-8000-000000000070";
 const NOTE_ID = "d8000000-0000-4000-8000-000000000001";
+const CROSS_TEACHER_USER = "b8000000-0000-4000-8000-000000000080";
+const TEACHER_CROSS = "a8000000-0000-4000-8000-000000000081";
+const COURSE_CROSS = "a8000000-0000-4000-8000-000000000082";
+const FOREIGN_ROLE_ADMIN = "a8000000-0000-4000-8000-000000000083";
 
 function read(rel) {
   return fs.readFileSync(path.join(ROOT, rel), "utf8");
@@ -509,7 +513,7 @@ test("RED-TT-14 — plusieurs champs modifiés → 1 seul event", async () => {
   });
 });
 
-test("RED-TT-15 — aucune production TEACHER_REPLACEMENT", async () => {
+test("RED-TT-15 — changement weekly slot ne produit pas TEACHER_REPLACEMENT", async () => {
   await withIsolatedPg(async (pool) => {
     await seedTimetableFixtures(pool);
     await insertWeeklySlot(pool, { id: SLOT_A });
@@ -518,11 +522,11 @@ test("RED-TT-15 — aucune production TEACHER_REPLACEMENT", async () => {
     assert.equal(rows.length, 1);
     assert.equal(rows.every((row) => row.event_type === TT_EVENT), true);
     const replacement = await pool.query(
-      `SELECT count(*)::int c FROM communication_event_outbox WHERE event_type ILIKE '%replacement%'`,
+      `SELECT count(*)::int c FROM communication_event_outbox WHERE event_type = $1`,
+      ["planning.teacher.replacement"],
     );
     assert.equal(replacement.rows[0].c, 0);
   });
-  assert.doesNotMatch(read("backend/db/communicationsNotificationsSchema.js"), /teacher\.replacement/);
 });
 
 test("RED-TT-17 — cycle A→B→A→B produit 3 événements distincts", async () => {
@@ -601,16 +605,97 @@ test("RED-TT-19 — boot canonique sans migrations L4 manuelles", async () => {
   });
 });
 
-test("RED-TT-16 — AUDIT-COM-FINAL matrice 8/9", () => {
+test("RED-TT-20 — enseignant dont le compte appartient à une autre école n'est jamais recipient", async () => {
+  await withIsolatedPg(async (pool) => {
+    await seedTimetableFixtures(pool);
+    // Liaison incohérente tolérée par le schéma : teacher école A -> compte école B.
+    await pool.query(
+      `INSERT INTO users (id,school_id,user_code,first_name,last_name,email,role,status)
+       VALUES ($1,$2,'ENS-TT-CROSS','Teacher','Cross','ens-cross-tt@test.local','Teacher','active')`,
+      [CROSS_TEACHER_USER, SCHOOL_B],
+    );
+    await pool.query(
+      `INSERT INTO teachers (id,school_id,user_id,teacher_code,status) VALUES ($1,$2,$3,'ENS-TT-CROSS','active')`,
+      [TEACHER_CROSS, SCHOOL_A, CROSS_TEACHER_USER],
+    );
+    await pool.query(
+      `INSERT INTO school_courses (id,school_id,class_id,subject_id,teacher_id,course_code,coefficient,status)
+       VALUES ($1,$2,$3,$4,$5,'COURSE-TT-CROSS',2,'active')`,
+      [COURSE_CROSS, SCHOOL_A, CLASS_A, SUBJECT_B, TEACHER_CROSS],
+    );
+
+    await insertWeeklySlot(pool, {
+      id: SLOT_A,
+      courseId: COURSE_CROSS,
+      classId: CLASS_A,
+      teacherId: TEACHER_CROSS,
+    });
+    // E1 : le hors-tenant est le titulaire courant du créneau.
+    await patchWeeklySlot(pool, SLOT_A, { startTime: "08:30:00" });
+    // E2 : le hors-tenant devient previousTeacherId.
+    await patchWeeklySlot(pool, SLOT_A, { teacherId: TEACHER_A, schoolCourseId: COURSE_A, classId: CLASS_A });
+    const rows = await outboxForSlot(pool, SLOT_A);
+    assert.equal(rows.length, 2);
+    assert.equal(String(parseOutboxPayload(rows[0]).teacherId), TEACHER_CROSS);
+    assert.equal(String(parseOutboxPayload(rows[1]).previousTeacherId), TEACHER_CROSS);
+
+    await drainSlot(pool, SLOT_A);
+    const r1 = await recipientsForEventKey(pool, rows[0].event_key);
+    const r2 = await recipientsForEventKey(pool, rows[1].event_key);
+    assert.equal(r1.includes(CROSS_TEACHER_USER), false, "titulaire hors tenant exclu");
+    assert.equal(r2.includes(CROSS_TEACHER_USER), false, "ancien titulaire hors tenant exclu");
+    assert.ok(r1.includes(ADMIN_A), "admin canonique toujours notifié");
+    assert.ok(r2.includes(TEACHER_USER_A), "nouvel enseignant canonique notifié");
+
+    const crossRows = await pool.query(
+      `SELECT count(*)::int c FROM notification_recipients WHERE user_id = $1`,
+      [CROSS_TEACHER_USER],
+    );
+    assert.equal(crossRows.rows[0].c, 0);
+  });
+});
+
+test("RED-TT-21 — SCHOOL_ADMIN dont le rôle actif est dans une autre école n'est jamais recipient", async () => {
+  await withIsolatedPg(async (pool) => {
+    await seedTimetableFixtures(pool);
+    // Compte rattaché à l'école A mais ne portant SCHOOL_ADMIN que dans l'école B.
+    // `users.role` reste non-admin : sinon le backfill canonique lui créerait
+    // légitimement un rôle SCHOOL_ADMIN dans l'école A.
+    await pool.query(
+      `INSERT INTO users (id,school_id,user_code,first_name,last_name,email,role,status)
+       VALUES ($1,$2,'ADM-TT-FOREIGN','Admin','Foreign','adm-foreign-tt@test.local','Parent','active')`,
+      [FOREIGN_ROLE_ADMIN, SCHOOL_A],
+    );
+    await pool.query(
+      `INSERT INTO user_roles (user_id, school_id, role_key, status) VALUES ($1,$2,'SCHOOL_ADMIN','active')`,
+      [FOREIGN_ROLE_ADMIN, SCHOOL_B],
+    );
+
+    await insertWeeklySlot(pool, { id: SLOT_A });
+    await patchWeeklySlot(pool, SLOT_A, { startTime: "08:30:00" });
+    const row = (await outboxForSlot(pool, SLOT_A))[0];
+    await drainSlot(pool, SLOT_A);
+    const recipients = await recipientsForEventKey(pool, row.event_key);
+    assert.equal(recipients.includes(FOREIGN_ROLE_ADMIN), false, "rôle admin d'une autre école ne qualifie pas ici");
+    assert.ok(recipients.includes(ADMIN_A), "admin canonique de l'école toujours notifié");
+
+    const foreignRows = await pool.query(
+      `SELECT count(*)::int c FROM notification_recipients WHERE user_id = $1`,
+      [FOREIGN_ROLE_ADMIN],
+    );
+    assert.equal(foreignRows.rows[0].c, 0);
+  });
+});
+
+test("RED-TT-16 — AUDIT-COM-FINAL matrice 9/9", () => {
   const schema = read("backend/db/communicationsNotificationsSchema.js");
+  const teacherOutbox = read("backend/db/teacherReplacementOutbox.sql");
   const block = schema.slice(schema.indexOf("somafrik_enqueue_communication_event"), schema.indexOf("$$ LANGUAGE plpgsql"));
-  const wired = [...new Set([...block.matchAll(/v_event_type := '([^']+)'/g)].map((m) => m[1]))].sort();
+  const wired = [...new Set([...block.matchAll(/v_event_type := '([^']+)'/g)].map((m) => m[1]))];
+  wired.push(...[...teacherOutbox.matchAll(/v_event_type(?:\s+TEXT)?\s*:=\s*'([^']+)'/g)].map((m) => m[1]));
   const sweep = read("backend/lib/communicationsPaymentDueSweep.js");
   wired.push(...[...sweep.matchAll(/PD_EVENT = "([^"]+)"/g)].map((m) => m[1]));
   const mapped = [...new Set(wired)].map((t) => mapDispatcherEventToLotI(t)).filter(Boolean).sort();
-  assert.equal(mapped.length, 8);
-  assert.deepEqual(
-    LOT_I_EVENTS.filter((key) => !mapped.includes(key)).sort(),
-    ["TEACHER_REPLACEMENT"],
-  );
+  assert.equal(mapped.length, 9);
+  assert.deepEqual(LOT_I_EVENTS.filter((key) => !mapped.includes(key)).sort(), []);
 });

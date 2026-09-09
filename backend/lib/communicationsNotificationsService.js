@@ -534,6 +534,30 @@ async function downloadAttachment(store, attachmentId, principal, query = {}) {
   return { bytes, fileName: attachment.file_name, mimeType: attachment.mime_type };
 }
 
+/**
+ * Résolution fail-closed du compte d'un enseignant.
+ * `teachers.user_id` est un FK nu vers `users(id)` : aucune contrainte n'impose
+ * que le compte lié appartienne à l'école de la fiche enseignant. La jointure
+ * sur `users.school_id` rend l'invariant tenant obligatoire côté requête.
+ */
+async function resolveTenantTeacherUserId(tx, teacherId, schoolId) {
+  const tid = String(teacherId ?? "").trim();
+  if (!tid) return null;
+  const row = await tx.one(
+    `SELECT u.id AS user_id
+     FROM teachers t
+     JOIN users u
+       ON u.id = t.user_id
+      AND u.school_id = t.school_id
+      AND COALESCE(u.status, 'active') = 'active'
+     WHERE t.id = $1
+       AND t.school_id = $2
+       AND COALESCE(t.status, 'active') = 'active'`,
+    [tid, schoolId],
+  );
+  return row?.user_id ?? null;
+}
+
 async function eventSpec(tx, event) {
   const sourceId = event.source_entity_id;
   const schoolId = event.school_id;
@@ -710,14 +734,7 @@ async function eventSpec(tx, event) {
     const classId = String(payload.classId ?? "").trim();
     const teacherId = String(payload.teacherId ?? "").trim();
     const previousTeacherId = String(payload.previousTeacherId ?? "").trim();
-    const resolveTeacherUser = async (tid) => {
-      if (!tid) return null;
-      const row = await tx.one(
-        `SELECT user_id FROM teachers WHERE id = $1 AND school_id = $2`,
-        [tid, schoolId],
-      );
-      return row?.user_id ?? null;
-    };
+    const resolveTeacherUser = (tid) => resolveTenantTeacherUserId(tx, tid, schoolId);
     const assigneeUserId = await resolveTeacherUser(teacherId);
     if (assigneeUserId) {
       add(assigneeUserId, "teacher", { weeklySlotId: sourceId, classId, role: "assignee" });
@@ -746,6 +763,73 @@ async function eventSpec(tx, event) {
       endTime: payload.endTime ?? null,
       teacherId: teacherId || null,
       previousTeacherId: previousTeacherId || null,
+    };
+  } else if (eventType === "planning.teacher.replacement") {
+    const payload = (() => {
+      const raw = event.payload;
+      if (raw && typeof raw === "object") return raw;
+      if (typeof raw === "string") {
+        try {
+          return JSON.parse(raw);
+        } catch {
+          return {};
+        }
+      }
+      return {};
+    })();
+    const action = String(payload.action ?? "").trim();
+    const classId = String(payload.classId ?? "").trim();
+    const originalTeacherId = String(payload.originalTeacherId ?? "").trim();
+    const substituteTeacherId = String(payload.substituteTeacherId ?? "").trim();
+    const previousSubstituteTeacherId = String(payload.previousSubstituteTeacherId ?? "").trim();
+    const resolveTeacherUser = (tid) => resolveTenantTeacherUserId(tx, tid, schoolId);
+    const teacherIds = new Set();
+    if (originalTeacherId) teacherIds.add(originalTeacherId);
+    if (substituteTeacherId) teacherIds.add(substituteTeacherId);
+    if (action === "reassigned" && previousSubstituteTeacherId) {
+      teacherIds.add(previousSubstituteTeacherId);
+    }
+    for (const tid of teacherIds) {
+      const userId = await resolveTeacherUser(tid);
+      if (userId) {
+        addExact(userId, "teacher", { replacementId: sourceId, classId, teacherId: tid });
+      }
+    }
+    if (classId && typeof tx.listClassParentUserIds === "function") {
+      for (const row of await tx.listClassParentUserIds(schoolId, [classId])) {
+        addExact(row.user_id || row.id, "parent", { replacementId: sourceId, classId });
+      }
+    }
+    if (typeof tx.listSchoolAdminUserIds === "function") {
+      for (const id of await tx.listSchoolAdminUserIds(schoolId)) {
+        addExact(id, "school_admin", { replacementId: sourceId, classId });
+      }
+    }
+    if (action === "reassigned") {
+      title = "Remplacement d'enseignant modifié";
+      body = "Un remplacement d'enseignant a été modifié.";
+    } else if (action === "cancelled") {
+      title = "Remplacement d'enseignant annulé";
+      body = "Un remplacement d'enseignant a été annulé.";
+    } else {
+      title = "Remplacement d'enseignant";
+      body = "Un remplacement d'enseignant a été planifié.";
+    }
+    navigationTarget = {};
+    metadata = {
+      replacementId: sourceId,
+      changeRevision: payload.changeRevision ?? null,
+      action: action || null,
+      weeklySlotId: payload.weeklySlotId ?? null,
+      classId: classId || null,
+      academicYearId: payload.academicYearId ?? null,
+      occurrenceDate: payload.occurrenceDate ?? null,
+      originalTeacherId: originalTeacherId || null,
+      substituteTeacherId: substituteTeacherId || null,
+      previousSubstituteTeacherId: previousSubstituteTeacherId || null,
+      startTime: payload.startTime ?? null,
+      endTime: payload.endTime ?? null,
+      status: payload.status ?? null,
     };
   } else {
     throw new Error(`Type d'événement C4 non supporté: ${eventType}`);

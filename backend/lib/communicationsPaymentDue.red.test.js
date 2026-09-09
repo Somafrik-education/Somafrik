@@ -550,23 +550,23 @@ test("RED-PD-15 — non-régression PAYMENT_RECEIVED", async () => {
   });
 });
 
-test("RED-PD-16 — matrice Lot I 8/9 inclut PAYMENT_DUE", () => {
+test("RED-PD-16 — matrice Lot I 9/9 inclut PAYMENT_DUE et TEACHER_REPLACEMENT", () => {
   const schema = read("backend/db/communicationsNotificationsSchema.js");
+  const teacherOutbox = read("backend/db/teacherReplacementOutbox.sql");
   const sweep = read("backend/lib/communicationsPaymentDueSweep.js");
   const triggerTypes = [...schema.slice(schema.indexOf("somafrik_enqueue_communication_event"), schema.indexOf("$$ LANGUAGE plpgsql"))
-    .matchAll(/v_event_type := '([^']+)'/g)].map((m) => m[1]);
+    .matchAll(/v_event_type(?:\s+TEXT)?\s*:=\s*'([^']+)'/g)].map((m) => m[1]);
+  const teacherTypes = [...teacherOutbox.matchAll(/v_event_type(?:\s+TEXT)?\s*:=\s*'([^']+)'/g)].map((m) => m[1]);
   const sweepTypes = [...sweep.matchAll(/PD_EVENT = "([^"]+)"/g)].map((m) => m[1]);
-  const wired = [...new Set([...triggerTypes, ...sweepTypes])];
+  const wired = [...new Set([...triggerTypes, ...teacherTypes, ...sweepTypes])];
   const mapped = wired.map((eventType) => mapDispatcherEventToLotI(eventType)).filter(Boolean).sort();
   assert.equal(LOT_I_EVENTS.length, 9);
-  assert.equal(mapped.length, 8);
+  assert.equal(mapped.length, 9);
   assert.ok(mapped.includes("PAYMENT_DUE"));
   assert.ok(mapped.includes("PAYMENT_RECEIVED"));
   assert.ok(mapped.includes("TIMETABLE_CHANGED"));
-  assert.deepEqual(
-    LOT_I_EVENTS.filter((key) => !mapped.includes(key)).sort(),
-    ["TEACHER_REPLACEMENT"],
-  );
+  assert.ok(mapped.includes("TEACHER_REPLACEMENT"));
+  assert.deepEqual(LOT_I_EVENTS.filter((key) => !mapped.includes(key)).sort(), []);
 });
 
 test("RED-PD-17 — sweep puis paiement complet → drainOutbox sans notification", async () => {

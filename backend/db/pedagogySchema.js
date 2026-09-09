@@ -31,6 +31,11 @@ const PLANNING_WEEKLY_CHANGE_REVISION_SQL = fs.readFileSync(
   "utf8",
 );
 
+const REPLACEMENT_CHANGE_REVISION_SQL = fs.readFileSync(
+  path.join(__dirname, "courseScheduleReplacementChangeRevision.sql"),
+  "utf8",
+);
+
 const PEDAGOGY_SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS school_courses (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -108,6 +113,8 @@ ${ROOMS_SCHEMA_SQL}
 ${REPLACEMENTS_SCHEMA_SQL}
 
 ${PLANNING_WEEKLY_CHANGE_REVISION_SQL}
+
+${REPLACEMENT_CHANGE_REVISION_SQL}
 `;
 
 module.exports = {
@@ -116,4 +123,5 @@ module.exports = {
   ROOMS_SCHEMA_SQL,
   REPLACEMENTS_SCHEMA_SQL,
   PLANNING_WEEKLY_CHANGE_REVISION_SQL,
+  REPLACEMENT_CHANGE_REVISION_SQL,
 };

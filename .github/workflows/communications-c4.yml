@@ -5,6 +5,7 @@ on:
     branches: [develop]
     paths:
       - "backend/db/clientsCanonicalBootstrap.js"
+      - "backend/db/clientsPgStore.js"
       - "backend/db/communicationsC4.bootstrap.pg.test.js"
       - "backend/db/communicationsNotificationsSchema.js"
       - "backend/db/migrations/20260828_communications_c4_internal_notifications.sql"
@@ -62,6 +63,11 @@ on:
       - "backend/lib/communicationsReportCardPublished.red.test.js"
       - "backend/lib/communicationsPaymentDue.red.test.js"
       - "backend/lib/communicationsTimetableChanged.red.test.js"
+      - "backend/lib/communicationsTeacherReplacement.red.test.js"
+      - "backend/db/courseScheduleReplacementChangeRevision.sql"
+      - "backend/db/teacherReplacementOutbox.sql"
+      - "backend/db/migrations/20260918_communication_teacher_replacement_outbox.sql"
+      - "backend/db/pedagogySchema.js"
       - "backend/lib/communicationsPaymentDueSweep.js"
       - "backend/lib/communicationsPaymentDueEligibility.js"
       - "backend/db/migrations/20260913_communication_student_late_outbox.sql"
@@ -71,6 +77,7 @@ on:
       - "docs/audits/communications-student-late-green-2026-09-09.md"
       - "docs/audits/communications-report-card-published-green-2026-09-09.md"
       - "docs/audits/communications-timetable-changed-green-2026-09-09.md"
+      - "docs/audits/communications-teacher-replacement-green-2026-09-09.md"
       - "docs/audits/communications-final-audit-2026-09-09.md"
       - "backend/db/migrations/20260908_communication_channel_deliveries_reliability.sql"
       - "docs/audits/communications-delivery-reliability-red-2026-09-08.md"

@@ -64,11 +64,14 @@ function read(rel) {
 
 function outboxEventTypesFromSchema() {
   const schema = read("backend/db/communicationsNotificationsSchema.js");
+  const teacherOutbox = read("backend/db/teacherReplacementOutbox.sql");
   const block = schema.slice(schema.indexOf("somafrik_enqueue_communication_event"), schema.indexOf("$$ LANGUAGE plpgsql"));
-  const matches = [...block.matchAll(/v_event_type := '([^']+)'/g)].map((m) => m[1]);
+  const eventTypePattern = /v_event_type(?:\s+TEXT)?\s*:=\s*'([^']+)'/g;
+  const matches = [...block.matchAll(eventTypePattern)].map((m) => m[1]);
+  const teacherTypes = [...teacherOutbox.matchAll(eventTypePattern)].map((m) => m[1]);
   const sweep = read("backend/lib/communicationsPaymentDueSweep.js");
   const sweepTypes = [...sweep.matchAll(/PD_EVENT = "([^"]+)"/g)].map((m) => m[1]);
-  return [...new Set([...matches, ...sweepTypes])].sort();
+  return [...new Set([...matches, ...teacherTypes, ...sweepTypes])].sort();
 }
 
 function envPreprod(extra = {}) {
@@ -126,7 +129,7 @@ test("AUDIT-COM-FINAL-01 — architecture : quatre familles séparées", () => {
   assert.match(server, /\/api\/backoffice\/communications\/deliveries\/health/);
 });
 
-test("AUDIT-COM-FINAL-01b — matrice événements : 8/9 Lot I câblés, 1/9 sans producteur (P1 connu)", () => {
+test("AUDIT-COM-FINAL-01b — matrice événements : 9/9 Lot I câblés", () => {
   const wired = outboxEventTypesFromSchema();
   assert.deepEqual(wired, [
     "attendance.student.absent",
@@ -137,6 +140,7 @@ test("AUDIT-COM-FINAL-01b — matrice événements : 8/9 Lot I câblés, 1/9 san
     "finance.payment.recorded",
     "pedagogy.grade.published",
     "pedagogy.report_card.published",
+    "planning.teacher.replacement",
     "planning.timetable.changed",
   ]);
 
@@ -145,7 +149,7 @@ test("AUDIT-COM-FINAL-01b — matrice événements : 8/9 Lot I câblés, 1/9 san
     .filter(Boolean)
     .sort();
   assert.equal(LOT_I_EVENTS.length, 9, "Lot I canonique = 9 événements (LOT_I_EVENTS + CHECK PostgreSQL)");
-  assert.equal(mappedPolicy.length, 8, "8/9 événements Lot I ont un producteur outbox");
+  assert.equal(mappedPolicy.length, 9, "9/9 événements Lot I ont un producteur outbox");
   assert.deepEqual(mappedPolicy, [
     "ANNOUNCEMENT_PUBLISHED",
     "GRADE_PUBLISHED",
@@ -154,15 +158,14 @@ test("AUDIT-COM-FINAL-01b — matrice événements : 8/9 Lot I câblés, 1/9 san
     "REPORT_CARD_PUBLISHED",
     "STUDENT_ABSENT",
     "STUDENT_LATE",
+    "TEACHER_REPLACEMENT",
     "TIMETABLE_CHANGED",
   ]);
 
   const missingProducers = LOT_I_EVENTS.filter(
     (key) => !mappedPolicy.includes(key),
   ).sort();
-  assert.deepEqual(missingProducers, [
-    "TEACHER_REPLACEMENT",
-  ]);
+  assert.deepEqual(missingProducers, []);
 });
 
 test("AUDIT-COM-FINAL-02 — isolation tenant : Expo ne cible pas un token école B pour user A école A", async () => {

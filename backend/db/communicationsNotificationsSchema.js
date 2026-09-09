@@ -5,6 +5,14 @@
  * Domaine volontairement distinct de la table plateforme `notifications`.
  */
 
+const fs = require("node:fs");
+const path = require("node:path");
+
+const TEACHER_REPLACEMENT_OUTBOX_SQL = fs.readFileSync(
+  path.join(__dirname, "teacherReplacementOutbox.sql"),
+  "utf8",
+);
+
 const COMMUNICATIONS_C4_SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS communication_event_outbox (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -293,6 +301,8 @@ BEGIN
   END IF;
 END
 $c4_timetable_changed_trigger$;
+
+${TEACHER_REPLACEMENT_OUTBOX_SQL}
 
 CREATE TABLE IF NOT EXISTS communication_channel_deliveries (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

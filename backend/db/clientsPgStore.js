@@ -760,11 +760,24 @@ function createClientsPgStore(repo) {
         return row?.user_id ?? null;
       },
       async listParentUserIdsForStudent(schoolId, studentRef) {
+        // Fail-closed tenant : relation, contact ET compte utilisateur doivent
+        // appartenir à l'école de l'élève. `contacts.user_id` est un FK nu vers
+        // `users(id)`, la jointure rend l'invariant obligatoire.
         const rows = await all(
-          `SELECT DISTINCT c.user_id
+          `SELECT DISTINCT u.id AS user_id
            FROM students st
-           JOIN contact_relations r ON r.student_id = st.id AND r.status = 'active'
-           JOIN contacts c ON c.id = r.contact_id AND c.status = 'active' AND c.user_id IS NOT NULL
+           JOIN contact_relations r
+             ON r.student_id = st.id
+            AND r.school_id = st.school_id
+            AND r.status = 'active'
+           JOIN contacts c
+             ON c.id = r.contact_id
+            AND c.school_id = st.school_id
+            AND c.status = 'active'
+           JOIN users u
+             ON u.id = c.user_id
+            AND u.school_id = st.school_id
+            AND COALESCE(u.status, 'active') = 'active'
            WHERE st.school_id = $1 AND (st.id::text = $2 OR st.student_code = $2)`,
           [schoolId, asTrimmed(studentRef)],
         );
@@ -782,11 +795,21 @@ function createClientsPgStore(repo) {
         return row?.user_id ?? null;
       },
       async listSchoolAdminUserIds(schoolId) {
+        // Fail-closed tenant : le rôle doit être porté dans l'école de
+        // l'événement. Sans `ur.school_id`, un rôle SCHOOL_ADMIN actif d'un
+        // autre établissement qualifierait le compte comme admin ici.
         const rows = await all(
           `SELECT DISTINCT u.id
            FROM users u
-           JOIN user_roles ur ON ur.user_id = u.id AND ur.status = 'active' AND ur.revoked_at IS NULL
-           WHERE u.school_id = $1 AND upper(ur.role_key) IN ('SCHOOL_ADMIN', 'PROVISEUR', 'PRINCIPAL', 'PREFET_ETUDES')`,
+           JOIN user_roles ur
+             ON ur.user_id = u.id
+            AND ur.school_id = u.school_id
+            AND ur.school_id = $1
+            AND ur.status = 'active'
+            AND ur.revoked_at IS NULL
+           WHERE u.school_id = $1
+             AND COALESCE(u.status, 'active') = 'active'
+             AND upper(ur.role_key) IN ('SCHOOL_ADMIN', 'PROVISEUR', 'PRINCIPAL', 'PREFET_ETUDES')`,
           [schoolId],
         );
         return rows.map((row) => row.id);
@@ -1468,11 +1491,24 @@ function createClientsPgStore(repo) {
       },
       async listClassParentUserIds(schoolId, classIds) {
         if (!classIds?.length) return [];
+        // Fail-closed tenant : contact ET compte utilisateur doivent appartenir
+        // à l'école de l'inscription. Aucune contrainte PostgreSQL ne garantit
+        // contacts.user_id -> users.school_id, la jointure la rend obligatoire.
         return all(
-          `SELECT DISTINCT c.user_id
+          `SELECT DISTINCT u.id AS user_id
            FROM enrollments e
-           JOIN contact_relations r ON r.student_id = e.student_id AND r.status = 'active' AND r.school_id = e.school_id
-           JOIN contacts c ON c.id = r.contact_id AND c.status = 'active' AND c.user_id IS NOT NULL
+           JOIN contact_relations r
+             ON r.student_id = e.student_id
+            AND r.school_id = e.school_id
+            AND r.status = 'active'
+           JOIN contacts c
+             ON c.id = r.contact_id
+            AND c.school_id = e.school_id
+            AND c.status = 'active'
+           JOIN users u
+             ON u.id = c.user_id
+            AND u.school_id = e.school_id
+            AND COALESCE(u.status, 'active') = 'active'
            WHERE e.school_id = $1
              AND e.class_id = ANY($2::uuid[])
              AND e.status = 'active'`,
