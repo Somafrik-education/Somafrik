@@ -209,12 +209,11 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
-          {
-            node --test backend/lib/communicationsNavigationContract.red.test.js
-            node --test backend/lib/communicationsPlanningNavigation.red.test.js
-            node --test backend/lib/communicationsUnreadPagination.red.test.js
-            node --test backend/lib/communicationsNavigationSecurity.red.test.js
-          } 2>&1 | tee notifications-red.log
+          node --test \
+            backend/lib/communicationsNavigationContract.red.test.js \
+            backend/lib/communicationsPlanningNavigation.red.test.js \
+            backend/lib/communicationsUnreadPagination.red.test.js \
+            backend/lib/communicationsNavigationSecurity.red.test.js 2>&1 | tee notifications-red.log
       - name: Preserve RED notifications log
         if: always()
         uses: actions/upload-artifact@v4
