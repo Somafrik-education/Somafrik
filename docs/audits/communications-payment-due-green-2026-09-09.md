@@ -57,7 +57,25 @@ Module partagé `communicationsPaymentDueEligibility.js` :
 - Verrou `FOR UPDATE OF o` sur l'obligation au drain → sérialisation avec transaction paiement concurrente
 - Tests RED-PD-17 (sweep → paiement → drain) et RED-PD-18 (deux connexions PG : paiement non commité vs drain)
 
-Body neutralisé P2 : « Un paiement scolaire est arrivé à échéance. »
+Body neutralisé : « Un paiement scolaire est arrivé à échéance. »
+
+---
+
+## Correction P2 navigation Mobile `finance_obligation`
+
+Le contrat C4 `navigationTarget = { type: "finance_obligation", studentId, obligationId }` est désormais consommé sur Mobile :
+
+- le fan-out PUSH convertit uniquement `finance_obligation` vers la destination allowlistée `StudentPayments` ;
+- le payload Expo transporte `somafrikStudentId` et conserve `eventKey` ;
+- toute destination inconnue ou `StudentPayments` sans `studentId` retombe fail-safe sur `Home` ;
+- `pushNotificationTap` conserve les paramètres pendant un cold-start/login et les transmet à `navigationRef` ;
+- l'Inbox C4 Mobile affiche `Voir le paiement` uniquement si la notification porte un `finance_obligation` valide et si la session peut lire `StudentPayments` ;
+- aucune URL ou route arbitraire n'est acceptée.
+
+Tests dédiés :
+
+- `backend/lib/communicationsFinanceMobileNavigation.test.js`
+- `Mobile/src/lib/financeNotificationNavigation.test.ts`
 
 ---
 
@@ -95,6 +113,7 @@ Aucun producteur `finance.payment.due` : balayage absent, mapping Lot I absent, 
 | **Dispatcher** | `"finance.payment.due": ["PUSH","EMAIL"]` |
 | **Lot I map** | `"finance.payment.due" → PAYMENT_DUE` |
 | **Worker** | sweep avant drainOutbox |
+| **Mobile navigation** | `finance_obligation → StudentPayments({ studentId })` |
 
 Pas de migration SQL (pas de trigger partagé modifié).
 
@@ -122,6 +141,7 @@ Lot I : **PARENT** + **SCHOOL_ADMIN** (`schoolNotificationPolicy.js`).
 
 - `finance.payment.recorded` / PAYMENT_RECEIVED : intact (trigger payments)
 - L1 STUDENT_LATE, L2 REPORT_CARD_PUBLISHED : non modifiés
+- destinations PUSH non allowlistées : fallback `Home`
 
 ---
 
@@ -140,7 +160,9 @@ Lot I : **PARENT** + **SCHOOL_ADMIN** (`schoolNotificationPolicy.js`).
 
 | Suite | Contrats |
 |---|---|
-| `communicationsPaymentDue.red.test.js` | RED-PD-01 → 16 |
+| `communicationsPaymentDue.red.test.js` | RED-PD-01 → 18 |
+| `communicationsFinanceMobileNavigation.test.js` | payload Expo finance + fallback Home |
+| `financeNotificationNavigation.test.ts` | allowlist, params, cold-start, Inbox target |
 | `communicationsFinal.audit.test.js` | 7/9 |
 
 ---
@@ -152,6 +174,6 @@ Lot I : **PARENT** + **SCHOOL_ADMIN** (`schoolNotificationPolicy.js`).
 | P0 | 0 |
 | P1 lot | 0 (course sweep/paiement corrigée) |
 | P1 Communications global | 1 (2/9 restants) |
-| P2 | inchangé |
+| P2 navigation Finance Mobile | 0 après câblage `StudentPayments` |
 
 **Verdict lot L3 : GO** (sous réserve CI verte et review CTO).
