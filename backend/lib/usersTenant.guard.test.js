@@ -68,6 +68,10 @@ test("GP-003: usersSchoolScope n'autorise pas leftover comme autorité établiss
 
   assert.match(sqlFn, /u\.school_id/);
   assert.match(sqlFn, /profile_payload->>'countryCode'/);
+  assert.match(sqlFn, /COUNTRY_ADMIN/);
+  assert.match(sqlFn, /SCHOOL_ADMIN/);
+  assert.match(sqlFn, /user_roles/);
+  assert.doesNotMatch(sqlFn, /return "TRUE"/);
   assert.doesNotMatch(sqlFn, /school_code/);
   assert.doesNotMatch(sqlFn, /login_code/);
   assert.doesNotMatch(sqlFn, /COALESCE/i);

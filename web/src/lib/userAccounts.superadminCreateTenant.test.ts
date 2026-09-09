@@ -75,6 +75,17 @@ describe("Superadmin create-user tenant defaults", () => {
     });
   });
 
+  it("refuse une création Superadmin sans rôle plateforme", () => {
+    expect(
+      validateUserAccount(
+        { firstName: "A", lastName: "B", role: "", schoolCode: "", countryScope: "" } as UserAccount,
+        [],
+        ["Admin Pays", "Admin School"],
+        { creator: superadminSession.user, schools: state.schools },
+      ),
+    ).toBe("Sélectionnez un rôle plateforme (Admin Pays ou Admin School).");
+  });
+
   it("refuse Admin School sans pays / sans école", () => {
     const creator = superadminSession.user;
     expect(

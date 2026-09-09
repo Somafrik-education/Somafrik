@@ -55,13 +55,17 @@ function sourceGuards() {
   assert.match(httpTest, /USER_PAYS_BI/);
   assert.match(scopeLib, /profile_payload->>'countryCode'/);
   assert.match(scopeLib, /sameId\(requestedRaw, membership\.schoolId\)/);
+  assert.match(scopeLib, /COUNTRY_ADMIN/);
+  assert.match(scopeLib, /SCHOOL_ADMIN/);
+  assert.match(scopeLib, /user_roles/);
+  assert.doesNotMatch(scopeLib, /if \(!scope \|\| scope\.mode === "all"\) return "TRUE"/);
 }
 
 function main() {
   sourceGuards();
   run(
     process.execPath,
-    ["--test", "backend/lib/usersSchoolScope.test.js", "backend/lib/usersTenant.guard.test.js"],
+    ["--test", "backend/lib/usersSchoolScope.test.js", "backend/lib/usersTenant.guard.test.js", "backend/lib/usersPlatformCatalog.test.js"],
     "tests unitaires / garde-fou GP-003 ont échoué",
   );
   if (!String(process.env.DATABASE_URL ?? "").trim()) {

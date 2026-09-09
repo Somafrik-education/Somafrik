@@ -23,7 +23,7 @@ import {
   scopedCountries as scopedCountriesForUser,
   SCHOOL_ADMIN_ROLE,
 } from "./orgHierarchy";
-import { isSuperadminManagedUser, isUnassignedUserAccount } from "./userAccounts";
+import { isSuperadminManagedUser } from "./userAccounts";
 import { isUserAccountVisible } from "./userAccountRules";
 import {
   projectScopedUsersForSchool,
@@ -174,7 +174,7 @@ export function projectScopedUsers(user: SessionUser | null, state: ScopeState):
     );
     const users = visible.filter(
       (account) =>
-        (account.role === SCHOOL_ADMIN_ROLE || isUnassignedUserAccount(account)) &&
+        account.role === SCHOOL_ADMIN_ROLE &&
         (countryScopeMatches(account.countryScope, user.countryScope) ||
           countrySchoolCodes.has(normalize(account.schoolCode))),
     );

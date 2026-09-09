@@ -36,6 +36,7 @@ const {
 const {
   allocateUserCode,
   hydrateUser,
+  loadRoleKeys,
   FORBIDDEN_CREATE_KEYS,
   FORBIDDEN_IDENTITY_PATCH_KEYS,
 } = require("./userRoleLifecycleService");
@@ -440,7 +441,8 @@ async function updateUser(store, userId, rawPatch, principal, auditMeta) {
     throw createClientsError(404, "Utilisateur introuvable.", CLIENTS_ERROR.USER_NOT_FOUND);
   }
   const attached = await attachUsersStorePrincipal(principal, store);
-  assertUsersTargetAccess(attached, targetFromUserRow(existing));
+  const roleKeys = await loadRoleKeys(store, existing.id);
+  assertUsersTargetAccess(attached, { ...targetFromUserRow(existing), roleKeys });
   const schoolCode = existing.school_login_code || existing.school_code;
   assertSafeUserPatch(attached, existing, patch);
 
@@ -527,6 +529,15 @@ async function reassignUserSchool(store, userId, rawPayload, principal, auditMet
         CLIENTS_ERROR.ROLE_SCOPE_CONFLICT,
       );
     }
+    if (!roleKeys.includes("SCHOOL_ADMIN")) {
+      throw createClientsError(
+        403,
+        "Accès refusé : hors catalogue plateforme.",
+        CLIENTS_ERROR.FORBIDDEN,
+      );
+    }
+    const attached = await attachUsersStorePrincipal(principal, store);
+    assertUsersTargetAccess(attached, { ...targetFromUserRow(locked), roleKeys });
     if (!locked.school_id) {
       throw createClientsError(
         409,
