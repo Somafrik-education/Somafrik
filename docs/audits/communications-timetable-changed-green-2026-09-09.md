@@ -6,7 +6,16 @@
 |---|---|
 | Base SHA | `25c3d8367502294256c4798d22fc21bda66eb395` |
 | Branche | `cursor/communications-timetable-changed-d98a` |
-| HEAD SHA | `7893354c` |
+| HEAD SHA | _(commit P1 fix)_ |
+
+## Correctifs P1 CTO (#568)
+
+| P1 | Correction |
+|---|---|
+| Clé OLD→NEW | Colonne `change_revision` monotone + trigger BEFORE UPDATE ; clé `planning.timetable.changed:<slot_id>:<change_revision>` |
+| Drain état courant | `eventSpec()` lit snapshot immuable `event.payload` (teacherId, previousTeacherId, classId, horaires…) |
+
+Tests ajoutés : RED-TT-17 (cycle A→B→A→B → 3 events), RED-TT-18 (E1/E2 drain avec snapshot).
 
 ## SoT Planning
 
@@ -56,7 +65,7 @@ L4 ne produit **jamais** `TEACHER_REPLACEMENT`.
 
 Sur `develop@25c3d836` sans migration L4 : un `UPDATE` réel d'un créneau `active` (ex. décalage horaire) ne produisait **aucun** enregistrement dans `communication_event_outbox`.
 
-Fichier : `backend/lib/communicationsTimetableChanged.red.test.js` (RED-TT-01 → 16).
+Fichier : `backend/lib/communicationsTimetableChanged.red.test.js` (RED-TT-01 → 18).
 
 ## Event type
 
@@ -65,20 +74,31 @@ Fichier : `backend/lib/communicationsTimetableChanged.red.test.js` (RED-TT-01 �
 ## Event key
 
 ```
-planning.timetable.changed:<weekly_slot_id>:<md5(OLD|NEW champs notifiables)>
+planning.timetable.changed:<weekly_slot_id>:<change_revision>
 ```
 
-Empreinte déterministe OLD→NEW : idempotence sur rejeu identique, préservation de modifications successives distinctes.
+`change_revision` (BIGINT) est incrémenté atomiquement par `trg_course_schedule_weekly_slots_bump_revision` à chaque mutation notifiable d'un créneau `active`. Préserve les cycles A→B→A→B (RED-TT-17).
 
 ## Stratégie idempotence / version
 
-Pas de versioning Planning dédié. Empreinte MD5 des champs notifiables OLD/NEW dans la même transaction trigger — identité durable du delta métier sans UUID aléatoire.
+Révision monotone durable sur la ligne canonique — pas de hash OLD|NEW. Rejeu d'un UPDATE sans delta métier → pas d'incrément → pas d'event.
+
+## Snapshot payload / recipients enseignant
+
+Le trigger enregistre dans `payload` l'état **post-mutation** (`teacherId`, `classId`, horaires…) plus `previousTeacherId` si `teacher_id` a changé.
+
+`eventSpec()` **ne relit pas** `course_schedule_weekly_slots` au drain :
+
+- mutation sans changement de prof → **nouvel enseignant** (`teacherId`) uniquement ;
+- mutation avec changement de prof → **nouvel + ancien** enseignant (`teacherId` + `previousTeacherId`).
+
+Contrat distinct de `TEACHER_REPLACEMENT` (table `course_schedule_replacements`, lot futur).
 
 ## Recipients Lot I
 
 Policy canonique (`schoolNotificationPolicy.js`) :
 
-- **TEACHER** — enseignant lié au créneau (`teachers.user_id`)
+- **TEACHER** — résolu depuis le snapshot payload (assignee ± previous_assignee)
 - **SCHOOL_ADMIN** — admins établissement via `listSchoolAdminUserIds`
 
 (Pas de PARENT / STUDENT pour `TIMETABLE_CHANGED`.)

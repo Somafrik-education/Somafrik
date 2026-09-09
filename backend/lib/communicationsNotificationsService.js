@@ -695,21 +695,42 @@ async function eventSpec(tx, event) {
       periodLabel: obligation.period_label,
     };
   } else if (eventType === "planning.timetable.changed") {
-    const slot = await tx.one(
-      `SELECT w.id, w.class_id, w.teacher_id, w.academic_year_id, w.day_of_week,
-              w.start_time, w.end_time, w.status, t.user_id AS teacher_user_id
-       FROM course_schedule_weekly_slots w
-       JOIN teachers t ON t.id = w.teacher_id AND t.school_id = w.school_id
-       WHERE w.id = $1 AND w.school_id = $2`,
-      [sourceId, schoolId],
-    );
-    if (!slot) throw new Error("Créneau planning source introuvable");
-    if (slot.teacher_user_id) {
-      add(slot.teacher_user_id, "teacher", { weeklySlotId: sourceId, classId: slot.class_id });
+    const payload = (() => {
+      const raw = event.payload;
+      if (raw && typeof raw === "object") return raw;
+      if (typeof raw === "string") {
+        try {
+          return JSON.parse(raw);
+        } catch {
+          return {};
+        }
+      }
+      return {};
+    })();
+    const classId = String(payload.classId ?? "").trim();
+    const teacherId = String(payload.teacherId ?? "").trim();
+    const previousTeacherId = String(payload.previousTeacherId ?? "").trim();
+    const resolveTeacherUser = async (tid) => {
+      if (!tid) return null;
+      const row = await tx.one(
+        `SELECT user_id FROM teachers WHERE id = $1 AND school_id = $2`,
+        [tid, schoolId],
+      );
+      return row?.user_id ?? null;
+    };
+    const assigneeUserId = await resolveTeacherUser(teacherId);
+    if (assigneeUserId) {
+      add(assigneeUserId, "teacher", { weeklySlotId: sourceId, classId, role: "assignee" });
+    }
+    if (previousTeacherId && previousTeacherId !== teacherId) {
+      const previousUserId = await resolveTeacherUser(previousTeacherId);
+      if (previousUserId) {
+        add(previousUserId, "teacher", { weeklySlotId: sourceId, classId, role: "previous_assignee" });
+      }
     }
     if (typeof tx.listSchoolAdminUserIds === "function") {
       for (const id of await tx.listSchoolAdminUserIds(schoolId)) {
-        add(id, "school_admin", { weeklySlotId: sourceId, classId: slot.class_id });
+        add(id, "school_admin", { weeklySlotId: sourceId, classId });
       }
     }
     title = "Emploi du temps modifié";
@@ -717,9 +738,14 @@ async function eventSpec(tx, event) {
     navigationTarget = {};
     metadata = {
       weeklySlotId: sourceId,
-      classId: slot.class_id,
-      academicYearId: slot.academic_year_id,
-      dayOfWeek: slot.day_of_week,
+      changeRevision: payload.changeRevision ?? null,
+      classId: classId || null,
+      academicYearId: payload.academicYearId ?? null,
+      dayOfWeek: payload.dayOfWeek ?? null,
+      startTime: payload.startTime ?? null,
+      endTime: payload.endTime ?? null,
+      teacherId: teacherId || null,
+      previousTeacherId: previousTeacherId || null,
     };
   } else {
     throw new Error(`Type d'événement C4 non supporté: ${eventType}`);

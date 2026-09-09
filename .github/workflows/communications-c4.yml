@@ -67,6 +67,7 @@ on:
       - "backend/db/migrations/20260913_communication_student_late_outbox.sql"
       - "backend/db/migrations/20260914_communication_report_card_published_outbox.sql"
       - "backend/db/migrations/20260916_communication_timetable_changed_outbox.sql"
+      - "backend/db/migrations/20260917_communication_timetable_changed_revision.sql"
       - "docs/audits/communications-student-late-green-2026-09-09.md"
       - "docs/audits/communications-report-card-published-green-2026-09-09.md"
       - "docs/audits/communications-timetable-changed-green-2026-09-09.md"

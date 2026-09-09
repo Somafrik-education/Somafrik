@@ -111,6 +111,7 @@ async function withIsolatedPg(run) {
     await pool.query(read("backend/db/migrations/20260913_communication_student_late_outbox.sql"));
     await pool.query(read("backend/db/migrations/20260914_communication_report_card_published_outbox.sql"));
     await pool.query(read("backend/db/migrations/20260916_communication_timetable_changed_outbox.sql"));
+    await pool.query(read("backend/db/migrations/20260917_communication_timetable_changed_revision.sql"));
     return { skipped: false, ...(await run(pool)) };
   } finally {
     await pool.end();
@@ -264,6 +265,32 @@ async function drainSlot(pool, slotId) {
   return outboxForSlot(pool, slotId);
 }
 
+function parseOutboxPayload(row) {
+  const raw = row?.payload;
+  if (raw && typeof raw === "object") return raw;
+  if (typeof raw === "string") {
+    try {
+      return JSON.parse(raw);
+    } catch {
+      return {};
+    }
+  }
+  return {};
+}
+
+async function recipientsForEventKey(pool, eventKey) {
+  const note = await pool.query(
+    `SELECT id FROM communication_notifications WHERE event_key = $1`,
+    [eventKey],
+  );
+  if (!note.rows.length) return [];
+  const rec = await pool.query(
+    `SELECT user_id FROM notification_recipients WHERE notification_id = $1`,
+    [note.rows[0].id],
+  );
+  return rec.rows.map((row) => row.user_id);
+}
+
 test("RED-TT-03 — mapping dispatcher → TIMETABLE_CHANGED", () => {
   assert.equal(mapDispatcherEventToLotI(TT_EVENT), "TIMETABLE_CHANGED");
   assert.match(read("backend/lib/communicationsDispatcher.js"), /"planning\.timetable\.changed": \["PUSH", "EMAIL"\]/);
@@ -299,13 +326,14 @@ test("RED-TT-02 — UPDATE sans changement métier → 0 event", async () => {
   });
 });
 
-test("RED-TT-04 — event key déterministe (empreinte OLD→NEW)", async () => {
+test("RED-TT-04 — event key déterministe (change_revision monotone)", async () => {
   await withIsolatedPg(async (pool) => {
     await seedTimetableFixtures(pool);
     await insertWeeklySlot(pool, { id: SLOT_A });
     await patchWeeklySlot(pool, SLOT_A, { startTime: "08:30:00" });
     const row = (await outboxForSlot(pool, SLOT_A))[0];
-    assert.match(row.event_key, /^planning\.timetable\.changed:[0-9a-f-]+:[a-f0-9]{32}$/);
+    assert.match(row.event_key, /^planning\.timetable\.changed:[0-9a-f-]+:1$/);
+    assert.equal(Number(row.payload.changeRevision), 1);
   });
 });
 
@@ -499,6 +527,51 @@ test("RED-TT-15 — aucune production TEACHER_REPLACEMENT", async () => {
     assert.equal(replacement.rows[0].c, 0);
   });
   assert.doesNotMatch(read("backend/db/communicationsNotificationsSchema.js"), /teacher\.replacement/);
+});
+
+test("RED-TT-17 — cycle A→B→A→B produit 3 événements distincts", async () => {
+  await withIsolatedPg(async (pool) => {
+    await seedTimetableFixtures(pool);
+    await insertWeeklySlot(pool, { id: SLOT_A, startTime: "08:00:00", endTime: "09:00:00" });
+    await patchWeeklySlot(pool, SLOT_A, { startTime: "08:30:00" });
+    await patchWeeklySlot(pool, SLOT_A, { startTime: "08:00:00" });
+    await patchWeeklySlot(pool, SLOT_A, { startTime: "08:30:00" });
+    const rows = await outboxForSlot(pool, SLOT_A);
+    assert.equal(rows.length, 3);
+    assert.equal(new Set(rows.map((row) => row.event_key)).size, 3);
+    assert.equal(rows[0].event_key, `${TT_EVENT}:${SLOT_A}:1`);
+    assert.equal(rows[1].event_key, `${TT_EVENT}:${SLOT_A}:2`);
+    assert.equal(rows[2].event_key, `${TT_EVENT}:${SLOT_A}:3`);
+  });
+});
+
+test("RED-TT-18 — drain utilise snapshot payload, pas état courant du slot", async () => {
+  await withIsolatedPg(async (pool) => {
+    await seedTimetableFixtures(pool);
+    await insertWeeklySlot(pool, { id: SLOT_A, teacherId: TEACHER_A, classId: CLASS_A, courseId: COURSE_A });
+    await patchWeeklySlot(pool, SLOT_A, { startTime: "08:30:00" });
+    await patchWeeklySlot(pool, SLOT_A, {
+      teacherId: TEACHER_B,
+      schoolCourseId: COURSE_B,
+      classId: CLASS_B,
+    });
+    const rows = await outboxForSlot(pool, SLOT_A);
+    assert.equal(rows.length, 2);
+    const e1 = rows[0];
+    const e2 = rows[1];
+    const p1 = parseOutboxPayload(e1);
+    const p2 = parseOutboxPayload(e2);
+    assert.equal(String(p1.teacherId), TEACHER_A);
+    assert.equal(String(p2.teacherId), TEACHER_B);
+    assert.equal(String(p2.previousTeacherId), TEACHER_A);
+    await drainSlot(pool, SLOT_A);
+    const r1 = await recipientsForEventKey(pool, e1.event_key);
+    const r2 = await recipientsForEventKey(pool, e2.event_key);
+    assert.ok(r1.includes(TEACHER_USER_A), "E1 notifie enseignant A du snapshot");
+    assert.equal(r1.includes(TEACHER_USER_B), false, "E1 n'utilise pas l'état courant (B)");
+    assert.ok(r2.includes(TEACHER_USER_B), "E2 notifie nouvel enseignant B");
+    assert.ok(r2.includes(TEACHER_USER_A), "E2 notifie aussi ancien enseignant A (changement prof)");
+  });
 });
 
 test("RED-TT-16 — AUDIT-COM-FINAL matrice 8/9", () => {

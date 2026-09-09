@@ -177,13 +177,21 @@ BEGIN
     v_actor := NULL;
     v_payload := jsonb_build_object(
       'weeklySlotId', NEW.id,
+      'changeRevision', NEW.change_revision,
       'classId', NEW.class_id,
       'teacherId', NEW.teacher_id,
+      'previousTeacherId', CASE
+        WHEN OLD.teacher_id IS DISTINCT FROM NEW.teacher_id THEN OLD.teacher_id
+        ELSE NULL
+      END,
       'academicYearId', NEW.academic_year_id,
       'dayOfWeek', NEW.day_of_week,
       'startTime', NEW.start_time::text,
       'endTime', NEW.end_time::text,
-      'status', NEW.status
+      'status', NEW.status,
+      'room', NEW.room,
+      'roomId', NEW.room_id,
+      'schoolCourseId', NEW.school_course_id
     );
     -- INSERT nouvelle séance → 0 event. Seules les modifications d'un créneau actif visible.
     IF TG_OP = 'UPDATE' AND lower(trim(COALESCE(OLD.status, ''))) = 'active' THEN
@@ -199,20 +207,7 @@ BEGIN
         OR NEW.status IS DISTINCT FROM OLD.status
       );
       IF should_emit THEN
-        v_event_key := v_event_type || ':' || NEW.id::text || ':' || md5(
-          concat_ws('|',
-            COALESCE(OLD.status, ''),
-            COALESCE(NEW.status, ''),
-            OLD.day_of_week::text, NEW.day_of_week::text,
-            OLD.start_time::text, NEW.start_time::text,
-            OLD.end_time::text, NEW.end_time::text,
-            COALESCE(OLD.room, ''), COALESCE(NEW.room, ''),
-            COALESCE(OLD.room_id::text, ''), COALESCE(NEW.room_id::text, ''),
-            OLD.school_course_id::text, NEW.school_course_id::text,
-            OLD.teacher_id::text, NEW.teacher_id::text,
-            OLD.class_id::text, NEW.class_id::text
-          )
-        );
+        v_event_key := v_event_type || ':' || NEW.id::text || ':' || NEW.change_revision::text;
       END IF;
     END IF;
   END IF;
