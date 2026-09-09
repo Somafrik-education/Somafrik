@@ -35,6 +35,7 @@ function sourceGuards() {
   const mobile = read("Mobile/src/services/pushNotifications.ts");
   const runtime = read("Mobile/src/components/PushNotificationsRuntime.tsx");
   const tap = read("Mobile/src/lib/pushNotificationTap.ts");
+  const destinations = read("Mobile/src/lib/pushNotificationDestinations.ts");
   const navigator = read("Mobile/src/navigation/AppNavigator.tsx");
   const auth = read("Mobile/src/context/AuthContext.tsx");
   const api = read("Mobile/src/services/api.ts");
@@ -145,7 +146,10 @@ function sourceGuards() {
   assert.match(tap, /consumeInitialPushResponse/);
   assert.match(tap, /isAuthenticated/);
   assert.match(tap, /dismissPendingPushNavigation/);
-  assert.match(tap, /resolvePushDestination/);
+  assert.match(tap, /resolvePushNavigationData/);
+  assert.match(destinations, /StudentPayments/);
+  assert.match(destinations, /somafrikStudentId/);
+  assert.match(destinations, /return \{ destination: "Home" \}/);
   assert.match(navigator, /session == null|Boolean\(session\) && canPersistFullSession/);
   assert.match(auth, /dismissPendingPushNavigation/);
   assert.match(api, /revokeCurrentPushDevice/);
@@ -173,6 +177,7 @@ function main() {
   run(process.execPath, ["backend/lib/rateLimit.push-selftest.test.js"], "rate limit self-test");
   run("npx", ["--yes", "tsx", "Mobile/src/services/pushNotifications.test.ts"], "mobile push unit");
   run("npx", ["--yes", "tsx", "Mobile/src/lib/pushNotificationTap.test.ts"], "mobile cold-start tap");
+  run("npx", ["--yes", "tsx", "Mobile/src/lib/financeNotificationNavigation.test.ts"], "mobile finance notification navigation");
   run(process.execPath, ["backend/db/clientsCanonicalBootstrap.test.js"], "clientsCanonicalBootstrap");
   assert.ok(String(process.env.DATABASE_URL ?? "").trim(), "DATABASE_URL requis pour PUSH-N1");
   run(process.execPath, ["backend/db/mobilePushDevicesSchema.upgrade.pg.test.js"], "upgrade schéma PUSH-N1 legacy");
