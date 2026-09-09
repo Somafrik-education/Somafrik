@@ -15,7 +15,10 @@ import * as DocumentPicker from "expo-document-picker";
 import { useFocusEffect } from "@react-navigation/native";
 import { useAuth } from "../context/AuthContext";
 import { useAdminData } from "../context/AdminDataContext";
+import { canReadRoute } from "../domain/security/permissions";
 import { hasCommunicationSchoolScope } from "../lib/communicationSchoolScope";
+import { resolveInternalNotificationNavigationTarget } from "../lib/pushNotificationDestinations";
+import { navigationRef } from "../navigation/rootNavigation";
 import {
   archiveInternalNotification,
   createInternalNotification,
@@ -59,6 +62,7 @@ export default function InternalNotificationsScreen() {
 
   const scopeReady = !requiresSchoolSelection || hasCommunicationSchoolScope(activeSchoolCode);
   const canCreate = hasPermission(session, "Notifications:CREATE") && scopeReady;
+  const canOpenStudentPayments = canReadRoute(session, "StudentPayments");
   const unread = useMemo(() => rows.filter((row) => !row.readAt).length, [rows]);
 
   const load = useCallback(async (refresh = false) => {
@@ -102,6 +106,12 @@ export default function InternalNotificationsScreen() {
     } catch (err) {
       Alert.alert("Archivage impossible", err instanceof Error ? err.message : "Réessayez.");
     }
+  }
+
+  function openNavigationTarget(row: InternalNotificationRecord) {
+    const target = resolveInternalNotificationNavigationTarget(row.navigationTarget);
+    if (!target || !canOpenStudentPayments || !navigationRef.isReady()) return;
+    navigationRef.navigate(target.destination as never, target.params as never);
   }
 
   async function pickAttachments() {
@@ -198,46 +208,54 @@ export default function InternalNotificationsScreen() {
 
       {!rows.length && !error ? <Text style={styles.empty}>Aucune notification.</Text> : null}
 
-      {rows.map((row) => (
-        <View key={row.id} style={[styles.card, !row.readAt && styles.unreadCard]}>
-          <View style={styles.rowTop}>
-            <Text style={styles.cardTitle}>{row.title}</Text>
-            <Text style={[styles.badge, row.readAt ? styles.readBadge : styles.unreadBadge]}>{row.readAt ? "Lu" : "Non lu"}</Text>
-          </View>
-          <Text style={styles.body}>{row.body}</Text>
-          <Text style={styles.meta}>{row.senderName} · {formatDateTime(row.publishedAt || row.createdAt)}</Text>
-          {(row.attachments ?? []).map((attachment) => (
-            <TouchableOpacity
-              key={attachment.id}
-              style={styles.fileButton}
-              onPress={async () => {
-                try {
-                  const uri = await downloadInternalNotificationAttachment(
-                    attachment.id,
-                    attachment.fileName,
-                    activeSchoolCode,
-                  );
-                  await Linking.openURL(uri);
-                } catch (err) {
-                  Alert.alert("Téléchargement impossible", err instanceof Error ? err.message : "Réessayez.");
-                }
-              }}
-            >
-              <Text style={styles.fileButtonText}>{attachment.fileName}</Text>
-            </TouchableOpacity>
-          ))}
-          <View style={styles.actions}>
-            {!row.readAt ? (
-              <TouchableOpacity style={styles.secondaryButton} onPress={() => void markRead(row)}>
-                <Text style={styles.secondaryButtonText}>Marquer comme lu</Text>
+      {rows.map((row) => {
+        const navigationTarget = resolveInternalNotificationNavigationTarget(row.navigationTarget);
+        return (
+          <View key={row.id} style={[styles.card, !row.readAt && styles.unreadCard]}>
+            <View style={styles.rowTop}>
+              <Text style={styles.cardTitle}>{row.title}</Text>
+              <Text style={[styles.badge, row.readAt ? styles.readBadge : styles.unreadBadge]}>{row.readAt ? "Lu" : "Non lu"}</Text>
+            </View>
+            <Text style={styles.body}>{row.body}</Text>
+            <Text style={styles.meta}>{row.senderName} · {formatDateTime(row.publishedAt || row.createdAt)}</Text>
+            {(row.attachments ?? []).map((attachment) => (
+              <TouchableOpacity
+                key={attachment.id}
+                style={styles.fileButton}
+                onPress={async () => {
+                  try {
+                    const uri = await downloadInternalNotificationAttachment(
+                      attachment.id,
+                      attachment.fileName,
+                      activeSchoolCode,
+                    );
+                    await Linking.openURL(uri);
+                  } catch (err) {
+                    Alert.alert("Téléchargement impossible", err instanceof Error ? err.message : "Réessayez.");
+                  }
+                }}
+              >
+                <Text style={styles.fileButtonText}>{attachment.fileName}</Text>
               </TouchableOpacity>
-            ) : null}
-            <TouchableOpacity style={styles.secondaryButton} onPress={() => void archive(row)}>
-              <Text style={styles.secondaryButtonText}>Archiver</Text>
-            </TouchableOpacity>
+            ))}
+            <View style={styles.actions}>
+              {navigationTarget && canOpenStudentPayments ? (
+                <TouchableOpacity style={styles.primaryButton} onPress={() => openNavigationTarget(row)}>
+                  <Text style={styles.primaryButtonText}>Voir le paiement</Text>
+                </TouchableOpacity>
+              ) : null}
+              {!row.readAt ? (
+                <TouchableOpacity style={styles.secondaryButton} onPress={() => void markRead(row)}>
+                  <Text style={styles.secondaryButtonText}>Marquer comme lu</Text>
+                </TouchableOpacity>
+              ) : null}
+              <TouchableOpacity style={styles.secondaryButton} onPress={() => void archive(row)}>
+                <Text style={styles.secondaryButtonText}>Archiver</Text>
+              </TouchableOpacity>
+            </View>
           </View>
-        </View>
-      ))}
+        );
+      })}
     </ScrollView>
   );
 }
