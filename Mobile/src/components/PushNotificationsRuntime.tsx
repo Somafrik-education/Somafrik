@@ -24,7 +24,7 @@ Notifications.setNotificationHandler({
 });
 
 function navigateTo(destination: string, params?: AllowedPushNavigationParams) {
-  navigationRef.navigate(destination as never, params as never);
+  navigationRef.navigate({ name: destination, params } as never);
 }
 
 function isNavigationReady() {
