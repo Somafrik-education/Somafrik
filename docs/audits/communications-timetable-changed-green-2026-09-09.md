@@ -6,7 +6,7 @@
 |---|---|
 | Base SHA | `25c3d8367502294256c4798d22fc21bda66eb395` |
 | Branche | `cursor/communications-timetable-changed-d98a` |
-| HEAD SHA | _(voir commit final)_ |
+| HEAD SHA | `df6db161` |
 
 ## SoT Planning
 
