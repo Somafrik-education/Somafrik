@@ -66,7 +66,9 @@ function outboxEventTypesFromSchema() {
   const schema = read("backend/db/communicationsNotificationsSchema.js");
   const block = schema.slice(schema.indexOf("somafrik_enqueue_communication_event"), schema.indexOf("$$ LANGUAGE plpgsql"));
   const matches = [...block.matchAll(/v_event_type := '([^']+)'/g)].map((m) => m[1]);
-  return [...new Set(matches)].sort();
+  const sweep = read("backend/lib/communicationsPaymentDueSweep.js");
+  const sweepTypes = [...sweep.matchAll(/PD_EVENT = "([^"]+)"/g)].map((m) => m[1]);
+  return [...new Set([...matches, ...sweepTypes])].sort();
 }
 
 function envPreprod(extra = {}) {
@@ -124,13 +126,14 @@ test("AUDIT-COM-FINAL-01 — architecture : quatre familles séparées", () => {
   assert.match(server, /\/api\/backoffice\/communications\/deliveries\/health/);
 });
 
-test("AUDIT-COM-FINAL-01b — matrice événements : 6/9 Lot I câblés, 3/9 sans producteur (P1 connu)", () => {
+test("AUDIT-COM-FINAL-01b — matrice événements : 7/9 Lot I câblés, 2/9 sans producteur (P1 connu)", () => {
   const wired = outboxEventTypesFromSchema();
   assert.deepEqual(wired, [
     "attendance.student.absent",
     "attendance.student.late",
     "communication.announcement.published",
     "communication.message.created",
+    "finance.payment.due",
     "finance.payment.recorded",
     "pedagogy.grade.published",
     "pedagogy.report_card.published",
@@ -141,10 +144,11 @@ test("AUDIT-COM-FINAL-01b — matrice événements : 6/9 Lot I câblés, 3/9 san
     .filter(Boolean)
     .sort();
   assert.equal(LOT_I_EVENTS.length, 9, "Lot I canonique = 9 événements (LOT_I_EVENTS + CHECK PostgreSQL)");
-  assert.equal(mappedPolicy.length, 6, "6/9 événements Lot I ont un producteur outbox");
+  assert.equal(mappedPolicy.length, 7, "7/9 événements Lot I ont un producteur outbox");
   assert.deepEqual(mappedPolicy, [
     "ANNOUNCEMENT_PUBLISHED",
     "GRADE_PUBLISHED",
+    "PAYMENT_DUE",
     "PAYMENT_RECEIVED",
     "REPORT_CARD_PUBLISHED",
     "STUDENT_ABSENT",
@@ -155,7 +159,6 @@ test("AUDIT-COM-FINAL-01b — matrice événements : 6/9 Lot I câblés, 3/9 san
     (key) => !mappedPolicy.includes(key),
   ).sort();
   assert.deepEqual(missingProducers, [
-    "PAYMENT_DUE",
     "TEACHER_REPLACEMENT",
     "TIMETABLE_CHANGED",
   ]);

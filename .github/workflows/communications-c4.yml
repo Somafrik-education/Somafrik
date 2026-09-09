@@ -55,6 +55,8 @@ on:
       - "backend/lib/communicationsFinal.audit.test.js"
       - "backend/lib/communicationsStudentLate.red.test.js"
       - "backend/lib/communicationsReportCardPublished.red.test.js"
+      - "backend/lib/communicationsPaymentDue.red.test.js"
+      - "backend/lib/communicationsPaymentDueSweep.js"
       - "backend/db/migrations/20260913_communication_student_late_outbox.sql"
       - "backend/db/migrations/20260914_communication_report_card_published_outbox.sql"
       - "docs/audits/communications-student-late-green-2026-09-09.md"

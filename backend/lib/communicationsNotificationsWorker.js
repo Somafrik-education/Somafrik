@@ -2,6 +2,7 @@
 
 const { drainOutbox } = require("./communicationsNotificationsService");
 const { dispatchProcessedEvents } = require("./communicationsDispatcher");
+const { sweepPaymentDueOutbox } = require("./communicationsPaymentDueSweep");
 
 let timer = null;
 let running = false;
@@ -17,6 +18,15 @@ async function runOnce(repository, logger = console) {
   if (!store || typeof store.withTransaction !== "function") return [];
   running = true;
   try {
+    try {
+      await sweepPaymentDueOutbox(store, {
+        limit: Number(process.env.COMMUNICATION_PAYMENT_DUE_SWEEP_BATCH || 100),
+      });
+    } catch (error) {
+      logger.error?.("[communications-c4] payment due sweep failed", {
+        message: String(error?.message || error).slice(0, 300),
+      });
+    }
     const processed = await drainOutbox(store, {
       limit: Number(process.env.COMMUNICATION_NOTIFICATIONS_BATCH || 50),
     });
