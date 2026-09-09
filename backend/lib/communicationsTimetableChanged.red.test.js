@@ -108,10 +108,6 @@ async function withIsolatedPg(run) {
     await pool.query(read("backend/db/schema.sql"));
     await pool.query(PEDAGOGY_SCHEMA_SQL);
     await ensureClientsCanonicalBootstrap(pool, { info() {}, error() {} });
-    await pool.query(read("backend/db/migrations/20260913_communication_student_late_outbox.sql"));
-    await pool.query(read("backend/db/migrations/20260914_communication_report_card_published_outbox.sql"));
-    await pool.query(read("backend/db/migrations/20260916_communication_timetable_changed_outbox.sql"));
-    await pool.query(read("backend/db/migrations/20260917_communication_timetable_changed_revision.sql"));
     return { skipped: false, ...(await run(pool)) };
   } finally {
     await pool.end();
@@ -571,6 +567,37 @@ test("RED-TT-18 — drain utilise snapshot payload, pas état courant du slot", 
     assert.equal(r1.includes(TEACHER_USER_B), false, "E1 n'utilise pas l'état courant (B)");
     assert.ok(r2.includes(TEACHER_USER_B), "E2 notifie nouvel enseignant B");
     assert.ok(r2.includes(TEACHER_USER_A), "E2 notifie aussi ancien enseignant A (changement prof)");
+  });
+});
+
+test("RED-TT-19 — boot canonique sans migrations L4 manuelles", async () => {
+  await withIsolatedPg(async (pool) => {
+    const column = await pool.query(
+      `SELECT 1 FROM information_schema.columns
+       WHERE table_schema = 'public'
+         AND table_name = 'course_schedule_weekly_slots'
+         AND column_name = 'change_revision'
+       LIMIT 1`,
+    );
+    assert.equal(column.rowCount, 1, "change_revision présent après pedagogy + bootstrap C4");
+    const bump = await pool.query(
+      `SELECT 1 FROM pg_trigger WHERE tgname = 'trg_course_schedule_weekly_slots_bump_revision' LIMIT 1`,
+    );
+    assert.equal(bump.rowCount, 1, "trigger bump revision installé par bootstrap Pédagogie");
+    const outboxTrigger = await pool.query(
+      `SELECT 1 FROM pg_trigger WHERE tgname = 'trg_c4_timetable_changed_event' LIMIT 1`,
+    );
+    assert.equal(outboxTrigger.rowCount, 1, "trigger outbox C4 installé par bootstrap");
+    await seedTimetableFixtures(pool);
+    await insertWeeklySlot(pool, { id: SLOT_A, startTime: "08:00:00", endTime: "09:00:00" });
+    await patchWeeklySlot(pool, SLOT_A, { startTime: "08:30:00" });
+    await patchWeeklySlot(pool, SLOT_A, { startTime: "08:00:00" });
+    await patchWeeklySlot(pool, SLOT_A, { startTime: "08:30:00" });
+    const rows = await outboxForSlot(pool, SLOT_A);
+    assert.equal(rows.length, 3);
+    assert.equal(rows[0].event_key, `${TT_EVENT}:${SLOT_A}:1`);
+    assert.equal(rows[1].event_key, `${TT_EVENT}:${SLOT_A}:2`);
+    assert.equal(rows[2].event_key, `${TT_EVENT}:${SLOT_A}:3`);
   });
 });
 

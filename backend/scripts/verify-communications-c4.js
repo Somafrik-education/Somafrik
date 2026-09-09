@@ -117,6 +117,8 @@ function sourceGuards() {
   assert.match(schema, /pedagogy\.grade\.published/);
   assert.match(schema, /pedagogy\.report_card\.published/);
   assert.match(schema, /planning\.timetable\.changed/);
+  assert.match(read("backend/db/pedagogySchema.js"), /planningWeeklyChangeRevision\.sql/);
+  assert.match(read("backend/db/planningWeeklyChangeRevision.sql"), /change_revision/);
   assert.match(schema, /finance\.payment\.recorded/);
   assert.match(read("backend/lib/communicationsPaymentDueSweep.js"), /finance\.payment\.due/);
   assert.match(schema, /CREATE TRIGGER trg_c4_message_event/);

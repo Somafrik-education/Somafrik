@@ -1,5 +1,7 @@
--- Lot L4 P1 — change_revision monotone + snapshot payload immuable
--- Corrige clé OLD|NEW (cycle A→B→A→B) et drain historique hors état courant.
+-- Lot L4 P1 — change_revision (planningWeeklyChangeRevision.sql) + enqueue C4
+
+-- Planning V2 — révision monotone pour TIMETABLE_CHANGED (bootstrap Pédagogie + migration L4).
+-- Source unique : importé par pedagogySchema.js ; recopié idempotent dans 20260917.
 
 ALTER TABLE course_schedule_weekly_slots
   ADD COLUMN IF NOT EXISTS change_revision BIGINT NOT NULL DEFAULT 0;
