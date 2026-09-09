@@ -37,14 +37,22 @@ export function PlanningSubstitutionsPage() {
   const { canRead, canCreate, canDelete } = useFeaturePermissions("Remplacements");
   const { showToast } = useToast();
   const [params, setParams] = useSearchParams();
+  // Deep-link : une notification désigne un remplacement existant. Dans ce cas
+  // `weeklySlotId` n'est qu'un contexte et ne doit pas amorcer la création.
+  const deepLinkReplacementId = (params.get("replacementId") ?? "").trim();
   const [status, setStatus] = useState<"loading" | "ok" | "error" | "forbidden">("loading");
   const [items, setItems] = useState<CourseScheduleReplacement[]>([]);
   const [filterDate, setFilterDate] = useState(params.get("occurrenceDate") || "");
-  const [filterStatus, setFilterStatus] = useState("planned");
-  const [wizardOpen, setWizardOpen] = useState(Boolean(params.get("weeklySlotId")));
+  const [filterStatus, setFilterStatus] = useState(deepLinkReplacementId ? "" : "planned");
+  const [selectedReplacementId, setSelectedReplacementId] = useState(deepLinkReplacementId);
+  const [wizardOpen, setWizardOpen] = useState(
+    Boolean(params.get("weeklySlotId")) && !deepLinkReplacementId,
+  );
   const [wizardDate, setWizardDate] = useState(params.get("occurrenceDate") || "");
   const [occurrences, setOccurrences] = useState<OccurrenceOption[]>([]);
-  const [weeklySlotId, setWeeklySlotId] = useState(params.get("weeklySlotId") || "");
+  const [weeklySlotId, setWeeklySlotId] = useState(
+    deepLinkReplacementId ? "" : params.get("weeklySlotId") || "",
+  );
   const [originalName, setOriginalName] = useState("");
   const [substitutes, setSubstitutes] = useState<SubstituteOption[]>([]);
   const [substituteTeacherId, setSubstituteTeacherId] = useState("");
@@ -78,6 +86,17 @@ export function PlanningSubstitutionsPage() {
     void loadList();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [canRead, filterDate, filterStatus]);
+
+  useEffect(() => {
+    setSelectedReplacementId(deepLinkReplacementId);
+  }, [deepLinkReplacementId]);
+
+  const selectedReplacement = useMemo(
+    () => items.find((row) => row.id === selectedReplacementId) ?? null,
+    [items, selectedReplacementId],
+  );
+  const deepLinkMissing =
+    Boolean(deepLinkReplacementId) && status === "ok" && !selectedReplacement;
 
   async function loadOccurrences(date: string) {
     if (!date) {
@@ -246,6 +265,30 @@ export function PlanningSubstitutionsPage() {
             />
           </Field>
         </div>
+        {selectedReplacement ? (
+          <div
+            className="mt-4 rounded-2xl border border-brand bg-brand-50 p-4"
+            data-testid="planning-replacement-selected"
+            data-replacement-id={selectedReplacement.id}
+          >
+            <p className="text-xs font-semibold uppercase tracking-wide text-muted">
+              Remplacement sélectionné
+            </p>
+            <p className="mt-1 text-sm font-black text-ink">
+              {selectedReplacement.occurrenceDate} · {selectedReplacement.className} ·{" "}
+              {selectedReplacement.courseName}
+            </p>
+            <p className="mt-1 text-sm text-ink">
+              {selectedReplacement.originalTeacherName} remplacé par{" "}
+              {selectedReplacement.substituteTeacherName} · {statusLabel(selectedReplacement.status)}
+            </p>
+          </div>
+        ) : null}
+        {deepLinkMissing ? (
+          <p className="mt-4 text-sm text-muted" data-testid="planning-replacement-missing">
+            Ce remplacement n'est plus disponible ou n'est pas accessible.
+          </p>
+        ) : null}
         <div className="mt-4">
           {status === "loading" ? (
             <p className="text-sm text-muted">Chargement des remplacements…</p>
@@ -258,7 +301,12 @@ export function PlanningSubstitutionsPage() {
               </p>
             </div>
           ) : (
-            <DataTable columns={columns} data={items} emptyLabel="Aucun remplacement." />
+            <DataTable
+              columns={columns}
+              data={items}
+              emptyLabel="Aucun remplacement."
+              isRowSelected={(row) => Boolean(selectedReplacementId) && row.id === selectedReplacementId}
+            />
           )}
         </div>
       </Card>

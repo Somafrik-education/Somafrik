@@ -10,6 +10,7 @@ import {
   type MessageRecipient,
 } from "../lib/messagesApi";
 import { hasCommunicationSchoolScope } from "../lib/communicationSchoolScope";
+import { useDeepLinkId } from "../lib/notificationDeepLink";
 import { Card, SectionHeader } from "../components/ui/Card";
 import { Button } from "../components/ui/Button";
 import { Field } from "../components/ui/Field";
@@ -43,6 +44,7 @@ export function MessagesConversationsPage() {
   const selfId = String(session?.user?.id ?? "");
   const schoolScope = hasCommunicationSchoolScope(activeSchoolCode) ? activeSchoolCode : undefined;
   const scopeReady = !requiresSelection || Boolean(schoolScope);
+  const deepLinkConversationId = useDeepLinkId("conversationId");
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
   const [selectedId, setSelectedId] = useState<string>("");
   const [messages, setMessages] = useState<ConversationMessage[]>([]);
@@ -101,6 +103,12 @@ export function MessagesConversationsPage() {
       showToast(error instanceof ApiError ? error.message : "Impossible de charger le fil", "error");
     });
   }, [loadThread, selectedId, showToast, scopeReady]);
+
+  // Deep-link notification : ouvrir la conversation désignée par l'URL.
+  useEffect(() => {
+    if (!deepLinkConversationId || !canRead || !scopeReady) return;
+    setSelectedId(deepLinkConversationId);
+  }, [deepLinkConversationId, canRead, scopeReady]);
 
   const selected = useMemo(
     () => conversations.find((row) => row.id === selectedId) ?? null,
@@ -184,6 +192,9 @@ export function MessagesConversationsPage() {
               <button
                 key={row.id}
                 type="button"
+                data-testid="messages-conversation-item"
+                data-conversation-id={row.id}
+                aria-selected={selectedId === row.id}
                 className={`w-full rounded-xl px-3 py-2 text-left ${selectedId === row.id ? "bg-slate-100" : "hover:bg-slate-50"}`}
                 onClick={() => setSelectedId(row.id)}
               >
@@ -211,7 +222,11 @@ export function MessagesConversationsPage() {
           title={selected ? counterpartName(selected, selfId) : "Nouveau message"}
           description={selected ? `Conversation ${selected.id.slice(0, 8)}` : "Choisissez un destinataire puis écrivez."}
         />
-        <div className="mt-4 flex-1 space-y-3 overflow-y-auto">
+        <div
+          className="mt-4 flex-1 space-y-3 overflow-y-auto"
+          data-testid="messages-thread"
+          data-conversation-id={selectedId || undefined}
+        >
           {messages.map((row) => (
             <div key={row.id} className={`max-w-[80%] rounded-2xl px-3 py-2 ${row.senderUserId === selfId ? "ml-auto bg-slate-900 text-white" : "bg-slate-100 text-ink"}`}>
               <p className="text-xs opacity-80">

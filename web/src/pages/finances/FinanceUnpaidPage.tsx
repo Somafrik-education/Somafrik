@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "../../context/AuthContext";
 import { useData } from "../../context/DataContext";
 import { Card, SectionHeader } from "../../components/ui/Card";
@@ -34,6 +34,7 @@ import {
   isOwnUnpaidScopeOnly,
 } from "../../lib/unpaidPermissions";
 import { usePermissionContext } from "../../lib/usePermissionContext";
+import { useDeepLinkId } from "../../lib/notificationDeepLink";
 import { resolveFinanceUiActions } from "../../lib/financeActionPermissions";
 import { QuickPaymentModal } from "../../components/payments/QuickPaymentModal";
 import { financeApi } from "../../lib/financeApi";
@@ -65,6 +66,9 @@ export function FinanceUnpaidPage() {
   const financeActions = resolveFinanceUiActions(ctx);
   /** Modal d'encaissement : CREATE|UPDATE + READ (GET payment-student-options). */
   const canRegisterPayment = financeActions.canConsultPayments && financeActions.canCreatePayment;
+
+  const deepLinkObligationId = useDeepLinkId("obligationId");
+  const appliedObligationRef = useRef("");
 
   const [search, setSearch] = useState("");
   const [className, setClassName] = useState("");
@@ -106,6 +110,17 @@ export function FinanceUnpaidPage() {
     if (!detailStudentId) return null;
     return getStudentUnpaidDetail(state, session?.user ?? null, detailStudentId, fees, reminders);
   }, [detailStudentId, state, session?.user, fees, reminders]);
+
+  // Deep-link notification : ouvrir le détail de l'élève portant l'impayé visé
+  // et mettre cette obligation en évidence dans la liste des obligations.
+  useEffect(() => {
+    if (!deepLinkObligationId || !canAccess) return;
+    if (appliedObligationRef.current === deepLinkObligationId) return;
+    const fee = fees.find((row) => String(row.id) === deepLinkObligationId);
+    if (!fee) return;
+    appliedObligationRef.current = deepLinkObligationId;
+    setDetailStudentId(String(fee.studentId ?? ""));
+  }, [deepLinkObligationId, canAccess, fees]);
 
   if (!canAccess) {
     return (
@@ -363,7 +378,17 @@ export function FinanceUnpaidPage() {
               <p className="font-semibold text-ink">Obligations ouvertes</p>
               <ul className="mt-2 space-y-1">
                 {detail.fees.map((fee) => (
-                  <li key={fee.id} className="flex justify-between gap-2 rounded border border-line/60 px-2 py-1">
+                  <li
+                    key={fee.id}
+                    data-testid="unpaid-obligation"
+                    data-obligation-id={fee.id}
+                    data-selected={String(fee.id) === deepLinkObligationId ? "true" : undefined}
+                    className={`flex justify-between gap-2 rounded border px-2 py-1 ${
+                      String(fee.id) === deepLinkObligationId
+                        ? "border-brand bg-brand-50 font-semibold"
+                        : "border-line/60"
+                    }`}
+                  >
                     <span>
                       {fee.label}
                       {fee.className ? ` · ${fee.className}` : ""}

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "../context/AuthContext";
 import { useData } from "../context/DataContext";
 import { useActiveSchool } from "../context/ActiveSchoolContext";
@@ -9,6 +9,7 @@ import { PrintButton } from "../components/ui/PrintButton";
 import { useToast } from "../components/ui/Toast";
 import { useFeaturePermissions, usePermissionContext } from "../lib/usePermissionContext";
 import { canManagePresences } from "../lib/permissions";
+import { useDeepLinkId } from "../lib/notificationDeepLink";
 import { resolveTeacherRecordForUser } from "../lib/establishment";
 import { classStudentsApi, type ClassStudent } from "../lib/classStudentsApi";
 import {
@@ -107,6 +108,9 @@ export function PresencesPage() {
   const [attendanceDirty, setAttendanceDirty] = useState(false);
   const [busy, setBusy] = useState(false);
   const [selectedTeacherId, setSelectedTeacherId] = useState("");
+  const [focusedStudentId, setFocusedStudentId] = useState("");
+  const deepLinkAttendanceId = useDeepLinkId("attendanceId");
+  const appliedAttendanceRef = useRef("");
 
   const selectedCard = useMemo(
     () => findPresenceClassCard(classCards, { classId: selectedClassId, classCode: selectedClassCode }),
@@ -186,6 +190,23 @@ export function PresencesPage() {
     setSelectedClassCode(card.classCode);
     setSelectedTeacherId("");
   }
+
+  // Deep-link notification : positionner l'appel sur la classe de la présence
+  // visée et mettre en évidence l'élève concerné.
+  useEffect(() => {
+    if (!deepLinkAttendanceId || !canRead) return;
+    if (appliedAttendanceRef.current === deepLinkAttendanceId) return;
+    const presence = presences.find((row) => String(row.id ?? "") === deepLinkAttendanceId);
+    if (!presence) return;
+    const card = findPresenceClassCard(classCards, {
+      classId: String((presence as Record<string, unknown>).classId ?? "") || null,
+      classCode: String((presence as Record<string, unknown>).classCode ?? "") || null,
+    });
+    if (!card) return;
+    appliedAttendanceRef.current = deepLinkAttendanceId;
+    selectClass(card);
+    setFocusedStudentId(String((presence as Record<string, unknown>).studentId ?? ""));
+  }, [deepLinkAttendanceId, canRead, presences, classCards]);
 
   function clearSelectedClass() {
     setSelectedClassId(null);
@@ -443,8 +464,19 @@ export function PresencesPage() {
             const currentStatus = attendance[studentId] ?? "Présent";
             const name = String(student.name ?? `${student.firstName ?? ""} ${student.lastName ?? ""}`.trim());
 
+            const focused = Boolean(focusedStudentId) && studentId === focusedStudentId;
+
             return (
-              <li key={studentId} className="flex flex-col gap-3 px-4 py-4 sm:flex-row sm:items-center sm:justify-between">
+              <li
+                key={studentId}
+                data-testid="presence-student-row"
+                data-student-id={studentId}
+                data-selected={focused ? "true" : undefined}
+                aria-selected={focused || undefined}
+                className={`flex flex-col gap-3 px-4 py-4 sm:flex-row sm:items-center sm:justify-between ${
+                  focused ? "bg-brand-50 ring-2 ring-inset ring-brand" : ""
+                }`}
+              >
                 <div>
                   <p className="font-black text-ink">{name || "Élève"}</p>
                   <p className="text-sm font-semibold text-muted">{String(student.matricule ?? student.publicId ?? "—")}</p>

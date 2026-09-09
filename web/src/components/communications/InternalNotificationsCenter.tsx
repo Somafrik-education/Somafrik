@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { useActiveSchool } from "../../context/ActiveSchoolContext";
 import { useFeaturePermissions } from "../../lib/usePermissionContext";
@@ -7,6 +7,7 @@ import {
   type InternalNotificationRecord,
 } from "../../lib/internalNotificationsApi";
 import { notifyInternalNotificationsChanged } from "../../lib/internalNotificationsRead";
+import { resolveNotificationDestination } from "../../lib/notificationNavigation";
 import { Card, SectionHeader } from "../ui/Card";
 import { Button } from "../ui/Button";
 import { Badge } from "../ui/Badge";
@@ -46,8 +47,20 @@ export function InternalNotificationsCenter() {
   const [body, setBody] = useState("");
   const [files, setFiles] = useState<File[]>([]);
   const [busy, setBusy] = useState(false);
+  const [cursor, setCursor] = useState<string | null>(null);
+  const [loadingMore, setLoadingMore] = useState(false);
+  // Compte des non lues tel que le serveur le voit : même source que la pastille
+  // du Topbar, donc jamais un décompte local limité à la page chargée.
+  const [unread, setUnread] = useState<number | null>(null);
 
-  const unread = useMemo(() => rows.filter((row) => !row.readAt).length, [rows]);
+  async function refreshUnread() {
+    try {
+      const result = await internalNotificationsApi.unreadCount(activeSchoolCode ?? undefined);
+      setUnread(Math.max(0, Number(result?.count) || 0));
+    } catch {
+      setUnread(null);
+    }
+  }
 
   async function load() {
     setLoading(true);
@@ -55,10 +68,30 @@ export function InternalNotificationsCenter() {
     try {
       const result = await internalNotificationsApi.list(activeSchoolCode ?? undefined);
       setRows(result.items ?? []);
+      setCursor(result.nextCursor ?? null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Notifications indisponibles");
     } finally {
       setLoading(false);
+    }
+    await refreshUnread();
+  }
+
+  async function loadMore() {
+    if (!cursor || loadingMore) return;
+    setLoadingMore(true);
+    try {
+      const result = await internalNotificationsApi.list(activeSchoolCode ?? undefined, { cursor });
+      const items = result.items ?? [];
+      setRows((current) => {
+        const known = new Set(current.map((row) => row.id));
+        return [...current, ...items.filter((row) => !known.has(row.id))];
+      });
+      setCursor(result.nextCursor ?? null);
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : "Chargement interrompu", "error");
+    } finally {
+      setLoadingMore(false);
     }
   }
 
@@ -74,10 +107,10 @@ export function InternalNotificationsCenter() {
         : await internalNotificationsApi.markRead(row.id, activeSchoolCode ?? undefined);
       setRows((current) => current.map((item) => (item.id === row.id ? updated : item)));
       notifyInternalNotificationsChanged();
-      const target = updated.navigationTarget ?? {};
-      if (target.type === "conversation") navigate("/messages");
-      else if (target.type === "announcement") navigate("/annonces");
-      else if (target.type === "payment") navigate("/paiements");
+      const destination = resolveNotificationDestination(updated.navigationTarget);
+      if (destination) navigate(destination);
+      else showToast("Cette notification ne renvoie vers aucune ressource consultable.", "info");
+      if (!row.readAt) void refreshUnread();
     } catch (err) {
       showToast(err instanceof Error ? err.message : "Échec de la lecture", "error");
     }
@@ -88,6 +121,7 @@ export function InternalNotificationsCenter() {
       await internalNotificationsApi.archive(row.id, activeSchoolCode ?? undefined);
       setRows((current) => current.filter((item) => item.id !== row.id));
       notifyInternalNotificationsChanged();
+      if (!row.readAt) void refreshUnread();
     } catch (err) {
       showToast(err instanceof Error ? err.message : "Échec de l'archivage", "error");
     }
@@ -130,7 +164,11 @@ export function InternalNotificationsCenter() {
       <Card className="p-6">
         <SectionHeader
           title="Notifications"
-          description={`${unread} non lue(s) · historique synchronisé Web/Mobile.`}
+          description={
+            unread === null
+              ? "Historique synchronisé Web/Mobile."
+              : `${unread} non lue(s) · historique synchronisé Web/Mobile.`
+          }
           actions={canCreate ? <Button onClick={() => setComposer(true)}>Nouvelle notification</Button> : undefined}
         />
         {loading ? <p className="py-10 text-center text-muted">Chargement…</p> : null}
@@ -195,6 +233,13 @@ export function InternalNotificationsCenter() {
             </article>
           ))}
         </div>
+        {!loading && !error && cursor ? (
+          <div className="mt-4 flex justify-center">
+            <Button variant="secondary" onClick={() => void loadMore()} disabled={loadingMore}>
+              {loadingMore ? "Chargement…" : "Charger les notifications plus anciennes"}
+            </Button>
+          </div>
+        ) : null}
       </Card>
 
       <Modal

@@ -64,6 +64,36 @@ on:
       - "backend/lib/communicationsPaymentDue.red.test.js"
       - "backend/lib/communicationsTimetableChanged.red.test.js"
       - "backend/lib/communicationsTeacherReplacement.red.test.js"
+      - "backend/lib/communicationsNavigationTargets.js"
+      - "backend/lib/communicationsNavigationContract.red.test.js"
+      - "backend/lib/communicationsPlanningNavigation.red.test.js"
+      - "backend/lib/communicationsUnreadPagination.red.test.js"
+      - "backend/lib/communicationsNavigationSecurity.red.test.js"
+      - "web/src/components/communications/InternalNotificationsCenter.navigation.red.test.tsx"
+      - "web/src/components/communications/InternalNotificationsCenter.counter.red.test.tsx"
+      - "docs/audits/notifications-navigation-red-2026-09-09.md"
+      - "docs/audits/notifications-navigation-green-2026-09-09.md"
+      - "docs/audits/notifications-deeplink-green-2026-09-09.md"
+      - "web/src/lib/notificationDeepLink.ts"
+      - "web/src/lib/notificationDeepLinkContract.test.ts"
+      - "web/src/pages/notificationDeepLinkJourney.test.tsx"
+      - "web/src/pages/MessagesConversationsPage.tsx"
+      - "web/src/pages/AnnouncementsPage.tsx"
+      - "web/src/pages/AnnouncementsPage.deeplink.test.tsx"
+      - "web/src/pages/EntityPage.tsx"
+      - "web/src/pages/EntityPage.deeplink.test.tsx"
+      - "web/src/pages/PresencesPage.tsx"
+      - "web/src/pages/PresencesPage.deeplink.test.tsx"
+      - "web/src/pages/GradesEvaluationsPage.tsx"
+      - "web/src/pages/GradesEvaluationsPage.deeplink.test.tsx"
+      - "web/src/pages/CoursePlanningPage.tsx"
+      - "web/src/pages/CoursePlanningPage.deeplink.test.tsx"
+      - "web/src/pages/finances/FinanceUnpaidPage.tsx"
+      - "web/src/pages/finances/FinanceUnpaidPage.deeplink.test.tsx"
+      - "web/src/pages/planning/PlanningSubstitutionsPage.tsx"
+      - "web/src/components/grades/StudentGradesPanel.tsx"
+      - "web/src/components/ui/DataTable.tsx"
+      - "web/src/design-system/data-display/Table.tsx"
       - "backend/db/courseScheduleReplacementChangeRevision.sql"
       - "backend/db/teacherReplacementOutbox.sql"
       - "backend/db/migrations/20260918_communication_teacher_replacement_outbox.sql"
@@ -101,6 +131,7 @@ on:
       - "web/src/components/layout/Topbar.tsx"
       - "web/src/lib/internalNotificationsApi.ts"
       - "web/src/lib/internalNotificationsRead.ts"
+      - "web/src/lib/notificationNavigation.ts"
       - "web/src/lib/internalNotificationsC4.test.ts"
       - "web/src/pages/NotificationsPage.tsx"
       - "web/src/pages/parametres/SettingsPlaceholders.tsx"
@@ -190,6 +221,50 @@ jobs:
           retention-days: 7
       - name: Build Web
         run: npm --prefix web run build
+      # Deuxième moitié du parcours « Ouvrir » : la page d'arrivée doit ouvrir
+      # la ressource désignée, pas seulement recevoir son identifiant dans l'URL.
+      - name: Deep-link notifications — destination réellement ouverte
+        shell: bash
+        run: |
+          set -o pipefail
+          npx --prefix web vitest run --root web \
+            src/lib/notificationDeepLinkContract.test.ts \
+            src/pages/notificationDeepLinkJourney.test.tsx \
+            src/pages/AnnouncementsPage.deeplink.test.tsx \
+            src/pages/EntityPage.deeplink.test.tsx \
+            src/pages/PresencesPage.deeplink.test.tsx \
+            src/pages/GradesEvaluationsPage.deeplink.test.tsx \
+            src/pages/CoursePlanningPage.deeplink.test.tsx \
+            src/pages/finances/FinanceUnpaidPage.deeplink.test.tsx 2>&1 | tee notifications-deeplink.log
+      - name: Preserve deep-link log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: notifications-deeplink
+          path: notifications-deeplink.log
+          if-no-files-found: warn
+          retention-days: 7
       - name: Typecheck Mobile
         working-directory: Mobile
         run: npx tsc --noEmit --project tsconfig.json
+      # Navigation des notifications (C0 fail-closed, C1 producteurs planning,
+      # C2 résolveur Web, C3 compteur et pagination). Ce pas est bloquant et
+      # placé en dernier, pour que les vérifications de non-régression du
+      # portail s'exécutent et restent lisibles quoi qu'il arrive ici.
+      - name: Notifications navigation C0 à C3
+        shell: bash
+        run: |
+          set -o pipefail
+          node --test \
+            backend/lib/communicationsNavigationContract.red.test.js \
+            backend/lib/communicationsPlanningNavigation.red.test.js \
+            backend/lib/communicationsUnreadPagination.red.test.js \
+            backend/lib/communicationsNavigationSecurity.red.test.js 2>&1 | tee notifications-navigation.log
+      - name: Preserve notifications navigation log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: notifications-navigation
+          path: notifications-navigation.log
+          if-no-files-found: warn
+          retention-days: 7

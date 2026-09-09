@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "../context/AuthContext";
 import { useData } from "../context/DataContext";
 import { useActiveSchool } from "../context/ActiveSchoolContext";
@@ -12,6 +12,7 @@ import { Field, Input, Select } from "../components/ui/Field";
 import { useToast } from "../components/ui/Toast";
 import { useConfirm } from "../components/ui/ConfirmDialog";
 import { useFeaturePermissions } from "../lib/usePermissionContext";
+import { useDeepLinkId } from "../lib/notificationDeepLink";
 import { ApiError } from "../api/client";
 import {
   EmptyState,
@@ -112,6 +113,9 @@ export function GradesEvaluationsPage() {
 
   const grades = scopedGrades(scopeUser, state);
 
+  const deepLinkGradeId = useDeepLinkId("gradeId");
+  const appliedGradeRef = useRef("");
+
   const [tab, setTab] = useState<TabKey>("evaluations");
   const [period, setPeriod] = useState(queueDefaults.periodFilter ?? "");
   const [statusFilter, setStatusFilter] = useState(queueDefaults.statusFilter);
@@ -171,6 +175,23 @@ export function GradesEvaluationsPage() {
 
   const selectedEvaluation =
     evaluations.find((evaluation) => evaluation.id === selectedEvaluationId) ?? null;
+
+  // Deep-link notification : positionner la page sur l'élève, la période et
+  // l'évaluation de la note visée, puis mettre cette note en évidence.
+  useEffect(() => {
+    if (!deepLinkGradeId || !canRead) return;
+    if (appliedGradeRef.current === deepLinkGradeId) return;
+    const grade = grades.find((row) => String(row.id) === deepLinkGradeId);
+    if (!grade) return;
+    appliedGradeRef.current = deepLinkGradeId;
+    const evaluation = evaluations.find((row) => row.id === grade.evaluationId) ?? null;
+    const className = String(evaluation?.className ?? "");
+    if (className && classNames.includes(className)) setSelectedClass(className);
+    if (grade.period) setPeriod(grade.period);
+    if (grade.evaluationId) setSelectedEvaluationId(String(grade.evaluationId));
+    setSelectedStudentId(String(grade.studentId ?? ""));
+    setTab("eleve");
+  }, [deepLinkGradeId, canRead, grades, evaluations, classNames]);
 
   async function confirmDiscardUnsavedGrades() {
     if (!gradeEntryDirty) return true;
@@ -719,6 +740,7 @@ export function GradesEvaluationsPage() {
                 state={state}
                 user={scopeUser}
                 period={period}
+                highlightGradeId={deepLinkGradeId}
               />
             ) : (
               <EmptyState

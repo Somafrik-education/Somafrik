@@ -1,7 +1,17 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { MemoryRouter } from "react-router-dom";
 import { PresencesPage } from "./PresencesPage";
+
+/** Les pages applicatives sont montées sous le Router : le deep-link lit l'URL. */
+function RoutedPresencesPage() {
+  return (
+    <MemoryRouter>
+      <PresencesPage />
+    </MemoryRouter>
+  );
+}
 import { ATTENDANCE_PEDAGOGICAL_TEACHER_COPY } from "../lib/attendanceAuthor";
 import { readFileSync } from "node:fs";
 import path from "node:path";
@@ -113,7 +123,7 @@ describe("PresencesPage — roster canonique", () => {
   });
 
   it("affiche deux cartes homonymes et le compteur PG, pas un filtre className", async () => {
-    render(<PresencesPage />);
+    render(<RoutedPresencesPage />);
     const cards = await screen.findAllByRole("button");
     const secondA = cards.filter((node) => node.textContent?.includes("2ème A"));
     expect(secondA).toHaveLength(2);
@@ -123,7 +133,7 @@ describe("PresencesPage — roster canonique", () => {
 
   it("charge le roster via GET /classes/:classCode/students (cas A className vide)", async () => {
     const user = userEvent.setup();
-    render(<PresencesPage />);
+    render(<RoutedPresencesPage />);
     const cards = await screen.findAllByRole("button");
     const classA = cards.find((node) => node.textContent?.includes("1 élève")) as HTMLElement;
     await user.click(classA);
@@ -156,7 +166,7 @@ describe("PresencesPage — roster canonique", () => {
     };
     dataState.assignments = [];
     dataState.teachers = [];
-    render(<PresencesPage />);
+    render(<RoutedPresencesPage />);
     const cards = await screen.findAllByRole("button");
     const classCards = cards.filter((node) => node.textContent?.includes("2ème A"));
     expect(classCards).toHaveLength(2);
@@ -191,7 +201,7 @@ describe("PresencesPage — enseignant pédagogique ≠ acteur JWT", () => {
 
   async function openClassWithRoster() {
     const user = userEvent.setup();
-    render(<PresencesPage />);
+    render(<RoutedPresencesPage />);
     const cards = await screen.findAllByRole("button");
     const classA = cards.find((node) => node.textContent?.includes("1 élève")) as HTMLElement;
     await user.click(classA);
