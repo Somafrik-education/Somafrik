@@ -214,3 +214,7 @@ couverts.
 Les correctifs C1 (navigation Web complète avec identifiants), C2 (cibles des
 producteurs planning) et C3 (compteur et pagination) restent hors périmètre
 jusqu'à validation de la preuve RED. C4 Archives est reporté.
+
+**Suite** : preuve RED validée par le CTO, correctifs livrés dans la même PR.
+Voir `notifications-navigation-green-2026-09-09.md` — 37 / 37 verts, sans
+modification d'aucune assertion de ce lot.
