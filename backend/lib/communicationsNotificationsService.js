@@ -21,6 +21,7 @@ const {
   mapAttachmentRow,
 } = require("./communicationsAttachments");
 const { enabledChannelsForUser } = require("./communicationsPreferences");
+const { isPaymentDueEligible } = require("./communicationsPaymentDueEligibility");
 const {
   resolveAllowedChannels,
   getSchoolPolicyEventsBySchoolId,
@@ -670,7 +671,9 @@ async function eventSpec(tx, event) {
       `SELECT o.*, trim(concat(st.first_name,' ',st.last_name)) AS student_name
        FROM student_fee_obligations o JOIN students st ON st.id = o.student_id
        WHERE o.id = $1 AND o.school_id = $2`, [sourceId, schoolId]);
-    if (!obligation) throw new Error("Obligation source introuvable");
+    if (!isPaymentDueEligible(obligation)) {
+      return { title: "", body: "", navigationTarget: {}, metadata: {}, recipients: [] };
+    }
     const parentIds = await tx.listParentUserIdsForStudent(schoolId, obligation.student_id);
     for (const id of parentIds) add(id, "parent", { studentId: obligation.student_id });
     if (typeof tx.listSchoolAdminUserIds === "function") {
@@ -679,7 +682,7 @@ async function eventSpec(tx, event) {
       }
     }
     title = "Paiement arrivé à échéance";
-    body = "Un paiement scolaire concernant votre enfant est arrivé à échéance.";
+    body = "Un paiement scolaire est arrivé à échéance.";
     navigationTarget = {
       type: "finance_obligation",
       studentId: obligation.student_id,

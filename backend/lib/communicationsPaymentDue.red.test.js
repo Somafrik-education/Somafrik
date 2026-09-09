@@ -17,6 +17,7 @@ const { createMemoryDeliveryAdapter } = require("./communicationChannelFanout");
 const { dispatchCommunication } = require("./communicationsDispatcher");
 const { drainOutbox } = require("./communicationsNotificationsService");
 const { sweepPaymentDueOutbox, PD_EVENT, eventKeyForObligation } = require("./communicationsPaymentDueSweep");
+const { isPaymentDueEligible } = require("./communicationsPaymentDueEligibility");
 const { mapDispatcherEventToLotI, LOT_I_EVENTS } = require("./schoolNotificationPolicy");
 const { ensureClientsCanonicalBootstrap } = require("../db/clientsCanonicalBootstrap");
 const { FINANCE_SCHEMA_SQL } = require("../db/financeSchema");
@@ -227,7 +228,8 @@ async function allocatePayment(pool, { obligationId, schoolId = SCHOOL_A, studen
 test("RED-PD-03 — mapping dispatcher → PAYMENT_DUE", () => {
   assert.equal(mapDispatcherEventToLotI(PD_EVENT), "PAYMENT_DUE");
   assert.match(read("backend/lib/communicationsDispatcher.js"), /"finance\.payment\.due": \["PUSH", "EMAIL"\]/);
-  assert.match(read("backend/lib/schoolNotificationPolicy.js"), /"finance\.payment\.due": "PAYMENT_DUE"/);
+  assert.match(read("backend/lib/communicationsPaymentDueSweep.js"), /paymentDueEligibleSqlConditions/);
+  assert.match(read("backend/lib/communicationsNotificationsService.js"), /isPaymentDueEligible/);
 });
 
 test("RED-PD-01 — obligation future → aucun event immédiat", async () => {
@@ -352,7 +354,7 @@ test("RED-PD-10 — recipients parent + school admin", async () => {
     );
     assert.equal(note.rowCount, 1);
     assert.equal(note.rows[0].title, "Paiement arrivé à échéance");
-    assert.match(note.rows[0].body, /échéance/i);
+    assert.equal(note.rows[0].body, "Un paiement scolaire est arrivé à échéance.");
     const recipients = await pool.query(
       `SELECT r.user_id, r.recipient_kind FROM notification_recipients r
        JOIN communication_notifications n ON n.id = r.notification_id
@@ -435,7 +437,7 @@ test("RED-PD-12 — politique établissement PAYMENT_DUE appliquée", async () =
       event_type: PD_EVENT,
       school_id: SCHOOL_A,
       title: "Paiement arrivé à échéance",
-      body: "Un paiement scolaire concernant votre enfant est arrivé à échéance.",
+      body: "Un paiement scolaire est arrivé à échéance.",
     }],
     recipients: [{ notification_id: NOTE_ID, school_id: SCHOOL_A, user_id: PARENT_A, recipient_kind: "parent" }],
     users: [{ id: PARENT_A, school_id: SCHOOL_A, email: "par-pd-a@test.local" }],
@@ -475,7 +477,7 @@ test("RED-PD-13 — préférences utilisateur AND policy", async () => {
       event_type: PD_EVENT,
       school_id: SCHOOL_A,
       title: "Paiement arrivé à échéance",
-      body: "Un paiement scolaire concernant votre enfant est arrivé à échéance.",
+      body: "Un paiement scolaire est arrivé à échéance.",
     }],
     recipients: [{ notification_id: NOTE_ID, school_id: SCHOOL_A, user_id: PARENT_A, recipient_kind: "parent" }],
     users: [{ id: PARENT_A, school_id: SCHOOL_A, email: "par-pd-a@test.local" }],
@@ -559,4 +561,60 @@ test("RED-PD-16 — matrice Lot I 7/9 inclut PAYMENT_DUE", () => {
   assert.equal(mapped.length, 7);
   assert.ok(mapped.includes("PAYMENT_DUE"));
   assert.ok(mapped.includes("PAYMENT_RECEIVED"));
+});
+
+test("RED-PD-17 — sweep puis paiement complet → drainOutbox sans notification", async () => {
+  await withIsolatedPg(async (pool) => {
+    await seedPaymentDueFixtures(pool);
+    const obligationId = await insertObligation(pool, { dueDate: "2026-09-05", amountDue: 10000 });
+    await withRepo(pool, async (repo) => {
+      const store = repo.getClientsStore();
+      await sweepPaymentDueOutbox(store, { referenceDate: REF_DATE });
+      assert.equal((await outboxForObligation(pool, obligationId)).length, 1);
+      await allocatePayment(pool, { obligationId, amount: 10000 });
+      await drainOutbox(store, { limit: 10 });
+    });
+    const noteCount = await pool.query(
+      `SELECT count(*)::int c FROM communication_notifications WHERE event_key = $1`,
+      [eventKeyForObligation(obligationId)],
+    );
+    const recipientCount = await pool.query(
+      `SELECT count(*)::int c FROM notification_recipients r
+       JOIN communication_notifications n ON n.id = r.notification_id
+       WHERE n.event_key = $1`,
+      [eventKeyForObligation(obligationId)],
+    );
+    assert.equal(noteCount.rows[0].c, 0, "obligation soldée avant drain → aucune notification");
+    assert.equal(recipientCount.rows[0].c, 0);
+    const outbox = await pool.query(
+      `SELECT status FROM communication_event_outbox WHERE event_key = $1`,
+      [eventKeyForObligation(obligationId)],
+    );
+    assert.equal(outbox.rows[0].status, "processed");
+  });
+});
+
+test("RED-PD-18 — outbox existant + paiement concurrent → 0 notification à la consommation", async () => {
+  await withIsolatedPg(async (pool) => {
+    await seedPaymentDueFixtures(pool);
+    const obligationId = await insertObligation(pool, { dueDate: "2026-09-05", amountDue: 15000 });
+    await pool.query(
+      `INSERT INTO communication_event_outbox
+         (event_key, event_type, school_id, source_entity_type, source_entity_id, payload)
+       VALUES ($1,$2,$3,'student_fee_obligation',$4,'{}'::jsonb)`,
+      [eventKeyForObligation(obligationId), PD_EVENT, SCHOOL_A, obligationId],
+    );
+    await allocatePayment(pool, { obligationId, amount: 15000 });
+    assert.equal(isPaymentDueEligible((await pool.query(
+      `SELECT * FROM student_fee_obligations WHERE id = $1`, [obligationId],
+    )).rows[0], { referenceDate: REF_DATE }), false);
+    await withRepo(pool, async (repo) => {
+      await drainOutbox(repo.getClientsStore(), { limit: 10 });
+    });
+    const noteCount = await pool.query(
+      `SELECT count(*)::int c FROM communication_notifications WHERE event_key = $1`,
+      [eventKeyForObligation(obligationId)],
+    );
+    assert.equal(noteCount.rows[0].c, 0);
+  });
 });

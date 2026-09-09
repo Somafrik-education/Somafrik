@@ -3,8 +3,9 @@
 /**
  * Lot L3 — producteur PAYMENT_DUE via balayage idempotent des obligations exigibles.
  * SoT : student_fee_obligations (due_date DATE, balance, statut Finance canonique).
- * Aligné sur financeSchema : due_date < CURRENT_DATE → exigible (jour J exclus).
  */
+
+const { paymentDueEligibleSqlConditions } = require("./communicationsPaymentDueEligibility");
 
 const PD_EVENT = "finance.payment.due";
 
@@ -13,9 +14,7 @@ function eventKeyForObligation(obligationId) {
 }
 
 function sweepDueSql(referenceDateParamIndex) {
-  const dateExpr = referenceDateParamIndex
-    ? `COALESCE($${referenceDateParamIndex}::date, CURRENT_DATE)`
-    : "CURRENT_DATE";
+  const eligible = paymentDueEligibleSqlConditions(referenceDateParamIndex);
   return `
     INSERT INTO communication_event_outbox (
       event_key, event_type, school_id, actor_user_id,
@@ -39,12 +38,7 @@ function sweepDueSql(referenceDateParamIndex) {
       'pending',
       NOW()
     FROM student_fee_obligations o
-    WHERE o.archived_at IS NULL
-      AND (to_jsonb(o)->>'cancelled_at') IS NULL
-      AND COALESCE(o.balance, 0) > 0
-      AND o.due_date IS NOT NULL
-      AND o.due_date < ${dateExpr}
-      AND o.status NOT IN ('Payé', 'Exonéré', 'Annulé')
+    WHERE ${eligible}
       AND NOT EXISTS (
         SELECT 1 FROM communication_event_outbox e
         WHERE e.event_key = $1 || ':' || o.id::text

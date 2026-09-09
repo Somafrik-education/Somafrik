@@ -48,6 +48,18 @@ AND status NOT IN ('Payé', 'Exonéré', 'Annulé')
 
 ---
 
+## Correction P1 (course sweep/paiement)
+
+Module partagé `communicationsPaymentDueEligibility.js` :
+
+- `isPaymentDueEligible()` — utilisé par sweep SQL (`paymentDueEligibleSqlConditions`) et `eventSpec()` au drain
+- Si obligation plus éligible à la consommation : 0 recipient, 0 notification, outbox `processed` sans erreur
+- Tests RED-PD-17 (sweep → paiement → drain) et RED-PD-18 (outbox + paiement concurrent)
+
+Body neutralisé P2 : « Un paiement scolaire est arrivé à échéance. »
+
+---
+
 ## Mécanisme temporel / scheduler
 
 Aucun cron Finance dédié n’existait. Le producteur s’appuie sur le **worker C4 canonique** (`communicationsNotificationsWorker.runOnce`) :
@@ -137,7 +149,7 @@ Lot I : **PARENT** + **SCHOOL_ADMIN** (`schoolNotificationPolicy.js`).
 | Classe | Lot L3 |
 |---|---|
 | P0 | 0 |
-| P1 lot | 0 |
+| P1 lot | 0 (course sweep/paiement corrigée) |
 | P1 Communications global | 1 (2/9 restants) |
 | P2 | inchangé |
 
