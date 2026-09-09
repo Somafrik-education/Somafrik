@@ -170,22 +170,39 @@ destinés à encadrer les correctifs à venir.
 
 ## 9. Non-régression
 
-- Web : `npx vitest run` → 163 fichiers verts, 858 tests verts. Seuls les 2
+- Web : `npx vitest run` → **163 fichiers verts, 858 tests verts**. Seuls les 2
   nouveaux fichiers RED échouent (16 tests), ce qui correspond exactement aux
   comportements volontairement mis sous test.
 - Web : `tsc --noEmit` et `npm run build` passent, nouveaux tests inclus.
-- Backend : portail `npm run verify:communications-c4` inchangé et vert. Les
-  nouvelles suites RED ne lui sont pas rattachées, afin qu'il continue de
-  signaler les vraies régressions.
+- Backend : portail `npm run verify:communications-c4` exécuté localement en
+  entier → sortie 0, aucun `not ok`. Aucune suite existante n'est modifiée ni
+  rattachée aux nouveaux tests.
 
-## 10. CI
+## 10. CI — rouge assumé
 
-Les six nouveaux fichiers sont déclarés dans les chemins déclencheurs du workflow
-`Communications C4`. Un pas dédié `RED notifications navigation` exécute les
-quatre suites backend et les deux suites Web en `continue-on-error`, et archive
-la sortie complète en artefact `notifications-red`. Le portail bloquant reste
-donc vert sur le code de production intact, tandis que les échecs attendus sont
-consultables tels quels.
+La CI est **volontairement rouge** sur cette PR : c'est la preuve RED demandée.
+
+- `PR Gates / Risk-targeted`, pas « Web tests » (`npm --prefix web test`) :
+  **rouge**, sur les 16 échecs attendus des lots R1 et R3-Web, et sur eux
+  seulement. Ce portail exécute la totalité de la suite Vitest ; les 858 autres
+  tests y passent.
+- `PR Gates / Required` : rouge par agrégation du précédent.
+- `Communications C4` : les quatre suites RED backend sont ajoutées en dernier
+  pas du portail, **bloquant lui aussi**, après la vérification C4, le build Web
+  et le typecheck Mobile — de sorte que toutes les vérifications de
+  non-régression s'exécutent et restent lisibles avant l'échec attendu. La
+  sortie complète est archivée en artefact `notifications-red`.
+- Tous les autres portails (Architecture Audit, UI French Copy, Scope, Secrets,
+  Quality, Core tests, Android release readiness) : verts.
+
+Aucun `continue-on-error` n'est utilisé : rouge signifie « défaut toujours
+présent », vert signifiera « défaut corrigé ». Le passage au vert de ces deux
+portails sera la preuve d'aboutissement de C1, C2 et C3.
+
+Note de périmètre : avant cette PR, aucun workflow n'exécutait la suite Vitest
+Web autrement que via le pas « Web tests » de `PR Gates / Risk-targeted`, lequel
+n'est conditionné qu'au périmètre `web`. Les lots R1 et R3-Web y sont donc bien
+couverts.
 
 ## 11. Suite
 
