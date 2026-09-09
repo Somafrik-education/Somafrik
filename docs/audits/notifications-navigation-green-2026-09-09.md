@@ -165,7 +165,7 @@ Rien d'autre. Aucun fichier hors domaine Notifications.
   colonne.
 - **Suites hors Notifications** : portail `verify:communications-c4` complet vert
   (incluant les parcours HTTP PostgreSQL, l'audit d'architecture, les
-  préférences, le fanout, les Lots I à L5), suite Viteste Web complète verte
+  préférences, le fanout, les Lots I à L5), suite Vitest Web complète verte
   (165 fichiers, 874 tests), `tsc --noEmit` Web vert, typecheck Mobile vert.
 - **Mobile inchangé** : aucune adaptation nécessaire. Les nouveaux types de
   cible passent par l'allowlist existante de `pushNotificationDestinations.ts`,
