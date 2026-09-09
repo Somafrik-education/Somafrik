@@ -630,6 +630,29 @@ async function eventSpec(tx, event) {
     title = "Nouvelle note disponible";
     body = "Une nouvelle note est disponible dans Somafrik.";
     navigationTarget = { type: "grade", studentId: grade.student_id, gradeId: sourceId };
+  } else if (eventType === "pedagogy.report_card.published") {
+    const card = await tx.one(
+      `SELECT rc.*, st.student_code
+       FROM report_cards rc JOIN students st ON st.id = rc.student_id
+       WHERE rc.id = $1 AND rc.school_id = $2`, [sourceId, schoolId]);
+    if (!card) throw new Error("Bulletin source introuvable");
+    const parentIds = await tx.listParentUserIdsForStudent(schoolId, card.student_id);
+    for (const id of parentIds) add(id, "parent", { studentId: card.student_id });
+    const studentUser = await tx.one(
+      `SELECT id FROM users WHERE school_id = $1 AND user_code = $2 AND COALESCE(status,'active')='active' LIMIT 1`,
+      [schoolId, card.student_code],
+    );
+    if (studentUser) add(studentUser.id, "student", { studentId: card.student_id });
+    title = "Bulletin disponible";
+    body = "Un nouveau bulletin scolaire est disponible.";
+    navigationTarget = {
+      type: "report_card",
+      studentId: card.student_id,
+      reportCardId: sourceId,
+      termId: card.term_id,
+      academicYearId: card.academic_year_id,
+    };
+    metadata = { termId: card.term_id, academicYearId: card.academic_year_id };
   } else if (eventType === "finance.payment.recorded") {
     const payment = await tx.one(
       `SELECT p.*, trim(concat(st.first_name,' ',st.last_name)) AS student_name

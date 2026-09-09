@@ -115,12 +115,14 @@ function sourceGuards() {
   assert.match(schema, /communication\.announcement\.published/);
   assert.match(schema, /attendance\.student\.absent/);
   assert.match(schema, /pedagogy\.grade\.published/);
+  assert.match(schema, /pedagogy\.report_card\.published/);
   assert.match(schema, /finance\.payment\.recorded/);
   assert.match(schema, /CREATE TRIGGER trg_c4_message_event/);
   assert.match(schema, /CREATE TRIGGER trg_c4_announcement_event/);
   assert.match(schema, /CREATE TRIGGER trg_c4_attendance_event/);
   assert.match(schema, /CREATE TRIGGER trg_c4_grade_event/);
   assert.match(schema, /CREATE TRIGGER trg_c4_payment_event/);
+  assert.match(schema, /trg_c4_report_card_event/);
   assert.match(schema, /OLD\.publication_status/);
   assert.match(schema, /OLD\.payment_status/);
   assert.match(schema, /OLD\.status/);
@@ -354,6 +356,7 @@ function main() {
   run(process.execPath, ["--test", "backend/lib/communicationsDeliveryHealth.test.js"], "Lot K delivery health");
   run(process.execPath, ["--test", "backend/lib/communicationsFinal.audit.test.js"], "AUDIT-COM-FINAL audit H-K");
   run(process.execPath, ["--test", "backend/lib/communicationsStudentLate.red.test.js"], "Lot L1 STUDENT_LATE RED/GREEN");
+  run(process.execPath, ["--test", "backend/lib/communicationsReportCardPublished.red.test.js"], "Lot L2 REPORT_CARD_PUBLISHED RED/GREEN");
   run(process.execPath, ["--test", "backend/lib/trialAccessRequestNotification.red.test.js"], "trial EMAIL durable unit");
   run(process.execPath, ["--test", "backend/lib/schoolNotificationSettings.test.js"], "Lot I school notification settings");
   run("npm", ["--prefix", "web", "run", "test", "--", "src/pages/parametres/SettingsNotificationsPage.test.tsx"], "web Lot I notification settings");

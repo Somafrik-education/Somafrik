@@ -36,6 +36,7 @@ const EVENT_EXTERNAL_CHANNEL_POLICY = Object.freeze({
   "attendance.student.absent": ["PUSH", "EMAIL"],
   "attendance.student.late": ["PUSH", "EMAIL"],
   "pedagogy.grade.published": ["PUSH", "EMAIL"],
+  "pedagogy.report_card.published": ["PUSH", "EMAIL"],
   "finance.payment.recorded": ["PUSH", "EMAIL"],
 });
 

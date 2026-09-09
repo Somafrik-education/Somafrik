@@ -49,6 +49,7 @@ const C4_TO_LOT_I = Object.freeze({
   "attendance.student.absent": "STUDENT_ABSENT",
   "attendance.student.late": "STUDENT_LATE",
   "pedagogy.grade.published": "GRADE_PUBLISHED",
+  "pedagogy.report_card.published": "REPORT_CARD_PUBLISHED",
   "finance.payment.recorded": "PAYMENT_RECEIVED",
   "communication.announcement.published": "ANNOUNCEMENT_PUBLISHED",
 });
