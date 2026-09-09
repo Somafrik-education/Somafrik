@@ -64,6 +64,13 @@ on:
       - "backend/lib/communicationsPaymentDue.red.test.js"
       - "backend/lib/communicationsTimetableChanged.red.test.js"
       - "backend/lib/communicationsTeacherReplacement.red.test.js"
+      - "backend/lib/communicationsNavigationContract.red.test.js"
+      - "backend/lib/communicationsPlanningNavigation.red.test.js"
+      - "backend/lib/communicationsUnreadPagination.red.test.js"
+      - "backend/lib/communicationsNavigationSecurity.red.test.js"
+      - "web/src/components/communications/InternalNotificationsCenter.navigation.red.test.tsx"
+      - "web/src/components/communications/InternalNotificationsCenter.counter.red.test.tsx"
+      - "docs/audits/notifications-navigation-red-2026-09-09.md"
       - "backend/db/courseScheduleReplacementChangeRevision.sql"
       - "backend/db/teacherReplacementOutbox.sql"
       - "backend/db/migrations/20260918_communication_teacher_replacement_outbox.sql"
@@ -187,6 +194,33 @@ jobs:
           name: communications-c4-verification
           path: communications-c4.log
           if-no-files-found: error
+          retention-days: 7
+      # Phase TESTS ROUGES notifications : ces suites doivent échouer tant que
+      # les correctifs C1/C2/C3 ne sont pas livrés. Le pas est non bloquant pour
+      # que le portail C4 continue de signaler les vraies régressions ; les
+      # échecs attendus sont conservés en artefact pour contrôle.
+      - name: RED notifications navigation (échecs attendus, non bloquant)
+        continue-on-error: true
+        shell: bash
+        run: |
+          set +e
+          {
+            node --test backend/lib/communicationsNavigationContract.red.test.js
+            node --test backend/lib/communicationsPlanningNavigation.red.test.js
+            node --test backend/lib/communicationsUnreadPagination.red.test.js
+            node --test backend/lib/communicationsNavigationSecurity.red.test.js
+            (cd web && npx vitest run \
+              src/components/communications/InternalNotificationsCenter.navigation.red.test.tsx \
+              src/components/communications/InternalNotificationsCenter.counter.red.test.tsx)
+          } 2>&1 | tee notifications-red.log
+          exit 0
+      - name: Preserve RED notifications log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: notifications-red
+          path: notifications-red.log
+          if-no-files-found: warn
           retention-days: 7
       - name: Build Web
         run: npm --prefix web run build
