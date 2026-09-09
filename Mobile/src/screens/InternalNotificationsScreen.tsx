@@ -111,7 +111,7 @@ export default function InternalNotificationsScreen() {
   function openNavigationTarget(row: InternalNotificationRecord) {
     const target = resolveInternalNotificationNavigationTarget(row.navigationTarget);
     if (!target || !canOpenStudentPayments || !navigationRef.isReady()) return;
-    navigationRef.navigate(target.destination as never, target.params as never);
+    navigationRef.navigate({ name: target.destination, params: target.params } as never);
   }
 
   async function pickAttachments() {
