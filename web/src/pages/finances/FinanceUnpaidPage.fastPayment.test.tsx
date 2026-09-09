@@ -1,8 +1,18 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { MemoryRouter } from "react-router-dom";
 import type { BackOfficeState, SessionUser, StudentFee } from "../../types";
 import { FinanceUnpaidPage } from "./FinanceUnpaidPage";
+
+/** Les pages applicatives sont montées sous le Router : le deep-link lit l'URL. */
+function RoutedFinanceUnpaidPage() {
+  return (
+    <MemoryRouter>
+      <FinanceUnpaidPage />
+    </MemoryRouter>
+  );
+}
 import {
   BLOCKING_OBLIGATION_MISMATCH_MESSAGE,
   CLASS_NAME,
@@ -218,7 +228,7 @@ describe("IMP-FAST — enregistrement rapide Impayés (contrat UUID ↔ code pub
   });
 
   it("IMP-FAST-RED-01 — clic Impayés sélectionne l'élève demandé sans saisie ni recherche", async () => {
-    render(<FinanceUnpaidPage />);
+    render(<RoutedFinanceUnpaidPage />);
     expect(screen.getAllByText(STUDENT_NAME).length).toBeGreaterThan(0);
     await openPaymentFromUnpaidRow();
 
@@ -232,7 +242,7 @@ describe("IMP-FAST — enregistrement rapide Impayés (contrat UUID ↔ code pub
   });
 
   it("IMP-FAST-RED-03 — obligation unique 140000 CDF auto-sélectionnée, Non imputé n'est pas le défaut", async () => {
-    render(<FinanceUnpaidPage />);
+    render(<RoutedFinanceUnpaidPage />);
     await openPaymentFromUnpaidRow();
 
     const modal = await screen.findByTestId("quick-payment-modal");
@@ -247,7 +257,7 @@ describe("IMP-FAST — enregistrement rapide Impayés (contrat UUID ↔ code pub
   });
 
   it("IMP-FAST-RED-04 — initialStudentId = code public alors que payment-student-options.studentId = UUID → élève préselectionné", async () => {
-    render(<FinanceUnpaidPage />);
+    render(<RoutedFinanceUnpaidPage />);
     const unpaidButton = screen.getAllByTestId(`unpaid-register-payment-${STUDENT_CODE}`)[0];
     expect(unpaidButton).toBeInTheDocument();
     await openPaymentFromUnpaidRow();
@@ -323,7 +333,7 @@ describe("IMP-FAST — enregistrement rapide Impayés (contrat UUID ↔ code pub
       }),
     ]);
 
-    render(<FinanceUnpaidPage />);
+    render(<RoutedFinanceUnpaidPage />);
     await openPaymentFromUnpaidRow();
     const modal = screen.getByTestId("quick-payment-modal");
     expect(within(modal).getByText("Inscription")).toBeInTheDocument();
@@ -335,7 +345,7 @@ describe("IMP-FAST — enregistrement rapide Impayés (contrat UUID ↔ code pub
 
   it("IMP-FAST-RED-06 — solde Impayés > 0 sans obligation résoluble → erreur bloquante, pas de Non imputé silencieux", async () => {
     listStudentFees.mockResolvedValue([]);
-    render(<FinanceUnpaidPage />);
+    render(<RoutedFinanceUnpaidPage />);
     const user = await openPaymentFromUnpaidRow();
     const modal = screen.getByTestId("quick-payment-modal");
 
@@ -375,7 +385,7 @@ describe("IMP-FAST — enregistrement rapide Impayés (contrat UUID ↔ code pub
       allocatedAmount: 40_000,
       unallocatedAmount: 0,
     });
-    const view = render(<FinanceUnpaidPage />);
+    const view = render(<RoutedFinanceUnpaidPage />);
     const user = await openPaymentFromUnpaidRow();
     const feeSelect = screen.getByLabelText(/Frais concerné/i) as HTMLSelectElement;
     expect(feeSelect.value).toBe(OBLIGATION_SCO_ID);
@@ -390,7 +400,7 @@ describe("IMP-FAST — enregistrement rapide Impayés (contrat UUID ↔ code pub
     });
     expect(JSON.stringify(createPayment.mock.calls[0][0])).not.toMatch(/Non imputé/);
     await waitFor(() => expect(refresh).toHaveBeenCalled());
-    view.rerender(<FinanceUnpaidPage />);
+    view.rerender(<RoutedFinanceUnpaidPage />);
     expect(screen.getAllByText(STUDENT_NAME).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/100[\s\u202f\u00a0]?000 CDF/).length).toBeGreaterThan(0);
   });
@@ -414,7 +424,7 @@ describe("IMP-FAST — enregistrement rapide Impayés (contrat UUID ↔ code pub
       allocatedAmount: OPEN_BALANCE_CDF,
       unallocatedAmount: 0,
     });
-    const view = render(<FinanceUnpaidPage />);
+    const view = render(<RoutedFinanceUnpaidPage />);
     const user = await openPaymentFromUnpaidRow();
     const amount = screen.getByLabelText(/Montant à encaisser/i);
     await user.clear(amount);
@@ -426,7 +436,7 @@ describe("IMP-FAST — enregistrement rapide Impayés (contrat UUID ↔ code pub
       items: [expect.objectContaining({ obligationId: OBLIGATION_SCO_ID, amount: OPEN_BALANCE_CDF })],
     });
     await waitFor(() => expect(refresh).toHaveBeenCalled());
-    view.rerender(<FinanceUnpaidPage />);
+    view.rerender(<RoutedFinanceUnpaidPage />);
     expect(screen.queryAllByText(STUDENT_NAME)).toHaveLength(0);
     expect(screen.queryAllByTestId(`unpaid-register-payment-${STUDENT_CODE}`)).toHaveLength(0);
     expect(screen.getAllByText("Aucun reste à payer").length).toBeGreaterThan(0);
@@ -445,7 +455,7 @@ describe("IMP-FAST — enregistrement rapide Impayés (contrat UUID ↔ code pub
         amountDue: 99_000,
       }),
     ]);
-    render(<FinanceUnpaidPage />);
+    render(<RoutedFinanceUnpaidPage />);
     await openPaymentFromUnpaidRow();
     const modal = screen.getByTestId("quick-payment-modal");
     expect(within(modal).getByText("Scolarité T1")).toBeInTheDocument();
@@ -460,7 +470,7 @@ describe("IMP-FAST — enregistrement rapide Impayés (contrat UUID ↔ code pub
           release = () => resolve({ id: "pay-1", amount: 40_000, allocatedAmount: 40_000 });
         }),
     );
-    render(<FinanceUnpaidPage />);
+    render(<RoutedFinanceUnpaidPage />);
     const user = await openPaymentFromUnpaidRow();
     const amount = screen.getByLabelText(/Montant à encaisser/i);
     await user.clear(amount);

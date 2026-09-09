@@ -1,8 +1,18 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { MemoryRouter } from "react-router-dom";
 import type { BackOfficeState, SessionUser, StudentFee } from "../../types";
 import { FinanceUnpaidPage } from "./FinanceUnpaidPage";
+
+/** Les pages applicatives sont montées sous le Router : le deep-link lit l'URL. */
+function RoutedFinanceUnpaidPage() {
+  return (
+    <MemoryRouter>
+      <FinanceUnpaidPage />
+    </MemoryRouter>
+  );
+}
 
 const SCHOOL_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const SCHOOL_CODE = "CD-IN-26-001";
@@ -217,7 +227,7 @@ describe("IMP-PAY — Enregistrer un paiement depuis Impayés", () => {
   });
 
   it("IMP-PAY-01 — élève impayé + utilisateur autorisé → bouton visible", () => {
-    render(<FinanceUnpaidPage />);
+    render(<RoutedFinanceUnpaidPage />);
     expect(screen.getAllByText("Awa Diop").length).toBeGreaterThan(0);
     expect(screen.getAllByTestId(`unpaid-register-payment-${STUDENT_A}`)[0]).toHaveTextContent(
       "Enregistrer un paiement",
@@ -227,7 +237,7 @@ describe("IMP-PAY — Enregistrer un paiement depuis Impayés", () => {
 
   it("IMP-PAY-02 — Impayés:READ sans droit Paiements → bouton absent", () => {
     asUser("Admin School", ["Impayés:READ"]);
-    render(<FinanceUnpaidPage />);
+    render(<RoutedFinanceUnpaidPage />);
     expect(screen.getAllByText("Awa Diop").length).toBeGreaterThan(0);
     expect(screen.queryAllByTestId(`unpaid-register-payment-${STUDENT_A}`)).toHaveLength(0);
     expect(screen.queryByRole("button", { name: "Enregistrer un paiement" })).not.toBeInTheDocument();
@@ -236,7 +246,7 @@ describe("IMP-PAY — Enregistrer un paiement depuis Impayés", () => {
 
   it("IMP-PAY-09 — Paiements:CREATE sans Paiements:READ → bouton absent", () => {
     asUser("Comptable", ["Impayés:READ", "Paiements:CREATE"]);
-    render(<FinanceUnpaidPage />);
+    render(<RoutedFinanceUnpaidPage />);
     expect(screen.getAllByText("Awa Diop").length).toBeGreaterThan(0);
     expect(screen.queryAllByTestId(`unpaid-register-payment-${STUDENT_A}`)).toHaveLength(0);
     expect(screen.queryByRole("button", { name: "Enregistrer un paiement" })).not.toBeInTheDocument();
@@ -244,7 +254,7 @@ describe("IMP-PAY — Enregistrer un paiement depuis Impayés", () => {
 
   it("IMP-PAY-10 — Impayés:READ + Paiements:READ + Paiements:UPDATE → bouton visible", () => {
     asUser("Comptable", ["Impayés:READ", "Paiements:READ", "Paiements:UPDATE"]);
-    render(<FinanceUnpaidPage />);
+    render(<RoutedFinanceUnpaidPage />);
     expect(screen.getAllByTestId(`unpaid-register-payment-${STUDENT_A}`)[0]).toHaveTextContent(
       "Enregistrer un paiement",
     );
@@ -266,7 +276,7 @@ describe("IMP-PAY — Enregistrer un paiement depuis Impayés", () => {
         className: "6ème A",
       },
     ]);
-    render(<FinanceUnpaidPage />);
+    render(<RoutedFinanceUnpaidPage />);
     await openPaymentFor(STUDENT_A);
     expect(screen.getByRole("dialog", { name: /Enregistrer un encaissement/i })).toBeInTheDocument();
     const selected = await screen.findByTestId("quick-payment-selected-student");
@@ -333,7 +343,7 @@ describe("IMP-PAY — Enregistrer un paiement depuis Impayés", () => {
         currency: "XOF",
       },
     ]);
-    render(<FinanceUnpaidPage />);
+    render(<RoutedFinanceUnpaidPage />);
     await openPaymentFor(STUDENT_A);
     const modal = screen.getByTestId("quick-payment-modal");
     expect(within(modal).getByText("Inscription")).toBeInTheDocument();
@@ -370,7 +380,7 @@ describe("IMP-PAY — Enregistrer un paiement depuis Impayés", () => {
         }),
       ]);
     });
-    const view = render(<FinanceUnpaidPage />);
+    const view = render(<RoutedFinanceUnpaidPage />);
     const user = await openPaymentFor(STUDENT_A);
     const amount = screen.getByLabelText(/Montant à encaisser/i);
     await user.clear(amount);
@@ -382,7 +392,7 @@ describe("IMP-PAY — Enregistrer un paiement depuis Impayés", () => {
     });
     await waitFor(() => expect(refresh).toHaveBeenCalled());
     expect(showToast).toHaveBeenCalledWith("Paiement enregistré", "success");
-    view.rerender(<FinanceUnpaidPage />);
+    view.rerender(<RoutedFinanceUnpaidPage />);
     expect(screen.getAllByText("Awa Diop").length).toBeGreaterThan(0);
     expect(screen.getAllByText(/60[\s\u202f\u00a0]?000 XOF/).length).toBeGreaterThan(0);
     expect(screen.getAllByTestId(`unpaid-register-payment-${STUDENT_A}`).length).toBeGreaterThan(0);
@@ -414,7 +424,7 @@ describe("IMP-PAY — Enregistrer un paiement depuis Impayés", () => {
         }),
       ]);
     });
-    const view = render(<FinanceUnpaidPage />);
+    const view = render(<RoutedFinanceUnpaidPage />);
     expect(screen.getAllByText("Awa Diop").length).toBeGreaterThan(0);
     const user = await openPaymentFor(STUDENT_A);
     const amount = screen.getByLabelText(/Montant à encaisser/i);
@@ -423,7 +433,7 @@ describe("IMP-PAY — Enregistrer un paiement depuis Impayés", () => {
     await user.click(screen.getByRole("button", { name: "Enregistrer l'encaissement" }));
     await waitFor(() => expect(createPayment).toHaveBeenCalledTimes(1));
     await waitFor(() => expect(refresh).toHaveBeenCalled());
-    view.rerender(<FinanceUnpaidPage />);
+    view.rerender(<RoutedFinanceUnpaidPage />);
     expect(screen.queryAllByText("Awa Diop")).toHaveLength(0);
     expect(screen.queryAllByTestId(`unpaid-register-payment-${STUDENT_A}`)).toHaveLength(0);
     expect(screen.getAllByText("Aucun reste à payer").length).toBeGreaterThan(0);
@@ -444,7 +454,7 @@ describe("IMP-PAY — Enregistrer un paiement depuis Impayés", () => {
     ]);
     createPayment.mockRejectedValueOnce(new Error("FINANCE_PAYMENT_REJECTED"));
     const snapshot = structuredClone(dataState.current.studentFees);
-    render(<FinanceUnpaidPage />);
+    render(<RoutedFinanceUnpaidPage />);
     const user = await openPaymentFor(STUDENT_A);
     const amount = screen.getByLabelText(/Montant à encaisser/i);
     await user.clear(amount);
@@ -483,7 +493,7 @@ describe("IMP-PAY — Enregistrer un paiement depuis Impayés", () => {
           release = () => resolve({ id: "pay-1", amount: 40_000 });
         }),
     );
-    render(<FinanceUnpaidPage />);
+    render(<RoutedFinanceUnpaidPage />);
     const user = await openPaymentFor(STUDENT_A);
     const amount = screen.getByLabelText(/Montant à encaisser/i);
     await user.clear(amount);
