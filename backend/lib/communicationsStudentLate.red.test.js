@@ -34,6 +34,7 @@ const CLASS_B = "b5000000-0000-4000-8000-000000000030";
 const YEAR_A = "a5000000-0000-4000-8000-000000000040";
 const YEAR_B = "b5000000-0000-4000-8000-000000000041";
 const NOTE_ID = "c5000000-0000-4000-8000-000000000001";
+const CROSS_PARENT_USER = "b5000000-0000-4000-8000-000000000012";
 
 function read(rel) {
   return fs.readFileSync(path.join(ROOT, rel), "utf8");
@@ -529,5 +530,55 @@ test("RED-LATE-03b — parent autre élève / autre établissement exclus", asyn
       [`${LATE_EVENT}:${attendanceId}`, PARENT_OTHER],
     );
     assert.equal(otherStudentParent.rows[0].c, 0);
+  });
+});
+
+test("RED-LATE-03c — parent historique dont le compte appartient à une autre école n'est jamais recipient", async () => {
+  await withIsolatedPg(async (pool) => {
+    await seedLateFixtures(pool);
+    const countryA = (await pool.query(`SELECT country_id FROM schools WHERE id = $1`, [SCHOOL_A])).rows[0].country_id;
+    // Liaison incohérente tolérée par le schéma : contact école A -> compte école B.
+    await pool.query(
+      `INSERT INTO users (id,school_id,user_code,first_name,last_name,email,role,status)
+       VALUES ($1,$2,'PAR-LATE-CROSS','Parent','Cross','par-cross-late@test.local','Parent','active')`,
+      [CROSS_PARENT_USER, SCHOOL_B],
+    );
+    const crossContact = (await pool.query(
+      `INSERT INTO contacts (school_id,country_id,first_name,last_name,contact_type,phone,status,user_id)
+       VALUES ($1,$2,'Parent','Cross','Parent','+22501010103','active',$3) RETURNING id`,
+      [SCHOOL_A, countryA, CROSS_PARENT_USER],
+    )).rows[0].id;
+    await pool.query(
+      `INSERT INTO contact_relations (school_id,country_id,relation_type,contact_id,student_id,status)
+       VALUES ($1,$2,'parent_student',$3,$4,'active')`,
+      [SCHOOL_A, countryA, crossContact, STUDENT_A],
+    );
+
+    const attendanceId = randomUUID();
+    await insertAttendance(pool, {
+      id: attendanceId,
+      schoolId: SCHOOL_A,
+      studentId: STUDENT_A,
+      classId: CLASS_A,
+      status: "late",
+      createdBy: ADMIN_A,
+    });
+    await withRepo(pool, async (repo) => {
+      await drainOutbox(repo.getClientsStore(), { limit: 10 });
+    });
+    const recipients = (await pool.query(
+      `SELECT r.user_id FROM notification_recipients r
+       JOIN communication_notifications n ON n.id = r.notification_id
+       WHERE n.event_key = $1`,
+      [`${LATE_EVENT}:${attendanceId}`],
+    )).rows.map((row) => row.user_id);
+    assert.equal(recipients.includes(CROSS_PARENT_USER), false, "compte parent hors tenant exclu");
+    assert.ok(recipients.includes(PARENT_A), "parent canonique toujours notifié");
+
+    const crossRows = await pool.query(
+      `SELECT count(*)::int c FROM notification_recipients WHERE user_id = $1`,
+      [CROSS_PARENT_USER],
+    );
+    assert.equal(crossRows.rows[0].c, 0);
   });
 });

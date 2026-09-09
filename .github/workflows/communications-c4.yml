@@ -5,6 +5,7 @@ on:
     branches: [develop]
     paths:
       - "backend/db/clientsCanonicalBootstrap.js"
+      - "backend/db/clientsPgStore.js"
       - "backend/db/communicationsC4.bootstrap.pg.test.js"
       - "backend/db/communicationsNotificationsSchema.js"
       - "backend/db/migrations/20260828_communications_c4_internal_notifications.sql"

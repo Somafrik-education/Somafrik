@@ -534,6 +534,30 @@ async function downloadAttachment(store, attachmentId, principal, query = {}) {
   return { bytes, fileName: attachment.file_name, mimeType: attachment.mime_type };
 }
 
+/**
+ * Résolution fail-closed du compte d'un enseignant.
+ * `teachers.user_id` est un FK nu vers `users(id)` : aucune contrainte n'impose
+ * que le compte lié appartienne à l'école de la fiche enseignant. La jointure
+ * sur `users.school_id` rend l'invariant tenant obligatoire côté requête.
+ */
+async function resolveTenantTeacherUserId(tx, teacherId, schoolId) {
+  const tid = String(teacherId ?? "").trim();
+  if (!tid) return null;
+  const row = await tx.one(
+    `SELECT u.id AS user_id
+     FROM teachers t
+     JOIN users u
+       ON u.id = t.user_id
+      AND u.school_id = t.school_id
+      AND COALESCE(u.status, 'active') = 'active'
+     WHERE t.id = $1
+       AND t.school_id = $2
+       AND COALESCE(t.status, 'active') = 'active'`,
+    [tid, schoolId],
+  );
+  return row?.user_id ?? null;
+}
+
 async function eventSpec(tx, event) {
   const sourceId = event.source_entity_id;
   const schoolId = event.school_id;
@@ -710,14 +734,7 @@ async function eventSpec(tx, event) {
     const classId = String(payload.classId ?? "").trim();
     const teacherId = String(payload.teacherId ?? "").trim();
     const previousTeacherId = String(payload.previousTeacherId ?? "").trim();
-    const resolveTeacherUser = async (tid) => {
-      if (!tid) return null;
-      const row = await tx.one(
-        `SELECT user_id FROM teachers WHERE id = $1 AND school_id = $2`,
-        [tid, schoolId],
-      );
-      return row?.user_id ?? null;
-    };
+    const resolveTeacherUser = (tid) => resolveTenantTeacherUserId(tx, tid, schoolId);
     const assigneeUserId = await resolveTeacherUser(teacherId);
     if (assigneeUserId) {
       add(assigneeUserId, "teacher", { weeklySlotId: sourceId, classId, role: "assignee" });
@@ -765,24 +782,7 @@ async function eventSpec(tx, event) {
     const originalTeacherId = String(payload.originalTeacherId ?? "").trim();
     const substituteTeacherId = String(payload.substituteTeacherId ?? "").trim();
     const previousSubstituteTeacherId = String(payload.previousSubstituteTeacherId ?? "").trim();
-    // Fail-closed tenant : le compte utilisateur de l'enseignant doit lui aussi
-    // appartenir à l'école de l'événement (teachers.user_id n'est pas contraint).
-    const resolveTeacherUser = async (tid) => {
-      if (!tid) return null;
-      const row = await tx.one(
-        `SELECT u.id AS user_id
-         FROM teachers t
-         JOIN users u
-           ON u.id = t.user_id
-          AND u.school_id = t.school_id
-          AND COALESCE(u.status, 'active') = 'active'
-         WHERE t.id = $1
-           AND t.school_id = $2
-           AND COALESCE(t.status, 'active') = 'active'`,
-        [tid, schoolId],
-      );
-      return row?.user_id ?? null;
-    };
+    const resolveTeacherUser = (tid) => resolveTenantTeacherUserId(tx, tid, schoolId);
     const teacherIds = new Set();
     if (originalTeacherId) teacherIds.add(originalTeacherId);
     if (substituteTeacherId) teacherIds.add(substituteTeacherId);
