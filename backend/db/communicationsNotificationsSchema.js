@@ -105,15 +105,22 @@ BEGIN
       AND (TG_OP = 'INSERT' OR lower(trim(COALESCE(OLD.status, ''))) <> 'published');
 
   ELSIF TG_TABLE_NAME = 'attendance' THEN
-    v_event_type := 'attendance.student.absent';
     v_source_type := 'attendance';
     v_source_id := NEW.id;
     v_school_id := NEW.school_id;
     v_actor := NEW.created_by;
-    v_event_key := v_event_type || ':' || NEW.id::text;
     v_payload := jsonb_build_object('studentId', NEW.student_id, 'attendanceDate', NEW.attendance_date);
-    should_emit := lower(trim(COALESCE(NEW.status, ''))) IN ('absent', 'absence')
-      AND (TG_OP = 'INSERT' OR lower(trim(COALESCE(OLD.status, ''))) NOT IN ('absent', 'absence'));
+    IF lower(trim(COALESCE(NEW.status, ''))) IN ('absent', 'absence') THEN
+      v_event_type := 'attendance.student.absent';
+      v_event_key := v_event_type || ':' || NEW.id::text;
+      should_emit := TG_OP = 'INSERT'
+        OR lower(trim(COALESCE(OLD.status, ''))) NOT IN ('absent', 'absence');
+    ELSIF lower(trim(COALESCE(NEW.status, ''))) IN ('late', 'retard') THEN
+      v_event_type := 'attendance.student.late';
+      v_event_key := v_event_type || ':' || NEW.id::text;
+      should_emit := TG_OP = 'INSERT'
+        OR lower(trim(COALESCE(OLD.status, ''))) NOT IN ('late', 'retard');
+    END IF;
 
   ELSIF TG_TABLE_NAME = 'grades' THEN
     v_event_type := 'pedagogy.grade.published';
