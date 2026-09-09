@@ -22,6 +22,8 @@ export interface TableProps<T> {
   pageSize?: number;
   /** Cartes empilées sous `md` (listes Finance / petits viewports). */
   stackOnMobile?: boolean;
+  /** Marque une ligne comme sélectionnée (deep-link, mise en évidence). */
+  isRowSelected?: (row: T) => boolean;
 }
 
 function alignClass(align?: "left" | "right" | "center") {
@@ -54,6 +56,7 @@ export function Table<T>({
   sortable = false,
   pageSize,
   stackOnMobile = false,
+  isRowSelected,
 }: TableProps<T>) {
   const [sortKey, setSortKey] = useState<string | null>(null);
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
@@ -132,9 +135,11 @@ export function Table<T>({
             <tr
               key={rowKey(row, index)}
               onClick={onRowClick ? () => onRowClick(row) : undefined}
+              aria-selected={isRowSelected?.(row) || undefined}
+              data-selected={isRowSelected?.(row) ? "true" : undefined}
               className={`border-b border-line/70 last:border-0 ${
                 onRowClick ? "cursor-pointer hover:bg-brand-50/40" : ""
-              }`}
+              } ${isRowSelected?.(row) ? "bg-brand-50 font-semibold" : ""}`}
             >
               {columns.map((col) => (
                 <td
