@@ -49,6 +49,9 @@ function sourceGuards() {
   const mobileNav = read("Mobile/src/navigation/AppNavigator.tsx");
   const mobileDrawer = read("Mobile/src/navigation/roleDrawerPreferences.ts");
   const schemaSql = read("backend/db/schema.sql");
+  // Le producteur L5 vit dans son propre fichier SQL, injecté par interpolation
+  // dans COMMUNICATIONS_C4_SCHEMA_SQL : le gate lit la source réelle.
+  const teacherReplacementOutbox = read("backend/db/teacherReplacementOutbox.sql");
 
   // 1-3 tables
   assert.match(schema, /communication_event_outbox/);
@@ -117,7 +120,7 @@ function sourceGuards() {
   assert.match(schema, /pedagogy\.grade\.published/);
   assert.match(schema, /pedagogy\.report_card\.published/);
   assert.match(schema, /planning\.timetable\.changed/);
-  assert.match(read("backend/db/teacherReplacementOutbox.sql"), /planning\.teacher\.replacement/);
+  assert.match(teacherReplacementOutbox, /planning\.teacher\.replacement/);
   assert.match(read("backend/db/pedagogySchema.js"), /planningWeeklyChangeRevision\.sql/);
   assert.match(read("backend/db/planningWeeklyChangeRevision.sql"), /change_revision/);
   assert.match(read("backend/db/pedagogySchema.js"), /courseScheduleReplacementChangeRevision\.sql/);
@@ -131,7 +134,9 @@ function sourceGuards() {
   assert.match(schema, /CREATE TRIGGER trg_c4_payment_event/);
   assert.match(schema, /trg_c4_report_card_event/);
   assert.match(schema, /trg_c4_timetable_changed_event/);
-  assert.match(schema, /trg_c4_teacher_replacement_event/);
+  assert.match(schema, /TEACHER_REPLACEMENT_OUTBOX_SQL/);
+  assert.match(teacherReplacementOutbox, /trg_c4_teacher_replacement_event/);
+  assert.match(teacherReplacementOutbox, /somafrik_enqueue_teacher_replacement_event/);
   assert.match(schema, /OLD\.publication_status/);
   assert.match(schema, /OLD\.payment_status/);
   assert.match(schema, /OLD\.status/);
