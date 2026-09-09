@@ -670,7 +670,8 @@ async function eventSpec(tx, event) {
     const obligation = await tx.one(
       `SELECT o.*, trim(concat(st.first_name,' ',st.last_name)) AS student_name
        FROM student_fee_obligations o JOIN students st ON st.id = o.student_id
-       WHERE o.id = $1 AND o.school_id = $2`, [sourceId, schoolId]);
+       WHERE o.id = $1 AND o.school_id = $2
+       FOR UPDATE OF o`, [sourceId, schoolId]);
     if (!isPaymentDueEligible(obligation)) {
       return { title: "", body: "", navigationTarget: {}, metadata: {}, recipients: [] };
     }

@@ -230,6 +230,7 @@ test("RED-PD-03 — mapping dispatcher → PAYMENT_DUE", () => {
   assert.match(read("backend/lib/communicationsDispatcher.js"), /"finance\.payment\.due": \["PUSH", "EMAIL"\]/);
   assert.match(read("backend/lib/communicationsPaymentDueSweep.js"), /paymentDueEligibleSqlConditions/);
   assert.match(read("backend/lib/communicationsNotificationsService.js"), /isPaymentDueEligible/);
+  assert.match(read("backend/lib/communicationsNotificationsService.js"), /FOR UPDATE OF o/);
 });
 
 test("RED-PD-01 — obligation future → aucun event immédiat", async () => {
@@ -594,7 +595,7 @@ test("RED-PD-17 — sweep puis paiement complet → drainOutbox sans notificatio
   });
 });
 
-test("RED-PD-18 — outbox existant + paiement concurrent → 0 notification à la consommation", async () => {
+test("RED-PD-18 — concurrence réelle : paiement non commité vs drain FOR UPDATE", async () => {
   await withIsolatedPg(async (pool) => {
     await seedPaymentDueFixtures(pool);
     const obligationId = await insertObligation(pool, { dueDate: "2026-09-05", amountDue: 15000 });
@@ -604,17 +605,62 @@ test("RED-PD-18 — outbox existant + paiement concurrent → 0 notification à 
        VALUES ($1,$2,$3,'student_fee_obligation',$4,'{}'::jsonb)`,
       [eventKeyForObligation(obligationId), PD_EVENT, SCHOOL_A, obligationId],
     );
-    await allocatePayment(pool, { obligationId, amount: 15000 });
-    assert.equal(isPaymentDueEligible((await pool.query(
-      `SELECT * FROM student_fee_obligations WHERE id = $1`, [obligationId],
-    )).rows[0], { referenceDate: REF_DATE }), false);
-    await withRepo(pool, async (repo) => {
-      await drainOutbox(repo.getClientsStore(), { limit: 10 });
-    });
-    const noteCount = await pool.query(
-      `SELECT count(*)::int c FROM communication_notifications WHERE event_key = $1`,
-      [eventKeyForObligation(obligationId)],
-    );
-    assert.equal(noteCount.rows[0].c, 0);
+
+    const payClient = await pool.connect();
+    let drainDone = false;
+    try {
+      await payClient.query("BEGIN");
+      const paymentId = randomUUID();
+      await payClient.query(
+        `INSERT INTO payments (id,school_id,student_id,payment_code,amount,currency,payment_method,payment_status,payment_date,created_by)
+         VALUES ($1,$2,$3,$4,$5,'XOF','cash','paid','2026-09-09',$6)`,
+        [paymentId, SCHOOL_A, STUDENT_A, `PAY-RACE-${paymentId.slice(0, 8)}`, 15000, ADMIN_A],
+      );
+      await payClient.query(
+        `INSERT INTO payment_allocations (school_id, payment_id, obligation_id, amount) VALUES ($1,$2,$3,$4)`,
+        [SCHOOL_A, paymentId, obligationId, 15000],
+      );
+      const lockedRow = (await payClient.query(
+        `SELECT balance, status FROM student_fee_obligations WHERE id = $1`,
+        [obligationId],
+      )).rows[0];
+      assert.equal(Number(lockedRow.balance), 0, "paiement non commité solde l'obligation dans sa transaction");
+
+      const drainPromise = withRepo(pool, async (repo) => {
+        await drainOutbox(repo.getClientsStore(), { limit: 10 });
+        drainDone = true;
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 250));
+      assert.equal(drainDone, false, "drain doit attendre le verrou FOR UPDATE du paiement");
+
+      await payClient.query("COMMIT");
+      await drainPromise;
+
+      const noteCount = await pool.query(
+        `SELECT count(*)::int c FROM communication_notifications WHERE event_key = $1`,
+        [eventKeyForObligation(obligationId)],
+      );
+      const recipientCount = await pool.query(
+        `SELECT count(*)::int c FROM notification_recipients r
+         JOIN communication_notifications n ON n.id = r.notification_id
+         WHERE n.event_key = $1`,
+        [eventKeyForObligation(obligationId)],
+      );
+      assert.equal(noteCount.rows[0].c, 0, "après COMMIT paiement, drain ne notifie pas");
+      assert.equal(recipientCount.rows[0].c, 0);
+      const outbox = await pool.query(
+        `SELECT status FROM communication_event_outbox WHERE event_key = $1`,
+        [eventKeyForObligation(obligationId)],
+      );
+      assert.equal(outbox.rows[0].status, "processed");
+    } finally {
+      try {
+        await payClient.query("ROLLBACK");
+      } catch {
+        /* ignore if already committed */
+      }
+      payClient.release();
+    }
   });
 });

@@ -54,7 +54,8 @@ Module partagé `communicationsPaymentDueEligibility.js` :
 
 - `isPaymentDueEligible()` — utilisé par sweep SQL (`paymentDueEligibleSqlConditions`) et `eventSpec()` au drain
 - Si obligation plus éligible à la consommation : 0 recipient, 0 notification, outbox `processed` sans erreur
-- Tests RED-PD-17 (sweep → paiement → drain) et RED-PD-18 (outbox + paiement concurrent)
+- Verrou `FOR UPDATE OF o` sur l'obligation au drain → sérialisation avec transaction paiement concurrente
+- Tests RED-PD-17 (sweep → paiement → drain) et RED-PD-18 (deux connexions PG : paiement non commité vs drain)
 
 Body neutralisé P2 : « Un paiement scolaire est arrivé à échéance. »
 
