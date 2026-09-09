@@ -48,7 +48,7 @@ export function parentLinkedStudents(
   user: SessionUser | null,
   state: Pick<BackOfficeState, "students">,
 ): StudentRow[] {
-  if (!isParentNotesRole(user)) return [];
+  if (!user || !isParentNotesRole(user)) return [];
   const linkedIds = parentLinkedIdSet(user);
   if (!linkedIds.size) return [];
 
