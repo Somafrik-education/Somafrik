@@ -185,13 +185,18 @@ La CI est **volontairement rouge** sur cette PR : c'est la preuve RED demandée.
 - `PR Gates / Risk-targeted`, pas « Web tests » (`npm --prefix web test`) :
   **rouge**, sur les 16 échecs attendus des lots R1 et R3-Web, et sur eux
   seulement. Ce portail exécute la totalité de la suite Vitest ; les 858 autres
-  tests y passent.
+  tests y passent, et tous ses autres pas sont verts.
 - `PR Gates / Required` : rouge par agrégation du précédent.
 - `Communications C4` : les quatre suites RED backend sont ajoutées en dernier
   pas du portail, **bloquant lui aussi**, après la vérification C4, le build Web
   et le typecheck Mobile — de sorte que toutes les vérifications de
-  non-régression s'exécutent et restent lisibles avant l'échec attendu. La
-  sortie complète est archivée en artefact `notifications-red`.
+  non-régression s'exécutent et restent lisibles avant l'échec attendu. Le
+  relevé de ce portail sur le HEAD confirme : `Verify Communications C4 E2E`,
+  `Build Web` et `Typecheck Mobile` verts, seul le pas RED rouge. Les quatre
+  suites sont exécutées en une invocation `node --test` unique — un bloc de
+  commandes successives s'arrêterait à la première, `bash -e` étant actif par
+  défaut dans les pas GitHub Actions. Relevé attendu : **20 tests, 10 rouges,
+  10 verts**. La sortie complète est archivée en artefact `notifications-red`.
 - Tous les autres portails (Architecture Audit, UI French Copy, Scope, Secrets,
   Quality, Core tests, Android release readiness) : verts.
 
