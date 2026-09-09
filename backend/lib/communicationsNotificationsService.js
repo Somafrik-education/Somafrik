@@ -22,6 +22,7 @@ const {
 } = require("./communicationsAttachments");
 const { enabledChannelsForUser } = require("./communicationsPreferences");
 const { isPaymentDueEligible } = require("./communicationsPaymentDueEligibility");
+const { sanitizeNavigationTargets } = require("./communicationsNavigationTargets");
 const {
   resolveAllowedChannels,
   getSchoolPolicyEventsBySchoolId,
@@ -292,8 +293,9 @@ async function list(store, principal, query = {}) {
   }
   const page = visible.slice(0, limit);
   const attachments = await hydrateAttachments(tx, page.map((row) => row.id));
+  const items = page.map((row) => mapNotification(row, { schoolCode, attachments: attachments.get(String(row.id)) ?? [] }));
   return {
-    items: page.map((row) => mapNotification(row, { schoolCode, attachments: attachments.get(String(row.id)) ?? [] })),
+    items: await sanitizeNavigationTargets(tx, school.id, items),
     nextCursor: visible.length > limit ? makeCursor(page.at(-1)?.created_at, page.at(-1)?.id) : null,
   };
 }
@@ -307,7 +309,8 @@ async function get(store, notificationId, principal, query = {}) {
   const viewerCategories = await resolveUserRecipientCategories(tx, { userId, schoolId: school.id });
   if (!(await allowsInAppForRow(tx, school.id, row, true, viewerCategories))) throw notFound();
   const attachments = (await hydrateAttachments(tx, [row.id])).get(String(row.id)) ?? [];
-  return mapNotification(row, { schoolCode, attachments });
+  const [item] = await sanitizeNavigationTargets(tx, school.id, [mapNotification(row, { schoolCode, attachments })]);
+  return item;
 }
 
 async function unreadCount(store, principal, query = {}) {
@@ -368,7 +371,8 @@ async function markRead(store, notificationId, principal, auditMeta, query = {})
     const viewerCategories = await resolveUserRecipientCategories(tx, { userId, schoolId: school.id });
     if (!(await allowsInAppForRow(tx, school.id, row, userVisible, viewerCategories))) throw notFound();
     const attachments = (await hydrateAttachments(tx, [row.id])).get(String(row.id)) ?? [];
-    return mapNotification(row, { schoolCode, attachments });
+    const [item] = await sanitizeNavigationTargets(tx, school.id, [mapNotification(row, { schoolCode, attachments })]);
+    return item;
   });
 }
 
@@ -752,7 +756,11 @@ async function eventSpec(tx, event) {
     }
     title = "Emploi du temps modifié";
     body = "Une modification a été apportée à l'emploi du temps.";
-    navigationTarget = {};
+    navigationTarget = {
+      type: "timetable",
+      weeklySlotId: sourceId,
+      classId: classId || null,
+    };
     metadata = {
       weeklySlotId: sourceId,
       changeRevision: payload.changeRevision ?? null,
@@ -815,7 +823,13 @@ async function eventSpec(tx, event) {
       title = "Remplacement d'enseignant";
       body = "Un remplacement d'enseignant a été planifié.";
     }
-    navigationTarget = {};
+    navigationTarget = {
+      type: "teacher_replacement",
+      replacementId: sourceId,
+      classId: classId || null,
+      weeklySlotId: payload.weeklySlotId ?? null,
+      occurrenceDate: payload.occurrenceDate ?? null,
+    };
     metadata = {
       replacementId: sourceId,
       changeRevision: payload.changeRevision ?? null,
