@@ -7,6 +7,7 @@ import {
   getUserFormFieldPolicy,
   toCreateUserApiPayload,
   toProvisionUserApiPayload,
+  shouldProvisionPlatformUser,
   validateUserAccount,
 } from "./userAccounts";
 
@@ -125,6 +126,15 @@ describe("Superadmin create-user tenant defaults", () => {
         },
       ),
     ).toBe("L'établissement n'appartient pas au pays sélectionné.");
+  });
+
+  it("Country Admin provisionne Admin School ; Superadmin provisionne Admin Pays / Admin School", () => {
+    expect(shouldProvisionPlatformUser("Super Administrateur Somafrik", "Admin Pays")).toBe(true);
+    expect(shouldProvisionPlatformUser("Super Administrateur Somafrik", "Admin School")).toBe(true);
+    expect(shouldProvisionPlatformUser("Admin Pays", "Admin School")).toBe(true);
+    expect(shouldProvisionPlatformUser("Admin Pays", "Admin Pays")).toBe(false);
+    expect(shouldProvisionPlatformUser("Admin School", "Secrétaire")).toBe(false);
+    expect(shouldProvisionPlatformUser("Admin School", "Admin School")).toBe(false);
   });
 
   it("construit un payload provision Admin School sans héritage session", () => {

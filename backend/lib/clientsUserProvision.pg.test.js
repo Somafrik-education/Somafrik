@@ -237,6 +237,56 @@ async function main() {
     const leftoverMismatch = await pool.query(`SELECT id FROM users WHERE email = 'wrong.scope.pg@test.local'`);
     assert.equal(leftoverMismatch.rowCount, 0);
 
+    const countryAdminCd = {
+      sub: "admin-pays-cd",
+      role: "Admin Pays",
+      countryCode: "CD",
+      schoolCode: "*",
+      identifier: "admin-rdc",
+    };
+    const pendingSchool = await store.provisionUser(
+      {
+        firstName: "Patrick",
+        lastName: "Pending",
+        email: "patrick.pending.cd.pg@test.local",
+        temporaryPassword: "SchoolPending!2026",
+        roleKey: "SCHOOL_ADMIN",
+        countryCode: "CD",
+        schoolCode: "CD-2026-0001",
+      },
+      countryAdminCd,
+      auditMeta,
+    );
+    assert.ok((pendingSchool.roleKeys || []).includes("SCHOOL_ADMIN"));
+    const pendingPg = await pool.query(
+      `SELECT u.status, u.profile_payload, ur.role_key, ur.status AS role_status
+         FROM users u
+         JOIN user_roles ur ON ur.user_id = u.id AND ur.role_key = 'SCHOOL_ADMIN'
+        WHERE u.id = $1 AND ur.status = 'active' AND ur.revoked_at IS NULL`,
+      [pendingSchool.id],
+    );
+    assert.equal(pendingPg.rowCount, 1);
+    assert.equal(pendingPg.rows[0].status, "pending_validation");
+    assert.equal(pendingPg.rows[0].profile_payload?.validationStatus, "En attente de validation");
+
+    await assert.rejects(
+      () =>
+        store.provisionUser(
+          {
+            firstName: "Foreign",
+            lastName: "School",
+            email: "foreign.school.bi.pg@test.local",
+            temporaryPassword: "SchoolForeign!2026",
+            roleKey: "SCHOOL_ADMIN",
+            countryCode: "BI",
+            schoolCode: "BI-2026-0001",
+          },
+          countryAdminCd,
+          auditMeta,
+        ),
+      (error) => error.statusCode === 403 && error.code === CLIENTS_ERROR.TENANT_MISMATCH,
+    );
+
     const roleFailStore = {
       ...store,
       withTransaction(fn) {

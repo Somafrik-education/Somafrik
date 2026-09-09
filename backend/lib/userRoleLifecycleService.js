@@ -15,7 +15,6 @@ const {
 const {
   attachUsersStorePrincipal,
   assertUsersTargetAccess,
-  resolveUsersSchoolScope,
   targetFromUserRow,
 } = require("./usersSchoolScope");
 const { toDbRole } = require("./clientsRolePolicy");
@@ -409,13 +408,8 @@ async function grantRole(store, userId, rawPayload, principal, auditMeta) {
   const { roleKey, label } = await assertGrantableRole(store, principal, payload.role ?? payload.roleKey);
 
   const attached = await attachUsersStorePrincipal(principal, store);
-  const scope = resolveUsersSchoolScope(attached);
   const existingKeys = await loadRoleKeys(store, existing.id);
-  assertUsersTargetAccess(
-    attached,
-    { ...targetFromUserRow(existing), roleKeys: existingKeys },
-    { allowUnassignedPlatformGrant: scope.mode === "all" || scope.mode === "country" },
-  );
+  assertUsersTargetAccess(attached, { ...targetFromUserRow(existing), roleKeys: existingKeys });
   assertNotSelfTarget(attached, existing.id);
   const schoolCode = asTrimmed(existing.school_login_code || existing.school_code);
 

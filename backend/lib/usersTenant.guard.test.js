@@ -93,3 +93,14 @@ test("GP-003: createUser ne dérive plus l'école du JWT leftover", () => {
   assert.doesNotMatch(createFn, /resolveCreateUserSchoolCode/);
   assert.doesNotMatch(createFn, /principal\?\.schoolCode\)\.toUpperCase/);
 });
+
+test("P0: GRANT plateforme refuse les identités sans rôle (pas d'allowUnassignedPlatformGrant)", () => {
+  const scopeLib = read("lib/usersSchoolScope.js");
+  const grantSrc = read("lib/userRoleLifecycleService.js");
+  const httpTest = read("lib/usersTenant.http.pg.test.js");
+  assert.doesNotMatch(scopeLib, /allowUnassignedPlatformGrant/);
+  assert.doesNotMatch(grantSrc, /allowUnassignedPlatformGrant/);
+  assert.match(httpTest, /INSERT INTO students/);
+  assert.match(httpTest, /PENDING/);
+  assert.doesNotMatch(httpTest, /somafrik_assign_permanent_user_identity/);
+});

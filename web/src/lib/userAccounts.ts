@@ -147,6 +147,13 @@ export function isSuperadminDirectUserRole(role?: string): boolean {
   );
 }
 
+/** Superadmin / Admin Pays : création atomique, jamais identité vide puis GRANT. */
+export function shouldProvisionPlatformUser(creatorRole?: string, targetRole?: string): boolean {
+  if (isSuperAdminRole(creatorRole) && isSuperadminDirectUserRole(targetRole)) return true;
+  if (creatorRole === COUNTRY_ADMIN_ROLE && targetRole === SCHOOL_ADMIN_ROLE) return true;
+  return false;
+}
+
 export interface UserFormFieldPolicy {
   countryScope: "hidden" | "readonly" | "select";
   scopeLevel: "hidden" | "readonly" | "select";
@@ -631,7 +638,7 @@ export function toCreateUserApiPayload(user: UserAccount): Record<string, unknow
   };
 }
 
-/** Superadmin : création atomique identité + rôle (COUNTRY_ADMIN / SCHOOL_ADMIN). */
+/** Superadmin / Admin Pays : création atomique identité + rôle (COUNTRY_ADMIN / SCHOOL_ADMIN). */
 export function toProvisionUserApiPayload(user: UserAccount): Record<string, unknown> {
   const countryCode = getCountryCodeFromScope(user.countryScope);
   const roleKey =

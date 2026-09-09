@@ -203,15 +203,24 @@ async function seed(pool) {
     [USER_PAYS_BI],
   );
 
+  const studentA = await pool.query(
+    `INSERT INTO students (school_id, student_code, first_name, last_name, status)
+     VALUES ($1, 'PENDING', 'Sami', 'A', 'active')
+     RETURNING id, student_code`,
+    [schoolA.rows[0].id],
+  );
+  const studentCodeA = studentA.rows[0].student_code;
+
   await pool.query(
     `INSERT INTO users (id, school_id, user_code, first_name, last_name, email, role, status, must_change_password)
      VALUES
        ($1, $5, 'TEACH-A', 'Tania', 'A', 'ta@gp003.test', 'Enseignant', 'active', FALSE),
        ($2, $5, 'EMPTY-A', 'Idem', 'Vide', 'empty.a@gp003.test', NULL, 'active', FALSE),
-       ($3, $5, 'STUD-A', 'Sami', 'A', 'stu.a@gp003.test', 'Élève / Étudiant', 'active', FALSE),
+       ($3, $5, $6, 'Sami', 'A', 'stu.a@gp003.test', 'Élève / Étudiant', 'active', FALSE),
        ($4, $5, 'PAR-A', 'Papa', 'A', 'par.a@gp003.test', 'Parent', 'active', FALSE)`,
-    [USER_TEACHER_A, USER_UNASSIGNED_A, USER_STUDENT_A, USER_PARENT_A, schoolA.rows[0].id],
+    [USER_TEACHER_A, USER_UNASSIGNED_A, USER_STUDENT_A, USER_PARENT_A, schoolA.rows[0].id, studentCodeA],
   );
+  await pool.query(`UPDATE students SET user_id = $1 WHERE id = $2`, [USER_STUDENT_A, studentA.rows[0].id]);
   await pool.query(
     `INSERT INTO user_roles (user_id, school_id, role_key, status)
      VALUES
@@ -473,6 +482,26 @@ async function main() {
       body: { role: "Enseignant" },
     });
     assert.equal(grantSuperTeacher.status, 403, `P0-9 Superadmin ne GRANT pas un rôle métier: ${JSON.stringify(grantSuperTeacher.data)}`);
+    const grantSuperUnassigned = await request(`/backoffice/users/${USER_UNASSIGNED_A}/roles/grant`, {
+      method: "POST",
+      token: tokenSuper,
+      body: { role: "Admin School" },
+    });
+    assert.equal(
+      grantSuperUnassigned.status,
+      403,
+      `P0-9 Superadmin ne GRANT pas une identité école sans rôle: ${JSON.stringify(grantSuperUnassigned.data)}`,
+    );
+    const grantPaysUnassigned = await request(`/backoffice/users/${USER_UNASSIGNED_A}/roles/grant`, {
+      method: "POST",
+      token: tokenPaysCd,
+      body: { role: "Admin School" },
+    });
+    assert.equal(
+      grantPaysUnassigned.status,
+      403,
+      `P0-10 Admin Pays ne GRANT pas une identité école sans rôle: ${JSON.stringify(grantPaysUnassigned.data)}`,
+    );
     const grantSuperSecretary = await request(`/backoffice/users/${STAFF_A}/roles/grant`, {
       method: "POST",
       token: tokenSuper,

@@ -39,7 +39,7 @@ import {
   toUpdateUserIdentityPayload,
   validateUserAccount,
   resetUserAccountPassword,
-  isSuperadminDirectUserRole,
+  shouldProvisionPlatformUser,
 } from "../lib/userAccounts";
 import { clientsApi } from "../lib/clientsApi";
 import {
@@ -207,8 +207,7 @@ export function UsersPage() {
           }
         } else {
           try {
-            const shouldProvision =
-              isSuperAdminRole(session?.user?.role) && isSuperadminDirectUserRole(syncedUser.role);
+            const shouldProvision = shouldProvisionPlatformUser(session?.user?.role, syncedUser.role);
             const created = (
               shouldProvision
                 ? await clientsApi.provisionUser(toProvisionUserApiPayload(syncedUser))

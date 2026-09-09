@@ -59,6 +59,9 @@ function sourceGuards() {
   assert.match(scopeLib, /SCHOOL_ADMIN/);
   assert.match(scopeLib, /user_roles/);
   assert.doesNotMatch(scopeLib, /if \(!scope \|\| scope\.mode === "all"\) return "TRUE"/);
+  assert.doesNotMatch(scopeLib, /allowUnassignedPlatformGrant/);
+  assert.match(httpTest, /INSERT INTO students/);
+  assert.match(httpTest, /PENDING/);
 }
 
 function main() {

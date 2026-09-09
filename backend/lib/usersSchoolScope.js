@@ -38,7 +38,6 @@ function countryIsoFromPublicCode(code) {
 }
 
 const PLATFORM_CATALOG_ROLE_KEYS = Object.freeze(["COUNTRY_ADMIN", "SCHOOL_ADMIN"]);
-const PLATFORM_IDENTITY_ROLE_KEYS = Object.freeze(["SUPER_ADMIN", "COUNTRY_ADMIN", "SCHOOL_ADMIN"]);
 
 function roleKeysFrom(user) {
   return Array.isArray(user?.roleKeys)
@@ -53,11 +52,6 @@ function hasPlatformCatalogRole(roleKeys) {
 
 function hasSchoolAdminCatalogRole(roleKeys) {
   return (Array.isArray(roleKeys) ? roleKeys : []).includes("SCHOOL_ADMIN");
-}
-
-function hasMetierRole(roleKeys) {
-  const platform = new Set(PLATFORM_IDENTITY_ROLE_KEYS);
-  return (Array.isArray(roleKeys) ? roleKeys : []).some((key) => key && !platform.has(key));
 }
 
 function failClosed(message, code = CLIENTS_ERROR.TENANT_MISMATCH) {
@@ -398,30 +392,20 @@ function targetFromUserRow(row = {}) {
   };
 }
 
-function assertUsersTargetAccess(principal, current, options = {}) {
+function assertUsersTargetAccess(principal, current) {
   const scope = resolveUsersSchoolScope(principal);
   if (scope.mode === "none") {
     failClosed("Accès refusé : établissement hors périmètre.");
   }
   const roleKeys = roleKeysFrom(current);
   if (scope.mode === "all") {
-    if (options.allowUnassignedPlatformGrant) {
-      if (hasMetierRole(roleKeys)) {
-        failClosed("Accès refusé : cible métier hors catalogue plateforme.");
-      }
-      return scope;
-    }
     if (!hasPlatformCatalogRole(roleKeys)) {
       failClosed("Accès refusé : hors catalogue plateforme.");
     }
     return scope;
   }
   if (scope.mode === "country") {
-    if (options.allowUnassignedPlatformGrant) {
-      if (hasMetierRole(roleKeys)) {
-        failClosed("Accès refusé : cible métier hors catalogue plateforme.");
-      }
-    } else if (!hasSchoolAdminCatalogRole(roleKeys)) {
+    if (!hasSchoolAdminCatalogRole(roleKeys)) {
       failClosed("Accès refusé : hors catalogue plateforme.");
     }
     if (normalizeLoginCode(current?.countryCode) !== scope.countryCode) {

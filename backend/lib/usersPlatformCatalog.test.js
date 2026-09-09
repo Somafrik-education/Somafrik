@@ -308,9 +308,18 @@ test("catalogue mémoire : GET Superadmin / Admin Pays / Admin School + mutation
     store.grantUserRole(unassigned.id, { role: "Enseignant" }, countryAdmin, auditMeta),
     { status: 403 },
   );
-
-  const granted = await store.grantUserRole(unassigned.id, { role: "Admin School" }, superAdmin, auditMeta);
-  assert.ok((granted.roleKeys || []).includes("SCHOOL_ADMIN"));
+  await expectRejection(
+    store.grantUserRole(unassigned.id, { role: "Admin School" }, superAdmin, auditMeta),
+    { status: 403 },
+  );
+  await expectRejection(
+    store.grantUserRole(unassigned.id, { role: "Admin School" }, countryAdmin, auditMeta),
+    { status: 403 },
+  );
+  await expectRejection(
+    store.grantUserRole(unassigned.id, { role: "Admin Pays" }, superAdmin, auditMeta),
+    { status: 403 },
+  );
 
   const patched = await store.updateUser(adminA.id, { firstName: "Aline" }, superAdmin, auditMeta);
   assert.equal(patched.firstName, "Aline");
