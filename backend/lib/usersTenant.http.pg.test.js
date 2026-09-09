@@ -34,6 +34,10 @@ const USER_PAYS_CD = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa06";
 const USER_PAYS_BI = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa07";
 const STAFF_A = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa11";
 const STAFF_B = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa12";
+const USER_TEACHER_A = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa13";
+const USER_UNASSIGNED_A = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa14";
+const USER_STUDENT_A = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa15";
+const USER_PARENT_A = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa16";
 
 const USER_PERMS = ["Utilisateurs:READ", "Utilisateurs:CREATE", "Utilisateurs:UPDATE"];
 
@@ -197,6 +201,33 @@ async function seed(pool) {
     `INSERT INTO user_roles (user_id, school_id, role_key, status)
      VALUES ($1, NULL, 'COUNTRY_ADMIN', 'active')`,
     [USER_PAYS_BI],
+  );
+
+  const studentA = await pool.query(
+    `INSERT INTO students (school_id, student_code, first_name, last_name, status)
+     VALUES ($1, 'PENDING', 'Sami', 'A', 'active')
+     RETURNING id, student_code`,
+    [schoolA.rows[0].id],
+  );
+  const studentCodeA = studentA.rows[0].student_code;
+
+  await pool.query(
+    `INSERT INTO users (id, school_id, user_code, first_name, last_name, email, role, status, must_change_password)
+     VALUES
+       ($1, $5, 'TEACH-A', 'Tania', 'A', 'ta@gp003.test', 'Enseignant', 'active', FALSE),
+       ($2, $5, 'EMPTY-A', 'Idem', 'Vide', 'empty.a@gp003.test', NULL, 'active', FALSE),
+       ($3, $5, $6, 'Sami', 'A', 'stu.a@gp003.test', 'Élève / Étudiant', 'active', FALSE),
+       ($4, $5, 'PAR-A', 'Papa', 'A', 'par.a@gp003.test', 'Parent', 'active', FALSE)`,
+    [USER_TEACHER_A, USER_UNASSIGNED_A, USER_STUDENT_A, USER_PARENT_A, schoolA.rows[0].id, studentCodeA],
+  );
+  await pool.query(`UPDATE students SET user_id = $1 WHERE id = $2`, [USER_STUDENT_A, studentA.rows[0].id]);
+  await pool.query(
+    `INSERT INTO user_roles (user_id, school_id, role_key, status)
+     VALUES
+       ($1, $4, 'TEACHER', 'active'),
+       ($2, $4, 'STUDENT', 'active'),
+       ($3, $4, 'PARENT', 'active')`,
+    [USER_TEACHER_A, USER_STUDENT_A, USER_PARENT_A, schoolA.rows[0].id],
   );
 
   return { schoolAId: schoolA.rows[0].id, schoolBId: schoolB.rows[0].id };
@@ -406,15 +437,25 @@ async function main() {
     const getSuper = await request("/backoffice/users", { token: tokenSuper });
     assert.equal(getSuper.status, 200, "P0-9 Superadmin GET");
     const superUsers = unwrapList(getSuper.data);
-    assert.ok(superUsers.some((row) => row.schoolCode === LOGIN_A || row.id === STAFF_A));
-    assert.ok(superUsers.some((row) => row.schoolCode === LOGIN_B || row.id === STAFF_B));
+    assert.ok(superUsers.some((row) => row.id === USER_PAYS_CD), "P0-9 voit COUNTRY_ADMIN CD");
+    assert.ok(superUsers.some((row) => row.id === USER_PAYS_BI), "P0-9 voit COUNTRY_ADMIN BI");
+    assert.ok(superUsers.some((row) => row.id === USER_A), "P0-9 voit SCHOOL_ADMIN A");
+    assert.ok(superUsers.some((row) => row.id === USER_B), "P0-9 voit SCHOOL_ADMIN B");
+    assert.equal(superUsers.some((row) => row.id === STAFF_A), false, "P0-9 ne voit pas secrétaire A");
+    assert.equal(superUsers.some((row) => row.id === STAFF_B), false, "P0-9 ne voit pas secrétaire B");
+    assert.equal(superUsers.some((row) => row.id === USER_TEACHER_A), false, "P0-9 ne voit pas enseignant");
+    assert.equal(superUsers.some((row) => row.id === USER_STUDENT_A), false, "P0-9 ne voit pas élève");
+    assert.equal(superUsers.some((row) => row.id === USER_PARENT_A), false, "P0-9 ne voit pas parent");
+    assert.equal(superUsers.some((row) => row.id === USER_UNASSIGNED_A), false, "P0-9 ne voit pas school_id sans rôle");
 
     const getPays = await request("/backoffice/users", { token: tokenPaysCd });
     assert.equal(getPays.status, 200, `P0-10 Admin Pays GET: ${JSON.stringify(getPays.data)}`);
     const paysUsers = unwrapList(getPays.data);
-    assert.equal(paysUsers.some((row) => row.schoolCode === LOGIN_B || row.id === STAFF_B || row.id === USER_PAYS_BI), false, "P0-10 jamais BI");
-    assert.ok(paysUsers.some((row) => row.id === USER_PAYS_CD), "P0-10 voit compte pays CD sans school_id");
-    assert.ok(paysUsers.every((row) => !row.schoolCode || row.schoolCode === LOGIN_A || row.countryCode === "CD" || row.schoolCode === "*"));
+    assert.ok(paysUsers.some((row) => row.id === USER_A), "P0-10 voit SCHOOL_ADMIN CD");
+    assert.equal(paysUsers.some((row) => row.id === STAFF_A || row.id === USER_TEACHER_A), false, "P0-10 aucun staff métier");
+    assert.equal(paysUsers.some((row) => row.id === USER_PAYS_CD), false, "P0-10 ne reçoit pas COUNTRY_ADMIN");
+    assert.equal(paysUsers.some((row) => row.schoolCode === LOGIN_B || row.id === STAFF_B || row.id === USER_PAYS_BI || row.id === USER_B), false, "P0-10 jamais BI");
+    assert.ok(paysUsers.every((row) => Array.isArray(row.roleKeys) ? row.roleKeys.includes("SCHOOL_ADMIN") : row.role === "Admin School"));
 
     const patchPaysBi = await request(`/backoffice/users/${STAFF_B}`, {
       method: "PATCH",
@@ -422,6 +463,73 @@ async function main() {
       body: { firstName: "Nope" },
     });
     assert.equal(patchPaysBi.status, 403, `P0-10 Admin Pays CD ne patch pas BI: ${JSON.stringify(patchPaysBi.data)}`);
+
+    const patchSuperStaff = await request(`/backoffice/users/${STAFF_A}`, {
+      method: "PATCH",
+      token: tokenSuper,
+      body: { firstName: "Nope" },
+    });
+    assert.equal(patchSuperStaff.status, 403, `P0-9 Superadmin ne PATCH pas un secrétaire: ${JSON.stringify(patchSuperStaff.data)}`);
+    const patchSuperEmpty = await request(`/backoffice/users/${USER_UNASSIGNED_A}`, {
+      method: "PATCH",
+      token: tokenSuper,
+      body: { firstName: "Nope" },
+    });
+    assert.equal(patchSuperEmpty.status, 403, `P0-9 Superadmin ne PATCH pas une identité école sans rôle: ${JSON.stringify(patchSuperEmpty.data)}`);
+    const grantSuperTeacher = await request(`/backoffice/users/${USER_UNASSIGNED_A}/roles/grant`, {
+      method: "POST",
+      token: tokenSuper,
+      body: { role: "Enseignant" },
+    });
+    assert.equal(grantSuperTeacher.status, 403, `P0-9 Superadmin ne GRANT pas un rôle métier: ${JSON.stringify(grantSuperTeacher.data)}`);
+    const grantSuperUnassigned = await request(`/backoffice/users/${USER_UNASSIGNED_A}/roles/grant`, {
+      method: "POST",
+      token: tokenSuper,
+      body: { role: "Admin School" },
+    });
+    assert.equal(
+      grantSuperUnassigned.status,
+      403,
+      `P0-9 Superadmin ne GRANT pas une identité école sans rôle: ${JSON.stringify(grantSuperUnassigned.data)}`,
+    );
+    const grantPaysUnassigned = await request(`/backoffice/users/${USER_UNASSIGNED_A}/roles/grant`, {
+      method: "POST",
+      token: tokenPaysCd,
+      body: { role: "Admin School" },
+    });
+    assert.equal(
+      grantPaysUnassigned.status,
+      403,
+      `P0-10 Admin Pays ne GRANT pas une identité école sans rôle: ${JSON.stringify(grantPaysUnassigned.data)}`,
+    );
+    const grantSuperSecretary = await request(`/backoffice/users/${STAFF_A}/roles/grant`, {
+      method: "POST",
+      token: tokenSuper,
+      body: { role: "Admin School" },
+    });
+    assert.equal(grantSuperSecretary.status, 403, `P0-9 Superadmin ne GRANT pas un compte métier: ${JSON.stringify(grantSuperSecretary.data)}`);
+    const grantPaysTeacher = await request(`/backoffice/users/${USER_UNASSIGNED_A}/roles/grant`, {
+      method: "POST",
+      token: tokenPaysCd,
+      body: { role: "Enseignant" },
+    });
+    assert.equal(grantPaysTeacher.status, 403, `P0-10 Admin Pays ne GRANT pas un rôle métier: ${JSON.stringify(grantPaysTeacher.data)}`);
+    const resetSuperStaff = await request(`/users/${STAFF_A}/reset-password`, {
+      method: "POST",
+      token: tokenSuper,
+      body: { temporaryPassword: "Tmp-reset-ok-12" },
+    });
+    assert.ok(resetSuperStaff.status === 403 || resetSuperStaff.status === 404, `P0-9 Superadmin ne RESET pas un secrétaire: ${resetSuperStaff.status}`);
+
+    const assignableSuper = await request("/backoffice/users/assignable-roles", { token: tokenSuper });
+    assert.equal(assignableSuper.status, 200, `P0-9 assignable Superadmin: ${JSON.stringify(assignableSuper.data)}`);
+    const superRoleKeys = (assignableSuper.data?.roles || []).map((row) => row.roleKey);
+    assert.ok(superRoleKeys.includes("COUNTRY_ADMIN") && superRoleKeys.includes("SCHOOL_ADMIN"));
+    assert.equal(superRoleKeys.includes("TEACHER") || superRoleKeys.includes("SECRETARY"), false, "P0-9 rôles métier absents du catalogue plateforme");
+    const assignablePays = await request("/backoffice/users/assignable-roles", { token: tokenPaysCd });
+    assert.equal(assignablePays.status, 200, `P0-10 assignable Admin Pays: ${JSON.stringify(assignablePays.data)}`);
+    const paysRoleKeys = (assignablePays.data?.roles || []).map((row) => row.roleKey);
+    assert.deepEqual(paysRoleKeys, ["SCHOOL_ADMIN"]);
 
     const getB = await request("/backoffice/users", { token: tokenB });
     assert.equal(getB.status, 200, `P0-11 GET B: ${JSON.stringify(getB.data)}`);

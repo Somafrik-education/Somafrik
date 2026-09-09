@@ -36,6 +36,7 @@ const {
 const {
   allocateUserCode,
   hydrateUser,
+  loadRoleKeys,
   FORBIDDEN_CREATE_KEYS,
   FORBIDDEN_IDENTITY_PATCH_KEYS,
 } = require("./userRoleLifecycleService");
@@ -258,15 +259,22 @@ function rethrowProvisionLoginIdentityConflict(error) {
 }
 
 async function provisionUser(store, rawPayload, principal, auditMeta) {
-  if (!isSuperAdminPrincipal(principal)) {
+  const roleKey = toRoleKey(rawPayload?.roleKey ?? rawPayload?.role);
+  if (isCountryAdminPrincipal(principal)) {
+    if (roleKey !== SCHOOL_ADMIN_KEY) {
+      throw createClientsError(
+        403,
+        "L'Admin Pays ne peut provisionner que le rôle Admin School.",
+        USER_ROLE_ERROR.PLATFORM_ROLE_FORBIDDEN,
+      );
+    }
+  } else if (!isSuperAdminPrincipal(principal)) {
     throw createClientsError(
       403,
       "Le provisioning Admin Pays / Admin School est réservé au Superadmin.",
       USER_ROLE_ERROR.PLATFORM_ROLE_FORBIDDEN,
     );
   }
-
-  const roleKey = toRoleKey(rawPayload?.roleKey ?? rawPayload?.role);
   if (!roleKey || !PROVISIONABLE_ROLE_KEYS.includes(roleKey)) {
     throw createClientsError(
       400,
@@ -327,6 +335,7 @@ async function provisionUser(store, rawPayload, principal, auditMeta) {
       if (!school) {
         throw createClientsError(404, "Établissement introuvable.", CLIENTS_ERROR.SCHOOL_NOT_FOUND);
       }
+      await assertSchoolInPrincipalCountry(tx, principal, schoolCode);
       assertRequestedCountryMatchesSchool(school, requestedCountry);
     }
 
@@ -347,6 +356,7 @@ async function provisionUser(store, rawPayload, principal, auditMeta) {
       phone,
     }).catch(rethrowProvisionLoginIdentityConflict);
 
+    const pendingCountryAdminProvision = isCountryAdminPrincipal(principal) && roleKey === SCHOOL_ADMIN_KEY;
     const countryName = asTrimmed(country.name || country.country_name || rawPayload.countryScope);
     const profile = {
       contactId: payload.contactId,
@@ -360,6 +370,13 @@ async function provisionUser(store, rawPayload, principal, auditMeta) {
       ...(payload.validatedBy ? { validatedBy: payload.validatedBy } : {}),
       ...(payload.validatedAt ? { validatedAt: payload.validatedAt } : {}),
       ...(Array.isArray(payload.history) ? { history: payload.history } : {}),
+      ...(pendingCountryAdminProvision
+        ? {
+            validationStatus: PENDING_VALIDATION_STATUS,
+            validationRequestedBy: principal?.identifier || principal?.email || "Admin Pays",
+            validationRequestedAt: new Date().toISOString(),
+          }
+        : {}),
     };
 
     let saved;
@@ -374,7 +391,7 @@ async function provisionUser(store, rawPayload, principal, auditMeta) {
         gender: asTrimmed(payload.gender),
         birthDate: toIsoDate(payload.birthDate),
         role: null,
-        status: toDbStatus(payload.status || "Actif"),
+        status: toDbStatus(pendingCountryAdminProvision ? PENDING_VALIDATION_STATUS : payload.status || "Actif"),
         passwordHash: hashSecret(temporaryPassword),
         mustChangePassword: true,
         profile,
@@ -440,7 +457,8 @@ async function updateUser(store, userId, rawPatch, principal, auditMeta) {
     throw createClientsError(404, "Utilisateur introuvable.", CLIENTS_ERROR.USER_NOT_FOUND);
   }
   const attached = await attachUsersStorePrincipal(principal, store);
-  assertUsersTargetAccess(attached, targetFromUserRow(existing));
+  const roleKeys = await loadRoleKeys(store, existing.id);
+  assertUsersTargetAccess(attached, { ...targetFromUserRow(existing), roleKeys });
   const schoolCode = existing.school_login_code || existing.school_code;
   assertSafeUserPatch(attached, existing, patch);
 
@@ -527,6 +545,15 @@ async function reassignUserSchool(store, userId, rawPayload, principal, auditMet
         CLIENTS_ERROR.ROLE_SCOPE_CONFLICT,
       );
     }
+    if (!roleKeys.includes("SCHOOL_ADMIN")) {
+      throw createClientsError(
+        403,
+        "Accès refusé : hors catalogue plateforme.",
+        CLIENTS_ERROR.FORBIDDEN,
+      );
+    }
+    const attached = await attachUsersStorePrincipal(principal, store);
+    assertUsersTargetAccess(attached, { ...targetFromUserRow(locked), roleKeys });
     if (!locked.school_id) {
       throw createClientsError(
         409,

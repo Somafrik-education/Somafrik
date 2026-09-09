@@ -59,11 +59,10 @@ export function isUnassignedUserAccount(
   );
 }
 
-/** Comptes plateforme gérables par le Superadmin (dont les identités encore sans rôle). */
+/** Comptes plateforme gérables par le Superadmin (Admin Pays / Admin School). */
 export function isSuperadminManagedUser(
   user: Pick<UserAccount, "role" | "roles" | "assignmentStatus">,
 ): boolean {
-  if (isUnassignedUserAccount(user)) return true;
   const key = normalizedPlatformRoleKey(user.role);
   return (
     normalizedPlatformRoleKey(COUNTRY_ADMIN_ROLE) === key ||
@@ -98,8 +97,7 @@ export function canManageUserAccount(
   }
   if (actor.role === COUNTRY_ADMIN_ROLE) {
     return (
-      (normalizedPlatformRoleKey(target.role) === normalizedPlatformRoleKey(SCHOOL_ADMIN_ROLE) ||
-        isUnassignedUserAccount(target)) &&
+      normalizedPlatformRoleKey(target.role) === normalizedPlatformRoleKey(SCHOOL_ADMIN_ROLE) &&
       (action === "READ" || action === "CREATE" || action === "UPDATE" || action === "SUSPEND")
     );
   }
@@ -147,6 +145,13 @@ export function isSuperadminDirectUserRole(role?: string): boolean {
     role === COUNTRY_ADMIN_ROLE ||
     role === SCHOOL_ADMIN_ROLE
   );
+}
+
+/** Superadmin / Admin Pays : création atomique, jamais identité vide puis GRANT. */
+export function shouldProvisionPlatformUser(creatorRole?: string, targetRole?: string): boolean {
+  if (isSuperAdminRole(creatorRole) && isSuperadminDirectUserRole(targetRole)) return true;
+  if (creatorRole === COUNTRY_ADMIN_ROLE && targetRole === SCHOOL_ADMIN_ROLE) return true;
+  return false;
 }
 
 export interface UserFormFieldPolicy {
@@ -633,7 +638,7 @@ export function toCreateUserApiPayload(user: UserAccount): Record<string, unknow
   };
 }
 
-/** Superadmin : création atomique identité + rôle (COUNTRY_ADMIN / SCHOOL_ADMIN). */
+/** Superadmin / Admin Pays : création atomique identité + rôle (COUNTRY_ADMIN / SCHOOL_ADMIN). */
 export function toProvisionUserApiPayload(user: UserAccount): Record<string, unknown> {
   const countryCode = getCountryCodeFromScope(user.countryScope);
   const roleKey =
@@ -676,6 +681,14 @@ export function validateUserAccount(
     return "Prénom et nom sont obligatoires.";
   }
   const requestedRole = String(user.role ?? "").trim();
+  const platformCreator = isSuperAdminRole(creator?.role) || creator?.role === COUNTRY_ADMIN_ROLE;
+  if (platformCreator && !user.id) {
+    if (!requestedRole || requestedRole === "Sans affectation") {
+      return creator?.role === COUNTRY_ADMIN_ROLE
+        ? "Sélectionnez le rôle Admin School."
+        : "Sélectionnez un rôle plateforme (Admin Pays ou Admin School).";
+    }
+  }
   if (
     !user.id &&
     requestedRole &&

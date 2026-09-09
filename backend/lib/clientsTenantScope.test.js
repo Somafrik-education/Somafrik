@@ -40,21 +40,21 @@ async function main() {
   };
   const auditMeta = { ipAddress: "127.0.0.1", userAgent: "tenant-scope-test" };
 
-  const nominal = await store.createUser(
+  const nominal = await store.provisionUser(
     {
       firstName: "Grace",
       lastName: "Ndayishimiye",
       email: "grace.bi@test.local",
       schoolCode: "BI-2026-0001",
       countryCode: "BI",
+      roleKey: "SCHOOL_ADMIN",
     },
     superAdmin,
     auditMeta,
   );
   assert.equal(nominal.schoolCode, "BI-2026-0001");
   assert.equal(nominal.countryCode, "BI");
-  const granted = await store.grantUserRole(nominal.id, { role: "Admin School" }, superAdmin, auditMeta);
-  assert.ok((granted.roleKeys || []).includes("SCHOOL_ADMIN"));
+  assert.ok((nominal.roleKeys || []).includes("SCHOOL_ADMIN"));
   const roleRow = store._tables.userRoles.find(
     (row) => row.user_id === nominal.id && row.role_key === "SCHOOL_ADMIN" && row.status === "active",
   );
@@ -93,27 +93,22 @@ async function main() {
   assert.notEqual(unscopedRow.country_code, "CD");
   await expectRejection(
     store.grantUserRole(unscoped.id, { role: "Admin School" }, superAdmin, auditMeta),
-    { status: 400, code: CLIENTS_ERROR.INVALID_TENANT_SCOPE },
+    { status: 403, code: CLIENTS_ERROR.TENANT_MISMATCH },
   );
 
-  const countryIdentity = await store.createUser(
+  const countryIdentity = await store.provisionUser(
     {
       firstName: "Amina",
       lastName: "Pays",
       email: "amina.pays@test.local",
       countryCode: "BI",
       countryScope: "BI",
+      roleKey: "COUNTRY_ADMIN",
     },
     superAdmin,
     auditMeta,
   );
-  const countryGranted = await store.grantUserRole(
-    countryIdentity.id,
-    { role: "Admin Pays" },
-    superAdmin,
-    auditMeta,
-  );
-  assert.ok((countryGranted.roleKeys || []).includes("COUNTRY_ADMIN"));
+  assert.ok((countryIdentity.roleKeys || []).includes("COUNTRY_ADMIN"));
 
   await expectRejection(
     store.createUser(

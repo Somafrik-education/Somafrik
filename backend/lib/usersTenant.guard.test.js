@@ -68,6 +68,10 @@ test("GP-003: usersSchoolScope n'autorise pas leftover comme autorité établiss
 
   assert.match(sqlFn, /u\.school_id/);
   assert.match(sqlFn, /profile_payload->>'countryCode'/);
+  assert.match(sqlFn, /COUNTRY_ADMIN/);
+  assert.match(sqlFn, /SCHOOL_ADMIN/);
+  assert.match(sqlFn, /user_roles/);
+  assert.doesNotMatch(sqlFn, /return "TRUE"/);
   assert.doesNotMatch(sqlFn, /school_code/);
   assert.doesNotMatch(sqlFn, /login_code/);
   assert.doesNotMatch(sqlFn, /COALESCE/i);
@@ -88,4 +92,15 @@ test("GP-003: createUser ne dérive plus l'école du JWT leftover", () => {
   assert.match(service, /resolveUsersWriteSchool/);
   assert.doesNotMatch(createFn, /resolveCreateUserSchoolCode/);
   assert.doesNotMatch(createFn, /principal\?\.schoolCode\)\.toUpperCase/);
+});
+
+test("P0: GRANT plateforme refuse les identités sans rôle (pas d'allowUnassignedPlatformGrant)", () => {
+  const scopeLib = read("lib/usersSchoolScope.js");
+  const grantSrc = read("lib/userRoleLifecycleService.js");
+  const httpTest = read("lib/usersTenant.http.pg.test.js");
+  assert.doesNotMatch(scopeLib, /allowUnassignedPlatformGrant/);
+  assert.doesNotMatch(grantSrc, /allowUnassignedPlatformGrant/);
+  assert.match(httpTest, /INSERT INTO students/);
+  assert.match(httpTest, /PENDING/);
+  assert.doesNotMatch(httpTest, /somafrik_assign_permanent_user_identity/);
 });

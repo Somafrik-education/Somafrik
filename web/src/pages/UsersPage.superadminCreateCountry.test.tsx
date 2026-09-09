@@ -113,6 +113,8 @@ describe("UsersPage — Superadmin création sans pays RDC par défaut", () => {
     expect(school.value).toBe("");
     expect(school).toBeDisabled();
     expect(within(country).getByText("Choisir un pays...")).toBeInTheDocument();
+    expect(screen.queryByText("Sans affectation (plus tard)")).not.toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "Choisir un rôle..." })).toBeInTheDocument();
   });
 
   it("B — pays CD et BI disponibles, sans auto-select countries[0]", () => {

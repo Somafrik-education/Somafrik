@@ -39,7 +39,7 @@ import {
   toUpdateUserIdentityPayload,
   validateUserAccount,
   resetUserAccountPassword,
-  isSuperadminDirectUserRole,
+  shouldProvisionPlatformUser,
 } from "../lib/userAccounts";
 import { clientsApi } from "../lib/clientsApi";
 import {
@@ -207,8 +207,7 @@ export function UsersPage() {
           }
         } else {
           try {
-            const shouldProvision =
-              isSuperAdminRole(session?.user?.role) && isSuperadminDirectUserRole(syncedUser.role);
+            const shouldProvision = shouldProvisionPlatformUser(session?.user?.role, syncedUser.role);
             const created = (
               shouldProvision
                 ? await clientsApi.provisionUser(toProvisionUserApiPayload(syncedUser))
@@ -799,8 +798,10 @@ export function UsersPage() {
             ) : (
               <p className="sm:col-span-2 text-sm text-muted">
                 {isSuperadminView
-                  ? "Administrateur pays et Administrateur établissement sont créés directement avec leur rôle. Sans affectation crée uniquement l'identité."
-                  : "L'identifiant (UUID et code USR) est généré côté serveur. Aucun rôle n'est attribué à la création. Utilisez ensuite Attribuer."}
+                  ? "Administrateur pays et Administrateur établissement sont créés directement avec leur rôle."
+                  : isCountryAdminView
+                    ? "Administrateur établissement est créé avec son rôle. L'identité vide n'est pas proposée."
+                    : "L'identifiant (UUID et code USR) est généré côté serveur. Aucun rôle n'est attribué à la création. Utilisez ensuite Attribuer."}
               </p>
             )}
             <Field label="Prénom" required>
@@ -851,11 +852,11 @@ export function UsersPage() {
               <Field
                 label="Rôle"
                 hint={
-                  isSuperadminView
+                  isSuperadminView || isCountryAdminView
                     ? "Le rôle est créé immédiatement à l'enregistrement"
                     : "L'identité est créée d'abord, puis le rôle est attribué"
                 }
-                required={isSuperadminView}
+                required={isSuperadminView || isCountryAdminView}
               >
                 <Select
                   value={editing.role ?? ""}
@@ -864,7 +865,13 @@ export function UsersPage() {
                     setEditing(applyRoleChangeToUser(editing, e.target.value, session, state));
                   }}
                   options={[
-                    { value: "", label: "Sans affectation (plus tard)" },
+                    {
+                      value: "",
+                      label:
+                        isSuperadminView || isCountryAdminView
+                          ? "Choisir un rôle..."
+                          : "Sans affectation (plus tard)",
+                    },
                     ...creatableRoles.map((role) => ({ value: role, label: role })),
                   ]}
                 />

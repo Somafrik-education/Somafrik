@@ -192,11 +192,17 @@ async function assertBusinessProfileGrantAllowed(tx, user, school, roleKey) {
 }
 
 async function loadRoleKeys(tx, userId) {
-  if (typeof tx.listActiveUserRoleKeys !== "function") {
-    const fallback = toRoleKey(tx.role || "");
-    return fallback ? [fallback] : [];
+  if (typeof tx.listActiveUserRoleKeys === "function") {
+    return tx.listActiveUserRoleKeys(userId);
   }
-  return tx.listActiveUserRoleKeys(userId);
+  if (typeof tx.bind === "function") {
+    const bound = tx.bind({});
+    if (typeof bound.listActiveUserRoleKeys === "function") {
+      return bound.listActiveUserRoleKeys(userId);
+    }
+  }
+  const fallback = toRoleKey(tx.role || "");
+  return fallback ? [fallback] : [];
 }
 
 async function hydrateUserRow(tx, row) {
@@ -269,6 +275,28 @@ async function assertGrantableRole(store, principal, roleInput) {
       "Le rôle Superadmin n'est pas attribuable.",
       USER_ROLE_ERROR.PLATFORM_ROLE_FORBIDDEN,
     );
+  }
+
+  if (isSuperAdminPrincipal(principal)) {
+    if (roleKey !== "COUNTRY_ADMIN" && roleKey !== SCHOOL_ADMIN_KEY) {
+      throw createUserRoleError(
+        403,
+        "Rôle hors catalogue plateforme.",
+        USER_ROLE_ERROR.PLATFORM_ROLE_FORBIDDEN,
+      );
+    }
+    return { roleKey, label: toRoleLabel(roleKey) || label };
+  }
+
+  if (isCountryAdminPrincipal(principal)) {
+    if (roleKey !== SCHOOL_ADMIN_KEY) {
+      throw createUserRoleError(
+        403,
+        "Rôle hors catalogue plateforme.",
+        USER_ROLE_ERROR.PLATFORM_ROLE_FORBIDDEN,
+      );
+    }
+    return { roleKey, label: toRoleLabel(roleKey) || label };
   }
 
   if (isPlatformRoleKey(roleKey) && !isSuperAdminPrincipal(principal)) {
@@ -380,7 +408,8 @@ async function grantRole(store, userId, rawPayload, principal, auditMeta) {
   const { roleKey, label } = await assertGrantableRole(store, principal, payload.role ?? payload.roleKey);
 
   const attached = await attachUsersStorePrincipal(principal, store);
-  assertUsersTargetAccess(attached, targetFromUserRow(existing));
+  const existingKeys = await loadRoleKeys(store, existing.id);
+  assertUsersTargetAccess(attached, { ...targetFromUserRow(existing), roleKeys: existingKeys });
   assertNotSelfTarget(attached, existing.id);
   const schoolCode = asTrimmed(existing.school_login_code || existing.school_code);
 
@@ -527,7 +556,8 @@ async function revokeRole(store, userId, rawPayload, principal, auditMeta) {
   }
 
   const attached = await attachUsersStorePrincipal(principal, store);
-  assertUsersTargetAccess(attached, targetFromUserRow(existing));
+  const existingKeys = await loadRoleKeys(store, existing.id);
+  assertUsersTargetAccess(attached, { ...targetFromUserRow(existing), roleKeys: existingKeys });
   assertNotSelfTarget(attached, existing.id);
   const schoolCode = asTrimmed(existing.school_login_code || existing.school_code);
 
@@ -618,6 +648,15 @@ async function revokeRole(store, userId, rawPayload, principal, auditMeta) {
 }
 
 async function listAssignableRolesForPrincipal(store, principal) {
+  if (isSuperAdminPrincipal(principal)) {
+    return ["COUNTRY_ADMIN", SCHOOL_ADMIN_KEY].map((roleKey) => ({
+      roleKey,
+      roleName: toRoleLabel(roleKey),
+    }));
+  }
+  if (isCountryAdminPrincipal(principal)) {
+    return [{ roleKey: SCHOOL_ADMIN_KEY, roleName: toRoleLabel(SCHOOL_ADMIN_KEY) }];
+  }
   if (typeof store.listEstablishmentAssignableRoles === "function") {
     const catalogue = await store.listEstablishmentAssignableRoles(principal);
     return catalogue
@@ -648,6 +687,7 @@ async function listAssignableRolesForPrincipal(store, principal) {
 module.exports = {
   hydrateUser,
   hydrateUserRow,
+  loadRoleKeys,
   loadBusinessProfilesByUserIds,
   allocateUserCode,
   syncPrimaryRole,
