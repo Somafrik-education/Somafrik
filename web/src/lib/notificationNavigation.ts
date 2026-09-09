@@ -86,3 +86,23 @@ export function resolveNotificationDestination(target: NotificationNavigationTar
 export function openableNotificationTargetTypes(): string[] {
   return Object.keys(DESTINATIONS);
 }
+
+export type NotificationDestinationContract = {
+  type: string;
+  path: string;
+  requiredKey: string;
+  contextKeys: readonly string[];
+};
+
+/**
+ * Contrat destination par destination : route servie et nom exact du paramètre
+ * que la page d'arrivée doit consommer pour ouvrir la ressource.
+ */
+export function notificationDestinationContract(): NotificationDestinationContract[] {
+  return Object.entries(DESTINATIONS).map(([type, spec]) => ({
+    type,
+    path: spec.path,
+    requiredKey: spec.requiredKey,
+    contextKeys: spec.contextKeys ?? [],
+  }));
+}
