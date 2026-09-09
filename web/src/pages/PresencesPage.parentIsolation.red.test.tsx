@@ -8,8 +8,8 @@
  * - seulement « Mes enfants → présence de l'enfant » ;
  * - plusieurs enfants : sélecteur d'enfant, pas sélecteur de classe.
  *
- * Le filtrage UI n'est pas la sécurité. Ce fichier prouve que l'écran actuel
- * est encore un appel de classe, identique à la capture préprod.
+ * Le filtrage UI n'est pas la sécurité : le serveur reste l'autorité.
+ * Ce fichier fige le contrat visuel Parent « Mes enfants ».
  */
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -145,6 +145,24 @@ describe("P0 UI Parent — isolation présences", () => {
   it("le source Parent n'est plus un écran d'appel unique", () => {
     const source = readFileSync(path.join(__dirname, "PresencesPage.tsx"), "utf8");
     expect(source).toMatch(/Mes enfants/);
-    expect(source).toMatch(/role === ["']Parent["']/);
+    expect(source).toMatch(/isParentPresenceRole/);
+    expect(source).toMatch(/ParentPresencesView/);
+  });
+
+  it("plusieurs enfants : sélecteur d'enfant, pas de sélecteur de classe", () => {
+    authSession.user = {
+      ...authSession.user,
+      studentIds: ["STU-MAEVA", "STU-SIB"],
+      children: [
+        { id: "STU-MAEVA", firstName: "Maeva", lastName: "A", name: "Maeva A" },
+        { id: "STU-SIB", firstName: "Sibling", lastName: "E", name: "Sibling E" },
+      ],
+    };
+    renderParentPresences();
+    expect(screen.getByLabelText("Enfant")).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "Maeva A" })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "Sibling E" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Changer de classe" })).not.toBeInTheDocument();
+    expect(screen.queryByText("Taux de présence")).not.toBeInTheDocument();
   });
 });

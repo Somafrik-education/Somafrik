@@ -15,8 +15,9 @@
  * GET /api/presences
  * GET /api/students/{idAutreEleve}/presences
  *
- * STOP diagnostic : ce fichier encode le contrat fail-closed. Les cas RED
- * documentent les fuites encore présentes sur develop.
+ * Contrat GREEN fail-closed. Le rattachement Parent ↔ enfants est canonique
+ * (`contacts.user_id` → `contact_relations.student_id`) ; un JWT ne peut pas
+ * élargir le roster au-delà des enfants liés.
  */
 
 const assert = require("node:assert/strict");
@@ -310,6 +311,42 @@ async function seed(pool) {
     [schoolAId, teacher.rows[0].id, class2A.rows[0].id, subject.rows[0].id, yearA.rows[0].id],
   );
 
+  const contactA = await pool.query(
+    `INSERT INTO contacts (school_id, country_id, first_name, last_name, contact_type, status, user_id)
+     VALUES ($1, $2, 'Papa', 'Maeve', 'parent', 'active', $3) RETURNING id`,
+    [schoolAId, cd.id, USER_PARENT_A],
+  );
+  const contactTwo = await pool.query(
+    `INSERT INTO contacts (school_id, country_id, first_name, last_name, contact_type, status, user_id)
+     VALUES ($1, $2, 'Parent', 'Deux', 'parent', 'active', $3) RETURNING id`,
+    [schoolAId, cd.id, USER_PARENT_TWO],
+  );
+  const contactB = await pool.query(
+    `INSERT INTO contacts (school_id, country_id, first_name, last_name, contact_type, status, user_id)
+     VALUES ($1, $2, 'Parent', 'Buj', 'parent', 'active', $3) RETURNING id`,
+    [schoolBId, bi.id, USER_PARENT_B],
+  );
+  await pool.query(
+    `INSERT INTO contact_relations (school_id, country_id, relation_type, contact_id, student_id, status)
+     VALUES
+       ($1, $3, 'parent_student', $5, $8, 'active'),
+       ($1, $3, 'parent_student', $6, $8, 'active'),
+       ($1, $3, 'parent_student', $6, $9, 'active'),
+       ($2, $4, 'parent_student', $7, $10, 'active')`,
+    [
+      schoolAId,
+      schoolBId,
+      cd.id,
+      bi.id,
+      contactA.rows[0].id,
+      contactTwo.rows[0].id,
+      contactB.rows[0].id,
+      maeva.rows[0].id,
+      sibling.rows[0].id,
+      studentB.rows[0].id,
+    ],
+  );
+
   await pool.query(
     `INSERT INTO attendance (id, school_id, student_id, class_id, attendance_date, status)
      VALUES
@@ -346,6 +383,10 @@ async function seed(pool) {
     class2AId: class2A.rows[0].id,
     maevaId: maeva.rows[0].id,
     aishaId: aisha.rows[0].id,
+    maevaCode: "STU-MAEVA",
+    siblingCode: "STU-SIB",
+    aishaCode: "STU-AISHA",
+    studentBCode: "STU-B1",
   };
 }
 
@@ -404,6 +445,33 @@ async function main() {
       ALTER TABLE schools DROP CONSTRAINT IF EXISTS schools_login_code_format_check;
     `);
     const fixture = await seed(repo.pool);
+    const studentCodesByName = Object.fromEntries(
+      (
+        await pool.query(
+          `SELECT first_name, student_code, id::text AS uuid FROM students ORDER BY first_name`,
+        )
+      ).rows.map((row) => [row.first_name, { code: row.student_code, uuid: row.uuid }]),
+    );
+    const maevaKeys = [
+      studentCodesByName.Maeva?.code,
+      studentCodesByName.Maeva?.uuid,
+      "STU-MAEVA",
+    ].filter(Boolean);
+    const siblingKeys = [
+      studentCodesByName.Sibling?.code,
+      studentCodesByName.Sibling?.uuid,
+      "STU-SIB",
+    ].filter(Boolean);
+    const aishaKeys = [
+      studentCodesByName.Aisha?.code,
+      studentCodesByName.Aisha?.uuid,
+      "STU-AISHA",
+    ].filter(Boolean);
+    const studentBKeys = [
+      studentCodesByName.Binta?.code,
+      studentCodesByName.Binta?.uuid,
+      "STU-B1",
+    ].filter(Boolean);
 
     child = spawn(process.execPath, ["backend/server.js"], {
       cwd: ROOT,
@@ -431,7 +499,7 @@ async function main() {
       roleKeys: ["PARENT"],
       schoolCode: LOGIN_A,
       permissions: PARENT_PERMS,
-      studentIds: ["STU-MAEVA"],
+      studentIds: maevaKeys,
     });
     const tokenParentTwo = mint({
       sub: USER_PARENT_TWO,
@@ -439,7 +507,7 @@ async function main() {
       roleKeys: ["PARENT"],
       schoolCode: LOGIN_A,
       permissions: PARENT_PERMS,
-      studentIds: ["STU-MAEVA", "STU-SIB"],
+      studentIds: [...maevaKeys, ...siblingKeys],
     });
     const tokenParentEmpty = mint({
       sub: USER_PARENT_EMPTY,
@@ -455,7 +523,30 @@ async function main() {
       roleKeys: ["PARENT"],
       schoolCode: LOGIN_B,
       permissions: PARENT_PERMS,
-      studentIds: ["STU-B1"],
+      studentIds: studentBKeys,
+    });
+    const tokenParentCanonical = mint({
+      sub: USER_PARENT_A,
+      role: "Parent",
+      roleKeys: ["PARENT"],
+      schoolCode: LOGIN_A,
+      permissions: PARENT_PERMS,
+      studentIds: [],
+    });
+    const tokenParentForgedJwt = mint({
+      sub: USER_PARENT_A,
+      role: "Parent",
+      roleKeys: ["PARENT"],
+      schoolCode: LOGIN_A,
+      permissions: PARENT_PERMS,
+      studentIds: [...maevaKeys, ...aishaKeys],
+    });
+    const tokenParentRoleKeysOnly = mint({
+      sub: USER_PARENT_A,
+      roleKeys: ["PARENT"],
+      schoolCode: LOGIN_A,
+      permissions: PARENT_PERMS,
+      studentIds: [],
     });
     const tokenTeacher = mint({
       sub: USER_TEACHER,
@@ -477,11 +568,18 @@ async function main() {
     const rosterA = await request(`/classes/${CLASS_2A}/students`, { token: tokenParentA });
     const rosterForged = await request(`/classes/${CLASS_2B}/students`, { token: tokenParentA });
     const presencesA = await request("/presences", { token: tokenParentA });
-    const otherPresences = await request("/students/STU-AISHA/presences", { token: tokenParentA });
+    const aishaRef = aishaKeys[0] || "STU-AISHA";
+    const otherPresences = await request(`/students/${encodeURIComponent(aishaRef)}/presences`, {
+      token: tokenParentA,
+    });
 
     check("P0-1-classes", "Parent 1 enfant — GET /classes sans 2ème B ni effectif 4", () => {
       assert.equal(classesA.status, 200, `GET /classes status=${classesA.status}`);
       const rows = unwrapList(classesA.data);
+      assert.ok(
+        rows.some((row) => String(row.classCode) === CLASS_2A),
+        `2ème A absente: ${JSON.stringify(rows)}`,
+      );
       assert.equal(
         rows.some((row) => String(row.classCode) === CLASS_2B),
         false,
@@ -497,14 +595,21 @@ async function main() {
     check("P0-1-roster", "Parent 1 enfant — GET /classes/CLS-2A/students = Maeva seule", () => {
       assert.ok([200, 403].includes(rosterA.status), `roster status=${rosterA.status}`);
       const codes = studentCodes(rosterA.data);
-      assert.deepEqual(codes, ["STU-MAEVA"], `roster=${JSON.stringify(rosterA.data)}`);
+      assert.equal(codes.length, 1, `roster=${JSON.stringify(rosterA.data)}`);
+      assert.ok(
+        maevaKeys.includes(codes[0]),
+        `attendu Maeva ${JSON.stringify(maevaKeys)}, reçu ${JSON.stringify(codes)}`,
+      );
     });
 
     check("P0-1-presences", "Parent 1 enfant — GET /presences = Maeva seule", () => {
       assert.equal(presencesA.status, 200, `GET /presences status=${presencesA.status}`);
       const ids = presenceStudentIds(presencesA.data);
-      assert.ok(ids.includes("STU-MAEVA"), `Maeva absente de /presences: ${JSON.stringify(presencesA.data)}`);
-      assert.ok(ids.every((id) => id === "STU-MAEVA"), `presences=${JSON.stringify(presencesA.data)}`);
+      assert.ok(
+        ids.some((id) => maevaKeys.includes(id)),
+        `Maeva absente de /presences: ${JSON.stringify(presencesA.data)} keys=${JSON.stringify(maevaKeys)}`,
+      );
+      assert.ok(ids.every((id) => maevaKeys.includes(id)), `presences=${JSON.stringify(presencesA.data)}`);
       assert.equal(ids.includes("STU-AISHA") || ids.includes("STU-JEAN") || ids.includes("STU-LUC"), false);
       assert.equal(presenceIds(presencesA.data).includes(PRES_AISHA), false);
       assert.equal(presenceIds(presencesA.data).includes(PRES_MAEVA), true);
@@ -537,17 +642,21 @@ async function main() {
     const presencesTwo = await request("/presences", { token: tokenParentTwo });
 
     check("P0-2-roster", "Parent 2 enfants — roster 2ème A = Maeva seule", () => {
-      assert.deepEqual(studentCodes(rosterTwo.data), ["STU-MAEVA"], JSON.stringify(rosterTwo.data));
+      const codes = studentCodes(rosterTwo.data);
+      assert.equal(codes.length, 1, JSON.stringify(rosterTwo.data));
+      assert.ok(maevaKeys.includes(codes[0]), JSON.stringify(rosterTwo.data));
     });
     check("P0-2-roster-b", "Parent 2 enfants — roster 2ème B = Sibling seul", () => {
-      assert.deepEqual(studentCodes(rosterTwoB.data), ["STU-SIB"], JSON.stringify(rosterTwoB.data));
+      const codes = studentCodes(rosterTwoB.data);
+      assert.equal(codes.length, 1, JSON.stringify(rosterTwoB.data));
+      assert.ok(siblingKeys.includes(codes[0]), JSON.stringify(rosterTwoB.data));
     });
     check("P0-2-presences", "Parent 2 enfants — présences Maeva + Sibling uniquement", () => {
-      const ids = new Set(presenceStudentIds(presencesTwo.data));
-      assert.ok(ids.has("STU-MAEVA"), `Maeva absente: ${JSON.stringify(presencesTwo.data)}`);
-      assert.ok(ids.has("STU-SIB"), `Sibling absent: ${JSON.stringify(presencesTwo.data)}`);
-      assert.equal(ids.has("STU-AISHA") || ids.has("STU-JEAN") || ids.has("STU-LUC"), false);
-      assert.equal(ids.has("STU-B1"), false);
+      const ids = presenceStudentIds(presencesTwo.data);
+      assert.ok(ids.some((id) => maevaKeys.includes(id)), `Maeva absente: ${JSON.stringify(presencesTwo.data)}`);
+      assert.ok(ids.some((id) => siblingKeys.includes(id)), `Sibling absent: ${JSON.stringify(presencesTwo.data)}`);
+      assert.equal(ids.some((id) => ["STU-AISHA", "STU-JEAN", "STU-LUC"].includes(id)), false);
+      assert.equal(ids.some((id) => studentBKeys.includes(id)), false);
     });
     check("P0-2-classes", "Parent 2 enfants — GET /classes sans effectif camarades", () => {
       const rows = unwrapList(classesTwo.data);
@@ -628,6 +737,55 @@ async function main() {
       assert.equal(ids.includes(PRES_MAEVA) || ids.includes(PRES_AISHA), false);
     });
 
+    const classesCanonical = await request("/classes", { token: tokenParentCanonical });
+    const rosterCanonical = await request(`/classes/${CLASS_2A}/students`, { token: tokenParentCanonical });
+    const presencesCanonical = await request("/presences", { token: tokenParentCanonical });
+    const rosterForgedJwt = await request(`/classes/${CLASS_2A}/students`, { token: tokenParentForgedJwt });
+    const presencesForgedJwt = await request("/presences", { token: tokenParentForgedJwt });
+    const rosterRoleKeys = await request(`/classes/${CLASS_2A}/students`, { token: tokenParentRoleKeysOnly });
+    const presencesRoleKeys = await request("/presences", { token: tokenParentRoleKeysOnly });
+
+    check("P0-10-classes", "contact_relations sans studentIds JWT — GET /classes = 2ème A seule", () => {
+      assert.equal(classesCanonical.status, 200, `status=${classesCanonical.status}`);
+      const rows = unwrapList(classesCanonical.data);
+      assert.ok(rows.some((row) => String(row.classCode) === CLASS_2A), JSON.stringify(rows));
+      assert.equal(rows.some((row) => String(row.classCode) === CLASS_2B), false, JSON.stringify(rows));
+    });
+    check("P0-10-roster", "contact_relations sans studentIds JWT — roster = Maeva seule", () => {
+      assert.equal(rosterCanonical.status, 200, `status=${rosterCanonical.status}`);
+      const codes = studentCodes(rosterCanonical.data);
+      assert.equal(codes.length, 1, JSON.stringify(rosterCanonical.data));
+      assert.ok(maevaKeys.includes(codes[0]), JSON.stringify(codes));
+    });
+    check("P0-10-presences", "contact_relations sans studentIds JWT — présences = Maeva seule", () => {
+      assert.equal(presencesCanonical.status, 200);
+      const ids = presenceStudentIds(presencesCanonical.data);
+      assert.ok(ids.some((id) => maevaKeys.includes(id)), JSON.stringify(presencesCanonical.data));
+      assert.ok(ids.every((id) => maevaKeys.includes(id)), JSON.stringify(presencesCanonical.data));
+      assert.equal(presenceIds(presencesCanonical.data).includes(PRES_MAEVA), true);
+    });
+    check("P0-11-roster", "JWT camarade + contact_relations Maeva — pas d'Aisha au roster", () => {
+      const codes = studentCodes(rosterForgedJwt.data);
+      assert.equal(codes.length, 1, JSON.stringify(rosterForgedJwt.data));
+      assert.ok(maevaKeys.includes(codes[0]), JSON.stringify(codes));
+      assert.equal(codes.some((code) => aishaKeys.includes(code)), false);
+    });
+    check("P0-11-presences", "JWT camarade + contact_relations Maeva — pas d'Aisha en présences", () => {
+      const ids = presenceStudentIds(presencesForgedJwt.data);
+      assert.ok(ids.some((id) => maevaKeys.includes(id)), JSON.stringify(presencesForgedJwt.data));
+      assert.equal(ids.some((id) => aishaKeys.includes(id)), false);
+      assert.equal(presenceIds(presencesForgedJwt.data).includes(PRES_AISHA), false);
+    });
+    check("P0-12-roleKeys", "roleKeys PARENT sans libellé role — Maeva seule", () => {
+      const codes = studentCodes(rosterRoleKeys.data);
+      assert.equal(rosterRoleKeys.status, 200, `status=${rosterRoleKeys.status}`);
+      assert.equal(codes.length, 1, JSON.stringify(rosterRoleKeys.data));
+      assert.ok(maevaKeys.includes(codes[0]), JSON.stringify(codes));
+      const ids = presenceStudentIds(presencesRoleKeys.data);
+      assert.ok(ids.some((id) => maevaKeys.includes(id)), JSON.stringify(presencesRoleKeys.data));
+      assert.ok(ids.every((id) => maevaKeys.includes(id)), JSON.stringify(presencesRoleKeys.data));
+    });
+
     const red = results.filter((row) => row.status === "RED");
     console.log("parentAttendanceIsolation.http.pg.test.js matrix:");
     for (const row of results) {
@@ -635,7 +793,7 @@ async function main() {
       console.log(`  ${row.status} ${row.id} ${row.title}${extra}`);
     }
     if (red.length) {
-      throw new Error(`${red.length} cas RED / ${results.length} (attendu tant que le P0 n'est pas corrigé)`);
+      throw new Error(`${red.length} cas RED / ${results.length}`);
     }
     console.log("OK parentAttendanceIsolation.http.pg.test.js");
   } finally {

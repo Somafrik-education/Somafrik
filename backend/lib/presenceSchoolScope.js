@@ -243,7 +243,16 @@ function isStudentScopedPresenceRole(role = "") {
 }
 
 function presenceListStaysStudentScoped(principal) {
-  return isStudentScopedPresenceRole(principal?.role);
+  if (isStudentScopedPresenceRole(principal?.role)) {
+    return true;
+  }
+  try {
+    const { principalIsParentOrStudent } = require("./parentScope");
+    const { principalHasRole } = require("./userRoleLifecycle");
+    return principalIsParentOrStudent(principal) || principalHasRole(principal, "Enseignant");
+  } catch {
+    return false;
+  }
 }
 
 function assertPresenceReadable(principal) {

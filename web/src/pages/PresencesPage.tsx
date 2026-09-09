@@ -15,6 +15,7 @@ import { classStudentsApi, type ClassStudent } from "../lib/classStudentsApi";
 import {
   buildPresenceClassCards,
   findPresenceClassCard,
+  isParentPresenceRole,
   type PresenceClassCard,
 } from "../lib/presenceRoster";
 import {
@@ -30,7 +31,9 @@ import {
   formatAttendanceDate,
   formatAttendanceHour,
   getPresenceStats,
+  normalizePresenceStatus,
   presenceIsAttended,
+  presenceMatchesStudent,
   resolveStudentApiId,
   rollCallInitialStatus,
   sameAttendanceDay,
@@ -315,6 +318,16 @@ export function PresencesPage() {
     );
   }
 
+  if (isParentPresenceRole(scopeUser?.role, (scopeUser as { roleKeys?: string[] } | null)?.roleKeys)) {
+    return (
+      <ParentPresencesView
+        user={scopeUser as Record<string, unknown> | null}
+        presences={presences}
+        attendanceId={deepLinkAttendanceId}
+      />
+    );
+  }
+
   if (!selectedCard) {
     return (
       <div className="space-y-6">
@@ -517,6 +530,100 @@ export function PresencesPage() {
           })}
         </ul>
       </Card>
+    </div>
+  );
+}
+
+type ParentChild = {
+  id: string;
+  name: string;
+  keys: string[];
+};
+
+function parentChildKeys(child: Record<string, unknown>) {
+  return [child.id, child.publicId, child.matricule, child.studentCode, child.studentId]
+    .map((value) => String(value ?? "").trim())
+    .filter(Boolean);
+}
+
+function resolveParentChildren(user: Record<string, unknown> | null): ParentChild[] {
+  const raw = Array.isArray(user?.children) ? (user?.children as Record<string, unknown>[]) : [];
+  const fromChildren = raw
+    .map((child) => {
+      const keys = parentChildKeys(child);
+      if (!keys.length) return null;
+      const name = String(child.name ?? `${child.firstName ?? ""} ${child.lastName ?? ""}`.trim());
+      return { id: keys[0], name: name || keys[0], keys };
+    })
+    .filter((row): row is ParentChild => Boolean(row));
+  if (fromChildren.length) return fromChildren;
+  const ids = Array.isArray(user?.studentIds) ? (user?.studentIds as unknown[]) : [];
+  return ids
+    .map((value) => String(value ?? "").trim())
+    .filter(Boolean)
+    .map((id) => ({ id, name: id, keys: [id] }));
+}
+
+function ParentPresencesView({
+  user,
+  presences,
+  attendanceId,
+}: {
+  user: Record<string, unknown> | null;
+  presences: PresenceRow[];
+  attendanceId: string;
+}) {
+  const children = useMemo(() => resolveParentChildren(user), [user]);
+  const [selectedChildId, setSelectedChildId] = useState(children[0]?.id ?? "");
+
+  useEffect(() => {
+    if (!attendanceId) return;
+    const presence = presences.find((row) => String(row.id ?? "") === attendanceId);
+    if (!presence) return;
+    const presenceStudent = String(presence.studentId ?? "").trim();
+    const match = children.find((child) => child.keys.includes(presenceStudent));
+    if (match) setSelectedChildId(match.id);
+  }, [attendanceId, children, presences]);
+
+  const selected = children.find((child) => child.id === selectedChildId) ?? children[0] ?? null;
+  const latest = selected
+    ? presences.find((row) => selected.keys.some((key) => presenceMatchesStudent(row, { id: key, matricule: key, publicId: key })))
+    : undefined;
+  const status = latest ? normalizePresenceStatus(latest) : null;
+
+  return (
+    <div className="space-y-6">
+      <SectionHeader title="Mes enfants" description="Présence de l'enfant — seuls vos enfants liés sont visibles." />
+      {!children.length ? (
+        <Card className="p-6">
+          <p className="text-sm text-muted">Aucun enfant lié à votre compte.</p>
+        </Card>
+      ) : (
+        <>
+          {children.length > 1 ? (
+            <Field label="Enfant" htmlFor="parent-child">
+              <Select
+                id="parent-child"
+                value={selected?.id ?? ""}
+                onChange={(event) => setSelectedChildId(event.target.value)}
+                options={children.map((child) => ({ value: child.id, label: child.name }))}
+              />
+            </Field>
+          ) : null}
+          {selected ? (
+            <Card className="p-5" data-testid="presence-student-row" data-student-id={selected.id}>
+              <p className="font-black text-ink">{selected.name}</p>
+              {status ? (
+                <p className="mt-2 text-sm font-semibold text-muted">
+                  Présence : <span className="text-ink">{status}</span>
+                </p>
+              ) : (
+                <p className="mt-2 text-sm text-muted">Aucune présence enregistrée pour cet enfant.</p>
+              )}
+            </Card>
+          ) : null}
+        </>
+      )}
     </div>
   );
 }

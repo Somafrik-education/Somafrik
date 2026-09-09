@@ -1,7 +1,7 @@
 "use strict";
 
 /**
- * P0 Parent Attendance Isolation — RED authz.
+ * P0 Parent Attendance Isolation — authz fail-closed (matrice GREEN).
  * Contrat : un Parent ne voit jamais le roster des camarades, ni le catalogue
  * de classes de l'établissement. Fail-closed si le rôle n'est pas reconnu.
  */
@@ -270,10 +270,23 @@ describe("P0 GET /classes — Parent ne reçoit jamais le catalogue établisseme
 });
 
 describe("P0 fail-closed — roleKeys PARENT sans libellé role", () => {
-  it("ne tombe pas en return rows (fuite roster complet)", () => {
+  it("reconnaît PARENT et ne renvoie que l'enfant lié", () => {
+    const scoped = scopeClassStudentsForPrincipal(
+      { roleKeys: ["PARENT"], studentIds: ["STU-MAEVA"] },
+      { classCode: "CLS-2A", classId: "uuid-2a", className: "2ème A" },
+      ROSTER_2A,
+      resolveAuthorizedStudentForPrincipal,
+    );
+    assert.deepEqual(
+      scoped.map((row) => row.studentCode),
+      ["STU-MAEVA"],
+    );
+  });
+
+  it("sans enfant lié → 403, jamais le roster complet", () => {
     expectBusinessForbidden(() =>
       scopeClassStudentsForPrincipal(
-        { roleKeys: ["PARENT"], studentIds: ["STU-MAEVA"] },
+        { roleKeys: ["PARENT"], studentIds: [] },
         { classCode: "CLS-2A", classId: "uuid-2a", className: "2ème A" },
         ROSTER_2A,
         resolveAuthorizedStudentForPrincipal,

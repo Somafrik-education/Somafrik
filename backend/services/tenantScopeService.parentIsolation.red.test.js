@@ -1,7 +1,7 @@
 "use strict";
 
 /**
- * P0 Parent Attendance Isolation — RED TenantScopeService.
+ * P0 Parent Attendance Isolation — TenantScopeService fail-closed (matrice GREEN).
  * Une ligne « classe seule » (className, sans studentId / matricule) ne doit
  * jamais être visible de tous les parents.
  */

@@ -659,6 +659,17 @@ app.get("/api/classes", requireAuth, requirePermission("GET /api/classes"), asyn
   tenantScopeService.assertSchoolAccess(req.principal, schoolCode);
   const rows = await repository.listSchoolClasses(schoolCode);
   const { scopeSchoolClassesForPrincipal } = require("./lib/classStudentsAuthz");
+  const {
+    principalIsParentOrStudent,
+    linkedStudentsFromRows,
+    scopeSchoolClassesForLinkedStudents,
+  } = require("./lib/parentScope");
+  if (principalIsParentOrStudent(req.principal) && typeof repository.listSchoolStudents === "function") {
+    const students = await repository.listSchoolStudents(schoolCode);
+    const linked = linkedStudentsFromRows(students, req.principal);
+    res.json(scopeSchoolClassesForLinkedStudents(rows, linked));
+    return;
+  }
   res.json(scopeSchoolClassesForPrincipal(req.principal, rows));
 }));
 
@@ -1970,9 +1981,10 @@ app.get("/api/students/:id/notes", requireAuth, requirePermission("GET /api/stud
 app.get("/api/notes", requireAuth, requirePermission("GET /api/notes"), asyncHandler(async (req, res) => {
   const { notes, students, evaluations } = await loadCanonicalPedagogyForPrincipal(req.principal);
   let scopedStudents = tenantScopeService.filterRows(students, req.principal);
-  if (!scopedStudents.length && isParentOrStudentPrincipalRole(req.principal.role)) {
+  if (!scopedStudents.length && isParentOrStudentPrincipalRole(req.principal)) {
+    const { studentMatchesLinkedKeys } = require("./lib/parentScope");
     const linkedIds = principalLinkedStudentIds(req.principal);
-    scopedStudents = students.filter((student) => linkedIds.has(String(student.id ?? "").trim()));
+    scopedStudents = students.filter((student) => studentMatchesLinkedKeys(student, linkedIds));
   }
   const studentIds = buildScopedStudentIdSet(scopedStudents);
   const scopedNotes = notes.filter((note) => studentIds.has(String(note.studentId ?? "")));
@@ -1995,10 +2007,11 @@ app.get("/api/presences", requireAuth, requirePermission("GET /api/presences"), 
     .filter((student) => !className || student.className === className);
   scopedStudents = filterPresenceRows(scopedStudents, scope)
     .filter((student) => !className || student.className === className);
-  if (!scopedStudents.length && isParentOrStudentPrincipalRole(principal.role)) {
+  if (!scopedStudents.length && isParentOrStudentPrincipalRole(principal)) {
+    const { studentMatchesLinkedKeys } = require("./lib/parentScope");
     const linkedIds = principalLinkedStudentIds(principal);
     scopedStudents = filterPresenceRows(students, scope)
-      .filter((student) => linkedIds.has(String(student.id ?? "").trim()))
+      .filter((student) => studentMatchesLinkedKeys(student, linkedIds))
       .filter((student) => !className || student.className === className);
   }
   const studentIds = buildScopedStudentIdSet(scopedStudents);
@@ -6190,54 +6203,112 @@ function countryCodeFromScope(countryScope) {
   return codes[normalized] ?? (/^[A-Z]{2}$/.test(normalized) ? normalized : "");
 }
 
-async function hydrateParentPrincipal(principal) {
-  if (!principal || principal.role !== "Parent") {
-    return principal;
+async function loadCanonicalParentLinkedStudents(principal, schoolStudents) {
+  const { expandStudentIdentityKeys } = require("./lib/parentScope");
+  const userId = String(principal?.sub ?? "").trim();
+  if (!userId || typeof repository.listLiveParentLinkedStudentIdsForSync !== "function") {
+    return [];
   }
-  const state = await getAuthoritativeBackOfficeState();
-  const principalKeys = new Set(
-    [principal.sub, principal.identifier, principal.publicId, principal.contactId]
-      .map((value) => String(value ?? "").trim())
+  let schoolId = String(principal.effectiveSchoolId ?? principal.schoolId ?? "").trim();
+  if (!schoolId && typeof repository.getSchoolByCode === "function") {
+    const school = await repository.getSchoolByCode(String(principal.schoolCode ?? "").trim());
+    schoolId = String(school?.id ?? school?.school_id ?? "").trim();
+  }
+  if (!schoolId) {
+    return [];
+  }
+  let rows = [];
+  try {
+    rows = await repository.listLiveParentLinkedStudentIdsForSync(userId, schoolId);
+  } catch {
+    return [];
+  }
+  const ids = new Set(
+    (rows ?? [])
+      .map((row) => String(row?.studentId ?? row?.id ?? "").trim())
       .filter(Boolean),
   );
-  const parentUser = (state.users ?? []).find((user) =>
-    [user.id, user.publicId, user.identifier, user.contactId].some((value) =>
-      principalKeys.has(String(value ?? "").trim()),
-    ),
-  );
-  const schoolCode = String(
-    principal.schoolCode ?? parentUser?.schoolCode ?? "",
-  ).trim();
-  let children = resolveParentChildren(
-    parentUser ?? {
-      contactId: principal.contactId,
-      identifier: principal.identifier,
-      phone: principal.phone ?? principal.identifier,
-      schoolCode,
-    },
-    state,
-    schoolCode,
-  );
-  if (!children.length && (principal.studentIds ?? []).length) {
-    const linkedIds = new Set(
-      principal.studentIds.map((value) => String(value ?? "").trim()).filter(Boolean),
-    );
-    children = (state.students ?? []).filter((row) =>
-      linkedIds.has(String(row.id ?? "").trim()),
-    );
+  if (!ids.size) {
+    return [];
   }
-  if (!children.length) {
+  return (schoolStudents ?? []).filter((student) =>
+    expandStudentIdentityKeys(student).some((key) => ids.has(key)),
+  );
+}
+
+async function hydrateParentPrincipal(principal) {
+  const {
+    principalIsParentOrStudent,
+    principalIsParent,
+    expandStudentIdentityKeys,
+    mergeLinkedStudentKeys,
+    restrictStudentIdsToCanonicalChildren,
+    linkedStudentsFromRows,
+    classRefsFromStudents,
+  } = require("./lib/parentScope");
+  if (!principal || !principalIsParentOrStudent(principal)) {
     return principal;
   }
-  const studentIds = children
-    .flatMap((child) => [child.id, child.publicId, child.matricule])
-    .map((value) => String(value ?? "").trim())
-    .filter(Boolean);
+  const students = await listCanonicalStudentsForPrincipal(principal);
+  const canonicalChildren = await loadCanonicalParentLinkedStudents(principal, students);
+  let children = canonicalChildren;
+  if (!children.length) {
+    try {
+      const state = await getAuthoritativeBackOfficeState();
+      const principalKeys = new Set(
+        [principal.sub, principal.identifier, principal.publicId, principal.contactId]
+          .map((value) => String(value ?? "").trim())
+          .filter(Boolean),
+      );
+      const parentUser = (state.users ?? []).find((user) =>
+        [user.id, user.publicId, user.identifier, user.contactId].some((value) =>
+          principalKeys.has(String(value ?? "").trim()),
+        ),
+      );
+      const schoolCode = String(
+        principal.schoolCode ?? parentUser?.schoolCode ?? "",
+      ).trim();
+      children = resolveParentChildren(
+        parentUser ?? {
+          contactId: principal.contactId,
+          identifier: principal.identifier,
+          phone: principal.phone ?? principal.identifier,
+          schoolCode,
+        },
+        state,
+        schoolCode,
+      );
+      if (!children.length) {
+        children = linkedStudentsFromRows(state.students ?? students, principal);
+      }
+    } catch {
+      children = linkedStudentsFromRows(students, principal);
+    }
+  }
+  const seedIds = canonicalChildren.length
+    ? restrictStudentIdsToCanonicalChildren(principal.studentIds, canonicalChildren)
+    : [
+        ...(principal.studentIds ?? []),
+        ...children.flatMap((child) => expandStudentIdentityKeys(child)),
+      ];
+  const pool = students.length ? students : children;
+  const studentIds = mergeLinkedStudentKeys(
+    { ...principal, studentIds: seedIds },
+    canonicalChildren.length ? canonicalChildren : pool,
+  );
+  const linked = linkedStudentsFromRows(canonicalChildren.length ? canonicalChildren : pool, {
+    ...principal,
+    studentIds,
+  });
+  const refs = classRefsFromStudents(linked);
   return {
     ...principal,
-    schoolCode: schoolCode || principal.schoolCode,
-    contactId: principal.contactId ?? parentUser?.contactId,
+    role: principal.role || (principalIsParent(principal) ? "Parent" : principal.role),
+    schoolCode: principal.schoolCode,
+    contactId: principal.contactId,
     studentIds,
+    classCodes: [...new Set([...(principal.classCodes ?? []), ...refs.classCodes])],
+    classIds: [...new Set([...(principal.classIds ?? []), ...refs.classIds])],
   };
 }
 
@@ -6422,7 +6493,9 @@ function sendList(res, rows, query, searchableFields) {
 function findStudent(students, studentId) {
   const key = String(studentId ?? "").trim();
   const direct = students.find((item) =>
-    [item.id, item.publicId, item.matricule].some((value) => String(value ?? "").trim() === key),
+    [item.id, item.publicId, item.matricule, item.studentCode, item.studentUuid].some(
+      (value) => String(value ?? "").trim() === key,
+    ),
   );
 
   if (direct) {
@@ -6437,32 +6510,25 @@ function findStudent(students, studentId) {
 }
 
 function principalLinkedStudentIds(principal = {}) {
-  return new Set(
-    (principal.studentIds ?? []).map((value) => String(value ?? "").trim()).filter(Boolean),
-  );
+  const { collectLinkedStudentKeys } = require("./lib/parentScope");
+  return new Set(collectLinkedStudentKeys(principal));
 }
 
 function resolveAuthorizedStudentForPrincipal(students, principal, studentRef) {
-  const scopedStudents = tenantScopeService.filterRows(students, principal);
-  const scopedMatch = findStudent(scopedStudents, studentRef);
-  if (scopedMatch) {
-    return scopedMatch;
-  }
-  if (!isParentOrStudentPrincipalRole(principal.role)) {
-    return undefined;
-  }
-  const linkedIds = principalLinkedStudentIds(principal);
-  const rawStudent = findStudent(students, studentRef);
-  if (!rawStudent) {
-    return undefined;
-  }
-  for (const value of [rawStudent.id, rawStudent.publicId, rawStudent.matricule]) {
-    const key = String(value ?? "").trim();
-    if (key && linkedIds.has(key)) {
-      return rawStudent;
+  const {
+    principalIsParentOrStudent,
+    studentMatchesLinkedKeys,
+  } = require("./lib/parentScope");
+  if (principalIsParentOrStudent(principal)) {
+    const linkedIds = principalLinkedStudentIds(principal);
+    const rawStudent = findStudent(students, studentRef);
+    if (!rawStudent) {
+      return undefined;
     }
+    return studentMatchesLinkedKeys(rawStudent, linkedIds) ? rawStudent : undefined;
   }
-  return undefined;
+  const scopedStudents = tenantScopeService.filterRows(students, principal);
+  return findStudent(scopedStudents, studentRef);
 }
 
 function samePresenceDay(left, right) {
@@ -6548,18 +6614,22 @@ async function savePresencesViaBackOfficeState(state, items = []) {
 }
 
 function buildScopedStudentIdSet(students = []) {
+  const { expandStudentIdentityKeys } = require("./lib/parentScope");
   const ids = new Set();
   for (const student of students) {
-    for (const value of [student.id, student.publicId, student.matricule]) {
-      const key = String(value ?? "").trim();
-      if (key) ids.add(key);
+    for (const value of expandStudentIdentityKeys(student)) {
+      ids.add(value);
     }
   }
   return ids;
 }
 
-function isParentOrStudentPrincipalRole(role = "") {
-  const key = String(role ?? "")
+function isParentOrStudentPrincipalRole(roleOrPrincipal = "") {
+  if (roleOrPrincipal && typeof roleOrPrincipal === "object") {
+    const { principalIsParentOrStudent } = require("./lib/parentScope");
+    return principalIsParentOrStudent(roleOrPrincipal);
+  }
+  const key = String(roleOrPrincipal ?? "")
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
     .trim()
@@ -6569,7 +6639,7 @@ function isParentOrStudentPrincipalRole(role = "") {
 
 /** Parent / élève : uniquement les notes liées à une évaluation publiée. */
 function filterNotesForPrincipal(notes = [], evaluations = [], principal = {}) {
-  if (!isParentOrStudentPrincipalRole(principal.role)) {
+  if (!isParentOrStudentPrincipalRole(principal)) {
     return notes;
   }
   const { isPublishedEvaluationStatus } = require("./lib/gradesCanonical");
