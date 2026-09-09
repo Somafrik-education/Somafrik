@@ -64,6 +64,7 @@ on:
       - "backend/lib/communicationsPaymentDue.red.test.js"
       - "backend/lib/communicationsTimetableChanged.red.test.js"
       - "backend/lib/communicationsTeacherReplacement.red.test.js"
+      - "backend/lib/communicationsNavigationTargets.js"
       - "backend/lib/communicationsNavigationContract.red.test.js"
       - "backend/lib/communicationsPlanningNavigation.red.test.js"
       - "backend/lib/communicationsUnreadPagination.red.test.js"
@@ -108,6 +109,7 @@ on:
       - "web/src/components/layout/Topbar.tsx"
       - "web/src/lib/internalNotificationsApi.ts"
       - "web/src/lib/internalNotificationsRead.ts"
+      - "web/src/lib/notificationNavigation.ts"
       - "web/src/lib/internalNotificationsC4.test.ts"
       - "web/src/pages/NotificationsPage.tsx"
       - "web/src/pages/parametres/SettingsPlaceholders.tsx"
@@ -200,12 +202,11 @@ jobs:
       - name: Typecheck Mobile
         working-directory: Mobile
         run: npx tsc --noEmit --project tsconfig.json
-      # Phase TESTS ROUGES notifications : ces suites échouent tant que les
-      # correctifs C1/C2/C3 ne sont pas livrés. Le pas est volontairement
-      # bloquant : rouge = défaut toujours présent, vert = défaut corrigé.
-      # Il est placé en dernier pour que toutes les vérifications de
-      # non-régression du portail s'exécutent avant.
-      - name: RED notifications navigation (rouge attendu avant C1/C2/C3)
+      # Navigation des notifications (C0 fail-closed, C1 producteurs planning,
+      # C2 résolveur Web, C3 compteur et pagination). Ce pas est bloquant et
+      # placé en dernier, pour que les vérifications de non-régression du
+      # portail s'exécutent et restent lisibles quoi qu'il arrive ici.
+      - name: Notifications navigation C0 à C3
         shell: bash
         run: |
           set -o pipefail
@@ -213,12 +214,12 @@ jobs:
             backend/lib/communicationsNavigationContract.red.test.js \
             backend/lib/communicationsPlanningNavigation.red.test.js \
             backend/lib/communicationsUnreadPagination.red.test.js \
-            backend/lib/communicationsNavigationSecurity.red.test.js 2>&1 | tee notifications-red.log
-      - name: Preserve RED notifications log
+            backend/lib/communicationsNavigationSecurity.red.test.js 2>&1 | tee notifications-navigation.log
+      - name: Preserve notifications navigation log
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: notifications-red
-          path: notifications-red.log
+          name: notifications-navigation
+          path: notifications-navigation.log
           if-no-files-found: warn
           retention-days: 7
