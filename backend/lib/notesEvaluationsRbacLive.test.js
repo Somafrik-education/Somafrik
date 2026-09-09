@@ -93,8 +93,13 @@ const jwtPrefetA = {
 test("contrat source : POST /api/notes overlaye le live via requirePermission", () => {
   const notesBlock = sliceFrom(serverSrc, 'app.post("/api/notes"', 'app.post("/api/presences"');
   assert.match(notesBlock, /requireAuth/);
+  assert.match(notesBlock, /requireParentNotesReadOnly/);
   assert.match(notesBlock, /requireSchoolSubscriptionFeature\("write_notes"\)/);
   assert.match(notesBlock, /requirePermission\("POST \/api\/notes"\)/);
+  const parentIdx = notesBlock.indexOf("requireParentNotesReadOnly");
+  const subIdx = notesBlock.indexOf('requireSchoolSubscriptionFeature("write_notes")');
+  const rbacIdx = notesBlock.indexOf('requirePermission("POST /api/notes")');
+  assert.ok(parentIdx >= 0 && parentIdx < subIdx && subIdx < rbacIdx, "Parent READ ONLY avant write_notes et RBAC");
   assert.equal(notesBlock.includes("assertCanManageNotes"), false);
 });
 

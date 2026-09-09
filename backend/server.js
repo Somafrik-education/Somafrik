@@ -1957,7 +1957,9 @@ app.delete("/api/students/:id", requireAuth, requirePermission("DELETE /api/stud
 
 /** Lecture notes : Notes:READ live (Parent/Élève : seed « Voir notes » + matrice Notes:R). */
 app.get("/api/students/:id/notes", requireAuth, requirePermission("GET /api/students/:id/notes"), asyncHandler(async (req, res) => {
+  const { assertParentNotesStudentAccess } = require("./lib/parentNotesScope");
   const { notes, students, evaluations } = await loadCanonicalPedagogyForPrincipal(req.principal);
+  assertParentNotesStudentAccess(req.principal, req.params.id, students);
   const student = resolveAuthorizedStudentForPrincipal(students, req.principal, req.params.id);
   if (!student) {
     return res.json([]);
@@ -1968,14 +1970,37 @@ app.get("/api/students/:id/notes", requireAuth, requirePermission("GET /api/stud
 }));
 
 app.get("/api/notes", requireAuth, requirePermission("GET /api/notes"), asyncHandler(async (req, res) => {
+  const {
+    assertParentNotesStudentAccess,
+    filterNotesForGuardianStudents,
+    filterStudentsForGuardianNotes,
+    isGuardianNotesPrincipal,
+  } = require("./lib/parentNotesScope");
   const { notes, students, evaluations } = await loadCanonicalPedagogyForPrincipal(req.principal);
+  const requestedStudentId = String(req.query.studentId ?? "").trim();
+  if (requestedStudentId) {
+    assertParentNotesStudentAccess(req.principal, requestedStudentId, students);
+  }
   let scopedStudents = tenantScopeService.filterRows(students, req.principal);
-  if (!scopedStudents.length && isParentOrStudentPrincipalRole(req.principal.role)) {
+  if (isGuardianNotesPrincipal(req.principal)) {
+    scopedStudents = filterStudentsForGuardianNotes(
+      scopedStudents.length ? scopedStudents : students,
+      req.principal,
+    );
+  } else if (!scopedStudents.length && isParentOrStudentPrincipalRole(req.principal.role)) {
     const linkedIds = principalLinkedStudentIds(req.principal);
     scopedStudents = students.filter((student) => linkedIds.has(String(student.id ?? "").trim()));
   }
+  if (requestedStudentId) {
+    scopedStudents = scopedStudents.filter((student) => {
+      const keys = [student.id, student.publicId, student.matricule, student.studentCode];
+      return keys.some((value) => String(value ?? "").trim() === requestedStudentId);
+    });
+  }
   const studentIds = buildScopedStudentIdSet(scopedStudents);
-  const scopedNotes = notes.filter((note) => studentIds.has(String(note.studentId ?? "")));
+  const scopedNotes = isGuardianNotesPrincipal(req.principal)
+    ? filterNotesForGuardianStudents(notes, scopedStudents)
+    : notes.filter((note) => studentIds.has(String(note.studentId ?? "")));
   res.json(filterNotesForPrincipal(scopedNotes, evaluations, req.principal));
 }));
 
@@ -2020,7 +2045,7 @@ app.get("/api/presences", requireAuth, requirePermission("GET /api/presences"), 
   ));
 }));
 
-app.post("/api/notes", requireAuth, requireSchoolSubscriptionFeature("write_notes"), requirePermission("POST /api/notes"), asyncHandler(async (req, res) => {
+app.post("/api/notes", requireAuth, requireParentNotesReadOnly, requireSchoolSubscriptionFeature("write_notes"), requirePermission("POST /api/notes"), asyncHandler(async (req, res) => {
   await withIdempotency({
     req,
     res,
@@ -2030,6 +2055,8 @@ app.post("/api/notes", requireAuth, requireSchoolSubscriptionFeature("write_note
       const state = await loadCanonicalPedagogyForPrincipal(req.principal);
       const { pedagogyAuditMetaFromRequest, ignoreClientScope } = require("./lib/pedagogyManagement");
       const { assertNoteWrite } = require("./services/dataIntegrityService");
+      const { assertParentNotesReadOnly } = require("./lib/parentNotesScope");
+      assertParentNotesReadOnly(req.principal);
       const body = ignoreClientScope(req.body ?? {});
       const principalSchool = String(req.principal?.schoolCode ?? "").trim().toUpperCase();
       const scopedState =
@@ -4108,6 +4135,10 @@ function denyPermission(message = "Permission insuffisante pour cette fonctionna
   const error = new BusinessError(403, message);
   error.code = PERMISSION_DENIED;
   return error;
+}
+
+function requireParentNotesReadOnly(req, res, next) {
+  return require("./lib/parentNotesScope").requireParentNotesReadOnly(req, res, next);
 }
 
 async function saveEstablishmentState() {

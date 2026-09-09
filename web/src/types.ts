@@ -334,6 +334,8 @@ export interface SessionUser extends UserAccount {
   assignedClassIds?: string[];
   assignedClassCodes?: string[];
   teacherCode?: string;
+  /** Enfants canoniquement liés (login Parent). */
+  children?: Record<string, unknown>[];
 }
 
 export interface SessionScope {

@@ -17,6 +17,15 @@ const sessionUser = vi.hoisted(() => ({
     schoolId: "school-sch-001",
     schoolPublicCode: "SCH-001",
     name: "Admin",
+  } as {
+    id: string;
+    role: string;
+    schoolCode: string;
+    schoolId?: string;
+    schoolPublicCode?: string;
+    name?: string;
+    roleKeys?: string[];
+    children?: Record<string, unknown>[];
   },
 }));
 
@@ -141,6 +150,14 @@ function renderPage(search: string) {
 beforeEach(() => {
   vi.clearAllMocks();
   permissions.canRead = true;
+  sessionUser.current = {
+    id: "u1",
+    role: "Admin School",
+    schoolCode: "SCH-001",
+    schoolId: "school-sch-001",
+    schoolPublicCode: "SCH-001",
+    name: "Admin",
+  };
   dataState.current = {
     schools: [{ code: "SCH-001", name: "Lycée Test" }],
     classes: [{ id: "c1", name: "6e A", schoolCode: "SCH-001" }],
@@ -188,5 +205,40 @@ describe("DEEPLINK-NOTE — la page Notes consomme gradeId", () => {
     renderPage("?gradeId=grade-autre-ecole");
     await screen.findByText("Par élève");
     expect(document.querySelectorAll('tr[data-selected="true"]')).toHaveLength(0);
+  });
+});
+
+describe("DEEPLINK-NOTE — contrôle parental", () => {
+  beforeEach(() => {
+    sessionUser.current = {
+      id: "parent-a",
+      role: "Parent",
+      roleKeys: ["PARENT"],
+      schoolCode: "SCH-001",
+      schoolId: "school-sch-001",
+      schoolPublicCode: "CD02",
+      name: "Parent A",
+      children: [
+        { id: "s1", name: "Diallo Awa", className: "6e A", schoolCode: "SCH-001", schoolId: "school-sch-001" },
+      ],
+    };
+  });
+
+  it("deep-link vers la note de l'enfant lié positionne Notes et met la ligne en évidence", async () => {
+    renderPage("?gradeId=grade-2&studentId=s1");
+    expect((await screen.findAllByText("Diallo Awa")).length).toBeGreaterThan(0);
+    expect(screen.queryByRole("button", { name: "Saisie des notes" })).not.toBeInTheDocument();
+    const rows = await waitFor(() => {
+      const selected = document.querySelectorAll('tr[data-selected="true"]');
+      expect(selected.length).toBe(1);
+      return Array.from(selected);
+    });
+    expect(rows[0]).toHaveTextContent("Français");
+  });
+
+  it("deep-link studentId d'un enfant non lié ne permet pas de consulter B", async () => {
+    renderPage("?gradeId=grade-2&studentId=s2");
+    expect(screen.queryByText("Binta Traoré")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Saisie des notes" })).not.toBeInTheDocument();
   });
 });

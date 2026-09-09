@@ -64,11 +64,25 @@ import { EvaluationFormModal } from "../components/grades/EvaluationFormModal";
 import { GradeEntryGrid } from "../components/grades/GradeEntryGrid";
 import { ClassGradesOverview } from "../components/grades/ClassGradesOverview";
 import { StudentGradesPanel } from "../components/grades/StudentGradesPanel";
+import { ParentChildGradesPanel } from "../components/grades/ParentChildGradesPanel";
+import {
+  ALL_COURSES_FILTER,
+  PARENT_NOTES_TABS,
+  filterParentGrades,
+  formatParentClassLabel,
+  isParentLinkedStudentId,
+  isParentNotesRole,
+  parentCourseOptions,
+  parentLinkedStudents,
+  parentStudentLabel,
+  type ParentNotesTabKey,
+} from "../lib/parentNotes";
 import type { Evaluation, StudentGrade } from "../types";
 
-type TabKey = "evaluations" | "saisie" | "classe" | "eleve" | "stats";
+type StaffTabKey = "evaluations" | "saisie" | "classe" | "eleve" | "stats";
+type TabKey = StaffTabKey | ParentNotesTabKey;
 
-const TABS: { key: TabKey; label: string }[] = [
+const STAFF_TABS: { key: StaffTabKey; label: string }[] = [
   { key: "evaluations", label: "Évaluations" },
   { key: "saisie", label: "Saisie des notes" },
   { key: "classe", label: "Par classe" },
@@ -90,9 +104,18 @@ export function GradesEvaluationsPage() {
   const { confirm } = useConfirm();
   const scopeUser = scopedUser ?? session?.user ?? null;
   const { canRead, canCreate, canUpdate } = useFeaturePermissions("Notes");
-  const canEnterGrades = canCreate || canUpdate;
+  const parentMode = isParentNotesRole(scopeUser);
+  const canEnterGrades = !parentMode && (canCreate || canUpdate);
+  const canMutateEvaluations = !parentMode && canUpdate;
+  const canCreateEvaluations = !parentMode && canCreate;
 
-  const students = scopedStudents(scopeUser, state) as Record<string, unknown>[];
+  const parentChildren = useMemo(
+    () => (parentMode ? parentLinkedStudents(scopeUser, state) : []),
+    [parentMode, scopeUser, state],
+  );
+  const students = (
+    parentMode ? parentChildren : scopedStudents(scopeUser, state)
+  ) as Record<string, unknown>[];
   const classes = scopedClasses(scopeUser, state, students) as Record<string, unknown>[];
   const classNames = useMemo(() => {
     const teacherLabels = listTeacherScopedClassLabels(scopeUser, state, students, classes);
@@ -111,17 +134,24 @@ export function GradesEvaluationsPage() {
     return scopedEvaluations(scopeUser, { ...state, evaluations: synced });
   }, [state, scopeUser, code]);
 
-  const grades = scopedGrades(scopeUser, state);
+  const grades = parentMode
+    ? scopedGrades(scopeUser, state).filter((grade) =>
+        isParentLinkedStudentId(scopeUser, String(grade.studentId ?? ""), state),
+      )
+    : scopedGrades(scopeUser, state);
 
   const deepLinkGradeId = useDeepLinkId("gradeId");
+  const deepLinkStudentId = useDeepLinkId("studentId");
   const appliedGradeRef = useRef("");
 
-  const [tab, setTab] = useState<TabKey>("evaluations");
+  const visibleTabs = parentMode ? PARENT_NOTES_TABS : STAFF_TABS;
+  const [tab, setTab] = useState<TabKey>(parentMode ? "notes" : "evaluations");
   const [period, setPeriod] = useState(queueDefaults.periodFilter ?? "");
   const [statusFilter, setStatusFilter] = useState(queueDefaults.statusFilter);
   const [queueDefaultsKey, setQueueDefaultsKey] = useState("");
   const [selectedClass, setSelectedClass] = useState(classNames[0] ?? "");
   const [selectedStudentId, setSelectedStudentId] = useState("");
+  const [selectedCourse, setSelectedCourse] = useState(ALL_COURSES_FILTER);
   const [selectedEvaluationId, setSelectedEvaluationId] = useState("");
   const [formOpen, setFormOpen] = useState(false);
   const [editingEvaluation, setEditingEvaluation] = useState<Evaluation | null>(null);
@@ -135,7 +165,7 @@ export function GradesEvaluationsPage() {
   }, []);
 
   useEffect(() => {
-    if (!code) return;
+    if (parentMode || !code) return;
     const imported = buildEvaluationsFromExams(state, code);
     if (!imported.length) return;
     void (async () => {
@@ -146,7 +176,7 @@ export function GradesEvaluationsPage() {
       }
       await refresh();
     })();
-  }, [code, state.exams?.length]);
+  }, [code, parentMode, state.exams?.length]);
 
   useEffect(() => {
     const key = `${scopeUser?.id ?? ""}:${scopeUser?.role ?? ""}:${code}`;
@@ -163,7 +193,47 @@ export function GradesEvaluationsPage() {
     );
   }, [classNames]);
 
-  const filteredEvaluations = filterEvaluationsForQueue(evaluations, period, statusFilter);
+  useEffect(() => {
+    if (!parentMode) return;
+    setTab((current) => {
+      if (PARENT_NOTES_TABS.some((item) => item.key === current)) return current;
+      return "notes";
+    });
+  }, [parentMode]);
+
+  useEffect(() => {
+    if (!parentMode) return;
+    const linkedIds = new Set(parentChildren.map((row) => String(row.id ?? "")));
+    setSelectedStudentId((current) => {
+      if (deepLinkStudentId && isParentLinkedStudentId(scopeUser, deepLinkStudentId, state)) {
+        return deepLinkStudentId;
+      }
+      if (current && linkedIds.has(current)) return current;
+      if (parentChildren.length === 1) return String(parentChildren[0].id ?? "");
+      return "";
+    });
+  }, [parentMode, parentChildren, deepLinkStudentId, scopeUser, state]);
+
+  const selectedChild =
+    students.find((row) => String(row.id) === selectedStudentId) ?? null;
+  const parentGrades = filterParentGrades(grades, selectedStudentId, period, selectedCourse);
+  const parentEvaluations = useMemo(() => {
+    if (!parentMode || !selectedChild) return [];
+    const className = String(selectedChild.className ?? "");
+    return evaluations.filter((evaluation) => {
+      if (evaluation.active === false) return false;
+      if (String(evaluation.status) !== "Publiée") return false;
+      if (className && !classNamesMatch(evaluation.className, className)) return false;
+      if (selectedCourse && String(evaluation.subject ?? "") !== selectedCourse) return false;
+      if (period && String(evaluation.period ?? "") !== period) return false;
+      return true;
+    });
+  }, [parentMode, selectedChild, evaluations, selectedCourse, period]);
+  const courseOptions = parentCourseOptions(grades.filter((grade) => String(grade.studentId) === selectedStudentId), parentEvaluations);
+
+  const filteredEvaluations = parentMode
+    ? parentEvaluations
+    : filterEvaluationsForQueue(evaluations, period, statusFilter);
   const gradeEntryEvaluations = useMemo(
     () =>
       evaluationsEligibleForGradeEntry(scopeUser, evaluations, state).filter(
@@ -183,6 +253,9 @@ export function GradesEvaluationsPage() {
     if (appliedGradeRef.current === deepLinkGradeId) return;
     const grade = grades.find((row) => String(row.id) === deepLinkGradeId);
     if (!grade) return;
+    if (parentMode && !isParentLinkedStudentId(scopeUser, String(grade.studentId ?? ""), state)) {
+      return;
+    }
     appliedGradeRef.current = deepLinkGradeId;
     const evaluation = evaluations.find((row) => row.id === grade.evaluationId) ?? null;
     const className = String(evaluation?.className ?? "");
@@ -190,8 +263,8 @@ export function GradesEvaluationsPage() {
     if (grade.period) setPeriod(grade.period);
     if (grade.evaluationId) setSelectedEvaluationId(String(grade.evaluationId));
     setSelectedStudentId(String(grade.studentId ?? ""));
-    setTab("eleve");
-  }, [deepLinkGradeId, canRead, grades, evaluations, classNames]);
+    setTab(parentMode ? "notes" : "eleve");
+  }, [deepLinkGradeId, canRead, grades, evaluations, classNames, parentMode, scopeUser, state]);
 
   async function confirmDiscardUnsavedGrades() {
     if (!gradeEntryDirty) return true;
@@ -466,7 +539,7 @@ export function GradesEvaluationsPage() {
       header: "",
       render: (row) => (
         <div className="flex flex-wrap gap-1">
-          {canUpdate && canEditEvaluation(row, state) ? (
+          {canMutateEvaluations && canEditEvaluation(row, state) ? (
             <Button
               variant="secondary"
               className="text-xs"
@@ -478,7 +551,7 @@ export function GradesEvaluationsPage() {
               Modifier
             </Button>
           ) : null}
-          {canUpdate &&
+          {canMutateEvaluations &&
           canValidateGrades(scopeUser) &&
           row.status !== "Validée" &&
           row.status !== "Publiée" ? (
@@ -486,12 +559,12 @@ export function GradesEvaluationsPage() {
               Valider
             </Button>
           ) : null}
-          {canPublishGrades(scopeUser) && row.status === "Validée" ? (
+          {canPublishGrades(scopeUser) && !parentMode && row.status === "Validée" ? (
             <Button variant="secondary" className="text-xs" onClick={() => void handlePublishEvaluation(row)}>
               Publier
             </Button>
           ) : null}
-          {canUpdate ? (
+          {canMutateEvaluations ? (
             <Button variant="secondary" className="text-xs" onClick={() => void handleDeactivate(row)}>
               Désactiver
             </Button>
@@ -520,14 +593,19 @@ export function GradesEvaluationsPage() {
         <ToolLayout.Header>
           <SectionHeader
             title="Notes & évaluations"
-            description="Création d'évaluations, saisie des notes, moyennes et validation (contrat D3.6b)."
+            description={
+              parentMode
+                ? "Notes, évaluations et moyennes de vos enfants."
+                : "Création d'évaluations, saisie des notes, moyennes et validation (contrat D3.6b)."
+            }
             actions={
+              parentMode ? undefined : (
               <div className="flex flex-wrap gap-2">
                 <PrintButton />
                 <Button variant="secondary" onClick={exportGrades}>
                   Exporter CSV
                 </Button>
-                {canCreate ? (
+                {canCreateEvaluations ? (
                   <Button
                     onClick={() => {
                       setEditingEvaluation(null);
@@ -538,6 +616,7 @@ export function GradesEvaluationsPage() {
                   </Button>
                 ) : null}
               </div>
+              )
             }
           />
         </ToolLayout.Header>
@@ -558,7 +637,7 @@ export function GradesEvaluationsPage() {
             </InlineAlert>
           ) : null}
           <div className="flex flex-wrap gap-2" role="tablist" aria-label="Vues Notes">
-            {TABS.map((item) => (
+            {visibleTabs.map((item) => (
               <Button
                 key={item.key}
                 variant={tab === item.key ? "primary" : "secondary"}
@@ -572,7 +651,30 @@ export function GradesEvaluationsPage() {
               </Button>
             ))}
           </div>
-          <div className="mt-3 grid gap-3 sm:grid-cols-3">
+          <div className={`mt-3 grid gap-3 ${parentMode ? "sm:grid-cols-2 lg:grid-cols-4" : "sm:grid-cols-3"}`}>
+            {parentMode ? (
+              <>
+                <Field label="Enfant">
+                  <Select
+                    aria-label="Enfant"
+                    value={selectedStudentId}
+                    onChange={(e) => setSelectedStudentId(e.target.value)}
+                    options={[
+                      ...(parentChildren.length > 1 ? [{ value: "", label: "Choisir…" }] : []),
+                      ...parentChildren.map((student) => ({
+                        value: String(student.id ?? ""),
+                        label: parentStudentLabel(student),
+                      })),
+                    ]}
+                  />
+                </Field>
+                <Field label="Classe">
+                  <p className="input-base flex items-center text-sm text-ink" aria-live="polite">
+                    {formatParentClassLabel(selectedChild, String(scopeUser?.schoolPublicCode ?? ""))}
+                  </p>
+                </Field>
+              </>
+            ) : null}
             <Field label="Période">
               <Select
                 aria-label="Période"
@@ -585,7 +687,17 @@ export function GradesEvaluationsPage() {
                 options={periodOptions}
               />
             </Field>
-            {queueDefaults.showStatusFilter ? (
+            {parentMode ? (
+              <Field label="Cours">
+                <Select
+                  aria-label="Cours"
+                  value={selectedCourse}
+                  onChange={(e) => setSelectedCourse(e.target.value)}
+                  options={courseOptions}
+                />
+              </Field>
+            ) : null}
+            {!parentMode && queueDefaults.showStatusFilter ? (
               <Field label="Statut">
                 <Select
                   aria-label="Statut"
@@ -595,7 +707,7 @@ export function GradesEvaluationsPage() {
                 />
               </Field>
             ) : null}
-            {tab !== "eleve" ? (
+            {!parentMode && tab !== "eleve" ? (
               <Field label="Classe">
                 <Select
                   value={selectedClass}
@@ -607,7 +719,8 @@ export function GradesEvaluationsPage() {
                   options={classNames.map((name) => ({ value: name, label: name }))}
                 />
               </Field>
-            ) : (
+            ) : null}
+            {!parentMode && tab === "eleve" ? (
               <Field label="Élève">
                 <Select
                   value={selectedStudentId}
@@ -621,7 +734,7 @@ export function GradesEvaluationsPage() {
                   ]}
                 />
               </Field>
-            )}
+            ) : null}
           </div>
         </ToolLayout.Context>
 
@@ -630,9 +743,13 @@ export function GradesEvaluationsPage() {
             filteredEvaluations.length === 0 ? (
               <EmptyState
                 title="Aucune évaluation"
-                description={evaluationsEmptyDescription(period, statusFilter)}
+                description={
+                  parentMode
+                    ? "Aucune évaluation publiée pour cet enfant."
+                    : evaluationsEmptyDescription(period, statusFilter)
+                }
                 action={
-                  canCreate ? (
+                  canCreateEvaluations ? (
                     <Button
                       onClick={() => {
                         setEditingEvaluation(null);
@@ -655,7 +772,43 @@ export function GradesEvaluationsPage() {
             )
           ) : null}
 
-          {tab === "saisie" ? (
+          {tab === "notes" ? (
+            selectedChild ? (
+              <ParentChildGradesPanel
+                student={selectedChild}
+                grades={parentGrades}
+                evaluations={evaluations}
+                period={period}
+                courseFilter={selectedCourse}
+                highlightGradeId={deepLinkGradeId}
+              />
+            ) : (
+              <EmptyState
+                title="Aucun enfant sélectionné"
+                description="Choisissez un enfant pour consulter ses notes."
+              />
+            )
+          ) : null}
+
+          {tab === "matiere" ? (
+            selectedChild ? (
+              <ParentChildGradesPanel
+                student={selectedChild}
+                grades={parentGrades}
+                evaluations={evaluations}
+                period={period}
+                courseFilter={selectedCourse}
+                highlightGradeId={deepLinkGradeId}
+              />
+            ) : (
+              <EmptyState
+                title="Aucun enfant sélectionné"
+                description="Choisissez un enfant pour consulter les moyennes par matière."
+              />
+            )
+          ) : null}
+
+          {!parentMode && tab === "saisie" ? (
             <Card className="p-6">
               <Field label="Évaluation">
                 <Select
@@ -687,7 +840,7 @@ export function GradesEvaluationsPage() {
                     onError={(message) => showToast(message, "error")}
                     onDirtyChange={handleGradeEntryDirtyChange}
                   />
-                  {canCorrectValidatedGrades(scopeUser) ? (
+                  {canCorrectValidatedGrades(scopeUser) && !parentMode ? (
                     <div className="mt-4">
                       <Button
                         variant="secondary"
@@ -724,7 +877,7 @@ export function GradesEvaluationsPage() {
             </Card>
           ) : null}
 
-          {tab === "classe" ? (
+          {!parentMode && tab === "classe" ? (
             <ClassGradesOverview
               className={selectedClass}
               period={period}
@@ -733,7 +886,7 @@ export function GradesEvaluationsPage() {
             />
           ) : null}
 
-          {tab === "eleve" ? (
+          {!parentMode && tab === "eleve" ? (
             selectedStudentId ? (
               <StudentGradesPanel
                 student={students.find((row) => String(row.id) === selectedStudentId) ?? null}
@@ -750,7 +903,7 @@ export function GradesEvaluationsPage() {
             )
           ) : null}
 
-          {tab === "stats" ? (
+          {!parentMode && tab === "stats" ? (
             <ClassGradesOverview
               className={selectedClass}
               period={period}
