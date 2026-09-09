@@ -17,6 +17,18 @@ function isTeacherRole(role?: string) {
   return String(role ?? "").trim() === "Enseignant";
 }
 
+export function isParentPresenceRole(role?: string, roleKeys?: unknown) {
+  const key = String(role ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .toLowerCase();
+  if (key.includes("parent")) return true;
+  return (Array.isArray(roleKeys) ? roleKeys : []).some(
+    (value) => String(value ?? "").trim().toUpperCase() === "PARENT",
+  );
+}
+
 /** Fail-closed : seul un statut explicitement actif autorise. Absent → false. */
 function isExplicitlyActiveAssignmentStatus(status: unknown) {
   const normalized = asRef(status)
@@ -147,6 +159,9 @@ export function buildPresenceClassCards(input: {
   teacherRecord?: Row | null;
   currentUser?: Row | null;
 }): PresenceClassCard[] {
+  if (isParentPresenceRole(input.role, input.currentUser?.roleKeys)) {
+    return [];
+  }
   const fromClasses = (input.classes ?? [])
     .map((row) => toPresenceClassCard(row))
     .filter((row): row is PresenceClassCard => Boolean(row));

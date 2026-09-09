@@ -2,6 +2,11 @@
 
 const { BusinessError } = require("../services/authService");
 const { principalHasRole, principalHasAnyRole } = require("./userRoleLifecycle");
+const {
+  principalIsParentOrStudent,
+  collectLinkedStudentKeys,
+  studentMatchesLinkedKeys,
+} = require("./parentScope");
 
 const SUPER_ADMIN_ROLES = new Set(["Super Administrateur Somafrik", "Super Administrateur OKAFRIK"]);
 
@@ -201,9 +206,9 @@ function scopeClassStudentsForPrincipal(principal, classContext, rows, resolveAu
     return rows;
   }
 
-  if (isParentOrStudentRole(principal.role)) {
+  if (principalIsParentOrStudent(principal)) {
     const scoped = (rows ?? []).filter((row) => {
-      const ref = row?.id ?? row?.publicId ?? row?.matricule ?? row?.studentCode;
+      const ref = row?.id ?? row?.publicId ?? row?.matricule ?? row?.studentCode ?? row?.studentUuid;
       return Boolean(resolveAuthorizedStudent([row], principal, ref));
     });
     if (!scoped.length) {
@@ -245,14 +250,9 @@ function scopeSchoolStudentsForPrincipal(principal, rows, resolveAuthorizedStude
     });
   }
 
-  if (isParentOrStudentRole(principal.role)) {
-    const linkedIds = new Set(
-      (principal.studentIds ?? principal.linkedStudentIds ?? []).map((value) => asRef(value)).filter(Boolean),
-    );
-    return (rows ?? []).filter((row) => {
-      const candidates = [row?.id, row?.publicId, row?.matricule, row?.studentCode].map(asRef);
-      return candidates.some((value) => value && linkedIds.has(value));
-    });
+  if (principalIsParentOrStudent(principal)) {
+    const linkedIds = new Set(collectLinkedStudentKeys(principal));
+    return (rows ?? []).filter((row) => studentMatchesLinkedKeys(row, linkedIds));
   }
 
   return rows;
@@ -284,6 +284,21 @@ function scopeSchoolClassesForPrincipal(principal, rows) {
       const code = asRef(row?.classCode ?? row?.class_code ?? row?.publicId);
       const id = asRef(row?.classId ?? row?.class_id ?? row?.id);
       return (code && classCodes.has(code)) || (id && (classIds.has(id) || classCodes.has(id)));
+    });
+  }
+
+  if (principalIsParentOrStudent(principal)) {
+    const { classCodes, classIds } = {
+      classCodes: new Set((principal.classCodes ?? []).map(asRef).filter(Boolean)),
+      classIds: new Set((principal.classIds ?? []).map(asRef).filter(Boolean)),
+    };
+    if (!classCodes.size && !classIds.size) {
+      return [];
+    }
+    return (rows ?? []).filter((row) => {
+      const code = asRef(row?.classCode ?? row?.class_code ?? row?.publicId);
+      const id = asRef(row?.classId ?? row?.class_id ?? row?.id);
+      return (code && classCodes.has(code)) || (id && classIds.has(id));
     });
   }
 
