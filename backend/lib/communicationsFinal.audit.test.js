@@ -126,7 +126,7 @@ test("AUDIT-COM-FINAL-01 — architecture : quatre familles séparées", () => {
   assert.match(server, /\/api\/backoffice\/communications\/deliveries\/health/);
 });
 
-test("AUDIT-COM-FINAL-01b — matrice événements : 7/9 Lot I câblés, 2/9 sans producteur (P1 connu)", () => {
+test("AUDIT-COM-FINAL-01b — matrice événements : 8/9 Lot I câblés, 1/9 sans producteur (P1 connu)", () => {
   const wired = outboxEventTypesFromSchema();
   assert.deepEqual(wired, [
     "attendance.student.absent",
@@ -137,6 +137,7 @@ test("AUDIT-COM-FINAL-01b — matrice événements : 7/9 Lot I câblés, 2/9 san
     "finance.payment.recorded",
     "pedagogy.grade.published",
     "pedagogy.report_card.published",
+    "planning.timetable.changed",
   ]);
 
   const mappedPolicy = wired
@@ -144,7 +145,7 @@ test("AUDIT-COM-FINAL-01b — matrice événements : 7/9 Lot I câblés, 2/9 san
     .filter(Boolean)
     .sort();
   assert.equal(LOT_I_EVENTS.length, 9, "Lot I canonique = 9 événements (LOT_I_EVENTS + CHECK PostgreSQL)");
-  assert.equal(mappedPolicy.length, 7, "7/9 événements Lot I ont un producteur outbox");
+  assert.equal(mappedPolicy.length, 8, "8/9 événements Lot I ont un producteur outbox");
   assert.deepEqual(mappedPolicy, [
     "ANNOUNCEMENT_PUBLISHED",
     "GRADE_PUBLISHED",
@@ -153,6 +154,7 @@ test("AUDIT-COM-FINAL-01b — matrice événements : 7/9 Lot I câblés, 2/9 san
     "REPORT_CARD_PUBLISHED",
     "STUDENT_ABSENT",
     "STUDENT_LATE",
+    "TIMETABLE_CHANGED",
   ]);
 
   const missingProducers = LOT_I_EVENTS.filter(
@@ -160,7 +162,6 @@ test("AUDIT-COM-FINAL-01b — matrice événements : 7/9 Lot I câblés, 2/9 san
   ).sort();
   assert.deepEqual(missingProducers, [
     "TEACHER_REPLACEMENT",
-    "TIMETABLE_CHANGED",
   ]);
 });
 

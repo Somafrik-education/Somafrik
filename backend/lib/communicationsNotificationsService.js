@@ -694,6 +694,33 @@ async function eventSpec(tx, event) {
       feeType: obligation.fee_type,
       periodLabel: obligation.period_label,
     };
+  } else if (eventType === "planning.timetable.changed") {
+    const slot = await tx.one(
+      `SELECT w.id, w.class_id, w.teacher_id, w.academic_year_id, w.day_of_week,
+              w.start_time, w.end_time, w.status, t.user_id AS teacher_user_id
+       FROM course_schedule_weekly_slots w
+       JOIN teachers t ON t.id = w.teacher_id AND t.school_id = w.school_id
+       WHERE w.id = $1 AND w.school_id = $2`,
+      [sourceId, schoolId],
+    );
+    if (!slot) throw new Error("Créneau planning source introuvable");
+    if (slot.teacher_user_id) {
+      add(slot.teacher_user_id, "teacher", { weeklySlotId: sourceId, classId: slot.class_id });
+    }
+    if (typeof tx.listSchoolAdminUserIds === "function") {
+      for (const id of await tx.listSchoolAdminUserIds(schoolId)) {
+        add(id, "school_admin", { weeklySlotId: sourceId, classId: slot.class_id });
+      }
+    }
+    title = "Emploi du temps modifié";
+    body = "Une modification a été apportée à l'emploi du temps.";
+    navigationTarget = {};
+    metadata = {
+      weeklySlotId: sourceId,
+      classId: slot.class_id,
+      academicYearId: slot.academic_year_id,
+      dayOfWeek: slot.day_of_week,
+    };
   } else {
     throw new Error(`Type d'événement C4 non supporté: ${eventType}`);
   }

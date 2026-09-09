@@ -53,6 +53,7 @@ const C4_TO_LOT_I = Object.freeze({
   "finance.payment.recorded": "PAYMENT_RECEIVED",
   "finance.payment.due": "PAYMENT_DUE",
   "communication.announcement.published": "ANNOUNCEMENT_PUBLISHED",
+  "planning.timetable.changed": "TIMETABLE_CHANGED",
 });
 
 const MANDATORY_EVENT_CHANNELS = Object.freeze({
