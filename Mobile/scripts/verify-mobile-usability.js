@@ -115,8 +115,12 @@ function main() {
   console.log("OK: Planning — chips >=44dp selected + carte 320px lisible");
 
   const finance = source(path.join("components", "PaymentReceiptCard.tsx"));
+  const financeAccordion = source(path.join("components", "ExpandableFinanceCard.tsx"));
   assert.match(finance, /StatusBadge/);
-  assert.match(finance, /toLocaleString\("fr-FR"\)/);
+  assert.match(finance, /formatFinanceAmount/);
+  assert.match(finance, /ExpandableFinanceCard/);
+  assert.match(financeAccordion, /accessibilityState=\{\{ expanded \}\}/);
+  assert.match(financeAccordion, /minHeight:\s*68/);
   assert.match(finance, /selectable/);
   assert.doesNotMatch(finance, /numberOfLines=\{1\}[\s\S]{0,80}amount/);
   const payments = source(path.join("screens", "PaymentsScreen.tsx"));
