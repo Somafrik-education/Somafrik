@@ -122,6 +122,33 @@ const cases: { id: string; title: string; run: () => void }[] = [
       assert.doesNotMatch(cash, /Math\.max\(0,\s*collected/);
     },
   },
+  {
+    id: "FIN-L3-05-B1",
+    title: "Encaissé Web exclut brouillon comme le contrat métier",
+    run() {
+      const cash = read("lib/paymentCashKpi.ts");
+      const fnStart = cash.indexOf("export function isCountedCashPayment");
+      const fn = cash.slice(fnStart, fnStart + 700);
+      assert.match(fn, /brouillon/, "Web doit exclure les brouillons de l'encaissé");
+    },
+  },
+  {
+    id: "FIN-L3-05-D1",
+    title: "Frais & tarifs Reste à payer ventilé, jamais 1 091 001 CDF",
+    run() {
+      const page = read("pages/finances/FinanceFeesPage.tsx");
+      assert.doesNotMatch(
+        page,
+        /formatFinanceAmount\(summary\.totalBalance,\s*currency\)/,
+        "Frais & tarifs somme encore les soldes puis les étiquette avec catalogCurrency",
+      );
+      assert.match(
+        page,
+        /formatPaymentOverviewAmounts|remainingLabel|formatFeeRemainingLabel/,
+        "Frais & tarifs n'utilise pas le reste dû par devise des obligations",
+      );
+    },
+  },
 ];
 
 let failed = 0;

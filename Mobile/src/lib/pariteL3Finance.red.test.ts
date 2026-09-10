@@ -76,6 +76,52 @@ const cases: { id: string; title: string; run: () => void }[] = [
       );
     },
   },
+  {
+    id: "FIN-L3-05-A1",
+    title: "CanonicalStudentFee / normalizeStudentFeeRow préservent currency",
+    run() {
+      const api = read("services/api.ts");
+      const typeStart = api.indexOf("export type CanonicalStudentFee");
+      const typeBlock = api.slice(typeStart, api.indexOf("function normalizeStudentFeeRow"));
+      assert.match(typeBlock, /currency/, "CanonicalStudentFee n'a pas currency — GET /finance/student-fees est jeté");
+      const fnStart = api.indexOf("function normalizeStudentFeeRow");
+      const fn = api.slice(fnStart, api.indexOf("export function getStudentFees"));
+      assert.match(fn, /row\.currency/, "normalizeStudentFeeRow ne lit pas row.currency");
+      assert.match(fn, /currency:/, "normalizeStudentFeeRow n'écrit pas currency");
+    },
+  },
+  {
+    id: "FIN-L3-05-B1-MOBILE",
+    title: "Encaissé Mobile exclut brouillon comme le Web",
+    run() {
+      const cash = read("lib/paymentCashKpi.ts");
+      const fnStart = cash.indexOf("export function isCountedMobileCashPayment");
+      const fn = cash.slice(fnStart, fnStart + 700);
+      assert.match(fn, /brouillon/, "Mobile compte encore les brouillons dans l'encaissé (+200 CDF)");
+    },
+  },
+  {
+    id: "FIN-L3-05-C4",
+    title: "Home n'affiche plus de suffixe F sur les KPI financiers",
+    run() {
+      const home = read("screens/HomeScreen.tsx");
+      assert.doesNotMatch(
+        home,
+        /formatAmount\(paymentStats\.pendingAmount\)/,
+        "À percevoir Home n'est pas le reste dû des obligations",
+      );
+      assert.doesNotMatch(
+        home,
+        /formatAmount\(cashKpi\.collectedAmount\)/,
+        "Encaissé Home n'est pas le ledger cash Paiements",
+      );
+      const formatStart = home.indexOf("function formatAmount");
+      if (formatStart >= 0) {
+        const formatFn = home.slice(formatStart, formatStart + 180);
+        assert.doesNotMatch(formatFn, /\} F`/, "suffixe générique F encore utilisé pour un KPI financier");
+      }
+    },
+  },
 ];
 
 let failed = 0;

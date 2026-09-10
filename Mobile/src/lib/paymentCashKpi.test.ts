@@ -3,7 +3,7 @@
  *   npx tsx Mobile/src/lib/paymentCashKpi.test.ts
  */
 import assert from "node:assert/strict";
-import { getPaymentCashKpi, isCountedMobileCashPayment } from "./paymentCashKpi";
+import { formatPaymentCashAmounts, getPaymentCashKpi, isCountedMobileCashPayment } from "./paymentCashKpi";
 import { normalizePaymentRow, paymentStatusLabel, isPaidStatus } from "./dataTruth";
 
 function run() {
@@ -35,7 +35,7 @@ function run() {
   assert.equal(mix.allocatedAmount, 150);
   assert.equal(mix.unallocatedAmount, 150);
 
-  for (const status of ["Annulé", "En attente de confirmation", "pending", "Refusé", "Échoué", "failed"]) {
+  for (const status of ["Annulé", "En attente de confirmation", "pending", "Refusé", "Échoué", "failed", "Brouillon"]) {
     const row = normalizePaymentRow({ id: `skip-${status}`, amount: 150, status, unallocatedAmount: 150 });
     assert.equal(isCountedMobileCashPayment(row), false, `${status} ne doit pas entrer dans Encaissé`);
     const ignored = getPaymentCashKpi([row]);
@@ -44,7 +44,29 @@ function run() {
     assert.equal(ignored.unallocatedAmount, 0, `${status} → non imputé = 0`);
   }
 
-  console.log("OK: paymentCashKpi exclut pending/refusé/échoué et sépare Maeva 150 FC non imputés");
+  const paid = normalizePaymentRow({
+    id: "pay-cdf",
+    amount: 754_250,
+    currency: "CDF",
+    status: "Payé",
+    allocatedAmount: 754_250,
+    unallocatedAmount: 0,
+  });
+  const draft = normalizePaymentRow({
+    id: "pay-draft-200",
+    amount: 200,
+    currency: "CDF",
+    status: "Brouillon",
+    allocatedAmount: 0,
+    unallocatedAmount: 200,
+  });
+  assert.equal(isCountedMobileCashPayment(draft), false, "FIN-L3-05-B2 brouillon 200 CDF non comptabilisé");
+  const cash = formatPaymentCashAmounts([paid, draft]);
+  const cdf = cash.buckets.find((row) => row.currencyKey === "CDF");
+  assert.equal(cdf?.collectedAmount, 754_250, "FIN-L3-05-B2 jamais +200 CDF Mobile");
+  assert.notEqual(cdf?.collectedAmount, 754_450);
+
+  console.log("OK: paymentCashKpi exclut pending/refusé/échoué/brouillon et sépare Maeva 150 FC non imputés");
 }
 
 run();
