@@ -376,7 +376,7 @@ export function FinanceUnpaidPage() {
           <div className="mt-6">
             <EmptyState
               title={loadStatus === "forbidden" ? "Accès refusé" : "Impossible de charger les impayés"}
-              description={loadError ?? "Le ledger Impayés n'a pas pu être lu."}
+              description={loadError ?? "Les impayés n'ont pas pu être lus."}
             />
           </div>
         ) : null}

@@ -27,7 +27,7 @@ const cases: { id: string; title: string; run: () => void }[] = [
   },
   {
     id: "FIN-L2-02",
-    title: "Dashboard Impayés Web ne somme pas CDF+USD sous une devise",
+    title: "Totaux Impayés Web ne somme pas CDF+USD sous une devise",
     run() {
       const unpaidModule = read("lib/unpaidModule.ts");
       assert.match(
