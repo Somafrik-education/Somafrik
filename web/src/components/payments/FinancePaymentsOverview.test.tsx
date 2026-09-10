@@ -57,4 +57,18 @@ describe("FinancePaymentsOverview — FIN-L3", () => {
     expect(screen.queryByText(/Frais configurés/)).not.toBeInTheDocument();
     expect(screen.getByText("41")).toBeInTheDocument();
   });
+
+  it("FIN-L3-04-C Montant encaissé ≠ Montant imputé aux obligations", () => {
+    render(
+      <FinancePaymentsOverview
+        expectedLabel="100 000 CDF"
+        collectedLabel="20 000 CDF"
+        remainingLabel="80 000 CDF"
+        obligationCount={2}
+        recentPaymentCount={1}
+      />,
+    );
+    expect(screen.getByText("Montant imputé aux obligations")).toBeInTheDocument();
+    expect(screen.getByText("Montant encaissé")).toBeInTheDocument();
+  });
 });

@@ -28,6 +28,37 @@ const cases: { id: string; title: string; run: () => void }[] = [
       );
     },
   },
+  {
+    id: "FIN-L3-04-A-MOBILE",
+    title: "Cash Mobile ventilé par devise du paiement, pas catalogCurrency",
+    run() {
+      const payments = read("screens/PaymentsScreen.tsx");
+      const student = read("screens/StudentPaymentsScreen.tsx");
+      const normalize = read("lib/dataTruth.ts");
+      const fnStart = normalize.indexOf("export function normalizePaymentRow");
+      const fn = normalize.slice(fnStart, fnStart + 1800);
+      assert.match(
+        fn,
+        /currency:/,
+        "normalizePaymentRow jette encore GET /payments.currency",
+      );
+      assert.match(
+        payments,
+        /formatPaymentCashAmounts|getPaymentCashBreakdown/,
+        "PaymentsScreen formate encore cashKpi.collectedAmount + catalogCurrency",
+      );
+      assert.doesNotMatch(
+        payments,
+        /moneyLabel\(cashKpi\.collectedAmount, paymentsReady, catalogCurrency\)/,
+        "Montant encaissé Mobile additionne encore le cash sous catalogCurrency",
+      );
+      assert.match(
+        student,
+        /formatPaymentCashAmounts|getPaymentCashBreakdown/,
+        "StudentPaymentsScreen formate encore l'encaissé avec catalogCurrency",
+      );
+    },
+  },
 ];
 
 let failed = 0;

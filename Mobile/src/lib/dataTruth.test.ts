@@ -120,6 +120,29 @@ function run() {
   assert.equal(isCancelledStatus("cancelled"), true);
   assert.equal(isCancelledStatus("En attente"), false);
 
+  const usdReceipt = normalizePaymentRow({
+    id: "pay-usd",
+    amount: 50,
+    currency: "USD",
+    status: "Payé",
+  });
+  assert.equal(
+    usdReceipt.currency,
+    "USD",
+    "FIN-L3-04 — GET /payments.currency doit survivre à normalizePaymentRow",
+  );
+  const blankReceipt = normalizePaymentRow({
+    id: "pay-blank",
+    amount: 80,
+    currency: "   ",
+    status: "Payé",
+  });
+  assert.equal(
+    String(blankReceipt.currency ?? "").trim(),
+    "",
+    "FIN-L3-04-B — devise vide/espaces non inventée",
+  );
+
   const paymentsError = snapshotFromFailure({ status: 500, message: "Erreur paiements" }, []);
   assert.equal(paymentsError.status, "error");
   assert.equal(shouldRenderEmpty(paymentsError), false);

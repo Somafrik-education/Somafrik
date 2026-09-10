@@ -74,6 +74,45 @@ const cases: { id: string; title: string; run: () => void }[] = [
       assert.doesNotMatch(overview, /Frais configurés|label=["']Tarifs["']/);
     },
   },
+  {
+    id: "FIN-L3-04-A",
+    title: "Cash Web/Mobile ventilé par devise, jamais catalogCurrency",
+    run() {
+      const entity = read("pages/EntityPage.tsx");
+      const helper = read("lib/paymentAmountBreakdown.ts");
+      const cash = read("lib/paymentCashKpi.ts");
+      assert.match(
+        cash,
+        /getPaymentCashBreakdown|formatPaymentCashAmounts/,
+        "le cash Web n'est pas ventilé par devise du paiement",
+      );
+      assert.match(
+        helper,
+        /formatPaymentCashAmounts|getPaymentCashBreakdown|scopedPayments/,
+        "la synthèse Paiements n'utilise pas le ledger cash par devise",
+      );
+      assert.match(
+        entity,
+        /buildFinancePaymentsOverview/,
+      );
+    },
+  },
+  {
+    id: "FIN-L3-04-C",
+    title: "Montant encaissé = cash ; amountPaid = Montant imputé aux obligations",
+    run() {
+      const overview = read("components/payments/FinancePaymentsOverview.tsx");
+      assert.match(
+        overview,
+        /Montant imputé aux obligations/,
+        "amountPaid est encore libellé Montant encaissé",
+      );
+      const encaissé = overview.indexOf('label="Montant encaissé"');
+      const imputé = overview.indexOf("Montant imputé aux obligations");
+      assert.ok(encaissé >= 0 && imputé >= 0, "les deux libellés doivent coexister");
+      assert.notEqual(encaissé, imputé);
+    },
+  },
 ];
 
 let failed = 0;
