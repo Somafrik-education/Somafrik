@@ -94,7 +94,7 @@ export default function UnpaidScreen() {
             <Text style={styles.detailValue}>{item.daysLate > 0 ? `${item.daysLate} jour(s)` : "Non échu"}</Text>
             <Text style={styles.detailLabel}>Montant attendu</Text>
             <Text style={styles.detailValue}>{formatFinanceAmount(item.amountExpected, item.currency)}</Text>
-            <Text style={styles.detailLabel}>Montant payé</Text>
+            <Text style={styles.detailLabel}>Montant alloué aux impayés ouverts</Text>
             <Text style={styles.detailValue}>{formatFinanceAmount(item.amountPaid, item.currency)}</Text>
             <Text style={styles.detailLabel}>Reste dû</Text>
             <Text style={styles.detailValue}>{formatFinanceAmount(item.amountDue, item.currency)}</Text>
