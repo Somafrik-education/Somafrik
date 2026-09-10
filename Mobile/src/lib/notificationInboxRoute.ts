@@ -1,7 +1,7 @@
-import { canReadRoute, canReadView } from "../domain/security/permissions";
+import { canReadRoute } from "../domain/security/permissions";
 import { ALL_SCHOOLS_CODE } from "./activeSchool";
 
-export type NotificationsInboxRoute = "InternalNotifications" | "PlatformNotifications";
+export type NotificationsInboxRoute = "InternalNotifications";
 
 export function schoolCodeFromSession(session: { user?: { schoolCode?: string }; school?: { code?: string } } | null): string {
   return String(session?.user?.schoolCode ?? session?.school?.code ?? "").trim();
@@ -9,7 +9,7 @@ export function schoolCodeFromSession(session: { user?: { schoolCode?: string };
 
 /**
  * Contexte établissement actif : école sélectionnée, ou école liée à la session.
- * Un privilège plateforme ne convertit pas ce contexte en catalogue B.
+ * Un privilège plateforme ne convertit pas ce contexte en catalogue plateforme.
  */
 export function hasSchoolNotificationContext(
   session: unknown,
@@ -22,18 +22,13 @@ export function hasSchoolNotificationContext(
 }
 
 /**
- * Inbox CTA / cloche : routage par contexte actif, pas par union de privilèges.
- * École → C4 InternalNotifications. Plateforme sans école → PlatformNotifications.
+ * Inbox CTA / cloche Mobile : uniquement la boîte C4 d'un établissement actif.
+ * Les notifications plateforme restent réservées au Web (#577 L0).
  */
 export function resolveNotificationsInboxRoute(
   session: unknown,
   activeSchoolCode?: string | null,
 ): NotificationsInboxRoute | null {
-  if (hasSchoolNotificationContext(session, activeSchoolCode)) {
-    return canReadRoute(session, "InternalNotifications") ? "InternalNotifications" : null;
-  }
-  if (canReadView(session, "PlatformNotifications")) {
-    return "PlatformNotifications";
-  }
-  return null;
+  if (!hasSchoolNotificationContext(session, activeSchoolCode)) return null;
+  return canReadRoute(session, "InternalNotifications") ? "InternalNotifications" : null;
 }

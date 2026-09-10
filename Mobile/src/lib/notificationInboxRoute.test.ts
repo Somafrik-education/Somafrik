@@ -39,24 +39,24 @@ assert.equal(
 assert.equal(
   resolveNotificationsInboxRoute(superAdmin, "CD-IN-26-001"),
   "InternalNotifications",
-  "privilège plateforme + école active → C4, pas PlatformNotifications",
+  "si un contexte école est explicitement actif, la seule inbox Mobile est C4",
 );
 assert.equal(
   resolveNotificationsInboxRoute(superAdmin, "*"),
-  "PlatformNotifications",
-  "contexte plateforme → catalogue B",
+  null,
+  "contexte plateforme → aucun catalogue plateforme sur Mobile",
 );
 assert.equal(
   resolveNotificationsInboxRoute(superAdmin, ""),
-  "PlatformNotifications",
-  "sans école active, Superadmin reste sur le catalogue plateforme",
+  null,
+  "sans école active, les notifications plateforme restent réservées au Web",
 );
 
 const schoolWithoutC4 = session("parent_student", ["Messages:READ"], "CD-IN-26-001");
 assert.equal(
   resolveNotificationsInboxRoute(schoolWithoutC4, "CD-IN-26-001"),
   null,
-  "contexte école sans Notifications:READ → pas de fallback PlatformNotifications",
+  "contexte école sans Notifications:READ → aucun fallback plateforme",
 );
 
 console.log("OK Mobile notificationInboxRoute.test.ts");

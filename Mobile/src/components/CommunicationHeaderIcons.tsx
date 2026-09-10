@@ -42,7 +42,7 @@ function HeaderIconButton({
   );
 }
 
-/** Accès rapide Messages / Annonces / Notifications (aligné Topbar web). */
+/** Accès rapide Messages / Annonces / Notifications établissement (aligné Topbar web). */
 export default function CommunicationHeaderIcons({
   navigation,
   unreadMessages = 0,
@@ -51,7 +51,7 @@ export default function CommunicationHeaderIcons({
   unreadMessages?: number;
 }) {
   const { session } = useAuth();
-  const { notificationsData, activeSchoolCode } = useAdminData();
+  const { activeSchoolCode } = useAdminData();
   const unreadAnnouncements = useAnnouncementsUnreadCount(
     canReadRoute(session, "Announcements"),
     activeSchoolCode,
@@ -59,22 +59,21 @@ export default function CommunicationHeaderIcons({
 
   const canMessages = canAccessMessagesRoute(session);
   const canAnnouncements = canReadRoute(session, "Announcements");
-  const notificationsInboxRoute = resolveNotificationsInboxRoute(session, activeSchoolCode);
+  const resolvedNotificationsInboxRoute = resolveNotificationsInboxRoute(session, activeSchoolCode);
+  const notificationsInboxRoute =
+    resolvedNotificationsInboxRoute === "InternalNotifications"
+      ? resolvedNotificationsInboxRoute
+      : null;
   const canInternalNotifications = notificationsInboxRoute === "InternalNotifications";
-  const canPlatformNotifications = notificationsInboxRoute === "PlatformNotifications";
   const { count: internalUnreadNotifications } = useInternalNotificationsUnreadCount(
-    canInternalNotifications, activeSchoolCode,
+    canInternalNotifications,
+    activeSchoolCode,
   );
-  const canNotifications = Boolean(notificationsInboxRoute);
+  const canNotifications = canInternalNotifications;
 
   if (!canMessages && !canAnnouncements && !canNotifications) {
     return null;
   }
-
-  const platformUnreadNotifications = notificationsData.filter(
-    (item) => String(item.status ?? "") !== "Lu" && String(item.status ?? "") !== "read",
-  ).length;
-  const unreadNotifications = canInternalNotifications ? internalUnreadNotifications : platformUnreadNotifications;
 
   return (
     <View style={styles.row}>
@@ -98,7 +97,7 @@ export default function CommunicationHeaderIcons({
         <HeaderIconButton
           icon="notifications-outline"
           label="Notifications"
-          count={unreadNotifications}
+          count={internalUnreadNotifications}
           onPress={() => navigation.navigate(notificationsInboxRoute ?? "InternalNotifications")}
         />
       ) : null}
