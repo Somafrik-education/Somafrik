@@ -8,7 +8,9 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { canReadEntity, canReadRoute, hasSecurityPermission } from "../domain/security/permissions";
 import { getPaymentStats } from "../domain/metrics/schoolMetrics";
+import { attachCanonicalRoleIdentity } from "./canonicalRoleIdentity";
 import { getRoleHomeShell } from "./roleHomeConfig";
 import type { PaymentItem } from "../data/catalog";
 
@@ -20,14 +22,16 @@ function readMobile(rel: string) {
 
 export type UnpaidApiResult =
   | { status: 200; rows: UnpaidLedgerRow[] }
-  | { status: 401 | 403; message: string }
+  | { status: 401 | 403 | 500; message: string }
+  | { status: "network"; message: string }
+  | { status: "loading" }
   | { status: "not-called" };
 
 export type UnpaidLedgerRow = { studentId: string; schoolCode: string; amountDue: number };
 
 export type ImpayesView = {
   presentsImpayes: boolean;
-  kind: "hidden" | "success" | "forbidden" | "unauthenticated" | "error";
+  kind: "hidden" | "success" | "forbidden" | "unauthenticated" | "error" | "loading" | "empty";
   value: string | null;
   destination: "Payments" | "Unpaid" | "none";
   ignoredUnpaidApi: boolean;
@@ -90,12 +94,15 @@ export function shippedImpayesView(input: {
   }
 
   if (!wiring.valueTiedToReceiptPending && wiring.unpaidClientInApiLayer) {
+    const destination: ImpayesView["destination"] = inspectShippedImpayesUx().dedicatedRouteRegistered
+      ? "Unpaid"
+      : "none";
     if (input.unpaidApi.status === 401) {
       return {
         presentsImpayes: true,
         kind: "unauthenticated",
         value: null,
-        destination: "Unpaid",
+        destination,
         ignoredUnpaidApi: false,
       };
     }
@@ -104,16 +111,35 @@ export function shippedImpayesView(input: {
         presentsImpayes: true,
         kind: "forbidden",
         value: null,
-        destination: "Unpaid",
+        destination,
+        ignoredUnpaidApi: false,
+      };
+    }
+    if (input.unpaidApi.status === 500 || input.unpaidApi.status === "network") {
+      return {
+        presentsImpayes: true,
+        kind: "error",
+        value: null,
+        destination,
+        ignoredUnpaidApi: false,
+      };
+    }
+    if (input.unpaidApi.status === "loading") {
+      return {
+        presentsImpayes: true,
+        kind: "loading",
+        value: null,
+        destination,
         ignoredUnpaidApi: false,
       };
     }
     if (input.unpaidApi.status === 200) {
+      const count = ledgerStudentCount(input.unpaidApi.rows, input.schoolCode);
       return {
         presentsImpayes: true,
-        kind: "success",
-        value: String(ledgerStudentCount(input.unpaidApi.rows, input.schoolCode)),
-        destination: "Unpaid",
+        kind: count === 0 ? "empty" : "success",
+        value: String(count),
+        destination,
         ignoredUnpaidApi: false,
       };
     }
@@ -139,4 +165,158 @@ export function payment(
     status: extras.status ?? "Payé",
     ...extras,
   } as PaymentItem;
+}
+
+const DEDICATED_UNPAID_ROUTES = ["Unpaid", "Impayes", "FinanceUnpaid"] as const;
+
+function extractRootStackParamKeys(navigatorSrc: string): string[] {
+  const marker = "export type RootStackParamList";
+  const start = navigatorSrc.indexOf(marker);
+  if (start < 0) return [];
+  const brace = navigatorSrc.indexOf("{", start);
+  if (brace < 0) return [];
+  let depth = 0;
+  let end = brace;
+  for (let i = brace; i < navigatorSrc.length; i += 1) {
+    const ch = navigatorSrc[i];
+    if (ch === "{") depth += 1;
+    if (ch === "}") {
+      depth -= 1;
+      if (depth === 0) {
+        end = i;
+        break;
+      }
+    }
+  }
+  const block = navigatorSrc.slice(brace, end + 1);
+  return [...block.matchAll(/^\s{2}([A-Za-z][A-Za-z0-9]*)\s*:/gm)].map((match) => match[1]);
+}
+
+export type UnpaidListRow = {
+  studentName: string;
+  className: string | null;
+  amountDue: number;
+  status: string;
+};
+
+export function inspectShippedImpayesUx() {
+  const navigator = readMobile("navigation/AppNavigator.tsx");
+  const registeredScreens = [...navigator.matchAll(/<Stack\.Screen\s+name="([^"]+)"/g)].map((match) => match[1]);
+  const paramKeys = extractRootStackParamKeys(navigator);
+  const dedicatedRouteRegistered = DEDICATED_UNPAID_ROUTES.some(
+    (name) => registeredScreens.includes(name) && paramKeys.includes(name),
+  );
+  const dedicatedScreenRel =
+    ["screens/UnpaidScreen.tsx", "screens/ImpayesScreen.tsx", "screens/FinanceUnpaidScreen.tsx"].find((rel) =>
+      fs.existsSync(path.join(srcRoot, rel)),
+    ) ?? null;
+  const dedicatedSrc = dedicatedScreenRel ? readMobile(dedicatedScreenRel) : "";
+  const payments = readMobile("screens/PaymentsScreen.tsx");
+  const wiring = inspectShippedImpayesWiring();
+
+  return {
+    registeredScreens,
+    paramKeys,
+    dedicatedRouteRegistered,
+    dedicatedScreenRel,
+    presentsDedicatedUnpaid: Boolean(dedicatedRouteRegistered && dedicatedScreenRel),
+    paymentsLabelsImpayes: /Impayés/.test(payments),
+    paymentsUsesReceiptPending: /paymentStats\.pending/.test(payments),
+    listFields: {
+      studentName: /studentName/.test(dedicatedSrc),
+      className: /className/.test(dedicatedSrc),
+      amountDue: /amountDue/.test(dedicatedSrc),
+      status: /status|severity|retard/i.test(dedicatedSrc),
+    },
+    loadingContract: /loading|Chargement/.test(dedicatedSrc) || /QueryStateView/.test(dedicatedSrc),
+    emptyContract: /empty|Aucun reste|Aucun impay/.test(dedicatedSrc) || /QueryStateView/.test(dedicatedSrc),
+    errorRetryContract: /onRetry|Réessayer|retry/i.test(dedicatedSrc) || /QueryStateView/.test(dedicatedSrc),
+    accessibilityContract:
+      /accessibilityRole/.test(dedicatedSrc) && /accessibilityLabel/.test(dedicatedSrc),
+    kpiNavigatesToPayments: wiring.homeKpiNavigatesToPayments,
+    unpaidClientInApiLayer: wiring.unpaidClientInApiLayer,
+    valueTiedToReceiptPending: wiring.valueTiedToReceiptPending,
+  };
+}
+
+export function liveFinanceSession(role: string, permissions: string[], schoolCode = "CD-IN-26-001") {
+  return attachCanonicalRoleIdentity({
+    role,
+    permissions,
+    user: {
+      id: `${role}-l1`,
+      name: role,
+      schoolCode,
+      role,
+      permissions,
+    },
+  });
+}
+
+/** Surface Impayés réellement exposée au rôle, d'après le câblage livré + RBAC live. */
+export function shippedImpayesSurfaceVisible(session: ReturnType<typeof liveFinanceSession>): boolean {
+  const wiring = inspectShippedImpayesWiring();
+  const ux = inspectShippedImpayesUx();
+  const canPayments = canReadEntity(session, "payments");
+  const canUnpaid = hasSecurityPermission(session, "Impayés", "READ");
+  const homeCatalog = getRoleHomeShell(session).kpiKeys.includes("unpaidPayments");
+  const homeKpi =
+    Boolean(wiring.homeKpiLabeledImpayes && homeCatalog) &&
+    (wiring.homeKpiGatedOnPaymentsEntity ? canPayments : canUnpaid);
+  const paymentsCard = Boolean(wiring.paymentsCardLabeledImpayes && canPayments);
+  const unpaidRoute = Boolean(ux.dedicatedRouteRegistered && (canUnpaid || canReadRoute(session, "Unpaid")));
+  return homeKpi || paymentsCard || unpaidRoute;
+}
+
+export type ImpayesUxState = ImpayesView & {
+  presentsDedicatedUnpaid: boolean;
+  retryAvailable: boolean;
+  sensitiveRowsExposed: boolean;
+  listRows: UnpaidListRow[];
+};
+
+/**
+ * État UX livré de la surface Impayés.
+ * Tant qu'il n'y a pas d'écran dédié + client ledger, les 401/403/500/loading
+ * restent un succès numérique dérivé des reçus.
+ */
+export function shippedImpayesUxState(input: {
+  receipts: PaymentItem[];
+  unpaidApi: UnpaidApiResult;
+  schoolCode: string;
+}): ImpayesUxState {
+  const ux = inspectShippedImpayesUx();
+  const view = shippedImpayesView(input);
+  const dedicatedReady = ux.presentsDedicatedUnpaid && ux.unpaidClientInApiLayer && !ux.valueTiedToReceiptPending;
+
+  if (!dedicatedReady) {
+    const numericSuccess = view.kind === "success" && view.value != null;
+    return {
+      ...view,
+      presentsDedicatedUnpaid: false,
+      retryAvailable: false,
+      sensitiveRowsExposed: numericSuccess && (input.unpaidApi.status === 403 || input.unpaidApi.status === 401),
+      listRows: [],
+    };
+  }
+
+  const listRows: UnpaidListRow[] =
+    input.unpaidApi.status === 200
+      ? input.unpaidApi.rows
+          .filter((row) => row.schoolCode === input.schoolCode && row.amountDue > 0)
+          .map((row) => ({
+            studentName: row.studentId,
+            className: null,
+            amountDue: row.amountDue,
+            status: "En retard",
+          }))
+      : [];
+
+  return {
+    ...view,
+    presentsDedicatedUnpaid: true,
+    retryAvailable: view.kind === "error",
+    sensitiveRowsExposed: false,
+    listRows,
+  };
 }

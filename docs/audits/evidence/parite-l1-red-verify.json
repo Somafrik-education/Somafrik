@@ -1,0 +1,249 @@
+{
+  "audit": "parite-l1-unpaid-red",
+  "generatedAt": "2026-09-10T02:26:26.951Z",
+  "l0BaseSha": "4a526d1a442a6f1587ea347e5a50e33de57ea34b",
+  "branch": "cursor/l1-unpaid-red-tests-8d64",
+  "testedHead": "446f3dcb56af0bf7299d997f751cd06ab6124dbd",
+  "prHeadAtTestTime": "446f3dcb56af0bf7299d997f751cd06ab6124dbd",
+  "evidenceCommit": "1dc90c16324fdbc3b9b213d10196d9a1f9b966b0",
+  "prHead": "1dc90c16324fdbc3b9b213d10196d9a1f9b966b0",
+  "shaNote": "testedHead = SHA sur lequel les tests ont tourné. evidenceCommit/prHead = SHA du commit de preuve JSON (résultats), distinct de testedHead. Le HEAD GitHub de la PR peut être un commit tampon ultérieur qui n'écrit que ces champs SHA.",
+  "expected": {
+    "L1": [
+      "L1-01",
+      "L1-02",
+      "L1-03",
+      "L1-04",
+      "L1-05",
+      "L1-06",
+      "L1-07",
+      "L1-08",
+      "L1-09",
+      "L1-10"
+    ],
+    "L1-UX": [
+      "L1-UX-01",
+      "L1-UX-02",
+      "L1-UX-03",
+      "L1-UX-04",
+      "L1-UX-05",
+      "L1-UX-06",
+      "L1-UX-07",
+      "L1-UX-08",
+      "L1-UX-09",
+      "L1-UX-10"
+    ],
+    "L1_failed": [
+      "L1-01",
+      "L1-02",
+      "L1-03",
+      "L1-04",
+      "L1-05",
+      "L1-06",
+      "L1-07",
+      "L1-08",
+      "L1-09"
+    ],
+    "L1_passed": [
+      "L1-10"
+    ],
+    "L1-UX_failed": [
+      "L1-UX-01",
+      "L1-UX-02",
+      "L1-UX-03",
+      "L1-UX-04",
+      "L1-UX-05",
+      "L1-UX-06",
+      "L1-UX-07",
+      "L1-UX-08",
+      "L1-UX-09",
+      "L1-UX-10"
+    ],
+    "L1-UX_passed": [],
+    "total": 20
+  },
+  "problems": [],
+  "l0NonRegression": {
+    "green": 12,
+    "red": 0,
+    "passedIds": [
+      "L0-01",
+      "L0-02",
+      "L0-03",
+      "L0-04",
+      "L0-05",
+      "L0-06",
+      "L0-07",
+      "L0-08",
+      "L0-09",
+      "L0-10",
+      "L0-11",
+      "L0-12"
+    ],
+    "failedIds": []
+  },
+  "files": [
+    {
+      "file": "src/lib/pariteL1UnpaidKpi.red.test.ts",
+      "exit": 1,
+      "expectedIds": [
+        "L1-01",
+        "L1-02",
+        "L1-03",
+        "L1-04",
+        "L1-05",
+        "L1-06",
+        "L1-07",
+        "L1-08",
+        "L1-09",
+        "L1-10"
+      ],
+      "failedIds": [
+        "L1-01",
+        "L1-02",
+        "L1-03",
+        "L1-04",
+        "L1-05",
+        "L1-06",
+        "L1-07",
+        "L1-08",
+        "L1-09"
+      ],
+      "passedIds": [
+        "L1-10"
+      ],
+      "failedCount": 9,
+      "passedCount": 1
+    },
+    {
+      "file": "src/lib/pariteL1UnpaidUx.red.test.ts",
+      "exit": 1,
+      "expectedIds": [
+        "L1-UX-01",
+        "L1-UX-02",
+        "L1-UX-03",
+        "L1-UX-04",
+        "L1-UX-05",
+        "L1-UX-06",
+        "L1-UX-07",
+        "L1-UX-08",
+        "L1-UX-09",
+        "L1-UX-10"
+      ],
+      "failedIds": [
+        "L1-UX-01",
+        "L1-UX-02",
+        "L1-UX-03",
+        "L1-UX-04",
+        "L1-UX-05",
+        "L1-UX-06",
+        "L1-UX-07",
+        "L1-UX-08",
+        "L1-UX-09",
+        "L1-UX-10"
+      ],
+      "passedIds": [],
+      "failedCount": 10,
+      "passedCount": 0
+    }
+  ],
+  "summary": {
+    "L1": {
+      "green": 1,
+      "red": 9,
+      "total": 10,
+      "passedIds": [
+        "L1-10"
+      ],
+      "failedIds": [
+        "L1-01",
+        "L1-02",
+        "L1-03",
+        "L1-04",
+        "L1-05",
+        "L1-06",
+        "L1-07",
+        "L1-08",
+        "L1-09"
+      ],
+      "requiredPassedIds": [
+        "L1-10"
+      ],
+      "requiredFailedIds": [
+        "L1-01",
+        "L1-02",
+        "L1-03",
+        "L1-04",
+        "L1-05",
+        "L1-06",
+        "L1-07",
+        "L1-08",
+        "L1-09"
+      ]
+    },
+    "L1-UX": {
+      "green": 0,
+      "red": 10,
+      "total": 10,
+      "passedIds": [],
+      "failedIds": [
+        "L1-UX-01",
+        "L1-UX-02",
+        "L1-UX-03",
+        "L1-UX-04",
+        "L1-UX-05",
+        "L1-UX-06",
+        "L1-UX-07",
+        "L1-UX-08",
+        "L1-UX-09",
+        "L1-UX-10"
+      ],
+      "requiredPassedIds": [],
+      "requiredFailedIds": [
+        "L1-UX-01",
+        "L1-UX-02",
+        "L1-UX-03",
+        "L1-UX-04",
+        "L1-UX-05",
+        "L1-UX-06",
+        "L1-UX-07",
+        "L1-UX-08",
+        "L1-UX-09",
+        "L1-UX-10"
+      ]
+    }
+  },
+  "productionUntouched": true,
+  "productionDiff": {
+    "baseSha": "4a526d1a442a6f1587ea347e5a50e33de57ea34b",
+    "changedFiles": [
+      "Mobile/package.json",
+      "Mobile/scripts/verify-parite-l1-red.js",
+      "Mobile/scripts/verify-parite-l1-red.test.js",
+      "Mobile/src/lib/pariteL0L1RedReport.ts",
+      "Mobile/src/lib/pariteL1Unpaid.shipped.ts",
+      "Mobile/src/lib/pariteL1UnpaidKpi.red.test.ts",
+      "Mobile/src/lib/pariteL1UnpaidUx.red.test.ts",
+      "docs/audits/evidence/parite-l1-red-verify.json",
+      "docs/audits/parite-l0-l1-ux-maquette.md",
+      "docs/audits/parite-web-mobile-l1-red-2026-09-10.md",
+      "package.json"
+    ],
+    "allowedFiles": [
+      "Mobile/package.json",
+      "Mobile/scripts/verify-parite-l1-red.js",
+      "Mobile/scripts/verify-parite-l1-red.test.js",
+      "Mobile/src/lib/pariteL0L1RedReport.ts",
+      "Mobile/src/lib/pariteL1Unpaid.shipped.ts",
+      "Mobile/src/lib/pariteL1UnpaidKpi.red.test.ts",
+      "Mobile/src/lib/pariteL1UnpaidUx.red.test.ts",
+      "docs/audits/evidence/parite-l1-red-verify.json",
+      "docs/audits/parite-l0-l1-ux-maquette.md",
+      "docs/audits/parite-web-mobile-l1-red-2026-09-10.md",
+      "package.json"
+    ],
+    "unexpectedFiles": [],
+    "forbiddenHits": []
+  },
+  "stampedAt": "2026-09-10T02:27:15.696Z"
+}
