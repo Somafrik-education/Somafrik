@@ -23,6 +23,7 @@ import {
   type UnpaidLedgerRow,
 } from "./pariteL1Unpaid.shipped";
 import { canReadEntity, hasSecurityPermission } from "../domain/security/permissions";
+import { getRoleHomeShell } from "./roleHomeConfig";
 
 const SCHOOL_A = "CD-IN-26-001";
 const SCHOOL_B = "BI-EC-26-001";
@@ -221,6 +222,13 @@ const cases: RedCase[] = [
       }
       if (shippedImpayesSurfaceVisible(paymentsOnlyAdmin)) {
         problems.push("Admin établissement Paiements:READ sans Impayés:READ voit encore une surface Impayés");
+      }
+      const adminShellKeys = getRoleHomeShell(unpaidAdmin).kpiKeys;
+      if (!adminShellKeys.includes("unpaidPayments") || adminShellKeys.indexOf("unpaidPayments") >= 4) {
+        problems.push("coque Admin établissement : unpaidPayments hors des 4 KPI d'accueil");
+      }
+      if (!shippedImpayesSurfaceVisible(unpaidAdmin)) {
+        problems.push("Admin établissement Impayés:READ ne voit pas Impayés");
       }
       assert.equal(problems.length, 0, `#577 L1 RBAC : ${problems.join(" | ")}`);
     },

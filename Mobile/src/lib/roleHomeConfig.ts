@@ -67,7 +67,7 @@ const SCHOOL_ADMIN: RoleHomeShell = {
   accent: "#1D4ED8",
   identityIcon: "briefcase-outline",
   bannerIcon: "business-outline",
-  kpiKeys: ["users", "presence", "students", "paymentRate"],
+  kpiKeys: ["users", "presence", "students", "unpaidPayments", "paymentRate"],
   actionKeys: ["students", "attendance", "payments", "classes", "teachers", "grades", "announcements"],
   showSecurityMatrix: true,
 };

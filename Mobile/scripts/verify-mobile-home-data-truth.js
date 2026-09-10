@@ -182,7 +182,7 @@ function main() {
   assert.doesNotMatch(paymentRate, /paid \/ payments\.length/);
   assert.doesNotMatch(paymentRate, /Math\.round\(\(paid \/ payments\.length\)/);
   const roleHome = read(path.join("lib", "roleHomeConfig.ts"));
-  assert.match(roleHome, /kpiKeys: \["users", "presence", "students", "paymentRate"\]/);
+  assert.match(roleHome, /kpiKeys: \["users", "presence", "students", "unpaidPayments", "paymentRate"\]/);
   assert.doesNotMatch(roleHome, /kpiKeys: \["users", "classes", "students"/);
   assert.doesNotMatch(home, /navigate\("AdminCrud", \{ entity: "users" \}/);
   assert.doesNotMatch(home, /navigate\("AdminCrud", \{ entity: "payments" \}/);
