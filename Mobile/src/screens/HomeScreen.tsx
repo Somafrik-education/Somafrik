@@ -13,7 +13,7 @@ import { useAdminData } from "../context/AdminDataContext";
 import StudentsScopeAlert from "../components/StudentsScopeAlert";
 import { getPaymentCashKpi } from "../lib/paymentCashKpi";
 import { getPaymentStats, getPresenceStats } from "../domain/metrics/schoolMetrics";
-import { canReadEntity, canReadRoute } from "../domain/security/permissions";
+import { canReadEntity, canReadRoute, hasSecurityPermission } from "../domain/security/permissions";
 import { canAccessMessagesRoute } from "../lib/mobileCtaRbacAlignment";
 import { buildOverflowQuickActionItems } from "../navigation/roleTabPreferences";
 import { DATA_TRUTH_TEST_IDS, METRIC_PENDING_LABEL, metricLabelFromSnapshot, parentAverageDisplay } from "../lib/dataTruth";
@@ -56,6 +56,8 @@ import {
   type RoleHomeActionKey,
   type RoleHomeKpiKey,
 } from "../lib/roleHomeConfig";
+import { useUnpaidLedger } from "../hooks/useUnpaidLedger";
+import { unpaidLedgerMetricValue } from "../lib/unpaidLedger";
 
 export default function HomeScreen({ navigation }: any) {
   const { scrollContentPaddingBottom } = useFloatingTabBarLayout();
@@ -92,6 +94,7 @@ export default function HomeScreen({ navigation }: any) {
     classesSnapshot,
     assignmentsSnapshot,
     establishmentStudents,
+    activeSchoolCode,
   } = useAdminData();
   const { isTablet, horizontalPadding, contentMaxWidth } = useResponsiveLayout();
   const teacherScopeState = {
@@ -106,6 +109,9 @@ export default function HomeScreen({ navigation }: any) {
     session?.school ??
     schoolsData[0] ??
     { name: "École", timezone: undefined, code: "" };
+  const canReadUnpaid = hasSecurityPermission(session, "Impayés", "READ");
+  const unpaidSchoolCode = activeSchoolCode || currentSchool.code;
+  const { state: unpaidLedger } = useUnpaidLedger(canReadUnpaid, unpaidSchoolCode);
 
   const canonicalPayments =
     paymentsSnapshot.status === "success" || paymentsSnapshot.status === "empty" ? paymentsData : [];
@@ -374,8 +380,8 @@ export default function HomeScreen({ navigation }: any) {
     paidPayments: canReadEntity(session, "payments")
       ? kpi("paidPayments", "checkmark-circle-outline", paymentsReady ? formatAmount(cashKpi.collectedAmount) : "—", "Encaissé", "#16A34A", "#ECFDF5", () => navigation.navigate("Payments"))
       : null,
-    unpaidPayments: canReadEntity(session, "payments")
-      ? kpi("unpaidPayments", "alert-circle-outline", paymentsReady ? String(paymentStats.pending) : "—", "Impayés", "#DC2626", "#FEF2F2", () => navigation.navigate("Payments"))
+    unpaidPayments: canReadUnpaid
+      ? kpi("unpaidPayments", "alert-circle-outline", unpaidLedgerMetricValue(unpaidLedger), "Impayés", "#DC2626", "#FEF2F2", () => navigation.navigate("Unpaid"))
       : null,
     paymentCount: canReadEntity(session, "payments")
       ? kpi("paymentCount", "card-outline", paymentsValue, PAYMENTS_KPI_LABEL, "#EA580C", "#FFF7ED", () => navigation.navigate("Payments"), DATA_TRUTH_TEST_IDS.homePaymentsValue)

@@ -1,0 +1,126 @@
+{
+  "generatedAt": "2026-09-10T17:25:13Z",
+  "issue": 577,
+  "lot": "L1",
+  "base": {
+    "branch": "develop",
+    "sha": "b0bcc27799cc43bab74c7c1f23279b8897b5a5a8"
+  },
+  "workBranch": "feat/577-l1-unpaid-parity",
+  "red": {
+    "expectedIds": [
+      "L1-01",
+      "L1-02",
+      "L1-03",
+      "L1-04",
+      "L1-05",
+      "L1-06",
+      "L1-07",
+      "L1-08",
+      "L1-09",
+      "L1-10"
+    ],
+    "failedIds": [
+      "L1-01",
+      "L1-02",
+      "L1-03",
+      "L1-04",
+      "L1-05",
+      "L1-06",
+      "L1-07",
+      "L1-08",
+      "L1-09"
+    ],
+    "passedIds": ["L1-10"],
+    "exit": 1
+  },
+  "green": {
+    "command": "npm run test:parite-l1-green",
+    "failedIds": [],
+    "passedIds": [
+      "L1-01",
+      "L1-02",
+      "L1-03",
+      "L1-04",
+      "L1-05",
+      "L1-06",
+      "L1-07",
+      "L1-08",
+      "L1-09",
+      "L1-10"
+    ],
+    "contractTest": "Mobile/src/lib/unpaidLedger.test.ts",
+    "exit": 0
+  },
+  "uxFollowUp": {
+    "reference": "somafrik-mobile-ux-v7.html",
+    "redCommit": "cf218a178e06e929bb631044e9e2405c316bd42d",
+    "greenCommit": "072b1bbca95aa8e2e7e9c16ff6a7b7e9d2377aaf",
+    "test": "Mobile/src/lib/pariteL1FinanceUx.test.ts",
+    "viewportsDp": [360, 390, 430],
+    "mixedCurrencyTotalsSeparated": true,
+    "expandablePaymentCards": true,
+    "expandableUnpaidCards": true,
+    "exit": 0
+  },
+  "allocationLabelFollowUp": {
+    "case": "Oscar Mukwege / PAY-0015",
+    "expectedAmount": 180000,
+    "allocatedAmount": 50000,
+    "remainingAmount": 130000,
+    "currency": "CDF",
+    "oldLabel": "Montant payé",
+    "newLabel": "Montant alloué aux impayés ouverts",
+    "redCommit": "cc50dbe0c5ee8ed4c2516bc390136998a8ab3c20",
+    "greenCommit": "cb43c0696c2495306911f0e942c7562e92fffcee",
+    "calculationChanged": false,
+    "apiChanged": false,
+    "databaseChanged": false,
+    "exit": 0
+  },
+  "regressions": {
+    "passed": [
+      "Mobile typecheck",
+      "L0 12/12",
+      "mobile security",
+      "mobile RBAC live",
+      "canonical route map",
+      "CTA RBAC alignment",
+      "home data truth",
+      "UX V1",
+      "live permissions refresh",
+      "mobile data truth",
+      "network resilience",
+      "no false writes",
+      "school scope transport",
+      "L1 offline reads contract",
+      "canonical role identity",
+      "form fields",
+      "UI E2E scaffold",
+      "internal notifications C4",
+      "Web Finance UX 81/81",
+      "Mobile runtime E2E 41/41"
+    ],
+    "environmentBlockedWrappers": [
+      {
+        "commands": [
+          "verify:mobile-usability",
+          "verify:mobile-ux-v1",
+          "verify:mobile-rbac-live",
+          "verify:mobile-school-scope-transport",
+          "verify:mobile-cta-rbac-alignment"
+        ],
+        "cause": "managed runtime blocks the npx tsx IPC socket; underlying TypeScript tests passed through the Node tsx loader"
+      },
+      {
+        "command": "verify:finance-rbac",
+        "cause": "10 memory tests passed; PostgreSQL HTTP proof requires DATABASE_URL"
+      }
+    ]
+  },
+  "serverChanges": false,
+  "databaseChanges": false,
+  "serverRbacChanges": false,
+  "readyForbidden": true,
+  "mergeForbidden": true
+}
