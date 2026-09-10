@@ -27,14 +27,14 @@ Légende : **O** = présent et branché API/PG · **P** = partiel / divergent ·
 | Clôturer | N | N | — | — | — | Notion absente du métier |
 | Demo / fallback | N | N (fichier mort `data/notes.ts`) | ignoreClientScope | JWT `school_id` | O | Fichier demo non importé |
 
-## Après (cible L3)
+## Après (livré L3)
 
 | Fonction | Web | Mobile | API | Données PG | Parité |
 | --- | --- | --- | --- | --- | --- |
-| Consultation évaluations | O | O | GET `/evaluations` | `evaluations` | O |
+| Consultation évaluations | O | O + filtres + champs carte | GET `/evaluations` | `evaluations` | O |
 | Création évaluation | O + `classId` | O + coefficient | POST `/evaluations` | `evaluations` | O |
 | Modification évaluation | O | O | PATCH | `evaluations` | O |
-| Saisie notes | O + CTA ligne | O + roster className fallback | POST `/notes` | `grades` | O |
+| Saisie notes | O + CTA ligne | O + roster className | POST `/notes` | `grades` | O |
 | Consultation notes | O | O + hydratation liste | GET `/notes` | `grades` | O |
 | Filtres | O | O | — | — | O |
 | Navigation | O | O | — | — | O |
@@ -42,3 +42,4 @@ Légende : **O** = présent et branché API/PG · **P** = partiel / divergent ·
 | Coefficients | O | O | body | colonne | O |
 | Moyennes consultation | coef d’évaluation | coef d’évaluation | moteur canonique | — | O |
 | Valider / Publier | O | O (mêmes rôles) | PATCH status | `locked`/`published` | O |
+

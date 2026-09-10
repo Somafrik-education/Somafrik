@@ -102,7 +102,7 @@ function assertNotesWebUsesSessionAssignments() {
     />\s*Enregistrer\s*</,
     "aucun bouton Enregistrer par élève ne doit subsister",
   );
-  assert.match(gradeGrid, /Enregistrer tout/);
+  assert.match(gradeGrid, /Enregistrer les notes/);
 
   const gradesPageSave = fs.readFileSync(path.join(ROOT, "web/src/pages/GradesEvaluationsPage.tsx"), "utf8");
   assert.match(gradesPageSave, /async function handleSaveGrades/);

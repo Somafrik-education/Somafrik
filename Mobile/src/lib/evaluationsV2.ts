@@ -3,6 +3,8 @@
  * PostgreSQL/API = autorité. Identifiants canoniques, jamais catalog.ts / subject string.
  */
 
+import { PEDAGOGY_COPY } from "./pedagogyParityContract";
+
 export const EVALUATION_STATUS_UI = [
   "Brouillon",
   "Ouverte",
@@ -282,6 +284,39 @@ export function buildValidateEvaluationPatch(): Record<string, unknown> {
   return { status: "Validée" };
 }
 
+export function buildPublishEvaluationPatch(): Record<string, unknown> {
+  return { status: "Publiée" };
+}
+
+export function canEditEvaluationFields(evaluation: CanonicalEvaluation): boolean {
+  if (evaluation.active === false) return false;
+  return isDraftOrOpenEvaluationStatus(evaluation.status);
+}
+
+export const ALL_PERIODS_FILTER = "";
+export const ALL_STATUSES_FILTER = "tous";
+export const PENDING_VALIDATION_FILTER = "a-valider";
+
+export function filterEvaluationsForQueue(
+  evaluations: CanonicalEvaluation[],
+  periodFilter: string,
+  statusFilter: string,
+): CanonicalEvaluation[] {
+  return evaluations.filter((evaluation) => {
+    if (periodFilter) {
+      const selected = asText(periodFilter);
+      const periodId = asText(evaluation.periodId ?? evaluation.termId);
+      const periodName = asText(evaluation.periodName ?? evaluation.period);
+      if (selected !== periodId && selected !== periodName) return false;
+    }
+    if (!statusFilter || statusFilter === ALL_STATUSES_FILTER) return true;
+    if (statusFilter === PENDING_VALIDATION_FILTER) {
+      return isDraftOrOpenEvaluationStatus(evaluation.status);
+    }
+    return evaluation.status === statusFilter;
+  });
+}
+
 export function teacherCreatePayloadContainsForbiddenFields(payload: Record<string, unknown>): boolean {
   if (asText(payload.teacherId) || asText(payload.teacher_code) || asText(payload.teacherCode)) {
     return true;
@@ -344,7 +379,7 @@ export function normalizeGrade(raw: unknown): CanonicalGrade {
     score: Number.isFinite(score) ? score : undefined,
     scale: Number(row.scale ?? row.maxScore ?? 20) || 20,
     coefficient: Number(row.coefficient ?? 1) || 1,
-    evaluationCoefficient: Number(row.evaluationCoefficient ?? row.coefficient ?? 1) || 1,
+    evaluationCoefficient: Number(row.evaluationCoefficient ?? 1) || 1,
     gradeStatus,
     status: fromGradeStatus(gradeStatus),
     subject: asText(row.subject) || undefined,
@@ -394,17 +429,20 @@ export function studentApiId(student: CanonicalRosterStudent): string {
 
 export function rosterStudentsForEvaluation(
   students: CanonicalRosterStudent[],
-  evaluation: Pick<CanonicalEvaluation, "classId" | "classCode">,
+  evaluation: Pick<CanonicalEvaluation, "classId" | "classCode" | "className">,
 ): CanonicalRosterStudent[] {
   const classId = asText(evaluation.classId);
   const classCode = asText(evaluation.classCode);
+  const className = normalizeKey(evaluation.className);
   return students.filter((student) => {
     if (student.archived || normalizeKey(student.status) === "archived") return false;
     const studentClassId = asText(student.classId);
     const studentClassCode = asText(student.classCode);
+    const studentClassName = normalizeKey(student.className);
     if (classId && studentClassId && studentClassId === classId) return true;
     if (classCode && studentClassCode && studentClassCode === classCode) return true;
     if (classId && studentClassCode && studentClassCode === classId) return true;
+    if (className && studentClassName && studentClassName === className) return true;
     return false;
   });
 }
@@ -548,12 +586,15 @@ export const EVALUATIONS_V2_COPY = {
   missingEvaluationTeacher:
     "Aucun enseignant n'est affecté à cette évaluation. Vérifiez l'affectation du cours.",
   teacherCannotValidate: "Validation réservée au préfet ou à l'administration.",
-  saving: "Enregistrement…",
-  saveGrades: "Enregistrer les notes",
+  saving: PEDAGOGY_COPY.saving,
+  saveGrades: PEDAGOGY_COPY.saveGrades,
   retry: "Réessayer",
-  validate: "Valider l'évaluation",
-  create: "Créer l'évaluation",
-  enterGrades: "Saisir les notes",
+  validate: PEDAGOGY_COPY.validate,
+  create: PEDAGOGY_COPY.saveForm,
+  enterGrades: PEDAGOGY_COPY.enterGrades,
+  consult: PEDAGOGY_COPY.consult,
+  publish: PEDAGOGY_COPY.publish,
+  edit: PEDAGOGY_COPY.editEvaluation,
 } as const;
 
 export const EVALUATIONS_V2_TEST_IDS = {
