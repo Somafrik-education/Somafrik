@@ -9,7 +9,7 @@ import {
   getPaymentCashBreakdown,
   isCountedMobileCashPayment,
 } from "./paymentCashKpi";
-import { formatPaymentCashAmounts as formatWebCash } from "../../../web/src/lib/paymentCashKpi.ts";
+import { formatPaymentCashAmounts as formatWebCash } from "../../../web/src/lib/paymentCashKpi";
 import {
   FIN_L306_DIVERGENT_COUNTED,
   FIN_L306_DIVERGENT_COUNTED_ID,
@@ -49,9 +49,10 @@ function run() {
   assert.equal(b1.amount, 1000, "FIN-L3-06-B1 amount canonique serveur");
   assert.notEqual(b1.amount, 1200, "FIN-L3-06-B1 interdit SUM(items)=1200");
   assert.equal(b1.totalAmount, 1000, "FIN-L3-06-B1 totalAmount reste canonique");
-  assert.equal(b1.items.length, 2, "FIN-L3-06-B1 items conservés pour le reçu");
+  const b1Items = b1.items ?? [];
+  assert.equal(b1Items.length, 2, "FIN-L3-06-B1 items conservés pour le reçu");
   assert.equal(
-    b1.items.reduce((sum, item) => sum + Number(item.amount || 0), 0),
+    b1Items.reduce((sum, item) => sum + Number(item.amount || 0), 0),
     1200,
     "FIN-L3-06-B1 SUM(items) reste 1200 sur les lignes",
   );

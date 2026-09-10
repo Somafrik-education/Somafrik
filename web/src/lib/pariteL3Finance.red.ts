@@ -151,7 +151,7 @@ const cases: { id: string; title: string; run: () => void }[] = [
   },
   {
     id: "FIN-L3-06-B3",
-    title: "Montant encaissé Web = payment.amount, jamais SUM(items)",
+    title: "Montant encaissé Web = montant API, jamais somme des lignes",
     run() {
       const cash = read("lib/paymentCashKpi.ts");
       assert.match(
