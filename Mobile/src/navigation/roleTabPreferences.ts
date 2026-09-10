@@ -11,7 +11,6 @@ import StudentPresencesScreen from "../screens/StudentPresencesScreen";
 import StudentPaymentsScreen from "../screens/StudentPaymentsScreen";
 import TeacherAttendanceScreen from "../screens/TeacherAttendanceScreen";
 import TeacherGradesScreen from "../screens/TeacherGradesScreen";
-import PlatformNotificationsScreen from "../screens/PlatformNotificationsScreen";
 import { shortBottomTabLabel } from "../lib/mobileUxV1Layout";
 import {
   getRoleTabCatalog,
@@ -42,7 +41,6 @@ const SCREEN_BY_TAB: Record<string, ComponentType<any>> = {
   Presences: StudentPresencesScreen,
   FraisEleve: StudentPaymentsScreen,
   Utilisateurs: UsersScreen,
-  PlatformNotifications: PlatformNotificationsScreen,
 };
 
 const ICONS_BY_TAB: Record<
@@ -60,7 +58,6 @@ const ICONS_BY_TAB: Record<
   Presences: { icon: "calendar-outline", focusedIcon: "calendar", quickActionIcon: "calendar-outline" },
   FraisEleve: { icon: "wallet-outline", focusedIcon: "wallet", quickActionIcon: "card-outline" },
   Utilisateurs: { icon: "person-outline", focusedIcon: "person", quickActionIcon: "person-circle-outline" },
-  PlatformNotifications: { icon: "notifications-outline", focusedIcon: "notifications", quickActionIcon: "notifications-outline" },
 };
 
 const INITIAL_PARAMS_BY_TAB: Record<string, Record<string, unknown>> = {};

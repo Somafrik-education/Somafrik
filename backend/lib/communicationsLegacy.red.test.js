@@ -93,22 +93,33 @@ test("J-02 / RED-COM-06B — Web établissement ne lit plus le catalogue legacy 
   );
 });
 
-test("J-03 / RED-COM-06C — Mobile route le CTA selon le contexte actif", () => {
+test("J-03 / #577 L0 — Mobile limite Notifications à l'inbox établissement C4", () => {
   const home = read("Mobile/src/screens/HomeScreen.tsx");
   const helper = read("Mobile/src/lib/notificationInboxRoute.ts");
-  const start = home.indexOf("platformNotifications:");
-  assert.ok(start >= 0, "CTA Home notifications introuvable");
-  const block = home.slice(start, home.indexOf("announcements:", start));
-  assert.match(home, /resolveNotificationsInboxRoute/);
-  assert.match(block, /resolveNotificationsInboxRoute/);
+  const communicationHeader = read("Mobile/src/components/CommunicationHeaderIcons.tsx");
+  const appHeader = read("Mobile/src/components/MobileAppHeader.tsx");
+  const navigator = read("Mobile/src/navigation/AppNavigator.tsx");
+
+  assert.doesNotMatch(
+    home,
+    /platformNotifications:\s*\(/,
+    "l'Accueil Mobile ne doit plus exposer de CTA notifications plateforme",
+  );
   assert.match(helper, /hasSchoolNotificationContext/);
-  assert.match(
+  assert.match(helper, /canReadRoute\(session, "InternalNotifications"\)/);
+  assert.doesNotMatch(
     helper,
     /canReadView\(session, "PlatformNotifications"\)/,
-    "le catalogue B reste accessible hors contexte établissement",
+    "le helper Mobile ne doit plus fournir de fallback vers le catalogue plateforme réservé au Web",
   );
-  assert.match(read("Mobile/src/components/CommunicationHeaderIcons.tsx"), /resolveNotificationsInboxRoute/);
-  assert.match(read("Mobile/src/components/MobileAppHeader.tsx"), /resolveNotificationsInboxRoute/);
+  assert.match(communicationHeader, /resolvedNotificationsInboxRoute === "InternalNotifications"/);
+  assert.doesNotMatch(communicationHeader, /canPlatformNotifications/);
+  assert.match(appHeader, /resolvedNotificationsInboxRoute === "InternalNotifications"/);
+  assert.doesNotMatch(
+    navigator,
+    /name="PlatformNotifications"/,
+    "PlatformNotifications ne doit plus être enregistré dans le graphe Mobile live",
+  );
 });
 
 test("J-04 / RED-COM-06E — KPI Alertes à traiter = unread C4", () => {

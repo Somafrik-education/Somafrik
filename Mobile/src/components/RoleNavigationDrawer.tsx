@@ -67,10 +67,6 @@ export default function RoleNavigationDrawer({
 
   const openItem = (item: RoleDrawerItem) => {
     onClose();
-    if (item.entity) {
-      rootNavigation.navigate("AdminCrud", { entity: item.entity });
-      return;
-    }
     if (item.route) {
       rootNavigation.navigate(item.route);
     }

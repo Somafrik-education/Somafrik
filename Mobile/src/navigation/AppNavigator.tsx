@@ -21,31 +21,25 @@ import TeachersScreen from "../screens/TeachersScreen";
 import UsersScreen from "../screens/UsersScreen";
 import PaymentsScreen from "../screens/PaymentsScreen";
 import AnnouncementsScreen from "../screens/AnnouncementsScreen";
-import SafeAdminCrudScreen from "../screens/SafeAdminCrudScreen";
 import MessagesScreen from "../screens/MessagesScreen";
 import TimetableScreen from "../screens/TimetableScreen";
 import ReportCardsScreen from "../screens/ReportCardsScreen";
 import TeacherAttendanceScreen from "../screens/TeacherAttendanceScreen";
 import TeacherGradesScreen from "../screens/TeacherGradesScreen";
 import {
-  AuditScreen,
-  DocumentsScreen,
   MobilePaymentScreen,
   OfflineModeScreen,
-  ReportsScreen,
   SupportScreen,
   SynchronizationScreen,
 } from "../screens/MvpUtilityScreens";
-import PermissionsScreen from "../screens/PermissionsScreen";
 import ConfigurationScreen from "../screens/ConfigurationScreen";
 import EstablishmentProfileScreen from "../screens/EstablishmentProfileScreen";
 import SchoolYearSettingsScreen from "../screens/SchoolYearSettingsScreen";
 import SchoolPedagogicalStructureScreen from "../screens/SchoolPedagogicalStructureScreen";
 import SchoolAssignableRolesScreen from "../screens/SchoolAssignableRolesScreen";
-import PlatformNotificationsScreen from "../screens/PlatformNotificationsScreen";
 import InternalNotificationsScreen from "../screens/InternalNotificationsScreen";
 import OfflineBanner from "../components/OfflineBanner";
-import { AdminEntity } from "../context/AdminDataContext";
+import type { AdminEntity } from "../context/AdminDataContext";
 import { useAuth } from "../context/AuthContext";
 import { canPersistFullSession } from "../lib/dataTruth";
 import { canReadRoute, canReadView } from "../domain/security/permissions";
@@ -93,9 +87,6 @@ export type RootStackParamList = {
   Messages: undefined;
   Timetable: undefined;
   ReportCards: undefined;
-  Documents: undefined;
-  Reports: undefined;
-  Audit: undefined;
   Support: undefined;
   MobilePayment: undefined;
   OfflineMode: undefined;
@@ -105,9 +96,8 @@ export type RootStackParamList = {
   SchoolYearSettings: undefined;
   SchoolPedagogicalStructure: undefined;
   SchoolAssignableRoles: undefined;
-  PlatformNotifications: undefined;
   InternalNotifications: undefined;
-  Permissions: undefined;
+  /** Type conservé pour compiler l'écran historique, jamais enregistré dans le graphe live. */
   AdminCrud: {
     entity: AdminEntity;
     filter?: "paid" | "pending";
@@ -231,7 +221,7 @@ export default function AppNavigator() {
 
   // Chaque écran reste filtré par canReadRoute. SchoolManagement n'ouvre plus
   // le bundle par identité établissement : seul Établissements:READ le déclenche.
-  const canOpenAdminCrud =
+  const canOpenAdminScreens =
     canReadRoute(session, "SchoolManagement") ||
     canReadRoute(session, "Teachers") ||
     canReadView(session, "users") ||
@@ -269,7 +259,7 @@ export default function AppNavigator() {
         <Stack.Screen name="Login" component={LoginScreen} options={{ headerShown: false }} />
         <Stack.Screen name="Home" component={HomeTabs} options={{ headerShown: false }} />
 
-        {canOpenAdminCrud && (
+        {canOpenAdminScreens && (
           <>
             {session?.role !== "school_admin" && canReadRoute(session, "SchoolManagement") && (
               <Stack.Screen name="SchoolManagement" component={SchoolManagementScreen} options={{ title: "Gestion de l'établissement" }} />
@@ -281,7 +271,6 @@ export default function AppNavigator() {
             {canReadRoute(session, "Payments") && (
               <Stack.Screen name="Payments" component={PaymentsScreen} options={{ title: "Paiements" }} />
             )}
-            <Stack.Screen name="AdminCrud" component={SafeAdminCrudScreen} options={{ title: "Administration" }} />
           </>
         )}
 
@@ -314,9 +303,6 @@ export default function AppNavigator() {
           </>
         )}
 
-        {canReadRoute(session, "Documents") && <Stack.Screen name="Documents" component={DocumentsScreen} options={{ title: "Documents" }} />}
-        {canReadRoute(session, "Reports") && <Stack.Screen name="Reports" component={ReportsScreen} options={{ title: "Rapports" }} />}
-        {canReadRoute(session, "Audit") && <Stack.Screen name="Audit" component={AuditScreen} options={{ title: "Audit" }} />}
         {canReadRoute(session, "MobilePayment") && <Stack.Screen name="MobilePayment" component={MobilePaymentScreen} options={{ title: "Paiement mobile" }} />}
         {canReadRoute(session, "OfflineMode") && <Stack.Screen name="OfflineMode" component={OfflineModeScreen} options={{ title: "Mode hors ligne" }} />}
         {canReadRoute(session, "Synchronization") && <Stack.Screen name="Synchronization" component={SynchronizationScreen} options={{ title: "Synchronisation" }} />}
@@ -339,8 +325,6 @@ export default function AppNavigator() {
           <Stack.Screen name="SchoolAssignableRoles" component={SchoolAssignableRolesScreen} options={{ title: "Rôles disponibles" }} />
         )}
         {canReadRoute(session, "InternalNotifications") && <Stack.Screen name="InternalNotifications" component={InternalNotificationsScreen} options={{ title: "Notifications" }} />}
-        {canReadView(session, "PlatformNotifications") && <Stack.Screen name="PlatformNotifications" component={PlatformNotificationsScreen} options={{ title: "Notifications plateforme" }} />}
-        {canReadView(session, "Permissions") && <Stack.Screen name="Permissions" component={PermissionsScreen} options={{ title: "Droits par rôle" }} />}
       </Stack.Navigator>
     </NavigationContainer>
   );

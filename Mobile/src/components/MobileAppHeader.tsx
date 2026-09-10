@@ -19,7 +19,13 @@ export default function MobileAppHeader({ navigation }: { navigation: any }) {
   const [drawerOpen, setDrawerOpen] = useState(false);
 
   const schoolName = session?.school?.name ?? session?.user?.schoolCode ?? "Somafrik";
-  const notificationsInboxRoute = resolveNotificationsInboxRoute(session, activeSchoolCode);
+  const resolvedNotificationsInboxRoute = resolveNotificationsInboxRoute(session, activeSchoolCode);
+  // #577 L0 : la messagerie plateforme reste réservée au Web. Le header Mobile
+  // n'expose que la boîte interne d'un établissement réellement sélectionné.
+  const notificationsInboxRoute =
+    resolvedNotificationsInboxRoute === "InternalNotifications"
+      ? resolvedNotificationsInboxRoute
+      : null;
   const canInternalNotifications = notificationsInboxRoute === "InternalNotifications";
   const { count: internalUnread } = useInternalNotificationsUnreadCount(
     canInternalNotifications,

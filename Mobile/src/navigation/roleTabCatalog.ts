@@ -47,7 +47,6 @@ const accountantTabs: RoleTabCatalogItem[] = [
 
 const platformTabs: RoleTabCatalogItem[] = [
   { tabName: "Utilisateurs", route: "Users", label: "Comptes", quickActionLabel: "Utilisateurs" },
-  { tabName: "PlatformNotifications", route: "PlatformNotifications", label: "Notifs", quickActionLabel: "Notifications" },
 ];
 
 export function getRoleTabCatalog(role?: string): RoleTabCatalogItem[] {

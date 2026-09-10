@@ -118,31 +118,21 @@ assert.deepEqual(drawerLabels(student).slice(0, 2), ["Notes", "Présences"]);
 assert.equal(drawerLabels(student).includes("Paiements"), false, "Élève defaults : pas de Paiements:READ");
 assert.equal(tabRoutes(student).includes("FraisEleve"), false);
 
-assert.deepEqual(drawerLabels(superAdmin).slice(0, 4), [
-  "Établissements",
-  "Abonnements",
-  "Utilisateurs",
-  "Notifications",
-]);
+assert.deepEqual(drawerLabels(superAdmin), ["Utilisateurs", "Paramètres"]);
 assert.equal(drawerLabels(superAdmin).includes("Classes"), false);
 assert.equal(drawerLabels(superAdmin).includes("Paiements"), false);
-assert.deepEqual(tabLabels(superAdmin), ["Comptes", "Notifs"]);
-assert.deepEqual(tabRoutes(superAdmin), ["Users", "PlatformNotifications"]);
+assert.deepEqual(tabLabels(superAdmin), ["Comptes"]);
+assert.deepEqual(tabRoutes(superAdmin), ["Users"]);
 assert.equal(
   getRoleTabCatalog("super_admin").some((tab) => tab.route === "schools" || tab.route === "subscriptions"),
   false,
   "pas d’onglet Écoles/Offres tant que AdminCrud générique est fail-closed",
 );
 
-assert.deepEqual(drawerLabels(countryAdmin).slice(0, 4), [
-  "Établissements",
-  "Abonnements",
-  "Utilisateurs",
-  "Notifications",
-]);
+assert.deepEqual(drawerLabels(countryAdmin), ["Utilisateurs"]);
 assert.equal(drawerLabels(countryAdmin).includes("Paramètres"), false);
 assert.equal(drawerLabels(countryAdmin).includes("Droits par rôle"), false);
-assert.deepEqual(tabLabels(countryAdmin), ["Comptes", "Notifs"]);
+assert.deepEqual(tabLabels(countryAdmin), ["Comptes"]);
 assert.equal(
   getRoleTabCatalog("country_admin").some((tab) => tab.route === "schools" || tab.route === "subscriptions"),
   false,
