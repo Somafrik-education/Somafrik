@@ -32,6 +32,17 @@
 | SCO-05 | Liste Élèves : classe + statut + année | `StudentsListPage` | cartes Élèves | `GET /students` | Lignes tactiles |
 | SCO-06 | 403 ≠ liste vide ; année absente ≠ succès | hub + listes | hub + listes | RBAC inchangé | États UX |
 
+## Après L0 (GREEN)
+
+| ID | Web | Mobile | Données identiques ? |
+| --- | --- | --- | --- |
+| SCO-01 Classes | `filterCanonicalClasses(state.classes)` | Accueil + liste : `filterCanonicalClasses` | Oui (GET /classes, sans CLASS-) |
+| SCO-02 Hub + année | titre Scolarité + `academicYearsApi` | `SchoolingHubScreen` + `listAcademicYears` | Oui (`isCurrent`) |
+| SCO-03 Actions | Classes / Élèves / Inscriptions / Structure / Année | mêmes labels et mêmes destinations métier | Oui |
+| SCO-04 Liste classes | table FR + `/parametres/structure` | cartes + statut FR | Oui source |
+| SCO-05 Élèves | classe + statut + année | classe + statut (année sur fiche) | Oui source GET /students |
+| SCO-06 États | 403 / erreur / vide / année absente explicites | idem | Oui fail-closed |
+
 ## Reportés volontairement
 
 | Sujet | Pourquoi |

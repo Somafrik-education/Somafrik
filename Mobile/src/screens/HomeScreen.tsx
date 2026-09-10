@@ -26,6 +26,7 @@ import {
   formatHomePaymentsKpi,
 } from "../lib/homeDashboardKpis";
 import { countActiveUserAccounts } from "../lib/format";
+import { filterCanonicalClasses } from "../lib/schoolingTruth";
 import { TODAY_PRESENCE_KPI_LABEL, getTodayEstablishmentPresenceKpi } from "../lib/todayPresenceKpi";
 import { canonicalWeightedAverage, notesForStudent } from "../lib/evaluationsV2";
 import {
@@ -127,7 +128,7 @@ export default function HomeScreen({ navigation }: any) {
   const usersValue = metricLabelFromSnapshot(usersSnapshot, (rows) => String(countActiveUserAccounts(rows)));
   const studentsValue = metricLabelFromSnapshot(studentsSnapshot, () => String(visibleStudents.length));
   const classesValue = metricLabelFromSnapshot(classesSnapshot, (rows) =>
-    String(rows.length || new Set(visibleStudents.map((student) => student.className)).size),
+    String(filterCanonicalClasses(rows).length),
   );
   const studentsReady =
     studentsSnapshot.status === "success" ||

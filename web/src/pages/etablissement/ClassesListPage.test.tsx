@@ -289,7 +289,7 @@ describe("ClassesListPage (CRUD /api/classes)", () => {
     renderPage();
     const empty = await screen.findByRole("status");
     expect(empty).toHaveTextContent("Liste vide");
-    expect(empty).toHaveTextContent("Aucun élément à afficher dans classes.");
+    expect(empty).toHaveTextContent("Aucune classe n'est encore créée pour cet établissement.");
   });
 
   it("affiche ForbiddenState si accès refusé", () => {

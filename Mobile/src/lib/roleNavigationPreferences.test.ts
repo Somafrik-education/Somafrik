@@ -47,17 +47,17 @@ assert.notEqual(
   getRoleDrawerCatalog("secretary").map((item) => item.label).join("|"),
   "Préfet et Secrétaire ont des catalogues distincts",
 );
-assert.equal(getRoleDrawerCatalog("school_admin")[0]?.label, "Élèves");
+assert.equal(getRoleDrawerCatalog("school_admin")[0]?.label, "Scolarité");
 assert.equal(getRoleDrawerCatalog("accountant")[0]?.label, "Paiements");
-assert.equal(getRoleDrawerCatalog("prefet")[2]?.label, "Présences");
-assert.equal(getRoleDrawerCatalog("secretary")[0]?.label, "Élèves");
-assert.equal(getRoleDrawerCatalog("secretary")[1]?.label, "Présences");
-assert.equal(getRoleDrawerCatalog("secretary")[2]?.label, "Paiements");
+assert.equal(getRoleDrawerCatalog("prefet")[3]?.label, "Présences");
+assert.equal(getRoleDrawerCatalog("secretary")[0]?.label, "Scolarité");
+assert.equal(getRoleDrawerCatalog("secretary")[2]?.label, "Présences");
+assert.equal(getRoleDrawerCatalog("secretary")[3]?.label, "Paiements");
 
 const schoolAdminLabels = drawerLabels(schoolAdmin);
 assert.deepEqual(
   schoolAdminLabels.slice(0, 6),
-  ["Élèves", "Classes", "Présences", "Paiements", "Enseignants", "Notes"],
+  ["Scolarité", "Élèves", "Classes", "Présences", "Paiements", "Enseignants"],
 );
 assert.ok(schoolAdminLabels.indexOf("Utilisateurs") > schoolAdminLabels.indexOf("Paiements"));
 assert.ok(schoolAdminLabels.indexOf("Paramètres") > schoolAdminLabels.indexOf("Utilisateurs"));
@@ -73,7 +73,7 @@ assert.deepEqual(
 );
 assert.deepEqual(
   schoolAdminSections[0].items.map((item) => item.label).slice(0, 4),
-  ["Élèves", "Classes", "Présences", "Paiements"],
+  ["Scolarité", "Élèves", "Classes", "Présences"],
 );
 assert.ok(schoolAdminSections[1].items.some((item) => item.label === "Paramètres"));
 assert.ok(schoolAdminSections[1].items.some((item) => item.label === "Structure pédagogique"));
@@ -86,7 +86,7 @@ assert.equal(
 );
 
 const prefetLabels = drawerLabels(prefet);
-assert.deepEqual(prefetLabels.slice(0, 4), ["Élèves", "Classes", "Présences", "Notes"]);
+assert.deepEqual(prefetLabels.slice(0, 5), ["Scolarité", "Élèves", "Classes", "Présences", "Notes"]);
 assert.equal(prefetLabels.includes("Paiements"), false, "Préfet defaults : pas de Paiements:READ");
 assert.equal(prefetLabels.includes("Paramètres"), false, "Préfet n’est pas opérateur Paramètres");
 assert.ok(prefetLabels.indexOf("Utilisateurs") > prefetLabels.indexOf("Notes"));
@@ -102,7 +102,7 @@ assert.equal(
 );
 
 const secretaryLabels = drawerLabels(secretary);
-assert.deepEqual(secretaryLabels.slice(0, 3), ["Élèves", "Présences", "Paiements"]);
+assert.deepEqual(secretaryLabels.slice(0, 4), ["Scolarité", "Élèves", "Présences", "Paiements"]);
 assert.ok(secretaryLabels.indexOf("Utilisateurs") > secretaryLabels.indexOf("Paiements"));
 assert.deepEqual(tabLabels(secretary), ["Élèves", "Appel", "Frais", "Classes"]);
 
@@ -142,11 +142,11 @@ assert.equal(drawerLabels(supervisor).length, 0, "Surveillant : pas de defaults 
 assert.equal(tabLabels(supervisor).length, 0);
 
 const adjointLabels = drawerLabels(adjoint);
-assert.equal(adjointLabels[0], "Présences");
+assert.equal(adjointLabels[0], "Scolarité");
 assert.ok(adjointLabels.includes("Élèves"));
 
 const readOnlySchool = sessionOf("school_admin", ["Élèves:READ", "Classes:READ"]);
-assert.deepEqual(drawerLabels(readOnlySchool), ["Élèves", "Classes"]);
+assert.deepEqual(drawerLabels(readOnlySchool), ["Scolarité", "Élèves", "Classes"]);
 assert.deepEqual(tabLabels(readOnlySchool), ["Élèves", "Classes"]);
 assert.equal(drawerLabels(readOnlySchool).includes("Paramètres"), false);
 assert.equal(drawerLabels(readOnlySchool).includes("Utilisateurs"), false);
@@ -157,7 +157,7 @@ assert.deepEqual(tabLabels(paymentsOnly), ["Frais"]);
 
 const noStudentsPrefet = sessionOf("prefet", ["Présences:READ", "Notes:READ", "Classes:READ"]);
 assert.equal(drawerLabels(noStudentsPrefet).includes("Élèves"), false);
-assert.deepEqual(drawerLabels(noStudentsPrefet), ["Classes", "Présences", "Notes"]);
+assert.deepEqual(drawerLabels(noStudentsPrefet), ["Scolarité", "Classes", "Présences", "Notes"]);
 
 assert.equal(getAllowedRoleDrawerItems(sessionOf("school_admin", [])).length, 0, "permissions [] live = fail-closed, pas de defaults");
 

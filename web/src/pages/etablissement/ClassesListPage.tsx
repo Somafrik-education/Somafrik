@@ -20,6 +20,16 @@ import { scopeAcademicYearsForConfiguration } from "../../lib/academicYearsScope
 import { educationReferenceApi, type EducationSchoolCatalog } from "../../lib/educationReferenceApi";
 import { usePermissionContext } from "../../lib/usePermissionContext";
 import { getEntityFeaturePermissions } from "../../lib/permissions";
+import { displayStatusName } from "../../lib/format";
+import {
+  SCOLARITE_COPY,
+  composeClassPreviewName,
+  getClassDisplayName,
+  isPedagogicalSeriesCode,
+  selectCurrentAcademicYear,
+} from "../../lib/schoolingTruth";
+
+export { composeClassPreviewName, getClassDisplayName, isPedagogicalSeriesCode };
 
 type ClassFormState = {
   academicYearId: string;
@@ -44,38 +54,6 @@ type AcademicYearOption = {
   isCurrent?: boolean;
 };
 
-/** Série métier A/B/C — visible dans le nom. Les codes techniques (CD02…) ne le sont pas. */
-export function isPedagogicalSeriesCode(value: unknown): boolean {
-  return /^[A-Z]$/i.test(String(value ?? "").trim());
-}
-
-function pedagogicalSeriesToken(groupCode?: string | null, groupName?: string | null): string {
-  const code = String(groupCode ?? "").trim();
-  if (isPedagogicalSeriesCode(code)) return code.toLocaleUpperCase("fr");
-  const name = String(groupName ?? "").trim();
-  if (isPedagogicalSeriesCode(name)) return name.toLocaleUpperCase("fr");
-  return "";
-}
-
-/**
- * Aperçu / nom canonique : Niveau + Filière éventuelle + Série métier.
- * Ex. « 1ère Primaire A », « 1ère Humanité Scientifique A ».
- */
-export function composeClassPreviewName(parts: {
-  levelName?: string | null;
-  streamName?: string | null;
-  groupCode?: string | null;
-  groupName?: string | null;
-}): string {
-  return [
-    String(parts.levelName ?? "").trim(),
-    String(parts.streamName ?? "").trim(),
-    pedagogicalSeriesToken(parts.groupCode, parts.groupName),
-  ]
-    .filter(Boolean)
-    .join(" ");
-}
-
 const MASCULINE_PEDAGOGICAL_LABELS = new Set(["groupe", "niveau"]);
 
 export function chooseFrenchIndefiniteArticle(label: string): "un" | "une" {
@@ -89,21 +67,6 @@ export function chooseFrenchIndefiniteArticle(label: string): "un" | "une" {
 export function chooseLabeledOption(label: string): string {
   const noun = String(label ?? "").trim().toLocaleLowerCase("fr") || "élément";
   return `Choisir ${chooseFrenchIndefiniteArticle(label)} ${noun}`;
-}
-
-/**
- * Affichage liste : conserve la série métier A/B/C dans le nom.
- * Retire uniquement un suffixe technique legacy (ex. « 1ère A CD02 » → « 1ère A »).
- */
-export function getClassDisplayName(row: Pick<SchoolClass, "name" | "groupCode">): string {
-  const name = String(row.name ?? "").trim();
-  const groupCode = String(row.groupCode ?? "").trim();
-  if (!name || !groupCode) return name;
-  if (isPedagogicalSeriesCode(groupCode)) return name;
-  const suffix = ` ${groupCode}`;
-  return name.toLocaleLowerCase("fr").endsWith(suffix.toLocaleLowerCase("fr"))
-    ? name.slice(0, -suffix.length).trim()
-    : name;
 }
 
 /**
@@ -203,6 +166,7 @@ export function ClassesListPage() {
     groupCode: selectedGroup?.code,
     groupName: selectedGroup?.name,
   });
+  const currentYear = useMemo(() => selectCurrentAcademicYear(years), [years]);
   const labels = catalog?.labels ?? { levelLabel: "Niveau", trackLabel: "Filière", groupLabel: "Groupe" };
 
   function openCreate() {
@@ -290,7 +254,11 @@ export function ClassesListPage() {
         render: (row: SchoolClass) => row.academicYearName || "—",
       },
       { key: "students", header: "Effectif", render: (row: SchoolClass) => Number(row.students ?? 0) },
-      { key: "status", header: "Statut" },
+      {
+        key: "status",
+        header: "Statut",
+        render: (row: SchoolClass) => displayStatusName(row.status),
+      },
       {
         key: "actions",
         header: "Actions",
@@ -333,7 +301,13 @@ export function ClassesListPage() {
     <>
       <EntityListShell
         title="Classes"
-        description="Organisation des classes de l'établissement (persistance PostgreSQL)."
+        description={
+          loading
+            ? "Organisation des classes (PostgreSQL)."
+            : currentYear
+              ? `Année active : ${currentYear.name}. Organisation des classes (PostgreSQL).`
+              : `${SCOLARITE_COPY.missingYear}. Organisation des classes (PostgreSQL).`
+        }
         alerts={
           error ? (
             <InlineAlert tone="danger" title="Erreur">
@@ -358,8 +332,8 @@ export function ClassesListPage() {
               className="h-10 rounded-lg border border-border bg-surface px-3 text-sm text-foreground"
             >
               <option value="">Tous les statuts</option>
-              <option value="active">Actives</option>
-              <option value="inactive">Inactives</option>
+              <option value="active">Actif</option>
+              <option value="inactive">Inactif</option>
             </select>
           </div>
         }
@@ -381,7 +355,7 @@ export function ClassesListPage() {
         ) : filtered.length === 0 ? (
           <EmptyState
             title="Liste vide"
-            description="Aucun élément à afficher dans classes."
+            description="Aucune classe n'est encore créée pour cet établissement."
           />
         ) : (
           <EntityListTable
@@ -434,8 +408,8 @@ export function ClassesListPage() {
               </p>
               <p className="text-sm text-amber-900">
                 Activez l'offre pédagogique dans{" "}
-                <Link className="underline" to="/configuration">
-                  Paramètres / Référentiel
+                <Link className="underline" to="/parametres/structure">
+                  Paramètres → Structure pédagogique
                 </Link>{" "}
                 avant de créer une classe.
               </p>
@@ -448,8 +422,8 @@ export function ClassesListPage() {
               </p>
               <p className="text-sm text-amber-900">
                 Configurez le catalogue pays puis activez « {labels.groupLabel} » dans{" "}
-                <Link className="underline" to="/configuration">
-                  Paramètres / Référentiel
+                <Link className="underline" to="/parametres/structure">
+                  Paramètres → Structure pédagogique
                 </Link>
                 . Aucun {labels.groupLabel.toLowerCase()} n'est proposé par défaut.
               </p>
@@ -507,8 +481,8 @@ export function ClassesListPage() {
                 }))
               }
               options={[
-                { value: "active", label: "active" },
-                { value: "inactive", label: "inactive" },
+                { value: "active", label: "Actif" },
+                { value: "inactive", label: "Inactif" },
               ]}
             />
           </Field>

@@ -170,6 +170,19 @@ describe("EtablissementOverviewPage — bootstrap DataProvider + DomainRouteBoot
         return asyncState.assignmentsPromise ?? store.assignments;
       }
       if (url === "/backoffice/relations") return store.relations;
+      if (url === "/v2/academic-years") {
+        return [
+          {
+            id: "ay-1",
+            name: "2025-2026",
+            isCurrent: true,
+            startDate: "2025-09-01",
+            endDate: "2026-07-31",
+            status: "active",
+            schoolCode: LOGIN_A,
+          },
+        ];
+      }
       if (url.startsWith("/backoffice/establishments/")) {
         return {
           id: SCHOOL_ID_A,
@@ -237,7 +250,7 @@ describe("EtablissementOverviewPage — bootstrap DataProvider + DomainRouteBoot
 
     renderEstablishmentTree("/etablissement/vue-ensemble");
 
-    expect(await screen.findByText("Chargement des données de l’établissement…")).toBeInTheDocument();
+    expect(await screen.findByText("Chargement de la scolarité…")).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Enseignants" })).not.toBeInTheDocument();
     expect(screen.queryByText(/enseignant\(s\) sans affectation/i)).not.toBeInTheDocument();
     expect(apiGetMock).toHaveBeenCalledWith("/assignments");

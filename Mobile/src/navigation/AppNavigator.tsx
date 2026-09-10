@@ -37,6 +37,7 @@ import ConfigurationScreen from "../screens/ConfigurationScreen";
 import EstablishmentProfileScreen from "../screens/EstablishmentProfileScreen";
 import SchoolYearSettingsScreen from "../screens/SchoolYearSettingsScreen";
 import SchoolPedagogicalStructureScreen from "../screens/SchoolPedagogicalStructureScreen";
+import SchoolingHubScreen from "../screens/SchoolingHubScreen";
 import SchoolAssignableRolesScreen from "../screens/SchoolAssignableRolesScreen";
 import InternalNotificationsScreen from "../screens/InternalNotificationsScreen";
 import OfflineBanner from "../components/OfflineBanner";
@@ -78,6 +79,7 @@ export type RootStackParamList = {
   StudentPayments: { studentId: string };
   SchoolManagement: undefined;
   Classes: undefined;
+  Schooling: undefined;
   Teachers: undefined;
   Users: undefined;
   TeacherStudents: undefined;
@@ -280,6 +282,7 @@ export default function AppNavigator() {
           </>
         )}
 
+        {canReadRoute(session, "Schooling") && <Stack.Screen name="Schooling" component={SchoolingHubScreen} options={{ title: "Scolarité" }} />}
         {canReadRoute(session, "Classes") && <Stack.Screen name="Classes" component={ClassesScreen} options={{ title: "Classes" }} />}
         {canReadRoute(session, "Students") && <Stack.Screen name="Students" component={StudentsScreen} options={{ title: "Élèves" }} />}
         {canReadRoute(session, "TeacherStudents") && <Stack.Screen name="TeacherStudents" component={StudentsScreen} options={{ title: "Mes élèves" }} />}

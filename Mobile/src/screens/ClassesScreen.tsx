@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   View,
   Text,
@@ -40,6 +40,14 @@ import { filterClassesByQuery, USABILITY_TEST_IDS } from "../lib/mobileUsability
 import { shouldBlockUnsupportedMutations } from "../offline/l1/readModel";
 import ClassMutationControls from "../components/ClassMutationControls";
 import FormField from "../components/FormField";
+import { displayStatusName } from "../lib/format";
+import {
+  SCOLARITE_COPY,
+  filterCanonicalClasses,
+  getClassDisplayName,
+  selectCurrentAcademicYear,
+} from "../lib/schoolingTruth";
+import { listAcademicYears, type AcademicYearRecord } from "../services/schoolSettingsApi";
 
 export default function ClassesScreen({ navigation }: any) {
   const { scrollContentPaddingBottom } = useFloatingTabBarLayout();
@@ -58,6 +66,7 @@ export default function ClassesScreen({ navigation }: any) {
   const { classesData, studentsData, teachersData, assignmentsData, schoolsData, presencesSnapshot, loadClasses, loadStudents, loadPresences, loadTeachers, loadAssignments, classesSnapshot, studentsSnapshot, assignmentsSnapshot, resourceScopeKey, establishmentStudents } = useAdminData();
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
+  const [years, setYears] = useState<AcademicYearRecord[]>([]);
   const [offlineActionMessage, setOfflineActionMessage] = useState<string | null>(null);
   const classesUnavailable = classesSnapshot.status === "offline" || classesSnapshot.status === "error";
   const mutationsBlocked = shouldBlockUnsupportedMutations({
@@ -72,7 +81,10 @@ export default function ClassesScreen({ navigation }: any) {
     assignmentsSource: assignmentsSnapshot.source,
   };
   const visibleStudents = establishmentStudents;
-  const visibleClasses = scopedClassesForSession(session, classesData, studentsData, teacherScopeState);
+  const visibleClasses = filterCanonicalClasses(
+    scopedClassesForSession(session, classesData, studentsData, teacherScopeState),
+  );
+  const currentYear = selectCurrentAcademicYear(years);
   const totalStudents = visibleStudents.length;
   const canOpenStudents = canReadRoute(session, session?.role === "teacher" ? "TeacherStudents" : "Students");
   const schoolCode = String(session?.school?.code ?? session?.user?.schoolCode ?? "");
@@ -103,6 +115,20 @@ export default function ClassesScreen({ navigation }: any) {
     }, [loadClasses, loadStudents, loadPresences, loadTeachers, loadAssignments, resourceScopeKey]),
   );
 
+  useEffect(() => {
+    let cancelled = false;
+    void listAcademicYears()
+      .then((rows) => {
+        if (!cancelled) setYears(Array.isArray(rows) ? rows : []);
+      })
+      .catch(() => {
+        if (!cancelled) setYears([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [schoolCode]);
+
   const handleBlockedNetworkAction = () => {
     setOfflineActionMessage(OFFLINE_COPY.mutationRequiresConnection);
   };
@@ -123,7 +149,9 @@ export default function ClassesScreen({ navigation }: any) {
             {CLASSES_STUDENT_COPY.classesTitle}
           </Text>
           <Text style={styles.subtitle} numberOfLines={3}>
-            Gérez les classes et les élèves
+            {currentYear?.name
+              ? `Année active : ${currentYear.name}`
+              : "Aucune année scolaire active"}
           </Text>
         </View>
       </View>
@@ -241,7 +269,7 @@ export default function ClassesScreen({ navigation }: any) {
               Aucune classe ne correspond à cette recherche.
             </Text>
           ) : (
-            <Text style={styles.emptySearch}>Aucune classe à afficher.</Text>
+            <Text style={styles.emptySearch}>Aucune classe n'est encore créée pour cet établissement.</Text>
           )
         }
         renderItem={({ item }) => {
@@ -286,7 +314,7 @@ export default function ClassesScreen({ navigation }: any) {
               <View style={styles.classContent}>
                 <View style={styles.classTopRow}>
                   <Text style={styles.className} numberOfLines={3}>
-                    {item.name}
+                    {getClassDisplayName(item)}
                   </Text>
                   <View style={styles.badge}>
                     <Text
@@ -303,7 +331,12 @@ export default function ClassesScreen({ navigation }: any) {
                     ? `${classStudents.length} élèves`
                     : metricLabelFromSnapshot(studentsSnapshot, () => String(classStudents.length))}
                 </Text>
-                {item.classCode ? (
+                {item.status ? (
+                  <Text style={styles.classInfo} numberOfLines={1}>
+                    Statut : {displayStatusName(item.status)}
+                  </Text>
+                ) : null}
+                {item.classCode && !String(item.classCode).startsWith("CLASS-") ? (
                   <Text style={styles.classInfo} numberOfLines={2}>
                     Code : {item.classCode}
                   </Text>

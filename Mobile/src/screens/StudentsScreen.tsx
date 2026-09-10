@@ -53,6 +53,8 @@ import { shouldBlockUnsupportedMutations } from "../offline/l1/readModel";
 import { OFFLINE_COPY } from "../lib/offlineModeSpec";
 
 import { studentDisplayName } from "../lib/studentDisplayName";
+import { displayStatusName } from "../lib/format";
+import { SCOLARITE_COPY } from "../lib/schoolingTruth";
 
 import { MIN_TOUCH_TARGET_DP } from "../lib/mobileUsability";
 
@@ -319,19 +321,18 @@ export default function StudentsScreen({ route, navigation }: any) {
 
             </Text>
 
+            {className === "Toutes les classes" && student.className ? (
+              <Text style={styles.studentMeta} numberOfLines={1}>
+                {student.className}
+              </Text>
+            ) : null}
+            {student.status ? (
+              <Text style={styles.studentMeta} numberOfLines={1}>
+                {displayStatusName(student.status)}
+              </Text>
+            ) : null}
+
           </View>
-
-
-
-          {className === "Toutes les classes" && (
-
-            <Text style={styles.studentClass} numberOfLines={1}>
-
-              {student.className}
-
-            </Text>
-
-          )}
 
 
 
@@ -571,7 +572,13 @@ export default function StudentsScreen({ route, navigation }: any) {
 
   const isClassEmpty = classStudents.length === 0 && className !== "Toutes les classes";
 
-  const emptyMessage = isClassEmpty
+  const isDirectoryEmpty = classStudents.length === 0 && className === "Toutes les classes" && !query.trim();
+
+  const emptyMessage = isDirectoryEmpty
+
+    ? "Aucun élève inscrit. Ouvrez une classe puis « Inscrire un élève »."
+
+    : isClassEmpty
 
     ? CLASSES_STUDENT_COPY.studentsEmptyClass
 
@@ -603,7 +610,11 @@ export default function StudentsScreen({ route, navigation }: any) {
 
         <Text style={styles.emptyHint}>
 
-          {isClassEmpty
+          {isDirectoryEmpty
+
+            ? SCOLARITE_COPY.enrollmentsHint
+
+            : isClassEmpty
 
             ? "Cette classe n'a pas encore d'élève inscrit."
 
@@ -615,7 +626,7 @@ export default function StudentsScreen({ route, navigation }: any) {
 
     ),
 
-    [className, emptyMessage, isClassEmpty],
+    [className, emptyMessage, isClassEmpty, isDirectoryEmpty],
 
   );
 
@@ -1057,22 +1068,11 @@ const styles = StyleSheet.create({
 
   },
 
-
-
-  studentClass: {
-
-    width: 58,
-
-    marginHorizontal: 8,
-
-    fontSize: 10,
-
+  studentMeta: {
+    marginTop: 2,
+    fontSize: 11,
     fontWeight: "800",
-
     color: "#2563EB",
-
-    textAlign: "right",
-
   },
 
 

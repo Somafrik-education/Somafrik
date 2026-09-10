@@ -25,7 +25,7 @@ const SUBSCRIPTION_NAV = [
 ];
 
 const ETABLISSEMENT_PAGE_NAV = [
-  { path: "/etablissement/vue-ensemble", label: "Vue d'ensemble" },
+  { path: "/etablissement/vue-ensemble", label: "Scolarité" },
   { path: "/etablissement/comptes-utilisateurs", label: "Comptes utilisateurs" },
   { path: "/etablissement/relations-parent-enfant", label: "Parents & élèves" },
 ];
