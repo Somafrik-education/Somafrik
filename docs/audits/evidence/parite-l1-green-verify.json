@@ -1,0 +1,142 @@
+{
+  "audit": "parite-l1-unpaid-green",
+  "generatedAt": "2026-09-10T09:47:05.193Z",
+  "developBaseSha": "b0bcc27799cc43bab74c7c1f23279b8897b5a5a8",
+  "branch": "feat/577-l1-mobile-unpaid-green",
+  "testedHead": "b49f46a07f8d3fb5488c4298a93386ddb23d623b",
+  "prHeadAtTestTime": "b49f46a07f8d3fb5488c4298a93386ddb23d623b",
+  "evidenceCommit": null,
+  "prHead": null,
+  "shaNote": "testedHead = SHA des tests. evidenceCommit/prHead = commit de cette preuve JSON s'il est distinct.",
+  "problems": [],
+  "changedFiles": [
+    "Mobile/package.json",
+    "Mobile/scripts/verify-parite-l1-green.js",
+    "Mobile/scripts/verify-parite-l1-red.js",
+    "Mobile/scripts/verify-parite-l1-red.test.js",
+    "Mobile/src/domain/metrics/schoolMetrics.ts",
+    "Mobile/src/domain/security/permissions.ts",
+    "Mobile/src/hooks/useUnpaidLedger.ts",
+    "Mobile/src/lib/dataTruth.ts",
+    "Mobile/src/lib/pariteL0L1RedReport.ts",
+    "Mobile/src/lib/pariteL1Unpaid.shipped.ts",
+    "Mobile/src/lib/pariteL1UnpaidKpi.red.test.ts",
+    "Mobile/src/lib/pariteL1UnpaidUx.red.test.ts",
+    "Mobile/src/lib/unpaidLedger.test.ts",
+    "Mobile/src/lib/unpaidLedger.ts",
+    "Mobile/src/navigation/AppNavigator.tsx",
+    "Mobile/src/screens/HomeScreen.tsx",
+    "Mobile/src/screens/PaymentsScreen.tsx",
+    "Mobile/src/screens/UnpaidScreen.tsx",
+    "Mobile/src/services/api.ts",
+    "docs/audits/parite-l0-l1-ux-maquette.md",
+    "docs/audits/parite-web-mobile-l1-green-2026-09-10.md",
+    "docs/audits/parite-web-mobile-l1-red-2026-09-10.md",
+    "package.json"
+  ],
+  "backendOrWebHits": [],
+  "files": [
+    {
+      "file": "src/lib/pariteL0Hygiene.red.test.ts",
+      "exit": 0,
+      "passedIds": [
+        "L0-01",
+        "L0-02",
+        "L0-03",
+        "L0-04",
+        "L0-05",
+        "L0-06",
+        "L0-07",
+        "L0-08",
+        "L0-09",
+        "L0-10",
+        "L0-11",
+        "L0-12"
+      ],
+      "failedIds": [],
+      "passedCount": 12,
+      "failedCount": 0
+    },
+    {
+      "file": "src/lib/pariteL1UnpaidKpi.red.test.ts",
+      "exit": 0,
+      "passedIds": [
+        "L1-01",
+        "L1-02",
+        "L1-03",
+        "L1-04",
+        "L1-05",
+        "L1-06",
+        "L1-07",
+        "L1-08",
+        "L1-09",
+        "L1-10"
+      ],
+      "failedIds": [],
+      "passedCount": 10,
+      "failedCount": 0
+    },
+    {
+      "file": "src/lib/pariteL1UnpaidUx.red.test.ts",
+      "exit": 0,
+      "passedIds": [
+        "L1-UX-01",
+        "L1-UX-02",
+        "L1-UX-03",
+        "L1-UX-04",
+        "L1-UX-05",
+        "L1-UX-06",
+        "L1-UX-07",
+        "L1-UX-08",
+        "L1-UX-09",
+        "L1-UX-10"
+      ],
+      "failedIds": [],
+      "passedCount": 10,
+      "failedCount": 0
+    }
+  ],
+  "summary": {
+    "L0": {
+      "green": 12,
+      "red": 0,
+      "total": 12
+    },
+    "L1": {
+      "green": 10,
+      "red": 0,
+      "total": 10,
+      "passedIds": [
+        "L1-01",
+        "L1-02",
+        "L1-03",
+        "L1-04",
+        "L1-05",
+        "L1-06",
+        "L1-07",
+        "L1-08",
+        "L1-09",
+        "L1-10"
+      ],
+      "failedIds": []
+    },
+    "L1-UX": {
+      "green": 10,
+      "red": 0,
+      "total": 10,
+      "passedIds": [
+        "L1-UX-01",
+        "L1-UX-02",
+        "L1-UX-03",
+        "L1-UX-04",
+        "L1-UX-05",
+        "L1-UX-06",
+        "L1-UX-07",
+        "L1-UX-08",
+        "L1-UX-09",
+        "L1-UX-10"
+      ],
+      "failedIds": []
+    }
+  }
+}
