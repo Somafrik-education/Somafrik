@@ -30,7 +30,7 @@ SHA (preuve JSON) :
 | Champ | Rôle |
 | --- | --- |
 | `testedHead` | SHA sur lequel `npm run verify:parite-l1-red` a tourné — `446f3dcb56af0bf7299d997f751cd06ab6124dbd` |
-| `evidenceCommit` / `prHead` | SHA du commit de cette preuve JSON (tampon `--stamp-heads`, distinct si evidence-only) |
+| `evidenceCommit` / `prHead` | `1dc90c16324fdbc3b9b213d10196d9a1f9b966b0` (preuve JSON ; distinct de `testedHead`) |
 
 ## Production non modifiée
 

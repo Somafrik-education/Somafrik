@@ -5,9 +5,9 @@
   "branch": "cursor/l1-unpaid-red-tests-8d64",
   "testedHead": "446f3dcb56af0bf7299d997f751cd06ab6124dbd",
   "prHeadAtTestTime": "446f3dcb56af0bf7299d997f751cd06ab6124dbd",
-  "evidenceCommit": null,
-  "prHead": null,
-  "shaNote": "testedHead = SHA sur lequel les tests ont tourné. evidenceCommit/prHead sont tamponnés après le commit de cette preuve (`node scripts/verify-parite-l1-red.js --stamp-heads`) et peuvent différer de testedHead si le commit suivant est evidence-only.",
+  "evidenceCommit": "1dc90c16324fdbc3b9b213d10196d9a1f9b966b0",
+  "prHead": "1dc90c16324fdbc3b9b213d10196d9a1f9b966b0",
+  "shaNote": "testedHead = SHA sur lequel les tests ont tourné. evidenceCommit/prHead = SHA du commit de preuve JSON (résultats), distinct de testedHead. Le HEAD GitHub de la PR peut être un commit tampon ultérieur qui n'écrit que ces champs SHA.",
   "expected": {
     "L1": [
       "L1-01",
@@ -244,5 +244,6 @@
     ],
     "unexpectedFiles": [],
     "forbiddenHits": []
-  }
+  },
+  "stampedAt": "2026-09-10T02:27:15.696Z"
 }
