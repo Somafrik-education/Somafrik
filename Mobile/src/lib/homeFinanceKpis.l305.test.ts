@@ -43,7 +43,8 @@ function run() {
   assert.doesNotMatch(home, /formatAmount\(paymentStats\.pendingAmount\)/);
   assert.doesNotMatch(home, /formatAmount\(cashKpi\.collectedAmount\)/);
   assert.match(home, /studentFeesReady|"—"/, "FIN-L3-05-C5 jamais faux zéro");
-  assert.match(layout, /numberOfLines=\{2\}/, "FIN-L3-05-C Home KPI deux lignes si besoin");
+  assert.match(layout, /includes\("\\n"\)/, "FIN-L3-05-C Home KPI deux lignes si besoin");
+  assert.match(layout, /fontSize:\s*20/, "FIN-L3-05-F KPI simple conserve 20 px");
 }
 
 run();

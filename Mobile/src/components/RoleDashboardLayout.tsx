@@ -138,29 +138,36 @@ export default function RoleDashboardLayout({
         </View>
 
         <View style={styles.statsGrid}>
-          {visibleKpis.map((kpi) => (
-            <TouchableOpacity
-              key={kpi.key}
-              activeOpacity={0.85}
-              style={styles.statCard}
-              onPress={kpi.onPress}
-              disabled={!kpi.onPress}
-              accessibilityRole="button"
-              accessibilityLabel={`${kpi.label} : ${kpi.value}`}
-              accessibilityState={{ disabled: !kpi.onPress }}
-              testID={kpi.testID}
-            >
-              <View style={[styles.statIconBox, { backgroundColor: kpi.bg }]}>
-                <Ionicons name={kpi.icon} size={18} color={kpi.color} />
-              </View>
-              <Text style={[styles.statValue, { color: kpi.color }]} numberOfLines={2} maxFontSizeMultiplier={1.3}>
-                {kpi.value}
-              </Text>
-              <Text style={styles.statLabel} numberOfLines={1} maxFontSizeMultiplier={1.3}>
-                {kpi.label}
-              </Text>
-            </TouchableOpacity>
-          ))}
+          {visibleKpis.map((kpi) => {
+            const multiline = String(kpi.value).includes("\n");
+            return (
+              <TouchableOpacity
+                key={kpi.key}
+                activeOpacity={0.85}
+                style={styles.statCard}
+                onPress={kpi.onPress}
+                disabled={!kpi.onPress}
+                accessibilityRole="button"
+                accessibilityLabel={`${kpi.label} : ${kpi.value}`}
+                accessibilityState={{ disabled: !kpi.onPress }}
+                testID={kpi.testID}
+              >
+                <View style={[styles.statIconBox, { backgroundColor: kpi.bg }]}>
+                  <Ionicons name={kpi.icon} size={18} color={kpi.color} />
+                </View>
+                <Text
+                  style={[styles.statValue, multiline && styles.statValueMultiline, { color: kpi.color }]}
+                  numberOfLines={multiline ? 2 : 1}
+                  maxFontSizeMultiplier={1.3}
+                >
+                  {kpi.value}
+                </Text>
+                <Text style={styles.statLabel} numberOfLines={1} maxFontSizeMultiplier={1.3}>
+                  {kpi.label}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
         </View>
 
         {actions.length ? (
@@ -324,10 +331,13 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   statValue: {
-    fontSize: 16,
-    lineHeight: 20,
+    fontSize: 20,
     fontWeight: "800",
     letterSpacing: -0.3,
+  },
+  statValueMultiline: {
+    fontSize: 16,
+    lineHeight: 20,
   },
   statLabel: {
     marginTop: 2,
