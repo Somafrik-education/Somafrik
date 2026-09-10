@@ -24,7 +24,7 @@ const cases: { id: string; title: string; run: () => void }[] = [
       );
       assert.match(
         entity,
-        /formatPaymentOverviewAmounts|getPaymentAmountBreakdown/,
+        /buildFinancePaymentsOverview|formatPaymentOverviewAmounts|getPaymentAmountBreakdown/,
         "EntityPage Paiements s'appuie encore sur getPaymentRateKpi.expectedAmount=0 + devise école",
       );
     },
@@ -46,11 +46,17 @@ const cases: { id: string; title: string; run: () => void }[] = [
     title: "Compteur Paiements scopé via scopedStudentFees (pas state.studentFees brut)",
     run() {
       const entity = read("pages/EntityPage.tsx");
+      const helper = read("lib/paymentAmountBreakdown.ts");
       const paymentOverview = entity.slice(entity.indexOf("paymentOverview"));
       assert.match(
         paymentOverview,
-        /scopedStudentFees/,
+        /buildFinancePaymentsOverview|scopedStudentFees/,
         "EntityPage compte encore state.studentFees hors scope établissement",
+      );
+      assert.match(
+        helper,
+        /scopedStudentFees/,
+        "la synthèse Paiements n'applique pas scopedStudentFees",
       );
     },
   },

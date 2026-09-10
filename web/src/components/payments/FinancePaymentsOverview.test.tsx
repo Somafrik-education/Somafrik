@@ -34,7 +34,7 @@ describe("FinancePaymentsOverview — FIN-L3", () => {
         recentPaymentCount={0}
       />,
     );
-    expect(screen.queryByText(/0[\s\u00a0\u202f]?USD/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/^(0[\s\u00a0\u202f]+USD)$/m)).not.toBeInTheDocument();
     expect(screen.getByText(/100[\s\u00a0\u202f]?000 CDF/)).toBeInTheDocument();
     expect(screen.getByText(/50 USD/)).toBeInTheDocument();
     expect(screen.getByText(/20[\s\u00a0\u202f]?000 CDF/)).toBeInTheDocument();

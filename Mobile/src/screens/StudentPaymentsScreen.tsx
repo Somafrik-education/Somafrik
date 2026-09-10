@@ -13,6 +13,7 @@ import PaymentCancelControls from "../components/PaymentCancelControls";
 import { useAdminData } from "../context/AdminDataContext";
 import { DATA_TRUTH_COPY, DATA_TRUTH_TEST_IDS, paymentPaidAt } from "../lib/dataTruth";
 import { getPaymentCashKpi } from "../lib/paymentCashKpi";
+import { formatPaymentOverviewAmounts } from "../lib/paymentAmountBreakdown";
 import { getPaymentRateKpi } from "../lib/paymentRateKpi";
 import { paymentStudentsFromOptions, type PaymentStudent } from "../lib/paymentEnrollment";
 import { useFloatingTabBarLayout } from "../lib/screenLayout";
@@ -89,23 +90,15 @@ export default function StudentPaymentsScreen({ route, navigation }: Partial<Pro
   );
   const studentFees = studentFeesData.filter((fee) => aliasKeySet.has(normalizeId(fee.studentId)));
   const paymentRateKpi = getPaymentRateKpi(studentFees);
+  const paymentAmountOverview = formatPaymentOverviewAmounts(studentFees);
   const cashKpi = getPaymentCashKpi(paiementsEleve);
   const feesReady =
     studentFeesSnapshot.status === "success" || studentFeesSnapshot.status === "empty";
   const paymentsReady = paymentsSnapshot.status === "success" || paymentsSnapshot.status === "empty";
-  const expectedLabel =
-    feesReady && paymentRateKpi.expectedAmount > 0
-      ? formatFinanceAmount(paymentRateKpi.expectedAmount, catalogCurrency)
-      : "—";
-  const imputedLabel =
-    feesReady && paymentRateKpi.expectedAmount > 0
-      ? formatFinanceAmount(paymentRateKpi.collectedAmount, catalogCurrency)
-      : "—";
+  const expectedLabel = feesReady ? paymentAmountOverview.expectedLabel : "—";
+  const imputedLabel = feesReady ? paymentAmountOverview.collectedLabel : "—";
   const remaining = Math.max(0, paymentRateKpi.expectedAmount - paymentRateKpi.collectedAmount);
-  const remainingLabel =
-    feesReady && paymentRateKpi.expectedAmount > 0
-      ? formatFinanceAmount(remaining, catalogCurrency)
-      : "—";
+  const remainingLabel = feesReady ? paymentAmountOverview.remainingLabel : remaining >= 0 ? "—" : "—";
   const collectedLabel = paymentsReady ? formatFinanceAmount(cashKpi.collectedAmount, catalogCurrency) : "—";
   const unallocatedLabel = paymentsReady ? formatFinanceAmount(cashKpi.unallocatedAmount, catalogCurrency) : "—";
   const showQueryState = paymentsSnapshot.status !== "success" || sortedPayments.length === 0;

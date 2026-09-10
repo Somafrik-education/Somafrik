@@ -11,6 +11,7 @@ import { getPaymentStats } from "../domain/metrics/schoolMetrics";
 import { hasSecurityPermission } from "../domain/security/permissions";
 import { DATA_TRUTH_COPY, DATA_TRUTH_TEST_IDS } from "../lib/dataTruth";
 import { getPaymentCashKpi } from "../lib/paymentCashKpi";
+import { formatPaymentOverviewAmounts } from "../lib/paymentAmountBreakdown";
 import { getPaymentRateKpi } from "../lib/paymentRateKpi";
 import { useFloatingTabBarLayout } from "../lib/screenLayout";
 import { getFinanceCatalog, getPaymentStudentOptions } from "../services/api";
@@ -44,6 +45,7 @@ export default function PaymentsScreen({ navigation }: any) {
   const [catalogCurrency, setCatalogCurrency] = useState("");
   const paymentStats = getPaymentStats(paymentsData);
   const paymentRateKpi = getPaymentRateKpi(studentFeesData);
+  const paymentAmountOverview = formatPaymentOverviewAmounts(studentFeesData);
   const cashKpi = getPaymentCashKpi(paymentsData);
   const canReadUnpaid = hasSecurityPermission(session, "Impayés", "READ");
   const requestedSchoolCode = activeSchoolCode || session?.school?.code || session?.user?.schoolCode;
@@ -82,15 +84,8 @@ export default function PaymentsScreen({ navigation }: any) {
   );
 
   const showQueryState = paymentsSnapshot.status !== "success";
-  const expectedLabel =
-    feesReady && paymentRateKpi.expectedAmount > 0
-      ? formatFinanceAmount(paymentRateKpi.expectedAmount, catalogCurrency)
-      : "—";
-  const remaining = Math.max(0, paymentRateKpi.expectedAmount - paymentRateKpi.collectedAmount);
-  const remainingLabel =
-    feesReady && paymentRateKpi.expectedAmount > 0
-      ? formatFinanceAmount(remaining, catalogCurrency)
-      : "—";
+  const expectedLabel = feesReady ? paymentAmountOverview.expectedLabel : "—";
+  const remainingLabel = feesReady ? paymentAmountOverview.remainingLabel : "—";
   const rateLabel = feesReady ? paymentRateKpi.value : "—";
   const stackedSummary = financeSummaryColumns(viewportWidth) === 1;
 
@@ -127,7 +122,9 @@ export default function PaymentsScreen({ navigation }: any) {
               <View style={[styles.financeHero, stackedSummary && styles.financeHeroStacked]}>
                 <View style={styles.summaryCard}>
                   <Text style={styles.summaryLabel}>Montant attendu</Text>
-                  <Text style={styles.summaryAmount} numberOfLines={1} adjustsFontSizeToFit>{expectedLabel}</Text>
+                  <Text style={styles.summaryAmount} numberOfLines={3} adjustsFontSizeToFit>
+                    {expectedLabel}
+                  </Text>
                   <Text style={styles.summarySub}>Reste à payer : {remainingLabel}</Text>
                   <Text style={styles.summarySub}>{rateLabel}</Text>
                 </View>

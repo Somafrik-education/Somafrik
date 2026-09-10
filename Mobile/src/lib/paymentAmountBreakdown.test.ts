@@ -40,12 +40,12 @@ function run() {
 
   const formatted = formatPaymentOverviewAmounts(mixedCdfUsd());
   assert.equal(
-    /0[\s\u00a0\u202f]?USD/.test(formatted.expectedLabel),
+    /(^|\n)0[\s\u00a0\u202f]+USD(\n|$)/.test(formatted.expectedLabel),
     false,
     "FIN-L3-01-A expectedLabel ne doit pas être 0 USD",
   );
-  assert.equal(/0[\s\u00a0\u202f]?USD/.test(formatted.collectedLabel), false);
-  assert.equal(/0[\s\u00a0\u202f]?USD/.test(formatted.remainingLabel), false);
+  assert.equal(/(^|\n)0[\s\u00a0\u202f]+USD(\n|$)/.test(formatted.collectedLabel), false);
+  assert.equal(/(^|\n)0[\s\u00a0\u202f]+USD(\n|$)/.test(formatted.remainingLabel), false);
 
   const buckets = getPaymentAmountBreakdown(mixedCdfUsd());
   const cdf = buckets.find((row) => row.currencyKey === "CDF");

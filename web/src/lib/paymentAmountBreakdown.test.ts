@@ -38,9 +38,9 @@ describe("FIN-L3-01 — KPI Paiements par devise (pas de 0 USD artificiel)", () 
     expect(kpi.expectedAmount).toBe(0);
 
     const formatted = formatPaymentOverviewAmounts(fees);
-    expect(formatted.expectedLabel).not.toMatch(/0[\s\u00a0\u202f]?USD/);
-    expect(formatted.collectedLabel).not.toMatch(/0[\s\u00a0\u202f]?USD/);
-    expect(formatted.remainingLabel).not.toMatch(/0[\s\u00a0\u202f]?USD/);
+    expect(formatted.expectedLabel).not.toMatch(/(^|\n)0[\s\u00a0\u202f]+USD(\n|$)/);
+    expect(formatted.collectedLabel).not.toMatch(/(^|\n)0[\s\u00a0\u202f]+USD(\n|$)/);
+    expect(formatted.remainingLabel).not.toMatch(/(^|\n)0[\s\u00a0\u202f]+USD(\n|$)/);
     expect(formatted.expectedLabel).not.toBe(formatFinanceAmount(0, "USD"));
   });
 
