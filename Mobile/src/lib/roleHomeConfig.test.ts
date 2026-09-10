@@ -12,7 +12,7 @@ const admin = getRoleHomeShell({ role: "school_admin" });
 assert.equal(admin.spaceLabel, "Espace administrateur");
 assert.ok(admin.kpiKeys.includes("unpaidPayments"));
 assert.ok(admin.kpiKeys.indexOf("unpaidPayments") < MAX_HOME_KPIS);
-assert.deepEqual(admin.kpiKeys, ["users", "presence", "students", "unpaidPayments", "paymentRate"]);
+assert.deepEqual(admin.kpiKeys, ["users", "presence", "students", "unpaidPayments"]);
 assert.deepEqual(admin.actionKeys.slice(0, 4), ["students", "attendance", "payments", "classes"]);
 assert.ok(admin.actionKeys.includes("teachers"));
 assert.ok(!admin.actionKeys.includes("users"));
@@ -30,8 +30,8 @@ assert.deepEqual(
 );
 assert.deepEqual(
   schoolAdminVisibleKpis(false),
-  ["users", "presence", "students", "paymentRate"],
-  "sans Impayés:READ la carte Impayés disparaît (fail-closed) et paymentRate reprend le 4e slot",
+  ["users", "presence", "students"],
+  "sans Impayés:READ la carte Impayés disparaît (fail-closed)",
 );
 
 const prefet = getRoleHomeShell({ role: "prefet" });

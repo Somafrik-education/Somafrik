@@ -9,6 +9,9 @@
  * Ils n'exigent pas l'URL dans HomeScreen ni PaymentsScreen.
  */
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { UX_V1_VIEWPORTS, tabLabelFitsViewport } from "./mobileUxV1Layout";
 import { MIN_TOUCH_TARGET_DP } from "./mobileUsability";
 import { MAQUETTE_L0_L1_VIEWPORTS_DP, MAQUETTE_MIN_TOUCH_DP } from "./pariteL0L1UxContract";
@@ -23,7 +26,12 @@ import {
   type UnpaidLedgerRow,
 } from "./pariteL1Unpaid.shipped";
 import { canReadEntity, hasSecurityPermission } from "../domain/security/permissions";
-import { getRoleHomeShell } from "./roleHomeConfig";
+import { getRoleHomeShell, MAX_HOME_KPIS, selectHomeKpis } from "./roleHomeConfig";
+
+const homeScreenSrc = fs.readFileSync(
+  path.join(path.dirname(fileURLToPath(import.meta.url)), "../screens/HomeScreen.tsx"),
+  "utf8",
+);
 
 const SCHOOL_A = "CD-IN-26-001";
 const SCHOOL_B = "BI-EC-26-001";
@@ -194,7 +202,7 @@ const cases: RedCase[] = [
   },
   {
     id: "L1-08",
-    title: "Si Impayés reste, le gate RBAC ne doit pas être seulement Paiements:READ",
+    title: "Coque Admin établissement : Impayés:READ sélectionne unpaidPayments (fail-closed, Unpaid, pas pending)",
     run() {
       const wiring = inspectShippedImpayesWiring();
       if (!wiring.presentsImpayes) return;
@@ -223,14 +231,57 @@ const cases: RedCase[] = [
       if (shippedImpayesSurfaceVisible(paymentsOnlyAdmin)) {
         problems.push("Admin établissement Paiements:READ sans Impayés:READ voit encore une surface Impayés");
       }
-      const adminShellKeys = getRoleHomeShell(unpaidAdmin).kpiKeys;
-      if (!adminShellKeys.includes("unpaidPayments") || adminShellKeys.indexOf("unpaidPayments") >= 4) {
-        problems.push("coque Admin établissement : unpaidPayments hors des 4 KPI d'accueil");
-      }
       if (!shippedImpayesSurfaceVisible(unpaidAdmin)) {
         problems.push("Admin établissement Impayés:READ ne voit pas Impayés");
       }
-      assert.equal(problems.length, 0, `#577 L1 RBAC : ${problems.join(" | ")}`);
+
+      assert.equal(MAX_HOME_KPIS, 4, "MAX_HOME_KPIS ne doit pas augmenter");
+      const schoolAdminShell = getRoleHomeShell(unpaidAdmin);
+      const expectedAdminCatalog = ["users", "presence", "students", "unpaidPayments"];
+      if (JSON.stringify(schoolAdminShell.kpiKeys) !== JSON.stringify(expectedAdminCatalog)) {
+        problems.push(
+          `coque Admin établissement kpiKeys=${JSON.stringify(schoolAdminShell.kpiKeys)} ≠ ${JSON.stringify(expectedAdminCatalog)}`,
+        );
+      }
+
+      const visibleWithRead = selectHomeKpis(schoolAdminShell.kpiKeys);
+      if (!visibleWithRead.includes("unpaidPayments") || visibleWithRead.indexOf("unpaidPayments") >= MAX_HOME_KPIS) {
+        problems.push(
+          `Admin établissement + Impayés:READ : unpaidPayments absent des ${MAX_HOME_KPIS} KPI visibles (${JSON.stringify(visibleWithRead)})`,
+        );
+      }
+
+      const visibleWithoutRead = selectHomeKpis(
+        schoolAdminShell.kpiKeys.filter((key) => key !== "unpaidPayments"),
+      );
+      if (visibleWithoutRead.includes("unpaidPayments")) {
+        problems.push(
+          `sans Impayés:READ la carte Impayés reste dans la coque Accueil (${JSON.stringify(visibleWithoutRead)})`,
+        );
+      }
+
+      if (!/kpi\("unpaidPayments"[\s\S]{0,180}navigate\("Unpaid"\)/.test(homeScreenSrc)) {
+        problems.push("KPI unpaidPayments ne navigue pas vers Unpaid");
+      }
+      if (/kpi\("unpaidPayments"[\s\S]{0,180}navigate\("Payments"\)/.test(homeScreenSrc)) {
+        problems.push("KPI unpaidPayments navigue encore vers Payments");
+      }
+      if (wiring.homeKpiUsesReceiptPending) {
+        problems.push("KPI Impayés encore alimenté par paymentStats.pending");
+      }
+      const view = shippedImpayesView({
+        receipts: pendingReceiptsFour,
+        unpaidApi: { status: 200, rows: ledgerAThree },
+        schoolCode: SCHOOL_A,
+      });
+      if (view.presentsImpayes && view.destination !== "Unpaid") {
+        problems.push(`KPI Impayés destination=${view.destination} ≠ Unpaid`);
+      }
+      if (view.presentsImpayes && view.value === String(pendingReceiptsFour.length)) {
+        problems.push("KPI Impayés reprend le compteur de reçus pending");
+      }
+
+      assert.equal(problems.length, 0, `#577 L1 RBAC Admin établissement : ${problems.join(" | ")}`);
     },
   },
   {
