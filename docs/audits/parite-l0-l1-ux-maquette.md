@@ -62,3 +62,4 @@ Constantes machine : `Mobile/src/lib/pariteL0L1UxContract.ts`.
 | 401/403 simulés | L1-06 |
 | Isolation établissement simulée | L1-07 |
 | 360/390/430 si Impayés reste | L1-10 |
+| Écran dédié Impayés / navigation / états UX | L1-UX-01…L1-UX-10 |
