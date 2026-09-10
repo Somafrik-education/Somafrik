@@ -139,7 +139,7 @@ export default function PaymentsScreen({ navigation }: any) {
 
                 <View style={styles.smallCard}>
                   <Text style={styles.smallNumber}>{paymentStats.pending}</Text>
-                  <Text style={styles.smallLabel}>Impayés</Text>
+                  <Text style={styles.smallLabel}>En attente</Text>
                 </View>
               </View>
 

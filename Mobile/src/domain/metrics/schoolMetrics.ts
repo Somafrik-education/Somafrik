@@ -101,9 +101,10 @@ export function isUnallocatedPayment(payment: Pick<PaymentItem, "status">) {
 }
 
 /**
- * Cartes Payés / Impayés = reçus encore dans le cycle d'encaissement.
- * Un reçu Annulé n'est ni payé ni impayé — ce n'est plus une créance.
+ * Cartes Payés / En attente = reçus encore dans le cycle d'encaissement.
+ * Un reçu Annulé n'est ni payé ni en attente — ce n'est plus une créance.
  * Un reçu Non imputé n'est pas Payé : l'argent est en caisse sans dette affectée.
+ * Impayés (ledger d'obligations) n'utilise pas ce compteur.
  */
 export function getPaymentStats(payments: PaymentItem[], studentIds?: string[]): PaymentStats {
   const scopedRows = scopeRowsByStudentIds(payments, studentIds);

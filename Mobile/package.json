@@ -72,6 +72,8 @@
     "test:parite-l1-red": "node scripts/verify-parite-l1-red.js",
     "verify:parite-l0-l1-red": "node scripts/verify-parite-l0-l1-red.js",
     "verify:parite-l1-red": "node scripts/verify-parite-l1-red.js",
+    "test:parite-l1-green": "node scripts/verify-parite-l1-green.js",
+    "verify:parite-l1-green": "node scripts/verify-parite-l1-green.js",
     "test:l1-offline-reads": "npx --yes tsx src/offline/l1/l1OfflineReads.test.ts",
     "verify:mobile-l1-sqlite-cache": "node scripts/verify-mobile-l1-sqlite-cache.js",
     "verify:mobile-l1-offline-reads": "node scripts/verify-mobile-l1-offline-reads.js",

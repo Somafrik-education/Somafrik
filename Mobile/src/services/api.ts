@@ -20,6 +20,7 @@ import {
   saveTokens,
 } from "./secureStorage";
 import { canPersistFullSession, normalizePaymentRow, unwrapList } from "../lib/dataTruth";
+import { parseUnpaidPayload } from "../lib/unpaidLedger";
 import { buildEffectivePermissionsSnapshotV1 } from "../lib/offlinePermissionsSnapshot";
 import {
   normalizeEvaluation,
@@ -758,6 +759,10 @@ export function getStudentFees() {
   return request<unknown>("/finance/student-fees").then((payload) =>
     unwrapList(payload).map(normalizeStudentFeeRow),
   );
+}
+
+export function listUnpaid() {
+  return request<unknown>("/backoffice/finance/unpaid").then(parseUnpaidPayload);
 }
 
 export function reconcilePaymentAllocations() {
