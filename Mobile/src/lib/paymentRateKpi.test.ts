@@ -128,6 +128,14 @@ function run() {
   assert.equal(mixedCurrency.value, "—");
   assert.equal(mixedCurrency.expectedAmount, 0);
 
+  const unknownCurrency = getPaymentRateKpi([
+    obligation("s1", { amountDue: 100_000, amountPaid: 20_000, currency: "CDF" }),
+    obligation("s2", { amountDue: 50, amountPaid: 10 }),
+  ]);
+  assert.equal(unknownCurrency.rate, null, "CDF + devise absente → pas de taux unique");
+  assert.equal(unknownCurrency.value, "—");
+  assert.equal(unknownCurrency.expectedAmount, 0);
+
   console.log("OK: paymentRateKpi assiette obligations 20/0/100/—");
 }
 

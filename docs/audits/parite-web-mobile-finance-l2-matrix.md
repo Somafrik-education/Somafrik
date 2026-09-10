@@ -30,6 +30,8 @@
 | FIN-L2-05 | Taux de paiement Mobile fail-closed multidevise | n/a | OK | idem | n/a | GREEN |
 | FIN-L2-06 | Impayés Web : 403/RBAC ≠ liste vide succès | OK | OK | Impayés:READ + GET unpaid | n/a | GREEN |
 | FIN-L2-03-M | Oscar Mobile allocation (régression #583) | n/a | OK | idem | OK | GREEN |
+| FIN-L2-07 | Taux de paiement devise absente fail-closed | NOK | NOK | `student-fees.currency` | n/a | RED |
+| FIN-L2-08 | Impayés : créance sans devise jamais omise | NOK | n/a | lignes ledger | n/a | RED |
 
 Régression Oscar Mobile (déjà GREEN #583) : `pariteL1FinanceUx.test.ts` — ne pas reculer vers « Montant payé ».
 

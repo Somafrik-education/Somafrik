@@ -44,4 +44,23 @@ describe("buildUnpaidDashboard — devise", () => {
       { currency: "USD", amount: 50 },
     ]);
   });
+
+  it("FIN-L2-08 — créance sans devise jamais omise du résumé", () => {
+    const dashboard = buildUnpaidDashboard([
+      row({ studentId: "cdf", amountDue: 120_000, currency: "CDF" }),
+      row({ studentId: "usd", amountDue: 50, currency: "USD", className: "6ème B" }),
+      row({ studentId: "unk", amountDue: 50, currency: "", className: "6ème C" }),
+    ]);
+    const represented = dashboard.totalsByCurrency.reduce((sum, item) => sum + item.amount, 0);
+    expect(represented).toBe(120_000 + 50 + 50);
+    const unknown = dashboard.totalsByCurrency.filter(
+      (item) => !String(item.currency ?? "").trim() || /devise non renseignée/i.test(item.currency),
+    );
+    expect(unknown).toHaveLength(1);
+    expect(unknown[0].amount).toBe(50);
+    expect(dashboard.totalsByCurrency.find((item) => item.currency === "CDF")?.amount).toBe(120_000);
+    expect(dashboard.totalsByCurrency.find((item) => item.currency === "USD")?.amount).toBe(50);
+    expect(dashboard.totalAmountDue).toBe(0);
+    expect(dashboard.currency).toBe("");
+  });
 });
