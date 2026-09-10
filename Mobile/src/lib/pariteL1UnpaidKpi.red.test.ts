@@ -254,9 +254,9 @@ const cases: RedCase[] = [
       const visibleWithoutRead = selectHomeKpis(
         schoolAdminShell.kpiKeys.filter((key) => key !== "unpaidPayments"),
       );
-      if (visibleWithoutRead.includes("unpaidPayments")) {
+      if (JSON.stringify(visibleWithoutRead) !== JSON.stringify(["users", "presence", "students"])) {
         problems.push(
-          `sans Impayés:READ la carte Impayés reste dans la coque Accueil (${JSON.stringify(visibleWithoutRead)})`,
+          `sans Impayés:READ la carte Impayés doit disparaître (${JSON.stringify(visibleWithoutRead)})`,
         );
       }
 
