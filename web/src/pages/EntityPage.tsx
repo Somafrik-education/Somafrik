@@ -120,8 +120,7 @@ import { appendAuditLog } from "../lib/audit";
 import { validateCourseTeacherRule } from "../lib/pedagogyGovernance";
 import { QuickPaymentModal } from "../components/payments/QuickPaymentModal";
 import { FinancePaymentsOverview } from "../components/payments/FinancePaymentsOverview";
-import { getPaymentRateKpi } from "../lib/paymentRateKpi";
-import { resolveFinanceCurrency } from "../lib/financeCurrency";
+import { buildFinancePaymentsOverview } from "../lib/paymentAmountBreakdown";
 import { resolveFinanceUiActions } from "../lib/financeActionPermissions";
 import { PaymentReceipt } from "../components/payments/PaymentReceipt";
 import { type PaymentRecord } from "../lib/quickPayment";
@@ -447,23 +446,12 @@ function EntityPageContent({ entity, mode, classScope, disableCreate = false }: 
 
   const paymentOverview = useMemo(() => {
     if (module?.key !== "payments") return null;
-    const fees = Array.isArray(state.studentFees) ? state.studentFees : [];
-    const kpi = getPaymentRateKpi(fees);
-    const remaining = Math.max(0, kpi.expectedAmount - kpi.collectedAmount);
-    const currency = resolveFinanceCurrency(
-      school?.currency,
-      fees.find((fee) => fee.currency)?.currency,
-      (rows[0] as { currency?: string } | undefined)?.currency,
-    );
-    return {
-      expectedAmount: kpi.expectedAmount,
-      collectedAmount: kpi.collectedAmount,
-      remainingAmount: remaining,
-      obligationCount: fees.filter((fee) => String(fee.status ?? "") !== "Annulé").length,
+    return buildFinancePaymentsOverview({
+      user: scopeUser,
+      state,
       recentPaymentCount: rows.length,
-      currency,
-    };
-  }, [module?.key, state.studentFees, school?.currency, rows]);
+    });
+  }, [module?.key, scopeUser, state, rows]);
 
   if (!module) {
     return <Navigate to="/etablissement" replace />;

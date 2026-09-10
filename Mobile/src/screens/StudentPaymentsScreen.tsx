@@ -12,12 +12,13 @@ import PaymentMutationControls from "../components/PaymentMutationControls";
 import PaymentCancelControls from "../components/PaymentCancelControls";
 import { useAdminData } from "../context/AdminDataContext";
 import { DATA_TRUTH_COPY, DATA_TRUTH_TEST_IDS, paymentPaidAt } from "../lib/dataTruth";
-import { getPaymentCashKpi } from "../lib/paymentCashKpi";
+import { getPaymentCashKpi, formatPaymentCashAmounts } from "../lib/paymentCashKpi";
+import { formatPaymentOverviewAmounts } from "../lib/paymentAmountBreakdown";
 import { getPaymentRateKpi } from "../lib/paymentRateKpi";
 import { paymentStudentsFromOptions, type PaymentStudent } from "../lib/paymentEnrollment";
 import { useFloatingTabBarLayout } from "../lib/screenLayout";
 import { getFinanceCatalog, getPaymentStudentOptions } from "../services/api";
-import { formatFinanceAmount, resolveFinanceCurrency } from "../lib/financeCurrency";
+import { resolveFinanceCurrency } from "../lib/financeCurrency";
 import {
   STUDENT_PAYMENTS_KPI_DENSITY as KPI,
   STUDENT_SUB_SCREENS_COPY,
@@ -89,25 +90,18 @@ export default function StudentPaymentsScreen({ route, navigation }: Partial<Pro
   );
   const studentFees = studentFeesData.filter((fee) => aliasKeySet.has(normalizeId(fee.studentId)));
   const paymentRateKpi = getPaymentRateKpi(studentFees);
+  const paymentAmountOverview = formatPaymentOverviewAmounts(studentFees);
   const cashKpi = getPaymentCashKpi(paiementsEleve);
+  const cashOverview = formatPaymentCashAmounts(paiementsEleve);
   const feesReady =
     studentFeesSnapshot.status === "success" || studentFeesSnapshot.status === "empty";
   const paymentsReady = paymentsSnapshot.status === "success" || paymentsSnapshot.status === "empty";
-  const expectedLabel =
-    feesReady && paymentRateKpi.expectedAmount > 0
-      ? formatFinanceAmount(paymentRateKpi.expectedAmount, catalogCurrency)
-      : "—";
-  const imputedLabel =
-    feesReady && paymentRateKpi.expectedAmount > 0
-      ? formatFinanceAmount(paymentRateKpi.collectedAmount, catalogCurrency)
-      : "—";
+  const expectedLabel = feesReady ? paymentAmountOverview.expectedLabel : "—";
+  const imputedLabel = feesReady ? paymentAmountOverview.collectedLabel : "—";
   const remaining = Math.max(0, paymentRateKpi.expectedAmount - paymentRateKpi.collectedAmount);
-  const remainingLabel =
-    feesReady && paymentRateKpi.expectedAmount > 0
-      ? formatFinanceAmount(remaining, catalogCurrency)
-      : "—";
-  const collectedLabel = paymentsReady ? formatFinanceAmount(cashKpi.collectedAmount, catalogCurrency) : "—";
-  const unallocatedLabel = paymentsReady ? formatFinanceAmount(cashKpi.unallocatedAmount, catalogCurrency) : "—";
+  const remainingLabel = feesReady ? paymentAmountOverview.remainingLabel : remaining >= 0 ? "—" : "—";
+  const collectedLabel = paymentsReady ? cashOverview.collectedLabel : "—";
+  const unallocatedLabel = paymentsReady ? cashOverview.unallocatedLabel : "—";
   const showQueryState = paymentsSnapshot.status !== "success" || sortedPayments.length === 0;
 
   const financeHeader = (
