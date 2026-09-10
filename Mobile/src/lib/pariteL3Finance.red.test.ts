@@ -59,6 +59,23 @@ const cases: { id: string; title: string; run: () => void }[] = [
       );
     },
   },
+  {
+    id: "FIN-L3-04-E-MOBILE",
+    title: "unallocatedAmount canonique, jamais collected - allocated",
+    run() {
+      const cash = read("lib/paymentCashKpi.ts");
+      const normalize = read("lib/dataTruth.ts");
+      const fnStart = normalize.indexOf("export function normalizePaymentRow");
+      const fn = normalize.slice(fnStart, fnStart + 1800);
+      assert.doesNotMatch(cash, /collected - allocated/);
+      assert.doesNotMatch(cash, /Math\.max\(0,\s*collected/);
+      assert.doesNotMatch(
+        fn,
+        /row\.amount \?\? row\.totalAmount \?\? 0\) - Number\(row\.allocatedAmount/,
+        "normalizePaymentRow reconstruit encore unallocated = amount - allocated",
+      );
+    },
+  },
 ];
 
 let failed = 0;

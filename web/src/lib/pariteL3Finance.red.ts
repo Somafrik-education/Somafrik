@@ -113,6 +113,15 @@ const cases: { id: string; title: string; run: () => void }[] = [
       assert.notEqual(encaissé, imputé);
     },
   },
+  {
+    id: "FIN-L3-04-E",
+    title: "unallocatedAmount canonique, jamais collected - allocated",
+    run() {
+      const cash = read("lib/paymentCashKpi.ts");
+      assert.doesNotMatch(cash, /collected - allocated/);
+      assert.doesNotMatch(cash, /Math\.max\(0,\s*collected/);
+    },
+  },
 ];
 
 let failed = 0;

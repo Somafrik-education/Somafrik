@@ -68,4 +68,23 @@ describe("FIN-L3-04 — cash Paiements par devise", () => {
     expect(cdf?.allocatedAmount).toBe(0);
     expect(cdf?.unallocatedAmount).toBe(150);
   });
+
+  it("FIN-L3-04-E unallocatedAmount absent => ne fabrique pas 40 et ne masque pas par 0", () => {
+    const rows = [
+      {
+        amount: 100,
+        allocatedAmount: 60,
+        currency: "CDF",
+        status: "Payé",
+      },
+    ];
+    const cdf = getPaymentCashBreakdown(rows).find((row) => row.currencyKey === "CDF");
+    expect(cdf?.collectedAmount).toBe(100);
+    expect(cdf?.allocatedAmount).toBe(60);
+    expect(cdf?.unallocatedAmount).not.toBe(40);
+    expect(cdf?.unallocatedAmount).toBeNull();
+    const formatted = formatPaymentCashAmounts(rows);
+    expect(formatted.unallocatedLabel).toBe("—");
+    expect(formatted.collectedLabel).toMatch(/100 CDF/);
+  });
 });

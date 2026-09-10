@@ -65,6 +65,25 @@ function run() {
   assert.equal(leftover[0]?.collectedAmount, 150, "FIN-L3-04-D encaissé");
   assert.equal(leftover[0]?.allocatedAmount, 0, "FIN-L3-04-D pas imputé");
   assert.equal(leftover[0]?.unallocatedAmount, 150);
+
+  const missingUnallocated = {
+    amount: 100,
+    allocatedAmount: 60,
+    currency: "CDF",
+    status: "Payé",
+  };
+  const inferred = getPaymentCashBreakdown([missingUnallocated]);
+  assert.equal(inferred[0]?.collectedAmount, 100, "FIN-L3-04-E encaissé conservé");
+  assert.equal(inferred[0]?.allocatedAmount, 60, "FIN-L3-04-E imputé conservé");
+  assert.notEqual(inferred[0]?.unallocatedAmount, 40, "FIN-L3-04-E ne fabrique pas collected-allocated");
+  assert.equal(inferred[0]?.unallocatedAmount, null, "FIN-L3-04-E fail-closed, pas un 0 masquant");
+  assert.equal(formatPaymentCashAmounts([missingUnallocated]).unallocatedLabel, "—");
+
+  const viaNormalize = getPaymentCashBreakdown([
+    normalizePaymentRow({ id: "p-e", ...missingUnallocated }),
+  ]);
+  assert.notEqual(viaNormalize[0]?.unallocatedAmount, 40, "FIN-L3-04-E normalizePaymentRow ne fabrique pas 40");
+  assert.equal(viaNormalize[0]?.unallocatedAmount, null);
 }
 
 run();
