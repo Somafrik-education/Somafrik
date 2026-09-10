@@ -1,0 +1,138 @@
+{
+  "audit": "parite-l1-unpaid-red",
+  "generatedAt": "2026-09-10T02:06:28.260Z",
+  "head": "54fa227606ef4409310d48f5541f943b3f65eaa0",
+  "expected": {
+    "L1": [
+      "L1-01",
+      "L1-02",
+      "L1-03",
+      "L1-04",
+      "L1-05",
+      "L1-06",
+      "L1-07",
+      "L1-08",
+      "L1-09",
+      "L1-10"
+    ],
+    "L1-UX": [
+      "L1-UX-01",
+      "L1-UX-02",
+      "L1-UX-03",
+      "L1-UX-04",
+      "L1-UX-05",
+      "L1-UX-06",
+      "L1-UX-07",
+      "L1-UX-08",
+      "L1-UX-09",
+      "L1-UX-10"
+    ],
+    "total": 20
+  },
+  "problems": [],
+  "files": [
+    {
+      "file": "src/lib/pariteL1UnpaidKpi.red.test.ts",
+      "exit": 1,
+      "expectedIds": [
+        "L1-01",
+        "L1-02",
+        "L1-03",
+        "L1-04",
+        "L1-05",
+        "L1-06",
+        "L1-07",
+        "L1-08",
+        "L1-09",
+        "L1-10"
+      ],
+      "failedIds": [
+        "L1-01",
+        "L1-02",
+        "L1-03",
+        "L1-04",
+        "L1-05",
+        "L1-06",
+        "L1-07",
+        "L1-08",
+        "L1-09"
+      ],
+      "passedIds": [
+        "L1-10"
+      ],
+      "failedCount": 9,
+      "passedCount": 1
+    },
+    {
+      "file": "src/lib/pariteL1UnpaidUx.red.test.ts",
+      "exit": 1,
+      "expectedIds": [
+        "L1-UX-01",
+        "L1-UX-02",
+        "L1-UX-03",
+        "L1-UX-04",
+        "L1-UX-05",
+        "L1-UX-06",
+        "L1-UX-07",
+        "L1-UX-08",
+        "L1-UX-09",
+        "L1-UX-10"
+      ],
+      "failedIds": [
+        "L1-UX-01",
+        "L1-UX-02",
+        "L1-UX-03",
+        "L1-UX-04",
+        "L1-UX-05",
+        "L1-UX-06",
+        "L1-UX-07",
+        "L1-UX-08",
+        "L1-UX-09",
+        "L1-UX-10"
+      ],
+      "passedIds": [],
+      "failedCount": 10,
+      "passedCount": 0
+    }
+  ],
+  "summary": {
+    "L1": {
+      "green": 1,
+      "red": 9,
+      "total": 10,
+      "passedIds": [
+        "L1-10"
+      ],
+      "failedIds": [
+        "L1-01",
+        "L1-02",
+        "L1-03",
+        "L1-04",
+        "L1-05",
+        "L1-06",
+        "L1-07",
+        "L1-08",
+        "L1-09"
+      ]
+    },
+    "L1-UX": {
+      "green": 0,
+      "red": 10,
+      "total": 10,
+      "passedIds": [],
+      "failedIds": [
+        "L1-UX-01",
+        "L1-UX-02",
+        "L1-UX-03",
+        "L1-UX-04",
+        "L1-UX-05",
+        "L1-UX-06",
+        "L1-UX-07",
+        "L1-UX-08",
+        "L1-UX-09",
+        "L1-UX-10"
+      ]
+    }
+  },
+  "productionUntouched": true
+}
