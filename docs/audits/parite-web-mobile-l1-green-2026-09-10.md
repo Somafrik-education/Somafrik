@@ -31,6 +31,7 @@ La surface Mobile conserve « Impayés » et consomme le ledger canonique déjà
 | Base rouge `pariteL1UnpaidKpi.red.test.ts` | **1 vert / 9 rouges** |
 | Après implémentation | **10 verts / 0 rouge** |
 | Nouveau contrat ledger/tenant/RBAC | **vert** |
+| Contrat UX Finance issu de la maquette V7 | **rouge puis vert** |
 | TypeScript Mobile | **vert** |
 
 Le cas L1-10 était déjà vert sur la base : le viewport 430 dp avait été livré au Lot 0.
@@ -51,6 +52,29 @@ npm run test:parite-l1-green
 | Impayés | écran de synthèse et liste des élèves concernés, lecture seule |
 | Drawer Comptable | entrée `Impayés`, masquée sans `Impayés:READ` |
 | Client API | `getUnpaidLedger()` dans `services/api.ts` uniquement |
+
+## Correctif UX après smoke physique
+
+Le smoke Expo Go a confirmé la vérité du KPI après le correctif serveur #584, puis a exposé
+deux écarts de présentation et un défaut financier critique :
+
+- les résumés de Paiements restaient surdimensionnés par rapport à la maquette validée ;
+- les paiements récents n'utilisaient pas les cartes compactes dépliables ;
+- le résumé Impayés additionnait des montants CDF et USD sous une seule devise.
+
+Le test `pariteL1FinanceUx.test.ts` a d'abord été enregistré rouge. Le passage vert apporte :
+
+- le résumé Paiements en deux colonnes à 390/430 dp, replié à 360 dp ;
+- des cartes de paiement et d'impayé compactes, accessibles et dépliables ;
+- les détails et actions secondaires uniquement dans la zone dépliée ;
+- les totaux Impayés regroupés par devise, sans conversion ni addition inventée ;
+- la conservation des données métier : référence, moyen, libellés, non-imputé, période,
+  retard, montants attendu/payé/dû et échéance.
+
+Commits distants de preuve :
+
+- RED : `cf218a178e06e929bb631044e9e2405c316bd42d` ;
+- GREEN : `072b1bbca95aa8e2e7e9c16ff6a7b7e9d2377aaf`.
 
 ## Non-régressions exécutées
 
@@ -73,15 +97,18 @@ npm run test:parite-l1-green
 | `test:form-fields` | vert |
 | `verify:mobile-ui-e2e-scaffold` | vert |
 | `internalNotificationsC4.test.ts` | vert |
+| `pariteL1FinanceUx.test.ts` | vert |
+| `financeCurrency.test.ts` | vert |
+| Tests Web Finance UX | 81/81 vert |
+| Runtime E2E Mobile | 41/41 vert |
 
 ## Contrôles non verts sans régression de ce lot
 
-1. `verify:mobile-usability` atteint tous ses sous-tests puis échoue sur une assertion historique
-   exigeant directement `toLocaleString("fr-FR")` dans `PaymentReceiptCard.tsx`. Ce fichier utilise
-   déjà `formatFinanceAmount` sur la base et n'est pas modifié par le Lot 1.
-2. Le `typecheck` racine valide la syntaxe Backend, puis ne peut pas lancer le typecheck Web car
-   les dépendances `web/node_modules` ne sont pas installées dans l'environnement. Aucun fichier Web
-   ou Backend n'est modifié. Le typecheck Mobile est vert.
+1. Dans ce runtime géré, les wrappers qui lancent `npx tsx` échouent avant leurs assertions sur
+   `listen EPERM /tmp/tsx-*/…pipe`. Les mêmes fichiers de tests ont été exécutés directement avec le
+   chargeur Node `tsx` et sont verts. La CI GitHub reste l'autorité pour les commandes officielles.
+2. `verify:finance-rbac` valide ses 10 tests mémoire puis s'arrête faute de `DATABASE_URL`. Aucun
+   backend, schéma PostgreSQL ou contrat RBAC n'est modifié par ce correctif UX.
 
 Ces deux points ne justifient aucune correction hors périmètre L1.
 

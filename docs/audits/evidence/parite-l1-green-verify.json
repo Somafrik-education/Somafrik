@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-10T11:35:55Z",
+  "generatedAt": "2026-09-10T16:31:41Z",
   "issue": 577,
   "lot": "L1",
   "base": {
@@ -52,6 +52,17 @@
     "contractTest": "Mobile/src/lib/unpaidLedger.test.ts",
     "exit": 0
   },
+  "uxFollowUp": {
+    "reference": "somafrik-mobile-ux-v7.html",
+    "redCommit": "cf218a178e06e929bb631044e9e2405c316bd42d",
+    "greenCommit": "072b1bbca95aa8e2e7e9c16ff6a7b7e9d2377aaf",
+    "test": "Mobile/src/lib/pariteL1FinanceUx.test.ts",
+    "viewportsDp": [360, 390, 430],
+    "mixedCurrencyTotalsSeparated": true,
+    "expandablePaymentCards": true,
+    "expandableUnpaidCards": true,
+    "exit": 0
+  },
   "regressions": {
     "passed": [
       "Mobile typecheck",
@@ -71,16 +82,24 @@
       "canonical role identity",
       "form fields",
       "UI E2E scaffold",
-      "internal notifications C4"
+      "internal notifications C4",
+      "Web Finance UX 81/81",
+      "Mobile runtime E2E 41/41"
     ],
-    "knownUnchangedFailures": [
+    "environmentBlockedWrappers": [
       {
-        "command": "npm run verify:mobile-usability",
-        "cause": "historical direct-toLocaleString assertion against unchanged PaymentReceiptCard.tsx"
+        "commands": [
+          "verify:mobile-usability",
+          "verify:mobile-ux-v1",
+          "verify:mobile-rbac-live",
+          "verify:mobile-school-scope-transport",
+          "verify:mobile-cta-rbac-alignment"
+        ],
+        "cause": "managed runtime blocks the npx tsx IPC socket; underlying TypeScript tests passed through the Node tsx loader"
       },
       {
-        "command": "npm run typecheck",
-        "cause": "web tsc unavailable because web dependencies are not installed; backend syntax passed and Mobile typecheck passed"
+        "command": "verify:finance-rbac",
+        "cause": "10 memory tests passed; PostgreSQL HTTP proof requires DATABASE_URL"
       }
     ]
   },
