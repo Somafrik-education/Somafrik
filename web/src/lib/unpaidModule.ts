@@ -198,7 +198,39 @@ export function aggregateUnpaidByStudent(
     .sort((a, b) => b.amountDue - a.amountDue);
 }
 
-/** IMP-017 à IMP-019 */
+/** IMP-017 à IMP-019 — totaux fail-closed si plusieurs devises coexistent. */
+export const UNPAID_UNKNOWN_CURRENCY_LABEL = "Devise non renseignée";
+
+function normalizeUnpaidCurrency(value: unknown): string {
+  return String(value ?? "").trim().toUpperCase();
+}
+
+export function unpaidTotalsByCurrency(
+  rows: Array<{ amountDue: number; currency?: string }>,
+): Pick<UnpaidDashboardStats, "totalAmountDue" | "currency" | "totalsByCurrency"> {
+  const grouped = new Map<string, number>();
+  for (const row of rows) {
+    const currency = normalizeUnpaidCurrency(row.currency);
+    grouped.set(currency, (grouped.get(currency) ?? 0) + Number(row.amountDue ?? 0));
+  }
+  const totalsByCurrency = [...grouped.entries()]
+    .map(([currency, amount]) => ({
+      currency: currency || UNPAID_UNKNOWN_CURRENCY_LABEL,
+      amount,
+    }))
+    .sort((a, b) => a.currency.localeCompare(b.currency, "fr"));
+  const known = totalsByCurrency.filter((item) => item.currency !== UNPAID_UNKNOWN_CURRENCY_LABEL);
+  const hasUnknown = known.length !== totalsByCurrency.length;
+  if (known.length !== 1 || hasUnknown) {
+    return { totalsByCurrency, totalAmountDue: 0, currency: "" };
+  }
+  return {
+    totalsByCurrency,
+    totalAmountDue: known[0]?.amount ?? 0,
+    currency: known[0]?.currency ?? "",
+  };
+}
+
 export function buildUnpaidDashboard(rows: StudentUnpaidRow[]): UnpaidDashboardStats {
   const byClassMap = new Map<string, { amountDue: number; studentIds: Set<string> }>();
   for (const row of rows) {
@@ -208,11 +240,12 @@ export function buildUnpaidDashboard(rows: StudentUnpaidRow[]): UnpaidDashboardS
     byClassMap.set(row.className, entry);
   }
 
+  const totals = unpaidTotalsByCurrency(rows);
+
   return {
-    totalAmountDue: rows.reduce((sum, row) => sum + row.amountDue, 0),
+    ...totals,
     studentCount: rows.length,
     overdueLineCount: rows.filter((row) => row.daysLate > 0).length,
-    currency: rows[0]?.currency ? String(rows[0].currency).trim().toUpperCase() : "",
     byClass: [...byClassMap.entries()]
       .map(([className, stats]) => ({
         className,
@@ -235,6 +268,32 @@ export function classOptionsFromUnpaid(rows: StudentUnpaidRow[]): string[] {
   return [...new Set(rows.map((row) => row.className).filter(Boolean))].sort((a, b) =>
     a.localeCompare(b, "fr"),
   );
+}
+
+export function normalizeUnpaidLedgerPayload(payload: unknown): {
+  rows: StudentUnpaidRow[];
+  fees: StudentFee[];
+} {
+  const body = payload && typeof payload === "object" ? (payload as Record<string, unknown>) : {};
+  return {
+    rows: Array.isArray(body.rows) ? (body.rows as StudentUnpaidRow[]) : [],
+    fees: Array.isArray(body.fees) ? (body.fees as StudentFee[]) : [],
+  };
+}
+
+export function filterUnpaidRows(rows: StudentUnpaidRow[], filters: UnpaidFilters = {}): StudentUnpaidRow[] {
+  return rows.filter((row) => {
+    if (filters.className && normalize(row.className) !== normalize(filters.className)) return false;
+    if (filters.period && normalize(row.periodLabel ?? "") !== normalize(filters.period)) return false;
+    if (filters.search) {
+      const q = normalize(filters.search);
+      const haystack = [row.studentName, row.studentId, row.matricule, row.className, row.periodLabel]
+        .map((value) => normalize(value))
+        .join(" ");
+      if (!haystack.includes(q)) return false;
+    }
+    return true;
+  });
 }
 
 export interface UnpaidDetail {

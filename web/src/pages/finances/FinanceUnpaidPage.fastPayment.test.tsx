@@ -33,6 +33,11 @@ import {
   paymentStudentOptionRow,
   postgresObligationRow,
 } from "../../lib/financeStudentIdentity.fixtures";
+import {
+  aggregateUnpaidByStudent,
+  listUnpaidStudentFees,
+  scopedPaymentReminders,
+} from "../../lib/unpaidModule";
 
 const showToast = vi.hoisted(() => vi.fn());
 const refresh = vi.hoisted(() => vi.fn(async () => undefined));
@@ -40,6 +45,7 @@ const createPayment = vi.hoisted(() => vi.fn());
 const listPaymentStudentOptions = vi.hoisted(() => vi.fn());
 const getFinanceCatalog = vi.hoisted(() => vi.fn());
 const listStudentFees = vi.hoisted(() => vi.fn());
+const listUnpaid = vi.hoisted(() => vi.fn());
 
 const authState = vi.hoisted(() => ({
   session: {
@@ -97,6 +103,7 @@ vi.mock("../../lib/financeApi", () => ({
     listPaymentStudentOptions,
     getFinanceCatalog,
     listStudentFees,
+    listUnpaid,
     createReminder: vi.fn(),
   },
 }));
@@ -197,9 +204,18 @@ function studentOptionsPostgresContract() {
   ]);
 }
 
+function unpaidLedgerFromState() {
+  const state = dataState.current;
+  const user = authState.session.user;
+  const fees = listUnpaidStudentFees(state, user);
+  const reminders = scopedPaymentReminders(user, state);
+  const rows = aggregateUnpaidByStudent(fees, reminders, state);
+  return { rows, fees };
+}
+
 async function openPaymentFromUnpaidRow() {
   const user = userEvent.setup();
-  const buttons = screen.getAllByTestId(`unpaid-register-payment-${STUDENT_CODE}`);
+  const buttons = await screen.findAllByTestId(`unpaid-register-payment-${STUDENT_CODE}`);
   await user.click(buttons[0]);
   await screen.findByTestId("quick-payment-modal");
   return user;
@@ -214,6 +230,8 @@ describe("IMP-FAST — enregistrement rapide Impayés (contrat UUID ↔ code pub
     listPaymentStudentOptions.mockReset();
     getFinanceCatalog.mockReset();
     listStudentFees.mockReset();
+    listUnpaid.mockReset();
+    listUnpaid.mockImplementation(async () => unpaidLedgerFromState());
     catalogOk();
     studentOptionsPostgresContract();
     listStudentFees.mockResolvedValue([postgresObligationRow()]);
@@ -229,7 +247,7 @@ describe("IMP-FAST — enregistrement rapide Impayés (contrat UUID ↔ code pub
 
   it("IMP-FAST-RED-01 — clic Impayés sélectionne l'élève demandé sans saisie ni recherche", async () => {
     render(<RoutedFinanceUnpaidPage />);
-    expect(screen.getAllByText(STUDENT_NAME).length).toBeGreaterThan(0);
+    expect((await screen.findAllByText(STUDENT_NAME)).length).toBeGreaterThan(0);
     await openPaymentFromUnpaidRow();
 
     const selected = await screen.findByTestId("quick-payment-selected-student");
@@ -258,7 +276,7 @@ describe("IMP-FAST — enregistrement rapide Impayés (contrat UUID ↔ code pub
 
   it("IMP-FAST-RED-04 — initialStudentId = code public alors que payment-student-options.studentId = UUID → élève préselectionné", async () => {
     render(<RoutedFinanceUnpaidPage />);
-    const unpaidButton = screen.getAllByTestId(`unpaid-register-payment-${STUDENT_CODE}`)[0];
+    const unpaidButton = (await screen.findAllByTestId(`unpaid-register-payment-${STUDENT_CODE}`))[0];
     expect(unpaidButton).toBeInTheDocument();
     await openPaymentFromUnpaidRow();
 
@@ -401,8 +419,8 @@ describe("IMP-FAST — enregistrement rapide Impayés (contrat UUID ↔ code pub
     expect(JSON.stringify(createPayment.mock.calls[0][0])).not.toMatch(/Non imputé/);
     await waitFor(() => expect(refresh).toHaveBeenCalled());
     view.rerender(<RoutedFinanceUnpaidPage />);
-    expect(screen.getAllByText(STUDENT_NAME).length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/100[\s\u202f\u00a0]?000 CDF/).length).toBeGreaterThan(0);
+    expect((await screen.findAllByText(STUDENT_NAME)).length).toBeGreaterThan(0);
+    expect((await screen.findAllByText(/100[\s\u202f\u00a0]?000 CDF/)).length).toBeGreaterThan(0);
   });
 
   it("IMP-FAST-GREEN-08 — paiement intégral → obligation soldée, élève absent des Impayés après refresh", async () => {
@@ -437,8 +455,10 @@ describe("IMP-FAST — enregistrement rapide Impayés (contrat UUID ↔ code pub
     });
     await waitFor(() => expect(refresh).toHaveBeenCalled());
     view.rerender(<RoutedFinanceUnpaidPage />);
+    await waitFor(() => {
+      expect(screen.queryAllByTestId(`unpaid-register-payment-${STUDENT_CODE}`)).toHaveLength(0);
+    });
     expect(screen.queryAllByText(STUDENT_NAME)).toHaveLength(0);
-    expect(screen.queryAllByTestId(`unpaid-register-payment-${STUDENT_CODE}`)).toHaveLength(0);
     expect(screen.getAllByText("Aucun reste à payer").length).toBeGreaterThan(0);
   });
 

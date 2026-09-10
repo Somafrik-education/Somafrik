@@ -14,6 +14,7 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint . --ext .ts,.tsx",
     "test": "vitest run",
+    "test:parite-l2-red": "npx --yes tsx src/lib/pariteL2Finance.red.ts",
     "test:watch": "vitest",
     "test:hydration-red": "vitest run --config vitest.hydration.config.ts",
 

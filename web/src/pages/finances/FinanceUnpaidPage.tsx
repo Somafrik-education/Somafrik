@@ -13,20 +13,22 @@ import { useConfirm } from "../../components/ui/ConfirmDialog";
 import type {
   ReminderChannel,
   ReminderRecipient,
+  StudentFee,
   StudentUnpaidRow,
 } from "../../types";
 import {
-  aggregateUnpaidByStudent,
   buildReminderMessage,
   buildUnpaidDashboard,
   canSendReminder,
   classOptionsFromUnpaid,
+  filterUnpaidRows,
   getStudentUnpaidDetail,
-  listUnpaidStudentFees,
+  normalizeUnpaidLedgerPayload,
   periodOptionsFromFees,
   REMINDER_COOLDOWN_DAYS,
   scopedPaymentReminders,
   severityTone,
+  UNPAID_UNKNOWN_CURRENCY_LABEL,
 } from "../../lib/unpaidModule";
 import {
   canAccessUnpaidModule,
@@ -42,7 +44,9 @@ import { createFinanceIdempotencyKey } from "../../lib/financeIdempotency";
 import { ApiError } from "../../api/client";
 import { formatFinanceAmount, formatFinanceDate, resolveFinanceCurrency } from "../../lib/financeCurrency";
 import { financeObligationStatusLabel, financePaymentStatusLabel } from "../../lib/financeObligationStatus";
-import { EmptyState } from "../../design-system";
+import { EmptyState, LoadingState } from "../../design-system";
+
+type UnpaidLoadStatus = "idle" | "loading" | "ready" | "forbidden" | "unauthenticated" | "error";
 
 const REMINDER_CHANNELS: { value: ReminderChannel; label: string }[] = [
   { value: "notification", label: "Notification application" },
@@ -81,46 +85,101 @@ export function FinanceUnpaidPage() {
   const [reminderMessage, setReminderMessage] = useState("");
   const [busy, setBusy] = useState(false);
   const reminderIntentionRef = useRef(createFinanceIdempotencyKey());
+  const [ledgerRows, setLedgerRows] = useState<StudentUnpaidRow[]>([]);
+  const [ledgerFees, setLedgerFees] = useState<StudentFee[]>([]);
+  const [ledgerTick, setLedgerTick] = useState(0);
+  const [loadStatus, setLoadStatus] = useState<UnpaidLoadStatus>("loading");
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const reminders = useMemo(
     () => scopedPaymentReminders(session?.user ?? null, state),
     [session?.user, state.paymentReminders],
   );
 
-  const fees = useMemo(
+  useEffect(() => {
+    if (!canAccess) return;
+    let cancelled = false;
+    setLoadStatus("loading");
+    setLoadError(null);
+    void (async () => {
+      try {
+        const payload = await financeApi.listUnpaid();
+        if (cancelled) return;
+        const { rows: nextRows, fees: nextFees } = normalizeUnpaidLedgerPayload(payload);
+        setLedgerRows(nextRows);
+        setLedgerFees(nextFees);
+        setLoadStatus("ready");
+      } catch (error) {
+        if (cancelled) return;
+        setLedgerRows([]);
+        setLedgerFees([]);
+        const status = error instanceof ApiError ? error.status : undefined;
+        if (status === 401) {
+          setLoadStatus("unauthenticated");
+          setLoadError("Session expirée. Reconnectez-vous pour consulter les impayés.");
+          return;
+        }
+        if (status === 403) {
+          setLoadStatus("forbidden");
+          setLoadError("Accès refusé. Le droit Impayés:READ est requis.");
+          return;
+        }
+        setLoadStatus("error");
+        setLoadError(
+          error instanceof Error ? error.message : "Impossible de charger les impayés.",
+        );
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [canAccess, ledgerTick]);
+
+  function reloadUnpaidLedger() {
+    setLedgerTick((tick) => tick + 1);
+  }
+
+  const rows = useMemo(
     () =>
-      listUnpaidStudentFees(state, session?.user ?? null, {
+      filterUnpaidRows(ledgerRows, {
         search,
         className: className || undefined,
         period: period || undefined,
       }),
-    [state, session?.user, search, className, period],
-  );
-
-  const rows = useMemo(
-    () => aggregateUnpaidByStudent(fees, reminders, state),
-    [fees, reminders, state],
+    [ledgerRows, search, className, period],
   );
 
   const dashboard = useMemo(() => buildUnpaidDashboard(rows), [rows]);
-  const classOptions = useMemo(() => classOptionsFromUnpaid(rows), [rows]);
-  const periodOptions = useMemo(() => periodOptionsFromFees(fees), [fees]);
+  const classOptions = useMemo(() => classOptionsFromUnpaid(ledgerRows), [ledgerRows]);
+  const periodOptions = useMemo(() => periodOptionsFromFees(ledgerFees), [ledgerFees]);
+  const mixedCurrencies =
+    dashboard.totalsByCurrency.length > 1 ||
+    dashboard.totalsByCurrency.some((item) => item.currency === UNPAID_UNKNOWN_CURRENCY_LABEL);
 
   const detail = useMemo(() => {
     if (!detailStudentId) return null;
-    return getStudentUnpaidDetail(state, session?.user ?? null, detailStudentId, fees, reminders);
-  }, [detailStudentId, state, session?.user, fees, reminders]);
+    const computed = getStudentUnpaidDetail(
+      state,
+      session?.user ?? null,
+      detailStudentId,
+      ledgerFees,
+      reminders,
+    );
+    const ledgerRow = ledgerRows.find((row) => row.studentId === detailStudentId);
+    if (!computed) return null;
+    return ledgerRow ? { ...computed, row: ledgerRow } : computed;
+  }, [detailStudentId, state, session?.user, ledgerFees, ledgerRows, reminders]);
 
   // Deep-link notification : ouvrir le détail de l'élève portant l'impayé visé
   // et mettre cette obligation en évidence dans la liste des obligations.
   useEffect(() => {
     if (!deepLinkObligationId || !canAccess) return;
     if (appliedObligationRef.current === deepLinkObligationId) return;
-    const fee = fees.find((row) => String(row.id) === deepLinkObligationId);
+    const fee = ledgerFees.find((row) => String(row.id) === deepLinkObligationId);
     if (!fee) return;
     appliedObligationRef.current = deepLinkObligationId;
     setDetailStudentId(String(fee.studentId ?? ""));
-  }, [deepLinkObligationId, canAccess, fees]);
+  }, [deepLinkObligationId, canAccess, ledgerFees]);
 
   if (!canAccess) {
     return (
@@ -170,6 +229,7 @@ export function FinanceUnpaidPage() {
       );
       reminderIntentionRef.current = createFinanceIdempotencyKey();
       await refresh();
+      reloadUnpaidLedger();
 
       showToast(
         reminderChannel === "notification"
@@ -280,23 +340,51 @@ export function FinanceUnpaidPage() {
           title="Impayés & restes à payer"
           description={
             ownScopeOnly
-              ? "Votre situation financière : montant dû, déjà payé et reste à régler."
+              ? "Votre situation financière : montant attendu, montant alloué aux impayés ouverts et reste dû."
               : "Élèves avec un reste à payer — lecture des obligations ouvertes après application des tarifs."
           }
           actions={<PrintButton documentTitle="Impayés — Somafrik" />}
         />
 
         <div className="no-print mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <Stat
-            label="Total restant"
-            value={formatFinanceAmount(dashboard.totalAmountDue, resolveFinanceCurrency(dashboard.currency))}
-          />
+          {mixedCurrencies ? (
+            dashboard.totalsByCurrency.map((item) => (
+              <Stat
+                key={item.currency}
+                label={`Total restant ${item.currency}`}
+                value={formatUnpaidTotal(item.amount, item.currency)}
+              />
+            ))
+          ) : (
+            <Stat
+              label="Total restant"
+              value={formatFinanceAmount(
+                dashboard.totalAmountDue,
+                resolveFinanceCurrency(dashboard.currency),
+              )}
+            />
+          )}
           <Stat label="Élèves en retard" value={dashboard.studentCount} />
           <Stat label="Lignes en retard" value={dashboard.overdueLineCount} />
           <Stat label="Délai relance min." value={`${REMINDER_COOLDOWN_DAYS} jours`} />
         </div>
 
-        {!fees.length ? (
+        {loadStatus === "loading" ? (
+          <div className="mt-6">
+            <LoadingState message="Chargement des impayés…" />
+          </div>
+        ) : null}
+
+        {loadStatus === "forbidden" || loadStatus === "unauthenticated" || loadStatus === "error" ? (
+          <div className="mt-6">
+            <EmptyState
+              title={loadStatus === "forbidden" ? "Accès refusé" : "Impossible de charger les impayés"}
+              description={loadError ?? "Les impayés n'ont pas pu être lus."}
+            />
+          </div>
+        ) : null}
+
+        {loadStatus === "ready" && ledgerRows.length === 0 ? (
           <div className="mt-6">
             <EmptyState
               title="Aucun reste à payer"
@@ -343,7 +431,10 @@ export function FinanceUnpaidPage() {
                 <div key={item.className} className="rounded-lg border border-line/70 px-3 py-2 text-sm">
                   <p className="font-semibold">{item.className}</p>
                   <p className="text-muted">
-                    {item.studentCount} élève(s) · {formatFinanceAmount(item.amountDue, resolveFinanceCurrency(dashboard.currency))}
+                    {item.studentCount} élève(s)
+                    {mixedCurrencies
+                      ? ""
+                      : ` · ${formatFinanceAmount(item.amountDue, resolveFinanceCurrency(dashboard.currency))}`}
                   </p>
                 </div>
               ))}
@@ -351,9 +442,17 @@ export function FinanceUnpaidPage() {
           </div>
         ) : null}
 
-        <div className="mt-6">
-          <Table columns={columns} rows={rows} rowKey={(row) => row.studentId} emptyLabel="Aucun reste à payer" stackOnMobile />
-        </div>
+        {loadStatus === "ready" ? (
+          <div className="mt-6">
+            <Table
+              columns={columns}
+              rows={rows}
+              rowKey={(row) => row.studentId}
+              emptyLabel="Aucun reste à payer"
+              stackOnMobile
+            />
+          </div>
+        ) : null}
       </Card>
 
       <Modal
@@ -367,6 +466,20 @@ export function FinanceUnpaidPage() {
             <div className="grid gap-2 sm:grid-cols-2">
               <Info label="Classe" value={detail.row.className} />
               <Info label="Période" value={detail.row.periodLabel} />
+              <Info
+                label="Montant attendu"
+                value={formatFinanceAmount(
+                  detail.row.amountExpected,
+                  resolveFinanceCurrency(detail.row.currency),
+                )}
+              />
+              <Info
+                label="Montant alloué aux impayés ouverts"
+                value={formatFinanceAmount(
+                  detail.row.amountPaid,
+                  resolveFinanceCurrency(detail.row.currency),
+                )}
+              />
               <Info
                 label="Reste à payer"
                 value={formatFinanceAmount(detail.row.amountDue, resolveFinanceCurrency(detail.row.currency))}
@@ -452,7 +565,10 @@ export function FinanceUnpaidPage() {
         unpaidFeeIds={rows.find((row) => row.studentId === paymentStudentId)?.feeIds}
         onClose={() => setPaymentStudentId(null)}
         onSaved={() => {
-          void refresh();
+          void (async () => {
+            await refresh();
+            reloadUnpaidLedger();
+          })();
         }}
       />
 
@@ -502,6 +618,15 @@ export function FinanceUnpaidPage() {
       </Modal>
     </>
   );
+}
+
+function formatUnpaidTotal(amount: number, currency: string): string {
+  if (currency === UNPAID_UNKNOWN_CURRENCY_LABEL || !resolveFinanceCurrency(currency)) {
+    const numeric = Number(amount);
+    const value = Number.isFinite(numeric) ? numeric : 0;
+    return `${new Intl.NumberFormat("fr-FR").format(value)} · ${UNPAID_UNKNOWN_CURRENCY_LABEL}`;
+  }
+  return formatFinanceAmount(amount, currency);
 }
 
 function Stat({ label, value }: { label: string; value: number | string }) {
