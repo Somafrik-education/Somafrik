@@ -204,7 +204,7 @@ export function installForbiddenDomainFetch(ctl: ForbiddenFetchCtl) {
 
     if (path === "/auth/refresh") {
       if (ctl.refreshStatus !== 200) {
-        return jsonResponse({ message: "refresh failed" }, ctl.refreshStatus);
+        return jsonResponse({ message: "Échec du rafraîchissement" }, ctl.refreshStatus);
       }
       ctl.access = "access-2";
       ctl.refresh = "refresh-2";
