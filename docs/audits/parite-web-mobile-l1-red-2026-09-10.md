@@ -16,6 +16,17 @@
 Preuve : `docs/audits/evidence/parite-l1-red-verify.json`  
 Commande : `npm run verify:parite-l1-red`
 
+Le vérificateur **échoue** si la baseline n'est pas exactement celle-ci (un seul RED restant ne suffit plus) :
+
+- L1 failed = `L1-01…L1-09`
+- L1 passed = `L1-10`
+- L1-UX failed = `L1-UX-01…L1-UX-10`
+- L1-UX passed = `∅`
+
+`productionUntouched` est **calculé** via `git diff` contre la base L0 `4a526d1a442a6f1587ea347e5a50e33de57ea34b` + allowlist stricte. Il n'est plus écrit en dur.
+
+SHA : `testedHead` = commit des tests ; `evidenceCommit` / `prHead` = commit de la preuve (tampon `--stamp-heads`). Ils peuvent différer si la preuve JSON est un commit suivant.
+
 ## Production non modifiée
 
 Aucun de ces fichiers n'est touché :
