@@ -1,13 +1,17 @@
 /**
- * FIN-L3-06 — fixture fidèle au contrat GET /payments.
+ * FIN-L3-06 — fixture HYPOTHÉTIQUE client-only.
  *
- * CE N'EST PAS un dump préprod live. DATABASE_URL / API préprod absents
- * de l'agent. Les identifiants ci-dessous sont synthétiques.
+ * CE N'EST PAS un dump préprod live.
+ * CE N'EST PAS le payload final GET /payments de develop actuel.
  *
- * Mathématique reproduite (CD-2026-0001, constat CTO) :
- *   Σ amount des paiements comptés     = 754 250 CDF  (Web)
- *   Σ SUM(items.amount) des mêmes lignes = 754 450 CDF  (Mobile actuel)
- *   écart = +200 CDF
+ * Sur le chemin réel GET /api/payments → listFinanceProjection →
+ * decoratePaymentWithItems(), si items.length > 0 alors
+ * API amount = API totalAmount = SUM(items). Un couple
+ * amount=754250 / SUM(items)=754450 ne survit pas à ce décorateur :
+ * le JSON sortant aurait amount=754450.
+ *
+ * Cette fixture sert uniquement à verrouiller le comportement client
+ * SI un payload brut (avant décoration) présentait cette divergence.
  */
 
 export type FinL306PaymentItem = {
@@ -32,7 +36,7 @@ export type FinL306PaymentRow = {
 
 export const FIN_L306_DIVERGENT_COUNTED_ID = "FIX-L306-CDF-COUNTED";
 
-/** Paiement compté dont API amount ≠ SUM(items) — écart exact +200 CDF. */
+/** Hypothèse pre-décoration : persisté 754250, items 754450. GET actuel écraserait amount à 754450. */
 export const FIN_L306_DIVERGENT_COUNTED: FinL306PaymentRow = {
   id: FIN_L306_DIVERGENT_COUNTED_ID,
   publicId: FIN_L306_DIVERGENT_COUNTED_ID,

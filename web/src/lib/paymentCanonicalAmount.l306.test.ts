@@ -11,7 +11,7 @@ import {
 } from "../../../Mobile/src/lib/finL306CanonicalCash.fixture";
 
 describe("FIN-L3-06 — cash Web = amount canonique GET /payments", () => {
-  it("FIN-L3-06-A fixture : Σ Web 754250 CDF, Σ items 754450, écart +200", () => {
+  it("FIN-L3-06-A fixture hypothétique pre-décoration : 754250 vs SUM(items) 754450", () => {
     const audit = auditPaymentAmountVsItems(FIN_L306_LEDGER);
     expect(audit).toHaveLength(1);
     expect(audit[0]?.amount).toBe(754_250);
@@ -22,7 +22,25 @@ describe("FIN-L3-06 — cash Web = amount canonique GET /payments", () => {
     expect(mobileItemsCountedAmount(FIN_L306_LEDGER, "CDF")).toBe(754_450);
   });
 
-  it("FIN-L3-06-B2 Web utilise 754250 même si SUM(items)=754450", () => {
+  it("FIN-L3-06-C payload déjà décoré amount=754450 : Web et Mobile restent à 754450", () => {
+    const decorated = {
+      amount: 754_450,
+      totalAmount: 754_450,
+      currency: "CDF",
+      status: "Payé",
+      allocatedAmount: 754_450,
+      unallocatedAmount: 0,
+      items: [
+        { feeType: "Minerval", amount: 754_250 },
+        { feeType: "Ligne", amount: 200 },
+      ],
+    };
+    const cdf = getPaymentCashBreakdown([decorated]).find((row) => row.currencyKey === "CDF");
+    expect(cdf?.collectedAmount).toBe(754_450);
+    expect(formatPaymentCashAmounts([decorated]).collectedLabel).toMatch(/754[\s\u00a0\u202f]?450 CDF/);
+  });
+
+  it("FIN-L3-06-B2 Web utilise 754250 même si SUM(items)=754450 sur fixture pre-décoration", () => {
     const cdf = getPaymentCashBreakdown(FIN_L306_LEDGER).find((row) => row.currencyKey === "CDF");
     expect(cdf?.collectedAmount).toBe(754_250);
     expect(cdf?.collectedAmount).not.toBe(754_450);

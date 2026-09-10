@@ -127,6 +127,24 @@ function run() {
     "FIN-L3-06-B7 totalAmount est le fallback canonique GET /payments (même colonne persistée)",
   );
   assert.notEqual(viaTotalAmount.amount, 1200);
+
+  const decoratedApiPayload = normalizePaymentRow({
+    amount: 754_450,
+    totalAmount: 754_450,
+    currency: "CDF",
+    status: "Payé",
+    allocatedAmount: 754_450,
+    unallocatedAmount: 0,
+    items: [{ amount: 754_250 }, { amount: 200 }],
+  });
+  assert.equal(
+    decoratedApiPayload.amount,
+    754_450,
+    "FIN-L3-06-C si GET a déjà SUM(items), le client GREEN ne ramène pas 754250",
+  );
+  const decoratedCash = formatMobileCash([decoratedApiPayload]);
+  assert.equal(decoratedCash.buckets.find((row) => row.currencyKey === "CDF")?.collectedAmount, 754_450);
+  assert.equal(formatWebCash([decoratedApiPayload]).buckets.find((row) => row.currencyKey === "CDF")?.collectedAmount, 754_450);
 }
 
 run();
