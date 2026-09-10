@@ -327,10 +327,16 @@ export function DataProvider({ children }: { children: ReactNode }) {
             logDomainSync("DOMAIN_FETCH_ERROR", { domain: entry.domain, error: entry.message });
           }
         }
+
+        // Un 403 métier est fail-closed au loader (aucune donnée n'est fusionnée),
+        // mais ne doit pas devenir une panne globale de session ni annuler les
+        // domaines 200 du même batch. Les 401 et autres erreurs serveur restent
+        // bloquantes et conservent le comportement historique.
+        const blockingErrors = result.serverErrors.filter((entry) => entry.status !== 403);
         const failure = formatOutboxFailureMessage(loadSyncOutbox());
-        const loadError = result.serverErrors.map((entry) => `${entry.domain}: ${entry.message}`).join(" ; ");
+        const loadError = blockingErrors.map((entry) => `${entry.domain}: ${entry.message}`).join(" ; ");
         setError(failure || loadError || null);
-        if (result.serverErrors.length) {
+        if (blockingErrors.length) {
           throw new Error(loadError);
         }
       } catch (err) {
