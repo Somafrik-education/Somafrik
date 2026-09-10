@@ -3,6 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { normalizeUnpaidLedger } from "./unpaidLedger";
+import { financeSummaryColumns } from "./financeListUx";
 
 const SCHOOL = "CD-2026-0001";
 const srcRoot = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -11,15 +12,19 @@ const read = (relative: string) => fs.readFileSync(path.join(srcRoot, relative),
 const paymentsScreen = read("screens/PaymentsScreen.tsx");
 const receiptCard = read("components/PaymentReceiptCard.tsx");
 const unpaidScreen = read("screens/UnpaidScreen.tsx");
+const expandableCard = read("components/ExpandableFinanceCard.tsx");
 
 // Maquette Mobile v7 : résumé financier en deux colonnes, replié à 360 dp.
 assert.match(paymentsScreen, /useWindowDimensions/);
 assert.match(paymentsScreen, /financeSummaryColumns/);
 assert.match(paymentsScreen, /styles\.financeHero/);
+assert.equal(financeSummaryColumns(360), 1);
+assert.equal(financeSummaryColumns(390), 2);
+assert.equal(financeSummaryColumns(430), 2);
 
 // Paiements récents : résumé compact, détails et actions uniquement au dépliage.
 assert.match(receiptCard, /ExpandableFinanceCard/);
-assert.match(receiptCard, /accessibilityState/);
+assert.match(expandableCard, /accessibilityState/);
 assert.match(receiptCard, /Référence/);
 assert.match(receiptCard, /Moyen/);
 assert.match(receiptCard, /Libellés/);

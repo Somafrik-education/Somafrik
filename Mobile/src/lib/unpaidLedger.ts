@@ -19,6 +19,7 @@ export type UnpaidLedger = {
   studentCount: number;
   totalAmountDue: number;
   currency: string;
+  totalsByCurrency: Array<{ currency: string; amount: number }>;
 };
 
 export type UnpaidLedgerStatus =
@@ -42,6 +43,7 @@ export const EMPTY_UNPAID_LEDGER: UnpaidLedger = {
   studentCount: 0,
   totalAmountDue: 0,
   currency: "",
+  totalsByCurrency: [],
 };
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -93,11 +95,21 @@ export function normalizeUnpaidLedger(payload: unknown, requestedSchoolCode?: st
     .filter((row) => !requested || row.schoolCode === requested)
     .filter((row) => row.amountDue > 0);
 
+  const groupedTotals = new Map<string, number>();
+  for (const row of rows) {
+    groupedTotals.set(row.currency, (groupedTotals.get(row.currency) ?? 0) + row.amountDue);
+  }
+  const totalsByCurrency = [...groupedTotals.entries()]
+    .map(([currency, amount]) => ({ currency, amount }))
+    .sort((a, b) => a.currency.localeCompare(b.currency, "fr"));
+  const singleCurrencyTotal = totalsByCurrency.length === 1 ? totalsByCurrency[0] : undefined;
+
   return {
     rows,
     studentCount: new Set(rows.map((row) => row.studentId)).size,
-    totalAmountDue: rows.reduce((sum, row) => sum + row.amountDue, 0),
-    currency: rows.find((row) => row.currency)?.currency ?? "",
+    totalAmountDue: singleCurrencyTotal?.amount ?? 0,
+    currency: singleCurrencyTotal?.currency ?? "",
+    totalsByCurrency,
   };
 }
 
