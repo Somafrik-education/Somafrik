@@ -385,6 +385,7 @@ export function normalizePaymentRow(raw: unknown): CanonicalPayment {
     overpaymentAmount: Number(row.overpaymentAmount ?? row.unallocatedAmount ?? 0),
     obligationId: row.obligationId ? String(row.obligationId) : undefined,
     schoolFeeItemId: row.schoolFeeItemId ? String(row.schoolFeeItemId) : undefined,
+    currency: String(row.currency ?? "").trim(),
   };
 }
 

@@ -10,21 +10,16 @@ import { useAuth } from "../context/AuthContext";
 import { getPaymentStats } from "../domain/metrics/schoolMetrics";
 import { hasSecurityPermission } from "../domain/security/permissions";
 import { DATA_TRUTH_COPY, DATA_TRUTH_TEST_IDS } from "../lib/dataTruth";
-import { getPaymentCashKpi } from "../lib/paymentCashKpi";
+import { getPaymentCashKpi, formatPaymentCashAmounts } from "../lib/paymentCashKpi";
 import { formatPaymentOverviewAmounts } from "../lib/paymentAmountBreakdown";
 import { getPaymentRateKpi } from "../lib/paymentRateKpi";
 import { useFloatingTabBarLayout } from "../lib/screenLayout";
 import { getFinanceCatalog, getPaymentStudentOptions } from "../services/api";
-import { formatFinanceAmount, resolveFinanceCurrency } from "../lib/financeCurrency";
+import { resolveFinanceCurrency } from "../lib/financeCurrency";
 import { paymentStudentsFromOptions, type PaymentStudent } from "../lib/paymentEnrollment";
 import { useUnpaidLedger } from "../hooks/useUnpaidLedger";
 import { unpaidLedgerMetricValue, unpaidLedgerStateMessage } from "../lib/unpaidLedger";
 import { financeSummaryColumns } from "../lib/financeListUx";
-
-function moneyLabel(amount: number, ready: boolean, currency: string) {
-  if (!ready) return "—";
-  return formatFinanceAmount(amount, currency);
-}
 
 export default function PaymentsScreen({ navigation }: any) {
   const { session } = useAuth();
@@ -47,6 +42,7 @@ export default function PaymentsScreen({ navigation }: any) {
   const paymentRateKpi = getPaymentRateKpi(studentFeesData);
   const paymentAmountOverview = formatPaymentOverviewAmounts(studentFeesData);
   const cashKpi = getPaymentCashKpi(paymentsData);
+  const cashOverview = formatPaymentCashAmounts(paymentsData);
   const canReadUnpaid = hasSecurityPermission(session, "Impayés", "READ");
   const requestedSchoolCode = activeSchoolCode || session?.school?.code || session?.user?.schoolCode;
   const { state: unpaidLedger } = useUnpaidLedger(canReadUnpaid, requestedSchoolCode);
@@ -131,12 +127,12 @@ export default function PaymentsScreen({ navigation }: any) {
 
                 <View style={styles.summaryCardSecondary}>
                   <Text style={styles.summaryLabelDark}>Montant encaissé</Text>
-                  <Text style={styles.summaryAmountDark} numberOfLines={1} adjustsFontSizeToFit>
-                    {moneyLabel(cashKpi.collectedAmount, paymentsReady, catalogCurrency)}
+                  <Text style={styles.summaryAmountDark} numberOfLines={3} adjustsFontSizeToFit>
+                    {paymentsReady ? cashOverview.collectedLabel : "—"}
                   </Text>
                   <Text style={styles.summarySubDark}>
-                    Imputé {moneyLabel(cashKpi.allocatedAmount, paymentsReady, catalogCurrency)} · Non imputé{" "}
-                    {moneyLabel(cashKpi.unallocatedAmount, paymentsReady, catalogCurrency)}
+                    Imputé {paymentsReady ? cashOverview.allocatedLabel : "—"} · Non imputé{" "}
+                    {paymentsReady ? cashOverview.unallocatedLabel : "—"}
                   </Text>
                 </View>
               </View>

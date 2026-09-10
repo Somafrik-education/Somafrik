@@ -28,7 +28,8 @@ describe("FinancePaymentsOverview — FIN-L3", () => {
     render(
       <FinancePaymentsOverview
         expectedLabel={formatted.expectedLabel}
-        collectedLabel={formatted.collectedLabel}
+        cashLabel="—"
+        allocatedLabel={formatted.collectedLabel}
         remainingLabel={formatted.remainingLabel}
         obligationCount={2}
         recentPaymentCount={0}
@@ -45,7 +46,8 @@ describe("FinancePaymentsOverview — FIN-L3", () => {
     render(
       <FinancePaymentsOverview
         expectedLabel="—"
-        collectedLabel="—"
+        cashLabel="—"
+        allocatedLabel="—"
         remainingLabel="—"
         obligationCount={41}
         recentPaymentCount={0}
@@ -62,7 +64,8 @@ describe("FinancePaymentsOverview — FIN-L3", () => {
     render(
       <FinancePaymentsOverview
         expectedLabel="100 000 CDF"
-        collectedLabel="20 000 CDF"
+        cashLabel="150 CDF"
+        allocatedLabel="20 000 CDF"
         remainingLabel="80 000 CDF"
         obligationCount={2}
         recentPaymentCount={1}
@@ -70,5 +73,7 @@ describe("FinancePaymentsOverview — FIN-L3", () => {
     );
     expect(screen.getByText("Montant imputé aux obligations")).toBeInTheDocument();
     expect(screen.getByText("Montant encaissé")).toBeInTheDocument();
+    expect(screen.getByText("150 CDF")).toBeInTheDocument();
+    expect(screen.getByText("20 000 CDF")).toBeInTheDocument();
   });
 });

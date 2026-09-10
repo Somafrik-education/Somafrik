@@ -17,6 +17,7 @@ export interface FinancePayment {
   studentId: string;
   amount: number;
   totalAmount?: number;
+  currency?: string;
   feeType: string;
   items?: FinancePaymentItem[];
   itemCount?: number;

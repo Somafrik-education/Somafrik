@@ -1,6 +1,8 @@
 import type { BackOfficeState, SessionUser } from "../types";
 import { scopedStudentFees } from "./fees";
+import { scopedPayments } from "./establishment";
 import { formatFinanceAmount, resolveFinanceCurrency } from "./financeCurrency";
+import { formatPaymentCashAmounts } from "./paymentCashKpi";
 import type { StudentFeeObligation } from "./paymentRateKpi";
 
 export const PAYMENT_UNKNOWN_CURRENCY_LABEL = "Devise non renseignée";
@@ -16,7 +18,8 @@ export type PaymentAmountBucket = {
 
 export type FinancePaymentsOverviewModel = {
   expectedLabel: string;
-  collectedLabel: string;
+  cashLabel: string;
+  allocatedLabel: string;
   remainingLabel: string;
   buckets: PaymentAmountBucket[];
   obligationCount: number;
@@ -119,9 +122,15 @@ export function buildFinancePaymentsOverview(input: {
   recentPaymentCount: number;
 }): FinancePaymentsOverviewModel {
   const fees = scopedStudentFees(input.user, input.state);
+  const payments = scopedPayments(input.user, input.state);
   const formatted = formatPaymentOverviewAmounts(fees);
+  const cash = formatPaymentCashAmounts(payments as never);
   return {
-    ...formatted,
+    expectedLabel: formatted.expectedLabel,
+    cashLabel: cash.collectedLabel,
+    allocatedLabel: formatted.collectedLabel,
+    remainingLabel: formatted.remainingLabel,
+    buckets: formatted.buckets,
     obligationCount: countActiveStudentFeeObligations(fees),
     recentPaymentCount: input.recentPaymentCount,
   };
