@@ -1,6 +1,7 @@
 # Finance L2 — preuve GREEN
 
 **Base RED :** `b87237b979e10bc782127e99ad9dfae6eccde67d`  
+**SHA GREEN :** `70e7ad1b34eb468e1e7a76391ab25dca1a831b0d`  
 **Commande :** `npm run test:parite-l2-red`
 
 ## Résultat exact (après implémentation)
