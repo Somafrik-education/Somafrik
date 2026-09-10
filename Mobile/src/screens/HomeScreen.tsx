@@ -11,7 +11,8 @@ import RoleDashboardLayout, {
 } from "../components/RoleDashboardLayout";
 import { useAdminData } from "../context/AdminDataContext";
 import StudentsScopeAlert from "../components/StudentsScopeAlert";
-import { getPaymentCashKpi } from "../lib/paymentCashKpi";
+import { formatPaymentCashAmounts } from "../lib/paymentCashKpi";
+import { formatPaymentOverviewAmounts } from "../lib/paymentAmountBreakdown";
 import { getPaymentStats, getPresenceStats } from "../domain/metrics/schoolMetrics";
 import { canReadEntity, canReadRoute, hasSecurityPermission } from "../domain/security/permissions";
 import { canAccessMessagesRoute } from "../lib/mobileCtaRbacAlignment";
@@ -68,6 +69,7 @@ export default function HomeScreen({ navigation }: any) {
     paymentsData,
     paymentsSnapshot,
     loadPayments,
+    studentFeesData,
     studentFeesSnapshot,
     loadStudentFees,
     notesSnapshot,
@@ -115,8 +117,7 @@ export default function HomeScreen({ navigation }: any) {
 
   const canonicalPayments =
     paymentsSnapshot.status === "success" || paymentsSnapshot.status === "empty" ? paymentsData : [];
-  const paymentStats = getPaymentStats(canonicalPayments);
-  const cashKpi = getPaymentCashKpi(canonicalPayments);
+  const cashOverview = formatPaymentCashAmounts(canonicalPayments);
   const paymentsReady =
     paymentsSnapshot.status === "success" ||
     paymentsSnapshot.status === "empty" ||
@@ -147,6 +148,9 @@ export default function HomeScreen({ navigation }: any) {
     studentFeesSnapshot.status === "success" ||
     studentFeesSnapshot.status === "empty" ||
     (studentFeesSnapshot.status === "offline" && studentFeesSnapshot.data.length > 0);
+  const feeOverview = formatPaymentOverviewAmounts(studentFeesData);
+  const receivableLabel = studentFeesReady ? feeOverview.remainingLabel : "—";
+  const collectedLabel = paymentsReady ? cashOverview.collectedLabel : "—";
   const paymentRateValue = metricLabelFromSnapshot(
     studentFeesSnapshot,
     (rows) => formatHomePaymentRateKpi(rows).value,
@@ -375,10 +379,10 @@ export default function HomeScreen({ navigation }: any) {
         )
       : null,
     pendingPayments: canReadEntity(session, "payments")
-      ? kpi("pendingPayments", "time-outline", paymentsReady ? formatAmount(paymentStats.pendingAmount) : "—", "À percevoir", "#EA580C", "#FFF7ED", () => navigation.navigate("Payments"))
+      ? kpi("pendingPayments", "time-outline", receivableLabel, "À percevoir", "#EA580C", "#FFF7ED", () => navigation.navigate("Payments"))
       : null,
     paidPayments: canReadEntity(session, "payments")
-      ? kpi("paidPayments", "checkmark-circle-outline", paymentsReady ? formatAmount(cashKpi.collectedAmount) : "—", "Encaissé", "#16A34A", "#ECFDF5", () => navigation.navigate("Payments"))
+      ? kpi("paidPayments", "checkmark-circle-outline", collectedLabel, "Encaissé", "#16A34A", "#ECFDF5", () => navigation.navigate("Payments"))
       : null,
     unpaidPayments: canReadUnpaid
       ? kpi("unpaidPayments", "alert-circle-outline", unpaidLedgerMetricValue(unpaidLedger), "Impayés", "#DC2626", "#FEF2F2", () => navigation.navigate("Unpaid"))
@@ -534,10 +538,6 @@ function action(
   onPress: () => void,
 ): RoleDashboardAction {
   return { key, icon, label, onPress };
-}
-
-function formatAmount(value: number) {
-  return `${Math.round(value).toLocaleString("fr-FR")} F`;
 }
 
 function isTodayPresence(dateValue?: string) {

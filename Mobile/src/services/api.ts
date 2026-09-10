@@ -742,6 +742,7 @@ export type CanonicalStudentFee = {
   feeType?: string;
   label?: string;
   schoolFeeItemId?: string;
+  currency?: string;
 };
 
 function normalizeStudentFeeRow(raw: unknown): CanonicalStudentFee {
@@ -763,6 +764,7 @@ function normalizeStudentFeeRow(raw: unknown): CanonicalStudentFee {
     feeType: row.feeType ? String(row.feeType) : undefined,
     label: String(row.label ?? row.feeType ?? "").trim() || undefined,
     schoolFeeItemId: row.schoolFeeItemId ? String(row.schoolFeeItemId) : row.school_fee_item_id ? String(row.school_fee_item_id) : undefined,
+    currency: String(row.currency ?? "").trim(),
   };
 }
 

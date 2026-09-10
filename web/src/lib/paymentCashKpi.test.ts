@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatPaymentCashAmounts, getPaymentCashBreakdown } from "./paymentCashKpi";
+import { formatPaymentCashAmounts, getPaymentCashBreakdown, isCountedCashPayment } from "./paymentCashKpi";
 
 const UNKNOWN = "Devise non renseignée";
 
@@ -86,5 +86,46 @@ describe("FIN-L3-04 — cash Paiements par devise", () => {
     const formatted = formatPaymentCashAmounts(rows);
     expect(formatted.unallocatedLabel).toBe("—");
     expect(formatted.collectedLabel).toMatch(/100 CDF/);
+  });
+});
+
+describe("FIN-L3-05-B — encaissé Web, statuts comptabilisés", () => {
+  it("FIN-L3-05-B1 table de décision des statuts", () => {
+    const table: Array<[string, boolean]> = [
+      ["Payé", true],
+      ["Non imputé", true],
+      ["Partiel", true],
+      ["Brouillon", false],
+      ["En attente", false],
+      ["pending", false],
+      ["Annulé", false],
+      ["Refusé", false],
+      ["Échoué", false],
+      ["failed", false],
+    ];
+    for (const [status, counted] of table) {
+      expect(isCountedCashPayment({ status }), status).toBe(counted);
+    }
+  });
+
+  it("FIN-L3-05-B2 brouillon 200 CDF exclu de l'encaissé", () => {
+    const rows = [
+      payment({ amount: 754_250, allocatedAmount: 754_250, unallocatedAmount: 0, currency: "CDF", status: "Payé" }),
+      payment({ amount: 200, allocatedAmount: 0, unallocatedAmount: 200, currency: "CDF", status: "Brouillon" }),
+    ];
+    const cdf = getPaymentCashBreakdown(rows).find((row) => row.currencyKey === "CDF");
+    expect(cdf?.collectedAmount).toBe(754_250);
+    expect(cdf?.collectedAmount).not.toBe(754_450);
+  });
+
+  it("FIN-L3-05-B4 CDF + USD jamais sommé", () => {
+    const rows = [
+      payment({ amount: 754_250, currency: "CDF", status: "Payé" }),
+      payment({ amount: 50, currency: "USD", status: "Payé" }),
+    ];
+    const formatted = formatPaymentCashAmounts(rows);
+    expect(formatted.collectedLabel).not.toMatch(/754[\s\u00a0\u202f]?300/);
+    expect(formatted.collectedLabel).toMatch(/754[\s\u00a0\u202f]?250 CDF/);
+    expect(formatted.collectedLabel).toMatch(/50 USD/);
   });
 });
