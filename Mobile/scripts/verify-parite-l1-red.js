@@ -21,8 +21,8 @@ const repoRoot = path.join(mobileRoot, "..");
 const evidenceRel = "docs/audits/evidence/parite-l1-red-verify.json";
 const evidencePath = path.join(repoRoot, evidenceRel);
 
-const L0_BASE_SHA = "4a526d1a442a6f1587ea347e5a50e33de57ea34b";
-const PR_BRANCH = "cursor/l1-unpaid-red-tests-8d64";
+const L0_BASE_SHA = "b0bcc27799cc43bab74c7c1f23279b8897b5a5a8";
+const PR_BRANCH = "feat/577-l1-mobile-unpaid-green";
 
 const L0_EXPECTED = Array.from({ length: 12 }, (_, i) => `L0-${String(i + 1).padStart(2, "0")}`);
 const L1_EXPECTED = Array.from({ length: 10 }, (_, i) => `L1-${String(i + 1).padStart(2, "0")}`);

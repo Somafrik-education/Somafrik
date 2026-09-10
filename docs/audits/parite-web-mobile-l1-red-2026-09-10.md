@@ -1,8 +1,9 @@
 # L1 Impayés — tests ROUGES métier + UX (aucune implémentation)
 
 **Mandat :** RED uniquement. Aucun écran. Aucun GREEN. Aucun Ready. Aucun merge.  
-**Base :** HEAD #580 `feat/577-l0-mobile-hygiene` (tests L1 déjà présents, production L0 inchangée).  
-**Branche :** `cursor/l1-unpaid-red-tests-8d64`
+**Base :** `develop@b0bcc277` (`feat/577-l1-mobile-unpaid-green`, L0 #580 déjà fusionné).  
+**Branche :** `feat/577-l1-mobile-unpaid-green`  
+**Source RED reportée :** `54fa2276` + durcissement `446f3dcb` (sans commits de tampon/preuve #581).
 
 ## Résultat machine
 
@@ -23,7 +24,7 @@ Le vérificateur **échoue** si la baseline n'est pas exactement celle-ci (un se
 - L1-UX failed = `L1-UX-01…L1-UX-10`
 - L1-UX passed = `∅`
 
-`productionUntouched` est **calculé** via `git diff` contre la base L0 `4a526d1a442a6f1587ea347e5a50e33de57ea34b` + allowlist stricte. Il n'est plus écrit en dur.
+`productionUntouched` est **calculé** via `git diff` contre `develop@b0bcc27799cc43bab74c7c1f23279b8897b5a5a8` + allowlist stricte. Il n'est plus écrit en dur.
 
 SHA : `testedHead` = commit des tests ; `evidenceCommit` / `prHead` = commit de la preuve (tampon `--stamp-heads`). Ils peuvent différer si la preuve JSON est un commit suivant.
 
