@@ -25,7 +25,12 @@ Le vérificateur **échoue** si la baseline n'est pas exactement celle-ci (un se
 
 `productionUntouched` est **calculé** via `git diff` contre la base L0 `4a526d1a442a6f1587ea347e5a50e33de57ea34b` + allowlist stricte. Il n'est plus écrit en dur.
 
-SHA : `testedHead` = commit des tests ; `evidenceCommit` / `prHead` = commit de la preuve (tampon `--stamp-heads`). Ils peuvent différer si la preuve JSON est un commit suivant.
+SHA (preuve JSON) :
+
+| Champ | Rôle |
+| --- | --- |
+| `testedHead` | SHA sur lequel `npm run verify:parite-l1-red` a tourné — `446f3dcb56af0bf7299d997f751cd06ab6124dbd` |
+| `evidenceCommit` / `prHead` | SHA du commit de cette preuve JSON (tampon `--stamp-heads`, distinct si evidence-only) |
 
 ## Production non modifiée
 

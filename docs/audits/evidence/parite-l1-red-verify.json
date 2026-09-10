@@ -1,7 +1,13 @@
 {
   "audit": "parite-l1-unpaid-red",
-  "generatedAt": "2026-09-10T02:06:28.260Z",
-  "head": "54fa227606ef4409310d48f5541f943b3f65eaa0",
+  "generatedAt": "2026-09-10T02:26:26.951Z",
+  "l0BaseSha": "4a526d1a442a6f1587ea347e5a50e33de57ea34b",
+  "branch": "cursor/l1-unpaid-red-tests-8d64",
+  "testedHead": "446f3dcb56af0bf7299d997f751cd06ab6124dbd",
+  "prHeadAtTestTime": "446f3dcb56af0bf7299d997f751cd06ab6124dbd",
+  "evidenceCommit": null,
+  "prHead": null,
+  "shaNote": "testedHead = SHA sur lequel les tests ont tourné. evidenceCommit/prHead sont tamponnés après le commit de cette preuve (`node scripts/verify-parite-l1-red.js --stamp-heads`) et peuvent différer de testedHead si le commit suivant est evidence-only.",
   "expected": {
     "L1": [
       "L1-01",
@@ -27,9 +33,55 @@
       "L1-UX-09",
       "L1-UX-10"
     ],
+    "L1_failed": [
+      "L1-01",
+      "L1-02",
+      "L1-03",
+      "L1-04",
+      "L1-05",
+      "L1-06",
+      "L1-07",
+      "L1-08",
+      "L1-09"
+    ],
+    "L1_passed": [
+      "L1-10"
+    ],
+    "L1-UX_failed": [
+      "L1-UX-01",
+      "L1-UX-02",
+      "L1-UX-03",
+      "L1-UX-04",
+      "L1-UX-05",
+      "L1-UX-06",
+      "L1-UX-07",
+      "L1-UX-08",
+      "L1-UX-09",
+      "L1-UX-10"
+    ],
+    "L1-UX_passed": [],
     "total": 20
   },
   "problems": [],
+  "l0NonRegression": {
+    "green": 12,
+    "red": 0,
+    "passedIds": [
+      "L0-01",
+      "L0-02",
+      "L0-03",
+      "L0-04",
+      "L0-05",
+      "L0-06",
+      "L0-07",
+      "L0-08",
+      "L0-09",
+      "L0-10",
+      "L0-11",
+      "L0-12"
+    ],
+    "failedIds": []
+  },
   "files": [
     {
       "file": "src/lib/pariteL1UnpaidKpi.red.test.ts",
@@ -113,6 +165,20 @@
         "L1-07",
         "L1-08",
         "L1-09"
+      ],
+      "requiredPassedIds": [
+        "L1-10"
+      ],
+      "requiredFailedIds": [
+        "L1-01",
+        "L1-02",
+        "L1-03",
+        "L1-04",
+        "L1-05",
+        "L1-06",
+        "L1-07",
+        "L1-08",
+        "L1-09"
       ]
     },
     "L1-UX": {
@@ -131,8 +197,52 @@
         "L1-UX-08",
         "L1-UX-09",
         "L1-UX-10"
+      ],
+      "requiredPassedIds": [],
+      "requiredFailedIds": [
+        "L1-UX-01",
+        "L1-UX-02",
+        "L1-UX-03",
+        "L1-UX-04",
+        "L1-UX-05",
+        "L1-UX-06",
+        "L1-UX-07",
+        "L1-UX-08",
+        "L1-UX-09",
+        "L1-UX-10"
       ]
     }
   },
-  "productionUntouched": true
+  "productionUntouched": true,
+  "productionDiff": {
+    "baseSha": "4a526d1a442a6f1587ea347e5a50e33de57ea34b",
+    "changedFiles": [
+      "Mobile/package.json",
+      "Mobile/scripts/verify-parite-l1-red.js",
+      "Mobile/scripts/verify-parite-l1-red.test.js",
+      "Mobile/src/lib/pariteL0L1RedReport.ts",
+      "Mobile/src/lib/pariteL1Unpaid.shipped.ts",
+      "Mobile/src/lib/pariteL1UnpaidKpi.red.test.ts",
+      "Mobile/src/lib/pariteL1UnpaidUx.red.test.ts",
+      "docs/audits/evidence/parite-l1-red-verify.json",
+      "docs/audits/parite-l0-l1-ux-maquette.md",
+      "docs/audits/parite-web-mobile-l1-red-2026-09-10.md",
+      "package.json"
+    ],
+    "allowedFiles": [
+      "Mobile/package.json",
+      "Mobile/scripts/verify-parite-l1-red.js",
+      "Mobile/scripts/verify-parite-l1-red.test.js",
+      "Mobile/src/lib/pariteL0L1RedReport.ts",
+      "Mobile/src/lib/pariteL1Unpaid.shipped.ts",
+      "Mobile/src/lib/pariteL1UnpaidKpi.red.test.ts",
+      "Mobile/src/lib/pariteL1UnpaidUx.red.test.ts",
+      "docs/audits/evidence/parite-l1-red-verify.json",
+      "docs/audits/parite-l0-l1-ux-maquette.md",
+      "docs/audits/parite-web-mobile-l1-red-2026-09-10.md",
+      "package.json"
+    ],
+    "unexpectedFiles": [],
+    "forbiddenHits": []
+  }
 }
