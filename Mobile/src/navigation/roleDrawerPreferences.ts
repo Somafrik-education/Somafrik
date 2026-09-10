@@ -44,6 +44,7 @@ const I = {
   users: { label: "Utilisateurs", icon: "person-circle-outline" as const, route: "Users", view: "users" },
   platformUsers: { label: "Utilisateurs", icon: "people-outline" as const, route: "Users", view: "users" },
   payments: { label: "Paiements", icon: "card-outline" as const, route: "Payments", view: "payments" },
+  unpaid: { label: "Impayés", icon: "alert-circle-outline" as const, route: "Unpaid", view: "Unpaid" },
   studentPayments: { label: "Paiements", icon: "card-outline" as const, route: "StudentPayments", view: "StudentPayments" },
   mobilePayment: { label: "Paiements", icon: "phone-portrait-outline" as const, route: "MobilePayment", view: "MobilePayment" },
   attendance: { label: "Présences", icon: "checkbox-outline" as const, route: "TeacherAttendance", view: "TeacherAttendance" },
@@ -150,6 +151,7 @@ const secretaryItems: RoleDrawerItem[] = [
 
 const accountantItems: RoleDrawerItem[] = [
   quotidien(I.payments),
+  quotidien(I.unpaid),
   quotidien(I.students),
   quotidien(I.messages),
   quotidien(I.announcements),

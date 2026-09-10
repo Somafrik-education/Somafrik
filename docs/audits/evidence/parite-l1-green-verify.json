@@ -1,0 +1,92 @@
+{
+  "generatedAt": "2026-09-10T11:35:55Z",
+  "issue": 577,
+  "lot": "L1",
+  "base": {
+    "branch": "develop",
+    "sha": "b0bcc27799cc43bab74c7c1f23279b8897b5a5a8"
+  },
+  "workBranch": "feat/577-l1-unpaid-parity",
+  "red": {
+    "expectedIds": [
+      "L1-01",
+      "L1-02",
+      "L1-03",
+      "L1-04",
+      "L1-05",
+      "L1-06",
+      "L1-07",
+      "L1-08",
+      "L1-09",
+      "L1-10"
+    ],
+    "failedIds": [
+      "L1-01",
+      "L1-02",
+      "L1-03",
+      "L1-04",
+      "L1-05",
+      "L1-06",
+      "L1-07",
+      "L1-08",
+      "L1-09"
+    ],
+    "passedIds": ["L1-10"],
+    "exit": 1
+  },
+  "green": {
+    "command": "npm run test:parite-l1-green",
+    "failedIds": [],
+    "passedIds": [
+      "L1-01",
+      "L1-02",
+      "L1-03",
+      "L1-04",
+      "L1-05",
+      "L1-06",
+      "L1-07",
+      "L1-08",
+      "L1-09",
+      "L1-10"
+    ],
+    "contractTest": "Mobile/src/lib/unpaidLedger.test.ts",
+    "exit": 0
+  },
+  "regressions": {
+    "passed": [
+      "Mobile typecheck",
+      "L0 12/12",
+      "mobile security",
+      "mobile RBAC live",
+      "canonical route map",
+      "CTA RBAC alignment",
+      "home data truth",
+      "UX V1",
+      "live permissions refresh",
+      "mobile data truth",
+      "network resilience",
+      "no false writes",
+      "school scope transport",
+      "L1 offline reads contract",
+      "canonical role identity",
+      "form fields",
+      "UI E2E scaffold",
+      "internal notifications C4"
+    ],
+    "knownUnchangedFailures": [
+      {
+        "command": "npm run verify:mobile-usability",
+        "cause": "historical direct-toLocaleString assertion against unchanged PaymentReceiptCard.tsx"
+      },
+      {
+        "command": "npm run typecheck",
+        "cause": "web tsc unavailable because web dependencies are not installed; backend syntax passed and Mobile typecheck passed"
+      }
+    ]
+  },
+  "serverChanges": false,
+  "databaseChanges": false,
+  "serverRbacChanges": false,
+  "readyForbidden": true,
+  "mergeForbidden": true
+}

@@ -53,7 +53,11 @@ import {
   getRestrictedAccessToken,
   getRestrictedRefreshToken,
 } from "../lib/restrictedSession";
-import { clearRequestSchoolScope, getRequestSchoolScope } from "../lib/requestSchoolScope";
+import {
+  clearRequestSchoolScope,
+  getRequestSchoolScope,
+  publicRequestSchoolScope,
+} from "../lib/requestSchoolScope";
 import { clearStoredSchoolCode } from "../lib/activeSchool";
 import { attachStudentTenantIdentity } from "../lib/studentsScope";
 import {
@@ -62,6 +66,7 @@ import {
   withCommunicationSchoolPayload,
   withCommunicationSchoolScope,
 } from "../lib/communicationSchoolScope";
+import { normalizeUnpaidLedger, type UnpaidLedger } from "../lib/unpaidLedger";
 
 export function getApiBaseUrl() {
   return resolveApiBaseUrl();
@@ -714,6 +719,13 @@ export function deleteCourseScheduleReplacement(replacementId: string) {
 
 export function getPayments() {
   return request<unknown>("/payments").then((payload) => unwrapList(payload).map(normalizePaymentRow));
+}
+
+/** Ledger canonique des créances, agrégé et scopé côté serveur par établissement. */
+export function getUnpaidLedger(requestedSchoolCode?: string | null): Promise<UnpaidLedger> {
+  return request<unknown>("/backoffice/finance/unpaid").then((payload) =>
+    normalizeUnpaidLedger(payload, publicRequestSchoolScope(requestedSchoolCode)),
+  );
 }
 
 export type CanonicalStudentFee = {

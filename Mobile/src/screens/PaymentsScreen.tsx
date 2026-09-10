@@ -1,12 +1,14 @@
 import { useCallback, useState } from "react";
-import { FlatList, StyleSheet, Text, View } from "react-native";
+import { FlatList, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
 import QueryStateView from "../components/QueryStateView";
 import PaymentReceiptCard from "../components/PaymentReceiptCard";
 import PaymentMutationControls from "../components/PaymentMutationControls";
 import PaymentCancelControls from "../components/PaymentCancelControls";
 import { useAdminData } from "../context/AdminDataContext";
+import { useAuth } from "../context/AuthContext";
 import { getPaymentStats } from "../domain/metrics/schoolMetrics";
+import { hasSecurityPermission } from "../domain/security/permissions";
 import { DATA_TRUTH_COPY, DATA_TRUTH_TEST_IDS } from "../lib/dataTruth";
 import { getPaymentCashKpi } from "../lib/paymentCashKpi";
 import { getPaymentRateKpi } from "../lib/paymentRateKpi";
@@ -14,6 +16,8 @@ import { useFloatingTabBarLayout } from "../lib/screenLayout";
 import { getFinanceCatalog, getPaymentStudentOptions } from "../services/api";
 import { formatFinanceAmount, resolveFinanceCurrency } from "../lib/financeCurrency";
 import { paymentStudentsFromOptions, type PaymentStudent } from "../lib/paymentEnrollment";
+import { useUnpaidLedger } from "../hooks/useUnpaidLedger";
+import { unpaidLedgerMetricValue, unpaidLedgerStateMessage } from "../lib/unpaidLedger";
 
 function moneyLabel(amount: number, ready: boolean, currency: string) {
   if (!ready) return "—";
@@ -21,6 +25,7 @@ function moneyLabel(amount: number, ready: boolean, currency: string) {
 }
 
 export default function PaymentsScreen({ navigation }: any) {
+  const { session } = useAuth();
   const { scrollContentPaddingBottom } = useFloatingTabBarLayout();
   const contentStyle = [styles.content, { paddingBottom: scrollContentPaddingBottom }];
   const {
@@ -30,6 +35,7 @@ export default function PaymentsScreen({ navigation }: any) {
     studentFeesSnapshot,
     loadPayments,
     loadStudentFees,
+    activeSchoolCode,
   } = useAdminData();
   const [paymentStudents, setPaymentStudents] = useState<PaymentStudent[]>([]);
   const [paymentMethods, setPaymentMethods] = useState<string[]>([]);
@@ -37,6 +43,10 @@ export default function PaymentsScreen({ navigation }: any) {
   const paymentStats = getPaymentStats(paymentsData);
   const paymentRateKpi = getPaymentRateKpi(studentFeesData);
   const cashKpi = getPaymentCashKpi(paymentsData);
+  const canReadUnpaid = hasSecurityPermission(session, "Impayés", "READ");
+  const requestedSchoolCode = activeSchoolCode || session?.school?.code || session?.user?.schoolCode;
+  const { state: unpaidLedger } = useUnpaidLedger(canReadUnpaid, requestedSchoolCode);
+  const unpaidStateMessage = unpaidLedgerStateMessage(unpaidLedger);
   const feesReady =
     studentFeesSnapshot.status === "success" || studentFeesSnapshot.status === "empty";
   const paymentsReady = paymentsSnapshot.status === "success" || paymentsSnapshot.status === "empty";
@@ -137,11 +147,24 @@ export default function PaymentsScreen({ navigation }: any) {
                   <Text style={styles.smallLabel}>Non imputés</Text>
                 </View>
 
-                <View style={styles.smallCard}>
-                  <Text style={styles.smallNumber}>{paymentStats.pending}</Text>
-                  <Text style={styles.smallLabel}>Impayés</Text>
-                </View>
+                {canReadUnpaid ? (
+                  <TouchableOpacity
+                    style={styles.smallCard}
+                    onPress={() => navigation.navigate("Unpaid")}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Impayés : ${unpaidLedgerMetricValue(unpaidLedger)}`}
+                  >
+                    <Text style={styles.smallNumber}>{unpaidLedgerMetricValue(unpaidLedger)}</Text>
+                    <Text style={styles.smallLabel}>Impayés</Text>
+                  </TouchableOpacity>
+                ) : null}
               </View>
+
+              {unpaidStateMessage ? (
+                <Text style={styles.unpaidError} accessibilityRole="alert">
+                  {unpaidStateMessage}
+                </Text>
+              ) : null}
 
               <Text style={styles.sectionTitle}>Paiements récents</Text>
             </View>
@@ -199,6 +222,7 @@ const styles = StyleSheet.create({
   },
   smallNumber: { fontSize: 28, fontWeight: "800", color: "#0F172A" },
   smallLabel: { color: "#64748B", fontWeight: "700", marginTop: 6 },
+  unpaidError: { color: "#991B1B", fontSize: 13, fontWeight: "700", marginTop: -8, marginBottom: 18 },
   sectionTitle: { fontSize: 18, fontWeight: "800", color: "#0F172A", marginBottom: 12 },
   button: {
     marginTop: 8,
