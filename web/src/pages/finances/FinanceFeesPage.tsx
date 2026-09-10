@@ -40,6 +40,7 @@ import { QuickFeeGridModal } from "../../components/fees/QuickFeeGridModal";
 import { financeApi, type FinanceCatalog } from "../../lib/financeApi";
 import { createFinanceIdempotencyKey } from "../../lib/financeIdempotency";
 import { formatFinanceAmount, resolveFinanceCurrency } from "../../lib/financeCurrency";
+import { formatPaymentOverviewAmounts } from "../../lib/paymentAmountBreakdown";
 import { EmptyState, ErrorState, LoadingState } from "../../design-system";
 import { FinanceCatalogConfig } from "./FinanceCatalogConfig";
 
@@ -129,7 +130,6 @@ export function FinanceFeesPage() {
 
   const allItems = scopedSchoolFeeItems(session?.user ?? null, state);
   const studentFees = scopedStudentFees(session?.user ?? null, state);
-  const currency = resolveFinanceCurrency(catalogCurrency, activeSchool?.currency, resolveSchoolCurrency(state, schoolCode));
   const classOptions = useMemo(() => classOptionsForSchool(state, schoolCode), [state, schoolCode]);
   const classChoices = useMemo(() => classChoicesForSchool(state, schoolCode), [state, schoolCode]);
   const years = useMemo(
@@ -329,6 +329,7 @@ export function FinanceFeesPage() {
   ];
 
   const summary = studentFeeSummary(studentFees);
+  const remainingLabel = formatPaymentOverviewAmounts(studentFees).remainingLabel;
 
   return (
     <>
@@ -359,7 +360,7 @@ export function FinanceFeesPage() {
 
         <div className="mt-4 grid gap-3 sm:grid-cols-3">
           <Kpi label="Tarifs" value={grids.length} />
-          <Kpi label="Reste à payer" value={formatFinanceAmount(summary.totalBalance, currency)} />
+          <Kpi label="Reste à payer" value={remainingLabel} />
           <Kpi label="Échéances dépassées" value={summary.overdue} />
         </div>
 
@@ -655,7 +656,7 @@ function Kpi({ label, value }: { label: string; value: number | string }) {
   return (
     <div className="rounded-lg border border-line/70 bg-surface/50 px-4 py-3">
       <p className="text-xs font-semibold uppercase tracking-wide text-muted">{label}</p>
-      <p className="mt-1 text-xl font-black text-ink">{value}</p>
+      <p className="mt-1 text-xl font-black text-ink whitespace-pre-line">{value}</p>
     </div>
   );
 }

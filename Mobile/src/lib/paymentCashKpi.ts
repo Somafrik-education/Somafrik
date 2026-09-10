@@ -54,7 +54,7 @@ export function isCountedMobileCashPayment(payment: Pick<CashPaymentRow, "status
   if (isCancelledStatus(payment.status ?? undefined)) return false;
   const status = normalizedStatus(payment.status);
   if (status.includes("attente") || status === "pending") return false;
-  if (status === "refuse" || status === "echoue" || status === "failed") return false;
+  if (status === "refuse" || status === "echoue" || status === "failed" || status.includes("brouillon")) return false;
   return true;
 }
 
