@@ -10,11 +10,29 @@ assert.equal(MAX_HOME_KPIS, 4);
 
 const admin = getRoleHomeShell({ role: "school_admin" });
 assert.equal(admin.spaceLabel, "Espace administrateur");
-assert.equal(admin.kpiKeys.length, 4);
-assert.deepEqual(admin.kpiKeys, ["users", "presence", "students", "paymentRate"]);
+assert.ok(admin.kpiKeys.includes("unpaidPayments"));
+assert.ok(admin.kpiKeys.indexOf("unpaidPayments") < MAX_HOME_KPIS);
+assert.deepEqual(admin.kpiKeys, ["users", "presence", "students", "unpaidPayments"]);
 assert.deepEqual(admin.actionKeys.slice(0, 4), ["students", "attendance", "payments", "classes"]);
 assert.ok(admin.actionKeys.includes("teachers"));
 assert.ok(!admin.actionKeys.includes("users"));
+
+function schoolAdminVisibleKpis(canReadUnpaid: boolean) {
+  return selectHomeKpis(
+    admin.kpiKeys.filter((key) => key !== "unpaidPayments" || canReadUnpaid),
+  );
+}
+
+assert.deepEqual(
+  schoolAdminVisibleKpis(true),
+  ["users", "presence", "students", "unpaidPayments"],
+  "Admin établissement + Impayés:READ doit voir la carte Impayés dans les 4 KPI",
+);
+assert.deepEqual(
+  schoolAdminVisibleKpis(false),
+  ["users", "presence", "students"],
+  "sans Impayés:READ la carte Impayés disparaît (fail-closed)",
+);
 
 const prefet = getRoleHomeShell({ role: "prefet" });
 assert.equal(prefet.spaceLabel, "Espace préfet des études");

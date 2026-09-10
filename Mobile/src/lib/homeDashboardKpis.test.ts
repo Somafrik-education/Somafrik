@@ -140,7 +140,7 @@ function run() {
   assert.doesNotMatch(homeSrc, /getPaymentStats\([^)]*studentIds/);
 
   const roleHome = fs.readFileSync(path.join(process.cwd(), "src", "lib", "roleHomeConfig.ts"), "utf8");
-  assert.match(roleHome, /kpiKeys: \["users", "presence", "students", "paymentRate"\]/);
+  assert.match(roleHome, /kpiKeys: \["users", "presence", "students", "unpaidPayments"\]/);
   assert.doesNotMatch(roleHome, /kpiKeys: \["users", "classes", "students"/);
 
   console.log("OK: homeDashboardKpis valeur+libellé utilisateurs actifs / paiements");

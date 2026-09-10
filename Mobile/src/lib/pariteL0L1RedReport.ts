@@ -3,8 +3,10 @@
  */
 export type RedCase = { id: string; title: string; run: () => void };
 
+export type RedLot = "L0" | "L1" | "L1-UX";
+
 export type RedReport = {
-  lot: "L0" | "L1";
+  lot: RedLot;
   expectedIds: string[];
   failedIds: string[];
   passedIds: string[];
@@ -39,7 +41,20 @@ export const L1_EXPECTED_IDS = [
   "L1-10",
 ] as const;
 
-export function runRedCases(lot: "L0" | "L1", expectedIds: readonly string[], cases: RedCase[]): RedReport {
+export const L1_UX_EXPECTED_IDS = [
+  "L1-UX-01",
+  "L1-UX-02",
+  "L1-UX-03",
+  "L1-UX-04",
+  "L1-UX-05",
+  "L1-UX-06",
+  "L1-UX-07",
+  "L1-UX-08",
+  "L1-UX-09",
+  "L1-UX-10",
+] as const;
+
+export function runRedCases(lot: RedLot, expectedIds: readonly string[], cases: RedCase[]): RedReport {
   const caseIds = cases.map((item) => item.id);
   if (JSON.stringify(caseIds) !== JSON.stringify([...expectedIds])) {
     throw new Error(

@@ -9,6 +9,9 @@
  * Ils n'exigent pas l'URL dans HomeScreen ni PaymentsScreen.
  */
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { UX_V1_VIEWPORTS, tabLabelFitsViewport } from "./mobileUxV1Layout";
 import { MIN_TOUCH_TARGET_DP } from "./mobileUsability";
 import { MAQUETTE_L0_L1_VIEWPORTS_DP, MAQUETTE_MIN_TOUCH_DP } from "./pariteL0L1UxContract";
@@ -16,10 +19,19 @@ import { L1_EXPECTED_IDS, runRedCases, type RedCase } from "./pariteL0L1RedRepor
 import {
   inspectShippedImpayesWiring,
   ledgerStudentCount,
+  liveFinanceSession,
   payment,
+  shippedImpayesSurfaceVisible,
   shippedImpayesView,
   type UnpaidLedgerRow,
 } from "./pariteL1Unpaid.shipped";
+import { canReadEntity, hasSecurityPermission } from "../domain/security/permissions";
+import { getRoleHomeShell, MAX_HOME_KPIS, selectHomeKpis } from "./roleHomeConfig";
+
+const homeScreenSrc = fs.readFileSync(
+  path.join(path.dirname(fileURLToPath(import.meta.url)), "../screens/HomeScreen.tsx"),
+  "utf8",
+);
 
 const SCHOOL_A = "CD-IN-26-001";
 const SCHOOL_B = "BI-EC-26-001";
@@ -29,10 +41,27 @@ const paidReceiptsOnly = [
   payment("p-paid-2", { status: "Payé", studentId: "stu-b" }),
 ];
 
+const pendingReceiptsFour = [
+  payment("p-pend-1", { status: "En attente", studentId: "stu-w" }),
+  payment("p-pend-2", { status: "En attente", studentId: "stu-x" }),
+  payment("p-pend-3", { status: "En attente", studentId: "stu-y" }),
+  payment("p-pend-4", { status: "En attente", studentId: "stu-z" }),
+];
+
 const ledgerAThree: UnpaidLedgerRow[] = [
   { studentId: "stu-a", schoolCode: SCHOOL_A, amountDue: 50_000 },
   { studentId: "stu-c", schoolCode: SCHOOL_A, amountDue: 80_000 },
   { studentId: "stu-d", schoolCode: SCHOOL_A, amountDue: 20_000 },
+];
+
+const ledgerAOne: UnpaidLedgerRow[] = [{ studentId: "stu-a", schoolCode: SCHOOL_A, amountDue: 10_000 }];
+
+const ledgerBFive: UnpaidLedgerRow[] = [
+  { studentId: "stu-b1", schoolCode: SCHOOL_B, amountDue: 11_000 },
+  { studentId: "stu-b2", schoolCode: SCHOOL_B, amountDue: 22_000 },
+  { studentId: "stu-b3", schoolCode: SCHOOL_B, amountDue: 33_000 },
+  { studentId: "stu-b4", schoolCode: SCHOOL_B, amountDue: 44_000 },
+  { studentId: "stu-b5", schoolCode: SCHOOL_B, amountDue: 55_000 },
 ];
 
 const cases: RedCase[] = [
@@ -40,18 +69,33 @@ const cases: RedCase[] = [
     id: "L1-01",
     title: "Si Impayés est affiché, le chiffre ne peut pas être les reçus pending (ledger ou retrait)",
     run() {
-      const view = shippedImpayesView({
+      const problems: string[] = [];
+      const direct = shippedImpayesView({
         receipts: paidReceiptsOnly,
         unpaidApi: { status: 200, rows: ledgerAThree },
         schoolCode: SCHOOL_A,
       });
-      if (!view.presentsImpayes) return;
-      const webCount = ledgerStudentCount(ledgerAThree, SCHOOL_A);
-      assert.equal(
-        view.value,
-        String(webCount),
-        `#577 P1-04 / P0-CAND : surface « Impayés » encore visible avec valeur=${view.value} (reçus pending) ≠ ledger ${webCount}. Neutralité : brancher le ledger OU retirer le libellé.`,
-      );
+      if (direct.presentsImpayes) {
+        const webCount = ledgerStudentCount(ledgerAThree, SCHOOL_A);
+        if (direct.value !== String(webCount)) {
+          problems.push(
+            `ledger 3 / reçus 0 → vue=${direct.value} ≠ ${webCount}. Neutralité : brancher le ledger OU retirer le libellé.`,
+          );
+        }
+      }
+      const inverse = shippedImpayesView({
+        receipts: pendingReceiptsFour,
+        unpaidApi: { status: 200, rows: [] },
+        schoolCode: SCHOOL_A,
+      });
+      if (inverse.presentsImpayes) {
+        if (inverse.value !== "0") {
+          problems.push(
+            `ledger 0 / reçus pending 4 → vue=${inverse.value} ≠ 0. Un compteur de reçus ne peut pas être présenté comme Impayés.`,
+          );
+        }
+      }
+      assert.equal(problems.length, 0, `#577 P1-04 / P0-CAND : ${problems.join(" | ")}`);
     },
   },
   {
@@ -135,44 +179,109 @@ const cases: RedCase[] = [
     id: "L1-07",
     title: "Isolation établissement : Impayés ne mélange pas l'école B (simulation API 200 scopée)",
     run() {
-      const receiptsSchoolB = [
-        payment("p-b1", { status: "En attente", studentId: "stu-school-b-1" }),
-        payment("p-b2", { status: "En attente", studentId: "stu-school-b-2" }),
-        payment("p-b3", { status: "En attente", studentId: "stu-school-b-3" }),
-      ];
-      const mixedLedger: UnpaidLedgerRow[] = [
-        { studentId: "stu-a", schoolCode: SCHOOL_A, amountDue: 10_000 },
-        { studentId: "stu-other-1", schoolCode: SCHOOL_B, amountDue: 99_000 },
-        { studentId: "stu-other-2", schoolCode: SCHOOL_B, amountDue: 40_000 },
-      ];
+      const mixedLedger: UnpaidLedgerRow[] = [...ledgerAOne, ...ledgerBFive];
       const view = shippedImpayesView({
-        receipts: receiptsSchoolB,
+        receipts: [
+          payment("p-b1", { status: "En attente", studentId: "stu-b1" }),
+          payment("p-b2", { status: "En attente", studentId: "stu-b2" }),
+          payment("p-b3", { status: "En attente", studentId: "stu-b3" }),
+          payment("p-b4", { status: "En attente", studentId: "stu-b4" }),
+          payment("p-b5", { status: "En attente", studentId: "stu-b5" }),
+        ],
         unpaidApi: { status: 200, rows: mixedLedger.filter((row) => row.schoolCode === SCHOOL_A) },
         schoolCode: SCHOOL_A,
       });
       if (!view.presentsImpayes) return;
-      const schoolA = ledgerStudentCount(
-        mixedLedger.filter((row) => row.schoolCode === SCHOOL_A),
-        SCHOOL_A,
-      );
+      const schoolA = ledgerStudentCount(ledgerAOne, SCHOOL_A);
       assert.equal(
         view.value,
         String(schoolA),
-        `#577 L1 : isolation établissement — vue=${view.value} (reçus pending école B) ≠ ledger école A=${schoolA} renvoyé par l'API scopée`,
+        `#577 L1 : isolation établissement — session école A attend ${schoolA}, vue=${view.value} (reçus pending école B=${ledgerBFive.length}).`,
       );
     },
   },
   {
     id: "L1-08",
-    title: "Si Impayés reste, le gate RBAC ne doit pas être seulement Paiements:READ",
+    title: "Coque Admin établissement : Impayés:READ sélectionne unpaidPayments (fail-closed, Unpaid, pas pending)",
     run() {
       const wiring = inspectShippedImpayesWiring();
       if (!wiring.presentsImpayes) return;
-      assert.equal(
-        wiring.homeKpiGatedOnPaymentsEntity && wiring.homeKpiLabeledImpayes,
-        false,
-        "#577 L1 : le module Web Impayés exige Impayés:READ ; le KPI Mobile « Impayés » est encore gated sur l'entité payments — ou retirer le libellé",
+      const problems: string[] = [];
+      if (wiring.homeKpiGatedOnPaymentsEntity && wiring.homeKpiLabeledImpayes) {
+        problems.push(
+          "KPI Accueil « Impayés » encore gated sur canReadEntity(payments) au lieu de Impayés:READ",
+        );
+      }
+
+      const paymentsOnlySecretary = liveFinanceSession("secretary", ["Paiements:READ"]);
+      const paymentsOnlyAdmin = liveFinanceSession("school_admin", ["Paiements:READ"]);
+      const unpaidAdmin = liveFinanceSession("school_admin", ["Impayés:READ", "Paiements:READ"]);
+      const accountant = liveFinanceSession("accountant", ["Paiements:READ", "Impayés:READ"]);
+
+      assert.equal(hasSecurityPermission(paymentsOnlySecretary, "Impayés", "READ"), false);
+      assert.equal(canReadEntity(paymentsOnlySecretary, "payments"), true);
+      assert.equal(hasSecurityPermission(paymentsOnlyAdmin, "Impayés", "READ"), false);
+      assert.equal(canReadEntity(paymentsOnlyAdmin, "payments"), true);
+      assert.equal(hasSecurityPermission(unpaidAdmin, "Impayés", "READ"), true);
+      assert.equal(hasSecurityPermission(accountant, "Impayés", "READ"), true);
+
+      if (shippedImpayesSurfaceVisible(paymentsOnlySecretary)) {
+        problems.push("Secrétaire Paiements:READ sans Impayés:READ voit encore une surface Impayés");
+      }
+      if (shippedImpayesSurfaceVisible(paymentsOnlyAdmin)) {
+        problems.push("Admin établissement Paiements:READ sans Impayés:READ voit encore une surface Impayés");
+      }
+      if (!shippedImpayesSurfaceVisible(unpaidAdmin)) {
+        problems.push("Admin établissement Impayés:READ ne voit pas Impayés");
+      }
+
+      assert.equal(MAX_HOME_KPIS, 4, "MAX_HOME_KPIS ne doit pas augmenter");
+      const schoolAdminShell = getRoleHomeShell(unpaidAdmin);
+      const expectedAdminCatalog = ["users", "presence", "students", "unpaidPayments"];
+      if (JSON.stringify(schoolAdminShell.kpiKeys) !== JSON.stringify(expectedAdminCatalog)) {
+        problems.push(
+          `coque Admin établissement kpiKeys=${JSON.stringify(schoolAdminShell.kpiKeys)} ≠ ${JSON.stringify(expectedAdminCatalog)}`,
+        );
+      }
+
+      const visibleWithRead = selectHomeKpis(schoolAdminShell.kpiKeys);
+      if (!visibleWithRead.includes("unpaidPayments") || visibleWithRead.indexOf("unpaidPayments") >= MAX_HOME_KPIS) {
+        problems.push(
+          `Admin établissement + Impayés:READ : unpaidPayments absent des ${MAX_HOME_KPIS} KPI visibles (${JSON.stringify(visibleWithRead)})`,
+        );
+      }
+
+      const visibleWithoutRead = selectHomeKpis(
+        schoolAdminShell.kpiKeys.filter((key) => key !== "unpaidPayments"),
       );
+      if (JSON.stringify(visibleWithoutRead) !== JSON.stringify(["users", "presence", "students"])) {
+        problems.push(
+          `sans Impayés:READ la carte Impayés doit disparaître (${JSON.stringify(visibleWithoutRead)})`,
+        );
+      }
+
+      if (!/kpi\("unpaidPayments"[\s\S]{0,180}navigate\("Unpaid"\)/.test(homeScreenSrc)) {
+        problems.push("KPI unpaidPayments ne navigue pas vers Unpaid");
+      }
+      if (/kpi\("unpaidPayments"[\s\S]{0,180}navigate\("Payments"\)/.test(homeScreenSrc)) {
+        problems.push("KPI unpaidPayments navigue encore vers Payments");
+      }
+      if (wiring.homeKpiUsesReceiptPending) {
+        problems.push("KPI Impayés encore alimenté par paymentStats.pending");
+      }
+      const view = shippedImpayesView({
+        receipts: pendingReceiptsFour,
+        unpaidApi: { status: 200, rows: ledgerAThree },
+        schoolCode: SCHOOL_A,
+      });
+      if (view.presentsImpayes && view.destination !== "Unpaid") {
+        problems.push(`KPI Impayés destination=${view.destination} ≠ Unpaid`);
+      }
+      if (view.presentsImpayes && view.value === String(pendingReceiptsFour.length)) {
+        problems.push("KPI Impayés reprend le compteur de reçus pending");
+      }
+
+      assert.equal(problems.length, 0, `#577 L1 RBAC Admin établissement : ${problems.join(" | ")}`);
     },
   },
   {

@@ -20,6 +20,7 @@ import StudentPaymentsScreen from "../screens/StudentPaymentsScreen";
 import TeachersScreen from "../screens/TeachersScreen";
 import UsersScreen from "../screens/UsersScreen";
 import PaymentsScreen from "../screens/PaymentsScreen";
+import UnpaidScreen from "../screens/UnpaidScreen";
 import AnnouncementsScreen from "../screens/AnnouncementsScreen";
 import MessagesScreen from "../screens/MessagesScreen";
 import TimetableScreen from "../screens/TimetableScreen";
@@ -83,6 +84,7 @@ export type RootStackParamList = {
   TeacherAttendance: undefined;
   TeacherGrades: undefined;
   Payments: undefined;
+  Unpaid: undefined;
   Announcements: undefined;
   Messages: undefined;
   Timetable: undefined;
@@ -272,6 +274,10 @@ export default function AppNavigator() {
               <Stack.Screen name="Payments" component={PaymentsScreen} options={{ title: "Paiements" }} />
             )}
           </>
+        )}
+
+        {canReadRoute(session, "Unpaid") && (
+          <Stack.Screen name="Unpaid" component={UnpaidScreen} options={{ title: "Impayés" }} />
         )}
 
         {canReadRoute(session, "Classes") && <Stack.Screen name="Classes" component={ClassesScreen} options={{ title: "Classes" }} />}
