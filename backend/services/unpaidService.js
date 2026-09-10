@@ -37,6 +37,12 @@ function computeUnpaidSeverity(daysLate) {
   return "Retard critique";
 }
 
+function normalizeReminderTimestamp(value) {
+  if (value === null || value === undefined || value === "") return "";
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? "" : parsed.toISOString();
+}
+
 function refreshStudentFeeStatuses(fees, now = new Date()) {
   return fees.map((fee) => {
     const balance = Math.max(0, Number(fee.amountDue) - Number(fee.amountPaid) - Number(fee.exemption ?? 0));
@@ -107,7 +113,10 @@ function aggregateByStudent(fees, reminders, state, now = new Date()) {
     const primary = studentFees.sort((a, b) => computeDaysLate(b.dueDate, now) - computeDaysLate(a.dueDate, now))[0];
     const daysLate = Math.max(...studentFees.map((fee) => computeDaysLate(fee.dueDate, now)), 0);
     const studentReminders = (reminders ?? []).filter((row) => row.studentId === studentId);
-    const lastReminderAt = studentReminders.map((row) => row.sentAt).sort((a, b) => b.localeCompare(a))[0];
+    const lastReminderAt = studentReminders
+      .map((row) => normalizeReminderTimestamp(row.sentAt))
+      .filter(Boolean)
+      .sort((a, b) => b.localeCompare(a))[0];
     const periods = [...new Set(studentFees.map((fee) => fee.periodLabel ?? fee.academicYear).filter(Boolean))];
 
     return {
