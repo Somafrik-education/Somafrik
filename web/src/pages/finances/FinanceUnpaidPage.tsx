@@ -28,6 +28,7 @@ import {
   REMINDER_COOLDOWN_DAYS,
   scopedPaymentReminders,
   severityTone,
+  UNPAID_UNKNOWN_CURRENCY_LABEL,
 } from "../../lib/unpaidModule";
 import {
   canAccessUnpaidModule,
@@ -151,7 +152,9 @@ export function FinanceUnpaidPage() {
   const dashboard = useMemo(() => buildUnpaidDashboard(rows), [rows]);
   const classOptions = useMemo(() => classOptionsFromUnpaid(ledgerRows), [ledgerRows]);
   const periodOptions = useMemo(() => periodOptionsFromFees(ledgerFees), [ledgerFees]);
-  const mixedCurrencies = dashboard.totalsByCurrency.length > 1;
+  const mixedCurrencies =
+    dashboard.totalsByCurrency.length > 1 ||
+    dashboard.totalsByCurrency.some((item) => item.currency === UNPAID_UNKNOWN_CURRENCY_LABEL);
 
   const detail = useMemo(() => {
     if (!detailStudentId) return null;
@@ -349,7 +352,7 @@ export function FinanceUnpaidPage() {
               <Stat
                 key={item.currency}
                 label={`Total restant ${item.currency}`}
-                value={formatFinanceAmount(item.amount, item.currency)}
+                value={formatUnpaidTotal(item.amount, item.currency)}
               />
             ))
           ) : (
@@ -615,6 +618,15 @@ export function FinanceUnpaidPage() {
       </Modal>
     </>
   );
+}
+
+function formatUnpaidTotal(amount: number, currency: string): string {
+  if (currency === UNPAID_UNKNOWN_CURRENCY_LABEL || !resolveFinanceCurrency(currency)) {
+    const numeric = Number(amount);
+    const value = Number.isFinite(numeric) ? numeric : 0;
+    return `${new Intl.NumberFormat("fr-FR").format(value)} · ${UNPAID_UNKNOWN_CURRENCY_LABEL}`;
+  }
+  return formatFinanceAmount(amount, currency);
 }
 
 function Stat({ label, value }: { label: string; value: number | string }) {

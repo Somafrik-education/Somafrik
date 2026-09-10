@@ -199,26 +199,35 @@ export function aggregateUnpaidByStudent(
 }
 
 /** IMP-017 à IMP-019 — totaux fail-closed si plusieurs devises coexistent. */
+export const UNPAID_UNKNOWN_CURRENCY_LABEL = "Devise non renseignée";
+
+function normalizeUnpaidCurrency(value: unknown): string {
+  return String(value ?? "").trim().toUpperCase();
+}
+
 export function unpaidTotalsByCurrency(
   rows: Array<{ amountDue: number; currency?: string }>,
 ): Pick<UnpaidDashboardStats, "totalAmountDue" | "currency" | "totalsByCurrency"> {
   const grouped = new Map<string, number>();
   for (const row of rows) {
-    const currency = String(row.currency ?? "").trim().toUpperCase();
+    const currency = normalizeUnpaidCurrency(row.currency);
     grouped.set(currency, (grouped.get(currency) ?? 0) + Number(row.amountDue ?? 0));
   }
   const totalsByCurrency = [...grouped.entries()]
-    .map(([currency, amount]) => ({ currency, amount }))
+    .map(([currency, amount]) => ({
+      currency: currency || UNPAID_UNKNOWN_CURRENCY_LABEL,
+      amount,
+    }))
     .sort((a, b) => a.currency.localeCompare(b.currency, "fr"));
-  const labeled = totalsByCurrency.filter((item) => item.currency);
-  if (labeled.length > 1) {
-    return { totalsByCurrency: labeled, totalAmountDue: 0, currency: "" };
+  const known = totalsByCurrency.filter((item) => item.currency !== UNPAID_UNKNOWN_CURRENCY_LABEL);
+  const hasUnknown = known.length !== totalsByCurrency.length;
+  if (known.length !== 1 || hasUnknown) {
+    return { totalsByCurrency, totalAmountDue: 0, currency: "" };
   }
-  const single = labeled[0] ?? totalsByCurrency[0];
   return {
     totalsByCurrency,
-    totalAmountDue: single?.amount ?? 0,
-    currency: single?.currency ?? "",
+    totalAmountDue: known[0]?.amount ?? 0,
+    currency: known[0]?.currency ?? "",
   };
 }
 

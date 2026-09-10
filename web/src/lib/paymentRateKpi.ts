@@ -66,9 +66,7 @@ export function getPaymentRateKpi(fees: readonly StudentFeeObligation[]): Paymen
   if (!active.length) return emptyKpi();
 
   const currencies = new Set(
-    active
-      .map((fee) => String(fee.currency ?? "").trim().toUpperCase())
-      .filter(Boolean),
+    active.map((fee) => String(fee.currency ?? "").trim().toUpperCase()),
   );
   if (currencies.size > 1) return emptyKpi();
 
