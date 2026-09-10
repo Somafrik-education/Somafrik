@@ -57,19 +57,16 @@ assert.match(screenSrc, /archiveInternalNotification/);
 const headerSrc = fs.readFileSync(path.join(ROOT, "src/components/MobileAppHeader.tsx"), "utf8");
 assert.match(headerSrc, /InternalNotifications/);
 assert.match(headerSrc, /useInternalNotificationsUnreadCount/);
+assert.match(headerSrc, /resolvedNotificationsInboxRoute === "InternalNotifications"/);
 
 const navSrc = fs.readFileSync(path.join(ROOT, "src/navigation/AppNavigator.tsx"), "utf8");
 assert.match(navSrc, /InternalNotifications/);
 
 const homeSrc = fs.readFileSync(path.join(ROOT, "src/screens/HomeScreen.tsx"), "utf8");
-assert.match(homeSrc, /resolveNotificationsInboxRoute/);
-const homeStart = homeSrc.indexOf("platformNotifications:");
-const homeCta = homeSrc.slice(homeStart, homeSrc.indexOf("announcements:", homeStart));
-assert.match(homeCta, /resolveNotificationsInboxRoute/);
 assert.doesNotMatch(
-  homeCta,
-  /canReadView\(session, "PlatformNotifications"\)/,
-  "Home CTA ne doit plus envoyer vers PlatformNotifications dès qu'un privilège plateforme existe",
+  homeSrc,
+  /platformNotifications:\s*\(/,
+  "#577 L0 : l'Accueil Mobile ne doit plus exposer la messagerie plateforme Web-only",
 );
 
 const placeholders = fs.readFileSync(

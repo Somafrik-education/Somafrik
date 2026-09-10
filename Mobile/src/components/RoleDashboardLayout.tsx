@@ -139,7 +139,17 @@ export default function RoleDashboardLayout({
 
         <View style={styles.statsGrid}>
           {visibleKpis.map((kpi) => (
-            <TouchableOpacity key={kpi.key} activeOpacity={0.85} style={styles.statCard} onPress={kpi.onPress} testID={kpi.testID}>
+            <TouchableOpacity
+              key={kpi.key}
+              activeOpacity={0.85}
+              style={styles.statCard}
+              onPress={kpi.onPress}
+              disabled={!kpi.onPress}
+              accessibilityRole="button"
+              accessibilityLabel={`${kpi.label} : ${kpi.value}`}
+              accessibilityState={{ disabled: !kpi.onPress }}
+              testID={kpi.testID}
+            >
               <View style={[styles.statIconBox, { backgroundColor: kpi.bg }]}>
                 <Ionicons name={kpi.icon} size={18} color={kpi.color} />
               </View>

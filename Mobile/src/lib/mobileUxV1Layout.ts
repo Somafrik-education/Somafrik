@@ -9,7 +9,7 @@ import { MAX_HOME_KPIS } from "./roleHomeConfig";
 
 export const UX_V1_SPEC_VERSION = "2.0";
 
-export const UX_V1_VIEWPORTS = [320, 360, 390, 412] as const;
+export const UX_V1_VIEWPORTS = [320, 360, 390, 412, 430] as const;
 export const UX_V1_FONT_SCALES = [1, 1.3] as const;
 export const UX_V1_VALIDATION_VIEWPORT = { width: 360, height: 800 } as const;
 

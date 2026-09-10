@@ -41,7 +41,11 @@ function main() {
   const announcements = read(path.join("screens", "AnnouncementsScreen.tsx"));
   const adminCtx = read(path.join("context", "AdminDataContext.tsx"));
 
-  assert.match(navigator, /SafeAdminCrudScreen/);
+  assert.doesNotMatch(
+    navigator,
+    /name="AdminCrud"/,
+    "#577 L0 : AdminCrud ne doit plus être enregistré dans le graphe Mobile live",
+  );
   assert.doesNotMatch(
     navigator,
     /component=\{AdminCrudScreen\}/,
@@ -167,7 +171,7 @@ function main() {
   assert.match(adminCtx, /LOCAL_WRITE_FORBIDDEN_ENTITIES/);
   assert.match(adminCtx, /if \(LOCAL_WRITE_FORBIDDEN_ENTITIES.has\(entity\)\) return;/);
 
-  console.log("OK: faux writes AdminCrud/RBAC bloqués; CRUD canonique branché sur les APIs PostgreSQL");
+  console.log("OK: AdminCrud absent du graphe live; faux writes/RBAC bloqués; CRUD canonique branché sur les APIs PostgreSQL");
 }
 
 main();

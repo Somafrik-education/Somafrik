@@ -56,7 +56,7 @@ assert.equal(
   false,
 );
 
-assert.equal(schoolAdminLabelsFitAllViewports(1), true, "labels school_admin tiennent en 320–412 dp");
+assert.equal(schoolAdminLabelsFitAllViewports(1), true, "labels school_admin tiennent en 320–430 dp");
 assert.equal(schoolAdminLabelsFitAllViewports(1.3), true, "labels school_admin tiennent à fontScale 1.3");
 
 for (const width of UX_V1_VIEWPORTS) {
@@ -83,7 +83,7 @@ assert.equal(
   "petit écran : above-the-fold compact",
 );
 
-assert.equal(homeAboveFoldFitsAllViewports(), true, "320/360/390/412 × fontScale 1.0/1.3");
+assert.equal(homeAboveFoldFitsAllViewports(), true, "320/360/390/412/430 × fontScale 1.0/1.3");
 
 for (const width of UX_V1_VIEWPORTS) {
   for (const fontScale of UX_V1_FONT_SCALES) {

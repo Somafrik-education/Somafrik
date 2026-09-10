@@ -13,8 +13,7 @@ import { useAdminData } from "../context/AdminDataContext";
 import StudentsScopeAlert from "../components/StudentsScopeAlert";
 import { getPaymentCashKpi } from "../lib/paymentCashKpi";
 import { getPaymentStats, getPresenceStats } from "../domain/metrics/schoolMetrics";
-import { canReadEntity, canReadRoute, canReadView } from "../domain/security/permissions";
-import { resolveNotificationsInboxRoute } from "../lib/notificationInboxRoute";
+import { canReadEntity, canReadRoute } from "../domain/security/permissions";
 import { canAccessMessagesRoute } from "../lib/mobileCtaRbacAlignment";
 import { buildOverflowQuickActionItems } from "../navigation/roleTabPreferences";
 import { DATA_TRUTH_TEST_IDS, METRIC_PENDING_LABEL, metricLabelFromSnapshot, parentAverageDisplay } from "../lib/dataTruth";
@@ -87,14 +86,12 @@ export default function HomeScreen({ navigation }: any) {
     loadClasses,
     loadAssignments,
     resourceScopeKey,
-    countriesData,
     teachersData,
     assignmentsData,
     classesData,
     classesSnapshot,
     assignmentsSnapshot,
     establishmentStudents,
-    activeSchoolCode,
   } = useAdminData();
   const { isTablet, horizontalPadding, contentMaxWidth } = useResponsiveLayout();
   const teacherScopeState = {
@@ -264,7 +261,7 @@ export default function HomeScreen({ navigation }: any) {
     ? canReadStudentPayments
     : canReadEntity(session, "payments") || canReadStudentPayments;
 
-  const kpiCatalog: Record<RoleHomeKpiKey, RoleDashboardKpi | null> = {
+  const kpiCatalog: Partial<Record<RoleHomeKpiKey, RoleDashboardKpi | null>> = {
     users: canReadEntity(session, "users")
       ? kpi("users", "person-outline", usersValue, ACTIVE_USERS_KPI_LABEL, "#2563EB", "#EFF6FF", () => navigation.navigate(usersRoute), DATA_TRUTH_TEST_IDS.homeUsersValue)
       : null,
@@ -383,20 +380,11 @@ export default function HomeScreen({ navigation }: any) {
     paymentCount: canReadEntity(session, "payments")
       ? kpi("paymentCount", "card-outline", paymentsValue, PAYMENTS_KPI_LABEL, "#EA580C", "#FFF7ED", () => navigation.navigate("Payments"), DATA_TRUTH_TEST_IDS.homePaymentsValue)
       : null,
-    documents: canReadRoute(session, "Documents")
-      ? kpi("documents", "folder-open-outline", "—", "Documents", "#2563EB", "#EFF6FF", () => navigation.navigate("Documents"))
-      : null,
     messages: canAccessMessagesRoute(session)
       ? kpi("messages", "chatbubbles-outline", unreadMessagesValue, "Messages", "#0F766E", "#ECFDF5", () => navigation.navigate("Messages"))
       : null,
     announcements: canReadEntity(session, "announcements")
       ? kpi("announcements", "megaphone-outline", announcementsValue, "Annonces", "#7C3AED", "#F5F3FF", () => navigation.navigate("Announcements"))
-      : null,
-    countries: isPlatformAdmin
-      ? kpi("countries", "earth-outline", String(countriesData.length), "Pays", "#2563EB", "#EFF6FF", () => navigation.navigate("AdminCrud", { entity: "countries" }))
-      : null,
-    schools: isPlatformAdmin
-      ? kpi("schools", "business-outline", String(schoolsData.length), "Établissements", "#7C3AED", "#F5F3FF", () => navigation.navigate("AdminCrud", { entity: "schools" }))
       : null,
   };
 
@@ -404,17 +392,11 @@ export default function HomeScreen({ navigation }: any) {
     shell.kpiKeys.map((key) => kpiCatalog[key]).filter((item): item is RoleDashboardKpi => Boolean(item)),
   );
 
-  const actionCatalog: Record<RoleHomeActionKey, RoleDashboardAction | null> = {
+  const actionCatalog: Partial<Record<RoleHomeActionKey, RoleDashboardAction | null>> = {
     users: canReadEntity(session, "users") ? action("users", "person-circle-outline", "Utilisateurs", () => navigation.navigate("Users")) : null,
     classes: canReadRoute(session, "Classes") ? action("classes", "grid-outline", "Classes", () => navigation.navigate("Classes")) : null,
     teachers: canReadEntity(session, "teachers") ? action("teachers", "person-add-outline", "Enseignants", () => navigation.navigate("Teachers")) : null,
     payments: canReadEntity(session, "payments") ? action("payments", "card-outline", "Paiements", () => navigation.navigate("Payments")) : null,
-    platformNotifications: (() => {
-      const inboxRoute = resolveNotificationsInboxRoute(session, activeSchoolCode);
-      return inboxRoute
-        ? action("platformNotifications", "notifications-outline", "Notifications", () => navigation.navigate(inboxRoute))
-        : null;
-    })(),
     announcements: canReadEntity(session, "announcements") ? action("announcements", "megaphone-outline", "Annonces", () => navigation.navigate("Announcements")) : null,
     students: canReadEntity(session, "students") ? action("students", "people-outline", "Élèves", () => navigation.navigate(studentsRoute)) : null,
     attendance: canReadRoute(session, "TeacherAttendance") ? action("attendance", "checkbox-outline", "Présences", () => navigation.navigate("TeacherAttendance")) : null,
@@ -436,7 +418,6 @@ export default function HomeScreen({ navigation }: any) {
     studentPayments: canShowHomeStudentAction(session, "studentPayments", selectedStudentId)
       ? action("studentPayments", "card-outline", "Paiements", () => navigation.navigate("StudentPayments", { studentId: selectedStudentId }))
       : null,
-    documents: canReadRoute(session, "Documents") ? action("documents", "folder-open-outline", "Documents", () => navigation.navigate("Documents")) : null,
   };
 
   const configuredActions = shell.actionKeys
@@ -509,8 +490,7 @@ export default function HomeScreen({ navigation }: any) {
       }}
       kpis={kpis}
       actions={actions}
-      showSecurityMatrix={shell.showSecurityMatrix && canReadView(session, "Permissions")}
-      onSecurityMatrixPress={() => navigation.navigate("Permissions")}
+      showSecurityMatrix={false}
       footerSlot={
         showParentAnnouncement ? (
           <View style={footerStyles.wrap}>
