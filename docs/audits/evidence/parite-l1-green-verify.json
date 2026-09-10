@@ -1,10 +1,10 @@
 {
   "audit": "parite-l1-unpaid-green",
-  "generatedAt": "2026-09-10T11:06:03.786Z",
+  "generatedAt": "2026-09-10T11:12:28.071Z",
   "developBaseSha": "b0bcc27799cc43bab74c7c1f23279b8897b5a5a8",
   "branch": "feat/577-l1-mobile-unpaid-green",
-  "testedHead": "cc4b7d955af540af39eadb74a44824efc38eed05",
-  "prHeadAtTestTime": "cc4b7d955af540af39eadb74a44824efc38eed05",
+  "testedHead": "a0a5f28689b0d029e803a1cf176f4d3770f9f823",
+  "prHeadAtTestTime": "a0a5f28689b0d029e803a1cf176f4d3770f9f823",
   "evidenceCommit": null,
   "prHead": null,
   "shaNote": "testedHead = SHA des tests. evidenceCommit/prHead = commit de cette preuve JSON s'il est distinct.",
