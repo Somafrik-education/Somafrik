@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-10T16:31:41Z",
+  "generatedAt": "2026-09-10T17:25:13Z",
   "issue": 577,
   "lot": "L1",
   "base": {
@@ -61,6 +61,21 @@
     "mixedCurrencyTotalsSeparated": true,
     "expandablePaymentCards": true,
     "expandableUnpaidCards": true,
+    "exit": 0
+  },
+  "allocationLabelFollowUp": {
+    "case": "Oscar Mukwege / PAY-0015",
+    "expectedAmount": 180000,
+    "allocatedAmount": 50000,
+    "remainingAmount": 130000,
+    "currency": "CDF",
+    "oldLabel": "Montant payé",
+    "newLabel": "Montant alloué aux impayés ouverts",
+    "redCommit": "cc50dbe0c5ee8ed4c2516bc390136998a8ab3c20",
+    "greenCommit": "cb43c0696c2495306911f0e942c7562e92fffcee",
+    "calculationChanged": false,
+    "apiChanged": false,
+    "databaseChanged": false,
     "exit": 0
   },
   "regressions": {

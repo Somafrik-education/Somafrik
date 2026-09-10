@@ -76,6 +76,19 @@ Commits distants de preuve :
 - RED : `cf218a178e06e929bb631044e9e2405c316bd42d` ;
 - GREEN : `072b1bbca95aa8e2e7e9c16ff6a7b7e9d2377aaf`.
 
+### Clarification après rapprochement Web/Mobile — Oscar Mukwege
+
+Le reçu `PAY-0015` confirme `30 000 CDF` reçus, `30 000 CDF` imputés et `0 CDF`
+non imputé. Avec l'encaissement de novembre de `20 000 CDF`, le ledger des créances
+ouvertes expose correctement `180 000 CDF` attendus, `50 000 CDF` alloués et
+`130 000 CDF` restants.
+
+Le calcul et les données sont conservés. Seul le libellé Mobile ambigu `Montant payé`
+devient `Montant alloué aux impayés ouverts`.
+
+- RED libellé : `cc50dbe0c5ee8ed4c2516bc390136998a8ab3c20` ;
+- GREEN libellé : `cb43c0696c2495306911f0e942c7562e92fffcee`.
+
 ## Non-régressions exécutées
 
 | Contrôle | Résultat |
