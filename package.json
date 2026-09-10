@@ -28,6 +28,7 @@
     "test:parite-l0-l1-red": "npm --prefix Mobile run test:parite-l0-l1-red",
     "verify:parite-l0-l1-red": "npm --prefix Mobile run verify:parite-l0-l1-red",
     "test:parite-l1-green": "npm --prefix Mobile run test:parite-l1-green",
+    "test:parite-l1-ux": "npm --prefix Mobile run test:parite-l1-ux",
     "test:v2-domain": "npm --prefix packages/domain test",
     "test:v2-auth": "npm --prefix packages/auth test",
     "test:help-catalog": "npm --prefix packages/help-catalog test",
