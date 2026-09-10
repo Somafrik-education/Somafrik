@@ -55,9 +55,7 @@ export function getPaymentCashBreakdown(payments: readonly CashPaymentRow[]): Pa
     if (!isCountedCashPayment(payment)) continue;
     const collected = parseMoney(payment.amount ?? payment.totalAmount);
     const allocated = parseMoney(payment.allocatedAmount);
-    const unallocated = parseMoney(
-      payment.unallocatedAmount ?? Math.max(0, collected - allocated),
-    );
+    const unallocated = parseMoney(payment.unallocatedAmount ?? 0);
     const currencyKey = resolveFinanceCurrency(payment.currency);
     const current = grouped.get(currencyKey) ?? {
       collectedAmount: 0,
