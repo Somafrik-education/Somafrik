@@ -1,7 +1,8 @@
 /**
- * P0 [RED] — LOT RED-2 / RED-7
+ * P0/P1 — LOT RED-2 / RED-7 devenu contrat de non-régression.
  * Après connexion, une page autorisée (Paramètres, dashboard, établissement, notes)
- * ne doit pas devenir indisponible parce qu'un domaine sans rapport répond 403.
+ * ne doit ni charger les listes Communication hors périmètre, ni devenir indisponible
+ * à cause d'un domaine sans rapport.
  */
 import { render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -40,15 +41,23 @@ function persistSession(session: ReturnType<typeof sessionForRole>) {
   sessionStorage.setItem("somafrik.web.session", JSON.stringify(session));
 }
 
-async function waitForForbiddenDomainCalls(ctl: ForbiddenFetchCtl) {
+async function waitForPathCall(ctl: ForbiddenFetchCtl, predicate: (path: string) => boolean) {
   await waitFor(
     () => {
-      expect(
-        ctl.calls.some((call) => call.path === "/backoffice/messages" && call.status === 403),
-      ).toBe(true);
+      expect(ctl.calls.some((call) => call.method === "GET" && predicate(call.path))).toBe(true);
     },
     { timeout: 5000 },
   );
+}
+
+function expectNoGlobalCommunicationListFetch(ctl: ForbiddenFetchCtl) {
+  expect(
+    ctl.calls.filter(
+      (call) =>
+        call.method === "GET" &&
+        (call.path === "/backoffice/messages" || call.path === "/backoffice/announcements"),
+    ),
+  ).toEqual([]);
 }
 
 function Providers({ children }: { children: ReactNode }) {
@@ -61,7 +70,7 @@ function Providers({ children }: { children: ReactNode }) {
   );
 }
 
-describe("P0 [RED] — pages globales bloquées par un 403 facultatif", () => {
+describe("P0/P1 — pages globales indépendantes des domaines Communication", () => {
   let ctl: ForbiddenFetchCtl;
 
   beforeEach(() => {
@@ -69,6 +78,8 @@ describe("P0 [RED] — pages globales bloquées par un 403 facultatif", () => {
     localStorage.clear();
     ctl = createForbiddenFetchCtl();
     ctl.permissions = getInternalRoleDefaults(SCHOOL_ADMIN_ROLE);
+    // Sentinelle : si une page hors Communication déclenche encore ces GET,
+    // le backend répond 403 et le test doit le révéler.
     ctl.domainStatus = { messages: 403, announcements: 403 };
     installForbiddenDomainFetch(ctl);
   });
@@ -79,7 +90,7 @@ describe("P0 [RED] — pages globales bloquées par un 403 facultatif", () => {
     localStorage.clear();
   });
 
-  it("[RED] RED-2 / RED-7 /parametres reste affichable, session intacte, pas de redirection Login", { timeout: 15000 }, async () => {
+  it("RED-2 / RED-7 /parametres reste affichable sans GET messages/announcements", { timeout: 15000 }, async () => {
     persistSession(sessionForRole(SCHOOL_ADMIN_ROLE));
 
     render(
@@ -108,16 +119,15 @@ describe("P0 [RED] — pages globales bloquées par un 403 facultatif", () => {
     await waitFor(() => {
       expect(screen.getByRole("heading", { name: "Profil établissement" })).toBeInTheDocument();
     }, { timeout: 8000 });
-    await waitForForbiddenDomainCalls(ctl);
+    await waitForPathCall(ctl, (path) => path.includes("academic-config"));
+
+    expectNoGlobalCommunicationListFetch(ctl);
     expect(screen.queryByText("PAGE LOGIN")).not.toBeInTheDocument();
     expect(screen.queryByText(/Impossible de charger/i)).not.toBeInTheDocument();
-    expect(
-      screen.queryByText(/accès refusé pour ce domaine/i),
-      "la barre d'erreur globale ne doit pas afficher les 403 messages/announcements",
-    ).not.toBeInTheDocument();
+    expect(screen.queryByText(/accès refusé pour ce domaine/i)).not.toBeInTheDocument();
   });
 
-  it("[RED] RED-7 tableau de bord : un 403 messages/annonces ne masque pas le dashboard", { timeout: 15000 }, async () => {
+  it("RED-7 tableau de bord : pas de GET Communication parasite ni panne globale", { timeout: 15000 }, async () => {
     persistSession(sessionForRole(SCHOOL_ADMIN_ROLE));
 
     render(
@@ -130,16 +140,18 @@ describe("P0 [RED] — pages globales bloquées par un 403 facultatif", () => {
       </Providers>,
     );
 
+    await waitForPathCall(ctl, (path) => path === "/students");
     await waitFor(() => {
       expect(screen.getByLabelText(/Rafraîchir les données/i)).toBeEnabled();
     }, { timeout: 5000 });
-    await waitForForbiddenDomainCalls(ctl);
+
+    expectNoGlobalCommunicationListFetch(ctl);
     expect(screen.queryByText("PAGE LOGIN")).not.toBeInTheDocument();
     expect(screen.queryByText(/Impossible de charger/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/accès refusé pour ce domaine/i)).not.toBeInTheDocument();
   });
 
-  it("[RED] RED-7 /etablissement/vue-ensemble ne doit pas passer en ErrorState à cause de messages 403", { timeout: 15000 }, async () => {
+  it("RED-7 /etablissement/vue-ensemble reste disponible sans GET Communication parasite", { timeout: 15000 }, async () => {
     persistSession(sessionForRole(SCHOOL_ADMIN_ROLE));
 
     render(
@@ -152,17 +164,18 @@ describe("P0 [RED] — pages globales bloquées par un 403 facultatif", () => {
       </Providers>,
     );
 
-    await waitForForbiddenDomainCalls(ctl);
+    await waitForPathCall(ctl, (path) => path === "/students");
     await waitFor(() => {
       expect(screen.queryByText(/Chargement des données de l’établissement/i)).not.toBeInTheDocument();
     }, { timeout: 5000 });
 
+    expectNoGlobalCommunicationListFetch(ctl);
     expect(screen.queryByText("Impossible de charger la vue d’ensemble.")).not.toBeInTheDocument();
     expect(screen.queryByText(/accès refusé pour ce domaine/i)).not.toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Élèves" })).toBeInTheDocument();
   });
 
-  it("[RED] RED-7 page établissement /eleves reste utilisable si messages 403", { timeout: 15000 }, async () => {
+  it("RED-7 page établissement /eleves reste utilisable sans GET Communication parasite", { timeout: 15000 }, async () => {
     persistSession(sessionForRole(SCHOOL_ADMIN_ROLE));
 
     render(
@@ -174,15 +187,16 @@ describe("P0 [RED] — pages globales bloquées par un 403 facultatif", () => {
       </Providers>,
     );
 
+    await waitForPathCall(ctl, (path) => path === "/students");
     await waitFor(() => {
-      expect(screen.getByText("Élèves")).toBeInTheDocument();
+      expect(screen.getByText("Amina Nuru")).toBeInTheDocument();
     }, { timeout: 5000 });
-    await waitForForbiddenDomainCalls(ctl);
+
+    expectNoGlobalCommunicationListFetch(ctl);
     expect(screen.queryByText(/accès refusé pour ce domaine/i)).not.toBeInTheDocument();
-    expect(screen.getByText("Amina Nuru")).toBeInTheDocument();
   });
 
-  it("[RED] RED-7 page Parent /notes : un 403 messages ne doit pas afficher une panne Notes", { timeout: 15000 }, async () => {
+  it("RED-7 page Parent /notes : pas de GET Communication parasite ni fausse panne Notes", { timeout: 15000 }, async () => {
     persistSession(sessionForRole("Parent", "access-parent"));
     ctl.permissions = getInternalRoleDefaults("Parent");
 
@@ -195,7 +209,9 @@ describe("P0 [RED] — pages globales bloquées par un 403 facultatif", () => {
       </Providers>,
     );
 
-    await waitForForbiddenDomainCalls(ctl);
+    await waitForPathCall(ctl, (path) => path === "/notes");
+
+    expectNoGlobalCommunicationListFetch(ctl);
     expect(screen.queryByText(/Synchronisation Notes en échec/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/accès refusé pour ce domaine/i)).not.toBeInTheDocument();
   });
