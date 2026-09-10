@@ -8,6 +8,11 @@ import { render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import type { BackOfficeState, SessionUser, StudentFee } from "../../types";
 import { FinanceUnpaidPage } from "./FinanceUnpaidPage";
+import {
+  aggregateUnpaidByStudent,
+  listUnpaidStudentFees,
+  scopedPaymentReminders,
+} from "../../lib/unpaidModule";
 
 const SCHOOL_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const SCHOOL_CODE = "CD-IN-26-001";
@@ -16,6 +21,7 @@ const STUDENT_B = "stu-binta";
 
 const showToast = vi.hoisted(() => vi.fn());
 const refresh = vi.hoisted(() => vi.fn(async () => undefined));
+const listUnpaid = vi.hoisted(() => vi.fn());
 
 const authState = vi.hoisted(() => ({
   session: {
@@ -59,6 +65,7 @@ vi.mock("../../lib/financeApi", () => ({
     listPaymentStudentOptions: vi.fn().mockResolvedValue([]),
     getFinanceCatalog: vi.fn().mockResolvedValue({ currency: "XOF", paymentMethods: [] }),
     listStudentFees: vi.fn(),
+    listUnpaid,
     createReminder: vi.fn(),
   },
 }));
@@ -148,6 +155,14 @@ function renderPage(search: string) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  listUnpaid.mockImplementation(async () => {
+    const state = dataState.current;
+    const user = authState.session.user;
+    const fees = listUnpaidStudentFees(state, user);
+    const reminders = scopedPaymentReminders(user, state);
+    const rows = aggregateUnpaidByStudent(fees, reminders, state);
+    return { rows, fees };
+  });
   dataState.current = stateWith([
     fee({ id: "obl-awa", studentId: STUDENT_A, label: "Scolarité T1 Awa" }),
     fee({ id: "obl-binta", studentId: STUDENT_B, label: "Scolarité T1 Binta" }),

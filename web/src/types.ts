@@ -558,6 +558,7 @@ export interface UnpaidDashboardStats {
   overdueLineCount: number;
   byClass: { className: string; amountDue: number; studentCount: number }[];
   currency: string;
+  totalsByCurrency: { currency: string; amount: number }[];
 }
 
 /** NE-001 — Types d'évaluation. */

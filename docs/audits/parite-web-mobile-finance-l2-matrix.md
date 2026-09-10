@@ -10,25 +10,26 @@
 | --- | --- | --- | --- |
 | Accueil KPI Impayés | absent (taux de paiement) | ledger `GET /backoffice/finance/unpaid` | unpaidService |
 | Paiements liste / encaissement / reçu | `/finances/paiements` | `PaymentsScreen` + cartes dépliables | `GET/POST /payments` |
-| Impayés consultation | `/finances/impayes` via `studentFees` client | `UnpaidScreen` via `GET unpaid` | **divergence** |
+| Impayés consultation | `/finances/impayes` via `GET /backoffice/finance/unpaid` | `UnpaidScreen` via `GET unpaid` | unpaidService |
 | Frais & tarifs | `/finances/frais` | absent | `GET /finance/fee-grids` |
 | Relances Impayés | POST reminders | absent (limite L1) | unpaid reminders |
 | Encaissement depuis Impayés | QuickPayment | absent (limite L1) | POST /payments |
-| Oscar attendu / alloué / reste | calcul OK ; libellé Impayés Web « déjà payé » | « Montant alloué aux impayés ouverts » | obligations ouvertes |
-| Totaux multidevise Impayés | somme arithmétique + 1re devise | `totalsByCurrency`, pas de somme mixte | — |
-| Taux de paiement | `getPaymentRateKpi(studentFees)` | copie Mobile identique | `GET /finance/student-fees` |
+| Oscar attendu / alloué / reste | « Montant alloué aux impayés ouverts » | « Montant alloué aux impayés ouverts » | obligations ouvertes |
+| Totaux multidevise Impayés | `totalsByCurrency`, pas de somme mixte | `totalsByCurrency`, pas de somme mixte | lignes ledger par devise |
+| Taux de paiement | `getPaymentRateKpi` fail-closed si devises mixtes | idem | `GET /finance/student-fees` |
 | UX 360/390/430 Finance | n/a Web | livré #583 | maquette v7 |
 
 ## Lot retenu (maîtrisable)
 
-| ID | Fonction | Web | Mobile | Donnée canonique | UX maquette | Statut visé |
+| ID | Fonction | Web | Mobile | Donnée canonique | UX maquette | Statut |
 | --- | --- | --- | --- | --- | --- | --- |
-| FIN-L2-01 | Impayés Web lit le ledger canonique | NOK | OK | `GET /backoffice/finance/unpaid` | n/a | RED→GREEN |
-| FIN-L2-02 | Totaux Impayés sans somme CDF+USD | NOK | OK | lignes ledger par devise | n/a | RED→GREEN |
-| FIN-L2-03 | Libellé Oscar allocation Impayés Web | NOK | OK | `amountPaid` des obligations ouvertes | n/a | RED→GREEN |
-| FIN-L2-04 | Taux de paiement Web fail-closed multidevise | NOK | n/a | `student-fees.currency` | n/a | RED→GREEN |
-| FIN-L2-05 | Taux de paiement Mobile fail-closed multidevise | n/a | NOK | idem | n/a | RED→GREEN |
-| FIN-L2-06 | Impayés Web : 403/RBAC ≠ liste vide succès | NOK | OK | Impayés:READ + GET unpaid | n/a | RED→GREEN |
+| FIN-L2-01 | Impayés Web lit le ledger canonique | OK | OK | `GET /backoffice/finance/unpaid` | n/a | GREEN |
+| FIN-L2-02 | Totaux Impayés sans somme CDF+USD | OK | OK | lignes ledger par devise | n/a | GREEN |
+| FIN-L2-03 | Libellé Oscar allocation Impayés Web | OK | OK | `amountPaid` des obligations ouvertes | n/a | GREEN |
+| FIN-L2-04 | Taux de paiement Web fail-closed multidevise | OK | n/a | `student-fees.currency` | n/a | GREEN |
+| FIN-L2-05 | Taux de paiement Mobile fail-closed multidevise | n/a | OK | idem | n/a | GREEN |
+| FIN-L2-06 | Impayés Web : 403/RBAC ≠ liste vide succès | OK | OK | Impayés:READ + GET unpaid | n/a | GREEN |
+| FIN-L2-03-M | Oscar Mobile allocation (régression #583) | n/a | OK | idem | OK | GREEN |
 
 Régression Oscar Mobile (déjà GREEN #583) : `pariteL1FinanceUx.test.ts` — ne pas reculer vers « Montant payé ».
 

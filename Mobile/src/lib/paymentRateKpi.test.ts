@@ -120,6 +120,14 @@ function run() {
   assert.equal(cancelledReceiptDoesNotInflate.collectedAmount, 0, "paiement annulé → 0 FC encaissé");
   assert.equal(cancelledReceiptDoesNotInflate.rate, 0);
 
+  const mixedCurrency = getPaymentRateKpi([
+    obligation("s1", { amountDue: 100_000, amountPaid: 20_000, currency: "CDF" }),
+    obligation("s2", { amountDue: 50, amountPaid: 10, currency: "USD" }),
+  ]);
+  assert.equal(mixedCurrency.rate, null, "CDF+USD → pas de taux unique");
+  assert.equal(mixedCurrency.value, "—");
+  assert.equal(mixedCurrency.expectedAmount, 0);
+
   console.log("OK: paymentRateKpi assiette obligations 20/0/100/—");
 }
 

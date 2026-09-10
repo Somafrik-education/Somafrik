@@ -15,6 +15,7 @@ export type StudentFeeObligation = {
   status?: string | null;
   archivedAt?: string | null;
   archived_at?: string | null;
+  currency?: string | null;
 };
 
 export type PaymentRateKpi = {
@@ -63,6 +64,13 @@ function emptyKpi(): PaymentRateKpi {
 export function getPaymentRateKpi(fees: readonly StudentFeeObligation[]): PaymentRateKpi {
   const active = fees.filter((fee) => !isCancelledObligation(fee));
   if (!active.length) return emptyKpi();
+
+  const currencies = new Set(
+    active
+      .map((fee) => String(fee.currency ?? "").trim().toUpperCase())
+      .filter(Boolean),
+  );
+  if (currencies.size > 1) return emptyKpi();
 
   let expectedAmount = 0;
   let collectedAmount = 0;

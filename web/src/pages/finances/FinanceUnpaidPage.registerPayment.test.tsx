@@ -4,6 +4,11 @@ import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import type { BackOfficeState, SessionUser, StudentFee } from "../../types";
 import { FinanceUnpaidPage } from "./FinanceUnpaidPage";
+import {
+  aggregateUnpaidByStudent,
+  listUnpaidStudentFees,
+  scopedPaymentReminders,
+} from "../../lib/unpaidModule";
 
 /** Les pages applicatives sont montées sous le Router : le deep-link lit l'URL. */
 function RoutedFinanceUnpaidPage() {
@@ -26,6 +31,7 @@ const createPayment = vi.hoisted(() => vi.fn());
 const listPaymentStudentOptions = vi.hoisted(() => vi.fn());
 const getFinanceCatalog = vi.hoisted(() => vi.fn());
 const listStudentFees = vi.hoisted(() => vi.fn());
+const listUnpaid = vi.hoisted(() => vi.fn());
 
 const authState = vi.hoisted(() => ({
   session: {
@@ -83,6 +89,7 @@ vi.mock("../../lib/financeApi", () => ({
     listPaymentStudentOptions,
     getFinanceCatalog,
     listStudentFees,
+    listUnpaid,
     createReminder: vi.fn(),
   },
 }));
@@ -199,9 +206,18 @@ function asUser(role: string, permissions: string[]) {
   authState.session.user.permissions = permissions;
 }
 
+function unpaidLedgerFromState() {
+  const state = dataState.current;
+  const user = authState.session.user;
+  const fees = listUnpaidStudentFees(state, user);
+  const reminders = scopedPaymentReminders(user, state);
+  const rows = aggregateUnpaidByStudent(fees, reminders, state);
+  return { rows, fees };
+}
+
 async function openPaymentFor(studentId: string) {
   const user = userEvent.setup();
-  const buttons = screen.getAllByTestId(`unpaid-register-payment-${studentId}`);
+  const buttons = await screen.findAllByTestId(`unpaid-register-payment-${studentId}`);
   await user.click(buttons[0]);
   await screen.findByTestId("quick-payment-modal");
   return user;
@@ -216,6 +232,8 @@ describe("IMP-PAY — Enregistrer un paiement depuis Impayés", () => {
     listPaymentStudentOptions.mockReset();
     getFinanceCatalog.mockReset();
     listStudentFees.mockReset();
+    listUnpaid.mockReset();
+    listUnpaid.mockImplementation(async () => unpaidLedgerFromState());
     catalogOk();
     studentOptionsOk();
     listStudentFees.mockResolvedValue([]);
@@ -226,36 +244,36 @@ describe("IMP-PAY — Enregistrer un paiement depuis Impayés", () => {
     ]);
   });
 
-  it("IMP-PAY-01 — élève impayé + utilisateur autorisé → bouton visible", () => {
+  it("IMP-PAY-01 — élève impayé + utilisateur autorisé → bouton visible", async () => {
     render(<RoutedFinanceUnpaidPage />);
-    expect(screen.getAllByText("Awa Diop").length).toBeGreaterThan(0);
-    expect(screen.getAllByTestId(`unpaid-register-payment-${STUDENT_A}`)[0]).toHaveTextContent(
+    expect((await screen.findAllByText("Awa Diop")).length).toBeGreaterThan(0);
+    expect((await screen.findAllByTestId(`unpaid-register-payment-${STUDENT_A}`))[0]).toHaveTextContent(
       "Enregistrer un paiement",
     );
     expect(screen.queryByRole("button", { name: "Payer" })).not.toBeInTheDocument();
   });
 
-  it("IMP-PAY-02 — Impayés:READ sans droit Paiements → bouton absent", () => {
+  it("IMP-PAY-02 — Impayés:READ sans droit Paiements → bouton absent", async () => {
     asUser("Admin School", ["Impayés:READ"]);
     render(<RoutedFinanceUnpaidPage />);
-    expect(screen.getAllByText("Awa Diop").length).toBeGreaterThan(0);
+    expect((await screen.findAllByText("Awa Diop")).length).toBeGreaterThan(0);
     expect(screen.queryAllByTestId(`unpaid-register-payment-${STUDENT_A}`)).toHaveLength(0);
     expect(screen.queryByRole("button", { name: "Enregistrer un paiement" })).not.toBeInTheDocument();
     expect(screen.getAllByRole("button", { name: "Détail" }).length).toBeGreaterThan(0);
   });
 
-  it("IMP-PAY-09 — Paiements:CREATE sans Paiements:READ → bouton absent", () => {
+  it("IMP-PAY-09 — Paiements:CREATE sans Paiements:READ → bouton absent", async () => {
     asUser("Comptable", ["Impayés:READ", "Paiements:CREATE"]);
     render(<RoutedFinanceUnpaidPage />);
-    expect(screen.getAllByText("Awa Diop").length).toBeGreaterThan(0);
+    expect((await screen.findAllByText("Awa Diop")).length).toBeGreaterThan(0);
     expect(screen.queryAllByTestId(`unpaid-register-payment-${STUDENT_A}`)).toHaveLength(0);
     expect(screen.queryByRole("button", { name: "Enregistrer un paiement" })).not.toBeInTheDocument();
   });
 
-  it("IMP-PAY-10 — Impayés:READ + Paiements:READ + Paiements:UPDATE → bouton visible", () => {
+  it("IMP-PAY-10 — Impayés:READ + Paiements:READ + Paiements:UPDATE → bouton visible", async () => {
     asUser("Comptable", ["Impayés:READ", "Paiements:READ", "Paiements:UPDATE"]);
     render(<RoutedFinanceUnpaidPage />);
-    expect(screen.getAllByTestId(`unpaid-register-payment-${STUDENT_A}`)[0]).toHaveTextContent(
+    expect((await screen.findAllByTestId(`unpaid-register-payment-${STUDENT_A}`))[0]).toHaveTextContent(
       "Enregistrer un paiement",
     );
   });
@@ -393,9 +411,9 @@ describe("IMP-PAY — Enregistrer un paiement depuis Impayés", () => {
     await waitFor(() => expect(refresh).toHaveBeenCalled());
     expect(showToast).toHaveBeenCalledWith("Paiement enregistré", "success");
     view.rerender(<RoutedFinanceUnpaidPage />);
-    expect(screen.getAllByText("Awa Diop").length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/60[\s\u202f\u00a0]?000 XOF/).length).toBeGreaterThan(0);
-    expect(screen.getAllByTestId(`unpaid-register-payment-${STUDENT_A}`).length).toBeGreaterThan(0);
+    expect((await screen.findAllByText("Awa Diop")).length).toBeGreaterThan(0);
+    expect((await screen.findAllByText(/60[\s\u202f\u00a0]?000 XOF/)).length).toBeGreaterThan(0);
+    expect((await screen.findAllByTestId(`unpaid-register-payment-${STUDENT_A}`)).length).toBeGreaterThan(0);
   });
 
   it("IMP-PAY-06 — paiement intégral → solde 0, ligne retirée après refresh", async () => {
@@ -425,7 +443,7 @@ describe("IMP-PAY — Enregistrer un paiement depuis Impayés", () => {
       ]);
     });
     const view = render(<RoutedFinanceUnpaidPage />);
-    expect(screen.getAllByText("Awa Diop").length).toBeGreaterThan(0);
+    expect((await screen.findAllByText("Awa Diop")).length).toBeGreaterThan(0);
     const user = await openPaymentFor(STUDENT_A);
     const amount = screen.getByLabelText(/Montant à encaisser/i);
     await user.clear(amount);
@@ -434,8 +452,10 @@ describe("IMP-PAY — Enregistrer un paiement depuis Impayés", () => {
     await waitFor(() => expect(createPayment).toHaveBeenCalledTimes(1));
     await waitFor(() => expect(refresh).toHaveBeenCalled());
     view.rerender(<RoutedFinanceUnpaidPage />);
+    await waitFor(() => {
+      expect(screen.queryAllByTestId(`unpaid-register-payment-${STUDENT_A}`)).toHaveLength(0);
+    });
     expect(screen.queryAllByText("Awa Diop")).toHaveLength(0);
-    expect(screen.queryAllByTestId(`unpaid-register-payment-${STUDENT_A}`)).toHaveLength(0);
     expect(screen.getAllByText("Aucun reste à payer").length).toBeGreaterThan(0);
   });
 
@@ -466,7 +486,7 @@ describe("IMP-PAY — Enregistrer un paiement depuis Impayés", () => {
     expect(refresh).not.toHaveBeenCalled();
     expect(dataState.current.studentFees).toEqual(snapshot);
     expect(screen.getByTestId("quick-payment-modal")).toBeInTheDocument();
-    expect(screen.getAllByText("Awa Diop").length).toBeGreaterThan(0);
+    expect((await screen.findAllByText("Awa Diop")).length).toBeGreaterThan(0);
 
     createPayment.mockResolvedValueOnce({ id: "pay-retry", amount: 40_000 });
     await user.click(screen.getByRole("button", { name: "Enregistrer l'encaissement" }));

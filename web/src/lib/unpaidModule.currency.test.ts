@@ -31,4 +31,17 @@ describe("buildUnpaidDashboard — devise", () => {
     expect(buildUnpaidDashboard([row({ currency: "xof" })]).currency).toBe("XOF");
     expect(buildUnpaidDashboard([row({ currency: "EUR" })]).currency).toBe("EUR");
   });
+
+  it("ne publie pas une somme CDF+USD sous une seule devise", () => {
+    const dashboard = buildUnpaidDashboard([
+      row({ studentId: "cdf", amountDue: 120_000, currency: "CDF" }),
+      row({ studentId: "usd", amountDue: 50, currency: "USD", className: "6ème B" }),
+    ]);
+    expect(dashboard.totalAmountDue).toBe(0);
+    expect(dashboard.currency).toBe("");
+    expect(dashboard.totalsByCurrency).toEqual([
+      { currency: "CDF", amount: 120_000 },
+      { currency: "USD", amount: 50 },
+    ]);
+  });
 });
