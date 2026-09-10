@@ -1,7 +1,8 @@
 # #577 — Lot 0 Mobile vert (hygiène et navigation fail-closed)
 
 **Date :** 2026-09-10  
-**Base empilée :** `a24b5ae3157b27a8f52bbc93fb725b08654d98cc` (Draft #578)  
+**Base RED d’origine :** `a24b5ae3157b27a8f52bbc93fb725b08654d98cc` (Draft #578)  
+**Base PR de validation :** `develop@ec2b232e8cb0e6aae27ddac5b1b99a3c9c3596c3`  
 **Branche :** `feat/577-l0-mobile-hygiene`  
 **Périmètre :** Lot 0 uniquement  
 **Backend / API / PostgreSQL / RBAC métier :** non touchés  
@@ -65,3 +66,9 @@ et L1. Aucun client unpaid, KPI ledger ou traitement 401/403 n'a été ajouté i
 
 Preuve structurée :
 `docs/audits/evidence/parite-l0-green-verify.json`.
+
+## Gouvernance de validation
+
+La PR #580 a été retargetée vers `develop` sans changement runtime afin que les
+PR Gates GitHub s'exécutent sur le vrai diff `develop → HEAD`. La preuve RED de
+#578 reste dans l'historique du HEAD ; aucun test n'est supprimé ou désactivé.
