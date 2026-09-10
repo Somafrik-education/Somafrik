@@ -24,7 +24,7 @@ export type PaymentCashBucket = {
   currencyLabel: string;
   collectedAmount: number;
   allocatedAmount: number;
-  unallocatedAmount: number;
+  unallocatedAmount: number | null;
 };
 
 function normalizedStatus(status: unknown): string {
@@ -38,6 +38,15 @@ function normalizedStatus(status: unknown): string {
 function parseMoney(value: unknown): number {
   const amount = Number(value ?? 0);
   return Number.isFinite(amount) ? Math.max(0, amount) : 0;
+}
+
+/** Canonique GET /payments : absent/invalide → null, jamais inféré côté client. */
+function readCanonicalUnallocated(value: unknown): number | null {
+  if (value == null) return null;
+  if (typeof value === "string" && !value.trim()) return null;
+  const amount = Number(value);
+  if (!Number.isFinite(amount) || amount < 0) return null;
+  return amount;
 }
 
 /** Aligné sur le backend : encaissé = paiement compté et confirmé, jamais pending/refusé/échoué. */
@@ -67,21 +76,25 @@ export function getPaymentCashKpi(payments: readonly CanonicalPayment[]): Paymen
 }
 
 export function getPaymentCashBreakdown(payments: readonly CashPaymentRow[]): PaymentCashBucket[] {
-  const grouped = new Map<string, PaymentCashKpi>();
+  const grouped = new Map<string, Omit<PaymentCashBucket, "currencyKey" | "currencyLabel">>();
   for (const payment of payments) {
     if (!isCountedMobileCashPayment(payment)) continue;
     const collected = parseMoney(payment.amount ?? payment.totalAmount);
     const allocated = parseMoney(payment.allocatedAmount);
-    const unallocated = parseMoney(payment.unallocatedAmount ?? 0);
+    const unallocated = readCanonicalUnallocated(payment.unallocatedAmount);
     const currencyKey = resolveFinanceCurrency(payment.currency);
     const current = grouped.get(currencyKey) ?? {
       collectedAmount: 0,
       allocatedAmount: 0,
-      unallocatedAmount: 0,
+      unallocatedAmount: 0 as number | null,
     };
     current.collectedAmount += collected;
     current.allocatedAmount += allocated;
-    current.unallocatedAmount += unallocated;
+    if (unallocated == null || current.unallocatedAmount == null) {
+      current.unallocatedAmount = null;
+    } else {
+      current.unallocatedAmount += unallocated;
+    }
     grouped.set(currencyKey, current);
   }
 
@@ -119,10 +132,13 @@ export function formatPaymentCashAmounts(payments: readonly CashPaymentRow[]): {
   buckets: PaymentCashBucket[];
 } {
   const buckets = getPaymentCashBreakdown(payments);
+  const unallocatedKnown = buckets.every((bucket) => bucket.unallocatedAmount != null);
   return {
     buckets,
     collectedLabel: joinCashLines(buckets, (bucket) => bucket.collectedAmount),
     allocatedLabel: joinCashLines(buckets, (bucket) => bucket.allocatedAmount),
-    unallocatedLabel: joinCashLines(buckets, (bucket) => bucket.unallocatedAmount),
+    unallocatedLabel: unallocatedKnown
+      ? joinCashLines(buckets, (bucket) => bucket.unallocatedAmount ?? 0)
+      : CASH_AMOUNT_UNAVAILABLE_LABEL,
   };
 }
