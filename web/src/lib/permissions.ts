@@ -455,8 +455,13 @@ export function canReadView(ctx: PermissionContext, viewName: string): boolean {
   if (viewName === "relations") {
     return hasBackOfficePermission(ctx, "Relations", "READ");
   }
+  if (viewName === "messages") {
+    // Contrairement aux notifications, Messages n'a aucun accès implicite par rôle.
+    // La vue et son GET doivent suivre la permission effective Messages:READ.
+    return hasBackOfficePermission(ctx, "Messages", "READ");
+  }
   if (
-    (viewName === "messages" || viewName === "notifications" || viewName === "announcements") &&
+    (viewName === "notifications" || viewName === "announcements") &&
     isPlatformCommunicationUser(ctx)
   ) {
     return true;
@@ -482,7 +487,7 @@ export function canReadView(ctx: PermissionContext, viewName: string): boolean {
   if (viewName === "announcements") {
     return hasBackOfficePermission(ctx, "Announcements", "READ");
   }
-  if (viewName === "messages" || viewName === "notifications") {
+  if (viewName === "notifications") {
     if (hasBackOfficePermission(ctx, VIEW_PERMISSION_FEATURES[viewName] ?? null, "READ")) {
       return true;
     }
