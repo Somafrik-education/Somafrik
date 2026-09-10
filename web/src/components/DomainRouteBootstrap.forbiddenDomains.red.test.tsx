@@ -215,4 +215,52 @@ describe("P0/P1 — pages globales indépendantes des domaines Communication", (
     expect(screen.queryByText(/Synchronisation Notes en échec/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/accès refusé pour ce domaine/i)).not.toBeInTheDocument();
   });
+
+  it("GREEN HTTP Messages : Messages:READ charge bien /backoffice/messages sur /messages", { timeout: 15000 }, async () => {
+    persistSession(sessionForRole(SCHOOL_ADMIN_ROLE));
+    ctl.domainStatus.messages = 200;
+
+    render(
+      <Providers>
+        <MemoryRouter initialEntries={["/messages"]}>
+          <DomainRouteBootstrap />
+          <div>PAGE MESSAGES AUTORISÉE</div>
+        </MemoryRouter>
+      </Providers>,
+    );
+
+    await waitForPathCall(ctl, (path) => path === "/backoffice/messages");
+
+    expect(
+      ctl.calls.some(
+        (call) =>
+          call.method === "GET" &&
+          call.path === "/backoffice/messages" &&
+          call.status === 200,
+      ),
+    ).toBe(true);
+    expect(
+      ctl.calls.some((call) => call.method === "GET" && call.path === "/backoffice/announcements"),
+    ).toBe(false);
+  });
+
+  it("GREEN HTTP Messages : sans Messages:READ aucun GET /backoffice/messages", { timeout: 15000 }, async () => {
+    ctl.permissions = getInternalRoleDefaults("Surveillant");
+    persistSession(sessionForRole("Surveillant", "access-surveillant"));
+
+    render(
+      <Providers>
+        <MemoryRouter initialEntries={["/messages"]}>
+          <DomainRouteBootstrap />
+          <div>PROBE SANS DROIT MESSAGES</div>
+        </MemoryRouter>
+      </Providers>,
+    );
+
+    await waitForPathCall(ctl, (path) => path === "/auth/effective-permissions");
+
+    expect(
+      ctl.calls.some((call) => call.method === "GET" && call.path === "/backoffice/messages"),
+    ).toBe(false);
+  });
 });
