@@ -94,6 +94,22 @@ describe("P0 [RED] — matrice rôles × domaines (chargements excessifs)", () =
     expect(domains).not.toContain("announcements");
   });
 
+  it("Messages:READ n'implique aucun bypass de vue ni hydratation layout", () => {
+    const schoolAdmin = ctxForRole(SCHOOL_ADMIN_ROLE);
+    expect(hasBackOfficePermission(schoolAdmin, "Messages", "READ")).toBe(true);
+    expect(canReadView(schoolAdmin, "messages")).toBe(true);
+    expect(canLoadDomain(schoolAdmin, "messages")).toBe(true);
+    expect(layoutDomainsForContext(schoolAdmin)).not.toContain("messages");
+    expect(layoutDomainsForContext(schoolAdmin)).not.toContain("announcements");
+  });
+
+  it("sans Messages:READ, canReadView(messages) reste fail-closed même pour un rôle établissement", () => {
+    const supervisor = ctxForRole("Surveillant", []);
+    expect(hasBackOfficePermission(supervisor, "Messages", "READ")).toBe(false);
+    expect(canReadView(supervisor, "messages")).toBe(false);
+    expect(canLoadDomain(supervisor, "messages")).toBe(false);
+  });
+
   it("[RED] RED-5 Super Admin / Admin Pays : /parametres ne doit pas hydrater les domaines établissement messages/announcements", () => {
     for (const role of [SUPER_ADMIN_ROLE, COUNTRY_ADMIN_ROLE]) {
       const ctx = ctxForRole(role);

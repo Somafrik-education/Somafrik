@@ -189,7 +189,9 @@ describe("P0/P1 — pages globales indépendantes des domaines Communication", (
 
     await waitForPathCall(ctl, (path) => path === "/students");
     await waitFor(() => {
-      expect(screen.getByText("Amina Nuru")).toBeInTheDocument();
+      // StudentsListPage affiche Nom / Prénom dans des colonnes distinctes.
+      expect(screen.getByText("Nuru")).toBeInTheDocument();
+      expect(screen.getByText("Amina")).toBeInTheDocument();
     }, { timeout: 5000 });
 
     expectNoGlobalCommunicationListFetch(ctl);

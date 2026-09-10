@@ -162,8 +162,9 @@ describe("P0 [RED] — DataContext / domaines interdits (messages, announcements
     expect(result.current.data.state.users.length).toBeGreaterThan(0);
     expect(result.current.data.state.messages).toEqual([]);
     expect(result.current.data.state.announcements).toEqual([]);
-    expect(result.current.data.error).not.toMatch(/messages:.*accès refusé/i);
-    expect(result.current.data.error).not.toMatch(/announcements:.*accès refusé/i);
+    // error est null après un 403 facultatif (typeof null === "object" casse .toMatch).
+    expect(result.current.data.error ?? "").not.toMatch(/messages:.*accès refusé/i);
+    expect(result.current.data.error ?? "").not.toMatch(/announcements:.*accès refusé/i);
     expect(result.current.data.error).toBeNull();
   });
 
@@ -202,6 +203,27 @@ describe("P0 [RED] — DataContext / domaines interdits (messages, announcements
     expect(JSON.stringify(result.current.data.state.messages)).not.toContain("DONNEE INTERDITE");
     expect(result.current.data.error).toMatch(/session expirée/i);
     expect(result.current.data.error).not.toMatch(/accès refusé/i);
+  });
+
+  it("[CONTROL] 401 bloquant + 403 facultatif : session expirée, 403 filtré, aucune donnée interdite", async () => {
+    ctl.domainStatus = { messages: 401, announcements: 403 };
+    ctl.refreshStatus = 401;
+    const result = await loginSchoolAdmin();
+
+    await act(async () => {
+      await result.current.data
+        .ensureDomains(["users", "messages", "announcements"], { schoolCode: SCHOOL_A })
+        .catch(() => undefined);
+    });
+
+    expect(result.current.data.state.messages).toEqual([]);
+    expect(result.current.data.state.announcements).toEqual([]);
+    expect(JSON.stringify(result.current.data.state)).not.toContain("DONNEE INTERDITE");
+    expect(JSON.stringify(result.current.data.state)).not.toContain(FORBIDDEN_MESSAGE.id);
+    expect(JSON.stringify(result.current.data.state)).not.toContain(FORBIDDEN_ANNOUNCEMENT.id);
+    expect(result.current.data.error).toMatch(/session expirée/i);
+    expect(result.current.data.error).not.toMatch(/accès refusé/i);
+    expect(result.current.data.error).not.toMatch(/announcements:/i);
   });
 
   it("[CONTROL] RED-6 401 sur /auth/effective-permissions : la session est bien invalidée", async () => {
