@@ -26,6 +26,7 @@
     "test:mobile-crud-parity": "npx --yes tsx src/lib/mobileCrudParity.test.ts",
     "test:form-fields": "npx --yes tsx src/lib/formFieldValidation.test.ts",
     "test:payment-enrollment": "npx --yes tsx src/lib/paymentEnrollment.test.ts",
+    "test:l308-red": "npx --yes tsx src/lib/paymentStudentSelector.l308.test.ts && npx --yes tsx src/components/PaymentMutationControls.l308.test.ts",
     "test:payments-kpi-density": "npx --yes tsx src/lib/studentPaymentsKpiDensity.test.ts",
     "test:school-class-courses": "npx --yes tsx src/lib/schoolClassCourses.test.ts",
     "test:push-notifications": "npx --yes tsx src/services/pushNotifications.test.ts",

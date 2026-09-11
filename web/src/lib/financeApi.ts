@@ -98,6 +98,7 @@ export interface PaymentStudentOption {
   classId: string | null;
   classCode: string;
   className: string;
+  schoolCode?: string;
   studentStatus?: string;
   enrollmentStatus?: string;
   classes?: Array<{ classId: string; classCode: string; className: string }>;
