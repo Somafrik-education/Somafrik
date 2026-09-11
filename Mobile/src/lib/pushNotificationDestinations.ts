@@ -1,4 +1,4 @@
-export const SOMAFRIK_PUSH_CHANNEL_ID = "somafrik-default";
+export const SOMAFRIK_PUSH_CHANNEL_ID = "somafrik-default-v2";
 export const ALLOWED_PUSH_DESTINATIONS = ["Home", "StudentPayments"] as const;
 export type AllowedPushDestination = (typeof ALLOWED_PUSH_DESTINATIONS)[number];
 export type AllowedPushNavigationParams = { studentId?: string };
