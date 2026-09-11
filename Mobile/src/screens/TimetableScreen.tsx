@@ -9,7 +9,7 @@ import {
   View,
 } from "react-native";
 import FormField from "../components/FormField";
-import { Ionicons } from "@expo/vector-icons";
+import ExpandableEntityCard from "../components/ExpandableEntityCard";
 import { useFocusEffect } from "@react-navigation/native";
 import { useAuth } from "../context/AuthContext";
 import { useAdminData } from "../context/AdminDataContext";
@@ -42,6 +42,8 @@ import {
   type PlanningCourseOption,
   type ReplacementTeacherOption,
 } from "../lib/planningV2";
+import { nextExclusiveExpandedKey } from "../lib/expandableEntity";
+import { MIN_TOUCH_TARGET_DP } from "../lib/mobileUsability";
 import { createInFlightLock, createIntentionStore } from "../lib/mutationGuard";
 import { NETWORK_COPY, executeMutation } from "../lib/networkResilience";
 
@@ -90,6 +92,7 @@ export default function TimetableScreen() {
   const l1ReadOnly = mutationsBlocked || courseSchedulesSnapshot.source === "l1-cache";
 
   const [selectedDay, setSelectedDay] = useState(todayDayOfWeek() === 7 ? 1 : todayDayOfWeek());
+  const [expandedSlotId, setExpandedSlotId] = useState<string | null>(null);
   const [mode, setMode] = useState<Mode>("list");
   const [editing, setEditing] = useState<CanonicalWeeklySlot | null>(null);
   const [schoolCourseId, setSchoolCourseId] = useState("");
@@ -368,46 +371,56 @@ export default function TimetableScreen() {
   );
 
   const renderSlotCard = (item: DisplayedOccurrence, compact = false) => (
-    <TouchableOpacity
+    <ExpandableEntityCard
       key={item.id}
-      style={styles.card}
-      onPress={() => (canUpdate && !mutationsBlocked ? openEdit(item) : undefined)}
-      disabled={!canUpdate || mutationsBlocked}
+      title={item.courseName || "Cours"}
+      subtitle={item.className || item.classCode || "—"}
+      badge={`${item.startTime}–${item.endTime}`}
       testID={PLANNING_V2_TEST_IDS.slotCard}
+      expanded={expandedSlotId === item.id}
+      onExpandedChange={() =>
+        setExpandedSlotId((current) => nextExclusiveExpandedKey(current, item.id))
+      }
     >
-      <View style={styles.timeBox}>
-        <Text style={styles.time}>{item.startTime}</Text>
-        <Text style={styles.timeMuted}>{item.endTime}</Text>
-      </View>
-      <View style={styles.cardBody}>
-        <Text style={styles.course} numberOfLines={3}>{item.courseName || "Cours"}</Text>
-        <Text style={styles.meta} numberOfLines={2}>Classe : {item.className || item.classCode || "—"}</Text>
-        <Text style={styles.meta} numberOfLines={2}>Enseignant : {item.isReplacement ? item.originalTeacherName : item.teacherName || "—"}</Text>
-        <Text style={styles.meta} numberOfLines={2}>Salle : {item.roomName || "Sans salle"}</Text>
-        {item.replacementsUnverified ? (
-          <Text style={styles.unverified} testID={PLANNING_V2_TEST_IDS.usualTeacherUnverified}>
-            {PLANNING_V2_COPY.usualTeacherUnverified} : {item.teacherName}
-          </Text>
-        ) : item.isReplacement ? (
-          <Text style={styles.replacement} testID={PLANNING_V2_TEST_IDS.replacementBadge}>
-            {PLANNING_V2_COPY.usualTeacher} : {item.originalTeacherName}. {PLANNING_V2_COPY.replacedBy} {item.substituteTeacherName}
-          </Text>
+      <Text style={styles.meta} numberOfLines={2}>
+        Classe : {item.className || item.classCode || "—"}
+      </Text>
+      <Text style={styles.meta} numberOfLines={2}>
+        Enseignant : {item.isReplacement ? item.originalTeacherName : item.teacherName || "—"}
+      </Text>
+      <Text style={styles.meta} numberOfLines={2}>Salle : {item.roomName || "Sans salle"}</Text>
+      {item.replacementsUnverified ? (
+        <Text style={styles.unverified} testID={PLANNING_V2_TEST_IDS.usualTeacherUnverified}>
+          {PLANNING_V2_COPY.usualTeacherUnverified} : {item.teacherName}
+        </Text>
+      ) : item.isReplacement ? (
+        <Text style={styles.replacement} testID={PLANNING_V2_TEST_IDS.replacementBadge}>
+          {PLANNING_V2_COPY.usualTeacher} : {item.originalTeacherName}. {PLANNING_V2_COPY.replacedBy} {item.substituteTeacherName}
+        </Text>
+      ) : null}
+      <View style={styles.slotActions}>
+        {canUpdate && !mutationsBlocked ? (
+          <TouchableOpacity
+            style={styles.slotAction}
+            onPress={() => openEdit(item)}
+            accessibilityRole="button"
+            accessibilityLabel={`Modifier le cours ${item.courseName || ""} de ${item.className || ""}`}
+          >
+            <Text style={styles.slotActionText}>Modifier</Text>
+          </TouchableOpacity>
+        ) : null}
+        {canReplace && !compact && !mutationsBlocked ? (
+          <TouchableOpacity
+            style={styles.slotAction}
+            onPress={() => void openReplace(item)}
+            accessibilityRole="button"
+            accessibilityLabel={`Remplacer le cours ${item.courseName || ""} de ${item.className || ""}`}
+          >
+            <Text style={styles.slotActionText}>Remplacer</Text>
+          </TouchableOpacity>
         ) : null}
       </View>
-      {canReplace && !compact && !mutationsBlocked ? (
-        <TouchableOpacity
-          onPress={() => void openReplace(item)}
-          accessibilityRole="button"
-          accessibilityLabel={`Remplacer le cours ${item.courseName || ""} de ${item.className || ""}`}
-          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-          style={{ minWidth: 44, minHeight: 44, alignItems: "center", justifyContent: "center" }}
-        >
-          <Ionicons name="swap-horizontal-outline" size={20} color="#2563EB" />
-        </TouchableOpacity>
-      ) : (
-        <Ionicons name="calendar-outline" size={22} color="#2563EB" />
-      )}
-    </TouchableOpacity>
+    </ExpandableEntityCard>
   );
 
   const renderWeekColumns = () => (
@@ -696,30 +709,21 @@ const styles = StyleSheet.create({
   chipText: { color: "#334155", fontWeight: "800" },
   chipTextActive: { color: "#FFFFFF" },
   dayTitle: { color: "#0F172A", fontSize: 18, fontWeight: "900", marginBottom: 10 },
-  card: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 18,
-    padding: 14,
-    marginBottom: 10,
-    flexDirection: "row",
-    alignItems: "center",
-    borderWidth: 1,
-    borderColor: "#E2E8F0",
-  },
-  timeBox: {
-    width: 72,
-    borderRadius: 14,
-    backgroundColor: "#EFF6FF",
-    padding: 10,
-    marginRight: 12,
-  },
-  time: { color: "#2563EB", fontWeight: "900", textAlign: "center" },
-  timeMuted: { color: "#64748B", fontSize: 12, fontWeight: "800", textAlign: "center", marginTop: 3 },
-  cardBody: { flex: 1, minWidth: 0 },
-  course: { color: "#0F172A", fontSize: 16, fontWeight: "900" },
   meta: { color: "#64748B", fontSize: 12, fontWeight: "700", marginTop: 4 },
   replacement: { color: "#B45309", fontSize: 12, fontWeight: "800", marginTop: 6 },
   unverified: { color: "#B45309", fontSize: 12, fontWeight: "800", marginTop: 6 },
+  slotActions: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 10 },
+  slotAction: {
+    minHeight: MIN_TOUCH_TARGET_DP,
+    minWidth: MIN_TOUCH_TARGET_DP,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 12,
+    backgroundColor: "#EFF6FF",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  slotActionText: { color: "#1D4ED8", fontWeight: "800" },
   warningBanner: {
     backgroundColor: "#FEF3C7",
     borderRadius: 16,
