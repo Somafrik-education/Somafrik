@@ -30,4 +30,10 @@
 # 5) Test HMAC JWT (faux secret, non fonctionnel) introduit au commit 7153829f.
 #    HEAD utilise "a".repeat(48) ; le littéral ne subsiste que dans cet historique.
 7153829f8672924edbbafba110af7e5a9efd8029:backend/services/tokenService.test.js:generic-api-key:10
+#
+# 6) Configuration cliente Firebase Android Somafrik.
+#    google-services.json est destiné à l'app cliente et contient l'identifiant de clé
+#    Firebase requis pour initialiser le SDK. Exception STRICTEMENT limitée au finding
+#    historique introduit sur develop@f4fdd6f0. Toute nouvelle valeur/ligne/commit reste scannée.
+f4fdd6f05966b149eba0ddd494862b15f9b686d5:Mobile/google-services.json:gcp-api-key:18
 
