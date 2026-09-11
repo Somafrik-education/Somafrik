@@ -627,7 +627,7 @@ Application → Module → Sous-module → Vue (Liste | Hub | Outil) → Fiche �
 **Implications :**
 - Primitive de référence : `ExpandableEntityCard` (Finance = alias). Communication peut rester sur sa carte dédiée jusqu’au lot tokens.
 - Option A Notes : le CTA `Saisir` / `Consulter` reste visible carte fermée ; `Modifier` / `Valider` / `Publier` passent en zone ouverte.
-- PED-L3-12 doit être amendé **avant** toute modification de `TeacherGrades` : coef, enseignant et date ne sont plus obligatoires dans le résumé fermé ; la progression reste visible.
+- PED-L3-12 (lot Évaluations) : coef, enseignant et date en zone ouverte ; progression visible carte fermée ; Saisir/Consulter visible fermé.
 - Appel : exception métier — pas d’accordion sur les 4 statuts (pattern Roll-call compact).
 - Messages : fil + modal, pas une carte dépliable.
 - Pas de réactivation de `AdminCrudScreen`, `MenuScreen` ou `PlatformNotificationsScreen`.

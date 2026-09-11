@@ -2,13 +2,13 @@
  * Lot 0 — écarts encore ROUGES (collections hors îlots Finance / Scolarité / Communication).
  *   npx --yes tsx src/lib/progressiveDisclosure.red.test.ts
  *
- * Exit 1 tant que PD-02, PD-04, PD-06, PD-07 échouent. PD-01, PD-03 et PD-05 sont GREEN.
+ * Exit 1 tant que PD-04, PD-06, PD-07 échouent. PD-01, PD-02, PD-03 et PD-05 sont GREEN.
  */
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { PD_EVALUATION_SECONDARY_ACTIONS, PD_RED_EXPECTED_IDS } from "./progressiveDisclosureUxContract";
+import { PD_RED_EXPECTED_IDS } from "./progressiveDisclosureUxContract";
 
 const srcRoot = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
 const read = (relative: string) => fs.readFileSync(path.join(srcRoot, relative), "utf8");
@@ -28,27 +28,6 @@ function cardOpening(card: string) {
 }
 
 const cases: RedCase[] = [
-  {
-    id: "PD-02",
-    title: "Évaluations : résumé sans Modifier/Valider/Publier ; Saisir peut rester visible",
-    run() {
-      const screen = read("screens/TeacherGradesScreen.tsx");
-      assert.match(
-        screen,
-        /ExpandableEntityCard|ExpandableFinanceCard/,
-        "la liste évaluations n'utilise pas encore la carte dépliable",
-      );
-      const card = sliceFirstCard(screen, "ExpandableEntityCard") || sliceFirstCard(screen, "ExpandableFinanceCard");
-      const opening = cardOpening(card);
-      for (const action of PD_EVALUATION_SECONDARY_ACTIONS) {
-        assert.equal(
-          opening.includes(action),
-          false,
-          `${action} est encore dans le résumé fermé`,
-        );
-      }
-    },
-  },
   {
     id: "PD-04",
     title: "Utilisateurs : carte Entity, mutations uniquement en zone ouverte",

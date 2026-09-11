@@ -39,7 +39,7 @@ Les détails secondaires et les actions métier (sauf exception nommée) se rév
 | --- | --- |
 | CTA Notes `Saisir` / `Consulter` | **Option A** — reste visible même carte fermée |
 | `Modifier` / `Valider` / `Publier` | Zone ouverte uniquement |
-| PED-L3-12 | **À amender avant** toute modification de `TeacherGrades` : coef, enseignant, date **plus obligatoires** dans le résumé fermé ; **progression `N/M` reste visible** |
+| PED-L3-12 | **Amendé (lot Évaluations)** : coef, enseignant, date **en zone ouverte** ; progression `N/M` **visible fermée** ; Saisir/Consulter visible fermé |
 | Appel | **Exception métier** — pas d’accordion sur les 4 statuts. Pattern Roll-call compact, choix immédiatement accessibles |
 | Messages | **Fil + modal** — pas une carte dépliable |
 | `AdminCrudScreen`, `MenuScreen`, `PlatformNotificationsScreen` | **Pas de réactivation** |
