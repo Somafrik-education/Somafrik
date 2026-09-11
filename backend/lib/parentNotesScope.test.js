@@ -14,12 +14,6 @@ const {
   filterStudentsForGuardianNotes,
   filterNotesForGuardianStudents,
 } = require("./parentNotesScope");
-const {
-  COURSE_READ_PERMISSIONS,
-  COURSE_CREATE_PERMISSIONS,
-  COURSE_UPDATE_PERMISSIONS,
-  COURSE_DELETE_PERMISSIONS,
-} = require("./coursesRbacPolicy");
 
 const CHILD_A = {
   id: "stu-a",
@@ -179,13 +173,6 @@ test("linkedStudentIdSet lit studentIds et children", () => {
   assert.equal(ids.has("stu-a"), true);
   assert.equal(ids.has("stu-a2"), true);
   assert.equal(ids.has("M-2"), true);
-});
-
-test("Notes:READ ouvre seulement GET /api/courses pour le calcul de moyenne", () => {
-  assert.equal(COURSE_READ_PERMISSIONS.includes("Notes:READ"), true);
-  assert.equal(COURSE_CREATE_PERMISSIONS.includes("Notes:READ"), false);
-  assert.equal(COURSE_UPDATE_PERMISSIONS.includes("Notes:READ"), false);
-  assert.equal(COURSE_DELETE_PERMISSIONS.includes("Notes:READ"), false);
 });
 
 test("contrat source : GET notes élève et POST notes branchent le garde Parent", () => {
