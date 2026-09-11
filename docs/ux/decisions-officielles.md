@@ -620,6 +620,23 @@ Application → Module → Sous-module → Vue (Liste | Hub | Outil) → Fiche �
 
 ---
 
+## DO-047 — Progressive disclosure Mobile (cartes compactes)
+
+**Décision :** Sur l’application native `Mobile/`, une collection d’objets métier se présente en cartes synthétiques fermées par défaut. Carte fermée = identité + sous-titre discriminant + état. Détails et actions secondaires après interaction explicite (tap, chevron, « Voir détails », fiche).
+
+**Implications :**
+- Primitive de référence : `ExpandableEntityCard` (Finance = alias). Communication peut rester sur sa carte dédiée jusqu’au lot tokens.
+- Option A Notes : le CTA `Saisir` / `Consulter` reste visible carte fermée ; `Modifier` / `Valider` / `Publier` passent en zone ouverte.
+- PED-L3-12 doit être amendé **avant** toute modification de `TeacherGrades` : coef, enseignant et date ne sont plus obligatoires dans le résumé fermé ; la progression reste visible.
+- Appel : exception métier — pas d’accordion sur les 4 statuts (pattern Roll-call compact).
+- Messages : fil + modal, pas une carte dépliable.
+- Pas de réactivation de `AdminCrudScreen`, `MenuScreen` ou `PlatformNotificationsScreen`.
+- Migration par lots, une PR par module. Pas de refonte globale.
+
+**Réf. :** P11, P2, P7, P13 ; Pattern P-011 ; Anti-pattern AP-013 ; [contrat Mobile](./progressive-disclosure-mobile.md). GO CTO 2026-09-11.
+
+---
+
 ## Journal
 
 | ID | Titre | Introduit |
@@ -670,3 +687,4 @@ Application → Module → Sous-module → Vue (Liste | Hub | Outil) → Fiche �
 | DO-044 | Anti-patterns Design System | D1.4 |
 | DO-045 | Compatibilité ascendante du Design System | D1.4 |
 | DO-046 | Dépréciation contrôlée | D1.4 |
+| DO-047 | Progressive disclosure Mobile (cartes compactes) | Mobile native — GO CTO 2026-09-11 |

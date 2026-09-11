@@ -36,6 +36,10 @@ function main() {
   console.log("OK: tests unitaires Login/Classes/Notes/Finance/Planning/Messages/a11y");
 
   run("npx", ["--yes", "tsx", path.join("src", "lib", "roleSelectionLayout.test.ts")], MOBILE);
+  run("npx", ["--yes", "tsx", path.join("src", "lib", "progressiveDisclosureUx.test.ts")], MOBILE);
+  run("node", [path.join("scripts", "verify-progressive-disclosure-red.js")], MOBILE);
+  console.log("OK: contrat progressive disclosure Lot 0 (verts + PD-01…PD-07 encore rouges)");
+
   const roleSelection = source(path.join("screens", "RoleSelectionScreen.tsx"));
   assert.match(roleSelection, /useWindowDimensions/);
   assert.match(roleSelection, /getRoleSelectionLayout/);
