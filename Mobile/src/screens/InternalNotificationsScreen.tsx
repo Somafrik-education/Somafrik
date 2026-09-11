@@ -22,6 +22,7 @@ import { useInternalNotificationsUnreadCount } from "../lib/internalNotification
 import { resolveInternalNotificationNavigationTarget } from "../lib/pushNotificationDestinations";
 import { navigationRef } from "../navigation/rootNavigation";
 import CommunicationChrome from "../components/CommunicationChrome";
+import ExpandableCommunicationCard from "../components/ExpandableCommunicationCard";
 import {
   archiveInternalNotification,
   createInternalNotification,
@@ -267,13 +268,15 @@ export default function InternalNotificationsScreen() {
       {visibleRows.map((row) => {
         const navigationTarget = resolveInternalNotificationNavigationTarget(row.navigationTarget);
         return (
-          <View key={row.id} style={[styles.card, !row.readAt && styles.unreadCard]}>
-            <View style={styles.rowTop}>
-              <Text style={styles.cardTitle}>{row.title}</Text>
-              <Text style={[styles.badge, row.readAt ? styles.readBadge : styles.unreadBadge]}>{row.readAt ? "Lu" : "Non lu"}</Text>
-            </View>
-            <Text style={styles.body} numberOfLines={2}>{row.excerpt}</Text>
-            <Text style={styles.meta}>{row.senderName} · {formatDateTime(row.publishedAt || row.createdAt)}</Text>
+          <ExpandableCommunicationCard
+            key={row.id}
+            title={row.title}
+            subtitle={`${row.senderName} · ${formatDateTime(row.publishedAt || row.createdAt)}`}
+            badge={row.readAt ? "Lu" : "Non lu"}
+            badgeTone={row.readAt ? "default" : "info"}
+            testID={`notification-card-${row.id}`}
+          >
+            <Text style={styles.body}>{row.body || row.excerpt}</Text>
             {(row.attachments ?? []).map((attachment) => (
               <TouchableOpacity
                 key={attachment.id}
@@ -309,7 +312,7 @@ export default function InternalNotificationsScreen() {
                 <Text style={styles.secondaryButtonText}>Archiver</Text>
               </TouchableOpacity>
             </View>
-          </View>
+          </ExpandableCommunicationCard>
         );
       })}
       {cursor ? (

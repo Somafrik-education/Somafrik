@@ -2,7 +2,6 @@ import { useCallback, useMemo, useState } from "react";
 import {
   Alert,
   Linking,
-  Modal,
   View,
   Text,
   StyleSheet,
@@ -14,6 +13,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect } from "@react-navigation/native";
 import AnnouncementMutationControls from "../components/AnnouncementMutationControls";
 import CommunicationChrome from "../components/CommunicationChrome";
+import ExpandableCommunicationCard from "../components/ExpandableCommunicationCard";
 import QueryStateView from "../components/QueryStateView";
 import StatusBadge from "../components/StatusBadge";
 import { useAuth } from "../context/AuthContext";
@@ -42,6 +42,14 @@ function formatDisplayDate(iso?: string) {
   }).format(date);
 }
 
+function announcementOriginLabel(announcement: CanonicalAnnouncement): string {
+  if (announcement.originLabel) return announcement.originLabel;
+  if (announcement.source === "platform") {
+    return announcement.systemBroadcast ? "Annonce Somafrik" : "Annonce administrative Somafrik";
+  }
+  return "Annonce établissement";
+}
+
 export default function AnnouncementsScreen() {
   const { scrollContentPaddingBottom } = useFloatingTabBarLayout();
   const contentStyle = [styles.content, { paddingBottom: scrollContentPaddingBottom }];
@@ -52,7 +60,6 @@ export default function AnnouncementsScreen() {
   const isSuperadmin = isSuperAdminSessionRole(session?.role) || isSuperAdminSessionRole(session?.user?.role);
   const { announcementsSnapshot: snapshot, loadAnnouncements: load, resourceScopeKey, activeSchoolCode } = useAdminData();
   const [archivingId, setArchivingId] = useState("");
-  const [selected, setSelected] = useState<CanonicalAnnouncement | null>(null);
   const [query, setQuery] = useState("");
   const [unreadOnly, setUnreadOnly] = useState(false);
 
@@ -62,19 +69,14 @@ export default function AnnouncementsScreen() {
     }, [canRead, load, resourceScopeKey]),
   );
 
-  const openAnnouncement = async (announcement: CanonicalAnnouncement) => {
-    setSelected(announcement);
-    if (!announcement.readAt) {
-      const marked = await markCanonicalAnnouncementRead(
-        announcement.id,
-        activeSchoolCode,
-        announcement.source,
-      ).catch(() => null);
-      if (marked) {
-        setSelected(marked);
-        await load();
-      }
-    }
+  const markReadIfNeeded = async (announcement: CanonicalAnnouncement) => {
+    if (announcement.readAt) return;
+    await markCanonicalAnnouncementRead(
+      announcement.id,
+      activeSchoolCode,
+      announcement.source,
+    ).catch(() => null);
+    await load();
   };
 
   const confirmArchive = (announcement: CanonicalAnnouncement) => {
@@ -89,7 +91,6 @@ export default function AnnouncementsScreen() {
           try {
             await archiveCanonicalAnnouncement(announcement.id, activeSchoolCode, announcement.source);
             await load();
-            setSelected(null);
           } catch (error) {
             const message = error instanceof Error ? error.message : "Impossible d'archiver l'annonce.";
             Alert.alert("Archivage impossible", message);
@@ -164,27 +165,49 @@ export default function AnnouncementsScreen() {
             )}
           </>
         }
-        renderItem={({ item: announcement }) => (
-          <TouchableOpacity style={styles.card} onPress={() => void openAnnouncement(announcement)}>
-            <View style={styles.cardContent}>
-              <View style={styles.titleRow}>
-                <Text style={styles.cardTitle} numberOfLines={1}>{announcement.title}</Text>
-                {!announcement.readAt ? (
-                  <Text style={styles.unread}>Non lu</Text>
-                ) : (
-                  <Text style={styles.read}>Lu</Text>
-                )}
-              </View>
-              {announcement.excerpt ? <Text style={styles.excerpt} numberOfLines={1}>{announcement.excerpt}</Text> : null}
-              <Text style={styles.date} numberOfLines={1}>
-                {announcement.author ? `${announcement.author} · ` : ""}
-                {formatDisplayDate(announcement.publishedAt || announcement.createdAt || announcement.date)}
-              </Text>
-              {announcement.audience ? <Text style={styles.date} numberOfLines={1}>{announcement.audience}</Text> : null}
+        renderItem={({ item: announcement }) => {
+          const origin = announcementOriginLabel(announcement);
+          const canShowArchive = canArchive && (announcement.source !== "platform" || isSuperadmin);
+          return (
+            <ExpandableCommunicationCard
+              title={announcement.title}
+              subtitle={origin}
+              badge={announcement.readAt ? "Lu" : "Non lu"}
+              badgeTone={announcement.readAt ? "default" : "info"}
+              testID={`announcement-card-${announcement.id}`}
+              onExpandedChange={(expanded) => {
+                if (expanded) void markReadIfNeeded(announcement);
+              }}
+            >
+              <Text style={styles.message}>{announcement.message || announcement.excerpt}</Text>
+              {announcement.author ? (
+                <Text style={styles.date}>
+                  {announcement.author} · {formatDisplayDate(announcement.publishedAt || announcement.createdAt || announcement.date)}
+                </Text>
+              ) : (
+                <Text style={styles.date}>
+                  {formatDisplayDate(announcement.publishedAt || announcement.createdAt || announcement.date)}
+                </Text>
+              )}
+              {announcement.audience ? <Text style={styles.date}>{announcement.audience}</Text> : null}
               {announcement.status ? <StatusBadge status={announcement.status} /> : null}
-            </View>
-            {canArchive && (announcement.source !== "platform" || isSuperadmin) && (
-              <View style={styles.actionRow}>
+              {(announcement.attachments ?? []).map((file) => (
+                <TouchableOpacity
+                  key={file.id}
+                  onPress={() => {
+                    const download =
+                      announcement.source === "platform"
+                        ? downloadPlatformAnnouncementAttachment(file.id, file.fileName)
+                        : downloadCommunicationAttachment(file.id, file.fileName, activeSchoolCode);
+                    void download
+                      .then((uri) => Linking.openURL(uri))
+                      .catch((error) => Alert.alert("Téléchargement impossible", error instanceof Error ? error.message : ""));
+                  }}
+                >
+                  <Text style={styles.link}>{file.fileName}</Text>
+                </TouchableOpacity>
+              ))}
+              {canShowArchive ? (
                 <TouchableOpacity
                   style={[styles.smallDangerAction, archivingId === announcement.id && styles.disabled]}
                   onPress={() => confirmArchive(announcement)}
@@ -193,42 +216,15 @@ export default function AnnouncementsScreen() {
                   accessibilityLabel={`Archiver l'annonce ${announcement.title}`}
                   accessibilityState={{ disabled: Boolean(archivingId), busy: archivingId === announcement.id }}
                 >
-                  <Ionicons name="archive-outline" size={18} color="#DC2626" />
-                  <Text style={styles.smallDangerText}>{archivingId === announcement.id ? "Archivage…" : "Archiver"}</Text>
+                  <Text style={styles.smallDangerText}>
+                    {archivingId === announcement.id ? "Archivage…" : "Archiver"}
+                  </Text>
                 </TouchableOpacity>
-              </View>
-            )}
-          </TouchableOpacity>
-        )}
+              ) : null}
+            </ExpandableCommunicationCard>
+          );
+        }}
       />
-      <Modal visible={Boolean(selected)} animationType="slide" onRequestClose={() => setSelected(null)}>
-        <View style={styles.modal}>
-          <Text style={styles.title}>{selected?.title}</Text>
-          <Text style={styles.date}>
-            {selected?.author} · {formatDisplayDate(selected?.publishedAt || selected?.createdAt || selected?.date)}
-          </Text>
-          <Text style={styles.message}>{selected?.message}</Text>
-          {(selected?.attachments ?? []).map((file) => (
-            <TouchableOpacity
-              key={file.id}
-              onPress={() => {
-                const download =
-                  selected?.source === "platform"
-                    ? downloadPlatformAnnouncementAttachment(file.id, file.fileName)
-                    : downloadCommunicationAttachment(file.id, file.fileName, activeSchoolCode);
-                void download
-                  .then((uri) => Linking.openURL(uri))
-                  .catch((error) => Alert.alert("Téléchargement impossible", error instanceof Error ? error.message : ""));
-              }}
-            >
-              <Text style={styles.link}>{file.fileName}</Text>
-            </TouchableOpacity>
-          ))}
-          <TouchableOpacity style={styles.create} onPress={() => setSelected(null)}>
-            <Text style={styles.createText}>Fermer</Text>
-          </TouchableOpacity>
-        </View>
-      </Modal>
     </>
   );
 }

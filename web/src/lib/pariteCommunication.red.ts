@@ -59,18 +59,24 @@ const cases: { id: string; title: string; run: () => void }[] = [
   },
   {
     id: "COM-04",
-    title: "Annonces Web : audienceLabel API visible en liste",
+    title: "Annonces Web : audienceLabel API visible au détail, pas dans la carte compacte",
     run() {
       const page = read("pages/AnnouncementsPage.tsx");
-      const listStart = page.indexOf("items.map");
+      const listStart = page.indexOf("visibleItems.map");
       const detailStart = page.indexOf("announcement-detail");
       assert.notEqual(listStart, -1, "liste Annonces introuvable");
       assert.notEqual(detailStart, -1, "détail Annonces introuvable");
       const listBlock = page.slice(listStart, detailStart);
-      assert.match(
+      const detailBlock = page.slice(detailStart);
+      assert.doesNotMatch(
         listBlock,
+        /row\.audienceLabel/,
+        "la carte compacte Annonces répète encore audienceLabel",
+      );
+      assert.match(
+        detailBlock,
         /audienceLabel/,
-        "la liste Annonces n'affiche pas audienceLabel (présent seulement au détail)",
+        "le panneau détail Annonces n'affiche pas audienceLabel API",
       );
     },
   },

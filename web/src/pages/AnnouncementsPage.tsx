@@ -601,22 +601,15 @@ export function AnnouncementsPage() {
                 onClick={() => setSelectedId(row.id)}
               >
                 <p className="truncate font-semibold text-ink">{row.title}</p>
-                {row.excerpt ? <p className="truncate text-xs text-muted">{row.excerpt}</p> : null}
-                <p className="text-xs text-muted">
+                <p className="truncate text-xs text-muted">
                   {isPlatformRow(row)
                     ? row.announcementType === "system"
                       ? "Annonce Somafrik"
                       : "Annonce administrative Somafrik"
                     : "Annonce établissement"}
                   {row.badge ? ` · ${row.badge}` : ""}
+                  {` · ${row.readAt ? "Lu" : "Non lu"}`}
                 </p>
-                <p className="truncate text-xs text-muted">
-                  {row.author || "Expéditeur"} · {formatDisplayDate(row.publishedAt || row.createdAt)}
-                </p>
-                {row.audienceLabel ? (
-                  <p className="truncate text-xs text-muted">{row.audienceLabel}</p>
-                ) : null}
-                <p className="text-xs">{row.readAt ? "Lu" : "Non lu"}</p>
               </button>
             </li>
           ))}

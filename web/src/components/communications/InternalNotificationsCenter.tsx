@@ -11,11 +11,11 @@ import { resolveNotificationDestination } from "../../lib/notificationNavigation
 import { filterCommunicationRows, excerptCommunication } from "../../lib/communicationListFilter";
 import { Card } from "../ui/Card";
 import { Button } from "../ui/Button";
-import { Badge } from "../ui/Badge";
 import { Field, Input } from "../ui/Field";
 import { Modal } from "../ui/Modal";
 import { useToast } from "../ui/Toast";
 import { CommunicationChrome, useCommunicationListQuery } from "./CommunicationChrome";
+import { ExpandableCommunicationCard } from "./ExpandableCommunicationCard";
 
 function formatDateTime(value?: string): string {
   if (!value) return "";
@@ -203,56 +203,49 @@ export function InternalNotificationsCenter() {
         {!loading && !error && visibleRows.length === 0 ? (
           <p className="py-10 text-center text-muted">Aucune notification.</p>
         ) : null}
-        <div className="mt-2 space-y-1">
+        <div className="mt-2 space-y-2">
           {visibleRows.map((row) => (
-            <article
+            <ExpandableCommunicationCard
               key={row.id}
-              className={`rounded-lg border px-3 py-2 ${row.readAt ? "border-line bg-white" : "border-brand/30 bg-brand-50/40"}`}
+              title={row.title}
+              subtitle={`${row.senderName} · ${formatDateTime(row.publishedAt || row.createdAt)}`}
+              badge={row.readAt ? "Lu" : "Non lu"}
+              badgeTone={row.readAt ? "default" : "info"}
+              testID={`notification-card-${row.id}`}
             >
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <h3 className="truncate font-semibold text-ink">{row.title}</h3>
-                    <Badge tone={row.readAt ? "neutral" : "info"}>{row.readAt ? "Lu" : "Non lu"}</Badge>
-                    <Badge tone="neutral">{sourceLabel(row.eventType)}</Badge>
-                  </div>
-                  <p className="mt-0.5 truncate text-sm text-muted">{row.excerpt}</p>
-                  <p className="mt-1 text-xs text-muted">
-                    {row.senderName} · {formatDateTime(row.publishedAt || row.createdAt)}
-                  </p>
-                  {row.attachments?.length ? (
-                    <div className="mt-2 flex flex-wrap gap-2">
-                      {row.attachments.map((attachment) => (
-                        <Button
-                          key={attachment.id}
-                          variant="secondary"
-                          size="sm"
-                          onClick={async () => {
-                            const blob = await internalNotificationsApi.downloadAttachment(
-                              attachment.id,
-                              activeSchoolCode ?? undefined,
-                            );
-                            const href = URL.createObjectURL(blob);
-                            window.open(href, "_blank", "noopener,noreferrer");
-                            setTimeout(() => URL.revokeObjectURL(href), 60_000);
-                          }}
-                        >
-                          {attachment.fileName}
-                        </Button>
-                      ))}
-                    </div>
-                  ) : null}
+              <p className="whitespace-pre-wrap text-sm text-ink">{row.body}</p>
+              <p className="text-xs text-muted">{sourceLabel(row.eventType)}</p>
+              {row.attachments?.length ? (
+                <div className="flex flex-wrap gap-2">
+                  {row.attachments.map((attachment) => (
+                    <Button
+                      key={attachment.id}
+                      variant="secondary"
+                      size="sm"
+                      onClick={async () => {
+                        const blob = await internalNotificationsApi.downloadAttachment(
+                          attachment.id,
+                          activeSchoolCode ?? undefined,
+                        );
+                        const href = URL.createObjectURL(blob);
+                        window.open(href, "_blank", "noopener,noreferrer");
+                        setTimeout(() => URL.revokeObjectURL(href), 60_000);
+                      }}
+                    >
+                      {attachment.fileName}
+                    </Button>
+                  ))}
                 </div>
-                <div className="flex gap-2">
-                  <Button size="sm" variant="secondary" onClick={() => void openNotification(row)}>
-                    {row.readAt ? "Ouvrir" : "Lire"}
-                  </Button>
-                  <Button size="sm" variant="ghost" onClick={() => void archiveNotification(row)}>
-                    Archiver
-                  </Button>
-                </div>
+              ) : null}
+              <div className="flex gap-2">
+                <Button size="sm" variant="secondary" onClick={() => void openNotification(row)}>
+                  {row.readAt ? "Ouvrir" : "Lire"}
+                </Button>
+                <Button size="sm" variant="ghost" onClick={() => void archiveNotification(row)}>
+                  Archiver
+                </Button>
               </div>
-            </article>
+            </ExpandableCommunicationCard>
           ))}
         </div>
         {!loading && !error && cursor ? (

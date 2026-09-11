@@ -16,6 +16,7 @@
     "test": "vitest run",
     "test:parite-l2-red": "npx --yes tsx src/lib/pariteL2Finance.red.ts",
     "test:parite-communication-red": "npx --yes tsx src/lib/pariteCommunication.red.ts",
+    "test:parite-communication-ux": "npx --yes tsx src/lib/pariteCommunicationUx.test.ts",
     "test:parite-l3-pedagogie": "npx --yes tsx src/lib/pariteL3Pedagogy.red.ts",
     "test:watch": "vitest",
     "test:hydration-red": "vitest run --config vitest.hydration.config.ts",

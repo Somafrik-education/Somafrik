@@ -32,6 +32,7 @@ import {
 import { safeLogger } from "../services/safeLogger";
 import { clearStoredSchoolCode } from "../lib/activeSchool";
 import { clearRequestSchoolScope } from "../lib/requestSchoolScope";
+import { createCommunicationUxSmokeSession } from "../lib/communicationUxSmoke";
 import {
   createEffectivePermissionsRefresher,
   planForegroundRefresh,
@@ -368,4 +369,24 @@ export function useAuth() {
   }
 
   return context;
+}
+
+/** Recette UX Communication uniquement — jamais utilisé hors EXPO_PUBLIC_COMMUNICATION_UX_SMOKE=1. */
+export function CommunicationUxSmokeAuthProvider({ children }: { children: React.ReactNode }) {
+  const session = useMemo(() => createCommunicationUxSmokeSession(), []);
+  const value = useMemo<AuthContextValue>(
+    () => ({
+      session,
+      selectedStudentId: null,
+      bootstrapping: false,
+      permissionsBootstrap: "ready",
+      permissionsBootstrapError: null,
+      setSession: () => undefined,
+      setSelectedStudentId: () => undefined,
+      refreshEffectivePermissions: async () => true,
+      logout: () => undefined,
+    }),
+    [session],
+  );
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

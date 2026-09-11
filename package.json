@@ -31,6 +31,7 @@
     "test:parite-l1-ux": "npm --prefix Mobile run test:parite-l1-ux",
     "test:parite-l2-red": "npx --yes tsx web/src/lib/pariteL2Finance.red.ts && npx --yes tsx Mobile/src/lib/pariteL2Finance.red.test.ts",
     "test:parite-communication-red": "npx --yes tsx web/src/lib/pariteCommunication.red.ts && npx --yes tsx Mobile/src/lib/pariteCommunication.red.test.ts",
+    "test:parite-communication-ux": "npx --yes tsx web/src/lib/pariteCommunicationUx.test.ts && npx --yes tsx Mobile/src/lib/pariteCommunicationUx.test.ts",
     "test:parite-l3-pedagogie": "npx --yes tsx web/src/lib/pariteL3Pedagogy.red.ts && npx --yes tsx Mobile/src/lib/pariteL3Pedagogy.red.test.ts",
     "test:v2-domain": "npm --prefix packages/domain test",
     "test:v2-auth": "npm --prefix packages/auth test",
