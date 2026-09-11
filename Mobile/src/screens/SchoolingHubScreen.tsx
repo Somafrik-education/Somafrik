@@ -4,6 +4,7 @@ import { useFocusEffect } from "@react-navigation/native";
 import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "../context/AuthContext";
 import { useAdminData } from "../context/AdminDataContext";
+import ExpandableEntityCard from "../components/ExpandableEntityCard";
 import { canReadRoute, canReadView } from "../domain/security/permissions";
 import { useFloatingTabBarLayout } from "../lib/screenLayout";
 import { useResponsiveLayout } from "../hooks/useResponsiveLayout";
@@ -17,6 +18,7 @@ import {
 } from "../lib/schoolingTruth";
 import { listAcademicYears, type AcademicYearRecord } from "../services/schoolSettingsApi";
 import { scopedClassesForSession } from "../lib/establishment";
+import { nextExclusiveExpandedKey } from "../lib/expandableEntity";
 
 type HubAction = {
   key: string;
@@ -49,6 +51,7 @@ export default function SchoolingHubScreen({ navigation }: any) {
   } = useAdminData();
   const [years, setYears] = useState<AcademicYearRecord[]>([]);
   const [yearsError, setYearsError] = useState<string | null>(null);
+  const [expandedActionKey, setExpandedActionKey] = useState<string | null>(null);
 
   const schoolCode = String(session?.school?.code ?? session?.user?.schoolCode ?? "");
   const currentSchool =
@@ -224,22 +227,29 @@ export default function SchoolingHubScreen({ navigation }: any) {
 
       <Text style={styles.section}>{SCOLARITE_COPY.actions}</Text>
       {actions.map((action) => (
-        <TouchableOpacity
+        <ExpandableEntityCard
           key={action.key}
-          style={styles.actionCard}
-          accessibilityRole="button"
-          accessibilityLabel={action.label}
-          onPress={action.onPress}
+          title={action.label}
+          subtitle=""
+          badge=""
+          testID={`schooling-action-${action.key}`}
+          expanded={expandedActionKey === action.key}
+          onExpandedChange={() => setExpandedActionKey((current) => nextExclusiveExpandedKey(current, action.key))}
         >
-          <View style={styles.actionIcon}>
-            <Ionicons name={action.icon} size={22} color="#2563EB" />
-          </View>
-          <View style={styles.actionCopy}>
-            <Text style={styles.actionTitle}>{action.label}</Text>
+          <View style={styles.actionDetail}>
+            <Ionicons name={action.icon} size={18} color="#2563EB" />
             <Text style={styles.actionDescription}>{action.description}</Text>
           </View>
-          <Ionicons name="chevron-forward" size={18} color="#94A3B8" />
-        </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.openButton}
+            accessibilityRole="button"
+            accessibilityLabel={`${SCOLARITE_COPY.openHubAction} ${action.label}`}
+            testID={`schooling-action-open-${action.key}`}
+            onPress={action.onPress}
+          >
+            <Text style={styles.openButtonText}>{SCOLARITE_COPY.openHubAction}</Text>
+          </TouchableOpacity>
+        </ExpandableEntityCard>
       ))}
     </ScrollView>
   );
@@ -282,28 +292,16 @@ const styles = StyleSheet.create({
     padding: 12,
   },
   alertText: { fontSize: 14, fontWeight: "700", color: "#92400E" },
-  actionCard: {
+  actionDetail: { flexDirection: "row", alignItems: "flex-start", gap: 8 },
+  actionDescription: { flex: 1, fontSize: 13, fontWeight: "500", color: "#64748B" },
+  openButton: {
     minHeight: MIN_TOUCH_TARGET_DP,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-    marginBottom: 10,
-    borderRadius: 18,
-    backgroundColor: "#FFFFFF",
-    borderWidth: 1,
-    borderColor: "#E2E8F0",
-    paddingVertical: 14,
-    paddingHorizontal: 14,
-  },
-  actionIcon: {
-    width: 44,
-    height: 44,
-    borderRadius: 14,
+    borderRadius: 12,
     backgroundColor: "#EFF6FF",
     alignItems: "center",
     justifyContent: "center",
+    paddingHorizontal: 12,
+    marginTop: 10,
   },
-  actionCopy: { flex: 1, minWidth: 0 },
-  actionTitle: { fontSize: 16, fontWeight: "800", color: "#0F172A" },
-  actionDescription: { marginTop: 2, fontSize: 13, fontWeight: "500", color: "#64748B" },
+  openButtonText: { color: "#1D4ED8", fontWeight: "800" },
 });

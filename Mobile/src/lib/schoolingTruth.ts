@@ -15,6 +15,9 @@ export const SCOLARITE_COPY = {
   indicators: "Indicateurs",
   actions: "Actions",
   administration: "Administration de l'établissement",
+  openClassStudents: "Voir les élèves",
+  openStudentFiche: "Ouvrir la fiche",
+  openHubAction: "Ouvrir",
 } as const;
 
 type ClassLike = {

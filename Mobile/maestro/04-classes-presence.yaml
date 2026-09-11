@@ -18,6 +18,8 @@ appId: com.somafrik.app
           id: "class-card-.*"
 - tapOn:
     id: "class-card-.*"
+- tapOn:
+    id: "class-open-students-.*"
 - extendedWaitUntil:
     visible:
       id: "students-screen"
@@ -29,6 +31,8 @@ appId: com.somafrik.app
           id: "students-list"
 - tapOn:
     id: "student-row-.*"
+- tapOn:
+    id: "student-open-fiche-.*"
 - extendedWaitUntil:
     visible:
       id: "student-detail-screen"

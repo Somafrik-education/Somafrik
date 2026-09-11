@@ -580,8 +580,46 @@ function classCardTestId(className) {
   return `${CLASSES_STUDENT_TEST_IDS.classCardPrefix}${slugifyClassName(className)}`;
 }
 
+function classOpenStudentsTestId(className) {
+  return `class-open-students-${slugifyClassName(className)}`;
+}
+
 function studentRowTestId(studentId) {
   return `${CLASSES_STUDENT_TEST_IDS.studentRowPrefix}${studentId}`;
+}
+
+function studentOpenFicheTestId(studentId) {
+  return `student-open-fiche-${studentId}`;
+}
+
+async function openClassStudentsFromCard(page, className) {
+  const classCardLocator = page.locator(testIdSelector(classCardTestId(className)));
+  if ((await classCardLocator.count()) > 0) {
+    await classCardLocator.first().click();
+  } else {
+    await page.getByText(className, { exact: true }).first().click();
+  }
+  const openLocator = page.locator(testIdSelector(classOpenStudentsTestId(className)));
+  if ((await openLocator.count()) > 0) {
+    await openLocator.first().click();
+    return;
+  }
+  await page.getByText("Voir les élèves", { exact: true }).first().click();
+}
+
+async function openStudentFicheFromRow(page, studentId, studentLastName) {
+  const studentRowLocator = page.locator(testIdSelector(studentRowTestId(studentId)));
+  if ((await studentRowLocator.count()) === 0) {
+    await page.getByText(studentLastName, { exact: false }).first().click();
+  } else {
+    await studentRowLocator.first().click();
+  }
+  const openLocator = page.locator(testIdSelector(studentOpenFicheTestId(studentId)));
+  if ((await openLocator.count()) > 0) {
+    await openLocator.first().click();
+    return;
+  }
+  await page.getByText("Ouvrir la fiche", { exact: true }).first().click();
 }
 
 function classBoxValid(box) {
@@ -906,11 +944,7 @@ async function assertClassesStudentJourneyUi(page, fixtures, viewport, results) 
     true,
   );
 
-  if ((await classCardLocator.count()) > 0) {
-    await classCardLocator.first().click();
-  } else {
-    await page.getByText(fixtures.className, { exact: true }).first().click();
-  }
+  await openClassStudentsFromCard(page, fixtures.className);
   await Promise.race([
     page.waitForSelector(testIdSelector(CLASSES_STUDENT_TEST_IDS.studentsScreen), {
       state: "visible",
@@ -958,12 +992,7 @@ async function assertClassesStudentJourneyUi(page, fixtures, viewport, results) 
     rowAboveTabBar,
   );
 
-  const studentRowLocator = page.locator(testIdSelector(studentRowId));
-  if ((await studentRowLocator.count()) === 0) {
-    await page.getByText(fixtures.studentLastName, { exact: false }).first().click();
-  } else {
-    await studentRowLocator.click();
-  }
+  await openStudentFicheFromRow(page, fixtures.studentId, fixtures.studentLastName);
   await Promise.race([
     page.waitForSelector(testIdSelector(CLASSES_STUDENT_TEST_IDS.studentDetailScreen), {
       state: "visible",
@@ -1140,13 +1169,7 @@ async function navigateToStudentDetail(page, fixtures) {
   await openClassesTab(page);
   await page.waitForTimeout(1200);
 
-  const classCardId = classCardTestId(fixtures.className);
-  const classCardLocator = page.locator(testIdSelector(classCardId));
-  if ((await classCardLocator.count()) > 0) {
-    await classCardLocator.first().click();
-  } else {
-    await page.getByText(fixtures.className, { exact: true }).first().click();
-  }
+  await openClassStudentsFromCard(page, fixtures.className);
 
   await Promise.race([
     page.waitForSelector(testIdSelector(CLASSES_STUDENT_TEST_IDS.studentsScreen), {
@@ -1159,13 +1182,7 @@ async function navigateToStudentDetail(page, fixtures) {
     }),
   ]);
 
-  const studentRowId = studentRowTestId(fixtures.studentId);
-  const studentRowLocator = page.locator(testIdSelector(studentRowId));
-  if ((await studentRowLocator.count()) === 0) {
-    await page.getByText(fixtures.studentLastName, { exact: false }).first().click();
-  } else {
-    await studentRowLocator.click();
-  }
+  await openStudentFicheFromRow(page, fixtures.studentId, fixtures.studentLastName);
 
   await Promise.race([
     page.waitForSelector(testIdSelector(CLASSES_STUDENT_TEST_IDS.studentDetailScreen), {
@@ -1533,13 +1550,7 @@ async function openClassStudentsList(page, className) {
   await openClassesTab(page);
   await page.waitForTimeout(1200);
 
-  const classCardId = classCardTestId(className);
-  const classCardLocator = page.locator(testIdSelector(classCardId));
-  if ((await classCardLocator.count()) > 0) {
-    await classCardLocator.first().click();
-  } else {
-    await page.getByText(className, { exact: true }).first().click();
-  }
+  await openClassStudentsFromCard(page, className);
 
   const startedAt = Date.now();
   await Promise.race([

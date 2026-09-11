@@ -13,6 +13,7 @@ const paymentsScreen = read("screens/PaymentsScreen.tsx");
 const receiptCard = read("components/PaymentReceiptCard.tsx");
 const unpaidScreen = read("screens/UnpaidScreen.tsx");
 const expandableCard = read("components/ExpandableFinanceCard.tsx");
+const entityCard = read("components/ExpandableEntityCard.tsx");
 
 // Maquette Mobile v7 : résumé financier en deux colonnes, replié à 360 dp.
 assert.match(paymentsScreen, /useWindowDimensions/);
@@ -24,7 +25,8 @@ assert.equal(financeSummaryColumns(430), 2);
 
 // Paiements récents : résumé compact, détails et actions uniquement au dépliage.
 assert.match(receiptCard, /ExpandableFinanceCard/);
-assert.match(expandableCard, /accessibilityState/);
+assert.match(expandableCard, /ExpandableEntityCard/);
+assert.match(entityCard, /accessibilityState/);
 assert.match(receiptCard, /Référence/);
 assert.match(receiptCard, /Moyen/);
 assert.match(receiptCard, /Libellés/);
