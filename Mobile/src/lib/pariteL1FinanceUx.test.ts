@@ -40,6 +40,10 @@ assert.doesNotMatch(unpaidScreen, />Montant payé</);
 assert.match(unpaidScreen, /Reste dû/);
 assert.match(unpaidScreen, /Échéance/);
 
+const studentPayments = read("screens/StudentPaymentsScreen.tsx");
+assert.match(studentPayments, /actions=\{[\s\S]*PaymentCancelControls/);
+assert.doesNotMatch(studentPayments, /<PaymentReceiptCard[\s\S]*?\/>\s*<PaymentCancelControls/);
+
 // Une synthèse ne doit jamais additionner des monnaies différentes sous une seule devise.
 const mixed = normalizeUnpaidLedger(
   {

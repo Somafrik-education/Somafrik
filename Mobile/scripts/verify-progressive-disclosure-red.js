@@ -1,13 +1,14 @@
 #!/usr/bin/env node
 /**
- * Preuve Lot 0 : PD-01…PD-07 encore ROUGES.
+ * Preuve lots restants : PD-01…PD-04, PD-06, PD-07 encore ROUGES.
+ * PD-05 (Finance élève) est GREEN — voir progressiveDisclosureUx.test.ts.
  * Exit 0 seulement si tous les identifiants attendus sont en FAIL.
  */
 const { spawnSync } = require("node:child_process");
 const path = require("node:path");
 
 const mobileRoot = path.join(__dirname, "..");
-const EXPECTED = ["PD-01", "PD-02", "PD-03", "PD-04", "PD-05", "PD-06", "PD-07"];
+const EXPECTED = ["PD-01", "PD-02", "PD-03", "PD-04", "PD-06", "PD-07"];
 
 const result = spawnSync("npx", ["--yes", "tsx", "src/lib/progressiveDisclosure.red.test.ts"], {
   cwd: mobileRoot,

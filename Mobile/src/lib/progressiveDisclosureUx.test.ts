@@ -52,6 +52,14 @@ assert.match(paymentsScreen, /actions=\{<PaymentCancelControls/);
 const unpaidScreen = read("screens/UnpaidScreen.tsx");
 assert.match(unpaidScreen, /ExpandableFinanceCard/);
 
+const studentPayments = read("screens/StudentPaymentsScreen.tsx");
+assert.match(studentPayments, /actions=\{[\s\S]*PaymentCancelControls/);
+assert.doesNotMatch(
+  studentPayments,
+  /<PaymentReceiptCard[\s\S]*?\/>\s*<PaymentCancelControls/,
+  "PD-05 : l'annulation ne doit plus être un frère du reçu",
+);
+
 const classesScreen = read("screens/ClassesScreen.tsx");
 assert.match(classesScreen, /ExpandableEntityCard/);
 assert.match(classesScreen, /expandedClassKey/);
