@@ -15,6 +15,8 @@
     "lint": "eslint . --ext .ts,.tsx",
     "test": "vitest run",
     "test:parite-l2-red": "npx --yes tsx src/lib/pariteL2Finance.red.ts",
+    "test:parite-communication-red": "npx --yes tsx src/lib/pariteCommunication.red.ts",
+    "test:parite-communication-ux": "vitest run src/lib/pariteCommunicationUx.test.ts",
     "test:parite-l3-pedagogie": "npx --yes tsx src/lib/pariteL3Pedagogy.red.ts",
     "test:l308-red": "vitest run src/components/payments/QuickPaymentModal.l308.studentSelector.test.tsx src/lib/financeL308PaymentStudent.parity.test.ts",
     "test:watch": "vitest",

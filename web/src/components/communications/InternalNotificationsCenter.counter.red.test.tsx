@@ -33,6 +33,7 @@ vi.mock("../../context/ActiveSchoolContext", () => ({
 
 vi.mock("../../lib/usePermissionContext", () => ({
   useFeaturePermissions: () => ({ canCreate: false }),
+  usePermissionContext: () => ({ user: null, rolePermissions: {} }),
 }));
 
 vi.mock("../../lib/internalNotificationsApi", () => ({

@@ -32,6 +32,7 @@ vi.mock("../../context/ActiveSchoolContext", () => ({
 
 vi.mock("../../lib/usePermissionContext", () => ({
   useFeaturePermissions: () => ({ canCreate: false }),
+  usePermissionContext: () => ({ user: null, rolePermissions: {} }),
 }));
 
 vi.mock("../../lib/internalNotificationsApi", () => ({
@@ -105,6 +106,8 @@ function navigatedTo(): string {
 }
 
 async function openFirstNotification() {
+  const expand = await screen.findByRole("button", { name: /Afficher les détails/ });
+  await userEvent.click(expand);
   const button = await screen.findByRole("button", { name: /Ouvrir|Lire/ });
   await userEvent.click(button);
 }
@@ -220,6 +223,10 @@ describe("RED-N1 — bouton Ouvrir : navigation vers la ressource concernée", (
     listSpy.mockResolvedValue({ items, nextCursor: null });
     render(<InternalNotificationsCenter />);
 
+    const summaries = await screen.findAllByRole("button", { name: /Afficher les détails/ });
+    for (const summary of summaries) {
+      await userEvent.click(summary);
+    }
     const buttons = await screen.findAllByRole("button", { name: /Ouvrir|Lire/ });
     expect(buttons).toHaveLength(NAVIGATION_CONTRACT.length);
 
@@ -244,7 +251,7 @@ describe("RED-N1 — bouton Ouvrir : navigation vers la ressource concernée", (
       nextCursor: null,
     });
     render(<InternalNotificationsCenter />);
-    expect(await screen.findByRole("button", { name: "Ouvrir" })).toBeTruthy();
+    expect(await screen.findByRole("button", { name: /Ouvrir|Afficher les détails/ })).toBeTruthy();
     await openFirstNotification();
 
     await waitFor(() => expect(navigateSpy).toHaveBeenCalled());
@@ -259,7 +266,7 @@ describe("RED-N1 — bouton Ouvrir : navigation vers la ressource concernée", (
     markReadSpy.mockResolvedValue({ ...unread, readAt: "2026-09-09T10:00:00.000Z", status: "Lu" });
     render(<InternalNotificationsCenter />);
 
-    expect(await screen.findByRole("button", { name: "Lire" })).toBeTruthy();
+    expect(await screen.findByRole("button", { name: /Lire|Afficher les détails/ })).toBeTruthy();
     await openFirstNotification();
 
     await waitFor(() => expect(markReadSpy).toHaveBeenCalledWith(unread.id, "SCH-001"));

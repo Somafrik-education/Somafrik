@@ -156,7 +156,8 @@ describe("DEEPLINK-JOURNEY — notification → Ouvrir → page destination → 
 
     renderJourney();
     await screen.findByText("Notification");
-    await userEvent.click(screen.getByRole("button", { name: "Ouvrir" }));
+    await userEvent.click(screen.getByRole("button", { name: /Afficher les détails/ }));
+    await userEvent.click(await screen.findByRole("button", { name: "Ouvrir" }));
 
     await waitFor(() => expect(listMessages).toHaveBeenCalledWith("conv-2", "", "SCH-001"));
     const thread = await screen.findByTestId("messages-thread");
@@ -239,7 +240,8 @@ describe("DEEPLINK-JOURNEY — notification → Ouvrir → page destination → 
 
     renderJourney();
     await screen.findByText("Notification");
-    await userEvent.click(screen.getByRole("button", { name: "Ouvrir" }));
+    await userEvent.click(screen.getByRole("button", { name: /Afficher les détails/ }));
+    await userEvent.click(await screen.findByRole("button", { name: "Ouvrir" }));
 
     const selected = await screen.findByTestId("planning-replacement-selected");
     expect(selected).toHaveAttribute("data-replacement-id", "rep-9");
