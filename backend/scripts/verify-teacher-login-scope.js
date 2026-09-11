@@ -83,7 +83,9 @@ function assertNotesWebUsesSessionAssignments() {
   assert.match(gradeGrid, /async function saveAll\(/);
   assert.match(gradeGrid, /await onSave\(/);
   assert.match(gradeGrid, /saving/);
-  assert.match(gradeGrid, /Enregistrement…/);
+  assert.match(gradeGrid, /PEDAGOGY_COPY\.saving/);
+  const pedagogyCopy = fs.readFileSync(path.join(ROOT, "web/src/lib/pedagogyParityContract.ts"), "utf8");
+  assert.match(pedagogyCopy, /saving:\s*"Enregistrement…"/);
   assert.match(gradeGrid, /onSave:\s*\(grades: StudentGrade\[\]\)\s*=>\s*Promise<void>/);
   assert.doesNotMatch(gradeGrid, /onChange\(changed\)/);
   const saveAllBlock = gradeGrid.match(/async function saveAll\(\) \{[\s\S]*?\n  \}/);
