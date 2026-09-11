@@ -831,7 +831,7 @@ export function GradesEvaluationsPage() {
             )
           ) : null}
 
-          {tab === "matiere" ? (
+          {tab === "cours" ? (
             selectedChild ? (
               <ParentChildGradesPanel
                 student={selectedChild}
@@ -844,7 +844,7 @@ export function GradesEvaluationsPage() {
             ) : (
               <EmptyState
                 title="Aucun enfant sélectionné"
-                description="Choisissez un enfant pour consulter les moyennes par matière."
+                description="Choisissez un enfant pour consulter les moyennes par cours."
               />
             )
           ) : null}
