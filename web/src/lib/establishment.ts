@@ -3,7 +3,7 @@ import { isActiveUserAccount, normalize } from "./format";
 import { dedupeClassesByName } from "./classRules";
 import { COUNTRY_ADMIN_ROLE, isSuperAdminRole } from "./orgHierarchy";
 import { scopedSchools } from "./scope";
-import { resolveSessionSchoolIdentity } from "./schoolCanonicalIdentity";
+import { isLegacySchoolCode, resolveSessionSchoolIdentity } from "./schoolCanonicalIdentity";
 import { projectScopedStudents } from "./studentsScope";
 
 type Row = Record<string, unknown>;
@@ -241,6 +241,7 @@ function scopedByStudentIds(user: SessionUser | null, state: BackOfficeState, ke
  * Un paiement du tenant ne doit pas disparaître lorsque l'élève n'est plus dans
  * le snapshot courant `students`. `payments.schoolCode` est le login_code V2 ;
  * le leftover `session.schoolCode` (CC-YYYY-NNNN) n'est pas une autorité tenant.
+ * Un schoolCode de session non leftover (ex. SCH-001, login V2) reste un tenant valide.
  */
 export function scopedPayments(user: SessionUser | null, state: BackOfficeState): Row[] {
   const schoolCode = user?.schoolCode;
@@ -248,16 +249,19 @@ export function scopedPayments(user: SessionUser | null, state: BackOfficeState)
   if (!schoolCode || schoolCode === "*") return rows;
 
   const canonicalPublicCode = resolveSessionSchoolIdentity(user)?.publicCode;
+  const sessionTenantCode = isLegacySchoolCode(schoolCode) ? "" : normalize(schoolCode);
   const studentIds = new Set(scopedStudents(user, state).map((student) => String(student.id ?? "")).filter(Boolean));
 
   return rows.filter((row) => {
+    const rowCode = normalize(row.schoolCode);
     const sameCanonicalSchool = Boolean(
-      canonicalPublicCode && normalize(row.schoolCode) === normalize(canonicalPublicCode),
+      canonicalPublicCode && rowCode === normalize(canonicalPublicCode),
     );
+    const sameNonLeftoverSessionSchool = Boolean(sessionTenantCode && rowCode === sessionTenantCode);
     const belongsToCurrentStudent = Boolean(
       row.studentId && studentIds.has(String(row.studentId)),
     );
-    return sameCanonicalSchool || belongsToCurrentStudent;
+    return sameCanonicalSchool || sameNonLeftoverSessionSchool || belongsToCurrentStudent;
   });
 }
 
