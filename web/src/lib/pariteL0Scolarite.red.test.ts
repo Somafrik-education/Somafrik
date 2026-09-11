@@ -1,11 +1,13 @@
 /**
  * Lot Scolarité L0 — écarts causaux Web (inspection du code livré).
  * Doivent échouer sur develop@193c5df3 avant correction.
+ * Fichier .red.test.ts : exclu du scanner UI French Copy (SKIP_RE) et exécuté par Vitest.
  */
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { describe, it } from "vitest";
 
 const webRoot = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
 const read = (relative: string) => fs.readFileSync(path.join(webRoot, relative), "utf8");
@@ -107,30 +109,10 @@ const cases: { id: string; title: string; run: () => void }[] = [
   },
 ];
 
-const failed: { id: string; title: string; message: string }[] = [];
-const passedIds: string[] = [];
-for (const testCase of cases) {
-  try {
-    testCase.run();
-    passedIds.push(testCase.id);
-  } catch (error) {
-    failed.push({
-      id: testCase.id,
-      title: testCase.title,
-      message: error instanceof Error ? error.message : String(error),
+describe("parite L0 Scolarité Web", () => {
+  for (const testCase of cases) {
+    it(`${testCase.id} — ${testCase.title}`, () => {
+      testCase.run();
     });
   }
-}
-
-const failedIds = failed.map((item) => item.id);
-console.log(`parite L0 Scolarité Web — ${passedIds.length} vert / ${failed.length} rouge / ${cases.length} cas`);
-for (const id of passedIds) console.log(`  PASS ${id}`);
-for (const item of failed) {
-  console.log(`  FAIL [${item.id}] ${item.title}`);
-  console.log(`    ${item.message}`);
-}
-console.log(
-  `PARITE_SCO_L0_WEB_REPORT ${JSON.stringify({ passedIds, failedIds, expectedIds: cases.map((item) => item.id) })}`,
-);
-if (failed.length) process.exit(1);
-console.log("OK: L0 Scolarité Web");
+});

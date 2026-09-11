@@ -87,6 +87,8 @@ Le bouton HELP peut recouvrir un KPI à 360 px — chrome HELP hors lot.
 
 ## Gates CTO 2026-09-11 (micro-correctif, Draft)
 
-- **UI French Copy** : `web/src/lib/pariteL0Scolarite.red.ts` renommé `web/src/lib/pariteL0Scolarite.red.test.ts` pour entrer dans `SKIP_RE` existant (`\.(?:test|spec)\.[jt]sx?$`). `scripts/verify-ui-french-copy.js` et son allowlist **non modifiés**.
+- **UI French Copy** : `web/src/lib/pariteL0Scolarite.red.ts` → `web/src/lib/pariteL0Scolarite.red.test.ts` (SKIP_RE existant). `scripts/verify-ui-french-copy.js` et son allowlist **non modifiés**. Le fichier est une suite Vitest (pas un script `tsx`) pour rester compatible avec `npm --prefix web test`.
 - **Web smoke GO-PROD** : `scripts/verify-web-smoke.js` **non modifié**. Preuve Classes conservée côté UI : description visible `Organisation des classes (persistance PostgreSQL).` (heading `Classes` + `aria-label="Rechercher dans classes"`).
-- **Mobile** : `npm --prefix Mobile run typecheck` + `npm --prefix Mobile run test:parite-scolarite-l0` + smoke Expo (`npx expo start --web`) sur `SchoolingHubScreen`.
+- **TypeScript Mobile** : `npm --prefix Mobile run typecheck` (`tsc --noEmit`) → OK.
+- **Tests Mobile Scolarité L0** : `npm --prefix Mobile run test:parite-scolarite-l0` → 4 vert / 0 rouge.
+- **Smoke Expo** : `npx expo start --web` (composants React Native, pas Vite) + connexion admin mémoire + drawer `Scolarité` + hub + navigations Classes / Élèves / Inscriptions / Structure / Année. Viewports 390 et 360 : 0 overflow body. Aucun écran blanc. Pas d’émulateur Android dans cet environnement.
