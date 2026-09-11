@@ -36,7 +36,6 @@ export const PD_RED_EXPECTED_IDS = [
   "PD-02",
   "PD-03",
   "PD-04",
-  "PD-05",
   "PD-06",
   "PD-07",
 ] as const;

@@ -100,23 +100,6 @@ const cases: RedCase[] = [
     },
   },
   {
-    id: "PD-05",
-    title: "Paiements élève : annulation via actions du reçu, pas en frère JSX",
-    run() {
-      const screen = read("screens/StudentPaymentsScreen.tsx");
-      assert.match(
-        screen,
-        /actions=\{[\s\S]*PaymentCancelControls/,
-        "PaymentCancelControls n'est pas passé via actions du reçu",
-      );
-      assert.doesNotMatch(
-        screen,
-        /<PaymentReceiptCard[\s\S]*?\/>\s*<PaymentCancelControls/,
-        "PaymentCancelControls reste un frère du reçu (visible sans déplier)",
-      );
-    },
-  },
-  {
     id: "PD-06",
     title: "Bulletins : métriques et PDF uniquement en zone ouverte",
     run() {

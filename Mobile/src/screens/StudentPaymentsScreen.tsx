@@ -220,10 +220,13 @@ export default function StudentPaymentsScreen({ route, navigation }: Partial<Pro
           keyboardShouldPersistTaps="handled"
           ListHeaderComponent={financeHeader}
           renderItem={({ item }) => (
-            <>
-              <PaymentReceiptCard payment={item} studentName={student?.name} currency={catalogCurrency} showItems />
-              <PaymentCancelControls payment={item} onChanged={() => refreshFinance()} />
-            </>
+            <PaymentReceiptCard
+              payment={item}
+              studentName={student?.name}
+              currency={catalogCurrency}
+              showItems
+              actions={<PaymentCancelControls payment={item} onChanged={() => refreshFinance()} />}
+            />
           )}
         />
       )}
