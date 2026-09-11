@@ -17,11 +17,11 @@ import {
 import { studentSubScreenStyles as styles } from "../lib/studentSubScreenLayout";
 import { DATA_TRUTH_TEST_IDS } from "../lib/dataTruth";
 import {
-  canonicalWeightedAverage,
   EVALUATIONS_V2_COPY,
   EVALUATIONS_V2_TEST_IDS,
   notesForStudent,
 } from "../lib/evaluationsV2";
+import { canonicalStudentGeneralAverage } from "../lib/pedagogyAverage";
 import { findStudentByIdentity, sessionStudentAliasKeys } from "../lib/canonicalStudentIdentity";
 
 type Props = NativeStackScreenProps<RootStackParamList, "StudentNotes">;
@@ -30,7 +30,7 @@ export default function StudentNotesScreen({ route, navigation }: Partial<Props>
   const { scrollContentPaddingBottom } = useFloatingTabBarLayout();
   const listContentStyle = [styles.listContent, { paddingBottom: scrollContentPaddingBottom }];
   const { session, selectedStudentId } = useAuth();
-  const { studentsData, notesSnapshot, loadNotes } = useAdminData();
+  const { studentsData, notesSnapshot, loadNotes, schoolCoursesSnapshot, loadSchoolCourses } = useAdminData();
   const studentId = route?.params?.studentId ?? selectedStudentId;
   const studentAliasKeys = sessionStudentAliasKeys({
     role: session?.role,
@@ -42,13 +42,18 @@ export default function StudentNotesScreen({ route, navigation }: Partial<Props>
   useFocusEffect(
     useCallback(() => {
       void loadNotes();
-    }, [loadNotes]),
+      void loadSchoolCourses();
+    }, [loadNotes, loadSchoolCourses]),
   );
 
   const studentNotes = studentAliasKeys.length
     ? notesForStudent(notesSnapshot.data, studentAliasKeys)
     : [];
-  const average = canonicalWeightedAverage(studentNotes);
+  const average = canonicalStudentGeneralAverage(
+    studentNotes,
+    schoolCoursesSnapshot.data,
+    student?.className,
+  );
 
   return (
     <View style={styles.container} testID={STUDENT_SUB_SCREENS_TEST_IDS.notesScreen}>
@@ -76,7 +81,7 @@ export default function StudentNotesScreen({ route, navigation }: Partial<Props>
           {average.available ? `${average.average?.toFixed(1)}/20` : EVALUATIONS_V2_COPY.averageUnavailable}
         </Text>
         <Text style={[styles.summaryMeta, { color: "#DBEAFE" }]}>
-          {average.available ? `Coef. ${average.totalCoefficients}` : "Notes publiées uniquement"}
+          {average.available ? `Coef. cours ${average.totalCourseCoefficients}` : "Notes publiées uniquement"}
         </Text>
       </View>
 
