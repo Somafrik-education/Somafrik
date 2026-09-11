@@ -2,33 +2,14 @@
  * Lot 0 — écarts encore ROUGES (collections hors îlots Finance / Scolarité / Communication).
  *   npx --yes tsx src/lib/progressiveDisclosure.red.test.ts
  *
- * Exit 1 tant que PD-07 échoue. PD-01 à PD-06 sont GREEN.
+ * Contrat clos : plus aucun identifiant PD rouge. PD-01 à PD-07 sont GREEN.
  */
 import assert from "node:assert/strict";
-import fs from "node:fs";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
 import { PD_RED_EXPECTED_IDS } from "./progressiveDisclosureUxContract";
-
-const srcRoot = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
-const read = (relative: string) => fs.readFileSync(path.join(srcRoot, relative), "utf8");
 
 type RedCase = { id: string; title: string; run: () => void };
 
-const cases: RedCase[] = [
-  {
-    id: "PD-07",
-    title: "EDT : enseignant/salle/remplacer hors résumé fermé",
-    run() {
-      const screen = read("screens/TimetableScreen.tsx");
-      assert.match(
-        screen,
-        /ExpandableEntityCard|ExpandableFinanceCard/,
-        "les créneaux n'utilisent pas encore la carte dépliable",
-      );
-    },
-  },
-];
+const cases: RedCase[] = [];
 
 const failed: { id: string; title: string; message: string }[] = [];
 const passedIds: string[] = [];

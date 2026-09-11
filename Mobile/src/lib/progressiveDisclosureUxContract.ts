@@ -30,8 +30,6 @@ export const PD_EVALUATION_COLLAPSED_REQUIRES_PROGRESS = true;
 export const PD_EVALUATION_COLLAPSED_OMITS = ["coefficient", "teacherName", "date"] as const;
 export const PD_EVALUATION_SECONDARY_ACTIONS = ["Modifier", "Valider", "Publier"] as const;
 
-export const PD_RED_EXPECTED_IDS = [
-  "PD-07",
-] as const;
+export const PD_RED_EXPECTED_IDS = [] as const;
 
 export type PdRedId = (typeof PD_RED_EXPECTED_IDS)[number];

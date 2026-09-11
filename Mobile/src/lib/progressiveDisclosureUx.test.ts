@@ -12,6 +12,7 @@ import {
   PD_EVALUATION_PRIMARY_CTA_WHEN_COLLAPSED,
   PD_EVALUATION_SECONDARY_ACTIONS,
   PD_MESSAGES_USE_THREAD_MODAL,
+  PD_RED_EXPECTED_IDS,
   PD_ROLL_CALL_STATUSES_ALWAYS_VISIBLE,
   PD_UX_SPEC_VERSION,
 } from "./progressiveDisclosureUxContract";
@@ -31,6 +32,7 @@ assert.deepEqual([...PD_DEAD_SCREENS], [
   "MenuScreen",
   "PlatformNotificationsScreen",
 ]);
+assert.deepEqual([...PD_RED_EXPECTED_IDS], []);
 
 const entityCard = read("components/ExpandableEntityCard.tsx");
 assert.match(entityCard, /defaultExpanded = false/);
@@ -271,6 +273,46 @@ assert.match(reportCard, /label="Moyenne"/);
 assert.match(reportCard, /label="Rang"/);
 assert.match(reportCard, /label="Publié le"/);
 assert.match(reportCard, /openPdf\(card\.studentId, period\)/);
+
+const timetableScreen = read("screens/TimetableScreen.tsx");
+assert.match(timetableScreen, /ExpandableEntityCard/, "PD-07 : créneaux = ExpandableEntityCard");
+assert.match(timetableScreen, /expandedSlotId/);
+assert.match(timetableScreen, /nextExclusiveExpandedKey\(current, item\.id\)/);
+assert.doesNotMatch(timetableScreen, /defaultExpanded=\{true\}/);
+assert.doesNotMatch(timetableScreen, /summaryActions=/, "PD-07 : Modifier/Remplacer pas en summaryActions");
+assert.match(timetableScreen, /occurrences\.map\(\(item\) => renderSlotCard\(item\)\)/);
+assert.match(timetableScreen, /items\.map\(\(item\) => renderSlotCard\(item, true\)\)/);
+assert.match(timetableScreen, /testID=\{PLANNING_V2_TEST_IDS\.slotCard\}/);
+assert.match(timetableScreen, /DATA_TRUTH_TEST_IDS\.planningList/);
+const slotCard = sliceFirstCard(timetableScreen, "ExpandableEntityCard");
+assert.ok(slotCard, "PD-07 : carte créneau absente");
+const slotOpening = cardOpening(slotCard);
+assert.match(slotOpening, /item\.courseName/);
+assert.match(slotOpening, /item\.className/);
+assert.match(slotOpening, /item\.classCode/);
+assert.match(slotOpening, /item\.startTime/);
+assert.match(slotOpening, /item\.endTime/);
+assert.doesNotMatch(slotOpening, /teacherName/, "PD-07 : enseignant hors résumé");
+assert.doesNotMatch(slotOpening, /originalTeacherName/, "PD-07 : titulaire hors résumé");
+assert.doesNotMatch(slotOpening, /substituteTeacherName/, "PD-07 : remplaçant hors résumé");
+assert.doesNotMatch(slotOpening, /roomName/, "PD-07 : salle hors résumé");
+assert.doesNotMatch(slotOpening, /openEdit/, "PD-07 : Modifier hors résumé");
+assert.doesNotMatch(slotOpening, /openReplace/, "PD-07 : Remplacer hors résumé");
+assert.doesNotMatch(slotOpening, /Remplacer/, "PD-07 : bouton Remplacer hors résumé");
+assert.doesNotMatch(slotOpening, /usualTeacherUnverified|replacementBadge/, "PD-07 : détails remplacement hors résumé");
+assert.match(slotCard, /Enseignant :/, "PD-07 : enseignant en zone ouverte");
+assert.match(slotCard, /Salle :/, "PD-07 : salle en zone ouverte");
+assert.match(slotCard, /PLANNING_V2_COPY\.usualTeacherUnverified/);
+assert.match(slotCard, /item\.isReplacement/);
+assert.match(slotCard, /canUpdate && !mutationsBlocked/, "PD-07 : Modifier sous garde canUpdate");
+assert.match(slotCard, /openEdit\(item\)/);
+assert.match(slotCard, />Modifier</);
+assert.match(slotCard, /canReplace && !compact && !mutationsBlocked/, "PD-07 : Remplacer hors compact");
+assert.match(slotCard, /openReplace\(item\)/);
+assert.match(slotCard, />Remplacer</);
+assert.match(timetableScreen, /executeMutation/);
+assert.match(timetableScreen, /createInFlightLock/);
+assert.match(timetableScreen, /l1ReadOnly/);
 
 const navigator = read("navigation/AppNavigator.tsx");
 assert.doesNotMatch(navigator, /from ["']\.\.\/screens\/AdminCrudScreen["']/);
