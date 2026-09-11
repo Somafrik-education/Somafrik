@@ -13,7 +13,7 @@ const read = (relative: string) => fs.readFileSync(path.join(webRoot, relative),
 const cases: { id: string; title: string; run: () => void }[] = [
   {
     id: "SCO-01",
-    title: "Hub Scolarité compte les classes canoniques, pas scopedClasses synthétiques",
+    title: "Écran Scolarité compte les classes canoniques, pas scopedClasses synthétiques",
     run() {
       const overview = read("pages/etablissement/EtablissementOverviewPage.tsx");
       assert.match(
@@ -30,7 +30,7 @@ const cases: { id: string; title: string; run: () => void }[] = [
   },
   {
     id: "SCO-02",
-    title: "Hub affiche Scolarité et l'année scolaire active GET /v2/academic-years",
+    title: "Écran Scolarité affiche le titre et l'année scolaire active GET /v2/academic-years",
     run() {
       const overview = read("pages/etablissement/EtablissementOverviewPage.tsx");
       const layout = read("pages/etablissement/MonEtablissementLayout.tsx");
@@ -54,7 +54,7 @@ const cases: { id: string; title: string; run: () => void }[] = [
   },
   {
     id: "SCO-03",
-    title: "Hub : actions Classes, Élèves, Inscriptions, Année, Structure",
+    title: "Écran Scolarité : actions Classes, Élèves, Inscriptions, Année, Structure",
     run() {
       const overview = read("pages/etablissement/EtablissementOverviewPage.tsx");
       assert.match(overview, /\/etablissement\/classes/, "action Classes absente");

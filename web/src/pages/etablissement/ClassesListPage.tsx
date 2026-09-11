@@ -303,10 +303,10 @@ export function ClassesListPage() {
         title="Classes"
         description={
           loading
-            ? "Organisation des classes (PostgreSQL)."
+            ? "Organisation des classes (persistance PostgreSQL)."
             : currentYear
-              ? `Année active : ${currentYear.name}. Organisation des classes (PostgreSQL).`
-              : `${SCOLARITE_COPY.missingYear}. Organisation des classes (PostgreSQL).`
+              ? `Année active : ${currentYear.name}. Organisation des classes (persistance PostgreSQL).`
+              : `${SCOLARITE_COPY.missingYear}. Organisation des classes (persistance PostgreSQL).`
         }
         alerts={
           error ? (
