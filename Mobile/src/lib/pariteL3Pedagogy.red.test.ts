@@ -42,6 +42,24 @@ const cases: { id: string; title: string; run: () => void }[] = [
         /coefficient:/,
         "buildCreateEvaluationPayload n'est pas appelé avec le coefficient saisi (reste 1 silencieux)",
       );
+      assert.match(
+        screen,
+        /parseEvaluationCoefficient\(createCoefficient\)/,
+        "le champ Coefficient n'est pas validé avant l'envoi",
+      );
+      assert.match(screen, /Coefficient invalide/, "aucune erreur affichée si le coefficient est invalide");
+      assert.equal(
+        /Number\(String\(createCoefficient\)[\s\S]*?\) \|\| 1/.test(screen),
+        false,
+        "le coefficient saisi est encore substitué silencieusement par 1",
+      );
+      const lib = read("lib/evaluationsV2.ts");
+      assert.match(lib, /parseEvaluationCoefficient/);
+      assert.equal(
+        /Number\(input\.coefficient \?\? 1\) \|\| 1/.test(lib),
+        false,
+        "buildCreateEvaluationPayload substitue encore 1 silencieusement",
+      );
     },
   },
   {

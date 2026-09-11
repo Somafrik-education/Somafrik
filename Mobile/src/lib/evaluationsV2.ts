@@ -230,6 +230,18 @@ export function stripEvaluationClientScope(payload: Record<string, unknown>): Re
 export const EVALUATIONS_V2_MISSING_TEACHER =
   "Aucun enseignant n'est affecté à cette évaluation. Vérifiez l'affectation du cours.";
 
+export const EVALUATIONS_V2_INVALID_COEFFICIENT =
+  "Le coefficient doit être un nombre fini strictement positif.";
+
+/** Parse le coefficient saisi. Refuse 0, NaN, Infinity et toute substitution silencieuse par 1. */
+export function parseEvaluationCoefficient(raw: unknown): number {
+  const value = typeof raw === "number" ? raw : Number(String(raw ?? "").trim().replace(",", "."));
+  if (!Number.isFinite(value) || !(value > 0)) {
+    throw new Error(EVALUATIONS_V2_INVALID_COEFFICIENT);
+  }
+  return value;
+}
+
 /**
  * Acteur JWT ≠ enseignant pédagogique.
  * Session enseignant : aucun teacherId client (le backend utilise principal.sub).
@@ -264,6 +276,7 @@ export function buildCreateEvaluationPayload(input: CreateEvaluationInput): Reco
   if (!(scale > 0)) {
     throw new Error("Le barème doit être strictement positif.");
   }
+  const coefficient = parseEvaluationCoefficient(input.coefficient);
 
   return stripEvaluationClientScope({
     classId: asText(input.classId),
@@ -276,7 +289,7 @@ export function buildCreateEvaluationPayload(input: CreateEvaluationInput): Reco
     date: asText(input.date),
     scale,
     title: asText(input.title) || undefined,
-    coefficient: Number(input.coefficient ?? 1) || 1,
+    coefficient,
   });
 }
 

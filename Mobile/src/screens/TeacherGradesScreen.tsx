@@ -33,9 +33,11 @@ import {
   ALL_PERIODS_FILTER,
   ALL_STATUSES_FILTER,
   PENDING_VALIDATION_FILTER,
+  EVALUATIONS_V2_INVALID_COEFFICIENT,
   gradeSaveActorScope,
   gradesForEvaluation,
   isDraftOrOpenEvaluationStatus,
+  parseEvaluationCoefficient,
   rosterStudentsForEvaluation,
   selectablePeriods,
   studentApiId,
@@ -248,6 +250,16 @@ export default function TeacherGradesScreen() {
       Alert.alert("Type requis", typesError || "Aucun type d'évaluation actif.");
       return;
     }
+    let coefficient: number;
+    try {
+      coefficient = parseEvaluationCoefficient(createCoefficient);
+    } catch (error) {
+      Alert.alert(
+        "Coefficient invalide",
+        error instanceof Error ? error.message : EVALUATIONS_V2_INVALID_COEFFICIENT,
+      );
+      return;
+    }
     const scale = Number(String(createScale).replace(",", "."));
     try {
       const payload = buildCreateEvaluationPayload({
@@ -260,7 +272,7 @@ export default function TeacherGradesScreen() {
         date: createDate,
         scale,
         title: createTitle || evaluationTypes.find((row) => row.id === createTypeId)?.name,
-        coefficient: Number(String(createCoefficient).replace(",", ".")) || 1,
+        coefficient: coefficient,
       });
       if (teacherCreatePayloadContainsForbiddenFields(payload)) {
         Alert.alert("Requête invalide", "teacherId et statut Validée sont interdits à la création.");
@@ -313,7 +325,7 @@ export default function TeacherGradesScreen() {
     setCreateTypeId(String(evaluation.evaluationTypeId || ""));
     setCreateDate(evaluation.date || formatIsoDate(new Date()));
     setCreateScale(String(evaluation.scale || 20));
-    setCreateCoefficient(String(evaluation.coefficient || 1));
+    setCreateCoefficient(evaluation.coefficient == null ? "1" : String(evaluation.coefficient));
     setCreateTitle(evaluation.title);
     setMode("edit");
   };
@@ -325,6 +337,16 @@ export default function TeacherGradesScreen() {
     }
     if (!canEditEvaluationFields(selected)) {
       Alert.alert("Modification refusée", "Cette évaluation ne peut plus être modifiée.");
+      return;
+    }
+    let coefficient: number;
+    try {
+      coefficient = parseEvaluationCoefficient(createCoefficient);
+    } catch (error) {
+      Alert.alert(
+        "Coefficient invalide",
+        error instanceof Error ? error.message : EVALUATIONS_V2_INVALID_COEFFICIENT,
+      );
       return;
     }
     const scale = Number(String(createScale).replace(",", "."));
@@ -339,7 +361,7 @@ export default function TeacherGradesScreen() {
         date: createDate,
         scale,
         title: createTitle || selected.title,
-        coefficient: Number(String(createCoefficient).replace(",", ".")) || 1,
+        coefficient: coefficient,
       });
       if (teacherCreatePayloadContainsForbiddenFields(payload)) {
         Alert.alert("Requête invalide", "teacherId et statut Validée sont interdits à la modification.");
