@@ -167,7 +167,6 @@ export default function AnnouncementsScreen() {
         }
         renderItem={({ item: announcement }) => {
           const origin = announcementOriginLabel(announcement);
-          const canShowArchive = canArchive && (announcement.source !== "platform" || isSuperadmin);
           return (
             <ExpandableCommunicationCard
               title={announcement.title}
@@ -207,7 +206,7 @@ export default function AnnouncementsScreen() {
                   <Text style={styles.link}>{file.fileName}</Text>
                 </TouchableOpacity>
               ))}
-              {canShowArchive ? (
+              {canArchive && (announcement.source !== "platform" || isSuperadmin) ? (
                 <TouchableOpacity
                   style={[styles.smallDangerAction, archivingId === announcement.id && styles.disabled]}
                   onPress={() => confirmArchive(announcement)}
