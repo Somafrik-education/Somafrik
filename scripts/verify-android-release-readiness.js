@@ -295,16 +295,28 @@ async function main() {
   for (const needle of ["*.jks", "*.keystore", "credentials.json", "*.apk"]) {
     assert.ok(gitignore.includes(needle), `.gitignore doit contenir ${needle}`);
   }
-  const trackedSecrets = spawnSync("git", ["ls-files", "*.jks", "*.keystore", "credentials.json", "Mobile/google-services.json"], {
-    encoding: "utf8",
-    cwd: ROOT,
-  });
-  assert.equal((trackedSecrets.stdout || "").trim(), "", "secrets / google-services.json suivis par git");
+  const trackedSecrets = spawnSync(
+    "git",
+    ["ls-files", "*.jks", "*.keystore", "credentials.json", "*firebase-adminsdk*.json", "*fcm-service-account*.json", "*google-fcm-service-account*.json"],
+    { encoding: "utf8", cwd: ROOT },
+  );
+  assert.equal((trackedSecrets.stdout || "").trim(), "", "secret Android/Firebase privé suivi par git");
+
+  const firebaseClientPath = path.join(MOBILE, "google-services.json");
+  assert.ok(fs.existsSync(firebaseClientPath), "Mobile/google-services.json client Firebase manquant");
+  const firebaseClient = JSON.parse(read(firebaseClientPath));
+  const firebasePackages = (firebaseClient.client || [])
+    .map((client) => client?.client_info?.android_client_info?.package_name)
+    .filter(Boolean);
+  assert.ok(firebasePackages.includes(ANDROID_PACKAGE), `google-services.json ne cible pas ${ANDROID_PACKAGE}`);
+  assert.ok(firebaseClient.project_info?.project_id, "google-services.json project_id manquant");
+  console.log(`PASS AR-FIREBASE-CLIENT package=${ANDROID_PACKAGE} project=${firebaseClient.project_info.project_id}`);
+
   const trackedApk = spawnSync("git", ["ls-files", "*.apk", "*.aab"], { encoding: "utf8", cwd: ROOT });
   assert.equal((trackedApk.stdout || "").trim(), "", "APK/AAB suivis par git");
   const trackedAndroid = spawnSync("git", ["ls-files", "Mobile/android"], { encoding: "utf8", cwd: ROOT });
   assert.equal((trackedAndroid.stdout || "").trim(), "", "Mobile/android/ versionné");
-  console.log("PASS AR-SECRETS aucun keystore/apk/aab/google-services suivi");
+  console.log("PASS AR-SECRETS aucun keystore/apk/aab/service-account suivi ; config Firebase cliente validée");
 
   const lot7 = read(path.join(MOBILE, "scripts", "verify-mobile-release-readiness.js"));
   const ci = read(path.join(ROOT, ".github", "workflows", "ci.yml"));
