@@ -8,8 +8,14 @@
 import { spawn } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
+import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
-import { chromium } from "playwright";
+
+const require = createRequire(import.meta.url);
+const playwrightEntry = require.resolve("playwright", {
+  paths: ["/tmp/pw", path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../node_modules")],
+});
+const { chromium } = require(playwrightEntry);
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const OUT = path.join(ROOT, "docs/audits/evidence");
@@ -46,6 +52,7 @@ const WEB_SESSION = {
     role: "Admin School",
     schoolCode: SCHOOL,
     schoolPublicCode: SCHOOL,
+    schoolId: "11111111-1111-4111-8111-111111111111",
     permissions: ADMIN_PERMISSIONS,
   },
 };
@@ -169,14 +176,38 @@ async function fulfillApi(route) {
   if (pathName.includes("/backoffice/messages/recipients")) {
     return route.fulfill(json({ items: [] }));
   }
+  if (pathName.includes("/backoffice/messages")) {
+    return route.fulfill(json([]));
+  }
+  if (pathName.includes("/backoffice/establishments/") && pathName.endsWith("/academic-config")) {
+    return route.fulfill(json({ schoolCode: SCHOOL }));
+  }
+  if (pathName.includes("/backoffice/establishments/")) {
+    return route.fulfill(json({
+      code: SCHOOL,
+      name: "École recette Communication",
+      city: "Kinshasa",
+      id: "11111111-1111-4111-8111-111111111111",
+    }));
+  }
+  if (pathName.includes("/backoffice/subscription-access")) {
+    return route.fulfill(json({ level: "full", plan: "Actif" }));
+  }
+  if (pathName.includes("/unread-count")) {
+    return route.fulfill(json({ count: 0 }));
+  }
   if (method === "PATCH" || method === "POST") {
     return route.fulfill(json({ ...NOTIFICATION, readAt: "2026-09-11T00:00:00.000Z", status: "Lu" }));
   }
-  return route.fulfill(json({ items: [] }));
+  return route.fulfill(json([]));
 }
 
 function spawnLogged(command, args, options) {
-  const child = spawn(command, args, { ...options, stdio: ["ignore", "pipe", "pipe"] });
+  const child = spawn(command, args, {
+    ...options,
+    stdio: ["ignore", "pipe", "pipe"],
+    detached: true,
+  });
   let output = "";
   const onData = (chunk) => {
     output += chunk.toString();
@@ -229,7 +260,8 @@ async function shot(page, name) {
 
 async function captureWeb(browser) {
   const page = await browser.newPage();
-  await page.route("**/api/**", fulfillApi);
+  await page.route("**/api/auth/**", fulfillApi);
+  await page.route("**/api/backoffice/**", fulfillApi);
   await page.addInitScript((session) => {
     sessionStorage.setItem("somafrik.web.session", JSON.stringify(session));
     sessionStorage.setItem("somafrik.activeSchoolCode", "CD-2026-0001");
@@ -237,24 +269,24 @@ async function captureWeb(browser) {
 
   for (const width of [1440, 1024]) {
     await page.setViewportSize({ width, height: 900 });
-    await page.goto(`http://127.0.0.1:${WEB_PORT}/messages`, { waitUntil: "networkidle" });
-    await page.getByText("Communication").first().waitFor();
+    await page.goto(`http://127.0.0.1:${WEB_PORT}/messages`, { waitUntil: "domcontentloaded" });
+    await page.getByRole("heading", { name: "Communication", level: 2 }).waitFor({ timeout: 45_000 });
     await page.getByTestId("messages-conversation-item").first().click();
-    await page.getByText("Marie sera absente").waitFor();
+    await page.getByTestId("messages-thread").getByText("Marie sera absente").waitFor();
     await shot(page, `communication_web_messages_${width}.png`);
 
-    await page.goto(`http://127.0.0.1:${WEB_PORT}/annonces`, { waitUntil: "networkidle" });
+    await page.goto(`http://127.0.0.1:${WEB_PORT}/annonces`, { waitUntil: "domcontentloaded" });
     await page.getByText("Annonce Somafrik").first().waitFor();
     await shot(page, `communication_web_annonces_${width}_liste.png`);
     await page.locator('[data-testid="announcement-item"]').filter({ hasText: "Annonce Somafrik" }).click();
     await page.getByTestId("announcement-detail").getByText("Tous les utilisateurs Somafrik").waitFor();
     await shot(page, `communication_web_annonces_${width}_detail.png`);
 
-    await page.goto(`http://127.0.0.1:${WEB_PORT}/notifications`, { waitUntil: "networkidle" });
+    await page.goto(`http://127.0.0.1:${WEB_PORT}/notifications`, { waitUntil: "domcontentloaded" });
     await page.getByRole("button", { name: /Afficher les détails/ }).waitFor();
     await shot(page, `communication_web_notifications_${width}_replie.png`);
     await page.getByRole("button", { name: /Afficher les détails/ }).click();
-    await page.getByRole("button", { name: /Lire|Ouvrir/ }).waitFor();
+    await page.getByRole("button", { name: /^Lire$|^Ouvrir$/ }).waitFor();
     await shot(page, `communication_web_notifications_${width}_deplie.png`);
   }
   await page.close();
@@ -264,16 +296,22 @@ async function captureExpo(browser) {
   const page = await browser.newPage();
   for (const width of [360, 390]) {
     await page.setViewportSize({ width, height: 800 });
-    await page.goto(`http://127.0.0.1:${EXPO_PORT}`, { waitUntil: "networkidle" });
+    await page.goto(`http://127.0.0.1:${EXPO_PORT}`, { waitUntil: "domcontentloaded" });
     await page.getByTestId("communication-ux-smoke-banner").waitFor({ timeout: 60_000 });
     await page.getByText("Communication").first().waitFor();
 
     await page.getByRole("button", { name: "Annonces" }).click();
-    await page.getByText("Rentrée Somafrik").waitFor();
+    try {
+      await page.getByText("Rentrée Somafrik").waitFor({ timeout: 20_000 });
+    } catch (error) {
+      await shot(page, `communication_expo_debug_${width}.png`);
+      throw error;
+    }
     await shot(page, `communication_expo_annonces_${width}_replie.png`);
     await page.getByRole("button", { name: /Rentrée Somafrik.*Afficher les détails/ }).click();
     await page.getByText("Tous les utilisateurs Somafrik").waitFor();
-    await page.getByText("Archiver", { exact: false }).waitFor();
+    await page.getByRole("button", { name: /Réunion parents.*Afficher les détails/ }).click();
+    await page.getByRole("button", { name: /Archiver l'annonce Réunion parents/ }).waitFor();
     await shot(page, `communication_expo_annonces_${width}_deplie.png`);
 
     await page.getByRole("button", { name: "Notifications" }).click();
@@ -284,10 +322,11 @@ async function captureExpo(browser) {
     await shot(page, `communication_expo_notifications_${width}_deplie.png`);
 
     await page.getByRole("button", { name: "Messages" }).click();
-    await page.getByText("Parent Kalala").waitFor();
+    await page.getByText("Parent Kalala").first().waitFor();
+    await page.getByText("Conversations").scrollIntoViewIfNeeded();
     await shot(page, `communication_expo_messages_${width}_liste.png`);
     await page.getByRole("button", { name: "Parent Kalala" }).click();
-    await page.getByText("Marie sera absente").waitFor();
+    await page.getByText("Marie sera absente").first().waitFor();
     await shot(page, `communication_expo_messages_${width}_detail.png`);
   }
   await page.close();
@@ -316,7 +355,7 @@ async function main() {
     await waitForOutput(expo, /Web is waiting on|http:\/\/localhost:19017|Bundled/, 180_000);
     await waitHttp(`http://127.0.0.1:${EXPO_PORT}`, 180_000);
 
-    const browser = await chromium.launch({ headless: true });
+    const browser = await chromium.launch({ headless: true, channel: "chrome" });
     try {
       await captureWeb(browser);
       await captureExpo(browser);
@@ -326,6 +365,8 @@ async function main() {
   } finally {
     web.kill("SIGTERM");
     expo.kill("SIGTERM");
+    try { process.kill(-web.pid, "SIGTERM"); } catch { /* already gone */ }
+    try { process.kill(-expo.pid, "SIGTERM"); } catch { /* already gone */ }
   }
 }
 

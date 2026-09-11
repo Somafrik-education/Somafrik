@@ -5,6 +5,7 @@
  */
 import type { LoginResponse } from "../services/api";
 import { getInternalRoleDefaults } from "./internalRoleDefaults";
+import * as SecureStore from "expo-secure-store";
 
 export const COMMUNICATION_UX_SMOKE_SCHOOL = "CD-2026-0001";
 export const COMMUNICATION_UX_SMOKE_USER_ID = "user-smoke-admin";
@@ -27,12 +28,14 @@ export function createCommunicationUxSmokeSession(): LoginResponse {
       role: "school_admin",
       schoolCode: COMMUNICATION_UX_SMOKE_SCHOOL,
       schoolPublicCode: COMMUNICATION_UX_SMOKE_SCHOOL,
+      schoolId: "11111111-1111-4111-8111-111111111111",
       permissions,
     },
     school: {
       code: COMMUNICATION_UX_SMOKE_SCHOOL,
       name: "École recette Communication",
       city: "Kinshasa",
+      id: "11111111-1111-4111-8111-111111111111",
     },
   };
 }
@@ -136,9 +139,24 @@ function pathnameOf(input: RequestInfo | URL) {
 
 let installed = false;
 
+function installCommunicationUxSmokeSecureStore() {
+  const memory = new Map<string, string>();
+  const patched = {
+    getItemAsync: async (key: string) => memory.get(key) ?? null,
+    setItemAsync: async (key: string, value: string) => {
+      memory.set(key, value);
+    },
+    deleteItemAsync: async (key: string) => {
+      memory.delete(key);
+    },
+  };
+  Object.assign(SecureStore, patched);
+}
+
 export function installCommunicationUxSmokeFetch() {
   if (installed || typeof fetch !== "function") return;
   installed = true;
+  installCommunicationUxSmokeSecureStore();
   const original = globalThis.fetch.bind(globalThis);
 
   globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
