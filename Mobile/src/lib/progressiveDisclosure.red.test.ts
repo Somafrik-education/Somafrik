@@ -2,7 +2,7 @@
  * Lot 0 — écarts encore ROUGES (collections hors îlots Finance / Scolarité / Communication).
  *   npx --yes tsx src/lib/progressiveDisclosure.red.test.ts
  *
- * Exit 1 tant que PD-02, PD-03, PD-04, PD-06, PD-07 échouent. PD-01 et PD-05 sont GREEN.
+ * Exit 1 tant que PD-02, PD-04, PD-06, PD-07 échouent. PD-01, PD-03 et PD-05 sont GREEN.
  */
 import assert from "node:assert/strict";
 import fs from "node:fs";
@@ -47,31 +47,6 @@ const cases: RedCase[] = [
           `${action} est encore dans le résumé fermé`,
         );
       }
-    },
-  },
-  {
-    id: "PD-03",
-    title: "Appel : méta arrivée/motif masquée ; les 4 statuts restent visibles",
-    run() {
-      const screen = read("screens/TeacherAttendanceScreen.tsx");
-      const itemStart = screen.indexOf("renderItem={({ item: student })");
-      const roster = itemStart >= 0 ? screen.slice(itemStart) : screen;
-      assert.match(roster, /ATTENDANCE_ACTIONS\.map/, "les 4 statuts d'appel ne doivent pas disparaître");
-      const identityStart = roster.indexOf("studentIdentity");
-      const actionsStart = roster.indexOf("statusActions");
-      const identity = identityStart >= 0 && actionsStart > identityStart
-        ? roster.slice(identityStart, actionsStart)
-        : roster;
-      assert.doesNotMatch(
-        identity,
-        /entry\.arrivalTime/,
-        "l'heure d'arrivée reste exposée dans l'identité par défaut",
-      );
-      assert.doesNotMatch(
-        identity,
-        /entry\.reason/,
-        "le motif reste exposé dans l'identité par défaut",
-      );
     },
   },
   {

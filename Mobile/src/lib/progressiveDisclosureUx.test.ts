@@ -122,6 +122,43 @@ assert.match(messages, /Modal visible=\{Boolean\(selectedConversation\)\}/);
 const attendance = read("screens/TeacherAttendanceScreen.tsx");
 assert.match(attendance, /ATTENDANCE_ACTIONS\.map/);
 assert.match(attendance, /setAttendanceStatus\(student\.id, action\)/);
+assert.match(attendance, /nextExclusiveExpandedKey\(current, student\.id\)/);
+assert.match(attendance, /extraData=\{expandedStudentId\}/);
+assert.match(attendance, /accessibilityState=\{\{ expanded: isExpanded \}\}/);
+assert.doesNotMatch(attendance, /ExpandableEntityCard/, "PD-03 : pas d'accordéon Entity autour de l'appel");
+assert.doesNotMatch(attendance, /getNextStatus/);
+assert.match(attendance, /statusAction:[\s\S]*minHeight:\s*MIN_TOUCH_TARGET_DP/);
+assert.match(attendance, /statusAction:[\s\S]*minWidth:\s*MIN_TOUCH_TARGET_DP/);
+const attendanceRosterStart = attendance.indexOf("renderItem={({ item: student })");
+const attendanceRoster = attendanceRosterStart >= 0 ? attendance.slice(attendanceRosterStart) : attendance;
+const identityStart = attendanceRoster.indexOf("style={styles.studentIdentity}");
+const identityEnd = attendanceRoster.indexOf("</TouchableOpacity>", identityStart);
+const attendanceIdentity = identityStart >= 0 && identityEnd > identityStart
+  ? attendanceRoster.slice(identityStart, identityEnd)
+  : "";
+assert.ok(attendanceIdentity, "PD-03 : zone identité élève absente");
+assert.match(attendanceIdentity, /nextExclusiveExpandedKey\(current, student\.id\)/);
+assert.doesNotMatch(attendanceIdentity, /entry\.arrivalTime/, "PD-03 : arrivée hors résumé");
+assert.doesNotMatch(attendanceIdentity, /entry\.reason/, "PD-03 : motif hors résumé");
+assert.doesNotMatch(attendanceIdentity, /sourceLabel/, "PD-03 : source hors résumé");
+assert.doesNotMatch(attendanceIdentity, /student\.matricule/, "PD-03 : matricule hors résumé");
+const detailStart = attendanceRoster.indexOf("styles.studentDetail");
+const actionsStart = attendanceRoster.indexOf("statusActions");
+const attendanceDetail = detailStart >= 0 && actionsStart > detailStart
+  ? attendanceRoster.slice(detailStart, actionsStart)
+  : "";
+assert.match(attendanceDetail, /student\.matricule/);
+assert.match(attendanceDetail, /entry\.arrivalTime/);
+assert.match(attendanceDetail, /entry\.reason/);
+assert.match(attendanceDetail, /sourceLabel/);
+const attendanceActions = actionsStart >= 0 ? attendanceRoster.slice(actionsStart, attendanceRoster.indexOf("ListFooterComponent")) : "";
+assert.match(attendanceActions, /ATTENDANCE_ACTIONS\.map/);
+assert.match(attendanceActions, /setAttendanceStatus\(student\.id, action\)/);
+assert.doesNotMatch(
+  attendanceActions,
+  /setExpandedStudentId|nextExclusiveExpandedKey/,
+  "PD-03 : un bouton P/A/R/J ne bascule pas le détail",
+);
 
 const navigator = read("navigation/AppNavigator.tsx");
 assert.doesNotMatch(navigator, /from ["']\.\.\/screens\/AdminCrudScreen["']/);

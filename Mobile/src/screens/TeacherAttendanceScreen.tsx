@@ -28,6 +28,8 @@ import {
   type AttendanceClassIdentity,
 } from "../lib/attendanceClassIdentity";
 import { overlayPresenceOutboxOnAttendance, applyOutboxReadToRollCall, outboxMatchesAttendanceClass } from "../lib/attendanceOffline";
+import { nextExclusiveExpandedKey } from "../lib/expandableEntity";
+import { SCOLARITE_COPY } from "../lib/schoolingTruth";
 import { savePresences } from "../services/api";
 import { clearConfirmedAttendanceDirty } from "../lib/attendanceDraft";
 import {
@@ -137,6 +139,7 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
     [session, scopeState],
   );
   const [selectedClass, setSelectedClass] = useState<AttendanceClassIdentity | null>(null);
+  const [expandedStudentId, setExpandedStudentId] = useState<string | null>(null);
   const [savedCalls, setSavedCalls] = useState<SavedCall[]>([]);
   const [auditLog, setAuditLog] = useState<string[]>([]);
   const [attendance, setAttendance] = useState<Record<string, RollCallEntry>>({});
@@ -160,6 +163,10 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
   useEffect(() => {
     setAttendance({});
   }, [resourceScopeKey]);
+
+  useEffect(() => {
+    setExpandedStudentId(null);
+  }, [selectedClass]);
 
   useEffect(() => {
     let cancelled = false;
@@ -583,10 +590,6 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
           ) : null}
           {assignedClasses.map((classRef) => {
             const rows = filterStudentsByClassIdentity(classStudents, classRef, classesData);
-            const classCourses = assignmentsForClassIdentity(assignments, classRef).map((assignment) =>
-              String(assignment.course ?? ""),
-            );
-            const courseLabel = resolveClassCourseLabel(classCourses);
             const savedCount = todayCallGroups.filter((call) => classNameMatches(call.className, classRef.className)).length;
             return (
               <TouchableOpacity
@@ -603,12 +606,7 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
                 </View>
                 <View style={styles.selectClassText}>
                   <Text style={styles.className}>{classRef.className}</Text>
-                  <Text
-                    testID={classCourses.filter(Boolean).length ? "attendance-courses" : "attendance-courses-fallback"}
-                    style={styles.meta}
-                  >
-                    {rows.length} élève(s) • {courseLabel}
-                  </Text>
+                  <Text style={styles.meta}>{rows.length} élève(s)</Text>
                   <Text style={styles.meta}>{savedCount} appel(s) enregistré(s) aujourd'hui</Text>
                 </View>
                 <Ionicons name="chevron-forward-outline" size={20} color="#CBD5E1" />
@@ -625,6 +623,7 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
       style={styles.container}
       contentContainerStyle={contentStyle}
       data={selectedRows}
+      extraData={expandedStudentId}
       keyExtractor={(student) => student.id}
       keyboardShouldPersistTaps="handled"
       ListHeaderComponent={
@@ -755,13 +754,18 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
         const sourceLabel = outboxUnavailable
           ? ROLL_CALL_COPY.outboxUnavailable
           : rollCallSourceLabel(entry.source);
+        const isExpanded = expandedStudentId === student.id;
         return (
           <View testID={USABILITY_TEST_IDS.attendanceStudent(student.id)} style={styles.studentRow}>
             <TouchableOpacity
               style={styles.studentIdentity}
+              onPress={() =>
+                setExpandedStudentId((current) => nextExclusiveExpandedKey(current, student.id))
+              }
               onLongPress={() => canOpenStudentDetail && navigation.navigate("StudentDetail", { studentId: student.id })}
               accessibilityRole="button"
-              accessibilityLabel={`Élève ${student.name}`}
+              accessibilityState={{ expanded: isExpanded }}
+              accessibilityLabel={`Élève ${student.name}. Statut ${status ?? ROLL_CALL_COPY.unset}. ${isExpanded ? "Masquer" : "Afficher"} les détails`}
               accessibilityHint="Appui long pour ouvrir la fiche"
             >
               <View style={styles.avatar}>
@@ -769,18 +773,12 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
               </View>
               <View style={styles.studentContent}>
                 <Text style={styles.studentName} numberOfLines={3}>{student.name}</Text>
-                <Text style={styles.meta}>
-                  {student.matricule}
-                  {entry.arrivalTime ? ` • arrivée ${entry.arrivalTime}` : ""}
-                  {entry.reason ? ` • ${entry.reason}` : ""}
-                </Text>
                 <Text
                   testID={USABILITY_TEST_IDS.attendanceCurrentStatus(student.id)}
                   accessibilityLabel={`Statut ${student.name}: ${status ?? ROLL_CALL_COPY.unset}`}
                   style={styles.statusLabel}
                 >
                   Statut : {status ?? ROLL_CALL_COPY.unset}
-                  {sourceLabel ? ` • ${sourceLabel}` : ""}
                 </Text>
                 {status ? (
                   <View
@@ -789,7 +787,34 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
                   />
                 ) : null}
               </View>
+              <Ionicons name={isExpanded ? "chevron-up" : "chevron-down"} size={18} color="#64748B" />
             </TouchableOpacity>
+            {isExpanded ? (
+              <View style={styles.studentDetail}>
+                {student.matricule ? (
+                  <Text style={styles.meta}>Matricule : {student.matricule}</Text>
+                ) : null}
+                {entry.arrivalTime ? (
+                  <Text style={styles.meta}>Arrivée : {entry.arrivalTime}</Text>
+                ) : null}
+                {entry.reason ? (
+                  <Text style={styles.meta}>Motif : {entry.reason}</Text>
+                ) : null}
+                {sourceLabel ? (
+                  <Text style={styles.meta}>Source : {sourceLabel}</Text>
+                ) : null}
+                {canOpenStudentDetail ? (
+                  <TouchableOpacity
+                    style={styles.openFiche}
+                    onPress={() => navigation.navigate("StudentDetail", { studentId: student.id })}
+                    accessibilityRole="button"
+                    accessibilityLabel={SCOLARITE_COPY.openStudentFiche}
+                  >
+                    <Text style={styles.openFicheText}>{SCOLARITE_COPY.openStudentFiche}</Text>
+                  </TouchableOpacity>
+                ) : null}
+              </View>
+            ) : null}
             <View style={styles.statusActions}>
               {ATTENDANCE_ACTIONS.map((action) => {
                 const selected = status === action;
@@ -1033,6 +1058,22 @@ const styles = StyleSheet.create({
   studentContent: { flex: 1 },
   studentName: { color: "#0F172A", fontWeight: "900", fontSize: 16 },
   statusLabel: { color: "#334155", fontWeight: "800", marginTop: 4 },
+  studentDetail: {
+    borderTopWidth: 1,
+    borderTopColor: "#E2E8F0",
+    paddingTop: 10,
+    gap: 4,
+  },
+  openFiche: {
+    marginTop: 8,
+    minHeight: MIN_TOUCH_TARGET_DP,
+    borderRadius: 12,
+    backgroundColor: "#E2E8F0",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 12,
+  },
+  openFicheText: { color: "#0F172A", fontWeight: "800" },
   statusActions: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   statusAction: {
     minHeight: MIN_TOUCH_TARGET_DP,
