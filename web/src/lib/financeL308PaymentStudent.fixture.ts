@@ -16,6 +16,10 @@ import {
 } from "./financeStudentIdentity.fixtures";
 
 export const L308_SCHOOL_CODE = SCHOOL_CODE;
+/** leftover JWT historique CC-YYYY-NNNN — jamais une autorité tenant. */
+export const L308_LEFTOVER_SCHOOL_CODE = "CD-2026-0001";
+/** login_code V2 non leftover encore supporté (préprod / fixtures). */
+export const L308_NON_LEFTOVER_SCHOOL_CODE = "SCH-001";
 export const L308_AMOUNT = 25_000;
 export const L308_CURRENCY = "CDF";
 export const L308_METHOD = "Espèces";

@@ -50,6 +50,23 @@ const cases: { id: string; title: string; run: () => void }[] = [
       );
     },
   },
+  {
+    id: "FIN-L3-08-M-UI-SCOPE",
+    title: "le scope de recherche n'utilise jamais un leftover schoolCode en priorité",
+    run() {
+      const controls = read("components/PaymentMutationControls.tsx");
+      assert.match(
+        controls,
+        /resolvePaymentStudentSearchScope/,
+        "schoolScope encore calculé schoolCode || schoolPublicCode — leftover CD-2026-0001 gagne",
+      );
+      assert.doesNotMatch(
+        controls,
+        /trimField\(session\?\.user\?\.schoolCode\)\s*\|\|/,
+        "schoolCode leftover encore évalué avant l'identité canonique",
+      );
+    },
+  },
 ];
 
 let failed = 0;

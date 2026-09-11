@@ -11,11 +11,24 @@ import {
   L308_FOREIGN,
   L308_HOMONYM_A,
   L308_HOMONYM_B,
+  L308_LEFTOVER_SCHOOL_CODE,
+  L308_NON_LEFTOVER_SCHOOL_CODE,
   L308_SCHOOL_CODE,
   l308PickerLabel,
 } from "../../../web/src/lib/financeL308PaymentStudent.fixture";
 import * as enrollment from "./paymentEnrollment";
 import { paymentStudentsFromOptions } from "./paymentEnrollment";
+
+type PaymentSearchScopeSession = {
+  user?: { schoolCode?: string; schoolPublicCode?: string };
+  school?: { code?: string };
+};
+
+function paymentSearchScopeResolver() {
+  return (enrollment as {
+    resolvePaymentStudentSearchScope?: (session: PaymentSearchScopeSession | null) => string;
+  }).resolvePaymentStudentSearchScope;
+}
 
 const cases: { id: string; title: string; run: () => void }[] = [
   {
@@ -66,6 +79,51 @@ const cases: { id: string; title: string; run: () => void }[] = [
       assert.equal(labelA, l308PickerLabel({ name: "Jean Mbala", className: "6ème A", studentCode: L308_HOMONYM_A.studentCode }));
       assert.match(labelB, /5ème B/);
       assert.match(labelB, new RegExp(L308_HOMONYM_B.studentCode));
+    },
+  },
+  {
+    id: "FIN-L3-08-M-LEFTOVER",
+    title: "leftover CD-2026-0001 ne gagne pas contre schoolPublicCode V2",
+    run() {
+      const resolve = paymentSearchScopeResolver();
+      assert.equal(
+        typeof resolve,
+        "function",
+        "PaymentMutationControls prend encore schoolCode leftover avant schoolPublicCode",
+      );
+      const scope = resolve!({
+        user: {
+          schoolCode: L308_LEFTOVER_SCHOOL_CODE,
+          schoolPublicCode: L308_SCHOOL_CODE,
+        },
+      });
+      assert.equal(
+        scope,
+        L308_SCHOOL_CODE,
+        "leftover CC-YYYY-NNNN ne doit pas devenir le filtre de recherche Élève",
+      );
+      const roster = paymentStudentsFromOptions([L308_HOMONYM_A, L308_FOREIGN]);
+      const hits = enrollment.searchPaymentStudents("Mbala", roster, scope);
+      assert.equal(hits.length, 1, "les élèves CD-IN-26-001 doivent rester trouvables");
+      assert.equal(hits[0].id, L308_HOMONYM_A.studentId);
+    },
+  },
+  {
+    id: "FIN-L3-08-M-SCH001",
+    title: "SCH-001 non leftover reste un tenant valide pour la recherche",
+    run() {
+      const resolve = paymentSearchScopeResolver();
+      assert.equal(typeof resolve, "function");
+      const scope = resolve!({ user: { schoolCode: L308_NON_LEFTOVER_SCHOOL_CODE } });
+      assert.equal(scope, L308_NON_LEFTOVER_SCHOOL_CODE);
+      const roster = paymentStudentsFromOptions([
+        { ...L308_HOMONYM_A, schoolCode: L308_NON_LEFTOVER_SCHOOL_CODE },
+        { ...L308_FOREIGN, schoolCode: "SCH-999" },
+      ]);
+      const hits = enrollment.searchPaymentStudents("Mbala", roster, scope);
+      assert.equal(hits.length, 1);
+      assert.equal(hits[0].id, L308_HOMONYM_A.studentId);
+      assert.equal(enrollment.searchPaymentStudents("Intru", roster, scope).length, 0);
     },
   },
 ];
