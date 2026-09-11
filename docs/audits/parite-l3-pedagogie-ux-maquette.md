@@ -33,7 +33,11 @@ Entrée unique **Notes & évaluations** :
 
 ### Carte / ligne évaluation (champs visibles)
 
-Intitulé · Cours · Classe · Période · Date · Coefficient · Enseignant · Statut · progression de saisie (`N/M` notes).
+**Résumé fermé (Mobile, PED-L3-12 amendé 2026-09-11 / DO-047) :** Intitulé · Classe • Cours · Statut · progression de saisie (`N/M`). CTA **Saisir les notes** / **Consulter** visible même carte fermée.
+
+**Zone dépliée :** Période · Date · Barème · Coefficient · Enseignant · **Modifier** / **Valider** / **Publier**.
+
+Web (tableau) : Intitulé · Cours · Classe · Période · Date · Coefficient · Enseignant · Statut · progression `N/M` ; CTA Saisir sur la ligne.
 
 ### Saisie
 
@@ -65,7 +69,7 @@ Viewports de recette : **360 / 768 / 1024 / 1440 px**.
 
 - Cartes, liste compacte, CTA principal évident.
 - Création : Classe/cours (affectations), Période, Type, Date, Barème, **Coefficient**, Titre.
-- Liste : filtres période/statut ; cartes avec les champs du §1.
+- Liste : filtres période/statut ; cartes `ExpandableEntityCard` — résumé = titre, classe • cours, statut, progression `N/M`, CTA Saisir/Consulter ; méta coef/date/enseignant et Modifier/Valider/Publier en zone dépliée.
 - Saisie : roster de la classe (classId, sinon classCode, sinon className).
 - Consultation élève/parent : notes publiées + moyenne pondérée des **coefficients d’évaluation**, jamais le coefficient matière à la place.
 

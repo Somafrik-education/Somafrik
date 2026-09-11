@@ -37,6 +37,7 @@ assert.match(entityCard, /defaultExpanded = false/);
 assert.match(entityCard, /accessibilityState=\{\{ expanded: isExpanded \}\}/);
 assert.match(entityCard, /chevron-up/);
 assert.match(entityCard, /chevron-down/);
+assert.match(entityCard, /summaryActions \? <View style=\{styles\.summaryActions\}>\{summaryActions\}<\/View> : null/);
 assert.match(entityCard, /isExpanded \? <View style=\{styles\.detail\}>\{children\}<\/View> : null/);
 
 const financeCard = read("components/ExpandableFinanceCard.tsx");
@@ -158,6 +159,50 @@ assert.doesNotMatch(
   attendanceActions,
   /setExpandedStudentId|nextExclusiveExpandedKey/,
   "PD-03 : un bouton P/A/R/J ne bascule pas le détail",
+);
+
+const gradesScreen = read("screens/TeacherGradesScreen.tsx");
+assert.match(gradesScreen, /ExpandableEntityCard/, "PD-02 : liste évaluations = ExpandableEntityCard");
+assert.match(gradesScreen, /expandedEvaluationId/);
+assert.match(gradesScreen, /extraData=\{expandedEvaluationId\}/);
+assert.match(gradesScreen, /nextExclusiveExpandedKey\(current, evaluation\.evaluationId\)/);
+assert.doesNotMatch(gradesScreen, /defaultExpanded=\{true\}/);
+assert.match(gradesScreen, /summaryActions=/);
+assert.match(gradesScreen, /function EvaluationSummaryActions/);
+const gradesCard = sliceFirstCard(gradesScreen, "ExpandableEntityCard");
+assert.ok(gradesCard, "PD-02 : carte évaluation absente");
+assert.match(gradesCard, /title=\{evaluation\.title\}/);
+assert.match(gradesCard, /\$\{evaluation\.className\} • \$\{evaluation\.courseName\}/);
+assert.match(gradesCard, /badge=\{evaluation\.status\}/);
+assert.doesNotMatch(
+  /subtitle=\{[\s\S]*?\}/.exec(gradesCard)?.[0] ?? "",
+  /coefficient|teacherName|evaluation\.date/,
+  "PD-02 : coef/enseignant/date hors sous-titre fermé",
+);
+const gradesSummaryStart = gradesScreen.indexOf("function EvaluationSummaryActions");
+const gradesSummary = gradesSummaryStart >= 0
+  ? gradesScreen.slice(gradesSummaryStart, gradesScreen.indexOf("\nfunction ", gradesSummaryStart + 1))
+  : "";
+assert.match(gradesSummary, /PEDAGOGY_COPY\.progress/, "PD-02 : progression dans le résumé fermé");
+assert.match(gradesSummary, /enterGrades/, "PD-02 : Saisir visible carte fermée");
+assert.match(gradesSummary, /consult/, "PD-02 : Consulter visible carte fermée");
+assert.doesNotMatch(gradesSummary, /coefficient/, "PD-02 : coefficient hors résumé");
+assert.doesNotMatch(gradesSummary, /teacherName/, "PD-02 : enseignant hors résumé");
+assert.doesNotMatch(
+  gradesSummary,
+  /editEvaluation|Publier|validate/,
+  "PD-02 : Modifier/Valider/Publier hors résumé fermé",
+);
+assert.match(gradesCard, /evaluation\.coefficient/, "PD-02 : coefficient en zone dépliée");
+assert.match(gradesCard, /evaluation\.teacherName/, "PD-02 : enseignant en zone dépliée");
+assert.match(gradesCard, /evaluation\.date/, "PD-02 : date en zone dépliée");
+assert.match(gradesCard, /PEDAGOGY_COPY\.editEvaluation/, "PD-02 : Modifier uniquement déplié");
+assert.match(gradesCard, /EVALUATIONS_V2_COPY\.validate/, "PD-02 : Valider uniquement déplié");
+assert.match(gradesCard, /Publier/, "PD-02 : Publier uniquement déplié");
+assert.doesNotMatch(
+  gradesCard,
+  /enterGrades|consult/,
+  "PD-02 : Saisir/Consulter via summaryActions, pas dans children",
 );
 
 const navigator = read("navigation/AppNavigator.tsx");

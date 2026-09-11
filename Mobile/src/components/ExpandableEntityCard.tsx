@@ -11,6 +11,7 @@ export type ExpandableEntityCardProps = {
   badge: string;
   badgeTone?: Tone;
   badgeContent?: ReactNode;
+  summaryActions?: ReactNode;
   children: ReactNode;
   testID?: string;
   defaultExpanded?: boolean;
@@ -24,6 +25,7 @@ export default function ExpandableEntityCard({
   badge,
   badgeTone = "default",
   badgeContent,
+  summaryActions,
   children,
   testID,
   defaultExpanded = false,
@@ -77,6 +79,7 @@ export default function ExpandableEntityCard({
         ) : null}
         <Ionicons name={isExpanded ? "chevron-up" : "chevron-down"} size={20} color="#64748B" />
       </TouchableOpacity>
+      {summaryActions ? <View style={styles.summaryActions}>{summaryActions}</View> : null}
       {isExpanded ? <View style={styles.detail}>{children}</View> : null}
     </View>
   );
@@ -117,5 +120,12 @@ const styles = StyleSheet.create({
   badgeWarning: { color: "#A65B00", backgroundColor: "#FFF4D8" },
   badgeDanger: { color: "#B91C1C", backgroundColor: "#FDECEC" },
   badgeContent: { maxWidth: "36%" },
+  summaryActions: {
+    borderTopWidth: 1,
+    borderTopColor: "#D9E1EC",
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    gap: 8,
+  },
   detail: { borderTopWidth: 1, borderTopColor: "#D9E1EC", padding: 14 },
 });

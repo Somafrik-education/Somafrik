@@ -17,6 +17,13 @@ import {
 const srcRoot = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
 const read = (relative: string) => fs.readFileSync(path.join(srcRoot, relative), "utf8");
 
+function sliceFirstCard(source: string, tag: string) {
+  const start = source.indexOf(`<${tag}`);
+  const end = source.indexOf(`</${tag}>`, start);
+  if (start < 0 || end < 0) return "";
+  return source.slice(start, end);
+}
+
 const cases: { id: string; title: string; run: () => void }[] = [
   {
     id: "PED-L3-10",
@@ -64,12 +71,40 @@ const cases: { id: string; title: string; run: () => void }[] = [
   },
   {
     id: "PED-L3-12",
-    title: "Carte évaluation Mobile : coef, enseignant, date, progression",
+    title: "Carte évaluation : progression fermée ; coef, enseignant, date dépliés",
     run() {
       const screen = read("screens/TeacherGradesScreen.tsx");
-      assert.match(screen, /coefficient|Coef/, "coefficient absent des cartes liste");
-      assert.match(screen, /teacherName/, "enseignant absent des cartes liste");
-      assert.match(screen, /\/\s*|note/, "progression de saisie absente ou non affichée en N/M");
+      assert.match(screen, /ExpandableEntityCard/, "la liste évaluations n'utilise pas ExpandableEntityCard");
+      const card = sliceFirstCard(screen, "ExpandableEntityCard");
+      assert.ok(card, "aucune carte Entity évaluations");
+      assert.match(card, /title=\{evaluation\.title\}/, "titre absent du résumé fermé");
+      assert.match(
+        card,
+        /\$\{evaluation\.className\} • \$\{evaluation\.courseName\}/,
+        "classe • cours absent du résumé fermé",
+      );
+      assert.match(card, /badge=\{evaluation\.status\}/, "statut absent du résumé fermé");
+      assert.match(card, /summaryActions=/, "Saisir/Consulter et la progression doivent rester visibles carte fermée");
+      assert.match(screen, /function EvaluationSummaryActions/, "CTA Saisir n'est pas extrait hors children");
+      const summaryFnStart = screen.indexOf("function EvaluationSummaryActions");
+      const summaryFn = summaryFnStart >= 0 ? screen.slice(summaryFnStart, screen.indexOf("\nfunction ", summaryFnStart + 1)) : "";
+      assert.match(summaryFn, /PEDAGOGY_COPY\.progress/, "progression absente du résumé fermé");
+      assert.match(summaryFn, /enterGrades/, "Saisir absent du résumé fermé");
+      assert.match(summaryFn, /consult/, "Consulter absent du résumé fermé");
+      assert.doesNotMatch(summaryFn, /coefficient/, "coefficient encore dans le résumé fermé");
+      assert.doesNotMatch(summaryFn, /teacherName/, "enseignant encore dans le résumé fermé");
+      assert.doesNotMatch(summaryFn, /editEvaluation|Publier|validate/, "actions secondaires encore dans le résumé fermé");
+      assert.match(card, /evaluation\.coefficient/, "coefficient absent de la zone dépliée");
+      assert.match(card, /evaluation\.teacherName/, "enseignant absent de la zone dépliée");
+      assert.match(card, /evaluation\.date/, "date absente de la zone dépliée");
+      assert.match(card, /PEDAGOGY_COPY\.editEvaluation/, "Modifier absent de la zone dépliée");
+      assert.match(card, /EVALUATIONS_V2_COPY\.validate|PEDAGOGY_COPY\.validate/, "Valider absent de la zone dépliée");
+      assert.match(card, /Publier|PEDAGOGY_COPY\.publish/, "Publier absent de la zone dépliée");
+      assert.doesNotMatch(
+        /subtitle=\{[\s\S]*?\}/.exec(card)?.[0] ?? "",
+        /coefficient|teacherName|evaluation\.date/,
+        "coef/enseignant/date encore dans le sous-titre fermé",
+      );
     },
   },
   {

@@ -24,15 +24,13 @@ export const PD_DEAD_SCREENS = [
 ] as const;
 
 /**
- * Cible liste évaluations (amendement PED-L3-12, lot Évaluations — pas ce lot).
- * Progression visible fermée ; date / coefficient / enseignant en zone ouverte.
+ * PED-L3-12 (lot Évaluations) : progression visible fermée ; date / coefficient / enseignant en zone ouverte.
  */
 export const PD_EVALUATION_COLLAPSED_REQUIRES_PROGRESS = true;
 export const PD_EVALUATION_COLLAPSED_OMITS = ["coefficient", "teacherName", "date"] as const;
 export const PD_EVALUATION_SECONDARY_ACTIONS = ["Modifier", "Valider", "Publier"] as const;
 
 export const PD_RED_EXPECTED_IDS = [
-  "PD-02",
   "PD-04",
   "PD-06",
   "PD-07",
