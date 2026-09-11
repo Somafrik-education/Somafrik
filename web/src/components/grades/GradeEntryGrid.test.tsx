@@ -90,7 +90,7 @@ function renderGrid(overrides: {
 }
 
 describe("GradeEntryGrid — saisie brouillon / ouverte / validée", () => {
-  it("Brouillon : saisie active, Enregistrer tout présent, pas de message d'attente", () => {
+  it("Brouillon : saisie active, Enregistrer les notes présent, pas de message d'attente", () => {
     renderGrid({ status: "Brouillon", canEdit: true });
 
     expect(screen.queryByText("En attente de validation")).not.toBeInTheDocument();
@@ -98,7 +98,7 @@ describe("GradeEntryGrid — saisie brouillon / ouverte / validée", () => {
     expect(screen.getByLabelText("Note /20")).not.toBeDisabled();
     expect(screen.getByLabelText("Statut de la note")).not.toBeDisabled();
     expect(screen.queryByRole("button", { name: "Enregistrer" })).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Enregistrer tout" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Enregistrer les notes" })).toBeDisabled();
   });
 
   it("Brouillon + canEdit=false : champs désactivés sans « en attente de validation »", () => {
@@ -108,7 +108,7 @@ describe("GradeEntryGrid — saisie brouillon / ouverte / validée", () => {
     expect(screen.queryByText("Saisie fermée")).not.toBeInTheDocument();
     expect(screen.getByLabelText("Note /20")).toBeDisabled();
     expect(screen.getByLabelText("Statut de la note")).toBeDisabled();
-    expect(screen.queryByRole("button", { name: "Enregistrer tout" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Enregistrer les notes" })).not.toBeInTheDocument();
   });
 
   it("Publiée : saisie fermée, champs désactivés, aucun enregistrement", () => {
@@ -118,7 +118,7 @@ describe("GradeEntryGrid — saisie brouillon / ouverte / validée", () => {
     expect(screen.getByRole("status")).toHaveTextContent("publiée");
     expect(screen.getByLabelText("Note /20")).toBeDisabled();
     expect(screen.getByLabelText("Statut de la note")).toBeDisabled();
-    expect(screen.queryByRole("button", { name: "Enregistrer tout" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Enregistrer les notes" })).not.toBeInTheDocument();
   });
 
   it("Annulée : saisie fermée, champs désactivés, aucun enregistrement", () => {
@@ -128,17 +128,17 @@ describe("GradeEntryGrid — saisie brouillon / ouverte / validée", () => {
     expect(screen.getByRole("status")).toHaveTextContent("annulée");
     expect(screen.getByLabelText("Note /20")).toBeDisabled();
     expect(screen.getByLabelText("Statut de la note")).toBeDisabled();
-    expect(screen.queryByRole("button", { name: "Enregistrer tout" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Enregistrer les notes" })).not.toBeInTheDocument();
   });
 
-  it("Validée : input actif et seul Enregistrer tout est présent", () => {
+  it("Validée : input actif et seul Enregistrer les notes est présent", () => {
     renderGrid({ status: "Validée", canEdit: true });
 
     expect(screen.queryByText("En attente de validation")).not.toBeInTheDocument();
     expect(screen.getByLabelText("Note /20")).not.toBeDisabled();
     expect(screen.getByLabelText("Statut de la note")).not.toBeDisabled();
     expect(screen.queryByRole("button", { name: "Enregistrer" })).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Enregistrer tout" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Enregistrer les notes" })).toBeDisabled();
   });
 
   it("A/B — saisie 14 puis blur : aucun onSave", () => {
@@ -151,7 +151,7 @@ describe("GradeEntryGrid — saisie brouillon / ouverte / validée", () => {
 
     expect(note).toHaveValue(14);
     expect(onSave).not.toHaveBeenCalled();
-    expect(screen.getByRole("button", { name: "Enregistrer tout" })).not.toBeDisabled();
+    expect(screen.getByRole("button", { name: "Enregistrer les notes" })).not.toBeDisabled();
   });
 
   it("C — changement de statut d'absence : reste local, aucun onSave", () => {
@@ -168,12 +168,12 @@ describe("GradeEntryGrid — saisie brouillon / ouverte / validée", () => {
     expect(onSave).not.toHaveBeenCalled();
   });
 
-  it("D — Enregistrer tout appelle onSave une seule fois", async () => {
+  it("D — Enregistrer les notes appelle onSave une seule fois", async () => {
     const { onSave } = renderGrid({ status: "Validée", canEdit: true });
     const note = screen.getByLabelText("Note /20") as HTMLInputElement;
 
     fireEvent.change(note, { target: { value: "14" } });
-    fireEvent.click(screen.getByRole("button", { name: "Enregistrer tout" }));
+    fireEvent.click(screen.getByRole("button", { name: "Enregistrer les notes" }));
 
     await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
     expect(onSave).toHaveBeenCalledWith([
@@ -193,24 +193,24 @@ describe("GradeEntryGrid — saisie brouillon / ouverte / validée", () => {
     const onSave = vi.fn(() => deferred.promise);
     renderGrid({ status: "Validée", canEdit: true, onSave });
     fireEvent.change(screen.getByLabelText("Note /20"), { target: { value: "14" } });
-    fireEvent.click(screen.getByRole("button", { name: "Enregistrer tout" }));
+    fireEvent.click(screen.getByRole("button", { name: "Enregistrer les notes" }));
 
     const pending = await screen.findByRole("button", { name: "Enregistrement…" });
     expect(pending).toBeDisabled();
     fireEvent.click(pending);
     expect(onSave).toHaveBeenCalledTimes(1);
     deferred.resolve();
-    await waitFor(() => expect(screen.getByRole("button", { name: "Enregistrer tout" })).toBeDisabled());
+    await waitFor(() => expect(screen.getByRole("button", { name: "Enregistrer les notes" })).toBeDisabled());
   });
 
   it("F — Promise resolve : drafts effacés, bouton disabled", async () => {
     const { onSave } = renderGrid({ status: "Validée", canEdit: true });
     const note = screen.getByLabelText("Note /20") as HTMLInputElement;
     fireEvent.change(note, { target: { value: "14" } });
-    fireEvent.click(screen.getByRole("button", { name: "Enregistrer tout" }));
+    fireEvent.click(screen.getByRole("button", { name: "Enregistrer les notes" }));
 
     await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
-    await waitFor(() => expect(screen.getByRole("button", { name: "Enregistrer tout" })).toBeDisabled());
+    await waitFor(() => expect(screen.getByRole("button", { name: "Enregistrer les notes" })).toBeDisabled());
     expect(note).toHaveValue(null);
   });
 
@@ -221,11 +221,11 @@ describe("GradeEntryGrid — saisie brouillon / ouverte / validée", () => {
     renderGrid({ status: "Validée", canEdit: true, onSave, onError });
     const note = screen.getByLabelText("Note /20") as HTMLInputElement;
     fireEvent.change(note, { target: { value: "14" } });
-    fireEvent.click(screen.getByRole("button", { name: "Enregistrer tout" }));
+    fireEvent.click(screen.getByRole("button", { name: "Enregistrer les notes" }));
 
     await screen.findByRole("button", { name: "Enregistrement…" });
     deferred.reject(new Error("Riziki Masumbuko : échec réseau"));
-    await waitFor(() => expect(screen.getByRole("button", { name: "Enregistrer tout" })).not.toBeDisabled());
+    await waitFor(() => expect(screen.getByRole("button", { name: "Enregistrer les notes" })).not.toBeDisabled());
     expect(note).toHaveValue(14);
     expect(onError).toHaveBeenCalledWith("Riziki Masumbuko : échec réseau");
   });
@@ -236,7 +236,7 @@ describe("GradeEntryGrid — saisie brouillon / ouverte / validée", () => {
     fireEvent.change(notes[0], { target: { value: "14" } });
     fireEvent.change(notes[1], { target: { value: "12" } });
     fireEvent.change(notes[2], { target: { value: "9" } });
-    fireEvent.click(screen.getByRole("button", { name: "Enregistrer tout" }));
+    fireEvent.click(screen.getByRole("button", { name: "Enregistrer les notes" }));
 
     await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
     const batch = (onSave as ReturnType<typeof vi.fn>).mock.calls[0][0] as StudentGrade[];
@@ -268,7 +268,7 @@ describe("GradeEntryGrid — saisie brouillon / ouverte / validée", () => {
     expect(screen.queryByRole("button", { name: "Enregistrer" })).not.toBeInTheDocument();
   });
 
-  it("statut absence nettoie la valeur et reste local jusqu'à Enregistrer tout", async () => {
+  it("statut absence nettoie la valeur et reste local jusqu'à Enregistrer les notes", async () => {
     const { onSave } = renderGrid({ status: "Validée", canEdit: true });
     const note = screen.getByLabelText("Note /20") as HTMLInputElement;
     const status = screen.getByLabelText("Statut de la note") as HTMLSelectElement;
@@ -280,17 +280,17 @@ describe("GradeEntryGrid — saisie brouillon / ouverte / validée", () => {
     expect(note).toBeDisabled();
     expect(onSave).not.toHaveBeenCalled();
 
-    fireEvent.click(screen.getByRole("button", { name: "Enregistrer tout" }));
+    fireEvent.click(screen.getByRole("button", { name: "Enregistrer les notes" }));
     await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
     expect(onSave).toHaveBeenCalledWith([
       expect.objectContaining({ studentId: "s1", gradeStatus: "Absente", value: undefined }),
     ]);
   });
 
-  it("Enseignant : évaluation sans teacherId — Enregistrer tout appelle onSave", async () => {
+  it("Enseignant : évaluation sans teacherId — Enregistrer les notes appelle onSave", async () => {
     const { onSave, onError } = renderGrid({ status: "Validée", canEdit: true, teacherId: "" });
     fireEvent.change(screen.getByLabelText("Note /20"), { target: { value: "14" } });
-    fireEvent.click(screen.getByRole("button", { name: "Enregistrer tout" }));
+    fireEvent.click(screen.getByRole("button", { name: "Enregistrer les notes" }));
     await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
     expect(onSave).toHaveBeenCalledWith([
       expect.objectContaining({
@@ -319,7 +319,7 @@ describe("GradeEntryGrid — saisie brouillon / ouverte / validée", () => {
       user: prefet,
     });
     fireEvent.change(screen.getByLabelText("Note /20"), { target: { value: "14" } });
-    fireEvent.click(screen.getByRole("button", { name: "Enregistrer tout" }));
+    fireEvent.click(screen.getByRole("button", { name: "Enregistrer les notes" }));
     await waitFor(() =>
       expect(onError).toHaveBeenCalledWith(
         "Aucun enseignant n'est affecté à cette évaluation. Vérifiez l'affectation du cours.",

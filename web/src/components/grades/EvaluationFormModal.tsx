@@ -4,13 +4,20 @@ import { Modal } from "../ui/Modal";
 import { Field, Input, Select } from "../ui/Field";
 import { Button } from "../ui/Button";
 import { ApiError } from "../../api/client";
-import { SCALE_OPTIONS, createEvaluation, resolveDefaultPeriod, courseOptionsForClass } from "../../lib/evaluations";
+import {
+  SCALE_OPTIONS,
+  createEvaluation,
+  resolveCanonicalClassId,
+  resolveDefaultPeriod,
+  courseOptionsForClass,
+} from "../../lib/evaluations";
 import { evaluationTypesApi, type CanonicalEvaluationType } from "../../lib/evaluationTypesApi";
 import type { BackOfficeState } from "../../types";
 import { inputToPeriodDate, periodDateToInput } from "../../lib/dates";
 import { scopedTeachers } from "../../lib/establishment";
 import { getTeacherDisplayName } from "../../lib/pedagogySync";
 import { isSuperAdminRole } from "../../lib/orgHierarchy";
+import { PEDAGOGY_COPY } from "../../lib/pedagogyParityContract";
 
 interface EvaluationFormModalProps {
   open: boolean;
@@ -117,8 +124,14 @@ export function EvaluationFormModal({
     }
 
     const teacher = teachers.find((row) => String(row.id) === teacherId);
+    const classId = resolveCanonicalClassId(
+      state.classes as Array<Record<string, unknown>> | undefined,
+      className,
+      initial?.classId,
+    );
     const payload = {
       schoolCode,
+      classId,
       className,
       subject,
       teacherId: teacherId || undefined,
@@ -144,7 +157,7 @@ export function EvaluationFormModal({
     <Modal
       open={open}
       onClose={onClose}
-      title={initial ? "Modifier l'évaluation" : "Nouvelle évaluation"}
+      title={initial ? "Modifier l'évaluation" : PEDAGOGY_COPY.newEvaluation}
       footer={
         <>
           <Button variant="secondary" onClick={onClose}>

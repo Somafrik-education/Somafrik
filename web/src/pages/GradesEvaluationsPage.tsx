@@ -34,7 +34,10 @@ import {
   deactivateEvaluation,
   buildEvaluationsFromExams,
   ensureEvaluationsSynced,
+  evaluationEntryProgressLabel,
+  evaluationStatusAllowsGradeWrite,
   evaluationsEligibleForGradeEntry,
+  gradesForEvaluation,
   gradesToLegacyNotes,
   gradeSaveActorScope,
   isTeacherSessionRole,
@@ -43,6 +46,7 @@ import {
   resolveGradesPeriod,
   scopedEvaluations,
   scopedGrades,
+  studentMatchesEvaluationClass,
   syncBulletinsForClass,
   updateEvaluation,
   validateEvaluationGrades,
@@ -78,13 +82,14 @@ import {
   type ParentNotesTabKey,
 } from "../lib/parentNotes";
 import type { Evaluation, StudentGrade } from "../types";
+import { PEDAGOGY_COPY } from "../lib/pedagogyParityContract";
 
 type StaffTabKey = "evaluations" | "saisie" | "classe" | "eleve" | "stats";
 type TabKey = StaffTabKey | ParentNotesTabKey;
 
 const STAFF_TABS: { key: StaffTabKey; label: string }[] = [
-  { key: "evaluations", label: "Évaluations" },
-  { key: "saisie", label: "Saisie des notes" },
+  { key: "evaluations", label: PEDAGOGY_COPY.evaluationsTitle },
+  { key: "saisie", label: PEDAGOGY_COPY.gradeEntryTab },
   { key: "classe", label: "Par classe" },
   { key: "eleve", label: "Par élève" },
   { key: "stats", label: "Statistiques" },
@@ -509,8 +514,28 @@ export function GradesEvaluationsPage() {
     { key: "subject", header: "Cours", render: (row) => row.subject },
     { key: "type", header: "Type", render: (row) => row.evaluationType },
     { key: "period", header: "Période", render: (row) => row.period },
+    {
+      key: "date",
+      header: "Date",
+      render: (row) => row.date || "—",
+    },
+    {
+      key: "teacher",
+      header: "Enseignant",
+      render: (row) => row.teacherName || "—",
+    },
     { key: "scale", header: "Barème", render: (row) => `/${row.scale}` },
     { key: "coef", header: "Coef.", render: (row) => row.coefficient },
+    {
+      key: "progress",
+      header: PEDAGOGY_COPY.progress,
+      render: (row) => {
+        const roster = students.filter((student) => studentMatchesEvaluationClass(student, row));
+        const entered = gradesForEvaluation(grades, row.id).length;
+        const progression = evaluationEntryProgressLabel(entered, roster.length);
+        return progression;
+      },
+    },
     {
       key: "status",
       header: "Statut",
@@ -548,9 +573,25 @@ export function GradesEvaluationsPage() {
                 setFormOpen(true);
               }}
             >
-              Modifier
+              {PEDAGOGY_COPY.editEvaluation}
             </Button>
           ) : null}
+          <Button
+            variant="secondary"
+            className="text-xs"
+            onClick={() => {
+              requestContextChange(() => {
+                setSelectedEvaluationId(row.id);
+                if (row.className) setSelectedClass(row.className);
+                if (row.period) setPeriod(row.period);
+                setTab("saisie");
+              });
+            }}
+          >
+            {evaluationStatusAllowsGradeWrite(row.status, row.active !== false)
+              ? PEDAGOGY_COPY.enterGrades // Saisir les notes
+              : PEDAGOGY_COPY.consult}
+          </Button>
           {canMutateEvaluations &&
           canValidateGrades(scopeUser) &&
           row.status !== "Validée" &&
@@ -592,7 +633,7 @@ export function GradesEvaluationsPage() {
       <ToolLayout>
         <ToolLayout.Header>
           <SectionHeader
-            title="Notes & évaluations"
+            title={PEDAGOGY_COPY.moduleTitle}
             description={
               parentMode
                 ? "Notes, évaluations et moyennes de vos enfants."
@@ -612,7 +653,7 @@ export function GradesEvaluationsPage() {
                       setFormOpen(true);
                     }}
                   >
-                    Nouvelle évaluation
+                    {PEDAGOGY_COPY.newEvaluation /* Nouvelle évaluation */}
                   </Button>
                 ) : null}
               </div>
@@ -756,7 +797,7 @@ export function GradesEvaluationsPage() {
                         setFormOpen(true);
                       }}
                     >
-                      Nouvelle évaluation
+                      {PEDAGOGY_COPY.newEvaluation /* Nouvelle évaluation */}
                     </Button>
                   ) : undefined
                 }
@@ -790,7 +831,7 @@ export function GradesEvaluationsPage() {
             )
           ) : null}
 
-          {tab === "matiere" ? (
+          {tab === "cours" ? (
             selectedChild ? (
               <ParentChildGradesPanel
                 student={selectedChild}
@@ -803,7 +844,7 @@ export function GradesEvaluationsPage() {
             ) : (
               <EmptyState
                 title="Aucun enfant sélectionné"
-                description="Choisissez un enfant pour consulter les moyennes par matière."
+                description="Choisissez un enfant pour consulter les moyennes par cours."
               />
             )
           ) : null}

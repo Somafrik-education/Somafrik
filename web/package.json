@@ -15,6 +15,7 @@
     "lint": "eslint . --ext .ts,.tsx",
     "test": "vitest run",
     "test:parite-l2-red": "npx --yes tsx src/lib/pariteL2Finance.red.ts",
+    "test:parite-l3-pedagogie": "npx --yes tsx src/lib/pariteL3Pedagogy.red.ts",
     "test:parite-scolarite-l0": "vitest run src/lib/pariteL0Scolarite.red.test.ts",
     "test:watch": "vitest",
     "test:hydration-red": "vitest run --config vitest.hydration.config.ts",
