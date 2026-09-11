@@ -3,7 +3,9 @@
  * Captures recette Communication :
  * - Web Vite : 1440 et 1024 uniquement (pas 360/390).
  * - Expo / React Native (cible web de Mobile/) : 360dp et 390dp.
- * Le harnais Expo n'est pas Vite. Il exécute Mobile/src/screens/* via expo start --web.
+ * Le harnais Expo n'est pas Vite. Il exécute Mobile/src/screens/* via
+ * expo start --web + entrée Metro SOMAFRIK_COMMUNICATION_UX_SMOKE_ENTRY=1
+ * (App.communicationUxSmoke.tsx), hors App.tsx / Auth runtime.
  */
 import { spawn } from "node:child_process";
 import fs from "node:fs";
@@ -342,7 +344,7 @@ async function main() {
     cwd: path.join(ROOT, "Mobile"),
     env: {
       ...process.env,
-      EXPO_PUBLIC_COMMUNICATION_UX_SMOKE: "1",
+      SOMAFRIK_COMMUNICATION_UX_SMOKE_ENTRY: "1",
       EXPO_PUBLIC_API_URL: "http://127.0.0.1:5000",
       BROWSER: "none",
       CI: "1",

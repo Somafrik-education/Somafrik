@@ -13,8 +13,6 @@ import PushNotificationsRuntime from "./src/components/PushNotificationsRuntime"
 import EnvironmentBadge from "./src/components/EnvironmentBadge";
 import ConfigurationErrorScreen from "./src/components/ConfigurationErrorScreen";
 import { resolveApiRootUrl } from "./src/config/env";
-import CommunicationUxSmokeApp from "./src/screens/CommunicationUxSmokeApp";
-import { isCommunicationUxSmokeEnabled } from "./src/lib/communicationUxSmoke";
 
 /** Thème React Native Paper aligné sur la marque Somafrik (cohérent avec le web). */
 const paperTheme: MD3Theme = {
@@ -42,19 +40,6 @@ function paperIcon({ name, color, size }: PaperIconProps) {
 }
 
 export default function App() {
-  if (isCommunicationUxSmokeEnabled()) {
-    return (
-      <SafeAreaProvider>
-        <PaperProvider theme={paperTheme} settings={{ icon: paperIcon }}>
-          <CommunicationUxSmokeApp />
-        </PaperProvider>
-      </SafeAreaProvider>
-    );
-  }
-  return <ProductionApp />;
-}
-
-function ProductionApp() {
   const configError = useMemo(() => {
     try {
       resolveApiRootUrl();

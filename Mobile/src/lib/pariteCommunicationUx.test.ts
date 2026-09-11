@@ -64,6 +64,25 @@ assert.doesNotMatch(api, /EXPO_PUBLIC_COMMUNICATION_UX_SMOKE/);
 assert.doesNotMatch(hydration, /EXPO_PUBLIC_COMMUNICATION_UX_SMOKE/);
 assert.doesNotMatch(notificationsApi, /EXPO_PUBLIC_COMMUNICATION_UX_SMOKE/);
 
+const mobileRoot = path.join(srcRoot, "..");
+const app = fs.readFileSync(path.join(mobileRoot, "App.tsx"), "utf8");
+const auth = fs.readFileSync(path.join(srcRoot, "context/AuthContext.tsx"), "utf8");
+const metro = fs.readFileSync(path.join(mobileRoot, "metro.config.js"), "utf8");
+assert.doesNotMatch(app, /CommunicationUxSmoke|communicationUxSmoke|EXPO_PUBLIC_COMMUNICATION_UX_SMOKE/);
+assert.doesNotMatch(auth, /communicationUxSmoke|CommunicationUxSmoke|EXPO_PUBLIC_COMMUNICATION_UX_SMOKE/);
+assert.match(metro, /SOMAFRIK_COMMUNICATION_UX_SMOKE_ENTRY === "1"/);
+assert.doesNotMatch(metro, /EXPO_PUBLIC_COMMUNICATION_UX_SMOKE/);
+
+for (const file of listTs(srcRoot)) {
+  if (file.endsWith(`${path.sep}pariteCommunicationUx.test.ts`)) continue;
+  const source = fs.readFileSync(file, "utf8");
+  assert.doesNotMatch(
+    source,
+    /communicationUxSmoke|CommunicationUxSmoke|EXPO_PUBLIC_COMMUNICATION_UX_SMOKE/,
+    `${path.relative(mobileRoot, file)} ne doit pas embarquer le harnais recette`,
+  );
+}
+
 console.log("OK UX Communication Mobile : cartes compactes + détails après dépliage");
 
 function sliceCard(source: string, tag: string) {
@@ -83,4 +102,13 @@ function cardOpening(card: string) {
 function cardDetail(card: string) {
   const split = card.indexOf(">");
   return card.slice(split);
+}
+
+function listTs(dir: string, acc: string[] = []): string[] {
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) listTs(full, acc);
+    else if (/\.(ts|tsx)$/.test(entry.name)) acc.push(full);
+  }
+  return acc;
 }

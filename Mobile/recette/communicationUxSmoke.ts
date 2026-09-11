@@ -1,18 +1,15 @@
 /**
- * Harnais de recette UX Communication — jamais un SoT métier.
- * Activé uniquement si EXPO_PUBLIC_COMMUNICATION_UX_SMOKE=1.
+ * Harnais de recette UX Communication — hors graphe de production.
+ * Branché uniquement via App.communicationUxSmoke.tsx + Metro
+ * SOMAFRIK_COMMUNICATION_UX_SMOKE_ENTRY=1 (pas un flag EXPO_PUBLIC_*).
  * Les écrans Messages / Annonces / Notifications restent les composants de production.
  */
-import type { LoginResponse } from "../services/api";
-import { getInternalRoleDefaults } from "./internalRoleDefaults";
+import type { LoginResponse } from "../src/services/api";
+import { getInternalRoleDefaults } from "../src/lib/internalRoleDefaults";
 import * as SecureStore from "expo-secure-store";
 
 export const COMMUNICATION_UX_SMOKE_SCHOOL = "CD-2026-0001";
 export const COMMUNICATION_UX_SMOKE_USER_ID = "user-smoke-admin";
-
-export function isCommunicationUxSmokeEnabled() {
-  return String(process.env.EXPO_PUBLIC_COMMUNICATION_UX_SMOKE || "") === "1";
-}
 
 export function createCommunicationUxSmokeSession(): LoginResponse {
   const permissions = getInternalRoleDefaults("Admin School");
