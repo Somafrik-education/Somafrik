@@ -33,7 +33,6 @@ export const PD_EVALUATION_SECONDARY_ACTIONS = ["Modifier", "Valider", "Publier"
 
 export const PD_RED_EXPECTED_IDS = [
   "PD-02",
-  "PD-03",
   "PD-04",
   "PD-06",
   "PD-07",
