@@ -240,6 +240,25 @@ test("Finance : retry même clé → même payment.id / référence, aucun secon
   assert.equal(lostResponseRetry.res.payload.totalAmount, 541);
 });
 
+test("TTL : POST /api/presences a un TTL offline >= 35 jours, notes restent 24 h, paiements 7 j", () => {
+  const {
+    ttlForRoute,
+    TTL_DEFAULT_MS,
+    TTL_PAYMENTS_MS,
+    TTL_OFFLINE_REPLAY_MS,
+  } = require("../services/idempotencyService");
+  const thirtyDays = 30 * 24 * 60 * 60 * 1000;
+  const thirtyFiveDays = 35 * 24 * 60 * 60 * 1000;
+  assert.equal(TTL_DEFAULT_MS, 24 * 60 * 60 * 1000);
+  assert.equal(TTL_PAYMENTS_MS, 7 * 24 * 60 * 60 * 1000);
+  assert.equal(TTL_OFFLINE_REPLAY_MS, thirtyFiveDays);
+  assert.ok(TTL_OFFLINE_REPLAY_MS > thirtyDays);
+  assert.equal(ttlForRoute("POST /api/presences"), TTL_OFFLINE_REPLAY_MS);
+  assert.equal(ttlForRoute("POST /api/notes"), TTL_DEFAULT_MS);
+  assert.equal(ttlForRoute("POST /api/payments"), TTL_PAYMENTS_MS);
+  assert.equal(ttlForRoute("POST /api/students"), TTL_DEFAULT_MS);
+});
+
 test("hashPayload ignore le scope client forgé (schoolCode/createdBy)", () => {
   assert.equal(
     hashPayload({ amount: 25000, schoolCode: "BI-2026-0001", createdBy: "forged" }),
