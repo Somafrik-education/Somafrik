@@ -194,6 +194,16 @@ test("GET Notes:READ — SCHOOL_ADMIN, PREFET, TEACHER, PARENT, STUDENT", () => 
   assert.equal(rbac.canAccess({ role: "Parent", permissions: ["Élèves:READ"] }, "GET /api/notes"), false);
 });
 
+test("Notes:READ n'ouvre pas GET/POST/PATCH/DELETE /api/courses", () => {
+  for (const role of ["Parent", "Élève / Étudiant"]) {
+    const notesOnly = { role, permissions: ["Notes:READ"] };
+    assert.equal(rbac.canAccess(notesOnly, "GET /api/courses"), false, `${role} GET courses`);
+    assert.equal(rbac.canAccess(notesOnly, "POST /api/courses"), false, `${role} POST courses`);
+    assert.equal(rbac.canAccess(notesOnly, "PATCH /api/courses/:courseId"), false, `${role} PATCH courses`);
+    assert.equal(rbac.canAccess(notesOnly, "DELETE /api/courses/:courseId"), false, `${role} DELETE courses`);
+  }
+});
+
 test("seed Parent/Élève : Notes:READ canonique (parcours lecture)", () => {
   const live = rolePermissionsForLiveRbac();
   const parent = parsePermissionStringsToModuleCrud(live.Parent);

@@ -260,7 +260,7 @@ export function normalizeMessage(value: unknown): CanonicalSchoolMessage | null 
     schoolId: tenant.schoolId,
     theme: text(row.theme),
     direction: text(row.direction),
-    message: text(row.message),
+    message: text(row.message ?? row.body ?? row.content),
     status: text(row.status),
     date: text(row.date ?? row.createdAt ?? row.created_at),
     conversationId: text(row.conversationId ?? row.conversation_id) || undefined,

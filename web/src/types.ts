@@ -646,6 +646,7 @@ export interface StudentGrade {
   value?: number;
   scale: number;
   evaluationCoefficient?: number;
+  /** Coefficient du cours porté par /api/notes (`subject_coefficient`). Pas /api/courses. */
   coefficient?: number;
   gradeStatus: GradeStatus;
   comment?: string;

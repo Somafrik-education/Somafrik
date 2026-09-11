@@ -6,9 +6,9 @@ import { useData } from "../../context/DataContext";
 import { useActiveSchool } from "../../context/ActiveSchoolContext";
 import { displayRoleName, getInitials } from "../../lib/format";
 import { scopedNotifications } from "../../lib/scope";
-import { scopedMessages } from "../../lib/establishment";
 import { useAnnouncementsUnreadCount } from "../../lib/announcementsRead";
 import { useInternalNotificationsUnreadCount } from "../../lib/internalNotificationsRead";
+import { useMessagesUnreadCount } from "../../lib/messagesRead";
 import { canReadView, hasBackOfficePermission } from "../../lib/permissions";
 import { isPlatformCommunicationUser } from "../../lib/establishmentCommunication";
 import { usePermissionContext } from "../../lib/usePermissionContext";
@@ -54,10 +54,9 @@ export function Topbar({ title, onMenuOpen }: { title: string; onMenuOpen?: () =
   const location = useLocation();
   const { session, logout } = useAuth();
   const { state, loading, error, refresh } = useData();
-  const { scopedUser, activeSchoolCode } = useActiveSchool();
+  const { activeSchoolCode } = useActiveSchool();
   const ctx = usePermissionContext();
   const user = session?.user;
-  const scopeUser = scopedUser ?? user ?? null;
   const [preferencesOpen, setPreferencesOpen] = useState(false);
 
   const canReadNotifications = canReadView(ctx, "notifications");
@@ -79,9 +78,7 @@ export function Topbar({ title, onMenuOpen }: { title: string; onMenuOpen?: () =
       : "/notifications";
 
   const canReadMessages = canReadView(ctx, "messages");
-  const unreadMessages = canReadMessages
-    ? scopedMessages(scopeUser, state).filter((m) => String(m.status ?? "") !== "Lu").length
-    : 0;
+  const unreadMessages = useMessagesUnreadCount(canReadMessages, activeSchoolCode);
 
   const canReadAnnouncements = canReadView(ctx, "announcements");
   const unreadAnnouncements = useAnnouncementsUnreadCount(canReadAnnouncements, activeSchoolCode);

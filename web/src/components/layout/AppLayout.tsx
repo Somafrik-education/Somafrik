@@ -53,6 +53,13 @@ export function AppLayout() {
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const location = useLocation();
   const title = useMemo(() => {
+    if (
+      location.pathname === "/messages" ||
+      location.pathname === "/annonces" ||
+      location.pathname === "/notifications"
+    ) {
+      return "Communication";
+    }
     const match = PAGE_NAV_ITEMS.filter(
       (item) =>
         item.path === location.pathname ||

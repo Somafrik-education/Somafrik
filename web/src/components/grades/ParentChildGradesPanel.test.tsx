@@ -19,6 +19,8 @@ const mathGrade: StudentGrade = {
   period: "Trimestre 1",
   value: 16,
   scale: 20,
+  evaluationCoefficient: 1,
+  coefficient: 2,
   gradeStatus: "Validée",
   date: "2026-09-01",
 };
@@ -32,6 +34,8 @@ const frenchGrade: StudentGrade = {
   period: "Trimestre 1",
   value: 10,
   scale: 20,
+  evaluationCoefficient: 1,
+  coefficient: 1,
   gradeStatus: "Validée",
   date: "2026-09-02",
 };
@@ -63,6 +67,19 @@ const evaluations: Evaluation[] = [
     status: "Publiée",
     active: true,
   },
+  {
+    id: "EVAL-3",
+    schoolCode: "SCH-001",
+    className: "1ère A",
+    subject: "Mathématiques",
+    period: "Trimestre 1",
+    title: "Devoir 2",
+    evaluationType: "Devoir",
+    scale: 20,
+    coefficient: 3,
+    status: "Publiée",
+    active: true,
+  },
 ];
 
 describe("ParentChildGradesPanel", () => {
@@ -89,7 +106,7 @@ describe("ParentChildGradesPanel", () => {
     expect(screen.queryByText(/Classement/)).not.toBeInTheDocument();
   });
 
-  it("KPI tous cours = moyenne générale, filtre Cours = moyenne de la matière", () => {
+  it("KPI tous cours = moyenne générale canonique, filtre Cours = moyenne du cours", () => {
     const { rerender } = render(
       <ParentChildGradesPanel
         student={student}
@@ -100,7 +117,7 @@ describe("ParentChildGradesPanel", () => {
     );
 
     expect(screen.getByText("Moyenne générale")).toBeInTheDocument();
-    expect(screen.getByText("13,0 / 20")).toBeInTheDocument();
+    expect(screen.getByText("14,0 / 20")).toBeInTheDocument();
     expect(screen.getAllByText("2")).toHaveLength(2);
 
     rerender(
@@ -116,7 +133,46 @@ describe("ParentChildGradesPanel", () => {
     expect(screen.getByText("Moyenne Mathématiques")).toBeInTheDocument();
     expect(screen.getByText("16,0 / 20")).toBeInTheDocument();
     expect(screen.queryByText("Moyenne générale")).not.toBeInTheDocument();
-    expect(screen.queryByText("13,0 / 20")).not.toBeInTheDocument();
+    expect(screen.queryByText("14,0 / 20")).not.toBeInTheDocument();
     expect(screen.queryByText("Dictée")).not.toBeInTheDocument();
+  });
+
+  it("pondère d'abord les évaluations puis les cours comme le backend", () => {
+    const mathLow: StudentGrade = {
+      ...mathGrade,
+      id: "g-low",
+      evaluationId: "EVAL-1",
+      value: 10,
+      evaluationCoefficient: 1,
+      coefficient: 2,
+    };
+    const mathHigh: StudentGrade = {
+      ...mathGrade,
+      id: "g-high",
+      evaluationId: "EVAL-3",
+      value: 20,
+      evaluationCoefficient: 3,
+      coefficient: 2,
+    };
+    const french: StudentGrade = {
+      ...frenchGrade,
+      id: "g-fr",
+      value: 12,
+      evaluationCoefficient: 1,
+      coefficient: 1,
+    };
+
+    render(
+      <ParentChildGradesPanel
+        student={student}
+        grades={[mathLow, mathHigh, french]}
+        evaluations={evaluations}
+        period="Trimestre 1"
+      />,
+    );
+
+    // Maths = (10*1 + 20*3)/4 = 17,5 ; général = (17,5*2 + 12*1)/3 = 15,666…
+    expect(screen.getByText("15,7 / 20")).toBeInTheDocument();
+    expect(screen.queryByText("16,4 / 20")).not.toBeInTheDocument();
   });
 });
