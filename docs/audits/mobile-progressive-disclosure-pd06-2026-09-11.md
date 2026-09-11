@@ -50,4 +50,6 @@ npm run verify:mobile-data-truth
 - `Mobile/scripts/verify-mobile-usability.js` L240 : `assert.match(ci, /name: verify:mobile-usability/)`
 - `.github/workflows/ci.yml` s’appelle `CI Full Nightly` et exécute `npm run verify:mobile-usability` **sans** step `name: verify:mobile-usability`
 
+HOLD P1 (post-audit #607) : `ScrollView` + `rows.map` restaurés ; `extraData` retiré. PD-06 inchangé.
+
 PD-07 reste ROUGE (lot EDT suivant).

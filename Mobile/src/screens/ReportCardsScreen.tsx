@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from "react";
-import { Alert, FlatList, Linking, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { Alert, Linking, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect } from "@react-navigation/native";
 import { useAuth } from "../context/AuthContext";
@@ -79,78 +79,73 @@ export default function ReportCardsScreen() {
     reportCardsSnapshot.status !== "success" || rows.length === 0;
 
   return (
-    <FlatList
-      style={styles.screen}
-      contentContainerStyle={contentStyle}
-      testID={!showQueryState ? DATA_TRUTH_TEST_IDS.bulletinsList : undefined}
-      data={showQueryState ? [] : rows}
-      extraData={expandedReportCardId}
-      keyExtractor={(card) => card.id}
-      ListHeaderComponent={
-        <>
-          <Text style={styles.title}>Bulletins</Text>
-          <Text style={styles.subtitle}>
-            {reportCardsSnapshot.status === "success"
-              ? `${rows.length} bulletin(s) disponible(s)`
-              : "Documents générés par l'établissement"}
-          </Text>
-          {showQueryState ? (
-            <QueryStateView
-              snapshot={
-                reportCardsSnapshot.status === "success" && rows.length === 0
-                  ? { status: "empty", data: [] }
-                  : reportCardsSnapshot
-              }
-              emptyMessage={DATA_TRUTH_COPY.emptyBulletins}
-              errorMessage={DATA_TRUTH_COPY.errorBulletins}
-              offlineMessage={DATA_TRUTH_COPY.offlineBulletins}
-              emptyTestId={DATA_TRUTH_TEST_IDS.bulletinsEmpty}
-              errorTestId={DATA_TRUTH_TEST_IDS.bulletinsError}
-              onRetry={() => void loadReportCards()}
-            />
-          ) : null}
-        </>
-      }
-      renderItem={({ item: card }) => {
-        const student = studentsData.find((item) => item.id === card.studentId);
-        const period = bulletinPeriod(card);
-        const isPublished = isPublishedBulletin(card.status);
-        const averageLabel =
-          card.average == null || !Number.isFinite(Number(card.average))
-            ? "—"
-            : `${Number(card.average).toFixed(1)}/20`;
-        const rankLabel =
-          card.rank == null || !Number.isFinite(Number(card.rank)) ? "—" : `${card.rank}e`;
+    <ScrollView style={styles.screen} contentContainerStyle={contentStyle}>
+      <Text style={styles.title}>Bulletins</Text>
+      <Text style={styles.subtitle}>
+        {reportCardsSnapshot.status === "success"
+          ? `${rows.length} bulletin(s) disponible(s)`
+          : "Documents générés par l'établissement"}
+      </Text>
 
-        return (
-          <ExpandableEntityCard
-            title={card.studentName || student?.name || "Élève"}
-            subtitle={period || "Période non renseignée"}
-            badge={card.status || "—"}
-            badgeTone={!isPublished ? "warning" : "default"}
-            expanded={expandedReportCardId === card.id}
-            onExpandedChange={() =>
-              setExpandedReportCardId((current) => nextExclusiveExpandedKey(current, card.id))
-            }
-          >
-            <View style={styles.metricsRow}>
-              <Metric label="Moyenne" value={averageLabel} />
-              <Metric label="Rang" value={rankLabel} />
-              <Metric label="Publié le" value={card.publishedAt || "À valider"} />
-            </View>
-            <TouchableOpacity
-              activeOpacity={0.85}
-              style={[styles.pdfButton, (!isPublished || !card.studentId || !period) && styles.pdfButtonDisabled]}
-              disabled={!isPublished || !card.studentId || !period}
-              onPress={() => openPdf(card.studentId, period)}
-            >
-              <Ionicons name="document-text-outline" size={18} color="#FFFFFF" />
-              <Text style={styles.pdfText}>Visionner le bulletin</Text>
-            </TouchableOpacity>
-          </ExpandableEntityCard>
-        );
-      }}
-    />
+      {showQueryState ? (
+        <QueryStateView
+          snapshot={
+            reportCardsSnapshot.status === "success" && rows.length === 0
+              ? { status: "empty", data: [] }
+              : reportCardsSnapshot
+          }
+          emptyMessage={DATA_TRUTH_COPY.emptyBulletins}
+          errorMessage={DATA_TRUTH_COPY.errorBulletins}
+          offlineMessage={DATA_TRUTH_COPY.offlineBulletins}
+          emptyTestId={DATA_TRUTH_TEST_IDS.bulletinsEmpty}
+          errorTestId={DATA_TRUTH_TEST_IDS.bulletinsError}
+          onRetry={() => void loadReportCards()}
+        />
+      ) : (
+        <View testID={DATA_TRUTH_TEST_IDS.bulletinsList}>
+          {rows.map((card) => {
+            const student = studentsData.find((item) => item.id === card.studentId);
+            const period = bulletinPeriod(card);
+            const isPublished = isPublishedBulletin(card.status);
+            const averageLabel =
+              card.average == null || !Number.isFinite(Number(card.average))
+                ? "—"
+                : `${Number(card.average).toFixed(1)}/20`;
+            const rankLabel =
+              card.rank == null || !Number.isFinite(Number(card.rank)) ? "—" : `${card.rank}e`;
+
+            return (
+              <ExpandableEntityCard
+                key={card.id}
+                title={card.studentName || student?.name || "Élève"}
+                subtitle={period || "Période non renseignée"}
+                badge={card.status || "—"}
+                badgeTone={!isPublished ? "warning" : "default"}
+                expanded={expandedReportCardId === card.id}
+                onExpandedChange={() =>
+                  setExpandedReportCardId((current) => nextExclusiveExpandedKey(current, card.id))
+                }
+              >
+                <View style={styles.metricsRow}>
+                  <Metric label="Moyenne" value={averageLabel} />
+                  <Metric label="Rang" value={rankLabel} />
+                  <Metric label="Publié le" value={card.publishedAt || "À valider"} />
+                </View>
+                <TouchableOpacity
+                  activeOpacity={0.85}
+                  style={[styles.pdfButton, (!isPublished || !card.studentId || !period) && styles.pdfButtonDisabled]}
+                  disabled={!isPublished || !card.studentId || !period}
+                  onPress={() => openPdf(card.studentId, period)}
+                >
+                  <Ionicons name="document-text-outline" size={18} color="#FFFFFF" />
+                  <Text style={styles.pdfText}>Visionner le bulletin</Text>
+                </TouchableOpacity>
+              </ExpandableEntityCard>
+            );
+          })}
+        </View>
+      )}
+    </ScrollView>
   );
 }
 
