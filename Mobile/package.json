@@ -72,6 +72,7 @@
     "test:parite-l1-green": "npx --yes tsx src/lib/pariteL1UnpaidKpi.red.test.ts && npx --yes tsx src/lib/unpaidLedger.test.ts && npm run test:parite-l1-ux",
     "test:parite-l1-ux": "npx --yes tsx src/lib/pariteL1FinanceUx.test.ts",
     "test:parite-l2-red": "npx --yes tsx src/lib/pariteL2Finance.red.test.ts",
+    "test:parite-l3-pedagogie": "npx --yes tsx src/lib/pariteL3Pedagogy.red.test.ts",
     "verify:parite-l0-l1-red": "node scripts/verify-parite-l0-l1-red.js",
     "test:l1-offline-reads": "npx --yes tsx src/offline/l1/l1OfflineReads.test.ts",
     "verify:mobile-l1-sqlite-cache": "node scripts/verify-mobile-l1-sqlite-cache.js",

@@ -243,6 +243,8 @@ describe("GradesEvaluationsPage — parcours Parent", () => {
     renderPage();
     expect(screen.queryByRole("button", { name: "Saisie des notes" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Notes" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Par cours" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Par matière" })).not.toBeInTheDocument();
     expect(screen.getByLabelText("Cours")).toBeInTheDocument();
     expect(screen.getByText("Tous les cours")).toBeInTheDocument();
   });
