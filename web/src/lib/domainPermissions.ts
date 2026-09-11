@@ -22,7 +22,7 @@ const DOMAIN_VIEW_MAP: Partial<Record<DomainKey, string>> = {
   students: "students",
   teachers: "teachers",
   classes: "classes",
-  courses: "courses", // lecture catalogue Matières — pas une dépendance Planning
+  courses: "courses", // lecture catalogue Matières — ou dépendance lecture Notes pour coefficients
   courseSchedules: "planning",
   assignments: "assignments",
   payments: "payments",
@@ -71,6 +71,12 @@ export function canLoadDomain(ctx: PermissionContext, domain: DomainKey): boolea
 
   if (domain === "studentFees") {
     return canReadView(ctx, "fees") || canReadView(ctx, "payments");
+  }
+
+  if (domain === "courses") {
+    // Notes affiche la moyenne générale canonique : le coefficient du cours est
+    // une dépendance de lecture. Le backend applique le même OR sur GET /api/courses.
+    return canReadView(ctx, "courses") || canReadView(ctx, "notes");
   }
 
   const view = DOMAIN_VIEW_MAP[domain];
