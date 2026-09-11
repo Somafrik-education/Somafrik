@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   View,
   Text,
@@ -24,6 +24,7 @@ import {
 import { useFloatingTabBarLayout } from "../lib/screenLayout";
 import {
   CLASS_CARD_TEST_ID,
+  CLASS_OPEN_STUDENTS_TEST_ID,
   CLASSES_STUDENT_COPY,
   CLASSES_STUDENT_TEST_IDS,
 } from "../lib/classesStudentJourneySpec";
@@ -39,7 +40,17 @@ import { isMetricReady, metricLabelFromSnapshot } from "../lib/dataTruth";
 import { filterClassesByQuery, USABILITY_TEST_IDS } from "../lib/mobileUsability";
 import { shouldBlockUnsupportedMutations } from "../offline/l1/readModel";
 import ClassMutationControls from "../components/ClassMutationControls";
+import ExpandableEntityCard from "../components/ExpandableEntityCard";
 import FormField from "../components/FormField";
+import { displayStatusName } from "../lib/format";
+import {
+  SCOLARITE_COPY,
+  filterCanonicalClasses,
+  getClassDisplayName,
+  selectCurrentAcademicYear,
+} from "../lib/schoolingTruth";
+import { nextExclusiveExpandedKey } from "../lib/expandableEntity";
+import { listAcademicYears, type AcademicYearRecord } from "../services/schoolSettingsApi";
 
 export default function ClassesScreen({ navigation }: any) {
   const { scrollContentPaddingBottom } = useFloatingTabBarLayout();
@@ -58,6 +69,8 @@ export default function ClassesScreen({ navigation }: any) {
   const { classesData, studentsData, teachersData, assignmentsData, schoolsData, presencesSnapshot, loadClasses, loadStudents, loadPresences, loadTeachers, loadAssignments, classesSnapshot, studentsSnapshot, assignmentsSnapshot, resourceScopeKey, establishmentStudents } = useAdminData();
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
+  const [expandedClassKey, setExpandedClassKey] = useState<string | null>(null);
+  const [years, setYears] = useState<AcademicYearRecord[]>([]);
   const [offlineActionMessage, setOfflineActionMessage] = useState<string | null>(null);
   const classesUnavailable = classesSnapshot.status === "offline" || classesSnapshot.status === "error";
   const mutationsBlocked = shouldBlockUnsupportedMutations({
@@ -72,7 +85,10 @@ export default function ClassesScreen({ navigation }: any) {
     assignmentsSource: assignmentsSnapshot.source,
   };
   const visibleStudents = establishmentStudents;
-  const visibleClasses = scopedClassesForSession(session, classesData, studentsData, teacherScopeState);
+  const visibleClasses = filterCanonicalClasses(
+    scopedClassesForSession(session, classesData, studentsData, teacherScopeState),
+  );
+  const currentYear = selectCurrentAcademicYear(years);
   const totalStudents = visibleStudents.length;
   const canOpenStudents = canReadRoute(session, session?.role === "teacher" ? "TeacherStudents" : "Students");
   const schoolCode = String(session?.school?.code ?? session?.user?.schoolCode ?? "");
@@ -103,6 +119,20 @@ export default function ClassesScreen({ navigation }: any) {
     }, [loadClasses, loadStudents, loadPresences, loadTeachers, loadAssignments, resourceScopeKey]),
   );
 
+  useEffect(() => {
+    let cancelled = false;
+    void listAcademicYears()
+      .then((rows) => {
+        if (!cancelled) setYears(Array.isArray(rows) ? rows : []);
+      })
+      .catch(() => {
+        if (!cancelled) setYears([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [schoolCode]);
+
   const handleBlockedNetworkAction = () => {
     setOfflineActionMessage(OFFLINE_COPY.mutationRequiresConnection);
   };
@@ -123,7 +153,9 @@ export default function ClassesScreen({ navigation }: any) {
             {CLASSES_STUDENT_COPY.classesTitle}
           </Text>
           <Text style={styles.subtitle} numberOfLines={3}>
-            Gérez les classes et les élèves
+            {currentYear?.name
+              ? `Année active : ${currentYear.name}`
+              : "Aucune année scolaire active"}
           </Text>
         </View>
       </View>
@@ -241,7 +273,7 @@ export default function ClassesScreen({ navigation }: any) {
               Aucune classe ne correspond à cette recherche.
             </Text>
           ) : (
-            <Text style={styles.emptySearch}>Aucune classe à afficher.</Text>
+            <Text style={styles.emptySearch}>Aucune classe n'est encore créée pour cet établissement.</Text>
           )
         }
         renderItem={({ item }) => {
@@ -265,67 +297,59 @@ export default function ClassesScreen({ navigation }: any) {
             timeZone: (currentSchool as { timezone?: string } | undefined)?.timezone,
           });
 
+          const classKey = String(item.id ?? item.name);
+          const studentCountLabel = isMetricReady(studentsSnapshot)
+            ? `${classStudents.length} élèves`
+            : metricLabelFromSnapshot(studentsSnapshot, () => String(classStudents.length));
+          const statusLabel = item.status ? displayStatusName(item.status) : "";
+
           return (
-            <View style={styles.classCard}>
-              <TouchableOpacity
-                activeOpacity={0.85}
-                style={styles.classMain}
-                testID={CLASS_CARD_TEST_ID(item.name)}
-                accessibilityRole="button"
-                accessibilityLabel={`Ouvrir la classe ${item.name}`}
-                onPress={() =>
-                  canOpenStudents && navigation.navigate("Students", {
-                    className: item.name,
-                  })
-                }
-              >
-              <View style={styles.classIconBox}>
-                <Ionicons name="grid-outline" size={26} color="#2563EB" />
-              </View>
-
-              <View style={styles.classContent}>
-                <View style={styles.classTopRow}>
-                  <Text style={styles.className} numberOfLines={3}>
-                    {item.name}
+            <ExpandableEntityCard
+              title={getClassDisplayName(item)}
+              subtitle={studentCountLabel}
+              badge={statusLabel || presenceBadge.badgeText}
+              badgeContent={
+                <View style={styles.badge}>
+                  <Text style={styles.badgeText} testID={classPresenceBadgeTestId(item)}>
+                    {presenceBadge.badgeText}
                   </Text>
-                  <View style={styles.badge}>
-                    <Text
-                      style={styles.badgeText}
-                      testID={classPresenceBadgeTestId(item)}
-                    >
-                      {presenceBadge.badgeText}
-                    </Text>
-                  </View>
                 </View>
-
-                <Text style={styles.classInfo}>
-                  {isMetricReady(studentsSnapshot)
-                    ? `${classStudents.length} élèves`
-                    : metricLabelFromSnapshot(studentsSnapshot, () => String(classStudents.length))}
+              }
+              testID={CLASS_CARD_TEST_ID(item.name)}
+              expanded={expandedClassKey === classKey}
+              onExpandedChange={() => setExpandedClassKey((current) => nextExclusiveExpandedKey(current, classKey))}
+            >
+              {item.status ? (
+                <Text style={styles.classInfo} numberOfLines={1}>
+                  Statut : {statusLabel}
                 </Text>
-                {item.classCode ? (
-                  <Text style={styles.classInfo} numberOfLines={2}>
-                    Code : {item.classCode}
-                  </Text>
-                ) : null}
-                <Text style={styles.classTeacher}>
-                  Professeur principal : {teacher?.name ?? "Non assigné"}
+              ) : null}
+              {item.classCode && !String(item.classCode).startsWith("CLASS-") ? (
+                <Text style={styles.classInfo} numberOfLines={2}>
+                  Code : {item.classCode}
                 </Text>
-              </View>
-
-              <Ionicons
-                name="chevron-forward-outline"
-                size={20}
-                color="#CBD5E1"
-              />
-              </TouchableOpacity>
+              ) : null}
+              <Text style={styles.classTeacher}>
+                Professeur principal : {teacher?.name ?? "Non assigné"}
+              </Text>
+              {canOpenStudents ? (
+                <TouchableOpacity
+                  style={styles.openButton}
+                  testID={CLASS_OPEN_STUDENTS_TEST_ID(item.name)}
+                  accessibilityRole="button"
+                  accessibilityLabel={SCOLARITE_COPY.openClassStudents}
+                  onPress={() => navigation.navigate("Students", { className: item.name })}
+                >
+                  <Text style={styles.openButtonText}>{SCOLARITE_COPY.openClassStudents}</Text>
+                </TouchableOpacity>
+              ) : null}
               <ClassMutationControls
                 row={item}
                 networkRequired={mutationsBlocked}
                 onBlockedMutation={handleBlockedNetworkAction}
                 onChanged={async () => { await Promise.all([loadClasses(), loadStudents()]); }}
               />
-            </View>
+            </ExpandableEntityCard>
           );
         }}
       />
@@ -582,4 +606,14 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     color: "#64748B",
   },
+  openButton: {
+    minHeight: 44,
+    borderRadius: 12,
+    backgroundColor: "#EFF6FF",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 12,
+    marginTop: 10,
+  },
+  openButtonText: { color: "#1D4ED8", fontWeight: "800" },
 });

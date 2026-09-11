@@ -348,6 +348,10 @@ export function canReadView(session: any, viewName: string): boolean {
     return hasPlatformBackofficePrivilege(session);
   }
   if (viewName === "overview") return true;
+  if (viewName === "Schooling") {
+    if (session?.role === "country_admin") return false;
+    return canReadView(session, "classes") || canReadView(session, "students");
+  }
 
   if (viewName === "Permissions") {
     return false;

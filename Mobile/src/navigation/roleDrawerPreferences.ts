@@ -39,6 +39,7 @@ const I = {
   students: { label: "Élèves", icon: "people-outline" as const, route: "Students", view: "students" },
   teacherStudents: { label: "Mes élèves", icon: "people-outline" as const, route: "TeacherStudents", view: "TeacherStudents" },
   classes: { label: "Classes", icon: "grid-outline" as const, route: "Classes", view: "classes" },
+  schooling: { label: "Scolarité", icon: "school-outline" as const, route: "Schooling", view: "Schooling" },
   teacherClasses: { label: "Mes classes", icon: "grid-outline" as const, route: "Classes", view: "Classes" },
   teachers: { label: "Enseignants", icon: "school-outline" as const, route: "Teachers", view: "teachers" },
   users: { label: "Utilisateurs", icon: "person-circle-outline" as const, route: "Users", view: "users" },
@@ -70,6 +71,7 @@ const platformItems: RoleDrawerItem[] = [
 ];
 
 const schoolAdminItems: RoleDrawerItem[] = [
+  quotidien(I.schooling),
   quotidien(I.students),
   quotidien(I.classes),
   quotidien(I.attendance),
@@ -90,6 +92,7 @@ const schoolAdminItems: RoleDrawerItem[] = [
 ];
 
 const prefetItems: RoleDrawerItem[] = [
+  quotidien(I.schooling),
   quotidien(I.students),
   quotidien(I.classes),
   quotidien(I.attendance),
@@ -110,6 +113,7 @@ const prefetItems: RoleDrawerItem[] = [
 ];
 
 const principalItems: RoleDrawerItem[] = [
+  quotidien(I.schooling),
   quotidien(I.students),
   quotidien(I.classes),
   quotidien(I.attendance),
@@ -130,6 +134,7 @@ const principalItems: RoleDrawerItem[] = [
 ];
 
 const secretaryItems: RoleDrawerItem[] = [
+  quotidien(I.schooling),
   quotidien(I.students),
   quotidien(I.attendance),
   quotidien(I.payments),
@@ -171,6 +176,7 @@ const accountantItems: RoleDrawerItem[] = [
 ];
 
 const adjointItems: RoleDrawerItem[] = [
+  quotidien(I.schooling),
   quotidien(I.attendance),
   quotidien(I.students),
   quotidien(I.classes),

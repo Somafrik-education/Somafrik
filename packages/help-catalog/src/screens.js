@@ -27,6 +27,7 @@ const MOBILE_ROUTE_SCREENS = Object.freeze(
   Object.assign(Object.create(null), {
     Home: HELP_SCREEN.DASHBOARD,
     HomeTabs: HELP_SCREEN.DASHBOARD,
+    Schooling: HELP_SCREEN.DASHBOARD,
     Classes: HELP_SCREEN.CLASSES,
     Students: HELP_SCREEN.STUDENTS,
     TeacherStudents: HELP_SCREEN.STUDENTS,

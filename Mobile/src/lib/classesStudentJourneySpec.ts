@@ -39,8 +39,14 @@ export const CLASSES_STUDENT_TEST_IDS = {
 export const CLASS_CARD_TEST_ID = (className: string) =>
   `${CLASSES_STUDENT_TEST_IDS.classCardPrefix}${slugify(className)}`;
 
+export const CLASS_OPEN_STUDENTS_TEST_ID = (className: string) =>
+  `class-open-students-${slugify(className)}`;
+
 export const STUDENT_ROW_TEST_ID = (studentId: string) =>
   `${CLASSES_STUDENT_TEST_IDS.studentRowPrefix}${studentId}`;
+
+export const STUDENT_OPEN_FICHE_TEST_ID = (studentId: string) =>
+  `student-open-fiche-${studentId}`;
 
 /** Seuil métier — liste longue d'élèves. */
 export const LONG_STUDENTS_LIST_MIN_COUNT = 50;

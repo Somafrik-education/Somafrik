@@ -115,12 +115,14 @@ function main() {
   console.log("OK: Planning — chips >=44dp selected + carte 320px lisible");
 
   const finance = source(path.join("components", "PaymentReceiptCard.tsx"));
-  const financeAccordion = source(path.join("components", "ExpandableFinanceCard.tsx"));
+  const financeAccordion = source(path.join("components", "ExpandableEntityCard.tsx"));
+  const financeWrapper = source(path.join("components", "ExpandableFinanceCard.tsx"));
   assert.match(finance, /StatusBadge/);
   assert.match(finance, /formatFinanceAmount/);
   assert.match(finance, /ExpandableFinanceCard/);
-  assert.match(financeAccordion, /accessibilityState=\{\{ expanded \}\}/);
-  assert.match(financeAccordion, /minHeight:\s*68/);
+  assert.match(financeWrapper, /ExpandableEntityCard/);
+  assert.match(financeAccordion, /accessibilityState=\{\{ expanded: isExpanded \}\}/);
+  assert.match(financeAccordion, /minHeight:\s*Math\.max\(68,\s*MIN_TOUCH_TARGET_DP\)|minHeight:\s*68/);
   assert.match(finance, /selectable/);
   assert.doesNotMatch(finance, /numberOfLines=\{1\}[\s\S]{0,80}amount/);
   const payments = source(path.join("screens", "PaymentsScreen.tsx"));
@@ -172,7 +174,7 @@ function main() {
   assert.match(overflow, /OVERFLOW_TRIGGER_DP|minWidth:\s*MIN_TOUCH_TARGET_DP/);
   assert.match(overflow, /OVERFLOW_MENU_ITEM_DP/);
   const studentsList = source(path.join("screens", "StudentsScreen.tsx"));
-  assert.match(studentsList, /style=\{styles\.studentMain\}/);
+  assert.match(studentsList, /ExpandableEntityCard/);
   assert.match(studentsList, /StudentMutationControls/);
   assert.match(studentsList, /MIN_TOUCH_TARGET_DP/);
   console.log("OK: OverflowActions Élèves — ⋮ 44 dp, menu ≥44, pas de rangée sous la fiche");

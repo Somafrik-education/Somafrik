@@ -77,6 +77,8 @@
     "test:parite-communication-red": "npx --yes tsx src/lib/pariteCommunication.red.test.ts",
     "test:parite-communication-ux": "npx --yes tsx src/lib/pariteCommunicationUx.test.ts",
     "test:parite-l3-pedagogie": "npx --yes tsx src/lib/pariteL3Pedagogy.red.test.ts",
+    "test:parite-scolarite-l0": "npx --yes tsx src/lib/pariteL0Scolarite.red.test.ts && npx --yes tsx src/lib/pariteScolariteExpandableUx.test.ts",
+    "test:schooling-truth": "npx --yes tsx src/lib/schoolingTruth.test.ts",
     "verify:parite-l0-l1-red": "node scripts/verify-parite-l0-l1-red.js",
     "test:l1-offline-reads": "npx --yes tsx src/offline/l1/l1OfflineReads.test.ts",
     "verify:mobile-l1-sqlite-cache": "node scripts/verify-mobile-l1-sqlite-cache.js",

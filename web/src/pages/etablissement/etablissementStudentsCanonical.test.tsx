@@ -102,6 +102,22 @@ vi.mock("../../lib/studentsApi", () => ({
   studentsApi: { list: listMock, get: vi.fn(), update: vi.fn(), archive: archiveMock },
 }));
 
+vi.mock("../../lib/academicYearsApi", () => ({
+  academicYearsApi: {
+    list: vi.fn(async () => [
+      {
+        id: "ay-1",
+        name: "2025-2026",
+        isCurrent: true,
+        startDate: "2025-09-01",
+        endDate: "2026-07-31",
+        status: "active",
+        schoolCode: LOGIN_A,
+      },
+    ]),
+  },
+}));
+
 // Ce fichier teste la convergence d'un snapshot DataContext déjà fourni à la page.
 // Le bootstrap réel et l'attente d'hydratation sont couverts séparément par
 // EtablissementOverviewPage.bootstrap.test.tsx.
@@ -241,7 +257,7 @@ describe("convergence canonique Élèves — annuaire + vue d'ensemble", () => {
       </MemoryRouter>,
     );
     expect(tileCount("Élèves")).toBe("15");
-    await user.click(screen.getByRole("link", { name: /Élèves/ }));
+    await user.click(screen.getByTestId("schooling-kpi-students"));
     expect(await screen.findByText("Nom1")).toBeInTheDocument();
     expect(screen.getAllByRole("link", { name: "Dossier" })).toHaveLength(15);
     await user.click(screen.getByRole("link", { name: "Aller vue-ensemble" }));

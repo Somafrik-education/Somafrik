@@ -79,6 +79,22 @@ vi.mock("../../lib/domainRouteHydration", () => ({
   useDomainRouteHydrationStatus: () => "ready",
 }));
 
+vi.mock("../../lib/academicYearsApi", () => ({
+  academicYearsApi: {
+    list: vi.fn(async () => [
+      {
+        id: "ay-1",
+        name: "2025-2026",
+        isCurrent: true,
+        startDate: "2025-09-01",
+        endDate: "2026-07-31",
+        status: "active",
+        schoolCode: "CD-IN-26-001",
+      },
+    ]),
+  },
+}));
+
 vi.mock("../../lib/usePermissionContext", () => ({
   usePermissionContext: () => ({
     user: schoolAdmin.user,
