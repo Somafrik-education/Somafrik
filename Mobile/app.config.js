@@ -108,7 +108,7 @@ module.exports = ({ config }) => {
         "expo-notifications",
         {
           color: "#1d4ed8",
-          defaultChannel: "somafrik-default",
+          defaultChannel: "somafrik-default-v2",
         },
       ],
       [
