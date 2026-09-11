@@ -71,6 +71,21 @@ function gradeNumericValue(grade: StudentGrade): number {
   return Number(grade.value ?? 0);
 }
 
+/** Coefficients de cours portés par les notes canoniques (`coefficient` du DTO /api/notes). */
+export function coursesFromGradeCoefficients(grades: StudentGrade[]): CourseRow[] {
+  const bySubject = new Map<string, CourseRow>();
+  for (const grade of grades) {
+    const name = String(grade.subject ?? "").trim();
+    if (!name || bySubject.has(name)) continue;
+    const coefficient = Number(grade.coefficient);
+    bySubject.set(name, {
+      name,
+      coefficient: Number.isFinite(coefficient) && coefficient > 0 ? coefficient : 1,
+    });
+  }
+  return [...bySubject.values()];
+}
+
 export class GradeBookService {
   constructor(
     private readonly students: StudentRow[],
@@ -87,8 +102,16 @@ export class GradeBookService {
   }
 
   getCourseCoefficient(subject: string): number {
+    const fromGrade = this.grades.find(
+      (grade) =>
+        normalize(grade.subject) === normalize(subject) &&
+        Number.isFinite(Number(grade.coefficient)) &&
+        Number(grade.coefficient) > 0,
+    );
+    if (fromGrade) return Number(fromGrade.coefficient);
     const course = this.courses.find((item) => normalize(item.name) === normalize(subject));
-    return Number(course?.coefficient ?? 1);
+    const fallback = Number(course?.coefficient ?? 1);
+    return Number.isFinite(fallback) && fallback > 0 ? fallback : 1;
   }
 
   getSubjectAverage(studentId: string, subject: string, period?: string): SubjectAverageRow {

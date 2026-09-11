@@ -38,6 +38,7 @@ class GradeBookService {
 
   getSubjectAverage(studentId, subject, period) {
     const notes = this.notesForStudent(studentId, period).filter((note) => note.subject === subject);
+    const fromNote = notes.find((note) => Number(note.coefficient) > 0);
     const course = this.courses.find((item) => item.name === subject);
     const { average, totalCoefficients } = weightedAverage(notes, { displayScale: 20 });
 
@@ -45,7 +46,7 @@ class GradeBookService {
       subject,
       average,
       averageDisplay: formatAverageForDisplay(average, 2),
-      coefficient: Number(course?.coefficient ?? 1),
+      coefficient: Number(fromNote?.coefficient ?? course?.coefficient ?? 1),
       gradeCount: notes.filter((note) => gradeCountsInAverage(note)).length,
       totalCoefficients,
     };

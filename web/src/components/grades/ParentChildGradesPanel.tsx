@@ -1,7 +1,7 @@
 import type { Evaluation, StudentGrade } from "../../types";
 import { Card, SectionHeader } from "../ui/Card";
 import { Table, type Column } from "../ui/Table";
-import { formatStudentName } from "../../lib/gradeBook";
+import { GradeBookService, coursesFromGradeCoefficients, formatStudentName } from "../../lib/gradeBook";
 import { parentGradesKpis } from "../../lib/parentNotes";
 
 type StudentRow = Record<string, unknown>;
@@ -43,6 +43,24 @@ export function ParentChildGradesPanel({
   highlightGradeId = "",
 }: ParentChildGradesPanelProps) {
   const kpis = parentGradesKpis(grades, courseFilter);
+  const gradeBookStudent = student
+    ? {
+        id: String(student.id ?? ""),
+        className: String(student.className ?? ""),
+        name: String(student.name ?? ""),
+        firstName: String(student.firstName ?? ""),
+        lastName: String(student.lastName ?? ""),
+      }
+    : null;
+  const canonicalGeneralAverage =
+    gradeBookStudent && grades.length
+      ? new GradeBookService(
+          [gradeBookStudent],
+          grades,
+          coursesFromGradeCoefficients(grades),
+        ).getStudentAverageValue(gradeBookStudent.id, period)
+      : null;
+  const displayedAverage = courseFilter ? kpis.average : canonicalGeneralAverage;
 
   const columns: Column<StudentGrade>[] = [
     { key: "subject", header: "Cours", render: (row) => row.subject },
@@ -82,7 +100,7 @@ export function ParentChildGradesPanel({
         <div className="mt-4 grid gap-3 sm:grid-cols-3">
           <div className="rounded-lg border border-line bg-surface px-3 py-2">
             <p className="text-xs text-muted">{kpis.averageLabel}</p>
-            <p className="text-xl font-semibold text-ink">{formatAverage(kpis.average)}</p>
+            <p className="text-xl font-semibold text-ink">{formatAverage(displayedAverage)}</p>
           </div>
           <div className="rounded-lg border border-line bg-surface px-3 py-2">
             <p className="text-xs text-muted">Évaluations</p>
