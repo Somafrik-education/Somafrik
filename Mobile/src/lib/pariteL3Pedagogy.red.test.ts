@@ -243,6 +243,28 @@ const cases: { id: string; title: string; run: () => void }[] = [
       assert.equal(PEDAGOGY_MIN_TOUCH_DP, 44);
     },
   },
+  {
+    id: "PED-L3-26",
+    title: "Moyenne générale Mobile = moteur canonique à deux niveaux",
+    run() {
+      const screen = read("screens/StudentNotesScreen.tsx");
+      assert.match(
+        screen,
+        /canonicalStudentGeneralAverage/,
+        "Mobile calcule encore la moyenne générale directement sur toutes les évaluations",
+      );
+      assert.match(
+        screen,
+        /schoolCoursesSnapshot/,
+        "Mobile n'utilise pas les coefficients de cours canoniques pour la moyenne générale",
+      );
+      assert.equal(
+        /const average = canonicalWeightedAverage\(studentNotes\)/.test(screen),
+        false,
+        "la moyenne générale Mobile reste plate",
+      );
+    },
+  },
 ];
 
 const failed: { id: string; title: string; message: string }[] = [];
