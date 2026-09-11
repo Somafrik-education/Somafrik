@@ -216,7 +216,7 @@ export function scopedClasses(user: SessionUser | null, state: BackOfficeState, 
     }
   });
   const deduped = dedupeClassesByName(rows);
-  const teacherClassNames = teacherScopedClassNames(user?.role ? user : null, state);
+  const teacherClassNames = teacherScopedClassNames(user, state);
   if (teacherClassNames) {
     return deduped.filter((item) => teacherClassNames.has(normalize(item.name ?? item.className)));
   }
