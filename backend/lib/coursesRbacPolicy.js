@@ -12,6 +12,9 @@
  *   déjà utilisé par `/api/v2/subjects`. Ce n'est PAS un jeton granulaire
  *   CREATE qui ouvrirait UPDATE/DELETE.
  * - `Voir classes` : lecture du catalogue pour les rôles qui la possèdent.
+ * - `Notes:READ` : lecture seule du catalogue requise pour calculer la moyenne
+ *   générale canonique (coefficient des cours) côté Parent/Élève. La route
+ *   reste filtrée par tenant et n'ouvre aucun verbe d'écriture.
  *
  * `Affectations:READ` n'ouvre PAS le catalogue `/api/courses` : un enseignant
  * qui doit consulter ses cours utilise la projection métier dédiée
@@ -29,6 +32,7 @@ const COURSE_READ_PERMISSIONS = Object.freeze([
   "Matières:READ",
   "Gérer cours",
   "Voir classes",
+  "Notes:READ",
   "ALL_PRIVILEGES",
 ]);
 
