@@ -32,7 +32,6 @@ export const PD_EVALUATION_COLLAPSED_OMITS = ["coefficient", "teacherName", "dat
 export const PD_EVALUATION_SECONDARY_ACTIONS = ["Modifier", "Valider", "Publier"] as const;
 
 export const PD_RED_EXPECTED_IDS = [
-  "PD-01",
   "PD-02",
   "PD-03",
   "PD-04",

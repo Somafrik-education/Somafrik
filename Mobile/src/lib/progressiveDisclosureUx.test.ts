@@ -68,6 +68,44 @@ const studentsScreen = read("screens/StudentsScreen.tsx");
 assert.match(studentsScreen, /ExpandableEntityCard/);
 assert.match(studentsScreen, /expandedStudentId/);
 
+function sliceFirstCard(source: string, tag: string) {
+  const start = source.indexOf(`<${tag}`);
+  const end = source.indexOf(`</${tag}>`, start);
+  if (start < 0 || end < 0) return "";
+  return source.slice(start, end);
+}
+
+function cardOpening(card: string) {
+  const split = card.indexOf(">");
+  return split < 0 ? card : card.slice(0, split);
+}
+
+const teachersScreen = read("screens/TeachersScreen.tsx");
+assert.match(teachersScreen, /ExpandableEntityCard/, "PD-01 : liste enseignants = ExpandableEntityCard");
+assert.match(teachersScreen, /expandedTeacherId/);
+assert.match(teachersScreen, /extraData=\{expandedTeacherId\}/);
+assert.match(teachersScreen, /nextExclusiveExpandedKey\(current, teacher\.id\)/);
+assert.doesNotMatch(teachersScreen, /defaultExpanded=\{true\}/);
+assert.match(teachersScreen, /<TeacherMutationControls onChanged=\{\(\) => load\(\)\} \/>/);
+assert.match(teachersScreen, /AssignmentMutationControls/);
+const teachersCreateAt = teachersScreen.indexOf("<TeacherMutationControls onChanged");
+const teachersCardAt = teachersScreen.indexOf("<ExpandableEntityCard");
+assert.ok(teachersCreateAt >= 0 && teachersCreateAt < teachersCardAt, "PD-01 : création reste hors carte");
+const teacherCard = sliceFirstCard(teachersScreen, "ExpandableEntityCard");
+assert.ok(teacherCard, "PD-01 : carte enseignant absente");
+const teacherOpening = cardOpening(teacherCard);
+assert.match(teacherOpening, /title=\{/);
+assert.match(teacherOpening, /subtitle=\{/);
+assert.match(teacherOpening, /badge=\{/);
+assert.doesNotMatch(teacherOpening, /TeacherMutationControls/, "PD-01 : mutations hors résumé");
+assert.doesNotMatch(teacherOpening, /teacherCourses/, "PD-01 : cours hors résumé");
+assert.doesNotMatch(teacherOpening, /teacherClasses/, "PD-01 : classes hors résumé");
+assert.doesNotMatch(teacherOpening, /teacher\.phone/, "PD-01 : téléphone hors résumé");
+assert.match(teacherCard, /<TeacherMutationControls[\s\S]*row=\{teacher\}/);
+assert.match(teacherCard, /teacherCourses/);
+assert.match(teacherCard, /teacherClasses/);
+assert.match(teacherCard, /teacher\.phone/);
+
 const announcements = read("screens/AnnouncementsScreen.tsx");
 assert.match(announcements, /ExpandableCommunicationCard/);
 assert.doesNotMatch(announcements, /defaultExpanded=\{true\}/);

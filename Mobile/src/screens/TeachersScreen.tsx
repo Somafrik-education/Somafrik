@@ -1,8 +1,8 @@
 import { useCallback, useState } from "react";
 import { View, Text, StyleSheet, FlatList, RefreshControl } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect } from "@react-navigation/native";
 import QueryStateView from "../components/QueryStateView";
+import ExpandableEntityCard from "../components/ExpandableEntityCard";
 import TeacherMutationControls from "../components/TeacherMutationControls";
 import AssignmentMutationControls from "../components/AssignmentMutationControls";
 import { useAdminData } from "../context/AdminDataContext";
@@ -10,6 +10,7 @@ import {
   resolveTeacherClassesForRecord,
   resolveTeacherCoursesForRecord,
 } from "../lib/establishment";
+import { nextExclusiveExpandedKey } from "../lib/expandableEntity";
 import { displayStatusName } from "../lib/format";
 import { useFloatingTabBarLayout } from "../lib/screenLayout";
 import { NAVIGATION_TEST_IDS } from "../lib/mobileNavigationSpec";
@@ -28,6 +29,7 @@ export default function TeachersScreen() {
     resourceScopeKey,
   } = useAdminData();
   const [subjects, setSubjects] = useState<SchoolSubject[]>([]);
+  const [expandedTeacherId, setExpandedTeacherId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     await Promise.all([loadTeachers(), loadAssignments(), loadClasses()]);
@@ -51,6 +53,7 @@ export default function TeachersScreen() {
       contentContainerStyle={contentStyle}
       testID={listHydrated ? "teachers-list" : undefined}
       data={showQueryState ? [] : snapshot.data}
+      extraData={expandedTeacherId}
       keyExtractor={(teacher) => teacher.id}
       refreshControl={<RefreshControl refreshing={snapshot.status === "loading"} onRefresh={() => void load()} />}
       ListHeaderComponent={
@@ -83,21 +86,31 @@ export default function TeachersScreen() {
       renderItem={({ item: teacher }) => {
         const teacherClasses = resolveTeacherClassesForRecord(teacher, assignmentsData);
         const teacherCourses = resolveTeacherCoursesForRecord(teacher, assignmentsData);
+        const statusLabel = teacher.status ? displayStatusName(teacher.status) : "";
+        const statusKey = String(teacher.status ?? "").toLowerCase();
+        const badgeTone =
+          /archiv|inactif|inactive|disabled|desactiv|suspend/.test(statusKey) ? "warning" as const : "default" as const;
         return (
-          <View style={styles.card}>
-            <View style={styles.iconBox}>
-              <Ionicons name="school-outline" size={24} color="#2563EB" />
-            </View>
-            <View style={styles.cardContent}>
-              <Text style={styles.name} numberOfLines={3}>{teacher.name || teacher.teacherCode}</Text>
-              <Text style={styles.code}>{teacher.teacherCode || teacher.publicId}</Text>
-              <Text style={styles.meta} numberOfLines={3}>{teacherCourses.join(", ") || teacher.mainSubject || "Cours non renseignés"}</Text>
-              <Text style={styles.meta} numberOfLines={3}>Classes : {teacherClasses.join(", ") || "Non assignées"}</Text>
-              {teacher.status ? <Text style={styles.meta}>Statut : {displayStatusName(teacher.status)}</Text> : null}
-              {teacher.phone ? <Text style={styles.phone}>{teacher.phone}</Text> : null}
-              <TeacherMutationControls row={teacher} onChanged={() => load()} />
-            </View>
-          </View>
+          <ExpandableEntityCard
+            title={teacher.name || teacher.teacherCode}
+            subtitle={String(teacher.teacherCode || teacher.publicId || "")}
+            badge={statusLabel}
+            badgeTone={badgeTone}
+            testID={`teachers-row-${teacher.id}`}
+            expanded={expandedTeacherId === teacher.id}
+            onExpandedChange={() =>
+              setExpandedTeacherId((current) => nextExclusiveExpandedKey(current, teacher.id))
+            }
+          >
+            <Text style={styles.meta} numberOfLines={3}>
+              {teacherCourses.join(", ") || teacher.mainSubject || "Cours non renseignés"}
+            </Text>
+            <Text style={styles.meta} numberOfLines={3}>
+              Classes : {teacherClasses.join(", ") || "Non assignées"}
+            </Text>
+            {teacher.phone ? <Text style={styles.phone}>{teacher.phone}</Text> : null}
+            <TeacherMutationControls row={teacher} onChanged={() => load()} />
+          </ExpandableEntityCard>
         );
       }}
       ListFooterComponent={
@@ -116,26 +129,6 @@ const styles = StyleSheet.create({
   content: { padding: 20 },
   title: { fontSize: 32, fontWeight: "900", color: "#0F172A" },
   subtitle: { marginTop: 6, marginBottom: 20, color: "#64748B", fontWeight: "700" },
-  card: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 22,
-    padding: 16,
-    marginBottom: 14,
-    flexDirection: "row",
-    alignItems: "flex-start",
-  },
-  iconBox: {
-    width: 50,
-    height: 50,
-    borderRadius: 18,
-    backgroundColor: "#EFF6FF",
-    alignItems: "center",
-    justifyContent: "center",
-    marginRight: 12,
-  },
-  cardContent: { flex: 1, minWidth: 0 },
-  name: { fontSize: 17, fontWeight: "900", color: "#0F172A" },
-  code: { marginTop: 3, color: "#2563EB", fontWeight: "800" },
   meta: { marginTop: 4, color: "#64748B", fontWeight: "600" },
   phone: { color: "#2563EB", fontWeight: "800", marginTop: 4 },
   lifecycleHint: { color: "#64748B", fontWeight: "700", lineHeight: 20, marginTop: 8 },
