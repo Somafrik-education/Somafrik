@@ -3,6 +3,7 @@ import { isActiveUserAccount, normalize } from "./format";
 import { dedupeClassesByName } from "./classRules";
 import { COUNTRY_ADMIN_ROLE, isSuperAdminRole } from "./orgHierarchy";
 import { scopedSchools } from "./scope";
+import { resolveSessionSchoolIdentity } from "./schoolCanonicalIdentity";
 import { projectScopedStudents } from "./studentsScope";
 
 type Row = Record<string, unknown>;
@@ -215,7 +216,7 @@ export function scopedClasses(user: SessionUser | null, state: BackOfficeState, 
     }
   });
   const deduped = dedupeClassesByName(rows);
-  const teacherClassNames = teacherScopedClassNames(user, state);
+  const teacherClassNames = teacherScopedClassNames(user?.role ? user : null, state);
   if (teacherClassNames) {
     return deduped.filter((item) => teacherClassNames.has(normalize(item.name ?? item.className)));
   }
@@ -235,8 +236,29 @@ function scopedByStudentIds(user: SessionUser | null, state: BackOfficeState, ke
   );
 }
 
+/**
+ * Finance : les paiements sont un historique comptable de l'établissement.
+ * Un paiement du tenant ne doit pas disparaître lorsque l'élève n'est plus dans
+ * le snapshot courant `students`. `payments.schoolCode` est le login_code V2 ;
+ * le leftover `session.schoolCode` (CC-YYYY-NNNN) n'est pas une autorité tenant.
+ */
 export function scopedPayments(user: SessionUser | null, state: BackOfficeState): Row[] {
-  return scopedByStudentIds(user, state, "payments");
+  const schoolCode = user?.schoolCode;
+  const rows = (state.payments ?? []) as Row[];
+  if (!schoolCode || schoolCode === "*") return rows;
+
+  const canonicalPublicCode = resolveSessionSchoolIdentity(user)?.publicCode;
+  const studentIds = new Set(scopedStudents(user, state).map((student) => String(student.id ?? "")).filter(Boolean));
+
+  return rows.filter((row) => {
+    const sameCanonicalSchool = Boolean(
+      canonicalPublicCode && normalize(row.schoolCode) === normalize(canonicalPublicCode),
+    );
+    const belongsToCurrentStudent = Boolean(
+      row.studentId && studentIds.has(String(row.studentId)),
+    );
+    return sameCanonicalSchool || belongsToCurrentStudent;
+  });
 }
 
 export function scopedPresences(user: SessionUser | null, state: BackOfficeState): Row[] {
