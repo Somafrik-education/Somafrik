@@ -98,7 +98,10 @@ function createExpoPushService({
       body: message.body,
       data: message.data || {},
       sound: "default",
-      channelId: message.channelId || SOMAFRIK_PUSH_CHANNEL_ID,
+      // Android notification channels are immutable once created on a device.
+      // The transport therefore owns this contract and must not let stale callers
+      // fall back to the legacy low-importance channel.
+      channelId: SOMAFRIK_PUSH_CHANNEL_ID,
       priority: "high",
     }));
     const data = await requestJson(sendUrl, payload);
