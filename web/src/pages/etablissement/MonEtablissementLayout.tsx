@@ -22,14 +22,8 @@ export function MonEtablissementLayout() {
   const tabs = ETABLISSEMENT_TABS.filter((tab) => canReadView(ctx, tab.view));
 
   return (
-    <div className="space-y-5">
-      <div>
-        <p className="text-xs font-black uppercase tracking-wide text-brand">Mon établissement</p>
-        <h1 className="mt-1 text-2xl font-black text-ink">Mon établissement</h1>
-        <p className="mt-1 text-sm text-muted">
-          Scolarité, classes, effectifs et liaisons de l'établissement.
-        </p>
-      </div>
+    <div className="space-y-4">
+      <p className="text-xs font-black uppercase tracking-wide text-brand">Mon établissement</p>
       <TabNav tabs={tabs} />
       <Outlet />
     </div>

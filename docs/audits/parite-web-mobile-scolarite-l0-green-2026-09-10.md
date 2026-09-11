@@ -73,4 +73,13 @@ npm --prefix web run typecheck → tsc --noEmit OK
 npm --prefix web run lint → 0 error (warnings préexistants, non traités)
 ```
 
-Smoke visuel : `node scripts/scolarite-l0-viewport-smoke.js` après `npm --prefix web run build` (1440 / 1024 / 390 / 360).
+Smoke visuel : `VITE_API_URL=https://api.somafrik.app npm --prefix web run build && node scripts/scolarite-l0-viewport-smoke.js`
+
+```
+scolarite-l0-viewport-smoke: GO (0 overflow(s))
+viewports 1440 / 1024 / 390 / 360 × hub / classes / élèves
+```
+
+Note : 360/390 = Web responsive (tables desktop conservées). L’app Expo native n’a pas été lancée dans cet environnement ; le hub Mobile est `SchoolingHubScreen` (cartes).
+Le bandeau « Accès limité — Abonnement » vient du chrome abonnement (mock smoke sans offre) — hors lot.
+Le bouton HELP peut recouvrir un KPI à 360 px — chrome HELP hors lot.

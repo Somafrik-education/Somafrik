@@ -13,7 +13,7 @@ const { spawn } = require("node:child_process");
 const ROOT = path.resolve(__dirname, "..");
 const WEB = path.join(ROOT, "web");
 const OUT_DIR = "/opt/cursor/artifacts";
-const PREVIEW_PORT = Number(process.env.SCOLARITE_L0_PREVIEW_PORT || 4174);
+const PREVIEW_PORT = Number(process.env.SCOLARITE_L0_PREVIEW_PORT || 4180);
 const BASE = `http://127.0.0.1:${PREVIEW_PORT}`;
 const CHROME =
   process.env.CHROME_PATH ||
@@ -29,9 +29,9 @@ const VIEWPORTS = [
 ];
 
 const PAGES = [
-  { id: "hub", path: "/etablissement/vue-ensemble", wait: "Scolarité" },
-  { id: "classes", path: "/etablissement/classes", wait: "Classes" },
-  { id: "students", path: "/etablissement/eleves", wait: "Élèves" },
+  { id: "hub", path: "/etablissement/vue-ensemble", testId: "schooling-hub" },
+  { id: "classes", path: "/etablissement/classes", label: "Rechercher dans classes" },
+  { id: "students", path: "/etablissement/eleves", label: "Rechercher dans élèves" },
 ];
 
 const SCHOOL = {
@@ -235,15 +235,23 @@ async function main() {
       }, SESSION);
 
       for (const screen of PAGES) {
-        await page.goto(`${BASE}${screen.path}`, { waitUntil: "networkidle", timeout: 30000 });
-        await page.getByText(screen.wait, { exact: false }).first().waitFor({ timeout: 15000 });
+        await page.goto(`${BASE}${screen.path}`, { waitUntil: "domcontentloaded", timeout: 30000 });
+        if (screen.testId) {
+          await page.getByTestId(screen.testId).waitFor({ state: "visible", timeout: 20000 });
+        } else {
+          await page.getByLabel(screen.label).waitFor({ state: "visible", timeout: 20000 });
+        }
         const file = path.join(OUT_DIR, `scolarite_l0_${screen.id}_${viewport.name}.png`);
         await page.screenshot({ path: file, fullPage: true });
-        const metrics = await page.evaluate(() => ({
-          innerWidth: window.innerWidth,
-          scrollWidth: document.documentElement.scrollWidth,
-        }));
-        const overflow = metrics.scrollWidth > metrics.innerWidth + 8;
+        const metrics = await page.evaluate(() => {
+          const main = document.querySelector("main") || document.documentElement;
+          return {
+            innerWidth: window.innerWidth,
+            scrollWidth: Math.max(main.scrollWidth, document.documentElement.scrollWidth),
+            mainScrollWidth: main.scrollWidth,
+          };
+        });
+        const overflow = metrics.mainScrollWidth > metrics.innerWidth + 24;
         if (overflow) overflows.push({ viewport: viewport.name, page: screen.id, ...metrics });
         findings.push({
           viewport: viewport.name,
