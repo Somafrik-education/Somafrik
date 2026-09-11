@@ -205,6 +205,39 @@ assert.doesNotMatch(
   "PD-02 : Saisir/Consulter via summaryActions, pas dans children",
 );
 
+const usersScreen = read("screens/UsersScreen.tsx");
+assert.match(usersScreen, /ExpandableEntityCard/, "PD-04 : liste utilisateurs = ExpandableEntityCard");
+assert.match(usersScreen, /expandedUserId/);
+assert.match(usersScreen, /extraData=\{expandedUserId\}/);
+assert.match(usersScreen, /nextExclusiveExpandedKey\(current, user\.id\)/);
+assert.doesNotMatch(usersScreen, /defaultExpanded=\{true\}/);
+assert.match(usersScreen, /<UserMutationControls onChanged=\{\(\) => load\(\)\} \/>/);
+const usersCreateAt = usersScreen.indexOf("<UserMutationControls onChanged");
+const usersCardAt = usersScreen.indexOf("<ExpandableEntityCard");
+assert.ok(usersCreateAt >= 0 && usersCreateAt < usersCardAt, "PD-04 : création reste hors carte");
+const userCard = sliceFirstCard(usersScreen, "ExpandableEntityCard");
+assert.ok(userCard, "PD-04 : carte utilisateur absente");
+const userOpening = cardOpening(userCard);
+assert.match(userOpening, /title=\{/);
+assert.match(userOpening, /user\.firstName/);
+assert.match(userOpening, /user\.identifier/);
+assert.match(userOpening, /subtitle=\{/);
+assert.match(userOpening, /user\.publicId/);
+assert.match(userOpening, /badge=\{/);
+assert.match(usersScreen, /displayStatusName\(user\.status\)/, "PD-04 : statut en badge");
+assert.doesNotMatch(userOpening, /UserMutationControls/, "PD-04 : mutations hors résumé");
+assert.doesNotMatch(userOpening, /formatBusinessProfileKind/, "PD-04 : type métier hors résumé");
+assert.doesNotMatch(userOpening, /formatAccessRolesDisplay/, "PD-04 : rôles hors résumé");
+assert.doesNotMatch(userOpening, /user\.email/, "PD-04 : email hors résumé");
+assert.doesNotMatch(userOpening, /user\.phone/, "PD-04 : téléphone hors résumé");
+assert.doesNotMatch(userOpening, /user\.schoolCode/, "PD-04 : établissement hors résumé");
+assert.match(userCard, /<UserMutationControls[\s\S]*row=\{user\}/, "PD-04 : mutations de ligne en zone ouverte");
+assert.match(userCard, /formatBusinessProfileKind/);
+assert.match(userCard, /formatAccessRolesDisplay|user-access-roles/);
+assert.match(userCard, /user\.email/);
+assert.match(userCard, /user\.phone/);
+assert.match(userCard, /user\.schoolCode/);
+
 const navigator = read("navigation/AppNavigator.tsx");
 assert.doesNotMatch(navigator, /from ["']\.\.\/screens\/AdminCrudScreen["']/);
 assert.doesNotMatch(navigator, /from ["']\.\.\/screens\/MenuScreen["']/);

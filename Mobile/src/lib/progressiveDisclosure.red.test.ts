@@ -2,7 +2,7 @@
  * Lot 0 — écarts encore ROUGES (collections hors îlots Finance / Scolarité / Communication).
  *   npx --yes tsx src/lib/progressiveDisclosure.red.test.ts
  *
- * Exit 1 tant que PD-04, PD-06, PD-07 échouent. PD-01, PD-02, PD-03 et PD-05 sont GREEN.
+ * Exit 1 tant que PD-06, PD-07 échouent. PD-01, PD-02, PD-03, PD-04 et PD-05 sont GREEN.
  */
 import assert from "node:assert/strict";
 import fs from "node:fs";
@@ -28,18 +28,6 @@ function cardOpening(card: string) {
 }
 
 const cases: RedCase[] = [
-  {
-    id: "PD-04",
-    title: "Utilisateurs : carte Entity, mutations uniquement en zone ouverte",
-    run() {
-      const screen = read("screens/UsersScreen.tsx");
-      assert.match(screen, /ExpandableEntityCard/, "la liste utilisateurs n'utilise pas encore ExpandableEntityCard");
-      const card = sliceFirstCard(screen, "ExpandableEntityCard");
-      const opening = cardOpening(card);
-      assert.doesNotMatch(opening, /UserMutationControls/, "mutations encore dans le résumé");
-      assert.match(card, /<UserMutationControls[\s\S]*row=\{user\}/, "mutations absentes de la zone ouverte");
-    },
-  },
   {
     id: "PD-06",
     title: "Bulletins : métriques et PDF uniquement en zone ouverte",
