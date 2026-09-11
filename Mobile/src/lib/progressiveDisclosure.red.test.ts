@@ -2,7 +2,7 @@
  * Lot 0 — écarts encore ROUGES (collections hors îlots Finance / Scolarité / Communication).
  *   npx --yes tsx src/lib/progressiveDisclosure.red.test.ts
  *
- * Exit 1 tant que PD-06, PD-07 échouent. PD-01, PD-02, PD-03, PD-04 et PD-05 sont GREEN.
+ * Exit 1 tant que PD-07 échoue. PD-01 à PD-06 sont GREEN.
  */
 import assert from "node:assert/strict";
 import fs from "node:fs";
@@ -15,34 +15,7 @@ const read = (relative: string) => fs.readFileSync(path.join(srcRoot, relative),
 
 type RedCase = { id: string; title: string; run: () => void };
 
-function sliceFirstCard(source: string, tag: string) {
-  const start = source.indexOf(`<${tag}`);
-  const end = source.indexOf(`</${tag}>`, start);
-  if (start < 0 || end < 0) return "";
-  return source.slice(start, end);
-}
-
-function cardOpening(card: string) {
-  const split = card.indexOf(">");
-  return split < 0 ? card : card.slice(0, split);
-}
-
 const cases: RedCase[] = [
-  {
-    id: "PD-06",
-    title: "Bulletins : métriques et PDF uniquement en zone ouverte",
-    run() {
-      const screen = read("screens/ReportCardsScreen.tsx");
-      assert.match(
-        screen,
-        /ExpandableEntityCard|ExpandableFinanceCard/,
-        "la liste bulletins n'utilise pas encore la carte dépliable",
-      );
-      const card = sliceFirstCard(screen, "ExpandableEntityCard") || sliceFirstCard(screen, "ExpandableFinanceCard");
-      const opening = cardOpening(card);
-      assert.doesNotMatch(opening, /Visionner le bulletin/, "le CTA PDF est encore dans le résumé");
-    },
-  },
   {
     id: "PD-07",
     title: "EDT : enseignant/salle/remplacer hors résumé fermé",
