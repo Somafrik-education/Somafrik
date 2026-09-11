@@ -2,7 +2,7 @@
  * Lot 0 — écarts encore ROUGES (collections hors îlots Finance / Scolarité / Communication).
  *   npx --yes tsx src/lib/progressiveDisclosure.red.test.ts
  *
- * Exit 1 tant que PD-01…PD-07 échouent. Le vérificateur attend précisément ces échecs.
+ * Exit 1 tant que PD-02, PD-03, PD-04, PD-06, PD-07 échouent. PD-01 et PD-05 sont GREEN.
  */
 import assert from "node:assert/strict";
 import fs from "node:fs";
@@ -28,19 +28,6 @@ function cardOpening(card: string) {
 }
 
 const cases: RedCase[] = [
-  {
-    id: "PD-01",
-    title: "Enseignants : carte Entity, mutations uniquement en zone ouverte",
-    run() {
-      const screen = read("screens/TeachersScreen.tsx");
-      assert.match(screen, /ExpandableEntityCard/, "la liste enseignants n'utilise pas encore ExpandableEntityCard");
-      const card = sliceFirstCard(screen, "ExpandableEntityCard");
-      assert.ok(card, "aucune carte Entity enseignants");
-      const opening = cardOpening(card);
-      assert.doesNotMatch(opening, /TeacherMutationControls/, "Modifier/Archiver encore dans le résumé");
-      assert.match(card, /<TeacherMutationControls[\s\S]*row=\{teacher\}/, "mutations absentes de la zone ouverte");
-    },
-  },
   {
     id: "PD-02",
     title: "Évaluations : résumé sans Modifier/Valider/Publier ; Saisir peut rester visible",
