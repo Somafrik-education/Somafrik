@@ -81,7 +81,11 @@ async function main() {
     }
     sendCalls += 1;
     const body = JSON.parse(init.body);
-    assert.equal(body[0].channelId, SOMAFRIK_PUSH_CHANNEL_ID);
+    assert.equal(
+      body[0].channelId,
+      SOMAFRIK_PUSH_CHANNEL_ID,
+      "un ancien channelId fourni par un appelant ne doit jamais quitter le backend",
+    );
     assert.equal(body[0].priority, "high");
     return {
       ok: true,
@@ -102,6 +106,7 @@ async function main() {
   const ok = await okService.sendToTokens(["ExponentPushToken[alive]"], {
     title: "Test Somafrik",
     body: "Les notifications push Somafrik fonctionnent correctement.",
+    channelId: "somafrik-default",
   });
   assert.equal(ok.pendingReceipts[0].receiptId, "ticket-ok-1");
   assert.equal(queued[0].receiptId, "ticket-ok-1");
