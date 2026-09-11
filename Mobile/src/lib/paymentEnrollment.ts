@@ -1,3 +1,5 @@
+import { isLegacySchoolCode } from "./studentsScope";
+
 /**
  * Résolution canonique classe pour un paiement scolaire Mobile.
  * Source d'autorité : inscriptions PostgreSQL actives de l'élève (classId UUID).
@@ -75,6 +77,29 @@ export function searchPaymentStudents(
     if (hits.length >= 8) break;
   }
   return hits;
+}
+
+export type PaymentSearchScopeSession = {
+  user?: { schoolCode?: string; schoolPublicCode?: string };
+  school?: { code?: string };
+} | null;
+
+/**
+ * Scope de recherche Élève : leftover CC-YYYY-NNNN n'est jamais une autorité.
+ * schoolPublicCode / login V2 / SCH-001 non leftover restent valides.
+ */
+export function resolvePaymentStudentSearchScope(session: PaymentSearchScopeSession): string {
+  const candidates = [
+    trim(session?.user?.schoolPublicCode),
+    trim(session?.user?.schoolCode),
+    trim(session?.school?.code),
+  ];
+  for (const code of candidates) {
+    if (!code || code === "*") continue;
+    if (isLegacySchoolCode(code)) continue;
+    return code;
+  }
+  return "";
 }
 
 function isActiveEnrollment(status?: string): boolean {

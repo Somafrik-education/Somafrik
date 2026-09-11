@@ -18,6 +18,7 @@ import {
   paymentSubmitErrorMessage,
   preselectPaymentClassId,
   preselectPaymentObligationId,
+  resolvePaymentStudentSearchScope,
   searchPaymentStudents,
   type PaymentFeeRow,
   type PaymentStudent,
@@ -89,10 +90,7 @@ export default function PaymentMutationControls({
     () => studentOptions.find((item) => item.id === studentId) ?? null,
     [studentOptions, studentId],
   );
-  const schoolScope =
-    trimField(session?.user?.schoolCode) ||
-    trimField(session?.user?.schoolPublicCode) ||
-    trimField(session?.school?.code);
+  const schoolScope = resolvePaymentStudentSearchScope(session);
   const searchResults = useMemo(
     () => (studentId ? [] : searchPaymentStudents(studentQuery, studentOptions, schoolScope)),
     [studentId, studentQuery, studentOptions, schoolScope],
