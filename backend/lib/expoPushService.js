@@ -2,6 +2,7 @@
 
 const DEFAULT_PUSH_URL = "https://exp.host/--/api/v2/push/send";
 const DEFAULT_RECEIPTS_URL = "https://exp.host/--/api/v2/push/getReceipts";
+const SOMAFRIK_PUSH_CHANNEL_ID = "somafrik-default-v2";
 const MAX_ATTEMPTS = 3;
 const RETRY_BASE_MS = 400;
 
@@ -97,8 +98,8 @@ function createExpoPushService({
       body: message.body,
       data: message.data || {},
       sound: "default",
-      channelId: message.channelId || "somafrik-default",
-      priority: "default",
+      channelId: message.channelId || SOMAFRIK_PUSH_CHANNEL_ID,
+      priority: "high",
     }));
     const data = await requestJson(sendUrl, payload);
     const tickets = Array.isArray(data?.data) ? data.data : Array.isArray(data) ? data : [];
@@ -131,4 +132,5 @@ module.exports = {
   createExpoPushService,
   DEFAULT_PUSH_URL,
   DEFAULT_RECEIPTS_URL,
+  SOMAFRIK_PUSH_CHANNEL_ID,
 };

@@ -20,9 +20,12 @@ type NotificationsLike = {
       importance: number;
       vibrationPattern?: number[];
       lightColor?: string;
+      sound?: string | null;
+      enableVibrate?: boolean;
+      showBadge?: boolean;
     },
   ) => Promise<unknown>;
-  AndroidImportance?: { DEFAULT: number };
+  AndroidImportance?: { HIGH?: number; DEFAULT?: number };
   getPermissionsAsync: () => Promise<PermissionResponse>;
   requestPermissionsAsync: () => Promise<PermissionResponse>;
   getExpoPushTokenAsync: (options: { projectId: string }) => Promise<{ data?: string }>;
@@ -157,13 +160,16 @@ export async function registerAuthenticatedPushDevice(deps: PushRegisterDeps = {
   if (!isNativePushCompatible(deps.executionEnvironment, deps.expoGoConfig)) return "unsupported";
 
   const notifications = deps.notifications ?? nativeNotifications();
-  const importance = notifications.AndroidImportance?.DEFAULT ?? 3;
+  const importance = notifications.AndroidImportance?.HIGH ?? 4;
   if (typeof notifications.setNotificationChannelAsync === "function") {
     await notifications.setNotificationChannelAsync(SOMAFRIK_PUSH_CHANNEL_ID, {
       name: "Somafrik",
       importance,
+      sound: "default",
+      enableVibrate: true,
       vibrationPattern: [0, 250, 250, 250],
       lightColor: "#1d4ed8",
+      showBadge: true,
     });
   }
 
