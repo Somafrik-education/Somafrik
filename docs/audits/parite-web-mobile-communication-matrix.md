@@ -2,6 +2,7 @@
 
 **Base :** `develop@193c5df3e7b3049bb02f70d53106b0889f95fd0d`  
 **Branche :** `cursor/communication-web-mobile-parity-7447`  
+**GREEN :** `docs/audits/parite-web-mobile-communication-green-2026-09-10.md` (14/14 cas de parité verts)  
 **Règle :** même donnée métier canonique PostgreSQL → même identifiant, auteur, établissement, audience, titre, contenu, date, statut, lu/non lu. Pas de copie pixel. Pas de second état métier.
 
 Contrat UX : `docs/audits/parite-web-mobile-communication-ux-maquette.md`
@@ -74,3 +75,5 @@ Aucune suppression de surface existante. Plateforme Notifications reste Web-only
 ## Décision de lot
 
 Corriger uniquement les écarts de **données** et d’**UX de liste** sur C2/C3/C4 déjà exposés. Écriture : conserver les endpoints déjà utilisés (conversations Web, `POST /messages` Mobile). Aucun fallback métier, aucun second état.
+
+**GREEN livré :** conversations Mobile = C2 ; unread-count API Web/Mobile/Accueil ; C4 cursor + compteur serveur ; chrome Communication ; recherche/filtre client sur listes canoniques ; `audienceLabel` en liste Web. Hors lot inchangé (plateforme Mobile, PATCH UI, search serveur).

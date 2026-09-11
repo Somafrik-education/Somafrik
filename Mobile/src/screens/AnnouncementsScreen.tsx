@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import {
   Alert,
   Linking,
@@ -13,12 +13,14 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect } from "@react-navigation/native";
 import AnnouncementMutationControls from "../components/AnnouncementMutationControls";
+import CommunicationChrome from "../components/CommunicationChrome";
 import QueryStateView from "../components/QueryStateView";
 import StatusBadge from "../components/StatusBadge";
 import { useAuth } from "../context/AuthContext";
 import { useAdminData } from "../context/AdminDataContext";
 import { canMutateEntity, canReadEntity, isSuperAdminSessionRole } from "../domain/security/permissions";
 import { canArchiveAnnouncement } from "../lib/mobileCtaRbacAlignment";
+import { filterCommunicationRows, excerptCommunication } from "../lib/communicationListFilter";
 import { useFloatingTabBarLayout } from "../lib/screenLayout";
 import { downloadCommunicationAttachment, downloadPlatformAnnouncementAttachment } from "../services/api";
 import {
@@ -51,6 +53,8 @@ export default function AnnouncementsScreen() {
   const { announcementsSnapshot: snapshot, loadAnnouncements: load, resourceScopeKey, activeSchoolCode } = useAdminData();
   const [archivingId, setArchivingId] = useState("");
   const [selected, setSelected] = useState<CanonicalAnnouncement | null>(null);
+  const [query, setQuery] = useState("");
+  const [unreadOnly, setUnreadOnly] = useState(false);
 
   useFocusEffect(
     useCallback(() => {
@@ -97,20 +101,45 @@ export default function AnnouncementsScreen() {
     ]);
   };
 
+  const visible = useMemo(
+    () =>
+      filterCommunicationRows(
+        (canRead && snapshot.status === "success" ? snapshot.data : []).map((row) => ({
+          ...row,
+          excerpt: excerptCommunication(String(row.message || "")),
+          author: row.author || "",
+          audience: row.audienceLabel || row.audience || "",
+          unread: !row.readAt,
+        })),
+        query,
+        unreadOnly,
+      ),
+    [canRead, snapshot, query, unreadOnly],
+  );
+
   return (
     <>
       <FlatList
         style={styles.container}
         contentContainerStyle={contentStyle}
-        data={canRead && snapshot.status === "success" ? snapshot.data : []}
+        data={visible}
         keyExtractor={(item) => item.id}
         refreshControl={
           canRead ? <RefreshControl refreshing={snapshot.status === "loading"} onRefresh={() => void load()} /> : undefined
         }
         ListHeaderComponent={
           <>
-            <Text style={styles.title}>Annonces</Text>
-            <Text style={styles.subtitle}>Communications chargées depuis PostgreSQL</Text>
+            <CommunicationChrome
+              surface="announcements"
+              title="Communication"
+              searchPlaceholder="Rechercher"
+              unreadLabel="Non lus"
+              countLabel="Annonces"
+              search={query}
+              onSearch={setQuery}
+              unreadOnly={unreadOnly}
+              onUnreadOnly={setUnreadOnly}
+            />
             {!canRead ? (
               <View style={styles.emptyState}>
                 <Ionicons name="lock-closed-outline" size={24} color="#DC2626" />
@@ -137,34 +166,22 @@ export default function AnnouncementsScreen() {
         }
         renderItem={({ item: announcement }) => (
           <TouchableOpacity style={styles.card} onPress={() => void openAnnouncement(announcement)}>
-            <View style={styles.cardMain}>
-              <View style={styles.iconBox}>
-                <Ionicons name="megaphone-outline" size={24} color="#7C3AED" />
-              </View>
-              <View style={styles.cardContent}>
-                <View style={styles.titleRow}>
-                  <Text style={styles.cardTitle} numberOfLines={3}>{announcement.title}</Text>
-                  {announcement.badge ? <Text style={styles.unread}>{announcement.badge}</Text> : null}
-                  {!announcement.readAt ? (
-                    <Text style={styles.unread}>Non lu</Text>
-                  ) : (
-                    <Text style={styles.read}>Lu</Text>
-                  )}
-                </View>
-                {announcement.originLabel || announcement.source === "platform" ? (
-                  <Text style={styles.date} numberOfLines={2}>
-                    {announcement.originLabel || (announcement.systemBroadcast ? "Annonce Somafrik" : "Annonce administrative Somafrik")}
-                  </Text>
+            <View style={styles.cardContent}>
+              <View style={styles.titleRow}>
+                <Text style={styles.cardTitle} numberOfLines={1}>{announcement.title}</Text>
+                {!announcement.readAt ? (
+                  <Text style={styles.unread}>Non lu</Text>
                 ) : (
-                  <Text style={styles.date} numberOfLines={2}>Annonce établissement</Text>
+                  <Text style={styles.read}>Lu</Text>
                 )}
-                {announcement.author ? <Text style={styles.date} numberOfLines={2}>Expéditeur : {announcement.author}</Text> : null}
-                <Text style={styles.date} numberOfLines={2}>
-                  {formatDisplayDate(announcement.publishedAt || announcement.createdAt || announcement.date)}
-                </Text>
-                {announcement.audience ? <Text style={styles.date} numberOfLines={2}>{announcement.audience}</Text> : null}
-                {announcement.status ? <StatusBadge status={announcement.status} /> : null}
               </View>
+              {announcement.excerpt ? <Text style={styles.excerpt} numberOfLines={1}>{announcement.excerpt}</Text> : null}
+              <Text style={styles.date} numberOfLines={1}>
+                {announcement.author ? `${announcement.author} · ` : ""}
+                {formatDisplayDate(announcement.publishedAt || announcement.createdAt || announcement.date)}
+              </Text>
+              {announcement.audience ? <Text style={styles.date} numberOfLines={1}>{announcement.audience}</Text> : null}
+              {announcement.status ? <StatusBadge status={announcement.status} /> : null}
             </View>
             {canArchive && (announcement.source !== "platform" || isSuperadmin) && (
               <View style={styles.actionRow}>
@@ -223,12 +240,11 @@ const styles = StyleSheet.create({
   subtitle: { marginTop: 4, marginBottom: 14, color: "#64748B" },
   emptyState: { alignItems: "center", gap: 8, paddingVertical: 24 },
   emptyText: { color: "#DC2626", fontWeight: "700" },
-  card: { backgroundColor: "#FFFFFF", borderRadius: 16, padding: 14, marginBottom: 10, borderWidth: 1, borderColor: "#E2E8F0" },
-  cardMain: { flexDirection: "row", gap: 12 },
-  iconBox: { width: 40, height: 40, borderRadius: 12, backgroundColor: "#F5F3FF", alignItems: "center", justifyContent: "center" },
+  card: { backgroundColor: "#FFFFFF", borderRadius: 12, paddingVertical: 10, paddingHorizontal: 12, marginBottom: 6, borderWidth: 1, borderColor: "#E2E8F0" },
   cardContent: { flex: 1 },
   titleRow: { flexDirection: "row", justifyContent: "space-between", gap: 8 },
-  cardTitle: { flex: 1, fontWeight: "800", color: "#0F172A" },
+  cardTitle: { flex: 1, fontWeight: "700", color: "#0F172A" },
+  excerpt: { marginTop: 2, color: "#64748B", fontSize: 12 },
   message: { marginTop: 6, color: "#334155" },
   date: { marginTop: 6, color: "#64748B", fontSize: 12 },
   unread: { color: "#7C3AED", fontWeight: "800", fontSize: 12 },

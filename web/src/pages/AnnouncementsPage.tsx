@@ -17,12 +17,14 @@ import {
 import { hasCommunicationSchoolScope } from "../lib/communicationSchoolScope";
 import { useDeepLinkId } from "../lib/notificationDeepLink";
 import { isSuperAdminRole } from "../lib/orgHierarchy";
+import { filterCommunicationRows, excerptCommunication } from "../lib/communicationListFilter";
 import { Card, SectionHeader } from "../components/ui/Card";
 import { Button } from "../components/ui/Button";
 import { Field } from "../components/ui/Field";
 import { useToast } from "../components/ui/Toast";
 import { useConfirm } from "../components/ui/ConfirmDialog";
 import { ApiError } from "../api/client";
+import { CommunicationChrome, useCommunicationListQuery } from "../components/communications/CommunicationChrome";
 
 const RECIPIENT_KIND_FALLBACK: AudienceKindOption[] = [
   { id: "parent", label: "parents" },
@@ -84,6 +86,7 @@ export function AnnouncementsPage() {
   const scopeReady = isGlobalSuperadmin || !requiresSelection || Boolean(schoolScope);
   const deepLinkAnnouncementId = useDeepLinkId("announcementId");
   const [items, setItems] = useState<UnifiedAnnouncement[]>([]);
+  const { search, setSearch, unreadOnly, setUnreadOnly } = useCommunicationListQuery();
   const [selectedId, setSelectedId] = useState("");
   const [detail, setDetail] = useState<UnifiedAnnouncement | null>(null);
   const [listLoaded, setListLoaded] = useState(false);
@@ -210,6 +213,23 @@ export function AnnouncementsPage() {
   const selected = useMemo(
     () => items.find((row) => row.id === selectedId) ?? detail,
     [items, selectedId, detail],
+  );
+  const visibleItems = useMemo(
+    () =>
+      filterCommunicationRows(
+        items.map((row) => ({
+          ...row,
+          excerpt: excerptCommunication(String(row.content || row.message || "")),
+          author: isPlatformRow(row)
+            ? row.senderDisplayName || row.createdByName || ""
+            : row.createdByName || "",
+          audience: row.audienceLabel || "",
+          unread: !row.readAt,
+        })),
+        search,
+        unreadOnly,
+      ),
+    [items, search, unreadOnly],
   );
 
   async function handleUpload(fileList: FileList | null) {
@@ -368,9 +388,20 @@ export function AnnouncementsPage() {
     : viewed?.createdByName;
 
   return (
-    <div className="grid gap-4 p-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)]">
+    <CommunicationChrome
+      surface="announcements"
+      title="Communication"
+      searchPlaceholder="Rechercher"
+      unreadLabel="Non lus"
+      countLabel={`${items.filter((row) => !row.readAt).length} non lue(s)`}
+      search={search}
+      onSearch={setSearch}
+      unreadOnly={unreadOnly}
+      onUnreadOnly={setUnreadOnly}
+      primaryAction={undefined}
+    >
+    <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)]">
       <div className="space-y-4">
-        <SectionHeader title="Annonces" description="Historique publié, lecture PostgreSQL." />
         {canCreate && isGlobalSuperadmin ? (
           <Card>
             <h2 className="mb-3 text-sm font-bold">Nouvelle annonce</h2>
@@ -556,20 +587,21 @@ export function AnnouncementsPage() {
           </div>
         ) : null}
         {!loading && !error && !items.length ? <p className="text-sm text-muted">Aucune annonce.</p> : null}
-        <ul className="space-y-2">
-          {items.map((row) => (
+        <ul className="space-y-1">
+          {visibleItems.map((row) => (
             <li key={`${row.source ?? "row"}-${row.id}`}>
               <button
                 type="button"
                 data-testid="announcement-item"
                 data-announcement-id={row.id}
                 aria-selected={selectedId === row.id}
-                className={`w-full rounded-xl border px-3 py-3 text-left ${
+                className={`w-full rounded-lg border px-3 py-2 text-left ${
                   selectedId === row.id ? "border-brand bg-brand-50" : "border-line bg-white"
                 }`}
                 onClick={() => setSelectedId(row.id)}
               >
-                <p className="font-semibold text-ink">{row.title}</p>
+                <p className="truncate font-semibold text-ink">{row.title}</p>
+                {row.excerpt ? <p className="truncate text-xs text-muted">{row.excerpt}</p> : null}
                 <p className="text-xs text-muted">
                   {isPlatformRow(row)
                     ? row.announcementType === "system"
@@ -578,10 +610,12 @@ export function AnnouncementsPage() {
                     : "Annonce établissement"}
                   {row.badge ? ` · ${row.badge}` : ""}
                 </p>
-                <p className="text-xs text-muted">
-                  {isPlatformRow(row) ? row.senderDisplayName || row.createdByName || "Expéditeur" : row.createdByName || "Expéditeur"}{" "}
-                  · {formatDisplayDate(row.publishedAt || row.createdAt)}
+                <p className="truncate text-xs text-muted">
+                  {row.author || "Expéditeur"} · {formatDisplayDate(row.publishedAt || row.createdAt)}
                 </p>
+                {row.audienceLabel ? (
+                  <p className="truncate text-xs text-muted">{row.audienceLabel}</p>
+                ) : null}
                 <p className="text-xs">{row.readAt ? "Lu" : "Non lu"}</p>
               </button>
             </li>
@@ -628,5 +662,6 @@ export function AnnouncementsPage() {
         )}
       </div>
     </div>
+    </CommunicationChrome>
   );
 }

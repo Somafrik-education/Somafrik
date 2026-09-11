@@ -17,8 +17,11 @@ import { useAuth } from "../context/AuthContext";
 import { useAdminData } from "../context/AdminDataContext";
 import { canReadRoute } from "../domain/security/permissions";
 import { hasCommunicationSchoolScope } from "../lib/communicationSchoolScope";
+import { filterCommunicationRows, excerptCommunication } from "../lib/communicationListFilter";
+import { useInternalNotificationsUnreadCount } from "../lib/internalNotificationsRead";
 import { resolveInternalNotificationNavigationTarget } from "../lib/pushNotificationDestinations";
 import { navigationRef } from "../navigation/rootNavigation";
+import CommunicationChrome from "../components/CommunicationChrome";
 import {
   archiveInternalNotification,
   createInternalNotification,
@@ -59,11 +62,29 @@ export default function InternalNotificationsScreen() {
   const [body, setBody] = useState("");
   const [attachments, setAttachments] = useState<Array<{ id: string; fileName: string }>>([]);
   const [sending, setSending] = useState(false);
+  const [cursor, setCursor] = useState<string | null>(null);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [query, setQuery] = useState("");
+  const [unreadOnly, setUnreadOnly] = useState(false);
 
   const scopeReady = !requiresSchoolSelection || hasCommunicationSchoolScope(activeSchoolCode);
   const canCreate = hasPermission(session, "Notifications:CREATE") && scopeReady;
   const canOpenStudentPayments = canReadRoute(session, "StudentPayments");
-  const unread = useMemo(() => rows.filter((row) => !row.readAt).length, [rows]);
+  const { count: unread, refresh: refreshUnread } = useInternalNotificationsUnreadCount(scopeReady, activeSchoolCode);
+  const visibleRows = useMemo(
+    () =>
+      filterCommunicationRows(
+        rows.map((row) => ({
+          ...row,
+          excerpt: excerptCommunication(row.body),
+          author: row.senderName,
+          unread: !row.readAt,
+        })),
+        query,
+        unreadOnly,
+      ),
+    [rows, query, unreadOnly],
+  );
 
   const load = useCallback(async (refresh = false) => {
     if (!scopeReady) {
@@ -78,22 +99,42 @@ export default function InternalNotificationsScreen() {
     try {
       const result = await listInternalNotifications(activeSchoolCode);
       setRows(result.items);
+      setCursor(result.nextCursor ?? null);
+      await refreshUnread();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Notifications indisponibles.");
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [activeSchoolCode, scopeReady]);
+  }, [activeSchoolCode, scopeReady, refreshUnread]);
 
   useFocusEffect(useCallback(() => {
     void load();
   }, [load]));
 
+  async function loadMore() {
+    if (!cursor || loadingMore) return;
+    setLoadingMore(true);
+    try {
+      const result = await listInternalNotifications(activeSchoolCode, { cursor });
+      setRows((current) => {
+        const known = new Set(current.map((row) => row.id));
+        return [...current, ...result.items.filter((row) => !known.has(row.id))];
+      });
+      setCursor(result.nextCursor ?? null);
+    } catch (err) {
+      Alert.alert("Chargement interrompu", err instanceof Error ? err.message : "Réessayez.");
+    } finally {
+      setLoadingMore(false);
+    }
+  }
+
   async function markRead(row: InternalNotificationRecord) {
     try {
       const updated = await markInternalNotificationRead(row.id, activeSchoolCode);
       setRows((current) => current.map((item) => item.id === row.id ? updated : item));
+      await refreshUnread();
     } catch (err) {
       Alert.alert("Lecture impossible", err instanceof Error ? err.message : "Réessayez.");
     }
@@ -103,6 +144,7 @@ export default function InternalNotificationsScreen() {
     try {
       await archiveInternalNotification(row.id, activeSchoolCode);
       setRows((current) => current.filter((item) => item.id !== row.id));
+      await refreshUnread();
     } catch (err) {
       Alert.alert("Archivage impossible", err instanceof Error ? err.message : "Réessayez.");
     }
@@ -171,19 +213,33 @@ export default function InternalNotificationsScreen() {
       contentContainerStyle={styles.content}
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => void load(true)} />}
     >
-      <View style={styles.header}>
-        <View>
-          <Text style={styles.title}>Notifications</Text>
-          <Text style={styles.subtitle}>{unread} non lue(s) · synchronisées avec le Web</Text>
-        </View>
-        {canCreate ? (
-          <TouchableOpacity style={styles.primaryButton} onPress={() => setShowComposer((value) => !value)}>
-            <Text style={styles.primaryButtonText}>{showComposer ? "Fermer" : "Nouvelle"}</Text>
-          </TouchableOpacity>
-        ) : null}
-      </View>
+      <CommunicationChrome
+        surface="notifications"
+        title="Communication"
+        searchPlaceholder="Rechercher"
+        unreadLabel="Non lus"
+        countLabel={`${unread} non lue(s) · synchronisées avec le Web`}
+        search={query}
+        onSearch={setQuery}
+        unreadOnly={unreadOnly}
+        onUnreadOnly={setUnreadOnly}
+        primaryAction={
+          canCreate ? (
+            <TouchableOpacity style={styles.primaryButton} onPress={() => setShowComposer((value) => !value)}>
+              <Text style={styles.primaryButtonText}>{showComposer ? "Fermer" : "Nouvelle"}</Text>
+            </TouchableOpacity>
+          ) : null
+        }
+      />
 
-      {error ? <Text style={styles.error}>{error}</Text> : null}
+      {error ? (
+        <View>
+          <Text style={styles.error}>{error}</Text>
+          <TouchableOpacity style={styles.secondaryButton} onPress={() => void load()}>
+            <Text style={styles.secondaryButtonText}>Réessayer</Text>
+          </TouchableOpacity>
+        </View>
+      ) : null}
 
       {showComposer ? (
         <View style={styles.card}>
@@ -206,9 +262,9 @@ export default function InternalNotificationsScreen() {
         </View>
       ) : null}
 
-      {!rows.length && !error ? <Text style={styles.empty}>Aucune notification.</Text> : null}
+      {!visibleRows.length && !error ? <Text style={styles.empty}>Aucune notification.</Text> : null}
 
-      {rows.map((row) => {
+      {visibleRows.map((row) => {
         const navigationTarget = resolveInternalNotificationNavigationTarget(row.navigationTarget);
         return (
           <View key={row.id} style={[styles.card, !row.readAt && styles.unreadCard]}>
@@ -216,7 +272,7 @@ export default function InternalNotificationsScreen() {
               <Text style={styles.cardTitle}>{row.title}</Text>
               <Text style={[styles.badge, row.readAt ? styles.readBadge : styles.unreadBadge]}>{row.readAt ? "Lu" : "Non lu"}</Text>
             </View>
-            <Text style={styles.body}>{row.body}</Text>
+            <Text style={styles.body} numberOfLines={2}>{row.excerpt}</Text>
             <Text style={styles.meta}>{row.senderName} · {formatDateTime(row.publishedAt || row.createdAt)}</Text>
             {(row.attachments ?? []).map((attachment) => (
               <TouchableOpacity
@@ -256,6 +312,11 @@ export default function InternalNotificationsScreen() {
           </View>
         );
       })}
+      {cursor ? (
+        <TouchableOpacity style={styles.secondaryButton} onPress={() => void loadMore()} disabled={loadingMore}>
+          <Text style={styles.secondaryButtonText}>{loadingMore ? "Chargement…" : "Charger les notifications plus anciennes"}</Text>
+        </TouchableOpacity>
+      ) : null}
     </ScrollView>
   );
 }
@@ -267,7 +328,7 @@ const styles = StyleSheet.create({
   header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12 },
   title: { fontSize: 24, fontWeight: "800", color: "#0F172A" },
   subtitle: { marginTop: 4, color: "#64748B" },
-  card: { backgroundColor: "#FFFFFF", borderRadius: 16, borderWidth: 1, borderColor: "#E2E8F0", padding: 16, gap: 10 },
+  card: { backgroundColor: "#FFFFFF", borderRadius: 12, borderWidth: 1, borderColor: "#E2E8F0", paddingVertical: 10, paddingHorizontal: 12, gap: 6 },
   unreadCard: { borderColor: "#93C5FD", backgroundColor: "#EFF6FF" },
   rowTop: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8 },
   cardTitle: { flex: 1, fontSize: 16, fontWeight: "800", color: "#0F172A" },

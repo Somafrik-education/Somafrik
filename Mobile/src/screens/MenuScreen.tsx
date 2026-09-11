@@ -8,6 +8,7 @@ import CommunicationPreferencesSheet from "../components/CommunicationPreference
 import { AdminEntity, useAdminData } from "../context/AdminDataContext";
 import StudentsScopeAlert from "../components/StudentsScopeAlert";
 import { canReadEntity, canReadRoute, canReadView, isSuperAdminSessionRole } from "../domain/security/permissions";
+import { canAccessMessagesRoute } from "../lib/mobileCtaRbacAlignment";
 import { useFloatingTabBarLayout } from "../lib/screenLayout";
 import { useResponsiveLayout } from "../hooks/useResponsiveLayout";
 import { MENU_TEST_IDS } from "../lib/loginScreenSpec";
@@ -35,6 +36,7 @@ const adminMenuItems: MenuItem[] = [
   { label: "👨‍🏫 Enseignants", entity: "teachers", route: "Teachers", view: "teachers" },
   { label: "📚 Classes", route: "Classes", view: "classes" },
   { label: "💰 Paiements", entity: "payments", route: "Payments", view: "payments" },
+  { label: "✉️ Messages", entity: "messages", route: "Messages", view: "messages" },
   { label: "📢 Annonces", entity: "announcements", route: "Announcements", view: "announcements" },
   { label: "🔔 Notifications", route: "InternalNotifications", view: "InternalNotifications" },
   { label: "🗓️ Emplois du temps", route: "Timetable", view: "Timetable" },
@@ -48,6 +50,7 @@ const parentMenuItems: MenuItem[] = [
   { label: "📄 Bulletins PDF", route: "ReportCards", view: "ReportCards" },
   { label: "💰 Situation des frais", route: "FraisEleve", view: "FraisEleve" },
   { label: "📱 Paiement mobile", route: "MobilePayment", view: "MobilePayment" },
+  { label: "✉️ Messages", entity: "messages", route: "Messages", view: "messages" },
   { label: "📢 Annonces de l'école", route: "Announcements", view: "Announcements" },
   { label: "🔔 Notifications", route: "InternalNotifications", view: "InternalNotifications" },
   { label: "🔄 Mode hors ligne", route: "OfflineMode", view: "OfflineMode" },
@@ -61,6 +64,7 @@ const studentMenuItems: MenuItem[] = [
   { label: "✅ Mes présences", route: "Presences", view: "Presences" },
   { label: "🗓️ Mon emploi du temps", route: "Timetable", view: "Timetable" },
   { label: "💰 Mes paiements", route: "FraisEleve", view: "FraisEleve" },
+  { label: "✉️ Messages", entity: "messages", route: "Messages", view: "messages" },
   { label: "📢 Annonces", route: "Announcements", view: "Announcements" },
   { label: "🔔 Notifications", route: "InternalNotifications", view: "InternalNotifications" },
   { label: "🔄 Mode hors ligne", route: "OfflineMode", view: "OfflineMode" },
@@ -73,6 +77,7 @@ const teacherMenuItems: MenuItem[] = [
   { label: "📝 Gestion des notes", route: "TeacherGrades", view: "TeacherGrades" },
   { label: "📄 Bulletins", route: "ReportCards", view: "ReportCards" },
   { label: "🗓️ Mon emploi du temps", route: "Timetable", view: "Timetable" },
+  { label: "✉️ Messages", entity: "messages", route: "Messages", view: "messages" },
   { label: "📢 Annonces de l'école", route: "Announcements", view: "Announcements" },
   { label: "🔔 Notifications", route: "InternalNotifications", view: "InternalNotifications" },
   { label: "🔄 Synchronisation", route: "Synchronization", view: "Synchronization" },
@@ -94,6 +99,7 @@ function canShowPushSelfTestButton(session: {
 function filterMenuItemsByPermission(session: any, items: MenuItem[]) {
   return items.filter((item) => {
     if (session?.role === "school_admin" && item.entity === "students") return false;
+    if (item.route === "Messages") return canAccessMessagesRoute(session);
     const view = item.view ?? (item.entity ? ENTITY_VIEW_MAP[item.entity] : item.route);
     if (view && !canReadView(session, view)) return false;
     if (item.entity) return canReadEntity(session, item.entity);

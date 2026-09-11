@@ -78,6 +78,50 @@ export async function getCanonicalMessages(schoolCode?: string): Promise<Canonic
     .filter((row): row is CanonicalSchoolMessage => Boolean(row));
 }
 
+export type CanonicalConversation = {
+  id: string;
+  schoolCode?: string;
+  subject?: string;
+  status?: string;
+  createdAt?: string;
+  updatedAt?: string;
+  participants?: Array<{ userId: string; name: string; roleLabel?: string }>;
+  lastMessage?: {
+    id: string;
+    body?: string;
+    sentAt?: string;
+    senderUserId?: string;
+    senderName?: string;
+  } | null;
+  unreadCount?: number;
+};
+
+export async function getCanonicalConversations(schoolCode?: string): Promise<CanonicalConversation[]> {
+  const payload = await httpRequest<{ items?: CanonicalConversation[] }>(
+    scopedMessagesPath("/backoffice/conversations", schoolCode),
+  );
+  return Array.isArray(payload?.items) ? payload.items : [];
+}
+
+export async function getCanonicalConversationMessages(
+  conversationId: string,
+  schoolCode?: string,
+): Promise<CanonicalSchoolMessage[]> {
+  const payload = await httpRequest<unknown>(
+    scopedMessagesPath(`/backoffice/conversations/${encodeURIComponent(conversationId)}/messages`, schoolCode),
+  );
+  return unwrapList(payload)
+    .map(normalizeMessage)
+    .filter((row): row is CanonicalSchoolMessage => Boolean(row));
+}
+
+export async function getMessagesUnreadCount(schoolCode?: string): Promise<number> {
+  const data = await httpRequest<{ count?: number }>(
+    scopedMessagesPath("/backoffice/messages/unread-count", schoolCode),
+  );
+  return Math.max(0, Number(data?.count) || 0);
+}
+
 function asTrimmedField(value: unknown): string {
   return String(value ?? "").trim();
 }

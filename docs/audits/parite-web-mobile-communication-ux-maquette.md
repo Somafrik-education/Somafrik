@@ -7,7 +7,8 @@
 Constantes machine : `web/src/lib/pariteCommunicationUxContract.ts` et `Mobile/src/lib/pariteCommunicationUxContract.ts`.
 
 Maquette HTML : `docs/audits/parite-web-mobile-communication-maquette.html`.  
-Captures cibles : `docs/audits/evidence/communication_web_1440_maquette.png`, `docs/audits/evidence/communication_mobile_390_maquette.png`.
+Captures maquette : `docs/audits/evidence/communication_maquette_{1440,1024,390,360}.png`.  
+Captures live Web : `docs/audits/evidence/communication_web_{messages,annonces,notifications}_{1440,1024,390,360}.png`.
 
 ---
 
