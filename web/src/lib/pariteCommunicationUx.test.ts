@@ -15,9 +15,12 @@ const notifications = read("components/communications/InternalNotificationsCente
 const announcements = read("pages/AnnouncementsPage.tsx");
 const messages = read("pages/MessagesConversationsPage.tsx");
 
+assert.match(expandable, /defaultExpanded = false/);
 assert.match(expandable, /aria-expanded=\{expanded\}/);
 assert.match(expandable, /les détails/);
 assert.match(expandable, /expanded \? <div className="space-y-2 border-t border-line px-3 py-3">\{children\}<\/div> : null/);
+assert.doesNotMatch(notifications, /defaultExpanded=\{true\}/);
+assert.doesNotMatch(announcements, /defaultExpanded=\{true\}/);
 
 const notifCardStart = notifications.indexOf("<ExpandableCommunicationCard");
 const notifCardEnd = notifications.lastIndexOf("</ExpandableCommunicationCard>");

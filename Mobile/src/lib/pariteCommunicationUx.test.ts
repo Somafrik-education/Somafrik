@@ -18,11 +18,15 @@ const api = read("services/api.ts");
 const hydration = read("services/domainHydrationApi.ts");
 const notificationsApi = read("services/internalNotificationsApi.ts");
 
+assert.match(expandable, /defaultExpanded = false/);
+assert.match(expandable, /accessibilityRole="button"/);
 assert.match(expandable, /accessibilityState=\{\{\s*expanded\s*\}\}/);
 assert.match(expandable, /expanded \? <View style=\{styles\.detail\}>\{children\}<\/View> : null/);
 assert.match(expandable, /chevron-down|chevron-up/);
 assert.match(expandable, /MIN_TOUCH_TARGET_DP/);
 assert.match(expandable, /les détails/);
+assert.doesNotMatch(announcements, /defaultExpanded=\{true\}/);
+assert.doesNotMatch(notifications, /defaultExpanded=\{true\}/);
 
 const announcementsCard = sliceCard(announcements, "ExpandableCommunicationCard");
 const announcementsOpening = cardOpening(announcementsCard);
