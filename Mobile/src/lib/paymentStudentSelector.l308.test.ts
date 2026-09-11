@@ -37,23 +37,19 @@ const cases: { id: string; title: string; run: () => void }[] = [
     id: "FIN-L3-08-M-SEARCH",
     title: "searchPaymentStudents : nom + matricule, studentId UUID, isolation tenant",
     run() {
-      const search = (enrollment as { searchPaymentStudents?: typeof paymentStudentsFromOptions }).searchPaymentStudents;
-      assert.equal(
-        typeof search,
-        "function",
-        "Mobile n'expose pas searchPaymentStudents — ChoiceChips nom-seul, pas de recherche Élève",
-      );
+      const search = enrollment.searchPaymentStudents;
+      assert.equal(typeof search, "function");
       const roster = paymentStudentsFromOptions([L308_HOMONYM_A, L308_HOMONYM_B, L308_FOREIGN]);
-      const byName = search!("Mbala", roster as never, L308_SCHOOL_CODE as never);
+      const byName = search("Mbala", roster, L308_SCHOOL_CODE);
       assert.equal(byName.length, 2, "les deux Jean Mbala du tenant doivent sortir");
       assert.ok(
         byName.every((row) => row.id === L308_HOMONYM_A.studentId || row.id === L308_HOMONYM_B.studentId),
         "la recherche doit renvoyer le studentId UUID canonique, pas le nom affiché",
       );
-      const byCode = search!(L308_HOMONYM_A.studentCode, roster as never, L308_SCHOOL_CODE as never);
+      const byCode = search(L308_HOMONYM_A.studentCode, roster, L308_SCHOOL_CODE);
       assert.equal(byCode.length, 1);
       assert.equal(byCode[0].id, L308_HOMONYM_A.studentId);
-      const foreign = search!("Intru", roster as never, L308_SCHOOL_CODE as never);
+      const foreign = search("Intru", roster, L308_SCHOOL_CODE);
       assert.equal(foreign.length, 0, "élève d'un autre établissement absent de la recherche");
     },
   },
@@ -61,12 +57,8 @@ const cases: { id: string; title: string; run: () => void }[] = [
     id: "FIN-L3-08-M-HOMONYM",
     title: "libellé picker : nom + classe + matricule pour distinguer les homonymes",
     run() {
-      const format = (enrollment as { formatPaymentStudentLabel?: (row: unknown) => string }).formatPaymentStudentLabel;
-      assert.equal(
-        typeof format,
-        "function",
-        "formatPaymentStudentLabel absent — chips = item.name seulement, homonymes identiques",
-      );
+      const format = enrollment.formatPaymentStudentLabel;
+      assert.equal(typeof format, "function");
       const rows = paymentStudentsFromOptions([L308_HOMONYM_A, L308_HOMONYM_B]);
       const labelA = format!(rows[0]);
       const labelB = format!(rows[1]);

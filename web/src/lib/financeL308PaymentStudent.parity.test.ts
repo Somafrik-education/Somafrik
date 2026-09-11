@@ -1,18 +1,23 @@
 /**
- * FIN-L3-08 RED-PARITÉ — même élève, même opération, même identifiant canonique.
- *
- * Cause visée : Web cherche/sélectionne via searchStudentsForPayment (UUID + matricule).
- * Mobile mappe le catalogue sans studentCode et n'a pas de recherche équivalente,
- * donc le contrat d'identité n'est pas le même.
+ * FIN-L3-08 PARITÉ — même élève, même opération, même identifiant canonique.
  */
 import { describe, expect, it } from "vitest";
-import * as mobileEnrollment from "../../../Mobile/src/lib/paymentEnrollment";
+import {
+  buildFinancePaymentWritePayload as mobileWrite,
+  paymentStudentsFromOptions,
+  searchPaymentStudents,
+} from "../../../Mobile/src/lib/paymentEnrollment";
+import { buildFinancePaymentWritePayload as webWrite } from "./financePaymentWrite";
 import { searchStudentsForPayment } from "./quickPayment";
 import {
+  L308_AMOUNT,
+  L308_CLASS_ID,
   L308_CURRENCY,
+  L308_DATE,
   L308_FOREIGN,
   L308_HOMONYM_A,
   L308_HOMONYM_B,
+  L308_METHOD,
   L308_SCHOOL_CODE,
 } from "./financeL308PaymentStudent.fixture";
 import { SCHOOL_CODE } from "./financeStudentIdentity.fixtures";
@@ -42,7 +47,7 @@ function webRosterFromOptions(rows: Array<Record<string, unknown>>) {
   });
 }
 
-describe("FIN-L3-08 RED-PARITÉ — Web ↔ Mobile sélecteur élève", () => {
+describe("FIN-L3-08 PARITÉ — Web ↔ Mobile sélecteur élève", () => {
   it("FIN-L3-08-P-IDENTITY — même catalogue → même studentId UUID + même matricule", () => {
     const options = [L308_HOMONYM_A, L308_HOMONYM_B, L308_FOREIGN];
     const webHits = searchStudentsForPayment("Mbala", webRosterFromOptions(options), schools as never, SCHOOL_CODE);
@@ -50,32 +55,43 @@ describe("FIN-L3-08 RED-PARITÉ — Web ↔ Mobile sélecteur élève", () => {
       [L308_HOMONYM_A.studentId, L308_HOMONYM_B.studentId].sort(),
     );
 
-    const mobileRows = mobileEnrollment.paymentStudentsFromOptions(options);
+    const mobileRows = paymentStudentsFromOptions(options);
     const jean = mobileRows.filter((row) => row.id === L308_HOMONYM_A.studentId);
     expect(jean).toHaveLength(1);
     expect(jean[0].id).toBe(L308_HOMONYM_A.studentId);
-    expect((jean[0] as { studentCode?: string }).studentCode).toBe(L308_HOMONYM_A.studentCode);
+    expect(jean[0].studentCode).toBe(L308_HOMONYM_A.studentCode);
 
-    const search = (mobileEnrollment as { searchPaymentStudents?: Function }).searchPaymentStudents;
-    expect(typeof search).toBe("function");
-    const mobileHits = search!("Mbala", mobileRows, L308_SCHOOL_CODE);
-    expect(mobileHits.map((row: { id: string }) => row.id).sort()).toEqual(
-      webHits.map((row) => row.id).sort(),
-    );
+    const mobileHits = searchPaymentStudents("Mbala", mobileRows, L308_SCHOOL_CODE);
+    expect(mobileHits.map((row) => row.id).sort()).toEqual(webHits.map((row) => row.id).sort());
   });
 
   it("FIN-L3-08-P-TENANT — ni Web ni Mobile ne retiennent l'élève étranger pour le même catalogue", () => {
     const options = [L308_HOMONYM_A, L308_FOREIGN];
     const webHits = searchStudentsForPayment("Intru", webRosterFromOptions(options), schools as never, SCHOOL_CODE);
     expect(webHits).toEqual([]);
+    expect(searchPaymentStudents("Intru", paymentStudentsFromOptions(options), L308_SCHOOL_CODE)).toEqual([]);
+  });
 
-    const search = (mobileEnrollment as { searchPaymentStudents?: Function }).searchPaymentStudents;
-    expect(typeof search).toBe("function");
-    const mobileHits = search!(
-      "Intru",
-      mobileEnrollment.paymentStudentsFromOptions(options),
-      L308_SCHOOL_CODE,
-    );
-    expect(mobileHits).toEqual([]);
+  it("FIN-L3-08-P-PAYLOAD — même élève + même opération → même studentId, montant, méthode", () => {
+    const webPayload = webWrite({
+      studentId: L308_HOMONYM_A.studentId,
+      classId: L308_CLASS_ID,
+      paymentMethod: L308_METHOD,
+      paidAt: L308_DATE,
+      lines: [{ obligationId: "__unallocated__", amount: L308_AMOUNT, label: "Non imputé" }],
+    });
+    const mobilePayload = mobileWrite({
+      studentId: L308_HOMONYM_A.studentId,
+      classId: L308_CLASS_ID,
+      method: L308_METHOD,
+      date: L308_DATE,
+      lines: [{ obligationId: "__unallocated__", amount: L308_AMOUNT, label: "Non imputé" }],
+    });
+    expect(webPayload.studentId).toBe(mobilePayload.studentId);
+    expect(webPayload.studentId).toBe(L308_HOMONYM_A.studentId);
+    expect((webPayload.items as Array<{ amount: number }>)[0].amount).toBe(L308_AMOUNT);
+    expect((mobilePayload.items as Array<{ amount: number }>)[0].amount).toBe(L308_AMOUNT);
+    expect(webPayload.method).toBe(L308_METHOD);
+    expect(mobilePayload.method).toBe(L308_METHOD);
   });
 });

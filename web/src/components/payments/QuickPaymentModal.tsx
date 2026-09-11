@@ -222,7 +222,9 @@ export function QuickPaymentModal({
               classId: klass.classId,
               classCode: klass.classCode,
               className: klass.className,
-              schoolCode: schoolCode && schoolCode !== "*" ? schoolCode : option.studentCode.slice(0, 11),
+              schoolCode:
+                String(option.schoolCode ?? "").trim() ||
+                (schoolCode && schoolCode !== "*" ? schoolCode : ""),
             });
           }
         }
