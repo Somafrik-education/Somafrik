@@ -8,7 +8,7 @@ type StudentRow = Record<string, unknown>;
 export const PARENT_NOTES_TABS = [
   { key: "notes", label: "Notes" },
   { key: "evaluations", label: "Évaluations" },
-  { key: "matiere", label: "Par matière" },
+  { key: "cours", label: "Par cours" },
 ] as const;
 
 export type ParentNotesTabKey = (typeof PARENT_NOTES_TABS)[number]["key"];

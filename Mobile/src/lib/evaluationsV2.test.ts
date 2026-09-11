@@ -18,11 +18,13 @@ import {
   normalizeEvaluation,
   normalizeGrade,
   notesForStudent,
+  parseEvaluationCoefficient,
   rosterStudentsForEvaluation,
   stripEvaluationClientScope,
   teacherCreatePayloadContainsForbiddenFields,
   validateGradeValue,
   gradeSaveActorScope,
+  EVALUATIONS_V2_INVALID_COEFFICIENT,
   EVALUATIONS_V2_MISSING_TEACHER,
 } from "./evaluationsV2";
 
@@ -45,8 +47,43 @@ function run() {
     date: "2026-03-12",
     scale: 20,
     title: "Devoir 1",
+    coefficient: 2,
   });
   assert.equal(created.classId, "class-1");
+  assert.equal(created.coefficient, 2);
+  assert.equal(parseEvaluationCoefficient("2,5"), 2.5);
+  assert.equal(parseEvaluationCoefficient(3), 3);
+  for (const invalid of [0, "0", "", "abc", Number.NaN, Number.POSITIVE_INFINITY, -1, undefined]) {
+    assert.throws(
+      () => parseEvaluationCoefficient(invalid),
+      (error: Error) => error.message === EVALUATIONS_V2_INVALID_COEFFICIENT,
+    );
+  }
+  assert.throws(
+    () =>
+      buildCreateEvaluationPayload({
+        classId: "class-1",
+        subject: "Mathématiques",
+        period: "Trimestre 1",
+        evaluationTypeId: "type-1",
+        date: "2026-03-12",
+        scale: 20,
+        coefficient: 0,
+      }),
+    (error: Error) => error.message === EVALUATIONS_V2_INVALID_COEFFICIENT,
+  );
+  assert.throws(
+    () =>
+      buildCreateEvaluationPayload({
+        classId: "class-1",
+        subject: "Mathématiques",
+        period: "Trimestre 1",
+        evaluationTypeId: "type-1",
+        date: "2026-03-12",
+        scale: 20,
+      }),
+    (error: Error) => error.message === EVALUATIONS_V2_INVALID_COEFFICIENT,
+  );
   assert.equal(created.evaluationTypeId, "type-1");
   assert.equal(created.teacherId, undefined);
   assert.equal(created.status, undefined);
