@@ -40,7 +40,7 @@ import {
 
 export type { PermissionsBootstrapState };
 
-type AuthContextValue = {
+export type AuthContextValue = {
   session: LoginResponse | null;
   selectedStudentId: string | null;
   bootstrapping: boolean;
@@ -52,7 +52,7 @@ type AuthContextValue = {
   logout: () => void;
 };
 
-const AuthContext = createContext<AuthContextValue | undefined>(undefined);
+export const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
 function stripSecrets(session: LoginResponse | null): LoginResponse | null {
   if (!session) return null;

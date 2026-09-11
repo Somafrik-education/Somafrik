@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { useActiveSchool } from "../../context/ActiveSchoolContext";
 import { useFeaturePermissions } from "../../lib/usePermissionContext";
@@ -8,12 +8,14 @@ import {
 } from "../../lib/internalNotificationsApi";
 import { notifyInternalNotificationsChanged } from "../../lib/internalNotificationsRead";
 import { resolveNotificationDestination } from "../../lib/notificationNavigation";
-import { Card, SectionHeader } from "../ui/Card";
+import { filterCommunicationRows, excerptCommunication } from "../../lib/communicationListFilter";
+import { Card } from "../ui/Card";
 import { Button } from "../ui/Button";
-import { Badge } from "../ui/Badge";
 import { Field, Input } from "../ui/Field";
 import { Modal } from "../ui/Modal";
 import { useToast } from "../ui/Toast";
+import { CommunicationChrome, useCommunicationListQuery } from "./CommunicationChrome";
+import { ExpandableCommunicationCard } from "./ExpandableCommunicationCard";
 
 function formatDateTime(value?: string): string {
   if (!value) return "";
@@ -25,12 +27,13 @@ function formatDateTime(value?: string): string {
   }).format(date);
 }
 
-function sourceLabel(eventType: string): string {
-  if (eventType.includes("message")) return "Message";
-  if (eventType.includes("announcement")) return "Annonce";
-  if (eventType.includes("attendance")) return "Présence";
-  if (eventType.includes("grade")) return "Note";
-  if (eventType.includes("payment")) return "Paiement";
+function sourceLabel(eventType?: string): string {
+  const value = String(eventType ?? "");
+  if (value.includes("message")) return "Message";
+  if (value.includes("announcement")) return "Annonce";
+  if (value.includes("attendance")) return "Présence";
+  if (value.includes("grade")) return "Note";
+  if (value.includes("payment")) return "Paiement";
   return "Information";
 }
 
@@ -49,9 +52,8 @@ export function InternalNotificationsCenter() {
   const [busy, setBusy] = useState(false);
   const [cursor, setCursor] = useState<string | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
-  // Compte des non lues tel que le serveur le voit : même source que la pastille
-  // du Topbar, donc jamais un décompte local limité à la page chargée.
   const [unread, setUnread] = useState<number | null>(null);
+  const { search, setSearch, unreadOnly, setUnreadOnly } = useCommunicationListQuery();
 
   async function refreshUnread() {
     try {
@@ -76,6 +78,21 @@ export function InternalNotificationsCenter() {
     }
     await refreshUnread();
   }
+
+  const visibleRows = useMemo(
+    () =>
+      filterCommunicationRows(
+        rows.map((row) => ({
+          ...row,
+          excerpt: excerptCommunication(row.body),
+          author: row.senderName,
+          unread: !row.readAt,
+        })),
+        search,
+        unreadOnly,
+      ),
+    [rows, search, unreadOnly],
+  );
 
   async function loadMore() {
     if (!cursor || loadingMore) return;
@@ -161,16 +178,21 @@ export function InternalNotificationsCenter() {
 
   return (
     <>
-      <Card className="p-6">
-        <SectionHeader
-          title="Notifications"
-          description={
-            unread === null
-              ? "Historique synchronisé Web/Mobile."
-              : `${unread} non lue(s) · historique synchronisé Web/Mobile.`
-          }
-          actions={canCreate ? <Button onClick={() => setComposer(true)}>Nouvelle notification</Button> : undefined}
-        />
+      <CommunicationChrome
+        surface="notifications"
+        title="Communication"
+        searchPlaceholder="Rechercher"
+        unreadLabel="Non lus"
+        countLabel={
+          unread === null ? "Notifications" : `${unread} non lue(s) · historique synchronisé Web/Mobile.`
+        }
+        search={search}
+        onSearch={setSearch}
+        unreadOnly={unreadOnly}
+        onUnreadOnly={setUnreadOnly}
+        primaryAction={canCreate ? <Button onClick={() => setComposer(true)}>Nouvelle notification</Button> : undefined}
+      >
+      <Card className="p-4">
         {loading ? <p className="py-10 text-center text-muted">Chargement…</p> : null}
         {error ? (
           <div className="py-8 text-center">
@@ -178,59 +200,52 @@ export function InternalNotificationsCenter() {
             <Button className="mt-3" variant="secondary" onClick={() => void load()}>Réessayer</Button>
           </div>
         ) : null}
-        {!loading && !error && rows.length === 0 ? (
+        {!loading && !error && visibleRows.length === 0 ? (
           <p className="py-10 text-center text-muted">Aucune notification.</p>
         ) : null}
-        <div className="mt-4 space-y-3">
-          {rows.map((row) => (
-            <article
+        <div className="mt-2 space-y-2">
+          {visibleRows.map((row) => (
+            <ExpandableCommunicationCard
               key={row.id}
-              className={`rounded-xl border p-4 ${row.readAt ? "border-line bg-white" : "border-brand/30 bg-brand-50/40"}`}
+              title={row.title}
+              subtitle={`${row.senderName} · ${formatDateTime(row.publishedAt || row.createdAt)}`}
+              badge={row.readAt ? "Lu" : "Non lu"}
+              badgeTone={row.readAt ? "default" : "info"}
+              testID={`notification-card-${row.id}`}
             >
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <h3 className="font-semibold text-ink">{row.title}</h3>
-                    <Badge tone={row.readAt ? "neutral" : "info"}>{row.readAt ? "Lu" : "Non lu"}</Badge>
-                    <Badge tone="neutral">{sourceLabel(row.eventType)}</Badge>
-                  </div>
-                  <p className="mt-1 text-sm text-muted">{row.body}</p>
-                  <p className="mt-2 text-xs text-muted">
-                    {row.senderName} · {formatDateTime(row.publishedAt || row.createdAt)}
-                  </p>
-                  {row.attachments?.length ? (
-                    <div className="mt-2 flex flex-wrap gap-2">
-                      {row.attachments.map((attachment) => (
-                        <Button
-                          key={attachment.id}
-                          variant="secondary"
-                          size="sm"
-                          onClick={async () => {
-                            const blob = await internalNotificationsApi.downloadAttachment(
-                              attachment.id,
-                              activeSchoolCode ?? undefined,
-                            );
-                            const href = URL.createObjectURL(blob);
-                            window.open(href, "_blank", "noopener,noreferrer");
-                            setTimeout(() => URL.revokeObjectURL(href), 60_000);
-                          }}
-                        >
-                          {attachment.fileName}
-                        </Button>
-                      ))}
-                    </div>
-                  ) : null}
+              <p className="whitespace-pre-wrap text-sm text-ink">{row.body}</p>
+              <p className="text-xs text-muted">{sourceLabel(row.eventType)}</p>
+              {row.attachments?.length ? (
+                <div className="flex flex-wrap gap-2">
+                  {row.attachments.map((attachment) => (
+                    <Button
+                      key={attachment.id}
+                      variant="secondary"
+                      size="sm"
+                      onClick={async () => {
+                        const blob = await internalNotificationsApi.downloadAttachment(
+                          attachment.id,
+                          activeSchoolCode ?? undefined,
+                        );
+                        const href = URL.createObjectURL(blob);
+                        window.open(href, "_blank", "noopener,noreferrer");
+                        setTimeout(() => URL.revokeObjectURL(href), 60_000);
+                      }}
+                    >
+                      {attachment.fileName}
+                    </Button>
+                  ))}
                 </div>
-                <div className="flex gap-2">
-                  <Button size="sm" variant="secondary" onClick={() => void openNotification(row)}>
-                    {row.readAt ? "Ouvrir" : "Lire"}
-                  </Button>
-                  <Button size="sm" variant="ghost" onClick={() => void archiveNotification(row)}>
-                    Archiver
-                  </Button>
-                </div>
+              ) : null}
+              <div className="flex gap-2">
+                <Button size="sm" variant="secondary" onClick={() => void openNotification(row)}>
+                  {row.readAt ? "Ouvrir" : "Lire"}
+                </Button>
+                <Button size="sm" variant="ghost" onClick={() => void archiveNotification(row)}>
+                  Archiver
+                </Button>
               </div>
-            </article>
+            </ExpandableCommunicationCard>
           ))}
         </div>
         {!loading && !error && cursor ? (
@@ -241,6 +256,7 @@ export function InternalNotificationsCenter() {
           </div>
         ) : null}
       </Card>
+      </CommunicationChrome>
 
       <Modal
         open={composer}

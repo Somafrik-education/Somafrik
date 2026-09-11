@@ -11,11 +11,14 @@ import {
 } from "../lib/messagesApi";
 import { hasCommunicationSchoolScope } from "../lib/communicationSchoolScope";
 import { useDeepLinkId } from "../lib/notificationDeepLink";
+import { filterCommunicationRows } from "../lib/communicationListFilter";
 import { Card, SectionHeader } from "../components/ui/Card";
 import { Button } from "../components/ui/Button";
 import { Field } from "../components/ui/Field";
 import { useToast } from "../components/ui/Toast";
 import { ApiError } from "../api/client";
+import { CommunicationChrome, useCommunicationListQuery } from "../components/communications/CommunicationChrome";
+import { EmptyState, ErrorState, LoadingState } from "@/design-system";
 
 function formatDisplayDate(iso?: string) {
   if (!iso) return "";
@@ -46,6 +49,9 @@ export function MessagesConversationsPage() {
   const scopeReady = !requiresSelection || Boolean(schoolScope);
   const deepLinkConversationId = useDeepLinkId("conversationId");
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
+  const [listLoading, setListLoading] = useState(false);
+  const [listError, setListError] = useState("");
+  const { search, setSearch, unreadOnly, setUnreadOnly } = useCommunicationListQuery();
   const [selectedId, setSelectedId] = useState<string>("");
   const [messages, setMessages] = useState<ConversationMessage[]>([]);
   const [draft, setDraft] = useState("");
@@ -59,8 +65,17 @@ export function MessagesConversationsPage() {
 
   const loadConversations = useCallback(async () => {
     if (!canRead || !scopeReady) return;
-    const result = await messagesApi.listConversations("", schoolScope);
-    setConversations(result.items ?? []);
+    setListLoading(true);
+    setListError("");
+    try {
+      const result = await messagesApi.listConversations("", schoolScope);
+      setConversations(result.items ?? []);
+    } catch (error) {
+      setConversations([]);
+      setListError(error instanceof ApiError ? error.message : "Impossible de charger les conversations");
+    } finally {
+      setListLoading(false);
+    }
   }, [canRead, schoolScope, scopeReady]);
 
   const loadThread = useCallback(async (conversationId: string) => {
@@ -82,9 +97,7 @@ export function MessagesConversationsPage() {
       setUsers([]);
       return;
     }
-    void loadConversations().catch((error) => {
-      showToast(error instanceof ApiError ? error.message : "Impossible de charger les conversations", "error");
-    });
+    void loadConversations();
     void messagesApi.listRecipients(schoolScope).then((rows) => {
       const list = Array.isArray(rows) ? rows : rows?.items ?? [];
       setUsers(list);
@@ -113,6 +126,25 @@ export function MessagesConversationsPage() {
   const selected = useMemo(
     () => conversations.find((row) => row.id === selectedId) ?? null,
     [conversations, selectedId],
+  );
+  const visibleConversations = useMemo(
+    () =>
+      filterCommunicationRows(
+        conversations.map((row) => ({
+          ...row,
+          title: counterpartName(row, selfId),
+          excerpt: row.lastMessage?.body || "",
+          author: row.lastMessage?.senderName || "",
+          unreadCount: row.unreadCount ?? 0,
+        })),
+        search,
+        unreadOnly,
+      ),
+    [conversations, search, unreadOnly, selfId],
+  );
+  const unreadTotal = useMemo(
+    () => conversations.reduce((sum, row) => sum + (row.unreadCount ?? 0), 0),
+    [conversations],
   );
 
   async function handleUpload(fileList: FileList | null) {
@@ -181,40 +213,66 @@ export function MessagesConversationsPage() {
   }
 
   return (
+    <>
+    {/* Communication — EntityListSearch communication-search */}
+    <CommunicationChrome
+      surface="messages"
+      title="Communication"
+      searchPlaceholder="Rechercher"
+      unreadLabel="Non lus"
+      countLabel={unreadTotal ? `${unreadTotal} non lu(s)` : "Messages"}
+      search={search}
+      onSearch={setSearch}
+      unreadOnly={unreadOnly}
+      onUnreadOnly={setUnreadOnly}
+      primaryAction={
+        canCreate ? (
+          <Button type="button" size="sm" variant="secondary" onClick={() => setSelectedId("")}>
+            Nouvelle conversation
+          </Button>
+        ) : undefined
+      }
+    >
     <div className="grid gap-4 lg:grid-cols-[minmax(260px,320px)_1fr]">
       <Card className="p-4">
-        <SectionHeader title="Conversations" description="Fils auxquels vous participez." />
+        {listLoading ? <LoadingState message="Chargement des conversations…" /> : null}
+        {listError ? (
+          <ErrorState
+            message={listError}
+            action={
+              <Button type="button" variant="secondary" size="sm" onClick={() => void loadConversations()}>
+                Réessayer
+              </Button>
+            }
+          />
+        ) : null}
+        {!listLoading && !listError && visibleConversations.length === 0 ? (
+          <EmptyState title="Aucune conversation." />
+        ) : null}
         <div className="mt-3 space-y-1">
-          {conversations.length === 0 ? (
-            <p className="py-8 text-center text-sm text-muted">Aucune conversation.</p>
-          ) : (
-            conversations.map((row) => (
+          {!listLoading && !listError
+            ? visibleConversations.map((row) => (
               <button
                 key={row.id}
                 type="button"
                 data-testid="messages-conversation-item"
                 data-conversation-id={row.id}
                 aria-selected={selectedId === row.id}
-                className={`w-full rounded-xl px-3 py-2 text-left ${selectedId === row.id ? "bg-slate-100" : "hover:bg-slate-50"}`}
+                className={`w-full rounded-lg px-3 py-2 text-left ${selectedId === row.id ? "bg-slate-100" : "hover:bg-slate-50"}`}
                 onClick={() => setSelectedId(row.id)}
               >
                 <div className="flex items-center justify-between gap-2">
-                  <span className="font-medium text-ink">{counterpartName(row, selfId)}</span>
+                  <span className="truncate font-medium text-ink">{row.title}</span>
                   {(row.unreadCount ?? 0) > 0 ? (
                     <span className="rounded-full bg-amber-500 px-2 py-0.5 text-xs text-white">{row.unreadCount}</span>
                   ) : null}
                 </div>
-                <p className="truncate text-xs text-muted">{row.lastMessage?.body || "—"}</p>
+                <p className="truncate text-xs text-muted">{row.excerpt || "—"}</p>
                 <p className="text-xs text-muted">{formatDisplayDate(row.lastMessage?.sentAt || row.updatedAt)}</p>
               </button>
             ))
-          )}
+            : null}
         </div>
-        {canCreate ? (
-          <Button className="mt-3 w-full" variant="secondary" size="sm" onClick={() => setSelectedId("")}>
-            Nouvelle conversation
-          </Button>
-        ) : null}
       </Card>
 
       <Card className="flex min-h-[520px] flex-col p-4">
@@ -312,5 +370,7 @@ export function MessagesConversationsPage() {
         ) : null}
       </Card>
     </div>
+    </CommunicationChrome>
+    </>
   );
 }

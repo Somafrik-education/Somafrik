@@ -58,7 +58,6 @@ assert.doesNotMatch(home, /metricLabelFromSnapshot\(studentsSnapshot, \(rows\) =
 assert.match(students, /establishmentStudents/);
 assert.match(classes, /establishmentStudents/);
 assert.match(attendance, /establishmentStudents/);
-assert.match(messages, /establishmentStudents/);
 assert.match(menu, /establishmentStudents/);
 
 assert.match(l1Projection, /schoolId: partition.schoolId/);

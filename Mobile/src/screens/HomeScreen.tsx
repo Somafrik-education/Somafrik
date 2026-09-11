@@ -16,6 +16,7 @@ import { formatPaymentOverviewAmounts } from "../lib/paymentAmountBreakdown";
 import { getPaymentStats, getPresenceStats } from "../domain/metrics/schoolMetrics";
 import { canReadEntity, canReadRoute, hasSecurityPermission } from "../domain/security/permissions";
 import { canAccessMessagesRoute } from "../lib/mobileCtaRbacAlignment";
+import { useMessagesUnreadCount } from "../lib/messagesRead";
 import { buildOverflowQuickActionItems } from "../navigation/roleTabPreferences";
 import { DATA_TRUTH_TEST_IDS, METRIC_PENDING_LABEL, metricLabelFromSnapshot, parentAverageDisplay } from "../lib/dataTruth";
 import {
@@ -163,8 +164,12 @@ export default function HomeScreen({ navigation }: any) {
     "0",
   );
   const announcementsValue = metricLabelFromSnapshot(announcementsSnapshot, (rows) => String(rows.length));
-  const unreadMessagesCount = getUnreadMessagesCount(session, messagesSnapshot.data, visibleStudents);
-  const unreadMessagesValue = metricLabelFromSnapshot(messagesSnapshot, () => String(unreadMessagesCount));
+  const { count: unreadMessagesApiCount } = useMessagesUnreadCount(
+    canAccessMessagesRoute(session) && Boolean(activeSchoolCode),
+    activeSchoolCode,
+  );
+  const unreadMessagesCount = unreadMessagesApiCount;
+  const unreadMessagesValue = metricLabelFromSnapshot(messagesSnapshot, () => String(unreadMessagesApiCount));
   const unreadMessages = messagesSnapshot.status === "success" || messagesSnapshot.status === "empty" ? unreadMessagesCount : 0;
   const teachersValue = String(teachersData.length);
   const teacherStudents = visibleStudents;
@@ -562,44 +567,6 @@ function toDateKey(value?: string | Date) {
   const parsed = new Date(text);
   if (Number.isNaN(parsed.getTime())) return "";
   return toDateKey(parsed);
-}
-
-function getUnreadMessagesCount(
-  session: any,
-  messagesData: any[],
-  scopedStudents: any[],
-) {
-  if (
-    session?.role === "super_admin" ||
-    session?.role === "school_admin" ||
-    session?.role === "country_admin" ||
-    session?.role === "principal" ||
-    session?.role === "proviseur" ||
-    session?.role === "prefet" ||
-    session?.role === "secretary" ||
-    session?.role === "accountant" ||
-    session?.role === "adjoint"
-  ) {
-    return messagesData.filter(
-      (message) => message.status === "Nouveau" && message.direction === "Parent vers école",
-    ).length;
-  }
-  if (session?.role === "teacher") {
-    const teacherParents = scopedStudents.map((student) => student.parentPhone);
-    return messagesData.filter(
-      (message) =>
-        message.status === "Nouveau" &&
-        (message.teacherId === session.user.id || teacherParents.includes(message.parentPhone)) &&
-        message.direction === "Parent vers enseignant",
-    ).length;
-  }
-  const parentPhone = session?.user.parentPhone ?? session?.user.children?.[0]?.parentPhone;
-  return messagesData.filter(
-    (message) =>
-      message.status === "Nouveau" &&
-      message.parentPhone === parentPhone &&
-      (message.direction === "École vers parent" || message.direction === "Enseignant vers parent"),
-  ).length;
 }
 
 const footerStyles = StyleSheet.create({
