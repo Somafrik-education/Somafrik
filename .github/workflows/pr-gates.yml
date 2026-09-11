@@ -359,6 +359,8 @@ jobs:
           npm run verify:mobile-l1-offline-reads
           npm run verify:mobile-rc2-offline-read-smoke
           npx --yes tsx Mobile/src/lib/roleSelectionLayout.test.ts
+          npx --yes tsx Mobile/src/lib/progressiveDisclosureUx.test.ts
+          node Mobile/scripts/verify-progressive-disclosure-red.js
 
       - name: Canonical sync
         if: needs.scope.outputs.sync == 'true'

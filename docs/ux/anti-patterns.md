@@ -154,6 +154,17 @@ En revue :
 
 ---
 
+### AP-013 — Collection métier always-open sur Mobile
+
+| Attribut | Valeur |
+|----------|--------|
+| **Interdit** | Afficher en permanence, sur une liste native, les détails secondaires **et** les actions métier (Modifier, Archiver, Valider, Publier, Annuler, PDF…) sans tap / chevron / fiche |
+| **Pourquoi** | Surcharge informationnelle ; contredit DO-047 / P-011 ; cas déjà constatés Enseignants, Évaluations, Utilisateurs |
+| **Correctif** | Carte fermée = identité + état ; détails/actions en zone ouverte — sauf exceptions nommées (Appel 4 statuts, Messages fil + modal, CTA Notes `Saisir` / `Consulter`) |
+| **DO liés** | DO-047, DO-002, DO-028 |
+
+---
+
 ## Gouvernance
 
 1. Toute PR UI D2.x+ est revue contre ce catalogue (checklist Framework).
@@ -178,3 +189,4 @@ En revue :
 | AP-010 | Mélanger kit ERP et kit secondaire sur un écran métier | D1.4 |
 | AP-011 | Contrôle sous la taille tactile minimale | D1.4 |
 | AP-012 | Casser la hiérarchie typographique | D1.4 |
+| AP-013 | Collection métier always-open sur Mobile | Mobile native — GO CTO 2026-09-11 |
