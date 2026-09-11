@@ -27,6 +27,7 @@ import {
   EVALUATIONS_V2_INVALID_COEFFICIENT,
   EVALUATIONS_V2_MISSING_TEACHER,
 } from "./evaluationsV2";
+import { canonicalStudentGeneralAverage } from "./pedagogyAverage";
 
 function run() {
   assert.equal(fromEvaluationStatus("locked"), "Validée");
@@ -213,6 +214,49 @@ function run() {
     normalizeGrade({ evaluationId: "e1", studentId: "s1", value: null, scale: 20, gradeStatus: "absent" }),
   ]);
   assert.equal(absentAverage.available, false);
+
+  const canonicalGeneral = canonicalStudentGeneralAverage(
+    [
+      normalizeGrade({
+        id: "m1",
+        evaluationId: "MATH-1",
+        studentId: "s1",
+        value: 10,
+        scale: 20,
+        subject: "Mathématiques",
+        evaluationCoefficient: 1,
+        gradeStatus: "graded",
+      }),
+      normalizeGrade({
+        id: "m2",
+        evaluationId: "MATH-2",
+        studentId: "s1",
+        value: 20,
+        scale: 20,
+        subject: "Mathématiques",
+        evaluationCoefficient: 3,
+        gradeStatus: "graded",
+      }),
+      normalizeGrade({
+        id: "f1",
+        evaluationId: "FR-1",
+        studentId: "s1",
+        value: 12,
+        scale: 20,
+        subject: "Français",
+        evaluationCoefficient: 1,
+        gradeStatus: "graded",
+      }),
+    ],
+    [
+      { name: "Mathématiques", className: "1ère A", coefficient: 2 },
+      { name: "Français", className: "1ère A", coefficient: 1 },
+    ],
+    "1ère A",
+  );
+  assert.equal(canonicalGeneral.available, true);
+  assert.equal(Number(canonicalGeneral.average?.toFixed(1)), 15.7);
+  assert.equal(canonicalGeneral.totalCourseCoefficients, 3);
 
   const grades = [
     normalizeGrade({ id: "n1", evaluationId: "EVAL-1", studentId: "s1", value: 12, scale: 20 }),
