@@ -95,6 +95,28 @@ const cases: { id: string; title: string; run: () => void }[] = [
       assert.match(page, /from ["'].*pedagogyParityContract["']/);
     },
   },
+  {
+    id: "PED-L3-07",
+    title: "Moyenne générale Web parent = moteur canonique à deux niveaux",
+    run() {
+      const panel = read("components/grades/ParentChildGradesPanel.tsx");
+      assert.match(
+        panel,
+        /GradeBookService/,
+        "Web parent calcule encore une moyenne plate au lieu de réutiliser le moteur canonique GradeBookService",
+      );
+      assert.match(
+        panel,
+        /scopedCourses/,
+        "Web parent ne fournit pas les coefficients de cours canoniques au moteur de moyenne générale",
+      );
+      assert.match(
+        panel,
+        /getStudentAverageValue/,
+        "Web parent n'utilise pas la moyenne générale canonique à deux niveaux",
+      );
+    },
+  },
 ];
 
 const failed: { id: string; title: string; message: string }[] = [];
