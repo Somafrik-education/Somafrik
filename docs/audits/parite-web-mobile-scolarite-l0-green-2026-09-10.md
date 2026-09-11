@@ -3,7 +3,7 @@
 **Base RED :** `develop@193c5df3e7b3049bb02f70d53106b0889f95fd0d`  
 **Commit RED :** `7c1b0194` — `test(red): SCO-L0 parité Scolarité hub/classes/élèves`  
 **Branche :** `cursor/schooling-web-mobile-parity-53ab`  
-**Commande lot :** `npm run test:parite-scolarite-l0`  
+**Commande lot :** `npm run test:parite-scolarite-l0` (`web/src/lib/pariteL0Scolarite.red.test.ts` + `Mobile/src/lib/pariteL0Scolarite.red.test.ts`)  
 **Ready / merge :** interdits sans GO CTO
 
 PostgreSQL/Supabase reste la source canonique. Aucun nouveau DataContext. L1 Mobile conservé (hors-ligne seulement). RBAC serveur inchangé.
@@ -73,13 +73,20 @@ npm --prefix web run typecheck → tsc --noEmit OK
 npm --prefix web run lint → 0 error (warnings préexistants, non traités)
 ```
 
-Smoke visuel : `VITE_API_URL=https://api.somafrik.app npm --prefix web run build && node scripts/scolarite-l0-viewport-smoke.js`
+Smoke visuel Web : `VITE_API_URL=https://api.somafrik.app npm --prefix web run build && node scripts/scolarite-l0-viewport-smoke.js`
 
 ```
 scolarite-l0-viewport-smoke: GO (0 overflow(s))
 viewports 1440 / 1024 / 390 / 360 × hub / classes / élèves
 ```
 
-Note : 360/390 = Web responsive (tables desktop conservées). L’app Expo native n’a pas été lancée dans cet environnement ; le hub Mobile est `SchoolingHubScreen` (cartes).
+Note : 360/390 Web = tables desktop conservées. Ce smoke ne remplace pas Expo/React Native.
+
 Le bandeau « Accès limité — Abonnement » vient du chrome abonnement (mock smoke sans offre) — hors lot.
 Le bouton HELP peut recouvrir un KPI à 360 px — chrome HELP hors lot.
+
+## Gates CTO 2026-09-11 (micro-correctif, Draft)
+
+- **UI French Copy** : `web/src/lib/pariteL0Scolarite.red.ts` renommé `web/src/lib/pariteL0Scolarite.red.test.ts` pour entrer dans `SKIP_RE` existant (`\.(?:test|spec)\.[jt]sx?$`). `scripts/verify-ui-french-copy.js` et son allowlist **non modifiés**.
+- **Web smoke GO-PROD** : `scripts/verify-web-smoke.js` **non modifié**. Preuve Classes conservée côté UI : description visible `Organisation des classes (persistance PostgreSQL).` (heading `Classes` + `aria-label="Rechercher dans classes"`).
+- **Mobile** : `npm --prefix Mobile run typecheck` + `npm --prefix Mobile run test:parite-scolarite-l0` + smoke Expo (`npx expo start --web`) sur `SchoolingHubScreen`.

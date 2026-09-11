@@ -1,7 +1,8 @@
 # Scolarité L0 — preuve RED
 
 **Base :** `develop@193c5df3e7b3049bb02f70d53106b0889f95fd0d`  
-**Commande :** `npm run test:parite-scolarite-l0`
+**Commande :** `npm run test:parite-scolarite-l0`  
+**Fichiers :** `web/src/lib/pariteL0Scolarite.red.test.ts` · `Mobile/src/lib/pariteL0Scolarite.red.test.ts`
 
 ## Résultat exact (avant implémentation)
 
