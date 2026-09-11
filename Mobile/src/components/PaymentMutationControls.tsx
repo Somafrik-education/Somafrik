@@ -14,9 +14,12 @@ import {
   buildFinancePaymentWritePayload,
   collectActivePaymentClasses,
   collectOpenPaymentFees,
+  formatPaymentStudentLabel,
   paymentSubmitErrorMessage,
   preselectPaymentClassId,
   preselectPaymentObligationId,
+  resolvePaymentStudentSearchScope,
+  searchPaymentStudents,
   type PaymentFeeRow,
   type PaymentStudent,
 } from "../lib/paymentEnrollment";
@@ -60,6 +63,7 @@ export default function PaymentMutationControls({
   const [confirmation, setConfirmation] = useState("");
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [studentId, setStudentId] = useState("");
+  const [studentQuery, setStudentQuery] = useState("");
   const [classId, setClassId] = useState("");
   const [lines, setLines] = useState<DraftLine[]>([
     { id: newLineId(), obligationId: UNALLOCATED_TARGET, amount: "" },
@@ -79,9 +83,18 @@ export default function PaymentMutationControls({
     return students.flatMap((item) => {
       if (!item.id || seen.has(item.id)) return [];
       seen.add(item.id);
-      return [{ id: item.id, label: item.name || item.id }];
+      return [item];
     });
   }, [students]);
+  const selectedStudent = useMemo(
+    () => studentOptions.find((item) => item.id === studentId) ?? null,
+    [studentOptions, studentId],
+  );
+  const schoolScope = resolvePaymentStudentSearchScope(session);
+  const searchResults = useMemo(
+    () => (studentId ? [] : searchPaymentStudents(studentQuery, studentOptions, schoolScope)),
+    [studentId, studentQuery, studentOptions, schoolScope],
+  );
 
   const classOptions = useMemo(() => collectActivePaymentClasses(studentId, students), [studentId, students]);
   const feeOptions = useMemo(() => collectOpenPaymentFees(studentId, studentFees), [studentId, studentFees]);
@@ -98,6 +111,8 @@ export default function PaymentMutationControls({
 
   const applyStudent = (nextStudentId: string) => {
     setStudentId(nextStudentId);
+    const next = studentOptions.find((item) => item.id === nextStudentId);
+    setStudentQuery(next ? trimField(next.name) : "");
     setClassId(preselectPaymentClassId(nextStudentId, students));
     setLines([
       {
@@ -107,11 +122,11 @@ export default function PaymentMutationControls({
       },
     ]);
     setFieldErrors((current) => {
-      const next = { ...current };
-      delete next.studentId;
-      delete next.classId;
-      delete next.obligationId;
-      return next;
+      const nextErrors = { ...current };
+      delete nextErrors.studentId;
+      delete nextErrors.classId;
+      delete nextErrors.obligationId;
+      return nextErrors;
     });
   };
 
@@ -122,6 +137,8 @@ export default function PaymentMutationControls({
     setFieldErrors({});
     const nextStudentId = trimField(initialStudentId);
     setStudentId(nextStudentId);
+    const next = students.find((item) => item.id === nextStudentId);
+    setStudentQuery(next ? trimField(next.name) : "");
     setClassId(preselectPaymentClassId(nextStudentId, students));
     setLines([
       {
@@ -219,17 +236,62 @@ export default function PaymentMutationControls({
         submitLabel={saving ? "Enregistrement…" : "Enregistrer"}
         onClose={() => setOpen(false)}
         onSubmit={() => void submit()}
-        submitDisabled={!paymentMethods?.length || !resolvedMethod}
+        submitDisabled={!paymentMethods?.length || !resolvedMethod || !studentId}
       >
-        <ChoiceChips
+        <FormField
           label="Élève"
           required
-          options={studentOptions}
-          selectedId={studentId}
-          onSelect={applyStudent}
-          disabled={saving}
+          type="search"
+          value={studentQuery}
+          onChangeText={(value) => {
+            setStudentQuery(value);
+            if (!selectedStudent) return;
+            if (value !== trimField(selectedStudent.name)) {
+              applyStudent("");
+              setStudentQuery(value);
+            }
+          }}
+          placeholder="Nom, matricule ou code élève"
+          helperText="Saisissez au moins 2 caractères pour retrouver un élève inscrit."
           error={fieldErrors.studentId}
+          editable={!saving}
+          testID="payment-student-search"
         />
+        {studentQuery.trim().length >= 2 && !studentId ? (
+          <View style={styles.resultsBox}>
+            {searchResults.length ? (
+              searchResults.map((item) => (
+                <TouchableOpacity
+                  key={item.id}
+                  style={styles.resultRow}
+                  onPress={() => applyStudent(item.id)}
+                  disabled={saving}
+                  testID={`payment-student-option-${item.id}`}
+                  accessibilityRole="button"
+                  accessibilityLabel={formatPaymentStudentLabel(item)}
+                >
+                  <Text style={styles.resultName}>{item.name || item.id}</Text>
+                  <Text style={styles.resultMeta}>
+                    {[item.className, item.studentCode].filter(Boolean).join(" · ")}
+                  </Text>
+                </TouchableOpacity>
+              ))
+            ) : (
+              <Text style={styles.openEmpty}>Aucun élève trouvé</Text>
+            )}
+          </View>
+        ) : null}
+        {selectedStudent ? (
+          <View style={styles.selectedBox} testID="payment-selected-student">
+            <Text style={styles.selectedName}>{selectedStudent.name || selectedStudent.id}</Text>
+            {selectedStudent.studentCode ? (
+              <Text style={styles.selectedMeta}>Matricule : {selectedStudent.studentCode}</Text>
+            ) : null}
+            {selectedStudent.className ? (
+              <Text style={styles.selectedMeta}>{selectedStudent.className}</Text>
+            ) : null}
+          </View>
+        ) : null}
         <ChoiceChips
           label="Classe"
           required
@@ -355,6 +417,33 @@ const styles = StyleSheet.create({
   openTitle: { color: "#0F172A", fontWeight: "800", marginBottom: 6 },
   openRow: { color: "#334155", fontWeight: "700", marginBottom: 4 },
   openEmpty: { color: "#64748B", fontWeight: "700" },
+  resultsBox: {
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    borderRadius: 12,
+    marginBottom: 12,
+    backgroundColor: "#F8FAFC",
+    overflow: "hidden",
+  },
+  resultRow: {
+    minHeight: MIN_TOUCH_TARGET_DP,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: "#E2E8F0",
+  },
+  resultName: { color: "#0F172A", fontWeight: "800" },
+  resultMeta: { color: "#64748B", fontWeight: "700", marginTop: 2, fontSize: 12 },
+  selectedBox: {
+    borderWidth: 1,
+    borderColor: "#BFDBFE",
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 12,
+    backgroundColor: "#EFF6FF",
+  },
+  selectedName: { color: "#0F172A", fontWeight: "800" },
+  selectedMeta: { color: "#475569", fontWeight: "700", marginTop: 4 },
   addLine: {
     minHeight: MIN_TOUCH_TARGET_DP,
     borderRadius: 12,

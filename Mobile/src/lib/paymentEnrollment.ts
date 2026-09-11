@@ -1,3 +1,5 @@
+import { isLegacySchoolCode } from "./studentsScope";
+
 /**
  * Résolution canonique classe pour un paiement scolaire Mobile.
  * Source d'autorité : inscriptions PostgreSQL actives de l'élève (classId UUID).
@@ -13,6 +15,7 @@ export type PaymentClassOption = {
 export type PaymentStudent = {
   id: string;
   name?: string;
+  studentCode?: string;
   classId?: string | null;
   classCode?: string;
   className?: string;
@@ -27,6 +30,76 @@ export type PaymentStudent = {
 
 function trim(value: unknown): string {
   return String(value ?? "").trim();
+}
+
+function normalizeSearch(value: unknown): string {
+  return String(value ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .toLowerCase();
+}
+
+export function formatPaymentStudentLabel(student: PaymentStudent): string {
+  const name = trim(student.name) || trim(student.id);
+  const className = trim(student.className) || trim(student.classCode);
+  const code = trim(student.studentCode);
+  return [name, className, code].filter(Boolean).join(" · ");
+}
+
+export function searchPaymentStudents(
+  query: string,
+  students: PaymentStudent[] = [],
+  schoolCode?: string,
+): PaymentStudent[] {
+  const q = normalizeSearch(query);
+  if (!q || q.length < 2) return [];
+  const wantedSchool = trim(schoolCode);
+  const seen = new Set<string>();
+  const hits: PaymentStudent[] = [];
+  for (const student of students) {
+    const id = trim(student.id);
+    if (!id || seen.has(id)) continue;
+    const studentSchool = trim(student.schoolCode);
+    if (wantedSchool && wantedSchool !== "*" && studentSchool && studentSchool !== wantedSchool) continue;
+    const haystack = [
+      student.name,
+      student.studentCode,
+      student.id,
+      student.className,
+      student.classCode,
+    ]
+      .map((value) => normalizeSearch(value))
+      .join(" ");
+    if (!haystack.includes(q)) continue;
+    seen.add(id);
+    hits.push(student);
+    if (hits.length >= 8) break;
+  }
+  return hits;
+}
+
+export type PaymentSearchScopeSession = {
+  user?: { schoolCode?: string; schoolPublicCode?: string };
+  school?: { code?: string };
+} | null;
+
+/**
+ * Scope de recherche Élève : leftover CC-YYYY-NNNN n'est jamais une autorité.
+ * schoolPublicCode / login V2 / SCH-001 non leftover restent valides.
+ */
+export function resolvePaymentStudentSearchScope(session: PaymentSearchScopeSession): string {
+  const candidates = [
+    trim(session?.user?.schoolPublicCode),
+    trim(session?.user?.schoolCode),
+    trim(session?.school?.code),
+  ];
+  for (const code of candidates) {
+    if (!code || code === "*") continue;
+    if (isLegacySchoolCode(code)) continue;
+    return code;
+  }
+  return "";
 }
 
 function isActiveEnrollment(status?: string): boolean {
@@ -293,11 +366,13 @@ export function paymentSubmitErrorMessage(outcome: "queued" | "failed" | string,
 export function paymentStudentsFromOptions(
   rows: Array<{
     studentId?: string;
+    studentCode?: string;
     firstName?: string;
     lastName?: string;
     classId?: string | null;
     classCode?: string;
     className?: string;
+    schoolCode?: string;
     classes?: Array<{ classId: string; classCode?: string; className?: string }>;
   }> = [],
 ): PaymentStudent[] {
@@ -308,9 +383,11 @@ export function paymentStudentsFromOptions(
     students.push({
       id,
       name: `${trim(row.firstName)} ${trim(row.lastName)}`.trim() || id,
+      studentCode: trim(row.studentCode),
       classId: row.classId ?? null,
       classCode: trim(row.classCode),
       className: trim(row.className),
+      schoolCode: trim(row.schoolCode),
       enrollments: (row.classes ?? []).map((klass) => ({
         status: "active",
         classId: klass.classId,

@@ -415,6 +415,7 @@ export type PaymentStudentOption = {
   classId?: string | null;
   classCode?: string;
   className?: string;
+  schoolCode?: string;
   classes?: Array<{ classId: string; classCode?: string; className?: string }>;
 };
 
