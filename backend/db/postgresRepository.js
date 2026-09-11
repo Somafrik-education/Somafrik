@@ -1949,7 +1949,19 @@ class PostgresRepository {
       `),
       this.all(`
         SELECT g.*, st.student_code, s.school_code, cl.class_code, cl.name AS class_name, sub.name AS subject_name,
-               sub.coefficient AS subject_coefficient, t.teacher_code, term.name AS term_name,
+               COALESCE(
+                 (
+                   SELECT sc.coefficient
+                   FROM school_courses sc
+                   WHERE sc.school_id = g.school_id
+                     AND sc.class_id = g.class_id
+                     AND sc.subject_id = g.subject_id
+                     AND sc.status = 'active'
+                   ORDER BY sc.created_at ASC, sc.id ASC
+                   LIMIT 1
+                 ),
+                 sub.coefficient
+               ) AS subject_coefficient, t.teacher_code, term.name AS term_name,
                ev.id AS evaluation_uuid, ev.legacy_json_id AS evaluation_legacy_id,
                ev.title AS evaluation_title, ev.status AS evaluation_status,
                ev.max_score AS evaluation_max_score, ev.coefficient AS evaluation_coefficient,
@@ -6537,6 +6549,12 @@ class PostgresRepository {
       grade.evaluation_legacy_id || grade.evaluation_uuid || grade.evaluation_id || null;
     const gradeStatus = fromGradeStatus(grade.grade_status ?? (grade.score == null ? "not_submitted" : "graded"));
     const score = grade.score == null ? undefined : Number(grade.score);
+    // Contrat DTO /api/notes :
+    // - coefficient = coefficient du cours (subject_coefficient PG)
+    // - evaluationCoefficient = coefficient de l'évaluation
+    // Ne pas confondre avec grades.coefficient (poids stocké sur la ligne de note).
+    const courseCoefficient = Number(grade.subject_coefficient);
+    const evaluationCoefficient = Number(grade.evaluation_coefficient);
     return {
       id: grade.id,
       schoolId: grade.school_id,
@@ -6546,7 +6564,7 @@ class PostgresRepository {
       subject: grade.subject_name,
       value: score,
       score,
-      coefficient: Number(grade.subject_coefficient ?? 1),
+      coefficient: Number.isFinite(courseCoefficient) && courseCoefficient > 0 ? courseCoefficient : 1,
       date: this.formatDate(grade.created_at),
       evaluationId,
       evaluationTitle: grade.evaluation_title || grade.comment || this.fromEvaluationType(grade.grade_type),
@@ -6554,7 +6572,10 @@ class PostgresRepository {
       evaluationTypeId: grade.evaluation_type_id || undefined,
       period: grade.term_name,
       scale: Number(grade.evaluation_max_score ?? grade.max_score ?? 20),
-      evaluationCoefficient: Number(grade.evaluation_coefficient ?? grade.coefficient ?? 1),
+      evaluationCoefficient:
+        Number.isFinite(evaluationCoefficient) && evaluationCoefficient > 0
+          ? evaluationCoefficient
+          : Number(grade.coefficient ?? 1),
       gradeStatus,
       status: gradeStatus,
       comment: grade.comment ?? "",
@@ -7016,7 +7037,19 @@ class PostgresRepository {
   async getGradeById(id) {
     const grade = await this.one(
       `SELECT g.*, st.student_code, s.school_code, cl.class_code, cl.name AS class_name, sub.name AS subject_name,
-              sub.coefficient AS subject_coefficient, t.teacher_code, term.name AS term_name,
+              COALESCE(
+                (
+                  SELECT sc.coefficient
+                  FROM school_courses sc
+                  WHERE sc.school_id = g.school_id
+                    AND sc.class_id = g.class_id
+                    AND sc.subject_id = g.subject_id
+                    AND sc.status = 'active'
+                  ORDER BY sc.created_at ASC, sc.id ASC
+                  LIMIT 1
+                ),
+                sub.coefficient
+              ) AS subject_coefficient, t.teacher_code, term.name AS term_name,
               ev.id AS evaluation_uuid, ev.legacy_json_id AS evaluation_legacy_id,
               ev.title AS evaluation_title, ev.status AS evaluation_status,
               ev.max_score AS evaluation_max_score, ev.coefficient AS evaluation_coefficient,

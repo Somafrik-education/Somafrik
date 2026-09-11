@@ -1,11 +1,5 @@
 import { canonicalWeightedAverage, type CanonicalGrade } from "./evaluationsV2";
 
-type CourseRow = {
-  name?: string;
-  className?: string;
-  coefficient?: number;
-};
-
 function normalizeKey(value: unknown): string {
   return String(value ?? "")
     .normalize("NFD")
@@ -14,31 +8,21 @@ function normalizeKey(value: unknown): string {
     .toLowerCase();
 }
 
-function courseCoefficientForSubject(
-  courses: CourseRow[],
-  subject: string,
-  className?: string,
-): number {
-  const subjectKey = normalizeKey(subject);
-  const classKey = normalizeKey(className);
-  const course = courses.find((row) => {
-    if (normalizeKey(row.name) !== subjectKey) return false;
-    const rowClass = normalizeKey(row.className);
-    return !classKey || !rowClass || rowClass === classKey;
-  });
-  const coefficient = Number(course?.coefficient ?? 1);
+function courseCoefficientFromNotes(notes: CanonicalGrade[]): number {
+  const fromNote = notes.find((note) => Number(note.coefficient) > 0);
+  const coefficient = Number(fromNote?.coefficient ?? 1);
   return Number.isFinite(coefficient) && coefficient > 0 ? coefficient : 1;
 }
 
 /**
- * Formule canonique backend/Web staff :
+ * Formule canonique backend/Web staff, à partir des notes /api/notes uniquement :
  * 1) moyenne de chaque cours pondérée par evaluationCoefficient ;
- * 2) moyenne générale pondérée par le coefficient du cours.
+ * 2) moyenne générale pondérée par coefficient (coefficient du cours porté par la note).
+ *
+ * Ne consomme pas le catalogue de cours établissement.
  */
 export function canonicalStudentGeneralAverage(
   notes: CanonicalGrade[],
-  courses: CourseRow[],
-  className?: string,
 ): { available: boolean; average: number | null; totalCourseCoefficients: number; displayScale: number } {
   const subjects = [...new Set(notes.map((note) => String(note.subject ?? "").trim()).filter(Boolean))];
   let weighted = 0;
@@ -48,7 +32,7 @@ export function canonicalStudentGeneralAverage(
     const subjectNotes = notes.filter((note) => normalizeKey(note.subject) === normalizeKey(subject));
     const subjectAverage = canonicalWeightedAverage(subjectNotes, { displayScale: 20 });
     if (!subjectAverage.available || subjectAverage.average == null) continue;
-    const courseCoefficient = courseCoefficientForSubject(courses, subject, className);
+    const courseCoefficient = courseCoefficientFromNotes(subjectNotes);
     weighted += subjectAverage.average * courseCoefficient;
     totalCourseCoefficients += courseCoefficient;
   }

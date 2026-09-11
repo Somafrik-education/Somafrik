@@ -30,7 +30,7 @@ export default function StudentNotesScreen({ route, navigation }: Partial<Props>
   const { scrollContentPaddingBottom } = useFloatingTabBarLayout();
   const listContentStyle = [styles.listContent, { paddingBottom: scrollContentPaddingBottom }];
   const { session, selectedStudentId } = useAuth();
-  const { studentsData, notesSnapshot, loadNotes, schoolCoursesSnapshot, loadSchoolCourses } = useAdminData();
+  const { studentsData, notesSnapshot, loadNotes } = useAdminData();
   const studentId = route?.params?.studentId ?? selectedStudentId;
   const studentAliasKeys = sessionStudentAliasKeys({
     role: session?.role,
@@ -42,18 +42,13 @@ export default function StudentNotesScreen({ route, navigation }: Partial<Props>
   useFocusEffect(
     useCallback(() => {
       void loadNotes();
-      void loadSchoolCourses();
-    }, [loadNotes, loadSchoolCourses]),
+    }, [loadNotes]),
   );
 
   const studentNotes = studentAliasKeys.length
     ? notesForStudent(notesSnapshot.data, studentAliasKeys)
     : [];
-  const average = canonicalStudentGeneralAverage(
-    studentNotes,
-    schoolCoursesSnapshot.data,
-    student?.className,
-  );
+  const average = canonicalStudentGeneralAverage(studentNotes);
 
   return (
     <View style={styles.container} testID={STUDENT_SUB_SCREENS_TEST_IDS.notesScreen}>

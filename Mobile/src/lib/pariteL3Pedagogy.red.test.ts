@@ -253,15 +253,23 @@ const cases: { id: string; title: string; run: () => void }[] = [
         /canonicalStudentGeneralAverage/,
         "Mobile calcule encore la moyenne générale directement sur toutes les évaluations",
       );
-      assert.match(
-        screen,
-        /schoolCoursesSnapshot/,
-        "Mobile n'utilise pas les coefficients de cours canoniques pour la moyenne générale",
+      assert.equal(
+        /schoolCoursesSnapshot|loadSchoolCourses/.test(screen),
+        false,
+        "Mobile ne doit pas charger /api/courses pour la moyenne générale",
       );
       assert.equal(
         /const average = canonicalWeightedAverage\(studentNotes\)/.test(screen),
         false,
         "la moyenne générale Mobile reste plate",
+      );
+      const engine = read("lib/pedagogyAverage.ts");
+      assert.match(engine, /evaluationCoefficient/);
+      assert.match(engine, /note\.coefficient/);
+      assert.equal(
+        /\/api\/courses/.test(engine),
+        false,
+        "pedagogyAverage.ts ne doit pas appeler le catalogue /api/courses",
       );
     },
   },

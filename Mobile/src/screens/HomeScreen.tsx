@@ -27,7 +27,8 @@ import {
 } from "../lib/homeDashboardKpis";
 import { countActiveUserAccounts } from "../lib/format";
 import { TODAY_PRESENCE_KPI_LABEL, getTodayEstablishmentPresenceKpi } from "../lib/todayPresenceKpi";
-import { canonicalWeightedAverage, notesForStudent } from "../lib/evaluationsV2";
+import { notesForStudent } from "../lib/evaluationsV2";
+import { canonicalStudentGeneralAverage } from "../lib/pedagogyAverage";
 import {
   filterRowsByStudentScope,
   findStudentByIdentity,
@@ -193,7 +194,7 @@ export default function HomeScreen({ navigation }: any) {
   const studentNotes = studentAliasKeys.length
     ? notesForStudent(notesSnapshot.data, studentAliasKeys)
     : [];
-  const canonicalAverage = canonicalWeightedAverage(studentNotes);
+  const canonicalAverage = canonicalStudentGeneralAverage(studentNotes);
   const averageDisplay = parentAverageDisplay({
     notesReady: notesSnapshot.status === "success" || notesSnapshot.status === "empty",
     notesForStudent: studentNotes,

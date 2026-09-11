@@ -1,11 +1,7 @@
 import type { Evaluation, StudentGrade } from "../../types";
-import { useAuth } from "../../context/AuthContext";
-import { useData } from "../../context/DataContext";
-import { useActiveSchool } from "../../context/ActiveSchoolContext";
 import { Card, SectionHeader } from "../ui/Card";
 import { Table, type Column } from "../ui/Table";
-import { GradeBookService, formatStudentName } from "../../lib/gradeBook";
-import { scopedCourses } from "../../lib/establishment";
+import { GradeBookService, coursesFromGradeCoefficients, formatStudentName } from "../../lib/gradeBook";
 import { parentGradesKpis } from "../../lib/parentNotes";
 
 type StudentRow = Record<string, unknown>;
@@ -46,16 +42,7 @@ export function ParentChildGradesPanel({
   courseFilter = "",
   highlightGradeId = "",
 }: ParentChildGradesPanelProps) {
-  const { session } = useAuth();
-  const { state } = useData();
-  const { scopedUser } = useActiveSchool();
   const kpis = parentGradesKpis(grades, courseFilter);
-
-  const canonicalCourses = scopedCourses(scopedUser ?? session?.user ?? null, state).map((row) => ({
-    name: String(row.name ?? row.subject ?? row.course ?? ""),
-    coefficient: Number(row.coefficient ?? 1),
-    className: String(row.className ?? ""),
-  }));
   const gradeBookStudent = student
     ? {
         id: String(student.id ?? ""),
@@ -67,10 +54,11 @@ export function ParentChildGradesPanel({
     : null;
   const canonicalGeneralAverage =
     gradeBookStudent && grades.length
-      ? new GradeBookService([gradeBookStudent], grades, canonicalCourses).getStudentAverageValue(
-          gradeBookStudent.id,
-          period,
-        )
+      ? new GradeBookService(
+          [gradeBookStudent],
+          grades,
+          coursesFromGradeCoefficients(grades),
+        ).getStudentAverageValue(gradeBookStudent.id, period)
       : null;
   const displayedAverage = courseFilter ? kpis.average : canonicalGeneralAverage;
 

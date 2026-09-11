@@ -107,8 +107,18 @@ const cases: { id: string; title: string; run: () => void }[] = [
       );
       assert.match(
         panel,
-        /scopedCourses/,
-        "Web parent ne fournit pas les coefficients de cours canoniques au moteur de moyenne générale",
+        /coursesFromGradeCoefficients|grade\.coefficient/,
+        "Web parent doit prendre le coefficient du cours porté par /api/notes, pas /api/courses",
+      );
+      assert.equal(
+        /scopedCourses/.test(panel),
+        false,
+        "Web parent ne doit plus dépendre du catalogue cours pour la moyenne générale",
+      );
+      assert.equal(
+        /listCourses|\/api\/courses/.test(panel),
+        false,
+        "Web parent ne doit pas appeler /api/courses pour calculer la moyenne",
       );
       assert.match(
         panel,

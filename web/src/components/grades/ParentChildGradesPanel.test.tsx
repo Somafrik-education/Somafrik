@@ -1,26 +1,7 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { ParentChildGradesPanel } from "./ParentChildGradesPanel";
 import type { Evaluation, StudentGrade } from "../../types";
-
-vi.mock("../../context/AuthContext", () => ({
-  useAuth: () => ({ session: { user: { id: "parent-1", role: "Parent", schoolCode: "SCH-001" } } }),
-}));
-
-vi.mock("../../context/DataContext", () => ({
-  useData: () => ({ state: {} }),
-}));
-
-vi.mock("../../context/ActiveSchoolContext", () => ({
-  useActiveSchool: () => ({ scopedUser: { id: "parent-1", role: "Parent", schoolCode: "SCH-001" } }),
-}));
-
-vi.mock("../../lib/establishment", () => ({
-  scopedCourses: () => [
-    { name: "Mathématiques", coefficient: 2, className: "1ère A", schoolCode: "SCH-001" },
-    { name: "Français", coefficient: 1, className: "1ère A", schoolCode: "SCH-001" },
-  ],
-}));
 
 const student = {
   id: "stu-a",
@@ -39,6 +20,7 @@ const mathGrade: StudentGrade = {
   value: 16,
   scale: 20,
   evaluationCoefficient: 1,
+  coefficient: 2,
   gradeStatus: "Validée",
   date: "2026-09-01",
 };
@@ -53,6 +35,7 @@ const frenchGrade: StudentGrade = {
   value: 10,
   scale: 20,
   evaluationCoefficient: 1,
+  coefficient: 1,
   gradeStatus: "Validée",
   date: "2026-09-02",
 };
@@ -161,6 +144,7 @@ describe("ParentChildGradesPanel", () => {
       evaluationId: "EVAL-1",
       value: 10,
       evaluationCoefficient: 1,
+      coefficient: 2,
     };
     const mathHigh: StudentGrade = {
       ...mathGrade,
@@ -168,12 +152,14 @@ describe("ParentChildGradesPanel", () => {
       evaluationId: "EVAL-3",
       value: 20,
       evaluationCoefficient: 3,
+      coefficient: 2,
     };
     const french: StudentGrade = {
       ...frenchGrade,
       id: "g-fr",
       value: 12,
       evaluationCoefficient: 1,
+      coefficient: 1,
     };
 
     render(
