@@ -34,7 +34,13 @@ Aucun changement API, RBAC, navigation, ni autre écran.
 
 ```bash
 npx --yes tsx Mobile/src/lib/progressiveDisclosureUx.test.ts
+# OK Lot 0 UX progressive disclosure : contrat + îlots verts + exceptions CTO
+
 npm --prefix Mobile run verify:progressive-disclosure-red
+# OK: exactement 5/5 PD encore ROUGES
+# failedIds: PD-02, PD-03, PD-04, PD-06, PD-07
 ```
+
+`verify:mobile-usability` exécute les deux suites PD ci-dessus avec succès, puis échoue **en fin de script** sur l’assertion préexistante `name: verify:mobile-usability` dans `ci.yml` nightly (hors périmètre PD-01, déjà constaté Lot 0 / PD-05).
 
 PD-02, PD-03, PD-04, PD-06, PD-07 restent ROUGES (lots suivants).
