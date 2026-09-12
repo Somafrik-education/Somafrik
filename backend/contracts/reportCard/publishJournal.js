@@ -35,15 +35,32 @@ function tokenBinding(recordOrPayload, publicId) {
  * Retry avec un autre snapshot_sha256 → IDEMPOTENCY_CONFLICT.
  */
 class PublishJournal {
-  constructor({ wrapping, signingKey }) {
+  constructor({ wrapping, wrappingKeys = [], signingKey }) {
     this.wrapping = wrapping;
     this.signingKey = signingKey;
+    this.wrappingKeys = new Map();
+    for (const key of wrappingKeys) {
+      this.wrappingKeys.set(key.wrapping_key_id, key);
+    }
+    if (wrapping) {
+      this.wrappingKeys.set(wrapping.wrapping_key_id, wrapping);
+    }
     this.records = new Map();
     this.outbox = [];
   }
 
   _key(reportCardId, version) {
     return `${reportCardId}::${version}`;
+  }
+
+  wrappingFor(wrappingKeyId) {
+    const wrapping = this.wrappingKeys.get(wrappingKeyId);
+    if (!wrapping) {
+      const err = new Error("WRAPPING_KEY_UNKNOWN");
+      err.code = "WRAPPING_KEY_UNKNOWN";
+      throw err;
+    }
+    return wrapping;
   }
 
   publish(payload) {
@@ -90,7 +107,11 @@ class PublishJournal {
   reprintUrl(reportCardId, version) {
     const record = this.records.get(this._key(reportCardId, version));
     if (!record) throw new Error("unknown published version");
-    const token = unwrapToken(record.token_ciphertext, this.wrapping, tokenBinding(record, record.public_id));
+    const token = unwrapToken(
+      record.token_ciphertext,
+      this.wrappingFor(record.wrapping_key_id),
+      tokenBinding(record, record.public_id)
+    );
     if (!constantTimeEqual(hashToken(token), record.token_hash)) {
       const err = new Error("TOKEN_HASH_MISMATCH");
       err.code = "TOKEN_HASH_MISMATCH";
@@ -122,8 +143,8 @@ class PublishJournal {
     return dump;
   }
 
-  static restore(dump, { wrapping, signingKey }) {
-    const journal = new PublishJournal({ wrapping, signingKey });
+  static restore(dump, { wrapping, wrappingKeys, signingKey }) {
+    const journal = new PublishJournal({ wrapping, wrappingKeys, signingKey });
     for (const row of dump) {
       const key = journal._key(row.report_card_id, row.published_snapshot_version);
       journal.records.set(

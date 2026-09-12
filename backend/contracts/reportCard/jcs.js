@@ -45,7 +45,14 @@ function serialize(value) {
     throw new TypeError("JCS: bigint is not I-JSON");
   }
   if (Array.isArray(value)) {
-    return `[${value.map((item) => serialize(item)).join(",")}]`;
+    const parts = [];
+    for (let i = 0; i < value.length; i += 1) {
+      if (!Object.prototype.hasOwnProperty.call(value, i)) {
+        throw new TypeError("JCS: sparse array is not I-JSON");
+      }
+      parts.push(serialize(value[i]));
+    }
+    return `[${parts.join(",")}]`;
   }
   if (type === "object") {
     const proto = Object.getPrototypeOf(value);

@@ -54,7 +54,7 @@ Règles :
 
 Une fois `PUBLISHED`, le payload est **deep-freeze**. Le renderer LOT 5 lit **uniquement** `payloadForRender`, qui refuse le parse si `SHA-256(canonical_bytes) !== snapshot_sha256` (`SNAPSHOT_INTEGRITY`) — un `Buffer` Node reste mutable octet par octet même si le conteneur est `freeze`. Une affectation imbriquée (`sealed.payload.cells[0].score = …`) est fail-closed (TypeError). Gates : `snapshot-immutability`, `snapshot-canonical-bytes-tamper-fails-closed`, `snapshot-canonical-jcs`.
 
-JCS = I-JSON (RFC 7493) : rejet de `undefined`, nombres non finis, **lone UTF-16 surrogates**. Vecteurs RFC 8785 (values.json, tri UTF-16, Appendix B) dans `reportCardLot0.jcs.test.js`.
+JCS = I-JSON (RFC 7493) : rejet de `undefined`, tableaux creux (`sparse`), nombres non finis, **lone UTF-16 surrogates**. Vecteurs RFC 8785 (values.json, tri UTF-16, Appendix B) dans `reportCardLot0.jcs.test.js`.
 
 ---
 
@@ -84,12 +84,12 @@ https://somafrik.app/verify/rc/<public_id>.<token>
 | Token | Aléatoire ≥ **128 bits** |
 | Vérification `/verify` | `token_hash` (SHA-256), comparaison constante |
 | Reprint | `token_ciphertext` AES-256-GCM + **AAD** `{public_id, report_card_id, published_snapshot_version, school_id}` + `wrapping_key_id` |
-| Clé de wrapping | **Hors PostgreSQL** |
+| Clé de wrapping | **Hors PostgreSQL** ; reprint résout `wrapping_key_id` historique (rotation ≠ nouveau token) |
 | Invariant | `même version → même URL → même QR` après redémarrage et des années |
 
 **Écartés comme défaut :** B (HMAC/KDF déterministe), C (un seul opaque). Restent documentés dans l’audit ; les changer exige une ADR de remplacement.
 
-**Interdit :** plaintext durable en PG ; token ou préfixe en logs Render/proxy/CDN/WAF/app/Sentry ; rate-limit par préfixe clair ; mint d’un token dans le PDF.
+**Interdit :** plaintext durable en PG ; token ou préfixe en logs Render/proxy/CDN/WAF/app/Sentry ; rate-limit par préfixe clair **ou par `token_hash`** (bucket = `ip` + `public_id`) ; mint d’un token dans le PDF.
 
 `/verify` : `Cache-Control: no-store`, `Referrer-Policy: no-referrer`, CSP stricte, **zéro** ressource/analytics tierce.
 

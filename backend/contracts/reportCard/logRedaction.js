@@ -19,11 +19,12 @@ function assertTokenAbsentFromLogs(logs, token) {
   }
 }
 
-function rateLimitKey({ ip, publicId, tokenHash }) {
-  if (tokenHash) return `hash:${tokenHash}`;
+function rateLimitKey({ ip, publicId, tokenHash } = {}) {
+  void tokenHash;
+  if (publicId && ip) return `ip:${ip}|pid:${publicId}`;
   if (publicId) return `pid:${publicId}`;
   if (ip) return `ip:${ip}`;
-  throw new Error("rate limit key requires ip, public_id or token_hash");
+  throw new Error("rate limit key requires ip or public_id");
 }
 
 module.exports = {

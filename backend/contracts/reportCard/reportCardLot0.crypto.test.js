@@ -130,6 +130,25 @@ test("reprint-after-restart-keeps-same-qr", () => {
   assert.equal(fromPdf, urlBefore);
 });
 
+test("reprint-after-restart-keeps-same-qr: historical wrapping_key_id after rotation", () => {
+  const oldWrap = generateWrappingKey("wrap-old");
+  const newWrap = generateWrappingKey("wrap-new");
+  const signingKey = generateSigningKey();
+  const journal = new PublishJournal({ wrapping: oldWrap, signingKey });
+  journal.publish(samplePayload());
+  const urlBefore = journal.reprintUrl("rc-1", 1);
+  const dump = journal.persistWithoutSecrets();
+  assert.equal(dump[0].wrapping_key_id, "wrap-old");
+  const rotated = PublishJournal.restore(dump, {
+    wrapping: newWrap,
+    wrappingKeys: [oldWrap],
+    signingKey,
+  });
+  assert.equal(rotated.reprintUrl("rc-1", 1), urlBefore);
+  const missingHistory = PublishJournal.restore(dump, { wrapping: newWrap, signingKey });
+  assert.throws(() => missingHistory.reprintUrl("rc-1", 1), (err) => err.code === "WRAPPING_KEY_UNKNOWN");
+});
+
 test("token-not-in-logs: redact path; rate-limit never uses plaintext prefix", () => {
   const token = generateToken();
   const publicId = "11111111-2222-3333-4444-555555555555";
@@ -139,9 +158,15 @@ test("token-not-in-logs: redact path; rate-limit never uses plaintext prefix", (
   assert.ok(!redacted.includes(token));
   assert.doesNotThrow(() => assertTokenAbsentFromLogs([redacted], token));
   assert.throws(() => assertTokenAbsentFromLogs([url], token));
-  const key = rateLimitKey({ publicId, tokenHash: hashToken(token) });
-  assert.ok(key.startsWith("hash:"));
-  assert.ok(!key.includes(token.slice(0, 8)));
+  const keyA = rateLimitKey({ publicId, ip: "203.0.113.10", tokenHash: hashToken(token) });
+  const keyB = rateLimitKey({
+    publicId,
+    ip: "203.0.113.10",
+    tokenHash: hashToken(generateToken()),
+  });
+  assert.equal(keyA, keyB);
+  assert.equal(keyA, `ip:203.0.113.10|pid:${publicId}`);
+  assert.ok(!keyA.includes(token.slice(0, 8)));
 });
 
 test("tenant-isolation: school B cannot bind school A capability", () => {
