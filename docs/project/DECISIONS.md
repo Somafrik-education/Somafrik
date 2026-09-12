@@ -1,7 +1,7 @@
 # Décisions d’architecture (ADR simplifié) — Somafrik
 
 **Statut :** registre officiel des décisions durables  
-**Dernière mise à jour :** 2026-08-13
+**Dernière mise à jour :** 2026-09-12
 
 Format obligatoire pour chaque entrée :
 
@@ -183,6 +183,19 @@ Les conversations (Chat, agents) **ne remplacent pas** ce registre.
 | **Contexte** | L'APK Preview QA affichait encore `CD-2026-0001` (placeholder Mobile + mapping public `code` = `school_code`). |
 | **Alternatives** | Dual-write login_code + school_code public ; regex unique acceptant les deux formats ; génération Web/Mobile. |
 | **Impact** | `toPublicSchool` expose le V2 ; `GET /api/schools/:code` matche login_code ; gate `verify:school-code-v2` ; bundle Preview sans `CD-2026-0001`. Contrat : `docs/project/SCHOOL-CODE-V2.md`. |
+| **Statut** | Proposée |
+
+---
+
+## ADR-014 — Framework bulletins : trois couches, snapshot JCS, QR stratégie A
+
+| | |
+|--|--|
+| **Date** | 2026-09-12 |
+| **Décision** | Framework bulletins = `AcademicRuleProfile` ≠ `ReportCardSchema` ≠ `RenderingTemplate`. Moteur sans `if(country)` / `if(school)`. Snapshot publié = RFC 8785 JCS ; `snapshot_sha256` et Ed25519 signent **les mêmes** bytes. QR = stratégie A (`token_hash` + `token_ciphertext` KMS hors PG). Publication atomique `UNIQUE(report_card_id, published_snapshot_version)`. Fixtures Burundi A/B = qualification, pas un pack pays. |
+| **Contexte** | Audit CTO PR #614 (GO documentaire). Empêcher LOT 1–10 de diverger. |
+| **Alternatives** | Template par pays ; hash PG seul ; QR JSON PII actuel ; token hash-only (reprint impossible) ; HMAC/KDF (B) ou opaque unique (C) comme défaut. |
+| **Impact** | ADR `docs/project/ADR-REPORT-CARD-FRAMEWORK-LOT0.md` ; contrats `backend/contracts/reportCard/` ; gate `verify:report-card-lot0`. Pas de SQL / route / UI dans LOT 0. |
 | **Statut** | Proposée |
 
 ---
