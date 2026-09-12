@@ -92,6 +92,7 @@ test("LOT 0 gates declared", () => {
   for (const gate of [
     "no-country-school-branch",
     "snapshot-immutability",
+    "snapshot-canonical-bytes-tamper-fails-closed",
     "publish-idempotent-qr",
     "publish-idempotency-rejects-payload-mismatch",
     "reprint-after-restart-keeps-same-qr",

@@ -115,6 +115,7 @@ const PRINT_CONTRACT = Object.freeze({
 const GATES = Object.freeze([
   "no-country-school-branch",
   "snapshot-immutability",
+  "snapshot-canonical-bytes-tamper-fails-closed",
   "snapshot-canonical-jcs",
   "snapshot-signature",
   "publish-idempotent-qr",

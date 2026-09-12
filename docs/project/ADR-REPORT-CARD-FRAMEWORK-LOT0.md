@@ -52,7 +52,7 @@ Règles :
 - `snapshot_signature = Ed25519.Sign(canonical_bytes)` — **les mêmes bytes** que le hash
 - **interdit :** `JSON.stringify` comme canon, `jsonb::text`, round-trip qui réordonne les clés
 
-Une fois `PUBLISHED`, le payload est **deep-freeze**. Le renderer LOT 5 lit **uniquement** `JSON.parse(canonical_bytes)` (`payloadForRender`), jamais un objet JS encore mutable. Une affectation imbriquée (`sealed.payload.cells[0].score = …`) est fail-closed (TypeError). Gate : `snapshot-immutability`, `snapshot-canonical-jcs`.
+Une fois `PUBLISHED`, le payload est **deep-freeze**. Le renderer LOT 5 lit **uniquement** `payloadForRender`, qui refuse le parse si `SHA-256(canonical_bytes) !== snapshot_sha256` (`SNAPSHOT_INTEGRITY`) — un `Buffer` Node reste mutable octet par octet même si le conteneur est `freeze`. Une affectation imbriquée (`sealed.payload.cells[0].score = …`) est fail-closed (TypeError). Gates : `snapshot-immutability`, `snapshot-canonical-bytes-tamper-fails-closed`, `snapshot-canonical-jcs`.
 
 JCS = I-JSON (RFC 7493) : rejet de `undefined`, nombres non finis, **lone UTF-16 surrogates**. Vecteurs RFC 8785 (values.json, tri UTF-16, Appendix B) dans `reportCardLot0.jcs.test.js`.
 

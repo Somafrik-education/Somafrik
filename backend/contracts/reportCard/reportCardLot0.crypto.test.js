@@ -11,6 +11,7 @@ const {
   sealSnapshot,
   payloadForRender,
   assertImmutable,
+  SnapshotIntegrityError,
 } = require("./snapshot");
 const {
   generateToken,
@@ -66,6 +67,20 @@ test("snapshot-immutability: nested mutation is fail-closed; render reads canoni
   });
   assert.equal(payloadForRender(sealed).cells[0].score, 14.5);
   assert.doesNotThrow(() => assertImmutable(sealed));
+});
+
+test("snapshot-canonical-bytes-tamper-fails-closed", () => {
+  const key = generateSigningKey();
+  const sealed = sealSnapshot(samplePayload(), key);
+  assert.equal(payloadForRender(sealed).student.given, "Hope");
+  const idx = sealed.canonical_bytes.indexOf(Buffer.from("Hope", "utf8"));
+  assert.ok(idx >= 0);
+  sealed.canonical_bytes[idx] = "N".charCodeAt(0);
+  assert.equal(JSON.parse(sealed.canonical_bytes.toString("utf8")).student.given, "Nope");
+  assert.throws(
+    () => payloadForRender(sealed),
+    (err) => err.code === "SNAPSHOT_INTEGRITY" && err instanceof SnapshotIntegrityError
+  );
 });
 
 test("snapshot-signature: Ed25519 over the same canonical bytes; key rotation does not resign v1", () => {
