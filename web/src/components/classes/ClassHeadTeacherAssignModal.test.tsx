@@ -16,7 +16,7 @@ vi.mock("../../lib/classesApi", () => ({
   classesApi: classesApiMock,
 }));
 
-vi.mock("../../components/ui/ConfirmDialog", () => ({
+vi.mock("../ui/ConfirmDialog", () => ({
   useConfirm: () => ({ confirm: confirmMock }),
 }));
 

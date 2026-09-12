@@ -7,7 +7,7 @@ import {
   formatHeadTeacherLine,
 } from "./classHeadTeacher";
 import { canAssignClassHeadTeacher } from "./permissions";
-import { SCHOOL_ADMIN_ROLE, SUPER_ADMIN_ROLE } from "./orgHierarchy";
+import { SCHOOL_ADMIN_ROLE, SUPER_ADMIN_ROLE, COUNTRY_ADMIN_ROLE } from "./orgHierarchy";
 import type { SessionUser } from "../types";
 
 describe("classHeadTeacher", () => {
@@ -48,6 +48,9 @@ describe("canAssignClassHeadTeacher", () => {
         ctx({ role: "Enseignant", permissions: ["Classes:READ", "Voir classes"] }),
       ),
     ).toBe(false);
+    expect(canAssignClassHeadTeacher(ctx({ role: COUNTRY_ADMIN_ROLE, permissions: ["COUNTRY_PRIVILEGES"] }))).toBe(
+      false,
+    );
   });
 });
 

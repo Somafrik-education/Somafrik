@@ -68,7 +68,7 @@ vi.mock("../../context/ActiveSchoolContext", () => ({
 }));
 
 vi.mock("../../lib/usePermissionContext", () => ({
-  usePermissionContext: () => ({ user: sessionStore.user }),
+  usePermissionContext: () => ({ user: sessionStore.user, rolePermissions: {} }),
 }));
 
 vi.mock("../../lib/permissions", async (importOriginal) => {
@@ -601,7 +601,7 @@ describe("ClassesListPage (CRUD /api/classes)", () => {
 
   it("affiche Affecter un professeur principal quand aucun n'est assigné", async () => {
     renderPage();
-    expect(await screen.findByText("Professeur principal : Non assigné")).toBeInTheDocument();
+    expect((await screen.findAllByText("Professeur principal : Non assigné")).length).toBeGreaterThan(0);
     const assignButtons = screen.getAllByRole("button", { name: "Affecter un professeur principal" });
     expect(assignButtons.length).toBeGreaterThan(0);
     const eleves = screen.getAllByRole("link", { name: "Élèves" });

@@ -166,7 +166,10 @@ export function canAssignClassHeadTeacher(ctx: PermissionContext): boolean {
   if (!ctx.user) return false;
   if (isSuperAdminRole(ctx.user.role)) return true;
   if (isSchoolAdminRole(ctx.user.role)) return true;
-  const tokens = getCurrentRolePermissions(ctx).map((permission) => normalize(permission));
+  const tokens = getCurrentRolePermissions({
+    ...ctx,
+    rolePermissions: ctx.rolePermissions ?? {},
+  }).map((permission) => normalize(permission));
   return tokens.some((permission) => HEAD_TEACHER_WRITE_TOKENS.has(permission));
 }
 

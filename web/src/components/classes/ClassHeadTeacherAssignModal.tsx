@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { Button, Modal } from "@/design-system";
-import { Field, Input } from "../components/ui/Field";
-import { ApiError } from "../api/client";
-import { classesApi, type HeadTeacherCandidate, type SchoolClass } from "../lib/classesApi";
-import { HEAD_TEACHER_COPY, classHasHeadTeacher } from "../lib/classHeadTeacher";
-import { useConfirm } from "../components/ui/ConfirmDialog";
+import { Field, Input } from "../ui/Field";
+import { ApiError } from "../../api/client";
+import { classesApi, type HeadTeacherCandidate, type SchoolClass } from "../../lib/classesApi";
+import { HEAD_TEACHER_COPY, classHasHeadTeacher } from "../../lib/classHeadTeacher";
+import { useConfirm } from "../ui/ConfirmDialog";
 
 type Props = {
   open: boolean;
