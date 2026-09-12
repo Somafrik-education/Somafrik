@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -9,7 +9,14 @@ import { canAccessMessagesRoute } from "../lib/mobileCtaRbacAlignment";
 import { resolveNotificationsInboxRoute } from "../lib/notificationInboxRoute";
 import { useInternalNotificationsUnreadCount } from "../lib/internalNotificationsRead";
 import { MIN_TOUCH_TARGET_DP } from "../lib/mobileUsability";
-import { COMPACT_HEADER_ROW_DP, HEADER_ACTIONS_SLOT_DP, HEADER_BADGE_BAND_DP, HEADER_MENU_SLOT_DP } from "../lib/mobileUxV1Layout";
+import {
+  COMPACT_HEADER_ROW_DP,
+  HEADER_ACTIONS_SLOT_DP,
+  HEADER_BADGE_BAND_DP,
+  HEADER_MENU_ICON_DP,
+  HEADER_MENU_SLOT_DP,
+  HEADER_MENU_TOUCH_DP,
+} from "../lib/mobileUxV1Layout";
 import { shouldShowEnvironmentBadge } from "../config/env";
 import RoleNavigationDrawer from "./RoleNavigationDrawer";
 
@@ -38,14 +45,6 @@ export default function MobileAppHeader({ navigation }: { navigation: any }) {
       ? "OfflineMode"
       : null;
 
-  const searchRoute = useMemo(() => {
-    if (canReadRoute(session, "TeacherStudents")) return "TeacherStudents";
-    if (canReadRoute(session, "Students")) return "Students";
-    if (canReadRoute(session, "Users")) return "Users";
-    if (canReadRoute(session, "Classes")) return "Classes";
-    return null;
-  }, [session]);
-
   const notificationsRoute = notificationsInboxRoute
     ?? (canReadRoute(session, "Announcements")
       ? "Announcements"
@@ -69,7 +68,7 @@ export default function MobileAppHeader({ navigation }: { navigation: any }) {
               accessibilityLabel="Ouvrir le menu"
               testID="mobile-header-menu"
             >
-              <Ionicons name="menu" size={22} color="#0F172A" />
+              <Ionicons name="menu" size={HEADER_MENU_ICON_DP} color="#0F172A" />
             </TouchableOpacity>
           </View>
 
@@ -91,14 +90,6 @@ export default function MobileAppHeader({ navigation }: { navigation: any }) {
                 label="Synchroniser"
                 testID="mobile-header-sync"
                 onPress={() => openRootRoute(syncRoute)}
-              />
-            ) : null}
-            {searchRoute ? (
-              <HeaderAction
-                icon="search-outline"
-                label="Rechercher"
-                testID="mobile-header-search"
-                onPress={() => openRootRoute(searchRoute)}
               />
             ) : null}
             {notificationsRoute ? (
@@ -174,13 +165,15 @@ const styles = StyleSheet.create({
   },
   menuSlot: {
     width: HEADER_MENU_SLOT_DP,
-    minHeight: MIN_TOUCH_TARGET_DP,
+    minHeight: COMPACT_HEADER_ROW_DP,
     flexDirection: "row",
     alignItems: "center",
   },
   menuButton: {
-    minWidth: MIN_TOUCH_TARGET_DP,
-    minHeight: MIN_TOUCH_TARGET_DP,
+    width: HEADER_MENU_TOUCH_DP,
+    height: HEADER_MENU_TOUCH_DP,
+    minWidth: HEADER_MENU_TOUCH_DP,
+    minHeight: HEADER_MENU_TOUCH_DP,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -188,19 +181,19 @@ const styles = StyleSheet.create({
     flex: 1,
     minWidth: 0,
     paddingHorizontal: 4,
-    alignItems: "center",
+    alignItems: "flex-start",
     justifyContent: "center",
   },
   schoolName: {
     color: "#0F172A",
     fontSize: 15,
     fontWeight: "700",
-    textAlign: "center",
+    textAlign: "left",
     width: "100%",
   },
   actionsSlot: {
     width: HEADER_ACTIONS_SLOT_DP,
-    minHeight: MIN_TOUCH_TARGET_DP,
+    minHeight: COMPACT_HEADER_ROW_DP,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "flex-end",
@@ -213,7 +206,7 @@ const styles = StyleSheet.create({
     position: "relative",
   },
   badge: {
-    position: "absolute",
+    position: absolute,
     top: 4,
     right: 4,
     minWidth: 16,
