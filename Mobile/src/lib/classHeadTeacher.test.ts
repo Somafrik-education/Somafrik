@@ -62,6 +62,7 @@ const overlayKeepsRemoteStatus = applyHeadTeacherClassPatch(
     status: "inactive",
     teacherId: "",
     teacher: "Non assigné",
+    headTeacherCode: null as string | null,
   },
   {
     status: "active",
@@ -80,7 +81,7 @@ const remoteWins = reconcileHeadTeacherPatches(
     "CLS-1": overlayKeepsRemoteStatus,
     "CLS-GONE": { classCode: "CLS-GONE" },
   },
-  [{ classCode: "CLS-1", status: "inactive", headTeacherCode: "SCH-A-ENS-0002" }],
+  [{ classCode: "CLS-1" }],
 );
 assert.equal(remoteWins["CLS-1"], undefined, "reload canonique vide le patch de la classe rechargée");
 assert.equal(remoteWins["CLS-GONE"]?.classCode, "CLS-GONE");
