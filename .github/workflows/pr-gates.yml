@@ -28,6 +28,7 @@ jobs:
       teachers: ${{ steps.detect.outputs.teachers }}
       finance: ${{ steps.detect.outputs.finance }}
       pedagogy: ${{ steps.detect.outputs.pedagogy }}
+      reportcard: ${{ steps.detect.outputs.reportcard }}
       planning: ${{ steps.detect.outputs.planning }}
       users: ${{ steps.detect.outputs.users }}
       platform: ${{ steps.detect.outputs.platform }}
@@ -60,6 +61,7 @@ jobs:
           teachers=false
           finance=false
           pedagogy=false
+          reportcard=false
           planning=false
           users=false
           platform=false
@@ -101,17 +103,18 @@ jobs:
             if [[ "$lower" =~ (teacher|subject|assignment) ]]; then teachers=true; fi
             if [[ "$lower" =~ (finance|payment|fee|cash|receipt) ]]; then finance=true; fi
             if [[ "$lower" =~ (pedagog|evaluation|grade|note|presence|attendance|reference) ]]; then pedagogy=true; fi
+            if [[ "$lower" =~ (reportcard|report-card|report_card) ]]; then reportcard=true; fi
             if [[ "$lower" =~ (planning|schedule|room|replacement|course) ]]; then planning=true; fi
             if [[ "$lower" =~ (user|client|parent|role|permission|identity) ]]; then users=true; fi
             if [[ "$lower" =~ (platform|school|country|notification|subscription|setting|document|exam|lockout|export) ]]; then platform=true; fi
           done <<< "$changed"
 
           targeted=false
-          for flag in db auth sync classes students teachers finance pedagogy planning users platform web mobile dependencies; do
+          for flag in db auth sync classes students teachers finance pedagogy reportcard planning users platform web mobile dependencies; do
             if [ "${!flag}" = "true" ]; then targeted=true; fi
           done
 
-          for flag in code workflows db auth sync classes students teachers finance pedagogy planning users platform web mobile dependencies targeted; do
+          for flag in code workflows db auth sync classes students teachers finance pedagogy reportcard planning users platform web mobile dependencies targeted; do
             printf '%s=%s\n' "$flag" "${!flag}" >> "$GITHUB_OUTPUT"
           done
 
@@ -314,6 +317,10 @@ jobs:
           npm run verify:education-reference-data
           npm run verify:evaluation-types-data
           npm run verify:mobile-sync-l1-school-courses
+
+      - name: Report card LOT 0 contracts
+        if: needs.scope.outputs.reportcard == 'true'
+        run: npm run verify:report-card-lot0
 
       - name: Planning
         if: needs.scope.outputs.planning == 'true'

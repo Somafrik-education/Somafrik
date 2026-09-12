@@ -1,0 +1,192 @@
+"use strict";
+
+const crypto = require("node:crypto");
+const { PUBLISH, VERIFICATION_STATES } = require("./contract");
+const { sealSnapshot, deepFreeze } = require("./snapshot");
+const {
+  generateToken,
+  hashToken,
+  constantTimeEqual,
+  wrapToken,
+  unwrapToken,
+  verificationUrl,
+} = require("./verificationSecret");
+
+class IdempotencyConflict extends Error {
+  constructor(message = "IDEMPOTENCY_CONFLICT") {
+    super(message);
+    this.name = "IdempotencyConflict";
+    this.code = "IDEMPOTENCY_CONFLICT";
+  }
+}
+
+function tokenBinding(recordOrPayload, publicId) {
+  return {
+    public_id: publicId,
+    report_card_id: recordOrPayload.report_card_id,
+    published_snapshot_version: recordOrPayload.published_snapshot_version,
+    school_id: recordOrPayload.school_id,
+  };
+}
+
+/**
+ * Journal in-memory : simule la frontière atomique LOT 4 sans SQL.
+ * Unique (report_card_id, published_snapshot_version).
+ * Retry avec un autre snapshot_sha256 → IDEMPOTENCY_CONFLICT.
+ */
+class PublishJournal {
+  constructor({ wrapping, wrappingKeys = [], signingKey }) {
+    this.wrapping = wrapping;
+    this.signingKey = signingKey;
+    this.wrappingKeys = new Map();
+    for (const key of wrappingKeys) {
+      this.wrappingKeys.set(key.wrapping_key_id, key);
+    }
+    if (wrapping) {
+      this.wrappingKeys.set(wrapping.wrapping_key_id, wrapping);
+    }
+    this.records = new Map();
+    this.outbox = [];
+  }
+
+  _key(reportCardId, version) {
+    return `${reportCardId}::${version}`;
+  }
+
+  wrappingFor(wrappingKeyId) {
+    const wrapping = this.wrappingKeys.get(wrappingKeyId);
+    if (!wrapping) {
+      const err = new Error("WRAPPING_KEY_UNKNOWN");
+      err.code = "WRAPPING_KEY_UNKNOWN";
+      throw err;
+    }
+    return wrapping;
+  }
+
+  publish(payload) {
+    const sealed = sealSnapshot(payload, this.signingKey);
+    const key = this._key(payload.report_card_id, payload.published_snapshot_version);
+    const existing = this.records.get(key);
+    if (existing) {
+      if (existing.snapshot_sha256 !== sealed.snapshot_sha256) {
+        throw new IdempotencyConflict();
+      }
+      return existing;
+    }
+
+    const token = generateToken();
+    const publicId = crypto.randomUUID();
+    const wrapped = wrapToken(token, this.wrapping, tokenBinding(payload, publicId));
+    const record = Object.freeze({
+      report_card_id: payload.report_card_id,
+      published_snapshot_version: payload.published_snapshot_version,
+      school_id: payload.school_id,
+      status: "PUBLISHED",
+      verification_status: VERIFICATION_STATES[0],
+      public_id: publicId,
+      token_hash: hashToken(token),
+      token_ciphertext: wrapped.token_ciphertext,
+      wrapping_key_id: wrapped.wrapping_key_id,
+      snapshot_sha256: sealed.snapshot_sha256,
+      snapshot_signature: sealed.snapshot_signature,
+      signing_key_id: sealed.signing_key_id,
+      sealed,
+    });
+    this.records.set(key, record);
+    this.outbox.push(
+      Object.freeze({
+        event: PUBLISH.outbox_event,
+        report_card_id: payload.report_card_id,
+        public_id: publicId,
+        published_snapshot_version: payload.published_snapshot_version,
+      })
+    );
+    return record;
+  }
+
+  reprintUrl(reportCardId, version) {
+    const record = this.records.get(this._key(reportCardId, version));
+    if (!record) throw new Error("unknown published version");
+    const token = unwrapToken(
+      record.token_ciphertext,
+      this.wrappingFor(record.wrapping_key_id),
+      tokenBinding(record, record.public_id)
+    );
+    if (!constantTimeEqual(hashToken(token), record.token_hash)) {
+      const err = new Error("TOKEN_HASH_MISMATCH");
+      err.code = "TOKEN_HASH_MISMATCH";
+      throw err;
+    }
+    return verificationUrl(record.public_id, token);
+  }
+
+  persistWithoutSecrets() {
+    const dump = [];
+    for (const rec of this.records.values()) {
+      dump.push({
+        report_card_id: rec.report_card_id,
+        published_snapshot_version: rec.published_snapshot_version,
+        school_id: rec.school_id,
+        public_id: rec.public_id,
+        token_hash: rec.token_hash,
+        token_ciphertext: rec.token_ciphertext,
+        wrapping_key_id: rec.wrapping_key_id,
+        snapshot_sha256: rec.snapshot_sha256,
+        snapshot_signature: rec.snapshot_signature,
+        signing_key_id: rec.signing_key_id,
+        sealed_payload: rec.sealed.payload,
+        canonical_bytes: rec.sealed.canonical_bytes.toString("base64"),
+        verification_status: rec.verification_status,
+        status: rec.status,
+      });
+    }
+    return dump;
+  }
+
+  static restore(dump, { wrapping, wrappingKeys, signingKey }) {
+    const journal = new PublishJournal({ wrapping, wrappingKeys, signingKey });
+    for (const row of dump) {
+      const key = journal._key(row.report_card_id, row.published_snapshot_version);
+      journal.records.set(
+        key,
+        Object.freeze({
+          ...row,
+          sealed: Object.freeze({
+            payload: deepFreeze(structuredClone(row.sealed_payload)),
+            canonical_bytes: Buffer.from(row.canonical_bytes, "base64"),
+            snapshot_sha256: row.snapshot_sha256,
+            frozen: true,
+          }),
+        })
+      );
+    }
+    return journal;
+  }
+
+  lookupPublic(publicId, token, { expectedSchoolId } = {}) {
+    for (const rec of this.records.values()) {
+      if (rec.public_id !== publicId) continue;
+      if (expectedSchoolId && rec.school_id !== expectedSchoolId) {
+        return { ok: false, reason: "tenant_mismatch" };
+      }
+      if (!constantTimeEqual(rec.token_hash, hashToken(token))) {
+        return { ok: false, reason: "not_found" };
+      }
+      return { ok: true, record: rec };
+    }
+    return { ok: false, reason: "not_found" };
+  }
+}
+
+function pdfRendersFromPersisted(journal, reportCardId, version) {
+  if (PUBLISH.pdf_mints_token) {
+    throw new Error("contract forbids PDF minting tokens");
+  }
+  return journal.reprintUrl(reportCardId, version);
+}
+
+module.exports = {
+  PublishJournal,
+  pdfRendersFromPersisted,
+  IdempotencyConflict,
+};
