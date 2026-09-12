@@ -47,10 +47,15 @@ function run() {
   const paid = normalizePaymentRow({
     id: "pay-cdf",
     amount: 754_250,
+    totalAmount: 754_250,
     currency: "CDF",
     status: "Payé",
     allocatedAmount: 754_250,
     unallocatedAmount: 0,
+    items: [
+      { amount: 754_250 },
+      { amount: 200 },
+    ],
   });
   const draft = normalizePaymentRow({
     id: "pay-draft-200",

@@ -28,6 +28,7 @@ function main() {
     path.join("src", "lib", "homeDashboardKpis.test.ts"),
     path.join("src", "lib", "paymentRateKpi.test.ts"),
     path.join("src", "lib", "paymentCashKpi.test.ts"),
+    path.join("src", "lib", "paymentCanonicalAmount.l306.test.ts"),
     path.join("src", "lib", "financeAllocationReconcile.test.ts"),
     path.join("src", "lib", "todayPresenceKpi.test.ts"),
     path.join("src", "domain", "metrics", "schoolMetrics.test.ts"),

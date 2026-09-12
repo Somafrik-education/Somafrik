@@ -360,22 +360,32 @@ function readCanonicalUnallocatedAmount(value: unknown): number | undefined {
   return Number.isFinite(amount) ? amount : undefined;
 }
 
-/** Reçu canonique : 1 paiement = 1 reçu, total = SUM(items). */
+/** GET /payments : amount persisté (totalAmount = même colonne). Jamais SUM(items). */
+function readCanonicalPaymentAmount(amount: unknown, totalAmount: unknown): number {
+  const candidates = [amount, totalAmount];
+  for (const candidate of candidates) {
+    if (candidate == null) continue;
+    if (typeof candidate === "string" && !candidate.trim()) continue;
+    const parsed = Number(candidate);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return 0;
+}
+
+/** Reçu canonique : 1 paiement = 1 reçu. Cash = amount API. Items = détail du reçu. */
 export function normalizePaymentRow(raw: unknown): CanonicalPayment {
   const row = asRecord(raw);
   const student = asRecord(row.student);
   const items = Array.isArray(row.items) ? row.items.map(asPaymentLine) : [];
-  const total = items.length
-    ? items.reduce((sum, item) => sum + Number(item.amount || 0), 0)
-    : Number(row.totalAmount ?? row.amount ?? 0);
+  const canonicalAmount = readCanonicalPaymentAmount(row.amount, row.totalAmount);
   return {
     id: String(row.id ?? row.publicId ?? row.reference ?? ""),
     publicId: row.publicId ? String(row.publicId) : undefined,
     reference: row.reference ? String(row.reference) : undefined,
     studentId: String(row.studentId ?? student.id ?? ""),
     studentName: String(row.studentName ?? student.name ?? "").trim() || undefined,
-    amount: total,
-    totalAmount: total,
+    amount: canonicalAmount,
+    totalAmount: canonicalAmount,
     paymentMethod: row.paymentMethod ? String(row.paymentMethod) : undefined,
     method: row.method ? String(row.method) : undefined,
     paidAt: row.paidAt ? String(row.paidAt) : undefined,

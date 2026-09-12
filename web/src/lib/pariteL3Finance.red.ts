@@ -149,6 +149,19 @@ const cases: { id: string; title: string; run: () => void }[] = [
       );
     },
   },
+  {
+    id: "FIN-L3-06-B3",
+    title: "Montant encaissé Web = montant API, jamais somme des lignes",
+    run() {
+      const cash = read("lib/paymentCashKpi.ts");
+      assert.match(
+        cash,
+        /parseMoney\(payment\.amount \?\? payment\.totalAmount\)/,
+        "le cash Web doit rester payment.amount (fallback totalAmount)",
+      );
+      assert.doesNotMatch(cash, /items\.reduce/);
+    },
+  },
 ];
 
 let failed = 0;

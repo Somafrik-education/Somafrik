@@ -161,6 +161,15 @@ function run() {
     "FIN-L3-04-E — ne pas inventer 0 si la donnée serveur est absente",
   );
 
+  const canonicalBeatsItems = normalizePaymentRow({
+    amount: 1000,
+    totalAmount: 1000,
+    items: [{ amount: 800 }, { amount: 400 }],
+    status: "Payé",
+  });
+  assert.equal(canonicalBeatsItems.amount, 1000, "FIN-L3-06-B1 amount serveur gagne");
+  assert.notEqual(canonicalBeatsItems.amount, 1200, "FIN-L3-06-B1 interdit SUM(items)");
+
   const paymentsError = snapshotFromFailure({ status: 500, message: "Erreur paiements" }, []);
   assert.equal(paymentsError.status, "error");
   assert.equal(shouldRenderEmpty(paymentsError), false);
