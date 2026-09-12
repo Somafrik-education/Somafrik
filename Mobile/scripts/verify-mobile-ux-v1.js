@@ -63,6 +63,7 @@ function main() {
   assert.match(layout, /homeAboveFoldFitsAllViewports/);
 
   runTsx("mobileUxV1Layout.test.ts");
+  runTsx("mobileAppHeader.topbar.test.ts");
   runTsx("roleHomeConfig.test.ts");
   runTsx("homeShellPermissions.test.ts");
   runTsx("roleNavigationPreferences.test.ts");
@@ -108,9 +109,13 @@ function main() {
   assert.match(header, /mobile-header-menu/);
   assert.match(header, /mobile-header-school-name/);
   assert.match(header, /mobile-header-sync/);
-  assert.match(header, /mobile-header-search/);
   assert.match(header, /mobile-header-notifications/);
+  assert.doesNotMatch(header, /mobile-header-search/);
+  assert.doesNotMatch(header, /search-outline/);
+  assert.doesNotMatch(header, /searchRoute/);
   assert.match(header, /RoleNavigationDrawer/);
+  assert.match(header, /onPress=\{\(\) => setDrawerOpen\(true\)\}/);
+  assert.match(header, /visible=\{drawerOpen\}/);
   assert.doesNotMatch(header, /globe/i);
   assert.doesNotMatch(header, /roleLabel/);
 

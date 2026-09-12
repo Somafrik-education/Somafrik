@@ -13,9 +13,11 @@ export const UX_V1_VIEWPORTS = [320, 360, 390, 412, 430] as const;
 export const UX_V1_FONT_SCALES = [1, 1.3] as const;
 export const UX_V1_VALIDATION_VIEWPORT = { width: 360, height: 800 } as const;
 
-export const COMPACT_HEADER_ROW_DP = MIN_TOUCH_TARGET_DP;
-export const HEADER_MENU_SLOT_DP = MIN_TOUCH_TARGET_DP;
-export const HEADER_ACTIONS_SLOT_DP = MIN_TOUCH_TARGET_DP * 3;
+export const COMPACT_HEADER_ROW_DP = 76;
+export const HEADER_MENU_ICON_DP = 32;
+export const HEADER_MENU_TOUCH_DP = 48;
+export const HEADER_MENU_SLOT_DP = HEADER_MENU_TOUCH_DP;
+export const HEADER_ACTIONS_SLOT_DP = MIN_TOUCH_TARGET_DP * 2;
 export const HEADER_BADGE_BAND_DP = 18;
 export const COMPACT_WELCOME_MAX_DP = 40;
 export const IDENTITY_CARD_MIN_DP = 88;

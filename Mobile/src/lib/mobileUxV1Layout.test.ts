@@ -6,7 +6,9 @@ import {
   MISSION_BANNER_MIN_DP,
   HEADER_ACTIONS_SLOT_DP,
   HEADER_BADGE_BAND_DP,
+  HEADER_MENU_ICON_DP,
   HEADER_MENU_SLOT_DP,
+  HEADER_MENU_TOUCH_DP,
   HOME_SCROLL_TOP_DP,
   KPI_ROW_MIN_DP,
   MAX_BOTTOM_TABS,
@@ -31,9 +33,12 @@ import {
 assert.equal(UX_V1_SPEC_VERSION, "2.0");
 assert.equal(MAX_BOTTOM_TABS, 5);
 assert.equal(MAX_ROLE_TABS, 4);
-assert.equal(COMPACT_HEADER_ROW_DP, 44);
-assert.equal(HEADER_ACTIONS_SLOT_DP, MIN_TOUCH_TARGET_DP * 3);
-assert.equal(HEADER_MENU_SLOT_DP, MIN_TOUCH_TARGET_DP);
+assert.equal(COMPACT_HEADER_ROW_DP, 76);
+assert.ok(COMPACT_HEADER_ROW_DP >= 72 && COMPACT_HEADER_ROW_DP <= 80);
+assert.equal(HEADER_ACTIONS_SLOT_DP, MIN_TOUCH_TARGET_DP * 2);
+assert.equal(HEADER_MENU_SLOT_DP, 48);
+assert.equal(HEADER_MENU_ICON_DP, 32);
+assert.equal(HEADER_MENU_TOUCH_DP, 48);
 assert.equal(HEADER_BADGE_BAND_DP, 18);
 assert.equal(shortBottomTabLabel("Utilisateurs"), "Comptes");
 assert.equal(shortBottomTabLabel("Enseignants"), "Profs");
