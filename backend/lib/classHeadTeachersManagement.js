@@ -57,6 +57,24 @@ CREATE INDEX IF NOT EXISTS idx_class_head_teachers_school_teacher
   ON class_head_teachers (school_id, teacher_id, status);
 `;
 
+/** Tables minimales pour que CLASS_SELECT (JOIN LATERAL PP) parse en tests PG isolés. */
+const CLASS_HEAD_TEACHERS_LIST_JOIN_FIXTURE_SQL = `
+CREATE TABLE IF NOT EXISTS users (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  first_name TEXT,
+  last_name TEXT,
+  status TEXT DEFAULT 'active'
+);
+CREATE TABLE IF NOT EXISTS teachers (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  school_id UUID NOT NULL REFERENCES schools(id),
+  user_id UUID REFERENCES users(id),
+  teacher_code VARCHAR(64) NOT NULL,
+  status TEXT DEFAULT 'active'
+);
+${CLASS_HEAD_TEACHERS_SCHEMA_SQL}
+`;
+
 const ACTIVE_TEACHER_STATUS_SQL = `
   lower(btrim(COALESCE(t.status, 'active'))) IN ('active', 'actif')
   AND (
@@ -183,6 +201,7 @@ module.exports = {
   HEAD_TEACHER_ASSIGN_ROUTE,
   HEAD_TEACHER_REMOVE_ROUTE,
   CLASS_HEAD_TEACHERS_SCHEMA_SQL,
+  CLASS_HEAD_TEACHERS_LIST_JOIN_FIXTURE_SQL,
   ACTIVE_TEACHER_STATUS_SQL,
   formatHeadTeacherDisplayName,
   formatAlreadyHeadTeacherHint,

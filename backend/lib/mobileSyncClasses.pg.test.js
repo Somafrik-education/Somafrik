@@ -7,6 +7,7 @@
 const assert = require("node:assert/strict");
 const { Pool } = require("pg");
 const { createClassesRepository } = require("../db/classesRepository");
+const { CLASS_HEAD_TEACHERS_LIST_JOIN_FIXTURE_SQL } = require("./classHeadTeachersManagement");
 const { TokenService } = require("../services/tokenService");
 const { TenantScopeService } = require("../services/tenantScopeService");
 const { handleMobileSyncL1Classes } = require("./mobileSyncClasses");
@@ -146,6 +147,7 @@ async function setupFixture(pool) {
     CREATE INDEX IF NOT EXISTS idx_classes_school_updated_at_id
       ON classes (school_id, updated_at, id);
   `);
+  await pool.query(CLASS_HEAD_TEACHERS_LIST_JOIN_FIXTURE_SQL);
   await pool.query("TRUNCATE teacher_assignments, teachers, user_roles, users, subjects, classes, academic_years, schools, countries CASCADE");
 
   const country = await pool.query(
