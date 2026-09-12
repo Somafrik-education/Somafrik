@@ -1,6 +1,6 @@
 "use strict";
 
-const { firstInternalLogoRef } = require("./schoolLogo");
+const { firstInternalLogoRef, canonicalLogoSource } = require("./schoolLogo");
 
 /**
  * LOT 1 — Établissements canoniques PostgreSQL.
@@ -39,6 +39,8 @@ const PROFILE_KEYS = Object.freeze([
   "createdAt",
   "updatedAt",
   "deletedAt",
+  "logoSource",
+  "logoUploadedAt",
 ]);
 
 function isPlainObject(value) {
@@ -187,6 +189,8 @@ function mapEstablishmentRow(row, subscription = null) {
     slogan: profile.slogan ?? "",
     status: profile.status || fromSchoolDbStatus(row.status),
     logoUrl: firstInternalLogoRef(row.logo_url, profile.logoUrl),
+    logoSource: canonicalLogoSource(profile.logoSource),
+    logoUploadedAt: canonicalLogoSource(profile.logoSource) ? String(profile.logoUploadedAt ?? "").trim() : "",
     schoolYear: profile.schoolYear || "2025-2026",
     timezone: profile.timezone || "Africa/Kinshasa",
     language: profile.language || "Français",

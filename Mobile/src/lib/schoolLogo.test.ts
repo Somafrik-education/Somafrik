@@ -9,9 +9,18 @@ import { schoolHasLogo, schoolLogoDisplayUri } from "./schoolLogo";
 
 assert.equal(schoolHasLogo({ logoUrl: "https://cdn.evil.test/logo.png", code: "CD-IN-26-001" }), false);
 assert.equal(schoolLogoDisplayUri({ logoUrl: "https://cdn.evil.test/logo.png", code: "CD-IN-26-001" }, "http://localhost:5000/api"), null);
-assert.equal(schoolHasLogo({ hasLogo: true, loginCode: "CD-IN-26-001" }), true);
+assert.equal(schoolHasLogo({ hasLogo: true, loginCode: "CD-IN-26-001" }), false);
 assert.equal(
-  schoolLogoDisplayUri({ hasLogo: true, loginCode: "CD-IN-26-001" }, "http://localhost:5000/api"),
+  schoolHasLogo({
+    hasLogo: true,
+    logoUrl: "school-logos/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa/logo.png",
+    loginCode: "CD-IN-26-001",
+  }),
+  false,
+);
+assert.equal(schoolHasLogo({ hasLogo: true, logoSource: "school_upload", loginCode: "CD-IN-26-001" }), true);
+assert.equal(
+  schoolLogoDisplayUri({ hasLogo: true, logoSource: "school_upload", loginCode: "CD-IN-26-001" }, "http://localhost:5000/api"),
   "http://localhost:5000/api/schools/CD-IN-26-001/logo",
 );
 assert.equal(schoolHasLogo({ code: "CD-IN-26-001" }), false);

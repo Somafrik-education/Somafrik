@@ -619,6 +619,10 @@ class FallbackRepository {
       publicId: record?.publicId || existing?.publicId || loginCode || code,
       loginCode,
       logoUrl: require("../lib/schoolLogo").persistableLogoRef(record?.logoUrl),
+      logoSource: require("../lib/schoolLogo").canonicalLogoSource(record?.logoSource),
+      logoUploadedAt: require("../lib/schoolLogo").canonicalLogoSource(record?.logoSource)
+        ? String(record?.logoUploadedAt ?? "").trim()
+        : "",
     };
     const index = existing
       ? store.findIndex(

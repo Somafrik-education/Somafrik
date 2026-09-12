@@ -64,6 +64,9 @@ describe("EstablishmentProfilePage (D2.3 migration)", () => {
     showToast.mockReset();
     refresh.mockReset();
     update.mockReset();
+    school.hasLogo = false;
+    school.logoUrl = "";
+    school.logoSource = undefined;
   });
 
   it("renders FormLayout zones and DS primary submit", () => {
@@ -78,6 +81,18 @@ describe("EstablishmentProfilePage (D2.3 migration)", () => {
     expect(screen.queryByLabelText(/Logo \(URL\)/i)).not.toBeInTheDocument();
     expect(screen.queryByPlaceholderText(/https/i)).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Ajouter un logo" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Modifier le logo" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Supprimer le logo" })).not.toBeInTheDocument();
+  });
+
+  it("legacy hasLogo sans logoSource → zone vide, Ajouter un logo", () => {
+    school.hasLogo = true;
+    school.logoUrl = "/api/schools/SCH-001/logo";
+    school.logoSource = undefined;
+    render(<EstablishmentProfilePage />);
+    expect(screen.getByRole("button", { name: "Ajouter un logo" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Modifier le logo" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Supprimer le logo" })).not.toBeInTheDocument();
   });
 
   it("exposes section landmarks for keyboard / AT navigation", () => {

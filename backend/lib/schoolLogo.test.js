@@ -56,6 +56,12 @@ test("une URL HTTP saisie n'est jamais une référence de logo", () => {
   assert.equal(persistableLogoRef("http://example.test/x.jpg"), "");
   assert.equal(firstInternalLogoRef("https://cdn.somafrik.test/logo.png", "/somafrik-logo.png"), "");
   assert.equal(schoolHasStoredLogo({ logoUrl: "https://example.test/logo.png" }), false);
+  assert.equal(
+    schoolHasStoredLogo({
+      logoUrl: "school-logos/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa/logo.png",
+    }),
+    false,
+  );
 });
 
 test("seule une clé interne school-logos/{tenant}/ est persistable", () => {
@@ -71,12 +77,25 @@ test("présentation publique : pas de logo → pas d'URL, hasLogo false", () => 
   assert.equal("logoUrl" in presented, false);
 });
 
-test("présentation publique : logo interne → chemin API généré, jamais l'URL utilisateur", () => {
+test("présentation publique : logo interne legacy sans provenance → aucun logo", () => {
   const presented = presentSchoolLogoFields({
     ...SCHOOL,
     logoUrl: "school-logos/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa/logo.png",
   });
+  assert.equal(presented.hasLogo, false);
+  assert.equal(presented.logoUrl, "");
+  assert.equal(presented.logoSource, "");
+});
+
+test("présentation publique : upload école (logoSource=school_upload) → chemin API généré", () => {
+  const presented = presentSchoolLogoFields({
+    ...SCHOOL,
+    logoUrl: "school-logos/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa/logo.png",
+    logoSource: "school_upload",
+    logoUploadedAt: "2026-09-12T20:00:00.000Z",
+  });
   assert.equal(presented.hasLogo, true);
+  assert.equal(presented.logoSource, "school_upload");
   assert.equal(presented.logoUrl, "/api/schools/CD-IN-26-001/logo");
   assert.doesNotMatch(presented.logoUrl, /^https?:\/\//);
 });
@@ -117,7 +136,8 @@ test("upload puis lecture restent isolés au tenant", async () => {
       saved.storageKey,
       /^school-logos\/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa\/logo-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.png$/,
     );
-    const file = await readSchoolLogoFile({ ...SCHOOL, logoUrl: saved.storageKey });
+    const uploaded = { ...SCHOOL, logoUrl: saved.storageKey, logoSource: "school_upload" };
+    const file = await readSchoolLogoFile(uploaded);
     assert.ok(file);
     assert.equal(file.mimeType, "image/png");
     assert.deepEqual(file.bytes, PNG_1X1);
@@ -127,12 +147,14 @@ test("upload puis lecture restent isolés au tenant", async () => {
       code: "SCH-OTHER",
       loginCode: "CD-EC-26-002",
       logoUrl: saved.storageKey,
+      logoSource: "school_upload",
     });
     assert.equal(other, null);
     assert.equal(
       resolveSchoolLogoPath({
         id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
         logoUrl: saved.storageKey,
+        logoSource: "school_upload",
       }),
       "",
     );
@@ -147,7 +169,7 @@ test("suppression efface le fichier", async () => {
       fileName: "nuru.png",
       mimeType: "image/png",
     });
-    const withLogo = { ...SCHOOL, logoUrl: saved.storageKey };
+    const withLogo = { ...SCHOOL, logoUrl: saved.storageKey, logoSource: "school_upload" };
     assert.ok(resolveSchoolLogoPath(withLogo));
     await deleteSchoolLogo(withLogo);
     assert.equal(resolveSchoolLogoPath(withLogo), "");
@@ -162,7 +184,11 @@ test("PDF établissement avec logo : img école, pas Somafrik", async () => {
       fileName: "nuru.png",
       mimeType: "image/png",
     });
-    const logoPath = resolveSchoolLogoPath({ ...SCHOOL, logoUrl: saved.storageKey });
+    const logoPath = resolveSchoolLogoPath({
+      ...SCHOOL,
+      logoUrl: saved.storageKey,
+      logoSource: "school_upload",
+    });
     const html = renderReportCardHtml({
       report: {
         id: "REP-2",
@@ -180,6 +206,32 @@ test("PDF établissement avec logo : img école, pas Somafrik", async () => {
     assert.match(html, /<img /);
     assert.match(html, /Logo Institut Nuruyetu/);
     assert.doesNotMatch(html, /somafrik-logo/i);
+  });
+});
+
+test("clé interne legacy sans school_upload : pas de lecture, pas de PDF, pas de hasLogo", async () => {
+  await withTempStorage(async () => {
+    const saved = await saveSchoolLogo({
+      school: SCHOOL,
+      buffer: PNG_1X1,
+      fileName: "nuru.png",
+      mimeType: "image/png",
+    });
+    const legacy = { ...SCHOOL, logoUrl: saved.storageKey };
+    assert.equal(await readSchoolLogoFile(legacy), null);
+    assert.equal(resolveSchoolLogoPath(legacy), "");
+    const presented = presentSchoolLogoFields(legacy);
+    assert.equal(presented.hasLogo, false);
+    assert.equal(presented.logoUrl, "");
+    assert.equal(presented.logoSource, "");
+
+    const deleted = await commitSchoolLogoDelete({
+      school: legacy,
+      persistEstablishment: async (record) => record,
+    });
+    assert.equal(deleted.logoUrl, "");
+    assert.equal(deleted.logoSource, "");
+    assert.ok(fs.existsSync(path.join(process.env.SOMAFRIK_COMMUNICATION_STORAGE, ...saved.storageKey.split("/"))));
   });
 });
 
@@ -229,11 +281,17 @@ test("PATCH établissement ignore une URL de logo fournie par le client", () => 
   };
   const { school } = service.update(
     existing.code,
-    { name: "Institut Nuruyetu", logoUrl: "https://cdn.evil.test/logo.png" },
+    {
+      name: "Institut Nuruyetu",
+      logoUrl: "https://cdn.evil.test/logo.png",
+      logoSource: "school_upload",
+      logoUploadedAt: "2026-09-12T20:00:00.000Z",
+    },
     { schools: [existing], countries: [{ code: "CD", name: "RDC" }] },
     principal,
   );
   assert.equal(school.logoUrl, existing.logoUrl);
+  assert.equal(school.logoSource, "");
   assert.doesNotMatch(school.logoUrl, /^https?:\/\//);
 });
 
@@ -284,7 +342,7 @@ test("échec persistEstablishment à l'upload : ancien fichier conservé, nouvea
       fileName: "nuru.png",
       mimeType: "image/png",
     });
-    const withLogo = { ...SCHOOL, logoUrl: first.storageKey };
+    const withLogo = { ...SCHOOL, logoUrl: first.storageKey, logoSource: "school_upload" };
     const persistError = new Error("db down");
     await assert.rejects(
       () =>
@@ -318,7 +376,7 @@ test("succès persistEstablishment à l'upload : nouveau conservé, ancien netto
       fileName: "nuru.png",
       mimeType: "image/png",
     });
-    const withLogo = { ...SCHOOL, logoUrl: first.storageKey };
+    const withLogo = { ...SCHOOL, logoUrl: first.storageKey, logoSource: "school_upload" };
     let persisted = null;
     const result = await commitSchoolLogoUpload({
       school: withLogo,
@@ -331,9 +389,10 @@ test("succès persistEstablishment à l'upload : nouveau conservé, ancien netto
       },
     });
     assert.equal(persisted.logoUrl, result.storageKey);
+    assert.equal(persisted.logoSource, "school_upload");
     assert.notEqual(result.storageKey, first.storageKey);
     assert.equal(resolveSchoolLogoPath(withLogo), "");
-    const nextSchool = { ...SCHOOL, logoUrl: result.storageKey };
+    const nextSchool = { ...SCHOOL, logoUrl: result.storageKey, logoSource: "school_upload" };
     const file = await readSchoolLogoFile(nextSchool);
     assert.ok(file);
     assert.equal(file.mimeType, "image/jpeg");
@@ -352,7 +411,7 @@ test("échec persistEstablishment à la suppression : fichier et pointeur DB con
       fileName: "nuru.png",
       mimeType: "image/png",
     });
-    const withLogo = { ...SCHOOL, logoUrl: saved.storageKey };
+    const withLogo = { ...SCHOOL, logoUrl: saved.storageKey, logoSource: "school_upload" };
     const persistError = new Error("db down");
     await assert.rejects(
       () =>
@@ -379,13 +438,14 @@ test("succès persistEstablishment à la suppression : fichier retiré seulement
       fileName: "nuru.png",
       mimeType: "image/png",
     });
-    const withLogo = { ...SCHOOL, logoUrl: saved.storageKey };
+    const withLogo = { ...SCHOOL, logoUrl: saved.storageKey, logoSource: "school_upload" };
     let sawFileDuringPersist = false;
     const result = await commitSchoolLogoDelete({
       school: withLogo,
       persistEstablishment: async (record) => {
         sawFileDuringPersist = Boolean(resolveSchoolLogoPath(withLogo));
         assert.equal(record.logoUrl, "");
+        assert.equal(record.logoSource, "");
         return record;
       },
     });

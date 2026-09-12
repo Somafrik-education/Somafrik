@@ -37,6 +37,7 @@ export type EstablishmentProfileRecord = {
   email?: string;
   logoUrl?: string;
   hasLogo?: boolean;
+  logoSource?: string;
   city?: string;
   principalName?: string;
   principalEmail?: string;

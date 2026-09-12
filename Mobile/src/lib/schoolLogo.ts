@@ -3,25 +3,23 @@ export type SchoolLogoSource = {
   loginCode?: string;
   publicId?: string;
   hasLogo?: boolean;
+  logoSource?: string;
   logoUrl?: string;
 } | null | undefined;
 
-const INTERNAL_LOGO_PATH = /\/api\/schools\/[^/]+\/logo\/?$/i;
+const SCHOOL_UPLOAD = "school_upload";
 
 function publicCode(school: SchoolLogoSource): string {
   if (!school) return "";
   return String(school.loginCode || school.publicId || school.code || "").trim();
 }
 
-/** Un établissement sans fichier uploadé n'a aucun logo — jamais de fallback plateforme. */
+/** Un établissement sans upload SCHOOL n'a aucun logo — jamais de fallback plateforme. */
 export function schoolHasLogo(school: SchoolLogoSource): boolean {
   if (!school) return false;
-  if (school.hasLogo === true) return true;
+  if (String(school.logoSource ?? "").trim() !== SCHOOL_UPLOAD) return false;
   if (school.hasLogo === false) return false;
-  const url = String(school.logoUrl ?? "").trim();
-  if (!url) return false;
-  if (/^https?:\/\//i.test(url) && !INTERNAL_LOGO_PATH.test(url)) return false;
-  return INTERNAL_LOGO_PATH.test(url) || url.startsWith("school-logos/");
+  return true;
 }
 
 /**

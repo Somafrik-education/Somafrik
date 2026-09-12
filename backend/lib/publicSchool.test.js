@@ -35,8 +35,21 @@ const withInternalLogo = toPublicSchool({
   city: "Kinshasa",
   logoUrl: "school-logos/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa/logo.png",
 });
-assert.equal(withInternalLogo.hasLogo, true);
-assert.equal(withInternalLogo.logoUrl, "/api/schools/CD-IN-26-001/logo");
+assert.equal(withInternalLogo.hasLogo, false);
+assert.ok(!("logoUrl" in withInternalLogo));
+
+const withUploadedLogo = toPublicSchool({
+  id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+  loginCode: "CD-IN-26-001",
+  code: "SCH-ABCDEF",
+  name: "École Test",
+  city: "Kinshasa",
+  logoUrl: "school-logos/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa/logo.png",
+  logoSource: "school_upload",
+});
+assert.equal(withUploadedLogo.hasLogo, true);
+assert.equal(withUploadedLogo.logoSource, "school_upload");
+assert.equal(withUploadedLogo.logoUrl, "/api/schools/CD-IN-26-001/logo");
 assert.notEqual(result.code, "CD-2026-0001");
 
 for (const privateField of [
