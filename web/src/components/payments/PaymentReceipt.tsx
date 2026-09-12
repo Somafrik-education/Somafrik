@@ -2,7 +2,7 @@ import type { PaymentRecord } from "../../lib/quickPayment";
 import type { School, SessionUser } from "../../types";
 import { useAuth } from "../../context/AuthContext";
 import { formatFinanceAmount, formatFinanceDate, resolveFinanceCurrency } from "../../lib/financeCurrency";
-import { financePaymentStatusLabel } from "../../lib/financeObligationStatus";
+import { schoolLogoSrc } from "../../lib/schoolLogo";
 
 interface PaymentReceiptProps {
   payment: PaymentRecord;
@@ -84,13 +84,9 @@ export function PaymentReceipt({ payment, school, enteredByName }: PaymentReceip
   return (
     <div className="payment-receipt mx-auto max-w-md rounded-2xl border border-line bg-white p-8 text-sm text-ink print:border-0 print:shadow-none">
       <div className="border-b border-line pb-4 text-center">
-        {school?.logoUrl ? (
-          <img src={school.logoUrl} alt="" className="mx-auto mb-3 h-14 w-14 object-contain" />
-        ) : (
-          <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-full bg-brand-50 text-lg font-black text-brand">
-            {(school?.name ?? "S").slice(0, 1)}
-          </div>
-        )}
+        {schoolLogoSrc(school) ? (
+          <img src={schoolLogoSrc(school) ?? ""} alt="" className="mx-auto mb-3 h-14 w-14 object-contain" />
+        ) : null}
         <p className="text-lg font-black">{school?.name ?? "Établissement"}</p>
         <p className="text-xs text-muted">{school?.city ?? ""}{school?.phone ? ` · ${school.phone}` : ""}</p>
         <p className="mt-3 text-xs font-bold uppercase tracking-wide text-brand">Reçu de paiement</p>

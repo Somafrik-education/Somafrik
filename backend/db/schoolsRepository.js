@@ -14,6 +14,7 @@ const {
   extractProfilePayload,
   mapEstablishmentRow,
 } = require("../lib/schoolsManagement");
+const { persistableLogoRef } = require("../lib/schoolLogo");
 const {
   generateInternalSchoolAlias,
   isInternalSchoolAlias,
@@ -187,7 +188,7 @@ function createSchoolsRepository(db) {
       const writeParams = [
         country.id,
         name,
-        record?.logoUrl ?? "",
+        persistableLogoRef(record?.logoUrl),
         record?.address ?? "",
         record?.city ?? "",
         record?.phone ?? "",

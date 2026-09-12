@@ -167,6 +167,8 @@ const routePermissions = {
   "GET /api/backoffice/establishments/:code": ["Établissements:READ", "Paramètres Établissement:READ", "Gérer établissements", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
   "POST /api/backoffice/establishments": ["Établissements:CREATE", "Gérer établissements", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
   "PATCH /api/backoffice/establishments/:code": ["Établissements:UPDATE", "Paramètres Établissement:UPDATE", "Gérer établissements", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
+  "PUT /api/backoffice/establishments/:code/logo": ["Établissements:UPDATE", "Paramètres Établissement:UPDATE", "Gérer établissements", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
+  "DELETE /api/backoffice/establishments/:code/logo": ["Établissements:UPDATE", "Paramètres Établissement:UPDATE", "Gérer établissements", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
   "DELETE /api/backoffice/establishments/:code": ["Établissements:DELETE", "ALL_PRIVILEGES"],
   "POST /api/backoffice/establishments/import": ["Établissements:CREATE", "Gérer établissements", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
   "POST /api/backoffice/import/students/validate": ["Élèves:CREATE", "Gérer élèves", "Gérer établissements", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],

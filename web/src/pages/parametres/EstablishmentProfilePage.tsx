@@ -5,6 +5,7 @@ import { canManageEstablishmentSettings } from "../../lib/permissions";
 import { usePermissionContext } from "../../lib/usePermissionContext";
 import { SCHOOL_TYPES, validateSchoolForm } from "../../lib/schoolModule";
 import { establishmentsApi } from "../../lib/establishmentsApi";
+import { SchoolLogoUploadField } from "../../components/SchoolLogoUploadField";
 import {
   Button,
   Card,
@@ -28,6 +29,7 @@ function schoolToDraft(school: School): School {
     phone: school.phone ?? "",
     email: school.email ?? "",
     logoUrl: school.logoUrl ?? "",
+    hasLogo: Boolean(school.hasLogo),
     principalName: school.principalName ?? "",
     principalEmail: school.principalEmail ?? "",
     principalPhone: school.principalPhone ?? "",
@@ -94,7 +96,6 @@ export function EstablishmentProfilePage() {
       address: current.address?.trim() ?? "",
       phone: current.phone?.trim() ?? "",
       email: current.email?.trim() ?? "",
-      logoUrl: current.logoUrl?.trim() ?? "",
       principalName: current.principalName?.trim() ?? "",
       principalEmail: current.principalEmail?.trim() || current.email?.trim() || "",
       principalPhone: current.principalPhone?.trim() ?? "",
@@ -176,33 +177,14 @@ export function EstablishmentProfilePage() {
                     className="bg-slate-50 font-mono text-xs"
                   />
                 </FormField>
-                <FormField
-                  label="Logo (URL)"
-                  htmlFor="profile-logo"
-                  hint="URL publique du logo de l'établissement."
-                >
-                  <Input
-                    id="profile-logo"
-                    type="url"
-                    value={draft.logoUrl ?? ""}
-                    onChange={(e) => setDraft({ ...draft, logoUrl: e.target.value })}
-                    placeholder="https://…"
-                    disabled={!canEdit || busy}
-                  />
-                </FormField>
-                {draft.logoUrl ? (
-                  <div className="sm:col-span-2">
-                    <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">Aperçu du logo</p>
-                    <img
-                      src={draft.logoUrl}
-                      alt=""
-                      className="h-16 w-auto rounded border border-line bg-white object-contain p-1"
-                      onError={(e) => {
-                        (e.target as HTMLImageElement).style.display = "none";
-                      }}
-                    />
-                  </div>
-                ) : null}
+                <SchoolLogoUploadField
+                  school={draft}
+                  canEdit={canEdit}
+                  disabled={busy}
+                  onChanged={refresh}
+                  onError={(message) => showToast(message, "error")}
+                  onSuccess={(message) => showToast(message, "success")}
+                />
               </div>
             </section>
 

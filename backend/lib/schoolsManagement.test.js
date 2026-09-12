@@ -83,6 +83,24 @@ test("mapEstablishmentRow projette leftover school_code dans code, pas le login_
   assert.notEqual(mapped.code, mapped.loginCode);
 });
 
+test("mapEstablishmentRow ignore une URL HTTP de logo", () => {
+  const mapped = mapEstablishmentRow({
+    id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    country_id: "uuid-c",
+    school_code: "SCH-ABCDEF",
+    login_code: "CD-IN-26-001",
+    name: "Lycée Test",
+    school_type: "Lycée",
+    city: "Kinshasa",
+    logo_url: "https://cdn.evil.test/logo.png",
+    status: "active",
+    iso_code: "CD",
+    country_name: "RDC",
+    profile_payload: { logoUrl: "https://cdn.evil.test/other.png" },
+  });
+  assert.equal(mapped.logoUrl, "");
+});
+
 test("mapEstablishmentRow privilégie profile_payload pour le statut BO", () => {
   const mapped = mapEstablishmentRow({
     id: "uuid-1",

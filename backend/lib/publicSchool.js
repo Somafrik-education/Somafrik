@@ -1,4 +1,5 @@
 const { publicSchoolCodeFromRecord } = require("./schoolCodeV2");
+const { presentPublicSchoolLogoFields } = require("./schoolLogo");
 
 function toPublicSchool(school = {}) {
   const canonicalCode = publicSchoolCodeFromRecord(school);
@@ -7,7 +8,7 @@ function toPublicSchool(school = {}) {
     loginCode: canonicalCode,
     name: String(school.name ?? "").trim(),
     city: String(school.city ?? "").trim(),
-    ...(school.logoUrl ? { logoUrl: String(school.logoUrl) } : {}),
+    ...presentPublicSchoolLogoFields(school),
   };
 }
 

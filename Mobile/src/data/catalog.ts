@@ -329,6 +329,7 @@ export type SchoolProfile = {
   currency: string;
   slogan: string;
   status: "Actif" | "Suspendu" | string;
+  hasLogo?: boolean;
   logoUrl?: string;
   schoolYear: string;
   timezone: string;

@@ -265,7 +265,6 @@ const configs: Record<
       { key: "email", label: "Email", placeholder: "contact@ecole.cd" },
       { key: "website", label: "Site web", placeholder: "https://..." },
       { key: "slogan", label: "Slogan", placeholder: "Excellence et Innovation" },
-      { key: "logoUrl", label: "Logo", placeholder: "URL JPG, PNG ou WebP" },
       { key: "status", label: "Statut", placeholder: "Choisir le statut", type: "select" },
       { key: "schoolYear", label: "Année scolaire", placeholder: "2025-2026" },
       { key: "currency", label: "Devise", placeholder: "Choisir la devise", type: "select" },
@@ -2037,10 +2036,6 @@ function validateBusinessRules({
 
     if (duplicateCode) {
       return "Création impossible : ce code établissement existe déjà.";
-    }
-
-    if (item.logoUrl && !/\.(jpg|jpeg|png|webp)$/i.test(item.logoUrl)) {
-      return "Logo impossible : le fichier doit être au format JPG, PNG ou WebP.";
     }
 
     if (Number(item.maxStudents) < studentsData.length) {

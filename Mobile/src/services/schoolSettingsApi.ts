@@ -3,7 +3,9 @@
  * Aucun PUT /academic-config. Aucune écriture outbox.
  */
 import { unwrapList } from "../lib/dataTruth";
-import { httpRequest } from "./httpClient";
+import { ApiClientError, httpRequest } from "./httpClient";
+import { getAccessToken } from "./secureStorage";
+import { resolveApiRootUrl } from "../config/env";
 import type { CanonicalEvaluationType, EducationSchoolCatalog } from "./api";
 
 export type SchoolSettings = {
@@ -34,6 +36,7 @@ export type EstablishmentProfileRecord = {
   phone?: string;
   email?: string;
   logoUrl?: string;
+  hasLogo?: boolean;
   city?: string;
   principalName?: string;
   principalEmail?: string;
@@ -202,6 +205,36 @@ export function patchEstablishmentProfile(code: string, payload: Record<string, 
       method: "PATCH",
       body: JSON.stringify(payload),
     },
+  );
+}
+
+export async function uploadEstablishmentLogo(
+  code: string,
+  file: { uri: string; name: string; mimeType: string },
+): Promise<{ school?: EstablishmentProfileRecord }> {
+  const token = await getAccessToken();
+  const root = resolveApiRootUrl().replace(/\/$/, "");
+  const blob = await (await fetch(file.uri)).blob();
+  const response = await fetch(`${root}/api/backoffice/establishments/${encodeURIComponent(code)}/logo`, {
+    method: "PUT",
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      "Content-Type": file.mimeType || "application/octet-stream",
+      "X-Filename": file.name,
+    },
+    body: blob,
+  });
+  const data = (await response.json().catch(() => ({}))) as { message?: string; school?: EstablishmentProfileRecord };
+  if (!response.ok) {
+    throw new ApiClientError(String(data.message ?? "Échec de l'upload du logo"), response.status);
+  }
+  return data;
+}
+
+export function deleteEstablishmentLogo(code: string) {
+  return httpRequest<{ school?: EstablishmentProfileRecord }>(
+    `/backoffice/establishments/${encodeURIComponent(code)}/logo`,
+    { method: "DELETE" },
   );
 }
 

@@ -1,4 +1,5 @@
-import { api } from "../api/client";
+import { api, getAccessToken } from "../api/client";
+import { API_URL } from "./apiUrl";
 import type { School } from "../types";
 
 export interface EstablishmentImportResult {
@@ -29,6 +30,30 @@ export const establishmentsApi = {
 
   update: (code: string, payload: Partial<School>) =>
     api.patch<{ school: School }>(`/backoffice/establishments/${encodeURIComponent(code)}`, payload),
+
+  uploadLogo: async (code: string, file: File) => {
+    const token = getAccessToken();
+    const response = await fetch(
+      `${API_URL.replace(/\/$/, "")}/api/backoffice/establishments/${encodeURIComponent(code)}/logo`,
+      {
+        method: "PUT",
+        headers: {
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          "Content-Type": file.type || "application/octet-stream",
+          "X-Filename": file.name,
+        },
+        body: file,
+      },
+    );
+    const data = (await response.json().catch(() => ({}))) as { message?: string; school?: School };
+    if (!response.ok) {
+      throw new Error(String(data.message ?? "Échec de l'upload du logo"));
+    }
+    return data;
+  },
+
+  removeLogo: (code: string) =>
+    api.delete<{ school: School }>(`/backoffice/establishments/${encodeURIComponent(code)}/logo`),
 
   activate: (code: string) =>
     api.patch<{ school: School }>(`/backoffice/establishments/${encodeURIComponent(code)}/activate`, {}),

@@ -1,5 +1,7 @@
 "use strict";
 
+const { firstInternalLogoRef } = require("./schoolLogo");
+
 /**
  * LOT 1 — Établissements canoniques PostgreSQL.
  * Mapping ligne PG ↔ enregistrement BackOffice, sans lecture/écriture du snapshot JSON.
@@ -184,7 +186,7 @@ function mapEstablishmentRow(row, subscription = null) {
     currency: profile.currency || row.country_currency,
     slogan: profile.slogan ?? "",
     status: profile.status || fromSchoolDbStatus(row.status),
-    logoUrl: row.logo_url || profile.logoUrl || "",
+    logoUrl: firstInternalLogoRef(row.logo_url, profile.logoUrl),
     schoolYear: profile.schoolYear || "2025-2026",
     timezone: profile.timezone || "Africa/Kinshasa",
     language: profile.language || "Français",
