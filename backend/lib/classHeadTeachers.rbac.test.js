@@ -33,6 +33,11 @@ test("RBAC : superadmin et admin établissement autorisés, enseignant refusé",
     true,
   );
   assert.equal(
+    rbac.canAccess({ role: "Admin School", permissions: ["Classes:READ", "Voir classes"] }, HEAD_TEACHER_ASSIGN_ROUTE),
+    false,
+    "Admin School avec jetons lecture seuls → 403, pas de shortcut rôle",
+  );
+  assert.equal(
     rbac.canAccess(
       { role: "Préfet des études", permissions: ["Affectations:CREATE"] },
       HEAD_TEACHER_ASSIGN_ROUTE,

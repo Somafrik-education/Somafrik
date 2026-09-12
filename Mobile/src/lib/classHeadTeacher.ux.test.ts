@@ -17,6 +17,8 @@ const inventory = read("lib/mobileMutationInventory.ts");
 assert.match(classesScreen, /ClassHeadTeacherControls/);
 assert.match(classesScreen, /formatHeadTeacherLine/);
 assert.match(classesScreen, /classHeadTeacherPatches/);
+assert.match(classesScreen, /reconcileHeadTeacherPatches/);
+assert.match(classesScreen, /applyHeadTeacherClassPatch/);
 assert.doesNotMatch(classesScreen, /\/backoffice\/state/);
 assert.doesNotMatch(controls, /\/backoffice\/state/);
 assert.doesNotMatch(controls, /DataContext/);

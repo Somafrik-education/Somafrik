@@ -71,6 +71,16 @@ test("enseignant hors établissement ou inactif refusé", () => {
   assert.equal(UNASSIGNED_HEAD_TEACHER_LABEL, "Non assigné");
 });
 
+test("unicité active concurrente → 409 HEAD_TEACHER_CONCURRENT", () => {
+  const { isClassHeadTeacherActiveUniquenessViolation, mapHeadTeacherWriteConflict } = require("./classHeadTeachersManagement");
+  const pgError = { code: "23505", constraint: "uq_class_head_teachers_one_active" };
+  assert.equal(isClassHeadTeacherActiveUniquenessViolation(pgError), true);
+  assert.throws(
+    () => mapHeadTeacherWriteConflict(pgError),
+    (error) => error.statusCode === 409 && error.code === HEAD_TEACHER_ERROR.CONCURRENT,
+  );
+});
+
 test("mapClassRow expose Prénom NOM sans inventer un PP", () => {
   const { mapClassRow } = require("../db/classesRepository");
   const assigned = mapClassRow({

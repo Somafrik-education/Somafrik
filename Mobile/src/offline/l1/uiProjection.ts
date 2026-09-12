@@ -3,6 +3,7 @@
  * Libellés dérivés uniquement des codes stables. Jamais de noms inventés.
  */
 import type { SchoolClass, Student, TeacherAssignment } from "../../data/catalog";
+import { formatHeadTeacherDisplayName } from "../../lib/classHeadTeacher";
 import type { CanonicalWeeklySlot } from "../../lib/planningV2";
 import type { SchoolClassCourseRecord } from "../../services/schoolSettingsApi";
 import type { L1Partition, SqlValue } from "./types";
@@ -46,6 +47,13 @@ function joinedClassName(
 export function projectL1Class(row: Record<string, SqlValue>, partition: L1Partition): SchoolClass {
   const classCode = cell(row, "class_code");
   const name = cell(row, "name") || classCode;
+  const headTeacherCode = cell(row, "head_teacher_code");
+  const firstName = cell(row, "head_teacher_first_name");
+  const lastName = cell(row, "head_teacher_last_name");
+  const displayName =
+    cell(row, "head_teacher_display_name") ||
+    formatHeadTeacherDisplayName(firstName, lastName) ||
+    headTeacherCode;
   return {
     id: cell(row, "id"),
     publicId: classCode || cell(row, "id"),
@@ -53,13 +61,24 @@ export function projectL1Class(row: Record<string, SqlValue>, partition: L1Parti
     name,
     level: "",
     track: "",
-    teacherId: "",
+    teacherId: headTeacherCode,
+    teacher: displayName || undefined,
     academicYearId: cell(row, "academic_year_id") || undefined,
     levelId: cell(row, "level_id") || null,
     streamId: cell(row, "stream_id") || null,
     groupId: cell(row, "group_id") || null,
     status: cell(row, "status") || undefined,
     schoolCode: partition.schoolCode,
+    headTeacherCode: headTeacherCode || null,
+    headTeacherDisplayName: displayName || null,
+    headTeacher: headTeacherCode
+      ? {
+          teacherCode: headTeacherCode,
+          firstName,
+          lastName,
+          displayName,
+        }
+      : null,
   };
 }
 

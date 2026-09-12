@@ -10,6 +10,7 @@ const HEAD_TEACHER_ERROR = Object.freeze({
   TEACHER_REQUIRED: "HEAD_TEACHER_TEACHER_REQUIRED",
   TENANT_FIELD_FORBIDDEN: "HEAD_TEACHER_TENANT_FIELD_FORBIDDEN",
   POSTGRES_REQUIRED: "HEAD_TEACHER_POSTGRES_REQUIRED",
+  CONCURRENT: "HEAD_TEACHER_CONCURRENT",
 });
 
 const UNASSIGNED_HEAD_TEACHER_LABEL = "Non assigné";
@@ -183,6 +184,23 @@ function assertTeacherEligibleForHeadTeacher(teacher, schoolId) {
   }
 }
 
+function isClassHeadTeacherActiveUniquenessViolation(error) {
+  if (!error || String(error.code) !== "23505") return false;
+  const haystack = `${error.constraint ?? ""} ${error.message ?? ""} ${error.detail ?? ""}`;
+  return /uq_class_head_teachers_one_active|class_head_teachers/i.test(haystack);
+}
+
+function mapHeadTeacherWriteConflict(error) {
+  if (isClassHeadTeacherActiveUniquenessViolation(error) || String(error?.code) === "23505") {
+    throw createHttpError(
+      409,
+      "Affectation concurrente du professeur principal. Réessayez.",
+      HEAD_TEACHER_ERROR.CONCURRENT,
+    );
+  }
+  throw error;
+}
+
 /**
  * @param {string[]} otherClassNames
  * @returns {string}
@@ -205,6 +223,8 @@ module.exports = {
   ACTIVE_TEACHER_STATUS_SQL,
   formatHeadTeacherDisplayName,
   formatAlreadyHeadTeacherHint,
+  isClassHeadTeacherActiveUniquenessViolation,
+  mapHeadTeacherWriteConflict,
   isActiveTeacherStatus,
   isActiveClassStatus,
   headTeacherPostgresRequired,

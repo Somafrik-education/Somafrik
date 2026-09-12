@@ -620,6 +620,17 @@ describe("ClassesListPage (CRUD /api/classes)", () => {
     expect(screen.getAllByText("Professeur principal : Non assigné").length).toBeGreaterThan(0);
   });
 
+  it("masque le bouton d'affectation si Admin School a les écritures révoquées", async () => {
+    sessionStore.user = {
+      ...sessionStore.user,
+      role: "Admin School",
+      permissions: ["Classes:READ", "Voir classes"],
+    };
+    renderPage();
+    await screen.findByText("6ème A");
+    expect(screen.queryByRole("button", { name: "Affecter un professeur principal" })).not.toBeInTheDocument();
+  });
+
   it("affecte un professeur principal et met à jour la carte sans reload", async () => {
     const user = userEvent.setup();
     classesApiMock.listHeadTeacherCandidates.mockResolvedValue([

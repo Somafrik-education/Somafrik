@@ -53,9 +53,11 @@ import {
 import { nextExclusiveExpandedKey } from "../lib/expandableEntity";
 import { listAcademicYears, type AcademicYearRecord } from "../services/schoolSettingsApi";
 import {
+  applyHeadTeacherClassPatch,
   classHeadTeacherDisplayName,
   classPatchKey,
   formatHeadTeacherLine,
+  reconcileHeadTeacherPatches,
 } from "../lib/classHeadTeacher";
 import type { SchoolClass } from "../data/catalog";
 
@@ -126,6 +128,10 @@ export default function ClassesScreen({ navigation }: any) {
       };
     }, [loadClasses, loadStudents, loadPresences, loadTeachers, loadAssignments, resourceScopeKey]),
   );
+
+  useEffect(() => {
+    setClassHeadTeacherPatches((current) => reconcileHeadTeacherPatches(current, classesData));
+  }, [classesData]);
 
   useEffect(() => {
     let cancelled = false;
@@ -297,7 +303,7 @@ export default function ClassesScreen({ navigation }: any) {
           const teacher = teachersData.find((teacherItem) => teacherItem.id === item.teacherId);
           const patchKey = classPatchKey(item);
           const displayItem = classHeadTeacherPatches[patchKey]
-            ? { ...item, ...classHeadTeacherPatches[patchKey] }
+            ? applyHeadTeacherClassPatch(item, classHeadTeacherPatches[patchKey])
             : item;
           const headTeacherLine = formatHeadTeacherLine(
             classHeadTeacherDisplayName(displayItem) ||
@@ -357,7 +363,10 @@ export default function ClassesScreen({ navigation }: any) {
                 onBlockedMutation={handleBlockedNetworkAction}
                 onClassUpdated={(updated) => {
                   const key = classPatchKey(updated) || patchKey;
-                  setClassHeadTeacherPatches((current) => ({ ...current, [key]: updated }));
+                  setClassHeadTeacherPatches((current) => ({
+                    ...current,
+                    [key]: applyHeadTeacherClassPatch(item, updated as unknown as Record<string, unknown>),
+                  }));
                 }}
               />
               {canOpenStudents ? (

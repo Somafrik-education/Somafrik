@@ -129,6 +129,18 @@ const readOnlyClasses = liveSession({
 assert.equal(canMutateEntity(readOnlyClasses, "classes", "CREATE"), false);
 assert.equal(canAssignClassHeadTeacher(adminSchool), true);
 assert.equal(canAssignClassHeadTeacher(readOnlyClasses), false);
+
+const adminSchoolRevokedWrites = liveSession({
+  sessionRole: "school_admin",
+  roleLabel: "Admin School",
+  roleKeys: ["SCHOOL_ADMIN"],
+  permissions: ["Classes:READ", "Voir classes"],
+});
+assert.equal(
+  canAssignClassHeadTeacher(adminSchoolRevokedWrites),
+  false,
+  "Admin School avec Classes:READ seul — pas de shortcut rôle",
+);
 assert.deepEqual(resolveEntityCrudAccess(readOnlyClasses, "classes"), {
   canRead: true,
   canCreate: false,

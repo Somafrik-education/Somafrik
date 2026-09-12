@@ -52,6 +52,19 @@ describe("canAssignClassHeadTeacher", () => {
       false,
     );
   });
+
+  it("honore une révocation explicite sur Admin School", () => {
+    expect(
+      canAssignClassHeadTeacher(
+        ctx({ role: SCHOOL_ADMIN_ROLE, permissions: ["Classes:READ", "Voir classes"] }),
+      ),
+    ).toBe(false);
+    expect(
+      canAssignClassHeadTeacher(
+        ctx({ role: SCHOOL_ADMIN_ROLE, permissions: ["Classes:UPDATE", "Gérer classes"] }),
+      ),
+    ).toBe(true);
+  });
 });
 
 describe("HEAD_TEACHER_COPY", () => {

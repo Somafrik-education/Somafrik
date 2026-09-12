@@ -100,11 +100,28 @@ export function applyHeadTeacherClassPatch<T extends Record<string, unknown>>(
     }) || "";
   return {
     ...previous,
-    ...updated,
     teacherId: headTeacherCode,
     teacher: displayName || HEAD_TEACHER_COPY.unassigned,
     headTeacher,
     headTeacherCode: headTeacherCode || null,
     headTeacherDisplayName: displayName || null,
   };
+}
+
+/** Après un reload canonique, la liste distante reprend autorité : les patches des classes présentes sont retirés. */
+export function reconcileHeadTeacherPatches<T extends Record<string, unknown>>(
+  patches: Record<string, T>,
+  classes: Array<{ classCode?: string | null; publicId?: string | null; id?: string | null }>,
+): Record<string, T> {
+  if (!patches || Object.keys(patches).length === 0) return patches;
+  const loadedKeys = new Set(
+    classes.map((row) => classPatchKey(row)).filter(Boolean),
+  );
+  const next: Record<string, T> = {};
+  for (const [key, patch] of Object.entries(patches)) {
+    if (!loadedKeys.has(key)) {
+      next[key] = patch;
+    }
+  }
+  return next;
 }

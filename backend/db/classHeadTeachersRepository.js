@@ -13,6 +13,7 @@ const {
   assertTeacherEligibleForHeadTeacher,
   requireClassCodeParam,
   sqlTeacherPublicCodeEquals,
+  mapHeadTeacherWriteConflict,
   createHttpError,
   asTrimmedString,
 } = require("../lib/classHeadTeachersManagement");
@@ -50,7 +51,8 @@ function createClassHeadTeachersRepository(db) {
     );
   }
 
-  async function loadClassByCode(executor, schoolId, classCode) {
+  async function loadClassByCode(executor, schoolId, classCode, { forUpdate = false } = {}) {
+    const lockSql = forUpdate ? " FOR UPDATE" : "";
     return executor.one(
       `SELECT cl.id,
               cl.class_code,
@@ -60,8 +62,22 @@ function createClassHeadTeachersRepository(db) {
               cl.academic_year_id
        FROM classes cl
        WHERE cl.class_code = $1 AND cl.school_id = $2
-       LIMIT 1`,
+       LIMIT 1${lockSql}`,
       [classCode, schoolId],
+    );
+  }
+
+  async function touchClassUpdatedAt(executor, schoolId, classId) {
+    if (typeof executor.query === "function") {
+      await executor.query(
+        `UPDATE classes SET updated_at = NOW() WHERE id = $1 AND school_id = $2`,
+        [classId, schoolId],
+      );
+      return;
+    }
+    await executor.one(
+      `UPDATE classes SET updated_at = NOW() WHERE id = $1 AND school_id = $2 RETURNING id`,
+      [classId, schoolId],
     );
   }
 
@@ -181,7 +197,7 @@ function createClassHeadTeachersRepository(db) {
       const wantsAudit = Boolean(principal || auditMeta);
 
       const run = async (executor, tx = executor) => {
-        const schoolClass = await loadClassByCode(executor, school.id, classCode);
+        const schoolClass = await loadClassByCode(executor, school.id, classCode, { forUpdate: true });
         assertClassAcceptsHeadTeacherAssignment(schoolClass);
         const teacher = await findTeacherByPublicCode(executor, input.teacherCode);
         assertTeacherEligibleForHeadTeacher(teacher, school.id);
@@ -189,7 +205,8 @@ function createClassHeadTeachersRepository(db) {
         const previous = await executor.one(
           `SELECT id, teacher_id FROM class_head_teachers
            WHERE class_id = $1 AND status = 'active'
-           LIMIT 1`,
+           LIMIT 1
+           FOR UPDATE`,
           [schoolClass.id],
         );
 
@@ -207,14 +224,19 @@ function createClassHeadTeachersRepository(db) {
           );
         }
 
-        await executor.one(
-          `INSERT INTO class_head_teachers (
-             school_id, class_id, teacher_id, academic_year_id, status
-           ) VALUES ($1, $2, $3, $4, 'active')
-           RETURNING id`,
-          [school.id, schoolClass.id, teacher.id, schoolClass.academic_year_id],
-        );
+        try {
+          await executor.one(
+            `INSERT INTO class_head_teachers (
+               school_id, class_id, teacher_id, academic_year_id, status
+             ) VALUES ($1, $2, $3, $4, 'active')
+             RETURNING id`,
+            [school.id, schoolClass.id, teacher.id, schoolClass.academic_year_id],
+          );
+        } catch (error) {
+          mapHeadTeacherWriteConflict(error);
+        }
 
+        await touchClassUpdatedAt(executor, school.id, schoolClass.id);
         const mapped = await loadMappedClass(executor, school.id, classCode);
         if (wantsAudit) {
           await writeTransactionalAudit(auditScope(tx), tx, {
@@ -257,14 +279,15 @@ function createClassHeadTeachersRepository(db) {
       const wantsAudit = Boolean(principal || auditMeta);
 
       const run = async (executor, tx = executor) => {
-        const schoolClass = await loadClassByCode(executor, school.id, classCode);
+        const schoolClass = await loadClassByCode(executor, school.id, classCode, { forUpdate: true });
         if (!schoolClass) {
           throw createHttpError(404, "Classe introuvable.");
         }
         const previous = await executor.one(
           `SELECT id, teacher_id FROM class_head_teachers
            WHERE class_id = $1 AND status = 'active'
-           LIMIT 1`,
+           LIMIT 1
+           FOR UPDATE`,
           [schoolClass.id],
         );
         if (previous) {
@@ -275,6 +298,7 @@ function createClassHeadTeachersRepository(db) {
              RETURNING id`,
             [previous.id],
           );
+          await touchClassUpdatedAt(executor, school.id, schoolClass.id);
         }
         const mapped = await loadMappedClass(executor, school.id, classCode);
         if (wantsAudit && previous) {

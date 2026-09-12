@@ -10,6 +10,7 @@ import {
   formatHeadTeacherDisplayName,
   formatHeadTeacherLine,
   isActiveClass,
+  reconcileHeadTeacherPatches,
 } from "./classHeadTeacher";
 
 assert.equal(formatHeadTeacherDisplayName("Awa", "Diop"), "Awa DIOP");
@@ -53,6 +54,36 @@ const cleared = applyHeadTeacherClassPatch(restored, {
 });
 assert.equal(classHasHeadTeacher(cleared), false);
 assert.equal(cleared.teacher, "Non assigné");
+
+const overlayKeepsRemoteStatus = applyHeadTeacherClassPatch(
+  {
+    id: "CLS-1",
+    classCode: "CLS-1",
+    status: "inactive",
+    teacherId: "",
+    teacher: "Non assigné",
+  },
+  {
+    status: "active",
+    teacherId: "SCH-A-ENS-0001",
+    teacher: "Awa DIOP",
+    headTeacherCode: "SCH-A-ENS-0001",
+    headTeacherDisplayName: "Awa DIOP",
+    headTeacher: { teacherCode: "SCH-A-ENS-0001", displayName: "Awa DIOP" },
+  },
+);
+assert.equal(overlayKeepsRemoteStatus.status, "inactive", "le patch PP ne masque pas un statut distant");
+assert.equal(overlayKeepsRemoteStatus.headTeacherCode, "SCH-A-ENS-0001");
+
+const remoteWins = reconcileHeadTeacherPatches(
+  {
+    "CLS-1": overlayKeepsRemoteStatus,
+    "CLS-GONE": { classCode: "CLS-GONE" },
+  },
+  [{ classCode: "CLS-1", status: "inactive", headTeacherCode: "SCH-A-ENS-0002" }],
+);
+assert.equal(remoteWins["CLS-1"], undefined, "reload canonique vide le patch de la classe rechargée");
+assert.equal(remoteWins["CLS-GONE"]?.classCode, "CLS-GONE");
 
 const srcRoot = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
 const repoRoot = path.join(srcRoot, "..", "..");

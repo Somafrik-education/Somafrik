@@ -89,6 +89,8 @@ function createMemoryDb() {
   const assignments = [];
   let seq = 1;
   const nextId = () => `ht-${seq++}`;
+  /** @type {string[]} */
+  const sqls = [];
 
   function sqlClassRow(row) {
     const active = assignments.find((item) => item.class_id === row.id && item.status === "active");
@@ -110,10 +112,12 @@ function createMemoryDb() {
   }
 
   return {
+    sqls,
     async getSchoolByCode(code) {
       return schools.find((row) => row.school_code === String(code).trim().toUpperCase()) ?? null;
     },
     async one(sql, params = []) {
+      sqls.push(String(sql));
       const text = String(sql).replace(/\s+/g, " ").trim().toUpperCase();
       if (text.includes("FROM CLASSES CL") && text.includes("WHERE CL.CLASS_CODE")) {
         const row = classes.find((item) => item.class_code === params[0] && item.school_id === params[1]);
@@ -201,8 +205,16 @@ function createMemoryDb() {
       }
       throw new Error(`Unhandled all(): ${text}`);
     },
-    async query() {
+    async query(sql) {
+      sqls.push(String(sql));
       return { rows: [] };
+    },
+    async withTransaction(fn) {
+      return fn({
+        one: (sql, params) => this.one(sql, params),
+        all: (sql, params) => this.all(sql, params),
+        query: (sql, params) => this.query(sql, params),
+      });
     },
   };
 }
@@ -234,6 +246,32 @@ async function main() {
   const removed = await repo.remove("CLS-A", "SCH-A");
   assert.equal(removed.headTeacher, null);
   assert.equal(removed.teacher, "Non assigné");
+
+  assert.ok(
+    db.sqls.some((sql) => /FROM classes cl/i.test(sql) && /FOR UPDATE/i.test(sql)),
+    "mutations PP verrouillent la ligne classe",
+  );
+  assert.ok(
+    db.sqls.some((sql) => /UPDATE classes SET updated_at/i.test(sql)),
+    "mutations PP avancent classes.updated_at pour la synchro L1",
+  );
+
+  const conflictDb = createMemoryDb();
+  const origOne = conflictDb.one.bind(conflictDb);
+  conflictDb.one = async (sql, params = []) => {
+    if (String(sql).replace(/\s+/g, " ").toUpperCase().startsWith("INSERT INTO CLASS_HEAD_TEACHERS")) {
+      const error = new Error("duplicate key");
+      error.code = "23505";
+      error.constraint = "uq_class_head_teachers_one_active";
+      throw error;
+    }
+    return origOne(sql, params);
+  };
+  const conflictRepo = createClassHeadTeachersRepository(conflictDb);
+  await assert.rejects(
+    () => conflictRepo.assign("CLS-A", "SCH-A", { teacherCode: "SCH-A-ENS-0001" }),
+    (error) => error.statusCode === 409 && error.code === HEAD_TEACHER_ERROR.CONCURRENT,
+  );
 
   await assert.rejects(
     () => repo.assign("CLS-A", "SCH-A", { teacherCode: "SCH-B-ENS-0001" }),

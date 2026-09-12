@@ -7,7 +7,6 @@
  * (`MOBILE_ROLE_PERMISSION_MUTATION_ENABLED`).
  */
 import { canMutateEntity, canReadEntity, type SecurityAction, isSuperAdminSessionRole } from "../domain/security/permissions";
-import { isSchoolAdminRole } from "./format";
 
 export const CANONICAL_CRUD_ENTITIES = [
   "classes",
@@ -51,7 +50,6 @@ export function canAssignClassHeadTeacher(session: any): boolean {
   if (!session) return false;
   const role = session.role ?? session.user?.role;
   if (isSuperAdminSessionRole(role) || isSuperAdminSessionRole(session.user?.role)) return true;
-  if (isSchoolAdminRole(role) || isSchoolAdminRole(session.user?.role)) return true;
   return (
     canMutateEntity(session, "classes", "UPDATE") ||
     canMutateEntity(session, "assignments", "CREATE") ||

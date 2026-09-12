@@ -151,6 +151,12 @@ function createClassesRepository(db) {
     const status = row.status;
     const updatedAt =
       row.updated_at instanceof Date ? row.updated_at.toISOString() : row.updated_at;
+    const headTeacherCode = row.head_teacher_code ? String(row.head_teacher_code) : "";
+    const firstName = row.head_teacher_first_name ?? "";
+    const lastName = row.head_teacher_last_name ?? "";
+    const displayName = headTeacherCode
+      ? formatHeadTeacherDisplayName(firstName, lastName) || headTeacherCode
+      : "";
     return {
       id: row.id,
       classCode: row.class_code,
@@ -162,6 +168,10 @@ function createClassesRepository(db) {
       status,
       updatedAt,
       tombstone: status !== "active",
+      headTeacherCode: headTeacherCode || null,
+      headTeacherFirstName: headTeacherCode ? firstName || null : null,
+      headTeacherLastName: headTeacherCode ? lastName || null : null,
+      headTeacherDisplayName: displayName || null,
     };
   }
 
@@ -452,8 +462,12 @@ function createClassesRepository(db) {
                 cl.level_id,
                 cl.stream_id,
                 cl.group_id,
-                cl.updated_at
+                cl.updated_at,
+                ht.teacher_code AS head_teacher_code,
+                ht.first_name AS head_teacher_first_name,
+                ht.last_name AS head_teacher_last_name
          FROM classes cl
+         ${CLASS_HEAD_TEACHER_LATERAL}
          WHERE ${conditions.join(" AND ")}
          ORDER BY cl.updated_at ASC, cl.id ASC
          LIMIT $${params.length}`,
