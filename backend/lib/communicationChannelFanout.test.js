@@ -4,6 +4,7 @@ const { test } = require("node:test");
 const assert = require("node:assert/strict");
 const {
   createMemoryDeliveryAdapter,
+  createSqlDeliveryAdapter,
   enqueueChannelDeliveries,
   drainChannelDeliveries,
   fanOutNotificationChannels,
@@ -623,4 +624,70 @@ test("smtp_not_configured laisse la delivery EMAIL retryable", async () => {
   assert.equal(mails.length, 1);
   assert.equal(mails[0].to, "contact@somafrik.app");
   assert.equal(adapter.deliveries[0].status, "sent");
+});
+
+test("createSqlDeliveryAdapter suit le contrat createClientsPgStore (bind, pas all sur la façade)", async () => {
+  const sqlCalls = [];
+  const repo = {
+    async one(sql, params) {
+      sqlCalls.push({ op: "one", sql, params });
+      return { id: "deliv-1", status: "pending", attempts: 0, available_at: "2026-09-12T22:00:00.000Z" };
+    },
+    async all(sql, params) {
+      sqlCalls.push({ op: "all", sql, params });
+      return [
+        {
+          notification_id: NOTE_ID,
+          event_key: EVENT_KEY,
+          event_type: "attendance.student.absent",
+          school_id: SCHOOL_A,
+          title: "Absence",
+          body: "x",
+          navigation_target: null,
+          user_id: USER_A,
+          recipient_kind: "user",
+          recipient_context: {},
+        },
+      ];
+    },
+    async query(sql, params) {
+      sqlCalls.push({ op: "query", sql, params });
+      return { rowCount: 1 };
+    },
+    withTransaction(fn) {
+      return fn({
+        one: (sql, params) => repo.one(sql, params),
+        all: (sql, params) => repo.all(sql, params),
+        query: (sql, params) => repo.query(sql, params),
+      });
+    },
+  };
+
+  const { createClientsPgStore } = require("../db/clientsPgStore");
+  const store = createClientsPgStore(repo);
+  assert.equal(typeof store.bind, "function");
+  assert.equal(typeof store.withTransaction, "function");
+  assert.equal(typeof store.one, "undefined");
+  assert.equal(typeof store.all, "undefined");
+  assert.equal(typeof store.query, "undefined");
+
+  const adapter = createSqlDeliveryAdapter(store);
+  const targets = await adapter.loadFanoutTargets(EVENT_KEY);
+  assert.equal(targets.length, 1);
+  assert.equal(targets[0].user_id, USER_A);
+  assert.ok(
+    sqlCalls.some((call) => call.op === "all" && String(call.sql).includes("communication_notifications")),
+    "loadFanoutTargets doit passer par bound.all, pas store.all",
+  );
+
+  const claimed = await adapter.claimDue({ now: new Date("2026-09-12T22:00:00.000Z") });
+  assert.ok(claimed);
+  assert.equal(claimed.id, "deliv-1");
+  assert.ok(
+    sqlCalls.some((call) => call.op === "one" && String(call.sql).includes("FOR UPDATE SKIP LOCKED")),
+    "claimDue doit utiliser withTransaction + bound.one",
+  );
+  assert.ok(
+    sqlCalls.some((call) => call.op === "query" && String(call.sql).includes("status='processing'")),
+  );
 });
