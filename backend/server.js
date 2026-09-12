@@ -16,6 +16,12 @@ const {
 } = require("./lib/userAccountRules");
 const { GradeBookService } = require("./services/gradeBookService");
 const { toPublicSchool } = require("./lib/publicSchool");
+const {
+  presentSchoolLogoFields,
+  commitSchoolLogoUpload,
+  commitSchoolLogoDelete,
+  readSchoolLogoFile,
+} = require("./lib/schoolLogo");
 const { MvpBusinessService } = require("./services/mvpBusinessService");
 const { ReportPdfService } = require("./services/reportPdfService");
 const { createPostgresRepository, initializeRepository } = require("./db/repositoryFactory");
@@ -378,6 +384,20 @@ app.get("/api/schools/:code", asyncHandler(async (req, res) => {
   }
 
   res.json(toPublicSchool(foundSchool));
+}));
+
+app.get("/api/schools/:code/logo", asyncHandler(async (req, res) => {
+  const { platformSchools } = await getRuntime();
+  const { matchesSchoolLookup } = require("./lib/schoolCodeV2");
+  const requestedCode = req.params.code.toUpperCase();
+  const foundSchool = platformSchools.find((item) => matchesSchoolLookup(item, requestedCode));
+  const file = foundSchool ? await readSchoolLogoFile(foundSchool) : null;
+  if (!file) {
+    return res.status(404).json({ message: "Logo introuvable" });
+  }
+  res.setHeader("Content-Type", file.mimeType);
+  res.setHeader("Cache-Control", "private, no-store");
+  res.send(file.bytes);
 }));
 
 app.post("/api/backoffice/login", loginRateLimiter, asyncHandler(async (req, res) => {
@@ -3371,7 +3391,7 @@ app.get("/api/backoffice/subscription-access", requireAuth, requirePermission("G
 
 app.get("/api/backoffice/establishments", requireAuth, requirePermission("GET /api/backoffice/establishments"), asyncHandler(async (req, res) => {
   const state = await getAuthoritativeBackOfficeState();
-  const rows = establishmentService.list(state, req.principal);
+  const rows = establishmentService.list(state, req.principal).map(presentSchoolLogoFields);
   sendList(res, rows, req.query, ["name", "code", "country", "city", "type", "status", "principalName"]);
 }));
 
@@ -3382,7 +3402,7 @@ app.get("/api/backoffice/establishments/:code/subscription", requireAuth, requir
 
 app.get("/api/backoffice/establishments/:code", requireAuth, requirePermission("GET /api/backoffice/establishments/:code"), asyncHandler(async (req, res) => {
   const state = await getAuthoritativeBackOfficeState();
-  res.json(establishmentService.get(req.params.code, state, req.principal));
+  res.json(presentSchoolLogoFields(establishmentService.get(req.params.code, state, req.principal)));
 }));
 
 app.post("/api/backoffice/establishments", requireAuth, requirePermission("POST /api/backoffice/establishments"), asyncHandler(async (req, res) => {
@@ -3395,7 +3415,7 @@ app.post("/api/backoffice/establishments", requireAuth, requirePermission("POST 
   const savedSchool = await repository.persistEstablishment(school);
   await auditService.record(req, "create_establishment", "school", savedSchool.code, { name: savedSchool.name });
   const nextState = await getAuthoritativeBackOfficeState();
-  res.status(201).json({ school: savedSchool, state: scopedBackOfficeStateForResponse(nextState, req.principal) });
+  res.status(201).json({ school: presentSchoolLogoFields(savedSchool), state: scopedBackOfficeStateForResponse(nextState, req.principal) });
 }));
 
 app.post("/api/backoffice/establishments/import", requireAuth, requirePermission("POST /api/backoffice/establishments/import"), asyncHandler(async (req, res) => {
@@ -3416,7 +3436,7 @@ app.post("/api/backoffice/establishments/import", requireAuth, requirePermission
     created: savedCreated.length,
     errors: errors.length,
   });
-  res.status(201).json({ created: savedCreated, errors, count: savedCreated.length });
+  res.status(201).json({ created: savedCreated.map(presentSchoolLogoFields), errors, count: savedCreated.length });
 }));
 
 app.post("/api/backoffice/import/students/validate", requireAuth, requirePermission("POST /api/backoffice/import/students/validate"), asyncHandler(async (req, res) => {
@@ -3435,8 +3455,55 @@ app.patch("/api/backoffice/establishments/:code", requireAuth, requirePermission
   const savedSchool = await repository.persistEstablishment(school);
   await auditService.record(req, "update_establishment", "school", savedSchool.code);
   const nextState = await getAuthoritativeBackOfficeState();
-  res.json({ school: savedSchool, state: scopedBackOfficeStateForResponse(nextState, req.principal) });
+  res.json({ school: presentSchoolLogoFields(savedSchool), state: scopedBackOfficeStateForResponse(nextState, req.principal) });
 }));
+
+app.put(
+  "/api/backoffice/establishments/:code/logo",
+  requireAuth,
+  requirePermission("PUT /api/backoffice/establishments/:code/logo"),
+  express.raw({ type: () => true, limit: "6mb" }),
+  asyncHandler(async (req, res) => {
+    const persisted = await repository.listEstablishments();
+    const state = await getAuthoritativeBackOfficeState();
+    const schools = persisted.length ? persisted : state.schools;
+    const scopedState = { ...state, schools };
+    const school = establishmentService.get(req.params.code, scopedState, req.principal);
+    establishmentService.assertCanMutateLogo(req.principal, school);
+    const buffer = Buffer.isBuffer(req.body) ? req.body : Buffer.from(req.body ?? []);
+    const fileName = req.get("x-filename") || req.get("x-file-name") || "logo.png";
+    const mimeType = req.get("x-mime-type") || req.get("content-type") || "";
+    const { school: savedSchool } = await commitSchoolLogoUpload({
+      school,
+      buffer,
+      fileName,
+      mimeType,
+      persistEstablishment: (record) => repository.persistEstablishment(record),
+    });
+    await auditService.record(req, "update_establishment_logo", "school", savedSchool.code);
+    res.json({ school: presentSchoolLogoFields(savedSchool) });
+  }),
+);
+
+app.delete(
+  "/api/backoffice/establishments/:code/logo",
+  requireAuth,
+  requirePermission("DELETE /api/backoffice/establishments/:code/logo"),
+  asyncHandler(async (req, res) => {
+    const persisted = await repository.listEstablishments();
+    const state = await getAuthoritativeBackOfficeState();
+    const schools = persisted.length ? persisted : state.schools;
+    const scopedState = { ...state, schools };
+    const school = establishmentService.get(req.params.code, scopedState, req.principal);
+    establishmentService.assertCanMutateLogo(req.principal, school);
+    const savedSchool = await commitSchoolLogoDelete({
+      school,
+      persistEstablishment: (record) => repository.persistEstablishment(record),
+    });
+    await auditService.record(req, "delete_establishment_logo", "school", savedSchool.code);
+    res.json({ school: presentSchoolLogoFields(savedSchool) });
+  }),
+);
 
 app.patch("/api/backoffice/establishments/:code/activate", requireAuth, requirePermission("PATCH /api/backoffice/establishments/:code"), asyncHandler(async (req, res) => {
   const persisted = await repository.listEstablishments();
@@ -3445,7 +3512,7 @@ app.patch("/api/backoffice/establishments/:code/activate", requireAuth, requireP
   const { school } = establishmentService.activate(req.params.code, { ...state, schools }, req.principal);
   const savedSchool = await repository.persistEstablishment(school);
   await auditService.record(req, "activate_establishment", "school", savedSchool.code);
-  res.json({ school: savedSchool });
+  res.json({ school: presentSchoolLogoFields(savedSchool) });
 }));
 
 app.patch("/api/backoffice/establishments/:code/suspend", requireAuth, requirePermission("PATCH /api/backoffice/establishments/:code"), asyncHandler(async (req, res) => {
@@ -3455,7 +3522,7 @@ app.patch("/api/backoffice/establishments/:code/suspend", requireAuth, requirePe
   const { school } = establishmentService.suspend(req.params.code, { ...state, schools }, req.principal);
   const savedSchool = await repository.persistEstablishment(school);
   await auditService.record(req, "suspend_establishment", "school", savedSchool.code);
-  res.json({ school: savedSchool });
+  res.json({ school: presentSchoolLogoFields(savedSchool) });
 }));
 
 app.delete("/api/backoffice/establishments/:code", requireAuth, requirePermission("DELETE /api/backoffice/establishments/:code"), asyncHandler(async (req, res) => {
@@ -3466,7 +3533,7 @@ app.delete("/api/backoffice/establishments/:code", requireAuth, requirePermissio
   const savedSchool = await repository.persistEstablishment(school);
   await auditService.record(req, "delete_establishment", "school", savedSchool.code);
   const nextState = await getAuthoritativeBackOfficeState();
-  res.json({ school: savedSchool, state: scopedBackOfficeStateForResponse(nextState, req.principal) });
+  res.json({ school: presentSchoolLogoFields(savedSchool), state: scopedBackOfficeStateForResponse(nextState, req.principal) });
 }));
 
 app.get("/api/backoffice/finance/unpaid", requireAuth, requirePermission("GET /api/backoffice/finance/unpaid"), asyncHandler(async (req, res) => {

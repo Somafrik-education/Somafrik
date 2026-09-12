@@ -218,6 +218,8 @@ const PLATFORM_ADMIN_ALLOWED = Object.freeze([
   "GET /api/backoffice/establishments/:code",
   "POST /api/backoffice/establishments",
   "PATCH /api/backoffice/establishments/:code",
+  "PUT /api/backoffice/establishments/:code/logo",
+  "DELETE /api/backoffice/establishments/:code/logo",
   "DELETE /api/backoffice/establishments/:code",
   "POST /api/backoffice/establishments/import",
   "GET /api/backoffice/users",

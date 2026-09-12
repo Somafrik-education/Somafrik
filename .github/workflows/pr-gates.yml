@@ -131,6 +131,8 @@ jobs:
             backend/package-lock.json
             web/package-lock.json
             Mobile/package-lock.json
+      - name: Branding master
+        run: npm run verify:branding-master
       - name: Install dependencies
         run: npm run ci:install
       - name: Lint

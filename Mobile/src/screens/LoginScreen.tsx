@@ -15,7 +15,7 @@ import FormField from "../components/FormField";
 import { Ionicons } from "@expo/vector-icons";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { RootStackParamList } from "../navigation/AppNavigator";
-import { IdentifyResponse, changePassword, identifyAccount, login, persistAuthenticatedSession, LoginResponse } from "../services/api";
+import { IdentifyResponse, changePassword, identifyAccount, login, persistAuthenticatedSession, LoginResponse, getApiBaseUrl } from "../services/api";
 import { useAuth } from "../context/AuthContext";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { shouldShowDemoLogin } from "../config/env";
@@ -39,6 +39,7 @@ import {
 import { MOBILE_ACCESSIBILITY_COPY } from "../lib/mobileAccessibilitySpec";
 import KeyboardAwareScreen from "../components/KeyboardAwareScreen";
 import { USABILITY_TEST_IDS } from "../lib/mobileUsability";
+import { schoolLogoDisplayUri } from "../lib/schoolLogo";
 
 type Props = NativeStackScreenProps<RootStackParamList, "Login">;
 const somafrikLogo = require("../../assets/somafrik-logo.png");
@@ -222,6 +223,7 @@ export default function LoginScreen({ navigation, route }: Props) {
   const loginReady = canSubmitLogin(identity, identifier, password, isLoading);
   const identifierKeyboard = resolveIdentifierKeyboardType(identifier);
   const secretKeyboard = resolveSecretKeyboardType(identity?.role);
+  const schoolLogoUri = schoolLogoDisplayUri(school, getApiBaseUrl());
 
   return (
     <SafeAreaView
@@ -236,8 +238,8 @@ export default function LoginScreen({ navigation, route }: Props) {
         contentContainerStyle={styles.container}
       >
       <View style={styles.schoolLogo} testID={LOGIN_TEST_IDS.schoolLogo}>
-        {school?.logoUrl ? (
-          <Image source={{ uri: school.logoUrl }} style={styles.schoolLogoImage} />
+        {school ? (
+          schoolLogoUri ? <Image source={{ uri: schoolLogoUri }} style={styles.schoolLogoImage} /> : null
         ) : (
           <Image source={somafrikLogo} style={styles.schoolLogoImage} />
         )}

@@ -20,6 +20,7 @@ const zlib = require("zlib");
 
 const ROOT = path.join(__dirname, "..", "..");
 const MOBILE = path.join(ROOT, "Mobile");
+const { assertMasterAsset } = require("../../scripts/verify-branding-master");
 
 const CANONICAL = {
   mark: {
@@ -312,18 +313,8 @@ function verifyMobileBranding() {
     "Android adaptive doit être plus dézoomé que l'icône iOS",
   );
 
-  assertMobileAsset(
-    "logo UI",
-    MOBILE_ASSETS.uiLogo,
-    canonicalMark,
-    CANONICAL.mark.gitBlobSha,
-  );
-  assertMobileAsset(
-    "splash natif",
-    MOBILE_ASSETS.splash,
-    canonicalLockup,
-    CANONICAL.lockup.gitBlobSha,
-  );
+  assertMasterAsset("Mobile/assets/somafrik-logo.png");
+  assertMasterAsset("Mobile/assets/somafrik-splash.png");
 
   const appJson = JSON.parse(readText(path.join(MOBILE, "app.json")).replace(/^\uFEFF/, ""));
   assert.equal(appJson.expo.icon, LAUNCHER.iosIcon.appJsonPath);
@@ -360,7 +351,7 @@ function verifyMobileBranding() {
   );
 
   console.log(
-    "OK: BRANDING-V2 — marque UI/splash canoniques ; icônes launcher dézoomées iOS + Android adaptive",
+    "OK: BRANDING master CTO — logo UI/splash SHA-256 7de03f1c… ; icônes launcher dézoomées iOS + Android adaptive",
   );
 }
 

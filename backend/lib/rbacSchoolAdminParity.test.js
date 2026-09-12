@@ -75,3 +75,26 @@ test("C. list scopé SCHOOL_ADMIN ne retourne jamais plusieurs tenants", () => {
   assert.equal(rows.length, 1);
   assert.equal(rows[0].id, SCHOOL_A.id);
 });
+
+test("Logo établissement : SCHOOL_ADMIN A ne mute pas B ; enseignant sans droit", () => {
+  assert.ok(routePermissions["PUT /api/backoffice/establishments/:code/logo"].includes("Paramètres Établissement:UPDATE"));
+  assert.ok(routePermissions["DELETE /api/backoffice/establishments/:code/logo"].includes("Paramètres Établissement:UPDATE"));
+  const service = new EstablishmentService();
+  assert.throws(
+    () => service.assertCanMutateLogo(schoolAdmin(), SCHOOL_B),
+    (error) => error.statusCode === 403,
+  );
+  const teacher = {
+    role: "Enseignant",
+    schoolCode: SCHOOL_A.code,
+    permissions: ["Notes:READ"],
+  };
+  assert.throws(
+    () => service.assertCanMutateLogo(teacher, SCHOOL_A),
+    (error) => error.statusCode === 403,
+  );
+  service.assertCanMutateLogo(
+    { ...schoolAdmin(), permissions: ["Paramètres Établissement:UPDATE"] },
+    SCHOOL_A,
+  );
+});

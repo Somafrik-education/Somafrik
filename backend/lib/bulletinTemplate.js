@@ -20,7 +20,7 @@ function loadLogoDataUrl(logoPath) {
   try {
     const buffer = fs.readFileSync(logoPath);
     const ext = path.extname(logoPath).toLowerCase();
-    const mime = ext === ".png" ? "image/png" : "image/jpeg";
+    const mime = ext === ".png" ? "image/png" : ext === ".webp" ? "image/webp" : "image/jpeg";
     return `data:${mime};base64,${buffer.toString("base64")}`;
   } catch {
     return "";

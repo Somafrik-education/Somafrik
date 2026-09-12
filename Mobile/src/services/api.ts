@@ -134,6 +134,7 @@ export type SchoolInfo = {
   slogan?: string;
   status?: string;
   logoUrl?: string;
+  hasLogo?: boolean;
   schoolYear?: string;
   timezone?: string;
   language?: string;

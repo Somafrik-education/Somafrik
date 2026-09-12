@@ -23,8 +23,20 @@ assert.deepStrictEqual(result, {
   loginCode: "CD-IN-26-001",
   name: "École Test",
   city: "Kinshasa",
-  logoUrl: "https://example.test/logo.png",
+  hasLogo: false,
 });
+assert.ok(!("logoUrl" in result), "une URL externe ne doit jamais être exposée comme logo");
+
+const withInternalLogo = toPublicSchool({
+  id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+  loginCode: "CD-IN-26-001",
+  code: "SCH-ABCDEF",
+  name: "École Test",
+  city: "Kinshasa",
+  logoUrl: "school-logos/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa/logo.png",
+});
+assert.equal(withInternalLogo.hasLogo, true);
+assert.equal(withInternalLogo.logoUrl, "/api/schools/CD-IN-26-001/logo");
 assert.notEqual(result.code, "CD-2026-0001");
 
 for (const privateField of [

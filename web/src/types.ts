@@ -48,6 +48,7 @@ export interface School {
   maxStudents?: number;
   maxTeachers?: number;
   logoUrl?: string;
+  hasLogo?: boolean;
   schoolCode?: string;
   /** Directeur / recteur / responsable principal (ETB-F01). */
   principalName?: string;

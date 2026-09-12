@@ -46,7 +46,7 @@ vi.mock("../../lib/permissions", () => ({
 }));
 
 vi.mock("../../lib/establishmentsApi", () => ({
-  establishmentsApi: { update },
+  establishmentsApi: { update, uploadLogo: vi.fn(), removeLogo: vi.fn() },
 }));
 
 vi.mock("../../design-system", async (importOriginal) => {
@@ -75,6 +75,9 @@ describe("EstablishmentProfilePage (D2.3 migration)", () => {
     expect(screen.getByRole("button", { name: "Enregistrer" })).toHaveAttribute("type", "submit");
     expect(screen.getByLabelText("Actions du formulaire")).toBeInTheDocument();
     expect(screen.getByLabelText("Formulaire")).toBeInTheDocument();
+    expect(screen.queryByLabelText(/Logo \(URL\)/i)).not.toBeInTheDocument();
+    expect(screen.queryByPlaceholderText(/https/i)).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Ajouter un logo" })).toBeInTheDocument();
   });
 
   it("exposes section landmarks for keyboard / AT navigation", () => {
