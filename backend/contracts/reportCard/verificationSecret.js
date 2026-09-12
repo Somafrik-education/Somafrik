@@ -2,6 +2,7 @@
 
 const crypto = require("node:crypto");
 const { QR_STRATEGY } = require("./contract");
+const { canonicalize } = require("./jcs");
 
 const TOKEN_BYTES = QR_STRATEGY.token_min_bits / 8;
 
@@ -30,9 +31,21 @@ function generateWrappingKey(wrappingKeyId = "rc-wrap-1") {
   };
 }
 
-function wrapToken(token, wrapping) {
+function encryptionContext(binding) {
+  const ctx = {};
+  for (const key of QR_STRATEGY.aad_fields) {
+    if (binding?.[key] == null || binding[key] === "") {
+      throw new Error(`token wrap requires ${QR_STRATEGY.aad_fields.join(", ")}`);
+    }
+    ctx[key] = binding[key];
+  }
+  return Buffer.from(canonicalize(ctx), "utf8");
+}
+
+function wrapToken(token, wrapping, binding) {
   const iv = crypto.randomBytes(12);
   const cipher = crypto.createCipheriv("aes-256-gcm", wrapping.key, iv);
+  cipher.setAAD(encryptionContext(binding));
   const enc = Buffer.concat([cipher.update(token, "utf8"), cipher.final()]);
   const tag = cipher.getAuthTag();
   return {
@@ -41,14 +54,21 @@ function wrapToken(token, wrapping) {
   };
 }
 
-function unwrapToken(tokenCiphertext, wrapping) {
+function unwrapToken(tokenCiphertext, wrapping, binding) {
   const buf = Buffer.from(tokenCiphertext, "base64");
   const iv = buf.subarray(0, 12);
   const tag = buf.subarray(12, 28);
   const enc = buf.subarray(28);
   const decipher = crypto.createDecipheriv("aes-256-gcm", wrapping.key, iv);
+  decipher.setAAD(encryptionContext(binding));
   decipher.setAuthTag(tag);
-  return Buffer.concat([decipher.update(enc), decipher.final()]).toString("utf8");
+  try {
+    return Buffer.concat([decipher.update(enc), decipher.final()]).toString("utf8");
+  } catch {
+    const err = new Error("CIPHERTEXT_BINDING");
+    err.code = "CIPHERTEXT_BINDING";
+    throw err;
+  }
 }
 
 function verificationUrl(publicId, token) {
@@ -61,6 +81,7 @@ module.exports = {
   hashToken,
   constantTimeEqual,
   generateWrappingKey,
+  encryptionContext,
   wrapToken,
   unwrapToken,
   verificationUrl,

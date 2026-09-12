@@ -43,6 +43,12 @@ test("QR strategy A", () => {
   assert.equal(QR_STRATEGY.id, "A");
   assert.equal(QR_STRATEGY.token_min_bits, 128);
   assert.equal(QR_STRATEGY.wrapping_key_location, "outside_postgresql");
+  assert.deepEqual(QR_STRATEGY.aad_fields, [
+    "public_id",
+    "report_card_id",
+    "published_snapshot_version",
+    "school_id",
+  ]);
 });
 
 test("authenticity Ed25519 key outside PG", () => {
@@ -87,8 +93,10 @@ test("LOT 0 gates declared", () => {
     "no-country-school-branch",
     "snapshot-immutability",
     "publish-idempotent-qr",
+    "publish-idempotency-rejects-payload-mismatch",
     "reprint-after-restart-keeps-same-qr",
     "token-not-in-logs",
+    "token-ciphertext-bound-to-version",
     "snapshot-signature",
     "tenant-isolation",
   ]) {

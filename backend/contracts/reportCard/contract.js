@@ -31,6 +31,12 @@ const QR_STRATEGY = Object.freeze({
   token_min_bits: 128,
   token_hash: "SHA-256",
   token_ciphertext: "AES-256-GCM envelope",
+  aad_fields: Object.freeze([
+    "public_id",
+    "report_card_id",
+    "published_snapshot_version",
+    "school_id",
+  ]),
   wrapping_key_location: "outside_postgresql",
   invariant: "same_version_same_url_same_qr",
 });
@@ -112,8 +118,10 @@ const GATES = Object.freeze([
   "snapshot-canonical-jcs",
   "snapshot-signature",
   "publish-idempotent-qr",
+  "publish-idempotency-rejects-payload-mismatch",
   "reprint-after-restart-keeps-same-qr",
   "token-not-in-logs",
+  "token-ciphertext-bound-to-version",
   "tenant-isolation",
 ]);
 

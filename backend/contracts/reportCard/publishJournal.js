@@ -2,7 +2,7 @@
 
 const crypto = require("node:crypto");
 const { PUBLISH, VERIFICATION_STATES } = require("./contract");
-const { sealSnapshot } = require("./snapshot");
+const { sealSnapshot, deepFreeze } = require("./snapshot");
 const {
   generateToken,
   hashToken,
@@ -12,9 +12,27 @@ const {
   verificationUrl,
 } = require("./verificationSecret");
 
+class IdempotencyConflict extends Error {
+  constructor(message = "IDEMPOTENCY_CONFLICT") {
+    super(message);
+    this.name = "IdempotencyConflict";
+    this.code = "IDEMPOTENCY_CONFLICT";
+  }
+}
+
+function tokenBinding(recordOrPayload, publicId) {
+  return {
+    public_id: publicId,
+    report_card_id: recordOrPayload.report_card_id,
+    published_snapshot_version: recordOrPayload.published_snapshot_version,
+    school_id: recordOrPayload.school_id,
+  };
+}
+
 /**
  * Journal in-memory : simule la frontière atomique LOT 4 sans SQL.
  * Unique (report_card_id, published_snapshot_version).
+ * Retry avec un autre snapshot_sha256 → IDEMPOTENCY_CONFLICT.
  */
 class PublishJournal {
   constructor({ wrapping, signingKey }) {
@@ -29,14 +47,19 @@ class PublishJournal {
   }
 
   publish(payload) {
+    const sealed = sealSnapshot(payload, this.signingKey);
     const key = this._key(payload.report_card_id, payload.published_snapshot_version);
     const existing = this.records.get(key);
-    if (existing) return existing;
+    if (existing) {
+      if (existing.snapshot_sha256 !== sealed.snapshot_sha256) {
+        throw new IdempotencyConflict();
+      }
+      return existing;
+    }
 
     const token = generateToken();
     const publicId = crypto.randomUUID();
-    const wrapped = wrapToken(token, this.wrapping);
-    const sealed = sealSnapshot(payload, this.signingKey);
+    const wrapped = wrapToken(token, this.wrapping, tokenBinding(payload, publicId));
     const record = Object.freeze({
       report_card_id: payload.report_card_id,
       published_snapshot_version: payload.published_snapshot_version,
@@ -67,7 +90,12 @@ class PublishJournal {
   reprintUrl(reportCardId, version) {
     const record = this.records.get(this._key(reportCardId, version));
     if (!record) throw new Error("unknown published version");
-    const token = unwrapToken(record.token_ciphertext, this.wrapping);
+    const token = unwrapToken(record.token_ciphertext, this.wrapping, tokenBinding(record, record.public_id));
+    if (!constantTimeEqual(hashToken(token), record.token_hash)) {
+      const err = new Error("TOKEN_HASH_MISMATCH");
+      err.code = "TOKEN_HASH_MISMATCH";
+      throw err;
+    }
     return verificationUrl(record.public_id, token);
   }
 
@@ -86,6 +114,7 @@ class PublishJournal {
         snapshot_signature: rec.snapshot_signature,
         signing_key_id: rec.signing_key_id,
         sealed_payload: rec.sealed.payload,
+        canonical_bytes: rec.sealed.canonical_bytes.toString("base64"),
         verification_status: rec.verification_status,
         status: rec.status,
       });
@@ -101,7 +130,12 @@ class PublishJournal {
         key,
         Object.freeze({
           ...row,
-          sealed: Object.freeze({ payload: row.sealed_payload, frozen: true }),
+          sealed: Object.freeze({
+            payload: deepFreeze(structuredClone(row.sealed_payload)),
+            canonical_bytes: Buffer.from(row.canonical_bytes, "base64"),
+            snapshot_sha256: row.snapshot_sha256,
+            frozen: true,
+          }),
         })
       );
     }
@@ -133,4 +167,5 @@ function pdfRendersFromPersisted(journal, reportCardId, version) {
 module.exports = {
   PublishJournal,
   pdfRendersFromPersisted,
+  IdempotencyConflict,
 };

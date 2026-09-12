@@ -9,6 +9,7 @@ const {
   generateSigningKey,
   verifyCanonicalBytes,
   sealSnapshot,
+  payloadForRender,
   assertImmutable,
 } = require("./snapshot");
 const {
@@ -19,7 +20,7 @@ const {
   unwrapToken,
   TOKEN_BYTES,
 } = require("./verificationSecret");
-const { PublishJournal, pdfRendersFromPersisted } = require("./publishJournal");
+const { PublishJournal, pdfRendersFromPersisted, IdempotencyConflict } = require("./publishJournal");
 const { redactVerifyUrl, assertTokenAbsentFromLogs, rateLimitKey } = require("./logRedaction");
 
 function samplePayload(overrides = {}) {
@@ -46,7 +47,7 @@ test("snapshot-canonical-jcs: JSON.stringify is not canonical", () => {
   assert.notEqual(JSON.stringify(obj), canonicalize(obj));
 });
 
-test("snapshot-immutability: hash is SHA-256 of JCS bytes including identity fields", () => {
+test("snapshot-immutability: nested mutation is fail-closed; render reads canonical bytes", () => {
   const payload = samplePayload();
   const bytes = canonicalBytes(payload);
   const hex = snapshotSha256(payload);
@@ -54,6 +55,17 @@ test("snapshot-immutability: hash is SHA-256 of JCS bytes including identity fie
   assert.ok(bytes.includes('"school_id":"school-a"'));
   const tampered = samplePayload({ cells: [{ subject_id: "math", score: 15 }] });
   assert.notEqual(snapshotSha256(tampered), hex);
+
+  const key = generateSigningKey();
+  const sealed = sealSnapshot(samplePayload(), key);
+  assert.throws(() => {
+    sealed.payload.cells[0].score = 99;
+  });
+  assert.throws(() => {
+    sealed.payload.student.given = "X";
+  });
+  assert.equal(payloadForRender(sealed).cells[0].score, 14.5);
+  assert.doesNotThrow(() => assertImmutable(sealed));
 });
 
 test("snapshot-signature: Ed25519 over the same canonical bytes; key rotation does not resign v1", () => {
@@ -132,10 +144,48 @@ test("tenant-isolation: school B cannot bind school A capability", () => {
   assert.equal(crossTenant.reason, "tenant_mismatch");
 });
 
+test("publish-idempotency-rejects-payload-mismatch", () => {
+  const wrapping = generateWrappingKey();
+  const signingKey = generateSigningKey();
+  const journal = new PublishJournal({ wrapping, signingKey });
+  journal.publish(samplePayload());
+  assert.throws(
+    () => journal.publish(samplePayload({ cells: [{ subject_id: "math", score: 1 }] })),
+    (err) => err.code === "IDEMPOTENCY_CONFLICT" && err instanceof IdempotencyConflict
+  );
+  assert.equal(journal.outbox.length, 1);
+});
+
+test("token-ciphertext-bound-to-version: swapped ciphertext fails", () => {
+  const wrapping = generateWrappingKey();
+  const signingKey = generateSigningKey();
+  const journal = new PublishJournal({ wrapping, signingKey });
+  journal.publish(samplePayload({ report_card_id: "rc-1", school_id: "school-a" }));
+  journal.publish(samplePayload({ report_card_id: "rc-2", school_id: "school-b" }));
+  const a = journal.records.get("rc-1::1");
+  const b = journal.records.get("rc-2::1");
+  const swapped = Object.freeze({
+    ...b,
+    token_ciphertext: a.token_ciphertext,
+  });
+  journal.records.set("rc-2::1", swapped);
+  assert.throws(() => journal.reprintUrl("rc-2", 1), (err) => err.code === "CIPHERTEXT_BINDING");
+});
+
 test("ciphertext round-trip uses wrapping key outside the record", () => {
   const wrapping = generateWrappingKey("wrap-prod-1");
   const token = generateToken();
-  const wrapped = wrapToken(token, wrapping);
+  const binding = {
+    public_id: "pid-1",
+    report_card_id: "rc-1",
+    published_snapshot_version: 1,
+    school_id: "school-a",
+  };
+  const wrapped = wrapToken(token, wrapping, binding);
   assert.equal(wrapped.wrapping_key_id, "wrap-prod-1");
-  assert.equal(unwrapToken(wrapped.token_ciphertext, wrapping), token);
+  assert.equal(unwrapToken(wrapped.token_ciphertext, wrapping, binding), token);
+  assert.throws(
+    () => unwrapToken(wrapped.token_ciphertext, wrapping, { ...binding, school_id: "school-b" }),
+    (err) => err.code === "CIPHERTEXT_BINDING"
+  );
 });

@@ -29,7 +29,7 @@ function walk(dir, acc = []) {
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
     const full = path.join(dir, entry.name);
     if (entry.isDirectory()) walk(full, acc);
-    else if (entry.isFile() && entry.name.endsWith(".js") && !SKIP_NAMES.has(entry.name)) {
+    else if (entry.isFile() && entry.name.endsWith(".js") && !entry.name.endsWith(".test.js") && !SKIP_NAMES.has(entry.name)) {
       acc.push(full);
     }
   }

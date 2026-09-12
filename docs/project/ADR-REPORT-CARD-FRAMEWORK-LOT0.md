@@ -52,7 +52,9 @@ Règles :
 - `snapshot_signature = Ed25519.Sign(canonical_bytes)` — **les mêmes bytes** que le hash
 - **interdit :** `JSON.stringify` comme canon, `jsonb::text`, round-trip qui réordonne les clés
 
-Une fois `PUBLISHED`, le payload n’est plus muté. Correction = **nouvelle** version. Gate : `snapshot-immutability`, `snapshot-canonical-jcs`.
+Une fois `PUBLISHED`, le payload est **deep-freeze**. Le renderer LOT 5 lit **uniquement** `JSON.parse(canonical_bytes)` (`payloadForRender`), jamais un objet JS encore mutable. Une affectation imbriquée (`sealed.payload.cells[0].score = …`) est fail-closed (TypeError). Gate : `snapshot-immutability`, `snapshot-canonical-jcs`.
+
+JCS = I-JSON (RFC 7493) : rejet de `undefined`, nombres non finis, **lone UTF-16 surrogates**. Vecteurs RFC 8785 (values.json, tri UTF-16, Appendix B) dans `reportCardLot0.jcs.test.js`.
 
 ---
 
@@ -81,7 +83,7 @@ https://somafrik.app/verify/rc/<public_id>.<token>
 | --- | --- |
 | Token | Aléatoire ≥ **128 bits** |
 | Vérification `/verify` | `token_hash` (SHA-256), comparaison constante |
-| Reprint | `token_ciphertext` (AES-256-GCM / envelope KMS) + `wrapping_key_id` |
+| Reprint | `token_ciphertext` AES-256-GCM + **AAD** `{public_id, report_card_id, published_snapshot_version, school_id}` + `wrapping_key_id` |
 | Clé de wrapping | **Hors PostgreSQL** |
 | Invariant | `même version → même URL → même QR` après redémarrage et des années |
 
@@ -90,6 +92,8 @@ https://somafrik.app/verify/rc/<public_id>.<token>
 **Interdit :** plaintext durable en PG ; token ou préfixe en logs Render/proxy/CDN/WAF/app/Sentry ; rate-limit par préfixe clair ; mint d’un token dans le PDF.
 
 `/verify` : `Cache-Control: no-store`, `Referrer-Policy: no-referrer`, CSP stricte, **zéro** ressource/analytics tierce.
+
+Le reprint déchiffre avec cet AAD puis exige `hash(token) === token_hash` avant de construire l’URL. Une substitution de ciphertext entre lignes (même wrapping key) échoue. Gate : `token-ciphertext-bound-to-version`.
 
 Gates : `reprint-after-restart-keeps-same-qr`, `token-not-in-logs`.
 
@@ -106,11 +110,12 @@ Une **seule** frontière (transaction PG + outbox, LOT 4) crée :
 5. outbox `pedagogy.report_card.published`
 
 Clé d’idempotence : `UNIQUE (report_card_id, published_snapshot_version)`.  
-Un retry **relit** le même `public_id` / token. **Pas** de second QR.
+Un retry **avec le même** `snapshot_sha256` relit le même `public_id` / token.  
+Un retry **avec un payload différent** (même clé, hash distinct) → **`IDEMPOTENCY_CONFLICT`**, pas un succès silencieux.
 
-Le PDF (LOT 5) s’exécute **après COMMIT**, déchiffre `token_ciphertext`, **n’émet jamais** de token.
+Gates : `publish-idempotent-qr`, `publish-idempotency-rejects-payload-mismatch`.
 
-Gate : `publish-idempotent-qr`.
+Le PDF (LOT 5) s’exécute **après COMMIT**, déchiffre `token_ciphertext` (AAD + contrôle de hash), **n’émet jamais** de token.
 
 ---
 
@@ -164,6 +169,8 @@ Fichiers : `backend/contracts/reportCard/fixtures/burundi-a.json`, `burundi-b.js
 - aucun changement du calcul `grades` / `GradeBookService`
 
 Code autorisé : modules de **contrat** + tests (`backend/contracts/reportCard/**`). Le moteur métier commence au LOT 1–3.
+
+**P1 (LOT 1–3) :** le gate `no-country-school-branch` est aujourd’hui un scan regex/JS. Il ne couvre pas `switch`, ternaires, `Map`/lookup, ni `.ts`/`.mjs`. À renforcer (AST + convention de module) dès qu’un moteur existe. Non bloquant pour LOT 0.
 
 ---
 
