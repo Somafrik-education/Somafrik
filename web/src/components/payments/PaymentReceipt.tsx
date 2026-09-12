@@ -2,6 +2,7 @@ import type { PaymentRecord } from "../../lib/quickPayment";
 import type { School, SessionUser } from "../../types";
 import { useAuth } from "../../context/AuthContext";
 import { formatFinanceAmount, formatFinanceDate, resolveFinanceCurrency } from "../../lib/financeCurrency";
+import { financePaymentStatusLabel } from "../../lib/financeObligationStatus";
 import { schoolLogoSrc } from "../../lib/schoolLogo";
 
 interface PaymentReceiptProps {

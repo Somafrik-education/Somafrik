@@ -76,7 +76,7 @@ export default function EstablishmentProfileScreen() {
         phone: profile.phone || local?.phone || "",
         email: profile.email || local?.email || "",
         logoUrl: profile.logoUrl || "",
-        hasLogo: profile.hasLogo ?? schoolHasLogo(profile) || schoolHasLogo(local),
+        hasLogo: Boolean(profile.hasLogo ?? (schoolHasLogo(profile) || schoolHasLogo(local))),
         city: profile.city || local?.city || "",
         principalName: profile.principalName || "",
         principalEmail: profile.principalEmail || "",
