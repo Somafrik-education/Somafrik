@@ -99,10 +99,28 @@ function retryDelayMs(attempts) {
   return Math.min(RETRY_CAP_MS, RETRY_BASE_MS * 2 ** Math.min(exp, 10));
 }
 
+/**
+ * createClientsPgStore() expose bind()/withTransaction() sur la façade,
+ * et one/all/query seulement sur le store bindé.
+ */
+function sqlPrimitivesFromStore(store) {
+  if (store && typeof store.bind === "function") {
+    const bound = store.bind({});
+    return {
+      one: (sql, params) => bound.one(sql, params),
+      all: (sql, params) => bound.all(sql, params),
+      query: (sql, params) => bound.query(sql, params),
+    };
+  }
+  return {
+    one: (sql, params) => store.one(sql, params),
+    all: (sql, params) => store.all(sql, params),
+    query: (sql, params) => store.query(sql, params),
+  };
+}
+
 function createSqlDeliveryAdapter(store) {
-  const one = (sql, params) => store.one(sql, params);
-  const all = (sql, params) => store.all(sql, params);
-  const query = (sql, params) => store.query(sql, params);
+  const { one, all, query } = sqlPrimitivesFromStore(store);
 
   return {
     async loadFanoutTargets(eventKey) {

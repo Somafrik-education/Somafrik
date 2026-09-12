@@ -248,6 +248,8 @@ function sourceGuards() {
   const fanout = read("backend/lib/communicationChannelFanout.js");
   assert.match(fanout, /function operationalTrialEmailTo/);
   assert.match(fanout, /trial\.access\.request/);
+  assert.match(fanout, /sqlPrimitivesFromStore/);
+  assert.match(fanout, /typeof store\.bind === "function"/);
   const enqueueFn = fanout.slice(fanout.indexOf("async function enqueueChannelDeliveries"));
   assert.match(enqueueFn, /preference lookup failed, enqueue policy channels/);
   assert.match(fanout, /stale_processing_no_redelivery/);
@@ -257,6 +259,8 @@ function sourceGuards() {
   assert.doesNotMatch(sqlClaim, /status = 'processing' AND claimed_at/);
   const fanoutTests = read("backend/lib/communicationChannelFanout.test.js");
   assert.match(fanoutTests, /crash après succès Expo avant markSent n'envoie pas une seconde fois/);
+  assert.match(fanoutTests, /createClientsPgStore/);
+  assert.match(fanoutTests, /pas all sur la façade/);
   assert.match(fanoutTests, /crash après succès SMTP avant markSent n'envoie pas une seconde fois/);
   assert.match(fanoutTests, /payload.to n'override pas l'email tenant scoped user\+school/);
   assert.match(fanoutTests, /EMAIL opérationnel trial.access.request utilise payload.to sans user\/school/);
