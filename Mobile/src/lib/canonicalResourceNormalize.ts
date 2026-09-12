@@ -313,6 +313,8 @@ export function normalizeSchool(value: unknown): SchoolProfile | null {
     slogan: text(row.slogan),
     status: (text(row.status) || "Actif") as SchoolProfile["status"],
     hasLogo: Boolean(row.hasLogo),
+    logoSource: optionalText(row.logoSource ?? row.logo_source),
+    logoUploadedAt: optionalText(row.logoUploadedAt ?? row.logo_uploaded_at),
     logoUrl: optionalText(row.logoUrl ?? row.logo_url),
     schoolYear: text(row.schoolYear ?? row.school_year),
     timezone: text(row.timezone) || "Africa/Kinshasa",

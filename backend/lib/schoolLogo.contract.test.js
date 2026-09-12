@@ -69,6 +69,23 @@ test("PATCH établissements n'accepte plus logoUrl comme champ profil", () => {
     service,
     /ESTABLISHMENT_PROFILE_PATCH_FIELDS[\s\S]{0,200}"logoUrl"/,
   );
+  assert.match(service, /delete incoming.logoSource/);
+});
+
+test("logo SCHOOL exige provenance complète school_upload + logoUploadedAt", () => {
+  const lib = read("backend/lib/schoolLogo.js");
+  const web = read("web/src/lib/schoolLogo.ts");
+  const mobile = read("Mobile/src/lib/schoolLogo.ts");
+  assert.match(lib, /SCHOOL_LOGO_SOURCE_UPLOAD = "school_upload"/);
+  assert.match(lib, /canonicalLogoUploadedAt/);
+  assert.match(lib, /isSchoolUploadProvenance/);
+  assert.match(lib, /canonicalLogoUploadedAt\(school\.logoUploadedAt\)/);
+  assert.match(web, /logoSource[\s\S]{0,80}!== SCHOOL_UPLOAD/);
+  assert.match(web, /hasLogo !== true/);
+  assert.match(web, /logoUploadedAt/);
+  assert.match(mobile, /logoSource[\s\S]{0,80}!== SCHOOL_UPLOAD/);
+  assert.match(mobile, /hasLogo !== true/);
+  assert.match(mobile, /logoUploadedAt/);
 });
 
 test("gate branding-master pin le SHA-256 CTO", () => {

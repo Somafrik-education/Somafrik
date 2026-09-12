@@ -19,6 +19,7 @@ import {
   useToast,
 } from "../../design-system";
 import type { School } from "../../types";
+import { schoolHasLogo } from "../../lib/schoolLogo";
 
 function schoolToDraft(school: School): School {
   return {
@@ -29,7 +30,9 @@ function schoolToDraft(school: School): School {
     phone: school.phone ?? "",
     email: school.email ?? "",
     logoUrl: school.logoUrl ?? "",
-    hasLogo: Boolean(school.hasLogo),
+    hasLogo: schoolHasLogo(school),
+    logoSource: school.logoSource ?? "",
+    logoUploadedAt: school.logoUploadedAt ?? "",
     principalName: school.principalName ?? "",
     principalEmail: school.principalEmail ?? "",
     principalPhone: school.principalPhone ?? "",

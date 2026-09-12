@@ -330,6 +330,8 @@ export type SchoolProfile = {
   slogan: string;
   status: "Actif" | "Suspendu" | string;
   hasLogo?: boolean;
+  logoSource?: string;
+  logoUploadedAt?: string;
   logoUrl?: string;
   schoolYear: string;
   timezone: string;
@@ -387,6 +389,9 @@ export const school: SchoolProfile = {
   currency: "CDF",
   slogan: "Excellence et Innovation",
   status: "Actif",
+  hasLogo: false,
+  logoSource: "",
+  logoUploadedAt: "",
   logoUrl: "",
   schoolYear: "2025-2026",
   timezone: "Africa/Kinshasa",

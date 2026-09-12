@@ -64,6 +64,12 @@ describe("EstablishmentProfilePage (D2.3 migration)", () => {
     showToast.mockReset();
     refresh.mockReset();
     update.mockReset();
+    school.hasLogo = false;
+    school.logoUrl = "";
+    school.logoSource = undefined;
+    school.logoUploadedAt = undefined;
+    school.name = "Lycée Test";
+    school.code = "SCH-001";
   });
 
   it("renders FormLayout zones and DS primary submit", () => {
@@ -78,6 +84,53 @@ describe("EstablishmentProfilePage (D2.3 migration)", () => {
     expect(screen.queryByLabelText(/Logo \(URL\)/i)).not.toBeInTheDocument();
     expect(screen.queryByPlaceholderText(/https/i)).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Ajouter un logo" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Modifier le logo" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Supprimer le logo" })).not.toBeInTheDocument();
+  });
+
+  it("legacy hasLogo sans logoSource → zone vide, Ajouter un logo", () => {
+    school.hasLogo = true;
+    school.logoUrl = "/api/schools/SCH-001/logo";
+    school.logoSource = undefined;
+    render(<EstablishmentProfilePage />);
+    expect(screen.getByRole("button", { name: "Ajouter un logo" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Modifier le logo" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Supprimer le logo" })).not.toBeInTheDocument();
+  });
+
+  it("INSTITUT NURUYETU legacy : zone vide, Ajouter un logo, jamais Modifier/Supprimer", () => {
+    school.code = "CD-IN-26-001";
+    school.name = "INSTITUT NURUYETU";
+    school.hasLogo = true;
+    school.logoUrl = "/api/schools/CD-IN-26-001/logo";
+    school.logoSource = undefined;
+    school.logoUploadedAt = undefined;
+    render(<EstablishmentProfilePage />);
+    expect(screen.getByRole("button", { name: "Ajouter un logo" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Modifier le logo" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Supprimer le logo" })).not.toBeInTheDocument();
+  });
+
+  it("school_upload sans logoUploadedAt → zone vide, Ajouter un logo", () => {
+    school.hasLogo = true;
+    school.logoSource = "school_upload";
+    school.logoUploadedAt = undefined;
+    school.logoUrl = "/api/schools/SCH-001/logo";
+    render(<EstablishmentProfilePage />);
+    expect(screen.getByRole("button", { name: "Ajouter un logo" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Modifier le logo" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Supprimer le logo" })).not.toBeInTheDocument();
+  });
+
+  it("provenance complète + hasLogo=true → Modifier / Supprimer", () => {
+    school.hasLogo = true;
+    school.logoSource = "school_upload";
+    school.logoUploadedAt = "2026-09-12T20:00:00.000Z";
+    school.logoUrl = "/api/schools/SCH-001/logo";
+    render(<EstablishmentProfilePage />);
+    expect(screen.getByRole("button", { name: "Modifier le logo" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Supprimer le logo" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Ajouter un logo" })).not.toBeInTheDocument();
   });
 
   it("exposes section landmarks for keyboard / AT navigation", () => {

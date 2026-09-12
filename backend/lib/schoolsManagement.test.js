@@ -52,10 +52,14 @@ test("extrait le profil JSONB sans colonnes canoniques redondantes perdues", () 
     principalName: "Awa Kabila",
     validationStatus: "Validé",
     status: "Actif",
+    logoSource: "school_upload",
+    logoUploadedAt: "2026-09-12T20:00:00.000Z",
   });
   assert.equal(profile.principalName, "Awa Kabila");
   assert.equal(profile.validationStatus, "Validé");
   assert.equal(profile.status, "Actif");
+  assert.equal(profile.logoSource, "school_upload");
+  assert.equal(profile.logoUploadedAt, "2026-09-12T20:00:00.000Z");
   assert.equal(Object.prototype.hasOwnProperty.call(profile, "code"), false);
   assert.equal(Object.prototype.hasOwnProperty.call(profile, "name"), false);
 });
@@ -99,6 +103,62 @@ test("mapEstablishmentRow ignore une URL HTTP de logo", () => {
     profile_payload: { logoUrl: "https://cdn.evil.test/other.png" },
   });
   assert.equal(mapped.logoUrl, "");
+});
+
+test("mapEstablishmentRow n'infère pas logoSource depuis une clé interne", () => {
+  const { schoolHasStoredLogo } = require("./schoolLogo");
+  const legacy = mapEstablishmentRow({
+    id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    country_id: "uuid-c",
+    school_code: "SCH-ABCDEF",
+    login_code: "CD-IN-26-001",
+    name: "Institut Nuruyetu",
+    school_type: "Institut",
+    city: "Kinshasa",
+    logo_url: "school-logos/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa/logo.png",
+    status: "active",
+    iso_code: "CD",
+    country_name: "RDC",
+    profile_payload: {},
+  });
+  assert.equal(legacy.logoUrl, "school-logos/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa/logo.png");
+  assert.equal(legacy.logoSource, "");
+  assert.equal(schoolHasStoredLogo(legacy), false);
+
+  const incomplete = mapEstablishmentRow({
+    id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    country_id: "uuid-c",
+    school_code: "SCH-ABCDEF",
+    login_code: "CD-IN-26-001",
+    name: "Institut Nuruyetu",
+    school_type: "Institut",
+    city: "Kinshasa",
+    logo_url: "school-logos/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa/logo.png",
+    status: "active",
+    iso_code: "CD",
+    country_name: "RDC",
+    profile_payload: { logoSource: "school_upload" },
+  });
+  assert.equal(incomplete.logoSource, "school_upload");
+  assert.equal(incomplete.logoUploadedAt, "");
+  assert.equal(schoolHasStoredLogo(incomplete), false);
+
+  const uploaded = mapEstablishmentRow({
+    id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    country_id: "uuid-c",
+    school_code: "SCH-ABCDEF",
+    login_code: "CD-IN-26-001",
+    name: "Institut Nuruyetu",
+    school_type: "Institut",
+    city: "Kinshasa",
+    logo_url: "school-logos/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa/logo.png",
+    status: "active",
+    iso_code: "CD",
+    country_name: "RDC",
+    profile_payload: { logoSource: "school_upload", logoUploadedAt: "2026-09-12T20:00:00.000Z" },
+  });
+  assert.equal(uploaded.logoSource, "school_upload");
+  assert.equal(schoolHasStoredLogo(uploaded), true);
 });
 
 test("mapEstablishmentRow privilégie profile_payload pour le statut BO", () => {

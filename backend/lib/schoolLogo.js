@@ -15,6 +15,7 @@ const { storageRoot } = require("./communicationsAttachments");
 
 const MAX_SCHOOL_LOGO_BYTES = 5 * 1024 * 1024;
 const SCHOOL_LOGO_PREFIX = "school-logos";
+const SCHOOL_LOGO_SOURCE_UPLOAD = "school_upload";
 const ALLOWED_LOGO_MIME = Object.freeze({
   "image/jpeg": ".jpg",
   "image/png": ".png",
@@ -58,6 +59,23 @@ function isInternalStorageKey(value) {
 function persistableLogoRef(value) {
   const candidate = asTrimmed(value);
   return isInternalStorageKey(candidate) ? candidate : "";
+}
+
+function canonicalLogoSource(value) {
+  return asTrimmed(value).toLowerCase() === SCHOOL_LOGO_SOURCE_UPLOAD ? SCHOOL_LOGO_SOURCE_UPLOAD : "";
+}
+
+function canonicalLogoUploadedAt(value) {
+  const raw = asTrimmed(value);
+  if (!raw || !/^\d{4}-\d{2}-\d{2}/.test(raw)) return "";
+  return Number.isNaN(Date.parse(raw)) ? "" : raw;
+}
+
+function isSchoolUploadProvenance(school = {}) {
+  return (
+    canonicalLogoSource(school.logoSource) === SCHOOL_LOGO_SOURCE_UPLOAD &&
+    Boolean(canonicalLogoUploadedAt(school.logoUploadedAt))
+  );
 }
 
 function firstInternalLogoRef(...values) {
@@ -179,7 +197,14 @@ async function commitSchoolLogoUpload({ school, buffer, fileName, mimeType, pers
   }
   const previousKey = persistableLogoRef(school?.logoUrl);
   const saved = await saveSchoolLogo({ school, buffer, fileName, mimeType });
-  const next = { ...school, logoUrl: saved.storageKey, updatedAt: new Date().toISOString() };
+  const uploadedAt = new Date().toISOString();
+  const next = {
+    ...school,
+    logoUrl: saved.storageKey,
+    logoSource: SCHOOL_LOGO_SOURCE_UPLOAD,
+    logoUploadedAt: uploadedAt,
+    updatedAt: uploadedAt,
+  };
   try {
     const savedSchool = await persistEstablishment(next);
     if (previousKey && previousKey !== saved.storageKey) {
@@ -197,9 +222,15 @@ async function commitSchoolLogoDelete({ school, persistEstablishment }) {
     throw createLogoError(500, "Persistance établissement indisponible.", "SCHOOL_LOGO_PERSIST");
   }
   const previousKey = persistableLogoRef(school?.logoUrl);
-  const next = { ...school, logoUrl: "", updatedAt: new Date().toISOString() };
+  const next = {
+    ...school,
+    logoUrl: "",
+    logoSource: "",
+    logoUploadedAt: "",
+    updatedAt: new Date().toISOString(),
+  };
   const savedSchool = await persistEstablishment(next);
-  if (previousKey && logoKeyBelongsToSchool(previousKey, school)) {
+  if (isSchoolUploadProvenance(school) && previousKey && logoKeyBelongsToSchool(previousKey, school)) {
     await removeStoredLogo(previousKey);
   }
   return savedSchool;
@@ -213,6 +244,7 @@ function mimeFromStorageKey(storageKey) {
 }
 
 async function readSchoolLogoFile(school) {
+  if (!isSchoolUploadProvenance(school)) return null;
   const key = persistableLogoRef(school?.logoUrl);
   if (!key || !logoKeyBelongsToSchool(key, school)) return null;
   try {
@@ -225,6 +257,7 @@ async function readSchoolLogoFile(school) {
 }
 
 function resolveSchoolLogoPath(school) {
+  if (!isSchoolUploadProvenance(school)) return "";
   const key = persistableLogoRef(school?.logoUrl);
   if (!key || !logoKeyBelongsToSchool(key, school)) return "";
   try {
@@ -236,6 +269,7 @@ function resolveSchoolLogoPath(school) {
 }
 
 function schoolHasStoredLogo(school = {}) {
+  if (!isSchoolUploadProvenance(school)) return false;
   const key = persistableLogoRef(school.logoUrl);
   return Boolean(key && logoKeyBelongsToSchool(key, school));
 }
@@ -252,21 +286,32 @@ function presentSchoolLogoFields(school = {}) {
   return {
     ...school,
     hasLogo,
+    logoSource: hasLogo ? SCHOOL_LOGO_SOURCE_UPLOAD : "",
+    logoUploadedAt: hasLogo ? canonicalLogoUploadedAt(school.logoUploadedAt) : "",
     logoUrl: hasLogo ? publicSchoolLogoPath(school) : "",
   };
 }
 
 function presentPublicSchoolLogoFields(school = {}) {
   const hasLogo = schoolHasStoredLogo(school);
-  const logoUrl = hasLogo ? publicSchoolLogoPath(school) : "";
-  return { hasLogo, ...(logoUrl ? { logoUrl } : {}) };
+  if (!hasLogo) return { hasLogo: false };
+  return {
+    hasLogo: true,
+    logoSource: SCHOOL_LOGO_SOURCE_UPLOAD,
+    logoUploadedAt: canonicalLogoUploadedAt(school.logoUploadedAt),
+    logoUrl: publicSchoolLogoPath(school),
+  };
 }
 
 module.exports = {
   MAX_SCHOOL_LOGO_BYTES,
   ALLOWED_LOGO_MIME,
   SCHOOL_LOGO_PREFIX,
+  SCHOOL_LOGO_SOURCE_UPLOAD,
   persistableLogoRef,
+  canonicalLogoSource,
+  canonicalLogoUploadedAt,
+  isSchoolUploadProvenance,
   firstInternalLogoRef,
   isInternalStorageKey,
   schoolLogoTenantKey,
