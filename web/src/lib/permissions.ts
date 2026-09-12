@@ -152,6 +152,24 @@ export function getCurrentRolePermissions(ctx: PermissionContext): string[] {
   return resolveEffectivePermissions(ctx.user?.role, ctx.user?.permissions, ctx.rolePermissions);
 }
 
+const HEAD_TEACHER_WRITE_TOKENS = new Set([
+  "classes:update",
+  "gerer classes",
+  "affectations:create",
+  "affectations:update",
+  "gerer affectations",
+  "all-privileges",
+]);
+
+/** Superadmin, Admin School, ou droit explicite classes / affectations pédagogiques. */
+export function canAssignClassHeadTeacher(ctx: PermissionContext): boolean {
+  if (!ctx.user) return false;
+  if (isSuperAdminRole(ctx.user.role)) return true;
+  if (isSchoolAdminRole(ctx.user.role)) return true;
+  const tokens = getCurrentRolePermissions(ctx).map((permission) => normalize(permission));
+  return tokens.some((permission) => HEAD_TEACHER_WRITE_TOKENS.has(permission));
+}
+
 const COUNTRY_PRIVILEGE_FEATURES = new Set(["pays", "etablissements", "abonnements", "utilisateurs", "rapports", "referentiels pedagogiques"]);
 
 function countryPrivilegeAllowsRead(normalizedFeature: string): boolean {

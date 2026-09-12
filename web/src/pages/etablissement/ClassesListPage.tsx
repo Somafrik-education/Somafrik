@@ -19,7 +19,7 @@ import { academicYearsApi } from "../../lib/academicYearsApi";
 import { scopeAcademicYearsForConfiguration } from "../../lib/academicYearsScope";
 import { educationReferenceApi, type EducationSchoolCatalog } from "../../lib/educationReferenceApi";
 import { usePermissionContext } from "../../lib/usePermissionContext";
-import { getEntityFeaturePermissions } from "../../lib/permissions";
+import { canAssignClassHeadTeacher, getEntityFeaturePermissions } from "../../lib/permissions";
 import { displayStatusName } from "../../lib/format";
 import {
   SCOLARITE_COPY,
@@ -28,6 +28,14 @@ import {
   isPedagogicalSeriesCode,
   selectCurrentAcademicYear,
 } from "../../lib/schoolingTruth";
+import {
+  HEAD_TEACHER_COPY,
+  classHasHeadTeacher,
+  classHeadTeacherDisplayName,
+  formatHeadTeacherLine,
+  isActiveClass,
+} from "../../lib/classHeadTeacher";
+import { ClassHeadTeacherAssignModal } from "../../components/classes/ClassHeadTeacherAssignModal";
 
 export { composeClassPreviewName, getClassDisplayName, isPedagogicalSeriesCode };
 
@@ -77,6 +85,7 @@ export function ClassesListPage() {
   const { showToast } = useToast();
   const permissionCtx = usePermissionContext();
   const permissions = getEntityFeaturePermissions(permissionCtx, "classes", "Classes");
+  const canAssignHeadTeacher = canAssignClassHeadTeacher(permissionCtx);
   const { activeSchool } = useActiveSchool();
   const selectedSchoolForYears = useMemo(() => {
     const id = String(activeSchool?.id ?? "").trim();
@@ -92,6 +101,7 @@ export function ClassesListPage() {
   const [statusFilter, setStatusFilter] = useState<"" | ClassStatus>("");
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<SchoolClass | null>(null);
+  const [assigning, setAssigning] = useState<SchoolClass | null>(null);
   const [form, setForm] = useState<ClassFormState>(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
 
@@ -229,18 +239,22 @@ export function ClassesListPage() {
     }
   }
 
+  const patchRow = useCallback((updated: SchoolClass) => {
+    setRows((current) =>
+      current.map((item) => (item.classCode === updated.classCode ? updated : item)),
+    );
+  }, []);
+
   const deactivate = useCallback(async (row: SchoolClass) => {
     try {
       const updated = await classesApi.update(row.classCode, { status: "inactive" });
-      setRows((current) =>
-        current.map((item) => (item.classCode === updated.classCode ? updated : item)),
-      );
+      patchRow(updated);
       showToast("Classe désactivée.", "success");
     } catch (err) {
       const message = err instanceof ApiError ? err.message : "Désactivation impossible.";
       showToast(message, "error");
     }
-  }, [showToast]);
+  }, [patchRow, showToast]);
 
   const columns = useMemo(
     () => [
@@ -255,6 +269,11 @@ export function ClassesListPage() {
       },
       { key: "students", header: "Effectif", render: (row: SchoolClass) => Number(row.students ?? 0) },
       {
+        key: "headTeacher",
+        header: "Professeur principal",
+        render: (row: SchoolClass) => formatHeadTeacherLine(classHeadTeacherDisplayName(row)),
+      },
+      {
         key: "status",
         header: "Statut",
         render: (row: SchoolClass) => displayStatusName(row.status),
@@ -265,6 +284,11 @@ export function ClassesListPage() {
         sortable: false,
         render: (row: SchoolClass) => (
           <div className="flex flex-wrap items-center gap-2">
+            {canAssignHeadTeacher && isActiveClass(row.status) ? (
+              <Button type="button" variant="secondary" size="sm" onClick={() => setAssigning(row)}>
+                {classHasHeadTeacher(row) ? HEAD_TEACHER_COPY.modify : HEAD_TEACHER_COPY.assign}
+              </Button>
+            ) : null}
             <Link
               className="text-sm underline"
               to={`/etablissement/classes/${encodeURIComponent(row.classCode)}/eleves`}
@@ -290,7 +314,7 @@ export function ClassesListPage() {
         ),
       },
     ],
-    [permissions.canUpdate, deactivate, labels.groupLabel, labels.levelLabel, labels.trackLabel],
+    [canAssignHeadTeacher, permissions.canUpdate, deactivate, labels.groupLabel, labels.levelLabel, labels.trackLabel],
   );
 
   if (!permissions.canRead) {
@@ -499,6 +523,26 @@ export function ClassesListPage() {
           </div>
         </form>
       </Modal>
+
+      <ClassHeadTeacherAssignModal
+        open={Boolean(assigning)}
+        schoolClass={assigning}
+        onClose={() => setAssigning(null)}
+        onAssigned={(updated) => {
+          patchRow(updated);
+          showToast(
+            classHasHeadTeacher(assigning ?? updated)
+              ? HEAD_TEACHER_COPY.successReplace
+              : HEAD_TEACHER_COPY.successAssign,
+            "success",
+          );
+        }}
+        onRemoved={(updated) => {
+          patchRow(updated);
+          showToast(HEAD_TEACHER_COPY.successRemove, "success");
+        }}
+        onError={(message) => showToast(message, "error")}
+      />
     </>
   );
 }

@@ -57,6 +57,7 @@ Helper annexe : `backend/scripts/migrate-test-data.js`.
 | `academic_years` / `terms` | Calendrier | FK school |
 | `subjects` | Matières | FK school |
 | `classes` | Classes | UNIQUE `class_code` · FK school + année |
+| `class_head_teachers` | Professeur principal d'une classe | UNIQUE partiel actif `(class_id)` · FK school + classe + enseignant + année · fin = `status=inactive` (historique conservé) |
 | `teachers` | Enseignants | UNIQUE `teacher_code` · FK school · `user_id` optionnel |
 | `students` | Élèves | UNIQUE `student_code` · FK school |
 | `enrollments` | Inscriptions | liens élève / classe / année |

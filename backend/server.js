@@ -805,6 +805,80 @@ app.patch("/api/classes/:classCode", requireAuth, requirePermission("PATCH /api/
   res.json(updated);
 }));
 
+app.get(
+  "/api/classes/:classCode/head-teacher/candidates",
+  requireAuth,
+  requirePermission("GET /api/classes/:classCode/head-teacher/candidates"),
+  asyncHandler(async (req, res) => {
+    const schoolCode = String(req.principal?.schoolCode ?? "").trim();
+    if (!schoolCode || schoolCode === "*") {
+      throw new BusinessError(400, "schoolCode établissement requis.");
+    }
+    tenantScopeService.assertSchoolAccess(req.principal, schoolCode);
+    if (typeof repository.listClassHeadTeacherCandidates !== "function") {
+      const { headTeacherPostgresRequired } = require("./lib/classHeadTeachersManagement");
+      throw headTeacherPostgresRequired();
+    }
+    const rows = await repository.listClassHeadTeacherCandidates(
+      req.params.classCode,
+      schoolCode,
+      { q: req.query?.q },
+    );
+    res.json(rows);
+  }),
+);
+
+app.put(
+  "/api/classes/:classCode/head-teacher",
+  requireAuth,
+  requirePermission("PUT /api/classes/:classCode/head-teacher"),
+  asyncHandler(async (req, res) => {
+    const schoolCode = String(req.principal?.schoolCode ?? "").trim();
+    if (!schoolCode || schoolCode === "*") {
+      throw new BusinessError(400, "schoolCode établissement requis.");
+    }
+    tenantScopeService.assertSchoolAccess(req.principal, schoolCode);
+    if (typeof repository.assignClassHeadTeacher !== "function") {
+      const { headTeacherPostgresRequired } = require("./lib/classHeadTeachersManagement");
+      throw headTeacherPostgresRequired();
+    }
+    const { auditMetaFromRequest } = require("./lib/teacherTransactionalAudit");
+    const updated = await repository.assignClassHeadTeacher(
+      req.params.classCode,
+      schoolCode,
+      req.body ?? {},
+      req.principal,
+      auditMetaFromRequest(req),
+    );
+    res.json(updated);
+  }),
+);
+
+app.delete(
+  "/api/classes/:classCode/head-teacher",
+  requireAuth,
+  requirePermission("DELETE /api/classes/:classCode/head-teacher"),
+  asyncHandler(async (req, res) => {
+    const schoolCode = String(req.principal?.schoolCode ?? "").trim();
+    if (!schoolCode || schoolCode === "*") {
+      throw new BusinessError(400, "schoolCode établissement requis.");
+    }
+    tenantScopeService.assertSchoolAccess(req.principal, schoolCode);
+    if (typeof repository.removeClassHeadTeacher !== "function") {
+      const { headTeacherPostgresRequired } = require("./lib/classHeadTeachersManagement");
+      throw headTeacherPostgresRequired();
+    }
+    const { auditMetaFromRequest } = require("./lib/teacherTransactionalAudit");
+    const updated = await repository.removeClassHeadTeacher(
+      req.params.classCode,
+      schoolCode,
+      req.principal,
+      auditMetaFromRequest(req),
+    );
+    res.json(updated);
+  }),
+);
+
 async function enrollmentHttpPrincipal(req) {
   const {
     attachEnrollmentMembershipScope,

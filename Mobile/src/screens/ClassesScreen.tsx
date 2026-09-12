@@ -40,6 +40,7 @@ import { isMetricReady, metricLabelFromSnapshot } from "../lib/dataTruth";
 import { filterClassesByQuery, USABILITY_TEST_IDS } from "../lib/mobileUsability";
 import { shouldBlockUnsupportedMutations } from "../offline/l1/readModel";
 import ClassMutationControls from "../components/ClassMutationControls";
+import ClassHeadTeacherControls from "../components/ClassHeadTeacherControls";
 import ExpandableEntityCard from "../components/ExpandableEntityCard";
 import FormField from "../components/FormField";
 import { displayStatusName } from "../lib/format";
@@ -51,6 +52,12 @@ import {
 } from "../lib/schoolingTruth";
 import { nextExclusiveExpandedKey } from "../lib/expandableEntity";
 import { listAcademicYears, type AcademicYearRecord } from "../services/schoolSettingsApi";
+import {
+  classHeadTeacherDisplayName,
+  classPatchKey,
+  formatHeadTeacherLine,
+} from "../lib/classHeadTeacher";
+import type { SchoolClass } from "../data/catalog";
 
 export default function ClassesScreen({ navigation }: any) {
   const { scrollContentPaddingBottom } = useFloatingTabBarLayout();
@@ -70,6 +77,7 @@ export default function ClassesScreen({ navigation }: any) {
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [expandedClassKey, setExpandedClassKey] = useState<string | null>(null);
+  const [classHeadTeacherPatches, setClassHeadTeacherPatches] = useState<Record<string, SchoolClass>>({});
   const [years, setYears] = useState<AcademicYearRecord[]>([]);
   const [offlineActionMessage, setOfflineActionMessage] = useState<string | null>(null);
   const classesUnavailable = classesSnapshot.status === "offline" || classesSnapshot.status === "error";
@@ -287,6 +295,16 @@ export default function ClassesScreen({ navigation }: any) {
             classesData,
           );
           const teacher = teachersData.find((teacherItem) => teacherItem.id === item.teacherId);
+          const patchKey = classPatchKey(item);
+          const displayItem = classHeadTeacherPatches[patchKey]
+            ? { ...item, ...classHeadTeacherPatches[patchKey] }
+            : item;
+          const headTeacherLine = formatHeadTeacherLine(
+            classHeadTeacherDisplayName(displayItem) ||
+              (displayItem.headTeacherCode || displayItem.headTeacher?.teacherCode
+                ? teacher?.name
+                : ""),
+          );
           const presenceBadge = resolveClassTodayPresenceBadge({
             studentsSnapshot,
             presencesSnapshot,
@@ -331,8 +349,17 @@ export default function ClassesScreen({ navigation }: any) {
                 </Text>
               ) : null}
               <Text style={styles.classTeacher}>
-                Professeur principal : {teacher?.name ?? "Non assigné"}
+                {headTeacherLine}
               </Text>
+              <ClassHeadTeacherControls
+                schoolClass={displayItem}
+                networkRequired={mutationsBlocked}
+                onBlockedMutation={handleBlockedNetworkAction}
+                onClassUpdated={(updated) => {
+                  const key = classPatchKey(updated) || patchKey;
+                  setClassHeadTeacherPatches((current) => ({ ...current, [key]: updated }));
+                }}
+              />
               {canOpenStudents ? (
                 <TouchableOpacity
                   style={styles.openButton}

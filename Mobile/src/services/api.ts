@@ -516,6 +516,36 @@ export function updateSchoolClass(
   });
 }
 
+export type HeadTeacherCandidate = {
+  teacherCode: string;
+  firstName: string;
+  lastName: string;
+  displayName: string;
+  assignedToCurrentClass?: boolean;
+  otherClassNames?: string[];
+  alreadyHeadTeacherHint?: string;
+};
+
+export function listClassHeadTeacherCandidates(classCode: string, q?: string) {
+  const query = q?.trim() ? `?q=${encodeURIComponent(q.trim())}` : "";
+  return request<HeadTeacherCandidate[]>(
+    `/classes/${encodeURIComponent(classCode)}/head-teacher/candidates${query}`,
+  );
+}
+
+export function assignClassHeadTeacher(classCode: string, teacherCode: string) {
+  return request<Record<string, unknown>>(`/classes/${encodeURIComponent(classCode)}/head-teacher`, {
+    method: "PUT",
+    body: JSON.stringify({ teacherCode }),
+  });
+}
+
+export function removeClassHeadTeacher(classCode: string) {
+  return request<Record<string, unknown>>(`/classes/${encodeURIComponent(classCode)}/head-teacher`, {
+    method: "DELETE",
+  });
+}
+
 export function enrollClassStudent(
   classCode: string,
   payload: {
