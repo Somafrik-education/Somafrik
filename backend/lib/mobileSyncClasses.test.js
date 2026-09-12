@@ -31,6 +31,10 @@ function classRow(id, classCode, overrides = {}) {
     status: "active",
     updatedAt: SAME_TS,
     tombstone: false,
+    headTeacherCode: null,
+    headTeacherFirstName: null,
+    headTeacherLastName: null,
+    headTeacherDisplayName: null,
     ...overrides,
   };
 }
@@ -208,6 +212,10 @@ test("cold sync : mode full, projection minimale, tombstone inactive", async () 
         "academicYearId",
         "classCode",
         "groupId",
+        "headTeacherCode",
+        "headTeacherDisplayName",
+        "headTeacherFirstName",
+        "headTeacherLastName",
         "id",
         "levelId",
         "name",
@@ -220,7 +228,48 @@ test("cold sync : mode full, projection minimale, tombstone inactive", async () 
     assert.equal(Object.hasOwn(item, "students"), false);
     assert.equal(Object.hasOwn(item, "teacher"), false);
     assert.equal(Object.hasOwn(item, "payload"), false);
+    assert.equal(item.headTeacherCode, null);
+    assert.equal(item.headTeacherDisplayName, null);
   }
+});
+
+test("projection L1 porte le professeur principal", async () => {
+  const result = await sync(adminPrincipal(), {
+    rows: {
+      "SCH-A": [
+        classRow(ID_A, "CLS-A", {
+          headTeacherCode: "SCH-A-ENS-0001",
+          headTeacherFirstName: "Awa",
+          headTeacherLastName: "Diop",
+          headTeacherDisplayName: "Awa DIOP",
+        }),
+      ],
+    },
+  });
+  assert.equal(result.body.items[0].headTeacherCode, "SCH-A-ENS-0001");
+  assert.equal(result.body.items[0].headTeacherDisplayName, "Awa DIOP");
+  assert.equal(result.body.items[0].headTeacherFirstName, "Awa");
+  assert.equal(result.body.items[0].headTeacherLastName, "Diop");
+  assert.equal(Object.hasOwn(result.body.items[0], "teacher"), false);
+});
+
+test("warm delta : affectation PP détectable via updatedAt", async () => {
+  const rows = {
+    "SCH-A": [classRow(ID_A, "CLS-A")],
+  };
+  const cold = await sync(adminPrincipal(), { rows });
+  rows["SCH-A"][0] = classRow(ID_A, "CLS-A", {
+    updatedAt: "2026-08-26T09:00:00.000Z",
+    headTeacherCode: "SCH-A-ENS-0001",
+    headTeacherFirstName: "Awa",
+    headTeacherLastName: "Diop",
+    headTeacherDisplayName: "Awa DIOP",
+  });
+  const warm = await sync(adminPrincipal(), { cursor: cold.body.nextCursor, rows });
+  assert.equal(warm.body.mode, "delta");
+  assert.equal(warm.body.items.length, 1);
+  assert.equal(warm.body.items[0].headTeacherCode, "SCH-A-ENS-0001");
+  assert.equal(warm.body.items[0].headTeacherDisplayName, "Awa DIOP");
 });
 
 test("warm delta : seulement les lignes strictement postérieures au curseur", async () => {

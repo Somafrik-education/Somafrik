@@ -37,6 +37,8 @@ export const MOBILE_MUTATION_INVENTORY = [
   { name: "updateClientsUser", method: "PATCH", path: "/backoffice/users/:id", class: "D", outbox: false, domain: "users" },
   { name: "createSchoolClass", method: "POST", path: "/classes", class: "D", outbox: false, domain: "classes" },
   { name: "updateSchoolClass", method: "PATCH", path: "/classes/:classCode", class: "A", outbox: false, domain: "classes" },
+  { name: "assignClassHeadTeacher", method: "PUT", path: "/classes/:classCode/head-teacher", class: "A", outbox: false, domain: "classes" },
+  { name: "removeClassHeadTeacher", method: "DELETE", path: "/classes/:classCode/head-teacher", class: "A", outbox: false, domain: "classes" },
   { name: "enrollClassStudent", method: "POST", path: "/classes/:classCode/students", class: "D", outbox: false, domain: "students" },
   { name: "updateSchoolStudent", method: "PATCH", path: "/students/:id", class: "A", outbox: false, domain: "students" },
   { name: "deleteSchoolStudent", method: "DELETE", path: "/students/:id", class: "A", outbox: false, domain: "students" },

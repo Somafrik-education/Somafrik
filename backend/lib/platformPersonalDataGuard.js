@@ -286,6 +286,9 @@ const PLATFORM_ADMIN_ALLOWED = Object.freeze([
   "GET /api/classes",
   "POST /api/classes",
   "PATCH /api/classes/:classCode",
+  "GET /api/classes/:classCode/head-teacher/candidates",
+  "PUT /api/classes/:classCode/head-teacher",
+  "DELETE /api/classes/:classCode/head-teacher",
   "GET /api/mobile-sync/l1/classes",
 ]);
 

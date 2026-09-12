@@ -16,6 +16,116 @@ const {
   isClassStructuralUniquenessViolation,
 } = require("../lib/classesUniqueness");
 const { writeTransactionalAudit, resolveTransactionalScope } = require("../lib/teacherTransactionalAudit");
+const {
+  formatHeadTeacherDisplayName,
+  UNASSIGNED_HEAD_TEACHER_LABEL,
+} = require("../lib/classHeadTeachersManagement");
+
+const CLASS_HEAD_TEACHER_LATERAL = `LEFT JOIN LATERAL (
+           SELECT t.id AS teacher_id,
+                  t.teacher_code,
+                  t.status AS teacher_status,
+                  u.first_name,
+                  u.last_name
+           FROM class_head_teachers cht
+           JOIN teachers t ON t.id = cht.teacher_id
+           LEFT JOIN users u ON u.id = t.user_id
+           WHERE cht.class_id = cl.id
+             AND cht.status = 'active'
+           LIMIT 1
+         ) ht ON TRUE`;
+
+const CLASS_SELECT = `SELECT cl.id,
+                cl.class_code,
+                cl.name,
+                cl.level,
+                cl.section,
+                cl.status,
+                cl.academic_year_id,
+                cl.level_id,
+                cl.stream_id,
+                cl.group_id,
+                cl.group_code,
+                cl.created_at,
+                cl.updated_at,
+                s.school_code,
+                ay.name AS academic_year_name,
+                el.name AS level_name,
+                es.name AS stream_name,
+                COUNT(e.id) FILTER (WHERE e.status = 'active')::int AS enrollment_count,
+                ht.teacher_id AS head_teacher_uuid,
+                ht.teacher_code AS head_teacher_code,
+                ht.teacher_status AS head_teacher_status,
+                ht.first_name AS head_teacher_first_name,
+                ht.last_name AS head_teacher_last_name
+         FROM classes cl
+         JOIN schools s ON s.id = cl.school_id
+         JOIN academic_years ay ON ay.id = cl.academic_year_id
+         LEFT JOIN education_levels el ON el.id = cl.level_id
+         LEFT JOIN education_streams es ON es.id = cl.stream_id
+         LEFT JOIN enrollments e ON e.class_id = cl.id
+         ${CLASS_HEAD_TEACHER_LATERAL}`;
+
+const CLASS_GROUP_BY = `cl.id, s.school_code, ay.name, el.name, es.name,
+                ht.teacher_id, ht.teacher_code, ht.teacher_status, ht.first_name, ht.last_name`;
+
+/**
+ * @param {any} row
+ */
+function mapClassRow(row) {
+  const classCode = row.class_code;
+  const classId = row.id ?? row.class_id ?? null;
+  const levelName = row.level_name ?? row.level ?? "";
+  const trackName = row.stream_name ?? "";
+  const groupCode = row.group_code ?? "";
+  const headTeacherCode = row.head_teacher_code ? String(row.head_teacher_code) : "";
+  const firstName = row.head_teacher_first_name ?? "";
+  const lastName = row.head_teacher_last_name ?? "";
+  const displayName = headTeacherCode
+    ? formatHeadTeacherDisplayName(firstName, lastName) || headTeacherCode
+    : "";
+  const headTeacher = headTeacherCode
+    ? {
+        teacherCode: headTeacherCode,
+        firstName,
+        lastName,
+        displayName,
+        status: row.head_teacher_status ?? null,
+      }
+    : null;
+  return {
+    id: classId,
+    classId,
+    publicId: classCode,
+    classCode,
+    name: row.name,
+    className: row.name,
+    level: levelName,
+    track: trackName,
+    groupCode,
+    section: groupCode || (row.section ?? ""),
+    levelId: row.level_id ?? null,
+    streamId: row.stream_id ?? null,
+    groupId: row.group_id ?? null,
+    status: row.status,
+    schoolCode: row.school_code,
+    academicYearId: row.academic_year_id,
+    academicYearName: row.academic_year_name,
+    schoolYear: row.academic_year_name,
+    students: Number(row.enrollment_count ?? 0),
+    teacher: displayName || UNASSIGNED_HEAD_TEACHER_LABEL,
+    teacherId: headTeacherCode,
+    headTeacher,
+    headTeacherCode: headTeacherCode || null,
+    headTeacherFirstName: headTeacher ? firstName : null,
+    headTeacherLastName: headTeacher ? lastName : null,
+    headTeacherDisplayName: displayName || null,
+    headTeacherStatus: headTeacher ? row.head_teacher_status ?? null : null,
+    presenceRate: 0,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
 
 /**
  * Dedicated PostgreSQL repository for establishment classes.
@@ -33,42 +143,6 @@ const { writeTransactionalAudit, resolveTransactionalScope } = require("../lib/t
  */
 function createClassesRepository(db) {
   /**
-   * @param {any} row
-   */
-  function mapClassRow(row) {
-    const classCode = row.class_code;
-    const classId = row.id ?? row.class_id ?? null;
-    const levelName = row.level_name ?? row.level ?? "";
-    const trackName = row.stream_name ?? "";
-    const groupCode = row.group_code ?? "";
-    return {
-      id: classId,
-      classId,
-      publicId: classCode,
-      classCode,
-      name: row.name,
-      className: row.name,
-      level: levelName,
-      track: trackName,
-      groupCode,
-      section: groupCode || (row.section ?? ""),
-      levelId: row.level_id ?? null,
-      streamId: row.stream_id ?? null,
-      groupId: row.group_id ?? null,
-      status: row.status,
-      schoolCode: row.school_code,
-      academicYearId: row.academic_year_id,
-      academicYearName: row.academic_year_name,
-      schoolYear: row.academic_year_name,
-      students: Number(row.enrollment_count ?? 0),
-      teacher: "Non assigne",
-      presenceRate: 0,
-      createdAt: row.created_at,
-      updatedAt: row.updated_at,
-    };
-  }
-
-  /**
    * Projection L1 mobile-sync : identifiants + statut + updatedAt.
    * Tombstone = status terminal canonique `inactive` (pas de DELETE physique).
    * @param {any} row
@@ -77,6 +151,12 @@ function createClassesRepository(db) {
     const status = row.status;
     const updatedAt =
       row.updated_at instanceof Date ? row.updated_at.toISOString() : row.updated_at;
+    const headTeacherCode = row.head_teacher_code ? String(row.head_teacher_code) : "";
+    const firstName = row.head_teacher_first_name ?? "";
+    const lastName = row.head_teacher_last_name ?? "";
+    const displayName = headTeacherCode
+      ? formatHeadTeacherDisplayName(firstName, lastName) || headTeacherCode
+      : "";
     return {
       id: row.id,
       classCode: row.class_code,
@@ -88,6 +168,10 @@ function createClassesRepository(db) {
       status,
       updatedAt,
       tombstone: status !== "active",
+      headTeacherCode: headTeacherCode || null,
+      headTeacherFirstName: headTeacherCode ? firstName || null : null,
+      headTeacherLastName: headTeacherCode ? lastName || null : null,
+      headTeacherDisplayName: displayName || null,
     };
   }
 
@@ -222,31 +306,6 @@ function createClassesRepository(db) {
     };
   }
 
-  const CLASS_SELECT = `SELECT cl.id,
-                cl.class_code,
-                cl.name,
-                cl.level,
-                cl.section,
-                cl.status,
-                cl.academic_year_id,
-                cl.level_id,
-                cl.stream_id,
-                cl.group_id,
-                cl.group_code,
-                cl.created_at,
-                cl.updated_at,
-                s.school_code,
-                ay.name AS academic_year_name,
-                el.name AS level_name,
-                es.name AS stream_name,
-                COUNT(e.id) FILTER (WHERE e.status = 'active')::int AS enrollment_count
-         FROM classes cl
-         JOIN schools s ON s.id = cl.school_id
-         JOIN academic_years ay ON ay.id = cl.academic_year_id
-         LEFT JOIN education_levels el ON el.id = cl.level_id
-         LEFT JOIN education_streams es ON es.id = cl.stream_id
-         LEFT JOIN enrollments e ON e.class_id = cl.id`;
-
   async function insertClass(executor, school, academicYear, offering, input) {
     const displayName = composeClassDisplayName({
       levelName: offering.levelName,
@@ -318,12 +377,31 @@ function createClassesRepository(db) {
     /**
      * @param {string} schoolCode
      */
+    async getByClassCode(classCodeParam, schoolCode) {
+      const classCode = requireClassCodeParam(classCodeParam);
+      const school = await requireSchool(schoolCode);
+      const row = await db.one(
+        `${CLASS_SELECT}
+         WHERE cl.class_code = $1 AND cl.school_id = $2
+         GROUP BY ${CLASS_GROUP_BY}
+         LIMIT 1`,
+        [classCode, school.id],
+      );
+      if (!row) {
+        throw createHttpError(404, "Classe introuvable.");
+      }
+      return mapClassRow(row);
+    },
+
+    /**
+     * @param {string} schoolCode
+     */
     async listBySchoolCode(schoolCode) {
       const school = await requireSchool(schoolCode);
       const rows = await db.all(
         `${CLASS_SELECT}
          WHERE cl.school_id = $1
-         GROUP BY cl.id, s.school_code, ay.name, el.name, es.name
+         GROUP BY ${CLASS_GROUP_BY}
          ORDER BY cl.name ASC, cl.class_code ASC`,
         [school.id],
       );
@@ -384,8 +462,12 @@ function createClassesRepository(db) {
                 cl.level_id,
                 cl.stream_id,
                 cl.group_id,
-                cl.updated_at
+                cl.updated_at,
+                ht.teacher_code AS head_teacher_code,
+                ht.first_name AS head_teacher_first_name,
+                ht.last_name AS head_teacher_last_name
          FROM classes cl
+         ${CLASS_HEAD_TEACHER_LATERAL}
          WHERE ${conditions.join(" AND ")}
          ORDER BY cl.updated_at ASC, cl.id ASC
          LIMIT $${params.length}`,
@@ -488,7 +570,7 @@ function createClassesRepository(db) {
         const current = await executor.one(
           `${CLASS_SELECT}
            WHERE cl.class_code = $1 AND cl.school_id = $2
-           GROUP BY cl.id, s.school_code, ay.name, el.name, es.name
+           GROUP BY ${CLASS_GROUP_BY}
            LIMIT 1`,
           [classCode, school.id],
         );
@@ -586,6 +668,11 @@ function createClassesRepository(db) {
           level_name: levelName,
           stream_name: streamName,
           enrollment_count: enrollment?.enrollment_count ?? 0,
+          head_teacher_uuid: current.head_teacher_uuid,
+          head_teacher_code: current.head_teacher_code,
+          head_teacher_status: current.head_teacher_status,
+          head_teacher_first_name: current.head_teacher_first_name,
+          head_teacher_last_name: current.head_teacher_last_name,
         });
 
         if (wantsAudit) {
@@ -619,4 +706,9 @@ function createClassesRepository(db) {
   };
 }
 
-module.exports = { createClassesRepository };
+module.exports = {
+  createClassesRepository,
+  mapClassRow,
+  CLASS_SELECT,
+  CLASS_GROUP_BY,
+};

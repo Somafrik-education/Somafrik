@@ -95,6 +95,15 @@ export type SchoolClass = {
   level: string;
   track: string;
   teacherId: string;
+  teacher?: string;
+  headTeacherDisplayName?: string | null;
+  headTeacherCode?: string | null;
+  headTeacher?: {
+    teacherCode?: string;
+    firstName?: string;
+    lastName?: string;
+    displayName?: string;
+  } | null;
   academicYearId?: string;
   levelId?: string | null;
   streamId?: string | null;

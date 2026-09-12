@@ -275,6 +275,28 @@ CREATE TABLE IF NOT EXISTS teacher_assignments (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- Professeur principal d'une classe : une seule affectation active.
+-- Fin = status inactive + ended_at (historique conservé).
+CREATE TABLE IF NOT EXISTS class_head_teachers (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  school_id UUID NOT NULL REFERENCES schools(id),
+  class_id UUID NOT NULL REFERENCES classes(id),
+  teacher_id UUID NOT NULL REFERENCES teachers(id),
+  academic_year_id UUID NOT NULL REFERENCES academic_years(id),
+  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'inactive')),
+  assigned_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  ended_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_class_head_teachers_one_active
+  ON class_head_teachers (class_id)
+  WHERE status = 'active';
+
+CREATE INDEX IF NOT EXISTS idx_class_head_teachers_school_teacher
+  ON class_head_teachers (school_id, teacher_id, status);
+
 ALTER TABLE teacher_assignments ADD COLUMN IF NOT EXISTS assignment_role TEXT NOT NULL DEFAULT 'primary';
 
 -- Unicité des affectations ACTIVES uniquement : index partiel créé APRÈS inventaire fail-safe

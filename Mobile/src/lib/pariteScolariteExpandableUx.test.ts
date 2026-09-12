@@ -48,7 +48,7 @@ assert.match(classesScreen, /SCOLARITE_COPY\.openClassStudents/);
 assert.match(read("lib/schoolingTruth.ts"), /openClassStudents: "Voir les élèves"/);
 assert.match(classesScreen, /CLASS_OPEN_STUDENTS_TEST_ID/);
 assert.match(classesScreen, /<ClassMutationControls[\s\S]*row=\{item\}/);
-assert.match(classesScreen, /Professeur principal/);
+assert.match(classesScreen, /formatHeadTeacherLine|Professeur principal/);
 assert.match(classesScreen, /Code :/);
 assert.doesNotMatch(
   classesScreen,
