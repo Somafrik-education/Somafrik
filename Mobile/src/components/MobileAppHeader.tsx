@@ -206,7 +206,7 @@ const styles = StyleSheet.create({
     position: "relative",
   },
   badge: {
-    position: absolute,
+    position: "absolute",
     top: 4,
     right: 4,
     minWidth: 16,
