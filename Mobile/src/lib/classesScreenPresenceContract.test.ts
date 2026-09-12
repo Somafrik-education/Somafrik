@@ -37,7 +37,8 @@ function run() {
   assert.match(helper, /filterStudentsByClassIdentity/);
   assert.match(helper, /sameAttendanceDay/);
   assert.match(helper, /presenceBelongsToClass/);
-  assert.match(helper, /belongsToSchool/);
+  assert.match(helper, /presenceBelongsToSchool/);
+  assert.match(helper, /studentBelongsToSchool/);
   assert.match(helper, /schoolId\?: string \| null/);
   assert.doesNotMatch(
     helper,
