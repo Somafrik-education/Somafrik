@@ -92,9 +92,9 @@ function main() {
   assert.match(classBadge, /CLASS_EMPTY_PRESENCE_BADGE/);
   assert.match(classBadge, /CLASS_UNSET_PRESENCE_LABEL = "Non saisi"/);
   assert.match(classBadge, /badgeText: `Présence \$\{rate\} %`/);
-  assert.match(classBadge, /studentBelongsToSchool/);
+  assert.match(classBadge, /belongsToSchool/);
   assert.match(classBadge, /presenceBelongsToClass/);
-  assert.match(classBadge, /presenceBelongsToSchool/);
+  assert.match(classBadge, /schoolId\?: string \| null/);
   assert.doesNotMatch(
     classBadge,
     /if \(expected && rowSchool\)[\s\S]{0,120}return true;/,

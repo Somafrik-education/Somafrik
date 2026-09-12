@@ -11,7 +11,7 @@
  * - appel confirmé aujourd'hui (recorded === expected) → taux du jour
  * - ligne absente ≠ élève absent
  * - Présent + Retard = assistés ; Absent + Justifié = non assistés
- * - scope : classId actif + date du jour + tenant
+ * - scope : classId actif + date du jour + tenant (schoolId canonique en priorité)
  */
 import type { SchoolClass, Student } from "../data/catalog";
 import {
@@ -107,12 +107,21 @@ function unavailableBadge(periodKey: string): ClassTodayPresenceBadge {
   };
 }
 
-function presenceBelongsToSchool(row: ClassPresenceRow, schoolCode?: string | null) {
-  const expected = asRef(schoolCode);
-  if (!expected) return false;
-  const rowSchool = asRef(row.schoolCode);
-  if (!rowSchool) return false;
-  return normalizeKey(rowSchool) === normalizeKey(expected);
+function belongsToSchool(
+  row: { schoolId?: string | null; schoolCode?: string | null },
+  schoolId?: string | null,
+  schoolCode?: string | null,
+) {
+  const expectedId = asRef(schoolId);
+  const rowId = asRef(row.schoolId);
+  if (expectedId && rowId) {
+    return normalizeKey(rowId) === normalizeKey(expectedId);
+  }
+
+  const expectedCode = asRef(schoolCode);
+  const rowCode = asRef(row.schoolCode);
+  if (!expectedCode || !rowCode) return false;
+  return normalizeKey(rowCode) === normalizeKey(expectedCode);
 }
 
 function presenceBelongsToClass(
@@ -126,14 +135,6 @@ function presenceBelongsToClass(
   const rowClassCode = asRef(row.classCode);
   if (classCode && rowClassCode) return rowClassCode === classCode;
   return false;
-}
-
-function studentBelongsToSchool(student: ExpectedStudent, schoolCode?: string | null) {
-  const expected = asRef(schoolCode);
-  if (!expected) return false;
-  const studentSchool = asRef(student.schoolCode);
-  if (!studentSchool) return false;
-  return normalizeKey(studentSchool) === normalizeKey(expected);
 }
 
 export function classPresenceBadgeTestId(classRef: { id?: string; name?: string }) {
@@ -152,6 +153,7 @@ export function resolveClassTodayPresenceBadge(input: {
   students: readonly ExpectedStudent[];
   classes?: SchoolClass[];
   schoolClass: Pick<SchoolClass, "id" | "publicId" | "classCode" | "name">;
+  schoolId?: string | null;
   schoolCode?: string | null;
   timeZone?: string | null;
   now?: Date;
@@ -172,8 +174,8 @@ export function resolveClassTodayPresenceBadge(input: {
   );
   const expectedStudents = identityStudents.filter(
     (student) =>
-      studentBelongsToSchool(student, input.schoolCode) &&
-      isExpectedStudentForToday(student, input.schoolCode),
+      belongsToSchool(student, input.schoolId, input.schoolCode) &&
+      isExpectedStudentForToday(student),
   );
   const studentIds = expectedStudents.map((student) => asRef(student.id)).filter(Boolean);
 
@@ -203,7 +205,7 @@ export function resolveClassTodayPresenceBadge(input: {
   const todayRows = input.presencesSnapshot.data.filter(
     (row) =>
       sameAttendanceDay(row.date, periodKey) &&
-      presenceBelongsToSchool(row, input.schoolCode) &&
+      belongsToSchool(row, input.schoolId, input.schoolCode) &&
       presenceBelongsToClass(row, input.schoolClass),
   );
 
