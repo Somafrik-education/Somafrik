@@ -23,6 +23,9 @@ const classesApiMock = vi.hoisted(() => ({
   list: vi.fn(),
   create: vi.fn(),
   update: vi.fn(),
+  listHeadTeacherCandidates: vi.fn(),
+  assignHeadTeacher: vi.fn(),
+  removeHeadTeacher: vi.fn(),
 }));
 
 const apiGetMock = vi.hoisted(() => vi.fn());
@@ -65,7 +68,7 @@ vi.mock("../../context/ActiveSchoolContext", () => ({
 }));
 
 vi.mock("../../lib/usePermissionContext", () => ({
-  usePermissionContext: () => ({ user: sessionStore.user }),
+  usePermissionContext: () => ({ user: sessionStore.user, rolePermissions: {} }),
 }));
 
 vi.mock("../../lib/permissions", async (importOriginal) => {
@@ -78,6 +81,10 @@ vi.mock("../../lib/permissions", async (importOriginal) => {
 
 vi.mock("../../components/ui/Toast", () => ({
   useToast: () => ({ showToast: vi.fn() }),
+}));
+
+vi.mock("../../components/ui/ConfirmDialog", () => ({
+  useConfirm: () => ({ confirm: vi.fn(async () => true) }),
 }));
 
 vi.mock("../../lib/classesApi", () => ({
@@ -247,6 +254,9 @@ describe("ClassesListPage (CRUD /api/classes)", () => {
     ]);
     classesApiMock.create.mockReset();
     classesApiMock.update.mockReset();
+    classesApiMock.listHeadTeacherCandidates.mockResolvedValue([]);
+    classesApiMock.assignHeadTeacher.mockReset();
+    classesApiMock.removeHeadTeacher.mockReset();
     academicYearsApiMock.list.mockResolvedValue([
       {
         id: "ay-1",
@@ -587,5 +597,139 @@ describe("ClassesListPage (CRUD /api/classes)", () => {
     await user.selectOptions(screen.getByLabelText(/^Niveau/i), "level-1h");
     await user.selectOptions(screen.getByLabelText(/^Filière/i), "stream-sci");
     expect(screen.getByText("Nom généré : 1ère Humanité Scientifique A")).toBeInTheDocument();
+  });
+
+  it("affiche Affecter un professeur principal quand aucun n'est assigné", async () => {
+    renderPage();
+    expect((await screen.findAllByText("Professeur principal : Non assigné")).length).toBeGreaterThan(0);
+    const assignButtons = screen.getAllByRole("button", { name: "Affecter un professeur principal" });
+    expect(assignButtons.length).toBeGreaterThan(0);
+    const eleves = screen.getAllByRole("link", { name: "Élèves" });
+    expect(assignButtons[0].compareDocumentPosition(eleves[0]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("masque le bouton d'affectation pour un enseignant sans droit", async () => {
+    sessionStore.user = {
+      ...sessionStore.user,
+      role: "Enseignant",
+      permissions: ["Classes:READ", "Voir classes"],
+    };
+    renderPage();
+    await screen.findByText("6ème A");
+    expect(screen.queryByRole("button", { name: "Affecter un professeur principal" })).not.toBeInTheDocument();
+    expect(screen.getAllByText("Professeur principal : Non assigné").length).toBeGreaterThan(0);
+  });
+
+  it("masque le bouton d'affectation si Admin School a les écritures révoquées", async () => {
+    sessionStore.user = {
+      ...sessionStore.user,
+      role: "Admin School",
+      permissions: ["Classes:READ", "Voir classes"],
+    };
+    renderPage();
+    await screen.findByText("6ème A");
+    expect(screen.queryByRole("button", { name: "Affecter un professeur principal" })).not.toBeInTheDocument();
+  });
+
+  it("affecte un professeur principal et met à jour la carte sans reload", async () => {
+    const user = userEvent.setup();
+    classesApiMock.listHeadTeacherCandidates.mockResolvedValue([
+      {
+        teacherCode: "SCH-A-ENS-0001",
+        firstName: "Awa",
+        lastName: "Diop",
+        displayName: "Awa DIOP",
+        otherClassNames: [],
+      },
+      {
+        teacherCode: "SCH-A-ENS-0002",
+        firstName: "Hors",
+        lastName: "Tenant",
+        displayName: "Hors TENANT",
+        otherClassNames: [],
+      },
+    ]);
+    classesApiMock.assignHeadTeacher.mockResolvedValue({
+      id: "CLS-1",
+      publicId: "CLS-1",
+      classCode: "CLS-1",
+      name: "6ème A",
+      level: "6ème",
+      section: "A",
+      track: "",
+      groupCode: "A",
+      status: "active",
+      schoolCode: LOGIN_A,
+      academicYearId: "ay-1",
+      academicYearName: "2025-2026",
+      schoolYear: "2025-2026",
+      students: 2,
+      teacherId: "SCH-A-ENS-0001",
+      headTeacherCode: "SCH-A-ENS-0001",
+      headTeacherDisplayName: "Awa DIOP",
+      teacher: "Awa DIOP",
+    });
+
+    renderPage();
+    await screen.findByText("6ème A");
+    await user.click(screen.getAllByRole("button", { name: "Affecter un professeur principal" })[0]);
+    expect(await screen.findByText("Awa DIOP")).toBeInTheDocument();
+    expect(screen.queryByText("Hors TENANT")).toBeInTheDocument();
+    await user.click(screen.getByLabelText(/Awa DIOP/i));
+    await user.click(screen.getByRole("button", { name: "Confirmer l'affectation" }));
+    await waitFor(() => {
+      expect(classesApiMock.assignHeadTeacher).toHaveBeenCalledWith("CLS-1", "SCH-A-ENS-0001");
+    });
+    expect(await screen.findByText("Professeur principal : Awa DIOP")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Modifier l.affectation/ })).toBeInTheDocument();
+  });
+
+  it("restaure l'état précédent si l'affectation échoue", async () => {
+    const user = userEvent.setup();
+    classesApiMock.listHeadTeacherCandidates.mockResolvedValue([
+      {
+        teacherCode: "SCH-A-ENS-0001",
+        firstName: "Awa",
+        lastName: "Diop",
+        displayName: "Awa DIOP",
+        otherClassNames: [],
+      },
+    ]);
+    classesApiMock.assignHeadTeacher.mockRejectedValue(new Error("network down"));
+
+    renderPage();
+    await screen.findByText("6ème A");
+    await user.click(screen.getAllByRole("button", { name: "Affecter un professeur principal" })[0]);
+    await screen.findByText("Awa DIOP");
+    await user.click(screen.getByLabelText(/Awa DIOP/i));
+    await user.click(screen.getByRole("button", { name: "Confirmer l'affectation" }));
+    await waitFor(() => expect(classesApiMock.assignHeadTeacher).toHaveBeenCalled());
+    expect(screen.getAllByText("Professeur principal : Non assigné").length).toBeGreaterThan(0);
+    expect(screen.queryByText("Professeur principal : Awa DIOP")).not.toBeInTheDocument();
+  });
+
+  it("n'affiche pas le bouton d'affectation sur une classe désactivée", async () => {
+    classesApiMock.list.mockResolvedValue([
+      {
+        id: "CLS-OFF",
+        publicId: "CLS-OFF",
+        classCode: "CLS-OFF",
+        name: "4ème Z",
+        level: "4ème",
+        section: "Z",
+        track: "",
+        groupCode: "Z",
+        status: "inactive",
+        schoolCode: LOGIN_A,
+        academicYearId: "ay-1",
+        academicYearName: "2025-2026",
+        schoolYear: "2025-2026",
+        students: 0,
+      },
+    ]);
+    renderPage();
+    await screen.findByText("4ème Z");
+    expect(screen.queryByRole("button", { name: "Affecter un professeur principal" })).not.toBeInTheDocument();
+    expect(screen.getByText("Professeur principal : Non assigné")).toBeInTheDocument();
   });
 });

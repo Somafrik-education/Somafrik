@@ -1588,6 +1588,21 @@ class FallbackRepository {
     return clone(current);
   }
 
+  async listClassHeadTeacherCandidates() {
+    const { headTeacherPostgresRequired } = require("../lib/classHeadTeachersManagement");
+    throw headTeacherPostgresRequired();
+  }
+
+  async assignClassHeadTeacher() {
+    const { headTeacherPostgresRequired } = require("../lib/classHeadTeachersManagement");
+    throw headTeacherPostgresRequired();
+  }
+
+  async removeClassHeadTeacher() {
+    const { headTeacherPostgresRequired } = require("../lib/classHeadTeachersManagement");
+    throw headTeacherPostgresRequired();
+  }
+
   getClassStudentsRepository() {
     if (!this._classStudentsRepo) {
       const { createClassStudentsRepository } = require("./classStudentsRepository");

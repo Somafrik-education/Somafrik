@@ -8,6 +8,7 @@ const assert = require("node:assert/strict");
 const { Pool } = require("pg");
 const { createClassesRepository } = require("../db/classesRepository");
 const { createClassStudentsRepository } = require("../db/classStudentsRepository");
+const { CLASS_HEAD_TEACHERS_LIST_JOIN_FIXTURE_SQL } = require("./classHeadTeachersManagement");
 const { TokenService } = require("../services/tokenService");
 const { TenantScopeService } = require("../services/tenantScopeService");
 const { handleMobileSyncL1Students } = require("./mobileSyncStudents");
@@ -205,6 +206,7 @@ async function setupFixture(pool) {
   await pool.query(`
     ALTER TABLE students ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES users(id);
   `);
+  await pool.query(CLASS_HEAD_TEACHERS_LIST_JOIN_FIXTURE_SQL);
   await pool.query(`
     TRUNCATE contact_relations, contacts, enrollments, students, teacher_assignments,
              teachers, user_roles, users, subjects, classes, academic_years, schools, countries CASCADE

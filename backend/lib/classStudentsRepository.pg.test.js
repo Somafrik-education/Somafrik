@@ -11,6 +11,7 @@ const path = require("node:path");
 const { Pool } = require("pg");
 const { createClassesRepository } = require("../db/classesRepository");
 const { createClassStudentsRepository } = require("../db/classStudentsRepository");
+const { CLASS_HEAD_TEACHERS_LIST_JOIN_FIXTURE_SQL } = require("./classHeadTeachersManagement");
 const { createTxAdapter } = require("../db/txAdapter");
 const { hashSecret, verifySecret } = require("../services/credentialService");
 const { studentIdentityInitials } = require("./studentCanonicalIdentifier");
@@ -272,6 +273,7 @@ async function setupFixture(pool) {
     ALTER TABLE classes ADD COLUMN IF NOT EXISTS group_id UUID REFERENCES education_class_groups(id);
     ALTER TABLE classes ADD COLUMN IF NOT EXISTS group_code TEXT;
   `);
+  await pool.query(CLASS_HEAD_TEACHERS_LIST_JOIN_FIXTURE_SQL);
 
   await pool.query(
     "TRUNCATE enrollments, users, students, classes, school_class_groups, school_streams, school_levels, education_class_groups, education_streams, education_levels, academic_years, schools, countries CASCADE",

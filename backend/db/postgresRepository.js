@@ -96,6 +96,7 @@ class PostgresRepository {
     await this.ensureAttendanceCanonicalUniqueness();
     await this.ensureNotesCanonicalPersistence();
     await this.ensureClassesDomainConstraints();
+    await this.ensureClassHeadTeachersCanonicalSchema();
     await this.ensureTeachersDomainConstraints();
     await this.ensureTeacherAssignmentsActiveUniqueness();
     await this.ensureUsersLoginIdentityConstraints();
@@ -468,6 +469,11 @@ class PostgresRepository {
 
     await this.query(CREATE_CLASSES_NAME_UNIQUE_INDEX_SQL);
     await this.query(ENSURE_CLASSES_STATUS_CHECK_SQL);
+  }
+
+  async ensureClassHeadTeachersCanonicalSchema() {
+    const { CLASS_HEAD_TEACHERS_SCHEMA_SQL } = require("../lib/classHeadTeachersManagement");
+    await this.query(CLASS_HEAD_TEACHERS_SCHEMA_SQL);
   }
 
   /**
@@ -6809,6 +6815,49 @@ class PostgresRepository {
 
   async updateSchoolClass(classCode, schoolCode, body, principal, auditMeta) {
     const updated = await this.getClassesRepository().update(classCode, schoolCode, body, principal, auditMeta);
+    this.cachedDataset = null;
+    return updated;
+  }
+
+  getClassHeadTeachersRepository() {
+    if (!this._classHeadTeachersRepository) {
+      const { createClassHeadTeachersRepository } = require("./classHeadTeachersRepository");
+      this._classHeadTeachersRepository = createClassHeadTeachersRepository({
+        one: (sql, params) => this.one(sql, params),
+        all: (sql, params) => this.all(sql, params),
+        query: (sql, params) => this.query(sql, params),
+        getSchoolByCode: (code) => this.getSchoolByCode(code),
+        withTransaction: (fn) => this.withTransaction(fn),
+        createTxScope: (tx) => this.createTxScope(tx),
+        recordAudit: (payload, tx) => this.recordAudit(payload, tx),
+      });
+    }
+    return this._classHeadTeachersRepository;
+  }
+
+  listClassHeadTeacherCandidates(classCode, schoolCode, options) {
+    return this.getClassHeadTeachersRepository().listCandidates(classCode, schoolCode, options);
+  }
+
+  async assignClassHeadTeacher(classCode, schoolCode, body, principal, auditMeta) {
+    const updated = await this.getClassHeadTeachersRepository().assign(
+      classCode,
+      schoolCode,
+      body,
+      principal,
+      auditMeta,
+    );
+    this.cachedDataset = null;
+    return updated;
+  }
+
+  async removeClassHeadTeacher(classCode, schoolCode, principal, auditMeta) {
+    const updated = await this.getClassHeadTeachersRepository().remove(
+      classCode,
+      schoolCode,
+      principal,
+      auditMeta,
+    );
     this.cachedDataset = null;
     return updated;
   }
