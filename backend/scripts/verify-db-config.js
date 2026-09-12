@@ -22,9 +22,12 @@ const path = require("path");
 const ROOT = path.join(__dirname, "..", "..");
 const BACKEND = path.join(__dirname, "..");
 
-const {
+  const {
   DbConfigError,
   parseDatabasePort,
+  parsePoolMax,
+  DEFAULT_DB_POOL_MAX,
+  MAX_DB_POOL_MAX,
   redactDatabaseUrl,
   sanitizeDbErrorMessage,
   resolveDatabaseConfig,
@@ -68,6 +71,7 @@ function runUnitValidationTests() {
   assert.strictEqual(discrete.source, "DISCRETE");
   assert.strictEqual(discrete.host, "db.internal");
   assert.strictEqual(discrete.port, 5432);
+  assert.strictEqual(discrete.poolConfig.max, 5);
   assert.ok(!discrete.redactedConnectionString.includes("Strong-DB-Pass"));
   console.log("OK unit: configuration discrète valide");
 
@@ -75,6 +79,7 @@ function runUnitValidationTests() {
   assert.doesNotThrow(() => assertDatabaseConfiguration(validUrlEnv()));
   const fromUrl = resolveDatabaseConfig(validUrlEnv());
   assert.strictEqual(fromUrl.source, "DATABASE_URL");
+  assert.strictEqual(fromUrl.poolConfig.max, 5);
   assert.ok(fromUrl.redactedConnectionString.includes("***"));
   console.log("OK unit: DATABASE_URL valide");
 
@@ -101,6 +106,28 @@ function runUnitValidationTests() {
   );
   assert.ok(badPortViolations.some((v) => /DB_PORT invalide/i.test(v)));
   console.log("OK unit: ports invalides → FAIL");
+
+  assert.strictEqual(parsePoolMax(""), DEFAULT_DB_POOL_MAX);
+  assert.strictEqual(parsePoolMax(undefined), DEFAULT_DB_POOL_MAX);
+  assert.strictEqual(parsePoolMax("4"), 4);
+  const customPool = resolveDatabaseConfig(validDiscreteEnv({ DB_POOL_MAX: "4" }));
+  assert.strictEqual(customPool.poolConfig.max, 4);
+  for (const bad of ["abc", "0", "-1", "7", "15", "1.5", "6_000"]) {
+    assert.throws(
+      () => parsePoolMax(bad, "DB_POOL_MAX"),
+      (error) => error instanceof DbConfigError,
+      `DB_POOL_MAX ${bad} doit échouer`,
+    );
+  }
+  const badPoolViolations = collectDatabaseConfigViolations(
+    validDiscreteEnv({ DB_POOL_MAX: "15" }),
+  );
+  assert.ok(badPoolViolations.some((v) => /DB_POOL_MAX invalide/i.test(v)));
+  assert.ok(
+    MAX_DB_POOL_MAX * 2 < 15,
+    "le plafond par instance doit laisser une marge au rolling deploy (pooler session 15)",
+  );
+  console.log("OK unit: DB_POOL_MAX défaut conservateur + valeurs invalides → FAIL");
 
   // Production + configuration incomplète
   const prodIncomplete = collectDatabaseConfigViolations({

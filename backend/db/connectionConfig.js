@@ -9,6 +9,10 @@
 const MIN_PORT = 1;
 const MAX_PORT = 65535;
 const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "::1", "0.0.0.0"]);
+/** Pooler session distant : 15 clients. Défaut conservateur pour laisser une marge au rolling deploy (2 instances). */
+const DEFAULT_DB_POOL_MAX = 5;
+const MIN_DB_POOL_MAX = 1;
+const MAX_DB_POOL_MAX = 6;
 
 class DbConfigError extends Error {
   constructor(message) {
@@ -49,6 +53,25 @@ function parseDatabasePort(raw, fieldName = "DB_PORT") {
     );
   }
   return port;
+}
+
+function parsePoolMax(raw, fieldName = "DB_POOL_MAX") {
+  if (raw == null || String(raw).trim() === "") {
+    return DEFAULT_DB_POOL_MAX;
+  }
+  const text = String(raw).trim();
+  if (!/^\d+$/.test(text)) {
+    throw new DbConfigError(
+      `${fieldName} invalide : un entier entre ${MIN_DB_POOL_MAX} et ${MAX_DB_POOL_MAX} est requis.`,
+    );
+  }
+  const max = Number(text);
+  if (!Number.isInteger(max) || max < MIN_DB_POOL_MAX || max > MAX_DB_POOL_MAX) {
+    throw new DbConfigError(
+      `${fieldName} invalide : un entier entre ${MIN_DB_POOL_MAX} et ${MAX_DB_POOL_MAX} est requis.`,
+    );
+  }
+  return max;
 }
 
 function redactDatabaseUrl(url) {
@@ -225,6 +248,7 @@ function resolveDatabaseConfig(env = process.env) {
     if (!database) throw new DbConfigError("DATABASE_URL : nom de base manquant.");
 
     const ssl = buildPoolSslOption(sslPolicy);
+    const poolMax = parsePoolMax(readEnv(env, "DB_POOL_MAX"));
     return {
       connectionString: databaseUrl,
       host,
@@ -234,8 +258,10 @@ function resolveDatabaseConfig(env = process.env) {
       ssl,
       source: "DATABASE_URL",
       redactedConnectionString: redactDatabaseUrl(databaseUrl),
+      poolMax,
       poolConfig: {
         connectionString: databaseUrl,
+        max: poolMax,
         ...(ssl ? { ssl } : {}),
       },
     };
@@ -264,6 +290,7 @@ function resolveDatabaseConfig(env = process.env) {
     `postgresql://${encodeURIComponent(user)}:${encodeURIComponent(password)}` +
     `@${host}:${port}/${encodeURIComponent(database)}`;
   const ssl = buildPoolSslOption(sslPolicy);
+  const poolMax = parsePoolMax(readEnv(env, "DB_POOL_MAX"));
 
   return {
     connectionString,
@@ -274,8 +301,10 @@ function resolveDatabaseConfig(env = process.env) {
     ssl,
     source: "DISCRETE",
     redactedConnectionString: redactDatabaseUrl(connectionString),
+    poolMax,
     poolConfig: {
       connectionString,
+      max: poolMax,
       ...(ssl ? { ssl } : {}),
     },
   };
@@ -333,6 +362,12 @@ function collectDatabaseConfigViolations(env = process.env) {
     violations.push(sanitizeDbErrorMessage(error));
   }
 
+  try {
+    parsePoolMax(readEnv(env, "DB_POOL_MAX"));
+  } catch (error) {
+    violations.push(sanitizeDbErrorMessage(error));
+  }
+
   if (isMemoryFallbackAllowed(env)) {
     return violations;
   }
@@ -362,11 +397,15 @@ function assertDatabaseConfiguration(env = process.env) {
 module.exports = {
   MIN_PORT,
   MAX_PORT,
+  DEFAULT_DB_POOL_MAX,
+  MIN_DB_POOL_MAX,
+  MAX_DB_POOL_MAX,
   DbConfigError,
   isProductionEnvironment,
   isMemoryFallbackAllowed,
   isDatabaseRequired,
   parseDatabasePort,
+  parsePoolMax,
   redactDatabaseUrl,
   sanitizeDbErrorMessage,
   resolveSslPolicy,
