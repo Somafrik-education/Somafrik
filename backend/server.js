@@ -18,8 +18,8 @@ const { GradeBookService } = require("./services/gradeBookService");
 const { toPublicSchool } = require("./lib/publicSchool");
 const {
   presentSchoolLogoFields,
-  saveSchoolLogo,
-  deleteSchoolLogo,
+  commitSchoolLogoUpload,
+  commitSchoolLogoDelete,
   readSchoolLogoFile,
 } = require("./lib/schoolLogo");
 const { MvpBusinessService } = require("./services/mvpBusinessService");
@@ -3473,9 +3473,13 @@ app.put(
     const buffer = Buffer.isBuffer(req.body) ? req.body : Buffer.from(req.body ?? []);
     const fileName = req.get("x-filename") || req.get("x-file-name") || "logo.png";
     const mimeType = req.get("x-mime-type") || req.get("content-type") || "";
-    const saved = await saveSchoolLogo({ school, buffer, fileName, mimeType });
-    const next = { ...school, logoUrl: saved.storageKey, updatedAt: new Date().toISOString() };
-    const savedSchool = await repository.persistEstablishment(next);
+    const { school: savedSchool } = await commitSchoolLogoUpload({
+      school,
+      buffer,
+      fileName,
+      mimeType,
+      persistEstablishment: (record) => repository.persistEstablishment(record),
+    });
     await auditService.record(req, "update_establishment_logo", "school", savedSchool.code);
     res.json({ school: presentSchoolLogoFields(savedSchool) });
   }),
@@ -3492,9 +3496,10 @@ app.delete(
     const scopedState = { ...state, schools };
     const school = establishmentService.get(req.params.code, scopedState, req.principal);
     establishmentService.assertCanMutateLogo(req.principal, school);
-    await deleteSchoolLogo(school);
-    const next = { ...school, logoUrl: "", updatedAt: new Date().toISOString() };
-    const savedSchool = await repository.persistEstablishment(next);
+    const savedSchool = await commitSchoolLogoDelete({
+      school,
+      persistEstablishment: (record) => repository.persistEstablishment(record),
+    });
     await auditService.record(req, "delete_establishment_logo", "school", savedSchool.code);
     res.json({ school: presentSchoolLogoFields(savedSchool) });
   }),

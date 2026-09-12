@@ -70,3 +70,16 @@ test("PATCH établissements n'accepte plus logoUrl comme champ profil", () => {
     /ESTABLISHMENT_PROFILE_PATCH_FIELDS[\s\S]{0,200}"logoUrl"/,
   );
 });
+
+test("routes logo : persist DB avant nettoyage fichier", () => {
+  const server = read("backend/server.js");
+  const lib = read("backend/lib/schoolLogo.js");
+  assert.match(server, /commitSchoolLogoUpload/);
+  assert.match(server, /commitSchoolLogoDelete/);
+  assert.doesNotMatch(
+    lib,
+    /writeFile[\s\S]{0,200}previousKey[\s\S]{0,80}removeStoredLogo/,
+  );
+  assert.match(lib, /await persistEstablishment\(next\);[\s\S]{0,80}removeStoredLogo\(previousKey\)/);
+  assert.match(lib, /removeStoredLogo\(saved\.storageKey\);[\s\S]{0,40}throw error/);
+});

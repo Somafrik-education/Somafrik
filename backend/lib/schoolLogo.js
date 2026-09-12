@@ -6,6 +6,7 @@
  * Le backend peut générer un chemin interne `/api/schools/:code/logo` pour servir le fichier.
  */
 
+const { randomUUID } = require("node:crypto");
 const fs = require("node:fs");
 const fsp = require("node:fs/promises");
 const path = require("node:path");
@@ -130,7 +131,7 @@ function storageKeyForSchool(school, mimeType) {
   if (!ext) {
     throw createLogoError(400, "Type de fichier non autorisé.");
   }
-  return `${SCHOOL_LOGO_PREFIX}/${tenant}/logo${ext}`;
+  return `${SCHOOL_LOGO_PREFIX}/${tenant}/logo-${randomUUID()}${ext}`;
 }
 
 function absoluteLogoPath(storageKey) {
@@ -159,13 +160,9 @@ async function removeStoredLogo(storageKey) {
 async function saveSchoolLogo({ school, buffer, fileName, mimeType }) {
   const validated = validateSchoolLogoBuffer(buffer, mimeType, fileName);
   const nextKey = storageKeyForSchool(school, validated.mimeType);
-  const previousKey = persistableLogoRef(school.logoUrl);
   const abs = absoluteLogoPath(nextKey);
   await fsp.mkdir(path.dirname(abs), { recursive: true });
   await fsp.writeFile(abs, buffer);
-  if (previousKey && previousKey !== nextKey) {
-    await removeStoredLogo(previousKey);
-  }
   return { storageKey: nextKey, mimeType: validated.mimeType, fileSize: validated.fileSize };
 }
 
@@ -174,6 +171,38 @@ async function deleteSchoolLogo(school) {
   if (key && logoKeyBelongsToSchool(key, school)) {
     await removeStoredLogo(key);
   }
+}
+
+async function commitSchoolLogoUpload({ school, buffer, fileName, mimeType, persistEstablishment }) {
+  if (typeof persistEstablishment !== "function") {
+    throw createLogoError(500, "Persistance établissement indisponible.", "SCHOOL_LOGO_PERSIST");
+  }
+  const previousKey = persistableLogoRef(school?.logoUrl);
+  const saved = await saveSchoolLogo({ school, buffer, fileName, mimeType });
+  const next = { ...school, logoUrl: saved.storageKey, updatedAt: new Date().toISOString() };
+  try {
+    const savedSchool = await persistEstablishment(next);
+    if (previousKey && previousKey !== saved.storageKey) {
+      await removeStoredLogo(previousKey);
+    }
+    return { school: savedSchool, storageKey: saved.storageKey, mimeType: saved.mimeType, fileSize: saved.fileSize };
+  } catch (error) {
+    await removeStoredLogo(saved.storageKey);
+    throw error;
+  }
+}
+
+async function commitSchoolLogoDelete({ school, persistEstablishment }) {
+  if (typeof persistEstablishment !== "function") {
+    throw createLogoError(500, "Persistance établissement indisponible.", "SCHOOL_LOGO_PERSIST");
+  }
+  const previousKey = persistableLogoRef(school?.logoUrl);
+  const next = { ...school, logoUrl: "", updatedAt: new Date().toISOString() };
+  const savedSchool = await persistEstablishment(next);
+  if (previousKey && logoKeyBelongsToSchool(previousKey, school)) {
+    await removeStoredLogo(previousKey);
+  }
+  return savedSchool;
 }
 
 function mimeFromStorageKey(storageKey) {
@@ -246,6 +275,8 @@ module.exports = {
   validateSchoolLogoBuffer,
   saveSchoolLogo,
   deleteSchoolLogo,
+  commitSchoolLogoUpload,
+  commitSchoolLogoDelete,
   readSchoolLogoFile,
   resolveSchoolLogoPath,
   schoolHasStoredLogo,

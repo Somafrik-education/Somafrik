@@ -15,6 +15,8 @@ const {
   sniffLogoMime,
   saveSchoolLogo,
   deleteSchoolLogo,
+  commitSchoolLogoUpload,
+  commitSchoolLogoDelete,
   readSchoolLogoFile,
   resolveSchoolLogoPath,
   MAX_SCHOOL_LOGO_BYTES,
@@ -111,7 +113,10 @@ test("upload puis lecture restent isolés au tenant", async () => {
       fileName: "nuru.png",
       mimeType: "image/png",
     });
-    assert.match(saved.storageKey, /^school-logos\/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa\/logo\.png$/);
+    assert.match(
+      saved.storageKey,
+      /^school-logos\/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa\/logo-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.png$/,
+    );
     const file = await readSchoolLogoFile({ ...SCHOOL, logoUrl: saved.storageKey });
     assert.ok(file);
     assert.equal(file.mimeType, "image/png");
@@ -267,4 +272,125 @@ test("taille excessive refusée", () => {
     () => validateSchoolLogoBuffer(huge, "image/png", "logo.png"),
     (error) => error.statusCode === 400,
   );
+});
+
+const JPEG_MAGIC = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46, 0x00, 0x01]);
+
+test("échec persistEstablishment à l'upload : ancien fichier conservé, nouveau supprimé", async () => {
+  await withTempStorage(async () => {
+    const first = await saveSchoolLogo({
+      school: SCHOOL,
+      buffer: PNG_1X1,
+      fileName: "nuru.png",
+      mimeType: "image/png",
+    });
+    const withLogo = { ...SCHOOL, logoUrl: first.storageKey };
+    const persistError = new Error("db down");
+    await assert.rejects(
+      () =>
+        commitSchoolLogoUpload({
+          school: withLogo,
+          buffer: JPEG_MAGIC,
+          fileName: "nuru.jpg",
+          mimeType: "image/jpeg",
+          persistEstablishment: async () => {
+            throw persistError;
+          },
+        }),
+      persistError,
+    );
+    assert.ok(resolveSchoolLogoPath(withLogo));
+    const kept = await readSchoolLogoFile(withLogo);
+    assert.ok(kept);
+    assert.deepEqual(kept.bytes, PNG_1X1);
+    const root = process.env.SOMAFRIK_COMMUNICATION_STORAGE;
+    const leftovers = fs.readdirSync(path.join(root, "school-logos", SCHOOL.id));
+    assert.equal(leftovers.length, 1);
+    assert.equal(leftovers[0], path.posix.basename(first.storageKey));
+  });
+});
+
+test("succès persistEstablishment à l'upload : nouveau conservé, ancien nettoyé", async () => {
+  await withTempStorage(async () => {
+    const first = await saveSchoolLogo({
+      school: SCHOOL,
+      buffer: PNG_1X1,
+      fileName: "nuru.png",
+      mimeType: "image/png",
+    });
+    const withLogo = { ...SCHOOL, logoUrl: first.storageKey };
+    let persisted = null;
+    const result = await commitSchoolLogoUpload({
+      school: withLogo,
+      buffer: JPEG_MAGIC,
+      fileName: "nuru.jpg",
+      mimeType: "image/jpeg",
+      persistEstablishment: async (record) => {
+        persisted = record;
+        return record;
+      },
+    });
+    assert.equal(persisted.logoUrl, result.storageKey);
+    assert.notEqual(result.storageKey, first.storageKey);
+    assert.equal(resolveSchoolLogoPath(withLogo), "");
+    const nextSchool = { ...SCHOOL, logoUrl: result.storageKey };
+    const file = await readSchoolLogoFile(nextSchool);
+    assert.ok(file);
+    assert.equal(file.mimeType, "image/jpeg");
+    const root = process.env.SOMAFRIK_COMMUNICATION_STORAGE;
+    const leftovers = fs.readdirSync(path.join(root, "school-logos", SCHOOL.id));
+    assert.equal(leftovers.length, 1);
+    assert.equal(leftovers[0], path.posix.basename(result.storageKey));
+  });
+});
+
+test("échec persistEstablishment à la suppression : fichier et pointeur DB conservés", async () => {
+  await withTempStorage(async () => {
+    const saved = await saveSchoolLogo({
+      school: SCHOOL,
+      buffer: PNG_1X1,
+      fileName: "nuru.png",
+      mimeType: "image/png",
+    });
+    const withLogo = { ...SCHOOL, logoUrl: saved.storageKey };
+    const persistError = new Error("db down");
+    await assert.rejects(
+      () =>
+        commitSchoolLogoDelete({
+          school: withLogo,
+          persistEstablishment: async () => {
+            throw persistError;
+          },
+        }),
+      persistError,
+    );
+    assert.ok(resolveSchoolLogoPath(withLogo));
+    const kept = await readSchoolLogoFile(withLogo);
+    assert.ok(kept);
+    assert.deepEqual(kept.bytes, PNG_1X1);
+  });
+});
+
+test("succès persistEstablishment à la suppression : fichier retiré seulement après DB", async () => {
+  await withTempStorage(async () => {
+    const saved = await saveSchoolLogo({
+      school: SCHOOL,
+      buffer: PNG_1X1,
+      fileName: "nuru.png",
+      mimeType: "image/png",
+    });
+    const withLogo = { ...SCHOOL, logoUrl: saved.storageKey };
+    let sawFileDuringPersist = false;
+    const result = await commitSchoolLogoDelete({
+      school: withLogo,
+      persistEstablishment: async (record) => {
+        sawFileDuringPersist = Boolean(resolveSchoolLogoPath(withLogo));
+        assert.equal(record.logoUrl, "");
+        return record;
+      },
+    });
+    assert.equal(result.logoUrl, "");
+    assert.equal(sawFileDuringPersist, true);
+    assert.equal(resolveSchoolLogoPath(withLogo), "");
+  });
 });
