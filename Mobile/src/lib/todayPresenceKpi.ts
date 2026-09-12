@@ -18,6 +18,7 @@ export const TODAY_PRESENCE_KPI_LABEL = "Présence du jour";
 export const DEFAULT_SCHOOL_TIMEZONE = "Africa/Kinshasa";
 
 export type ExpectedStudent = StudentPresenceIdentity & {
+  schoolId?: string | null;
   schoolCode?: string | null;
   classId?: string | null;
   classCode?: string | null;

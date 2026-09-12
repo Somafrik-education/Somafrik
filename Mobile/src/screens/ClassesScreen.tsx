@@ -293,6 +293,7 @@ export default function ClassesScreen({ navigation }: any) {
             students: visibleStudents,
             classes: classesData,
             schoolClass: item,
+            schoolId: session?.user?.schoolId ?? currentSchool?.id,
             schoolCode,
             timeZone: (currentSchool as { timezone?: string } | undefined)?.timezone,
           });
