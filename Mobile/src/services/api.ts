@@ -136,6 +136,7 @@ export type SchoolInfo = {
   logoUrl?: string;
   hasLogo?: boolean;
   logoSource?: string;
+  logoUploadedAt?: string;
   schoolYear?: string;
   timezone?: string;
   language?: string;

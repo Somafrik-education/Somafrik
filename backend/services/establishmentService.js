@@ -22,7 +22,7 @@ const {
   DUPLICATE_STRONG,
   DUPLICATE_CONTACT,
 } = require("../lib/schoolModule");
-const { persistableLogoRef, canonicalLogoSource } = require("../lib/schoolLogo");
+const { persistableLogoRef, canonicalLogoSource, canonicalLogoUploadedAt } = require("../lib/schoolLogo");
 
 const SUPER_ADMIN_ROLES = new Set(["Super Administrateur Somafrik", "Super Administrateur OKAFRIK"]);
 
@@ -185,7 +185,7 @@ function hydrateSchoolPayload(payload, state, { isNew = false } = {}) {
     address: payload.address ?? "",
     logoUrl: isNew ? "" : persistableLogoRef(payload.logoUrl),
     logoSource: isNew ? "" : canonicalLogoSource(payload.logoSource),
-    logoUploadedAt: isNew ? "" : (canonicalLogoSource(payload.logoSource) ? String(payload.logoUploadedAt ?? "").trim() : ""),
+    logoUploadedAt: isNew ? "" : canonicalLogoUploadedAt(payload.logoUploadedAt),
     subscriptionPlan: payload.subscriptionPlan ?? "Standard",
     status: payload.status ?? "Actif",
     validationStatus: payload.validationStatus ?? "Validé",
@@ -308,9 +308,7 @@ class EstablishmentService {
     const effectivePatch = updateMode === "profile" ? filterEstablishmentProfilePatch(incoming) : incoming;
     effectivePatch.logoUrl = persistableLogoRef(existing.logoUrl);
     effectivePatch.logoSource = canonicalLogoSource(existing.logoSource);
-    effectivePatch.logoUploadedAt = canonicalLogoSource(existing.logoSource)
-      ? String(existing.logoUploadedAt ?? "").trim()
-      : "";
+    effectivePatch.logoUploadedAt = canonicalLogoUploadedAt(existing.logoUploadedAt);
     const canEditCode = isSuperAdmin(principal);
     const canEditCountry = isSuperAdmin(principal);
 

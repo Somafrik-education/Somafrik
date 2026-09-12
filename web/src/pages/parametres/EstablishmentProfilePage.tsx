@@ -32,6 +32,7 @@ function schoolToDraft(school: School): School {
     logoUrl: school.logoUrl ?? "",
     hasLogo: schoolHasLogo(school),
     logoSource: school.logoSource ?? "",
+    logoUploadedAt: school.logoUploadedAt ?? "",
     principalName: school.principalName ?? "",
     principalEmail: school.principalEmail ?? "",
     principalPhone: school.principalPhone ?? "",

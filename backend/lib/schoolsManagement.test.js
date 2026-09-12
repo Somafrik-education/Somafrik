@@ -125,6 +125,24 @@ test("mapEstablishmentRow n'infère pas logoSource depuis une clé interne", () 
   assert.equal(legacy.logoSource, "");
   assert.equal(schoolHasStoredLogo(legacy), false);
 
+  const incomplete = mapEstablishmentRow({
+    id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    country_id: "uuid-c",
+    school_code: "SCH-ABCDEF",
+    login_code: "CD-IN-26-001",
+    name: "Institut Nuruyetu",
+    school_type: "Institut",
+    city: "Kinshasa",
+    logo_url: "school-logos/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa/logo.png",
+    status: "active",
+    iso_code: "CD",
+    country_name: "RDC",
+    profile_payload: { logoSource: "school_upload" },
+  });
+  assert.equal(incomplete.logoSource, "school_upload");
+  assert.equal(incomplete.logoUploadedAt, "");
+  assert.equal(schoolHasStoredLogo(incomplete), false);
+
   const uploaded = mapEstablishmentRow({
     id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
     country_id: "uuid-c",

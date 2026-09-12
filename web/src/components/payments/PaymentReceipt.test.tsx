@@ -179,7 +179,31 @@ describe("PaymentReceipt multi-libellés", () => {
     expect(container.querySelector("img")).toBeNull();
   });
 
-  it("affiche le logo SCHOOL seulement si logoSource=school_upload", () => {
+  it("n'affiche pas de logo SCHOOL si hasLogo est absent malgré la provenance", () => {
+    const { container } = render(
+      <PaymentReceipt
+        school={{
+          code: "CD-IN-26-001",
+          name: "INSTITUT NURUYETU",
+          logoSource: "school_upload",
+          logoUploadedAt: "2026-09-12T20:00:00.000Z",
+        }}
+        payment={{
+          reference: "CD-IN-26-001-2026-PAY-0012",
+          studentName: "Esther Okito",
+          className: "6ème A",
+          items: [{ feeLabel: "Minerval", amount: 500 }],
+          method: "Espèces",
+          date: "2026-09-12",
+          status: "Payé",
+          currency: "CDF",
+        }}
+      />,
+    );
+    expect(container.querySelector("img")).toBeNull();
+  });
+
+  it("affiche le logo SCHOOL seulement si provenance complète et hasLogo=true", () => {
     const { container } = render(
       <PaymentReceipt
         school={{
@@ -187,6 +211,7 @@ describe("PaymentReceipt multi-libellés", () => {
           name: "INSTITUT NURUYETU",
           hasLogo: true,
           logoSource: "school_upload",
+          logoUploadedAt: "2026-09-12T20:00:00.000Z",
         }}
         payment={{
           reference: "CD-IN-26-001-2026-PAY-0011",

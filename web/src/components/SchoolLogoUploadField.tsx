@@ -8,7 +8,7 @@ const ACCEPT = "image/png,image/jpeg,image/webp,.png,.jpg,.jpeg,.webp";
 const MAX_BYTES = 5 * 1024 * 1024;
 
 type Props = {
-  school: Pick<School, "code" | "publicId" | "logoUrl" | "hasLogo" | "logoSource" | "name">;
+  school: Pick<School, "code" | "publicId" | "logoUrl" | "hasLogo" | "logoSource" | "logoUploadedAt" | "name">;
   canEdit: boolean;
   disabled?: boolean;
   onChanged?: () => Promise<void> | void;

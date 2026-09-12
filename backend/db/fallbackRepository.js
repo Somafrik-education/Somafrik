@@ -620,9 +620,7 @@ class FallbackRepository {
       loginCode,
       logoUrl: require("../lib/schoolLogo").persistableLogoRef(record?.logoUrl),
       logoSource: require("../lib/schoolLogo").canonicalLogoSource(record?.logoSource),
-      logoUploadedAt: require("../lib/schoolLogo").canonicalLogoSource(record?.logoSource)
-        ? String(record?.logoUploadedAt ?? "").trim()
-        : "",
+      logoUploadedAt: require("../lib/schoolLogo").canonicalLogoUploadedAt(record?.logoUploadedAt),
     };
     const index = existing
       ? store.findIndex(

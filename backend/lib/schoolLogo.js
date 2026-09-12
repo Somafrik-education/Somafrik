@@ -65,8 +65,17 @@ function canonicalLogoSource(value) {
   return asTrimmed(value).toLowerCase() === SCHOOL_LOGO_SOURCE_UPLOAD ? SCHOOL_LOGO_SOURCE_UPLOAD : "";
 }
 
+function canonicalLogoUploadedAt(value) {
+  const raw = asTrimmed(value);
+  if (!raw || !/^\d{4}-\d{2}-\d{2}/.test(raw)) return "";
+  return Number.isNaN(Date.parse(raw)) ? "" : raw;
+}
+
 function isSchoolUploadProvenance(school = {}) {
-  return canonicalLogoSource(school.logoSource) === SCHOOL_LOGO_SOURCE_UPLOAD;
+  return (
+    canonicalLogoSource(school.logoSource) === SCHOOL_LOGO_SOURCE_UPLOAD &&
+    Boolean(canonicalLogoUploadedAt(school.logoUploadedAt))
+  );
 }
 
 function firstInternalLogoRef(...values) {
@@ -278,7 +287,7 @@ function presentSchoolLogoFields(school = {}) {
     ...school,
     hasLogo,
     logoSource: hasLogo ? SCHOOL_LOGO_SOURCE_UPLOAD : "",
-    logoUploadedAt: hasLogo ? asTrimmed(school.logoUploadedAt) : "",
+    logoUploadedAt: hasLogo ? canonicalLogoUploadedAt(school.logoUploadedAt) : "",
     logoUrl: hasLogo ? publicSchoolLogoPath(school) : "",
   };
 }
@@ -289,6 +298,7 @@ function presentPublicSchoolLogoFields(school = {}) {
   return {
     hasLogo: true,
     logoSource: SCHOOL_LOGO_SOURCE_UPLOAD,
+    logoUploadedAt: canonicalLogoUploadedAt(school.logoUploadedAt),
     logoUrl: publicSchoolLogoPath(school),
   };
 }
@@ -300,6 +310,7 @@ module.exports = {
   SCHOOL_LOGO_SOURCE_UPLOAD,
   persistableLogoRef,
   canonicalLogoSource,
+  canonicalLogoUploadedAt,
   isSchoolUploadProvenance,
   firstInternalLogoRef,
   isInternalStorageKey,

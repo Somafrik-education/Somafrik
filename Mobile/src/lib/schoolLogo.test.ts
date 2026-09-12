@@ -7,6 +7,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { schoolHasLogo, schoolLogoDisplayUri } from "./schoolLogo";
 
+const UPLOADED_AT = "2026-09-12T20:00:00.000Z";
+
 assert.equal(schoolHasLogo({ logoUrl: "https://cdn.evil.test/logo.png", code: "CD-IN-26-001" }), false);
 assert.equal(schoolLogoDisplayUri({ logoUrl: "https://cdn.evil.test/logo.png", code: "CD-IN-26-001" }, "http://localhost:5000/api"), null);
 assert.equal(schoolHasLogo({ hasLogo: true, loginCode: "CD-IN-26-001" }), false);
@@ -18,9 +20,51 @@ assert.equal(
   }),
   false,
 );
-assert.equal(schoolHasLogo({ hasLogo: true, logoSource: "school_upload", loginCode: "CD-IN-26-001" }), true);
 assert.equal(
-  schoolLogoDisplayUri({ hasLogo: true, logoSource: "school_upload", loginCode: "CD-IN-26-001" }, "http://localhost:5000/api"),
+  schoolHasLogo({
+    hasLogo: true,
+    logoSource: "school_upload",
+    logoUrl: "school-logos/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa/logo.png",
+    loginCode: "CD-IN-26-001",
+  }),
+  false,
+);
+assert.equal(
+  schoolHasLogo({
+    logoSource: "school_upload",
+    logoUploadedAt: UPLOADED_AT,
+    loginCode: "CD-IN-26-001",
+  }),
+  false,
+);
+assert.equal(
+  schoolHasLogo({
+    hasLogo: false,
+    logoSource: "school_upload",
+    logoUploadedAt: UPLOADED_AT,
+    loginCode: "CD-IN-26-001",
+  }),
+  false,
+);
+assert.equal(
+  schoolHasLogo({
+    hasLogo: true,
+    logoSource: "school_upload",
+    logoUploadedAt: UPLOADED_AT,
+    loginCode: "CD-IN-26-001",
+  }),
+  true,
+);
+assert.equal(
+  schoolLogoDisplayUri(
+    {
+      hasLogo: true,
+      logoSource: "school_upload",
+      logoUploadedAt: UPLOADED_AT,
+      loginCode: "CD-IN-26-001",
+    },
+    "http://localhost:5000/api",
+  ),
   "http://localhost:5000/api/schools/CD-IN-26-001/logo",
 );
 assert.equal(schoolHasLogo({ code: "CD-IN-26-001" }), false);
