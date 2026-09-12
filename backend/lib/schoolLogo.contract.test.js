@@ -71,6 +71,16 @@ test("PATCH établissements n'accepte plus logoUrl comme champ profil", () => {
   );
 });
 
+test("gate branding-master pin le SHA-256 CTO", () => {
+  const src = read("scripts/verify-branding-master.js");
+  const pkg = read("package.json");
+  assert.match(src, /7de03f1c81c52aebf2dfae1a0efbba1bb4b4c7786cb454d6cf3e96d2989b042c/);
+  assert.match(src, /4b8474e1efcc0ab30aa8c2d1c56cf3580252af72/);
+  assert.match(src, /web\/public\/somafrik-logo\.png/);
+  assert.match(src, /Mobile\/assets\/somafrik-logo\.png/);
+  assert.match(pkg, /verify:branding-master/);
+});
+
 test("routes logo : persist DB avant nettoyage fichier", () => {
   const server = read("backend/server.js");
   const lib = read("backend/lib/schoolLogo.js");

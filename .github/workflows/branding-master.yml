@@ -1,0 +1,36 @@
+name: Branding master
+
+on:
+  pull_request:
+    branches: [develop, main]
+    paths:
+      - "web/public/somafrik-logo.png"
+      - "web/src/**"
+      - "Mobile/assets/somafrik-logo.png"
+      - "Mobile/assets/somafrik-splash.png"
+      - "Mobile/src/**"
+      - "scripts/verify-branding-master.js"
+      - "scripts/verify-branding-master.test.js"
+      - "package.json"
+      - ".github/workflows/branding-master.yml"
+      - ".github/workflows/pr-gates.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: branding-master-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  branding-master:
+    name: verify:branding-master
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.12.0"
+      - name: Pin constants
+        run: node --test scripts/verify-branding-master.test.js
+      - name: Verify PLATFORM logos match CTO master
+        run: node scripts/verify-branding-master.js
