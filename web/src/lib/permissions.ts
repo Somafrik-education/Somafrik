@@ -152,6 +152,17 @@ export function getCurrentRolePermissions(ctx: PermissionContext): string[] {
   return resolveEffectivePermissions(ctx.user?.role, ctx.user?.permissions, ctx.rolePermissions);
 }
 
+/** Superadmin, ou jeton effectif classes / affectations (révocations explicites honorées). */
+export function canAssignClassHeadTeacher(ctx: PermissionContext): boolean {
+  if (!ctx.user) return false;
+  if (isSuperAdminRole(ctx.user.role)) return true;
+  return (
+    hasBackOfficePermission(ctx, "Classes", "UPDATE") ||
+    hasBackOfficePermission(ctx, "Affectations", "CREATE") ||
+    hasBackOfficePermission(ctx, "Affectations", "UPDATE")
+  );
+}
+
 const COUNTRY_PRIVILEGE_FEATURES = new Set(["pays", "etablissements", "abonnements", "utilisateurs", "rapports", "referentiels pedagogiques"]);
 
 function countryPrivilegeAllowsRead(normalizedFeature: string): boolean {

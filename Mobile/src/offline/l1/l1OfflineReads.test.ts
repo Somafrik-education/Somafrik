@@ -152,6 +152,10 @@ async function run() {
       streamId: null,
       groupId: "grp-1",
       status: "active",
+      headTeacherCode: "ENS-A",
+      headTeacherFirstName: "Awa",
+      headTeacherLastName: "Diop",
+      headTeacherDisplayName: "Awa DIOP",
     },
     {
       id: "cls-5b",
@@ -231,6 +235,9 @@ async function run() {
   assert.equal(sixth.publicId, "CLS-6A");
   assert.equal(sixth.schoolCode, "SCH-1");
   assert.equal(sixth.classCode, "CLS-6A");
+  assert.equal(sixth.headTeacherCode, "ENS-A");
+  assert.equal(sixth.headTeacherDisplayName, "Awa DIOP");
+  assert.equal(sixth.teacherId, "ENS-A");
   assert.equal(sixth.level, "", "pas de nom de niveau inventé");
   const classesSnapshot = snapshotFromL1Cache(classes, classesRead.meta.lastSuccessAt);
   assert.equal(classesSnapshot.status, "success");
