@@ -4,8 +4,9 @@
  * AUDIT-COM-MODULE — tests RED.
  * Chaque cas affirme le comportement métier attendu.
  * Base d'origine des constats : develop@1bf4a057.
- * Base de validation (rebase / diff CTO) : develop@df7d94b3.
- * Ces tests doivent échouer : preuve reproductible du défaut, sans correction.
+ * Base de validation (rebase / diff CTO) : develop@a42c079d (après merge Lot A #628).
+ * AUDIT-COM-RED-01 doit passer (GREEN, Lot A).
+ * AUDIT-COM-RED-02…06 doivent échouer : preuve des défauts encore ouverts.
  */
 
 const { test } = require("node:test");
@@ -33,14 +34,15 @@ test("AUDIT-COM-RED-01 — Mobile : le modal fil Messages permet de répondre", 
 
   assert.match(
     modal,
-    /TextInput/,
-    "le modal fil Messages n'a pas de champ de saisie : impossible de répondre dans le fil",
+    /FormField|TextInput/,
+    "régression Lot A : le modal fil Messages n'a plus de champ de saisie",
   );
   assert.match(
     modal,
-    /Envoyer|sendMessage/,
-    "le modal fil Messages n'expose pas l'action Envoyer / sendMessage",
+    /Envoyer|replyInThread/,
+    "régression Lot A : le modal fil Messages n'expose plus l'action Envoyer",
   );
+  assert.match(screen, /replyClientsConversationMessage|conversationId/, "régression Lot A : la réponse n'est plus liée au conversationId");
 });
 
 test("AUDIT-COM-RED-02 — Mobile C4 : Ouvrir mène au message ou à l'annonce", () => {

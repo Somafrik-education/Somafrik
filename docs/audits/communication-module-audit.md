@@ -1,8 +1,8 @@
 # Audit module Communication
 
 **Mandat :** audit fonctionnel, technique et de non-régression — Web + Mobile natif Expo/React Native.  
-**Aucune correction fonctionnelle n’est livrée dans cette PR.**  
-**Décision :** HOLD — STOP avant toute implémentation. GO CTO requis.
+**Cette PR reste un dossier d’audit.** Lot A (#628) est mergé sur `develop` ; les lots B–D ne sont pas implémentés ici.  
+**Décision :** HOLD — #625 Draft. Aucun merge. Aucun Lot B tant que cette réconciliation n’est pas validée par un diff CTO.
 
 | Élément | Valeur |
 | --- | --- |
@@ -10,7 +10,8 @@
 | Branche | `audit/communication-module` |
 | Base | `develop` |
 | Base d'origine (constats initiaux) | `1bf4a057817cb009120042a9bb7b23ba211e2269` |
-| Base de validation (diff CTO / rebase) | `df7d94b3630c9bf7177380606a0857adaa5d5b67` |
+| Base de validation (diff CTO / rebase) | `a42c079d4a18b4a56277f1cd2f553329e416d3d1` |
+| Preuve Lot A | PR #628, merge `a42c079d4a18b4a56277f1cd2f553329e416d3d1` |
 | PR | https://github.com/Somafrik-education/Somafrik/pull/625 |
 | Date | 13 septembre 2026 |
 | Périmètre | Messages (C2), Annonces (C3), Notifications internes (C4), préférences canal, frontière notifications. Hors correction Finance / Scolarité / Pédagogie / Paramètres / Auth. |
@@ -20,24 +21,25 @@
 | Classe | Ouverts |
 | --- | ---: |
 | **P0** | 0 |
-| **P1** | 2 |
+| **P1** | 1 |
 | **P2** | 5 |
 | **P3** | 2 |
 
-L’API PostgreSQL C2/C3/C4 est isolée par `school_id`, persistante, et déjà couverte par les tests HTTP PG. Les écarts ouverts sont **côté clients** : réponse Mobile absente du fil, bouton **Ouvrir** Mobile limité au paiement, pagination C2/C3 ignorée, badge non-lu Web stale après ouverture, push Mobile incapable d’ouvrir Communication.
+L’API PostgreSQL C2/C3/C4 est isolée par `school_id`, persistante, et déjà couverte par les tests HTTP PG. **COM-F-04 / AUDIT-COM-RED-01 est GREEN** (composer de réponse dans le modal Mobile, Lot A #628). Les écarts ouverts restants sont **côté clients** : bouton **Ouvrir** Mobile limité au paiement, pagination C2/C3 ignorée, badge non-lu Web stale après ouverture, push Mobile incapable d’ouvrir Communication.
 
 ---
 
 ## 1. Gouvernance
 
 - Branche dédiée `audit/communication-module` créée depuis `develop@1bf4a057` (base d'origine des constats).
-- Rebase de validation sur `develop@df7d94b3` (base contrôlée pour le diff GitHub `develop...HEAD`). Aucun fichier métier ajouté par ce rebase.
-- PR Draft uniquement. **Aucun merge.**
+- Rebase de validation sur `develop@a42c079d` (merge Lot A #628 — base contrôlée pour le diff GitHub `develop...HEAD`). Aucun fichier métier ajouté par cette réconciliation.
+- PR Draft uniquement. **Aucun merge. Aucun Lot B pendant cette réconciliation.**
 - Aucun changement hors dossier d’audit / tests RED / gate CI.
 - Aucune migration PostgreSQL.
 - Aucun contournement RBAC.
 - Aucun test existant désactivé ou affaibli.
-- Tests RED = preuve du défaut (`RED → preuve`). Ils doivent échouer tant que le défaut n’est pas corrigé dans un lot ultérieur.
+- Tests RED ouverts = preuve du défaut (`RED → preuve`). Ils doivent échouer tant que le défaut n’est pas corrigé dans un lot ultérieur. Ensemble attendu : **AUDIT-COM-RED-02…06**.
+- `AUDIT-COM-RED-01` est **GREEN** (Lot A #628, merge `a42c079d`). Le gate échoue si RED-01 redevient rouge.
 - **Aucun merge sans diff GitHub indépendant CTO.**
 
 Contrôle CTO avant Ready/Merge futur :
@@ -71,7 +73,7 @@ Chaîne Annonces :
 
 `UI publish → publish() TX → announcements + announcement_recipients snapshot → trigger communication.announcement.published → C4`
 
-**Messages = fil + modal (Mobile) / fil panneau (Web)** — conforme à la maquette UX. Le modal Mobile est **lecture seule**.
+**Messages = fil + modal (Mobile) / fil panneau (Web)** — conforme à la maquette UX. Le modal Mobile inclut un composer de **réponse** (Lot A #628).
 
 ---
 
@@ -82,7 +84,7 @@ Chaîne Annonces :
 | COM-F-01 | Messages — chargement et liste conversations | PASS | PASS | PASS | PASS | PASS | PASS | PASS |
 | COM-F-02 | Messages — ouverture fil / modal | PASS | PASS | PASS | PASS | PASS | PASS | PASS |
 | COM-F-03 | Messages — création valide | PASS | PASS | PASS | PASS | PASS | PASS | PASS |
-| COM-F-04 | Messages — réponse au fil | PASS | FAIL | PASS | PASS | PASS | FAIL | FAIL |
+| COM-F-04 | Messages — réponse au fil | PASS | PASS | PASS | PASS | PASS | PASS | PASS |
 | COM-F-05 | Messages — destinataires autorisés / interdits | PASS | PASS | PASS | PASS | PASS | PASS | PASS |
 | COM-F-06 | Messages — pièces jointes | PASS | PASS | PASS | PASS | PASS | PASS | PASS |
 | COM-F-07 | Messages — lu / non-lu | PARTIAL | PASS | PASS | PASS | PASS | FAIL | PARTIAL |
@@ -124,20 +126,16 @@ Chaîne Annonces :
 
 ## 4. Anomalies FAIL/PARTIAL
 
-### AUDIT-COM-P1-01 — COM-F-04 — Réponse au fil absente du modal Mobile
+### AUDIT-COM-P1-01 — COM-F-04 — Réponse au fil absente du modal Mobile — **CORRIGÉ / GREEN**
 
 | | |
 | --- | --- |
-| Sévérité | **P1** |
+| Sévérité | **P1** (clos) |
 | Test RED | `AUDIT-COM-RED-01` |
-| Attendu | Depuis un fil ouvert, l’utilisateur autorisé (`Messages:CREATE`) peut répondre. Web : composer du panneau. Mobile : **fil + modal** avec composer, conformément à la maquette. |
-| Observé | Le modal `MessagesScreen` affiche le thread (auteur, corps, PJ, Fermer) **sans** `TextInput` ni `Envoyer`. `buildMessagePayload` accepte `conversationId` mais le composer reste sur la liste, derrière le modal. Fermer le modal remet `selectedConversation` à `null` : on ne répond pas au fil, on crée un nouveau message. |
-| Reproduction | 1. Role `Admin School` ou enseignant, établissement A. 2. Ouvrir Messages. 3. Créer une conversation. 4. Rouvrir la conversation. 5. Constater l’absence de champ Répondre dans le modal. |
-| Rôle | `SCHOOL_ADMIN` / `TEACHER` avec `Messages:CREATE` |
-| Tenant | école JWT (`effectiveSchoolCode` si super/country) |
-| Endpoint | `POST /api/backoffice/conversations/:id/messages` (Web) ; `POST /api/backoffice/messages` avec `conversationId` (Mobile, inutilisé depuis le modal) |
-| Code | `Mobile/src/screens/MessagesScreen.tsx` (bloc `<Modal>`) ; comparaison `web/src/pages/MessagesConversationsPage.tsx` `handleSend` + `messagesApi.reply` |
-| Reco | Lot A — composer dans le modal (KeyboardAvoiding, 44 dp), `conversationId` conservé, rechargement thread + unread-count après 201. |
+| Statut | **GREEN** — Lot A PR #628, merge `a42c079d4a18b4a56277f1cd2f553329e416d3d1` |
+| Attendu | Depuis un fil ouvert, l’utilisateur autorisé (`Messages:CREATE`) peut répondre. Web : composer du panneau. Mobile : **fil + modal** avec composer. |
+| Observé (après Lot A) | Le modal `MessagesScreen` expose `FormField` Réponse + **Envoyer** (`replyInThread` → `POST /backoffice/conversations/:id/messages`). Confirmation d’envoi séparée du refresh ; refresh KO n’affiche plus « Envoi impossible ». |
+| Reco | Clos. Ne pas rouvrir dans un lot B. |
 
 ### AUDIT-COM-P1-02 — COM-F-23 — Ouvrir Mobile ne mène pas au message / à l’annonce
 
@@ -219,9 +217,9 @@ Chaîne Annonces :
 | | |
 | --- | --- |
 | Sévérité | **P2** |
-| Test RED | `AUDIT-COM-RED-01`, `AUDIT-COM-RED-02` |
+| Test RED | `AUDIT-COM-RED-02` (Ouvrir) ; pagination RED-05/06 |
 | Attendu | Même titre, contenu, auteur, destinataires, date, état, thread après création Web ou Mobile et après refresh. |
-| Observé | **SoT unique PostgreSQL : OK** (mêmes endpoints C2/C3/C4). Une création Web est relue par Mobile (`GET /conversations`). Une création Mobile (`POST /messages`) est relue par Web. **Écarts :** (1) réponse in-thread impossible Mobile ; (2) Ouvrir C4 Web ouvre le fil, Mobile non ; (3) pagination asymétrique vs volume. Pas de second état métier. |
+| Observé | **SoT unique PostgreSQL : OK** (mêmes endpoints C2/C3/C4). Une création Web est relue par Mobile (`GET /conversations`). Une création Mobile (`POST /messages`) est relue par Web. **Écarts restants :** (1) Ouvrir C4 Web ouvre le fil, Mobile non ; (2) pagination asymétrique vs volume. Réponse in-thread Mobile : **GREEN** (Lot A #628). Pas de second état métier. |
 | Reproduction | Scénario A : créer conversation Web, pull-to-refresh Mobile → mêmes champs. Scénario B : répondre depuis le modal Mobile → impossible (P1-01). |
 | Rôle | `Messages:READ` + `CREATE` |
 | Tenant | même `school_id` |
@@ -289,7 +287,7 @@ Scénarios du mandat §11 vs couverture :
 | Données obligatoires manquantes | API 400 + UI « Message/Titre obligatoire » |
 | Destinataire valide / interdit | C2-02, C2-13 |
 | Lecture détail | GET conversation/messages, GET announcement |
-| Réponse | C2-03 API + Web UI ; **Mobile UI RED-01** |
+| Réponse | C2-03 API + Web UI ; **Mobile UI RED-01 GREEN** (#628) |
 | Persistance après refresh | PG rows C2-03 + GET ; UI reload on focus/mount |
 | Isolation établissement | C2-12, C3-01 B, C4-02 B |
 | Refus RBAC | C2-10 révocation |
@@ -308,7 +306,7 @@ Scénarios du mandat §11 vs couverture :
 - Pas d’E2E Expo runtime (hors `recette/communicationUxSmoke.ts`, non branché sur `App.tsx` production).
 - Pas de test automatique **live** Web→Mobile sur un même jeu PG (uniquement contrat de sources + HTTP PG).
 - Pagination C2/C3 UI : aucun test GREEN (RED-05/06).
-- Reply Mobile UI : aucun test GREEN (RED-01).
+- Reply Mobile UI : **GREEN** (`AUDIT-COM-RED-01`, Lot A #628).
 - Ouvrir Mobile conversation/annonce : aucun test GREEN (RED-02).
 - 401 refresh token sur pages Communication : client global, pas de test de page.
 - `PATCH` annonce UI : volontairement non couvert.
@@ -340,12 +338,12 @@ Lot I : 9/9 événements ont désormais un producteur (L1–L5 GREEN). Hors pér
 
 | Lot | Sévérité | Contenu | Hors lot |
 | --- | --- | --- | --- |
-| **A** | P1 | Composer de réponse dans le modal fil Mobile (même persistence `conversationId` / POST messages déjà canonique) | nouveau canal, DELETE, search serveur |
+| **A** | P1 | Composer de réponse dans le modal fil Mobile — **mergé** #628 (`a42c079d`) | |
 | **B** | P1/P2 | Ouvrir/Lire Mobile + allowlist push Messages/Annonces/InternalNotifications + deep params `conversationId`/`announcementId` | réécriture dispatcher, SMTP, prefs école |
 | **C** | P2 | Pagination C2/C3 Web+Mobile ; refresh liste unread après mark-read Web | PATCH UI annonces |
 | **D** | P3 | Header icons Mobile ; copies 403/404 Web ; loading plateforme | fusion inbox, plateforme Mobile (#577) |
 
-Ordre recommandé : **A → B → C → D**. Chaque lot : tests RED → GREEN, PR séparée, pas de merge sans diff CTO.
+Ordre recommandé : **A (fait) → B → C → D**. Lot B : PR séparée, uniquement après GO CTO sur cette réconciliation. Pas de merge #625 sans diff CTO.
 
 ---
 
@@ -365,7 +363,8 @@ Exécution locale (13 sept. 2026, sans PostgreSQL) :
 | Parité COM-01…06 Web + COM-10…17 Mobile | **14 PASS / 0 FAIL** |
 | UX Communication Mobile | **PASS** (tsx) |
 | UX Communication Web (vitest) | non exécuté localement (pas de `web/node_modules`) — CI |
-| RED AUDIT-COM-RED-01…06 | **6 FAIL** (preuve, attendu) |
+| RED AUDIT-COM-RED-01 | **PASS / GREEN** (Lot A #628) |
+| RED AUDIT-COM-RED-02…06 | **5 FAIL** (preuve, attendu) |
 | C2 / C3 / C4 HTTP PG | CI uniquement (`DATABASE_URL`) |
 
 Environnement d’audit agent : pas de Docker / PostgreSQL local. Les preuves UI runtime Expo et navigateur 1440/1024/390/360 n’ont **pas** été rejouées ici ; la maquette existante reste `docs/audits/parite-web-mobile-communication-ux-maquette.md`. Les défauts P1/P2 sont **reproductibles par inspection du code livré** (tests RED) et par les suites HTTP PG déjà présentes.
@@ -376,6 +375,6 @@ Environnement d’audit agent : pas de Docker / PostgreSQL local. Les preuves UI
 
 **HOLD. STOP.**
 
-Ne commencer aucune correction sans décision CTO.
+#625 reste Draft. Aucun merge. Aucun Lot B tant que le diff CTO de cette réconciliation n’est pas GO.
 
 Aucun merge sans diff GitHub indépendant CTO.
