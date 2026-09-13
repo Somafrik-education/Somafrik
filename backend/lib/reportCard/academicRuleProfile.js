@@ -263,8 +263,11 @@ function validateSpec(raw) {
   if (aggregation && rankingEnabled && !rankingMetric) {
     throw new AcademicRuleProfileError("INVALID_RANKING");
   }
+  if (rankingMetric && !aggregation) {
+    throw new AcademicRuleProfileError("INVALID_RANKING");
+  }
 
-  const pass_rule = normalizePassRule(raw.pass_rule);
+  const pass_rule = normalizePassRule(raw.pass_rule, { aggregation });
 
   const spec = {
     engine_id: ENGINE_ID,
@@ -310,7 +313,7 @@ function normalizeAggregation(raw) {
   };
 }
 
-function normalizePassRule(raw) {
+function normalizePassRule(raw, { aggregation } = {}) {
   if (raw == null) return null;
   if (typeof raw !== "object" || Array.isArray(raw)) {
     throw new AcademicRuleProfileError("INVALID_PASS_RULE");
@@ -322,6 +325,12 @@ function normalizePassRule(raw) {
   }
   if (hasMetric) {
     if (raw.metric !== PASS_RULE_METRIC_V1) {
+      throw new AcademicRuleProfileError("INVALID_PASS_RULE");
+    }
+    if (!aggregation) {
+      throw new AcademicRuleProfileError("INVALID_PASS_RULE");
+    }
+    if (raw.threshold == null || raw.threshold === "") {
       throw new AcademicRuleProfileError("INVALID_PASS_RULE");
     }
     const threshold = Number(raw.threshold);
@@ -401,7 +410,11 @@ function percentageFromWeighted({ points, max_points }) {
 }
 
 function isCalculablePassRule(spec) {
-  return spec?.pass_rule?.metric === PASS_RULE_METRIC_V1 && Number.isFinite(spec.pass_rule.threshold);
+  return (
+    spec?.aggregation?.percentage === PERCENTAGE_MODE_V1 &&
+    spec?.pass_rule?.metric === PASS_RULE_METRIC_V1 &&
+    Number.isFinite(spec.pass_rule.threshold)
+  );
 }
 
 function assignRanks(sortedDescendingValues, ties) {
