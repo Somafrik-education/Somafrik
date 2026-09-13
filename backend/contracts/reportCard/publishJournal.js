@@ -2,7 +2,7 @@
 
 const crypto = require("node:crypto");
 const { PUBLISH, VERIFICATION_STATES } = require("./contract");
-const { sealSnapshot, deepFreeze } = require("./snapshot");
+const { sealSnapshot, deepFreeze, payloadForRender, signingKeyRing } = require("./snapshot");
 const {
   generateToken,
   hashToken,
@@ -35,7 +35,7 @@ function tokenBinding(recordOrPayload, publicId) {
  * Retry avec un autre snapshot_sha256 → IDEMPOTENCY_CONFLICT.
  */
 class PublishJournal {
-  constructor({ wrapping, wrappingKeys = [], signingKey }) {
+  constructor({ wrapping, wrappingKeys = [], signingKey, signingKeys = [] }) {
     this.wrapping = wrapping;
     this.signingKey = signingKey;
     this.wrappingKeys = new Map();
@@ -45,6 +45,9 @@ class PublishJournal {
     if (wrapping) {
       this.wrappingKeys.set(wrapping.wrapping_key_id, wrapping);
     }
+    const ringKeys = [...signingKeys];
+    if (signingKey) ringKeys.push(signingKey);
+    this.signingKeys = signingKeyRing(ringKeys);
     this.records = new Map();
     this.outbox = [];
   }
@@ -120,6 +123,12 @@ class PublishJournal {
     return verificationUrl(record.public_id, token);
   }
 
+  payloadForRender(reportCardId, version) {
+    const record = this.records.get(this._key(reportCardId, version));
+    if (!record) throw new Error("unknown published version");
+    return payloadForRender(record.sealed, this.signingKeys);
+  }
+
   persistWithoutSecrets() {
     const dump = [];
     for (const rec of this.records.values()) {
@@ -143,8 +152,8 @@ class PublishJournal {
     return dump;
   }
 
-  static restore(dump, { wrapping, wrappingKeys, signingKey }) {
-    const journal = new PublishJournal({ wrapping, wrappingKeys, signingKey });
+  static restore(dump, { wrapping, wrappingKeys, signingKey, signingKeys }) {
+    const journal = new PublishJournal({ wrapping, wrappingKeys, signingKey, signingKeys });
     for (const row of dump) {
       const key = journal._key(row.report_card_id, row.published_snapshot_version);
       journal.records.set(
@@ -155,6 +164,8 @@ class PublishJournal {
             payload: deepFreeze(structuredClone(row.sealed_payload)),
             canonical_bytes: Buffer.from(row.canonical_bytes, "base64"),
             snapshot_sha256: row.snapshot_sha256,
+            snapshot_signature: row.snapshot_signature,
+            signing_key_id: row.signing_key_id,
             frozen: true,
           }),
         })
@@ -182,6 +193,7 @@ function pdfRendersFromPersisted(journal, reportCardId, version) {
   if (PUBLISH.pdf_mints_token) {
     throw new Error("contract forbids PDF minting tokens");
   }
+  journal.payloadForRender(reportCardId, version);
   return journal.reprintUrl(reportCardId, version);
 }
 

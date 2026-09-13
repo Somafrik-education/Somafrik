@@ -196,7 +196,7 @@ Les conversations (Chat, agents) **ne remplacent pas** ce registre.
 | **Contexte** | Audit CTO PR #614 (GO documentaire). Empêcher LOT 1–10 de diverger. |
 | **Alternatives** | Template par pays ; hash PG seul ; QR JSON PII actuel ; token hash-only (reprint impossible) ; HMAC/KDF (B) ou opaque unique (C) comme défaut. |
 | **Impact** | ADR `docs/project/ADR-REPORT-CARD-FRAMEWORK-LOT0.md` ; contrats `backend/contracts/reportCard/` ; gate `verify:report-card-lot0`. Pas de SQL / route / UI dans LOT 0. |
-| **Statut** | Proposée |
+| **Statut** | Acceptée |
 
 ---
 

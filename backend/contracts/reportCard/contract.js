@@ -118,6 +118,7 @@ const GATES = Object.freeze([
   "snapshot-canonical-bytes-tamper-fails-closed",
   "snapshot-canonical-jcs",
   "snapshot-signature",
+  "snapshot-signature-required-before-render",
   "publish-idempotent-qr",
   "publish-idempotency-rejects-payload-mismatch",
   "reprint-after-restart-keeps-same-qr",
