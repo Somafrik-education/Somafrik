@@ -107,6 +107,16 @@ function rankingProfile(ties) {
   });
 }
 
+function calculableProfileWithoutMax(overrides = {}) {
+  return calculableProfile({
+    score_components: [
+      { id: "TJ", applicability: "always", coefficient: 2 },
+      { id: "EX", applicability: "per_subject", max: 20, coefficient: 1 },
+    ],
+    ...overrides,
+  });
+}
+
 function calculableProfile(overrides = {}) {
   return validateProfileSpec({
     periods: ["T1", "T2", "T3"],
@@ -390,6 +400,83 @@ test("report-card-engine-annual-aggregates", () => {
   assert.equal(annual.students[0].annual.max_points, 80);
 });
 
+test("report-card-engine-points-without-max", () => {
+  const api = loadLot3();
+  assert.ok(api, "LOT 3 engine missing (RED)");
+  const profile = calculableProfileWithoutMax();
+  const facts = [fact({ raw_score: 12 })];
+  const points = compute(api, {
+    profile,
+    schema: schemaWithContextualSlot("PERIOD_POINTS", { period_id: "T1" }),
+    facts,
+  });
+  assert.equal(findSlot(points.students[0], { slot: "PERIOD_POINTS", period_id: "T1" }).internal, 24);
+  const total = compute(api, {
+    profile,
+    schema: schemaWithContextualSlot("TOTAL", { period_id: "T1" }),
+    facts,
+  });
+  assert.equal(findSlot(total.students[0], { slot: "TOTAL", period_id: "T1" }).internal, 24);
+  const subtotal = compute(api, {
+    profile,
+    schema: schemaWithContextualSlot("SUBTOTAL", { period_id: "T1", score_component_id: "TJ" }),
+    facts,
+  });
+  assert.equal(findSlot(subtotal.students[0], { slot: "SUBTOTAL" }).internal, 24);
+  const annualPoints = compute(api, {
+    profile,
+    schema: schemaWithContextualSlot("ANNUAL_POINTS"),
+    facts,
+  });
+  assert.equal(findSlot(annualPoints.students[0], { slot: "ANNUAL_POINTS" }).internal, 24);
+  assert.throws(
+    () =>
+      compute(api, {
+        profile,
+        schema: schemaWithContextualSlot("PERIOD_MAX", { period_id: "T1" }),
+        facts,
+      }),
+    (err) => err.code === "CALCULABILITY_PERCENTAGE_WITHOUT_MAX"
+  );
+  assert.throws(
+    () => compute(api, { profile, schema: schemaWithContextualSlot("ANNUAL_MAX"), facts }),
+    (err) => err.code === "CALCULABILITY_PERCENTAGE_WITHOUT_MAX"
+  );
+  assert.throws(
+    () => compute(api, { profile, schema: schemaWithContextualSlot("PERCENTAGE", { period_id: "T1" }), facts }),
+    (err) => err.code === "CALCULABILITY_PERCENTAGE_WITHOUT_MAX"
+  );
+  assert.throws(
+    () =>
+      compute(api, {
+        profile: calculableProfileWithoutMax({ pass_rule: { metric: "PERCENTAGE", threshold: 50 } }),
+        schema: schemaWithContextualSlot("DECISION", { period_id: "T1" }),
+        facts,
+      }),
+    (err) => err.code === "CALCULABILITY_PERCENTAGE_WITHOUT_MAX"
+  );
+  assert.throws(
+    () =>
+      compute(api, {
+        profile: calculableProfileWithoutMax({ ranking: { enabled: true, ties: "competition", metric: "PERCENTAGE" } }),
+        schema: schemaWithContextualSlot("RANK"),
+        facts,
+        cohort: facts,
+      }),
+    (err) => err.code === "CALCULABILITY_PERCENTAGE_WITHOUT_MAX"
+  );
+  const mixed = [
+    fact({ raw_score: 12 }),
+    fact({ score_component_id: "EX", raw_score: 10, subject_applicable: true }),
+  ];
+  const canonical = compute(api, { profile, facts: mixed });
+  const t1 = canonical.students[0].period_aggregates.find((row) => row.period_id === "T1");
+  assert.equal(t1.points, 34);
+  assert.equal(t1.max_points, null);
+  assert.equal(canonical.students[0].annual.points, 34);
+  assert.equal(canonical.students[0].annual.max_points, null);
+});
+
 test("report-card-engine-percentage", () => {
   const api = loadLot3();
   assert.ok(api, "LOT 3 engine missing (RED)");
@@ -501,6 +588,47 @@ test("report-card-engine-ranking-ties", () => {
   assert.equal(rankOf(min, "STU-3"), 1);
   assert.equal(rankOf(min, "STU-1"), 3);
   assert.equal(canonicalize(ranked("competition", factsA)), canonicalize(ranked("competition", factsB)));
+});
+
+test("report-card-engine-cohort-mismatch", () => {
+  const api = loadLot3();
+  assert.ok(api, "LOT 3 engine missing (RED)");
+  const schema = schemaWithContextualSlot("RANK");
+  const profile = rankingProfile("competition");
+  const facts = [fact({ student_id: "STU-1", raw_score: 20 })];
+  const divergentCohort = [
+    fact({ student_id: "STU-1", raw_score: 10 }),
+    fact({ student_id: "STU-2", raw_score: 15 }),
+  ];
+  assert.throws(
+    () => compute(api, { profile, schema, facts, cohort: divergentCohort }),
+    (err) => err.code === "COHORT_MISMATCH"
+  );
+  const factsOrdered = [
+    fact({ student_id: "STU-1", raw_score: 20 }),
+    fact({ student_id: "STU-2", raw_score: 10 }),
+  ];
+  const factsReversed = [factsOrdered[1], factsOrdered[0]];
+  const cohortOrdered = [
+    fact({ student_id: "STU-1", raw_score: 20 }),
+    fact({ student_id: "STU-2", raw_score: 10 }),
+    fact({ student_id: "STU-3", raw_score: 15 }),
+  ];
+  const cohortReversed = [
+    fact({ student_id: "STU-3", raw_score: 15 }),
+    fact({ student_id: "STU-2", raw_score: 10 }),
+    fact({ student_id: "STU-1", raw_score: 20 }),
+  ];
+  const rankOf = (result, studentId) =>
+    findSlot(
+      result.students.find((row) => row.student_id === studentId),
+      { slot: "RANK" }
+    ).internal;
+  const left = compute(api, { profile, schema, facts: factsOrdered, cohort: cohortOrdered });
+  const right = compute(api, { profile, schema, facts: factsReversed, cohort: cohortReversed });
+  assert.equal(rankOf(left, "STU-1"), 1);
+  assert.equal(rankOf(left, "STU-2"), 3);
+  assert.equal(canonicalize(left), canonicalize(right));
 });
 
 test("report-card-engine-pass-rule", () => {
