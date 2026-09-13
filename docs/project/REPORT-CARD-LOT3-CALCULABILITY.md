@@ -1,36 +1,25 @@
-# LOT 3 — P0 PRE-GATE calculabilité (LOT 1)
+# LOT 3 — Calculabilité (consommation LOT 1.1)
 
-**Statut :** HOLD — 5 points non déterminables depuis `AcademicRuleProfile` LOT 1.  
-**Base :** `develop@9fb6124a9f5fd0be3cc17abb96eb4fe0243281f0`  
-**Règle :** le moteur LOT 3 n’invente aucune convention absente de LOT 1. Pas de micro-correctif LOT 1 silencieux.
+**Statut :** P0-1 levé après merge #632 (`develop@d1aa3c6b`). LOT 3 consomme `AcademicRuleProfile` LOT 1.1.  
+**Règle :** aucune convention inventée dans `reportCardEngine.js`. Profil historique / incomplet = fail-closed.
 
-Le pré-gate #629 exige de figer sans ambiguïté cinq points **avant** une GREEN complète des agrégats / ranking / décision. Inspection du contrat LOT 1 (`backend/lib/reportCard/academicRuleProfile.js`) :
+| Slot demandé | Contrat LOT 1.1 présent | Sinon |
+|---|---|---|
+| `PERCENTAGE` | `aggregation.mode` + `percentage = points_over_max_100` + `rounding.stage = display_only` ; `PERCENTAGE = 100 × points / max_points` via `weightedContribution` / `percentageFromWeighted`. Identité `section_id + column_id + period_id`. | `CALCULABILITY_PERCENTAGE_WITHOUT_MAX` ou `CALCULABILITY_COEFFICIENT_AGGREGATION` |
+| `PERIOD_*` / `ANNUAL_*` / `TOTAL` / `SUBTOTAL` | Réservés : pas de sémantique slot distincte au-delà du pourcentage période. Fail-closed. | `CALCULABILITY_COEFFICIENT_AGGREGATION` |
+| `RANK` enabled | `ranking.metric = PERCENTAGE` + agrégation calculable. | `CALCULABILITY_RANKING_METRIC` |
+| `RANK` disabled | `NOT_APPLICABLE` / `RANKING_DISABLED` (identité structurée). | — |
+| `DECISION` | `isCalculablePassRule` (metric PERCENTAGE + threshold + aggregation). | `CALCULABILITY_PASS_RULE_SCALE` (`min_average` historique non calculable) |
 
-| # | Question | Ce que LOT 1 fournit | Écart | Comportement LOT 3 |
-|---|---|---|---|---|
-| 1 | Formule points/max avec `coefficient` | `coefficient` numérique optionnel par composante ; `max` optionnel. Aucune clé `aggregation`, `points = score * coefficient` vs moyenne pondérée, ni règle si `coefficient` est omis. | **Non déterminable.** | `CALCULABILITY_COEFFICIENT_AGGREGATION` dès qu’un slot `PERIOD_POINTS` / `PERIOD_MAX` / `ANNUAL_*` / `TOTAL` / `SUBTOTAL` est demandé. |
-| 2 | `PERCENTAGE` si `max` absent | `max` est optionnel. Aucune échelle par défaut, aucun `percentage_base`. | **Non déterminable.** Même avec `max` présent, le numérateur dépend du gap #1. | `CALCULABILITY_PERCENTAGE_WITHOUT_MAX` si une composante applicable n’a pas de `max` ; `CALCULABILITY_COEFFICIENT_AGGREGATION` si le schema demande `PERCENTAGE`. |
-| 3 | Échelle de `pass_rule.min_average` | `{ min_average: number ≥ 0 }` uniquement. Pas de `scale`, `unit`, `metric` (pourcentage vs /20 vs points). | **Non déterminable.** Interdit d’interpréter `10` comme 10/20. | `CALCULABILITY_PASS_RULE_SCALE` si `DECISION` est demandé. |
-| 4 | Ranking / décision sur valeur interne vs arrondie | `rounding.{decimals,mode}` existe. Aucun `rounding.stage`, `rank_on`, `decide_on`. | **Non déterminable.** | `CALCULABILITY_ROUNDING_STAGE` si ranking activé **ou** `DECISION` demandé. L’arrondi **exposé** des cellules NUMERIC reste possible (modes LOT 1 explicites). |
-| 5 | Ties `competition` vs `min` vs `dense` | Trois identifiants autorisés. Aucune sémantique (1224 vs 1334 vs 1223). `competition` et `min` sont souvent synonymes ailleurs, donc les garder distincts sans définition est ambigu. Aucune métrique à classer (`ranking.metric`). | **Non déterminable.** | Si `ranking.enabled === false` : aucun rang métier inventé. Si activé : `CALCULABILITY_RANKING_METRIC` (et pas d’invention de ties). |
+## Ce qui reste déterminable sans invention
 
-## Ce qui EST déterminable (implémentable sans convention inventée)
+- Cellules `period × composante` : N/A ≠ 0 ; `0` NUMERIC ; bornes via `assertScoreBounds`.
+- Doublon de faits `(student_id, subject_id, period_id, score_component_id)` → `DUPLICATE_FACT`.
+- Présence structurée : section / column / row / identity_fields / metadata_fields, sans indexation par seul `id`.
+- `per_subject` exige `subject_applicable` booléen explicite.
+- Profil/schema toujours revalidés (pas de confiance sur `layer`).
+- Déterminisme / ordre d’entrée / tenant envelope / interdiction country-school.
 
-- `componentApplies` / `resolveScoreCell` : N/A ≠ 0 ; `0` NUMERIC.
-- Intersection `period_id × score_component_id` du schema LOT 2.
-- `presence.when` limité à `period_id` / `score_component_id` / `slot` (évaluation déclarative, pas d’eval JS).
-- Modes d’arrondi `half_up` / `half_even` / `down` + `decimals` **sur une valeur de cellule déjà numérique**.
-- `ranking.enabled === false` ⇒ pas de `RANK` métier.
-- Déterminisme / ordre d’entrée / tenant envelope / fail-closed faits invalides / interdiction country-school.
+Profils historiques sans LOT 1.1 : **HOLD** calculabilité — le moteur refuse les slots d’agrégat / `DECISION` / `RANK` activé.
 
-## Décisions CTO demandées (micro-correctif LOT 1 ou note contractuelle)
-
-Sans ces décisions, LOT 3 ne produira **pas** `PERIOD_POINTS`, `PERCENTAGE`, `RANK` (si enabled) ni `DECISION`.
-
-1. Formule canonique : `points = numeric * coefficient` et `max_points = max * coefficient`, avec `coefficient` omis = 1 ? Ou moyenne `sum(score*c)/sum(c)` ?
-2. `PERCENTAGE = 100 * points / max_points` uniquement si tous les `max` applicables sont présents, sinon fail-closed ?
-3. `min_average` comparé à quelle métrique, sur quelle échelle (ex. même unité que `max` de composante, ou pourcentage 0–100) ?
-4. Ranking et `pass_rule` lisent-ils `internal` ou `exposed` (arrondi) ?
-5. Définition exacte `competition` / `dense` / `min`, et métrique classée (points période, annuel, pourcentage) ?
-
-**LOT 4 interdit** tant que ce HOLD calculabilité n’est pas tranché et que LOT 3 n’est pas fusionné.
+**LOT 4 interdit.**

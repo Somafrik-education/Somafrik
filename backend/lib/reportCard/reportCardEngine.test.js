@@ -172,6 +172,7 @@ test("report-card-engine-calculability-pregate", () => {
   assert.match(note, /CALCULABILITY_COEFFICIENT_AGGREGATION/);
   assert.match(note, /CALCULABILITY_PASS_RULE_SCALE/);
   assert.match(note, /HOLD/);
+  assert.match(note, /LOT 1\.1/);
 });
 
 test("report-card-engine-deterministic", () => {
@@ -356,8 +357,10 @@ test("report-card-engine-ranking-disabled", () => {
     profile: validProfile({ ranking: { enabled: false, ties: "competition" } }),
     schema: schemaWithSlot("RANK"),
   });
-  assert.equal(result.students[0].slots.RANK.kind, "NOT_APPLICABLE");
-  assert.equal(result.students[0].slots.RANK.reason, "RANKING_DISABLED");
+  const rank = findSlot(result.students[0], { slot: "RANK", column_id: "COL_SLOT" });
+  assert.equal(rank.kind, "NOT_APPLICABLE");
+  assert.equal(rank.reason, "RANKING_DISABLED");
+  assert.equal(rank.section_id, "SUBJECTS");
 });
 
 test("report-card-engine-ranking-ties", () => {
@@ -411,10 +414,10 @@ test("report-card-engine-presence-condition", () => {
     ],
   });
   const t1 = compute(api, { schema, facts: [fact({ period_id: "T1" })] });
-  assert.equal(t1.students[0].presence.SUBJECTS.applicable, true);
-  assert.equal(t1.students[0].presence.COL_T1_TJ.applicable, true);
+  assert.equal(findPresence(t1.students[0], { section_id: "SUBJECTS" }).applicable, true);
+  assert.equal(findPresence(t1.students[0], { section_id: "SUBJECTS", column_id: "COL_T1_TJ" }).applicable, true);
   const t2 = compute(api, { schema, facts: [fact({ period_id: "T2", raw_score: 8 })] });
-  assert.equal(t2.students[0].presence.SUBJECTS.applicable, false);
+  assert.equal(findPresence(t2.students[0], { section_id: "SUBJECTS" }).applicable, false);
 });
 
 test("report-card-engine-invalid-facts-fail-closed", () => {
