@@ -42,7 +42,7 @@ SET search_path TO pg_catalog, public, pg_temp
 AS $$
 BEGIN
   IF TG_OP = 'DELETE' THEN
-    IF OLD.status IN ('ACTIVE', 'SUPERSEDED') THEN
+    IF OLD.status IS DISTINCT FROM 'DRAFT' THEN
       RAISE EXCEPTION 'ACADEMIC_RULE_PROFILE_VERSION_IMMUTABLE'
         USING ERRCODE = 'integrity_constraint_violation';
     END IF;
