@@ -160,6 +160,53 @@ describe("academic-rule-profile PG constraints/versioning/isolation", { skip: !s
         ),
         (err) => String(err.message).includes("ACADEMIC_RULE_PROFILE_VERSION_IMMUTABLE")
       );
+
+      const superseded = await pool.query(
+        `SELECT status FROM academic_rule_profile_versions WHERE profile_id = $1 AND version = 1`,
+        [created.profile.id]
+      );
+      const currentActive = await pool.query(
+        `SELECT status FROM academic_rule_profile_versions WHERE profile_id = $1 AND version = 2`,
+        [created.profile.id]
+      );
+      assert.equal(superseded.rows[0].status, "SUPERSEDED");
+      assert.equal(currentActive.rows[0].status, "ACTIVE");
+
+      await assert.rejects(
+        pool.query(
+          `UPDATE academic_rule_profile_versions SET status = 'DRAFT' WHERE profile_id = $1 AND version = 1`,
+          [created.profile.id]
+        ),
+        (err) => String(err.message).includes("ACADEMIC_RULE_PROFILE_VERSION_IMMUTABLE")
+      );
+      await assert.rejects(
+        pool.query(
+          `UPDATE academic_rule_profile_versions SET status = 'DRAFT' WHERE profile_id = $1 AND version = 2`,
+          [created.profile.id]
+        ),
+        (err) => String(err.message).includes("ACADEMIC_RULE_PROFILE_VERSION_IMMUTABLE")
+      );
+
+      const afterReopenAttempt = await pool.query(
+        `SELECT version, status FROM academic_rule_profile_versions
+         WHERE profile_id = $1 AND version IN (1, 2) ORDER BY version`,
+        [created.profile.id]
+      );
+      assert.deepEqual(
+        afterReopenAttempt.rows.map((row) => ({ version: Number(row.version), status: row.status })),
+        [
+          { version: 1, status: "SUPERSEDED" },
+          { version: 2, status: "ACTIVE" },
+        ]
+      );
+
+      await assert.rejects(
+        pool.query(
+          `UPDATE academic_rule_profile_versions SET spec = '{"hack":true}'::jsonb WHERE profile_id = $1 AND version = 1`,
+          [created.profile.id]
+        ),
+        (err) => String(err.message).includes("ACADEMIC_RULE_PROFILE_VERSION_IMMUTABLE")
+      );
     } finally {
       await pool.end();
     }
