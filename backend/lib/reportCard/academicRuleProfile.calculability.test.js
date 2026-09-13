@@ -152,6 +152,43 @@ test("academic-rule-profile-pass-rule-typed", () => {
       ),
     (err) => err.code === "INVALID_PASS_RULE"
   );
+  assert.throws(
+    () =>
+      validateSpec(
+        calculableSpec({
+          ranking: { enabled: false, ties: "competition" },
+          pass_rule: { metric: "PERCENTAGE" },
+        })
+      ),
+    (err) => err.code === "INVALID_PASS_RULE"
+  );
+  assert.throws(
+    () =>
+      validateSpec(
+        calculableSpec({
+          ranking: { enabled: false, ties: "competition" },
+          pass_rule: { metric: "PERCENTAGE", threshold: null },
+        })
+      ),
+    (err) => err.code === "INVALID_PASS_RULE"
+  );
+  assert.throws(
+    () =>
+      validateSpec(
+        calculableSpec({
+          ranking: { enabled: false, ties: "competition" },
+          pass_rule: { metric: "PERCENTAGE", threshold: "" },
+        })
+      ),
+    (err) => err.code === "INVALID_PASS_RULE"
+  );
+  const zero = validateSpec(
+    calculableSpec({
+      ranking: { enabled: false, ties: "competition" },
+      pass_rule: { metric: "PERCENTAGE", threshold: 0 },
+    })
+  );
+  assert.equal(zero.pass_rule.threshold, 0);
 });
 
 test("academic-rule-profile-legacy-pass-rule-remains-readable-but-untyped", () => {
@@ -163,6 +200,19 @@ test("academic-rule-profile-legacy-pass-rule-remains-readable-but-untyped", () =
   assert.equal(typeof api.isCalculablePassRule, "function", "LOT 1.1 calculability missing (RED)");
   assert.equal(api.isCalculablePassRule(spec), false);
   assert.equal(api.isCalculablePassRule(validateSpec(calculableSpec({ ranking: { enabled: false } }))), true);
+  assert.throws(
+    () =>
+      validateSpec(
+        baseSpec({
+          pass_rule: { metric: "PERCENTAGE", threshold: 50 },
+        })
+      ),
+    (err) => err.code === "INVALID_PASS_RULE"
+  );
+  assert.equal(
+    api.isCalculablePassRule({ pass_rule: { metric: "PERCENTAGE", threshold: 50 } }),
+    false
+  );
 });
 
 test("academic-rule-profile-rounding-stage-display-only", () => {
@@ -207,6 +257,15 @@ test("academic-rule-profile-ranking-metric-required-when-calculable", () => {
   const historical = validateSpec(baseSpec({ ranking: { enabled: true, ties: "min" } }));
   assert.equal(historical.ranking.enabled, true);
   assert.equal(historical.ranking.metric, undefined);
+  assert.throws(
+    () =>
+      validateSpec(
+        baseSpec({
+          ranking: { enabled: true, ties: "competition", metric: "PERCENTAGE" },
+        })
+      ),
+    (err) => err.code === "INVALID_RANKING"
+  );
 });
 
 test("academic-rule-profile-ranking-ties-semantics-contract", () => {
