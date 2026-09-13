@@ -27,6 +27,8 @@ const FORBIDDEN = [
 const EXTRA_SCAN_FILES = Object.freeze([
   "backend/db/academicRuleProfilePgStore.js",
   "backend/db/academicRuleProfileSchema.js",
+  "backend/db/reportCardSchemaPgStore.js",
+  "backend/db/reportCardSchemaSql.js",
 ]);
 
 const SKIP_NAMES = new Set([
