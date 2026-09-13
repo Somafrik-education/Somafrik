@@ -32,6 +32,6 @@ describe("annonces plateforme Superadmin", () => {
     expect(read.replace(/\s+/g, " ")).not.toMatch(/\.catch\(\(\) => \(\{ count: 0 \}\)\)/);
     expect(page.replace(/\s+/g, " ")).not.toMatch(/\.catch\(\(\) => \(\{ items: \[\]/);
     expect(page).toMatch(/schoolScope\s*\n\s*\? announcementsApi\.list\(schoolScope\)/);
-    expect(page).toMatch(/Promise\.resolve\(\{ items: \[\] as AnnouncementRecord\[\] \}\)/);
+    expect(page).toMatch(/Promise\.resolve\(\{ items: \[\] as AnnouncementRecord\[\], nextCursor: null \}\)/);
   });
 });

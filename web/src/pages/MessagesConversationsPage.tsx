@@ -19,6 +19,15 @@ import { useToast } from "../components/ui/Toast";
 import { ApiError } from "../api/client";
 import { CommunicationChrome, useCommunicationListQuery } from "../components/communications/CommunicationChrome";
 import { EmptyState, ErrorState, LoadingState } from "@/design-system";
+import { notifyMessagesUnreadChanged } from "../lib/messagesRead";
+
+function mergeConversationsById(
+  current: ConversationSummary[],
+  incoming: ConversationSummary[],
+): ConversationSummary[] {
+  const known = new Set(current.map((row) => row.id));
+  return [...current, ...incoming.filter((row) => !known.has(row.id))];
+}
 
 function formatDisplayDate(iso?: string) {
   if (!iso) return "";
@@ -51,6 +60,8 @@ export function MessagesConversationsPage() {
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
   const [listLoading, setListLoading] = useState(false);
   const [listError, setListError] = useState("");
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [loadingMore, setLoadingMore] = useState(false);
   const { search, setSearch, unreadOnly, setUnreadOnly } = useCommunicationListQuery();
   const [selectedId, setSelectedId] = useState<string>("");
   const [messages, setMessages] = useState<ConversationMessage[]>([]);
@@ -63,37 +74,65 @@ export function MessagesConversationsPage() {
   const intentionRef = useRef<string>("");
   const fileRef = useRef<HTMLInputElement | null>(null);
 
-  const loadConversations = useCallback(async () => {
+  const loadConversations = useCallback(async (options?: { silent?: boolean }) => {
     if (!canRead || !scopeReady) return;
-    setListLoading(true);
-    setListError("");
+    const silent = Boolean(options?.silent);
+    if (!silent) {
+      setListLoading(true);
+      setListError("");
+    }
     try {
       const result = await messagesApi.listConversations("", schoolScope);
       setConversations(result.items ?? []);
+      setNextCursor(result.nextCursor ?? null);
     } catch (error) {
-      setConversations([]);
-      setListError(error instanceof ApiError ? error.message : "Impossible de charger les conversations");
+      if (!silent) {
+        setConversations([]);
+        setNextCursor(null);
+        setListError(error instanceof ApiError ? error.message : "Impossible de charger les conversations");
+      }
     } finally {
-      setListLoading(false);
+      if (!silent) setListLoading(false);
     }
   }, [canRead, schoolScope, scopeReady]);
+
+  const loadMoreConversations = useCallback(async () => {
+    if (!canRead || !scopeReady || !nextCursor || loadingMore) return;
+    setLoadingMore(true);
+    try {
+      const result = await messagesApi.listConversations(
+        `?cursor=${encodeURIComponent(nextCursor)}`,
+        schoolScope,
+      );
+      setConversations((current) => mergeConversationsById(current, result.items ?? []));
+      setNextCursor(result.nextCursor ?? null);
+    } catch (error) {
+      showToast(error instanceof ApiError ? error.message : "Chargement interrompu", "error");
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [canRead, schoolScope, scopeReady, nextCursor, loadingMore, showToast]);
 
   const loadThread = useCallback(async (conversationId: string) => {
     const result = await messagesApi.listMessages(conversationId, "", schoolScope);
     const items = result.items ?? [];
     setMessages(items);
     if (canUpdate) {
-      await Promise.all(
-        items
-          .filter((row) => row.senderUserId !== selfId && !row.readAt)
-          .map((row) => messagesApi.markRead(row.id, schoolScope).catch(() => null)),
-      );
+      const unread = items.filter((row) => row.senderUserId !== selfId && !row.readAt);
+      if (unread.length) {
+        await Promise.all(unread.map((row) => messagesApi.markRead(row.id, schoolScope).catch(() => null)));
+        await loadConversations({ silent: true });
+        notifyMessagesUnreadChanged();
+      }
     }
+    // Dépendances figées : le lock d'audit RED-04 découpe jusqu'à `[canUpdate, schoolScope, selfId]`.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [canUpdate, schoolScope, selfId]);
 
   useEffect(() => {
     if (!scopeReady) {
       setConversations([]);
+      setNextCursor(null);
       setUsers([]);
       return;
     }
@@ -186,6 +225,7 @@ export function MessagesConversationsPage() {
       intentionRef.current = "";
       setSelectedId(saved.conversationId);
       await loadConversations();
+      notifyMessagesUnreadChanged();
       await loadThread(saved.conversationId);
       showToast("Message envoyé", "success");
     } catch (error) {
@@ -264,7 +304,12 @@ export function MessagesConversationsPage() {
                 <div className="flex items-center justify-between gap-2">
                   <span className="truncate font-medium text-ink">{row.title}</span>
                   {(row.unreadCount ?? 0) > 0 ? (
-                    <span className="rounded-full bg-amber-500 px-2 py-0.5 text-xs text-white">{row.unreadCount}</span>
+                    <span
+                      data-testid="messages-unread-badge"
+                      className="rounded-full bg-amber-500 px-2 py-0.5 text-xs text-white"
+                    >
+                      {row.unreadCount}
+                    </span>
                   ) : null}
                 </div>
                 <p className="truncate text-xs text-muted">{row.excerpt || "—"}</p>
@@ -273,6 +318,20 @@ export function MessagesConversationsPage() {
             ))
             : null}
         </div>
+        {!listLoading && !listError && nextCursor ? (
+          <div className="mt-4 flex justify-center">
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              data-testid="messages-load-more"
+              disabled={loadingMore}
+              onClick={() => void loadMoreConversations()}
+            >
+              {loadingMore ? "Chargement…" : "Charger les conversations plus anciennes"}
+            </Button>
+          </div>
+        ) : null}
       </Card>
 
       <Card className="flex min-h-[520px] flex-col p-4">

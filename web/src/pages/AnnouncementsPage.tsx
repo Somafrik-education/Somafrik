@@ -25,6 +25,7 @@ import { useToast } from "../components/ui/Toast";
 import { useConfirm } from "../components/ui/ConfirmDialog";
 import { ApiError } from "../api/client";
 import { CommunicationChrome, useCommunicationListQuery } from "../components/communications/CommunicationChrome";
+import { notifyAnnouncementsUnreadChanged } from "../lib/announcementsRead";
 
 const RECIPIENT_KIND_FALLBACK: AudienceKindOption[] = [
   { id: "parent", label: "parents" },
@@ -75,6 +76,18 @@ function sortByPublishedAt(rows: UnifiedAnnouncement[]) {
   });
 }
 
+function rowKey(row: { id: string; source?: string }) {
+  return `${row.source ?? "row"}-${row.id}`;
+}
+
+function mergeAnnouncementsByKey(
+  current: UnifiedAnnouncement[],
+  incoming: UnifiedAnnouncement[],
+): UnifiedAnnouncement[] {
+  const known = new Set(current.map(rowKey));
+  return sortByPublishedAt([...current, ...incoming.filter((row) => !known.has(rowKey(row)))]);
+}
+
 export function AnnouncementsPage() {
   const { session } = useAuth();
   const { confirm } = useConfirm();
@@ -92,6 +105,9 @@ export function AnnouncementsPage() {
   const [listLoaded, setListLoaded] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [schoolCursor, setSchoolCursor] = useState<string | null>(null);
+  const [platformCursor, setPlatformCursor] = useState<string | null>(null);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [title, setTitle] = useState("");
   const [message, setMessage] = useState("");
   const [scopeType, setScopeType] = useState<"school" | "roles" | "classes">("school");
@@ -116,7 +132,7 @@ export function AnnouncementsPage() {
         platformAnnouncementsApi.list(),
         schoolScope
           ? announcementsApi.list(schoolScope)
-          : Promise.resolve({ items: [] as AnnouncementRecord[] }),
+          : Promise.resolve({ items: [] as AnnouncementRecord[], nextCursor: null }),
       ]);
       const platformItems = (platformResult.items ?? []).map((row) => ({
         ...row,
@@ -127,20 +143,54 @@ export function AnnouncementsPage() {
         source: "school" as const,
       }));
       setItems(sortByPublishedAt([...platformItems, ...schoolItems]));
+      setPlatformCursor(platformResult.nextCursor ?? null);
+      setSchoolCursor(schoolResult.nextCursor ?? null);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Impossible de charger les annonces.");
       setItems([]);
+      setPlatformCursor(null);
+      setSchoolCursor(null);
     } finally {
       setLoading(false);
       setListLoaded(true);
     }
   }, [canRead, schoolScope, scopeReady]);
 
+  const loadMoreAnnouncements = useCallback(async () => {
+    if ((!schoolCursor && !platformCursor) || loadingMore) return;
+    setLoadingMore(true);
+    try {
+      const pendingSchoolCursor = schoolCursor;
+      const pendingPlatformCursor = platformCursor;
+      const [platformResult, schoolResult] = await Promise.all([
+        pendingPlatformCursor
+          ? platformAnnouncementsApi.list({ cursor: pendingPlatformCursor })
+          : Promise.resolve({ items: [] as AnnouncementRecord[], nextCursor: pendingPlatformCursor }),
+        pendingSchoolCursor && schoolScope
+          ? announcementsApi.list(schoolScope, { cursor: pendingSchoolCursor })
+          : Promise.resolve({ items: [] as AnnouncementRecord[], nextCursor: pendingSchoolCursor }),
+      ]);
+      const incoming: UnifiedAnnouncement[] = [
+        ...(platformResult.items ?? []).map((row) => ({ ...row, source: "platform" as const })),
+        ...(schoolResult.items ?? []).map((row) => ({ ...row, source: "school" as const })),
+      ];
+      setItems((current) => mergeAnnouncementsByKey(current, incoming));
+      if (pendingPlatformCursor) setPlatformCursor(platformResult.nextCursor ?? null);
+      if (pendingSchoolCursor) setSchoolCursor(schoolResult.nextCursor ?? null);
+    } catch (err) {
+      showToast(err instanceof ApiError ? err.message : "Chargement interrompu", "error");
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [schoolCursor, platformCursor, loadingMore, schoolScope, showToast]);
+
   useEffect(() => {
     if (!scopeReady) {
       setItems([]);
       setDetail(null);
       setClasses([]);
+      setPlatformCursor(null);
+      setSchoolCursor(null);
       return;
     }
     void loadList();
@@ -189,6 +239,7 @@ export function AnnouncementsPage() {
             setItems((current) =>
               current.map((item) => (item.id === next.id ? { ...item, readAt: next.readAt } : item)),
             );
+            notifyAnnouncementsUnreadChanged();
           }
         }
       } catch (err) {
@@ -319,6 +370,7 @@ export function AnnouncementsPage() {
       intentionRef.current = "";
       setSelectedId(saved.id);
       await loadList();
+      notifyAnnouncementsUnreadChanged();
       showToast("Annonce publiée", "success");
     } catch (err) {
       setSubmitError(err instanceof ApiError ? err.message : "Publication échouée. Réessayez.");
@@ -339,6 +391,7 @@ export function AnnouncementsPage() {
       showToast("Annonce archivée", "success");
       setSelectedId("");
       await loadList();
+      notifyAnnouncementsUnreadChanged();
     } catch (err) {
       showToast(err instanceof ApiError ? err.message : "Archivage impossible.", "error");
     }
@@ -614,6 +667,19 @@ export function AnnouncementsPage() {
             </li>
           ))}
         </ul>
+        {!loading && !error && (schoolCursor || platformCursor) ? (
+          <div className="mt-4 flex justify-center">
+            <Button
+              type="button"
+              variant="secondary"
+              data-testid="announcements-load-more"
+              disabled={loadingMore}
+              onClick={() => void loadMoreAnnouncements()}
+            >
+              {loadingMore ? "Chargement…" : "Charger les annonces plus anciennes"}
+            </Button>
+          </div>
+        ) : null}
       </div>
       <div data-testid="announcement-detail" data-announcement-id={viewed?.id || undefined}>
         {viewed ? (
