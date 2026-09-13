@@ -677,3 +677,48 @@ test("report-card-schema-declarative-optional-conditional", () => {
     (err) => err.code === "CALCULATION_FORBIDDEN"
   );
 });
+
+test("report-card-schema-presence-alias-conflict", () => {
+  const api = loadLot2();
+  assert.ok(api, "LOT 2 domain missing (RED)");
+  const columnBase = {
+    id: "COL_EX",
+    order: 1,
+    kind: "score_component",
+    score_component_id: "EX",
+  };
+  function specWithColumn(column) {
+    return validSchemaSpec({
+      sections: [
+        {
+          id: "SUBJECTS",
+          order: 1,
+          kind: "subject_rows",
+          columns: [column],
+        },
+      ],
+    });
+  }
+  assert.throws(
+    () =>
+      api.validateSpec(
+        specWithColumn({
+          ...columnBase,
+          when: { period_id: "T1" },
+          condition: { period_id: "T2" },
+        })
+      ),
+    (err) => err.code === "INVALID_PRESENCE"
+  );
+  assert.throws(
+    () =>
+      api.validateSpec(
+        specWithColumn({
+          ...columnBase,
+          condition: { period_id: "T1" },
+          presence: { when: { period_id: "T2" } },
+        })
+      ),
+    (err) => err.code === "INVALID_PRESENCE"
+  );
+});
