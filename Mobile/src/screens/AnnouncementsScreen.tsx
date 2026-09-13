@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
   Linking,
@@ -25,9 +25,11 @@ import { useFloatingTabBarLayout } from "../lib/screenLayout";
 import { downloadCommunicationAttachment, downloadPlatformAnnouncementAttachment } from "../services/api";
 import {
   archiveCanonicalAnnouncement,
+  getCanonicalAnnouncementById,
   markCanonicalAnnouncementRead,
   type CanonicalAnnouncement,
 } from "../services/domainHydrationApi";
+import { mergeFocusedAnnouncement, resolveFocusedAnnouncement } from "../lib/announcementsOpenById";
 import type { RootStackParamList } from "../navigation/AppNavigator";
 
 function formatDisplayDate(iso?: string) {
@@ -65,6 +67,8 @@ export default function AnnouncementsScreen() {
   const [archivingId, setArchivingId] = useState("");
   const [query, setQuery] = useState("");
   const [unreadOnly, setUnreadOnly] = useState(false);
+  const [focusedAnnouncement, setFocusedAnnouncement] = useState<CanonicalAnnouncement | null>(null);
+  const markedFocusedIdRef = useRef("");
 
   useFocusEffect(
     useCallback(() => {
@@ -105,27 +109,58 @@ export default function AnnouncementsScreen() {
     ]);
   };
 
-  const visible = useMemo(
-    () =>
-      filterCommunicationRows(
-        (canRead && snapshot.status === "success" ? snapshot.data : []).map((row) => ({
-          ...row,
-          excerpt: excerptCommunication(String(row.message || "")),
-          author: row.author || "",
-          audience: row.audienceLabel || row.audience || "",
-          unread: !row.readAt,
-        })),
-        query,
-        unreadOnly,
-      ),
-    [canRead, snapshot, query, unreadOnly],
-  );
+  const visible = useMemo(() => {
+    const filtered = filterCommunicationRows(
+      (canRead && snapshot.status === "success" ? snapshot.data : []).map((row) => ({
+        ...row,
+        excerpt: excerptCommunication(String(row.message || "")),
+        author: row.author || "",
+        audience: row.audienceLabel || row.audience || "",
+        unread: !row.readAt,
+      })),
+      query,
+      unreadOnly,
+    );
+    return mergeFocusedAnnouncement(
+      filtered,
+      focusedAnnouncement
+        ? {
+            ...focusedAnnouncement,
+            excerpt: excerptCommunication(String(focusedAnnouncement.message || "")),
+            author: focusedAnnouncement.author || "",
+            audience: focusedAnnouncement.audienceLabel || focusedAnnouncement.audience || "",
+            unread: !focusedAnnouncement.readAt,
+          }
+        : null,
+    );
+  }, [canRead, snapshot, query, unreadOnly, focusedAnnouncement]);
 
   useEffect(() => {
-    if (!focusedAnnouncementId || !canRead || snapshot.status !== "success") return;
-    const found = snapshot.data.find((row) => row.id === focusedAnnouncementId);
-    if (found) void markReadIfNeeded(found);
-  }, [focusedAnnouncementId, canRead, snapshot]);
+    if (!focusedAnnouncementId || !canRead) {
+      setFocusedAnnouncement(null);
+      markedFocusedIdRef.current = "";
+      return;
+    }
+    let cancelled = false;
+    const list = snapshot.status === "success" ? snapshot.data : [];
+    void resolveFocusedAnnouncement({
+      announcementId: focusedAnnouncementId,
+      list,
+      fetchById: (id) => getCanonicalAnnouncementById(id, activeSchoolCode),
+    }).then((row) => {
+      if (!cancelled) setFocusedAnnouncement(row);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [focusedAnnouncementId, canRead, snapshot, activeSchoolCode]);
+
+  useEffect(() => {
+    if (!focusedAnnouncement || focusedAnnouncement.readAt) return;
+    if (markedFocusedIdRef.current === focusedAnnouncement.id) return;
+    markedFocusedIdRef.current = focusedAnnouncement.id;
+    void markReadIfNeeded(focusedAnnouncement);
+  }, [focusedAnnouncement]);
 
   return (
     <>

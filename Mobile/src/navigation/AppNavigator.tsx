@@ -4,6 +4,10 @@ import { NavigationContainer } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { navigationRef } from "./rootNavigation";
 import { flushPendingPushNavigation } from "../lib/pushNotificationTap";
+import {
+  collectRegisteredRouteNames,
+  navigateRegisteredPushDestination,
+} from "../lib/pushNotificationNavigate";
 
 import RoleSelectionScreen from "../screens/RoleSelectionScreen";
 import WelcomeScreen from "../screens/WelcomeScreen";
@@ -242,7 +246,14 @@ export default function AppNavigator() {
       key={session ? "authenticated" : "public"}
       onReady={() => {
         flushPendingPushNavigation(
-          (destination, params) => navigationRef.navigate({ name: destination, params } as never),
+          (destination, params) => {
+            navigateRegisteredPushDestination(
+              (name, nextParams) => navigationRef.navigate({ name, params: nextParams } as never),
+              destination,
+              params,
+              collectRegisteredRouteNames(navigationRef.getRootState()),
+            );
+          },
           {
             isReady: () => navigationRef.isReady(),
             isAuthenticated: () => Boolean(session) && canPersistFullSession(session),

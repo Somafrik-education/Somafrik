@@ -18,7 +18,7 @@ import {
 import type { CanonicalMessageContact, CanonicalMessageRelation } from "../lib/mobileCtaRbacAlignment";
 import type { CountryProfile, SchoolProfile, SubscriptionItem } from "../data/catalog";
 import type { PlatformNotification } from "../lib/scope";
-import { httpRequest } from "./httpClient";
+import { httpRequest, ApiClientError } from "./httpClient";
 
 export type {
   CanonicalAnnouncement,
@@ -65,6 +65,40 @@ export async function getCanonicalAnnouncements(schoolCode?: string): Promise<Ca
     const b = Date.parse(String(right.publishedAt || right.createdAt || right.date || "")) || 0;
     return b - a;
   });
+}
+
+async function fetchCanonicalAnnouncementByPath(
+  path: string,
+  source: "school" | "platform",
+): Promise<CanonicalAnnouncement | null> {
+  try {
+    const payload = await httpRequest<unknown>(path);
+    const row = normalizeAnnouncement(payload);
+    return row ? { ...row, source } : null;
+  } catch (error) {
+    if (error instanceof ApiClientError && (error.status === 404 || error.status === 403)) return null;
+    throw error;
+  }
+}
+
+export async function getCanonicalAnnouncementById(
+  announcementId: string,
+  schoolCode?: string,
+): Promise<CanonicalAnnouncement | null> {
+  const id = String(announcementId ?? "").trim();
+  if (!id) return null;
+  const scope = schoolCode || getRequestSchoolScope();
+  if (hasCommunicationSchoolScope(scope)) {
+    const school = await fetchCanonicalAnnouncementByPath(
+      withCommunicationSchoolScope(`/backoffice/announcements/${encodeURIComponent(id)}`, scope),
+      "school",
+    );
+    if (school) return school;
+  }
+  return fetchCanonicalAnnouncementByPath(
+    `/backoffice/platform-announcements/${encodeURIComponent(id)}`,
+    "platform",
+  );
 }
 
 function scopedMessagesPath(path: string, schoolCode?: string | null): string {

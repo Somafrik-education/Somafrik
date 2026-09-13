@@ -155,6 +155,8 @@ function sourceGuards() {
   assert.match(destinations, /somafrikConversationId/);
   assert.match(destinations, /return \{ destination: "Home" \}/);
   assert.match(navigator, /session == null|Boolean\(session\) && canPersistFullSession/);
+  assert.match(navigator, /navigateRegisteredPushDestination/);
+  assert.match(navigator, /collectRegisteredRouteNames/);
   assert.match(auth, /dismissPendingPushNavigation/);
   assert.match(api, /revokeCurrentPushDevice/);
   assert.match(gitignore, /firebase-adminsdk/);
