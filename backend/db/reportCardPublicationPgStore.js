@@ -93,6 +93,10 @@ function createReportCardPublicationPgStore(db) {
   async function insertPublication({ record, supersedeReportCardId }) {
     try {
       return await withTx(async (client) => {
+        await client.query("SELECT pg_advisory_xact_lock(hashtext($1::text), hashtext($2::text))", [
+          record.school_id,
+          record.report_card_id,
+        ]);
         if (supersedeReportCardId) {
           await client.query(
             `UPDATE report_card_published_snapshots

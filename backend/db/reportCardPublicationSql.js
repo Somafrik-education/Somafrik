@@ -27,6 +27,10 @@ CREATE TABLE IF NOT EXISTS report_card_published_snapshots (
 CREATE INDEX IF NOT EXISTS idx_report_card_published_snapshots_school
   ON report_card_published_snapshots (school_id, report_card_id);
 
+CREATE UNIQUE INDEX IF NOT EXISTS report_card_published_snapshots_one_active
+  ON report_card_published_snapshots (school_id, report_card_id)
+  WHERE verification_status = 'ACTIVE';
+
 CREATE TABLE IF NOT EXISTS report_card_publish_outbox (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   school_id UUID NOT NULL REFERENCES schools(id),

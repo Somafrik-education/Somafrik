@@ -13,6 +13,8 @@ Une transaction crée ensemble : `PUBLISHED` + `canonical_bytes` + `snapshot_sha
 
 Retry même `snapshot_sha256` → même `public_id` / même URL. Payload différent → `IDEMPOTENCY_CONFLICT`.
 
+Publications concurrentes de **versions distinctes** du même bulletin : sérialisation PostgreSQL `pg_advisory_xact_lock(hashtext(school_id), hashtext(report_card_id))` dans la transaction d’insert. Exactement une ligne `ACTIVE` ; les autres `SUPERSEDED`. Index unique partiel `(school_id, report_card_id) WHERE verification_status = 'ACTIVE'` en filet fail-closed. L’idempotence même-version reste inchangée.
+
 ## Snapshot signé
 
 Validation fail-closed **avant** `sealSnapshot` : `engine_id === somafrik.report_card.v1`, provenance `profile` + `schema` (id / version / spec_sha256), `students[]` canonique, version entière ≥ 1. PostgreSQL persiste l’`engine_id` déjà présent dans les bytes signés — aucun fallback.
