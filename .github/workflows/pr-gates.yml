@@ -338,6 +338,10 @@ jobs:
         if: needs.scope.outputs.reportcard == 'true'
         run: npm run verify:report-card-lot4
 
+      - name: Report card LOT 5 PDF and printable QR
+        if: needs.scope.outputs.reportcard == 'true'
+        run: npm run verify:report-card-lot5
+
       - name: Planning
         if: needs.scope.outputs.planning == 'true'
         run: |
