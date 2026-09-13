@@ -33,7 +33,6 @@ const EXTRA_SCAN_FILES = Object.freeze([
   "backend/lib/reportCard/reportCardPublication.js",
   "backend/lib/reportCard/reportCardPdf.js",
   "backend/db/reportCardPublicationSql.js",
-  "backend/db/reportCardPublicationSql.js",
   "backend/db/reportCardPublicationPgStore.js",
 ]);
 

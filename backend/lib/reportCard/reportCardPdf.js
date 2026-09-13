@@ -33,6 +33,11 @@ function escapeHtml(value) {
     .replace(/'/g, "&#39;");
 }
 
+function attr(name, value) {
+  if (value == null || value === "") return "";
+  return ` ${name}="${escapeHtml(value)}"`;
+}
+
 function decodeQrPng(pngBuffer) {
   const png = PNG.sync.read(pngBuffer);
   const result = jsQR(new Uint8ClampedArray(png.data), png.width, png.height);
@@ -73,11 +78,28 @@ function cellLabel(cell) {
   return cell.kind == null ? "" : String(cell.kind);
 }
 
+function slotLabel(slot) {
+  if (!slot || typeof slot !== "object") return "";
+  if (slot.kind === "DECISION") {
+    const decision = slot.passed === true ? "PASS" : slot.passed === false ? "FAIL" : "";
+    const metric = slot.exposed != null ? String(slot.exposed) : "";
+    return [metric, decision].filter(Boolean).join(" ");
+  }
+  return cellLabel(slot);
+}
+
+function presenceLabel(entry) {
+  const parts = [entry.section_id, entry.column_id, entry.row_id, entry.field_kind, entry.field_id].filter(
+    (part) => part != null && part !== ""
+  );
+  return parts.join(" ");
+}
+
 function renderStudentTables(payload) {
   const students = Array.isArray(payload.students) ? payload.students : [];
   return students
     .map((student) => {
-      const rows = (student.cells || [])
+      const cellRows = (student.cells || [])
         .map(
           (cell) => `<tr>
         <td>${escapeHtml(cell.subject_id)}</td>
@@ -87,12 +109,34 @@ function renderStudentTables(payload) {
       </tr>`
         )
         .join("\n");
+      const slotRows = (student.slots || [])
+        .map(
+          (slot) => `<tr data-slot="${escapeHtml(slot.slot)}"${attr("data-section", slot.section_id)}>
+        <td>${escapeHtml(slot.slot)}</td>
+        <td>${escapeHtml(slotLabel(slot))}</td>
+      </tr>`
+        )
+        .join("\n");
+      const presenceItems = (student.presence || [])
+        .map(
+          (entry) =>
+            `<li data-presence${attr("data-section", entry.section_id)}${attr("data-column", entry.column_id)}${attr(
+              "data-row",
+              entry.row_id
+            )} data-applicable="${entry.applicable === true ? "true" : "false"}">${escapeHtml(presenceLabel(entry))}</li>`
+        )
+        .join("\n");
       return `<section>
       <h2>${escapeHtml(student.student_id)}</h2>
-      <table class="cells">
+      <table class="cells" data-cells>
         <thead><tr><th>subject</th><th>period</th><th>component</th><th>value</th></tr></thead>
-        <tbody>${rows}</tbody>
+        <tbody>${cellRows}</tbody>
       </table>
+      <table class="slots" data-slots>
+        <thead><tr><th>slot</th><th>value</th></tr></thead>
+        <tbody>${slotRows}</tbody>
+      </table>
+      <ul class="presence">${presenceItems}</ul>
     </section>`;
     })
     .join("\n");
@@ -111,7 +155,28 @@ function buildHtml(payload, qr) {
     .replaceAll("{{QR_URL}}", escapeHtml(qr.url));
 }
 
-async function renderPdfAfterCommit(html) {
+function assertHtmlString(html) {
+  if (typeof html !== "string" || html.trim() === "") {
+    throw new ReportCardPdfError("PDF_RENDER_FAILED", "html string required");
+  }
+  return html;
+}
+
+async function rasterQrAfterLayout(page, qr) {
+  const handle = await page.$(".qr");
+  if (!handle) {
+    throw new ReportCardPdfError("QR_UNREADABLE");
+  }
+  const raster = await handle.screenshot({ type: "png", omitBackground: false });
+  const rasterQrDecoded = decodeQrPng(Buffer.from(raster));
+  if (qr && qr.url && rasterQrDecoded !== qr.url) {
+    throw new ReportCardPdfError("QR_SCAN_MISMATCH");
+  }
+  return rasterQrDecoded;
+}
+
+async function renderPdfAfterCommit({ html, qr } = {}) {
+  const documentHtml = assertHtmlString(html);
   const puppeteer = require("puppeteer");
   const browser = await puppeteer.launch({
     headless: true,
@@ -120,6 +185,7 @@ async function renderPdfAfterCommit(html) {
   });
   try {
     const page = await browser.newPage();
+    await page.setViewport({ width: 794, height: 1123, deviceScaleFactor: 2 });
     await page.setRequestInterception(true);
     page.on("request", (req) => {
       const url = req.url();
@@ -129,14 +195,15 @@ async function renderPdfAfterCommit(html) {
       }
       req.abort();
     });
-    await page.setContent(html, { waitUntil: "domcontentloaded" });
+    await page.setContent(documentHtml, { waitUntil: "domcontentloaded" });
+    const rasterQrDecoded = await rasterQrAfterLayout(page, qr);
     const pdf = await page.pdf({
       format: "A4",
       printBackground: true,
       preferCSSPageSize: true,
     });
     await page.close();
-    return Buffer.from(pdf);
+    return { pdf: Buffer.from(pdf), rasterQrDecoded };
   } finally {
     await browser.close();
   }
@@ -147,26 +214,41 @@ function thenable(value, fn) {
   return fn(value);
 }
 
+function unwrapDriverResult(result) {
+  if (Buffer.isBuffer(result)) {
+    return { pdf: result, rasterQrDecoded: result.rasterQrDecoded };
+  }
+  if (result && Buffer.isBuffer(result.pdf)) {
+    return { pdf: result.pdf, rasterQrDecoded: result.rasterQrDecoded };
+  }
+  throw new ReportCardPdfError("PDF_RENDER_FAILED");
+}
+
 function createReportCardPdf({ publication, pdfDriver } = {}) {
   if (!publication || typeof publication.payloadForRender !== "function") {
     throw new ReportCardPdfError("PUBLICATION_REQUIRED");
   }
   const driver = pdfDriver || renderPdfAfterCommit;
 
-  function render({ tenant, reportCardId, version } = {}) {
+  function render({ tenant, reportCardId, version, renderingTemplate } = {}) {
+    if (renderingTemplate !== undefined) {
+      return Promise.reject(new ReportCardPdfError("RENDERING_TEMPLATE_REQUIRED"));
+    }
     return Promise.resolve().then(() =>
       thenable(publication.payloadForRender({ tenant, reportCardId, version }), (payload) =>
         thenable(publication.reprintUrl({ tenant, reportCardId, version }), (url) =>
           thenable(buildPrintableQr(url), (qr) => {
             const html = buildHtml(payload, qr);
-            return thenable(driver({ html, qr, payload }), (pdf) =>
-              Object.freeze({
+            return thenable(driver({ html, qr, payload }), (raw) => {
+              const { pdf, rasterQrDecoded } = unwrapDriverResult(raw);
+              return Object.freeze({
                 pdf,
                 html,
                 qr: Object.freeze(qr),
                 payload,
-              })
-            );
+                ...(rasterQrDecoded != null ? { rasterQrDecoded } : {}),
+              });
+            });
           })
         )
       )
