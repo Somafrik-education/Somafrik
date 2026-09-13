@@ -304,24 +304,19 @@ test("report-card-publication-no-cross-school-fallback", () => {
   const api = loadLot4();
   assert.ok(api, "LOT 4 publication missing (RED)");
   const { publication } = boot(api);
-  const published = publication.publish({ tenant: TENANT_A, payload: snapshotPayload() });
-  const url = publication.reprintUrl({ tenant: TENANT_A, reportCardId: "rc-1", version: 1 });
-  const token = url.split(".").pop();
-  const missed = publication.lookupPublic({
-    tenant: TENANT_B,
-    publicId: published.public_id,
-    token,
-  });
-  assert.equal(missed.ok, false);
-  assert.ok(missed.reason === "tenant_mismatch" || missed.reason === "not_found");
-  assert.equal(missed.payload, undefined);
-  const found = publication.lookupPublic({
-    tenant: TENANT_A,
-    publicId: published.public_id,
-    token,
-  });
-  assert.equal(found.ok, true);
-  assert.equal(found.payload.school_id, SCHOOL_A);
+  publication.publish({ tenant: TENANT_A, payload: snapshotPayload() });
+  assert.throws(
+    () => publication.lookup({ tenant: TENANT_B, reportCardId: "rc-1", version: 1 }),
+    (err) => err.code === "TENANT_MISMATCH" || err.code === "PUBLICATION_NOT_FOUND"
+  );
+  assert.throws(
+    () => publication.reprintUrl({ tenant: TENANT_B, reportCardId: "rc-1", version: 1 }),
+    (err) => err.code === "TENANT_MISMATCH" || err.code === "PUBLICATION_NOT_FOUND"
+  );
+  assert.throws(
+    () => publication.payloadForRender({ tenant: TENANT_B, reportCardId: "rc-1", version: 1 }),
+    (err) => err.code === "TENANT_MISMATCH" || err.code === "PUBLICATION_NOT_FOUND"
+  );
 });
 
 test("report-card-qr-strategy-a-stable-url", () => {
@@ -376,6 +371,109 @@ test("report-card-new-version-new-public-id", () => {
   assert.equal(v2.verification_status, "ACTIVE");
   const stillV1 = publication.payloadForRender({ tenant: TENANT_A, reportCardId: "rc-1", version: 1 });
   assert.equal(stillV1.published_snapshot_version, 1);
+});
+
+test("report-card-publication-signed-provenance", () => {
+  const api = loadLot4();
+  assert.ok(api, "LOT 4 publication missing (RED)");
+  const { publication } = boot(api);
+  const missingEngine = snapshotPayload();
+  delete missingEngine.engine_id;
+  assert.throws(
+    () => publication.publish({ tenant: TENANT_A, payload: missingEngine }),
+    (err) => err.code === "INVALID_ENGINE"
+  );
+  assert.throws(
+    () =>
+      publication.publish({
+        tenant: TENANT_A,
+        payload: snapshotPayload({ engine_id: "other.engine" }),
+      }),
+    (err) => err.code === "INVALID_ENGINE"
+  );
+  assert.throws(
+    () => publication.publish({ tenant: TENANT_A, payload: snapshotPayload({ provenance: null }) }),
+    (err) => err.code === "INVALID_PROVENANCE"
+  );
+  assert.throws(
+    () =>
+      publication.publish({
+        tenant: TENANT_A,
+        payload: snapshotPayload({ provenance: { profile: { id: "P", version: 1, spec_sha256: "aa" } } }),
+      }),
+    (err) => err.code === "INVALID_PROVENANCE"
+  );
+  assert.throws(
+    () =>
+      publication.publish({
+        tenant: TENANT_A,
+        payload: snapshotPayload({
+          provenance: {
+            profile: { id: "P", spec_sha256: "aa" },
+            schema: { id: "S", version: 1, spec_sha256: "bb" },
+          },
+        }),
+      }),
+    (err) => err.code === "INVALID_PROVENANCE"
+  );
+  assert.throws(
+    () => publication.publish({ tenant: TENANT_A, payload: snapshotPayload({ students: null }) }),
+    (err) => err.code === "INVALID_SNAPSHOT"
+  );
+  assert.throws(
+    () => publication.publish({ tenant: TENANT_A, payload: snapshotPayload({ students: [{ student_id: "STU-1" }] }) }),
+    (err) => err.code === "INVALID_SNAPSHOT"
+  );
+  assert.throws(
+    () =>
+      publication.publish({
+        tenant: TENANT_A,
+        payload: snapshotPayload({ published_snapshot_version: 0 }),
+      }),
+    (err) => err.code === "INVALID_SNAPSHOT"
+  );
+  assert.throws(
+    () =>
+      publication.publish({
+        tenant: TENANT_A,
+        payload: snapshotPayload({ published_snapshot_version: 1.5 }),
+      }),
+    (err) => err.code === "INVALID_SNAPSHOT"
+  );
+  assert.equal(publication.listOutbox({ tenant: TENANT_A }).length, 0);
+  const published = publication.publish({ tenant: TENANT_A, payload: snapshotPayload() });
+  assert.equal(published.sealed.payload.engine_id, ENGINE_ID);
+  assert.match(published.sealed.canonical_bytes.toString("utf8"), /"engine_id":"somafrik\.report_card\.v1"/);
+  assert.equal(published.sealed.payload.provenance.profile.spec_sha256, "aa");
+  assert.equal(published.sealed.payload.provenance.schema.spec_sha256, "bb");
+  assert.ok(Array.isArray(published.sealed.payload.students));
+});
+
+test("report-card-qr-public-lookup-autonomous", () => {
+  const api = loadLot4();
+  assert.ok(api, "LOT 4 publication missing (RED)");
+  const { publication } = boot(api);
+  const published = publication.publish({ tenant: TENANT_A, payload: snapshotPayload() });
+  const url = publication.reprintUrl({ tenant: TENANT_A, reportCardId: "rc-1", version: 1 });
+  const token = url.split(".").pop();
+  const found = publication.lookupPublic({ publicId: published.public_id, token });
+  assert.equal(found.ok, true);
+  assert.equal(found.payload.school_id, SCHOOL_A);
+  assert.equal(found.payload.engine_id, ENGINE_ID);
+  assert.equal(found.record, undefined);
+  const badToken = publication.lookupPublic({ publicId: published.public_id, token: "nope" });
+  assert.equal(badToken.ok, false);
+  assert.equal(badToken.reason, "not_found");
+  assert.equal(badToken.payload, undefined);
+  assert.equal(badToken.record, undefined);
+  const badId = publication.lookupPublic({ publicId: "missing", token });
+  assert.equal(badId.ok, false);
+  assert.equal(badId.reason, "not_found");
+  assert.equal(badId.payload, undefined);
+  assert.throws(
+    () => publication.lookup({ tenant: TENANT_B, reportCardId: "rc-1", version: 1 }),
+    (err) => err.code === "TENANT_MISMATCH" || err.code === "PUBLICATION_NOT_FOUND"
+  );
 });
 
 test("report-card-no-country-school-branch", () => {

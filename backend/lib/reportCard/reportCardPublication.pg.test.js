@@ -141,6 +141,28 @@ describe("report-card-publication PG atomic/idempotent/isolation", { skip: !shou
         (err) => err.code === "TENANT_MISMATCH" || err.code === "PUBLICATION_NOT_FOUND"
       );
 
+      const missingEngine = payload(schoolA, { report_card_id: "rc-pg-reject" });
+      delete missingEngine.engine_id;
+      await assert.rejects(
+        () => publication.publish({ tenant: tenantA, payload: missingEngine }),
+        (err) => err.code === "INVALID_ENGINE"
+      );
+      const counts = await pool.query(
+        "SELECT (SELECT COUNT(*)::int FROM report_card_published_snapshots) AS snapshots, (SELECT COUNT(*)::int FROM report_card_publish_outbox) AS outbox"
+      );
+      assert.equal(counts.rows[0].snapshots, 1);
+      assert.equal(counts.rows[0].outbox, 1);
+
+      const publicUrl = await publication.reprintUrl({ tenant: tenantA, reportCardId: "rc-pg-1", version: 1 });
+      const publicToken = publicUrl.split(".").pop();
+      const publicFound = await publication.lookupPublic({ publicId: first.public_id, token: publicToken });
+      assert.equal(publicFound.ok, true);
+      assert.equal(publicFound.payload.engine_id, "somafrik.report_card.v1");
+      assert.equal(publicFound.record, undefined);
+      const publicMiss = await publication.lookupPublic({ publicId: first.public_id, token: "nope" });
+      assert.equal(publicMiss.ok, false);
+      assert.equal(publicMiss.reason, "not_found");
+
       const v2 = await publication.publish({
         tenant: tenantA,
         payload: payload(schoolA, { published_snapshot_version: 2, published_at: "2026-09-13T01:00:00.000Z" }),
