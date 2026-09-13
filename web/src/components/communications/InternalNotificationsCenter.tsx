@@ -15,6 +15,7 @@ import { Field, Input } from "../ui/Field";
 import { Modal } from "../ui/Modal";
 import { useToast } from "../ui/Toast";
 import { CommunicationChrome, useCommunicationListQuery } from "./CommunicationChrome";
+import { CommunicationHttpErrorState } from "./CommunicationHttpErrorState";
 import { ExpandableCommunicationCard } from "./ExpandableCommunicationCard";
 
 function formatDateTime(value?: string): string {
@@ -44,7 +45,7 @@ export function InternalNotificationsCenter() {
   const navigate = useNavigate();
   const [rows, setRows] = useState<InternalNotificationRecord[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<unknown>(null);
   const [composer, setComposer] = useState(false);
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
@@ -72,7 +73,7 @@ export function InternalNotificationsCenter() {
       setRows(result.items ?? []);
       setCursor(result.nextCursor ?? null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Notifications indisponibles");
+      setError(err);
     } finally {
       setLoading(false);
     }
@@ -195,10 +196,11 @@ export function InternalNotificationsCenter() {
       <Card className="p-4">
         {loading ? <p className="py-10 text-center text-muted">Chargement…</p> : null}
         {error ? (
-          <div className="py-8 text-center">
-            <p className="text-danger">{error}</p>
-            <Button className="mt-3" variant="secondary" onClick={() => void load()}>Réessayer</Button>
-          </div>
+          <CommunicationHttpErrorState
+            error={error}
+            fallbackMessage="Notifications indisponibles"
+            onRetry={() => void load()}
+          />
         ) : null}
         {!loading && !error && visibleRows.length === 0 ? (
           <p className="py-10 text-center text-muted">Aucune notification.</p>

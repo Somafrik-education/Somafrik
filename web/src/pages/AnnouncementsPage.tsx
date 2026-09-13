@@ -25,6 +25,7 @@ import { useToast } from "../components/ui/Toast";
 import { useConfirm } from "../components/ui/ConfirmDialog";
 import { ApiError } from "../api/client";
 import { CommunicationChrome, useCommunicationListQuery } from "../components/communications/CommunicationChrome";
+import { CommunicationHttpErrorState } from "../components/communications/CommunicationHttpErrorState";
 import { notifyAnnouncementsUnreadChanged } from "../lib/announcementsRead";
 
 const RECIPIENT_KIND_FALLBACK: AudienceKindOption[] = [
@@ -104,7 +105,7 @@ export function AnnouncementsPage() {
   const [detail, setDetail] = useState<UnifiedAnnouncement | null>(null);
   const [listLoaded, setListLoaded] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
+  const [error, setError] = useState<unknown>(null);
   const [schoolCursor, setSchoolCursor] = useState<string | null>(null);
   const [platformCursor, setPlatformCursor] = useState<string | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -126,7 +127,7 @@ export function AnnouncementsPage() {
   const loadList = useCallback(async () => {
     if (!canRead || !scopeReady) return;
     setLoading(true);
-    setError("");
+    setError(null);
     try {
       const [platformResult, schoolResult] = await Promise.all([
         platformAnnouncementsApi.list(),
@@ -146,7 +147,7 @@ export function AnnouncementsPage() {
       setPlatformCursor(platformResult.nextCursor ?? null);
       setSchoolCursor(schoolResult.nextCursor ?? null);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Impossible de charger les annonces.");
+      setError(err);
       setItems([]);
       setPlatformCursor(null);
       setSchoolCursor(null);
@@ -632,12 +633,11 @@ export function AnnouncementsPage() {
         ) : null}
         {loading ? <p className="text-sm text-muted">Chargement des annonces…</p> : null}
         {error ? (
-          <div>
-            <p className="text-sm text-danger">{error}</p>
-            <Button type="button" variant="secondary" onClick={() => void loadList()}>
-              Réessayer
-            </Button>
-          </div>
+          <CommunicationHttpErrorState
+            error={error}
+            fallbackMessage="Impossible de charger les annonces."
+            onRetry={() => void loadList()}
+          />
         ) : null}
         {!loading && !error && !items.length ? <p className="text-sm text-muted">Aucune annonce.</p> : null}
         <ul className="space-y-1">

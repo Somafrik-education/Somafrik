@@ -21,6 +21,8 @@ on:
       - "web/src/lib/platformAnnouncementsApi.ts"
       - "web/src/lib/announcementsRead.ts"
       - "web/src/lib/announcementsRead.lotc.test.tsx"
+      - "web/src/pages/PlatformNotificationsPage.tsx"
+      - "web/src/pages/PlatformNotificationsPage.p3.test.tsx"
       - "web/src/lib/announcementsPlatform.test.ts"
       - "Mobile/src/screens/AnnouncementsScreen.tsx"
       - "Mobile/src/components/AnnouncementMutationControls.tsx"

@@ -174,7 +174,7 @@ function sourceGuards() {
   assert.match(webRead, /\.unreadCount\(/);
   assert.match(topbar, /useInternalNotificationsUnreadCount/);
   assert.match(mobileRead, /getInternalNotificationsUnreadCount/);
-  assert.match(mobileHeader, /useInternalNotificationsUnreadCount/);
+  assert.match(mobileHeader, /CommunicationHeaderIcons/);
   assert.match(mobileIcons, /useInternalNotificationsUnreadCount/);
   assert.match(mobileNav, /InternalNotifications/);
   assert.match(mobileDrawer, /InternalNotifications/);
@@ -365,9 +365,11 @@ function main() {
   run(process.execPath, ["--check", "backend/server.js"], "syntax server");
   run(process.execPath, ["backend/lib/communicationsAttachments.test.js"], "communicationsAttachments unit");
   run("npm", ["--prefix", "web", "run", "test", "--", "src/lib/internalNotificationsC4.test.ts"], "web internal notifications C4");
+  run("npm", ["--prefix", "web", "run", "test", "--", "src/lib/communicationHttpError.test.ts", "src/components/communications/InternalNotificationsCenter.p3.test.tsx", "src/pages/PlatformNotificationsPage.p3.test.tsx"], "web Lot P3 HTTP + loading plateforme");
   run("npm", ["--prefix", "web", "run", "test", "--", "src/lib/dashboardKpiTruth.test.ts"], "web KPI Alertes C4");
   run("npm", ["--prefix", "web", "run", "test", "--", "src/lib/dashboardPermissions.test.ts"], "web Lot J P1 RBAC operations");
   run("npx", ["--yes", "tsx", "Mobile/src/lib/internalNotificationsC4.test.ts"], "mobile internal notifications C4");
+  run("npx", ["--yes", "tsx", "Mobile/src/lib/communicationHeaderIcons.p3.test.ts"], "mobile Lot P3 header Communication");
   run("npx", ["--yes", "tsx", "Mobile/src/lib/notificationInboxRoute.test.ts"], "mobile inbox routing context");
   run("npx", ["--yes", "tsx", "Mobile/src/lib/financeNotificationNavigation.test.ts"], "mobile C4 Ouvrir + push Communication");
   run("npx", ["--yes", "tsx", "Mobile/src/lib/communicationPagination.lotc.test.ts"], "mobile Lot C pagination RED-06");

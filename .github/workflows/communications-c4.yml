@@ -84,6 +84,11 @@ on:
       - "web/src/pages/MessagesConversationsPage.lotc.test.tsx"
       - "web/src/lib/messagesRead.ts"
       - "web/src/lib/messagesRead.lotc.test.tsx"
+      - "web/src/lib/communicationHttpError.ts"
+      - "web/src/lib/communicationHttpError.test.ts"
+      - "web/src/components/communications/CommunicationHttpErrorState.tsx"
+      - "web/src/components/communications/InternalNotificationsCenter.p3.test.tsx"
+      - "web/src/pages/PlatformNotificationsPage.p3.test.tsx"
       - "web/src/pages/AnnouncementsPage.tsx"
       - "web/src/pages/AnnouncementsPage.deeplink.test.tsx"
       - "web/src/pages/AnnouncementsPage.lotc.test.tsx"
@@ -146,6 +151,9 @@ on:
       - "web/src/pages/parametres/SettingsPlaceholders.tsx"
       - "Mobile/src/components/CommunicationHeaderIcons.tsx"
       - "Mobile/src/components/MobileAppHeader.tsx"
+      - "Mobile/src/lib/communicationHeaderIcons.p3.test.ts"
+      - "Mobile/src/lib/mobileUxV1Layout.ts"
+      - "Mobile/src/lib/mobileAppHeader.topbar.test.ts"
       - "Mobile/src/domain/security/permissions.ts"
       - "Mobile/src/lib/internalNotificationsRead.ts"
       - "Mobile/src/lib/internalNotificationsC4.test.ts"
@@ -244,6 +252,9 @@ jobs:
             src/pages/AnnouncementsPage.lotc.test.tsx \
             src/lib/messagesRead.lotc.test.tsx \
             src/lib/announcementsRead.lotc.test.tsx \
+            src/lib/communicationHttpError.test.ts \
+            src/components/communications/InternalNotificationsCenter.p3.test.tsx \
+            src/pages/PlatformNotificationsPage.p3.test.tsx \
             src/pages/EntityPage.deeplink.test.tsx \
             src/pages/PresencesPage.deeplink.test.tsx \
             src/pages/GradesEvaluationsPage.deeplink.test.tsx \

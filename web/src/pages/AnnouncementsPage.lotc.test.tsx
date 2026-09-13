@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
+import { ApiError } from "../api/client";
 import { AnnouncementsPage } from "./AnnouncementsPage";
 
 const showToast = vi.hoisted(() => vi.fn());
@@ -137,5 +138,17 @@ describe("Lot C — Annonces Web pagination", () => {
     renderPage();
     await screen.findByText("Annonce unique");
     expect(screen.queryByTestId("announcements-load-more")).toBeNull();
+  });
+
+  it("P3-02 — GET annonces 404 affiche Introuvable et le statut HTTP", async () => {
+    schoolList.mockRejectedValue(new ApiError("annonce absente", 404));
+    platformList.mockResolvedValue({ items: [], nextCursor: null });
+    renderPage();
+    const banner = await screen.findByTestId("communication-http-error");
+    expect(banner).toHaveAttribute("data-http-status", "404");
+    expect(banner).toHaveTextContent("Ressource introuvable");
+    expect(banner).toHaveTextContent("HTTP 404");
+    expect(banner).not.toHaveTextContent("annonce absente");
+    expect(screen.getByRole("button", { name: "Réessayer" })).toBeInTheDocument();
   });
 });

@@ -18,7 +18,8 @@ import { Field } from "../components/ui/Field";
 import { useToast } from "../components/ui/Toast";
 import { ApiError } from "../api/client";
 import { CommunicationChrome, useCommunicationListQuery } from "../components/communications/CommunicationChrome";
-import { EmptyState, ErrorState, LoadingState } from "@/design-system";
+import { EmptyState, LoadingState } from "@/design-system";
+import { CommunicationHttpErrorState } from "../components/communications/CommunicationHttpErrorState";
 import { notifyMessagesUnreadChanged } from "../lib/messagesRead";
 
 function mergeConversationsById(
@@ -59,7 +60,7 @@ export function MessagesConversationsPage() {
   const deepLinkConversationId = useDeepLinkId("conversationId");
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
   const [listLoading, setListLoading] = useState(false);
-  const [listError, setListError] = useState("");
+  const [listError, setListError] = useState<unknown>(null);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
   const { search, setSearch, unreadOnly, setUnreadOnly } = useCommunicationListQuery();
@@ -79,7 +80,7 @@ export function MessagesConversationsPage() {
     const silent = Boolean(options?.silent);
     if (!silent) {
       setListLoading(true);
-      setListError("");
+      setListError(null);
     }
     try {
       const result = await messagesApi.listConversations("", schoolScope);
@@ -89,7 +90,7 @@ export function MessagesConversationsPage() {
       if (!silent) {
         setConversations([]);
         setNextCursor(null);
-        setListError(error instanceof ApiError ? error.message : "Impossible de charger les conversations");
+        setListError(error);
       }
     } finally {
       if (!silent) setListLoading(false);
@@ -275,13 +276,10 @@ export function MessagesConversationsPage() {
       <Card className="p-4">
         {listLoading ? <LoadingState message="Chargement des conversations…" /> : null}
         {listError ? (
-          <ErrorState
-            message={listError}
-            action={
-              <Button type="button" variant="secondary" size="sm" onClick={() => void loadConversations()}>
-                Réessayer
-              </Button>
-            }
+          <CommunicationHttpErrorState
+            error={listError}
+            fallbackMessage="Impossible de charger les conversations"
+            onRetry={() => void loadConversations()}
           />
         ) : null}
         {!listLoading && !listError && visibleConversations.length === 0 ? (

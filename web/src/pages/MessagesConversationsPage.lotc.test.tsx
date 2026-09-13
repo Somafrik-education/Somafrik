@@ -10,6 +10,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { MemoryRouter } from "react-router-dom";
+import { ApiError } from "../api/client";
 import { MessagesConversationsPage } from "./MessagesConversationsPage";
 
 const showToast = vi.hoisted(() => vi.fn());
@@ -226,5 +227,16 @@ describe("Lot C — Messages Web unread + pagination", () => {
     renderPage();
     await screen.findByTestId("messages-conversation-item");
     expect(screen.queryByTestId("messages-load-more")).toBeNull();
+  });
+
+  it("P3-02 — GET /conversations 403 affiche Accès refusé et le statut HTTP", async () => {
+    listConversations.mockRejectedValue(new ApiError("message API brut", 403));
+    renderPage();
+    const banner = await screen.findByTestId("communication-http-error");
+    expect(banner).toHaveAttribute("data-http-status", "403");
+    expect(banner).toHaveTextContent("Accès refusé");
+    expect(banner).toHaveTextContent("HTTP 403");
+    expect(banner).not.toHaveTextContent("message API brut");
+    expect(screen.getByRole("button", { name: "Réessayer" })).toBeInTheDocument();
   });
 });

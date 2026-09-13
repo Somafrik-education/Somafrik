@@ -1,6 +1,7 @@
 /**
  * Contrat UI TopBar mobile — header Accueil uniquement.
  * RED → GREEN : pas de loupe, menu 32/48, rangée ~76 dp, 360/390 sans débordement.
+ * P3 : trio Communication compact monté à droite, 320 dp titre ≥ 96.
  */
 import assert from "node:assert/strict";
 import fs from "node:fs";
@@ -10,26 +11,33 @@ import { MIN_TOUCH_TARGET_DP } from "./mobileUsability";
 import {
   COMPACT_HEADER_ROW_DP,
   HEADER_ACTIONS_SLOT_DP,
+  HEADER_COMPACT_ACTION_DP,
+  HEADER_COMMUNICATION_ICON_COUNT,
   HEADER_MENU_SLOT_DP,
+  HEADER_ROW_PADDING_H,
+  HEADER_TITLE_MIN_DP,
   UX_V1_VIEWPORTS,
 } from "./mobileUxV1Layout";
 
 const srcRoot = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
 const headerSrc = fs.readFileSync(path.join(srcRoot, "components", "MobileAppHeader.tsx"), "utf8");
+const iconsSrc = fs.readFileSync(path.join(srcRoot, "components", "CommunicationHeaderIcons.tsx"), "utf8");
 
 const TOPBAR_MIN_DP = 72;
 const TOPBAR_MAX_DP = 80;
 const MENU_ICON_DP = 32;
 const MENU_TOUCH_DP = 48;
-const TITLE_MIN_DP = 96;
-const HEADER_ROW_PADDING_H = 4;
 const VALIDATION_WIDTHS = [360, 390] as const;
 
 assert.match(headerSrc, /testID="mobile-app-header"/);
 assert.match(headerSrc, /testID="mobile-header-menu"/);
 assert.match(headerSrc, /testID="mobile-header-school-name"/);
 assert.match(headerSrc, /testID="mobile-header-sync"/);
-assert.match(headerSrc, /testID="mobile-header-notifications"/);
+assert.match(headerSrc, /<CommunicationHeaderIcons/);
+assert.match(headerSrc, /variant="header"/);
+assert.match(iconsSrc, /testID=\{compact \? "mobile-header-messages"/);
+assert.match(iconsSrc, /testID=\{compact \? "mobile-header-announcements"/);
+assert.match(iconsSrc, /testID=\{compact \? "mobile-header-notifications"/);
 assert.match(headerSrc, /accessibilityLabel="Ouvrir le menu"/);
 assert.match(headerSrc, /accessibilityLabel=\{`\$\{label\}\$\{badgeLabel\}`\}/);
 
@@ -47,10 +55,10 @@ const menuIdx = headerSrc.indexOf('testID="mobile-header-menu"');
 const schoolIdx = headerSrc.indexOf('testID="mobile-header-school-name"');
 const syncIdx = headerSrc.indexOf('testID="mobile-header-sync"');
 const searchIdx = headerSrc.indexOf('testID="mobile-header-search"');
-const notifIdx = headerSrc.indexOf('testID="mobile-header-notifications"');
+const trioIdx = headerSrc.indexOf("<CommunicationHeaderIcons");
 assert.ok(menuIdx >= 0 && schoolIdx > menuIdx, "MENU avant le nom d'établissement");
 assert.ok(syncIdx > schoolIdx, "ACTUALISER après le nom d'établissement");
-assert.ok(notifIdx > syncIdx, "NOTIFICATIONS après Actualiser");
+assert.ok(trioIdx > syncIdx, "trio Communication après Actualiser");
 assert.equal(searchIdx, -1, "aucun testID Recherche entre Actualiser et Notifications");
 
 assert.match(headerSrc, /onPress=\{\(\) => setDrawerOpen\(true\)\}/);
@@ -63,7 +71,6 @@ assert.match(headerSrc, /flex:\s*1/);
 assert.match(headerSrc, /minHeight: COMPACT_HEADER_ROW_DP/);
 assert.match(headerSrc, /HEADER_ACTIONS_SLOT_DP/);
 assert.match(headerSrc, /HEADER_MENU_SLOT_DP/);
-assert.match(headerSrc, /count=\{canInternalNotifications \? internalUnread : 0\}/);
 
 assert.match(
   headerSrc,
@@ -84,8 +91,8 @@ assert.equal(COMPACT_HEADER_ROW_DP, 76, "cible CTO : rangée TopBar 76 dp");
 assert.equal(HEADER_MENU_SLOT_DP, MENU_TOUCH_DP, "slot menu = cible tactile 48 dp");
 assert.equal(
   HEADER_ACTIONS_SLOT_DP,
-  MIN_TOUCH_TARGET_DP * 2,
-  "slot actions = Actualiser + Notifications, sans place réservée à la loupe",
+  MIN_TOUCH_TARGET_DP + HEADER_COMPACT_ACTION_DP * HEADER_COMMUNICATION_ICON_COUNT,
+  "slot actions = Actualiser 44 + trio Communication compact 3×36, sans loupe",
 );
 
 function measureTopBarRow(viewportWidth: number) {
@@ -95,7 +102,7 @@ function measureTopBarRow(viewportWidth: number) {
     viewportWidth,
     occupied,
     titleWidth,
-    overflows: occupied > viewportWidth || titleWidth < TITLE_MIN_DP,
+    overflows: occupied > viewportWidth || titleWidth < HEADER_TITLE_MIN_DP,
     menuIcon: MENU_ICON_DP,
     menuTouch: MENU_TOUCH_DP,
     rowMinHeight: COMPACT_HEADER_ROW_DP,
@@ -105,7 +112,7 @@ function measureTopBarRow(viewportWidth: number) {
 for (const width of VALIDATION_WIDTHS) {
   const row = measureTopBarRow(width);
   assert.equal(row.overflows, false, `${width} px : TopBar déborde (titleWidth=${row.titleWidth})`);
-  assert.ok(row.titleWidth >= TITLE_MIN_DP, `${width} px : nom d'établissement trop serré`);
+  assert.ok(row.titleWidth >= HEADER_TITLE_MIN_DP, `${width} px : nom d'établissement trop serré`);
   assert.ok(row.menuTouch >= 48);
   assert.ok(row.rowMinHeight >= 72);
 }

@@ -109,7 +109,11 @@ function main() {
   assert.match(header, /mobile-header-menu/);
   assert.match(header, /mobile-header-school-name/);
   assert.match(header, /mobile-header-sync/);
-  assert.match(header, /mobile-header-notifications/);
+  assert.match(header, /CommunicationHeaderIcons/);
+  const headerIcons = read("Mobile/src/components/CommunicationHeaderIcons.tsx");
+  assert.match(headerIcons, /mobile-header-notifications/);
+  assert.match(headerIcons, /mobile-header-messages/);
+  assert.match(headerIcons, /mobile-header-announcements/);
   assert.doesNotMatch(header, /mobile-header-search/);
   assert.doesNotMatch(header, /search-outline/);
   assert.doesNotMatch(header, /searchRoute/);

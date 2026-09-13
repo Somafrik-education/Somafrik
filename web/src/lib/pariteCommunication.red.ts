@@ -39,8 +39,10 @@ const cases: { id: string; title: string; run: () => void }[] = [
     title: "Messages Web : chargement / erreur + Réessayer distincts du vide",
     run() {
       const page = read("pages/MessagesConversationsPage.tsx");
+      const httpError = read("components/communications/CommunicationHttpErrorState.tsx");
       assert.match(page, /LoadingState|Chargement/, "Messages n'expose pas d'état de chargement");
-      assert.match(page, new RegExp(COM_RETRY), "Messages n'offre pas Réessayer après erreur API");
+      assert.match(page, /CommunicationHttpErrorState/, "Messages n'expose pas la branche HTTP Communication");
+      assert.match(httpError, new RegExp(COM_RETRY), "Messages n'offre pas Réessayer après erreur API");
       assert.match(
         page,
         /EmptyState|Aucune conversation/,

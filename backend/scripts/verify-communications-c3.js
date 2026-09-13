@@ -112,7 +112,7 @@ function main() {
   run("npx", ["--yes", "tsx", "Mobile/src/lib/announcementsC3.test.ts"], "mobile announcements C3");
   run("npx", ["--yes", "tsx", "Mobile/src/lib/communicationPagination.lotc.test.ts"], "mobile Lot C pagination RED-06");
   run("npx", ["--yes", "tsx", "Mobile/src/lib/announcementsOpenById.test.ts"], "mobile announcement open-by-id");
-  run("npm", ["--prefix", "web", "run", "test", "--", "src/lib/announcementsC3.test.ts", "src/lib/announcementsRead.lotc.test.tsx"], "web announcements C3");
+  run("npm", ["--prefix", "web", "run", "test", "--", "src/lib/announcementsC3.test.ts", "src/lib/announcementsRead.lotc.test.tsx", "src/pages/AnnouncementsPage.lotc.test.tsx", "src/lib/communicationHttpError.test.ts"], "web announcements C3 + P3 HTTP");
   assert.ok(String(process.env.DATABASE_URL ?? "").trim(), "DATABASE_URL requis pour COM-C3");
   run(process.execPath, ["backend/lib/communicationsC3.http.pg.test.js"], "parcours HTTP PostgreSQL COM-C3");
   console.log("verify-communications-c3: GO — PostgreSQL réel inclus");
