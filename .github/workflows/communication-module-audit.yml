@@ -10,7 +10,6 @@ on:
       - "scripts/communication-module-audit.inventory.test.js"
       - "scripts/communication-module-audit.red.test.js"
       - "scripts/verify-communication-module-audit.js"
-      - "package.json"
       - ".github/workflows/communication-module-audit.yml"
       - "backend/lib/communicationsMessagesService.js"
       - "backend/lib/communicationsAnnouncementsService.js"
@@ -101,4 +100,4 @@ jobs:
           git log --oneline "${BASE}..${HEAD}"
           gitleaks detect --source . --log-opts="${BASE}..${HEAD}" --verbose --redact --exit-code 1
       - name: Audit Communication (inventaire GREEN + RED lock + C2/C3/C4)
-        run: npm run verify:communication-module-audit
+        run: node scripts/verify-communication-module-audit.js
