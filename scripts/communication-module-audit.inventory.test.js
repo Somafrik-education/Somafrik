@@ -40,28 +40,41 @@ test("la matrice JSON est alignée sur le markdown", () => {
   const report = readRepo(REPORT);
   assert.equal(matrix.auditId, "AUDIT-COM-MODULE-2026-09-13");
   assert.equal(matrix.originBaseSha, "1bf4a057817cb009120042a9bb7b23ba211e2269");
-  assert.equal(matrix.validationBaseSha, "d1aa3c6b804c390e94266c14606025daacf7b0ea");
+  assert.equal(matrix.validationBaseSha, "2e7e8e5333ede408c4cb861f3cea16f4ce7c65fa");
   assert.equal(matrix.auditBranch, "audit/communication-module");
   assert.match(report, /1bf4a057817cb009120042a9bb7b23ba211e2269/);
-  assert.match(report, /d1aa3c6b804c390e94266c14606025daacf7b0ea/);
+  assert.match(report, /2e7e8e5333ede408c4cb861f3cea16f4ce7c65fa/);
   assert.match(report, /a42c079d4a18b4a56277f1cd2f553329e416d3d1/);
   assert.match(report, /Base d'origine/);
   assert.match(report, /Base de validation/);
   assert.deepEqual(matrix.redTests, [
-    "AUDIT-COM-RED-02",
-    "AUDIT-COM-RED-03",
     "AUDIT-COM-RED-04",
     "AUDIT-COM-RED-05",
     "AUDIT-COM-RED-06",
   ]);
-  assert.ok(Array.isArray(matrix.closedRedTests) && matrix.closedRedTests.length >= 1);
+  assert.ok(Array.isArray(matrix.closedRedTests) && matrix.closedRedTests.length >= 3);
   const closed01 = matrix.closedRedTests.find((row) => row.id === "AUDIT-COM-RED-01");
   assert.ok(closed01, "AUDIT-COM-RED-01 doit être dans closedRedTests");
   assert.equal(closed01.status, "GREEN");
   assert.equal(closed01.pr, 628);
   assert.equal(closed01.mergeCommit, "a42c079d4a18b4a56277f1cd2f553329e416d3d1");
+  const closed02 = matrix.closedRedTests.find((row) => row.id === "AUDIT-COM-RED-02");
+  const closed03 = matrix.closedRedTests.find((row) => row.id === "AUDIT-COM-RED-03");
+  assert.ok(closed02, "AUDIT-COM-RED-02 doit être dans closedRedTests");
+  assert.ok(closed03, "AUDIT-COM-RED-03 doit être dans closedRedTests");
+  assert.equal(closed02.status, "GREEN");
+  assert.equal(closed03.status, "GREEN");
+  assert.equal(closed02.lot, "B");
+  assert.equal(closed03.lot, "B");
+  assert.equal(closed02.pr, 633);
+  assert.equal(closed03.pr, 633);
+  assert.equal(closed02.mergeCommit, "2e7e8e5333ede408c4cb861f3cea16f4ce7c65fa");
+  assert.equal(closed03.mergeCommit, "2e7e8e5333ede408c4cb861f3cea16f4ce7c65fa");
   assert.match(report, /AUDIT-COM-RED-01/);
+  assert.match(report, /AUDIT-COM-RED-02/);
+  assert.match(report, /AUDIT-COM-RED-03/);
   assert.match(report, /#628/);
+  assert.match(report, /#633/);
   assert.ok(Array.isArray(matrix.features) && matrix.features.length >= 40);
   for (const feature of matrix.features) {
     assert.match(report, new RegExp(`\\| ${feature.id} \\|`), `ID ${feature.id} absent du markdown`);

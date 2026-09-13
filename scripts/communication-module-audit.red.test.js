@@ -4,9 +4,9 @@
  * AUDIT-COM-MODULE — tests RED.
  * Chaque cas affirme le comportement métier attendu.
  * Base d'origine des constats : develop@1bf4a057.
- * Base de validation (rebase / diff CTO) : develop@d1aa3c6b (Lot A #628 + LOT 1.1 #632).
- * AUDIT-COM-RED-01 doit passer (GREEN, Lot A).
- * AUDIT-COM-RED-02…06 doivent échouer : preuve des défauts encore ouverts.
+ * Base de validation (rebase / diff CTO) : develop@2e7e8e53 (Lots A #628 + B #633).
+ * AUDIT-COM-RED-01/02/03 doivent passer (GREEN, Lots A+B).
+ * AUDIT-COM-RED-04…06 doivent échouer : preuve des défauts encore ouverts.
  */
 
 const { test } = require("node:test");

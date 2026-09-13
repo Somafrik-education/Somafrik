@@ -3,7 +3,7 @@
   "title": "Audit fonctionnel, technique et de non-régression — module Communication",
   "baseBranch": "develop",
   "originBaseSha": "1bf4a057817cb009120042a9bb7b23ba211e2269",
-  "validationBaseSha": "d1aa3c6b804c390e94266c14606025daacf7b0ea",
+  "validationBaseSha": "2e7e8e5333ede408c4cb861f3cea16f4ce7c65fa",
   "auditBranch": "audit/communication-module",
   "verdictsAllowed": ["PASS", "PARTIAL", "FAIL", "MISSING", "NOT_APPLICABLE"],
   "features": [
@@ -253,12 +253,12 @@
       "id": "COM-F-23",
       "name": "Notifications internes — action Ouvrir / Lire",
       "web": "PASS",
-      "mobile": "FAIL",
+      "mobile": "PASS",
       "api": "PASS",
       "postgresql": "PASS",
       "rbac": "PASS",
-      "tests": "FAIL",
-      "verdict": "FAIL"
+      "tests": "PASS",
+      "verdict": "PASS"
     },
     {
       "id": "COM-F-24",
@@ -341,34 +341,34 @@
       "id": "COM-F-31",
       "name": "Événement notification depuis message créé",
       "web": "PASS",
-      "mobile": "PARTIAL",
+      "mobile": "PASS",
       "api": "PASS",
       "postgresql": "PASS",
       "rbac": "PASS",
       "tests": "PASS",
-      "verdict": "PARTIAL"
+      "verdict": "PASS"
     },
     {
       "id": "COM-F-32",
       "name": "Événement notification depuis annonce publiée",
       "web": "PASS",
-      "mobile": "PARTIAL",
+      "mobile": "PASS",
       "api": "PASS",
       "postgresql": "PASS",
       "rbac": "PASS",
       "tests": "PASS",
-      "verdict": "PARTIAL"
+      "verdict": "PASS"
     },
     {
       "id": "COM-F-33",
       "name": "Deep link / push vers Communication",
       "web": "PASS",
-      "mobile": "FAIL",
+      "mobile": "PASS",
       "api": "PASS",
       "postgresql": "NOT_APPLICABLE",
       "rbac": "PASS",
-      "tests": "FAIL",
-      "verdict": "FAIL"
+      "tests": "PASS",
+      "verdict": "PASS"
     },
     {
       "id": "COM-F-34",
@@ -449,8 +449,6 @@
     }
   ],
   "redTests": [
-    "AUDIT-COM-RED-02",
-    "AUDIT-COM-RED-03",
     "AUDIT-COM-RED-04",
     "AUDIT-COM-RED-05",
     "AUDIT-COM-RED-06"
@@ -462,12 +460,26 @@
       "lot": "A",
       "pr": 628,
       "mergeCommit": "a42c079d4a18b4a56277f1cd2f553329e416d3d1"
+    },
+    {
+      "id": "AUDIT-COM-RED-02",
+      "status": "GREEN",
+      "lot": "B",
+      "pr": 633,
+      "mergeCommit": "2e7e8e5333ede408c4cb861f3cea16f4ce7c65fa"
+    },
+    {
+      "id": "AUDIT-COM-RED-03",
+      "status": "GREEN",
+      "lot": "B",
+      "pr": 633,
+      "mergeCommit": "2e7e8e5333ede408c4cb861f3cea16f4ce7c65fa"
     }
   ],
   "severity": {
     "P0": 0,
-    "P1": 1,
-    "P2": 5,
+    "P1": 0,
+    "P2": 3,
     "P3": 2
   }
 }
