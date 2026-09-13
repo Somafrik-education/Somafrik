@@ -163,7 +163,7 @@ describe("Lot C — Messages Web unread + pagination", () => {
       ],
     });
 
-    const view = render(<PermissionFlushApp />);
+    render(<PermissionFlushApp />);
     expect(listConversations).not.toHaveBeenCalled();
 
     permissions.canRead = true;
