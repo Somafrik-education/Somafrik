@@ -64,6 +64,46 @@ class SnapshotIntegrityError extends Error {
   }
 }
 
+class SnapshotSignatureInvalidError extends Error {
+  constructor(message = "SNAPSHOT_SIGNATURE_INVALID") {
+    super(message);
+    this.name = "SnapshotSignatureInvalidError";
+    this.code = "SNAPSHOT_SIGNATURE_INVALID";
+  }
+}
+
+class SnapshotSigningKeyUnknownError extends Error {
+  constructor(message = "SNAPSHOT_SIGNING_KEY_UNKNOWN") {
+    super(message);
+    this.name = "SnapshotSigningKeyUnknownError";
+    this.code = "SNAPSHOT_SIGNING_KEY_UNKNOWN";
+  }
+}
+
+class SigningKeyRing {
+  constructor(keys = []) {
+    this.keys = new Map();
+    for (const key of keys) {
+      if (!key?.signing_key_id || !key.publicKey) {
+        throw new Error("signing key requires signing_key_id and publicKey");
+      }
+      this.keys.set(key.signing_key_id, key);
+    }
+  }
+
+  publicKeyFor(signingKeyId) {
+    const key = this.keys.get(signingKeyId);
+    if (!key) {
+      throw new SnapshotSigningKeyUnknownError();
+    }
+    return key.publicKey;
+  }
+}
+
+function signingKeyRing(keys) {
+  return new SigningKeyRing(Array.isArray(keys) ? keys : [keys]);
+}
+
 function hashCanonical(bytes) {
   return crypto.createHash("sha256").update(bytes).digest("hex");
 }
@@ -78,6 +118,20 @@ function assertCanonicalIntegrity(sealed) {
   }
   if (hashCanonical(sealed.canonical_bytes) !== sealed.snapshot_sha256) {
     throw new SnapshotIntegrityError();
+  }
+}
+
+function assertAuthentic(sealed, keyRing) {
+  assertCanonicalIntegrity(sealed);
+  if (!sealed.snapshot_signature || !sealed.signing_key_id) {
+    throw new SnapshotSignatureInvalidError();
+  }
+  if (!(keyRing instanceof SigningKeyRing)) {
+    throw new SnapshotSigningKeyUnknownError();
+  }
+  const publicKey = keyRing.publicKeyFor(sealed.signing_key_id);
+  if (!verifyCanonicalBytes(sealed.canonical_bytes, sealed.snapshot_signature, publicKey)) {
+    throw new SnapshotSignatureInvalidError();
   }
 }
 
@@ -96,8 +150,8 @@ function sealSnapshot(payload, key) {
   });
 }
 
-function payloadForRender(sealed) {
-  assertCanonicalIntegrity(sealed);
+function payloadForRender(sealed, keyRing) {
+  assertAuthentic(sealed, keyRing);
   return payloadFromCanonicalBytes(sealed.canonical_bytes);
 }
 
@@ -125,6 +179,12 @@ module.exports = {
   payloadForRender,
   payloadFromCanonicalBytes,
   assertCanonicalIntegrity,
+  assertAuthentic,
   assertImmutable,
+  hashCanonical,
+  signingKeyRing,
+  SigningKeyRing,
   SnapshotIntegrityError,
+  SnapshotSignatureInvalidError,
+  SnapshotSigningKeyUnknownError,
 };

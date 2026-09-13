@@ -1,6 +1,6 @@
 # ADR-014 — Framework bulletins scolaires (LOT 0)
 
-**Statut :** Proposée — Draft PR LOT 0 (pas d’implémentation métier)  
+**Statut :** Acceptée — LOT 0 fusionné (#615) ; LOT 0.1 signature fail-closed (#622)  
 **Date :** 2026-09-12  
 **Source :** audit CTO [`docs/audits/report-card-framework-multicountry.md`](../audits/report-card-framework-multicountry.md) (PR #614, GO documentaire)
 
@@ -52,7 +52,7 @@ Règles :
 - `snapshot_signature = Ed25519.Sign(canonical_bytes)` — **les mêmes bytes** que le hash
 - **interdit :** `JSON.stringify` comme canon, `jsonb::text`, round-trip qui réordonne les clés
 
-Une fois `PUBLISHED`, le payload est **deep-freeze**. Le renderer LOT 5 lit **uniquement** `payloadForRender`, qui refuse le parse si `SHA-256(canonical_bytes) !== snapshot_sha256` (`SNAPSHOT_INTEGRITY`) — un `Buffer` Node reste mutable octet par octet même si le conteneur est `freeze`. Une affectation imbriquée (`sealed.payload.cells[0].score = …`) est fail-closed (TypeError). Gates : `snapshot-immutability`, `snapshot-canonical-bytes-tamper-fails-closed`, `snapshot-canonical-jcs`.
+Une fois `PUBLISHED`, le payload est **deep-freeze**. Le renderer LOT 5 / PDF / `/verify` lit **uniquement** `payloadForRender(sealed, signingKeyRing)`, qui : (1) refuse si `SHA-256(canonical_bytes) !== snapshot_sha256` (`SNAPSHOT_INTEGRITY`) ; (2) résout la clé publique par `signing_key_id` historique (`SNAPSHOT_SIGNING_KEY_UNKNOWN` si absente) ; (3) exige `Ed25519.Verify(canonical_bytes, snapshot_signature)` (`SNAPSHOT_SIGNATURE_INVALID`). `lookupPublic` (contrat `/verify`) n’émet un succès qu’après ce chemin ; un token valide + snapshot bytes/hash falsifiés ensemble n’est **pas** un succès public. Un hash seul ne suffit pas : réécrire payload + hash en base sans la clé privée échoue. Gates : `snapshot-immutability`, `snapshot-canonical-bytes-tamper-fails-closed`, `snapshot-canonical-jcs`, `snapshot-signature-required-before-render`, `verify-requires-snapshot-signature`.
 
 JCS = I-JSON (RFC 7493) : rejet de `undefined`, tableaux creux (`sparse`), nombres non finis, **lone UTF-16 surrogates**. Vecteurs RFC 8785 (values.json, tri UTF-16, Appendix B) dans `reportCardLot0.jcs.test.js`.
 
@@ -65,9 +65,9 @@ Champs : `snapshot_sha256`, `snapshot_signature`, `signing_key_id`.
 - Algorithme **par défaut : Ed25519**
 - Clé **privée hors PostgreSQL** (KMS / secret manager / HSM)
 - Rotation : les cartes existantes vérifient avec le `signing_key_id` historique ; **jamais** re-signer un snapshot publié
-- HMAC/KMS seulement si une ADR ultérieure l’impose. Un hash en base **seul** est insuffisant (un `UPDATE` peut réécrire payload + hash).
+- HMAC/KMS seulement si une ADR ultérieure l’impose. Un hash en base **seul** est insuffisant (un `UPDATE` peut réécrire payload + hash) — d’où la signature **obligatoire** sur le chemin de consommation
 
-Gate : `snapshot-signature`.
+Gates : `snapshot-signature`, `snapshot-signature-required-before-render`.
 
 ---
 
