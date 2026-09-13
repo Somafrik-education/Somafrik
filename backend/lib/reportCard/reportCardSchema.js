@@ -185,7 +185,12 @@ function normalizePresence(raw) {
     }
   }
   const optionalRaw = raw.optional !== undefined ? raw.optional : nested?.optional;
-  const whenRaw = raw.when !== undefined ? raw.when : raw.condition !== undefined ? raw.condition : nested?.when;
+  const whenSources = [];
+  if (raw.when !== undefined) whenSources.push(raw.when);
+  if (raw.condition !== undefined) whenSources.push(raw.condition);
+  if (nested && Object.prototype.hasOwnProperty.call(nested, "when")) whenSources.push(nested.when);
+  if (whenSources.length > 1) throw new ReportCardSchemaError("INVALID_PRESENCE");
+  const whenRaw = whenSources[0];
   if (raw.optional !== undefined && nested?.optional !== undefined && raw.optional !== nested.optional) {
     throw new ReportCardSchemaError("INVALID_PRESENCE");
   }
