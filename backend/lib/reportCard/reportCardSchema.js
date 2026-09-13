@@ -122,6 +122,29 @@ function requireId(raw, code = "INVALID_SPEC") {
   return id;
 }
 
+function cloneDeep(value) {
+  return JSON.parse(JSON.stringify(value));
+}
+
+function freezeDeep(value) {
+  if (value === null || typeof value !== "object") return value;
+  Object.freeze(value);
+  if (Array.isArray(value)) {
+    for (const item of value) freezeDeep(item);
+  } else {
+    for (const nested of Object.values(value)) freezeDeep(nested);
+  }
+  return value;
+}
+
+function cloneFrozen(value) {
+  return freezeDeep(cloneDeep(value));
+}
+
+function columnAllowsSemanticRefs(kind) {
+  return kind === "score_component" || kind === "period" || kind === "computed_slot";
+}
+
 function sortByOrder(items) {
   return [...items].sort((a, b) => a.order - b.order);
 }
@@ -158,12 +181,14 @@ function normalizeColumn(raw, index) {
   if (kind === "score_component") {
     column.score_component_id = requireId(raw.score_component_id, "INVALID_COLUMNS");
   } else if (raw.score_component_id != null) {
-    throw new ReportCardSchemaError("INVALID_COLUMNS");
+    if (!columnAllowsSemanticRefs(kind)) throw new ReportCardSchemaError("INVALID_COLUMNS");
+    column.score_component_id = requireId(raw.score_component_id, "INVALID_COLUMNS");
   }
   if (kind === "period") {
     column.period_id = requireId(raw.period_id, "INVALID_COLUMNS");
   } else if (raw.period_id != null) {
-    throw new ReportCardSchemaError("INVALID_COLUMNS");
+    if (!columnAllowsSemanticRefs(kind)) throw new ReportCardSchemaError("INVALID_COLUMNS");
+    column.period_id = requireId(raw.period_id, "INVALID_COLUMNS");
   }
   if (kind === "computed_slot") {
     const slot = String(raw.slot || "").trim();
@@ -205,13 +230,20 @@ function normalizeSection(raw, index) {
   const rows = rowsIn.map((row, rowIndex) => normalizeRow(row, rowIndex));
   assertUniqueOrders(rows);
   assertUniqueIds(rows.map((row) => row.id));
-  return {
+  const section = {
     id: requireId(raw.id, "INVALID_SECTIONS"),
     order: normalizeOrder(raw.order, index + 1),
     kind,
     columns: sortByOrder(columns),
     ...(rows.length ? { rows: sortByOrder(rows) } : {}),
   };
+  if (raw.period_id != null) {
+    section.period_id = requireId(raw.period_id, "INVALID_SECTIONS");
+  }
+  if (raw.score_component_id != null) {
+    section.score_component_id = requireId(raw.score_component_id, "INVALID_SECTIONS");
+  }
+  return section;
 }
 
 function validateSpec(raw) {
@@ -257,6 +289,12 @@ function validateAgainstProfile(schemaSpec, profileSpec) {
     (Array.isArray(profileSpec.score_components) ? profileSpec.score_components : []).map((component) => component?.id)
   );
   for (const section of spec.sections) {
+    if (section.period_id && !periodIds.has(section.period_id)) {
+      throw new ReportCardSchemaError("INVALID_PROFILE_REFERENCE");
+    }
+    if (section.score_component_id && !componentIds.has(section.score_component_id)) {
+      throw new ReportCardSchemaError("INVALID_PROFILE_REFERENCE");
+    }
     for (const column of section.columns) {
       if (column.period_id && !periodIds.has(column.period_id)) {
         throw new ReportCardSchemaError("INVALID_PROFILE_REFERENCE");
@@ -282,4 +320,5 @@ module.exports = {
   validateSpec,
   validateAgainstProfile,
   specSha256,
+  cloneFrozen,
 };

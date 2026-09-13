@@ -8,6 +8,7 @@ const {
   assertSameTenant,
   validateSpec,
   specSha256,
+  cloneFrozen,
 } = require("./reportCardSchema");
 
 function createReportCardSchemaStore() {
@@ -44,7 +45,7 @@ function createReportCardSchemaStore() {
       }
     }
     schemas.set(schemaId, schema);
-    const version = Object.freeze({
+    const version = cloneFrozen({
       id: crypto.randomUUID(),
       school_id: schoolId,
       schema_id: schemaId,
@@ -55,7 +56,7 @@ function createReportCardSchemaStore() {
       created_at: new Date().toISOString(),
     });
     versionsOf(schemaId).push(version);
-    return { schema, version };
+    return { schema, version: cloneFrozen(version) };
   }
 
   function addVersion({ schoolId, actorSchoolId, schemaId, spec }) {
@@ -63,7 +64,7 @@ function createReportCardSchemaStore() {
     getSchema(schoolId, schemaId);
     const normalized = validateSpec(spec);
     const list = versionsOf(schemaId);
-    const version = Object.freeze({
+    const version = cloneFrozen({
       id: crypto.randomUUID(),
       school_id: schoolId,
       schema_id: schemaId,
@@ -74,7 +75,7 @@ function createReportCardSchemaStore() {
       created_at: new Date().toISOString(),
     });
     list.push(version);
-    return version;
+    return cloneFrozen(version);
   }
 
   function activateVersion({ schoolId, actorSchoolId, schemaId, version }) {
@@ -86,12 +87,12 @@ function createReportCardSchemaStore() {
       throw new ReportCardSchemaError("VERSION_NOT_FOUND");
     }
     const next = list.map((row) => {
-      if (row.version === version) return Object.freeze({ ...row, status: "ACTIVE" });
-      if (row.status === "ACTIVE") return Object.freeze({ ...row, status: "SUPERSEDED" });
+      if (row.version === version) return cloneFrozen({ ...row, status: "ACTIVE" });
+      if (row.status === "ACTIVE") return cloneFrozen({ ...row, status: "SUPERSEDED" });
       return row;
     });
     versions.set(schemaId, next);
-    return next.find((row) => row.version === version);
+    return cloneFrozen(next.find((row) => row.version === version));
   }
 
   function updateDraftSpec({ schoolId, actorSchoolId, schemaId, version, spec }) {
@@ -103,13 +104,13 @@ function createReportCardSchemaStore() {
     const current = list[idx];
     if (current.status !== "DRAFT") throw new ReportCardSchemaError("VERSION_IMMUTABLE");
     const normalized = validateSpec(spec);
-    const updated = Object.freeze({
+    const updated = cloneFrozen({
       ...current,
       spec: normalized,
       spec_sha256: specSha256(normalized),
     });
     list[idx] = updated;
-    return updated;
+    return cloneFrozen(updated);
   }
 
   function getVersion({ schoolId, actorSchoolId, schemaId, version }) {
@@ -117,7 +118,7 @@ function createReportCardSchemaStore() {
     getSchema(schoolId, schemaId);
     const row = versionsOf(schemaId).find((item) => item.version === version);
     if (!row) throw new ReportCardSchemaError("VERSION_NOT_FOUND");
-    return row;
+    return cloneFrozen(row);
   }
 
   function getActive({ schoolId, actorSchoolId, schemaId }) {
@@ -125,7 +126,7 @@ function createReportCardSchemaStore() {
     getSchema(schoolId, schemaId);
     const row = versionsOf(schemaId).find((item) => item.status === "ACTIVE");
     if (!row) throw new ReportCardSchemaError("NO_ACTIVE_VERSION");
-    return row;
+    return cloneFrozen(row);
   }
 
   function listSchemas(schoolId, actorSchoolId) {
