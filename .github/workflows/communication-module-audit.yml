@@ -56,6 +56,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
       - name: Record exact HEAD
         run: |
           echo "EXACT_HEAD=$(git rev-parse HEAD)"
@@ -87,6 +88,17 @@ jobs:
           curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" \
             | tar -xz gitleaks
           sudo install -m 0755 gitleaks /usr/local/bin/gitleaks
-          gitleaks detect --source . --verbose --redact --exit-code 1
+          if [ -n "${{ github.event.pull_request.base.sha }}" ]; then
+            BASE="${{ github.event.pull_request.base.sha }}"
+            HEAD="${{ github.event.pull_request.head.sha }}"
+          else
+            git fetch origin develop
+            BASE="$(git merge-base origin/develop HEAD)"
+            HEAD="$(git rev-parse HEAD)"
+          fi
+          git fetch --no-tags origin "${BASE}"
+          echo "GITLEAKS_LOG_OPTS=${BASE}..${HEAD}"
+          git log --oneline "${BASE}..${HEAD}"
+          gitleaks detect --source . --log-opts="${BASE}..${HEAD}" --verbose --redact --exit-code 1
       - name: Audit Communication (inventaire GREEN + RED lock + C2/C3/C4)
         run: npm run verify:communication-module-audit
