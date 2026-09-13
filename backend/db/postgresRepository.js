@@ -128,6 +128,7 @@ class PostgresRepository {
     await this.ensureEvaluationTypesCanonicalSchema();
     await this.stripLegacyEvaluationTypesPayloads();
     await this.ensureEvaluationTypesBootstrap();
+    await this.ensureAcademicRuleProfilesCanonicalSchema();
     await this.runSchoolSettingsCanonicalBoot();
     await this.runDocumentsExamsCanonicalBoot();
     if (shouldSeedDemoData()) {
@@ -879,6 +880,11 @@ class PostgresRepository {
   async ensureEvaluationTypesBootstrap() {
     const { ensureEvaluationTypesBootstrap } = require("../lib/evaluationTypesService");
     await ensureEvaluationTypesBootstrap(this);
+  }
+
+  async ensureAcademicRuleProfilesCanonicalSchema() {
+    const { ACADEMIC_RULE_PROFILE_SCHEMA_SQL } = require("./academicRuleProfileSchema");
+    await this.query(ACADEMIC_RULE_PROFILE_SCHEMA_SQL);
   }
 
   getEvaluationTypesStore() {

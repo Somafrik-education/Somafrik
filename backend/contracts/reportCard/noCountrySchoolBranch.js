@@ -10,11 +10,24 @@ const FORBIDDEN = [
   /if\s*\(\s*country\b/,
   /if\s*\(\s*school\b/,
   /if\s*\(\s*schoolCode\b/,
+  /switch\s*\(\s*country\b/,
+  /switch\s*\(\s*school\b/,
   /iso_code\s*===\s*["']BI["']/,
   /countryCode\s*===\s*["']BI["']/,
   /country\s*===\s*["']BI["']/,
   /school\s*===\s*["']La Colombi[eè]re["']/,
+  /\bcountry\s*===\s*["'][^"']+["']\s*\?/,
+  /\bschool\s*===\s*["'][^"']+["']\s*\?/,
+  /new\s+Map\s*\(\s*\[\s*\[\s*["']BI["']/,
+  /\biso_code\s*===\s*["']/,
+  /\bcountryCode\s*===\s*["']/,
+  /\bschoolCode\s*===\s*["']/,
 ];
+
+const EXTRA_SCAN_FILES = Object.freeze([
+  "backend/db/academicRuleProfilePgStore.js",
+  "backend/db/academicRuleProfileSchema.js",
+]);
 
 const SKIP_NAMES = new Set([
   "noCountrySchoolBranch.js",
@@ -24,23 +37,37 @@ const SKIP_NAMES = new Set([
   "reportCardLot0.fixtures.test.js",
 ]);
 
+const SCANNED_EXTENSIONS = new Set([".js", ".ts", ".mjs"]);
+
 function walk(dir, acc = []) {
   if (!fs.existsSync(dir)) return acc;
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
     const full = path.join(dir, entry.name);
     if (entry.isDirectory()) walk(full, acc);
-    else if (entry.isFile() && entry.name.endsWith(".js") && !entry.name.endsWith(".test.js") && !SKIP_NAMES.has(entry.name)) {
+    else if (entry.isFile()) {
+      const ext = path.extname(entry.name);
+      if (!SCANNED_EXTENSIONS.has(ext)) continue;
+      if (entry.name.endsWith(".test.js") || entry.name.endsWith(".test.ts")) continue;
+      if (SKIP_NAMES.has(entry.name)) continue;
       acc.push(full);
     }
   }
   return acc;
 }
 
+function collectFiles(rel) {
+  const abs = path.join(ROOT, rel);
+  if (!fs.existsSync(abs)) return [];
+  const stat = fs.statSync(abs);
+  if (stat.isFile()) return [abs];
+  return walk(abs);
+}
+
 function scanEngineSources() {
   const hits = [];
-  for (const rel of ENGINE_SCAN_ROOTS) {
-    const abs = path.join(ROOT, rel);
-    for (const file of walk(abs)) {
+  const roots = [...ENGINE_SCAN_ROOTS, ...EXTRA_SCAN_FILES];
+  for (const rel of roots) {
+    for (const file of collectFiles(rel)) {
       const src = fs.readFileSync(file, "utf8");
       for (const re of FORBIDDEN) {
         if (re.test(src)) {
