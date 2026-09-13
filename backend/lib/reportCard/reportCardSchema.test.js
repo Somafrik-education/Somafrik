@@ -533,3 +533,147 @@ test("report-card-schema-non-draft-immutable", () => {
   assert.notEqual(active.spec.sections[0].id, "HACKED");
   assert.equal(active.spec_sha256, originalSha);
 });
+
+test("report-card-schema-declarative-optional-conditional", () => {
+  const api = loadLot2();
+  assert.ok(api, "LOT 2 domain missing (RED)");
+  const conditional = validSchemaSpec({
+    sections: [
+      {
+        id: "SUBJECTS",
+        order: 1,
+        kind: "subject_rows",
+        presence: { optional: true, when: { period_id: "T1" } },
+        rows: [{ id: "SUBJECT_LINE", order: 1, kind: "subject", presence: { optional: true } }],
+        columns: [
+          {
+            id: "COL_EX",
+            order: 1,
+            kind: "score_component",
+            score_component_id: "EX",
+            optional: true,
+            condition: { period_id: "T1", score_component_id: "EX" },
+          },
+        ],
+      },
+    ],
+  });
+  const spec = api.validateSpec(conditional);
+  const section = spec.sections[0];
+  const column = section.columns[0];
+  assert.equal(section.presence.optional, true);
+  assert.equal(section.presence.when.period_id, "T1");
+  assert.equal(section.rows[0].presence.optional, true);
+  assert.equal(column.presence.optional, true);
+  assert.equal(column.presence.when.period_id, "T1");
+  assert.equal(column.presence.when.score_component_id, "EX");
+  const unconditional = api.validateSpec(
+    validSchemaSpec({
+      sections: [
+        {
+          id: "SUBJECTS",
+          order: 1,
+          kind: "subject_rows",
+          rows: [{ id: "SUBJECT_LINE", order: 1, kind: "subject" }],
+          columns: [{ id: "COL_EX", order: 1, kind: "score_component", score_component_id: "EX" }],
+        },
+      ],
+    })
+  );
+  assert.notEqual(api.specSha256(spec), api.specSha256(unconditional));
+  const profile = validProfile();
+  assert.doesNotThrow(() => api.validateAgainstProfile(spec, profile));
+  const unknownPeriod = api.validateSpec(
+    validSchemaSpec({
+      sections: [
+        {
+          id: "SUBJECTS",
+          order: 1,
+          kind: "subject_rows",
+          columns: [
+            {
+              id: "COL_EX",
+              order: 1,
+              kind: "score_component",
+              score_component_id: "EX",
+              presence: { when: { period_id: "T9" } },
+            },
+          ],
+        },
+      ],
+    })
+  );
+  assert.throws(
+    () => api.validateAgainstProfile(unknownPeriod, profile),
+    (err) => err.code === "INVALID_PROFILE_REFERENCE"
+  );
+  assert.throws(
+    () =>
+      api.validateSpec(
+        validSchemaSpec({
+          sections: [
+            {
+              id: "SUBJECTS",
+              order: 1,
+              kind: "subject_rows",
+              columns: [
+                {
+                  id: "COL_EX",
+                  order: 1,
+                  kind: "score_component",
+                  score_component_id: "EX",
+                  condition: { country: "BI" },
+                },
+              ],
+            },
+          ],
+        })
+      ),
+    (err) => err.code === "COUNTRY_SCHOOL_BRANCH_FORBIDDEN"
+  );
+  assert.throws(
+    () =>
+      api.validateSpec(
+        validSchemaSpec({
+          sections: [
+            {
+              id: "SUBJECTS",
+              order: 1,
+              kind: "subject_rows",
+              presence: { when: { school: "La Colombière" } },
+            },
+          ],
+        })
+      ),
+    (err) => err.code === "COUNTRY_SCHOOL_BRANCH_FORBIDDEN"
+  );
+  assert.equal(api.evaluatePresence, undefined);
+  assert.equal(api.evaluateCondition, undefined);
+  const domainSrc = fs.readFileSync(path.join(__dirname, "reportCardSchema.js"), "utf8");
+  assert.equal(/function\s+evaluate(Presence|Condition|When|Visibility)\b/.test(domainSrc), false);
+  assert.equal(/\beval\s*\(/.test(domainSrc), false);
+  assert.throws(
+    () =>
+      api.validateSpec(
+        validSchemaSpec({
+          sections: [
+            {
+              id: "SUBJECTS",
+              order: 1,
+              kind: "subject_rows",
+              columns: [
+                {
+                  id: "COL_EX",
+                  order: 1,
+                  kind: "score_component",
+                  score_component_id: "EX",
+                  presence: { when: { formula: "TJ+EX" } },
+                },
+              ],
+            },
+          ],
+        })
+      ),
+    (err) => err.code === "CALCULATION_FORBIDDEN"
+  );
+});
