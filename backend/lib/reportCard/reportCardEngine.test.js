@@ -88,6 +88,47 @@ function schemaWithSlot(slot) {
   });
 }
 
+function calculableProfile(overrides = {}) {
+  return validateProfileSpec({
+    periods: ["T1", "T2", "T3"],
+    annual: true,
+    score_components: [
+      { id: "TJ", applicability: "always", max: 20, coefficient: 2 },
+      { id: "EX", applicability: "per_subject", max: 20, coefficient: 1 },
+    ],
+    missing_score: "NOT_APPLICABLE_not_zero",
+    rounding: { decimals: 2, mode: "half_up", stage: "display_only" },
+    ranking: { enabled: false, ties: "competition" },
+    aggregation: {
+      mode: "weighted_sum",
+      coefficient_default: 1,
+      percentage: "points_over_max_100",
+    },
+    ...overrides,
+  });
+}
+
+function findSlot(student, match) {
+  return (student.slots || []).find(
+    (entry) =>
+      (match.section_id == null || entry.section_id === match.section_id) &&
+      (match.column_id == null || entry.column_id === match.column_id) &&
+      (match.slot == null || entry.slot === match.slot) &&
+      (match.period_id == null || entry.period_id === match.period_id)
+  );
+}
+
+function findPresence(student, match) {
+  return (student.presence || []).find(
+    (entry) =>
+      (match.section_id == null || entry.section_id === match.section_id) &&
+      (match.column_id == null || entry.column_id === match.column_id) &&
+      (match.row_id == null || entry.row_id === match.row_id) &&
+      (match.field_id == null || entry.field_id === match.field_id) &&
+      (match.field_kind == null || entry.field_kind === match.field_kind)
+  );
+}
+
 function fact(overrides = {}) {
   return {
     student_id: "STU-1",
@@ -441,4 +482,136 @@ test("report-card-engine-tenant-envelope", () => {
     facts: [fact({ school_id: SCHOOL_A })],
   });
   assert.equal(ok.tenant.school_id, SCHOOL_A);
+});
+
+test("report-card-engine-duplicate-facts-fail-closed", () => {
+  const api = loadLot3();
+  assert.ok(api, "LOT 3 engine missing (RED)");
+  const dupA = [fact({ raw_score: 10 }), fact({ raw_score: 14 })];
+  const dupB = [dupA[1], dupA[0]];
+  assert.throws(
+    () => compute(api, { facts: dupA }),
+    (err) => err.code === "DUPLICATE_FACT"
+  );
+  assert.throws(
+    () => compute(api, { facts: dupB }),
+    (err) => err.code === "DUPLICATE_FACT"
+  );
+});
+
+test("report-card-engine-slot-presence-identity-no-collision", () => {
+  const api = loadLot3();
+  assert.ok(api, "LOT 3 engine missing (RED)");
+  const schema = validateSchemaSpec({
+    sections: [
+      {
+        id: "SEC_A",
+        order: 1,
+        kind: "totals",
+        columns: [{ id: "COL_X", order: 1, kind: "computed_slot", slot: "PERCENTAGE", period_id: "T1" }],
+      },
+      {
+        id: "SEC_B",
+        order: 2,
+        kind: "totals",
+        columns: [{ id: "COL_X", order: 1, kind: "computed_slot", slot: "PERCENTAGE", period_id: "T2" }],
+      },
+    ],
+  });
+  const result = compute(api, {
+    profile: calculableProfile(),
+    schema,
+    facts: [
+      fact({ period_id: "T1", raw_score: 10 }),
+      fact({ period_id: "T2", raw_score: 20 }),
+    ],
+  });
+  const student = result.students[0];
+  assert.ok(Array.isArray(student.slots));
+  assert.ok(Array.isArray(student.presence));
+  const pctT1 = findSlot(student, { section_id: "SEC_A", column_id: "COL_X", slot: "PERCENTAGE", period_id: "T1" });
+  const pctT2 = findSlot(student, { section_id: "SEC_B", column_id: "COL_X", slot: "PERCENTAGE", period_id: "T2" });
+  assert.ok(pctT1);
+  assert.ok(pctT2);
+  assert.equal(pctT1.kind, "NUMERIC");
+  assert.equal(pctT2.kind, "NUMERIC");
+  assert.notEqual(pctT1.internal, pctT2.internal);
+  const presenceA = findPresence(student, { section_id: "SEC_A", column_id: "COL_X" });
+  const presenceB = findPresence(student, { section_id: "SEC_B", column_id: "COL_X" });
+  assert.ok(presenceA);
+  assert.ok(presenceB);
+  assert.notEqual(presenceA, presenceB);
+});
+
+test("report-card-engine-facts-presence-validation-fail-closed", () => {
+  const api = loadLot3();
+  assert.ok(api, "LOT 3 engine missing (RED)");
+  assert.throws(
+    () => compute(api, { facts: [fact({ student_id: "" })] }),
+    (err) => err.code === "INVALID_FACTS"
+  );
+  assert.throws(
+    () => compute(api, { facts: [fact({ subject_id: "" })] }),
+    (err) => err.code === "INVALID_FACTS"
+  );
+  assert.throws(
+    () => compute(api, { facts: [fact({ score_component_id: "EX", subject_applicable: undefined, raw_score: 12 })] }),
+    (err) => err.code === "INVALID_FACTS"
+  );
+  assert.throws(
+    () => compute(api, { facts: [fact({ raw_score: 21 })] }),
+    (err) => err.code === "SCORE_OUT_OF_BOUNDS" || err.code === "INVALID_FACTS"
+  );
+  assert.throws(
+    () => compute(api, { facts: [fact({ raw_score: -1 })] }),
+    (err) => err.code === "INVALID_SCORE" || err.code === "INVALID_FACTS" || err.code === "SCORE_OUT_OF_BOUNDS"
+  );
+  assert.throws(
+    () => compute(api, { profile: { layer: "AcademicRuleProfile" } }),
+    (err) => err.code === "INVALID_SPEC" || err.code === "INVALID_PERIODS" || err.code === "INVALID_PROFILE"
+  );
+  const schema = validateSchemaSpec({
+    sections: [
+      {
+        id: "SUBJECTS",
+        order: 1,
+        kind: "subject_rows",
+        rows: [{ id: "SUBJECT_LINE", order: 1, kind: "subject", presence: { when: { period_id: "T1" } } }],
+        columns: [
+          {
+            id: "COL_T1_TJ",
+            order: 1,
+            kind: "score_component",
+            score_component_id: "TJ",
+            period_id: "T1",
+          },
+        ],
+      },
+    ],
+    identity_fields: [{ id: "STUDENT_NAME", order: 1, presence: { when: { period_id: "T1" } } }],
+    metadata_fields: [{ id: "SCHOOL_YEAR", order: 1, presence: { when: { period_id: "T2" } } }],
+  });
+  const result = compute(api, { schema, facts: [fact({ period_id: "T1" })] });
+  const student = result.students[0];
+  assert.ok(Array.isArray(student.presence));
+  assert.equal(findPresence(student, { section_id: "SUBJECTS", row_id: "SUBJECT_LINE" }).applicable, true);
+  assert.equal(findPresence(student, { field_kind: "identity", field_id: "STUDENT_NAME" }).applicable, true);
+  assert.equal(findPresence(student, { field_kind: "metadata", field_id: "SCHOOL_YEAR" }).applicable, false);
+});
+
+test("report-card-engine-historical-profile-not-calculable", () => {
+  const api = loadLot3();
+  assert.ok(api, "LOT 3 engine missing (RED)");
+  assert.throws(
+    () => compute(api, { profile: validProfile(), schema: schemaWithSlot("PERCENTAGE") }),
+    (err) => err.code === "CALCULABILITY_COEFFICIENT_AGGREGATION" || err.code === "CALCULABILITY_PERCENTAGE_WITHOUT_MAX"
+  );
+  assert.throws(
+    () =>
+      compute(api, {
+        profile: validProfile({ pass_rule: { min_average: 10 } }),
+        schema: schemaWithSlot("DECISION"),
+      }),
+    (err) => err.code === "CALCULABILITY_PASS_RULE_SCALE"
+  );
 });
