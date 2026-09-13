@@ -1034,6 +1034,28 @@ export function sendClientsMessage(payload: Record<string, unknown>, options?: M
   });
 }
 
+export function replyClientsConversationMessage(
+  conversationId: string,
+  payload: Record<string, unknown>,
+  options?: MutationRequestOptions,
+) {
+  const id = String(conversationId ?? "").trim();
+  if (!id) {
+    return Promise.reject(new ApiClientError("Conversation requise."));
+  }
+  const schoolCode = communicationSchoolScope(
+    typeof payload.effectiveSchoolCode === "string" ? payload.effectiveSchoolCode : undefined,
+  );
+  return request(
+    scopedMessagesPath(`/backoffice/conversations/${encodeURIComponent(id)}/messages`, schoolCode),
+    {
+      method: "POST",
+      body: JSON.stringify(withCommunicationSchoolPayload(payload, schoolCode)),
+      idempotencyKey: options?.idempotencyKey,
+    },
+  );
+}
+
 export type CanonicalMessageRecipient = {
   userId: string;
   displayName: string;
