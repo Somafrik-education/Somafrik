@@ -71,6 +71,12 @@ function asTrimmed(value) {
   return String(value ?? "").trim();
 }
 
+function asSafeResourceId(value) {
+  const id = asTrimmed(value);
+  if (!id || id.length > 128 || !/^[A-Za-z0-9_-]+$/.test(id)) return "";
+  return id;
+}
+
 function deliveryKey(eventKey, userId, channel) {
   return `${asTrimmed(eventKey)}:${asTrimmed(userId)}:${asTrimmed(channel).toUpperCase()}`;
 }
@@ -535,12 +541,30 @@ function asPayload(raw) {
 function mobilePushDataForDelivery(row, payload) {
   const data = { somafrikDestination: "Home", eventKey: row.event_key };
   const navigationTarget = asPayload(payload?.navigationTarget);
-  if (asTrimmed(navigationTarget.type) === "finance_obligation") {
-    const studentId = asTrimmed(navigationTarget.studentId);
+  const type = asTrimmed(navigationTarget.type);
+  if (type === "finance_obligation") {
+    const studentId = asSafeResourceId(navigationTarget.studentId);
     if (studentId) {
       data.somafrikDestination = "StudentPayments";
       data.somafrikStudentId = studentId;
     }
+    return data;
+  }
+  if (type === "conversation") {
+    const conversationId = asSafeResourceId(navigationTarget.conversationId);
+    if (conversationId) {
+      data.somafrikDestination = "Messages";
+      data.somafrikConversationId = conversationId;
+    }
+    return data;
+  }
+  if (type === "announcement") {
+    const announcementId = asSafeResourceId(navigationTarget.announcementId);
+    if (announcementId) {
+      data.somafrikDestination = "Announcements";
+      data.somafrikAnnouncementId = announcementId;
+    }
+    return data;
   }
   return data;
 }

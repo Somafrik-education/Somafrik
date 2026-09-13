@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
   Linking,
@@ -10,7 +10,7 @@ import {
   TouchableOpacity,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { useFocusEffect } from "@react-navigation/native";
+import { useFocusEffect, useRoute, type RouteProp } from "@react-navigation/native";
 import AnnouncementMutationControls from "../components/AnnouncementMutationControls";
 import CommunicationChrome from "../components/CommunicationChrome";
 import ExpandableCommunicationCard from "../components/ExpandableCommunicationCard";
@@ -25,9 +25,12 @@ import { useFloatingTabBarLayout } from "../lib/screenLayout";
 import { downloadCommunicationAttachment, downloadPlatformAnnouncementAttachment } from "../services/api";
 import {
   archiveCanonicalAnnouncement,
+  getCanonicalAnnouncementById,
   markCanonicalAnnouncementRead,
   type CanonicalAnnouncement,
 } from "../services/domainHydrationApi";
+import { mergeFocusedAnnouncement, resolveFocusedAnnouncement } from "../lib/announcementsOpenById";
+import type { RootStackParamList } from "../navigation/AppNavigator";
 
 function formatDisplayDate(iso?: string) {
   if (!iso) return "";
@@ -54,6 +57,8 @@ export default function AnnouncementsScreen() {
   const { scrollContentPaddingBottom } = useFloatingTabBarLayout();
   const contentStyle = [styles.content, { paddingBottom: scrollContentPaddingBottom }];
   const { session } = useAuth();
+  const route = useRoute<RouteProp<RootStackParamList, "Announcements">>();
+  const focusedAnnouncementId = String(route.params?.announcementId ?? "").trim();
   const canRead = canReadEntity(session, "announcements");
   const canCreate = canMutateEntity(session, "announcements", "CREATE");
   const canArchive = canArchiveAnnouncement(session);
@@ -62,6 +67,8 @@ export default function AnnouncementsScreen() {
   const [archivingId, setArchivingId] = useState("");
   const [query, setQuery] = useState("");
   const [unreadOnly, setUnreadOnly] = useState(false);
+  const [focusedAnnouncement, setFocusedAnnouncement] = useState<CanonicalAnnouncement | null>(null);
+  const markedFocusedIdRef = useRef("");
 
   useFocusEffect(
     useCallback(() => {
@@ -102,21 +109,58 @@ export default function AnnouncementsScreen() {
     ]);
   };
 
-  const visible = useMemo(
-    () =>
-      filterCommunicationRows(
-        (canRead && snapshot.status === "success" ? snapshot.data : []).map((row) => ({
-          ...row,
-          excerpt: excerptCommunication(String(row.message || "")),
-          author: row.author || "",
-          audience: row.audienceLabel || row.audience || "",
-          unread: !row.readAt,
-        })),
-        query,
-        unreadOnly,
-      ),
-    [canRead, snapshot, query, unreadOnly],
-  );
+  const visible = useMemo(() => {
+    const filtered = filterCommunicationRows(
+      (canRead && snapshot.status === "success" ? snapshot.data : []).map((row) => ({
+        ...row,
+        excerpt: excerptCommunication(String(row.message || "")),
+        author: row.author || "",
+        audience: row.audienceLabel || row.audience || "",
+        unread: !row.readAt,
+      })),
+      query,
+      unreadOnly,
+    );
+    return mergeFocusedAnnouncement(
+      filtered,
+      focusedAnnouncement
+        ? {
+            ...focusedAnnouncement,
+            excerpt: excerptCommunication(String(focusedAnnouncement.message || "")),
+            author: focusedAnnouncement.author || "",
+            audience: focusedAnnouncement.audienceLabel || focusedAnnouncement.audience || "",
+            unread: !focusedAnnouncement.readAt,
+          }
+        : null,
+    );
+  }, [canRead, snapshot, query, unreadOnly, focusedAnnouncement]);
+
+  useEffect(() => {
+    if (!focusedAnnouncementId || !canRead) {
+      setFocusedAnnouncement(null);
+      markedFocusedIdRef.current = "";
+      return;
+    }
+    let cancelled = false;
+    const list = snapshot.status === "success" ? snapshot.data : [];
+    void resolveFocusedAnnouncement({
+      announcementId: focusedAnnouncementId,
+      list,
+      fetchById: (id) => getCanonicalAnnouncementById(id, activeSchoolCode),
+    }).then((row) => {
+      if (!cancelled) setFocusedAnnouncement(row);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [focusedAnnouncementId, canRead, snapshot, activeSchoolCode]);
+
+  useEffect(() => {
+    if (!focusedAnnouncement || focusedAnnouncement.readAt) return;
+    if (markedFocusedIdRef.current === focusedAnnouncement.id) return;
+    markedFocusedIdRef.current = focusedAnnouncement.id;
+    void markReadIfNeeded(focusedAnnouncement);
+  }, [focusedAnnouncement]);
 
   return (
     <>
@@ -169,11 +213,13 @@ export default function AnnouncementsScreen() {
           const origin = announcementOriginLabel(announcement);
           return (
             <ExpandableCommunicationCard
+              key={announcement.id === focusedAnnouncementId ? `${announcement.id}-open` : announcement.id}
               title={announcement.title}
               subtitle={origin}
               badge={announcement.readAt ? "Lu" : "Non lu"}
               badgeTone={announcement.readAt ? "default" : "info"}
               testID={`announcement-card-${announcement.id}`}
+              defaultExpanded={Boolean(focusedAnnouncementId) && announcement.id === focusedAnnouncementId}
               onExpandedChange={(expanded) => {
                 if (expanded) void markReadIfNeeded(announcement);
               }}

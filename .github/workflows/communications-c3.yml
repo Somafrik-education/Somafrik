@@ -26,6 +26,8 @@ on:
       - "web/src/lib/clientsApi.ts"
       - "web/src/lib/communicationSchoolScope.ts"
       - "Mobile/src/screens/AnnouncementsScreen.tsx"
+      - "Mobile/src/lib/announcementsOpenById.ts"
+      - "Mobile/src/lib/announcementsOpenById.test.ts"
       - "Mobile/src/components/AnnouncementMutationControls.tsx"
       - "Mobile/src/lib/announcementsRead.ts"
       - "Mobile/src/lib/announcementsC3.test.ts"

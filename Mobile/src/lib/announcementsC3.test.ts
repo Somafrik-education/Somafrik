@@ -37,6 +37,9 @@ assert.match(readSrc, /getAnnouncementsUnreadCount/);
 const screenSrc = fs.readFileSync(path.join(ROOT, "src/screens/AnnouncementsScreen.tsx"), "utf8");
 assert.doesNotMatch(screenSrc, /localStorage/);
 assert.match(screenSrc, /markCanonicalAnnouncementRead/);
+assert.match(screenSrc, /getCanonicalAnnouncementById/);
+assert.match(screenSrc, /resolveFocusedAnnouncement/);
+assert.doesNotMatch(screenSrc, /nextCursor/);
 assert.match(screenSrc, /formatDisplayDate/);
 assert.match(screenSrc, /attachments/);
 
