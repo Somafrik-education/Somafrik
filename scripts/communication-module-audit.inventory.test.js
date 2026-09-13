@@ -40,9 +40,10 @@ test("la matrice JSON est alignée sur le markdown", () => {
   const report = readRepo(REPORT);
   assert.equal(matrix.auditId, "AUDIT-COM-MODULE-2026-09-13");
   assert.equal(matrix.originBaseSha, "1bf4a057817cb009120042a9bb7b23ba211e2269");
-  assert.equal(matrix.validationBaseSha, "a42c079d4a18b4a56277f1cd2f553329e416d3d1");
+  assert.equal(matrix.validationBaseSha, "d1aa3c6b804c390e94266c14606025daacf7b0ea");
   assert.equal(matrix.auditBranch, "audit/communication-module");
   assert.match(report, /1bf4a057817cb009120042a9bb7b23ba211e2269/);
+  assert.match(report, /d1aa3c6b804c390e94266c14606025daacf7b0ea/);
   assert.match(report, /a42c079d4a18b4a56277f1cd2f553329e416d3d1/);
   assert.match(report, /Base d'origine/);
   assert.match(report, /Base de validation/);

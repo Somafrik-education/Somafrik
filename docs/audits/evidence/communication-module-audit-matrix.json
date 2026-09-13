@@ -3,7 +3,7 @@
   "title": "Audit fonctionnel, technique et de non-régression — module Communication",
   "baseBranch": "develop",
   "originBaseSha": "1bf4a057817cb009120042a9bb7b23ba211e2269",
-  "validationBaseSha": "a42c079d4a18b4a56277f1cd2f553329e416d3d1",
+  "validationBaseSha": "d1aa3c6b804c390e94266c14606025daacf7b0ea",
   "auditBranch": "audit/communication-module",
   "verdictsAllowed": ["PASS", "PARTIAL", "FAIL", "MISSING", "NOT_APPLICABLE"],
   "features": [

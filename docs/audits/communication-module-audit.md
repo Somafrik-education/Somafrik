@@ -10,7 +10,7 @@
 | Branche | `audit/communication-module` |
 | Base | `develop` |
 | Base d'origine (constats initiaux) | `1bf4a057817cb009120042a9bb7b23ba211e2269` |
-| Base de validation (diff CTO / rebase) | `a42c079d4a18b4a56277f1cd2f553329e416d3d1` |
+| Base de validation (diff CTO / rebase) | `d1aa3c6b804c390e94266c14606025daacf7b0ea` |
 | Preuve Lot A | PR #628, merge `a42c079d4a18b4a56277f1cd2f553329e416d3d1` |
 | PR | https://github.com/Somafrik-education/Somafrik/pull/625 |
 | Date | 13 septembre 2026 |
@@ -32,7 +32,7 @@ L’API PostgreSQL C2/C3/C4 est isolée par `school_id`, persistante, et déjà 
 ## 1. Gouvernance
 
 - Branche dédiée `audit/communication-module` créée depuis `develop@1bf4a057` (base d'origine des constats).
-- Rebase de validation sur `develop@a42c079d` (merge Lot A #628 — base contrôlée pour le diff GitHub `develop...HEAD`). Aucun fichier métier ajouté par cette réconciliation.
+- Rebase de validation sur `develop@d1aa3c6b` (socle courant : Lot A #628 + LOT 1.1 #632). Aucun fichier métier Communication ajouté. LOT B HOLD.
 - PR Draft uniquement. **Aucun merge. Aucun Lot B pendant cette réconciliation.**
 - Aucun changement hors dossier d’audit / tests RED / gate CI.
 - Aucune migration PostgreSQL.
