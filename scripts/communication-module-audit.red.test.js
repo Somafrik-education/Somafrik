@@ -2,8 +2,10 @@
 
 /**
  * AUDIT-COM-MODULE — tests RED.
- * Chaque cas affirme le comportement métier attendu. Sur develop@1bf4a057
- * ces tests doivent échouer : preuve reproductible du défaut, sans correction.
+ * Chaque cas affirme le comportement métier attendu.
+ * Base d'origine des constats : develop@1bf4a057.
+ * Base de validation (rebase / diff CTO) : develop@df7d94b3.
+ * Ces tests doivent échouer : preuve reproductible du défaut, sans correction.
  */
 
 const { test } = require("node:test");

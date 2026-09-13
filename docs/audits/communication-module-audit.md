@@ -9,7 +9,8 @@
 | Audit ID | `AUDIT-COM-MODULE-2026-09-13` |
 | Branche | `audit/communication-module` |
 | Base | `develop` |
-| Base SHA | `1bf4a057817cb009120042a9bb7b23ba211e2269` |
+| Base d'origine (constats initiaux) | `1bf4a057817cb009120042a9bb7b23ba211e2269` |
+| Base de validation (diff CTO / rebase) | `df7d94b3630c9bf7177380606a0857adaa5d5b67` |
 | PR | https://github.com/Somafrik-education/Somafrik/pull/625 |
 | Date | 13 septembre 2026 |
 | Périmètre | Messages (C2), Annonces (C3), Notifications internes (C4), préférences canal, frontière notifications. Hors correction Finance / Scolarité / Pédagogie / Paramètres / Auth. |
@@ -29,7 +30,8 @@ L’API PostgreSQL C2/C3/C4 est isolée par `school_id`, persistante, et déjà 
 
 ## 1. Gouvernance
 
-- Branche dédiée `audit/communication-module` créée depuis `develop@1bf4a057`.
+- Branche dédiée `audit/communication-module` créée depuis `develop@1bf4a057` (base d'origine des constats).
+- Rebase de validation sur `develop@df7d94b3` (base contrôlée pour le diff GitHub `develop...HEAD`). Aucun fichier métier ajouté par ce rebase.
 - PR Draft uniquement. **Aucun merge.**
 - Aucun changement hors dossier d’audit / tests RED / gate CI.
 - Aucune migration PostgreSQL.

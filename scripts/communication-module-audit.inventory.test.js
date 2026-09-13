@@ -39,8 +39,13 @@ test("la matrice JSON est alignée sur le markdown", () => {
   const matrix = JSON.parse(readRepo(MATRIX));
   const report = readRepo(REPORT);
   assert.equal(matrix.auditId, "AUDIT-COM-MODULE-2026-09-13");
-  assert.equal(matrix.baseSha, "1bf4a057817cb009120042a9bb7b23ba211e2269");
+  assert.equal(matrix.originBaseSha, "1bf4a057817cb009120042a9bb7b23ba211e2269");
+  assert.equal(matrix.validationBaseSha, "df7d94b3630c9bf7177380606a0857adaa5d5b67");
   assert.equal(matrix.auditBranch, "audit/communication-module");
+  assert.match(report, /1bf4a057817cb009120042a9bb7b23ba211e2269/);
+  assert.match(report, /df7d94b3630c9bf7177380606a0857adaa5d5b67/);
+  assert.match(report, /Base d'origine/);
+  assert.match(report, /Base de validation/);
   assert.ok(Array.isArray(matrix.features) && matrix.features.length >= 40);
   for (const feature of matrix.features) {
     assert.match(report, new RegExp(`\\| ${feature.id} \\|`), `ID ${feature.id} absent du markdown`);

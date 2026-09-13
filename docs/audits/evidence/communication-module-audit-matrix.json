@@ -2,7 +2,8 @@
   "auditId": "AUDIT-COM-MODULE-2026-09-13",
   "title": "Audit fonctionnel, technique et de non-régression — module Communication",
   "baseBranch": "develop",
-  "baseSha": "1bf4a057817cb009120042a9bb7b23ba211e2269",
+  "originBaseSha": "1bf4a057817cb009120042a9bb7b23ba211e2269",
+  "validationBaseSha": "df7d94b3630c9bf7177380606a0857adaa5d5b67",
   "auditBranch": "audit/communication-module",
   "verdictsAllowed": ["PASS", "PARTIAL", "FAIL", "MISSING", "NOT_APPLICABLE"],
   "features": [
