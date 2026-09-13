@@ -59,6 +59,7 @@ Fichiers `*.test.js` exécutés via scripts `verify:*` (pas de runner Jest dédi
 - helpers d’unicité présences, etc.
 - contrats bulletins LOT 0 : `backend/contracts/reportCard/*.test.js` (`npm run verify:report-card-lot0`)
 - profils académiques LOT 1 : `backend/lib/reportCard/academicRuleProfile*.test.js` (`npm run verify:report-card-lot1`)
+- calculabilité LOT 1.1 : mêmes gates LOT 1 (`academic-rule-profile-aggregation-contract` et contrats coefficient / pourcentage / pass_rule / rounding.stage / ranking / bornes)
 - schémas de bulletin LOT 2 : `backend/lib/reportCard/reportCardSchema*.test.js` (`npm run verify:report-card-lot2`)
 
 ```bash
