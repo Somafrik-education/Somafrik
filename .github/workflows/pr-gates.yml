@@ -322,6 +322,10 @@ jobs:
         if: needs.scope.outputs.reportcard == 'true'
         run: npm run verify:report-card-lot0
 
+      - name: Report card LOT 1 profiles
+        if: needs.scope.outputs.reportcard == 'true'
+        run: npm run verify:report-card-lot1
+
       - name: Planning
         if: needs.scope.outputs.planning == 'true'
         run: |
