@@ -96,3 +96,35 @@ export function buildConversationReplyPayload(input: {
     },
   };
 }
+
+export function isSameActiveConversation(
+  activeConversationId: string | null | undefined,
+  sentConversationId: string,
+): boolean {
+  const active = String(activeConversationId ?? "").trim();
+  const sent = String(sentConversationId ?? "").trim();
+  return Boolean(active) && Boolean(sent) && active === sent;
+}
+
+export type ReplyPostConfirmDecision = {
+  announceSendFailure: boolean;
+  applyThread: boolean;
+  announceRefreshWarning: boolean;
+};
+
+export function replyPostConfirmAction(input: {
+  mutationConfirmed: boolean;
+  refreshFailed: boolean;
+  activeConversationId?: string | null;
+  sentConversationId: string;
+}): ReplyPostConfirmDecision {
+  if (!input.mutationConfirmed) {
+    return { announceSendFailure: true, applyThread: false, announceRefreshWarning: false };
+  }
+  const sameThread = isSameActiveConversation(input.activeConversationId, input.sentConversationId);
+  return {
+    announceSendFailure: false,
+    applyThread: sameThread && !input.refreshFailed,
+    announceRefreshWarning: sameThread && input.refreshFailed,
+  };
+}

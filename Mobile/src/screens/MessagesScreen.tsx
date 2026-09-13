@@ -33,6 +33,7 @@ import {
   buildMessagePayload,
   collectSuccessfulAttachmentIds,
   isAllowedMessageAttachmentMime,
+  replyPostConfirmAction,
 } from "../lib/messageAttachments";
 import { hasCommunicationSchoolScope, withCommunicationSchoolPayload } from "../lib/communicationSchoolScope";
 import { filterCommunicationRows } from "../lib/communicationListFilter";
@@ -102,6 +103,8 @@ export default function MessagesScreen() {
   const sendIntentionRef = useRef(createIntentionStore());
   const replyLockRef = useRef(createInFlightLock());
   const replyIntentionRef = useRef(createIntentionStore());
+  const selectedConversationIdRef = useRef("");
+  selectedConversationIdRef.current = String(selectedConversation?.id ?? "");
 
   const role = session?.role;
   const selfId = String(session?.user?.id ?? "");
@@ -328,6 +331,7 @@ export default function MessagesScreen() {
   };
 
   const closeThread = () => {
+    selectedConversationIdRef.current = "";
     setSelectedConversation(null);
     setThreadMessages([]);
     setReplyDraft("");
@@ -358,36 +362,67 @@ export default function MessagesScreen() {
     const idempotencyKey = replyIntentionRef.current.getOrCreate(intentionId);
     setReplying(true);
     try {
-      const submitted = await submitProtectedMutation({
-        domain: "messages",
-        method: "POST",
-        path: `/backoffice/conversations/${encodeURIComponent(conversationId)}/messages`,
-        payload,
-        idempotencyKey,
-        userId: String(session?.user.id ?? ""),
-        schoolScope: String(activeSchoolCode || session?.school?.code || session?.user.schoolCode || ""),
-        persistOutbox: true,
-        request: () => replyClientsConversationMessage(conversationId, payload, { idempotencyKey }),
-      });
-      if (submitted.outcome !== "confirmed") {
-        const queuedLike = submitted.outcome === "queued" || submitted.outcome === "in_flight";
-        Alert.alert(
-          queuedLike ? NETWORK_COPY.queued : NETWORK_COPY.failed,
-          queuedLike
-            ? "La réponse est conservée en file d'attente. Elle n'apparaîtra dans le fil qu'après confirmation serveur."
-            : submitted.error instanceof Error
-              ? submitted.error.message
-              : "Impossible d'envoyer la réponse.",
-        );
+      try {
+        const submitted = await submitProtectedMutation({
+          domain: "messages",
+          method: "POST",
+          path: `/backoffice/conversations/${encodeURIComponent(conversationId)}/messages`,
+          payload,
+          idempotencyKey,
+          userId: String(session?.user.id ?? ""),
+          schoolScope: String(activeSchoolCode || session?.school?.code || session?.user.schoolCode || ""),
+          persistOutbox: true,
+          request: () => replyClientsConversationMessage(conversationId, payload, { idempotencyKey }),
+        });
+        if (submitted.outcome !== "confirmed") {
+          const queuedLike = submitted.outcome === "queued" || submitted.outcome === "in_flight";
+          Alert.alert(
+            queuedLike ? NETWORK_COPY.queued : NETWORK_COPY.failed,
+            queuedLike
+              ? "La réponse est conservée en file d'attente. Elle n'apparaîtra dans le fil qu'après confirmation serveur."
+              : submitted.error instanceof Error
+                ? submitted.error.message
+                : "Impossible d'envoyer la réponse.",
+          );
+          return;
+        }
+        replyIntentionRef.current.rotate(intentionId);
+        setReplyDraft("");
+      } catch (error) {
+        Alert.alert("Envoi impossible", error instanceof Error ? error.message : "Impossible d'envoyer la réponse.");
         return;
       }
-      replyIntentionRef.current.rotate(intentionId);
-      setReplyDraft("");
-      const thread = await getCanonicalConversationMessages(conversationId, activeSchoolCode);
-      setThreadMessages(thread);
-      await refreshUnread();
-    } catch (error) {
-      Alert.alert("Envoi impossible", error instanceof Error ? error.message : "Impossible d'envoyer la réponse.");
+
+      try {
+        const thread = await getCanonicalConversationMessages(conversationId, activeSchoolCode);
+        const apply = replyPostConfirmAction({
+          mutationConfirmed: true,
+          refreshFailed: false,
+          activeConversationId: selectedConversationIdRef.current,
+          sentConversationId: conversationId,
+        });
+        if (apply.applyThread) {
+          setThreadMessages(thread);
+          try {
+            await refreshUnread();
+          } catch {
+            /* unread stale n'est pas un échec d'envoi */
+          }
+        }
+      } catch {
+        const refresh = replyPostConfirmAction({
+          mutationConfirmed: true,
+          refreshFailed: true,
+          activeConversationId: selectedConversationIdRef.current,
+          sentConversationId: conversationId,
+        });
+        if (refresh.announceRefreshWarning) {
+          Alert.alert(
+            "Fil non actualisé",
+            "La réponse a été envoyée. Rouvrez la conversation pour voir le fil à jour.",
+          );
+        }
+      }
     } finally {
       setReplying(false);
       replyLockRef.current.end();
@@ -395,6 +430,7 @@ export default function MessagesScreen() {
   };
 
   const openConversation = async (item: CanonicalConversation) => {
+    selectedConversationIdRef.current = String(item.id ?? "");
     setSelectedConversation(item);
     setReplyDraft("");
     setReplyError("");

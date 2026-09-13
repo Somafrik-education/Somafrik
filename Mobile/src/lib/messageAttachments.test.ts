@@ -8,6 +8,8 @@ import {
   collectSuccessfulAttachmentIds,
   conversationReplyPath,
   isAllowedMessageAttachmentMime,
+  isSameActiveConversation,
+  replyPostConfirmAction,
 } from "./messageAttachments";
 
 assert.equal(isAllowedMessageAttachmentMime("application/pdf"), true);
@@ -91,6 +93,59 @@ assert.equal(
   "/backoffice/conversations/conv%2Fspecial/messages",
 );
 
+assert.equal(isSameActiveConversation("conv-A", "conv-A"), true);
+assert.equal(isSameActiveConversation(" conv-A ", "conv-A"), true);
+assert.equal(isSameActiveConversation("conv-B", "conv-A"), false);
+assert.equal(isSameActiveConversation("", "conv-A"), false);
+assert.equal(isSameActiveConversation(null, "conv-A"), false);
+
+const mutateFailed = replyPostConfirmAction({
+  mutationConfirmed: false,
+  refreshFailed: false,
+  activeConversationId: "conv-1",
+  sentConversationId: "conv-1",
+});
+assert.equal(mutateFailed.announceSendFailure, true);
+assert.equal(mutateFailed.applyThread, false);
+
+const confirmedRefreshKo = replyPostConfirmAction({
+  mutationConfirmed: true,
+  refreshFailed: true,
+  activeConversationId: "conv-1",
+  sentConversationId: "conv-1",
+});
+assert.equal(confirmedRefreshKo.announceSendFailure, false, "POST confirmé + refresh KO ne doit pas annoncer Envoi impossible");
+assert.equal(confirmedRefreshKo.applyThread, false);
+assert.equal(confirmedRefreshKo.announceRefreshWarning, true);
+
+const staleConversation = replyPostConfirmAction({
+  mutationConfirmed: true,
+  refreshFailed: false,
+  activeConversationId: "conv-B",
+  sentConversationId: "conv-A",
+});
+assert.equal(staleConversation.applyThread, false, "un refresh de l'ancienne conversation ne doit pas remplacer le fil courant");
+assert.equal(staleConversation.announceSendFailure, false);
+assert.equal(staleConversation.announceRefreshWarning, false);
+
+const closedModal = replyPostConfirmAction({
+  mutationConfirmed: true,
+  refreshFailed: false,
+  activeConversationId: "",
+  sentConversationId: "conv-A",
+});
+assert.equal(closedModal.applyThread, false);
+
+const confirmedOk = replyPostConfirmAction({
+  mutationConfirmed: true,
+  refreshFailed: false,
+  activeConversationId: "conv-1",
+  sentConversationId: "conv-1",
+});
+assert.equal(confirmedOk.applyThread, true);
+assert.equal(confirmedOk.announceSendFailure, false);
+assert.equal(confirmedOk.announceRefreshWarning, false);
+
 const srcRoot = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
 function readRepo(relativePath: string) {
   return fs.readFileSync(path.join(srcRoot, relativePath), "utf8");
@@ -123,10 +178,24 @@ assert.match(screen, /Message est obligatoire/, "la réponse vide n'est pas refu
 assert.match(screen, /buildConversationReplyPayload/);
 assert.match(screen, /replyClientsConversationMessage/);
 assert.match(screen, /getCanonicalConversationMessages\(conversationId/);
+assert.match(screen, /replyPostConfirmAction/);
+assert.match(screen, /selectedConversationIdRef/);
+assert.match(screen, /Fil non actualisé/);
 assert.match(
   screen,
   /path:\s*`\/backoffice\/conversations\/\$\{encodeURIComponent\(conversationId\)\}\/messages`/,
 );
+const replyFn = sliceBetween(screen, "const replyInThread = async", "const openConversation", "replyInThread");
+assert.equal((replyFn.match(/try \{/g) ?? []).length >= 3, true, "mutation et refresh doivent être dans des try séparés");
+assert.match(replyFn, /Alert\.alert\(\s*"Envoi impossible"/);
+const refreshSlice = replyFn.slice(replyFn.indexOf("getCanonicalConversationMessages(conversationId"));
+assert.doesNotMatch(
+  refreshSlice,
+  /Envoi impossible/,
+  "après confirmation, le refresh KO ne doit plus afficher Envoi impossible",
+);
+assert.match(refreshSlice, /Fil non actualisé/);
+assert.match(refreshSlice, /replyPostConfirmAction/);
 assert.doesNotMatch(
   modal,
   /participantUserIds/,
