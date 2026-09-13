@@ -58,7 +58,8 @@ Fichiers `*.test.js` exécutés via scripts `verify:*` (pas de runner Jest dédi
 - `teacherNotesWriteAccess`
 - helpers d’unicité présences, etc.
 - contrats bulletins LOT 0 : `backend/contracts/reportCard/*.test.js` (`npm run verify:report-card-lot0`)
-- profils académiques LOT 1 : `backend/lib/reportCard/*.test.js` (`npm run verify:report-card-lot1`)
+- profils académiques LOT 1 : `backend/lib/reportCard/academicRuleProfile*.test.js` (`npm run verify:report-card-lot1`)
+- schémas de bulletin LOT 2 : `backend/lib/reportCard/reportCardSchema*.test.js` (`npm run verify:report-card-lot2`)
 
 ```bash
 npm run verify:notes-sync
