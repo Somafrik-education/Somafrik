@@ -382,7 +382,7 @@ function createReportCardConfiguration({
     }
   }
 
-  async function validateBundle(store, schoolId, refs) {
+  async function validateBundle(store, schoolId, refs, { requireFrozenTemplate = true } = {}) {
     if (!refs?.profile?.id || !Number.isInteger(Number(refs.profile.version))) {
       throw new ReportCardConfigurationError("INVALID_BUNDLE");
     }
@@ -396,7 +396,13 @@ function createReportCardConfiguration({
     if (!isCalculablePassRule(profile.spec)) {
       throw new ReportCardConfigurationError("PROFILE_NOT_CALCULABLE");
     }
+    if (profile.status === "DRAFT") {
+      throw new ReportCardConfigurationError("BUNDLE_VERSION_MUTABLE");
+    }
     const schema = await loadSchemaVersion(schoolId, refs.schema.id, Number(refs.schema.version));
+    if (schema.status === "DRAFT") {
+      throw new ReportCardConfigurationError("BUNDLE_VERSION_MUTABLE");
+    }
     try {
       validateAgainstProfile(schema.spec, profile.spec);
     } catch (err) {
@@ -414,6 +420,9 @@ function createReportCardConfiguration({
       throw wrapTemplateError(err);
     }
     if (!normalized) throw new ReportCardConfigurationError("RENDERING_TEMPLATE_REQUIRED");
+    if (requireFrozenTemplate && template.status === "DRAFT") {
+      throw new ReportCardConfigurationError("BUNDLE_VERSION_MUTABLE");
+    }
     return {
       profile,
       schema,
@@ -552,7 +561,7 @@ function createReportCardConfiguration({
       if (request.status !== "CONFIGURING") {
         throw new ReportCardConfigurationError("INVALID_TRANSITION");
       }
-      const bundle = await validateBundle(store, schoolId, { profile, schema, template });
+      const bundle = await validateBundle(store, schoolId, { profile, schema, template }, { requireFrozenTemplate: false });
       const updated = {
         ...request,
         profile_id: bundle.profile.profile_id || bundle.profile.id,
@@ -595,11 +604,12 @@ function createReportCardConfiguration({
       if (!request.profile_id || !request.schema_id || !request.rendering_template_id) {
         throw new ReportCardConfigurationError("INVALID_BUNDLE");
       }
-      await validateBundle(store, schoolId, {
+      const refs = {
         profile: { id: request.profile_id, version: request.profile_version },
         schema: { id: request.schema_id, version: request.schema_version },
         template: { id: request.rendering_template_id, version: request.rendering_template_version },
-      });
+      };
+      await validateBundle(store, schoolId, refs, { requireFrozenTemplate: false });
       const template = await store.getTemplateVersion(
         schoolId,
         request.rendering_template_id,
@@ -608,6 +618,7 @@ function createReportCardConfiguration({
       if (template && template.status === "DRAFT") {
         await store.activateTemplateVersion(schoolId, request.rendering_template_id, request.rendering_template_version);
       }
+      await validateBundle(store, schoolId, refs, { requireFrozenTemplate: true });
       return applyTransition(store, request, "READY_FOR_REVIEW", actor, PERM_CONFIGURE, { at });
     });
   }
@@ -688,11 +699,23 @@ function createReportCardConfiguration({
       if (!request.profile_id || !request.schema_id || !request.rendering_template_id) {
         throw new ReportCardConfigurationError("INVALID_BUNDLE");
       }
-      const bundle = await validateBundle(store, schoolId, {
-        profile: { id: request.profile_id, version: request.profile_version },
-        schema: { id: request.schema_id, version: request.schema_version },
-        template: { id: request.rendering_template_id, version: request.rendering_template_version },
-      });
+      const bundle = await validateBundle(
+        store,
+        schoolId,
+        {
+          profile: { id: request.profile_id, version: request.profile_version },
+          schema: { id: request.schema_id, version: request.schema_version },
+          template: { id: request.rendering_template_id, version: request.rendering_template_version },
+        },
+        { requireFrozenTemplate: true }
+      );
+      if (
+        request.profile_spec_sha256 !== bundle.profile_spec_sha256 ||
+        request.schema_spec_sha256 !== bundle.schema_spec_sha256 ||
+        request.rendering_template_spec_sha256 !== bundle.rendering_template_spec_sha256
+      ) {
+        throw new ReportCardConfigurationError("BUNDLE_VERSION_MUTABLE");
+      }
       const previous = await store.getActiveByPair(schoolId, request.model_key);
       if (previous && previous.id !== request.id) {
         await applyTransition(store, previous, "ARCHIVED", actor, PERM_CONFIGURE, {

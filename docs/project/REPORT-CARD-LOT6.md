@@ -15,6 +15,8 @@ Workflow backend/PostgreSQL uniquement. Aucune UI Web/Mobile, aucune route publi
 
 Bundle exact : `AcademicRuleProfile` (LOT 1/1.1, calculable) + `ReportCardSchema` (LOT 2, `validateAgainstProfile`) + `RenderingTemplate` versionné (validateur LOT 5 partagé) + `engine_id = somafrik.report_card.v1`.
 
+Aucune version `DRAFT` de profile/schema dans un bundle prêt/actif (`BUNDLE_VERSION_MUTABLE`). Le template est figé (non-DRAFT) avant `READY_FOR_REVIEW`. Activation revalide les `spec_sha256` exacts.
+
 La spec template ne contient pas `school_id` / `country`. Canonicalisation JCS RFC 8785 + `spec_sha256`. Versions non-DRAFT immuables.
 
 ## RBAC

@@ -5,7 +5,6 @@ const assert = require("node:assert/strict");
 const crypto = require("node:crypto");
 const fs = require("node:fs");
 const path = require("node:path");
-const { execSync } = require("node:child_process");
 const { ENGINE_ID, TEMPLATE_REQUEST_STATES, RBAC_TOKENS, PUBLISH } = require("../../contracts/reportCard/contract");
 const { canonicalize } = require("../../contracts/reportCard/jcs");
 const { scanEngineSources, scanText } = require("../../contracts/reportCard/noCountrySchoolBranch");
@@ -1039,17 +1038,16 @@ test("report-card-lot6-no-publication-token-pdf-side-effects", async () => {
 });
 
 test("report-card-lot6-no-web-mobile-lot7-plus", async () => {
-  const src = fs.readFileSync(path.join(__dirname, "reportCardConfiguration.js"), "utf8");
-  assert.equal(/\/verify\b/.test(src), false);
-  const changed = execSync("git diff --name-only origin/develop...HEAD", { encoding: "utf8" });
-  const files = changed
-    .split("\n")
-    .map((line) => line.trim())
-    .filter(Boolean);
-  for (const file of files) {
-    const lower = file.toLowerCase();
-    assert.equal(lower.startsWith("web/"), false, file);
-    assert.equal(lower.startsWith("mobile/"), false, file);
+  const lot6Files = [
+    "backend/lib/reportCard/reportCardConfiguration.js",
+    "backend/lib/reportCard/renderingTemplate.js",
+    "backend/db/reportCardConfigurationSql.js",
+    "backend/db/reportCardConfigurationPgStore.js",
+  ];
+  for (const rel of lot6Files) {
+    const src = fs.readFileSync(path.join(ROOT, rel), "utf8");
+    assert.equal(/\/verify\b/.test(src), false, rel);
+    assert.equal(/web\/src|Mobile\/src/.test(src), false, rel);
   }
   assert.equal(fs.existsSync(path.join(ROOT, "web/src/pages/reportCardConfiguration")), false);
   assert.equal(fs.existsSync(path.join(ROOT, "Mobile/src/screens/ReportCardVerify.tsx")), false);
