@@ -87,8 +87,8 @@ export type RootStackParamList = {
   TeacherGrades: undefined;
   Payments: undefined;
   Unpaid: undefined;
-  Announcements: undefined;
-  Messages: undefined;
+  Announcements: { announcementId?: string } | undefined;
+  Messages: { conversationId?: string } | undefined;
   Timetable: undefined;
   ReportCards: undefined;
   Support: undefined;

@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Alert,
   Linking,
@@ -10,7 +10,7 @@ import {
   TouchableOpacity,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { useFocusEffect } from "@react-navigation/native";
+import { useFocusEffect, useRoute, type RouteProp } from "@react-navigation/native";
 import AnnouncementMutationControls from "../components/AnnouncementMutationControls";
 import CommunicationChrome from "../components/CommunicationChrome";
 import ExpandableCommunicationCard from "../components/ExpandableCommunicationCard";
@@ -28,6 +28,7 @@ import {
   markCanonicalAnnouncementRead,
   type CanonicalAnnouncement,
 } from "../services/domainHydrationApi";
+import type { RootStackParamList } from "../navigation/AppNavigator";
 
 function formatDisplayDate(iso?: string) {
   if (!iso) return "";
@@ -54,6 +55,8 @@ export default function AnnouncementsScreen() {
   const { scrollContentPaddingBottom } = useFloatingTabBarLayout();
   const contentStyle = [styles.content, { paddingBottom: scrollContentPaddingBottom }];
   const { session } = useAuth();
+  const route = useRoute<RouteProp<RootStackParamList, "Announcements">>();
+  const focusedAnnouncementId = String(route.params?.announcementId ?? "").trim();
   const canRead = canReadEntity(session, "announcements");
   const canCreate = canMutateEntity(session, "announcements", "CREATE");
   const canArchive = canArchiveAnnouncement(session);
@@ -118,6 +121,12 @@ export default function AnnouncementsScreen() {
     [canRead, snapshot, query, unreadOnly],
   );
 
+  useEffect(() => {
+    if (!focusedAnnouncementId || !canRead || snapshot.status !== "success") return;
+    const found = snapshot.data.find((row) => row.id === focusedAnnouncementId);
+    if (found) void markReadIfNeeded(found);
+  }, [focusedAnnouncementId, canRead, snapshot]);
+
   return (
     <>
       <FlatList
@@ -169,11 +178,13 @@ export default function AnnouncementsScreen() {
           const origin = announcementOriginLabel(announcement);
           return (
             <ExpandableCommunicationCard
+              key={announcement.id === focusedAnnouncementId ? `${announcement.id}-open` : announcement.id}
               title={announcement.title}
               subtitle={origin}
               badge={announcement.readAt ? "Lu" : "Non lu"}
               badgeTone={announcement.readAt ? "default" : "info"}
               testID={`announcement-card-${announcement.id}`}
+              defaultExpanded={Boolean(focusedAnnouncementId) && announcement.id === focusedAnnouncementId}
               onExpandedChange={(expanded) => {
                 if (expanded) void markReadIfNeeded(announcement);
               }}

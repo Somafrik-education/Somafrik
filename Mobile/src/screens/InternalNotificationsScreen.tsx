@@ -16,10 +16,15 @@ import { useFocusEffect } from "@react-navigation/native";
 import { useAuth } from "../context/AuthContext";
 import { useAdminData } from "../context/AdminDataContext";
 import { canReadRoute } from "../domain/security/permissions";
+import { canAccessMessagesRoute } from "../lib/mobileCtaRbacAlignment";
 import { hasCommunicationSchoolScope } from "../lib/communicationSchoolScope";
 import { filterCommunicationRows, excerptCommunication } from "../lib/communicationListFilter";
 import { useInternalNotificationsUnreadCount } from "../lib/internalNotificationsRead";
-import { resolveInternalNotificationNavigationTarget } from "../lib/pushNotificationDestinations";
+import {
+  resolveInternalNotificationNavigationTarget,
+  type AllowedPushDestination,
+  type AllowedPushNavigationParams,
+} from "../lib/pushNotificationDestinations";
 import { navigationRef } from "../navigation/rootNavigation";
 import CommunicationChrome from "../components/CommunicationChrome";
 import ExpandableCommunicationCard from "../components/ExpandableCommunicationCard";
@@ -71,6 +76,8 @@ export default function InternalNotificationsScreen() {
   const scopeReady = !requiresSchoolSelection || hasCommunicationSchoolScope(activeSchoolCode);
   const canCreate = hasPermission(session, "Notifications:CREATE") && scopeReady;
   const canOpenStudentPayments = canReadRoute(session, "StudentPayments");
+  const canOpenMessages = canAccessMessagesRoute(session);
+  const canOpenAnnouncements = canReadRoute(session, "Announcements");
   const { count: unread, refresh: refreshUnread } = useInternalNotificationsUnreadCount(scopeReady, activeSchoolCode);
   const visibleRows = useMemo(
     () =>
@@ -151,9 +158,30 @@ export default function InternalNotificationsScreen() {
     }
   }
 
-  function openNavigationTarget(row: InternalNotificationRecord) {
+  function canOpenResolvedTarget(target: {
+    destination: AllowedPushDestination;
+    params?: AllowedPushNavigationParams;
+  }) {
+    if (target.destination === "StudentPayments") return canOpenStudentPayments;
+    if (target.destination === "Messages") return canOpenMessages;
+    if (target.destination === "Announcements") return canOpenAnnouncements;
+    return false;
+  }
+
+  function openActionLabel(row: InternalNotificationRecord, destination: AllowedPushDestination) {
+    if (destination === "StudentPayments") return "Voir le paiement";
+    return row.readAt ? "Ouvrir" : "Lire";
+  }
+
+  async function openNavigationTarget(row: InternalNotificationRecord) {
     const target = resolveInternalNotificationNavigationTarget(row.navigationTarget);
-    if (!target || !canOpenStudentPayments || !navigationRef.isReady()) return;
+    if (!target || !canOpenResolvedTarget(target) || !navigationRef.isReady()) {
+      Alert.alert("Ouverture impossible", "Cette notification ne renvoie vers aucune ressource consultable.");
+      return;
+    }
+    if (!row.readAt) {
+      await markRead(row);
+    }
     navigationRef.navigate({ name: target.destination, params: target.params } as never);
   }
 
@@ -298,9 +326,9 @@ export default function InternalNotificationsScreen() {
               </TouchableOpacity>
             ))}
             <View style={styles.actions}>
-              {navigationTarget && canOpenStudentPayments ? (
-                <TouchableOpacity style={styles.primaryButton} onPress={() => openNavigationTarget(row)}>
-                  <Text style={styles.primaryButtonText}>Voir le paiement</Text>
+              {navigationTarget && canOpenResolvedTarget(navigationTarget) ? (
+                <TouchableOpacity style={styles.primaryButton} onPress={() => void openNavigationTarget(row)}>
+                  <Text style={styles.primaryButtonText}>{openActionLabel(row, navigationTarget.destination)}</Text>
                 </TouchableOpacity>
               ) : null}
               {!row.readAt ? (

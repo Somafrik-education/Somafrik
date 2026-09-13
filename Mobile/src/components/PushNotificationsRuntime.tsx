@@ -23,7 +23,25 @@ Notifications.setNotificationHandler({
   }),
 });
 
+function collectRouteNames(state: { routeNames?: string[]; routes?: Array<{ name?: string; state?: unknown }> } | undefined, acc = new Set<string>()) {
+  if (!state) return acc;
+  for (const name of state.routeNames ?? []) acc.add(name);
+  for (const route of state.routes ?? []) {
+    if (route.name) acc.add(route.name);
+    if (route.state && typeof route.state === "object") {
+      collectRouteNames(route.state as never, acc);
+    }
+  }
+  return acc;
+}
+
 function navigateTo(destination: string, params?: AllowedPushNavigationParams) {
+  if (!navigationRef.isReady()) return;
+  const registered = collectRouteNames(navigationRef.getRootState());
+  if (destination !== "Home" && !registered.has(destination)) {
+    navigationRef.navigate({ name: "Home" } as never);
+    return;
+  }
   navigationRef.navigate({ name: destination, params } as never);
 }
 

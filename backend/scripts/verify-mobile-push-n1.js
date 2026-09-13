@@ -148,7 +148,11 @@ function sourceGuards() {
   assert.match(tap, /dismissPendingPushNavigation/);
   assert.match(tap, /resolvePushNavigationData/);
   assert.match(destinations, /StudentPayments/);
+  assert.match(destinations, /"Messages"/);
+  assert.match(destinations, /"Announcements"/);
+  assert.match(destinations, /"InternalNotifications"/);
   assert.match(destinations, /somafrikStudentId/);
+  assert.match(destinations, /somafrikConversationId/);
   assert.match(destinations, /return \{ destination: "Home" \}/);
   assert.match(navigator, /session == null|Boolean\(session\) && canPersistFullSession/);
   assert.match(auth, /dismissPendingPushNavigation/);

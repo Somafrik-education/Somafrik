@@ -43,6 +43,57 @@ test("target inconnu reste fail-safe Home", () => {
   );
 });
 
+const CONVERSATION_ID = "66666666-6666-4666-8666-666666666666";
+const ANNOUNCEMENT_ID = "77777777-7777-4777-8777-777777777777";
+
+test("conversation produit une destination Mobile Messages allowlistée", () => {
+  assert.deepEqual(
+    mobilePushDataForDelivery(
+      { event_key: EVENT_KEY },
+      { navigationTarget: { type: "conversation", conversationId: CONVERSATION_ID } },
+    ),
+    {
+      somafrikDestination: "Messages",
+      somafrikConversationId: CONVERSATION_ID,
+      eventKey: EVENT_KEY,
+    },
+  );
+});
+
+test("conversation sans conversationId reste fail-safe Home", () => {
+  assert.deepEqual(
+    mobilePushDataForDelivery(
+      { event_key: EVENT_KEY },
+      { navigationTarget: { type: "conversation" } },
+    ),
+    { somafrikDestination: "Home", eventKey: EVENT_KEY },
+  );
+});
+
+test("announcement produit une destination Mobile Announcements allowlistée", () => {
+  assert.deepEqual(
+    mobilePushDataForDelivery(
+      { event_key: EVENT_KEY },
+      { navigationTarget: { type: "announcement", announcementId: ANNOUNCEMENT_ID } },
+    ),
+    {
+      somafrikDestination: "Announcements",
+      somafrikAnnouncementId: ANNOUNCEMENT_ID,
+      eventKey: EVENT_KEY,
+    },
+  );
+});
+
+test("identifiant conversation injecté est rejeté", () => {
+  assert.deepEqual(
+    mobilePushDataForDelivery(
+      { event_key: EVENT_KEY },
+      { navigationTarget: { type: "conversation", conversationId: "https://evil.example" } },
+    ),
+    { somafrikDestination: "Home", eventKey: EVENT_KEY },
+  );
+});
+
 test("fan-out PUSH PAYMENT_DUE transmet StudentPayments + studentId à Expo", async () => {
   const adapter = createMemoryDeliveryAdapter({
     notifications: [{

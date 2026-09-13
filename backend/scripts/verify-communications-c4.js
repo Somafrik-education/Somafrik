@@ -44,6 +44,7 @@ function sourceGuards() {
   const mobileHttp = read("Mobile/src/services/httpClient.ts");
   const mobileRead = read("Mobile/src/lib/internalNotificationsRead.ts");
   const mobileScreen = read("Mobile/src/screens/InternalNotificationsScreen.tsx");
+  const mobileDestinations = read("Mobile/src/lib/pushNotificationDestinations.ts");
   const mobileHeader = read("Mobile/src/components/MobileAppHeader.tsx");
   const mobileIcons = read("Mobile/src/components/CommunicationHeaderIcons.tsx");
   const mobileNav = read("Mobile/src/navigation/AppNavigator.tsx");
@@ -85,6 +86,12 @@ function sourceGuards() {
   assert.doesNotMatch(mobileRead, /localStorage|AsyncStorage/);
   assert.doesNotMatch(webApi, /localStorage/);
   assert.doesNotMatch(mobileApi, /AsyncStorage/);
+  assert.match(mobileScreen, /Ouvrir|Lire/);
+  assert.match(mobileDestinations, /conversationId/);
+  assert.match(mobileDestinations, /announcement/);
+  assert.match(mobileDestinations, /"Messages"/);
+  assert.match(mobileDestinations, /"Announcements"/);
+  assert.match(mobileDestinations, /"InternalNotifications"/);
 
   // 7-8 sender système / humain
   assert.match(service, /SYSTEM_SENDER_NAME = "Somafrik"/);
@@ -362,6 +369,8 @@ function main() {
   run("npm", ["--prefix", "web", "run", "test", "--", "src/lib/dashboardPermissions.test.ts"], "web Lot J P1 RBAC operations");
   run("npx", ["--yes", "tsx", "Mobile/src/lib/internalNotificationsC4.test.ts"], "mobile internal notifications C4");
   run("npx", ["--yes", "tsx", "Mobile/src/lib/notificationInboxRoute.test.ts"], "mobile inbox routing context");
+  run("npx", ["--yes", "tsx", "Mobile/src/lib/financeNotificationNavigation.test.ts"], "mobile C4 Ouvrir + push Communication");
+  run(process.execPath, ["--test", "backend/lib/communicationsFinanceMobileNavigation.test.js"], "fan-out push Communication destinations");
   assert.ok(String(process.env.DATABASE_URL ?? "").trim(), "DATABASE_URL requis pour COM-C4");
   run(process.execPath, ["backend/db/communicationsC4.bootstrap.pg.test.js"], "bootstrap payments cancelled_at CAS A/B");
   run(process.execPath, ["backend/lib/communicationsC4.http.pg.test.js"], "parcours HTTP PostgreSQL COM-C4");

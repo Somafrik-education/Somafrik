@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -16,7 +16,8 @@ import * as ImagePicker from "expo-image-picker";
 import * as DocumentPicker from "expo-document-picker";
 import FormField from "../components/FormField";
 import { Ionicons } from "@expo/vector-icons";
-import { useFocusEffect } from "@react-navigation/native";
+import { useFocusEffect, useNavigation, useRoute, type RouteProp } from "@react-navigation/native";
+import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import QueryStateView from "../components/QueryStateView";
 import StudentSwitcher from "../components/StudentSwitcher";
 import { useAdminData } from "../context/AdminDataContext";
@@ -61,6 +62,7 @@ import {
   type CanonicalSchoolMessage,
 } from "../services/domainHydrationApi";
 import type { CanonicalMessageRecipient } from "../services/api";
+import type { RootStackParamList } from "../navigation/AppNavigator";
 
 const priorities: MessagePriority[] = ["Faible", "Moyenne", "Haute", "Critique"];
 
@@ -73,6 +75,8 @@ function counterpartName(conversation: CanonicalConversation, selfId?: string) {
 export default function MessagesScreen() {
   const { scrollContentPaddingBottom } = useFloatingTabBarLayout();
   const { session, selectedStudentId } = useAuth();
+  const route = useRoute<RouteProp<RootStackParamList, "Messages">>();
+  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList, "Messages">>();
   const {
     loadMessages,
     resourceScopeKey,
@@ -448,6 +452,13 @@ export default function MessagesScreen() {
       setThreadMessages([]);
     }
   };
+
+  const pendingConversationId = String(route.params?.conversationId ?? "").trim();
+  useEffect(() => {
+    if (!pendingConversationId || !canRead || !scopeReady) return;
+    void openConversation({ id: pendingConversationId });
+    navigation.setParams({ conversationId: undefined });
+  }, [pendingConversationId, canRead, scopeReady, navigation]);
 
   return (
     <View style={styles.screen}>
