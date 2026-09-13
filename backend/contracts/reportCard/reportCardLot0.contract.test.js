@@ -100,6 +100,7 @@ test("LOT 0 gates declared", () => {
     "token-ciphertext-bound-to-version",
     "snapshot-signature",
     "snapshot-signature-required-before-render",
+    "verify-requires-snapshot-signature",
     "tenant-isolation",
   ]) {
     assert.ok(GATES.includes(gate), gate);

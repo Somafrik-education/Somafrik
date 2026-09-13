@@ -224,9 +224,66 @@ test("tenant-isolation: school B cannot bind school A capability", () => {
   const [publicId, token] = opaque.split(".");
   const publicOk = journal.lookupPublic(publicId, token);
   assert.equal(publicOk.ok, true);
+  assert.equal(publicOk.payload.student.given, "Hope");
   const crossTenant = journal.lookupPublic(publicId, token, { expectedSchoolId: "school-b" });
   assert.equal(crossTenant.ok, false);
   assert.equal(crossTenant.reason, "tenant_mismatch");
+});
+
+test("verify-requires-snapshot-signature: forged bytes+hash is not a public success", () => {
+  const wrapping = generateWrappingKey();
+  const signingKey = generateSigningKey("kid-1");
+  const journal = new PublishJournal({ wrapping, signingKey });
+  journal.publish(samplePayload());
+  const url = journal.reprintUrl("rc-1", 1);
+  const [, opaque] = url.split("/verify/rc/");
+  const [publicId, token] = opaque.split(".");
+  assert.equal(journal.lookupPublic(publicId, token).ok, true);
+
+  const rec = journal.records.get("rc-1::1");
+  const bytes = Buffer.from(rec.sealed.canonical_bytes);
+  const idx = bytes.indexOf(Buffer.from("Hope", "utf8"));
+  assert.ok(idx >= 0);
+  bytes[idx] = "N".charCodeAt(0);
+  const sha256 = hashCanonical(bytes);
+  journal.records.set(
+    "rc-1::1",
+    Object.freeze({
+      ...rec,
+      snapshot_sha256: sha256,
+      sealed: Object.freeze({
+        ...rec.sealed,
+        canonical_bytes: bytes,
+        snapshot_sha256: sha256,
+      }),
+    })
+  );
+  const forged = journal.lookupPublic(publicId, token);
+  assert.equal(forged.ok, false);
+  assert.equal(forged.reason, "SNAPSHOT_SIGNATURE_INVALID");
+});
+
+test("verify-requires-snapshot-signature: historical key after rotation; missing kid fails closed", () => {
+  const wrapping = generateWrappingKey();
+  const key1 = generateSigningKey("kid-1");
+  const key2 = generateSigningKey("kid-2");
+  const journal = new PublishJournal({ wrapping, signingKey: key1 });
+  journal.publish(samplePayload());
+  const url = journal.reprintUrl("rc-1", 1);
+  const [, opaque] = url.split("/verify/rc/");
+  const [publicId, token] = opaque.split(".");
+  const dump = journal.persistWithoutSecrets();
+
+  const rotated = PublishJournal.restore(dump, { wrapping, signingKey: key2, signingKeys: [key1] });
+  const ok = rotated.lookupPublic(publicId, token);
+  assert.equal(ok.ok, true);
+  assert.equal(ok.payload.student.given, "Hope");
+  assert.equal(ok.payload.published_snapshot_version, 1);
+
+  const missing = PublishJournal.restore(dump, { wrapping, signingKey: key2 });
+  const fail = missing.lookupPublic(publicId, token);
+  assert.equal(fail.ok, false);
+  assert.equal(fail.reason, "SNAPSHOT_SIGNING_KEY_UNKNOWN");
 });
 
 test("publish-idempotency-rejects-payload-mismatch", () => {

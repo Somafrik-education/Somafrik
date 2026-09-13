@@ -183,7 +183,12 @@ class PublishJournal {
       if (!constantTimeEqual(rec.token_hash, hashToken(token))) {
         return { ok: false, reason: "not_found" };
       }
-      return { ok: true, record: rec };
+      try {
+        const payload = payloadForRender(rec.sealed, this.signingKeys);
+        return { ok: true, payload, record: rec };
+      } catch (err) {
+        return { ok: false, reason: err.code || "SNAPSHOT_SIGNATURE_INVALID" };
+      }
     }
     return { ok: false, reason: "not_found" };
   }
