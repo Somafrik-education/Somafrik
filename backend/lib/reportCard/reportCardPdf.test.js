@@ -189,6 +189,20 @@ function publicationKeys() {
   };
 }
 
+function genericRenderingTemplate(overrides = {}) {
+  return {
+    paper: "A4",
+    orientation: "portrait",
+    qr_required: true,
+    sections: [
+      { id: "SUMMARY", order: 1, label: "Totaux", source: "slots" },
+      { id: "SUBJECTS", order: 2, label: "Disciplines", source: "cells" },
+      { id: "APPLICABILITY", order: 3, label: "Presence", source: "presence" },
+    ],
+    ...overrides,
+  };
+}
+
 function boot(api, overrides = {}) {
   const signingKey = generateSigningKey("rc-ed25519-1");
   const wrapping = generateWrappingKey("rc-wrap-1");
@@ -486,6 +500,11 @@ test("report-card-pdf-default-puppeteer-smoke", { timeout: 60000 }, async () => 
   const expected = publication.reprintUrl({ tenant: TENANT_A, reportCardId: "rc-1", version: 1 });
   assert.equal(rendered.qr.decoded, expected);
   assert.equal(rendered.rasterQrDecoded, expected);
+  assert.match(rendered.html, /@font-face/);
+  assert.match(rendered.html, /data:font\/(woff2|ttf|otf)/);
+  assert.match(rendered.html, /SomafrikReportCard/);
+  assert.equal(rendered.embeddedFontFamily, "SomafrikReportCard");
+  assert.equal(rendered.embeddedFontLoaded, true);
   const src = fs.readFileSync(SRC, "utf8");
   assert.match(src, /puppeteer\.launch/);
   assert.match(src, /page\.setContent/);
@@ -534,6 +553,70 @@ test("report-card-pdf-rendering-template-fail-closed", async () => {
       }),
     (err) => err && err.code === "RENDERING_TEMPLATE_REQUIRED"
   );
+  await assert.rejects(
+    () =>
+      pdf.render({
+        tenant: TENANT_A,
+        reportCardId: "rc-1",
+        version: 1,
+        renderingTemplate: {},
+      }),
+    (err) =>
+      err &&
+      (err.code === "RENDERING_TEMPLATE_INVALID" || err.code === "RENDERING_TEMPLATE_REQUIRED")
+  );
   const rendered = await pdf.render({ tenant: TENANT_A, reportCardId: "rc-1", version: 1 });
   assert.match(rendered.html, /data-section="SUBJECTS"|data-cells/);
+});
+
+test("report-card-pdf-rendering-template-drives-sections", async () => {
+  const api = loadLot5();
+  assert.ok(api, "LOT 5 pdf missing (RED)");
+  const { publication, pdf } = boot(api);
+  publish(publication, bulletinSnapshotPayload());
+  const rendered = await pdf.render({
+    tenant: TENANT_A,
+    reportCardId: "rc-1",
+    version: 1,
+    renderingTemplate: genericRenderingTemplate(),
+  });
+  assert.match(rendered.html, /data-template-section="SUMMARY"/);
+  assert.match(rendered.html, /data-template-section="SUBJECTS"/);
+  assert.match(rendered.html, />Totaux</);
+  assert.match(rendered.html, />Disciplines</);
+  assert.ok(rendered.html.indexOf("Totaux") < rendered.html.indexOf("Disciplines"));
+  assert.match(rendered.html, /data-slot="TOTAL"/);
+  assert.match(rendered.html, /data-cells/);
+  const reversed = await pdf.render({
+    tenant: TENANT_A,
+    reportCardId: "rc-1",
+    version: 1,
+    renderingTemplate: genericRenderingTemplate({
+      sections: [
+        { id: "SUBJECTS", order: 1, label: "Disciplines", source: "cells" },
+        { id: "SUMMARY", order: 2, label: "Totaux", source: "slots" },
+      ],
+    }),
+  });
+  assert.ok(reversed.html.indexOf("Disciplines") < reversed.html.indexOf("Totaux"));
+  await assert.rejects(
+    () =>
+      pdf.render({
+        tenant: TENANT_A,
+        reportCardId: "rc-1",
+        version: 1,
+        renderingTemplate: genericRenderingTemplate({ country: "BI" }),
+      }),
+    (err) => err && err.code === "COUNTRY_SCHOOL_BRANCH_FORBIDDEN"
+  );
+  await assert.rejects(
+    () =>
+      pdf.render({
+        tenant: TENANT_A,
+        reportCardId: "rc-1",
+        version: 1,
+        renderingTemplate: genericRenderingTemplate({ qr_required: false }),
+      }),
+    (err) => err && (err.code === "QR_REQUIRED" || err.code === "RENDERING_TEMPLATE_INVALID")
+  );
 });
