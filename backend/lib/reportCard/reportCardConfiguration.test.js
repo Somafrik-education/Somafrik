@@ -697,6 +697,129 @@ test("report-card-lot6-profile-schema-template-compatible", async () => {
   );
 });
 
+test("report-card-lot6-bundle-rejects-mutable-draft-versions", async () => {
+  const { api, profileStore, schemaStore } = world();
+  const configuring = await toConfiguring(api, { modelKey: "draft-prof" });
+  const draftProf = profileStore.createProfile({
+    schoolId: SCHOOL_A,
+    actorSchoolId: SCHOOL_A,
+    profileKey: `draft-p-${crypto.randomUUID()}`,
+    spec: calculableProfile(),
+    activate: false,
+  });
+  assert.equal(draftProf.version.status, "DRAFT");
+  const frozenSchema = schemaStore.createSchema({
+    schoolId: SCHOOL_A,
+    actorSchoolId: SCHOOL_A,
+    schemaKey: `ok-s-${crypto.randomUUID()}`,
+    spec: compatibleSchema(),
+    activate: true,
+  });
+  const template = await api.saveRenderingTemplate({
+    actor: superadmin(),
+    schoolId: SCHOOL_A,
+    requestId: configuring.id,
+    spec: validTemplate(),
+  });
+  await assert.rejects(
+    () =>
+      api.bindBundle({
+        actor: superadmin(),
+        schoolId: SCHOOL_A,
+        requestId: configuring.id,
+        profile: { id: draftProf.profile.id, version: draftProf.version.version },
+        schema: { id: frozenSchema.schema.id, version: frozenSchema.version.version },
+        template: { id: template.template_id, version: template.version },
+      }),
+    (err) => err && err.code === "BUNDLE_VERSION_MUTABLE"
+  );
+
+  const frozenProf = profileStore.createProfile({
+    schoolId: SCHOOL_A,
+    actorSchoolId: SCHOOL_A,
+    profileKey: `ok-p-${crypto.randomUUID()}`,
+    spec: calculableProfile(),
+    activate: true,
+  });
+  const draftSchema = schemaStore.createSchema({
+    schoolId: SCHOOL_A,
+    actorSchoolId: SCHOOL_A,
+    schemaKey: `draft-s-${crypto.randomUUID()}`,
+    spec: compatibleSchema(),
+    activate: false,
+  });
+  assert.equal(draftSchema.version.status, "DRAFT");
+  const configuringSchema = await toConfiguring(api, { modelKey: "draft-schema" });
+  const template2 = await api.saveRenderingTemplate({
+    actor: superadmin(),
+    schoolId: SCHOOL_A,
+    requestId: configuringSchema.id,
+    spec: validTemplate(),
+  });
+  await assert.rejects(
+    () =>
+      api.bindBundle({
+        actor: superadmin(),
+        schoolId: SCHOOL_A,
+        requestId: configuringSchema.id,
+        profile: { id: frozenProf.profile.id, version: frozenProf.version.version },
+        schema: { id: draftSchema.schema.id, version: draftSchema.version.version },
+        template: { id: template2.template_id, version: template2.version },
+      }),
+    (err) => err && err.code === "BUNDLE_VERSION_MUTABLE"
+  );
+
+  const approved = await toApproved(api, profileStore, schemaStore, { modelKey: "frozen-active" });
+  const active = await api.activate({
+    actor: superadmin(),
+    schoolId: SCHOOL_A,
+    requestId: approved.id,
+    commandId: "frozen-1",
+  });
+  assert.equal(active.status, "ACTIVE");
+  assert.throws(
+    () =>
+      profileStore.updateDraftSpec({
+        schoolId: SCHOOL_A,
+        actorSchoolId: SCHOOL_A,
+        profileId: active.profile_id,
+        version: active.profile_version,
+        spec: calculableProfile({ rounding: { decimals: 1, mode: "half_up", stage: "display_only" } }),
+      }),
+    (err) => err && err.code === "VERSION_IMMUTABLE"
+  );
+  assert.throws(
+    () =>
+      schemaStore.updateDraftSpec({
+        schoolId: SCHOOL_A,
+        actorSchoolId: SCHOOL_A,
+        schemaId: active.schema_id,
+        version: active.schema_version,
+        spec: compatibleSchema({ metadata_fields: [{ id: "SCHOOL_YEAR", order: 1 }, { id: "CLASS_ID", order: 2 }] }),
+      }),
+    (err) => err && err.code === "VERSION_IMMUTABLE"
+  );
+  await assert.rejects(
+    () =>
+      api.updateRenderingTemplateSpec({
+        actor: superadmin(),
+        schoolId: SCHOOL_A,
+        templateId: active.rendering_template_id,
+        version: active.rendering_template_version,
+        spec: validTemplate({ sections: [{ id: "ONLY", order: 1, label: "Mut", source: "cells" }] }),
+      }),
+    (err) => err && err.code === "VERSION_IMMUTABLE"
+  );
+  const binding = await api.getActiveBinding({
+    actor: superadmin(),
+    schoolId: SCHOOL_A,
+    modelKey: "frozen-active",
+  });
+  assert.equal(binding.profile_spec_sha256, active.profile_spec_sha256);
+  assert.equal(binding.schema_spec_sha256, active.schema_spec_sha256);
+  assert.equal(binding.rendering_template_spec_sha256, active.rendering_template_spec_sha256);
+});
+
 test("report-card-lot6-activation-atomic", async () => {
   const { api, profileStore, schemaStore } = world();
   const approved = await toApproved(api, profileStore, schemaStore, { modelKey: "atomic" });
