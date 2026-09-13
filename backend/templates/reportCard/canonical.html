@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Bulletin</title>
+    <style>{{INLINE_CSS}}</style>
+  </head>
+  <body>
+    <div class="page">
+      <h1>Bulletin</h1>
+      <p class="meta">{{REPORT_CARD_ID}} · v{{VERSION}} · {{PUBLISHED_AT}}</p>
+      {{STUDENTS}}
+      <aside class="qr-box">
+        <img class="qr" alt="QR verification" src="{{QR_DATA_URL}}" />
+        <p class="verify-url">{{QR_URL}}</p>
+      </aside>
+    </div>
+  </body>
+</html>
