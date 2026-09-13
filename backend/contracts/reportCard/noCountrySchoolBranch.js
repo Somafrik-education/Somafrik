@@ -29,6 +29,7 @@ const EXTRA_SCAN_FILES = Object.freeze([
   "backend/db/academicRuleProfileSchema.js",
   "backend/db/reportCardSchemaPgStore.js",
   "backend/db/reportCardSchemaSql.js",
+  "backend/lib/reportCard/reportCardEngine.js",
 ]);
 
 const SKIP_NAMES = new Set([
