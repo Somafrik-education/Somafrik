@@ -207,6 +207,30 @@ describe("academic-rule-profile PG constraints/versioning/isolation", { skip: !s
         ),
         (err) => String(err.message).includes("ACADEMIC_RULE_PROFILE_VERSION_IMMUTABLE")
       );
+
+      await pool.query(
+        `UPDATE academic_rule_profile_versions SET status = 'ARCHIVED' WHERE profile_id = $1 AND version = 1`,
+        [created.profile.id]
+      );
+      const archived = await pool.query(
+        `SELECT status FROM academic_rule_profile_versions WHERE profile_id = $1 AND version = 1`,
+        [created.profile.id]
+      );
+      assert.equal(archived.rows[0].status, "ARCHIVED");
+      await assert.rejects(
+        pool.query(
+          `DELETE FROM academic_rule_profile_versions WHERE profile_id = $1 AND version = 1`,
+          [created.profile.id]
+        ),
+        (err) => String(err.message).includes("ACADEMIC_RULE_PROFILE_VERSION_IMMUTABLE")
+      );
+      const stillThere = await pool.query(
+        `SELECT version, status FROM academic_rule_profile_versions WHERE profile_id = $1 AND version = 1`,
+        [created.profile.id]
+      );
+      assert.equal(stillThere.rowCount, 1);
+      assert.equal(Number(stillThere.rows[0].version), 1);
+      assert.equal(stillThere.rows[0].status, "ARCHIVED");
     } finally {
       await pool.end();
     }
