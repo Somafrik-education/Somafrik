@@ -88,6 +88,107 @@ function snapshotPayload(overrides = {}) {
   };
 }
 
+function bulletinEngineResult() {
+  const profile = validateProfileSpec({
+    periods: ["T1", "T2"],
+    annual: true,
+    score_components: [{ id: "TJ", applicability: "always", max: 20, coefficient: 1 }],
+    missing_score: "NOT_APPLICABLE_not_zero",
+    rounding: { decimals: 2, mode: "half_up", stage: "display_only" },
+    ranking: { enabled: true, ties: "competition", metric: "PERCENTAGE" },
+    pass_rule: { metric: "PERCENTAGE", threshold: 50 },
+    aggregation: {
+      mode: "weighted_sum",
+      coefficient_default: 1,
+      percentage: "points_over_max_100",
+    },
+  });
+  const schema = validateSchemaSpec({
+    sections: [
+      {
+        id: "SUBJECTS",
+        order: 1,
+        kind: "subject_rows",
+        presence: { when: { period_id: "T1" } },
+        columns: [
+          {
+            id: "COL_T1_TJ",
+            order: 1,
+            kind: "score_component",
+            score_component_id: "TJ",
+            period_id: "T1",
+          },
+        ],
+      },
+      {
+        id: "SUMMARY",
+        order: 2,
+        kind: "totals",
+        columns: [
+          { id: "COL_TOTAL", order: 1, kind: "computed_slot", slot: "TOTAL" },
+          { id: "COL_PERCENTAGE", order: 2, kind: "computed_slot", slot: "PERCENTAGE" },
+          { id: "COL_RANK", order: 3, kind: "computed_slot", slot: "RANK" },
+          { id: "COL_DECISION", order: 4, kind: "computed_slot", slot: "DECISION" },
+        ],
+      },
+    ],
+  });
+  const facts = [
+    {
+      student_id: "STU-1",
+      subject_id: "MATH",
+      period_id: "T1",
+      score_component_id: "TJ",
+      raw_score: 12,
+      subject_applicable: true,
+    },
+    {
+      student_id: "STU-2",
+      subject_id: "MATH",
+      period_id: "T1",
+      score_component_id: "TJ",
+      raw_score: 8,
+      subject_applicable: true,
+    },
+  ];
+  return computeReportCard({
+    profile,
+    schema,
+    facts,
+    cohort: facts,
+    provenance: {
+      profile: { id: "PROF-1", version: 1, spec_sha256: "aa" },
+      schema: { id: "SCH-1", version: 1, spec_sha256: "bb" },
+    },
+    tenant: { schoolId: SCHOOL_A, actorSchoolId: SCHOOL_A },
+  });
+}
+
+function bulletinSnapshotPayload(overrides = {}) {
+  const result = bulletinEngineResult();
+  return {
+    report_card_id: "rc-1",
+    published_snapshot_version: 1,
+    school_id: SCHOOL_A,
+    published_at: "2026-09-13T00:00:00.000Z",
+    engine_id: result.engine_id,
+    provenance: result.provenance,
+    students: result.students,
+    ...overrides,
+  };
+}
+
+function publicationKeys() {
+  const signingKey = generateSigningKey("rc-ed25519-1");
+  const wrapping = generateWrappingKey("rc-wrap-1");
+  return {
+    signingKey,
+    wrapping,
+    wrappingKeys: [wrapping],
+    signingKeys: [signingKey],
+  };
+}
+
 function boot(api, overrides = {}) {
   const signingKey = generateSigningKey("rc-ed25519-1");
   const wrapping = generateWrappingKey("rc-wrap-1");
@@ -370,4 +471,69 @@ test("report-card-lot5-no-lot6-plus-side-effects", async () => {
   const mobile = path.join(__dirname, "../../../Mobile/src/screens/ReportCardsScreen.tsx");
   assert.equal(fs.existsSync(web), true);
   assert.equal(fs.existsSync(mobile), true);
+});
+
+test("report-card-pdf-default-puppeteer-smoke", { timeout: 60000 }, async () => {
+  const api = loadLot5();
+  assert.ok(api, "LOT 5 pdf missing (RED)");
+  const publication = createReportCardPublication(publicationKeys());
+  publish(publication);
+  const pdf = api.createReportCardPdf({ publication });
+  const rendered = await pdf.render({ tenant: TENANT_A, reportCardId: "rc-1", version: 1 });
+  assert.ok(Buffer.isBuffer(rendered.pdf), "pdf is a Buffer");
+  assert.equal(rendered.pdf.subarray(0, 4).toString("ascii"), "%PDF");
+  assert.ok(rendered.pdf.length > 500, "pdf is non-empty");
+  const expected = publication.reprintUrl({ tenant: TENANT_A, reportCardId: "rc-1", version: 1 });
+  assert.equal(rendered.qr.decoded, expected);
+  assert.equal(rendered.rasterQrDecoded, expected);
+  const src = fs.readFileSync(SRC, "utf8");
+  assert.match(src, /puppeteer\.launch/);
+  assert.match(src, /page\.setContent/);
+  assert.match(src, /page\.pdf/);
+  assert.match(src, /page\.\$\(["']\.qr["']\)|screenshot/);
+});
+
+test("report-card-pdf-canonical-slots-and-presence", async () => {
+  const api = loadLot5();
+  assert.ok(api, "LOT 5 pdf missing (RED)");
+  const { publication, pdf } = boot(api);
+  publish(publication, bulletinSnapshotPayload());
+  const payload = await publication.payloadForRender({
+    tenant: TENANT_A,
+    reportCardId: "rc-1",
+    version: 1,
+  });
+  const student = payload.students.find((row) => row.student_id === "STU-1");
+  assert.ok(student, "snapshot student STU-1");
+  const slotKinds = new Set((student.slots || []).map((slot) => slot.slot));
+  for (const kind of ["TOTAL", "PERCENTAGE", "RANK", "DECISION"]) {
+    assert.ok(slotKinds.has(kind), `snapshot has ${kind}`);
+  }
+  assert.ok(Array.isArray(student.presence) && student.presence.length > 0);
+  const rendered = await pdf.render({ tenant: TENANT_A, reportCardId: "rc-1", version: 1 });
+  assert.match(rendered.html, /data-section="SUBJECTS"/);
+  assert.match(rendered.html, /data-slot="TOTAL"/);
+  assert.match(rendered.html, /data-slot="PERCENTAGE"/);
+  assert.match(rendered.html, /data-slot="RANK"/);
+  assert.match(rendered.html, /data-slot="DECISION"/);
+  assert.match(rendered.html, /data-presence/);
+});
+
+test("report-card-pdf-rendering-template-fail-closed", async () => {
+  const api = loadLot5();
+  assert.ok(api, "LOT 5 pdf missing (RED)");
+  const { publication, pdf } = boot(api);
+  publish(publication);
+  await assert.rejects(
+    () =>
+      pdf.render({
+        tenant: TENANT_A,
+        reportCardId: "rc-1",
+        version: 1,
+        renderingTemplate: null,
+      }),
+    (err) => err && err.code === "RENDERING_TEMPLATE_REQUIRED"
+  );
+  const rendered = await pdf.render({ tenant: TENANT_A, reportCardId: "rc-1", version: 1 });
+  assert.match(rendered.html, /data-section="SUBJECTS"|data-cells/);
 });
