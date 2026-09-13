@@ -23,6 +23,7 @@ on:
       - "web/src/pages/AnnouncementsPage.tsx"
       - "web/src/lib/announcementsApi.ts"
       - "web/src/lib/announcementsRead.ts"
+      - "web/src/lib/announcementsRead.lotc.test.tsx"
       - "web/src/lib/clientsApi.ts"
       - "web/src/lib/communicationSchoolScope.ts"
       - "Mobile/src/screens/AnnouncementsScreen.tsx"

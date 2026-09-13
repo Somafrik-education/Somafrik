@@ -34,7 +34,7 @@ export function useAnnouncementsUnreadCount(enabled: boolean, schoolCode?: strin
         ]);
         if (!cancelled) setCount((Number(school?.count) || 0) + (Number(platform?.count) || 0));
       } catch {
-        if (!cancelled) setCount(0);
+        /* erreur transport : conserver la dernière valeur connue, jamais un zéro métier */
       }
     }
 

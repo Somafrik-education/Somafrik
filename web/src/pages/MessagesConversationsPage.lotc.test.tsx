@@ -4,7 +4,11 @@
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
+import { useState } from "react";
 import userEvent from "@testing-library/user-event";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { MemoryRouter } from "react-router-dom";
 import { MessagesConversationsPage } from "./MessagesConversationsPage";
 
@@ -14,6 +18,12 @@ const listConversations = vi.hoisted(() => vi.fn());
 const listMessages = vi.hoisted(() => vi.fn());
 const listRecipients = vi.hoisted(() => vi.fn());
 const messagesMarkRead = vi.hoisted(() => vi.fn());
+const permissions = vi.hoisted(() => ({
+  canRead: true,
+  canCreate: true,
+  canUpdate: true,
+  canDelete: true,
+}));
 
 vi.mock("../context/AuthContext", () => ({
   useAuth: () => ({ session: { user: { id: "user-1", role: "Admin School", schoolCode: "SCH-001" } } }),
@@ -27,7 +37,12 @@ vi.mock("../context/ActiveSchoolContext", () => ({
 }));
 
 vi.mock("../lib/usePermissionContext", () => ({
-  useFeaturePermissions: () => ({ canRead: true, canCreate: true, canUpdate: true, canDelete: true }),
+  useFeaturePermissions: () => ({
+    canRead: permissions.canRead,
+    canCreate: permissions.canCreate,
+    canUpdate: permissions.canUpdate,
+    canDelete: permissions.canDelete,
+  }),
   usePermissionContext: () => ({}),
 }));
 
@@ -75,8 +90,24 @@ function renderPage() {
   );
 }
 
+function PermissionFlushApp() {
+  const [nonce, setNonce] = useState(0);
+  return (
+    <MemoryRouter initialEntries={["/messages"]}>
+      <button type="button" data-testid="lotc-flush-permissions" onClick={() => setNonce((value) => value + 1)}>
+        flush {nonce}
+      </button>
+      <MessagesConversationsPage />
+    </MemoryRouter>
+  );
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
+  permissions.canRead = true;
+  permissions.canCreate = true;
+  permissions.canUpdate = true;
+  permissions.canDelete = true;
   listRecipients.mockResolvedValue({ items: [] });
   messagesMarkRead.mockResolvedValue({});
 });
@@ -111,6 +142,49 @@ describe("Lot C — Messages Web unread + pagination", () => {
     await waitFor(() => {
       expect(screen.queryByTestId("messages-unread-badge")).toBeNull();
     });
+  });
+
+  it("RED-04 — après passage lecture refusée → autorisée, mark-read recharge encore la liste", async () => {
+    permissions.canRead = false;
+    listConversations
+      .mockResolvedValueOnce({ items: [conversation("conv-1", 2, "Parent A")], nextCursor: null })
+      .mockResolvedValueOnce({ items: [conversation("conv-1", 0, "Parent A")], nextCursor: null });
+    listMessages.mockResolvedValue({
+      items: [
+        {
+          id: "msg-unread",
+          conversationId: "conv-1",
+          senderUserId: "user-2",
+          senderName: "Parent A",
+          body: "Bonjour",
+          sentAt: "2026-09-09T08:05:00.000Z",
+          readAt: null,
+        },
+      ],
+    });
+
+    const view = render(<PermissionFlushApp />);
+    expect(listConversations).not.toHaveBeenCalled();
+
+    permissions.canRead = true;
+    await userEvent.click(screen.getByTestId("lotc-flush-permissions"));
+
+    const item = await screen.findByTestId("messages-conversation-item");
+    await userEvent.click(item);
+    await waitFor(() => expect(messagesMarkRead).toHaveBeenCalledWith("msg-unread", "SCH-001"));
+    await waitFor(() => expect(listConversations).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(notifyUnread).toHaveBeenCalled());
+    await waitFor(() => {
+      expect(screen.queryByTestId("messages-unread-badge")).toBeNull();
+    });
+  });
+
+  it("RED-04 — loadThread dépend de loadConversations, sans exemption exhaustive-deps", () => {
+    const page = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "MessagesConversationsPage.tsx"), "utf8");
+    const loadThread = page.slice(page.indexOf("const loadThread = useCallback"), page.indexOf("const loadThread = useCallback") + 1200);
+    expect(loadThread).toMatch(/loadConversations\(\{\s*silent:\s*true\s*\}\)/);
+    expect(loadThread).toMatch(/\}, \[canUpdate, schoolScope, selfId, loadConversations\]\);/);
+    expect(loadThread).not.toMatch(/eslint-disable-next-line react-hooks\/exhaustive-deps/);
   });
 
   it("RED-05 — nextCursor est consommé, sans doublon, avec le même établissement", async () => {

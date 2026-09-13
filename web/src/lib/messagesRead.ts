@@ -28,7 +28,7 @@ export function useMessagesUnreadCount(enabled: boolean, schoolCode?: string | n
         const result = await messagesApi.unreadCount(schoolScope ?? undefined);
         if (!cancelled) setCount(Math.max(0, Number(result?.count) || 0));
       } catch {
-        if (!cancelled) setCount(0);
+        /* erreur transport : conserver la dernière valeur connue, jamais un zéro métier */
       }
     }
 

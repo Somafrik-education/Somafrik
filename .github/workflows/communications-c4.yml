@@ -82,9 +82,13 @@ on:
       - "web/src/pages/notificationDeepLinkJourney.test.tsx"
       - "web/src/pages/MessagesConversationsPage.tsx"
       - "web/src/pages/MessagesConversationsPage.lotc.test.tsx"
+      - "web/src/lib/messagesRead.ts"
+      - "web/src/lib/messagesRead.lotc.test.tsx"
       - "web/src/pages/AnnouncementsPage.tsx"
       - "web/src/pages/AnnouncementsPage.deeplink.test.tsx"
       - "web/src/pages/AnnouncementsPage.lotc.test.tsx"
+      - "web/src/lib/announcementsRead.ts"
+      - "web/src/lib/announcementsRead.lotc.test.tsx"
       - "web/src/pages/EntityPage.tsx"
       - "web/src/pages/EntityPage.deeplink.test.tsx"
       - "web/src/pages/PresencesPage.tsx"
@@ -238,6 +242,8 @@ jobs:
             src/pages/AnnouncementsPage.deeplink.test.tsx \
             src/pages/MessagesConversationsPage.lotc.test.tsx \
             src/pages/AnnouncementsPage.lotc.test.tsx \
+            src/lib/messagesRead.lotc.test.tsx \
+            src/lib/announcementsRead.lotc.test.tsx \
             src/pages/EntityPage.deeplink.test.tsx \
             src/pages/PresencesPage.deeplink.test.tsx \
             src/pages/GradesEvaluationsPage.deeplink.test.tsx \

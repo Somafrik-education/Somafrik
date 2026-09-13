@@ -125,9 +125,7 @@ export function MessagesConversationsPage() {
         notifyMessagesUnreadChanged();
       }
     }
-    // Dépendances figées : le lock d'audit RED-04 découpe jusqu'à `[canUpdate, schoolScope, selfId]`.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [canUpdate, schoolScope, selfId]);
+  }, [canUpdate, schoolScope, selfId, loadConversations]);
 
   useEffect(() => {
     if (!scopeReady) {

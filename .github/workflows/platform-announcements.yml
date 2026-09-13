@@ -20,6 +20,7 @@ on:
       - "web/src/pages/AnnouncementsPage.tsx"
       - "web/src/lib/platformAnnouncementsApi.ts"
       - "web/src/lib/announcementsRead.ts"
+      - "web/src/lib/announcementsRead.lotc.test.tsx"
       - "web/src/lib/announcementsPlatform.test.ts"
       - "Mobile/src/screens/AnnouncementsScreen.tsx"
       - "Mobile/src/components/AnnouncementMutationControls.tsx"
