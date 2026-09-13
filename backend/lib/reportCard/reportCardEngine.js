@@ -197,6 +197,7 @@ function assertRequestedSlots(profile, schema) {
 function aggregateWeighted(profile, cells, { periodId, scoreComponentId } = {}) {
   let points = 0;
   let maxPoints = 0;
+  let maxComplete = true;
   for (const cell of cells) {
     if (periodId && cell.period_id !== periodId) continue;
     if (scoreComponentId && cell.score_component_id !== scoreComponentId) continue;
@@ -214,11 +215,12 @@ function aggregateWeighted(profile, cells, { periodId, scoreComponentId } = {}) 
     }
     points += contrib.points;
     if (contrib.max_points == null) {
-      throw new ReportCardEngineError("CALCULABILITY_PERCENTAGE_WITHOUT_MAX");
+      maxComplete = false;
+    } else {
+      maxPoints += contrib.max_points;
     }
-    maxPoints += contrib.max_points;
   }
-  return { points, max_points: maxPoints };
+  return { points, max_points: maxComplete ? maxPoints : null };
 }
 
 function numericSlot(internal, profile) {
@@ -255,6 +257,9 @@ function assertSlotContext(profile, section, column) {
 
 function computePercentageValue(profile, cells, scope) {
   const { points, max_points } = aggregateWeighted(profile, cells, scope);
+  if (max_points == null) {
+    throw new ReportCardEngineError("CALCULABILITY_PERCENTAGE_WITHOUT_MAX");
+  }
   try {
     return percentageFromWeighted({ points, max_points });
   } catch (err) {
@@ -263,18 +268,21 @@ function computePercentageValue(profile, cells, scope) {
 }
 
 function periodAggregatesFor(profile, cells) {
-  const byPeriod = new Map();
-  for (const cell of cells) {
-    if (!byPeriod.has(cell.period_id)) {
-      byPeriod.set(cell.period_id, { period_id: cell.period_id, points: 0, max_points: 0 });
-    }
-    if (cell.kind !== "NUMERIC") continue;
-    const { points, max_points } = aggregateWeighted(profile, [cell], {});
-    const row = byPeriod.get(cell.period_id);
-    row.points += points;
-    row.max_points += max_points;
-  }
-  return [...byPeriod.values()].sort((a, b) => compareId(a.period_id, b.period_id));
+  const periodIds = [...new Set(cells.map((cell) => cell.period_id))].sort(compareId);
+  return periodIds.map((period_id) => {
+    const { points, max_points } = aggregateWeighted(profile, cells, { periodId: period_id });
+    return { period_id, points, max_points };
+  });
+}
+
+function cellsFingerprint(cells) {
+  return cells
+    .map(
+      (cell) =>
+        `${cell.subject_id}\0${cell.period_id}\0${cell.score_component_id}\0${cell.kind}\0${cell.internal}`
+    )
+    .sort(compareId)
+    .join("\n");
 }
 
 function comparePresence(a, b) {
@@ -378,7 +386,11 @@ function computeSlots(profile, schema, cells, ranksByColumn) {
     }
     if (AGGREGATE_SLOTS.has(column.slot)) {
       const { points, max_points } = aggregateWeighted(profile, cells, scope);
-      const internal = column.slot === "PERIOD_MAX" || column.slot === "ANNUAL_MAX" ? max_points : points;
+      const isMax = column.slot === "PERIOD_MAX" || column.slot === "ANNUAL_MAX";
+      if (isMax && max_points == null) {
+        throw new ReportCardEngineError("CALCULABILITY_PERCENTAGE_WITHOUT_MAX");
+      }
+      const internal = isMax ? max_points : points;
       slots.push({ ...identity, ...numericSlot(internal, profile) });
       continue;
     }
@@ -528,6 +540,9 @@ function computeReportCard(input = {}) {
     }
     for (const studentId of students.keys()) {
       if (!cohortCells.has(studentId)) throw new ReportCardEngineError("COHORT_INCOMPLETE");
+      if (cellsFingerprint(factCells.get(studentId)) !== cellsFingerprint(cohortCells.get(studentId))) {
+        throw new ReportCardEngineError("COHORT_MISMATCH");
+      }
     }
     ranksByStudent = computeRanksByColumn(profile, schema, cohortCells);
   }
@@ -548,10 +563,12 @@ function computeReportCard(input = {}) {
       const period_aggregates = periodAggregatesFor(profile, cells);
       result.period_aggregates = period_aggregates;
       if (profile.annual !== false) {
-        result.annual = period_aggregates.reduce(
-          (acc, row) => ({ points: acc.points + row.points, max_points: acc.max_points + row.max_points }),
-          { points: 0, max_points: 0 }
-        );
+        result.annual = {
+          points: period_aggregates.reduce((acc, row) => acc + row.points, 0),
+          max_points: period_aggregates.some((row) => row.max_points == null)
+            ? null
+            : period_aggregates.reduce((acc, row) => acc + row.max_points, 0),
+        };
       }
     }
     return result;
