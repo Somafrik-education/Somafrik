@@ -2,7 +2,8 @@
 
 /**
  * LOT 1 — AcademicRuleProfile (règles de calcul), versionné, tenant-safe.
- * Pas de ReportCardSchema, pas de moteur de notes, pas de PDF /verify.
+ * LOT 1.1 — contrat de calculabilité explicite (agrégation, pourcentage, pass_rule typé,
+ * rounding.stage, ranking.metric, bornes). Pas de ReportCardSchema, pas de moteur LOT 3.
  */
 
 const crypto = require("node:crypto");
@@ -17,6 +18,17 @@ const SELECTOR_ID_RE = /^[A-Z][A-Z0-9_]{0,31}$/;
 const TIE_STRATEGIES = Object.freeze(["competition", "dense", "min"]);
 const ROUNDING_MODES = Object.freeze(["half_up", "half_even", "down"]);
 const MISSING_SCORE_POLICY = "NOT_APPLICABLE_not_zero";
+const AGGREGATION_MODE_V1 = "weighted_sum";
+const PERCENTAGE_MODE_V1 = "points_over_max_100";
+const COEFFICIENT_DEFAULT_V1 = 1;
+const ROUNDING_STAGE_V1 = "display_only";
+const PASS_RULE_METRIC_V1 = "PERCENTAGE";
+const RANKING_METRIC_V1 = "PERCENTAGE";
+const TIE_SEMANTICS = Object.freeze({
+  competition: Object.freeze({ ranks: Object.freeze([1, 2, 2, 4]) }),
+  dense: Object.freeze({ ranks: Object.freeze([1, 2, 2, 3]) }),
+  min: Object.freeze({ ranks: Object.freeze([1, 2, 2, 4]), alias_of: "competition" }),
+});
 
 const GENERIC_COMPONENT_IDS = Object.freeze([
   "TJ",
@@ -222,21 +234,37 @@ function validateSpec(raw) {
   if (!ROUNDING_MODES.includes(mode)) {
     throw new AcademicRuleProfileError("INVALID_ROUNDING");
   }
+  let roundingStage = null;
+  if (rounding.stage != null && rounding.stage !== "") {
+    if (rounding.stage !== ROUNDING_STAGE_V1) {
+      throw new AcademicRuleProfileError("INVALID_ROUNDING");
+    }
+    roundingStage = ROUNDING_STAGE_V1;
+  }
+
+  const aggregation = normalizeAggregation(raw.aggregation);
+  if (aggregation && !roundingStage) {
+    throw new AcademicRuleProfileError("INVALID_ROUNDING");
+  }
 
   const ranking = raw.ranking && typeof raw.ranking === "object" ? raw.ranking : { enabled: false, ties: "competition" };
   const ties = ranking.ties || "competition";
   if (!TIE_STRATEGIES.includes(ties)) {
     throw new AcademicRuleProfileError("INVALID_RANKING");
   }
-
-  let pass_rule = null;
-  if (raw.pass_rule != null) {
-    const minAverage = Number(raw.pass_rule.min_average ?? raw.pass_rule.threshold);
-    if (!Number.isFinite(minAverage) || minAverage < 0) {
-      throw new AcademicRuleProfileError("INVALID_PASS_RULE");
+  const rankingEnabled = ranking.enabled !== false;
+  let rankingMetric = null;
+  if (ranking.metric != null && ranking.metric !== "") {
+    if (ranking.metric !== RANKING_METRIC_V1) {
+      throw new AcademicRuleProfileError("INVALID_RANKING");
     }
-    pass_rule = { min_average: minAverage };
+    rankingMetric = RANKING_METRIC_V1;
   }
+  if (aggregation && rankingEnabled && !rankingMetric) {
+    throw new AcademicRuleProfileError("INVALID_RANKING");
+  }
+
+  const pass_rule = normalizePassRule(raw.pass_rule);
 
   const spec = {
     engine_id: ENGINE_ID,
@@ -246,11 +274,67 @@ function validateSpec(raw) {
     annual: raw.annual !== false,
     score_components,
     missing_score: MISSING_SCORE_POLICY,
-    rounding: { decimals, mode },
-    ranking: { enabled: ranking.enabled !== false, ties },
+    rounding: roundingStage ? { decimals, mode, stage: roundingStage } : { decimals, mode },
+    ranking: rankingMetric
+      ? { enabled: rankingEnabled, ties, metric: rankingMetric }
+      : { enabled: rankingEnabled, ties },
+    ...(aggregation ? { aggregation } : {}),
     ...(pass_rule ? { pass_rule } : {}),
   };
   return spec;
+}
+
+function normalizeAggregation(raw) {
+  if (raw == null || raw === "") return null;
+  if (typeof raw !== "object" || Array.isArray(raw)) {
+    throw new AcademicRuleProfileError("INVALID_AGGREGATION");
+  }
+  rejectCountrySchoolKeys(raw);
+  if (raw.mode !== AGGREGATION_MODE_V1) {
+    throw new AcademicRuleProfileError("INVALID_AGGREGATION");
+  }
+  if (!Object.prototype.hasOwnProperty.call(raw, "coefficient_default")) {
+    throw new AcademicRuleProfileError("INVALID_AGGREGATION");
+  }
+  const coefficientDefault = Number(raw.coefficient_default);
+  if (!Number.isFinite(coefficientDefault) || coefficientDefault !== COEFFICIENT_DEFAULT_V1) {
+    throw new AcademicRuleProfileError("INVALID_AGGREGATION");
+  }
+  if (raw.percentage !== PERCENTAGE_MODE_V1) {
+    throw new AcademicRuleProfileError("INVALID_AGGREGATION");
+  }
+  return {
+    mode: AGGREGATION_MODE_V1,
+    coefficient_default: COEFFICIENT_DEFAULT_V1,
+    percentage: PERCENTAGE_MODE_V1,
+  };
+}
+
+function normalizePassRule(raw) {
+  if (raw == null) return null;
+  if (typeof raw !== "object" || Array.isArray(raw)) {
+    throw new AcademicRuleProfileError("INVALID_PASS_RULE");
+  }
+  const hasMetric = raw.metric != null && raw.metric !== "";
+  const hasLegacy = raw.min_average != null && raw.min_average !== "";
+  if (hasMetric && hasLegacy) {
+    throw new AcademicRuleProfileError("INVALID_PASS_RULE");
+  }
+  if (hasMetric) {
+    if (raw.metric !== PASS_RULE_METRIC_V1) {
+      throw new AcademicRuleProfileError("INVALID_PASS_RULE");
+    }
+    const threshold = Number(raw.threshold);
+    if (!Number.isFinite(threshold) || threshold < 0 || threshold > 100) {
+      throw new AcademicRuleProfileError("INVALID_PASS_RULE");
+    }
+    return { metric: PASS_RULE_METRIC_V1, threshold };
+  }
+  const minAverage = Number(raw.min_average ?? raw.threshold);
+  if (!Number.isFinite(minAverage) || minAverage < 0) {
+    throw new AcademicRuleProfileError("INVALID_PASS_RULE");
+  }
+  return { min_average: minAverage };
 }
 
 function specSha256(spec) {
@@ -288,6 +372,77 @@ function dimensionApplies(dimension, { id, runtimeFlag } = {}) {
   return false;
 }
 
+function componentWeight(component, aggregation) {
+  if (!aggregation || aggregation.mode !== AGGREGATION_MODE_V1) {
+    throw new AcademicRuleProfileError("INVALID_AGGREGATION");
+  }
+  if (component?.coefficient != null) return Number(component.coefficient);
+  return aggregation.coefficient_default;
+}
+
+function weightedContribution({ numericScore, component, aggregation }) {
+  const weight = componentWeight(component, aggregation);
+  if (!Number.isFinite(numericScore)) {
+    throw new AcademicRuleProfileError("INVALID_SCORE");
+  }
+  const points = numericScore * weight;
+  const max_points = component?.max != null ? Number(component.max) * weight : null;
+  return { points, max_points, weight };
+}
+
+function percentageFromWeighted({ points, max_points }) {
+  if (!Number.isFinite(points) || !Number.isFinite(max_points)) {
+    throw new AcademicRuleProfileError("INVALID_AGGREGATION");
+  }
+  if (max_points === 0) {
+    throw new AcademicRuleProfileError("WEIGHTED_MAX_ZERO");
+  }
+  return (100 * points) / max_points;
+}
+
+function isCalculablePassRule(spec) {
+  return spec?.pass_rule?.metric === PASS_RULE_METRIC_V1 && Number.isFinite(spec.pass_rule.threshold);
+}
+
+function assignRanks(sortedDescendingValues, ties) {
+  if (!Array.isArray(sortedDescendingValues)) {
+    throw new AcademicRuleProfileError("INVALID_RANKING");
+  }
+  const strategy = ties === "min" ? "competition" : ties;
+  if (strategy !== "competition" && strategy !== "dense") {
+    throw new AcademicRuleProfileError("INVALID_RANKING");
+  }
+  const ranks = [];
+  let index = 0;
+  let denseRank = 1;
+  while (index < sortedDescendingValues.length) {
+    let end = index + 1;
+    while (end < sortedDescendingValues.length && sortedDescendingValues[end] === sortedDescendingValues[index]) {
+      end += 1;
+    }
+    const rank = strategy === "dense" ? denseRank : index + 1;
+    for (let i = index; i < end; i += 1) ranks.push(rank);
+    denseRank += 1;
+    index = end;
+  }
+  return ranks;
+}
+
+function assertScoreBounds({ numericScore, max } = {}) {
+  if (!Number.isFinite(numericScore) || numericScore < 0) {
+    throw new AcademicRuleProfileError("INVALID_SCORE");
+  }
+  if (max != null && max !== "") {
+    const ceiling = Number(max);
+    if (!Number.isFinite(ceiling) || ceiling <= 0) {
+      throw new AcademicRuleProfileError("INVALID_MAX");
+    }
+    if (numericScore > ceiling) {
+      throw new AcademicRuleProfileError("SCORE_OUT_OF_BOUNDS");
+    }
+  }
+}
+
 function componentApplies(component, { subjectId, periodId, subjectApplicable } = {}) {
   const applicability = component?.applicability;
   const canonical =
@@ -307,8 +462,15 @@ module.exports = {
   SUBJECT_APPLICABILITY_MODES,
   PERIOD_APPLICABILITY_MODES,
   TIE_STRATEGIES,
+  TIE_SEMANTICS,
   ROUNDING_MODES,
   MISSING_SCORE_POLICY,
+  AGGREGATION_MODE_V1,
+  PERCENTAGE_MODE_V1,
+  COEFFICIENT_DEFAULT_V1,
+  ROUNDING_STAGE_V1,
+  PASS_RULE_METRIC_V1,
+  RANKING_METRIC_V1,
   GENERIC_COMPONENT_IDS,
   AcademicRuleProfileError,
   requireSchoolId,
@@ -318,4 +480,10 @@ module.exports = {
   resolveScoreCell,
   assertNaIsNotZero,
   componentApplies,
+  componentWeight,
+  weightedContribution,
+  percentageFromWeighted,
+  isCalculablePassRule,
+  assignRanks,
+  assertScoreBounds,
 };
