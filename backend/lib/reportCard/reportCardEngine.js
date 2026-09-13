@@ -17,10 +17,12 @@ const {
   percentageFromWeighted,
   isCalculablePassRule,
   assertScoreBounds,
+  assignRanks,
   AGGREGATION_MODE_V1,
   PERCENTAGE_MODE_V1,
   ROUNDING_STAGE_V1,
   RANKING_METRIC_V1,
+  PASS_RULE_METRIC_V1,
 } = require("./academicRuleProfile");
 const { validateSpec: validateSchemaSpec, validateAgainstProfile } = require("./reportCardSchema");
 
@@ -219,21 +221,60 @@ function aggregateWeighted(profile, cells, { periodId, scoreComponentId } = {}) 
   return { points, max_points: maxPoints };
 }
 
-function computePercentageValue(profile, cells, column) {
-  const { points, max_points } = aggregateWeighted(profile, cells, {
-    periodId: column.period_id,
-    scoreComponentId: column.score_component_id,
-  });
+function numericSlot(internal, profile) {
+  return {
+    kind: "NUMERIC",
+    internal,
+    exposed: roundNumber(internal, profile.rounding.decimals, profile.rounding.mode),
+  };
+}
+
+function columnScope(section, column) {
+  return {
+    periodId: column.period_id || section.period_id || null,
+    scoreComponentId: column.score_component_id || section.score_component_id || null,
+  };
+}
+
+function assertSlotContext(profile, section, column) {
+  const slot = column.slot;
+  const { periodId, scoreComponentId } = columnScope(section, column);
+  if (slot === "PERIOD_POINTS" || slot === "PERIOD_MAX") {
+    if (!periodId) throw new ReportCardEngineError("INVALID_SLOT_CONTEXT");
+  }
+  if (slot === "ANNUAL_POINTS" || slot === "ANNUAL_MAX") {
+    if (periodId || profile.annual === false) throw new ReportCardEngineError("INVALID_SLOT_CONTEXT");
+  }
+  if (slot === "SUBTOTAL") {
+    if (!periodId && !scoreComponentId) throw new ReportCardEngineError("INVALID_SLOT_CONTEXT");
+  }
+  if (slot === "TOTAL") {
+    if (!periodId && profile.annual === false) throw new ReportCardEngineError("INVALID_SLOT_CONTEXT");
+  }
+}
+
+function computePercentageValue(profile, cells, scope) {
+  const { points, max_points } = aggregateWeighted(profile, cells, scope);
   try {
-    const internal = percentageFromWeighted({ points, max_points });
-    return {
-      kind: "NUMERIC",
-      internal,
-      exposed: roundNumber(internal, profile.rounding.decimals, profile.rounding.mode),
-    };
+    return percentageFromWeighted({ points, max_points });
   } catch (err) {
     wrapEngineError(err, "CALCULABILITY_COEFFICIENT_AGGREGATION");
   }
+}
+
+function periodAggregatesFor(profile, cells) {
+  const byPeriod = new Map();
+  for (const cell of cells) {
+    if (!byPeriod.has(cell.period_id)) {
+      byPeriod.set(cell.period_id, { period_id: cell.period_id, points: 0, max_points: 0 });
+    }
+    if (cell.kind !== "NUMERIC") continue;
+    const { points, max_points } = aggregateWeighted(profile, [cell], {});
+    const row = byPeriod.get(cell.period_id);
+    row.points += points;
+    row.max_points += max_points;
+  }
+  return [...byPeriod.values()].sort((a, b) => compareId(a.period_id, b.period_id));
 }
 
 function comparePresence(a, b) {
@@ -295,48 +336,60 @@ function collectPresence(schema, ctx) {
   return presence.sort(comparePresence);
 }
 
-function computeSlots(profile, schema, cells) {
+function computeSlots(profile, schema, cells, ranksByColumn) {
   const slots = [];
   for (const { section, column } of schemaColumns(schema)) {
     if (column.kind !== "computed_slot") continue;
+    assertSlotContext(profile, section, column);
+    const scope = columnScope(section, column);
     const identity = {
       section_id: section.id,
       column_id: column.id,
       slot: column.slot,
-      ...(column.period_id ? { period_id: column.period_id } : {}),
-      ...(column.score_component_id ? { score_component_id: column.score_component_id } : {}),
+      ...(scope.periodId ? { period_id: scope.periodId } : {}),
+      ...(scope.scoreComponentId ? { score_component_id: scope.scoreComponentId } : {}),
     };
-    if (column.slot === "RANK" && !profile.ranking.enabled) {
-      slots.push({ ...identity, kind: "NOT_APPLICABLE", reason: "RANKING_DISABLED" });
+    if (column.slot === "RANK") {
+      if (!profile.ranking.enabled) {
+        slots.push({ ...identity, kind: "NOT_APPLICABLE", reason: "RANKING_DISABLED" });
+        continue;
+      }
+      const rank = ranksByColumn.get(`${section.id}\0${column.id}`);
+      slots.push({ ...identity, kind: "RANK", internal: rank, exposed: rank });
       continue;
     }
     if (column.slot === "PERCENTAGE") {
-      const value = computePercentageValue(profile, cells, column);
-      slots.push({ ...identity, ...value });
+      const internal = computePercentageValue(profile, cells, scope);
+      slots.push({ ...identity, ...numericSlot(internal, profile) });
       continue;
     }
-    throw new ReportCardEngineError("CALCULABILITY_COEFFICIENT_AGGREGATION");
+    if (column.slot === "DECISION") {
+      const internal = computePercentageValue(profile, cells, scope);
+      slots.push({
+        ...identity,
+        kind: "DECISION",
+        metric: PASS_RULE_METRIC_V1,
+        threshold: profile.pass_rule.threshold,
+        internal,
+        exposed: roundNumber(internal, profile.rounding.decimals, profile.rounding.mode),
+        passed: internal >= profile.pass_rule.threshold,
+      });
+      continue;
+    }
+    if (AGGREGATE_SLOTS.has(column.slot)) {
+      const { points, max_points } = aggregateWeighted(profile, cells, scope);
+      const internal = column.slot === "PERIOD_MAX" || column.slot === "ANNUAL_MAX" ? max_points : points;
+      slots.push({ ...identity, ...numericSlot(internal, profile) });
+      continue;
+    }
+    throw new ReportCardEngineError("INVALID_SLOT_CONTEXT");
   }
   return slots.sort(compareSlot);
 }
 
-function computeReportCard(input = {}) {
-  const { facts = [], provenance = null, tenant = null, cohort = null } = input;
-  if (!Array.isArray(facts)) throw new ReportCardEngineError("INVALID_FACTS");
-  rejectFactBranchKeys(facts);
-  rejectFactBranchKeys(cohort);
-  const profile = requireProfile(input.profile);
-  const schema = requireSchema(input.schema);
-  try {
-    validateAgainstProfile(schema, profile);
-  } catch (err) {
-    throw new ReportCardEngineError(err.code || "INVALID_PROFILE_REFERENCE");
-  }
-  const tenantOut = assertTenant(tenant, facts);
-  const periodIds = new Set(profile.periods.map((period) => period.id));
-  const componentIds = new Set(profile.score_components.map((component) => component.id));
+function validateFactRows(profile, rows, periodIds, componentIds) {
   const seenFacts = new Set();
-  for (const row of facts) {
+  for (const row of rows) {
     if (!row || typeof row !== "object") throw new ReportCardEngineError("INVALID_FACTS");
     requireNonEmptyId(row.student_id);
     requireNonEmptyId(row.subject_id);
@@ -355,68 +408,156 @@ function computeReportCard(input = {}) {
     if (seenFacts.has(key)) throw new ReportCardEngineError("DUPLICATE_FACT");
     seenFacts.add(key);
   }
-  void cohort;
-  assertRequestedSlots(profile, schema);
+}
 
-  const slotIds = new Set(requestedSlots(schema));
+function groupByStudent(rows) {
   const students = new Map();
-  for (const row of facts) {
+  for (const row of rows) {
     if (!students.has(row.student_id)) students.set(row.student_id, []);
     students.get(row.student_id).push(row);
   }
+  return students;
+}
 
+function buildCells(profile, studentId, rows) {
+  return rows
+    .map((row) => {
+      const component = componentById(profile, row.score_component_id);
+      const applicable = componentApplies(component, {
+        subjectId: row.subject_id,
+        periodId: row.period_id,
+        subjectApplicable: row.subject_applicable,
+      });
+      const resolved = resolveScoreCell({ applicable, rawScore: row.raw_score });
+      if (resolved.kind === "NUMERIC") {
+        try {
+          assertScoreBounds({ numericScore: resolved.numericValue, max: component?.max });
+        } catch (err) {
+          wrapEngineError(err, "INVALID_FACTS");
+        }
+      }
+      const cell = {
+        student_id: studentId,
+        subject_id: row.subject_id,
+        period_id: row.period_id,
+        score_component_id: row.score_component_id,
+        kind: resolved.kind,
+        internal: resolved.numericValue,
+      };
+      if (resolved.kind === "NUMERIC") {
+        cell.exposed = roundNumber(resolved.numericValue, profile.rounding.decimals, profile.rounding.mode);
+      } else {
+        cell.exposed = null;
+      }
+      return cell;
+    })
+    .sort(
+      (a, b) =>
+        compareId(a.subject_id, b.subject_id) ||
+        compareId(a.period_id, b.period_id) ||
+        compareId(a.score_component_id, b.score_component_id)
+    );
+}
+
+function computeRanksByColumn(profile, schema, cohortCells) {
+  const ranksByStudent = new Map();
+  const rankColumns = schemaColumns(schema).filter(
+    ({ column }) => column.kind === "computed_slot" && column.slot === "RANK" && profile.ranking.enabled
+  );
+  const studentIds = [...cohortCells.keys()];
+  for (const { section, column } of rankColumns) {
+    const keyed = `${section.id}\0${column.id}`;
+    const scope = columnScope(section, column);
+    const values = studentIds.map((studentId) => ({
+      studentId,
+      pct: computePercentageValue(profile, cohortCells.get(studentId), scope),
+    }));
+    values.sort((left, right) => right.pct - left.pct);
+    const ranks = assignRanks(
+      values.map((item) => item.pct),
+      profile.ranking.ties
+    );
+    values.forEach((item, index) => {
+      if (!ranksByStudent.has(item.studentId)) ranksByStudent.set(item.studentId, new Map());
+      ranksByStudent.get(item.studentId).set(keyed, ranks[index]);
+    });
+  }
+  return ranksByStudent;
+}
+
+function computeReportCard(input = {}) {
+  const { facts = [], provenance = null, tenant = null, cohort = null } = input;
+  if (!Array.isArray(facts)) throw new ReportCardEngineError("INVALID_FACTS");
+  rejectFactBranchKeys(facts);
+  rejectFactBranchKeys(cohort);
+  const profile = requireProfile(input.profile);
+  const schema = requireSchema(input.schema);
+  try {
+    validateAgainstProfile(schema, profile);
+  } catch (err) {
+    throw new ReportCardEngineError(err.code || "INVALID_PROFILE_REFERENCE");
+  }
+  const tenantOut = assertTenant(tenant, facts);
+  const periodIds = new Set(profile.periods.map((period) => period.id));
+  const componentIds = new Set(profile.score_components.map((component) => component.id));
+  validateFactRows(profile, facts, periodIds, componentIds);
+  assertRequestedSlots(profile, schema);
+
+  const rankEnabled = schemaColumns(schema).some(
+    ({ column }) => column.kind === "computed_slot" && column.slot === "RANK" && profile.ranking.enabled
+  );
+  if (rankEnabled) {
+    if (!Array.isArray(cohort) || cohort.length < 1) throw new ReportCardEngineError("COHORT_REQUIRED");
+    validateFactRows(profile, cohort, periodIds, componentIds);
+    assertTenant(tenant, cohort);
+  }
+
+  const slotIds = new Set(requestedSlots(schema));
+  const students = groupByStudent(facts);
+  const factCells = new Map();
+  for (const studentId of students.keys()) {
+    factCells.set(studentId, buildCells(profile, studentId, students.get(studentId)));
+  }
+
+  let ranksByStudent = new Map();
+  if (rankEnabled) {
+    const cohortGroups = groupByStudent(cohort);
+    const cohortCells = new Map();
+    for (const studentId of cohortGroups.keys()) {
+      cohortCells.set(studentId, buildCells(profile, studentId, cohortGroups.get(studentId)));
+    }
+    for (const studentId of students.keys()) {
+      if (!cohortCells.has(studentId)) throw new ReportCardEngineError("COHORT_INCOMPLETE");
+    }
+    ranksByStudent = computeRanksByColumn(profile, schema, cohortCells);
+  }
+
+  const calculable = hasCalculableAggregation(profile);
   const studentResults = [...students.keys()].sort(compareId).map((studentId) => {
     const rows = students.get(studentId);
-    const cells = rows
-      .map((row) => {
-        const component = componentById(profile, row.score_component_id);
-        const applicable = componentApplies(component, {
-          subjectId: row.subject_id,
-          periodId: row.period_id,
-          subjectApplicable: row.subject_applicable,
-        });
-        const resolved = resolveScoreCell({ applicable, rawScore: row.raw_score });
-        if (resolved.kind === "NUMERIC") {
-          try {
-            assertScoreBounds({ numericScore: resolved.numericValue, max: component?.max });
-          } catch (err) {
-            wrapEngineError(err, "INVALID_FACTS");
-          }
-        }
-        const cell = {
-          student_id: studentId,
-          subject_id: row.subject_id,
-          period_id: row.period_id,
-          score_component_id: row.score_component_id,
-          kind: resolved.kind,
-          internal: resolved.numericValue,
-        };
-        if (resolved.kind === "NUMERIC") {
-          cell.exposed = roundNumber(resolved.numericValue, profile.rounding.decimals, profile.rounding.mode);
-        } else {
-          cell.exposed = null;
-        }
-        return cell;
-      })
-      .sort(
-        (a, b) =>
-          compareId(a.subject_id, b.subject_id) ||
-          compareId(a.period_id, b.period_id) ||
-          compareId(a.score_component_id, b.score_component_id)
-      );
-
+    const cells = factCells.get(studentId);
     const ctx = {
       periodIds: new Set(rows.map((row) => row.period_id)),
       componentIds: new Set(rows.map((row) => row.score_component_id)),
       slotIds,
     };
     const presence = collectPresence(schema, ctx);
-    const slots = computeSlots(profile, schema, cells);
-
-    return { student_id: studentId, cells, slots, presence };
+    const slots = computeSlots(profile, schema, cells, ranksByStudent.get(studentId) || new Map());
+    const result = { student_id: studentId, cells, slots, presence };
+    if (calculable) {
+      const period_aggregates = periodAggregatesFor(profile, cells);
+      result.period_aggregates = period_aggregates;
+      if (profile.annual !== false) {
+        result.annual = period_aggregates.reduce(
+          (acc, row) => ({ points: acc.points + row.points, max_points: acc.max_points + row.max_points }),
+          { points: 0, max_points: 0 }
+        );
+      }
+    }
+    return result;
   });
 
-  const result = {
+  const output = {
     engine_id: ENGINE_ID,
     provenance: provenance
       ? {
@@ -426,8 +567,8 @@ function computeReportCard(input = {}) {
       : null,
     students: studentResults,
   };
-  if (tenantOut) result.tenant = tenantOut;
-  return result;
+  if (tenantOut) output.tenant = tenantOut;
+  return output;
 }
 
 module.exports = {
