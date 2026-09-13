@@ -3,6 +3,8 @@
 /**
  * LOT 2 — ReportCardSchema (structure sémantique), versionné, tenant-safe.
  * Pas de calcul métier, pas de RenderingTemplate, pas de moteur / PDF /verify.
+ * `presence` est un contrat déclaratif d'optionalité/condition (section/row/column/field) :
+ * LOT 2 le normalise et le hashe, sans l'évaluer.
  */
 
 const crypto = require("node:crypto");
@@ -145,6 +147,78 @@ function columnAllowsSemanticRefs(kind) {
   return kind === "score_component" || kind === "period" || kind === "computed_slot";
 }
 
+const PRESENCE_WHEN_KEYS = Object.freeze(["period_id", "score_component_id", "slot"]);
+const PRESENCE_OBJECT_KEYS = Object.freeze(["optional", "when"]);
+
+function normalizeWhen(rawWhen) {
+  if (!rawWhen || typeof rawWhen !== "object" || Array.isArray(rawWhen)) {
+    throw new ReportCardSchemaError("INVALID_PRESENCE");
+  }
+  for (const key of Object.keys(rawWhen)) {
+    if (!PRESENCE_WHEN_KEYS.includes(key)) throw new ReportCardSchemaError("INVALID_PRESENCE");
+  }
+  const when = {};
+  if (rawWhen.period_id != null) when.period_id = requireId(rawWhen.period_id, "INVALID_PRESENCE");
+  if (rawWhen.score_component_id != null) {
+    when.score_component_id = requireId(rawWhen.score_component_id, "INVALID_PRESENCE");
+  }
+  if (rawWhen.slot != null) {
+    const slot = String(rawWhen.slot).trim();
+    if (!SLOT_IDS.includes(slot)) throw new ReportCardSchemaError("INVALID_PRESENCE");
+    when.slot = slot;
+  }
+  if (!when.period_id && !when.score_component_id && !when.slot) {
+    throw new ReportCardSchemaError("INVALID_PRESENCE");
+  }
+  return when;
+}
+
+function normalizePresence(raw) {
+  if (raw.visibility != null) throw new ReportCardSchemaError("INVALID_PRESENCE");
+  const nested = raw.presence;
+  if (nested != null && (typeof nested !== "object" || Array.isArray(nested))) {
+    throw new ReportCardSchemaError("INVALID_PRESENCE");
+  }
+  if (nested) {
+    for (const key of Object.keys(nested)) {
+      if (!PRESENCE_OBJECT_KEYS.includes(key)) throw new ReportCardSchemaError("INVALID_PRESENCE");
+    }
+  }
+  const optionalRaw = raw.optional !== undefined ? raw.optional : nested?.optional;
+  const whenRaw = raw.when !== undefined ? raw.when : raw.condition !== undefined ? raw.condition : nested?.when;
+  if (raw.optional !== undefined && nested?.optional !== undefined && raw.optional !== nested.optional) {
+    throw new ReportCardSchemaError("INVALID_PRESENCE");
+  }
+  if (optionalRaw === undefined && whenRaw === undefined) {
+    if (nested) throw new ReportCardSchemaError("INVALID_PRESENCE");
+    return null;
+  }
+  if (optionalRaw !== undefined && typeof optionalRaw !== "boolean") {
+    throw new ReportCardSchemaError("INVALID_PRESENCE");
+  }
+  const presence = {};
+  if (optionalRaw !== undefined) presence.optional = optionalRaw;
+  if (whenRaw !== undefined) presence.when = normalizeWhen(whenRaw);
+  return presence;
+}
+
+function withPresence(target, raw) {
+  const presence = normalizePresence(raw);
+  if (presence) target.presence = presence;
+  return target;
+}
+
+function assertPresenceRefs(node, periodIds, componentIds) {
+  const when = node?.presence?.when;
+  if (!when) return;
+  if (when.period_id && !periodIds.has(when.period_id)) {
+    throw new ReportCardSchemaError("INVALID_PROFILE_REFERENCE");
+  }
+  if (when.score_component_id && !componentIds.has(when.score_component_id)) {
+    throw new ReportCardSchemaError("INVALID_PROFILE_REFERENCE");
+  }
+}
+
 function sortByOrder(items) {
   return [...items].sort((a, b) => a.order - b.order);
 }
@@ -195,26 +269,32 @@ function normalizeColumn(raw, index) {
     if (!SLOT_IDS.includes(slot)) throw new ReportCardSchemaError("INVALID_COLUMNS");
     column.slot = slot;
   }
-  return column;
+  return withPresence(column, raw);
 }
 
 function normalizeRow(raw, index) {
   if (!raw || typeof raw !== "object") throw new ReportCardSchemaError("INVALID_ROWS");
   const kind = String(raw.kind || "").trim();
   if (!ROW_KINDS.includes(kind)) throw new ReportCardSchemaError("INVALID_ROWS");
-  return {
-    id: requireId(raw.id, "INVALID_ROWS"),
-    order: normalizeOrder(raw.order, index + 1),
-    kind,
-  };
+  return withPresence(
+    {
+      id: requireId(raw.id, "INVALID_ROWS"),
+      order: normalizeOrder(raw.order, index + 1),
+      kind,
+    },
+    raw
+  );
 }
 
 function normalizeField(raw, index) {
   if (!raw || typeof raw !== "object") throw new ReportCardSchemaError("INVALID_SPEC");
-  return {
-    id: requireId(raw.id),
-    order: normalizeOrder(raw.order, index + 1),
-  };
+  return withPresence(
+    {
+      id: requireId(raw.id),
+      order: normalizeOrder(raw.order, index + 1),
+    },
+    raw
+  );
 }
 
 function normalizeSection(raw, index) {
@@ -243,7 +323,7 @@ function normalizeSection(raw, index) {
   if (raw.score_component_id != null) {
     section.score_component_id = requireId(raw.score_component_id, "INVALID_SECTIONS");
   }
-  return section;
+  return withPresence(section, raw);
 }
 
 function validateSpec(raw) {
@@ -295,6 +375,7 @@ function validateAgainstProfile(schemaSpec, profileSpec) {
     if (section.score_component_id && !componentIds.has(section.score_component_id)) {
       throw new ReportCardSchemaError("INVALID_PROFILE_REFERENCE");
     }
+    assertPresenceRefs(section, periodIds, componentIds);
     for (const column of section.columns) {
       if (column.period_id && !periodIds.has(column.period_id)) {
         throw new ReportCardSchemaError("INVALID_PROFILE_REFERENCE");
@@ -302,8 +383,14 @@ function validateAgainstProfile(schemaSpec, profileSpec) {
       if (column.score_component_id && !componentIds.has(column.score_component_id)) {
         throw new ReportCardSchemaError("INVALID_PROFILE_REFERENCE");
       }
+      assertPresenceRefs(column, periodIds, componentIds);
+    }
+    for (const row of section.rows || []) {
+      assertPresenceRefs(row, periodIds, componentIds);
     }
   }
+  for (const field of spec.identity_fields) assertPresenceRefs(field, periodIds, componentIds);
+  for (const field of spec.metadata_fields) assertPresenceRefs(field, periodIds, componentIds);
   return spec;
 }
 
