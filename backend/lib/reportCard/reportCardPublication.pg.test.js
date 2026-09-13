@@ -143,7 +143,7 @@ describe("report-card-publication PG atomic/idempotent/isolation", { skip: !shou
 
       const missingEngine = payload(schoolA, { report_card_id: "rc-pg-reject" });
       delete missingEngine.engine_id;
-      await assert.rejects(
+      assert.throws(
         () => publication.publish({ tenant: tenantA, payload: missingEngine }),
         (err) => err.code === "INVALID_ENGINE"
       );
@@ -171,6 +171,61 @@ describe("report-card-publication PG atomic/idempotent/isolation", { skip: !shou
       const url1 = await publication.reprintUrl({ tenant: tenantA, reportCardId: "rc-pg-1", version: 1 });
       const url2 = await publication.reprintUrl({ tenant: tenantA, reportCardId: "rc-pg-1", version: 2 });
       assert.notEqual(url1, url2);
+    } finally {
+      await pool.end();
+    }
+  });
+
+  test("pg: concurrent distinct versions serialize to one ACTIVE", async () => {
+    const url = await ensureIsolatedDatabase(DATABASE_URL, `${IT_DB}_xver`);
+    const pool = new Pool({ connectionString: url, max: 8 });
+    try {
+      const { publication, schoolA, tenantA } = await boot(pool);
+      await publication.publish({ tenant: tenantA, payload: payload(schoolA) });
+      const [left, right] = await Promise.all([
+        publication.publish({
+          tenant: tenantA,
+          payload: payload(schoolA, {
+            published_snapshot_version: 2,
+            published_at: "2026-09-13T01:00:00.000Z",
+          }),
+        }),
+        publication.publish({
+          tenant: tenantA,
+          payload: payload(schoolA, {
+            published_snapshot_version: 3,
+            published_at: "2026-09-13T02:00:00.000Z",
+          }),
+        }),
+      ]);
+      assert.notEqual(left.public_id, right.public_id);
+      const rows = await pool.query(
+        `SELECT published_snapshot_version, verification_status
+         FROM report_card_published_snapshots
+         WHERE school_id = $1 AND report_card_id = $2
+         ORDER BY published_snapshot_version`,
+        [schoolA, "rc-pg-1"]
+      );
+      assert.equal(rows.rows.length, 3);
+      const active = rows.rows.filter((row) => row.verification_status === "ACTIVE");
+      const superseded = rows.rows.filter((row) => row.verification_status === "SUPERSEDED");
+      assert.equal(active.length, 1);
+      assert.equal(superseded.length, 2);
+      assert.deepEqual(
+        rows.rows.map((row) => Number(row.published_snapshot_version)),
+        [1, 2, 3]
+      );
+      const retry = await publication.publish({
+        tenant: tenantA,
+        payload: payload(schoolA, {
+          published_snapshot_version: Number(left.published_snapshot_version),
+          published_at:
+            Number(left.published_snapshot_version) === 2
+              ? "2026-09-13T01:00:00.000Z"
+              : "2026-09-13T02:00:00.000Z",
+        }),
+      });
+      assert.equal(retry.public_id, left.public_id);
     } finally {
       await pool.end();
     }

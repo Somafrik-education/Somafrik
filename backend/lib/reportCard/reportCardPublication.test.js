@@ -247,6 +247,18 @@ test("report-card-publication-idempotent", () => {
   assert.equal(publication.listOutbox({ tenant: TENANT_A }).length, 1);
 });
 
+test("report-card-publication-cross-version-serialization", () => {
+  const api = loadLot4();
+  assert.ok(api, "LOT 4 publication missing (RED)");
+  const store = fs.readFileSync(path.join(__dirname, "../../db/reportCardPublicationPgStore.js"), "utf8");
+  const sql = fs.readFileSync(path.join(__dirname, "../../db/reportCardPublicationSql.js"), "utf8");
+  assert.match(store, /pg_advisory_xact_lock\s*\(\s*hashtext\(/);
+  assert.match(
+    sql,
+    /CREATE UNIQUE INDEX IF NOT EXISTS report_card_published_snapshots_one_active[\s\S]*WHERE verification_status = 'ACTIVE'/
+  );
+});
+
 test("report-card-publication-concurrency-safe", async () => {
   const api = loadLot4();
   assert.ok(api, "LOT 4 publication missing (RED)");
