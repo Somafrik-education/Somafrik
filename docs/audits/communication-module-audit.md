@@ -10,6 +10,7 @@
 | Branche | `audit/communication-module` |
 | Base | `develop` |
 | Base SHA | `1bf4a057817cb009120042a9bb7b23ba211e2269` |
+| PR | https://github.com/Somafrik-education/Somafrik/pull/625 |
 | Date | 13 septembre 2026 |
 | Périmètre | Messages (C2), Annonces (C3), Notifications internes (C4), préférences canal, frontière notifications. Hors correction Finance / Scolarité / Pédagogie / Paramètres / Auth. |
 
