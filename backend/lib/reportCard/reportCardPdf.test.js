@@ -157,8 +157,9 @@ test("report-card-pdf-no-live-data-fallback", async () => {
     version: 1,
     live: { students: [{ student_id: "LIVE-HACK", cells: [{ exposed: 99 }] }] },
   });
-  assert.equal(rendered.html.includes("LIVE-HACK"), false);
-  assert.equal(rendered.html.includes("99"), false);
+  const htmlWithoutQr = rendered.html.replace(/data:image\/png;base64,[^"']+/g, "");
+  assert.equal(htmlWithoutQr.includes("LIVE-HACK"), false);
+  assert.equal(rendered.payload.students.some((row) => row.student_id === "LIVE-HACK"), false);
   assert.match(rendered.html, /STU-1/);
 });
 

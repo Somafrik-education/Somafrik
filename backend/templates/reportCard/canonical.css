@@ -1,0 +1,63 @@
+@page {
+  size: A4;
+  margin: 14mm 12mm;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: "Liberation Sans", "DejaVu Sans", Arial, sans-serif;
+  font-size: 11pt;
+  color: #111;
+  background: #fff;
+}
+
+.page {
+  width: 100%;
+}
+
+h1 {
+  font-size: 16pt;
+  margin: 0 0 8px;
+}
+
+.meta {
+  margin: 0 0 16px;
+  font-size: 10pt;
+}
+
+table.cells {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 16px;
+}
+
+table.cells th,
+table.cells td {
+  border: 1px solid #111;
+  padding: 4px 6px;
+  text-align: left;
+}
+
+.qr-box {
+  page-break-inside: avoid;
+  break-inside: avoid;
+  display: inline-block;
+  padding: 4mm;
+}
+
+.qr {
+  display: block;
+  width: 30mm;
+  height: 30mm;
+  image-rendering: pixelated;
+}
+
+.verify-url {
+  font-size: 8pt;
+  word-break: break-all;
+  max-width: 70mm;
+}
