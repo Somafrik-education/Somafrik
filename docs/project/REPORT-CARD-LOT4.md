@@ -13,12 +13,16 @@ Une transaction crée ensemble : `PUBLISHED` + `canonical_bytes` + `snapshot_sha
 
 Retry même `snapshot_sha256` → même `public_id` / même URL. Payload différent → `IDEMPOTENCY_CONFLICT`.
 
+## Snapshot signé
+
+Validation fail-closed **avant** `sealSnapshot` : `engine_id === somafrik.report_card.v1`, provenance `profile` + `schema` (id / version / spec_sha256), `students[]` canonique, version entière ≥ 1. PostgreSQL persiste l’`engine_id` déjà présent dans les bytes signés — aucun fallback.
+
 ## Tenant
 
-`schoolId` et `actorSchoolId` obligatoires. Lookup interne toujours `school_id`-scopé. Aucun fallback cross-school.
+Lookups internes (`lookup`, `reprintUrl`, `payloadForRender`) : `schoolId` et `actorSchoolId` obligatoires, toujours `school_id`-scopés. Aucun fallback cross-school.
 
 ## QR A
 
-`https://somafrik.app/verify/rc/<public_id>.<token>` — opaque, sans PII ni clé privée. Même version = même URL. Nouvelle version = nouveau `public_id`. Clés Ed25519 / wrapping **hors PostgreSQL**.
+`https://somafrik.app/verify/rc/<public_id>.<token>` — opaque, sans PII ni clé privée. Même version = même URL. Nouvelle version = nouveau `public_id`. `lookupPublic({ publicId, token })` résout sans tenant (capability URL). Clés Ed25519 / wrapping **hors PostgreSQL**.
 
 **LOT 5 (PDF) interdit.**

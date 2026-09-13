@@ -1,6 +1,6 @@
 "use strict";
 
-const { PUBLISH, VERIFICATION_STATES, ENGINE_ID } = require("../contracts/reportCard/contract");
+const { PUBLISH, VERIFICATION_STATES } = require("../contracts/reportCard/contract");
 const { deepFreeze, payloadFromCanonicalBytes } = require("../contracts/reportCard/snapshot");
 const { IdempotencyConflict } = require("../contracts/reportCard/publishJournal");
 
@@ -82,15 +82,10 @@ function createReportCardPublicationPgStore(db) {
     );
   }
 
-  async function findByPublicId(schoolId, publicId) {
+  async function findByPublicId(publicId) {
     return withClient(async (client) =>
       mapRecord(
-        await queryOne(
-          client,
-          `SELECT * FROM report_card_published_snapshots
-           WHERE school_id = $1 AND public_id = $2`,
-          [schoolId, publicId]
-        )
+        await queryOne(client, `SELECT * FROM report_card_published_snapshots WHERE public_id = $1`, [publicId])
       )
     );
   }
@@ -142,7 +137,7 @@ function createReportCardPublicationPgStore(db) {
             record.snapshot_sha256,
             record.snapshot_signature,
             record.signing_key_id,
-            record.sealed.payload.engine_id || ENGINE_ID,
+            record.sealed.payload.engine_id,
           ]
         );
         if (!inserted) {

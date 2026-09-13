@@ -33,6 +33,54 @@ class ReportCardPublicationError extends Error {
   }
 }
 
+function requireNonEmptyString(value) {
+  return typeof value === "string" && value.trim() !== "";
+}
+
+function requireLayerRef(ref) {
+  return Boolean(
+    ref &&
+      typeof ref === "object" &&
+      !Array.isArray(ref) &&
+      requireNonEmptyString(ref.id) &&
+      Number.isInteger(ref.version) &&
+      ref.version >= 1 &&
+      requireNonEmptyString(ref.spec_sha256)
+  );
+}
+
+function assertPublishablePayload(payload) {
+  if (payload.engine_id !== ENGINE_ID) {
+    throw new ReportCardPublicationError("INVALID_ENGINE");
+  }
+  const provenance = payload.provenance;
+  if (!provenance || typeof provenance !== "object" || Array.isArray(provenance)) {
+    throw new ReportCardPublicationError("INVALID_PROVENANCE");
+  }
+  if (!requireLayerRef(provenance.profile) || !requireLayerRef(provenance.schema)) {
+    throw new ReportCardPublicationError("INVALID_PROVENANCE");
+  }
+  const version = payload.published_snapshot_version;
+  if (!Number.isInteger(version) || version < 1) {
+    throw new ReportCardPublicationError("INVALID_SNAPSHOT");
+  }
+  if (!Array.isArray(payload.students)) {
+    throw new ReportCardPublicationError("INVALID_SNAPSHOT");
+  }
+  for (const student of payload.students) {
+    if (
+      !student ||
+      typeof student !== "object" ||
+      !requireNonEmptyString(student.student_id) ||
+      !Array.isArray(student.cells) ||
+      !Array.isArray(student.slots) ||
+      !Array.isArray(student.presence)
+    ) {
+      throw new ReportCardPublicationError("INVALID_SNAPSHOT");
+    }
+  }
+}
+
 function rejectBranchKeys(value) {
   if (value == null || typeof value !== "object") return;
   if (Array.isArray(value)) {
@@ -130,9 +178,9 @@ function createMemoryStore(dump) {
     find(schoolId, reportCardId, version) {
       return records.get(key(schoolId, reportCardId, version)) || null;
     },
-    findByPublicId(schoolId, publicId) {
+    findByPublicId(publicId) {
       for (const rec of records.values()) {
-        if (rec.school_id === schoolId && rec.public_id === publicId) return rec;
+        if (rec.public_id === publicId) return rec;
       }
       return null;
     },
@@ -233,9 +281,7 @@ function createReportCardPublication({
     if (!payload || typeof payload !== "object") throw new ReportCardPublicationError("INVALID_PAYLOAD");
     rejectBranchKeys(payload);
     const schoolId = assertTenant(tenant, payload.school_id);
-    if (payload.engine_id && payload.engine_id !== ENGINE_ID) {
-      throw new ReportCardPublicationError("INVALID_ENGINE");
-    }
+    assertPublishablePayload(payload);
     const sealed = sealSnapshot(payload, signingKey);
     return thenable(
       persistence.find(schoolId, payload.report_card_id, payload.published_snapshot_version),
@@ -298,16 +344,17 @@ function createReportCardPublication({
     );
   }
 
-  function lookupPublic({ tenant, publicId, token } = {}) {
-    const schoolId = assertTenant(tenant);
-    return thenable(persistence.findByPublicId(schoolId, publicId), (record) => {
+  function lookupPublic({ publicId, token } = {}) {
+    if (!requireNonEmptyString(publicId) || token == null || token === "") {
+      return { ok: false, reason: "not_found" };
+    }
+    return thenable(persistence.findByPublicId(publicId), (record) => {
       if (!record) return { ok: false, reason: "not_found" };
-      if (record.school_id !== schoolId) return { ok: false, reason: "tenant_mismatch" };
       if (!constantTimeEqual(record.token_hash, hashToken(token))) {
         return { ok: false, reason: "not_found" };
       }
       try {
-        return { ok: true, payload: payloadForRender(record.sealed, keyRing), record };
+        return { ok: true, payload: payloadForRender(record.sealed, keyRing) };
       } catch (err) {
         return { ok: false, reason: err.code || "SNAPSHOT_SIGNATURE_INVALID" };
       }
