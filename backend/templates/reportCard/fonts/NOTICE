@@ -1,0 +1,6 @@
+Liberation Sans Regular
+Copyright (c) 2012 Red Hat, Inc.
+License: SIL Open Font License 1.1
+Debian package: fonts-liberation 1:2.1.5-3
+The PDF renderer exposes this face as CSS family SomafrikReportCard via an
+embedded data: @font-face (no network, no system-font substitution).

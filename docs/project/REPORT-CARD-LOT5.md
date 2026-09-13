@@ -5,7 +5,9 @@
 
 Le PDF est un **consommateur** du snapshot LOT 4. Rendu uniquement après `payloadForRender` (JCS + SHA-256 + Ed25519). Puppeteer **après COMMIT**. Aucun mint/rotation de token. QR stratégie A reconstruit via `reprintUrl` (`public_id` + `token_ciphertext`).
 
-Le driver par défaut consomme `{ html, qr }` (chaîne HTML, pas un objet passé à `setContent`). Il lance Chromium, bloque tout réseau hors `data:` / `about:blank`, rasterise `.qr` (jsQR) puis émet un Buffer A4 `%PDF`. Le HTML générique rend `cells`, `slots` (TOTAL / PERCENTAGE / RANK / DECISION / …) et `presence` du snapshot. `RenderingTemplate` n’est pas LOT 5 : s’il est fourni (y compris `null`), fail-closed `RENDERING_TEMPLATE_REQUIRED`.
+Le driver par défaut consomme `{ html, qr }` (chaîne HTML, pas un objet passé à `setContent`). Il lance Chromium, bloque tout réseau hors `data:` / `about:blank`, rasterise `.qr` (jsQR) puis émet un Buffer A4 `%PDF`. Police de rendu : `SomafrikReportCard` embarquée en `@font-face` `data:` depuis `templates/reportCard/fonts/LiberationSans-Regular.ttf` (pas de substitution Arial/réseau).
+
+Le HTML générique rend `cells`, `slots` (TOTAL / PERCENTAGE / RANK / DECISION / …) et `presence` du snapshot **lorsqu’aucun** `RenderingTemplate` n’est fourni. Un template générique valide (sections `id` / `order` / `label` / `source`) pilote l’ordre et les libellés. `null` → `RENDERING_TEMPLATE_REQUIRED` ; objet invalide → `RENDERING_TEMPLATE_INVALID` ; `qr_required: false` interdit. Aucun stockage ni workflow Superadmin (LOT 6).
 
 ## Invariants
 

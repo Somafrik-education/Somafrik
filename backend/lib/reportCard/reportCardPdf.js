@@ -13,8 +13,12 @@ const jsQR = require("jsqr");
 const { PRINT_CONTRACT } = require("../../contracts/reportCard/contract");
 
 const TEMPLATE_DIR = path.join(__dirname, "../../templates/reportCard");
+const PRINT_FONT_FAMILY = "SomafrikReportCard";
+const PRINT_FONT_PATH = path.join(TEMPLATE_DIR, "fonts/LiberationSans-Regular.ttf");
 const QR_PRINT_MM = 30;
 const QR_DPI = 300;
+const SECTION_ID_RE = /^[A-Z][A-Z0-9_]{0,31}$/;
+const SECTION_SOURCES = Object.freeze(["cells", "slots", "presence"]);
 
 class ReportCardPdfError extends Error {
   constructor(code, message = code) {
@@ -36,6 +40,25 @@ function escapeHtml(value) {
 function attr(name, value) {
   if (value == null || value === "") return "";
   return ` ${name}="${escapeHtml(value)}"`;
+}
+
+function isForbiddenBranchKey(key) {
+  const compact = String(key).replace(/_/g, "").toLowerCase();
+  return compact === "country" || compact === "countryid" || compact === "countrycode" || compact === "isocode" || compact === "school" || compact === "schoolid" || compact === "schoolname";
+}
+
+function rejectCountrySchoolKeys(value) {
+  if (value == null || typeof value !== "object") return;
+  if (Array.isArray(value)) {
+    for (const item of value) rejectCountrySchoolKeys(item);
+    return;
+  }
+  for (const key of Object.keys(value)) {
+    if (isForbiddenBranchKey(key)) {
+      throw new ReportCardPdfError("COUNTRY_SCHOOL_BRANCH_FORBIDDEN", `forbidden key ${key}`);
+    }
+    rejectCountrySchoolKeys(value[key]);
+  }
 }
 
 function decodeQrPng(pngBuffer) {
@@ -95,62 +118,199 @@ function presenceLabel(entry) {
   return parts.join(" ");
 }
 
-function renderStudentTables(payload) {
-  const students = Array.isArray(payload.students) ? payload.students : [];
-  return students
-    .map((student) => {
-      const cellRows = (student.cells || [])
-        .map(
-          (cell) => `<tr>
+function normalizeRenderingTemplate(raw) {
+  if (raw === undefined) return null;
+  if (raw == null) {
+    throw new ReportCardPdfError("RENDERING_TEMPLATE_REQUIRED");
+  }
+  if (typeof raw !== "object" || Array.isArray(raw)) {
+    throw new ReportCardPdfError("RENDERING_TEMPLATE_INVALID");
+  }
+  rejectCountrySchoolKeys(raw);
+  if (raw.qr_required === false) {
+    throw new ReportCardPdfError("QR_REQUIRED");
+  }
+  const paper = raw.paper == null || raw.paper === "" ? "A4" : String(raw.paper);
+  const orientation = raw.orientation == null || raw.orientation === "" ? "portrait" : String(raw.orientation);
+  if (paper !== "A4" || orientation !== "portrait") {
+    throw new ReportCardPdfError("RENDERING_TEMPLATE_INVALID");
+  }
+  const sectionsIn = Array.isArray(raw.sections) ? raw.sections : null;
+  if (!sectionsIn || sectionsIn.length < 1) {
+    throw new ReportCardPdfError("RENDERING_TEMPLATE_INVALID");
+  }
+  const seenIds = new Set();
+  const seenOrders = new Set();
+  const sections = sectionsIn.map((section, index) => {
+    if (!section || typeof section !== "object" || Array.isArray(section)) {
+      throw new ReportCardPdfError("RENDERING_TEMPLATE_INVALID");
+    }
+    const id = String(section.id || "").trim();
+    if (!SECTION_ID_RE.test(id) || seenIds.has(id)) {
+      throw new ReportCardPdfError("RENDERING_TEMPLATE_INVALID");
+    }
+    seenIds.add(id);
+    const order = section.order == null ? index + 1 : Number(section.order);
+    if (!Number.isInteger(order) || order < 1 || seenOrders.has(order)) {
+      throw new ReportCardPdfError("RENDERING_TEMPLATE_INVALID");
+    }
+    seenOrders.add(order);
+    const source = String(section.source || "").trim();
+    if (!SECTION_SOURCES.includes(source)) {
+      throw new ReportCardPdfError("RENDERING_TEMPLATE_INVALID");
+    }
+    const label = String(section.label ?? "").trim();
+    if (!label) {
+      throw new ReportCardPdfError("RENDERING_TEMPLATE_INVALID");
+    }
+    return Object.freeze({ id, order, source, label });
+  });
+  sections.sort((left, right) => left.order - right.order || left.id.localeCompare(right.id));
+  return Object.freeze({
+    paper,
+    orientation,
+    qr_required: true,
+    sections: Object.freeze(sections),
+  });
+}
+
+function renderCellRows(student) {
+  return (student.cells || [])
+    .map(
+      (cell) => `<tr>
         <td>${escapeHtml(cell.subject_id)}</td>
         <td>${escapeHtml(cell.period_id)}</td>
         <td>${escapeHtml(cell.score_component_id)}</td>
         <td>${escapeHtml(cellLabel(cell))}</td>
       </tr>`
-        )
-        .join("\n");
-      const slotRows = (student.slots || [])
-        .map(
-          (slot) => `<tr data-slot="${escapeHtml(slot.slot)}"${attr("data-section", slot.section_id)}>
-        <td>${escapeHtml(slot.slot)}</td>
-        <td>${escapeHtml(slotLabel(slot))}</td>
-      </tr>`
-        )
-        .join("\n");
-      const presenceItems = (student.presence || [])
-        .map(
-          (entry) =>
-            `<li data-presence${attr("data-section", entry.section_id)}${attr("data-column", entry.column_id)}${attr(
-              "data-row",
-              entry.row_id
-            )} data-applicable="${entry.applicable === true ? "true" : "false"}">${escapeHtml(presenceLabel(entry))}</li>`
-        )
-        .join("\n");
-      return `<section>
-      <h2>${escapeHtml(student.student_id)}</h2>
-      <table class="cells" data-cells>
-        <thead><tr><th>subject</th><th>period</th><th>component</th><th>value</th></tr></thead>
-        <tbody>${cellRows}</tbody>
-      </table>
-      <table class="slots" data-slots>
-        <thead><tr><th>slot</th><th>value</th></tr></thead>
-        <tbody>${slotRows}</tbody>
-      </table>
-      <ul class="presence">${presenceItems}</ul>
-    </section>`;
-    })
+    )
     .join("\n");
 }
 
-function buildHtml(payload, qr) {
+function matchingSlots(student, sectionId) {
+  const slots = student.slots || [];
+  const filtered = slots.filter((slot) => slot.section_id === sectionId);
+  return filtered.length ? filtered : slots;
+}
+
+function matchingPresence(student, sectionId) {
+  const presence = student.presence || [];
+  const filtered = presence.filter((entry) => entry.section_id === sectionId);
+  return filtered.length ? filtered : presence;
+}
+
+function renderSlotRows(slots) {
+  return slots
+    .map(
+      (slot) => `<tr data-slot="${escapeHtml(slot.slot)}"${attr("data-section", slot.section_id)}>
+        <td>${escapeHtml(slot.slot)}</td>
+        <td>${escapeHtml(slotLabel(slot))}</td>
+      </tr>`
+    )
+    .join("\n");
+}
+
+function renderPresenceItems(presence) {
+  return presence
+    .map(
+      (entry) =>
+        `<li data-presence${attr("data-section", entry.section_id)}${attr("data-column", entry.column_id)}${attr(
+          "data-row",
+          entry.row_id
+        )} data-applicable="${entry.applicable === true ? "true" : "false"}">${escapeHtml(presenceLabel(entry))}</li>`
+    )
+    .join("\n");
+}
+
+function wrapTemplateSection(section, inner) {
+  return `<section data-template-section="${escapeHtml(section.id)}"${attr("data-section", section.id)}>
+      <h3>${escapeHtml(section.label)}</h3>
+      ${inner}
+    </section>`;
+}
+
+function renderStudentFromTemplate(student, template) {
+  const blocks = template.sections
+    .map((section) => {
+      if (section.source === "cells") {
+        return wrapTemplateSection(
+          section,
+          `<table class="cells" data-cells>
+        <thead><tr><th>subject</th><th>period</th><th>component</th><th>value</th></tr></thead>
+        <tbody>${renderCellRows(student)}</tbody>
+      </table>`
+        );
+      }
+      if (section.source === "slots") {
+        return wrapTemplateSection(
+          section,
+          `<table class="slots" data-slots>
+        <thead><tr><th>slot</th><th>value</th></tr></thead>
+        <tbody>${renderSlotRows(matchingSlots(student, section.id))}</tbody>
+      </table>`
+        );
+      }
+      return wrapTemplateSection(
+        section,
+        `<ul class="presence">${renderPresenceItems(matchingPresence(student, section.id))}</ul>`
+      );
+    })
+    .join("\n");
+  return `<section>
+      <h2>${escapeHtml(student.student_id)}</h2>
+      ${blocks}
+    </section>`;
+}
+
+function renderStudentFallback(student) {
+  return `<section>
+      <h2>${escapeHtml(student.student_id)}</h2>
+      <table class="cells" data-cells>
+        <thead><tr><th>subject</th><th>period</th><th>component</th><th>value</th></tr></thead>
+        <tbody>${renderCellRows(student)}</tbody>
+      </table>
+      <table class="slots" data-slots>
+        <thead><tr><th>slot</th><th>value</th></tr></thead>
+        <tbody>${renderSlotRows(student.slots || [])}</tbody>
+      </table>
+      <ul class="presence">${renderPresenceItems(student.presence || [])}</ul>
+    </section>`;
+}
+
+function renderStudentTables(payload, template) {
+  const students = Array.isArray(payload.students) ? payload.students : [];
+  return students
+    .map((student) => (template ? renderStudentFromTemplate(student, template) : renderStudentFallback(student)))
+    .join("\n");
+}
+
+function embeddedFontCss() {
+  if (!fs.existsSync(PRINT_FONT_PATH)) {
+    throw new ReportCardPdfError("PDF_FONT_UNAVAILABLE");
+  }
+  const bytes = fs.readFileSync(PRINT_FONT_PATH);
+  if (!bytes.length) {
+    throw new ReportCardPdfError("PDF_FONT_UNAVAILABLE");
+  }
+  return `@font-face {
+  font-family: "${PRINT_FONT_FAMILY}";
+  src: url("data:font/ttf;base64,${bytes.toString("base64")}") format("truetype");
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+}
+`;
+}
+
+function buildHtml(payload, qr, template) {
   const htmlTemplate = fs.readFileSync(path.join(TEMPLATE_DIR, "canonical.html"), "utf8");
-  const css = fs.readFileSync(path.join(TEMPLATE_DIR, "canonical.css"), "utf8");
+  const css = `${embeddedFontCss()}${fs.readFileSync(path.join(TEMPLATE_DIR, "canonical.css"), "utf8")}`;
   return htmlTemplate
     .replaceAll("{{INLINE_CSS}}", css)
     .replaceAll("{{REPORT_CARD_ID}}", escapeHtml(payload.report_card_id))
     .replaceAll("{{VERSION}}", escapeHtml(payload.published_snapshot_version))
     .replaceAll("{{PUBLISHED_AT}}", escapeHtml(payload.published_at))
-    .replaceAll("{{STUDENTS}}", renderStudentTables(payload))
+    .replaceAll("{{STUDENTS}}", renderStudentTables(payload, template))
     .replaceAll("{{QR_DATA_URL}}", qr.dataUrl)
     .replaceAll("{{QR_URL}}", escapeHtml(qr.url));
 }
@@ -175,6 +335,19 @@ async function rasterQrAfterLayout(page, qr) {
   return rasterQrDecoded;
 }
 
+async function resolveEmbeddedFont(page) {
+  await page.evaluate(() => document.fonts.ready);
+  const loaded = await page.evaluate((family) => {
+    const faces = [...document.fonts];
+    const embedded = faces.some((face) => face.family.replace(/["']/g, "") === family && face.status === "loaded");
+    return embedded && document.fonts.check(`12px "${family}"`);
+  }, PRINT_FONT_FAMILY);
+  if (!loaded) {
+    throw new ReportCardPdfError("PDF_FONT_UNAVAILABLE");
+  }
+  return { embeddedFontFamily: PRINT_FONT_FAMILY, embeddedFontLoaded: true };
+}
+
 async function renderPdfAfterCommit({ html, qr } = {}) {
   const documentHtml = assertHtmlString(html);
   const puppeteer = require("puppeteer");
@@ -196,6 +369,7 @@ async function renderPdfAfterCommit({ html, qr } = {}) {
       req.abort();
     });
     await page.setContent(documentHtml, { waitUntil: "domcontentloaded" });
+    const font = await resolveEmbeddedFont(page);
     const rasterQrDecoded = await rasterQrAfterLayout(page, qr);
     const pdf = await page.pdf({
       format: "A4",
@@ -203,7 +377,7 @@ async function renderPdfAfterCommit({ html, qr } = {}) {
       preferCSSPageSize: true,
     });
     await page.close();
-    return { pdf: Buffer.from(pdf), rasterQrDecoded };
+    return { pdf: Buffer.from(pdf), rasterQrDecoded, ...font };
   } finally {
     await browser.close();
   }
@@ -216,10 +390,20 @@ function thenable(value, fn) {
 
 function unwrapDriverResult(result) {
   if (Buffer.isBuffer(result)) {
-    return { pdf: result, rasterQrDecoded: result.rasterQrDecoded };
+    return {
+      pdf: result,
+      rasterQrDecoded: result.rasterQrDecoded,
+      embeddedFontFamily: result.embeddedFontFamily,
+      embeddedFontLoaded: result.embeddedFontLoaded,
+    };
   }
   if (result && Buffer.isBuffer(result.pdf)) {
-    return { pdf: result.pdf, rasterQrDecoded: result.rasterQrDecoded };
+    return {
+      pdf: result.pdf,
+      rasterQrDecoded: result.rasterQrDecoded,
+      embeddedFontFamily: result.embeddedFontFamily,
+      embeddedFontLoaded: result.embeddedFontLoaded,
+    };
   }
   throw new ReportCardPdfError("PDF_RENDER_FAILED");
 }
@@ -231,28 +415,29 @@ function createReportCardPdf({ publication, pdfDriver } = {}) {
   const driver = pdfDriver || renderPdfAfterCommit;
 
   function render({ tenant, reportCardId, version, renderingTemplate } = {}) {
-    if (renderingTemplate !== undefined) {
-      return Promise.reject(new ReportCardPdfError("RENDERING_TEMPLATE_REQUIRED"));
-    }
-    return Promise.resolve().then(() =>
-      thenable(publication.payloadForRender({ tenant, reportCardId, version }), (payload) =>
+    return Promise.resolve().then(() => {
+      const template = normalizeRenderingTemplate(renderingTemplate);
+      return thenable(publication.payloadForRender({ tenant, reportCardId, version }), (payload) =>
         thenable(publication.reprintUrl({ tenant, reportCardId, version }), (url) =>
           thenable(buildPrintableQr(url), (qr) => {
-            const html = buildHtml(payload, qr);
+            const html = buildHtml(payload, qr, template);
             return thenable(driver({ html, qr, payload }), (raw) => {
-              const { pdf, rasterQrDecoded } = unwrapDriverResult(raw);
+              const unwrapped = unwrapDriverResult(raw);
               return Object.freeze({
-                pdf,
+                pdf: unwrapped.pdf,
                 html,
                 qr: Object.freeze(qr),
                 payload,
-                ...(rasterQrDecoded != null ? { rasterQrDecoded } : {}),
+                ...(unwrapped.rasterQrDecoded != null ? { rasterQrDecoded: unwrapped.rasterQrDecoded } : {}),
+                ...(unwrapped.embeddedFontFamily != null
+                  ? { embeddedFontFamily: unwrapped.embeddedFontFamily, embeddedFontLoaded: unwrapped.embeddedFontLoaded }
+                  : {}),
               });
             });
           })
         )
-      )
-    );
+      );
+    });
   }
 
   return { render };
@@ -262,4 +447,5 @@ module.exports = {
   createReportCardPdf,
   ReportCardPdfError,
   QR_PRINT_MM,
+  PRINT_FONT_FAMILY,
 };
