@@ -6,22 +6,22 @@ const { ENGINE_SCAN_ROOTS } = require("./contract");
 
 const ROOT = path.resolve(__dirname, "../../..");
 
+const BRANCH_IDENT =
+  "(?:country|countryCode|country_code|iso_code|isoCode|school|schoolCode|school_code|schoolName|school_name)";
+
 const FORBIDDEN = [
-  /if\s*\(\s*country\b/,
-  /if\s*\(\s*school\b/,
-  /if\s*\(\s*schoolCode\b/,
-  /switch\s*\(\s*country\b/,
-  /switch\s*\(\s*school\b/,
+  new RegExp(String.raw`if\s*\(\s*${BRANCH_IDENT}\b`),
+  new RegExp(String.raw`switch\s*\(\s*${BRANCH_IDENT}\b`),
+  new RegExp(String.raw`\b${BRANCH_IDENT}\s*===?\s*['"]`),
+  new RegExp(String.raw`['"][^'"]+['"]\s*===?\s*${BRANCH_IDENT}\b`),
+  new RegExp(String.raw`\b${BRANCH_IDENT}\s*===?\s*['"][^'"]+['"]\s*\?`),
+  new RegExp(String.raw`['"][^'"]+['"]\s*===?\s*${BRANCH_IDENT}\s*\?`),
+  new RegExp(String.raw`\[\s*${BRANCH_IDENT}\s*\]`),
+  new RegExp(String.raw`new\s+Map\s*\(\s*\[\s*\[\s*['"][A-Z]{2}['"]`),
   /iso_code\s*===\s*["']BI["']/,
   /countryCode\s*===\s*["']BI["']/,
   /country\s*===\s*["']BI["']/,
   /school\s*===\s*["']La Colombi[eè]re["']/,
-  /\bcountry\s*===\s*["'][^"']+["']\s*\?/,
-  /\bschool\s*===\s*["'][^"']+["']\s*\?/,
-  /new\s+Map\s*\(\s*\[\s*\[\s*["']BI["']/,
-  /\biso_code\s*===\s*["']/,
-  /\bcountryCode\s*===\s*["']/,
-  /\bschoolCode\s*===\s*["']/,
 ];
 
 const EXTRA_SCAN_FILES = Object.freeze([
@@ -63,20 +63,27 @@ function collectFiles(rel) {
   return walk(abs);
 }
 
+function scanText(src) {
+  const hits = [];
+  for (const re of FORBIDDEN) {
+    re.lastIndex = 0;
+    if (re.test(src)) hits.push(String(re));
+  }
+  return hits;
+}
+
 function scanEngineSources() {
   const hits = [];
   const roots = [...ENGINE_SCAN_ROOTS, ...EXTRA_SCAN_FILES];
   for (const rel of roots) {
     for (const file of collectFiles(rel)) {
-      const src = fs.readFileSync(file, "utf8");
-      for (const re of FORBIDDEN) {
-        if (re.test(src)) {
-          hits.push({ file: path.relative(ROOT, file), pattern: String(re) });
-        }
+      const matched = scanText(fs.readFileSync(file, "utf8"));
+      for (const pattern of matched) {
+        hits.push({ file: path.relative(ROOT, file), pattern });
       }
     }
   }
   return hits;
 }
 
-module.exports = { scanEngineSources, FORBIDDEN };
+module.exports = { scanEngineSources, scanText, FORBIDDEN };

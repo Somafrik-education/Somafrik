@@ -117,6 +117,26 @@ test("academic-rule-profile-tenant-isolation", () => {
     () => store.createProfile({ profileKey: "x", spec: validSpec() }),
     (err) => err.code === "TENANT_REQUIRED"
   );
+  assert.throws(
+    () => store.createProfile({ schoolId: SCHOOL_A, profileKey: "x", spec: validSpec() }),
+    (err) => err.code === "TENANT_REQUIRED"
+  );
+  assert.throws(
+    () => store.getActive({ schoolId: SCHOOL_A, profileId: created.profile.id }),
+    (err) => err.code === "TENANT_REQUIRED"
+  );
+  assert.throws(
+    () => store.listProfiles(SCHOOL_A),
+    (err) => err.code === "TENANT_REQUIRED"
+  );
+  assert.throws(
+    () => store.listProfiles(SCHOOL_A, ""),
+    (err) => err.code === "TENANT_REQUIRED"
+  );
+  assert.throws(
+    () => store.addVersion({ schoolId: SCHOOL_A, profileId: created.profile.id, spec: validSpec() }),
+    (err) => err.code === "TENANT_REQUIRED"
+  );
   assert.equal(store.listProfiles(SCHOOL_B, SCHOOL_B).length, 0);
   assert.equal(store.listProfiles(SCHOOL_A, SCHOOL_A).length, 1);
 });
@@ -136,6 +156,25 @@ test("academic-rule-profile-no-country-school-branch", () => {
   );
   const hits = scanEngineSources();
   assert.deepEqual(hits, []);
+  const { scanText } = require("../../contracts/reportCard/noCountrySchoolBranch");
+  const forbiddenSnippets = [
+    'if (country === "CD") {}',
+    'if ("RW" === country) {}',
+    'if (country == "FR") {}',
+    'const x = country === "CD" ? 1 : 0;',
+    'const y = "BI" === country ? 1 : 0;',
+    'switch (country) { case "CD": break; }',
+    'switch (school) { case "X": break; }',
+    'const packs = new Map([["CD", {}]]);',
+    'const more = new Map([["RW", rules], ["BI", rules]]);',
+    "const hit = PACKS[country];",
+    "const schoolHit = bySchool[school];",
+    'if (iso_code === "CM") {}',
+    'if (schoolCode === "COL") {}',
+  ];
+  for (const snippet of forbiddenSnippets) {
+    assert.ok(scanText(snippet).length > 0, `scanner must reject: ${snippet}`);
+  }
 });
 
 test("academic-rule-profile-na-is-not-zero", () => {
@@ -164,8 +203,12 @@ test("academic-rule-profile-components-generic", () => {
     b.score_components.map((c) => c.id),
     ["TJ", "EX"]
   );
-  assert.equal(componentApplies(b.score_components[0], { subjectApplicable: false }), true);
-  assert.equal(componentApplies(b.score_components[1], { subjectApplicable: false }), false);
+  assert.equal(b.score_components[0].applicability.subjects.mode, "always");
+  assert.equal(b.score_components[0].applicability.periods.mode, "always");
+  assert.equal(b.score_components[1].applicability.subjects.mode, "per_subject");
+  assert.equal(componentApplies(b.score_components[0], { subjectApplicable: false, periodId: "T2" }), true);
+  assert.equal(componentApplies(b.score_components[1], { subjectApplicable: false, periodId: "T2" }), false);
+  assert.equal(componentApplies(b.score_components[1], { subjectApplicable: true, periodId: "T2" }), true);
   assert.ok(GENERIC_COMPONENT_IDS.includes("TJ"));
   for (const id of ["ORAL", "WRITTEN", "PRACTICAL"]) {
     assert.equal(validateSpec(validSpec({ score_components: [{ id, applicability: "always" }] })).score_components[0].id, id);
@@ -195,6 +238,66 @@ test("academic-rule-profile-rounding-ranking-contract", () => {
   assert.throws(
     () => validateSpec(validSpec({ ranking: { enabled: true, ties: "country_custom" } })),
     (err) => err.code === "INVALID_RANKING"
+  );
+});
+
+test("academic-rule-profile-period-subject-applicability", () => {
+  const spec = validateSpec(
+    validSpec({
+      score_components: [
+        {
+          id: "EX",
+          applicability: {
+            subjects: { exclude: ["TPA", "RELIGION_MORALE"] },
+            periods: { include: ["T1", "T2"] },
+          },
+        },
+      ],
+    })
+  );
+  const ex = spec.score_components[0];
+  assert.equal(ex.applicability.periods.mode, "include");
+  assert.deepEqual(ex.applicability.periods.ids, ["T1", "T2"]);
+  assert.equal(ex.applicability.subjects.mode, "exclude");
+  assert.equal(componentApplies(ex, { periodId: "T1", subjectId: "MATH" }), true);
+  assert.equal(componentApplies(ex, { periodId: "T3", subjectId: "MATH" }), false);
+  assert.equal(componentApplies(ex, { periodId: "T1", subjectId: "TPA" }), false);
+  assert.equal(componentApplies(ex, { subjectId: "MATH" }), false);
+  const naPeriod = resolveScoreCell({
+    applicable: componentApplies(ex, { periodId: "T3", subjectId: "MATH" }),
+    rawScore: 0,
+  });
+  const naSubject = resolveScoreCell({
+    applicable: componentApplies(ex, { periodId: "T1", subjectId: "TPA" }),
+    rawScore: 12,
+  });
+  const numeric = resolveScoreCell({
+    applicable: componentApplies(ex, { periodId: "T1", subjectId: "MATH" }),
+    rawScore: 0,
+  });
+  assert.equal(naPeriod.kind, "NOT_APPLICABLE");
+  assert.equal(naPeriod.numericValue, null);
+  assert.equal(naSubject.kind, "NOT_APPLICABLE");
+  assert.equal(naSubject.numericValue, null);
+  assert.equal(numeric.kind, "NUMERIC");
+  assert.equal(numeric.numericValue, 0);
+  assert.throws(
+    () =>
+      validateSpec(
+        validSpec({
+          score_components: [{ id: "EX", applicability: { periods: { include: ["T9"] } } }],
+        })
+      ),
+    (err) => err.code === "INVALID_APPLICABILITY"
+  );
+  assert.throws(
+    () =>
+      validateSpec(
+        validSpec({
+          score_components: [{ id: "EX", applicability: { periods: { include: [] } } }],
+        })
+      ),
+    (err) => err.code === "INVALID_APPLICABILITY"
   );
 });
 

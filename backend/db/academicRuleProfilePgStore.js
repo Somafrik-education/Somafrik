@@ -54,10 +54,10 @@ function createAcademicRuleProfilePgStore(db) {
     return result.rows[0] || null;
   }
 
-  async function requireProfile(client, schoolId, profileId) {
+  async function requireProfile(client, schoolId, profileId, { forUpdate = false } = {}) {
     const profile = await queryOne(
       client,
-      `SELECT id FROM academic_rule_profiles WHERE id = $1 AND school_id = $2`,
+      `SELECT id FROM academic_rule_profiles WHERE id = $1 AND school_id = $2${forUpdate ? " FOR UPDATE" : ""}`,
       [profileId, schoolId]
     );
     if (!profile) throw new AcademicRuleProfileError("PROFILE_NOT_FOUND");
@@ -97,8 +97,8 @@ function createAcademicRuleProfilePgStore(db) {
     assertSameTenant(schoolId, actorSchoolId);
     const normalized = validateSpec(spec);
     const sha = specSha256(normalized);
-    return withClient(async (client) => {
-      await requireProfile(client, schoolId, profileId);
+    return withTx(async (client) => {
+      await requireProfile(client, schoolId, profileId, { forUpdate: true });
       const next = await queryOne(
         client,
         `SELECT COALESCE(MAX(version), 0) + 1 AS next

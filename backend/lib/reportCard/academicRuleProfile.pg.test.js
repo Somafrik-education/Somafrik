@@ -52,7 +52,7 @@ function spec() {
 describe("academic-rule-profile PG constraints/versioning/isolation", { skip: !shouldRun }, () => {
   test("pg: tenant isolation, versioning, immutable spec", async () => {
     const url = await ensureIsolatedDatabase(DATABASE_URL, IT_DB);
-    const pool = new Pool({ connectionString: url });
+    const pool = new Pool({ connectionString: url, max: 8 });
     try {
       await pool.query("DROP SCHEMA public CASCADE");
       await pool.query("CREATE SCHEMA public");
@@ -117,6 +117,41 @@ describe("academic-rule-profile PG constraints/versioning/isolation", { skip: !s
           }),
         (err) => err.code === "PROFILE_NOT_FOUND"
       );
+
+      await assert.rejects(
+        () => store.getActive({ schoolId: schoolA, profileId: created.profile.id }),
+        (err) => err.code === "TENANT_REQUIRED"
+      );
+      await assert.rejects(
+        () => store.listProfiles(schoolA),
+        (err) => err.code === "TENANT_REQUIRED"
+      );
+      await assert.rejects(
+        () =>
+          store.addVersion({
+            schoolId: schoolA,
+            actorSchoolId: schoolB,
+            profileId: created.profile.id,
+            spec: spec(),
+          }),
+        (err) => err.code === "TENANT_MISMATCH"
+      );
+
+      const concurrent = await Promise.all([
+        store.addVersion({
+          schoolId: schoolA,
+          actorSchoolId: schoolA,
+          profileId: created.profile.id,
+          spec: spec(),
+        }),
+        store.addVersion({
+          schoolId: schoolA,
+          actorSchoolId: schoolA,
+          profileId: created.profile.id,
+          spec: spec(),
+        }),
+      ]);
+      assert.deepEqual(new Set(concurrent.map((row) => row.version)), new Set([3, 4]));
 
       await assert.rejects(
         pool.query(
