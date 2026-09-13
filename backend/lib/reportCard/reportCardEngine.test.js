@@ -88,6 +88,25 @@ function schemaWithSlot(slot) {
   });
 }
 
+function schemaWithContextualSlot(slot, extra = {}) {
+  return validateSchemaSpec({
+    sections: [
+      {
+        id: "SUMMARY",
+        order: 1,
+        kind: "totals",
+        columns: [{ id: "COL_SLOT", order: 1, kind: "computed_slot", slot, ...extra }],
+      },
+    ],
+  });
+}
+
+function rankingProfile(ties) {
+  return calculableProfile({
+    ranking: { enabled: true, ties, metric: "PERCENTAGE" },
+  });
+}
+
 function calculableProfile(overrides = {}) {
   return validateProfileSpec({
     periods: ["T1", "T2", "T3"],
@@ -279,6 +298,27 @@ test("report-card-engine-weighted-points-max", () => {
     () => compute(api, { schema: schemaWithSlot("PERIOD_MAX") }),
     (err) => err.code === "CALCULABILITY_COEFFICIENT_AGGREGATION"
   );
+  assert.throws(
+    () =>
+      compute(api, {
+        profile: calculableProfile(),
+        schema: schemaWithContextualSlot("PERIOD_POINTS"),
+        facts: [fact({ raw_score: 12 })],
+      }),
+    (err) => err.code === "INVALID_SLOT_CONTEXT"
+  );
+  const points = compute(api, {
+    profile: calculableProfile(),
+    schema: schemaWithContextualSlot("PERIOD_POINTS", { period_id: "T1" }),
+    facts: [fact({ raw_score: 12 })],
+  });
+  assert.equal(findSlot(points.students[0], { slot: "PERIOD_POINTS", period_id: "T1" }).internal, 24);
+  const max = compute(api, {
+    profile: calculableProfile(),
+    schema: schemaWithContextualSlot("PERIOD_MAX", { period_id: "T1" }),
+    facts: [fact({ raw_score: 12 })],
+  });
+  assert.equal(findSlot(max.students[0], { slot: "PERIOD_MAX", period_id: "T1" }).internal, 40);
 });
 
 test("report-card-engine-period-aggregates", () => {
@@ -288,6 +328,37 @@ test("report-card-engine-period-aggregates", () => {
     () => compute(api, { schema: schemaWithSlot("TOTAL") }),
     (err) => err.code === "CALCULABILITY_COEFFICIENT_AGGREGATION"
   );
+  assert.throws(
+    () =>
+      compute(api, {
+        profile: calculableProfile(),
+        schema: schemaWithContextualSlot("SUBTOTAL"),
+        facts: [fact({ raw_score: 12 })],
+      }),
+    (err) => err.code === "INVALID_SLOT_CONTEXT"
+  );
+  const total = compute(api, {
+    profile: calculableProfile(),
+    schema: schemaWithContextualSlot("TOTAL", { period_id: "T1" }),
+    facts: [fact({ raw_score: 12 })],
+  });
+  assert.equal(findSlot(total.students[0], { slot: "TOTAL", period_id: "T1" }).internal, 24);
+  const subtotal = compute(api, {
+    profile: calculableProfile(),
+    schema: schemaWithContextualSlot("SUBTOTAL", { period_id: "T1", score_component_id: "TJ" }),
+    facts: [fact({ raw_score: 12 })],
+  });
+  assert.equal(findSlot(subtotal.students[0], { slot: "SUBTOTAL" }).internal, 24);
+  const canonical = compute(api, {
+    profile: calculableProfile(),
+    facts: [fact({ period_id: "T1", raw_score: 10 }), fact({ period_id: "T2", raw_score: 20 })],
+  });
+  const t1 = canonical.students[0].period_aggregates.find((row) => row.period_id === "T1");
+  const t2 = canonical.students[0].period_aggregates.find((row) => row.period_id === "T2");
+  assert.equal(t1.points, 20);
+  assert.equal(t1.max_points, 40);
+  assert.equal(t2.points, 40);
+  assert.equal(t2.max_points, 40);
 });
 
 test("report-card-engine-annual-aggregates", () => {
@@ -301,6 +372,22 @@ test("report-card-engine-annual-aggregates", () => {
     () => compute(api, { schema: schemaWithSlot("ANNUAL_MAX") }),
     (err) => err.code === "CALCULABILITY_COEFFICIENT_AGGREGATION"
   );
+  const facts = [fact({ period_id: "T1", raw_score: 10 }), fact({ period_id: "T2", raw_score: 20 })];
+  const points = compute(api, {
+    profile: calculableProfile(),
+    schema: schemaWithContextualSlot("ANNUAL_POINTS"),
+    facts,
+  });
+  assert.equal(findSlot(points.students[0], { slot: "ANNUAL_POINTS" }).internal, 60);
+  const max = compute(api, {
+    profile: calculableProfile(),
+    schema: schemaWithContextualSlot("ANNUAL_MAX"),
+    facts,
+  });
+  assert.equal(findSlot(max.students[0], { slot: "ANNUAL_MAX" }).internal, 80);
+  const annual = compute(api, { profile: calculableProfile(), facts });
+  assert.equal(annual.students[0].annual.points, 60);
+  assert.equal(annual.students[0].annual.max_points, 80);
 });
 
 test("report-card-engine-percentage", () => {
@@ -318,6 +405,14 @@ test("report-card-engine-percentage", () => {
     () => compute(api, { schema: schemaWithSlot("PERCENTAGE") }),
     (err) => err.code === "CALCULABILITY_COEFFICIENT_AGGREGATION"
   );
+  const result = compute(api, {
+    profile: calculableProfile(),
+    schema: schemaWithContextualSlot("PERCENTAGE", { period_id: "T1" }),
+    facts: [fact({ raw_score: 10 })],
+  });
+  const pct = findSlot(result.students[0], { slot: "PERCENTAGE", period_id: "T1" });
+  assert.equal(pct.kind, "NUMERIC");
+  assert.equal(pct.internal, 50);
 });
 
 test("report-card-engine-rounding-half-up", () => {
@@ -375,6 +470,37 @@ test("report-card-engine-ranking-ties", () => {
       }),
     (err) => err.code === "CALCULABILITY_RANKING_METRIC" || err.code === "CALCULABILITY_ROUNDING_STAGE"
   );
+  const schema = schemaWithContextualSlot("RANK");
+  const factsA = [
+    fact({ student_id: "STU-1", raw_score: 10 }),
+    fact({ student_id: "STU-2", raw_score: 20 }),
+    fact({ student_id: "STU-3", raw_score: 20 }),
+  ];
+  const factsB = [factsA[2], factsA[0], factsA[1]];
+  assert.throws(
+    () => compute(api, { profile: rankingProfile("competition"), schema, facts: factsA }),
+    (err) => err.code === "COHORT_REQUIRED"
+  );
+  const ranked = (ties, facts) =>
+    compute(api, { profile: rankingProfile(ties), schema, facts, cohort: facts });
+  const competition = ranked("competition", factsA);
+  const dense = ranked("dense", factsA);
+  const min = ranked("min", factsA);
+  const rankOf = (result, studentId) =>
+    findSlot(
+      result.students.find((row) => row.student_id === studentId),
+      { slot: "RANK" }
+    ).internal;
+  assert.equal(rankOf(competition, "STU-2"), 1);
+  assert.equal(rankOf(competition, "STU-3"), 1);
+  assert.equal(rankOf(competition, "STU-1"), 3);
+  assert.equal(rankOf(dense, "STU-2"), 1);
+  assert.equal(rankOf(dense, "STU-3"), 1);
+  assert.equal(rankOf(dense, "STU-1"), 2);
+  assert.equal(rankOf(min, "STU-2"), 1);
+  assert.equal(rankOf(min, "STU-3"), 1);
+  assert.equal(rankOf(min, "STU-1"), 3);
+  assert.equal(canonicalize(ranked("competition", factsA)), canonicalize(ranked("competition", factsB)));
 });
 
 test("report-card-engine-pass-rule", () => {
@@ -388,6 +514,19 @@ test("report-card-engine-pass-rule", () => {
       }),
     (err) => err.code === "CALCULABILITY_PASS_RULE_SCALE" || err.code === "CALCULABILITY_ROUNDING_STAGE"
   );
+  const schema = schemaWithContextualSlot("DECISION", { period_id: "T1" });
+  const profile = calculableProfile({ pass_rule: { metric: "PERCENTAGE", threshold: 50 } });
+  const pass = compute(api, { profile, schema, facts: [fact({ raw_score: 10 })] });
+  const fail = compute(api, { profile, schema, facts: [fact({ raw_score: 9 })] });
+  const passSlot = findSlot(pass.students[0], { slot: "DECISION" });
+  const failSlot = findSlot(fail.students[0], { slot: "DECISION" });
+  assert.equal(passSlot.kind, "DECISION");
+  assert.equal(passSlot.metric, "PERCENTAGE");
+  assert.equal(passSlot.threshold, 50);
+  assert.equal(passSlot.internal, 50);
+  assert.equal(passSlot.passed, true);
+  assert.equal(failSlot.internal, 45);
+  assert.equal(failSlot.passed, false);
 });
 
 test("report-card-engine-presence-condition", () => {
