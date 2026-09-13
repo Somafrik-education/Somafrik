@@ -94,7 +94,7 @@ function sourceGuards() {
   assert.match(mobileScreen, /getCanonicalAnnouncementById/);
   assert.match(mobileHydration, /getCanonicalAnnouncementById/);
   assert.match(mobileHydration, /\/backoffice\/announcements\/\$\{encodeURIComponent\(id\)\}/);
-  assert.doesNotMatch(mobileScreen, /nextCursor/);
+  assert.match(mobileScreen, /nextCursor/);
   assert.doesNotMatch(mobileScreen, /localStorage/);
   assert.doesNotMatch(mobileRead, /localStorage/);
   assert.match(mobileControls, /idempotencyKey|Idempotency|randomUUID/);
@@ -110,6 +110,7 @@ function main() {
   run("npx", ["--yes", "tsx", "Mobile/src/lib/communicationSchoolScope.test.ts"], "communicationSchoolScope");
   run("npx", ["--yes", "tsx", "Mobile/src/lib/mobileCtaRbacAlignment.test.ts"], "mobileCtaRbacAlignment");
   run("npx", ["--yes", "tsx", "Mobile/src/lib/announcementsC3.test.ts"], "mobile announcements C3");
+  run("npx", ["--yes", "tsx", "Mobile/src/lib/communicationPagination.lotc.test.ts"], "mobile Lot C pagination RED-06");
   run("npx", ["--yes", "tsx", "Mobile/src/lib/announcementsOpenById.test.ts"], "mobile announcement open-by-id");
   run("npm", ["--prefix", "web", "run", "test", "--", "src/lib/announcementsC3.test.ts"], "web announcements C3");
   assert.ok(String(process.env.DATABASE_URL ?? "").trim(), "DATABASE_URL requis pour COM-C3");

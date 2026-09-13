@@ -211,7 +211,7 @@ assert.match(notificationsSrc, /Ouvrir|Lire/);
 assert.match(messagesSrc, /conversationId/);
 assert.match(announcementsSrc, /announcementId/);
 assert.match(announcementsSrc, /getCanonicalAnnouncementById/);
-assert.doesNotMatch(announcementsSrc, /nextCursor/);
+assert.match(announcementsSrc, /nextCursor/);
 const navigatorSrc = readFileSync(join(srcRoot, "navigation/AppNavigator.tsx"), "utf8");
 assert.match(navigatorSrc, /navigateRegisteredPushDestination/);
 assert.match(navigatorSrc, /collectRegisteredRouteNames/);

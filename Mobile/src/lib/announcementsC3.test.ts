@@ -39,7 +39,7 @@ assert.doesNotMatch(screenSrc, /localStorage/);
 assert.match(screenSrc, /markCanonicalAnnouncementRead/);
 assert.match(screenSrc, /getCanonicalAnnouncementById/);
 assert.match(screenSrc, /resolveFocusedAnnouncement/);
-assert.doesNotMatch(screenSrc, /nextCursor/);
+assert.match(screenSrc, /nextCursor/);
 assert.match(screenSrc, /formatDisplayDate/);
 assert.match(screenSrc, /attachments/);
 

@@ -25,6 +25,8 @@ on:
       - "Mobile/src/components/AnnouncementMutationControls.tsx"
       - "Mobile/src/lib/announcementsRead.ts"
       - "Mobile/src/lib/announcementsPlatform.test.ts"
+      - "Mobile/src/lib/communicationPagination.ts"
+      - "Mobile/src/lib/communicationPagination.lotc.test.ts"
       - "Mobile/src/lib/canonicalResourceNormalize.ts"
       - "Mobile/src/services/api.ts"
       - "Mobile/src/services/domainHydrationApi.ts"

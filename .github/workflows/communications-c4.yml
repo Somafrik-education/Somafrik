@@ -54,6 +54,8 @@ on:
       - "Mobile/src/lib/pushNotificationNavigate.ts"
       - "Mobile/src/lib/pushNotificationTap.ts"
       - "Mobile/src/lib/financeNotificationNavigation.test.ts"
+      - "Mobile/src/lib/communicationPagination.ts"
+      - "Mobile/src/lib/communicationPagination.lotc.test.ts"
       - "Mobile/src/components/PushNotificationsRuntime.tsx"
       - "backend/lib/communicationsTrialSmtp.red.test.js"
       - "backend/lib/communicationsDeliveryReliability.red.test.js"

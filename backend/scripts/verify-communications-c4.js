@@ -370,6 +370,7 @@ function main() {
   run("npx", ["--yes", "tsx", "Mobile/src/lib/internalNotificationsC4.test.ts"], "mobile internal notifications C4");
   run("npx", ["--yes", "tsx", "Mobile/src/lib/notificationInboxRoute.test.ts"], "mobile inbox routing context");
   run("npx", ["--yes", "tsx", "Mobile/src/lib/financeNotificationNavigation.test.ts"], "mobile C4 Ouvrir + push Communication");
+  run("npx", ["--yes", "tsx", "Mobile/src/lib/communicationPagination.lotc.test.ts"], "mobile Lot C pagination RED-06");
   run(process.execPath, ["--test", "backend/lib/communicationsFinanceMobileNavigation.test.js"], "fan-out push Communication destinations");
   assert.ok(String(process.env.DATABASE_URL ?? "").trim(), "DATABASE_URL requis pour COM-C4");
   run(process.execPath, ["backend/db/communicationsC4.bootstrap.pg.test.js"], "bootstrap payments cancelled_at CAS A/B");

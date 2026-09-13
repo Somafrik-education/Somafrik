@@ -31,6 +31,8 @@ on:
       - "Mobile/src/components/AnnouncementMutationControls.tsx"
       - "Mobile/src/lib/announcementsRead.ts"
       - "Mobile/src/lib/announcementsC3.test.ts"
+      - "Mobile/src/lib/communicationPagination.ts"
+      - "Mobile/src/lib/communicationPagination.lotc.test.ts"
       - "Mobile/src/lib/mobileCtaRbacAlignment.ts"
       - "Mobile/src/services/api.ts"
       - "Mobile/src/services/domainHydrationApi.ts"
