@@ -1,7 +1,12 @@
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import {
+  buildConversationReplyPayload,
   buildMessagePayload,
   collectSuccessfulAttachmentIds,
+  conversationReplyPath,
   isAllowedMessageAttachmentMime,
 } from "./messageAttachments";
 
@@ -56,5 +61,81 @@ const forbiddenUrl = buildMessagePayload({
 });
 assert.equal(forbiddenUrl.ok, false);
 if (!forbiddenUrl.ok) assert.equal(forbiddenUrl.code, "client_attachment_url_forbidden");
+
+const missingConversation = buildConversationReplyPayload({ message: "Réponse" });
+assert.equal(missingConversation.ok, false);
+if (!missingConversation.ok) assert.equal(missingConversation.code, "missing_conversation");
+
+const emptyReply = buildConversationReplyPayload({ conversationId: "conv-1", message: "   " });
+assert.equal(emptyReply.ok, false);
+if (!emptyReply.ok) assert.equal(emptyReply.code, "empty_message");
+
+const reply = buildConversationReplyPayload({
+  conversationId: "conv-42",
+  message: "  Bien reçu  ",
+  attachmentIds: ["att-1"],
+});
+assert.equal(reply.ok, true);
+if (reply.ok) {
+  assert.equal(reply.payload.message, "Bien reçu");
+  assert.equal(reply.payload.conversationId, "conv-42");
+  assert.deepEqual(reply.payload.attachmentIds, ["att-1"]);
+  assert.equal(Object.prototype.hasOwnProperty.call(reply.payload, "participantUserIds"), false);
+}
+
+assert.equal(conversationReplyPath(""), null);
+assert.equal(conversationReplyPath("  "), null);
+assert.equal(conversationReplyPath("conv-42"), "/backoffice/conversations/conv-42/messages");
+assert.equal(
+  conversationReplyPath("conv/special"),
+  "/backoffice/conversations/conv%2Fspecial/messages",
+);
+
+const srcRoot = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
+function readRepo(relativePath: string) {
+  return fs.readFileSync(path.join(srcRoot, relativePath), "utf8");
+}
+function sliceBetween(source: string, startToken: string, endToken: string, label: string) {
+  const start = source.indexOf(startToken);
+  const end = source.lastIndexOf(endToken);
+  assert.notEqual(start, -1, `${label}: début introuvable`);
+  assert.ok(end > start, `${label}: fin introuvable`);
+  return source.slice(start, end + endToken.length);
+}
+
+const screen = readRepo("screens/MessagesScreen.tsx");
+const api = readRepo("services/api.ts");
+const modal = sliceBetween(
+  screen,
+  "<Modal visible={Boolean(selectedConversation)}",
+  "</Modal>",
+  "modal Messages",
+);
+
+assert.match(modal, /FormField/, "le modal fil Messages n'a pas de champ de saisie");
+assert.match(modal, /Envoyer|replyInThread/, "le modal fil Messages n'expose pas l'action Envoyer");
+assert.match(modal, /canReplyInThread/, "le composer de réponse du fil n'est pas gated par Messages:CREATE");
+assert.match(modal, /messages-thread-reply-forbidden/, "état sans CREATE absent du modal");
+assert.match(modal, /KeyboardAvoidingContainer/, "le modal n'évite pas le clavier");
+assert.match(modal, /styles\.threadSendButton/, "le CTA Envoyer du fil n'utilise pas la cible tactile dédiée");
+assert.match(screen, /threadSendButton: \{ minHeight: MIN_TOUCH_TARGET_DP/, "cible tactile fil < 44 dp");
+assert.match(screen, /Message est obligatoire/, "la réponse vide n'est pas refusée");
+assert.match(screen, /buildConversationReplyPayload/);
+assert.match(screen, /replyClientsConversationMessage/);
+assert.match(screen, /getCanonicalConversationMessages\(conversationId/);
+assert.match(
+  screen,
+  /path:\s*`\/backoffice\/conversations\/\$\{encodeURIComponent\(conversationId\)\}\/messages`/,
+);
+assert.doesNotMatch(
+  modal,
+  /participantUserIds/,
+  "une réponse dans le fil ne doit jamais envoyer participantUserIds",
+);
+assert.match(api, /export function replyClientsConversationMessage/);
+assert.match(
+  api,
+  /\/backoffice\/conversations\/\$\{encodeURIComponent\(id\)\}\/messages/,
+);
 
 console.log("messageAttachments.test.ts OK");

@@ -105,8 +105,10 @@ function sourceGuards() {
   assert.match(mobileScreen, /uploadCommunicationAttachment/);
   assert.match(mobileScreen, /attachmentIds/);
   assert.match(mobileScreen, /withCommunicationSchoolPayload/);
+  assert.match(mobileScreen, /replyClientsConversationMessage/);
   assert.doesNotMatch(mobileScreen, /getCanonicalContacts/);
   assert.match(mobilePayload, /buildMessagePayload/);
+  assert.match(mobilePayload, /buildConversationReplyPayload/);
   assert.match(mobilePayload, /client_attachment_url_forbidden/);
   assert.match(mobileScope, /withCommunicationSchoolScope/);
   assert.match(mobileScope, /effectiveSchoolCode/);

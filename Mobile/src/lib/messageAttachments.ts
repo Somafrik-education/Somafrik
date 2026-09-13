@@ -23,7 +23,12 @@ export type MessagePayloadResult =
   | { ok: true; payload: Record<string, unknown> }
   | {
       ok: false;
-      code: "empty_message" | "missing_recipient" | "client_attachment_url_forbidden" | "upload_failed";
+      code:
+        | "empty_message"
+        | "missing_recipient"
+        | "missing_conversation"
+        | "client_attachment_url_forbidden"
+        | "upload_failed";
     };
 
 export function isAllowedMessageAttachmentMime(mimeType: string): boolean {
@@ -62,6 +67,32 @@ export function buildMessagePayload(input: MessagePayloadInput): MessagePayloadR
       ...(input.theme ? { theme: input.theme } : {}),
       ...(input.priority ? { priority: input.priority } : {}),
       ...(input.direction ? { direction: input.direction } : {}),
+    },
+  };
+}
+
+export function conversationReplyPath(conversationId: string): string | null {
+  const id = String(conversationId ?? "").trim();
+  if (!id) return null;
+  return `/backoffice/conversations/${encodeURIComponent(id)}/messages`;
+}
+
+export function buildConversationReplyPayload(input: {
+  conversationId?: string;
+  message?: string;
+  attachmentIds?: string[];
+}): MessagePayloadResult {
+  const conversationId = String(input.conversationId ?? "").trim();
+  if (!conversationId) return { ok: false, code: "missing_conversation" };
+  const body = String(input.message ?? "").trim();
+  if (!body) return { ok: false, code: "empty_message" };
+  const attachmentIds = (input.attachmentIds ?? []).map((id) => String(id ?? "").trim()).filter(Boolean);
+  return {
+    ok: true,
+    payload: {
+      message: body,
+      conversationId,
+      ...(attachmentIds.length ? { attachmentIds } : {}),
     },
   };
 }

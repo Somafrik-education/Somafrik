@@ -28,12 +28,17 @@ import {
   canShowStaffMessagesComposer,
   resolveMessagesRouteAccess,
 } from "../lib/mobileCtaRbacAlignment";
-import { buildMessagePayload, collectSuccessfulAttachmentIds, isAllowedMessageAttachmentMime } from "../lib/messageAttachments";
+import {
+  buildConversationReplyPayload,
+  buildMessagePayload,
+  collectSuccessfulAttachmentIds,
+  isAllowedMessageAttachmentMime,
+} from "../lib/messageAttachments";
 import { hasCommunicationSchoolScope, withCommunicationSchoolPayload } from "../lib/communicationSchoolScope";
 import { filterCommunicationRows } from "../lib/communicationListFilter";
 import { useMessagesUnreadCount } from "../lib/messagesRead";
 import { useFloatingTabBarLayout } from "../lib/screenLayout";
-import { sendClientsMessage, getMessageRecipients, uploadCommunicationAttachment, downloadCommunicationAttachment } from "../services/api";
+import { sendClientsMessage, replyClientsConversationMessage, getMessageRecipients, uploadCommunicationAttachment, downloadCommunicationAttachment } from "../services/api";
 import { createInFlightLock, createIntentionStore } from "../lib/mutationGuard";
 import { NETWORK_COPY } from "../lib/networkResilience";
 import { submitProtectedMutation } from "../lib/outbox";
@@ -90,8 +95,13 @@ export default function MessagesScreen() {
   const [threadMessages, setThreadMessages] = useState<CanonicalSchoolMessage[]>([]);
   const [sending, setSending] = useState(false);
   const [sendHint, setSendHint] = useState("");
+  const [replyDraft, setReplyDraft] = useState("");
+  const [replyError, setReplyError] = useState("");
+  const [replying, setReplying] = useState(false);
   const sendLockRef = useRef(createInFlightLock());
   const sendIntentionRef = useRef(createIntentionStore());
+  const replyLockRef = useRef(createInFlightLock());
+  const replyIntentionRef = useRef(createIntentionStore());
 
   const role = session?.role;
   const selfId = String(session?.user?.id ?? "");
@@ -102,6 +112,7 @@ export default function MessagesScreen() {
   const showStaffComposer = canShowStaffMessagesComposer(session) && scopeReady;
   const showComposer =
     scopeReady && (((role === "parent_student" || role === "teacher") && canSend) || showStaffComposer);
+  const canReplyInThread = canSend && scopeReady;
   const parentChildren = session?.user.children ?? [];
   const staffSendBlocked =
     showComposer &&
@@ -316,8 +327,77 @@ export default function MessagesScreen() {
     }
   };
 
+  const closeThread = () => {
+    setSelectedConversation(null);
+    setThreadMessages([]);
+    setReplyDraft("");
+    setReplyError("");
+  };
+
+  const replyInThread = async () => {
+    if (!replyLockRef.current.tryBegin()) return;
+    const conversationId = String(selectedConversation?.id ?? "").trim();
+    if (!canReplyInThread || !conversationId) {
+      replyLockRef.current.end();
+      return;
+    }
+    const built = buildConversationReplyPayload({
+      conversationId,
+      message: replyDraft,
+    });
+    if (!built.ok) {
+      replyLockRef.current.end();
+      if (built.code === "empty_message") {
+        setReplyError("Message est obligatoire.");
+      }
+      return;
+    }
+    setReplyError("");
+    const payload = withCommunicationSchoolPayload(built.payload, activeSchoolCode);
+    const intentionId = `message-reply:${conversationId}:${String(payload.message)}`;
+    const idempotencyKey = replyIntentionRef.current.getOrCreate(intentionId);
+    setReplying(true);
+    try {
+      const submitted = await submitProtectedMutation({
+        domain: "messages",
+        method: "POST",
+        path: `/backoffice/conversations/${encodeURIComponent(conversationId)}/messages`,
+        payload,
+        idempotencyKey,
+        userId: String(session?.user.id ?? ""),
+        schoolScope: String(activeSchoolCode || session?.school?.code || session?.user.schoolCode || ""),
+        persistOutbox: true,
+        request: () => replyClientsConversationMessage(conversationId, payload, { idempotencyKey }),
+      });
+      if (submitted.outcome !== "confirmed") {
+        const queuedLike = submitted.outcome === "queued" || submitted.outcome === "in_flight";
+        Alert.alert(
+          queuedLike ? NETWORK_COPY.queued : NETWORK_COPY.failed,
+          queuedLike
+            ? "La réponse est conservée en file d'attente. Elle n'apparaîtra dans le fil qu'après confirmation serveur."
+            : submitted.error instanceof Error
+              ? submitted.error.message
+              : "Impossible d'envoyer la réponse.",
+        );
+        return;
+      }
+      replyIntentionRef.current.rotate(intentionId);
+      setReplyDraft("");
+      const thread = await getCanonicalConversationMessages(conversationId, activeSchoolCode);
+      setThreadMessages(thread);
+      await refreshUnread();
+    } catch (error) {
+      Alert.alert("Envoi impossible", error instanceof Error ? error.message : "Impossible d'envoyer la réponse.");
+    } finally {
+      setReplying(false);
+      replyLockRef.current.end();
+    }
+  };
+
   const openConversation = async (item: CanonicalConversation) => {
     setSelectedConversation(item);
+    setReplyDraft("");
+    setReplyError("");
     try {
       const thread = await getCanonicalConversationMessages(item.id, activeSchoolCode);
       setThreadMessages(thread);
@@ -510,13 +590,14 @@ export default function MessagesScreen() {
       />
       </KeyboardAvoidingContainer>
 
-      <Modal visible={Boolean(selectedConversation)} transparent animationType="fade" onRequestClose={() => setSelectedConversation(null)}>
+      <Modal visible={Boolean(selectedConversation)} transparent animationType="fade" onRequestClose={closeThread}>
+        <KeyboardAvoidingContainer>
         <View style={styles.modalBackdrop}>
           <ScrollView contentContainerStyle={styles.readerCard} keyboardShouldPersistTaps="handled">
             <AccessibleIconButton
               accessibilityLabel="Fermer le message"
               icon="close"
-              onPress={() => setSelectedConversation(null)}
+              onPress={closeThread}
               style={styles.closeButton}
             />
             <Text style={styles.cardTitle}>{selectedConversation ? counterpartName(selectedConversation, selfId) : ""}</Text>
@@ -545,8 +626,45 @@ export default function MessagesScreen() {
                 ))}
               </View>
             ))}
+            {canReplyInThread ? (
+              <View style={styles.threadReply} testID="messages-thread-reply-composer">
+                <FormField
+                  label="Réponse"
+                  required
+                  type="multiline"
+                  value={replyDraft}
+                  onChangeText={(value) => {
+                    setReplyDraft(value);
+                    setReplyError("");
+                  }}
+                  placeholder="Écrire une réponse…"
+                  editable={!replying}
+                  autoCorrect
+                  error={replyError}
+                  accessibilityLabel="Texte de la réponse"
+                  testID="messages-thread-reply-input"
+                />
+                <TouchableOpacity
+                  style={[styles.sendButton, styles.threadSendButton, replying && styles.disabled]}
+                  onPress={() => void replyInThread()}
+                  disabled={replying}
+                  testID="messages-thread-reply-send"
+                  accessibilityRole="button"
+                  accessibilityLabel="Envoyer la réponse"
+                  accessibilityState={{ busy: replying, disabled: replying }}
+                >
+                  {replying ? <ActivityIndicator color="#FFFFFF" /> : <Ionicons name="send-outline" size={20} color="#FFFFFF" />}
+                  <Text style={styles.sendText}>{replying ? NETWORK_COPY.recording : "Envoyer"}</Text>
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <Text style={styles.meta} testID="messages-thread-reply-forbidden">
+                La réponse n'est pas autorisée.
+              </Text>
+            )}
           </ScrollView>
         </View>
+        </KeyboardAvoidingContainer>
       </Modal>
     </View>
   );
@@ -609,6 +727,8 @@ const styles = StyleSheet.create({
   chipText: { color: "#475569", fontWeight: "800" },
   chipTextActive: { color: "#FFFFFF" },
   sendButton: { backgroundColor: "#2563EB", borderRadius: 14, padding: 14, flexDirection: "row", justifyContent: "center", alignItems: "center" },
+  threadReply: { marginTop: 16, paddingTop: 12, borderTopWidth: 1, borderTopColor: "#E2E8F0" },
+  threadSendButton: { minHeight: MIN_TOUCH_TARGET_DP, marginTop: 4 },
   sendText: { color: "#FFFFFF", fontWeight: "900", marginLeft: 8 },
   disabled: { opacity: 0.5 },
   errorText: { color: "#B91C1C", fontWeight: "800", padding: 14 },
