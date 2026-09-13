@@ -379,6 +379,93 @@ test("report-card-schema-profile-reference-validation", () => {
   );
 });
 
+test("report-card-schema-period-component-intersection", () => {
+  const api = loadLot2();
+  assert.ok(api, "LOT 2 domain missing (RED)");
+  const spec = api.validateSpec(
+    validSchemaSpec({
+      sections: [
+        {
+          id: "SUBJECTS",
+          order: 1,
+          kind: "subject_rows",
+          period_id: "T1",
+          columns: [
+            {
+              id: "COL_T1_TJ",
+              order: 1,
+              kind: "score_component",
+              score_component_id: "TJ",
+              period_id: "T1",
+            },
+            {
+              id: "COL_T1_EX",
+              order: 2,
+              kind: "score_component",
+              score_component_id: "EX",
+              period_id: "T1",
+            },
+          ],
+        },
+      ],
+    })
+  );
+  const cell = spec.sections[0].columns[0];
+  assert.equal(spec.sections[0].period_id, "T1");
+  assert.equal(cell.period_id, "T1");
+  assert.equal(cell.score_component_id, "TJ");
+  const profile = validProfile();
+  assert.doesNotThrow(() => api.validateAgainstProfile(spec, profile));
+  const badPeriod = api.validateSpec(
+    validSchemaSpec({
+      sections: [
+        {
+          id: "SUBJECTS",
+          order: 1,
+          kind: "subject_rows",
+          columns: [
+            {
+              id: "COL_BAD",
+              order: 1,
+              kind: "score_component",
+              score_component_id: "TJ",
+              period_id: "T9",
+            },
+          ],
+        },
+      ],
+    })
+  );
+  assert.throws(
+    () => api.validateAgainstProfile(badPeriod, profile),
+    (err) => err.code === "INVALID_PROFILE_REFERENCE"
+  );
+  const badComponent = api.validateSpec(
+    validSchemaSpec({
+      sections: [
+        {
+          id: "SUBJECTS",
+          order: 1,
+          kind: "subject_rows",
+          columns: [
+            {
+              id: "COL_BAD2",
+              order: 1,
+              kind: "period",
+              period_id: "T1",
+              score_component_id: "UNKNOWN_COMP",
+            },
+          ],
+        },
+      ],
+    })
+  );
+  assert.throws(
+    () => api.validateAgainstProfile(badComponent, profile),
+    (err) => err.code === "INVALID_PROFILE_REFERENCE"
+  );
+});
+
 test("report-card-schema-no-calculation-formulas", () => {
   const api = loadLot2();
   assert.ok(api, "LOT 2 domain missing (RED)");
@@ -430,4 +517,19 @@ test("report-card-schema-non-draft-immutable", () => {
       }),
     (err) => err.code === "VERSION_IMMUTABLE"
   );
+  const originalId = created.version.spec.sections[0].id;
+  const originalSha = created.version.spec_sha256;
+  try {
+    created.version.spec.sections[0].id = "HACKED";
+  } catch {
+    /* freeze may throw */
+  }
+  const active = store.getActive({
+    schoolId: SCHOOL_A,
+    actorSchoolId: SCHOOL_A,
+    schemaId: created.schema.id,
+  });
+  assert.equal(active.spec.sections[0].id, originalId);
+  assert.notEqual(active.spec.sections[0].id, "HACKED");
+  assert.equal(active.spec_sha256, originalSha);
 });

@@ -210,6 +210,22 @@ describe("report-card-schema PG constraints/versioning/isolation", { skip: !shou
         ),
         (err) => String(err.message).includes("REPORT_CARD_SCHEMA_VERSION_IMMUTABLE")
       );
+      await pool.query(
+        `UPDATE report_card_schema_versions SET status = 'ARCHIVED' WHERE schema_id = $1 AND version = 1`,
+        [created.schema.id]
+      );
+      await assert.rejects(
+        pool.query(
+          `UPDATE report_card_schema_versions SET status = 'DRAFT' WHERE schema_id = $1 AND version = 1`,
+          [created.schema.id]
+        ),
+        (err) => String(err.message).includes("REPORT_CARD_SCHEMA_VERSION_IMMUTABLE")
+      );
+      const archived = await pool.query(
+        `SELECT status FROM report_card_schema_versions WHERE schema_id = $1 AND version = 1`,
+        [created.schema.id]
+      );
+      assert.equal(archived.rows[0].status, "ARCHIVED");
     } finally {
       await pool.end();
     }
