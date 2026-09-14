@@ -70,6 +70,15 @@ describe("AuthProvider logout — révocation Web Push avant perte du jeton", ()
     expect(result.current.session).toBeNull();
   });
 
+  it("déconnecte même si la révocation Web Push ne se résout jamais", async () => {
+    revokeSpy.mockImplementation(() => new Promise(() => undefined));
+    const { result } = renderHook(() => useAuth(), { wrapper });
+    act(() => result.current.setSession(session));
+    await act(async () => result.current.logout());
+    expect(api.post).toHaveBeenCalledWith("/auth/logout");
+    expect(result.current.session).toBeNull();
+  }, 4000);
+
   it("déconnecte même si la révocation Web Push échoue, sans exposer de secret", async () => {
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
     revokeSpy.mockRejectedValue(new Error("endpoint https://secret.example/push"));

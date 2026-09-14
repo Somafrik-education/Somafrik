@@ -60,7 +60,16 @@ function sourceGuards() {
   assert.doesNotMatch(runtime, /catch\(\(\)\s*=>\s*undefined\)/);
   assert.match(layout, /<WebPushRuntime/);
   const auth = read("web/src/context/AuthContext.tsx");
-  assert.match(auth, /revokeWebPushOnSessionEnd/);
+  assert.match(auth, /revokeWebPushOnSessionEndBounded/);
+  const getSubStart = permission.indexOf("async function defaultGetSubscription");
+  const getSubEnd = permission.indexOf("function logRevokeFailure");
+  assert.ok(getSubStart >= 0 && getSubEnd > getSubStart, "defaultGetSubscription manquante");
+  const getSubFn = permission.slice(getSubStart, getSubEnd);
+  assert.match(getSubFn, /getRegistration/);
+  assert.doesNotMatch(getSubFn, /\.ready/);
+  assert.match(permission, /WEB_PUSH_REVOKE_BUDGET_MS/);
+  const logoutTest = read("web/src/lib/AuthContext.logout.test.tsx");
+  assert.match(logoutTest, /VAPID disabled \/ aucun service worker enregistré/);
   assert.match(fanout, /isolateProvider/);
   assert.match(fanout, /already_sent/);
   const serviceTest = read("backend/lib/webPushSubscriptionsService.test.js");
@@ -92,6 +101,7 @@ function main() {
       "src/lib/webPushPermission.test.ts",
       "src/lib/webPushClickRouting.test.ts",
       "src/lib/AuthContext.webPush.logout.test.tsx",
+      "src/lib/AuthContext.logout.test.tsx",
       "src/components/WebPushRuntime.test.tsx",
     ],
     "web push client",
