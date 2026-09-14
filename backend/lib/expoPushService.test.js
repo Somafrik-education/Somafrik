@@ -109,6 +109,8 @@ async function main() {
     channelId: "somafrik-default",
   });
   assert.equal(ok.pendingReceipts[0].receiptId, "ticket-ok-1");
+  assert.equal(ok.publicTickets[0].status, "ok");
+  assert.equal(ok.publicTickets[0].id, "ticket-ok-1");
   assert.equal(queued[0].receiptId, "ticket-ok-1");
   assert.equal(receiptCalls, 0);
 

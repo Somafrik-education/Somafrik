@@ -44,6 +44,13 @@ export type PushRegisterDeps = {
 const REMEMBERED_TOKEN_KEY = "somafrik.push.currentExpoToken";
 let lastRegisteredToken: string | null = null;
 
+export type PushRegistrationOutcome = {
+  status: "registered" | "permission_denied" | "unsupported" | "failed";
+  reason?: string;
+};
+
+let lastRegistrationOutcome: PushRegistrationOutcome | null = null;
+
 async function rememberPushToken(token: string | null) {
   lastRegisteredToken = token;
   try {
@@ -98,6 +105,29 @@ function logInfo(message: string) {
   }
 }
 
+function logWarn(message: string, extra?: unknown) {
+  try {
+    const { safeLogger } = require("./safeLogger") as { safeLogger: { warn: (...args: unknown[]) => void } };
+    safeLogger.warn(message, extra);
+  } catch {
+    /* tests node : pas de logs natifs */
+  }
+}
+
+function rememberOutcome(outcome: PushRegistrationOutcome) {
+  lastRegistrationOutcome = outcome;
+}
+
+export function getLastPushRegistrationOutcome() {
+  return lastRegistrationOutcome;
+}
+
+export function observePushRegistrationFailure(error: unknown) {
+  const reason = error instanceof Error ? error.message : String(error ?? "unknown");
+  rememberOutcome({ status: "failed", reason: reason.slice(0, 180) });
+  logWarn("push device registration failed", error);
+}
+
 function nativeNotifications(): NotificationsLike {
   return require("expo-notifications") as NotificationsLike;
 }
@@ -150,61 +180,75 @@ export function getLastRegisteredPushTokenForTests() {
 
 export function resetPushRegistrationStateForTests() {
   lastRegisteredToken = null;
+  lastRegistrationOutcome = null;
 }
 
 export async function registerAuthenticatedPushDevice(deps: PushRegisterDeps = {}): Promise<
   "registered" | "permission_denied" | "unsupported"
 > {
-  const platform = deps.platform ?? defaultPlatform();
-  if (platform !== "android") return "unsupported";
-  if (!isNativePushCompatible(deps.executionEnvironment, deps.expoGoConfig)) return "unsupported";
+  try {
+    const platform = deps.platform ?? defaultPlatform();
+    if (platform !== "android") {
+      rememberOutcome({ status: "unsupported" });
+      return "unsupported";
+    }
+    if (!isNativePushCompatible(deps.executionEnvironment, deps.expoGoConfig)) {
+      rememberOutcome({ status: "unsupported" });
+      return "unsupported";
+    }
 
-  const notifications = deps.notifications ?? nativeNotifications();
-  const importance = notifications.AndroidImportance?.HIGH ?? 4;
-  if (typeof notifications.setNotificationChannelAsync === "function") {
-    await notifications.setNotificationChannelAsync(SOMAFRIK_PUSH_CHANNEL_ID, {
-      name: "Somafrik",
-      importance,
-      sound: "default",
-      enableVibrate: true,
-      vibrationPattern: [0, 250, 250, 250],
-      lightColor: "#1d4ed8",
-      showBadge: true,
+    const notifications = deps.notifications ?? nativeNotifications();
+    const importance = notifications.AndroidImportance?.HIGH ?? 4;
+    if (typeof notifications.setNotificationChannelAsync === "function") {
+      await notifications.setNotificationChannelAsync(SOMAFRIK_PUSH_CHANNEL_ID, {
+        name: "Somafrik",
+        importance,
+        sound: "default",
+        enableVibrate: true,
+        vibrationPattern: [0, 250, 250, 250],
+        lightColor: "#1d4ed8",
+        showBadge: true,
+      });
+    }
+
+    let permission = await notifications.getPermissionsAsync();
+    if (permission.status !== "granted" && permission.canAskAgain !== false) {
+      permission = await notifications.requestPermissionsAsync();
+    }
+    if (permission.status !== "granted") {
+      await rememberPushToken(null);
+      rememberOutcome({ status: "permission_denied" });
+      return "permission_denied";
+    }
+
+    const projectId = (deps.getProjectId ?? readProjectId)();
+    if (!projectId) {
+      throw new Error("ProjectId EAS absent : enregistrement push fail-closed.");
+    }
+
+    const tokenResponse = await notifications.getExpoPushTokenAsync({ projectId });
+    const expoPushToken = String(tokenResponse?.data ?? "").trim();
+    if (!expoPushToken) {
+      throw new Error("Jeton Expo Push indisponible.");
+    }
+
+    const post = deps.httpRequestImpl ?? defaultHttpRequest;
+    await post("/mobile/push-devices", {
+      method: "POST",
+      body: JSON.stringify({
+        expoPushToken,
+        platform: "android",
+        appProfile: (deps.getReleaseProfileImpl ?? defaultReleaseProfile)(),
+      }),
     });
+    await rememberPushToken(expoPushToken);
+    rememberOutcome({ status: "registered" });
+    logInfo("push device registered");
+    return "registered";
+  } catch (error) {
+    observePushRegistrationFailure(error);
+    throw error;
   }
-
-  let permission = await notifications.getPermissionsAsync();
-  if (permission.status !== "granted" && permission.canAskAgain !== false) {
-    permission = await notifications.requestPermissionsAsync();
-  }
-  if (permission.status !== "granted") {
-    await rememberPushToken(null);
-    return "permission_denied";
-  }
-
-  const projectId = (deps.getProjectId ?? readProjectId)();
-  if (!projectId) {
-    throw new Error("ProjectId EAS absent : enregistrement push fail-closed.");
-  }
-
-  const tokenResponse = await notifications.getExpoPushTokenAsync({ projectId });
-  const expoPushToken = String(tokenResponse?.data ?? "").trim();
-  if (!expoPushToken) {
-    throw new Error("Jeton Expo Push indisponible.");
-  }
-
-  const post = deps.httpRequestImpl ?? defaultHttpRequest;
-  await post("/mobile/push-devices", {
-    method: "POST",
-    body: JSON.stringify({
-      expoPushToken,
-      platform: "android",
-      appProfile: (deps.getReleaseProfileImpl ?? defaultReleaseProfile)(),
-    }),
-  });
-  await rememberPushToken(expoPushToken);
-  logInfo("push device registered");
-  return "registered";
 }
 
 export async function revokeCurrentPushDevice(deps: { httpRequestImpl?: PushRegisterDeps["httpRequestImpl"] } = {}) {

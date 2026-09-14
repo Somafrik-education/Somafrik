@@ -3,6 +3,7 @@
 const { BusinessError } = require("../services/authService");
 const { resolveAppEnv } = require("./corsConfig");
 const { uuidOrNull } = require("./principalIdentity");
+const { SOMAFRIK_PUSH_CHANNEL_ID } = require("./expoPushService");
 
 const N1_PLATFORM = "android";
 const BACKEND_ENVIRONMENTS = new Set(["development", "preproduction", "production"]);
@@ -146,6 +147,21 @@ function publicDevice(row) {
   };
 }
 
+function publicPushProof(result) {
+  const tickets = Array.isArray(result?.publicTickets)
+    ? result.publicTickets.map((ticket) => ({
+        status: ticket?.status === "ok" ? "ok" : "error",
+        id: String(ticket?.id ?? "").trim() || null,
+        error: ticket?.error ? String(ticket.error).slice(0, 80) : null,
+      }))
+    : [];
+  return {
+    channelId: SOMAFRIK_PUSH_CHANNEL_ID,
+    tickets,
+    pendingReceipts: Array.isArray(result?.pendingReceipts) ? result.pendingReceipts.length : 0,
+  };
+}
+
 async function upsertFromSession(store, principal, body = {}, env = process.env) {
   rejectClientIdentity(body);
   const userId = sessionUserId(principal);
@@ -198,13 +214,14 @@ async function sendSelfTest(store, principal, body, pushClient, env = process.en
       title: TEST_TITLE,
       body: TEST_BODY,
       data: { somafrikDestination: TEST_DESTINATION },
-      channelId: "somafrik-default",
+      channelId: SOMAFRIK_PUSH_CHANNEL_ID,
     },
   );
   return {
     sent: result.sent,
     tickets: result.ticketCount,
     revoked: result.revoked,
+    proof: publicPushProof(result),
   };
 }
 
@@ -217,6 +234,7 @@ module.exports = {
   APP_PROFILES,
   APP_PROFILES_BY_BACKEND,
   PUSH_SELFTEST_PERMISSION,
+  SOMAFRIK_PUSH_CHANNEL_ID,
   upsertFromSession,
   revokeCurrentFromSession,
   sendSelfTest,

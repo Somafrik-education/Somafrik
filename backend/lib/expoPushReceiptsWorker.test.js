@@ -97,6 +97,32 @@ async function main() {
   const terminal = missingStore._receipts[0];
   assert.equal(terminal.status, "expired");
 
+  const okStore = createMemoryMobilePushDevicesStore();
+  await okStore.upsertDevice({
+    userId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1",
+    schoolId: null,
+    expoPushToken: "ExponentPushToken[ok-keep]",
+    platform: "android",
+    backendEnvironment: "preproduction",
+    appProfile: "preview",
+  });
+  await okStore.enqueuePushReceipts(
+    [{ receiptId: "rcpt-ok", expoPushToken: "ExponentPushToken[ok-keep]" }],
+    { delayMs: 0, ttlMs: 24 * 60 * 60 * 1000, now: t0 },
+  );
+  const okReceipt = await processDuePushReceipts({
+    store: okStore,
+    pushClient: {
+      async fetchReceipts() {
+        return { "rcpt-ok": { status: "ok" } };
+      },
+    },
+    now: t0,
+  });
+  assert.equal(okReceipt[0].status, "ok");
+  const kept = await okStore.getByToken("ExponentPushToken[ok-keep]");
+  assert.equal(kept.revoked_at, null, "receipt ok : device reste actif");
+
   console.log("expoPushReceiptsWorker.test.js OK");
 }
 

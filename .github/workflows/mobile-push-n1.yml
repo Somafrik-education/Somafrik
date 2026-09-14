@@ -20,6 +20,7 @@ on:
       - "backend/lib/rateLimit.push-selftest.test.js"
       - "backend/lib/mobilePushDevices.http.pg.test.js"
       - "backend/scripts/verify-mobile-push-n1.js"
+      - "docs/mobile/PUSH-PREVIEW-PREPROD.md"
       - "backend/services/rbacService.js"
       - "docker-compose.preprod.yml"
       - "docker-compose.production.yml"

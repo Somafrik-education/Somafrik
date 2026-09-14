@@ -14,6 +14,7 @@ import { useResponsiveLayout } from "../hooks/useResponsiveLayout";
 import { MENU_TEST_IDS } from "../lib/loginScreenSpec";
 import { getReleaseProfile } from "../config/env";
 import { sendControlledPushTest } from "../services/pushNotifications";
+import { sanitizeUserFacingError } from "../services/safeLogger";
 import { ENTITY_VIEW_MAP } from "../lib/constants";
 import { ACCOUNT_DELETION_URL, LEGAL_COPY, PRIVACY_POLICY_URL } from "../lib/legalCompliance";
 import {
@@ -253,8 +254,11 @@ export default function MenuScreen() {
               .then(() => {
                 Alert.alert("Test push", "Notification de test envoyée.");
               })
-              .catch(() => {
-                Alert.alert("Test push", "Impossible d'envoyer la notification de test.");
+              .catch((error) => {
+                Alert.alert(
+                  "Test push",
+                  sanitizeUserFacingError(error, "Impossible d'envoyer la notification de test."),
+                );
               });
           }}
           accessibilityRole="button"

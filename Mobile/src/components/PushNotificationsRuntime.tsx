@@ -14,7 +14,10 @@ import {
   collectRegisteredRouteNames,
   navigateRegisteredPushDestination,
 } from "../lib/pushNotificationNavigate";
-import { registerAuthenticatedPushDevice } from "../services/pushNotifications";
+import {
+  observePushRegistrationFailure,
+  registerAuthenticatedPushDevice,
+} from "../services/pushNotifications";
 import { navigationRef } from "../navigation/rootNavigation";
 
 Notifications.setNotificationHandler({
@@ -67,7 +70,7 @@ export default function PushNotificationsRuntime() {
 
   useEffect(() => {
     if (!canonical) return;
-    void registerAuthenticatedPushDevice().catch(() => undefined);
+    void registerAuthenticatedPushDevice().catch(observePushRegistrationFailure);
   }, [canonical]);
 
   useEffect(() => {
