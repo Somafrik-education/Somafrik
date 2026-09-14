@@ -231,6 +231,16 @@ async function harness(overrides = {}) {
       },
     }),
     getTemplate: async () => ({ spec: TEMPLATE, spec_sha256: "cc" }),
+    getProfile: async () =>
+      validateProfileSpec({
+        periods: ["T1", "T2"],
+        annual: true,
+        score_components: [{ id: "TJ", applicability: "always", max: 20, coefficient: 1 }],
+        missing_score: "NOT_APPLICABLE_not_zero",
+        rounding: { decimals: 2, mode: "half_up" },
+        ranking: { enabled: false, ties: "competition" },
+      }),
+    getSchema: async () => validateSpecSchema(),
   });
   const bound = await listen(app);
   return {

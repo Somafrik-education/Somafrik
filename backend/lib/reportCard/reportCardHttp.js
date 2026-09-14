@@ -11,7 +11,10 @@ const PERM_CONFIGURE = "REPORT_CARD_CONFIGURE";
 const PERM_APPROVE = "REPORT_CARD_SCHOOL_APPROVE_TEMPLATE";
 const PERM_READ = "REPORT_CARD_READ";
 const PERM_REPRINT = "REPORT_CARD_REPRINT";
+const PERM_CORRECT = "REPORT_CARD_CORRECT";
+const PERM_REVOKE = "REPORT_CARD_REVOKE";
 const VERIFICATION_ACTIVE = "ACTIVE";
+const HISTORICAL_STATUSES = new Set(["ACTIVE", "SUPERSEDED", "REVOKED"]);
 
 const HTTP_STATUS = Object.freeze({
   RBAC_DENIED: 403,
@@ -23,6 +26,9 @@ const HTTP_STATUS = Object.freeze({
   PDF_QR_SCOPE_MISMATCH: 403,
   INVALID_TRANSITION: 409,
   IDEMPOTENCY_CONFLICT: 409,
+  CONCURRENCY_CONFLICT: 409,
+  REASON_REQUIRED: 400,
+  FACTS_REQUIRED: 400,
 });
 
 function parseCapability(value) {
@@ -103,13 +109,25 @@ function assertPdfQrScopeSafe(unscopedPayload, actor) {
   if (extras.length > 0) throw coded("PDF_QR_SCOPE_MISMATCH");
 }
 
-async function consultPublishedSnapshot({ publication, actor, schoolId, reportCardId, version, getTemplate }) {
+async function consultPublishedSnapshot({
+  publication,
+  actor,
+  schoolId,
+  reportCardId,
+  version,
+  getTemplate,
+  requireActive = true,
+} = {}) {
   if (!publication || typeof publication.lookup !== "function" || typeof publication.payloadForRender !== "function") {
     throw coded("REQUEST_NOT_FOUND");
   }
   const tenant = { schoolId, actorSchoolId: actor.actorSchoolId };
   const record = await Promise.resolve(publication.lookup({ tenant, reportCardId, version }));
-  if (!record || record.verification_status !== VERIFICATION_ACTIVE) {
+  if (!record) throw coded("PUBLICATION_NOT_FOUND");
+  if (requireActive && record.verification_status !== VERIFICATION_ACTIVE) {
+    throw coded("PUBLICATION_NOT_FOUND");
+  }
+  if (!requireActive && !HISTORICAL_STATUSES.has(record.verification_status)) {
     throw coded("PUBLICATION_NOT_FOUND");
   }
   const unscopedPayload = await Promise.resolve(
@@ -117,7 +135,7 @@ async function consultPublishedSnapshot({ publication, actor, schoolId, reportCa
   );
   const payload = assertScopedStudents(applyStudentScope(unscopedPayload, actor), actor);
   const template = await resolvePublishedTemplate(payload, schoolId, getTemplate);
-  return { payload, unscopedPayload, template, tenant };
+  return { payload, unscopedPayload, template, tenant, record };
 }
 
 function isPrivileged(actor) {
@@ -152,6 +170,12 @@ function schoolIdForAdmin(actor, requested) {
 }
 
 function mapError(err) {
+  if (err && (err.name === "IdempotencyConflict" || err.code === "IDEMPOTENCY_CONFLICT")) {
+    return {
+      status: HTTP_STATUS.IDEMPOTENCY_CONFLICT,
+      body: { ok: false, error: { code: "IDEMPOTENCY_CONFLICT" } },
+    };
+  }
   const code = err && err.code ? err.code : "INVALID_INPUT";
   return {
     status: HTTP_STATUS[code] || 400,
@@ -243,13 +267,34 @@ function registerReportCardHttp(app, deps = {}) {
   const logger = deps.logger;
   const auth = typeof deps.internalAuth === "function" ? deps.internalAuth : (_req, _res, next) => next();
 
+  let cachedCorrection = null;
+  let cachedCorrectionPublication = null;
+
   function services() {
+    const publication = deps.publication || (typeof deps.getPublication === "function" ? deps.getPublication() : null);
     return {
       configuration: deps.configuration || (typeof deps.getConfiguration === "function" ? deps.getConfiguration() : null),
-      publication: deps.publication || (typeof deps.getPublication === "function" ? deps.getPublication() : null),
+      publication,
       pdf: deps.pdf || (typeof deps.getPdf === "function" ? deps.getPdf() : null),
       getTemplate: typeof deps.getTemplate === "function" ? deps.getTemplate : null,
+      correction:
+        deps.correction ||
+        (typeof deps.getCorrection === "function" ? deps.getCorrection() : null) ||
+        (publication ? getOrCreateCorrection(publication) : null),
     };
+  }
+
+  function getOrCreateCorrection(publication) {
+    if (cachedCorrection && cachedCorrectionPublication === publication) return cachedCorrection;
+    const { createReportCardCorrection } = require("./reportCardCorrection");
+    cachedCorrection = createReportCardCorrection({
+      publication,
+      getFacts: typeof deps.getFacts === "function" ? deps.getFacts : null,
+      getProfile: typeof deps.getProfile === "function" ? deps.getProfile : null,
+      getSchema: typeof deps.getSchema === "function" ? deps.getSchema : null,
+    });
+    cachedCorrectionPublication = publication;
+    return cachedCorrection;
   }
 
   function route(fn) {
@@ -454,6 +499,7 @@ function registerReportCardHttp(app, deps = {}) {
         reportCardId: req.params.reportCardId,
         version,
         getTemplate,
+        requireActive: false,
       });
       assertPdfQrScopeSafe(unscopedPayload, actor);
       const rendered = await pdf.render({
@@ -486,6 +532,121 @@ function registerReportCardHttp(app, deps = {}) {
         getTemplate,
       });
       res.json({ ok: true, payload, template });
+    })
+  );
+
+  app.get(
+    "/api/report-card/publications/:reportCardId/history",
+    auth,
+    route(async (req, res) => {
+      const actor = await actorFrom(req);
+      const schoolId = schoolIdForSchoolActor(actor);
+      requireToken(actor, PERM_READ);
+      const { publication } = services();
+      if (!publication || typeof publication.listHistory !== "function") {
+        throw coded("REQUEST_NOT_FOUND");
+      }
+      const tenant = { schoolId, actorSchoolId: actor.actorSchoolId };
+      const rows = await Promise.resolve(
+        publication.listHistory({ tenant, reportCardId: req.params.reportCardId })
+      );
+      const versions = [];
+      for (const row of rows || []) {
+        if (!Array.isArray(actor.studentIds)) {
+          versions.push(row);
+          continue;
+        }
+        try {
+          const payload = applyStudentScope(
+            await Promise.resolve(
+              publication.payloadForRender({
+                tenant,
+                reportCardId: row.report_card_id,
+                version: row.published_snapshot_version,
+              })
+            ),
+            actor
+          );
+          if (payload && Array.isArray(payload.students) && payload.students.length > 0) {
+            versions.push(row);
+          }
+        } catch {
+          // Skip versions the scoped actor cannot consult.
+        }
+      }
+      if (!Array.isArray(actor.studentIds) && versions.length === 0) {
+        throw coded("PUBLICATION_NOT_FOUND");
+      }
+      res.json({ ok: true, versions });
+    })
+  );
+
+  app.get(
+    "/api/report-card/publications/:reportCardId/versions/:version",
+    auth,
+    route(async (req, res) => {
+      const actor = await actorFrom(req);
+      const schoolId = schoolIdForSchoolActor(actor);
+      requireToken(actor, PERM_READ);
+      const { publication, getTemplate } = services();
+      const version = Number(req.params.version);
+      const { payload, template } = await consultPublishedSnapshot({
+        publication,
+        actor,
+        schoolId,
+        reportCardId: req.params.reportCardId,
+        version,
+        getTemplate,
+        requireActive: false,
+      });
+      res.json({ ok: true, payload, template });
+    })
+  );
+
+  app.post(
+    "/api/report-card/publications/:reportCardId/corrections",
+    auth,
+    route(async (req, res) => {
+      const actor = await actorFrom(req);
+      const schoolId = schoolIdForSchoolActor(actor);
+      requireToken(actor, PERM_CORRECT);
+      const { correction } = services();
+      if (!correction || typeof correction.correct !== "function") {
+        throw coded("REQUEST_NOT_FOUND");
+      }
+      const publication = await correction.correct({
+        tenant: { schoolId, actorSchoolId: actor.actorSchoolId },
+        actor,
+        reportCardId: req.params.reportCardId,
+        sourceVersion: req.body?.sourceVersion,
+        reason: req.body?.reason,
+        commandId: req.body?.commandId,
+      });
+      res.status(201).json({ ok: true, publication });
+    })
+  );
+
+  app.post(
+    "/api/report-card/publications/:reportCardId/versions/:version/revoke",
+    auth,
+    route(async (req, res) => {
+      const actor = await actorFrom(req);
+      const schoolId = schoolIdForSchoolActor(actor);
+      requireToken(actor, PERM_REVOKE);
+      const { publication } = services();
+      if (!publication || typeof publication.revoke !== "function") {
+        throw coded("REQUEST_NOT_FOUND");
+      }
+      const revoked = await Promise.resolve(
+        publication.revoke({
+          tenant: { schoolId, actorSchoolId: actor.actorSchoolId },
+          reportCardId: req.params.reportCardId,
+          version: Number(req.params.version),
+          reason: req.body?.reason,
+          actorId: actor.actorId,
+        })
+      );
+      res.json({ ok: true, publication: revoked });
     })
   );
 

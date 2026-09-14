@@ -77,6 +77,12 @@ function resolveReportCardActorFromPrincipal(principal) {
     permissions.push("REPORT_CARD_READ");
     permissions.push("REPORT_CARD_REPRINT");
   }
+  if (hasFeatureAction(principal, "Bulletins", "SUSPEND")) {
+    permissions.push("REPORT_CARD_CORRECT");
+  }
+  if (hasFeatureAction(principal, "Bulletins", "DELETE")) {
+    permissions.push("REPORT_CARD_REVOKE");
+  }
   const actor = {
     actorId,
     actorSchoolId: tenantSchoolIdFromPrincipal(principal),

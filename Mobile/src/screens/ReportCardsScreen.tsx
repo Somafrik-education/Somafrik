@@ -21,6 +21,7 @@ import {
   listReportCardPublications,
   type ReportCardPublicationRow,
 } from "../lib/reportCardPublicationApi";
+import { listPublishedVersionHistory, type PublishedVersionRow } from "../lib/reportCardHistoryApi";
 import {
   SNAPSHOT_SLOT_PERCENTAGE,
   SNAPSHOT_SLOT_RANK,
@@ -54,6 +55,7 @@ type PublishedBulletinCard = {
   payload: SnapshotPayload;
   template?: RenderingTemplate | null;
   student: SnapshotStudent;
+  versionHistory: PublishedVersionRow[];
 };
 
 function bulletinErrorSnapshot(
@@ -77,6 +79,7 @@ function cardsFromPublication(
   row: ReportCardPublicationRow,
   payload: SnapshotPayload | null,
   template?: RenderingTemplate | null,
+  versionHistory: PublishedVersionRow[] = [],
 ): PublishedBulletinCard[] {
   if (!payload) return [];
   const version = Number(row.published_snapshot_version || payload.published_snapshot_version || 0);
@@ -96,6 +99,7 @@ function cardsFromPublication(
       payload,
       template,
       student,
+      versionHistory,
     };
   });
 }
@@ -118,7 +122,15 @@ export default function ReportCardsScreen() {
       const cards: PublishedBulletinCard[] = [];
       for (const row of publications) {
         const snap = await getReportCardPublicationSnapshot(row.report_card_id, row.published_snapshot_version);
-        cards.push(...cardsFromPublication(row, snap?.payload ?? null, snap?.template as RenderingTemplate | undefined));
+        const versionHistory = await listPublishedVersionHistory(row.report_card_id).catch(() => []);
+        cards.push(
+          ...cardsFromPublication(
+            row,
+            snap?.payload ?? null,
+            snap?.template as RenderingTemplate | undefined,
+            versionHistory,
+          ),
+        );
       }
       setReportCardsSnapshot(snapshotFromSuccess(cards));
     } catch (error) {
@@ -226,6 +238,24 @@ export default function ReportCardsScreen() {
                   <Metric label="Publié le" value={card.publishedAt || "—"} />
                 </View>
                 <ReportCardSnapshotView payload={card.payload} template={card.template} studentId={card.studentId} />
+                {card.versionHistory.length > 0 ? (
+                  <View style={styles.historyBlock}>
+                    <Text style={styles.historyTitle}>Historique des versions</Text>
+                    {card.versionHistory.map((entry) => (
+                      <Text
+                        key={`${entry.report_card_id}:${entry.published_snapshot_version}`}
+                        style={styles.historyRow}
+                      >
+                        v{entry.published_snapshot_version}{" "}
+                        {entry.verification_status === "SUPERSEDED"
+                          ? "SUPERSEDED"
+                          : entry.verification_status === "REVOKED"
+                            ? "REVOKED"
+                            : entry.verification_status || "ACTIVE"}
+                      </Text>
+                    ))}
+                  </View>
+                ) : null}
                 <TouchableOpacity
                   activeOpacity={0.85}
                   style={[styles.pdfButton, !isPublished && styles.pdfButtonDisabled]}
@@ -274,4 +304,7 @@ const styles = StyleSheet.create({
   },
   pdfButtonDisabled: { opacity: 0.45 },
   pdfText: { color: "#FFFFFF", fontWeight: "900" },
+  historyBlock: { marginBottom: 12, gap: 4 },
+  historyTitle: { color: "#334155", fontSize: 12, fontWeight: "900" },
+  historyRow: { color: "#475569", fontSize: 12, fontWeight: "700" },
 });

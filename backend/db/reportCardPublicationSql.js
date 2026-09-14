@@ -96,6 +96,25 @@ CREATE TRIGGER trg_report_card_publish_outbox_protect
 BEFORE UPDATE OR DELETE ON report_card_publish_outbox
 FOR EACH ROW
 EXECUTE FUNCTION report_card_publish_outbox_protect();
+
+ALTER TABLE report_card_published_snapshots
+  ADD COLUMN IF NOT EXISTS corrected_from_version INTEGER,
+  ADD COLUMN IF NOT EXISTS correction_reason TEXT,
+  ADD COLUMN IF NOT EXISTS revoke_reason TEXT,
+  ADD COLUMN IF NOT EXISTS actor_id TEXT,
+  ADD COLUMN IF NOT EXISTS command_id TEXT;
+
+CREATE TABLE IF NOT EXISTS report_card_correction_commands (
+  school_id UUID NOT NULL REFERENCES schools(id),
+  report_card_id TEXT NOT NULL,
+  command_id TEXT NOT NULL,
+  reason TEXT NOT NULL,
+  source_version INTEGER NOT NULL,
+  result_version INTEGER NOT NULL,
+  public_id TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (school_id, report_card_id, command_id)
+);
 `;
 
 module.exports = { REPORT_CARD_PUBLICATION_SQL };
