@@ -1,7 +1,7 @@
 # Architecture — Somafrik
 
 **Statut :** référence technique officielle  
-**Dernière mise à jour :** 2026-08-13
+**Dernière mise à jour :** 2026-09-14
 **Compléments :** [../preproduction.md](../preproduction.md) · [../ci-cd-security.md](../ci-cd-security.md) · [../ux/design-system/README.md](../ux/design-system/README.md)
 
 ---
@@ -47,6 +47,18 @@ flowchart LR
   Express --> JSON
   Sync --> PG
 ```
+
+### 1.2 Frontières d’environnement (PROD ≠ PREPROD ≠ DEMO)
+
+Contrat DEMO-0 ([ADR-015](./ADR-DEMO-SHOWCASE-LOT0.md)) — **pas encore de runtime Demo** :
+
+| Frontière | Front | API | `APP_ENV` |
+|-----------|-------|-----|-----------|
+| Production | `https://somafrik.app` | `https://api.somafrik.app` | `production` |
+| Préproduction | `https://preprod.somafrik.app` | API PREPROD | `preproduction` |
+| Démo (cible) | `https://demo.somafrik.app` | `https://api-demo.somafrik.app` | `demo` |
+
+La vitrine production qualifie sur `/demo` puis ouvre l’environnement Demo. Elle **ne** redirige **pas** vers la préproduction. CORS production n’inclut jamais `demo.somafrik.app`. `/demande-essai` reste l’essai 30 jours. Gate : `verify:demo-lot0`.
 
 ---
 
@@ -121,9 +133,9 @@ Endpoints principaux :
 
 ### 3.3 Middleware & sécurité
 
-- `requireAuth` — JWT `Authorization: Bearer` uniquement
+- `requireAuth` — JWT `Authorization: Bearer` uniquement (`?token=` / `?access_token=` refusés ; le futur handshake Demo utilise un `code` opaque, jamais un JWT en URL)
 - Lockout login (désactivable en E2E seulement)
-- CORS selon `APP_ENV` / `CORS_ORIGINS`
+- CORS selon `APP_ENV` (`production` → `somafrik.app`, `preproduction` → `preprod.somafrik.app`). `APP_ENV=demo` n’est **pas** encore un contrat runtime (DEMO-2) ; il est interdit d’ajouter `demo.somafrik.app` aux origines production
 - Sanitization des réponses utilisateur (S1.3)
 - Fail-closed si principal absent
 

@@ -81,6 +81,7 @@ npm run lint
 # Suite verify (tests automatisés existants, hors e2e lourds)
 npm run verify:v2-foundation
 npm run verify:jwt-header
+npm run verify:demo-lot0
 npm run verify:rbac-s1-4
 npm run verify:sanitize-user-responses
 npm run check

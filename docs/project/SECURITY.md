@@ -1,7 +1,7 @@
 # Sécurité — Somafrik
 
 **Statut :** politique & contrôles de sécurité  
-**Dernière mise à jour :** 2026-09-04  
+**Dernière mise à jour :** 2026-09-14  
 **Liens :** [ARCHITECTURE.md](./ARCHITECTURE.md) · [DECISIONS.md](./DECISIONS.md) · [../ci-cd-security.md](../ci-cd-security.md)
 
 ---
@@ -88,6 +88,18 @@ Les clients n’utilisent pas PostgREST. Migration `20260904_p0_supabase_data_ap
 | Logout / revoke-all | `POST /api/auth/logout`, `POST /api/auth/revoke-all` |
 | Mobile / Web | Persistance du **nouveau** refresh après rotation |
 | Tests | `npm run verify:jwt-header` · `npm run verify:auth-sessions` |
+
+Le handshake de l’environnement Démo public (ADR-015) **n’échappe pas** à cette règle : paramètre `code` opaque, jamais `token` / `access_token` / JWT.
+
+### CORS et frontières
+
+| `APP_ENV` | Origine front autorisée | Statut |
+|-----------|-------------------------|--------|
+| `production` | `https://somafrik.app` | runtime |
+| `preproduction` | `https://preprod.somafrik.app` | runtime |
+| `demo` | `https://demo.somafrik.app` (+ mint depuis `https://somafrik.app`) | **contrat DEMO-0 uniquement** — pas câblé |
+
+Interdit : ajouter `demo.somafrik.app` au CORS de l’API production. Interdit : réutiliser `demoSeedPolicy` / `VITE_SHOW_DEMO_ACCOUNTS` comme environnement public. Tests : `npm run verify:demo-lot0`.
 
 ### Lockout
 

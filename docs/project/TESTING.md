@@ -1,7 +1,7 @@
 # Stratégie de tests — Somafrik
 
 **Statut :** référence qualité & gates  
-**Dernière mise à jour :** 2026-08-14
+**Dernière mise à jour :** 2026-09-14
 **Liens :** [RELEASES.md](./RELEASES.md) · [CONTRIBUTING.md](./CONTRIBUTING.md) · [../ci-cd-security.md](../ci-cd-security.md)
 
 ---
@@ -58,6 +58,7 @@ Fichiers `*.test.js` exécutés via scripts `verify:*` (pas de runner Jest dédi
 - `teacherNotesWriteAccess`
 - helpers d’unicité présences, etc.
 - contrats bulletins LOT 0 : `backend/contracts/reportCard/*.test.js` (`npm run verify:report-card-lot0`)
+- contrats Démo commerciale LOT 0 : `backend/contracts/demo/*.test.js` (`npm run verify:demo-lot0`) — architecture, qualification, menaces, tests RED d’absence, isolation CORS/seed/JWT/essai 30 jours
 - profils académiques LOT 1 : `backend/lib/reportCard/academicRuleProfile*.test.js` (`npm run verify:report-card-lot1`)
 - calculabilité LOT 1.1 : mêmes gates LOT 1 (`academic-rule-profile-aggregation-contract` et contrats coefficient / pourcentage / pass_rule / rounding.stage / ranking / bornes)
 - schémas de bulletin LOT 2 : `backend/lib/reportCard/reportCardSchema*.test.js` (`npm run verify:report-card-lot2`)
@@ -86,6 +87,7 @@ node backend/lib/teacherNotesWriteAccess.test.js
 | `npm run verify:rbac-s1-4` | Matrice écriture BO + MVP |
 | `npm run verify:rbac-admin-01` | Classes/enseignants sans `auditLog` |
 | `npm run verify:jwt-header` | JWT header-only |
+| `npm run verify:demo-lot0` | Contrat DEMO-0 : frontières PROD/PREPROD/DEMO, handshake `code` opaque (pas de JWT en URL), matrice de qualification, menaces, absence runtime (`/demo`, `APP_ENV=demo` CORS, `demo:reset`), isolation seed legacy / `VITE_SHOW_DEMO_ACCOUNTS` / `/demande-essai` |
 | `npm run verify:sanitize-user-responses` | Pas de secrets dans les réponses |
 | `npm run verify:db-config` | Config DB prod/préprod |
 | `npm run verify:runtime-bootstrap` | `init` → health → login 401 |

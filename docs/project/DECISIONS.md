@@ -1,7 +1,7 @@
 # Décisions d’architecture (ADR simplifié) — Somafrik
 
 **Statut :** registre officiel des décisions durables  
-**Dernière mise à jour :** 2026-09-12
+**Dernière mise à jour :** 2026-09-14
 
 Format obligatoire pour chaque entrée :
 
@@ -197,6 +197,19 @@ Les conversations (Chat, agents) **ne remplacent pas** ce registre.
 | **Alternatives** | Template par pays ; hash PG seul ; QR JSON PII actuel ; token hash-only (reprint impossible) ; HMAC/KDF (B) ou opaque unique (C) comme défaut. |
 | **Impact** | ADR `docs/project/ADR-REPORT-CARD-FRAMEWORK-LOT0.md` ; contrats `backend/contracts/reportCard/` ; gate `verify:report-card-lot0`. Pas de SQL / route / UI dans LOT 0. |
 | **Statut** | Acceptée |
+
+---
+
+## ADR-015 — Environnement Démo commercial : vitrine → `/demo` → `demo.somafrik.app`
+
+| | |
+|--|--|
+| **Date** | 2026-09-14 |
+| **Décision** | Le CTA vitrine ne pointe pas vers la préproduction. Flux : `somafrik.app` → qualification `/demo` → code opaque one-shot → `demo.somafrik.app` → `api-demo.somafrik.app` → PostgreSQL Demo. `APP_ENV=demo` est une troisième frontière. `/demande-essai` reste l’essai 30 jours. Interdit : JWT dans l’URL, CORS Demo sur l’API production, réutilisation de `demoSeedPolicy` / `VITE_SHOW_DEMO_ACCOUNTS`. |
+| **Contexte** | Audit CTO `docs/audits/demo-vitrine-cto-2026-09-14.md` (`develop@5409019c`). GO chantier, pas d’implémentation dans DEMO-0. |
+| **Alternatives** | Bouton vers une copie de préproduction ; essai 30 jours comme unique porte d’entrée ; JWT en query ; ajouter `demo.somafrik.app` aux origines CORS production. |
+| **Impact** | ADR `docs/project/ADR-DEMO-SHOWCASE-LOT0.md` ; contrats `backend/contracts/demo/` ; gate `verify:demo-lot0`. Pas de SQL / route / UI / env Demo dans LOT 0. Lots suivants : DEMO-1 vitrine → DEMO-2 backend → DEMO-3 Web Demo → DEMO-4 Mobile → DEMO-5 E2E. |
+| **Statut** | Proposée |
 
 ---
 
