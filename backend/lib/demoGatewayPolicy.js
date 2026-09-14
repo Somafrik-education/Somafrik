@@ -24,6 +24,9 @@ const BLOCKED_GATEWAY_PATHS = new Set([
   "/api/login",
   "/api/backoffice/login",
   "/api/identify",
+  "/api/auth/refresh",
+  "/api/auth/change-password",
+  "/api/auth/revoke-all",
 ]);
 
 function cleanText(value, maxLength) {
