@@ -6,6 +6,7 @@ on:
       - 'web/src/pages/DemoEntryPage*'
       - 'web/src/components/marketing/**'
       - 'web/src/data/demoMarketing.ts'
+      - 'web/src/lib/demoNavigation.ts'
       - 'web/src/lib/featureFlags.ts'
       - 'web/src/main.tsx'
       - 'web/.env.example'
