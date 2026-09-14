@@ -9,7 +9,7 @@ import {
   type ReactNode,
 } from "react";
 import { api, ApiError, setAccessTokenProvider, setRefreshTokenProvider, setRotatedTokenPersister } from "../api/client";
-import { revokeWebPushOnSessionEndBounded } from "../lib/webPushPermission";
+import { revokeWebPushOnSessionEnd, WEB_PUSH_REVOKE_BUDGET_MS } from "../lib/webPushPermission";
 import { normalizePlatformRole } from "../lib/orgHierarchy";
 import type { LoginProfile, Session } from "../types";
 
@@ -32,6 +32,28 @@ interface AuthContextValue {
   logout: () => Promise<void>;
   changePassword: (newPassword: string) => Promise<void>;
   setSession: (session: Session | null) => void;
+}
+
+function logWebPushLogoutRevokeFailure(error: unknown) {
+  const message = error instanceof Error ? error.message : "unknown";
+  console.error(
+    JSON.stringify({
+      kind: "web_push_logout_revoke_failure",
+      message: message.slice(0, 180),
+    }),
+  );
+}
+
+async function revokeWebPushBeforeLogout(): Promise<void> {
+  await new Promise<void>((resolve) => {
+    const timer = setTimeout(resolve, WEB_PUSH_REVOKE_BUDGET_MS);
+    void revokeWebPushOnSessionEnd()
+      .catch(logWebPushLogoutRevokeFailure)
+      .finally(() => {
+        clearTimeout(timer);
+        resolve();
+      });
+  });
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -206,15 +228,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       if (sessionRef.current?.accessToken) {
         try {
-          await revokeWebPushOnSessionEndBounded();
+          await revokeWebPushBeforeLogout();
         } catch (error) {
-          const message = error instanceof Error ? error.message : "unknown";
-          console.error(
-            JSON.stringify({
-              kind: "web_push_logout_revoke_failure",
-              message: message.slice(0, 180),
-            }),
-          );
+          logWebPushLogoutRevokeFailure(error);
         }
         await api.post("/auth/logout");
       }
