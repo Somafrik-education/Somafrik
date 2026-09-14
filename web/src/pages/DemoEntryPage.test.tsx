@@ -6,6 +6,11 @@ import { MemoryRouter } from "react-router-dom";
 const navigateToDemoMock = vi.hoisted(() => vi.fn());
 
 vi.mock("../lib/demoNavigation", () => ({ navigateToDemo: navigateToDemoMock }));
+vi.mock("../lib/featureFlags", () => ({
+  publicDemoEnabled: true,
+  showDemoAccounts: false,
+  marketplaceEnabled: false,
+}));
 
 import { DemoEntryPage } from "./DemoEntryPage";
 
