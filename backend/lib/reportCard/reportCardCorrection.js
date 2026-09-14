@@ -96,18 +96,19 @@ function createReportCardCorrection({ publication, getFacts, getProfile, getSche
     if (typeof getFacts !== "function" || typeof getProfile !== "function" || typeof getSchema !== "function") {
       throw new ReportCardPublicationError("FACTS_REQUIRED");
     }
+    const profile = await getProfile({ tenant, ref: unscoped.provenance && unscoped.provenance.profile });
+    const schema = await getSchema({ tenant, ref: unscoped.provenance && unscoped.provenance.schema });
+    if (!profile || !schema) {
+      throw new ReportCardPublicationError("FACTS_REQUIRED");
+    }
     const facts = await getFacts({
       tenant,
       schoolId,
       reportCardId,
       sourceVersion: Number(sourceVersion),
+      profile,
     });
     if (!Array.isArray(facts)) {
-      throw new ReportCardPublicationError("FACTS_REQUIRED");
-    }
-    const profile = await getProfile({ tenant, ref: unscoped.provenance && unscoped.provenance.profile });
-    const schema = await getSchema({ tenant, ref: unscoped.provenance && unscoped.provenance.schema });
-    if (!profile || !schema) {
       throw new ReportCardPublicationError("FACTS_REQUIRED");
     }
     const computed = computeReportCard({
@@ -126,6 +127,8 @@ function createReportCardCorrection({ publication, getFacts, getProfile, getSche
       provenance: unscoped.provenance,
       students: computed.students,
     };
+    if (unscoped.academic_year_id) payload.academic_year_id = unscoped.academic_year_id;
+    if (unscoped.class_id) payload.class_id = unscoped.class_id;
     let published;
     try {
       published = await Promise.resolve(

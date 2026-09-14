@@ -14,7 +14,7 @@ Un bulletin publié n’est jamais modifié ni re-signé. Toute correction produ
 - `POST /api/report-card/publications/:reportCardId/versions/:version/revoke` — révocation (`REPORT_CARD_REVOKE`, motif)
 - PDF historique : `GET .../pdf?version=` réutilise le QR/capability **de cette version** (stratégie A, aucun mint)
 
-`getFacts` lit uniquement les notes/évaluations PostgreSQL canoniques. Le snapshot source fournit l’identité/provenance, jamais un score de repli. Absence de match, note dépubliée/supprimée ou erreur de schéma → correction refusée, pas de v+1. Plusieurs évaluations d’une même composante sont agrégées via `weightedAverage()` (barème + coefficient), pas « latest wins ». `revoke` n’accepte que `ACTIVE` (idempotent si déjà `REVOKED`) ; `SUPERSEDED` → 409.
+`getFacts` lit uniquement les notes/évaluations PostgreSQL du **scope source** (`academic_year_id` + `class_id` épinglés sur le snapshot). Pas d’année active courante. Le snapshot fournit l’identité/provenance, jamais un score de repli. Absence de match, note dépubliée/supprimée, scope manquant ou erreur de schéma → correction refusée, pas de v+1. Plusieurs évaluations d’une même composante sont agrégées via `weightedAverage()` sur l’échelle `score_components[].max` du profil épinglé (pas de convention `/20`). `revoke` n’accepte que `ACTIVE` (idempotent si déjà `REVOKED`) ; `SUPERSEDED` → 409.
 
 `Bulletins:SUSPEND` → `REPORT_CARD_CORRECT`. `Bulletins:DELETE` → `REPORT_CARD_REVOKE`. `listCurrent` LOT 8 reste ACTIVE-only.
 

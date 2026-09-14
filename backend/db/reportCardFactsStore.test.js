@@ -57,8 +57,9 @@ test("report-card-lot9-facts-aggregate-weighted-average-not-latest-wins", () => 
     ],
     { displayScale: 20 }
   ).average;
-  const forward = aggregateCanonicalFacts([newerHigh, olderWeighted]);
-  const reversed = aggregateCanonicalFacts([olderWeighted, newerHigh]);
+  const opts = { scaleByComponent: { TJ: 20 } };
+  const forward = aggregateCanonicalFacts([newerHigh, olderWeighted], opts);
+  const reversed = aggregateCanonicalFacts([olderWeighted, newerHigh], opts);
   assert.equal(forward.length, 1);
   assert.equal(forward[0].raw_score, expected);
   assert.equal(reversed[0].raw_score, expected);
@@ -88,4 +89,26 @@ test("report-card-lot9-facts-snapshot-identities-ignore-historical-scores", () =
   assert.equal(identities.length, 1);
   assert.equal("raw_score" in identities[0], false);
   assert.equal(identities[0].student_id, "STU-1");
+});
+
+test("report-card-lot9-facts-aggregate-uses-pinned-component-max", () => {
+  const { scaleByComponentFromProfile } = require("./reportCardFactsStore");
+  const rows = [
+    gradeRow({ score: 8, max_score: 10, coefficient: 1 }),
+    gradeRow({ score: 4, max_score: 10, coefficient: 1 }),
+  ];
+  const expected = weightedAverage(
+    [
+      { score: 8, maxScore: 10, coefficient: 1, gradeStatus: "graded" },
+      { score: 4, maxScore: 10, coefficient: 1, gradeStatus: "graded" },
+    ],
+    { displayScale: 10 }
+  ).average;
+  const scaled = aggregateCanonicalFacts(rows, { scaleByComponent: { TJ: 10 } });
+  const twenty = aggregateCanonicalFacts(rows, { scaleByComponent: { TJ: 20 } });
+  assert.equal(scaled[0].raw_score, expected);
+  assert.equal(Number(scaled[0].raw_score.toFixed(2)), 6);
+  assert.notEqual(twenty[0].raw_score, scaled[0].raw_score);
+  assert.equal(aggregateCanonicalFacts(rows, {}).length, 0);
+  assert.deepEqual(scaleByComponentFromProfile({ score_components: [{ id: "TJ", max: 10 }] }), { TJ: 10 });
 });

@@ -69,7 +69,10 @@ function toAverageNote(row) {
   };
 }
 
-function aggregateCanonicalFacts(gradeRows, { displayScale = 20 } = {}) {
+function aggregateCanonicalFacts(gradeRows, { scaleByComponent } = {}) {
+  if (!scaleByComponent || typeof scaleByComponent !== "object" || Array.isArray(scaleByComponent)) {
+    return [];
+  }
   const groups = new Map();
   for (const row of gradeRows || []) {
     if (!row || !row.student_id || !row.subject_id || !row.period_id || !row.score_component_id) continue;
@@ -80,6 +83,8 @@ function aggregateCanonicalFacts(gradeRows, { displayScale = 20 } = {}) {
   const facts = [];
   for (const rows of groups.values()) {
     const identity = rows[0];
+    const displayScale = Number(scaleByComponent[identity.score_component_id]);
+    if (!Number.isFinite(displayScale) || !(displayScale > 0)) continue;
     const { average, totalCoefficients } = weightedAverage(rows.map(toAverageNote), { displayScale });
     if (!totalCoefficients) {
       facts.push({
@@ -102,6 +107,18 @@ function aggregateCanonicalFacts(gradeRows, { displayScale = 20 } = {}) {
     });
   }
   return facts;
+}
+
+function scaleByComponentFromProfile(profile) {
+  if (!profile || !Array.isArray(profile.score_components)) return null;
+  const scaleByComponent = {};
+  for (const component of profile.score_components) {
+    if (!component || component.id == null) return null;
+    const max = Number(component.max);
+    if (!Number.isFinite(max) || !(max > 0)) return null;
+    scaleByComponent[String(component.id)] = max;
+  }
+  return Object.keys(scaleByComponent).length ? scaleByComponent : null;
 }
 
 function isUndefinedRelation(err) {
@@ -127,8 +144,9 @@ function createReportCardFactsPgStore(db) {
     return fn(db);
   }
 
-  async function listFacts({ schoolId } = {}) {
-    if (!schoolId) return [];
+  async function listFacts({ schoolId, classId, academicYearId, scaleByComponent } = {}) {
+    if (!schoolId || !classId || !academicYearId) return [];
+    if (!scaleByComponent || typeof scaleByComponent !== "object") return [];
     return withClient(async (client) => {
       try {
         const result = await client.query(
@@ -138,21 +156,25 @@ function createReportCardFactsPgStore(db) {
              t.name AS period_id,
              COALESCE(NULLIF(et.code, ''), NULLIF(e.evaluation_type, ''), g.grade_type) AS score_component_id,
              g.score AS score,
-             COALESCE(e.max_score, g.max_score, 20) AS max_score,
+             COALESCE(e.max_score, g.max_score) AS max_score,
              COALESCE(e.coefficient, g.coefficient, 1) AS coefficient,
              g.grade_status AS grade_status
            FROM grades g
            JOIN students st ON st.id = g.student_id AND st.school_id = g.school_id
            JOIN subjects sub ON sub.id = g.subject_id AND sub.school_id = g.school_id
            JOIN terms t ON t.id = g.term_id
+           JOIN classes c ON c.id = g.class_id AND c.school_id = g.school_id
            LEFT JOIN evaluations e ON e.id = g.evaluation_id
            LEFT JOIN evaluation_types et ON et.id = e.evaluation_type_id
            WHERE g.school_id = $1
+             AND g.class_id = $2
+             AND t.academic_year_id = $3
+             AND c.academic_year_id = $3
              AND g.publication_status = 'published'
              AND (e.id IS NULL OR e.status = 'published')`,
-          [schoolId]
+          [schoolId, classId, academicYearId]
         );
-        return aggregateCanonicalFacts(result.rows);
+        return aggregateCanonicalFacts(result.rows, { scaleByComponent });
       } catch (err) {
         if (isUndefinedRelation(err)) throw schemaUnavailable();
         throw err;
@@ -181,6 +203,7 @@ module.exports = {
   identitiesFromSnapshot,
   resolveFacts,
   aggregateCanonicalFacts,
+  scaleByComponentFromProfile,
   factKey,
   isUndefinedRelation,
 };

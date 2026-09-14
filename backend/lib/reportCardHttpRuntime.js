@@ -9,6 +9,7 @@ const {
   createReportCardFactsPgStore,
   identitiesFromSnapshot,
   resolveFacts,
+  scaleByComponentFromProfile,
   isUndefinedRelation,
 } = require("../db/reportCardFactsStore");
 const { createReportCardConfiguration } = require("./reportCard/reportCardConfiguration");
@@ -132,13 +133,14 @@ function createReportCardHttpRuntime(repository, env = process.env, overrides = 
   const factsStore =
     overrides.factsStore || (db ? createReportCardFactsPgStore(db) : null);
 
-  async function getFacts({ tenant, schoolId, reportCardId, sourceVersion } = {}) {
+  async function getFacts({ tenant, schoolId, reportCardId, sourceVersion, profile } = {}) {
     const sid = schoolId || (tenant && tenant.schoolId);
     if (!factsStore || typeof factsStore.listFacts !== "function") return null;
     if (!publication || reportCardId == null || sourceVersion == null) return null;
+    let payload = null;
     let identities = null;
     try {
-      const payload = await Promise.resolve(
+      payload = await Promise.resolve(
         publication.payloadForRender({
           tenant: { schoolId: sid, actorSchoolId: sid },
           reportCardId,
@@ -149,10 +151,22 @@ function createReportCardHttpRuntime(repository, env = process.env, overrides = 
     } catch {
       return null;
     }
-    if (!identities) return null;
+    if (!identities || !payload) return null;
+    const spec = await getProfile({ tenant: { schoolId: sid, actorSchoolId: sid }, ref: payload.provenance && payload.provenance.profile });
+    const scaleByComponent = scaleByComponentFromProfile(profile || spec);
+    if (!scaleByComponent) return null;
     let listed;
     try {
-      listed = await Promise.resolve(factsStore.listFacts({ schoolId: sid, reportCardId, sourceVersion }));
+      listed = await Promise.resolve(
+        factsStore.listFacts({
+          schoolId: sid,
+          reportCardId,
+          sourceVersion,
+          classId: payload.class_id,
+          academicYearId: payload.academic_year_id,
+          scaleByComponent,
+        })
+      );
     } catch (err) {
       if (isUndefinedRelation(err) || (err && err.code === "FACTS_REQUIRED")) return null;
       throw err;

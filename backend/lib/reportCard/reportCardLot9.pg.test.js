@@ -49,11 +49,11 @@ async function ensureIsolatedDatabase(databaseUrl, databaseName) {
   return withDatabaseName(databaseUrl, databaseName);
 }
 
-function profileSpec() {
+function profileSpec(componentMax = 20) {
   return validateProfileSpec({
     periods: ["T1", "T2"],
     annual: true,
-    score_components: [{ id: "TJ", applicability: "always", max: 20, coefficient: 1 }],
+    score_components: [{ id: "TJ", applicability: "always", max: componentMax, coefficient: 1 }],
     missing_score: "NOT_APPLICABLE_not_zero",
     rounding: { decimals: 2, mode: "half_up" },
     ranking: { enabled: false, ties: "competition" },
@@ -92,9 +92,9 @@ function fact(rawScore) {
   };
 }
 
-function computedPayload(schoolId, rawScore, provenance, reportCardId = "rc-lot9-1") {
+function computedPayload(schoolId, rawScore, provenance, reportCardId = "rc-lot9-1", scope = null, profile = null) {
   const result = computeReportCard({
-    profile: profileSpec(),
+    profile: profile || profileSpec(),
     schema: schemaSpec(),
     facts: [fact(rawScore)],
     provenance:
@@ -104,7 +104,7 @@ function computedPayload(schoolId, rawScore, provenance, reportCardId = "rc-lot9
       },
     tenant: { schoolId, actorSchoolId: schoolId },
   });
-  return {
+  const payload = {
     report_card_id: reportCardId,
     published_snapshot_version: 1,
     school_id: schoolId,
@@ -113,6 +113,9 @@ function computedPayload(schoolId, rawScore, provenance, reportCardId = "rc-lot9
     provenance: result.provenance,
     students: result.students,
   };
+  if (scope && scope.academicYearId) payload.academic_year_id = scope.academicYearId;
+  if (scope && scope.classId) payload.class_id = scope.classId;
+  return payload;
 }
 
 function listen(app) {
@@ -339,14 +342,36 @@ async function insertGrade(pool, schoolA, ctx, evaluationId, { score, maxScore =
   return row.rows[0].id;
 }
 
-function bootBindings(pool, schoolA, keys) {
+async function seedYearClass(pool, schoolA, base, { yearName, classCode, className }) {
+  const year = await pool.query(
+    "INSERT INTO academic_years (school_id, name) VALUES ($1, $2) RETURNING id",
+    [schoolA, yearName]
+  );
+  const klass = await pool.query(
+    `INSERT INTO classes (school_id, academic_year_id, class_code, name)
+     VALUES ($1, $2, $3, $4) RETURNING id`,
+    [schoolA, year.rows[0].id, classCode, className]
+  );
+  const term = await pool.query(
+    "INSERT INTO terms (academic_year_id, name) VALUES ($1, 'T1') RETURNING id",
+    [year.rows[0].id]
+  );
+  return {
+    ...base,
+    yearId: year.rows[0].id,
+    classId: klass.rows[0].id,
+    termId: term.rows[0].id,
+  };
+}
+
+function bootBindings(pool, schoolA, keys, { componentMax = 20 } = {}) {
   const profileStore = createAcademicRuleProfileStore();
   const schemaStore = createReportCardSchemaStore();
   const createdP = profileStore.createProfile({
     schoolId: schoolA,
     actorSchoolId: schoolA,
     profileKey: "lot9-pg",
-    spec: profileSpec(),
+    spec: profileSpec(componentMax),
     activate: true,
   });
   const createdS = schemaStore.createSchema({
@@ -654,7 +679,10 @@ describe("report-card-lot9 PG correction/revoke serialization", { skip: !shouldR
       registerReportCardHttp(app, bindings);
       const publication = bindings.getPublication();
       const tenant = { schoolId: schoolA, actorSchoolId: schoolA };
-      const payloadV1 = computedPayload(schoolA, 12, provenance);
+      const payloadV1 = computedPayload(schoolA, 12, provenance, "rc-lot9-1", {
+        academicYearId: year.rows[0].id,
+        classId: klass.rows[0].id,
+      });
       await publication.publish({ tenant, payload: payloadV1 });
       const v1Exposed = payloadV1.students[0].cells[0].exposed;
       await pool.query("UPDATE grades SET score = 16, updated_at = NOW() WHERE id = $1", [grade.rows[0].id]);
@@ -837,7 +865,13 @@ describe("report-card-lot9 PG correction/revoke serialization", { skip: !shouldR
       const gradeId = await insertGrade(pool, schoolA, ctx, evaluationId, { score: 12 });
       const keys = bootKeys();
       const { app, publication, tenant, provenance } = bootBindings(pool, schoolA, keys);
-      await publication.publish({ tenant, payload: computedPayload(schoolA, 12, provenance) });
+      await publication.publish({
+        tenant,
+        payload: computedPayload(schoolA, 12, provenance, "rc-lot9-1", {
+          academicYearId: ctx.yearId,
+          classId: ctx.classId,
+        }),
+      });
       assert.equal(await snapshotCount(pool, schoolA), 1);
 
       await pool.query("UPDATE grades SET publication_status = 'draft' WHERE id = $1", [gradeId]);
@@ -888,7 +922,13 @@ describe("report-card-lot9 PG correction/revoke serialization", { skip: !shouldR
       await insertGrade(pool, schoolA, ctx, evaluationId, { score: 12 });
       const keys = bootKeys();
       const { app, publication, tenant, provenance } = bootBindings(pool, schoolA, keys);
-      await publication.publish({ tenant, payload: computedPayload(schoolA, 12, provenance) });
+      await publication.publish({
+        tenant,
+        payload: computedPayload(schoolA, 12, provenance, "rc-lot9-1", {
+          academicYearId: ctx.yearId,
+          classId: ctx.classId,
+        }),
+      });
       await pool.query("ALTER TABLE grades DROP COLUMN score");
       const bound = await listen(app);
       try {
@@ -949,7 +989,10 @@ describe("report-card-lot9 PG correction/revoke serialization", { skip: !shouldR
       ).average;
       const keys = bootKeys();
       const { app, publication, tenant, provenance } = bootBindings(pool, schoolA, keys);
-      const payloadV1 = computedPayload(schoolA, 12, provenance);
+      const payloadV1 = computedPayload(schoolA, 12, provenance, "rc-lot9-1", {
+        academicYearId: ctx.yearId,
+        classId: ctx.classId,
+      });
       await publication.publish({ tenant, payload: payloadV1 });
       const bound = await listen(app);
       try {
@@ -993,6 +1036,107 @@ describe("report-card-lot9 PG correction/revoke serialization", { skip: !shouldR
         const v3Body = await v3.json();
         assert.equal(v3.status, 200);
         assert.equal(v3Body.payload.students[0].cells[0].internal, expected);
+      } finally {
+        await bound.close();
+      }
+    } finally {
+      await pool.end();
+    }
+  });
+
+  test("pg: correction uses only the source year and class not another cohort", async () => {
+    const url = await ensureIsolatedDatabase(DATABASE_URL, `${IT_DB}_scope`);
+    const pool = new Pool({ connectionString: url, max: 8 });
+    try {
+      const schoolA = await bootFresh(pool, { pedagogy: true });
+      const yearA = await seedPedagogy(pool, schoolA);
+      const yearB = await seedYearClass(pool, schoolA, yearA, {
+        yearName: "2027",
+        classCode: "5B",
+        className: "5e B",
+      });
+      const evalA = await insertEvaluation(pool, schoolA, yearA, { title: "TJ 2026" });
+      const evalB = await insertEvaluation(pool, schoolA, yearB, { title: "TJ 2027" });
+      await insertGrade(pool, schoolA, yearA, evalA, { score: 12 });
+      await insertGrade(pool, schoolA, yearB, evalB, { score: 20 });
+      const keys = bootKeys();
+      const { app, publication, tenant, provenance } = bootBindings(pool, schoolA, keys);
+      const payloadV1 = computedPayload(schoolA, 12, provenance, "rc-lot9-1", {
+        academicYearId: yearA.yearId,
+        classId: yearA.classId,
+      });
+      await publication.publish({ tenant, payload: payloadV1 });
+      await pool.query("UPDATE grades SET score = 14 WHERE evaluation_id = $1", [evalA]);
+      const bound = await listen(app);
+      try {
+        const res = await fetch(`${bound.base}/api/report-card/publications/rc-lot9-1/corrections`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            sourceVersion: 1,
+            reason: "Scope annee/classe",
+            commandId: "cmd-scope-1",
+          }),
+        });
+        const data = await res.json();
+        assert.equal(res.status, 201, JSON.stringify(data));
+        const snap = await fetch(`${bound.base}/api/report-card/publications/rc-lot9-1/versions/2`);
+        const body = await snap.json();
+        assert.equal(snap.status, 200);
+        assert.equal(body.payload.students[0].cells[0].internal, 14);
+        assert.notEqual(body.payload.students[0].cells[0].internal, 20);
+        assert.notEqual(body.payload.students[0].cells[0].internal, 17);
+        assert.equal(body.payload.academic_year_id, yearA.yearId);
+        assert.equal(body.payload.class_id, yearA.classId);
+      } finally {
+        await bound.close();
+      }
+    } finally {
+      await pool.end();
+    }
+  });
+
+  test("pg: correction aggregates on pinned profile component max not 20", async () => {
+    const url = await ensureIsolatedDatabase(DATABASE_URL, `${IT_DB}_scale`);
+    const pool = new Pool({ connectionString: url, max: 8 });
+    try {
+      const schoolA = await bootFresh(pool, { pedagogy: true });
+      const ctx = await seedPedagogy(pool, schoolA);
+      const evaluationId = await insertEvaluation(pool, schoolA, ctx, {
+        title: "TJ /10",
+        maxScore: 10,
+        coefficient: 1,
+      });
+      await insertGrade(pool, schoolA, ctx, evaluationId, { score: 8, maxScore: 10, coefficient: 1 });
+      const keys = bootKeys();
+      const { app, publication, tenant, provenance } = bootBindings(pool, schoolA, keys, { componentMax: 10 });
+      const payloadV1 = computedPayload(
+        schoolA,
+        5,
+        provenance,
+        "rc-lot9-1",
+        { academicYearId: ctx.yearId, classId: ctx.classId },
+        profileSpec(10)
+      );
+      await publication.publish({ tenant, payload: payloadV1 });
+      const bound = await listen(app);
+      try {
+        const res = await fetch(`${bound.base}/api/report-card/publications/rc-lot9-1/corrections`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            sourceVersion: 1,
+            reason: "Echelle profile 10",
+            commandId: "cmd-scale-10",
+          }),
+        });
+        const data = await res.json();
+        assert.equal(res.status, 201, JSON.stringify(data));
+        const snap = await fetch(`${bound.base}/api/report-card/publications/rc-lot9-1/versions/2`);
+        const body = await snap.json();
+        assert.equal(snap.status, 200);
+        assert.equal(body.payload.students[0].cells[0].internal, 8);
+        assert.notEqual(body.payload.students[0].cells[0].internal, 16);
       } finally {
         await bound.close();
       }
