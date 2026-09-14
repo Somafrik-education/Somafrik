@@ -744,7 +744,14 @@ async function runBrowserScenarios({ schoolAId }) {
       await openBulletinsFromNav(page);
       assert.equal(await requestModelCta(page).count(), 0, "Secrétaire READ-only ne doit pas voir le CTA de demande");
       await page.goto(`${WEB_URL}/bulletins/modele`, { waitUntil: "domcontentloaded" });
-      await page.getByRole("heading", { name: /modèle de bulletin/i }).waitFor();
+      await page.waitForURL(/\/bulletins\/?$/, { timeout: 20000 });
+      const pathname = new URL(page.url()).pathname.replace(/\/$/, "") || "/";
+      assert.equal(pathname, "/bulletins", "navigation directe READ-only doit rediriger hors /bulletins/modele");
+      assert.equal(
+        await page.getByRole("heading", { name: /modèle de bulletin/i }).count(),
+        0,
+        "la page modèle ne doit pas rester visible après refus route",
+      );
       assert.equal(await submitRequestCta(page).count(), 0, "navigation directe ne doit pas exposer la soumission");
       const token = await sessionToken(page);
       const created = await request("/report-card/requests", {

@@ -339,7 +339,7 @@ export default function App() {
         <Route
           path="/bulletins/modele"
           element={
-            <PermissionRoute view="bulletins">
+            <PermissionRoute view="bulletins" action="CREATE" fallbackPath="/bulletins">
               <ReportCardSchoolWorkflowPage />
             </PermissionRoute>
           }

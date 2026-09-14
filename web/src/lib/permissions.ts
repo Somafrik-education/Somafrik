@@ -507,6 +507,24 @@ export function canReadView(ctx: PermissionContext, viewName: string): boolean {
   return hasBackOfficePermission(ctx, VIEW_PERMISSION_FEATURES[viewName] ?? null, "READ");
 }
 
+export type ViewAccessAction = "READ" | "CREATE" | "UPDATE" | "DELETE";
+
+/**
+ * Accès route : READ = canReadView ; CREATE/UPDATE/DELETE exigent aussi le jeton
+ * métier de la vue (ex. Bulletins:CREATE pour /bulletins/modele).
+ */
+export function canAccessView(
+  ctx: PermissionContext,
+  viewName: string,
+  action: ViewAccessAction = "READ",
+): boolean {
+  if (!canReadView(ctx, viewName)) return false;
+  if (action === "READ") return true;
+  const feature = VIEW_PERMISSION_FEATURES[viewName];
+  if (!feature) return false;
+  return hasBackOfficePermission(ctx, feature, action);
+}
+
 export function hasSchoolPilotageAccess(ctx: PermissionContext): boolean {
   if (isSuperAdminRole(ctx.user?.role)) return false;
   const schoolFeatures = [

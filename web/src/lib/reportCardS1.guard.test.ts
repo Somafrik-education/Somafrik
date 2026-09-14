@@ -26,6 +26,29 @@ describe("S1 / #659 CTA non-régression", () => {
     expect(e2e).toMatch(/e2e-report-card-ready-review-school-approval-active/);
     expect(e2e).toMatch(/e2e-report-card-request-rbac-fail-closed/);
     expect(e2e).toMatch(/e2e-report-card-cross-tenant-forbidden/);
-     expect(e2e).not.toMatch(/page\.waitForTimeout\(\s*\d+/);
+    expect(e2e).not.toMatch(/page\.waitForTimeout\(\s*\d+/);
+
+    const app = readRel("web/src/App.tsx");
+    expect(app).toMatch(
+      /path="\/bulletins\/modele"[\s\S]{0,220}?PermissionRoute view="bulletins" action="CREATE" fallbackPath="\/bulletins"/,
+    );
+    expect(app).toMatch(
+      /path="\/bulletins\/historique"[\s\S]{0,180}?PermissionRoute view="bulletins">/,
+    );
+    expect(app).toMatch(
+      /path="\/bulletins"(?!\/)[\s\S]{0,180}?PermissionRoute view="bulletins">/,
+    );
+    expect(app).not.toMatch(/path="\/bulletins\/historique"[\s\S]{0,180}?action="CREATE"/);
+    expect(app).not.toMatch(/path="\/bulletins"(?!\/)[\s\S]{0,180}?action="CREATE"/);
+
+    const rbacStart = e2e.indexOf("e2e-report-card-request-rbac-fail-closed");
+    const rbacEnd = e2e.indexOf("e2e-report-card-cross-tenant-forbidden");
+    expect(rbacStart).toBeGreaterThan(-1);
+    expect(rbacEnd).toBeGreaterThan(rbacStart);
+    const rbac = e2e.slice(rbacStart, rbacEnd);
+    expect(rbac).toMatch(/page\.goto\(`\$\{WEB_URL\}\/bulletins\/modele`/);
+    expect(rbac).toMatch(/waitForURL\(\/\\\/bulletins\\\/\?\$/);
+    expect(rbac).not.toMatch(/getByRole\("heading", \{ name: \/modèle de bulletin\/i \}\)\.waitFor/);
+    expect(rbac).toMatch(/created\.status, 403/);
   });
 });
