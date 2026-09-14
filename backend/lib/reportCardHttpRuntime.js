@@ -7,8 +7,9 @@ const { createReportCardConfigurationPgStore } = require("../db/reportCardConfig
 const { createReportCardPublicationPgStore } = require("../db/reportCardPublicationPgStore");
 const {
   createReportCardFactsPgStore,
-  factsFromSnapshot,
-  overlayFacts,
+  identitiesFromSnapshot,
+  resolveFacts,
+  isUndefinedRelation,
 } = require("../db/reportCardFactsStore");
 const { createReportCardConfiguration } = require("./reportCard/reportCardConfiguration");
 const { createReportCardPublication } = require("./reportCard/reportCardPublication");
@@ -133,27 +134,30 @@ function createReportCardHttpRuntime(repository, env = process.env, overrides = 
 
   async function getFacts({ tenant, schoolId, reportCardId, sourceVersion } = {}) {
     const sid = schoolId || (tenant && tenant.schoolId);
-    let snapshotFacts = null;
-    if (publication && reportCardId != null && sourceVersion != null) {
-      try {
-        const payload = await Promise.resolve(
-          publication.payloadForRender({
-            tenant: { schoolId: sid, actorSchoolId: sid },
-            reportCardId,
-            version: Number(sourceVersion),
-          })
-        );
-        snapshotFacts = factsFromSnapshot(payload);
-      } catch {
-        snapshotFacts = null;
-      }
+    if (!factsStore || typeof factsStore.listFacts !== "function") return null;
+    if (!publication || reportCardId == null || sourceVersion == null) return null;
+    let identities = null;
+    try {
+      const payload = await Promise.resolve(
+        publication.payloadForRender({
+          tenant: { schoolId: sid, actorSchoolId: sid },
+          reportCardId,
+          version: Number(sourceVersion),
+        })
+      );
+      identities = identitiesFromSnapshot(payload);
+    } catch {
+      return null;
     }
-    let liveFacts = [];
-    if (factsStore && typeof factsStore.listFacts === "function") {
-      const listed = await Promise.resolve(factsStore.listFacts({ schoolId: sid, reportCardId, sourceVersion }));
-      if (Array.isArray(listed)) liveFacts = listed;
+    if (!identities) return null;
+    let listed;
+    try {
+      listed = await Promise.resolve(factsStore.listFacts({ schoolId: sid, reportCardId, sourceVersion }));
+    } catch (err) {
+      if (isUndefinedRelation(err) || (err && err.code === "FACTS_REQUIRED")) return null;
+      throw err;
     }
-    return overlayFacts(snapshotFacts, liveFacts);
+    return resolveFacts(identities, listed);
   }
 
   async function getProfile({ tenant, ref } = {}) {

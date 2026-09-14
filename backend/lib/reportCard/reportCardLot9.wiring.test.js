@@ -11,6 +11,7 @@ const { generateWrappingKey } = require("../../contracts/reportCard/verification
 const { createAcademicRuleProfileStore } = require("./academicRuleProfileStore");
 const { createReportCardSchemaStore } = require("./reportCardSchemaStore");
 const { specSha256 } = require("./academicRuleProfile");
+const { createMemoryFactsStore } = require("../../db/reportCardFactsStore");
 const { createReportCardHttpBindings } = require("../reportCardHttpRuntime");
 const { validateSpec: validateProfileSpec } = require("./academicRuleProfile");
 const { validateSpec: validateSchemaSpec } = require("./reportCardSchema");
@@ -85,6 +86,11 @@ test("report-card-lot9-server-js-wires-correction-resolvers", () => {
   assert.match(runtimeSrc, /getFacts/);
   assert.match(runtimeSrc, /getProfile/);
   assert.match(runtimeSrc, /getSchema/);
+  assert.equal(/liveByKey\.get\(factKey\(row\)\) \|\| row/.test(runtimeSrc), false);
+  const factsSrc = fs.readFileSync(path.join(ROOT, "backend/db/reportCardFactsStore.js"), "utf8");
+  assert.match(factsSrc, /weightedAverage/);
+  assert.match(factsSrc, /FACTS_REQUIRED/);
+  assert.match(factsSrc, /throw schemaUnavailable/);
 });
 
 test("report-card-lot9-production-wiring-corrects-to-next-version", async () => {
@@ -136,6 +142,7 @@ test("report-card-lot9-production-wiring-corrects-to-next-version", async () => 
   };
   const signingKey = generateSigningKey("rc-ed25519-1");
   const wrapping = generateWrappingKey("rc-wrap-1");
+  const factsStore = createMemoryFactsStore([{ schoolId: SCHOOL_A, facts: [fact(16)] }]);
   const env = {
     SOMAFRIK_REPORT_CARD_SIGNING_PRIVATE_KEY_PEM: signingKey.privateKey.export({ type: "pkcs8", format: "pem" }),
     SOMAFRIK_REPORT_CARD_SIGNING_KEY_ID: "rc-ed25519-1",
@@ -164,6 +171,7 @@ test("report-card-lot9-production-wiring-corrects-to-next-version", async () => 
     overrides: {
       profileStore,
       schemaStore,
+      factsStore,
       keys: { signingKey, wrapping, wrappingKeys: [wrapping], signingKeys: [signingKey] },
     },
   });
@@ -193,6 +201,7 @@ test("report-card-lot9-production-wiring-corrects-to-next-version", async () => 
     const body = await snap.json();
     assert.equal(snap.status, 200);
     assert.equal(body.payload.published_snapshot_version, 2);
+    assert.notEqual(body.payload.students[0].cells[0].exposed, payloadV1.students[0].cells[0].exposed);
     assert.deepEqual(body.payload.provenance.profile, provenance.profile);
   } finally {
     await bound.close();

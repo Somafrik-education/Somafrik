@@ -1,64 +1,117 @@
 "use strict";
 
+const { weightedAverage } = require("../lib/gradesCanonical");
+
 function factKey(row) {
   return `${row.student_id}\0${row.subject_id}\0${row.period_id}\0${row.score_component_id}`;
 }
 
-function factsFromSnapshot(payload) {
+function identitiesFromSnapshot(payload) {
   if (!payload || !Array.isArray(payload.students)) return null;
-  const facts = [];
+  const identities = [];
+  const seen = new Set();
   for (const student of payload.students) {
     if (!student || student.student_id == null || student.student_id === "") continue;
     const cells = Array.isArray(student.cells) ? student.cells : [];
     for (const cell of cells) {
       if (!cell || typeof cell !== "object") continue;
       if (!cell.subject_id || !cell.period_id || !cell.score_component_id) continue;
-      const numeric =
-        cell.internal != null && cell.internal !== ""
-          ? Number(cell.internal)
-          : cell.kind === "NUMERIC" && cell.exposed != null && cell.exposed !== ""
-            ? Number(cell.exposed)
-            : null;
-      facts.push({
+      const identity = {
         student_id: String(student.student_id),
         subject_id: String(cell.subject_id),
         period_id: String(cell.period_id),
         score_component_id: String(cell.score_component_id),
-        raw_score: Number.isFinite(numeric) ? numeric : null,
-        subject_applicable: cell.kind !== "NOT_APPLICABLE",
-      });
+      };
+      const key = factKey(identity);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      identities.push(identity);
     }
   }
-  return facts.length ? facts : null;
+  return identities.length ? identities : null;
 }
 
-function overlayFacts(snapshotFacts, liveFacts) {
-  if (!Array.isArray(snapshotFacts) || snapshotFacts.length === 0) {
-    return Array.isArray(liveFacts) && liveFacts.length ? liveFacts : null;
-  }
+function resolveFacts(identities, liveFacts) {
+  if (!Array.isArray(identities) || identities.length === 0) return null;
+  if (!Array.isArray(liveFacts)) return null;
   const liveByKey = new Map();
-  for (const row of liveFacts || []) {
+  for (const row of liveFacts) {
     if (!row) continue;
     const key = factKey(row);
     if (!liveByKey.has(key)) liveByKey.set(key, row);
   }
-  return snapshotFacts.map((row) => liveByKey.get(factKey(row)) || row);
+  const resolved = [];
+  for (const identity of identities) {
+    const live = liveByKey.get(factKey(identity));
+    if (!live) return null;
+    resolved.push({
+      student_id: identity.student_id,
+      subject_id: identity.subject_id,
+      period_id: identity.period_id,
+      score_component_id: identity.score_component_id,
+      raw_score: live.raw_score,
+      subject_applicable: live.subject_applicable !== false,
+    });
+  }
+  return resolved;
 }
 
-function mapGradeRow(row) {
-  const numeric = row.raw_score == null || row.raw_score === "" ? null : Number(row.raw_score);
+function toAverageNote(row) {
   return {
-    student_id: String(row.student_id),
-    subject_id: String(row.subject_id),
-    period_id: String(row.period_id),
-    score_component_id: String(row.score_component_id),
-    raw_score: Number.isFinite(numeric) ? numeric : null,
-    subject_applicable: row.subject_applicable !== false,
+    score: row.score,
+    value: row.score,
+    maxScore: row.max_score,
+    scale: row.max_score,
+    coefficient: row.coefficient,
+    evaluationCoefficient: row.coefficient,
+    gradeStatus: row.grade_status,
+    status: row.grade_status,
   };
 }
 
-function isUndefinedTable(err) {
+function aggregateCanonicalFacts(gradeRows, { displayScale = 20 } = {}) {
+  const groups = new Map();
+  for (const row of gradeRows || []) {
+    if (!row || !row.student_id || !row.subject_id || !row.period_id || !row.score_component_id) continue;
+    const key = factKey(row);
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(row);
+  }
+  const facts = [];
+  for (const rows of groups.values()) {
+    const identity = rows[0];
+    const { average, totalCoefficients } = weightedAverage(rows.map(toAverageNote), { displayScale });
+    if (!totalCoefficients) {
+      facts.push({
+        student_id: String(identity.student_id),
+        subject_id: String(identity.subject_id),
+        period_id: String(identity.period_id),
+        score_component_id: String(identity.score_component_id),
+        raw_score: null,
+        subject_applicable: false,
+      });
+      continue;
+    }
+    facts.push({
+      student_id: String(identity.student_id),
+      subject_id: String(identity.subject_id),
+      period_id: String(identity.period_id),
+      score_component_id: String(identity.score_component_id),
+      raw_score: average,
+      subject_applicable: true,
+    });
+  }
+  return facts;
+}
+
+function isUndefinedRelation(err) {
   return Boolean(err && (err.code === "42P01" || err.code === "42703"));
+}
+
+function schemaUnavailable() {
+  const err = new Error("FACTS_REQUIRED");
+  err.code = "FACTS_REQUIRED";
+  return err;
 }
 
 function createReportCardFactsPgStore(db) {
@@ -84,11 +137,10 @@ function createReportCardFactsPgStore(db) {
              COALESCE(NULLIF(sub.subject_code, ''), g.subject_id::text) AS subject_id,
              t.name AS period_id,
              COALESCE(NULLIF(et.code, ''), NULLIF(e.evaluation_type, ''), g.grade_type) AS score_component_id,
-             g.score AS raw_score,
-             CASE
-               WHEN g.grade_status IN ('exempt', 'excused') THEN FALSE
-               ELSE TRUE
-             END AS subject_applicable
+             g.score AS score,
+             COALESCE(e.max_score, g.max_score, 20) AS max_score,
+             COALESCE(e.coefficient, g.coefficient, 1) AS coefficient,
+             g.grade_status AS grade_status
            FROM grades g
            JOIN students st ON st.id = g.student_id AND st.school_id = g.school_id
            JOIN subjects sub ON sub.id = g.subject_id AND sub.school_id = g.school_id
@@ -96,15 +148,13 @@ function createReportCardFactsPgStore(db) {
            LEFT JOIN evaluations e ON e.id = g.evaluation_id
            LEFT JOIN evaluation_types et ON et.id = e.evaluation_type_id
            WHERE g.school_id = $1
-             AND COALESCE(g.publication_status, 'published') = 'published'
-           ORDER BY g.updated_at DESC NULLS LAST, g.created_at DESC NULLS LAST`,
+             AND g.publication_status = 'published'
+             AND (e.id IS NULL OR e.status = 'published')`,
           [schoolId]
         );
-        return result.rows
-          .filter((row) => row.student_id && row.subject_id && row.period_id && row.score_component_id)
-          .map(mapGradeRow);
+        return aggregateCanonicalFacts(result.rows);
       } catch (err) {
-        if (isUndefinedTable(err)) return [];
+        if (isUndefinedRelation(err)) throw schemaUnavailable();
         throw err;
       }
     });
@@ -128,7 +178,9 @@ function createMemoryFactsStore(seed = []) {
 module.exports = {
   createReportCardFactsPgStore,
   createMemoryFactsStore,
-  factsFromSnapshot,
-  overlayFacts,
+  identitiesFromSnapshot,
+  resolveFacts,
+  aggregateCanonicalFacts,
   factKey,
+  isUndefinedRelation,
 };

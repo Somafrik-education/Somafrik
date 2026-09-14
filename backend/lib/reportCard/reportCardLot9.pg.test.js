@@ -11,6 +11,7 @@ const { validateSpec: validateProfileSpec } = require("./academicRuleProfile");
 const { specSha256 } = require("./academicRuleProfile");
 const { validateSpec: validateSchemaSpec } = require("./reportCardSchema");
 const { computeReportCard } = require("./reportCardEngine");
+const { weightedAverage } = require("../gradesCanonical");
 const { createAcademicRuleProfileStore } = require("./academicRuleProfileStore");
 const { createReportCardSchemaStore } = require("./reportCardSchemaStore");
 const { createReportCardHttpBindings } = require("../reportCardHttpRuntime");
@@ -181,7 +182,9 @@ CREATE TABLE evaluations (
   title TEXT NOT NULL,
   evaluation_type TEXT NOT NULL DEFAULT 'TJ',
   evaluation_type_id UUID REFERENCES evaluation_types(id),
-  max_score NUMERIC(8, 2) NOT NULL DEFAULT 20
+  status TEXT NOT NULL DEFAULT 'published',
+  max_score NUMERIC(8, 2) NOT NULL DEFAULT 20,
+  coefficient NUMERIC(8, 2) NOT NULL DEFAULT 1
 );
 CREATE TABLE grades (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -246,6 +249,184 @@ function bootPublication(pool, keys) {
     store,
   });
   return { store, publication };
+}
+
+async function seedPedagogy(pool, schoolA) {
+  const year = await pool.query(
+    "INSERT INTO academic_years (school_id, name) VALUES ($1, '2026') RETURNING id",
+    [schoolA]
+  );
+  const klass = await pool.query(
+    `INSERT INTO classes (school_id, academic_year_id, class_code, name)
+     VALUES ($1, $2, '6A', '6e A') RETURNING id`,
+    [schoolA, year.rows[0].id]
+  );
+  const teacher = await pool.query(
+    "INSERT INTO teachers (school_id, teacher_code) VALUES ($1, 'ENS-1') RETURNING id",
+    [schoolA]
+  );
+  const student = await pool.query(
+    `INSERT INTO students (school_id, student_code, first_name, last_name)
+     VALUES ($1, 'STU-1', 'Ada', 'Lovelace') RETURNING id`,
+    [schoolA]
+  );
+  const subject = await pool.query(
+    "INSERT INTO subjects (school_id, subject_code, name) VALUES ($1, 'MATH', 'Maths') RETURNING id",
+    [schoolA]
+  );
+  const term = await pool.query(
+    "INSERT INTO terms (academic_year_id, name) VALUES ($1, 'T1') RETURNING id",
+    [year.rows[0].id]
+  );
+  const evalType = await pool.query(
+    "INSERT INTO evaluation_types (school_id, code, name) VALUES ($1, 'TJ', 'Travail journalier') RETURNING id",
+    [schoolA]
+  );
+  return {
+    yearId: year.rows[0].id,
+    classId: klass.rows[0].id,
+    teacherId: teacher.rows[0].id,
+    studentId: student.rows[0].id,
+    subjectId: subject.rows[0].id,
+    termId: term.rows[0].id,
+    evalTypeId: evalType.rows[0].id,
+  };
+}
+
+async function insertEvaluation(pool, schoolA, ctx, { title, coefficient = 1, maxScore = 20, status = "published" }) {
+  const row = await pool.query(
+    `INSERT INTO evaluations (
+       school_id, class_id, subject_id, teacher_id, term_id, title,
+       evaluation_type, evaluation_type_id, status, max_score, coefficient
+     ) VALUES ($1,$2,$3,$4,$5,$6,'TJ',$7,$8,$9,$10) RETURNING id`,
+    [
+      schoolA,
+      ctx.classId,
+      ctx.subjectId,
+      ctx.teacherId,
+      ctx.termId,
+      title,
+      ctx.evalTypeId,
+      status,
+      maxScore,
+      coefficient,
+    ]
+  );
+  return row.rows[0].id;
+}
+
+async function insertGrade(pool, schoolA, ctx, evaluationId, { score, maxScore = 20, coefficient = 1, publicationStatus = "published", updatedAt = "2026-09-10T00:00:00.000Z" }) {
+  const row = await pool.query(
+    `INSERT INTO grades (
+       school_id, student_id, class_id, subject_id, teacher_id, term_id, evaluation_id,
+       grade_type, score, max_score, coefficient, grade_status, publication_status, updated_at
+     ) VALUES ($1,$2,$3,$4,$5,$6,$7,'TJ',$8,$9,$10,'graded',$11,$12::timestamptz) RETURNING id`,
+    [
+      schoolA,
+      ctx.studentId,
+      ctx.classId,
+      ctx.subjectId,
+      ctx.teacherId,
+      ctx.termId,
+      evaluationId,
+      score,
+      maxScore,
+      coefficient,
+      publicationStatus,
+      updatedAt,
+    ]
+  );
+  return row.rows[0].id;
+}
+
+function bootBindings(pool, schoolA, keys) {
+  const profileStore = createAcademicRuleProfileStore();
+  const schemaStore = createReportCardSchemaStore();
+  const createdP = profileStore.createProfile({
+    schoolId: schoolA,
+    actorSchoolId: schoolA,
+    profileKey: "lot9-pg",
+    spec: profileSpec(),
+    activate: true,
+  });
+  const createdS = schemaStore.createSchema({
+    schoolId: schoolA,
+    actorSchoolId: schoolA,
+    schemaKey: "lot9-pg",
+    spec: schemaSpec(),
+    activate: true,
+  });
+  const provenance = {
+    profile: {
+      id: createdP.profile.id,
+      version: createdP.version.version,
+      spec_sha256: createdP.version.spec_sha256 || specSha256(createdP.version.spec),
+    },
+    schema: {
+      id: createdS.schema.id,
+      version: createdS.version.version,
+      spec_sha256: createdS.version.spec_sha256 || specSha256(createdS.version.spec),
+    },
+    template: { id: "TPL-1", version: 1, spec_sha256: "cc" },
+  };
+  const env = {
+    SOMAFRIK_REPORT_CARD_SIGNING_PRIVATE_KEY_PEM: keys.signingKey.privateKey.export({
+      type: "pkcs8",
+      format: "pem",
+    }),
+    SOMAFRIK_REPORT_CARD_SIGNING_KEY_ID: "rc-ed25519-1",
+    SOMAFRIK_REPORT_CARD_WRAPPING_KEY_B64: keys.wrapping.key.toString("base64"),
+    SOMAFRIK_REPORT_CARD_WRAPPING_KEY_ID: "rc-wrap-1",
+  };
+  const actor = {
+    actorId: "pg-prod",
+    actorSchoolId: schoolA,
+    permissions: ["REPORT_CARD_READ", "REPORT_CARD_REPRINT", "REPORT_CARD_CORRECT", "REPORT_CARD_REVOKE"],
+  };
+  const app = express();
+  app.use(express.json());
+  const bindings = createReportCardHttpBindings({
+    env,
+    resolveActor: () => actor,
+    getTemplate: async () => ({
+      spec: {
+        paper: "A4",
+        orientation: "portrait",
+        qr_required: true,
+        sections: [{ id: "SUBJECTS", order: 1, label: "Disciplines", source: "cells" }],
+      },
+      spec_sha256: "cc",
+    }),
+    overrides: {
+      db: pool,
+      profileStore,
+      schemaStore,
+      keys: {
+        signingKey: keys.signingKey,
+        wrapping: keys.wrapping,
+        wrappingKeys: [keys.wrapping],
+        signingKeys: [keys.signingKey],
+      },
+    },
+  });
+  const { registerReportCardHttp } = require("./reportCardHttp");
+  registerReportCardHttp(app, bindings);
+  return {
+    app,
+    bindings,
+    publication: bindings.getPublication(),
+    tenant: { schoolId: schoolA, actorSchoolId: schoolA },
+    provenance,
+  };
+}
+
+async function snapshotCount(pool, schoolA, reportCardId = "rc-lot9-1") {
+  const result = await pool.query(
+    `SELECT COUNT(*)::int AS n FROM report_card_published_snapshots
+     WHERE school_id = $1 AND report_card_id = $2`,
+    [schoolA, reportCardId]
+  );
+  return result.rows[0].n;
 }
 
 function rejectCode(err) {
@@ -641,6 +822,180 @@ describe("report-card-lot9 PG correction/revoke serialization", { skip: !shouldR
           }),
         (err) => err && err.code === "INVALID_TRANSITION"
       );
+    } finally {
+      await pool.end();
+    }
+  });
+
+  test("pg: missing unpublished or deleted live grade refuses correction", async () => {
+    const url = await ensureIsolatedDatabase(DATABASE_URL, `${IT_DB}_failclosed`);
+    const pool = new Pool({ connectionString: url, max: 8 });
+    try {
+      const schoolA = await bootFresh(pool, { pedagogy: true });
+      const ctx = await seedPedagogy(pool, schoolA);
+      const evaluationId = await insertEvaluation(pool, schoolA, ctx, { title: "Interro 1" });
+      const gradeId = await insertGrade(pool, schoolA, ctx, evaluationId, { score: 12 });
+      const keys = bootKeys();
+      const { app, publication, tenant, provenance } = bootBindings(pool, schoolA, keys);
+      await publication.publish({ tenant, payload: computedPayload(schoolA, 12, provenance) });
+      assert.equal(await snapshotCount(pool, schoolA), 1);
+
+      await pool.query("UPDATE grades SET publication_status = 'draft' WHERE id = $1", [gradeId]);
+      const bound = await listen(app);
+      try {
+        const unpublished = await fetch(`${bound.base}/api/report-card/publications/rc-lot9-1/corrections`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            sourceVersion: 1,
+            reason: "Note depubliée",
+            commandId: "cmd-unpub-1",
+          }),
+        });
+        assert.equal(unpublished.status, 400);
+        assert.equal((await unpublished.json()).error.code, "FACTS_REQUIRED");
+        assert.equal(await snapshotCount(pool, schoolA), 1);
+
+        await pool.query("UPDATE grades SET publication_status = 'published' WHERE id = $1", [gradeId]);
+        await pool.query("DELETE FROM grades WHERE id = $1", [gradeId]);
+        const deleted = await fetch(`${bound.base}/api/report-card/publications/rc-lot9-1/corrections`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            sourceVersion: 1,
+            reason: "Note supprimée",
+            commandId: "cmd-del-1",
+          }),
+        });
+        assert.equal(deleted.status, 400);
+        assert.equal((await deleted.json()).error.code, "FACTS_REQUIRED");
+        assert.equal(await snapshotCount(pool, schoolA), 1);
+      } finally {
+        await bound.close();
+      }
+    } finally {
+      await pool.end();
+    }
+  });
+
+  test("pg: schema table or column error refuses correction", async () => {
+    const url = await ensureIsolatedDatabase(DATABASE_URL, `${IT_DB}_schemaerr`);
+    const pool = new Pool({ connectionString: url, max: 8 });
+    try {
+      const schoolA = await bootFresh(pool, { pedagogy: true });
+      const ctx = await seedPedagogy(pool, schoolA);
+      const evaluationId = await insertEvaluation(pool, schoolA, ctx, { title: "Interro 1" });
+      await insertGrade(pool, schoolA, ctx, evaluationId, { score: 12 });
+      const keys = bootKeys();
+      const { app, publication, tenant, provenance } = bootBindings(pool, schoolA, keys);
+      await publication.publish({ tenant, payload: computedPayload(schoolA, 12, provenance) });
+      await pool.query("ALTER TABLE grades DROP COLUMN score");
+      const bound = await listen(app);
+      try {
+        const res = await fetch(`${bound.base}/api/report-card/publications/rc-lot9-1/corrections`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            sourceVersion: 1,
+            reason: "Colonne absente",
+            commandId: "cmd-schema-1",
+          }),
+        });
+        assert.equal(res.status, 400);
+        assert.equal((await res.json()).error.code, "FACTS_REQUIRED");
+        assert.equal(await snapshotCount(pool, schoolA), 1);
+      } finally {
+        await bound.close();
+      }
+    } finally {
+      await pool.end();
+    }
+  });
+
+  test("pg: two evaluations of the same component use weightedAverage not latest wins", async () => {
+    const url = await ensureIsolatedDatabase(DATABASE_URL, `${IT_DB}_weighted`);
+    const pool = new Pool({ connectionString: url, max: 8 });
+    try {
+      const schoolA = await bootFresh(pool, { pedagogy: true });
+      const ctx = await seedPedagogy(pool, schoolA);
+      const evalHigh = await insertEvaluation(pool, schoolA, ctx, {
+        title: "Devoir recent",
+        coefficient: 1,
+        maxScore: 20,
+      });
+      const evalWeighted = await insertEvaluation(pool, schoolA, ctx, {
+        title: "Devoir ancien",
+        coefficient: 3,
+        maxScore: 10,
+      });
+      await insertGrade(pool, schoolA, ctx, evalHigh, {
+        score: 20,
+        maxScore: 20,
+        coefficient: 1,
+        updatedAt: "2026-09-14T12:00:00.000Z",
+      });
+      await insertGrade(pool, schoolA, ctx, evalWeighted, {
+        score: 8,
+        maxScore: 10,
+        coefficient: 3,
+        updatedAt: "2026-09-01T12:00:00.000Z",
+      });
+      const expected = weightedAverage(
+        [
+          { score: 20, maxScore: 20, coefficient: 1, gradeStatus: "graded" },
+          { score: 8, maxScore: 10, coefficient: 3, gradeStatus: "graded" },
+        ],
+        { displayScale: 20 }
+      ).average;
+      const keys = bootKeys();
+      const { app, publication, tenant, provenance } = bootBindings(pool, schoolA, keys);
+      const payloadV1 = computedPayload(schoolA, 12, provenance);
+      await publication.publish({ tenant, payload: payloadV1 });
+      const bound = await listen(app);
+      try {
+        const res = await fetch(`${bound.base}/api/report-card/publications/rc-lot9-1/corrections`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            sourceVersion: 1,
+            reason: "Deux TJ",
+            commandId: "cmd-weighted-1",
+          }),
+        });
+        const data = await res.json();
+        assert.equal(res.status, 201, JSON.stringify(data));
+        const snap = await fetch(`${bound.base}/api/report-card/publications/rc-lot9-1/versions/2`);
+        const body = await snap.json();
+        assert.equal(snap.status, 200);
+        assert.equal(body.payload.students[0].cells[0].internal, expected);
+        assert.notEqual(body.payload.students[0].cells[0].internal, 20);
+        assert.notEqual(body.payload.students[0].cells[0].exposed, payloadV1.students[0].cells[0].exposed);
+
+        await pool.query(
+          `UPDATE grades SET updated_at = CASE evaluation_id
+             WHEN $1 THEN '2026-09-01T12:00:00.000Z'::timestamptz
+             ELSE '2026-09-14T12:00:00.000Z'::timestamptz
+           END`,
+          [evalHigh]
+        );
+        const retry = await fetch(`${bound.base}/api/report-card/publications/rc-lot9-1/corrections`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            sourceVersion: 2,
+            reason: "Ordre updated_at inverse",
+            commandId: "cmd-weighted-2",
+          }),
+        });
+        const retryBody = await retry.json();
+        assert.equal(retry.status, 201, JSON.stringify(retryBody));
+        const v3 = await fetch(`${bound.base}/api/report-card/publications/rc-lot9-1/versions/3`);
+        const v3Body = await v3.json();
+        assert.equal(v3.status, 200);
+        assert.equal(v3Body.payload.students[0].cells[0].internal, expected);
+      } finally {
+        await bound.close();
+      }
     } finally {
       await pool.end();
     }
