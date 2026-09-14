@@ -457,7 +457,7 @@ export function canReadView(ctx: PermissionContext, viewName: string): boolean {
     if (isSuperAdminRole(ctx.user?.role)) return false;
     return isSchoolAdminRole(ctx.user?.role);
   }
-  if (viewName === "bulletinDesign") {
+  if (viewName === "bulletinDesign" || viewName === "reportCardConfiguration") {
     return canDesignBulletins(ctx);
   }
   if (viewName === "contacts") {

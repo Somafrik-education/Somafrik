@@ -21,7 +21,7 @@ export const SUPER_ADMIN_PLATFORM_VIEWS = [
 
 export const SUPER_ADMIN_SCHOOL_SETTINGS_VIEWS = ["configuration"] as const;
 
-export const SUPER_ADMIN_BULLETIN_VIEWS = ["bulletinDesign"] as const;
+export const SUPER_ADMIN_BULLETIN_VIEWS = ["bulletinDesign", "reportCardConfiguration"] as const;
 
 export const SUPER_ADMIN_ALLOWED_VIEWS = new Set<string>([
   ...SUPER_ADMIN_PLATFORM_VIEWS,

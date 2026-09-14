@@ -204,6 +204,18 @@ export const SettingsSecurityPage = lazyPage(
   "SettingsSecurityPage",
 );
 export const BulletinDesignPage = lazyPage(() => import("./pages/BulletinDesignPage"), "BulletinDesignPage");
+export const ReportCardSchoolWorkflowPage = lazyPage(
+  () => import("./pages/ReportCardSchoolWorkflowPage"),
+  "ReportCardSchoolWorkflowPage",
+);
+export const ReportCardSuperadminWorkflowPage = lazyPage(
+  () => import("./pages/ReportCardSuperadminWorkflowPage"),
+  "ReportCardSuperadminWorkflowPage",
+);
+export const VerifyReportCardPage = lazyPage(
+  () => import("./pages/VerifyReportCardPage"),
+  "VerifyReportCardPage",
+);
 export const PresencesPage = lazyPage(() => import("./pages/PresencesPage"), "PresencesPage");
 export const GradesEvaluationsPage = lazyPage(
   () => import("./pages/GradesEvaluationsPage"),

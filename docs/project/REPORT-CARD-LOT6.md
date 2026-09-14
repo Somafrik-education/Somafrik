@@ -1,6 +1,6 @@
 # LOT 6 — Soumission établissement, configuration Superadmin, activation
 
-**Statut :** GO DEV / HOLD READY+MERGE. **LOT 7+ interdit.**  
+**Statut :** mergé. HTTP / Web / `/verify` : LOT 7.  
 **Ticket :** #639. **Prérequis :** LOT 5 mergé (`develop@074af9aa`).
 
 Workflow backend/PostgreSQL uniquement. Aucune UI Web/Mobile, aucune route publique `/verify`, aucun mint QR, aucun PDF métier dans la transaction d’activation.
@@ -30,6 +30,4 @@ La spec template ne contient pas `school_id` / `country`. Canonicalisation JCS R
 
 Pas de nouvel upload blob : la soumission porte une description/métadonnées. Réutiliser une infra fichiers existante si un artefact binaire devient nécessaire plus tard.
 
-Pas de routes HTTP dans ce lot : le service `createReportCardConfiguration` est le contrat. LOT 7 pourra exposer l’UI.
-
-**LOT 7+ interdit.**
+Pas de routes HTTP dans ce lot : le service `createReportCardConfiguration` est le contrat. L’exposition HTTP / Web / `/verify` est LOT 7.

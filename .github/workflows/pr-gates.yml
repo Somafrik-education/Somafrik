@@ -346,6 +346,10 @@ jobs:
         if: needs.scope.outputs.reportcard == 'true'
         run: npm run verify:report-card-lot6
 
+      - name: Report card LOT 7 web and public verify
+        if: needs.scope.outputs.reportcard == 'true'
+        run: npm run verify:report-card-lot7
+
       - name: Planning
         if: needs.scope.outputs.planning == 'true'
         run: |

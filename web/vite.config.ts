@@ -18,6 +18,12 @@ function webBaseRedirectPlugin(basePath: string): Plugin {
         const path = req.url?.split("?")[0] ?? "";
         const query = req.url?.includes("?") ? req.url.slice(req.url.indexOf("?")) : "";
 
+        if (path.startsWith("/verify/rc")) {
+          req.url = `${basePath}${query}`;
+          next();
+          return;
+        }
+
         if (basePath !== "/" && (path === "/" || path === basePath.slice(0, -1))) {
           res.writeHead(302, { Location: `${basePath}${query}` });
           res.end();

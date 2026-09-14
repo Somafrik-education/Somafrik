@@ -81,6 +81,14 @@ const SETTING_CARDS: SettingCard[] = [
     view: "bulletinDesign",
   },
   {
+    to: "/parametres/bulletins-configuration",
+    title: "Configuration bulletins",
+    description: "File d'attente, gabarit générique et activation du modèle de bulletin.",
+    icon: FileText,
+    status: "available",
+    view: "reportCardConfiguration",
+  },
+  {
     to: "/parametres/securite",
     title: "Sécurité",
     description: "Politique de mot de passe, PIN, session active et journal d'audit.",
@@ -147,6 +155,7 @@ const SUPERADMIN_SETTING_PATHS = new Set<string>([
   "/parametres/graphiques",
   "/parametres/securite",
   "/parametres/donnees",
+  "/parametres/bulletins-configuration",
 ]);
 const COUNTRY_ADMIN_SETTING_PATHS = new Set<string>([
   "/parametres/abonnements",

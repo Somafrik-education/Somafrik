@@ -354,7 +354,11 @@ function createReportCardPublication({
         return { ok: false, reason: "not_found" };
       }
       try {
-        return { ok: true, payload: payloadForRender(record.sealed, keyRing) };
+        return {
+          ok: true,
+          payload: payloadForRender(record.sealed, keyRing),
+          verification_status: record.verification_status,
+        };
       } catch (err) {
         return { ok: false, reason: err.code || "SNAPSHOT_SIGNATURE_INVALID" };
       }
