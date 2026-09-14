@@ -8,6 +8,9 @@
   "scripts": {
     "prestart": "node scripts/prestart-idempotency-schema.js",
     "start": "node server.js",
+    "start:demo": "node demoGateway.js",
+    "demo:reset": "node scripts/reset-demo-environment.js",
+    "verify:demo-entry-api": "node scripts/verify-demo-entry-api.js",
     "dev": "node server.js",
     "dev:memory": "node scripts/dev-memory.js",
     "dev:nodemon": "nodemon server.js",

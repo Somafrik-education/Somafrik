@@ -1,0 +1,37 @@
+name: Demo entry API
+
+on:
+  pull_request:
+    paths:
+      - 'backend/demoGateway.js'
+      - 'backend/lib/corsConfig.js'
+      - 'backend/lib/demoGatewayPolicy.js'
+      - 'backend/lib/demoResetSafety.js'
+      - 'backend/scripts/reset-demo-environment.js'
+      - 'backend/scripts/verify-demo-entry-api.js'
+      - 'backend/package.json'
+      - '.github/workflows/demo-entry-api.yml'
+  workflow_dispatch:
+
+jobs:
+  demo-entry-api:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.12.0'
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - name: Install backend dependencies
+        run: npm ci --prefix backend
+      - name: Syntax guards
+        run: |
+          node --check backend/demoGateway.js
+          node --check backend/lib/demoGatewayPolicy.js
+          node --check backend/lib/demoResetSafety.js
+          node --check backend/scripts/reset-demo-environment.js
+          node --check backend/scripts/verify-demo-entry-api.js
+      - name: Verify one-shot demo entry API
+        run: npm --prefix backend run verify:demo-entry-api
