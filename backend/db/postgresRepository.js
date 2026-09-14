@@ -1222,6 +1222,14 @@ class PostgresRepository {
     return this._mobilePushStore;
   }
 
+  getWebPushStore() {
+    if (!this._webPushStore) {
+      const { createWebPushSubscriptionsStore } = require("./webPushSubscriptionsStore");
+      this._webPushStore = createWebPushSubscriptionsStore(this);
+    }
+    return this._webPushStore;
+  }
+
   getCommunicationPreferencesStore() {
     return this;
   }
@@ -1246,6 +1254,21 @@ class PostgresRepository {
     const store = this.getMobilePushStore();
     const pushClient = createExpoPushService({ store });
     return service.sendSelfTest(store, principal, payload, pushClient);
+  }
+
+  upsertWebPushSubscription(principal, payload) {
+    const service = require("../lib/webPushSubscriptionsService");
+    return service.upsertFromSession(this.getWebPushStore(), principal, payload);
+  }
+
+  revokeCurrentWebPushSubscription(principal, payload) {
+    const service = require("../lib/webPushSubscriptionsService");
+    return service.revokeCurrentFromSession(this.getWebPushStore(), principal, payload);
+  }
+
+  webPushPublicConfig() {
+    const service = require("../lib/webPushSubscriptionsService");
+    return service.publicPushConfig();
   }
 
   /**
