@@ -268,11 +268,11 @@ test("report-card-lot10-no-lot11-plus", () => {
     "backend/lib/reportCard/country_pack_bi.js",
     "web/src/pages/ReportCardCountryPackPage.tsx",
     "Mobile/src/screens/ReportCardCountryPack.tsx",
-    "docs/project/REPORT-CARD-LOT11.md",
+    "docs/project/REPORT-CARD-LOT12.md",
   ];
   for (const rel of forbidden) {
     assert.equal(fs.existsSync(path.join(ROOT, rel)), false, rel);
   }
   const pkg = fs.readFileSync(path.join(ROOT, "package.json"), "utf8");
-  assert.equal(pkg.includes("verify:report-card-lot11"), false);
+  assert.equal(pkg.includes("verify:report-card-lot12"), false);
 });
