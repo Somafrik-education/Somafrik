@@ -848,6 +848,30 @@ test("report-card-lot6-activation-atomic", async () => {
   assert.equal(binding.rendering_template_id, active.rendering_template_id);
 });
 
+test("report-card-lot6-lookup-active-binding-no-actor-fail-closed", async () => {
+  const { api, profileStore, schemaStore } = world();
+  const approved = await toApproved(api, profileStore, schemaStore, { modelKey: "lookup" });
+  const active = await api.activate({
+    actor: superadmin(),
+    schoolId: SCHOOL_A,
+    requestId: approved.id,
+    commandId: "lookup-1",
+  });
+  const row = await api.lookupActiveBinding({ schoolId: SCHOOL_A, modelKey: "lookup" });
+  assert.equal(row.request_id, active.id);
+  assert.equal(row.profile_id, active.profile_id);
+  assert.equal(row.profile_version, active.profile_version);
+  assert.equal(row.profile_spec_sha256, active.profile_spec_sha256);
+  assert.equal(row.schema_id, active.schema_id);
+  assert.equal(row.schema_version, active.schema_version);
+  assert.equal(row.schema_spec_sha256, active.schema_spec_sha256);
+  assert.equal(row.rendering_template_id, active.rendering_template_id);
+  assert.equal(row.rendering_template_version, active.rendering_template_version);
+  assert.equal(row.rendering_template_spec_sha256, active.rendering_template_spec_sha256);
+  assert.equal(await api.lookupActiveBinding({ schoolId: SCHOOL_A, modelKey: "missing" }), null);
+  assert.equal(await api.lookupActiveBinding({ schoolId: SCHOOL_A, modelKey: "BAD KEY" }), null);
+});
+
 test("report-card-lot6-one-active-per-school-model-key", async () => {
   const { api, profileStore, schemaStore } = world();
   const first = await toApproved(api, profileStore, schemaStore, { modelKey: "shared" });

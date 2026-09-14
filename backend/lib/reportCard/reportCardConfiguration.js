@@ -794,6 +794,32 @@ function createReportCardConfiguration({
     return clone(row);
   }
 
+  async function lookupActiveBinding({ schoolId, modelKey } = {}) {
+    requireSchoolId(schoolId);
+    let key;
+    try {
+      key = requireModelKey(modelKey);
+    } catch {
+      return null;
+    }
+    const row = await persistence.getBinding(schoolId, key);
+    if (!row) return null;
+    if (
+      !row.profile_id ||
+      !Number.isInteger(Number(row.profile_version)) ||
+      !row.profile_spec_sha256 ||
+      !row.schema_id ||
+      !Number.isInteger(Number(row.schema_version)) ||
+      !row.schema_spec_sha256 ||
+      !row.rendering_template_id ||
+      !Number.isInteger(Number(row.rendering_template_version)) ||
+      !row.rendering_template_spec_sha256
+    ) {
+      return null;
+    }
+    return clone(row);
+  }
+
   async function lookupRenderingTemplateSpec({ schoolId, templateId, version } = {}) {
     requireSchoolId(schoolId);
     if (templateId == null || templateId === "" || version == null) return null;
@@ -938,6 +964,7 @@ function createReportCardConfiguration({
     getActiveBinding,
     listAudit,
     getRenderingTemplateVersion,
+    lookupActiveBinding,
     lookupRenderingTemplateSpec,
     lookupProfileSpec,
     lookupSchemaSpec,
