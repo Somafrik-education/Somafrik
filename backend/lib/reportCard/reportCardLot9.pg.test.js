@@ -15,6 +15,7 @@ const { weightedAverage } = require("../gradesCanonical");
 const { createAcademicRuleProfileStore } = require("./academicRuleProfileStore");
 const { createReportCardSchemaStore } = require("./reportCardSchemaStore");
 const { createReportCardHttpBindings } = require("../reportCardHttpRuntime");
+const { createInMemoryConfigurationPersistence } = require("./reportCardConfiguration");
 
 const DATABASE_URL = String(process.env.DATABASE_URL ?? "").trim();
 let Pool = null;
@@ -55,8 +56,10 @@ function profileSpec(componentMax = 20) {
     annual: true,
     score_components: [{ id: "TJ", applicability: "always", max: componentMax, coefficient: 1 }],
     missing_score: "NOT_APPLICABLE_not_zero",
-    rounding: { decimals: 2, mode: "half_up" },
+    rounding: { decimals: 2, mode: "half_up", stage: "display_only" },
     ranking: { enabled: false, ties: "competition" },
+    aggregation: { mode: "weighted_sum", coefficient_default: 1, percentage: "points_over_max_100" },
+    pass_rule: { metric: "PERCENTAGE", threshold: 50 },
   });
 }
 
@@ -364,9 +367,29 @@ async function seedYearClass(pool, schoolA, base, { yearName, classCode, classNa
   };
 }
 
-function bootBindings(pool, schoolA, keys, { componentMax = 20 } = {}) {
+function bootBindings(pool, schoolA, keys, { componentMax = 20, extraProfiles = [] } = {}) {
   const profileStore = createAcademicRuleProfileStore();
   const schemaStore = createReportCardSchemaStore();
+  const extraCreated = [];
+  for (const extra of extraProfiles) {
+    const extraProfile = profileStore.createProfile({
+      schoolId: schoolA,
+      actorSchoolId: schoolA,
+      profileKey: extra.profileKey,
+      spec: extra.profileSpec || profileSpec(extra.componentMax || 20),
+      activate: true,
+    });
+    const extraSchema = extra.schemaKey
+      ? schemaStore.createSchema({
+          schoolId: schoolA,
+          actorSchoolId: schoolA,
+          schemaKey: extra.schemaKey,
+          spec: extra.schemaSpec || schemaSpec(),
+          activate: true,
+        })
+      : null;
+    extraCreated.push({ profile: extraProfile, schema: extraSchema });
+  }
   const createdP = profileStore.createProfile({
     schoolId: schoolA,
     actorSchoolId: schoolA,
@@ -413,19 +436,11 @@ function bootBindings(pool, schoolA, keys, { componentMax = 20 } = {}) {
   const bindings = createReportCardHttpBindings({
     env,
     resolveActor: () => actor,
-    getTemplate: async () => ({
-      spec: {
-        paper: "A4",
-        orientation: "portrait",
-        qr_required: true,
-        sections: [{ id: "SUBJECTS", order: 1, label: "Disciplines", source: "cells" }],
-      },
-      spec_sha256: "cc",
-    }),
     overrides: {
       db: pool,
       profileStore,
       schemaStore,
+      configurationPersistence: createInMemoryConfigurationPersistence(),
       keys: {
         signingKey: keys.signingKey,
         wrapping: keys.wrapping,
@@ -442,7 +457,70 @@ function bootBindings(pool, schoolA, keys, { componentMax = 20 } = {}) {
     publication: bindings.getPublication(),
     tenant: { schoolId: schoolA, actorSchoolId: schoolA },
     provenance,
+    createdP,
+    createdS,
+    extraCreated,
+    profileStore,
+    schemaStore,
   };
+}
+
+function lot9TemplateSpec() {
+  return {
+    paper: "A4",
+    orientation: "portrait",
+    qr_required: true,
+    sections: [{ id: "SUBJECTS", order: 1, label: "Disciplines", source: "cells" }],
+  };
+}
+
+async function activateBoundModel(configuration, schoolId, { modelKey, profile, schema }) {
+  const submitter = {
+    actorId: "lot9-submit",
+    actorSchoolId: schoolId,
+    permissions: ["REPORT_CARD_SUBMIT_MODEL"],
+  };
+  const approver = {
+    actorId: "lot9-approve",
+    actorSchoolId: schoolId,
+    permissions: ["REPORT_CARD_SCHOOL_APPROVE_TEMPLATE"],
+  };
+  const superadmin = {
+    actorId: "lot9-sa",
+    permissions: ["REPORT_CARD_CONFIGURE"],
+    platform: { privileged: true },
+  };
+  const submitted = await configuration.submitModel({
+    actor: submitter,
+    schoolId,
+    modelKey,
+    description: "lot9 bundle",
+  });
+  await configuration.startReview({ actor: superadmin, schoolId, requestId: submitted.id });
+  await configuration.startConfiguring({ actor: superadmin, schoolId, requestId: submitted.id });
+  const template = await configuration.saveRenderingTemplate({
+    actor: superadmin,
+    schoolId,
+    requestId: submitted.id,
+    spec: lot9TemplateSpec(),
+  });
+  await configuration.bindBundle({
+    actor: superadmin,
+    schoolId,
+    requestId: submitted.id,
+    profile,
+    schema,
+    template: { id: template.template_id, version: template.version },
+  });
+  await configuration.markReadyForReview({ actor: superadmin, schoolId, requestId: submitted.id });
+  await configuration.approve({ actor: approver, schoolId, requestId: submitted.id });
+  const active = await configuration.activate({
+    actor: superadmin,
+    schoolId,
+    requestId: submitted.id,
+    commandId: `act-${modelKey}`,
+  });
+  return { active, template };
 }
 
 async function snapshotCount(pool, schoolA, reportCardId = "rc-lot9-1") {
@@ -1060,12 +1138,18 @@ describe("report-card-lot9 PG correction/revoke serialization", { skip: !shouldR
       await insertGrade(pool, schoolA, yearA, evalA, { score: 12 });
       await insertGrade(pool, schoolA, yearB, evalB, { score: 20 });
       const keys = bootKeys();
-      const { app, bindings, tenant } = bootBindings(pool, schoolA, keys);
+      const { app, bindings, tenant, createdP, createdS } = bootBindings(pool, schoolA, keys);
+      const boundModel = await activateBoundModel(bindings.getConfiguration(), schoolA, {
+        modelKey: "trimestriel",
+        profile: { id: createdP.profile.id, version: createdP.version.version },
+        schema: { id: createdS.schema.id, version: createdS.version.version },
+      });
       await bindings.publishInitial({
         tenant,
         reportCardId: "rc-lot9-1",
         classId: yearA.classId,
         academicYearId: yearA.yearId,
+        modelKey: "trimestriel",
       });
       await pool.query("UPDATE grades SET score = 14 WHERE evaluation_id = $1", [evalA]);
       const bound = await listen(app);
@@ -1075,6 +1159,11 @@ describe("report-card-lot9 PG correction/revoke serialization", { skip: !shouldR
         assert.equal(v1.status, 200);
         assert.equal(v1Body.payload.academic_year_id, yearA.yearId);
         assert.equal(v1Body.payload.class_id, yearA.classId);
+        assert.equal(v1Body.payload.provenance.profile.id, createdP.profile.id);
+        assert.equal(v1Body.payload.provenance.schema.id, createdS.schema.id);
+        assert.equal(v1Body.payload.provenance.template.id, boundModel.template.template_id);
+        assert.equal(v1Body.payload.provenance.template.version, boundModel.template.version);
+        assert.equal(v1Body.payload.provenance.template.spec_sha256, boundModel.template.spec_sha256);
         assert.equal(v1Body.payload.students[0].cells[0].internal, 12);
         const res = await fetch(`${bound.base}/api/report-card/publications/rc-lot9-1/corrections`, {
           method: "POST",
@@ -1117,7 +1206,12 @@ describe("report-card-lot9 PG correction/revoke serialization", { skip: !shouldR
       const evalA = await insertEvaluation(pool, schoolA, yearA, { title: "TJ 2026" });
       await insertGrade(pool, schoolA, yearA, evalA, { score: 12 });
       const keys = bootKeys();
-      const { bindings, tenant } = bootBindings(pool, schoolA, keys);
+      const { bindings, tenant, createdP, createdS } = bootBindings(pool, schoolA, keys);
+      await activateBoundModel(bindings.getConfiguration(), schoolA, {
+        modelKey: "trimestriel",
+        profile: { id: createdP.profile.id, version: createdP.version.version },
+        schema: { id: createdS.schema.id, version: createdS.version.version },
+      });
       await assert.rejects(
         () =>
           bindings.publishInitial({
@@ -1125,6 +1219,90 @@ describe("report-card-lot9 PG correction/revoke serialization", { skip: !shouldR
             reportCardId: "rc-lot9-1",
             classId: yearA.classId,
             academicYearId: yearB.yearId,
+            modelKey: "trimestriel",
+          }),
+        (err) => err && err.code === "FACTS_REQUIRED"
+      );
+      assert.equal(await snapshotCount(pool, schoolA), 0);
+    } finally {
+      await pool.end();
+    }
+  });
+
+  test("pg: production initial publish uses the requested LOT 6 binding not listProfiles rows 0", async () => {
+    const url = await ensureIsolatedDatabase(DATABASE_URL, `${IT_DB}_lot6_bundle`);
+    const pool = new Pool({ connectionString: url, max: 8 });
+    try {
+      const schoolA = await bootFresh(pool, { pedagogy: true });
+      const ctx = await seedPedagogy(pool, schoolA);
+      const evaluationId = await insertEvaluation(pool, schoolA, ctx, { title: "TJ wanted", maxScore: 10 });
+      await insertGrade(pool, schoolA, ctx, evaluationId, { score: 8, maxScore: 10 });
+      const keys = bootKeys();
+      const { app, bindings, tenant, createdP, createdS, extraCreated, profileStore, schemaStore } =
+        bootBindings(pool, schoolA, keys, {
+          componentMax: 10,
+          extraProfiles: [{ profileKey: "decoy-first", schemaKey: "decoy-first", componentMax: 20 }],
+        });
+      const decoyProfileId = extraCreated[0].profile.profile.id;
+      const decoySchemaId = extraCreated[0].schema.schema.id;
+      assert.equal(profileStore.listProfiles(schoolA, schoolA)[0].id, decoyProfileId);
+      assert.equal(schemaStore.listSchemas(schoolA, schoolA)[0].id, decoySchemaId);
+      assert.notEqual(decoyProfileId, createdP.profile.id);
+      assert.notEqual(decoySchemaId, createdS.schema.id);
+      const boundModel = await activateBoundModel(bindings.getConfiguration(), schoolA, {
+        modelKey: "trimestriel",
+        profile: { id: createdP.profile.id, version: createdP.version.version },
+        schema: { id: createdS.schema.id, version: createdS.version.version },
+      });
+      await bindings.publishInitial({
+        tenant,
+        reportCardId: "rc-lot9-1",
+        classId: ctx.classId,
+        academicYearId: ctx.yearId,
+        modelKey: "trimestriel",
+      });
+      const bound = await listen(app);
+      try {
+        const v1 = await fetch(`${bound.base}/api/report-card/publications/rc-lot9-1/versions/1`);
+        const body = await v1.json();
+        assert.equal(v1.status, 200, JSON.stringify(body));
+        assert.equal(body.payload.provenance.profile.id, createdP.profile.id);
+        assert.notEqual(body.payload.provenance.profile.id, decoyProfileId);
+        assert.equal(body.payload.provenance.schema.id, createdS.schema.id);
+        assert.notEqual(body.payload.provenance.schema.id, decoySchemaId);
+        assert.equal(body.payload.provenance.template.id, boundModel.template.template_id);
+        assert.equal(body.payload.provenance.template.version, boundModel.template.version);
+        assert.equal(body.payload.provenance.template.spec_sha256, boundModel.template.spec_sha256);
+        assert.equal(body.payload.students[0].cells[0].internal, 8);
+        assert.notEqual(body.payload.students[0].cells[0].internal, 16);
+      } finally {
+        await bound.close();
+      }
+    } finally {
+      await pool.end();
+    }
+  });
+
+  test("pg: production initial publish refuses a missing LOT 6 binding without a snapshot", async () => {
+    const url = await ensureIsolatedDatabase(DATABASE_URL, `${IT_DB}_lot6_missing`);
+    const pool = new Pool({ connectionString: url, max: 8 });
+    try {
+      const schoolA = await bootFresh(pool, { pedagogy: true });
+      const ctx = await seedPedagogy(pool, schoolA);
+      const evaluationId = await insertEvaluation(pool, schoolA, ctx, { title: "TJ unbound" });
+      await insertGrade(pool, schoolA, ctx, evaluationId, { score: 12 });
+      const keys = bootKeys();
+      const { bindings, tenant } = bootBindings(pool, schoolA, keys, {
+        extraProfiles: [{ profileKey: "decoy-first", schemaKey: "decoy-first", componentMax: 20 }],
+      });
+      await assert.rejects(
+        () =>
+          bindings.publishInitial({
+            tenant,
+            reportCardId: "rc-lot9-1",
+            classId: ctx.classId,
+            academicYearId: ctx.yearId,
+            modelKey: "trimestriel",
           }),
         (err) => err && err.code === "FACTS_REQUIRED"
       );

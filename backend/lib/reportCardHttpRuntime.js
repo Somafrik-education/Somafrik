@@ -180,8 +180,7 @@ function createReportCardHttpRuntime(repository, env = process.env, overrides = 
       ? createReportCardInitialPublication({
           publication,
           factsStore,
-          profileStore,
-          schemaStore,
+          configuration,
         })
       : null;
 
