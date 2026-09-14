@@ -40,19 +40,20 @@ test("la matrice JSON est alignée sur le markdown", () => {
   const report = readRepo(REPORT);
   assert.equal(matrix.auditId, "AUDIT-COM-MODULE-2026-09-13");
   assert.equal(matrix.originBaseSha, "1bf4a057817cb009120042a9bb7b23ba211e2269");
-  assert.equal(matrix.validationBaseSha, "2e7e8e5333ede408c4cb861f3cea16f4ce7c65fa");
+  assert.equal(matrix.validationBaseSha, "871e93ee27add59673c54d7af4fd3be08e2ceb07");
   assert.equal(matrix.auditBranch, "audit/communication-module");
   assert.match(report, /1bf4a057817cb009120042a9bb7b23ba211e2269/);
   assert.match(report, /2e7e8e5333ede408c4cb861f3cea16f4ce7c65fa/);
   assert.match(report, /a42c079d4a18b4a56277f1cd2f553329e416d3d1/);
+  assert.match(report, /871e93ee27add59673c54d7af4fd3be08e2ceb07/);
   assert.match(report, /Base d'origine/);
   assert.match(report, /Base de validation/);
-  assert.deepEqual(matrix.redTests, [
-    "AUDIT-COM-RED-04",
-    "AUDIT-COM-RED-05",
-    "AUDIT-COM-RED-06",
-  ]);
-  assert.ok(Array.isArray(matrix.closedRedTests) && matrix.closedRedTests.length >= 3);
+  assert.deepEqual(matrix.redTests, []);
+  assert.equal(matrix.severity.P0, 0);
+  assert.equal(matrix.severity.P1, 0);
+  assert.equal(matrix.severity.P2, 0);
+  assert.equal(matrix.severity.P3, 0);
+  assert.ok(Array.isArray(matrix.closedRedTests) && matrix.closedRedTests.length === 6);
   const closed01 = matrix.closedRedTests.find((row) => row.id === "AUDIT-COM-RED-01");
   assert.ok(closed01, "AUDIT-COM-RED-01 doit être dans closedRedTests");
   assert.equal(closed01.status, "GREEN");
@@ -70,11 +71,42 @@ test("la matrice JSON est alignée sur le markdown", () => {
   assert.equal(closed03.pr, 633);
   assert.equal(closed02.mergeCommit, "2e7e8e5333ede408c4cb861f3cea16f4ce7c65fa");
   assert.equal(closed03.mergeCommit, "2e7e8e5333ede408c4cb861f3cea16f4ce7c65fa");
+  const closed04 = matrix.closedRedTests.find((row) => row.id === "AUDIT-COM-RED-04");
+  const closed05 = matrix.closedRedTests.find((row) => row.id === "AUDIT-COM-RED-05");
+  const closed06 = matrix.closedRedTests.find((row) => row.id === "AUDIT-COM-RED-06");
+  assert.ok(closed04, "AUDIT-COM-RED-04 doit être dans closedRedTests");
+  assert.ok(closed05, "AUDIT-COM-RED-05 doit être dans closedRedTests");
+  assert.ok(closed06, "AUDIT-COM-RED-06 doit être dans closedRedTests");
+  assert.equal(closed04.status, "GREEN");
+  assert.equal(closed05.status, "GREEN");
+  assert.equal(closed06.status, "GREEN");
+  assert.equal(closed04.lot, "C");
+  assert.equal(closed05.lot, "C");
+  assert.equal(closed06.lot, "C");
+  assert.equal(closed04.pr, 637);
+  assert.equal(closed05.pr, 637);
+  assert.equal(closed06.pr, 637);
+  assert.equal(closed04.mergeCommit, "871e93ee27add59673c54d7af4fd3be08e2ceb07");
+  assert.equal(closed05.mergeCommit, "871e93ee27add59673c54d7af4fd3be08e2ceb07");
+  assert.equal(closed06.mergeCommit, "871e93ee27add59673c54d7af4fd3be08e2ceb07");
+  const closedPassIds = ["COM-F-07", "COM-F-09", "COM-F-19", "COM-F-28", "COM-F-34", "COM-F-35", "COM-F-39"];
+  for (const id of closedPassIds) {
+    const feature = matrix.features.find((row) => row.id === id);
+    assert.ok(feature, `${id} absent de la matrice`);
+    assert.equal(feature.verdict, "PASS", `${id} doit être PASS après #637`);
+  }
+  assert.equal(matrix.features.find((row) => row.id === "COM-F-20").verdict, "MISSING");
+  assert.equal(matrix.features.find((row) => row.id === "COM-F-21").verdict, "NOT_APPLICABLE");
+  assert.equal(matrix.features.find((row) => row.id === "COM-F-38").verdict, "MISSING");
   assert.match(report, /AUDIT-COM-RED-01/);
   assert.match(report, /AUDIT-COM-RED-02/);
   assert.match(report, /AUDIT-COM-RED-03/);
+  assert.match(report, /AUDIT-COM-RED-04/);
+  assert.match(report, /AUDIT-COM-RED-05/);
+  assert.match(report, /AUDIT-COM-RED-06/);
   assert.match(report, /#628/);
   assert.match(report, /#633/);
+  assert.match(report, /#637/);
   assert.ok(Array.isArray(matrix.features) && matrix.features.length >= 40);
   for (const feature of matrix.features) {
     assert.match(report, new RegExp(`\\| ${feature.id} \\|`), `ID ${feature.id} absent du markdown`);
@@ -87,7 +119,10 @@ test("la matrice JSON est alignée sur le markdown", () => {
     }
   }
   for (const redId of matrix.redTests) {
-    assert.match(report, new RegExp(redId), `test RED ${redId} non documenté`);
+    assert.match(report, new RegExp(redId), `test RED ouvert ${redId} non documenté`);
+  }
+  for (const row of matrix.closedRedTests) {
+    assert.match(report, new RegExp(row.id), `test RED clos ${row.id} non documenté`);
   }
 });
 

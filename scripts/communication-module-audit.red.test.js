@@ -1,12 +1,11 @@
 "use strict";
 
 /**
- * AUDIT-COM-MODULE — tests RED.
- * Chaque cas affirme le comportement métier attendu.
+ * AUDIT-COM-MODULE — tests RED devenus GREEN.
+ * Chaque cas affirme le comportement métier attendu (régression si échec).
  * Base d'origine des constats : develop@1bf4a057.
- * Base de validation (rebase / diff CTO) : develop@2e7e8e53 (Lots A #628 + B #633).
- * AUDIT-COM-RED-01/02/03 doivent passer (GREEN, Lots A+B).
- * AUDIT-COM-RED-04…06 doivent échouer : preuve des défauts encore ouverts.
+ * Base de validation (rebase / diff CTO) : develop@871e93ee (Lots A #628 + B #633 + C/P3 #637).
+ * AUDIT-COM-RED-01…06 doivent tous passer.
  */
 
 const { test } = require("node:test");
@@ -90,13 +89,18 @@ test("AUDIT-COM-RED-04 — Web Messages : mark-read rafraîchit la liste unreadC
   const loadThread = sliceBetween(
     page,
     "const loadThread = useCallback",
-    "}, [canUpdate, schoolScope, selfId]);",
+    "}, [canUpdate, schoolScope, selfId, loadConversations]);",
     "loadThread",
   );
   assert.match(
     loadThread,
-    /loadConversations/,
-    "après markRead, loadThread ne recharge pas la liste : le badge unreadCount de la carte reste stale",
+    /loadConversations\(\{\s*silent:\s*true\s*\}\)/,
+    "régression Lot C : après markRead, loadThread ne recharge plus la liste unreadCount",
+  );
+  assert.match(
+    loadThread,
+    /notifyMessagesUnreadChanged/,
+    "régression Lot C : le badge Topbar n'est plus notifié après lecture",
   );
 });
 

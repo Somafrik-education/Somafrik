@@ -5,11 +5,9 @@
  * - inventaire GREEN : doit passer
  * - tests Communication déjà livrés (parité COM-01…17, UX) : doivent passer
  * - C2/C3/C4 HTTP PG si DATABASE_URL
- * - tests RED ouverts : doivent échouer (preuve). Ensemble attendu = matrix.redTests
- *   (exactement AUDIT-COM-RED-04…06 après Lots A+B).
- * - AUDIT-COM-RED-01/02/03 doivent passer GREEN (preuves #628 + #633).
- *   Si l'un redevient rouge, le gate échoue (régression Lot A ou Lot B).
- * - Si un RED-04…06 passe, le dossier n'est plus à jour.
+ * - tests RED ouverts : matrix.redTests doit être vide après #637
+ * - AUDIT-COM-RED-01…06 doivent tous passer GREEN
+ *   (Lots A #628, B #633, C/P3 #637). Régression si l'un redevient rouge.
  */
 
 const assert = require("node:assert/strict");
@@ -20,6 +18,15 @@ const { spawnSync } = require("node:child_process");
 const ROOT = path.resolve(__dirname, "..");
 const MATRIX_PATH = path.join(ROOT, "docs/audits/evidence/communication-module-audit-matrix.json");
 const RESULTS_PATH = path.join(ROOT, "docs/audits/evidence/communication-module-audit-test-results.json");
+
+const ALL_RED_IDS = [
+  "AUDIT-COM-RED-01",
+  "AUDIT-COM-RED-02",
+  "AUDIT-COM-RED-03",
+  "AUDIT-COM-RED-04",
+  "AUDIT-COM-RED-05",
+  "AUDIT-COM-RED-06",
+];
 
 function readMatrix() {
   return JSON.parse(fs.readFileSync(MATRIX_PATH, "utf8"));
@@ -72,13 +79,13 @@ function main() {
   const closedRed = (matrix.closedRedTests || []).map((row) => row.id).sort();
   assert.deepEqual(
     expectedRed,
-    ["AUDIT-COM-RED-04", "AUDIT-COM-RED-05", "AUDIT-COM-RED-06"],
-    "l'ensemble RED attendu doit être exactement RED-04…06 après Lots A+B",
+    [],
+    "aucun RED ouvert après merge #637 : matrix.redTests doit être vide",
   );
   assert.deepEqual(
     closedRed,
-    ["AUDIT-COM-RED-01", "AUDIT-COM-RED-02", "AUDIT-COM-RED-03"],
-    "RED-01/02/03 doivent être clos GREEN dans la matrice (Lots A+B)",
+    ALL_RED_IDS,
+    "RED-01…06 doivent être clos GREEN dans la matrice (Lots A+B+#637)",
   );
   const results = {
     auditId: matrix.auditId,
@@ -128,47 +135,23 @@ function main() {
   const passedIds = parsePassedTestIds(redOutput);
   results.redFailedIds = failedIds;
   results.redPassedIds = passedIds;
-  results.auditRed = red.status === 0 ? "UNEXPECTED_PASS" : "FAIL_AS_EXPECTED";
-
-  const unexpectedPass = expectedRed.filter((id) => !failedIds.includes(id));
-  const extraFail = failedIds.filter((id) => !expectedRed.includes(id));
-  results.redUnexpectedPass = unexpectedPass;
-  results.redMissingFail = unexpectedPass;
+  results.auditRed = red.status === 0 && failedIds.length === 0 ? "GREEN" : "REGRESSION";
+  results.redUnexpectedPass = [];
+  results.redMissingFail = [];
 
   fs.mkdirSync(path.dirname(RESULTS_PATH), { recursive: true });
   fs.writeFileSync(RESULTS_PATH, `${JSON.stringify(results, null, 2)}\n`);
 
-  const expectedGreen = ["AUDIT-COM-RED-01", "AUDIT-COM-RED-02", "AUDIT-COM-RED-03"];
-  if (red.status === 0) {
-    throw new Error(
-      "Tous les tests RED Communication sont verts. Mettre à jour le rapport (verdicts PASS) avant de retirer le lock RED-04…06.",
-    );
-  }
-  for (const id of expectedGreen) {
-    assert.ok(
-      passedIds.includes(id),
-      `${id} doit passer GREEN (Lots A #628 / B #633). Régression si absent des PASS.`,
-    );
-    assert.ok(
-      !failedIds.includes(id),
-      `${id} redevient rouge : régression Lot A ou Lot B, dossier d'audit invalide.`,
-    );
-  }
+  assert.equal(red.status, 0, "AUDIT-COM-RED-01…06 doivent tous passer GREEN après #637");
+  assert.deepEqual(failedIds, [], `RED en régression : ${failedIds.join(", ")}`);
   assert.deepEqual(
-    unexpectedPass,
-    [],
-    `RED attendus non observés (défaut peut-être corrigé, mettre à jour l'audit) : ${unexpectedPass.join(", ")}`,
+    passedIds,
+    ALL_RED_IDS,
+    `RED GREEN attendus : ${ALL_RED_IDS.join(", ")} ; observés : ${passedIds.join(", ")}`,
   );
-  assert.deepEqual(
-    extraFail,
-    [],
-    `RED inattendus : ${extraFail.join(", ")}`,
-  );
-  assert.deepEqual(failedIds, expectedRed, "l'ensemble des RED échoués doit être exactement RED-04…06");
 
-  console.log("Audit Communication — inventaire GREEN + RED verrouillés.");
-  console.log(`RED GREEN : ${passedIds.join(", ") || "(aucun)"}`);
-  console.log(`RED échoués (preuve) : ${failedIds.join(", ")}`);
+  console.log("Audit Communication — inventaire GREEN + RED-01…06 GREEN.");
+  console.log(`RED GREEN : ${passedIds.join(", ")}`);
 }
 
 main();

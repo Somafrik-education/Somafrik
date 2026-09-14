@@ -1,8 +1,10 @@
 # Audit module Communication
 
-**Mandat :** audit fonctionnel, technique et de non-régression — Web + Mobile natif Expo/React Native.  
-**Cette PR reste un dossier d’audit.** Lots A (#628) et B (#633) sont mergés sur `develop` ; les lots C–D ne sont pas implémentés ici.  
-**Décision :** HOLD — #625 Draft. Aucun merge. Aucun Lot C tant que cette réconciliation n’est pas validée par un diff CTO.
+**Mandat :** audit fonctionnel, technique et de non-régression — Web + Mobile natif Expo/React Native.
+
+**Cette PR reste un dossier d’audit.** Lots A (#628), B (#633) et C/P3 (#637) sont mergés sur `develop`. Aucun nouveau lot métier.
+
+**Décision :** HOLD — #625 Draft. Aucun merge de ce dossier sans diff GitHub indépendant CTO.
 
 | Élément | Valeur |
 | --- | --- |
@@ -10,11 +12,12 @@
 | Branche | `audit/communication-module` |
 | Base | `develop` |
 | Base d'origine (constats initiaux) | `1bf4a057817cb009120042a9bb7b23ba211e2269` |
-| Base de validation (diff CTO / rebase) | `2e7e8e5333ede408c4cb861f3cea16f4ce7c65fa` |
+| Base de validation (diff CTO / rebase) | `871e93ee27add59673c54d7af4fd3be08e2ceb07` |
 | Preuve Lot A | PR #628, merge `a42c079d4a18b4a56277f1cd2f553329e416d3d1` |
 | Preuve Lot B | PR #633, merge `2e7e8e5333ede408c4cb861f3cea16f4ce7c65fa` |
+| Preuve Lot C / P3 | PR #637, merge `871e93ee27add59673c54d7af4fd3be08e2ceb07` |
 | PR | https://github.com/Somafrik-education/Somafrik/pull/625 |
-| Date | 13 septembre 2026 |
+| Date | 14 septembre 2026 |
 | Périmètre | Messages (C2), Annonces (C3), Notifications internes (C4), préférences canal, frontière notifications. Hors correction Finance / Scolarité / Pédagogie / Paramètres / Auth. |
 
 **Synthèse**
@@ -23,30 +26,30 @@
 | --- | ---: |
 | **P0** | 0 |
 | **P1** | 0 |
-| **P2** | 3 |
-| **P3** | 2 |
+| **P2** | 0 |
+| **P3** | 0 |
 
-L’API PostgreSQL C2/C3/C4 est isolée par `school_id`, persistante, et déjà couverte par les tests HTTP PG. **COM-F-04 / AUDIT-COM-RED-01 est GREEN** (composer de réponse dans le modal Mobile, Lot A #628). **COM-F-23 / AUDIT-COM-RED-02 et COM-F-33 / AUDIT-COM-RED-03 sont GREEN** (Ouvrir/Lire Mobile + allowlist push Communication, Lot B #633). Les écarts ouverts restants sont **côté clients** : pagination C2/C3 ignorée (Web + Mobile), badge non-lu Web stale après ouverture.
+L’API PostgreSQL C2/C3/C4 est isolée par `school_id`, persistante, et déjà couverte par les tests HTTP PG. **AUDIT-COM-RED-01…06 sont GREEN** : Lot A #628 (réponse modal Mobile), Lot B #633 (Ouvrir/Lire Mobile + allowlist push), Lot C/P3 #637 (unread Web, pagination C2/C3 Web+Mobile, header trio Mobile, copies HTTP Web). Restent **volontairement hors chantier** : COM-F-20 MISSING (PATCH annonce UI), COM-F-21 NOT_APPLICABLE (hard DELETE), COM-F-38 MISSING (catalogue plateforme Mobile, #577).
 
 ---
 
 ## 1. Gouvernance
 
 - Branche dédiée `audit/communication-module` créée depuis `develop@1bf4a057` (base d'origine des constats).
-- Rebase de validation sur `develop@2e7e8e53` (socle courant : Lot A #628 + Lot B #633). Aucun fichier métier Communication ajouté. LOT C HOLD.
-- PR Draft uniquement. **Aucun merge. Aucun Lot C pendant cette réconciliation.**
+- Rebase de validation sur `develop@871e93ee` (socle courant : Lot A #628 + Lot B #633 + Lot C/P3 #637). Aucun fichier métier Communication ajouté dans cette PR.
+- PR Draft uniquement. **Aucun merge de #625 sans diff GitHub indépendant CTO.** Aucun nouveau lot métier.
 - Aucun changement hors dossier d’audit / tests RED / gate CI.
 - Aucune migration PostgreSQL.
 - Aucun contournement RBAC.
 - Aucun test existant désactivé ou affaibli.
-- Tests RED ouverts = preuve du défaut (`RED → preuve`). Ils doivent échouer tant que le défaut n’est pas corrigé dans un lot ultérieur. Ensemble attendu : **AUDIT-COM-RED-04…06**.
-- `AUDIT-COM-RED-01` est **GREEN** (Lot A #628, merge `a42c079d`). `AUDIT-COM-RED-02` et `AUDIT-COM-RED-03` sont **GREEN** (Lot B #633, merge `2e7e8e53`). Le gate échoue si RED-01/02/03 redeviennent rouges.
+- Tests RED ouverts : **aucun** (`matrix.redTests = []`). `AUDIT-COM-RED-01…06` sont **GREEN**. Le gate échoue si l’un redevient rouge.
+- `AUDIT-COM-RED-01` GREEN (Lot A #628, merge `a42c079d`). `AUDIT-COM-RED-02` / `AUDIT-COM-RED-03` GREEN (Lot B #633, merge `2e7e8e53`). `AUDIT-COM-RED-04` / `AUDIT-COM-RED-05` / `AUDIT-COM-RED-06` GREEN (Lot C #637, merge `871e93ee`).
 - **Aucun merge sans diff GitHub indépendant CTO.**
 
 Contrôle CTO avant Ready/Merge futur :
 
 1. HEAD SHA figé.
-2. CI verte (après lots GREEN, pas sur cette PR RED).
+2. CI verte (inventaire + RED-01…06 GREEN + C2/C3/C4).
 3. PR mergeable.
 4. Périmètre = audit Communication uniquement.
 5. Diff GitHub indépendant `develop...HEAD`.
@@ -88,9 +91,9 @@ Chaîne Annonces :
 | COM-F-04 | Messages — réponse au fil | PASS | PASS | PASS | PASS | PASS | PASS | PASS |
 | COM-F-05 | Messages — destinataires autorisés / interdits | PASS | PASS | PASS | PASS | PASS | PASS | PASS |
 | COM-F-06 | Messages — pièces jointes | PASS | PASS | PASS | PASS | PASS | PASS | PASS |
-| COM-F-07 | Messages — lu / non-lu | PARTIAL | PASS | PASS | PASS | PASS | FAIL | PARTIAL |
+| COM-F-07 | Messages — lu / non-lu | PASS | PASS | PASS | PASS | PASS | PASS | PASS |
 | COM-F-08 | Messages — recherche et filtre Tous/Non lus | PASS | PASS | NOT_APPLICABLE | NOT_APPLICABLE | PASS | PASS | PASS |
-| COM-F-09 | Messages — pagination serveur nextCursor | FAIL | FAIL | PASS | PASS | PASS | FAIL | FAIL |
+| COM-F-09 | Messages — pagination serveur nextCursor | PASS | PASS | PASS | PASS | PASS | PASS | PASS |
 | COM-F-10 | Messages — persistance après refresh | PASS | PASS | PASS | PASS | PASS | PASS | PASS |
 | COM-F-11 | Annonces — liste | PASS | PASS | PASS | PASS | PASS | PASS | PASS |
 | COM-F-12 | Annonces — ouverture détail | PASS | PASS | PASS | PASS | PASS | PASS | PASS |
@@ -100,7 +103,7 @@ Chaîne Annonces :
 | COM-F-16 | Annonces — pièces jointes | PASS | PASS | PASS | PASS | PASS | PASS | PASS |
 | COM-F-17 | Annonces — lu / non-lu | PASS | PASS | PASS | PASS | PASS | PASS | PASS |
 | COM-F-18 | Annonces — recherche et filtre | PASS | PASS | NOT_APPLICABLE | NOT_APPLICABLE | PASS | PASS | PASS |
-| COM-F-19 | Annonces — pagination serveur nextCursor | FAIL | FAIL | PASS | PASS | PASS | FAIL | FAIL |
+| COM-F-19 | Annonces — pagination serveur nextCursor | PASS | PASS | PASS | PASS | PASS | PASS | PASS |
 | COM-F-20 | Annonces — modification titre/corps (PATCH) | MISSING | MISSING | PASS | PASS | PASS | PASS | MISSING |
 | COM-F-21 | Messages / Annonces — suppression hard DELETE | NOT_APPLICABLE | NOT_APPLICABLE | NOT_APPLICABLE | NOT_APPLICABLE | NOT_APPLICABLE | NOT_APPLICABLE | NOT_APPLICABLE |
 | COM-F-22 | Notifications internes C4 — liste | PASS | PASS | PASS | PASS | PASS | PASS | PASS |
@@ -109,18 +112,18 @@ Chaîne Annonces :
 | COM-F-25 | Notifications internes — archivage | PASS | PASS | PASS | PASS | PASS | PASS | PASS |
 | COM-F-26 | Notifications internes — pagination nextCursor | PASS | PASS | PASS | PASS | PASS | PASS | PASS |
 | COM-F-27 | Notifications internes — pièces jointes | PASS | PASS | PASS | PASS | PASS | PASS | PASS |
-| COM-F-28 | Chrome module Communication | PASS | PARTIAL | NOT_APPLICABLE | NOT_APPLICABLE | PASS | PASS | PARTIAL |
+| COM-F-28 | Chrome module Communication | PASS | PASS | NOT_APPLICABLE | NOT_APPLICABLE | PASS | PASS | PASS |
 | COM-F-29 | Isolation établissement school_id | PASS | PASS | PASS | PASS | PASS | PASS | PASS |
 | COM-F-30 | RBAC Messages / Annonces / Notifications | PASS | PASS | PASS | PASS | PASS | PASS | PASS |
 | COM-F-31 | Événement notification depuis message créé | PASS | PASS | PASS | PASS | PASS | PASS | PASS |
 | COM-F-32 | Événement notification depuis annonce publiée | PASS | PASS | PASS | PASS | PASS | PASS | PASS |
 | COM-F-33 | Deep link / push vers Communication | PASS | PASS | PASS | NOT_APPLICABLE | PASS | PASS | PASS |
-| COM-F-34 | Cohérence Web → Mobile (même SoT PostgreSQL) | PASS | PARTIAL | PASS | PASS | PASS | PARTIAL | PARTIAL |
-| COM-F-35 | Cohérence Mobile → Web (création / réponse) | PASS | PARTIAL | PASS | PASS | PASS | PARTIAL | PARTIAL |
+| COM-F-34 | Cohérence Web → Mobile (même SoT PostgreSQL) | PASS | PASS | PASS | PASS | PASS | PASS | PASS |
+| COM-F-35 | Cohérence Mobile → Web (création / réponse) | PASS | PASS | PASS | PASS | PASS | PASS | PASS |
 | COM-F-36 | Préférences canal IN_APP / PUSH / EMAIL | PASS | PASS | PASS | PASS | PASS | PASS | PASS |
 | COM-F-37 | Annonces plateforme | PASS | PASS | PASS | PASS | PASS | PASS | PASS |
 | COM-F-38 | Notifications plateforme (catalogue legacy) | PASS | MISSING | PASS | PASS | PASS | PASS | MISSING |
-| COM-F-39 | États loading / empty / error + API 401/403/404 | PARTIAL | PASS | PASS | NOT_APPLICABLE | PASS | PARTIAL | PARTIAL |
+| COM-F-39 | États loading / empty / error + API 401/403/404 | PASS | PASS | PASS | NOT_APPLICABLE | PASS | PASS | PASS |
 | COM-F-40 | Validation champs obligatoires (message / titre) | PASS | PASS | PASS | PASS | PASS | PASS | PASS |
 
 ---
@@ -160,89 +163,69 @@ Chaîne Annonces :
 | Observé (après Lot B) | `ALLOWED_PUSH_DESTINATIONS` inclut `Home`, `StudentPayments`, `Messages`, `Announcements`, `InternalNotifications`. Fan-out mappe conversation/annonce vers ces destinations Expo. |
 | Reco | Clos. Ne pas étendre l’allowlist au-delà des routes Communication déjà RBAC. |
 
-### AUDIT-COM-P2-02 — COM-F-07 — Badge non-lu Web stale après ouverture du fil
+### AUDIT-COM-P2-02 — COM-F-07 — Badge non-lu Web stale après ouverture du fil — **CORRIGÉ / GREEN**
 
 | | |
 | --- | --- |
-| Sévérité | **P2** |
+| Sévérité | **P2** (clos) |
 | Test RED | `AUDIT-COM-RED-04` |
+| Statut | **GREEN** — Lot C PR #637, merge `871e93ee27add59673c54d7af4fd3be08e2ceb07` |
 | Attendu | Ouvrir un fil marque les messages lus **et** la liste / le chrome reflètent `unreadCount` à jour (sans F5). |
-| Observé | `loadThread` appelle `messagesApi.markRead` puis **ne** rappelle **pas** `loadConversations`. La carte conserve son badge jusqu’au prochain chargement manuel. L’API et PostgreSQL (`school_message_reads`) sont corrects (C2-04). |
-| Reproduction | 1. Admin, conversation avec unreadCount ≥ 1. 2. Cliquer la conversation. 3. Le fil se charge, mark-read part. 4. Le badge liste reste inchangé. 5. Refresh navigateur → badge OK. |
-| Rôle | `Messages:UPDATE` (mark-read) |
-| Tenant | école courante |
-| Endpoint | `PATCH /api/backoffice/messages/:id/read` |
-| Code | `web/src/pages/MessagesConversationsPage.tsx` `loadThread` |
-| Reco | Lot C (non implémenté ici) — après mark-read, `loadConversations()` + refresh unread-count Topbar. |
+| Observé (après #637) | `loadThread` appelle `messagesApi.markRead` puis `loadConversations({ silent: true })` et `notifyMessagesUnreadChanged()`. Dépendances : `[canUpdate, schoolScope, selfId, loadConversations]`. Les hooks unread Web conservent le dernier compteur connu en cas d’échec de refresh. |
+| Reco | Clos. Ne pas affaiblir le lock RED-04 (deps sans `loadConversations`). |
 
-### AUDIT-COM-P2-03 — COM-F-09 — Pagination Messages ignorée Web et Mobile
+### AUDIT-COM-P2-03 — COM-F-09 — Pagination Messages ignorée Web et Mobile — **CORRIGÉ / GREEN**
 
 | | |
 | --- | --- |
-| Sévérité | **P2** |
+| Sévérité | **P2** (clos) |
 | Test RED | `AUDIT-COM-RED-05`, `AUDIT-COM-RED-06` |
+| Statut | **GREEN** — Lot C PR #637, merge `871e93ee27add59673c54d7af4fd3be08e2ceb07` |
 | Attendu | Si `nextCursor` est renvoyé, l’UI charge la page suivante (comme C4). |
-| Observé | L’API C2 pagine (`communicationsMessagesService.listConversations`). Web `listConversations("")` et Mobile `getCanonicalConversations` n’envoient pas `cursor`. Conversations au-delà de la première page **invisibles**. |
-| Reproduction | Jeu > limite serveur de conversations. Première page seulement. |
-| Rôle | `Messages:READ` |
-| Tenant | école courante |
-| Endpoint | `GET /api/backoffice/conversations?cursor=` |
-| Code | `MessagesConversationsPage.tsx`, `MessagesScreen.tsx`, `domainHydrationApi.ts` |
-| Reco | Lot C (non implémenté ici) — bouton « Charger les conversations plus anciennes » branché sur `nextCursor`. |
+| Observé (après #637) | Web `MessagesConversationsPage` et Mobile `MessagesScreen` consomment `nextCursor`. Fusion des conversations par id. Scope école préservé (`withCommunicationSchoolScope` Mobile ; pas de `effectiveSchoolCode` sur le chemin plateforme). |
+| Reco | Clos. |
 
-### AUDIT-COM-P2-04 — COM-F-19 — Pagination Annonces ignorée Web et Mobile
+### AUDIT-COM-P2-04 — COM-F-19 — Pagination Annonces ignorée Web et Mobile — **CORRIGÉ / GREEN**
 
 | | |
 | --- | --- |
-| Sévérité | **P2** |
+| Sévérité | **P2** (clos) |
 | Test RED | `AUDIT-COM-RED-05`, `AUDIT-COM-RED-06` |
+| Statut | **GREEN** — Lot C PR #637, merge `871e93ee27add59673c54d7af4fd3be08e2ceb07` |
 | Attendu | Même contrat que C4 / C2. |
-| Observé | `communicationsAnnouncementsService` expose `nextCursor`. `AnnouncementsPage` et `AnnouncementsScreen` / `getCanonicalAnnouncements` l’ignorent. |
-| Reproduction | Publier plus d’annonces que la limite de page. |
-| Rôle | `Announcements:READ` |
-| Tenant | école courante |
-| Endpoint | `GET /api/backoffice/announcements?cursor=` |
-| Code | `web/src/pages/AnnouncementsPage.tsx`, `Mobile/src/screens/AnnouncementsScreen.tsx` |
-| Reco | Lot C (non implémenté ici) — même pattern que C4. |
+| Observé (après #637) | `AnnouncementsPage` et `AnnouncementsScreen` consomment `nextCursor`. Fusion par `source-id` / `${source}-${id}`. |
+| Reco | Clos. |
 
-### AUDIT-COM-P2-05 — COM-F-34 / COM-F-35 — Parité Web ↔ Mobile partielle
+### AUDIT-COM-P2-05 — COM-F-34 / COM-F-35 — Parité Web ↔ Mobile partielle — **CORRIGÉ / GREEN**
 
 | | |
 | --- | --- |
-| Sévérité | **P2** |
+| Sévérité | **P2** (clos) |
 | Test RED | pagination `AUDIT-COM-RED-05` / `AUDIT-COM-RED-06` |
+| Statut | **GREEN** — Lot C PR #637, merge `871e93ee27add59673c54d7af4fd3be08e2ceb07` |
 | Attendu | Même titre, contenu, auteur, destinataires, date, état, thread après création Web ou Mobile et après refresh. |
-| Observé | **SoT unique PostgreSQL : OK** (mêmes endpoints C2/C3/C4). Une création Web est relue par Mobile (`GET /conversations`). Une création Mobile (`POST /messages`) est relue par Web. Réponse in-thread Mobile : **GREEN** (Lot A #628). Ouvrir C4 Mobile : **GREEN** (Lot B #633). **Écart restant :** pagination C2/C3 ignorée Web+Mobile (volume > première page). Pas de second état métier. |
-| Reproduction | Scénario A : créer conversation Web, pull-to-refresh Mobile → mêmes champs. Scénario B : répondre depuis le modal Mobile → GREEN. Scénario C : jeu > limite serveur → pages suivantes invisibles. |
-| Rôle | `Messages:READ` + `CREATE` |
-| Tenant | même `school_id` |
-| Endpoint | `GET/POST /conversations`, `POST /messages` |
-| Code | pages/écrans C2 cités |
-| Reco | Lot C. Pas de nouveau backend. Pas dans cette PR. |
+| Observé (après #637) | SoT unique PostgreSQL inchangé. Réponse in-thread Mobile GREEN (#628). Ouvrir C4 Mobile GREEN (#633). Pagination C2/C3 Web+Mobile GREEN (#637). Pas de second état métier. |
+| Reco | Clos. Les E2E runtime Expo / Playwright restent hors couverture automatique (volontaire). |
 
-### AUDIT-COM-P3-01 — COM-F-28 — `CommunicationHeaderIcons` non monté
+### AUDIT-COM-P3-01 — COM-F-28 — `CommunicationHeaderIcons` non monté — **CORRIGÉ / GREEN**
 
 | | |
 | --- | --- |
-| Sévérité | **P3** |
-| Test RED | (couverture parité COM-16/17 déjà GREEN pour Menu + chrome ; pas de nouveau RED : le chrome écran existe) |
+| Sévérité | **P3** (clos) |
+| Statut | **GREEN** — P3 PR #637, merge `871e93ee27add59673c54d7af4fd3be08e2ceb07` |
 | Attendu | Raccourcis Messages / Annonces / Notifications visibles (Web Topbar oui). |
-| Observé | Mobile : chrome **sur les 3 écrans** + Menu + drawer. Le composant `CommunicationHeaderIcons` n’est **pas** monté dans le header live (une cloche unique). Pas de no-op visible. |
-| Reproduction | Ouvrir n’importe quel écran hors Communication : pas de trio d’icônes. |
-| Rôle | school roles |
-| Code | `Mobile/src/components/CommunicationHeaderIcons.tsx` |
-| Reco | Lot D optionnel — monter le trio ou supprimer le composant mort. Pas un P1. |
+| Observé (après #637) | `CommunicationHeaderIcons` monté dans le `MobileAppHeader` live (`variant="header"`). Trio Messages / Annonces / InternalNotifications. Compact slot 44 + 3×36 (`HEADER_ACTIONS_SLOT_DP`). Home **n’importe pas** `CommunicationHeaderIcons` (#577 : InternalNotifications-only, pas `canPlatformNotifications`). |
+| Reco | Clos. Ne pas réactiver le catalogue plateforme Mobile. |
 
-### AUDIT-COM-P3-02 — COM-F-39 — 401/403/404 sans branche UI dédiée (Web)
+### AUDIT-COM-P3-02 — COM-F-39 — 401/403/404 sans branche UI dédiée (Web) — **CORRIGÉ / GREEN**
 
 | | |
 | --- | --- |
-| Sévérité | **P3** |
+| Sévérité | **P3** (clos) |
+| Statut | **GREEN** — P3 PR #637, merge `871e93ee27add59673c54d7af4fd3be08e2ceb07` |
 | Attendu | Messages utilisateur FR distincts pour 401/403/404/409/500. |
-| Observé | Messages/Annonces/C4 : Loading / Empty / Error + **Réessayer** en français. Les codes HTTP sont aplatis en `ApiError.message` (souvent FR API). Pas de branche visuelle par statut. Plateforme notifications : toast seulement, pas de bandeau loading. |
-| Reproduction | Forcer 403 sur `GET /conversations` → ErrorState « … » + Réessayer, pas « Accès refusé » générique dédié. |
-| Code | pages Communication Web |
-| Reco | Lot D — cartographie des codes déjà renvoyés par l’API (C2 400/403/404) vers copies FR stables. |
+| Observé (après #637) | `communicationHttpError.ts` + `CommunicationHttpErrorState` : copies FR distinctes, `HTTP nnn` visible + `data-http-status`. 403/401 → `ForbiddenState` « Accès refusé ». Câblé Messages, Annonces, InternalNotificationsCenter. `PlatformNotificationsPage` affiche `LoadingState` « Chargement des notifications plateforme… » pendant le loading DataContext. Mobile `PlatformNotifications` **non** réactivé (#577). |
+| Reco | Clos. |
 
 ### PARTIAL connexes (pas de nouveau défaut causal)
 
@@ -267,7 +250,7 @@ Classement (aucun n’est désactivé par cet audit) :
 | Mobile | `pariteCommunication.red.test.ts` COM-10…17 (GREEN), UX fil+modal, C4 cursor, school scope | conversations, menu, chrome |
 | E2E scripts | `verify-communications-c2/c3/c4/e2e.js` | gates CI existantes |
 | Notifications | `InternalNotificationsCenter.navigation.red.test.tsx` (Web Ouvrir), `communicationsNavigation*.test.js`, `financeNotificationNavigation.test.ts`, `announcementsOpenById.test.ts` | Web + Mobile Ouvrir Communication (Lot B) |
-| Cet audit | `scripts/communication-module-audit.inventory.test.js` (GREEN), `scripts/communication-module-audit.red.test.js` (RED lock) | inventaire + preuves P1/P2 |
+| Cet audit | `scripts/communication-module-audit.inventory.test.js` (GREEN), `scripts/communication-module-audit.red.test.js` (RED-01…06 GREEN) | inventaire + preuves Lots A+B+#637 |
 
 Scénarios du mandat §11 vs couverture :
 
@@ -298,10 +281,11 @@ Scénarios du mandat §11 vs couverture :
 - Pas d’E2E Playwright Web Communication (création → refresh → lecture).
 - Pas d’E2E Expo runtime (hors `recette/communicationUxSmoke.ts`, non branché sur `App.tsx` production).
 - Pas de test automatique **live** Web→Mobile sur un même jeu PG (uniquement contrat de sources + HTTP PG).
-- Pagination C2/C3 UI : aucun test GREEN (RED-05/06).
+- Pagination C2/C3 UI : **GREEN** (`AUDIT-COM-RED-05` / `AUDIT-COM-RED-06`, Lot C #637).
 - Reply Mobile UI : **GREEN** (`AUDIT-COM-RED-01`, Lot A #628).
 - Ouvrir Mobile conversation/annonce : **GREEN** (`AUDIT-COM-RED-02`, Lot B #633).
 - Push Mobile destinations Communication : **GREEN** (`AUDIT-COM-RED-03`, Lot B #633).
+- Copies HTTP 401/403/404/409/500 Web Communication : **GREEN** (P3-02, #637).
 - 401 refresh token sur pages Communication : client global, pas de test de page.
 - `PATCH` annonce UI : volontairement non couvert.
 - Catalogue plateforme Mobile : hors graphe, tests d’exclusion (#577) seulement.
@@ -328,16 +312,16 @@ Lot I : 9/9 événements ont désormais un producteur (L1–L5 GREEN). Hors pér
 
 ## 8. Lots de correction
 
-**Aucun lot n’est implémenté ici.** Proposition pour décision CTO :
+**Aucun lot n’est implémenté ici.** Lots métier mergés sur `develop` via des PR séparées :
 
 | Lot | Sévérité | Contenu | Hors lot |
 | --- | --- | --- | --- |
 | **A** | P1 | Composer de réponse dans le modal fil Mobile — **mergé** #628 (`a42c079d`) | |
 | **B** | P1/P2 | Ouvrir/Lire Mobile + allowlist push Messages/Annonces/InternalNotifications + deep params `conversationId`/`announcementId` — **mergé** #633 (`2e7e8e53`) | réécriture dispatcher, SMTP, prefs école |
-| **C** | P2 | Pagination C2/C3 Web+Mobile ; refresh liste unread après mark-read Web — **non implémenté ici** | PATCH UI annonces |
-| **D** | P3 | Header icons Mobile ; copies 403/404 Web ; loading plateforme | fusion inbox, plateforme Mobile (#577) |
+| **C** | P2 | Pagination C2/C3 Web+Mobile ; refresh liste unread après mark-read Web — **mergé** #637 (`871e93ee`) | PATCH UI annonces |
+| **P3** | P3 | Header icons Mobile ; copies 403/404 Web ; loading plateforme — **mergé** dans la même #637 (`871e93ee`) | fusion inbox, plateforme Mobile (#577) |
 
-Ordre recommandé : **A (fait) → B (fait) → C → D**. Lot C : PR séparée, uniquement après GO CTO sur cette réconciliation. Pas de merge #625 sans diff CTO. Cette PR n’implémente pas RED-04/05/06.
+Ordre réalisé : **A → B → C/P3**. Chantier produit Communication **terminé**. Cette PR #625 ne contient que le dossier d’audit. Pas de merge #625 sans diff CTO. PAS de nouveau lot métier.
 
 ---
 
@@ -349,21 +333,23 @@ Résultats machine : `docs/audits/evidence/communication-module-audit-test-resul
 
 Matrice : `docs/audits/evidence/communication-module-audit-matrix.json`.
 
-Exécution locale (13 sept. 2026, sans PostgreSQL) :
+Exécution locale (14 sept. 2026, sans PostgreSQL) :
 
 | Suite | Résultat |
 | --- | --- |
 | Inventaire audit (9 tests) | **9 PASS** |
 | Parité COM-01…06 Web + COM-10…17 Mobile | **14 PASS / 0 FAIL** |
 | UX Communication Mobile | **PASS** (tsx) |
-| UX Communication Web (vitest) | non exécuté localement (pas de `web/node_modules`) — CI |
+| UX Communication Web (vitest) | **PASS** |
 | RED AUDIT-COM-RED-01 | **PASS / GREEN** (Lot A #628) |
 | RED AUDIT-COM-RED-02 | **PASS / GREEN** (Lot B #633) |
 | RED AUDIT-COM-RED-03 | **PASS / GREEN** (Lot B #633) |
-| RED AUDIT-COM-RED-04…06 | **3 FAIL** (preuve, attendu) |
+| RED AUDIT-COM-RED-04 | **PASS / GREEN** (Lot C #637) |
+| RED AUDIT-COM-RED-05 | **PASS / GREEN** (Lot C #637) |
+| RED AUDIT-COM-RED-06 | **PASS / GREEN** (Lot C #637) |
 | C2 / C3 / C4 HTTP PG | CI uniquement (`DATABASE_URL`) |
 
-Environnement d’audit agent : pas de Docker / PostgreSQL local. Les preuves UI runtime Expo et navigateur 1440/1024/390/360 n’ont **pas** été rejouées ici ; la maquette existante reste `docs/audits/parite-web-mobile-communication-ux-maquette.md`. Les défauts P1/P2 sont **reproductibles par inspection du code livré** (tests RED) et par les suites HTTP PG déjà présentes.
+Environnement d’audit agent : pas de Docker / PostgreSQL local. Les preuves UI runtime Expo et navigateur 1440/1024/390/360 n’ont **pas** été rejouées ici ; la maquette existante reste `docs/audits/parite-web-mobile-communication-ux-maquette.md`. Les preuves RED-01…06 sont des **locks de non-régression** sur le code livré (#628, #633, #637).
 
 ---
 
@@ -371,6 +357,6 @@ Environnement d’audit agent : pas de Docker / PostgreSQL local. Les preuves UI
 
 **HOLD. STOP.**
 
-#625 reste Draft. Aucun merge. Aucun Lot C tant que le diff CTO de cette réconciliation n’est pas GO. RED-04/05/06 restent FAIL_AS_EXPECTED. Aucun Bulletin.
+#625 reste Draft. Chantier produit Communication **terminé** (#637 mergée). Cette PR ne contient que le dossier d’audit réconcilié. Aucun nouveau lot métier. Aucun merge de #625 sans diff GitHub indépendant CTO. Aucun Bulletin.
 
 Aucun merge sans diff GitHub indépendant CTO.

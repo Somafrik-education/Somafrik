@@ -3,7 +3,7 @@
   "title": "Audit fonctionnel, technique et de non-régression — module Communication",
   "baseBranch": "develop",
   "originBaseSha": "1bf4a057817cb009120042a9bb7b23ba211e2269",
-  "validationBaseSha": "2e7e8e5333ede408c4cb861f3cea16f4ce7c65fa",
+  "validationBaseSha": "871e93ee27add59673c54d7af4fd3be08e2ceb07",
   "auditBranch": "audit/communication-module",
   "verdictsAllowed": ["PASS", "PARTIAL", "FAIL", "MISSING", "NOT_APPLICABLE"],
   "features": [
@@ -76,13 +76,13 @@
     {
       "id": "COM-F-07",
       "name": "Messages — lu / non-lu",
-      "web": "PARTIAL",
+      "web": "PASS",
       "mobile": "PASS",
       "api": "PASS",
       "postgresql": "PASS",
       "rbac": "PASS",
-      "tests": "FAIL",
-      "verdict": "PARTIAL"
+      "tests": "PASS",
+      "verdict": "PASS"
     },
     {
       "id": "COM-F-08",
@@ -98,13 +98,13 @@
     {
       "id": "COM-F-09",
       "name": "Messages — pagination serveur nextCursor",
-      "web": "FAIL",
-      "mobile": "FAIL",
+      "web": "PASS",
+      "mobile": "PASS",
       "api": "PASS",
       "postgresql": "PASS",
       "rbac": "PASS",
-      "tests": "FAIL",
-      "verdict": "FAIL"
+      "tests": "PASS",
+      "verdict": "PASS"
     },
     {
       "id": "COM-F-10",
@@ -208,13 +208,13 @@
     {
       "id": "COM-F-19",
       "name": "Annonces — pagination serveur nextCursor",
-      "web": "FAIL",
-      "mobile": "FAIL",
+      "web": "PASS",
+      "mobile": "PASS",
       "api": "PASS",
       "postgresql": "PASS",
       "rbac": "PASS",
-      "tests": "FAIL",
-      "verdict": "FAIL"
+      "tests": "PASS",
+      "verdict": "PASS"
     },
     {
       "id": "COM-F-20",
@@ -308,12 +308,12 @@
       "id": "COM-F-28",
       "name": "Chrome module Communication",
       "web": "PASS",
-      "mobile": "PARTIAL",
+      "mobile": "PASS",
       "api": "NOT_APPLICABLE",
       "postgresql": "NOT_APPLICABLE",
       "rbac": "PASS",
       "tests": "PASS",
-      "verdict": "PARTIAL"
+      "verdict": "PASS"
     },
     {
       "id": "COM-F-29",
@@ -374,23 +374,23 @@
       "id": "COM-F-34",
       "name": "Cohérence Web → Mobile (même SoT PostgreSQL)",
       "web": "PASS",
-      "mobile": "PARTIAL",
+      "mobile": "PASS",
       "api": "PASS",
       "postgresql": "PASS",
       "rbac": "PASS",
-      "tests": "PARTIAL",
-      "verdict": "PARTIAL"
+      "tests": "PASS",
+      "verdict": "PASS"
     },
     {
       "id": "COM-F-35",
       "name": "Cohérence Mobile → Web (création / réponse)",
       "web": "PASS",
-      "mobile": "PARTIAL",
+      "mobile": "PASS",
       "api": "PASS",
       "postgresql": "PASS",
       "rbac": "PASS",
-      "tests": "PARTIAL",
-      "verdict": "PARTIAL"
+      "tests": "PASS",
+      "verdict": "PASS"
     },
     {
       "id": "COM-F-36",
@@ -428,13 +428,13 @@
     {
       "id": "COM-F-39",
       "name": "États loading / empty / error + API 401/403/404",
-      "web": "PARTIAL",
+      "web": "PASS",
       "mobile": "PASS",
       "api": "PASS",
       "postgresql": "NOT_APPLICABLE",
       "rbac": "PASS",
-      "tests": "PARTIAL",
-      "verdict": "PARTIAL"
+      "tests": "PASS",
+      "verdict": "PASS"
     },
     {
       "id": "COM-F-40",
@@ -448,11 +448,7 @@
       "verdict": "PASS"
     }
   ],
-  "redTests": [
-    "AUDIT-COM-RED-04",
-    "AUDIT-COM-RED-05",
-    "AUDIT-COM-RED-06"
-  ],
+  "redTests": [],
   "closedRedTests": [
     {
       "id": "AUDIT-COM-RED-01",
@@ -474,12 +470,33 @@
       "lot": "B",
       "pr": 633,
       "mergeCommit": "2e7e8e5333ede408c4cb861f3cea16f4ce7c65fa"
+    },
+    {
+      "id": "AUDIT-COM-RED-04",
+      "status": "GREEN",
+      "lot": "C",
+      "pr": 637,
+      "mergeCommit": "871e93ee27add59673c54d7af4fd3be08e2ceb07"
+    },
+    {
+      "id": "AUDIT-COM-RED-05",
+      "status": "GREEN",
+      "lot": "C",
+      "pr": 637,
+      "mergeCommit": "871e93ee27add59673c54d7af4fd3be08e2ceb07"
+    },
+    {
+      "id": "AUDIT-COM-RED-06",
+      "status": "GREEN",
+      "lot": "C",
+      "pr": 637,
+      "mergeCommit": "871e93ee27add59673c54d7af4fd3be08e2ceb07"
     }
   ],
   "severity": {
     "P0": 0,
     "P1": 0,
-    "P2": 3,
-    "P3": 2
+    "P2": 0,
+    "P3": 0
   }
 }

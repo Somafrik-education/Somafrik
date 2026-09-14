@@ -1,22 +1,21 @@
 {
   "auditId": "AUDIT-COM-MODULE-2026-09-13",
-  "generatedAt": "2026-09-13T21:50:00.000Z",
+  "generatedAt": "2026-09-14T00:21:45.272Z",
   "inventory": "PASS",
   "pariteRed": "PASS",
-  "pariteUx": "PARTIAL",
+  "pariteUx": "PASS",
   "communicationsC2": "skipped",
   "communicationsC3": "skipped",
   "communicationsC4": "skipped",
-  "auditRed": "FAIL_AS_EXPECTED",
-  "redFailedIds": [
-    "AUDIT-COM-RED-04",
-    "AUDIT-COM-RED-05",
-    "AUDIT-COM-RED-06"
-  ],
+  "auditRed": "GREEN",
+  "redFailedIds": [],
   "redPassedIds": [
     "AUDIT-COM-RED-01",
     "AUDIT-COM-RED-02",
-    "AUDIT-COM-RED-03"
+    "AUDIT-COM-RED-03",
+    "AUDIT-COM-RED-04",
+    "AUDIT-COM-RED-05",
+    "AUDIT-COM-RED-06"
   ],
   "redUnexpectedPass": [],
   "redMissingFail": []
