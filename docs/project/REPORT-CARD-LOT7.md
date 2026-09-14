@@ -1,0 +1,34 @@
+# LOT 7 — Web Bulletins et vérification publique `/verify`
+
+**Statut :** GO DEV / HOLD READY+MERGE. **LOT 8+ interdit.**  
+**Ticket :** #641. **Prérequis :** LOT 6 mergé (`develop@0e84e407`).
+
+Web établissement, Web Superadmin, routes HTTP du workflow LOT 6, consultation des bulletins publiés **sans recalcul**, page publique `/verify/rc/:capability` consommant exclusivement `lookupPublic` (LOT 4).
+
+## Routes HTTP
+
+Namespace dédié `/api/report-card/...` (pas de collision avec le legacy `/api/report-cards`).  
+Vérification publique : `POST /api/public/report-cards/verify` **sans auth**.
+
+Établissement : soumettre, lister/lire son `school_id`, approuver / demander des modifications, audit, binding ACTIVE.  
+Superadmin : file d’attente avec **école cible explicite**, revue, configuration, gabarit, bind, READY_FOR_REVIEW, rejet, activation.
+
+Erreurs stables : `RBAC_DENIED` / `PLATFORM_CONTEXT_REQUIRED` / `TENANT_MISMATCH` → 403 ; `REQUEST_NOT_FOUND` / `VERSION_NOT_FOUND` → 404 ; `INVALID_TRANSITION` / `IDEMPOTENCY_CONFLICT` → 409 ; sinon 400.
+
+## `/verify`
+
+Capability `publicId.token`. Échec public indistinguable `{ ok: false, reason: "not_found" }` pour token / public ID / capability malformée. Snapshot altéré : fail-closed.  
+`Cache-Control: no-store`, `Referrer-Policy: no-referrer`. Pas de mint/rotation, pas de persistance client, pas de fallback live.
+
+## Web
+
+- Établissement : `/bulletins/modele` (legacy `/bulletins` inchangé).
+- Superadmin : `/parametres/bulletins-configuration`.
+- Public : `/verify/rc/:capability` hors `ProtectedRoute`, `fetch` brut.
+- Rendu snapshot : TOTAL / PERCENTAGE / RANK / DECISION / présence, sans arithmétique.
+
+## Interdit
+
+Mobile (LOT 8), historique (LOT 9), pack Burundi (LOT 10), recalcul LOT 3, mutation token/snapshot LOT 4.
+
+Gate : `npm run verify:report-card-lot7`.
