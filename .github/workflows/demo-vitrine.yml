@@ -20,6 +20,8 @@ jobs:
     env:
       VITE_API_URL: https://api.example.test
       VITE_ENABLE_PUBLIC_DEMO: "true"
+      VITE_DEMO_WEB_ORIGIN: https://demo.somafrik.app
+      VITE_DEMO_ENTRY_API_URL: https://api-demo.example.test
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
