@@ -63,7 +63,7 @@ test("report-card-lot8-mobile-published-snapshot-only", () => {
   assert.match(api, /\/report-card\/publications\/.+snapshot|publications\/\$\{.*\}\/snapshot/);
   assert.doesNotMatch(api, /computeReportCard/);
   const screen = readRel("Mobile/src/screens/ReportCardsScreen.tsx");
-  assert.match(screen, /ReportCardSnapshotView|payload/);
+  assert.match(screen, /template=\{/);
   assert.doesNotMatch(screen, /getReportCards/);
 });
 

@@ -7,6 +7,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const express = require("express");
 const { ENGINE_ID } = require("../../contracts/reportCard/contract");
+const { resolveReportCardActorFromPrincipal } = require("../reportCardHttpActor");
 const { generateSigningKey } = require("../../contracts/reportCard/snapshot");
 const { generateWrappingKey } = require("../../contracts/reportCard/verificationSecret");
 const { createReportCardPublication } = require("./reportCardPublication");
@@ -23,13 +24,36 @@ const HTTP_SRC = path.join(__dirname, "reportCardHttp.js");
 const SERVER_SRC = path.join(ROOT, "backend/server.js");
 const RUNTIME_SRC = path.join(ROOT, "backend/lib/reportCardHttpRuntime.js");
 
+const READ = "REPORT_CARD_READ";
+const REPRINT = "REPORT_CARD_REPRINT";
+
 function schoolRead(schoolId = SCHOOL_A) {
   return {
     actorId: `read-${schoolId}`,
     actorSchoolId: schoolId,
-    permissions: [],
+    permissions: [READ, REPRINT],
   };
 }
+
+function parentRead(studentId = "STU-1", schoolId = SCHOOL_A) {
+  return {
+    actorId: `parent-${studentId}`,
+    actorSchoolId: schoolId,
+    permissions: [READ, REPRINT],
+    studentIds: [studentId],
+  };
+}
+
+const LOT8_TEMPLATE = {
+  paper: "A4",
+  orientation: "portrait",
+  qr_required: true,
+  sections: [
+    { id: "SUMMARY", order: 1, label: "Totaux certifies LOT8", source: "slots" },
+    { id: "SUBJECTS", order: 2, label: "Disciplines certifiees LOT8", source: "cells" },
+    { id: "APPLICABILITY", order: 3, label: "Presence certifiee LOT8", source: "presence" },
+  ],
+};
 
 function engineResult() {
   const profile = validateProfileSpec({
@@ -140,15 +164,22 @@ async function harness(overrides = {}) {
     publication: pub.publication,
     resolveActor: () => actor,
     getPdf: () => ({
-      render: async ({ tenant, reportCardId, version }) => {
-        pdfCalls.push({ tenant, reportCardId, version });
-        const payload = await pub.publication.payloadForRender({ tenant, reportCardId, version });
+      render: async (args) => {
+        pdfCalls.push(args);
+        const payload =
+          args.payload ||
+          (await pub.publication.payloadForRender({
+            tenant: args.tenant,
+            reportCardId: args.reportCardId,
+            version: args.version,
+          }));
         return {
           pdf: Buffer.from("%PDF-1.4 lot8-test\n"),
           payload,
         };
       },
     }),
+    getTemplate: async () => ({ spec: LOT8_TEMPLATE, spec_sha256: "cc" }),
   });
   const bound = await listen(app);
   return {
@@ -187,6 +218,13 @@ function publishBoth(publication) {
     tenant: TENANT_B,
     payload: snapshotPayload({ report_card_id: "rc-b", school_id: SCHOOL_B }),
   });
+}
+
+function twoStudentPayload() {
+  const base = snapshotPayload();
+  const other = JSON.parse(JSON.stringify(base.students[0]));
+  other.student_id = "STU-2";
+  return snapshotPayload({ students: [base.students[0], other] });
 }
 
 function secretLeak(row) {
@@ -321,8 +359,28 @@ test("report-card-lot8-mobile-rbac-server-authoritative", async () => {
   try {
     const listed = await h.json("GET", "/api/report-card/publications");
     assert.equal(listed.status, 403);
-    h.setActor(schoolRead(SCHOOL_A));
+    h.setActor({
+      actorId: "none",
+      actorSchoolId: SCHOOL_A,
+      permissions: [],
+    });
     h.publication.publish({ tenant: TENANT_A, payload: snapshotPayload() });
+    const denied = await h.json("GET", "/api/report-card/publications");
+    assert.equal(denied.status, 403);
+    const deniedSnap = await h.json("GET", "/api/report-card/publications/rc-1/snapshot?version=1");
+    assert.equal(deniedSnap.status, 403);
+    const deniedPdf = await h.bin("GET", "/api/report-card/publications/rc-1/pdf?version=1");
+    assert.equal(deniedPdf.status, 403);
+    h.setActor({
+      actorId: "read-only",
+      actorSchoolId: SCHOOL_A,
+      permissions: [READ],
+    });
+    const listedRead = await h.json("GET", "/api/report-card/publications");
+    assert.equal(listedRead.status, 200);
+    const pdfWithoutReprint = await h.bin("GET", "/api/report-card/publications/rc-1/pdf?version=1");
+    assert.equal(pdfWithoutReprint.status, 403);
+    h.setActor(schoolRead(SCHOOL_A));
     const ok = await h.json("GET", "/api/report-card/publications");
     assert.equal(ok.status, 200);
     const snap = await h.json("GET", "/api/report-card/publications/rc-1/snapshot?version=1");
@@ -332,13 +390,15 @@ test("report-card-lot8-mobile-rbac-server-authoritative", async () => {
     h.setActor({
       actorId: "spoof-write",
       actorSchoolId: SCHOOL_A,
-      permissions: [],
+      permissions: [READ, REPRINT],
       role: "Admin School",
     });
     const mint = await h.json("POST", "/api/report-card/publications", { reportCardId: "rc-1" });
     assert.ok([403, 404, 405].includes(mint.status));
     const httpSrc = fs.readFileSync(HTTP_SRC, "utf8");
     assert.equal(/\bgenerateToken\b/.test(httpSrc), false);
+    assert.match(httpSrc, /REPORT_CARD_READ/);
+    assert.match(httpSrc, /REPORT_CARD_REPRINT/);
   } finally {
     await h.close();
   }
@@ -359,6 +419,107 @@ test("report-card-lot8-mobile-cross-tenant-forbidden", async () => {
     assert.ok([403, 404].includes(snap.status));
     const pdf = await h.bin("GET", "/api/report-card/publications/rc-1/pdf?version=1");
     assert.ok([403, 404].includes(pdf.status));
+  } finally {
+    await h.close();
+  }
+});
+
+test("report-card-lot8-actor-read-maps-bulletins-read", () => {
+  const actor = resolveReportCardActorFromPrincipal({
+    sub: "parent-1",
+    schoolId: SCHOOL_A,
+    role: "parent_student",
+    permissions: ["Bulletins:READ"],
+    user: { children: [{ id: "STU-1", studentId: "STU-1" }] },
+  });
+  assert.equal(actor.permissions.includes(READ), true);
+  assert.equal(actor.permissions.includes(REPRINT), true);
+  assert.equal(actor.permissions.includes("REPORT_CARD_SUBMIT_MODEL"), false);
+  assert.equal(actor.permissions.includes("REPORT_CARD_SCHOOL_APPROVE_TEMPLATE"), false);
+  assert.ok(actor.studentIds.includes("STU-1"));
+  const empty = resolveReportCardActorFromPrincipal({
+    sub: "none",
+    schoolId: SCHOOL_A,
+    role: "Admin School",
+    permissions: [],
+  });
+  assert.equal(empty.permissions.includes(READ), false);
+  assert.equal(empty.studentIds, undefined);
+});
+
+test("report-card-lot8-mobile-student-scope-server-authoritative", async () => {
+  const h = await harness();
+  try {
+    h.publication.publish({ tenant: TENANT_A, payload: twoStudentPayload() });
+    h.setActor(parentRead("STU-1"));
+    const listed = await h.json("GET", "/api/report-card/publications");
+    assert.equal(listed.status, 200);
+    assert.equal(listed.data.publications.length, 1);
+    const snap = await h.json("GET", "/api/report-card/publications/rc-1/snapshot?version=1");
+    assert.equal(snap.status, 200);
+    const ids = (snap.data.payload.students || []).map((row) => row.student_id);
+    assert.deepEqual(ids, ["STU-1"]);
+    assert.equal(ids.includes("STU-2"), false);
+    const pdf = await h.bin("GET", "/api/report-card/publications/rc-1/pdf?version=1");
+    assert.equal(pdf.status, 200);
+    const pdfStudents = (h.pdfCalls.at(-1).payload.students || []).map((row) => row.student_id);
+    assert.deepEqual(pdfStudents, ["STU-1"]);
+    h.setActor(parentRead("STU-MISSING"));
+    const hidden = await h.json("GET", "/api/report-card/publications");
+    assert.equal(hidden.status, 200);
+    assert.equal(hidden.data.publications.length, 0);
+    const denied = await h.json("GET", "/api/report-card/publications/rc-1/snapshot?version=1");
+    assert.ok([403, 404].includes(denied.status));
+    const deniedPdf = await h.bin("GET", "/api/report-card/publications/rc-1/pdf?version=1");
+    assert.ok([403, 404].includes(deniedPdf.status));
+  } finally {
+    await h.close();
+  }
+});
+
+test("report-card-lot8-mobile-current-active-publication-only", async () => {
+  const h = await harness();
+  try {
+    h.publication.publish({ tenant: TENANT_A, payload: snapshotPayload() });
+    h.publication.publish({
+      tenant: TENANT_A,
+      payload: snapshotPayload({ published_snapshot_version: 2 }),
+    });
+    h.setActor(schoolRead(SCHOOL_A));
+    const listed = await h.json("GET", "/api/report-card/publications");
+    assert.equal(listed.status, 200);
+    assert.equal(listed.data.publications.length, 1);
+    assert.equal(listed.data.publications[0].published_snapshot_version, 2);
+    assert.equal(listed.data.publications[0].verification_status, "ACTIVE");
+    const stale = await h.json("GET", "/api/report-card/publications/rc-1/snapshot?version=1");
+    assert.ok([403, 404].includes(stale.status));
+    const current = await h.json("GET", "/api/report-card/publications/rc-1/snapshot?version=2");
+    assert.equal(current.status, 200);
+    const src = fs.readFileSync(HTTP_SRC, "utf8");
+    assert.match(src, /listCurrent/);
+    assert.equal(/listOutbox\s*\(/.test(src), false);
+  } finally {
+    await h.close();
+  }
+});
+
+test("report-card-lot8-mobile-uses-published-rendering-template", async () => {
+  const h = await harness();
+  try {
+    const payload = snapshotPayload({
+      provenance: {
+        ...snapshotPayload().provenance,
+        template: { id: "TPL-1", version: 1, spec_sha256: "cc" },
+      },
+    });
+    h.publication.publish({ tenant: TENANT_A, payload });
+    h.setActor(schoolRead(SCHOOL_A));
+    const snap = await h.json("GET", "/api/report-card/publications/rc-1/snapshot?version=1");
+    assert.equal(snap.status, 200);
+    assert.equal(snap.data.template.sections[0].label, "Totaux certifies LOT8");
+    const pdf = await h.bin("GET", "/api/report-card/publications/rc-1/pdf?version=1");
+    assert.equal(pdf.status, 200);
+    assert.equal(h.pdfCalls.at(-1).renderingTemplate.sections[0].label, "Totaux certifies LOT8");
   } finally {
     await h.close();
   }
