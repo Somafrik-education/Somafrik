@@ -5,7 +5,9 @@
  * Consomme LOT 6 (configuration) et LOT 4 (lookupPublic). Aucun mint, aucun recalcul.
  */
 
+const express = require("express");
 const { VERIFY_HEADERS } = require("../../contracts/reportCard/contract");
+const { toPublicArtifact } = require("./reportCardSourceArtifact");
 
 const PERM_CONFIGURE = "REPORT_CARD_CONFIGURE";
 const PERM_APPROVE = "REPORT_CARD_SCHOOL_APPROVE_TEMPLATE";
@@ -29,6 +31,16 @@ const HTTP_STATUS = Object.freeze({
   CONCURRENCY_CONFLICT: 409,
   REASON_REQUIRED: 400,
   FACTS_REQUIRED: 400,
+  FILE_TOO_LARGE: 400,
+  UNSUPPORTED_MEDIA: 400,
+  ARTIFACT_REQUIRED: 409,
+  ARTIFACT_IMMUTABLE: 409,
+  ARTIFACT_CORRUPT: 409,
+  HASH_MISMATCH: 409,
+  MAPPING_NOT_EXPLICIT: 400,
+  MAPPING_REQUIRED: 409,
+  STORAGE_UNAVAILABLE: 503,
+  ARTIFACT_NOT_FOUND: 404,
 });
 
 function parseCapability(value) {
@@ -173,13 +185,13 @@ function mapError(err) {
   if (err && (err.name === "IdempotencyConflict" || err.code === "IDEMPOTENCY_CONFLICT")) {
     return {
       status: HTTP_STATUS.IDEMPOTENCY_CONFLICT,
-      body: { ok: false, error: { code: "IDEMPOTENCY_CONFLICT" } },
+      body: { ok: false, code: "IDEMPOTENCY_CONFLICT", error: { code: "IDEMPOTENCY_CONFLICT" } },
     };
   }
   const code = err && err.code ? err.code : "INVALID_INPUT";
   return {
     status: HTTP_STATUS[code] || 400,
-    body: { ok: false, error: { code } },
+    body: { ok: false, code, error: { code } },
   };
 }
 
@@ -277,11 +289,33 @@ function registerReportCardHttp(app, deps = {}) {
       publication,
       pdf: deps.pdf || (typeof deps.getPdf === "function" ? deps.getPdf() : null),
       getTemplate: typeof deps.getTemplate === "function" ? deps.getTemplate : null,
+      sourceArtifact:
+        deps.sourceArtifact ||
+        (typeof deps.getSourceArtifact === "function" ? deps.getSourceArtifact() : null),
       correction:
         deps.correction ||
         (typeof deps.getCorrection === "function" ? deps.getCorrection() : null) ||
         (publication ? getOrCreateCorrection(publication) : null),
     };
+  }
+
+  function requireSourceArtifact() {
+    const { sourceArtifact } = services();
+    if (!sourceArtifact) throw coded("STORAGE_UNAVAILABLE");
+    return sourceArtifact;
+  }
+
+  const sourceRaw = express.raw({
+    type: (req) => /pdf|jpeg|jpg|png/i.test(String(req.headers["content-type"] || "")),
+    limit: "11mb",
+  });
+
+  function sendDownload(res, opened) {
+    const headers = opened.headers || {};
+    for (const [name, value] of Object.entries(headers)) {
+      res.setHeader(name, value);
+    }
+    res.status(200).end(opened.bytes);
   }
 
   function getOrCreateCorrection(publication) {
@@ -351,6 +385,58 @@ function registerReportCardHttp(app, deps = {}) {
         description: req.body?.description,
       });
       res.status(201).json({ ok: true, request: decorate(actor, request) });
+    })
+  );
+
+  app.post(
+    "/api/report-card/requests/:requestId/source-artifact",
+    auth,
+    sourceRaw,
+    route(async (req, res) => {
+      const actor = await actorFrom(req);
+      const schoolId = schoolIdForSchoolActor(actor);
+      const artifacts = requireSourceArtifact();
+      const bytes = Buffer.isBuffer(req.body) ? req.body : Buffer.from(req.body || []);
+      const artifact = await artifacts.replaceCurrent({
+        actor,
+        schoolId,
+        requestId: req.params.requestId,
+        bytes,
+        declaredMime: req.headers["content-type"],
+        originalFilename: req.headers["x-somafrik-original-filename"] || "modele.pdf",
+        idempotencyKey: req.headers["x-idempotency-key"],
+      });
+      res.status(201).json({ ok: true, artifact: toPublicArtifact(artifact) });
+    })
+  );
+
+  app.get(
+    "/api/report-card/requests/:requestId/source-artifact",
+    auth,
+    route(async (req, res) => {
+      const actor = await actorFrom(req);
+      const schoolId = schoolIdForSchoolActor(actor);
+      const artifacts = requireSourceArtifact();
+      const artifact = await artifacts.getCurrent({ actor, schoolId, requestId: req.params.requestId });
+      res.json({ ok: true, artifact: toPublicArtifact(artifact) });
+    })
+  );
+
+  app.get(
+    "/api/report-card/requests/:requestId/source-artifact/content",
+    auth,
+    route(async (req, res) => {
+      const actor = await actorFrom(req);
+      const schoolId = schoolIdForSchoolActor(actor);
+      const artifacts = requireSourceArtifact();
+      const current = await artifacts.getCurrent({ actor, schoolId, requestId: req.params.requestId });
+      const opened = await artifacts.openDownload({
+        actor,
+        schoolId,
+        artifactId: current.artifact_id,
+        inline: String(req.query?.download || "") !== "1",
+      });
+      sendDownload(res, opened);
     })
   );
 
@@ -677,6 +763,36 @@ function registerReportCardHttp(app, deps = {}) {
   );
 
   app.get(
+    "/api/report-card/admin/requests/:requestId/source-artifact",
+    auth,
+    route(async (req, res) => {
+      const actor = await actorFrom(req);
+      const schoolId = await adminSchoolId(actor, req);
+      const artifacts = requireSourceArtifact();
+      const artifact = await artifacts.getCurrent({ actor, schoolId, requestId: req.params.requestId });
+      res.json({ ok: true, artifact: toPublicArtifact(artifact) });
+    })
+  );
+
+  app.get(
+    "/api/report-card/admin/requests/:requestId/source-artifact/content",
+    auth,
+    route(async (req, res) => {
+      const actor = await actorFrom(req);
+      const schoolId = await adminSchoolId(actor, req);
+      const artifacts = requireSourceArtifact();
+      const current = await artifacts.getCurrent({ actor, schoolId, requestId: req.params.requestId });
+      const opened = await artifacts.openDownload({
+        actor,
+        schoolId,
+        artifactId: current.artifact_id,
+        inline: String(req.query?.download || "") !== "1",
+      });
+      sendDownload(res, opened);
+    })
+  );
+
+  app.get(
     "/api/report-card/admin/catalog",
     auth,
     route(async (req, res) => {
@@ -767,15 +883,42 @@ function registerReportCardHttp(app, deps = {}) {
     route(async (req, res) => {
       const actor = await actorFrom(req);
       const schoolId = await adminSchoolId(actor, req);
-      const { configuration } = services();
-      const request = await configuration.bindBundle({
-        actor,
-        schoolId,
-        requestId: req.params.requestId,
-        profile: req.body?.profile,
-        schema: req.body?.schema,
-        template: req.body?.template,
-      });
+      const { configuration, sourceArtifact } = services();
+      let request;
+      if (sourceArtifact) {
+        try {
+          const mapped = await sourceArtifact.mapExplicit({
+            actor,
+            schoolId,
+            requestId: req.params.requestId,
+            profile: req.body?.profile,
+            schema: req.body?.schema,
+            template: req.body?.template,
+            artifact_id: req.body?.artifact_id,
+            artifact_version: req.body?.artifact_version,
+          });
+          request = mapped.request;
+        } catch (err) {
+          if (!err || err.code !== "ARTIFACT_REQUIRED") throw err;
+          request = await configuration.bindBundle({
+            actor,
+            schoolId,
+            requestId: req.params.requestId,
+            profile: req.body?.profile,
+            schema: req.body?.schema,
+            template: req.body?.template,
+          });
+        }
+      } else {
+        request = await configuration.bindBundle({
+          actor,
+          schoolId,
+          requestId: req.params.requestId,
+          profile: req.body?.profile,
+          schema: req.body?.schema,
+          template: req.body?.template,
+        });
+      }
       res.json({ ok: true, request: decorate(actor, request) });
     })
   );
@@ -786,12 +929,36 @@ function registerReportCardHttp(app, deps = {}) {
     route(async (req, res) => {
       const actor = await actorFrom(req);
       const schoolId = await adminSchoolId(actor, req);
-      const { configuration } = services();
-      const request = await configuration.markReadyForReview({
-        actor,
-        schoolId,
-        requestId: req.params.requestId,
-      });
+      const { configuration, sourceArtifact } = services();
+      let request;
+      if (sourceArtifact) {
+        try {
+          const current = await sourceArtifact.getCurrent({
+            actor,
+            schoolId,
+            requestId: req.params.requestId,
+          });
+          request = await sourceArtifact.markReadyForReview({
+            actor,
+            schoolId,
+            requestId: req.params.requestId,
+          });
+          void current;
+        } catch (err) {
+          if (!err || err.code !== "ARTIFACT_REQUIRED") throw err;
+          request = await configuration.markReadyForReview({
+            actor,
+            schoolId,
+            requestId: req.params.requestId,
+          });
+        }
+      } else {
+        request = await configuration.markReadyForReview({
+          actor,
+          schoolId,
+          requestId: req.params.requestId,
+        });
+      }
       res.json({ ok: true, request: decorate(actor, request) });
     })
   );

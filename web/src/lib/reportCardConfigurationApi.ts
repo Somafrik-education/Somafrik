@@ -1,4 +1,4 @@
-import { api } from "../api/client";
+import { api, request } from "../api/client";
 
 export type ReportCardActions = {
   approve?: boolean;
@@ -53,6 +53,17 @@ export type ReportCardAuditEntry = {
   reason?: string | null;
 };
 
+export type ReportCardSourceArtifact = {
+  artifact_id: string;
+  request_id?: string;
+  school_id?: string;
+  version?: number;
+  sha256?: string;
+  media_type?: string;
+  original_filename?: string;
+  current?: boolean;
+};
+
 export const reportCardConfigurationApi = {
   listRequests: () => api.get<{ ok: boolean; requests: ReportCardRequest[] }>("/report-card/requests"),
   submitModel: (body: { modelKey: string; description?: string }) =>
@@ -83,6 +94,26 @@ export const reportCardConfigurationApi = {
     api.get<{ ok: boolean; payload: unknown }>(
       `/report-card/publications/${encodeURIComponent(reportCardId)}/snapshot?version=${encodeURIComponent(String(version))}`,
     ),
+  getSourceArtifact: (requestId: string) =>
+    api.get<{ ok: boolean; artifact: ReportCardSourceArtifact }>(
+      `/report-card/requests/${encodeURIComponent(requestId)}/source-artifact`,
+    ),
+  attachSourceArtifact: (requestId: string, file: File) =>
+    request<{ ok: boolean; artifact: ReportCardSourceArtifact }>(
+      `/report-card/requests/${encodeURIComponent(requestId)}/source-artifact`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": file.type || "application/pdf",
+          "X-Idempotency-Key":
+            globalThis.crypto && "randomUUID" in globalThis.crypto
+              ? globalThis.crypto.randomUUID()
+              : `upload-${Date.now()}`,
+          "X-Somafrik-Original-Filename": file.name || "modele.pdf",
+        },
+        body: file,
+      },
+    ),
 };
 
 export const reportCardAdminApi = {
@@ -102,6 +133,10 @@ export const reportCardAdminApi = {
   getBundle: (requestId: string, schoolId: string) =>
     api.get<ReportCardBundle>(
       `/report-card/admin/requests/${encodeURIComponent(requestId)}/bundle?schoolId=${encodeURIComponent(schoolId)}`,
+    ),
+  getSourceArtifact: (requestId: string, schoolId: string) =>
+    api.get<{ ok: boolean; artifact: ReportCardSourceArtifact }>(
+      `/report-card/admin/requests/${encodeURIComponent(requestId)}/source-artifact?schoolId=${encodeURIComponent(schoolId)}`,
     ),
   getActiveBinding: (modelKey: string, schoolId: string) =>
     api.get<{ ok: boolean; binding: Record<string, unknown> }>(
