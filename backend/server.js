@@ -531,7 +531,7 @@ app.post("/api/public/trial-requests", trialRequestRateLimiter, asyncHandler(asy
 {
   const { registerReportCardHttp } = require("./lib/reportCard/reportCardHttp");
   const { createReportCardHttpRuntime } = require("./lib/reportCardHttpRuntime");
-  const { resolveReportCardActorFromPrincipal } = require("./lib/reportCardHttpActor");
+  const { resolveReportCardActor, resolveReportCardTenantSchoolId } = require("./lib/reportCardHttpActor");
   let reportCardRuntime = null;
   function getReportCardRuntime() {
     if (!reportCardRuntime) {
@@ -542,7 +542,8 @@ app.post("/api/public/trial-requests", trialRequestRateLimiter, asyncHandler(asy
   registerReportCardHttp(app, {
     getConfiguration: () => getReportCardRuntime().configuration,
     getPublication: () => getReportCardRuntime().publication,
-    resolveActor: (req) => resolveReportCardActorFromPrincipal(req.principal),
+    resolveActor: (req) => resolveReportCardActor(req.principal, lookupSchoolForEffectiveScope),
+    resolveSchoolId: (raw) => resolveReportCardTenantSchoolId(raw, lookupSchoolForEffectiveScope),
     internalAuth: (req, res, next) => requireAuth(req, res, next),
   });
 }

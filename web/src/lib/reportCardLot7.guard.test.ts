@@ -12,6 +12,7 @@ const LOT7_FILES = [
   "web/src/components/bulletin/ReportCardSnapshotView.tsx",
   "web/src/lib/reportCardConfigurationApi.ts",
   "web/src/lib/reportCardVerifyApi.ts",
+  "web/src/lib/reportCardVerifyRoute.ts",
 ];
 
 const BRANCH_IDENT =

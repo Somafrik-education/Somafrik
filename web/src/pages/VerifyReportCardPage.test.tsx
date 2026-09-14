@@ -87,4 +87,36 @@ describe("LOT 7 public verify page", () => {
     expect(stored.includes("secret-token-value")).toBe(false);
     setItemLocal.mockRestore();
   });
+
+  it("report-card-lot7-web-public-verify-revoked-not-authentic", async () => {
+    verifyCapability.mockResolvedValue({
+      ok: true,
+      payload: snapshot,
+      verification_status: "revoked",
+    });
+    const mod = await import("./VerifyReportCardPage");
+    render(
+      <MemoryRouter initialEntries={["/verify/rc/pub-1.secret-token-value"]}>
+        <Routes>
+          <Route path="/verify/rc/:capability" element={<mod.VerifyReportCardPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    await waitFor(() => expect(screen.getByText(/révoqué/i)).toBeInTheDocument());
+    expect(screen.queryByText(/Bulletin authentique/i)).not.toBeInTheDocument();
+  });
+
+  it("report-card-lot7-web-public-verify-transport-unavailable", async () => {
+    verifyCapability.mockRejectedValue(new Error("network down"));
+    const mod = await import("./VerifyReportCardPage");
+    render(
+      <MemoryRouter initialEntries={["/verify/rc/pub-1.secret-token-value"]}>
+        <Routes>
+          <Route path="/verify/rc/:capability" element={<mod.VerifyReportCardPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    await waitFor(() => expect(screen.getByText(/indisponible/i)).toBeInTheDocument());
+    expect(screen.queryByText(/Vérification…/)).not.toBeInTheDocument();
+  });
 });

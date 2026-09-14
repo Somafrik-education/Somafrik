@@ -18,7 +18,7 @@ const { createReportCardPublication } = require("./reportCardPublication");
 const { computeReportCard } = require("./reportCardEngine");
 const { validateSpec: validateProfileSpec } = require("./academicRuleProfile");
 const { validateSpec: validateSchemaSpec } = require("./reportCardSchema");
-const { resolveReportCardActorFromPrincipal } = require("../reportCardHttpActor");
+const { resolveReportCardActorFromPrincipal, resolveReportCardActor } = require("../reportCardHttpActor");
 const { loadReportCardHttpCrypto, HISTORICAL_SIGNING_ENV } = require("../reportCardHttpRuntime");
 
 const SCHOOL_A = "school-a";
@@ -973,6 +973,62 @@ test("report-card-lot7-http-web-path-reaches-ready-approved-active", async () =>
     );
     assert.equal(adminBinding.status, 200);
     assert.equal(adminBinding.data.binding.request_id, requestId);
+  } finally {
+    await h.close();
+  }
+});
+
+test("report-card-lot7-verify-revoked-not-authentic", async () => {
+  const keys = bootPublication();
+  const { capability } = await publishFixture(keys.publication);
+  const dump = keys.publication.persistWithoutSecrets();
+  dump[0].verification_status = "REVOKED";
+  const restored = createReportCardPublication({
+    signingKey: keys.signingKey,
+    wrapping: keys.wrapping,
+    wrappingKeys: [keys.wrapping],
+    signingKeys: [keys.signingKey],
+    dump,
+  });
+  const h = await harness({ publication: restored });
+  try {
+    const res = await h.json("POST", "/api/public/report-cards/verify", { capability });
+    assert.equal(res.status, 200);
+    assert.equal(res.data.ok, true);
+    assert.equal(res.data.verification_status, "revoked");
+    assert.notEqual(res.data.verification_status, "authentic");
+  } finally {
+    await h.close();
+  }
+});
+
+test("report-card-lot7-actor-http-login-code-requires-uuid-lookup", async () => {
+  const h = await harness();
+  try {
+    h.setActor(
+      resolveReportCardActorFromPrincipal({
+        sub: "proviseur",
+        schoolCode: "CD-IN-26-001",
+        role: "Proviseur",
+        permissions: ["Bulletins:CREATE"],
+      })
+    );
+    const denied = await h.json("POST", "/api/report-card/requests", { modelKey: "trimestriel" });
+    assert.equal(denied.status, 400);
+    assert.equal(denied.data.error.code, "TENANT_REQUIRED");
+    const resolved = await resolveReportCardActor(
+      {
+        sub: "proviseur",
+        schoolCode: "CD-IN-26-001",
+        role: "Proviseur",
+        permissions: ["Bulletins:CREATE"],
+      },
+      async () => ({ id: SCHOOL_A, login_code: "CD-IN-26-001" })
+    );
+    h.setActor(resolved);
+    const created = await h.json("POST", "/api/report-card/requests", { modelKey: "trimestriel" });
+    assert.equal(created.status, 201);
+    assert.equal(created.data.request.school_id, SCHOOL_A);
   } finally {
     await h.close();
   }

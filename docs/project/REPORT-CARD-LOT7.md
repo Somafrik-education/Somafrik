@@ -21,8 +21,10 @@ Erreurs stables : `RBAC_DENIED` / `PLATFORM_CONTEXT_REQUIRED` / `TENANT_MISMATCH
 
 ## `/verify`
 
-Capability `publicId.token`. Échec public indistinguable `{ ok: false, reason: "not_found" }` pour token / public ID / capability malformée. Snapshot altéré : fail-closed.  
+Capability `publicId.token` sur **`/verify/rc/...` à la racine** (contrat QR LOT 0), hors basename `/web`. Snapshot `REVOKED` : statut public `revoked`, jamais « authentique ». Transport indisponible : état déterminé, pas un chargement infini.  
 `Cache-Control: no-store`, `Referrer-Policy: no-referrer`. Pas de mint/rotation, pas de persistance client, pas de fallback live.
+
+Acteur établissement : `effectiveSchoolId` UUID canonique (jamais le login_code V2 comme `school_id` PG).
 
 ## Web
 

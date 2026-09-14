@@ -132,7 +132,16 @@ async function handleVerify(req, res, { publication, logger }) {
     }
     const rawStatus = result.verification_status;
     const verification_status =
-      rawStatus === "SUPERSEDED" ? "superseded" : rawStatus === "ACTIVE" || !rawStatus ? "authentic" : rawStatus;
+      rawStatus === "SUPERSEDED"
+        ? "superseded"
+        : rawStatus === "REVOKED"
+          ? "revoked"
+          : rawStatus === "ACTIVE" || !rawStatus
+            ? "authentic"
+            : null;
+    if (!verification_status) {
+      return res.status(409).json({ ok: false, reason: "not_verifiable" });
+    }
     return res.status(200).json({
       ok: true,
       payload: result.payload,
@@ -145,6 +154,8 @@ async function handleVerify(req, res, { publication, logger }) {
 
 function registerReportCardHttp(app, deps = {}) {
   const resolveActor = typeof deps.resolveActor === "function" ? deps.resolveActor : () => null;
+  const resolveSchoolId =
+    typeof deps.resolveSchoolId === "function" ? deps.resolveSchoolId : async (value) => value;
   const logger = deps.logger;
   const auth = typeof deps.internalAuth === "function" ? deps.internalAuth : (_req, _res, next) => next();
 
@@ -166,6 +177,18 @@ function registerReportCardHttp(app, deps = {}) {
     };
   }
 
+  async function actorFrom(req) {
+    return requireActor(await Promise.resolve(resolveActor(req)));
+  }
+
+  async function adminSchoolId(actor, req) {
+    const requested = requestedSchoolId(req);
+    schoolIdForAdmin(actor, requested);
+    const resolved = await Promise.resolve(resolveSchoolId(requested));
+    if (resolved == null || resolved === "") throw coded("TENANT_REQUIRED");
+    return resolved;
+  }
+
   app.post("/api/public/report-cards/verify", (req, res) => {
     const { publication } = services();
     return handleVerify(req, res, { publication, logger });
@@ -175,7 +198,7 @@ function registerReportCardHttp(app, deps = {}) {
     "/api/report-card/requests",
     auth,
     route(async (req, res) => {
-      const actor = requireActor(resolveActor(req));
+      const actor = await actorFrom(req);
       const schoolId = schoolIdForSchoolActor(actor);
       const { configuration } = services();
       const requests = await configuration.listRequests({ actor, schoolId });
@@ -187,7 +210,7 @@ function registerReportCardHttp(app, deps = {}) {
     "/api/report-card/requests",
     auth,
     route(async (req, res) => {
-      const actor = requireActor(resolveActor(req));
+      const actor = await actorFrom(req);
       const schoolId = schoolIdForSchoolActor(actor);
       const { configuration } = services();
       const request = await configuration.submitModel({
@@ -204,7 +227,7 @@ function registerReportCardHttp(app, deps = {}) {
     "/api/report-card/requests/:requestId",
     auth,
     route(async (req, res) => {
-      const actor = requireActor(resolveActor(req));
+      const actor = await actorFrom(req);
       const schoolId = schoolIdForSchoolActor(actor);
       const { configuration } = services();
       const request = await configuration.getRequest({ actor, schoolId, requestId: req.params.requestId });
@@ -216,7 +239,7 @@ function registerReportCardHttp(app, deps = {}) {
     "/api/report-card/requests/:requestId/approve",
     auth,
     route(async (req, res) => {
-      const actor = requireActor(resolveActor(req));
+      const actor = await actorFrom(req);
       const schoolId = schoolIdForSchoolActor(actor);
       const { configuration } = services();
       const request = await configuration.approve({ actor, schoolId, requestId: req.params.requestId });
@@ -228,7 +251,7 @@ function registerReportCardHttp(app, deps = {}) {
     "/api/report-card/requests/:requestId/request-changes",
     auth,
     route(async (req, res) => {
-      const actor = requireActor(resolveActor(req));
+      const actor = await actorFrom(req);
       const schoolId = schoolIdForSchoolActor(actor);
       const { configuration } = services();
       const request = await configuration.requestChanges({
@@ -245,7 +268,7 @@ function registerReportCardHttp(app, deps = {}) {
     "/api/report-card/requests/:requestId/audit",
     auth,
     route(async (req, res) => {
-      const actor = requireActor(resolveActor(req));
+      const actor = await actorFrom(req);
       const schoolId = schoolIdForSchoolActor(actor);
       const { configuration } = services();
       const audit = await configuration.listAudit({ actor, schoolId, requestId: req.params.requestId });
@@ -257,7 +280,7 @@ function registerReportCardHttp(app, deps = {}) {
     "/api/report-card/bindings/:modelKey",
     auth,
     route(async (req, res) => {
-      const actor = requireActor(resolveActor(req));
+      const actor = await actorFrom(req);
       const schoolId = schoolIdForSchoolActor(actor);
       const { configuration } = services();
       const binding = await configuration.getActiveBinding({
@@ -273,7 +296,7 @@ function registerReportCardHttp(app, deps = {}) {
     "/api/report-card/requests/:requestId/bundle",
     auth,
     route(async (req, res) => {
-      const actor = requireActor(resolveActor(req));
+      const actor = await actorFrom(req);
       const schoolId = schoolIdForSchoolActor(actor);
       const { configuration } = services();
       const bundle = await configuration.getBoundBundle({
@@ -289,7 +312,7 @@ function registerReportCardHttp(app, deps = {}) {
     "/api/report-card/publications/:reportCardId/snapshot",
     auth,
     route(async (req, res) => {
-      const actor = requireActor(resolveActor(req));
+      const actor = await actorFrom(req);
       const schoolId = schoolIdForSchoolActor(actor);
       const { publication } = services();
       if (!publication || typeof publication.payloadForRender !== "function") {
@@ -309,8 +332,8 @@ function registerReportCardHttp(app, deps = {}) {
     "/api/report-card/admin/queue",
     auth,
     route(async (req, res) => {
-      const actor = requireActor(resolveActor(req));
-      const schoolId = schoolIdForAdmin(actor, requestedSchoolId(req));
+      const actor = await actorFrom(req);
+      const schoolId = await adminSchoolId(actor, req);
       const { configuration } = services();
       let requests = await configuration.listRequests({ actor, schoolId });
       const state = req.query?.state;
@@ -323,8 +346,8 @@ function registerReportCardHttp(app, deps = {}) {
     "/api/report-card/admin/requests/:requestId",
     auth,
     route(async (req, res) => {
-      const actor = requireActor(resolveActor(req));
-      const schoolId = schoolIdForAdmin(actor, requestedSchoolId(req));
+      const actor = await actorFrom(req);
+      const schoolId = await adminSchoolId(actor, req);
       const { configuration } = services();
       const request = await configuration.getRequest({ actor, schoolId, requestId: req.params.requestId });
       res.json({ ok: true, request: decorate(actor, request) });
@@ -335,8 +358,8 @@ function registerReportCardHttp(app, deps = {}) {
     "/api/report-card/admin/catalog",
     auth,
     route(async (req, res) => {
-      const actor = requireActor(resolveActor(req));
-      const schoolId = schoolIdForAdmin(actor, requestedSchoolId(req));
+      const actor = await actorFrom(req);
+      const schoolId = await adminSchoolId(actor, req);
       const { configuration } = services();
       const catalog = await configuration.listCatalog({ actor, schoolId });
       res.json({ ok: true, ...catalog });
@@ -347,8 +370,8 @@ function registerReportCardHttp(app, deps = {}) {
     "/api/report-card/admin/requests/:requestId/bundle",
     auth,
     route(async (req, res) => {
-      const actor = requireActor(resolveActor(req));
-      const schoolId = schoolIdForAdmin(actor, requestedSchoolId(req));
+      const actor = await actorFrom(req);
+      const schoolId = await adminSchoolId(actor, req);
       const { configuration } = services();
       const bundle = await configuration.getBoundBundle({
         actor,
@@ -363,8 +386,8 @@ function registerReportCardHttp(app, deps = {}) {
     "/api/report-card/admin/bindings/:modelKey",
     auth,
     route(async (req, res) => {
-      const actor = requireActor(resolveActor(req));
-      const schoolId = schoolIdForAdmin(actor, requestedSchoolId(req));
+      const actor = await actorFrom(req);
+      const schoolId = await adminSchoolId(actor, req);
       const { configuration } = services();
       const binding = await configuration.getActiveBinding({
         actor,
@@ -379,8 +402,8 @@ function registerReportCardHttp(app, deps = {}) {
     "/api/report-card/admin/requests/:requestId/review",
     auth,
     route(async (req, res) => {
-      const actor = requireActor(resolveActor(req));
-      const schoolId = schoolIdForAdmin(actor, requestedSchoolId(req));
+      const actor = await actorFrom(req);
+      const schoolId = await adminSchoolId(actor, req);
       const { configuration } = services();
       const request = await configuration.startReview({ actor, schoolId, requestId: req.params.requestId });
       res.json({ ok: true, request: decorate(actor, request) });
@@ -391,8 +414,8 @@ function registerReportCardHttp(app, deps = {}) {
     "/api/report-card/admin/requests/:requestId/configure",
     auth,
     route(async (req, res) => {
-      const actor = requireActor(resolveActor(req));
-      const schoolId = schoolIdForAdmin(actor, requestedSchoolId(req));
+      const actor = await actorFrom(req);
+      const schoolId = await adminSchoolId(actor, req);
       const { configuration } = services();
       const request = await configuration.startConfiguring({ actor, schoolId, requestId: req.params.requestId });
       res.json({ ok: true, request: decorate(actor, request) });
@@ -403,8 +426,8 @@ function registerReportCardHttp(app, deps = {}) {
     "/api/report-card/admin/requests/:requestId/save-template",
     auth,
     route(async (req, res) => {
-      const actor = requireActor(resolveActor(req));
-      const schoolId = schoolIdForAdmin(actor, requestedSchoolId(req));
+      const actor = await actorFrom(req);
+      const schoolId = await adminSchoolId(actor, req);
       const { configuration } = services();
       const template = await configuration.saveRenderingTemplate({
         actor,
@@ -420,8 +443,8 @@ function registerReportCardHttp(app, deps = {}) {
     "/api/report-card/admin/requests/:requestId/bind-bundle",
     auth,
     route(async (req, res) => {
-      const actor = requireActor(resolveActor(req));
-      const schoolId = schoolIdForAdmin(actor, requestedSchoolId(req));
+      const actor = await actorFrom(req);
+      const schoolId = await adminSchoolId(actor, req);
       const { configuration } = services();
       const request = await configuration.bindBundle({
         actor,
@@ -439,8 +462,8 @@ function registerReportCardHttp(app, deps = {}) {
     "/api/report-card/admin/requests/:requestId/ready-for-review",
     auth,
     route(async (req, res) => {
-      const actor = requireActor(resolveActor(req));
-      const schoolId = schoolIdForAdmin(actor, requestedSchoolId(req));
+      const actor = await actorFrom(req);
+      const schoolId = await adminSchoolId(actor, req);
       const { configuration } = services();
       const request = await configuration.markReadyForReview({
         actor,
@@ -455,8 +478,8 @@ function registerReportCardHttp(app, deps = {}) {
     "/api/report-card/admin/requests/:requestId/reject",
     auth,
     route(async (req, res) => {
-      const actor = requireActor(resolveActor(req));
-      const schoolId = schoolIdForAdmin(actor, requestedSchoolId(req));
+      const actor = await actorFrom(req);
+      const schoolId = await adminSchoolId(actor, req);
       const { configuration } = services();
       const request = await configuration.reject({
         actor,
@@ -472,8 +495,8 @@ function registerReportCardHttp(app, deps = {}) {
     "/api/report-card/admin/requests/:requestId/activate",
     auth,
     route(async (req, res) => {
-      const actor = requireActor(resolveActor(req));
-      const schoolId = schoolIdForAdmin(actor, requestedSchoolId(req));
+      const actor = await actorFrom(req);
+      const schoolId = await adminSchoolId(actor, req);
       const { configuration } = services();
       const request = await configuration.activate({
         actor,

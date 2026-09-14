@@ -70,14 +70,40 @@ test("report-card-lot7-actor-removed-permission-is-not-restored-by-role", () => 
   assert.deepEqual(actor.permissions, []);
 });
 
-test("report-card-lot7-actor-uses-effective-permissions-and-school-code", () => {
+test("report-card-lot7-actor-uses-effective-permissions-and-school-uuid", () => {
   const actor = resolveReportCardActorFromPrincipal({
     sub: "user-2",
-    schoolCode: "ECOLE1",
+    schoolCode: "CD-IN-26-001",
+    effectiveSchoolId: "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee",
     role: "Directeur",
     effectivePermissions: ["Bulletins:CREATE", "Bulletins:UPDATE"],
   });
-  assert.equal(actor.actorSchoolId, "ECOLE1");
+  assert.equal(actor.actorSchoolId, "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee");
   assert.equal(actor.permissions.includes(SUBMIT), true);
   assert.equal(actor.permissions.includes(APPROVE), true);
+});
+
+test("report-card-lot7-actor-login-code-is-not-school-id", () => {
+  const actor = resolveReportCardActorFromPrincipal({
+    sub: "user-2",
+    schoolCode: "CD-IN-26-001",
+    role: "Proviseur",
+    permissions: ["Bulletins:CREATE"],
+  });
+  assert.equal(actor.actorSchoolId, "");
+});
+
+test("report-card-lot7-actor-lookup-resolves-school-uuid", async () => {
+  const { resolveReportCardActor } = require("./reportCardHttpActor");
+  const actor = await resolveReportCardActor(
+    {
+      sub: "user-2",
+      schoolCode: "CD-IN-26-001",
+      role: "Proviseur",
+      permissions: ["Bulletins:CREATE"],
+    },
+    async () => ({ id: "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee", login_code: "CD-IN-26-001" })
+  );
+  assert.equal(actor.actorSchoolId, "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee");
+  assert.equal(actor.permissions.includes(SUBMIT), true);
 });
