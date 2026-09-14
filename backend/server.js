@@ -323,15 +323,19 @@ app.get("/", asyncHandler(async (req, res) => {
 app.get("/api/health", asyncHandler(async (_req, res) => {
   await repository.init();
   const { probeCommunicationStorageWritable } = require("./lib/communicationsAttachments");
+  const { probeReportCardSourceStorageWritable } = require("./lib/reportCard/reportCardSourceStorage");
   const attachments = await probeCommunicationStorageWritable();
+  const reportCardSource = await probeReportCardSourceStorageWritable();
+  const ready = Boolean(attachments.ready && reportCardSource.ready);
   const payload = {
-    status: attachments.ready ? "ok" : "not_ready",
+    status: ready ? "ok" : "not_ready",
     database: repository.engine ?? "postgresql",
     version: process.env.npm_package_version ?? "1.0.0",
     timestamp: new Date().toISOString(),
     attachments,
+    reportCardSource,
   };
-  if (!attachments.ready) {
+  if (!ready) {
     return res.status(503).json(payload);
   }
   res.json(payload);

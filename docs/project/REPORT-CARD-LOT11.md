@@ -13,8 +13,20 @@ Le fichier source est une **preuve documentaire**, jamais une règle exécutable
 
 | Champ | Valeur |
 | --- | --- |
-| Commit | RED uniquement (tests + inventaire stockage + gate). **Production code modified: NO.** |
-| GREEN | Non commencé. STOP après RED pour revue CTO du pré-gate stockage (namespace dédié). |
+| RED | `0ba33ac0d220723312ff4d00a4cc2d4d62947847` — tests + inventaire. Production code unmodified. |
+| GREEN | commit suivant — domaine, stockage dédié, HTTP, Web. **Production code modified: YES.** |
+| Décision CTO stockage | Option 2 : `SOMAFRIK_REPORT_CARD_SOURCE_STORAGE` (root dédié). Même volume physique autorisé via sous-répertoire. **Ne pas** utiliser `SOMAFRIK_COMMUNICATION_STORAGE` comme root runtime. |
+
+## Contrat stockage GREEN (validé CTO)
+
+1. `SOMAFRIK_REPORT_CARD_SOURCE_STORAGE` obligatoire en préprod/prod (`NODE_ENV=production`) ; absence ou `/tmp` `/var/tmp` → fail-closed 503.
+2. Clés opaques `YYYY/<uuid>` : **aucun** `schoolId`, `requestId`, `modelKey` ni nom original dans le chemin.
+3. `artifact_id` opaque ≠ locator de stockage ; le storage key n’est **pas** exposé au client.
+4. Magic bytes PDF/JPEG/PNG, MIME cohérent, max 10 MiB, SHA-256 enregistré.
+5. ACL bulletin : pas de GET public ; établissement = son tenant/sa demande ; Superadmin = `REPORT_CARD_CONFIGURE` + contexte cible + audit.
+6. Pattern de sécurité Communications réutilisé (`sniffMime`) **sans** refactor du domaine Communications.
+7. Métadonnées PostgreSQL tenant-scopées ; binaire hors PG.
+8. Docker : même volume `communication_storage`, env dédiée pointant vers `.../report-card-source`.
 
 ## Inventaire stockage — pré-gate CTO
 
@@ -37,12 +49,7 @@ Conclusion : **un magasin binaire durable canonique existe.** GREEN doit en réu
 
 L’audit framework (§9.4) demandait déjà un stockage durable **dédié** (`original_storage_key`) : même allowlist Communications, isolation `school_id` sur la clé, **nouvelle env plutôt que réutiliser le bucket Communications sans ACL séparée**.
 
-**Question CTO restante (pas un gap d’absence de store) :**
-
-1. **Recommandé DEV :** réutiliser le volume `SOMAFRIK_COMMUNICATION_STORAGE` avec préfixe opaque dédié (`rc-source/{schoolId}/{year}/{uuid}`) + ACL bulletin distincte + SHA-256.
-2. **Alternative audit 9.4 :** nouvelle env du même type (`SOMAFRIK_REPORT_CARD_SOURCE_STORAGE`) pointant éventuellement le même volume Docker, pour isoler le readiness fail-closed.
-
-Ni 1 ni 2 n’invente un provider externe. **Pas de STOP « aucun store ».** STOP GREEN jusqu’à confirmation du namespace (même volume + préfixe vs env dédiée).
+**Décision CTO (option 2) :** `SOMAFRIK_REPORT_CARD_SOURCE_STORAGE` — même volume physique autorisé, root runtime distinct, clés `YYYY/<uuid>` sans identifiants métier dans le chemin.
 
 ### Non réutilisable comme magasin d’artefacts source
 
@@ -63,9 +70,11 @@ Ni 1 ni 2 n’invente un provider externe. **Pas de STOP « aucun store ».** ST
 - disque éphémère Render comme store durable ;
 - URL publique brute non protégée.
 
-## Contrat GREEN (non implémenté dans cette révision RED)
+## Contrat GREEN
 
-Module attendu : `backend/lib/reportCard/reportCardSourceArtifact.js` → `createReportCardSourceArtifact`.
+Module : `backend/lib/reportCard/reportCardSourceArtifact.js` → `createReportCardSourceArtifact`.
+Stockage : `backend/lib/reportCard/reportCardSourceStorage.js`.
+Métadonnées PG : `report_card_source_artifacts` + audit append-only.
 
 - Upload établissement : `REPORT_CARD_SUBMIT_MODEL`, propre `school_id`, propre demande.
 - Superadmin : `REPORT_CARD_CONFIGURE`, preview cross-tenant audité, mapping **humain** vers profile/schema/template.

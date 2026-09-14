@@ -4,6 +4,7 @@ import {
   type ReportCardAuditEntry,
   type ReportCardBundle,
   type ReportCardRequest,
+  type ReportCardSourceArtifact,
 } from "../lib/reportCardConfigurationApi";
 import {
   ReportCardSnapshotView,
@@ -26,6 +27,8 @@ export function ReportCardSchoolWorkflowPage() {
   const [cardId, setCardId] = useState("");
   const [version, setVersion] = useState("1");
   const [payload, setPayload] = useState<Record<string, unknown> | null>(null);
+  const [uploadFile, setUploadFile] = useState<File | null>(null);
+  const [uploadedByRequest, setUploadedByRequest] = useState<Record<string, ReportCardSourceArtifact>>({});
 
   async function loadDetails(list: ReportCardRequest[]) {
     const next: Record<string, RequestDetails> = {};
@@ -110,6 +113,21 @@ export function ReportCardSchoolWorkflowPage() {
     }
   }
 
+  async function onUploadSource(requestId: string) {
+    if (!uploadFile) {
+      setError("Choisir un fichier PDF, JPG ou PNG.");
+      return;
+    }
+    try {
+      const data = await reportCardConfigurationApi.attachSourceArtifact(requestId, uploadFile);
+      const artifact = data.artifact;
+      setUploadedByRequest((current) => ({ ...current, [requestId]: artifact }));
+      setError("");
+    } catch {
+      setError("Envoi du modèle refusé.");
+    }
+  }
+
   return (
     <main className="mx-auto max-w-4xl p-6">
       <h1>Modèle de bulletin</h1>
@@ -148,6 +166,19 @@ export function ReportCardSchoolWorkflowPage() {
               {extra?.binding ? (
                 <p data-active-binding>
                   Configuration ACTIVE {String(extra.binding.model_key || request.model_key)}
+                </p>
+              ) : null}
+              <input
+                type="file"
+                accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png"
+                onChange={(event) => setUploadFile(event.target.files?.[0] || null)}
+              />
+              <button type="button" onClick={() => void onUploadSource(request.id)}>
+                Envoyer un modèle de bulletin
+              </button>
+              {uploadedByRequest[request.id] ? (
+                <p>
+                  Modèle envoyé {uploadedByRequest[request.id].artifact_id}
                 </p>
               ) : null}
             </li>

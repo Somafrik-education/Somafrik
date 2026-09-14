@@ -3,6 +3,7 @@ import {
   reportCardAdminApi,
   type ReportCardCatalogEntry,
   type ReportCardRequest,
+  type ReportCardSourceArtifact,
 } from "../lib/reportCardConfigurationApi";
 import { ReportCardTemplatePreview } from "../components/bulletin/ReportCardSnapshotView";
 
@@ -63,6 +64,7 @@ export function ReportCardSuperadminWorkflowPage() {
   const [drafts, setDrafts] = useState<Record<string, Draft>>({});
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [artifacts, setArtifacts] = useState<Record<string, ReportCardSourceArtifact | null>>({});
 
   function draftFor(request: ReportCardRequest): Draft {
     return drafts[request.id] || seedDraft(request, profiles, schemas);
@@ -92,6 +94,19 @@ export function ReportCardSuperadminWorkflowPage() {
       setRequests(data.requests || []);
       setProfiles(catalog.profiles || []);
       setSchemas(catalog.schemas || []);
+      const nextArtifacts: Record<string, ReportCardSourceArtifact | null> = {};
+      await Promise.all(
+        (data.requests || []).map(async (request) => {
+          if (typeof reportCardAdminApi.getSourceArtifact !== "function") return;
+          try {
+            const row = await reportCardAdminApi.getSourceArtifact(request.id, schoolId);
+            nextArtifacts[request.id] = row.artifact || null;
+          } catch {
+            nextArtifacts[request.id] = null;
+          }
+        }),
+      );
+      setArtifacts(nextArtifacts);
       setDrafts((current) => {
         const next = { ...current };
         for (const request of data.requests || []) {
@@ -189,6 +204,24 @@ export function ReportCardSuperadminWorkflowPage() {
           return (
             <li key={request.id} data-workflow-state={request.status}>
               <span>{request.model_key}</span> <strong>{request.status}</strong>
+              <section>
+                <h2>Artefact source</h2>
+                {artifacts[request.id] ? (
+                  <p>
+                    {artifacts[request.id]?.original_filename} {artifacts[request.id]?.artifact_id}{" "}
+                    {artifacts[request.id]?.sha256}
+                  </p>
+                ) : (
+                  <p>Aucun artefact source.</p>
+                )}
+                {artifacts[request.id]?.media_type === "application/pdf" ||
+                artifacts[request.id]?.media_type?.startsWith("image/") ? (
+                  <iframe
+                    title={`source-artifact-${request.id}`}
+                    src={`/api/report-card/admin/requests/${encodeURIComponent(request.id)}/source-artifact/content?schoolId=${encodeURIComponent(schoolId)}`}
+                  />
+                ) : null}
+              </section>
               {request.actions?.review ? (
                 <button type="button" onClick={() => void run(reportCardAdminApi.startReview, request.id)}>
                   Examiner
