@@ -101,6 +101,9 @@ function createReportCardCorrection({ publication, getFacts, getProfile, getSche
     if (!profile || !schema) {
       throw new ReportCardPublicationError("FACTS_REQUIRED");
     }
+    if (!unscoped.academic_year_id || !unscoped.class_id) {
+      throw new ReportCardPublicationError("FACTS_REQUIRED");
+    }
     const facts = await getFacts({
       tenant,
       schoolId,
@@ -126,9 +129,9 @@ function createReportCardCorrection({ publication, getFacts, getProfile, getSche
       engine_id: computed.engine_id,
       provenance: unscoped.provenance,
       students: computed.students,
+      academic_year_id: unscoped.academic_year_id,
+      class_id: unscoped.class_id,
     };
-    if (unscoped.academic_year_id) payload.academic_year_id = unscoped.academic_year_id;
-    if (unscoped.class_id) payload.class_id = unscoped.class_id;
     let published;
     try {
       published = await Promise.resolve(

@@ -86,11 +86,20 @@ test("report-card-lot9-server-js-wires-correction-resolvers", () => {
   assert.match(runtimeSrc, /getFacts/);
   assert.match(runtimeSrc, /getProfile/);
   assert.match(runtimeSrc, /getSchema/);
+  assert.match(runtimeSrc, /publishInitial/);
   assert.equal(/liveByKey\.get\(factKey\(row\)\) \|\| row/.test(runtimeSrc), false);
   const factsSrc = fs.readFileSync(path.join(ROOT, "backend/db/reportCardFactsStore.js"), "utf8");
   assert.match(factsSrc, /weightedAverage/);
   assert.match(factsSrc, /FACTS_REQUIRED/);
   assert.match(factsSrc, /throw schemaUnavailable/);
+  assert.match(factsSrc, /resolveCohort/);
+  const pubSrc = fs.readFileSync(path.join(ROOT, "backend/lib/reportCard/reportCardPublication.js"), "utf8");
+  assert.match(pubSrc, /payload\.academic_year_id/);
+  assert.match(pubSrc, /payload\.class_id/);
+  const initialSrc = fs.readFileSync(path.join(ROOT, "backend/lib/reportCard/reportCardInitialPublication.js"), "utf8");
+  assert.match(initialSrc, /resolveCohort/);
+  assert.match(initialSrc, /academic_year_id: cohort\.academicYearId/);
+  assert.match(initialSrc, /class_id: cohort\.classId/);
 });
 
 test("report-card-lot9-production-wiring-corrects-to-next-version", async () => {
@@ -139,6 +148,8 @@ test("report-card-lot9-production-wiring-corrects-to-next-version", async () => 
     engine_id: computedV1.engine_id,
     provenance,
     students: computedV1.students,
+    academic_year_id: "year-1",
+    class_id: "class-1",
   };
   const signingKey = generateSigningKey("rc-ed25519-1");
   const wrapping = generateWrappingKey("rc-wrap-1");

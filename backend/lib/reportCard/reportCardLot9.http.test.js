@@ -129,6 +129,8 @@ function snapshotPayload(overrides = {}, rawScore = 12) {
     engine_id: result.engine_id,
     provenance: result.provenance,
     students: result.students,
+    academic_year_id: "year-1",
+    class_id: "class-1",
     ...overrides,
   };
 }

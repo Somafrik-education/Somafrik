@@ -144,6 +144,30 @@ function createReportCardFactsPgStore(db) {
     return fn(db);
   }
 
+  async function resolveCohort({ schoolId, classId, academicYearId } = {}) {
+    if (!schoolId || !classId || !academicYearId) return null;
+    return withClient(async (client) => {
+      try {
+        const result = await client.query(
+          `SELECT c.id AS class_id, c.academic_year_id
+             FROM classes c
+            WHERE c.school_id = $1
+              AND c.id = $2
+              AND c.academic_year_id = $3`,
+          [schoolId, classId, academicYearId]
+        );
+        if (!result.rowCount) return null;
+        return {
+          classId: result.rows[0].class_id,
+          academicYearId: result.rows[0].academic_year_id,
+        };
+      } catch (err) {
+        if (isUndefinedRelation(err)) throw schemaUnavailable();
+        throw err;
+      }
+    });
+  }
+
   async function listFacts({ schoolId, classId, academicYearId, scaleByComponent } = {}) {
     if (!schoolId || !classId || !academicYearId) return [];
     if (!scaleByComponent || typeof scaleByComponent !== "object") return [];
@@ -182,7 +206,7 @@ function createReportCardFactsPgStore(db) {
     });
   }
 
-  return { listFacts };
+  return { listFacts, resolveCohort };
 }
 
 function createMemoryFactsStore(seed = []) {
@@ -193,6 +217,10 @@ function createMemoryFactsStore(seed = []) {
         .filter((row) => !schoolId || row.schoolId === schoolId)
         .flatMap((row) => (Array.isArray(row.facts) ? row.facts : [row]))
         .filter((row) => row && row.student_id);
+    },
+    resolveCohort({ classId, academicYearId } = {}) {
+      if (!classId || !academicYearId) return null;
+      return { classId, academicYearId };
     },
   };
 }

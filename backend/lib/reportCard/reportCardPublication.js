@@ -67,6 +67,9 @@ function assertPublishablePayload(payload) {
   if (!Array.isArray(payload.students)) {
     throw new ReportCardPublicationError("INVALID_SNAPSHOT");
   }
+  if (!requireNonEmptyString(payload.academic_year_id) || !requireNonEmptyString(payload.class_id)) {
+    throw new ReportCardPublicationError("INVALID_SNAPSHOT");
+  }
   for (const student of payload.students) {
     if (
       !student ||

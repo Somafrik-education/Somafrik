@@ -17,7 +17,7 @@ Publications concurrentes de **versions distinctes** du même bulletin : sérial
 
 ## Snapshot signé
 
-Validation fail-closed **avant** `sealSnapshot` : `engine_id === somafrik.report_card.v1`, provenance `profile` + `schema` (id / version / spec_sha256), `students[]` canonique, version entière ≥ 1. PostgreSQL persiste l’`engine_id` déjà présent dans les bytes signés — aucun fallback.
+Validation fail-closed **avant** `sealSnapshot` : `engine_id === somafrik.report_card.v1`, provenance `profile` + `schema` (id / version / spec_sha256), `students[]` canonique, version entière ≥ 1, cohorte signée `academic_year_id` + `class_id`. PostgreSQL persiste l’`engine_id` déjà présent dans les bytes signés — aucun fallback.
 
 ## Tenant
 

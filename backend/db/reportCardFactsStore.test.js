@@ -112,3 +112,13 @@ test("report-card-lot9-facts-aggregate-uses-pinned-component-max", () => {
   assert.equal(aggregateCanonicalFacts(rows, {}).length, 0);
   assert.deepEqual(scaleByComponentFromProfile({ score_components: [{ id: "TJ", max: 10 }] }), { TJ: 10 });
 });
+
+test("report-card-lot9-facts-resolve-cohort-requires-class-and-year", () => {
+  const { createMemoryFactsStore } = require("./reportCardFactsStore");
+  const store = createMemoryFactsStore([]);
+  assert.equal(store.resolveCohort({ classId: "class-1" }), null);
+  assert.deepEqual(store.resolveCohort({ classId: "class-1", academicYearId: "year-1" }), {
+    classId: "class-1",
+    academicYearId: "year-1",
+  });
+});

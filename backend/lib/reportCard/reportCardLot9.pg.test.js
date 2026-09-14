@@ -113,8 +113,8 @@ function computedPayload(schoolId, rawScore, provenance, reportCardId = "rc-lot9
     provenance: result.provenance,
     students: result.students,
   };
-  if (scope && scope.academicYearId) payload.academic_year_id = scope.academicYearId;
-  if (scope && scope.classId) payload.class_id = scope.classId;
+  payload.academic_year_id = (scope && scope.academicYearId) || "year-1";
+  payload.class_id = (scope && scope.classId) || "class-1";
   return payload;
 }
 
@@ -1044,7 +1044,7 @@ describe("report-card-lot9 PG correction/revoke serialization", { skip: !shouldR
     }
   });
 
-  test("pg: correction uses only the source year and class not another cohort", async () => {
+  test("pg: production initial publish stamps source class/year then correction isolates cohorts", async () => {
     const url = await ensureIsolatedDatabase(DATABASE_URL, `${IT_DB}_scope`);
     const pool = new Pool({ connectionString: url, max: 8 });
     try {
@@ -1060,15 +1060,22 @@ describe("report-card-lot9 PG correction/revoke serialization", { skip: !shouldR
       await insertGrade(pool, schoolA, yearA, evalA, { score: 12 });
       await insertGrade(pool, schoolA, yearB, evalB, { score: 20 });
       const keys = bootKeys();
-      const { app, publication, tenant, provenance } = bootBindings(pool, schoolA, keys);
-      const payloadV1 = computedPayload(schoolA, 12, provenance, "rc-lot9-1", {
-        academicYearId: yearA.yearId,
+      const { app, bindings, tenant } = bootBindings(pool, schoolA, keys);
+      await bindings.publishInitial({
+        tenant,
+        reportCardId: "rc-lot9-1",
         classId: yearA.classId,
+        academicYearId: yearA.yearId,
       });
-      await publication.publish({ tenant, payload: payloadV1 });
       await pool.query("UPDATE grades SET score = 14 WHERE evaluation_id = $1", [evalA]);
       const bound = await listen(app);
       try {
+        const v1 = await fetch(`${bound.base}/api/report-card/publications/rc-lot9-1/versions/1`);
+        const v1Body = await v1.json();
+        assert.equal(v1.status, 200);
+        assert.equal(v1Body.payload.academic_year_id, yearA.yearId);
+        assert.equal(v1Body.payload.class_id, yearA.classId);
+        assert.equal(v1Body.payload.students[0].cells[0].internal, 12);
         const res = await fetch(`${bound.base}/api/report-card/publications/rc-lot9-1/corrections`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -1091,6 +1098,37 @@ describe("report-card-lot9 PG correction/revoke serialization", { skip: !shouldR
       } finally {
         await bound.close();
       }
+    } finally {
+      await pool.end();
+    }
+  });
+
+  test("pg: production initial publish refuses a class/year that is not the canonical class row", async () => {
+    const url = await ensureIsolatedDatabase(DATABASE_URL, `${IT_DB}_scope_mismatch`);
+    const pool = new Pool({ connectionString: url, max: 8 });
+    try {
+      const schoolA = await bootFresh(pool, { pedagogy: true });
+      const yearA = await seedPedagogy(pool, schoolA);
+      const yearB = await seedYearClass(pool, schoolA, yearA, {
+        yearName: "2027",
+        classCode: "5B",
+        className: "5e B",
+      });
+      const evalA = await insertEvaluation(pool, schoolA, yearA, { title: "TJ 2026" });
+      await insertGrade(pool, schoolA, yearA, evalA, { score: 12 });
+      const keys = bootKeys();
+      const { bindings, tenant } = bootBindings(pool, schoolA, keys);
+      await assert.rejects(
+        () =>
+          bindings.publishInitial({
+            tenant,
+            reportCardId: "rc-lot9-1",
+            classId: yearA.classId,
+            academicYearId: yearB.yearId,
+          }),
+        (err) => err && err.code === "FACTS_REQUIRED"
+      );
+      assert.equal(await snapshotCount(pool, schoolA), 0);
     } finally {
       await pool.end();
     }

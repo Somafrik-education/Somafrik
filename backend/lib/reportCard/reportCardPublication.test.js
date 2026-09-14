@@ -93,6 +93,8 @@ function snapshotPayload(overrides = {}) {
     engine_id: result.engine_id,
     provenance: result.provenance,
     students: result.students,
+    academic_year_id: "year-1",
+    class_id: "class-1",
     ...overrides,
   };
 }
@@ -452,10 +454,35 @@ test("report-card-publication-signed-provenance", () => {
       }),
     (err) => err.code === "INVALID_SNAPSHOT"
   );
+  assert.throws(
+    () =>
+      publication.publish({
+        tenant: TENANT_A,
+        payload: snapshotPayload({ academic_year_id: "" }),
+      }),
+    (err) => err.code === "INVALID_SNAPSHOT"
+  );
+  assert.throws(
+    () =>
+      publication.publish({
+        tenant: TENANT_A,
+        payload: snapshotPayload({ class_id: " " }),
+      }),
+    (err) => err.code === "INVALID_SNAPSHOT"
+  );
+  const missingCohort = snapshotPayload();
+  delete missingCohort.academic_year_id;
+  delete missingCohort.class_id;
+  assert.throws(
+    () => publication.publish({ tenant: TENANT_A, payload: missingCohort }),
+    (err) => err.code === "INVALID_SNAPSHOT"
+  );
   assert.equal(publication.listOutbox({ tenant: TENANT_A }).length, 0);
   const published = publication.publish({ tenant: TENANT_A, payload: snapshotPayload() });
   assert.equal(published.sealed.payload.engine_id, ENGINE_ID);
   assert.match(published.sealed.canonical_bytes.toString("utf8"), /"engine_id":"somafrik\.report_card\.v1"/);
+  assert.equal(published.sealed.payload.academic_year_id, "year-1");
+  assert.equal(published.sealed.payload.class_id, "class-1");
   assert.equal(published.sealed.payload.provenance.profile.spec_sha256, "aa");
   assert.equal(published.sealed.payload.provenance.schema.spec_sha256, "bb");
   assert.ok(Array.isArray(published.sealed.payload.students));

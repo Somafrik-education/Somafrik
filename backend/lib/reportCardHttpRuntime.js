@@ -14,6 +14,7 @@ const {
 } = require("../db/reportCardFactsStore");
 const { createReportCardConfiguration } = require("./reportCard/reportCardConfiguration");
 const { createReportCardPublication } = require("./reportCard/reportCardPublication");
+const { createReportCardInitialPublication } = require("./reportCard/reportCardInitialPublication");
 
 const HISTORICAL_SIGNING_ENV = "SOMAFRIK_REPORT_CARD_SIGNING_HISTORICAL_PUBLIC_KEYS_JSON";
 const HISTORICAL_WRAPPING_ENV = "SOMAFRIK_REPORT_CARD_WRAPPING_HISTORICAL_KEYS_JSON";
@@ -174,6 +175,25 @@ function createReportCardHttpRuntime(repository, env = process.env, overrides = 
     return resolveFacts(identities, listed);
   }
 
+  const initialPublication =
+    publication && factsStore
+      ? createReportCardInitialPublication({
+          publication,
+          factsStore,
+          profileStore,
+          schemaStore,
+        })
+      : null;
+
+  async function publishInitial(args) {
+    if (!initialPublication) {
+      const err = new Error("FACTS_REQUIRED");
+      err.code = "FACTS_REQUIRED";
+      throw err;
+    }
+    return initialPublication.publishInitial(args);
+  }
+
   async function getProfile({ tenant, ref } = {}) {
     if (!ref || !configuration || typeof configuration.lookupProfileSpec !== "function") return null;
     return configuration.lookupProfileSpec({
@@ -194,7 +214,7 @@ function createReportCardHttpRuntime(repository, env = process.env, overrides = 
     });
   }
 
-  return { configuration, publication, getFacts, getProfile, getSchema, factsStore };
+  return { configuration, publication, getFacts, getProfile, getSchema, factsStore, publishInitial };
 }
 
 function createReportCardHttpBindings({
@@ -235,6 +255,7 @@ function createReportCardHttpBindings({
     getFacts: (args) => getRuntime().getFacts && getRuntime().getFacts(args),
     getProfile: (args) => getRuntime().getProfile && getRuntime().getProfile(args),
     getSchema: (args) => getRuntime().getSchema && getRuntime().getSchema(args),
+    publishInitial: (args) => getRuntime().publishInitial(args),
     resolveActor,
     resolveSchoolId,
     internalAuth,
