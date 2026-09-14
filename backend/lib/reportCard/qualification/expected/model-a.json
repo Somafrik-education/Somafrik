@@ -1,0 +1,256 @@
+{
+  "id": "fixture.qualification.burundi-model-a",
+  "engine_id": "somafrik.report_card.v1",
+  "canonical": [
+    {
+      "student_id": "STU1",
+      "cells": [
+        {
+          "subject_id": "ANGLAIS",
+          "period_id": "T1",
+          "score_component_id": "COMPONENT_PERIOD",
+          "kind": "NUMERIC",
+          "internal": 11,
+          "exposed": 11
+        },
+        {
+          "subject_id": "ANGLAIS",
+          "period_id": "T2",
+          "score_component_id": "COMPONENT_PERIOD",
+          "kind": "NUMERIC",
+          "internal": 12,
+          "exposed": 12
+        },
+        {
+          "subject_id": "ANGLAIS",
+          "period_id": "T3",
+          "score_component_id": "COMPONENT_PERIOD",
+          "kind": "NUMERIC",
+          "internal": 13,
+          "exposed": 13
+        },
+        {
+          "subject_id": "ARTS",
+          "period_id": "T1",
+          "score_component_id": "COMPONENT_PERIOD",
+          "kind": "NUMERIC",
+          "internal": 14,
+          "exposed": 14
+        },
+        {
+          "subject_id": "ARTS",
+          "period_id": "T2",
+          "score_component_id": "COMPONENT_PERIOD",
+          "kind": "NUMERIC",
+          "internal": 15,
+          "exposed": 15
+        },
+        {
+          "subject_id": "ARTS",
+          "period_id": "T3",
+          "score_component_id": "COMPONENT_PERIOD",
+          "kind": "NUMERIC",
+          "internal": 13,
+          "exposed": 13
+        },
+        {
+          "subject_id": "ETUDE_DU_MILIEU",
+          "period_id": "T1",
+          "score_component_id": "COMPONENT_PERIOD",
+          "kind": "NUMERIC",
+          "internal": 10,
+          "exposed": 10
+        },
+        {
+          "subject_id": "ETUDE_DU_MILIEU",
+          "period_id": "T2",
+          "score_component_id": "COMPONENT_PERIOD",
+          "kind": "NUMERIC",
+          "internal": 11,
+          "exposed": 11
+        },
+        {
+          "subject_id": "ETUDE_DU_MILIEU",
+          "period_id": "T3",
+          "score_component_id": "COMPONENT_PERIOD",
+          "kind": "NUMERIC",
+          "internal": 12,
+          "exposed": 12
+        },
+        {
+          "subject_id": "FRANCAIS",
+          "period_id": "T1",
+          "score_component_id": "COMPONENT_PERIOD",
+          "kind": "NUMERIC",
+          "internal": 16,
+          "exposed": 16
+        },
+        {
+          "subject_id": "FRANCAIS",
+          "period_id": "T2",
+          "score_component_id": "COMPONENT_PERIOD",
+          "kind": "NUMERIC",
+          "internal": 14,
+          "exposed": 14
+        },
+        {
+          "subject_id": "FRANCAIS",
+          "period_id": "T3",
+          "score_component_id": "COMPONENT_PERIOD",
+          "kind": "NUMERIC",
+          "internal": 15,
+          "exposed": 15
+        },
+        {
+          "subject_id": "KIRUNDI",
+          "period_id": "T1",
+          "score_component_id": "COMPONENT_PERIOD",
+          "kind": "NUMERIC",
+          "internal": 12,
+          "exposed": 12
+        },
+        {
+          "subject_id": "KIRUNDI",
+          "period_id": "T2",
+          "score_component_id": "COMPONENT_PERIOD",
+          "kind": "NUMERIC",
+          "internal": 13,
+          "exposed": 13
+        },
+        {
+          "subject_id": "KIRUNDI",
+          "period_id": "T3",
+          "score_component_id": "COMPONENT_PERIOD",
+          "kind": "NUMERIC",
+          "internal": 14,
+          "exposed": 14
+        },
+        {
+          "subject_id": "MATHEMATIQUES",
+          "period_id": "T1",
+          "score_component_id": "COMPONENT_PERIOD",
+          "kind": "NUMERIC",
+          "internal": 18,
+          "exposed": 18
+        },
+        {
+          "subject_id": "MATHEMATIQUES",
+          "period_id": "T2",
+          "score_component_id": "COMPONENT_PERIOD",
+          "kind": "NUMERIC",
+          "internal": 17,
+          "exposed": 17
+        },
+        {
+          "subject_id": "MATHEMATIQUES",
+          "period_id": "T3",
+          "score_component_id": "COMPONENT_PERIOD",
+          "kind": "NUMERIC",
+          "internal": 16,
+          "exposed": 16
+        }
+      ],
+      "slots": [
+        {
+          "section_id": "GROUPS",
+          "column_id": "COL_ANNUAL_MAX",
+          "slot": "ANNUAL_MAX",
+          "period_id": null,
+          "score_component_id": null,
+          "kind": "NUMERIC",
+          "internal": 360,
+          "exposed": 360,
+          "passed": null
+        },
+        {
+          "section_id": "GROUPS",
+          "column_id": "COL_ANNUAL_POINTS",
+          "slot": "ANNUAL_POINTS",
+          "period_id": null,
+          "score_component_id": null,
+          "kind": "NUMERIC",
+          "internal": 246,
+          "exposed": 246,
+          "passed": null
+        },
+        {
+          "section_id": "GROUPS",
+          "column_id": "COL_PERCENTAGE",
+          "slot": "PERCENTAGE",
+          "period_id": null,
+          "score_component_id": null,
+          "kind": "NUMERIC",
+          "internal": 68.33333333333333,
+          "exposed": 68.33,
+          "passed": null
+        },
+        {
+          "section_id": "GROUPS",
+          "column_id": "COL_T1_PERIOD_MAX",
+          "slot": "PERIOD_MAX",
+          "period_id": "T1",
+          "score_component_id": null,
+          "kind": "NUMERIC",
+          "internal": 120,
+          "exposed": 120,
+          "passed": null
+        },
+        {
+          "section_id": "GROUPS",
+          "column_id": "COL_T1_PERIOD_POINTS",
+          "slot": "PERIOD_POINTS",
+          "period_id": "T1",
+          "score_component_id": null,
+          "kind": "NUMERIC",
+          "internal": 81,
+          "exposed": 81,
+          "passed": null
+        },
+        {
+          "section_id": "GROUPS",
+          "column_id": "COL_T2_PERIOD_MAX",
+          "slot": "PERIOD_MAX",
+          "period_id": "T2",
+          "score_component_id": null,
+          "kind": "NUMERIC",
+          "internal": 120,
+          "exposed": 120,
+          "passed": null
+        },
+        {
+          "section_id": "GROUPS",
+          "column_id": "COL_T2_PERIOD_POINTS",
+          "slot": "PERIOD_POINTS",
+          "period_id": "T2",
+          "score_component_id": null,
+          "kind": "NUMERIC",
+          "internal": 82,
+          "exposed": 82,
+          "passed": null
+        },
+        {
+          "section_id": "GROUPS",
+          "column_id": "COL_T3_PERIOD_MAX",
+          "slot": "PERIOD_MAX",
+          "period_id": "T3",
+          "score_component_id": null,
+          "kind": "NUMERIC",
+          "internal": 120,
+          "exposed": 120,
+          "passed": null
+        },
+        {
+          "section_id": "GROUPS",
+          "column_id": "COL_T3_PERIOD_POINTS",
+          "slot": "PERIOD_POINTS",
+          "period_id": "T3",
+          "score_component_id": null,
+          "kind": "NUMERIC",
+          "internal": 83,
+          "exposed": 83,
+          "passed": null
+        }
+      ]
+    }
+  ]
+}

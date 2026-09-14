@@ -209,10 +209,19 @@ test("report-card-lot10-no-country-school-branch", () => {
   const lot10 = requireLot10();
   const catalogDir = path.join(__dirname, "qualification");
   assert.equal(fs.existsSync(catalogDir), true);
-  for (const name of fs.readdirSync(catalogDir)) {
-    if (!name.endsWith(".json") && !name.endsWith(".js")) continue;
-    const src = fs.readFileSync(path.join(catalogDir, name), "utf8");
-    assert.equal(scanText(src).length, 0, name);
+  const catalogEntries = [];
+  for (const name of fs.readdirSync(catalogDir, { withFileTypes: true })) {
+    const full = path.join(catalogDir, name.name);
+    if (name.isDirectory()) {
+      for (const nested of fs.readdirSync(full)) catalogEntries.push(path.join(full, nested));
+    } else {
+      catalogEntries.push(full);
+    }
+  }
+  for (const file of catalogEntries) {
+    if (!file.endsWith(".json") && !file.endsWith(".js")) continue;
+    const src = fs.readFileSync(file, "utf8");
+    assert.equal(scanText(src).length, 0, file);
     assert.doesNotMatch(src, /"country"/);
     assert.doesNotMatch(src, /La Colombière/);
   }

@@ -23,8 +23,10 @@ Les échelles `/20`, le seuil `PERCENTAGE` 50, les identifiants de groupes A et 
 
 Catalogue GREEN (fixtures uniquement, pas un pack pays) :
 
-- `backend/lib/reportCard/reportCardQualification.js`
+- `backend/lib/reportCard/reportCardQualification.js` (loader + goldens, pas de moteur, pas de harness PG)
 - `backend/lib/reportCard/qualification/model-a.json`
 - `backend/lib/reportCard/qualification/model-b.json`
+- `backend/lib/reportCard/qualification/expected/model-a.json` / `model-b.json` (oracles canoniques figés)
+- `backend/lib/reportCard/reportCardLot10.pg.support.js` (test-only)
 
 Gate : `npm run verify:report-card-lot10`.
