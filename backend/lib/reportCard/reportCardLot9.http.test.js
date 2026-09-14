@@ -821,3 +821,84 @@ test("report-card-lot9-no-client-recalculation", () => {
   const pubSrc = fs.readFileSync(PUB_SRC, "utf8");
   assert.match(pubSrc, /listHistory|listVersions/);
 });
+
+test("report-card-lot9-correction-idempotent-recovers-after-command-crash", async () => {
+  const { createMemoryStore } = require("./reportCardPublication");
+  const inner = createMemoryStore();
+  let crashRemaining = 1;
+  const store = new Proxy(inner, {
+    get(target, prop, receiver) {
+          if (prop === "insertPublication") {
+            return (args) => {
+              if (args.command && crashRemaining > 0) {
+                const inserted = target.insertPublication({ ...args, command: null });
+                crashRemaining -= 1;
+                throw new Error("CRASH_AFTER_PUBLISH");
+              }
+              return target.insertPublication(args);
+            };
+          }
+      return Reflect.get(target, prop, receiver);
+    },
+  });
+  const signingKey = generateSigningKey("rc-ed25519-1");
+  const wrapping = generateWrappingKey("rc-wrap-1");
+  const publication = createReportCardPublication({
+    signingKey,
+    wrapping,
+    wrappingKeys: [wrapping],
+    signingKeys: [signingKey],
+    store,
+  });
+  const { createReportCardCorrection } = require("./reportCardCorrection");
+  const correction = createReportCardCorrection({
+    publication,
+    getFacts: async () => [
+      {
+        student_id: "STU-1",
+        subject_id: "MATH",
+        period_id: "T1",
+        score_component_id: "TJ",
+        raw_score: 16,
+        subject_applicable: true,
+      },
+    ],
+    getProfile: async () =>
+      validateProfileSpec({
+        periods: ["T1", "T2"],
+        annual: true,
+        score_components: [{ id: "TJ", applicability: "always", max: 20, coefficient: 1 }],
+        missing_score: "NOT_APPLICABLE_not_zero",
+        rounding: { decimals: 2, mode: "half_up" },
+        ranking: { enabled: false, ties: "competition" },
+      }),
+    getSchema: async () => validateSpecSchema(),
+  });
+  publication.publish({ tenant: TENANT_A, payload: snapshotPayload() });
+  const actor = schoolCorrect();
+  await assert.rejects(
+    () =>
+      correction.correct({
+        tenant: TENANT_A,
+        actor,
+        reportCardId: "rc-1",
+        sourceVersion: 1,
+        reason: "Crash puis retry",
+        commandId: "cmd-crash-1",
+      }),
+    (err) => err && err.message === "CRASH_AFTER_PUBLISH"
+  );
+  const retried = await correction.correct({
+    tenant: TENANT_A,
+    actor,
+    reportCardId: "rc-1",
+    sourceVersion: 1,
+    reason: "Crash puis retry",
+    commandId: "cmd-crash-1",
+  });
+  const v2 = publication.lookup({ tenant: TENANT_A, reportCardId: "rc-1", version: 2 });
+  assert.equal(retried.public_id, v2.public_id);
+  const current = publication.listCurrent({ tenant: TENANT_A });
+  assert.equal(current.filter((row) => row.report_card_id === "rc-1").length, 1);
+  assert.equal(current[0].published_snapshot_version, 2);
+});

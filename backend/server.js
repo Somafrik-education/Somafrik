@@ -530,35 +530,19 @@ app.post("/api/public/trial-requests", trialRequestRateLimiter, asyncHandler(asy
 
 {
   const { registerReportCardHttp } = require("./lib/reportCard/reportCardHttp");
-  const { createReportCardHttpRuntime } = require("./lib/reportCardHttpRuntime");
+  const { createReportCardHttpBindings } = require("./lib/reportCardHttpRuntime");
   const { createReportCardPdf } = require("./lib/reportCard/reportCardPdf");
   const { resolveReportCardActor, resolveReportCardTenantSchoolId } = require("./lib/reportCardHttpActor");
-  let reportCardRuntime = null;
-  function getReportCardRuntime() {
-    if (!reportCardRuntime) {
-      reportCardRuntime = createReportCardHttpRuntime(repository);
-    }
-    return reportCardRuntime;
-  }
-  registerReportCardHttp(app, {
-    getConfiguration: () => getReportCardRuntime().configuration,
-    getPublication: () => getReportCardRuntime().publication,
-    getPdf: () => {
-      const publication = getReportCardRuntime().publication;
-      return publication ? createReportCardPdf({ publication }) : null;
-    },
-    getTemplate: ({ tenant, schoolId, templateId, version }) => {
-      const configuration = getReportCardRuntime().configuration;
-      if (!configuration || typeof configuration.lookupRenderingTemplateSpec !== "function") {
-        return null;
-      }
-      const sid = schoolId || (tenant && tenant.schoolId) || tenant;
-      return configuration.lookupRenderingTemplateSpec({ schoolId: sid, templateId, version });
-    },
-    resolveActor: (req) => resolveReportCardActor(req.principal, lookupSchoolForEffectiveScope),
-    resolveSchoolId: (raw) => resolveReportCardTenantSchoolId(raw, lookupSchoolForEffectiveScope),
-    internalAuth: (req, res, next) => requireAuth(req, res, next),
-  });
+  registerReportCardHttp(
+    app,
+    createReportCardHttpBindings({
+      repository,
+      createPdf: (publication) => createReportCardPdf({ publication }),
+      resolveActor: (req) => resolveReportCardActor(req.principal, lookupSchoolForEffectiveScope),
+      resolveSchoolId: (raw) => resolveReportCardTenantSchoolId(raw, lookupSchoolForEffectiveScope),
+      internalAuth: (req, res, next) => requireAuth(req, res, next),
+    })
+  );
 }
 
 app.get(/^\/verify\/rc(\/.*)?$/, (req, res, next) => {

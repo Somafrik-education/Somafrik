@@ -802,6 +802,34 @@ function createReportCardConfiguration({
     return { spec: clone(row.spec), spec_sha256: row.spec_sha256 };
   }
 
+  async function lookupProfileSpec({ schoolId, profileId, version, specSha256: expectedSha } = {}) {
+    requireSchoolId(schoolId);
+    if (profileId == null || profileId === "" || version == null) return null;
+    try {
+      const row = await loadProfileVersion(schoolId, profileId, Number(version));
+      if (!row || !row.spec) return null;
+      if (expectedSha && row.spec_sha256 && String(row.spec_sha256) !== String(expectedSha)) return null;
+      return row.spec;
+    } catch (err) {
+      if (err && (err.code === "VERSION_NOT_FOUND" || err.code === "PROFILE_NOT_FOUND")) return null;
+      throw err;
+    }
+  }
+
+  async function lookupSchemaSpec({ schoolId, schemaId, version, specSha256: expectedSha } = {}) {
+    requireSchoolId(schoolId);
+    if (schemaId == null || schemaId === "" || version == null) return null;
+    try {
+      const row = await loadSchemaVersion(schoolId, schemaId, Number(version));
+      if (!row || !row.spec) return null;
+      if (expectedSha && row.spec_sha256 && String(row.spec_sha256) !== String(expectedSha)) return null;
+      return row.spec;
+    } catch (err) {
+      if (err && (err.code === "VERSION_NOT_FOUND" || err.code === "SCHEMA_NOT_FOUND")) return null;
+      throw err;
+    }
+  }
+
   function publicVersionRef(row, idKey) {
     if (!row) return null;
     return {
@@ -911,6 +939,8 @@ function createReportCardConfiguration({
     listAudit,
     getRenderingTemplateVersion,
     lookupRenderingTemplateSpec,
+    lookupProfileSpec,
+    lookupSchemaSpec,
     updateRenderingTemplateSpec,
     listCatalog,
     getBoundBundle,

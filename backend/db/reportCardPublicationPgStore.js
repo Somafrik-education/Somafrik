@@ -61,6 +61,12 @@ function mapHistory(row) {
   });
 }
 
+function coded(code) {
+  const err = new Error(code);
+  err.code = code;
+  return err;
+}
+
 function isUniqueViolation(err) {
   return err && err.code === "23505";
 }
@@ -118,13 +124,24 @@ function createReportCardPublicationPgStore(db) {
     );
   }
 
-  async function insertPublication({ record, supersedeReportCardId }) {
+  async function insertPublication({ record, supersedeReportCardId, command }) {
     try {
       return await withTx(async (client) => {
         await client.query("SELECT pg_advisory_xact_lock(hashtext($1::text), hashtext($2::text))", [
           record.school_id,
           record.report_card_id,
         ]);
+        if (record.corrected_from_version != null) {
+          const source = await queryOne(
+            client,
+            `SELECT verification_status FROM report_card_published_snapshots
+             WHERE school_id = $1 AND report_card_id = $2 AND published_snapshot_version = $3`,
+            [record.school_id, record.report_card_id, record.corrected_from_version]
+          );
+          if (!source) throw coded("PUBLICATION_NOT_FOUND");
+          if (source.verification_status === VERIFICATION_STATES[2]) throw coded("INVALID_TRANSITION");
+          if (source.verification_status !== VERIFICATION_STATES[0]) throw coded("CONCURRENCY_CONFLICT");
+        }
         if (supersedeReportCardId) {
           await client.query(
             `UPDATE report_card_published_snapshots
@@ -203,6 +220,23 @@ function createReportCardPublicationPgStore(db) {
             PUBLISH.outbox_event,
           ]
         );
+        if (command && command.command_id) {
+          await client.query(
+            `INSERT INTO report_card_correction_commands (
+               school_id, report_card_id, command_id, reason, source_version, result_version, public_id
+             ) VALUES ($1,$2,$3,$4,$5,$6,$7)
+             ON CONFLICT (school_id, report_card_id, command_id) DO NOTHING`,
+            [
+              command.school_id,
+              command.report_card_id,
+              command.command_id,
+              command.reason,
+              command.source_version,
+              command.result_version || record.published_snapshot_version,
+              command.public_id || record.public_id,
+            ]
+          );
+        }
         return mapRecord(inserted);
       });
     } catch (err) {
@@ -259,7 +293,11 @@ function createReportCardPublicationPgStore(db) {
   }
 
   async function revoke({ schoolId, reportCardId, version, reason, actorId }) {
-    return withClient(async (client) => {
+    return withTx(async (client) => {
+      await client.query("SELECT pg_advisory_xact_lock(hashtext($1::text), hashtext($2::text))", [
+        schoolId,
+        reportCardId,
+      ]);
       const updated = await queryOne(
         client,
         `UPDATE report_card_published_snapshots
@@ -272,6 +310,22 @@ function createReportCardPublicationPgStore(db) {
       );
       return mapRecord(updated);
     });
+  }
+
+  async function findByCommand(schoolId, reportCardId, commandId) {
+    return withClient(async (client) =>
+      mapRecord(
+        await queryOne(
+          client,
+          `SELECT *
+           FROM report_card_published_snapshots
+           WHERE school_id = $1 AND report_card_id = $2 AND command_id = $3
+           ORDER BY published_snapshot_version DESC
+           LIMIT 1`,
+          [schoolId, reportCardId, commandId]
+        )
+      )
+    );
   }
 
   async function findCommand(schoolId, reportCardId, commandId) {
@@ -355,6 +409,7 @@ function createReportCardPublicationPgStore(db) {
     listHistory,
     revoke,
     findCommand,
+    findByCommand,
     saveCommand,
   };
 }

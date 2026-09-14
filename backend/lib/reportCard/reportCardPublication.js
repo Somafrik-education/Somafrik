@@ -211,7 +211,19 @@ function createMemoryStore(dump) {
       }
       return null;
     },
-    insertPublication({ record, supersedeReportCardId }) {
+    insertPublication({ record, supersedeReportCardId, command }) {
+      if (record.corrected_from_version != null) {
+        const source = records.get(key(record.school_id, record.report_card_id, record.corrected_from_version));
+        if (!source) {
+          throw new ReportCardPublicationError("PUBLICATION_NOT_FOUND");
+        }
+        if (source.verification_status === VERIFICATION_STATES[2]) {
+          throw new ReportCardPublicationError("INVALID_TRANSITION");
+        }
+        if (source.verification_status !== VERIFICATION_STATES[0]) {
+          throw new ReportCardPublicationError("CONCURRENCY_CONFLICT");
+        }
+      }
       if (supersedeReportCardId) {
         for (const [mapKey, rec] of records) {
           if (
@@ -241,6 +253,9 @@ function createMemoryStore(dump) {
           published_snapshot_version: record.published_snapshot_version,
         })
       );
+      if (command && command.command_id) {
+        this.saveCommand(command);
+      }
       return frozen;
     },
     listOutbox(schoolId) {
@@ -294,6 +309,19 @@ function createMemoryStore(dump) {
     },
     findCommand(schoolId, reportCardId, commandId) {
       return commands.get(`${schoolId}\0${reportCardId}\0${commandId}`) || null;
+    },
+    findByCommand(schoolId, reportCardId, commandId) {
+      let found = null;
+      for (const rec of records.values()) {
+        if (
+          rec.school_id === schoolId &&
+          rec.report_card_id === reportCardId &&
+          rec.command_id === commandId
+        ) {
+          if (!found || rec.published_snapshot_version > found.published_snapshot_version) found = rec;
+        }
+      }
+      return found;
     },
     saveCommand(row) {
       const existing = commands.get(`${row.school_id}\0${row.report_card_id}\0${row.command_id}`);
@@ -355,6 +383,38 @@ function createReportCardPublication({
   if (signingKey) ringKeys.push(signingKey);
   const keyRing = signingKeyRing(ringKeys);
   const persistence = store || createMemoryStore(dump);
+  const cardLocks = new Map();
+
+  function withCardLock(schoolId, reportCardId, fn) {
+    const lockKey = `${schoolId}\0${reportCardId}`;
+    const previous = cardLocks.get(lockKey);
+    if (!previous) {
+      try {
+        const result = fn();
+        if (result && typeof result.then === "function") {
+          cardLocks.set(
+            lockKey,
+            result.then(
+              () => undefined,
+              () => undefined
+            )
+          );
+        }
+        return result;
+      } catch (err) {
+        throw err;
+      }
+    }
+    const next = previous.then(fn, fn);
+    cardLocks.set(
+      lockKey,
+      next.then(
+        () => undefined,
+        () => undefined
+      )
+    );
+    return next;
+  }
 
   function wrappingFor(wrappingKeyId) {
     const key = wrappingKeyMap.get(wrappingKeyId);
@@ -370,15 +430,14 @@ function createReportCardPublication({
     return record;
   }
 
-  function publish({ tenant, payload, lineage } = {}) {
+  function publish({ tenant, payload, lineage, command } = {}) {
     if (!payload || typeof payload !== "object") throw new ReportCardPublicationError("INVALID_PAYLOAD");
     rejectBranchKeys(payload);
     const schoolId = assertTenant(tenant, payload.school_id);
     assertPublishablePayload(payload);
     const sealed = sealSnapshot(payload, signingKey);
-    return thenable(
-      persistence.find(schoolId, payload.report_card_id, payload.published_snapshot_version),
-      (existing) => {
+    return withCardLock(schoolId, payload.report_card_id, () =>
+      thenable(persistence.find(schoolId, payload.report_card_id, payload.published_snapshot_version), (existing) => {
         if (existing) {
           if (existing.snapshot_sha256 !== sealed.snapshot_sha256) throw new IdempotencyConflict();
           return existing;
@@ -386,6 +445,19 @@ function createReportCardPublication({
         const publicId = crypto.randomUUID();
         const token = generateToken();
         const wrapped = wrapToken(token, wrapping, tokenBinding(payload, publicId));
+        const commandId = (command && command.commandId) || (lineage && lineage.command_id) || null;
+        const commandRow =
+          commandId &&
+          Object.freeze({
+            school_id: schoolId,
+            report_card_id: payload.report_card_id,
+            command_id: commandId,
+            reason: (command && command.reason) || (lineage && lineage.correction_reason) || null,
+            source_version:
+              (command && command.sourceVersion) || (lineage && lineage.corrected_from_version) || null,
+            result_version: payload.published_snapshot_version,
+            public_id: publicId,
+          });
         const record = {
           report_card_id: payload.report_card_id,
           published_snapshot_version: payload.published_snapshot_version,
@@ -403,16 +475,17 @@ function createReportCardPublication({
           corrected_from_version: lineage && lineage.corrected_from_version,
           correction_reason: lineage && lineage.correction_reason,
           actor_id: lineage && lineage.actor_id,
-          command_id: lineage && lineage.command_id,
+          command_id: commandId,
         };
         return thenable(
           persistence.insertPublication({
             record,
             supersedeReportCardId: payload.report_card_id,
+            command: commandRow,
           }),
           (inserted) => inserted
         );
-      }
+      })
     );
   }
 
@@ -491,16 +564,18 @@ function createReportCardPublication({
     if (typeof persistence.revoke !== "function") {
       throw new ReportCardPublicationError("PUBLICATION_NOT_FOUND");
     }
-    return thenable(lookup({ tenant, reportCardId, version }), (record) =>
-      thenable(
-        persistence.revoke({
-          schoolId,
-          reportCardId,
-          version: record.published_snapshot_version,
-          reason: String(reason).trim(),
-          actorId,
-        }),
-        (updated) => requireRecord(updated)
+    return withCardLock(schoolId, reportCardId, () =>
+      thenable(lookup({ tenant, reportCardId, version }), (record) =>
+        thenable(
+          persistence.revoke({
+            schoolId,
+            reportCardId,
+            version: record.published_snapshot_version,
+            reason: String(reason).trim(),
+            actorId,
+          }),
+          (updated) => requireRecord(updated)
+        )
       )
     );
   }
@@ -509,6 +584,15 @@ function createReportCardPublication({
     const schoolId = assertTenant(tenant);
     if (typeof persistence.findCommand !== "function" || !commandId) return null;
     return persistence.findCommand(schoolId, reportCardId, commandId);
+  }
+
+  function findByCommand({ tenant, reportCardId, commandId } = {}) {
+    const schoolId = assertTenant(tenant);
+    if (!commandId) return null;
+    if (typeof persistence.findByCommand === "function") {
+      return persistence.findByCommand(schoolId, reportCardId, commandId);
+    }
+    return null;
   }
 
   function saveCommand({ tenant, reportCardId, commandId, reason, sourceVersion, resultVersion, publicId } = {}) {
@@ -545,6 +629,7 @@ function createReportCardPublication({
     listHistory,
     revoke,
     findCommand,
+    findByCommand,
     saveCommand,
     persistWithoutSecrets,
   };
@@ -552,6 +637,7 @@ function createReportCardPublication({
 
 module.exports = {
   createReportCardPublication,
+  createMemoryStore,
   ReportCardPublicationError,
   IdempotencyConflict,
 };

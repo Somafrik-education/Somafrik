@@ -54,6 +54,32 @@ function createReportCardCorrection({ publication, getFacts, getProfile, getSche
         }
         return publication.lookup({ tenant, reportCardId, version: existing.result_version });
       }
+      const recovered = await Promise.resolve(
+        typeof publication.findByCommand === "function"
+          ? publication.findByCommand({ tenant, reportCardId, commandId })
+          : null
+      );
+      if (recovered) {
+        if (recovered.correction_reason && recovered.correction_reason !== reason) {
+          throw new IdempotencyConflict();
+        }
+        if (typeof publication.saveCommand === "function") {
+          await Promise.resolve(
+            publication.saveCommand({
+              tenant,
+              reportCardId,
+              commandId,
+              reason,
+              sourceVersion: Number(sourceVersion),
+              resultVersion: recovered.published_snapshot_version,
+              publicId: recovered.public_id,
+            })
+          ).catch((err) => {
+            if (err instanceof IdempotencyConflict || (err && err.name === "IdempotencyConflict")) throw err;
+          });
+        }
+        return recovered;
+      }
     }
     const source = await Promise.resolve(
       publication.lookup({ tenant, reportCardId, version: Number(sourceVersion) })
@@ -112,6 +138,13 @@ function createReportCardCorrection({ publication, getFacts, getProfile, getSche
             actor_id: actor && actor.actorId,
             command_id: commandId,
           },
+          command: commandId
+            ? {
+                commandId,
+                reason,
+                sourceVersion: Number(sourceVersion),
+              }
+            : null,
         })
       );
     } catch (err) {
@@ -119,24 +152,6 @@ function createReportCardCorrection({ publication, getFacts, getProfile, getSche
         throw new ReportCardPublicationError("CONCURRENCY_CONFLICT");
       }
       throw err;
-    }
-    if (commandId) {
-      try {
-        await Promise.resolve(
-          publication.saveCommand({
-            tenant,
-            reportCardId,
-            commandId,
-            reason,
-            sourceVersion: Number(sourceVersion),
-            resultVersion: published.published_snapshot_version,
-            publicId: published.public_id,
-          })
-        );
-      } catch (err) {
-        if (err instanceof IdempotencyConflict) throw err;
-        throw err;
-      }
     }
     return published;
   }
