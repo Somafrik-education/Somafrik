@@ -178,10 +178,12 @@ function main() {
   sourceGuards();
   run(process.execPath, ["backend/lib/mobilePushDevicesService.test.js"], "push devices unit");
   run(process.execPath, ["--test", "backend/lib/mobilePushDevices.tenant.test.js"], "push tenant school_id");
+  run(process.execPath, ["backend/lib/mobilePushP0.contract.test.js"], "P0 #645 contrat preview/preprod");
   run(process.execPath, ["backend/lib/expoPushService.test.js"], "expo push unit");
   run(process.execPath, ["backend/lib/expoPushReceiptsWorker.test.js"], "expo receipts différés");
   run(process.execPath, ["backend/lib/rateLimit.push-selftest.test.js"], "rate limit self-test");
   run("npx", ["--yes", "tsx", "Mobile/src/services/pushNotifications.test.ts"], "mobile push unit");
+  run("npx", ["--yes", "tsx", "Mobile/src/services/pushNotifications.p0.test.ts"], "P0 #645 mobile preview");
   run("npx", ["--yes", "tsx", "Mobile/src/lib/pushNotificationTap.test.ts"], "mobile cold-start tap");
   run("npx", ["--yes", "tsx", "Mobile/src/lib/financeNotificationNavigation.test.ts"], "mobile finance notification navigation");
   run(process.execPath, ["backend/db/clientsCanonicalBootstrap.test.js"], "clientsCanonicalBootstrap");
