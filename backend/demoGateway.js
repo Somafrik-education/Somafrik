@@ -191,9 +191,12 @@ function createDemoGatewayApp({
         }
 
         const auth = await internalLogin(ticket);
-        const sessionTtlSeconds = Number(env.DEMO_SESSION_TTL_SECONDS ?? 900);
+        const sessionTtlSeconds = Math.max(60, Math.min(Number(env.DEMO_SESSION_TTL_SECONDS ?? 900), 900));
+        const publicAuth = { ...auth };
+        delete publicAuth.refreshToken;
         return res.json({
-          ...auth,
+          ...publicAuth,
+          expiresIn: Math.min(Number(auth.expiresIn ?? sessionTtlSeconds), sessionTtlSeconds),
           demo: true,
           demoSession: {
             id: ticket.sessionId,
@@ -206,6 +209,13 @@ function createDemoGatewayApp({
       }
     },
   );
+
+  app.use((req, res, next) => {
+    if (isBlockedDemoGatewayPath(req.originalUrl || req.url)) {
+      return res.status(404).json({ message: "Route indisponible dans l’environnement Démo." });
+    }
+    return next();
+  });
 
   app.use((req, res) => {
     proxy(req, res);
