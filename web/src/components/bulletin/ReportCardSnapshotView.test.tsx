@@ -36,9 +36,9 @@ const template = {
   orientation: "portrait",
   qr_required: true,
   sections: [
-    { id: "SUMMARY", order: 1, label: "Totaux", source: "slots" },
-    { id: "SUBJECTS", order: 2, label: "Disciplines", source: "cells" },
-    { id: "APPLICABILITY", order: 3, label: "Presence", source: "presence" },
+    { id: "SUMMARY", order: 1, label: "Totaux", source: "slots" as const },
+    { id: "SUBJECTS", order: 2, label: "Disciplines", source: "cells" as const },
+    { id: "APPLICABILITY", order: 3, label: "Presence", source: "presence" as const },
   ],
 };
 
