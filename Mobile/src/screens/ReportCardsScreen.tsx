@@ -122,7 +122,7 @@ export default function ReportCardsScreen() {
       const cards: PublishedBulletinCard[] = [];
       for (const row of publications) {
         const snap = await getReportCardPublicationSnapshot(row.report_card_id, row.published_snapshot_version);
-        const versionHistory = await listPublishedVersionHistory(row.report_card_id).catch(() => []);
+        const versionHistory = await listPublishedVersionHistory(row.report_card_id);
         cards.push(
           ...cardsFromPublication(
             row,
