@@ -165,7 +165,6 @@ async function harness(overrides = {}) {
     resolveActor: () => actor,
     getPdf: () => ({
       render: async (args) => {
-        pdfCalls.push(args);
         const payload =
           args.payload ||
           (await pub.publication.payloadForRender({
@@ -173,9 +172,18 @@ async function harness(overrides = {}) {
             reportCardId: args.reportCardId,
             version: args.version,
           }));
+        const qrUrl = await Promise.resolve(
+          pub.publication.reprintUrl({
+            tenant: args.tenant,
+            reportCardId: args.reportCardId,
+            version: args.version,
+          })
+        );
+        pdfCalls.push({ ...args, payload, qrUrl });
         return {
           pdf: Buffer.from("%PDF-1.4 lot8-test\n"),
           payload,
+          qr: { url: qrUrl },
         };
       },
     }),
@@ -520,6 +528,69 @@ test("report-card-lot8-mobile-uses-published-rendering-template", async () => {
     const pdf = await h.bin("GET", "/api/report-card/publications/rc-1/pdf?version=1");
     assert.equal(pdf.status, 200);
     assert.equal(h.pdfCalls.at(-1).renderingTemplate.sections[0].label, "Totaux certifies LOT8");
+  } finally {
+    await h.close();
+  }
+});
+
+function capabilityFromQrUrl(url) {
+  const marker = "/verify/rc/";
+  const text = String(url || "");
+  const idx = text.indexOf(marker);
+  assert.ok(idx >= 0, "PDF QR must reuse LOT 4/5 capability URL");
+  return text.slice(idx + marker.length);
+}
+
+test("report-card-lot8-mobile-pdf-qr-does-not-leak-other-students", async () => {
+  const h = await harness();
+  try {
+    h.publication.publish({ tenant: TENANT_A, payload: twoStudentPayload() });
+    h.setActor(parentRead("STU-1"));
+    const pdfCallsBefore = h.pdfCalls.length;
+    const pdf = await h.bin("GET", "/api/report-card/publications/rc-1/pdf?version=1");
+    if (pdf.status === 200) {
+      const qrUrl = h.pdfCalls.at(-1) && h.pdfCalls.at(-1).qrUrl;
+      const verified = await h.json("POST", "/api/public/report-cards/verify", {
+        capability: capabilityFromQrUrl(qrUrl),
+      });
+      assert.equal(verified.status, 200);
+      assert.equal(verified.data.ok, true);
+      const ids = (verified.data.payload.students || []).map((row) => row.student_id);
+      assert.equal(ids.includes("STU-1"), true);
+      assert.equal(ids.includes("STU-2"), false);
+    } else {
+      assert.ok([403, 404].includes(pdf.status));
+      assert.equal(h.pdfCalls.length, pdfCallsBefore);
+    }
+
+    h.setActor(schoolRead(SCHOOL_A));
+    const staffPdf = await h.bin("GET", "/api/report-card/publications/rc-1/pdf?version=1");
+    assert.equal(staffPdf.status, 200);
+    const staffVerified = await h.json("POST", "/api/public/report-cards/verify", {
+      capability: capabilityFromQrUrl(h.pdfCalls.at(-1).qrUrl),
+    });
+    assert.equal(staffVerified.status, 200);
+    const staffIds = (staffVerified.data.payload.students || []).map((row) => row.student_id);
+    assert.deepEqual(staffIds, ["STU-1", "STU-2"]);
+
+    h.publication.publish({
+      tenant: TENANT_A,
+      payload: snapshotPayload({ report_card_id: "rc-solo" }),
+    });
+    h.setActor(parentRead("STU-1"));
+    const soloPdf = await h.bin("GET", "/api/report-card/publications/rc-solo/pdf?version=1");
+    assert.equal(soloPdf.status, 200);
+    const soloVerified = await h.json("POST", "/api/public/report-cards/verify", {
+      capability: capabilityFromQrUrl(h.pdfCalls.at(-1).qrUrl),
+    });
+    assert.equal(soloVerified.status, 200);
+    const soloIds = (soloVerified.data.payload.students || []).map((row) => row.student_id);
+    assert.deepEqual(soloIds, ["STU-1"]);
+    assert.equal(soloIds.includes("STU-2"), false);
+
+    const httpSrc = fs.readFileSync(HTTP_SRC, "utf8");
+    assert.equal(/\bgenerateToken\b/.test(httpSrc), false);
+    assert.equal(httpSrc.includes("createReportCardPdf"), false);
   } finally {
     await h.close();
   }
