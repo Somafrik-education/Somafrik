@@ -21,4 +21,10 @@ Branche `if/switch country|school|iso`, constantes Burundi dans `reportCardEngin
 
 Les échelles `/20`, le seuil `PERCENTAGE` 50, les identifiants de groupes A et les matières EX N/A B (`TPA`, `RELIGION_MORALE`) viennent des fixtures LOT 0. Ce ne sont pas des règles `BI` dans le moteur.
 
+Catalogue GREEN (fixtures uniquement, pas un pack pays) :
+
+- `backend/lib/reportCard/reportCardQualification.js`
+- `backend/lib/reportCard/qualification/model-a.json`
+- `backend/lib/reportCard/qualification/model-b.json`
+
 Gate : `npm run verify:report-card-lot10`.
