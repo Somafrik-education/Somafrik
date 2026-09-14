@@ -9,7 +9,7 @@ import {
   type ReactNode,
 } from "react";
 import { api, ApiError, setAccessTokenProvider, setRefreshTokenProvider, setRotatedTokenPersister } from "../api/client";
-import { revokeWebPushOnSessionEnd } from "../lib/webPushPermission";
+import { revokeWebPushOnSessionEndBounded } from "../lib/webPushPermission";
 import { normalizePlatformRole } from "../lib/orgHierarchy";
 import type { LoginProfile, Session } from "../types";
 
@@ -227,7 +227,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       if (sessionRef.current?.accessToken) {
         try {
-          await revokeWebPushOnSessionEnd();
+          await revokeWebPushOnSessionEndBounded();
         } catch (error) {
           const message = error instanceof Error ? error.message : "unknown";
           console.error(

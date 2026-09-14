@@ -127,4 +127,57 @@ describe("WEB-PUSH permission navigateur", () => {
     expect(status).toBe("none");
     expect(revokeSubscription).not.toHaveBeenCalled();
   });
+
+  it("VAPID disabled / aucun SW enregistré : none sans attendre serviceWorker.ready", async () => {
+    const getRegistration = vi.fn(async () => undefined);
+    Object.defineProperty(navigator, "serviceWorker", {
+      configurable: true,
+      value: {
+        ready: new Promise(() => undefined),
+        getRegistration,
+        register: vi.fn(),
+      },
+    });
+    const revokeSubscription = vi.fn();
+    try {
+      const started = Date.now();
+      const status = await revokeWebPushOnSessionEnd({ revokeSubscription });
+      expect(status).toBe("none");
+      expect(getRegistration).toHaveBeenCalled();
+      expect(revokeSubscription).not.toHaveBeenCalled();
+      expect(Date.now() - started).toBeLessThan(500);
+    } finally {
+      Reflect.deleteProperty(navigator, "serviceWorker");
+    }
+  });
+
+  it("révocation bornée : getSubscription qui ne se résout jamais → none", async () => {
+    const revokeSubscription = vi.fn();
+    const started = Date.now();
+    const status = await revokeWebPushOnSessionEnd({
+      timeoutMs: 30,
+      getSubscription: () => new Promise(() => undefined),
+      revokeSubscription,
+    });
+    expect(status).toBe("none");
+    expect(revokeSubscription).not.toHaveBeenCalled();
+    expect(Date.now() - started).toBeLessThan(500);
+  });
+
+  it("erreur API browser : unsubscribe local tenté, pas de throw", async () => {
+    const unsubscribe = vi.fn(async () => true);
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const status = await revokeWebPushOnSessionEnd({
+      getSubscription: async () => ({
+        endpoint: "https://fcm.googleapis.com/fcm/send/somafrik-web",
+        unsubscribe,
+      }),
+      revokeSubscription: async () => {
+        throw new Error("network down");
+      },
+    });
+    expect(status).toBe("revoked");
+    expect(unsubscribe).toHaveBeenCalledTimes(1);
+    errorSpy.mockRestore();
+  });
 });

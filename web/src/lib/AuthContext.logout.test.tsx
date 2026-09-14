@@ -39,6 +39,7 @@ function wrapper({ children }: { children: ReactNode }) {
 describe("AuthProvider logout", () => {
   beforeEach(() => {
     sessionStorage.clear();
+    Reflect.deleteProperty(navigator, "serviceWorker");
     vi.mocked(api.post).mockReset();
     vi.mocked(api.get).mockReset();
     vi.mocked(api.get).mockResolvedValue({ permissions: ["Affectations:CREATE"] });
@@ -65,5 +66,27 @@ describe("AuthProvider logout", () => {
 
     expect(result.current.session).toBeNull();
     expect(sessionStorage.getItem("somafrik.web.session")).toBeNull();
+  });
+
+  it("VAPID disabled / aucun service worker enregistré → logout termine et session devient null", async () => {
+    Object.defineProperty(navigator, "serviceWorker", {
+      configurable: true,
+      value: {
+        ready: new Promise(() => undefined),
+        getRegistration: vi.fn(async () => undefined),
+        register: vi.fn(),
+      },
+    });
+    vi.mocked(api.post).mockResolvedValue({ message: "Déconnexion sécurisée effectuée" });
+    const { result } = renderHook(() => useAuth(), { wrapper });
+
+    act(() => result.current.setSession(session));
+    const started = Date.now();
+    await act(async () => result.current.logout());
+
+    expect(api.post).toHaveBeenCalledWith("/auth/logout");
+    expect(result.current.session).toBeNull();
+    expect(sessionStorage.getItem("somafrik.web.session")).toBeNull();
+    expect(Date.now() - started).toBeLessThan(1000);
   });
 });
