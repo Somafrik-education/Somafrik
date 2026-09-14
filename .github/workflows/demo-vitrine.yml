@@ -1,0 +1,36 @@
+name: Demo vitrine
+
+on:
+  pull_request:
+    paths:
+      - 'web/src/pages/DemoEntryPage*'
+      - 'web/src/components/marketing/**'
+      - 'web/src/data/demoMarketing.ts'
+      - 'web/src/lib/featureFlags.ts'
+      - 'web/src/main.tsx'
+      - 'web/.env.example'
+      - '.github/workflows/demo-vitrine.yml'
+  workflow_dispatch:
+
+jobs:
+  vitrine:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      VITE_API_URL: https://api.example.test
+      VITE_ENABLE_PUBLIC_DEMO: "true"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.12.0'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Install Web dependencies
+        run: npm ci --prefix web
+      - name: Demo entry tests
+        run: npm --prefix web run test -- src/pages/DemoEntryPage.test.tsx
+      - name: Typecheck Web
+        run: npm --prefix web run typecheck
+      - name: Build Web
+        run: npm --prefix web run build

@@ -2,4 +2,6 @@ const showDemoAccounts = import.meta.env.VITE_SHOW_DEMO_ACCOUNTS === "true";
 
 const marketplaceEnabled = import.meta.env.VITE_ENABLE_MARKETPLACE === "true";
 
-export { showDemoAccounts, marketplaceEnabled };
+const publicDemoEnabled = import.meta.env.VITE_ENABLE_PUBLIC_DEMO === "true";
+
+export { showDemoAccounts, marketplaceEnabled, publicDemoEnabled };
