@@ -298,16 +298,41 @@ function createReportCardPublicationPgStore(db) {
         schoolId,
         reportCardId,
       ]);
+      const current = await queryOne(
+        client,
+        `SELECT * FROM report_card_published_snapshots
+         WHERE school_id = $1 AND report_card_id = $2 AND published_snapshot_version = $3`,
+        [schoolId, reportCardId, version]
+      );
+      if (!current) throw coded("PUBLICATION_NOT_FOUND");
+      if (current.verification_status === VERIFICATION_STATES[2]) {
+        return mapRecord(current);
+      }
+      if (current.verification_status !== VERIFICATION_STATES[0]) {
+        throw coded("CONCURRENCY_CONFLICT");
+      }
       const updated = await queryOne(
         client,
         `UPDATE report_card_published_snapshots
          SET verification_status = $1,
              revoke_reason = COALESCE(revoke_reason, $2),
              actor_id = COALESCE(actor_id, $3)
-         WHERE school_id = $4 AND report_card_id = $5 AND published_snapshot_version = $6
+         WHERE school_id = $4
+           AND report_card_id = $5
+           AND published_snapshot_version = $6
+           AND verification_status = $7
          RETURNING *`,
-        [VERIFICATION_STATES[2], reason || null, actorId || null, schoolId, reportCardId, version]
+        [
+          VERIFICATION_STATES[2],
+          reason || null,
+          actorId || null,
+          schoolId,
+          reportCardId,
+          version,
+          VERIFICATION_STATES[0],
+        ]
       );
+      if (!updated) throw coded("CONCURRENCY_CONFLICT");
       return mapRecord(updated);
     });
   }

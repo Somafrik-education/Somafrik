@@ -298,6 +298,9 @@ function createMemoryStore(dump) {
       if (rec.verification_status === VERIFICATION_STATES[2]) {
         return freezeRecord({ ...rec, revoke_reason: rec.revoke_reason || reason, actor_id: rec.actor_id || actorId });
       }
+      if (rec.verification_status !== VERIFICATION_STATES[0]) {
+        throw new ReportCardPublicationError("CONCURRENCY_CONFLICT");
+      }
       const next = freezeRecord({
         ...rec,
         verification_status: VERIFICATION_STATES[2],

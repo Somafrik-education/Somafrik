@@ -782,6 +782,32 @@ test("report-card-lot9-revoked-not-current", async () => {
   }
 });
 
+test("report-card-lot9-revoke-superseded-conflicts", async () => {
+  const h = await harness();
+  try {
+    h.publication.publish({ tenant: TENANT_A, payload: snapshotPayload() });
+    h.setActor(schoolCorrect());
+    assert.equal(
+      (
+        await h.json("POST", "/api/report-card/publications/rc-1/corrections", {
+          sourceVersion: 1,
+          reason: "Puis refuse revoke v1",
+          commandId: "cmd-rev-sup-1",
+        })
+      ).status,
+      201
+    );
+    const revoked = await h.json("POST", "/api/report-card/publications/rc-1/versions/1/revoke", {
+      reason: "V1 deja SUPERSEDED",
+    });
+    assert.equal(revoked.status, 409);
+    assert.equal(revoked.data.error.code, "CONCURRENCY_CONFLICT");
+    assert.equal(h.publication.lookup({ tenant: TENANT_A, reportCardId: "rc-1", version: 1 }).verification_status, "SUPERSEDED");
+  } finally {
+    await h.close();
+  }
+});
+
 test("report-card-lot9-revoke-idempotent-terminal", async () => {
   const h = await harness();
   try {

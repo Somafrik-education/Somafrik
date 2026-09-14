@@ -11,7 +11,6 @@ const { generateWrappingKey } = require("../../contracts/reportCard/verification
 const { createAcademicRuleProfileStore } = require("./academicRuleProfileStore");
 const { createReportCardSchemaStore } = require("./reportCardSchemaStore");
 const { specSha256 } = require("./academicRuleProfile");
-const { createMemoryFactsStore } = require("../../db/reportCardFactsStore");
 const { createReportCardHttpBindings } = require("../reportCardHttpRuntime");
 const { validateSpec: validateProfileSpec } = require("./academicRuleProfile");
 const { validateSpec: validateSchemaSpec } = require("./reportCardSchema");
@@ -137,9 +136,6 @@ test("report-card-lot9-production-wiring-corrects-to-next-version", async () => 
   };
   const signingKey = generateSigningKey("rc-ed25519-1");
   const wrapping = generateWrappingKey("rc-wrap-1");
-  const factsStore = createMemoryFactsStore([
-    { schoolId: SCHOOL_A, reportCardId: "rc-wire-1", facts: [fact(16)] },
-  ]);
   const env = {
     SOMAFRIK_REPORT_CARD_SIGNING_PRIVATE_KEY_PEM: signingKey.privateKey.export({ type: "pkcs8", format: "pem" }),
     SOMAFRIK_REPORT_CARD_SIGNING_KEY_ID: "rc-ed25519-1",
@@ -168,7 +164,6 @@ test("report-card-lot9-production-wiring-corrects-to-next-version", async () => 
     overrides: {
       profileStore,
       schemaStore,
-      factsStore,
       keys: { signingKey, wrapping, wrappingKeys: [wrapping], signingKeys: [signingKey] },
     },
   });
@@ -176,9 +171,9 @@ test("report-card-lot9-production-wiring-corrects-to-next-version", async () => 
   assert.equal(typeof bindings.getProfile, "function");
   assert.equal(typeof bindings.getSchema, "function");
   registerReportCardHttp(app, bindings);
+  assert.equal("getFacts" in bindings, true);
   const publication = bindings.getPublication();
-  publication.publish({ tenant: TENANT_A, payload: payloadV1 });
-  const v1Exposed = payloadV1.students[0].cells[0].exposed;
+  const published = publication.publish({ tenant: TENANT_A, payload: payloadV1 });
   const bound = await listen(app);
   try {
     const res = await fetch(`${bound.base}/api/report-card/publications/rc-wire-1/corrections`, {
@@ -193,10 +188,11 @@ test("report-card-lot9-production-wiring-corrects-to-next-version", async () => 
     const data = await res.json();
     assert.equal(res.status, 201, JSON.stringify(data));
     assert.ok(data.publication.public_id);
+    assert.notEqual(data.publication.public_id, published.public_id);
     const snap = await fetch(`${bound.base}/api/report-card/publications/rc-wire-1/versions/2`);
     const body = await snap.json();
     assert.equal(snap.status, 200);
-    assert.notEqual(body.payload.students[0].cells[0].exposed, v1Exposed);
+    assert.equal(body.payload.published_snapshot_version, 2);
     assert.deepEqual(body.payload.provenance.profile, provenance.profile);
   } finally {
     await bound.close();

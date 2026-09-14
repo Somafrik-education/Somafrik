@@ -5,7 +5,11 @@ const { createAcademicRuleProfilePgStore } = require("../db/academicRuleProfileP
 const { createReportCardSchemaPgStore } = require("../db/reportCardSchemaPgStore");
 const { createReportCardConfigurationPgStore } = require("../db/reportCardConfigurationPgStore");
 const { createReportCardPublicationPgStore } = require("../db/reportCardPublicationPgStore");
-const { createReportCardFactsPgStore } = require("../db/reportCardFactsStore");
+const {
+  createReportCardFactsPgStore,
+  factsFromSnapshot,
+  overlayFacts,
+} = require("../db/reportCardFactsStore");
 const { createReportCardConfiguration } = require("./reportCard/reportCardConfiguration");
 const { createReportCardPublication } = require("./reportCard/reportCardPublication");
 
@@ -127,10 +131,29 @@ function createReportCardHttpRuntime(repository, env = process.env, overrides = 
   const factsStore =
     overrides.factsStore || (db ? createReportCardFactsPgStore(db) : null);
 
-  async function getFacts({ tenant, schoolId, reportCardId } = {}) {
-    if (!factsStore || typeof factsStore.listFacts !== "function") return null;
+  async function getFacts({ tenant, schoolId, reportCardId, sourceVersion } = {}) {
     const sid = schoolId || (tenant && tenant.schoolId);
-    return factsStore.listFacts({ schoolId: sid, reportCardId });
+    let snapshotFacts = null;
+    if (publication && reportCardId != null && sourceVersion != null) {
+      try {
+        const payload = await Promise.resolve(
+          publication.payloadForRender({
+            tenant: { schoolId: sid, actorSchoolId: sid },
+            reportCardId,
+            version: Number(sourceVersion),
+          })
+        );
+        snapshotFacts = factsFromSnapshot(payload);
+      } catch {
+        snapshotFacts = null;
+      }
+    }
+    let liveFacts = [];
+    if (factsStore && typeof factsStore.listFacts === "function") {
+      const listed = await Promise.resolve(factsStore.listFacts({ schoolId: sid, reportCardId, sourceVersion }));
+      if (Array.isArray(listed)) liveFacts = listed;
+    }
+    return overlayFacts(snapshotFacts, liveFacts);
   }
 
   async function getProfile({ tenant, ref } = {}) {

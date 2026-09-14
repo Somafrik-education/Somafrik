@@ -80,7 +80,7 @@ export function ReportCardHistoryPage() {
             {row.verification_status === "ACTIVE" ? <span> ACTIVE</span> : null}
             {row.verification_status === "SUPERSEDED" ? <span> SUPERSEDED</span> : null}
             {row.verification_status === "REVOKED" ? <span> REVOKED</span> : null}
-            {row.verification_status !== "REVOKED" ? (
+            {row.verification_status === "ACTIVE" ? (
               <button type="button" onClick={() => void onRevoke(row.published_snapshot_version)}>
                 Révoquer
               </button>
