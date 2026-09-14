@@ -38,8 +38,8 @@ expectClassification("GET /mvp/readiness", "LEGACY_REVIEW_CANDIDATE");
 expectClassification("GET /mvp/snapshot", "LEGACY_REVIEW_CANDIDATE");
 expectClassification("GET /mvp/dashboard", "LEGACY_REVIEW_CANDIDATE");
 
-const pdfRoute = byRoute.get("GET /students/:param/report.pdf");
-assert(pdfRoute, "Route PDF étudiant absente du scanner");
+const pdfRoute = byRoute.get("GET /report-card/publications/:param/pdf");
+assert(pdfRoute, "Route PDF bulletin canonique absente du scanner");
 assert(
   pdfRoute.clients.includes("Mobile/src/services/api.ts"),
   "Le téléchargement PDF Mobile doit être détecté comme consommateur direct",
@@ -48,6 +48,13 @@ assert.notStrictEqual(
   pdfRoute.classification,
   "ORPHAN_CANDIDATE",
   "Le bulletin PDF Mobile ne doit jamais redevenir un faux orphelin",
+);
+
+const legacyPdfRoute = byRoute.get("GET /students/:param/report.pdf");
+assert(legacyPdfRoute, "Route PDF étudiant legacy absente du scanner");
+assert(
+  !legacyPdfRoute.clients.includes("Mobile/src/services/api.ts"),
+  "Le téléchargement PDF Mobile ne doit plus consommer le bulletin live/legacy",
 );
 
 expectClient(
