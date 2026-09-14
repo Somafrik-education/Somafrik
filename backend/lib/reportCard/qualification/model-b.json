@@ -1,0 +1,98 @@
+{
+  "id": "fixture.qualification.burundi-model-b",
+  "title": "Qualification modèle B — lignes TJ / EX / Total",
+  "qualification_only": true,
+  "not_a_country_pack": true,
+  "engine_id": "somafrik.report_card.v1",
+  "modelKey": "qual-b",
+  "tenant": { "schoolId": "school-b", "actorSchoolId": "school-b" },
+  "profile": {
+    "period_mode": "term",
+    "periods": ["T1", "T2", "T3"],
+    "annual": true,
+    "score_components": [
+      { "id": "TJ", "applicability": "always", "max": 20, "coefficient": 1 },
+      { "id": "EX", "applicability": "per_subject", "max": 20, "coefficient": 1 }
+    ],
+    "missing_score": "NOT_APPLICABLE_not_zero",
+    "rounding": { "decimals": 2, "mode": "half_up", "stage": "display_only" },
+    "ranking": { "enabled": true, "ties": "competition", "metric": "PERCENTAGE" },
+    "aggregation": {
+      "mode": "weighted_sum",
+      "coefficient_default": 1,
+      "percentage": "points_over_max_100"
+    },
+    "pass_rule": { "metric": "PERCENTAGE", "threshold": 50 }
+  },
+  "schema": {
+    "sections": [
+      {
+        "id": "SUBJECTS",
+        "order": 1,
+        "kind": "subject_rows",
+        "rows": [{ "id": "SUBJECT_LINE", "order": 1, "kind": "subject" }],
+        "columns": [
+          { "id": "COL_T1_TJ", "order": 1, "kind": "score_component", "score_component_id": "TJ", "period_id": "T1" },
+          { "id": "COL_T1_EX", "order": 2, "kind": "score_component", "score_component_id": "EX", "period_id": "T1" },
+          { "id": "COL_T1_TOTAL", "order": 3, "kind": "computed_slot", "slot": "TOTAL", "period_id": "T1" },
+          { "id": "COL_T2_TJ", "order": 4, "kind": "score_component", "score_component_id": "TJ", "period_id": "T2" },
+          { "id": "COL_T2_EX", "order": 5, "kind": "score_component", "score_component_id": "EX", "period_id": "T2" },
+          { "id": "COL_T2_TOTAL", "order": 6, "kind": "computed_slot", "slot": "TOTAL", "period_id": "T2" },
+          { "id": "COL_T3_TJ", "order": 7, "kind": "score_component", "score_component_id": "TJ", "period_id": "T3" },
+          { "id": "COL_T3_EX", "order": 8, "kind": "score_component", "score_component_id": "EX", "period_id": "T3" },
+          { "id": "COL_T3_TOTAL", "order": 9, "kind": "computed_slot", "slot": "TOTAL", "period_id": "T3" },
+          { "id": "COL_ANNUAL_TOTAL", "order": 10, "kind": "computed_slot", "slot": "TOTAL" },
+          { "id": "COL_PERCENTAGE", "order": 11, "kind": "computed_slot", "slot": "PERCENTAGE" },
+          { "id": "COL_DECISION", "order": 12, "kind": "computed_slot", "slot": "DECISION" }
+        ]
+      }
+    ],
+    "identity_fields": [{ "id": "STUDENT_NAME", "order": 1 }]
+  },
+  "template": {
+    "paper": "A4",
+    "orientation": "portrait",
+    "qr_required": true,
+    "sections": [
+      { "id": "CELLS", "order": 1, "source": "cells", "label": "Disciplines" },
+      { "id": "SLOTS", "order": 2, "source": "slots", "label": "Totaux" }
+    ]
+  },
+  "provenance": {
+    "profile": { "id": "qual-b-profile", "version": 1 },
+    "schema": { "id": "qual-b-schema", "version": 1 },
+    "template": { "id": "qual-b-template", "version": 1 }
+  },
+  "facts": [
+    { "student_id": "STU1", "subject_id": "MATH", "period_id": "T1", "score_component_id": "TJ", "raw_score": 14, "subject_applicable": true },
+    { "student_id": "STU1", "subject_id": "MATH", "period_id": "T1", "score_component_id": "EX", "raw_score": 16, "subject_applicable": true },
+    { "student_id": "STU1", "subject_id": "MATH", "period_id": "T2", "score_component_id": "TJ", "raw_score": 13, "subject_applicable": true },
+    { "student_id": "STU1", "subject_id": "MATH", "period_id": "T2", "score_component_id": "EX", "raw_score": 15, "subject_applicable": true },
+    { "student_id": "STU1", "subject_id": "MATH", "period_id": "T3", "score_component_id": "TJ", "raw_score": 12, "subject_applicable": true },
+    { "student_id": "STU1", "subject_id": "MATH", "period_id": "T3", "score_component_id": "EX", "raw_score": 14, "subject_applicable": true },
+    { "student_id": "STU1", "subject_id": "FRANCAIS", "period_id": "T1", "score_component_id": "TJ", "raw_score": 11, "subject_applicable": true },
+    { "student_id": "STU1", "subject_id": "FRANCAIS", "period_id": "T1", "score_component_id": "EX", "raw_score": 12, "subject_applicable": true },
+    { "student_id": "STU1", "subject_id": "FRANCAIS", "period_id": "T2", "score_component_id": "TJ", "raw_score": 10, "subject_applicable": true },
+    { "student_id": "STU1", "subject_id": "FRANCAIS", "period_id": "T2", "score_component_id": "EX", "raw_score": 13, "subject_applicable": true },
+    { "student_id": "STU1", "subject_id": "FRANCAIS", "period_id": "T3", "score_component_id": "TJ", "raw_score": 12, "subject_applicable": true },
+    { "student_id": "STU1", "subject_id": "FRANCAIS", "period_id": "T3", "score_component_id": "EX", "raw_score": 11, "subject_applicable": true },
+    { "student_id": "STU1", "subject_id": "SCIENCES", "period_id": "T1", "score_component_id": "TJ", "raw_score": 15, "subject_applicable": true },
+    { "student_id": "STU1", "subject_id": "SCIENCES", "period_id": "T1", "score_component_id": "EX", "raw_score": 17, "subject_applicable": true },
+    { "student_id": "STU1", "subject_id": "SCIENCES", "period_id": "T2", "score_component_id": "TJ", "raw_score": 16, "subject_applicable": true },
+    { "student_id": "STU1", "subject_id": "SCIENCES", "period_id": "T2", "score_component_id": "EX", "raw_score": 18, "subject_applicable": true },
+    { "student_id": "STU1", "subject_id": "SCIENCES", "period_id": "T3", "score_component_id": "TJ", "raw_score": 14, "subject_applicable": true },
+    { "student_id": "STU1", "subject_id": "SCIENCES", "period_id": "T3", "score_component_id": "EX", "raw_score": 16, "subject_applicable": true },
+    { "student_id": "STU1", "subject_id": "TPA", "period_id": "T1", "score_component_id": "TJ", "raw_score": 13, "subject_applicable": true },
+    { "student_id": "STU1", "subject_id": "TPA", "period_id": "T1", "score_component_id": "EX", "raw_score": null, "subject_applicable": false },
+    { "student_id": "STU1", "subject_id": "TPA", "period_id": "T2", "score_component_id": "TJ", "raw_score": 14, "subject_applicable": true },
+    { "student_id": "STU1", "subject_id": "TPA", "period_id": "T2", "score_component_id": "EX", "raw_score": null, "subject_applicable": false },
+    { "student_id": "STU1", "subject_id": "TPA", "period_id": "T3", "score_component_id": "TJ", "raw_score": 12, "subject_applicable": true },
+    { "student_id": "STU1", "subject_id": "TPA", "period_id": "T3", "score_component_id": "EX", "raw_score": null, "subject_applicable": false },
+    { "student_id": "STU1", "subject_id": "RELIGION_MORALE", "period_id": "T1", "score_component_id": "TJ", "raw_score": 15, "subject_applicable": true },
+    { "student_id": "STU1", "subject_id": "RELIGION_MORALE", "period_id": "T1", "score_component_id": "EX", "raw_score": null, "subject_applicable": false },
+    { "student_id": "STU1", "subject_id": "RELIGION_MORALE", "period_id": "T2", "score_component_id": "TJ", "raw_score": 16, "subject_applicable": true },
+    { "student_id": "STU1", "subject_id": "RELIGION_MORALE", "period_id": "T2", "score_component_id": "EX", "raw_score": null, "subject_applicable": false },
+    { "student_id": "STU1", "subject_id": "RELIGION_MORALE", "period_id": "T3", "score_component_id": "TJ", "raw_score": 14, "subject_applicable": true },
+    { "student_id": "STU1", "subject_id": "RELIGION_MORALE", "period_id": "T3", "score_component_id": "EX", "raw_score": null, "subject_applicable": false }
+  ]
+}

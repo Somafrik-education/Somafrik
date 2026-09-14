@@ -1,0 +1,92 @@
+{
+  "id": "fixture.qualification.burundi-model-a",
+  "title": "Qualification modèle A — domaines / note de période",
+  "qualification_only": true,
+  "not_a_country_pack": true,
+  "engine_id": "somafrik.report_card.v1",
+  "modelKey": "qual-a",
+  "tenant": { "schoolId": "school-a", "actorSchoolId": "school-a" },
+  "profile": {
+    "period_mode": "term",
+    "periods": ["T1", "T2", "T3"],
+    "annual": true,
+    "score_components": [
+      { "id": "COMPONENT_PERIOD", "applicability": "always", "max": 20, "coefficient": 1 }
+    ],
+    "missing_score": "NOT_APPLICABLE_not_zero",
+    "rounding": { "decimals": 2, "mode": "half_up", "stage": "display_only" },
+    "ranking": { "enabled": true, "ties": "competition", "metric": "PERCENTAGE" },
+    "aggregation": {
+      "mode": "weighted_sum",
+      "coefficient_default": 1,
+      "percentage": "points_over_max_100"
+    },
+    "pass_rule": { "metric": "PERCENTAGE", "threshold": 50 }
+  },
+  "schema": {
+    "sections": [
+      {
+        "id": "GROUPS",
+        "order": 1,
+        "kind": "subject_groups",
+        "rows": [
+          { "id": "FRANCAIS", "order": 1, "kind": "group" },
+          { "id": "KIRUNDI", "order": 2, "kind": "group" },
+          { "id": "ETUDE_DU_MILIEU", "order": 3, "kind": "group" },
+          { "id": "MATHEMATIQUES", "order": 4, "kind": "group" },
+          { "id": "ARTS", "order": 5, "kind": "group" },
+          { "id": "ANGLAIS", "order": 6, "kind": "group" }
+        ],
+        "columns": [
+          { "id": "COL_T1_SCORE", "order": 1, "kind": "score_component", "score_component_id": "COMPONENT_PERIOD", "period_id": "T1" },
+          { "id": "COL_T2_SCORE", "order": 2, "kind": "score_component", "score_component_id": "COMPONENT_PERIOD", "period_id": "T2" },
+          { "id": "COL_T3_SCORE", "order": 3, "kind": "score_component", "score_component_id": "COMPONENT_PERIOD", "period_id": "T3" },
+          { "id": "COL_T1_PERIOD_POINTS", "order": 4, "kind": "computed_slot", "slot": "PERIOD_POINTS", "period_id": "T1" },
+          { "id": "COL_T1_PERIOD_MAX", "order": 5, "kind": "computed_slot", "slot": "PERIOD_MAX", "period_id": "T1" },
+          { "id": "COL_T2_PERIOD_POINTS", "order": 6, "kind": "computed_slot", "slot": "PERIOD_POINTS", "period_id": "T2" },
+          { "id": "COL_T2_PERIOD_MAX", "order": 7, "kind": "computed_slot", "slot": "PERIOD_MAX", "period_id": "T2" },
+          { "id": "COL_T3_PERIOD_POINTS", "order": 8, "kind": "computed_slot", "slot": "PERIOD_POINTS", "period_id": "T3" },
+          { "id": "COL_T3_PERIOD_MAX", "order": 9, "kind": "computed_slot", "slot": "PERIOD_MAX", "period_id": "T3" },
+          { "id": "COL_ANNUAL_POINTS", "order": 10, "kind": "computed_slot", "slot": "ANNUAL_POINTS" },
+          { "id": "COL_ANNUAL_MAX", "order": 11, "kind": "computed_slot", "slot": "ANNUAL_MAX" },
+          { "id": "COL_PERCENTAGE", "order": 12, "kind": "computed_slot", "slot": "PERCENTAGE" }
+        ]
+      }
+    ],
+    "identity_fields": [{ "id": "STUDENT_NAME", "order": 1 }]
+  },
+  "template": {
+    "paper": "A4",
+    "orientation": "portrait",
+    "qr_required": true,
+    "sections": [
+      { "id": "CELLS", "order": 1, "source": "cells", "label": "Domaines" },
+      { "id": "SLOTS", "order": 2, "source": "slots", "label": "Totaux" }
+    ]
+  },
+  "provenance": {
+    "profile": { "id": "qual-a-profile", "version": 1 },
+    "schema": { "id": "qual-a-schema", "version": 1 },
+    "template": { "id": "qual-a-template", "version": 1 }
+  },
+  "facts": [
+    { "student_id": "STU1", "subject_id": "FRANCAIS", "period_id": "T1", "score_component_id": "COMPONENT_PERIOD", "raw_score": 16 },
+    { "student_id": "STU1", "subject_id": "FRANCAIS", "period_id": "T2", "score_component_id": "COMPONENT_PERIOD", "raw_score": 14 },
+    { "student_id": "STU1", "subject_id": "FRANCAIS", "period_id": "T3", "score_component_id": "COMPONENT_PERIOD", "raw_score": 15 },
+    { "student_id": "STU1", "subject_id": "KIRUNDI", "period_id": "T1", "score_component_id": "COMPONENT_PERIOD", "raw_score": 12 },
+    { "student_id": "STU1", "subject_id": "KIRUNDI", "period_id": "T2", "score_component_id": "COMPONENT_PERIOD", "raw_score": 13 },
+    { "student_id": "STU1", "subject_id": "KIRUNDI", "period_id": "T3", "score_component_id": "COMPONENT_PERIOD", "raw_score": 14 },
+    { "student_id": "STU1", "subject_id": "ETUDE_DU_MILIEU", "period_id": "T1", "score_component_id": "COMPONENT_PERIOD", "raw_score": 10 },
+    { "student_id": "STU1", "subject_id": "ETUDE_DU_MILIEU", "period_id": "T2", "score_component_id": "COMPONENT_PERIOD", "raw_score": 11 },
+    { "student_id": "STU1", "subject_id": "ETUDE_DU_MILIEU", "period_id": "T3", "score_component_id": "COMPONENT_PERIOD", "raw_score": 12 },
+    { "student_id": "STU1", "subject_id": "MATHEMATIQUES", "period_id": "T1", "score_component_id": "COMPONENT_PERIOD", "raw_score": 18 },
+    { "student_id": "STU1", "subject_id": "MATHEMATIQUES", "period_id": "T2", "score_component_id": "COMPONENT_PERIOD", "raw_score": 17 },
+    { "student_id": "STU1", "subject_id": "MATHEMATIQUES", "period_id": "T3", "score_component_id": "COMPONENT_PERIOD", "raw_score": 16 },
+    { "student_id": "STU1", "subject_id": "ARTS", "period_id": "T1", "score_component_id": "COMPONENT_PERIOD", "raw_score": 14 },
+    { "student_id": "STU1", "subject_id": "ARTS", "period_id": "T2", "score_component_id": "COMPONENT_PERIOD", "raw_score": 15 },
+    { "student_id": "STU1", "subject_id": "ARTS", "period_id": "T3", "score_component_id": "COMPONENT_PERIOD", "raw_score": 13 },
+    { "student_id": "STU1", "subject_id": "ANGLAIS", "period_id": "T1", "score_component_id": "COMPONENT_PERIOD", "raw_score": 11 },
+    { "student_id": "STU1", "subject_id": "ANGLAIS", "period_id": "T2", "score_component_id": "COMPONENT_PERIOD", "raw_score": 12 },
+    { "student_id": "STU1", "subject_id": "ANGLAIS", "period_id": "T3", "score_component_id": "COMPONENT_PERIOD", "raw_score": 13 }
+  ]
+}
