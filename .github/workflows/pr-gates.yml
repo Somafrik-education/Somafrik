@@ -358,6 +358,10 @@ jobs:
         if: needs.scope.outputs.reportcard == 'true' || needs.scope.outputs.mobile == 'true' || needs.scope.outputs.web == 'true'
         run: npm run verify:report-card-lot9
 
+      - name: Report card LOT 10 Burundi A/B qualification
+        if: needs.scope.outputs.reportcard == 'true' || needs.scope.outputs.mobile == 'true' || needs.scope.outputs.web == 'true'
+        run: npm run verify:report-card-lot10
+
       - name: Planning
         if: needs.scope.outputs.planning == 'true'
         run: |

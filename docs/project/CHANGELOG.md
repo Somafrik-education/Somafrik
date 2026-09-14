@@ -11,6 +11,10 @@ et ce projet adhère au [Versioning sémantique](https://semver.org/lang/fr/) po
 
 ## [Unreleased]
 
+### Added
+
+- **LOT 10 — Qualification Burundi A/B** : mêmes couches `AcademicRuleProfile` / `ReportCardSchema` / `RenderingTemplate` et moteur `somafrik.report_card.v1` ; pas de branche pays. Gate `verify:report-card-lot10`. HOLD READY+MERGE.
+
 ### Security
 
 - **#503 P0-1** : migration idempotente de verrouillage Data API (`anon` / `authenticated` / `PUBLIC` sans SELECT/INSERT/UPDATE/DELETE métier) ; `ALTER DEFAULT PRIVILEGES` de `supabase_admin` best-effort (`insufficient_privilege` ignoré) ; boot `ensureSupabaseDataApiLockdown` ; gate `verify:supabase-data-api-lockdown` (permission denied PG + table future sans grant). Procédure dashboard CTO : `docs/compliance/supabase-data-api-lockdown.md`.

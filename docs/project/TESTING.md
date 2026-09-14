@@ -68,6 +68,7 @@ Fichiers `*.test.js` exécutés via scripts `verify:*` (pas de runner Jest dédi
 - Web bulletins + `/verify` LOT 7 : `backend/lib/reportCard/reportCardHttp.test.js` + pages Web (`npm run verify:report-card-lot7`)
 - Mobile bulletins natif LOT 8 : `backend/lib/reportCard/reportCardLot8.http.test.js` + `Mobile/src/lib/reportCardLot8.test.ts` (`npm run verify:report-card-lot8`)
 - Historique / corrections / versions bulletin LOT 9 : `backend/lib/reportCard/reportCardLot9.http.test.js` + guards Web/Mobile (`npm run verify:report-card-lot9`)
+- Qualification Burundi A/B LOT 10 : `backend/lib/reportCard/reportCardLot10*.test.js` + guards Web/Mobile (`npm run verify:report-card-lot10`)
 
 ```bash
 npm run verify:notes-sync
