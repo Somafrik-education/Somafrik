@@ -61,12 +61,35 @@ function createMemoryMetadata() {
   const idempotency = new Map();
   const audit = [];
   let auditSeq = 0;
+  let chain = Promise.resolve();
 
   function requestKey(schoolId, requestId) {
     return `${schoolId}::${requestId}`;
   }
 
-  return {
+  function snapshot() {
+    return {
+      byId: structuredClone(byId),
+      byRequest: structuredClone(byRequest),
+      idempotency: structuredClone(idempotency),
+      audit: structuredClone(audit),
+      auditSeq,
+    };
+  }
+
+  function restore(snap) {
+    byId.clear();
+    for (const [key, value] of snap.byId) byId.set(key, clone(value));
+    byRequest.clear();
+    for (const [key, value] of snap.byRequest) byRequest.set(key, value.map(clone));
+    idempotency.clear();
+    for (const [key, value] of snap.idempotency) idempotency.set(key, value);
+    audit.length = 0;
+    audit.push(...snap.audit.map(clone));
+    auditSeq = snap.auditSeq;
+  }
+
+  const api = {
     async save(artifact) {
       byId.set(artifact.artifact_id, clone(artifact));
       const list = byRequest.get(requestKey(artifact.school_id, artifact.request_id)) || [];
@@ -75,7 +98,10 @@ function createMemoryMetadata() {
       else list.push(clone(artifact));
       byRequest.set(requestKey(artifact.school_id, artifact.request_id), list);
       if (artifact.idempotency_key) {
-        idempotency.set(`${requestKey(artifact.school_id, artifact.request_id)}::${artifact.idempotency_key}`, artifact.artifact_id);
+        idempotency.set(
+          `${requestKey(artifact.school_id, artifact.request_id)}::${artifact.idempotency_key}`,
+          artifact.artifact_id
+        );
       }
       return clone(artifact);
     },
@@ -88,7 +114,7 @@ function createMemoryMetadata() {
     },
     async getByIdempotency(schoolId, requestId, key) {
       const id = idempotency.get(`${requestKey(schoolId, requestId)}::${key}`);
-      return id ? this.getById(id) : null;
+      return id ? api.getById(id) : null;
     },
     async appendAudit(entry) {
       auditSeq += 1;
@@ -99,6 +125,41 @@ function createMemoryMetadata() {
     async listAudit(schoolId, requestId) {
       return audit.filter((row) => row.school_id === schoolId && row.request_id === requestId).map(clone);
     },
+    async lockRequest() {},
+    async withTx(fn) {
+      const run = chain.then(async () => {
+        const snap = snapshot();
+        try {
+          return await fn(api);
+        } catch (err) {
+          restore(snap);
+          throw err;
+        }
+      });
+      chain = run.then(
+        () => {},
+        () => {}
+      );
+      return run;
+    },
+  };
+  return api;
+}
+
+function mappingFieldsFromBound(bound, current) {
+  if (!bound) return {};
+  return {
+    artifact_version: current ? current.version : null,
+    profile_id: bound.profile_id || null,
+    profile_version: bound.profile_version == null ? null : Number(bound.profile_version),
+    profile_spec_sha256: bound.profile_spec_sha256 || null,
+    schema_id: bound.schema_id || null,
+    schema_version: bound.schema_version == null ? null : Number(bound.schema_version),
+    schema_spec_sha256: bound.schema_spec_sha256 || null,
+    template_id: bound.rendering_template_id || null,
+    template_version:
+      bound.rendering_template_version == null ? null : Number(bound.rendering_template_version),
+    template_spec_sha256: bound.rendering_template_spec_sha256 || null,
   };
 }
 
@@ -143,17 +204,37 @@ function createReportCardSourceArtifact({ configuration, storage, metadata, cloc
     }
   }
 
-  async function currentOf(schoolId, requestId) {
-    const list = await store.listByRequest(schoolId, requestId);
+  async function currentOf(schoolId, requestId, tx = store) {
+    const list = await tx.listByRequest(schoolId, requestId);
     return list.find((row) => row.current) || null;
   }
 
-  function withExclusive(requestId, fn) {
-    if (inflight.has(requestId)) throw coded("CONCURRENCY_CONFLICT");
-    inflight.add(requestId);
-    return Promise.resolve()
-      .then(fn)
-      .finally(() => inflight.delete(requestId));
+  async function compensateBlob(storageKey) {
+    if (!storageKey || typeof blobs.remove !== "function") return;
+    try {
+      await blobs.remove(storageKey);
+    } catch {
+      /* best-effort compensation if the DB commit failed after persist */
+    }
+  }
+
+  async function withExclusive(schoolId, requestId, fn) {
+    const lockKey = `${schoolId}::${requestId}`;
+    if (inflight.has(lockKey)) throw coded("CONCURRENCY_CONFLICT");
+    inflight.add(lockKey);
+    try {
+      if (typeof store.withTx === "function") {
+        return await store.withTx(async (tx) => {
+          if (typeof tx.lockRequest === "function") {
+            await tx.lockRequest(schoolId, requestId);
+          }
+          return fn(tx);
+        });
+      }
+      return await fn(store);
+    } finally {
+      inflight.delete(lockKey);
+    }
   }
 
   async function putArtifact({
@@ -182,64 +263,74 @@ function createReportCardSourceArtifact({ configuration, storage, metadata, cloc
       }
     }
 
-    return withExclusive(requestId, async () => {
-      const again = key ? await store.getByIdempotency(schoolId, requestId, key) : null;
-      if (again) {
-        if (again.sha256 !== digest) throw coded("IDEMPOTENCY_CONFLICT");
-        return clone(again);
-      }
-      const previous = await currentOf(schoolId, requestId);
-      if (previous && !replace && !key) {
-        throw coded("CONCURRENCY_CONFLICT");
-      }
-      const at = nowIso(clock);
-      if (previous) {
-        previous.current = false;
-        previous.status = "ARCHIVED";
-        await store.save(previous);
-        await store.appendAudit({
+    let storageKey = null;
+    try {
+      return await withExclusive(schoolId, requestId, async (tx) => {
+        const again = key ? await tx.getByIdempotency(schoolId, requestId, key) : null;
+        if (again) {
+          if (again.sha256 !== digest) throw coded("IDEMPOTENCY_CONFLICT");
+          return clone(again);
+        }
+        const previous = await currentOf(schoolId, requestId, tx);
+        if (previous && !replace && !key) {
+          throw coded("CONCURRENCY_CONFLICT");
+        }
+        const at = nowIso(clock);
+        const list = await tx.listByRequest(schoolId, requestId);
+        const version = list.reduce((max, row) => Math.max(max, Number(row.version) || 0), 0) + 1;
+        storageKey = await blobs.persist(bytes);
+        if (previous) {
+          await tx.save({
+            ...previous,
+            current: false,
+            status: "ARCHIVED",
+          });
+          await tx.appendAudit({
+            school_id: schoolId,
+            request_id: requestId,
+            artifact_id: previous.artifact_id,
+            artifact_sha256: previous.sha256,
+            artifact_version: previous.version,
+            action: "ARCHIVE",
+            to_state: "ARCHIVED",
+            actor_id: actor.actorId || "unknown",
+            created_at: at,
+          });
+        }
+        const artifact = {
+          artifact_id: crypto.randomUUID(),
+          request_id: requestId,
+          school_id: schoolId,
+          version,
+          current: true,
+          status: "CURRENT",
+          media_type: validated.mediaType,
+          byte_size: validated.byteSize,
+          sha256: digest,
+          original_filename: originalFilename == null ? "" : String(originalFilename),
+          storage_key: storageKey,
+          idempotency_key: key || null,
+          created_by: actor.actorId || "unknown",
+          created_at: at,
+        };
+        await tx.save(artifact);
+        await tx.appendAudit({
           school_id: schoolId,
           request_id: requestId,
-          artifact_id: previous.artifact_id,
-          artifact_sha256: previous.sha256,
-          action: "ARCHIVE",
-          to_state: "ARCHIVED",
+          artifact_id: artifact.artifact_id,
+          artifact_sha256: artifact.sha256,
+          artifact_version: artifact.version,
+          action: previous ? "REPLACE" : "ATTACH",
+          to_state: "CURRENT",
           actor_id: actor.actorId || "unknown",
           created_at: at,
         });
-      }
-      const list = await store.listByRequest(schoolId, requestId);
-      const version = list.reduce((max, row) => Math.max(max, Number(row.version) || 0), 0) + 1;
-      const storageKey = await blobs.persist(bytes);
-      const artifact = {
-        artifact_id: crypto.randomUUID(),
-        request_id: requestId,
-        school_id: schoolId,
-        version,
-        current: true,
-        status: "CURRENT",
-        media_type: validated.mediaType,
-        byte_size: validated.byteSize,
-        sha256: digest,
-        original_filename: originalFilename == null ? "" : String(originalFilename),
-        storage_key: storageKey,
-        idempotency_key: key || null,
-        created_by: actor.actorId || "unknown",
-        created_at: at,
-      };
-      await store.save(artifact);
-      await store.appendAudit({
-        school_id: schoolId,
-        request_id: requestId,
-        artifact_id: artifact.artifact_id,
-        artifact_sha256: artifact.sha256,
-        action: previous ? "REPLACE" : "ATTACH",
-        to_state: "CURRENT",
-        actor_id: actor.actorId || "unknown",
-        created_at: at,
+        return clone(artifact);
       });
-      return clone(artifact);
-    });
+    } catch (err) {
+      await compensateBlob(storageKey);
+      throw err;
+    }
   }
 
   async function attachToRequest(args = {}) {
@@ -336,9 +427,7 @@ function createReportCardSourceArtifact({ configuration, storage, metadata, cloc
       to_state: bound.status,
       actor_id: actor.actorId || "unknown",
       created_at: nowIso(clock),
-      profile_id: profile.id,
-      schema_id: schema.id,
-      template_id: template.id,
+      ...mappingFieldsFromBound(bound, current),
     });
     return {
       artifact_id: current.artifact_id,
@@ -362,6 +451,7 @@ function createReportCardSourceArtifact({ configuration, storage, metadata, cloc
       request_id: requestId,
       artifact_id: current.artifact_id,
       artifact_sha256: current.sha256,
+      artifact_version: current.version,
       action: "READY_FOR_REVIEW",
       to_state: "READY_FOR_REVIEW",
       actor_id: actor.actorId || "unknown",

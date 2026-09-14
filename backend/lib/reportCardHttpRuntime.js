@@ -191,7 +191,7 @@ function createReportCardHttpRuntime(repository, env = process.env, overrides = 
     ? createReportCardSourceArtifact({
         configuration,
         storage: createDiskSourceStorage(env),
-        metadata: db ? createReportCardSourceArtifactPgStore(db) : undefined,
+        metadata: db ? createReportCardSourceArtifactPgStore(db.pool || db) : undefined,
       })
     : null;
 

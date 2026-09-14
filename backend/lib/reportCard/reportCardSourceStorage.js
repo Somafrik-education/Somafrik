@@ -184,6 +184,23 @@ async function persistSourceBytes(buffer, env = process.env) {
   return key;
 }
 
+async function deleteSourceBytes(storageKey, env = process.env) {
+  const key = assertSafeStorageKey(storageKey);
+  const root = storageRoot(env);
+  const abs = path.join(root, ...key.split("/"));
+  const resolvedRoot = path.resolve(root);
+  const resolvedFile = path.resolve(abs);
+  if (!resolvedFile.startsWith(resolvedRoot + path.sep) && resolvedFile !== resolvedRoot) {
+    return;
+  }
+  try {
+    await fs.unlink(resolvedFile);
+  } catch (err) {
+    if (err && err.code === "ENOENT") return;
+    throw err;
+  }
+}
+
 async function readSourceBytes(storageKey, env = process.env) {
   const key = assertSafeStorageKey(storageKey);
   const root = storageRoot(env);
@@ -215,6 +232,9 @@ function createDiskSourceStorage(env = process.env) {
     async read(storageKey) {
       return readSourceBytes(storageKey, env);
     },
+    async remove(storageKey) {
+      return deleteSourceBytes(storageKey, env);
+    },
   };
 }
 
@@ -236,6 +256,9 @@ function createMemorySourceStorage() {
       }
       return Buffer.from(found);
     },
+    async remove(storageKey) {
+      blobs.delete(storageKey);
+    },
     corrupt(storageKey) {
       const found = blobs.get(storageKey);
       if (found) found[0] ^= 0xff;
@@ -254,6 +277,7 @@ module.exports = {
   storageRoot,
   persistSourceBytes,
   readSourceBytes,
+  deleteSourceBytes,
   createDiskSourceStorage,
   createMemorySourceStorage,
   isProductionEnv,

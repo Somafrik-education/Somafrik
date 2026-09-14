@@ -14,7 +14,8 @@ Le fichier source est une **preuve documentaire**, jamais une règle exécutable
 | Champ | Valeur |
 | --- | --- |
 | RED | `0ba33ac0d220723312ff4d00a4cc2d4d62947847` — tests + inventaire. Production code unmodified. |
-| GREEN | commit suivant — domaine, stockage dédié, HTTP, Web. **Production code modified: YES.** |
+| GREEN | `d07d462356ea7b48da5b038e83dad83d841aea92` — domaine, stockage dédié, HTTP, Web. **Production code modified: YES.** |
+| Correctifs CTO P0-A / P1-B | commit suivant — transaction PG + verrou `(school_id, request_id)` + compensation blob ; audit mapping id/version/hash. **Production code modified: YES.** |
 | Décision CTO stockage | Option 2 : `SOMAFRIK_REPORT_CARD_SOURCE_STORAGE` (root dédié). Même volume physique autorisé via sous-répertoire. **Ne pas** utiliser `SOMAFRIK_COMMUNICATION_STORAGE` comme root runtime. |
 
 ## Contrat stockage GREEN (validé CTO)
@@ -85,5 +86,7 @@ Métadonnées PG : `report_card_source_artifacts` + audit append-only.
 - Audit append-only attach/replace/archive.
 - `READY_FOR_REVIEW` pin la version + hash exacts.
 - Web uniquement. Mobile inchangé.
+- Remplacement PG : transaction dédiée, `pg_advisory_xact_lock` + `FOR UPDATE` sur la demande `(school_id, request_id)`, calcul de version sous verrou, archivage + INSERT + audit atomiques. Le blob est persisté sous verrou ; si le commit DB échoue, compensation `remove` du nouvel objet. Le `Set` processus n’est plus le verrou de production.
+- Mapping traçable : `MAP_EXPLICIT` persiste `artifact_id` / `artifact_version` / `artifact_sha256` et les refs exactes du bundle (`profile|schema|template` id + version + spec_sha256) — jointure testée, pas de corrélation par horodatage.
 
-Gate : `npm run verify:report-card-lot11`.
+Gate : `npm run verify:report-card-lot11` (domaine, HTTP, PG, Web).

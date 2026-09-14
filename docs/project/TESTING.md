@@ -69,7 +69,7 @@ Fichiers `*.test.js` exécutés via scripts `verify:*` (pas de runner Jest dédi
 - Mobile bulletins natif LOT 8 : `backend/lib/reportCard/reportCardLot8.http.test.js` + `Mobile/src/lib/reportCardLot8.test.ts` (`npm run verify:report-card-lot8`)
 - Historique / corrections / versions bulletin LOT 9 : `backend/lib/reportCard/reportCardLot9.http.test.js` + guards Web/Mobile (`npm run verify:report-card-lot9`)
 - Qualification Burundi A/B LOT 10 : `backend/lib/reportCard/reportCardLot10*.test.js` + guards Web/Mobile (`npm run verify:report-card-lot10`)
-- Artefact source + mapping traçable LOT 11 : `backend/lib/reportCard/reportCardLot11*.test.js` + guards Web (`npm run verify:report-card-lot11`) — Mobile hors périmètre
+- Artefact source + mapping traçable LOT 11 : `backend/lib/reportCard/reportCardLot11*.test.js` (domaine, HTTP, PG transactionnel) + guards Web (`npm run verify:report-card-lot11`) — Mobile hors périmètre
 
 ```bash
 npm run verify:notes-sync

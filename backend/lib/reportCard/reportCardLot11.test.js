@@ -189,6 +189,9 @@ function memoryBlobs() {
       }
       return Buffer.from(found);
     },
+    async remove(storageKey) {
+      blobs.delete(storageKey);
+    },
     corrupt(storageKey) {
       const found = blobs.get(storageKey);
       assert.ok(found, "storage key missing");
@@ -852,6 +855,57 @@ test("report-card-lot11-mapping-explicit-no-auto-rules", async () => {
   assert.equal(ENGINE_ID, "somafrik.report_card.v1");
 });
 
+test("report-card-lot11-mapping-explicit-audit-persists-bundle-refs", async () => {
+  const ctx = await world();
+  const attached = await ctx.artifacts.attachToRequest({
+    actor: schoolSubmit(SCHOOL_A),
+    schoolId: SCHOOL_A,
+    requestId: ctx.requestId,
+    bytes: pdfBytes("map-audit"),
+    declaredMime: "application/pdf",
+    originalFilename: "map-audit.pdf",
+    idempotencyKey: "cmd-map-audit",
+  });
+  await ctx.configuration.startReview({ actor: superadmin(), schoolId: SCHOOL_A, requestId: ctx.requestId });
+  await ctx.configuration.startConfiguring({ actor: superadmin(), schoolId: SCHOOL_A, requestId: ctx.requestId });
+  const refs = seedBundle(ctx.profileStore, ctx.schemaStore, SCHOOL_A);
+  const template = await ctx.configuration.saveRenderingTemplate({
+    actor: superadmin(),
+    schoolId: SCHOOL_A,
+    requestId: ctx.requestId,
+    spec: validTemplate(),
+  });
+  const mapped = await ctx.artifacts.mapExplicit({
+    actor: superadmin(),
+    schoolId: SCHOOL_A,
+    requestId: ctx.requestId,
+    profile: refs.profile,
+    schema: refs.schema,
+    template: { id: template.template_id, version: template.version },
+    artifact_id: attached.artifact_id,
+    artifact_version: attached.version,
+  });
+  const audit = await ctx.artifacts.listAudit({
+    actor: superadmin(),
+    schoolId: SCHOOL_A,
+    requestId: ctx.requestId,
+  });
+  const row = audit.find((item) => item.action === "MAP_EXPLICIT");
+  assert.ok(row);
+  assert.equal(row.artifact_id, attached.artifact_id);
+  assert.equal(row.artifact_sha256, attached.sha256);
+  assert.equal(row.artifact_version, attached.version);
+  assert.equal(row.profile_id, mapped.request.profile_id);
+  assert.equal(row.profile_version, mapped.request.profile_version);
+  assert.equal(row.profile_spec_sha256, mapped.request.profile_spec_sha256);
+  assert.equal(row.schema_id, mapped.request.schema_id);
+  assert.equal(row.schema_version, mapped.request.schema_version);
+  assert.equal(row.schema_spec_sha256, mapped.request.schema_spec_sha256);
+  assert.equal(row.template_id, mapped.request.rendering_template_id);
+  assert.equal(row.template_version, mapped.request.rendering_template_version);
+  assert.equal(row.template_spec_sha256, mapped.request.rendering_template_spec_sha256);
+});
+
 test("report-card-lot11-ready-review-references-exact-artifact-version", async () => {
   const ctx = await world();
   await assert.rejects(
@@ -916,6 +970,20 @@ test("report-card-lot11-ready-review-references-exact-artifact-version", async (
     ),
     true
   );
+});
+
+test("report-card-lot11-pg-replace-uses-db-transaction-lock", () => {
+  const storeSrc = fs.readFileSync(path.join(__dirname, "../../db/reportCardSourceArtifactPgStore.js"), "utf8");
+  assert.match(storeSrc, /withTx/);
+  assert.match(storeSrc, /FOR UPDATE/);
+  assert.match(storeSrc, /pg_advisory_xact_lock/);
+  const domain = fs.readFileSync(ARTIFACT_SRC, "utf8");
+  assert.match(domain, /withTx/);
+  assert.match(domain, /compensateBlob|blobs\.remove/);
+  const sql = fs.readFileSync(path.join(__dirname, "../../db/reportCardSourceArtifactSql.js"), "utf8");
+  assert.match(sql, /profile_spec_sha256/);
+  assert.match(sql, /schema_spec_sha256/);
+  assert.match(sql, /template_spec_sha256/);
 });
 
 test("report-card-lot11-no-country-school-branch", () => {

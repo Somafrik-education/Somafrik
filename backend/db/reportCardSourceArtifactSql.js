@@ -40,17 +40,44 @@ CREATE TABLE IF NOT EXISTS report_card_source_artifact_audit (
   request_id UUID NOT NULL,
   artifact_id UUID,
   artifact_sha256 TEXT,
+  artifact_version INTEGER,
   action TEXT NOT NULL,
   to_state TEXT,
   actor_id TEXT NOT NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  profile_id UUID,
+  profile_version INTEGER,
+  profile_spec_sha256 TEXT,
+  schema_id UUID,
+  schema_version INTEGER,
+  schema_spec_sha256 TEXT,
+  template_id UUID,
+  template_version INTEGER,
+  template_spec_sha256 TEXT,
+  configuration_audit_id BIGINT,
   CONSTRAINT report_card_source_artifact_audit_request_tenant
     FOREIGN KEY (request_id, school_id)
     REFERENCES report_card_configuration_requests (id, school_id)
 );
 
+ALTER TABLE report_card_source_artifact_audit
+  ADD COLUMN IF NOT EXISTS artifact_version INTEGER,
+  ADD COLUMN IF NOT EXISTS profile_id UUID,
+  ADD COLUMN IF NOT EXISTS profile_version INTEGER,
+  ADD COLUMN IF NOT EXISTS profile_spec_sha256 TEXT,
+  ADD COLUMN IF NOT EXISTS schema_id UUID,
+  ADD COLUMN IF NOT EXISTS schema_version INTEGER,
+  ADD COLUMN IF NOT EXISTS schema_spec_sha256 TEXT,
+  ADD COLUMN IF NOT EXISTS template_id UUID,
+  ADD COLUMN IF NOT EXISTS template_version INTEGER,
+  ADD COLUMN IF NOT EXISTS template_spec_sha256 TEXT,
+  ADD COLUMN IF NOT EXISTS configuration_audit_id BIGINT;
+
 CREATE INDEX IF NOT EXISTS idx_report_card_source_artifact_audit_request
   ON report_card_source_artifact_audit (school_id, request_id, id);
+
+CREATE INDEX IF NOT EXISTS idx_report_card_source_artifact_audit_mapping
+  ON report_card_source_artifact_audit (artifact_id, profile_id, schema_id, template_id);
 
 CREATE OR REPLACE FUNCTION report_card_source_artifact_audit_protect()
 RETURNS trigger
