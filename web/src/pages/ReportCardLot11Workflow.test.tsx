@@ -20,6 +20,7 @@ vi.mock("../lib/reportCardConfigurationApi", () => ({
     getBundle: vi.fn(async () => ({ template: null, profile: null, schema: null })),
     getActiveBinding: vi.fn(async () => ({ binding: null })),
     attachSourceArtifact: (...args: unknown[]) => attachSourceArtifact(...args),
+    getSourceArtifact: (...args: unknown[]) => getSourceArtifact(...args),
   },
   reportCardAdminApi: {
     queue: (...args: unknown[]) => queue(...args),
@@ -59,7 +60,7 @@ describe("LOT 11 web workflow", () => {
   it("report-card-lot11-web-upload-error-success-persisted", async () => {
     attachSourceArtifact.mockRejectedValueOnce(new Error("FILE_TOO_LARGE"));
     attachSourceArtifact.mockResolvedValueOnce({
-      artifact: { artifact_id: "art-1", sha256: "abc", version: 1, original_filename: "modele.pdf" },
+      artifact: { artifact_id: "art-1", sha256: "abc", version: 1, original_filename: "modele.pdf", media_type: "application/pdf" },
     });
     const mod = await import("./ReportCardSchoolWorkflowPage");
     const user = userEvent.setup();
@@ -85,12 +86,15 @@ describe("LOT 11 web workflow", () => {
     });
     attachSourceArtifact.mockClear();
     attachSourceArtifact.mockResolvedValue({
-      artifact: { artifact_id: "art-1", sha256: "abc", version: 1, original_filename: "modele.pdf" },
+      artifact: { artifact_id: "art-1", sha256: "abc", version: 1, original_filename: "modele.pdf", media_type: "application/pdf" },
     });
     await user.click(screen.getByRole("button", { name: /envoyer un modèle de bulletin/i }));
     await waitFor(() => {
       expect(screen.getByText(/art-1|modèle envoyé|artefact/i)).toBeInTheDocument();
     });
+    const preview = screen.getByTitle("source-artifact-art-1");
+    expect(preview.tagName.toLowerCase()).toBe("iframe");
+    expect(preview.getAttribute("src")).toMatch(/\/api\/report-card\/requests\/req-1\/source-artifact\/content/);
   });
 
   it("report-card-lot11-superadmin-preview-privileged-only", async () => {
@@ -129,5 +133,10 @@ describe("LOT 11 web workflow", () => {
     });
     expect(getSourceArtifact).toHaveBeenCalled();
     expect(screen.getByText(/deadbeef|art-1|modele\.pdf/i)).toBeInTheDocument();
+    const preview = screen.getByTitle("source-artifact-art-1");
+    expect(preview.tagName.toLowerCase()).toBe("iframe");
+    expect(preview.getAttribute("src")).toMatch(
+      /\/api\/report-card\/admin\/requests\/req-1\/source-artifact\/content\?schoolId=school-a/,
+    );
   });
 });

@@ -79,6 +79,29 @@ CREATE INDEX IF NOT EXISTS idx_report_card_source_artifact_audit_request
 CREATE INDEX IF NOT EXISTS idx_report_card_source_artifact_audit_mapping
   ON report_card_source_artifact_audit (artifact_id, profile_id, schema_id, template_id);
 
+CREATE TABLE IF NOT EXISTS report_card_source_artifact_mapping (
+  school_id UUID NOT NULL,
+  request_id UUID NOT NULL,
+  artifact_id UUID NOT NULL,
+  artifact_version INTEGER NOT NULL,
+  artifact_sha256 TEXT NOT NULL,
+  valid BOOLEAN NOT NULL DEFAULT TRUE,
+  profile_id UUID,
+  profile_version INTEGER,
+  profile_spec_sha256 TEXT,
+  schema_id UUID,
+  schema_version INTEGER,
+  schema_spec_sha256 TEXT,
+  template_id UUID,
+  template_version INTEGER,
+  template_spec_sha256 TEXT,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (school_id, request_id),
+  CONSTRAINT report_card_source_artifact_mapping_request
+    FOREIGN KEY (request_id, school_id)
+    REFERENCES report_card_configuration_requests (id, school_id)
+);
+
 CREATE OR REPLACE FUNCTION report_card_source_artifact_audit_protect()
 RETURNS trigger
 LANGUAGE plpgsql

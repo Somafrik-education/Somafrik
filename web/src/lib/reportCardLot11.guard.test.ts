@@ -40,6 +40,8 @@ describe("LOT 11 web guards", () => {
     expect(school).toMatch(/Envoyer un modèle de bulletin/);
     expect(school).toMatch(/source-artifact|sourceArtifact|attachSourceArtifact/);
     expect(school).toMatch(/role="alert"/);
+    expect(school).toMatch(/iframe|img/);
+    expect(school).toMatch(/source-artifact\/content/);
     expect(school.includes("computeReportCard")).toBe(false);
     const api = readRel("web/src/lib/reportCardConfigurationApi.ts");
     expect(api).toMatch(/source-artifact|attachSourceArtifact|uploadSourceArtifact/);
@@ -49,6 +51,8 @@ describe("LOT 11 web guards", () => {
     const admin = readRel("web/src/pages/ReportCardSuperadminWorkflowPage.tsx");
     expect(admin).toMatch(/Artefact source/);
     expect(admin).toMatch(/source-artifact|sourceArtifact/);
+    expect(admin).toMatch(/iframe|img/);
+    expect(admin).toMatch(/source-artifact\/content/);
     expect(admin).toMatch(/AcademicRuleProfile|profile_id|Lier le bundle/);
     expect(admin).not.toMatch(/ocr|tesseract|autoExtract/i);
     expect(admin.includes("computeReportCard")).toBe(false);

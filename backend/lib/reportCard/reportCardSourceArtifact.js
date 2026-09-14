@@ -59,6 +59,7 @@ function createMemoryMetadata() {
   const byId = new Map();
   const byRequest = new Map();
   const idempotency = new Map();
+  const mappings = new Map();
   const audit = [];
   let auditSeq = 0;
   let chain = Promise.resolve();
@@ -72,6 +73,7 @@ function createMemoryMetadata() {
       byId: structuredClone(byId),
       byRequest: structuredClone(byRequest),
       idempotency: structuredClone(idempotency),
+      mappings: structuredClone(mappings),
       audit: structuredClone(audit),
       auditSeq,
     };
@@ -84,6 +86,8 @@ function createMemoryMetadata() {
     for (const [key, value] of snap.byRequest) byRequest.set(key, value.map(clone));
     idempotency.clear();
     for (const [key, value] of snap.idempotency) idempotency.set(key, value);
+    mappings.clear();
+    for (const [key, value] of snap.mappings) mappings.set(key, clone(value));
     audit.length = 0;
     audit.push(...snap.audit.map(clone));
     auditSeq = snap.auditSeq;
@@ -125,7 +129,28 @@ function createMemoryMetadata() {
     async listAudit(schoolId, requestId) {
       return audit.filter((row) => row.school_id === schoolId && row.request_id === requestId).map(clone);
     },
-    async lockRequest() {},
+    async getMapping(schoolId, requestId) {
+      const row = mappings.get(requestKey(schoolId, requestId));
+      return row ? clone(row) : null;
+    },
+    async saveMapping(row) {
+      const stored = clone(row);
+      mappings.set(requestKey(row.school_id, row.request_id), stored);
+      return clone(stored);
+    },
+    async invalidateMapping(schoolId, requestId) {
+      const row = mappings.get(requestKey(schoolId, requestId));
+      if (!row || row.valid === false) return null;
+      row.valid = false;
+      mappings.set(requestKey(schoolId, requestId), clone(row));
+      return clone(row);
+    },
+    async lockRequest() {
+      return {};
+    },
+    async withSessionLock(_schoolId, _requestId, fn) {
+      return api.withTx(() => fn());
+    },
     async withTx(fn) {
       const run = chain.then(async () => {
         const snap = snapshot();
@@ -225,16 +250,55 @@ function createReportCardSourceArtifact({ configuration, storage, metadata, cloc
     try {
       if (typeof store.withTx === "function") {
         return await store.withTx(async (tx) => {
+          let locked = {};
           if (typeof tx.lockRequest === "function") {
-            await tx.lockRequest(schoolId, requestId);
+            locked = (await tx.lockRequest(schoolId, requestId)) || {};
           }
-          return fn(tx);
+          return fn(tx, locked);
         });
       }
-      return await fn(store);
+      return await fn(store, {});
     } finally {
       inflight.delete(lockKey);
     }
+  }
+
+  async function withReadyLock(schoolId, requestId, fn) {
+    const lockKey = `${schoolId}::${requestId}`;
+    if (inflight.has(lockKey)) throw coded("CONCURRENCY_CONFLICT");
+    inflight.add(lockKey);
+    try {
+      if (typeof store.withSessionLock === "function") {
+        return await store.withSessionLock(schoolId, requestId, fn);
+      }
+      return await fn();
+    } finally {
+      inflight.delete(lockKey);
+    }
+  }
+
+  function mappingMatches(mapping, artifact) {
+    if (!mapping || mapping.valid === false || !artifact) return false;
+    return (
+      String(mapping.artifact_id) === String(artifact.artifact_id) &&
+      Number(mapping.artifact_version) === Number(artifact.version) &&
+      String(mapping.artifact_sha256) === String(artifact.sha256)
+    );
+  }
+
+  async function pinMapping(tx, { schoolId, requestId, artifact, bound, at }) {
+    if (typeof tx.saveMapping !== "function") return null;
+    const fields = mappingFieldsFromBound(bound, artifact);
+    return tx.saveMapping({
+      school_id: schoolId,
+      request_id: requestId,
+      artifact_id: artifact.artifact_id,
+      artifact_version: artifact.version,
+      artifact_sha256: artifact.sha256,
+      valid: true,
+      updated_at: at,
+      ...fields,
+    });
   }
 
   async function putArtifact({
@@ -265,7 +329,9 @@ function createReportCardSourceArtifact({ configuration, storage, metadata, cloc
 
     let storageKey = null;
     try {
-      return await withExclusive(schoolId, requestId, async (tx) => {
+      return await withExclusive(schoolId, requestId, async (tx, locked) => {
+        const lockedStatus = locked && locked.status ? locked.status : request.status;
+        if (IMMUTABLE_STATUSES.has(lockedStatus)) throw coded("ARTIFACT_IMMUTABLE");
         const again = key ? await tx.getByIdempotency(schoolId, requestId, key) : null;
         if (again) {
           if (again.sha256 !== digest) throw coded("IDEMPOTENCY_CONFLICT");
@@ -296,6 +362,22 @@ function createReportCardSourceArtifact({ configuration, storage, metadata, cloc
             actor_id: actor.actorId || "unknown",
             created_at: at,
           });
+          if (typeof tx.invalidateMapping === "function") {
+            const invalidated = await tx.invalidateMapping(schoolId, requestId);
+            if (invalidated) {
+              await tx.appendAudit({
+                school_id: schoolId,
+                request_id: requestId,
+                artifact_id: previous.artifact_id,
+                artifact_sha256: previous.sha256,
+                artifact_version: previous.version,
+                action: "INVALIDATE_MAPPING",
+                to_state: "MAPPING_STALE",
+                actor_id: actor.actorId || "unknown",
+                created_at: at,
+              });
+            }
+          }
         }
         const artifact = {
           artifact_id: crypto.randomUUID(),
@@ -370,22 +452,27 @@ function createReportCardSourceArtifact({ configuration, storage, metadata, cloc
     return bytes;
   }
 
-  function downloadHeaders(artifact) {
+  function contentHeaders(artifact, { inline = true } = {}) {
     const ext =
       artifact.media_type === "image/png" ? "png" : artifact.media_type === "image/jpeg" ? "jpg" : "pdf";
+    const kind = inline ? "inline" : "attachment";
     return {
       "Content-Type": artifact.media_type,
-      "Content-Disposition": `attachment; filename="bulletin-source.${ext}"`,
+      "Content-Disposition": `${kind}; filename="bulletin-source.${ext}"`,
       "X-Content-Type-Options": "nosniff",
       "Cache-Control": "private, no-store",
     };
   }
 
-  async function openDownload({ actor, schoolId, artifactId } = {}) {
+  function downloadHeaders(artifact) {
+    return contentHeaders(artifact, { inline: false });
+  }
+
+  async function openDownload({ actor, schoolId, artifactId, inline = true } = {}) {
     assertCanPreview(actor, schoolId);
     const artifact = await getById({ actor, schoolId, artifactId });
     const bytes = await verifyBytes(artifact);
-    return { bytes, headers: downloadHeaders(artifact), artifact: clone(artifact) };
+    return { bytes, headers: contentHeaders(artifact, { inline }), artifact: clone(artifact) };
   }
 
   async function mapExplicit({
@@ -418,16 +505,24 @@ function createReportCardSourceArtifact({ configuration, storage, metadata, cloc
       schema,
       template,
     });
-    await store.appendAudit({
-      school_id: schoolId,
-      request_id: requestId,
-      artifact_id: current.artifact_id,
-      artifact_sha256: current.sha256,
-      action: "MAP_EXPLICIT",
-      to_state: bound.status,
-      actor_id: actor.actorId || "unknown",
-      created_at: nowIso(clock),
-      ...mappingFieldsFromBound(bound, current),
+    const at = nowIso(clock);
+    await withExclusive(schoolId, requestId, async (tx) => {
+      const still = await currentOf(schoolId, requestId, tx);
+      if (!still || still.artifact_id !== current.artifact_id || still.sha256 !== current.sha256) {
+        throw coded("HASH_MISMATCH");
+      }
+      await pinMapping(tx, { schoolId, requestId, artifact: still, bound, at });
+      await tx.appendAudit({
+        school_id: schoolId,
+        request_id: requestId,
+        artifact_id: still.artifact_id,
+        artifact_sha256: still.sha256,
+        action: "MAP_EXPLICIT",
+        to_state: bound.status,
+        actor_id: actor.actorId || "unknown",
+        created_at: at,
+        ...mappingFieldsFromBound(bound, still),
+      });
     });
     return {
       artifact_id: current.artifact_id,
@@ -442,27 +537,32 @@ function createReportCardSourceArtifact({ configuration, storage, metadata, cloc
 
   async function markReadyForReview({ actor, schoolId, requestId } = {}) {
     assertCanConfigure(actor, schoolId);
-    const current = await currentOf(schoolId, requestId);
-    if (!current) throw coded("ARTIFACT_REQUIRED");
-    await verifyBytes(current);
-    const ready = await configuration.markReadyForReview({ actor, schoolId, requestId });
-    await store.appendAudit({
-      school_id: schoolId,
-      request_id: requestId,
-      artifact_id: current.artifact_id,
-      artifact_sha256: current.sha256,
-      artifact_version: current.version,
-      action: "READY_FOR_REVIEW",
-      to_state: "READY_FOR_REVIEW",
-      actor_id: actor.actorId || "unknown",
-      created_at: nowIso(clock),
+    return withReadyLock(schoolId, requestId, async () => {
+      const current = await currentOf(schoolId, requestId);
+      if (!current) throw coded("ARTIFACT_REQUIRED");
+      const mapping = typeof store.getMapping === "function" ? await store.getMapping(schoolId, requestId) : null;
+      if (!mapping || mapping.valid === false) throw coded("MAPPING_REQUIRED");
+      if (!mappingMatches(mapping, current)) throw coded("HASH_MISMATCH");
+      await verifyBytes(current);
+      const ready = await configuration.markReadyForReview({ actor, schoolId, requestId });
+      await store.appendAudit({
+        school_id: schoolId,
+        request_id: requestId,
+        artifact_id: current.artifact_id,
+        artifact_sha256: current.sha256,
+        artifact_version: current.version,
+        action: "READY_FOR_REVIEW",
+        to_state: "READY_FOR_REVIEW",
+        actor_id: actor.actorId || "unknown",
+        created_at: nowIso(clock),
+      });
+      return {
+        ...clone(ready),
+        artifact_id: current.artifact_id,
+        artifact_version: current.version,
+        artifact_sha256: current.sha256,
+      };
     });
-    return {
-      ...clone(ready),
-      artifact_id: current.artifact_id,
-      artifact_version: current.version,
-      artifact_sha256: current.sha256,
-    };
   }
 
   async function listAudit({ actor, schoolId, requestId } = {}) {
@@ -481,6 +581,7 @@ function createReportCardSourceArtifact({ configuration, storage, metadata, cloc
     markReadyForReview,
     listAudit,
     downloadHeaders,
+    contentHeaders,
     toPublicArtifact,
   };
 }

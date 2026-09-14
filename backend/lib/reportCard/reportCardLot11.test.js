@@ -713,6 +713,7 @@ test("report-card-lot11-hash-mismatch-fails-closed", async () => {
       isCoded(error, "HASH_MISMATCH") ||
       isCoded(error, "ARTIFACT_CORRUPT") ||
       isCoded(error, "ARTIFACT_REQUIRED") ||
+      isCoded(error, "MAPPING_REQUIRED") ||
       isCoded(error, "INVALID_TRANSITION")
   );
 });
@@ -904,6 +905,74 @@ test("report-card-lot11-mapping-explicit-audit-persists-bundle-refs", async () =
   assert.equal(row.template_id, mapped.request.rendering_template_id);
   assert.equal(row.template_version, mapped.request.rendering_template_version);
   assert.equal(row.template_spec_sha256, mapped.request.rendering_template_spec_sha256);
+});
+
+test("report-card-lot11-map-replace-ready-requires-remap", async () => {
+  const ctx = await world();
+  const first = await ctx.artifacts.attachToRequest({
+    actor: schoolSubmit(SCHOOL_A),
+    schoolId: SCHOOL_A,
+    requestId: ctx.requestId,
+    bytes: pdfBytes("v1"),
+    declaredMime: "application/pdf",
+    originalFilename: "v1.pdf",
+    idempotencyKey: "cmd-v1",
+  });
+  await ctx.configuration.startReview({ actor: superadmin(), schoolId: SCHOOL_A, requestId: ctx.requestId });
+  await ctx.configuration.startConfiguring({ actor: superadmin(), schoolId: SCHOOL_A, requestId: ctx.requestId });
+  const refs = seedBundle(ctx.profileStore, ctx.schemaStore, SCHOOL_A);
+  const template = await ctx.configuration.saveRenderingTemplate({
+    actor: superadmin(),
+    schoolId: SCHOOL_A,
+    requestId: ctx.requestId,
+    spec: validTemplate(),
+  });
+  await ctx.artifacts.mapExplicit({
+    actor: superadmin(),
+    schoolId: SCHOOL_A,
+    requestId: ctx.requestId,
+    profile: refs.profile,
+    schema: refs.schema,
+    template: { id: template.template_id, version: template.version },
+    artifact_id: first.artifact_id,
+    artifact_version: first.version,
+  });
+  const second = await ctx.artifacts.replaceCurrent({
+    actor: schoolSubmit(SCHOOL_A),
+    schoolId: SCHOOL_A,
+    requestId: ctx.requestId,
+    bytes: pdfBytes("v2"),
+    declaredMime: "application/pdf",
+    originalFilename: "v2.pdf",
+    idempotencyKey: "cmd-v2",
+  });
+  await assert.rejects(
+    () =>
+      ctx.artifacts.markReadyForReview({
+        actor: superadmin(),
+        schoolId: SCHOOL_A,
+        requestId: ctx.requestId,
+      }),
+    (error) => isCoded(error, "MAPPING_REQUIRED") || isCoded(error, "HASH_MISMATCH")
+  );
+  await ctx.artifacts.mapExplicit({
+    actor: superadmin(),
+    schoolId: SCHOOL_A,
+    requestId: ctx.requestId,
+    profile: refs.profile,
+    schema: refs.schema,
+    template: { id: template.template_id, version: template.version },
+    artifact_id: second.artifact_id,
+    artifact_version: second.version,
+  });
+  const ready = await ctx.artifacts.markReadyForReview({
+    actor: superadmin(),
+    schoolId: SCHOOL_A,
+    requestId: ctx.requestId,
+  });
+  assert.equal(ready.status, "READY_FOR_REVIEW");
+  assert.equal(ready.artifact_id, second.artifact_id);
+  assert.equal(ready.artifact_sha256, second.sha256);
 });
 
 test("report-card-lot11-ready-review-references-exact-artifact-version", async () => {

@@ -214,10 +214,19 @@ export function ReportCardSuperadminWorkflowPage() {
                 ) : (
                   <p>Aucun artefact source.</p>
                 )}
-                {artifacts[request.id]?.media_type === "application/pdf" ||
-                artifacts[request.id]?.media_type?.startsWith("image/") ? (
+                {artifacts[request.id]?.media_type?.startsWith("image/") ? (
+                  <img
+                    alt={`source-artifact-${artifacts[request.id]?.artifact_id}`}
+                    src={`/api/report-card/admin/requests/${encodeURIComponent(request.id)}/source-artifact/content?schoolId=${encodeURIComponent(schoolId)}`}
+                  />
+                ) : artifacts[request.id]?.media_type === "application/pdf" ? (
                   <iframe
-                    title={`source-artifact-${request.id}`}
+                    title={`source-artifact-${artifacts[request.id]?.artifact_id}`}
+                    src={`/api/report-card/admin/requests/${encodeURIComponent(request.id)}/source-artifact/content?schoolId=${encodeURIComponent(schoolId)}`}
+                  />
+                ) : artifacts[request.id] ? (
+                  <iframe
+                    title={`source-artifact-${artifacts[request.id]?.artifact_id}`}
                     src={`/api/report-card/admin/requests/${encodeURIComponent(request.id)}/source-artifact/content?schoolId=${encodeURIComponent(schoolId)}`}
                   />
                 ) : null}

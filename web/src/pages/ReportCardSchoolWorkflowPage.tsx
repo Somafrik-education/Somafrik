@@ -29,9 +29,11 @@ export function ReportCardSchoolWorkflowPage() {
   const [payload, setPayload] = useState<Record<string, unknown> | null>(null);
   const [uploadFile, setUploadFile] = useState<File | null>(null);
   const [uploadedByRequest, setUploadedByRequest] = useState<Record<string, ReportCardSourceArtifact>>({});
+  const [sourceByRequest, setSourceByRequest] = useState<Record<string, ReportCardSourceArtifact>>({});
 
   async function loadDetails(list: ReportCardRequest[]) {
     const next: Record<string, RequestDetails> = {};
+    const nextSource: Record<string, ReportCardSourceArtifact> = {};
     await Promise.all(
       list.map(async (request) => {
         const showReview = ["READY_FOR_REVIEW", "APPROVED", "ACTIVE"].includes(request.status);
@@ -49,9 +51,16 @@ export function ReportCardSchoolWorkflowPage() {
                 .catch(() => null)
             : null;
         next[request.id] = { audit: audit.audit || [], bundle, binding };
+        try {
+          const row = await reportCardConfigurationApi.getSourceArtifact(request.id);
+          if (row?.artifact) nextSource[request.id] = row.artifact;
+        } catch {
+          /* no artefact yet */
+        }
       }),
     );
     setDetails(next);
+    setSourceByRequest(nextSource);
   }
 
   async function reload() {
@@ -122,6 +131,7 @@ export function ReportCardSchoolWorkflowPage() {
       const data = await reportCardConfigurationApi.attachSourceArtifact(requestId, uploadFile);
       const artifact = data.artifact;
       setUploadedByRequest((current) => ({ ...current, [requestId]: artifact }));
+      setSourceByRequest((current) => ({ ...current, [requestId]: artifact }));
       setError("");
     } catch {
       setError("Envoi du modèle refusé.");
@@ -176,10 +186,25 @@ export function ReportCardSchoolWorkflowPage() {
               <button type="button" onClick={() => void onUploadSource(request.id)}>
                 Envoyer un modèle de bulletin
               </button>
-              {uploadedByRequest[request.id] ? (
-                <p>
-                  Modèle envoyé {uploadedByRequest[request.id].artifact_id}
-                </p>
+              {uploadedByRequest[request.id] || sourceByRequest[request.id] ? (
+                <div data-source-artifact-preview>
+                  <p>
+                    Modèle envoyé {(uploadedByRequest[request.id] || sourceByRequest[request.id]).artifact_id}
+                  </p>
+                  {(uploadedByRequest[request.id] || sourceByRequest[request.id]).media_type?.startsWith(
+                    "image/",
+                  ) ? (
+                    <img
+                      alt={`source-artifact-${(uploadedByRequest[request.id] || sourceByRequest[request.id]).artifact_id}`}
+                      src={`/api/report-card/requests/${encodeURIComponent(request.id)}/source-artifact/content`}
+                    />
+                  ) : (
+                    <iframe
+                      title={`source-artifact-${(uploadedByRequest[request.id] || sourceByRequest[request.id]).artifact_id}`}
+                      src={`/api/report-card/requests/${encodeURIComponent(request.id)}/source-artifact/content`}
+                    />
+                  )}
+                </div>
               ) : null}
             </li>
           );

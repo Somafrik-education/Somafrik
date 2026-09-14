@@ -38,6 +38,7 @@ const HTTP_STATUS = Object.freeze({
   ARTIFACT_CORRUPT: 409,
   HASH_MISMATCH: 409,
   MAPPING_NOT_EXPLICIT: 400,
+  MAPPING_REQUIRED: 409,
   STORAGE_UNAVAILABLE: 503,
   ARTIFACT_NOT_FOUND: 404,
 });
@@ -396,7 +397,7 @@ function registerReportCardHttp(app, deps = {}) {
       const schoolId = schoolIdForSchoolActor(actor);
       const artifacts = requireSourceArtifact();
       const bytes = Buffer.isBuffer(req.body) ? req.body : Buffer.from(req.body || []);
-      const artifact = await artifacts.attachToRequest({
+      const artifact = await artifacts.replaceCurrent({
         actor,
         schoolId,
         requestId: req.params.requestId,
@@ -433,6 +434,7 @@ function registerReportCardHttp(app, deps = {}) {
         actor,
         schoolId,
         artifactId: current.artifact_id,
+        inline: String(req.query?.download || "") !== "1",
       });
       sendDownload(res, opened);
     })
@@ -784,6 +786,7 @@ function registerReportCardHttp(app, deps = {}) {
         actor,
         schoolId,
         artifactId: current.artifact_id,
+        inline: String(req.query?.download || "") !== "1",
       });
       sendDownload(res, opened);
     })

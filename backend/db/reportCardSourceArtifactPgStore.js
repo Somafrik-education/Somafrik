@@ -39,6 +39,28 @@ function mapArtifact(row) {
   };
 }
 
+function mapMapping(row) {
+  if (!row) return null;
+  return {
+    school_id: row.school_id,
+    request_id: row.request_id,
+    artifact_id: row.artifact_id,
+    artifact_version: intOrNull(row.artifact_version),
+    artifact_sha256: row.artifact_sha256,
+    valid: Boolean(row.valid),
+    profile_id: row.profile_id || null,
+    profile_version: intOrNull(row.profile_version),
+    profile_spec_sha256: row.profile_spec_sha256 || null,
+    schema_id: row.schema_id || null,
+    schema_version: intOrNull(row.schema_version),
+    schema_spec_sha256: row.schema_spec_sha256 || null,
+    template_id: row.template_id || null,
+    template_version: intOrNull(row.template_version),
+    template_spec_sha256: row.template_spec_sha256 || null,
+    updated_at: iso(row.updated_at),
+  };
+}
+
 function mapAudit(row) {
   if (!row) return null;
   return {
@@ -105,7 +127,7 @@ function createReportCardSourceArtifactPgStore(db) {
           String(requestId),
         ]);
         const locked = await client.query(
-          `SELECT id FROM report_card_configuration_requests
+          `SELECT id, status FROM report_card_configuration_requests
            WHERE id = $1 AND school_id = $2
            FOR UPDATE`,
           [requestId, schoolId]
@@ -119,6 +141,76 @@ function createReportCardSourceArtifactPgStore(db) {
            FOR UPDATE`,
           [schoolId, requestId]
         );
+        await client.query(
+          `SELECT request_id FROM report_card_source_artifact_mapping
+           WHERE school_id = $1 AND request_id = $2
+           FOR UPDATE`,
+          [schoolId, requestId]
+        );
+        return { status: locked.rows[0].status };
+      },
+      async getMapping(schoolId, requestId) {
+        const { rows } = await client.query(
+          `SELECT * FROM report_card_source_artifact_mapping
+           WHERE school_id = $1 AND request_id = $2`,
+          [schoolId, requestId]
+        );
+        return mapMapping(rows[0]);
+      },
+      async saveMapping(row) {
+        const { rows } = await client.query(
+          `INSERT INTO report_card_source_artifact_mapping (
+             school_id, request_id, artifact_id, artifact_version, artifact_sha256, valid,
+             profile_id, profile_version, profile_spec_sha256,
+             schema_id, schema_version, schema_spec_sha256,
+             template_id, template_version, template_spec_sha256, updated_at
+           ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
+           ON CONFLICT (school_id, request_id) DO UPDATE SET
+             artifact_id = EXCLUDED.artifact_id,
+             artifact_version = EXCLUDED.artifact_version,
+             artifact_sha256 = EXCLUDED.artifact_sha256,
+             valid = EXCLUDED.valid,
+             profile_id = EXCLUDED.profile_id,
+             profile_version = EXCLUDED.profile_version,
+             profile_spec_sha256 = EXCLUDED.profile_spec_sha256,
+             schema_id = EXCLUDED.schema_id,
+             schema_version = EXCLUDED.schema_version,
+             schema_spec_sha256 = EXCLUDED.schema_spec_sha256,
+             template_id = EXCLUDED.template_id,
+             template_version = EXCLUDED.template_version,
+             template_spec_sha256 = EXCLUDED.template_spec_sha256,
+             updated_at = EXCLUDED.updated_at
+           RETURNING *`,
+          [
+            row.school_id,
+            row.request_id,
+            row.artifact_id,
+            row.artifact_version,
+            row.artifact_sha256,
+            row.valid !== false,
+            emptyToNull(row.profile_id),
+            intOrNull(row.profile_version),
+            emptyToNull(row.profile_spec_sha256),
+            emptyToNull(row.schema_id),
+            intOrNull(row.schema_version),
+            emptyToNull(row.schema_spec_sha256),
+            emptyToNull(row.template_id),
+            intOrNull(row.template_version),
+            emptyToNull(row.template_spec_sha256),
+            row.updated_at || new Date().toISOString(),
+          ]
+        );
+        return mapMapping(rows[0]);
+      },
+      async invalidateMapping(schoolId, requestId) {
+        const { rows } = await client.query(
+          `UPDATE report_card_source_artifact_mapping
+           SET valid = FALSE, updated_at = NOW()
+           WHERE school_id = $1 AND request_id = $2 AND valid = TRUE
+           RETURNING *`,
+          [schoolId, requestId]
+        );
+        return mapMapping(rows[0]);
       },
       async save(artifact) {
         await client.query(
@@ -233,9 +325,29 @@ function createReportCardSourceArtifactPgStore(db) {
     });
   }
 
+  async function withSessionLock(schoolId, requestId, fn) {
+    return withClient(async (client) => {
+      await client.query("SELECT pg_advisory_lock(hashtext($1::text), hashtext($2::text))", [
+        String(schoolId),
+        String(requestId),
+      ]);
+      try {
+        return await fn();
+      } finally {
+        await client
+          .query("SELECT pg_advisory_unlock(hashtext($1::text), hashtext($2::text))", [
+            String(schoolId),
+            String(requestId),
+          ])
+          .catch(() => {});
+      }
+    });
+  }
+
   const root = bind(db);
   return {
     withTx,
+    withSessionLock,
     ...root,
   };
 }

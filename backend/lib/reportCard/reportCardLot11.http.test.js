@@ -178,9 +178,18 @@ test("report-card-lot11-download-safe-headers", async () => {
     const disposition = schoolPreview.headers.get("content-disposition") || "";
     assert.match(contentType, /application\/pdf/);
     assert.doesNotMatch(contentType, /text\/html|image\/svg|javascript/i);
-    assert.match(disposition, /attachment|inline/i);
+    assert.match(disposition, /inline/i);
+    assert.doesNotMatch(disposition, /attachment/i);
     assert.doesNotMatch(disposition, /[\r\n]|filename\*=.*evil/i);
     assert.equal(schoolPreview.headers.get("x-content-type-options"), "nosniff");
+    assert.match(schoolPreview.headers.get("cache-control") || "", /private/i);
+    assert.match(schoolPreview.headers.get("cache-control") || "", /no-store/i);
+    assert.equal(Buffer.compare(schoolPreview.buffer, pdfBytes("headers")), 0);
+    const downloaded = await h.download(
+      `/api/report-card/requests/${created.data.request.id}/source-artifact/content?download=1`
+    );
+    assert.equal(downloaded.status, 200);
+    assert.match(downloaded.headers.get("content-disposition") || "", /attachment/i);
     assert.ok(!schoolPreview.headers.get("location") || !/^https?:\/\//.test(schoolPreview.headers.get("location")));
     void artifactId;
   } finally {
@@ -245,6 +254,11 @@ test("report-card-lot11-superadmin-preview-http-privileged-only", async () => {
     );
     assert.equal(content.status, 200);
     assert.match(content.headers.get("content-type") || "", /application\/pdf/);
+    assert.match(content.headers.get("content-disposition") || "", /inline/i);
+    assert.doesNotMatch(content.headers.get("content-disposition") || "", /attachment/i);
+    assert.equal(content.headers.get("x-content-type-options"), "nosniff");
+    assert.match(content.headers.get("cache-control") || "", /private.*no-store|no-store.*private/i);
+    assert.equal(Buffer.compare(content.buffer, pdfBytes("admin")), 0);
   } finally {
     await h.close();
   }
