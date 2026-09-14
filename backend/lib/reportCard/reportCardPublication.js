@@ -67,6 +67,9 @@ function assertPublishablePayload(payload) {
   if (!Array.isArray(payload.students)) {
     throw new ReportCardPublicationError("INVALID_SNAPSHOT");
   }
+  if (!requireNonEmptyString(payload.academic_year_id) || !requireNonEmptyString(payload.class_id)) {
+    throw new ReportCardPublicationError("INVALID_SNAPSHOT");
+  }
   for (const student of payload.students) {
     if (
       !student ||
@@ -132,9 +135,31 @@ function freezeRecord(record) {
   });
 }
 
+function toHistoryRow(rec) {
+  const payload = rec.sealed && rec.sealed.payload ? rec.sealed.payload : {};
+  return Object.freeze({
+    school_id: rec.school_id,
+    report_card_id: rec.report_card_id,
+    published_snapshot_version: rec.published_snapshot_version,
+    verification_status: rec.verification_status,
+    public_id: rec.public_id,
+    snapshot_sha256: rec.snapshot_sha256,
+    snapshot_signature: rec.snapshot_signature,
+    signing_key_id: rec.signing_key_id,
+    published_at: payload.published_at || rec.published_at || null,
+    engine_id: payload.engine_id || rec.engine_id || null,
+    provenance: payload.provenance || null,
+    corrected_from_version: rec.corrected_from_version == null ? null : rec.corrected_from_version,
+    correction_reason: rec.correction_reason || null,
+    revoke_reason: rec.revoke_reason || null,
+    actor_id: rec.actor_id || null,
+  });
+}
+
 function createMemoryStore(dump) {
   const records = new Map();
   const outbox = [];
+  const commands = new Map();
 
   function key(schoolId, reportCardId, version) {
     return `${schoolId}\0${reportCardId}\0${version}`;
@@ -166,6 +191,11 @@ function createMemoryStore(dump) {
         snapshot_signature: row.snapshot_signature,
         signing_key_id: row.signing_key_id,
         sealed,
+        corrected_from_version: row.corrected_from_version,
+        correction_reason: row.correction_reason,
+        revoke_reason: row.revoke_reason,
+        actor_id: row.actor_id,
+        command_id: row.command_id,
       })
     );
   }
@@ -184,7 +214,19 @@ function createMemoryStore(dump) {
       }
       return null;
     },
-    insertPublication({ record, supersedeReportCardId }) {
+    insertPublication({ record, supersedeReportCardId, command }) {
+      if (record.corrected_from_version != null) {
+        const source = records.get(key(record.school_id, record.report_card_id, record.corrected_from_version));
+        if (!source) {
+          throw new ReportCardPublicationError("PUBLICATION_NOT_FOUND");
+        }
+        if (source.verification_status === VERIFICATION_STATES[2]) {
+          throw new ReportCardPublicationError("INVALID_TRANSITION");
+        }
+        if (source.verification_status !== VERIFICATION_STATES[0]) {
+          throw new ReportCardPublicationError("CONCURRENCY_CONFLICT");
+        }
+      }
       if (supersedeReportCardId) {
         for (const [mapKey, rec] of records) {
           if (
@@ -214,6 +256,9 @@ function createMemoryStore(dump) {
           published_snapshot_version: record.published_snapshot_version,
         })
       );
+      if (command && command.command_id) {
+        this.saveCommand(command);
+      }
       return frozen;
     },
     listOutbox(schoolId) {
@@ -236,6 +281,66 @@ function createMemoryStore(dump) {
       }
       return out;
     },
+    listHistory(schoolId, reportCardId) {
+      const out = [];
+      for (const rec of records.values()) {
+        if (rec.school_id !== schoolId) continue;
+        if (reportCardId && rec.report_card_id !== reportCardId) continue;
+        out.push(toHistoryRow(rec));
+      }
+      return out.sort(
+        (a, b) =>
+          String(a.report_card_id).localeCompare(String(b.report_card_id)) ||
+          a.published_snapshot_version - b.published_snapshot_version
+      );
+    },
+    revoke({ schoolId, reportCardId, version, reason, actorId }) {
+      const mapKey = key(schoolId, reportCardId, version);
+      const rec = records.get(mapKey);
+      if (!rec) return null;
+      if (rec.verification_status === VERIFICATION_STATES[2]) {
+        return freezeRecord({ ...rec, revoke_reason: rec.revoke_reason || reason, actor_id: rec.actor_id || actorId });
+      }
+      if (rec.verification_status !== VERIFICATION_STATES[0]) {
+        throw new ReportCardPublicationError("CONCURRENCY_CONFLICT");
+      }
+      const next = freezeRecord({
+        ...rec,
+        verification_status: VERIFICATION_STATES[2],
+        revoke_reason: reason,
+        actor_id: actorId,
+      });
+      records.set(mapKey, next);
+      return next;
+    },
+    findCommand(schoolId, reportCardId, commandId) {
+      return commands.get(`${schoolId}\0${reportCardId}\0${commandId}`) || null;
+    },
+    findByCommand(schoolId, reportCardId, commandId) {
+      let found = null;
+      for (const rec of records.values()) {
+        if (
+          rec.school_id === schoolId &&
+          rec.report_card_id === reportCardId &&
+          rec.command_id === commandId
+        ) {
+          if (!found || rec.published_snapshot_version > found.published_snapshot_version) found = rec;
+        }
+      }
+      return found;
+    },
+    saveCommand(row) {
+      const existing = commands.get(`${row.school_id}\0${row.report_card_id}\0${row.command_id}`);
+      if (existing) {
+        if (existing.reason !== row.reason || existing.source_version !== row.source_version) {
+          throw new IdempotencyConflict();
+        }
+        return existing;
+      }
+      const frozen = Object.freeze({ ...row });
+      commands.set(`${row.school_id}\0${row.report_card_id}\0${row.command_id}`, frozen);
+      return frozen;
+    },
     dump() {
       const rows = [];
       for (const rec of records.values()) {
@@ -254,6 +359,11 @@ function createMemoryStore(dump) {
           canonical_bytes: rec.sealed.canonical_bytes.toString("base64"),
           verification_status: rec.verification_status,
           status: rec.status,
+          corrected_from_version: rec.corrected_from_version,
+          correction_reason: rec.correction_reason,
+          revoke_reason: rec.revoke_reason,
+          actor_id: rec.actor_id,
+          command_id: rec.command_id,
         });
       }
       return rows;
@@ -279,6 +389,38 @@ function createReportCardPublication({
   if (signingKey) ringKeys.push(signingKey);
   const keyRing = signingKeyRing(ringKeys);
   const persistence = store || createMemoryStore(dump);
+  const cardLocks = new Map();
+
+  function withCardLock(schoolId, reportCardId, fn) {
+    const lockKey = `${schoolId}\0${reportCardId}`;
+    const previous = cardLocks.get(lockKey);
+    if (!previous) {
+      try {
+        const result = fn();
+        if (result && typeof result.then === "function") {
+          cardLocks.set(
+            lockKey,
+            result.then(
+              () => undefined,
+              () => undefined
+            )
+          );
+        }
+        return result;
+      } catch (err) {
+        throw err;
+      }
+    }
+    const next = previous.then(fn, fn);
+    cardLocks.set(
+      lockKey,
+      next.then(
+        () => undefined,
+        () => undefined
+      )
+    );
+    return next;
+  }
 
   function wrappingFor(wrappingKeyId) {
     const key = wrappingKeyMap.get(wrappingKeyId);
@@ -294,15 +436,14 @@ function createReportCardPublication({
     return record;
   }
 
-  function publish({ tenant, payload } = {}) {
+  function publish({ tenant, payload, lineage, command } = {}) {
     if (!payload || typeof payload !== "object") throw new ReportCardPublicationError("INVALID_PAYLOAD");
     rejectBranchKeys(payload);
     const schoolId = assertTenant(tenant, payload.school_id);
     assertPublishablePayload(payload);
     const sealed = sealSnapshot(payload, signingKey);
-    return thenable(
-      persistence.find(schoolId, payload.report_card_id, payload.published_snapshot_version),
-      (existing) => {
+    return withCardLock(schoolId, payload.report_card_id, () =>
+      thenable(persistence.find(schoolId, payload.report_card_id, payload.published_snapshot_version), (existing) => {
         if (existing) {
           if (existing.snapshot_sha256 !== sealed.snapshot_sha256) throw new IdempotencyConflict();
           return existing;
@@ -310,6 +451,19 @@ function createReportCardPublication({
         const publicId = crypto.randomUUID();
         const token = generateToken();
         const wrapped = wrapToken(token, wrapping, tokenBinding(payload, publicId));
+        const commandId = (command && command.commandId) || (lineage && lineage.command_id) || null;
+        const commandRow =
+          commandId &&
+          Object.freeze({
+            school_id: schoolId,
+            report_card_id: payload.report_card_id,
+            command_id: commandId,
+            reason: (command && command.reason) || (lineage && lineage.correction_reason) || null,
+            source_version:
+              (command && command.sourceVersion) || (lineage && lineage.corrected_from_version) || null,
+            result_version: payload.published_snapshot_version,
+            public_id: publicId,
+          });
         const record = {
           report_card_id: payload.report_card_id,
           published_snapshot_version: payload.published_snapshot_version,
@@ -324,15 +478,20 @@ function createReportCardPublication({
           snapshot_signature: sealed.snapshot_signature,
           signing_key_id: sealed.signing_key_id,
           sealed,
+          corrected_from_version: lineage && lineage.corrected_from_version,
+          correction_reason: lineage && lineage.correction_reason,
+          actor_id: lineage && lineage.actor_id,
+          command_id: commandId,
         };
         return thenable(
           persistence.insertPublication({
             record,
             supersedeReportCardId: payload.report_card_id,
+            command: commandRow,
           }),
           (inserted) => inserted
         );
-      }
+      })
     );
   }
 
@@ -395,6 +554,69 @@ function createReportCardPublication({
     return thenable(persistence.listCurrent(schoolId), (rows) => rows || []);
   }
 
+  function listHistory({ tenant, reportCardId } = {}) {
+    const schoolId = assertTenant(tenant);
+    if (typeof persistence.listHistory !== "function") {
+      throw new ReportCardPublicationError("PUBLICATION_NOT_FOUND");
+    }
+    return thenable(persistence.listHistory(schoolId, reportCardId), (rows) => rows || []);
+  }
+
+  function revoke({ tenant, reportCardId, version, reason, actorId } = {}) {
+    const schoolId = assertTenant(tenant);
+    if (!requireNonEmptyString(reason) || !String(reason).trim()) {
+      throw new ReportCardPublicationError("REASON_REQUIRED");
+    }
+    if (typeof persistence.revoke !== "function") {
+      throw new ReportCardPublicationError("PUBLICATION_NOT_FOUND");
+    }
+    return withCardLock(schoolId, reportCardId, () =>
+      thenable(lookup({ tenant, reportCardId, version }), (record) =>
+        thenable(
+          persistence.revoke({
+            schoolId,
+            reportCardId,
+            version: record.published_snapshot_version,
+            reason: String(reason).trim(),
+            actorId,
+          }),
+          (updated) => requireRecord(updated)
+        )
+      )
+    );
+  }
+
+  function findCommand({ tenant, reportCardId, commandId } = {}) {
+    const schoolId = assertTenant(tenant);
+    if (typeof persistence.findCommand !== "function" || !commandId) return null;
+    return persistence.findCommand(schoolId, reportCardId, commandId);
+  }
+
+  function findByCommand({ tenant, reportCardId, commandId } = {}) {
+    const schoolId = assertTenant(tenant);
+    if (!commandId) return null;
+    if (typeof persistence.findByCommand === "function") {
+      return persistence.findByCommand(schoolId, reportCardId, commandId);
+    }
+    return null;
+  }
+
+  function saveCommand({ tenant, reportCardId, commandId, reason, sourceVersion, resultVersion, publicId } = {}) {
+    const schoolId = assertTenant(tenant);
+    if (typeof persistence.saveCommand !== "function") {
+      throw new ReportCardPublicationError("PUBLICATION_NOT_FOUND");
+    }
+    return persistence.saveCommand({
+      school_id: schoolId,
+      report_card_id: reportCardId,
+      command_id: commandId,
+      reason,
+      source_version: sourceVersion,
+      result_version: resultVersion,
+      public_id: publicId,
+    });
+  }
+
   function persistWithoutSecrets() {
     if (typeof persistence.dump !== "function") {
       throw new ReportCardPublicationError("DUMP_UNSUPPORTED");
@@ -410,12 +632,18 @@ function createReportCardPublication({
     lookupPublic,
     listOutbox,
     listCurrent,
+    listHistory,
+    revoke,
+    findCommand,
+    findByCommand,
+    saveCommand,
     persistWithoutSecrets,
   };
 }
 
 module.exports = {
   createReportCardPublication,
+  createMemoryStore,
   ReportCardPublicationError,
   IdempotencyConflict,
 };

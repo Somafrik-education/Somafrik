@@ -60,6 +60,8 @@ function payload(schoolId, overrides = {}) {
     engine_id: "somafrik.report_card.v1",
     provenance: { profile: { id: "P", version: 1, spec_sha256: "aa" }, schema: { id: "S", version: 1, spec_sha256: "bb" } },
     students: [{ student_id: "STU-1", cells: [], slots: [], presence: [] }],
+    academic_year_id: "year-1",
+    class_id: "class-1",
     ...overrides,
   };
 }

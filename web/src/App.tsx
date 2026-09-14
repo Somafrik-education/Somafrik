@@ -77,6 +77,7 @@ import {
   TimetableLayout,
   UsersPage,
   ReportCardSchoolWorkflowPage,
+  ReportCardHistoryPage,
   ReportCardSuperadminWorkflowPage,
   VerifyReportCardPage,
 } from "./lazyPages";
@@ -324,6 +325,14 @@ export default function App() {
           element={
             <PermissionRoute view="exams">
               <EntityPage entity="exams" />
+            </PermissionRoute>
+          }
+        />
+        <Route
+          path="/bulletins/historique"
+          element={
+            <PermissionRoute view="bulletins">
+              <ReportCardHistoryPage />
             </PermissionRoute>
           }
         />

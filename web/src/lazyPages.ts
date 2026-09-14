@@ -208,6 +208,10 @@ export const ReportCardSchoolWorkflowPage = lazyPage(
   () => import("./pages/ReportCardSchoolWorkflowPage"),
   "ReportCardSchoolWorkflowPage",
 );
+export const ReportCardHistoryPage = lazyPage(
+  () => import("./pages/ReportCardHistoryPage"),
+  "ReportCardHistoryPage",
+);
 export const ReportCardSuperadminWorkflowPage = lazyPage(
   () => import("./pages/ReportCardSuperadminWorkflowPage"),
   "ReportCardSuperadminWorkflowPage",

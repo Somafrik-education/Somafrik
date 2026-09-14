@@ -5,8 +5,16 @@ const { createAcademicRuleProfilePgStore } = require("../db/academicRuleProfileP
 const { createReportCardSchemaPgStore } = require("../db/reportCardSchemaPgStore");
 const { createReportCardConfigurationPgStore } = require("../db/reportCardConfigurationPgStore");
 const { createReportCardPublicationPgStore } = require("../db/reportCardPublicationPgStore");
+const {
+  createReportCardFactsPgStore,
+  identitiesFromSnapshot,
+  resolveFacts,
+  scaleByComponentFromProfile,
+  isUndefinedRelation,
+} = require("../db/reportCardFactsStore");
 const { createReportCardConfiguration } = require("./reportCard/reportCardConfiguration");
 const { createReportCardPublication } = require("./reportCard/reportCardPublication");
+const { createReportCardInitialPublication } = require("./reportCard/reportCardInitialPublication");
 
 const HISTORICAL_SIGNING_ENV = "SOMAFRIK_REPORT_CARD_SIGNING_HISTORICAL_PUBLIC_KEYS_JSON";
 const HISTORICAL_WRAPPING_ENV = "SOMAFRIK_REPORT_CARD_WRAPPING_HISTORICAL_KEYS_JSON";
@@ -97,32 +105,167 @@ function loadReportCardHttpCrypto(env = process.env) {
   return { signingKey, wrapping, signingKeys, wrappingKeys };
 }
 
-function createReportCardHttpRuntime(repository, env = process.env) {
-  const db = repository && repository.pool;
-  if (!db) {
-    return { configuration: null, publication: null };
+function createReportCardHttpRuntime(repository, env = process.env, overrides = {}) {
+  const db = overrides.db || (repository && repository.pool);
+  const profileStore =
+    overrides.profileStore || (db ? createAcademicRuleProfilePgStore(db) : null);
+  const schemaStore = overrides.schemaStore || (db ? createReportCardSchemaPgStore(db) : null);
+  const persistence =
+    overrides.configurationPersistence || (db ? createReportCardConfigurationPgStore(db) : null);
+  if (!profileStore || !schemaStore) {
+    return { configuration: null, publication: null, getFacts: null, getProfile: null, getSchema: null };
   }
   const configuration = createReportCardConfiguration({
-    profileStore: createAcademicRuleProfilePgStore(db),
-    schemaStore: createReportCardSchemaPgStore(db),
-    persistence: createReportCardConfigurationPgStore(db),
+    profileStore,
+    schemaStore,
+    persistence,
   });
-  const keys = loadReportCardHttpCrypto(env);
-  let publication = null;
-  if (keys.signingKey && keys.wrapping) {
+  const keys = overrides.keys || loadReportCardHttpCrypto(env);
+  let publication = overrides.publication || null;
+  if (!publication && keys.signingKey && keys.wrapping) {
     publication = createReportCardPublication({
       signingKey: keys.signingKey,
       wrapping: keys.wrapping,
-      wrappingKeys: keys.wrappingKeys,
-      signingKeys: keys.signingKeys,
-      store: createReportCardPublicationPgStore(db),
+      wrappingKeys: keys.wrappingKeys || [keys.wrapping],
+      signingKeys: keys.signingKeys || [keys.signingKey],
+      store: overrides.publicationStore || (db ? createReportCardPublicationPgStore(db) : undefined),
     });
   }
-  return { configuration, publication };
+  const factsStore =
+    overrides.factsStore || (db ? createReportCardFactsPgStore(db) : null);
+
+  async function getFacts({ tenant, schoolId, reportCardId, sourceVersion, profile } = {}) {
+    const sid = schoolId || (tenant && tenant.schoolId);
+    if (!factsStore || typeof factsStore.listFacts !== "function") return null;
+    if (!publication || reportCardId == null || sourceVersion == null) return null;
+    let payload = null;
+    let identities = null;
+    try {
+      payload = await Promise.resolve(
+        publication.payloadForRender({
+          tenant: { schoolId: sid, actorSchoolId: sid },
+          reportCardId,
+          version: Number(sourceVersion),
+        })
+      );
+      identities = identitiesFromSnapshot(payload);
+    } catch {
+      return null;
+    }
+    if (!identities || !payload) return null;
+    const spec = await getProfile({ tenant: { schoolId: sid, actorSchoolId: sid }, ref: payload.provenance && payload.provenance.profile });
+    const scaleByComponent = scaleByComponentFromProfile(profile || spec);
+    if (!scaleByComponent) return null;
+    let listed;
+    try {
+      listed = await Promise.resolve(
+        factsStore.listFacts({
+          schoolId: sid,
+          reportCardId,
+          sourceVersion,
+          classId: payload.class_id,
+          academicYearId: payload.academic_year_id,
+          scaleByComponent,
+        })
+      );
+    } catch (err) {
+      if (isUndefinedRelation(err) || (err && err.code === "FACTS_REQUIRED")) return null;
+      throw err;
+    }
+    return resolveFacts(identities, listed);
+  }
+
+  const initialPublication =
+    publication && factsStore
+      ? createReportCardInitialPublication({
+          publication,
+          factsStore,
+          profileStore,
+          schemaStore,
+        })
+      : null;
+
+  async function publishInitial(args) {
+    if (!initialPublication) {
+      const err = new Error("FACTS_REQUIRED");
+      err.code = "FACTS_REQUIRED";
+      throw err;
+    }
+    return initialPublication.publishInitial(args);
+  }
+
+  async function getProfile({ tenant, ref } = {}) {
+    if (!ref || !configuration || typeof configuration.lookupProfileSpec !== "function") return null;
+    return configuration.lookupProfileSpec({
+      schoolId: tenant && tenant.schoolId,
+      profileId: ref.id,
+      version: ref.version,
+      specSha256: ref.spec_sha256,
+    });
+  }
+
+  async function getSchema({ tenant, ref } = {}) {
+    if (!ref || !configuration || typeof configuration.lookupSchemaSpec !== "function") return null;
+    return configuration.lookupSchemaSpec({
+      schoolId: tenant && tenant.schoolId,
+      schemaId: ref.id,
+      version: ref.version,
+      specSha256: ref.spec_sha256,
+    });
+  }
+
+  return { configuration, publication, getFacts, getProfile, getSchema, factsStore, publishInitial };
+}
+
+function createReportCardHttpBindings({
+  repository,
+  env = process.env,
+  createPdf,
+  getTemplate,
+  resolveActor,
+  resolveSchoolId,
+  internalAuth,
+  logger,
+  overrides,
+} = {}) {
+  let runtime = null;
+  function getRuntime() {
+    if (!runtime) runtime = createReportCardHttpRuntime(repository, env, overrides);
+    return runtime;
+  }
+  return {
+    getConfiguration: () => getRuntime().configuration,
+    getPublication: () => getRuntime().publication,
+    getPdf: () => {
+      const publication = getRuntime().publication;
+      if (!publication || typeof createPdf !== "function") return null;
+      return createPdf(publication);
+    },
+    getTemplate:
+      typeof getTemplate === "function"
+        ? getTemplate
+        : ({ tenant, schoolId, templateId, version }) => {
+            const configuration = getRuntime().configuration;
+            if (!configuration || typeof configuration.lookupRenderingTemplateSpec !== "function") {
+              return null;
+            }
+            const sid = schoolId || (tenant && tenant.schoolId) || tenant;
+            return configuration.lookupRenderingTemplateSpec({ schoolId: sid, templateId, version });
+          },
+    getFacts: (args) => getRuntime().getFacts && getRuntime().getFacts(args),
+    getProfile: (args) => getRuntime().getProfile && getRuntime().getProfile(args),
+    getSchema: (args) => getRuntime().getSchema && getRuntime().getSchema(args),
+    publishInitial: (args) => getRuntime().publishInitial(args),
+    resolveActor,
+    resolveSchoolId,
+    internalAuth,
+    logger,
+  };
 }
 
 module.exports = {
   createReportCardHttpRuntime,
+  createReportCardHttpBindings,
   loadReportCardHttpCrypto,
   HISTORICAL_SIGNING_ENV,
   HISTORICAL_WRAPPING_ENV,
