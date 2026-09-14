@@ -55,9 +55,14 @@ assert.match(screenSrc, /markInternalNotificationRead/);
 assert.match(screenSrc, /archiveInternalNotification/);
 
 const headerSrc = fs.readFileSync(path.join(ROOT, "src/components/MobileAppHeader.tsx"), "utf8");
-assert.match(headerSrc, /InternalNotifications/);
-assert.match(headerSrc, /useInternalNotificationsUnreadCount/);
-assert.match(headerSrc, /resolvedNotificationsInboxRoute === "InternalNotifications"/);
+assert.match(headerSrc, /CommunicationHeaderIcons/);
+assert.match(headerSrc, /variant="header"/);
+assert.doesNotMatch(headerSrc, /canPlatformNotifications/);
+assert.doesNotMatch(
+  headerSrc,
+  /name="PlatformNotifications"/,
+  "#577 L0 : le header live ne doit pas ouvrir le catalogue plateforme",
+);
 
 const communicationHeaderSrc = fs.readFileSync(
   path.join(ROOT, "src/components/CommunicationHeaderIcons.tsx"),

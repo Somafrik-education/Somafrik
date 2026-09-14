@@ -20,15 +20,23 @@ import { useAuth } from "../context/AuthContext";
 import { useAdminData } from "../context/AdminDataContext";
 import { canMutateEntity, canReadEntity, isSuperAdminSessionRole } from "../domain/security/permissions";
 import { canArchiveAnnouncement } from "../lib/mobileCtaRbacAlignment";
+import { announcementRowKey, mergeAnnouncementsByKey, sortAnnouncementsByPublishedAt } from "../lib/communicationPagination";
 import { filterCommunicationRows, excerptCommunication } from "../lib/communicationListFilter";
 import { useFloatingTabBarLayout } from "../lib/screenLayout";
 import { downloadCommunicationAttachment, downloadPlatformAnnouncementAttachment } from "../services/api";
 import {
   archiveCanonicalAnnouncement,
   getCanonicalAnnouncementById,
+  getCanonicalAnnouncementsPage,
   markCanonicalAnnouncementRead,
   type CanonicalAnnouncement,
 } from "../services/domainHydrationApi";
+import {
+  emptyResourceSnapshot,
+  snapshotFromFailure,
+  snapshotFromSuccess,
+  type ResourceSnapshot,
+} from "../lib/dataTruth";
 import { mergeFocusedAnnouncement, resolveFocusedAnnouncement } from "../lib/announcementsOpenById";
 import type { RootStackParamList } from "../navigation/AppNavigator";
 
@@ -63,17 +71,72 @@ export default function AnnouncementsScreen() {
   const canCreate = canMutateEntity(session, "announcements", "CREATE");
   const canArchive = canArchiveAnnouncement(session);
   const isSuperadmin = isSuperAdminSessionRole(session?.role) || isSuperAdminSessionRole(session?.user?.role);
-  const { announcementsSnapshot: snapshot, loadAnnouncements: load, resourceScopeKey, activeSchoolCode } = useAdminData();
+  const { loadAnnouncements: load, resourceScopeKey, activeSchoolCode } = useAdminData();
+  const [announcementsSnapshot, setAnnouncementsSnapshot] =
+    useState<ResourceSnapshot<CanonicalAnnouncement>>(emptyResourceSnapshot());
+  const [schoolCursor, setSchoolCursor] = useState<string | null>(null);
+  const [platformCursor, setPlatformCursor] = useState<string | null>(null);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const nextCursor = schoolCursor || platformCursor;
   const [archivingId, setArchivingId] = useState("");
   const [query, setQuery] = useState("");
   const [unreadOnly, setUnreadOnly] = useState(false);
   const [focusedAnnouncement, setFocusedAnnouncement] = useState<CanonicalAnnouncement | null>(null);
   const markedFocusedIdRef = useRef("");
 
+  const loadFirstPage = useCallback(async () => {
+    if (!canRead) {
+      setAnnouncementsSnapshot(emptyResourceSnapshot());
+      setSchoolCursor(null);
+      setPlatformCursor(null);
+      return;
+    }
+    setAnnouncementsSnapshot((current) => ({ status: "loading", data: current.data }));
+    try {
+      const page = await getCanonicalAnnouncementsPage(activeSchoolCode);
+      setAnnouncementsSnapshot(snapshotFromSuccess(page.items));
+      setSchoolCursor(page.schoolCursor);
+      setPlatformCursor(page.platformCursor);
+    } catch (error) {
+      setAnnouncementsSnapshot(snapshotFromFailure(error, []));
+      setSchoolCursor(null);
+      setPlatformCursor(null);
+    }
+  }, [canRead, activeSchoolCode]);
+
+  const loadMoreAnnouncements = useCallback(async () => {
+    if (!nextCursor || loadingMore) return;
+    setLoadingMore(true);
+    try {
+      const pendingSchoolCursor = schoolCursor;
+      const pendingPlatformCursor = platformCursor;
+      const page = await getCanonicalAnnouncementsPage(activeSchoolCode, {
+        schoolCursor: pendingSchoolCursor,
+        platformCursor: pendingPlatformCursor,
+        includeSchool: Boolean(pendingSchoolCursor),
+        includePlatform: Boolean(pendingPlatformCursor),
+      });
+      setAnnouncementsSnapshot((current) =>
+        snapshotFromSuccess(sortAnnouncementsByPublishedAt(mergeAnnouncementsByKey(current.data, page.items))),
+      );
+      if (pendingSchoolCursor) setSchoolCursor(page.schoolCursor);
+      if (pendingPlatformCursor) setPlatformCursor(page.platformCursor);
+    } catch (error) {
+      Alert.alert("Chargement interrompu", error instanceof Error ? error.message : "Réessayez.");
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [activeSchoolCode, schoolCursor, platformCursor, nextCursor, loadingMore]);
+
+  const refreshList = useCallback(() => {
+    void load();
+    void loadFirstPage();
+  }, [load, loadFirstPage]);
+
   useFocusEffect(
     useCallback(() => {
-      if (canRead) void load();
-    }, [canRead, load, resourceScopeKey]),
+      if (canRead) refreshList();
+    }, [canRead, refreshList, resourceScopeKey]),
   );
 
   const markReadIfNeeded = async (announcement: CanonicalAnnouncement) => {
@@ -84,6 +147,7 @@ export default function AnnouncementsScreen() {
       announcement.source,
     ).catch(() => null);
     await load();
+    await loadFirstPage();
   };
 
   const confirmArchive = (announcement: CanonicalAnnouncement) => {
@@ -98,6 +162,7 @@ export default function AnnouncementsScreen() {
           try {
             await archiveCanonicalAnnouncement(announcement.id, activeSchoolCode, announcement.source);
             await load();
+            await loadFirstPage();
           } catch (error) {
             const message = error instanceof Error ? error.message : "Impossible d'archiver l'annonce.";
             Alert.alert("Archivage impossible", message);
@@ -111,7 +176,7 @@ export default function AnnouncementsScreen() {
 
   const visible = useMemo(() => {
     const filtered = filterCommunicationRows(
-      (canRead && snapshot.status === "success" ? snapshot.data : []).map((row) => ({
+      (canRead && announcementsSnapshot.status === "success" ? announcementsSnapshot.data : []).map((row) => ({
         ...row,
         excerpt: excerptCommunication(String(row.message || "")),
         author: row.author || "",
@@ -133,7 +198,7 @@ export default function AnnouncementsScreen() {
           }
         : null,
     );
-  }, [canRead, snapshot, query, unreadOnly, focusedAnnouncement]);
+  }, [canRead, announcementsSnapshot, query, unreadOnly, focusedAnnouncement]);
 
   useEffect(() => {
     if (!focusedAnnouncementId || !canRead) {
@@ -142,7 +207,7 @@ export default function AnnouncementsScreen() {
       return;
     }
     let cancelled = false;
-    const list = snapshot.status === "success" ? snapshot.data : [];
+    const list = announcementsSnapshot.status === "success" ? announcementsSnapshot.data : [];
     void resolveFocusedAnnouncement({
       announcementId: focusedAnnouncementId,
       list,
@@ -153,7 +218,7 @@ export default function AnnouncementsScreen() {
     return () => {
       cancelled = true;
     };
-  }, [focusedAnnouncementId, canRead, snapshot, activeSchoolCode]);
+  }, [focusedAnnouncementId, canRead, announcementsSnapshot, activeSchoolCode]);
 
   useEffect(() => {
     if (!focusedAnnouncement || focusedAnnouncement.readAt) return;
@@ -168,9 +233,9 @@ export default function AnnouncementsScreen() {
         style={styles.container}
         contentContainerStyle={contentStyle}
         data={visible}
-        keyExtractor={(item) => item.id}
+        keyExtractor={(item) => announcementRowKey(item)}
         refreshControl={
-          canRead ? <RefreshControl refreshing={snapshot.status === "loading"} onRefresh={() => void load()} /> : undefined
+          canRead ? <RefreshControl refreshing={announcementsSnapshot.status === "loading"} onRefresh={refreshList} /> : undefined
         }
         ListHeaderComponent={
           <>
@@ -192,16 +257,16 @@ export default function AnnouncementsScreen() {
               </View>
             ) : (
               <>
-                {canCreate ? <AnnouncementMutationControls onChanged={() => load()} /> : null}
-                {snapshot.status !== "success" ? (
+                {canCreate ? <AnnouncementMutationControls onChanged={refreshList} /> : null}
+                {announcementsSnapshot.status !== "success" ? (
                   <QueryStateView
-                    snapshot={snapshot}
+                    snapshot={announcementsSnapshot}
                     emptyMessage="Aucune annonce."
                     errorMessage="Impossible de charger les annonces."
                     offlineMessage="Réseau indisponible. Les annonces n'ont pas pu être chargées."
                     emptyTestId="announcements-empty"
                     errorTestId="announcements-error"
-                    onRetry={() => void load()}
+                    onRetry={refreshList}
                     loadingLabel="Chargement des annonces…"
                   />
                 ) : null}
@@ -269,6 +334,23 @@ export default function AnnouncementsScreen() {
             </ExpandableCommunicationCard>
           );
         }}
+        ListFooterComponent={
+          announcementsSnapshot.status === "success" && nextCursor ? (
+            <TouchableOpacity
+              style={[styles.secondaryButton, loadingMore && styles.disabled]}
+              onPress={() => void loadMoreAnnouncements()}
+              disabled={loadingMore}
+              testID="announcements-load-more"
+              accessibilityRole="button"
+              accessibilityLabel="Charger les annonces plus anciennes"
+              accessibilityState={{ disabled: loadingMore, busy: loadingMore }}
+            >
+              <Text style={styles.secondaryButtonText}>
+                {loadingMore ? "Chargement…" : "Charger les annonces plus anciennes"}
+              </Text>
+            </TouchableOpacity>
+          ) : null
+        }
       />
     </>
   );
@@ -294,6 +376,8 @@ const styles = StyleSheet.create({
   smallDangerAction: { flexDirection: "row", alignItems: "center", gap: 6 },
   smallDangerText: { color: "#DC2626", fontWeight: "700" },
   disabled: { opacity: 0.5 },
+  secondaryButton: { minHeight: 42, marginTop: 8, borderRadius: 12, borderWidth: 1, borderColor: "#CBD5E1", paddingHorizontal: 14, alignItems: "center", justifyContent: "center" },
+  secondaryButtonText: { color: "#334155", fontWeight: "700" },
   modal: { flex: 1, padding: 20, backgroundColor: "#FFFFFF", gap: 10 },
   link: { color: "#2563EB", fontWeight: "700" },
   create: { marginTop: 16, backgroundColor: "#2563EB", borderRadius: 14, alignItems: "center", padding: 14 },

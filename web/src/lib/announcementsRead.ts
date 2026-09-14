@@ -3,6 +3,13 @@ import { announcementsApi } from "./announcementsApi";
 import { platformAnnouncementsApi } from "./platformAnnouncementsApi";
 import { hasCommunicationSchoolScope } from "./communicationSchoolScope";
 
+export const ANNOUNCEMENTS_UNREAD_CHANGED_EVENT = "somafrik:announcements-unread-changed";
+
+export function notifyAnnouncementsUnreadChanged(): void {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(new Event(ANNOUNCEMENTS_UNREAD_CHANGED_EVENT));
+}
+
 /**
  * Badge Annonces : compteur PostgreSQL (GET unread-count).
  * Le stockage navigateur n'est plus la source de vérité.
@@ -18,16 +25,31 @@ export function useAnnouncementsUnreadCount(enabled: boolean, schoolCode?: strin
       return;
     }
     let cancelled = false;
-    void Promise.all([
-      schoolScope ? announcementsApi.unreadCount(schoolScope) : Promise.resolve({ count: 0 }),
-      platformAnnouncementsApi.unreadCount(),
-    ])
-      .then(([school, platform]) => {
+
+    async function refresh() {
+      try {
+        const [school, platform] = await Promise.all([
+          schoolScope ? announcementsApi.unreadCount(schoolScope) : Promise.resolve({ count: 0 }),
+          platformAnnouncementsApi.unreadCount(),
+        ]);
         if (!cancelled) setCount((Number(school?.count) || 0) + (Number(platform?.count) || 0));
-      })
-      .catch(() => undefined);
+      } catch {
+        /* erreur transport : conserver la dernière valeur connue, jamais un zéro métier */
+      }
+    }
+
+    void refresh();
+    const onChanged = () => {
+      void refresh();
+    };
+    window.addEventListener(ANNOUNCEMENTS_UNREAD_CHANGED_EVENT, onChanged);
+    window.addEventListener("focus", onChanged);
+    document.addEventListener("visibilitychange", onChanged);
     return () => {
       cancelled = true;
+      window.removeEventListener(ANNOUNCEMENTS_UNREAD_CHANGED_EVENT, onChanged);
+      window.removeEventListener("focus", onChanged);
+      document.removeEventListener("visibilitychange", onChanged);
     };
   }, [enabled, schoolScope]);
   return count;

@@ -106,6 +106,7 @@ function sourceGuards() {
   assert.match(mobileScreen, /attachmentIds/);
   assert.match(mobileScreen, /withCommunicationSchoolPayload/);
   assert.match(mobileScreen, /replyClientsConversationMessage/);
+  assert.match(mobileScreen, /nextCursor/);
   assert.doesNotMatch(mobileScreen, /getCanonicalContacts/);
   assert.match(mobilePayload, /buildMessagePayload/);
   assert.match(mobilePayload, /buildConversationReplyPayload/);
@@ -122,6 +123,8 @@ function main() {
   run(process.execPath, ["backend/lib/clientsSecurity.test.js"], "clientsSecurity");
   run("npx", ["--yes", "tsx", "Mobile/src/lib/messageAttachments.test.ts"], "messageAttachments payload");
   run("npx", ["--yes", "tsx", "Mobile/src/lib/communicationSchoolScope.test.ts"], "communicationSchoolScope");
+  run("npx", ["--yes", "tsx", "Mobile/src/lib/communicationPagination.lotc.test.ts"], "mobile Lot C pagination RED-06");
+  run("npm", ["--prefix", "web", "run", "test", "--", "src/lib/messagesRead.lotc.test.tsx", "src/pages/MessagesConversationsPage.lotc.test.tsx", "src/lib/communicationHttpError.test.ts"], "web Lot C messages unread + pagination + P3 HTTP");
   assert.ok(String(process.env.DATABASE_URL ?? "").trim(), "DATABASE_URL requis pour COM-C2");
   run(process.execPath, ["backend/lib/communicationsC2.http.pg.test.js"], "parcours HTTP PostgreSQL COM-C2");
   console.log("verify-communications-c2: GO — PostgreSQL réel inclus");

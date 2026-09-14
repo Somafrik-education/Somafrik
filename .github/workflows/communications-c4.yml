@@ -54,6 +54,8 @@ on:
       - "Mobile/src/lib/pushNotificationNavigate.ts"
       - "Mobile/src/lib/pushNotificationTap.ts"
       - "Mobile/src/lib/financeNotificationNavigation.test.ts"
+      - "Mobile/src/lib/communicationPagination.ts"
+      - "Mobile/src/lib/communicationPagination.lotc.test.ts"
       - "Mobile/src/components/PushNotificationsRuntime.tsx"
       - "backend/lib/communicationsTrialSmtp.red.test.js"
       - "backend/lib/communicationsDeliveryReliability.red.test.js"
@@ -79,8 +81,19 @@ on:
       - "web/src/lib/notificationDeepLinkContract.test.ts"
       - "web/src/pages/notificationDeepLinkJourney.test.tsx"
       - "web/src/pages/MessagesConversationsPage.tsx"
+      - "web/src/pages/MessagesConversationsPage.lotc.test.tsx"
+      - "web/src/lib/messagesRead.ts"
+      - "web/src/lib/messagesRead.lotc.test.tsx"
+      - "web/src/lib/communicationHttpError.ts"
+      - "web/src/lib/communicationHttpError.test.ts"
+      - "web/src/components/communications/CommunicationHttpErrorState.tsx"
+      - "web/src/components/communications/InternalNotificationsCenter.p3.test.tsx"
+      - "web/src/pages/PlatformNotificationsPage.p3.test.tsx"
       - "web/src/pages/AnnouncementsPage.tsx"
       - "web/src/pages/AnnouncementsPage.deeplink.test.tsx"
+      - "web/src/pages/AnnouncementsPage.lotc.test.tsx"
+      - "web/src/lib/announcementsRead.ts"
+      - "web/src/lib/announcementsRead.lotc.test.tsx"
       - "web/src/pages/EntityPage.tsx"
       - "web/src/pages/EntityPage.deeplink.test.tsx"
       - "web/src/pages/PresencesPage.tsx"
@@ -138,6 +151,9 @@ on:
       - "web/src/pages/parametres/SettingsPlaceholders.tsx"
       - "Mobile/src/components/CommunicationHeaderIcons.tsx"
       - "Mobile/src/components/MobileAppHeader.tsx"
+      - "Mobile/src/lib/communicationHeaderIcons.p3.test.ts"
+      - "Mobile/src/lib/mobileUxV1Layout.ts"
+      - "Mobile/src/lib/mobileAppHeader.topbar.test.ts"
       - "Mobile/src/domain/security/permissions.ts"
       - "Mobile/src/lib/internalNotificationsRead.ts"
       - "Mobile/src/lib/internalNotificationsC4.test.ts"
@@ -232,6 +248,13 @@ jobs:
             src/lib/notificationDeepLinkContract.test.ts \
             src/pages/notificationDeepLinkJourney.test.tsx \
             src/pages/AnnouncementsPage.deeplink.test.tsx \
+            src/pages/MessagesConversationsPage.lotc.test.tsx \
+            src/pages/AnnouncementsPage.lotc.test.tsx \
+            src/lib/messagesRead.lotc.test.tsx \
+            src/lib/announcementsRead.lotc.test.tsx \
+            src/lib/communicationHttpError.test.ts \
+            src/components/communications/InternalNotificationsCenter.p3.test.tsx \
+            src/pages/PlatformNotificationsPage.p3.test.tsx \
             src/pages/EntityPage.deeplink.test.tsx \
             src/pages/PresencesPage.deeplink.test.tsx \
             src/pages/GradesEvaluationsPage.deeplink.test.tsx \

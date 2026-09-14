@@ -54,4 +54,19 @@ describe("communicationSchoolScope", () => {
       effectiveSchoolCode: "CD-2026-0001",
     });
   });
+
+  it("pagination cursor + établissement : pas de fuite tenant", () => {
+    expect(withCommunicationSchoolScope("/backoffice/conversations?cursor=page-2", "SCH-COM-A")).toContain(
+      "cursor=page-2",
+    );
+    expect(withCommunicationSchoolScope("/backoffice/conversations?cursor=page-2", "SCH-COM-A")).toContain(
+      "effectiveSchoolCode=SCH-COM-A",
+    );
+    expect(withCommunicationSchoolScope("/backoffice/announcements?cursor=page-2", "SCH-COM-B")).toContain(
+      "effectiveSchoolCode=SCH-COM-B",
+    );
+    expect(withCommunicationSchoolScope("/backoffice/announcements?cursor=page-2", "SCH-COM-B")).not.toContain(
+      "SCH-COM-A",
+    );
+  });
 });

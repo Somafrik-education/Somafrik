@@ -49,8 +49,10 @@ function main() {
   const normalize = source(path.join("lib", "canonicalResourceNormalize.ts"));
   assert.match(api, /httpRequest<unknown>\("\/teachers"\)/);
   assert.match(api, /httpRequest<unknown>\("\/backoffice\/users"\)/);
-  assert.match(api, /withCommunicationSchoolScope\("\/backoffice\/announcements"/);
-  assert.match(api, /scopedMessagesPath\("\/backoffice\/conversations"/);
+  assert.match(api, /withListCursor\("\/backoffice\/announcements"/);
+  assert.match(api, /withCommunicationSchoolScope\(schoolPath, scope\)/);
+  assert.match(api, /withListCursor\("\/backoffice\/conversations"/);
+  assert.match(api, /scopedMessagesPath\(path, schoolCode\)/);
   assert.match(api, /scopedMessagesPath\("\/backoffice\/messages"/);
   assert.match(api, /scopedMessagesPath\("\/backoffice\/messages\/unread-count"/);
   assert.match(api, /httpRequest<unknown>\("\/backoffice\/establishments"\)/);

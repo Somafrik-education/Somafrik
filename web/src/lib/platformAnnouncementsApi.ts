@@ -27,9 +27,13 @@ export type PlatformAnnouncementRecord = AnnouncementRecord & {
 };
 
 export const platformAnnouncementsApi = {
-  list: async () => {
+  list: async (options?: { cursor?: string | null }) => {
+    const cursor = String(options?.cursor ?? "").trim();
+    const path = cursor
+      ? `/backoffice/platform-announcements?cursor=${encodeURIComponent(cursor)}`
+      : "/backoffice/platform-announcements";
     const data = await api.get<{ items: PlatformAnnouncementRecord[]; nextCursor: string | null } | PlatformAnnouncementRecord[]>(
-      "/backoffice/platform-announcements",
+      path,
     );
     return { items: unwrapItems(data), nextCursor: !Array.isArray(data) ? data.nextCursor ?? null : null };
   },

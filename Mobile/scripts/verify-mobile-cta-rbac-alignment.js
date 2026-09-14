@@ -104,7 +104,7 @@ function main() {
   const headerIcons = stripComments(readSrc(path.join("components", "CommunicationHeaderIcons.tsx")));
   assert.match(headerIcons, /canAccessMessagesRoute\(session\)/);
   const appHeader = stripComments(readSrc(path.join("components", "MobileAppHeader.tsx")));
-  assert.match(appHeader, /canAccessMessagesRoute\(session\)/);
+  assert.match(appHeader, /CommunicationHeaderIcons/);
 
   const announcements = stripComments(readSrc(path.join("screens", "AnnouncementsScreen.tsx")));
   assert.match(announcements, /canArchiveAnnouncement\(session\)/);

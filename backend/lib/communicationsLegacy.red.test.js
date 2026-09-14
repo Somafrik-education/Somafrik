@@ -114,7 +114,8 @@ test("J-03 / #577 L0 — Mobile limite Notifications à l'inbox établissement C
   );
   assert.match(communicationHeader, /resolvedNotificationsInboxRoute === "InternalNotifications"/);
   assert.doesNotMatch(communicationHeader, /canPlatformNotifications/);
-  assert.match(appHeader, /resolvedNotificationsInboxRoute === "InternalNotifications"/);
+  assert.match(appHeader, /CommunicationHeaderIcons/);
+  assert.doesNotMatch(appHeader, /canPlatformNotifications/);
   assert.doesNotMatch(
     navigator,
     /name="PlatformNotifications"/,

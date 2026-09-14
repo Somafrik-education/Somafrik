@@ -3,11 +3,7 @@ import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "../context/AuthContext";
-import { useAdminData } from "../context/AdminDataContext";
 import { canReadRoute } from "../domain/security/permissions";
-import { canAccessMessagesRoute } from "../lib/mobileCtaRbacAlignment";
-import { resolveNotificationsInboxRoute } from "../lib/notificationInboxRoute";
-import { useInternalNotificationsUnreadCount } from "../lib/internalNotificationsRead";
 import { MIN_TOUCH_TARGET_DP } from "../lib/mobileUsability";
 import {
   COMPACT_HEADER_ROW_DP,
@@ -18,39 +14,20 @@ import {
   HEADER_MENU_TOUCH_DP,
 } from "../lib/mobileUxV1Layout";
 import { shouldShowEnvironmentBadge } from "../config/env";
+import CommunicationHeaderIcons from "./CommunicationHeaderIcons";
 import RoleNavigationDrawer from "./RoleNavigationDrawer";
 
 export default function MobileAppHeader({ navigation }: { navigation: any }) {
   const { session } = useAuth();
-  const { activeSchoolCode } = useAdminData();
   const [drawerOpen, setDrawerOpen] = useState(false);
 
   const schoolName = session?.school?.name ?? session?.user?.schoolCode ?? "Somafrik";
-  const resolvedNotificationsInboxRoute = resolveNotificationsInboxRoute(session, activeSchoolCode);
-  // #577 L0 : la messagerie plateforme reste réservée au Web. Le header Mobile
-  // n'expose que la boîte interne d'un établissement réellement sélectionné.
-  const notificationsInboxRoute =
-    resolvedNotificationsInboxRoute === "InternalNotifications"
-      ? resolvedNotificationsInboxRoute
-      : null;
-  const canInternalNotifications = notificationsInboxRoute === "InternalNotifications";
-  const { count: internalUnread } = useInternalNotificationsUnreadCount(
-    canInternalNotifications,
-    activeSchoolCode,
-  );
 
   const syncRoute = canReadRoute(session, "Synchronization")
     ? "Synchronization"
     : canReadRoute(session, "OfflineMode")
       ? "OfflineMode"
       : null;
-
-  const notificationsRoute = notificationsInboxRoute
-    ?? (canReadRoute(session, "Announcements")
-      ? "Announcements"
-      : canAccessMessagesRoute(session)
-        ? "Messages"
-        : null);
 
   const rootNavigation = navigation.getParent?.() ?? navigation;
   const openRootRoute = (route: string) => rootNavigation.navigate(route);
@@ -92,15 +69,7 @@ export default function MobileAppHeader({ navigation }: { navigation: any }) {
                 onPress={() => openRootRoute(syncRoute)}
               />
             ) : null}
-            {notificationsRoute ? (
-              <HeaderAction
-                icon="notifications-outline"
-                label="Notifications"
-                testID="mobile-header-notifications"
-                count={canInternalNotifications ? internalUnread : 0}
-                onPress={() => openRootRoute(notificationsRoute)}
-              />
-            ) : null}
+            <CommunicationHeaderIcons navigation={rootNavigation} variant="header" />
           </View>
         </View>
       </SafeAreaView>

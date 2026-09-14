@@ -36,6 +36,7 @@ import {
   isAllowedMessageAttachmentMime,
   replyPostConfirmAction,
 } from "../lib/messageAttachments";
+import { mergeRowsById } from "../lib/communicationPagination";
 import { hasCommunicationSchoolScope, withCommunicationSchoolPayload } from "../lib/communicationSchoolScope";
 import { filterCommunicationRows } from "../lib/communicationListFilter";
 import { useMessagesUnreadCount } from "../lib/messagesRead";
@@ -56,7 +57,7 @@ import {
 } from "../lib/dataTruth";
 import {
   getCanonicalConversationMessages,
-  getCanonicalConversations,
+  getCanonicalConversationsPage,
   markCanonicalMessageRead,
   type CanonicalConversation,
   type CanonicalSchoolMessage,
@@ -96,6 +97,8 @@ export default function MessagesScreen() {
   const [pendingAttachments, setPendingAttachments] = useState<Array<{ id: string; fileName: string }>>([]);
   const [conversationsSnapshot, setConversationsSnapshot] =
     useState<ResourceSnapshot<CanonicalConversation>>(emptyResourceSnapshot());
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [selectedConversation, setSelectedConversation] = useState<CanonicalConversation | null>(null);
   const [threadMessages, setThreadMessages] = useState<CanonicalSchoolMessage[]>([]);
   const [sending, setSending] = useState(false);
@@ -149,16 +152,33 @@ export default function MessagesScreen() {
   const loadConversations = useCallback(async () => {
     if (!canRead || !scopeReady) {
       setConversationsSnapshot(emptyResourceSnapshot());
+      setNextCursor(null);
       return;
     }
     setConversationsSnapshot((current) => ({ status: "loading", data: current.data }));
     try {
-      const rows = await getCanonicalConversations(activeSchoolCode);
-      setConversationsSnapshot(snapshotFromSuccess(rows));
+      const page = await getCanonicalConversationsPage(activeSchoolCode);
+      setConversationsSnapshot(snapshotFromSuccess(page.items));
+      setNextCursor(page.nextCursor);
     } catch (error) {
       setConversationsSnapshot(snapshotFromFailure(error, []));
+      setNextCursor(null);
     }
   }, [canRead, activeSchoolCode, scopeReady]);
+
+  const loadMoreConversations = useCallback(async () => {
+    if (!canRead || !scopeReady || !nextCursor || loadingMore) return;
+    setLoadingMore(true);
+    try {
+      const page = await getCanonicalConversationsPage(activeSchoolCode, { cursor: nextCursor });
+      setConversationsSnapshot((current) => snapshotFromSuccess(mergeRowsById(current.data, page.items)));
+      setNextCursor(page.nextCursor);
+    } catch (error) {
+      Alert.alert("Chargement interrompu", error instanceof Error ? error.message : "Réessayez.");
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [canRead, activeSchoolCode, scopeReady, nextCursor, loadingMore]);
 
   useFocusEffect(
     useCallback(() => {
@@ -634,6 +654,23 @@ export default function MessagesScreen() {
         ListEmptyComponent={
           canRead && conversationsSnapshot.status === "success" ? <Text style={styles.meta}>Aucune conversation.</Text> : null
         }
+        ListFooterComponent={
+          canRead && conversationsSnapshot.status === "success" && nextCursor ? (
+            <TouchableOpacity
+              style={[styles.secondaryButton, loadingMore && styles.disabled]}
+              onPress={() => void loadMoreConversations()}
+              disabled={loadingMore}
+              testID="messages-load-more"
+              accessibilityRole="button"
+              accessibilityLabel="Charger les conversations plus anciennes"
+              accessibilityState={{ disabled: loadingMore, busy: loadingMore }}
+            >
+              <Text style={styles.secondaryButtonText}>
+                {loadingMore ? "Chargement…" : "Charger les conversations plus anciennes"}
+              </Text>
+            </TouchableOpacity>
+          ) : null
+        }
       />
       </KeyboardAvoidingContainer>
 
@@ -786,6 +823,8 @@ const styles = StyleSheet.create({
   unread: { color: "#FFFFFF", backgroundColor: "#DC2626", overflow: "hidden", borderRadius: 9, paddingHorizontal: 6, fontSize: 11, fontWeight: "800" },
   meta: { color: "#64748B", fontWeight: "600", marginTop: 4, fontSize: 12 },
   messageBody: { color: "#334155", marginTop: 4 },
+  secondaryButton: { minHeight: 42, marginTop: 8, borderRadius: 12, borderWidth: 1, borderColor: "#CBD5E1", paddingHorizontal: 14, alignItems: "center", justifyContent: "center" },
+  secondaryButtonText: { color: "#334155", fontWeight: "700" },
   modalBackdrop: { flex: 1, backgroundColor: "rgba(15,23,42,0.55)", justifyContent: "center", padding: 20 },
   readerCard: { backgroundColor: "#FFFFFF", borderRadius: 22, padding: 18 },
   closeButton: { alignSelf: "flex-end", padding: 8 },

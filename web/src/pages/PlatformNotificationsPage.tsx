@@ -12,6 +12,7 @@ import { PrintButton } from "../components/ui/PrintButton";
 import { Field, Input, Select } from "../components/ui/Field";
 import { useToast } from "../components/ui/Toast";
 import { platformApi } from "../lib/platformApi";
+import { LoadingState } from "@/design-system";
 import type { PlatformNotification } from "../types";
 
 const AUDIENCE_OPTIONS = [
@@ -47,7 +48,7 @@ function newId(): string {
 export function PlatformNotificationsPage() {
   const { session } = useAuth();
   const ctx = usePermissionContext();
-  const { state, refresh } = useData();
+  const { state, refresh, loading } = useData();
   const [busy, setBusy] = useState(false);
   const [composing, setComposing] = useState<PlatformNotification | null>(null);
   const { showToast } = useToast();
@@ -167,7 +168,9 @@ export function PlatformNotificationsPage() {
         />
 
         <div className="mt-4 space-y-3">
-          {rows.length === 0 ? (
+          {loading ? (
+            <LoadingState message="Chargement des notifications plateforme…" />
+          ) : rows.length === 0 ? (
             <p className="py-10 text-center text-muted">Aucune notification.</p>
           ) : (
             rows.map((notification) => (
