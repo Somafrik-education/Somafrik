@@ -206,16 +206,3 @@ export async function revokeWebPushOnSessionEnd(deps: WebPushRevokeDeps = {}): P
   const timeoutMs = deps.timeoutMs ?? WEB_PUSH_REVOKE_BUDGET_MS;
   return withTimeBudget(revokeWebPushOnSessionEndInner(deps), timeoutMs, "none");
 }
-
-/** Logout : attend la révocation au plus `WEB_PUSH_REVOKE_BUDGET_MS`, puis continue. */
-export async function revokeWebPushOnSessionEndBounded(): Promise<void> {
-  await new Promise<void>((resolve) => {
-    const timer = setTimeout(resolve, WEB_PUSH_REVOKE_BUDGET_MS);
-    void revokeWebPushOnSessionEnd()
-      .catch(logRevokeFailure)
-      .finally(() => {
-        clearTimeout(timer);
-        resolve();
-      });
-  });
-}

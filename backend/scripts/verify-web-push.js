@@ -60,7 +60,8 @@ function sourceGuards() {
   assert.doesNotMatch(runtime, /catch\(\(\)\s*=>\s*undefined\)/);
   assert.match(layout, /<WebPushRuntime/);
   const auth = read("web/src/context/AuthContext.tsx");
-  assert.match(auth, /revokeWebPushOnSessionEndBounded/);
+  assert.match(auth, /revokeWebPushOnSessionEnd/);
+  assert.match(auth, /WEB_PUSH_REVOKE_BUDGET_MS/);
   const getSubStart = permission.indexOf("async function defaultGetSubscription");
   const getSubEnd = permission.indexOf("function logRevokeFailure");
   assert.ok(getSubStart >= 0 && getSubEnd > getSubStart, "defaultGetSubscription manquante");
