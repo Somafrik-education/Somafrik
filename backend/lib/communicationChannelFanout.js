@@ -9,6 +9,7 @@ const nodemailer = require("nodemailer");
 const { uuidOrNull } = require("./principalIdentity");
 const { resolvePushBackendEnvironment } = require("./mobilePushDevicesService");
 const { createExpoPushService } = require("./expoPushService");
+const { createWebPushService } = require("./webPushService");
 const { enabledChannelsFromRows } = require("./communicationsPreferences");
 
 const CHANNELS = Object.freeze(["PUSH", "EMAIL"]);
@@ -234,16 +235,16 @@ function createSqlDeliveryAdapter(store) {
       );
     },
 
-    async markFailed(id, error, { attempts = 0, now = new Date() } = {}) {
+    async markFailed(id, error, { attempts = 0, now = new Date(), providerRef = null } = {}) {
       const exhausted = Number(attempts) >= MAX_ATTEMPTS;
       const status = exhausted ? DEAD_LETTER_STATUS : "failed";
       const next = exhausted ? now : new Date(now.getTime() + retryDelayMs(attempts));
       return one(
         `UPDATE communication_channel_deliveries
-         SET status=$4, last_error=$2, available_at=$3, updated_at=NOW()
+         SET status=$4, last_error=$2, available_at=$3, provider_ref=COALESCE($5, provider_ref), updated_at=NOW()
          WHERE id=$1
          RETURNING *`,
-        [id, String(error?.message || error).slice(0, 500), next.toISOString(), status],
+        [id, String(error?.message || error).slice(0, 500), next.toISOString(), status, providerRef],
       );
     },
 
@@ -423,12 +424,13 @@ function createMemoryDeliveryAdapter({ notifications = [], recipients = [], user
       row.dispatch_started_at = now.toISOString();
       return { ...row };
     },
-    async markFailed(id, error, { attempts = 0, now = new Date() } = {}) {
+    async markFailed(id, error, { attempts = 0, now = new Date(), providerRef = null } = {}) {
       const row = deliveries.find((item) => item.id === id);
       if (!row) return null;
       const exhausted = Number(attempts) >= MAX_ATTEMPTS;
       row.status = exhausted ? DEAD_LETTER_STATUS : "failed";
       row.last_error = String(error?.message || error).slice(0, 500);
+      if (providerRef) row.provider_ref = mergeProviderRefs(row.provider_ref, providerRef);
       row.available_at = new Date(
         now.getTime() + (exhausted ? 0 : retryDelayMs(attempts)),
       ).toISOString();
@@ -580,7 +582,23 @@ function scopedDevices(devices, { userId, schoolId, backendEnvironment }) {
   });
 }
 
-async function dispatchPush(row, { pushStore, pushClient, env = process.env }) {
+function webPushDataForDelivery(row, payload) {
+  const navigationTarget = asPayload(payload?.navigationTarget);
+  const sanitized = {};
+  const type = asTrimmed(navigationTarget.type);
+  if (type) sanitized.type = type;
+  for (const [key, value] of Object.entries(navigationTarget)) {
+    if (key === "type" || key === "url" || key === "href" || key === "location") continue;
+    const id = asSafeResourceId(value);
+    if (id) sanitized[key] = id;
+  }
+  return {
+    eventKey: asTrimmed(row.event_key),
+    navigationTarget: sanitized,
+  };
+}
+
+async function dispatchMobileExpoPush(row, { pushStore, pushClient, env = process.env }) {
   const userId = uuidOrNull(row.user_id);
   const schoolId = uuidOrNull(row.school_id);
   if (!userId || !schoolId) return { skipped: "missing_school_or_user" };
@@ -610,6 +628,107 @@ async function dispatchPush(row, { pushStore, pushClient, env = process.env }) {
     },
   );
   return { sent: result?.sent ?? devices.length, providerRef: `expo:${row.delivery_key}` };
+}
+
+function isOptionalWebPushSkip(reason) {
+  return [
+    "web_push_store_unavailable",
+    "web_push_client_unavailable",
+    "no_active_subscriptions",
+    "vapid_not_configured",
+    "web_push_not_sent",
+  ].includes(asTrimmed(reason));
+}
+
+async function dispatchWebPush(row, { webPushStore, webPushClient, env = process.env }) {
+  const userId = uuidOrNull(row.user_id);
+  const schoolId = uuidOrNull(row.school_id);
+  if (!userId || !schoolId) return { skipped: "missing_school_or_user" };
+  let backendEnvironment;
+  try {
+    backendEnvironment = resolvePushBackendEnvironment(env);
+  } catch {
+    return { skipped: "invalid_backend_environment" };
+  }
+  if (typeof webPushStore?.listActiveForUser !== "function") {
+    return { skipped: "web_push_store_unavailable" };
+  }
+  const listed = await webPushStore.listActiveForUser({ userId, schoolId, backendEnvironment });
+  const subscriptions = scopedDevices(listed, { userId, schoolId, backendEnvironment });
+  if (!subscriptions.length) return { skipped: "no_active_subscriptions" };
+  if (typeof webPushClient?.sendToSubscriptions !== "function") {
+    return { skipped: "web_push_client_unavailable" };
+  }
+  const payload = asPayload(row.payload);
+  const result = await webPushClient.sendToSubscriptions(subscriptions, {
+    title: payload.title || "Somafrik",
+    body: payload.body || "",
+    data: webPushDataForDelivery(row, payload),
+  });
+  if (!result?.sent) {
+    return { skipped: result?.skipped || "web_push_not_sent", revoked: result?.revoked };
+  }
+  return { sent: result.sent, providerRef: `web-push:${row.delivery_key}`, revoked: result.revoked };
+}
+
+function mergeProviderRefs(...refs) {
+  const parts = new Set();
+  for (const ref of refs) {
+    for (const part of asTrimmed(ref).split("+")) {
+      if (part) parts.add(part);
+    }
+  }
+  return [...parts].join("+");
+}
+
+function hasProviderPrefix(ref, prefix) {
+  return asTrimmed(ref)
+    .split("+")
+    .some((part) => part.startsWith(prefix));
+}
+
+async function isolateProvider(run) {
+  try {
+    return await run();
+  } catch (error) {
+    return { failed: true, error };
+  }
+}
+
+async function dispatchPush(row, deps) {
+  const prior = asTrimmed(row.provider_ref || row.providerRef);
+  const expoDone = hasProviderPrefix(prior, "expo:");
+  const webDone = hasProviderPrefix(prior, "web-push:");
+  const [mobile, web] = await Promise.all([
+    expoDone
+      ? Promise.resolve({ skipped: "already_sent" })
+      : isolateProvider(() => dispatchMobileExpoPush(row, deps)),
+    webDone
+      ? Promise.resolve({ skipped: "already_sent" })
+      : isolateProvider(() => dispatchWebPush(row, deps)),
+  ]);
+  const providerRef = mergeProviderRefs(
+    prior,
+    mobile.failed ? "" : mobile.providerRef,
+    web.failed ? "" : web.providerRef,
+  );
+  if (mobile.failed || web.failed) {
+    const error = mobile.error || web.error || new Error("push_provider_failed");
+    error.providerRef = providerRef;
+    throw error;
+  }
+  const mobileSent = Boolean(mobile.sent) || mobile.skipped === "already_sent";
+  const webSent = Boolean(web.sent) || web.skipped === "already_sent";
+  if (mobileSent || webSent) {
+    return {
+      sent: (mobile.sent || 0) + (web.sent || 0) || 1,
+      providerRef,
+    };
+  }
+  if (mobile.skipped && isOptionalWebPushSkip(web.skipped)) {
+    return mobile;
+  }
+  return web.skipped ? web : mobile;
 }
 
 function operationalTrialEmailTo(row, payload) {
@@ -679,6 +798,8 @@ async function drainChannelDeliveries(adapter, deps = {}) {
         outcome = await dispatchPush(row, {
           pushStore: deps.pushStore,
           pushClient: deps.pushClient,
+          webPushStore: deps.webPushStore,
+          webPushClient: deps.webPushClient,
           env: deps.env,
         });
       } else {
@@ -701,6 +822,7 @@ async function drainChannelDeliveries(adapter, deps = {}) {
       await adapter.markFailed(row.id, error, {
         attempts: row.attempts,
         now: deps.now ? new Date(deps.now()) : new Date(),
+        providerRef: error?.providerRef || null,
       });
       results.push({ id: row.id, status: "failed", error: String(error?.message || error) });
     }
@@ -711,9 +833,13 @@ async function drainChannelDeliveries(adapter, deps = {}) {
 function defaultPushDeps(repository) {
   const pushStore =
     typeof repository?.getMobilePushStore === "function" ? repository.getMobilePushStore() : null;
+  const webPushStore =
+    typeof repository?.getWebPushStore === "function" ? repository.getWebPushStore() : null;
   return {
     pushStore,
     pushClient: createExpoPushService({ store: pushStore }),
+    webPushStore,
+    webPushClient: createWebPushService({ store: webPushStore }),
   };
 }
 
@@ -736,6 +862,8 @@ async function fanOutNotificationChannels({
   adapter,
   pushStore,
   pushClient,
+  webPushStore,
+  webPushClient,
   mailer,
   env = process.env,
   now,
@@ -745,8 +873,8 @@ async function fanOutNotificationChannels({
 } = {}) {
   const deliveryAdapter = resolveFanoutDeliveryAdapter(store, adapter);
   const pushDeps =
-    pushStore || pushClient
-      ? { pushStore, pushClient }
+    pushStore || pushClient || webPushStore || webPushClient
+      ? { pushStore, pushClient, webPushStore, webPushClient }
       : defaultPushDeps(repository);
   try {
     await enqueueChannelDeliveries(deliveryAdapter, processed, channels || CHANNELS, {
@@ -783,6 +911,7 @@ module.exports = {
   createMemoryDeliveryAdapter,
   enqueueChannelDeliveries,
   mobilePushDataForDelivery,
+  webPushDataForDelivery,
   drainChannelDeliveries,
   fanOutNotificationChannels,
 };

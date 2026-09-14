@@ -9,6 +9,7 @@ import {
   type ReactNode,
 } from "react";
 import { api, ApiError, setAccessTokenProvider, setRefreshTokenProvider, setRotatedTokenPersister } from "../api/client";
+import { revokeWebPushOnSessionEnd } from "../lib/webPushPermission";
 import { normalizePlatformRole } from "../lib/orgHierarchy";
 import type { LoginProfile, Session } from "../types";
 
@@ -225,6 +226,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const logout = useCallback(async () => {
     try {
       if (sessionRef.current?.accessToken) {
+        try {
+          await revokeWebPushOnSessionEnd();
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "unknown";
+          console.error(
+            JSON.stringify({
+              kind: "web_push_logout_revoke_failure",
+              message: message.slice(0, 180),
+            }),
+          );
+        }
         await api.post("/auth/logout");
       }
     } catch {
