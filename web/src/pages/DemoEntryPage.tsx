@@ -7,6 +7,7 @@ import { FRANCOPHONE_AFRICA_COUNTRIES } from "../data/francophoneAfricaCountries
 import { marketingSkipLink } from "../data/marketingContent";
 import { publicDemoEnabled } from "../lib/featureFlags";
 import { API_URL } from "../lib/apiUrl";
+import { navigateToDemo } from "../lib/demoNavigation";
 
 type FormStatus = "idle" | "sending" | "error";
 
@@ -69,7 +70,7 @@ export function DemoEntryPage() {
         throw new Error("Redirection de démo invalide.");
       }
 
-      window.location.assign(payload.redirectUrl);
+      navigateToDemo(payload.redirectUrl);
     } catch (error) {
       setStatus("error");
       setMessage(
