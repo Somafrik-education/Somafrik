@@ -199,7 +199,20 @@ function createReportCardPublicationPgStore(db) {
     });
   }
 
-  return { find, findByPublicId, insertPublication, listOutbox };
+  async function listCurrent(schoolId) {
+    return withClient(async (client) => {
+      const result = await client.query(
+        `SELECT school_id, report_card_id, public_id, published_snapshot_version, verification_status
+         FROM report_card_published_snapshots
+         WHERE school_id = $1 AND verification_status = $2
+         ORDER BY report_card_id ASC, published_snapshot_version DESC`,
+        [schoolId, VERIFICATION_STATES[0]]
+      );
+      return result.rows;
+    });
+  }
+
+  return { find, findByPublicId, insertPublication, listOutbox, listCurrent };
 }
 
 module.exports = { createReportCardPublicationPgStore };

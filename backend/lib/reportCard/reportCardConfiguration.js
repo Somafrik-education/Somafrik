@@ -794,6 +794,14 @@ function createReportCardConfiguration({
     return clone(row);
   }
 
+  async function lookupRenderingTemplateSpec({ schoolId, templateId, version } = {}) {
+    requireSchoolId(schoolId);
+    if (templateId == null || templateId === "" || version == null) return null;
+    const row = await persistence.getTemplateVersion(schoolId, templateId, Number(version));
+    if (!row) return null;
+    return { spec: clone(row.spec), spec_sha256: row.spec_sha256 };
+  }
+
   function publicVersionRef(row, idKey) {
     if (!row) return null;
     return {
@@ -902,6 +910,7 @@ function createReportCardConfiguration({
     getActiveBinding,
     listAudit,
     getRenderingTemplateVersion,
+    lookupRenderingTemplateSpec,
     updateRenderingTemplateSpec,
     listCatalog,
     getBoundBundle,

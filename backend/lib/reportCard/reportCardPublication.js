@@ -219,6 +219,23 @@ function createMemoryStore(dump) {
     listOutbox(schoolId) {
       return outbox.filter((item) => item.school_id === schoolId);
     },
+    listCurrent(schoolId) {
+      const out = [];
+      for (const rec of records.values()) {
+        if (rec.school_id !== schoolId) continue;
+        if (rec.verification_status !== VERIFICATION_STATES[0]) continue;
+        out.push(
+          Object.freeze({
+            school_id: rec.school_id,
+            report_card_id: rec.report_card_id,
+            public_id: rec.public_id,
+            published_snapshot_version: rec.published_snapshot_version,
+            verification_status: rec.verification_status,
+          })
+        );
+      }
+      return out;
+    },
     dump() {
       const rows = [];
       for (const rec of records.values()) {
@@ -370,6 +387,14 @@ function createReportCardPublication({
     return persistence.listOutbox(schoolId);
   }
 
+  function listCurrent({ tenant } = {}) {
+    const schoolId = assertTenant(tenant);
+    if (typeof persistence.listCurrent !== "function") {
+      throw new ReportCardPublicationError("PUBLICATION_NOT_FOUND");
+    }
+    return thenable(persistence.listCurrent(schoolId), (rows) => rows || []);
+  }
+
   function persistWithoutSecrets() {
     if (typeof persistence.dump !== "function") {
       throw new ReportCardPublicationError("DUMP_UNSUPPORTED");
@@ -384,6 +409,7 @@ function createReportCardPublication({
     payloadForRender: payloadForRenderPublished,
     lookupPublic,
     listOutbox,
+    listCurrent,
     persistWithoutSecrets,
   };
 }

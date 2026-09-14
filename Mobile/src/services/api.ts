@@ -1282,13 +1282,13 @@ export function resetUserPassword(userId: string, temporaryPassword: string) {
   );
 }
 
-/** URL du bulletin PDF (sans JWT). */
-export function getReportCardPdfUrl(studentId: string, period = "Trimestre 1") {
-  return `${getApiBaseUrl()}/students/${encodeURIComponent(studentId)}/report.pdf?period=${encodeURIComponent(period)}`;
+/** URL du bulletin PDF LOT 5 (sans JWT). */
+export function getReportCardPdfUrl(reportCardId: string, version: number | string = 1) {
+  return `${getApiBaseUrl()}/report-card/publications/${encodeURIComponent(reportCardId)}/pdf?version=${encodeURIComponent(String(version))}`;
 }
 
 /**
- * S2.3 — Téléchargement sécurisé PDF.
+ * S2.3 — Téléchargement sécurisé PDF LOT 5.
  *
  * Adaptateur natif volontaire autour du client HTTP central (`httpClient`) :
  * `FileSystem.downloadAsync` écrit directement vers le cache et n'est pas
@@ -1296,20 +1296,20 @@ export function getReportCardPdfUrl(studentId: string, period = "Trimestre 1") {
  * par `httpRequest` / `httpUpload` — ne pas dupliquer ce pattern ailleurs.
  * Contrôles : Bearer, status 200 strict, MIME PDF/octet-stream, taille > 0.
  */
-export async function downloadReportCardPdf(studentId: string, period = "Trimestre 1"): Promise<string> {
+export async function downloadReportCardPdf(reportCardId: string, version: number | string = 1): Promise<string> {
   const token = await getAccessToken();
   if (!token) {
     throw new ApiClientError("Authentification requise pour télécharger le bulletin PDF.");
   }
 
-  const url = getReportCardPdfUrl(studentId, period);
+  const url = getReportCardPdfUrl(reportCardId, version);
   const cacheDir = FileSystem.cacheDirectory;
   if (!cacheDir) {
     throw new ApiClientError("Stockage local indisponible pour ouvrir le bulletin PDF.");
   }
 
-  const safePeriod = period.replace(/[^\w.-]+/g, "-").toLowerCase();
-  const target = `${cacheDir}bulletin-${studentId}-${safePeriod}.pdf`;
+  const safeVersion = String(version).replace(/[^\w.-]+/g, "-").toLowerCase();
+  const target = `${cacheDir}bulletin-${reportCardId}-${safeVersion}.pdf`;
   // Exception documentée : adaptateur FileSystem (voir JSDoc ci-dessus).
   const result = await FileSystem.downloadAsync(url, target, {
     headers: {
