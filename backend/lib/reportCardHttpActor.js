@@ -26,17 +26,11 @@ function resolveReportCardActorFromPrincipal(principal) {
     };
   }
   const permissions = [];
-  if (hasFeatureAction(principal, "Bulletins", "CREATE") || hasFeatureAction(principal, "Bulletins", "READ")) {
+  if (hasFeatureAction(principal, "Bulletins", "CREATE")) {
     permissions.push("REPORT_CARD_SUBMIT_MODEL");
   }
   if (hasFeatureAction(principal, "Bulletins", "UPDATE")) {
     permissions.push("REPORT_CARD_SCHOOL_APPROVE_TEMPLATE");
-  }
-  if (principal.role === "Admin School") {
-    if (!permissions.includes("REPORT_CARD_SUBMIT_MODEL")) permissions.push("REPORT_CARD_SUBMIT_MODEL");
-    if (!permissions.includes("REPORT_CARD_SCHOOL_APPROVE_TEMPLATE")) {
-      permissions.push("REPORT_CARD_SCHOOL_APPROVE_TEMPLATE");
-    }
   }
   return {
     actorId,

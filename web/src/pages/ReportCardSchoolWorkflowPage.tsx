@@ -1,9 +1,24 @@
 import { FormEvent, useEffect, useState } from "react";
-import { reportCardConfigurationApi, type ReportCardRequest } from "../lib/reportCardConfigurationApi";
-import { ReportCardSnapshotView } from "../components/bulletin/ReportCardSnapshotView";
+import {
+  reportCardConfigurationApi,
+  type ReportCardAuditEntry,
+  type ReportCardBundle,
+  type ReportCardRequest,
+} from "../lib/reportCardConfigurationApi";
+import {
+  ReportCardSnapshotView,
+  ReportCardTemplatePreview,
+} from "../components/bulletin/ReportCardSnapshotView";
+
+type RequestDetails = {
+  audit: ReportCardAuditEntry[];
+  bundle: ReportCardBundle | null;
+  binding: Record<string, unknown> | null;
+};
 
 export function ReportCardSchoolWorkflowPage() {
   const [requests, setRequests] = useState<ReportCardRequest[]>([]);
+  const [details, setDetails] = useState<Record<string, RequestDetails>>({});
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
   const [modelKey, setModelKey] = useState("trimestriel");
@@ -12,11 +27,37 @@ export function ReportCardSchoolWorkflowPage() {
   const [version, setVersion] = useState("1");
   const [payload, setPayload] = useState<Record<string, unknown> | null>(null);
 
+  async function loadDetails(list: ReportCardRequest[]) {
+    const next: Record<string, RequestDetails> = {};
+    await Promise.all(
+      list.map(async (request) => {
+        const showReview = ["READY_FOR_REVIEW", "APPROVED", "ACTIVE"].includes(request.status);
+        const audit = showReview
+          ? await reportCardConfigurationApi.listAudit(request.id).catch(() => ({ audit: [] }))
+          : { audit: [] };
+        const bundle = showReview
+          ? await reportCardConfigurationApi.getBundle(request.id).catch(() => null)
+          : null;
+        const binding =
+          request.status === "ACTIVE" && request.model_key
+            ? await reportCardConfigurationApi
+                .getActiveBinding(request.model_key)
+                .then((row) => row.binding)
+                .catch(() => null)
+            : null;
+        next[request.id] = { audit: audit.audit || [], bundle, binding };
+      }),
+    );
+    setDetails(next);
+  }
+
   async function reload() {
     setLoading(true);
     try {
       const data = await reportCardConfigurationApi.listRequests();
-      setRequests(data.requests || []);
+      const list = data.requests || [];
+      setRequests(list);
+      await loadDetails(list);
       setError("");
     } catch {
       setError("Impossible de charger les demandes.");
@@ -76,21 +117,42 @@ export function ReportCardSchoolWorkflowPage() {
       {error ? <p role="alert">{error}</p> : null}
       {requests.length === 0 && !loading ? <p>Aucune demande.</p> : null}
       <ul>
-        {requests.map((request) => (
-          <li key={request.id} data-workflow-state={request.status}>
-            <span>{request.model_key}</span> <strong>{request.status}</strong>
-            {request.actions?.approve ? (
-              <button type="button" onClick={() => void onApprove(request.id)}>
-                Approuver
-              </button>
-            ) : null}
-            {request.actions?.request_changes ? (
-              <button type="button" onClick={() => void onRequestChanges(request.id)}>
-                Demander des modifications
-              </button>
-            ) : null}
-          </li>
-        ))}
+        {requests.map((request) => {
+          const extra = details[request.id];
+          const template = extra?.bundle?.template?.spec as
+            | { paper?: string; orientation?: string; qr_required?: boolean; sections?: { id: string; label?: string; source: "cells" | "slots" | "presence" }[] }
+            | undefined;
+          return (
+            <li key={request.id} data-workflow-state={request.status}>
+              <span>{request.model_key}</span> <strong>{request.status}</strong>
+              {request.actions?.approve ? (
+                <button type="button" onClick={() => void onApprove(request.id)}>
+                  Approuver
+                </button>
+              ) : null}
+              {request.actions?.request_changes ? (
+                <button type="button" onClick={() => void onRequestChanges(request.id)}>
+                  Demander des modifications
+                </button>
+              ) : null}
+              {template ? <ReportCardTemplatePreview template={template} /> : null}
+              {extra?.audit?.length ? (
+                <ul data-audit>
+                  {extra.audit.map((entry, index) => (
+                    <li key={String(entry.id ?? index)}>
+                      {entry.from_state || "∅"} → {entry.to_state}
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+              {extra?.binding ? (
+                <p data-active-binding>
+                  Configuration ACTIVE {String(extra.binding.model_key || request.model_key)}
+                </p>
+              ) : null}
+            </li>
+          );
+        })}
       </ul>
       <form onSubmit={(event) => void onSubmit(event)}>
         <label>

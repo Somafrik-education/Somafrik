@@ -794,6 +794,85 @@ function createReportCardConfiguration({
     return clone(row);
   }
 
+  function publicVersionRef(row, idKey) {
+    if (!row) return null;
+    return {
+      id: row[idKey] || row.id,
+      version: row.version,
+      status: row.status,
+      spec_sha256: row.spec_sha256,
+    };
+  }
+
+  async function activeCatalogEntry(listFn, getActiveFn, keyName) {
+    const listed = await Promise.resolve(listFn());
+    const rows = [];
+    for (const item of listed || []) {
+      try {
+        const active = await Promise.resolve(getActiveFn(item.id));
+        rows.push({
+          id: item.id,
+          [keyName]: item[keyName],
+          version: active.version,
+          status: active.status,
+          spec_sha256: active.spec_sha256,
+        });
+      } catch {
+        // Versions DRAFT-only cannot be bound; omit from selectable catalog.
+      }
+    }
+    return rows;
+  }
+
+  async function listCatalog({ actor, schoolId } = {}) {
+    assertCanConfigure(actor, schoolId);
+    const profiles = await activeCatalogEntry(
+      () => profileStore.listProfiles(schoolId, schoolId),
+      (profileId) => profileStore.getActive({ schoolId, actorSchoolId: schoolId, profileId }),
+      "profile_key"
+    );
+    const schemas = await activeCatalogEntry(
+      () => schemaStore.listSchemas(schoolId, schoolId),
+      (schemaId) => schemaStore.getActive({ schoolId, actorSchoolId: schoolId, schemaId }),
+      "schema_key"
+    );
+    return { profiles, schemas };
+  }
+
+  async function getBoundBundle({ actor, schoolId, requestId } = {}) {
+    assertCanRead(actor, schoolId);
+    const request = freezeRequest(await loadRequest(persistence, schoolId, requestId));
+    let template = null;
+    let profile = null;
+    let schema = null;
+    if (request.rendering_template_id != null && request.rendering_template_version != null) {
+      template = await persistence.getTemplateVersion(
+        schoolId,
+        request.rendering_template_id,
+        request.rendering_template_version
+      );
+      if (!template) throw new ReportCardConfigurationError("VERSION_NOT_FOUND");
+    }
+    if (request.profile_id != null && request.profile_version != null) {
+      profile = publicVersionRef(
+        await loadProfileVersion(schoolId, request.profile_id, request.profile_version),
+        "profile_id"
+      );
+    }
+    if (request.schema_id != null && request.schema_version != null) {
+      schema = publicVersionRef(
+        await loadSchemaVersion(schoolId, request.schema_id, request.schema_version),
+        "schema_id"
+      );
+    }
+    return {
+      request,
+      template: template ? clone(template) : null,
+      profile,
+      schema,
+    };
+  }
+
   async function updateRenderingTemplateSpec({ actor, schoolId, templateId, version, spec } = {}) {
     assertCanConfigure(actor, schoolId);
     let normalized;
@@ -824,6 +903,8 @@ function createReportCardConfiguration({
     listAudit,
     getRenderingTemplateVersion,
     updateRenderingTemplateSpec,
+    listCatalog,
+    getBoundBundle,
   };
 }
 

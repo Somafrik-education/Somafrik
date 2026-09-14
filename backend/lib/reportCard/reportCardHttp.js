@@ -89,6 +89,8 @@ function decorate(actor, request) {
       configure: Boolean(
         privileged && (request.status === "UNDER_REVIEW" || request.status === "CHANGES_REQUESTED")
       ),
+      save_template: Boolean(privileged && request.status === "CONFIGURING"),
+      bind_bundle: Boolean(privileged && request.status === "CONFIGURING"),
       ready: Boolean(privileged && request.status === "CONFIGURING"),
       reject: Boolean(
         privileged &&
@@ -268,6 +270,22 @@ function registerReportCardHttp(app, deps = {}) {
   );
 
   app.get(
+    "/api/report-card/requests/:requestId/bundle",
+    auth,
+    route(async (req, res) => {
+      const actor = requireActor(resolveActor(req));
+      const schoolId = schoolIdForSchoolActor(actor);
+      const { configuration } = services();
+      const bundle = await configuration.getBoundBundle({
+        actor,
+        schoolId,
+        requestId: req.params.requestId,
+      });
+      res.json({ ok: true, ...bundle, request: decorate(actor, bundle.request) });
+    })
+  );
+
+  app.get(
     "/api/report-card/publications/:reportCardId/snapshot",
     auth,
     route(async (req, res) => {
@@ -310,6 +328,50 @@ function registerReportCardHttp(app, deps = {}) {
       const { configuration } = services();
       const request = await configuration.getRequest({ actor, schoolId, requestId: req.params.requestId });
       res.json({ ok: true, request: decorate(actor, request) });
+    })
+  );
+
+  app.get(
+    "/api/report-card/admin/catalog",
+    auth,
+    route(async (req, res) => {
+      const actor = requireActor(resolveActor(req));
+      const schoolId = schoolIdForAdmin(actor, requestedSchoolId(req));
+      const { configuration } = services();
+      const catalog = await configuration.listCatalog({ actor, schoolId });
+      res.json({ ok: true, ...catalog });
+    })
+  );
+
+  app.get(
+    "/api/report-card/admin/requests/:requestId/bundle",
+    auth,
+    route(async (req, res) => {
+      const actor = requireActor(resolveActor(req));
+      const schoolId = schoolIdForAdmin(actor, requestedSchoolId(req));
+      const { configuration } = services();
+      const bundle = await configuration.getBoundBundle({
+        actor,
+        schoolId,
+        requestId: req.params.requestId,
+      });
+      res.json({ ok: true, ...bundle, request: decorate(actor, bundle.request) });
+    })
+  );
+
+  app.get(
+    "/api/report-card/admin/bindings/:modelKey",
+    auth,
+    route(async (req, res) => {
+      const actor = requireActor(resolveActor(req));
+      const schoolId = schoolIdForAdmin(actor, requestedSchoolId(req));
+      const { configuration } = services();
+      const binding = await configuration.getActiveBinding({
+        actor,
+        schoolId,
+        modelKey: req.params.modelKey,
+      });
+      res.json({ ok: true, binding });
     })
   );
 

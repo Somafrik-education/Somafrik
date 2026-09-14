@@ -18,6 +18,8 @@ const { createReportCardPublication } = require("./reportCardPublication");
 const { computeReportCard } = require("./reportCardEngine");
 const { validateSpec: validateProfileSpec } = require("./academicRuleProfile");
 const { validateSpec: validateSchemaSpec } = require("./reportCardSchema");
+const { resolveReportCardActorFromPrincipal } = require("../reportCardHttpActor");
+const { loadReportCardHttpCrypto, HISTORICAL_SIGNING_ENV } = require("../reportCardHttpRuntime");
 
 const SCHOOL_A = "school-a";
 const SCHOOL_B = "school-b";
@@ -611,6 +613,66 @@ test("report-card-lot7-verify-tampered-snapshot-fails-closed", async () => {
 test("report-card-lot7-verify-historical-signing-key", async () => {
   const key1 = generateSigningKey("rc-ed25519-1");
   const wrapping = generateWrappingKey("rc-wrap-1");
+  const envPublish = {
+    SOMAFRIK_REPORT_CARD_SIGNING_PRIVATE_KEY_PEM: key1.privateKey.export({ type: "pkcs8", format: "pem" }),
+    SOMAFRIK_REPORT_CARD_SIGNING_KEY_ID: "rc-ed25519-1",
+    SOMAFRIK_REPORT_CARD_WRAPPING_KEY_B64: wrapping.key.toString("base64"),
+    SOMAFRIK_REPORT_CARD_WRAPPING_KEY_ID: "rc-wrap-1",
+  };
+  const publishedCrypto = loadReportCardHttpCrypto(envPublish);
+  const first = createReportCardPublication({
+    signingKey: publishedCrypto.signingKey,
+    wrapping: publishedCrypto.wrapping,
+    wrappingKeys: publishedCrypto.wrappingKeys,
+    signingKeys: publishedCrypto.signingKeys,
+  });
+  const { capability } = await publishFixture(first);
+  const dump = first.persistWithoutSecrets();
+  const key2 = generateSigningKey("rc-ed25519-2");
+  const rotatedEnv = {
+    SOMAFRIK_REPORT_CARD_SIGNING_PRIVATE_KEY_PEM: key2.privateKey.export({ type: "pkcs8", format: "pem" }),
+    SOMAFRIK_REPORT_CARD_SIGNING_KEY_ID: "rc-ed25519-2",
+    SOMAFRIK_REPORT_CARD_WRAPPING_KEY_B64: wrapping.key.toString("base64"),
+    SOMAFRIK_REPORT_CARD_WRAPPING_KEY_ID: "rc-wrap-1",
+    [HISTORICAL_SIGNING_ENV]: JSON.stringify([
+      {
+        signing_key_id: "rc-ed25519-1",
+        publicKeyPem: key1.publicKey.export({ type: "spki", format: "pem" }),
+      },
+    ]),
+  };
+  const rotatedCrypto = loadReportCardHttpCrypto(rotatedEnv);
+  assert.equal(rotatedCrypto.signingKey.signing_key_id, "rc-ed25519-2");
+  assert.equal(
+    rotatedCrypto.signingKeys.some((key) => key.signing_key_id === "rc-ed25519-1"),
+    true
+  );
+  const restored = createReportCardPublication({
+    signingKey: rotatedCrypto.signingKey,
+    wrapping: rotatedCrypto.wrapping,
+    wrappingKeys: rotatedCrypto.wrappingKeys,
+    signingKeys: rotatedCrypto.signingKeys,
+    dump,
+  });
+  const h = await harness({ publication: restored });
+  try {
+    const before = restored.persistWithoutSecrets();
+    const res = await h.json("POST", "/api/public/report-cards/verify", { capability });
+    assert.equal(res.status, 200);
+    assert.equal(res.data.ok, true);
+    assert.equal(res.data.payload.report_card_id, "rc-1");
+    const after = restored.persistWithoutSecrets();
+    assert.equal(after[0].signing_key_id, "rc-ed25519-1");
+    assert.equal(after[0].snapshot_sha256, before[0].snapshot_sha256);
+    assert.equal(after[0].snapshot_signature, before[0].snapshot_signature);
+  } finally {
+    await h.close();
+  }
+});
+
+test("report-card-lot7-verify-unknown-signing-key-fails-closed", async () => {
+  const key1 = generateSigningKey("rc-ed25519-1");
+  const wrapping = generateWrappingKey("rc-wrap-1");
   const first = createReportCardPublication({
     signingKey: key1,
     wrapping,
@@ -620,19 +682,25 @@ test("report-card-lot7-verify-historical-signing-key", async () => {
   const { capability } = await publishFixture(first);
   const dump = first.persistWithoutSecrets();
   const key2 = generateSigningKey("rc-ed25519-2");
+  const rotatedCrypto = loadReportCardHttpCrypto({
+    SOMAFRIK_REPORT_CARD_SIGNING_PRIVATE_KEY_PEM: key2.privateKey.export({ type: "pkcs8", format: "pem" }),
+    SOMAFRIK_REPORT_CARD_SIGNING_KEY_ID: "rc-ed25519-2",
+    SOMAFRIK_REPORT_CARD_WRAPPING_KEY_B64: wrapping.key.toString("base64"),
+    SOMAFRIK_REPORT_CARD_WRAPPING_KEY_ID: "rc-wrap-1",
+  });
   const restored = createReportCardPublication({
-    signingKey: key2,
-    wrapping,
-    wrappingKeys: [wrapping],
-    signingKeys: [key1, key2],
+    signingKey: rotatedCrypto.signingKey,
+    wrapping: rotatedCrypto.wrapping,
+    wrappingKeys: rotatedCrypto.wrappingKeys,
+    signingKeys: rotatedCrypto.signingKeys,
     dump,
   });
   const h = await harness({ publication: restored });
   try {
     const res = await h.json("POST", "/api/public/report-cards/verify", { capability });
-    assert.equal(res.status, 200);
-    assert.equal(res.data.ok, true);
-    assert.equal(res.data.payload.report_card_id, "rc-1");
+    assert.notEqual(res.status, 200);
+    assert.equal(res.data.ok, false);
+    assert.equal(res.data.payload, undefined);
   } finally {
     await h.close();
   }
@@ -733,6 +801,178 @@ test("report-card-lot7-verify-capability-not-logged", async () => {
     const token = capability.split(".").slice(1).join(".");
     await h.json("POST", "/api/public/report-cards/verify", { capability });
     assertTokenAbsentFromLogs(h.logs, token);
+  } finally {
+    await h.close();
+  }
+});
+
+test("report-card-lot7-actor-http-read-cannot-submit", async () => {
+  const h = await harness();
+  try {
+    h.setActor(
+      resolveReportCardActorFromPrincipal({
+        sub: "reader",
+        schoolId: SCHOOL_A,
+        role: "Enseignant",
+        permissions: ["Bulletins:READ"],
+      })
+    );
+    const denied = await h.json("POST", "/api/report-card/requests", { modelKey: "trimestriel" });
+    assert.equal(denied.status, 403);
+    assert.equal(denied.data.error.code, "RBAC_DENIED");
+  } finally {
+    await h.close();
+  }
+});
+
+test("report-card-lot7-actor-http-create-can-submit-update-can-approve", async () => {
+  const h = await harness();
+  try {
+    h.setActor(
+      resolveReportCardActorFromPrincipal({
+        sub: "creator",
+        schoolId: SCHOOL_A,
+        role: "Proviseur",
+        permissions: ["Bulletins:CREATE", "Bulletins:READ"],
+      })
+    );
+    const created = await h.json("POST", "/api/report-card/requests", { modelKey: "trimestriel" });
+    assert.equal(created.status, 201);
+    const ready = await toReady(h.api, h.profileStore, h.schemaStore, SCHOOL_A);
+    h.setActor(
+      resolveReportCardActorFromPrincipal({
+        sub: "creator",
+        schoolId: SCHOOL_A,
+        role: "Proviseur",
+        permissions: ["Bulletins:CREATE", "Bulletins:READ"],
+      })
+    );
+    const cannotApprove = await h.json("POST", `/api/report-card/requests/${ready.id}/approve`, {});
+    assert.equal(cannotApprove.status, 403);
+    h.setActor(
+      resolveReportCardActorFromPrincipal({
+        sub: "approver",
+        schoolId: SCHOOL_A,
+        role: "Proviseur",
+        permissions: ["Bulletins:UPDATE"],
+      })
+    );
+    const approved = await h.json("POST", `/api/report-card/requests/${ready.id}/approve`, {});
+    assert.equal(approved.status, 200);
+    assert.equal(approved.data.request.status, "APPROVED");
+  } finally {
+    await h.close();
+  }
+});
+
+test("report-card-lot7-actor-http-admin-school-role-does-not-grant-write", async () => {
+  const h = await harness();
+  try {
+    h.setActor(
+      resolveReportCardActorFromPrincipal({
+        sub: "admin-school",
+        schoolId: SCHOOL_A,
+        role: "Admin School",
+        permissions: ["Bulletins:READ"],
+      })
+    );
+    const submit = await h.json("POST", "/api/report-card/requests", { modelKey: "trimestriel" });
+    assert.equal(submit.status, 403);
+    const ready = await toReady(h.api, h.profileStore, h.schemaStore, SCHOOL_A);
+    const approve = await h.json("POST", `/api/report-card/requests/${ready.id}/approve`, {});
+    assert.equal(approve.status, 403);
+  } finally {
+    await h.close();
+  }
+});
+
+test("report-card-lot7-http-web-path-reaches-ready-approved-active", async () => {
+  const h = await harness();
+  try {
+    const refs = seedBundle(h.profileStore, h.schemaStore, SCHOOL_A);
+    h.setActor(schoolSubmit(SCHOOL_A));
+    const created = await h.json("POST", "/api/report-card/requests", {
+      modelKey: "trimestriel",
+      description: "web path",
+    });
+    assert.equal(created.status, 201);
+    const requestId = created.data.request.id;
+    h.setActor(superadmin());
+    const catalogDenied = await h.json("GET", `/api/report-card/admin/catalog?schoolId=${SCHOOL_B}`);
+    assert.equal(catalogDenied.status, 200);
+    assert.equal(catalogDenied.data.profiles.some((row) => row.id === refs.profile.id), false);
+    const catalog = await h.json("GET", `/api/report-card/admin/catalog?schoolId=${SCHOOL_A}`);
+    assert.equal(catalog.status, 200);
+    assert.equal(catalog.data.profiles.some((row) => row.id === refs.profile.id), true);
+    assert.equal(catalog.data.schemas.some((row) => row.id === refs.schema.id), true);
+    const reviewed = await h.json("POST", `/api/report-card/admin/requests/${requestId}/review`, {
+      schoolId: SCHOOL_A,
+    });
+    assert.equal(reviewed.data.request.status, "UNDER_REVIEW");
+    const configuring = await h.json("POST", `/api/report-card/admin/requests/${requestId}/configure`, {
+      schoolId: SCHOOL_A,
+    });
+    assert.equal(configuring.data.request.status, "CONFIGURING");
+    assert.equal(configuring.data.request.actions.save_template, true);
+    assert.equal(configuring.data.request.actions.bind_bundle, true);
+    const tooSoon = await h.json("POST", `/api/report-card/admin/requests/${requestId}/ready-for-review`, {
+      schoolId: SCHOOL_A,
+    });
+    assert.equal(tooSoon.status, 400);
+    assert.equal(tooSoon.data.error.code, "INVALID_BUNDLE");
+    const saved = await h.json("POST", `/api/report-card/admin/requests/${requestId}/save-template`, {
+      schoolId: SCHOOL_A,
+      spec: validTemplate(),
+    });
+    assert.equal(saved.status, 200);
+    const bound = await h.json("POST", `/api/report-card/admin/requests/${requestId}/bind-bundle`, {
+      schoolId: SCHOOL_A,
+      profile: refs.profile,
+      schema: refs.schema,
+      template: { id: saved.data.template.template_id, version: saved.data.template.version },
+    });
+    assert.equal(bound.status, 200);
+    const ready = await h.json("POST", `/api/report-card/admin/requests/${requestId}/ready-for-review`, {
+      schoolId: SCHOOL_A,
+    });
+    assert.equal(ready.status, 200);
+    assert.equal(ready.data.request.status, "READY_FOR_REVIEW");
+    h.setActor(schoolApprove(SCHOOL_A));
+    const schoolBundle = await h.json("GET", `/api/report-card/requests/${requestId}/bundle`);
+    assert.equal(schoolBundle.status, 200);
+    assert.ok(schoolBundle.data.template);
+    assert.equal(schoolBundle.data.template.spec.qr_required, true);
+    assert.equal(schoolBundle.data.profile.id, refs.profile.id);
+    const audit = await h.json("GET", `/api/report-card/requests/${requestId}/audit`);
+    assert.equal(audit.status, 200);
+    assert.ok(audit.data.audit.length >= 1);
+    const approved = await h.json("POST", `/api/report-card/requests/${requestId}/approve`, {});
+    assert.equal(approved.status, 200);
+    assert.equal(approved.data.request.status, "APPROVED");
+    h.setActor(superadmin());
+    const adminBundle = await h.json(
+      "GET",
+      `/api/report-card/admin/requests/${requestId}/bundle?schoolId=${SCHOOL_A}`
+    );
+    assert.equal(adminBundle.status, 200);
+    assert.ok(adminBundle.data.template.spec.sections.length >= 1);
+    const activated = await h.json("POST", `/api/report-card/admin/requests/${requestId}/activate`, {
+      schoolId: SCHOOL_A,
+    });
+    assert.equal(activated.status, 200);
+    assert.equal(activated.data.request.status, "ACTIVE");
+    h.setActor(schoolApprove(SCHOOL_A));
+    const binding = await h.json("GET", "/api/report-card/bindings/trimestriel");
+    assert.equal(binding.status, 200);
+    assert.equal(binding.data.binding.model_key, "trimestriel");
+    assert.equal(binding.data.binding.request_id, requestId);
+    h.setActor(superadmin());
+    const adminBinding = await h.json(
+      "GET",
+      `/api/report-card/admin/bindings/trimestriel?schoolId=${SCHOOL_A}`
+    );
+    assert.equal(adminBinding.status, 200);
+    assert.equal(adminBinding.data.binding.request_id, requestId);
   } finally {
     await h.close();
   }

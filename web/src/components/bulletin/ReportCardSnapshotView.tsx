@@ -39,8 +39,34 @@ type RenderingSection = {
 };
 
 type RenderingTemplate = {
+  paper?: string;
+  orientation?: string;
+  qr_required?: boolean;
   sections?: RenderingSection[];
 };
+
+export function ReportCardTemplatePreview({
+  template,
+}: {
+  template: RenderingTemplate | null | undefined;
+}) {
+  if (!template) return null;
+  return (
+    <article data-template-preview>
+      <p>
+        {template.paper || "A4"} {template.orientation || "portrait"}{" "}
+        {template.qr_required ? "QR requis" : ""}
+      </p>
+      <ol>
+        {(template.sections || []).map((section) => (
+          <li key={section.id} data-template-section={section.id} data-source={section.source}>
+            {section.label || section.id} ({section.source})
+          </li>
+        ))}
+      </ol>
+    </article>
+  );
+}
 
 type SnapshotPayload = {
   report_card_id?: string;

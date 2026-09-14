@@ -5,6 +5,8 @@ export type ReportCardActions = {
   request_changes?: boolean;
   review?: boolean;
   configure?: boolean;
+  save_template?: boolean;
+  bind_bundle?: boolean;
   ready?: boolean;
   reject?: boolean;
   activate?: boolean;
@@ -16,7 +18,39 @@ export type ReportCardRequest = {
   model_key?: string;
   school_id?: string;
   description?: string | null;
+  profile_id?: string | null;
+  profile_version?: number | null;
+  schema_id?: string | null;
+  schema_version?: number | null;
+  rendering_template_id?: string | null;
+  rendering_template_version?: number | null;
   actions?: ReportCardActions;
+};
+
+export type ReportCardCatalogEntry = {
+  id: string;
+  profile_key?: string;
+  schema_key?: string;
+  version: number;
+  status?: string;
+  spec_sha256?: string;
+};
+
+export type ReportCardBundle = {
+  ok: boolean;
+  request: ReportCardRequest;
+  template: { spec?: unknown; version?: number; status?: string } | null;
+  profile: { id: string; version: number; status?: string } | null;
+  schema: { id: string; version: number; status?: string } | null;
+};
+
+export type ReportCardAuditEntry = {
+  id?: number | string;
+  from_state?: string | null;
+  to_state?: string;
+  actor_id?: string;
+  permission?: string;
+  reason?: string | null;
 };
 
 export const reportCardConfigurationApi = {
@@ -36,7 +70,15 @@ export const reportCardConfigurationApi = {
       { comment },
     ),
   listAudit: (requestId: string) =>
-    api.get<{ ok: boolean; audit: unknown[] }>(`/report-card/requests/${encodeURIComponent(requestId)}/audit`),
+    api.get<{ ok: boolean; audit: ReportCardAuditEntry[] }>(
+      `/report-card/requests/${encodeURIComponent(requestId)}/audit`,
+    ),
+  getBundle: (requestId: string) =>
+    api.get<ReportCardBundle>(`/report-card/requests/${encodeURIComponent(requestId)}/bundle`),
+  getActiveBinding: (modelKey: string) =>
+    api.get<{ ok: boolean; binding: Record<string, unknown> }>(
+      `/report-card/bindings/${encodeURIComponent(modelKey)}`,
+    ),
   getSnapshot: (reportCardId: string, version: number) =>
     api.get<{ ok: boolean; payload: unknown }>(
       `/report-card/publications/${encodeURIComponent(reportCardId)}/snapshot?version=${encodeURIComponent(String(version))}`,
@@ -49,9 +91,21 @@ export const reportCardAdminApi = {
     if (state) params.set("state", state);
     return api.get<{ ok: boolean; requests: ReportCardRequest[] }>(`/report-card/admin/queue?${params.toString()}`);
   },
+  catalog: (schoolId: string) =>
+    api.get<{ ok: boolean; profiles: ReportCardCatalogEntry[]; schemas: ReportCardCatalogEntry[] }>(
+      `/report-card/admin/catalog?schoolId=${encodeURIComponent(schoolId)}`,
+    ),
   getRequest: (requestId: string, schoolId: string) =>
     api.get<{ ok: boolean; request: ReportCardRequest }>(
       `/report-card/admin/requests/${encodeURIComponent(requestId)}?schoolId=${encodeURIComponent(schoolId)}`,
+    ),
+  getBundle: (requestId: string, schoolId: string) =>
+    api.get<ReportCardBundle>(
+      `/report-card/admin/requests/${encodeURIComponent(requestId)}/bundle?schoolId=${encodeURIComponent(schoolId)}`,
+    ),
+  getActiveBinding: (modelKey: string, schoolId: string) =>
+    api.get<{ ok: boolean; binding: Record<string, unknown> }>(
+      `/report-card/admin/bindings/${encodeURIComponent(modelKey)}?schoolId=${encodeURIComponent(schoolId)}`,
     ),
   startReview: (requestId: string, schoolId: string) =>
     api.post<{ ok: boolean; request: ReportCardRequest }>(
@@ -79,7 +133,7 @@ export const reportCardAdminApi = {
       { schoolId, commandId },
     ),
   saveRenderingTemplate: (requestId: string, schoolId: string, spec: unknown) =>
-    api.post<{ ok: boolean; template: unknown }>(
+    api.post<{ ok: boolean; template: { template_id: string; version: number } }>(
       `/report-card/admin/requests/${encodeURIComponent(requestId)}/save-template`,
       { schoolId, spec },
     ),
