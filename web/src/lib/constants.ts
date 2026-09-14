@@ -65,6 +65,7 @@ export const VIEW_PERMISSION_FEATURES: Record<string, string | null> = {
   chartSettings: "Paramètres graphiques",
   academicSettings: "Paramètres Établissement",
   bulletinDesign: "Conception bulletins",
+  reportCardConfiguration: "Conception bulletins",
   students: "Élèves",
   teachers: "Enseignants",
   classes: "Classes",

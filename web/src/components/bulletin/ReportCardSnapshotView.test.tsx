@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { render, screen } from "@testing-library/react";
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 const payload = {
   report_card_id: "rc-1",
@@ -58,10 +61,8 @@ describe("LOT 7 snapshot renderer", () => {
     render(<mod.ReportCardSnapshotView payload={payload} template={template} />);
     expect(screen.getByText("99.00")).toBeInTheDocument();
     expect(screen.queryByText("111")).not.toBeInTheDocument();
-    const src = await import("node:fs").then((fs) =>
-      fs.readFileSync(new URL("./ReportCardSnapshotView.tsx", import.meta.url), "utf8"),
-    );
-    expect(/\+|reduce\(|average|moyenne/i.test(src) && /\braw_score\b/.test(src)).toBe(false);
+    const src = readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), "ReportCardSnapshotView.tsx"), "utf8");
     expect(src.includes("computeReportCard")).toBe(false);
+    expect(/\braw_score\b/.test(src)).toBe(false);
   });
 });

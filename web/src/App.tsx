@@ -76,6 +76,9 @@ import {
   TimetableByTeacherPage,
   TimetableLayout,
   UsersPage,
+  ReportCardSchoolWorkflowPage,
+  ReportCardSuperadminWorkflowPage,
+  VerifyReportCardPage,
 } from "./lazyPages";
 import { ActiveSchoolProvider } from "./context/ActiveSchoolContext";
 
@@ -88,6 +91,7 @@ export default function App() {
       <Route path="/demande-essai" element={<TrialRequestPage />} />
       <Route path="/confidentialite" element={<PrivacyPolicyPage />} />
       <Route path="/suppression-compte" element={<AccountDeletionPage />} />
+      <Route path="/verify/rc/:capability" element={<VerifyReportCardPage />} />
       <Route
         element={
           <ProtectedRoute>
@@ -324,6 +328,14 @@ export default function App() {
           }
         />
         <Route
+          path="/bulletins/modele"
+          element={
+            <PermissionRoute view="bulletins">
+              <ReportCardSchoolWorkflowPage />
+            </PermissionRoute>
+          }
+        />
+        <Route
           path="/bulletins"
           element={
             <PermissionRoute view="bulletins">
@@ -514,6 +526,14 @@ export default function App() {
             element={
               <PermissionRoute view="bulletinDesign">
                 <BulletinDesignPage />
+              </PermissionRoute>
+            }
+          />
+          <Route
+            path="bulletins-configuration"
+            element={
+              <PermissionRoute view="reportCardConfiguration">
+                <ReportCardSuperadminWorkflowPage />
               </PermissionRoute>
             }
           />

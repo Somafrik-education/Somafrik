@@ -528,6 +528,35 @@ app.post("/api/public/trial-requests", trialRequestRateLimiter, asyncHandler(asy
 // No session. No school / user / subscription provisioning. Superadmin inbox only.
 // Padding so nearby authenticated privacy routes are outside the RED snippet window.
 
+{
+  const { registerReportCardHttp } = require("./lib/reportCard/reportCardHttp");
+  const { createReportCardHttpRuntime } = require("./lib/reportCardHttpRuntime");
+  const { resolveReportCardActorFromPrincipal } = require("./lib/reportCardHttpActor");
+  let reportCardRuntime = null;
+  function getReportCardRuntime() {
+    if (!reportCardRuntime) {
+      reportCardRuntime = createReportCardHttpRuntime(repository);
+    }
+    return reportCardRuntime;
+  }
+  registerReportCardHttp(app, {
+    getConfiguration: () => getReportCardRuntime().configuration,
+    getPublication: () => getReportCardRuntime().publication,
+    resolveActor: (req) => resolveReportCardActorFromPrincipal(req.principal),
+    internalAuth: (req, res, next) => requireAuth(req, res, next),
+  });
+}
+
+app.get(/^\/verify\/rc(\/.*)?$/, (req, res, next) => {
+  const { VERIFY_HEADERS } = require("./contracts/reportCard/contract");
+  res.setHeader("Cache-Control", VERIFY_HEADERS.cache_control);
+  res.setHeader("Referrer-Policy", VERIFY_HEADERS.referrer_policy);
+  if (apiOnly) {
+    return res.status(404).json({ ok: false, reason: "not_found" });
+  }
+  return sendWebAppShell(res, next);
+});
+
 app.get("/api/privacy/erasure-requests", requireAuth, requirePermission("GET /api/privacy/erasure-requests"), asyncHandler(async (req, res) => {
   const { sanitizePrivacyRequest } = require("./lib/privacyErasure");
   const schoolCode = String(req.principal.schoolCode ?? "").trim().toUpperCase();
