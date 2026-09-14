@@ -174,6 +174,8 @@ function isNativePushCompatible(executionEnvironment?: string | null, expoGoConf
   return env === "bare" || env === "standalone" || env === "storeClient";
 }
 
+export { isNativePushCompatible };
+
 export function getLastRegisteredPushTokenForTests() {
   return lastRegisteredToken;
 }
