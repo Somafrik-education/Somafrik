@@ -6,13 +6,20 @@ import { demoDiscoveryRoles, demoPageCopy, demoProfiles } from "../data/demoMark
 import { FRANCOPHONE_AFRICA_COUNTRIES } from "../data/francophoneAfricaCountries";
 import { marketingSkipLink } from "../data/marketingContent";
 import { publicDemoEnabled } from "../lib/featureFlags";
-import { API_URL } from "../lib/apiUrl";
 import { navigateToDemo } from "../lib/demoNavigation";
 
 type FormStatus = "idle" | "sending" | "error";
 
 function demoWebOrigin(): string {
   return String(import.meta.env.VITE_DEMO_WEB_ORIGIN || "https://demo.somafrik.app").replace(/\/$/, "");
+}
+
+function demoEntryApiUrl(): string {
+  const value = String(import.meta.env.VITE_DEMO_ENTRY_API_URL || "").trim().replace(/\/$/, "");
+  if (!value) {
+    throw new Error("La démonstration n’est pas encore disponible.");
+  }
+  return value;
 }
 
 export function isAllowedDemoRedirect(value: unknown): value is string {
@@ -45,7 +52,7 @@ export function DemoEntryPage() {
     setMessage("");
 
     try {
-      const response = await fetch(`${API_URL.replace(/\/$/, "")}/api/public/demo-sessions`, {
+      const response = await fetch(`${demoEntryApiUrl()}/api/public/demo-sessions`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
