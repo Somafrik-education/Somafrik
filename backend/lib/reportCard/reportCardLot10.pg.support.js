@@ -87,7 +87,14 @@ CREATE TABLE grades (
   grade_status TEXT NOT NULL DEFAULT 'graded',
   publication_status TEXT NOT NULL DEFAULT 'published',
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT grades_status_check CHECK (
+    grade_status IN ('graded', 'absent', 'excused', 'not_submitted', 'exempt')
+  ),
+  CONSTRAINT grades_status_score_coherence CHECK (
+    (grade_status = 'graded' AND score IS NOT NULL)
+    OR (grade_status <> 'graded' AND score IS NULL)
+  )
 );
 `;
 
@@ -233,7 +240,7 @@ async function seedQualificationFacts(pool, schoolId, bundle) {
       `INSERT INTO grades (
          school_id, student_id, class_id, subject_id, teacher_id, term_id, evaluation_id,
          grade_type, score, max_score, coefficient, grade_status, publication_status
-       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'graded','published')`,
+       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,'published')`,
       [
         schoolId,
         sid,
@@ -246,6 +253,7 @@ async function seedQualificationFacts(pool, schoolId, bundle) {
         applicable ? fact.raw_score : null,
         maxScore,
         applicable ? 1 : 0,
+        applicable ? "graded" : "exempt",
       ]
     );
   }
