@@ -11,14 +11,13 @@ const QRCode = require("qrcode");
 const { PNG } = require("pngjs");
 const jsQR = require("jsqr");
 const { PRINT_CONTRACT } = require("../../contracts/reportCard/contract");
+const { normalizeRenderingTemplate } = require("./renderingTemplate");
 
 const TEMPLATE_DIR = path.join(__dirname, "../../templates/reportCard");
 const PRINT_FONT_FAMILY = "SomafrikReportCard";
 const PRINT_FONT_PATH = path.join(TEMPLATE_DIR, "fonts/LiberationSans-Regular.ttf");
 const QR_PRINT_MM = 30;
 const QR_DPI = 300;
-const SECTION_ID_RE = /^[A-Z][A-Z0-9_]{0,31}$/;
-const SECTION_SOURCES = Object.freeze(["cells", "slots", "presence"]);
 
 class ReportCardPdfError extends Error {
   constructor(code, message = code) {
@@ -40,25 +39,6 @@ function escapeHtml(value) {
 function attr(name, value) {
   if (value == null || value === "") return "";
   return ` ${name}="${escapeHtml(value)}"`;
-}
-
-function isForbiddenBranchKey(key) {
-  const compact = String(key).replace(/_/g, "").toLowerCase();
-  return compact === "country" || compact === "countryid" || compact === "countrycode" || compact === "isocode" || compact === "school" || compact === "schoolid" || compact === "schoolname";
-}
-
-function rejectCountrySchoolKeys(value) {
-  if (value == null || typeof value !== "object") return;
-  if (Array.isArray(value)) {
-    for (const item of value) rejectCountrySchoolKeys(item);
-    return;
-  }
-  for (const key of Object.keys(value)) {
-    if (isForbiddenBranchKey(key)) {
-      throw new ReportCardPdfError("COUNTRY_SCHOOL_BRANCH_FORBIDDEN", `forbidden key ${key}`);
-    }
-    rejectCountrySchoolKeys(value[key]);
-  }
 }
 
 function decodeQrPng(pngBuffer) {
@@ -116,62 +96,6 @@ function presenceLabel(entry) {
     (part) => part != null && part !== ""
   );
   return parts.join(" ");
-}
-
-function normalizeRenderingTemplate(raw) {
-  if (raw === undefined) return null;
-  if (raw == null) {
-    throw new ReportCardPdfError("RENDERING_TEMPLATE_REQUIRED");
-  }
-  if (typeof raw !== "object" || Array.isArray(raw)) {
-    throw new ReportCardPdfError("RENDERING_TEMPLATE_INVALID");
-  }
-  rejectCountrySchoolKeys(raw);
-  if (raw.qr_required === false) {
-    throw new ReportCardPdfError("QR_REQUIRED");
-  }
-  const paper = raw.paper == null || raw.paper === "" ? "A4" : String(raw.paper);
-  const orientation = raw.orientation == null || raw.orientation === "" ? "portrait" : String(raw.orientation);
-  if (paper !== "A4" || orientation !== "portrait") {
-    throw new ReportCardPdfError("RENDERING_TEMPLATE_INVALID");
-  }
-  const sectionsIn = Array.isArray(raw.sections) ? raw.sections : null;
-  if (!sectionsIn || sectionsIn.length < 1) {
-    throw new ReportCardPdfError("RENDERING_TEMPLATE_INVALID");
-  }
-  const seenIds = new Set();
-  const seenOrders = new Set();
-  const sections = sectionsIn.map((section, index) => {
-    if (!section || typeof section !== "object" || Array.isArray(section)) {
-      throw new ReportCardPdfError("RENDERING_TEMPLATE_INVALID");
-    }
-    const id = String(section.id || "").trim();
-    if (!SECTION_ID_RE.test(id) || seenIds.has(id)) {
-      throw new ReportCardPdfError("RENDERING_TEMPLATE_INVALID");
-    }
-    seenIds.add(id);
-    const order = section.order == null ? index + 1 : Number(section.order);
-    if (!Number.isInteger(order) || order < 1 || seenOrders.has(order)) {
-      throw new ReportCardPdfError("RENDERING_TEMPLATE_INVALID");
-    }
-    seenOrders.add(order);
-    const source = String(section.source || "").trim();
-    if (!SECTION_SOURCES.includes(source)) {
-      throw new ReportCardPdfError("RENDERING_TEMPLATE_INVALID");
-    }
-    const label = String(section.label ?? "").trim();
-    if (!label) {
-      throw new ReportCardPdfError("RENDERING_TEMPLATE_INVALID");
-    }
-    return Object.freeze({ id, order, source, label });
-  });
-  sections.sort((left, right) => left.order - right.order || left.id.localeCompare(right.id));
-  return Object.freeze({
-    paper,
-    orientation,
-    qr_required: true,
-    sections: Object.freeze(sections),
-  });
 }
 
 function renderCellRows(student) {
@@ -446,6 +370,7 @@ function createReportCardPdf({ publication, pdfDriver } = {}) {
 module.exports = {
   createReportCardPdf,
   ReportCardPdfError,
+  normalizeRenderingTemplate,
   QR_PRINT_MM,
   PRINT_FONT_FAMILY,
 };

@@ -34,6 +34,8 @@ const EXTRA_SCAN_FILES = Object.freeze([
   "backend/lib/reportCard/reportCardPdf.js",
   "backend/db/reportCardPublicationSql.js",
   "backend/db/reportCardPublicationPgStore.js",
+  "backend/db/reportCardConfigurationSql.js",
+  "backend/db/reportCardConfigurationPgStore.js",
 ]);
 
 const SKIP_NAMES = new Set([

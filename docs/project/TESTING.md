@@ -64,6 +64,7 @@ Fichiers `*.test.js` exécutés via scripts `verify:*` (pas de runner Jest dédi
 - moteur bulletin LOT 3 : `backend/lib/reportCard/reportCardEngine*.test.js` (`npm run verify:report-card-lot3`)
 - snapshot/publication bulletin LOT 4 : `backend/lib/reportCard/reportCardPublication*.test.js` (`npm run verify:report-card-lot4`)
 - PDF/QR imprimable bulletin LOT 5 : `backend/lib/reportCard/reportCardPdf*.test.js` (`npm run verify:report-card-lot5`)
+- configuration bulletin LOT 6 : `backend/lib/reportCard/reportCardConfiguration*.test.js` (`npm run verify:report-card-lot6`)
 
 ```bash
 npm run verify:notes-sync

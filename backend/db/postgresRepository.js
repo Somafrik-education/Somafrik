@@ -131,6 +131,7 @@ class PostgresRepository {
     await this.ensureAcademicRuleProfilesCanonicalSchema();
     await this.ensureReportCardSchemasCanonicalSchema();
     await this.ensureReportCardPublicationCanonicalSchema();
+    await this.ensureReportCardConfigurationCanonicalSchema();
     await this.runSchoolSettingsCanonicalBoot();
     await this.runDocumentsExamsCanonicalBoot();
     if (shouldSeedDemoData()) {
@@ -897,6 +898,11 @@ class PostgresRepository {
   async ensureReportCardPublicationCanonicalSchema() {
     const { REPORT_CARD_PUBLICATION_SQL } = require("./reportCardPublicationSql");
     await this.query(REPORT_CARD_PUBLICATION_SQL);
+  }
+
+  async ensureReportCardConfigurationCanonicalSchema() {
+    const { REPORT_CARD_CONFIGURATION_SQL } = require("./reportCardConfigurationSql");
+    await this.query(REPORT_CARD_CONFIGURATION_SQL);
   }
 
   getEvaluationTypesStore() {
