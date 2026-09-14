@@ -1,7 +1,7 @@
 "use strict";
 
 /**
- * LOT 10 — preuves publication / PDF / verify / correction sur les qualifications A/B.
+ * LOT 10 — preuves publication / PDF / verify / correction sur les qualifications A et B.
  */
 
 const test = require("node:test");
@@ -25,11 +25,8 @@ const { createReportCardSchemaStore } = require("./reportCardSchemaStore");
 const { createReportCardConfiguration, createInMemoryConfigurationPersistence } = require("./reportCardConfiguration");
 const { registerReportCardHttp } = require("./reportCardHttp");
 
-const SCHOOL_A = "school-a";
-const SCHOOL_B = "school-b";
-const TENANT_A = { schoolId: SCHOOL_A, actorSchoolId: SCHOOL_A };
-const TENANT_B = { schoolId: SCHOOL_B, actorSchoolId: SCHOOL_B };
 const ROOT = path.resolve(__dirname, "../../..");
+const CATALOG_DIR = path.join(__dirname, "qualification");
 
 function loadLot10() {
   try {
@@ -43,6 +40,38 @@ function requireLot10() {
   const lot10 = loadLot10();
   assert.ok(lot10 && typeof lot10.loadQualification === "function", "RED: reportCardQualification missing");
   return lot10;
+}
+
+function catalogFileFor(id) {
+  for (const name of fs.readdirSync(CATALOG_DIR)) {
+    if (!name.endsWith(".json")) continue;
+    const abs = path.join(CATALOG_DIR, name);
+    const raw = JSON.parse(fs.readFileSync(abs, "utf8"));
+    if (raw && raw.id === id) return abs;
+  }
+  return null;
+}
+
+function loadStaticGolden(id) {
+  const catalogFile = catalogFileFor(id);
+  assert.ok(catalogFile, `RED: catalog fixture missing for ${id}`);
+  const expectedFile = path.join(CATALOG_DIR, "expected", path.basename(catalogFile));
+  assert.equal(fs.existsSync(expectedFile), true, `RED: static golden missing ${expectedFile}`);
+  const golden = JSON.parse(fs.readFileSync(expectedFile, "utf8"));
+  assert.ok(Array.isArray(golden.canonical) && golden.canonical.length > 0, "RED: golden.canonical required");
+  return golden;
+}
+
+function both(lot10) {
+  return [lot10.QUALIFICATION_A, lot10.QUALIFICATION_B].map((id) => {
+    const bundle = lot10.loadQualification(id);
+    return {
+      id,
+      bundle,
+      golden: loadStaticGolden(id),
+      tenant: { schoolId: bundle.tenant.schoolId, actorSchoolId: bundle.tenant.actorSchoolId },
+    };
+  });
 }
 
 function listen(app) {
@@ -91,63 +120,81 @@ function snapshotFromQualification(bundle, reportCardId, { academicYearId, class
   };
 }
 
+function bumpFirstNumericFact(facts) {
+  let done = false;
+  return facts.map((row) => {
+    if (!done && row.raw_score != null && Number.isFinite(Number(row.raw_score))) {
+      done = true;
+      return { ...row, raw_score: Number(row.raw_score) + 1 };
+    }
+    return { ...row };
+  });
+}
+
 test("report-card-lot10-published-snapshot-deterministic", () => {
   const lot10 = requireLot10();
-  const a = lot10.loadQualification(lot10.QUALIFICATION_A);
-  const first = computeReportCard({
-    profile: a.profile,
-    schema: a.schema,
-    facts: a.facts,
-    provenance: a.provenance,
-    tenant: a.tenant,
-  });
-  const second = computeReportCard({
-    profile: a.profile,
-    schema: a.schema,
-    facts: a.facts,
-    provenance: a.provenance,
-    tenant: a.tenant,
-  });
-  assert.equal(canonicalize(lot10.canonicalResult(first)), canonicalize(lot10.canonicalResult(second)));
-  const keys = bootKeys();
-  const publication = createReportCardPublication(keys);
-  const payload = snapshotFromQualification(a, "rc-lot10-a", {
-    academicYearId: "year-a",
-    classId: "class-a",
-  });
-  const published = publication.publish({ tenant: TENANT_A, payload });
-  const again = publication.publish({ tenant: TENANT_A, payload });
-  assert.equal(again.public_id, published.public_id);
-  const rendered = publication.payloadForRender({ tenant: TENANT_A, reportCardId: "rc-lot10-a", version: 1 });
-  assert.equal(rendered.engine_id, ENGINE_ID);
-  assert.equal(rendered.academic_year_id, "year-a");
-  assert.equal(rendered.class_id, "class-a");
+  for (const row of both(lot10)) {
+    const first = computeReportCard({
+      profile: row.bundle.profile,
+      schema: row.bundle.schema,
+      facts: row.bundle.facts,
+      provenance: row.bundle.provenance,
+      tenant: row.bundle.tenant,
+    });
+    const second = computeReportCard({
+      profile: row.bundle.profile,
+      schema: row.bundle.schema,
+      facts: row.bundle.facts,
+      provenance: row.bundle.provenance,
+      tenant: row.bundle.tenant,
+    });
+    assert.equal(canonicalize(lot10.canonicalResult(first)), canonicalize(lot10.canonicalResult(second)));
+    assert.deepEqual(lot10.canonicalResult(first), row.golden.canonical);
+    const keys = bootKeys();
+    const publication = createReportCardPublication(keys);
+    const cardId = `rc-lot10-snap-${row.bundle.modelKey}`;
+    const payload = snapshotFromQualification(row.bundle, cardId, {
+      academicYearId: `year-${row.bundle.modelKey}`,
+      classId: `class-${row.bundle.modelKey}`,
+    });
+    const published = publication.publish({ tenant: row.tenant, payload });
+    const again = publication.publish({ tenant: row.tenant, payload });
+    assert.equal(again.public_id, published.public_id);
+    const rendered = publication.payloadForRender({ tenant: row.tenant, reportCardId: cardId, version: 1 });
+    assert.equal(rendered.engine_id, ENGINE_ID);
+    assert.equal(rendered.academic_year_id, `year-${row.bundle.modelKey}`);
+    assert.equal(rendered.class_id, `class-${row.bundle.modelKey}`);
+    assert.deepEqual(lot10.canonicalResult(rendered), row.golden.canonical);
+  }
 });
 
 test("report-card-lot10-pdf-web-mobile-same-snapshot", async () => {
   const lot10 = requireLot10();
-  const a = lot10.loadQualification(lot10.QUALIFICATION_A);
-  const keys = bootKeys();
-  const publication = createReportCardPublication(keys);
-  const payload = snapshotFromQualification(a, "rc-lot10-pdf", {
-    academicYearId: "year-a",
-    classId: "class-a",
-  });
-  publication.publish({ tenant: TENANT_A, payload });
-  const pdf = createReportCardPdf({
-    publication,
-    pdfDriver: async ({ html }) => Buffer.from(`%PDF-mock\n${html}`),
-  });
-  const rendered = await pdf.render({
-    tenant: TENANT_A,
-    reportCardId: "rc-lot10-pdf",
-    version: 1,
-    renderingTemplate: a.template,
-  });
-  assert.equal(rendered.payload.engine_id, ENGINE_ID);
-  const cell = payload.students[0].cells[0];
-  assert.match(rendered.html, new RegExp(String(cell.subject_id)));
-  if (cell.exposed != null) assert.match(rendered.html, new RegExp(String(cell.exposed)));
+  for (const row of both(lot10)) {
+    const keys = bootKeys();
+    const publication = createReportCardPublication(keys);
+    const cardId = `rc-lot10-pdf-${row.bundle.modelKey}`;
+    const payload = snapshotFromQualification(row.bundle, cardId, {
+      academicYearId: `year-${row.bundle.modelKey}`,
+      classId: `class-${row.bundle.modelKey}`,
+    });
+    publication.publish({ tenant: row.tenant, payload });
+    const pdf = createReportCardPdf({
+      publication,
+      pdfDriver: async ({ html }) => Buffer.from(`%PDF-mock\n${html}`),
+    });
+    const rendered = await pdf.render({
+      tenant: row.tenant,
+      reportCardId: cardId,
+      version: 1,
+      renderingTemplate: row.bundle.template,
+    });
+    assert.equal(rendered.payload.engine_id, ENGINE_ID);
+    assert.deepEqual(lot10.canonicalResult(rendered.payload), row.golden.canonical);
+    const cell = payload.students[0].cells[0];
+    assert.match(rendered.html, new RegExp(String(cell.subject_id)));
+    if (cell.exposed != null) assert.match(rendered.html, new RegExp(String(cell.exposed)));
+  }
   const webView = fs.readFileSync(path.join(ROOT, "web/src/components/bulletin/ReportCardSnapshotView.tsx"), "utf8");
   assert.match(webView, /payload\.students/);
   assert.equal(webView.includes("computeReportCard"), false);
@@ -158,95 +205,116 @@ test("report-card-lot10-pdf-web-mobile-same-snapshot", async () => {
 
 test("report-card-lot10-verify-authenticates-published-version", async () => {
   const lot10 = requireLot10();
-  const a = lot10.loadQualification(lot10.QUALIFICATION_A);
-  const keys = bootKeys();
-  const publication = createReportCardPublication(keys);
-  const payload = snapshotFromQualification(a, "rc-lot10-verify", {
-    academicYearId: "year-a",
-    classId: "class-a",
-  });
-  publication.publish({ tenant: TENANT_A, payload });
-  const url = publication.reprintUrl({ tenant: TENANT_A, reportCardId: "rc-lot10-verify", version: 1 });
-  const capability = String(url).split("/").pop();
-  const app = express();
-  app.use(express.json());
-  registerReportCardHttp(app, {
-    getPublication: () => publication,
-    resolveActor: () => ({
-      actorId: "read-a",
-      actorSchoolId: SCHOOL_A,
-      permissions: ["REPORT_CARD_READ"],
-    }),
-  });
-  const bound = await listen(app);
-  try {
-    const res = await fetch(`${bound.base}/api/public/report-cards/verify`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ capability }),
+  for (const row of both(lot10)) {
+    const keys = bootKeys();
+    const publication = createReportCardPublication(keys);
+    const cardId = `rc-lot10-verify-${row.bundle.modelKey}`;
+    const payload = snapshotFromQualification(row.bundle, cardId, {
+      academicYearId: `year-${row.bundle.modelKey}`,
+      classId: `class-${row.bundle.modelKey}`,
     });
-    const body = await res.json();
-    assert.equal(res.status, 200, JSON.stringify(body));
-    assert.equal(body.ok, true);
-    assert.equal(body.verification_status, "authentic");
-    assert.equal(body.payload.engine_id, ENGINE_ID);
-    assert.equal(body.payload.academic_year_id, "year-a");
-    assert.deepEqual(lot10.canonicalResult(body.payload), lot10.canonicalResult(payload));
-  } finally {
-    await bound.close();
+    publication.publish({ tenant: row.tenant, payload });
+    const url = publication.reprintUrl({ tenant: row.tenant, reportCardId: cardId, version: 1 });
+    const capability = String(url).split("/").pop();
+    const app = express();
+    app.use(express.json());
+    registerReportCardHttp(app, {
+      getPublication: () => publication,
+      resolveActor: () => ({
+        actorId: `read-${row.bundle.modelKey}`,
+        actorSchoolId: row.tenant.schoolId,
+        permissions: ["REPORT_CARD_READ"],
+      }),
+    });
+    const bound = await listen(app);
+    try {
+      const res = await fetch(`${bound.base}/api/public/report-cards/verify`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ capability }),
+      });
+      const body = await res.json();
+      assert.equal(res.status, 200, JSON.stringify(body));
+      assert.equal(body.ok, true);
+      assert.equal(body.verification_status, "authentic");
+      assert.equal(body.payload.engine_id, ENGINE_ID);
+      assert.equal(body.payload.academic_year_id, `year-${row.bundle.modelKey}`);
+      assert.deepEqual(lot10.canonicalResult(body.payload), row.golden.canonical);
+      assert.deepEqual(lot10.canonicalResult(body.payload), lot10.canonicalResult(payload));
+    } finally {
+      await bound.close();
+    }
   }
 });
 
 test("report-card-lot10-correction-pins-qualified-provenance", async () => {
   const lot10 = requireLot10();
-  const a = lot10.loadQualification(lot10.QUALIFICATION_A);
-  const keys = bootKeys();
-  const publication = createReportCardPublication(keys);
-  const payload = snapshotFromQualification(a, "rc-lot10-corr", {
-    academicYearId: "year-a",
-    classId: "class-a",
-  });
-  publication.publish({ tenant: TENANT_A, payload });
-  const liveFacts = a.facts.map((row) =>
-    row.score_component_id === "COMPONENT_PERIOD" && row.subject_id === a.facts[0].subject_id
-      ? { ...row, raw_score: row.raw_score + 1 }
-      : row
-  );
-  const correction = createReportCardCorrection({
-    publication,
-    getFacts: async () => liveFacts,
-    getProfile: async () => a.profile,
-    getSchema: async () => a.schema,
-  });
-  await correction.correct({
-    tenant: TENANT_A,
-    actor: { actorId: "corr", actorSchoolId: SCHOOL_A, permissions: ["REPORT_CARD_CORRECT"] },
-    reportCardId: "rc-lot10-corr",
-    sourceVersion: 1,
-    reason: "Qualification A",
-    commandId: "cmd-lot10-a",
-  });
-  const v2 = publication.payloadForRender({ tenant: TENANT_A, reportCardId: "rc-lot10-corr", version: 2 });
-  assert.equal(v2.published_snapshot_version, 2);
-  assert.deepEqual(v2.provenance.profile, payload.provenance.profile);
-  assert.deepEqual(v2.provenance.schema, payload.provenance.schema);
-  assert.deepEqual(v2.provenance.template, payload.provenance.template);
-  assert.equal(v2.academic_year_id, "year-a");
-  assert.equal(v2.class_id, "class-a");
+  for (const row of both(lot10)) {
+    const keys = bootKeys();
+    const publication = createReportCardPublication(keys);
+    const cardId = `rc-lot10-corr-${row.bundle.modelKey}`;
+    const yearId = `year-${row.bundle.modelKey}`;
+    const classId = `class-${row.bundle.modelKey}`;
+    const payload = snapshotFromQualification(row.bundle, cardId, { academicYearId: yearId, classId });
+    publication.publish({ tenant: row.tenant, payload });
+    const liveFacts = bumpFirstNumericFact(row.bundle.facts);
+    const correction = createReportCardCorrection({
+      publication,
+      getFacts: async () => liveFacts,
+      getProfile: async () => row.bundle.profile,
+      getSchema: async () => row.bundle.schema,
+    });
+    await correction.correct({
+      tenant: row.tenant,
+      actor: {
+        actorId: `corr-${row.bundle.modelKey}`,
+        actorSchoolId: row.tenant.schoolId,
+        permissions: ["REPORT_CARD_CORRECT"],
+      },
+      reportCardId: cardId,
+      sourceVersion: 1,
+      reason: `Qualification ${row.bundle.modelKey}`,
+      commandId: `cmd-lot10-${row.bundle.modelKey}`,
+    });
+    const v2 = publication.payloadForRender({ tenant: row.tenant, reportCardId: cardId, version: 2 });
+    assert.equal(v2.published_snapshot_version, 2);
+    assert.deepEqual(v2.provenance.profile, payload.provenance.profile);
+    assert.deepEqual(v2.provenance.schema, payload.provenance.schema);
+    assert.deepEqual(v2.provenance.template, payload.provenance.template);
+    assert.equal(v2.academic_year_id, yearId);
+    assert.equal(v2.class_id, classId);
+    assert.notDeepEqual(lot10.canonicalResult(v2), row.golden.canonical);
+  }
 });
 
 test("report-card-lot10-tenant-isolation", () => {
   const lot10 = requireLot10();
-  const a = lot10.loadQualification(lot10.QUALIFICATION_A);
   const keys = bootKeys();
   const publication = createReportCardPublication(keys);
-  const payload = snapshotFromQualification(a, "rc-lot10-iso", {
-    academicYearId: "year-a",
-    classId: "class-a",
-  });
-  publication.publish({ tenant: TENANT_A, payload });
+  const rows = both(lot10);
+  for (const row of rows) {
+    const payload = snapshotFromQualification(row.bundle, `rc-lot10-iso-${row.bundle.modelKey}`, {
+      academicYearId: `year-${row.bundle.modelKey}`,
+      classId: `class-${row.bundle.modelKey}`,
+    });
+    publication.publish({ tenant: row.tenant, payload });
+  }
   assert.throws(
-    () => publication.payloadForRender({ tenant: TENANT_B, reportCardId: "rc-lot10-iso", version: 1 }),
+    () =>
+      publication.payloadForRender({
+        tenant: rows[1].tenant,
+        reportCardId: `rc-lot10-iso-${rows[0].bundle.modelKey}`,
+        version: 1,
+      }),
+    (err) => err && (err.code === "TENANT_MISMATCH" || err.code === "PUBLICATION_NOT_FOUND")
+  );
+  assert.throws(
+    () =>
+      publication.payloadForRender({
+        tenant: rows[0].tenant,
+        reportCardId: `rc-lot10-iso-${rows[1].bundle.modelKey}`,
+        version: 1,
+      }),
     (err) => err && (err.code === "TENANT_MISMATCH" || err.code === "PUBLICATION_NOT_FOUND")
   );
 });
@@ -254,61 +322,122 @@ test("report-card-lot10-tenant-isolation", () => {
 test("report-card-lot10-initial-publication-stamps-class-year", async () => {
   const lot10 = requireLot10();
   assert.equal(typeof lot10.activateQualificationBinding, "function");
-  const a = lot10.loadQualification(lot10.QUALIFICATION_A);
+  for (const row of both(lot10)) {
+    const schoolId = row.tenant.schoolId;
+    const keys = bootKeys();
+    const profileStore = createAcademicRuleProfileStore();
+    const schemaStore = createReportCardSchemaStore();
+    const createdP = profileStore.createProfile({
+      schoolId,
+      actorSchoolId: schoolId,
+      profileKey: row.bundle.modelKey,
+      spec: row.bundle.profile,
+      activate: true,
+    });
+    const createdS = schemaStore.createSchema({
+      schoolId,
+      actorSchoolId: schoolId,
+      schemaKey: row.bundle.modelKey,
+      spec: row.bundle.schema,
+      activate: true,
+    });
+    const configuration = createReportCardConfiguration({
+      profileStore,
+      schemaStore,
+      persistence: createInMemoryConfigurationPersistence(),
+    });
+    const bound = await lot10.activateQualificationBinding(configuration, schoolId, {
+      modelKey: row.bundle.modelKey,
+      profile: { id: createdP.profile.id, version: createdP.version.version },
+      schema: { id: createdS.schema.id, version: createdS.version.version },
+      templateSpec: row.bundle.template,
+    });
+    const publication = createReportCardPublication(keys);
+    const factsStore = createMemoryFactsStore([
+      {
+        schoolId,
+        facts: row.bundle.facts,
+      },
+    ]);
+    const classId = `class-${row.bundle.modelKey}`;
+    const academicYearId = `year-${row.bundle.modelKey}`;
+    factsStore.resolveCohort = ({ classId: requestedClass, academicYearId: requestedYear }) => {
+      if (requestedClass === classId && requestedYear === academicYearId) {
+        return { classId, academicYearId };
+      }
+      return null;
+    };
+    const initial = createReportCardInitialPublication({ publication, factsStore, configuration });
+    await initial.publishInitial({
+      tenant: row.tenant,
+      reportCardId: `rc-lot10-init-${row.bundle.modelKey}`,
+      classId,
+      academicYearId,
+      modelKey: row.bundle.modelKey,
+    });
+    const v1 = publication.payloadForRender({
+      tenant: row.tenant,
+      reportCardId: `rc-lot10-init-${row.bundle.modelKey}`,
+      version: 1,
+    });
+    assert.equal(v1.academic_year_id, academicYearId);
+    assert.equal(v1.class_id, classId);
+    assert.equal(v1.provenance.profile.id, createdP.profile.id);
+    assert.equal(v1.provenance.schema.id, createdS.schema.id);
+    assert.equal(v1.provenance.template.id, bound.template.template_id);
+    assert.equal(v1.provenance.template.spec_sha256, bound.template.spec_sha256);
+    assert.deepEqual(lot10.canonicalResult(v1), row.golden.canonical);
+  }
+});
+
+test("report-card-lot10-a-b-no-mix", () => {
+  const lot10 = requireLot10();
+  const rows = both(lot10);
+  const [rowA, rowB] = rows;
+  assert.notEqual(canonicalize(rowA.golden.canonical), canonicalize(rowB.golden.canonical));
+  assert.throws(
+    () =>
+      computeReportCard({
+        profile: rowA.bundle.profile,
+        schema: rowA.bundle.schema,
+        facts: rowB.bundle.facts,
+        provenance: rowA.bundle.provenance,
+        tenant: rowA.bundle.tenant,
+      }),
+    (err) => err && err.code === "INVALID_FACTS"
+  );
+  assert.throws(
+    () =>
+      computeReportCard({
+        profile: rowB.bundle.profile,
+        schema: rowB.bundle.schema,
+        facts: rowA.bundle.facts,
+        provenance: rowB.bundle.provenance,
+        tenant: rowB.bundle.tenant,
+      }),
+    (err) => err && err.code === "INVALID_FACTS"
+  );
   const keys = bootKeys();
-  const profileStore = createAcademicRuleProfileStore();
-  const schemaStore = createReportCardSchemaStore();
-  const createdP = profileStore.createProfile({
-    schoolId: SCHOOL_A,
-    actorSchoolId: SCHOOL_A,
-    profileKey: "qual-a",
-    spec: a.profile,
-    activate: true,
-  });
-  const createdS = schemaStore.createSchema({
-    schoolId: SCHOOL_A,
-    actorSchoolId: SCHOOL_A,
-    schemaKey: "qual-a",
-    spec: a.schema,
-    activate: true,
-  });
-  const configuration = createReportCardConfiguration({
-    profileStore,
-    schemaStore,
-    persistence: createInMemoryConfigurationPersistence(),
-  });
-  const bound = await lot10.activateQualificationBinding(configuration, SCHOOL_A, {
-    modelKey: a.modelKey,
-    profile: { id: createdP.profile.id, version: createdP.version.version },
-    schema: { id: createdS.schema.id, version: createdS.version.version },
-    templateSpec: a.template,
-  });
   const publication = createReportCardPublication(keys);
-  const factsStore = createMemoryFactsStore([
-    {
-      schoolId: SCHOOL_A,
-      facts: a.facts,
-    },
-  ]);
-  factsStore.resolveCohort = ({ classId, academicYearId }) => {
-    if (classId === "class-a" && academicYearId === "year-a") {
-      return { classId, academicYearId };
-    }
-    return null;
-  };
-  const initial = createReportCardInitialPublication({ publication, factsStore, configuration });
-  await initial.publishInitial({
-    tenant: TENANT_A,
-    reportCardId: "rc-lot10-init",
-    classId: "class-a",
-    academicYearId: "year-a",
-    modelKey: a.modelKey,
+  const payloadA = snapshotFromQualification(rowA.bundle, "rc-lot10-mix-a", {
+    academicYearId: "year-qual-a",
+    classId: "class-qual-a",
   });
-  const v1 = publication.payloadForRender({ tenant: TENANT_A, reportCardId: "rc-lot10-init", version: 1 });
-  assert.equal(v1.academic_year_id, "year-a");
-  assert.equal(v1.class_id, "class-a");
-  assert.equal(v1.provenance.profile.id, createdP.profile.id);
-  assert.equal(v1.provenance.schema.id, createdS.schema.id);
-  assert.equal(v1.provenance.template.id, bound.template.template_id);
-  assert.equal(v1.provenance.template.spec_sha256, bound.template.spec_sha256);
+  const payloadB = snapshotFromQualification(rowB.bundle, "rc-lot10-mix-b", {
+    academicYearId: "year-qual-b",
+    classId: "class-qual-b",
+  });
+  publication.publish({ tenant: rowA.tenant, payload: payloadA });
+  publication.publish({ tenant: rowB.tenant, payload: payloadB });
+  const renderedA = publication.payloadForRender({ tenant: rowA.tenant, reportCardId: "rc-lot10-mix-a", version: 1 });
+  const renderedB = publication.payloadForRender({ tenant: rowB.tenant, reportCardId: "rc-lot10-mix-b", version: 1 });
+  assert.deepEqual(lot10.canonicalResult(renderedA), rowA.golden.canonical);
+  assert.deepEqual(lot10.canonicalResult(renderedB), rowB.golden.canonical);
+  assert.notDeepEqual(lot10.canonicalResult(renderedA), rowB.golden.canonical);
+  assert.notDeepEqual(lot10.canonicalResult(renderedB), rowA.golden.canonical);
+  assert.notEqual(renderedA.provenance.template.id, renderedB.provenance.template.id);
+  assert.throws(
+    () => publication.payloadForRender({ tenant: rowB.tenant, reportCardId: "rc-lot10-mix-a", version: 1 }),
+    (err) => err && (err.code === "TENANT_MISMATCH" || err.code === "PUBLICATION_NOT_FOUND")
+  );
 });

@@ -2,7 +2,7 @@
 
 /**
  * LOT 10 — qualification Burundi A/B (même moteur, pas un pack pays).
- * RED : le catalogue `reportCardQualification` n’existe pas encore.
+ * P0-A : oracle canonique figé (fichier expected/), jamais fabriqué par le moteur.
  */
 
 const test = require("node:test");
@@ -19,6 +19,8 @@ const { canonicalize } = require("../../contracts/reportCard/jcs");
 
 const ROOT = path.resolve(__dirname, "../../..");
 const ENGINE_SRC = path.join(__dirname, "reportCardEngine.js");
+const CATALOG_DIR = path.join(__dirname, "qualification");
+const RUNTIME_SRC = path.join(__dirname, "reportCardQualification.js");
 
 function loadLot10() {
   try {
@@ -32,6 +34,26 @@ function requireLot10() {
   const lot10 = loadLot10();
   assert.ok(lot10 && typeof lot10.loadQualification === "function", "RED: reportCardQualification missing");
   return lot10;
+}
+
+function catalogFileFor(id) {
+  for (const name of fs.readdirSync(CATALOG_DIR)) {
+    if (!name.endsWith(".json") || name.includes(".expected.")) continue;
+    const abs = path.join(CATALOG_DIR, name);
+    const raw = JSON.parse(fs.readFileSync(abs, "utf8"));
+    if (raw && raw.id === id) return abs;
+  }
+  return null;
+}
+
+function loadStaticGolden(id) {
+  const catalogFile = catalogFileFor(id);
+  assert.ok(catalogFile, `RED: catalog fixture missing for ${id}`);
+  const expectedFile = path.join(CATALOG_DIR, "expected", path.basename(catalogFile));
+  assert.equal(fs.existsSync(expectedFile), true, `RED: static golden missing ${path.relative(ROOT, expectedFile)}`);
+  const golden = JSON.parse(fs.readFileSync(expectedFile, "utf8"));
+  assert.ok(Array.isArray(golden.canonical) && golden.canonical.length > 0, "RED: golden.canonical required");
+  return { expectedFile, golden };
 }
 
 test("report-card-lot10-burundi-a-profile-schema-valid", () => {
@@ -68,9 +90,25 @@ test("report-card-lot10-burundi-b-profile-schema-valid", () => {
   assert.equal(ex.applicability.subjects.mode, "per_subject");
 });
 
+test("report-card-lot10-canonical-oracle-is-static", () => {
+  const lot10 = requireLot10();
+  const src = fs.readFileSync(RUNTIME_SRC, "utf8");
+  assert.doesNotMatch(src, /computeReportCard/);
+  assert.doesNotMatch(src, /DROP SCHEMA/);
+  assert.doesNotMatch(src, /CREATE DATABASE/);
+  assert.equal(typeof lot10.publishQualificationPg, "undefined");
+  assert.equal(src.includes("publishQualificationPg"), false);
+  for (const id of [lot10.QUALIFICATION_A, lot10.QUALIFICATION_B]) {
+    const { golden } = loadStaticGolden(id);
+    const bundle = lot10.loadQualification(id);
+    assert.deepEqual(bundle.expected.canonical, golden.canonical);
+  }
+});
+
 test("report-card-lot10-burundi-a-canonical-result", () => {
   const lot10 = requireLot10();
   const a = lot10.loadQualification(lot10.QUALIFICATION_A);
+  const { golden } = loadStaticGolden(lot10.QUALIFICATION_A);
   const computed = computeReportCard({
     profile: a.profile,
     schema: a.schema,
@@ -79,13 +117,15 @@ test("report-card-lot10-burundi-a-canonical-result", () => {
     tenant: a.tenant,
   });
   assert.equal(computed.engine_id, ENGINE_ID);
-  assert.deepEqual(lot10.canonicalResult(computed), a.expected.canonical);
+  assert.deepEqual(lot10.canonicalResult(computed), golden.canonical);
+  assert.deepEqual(a.expected.canonical, golden.canonical);
   assert.ok(computed.students[0].cells.some((cell) => cell.score_component_id === "COMPONENT_PERIOD"));
 });
 
 test("report-card-lot10-burundi-b-canonical-result", () => {
   const lot10 = requireLot10();
   const b = lot10.loadQualification(lot10.QUALIFICATION_B);
+  const { golden } = loadStaticGolden(lot10.QUALIFICATION_B);
   const computed = computeReportCard({
     profile: b.profile,
     schema: b.schema,
@@ -94,9 +134,27 @@ test("report-card-lot10-burundi-b-canonical-result", () => {
     tenant: b.tenant,
   });
   assert.equal(computed.engine_id, ENGINE_ID);
-  assert.deepEqual(lot10.canonicalResult(computed), b.expected.canonical);
+  assert.deepEqual(lot10.canonicalResult(computed), golden.canonical);
+  assert.deepEqual(b.expected.canonical, golden.canonical);
   const na = computed.students[0].cells.filter((cell) => cell.kind === "NOT_APPLICABLE");
   assert.ok(na.some((cell) => cell.score_component_id === "EX"));
+});
+
+test("report-card-lot10-canonical-mismatch-fails", () => {
+  const lot10 = requireLot10();
+  const a = lot10.loadQualification(lot10.QUALIFICATION_A);
+  const { golden } = loadStaticGolden(lot10.QUALIFICATION_A);
+  const computed = computeReportCard({
+    profile: a.profile,
+    schema: a.schema,
+    facts: a.facts,
+    provenance: a.provenance,
+    tenant: a.tenant,
+  });
+  const drifted = JSON.parse(JSON.stringify(golden.canonical));
+  drifted[0].cells[0].internal = Number(drifted[0].cells[0].internal) + 99;
+  assert.notDeepEqual(lot10.canonicalResult(computed), drifted);
+  assert.throws(() => assert.deepEqual(lot10.canonicalResult(computed), drifted));
 });
 
 test("report-card-lot10-a-b-same-engine-no-country-branch", () => {
