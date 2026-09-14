@@ -77,6 +77,46 @@ function canonicalResult(computedOrPayload) {
   }));
 }
 
+const SNAPSHOT_DYNAMIC_KEYS = Object.freeze([
+  "published_at",
+  "report_card_id",
+  "academic_year_id",
+  "class_id",
+  "school_id",
+  "public_id",
+  "token",
+  "token_hash",
+  "token_ciphertext",
+  "snapshot_signature",
+  "snapshot_sha256",
+  "canonical_bytes",
+  "signing_key_id",
+  "wrapping_key_id",
+  "verification_status",
+]);
+
+function layerFingerprint(ref) {
+  if (!ref || typeof ref !== "object") return null;
+  return {
+    version: ref.version,
+    spec_sha256: ref.spec_sha256,
+  };
+}
+
+function normalizePublishedSnapshot(payload) {
+  const clone = JSON.parse(JSON.stringify(payload || {}));
+  for (const key of SNAPSHOT_DYNAMIC_KEYS) {
+    delete clone[key];
+  }
+  clone.provenance = {
+    profile: layerFingerprint(clone.provenance && clone.provenance.profile),
+    schema: layerFingerprint(clone.provenance && clone.provenance.schema),
+    template: layerFingerprint(clone.provenance && clone.provenance.template),
+  };
+  clone.students = Array.isArray(clone.students) ? clone.students : [];
+  return clone;
+}
+
 function loadExpected(catalogFile) {
   const expectedFile = path.join(path.dirname(catalogFile), "expected", path.basename(catalogFile));
   if (!fs.existsSync(expectedFile)) {
@@ -90,7 +130,12 @@ function loadExpected(catalogFile) {
     err.code = "QUALIFICATION_EXPECTED_INVALID";
     throw err;
   }
-  return { canonical: expected.canonical };
+  if (!expected.snapshot || !Array.isArray(expected.snapshot.students) || expected.snapshot.students.length < 1) {
+    const err = new Error("QUALIFICATION_EXPECTED_INVALID");
+    err.code = "QUALIFICATION_EXPECTED_INVALID";
+    throw err;
+  }
+  return { canonical: expected.canonical, snapshot: expected.snapshot };
 }
 
 function hydrateQualification(raw, catalogFile) {
@@ -195,8 +240,10 @@ async function activateQualificationBinding(configuration, schoolId, { modelKey,
 module.exports = {
   QUALIFICATION_A,
   QUALIFICATION_B,
+  SNAPSHOT_DYNAMIC_KEYS,
   loadQualification,
   listQualifications,
   canonicalResult,
+  normalizePublishedSnapshot,
   activateQualificationBinding,
 };

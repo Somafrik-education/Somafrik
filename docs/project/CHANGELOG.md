@@ -13,7 +13,7 @@ et ce projet adhère au [Versioning sémantique](https://semver.org/lang/fr/) po
 
 ### Added
 
-- **LOT 10 — Qualification Burundi A/B** : mêmes couches `AcademicRuleProfile` / `ReportCardSchema` / `RenderingTemplate` et moteur `somafrik.report_card.v1` ; catalogue `reportCardQualification` + fixtures A/B + goldens `expected/` indépendants du moteur ; preuves publication/PDF/verify/correction/PG pour A **et** B ; harness PG test-only. Gate `verify:report-card-lot10`. HOLD READY+MERGE.
+- **LOT 10 — Qualification Burundi A/B** : mêmes couches `AcademicRuleProfile` / `ReportCardSchema` / `RenderingTemplate` et moteur `somafrik.report_card.v1` ; catalogue `reportCardQualification` + fixtures A/B + goldens `expected/` (`canonical` et snapshot publié normalisé) indépendants du moteur ; preuves publication/PDF/verify/correction/PG et rendu Web/Mobile pour A **et** B ; harness PG test-only. Gate `verify:report-card-lot10`. HOLD READY+MERGE.
 
 ### Security
 
