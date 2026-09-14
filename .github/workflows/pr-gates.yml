@@ -354,6 +354,10 @@ jobs:
         if: needs.scope.outputs.reportcard == 'true' || needs.scope.outputs.mobile == 'true'
         run: npm run verify:report-card-lot8
 
+      - name: Report card LOT 9 history corrections versions
+        if: needs.scope.outputs.reportcard == 'true' || needs.scope.outputs.mobile == 'true' || needs.scope.outputs.web == 'true'
+        run: npm run verify:report-card-lot9
+
       - name: Planning
         if: needs.scope.outputs.planning == 'true'
         run: |
