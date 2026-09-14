@@ -28,6 +28,8 @@ export const INTERNAL_ROLE_DEFAULT_PERMISSIONS: Record<string, string[]> = {
     "Présences:UPDATE",
     "Notes:READ",
     "Bulletins:READ",
+    "Bulletins:CREATE",
+    "Bulletins:UPDATE",
     "Paiements:READ",
     "Notifications:READ",
     "Announcements:READ",

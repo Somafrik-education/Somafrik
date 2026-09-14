@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
-import { Link, Navigate } from "react-router-dom";
+import { Link, Navigate, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { useData } from "../context/DataContext";
 import { useActiveSchool } from "../context/ActiveSchoolContext";
@@ -210,6 +210,7 @@ export function EntityPage(props: EntityPageProps) {
 
 function EntityPageContent({ entity, mode, classScope, disableCreate = false }: EntityPageProps) {
   const module = getEntityModule(entity);
+  const navigate = useNavigate();
   const { session } = useAuth();
   const { state, update, refresh } = useData();
   const { showToast } = useToast();
@@ -1589,6 +1590,16 @@ function EntityPageContent({ entity, mode, classScope, disableCreate = false }: 
 
   const primaryActions = (
     <>
+        {module.key === "bulletins" && canCreate ? (
+        <Button
+          size="sm"
+          type="button"
+          data-testid="report-card-request-model-cta"
+          onClick={() => navigate("/bulletins/modele")}
+        >
+          Demander un modèle de bulletin
+        </Button>
+      ) : null}
         {module.key === "payments" && financeActions.canCreatePayment ? (
         <Button size="sm" onClick={() => setQuickPaymentOpen(true)}>
           Enregistrer un encaissement

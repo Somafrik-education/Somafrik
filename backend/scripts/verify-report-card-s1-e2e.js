@@ -5,7 +5,7 @@
  * Admin établissement → CTA demande modèle → persistance → artefact → mapping
  * Superadmin → revue → approbation → ACTIVE. RBAC fail-closed + cross-tenant.
  *
- * Aucun mock du workflow métier. PostgreSQL isolé. Pas de page.waitForTimeout().
+ * Aucun mock du workflow métier. PostgreSQL isolé. Interdit : waitForTimeout numérique Playwright.
  */
 const assert = require("node:assert/strict");
 const { spawn, execSync } = require("node:child_process");
@@ -63,15 +63,24 @@ function compatibleSchema() {
   return {
     sections: [
       {
-        id: "SUBJECTS",
+        id: "IDENTITY",
         order: 1,
+        kind: "identity",
+        columns: [{ id: "STUDENT_NAME", order: 1, kind: "identity" }],
+      },
+      {
+        id: "SUBJECTS",
+        order: 2,
         kind: "subject_rows",
+        rows: [{ id: "SUBJECT_LINE", order: 1, kind: "subject" }],
         columns: [
           { id: "COL_TJ", order: 1, kind: "score_component", score_component_id: "TJ" },
-          { id: "COL_T1", order: 2, kind: "period", period_id: "T1" },
+          { id: "COL_EX", order: 2, kind: "score_component", score_component_id: "EX" },
         ],
       },
     ],
+    identity_fields: [{ id: "STUDENT_NAME", order: 1 }],
+    metadata_fields: [{ id: "SCHOOL_YEAR", order: 1 }],
   };
 }
 
@@ -196,14 +205,14 @@ async function prepareDatabase(databaseUrl) {
       `INSERT INTO countries (name, iso_code, phone_code, currency) VALUES ('Burundi', 'BI', '+257', 'BIF') RETURNING id`,
     );
     const schoolA = await pool.query(
-      `INSERT INTO schools (country_id, school_code, name, status, profile_payload)
-       VALUES ($1, $2, 'Lycée Kinshasa E2E', 'active', '{"timezone":"Africa/Kinshasa"}'::jsonb) RETURNING id`,
-      [countryCd.rows[0].id, SCHOOL_A_CODE],
+      `INSERT INTO schools (country_id, school_code, login_code, name, status, profile_payload)
+       VALUES ($1, $2, $3, 'Lycée Kinshasa E2E', 'active', '{"timezone":"Africa/Kinshasa"}'::jsonb) RETURNING id`,
+      [countryCd.rows[0].id, SCHOOL_A_CODE, SCHOOL_A_CODE],
     );
     const schoolB = await pool.query(
-      `INSERT INTO schools (country_id, school_code, name, status, profile_payload)
-       VALUES ($1, $2, 'Lycée Bujumbura E2E', 'active', '{"timezone":"Africa/Bujumbura"}'::jsonb) RETURNING id`,
-      [countryBi.rows[0].id, SCHOOL_B_CODE],
+      `INSERT INTO schools (country_id, school_code, login_code, name, status, profile_payload)
+       VALUES ($1, $2, $3, 'Lycée Bujumbura E2E', 'active', '{"timezone":"Africa/Bujumbura"}'::jsonb) RETURNING id`,
+      [countryBi.rows[0].id, SCHOOL_B_CODE, SCHOOL_B_CODE],
     );
     schoolAId = schoolA.rows[0].id;
     schoolBId = schoolB.rows[0].id;
@@ -238,10 +247,48 @@ async function prepareDatabase(databaseUrl) {
               ($2, 'Premium', 10, 'BIF', 'monthly', 'active', '2026-09-01')`,
       [schoolAId, schoolBId],
     );
+    await pool.query(
+      `INSERT INTO user_roles (user_id, school_id, role_key, status)
+       SELECT id, school_id, role, 'active' FROM users WHERE role IS NOT NULL`,
+    );
   } finally {
     await pool.end();
   }
   return { isolatedUrl, schoolAId, schoolBId };
+}
+
+async function seedSecretaryReadOnly(databaseUrl) {
+  const pool = new Pool({ connectionString: databaseUrl });
+  try {
+    const existing = await pool.query(
+      `SELECT id FROM role_module_permissions
+       WHERE status = 'active' AND upper(role_key) = 'SECRETARY'
+         AND scope_type = 'global' AND module_key = 'report_cards'
+         AND country_id IS NULL AND school_id IS NULL
+       LIMIT 1`,
+    );
+    if (existing.rowCount) {
+      await pool.query(
+        `UPDATE role_module_permissions
+         SET can_create = FALSE, can_read = TRUE, can_update = FALSE, can_delete = FALSE,
+             version = version + 1, updated_by = 'e2e-report-card-s1', updated_at = NOW()
+         WHERE id = $1`,
+        [existing.rows[0].id],
+      );
+    } else {
+      await pool.query(
+        `INSERT INTO role_module_permissions (
+           role_key, scope_type, country_id, school_id, module_key,
+           can_create, can_read, can_update, can_delete, status, version, updated_by
+         ) VALUES (
+           'SECRETARY', 'global', NULL, NULL, 'report_cards',
+           FALSE, TRUE, FALSE, FALSE, 'active', 1, 'e2e-report-card-s1'
+         )`,
+      );
+    }
+  } finally {
+    await pool.end();
+  }
 }
 
 async function seedCatalog(databaseUrl, schoolAId) {
@@ -289,6 +336,35 @@ function submitRequestCta(page) {
   return page
     .getByTestId("report-card-submit-request")
     .or(page.getByRole("button", { name: "Soumettre la demande de modèle" }));
+}
+
+async function expectValue(locator, expected) {
+  await locator.waitFor();
+  const value = await locator.inputValue();
+  assert.equal(value, expected, `valeur champ attendue ${expected}, reçu ${value}`);
+}
+
+function decodeJwtPayload(token) {
+  try {
+    const part = String(token || "").split(".")[1];
+    if (!part) return null;
+    return JSON.parse(Buffer.from(part, "base64url").toString("utf8"));
+  } catch {
+    return null;
+  }
+}
+
+function isReportCardCreatePost(response) {
+  let pathname = "";
+  try {
+    pathname = new URL(response.url()).pathname;
+  } catch {
+    pathname = response.url();
+  }
+  return (
+    response.request().method() === "POST" &&
+    pathname === "/api/report-card/requests"
+  );
 }
 
 async function loginAsSchool(page, identifier, password, schoolCode) {
@@ -364,6 +440,10 @@ async function openBulletinsFromNav(page) {
   await page.waitForURL(/\/bulletins\/?$/, { timeout: 20000 });
 }
 
+async function waitVisibleText(page, text) {
+  await page.getByText(text).first().waitFor();
+}
+
 async function waitWorkflowState(page, status) {
   await page.locator(`li[data-workflow-state="${status}"]`).waitFor({ timeout: 20000 });
 }
@@ -394,6 +474,10 @@ async function runBrowserScenarios({ schoolAId }) {
   const context = await browser.newContext({ viewport: { width: 1280, height: 800 } });
   const page = await context.newPage();
   page.setDefaultTimeout(20000);
+  page.on("response", (response) => {
+    if (!response.url().includes("/report-card/") || response.ok()) return;
+    console.error(`http ${response.status()} ${response.request().method()} ${response.url()}`);
+  });
   const state = {
     requestId: "",
     artifactId: "",
@@ -416,29 +500,47 @@ async function runBrowserScenarios({ schoolAId }) {
       await page.waitForURL(/\/bulletins\/modele\/?$/, { timeout: 15000 });
       const year = page.getByTestId("report-card-academic-year").or(page.getByText(ACADEMIC_YEAR_NAME));
       await year.first().waitFor({ timeout: 15000 });
-      const modelInput = page.getByLabel(/clé modèle/i);
+      const modelInput = page.getByTestId("report-card-model-key").or(page.getByLabel(/clé modèle/i));
       await modelInput.waitFor();
       await modelInput.fill(MODEL_KEY);
-      const description = page.getByLabel(/^Description$/i);
+      await expectValue(modelInput, MODEL_KEY);
+      const description = page.getByTestId("report-card-model-description").or(page.getByLabel(/^Description$/i));
       await description.fill("Demande E2E S1 isolée");
+      const tokenBefore = await sessionToken(page);
+      const jwt = decodeJwtPayload(tokenBefore);
+      const sessionPerms = await page.evaluate(() => {
+        try {
+          const parsed = JSON.parse(sessionStorage.getItem("somafrik.web.session") || "{}");
+          return parsed.permissions || parsed.user?.permissions || [];
+        } catch {
+          return [];
+        }
+      });
+      const livePerms = [...new Set([...(jwt?.permissions || []), ...sessionPerms])];
+      assert.ok(
+        livePerms.includes("Bulletins:CREATE"),
+        `Admin School sans Bulletins:CREATE: jwt=${JSON.stringify(jwt?.permissions || [])} session=${JSON.stringify(sessionPerms)}`,
+      );
       const submit = submitRequestCta(page);
       await submit.first().waitFor();
-      const created = await clickAndWaitHttp(
-        page,
-        submit.first(),
-        (response) =>
-          response.url().includes("/api/report-card/requests") &&
-          response.request().method() === "POST" &&
-          !response.url().includes("source-artifact"),
+      const created = await clickAndWaitHttp(page, submit.first(), isReportCardCreatePost);
+      const createdBody = await created.text();
+      assert.ok(
+        created.ok(),
+        `submit HTTP ${created.status()} ${created.url()} body=${createdBody} payload=${created.request().postData()}`,
       );
-      assert.ok(created.ok(), `submit HTTP ${created.status()} ${created.url()}`);
-      const payload = await created.json().catch(() => null);
+      let payload = null;
+      try {
+        payload = createdBody ? JSON.parse(createdBody) : null;
+      } catch {
+        payload = null;
+      }
       state.requestId = String(payload?.request?.id || "");
       assert.match(state.requestId, /^[0-9a-f-]{36}$/i, "request id absent de la réponse HTTP");
       await waitWorkflowState(page, "SUBMITTED");
       await page.reload({ waitUntil: "domcontentloaded" });
       await waitWorkflowState(page, "SUBMITTED");
-      await page.getByText(MODEL_KEY).waitFor();
+      await waitVisibleText(page, MODEL_KEY);
       const listed = await request("/report-card/requests", { token: await sessionToken(page) });
       assert.equal(listed.status, 200, JSON.stringify(listed.data));
       const row = (listed.data?.requests || []).find((item) => item.id === state.requestId);
@@ -458,7 +560,7 @@ async function runBrowserScenarios({ schoolAId }) {
       });
       const uploadPdf = await clickAndWaitHttp(
         page,
-        page.getByRole("button", { name: "Envoyer un modèle de bulletin" }).first(),
+        page.getByTestId("report-card-upload-source").or(page.getByRole("button", { name: "Envoyer un modèle de bulletin" })).first(),
         (response) =>
           response.url().includes("/source-artifact") &&
           response.request().method() === "POST" &&
@@ -469,14 +571,14 @@ async function runBrowserScenarios({ schoolAId }) {
       const pdfId = String(pdfBody?.artifact?.artifact_id || "");
       assert.ok(pdfId, "artifact_id PDF absent");
       await page.locator("[data-source-artifact-preview]").waitFor();
-      await page.getByText(pdfId).waitFor();
+      await waitVisibleText(page, pdfId);
       const preview = page.locator(
         "[data-source-artifact-preview] iframe, [data-source-artifact-preview] img, iframe[title^='source-artifact'], img[alt^='source-artifact']",
       );
       await preview.first().waitFor();
       await page.reload({ waitUntil: "domcontentloaded" });
       await page.locator("[data-source-artifact-preview]").waitFor();
-      await page.getByText(pdfId).waitFor();
+      await waitVisibleText(page, pdfId);
 
       await fileInput.setInputFiles({
         name: "modele-e2e.png",
@@ -485,7 +587,7 @@ async function runBrowserScenarios({ schoolAId }) {
       });
       const uploadPng = await clickAndWaitHttp(
         page,
-        page.getByRole("button", { name: "Envoyer un modèle de bulletin" }).first(),
+        page.getByTestId("report-card-upload-source").or(page.getByRole("button", { name: "Envoyer un modèle de bulletin" })).first(),
         (response) =>
           response.url().includes("/source-artifact") &&
           response.request().method() === "POST" &&
@@ -497,9 +599,9 @@ async function runBrowserScenarios({ schoolAId }) {
       state.artifactVersion = String(pngBody?.artifact?.version || "");
       assert.ok(state.artifactId, "artifact_id PNG absent");
       assert.notEqual(state.artifactId, pdfId, "la version PNG doit remplacer l'artefact PDF");
-      await page.getByText(state.artifactId).waitFor();
+      await waitVisibleText(page, state.artifactId);
       await page.reload({ waitUntil: "domcontentloaded" });
-      await page.getByText(state.artifactId).waitFor();
+      await waitVisibleText(page, state.artifactId);
       const current = await request(`/report-card/requests/${encodeURIComponent(state.requestId)}/source-artifact`, {
         token: await sessionToken(page),
       });
@@ -513,11 +615,11 @@ async function runBrowserScenarios({ schoolAId }) {
       await loginAsSuperadmin(page, "superadmin", "1234");
       await page.goto(`${WEB_URL}/parametres/bulletins-configuration`, { waitUntil: "domcontentloaded" });
       await page.getByRole("heading", { name: /configuration bulletins/i }).waitFor();
-      const schoolInput = page.getByLabel(/établissement cible/i);
+      const schoolInput = page.getByTestId("report-card-target-school").or(page.getByLabel(/établissement cible/i));
       await schoolInput.fill(state.schoolId);
       const loaded = await clickAndWaitHttp(
         page,
-        page.getByRole("button", { name: "Charger la file" }),
+        page.getByTestId("report-card-load-queue").or(page.getByRole("button", { name: "Charger la file" })),
         (response) => response.url().includes("/report-card/admin/queue") && response.request().method() === "GET",
       );
       assert.ok(loaded.ok(), `queue HTTP ${loaded.status()}`);
@@ -525,8 +627,8 @@ async function runBrowserScenarios({ schoolAId }) {
       const found = (queueBody?.requests || []).find((item) => item.id === state.requestId);
       assert.ok(found, "Superadmin ne retrouve pas la demande créée");
       assert.equal(found.school_id, state.schoolId);
-      await page.getByText(MODEL_KEY).waitFor();
-      await page.getByText(state.artifactId).waitFor();
+      await waitVisibleText(page, MODEL_KEY);
+      await waitVisibleText(page, state.artifactId);
       const adminPreview = page.locator(
         "iframe[title^='source-artifact'], img[alt^='source-artifact']",
       );
@@ -589,10 +691,10 @@ async function runBrowserScenarios({ schoolAId }) {
       await logout(page);
       await loginAsSuperadmin(page, "superadmin", "1234");
       await page.goto(`${WEB_URL}/parametres/bulletins-configuration`, { waitUntil: "domcontentloaded" });
-      await page.getByLabel(/établissement cible/i).fill(state.schoolId);
+      await page.getByTestId("report-card-target-school").or(page.getByLabel(/établissement cible/i)).fill(state.schoolId);
       await clickAndWaitHttp(
         page,
-        page.getByRole("button", { name: "Charger la file" }),
+        page.getByTestId("report-card-load-queue").or(page.getByRole("button", { name: "Charger la file" })),
         (response) => response.url().includes("/report-card/admin/queue") && response.request().method() === "GET",
       );
       await waitWorkflowState(page, "APPROVED");
@@ -604,15 +706,15 @@ async function runBrowserScenarios({ schoolAId }) {
       assert.ok(activate.ok(), `activate HTTP ${activate.status()}`);
       await waitWorkflowState(page, "ACTIVE");
       await page.reload({ waitUntil: "domcontentloaded" });
-      await page.getByLabel(/établissement cible/i).fill(state.schoolId);
+      await page.getByTestId("report-card-target-school").or(page.getByLabel(/établissement cible/i)).fill(state.schoolId);
       await clickAndWaitHttp(
         page,
-        page.getByRole("button", { name: "Charger la file" }),
+        page.getByTestId("report-card-load-queue").or(page.getByRole("button", { name: "Charger la file" })),
         (response) => response.url().includes("/report-card/admin/queue") && response.request().method() === "GET",
       );
       await waitWorkflowState(page, "ACTIVE");
-      await page.getByText(MODEL_KEY).waitFor();
-      await page.getByText(state.artifactId).waitFor();
+      await waitVisibleText(page, MODEL_KEY);
+      await waitVisibleText(page, state.artifactId);
       const token = await sessionToken(page);
       const again = await request(
         `/report-card/admin/requests/${encodeURIComponent(state.requestId)}?schoolId=${encodeURIComponent(state.schoolId)}`,
@@ -718,6 +820,7 @@ async function main() {
     await waitForUrl(`${apiBase()}/health`, "backend");
     await waitForUrl(WEB_URL, "web");
     await seedCatalog(prepared.isolatedUrl, prepared.schoolAId);
+    await seedSecretaryReadOnly(prepared.isolatedUrl);
     await runBrowserScenarios({ schoolAId: prepared.schoolAId });
     console.log(`OK report-card-s1-e2e (${Date.now() - startedAt}ms)`);
   } catch (error) {

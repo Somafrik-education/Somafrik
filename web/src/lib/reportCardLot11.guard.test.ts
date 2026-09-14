@@ -38,21 +38,22 @@ describe("LOT 11 web guards", () => {
   it("report-card-lot11-web-upload-error-success-persisted", () => {
     const school = readRel("web/src/pages/ReportCardSchoolWorkflowPage.tsx");
     expect(school).toMatch(/Envoyer un modèle de bulletin/);
-    expect(school).toMatch(/source-artifact|sourceArtifact|attachSourceArtifact/);
+    expect(school).toMatch(/source-artifact|sourceArtifact|attachSourceArtifact|ReportCardSourcePreview/);
     expect(school).toMatch(/role="alert"/);
-    expect(school).toMatch(/iframe|img/);
-    expect(school).toMatch(/source-artifact\/content/);
+    expect(school).toMatch(/ReportCardSourcePreview/);
     expect(school.includes("computeReportCard")).toBe(false);
     const api = readRel("web/src/lib/reportCardConfigurationApi.ts");
+    expect(api).toMatch(/source-artifact\/content/);
     expect(api).toMatch(/source-artifact|attachSourceArtifact|uploadSourceArtifact/);
+    const preview = readRel("web/src/components/bulletin/ReportCardSourcePreview.tsx");
+    expect(preview).toMatch(/iframe|img/);
+    expect(preview).toMatch(/getSourceArtifactContent/);
   });
 
   it("report-card-lot11-superadmin-preview-surface", () => {
     const admin = readRel("web/src/pages/ReportCardSuperadminWorkflowPage.tsx");
     expect(admin).toMatch(/Artefact source/);
-    expect(admin).toMatch(/source-artifact|sourceArtifact/);
-    expect(admin).toMatch(/iframe|img/);
-    expect(admin).toMatch(/source-artifact\/content/);
+    expect(admin).toMatch(/source-artifact|sourceArtifact|ReportCardSourcePreview/);
     expect(admin).toMatch(/AcademicRuleProfile|profile_id|Lier le bundle/);
     expect(admin).not.toMatch(/ocr|tesseract|autoExtract/i);
     expect(admin.includes("computeReportCard")).toBe(false);

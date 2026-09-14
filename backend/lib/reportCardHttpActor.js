@@ -1,6 +1,6 @@
 "use strict";
 
-const { isInternalSchoolAlias, isV2SchoolLoginCode } = require("./schoolCodeV2");
+const { isInternalSchoolAlias, isLegacySchoolCodeFormat, isV2SchoolLoginCode } = require("./schoolCodeV2");
 const { getPrincipalStudentIds, principalSessionLabel } = require("./principalStudentIds");
 
 const SUPER_ADMIN_ROLES = new Set(["Super Administrateur Somafrik", "Super Administrateur OKAFRIK"]);
@@ -24,11 +24,17 @@ function isSchoolUuid(value) {
   return UUID_RE.test(String(value || "").trim());
 }
 
+function isPublicSchoolCode(value) {
+  return (
+    isV2SchoolLoginCode(value) || isInternalSchoolAlias(value) || isLegacySchoolCodeFormat(value)
+  );
+}
+
 function schoolRecordId(school) {
   if (!school || typeof school !== "object") return "";
   const id = String(school.id || school.schoolId || school.school_id || "").trim();
   if (!id || id === "*") return "";
-  if (isV2SchoolLoginCode(id) || isInternalSchoolAlias(id)) return "";
+  if (isPublicSchoolCode(id)) return "";
   return id;
 }
 
@@ -39,12 +45,7 @@ function tenantSchoolIdFromPrincipal(principal) {
     if (isSchoolUuid(text)) return text;
   }
   const explicit = String(principal.schoolId || principal.school_id || "").trim();
-  if (
-    explicit &&
-    !isV2SchoolLoginCode(explicit) &&
-    !isInternalSchoolAlias(explicit) &&
-    explicit !== "*"
-  ) {
+  if (explicit && !isPublicSchoolCode(explicit) && explicit !== "*") {
     return explicit;
   }
   return "";
@@ -98,7 +99,7 @@ async function resolveReportCardTenantSchoolId(raw, lookupSchool) {
   const text = String(raw || "").trim();
   if (!text || text === "*") return "";
   if (isSchoolUuid(text)) return text;
-  if (!isV2SchoolLoginCode(text) && !isInternalSchoolAlias(text)) {
+  if (!isPublicSchoolCode(text)) {
     return text;
   }
   if (typeof lookupSchool !== "function") return "";
@@ -109,8 +110,15 @@ async function resolveReportCardTenantSchoolId(raw, lookupSchool) {
 async function resolveReportCardActor(principal, lookupSchool) {
   const actor = resolveReportCardActorFromPrincipal(principal);
   if (!actor || actor.platform?.privileged) return actor;
-  if (actor.actorSchoolId) return actor;
-  const code = String(principal?.effectiveSchoolCode || principal?.schoolCode || "").trim();
+  if (isSchoolUuid(actor.actorSchoolId)) return actor;
+  const code = String(
+    principal?.effectiveSchoolCode ||
+      principal?.schoolCode ||
+      principal?.schoolId ||
+      principal?.school_id ||
+      actor.actorSchoolId ||
+      ""
+  ).trim();
   const resolved = await resolveReportCardTenantSchoolId(code, lookupSchool);
   return { ...actor, actorSchoolId: resolved };
 }

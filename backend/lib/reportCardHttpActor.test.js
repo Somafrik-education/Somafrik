@@ -107,3 +107,32 @@ test("report-card-lot7-actor-lookup-resolves-school-uuid", async () => {
   assert.equal(actor.actorSchoolId, "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee");
   assert.equal(actor.permissions.includes(SUBMIT), true);
 });
+
+test("report-card-s1-legacy-school-code-is-not-tenant-uuid", () => {
+  const actor = resolveReportCardActorFromPrincipal({
+    sub: "admin-a",
+    schoolId: "CD-2026-0001",
+    schoolCode: "CD-2026-0001",
+    role: "Admin School",
+    permissions: ["Bulletins:CREATE", "Bulletins:READ"],
+  });
+  assert.equal(actor.actorSchoolId, "");
+});
+
+test("report-card-s1-legacy-school-code-lookup-resolves-uuid", async () => {
+  const { resolveReportCardActor } = require("./reportCardHttpActor");
+  const actor = await resolveReportCardActor(
+    {
+      sub: "admin-a",
+      schoolId: "CD-2026-0001",
+      schoolCode: "CD-2026-0001",
+      role: "Admin School",
+      permissions: ["Bulletins:CREATE"],
+    },
+    async (code) => {
+      assert.equal(code, "CD-2026-0001");
+      return { id: "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee", school_code: "CD-2026-0001" };
+    }
+  );
+  assert.equal(actor.actorSchoolId, "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee");
+});

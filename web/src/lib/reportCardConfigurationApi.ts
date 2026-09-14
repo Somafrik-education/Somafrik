@@ -1,4 +1,4 @@
-import { api, request } from "../api/client";
+import { api, request, requestBlob } from "../api/client";
 
 export type ReportCardActions = {
   approve?: boolean;
@@ -114,6 +114,8 @@ export const reportCardConfigurationApi = {
         body: file,
       },
     ),
+  getSourceArtifactContent: (requestId: string) =>
+    requestBlob(`/report-card/requests/${encodeURIComponent(requestId)}/source-artifact/content`),
 };
 
 export const reportCardAdminApi = {
@@ -137,6 +139,10 @@ export const reportCardAdminApi = {
   getSourceArtifact: (requestId: string, schoolId: string) =>
     api.get<{ ok: boolean; artifact: ReportCardSourceArtifact }>(
       `/report-card/admin/requests/${encodeURIComponent(requestId)}/source-artifact?schoolId=${encodeURIComponent(schoolId)}`,
+    ),
+  getSourceArtifactContent: (requestId: string, schoolId: string) =>
+    requestBlob(
+      `/report-card/admin/requests/${encodeURIComponent(requestId)}/source-artifact/content?schoolId=${encodeURIComponent(schoolId)}`,
     ),
   getActiveBinding: (modelKey: string, schoolId: string) =>
     api.get<{ ok: boolean; binding: Record<string, unknown> }>(

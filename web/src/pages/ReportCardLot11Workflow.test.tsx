@@ -9,6 +9,7 @@ const attachSourceArtifact = vi.hoisted(() => vi.fn());
 const queue = vi.hoisted(() => vi.fn());
 const catalog = vi.hoisted(() => vi.fn());
 const getSourceArtifact = vi.hoisted(() => vi.fn());
+const getSourceArtifactContent = vi.hoisted(() => vi.fn());
 
 vi.mock("../lib/reportCardConfigurationApi", () => ({
   reportCardConfigurationApi: {
@@ -21,11 +22,13 @@ vi.mock("../lib/reportCardConfigurationApi", () => ({
     getActiveBinding: vi.fn(async () => ({ binding: null })),
     attachSourceArtifact: (...args: unknown[]) => attachSourceArtifact(...args),
     getSourceArtifact: (...args: unknown[]) => getSourceArtifact(...args),
+    getSourceArtifactContent: (...args: unknown[]) => getSourceArtifactContent(...args),
   },
   reportCardAdminApi: {
     queue: (...args: unknown[]) => queue(...args),
     catalog: (...args: unknown[]) => catalog(...args),
     getSourceArtifact: (...args: unknown[]) => getSourceArtifact(...args),
+    getSourceArtifactContent: (...args: unknown[]) => getSourceArtifactContent(...args),
     startReview: vi.fn(),
     startConfiguring: vi.fn(),
     markReadyForReview: vi.fn(),
@@ -33,6 +36,36 @@ vi.mock("../lib/reportCardConfigurationApi", () => ({
     activate: vi.fn(),
     saveRenderingTemplate: vi.fn(),
     bindBundle: vi.fn(),
+  },
+}));
+
+vi.mock("../context/AuthContext", () => ({
+  useAuth: () => ({
+    session: {
+      user: {
+        role: "Admin School",
+        permissions: ["Bulletins:READ", "Bulletins:CREATE", "Bulletins:UPDATE"],
+      },
+    },
+    permissionsReady: true,
+    permissionsBootstrap: "ready",
+    permissionsBootstrapError: null,
+  }),
+}));
+
+vi.mock("../lib/academicYearsApi", () => ({
+  academicYearsApi: {
+    list: vi.fn(async () => [
+      {
+        id: "year-1",
+        schoolCode: "CD-2026-0001",
+        name: "2026-2027",
+        startDate: "2026-09-01",
+        endDate: "2027-07-31",
+        status: "open",
+        isCurrent: true,
+      },
+    ]),
   },
 }));
 
@@ -44,6 +77,10 @@ describe("LOT 11 web workflow", () => {
     queue.mockReset();
     catalog.mockReset();
     getSourceArtifact.mockReset();
+    getSourceArtifactContent.mockReset();
+    getSourceArtifactContent.mockResolvedValue(new Blob(["%PDF-1.4"], { type: "application/pdf" }));
+    vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:http://preview/art-1");
+    vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
     catalog.mockResolvedValue({ profiles: [], schemas: [] });
     listRequests.mockResolvedValue({
       requests: [
@@ -92,9 +129,12 @@ describe("LOT 11 web workflow", () => {
     await waitFor(() => {
       expect(screen.getByText(/art-1|modèle envoyé|artefact/i)).toBeInTheDocument();
     });
+    await waitFor(() => {
+      expect(screen.getByTitle("source-artifact-art-1")).toBeInTheDocument();
+    });
     const preview = screen.getByTitle("source-artifact-art-1");
     expect(preview.tagName.toLowerCase()).toBe("iframe");
-    expect(preview.getAttribute("src")).toMatch(/\/api\/report-card\/requests\/req-1\/source-artifact\/content/);
+    expect(preview.getAttribute("src")).toMatch(/^blob:/);
   });
 
   it("report-card-lot11-superadmin-preview-privileged-only", async () => {
@@ -132,11 +172,12 @@ describe("LOT 11 web workflow", () => {
       expect(screen.getByText(/artefact source/i)).toBeInTheDocument();
     });
     expect(getSourceArtifact).toHaveBeenCalled();
-    expect(screen.getByText(/deadbeef|art-1|modele\.pdf/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/deadbeef|art-1|modele\.pdf/i).length).toBeGreaterThan(0);
+    await waitFor(() => {
+      expect(screen.getByTitle("source-artifact-art-1")).toBeInTheDocument();
+    });
     const preview = screen.getByTitle("source-artifact-art-1");
     expect(preview.tagName.toLowerCase()).toBe("iframe");
-    expect(preview.getAttribute("src")).toMatch(
-      /\/api\/report-card\/admin\/requests\/req-1\/source-artifact\/content\?schoolId=school-a/,
-    );
+    expect(preview.getAttribute("src")).toMatch(/^blob:/);
   });
 });
