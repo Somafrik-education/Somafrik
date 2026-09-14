@@ -160,6 +160,10 @@ function sourceGuards() {
   assert.doesNotMatch(runtime, /registerAuthenticatedPushDevice\(\)\.catch\(\(\) => undefined\)/);
   assert.match(mobile, /push device registration failed/);
   assert.match(mobile, /getLastPushRegistrationOutcome/);
+  assert.doesNotMatch(mobile, /if \(resolvedExpoGoConfig != null\) return false/);
+  assert.match(mobile, /hostUri/);
+  assert.match(mobile, /debuggerHost/);
+  assert.match(mobile, /export function isNativePushCompatible/);
   assert.match(tap, /consumeInitialPushResponse/);
   assert.match(tap, /isAuthenticated/);
   assert.match(tap, /dismissPendingPushNavigation/);

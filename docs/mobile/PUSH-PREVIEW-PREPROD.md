@@ -14,6 +14,20 @@ Diagnostic et contrat P0 (#645). Aucun secret n’est modifié depuis le dépôt
 
 Le profil Mobile `preview` est une métadonnée acceptée par le backend préproduction. Il n’est pas une autorité d’environnement.
 
+## Compatibilité native Expo (SDK 54)
+
+`registerAuthenticatedPushDevice()` refuse Expo Go et les plateformes non Android. Un build EAS Android `preview` réellement natif doit passer cette garde.
+
+| `Constants.executionEnvironment` | Contexte |
+| ----- | ------ |
+| `standalone` | Build EAS preview / release (valeur documentée Expo SDK 54) |
+| `bare` | Projet natif CNG / prebuild EAS |
+| `storeClient` | Expo Go (refusé s’il y a un packager) |
+
+`Constants.expoGoConfig` **n’est pas** un booléen « est Expo Go ». Le getter SDK 54, sur un EmbeddedManifest (APK EAS, `updates` non utilisés), renvoie **l’objet manifeste entier** (non nul). Traiter `expoGoConfig != null` comme Expo Go bloque l’enregistrement preview avant tout `POST /mobile/push-devices`.
+
+Expo Go se détecte uniquement par `hostUri` ou `debuggerHost` non vides. Un `executionEnvironment` vide reste fail-closed.
+
 ## Enregistrement device
 
 `POST /api/mobile/push-devices` lie l’appareil à la session (user + école + `APP_ENV` + `appProfile`).

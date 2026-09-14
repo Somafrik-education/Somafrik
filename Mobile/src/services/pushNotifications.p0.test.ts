@@ -60,6 +60,13 @@ async function main() {
   assert.match(runtimeSrc, /push device registration failed|observePushRegistration/);
   assert.match(mobileSrc, /push device registration failed/);
   assert.match(mobileSrc, /requestPermissionsAsync/);
+  assert.doesNotMatch(
+    mobileSrc,
+    /if \(resolvedExpoGoConfig != null\) return false/,
+    "SDK 54 EmbeddedManifest expoGoConfig must not be treated as Expo Go",
+  );
+  assert.match(mobileSrc, /hostUri/);
+  assert.match(mobileSrc, /debuggerHost/);
 
   const channels: string[] = [];
   let requested = false;
