@@ -20,6 +20,7 @@ const HTTP_STATUS = Object.freeze({
   REQUEST_NOT_FOUND: 404,
   VERSION_NOT_FOUND: 404,
   PUBLICATION_NOT_FOUND: 404,
+  PDF_QR_SCOPE_MISMATCH: 403,
   INVALID_TRANSITION: 409,
   IDEMPOTENCY_CONFLICT: 409,
 });
@@ -88,6 +89,20 @@ async function resolvePublishedTemplate(payload, schoolId, getTemplate) {
   return spec;
 }
 
+function assertPdfQrScopeSafe(unscopedPayload, actor) {
+  if (!Array.isArray(actor.studentIds)) return;
+  const allowed = new Set(actor.studentIds.map((id) => String(id)));
+  const students = Array.isArray(unscopedPayload && unscopedPayload.students)
+    ? unscopedPayload.students
+    : [];
+  const extras = students.filter((row) => {
+    if (!row || typeof row !== "object") return true;
+    const id = row.student_id != null ? row.student_id : row.studentId;
+    return !allowed.has(String(id));
+  });
+  if (extras.length > 0) throw coded("PDF_QR_SCOPE_MISMATCH");
+}
+
 async function consultPublishedSnapshot({ publication, actor, schoolId, reportCardId, version, getTemplate }) {
   if (!publication || typeof publication.lookup !== "function" || typeof publication.payloadForRender !== "function") {
     throw coded("REQUEST_NOT_FOUND");
@@ -97,15 +112,12 @@ async function consultPublishedSnapshot({ publication, actor, schoolId, reportCa
   if (!record || record.verification_status !== VERIFICATION_ACTIVE) {
     throw coded("PUBLICATION_NOT_FOUND");
   }
-  const payload = assertScopedStudents(
-    applyStudentScope(
-      await Promise.resolve(publication.payloadForRender({ tenant, reportCardId, version })),
-      actor
-    ),
-    actor
+  const unscopedPayload = await Promise.resolve(
+    publication.payloadForRender({ tenant, reportCardId, version })
   );
+  const payload = assertScopedStudents(applyStudentScope(unscopedPayload, actor), actor);
   const template = await resolvePublishedTemplate(payload, schoolId, getTemplate);
-  return { payload, template, tenant };
+  return { payload, unscopedPayload, template, tenant };
 }
 
 function isPrivileged(actor) {
@@ -435,7 +447,7 @@ function registerReportCardHttp(app, deps = {}) {
         throw coded("REQUEST_NOT_FOUND");
       }
       const version = Number(req.query.version);
-      const { payload, template, tenant } = await consultPublishedSnapshot({
+      const { payload, unscopedPayload, template, tenant } = await consultPublishedSnapshot({
         publication,
         actor,
         schoolId,
@@ -443,6 +455,7 @@ function registerReportCardHttp(app, deps = {}) {
         version,
         getTemplate,
       });
+      assertPdfQrScopeSafe(unscopedPayload, actor);
       const rendered = await pdf.render({
         tenant,
         reportCardId: req.params.reportCardId,

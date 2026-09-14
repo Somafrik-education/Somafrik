@@ -12,7 +12,7 @@ Namespace inchangé `/api/report-card/...` (pas de collision legacy `/api/report
 
 - `GET /api/report-card/publications` — catalogue tenant-scopé `listCurrent` (publications `ACTIVE` seulement, pas l’outbox, pas de `token_*`).
 - `GET /api/report-card/publications/:reportCardId/snapshot?version=` — snapshot `ACTIVE` + `payloadForRender`, scope élève serveur, template de publication.
-- `GET /api/report-card/publications/:reportCardId/pdf?version=` — PDF LOT 5 injecté (pas `createReportCardPdf` dans le module HTTP LOT 7) avec le même payload scopé et le même `RenderingTemplate`.
+- `GET /api/report-card/publications/:reportCardId/pdf?version=` — PDF LOT 5 injecté (pas `createReportCardPdf` dans le module HTTP LOT 7) avec le même payload scopé et le même `RenderingTemplate`. Le QR réutilise `reprintUrl` (stratégie A, aucun mint). Si le snapshot public contient un élève hors `studentIds`, le PDF est refusé (fail-closed) : pas de QR d’une publication multi-élèves non compatible avec le scope.
 
 `Bulletins:READ` → `REPORT_CARD_READ` + `REPORT_CARD_REPRINT` (consult/réimpression, jamais SUBMIT/APPROVE). Liste/snapshot exigent `REPORT_CARD_READ` ; PDF exige `REPORT_CARD_REPRINT`. Acteurs `student` / `parent_student` : `studentIds` serveur-autoritaire. Superadmin sans tenant école → fail-closed. Cross-tenant et version `SUPERSEDED` → 403/404.
 

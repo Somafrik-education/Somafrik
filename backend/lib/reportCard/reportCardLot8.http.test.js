@@ -468,10 +468,10 @@ test("report-card-lot8-mobile-student-scope-server-authoritative", async () => {
     const ids = (snap.data.payload.students || []).map((row) => row.student_id);
     assert.deepEqual(ids, ["STU-1"]);
     assert.equal(ids.includes("STU-2"), false);
+    const pdfCallsBefore = h.pdfCalls.length;
     const pdf = await h.bin("GET", "/api/report-card/publications/rc-1/pdf?version=1");
-    assert.equal(pdf.status, 200);
-    const pdfStudents = (h.pdfCalls.at(-1).payload.students || []).map((row) => row.student_id);
-    assert.deepEqual(pdfStudents, ["STU-1"]);
+    assert.ok([403, 404].includes(pdf.status));
+    assert.equal(h.pdfCalls.length, pdfCallsBefore);
     h.setActor(parentRead("STU-MISSING"));
     const hidden = await h.json("GET", "/api/report-card/publications");
     assert.equal(hidden.status, 200);
@@ -587,6 +587,19 @@ test("report-card-lot8-mobile-pdf-qr-does-not-leak-other-students", async () => 
     const soloIds = (soloVerified.data.payload.students || []).map((row) => row.student_id);
     assert.deepEqual(soloIds, ["STU-1"]);
     assert.equal(soloIds.includes("STU-2"), false);
+
+    h.setActor({
+      ...parentRead("STU-1"),
+      studentIds: ["STU-1", "STU-2"],
+    });
+    const bothPdf = await h.bin("GET", "/api/report-card/publications/rc-1/pdf?version=1");
+    assert.equal(bothPdf.status, 200);
+    const bothVerified = await h.json("POST", "/api/public/report-cards/verify", {
+      capability: capabilityFromQrUrl(h.pdfCalls.at(-1).qrUrl),
+    });
+    assert.equal(bothVerified.status, 200);
+    const bothIds = (bothVerified.data.payload.students || []).map((row) => row.student_id);
+    assert.deepEqual(bothIds, ["STU-1", "STU-2"]);
 
     const httpSrc = fs.readFileSync(HTTP_SRC, "utf8");
     assert.equal(/\bgenerateToken\b/.test(httpSrc), false);

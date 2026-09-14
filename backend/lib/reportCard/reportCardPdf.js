@@ -332,6 +332,26 @@ function unwrapDriverResult(result) {
   throw new ReportCardPdfError("PDF_RENDER_FAILED");
 }
 
+function studentIdSet(payload) {
+  const ids = new Set();
+  for (const row of Array.isArray(payload && payload.students) ? payload.students : []) {
+    if (!row || typeof row !== "object") continue;
+    const id = row.student_id != null ? row.student_id : row.studentId;
+    if (id != null && String(id) !== "") ids.add(String(id));
+  }
+  return ids;
+}
+
+function sameStudentIds(left, right) {
+  const a = studentIdSet(left);
+  const b = studentIdSet(right);
+  if (a.size !== b.size) return false;
+  for (const id of a) {
+    if (!b.has(id)) return false;
+  }
+  return true;
+}
+
 function createReportCardPdf({ publication, pdfDriver } = {}) {
   if (!publication || typeof publication.payloadForRender !== "function") {
     throw new ReportCardPdfError("PUBLICATION_REQUIRED");
@@ -341,12 +361,12 @@ function createReportCardPdf({ publication, pdfDriver } = {}) {
   function render({ tenant, reportCardId, version, renderingTemplate, payload: providedPayload } = {}) {
     return Promise.resolve().then(() => {
       const template = normalizeRenderingTemplate(renderingTemplate);
-      const payloadSource =
-        providedPayload != null
-          ? providedPayload
-          : publication.payloadForRender({ tenant, reportCardId, version });
-      return thenable(payloadSource, (payload) =>
-        thenable(publication.reprintUrl({ tenant, reportCardId, version }), (url) =>
+      return thenable(publication.payloadForRender({ tenant, reportCardId, version }), (canonicalPayload) => {
+        const payload = providedPayload != null ? providedPayload : canonicalPayload;
+        if (providedPayload != null && !sameStudentIds(providedPayload, canonicalPayload)) {
+          throw new ReportCardPdfError("PDF_QR_SCOPE_MISMATCH");
+        }
+        return thenable(publication.reprintUrl({ tenant, reportCardId, version }), (url) =>
           thenable(buildPrintableQr(url), (qr) => {
             const html = buildHtml(payload, qr, template);
             return thenable(driver({ html, qr, payload }), (raw) => {
@@ -363,8 +383,8 @@ function createReportCardPdf({ publication, pdfDriver } = {}) {
               });
             });
           })
-        )
-      );
+        );
+      });
     });
   }
 
