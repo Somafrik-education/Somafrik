@@ -12,6 +12,12 @@ export type ReportCardPublicationRow = {
   report_card_id: string;
   public_id?: string;
   published_snapshot_version: number;
+  verification_status?: string;
+};
+
+export type ReportCardPublicationSnapshot = {
+  payload: SnapshotPayload;
+  template?: unknown;
 };
 
 export function reportCardPublicationPdfPath(reportCardId: string, version: number | string) {
@@ -30,10 +36,11 @@ export async function listReportCardPublications() {
 }
 
 export async function getReportCardPublicationSnapshot(reportCardId: string, version: number | string) {
-  const data = await httpRequest<{ ok?: boolean; payload?: SnapshotPayload }>(
+  const data = await httpRequest<{ ok?: boolean; payload?: SnapshotPayload; template?: unknown }>(
     reportCardPublicationSnapshotPath(reportCardId, version),
   );
-  return data?.payload ?? null;
+  if (!data?.payload) return null;
+  return { payload: data.payload, template: data.template } satisfies ReportCardPublicationSnapshot;
 }
 
 export { downloadReportCardPdf };

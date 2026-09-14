@@ -27,6 +27,7 @@ import {
   exposedSlot,
   studentDisplayName,
   studentPeriodLabel,
+  type RenderingTemplate,
   type SnapshotPayload,
   type SnapshotStudent,
 } from "../lib/reportCardSnapshotDisplay";
@@ -51,6 +52,7 @@ type PublishedBulletinCard = {
   percentageLabel: string;
   rankLabel: string;
   payload: SnapshotPayload;
+  template?: RenderingTemplate | null;
   student: SnapshotStudent;
 };
 
@@ -71,7 +73,11 @@ function bulletinErrorSnapshot(
   return snapshotFromFailure(error, previous);
 }
 
-function cardsFromPublication(row: ReportCardPublicationRow, payload: SnapshotPayload | null): PublishedBulletinCard[] {
+function cardsFromPublication(
+  row: ReportCardPublicationRow,
+  payload: SnapshotPayload | null,
+  template?: RenderingTemplate | null,
+): PublishedBulletinCard[] {
   if (!payload) return [];
   const version = Number(row.published_snapshot_version || payload.published_snapshot_version || 0);
   return (payload.students || []).map((student) => {
@@ -88,6 +94,7 @@ function cardsFromPublication(row: ReportCardPublicationRow, payload: SnapshotPa
       percentageLabel: exposedSlot(student, SNAPSHOT_SLOT_PERCENTAGE) || "—",
       rankLabel: exposedSlot(student, SNAPSHOT_SLOT_RANK) || "—",
       payload,
+      template,
       student,
     };
   });
@@ -110,8 +117,8 @@ export default function ReportCardsScreen() {
       const publications = await listReportCardPublications();
       const cards: PublishedBulletinCard[] = [];
       for (const row of publications) {
-        const payload = await getReportCardPublicationSnapshot(row.report_card_id, row.published_snapshot_version);
-        cards.push(...cardsFromPublication(row, payload));
+        const snap = await getReportCardPublicationSnapshot(row.report_card_id, row.published_snapshot_version);
+        cards.push(...cardsFromPublication(row, snap?.payload ?? null, snap?.template as RenderingTemplate | undefined));
       }
       setReportCardsSnapshot(snapshotFromSuccess(cards));
     } catch (error) {
@@ -218,7 +225,7 @@ export default function ReportCardsScreen() {
                   <Metric label="Rang" value={rankLabel} />
                   <Metric label="Publié le" value={card.publishedAt || "—"} />
                 </View>
-                <ReportCardSnapshotView payload={card.payload} studentId={card.studentId} />
+                <ReportCardSnapshotView payload={card.payload} template={card.template} studentId={card.studentId} />
                 <TouchableOpacity
                   activeOpacity={0.85}
                   style={[styles.pdfButton, !isPublished && styles.pdfButtonDisabled]}

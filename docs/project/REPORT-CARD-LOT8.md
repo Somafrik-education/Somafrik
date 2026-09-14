@@ -10,11 +10,11 @@ Consultation Mobile native des bulletins **publiés** à partir du snapshot auth
 
 Namespace inchangé `/api/report-card/...` (pas de collision legacy `/api/report-cards`).
 
-- `GET /api/report-card/publications` — liste tenant-scopée `listOutbox` (pas de `token_*`).
-- `GET /api/report-card/publications/:reportCardId/snapshot?version=` — snapshot déjà LOT 7.
-- `GET /api/report-card/publications/:reportCardId/pdf?version=` — PDF LOT 5 injecté (pas `createReportCardPdf` dans le module HTTP LOT 7).
+- `GET /api/report-card/publications` — catalogue tenant-scopé `listCurrent` (publications `ACTIVE` seulement, pas l’outbox, pas de `token_*`).
+- `GET /api/report-card/publications/:reportCardId/snapshot?version=` — snapshot `ACTIVE` + `payloadForRender`, scope élève serveur, template de publication.
+- `GET /api/report-card/publications/:reportCardId/pdf?version=` — PDF LOT 5 injecté (pas `createReportCardPdf` dans le module HTTP LOT 7) avec le même payload scopé et le même `RenderingTemplate`.
 
-Acteur établissement authentifié avec `actorSchoolId` résolu. `Bulletins:READ` consulte ; aucun token d’écriture n’est inféré côté client. Superadmin sans tenant école → fail-closed. Cross-tenant → 403/404.
+`Bulletins:READ` → `REPORT_CARD_READ` + `REPORT_CARD_REPRINT` (consult/réimpression, jamais SUBMIT/APPROVE). Liste/snapshot exigent `REPORT_CARD_READ` ; PDF exige `REPORT_CARD_REPRINT`. Acteurs `student` / `parent_student` : `studentIds` serveur-autoritaire. Superadmin sans tenant école → fail-closed. Cross-tenant et version `SUPERSEDED` → 403/404.
 
 ## Mobile
 

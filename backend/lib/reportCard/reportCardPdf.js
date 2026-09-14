@@ -338,10 +338,14 @@ function createReportCardPdf({ publication, pdfDriver } = {}) {
   }
   const driver = pdfDriver || renderPdfAfterCommit;
 
-  function render({ tenant, reportCardId, version, renderingTemplate } = {}) {
+  function render({ tenant, reportCardId, version, renderingTemplate, payload: providedPayload } = {}) {
     return Promise.resolve().then(() => {
       const template = normalizeRenderingTemplate(renderingTemplate);
-      return thenable(publication.payloadForRender({ tenant, reportCardId, version }), (payload) =>
+      const payloadSource =
+        providedPayload != null
+          ? providedPayload
+          : publication.payloadForRender({ tenant, reportCardId, version });
+      return thenable(payloadSource, (payload) =>
         thenable(publication.reprintUrl({ tenant, reportCardId, version }), (url) =>
           thenable(buildPrintableQr(url), (qr) => {
             const html = buildHtml(payload, qr, template);

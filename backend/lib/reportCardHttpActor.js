@@ -1,8 +1,10 @@
 "use strict";
 
 const { isInternalSchoolAlias, isV2SchoolLoginCode } = require("./schoolCodeV2");
+const { getPrincipalStudentIds, principalSessionLabel } = require("./principalStudentIds");
 
 const SUPER_ADMIN_ROLES = new Set(["Super Administrateur Somafrik", "Super Administrateur OKAFRIK"]);
+const STUDENT_SCOPED_ROLES = new Set(["student", "Élève / Étudiant", "parent_student", "Parent"]);
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 function principalPermissionList(principal) {
@@ -48,6 +50,12 @@ function tenantSchoolIdFromPrincipal(principal) {
   return "";
 }
 
+function isStudentScopedPrincipal(principal) {
+  const role = String(principal?.role || "");
+  const label = principalSessionLabel(principal);
+  return STUDENT_SCOPED_ROLES.has(role) || STUDENT_SCOPED_ROLES.has(label);
+}
+
 function resolveReportCardActorFromPrincipal(principal) {
   if (!principal) return null;
   const actorId = principal.sub || principal.id || principal.userId;
@@ -65,11 +73,19 @@ function resolveReportCardActorFromPrincipal(principal) {
   if (hasFeatureAction(principal, "Bulletins", "UPDATE")) {
     permissions.push("REPORT_CARD_SCHOOL_APPROVE_TEMPLATE");
   }
-  return {
+  if (hasFeatureAction(principal, "Bulletins", "READ")) {
+    permissions.push("REPORT_CARD_READ");
+    permissions.push("REPORT_CARD_REPRINT");
+  }
+  const actor = {
     actorId,
     actorSchoolId: tenantSchoolIdFromPrincipal(principal),
     permissions,
   };
+  if (isStudentScopedPrincipal(principal)) {
+    actor.studentIds = getPrincipalStudentIds(principal);
+  }
+  return actor;
 }
 
 async function resolveReportCardTenantSchoolId(raw, lookupSchool) {
