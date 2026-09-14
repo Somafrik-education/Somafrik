@@ -452,6 +452,9 @@ export const DATA_TRUTH_COPY = {
   offlinePayments: "Réseau indisponible. Les paiements n'ont pas pu être chargés.",
   emptyBulletins: "Aucun bulletin disponible",
   errorBulletins: "Impossible de charger les bulletins.",
+  forbiddenBulletins: "Accès refusé aux bulletins.",
+  notFoundBulletins: "Bulletin introuvable.",
+  serverErrorBulletins: "Erreur serveur. Impossible de charger les bulletins.",
   offlineBulletins: "Réseau indisponible. Les bulletins n'ont pas pu être chargés.",
   writePaymentsWebOnly:
     "La saisie d'un paiement multi-libellés se fait depuis le web établissement pour le moment.",

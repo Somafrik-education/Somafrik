@@ -98,7 +98,7 @@ test("report-card-lot8-mobile-render-total-percentage-rank-decision-presence", a
   assert.match(display, /RANK/);
   assert.match(display, /DECISION/);
   assert.match(display, /presence/);
-  const mod = await import("./reportCardSnapshotDisplay.ts");
+  const mod = await import("./reportCardSnapshotDisplay");
   const student = {
     student_id: "STU-1",
     cells: [{ subject_id: "MATH", period_id: "T1", score_component_id: "TJ", exposed: "12" }],

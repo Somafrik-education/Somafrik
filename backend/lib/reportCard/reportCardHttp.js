@@ -16,6 +16,7 @@ const HTTP_STATUS = Object.freeze({
   TENANT_MISMATCH: 403,
   REQUEST_NOT_FOUND: 404,
   VERSION_NOT_FOUND: 404,
+  PUBLICATION_NOT_FOUND: 404,
   INVALID_TRANSITION: 409,
   IDEMPOTENCY_CONFLICT: 409,
 });
@@ -163,6 +164,7 @@ function registerReportCardHttp(app, deps = {}) {
     return {
       configuration: deps.configuration || (typeof deps.getConfiguration === "function" ? deps.getConfiguration() : null),
       publication: deps.publication || (typeof deps.getPublication === "function" ? deps.getPublication() : null),
+      pdf: deps.pdf || (typeof deps.getPdf === "function" ? deps.getPdf() : null),
     };
   }
 
@@ -305,6 +307,44 @@ function registerReportCardHttp(app, deps = {}) {
         requestId: req.params.requestId,
       });
       res.json({ ok: true, ...bundle, request: decorate(actor, bundle.request) });
+    })
+  );
+
+  app.get(
+    "/api/report-card/publications",
+    auth,
+    route(async (req, res) => {
+      const actor = await actorFrom(req);
+      const schoolId = schoolIdForSchoolActor(actor);
+      const { publication } = services();
+      if (!publication || typeof publication.listOutbox !== "function") {
+        throw coded("REQUEST_NOT_FOUND");
+      }
+      const publications = await publication.listOutbox({
+        tenant: { schoolId, actorSchoolId: actor.actorSchoolId },
+      });
+      res.json({ ok: true, publications });
+    })
+  );
+
+  app.get(
+    "/api/report-card/publications/:reportCardId/pdf",
+    auth,
+    route(async (req, res) => {
+      const actor = await actorFrom(req);
+      const schoolId = schoolIdForSchoolActor(actor);
+      const { pdf } = services();
+      if (!pdf || typeof pdf.render !== "function") {
+        throw coded("REQUEST_NOT_FOUND");
+      }
+      const version = Number(req.query.version);
+      const rendered = await pdf.render({
+        tenant: { schoolId, actorSchoolId: actor.actorSchoolId },
+        reportCardId: req.params.reportCardId,
+        version,
+      });
+      res.setHeader("Content-Type", "application/pdf");
+      res.send(rendered.pdf);
     })
   );
 
