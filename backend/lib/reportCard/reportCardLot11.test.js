@@ -975,6 +975,73 @@ test("report-card-lot11-map-replace-ready-requires-remap", async () => {
   assert.equal(ready.artifact_sha256, second.sha256);
 });
 
+test("report-card-lot11-rebind-same-artifact-ready-requires-remap", async () => {
+  const ctx = await world();
+  const attached = await ctx.artifacts.attachToRequest({
+    actor: schoolSubmit(SCHOOL_A),
+    schoolId: SCHOOL_A,
+    requestId: ctx.requestId,
+    bytes: pdfBytes("rebind"),
+    declaredMime: "application/pdf",
+    originalFilename: "rebind.pdf",
+    idempotencyKey: "cmd-rebind",
+  });
+  await ctx.configuration.startReview({ actor: superadmin(), schoolId: SCHOOL_A, requestId: ctx.requestId });
+  await ctx.configuration.startConfiguring({ actor: superadmin(), schoolId: SCHOOL_A, requestId: ctx.requestId });
+  const refsX = seedBundle(ctx.profileStore, ctx.schemaStore, SCHOOL_A);
+  const refsY = seedBundle(ctx.profileStore, ctx.schemaStore, SCHOOL_A);
+  const template = await ctx.configuration.saveRenderingTemplate({
+    actor: superadmin(),
+    schoolId: SCHOOL_A,
+    requestId: ctx.requestId,
+    spec: validTemplate(),
+  });
+  await ctx.artifacts.mapExplicit({
+    actor: superadmin(),
+    schoolId: SCHOOL_A,
+    requestId: ctx.requestId,
+    profile: refsX.profile,
+    schema: refsX.schema,
+    template: { id: template.template_id, version: template.version },
+    artifact_id: attached.artifact_id,
+    artifact_version: attached.version,
+  });
+  await ctx.configuration.bindBundle({
+    actor: superadmin(),
+    schoolId: SCHOOL_A,
+    requestId: ctx.requestId,
+    profile: refsY.profile,
+    schema: refsY.schema,
+    template: { id: template.template_id, version: template.version },
+  });
+  await assert.rejects(
+    () =>
+      ctx.artifacts.markReadyForReview({
+        actor: superadmin(),
+        schoolId: SCHOOL_A,
+        requestId: ctx.requestId,
+      }),
+    (error) => isCoded(error, "MAPPING_REQUIRED")
+  );
+  await ctx.artifacts.mapExplicit({
+    actor: superadmin(),
+    schoolId: SCHOOL_A,
+    requestId: ctx.requestId,
+    profile: refsY.profile,
+    schema: refsY.schema,
+    template: { id: template.template_id, version: template.version },
+    artifact_id: attached.artifact_id,
+    artifact_version: attached.version,
+  });
+  const ready = await ctx.artifacts.markReadyForReview({
+    actor: superadmin(),
+    schoolId: SCHOOL_A,
+    requestId: ctx.requestId,
+  });
+  assert.equal(ready.status, "READY_FOR_REVIEW");
+  assert.equal(ready.profile_id, refsY.profile.id);
+});
+
 test("report-card-lot11-ready-review-references-exact-artifact-version", async () => {
   const ctx = await world();
   await assert.rejects(

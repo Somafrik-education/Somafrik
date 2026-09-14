@@ -88,7 +88,7 @@ Métadonnées PG : `report_card_source_artifacts` + audit append-only.
 - Web uniquement. Mobile inchangé.
 - Remplacement PG : transaction dédiée, `pg_advisory_xact_lock` + `FOR UPDATE` sur la demande `(school_id, request_id)`, calcul de version sous verrou, archivage + INSERT + audit atomiques. Le blob est persisté sous verrou ; si le commit DB échoue, compensation `remove` du nouvel objet. Le `Set` processus n’est plus le verrou de production.
 - Mapping traçable : `MAP_EXPLICIT` persiste `artifact_id` / `artifact_version` / `artifact_sha256` et les refs exactes du bundle (`profile|schema|template` id + version + spec_sha256) — jointure testée, pas de corrélation par horodatage.
-- Pin mapping durable (`report_card_source_artifact_mapping`) : replace après mapping invalide le pin ; `markReadyForReview` fail-closed si `current != mapped` ou mapping stale ; le statut request est relus sous `FOR UPDATE` avant mutation artefact.
+- Pin mapping durable (`report_card_source_artifact_mapping`) : replace après mapping invalide le pin ; `markReadyForReview` fail-closed si `current != mapped` **ou** si le pin profile/schema/template id+version+hash ≠ bundle courant ; le statut request est relus sous `FOR UPDATE` avant mutation artefact.
 - Preview Web authentifié établissement et Superadmin (iframe PDF / img) ; `/source-artifact/content` en `Content-Disposition: inline` (`?download=1` = attachment), `nosniff`, `private, no-store`.
 
 Gate : `npm run verify:report-card-lot11` (domaine, HTTP, PG, Web).

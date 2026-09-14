@@ -286,6 +286,27 @@ function createReportCardSourceArtifact({ configuration, storage, metadata, cloc
     );
   }
 
+  function bundleMatches(mapping, request) {
+    if (!mapping || mapping.valid === false || !request) return false;
+    return (
+      String(mapping.profile_id || "") === String(request.profile_id || "") &&
+      Number(mapping.profile_version) === Number(request.profile_version) &&
+      String(mapping.profile_spec_sha256 || "") === String(request.profile_spec_sha256 || "") &&
+      String(mapping.schema_id || "") === String(request.schema_id || "") &&
+      Number(mapping.schema_version) === Number(request.schema_version) &&
+      String(mapping.schema_spec_sha256 || "") === String(request.schema_spec_sha256 || "") &&
+      String(mapping.template_id || "") === String(request.rendering_template_id || "") &&
+      Number(mapping.template_version) === Number(request.rendering_template_version) &&
+      String(mapping.template_spec_sha256 || "") === String(request.rendering_template_spec_sha256 || "") &&
+      Boolean(mapping.profile_id) &&
+      Boolean(mapping.schema_id) &&
+      Boolean(mapping.template_id) &&
+      Boolean(mapping.profile_spec_sha256) &&
+      Boolean(mapping.schema_spec_sha256) &&
+      Boolean(mapping.template_spec_sha256)
+    );
+  }
+
   async function pinMapping(tx, { schoolId, requestId, artifact, bound, at }) {
     if (typeof tx.saveMapping !== "function") return null;
     const fields = mappingFieldsFromBound(bound, artifact);
@@ -490,49 +511,45 @@ function createReportCardSourceArtifact({ configuration, storage, metadata, cloc
     if (fromArtifact || !profile || !schema || !template) {
       throw coded("MAPPING_NOT_EXPLICIT");
     }
-    const current = await currentOf(schoolId, requestId);
-    if (!current) throw coded("ARTIFACT_REQUIRED");
-    if (artifact_id && artifact_id !== current.artifact_id) throw coded("HASH_MISMATCH");
-    if (artifact_version != null && Number(artifact_version) !== Number(current.version)) {
-      throw coded("HASH_MISMATCH");
-    }
-    await verifyBytes(current);
-    const bound = await configuration.bindBundle({
-      actor,
-      schoolId,
-      requestId,
-      profile,
-      schema,
-      template,
-    });
-    const at = nowIso(clock);
-    await withExclusive(schoolId, requestId, async (tx) => {
-      const still = await currentOf(schoolId, requestId, tx);
-      if (!still || still.artifact_id !== current.artifact_id || still.sha256 !== current.sha256) {
+    return withReadyLock(schoolId, requestId, async () => {
+      const current = await currentOf(schoolId, requestId);
+      if (!current) throw coded("ARTIFACT_REQUIRED");
+      if (artifact_id && artifact_id !== current.artifact_id) throw coded("HASH_MISMATCH");
+      if (artifact_version != null && Number(artifact_version) !== Number(current.version)) {
         throw coded("HASH_MISMATCH");
       }
-      await pinMapping(tx, { schoolId, requestId, artifact: still, bound, at });
-      await tx.appendAudit({
+      await verifyBytes(current);
+      const bound = await configuration.bindBundle({
+        actor,
+        schoolId,
+        requestId,
+        profile,
+        schema,
+        template,
+      });
+      const at = nowIso(clock);
+      await pinMapping(store, { schoolId, requestId, artifact: current, bound, at });
+      await store.appendAudit({
         school_id: schoolId,
         request_id: requestId,
-        artifact_id: still.artifact_id,
-        artifact_sha256: still.sha256,
+        artifact_id: current.artifact_id,
+        artifact_sha256: current.sha256,
         action: "MAP_EXPLICIT",
         to_state: bound.status,
         actor_id: actor.actorId || "unknown",
         created_at: at,
-        ...mappingFieldsFromBound(bound, still),
+        ...mappingFieldsFromBound(bound, current),
       });
+      return {
+        artifact_id: current.artifact_id,
+        artifact_version: current.version,
+        artifact_sha256: current.sha256,
+        profile,
+        schema,
+        template,
+        request: bound,
+      };
     });
-    return {
-      artifact_id: current.artifact_id,
-      artifact_version: current.version,
-      artifact_sha256: current.sha256,
-      profile,
-      schema,
-      template,
-      request: bound,
-    };
   }
 
   async function markReadyForReview({ actor, schoolId, requestId } = {}) {
@@ -543,6 +560,8 @@ function createReportCardSourceArtifact({ configuration, storage, metadata, cloc
       const mapping = typeof store.getMapping === "function" ? await store.getMapping(schoolId, requestId) : null;
       if (!mapping || mapping.valid === false) throw coded("MAPPING_REQUIRED");
       if (!mappingMatches(mapping, current)) throw coded("HASH_MISMATCH");
+      const request = await loadConfigurationRequest(actor, schoolId, requestId);
+      if (!bundleMatches(mapping, request)) throw coded("MAPPING_REQUIRED");
       await verifyBytes(current);
       const ready = await configuration.markReadyForReview({ actor, schoolId, requestId });
       await store.appendAudit({

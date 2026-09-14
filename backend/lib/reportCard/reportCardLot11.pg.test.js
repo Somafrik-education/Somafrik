@@ -128,6 +128,26 @@ function pdfBytes(marker = "lot11-pg") {
   return Buffer.from(`%PDF-1.4\n%${marker}\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF\n`);
 }
 
+function wrapFailSaveMapping(store) {
+  async function fail() {
+    const err = new Error("injected-fail-after-bind-before-pin");
+    err.code = "INJECTED_FAIL";
+    throw err;
+  }
+  return {
+    ...store,
+    saveMapping: fail,
+    async withTx(fn) {
+      return store.withTx(async (tx) => {
+        return fn({
+          ...tx,
+          saveMapping: fail,
+        });
+      });
+    },
+  };
+}
+
 function wrapFailBetweenArchiveAndCreate(store) {
   return {
     ...store,
@@ -610,6 +630,162 @@ describe("report-card-lot11 PG transactional replace + mapping audit", { skip: !
           assert.equal(pin.rows[0].valid, false);
         }
       }
+    } finally {
+      await ctx.pool.end();
+    }
+  });
+
+  test("report-card-lot11-bind-without-pin-ready-forbidden", async () => {
+    const ctx = await openLot11Pg();
+    try {
+      const healthy = createArtifactService(ctx.configuration, ctx.storage, ctx.pool);
+      const attached = await healthy.attachToRequest({
+        actor: schoolSubmit(),
+        schoolId: SCHOOL_A,
+        requestId: ctx.requestId,
+        bytes: pdfBytes("pin-fail"),
+        declaredMime: "application/pdf",
+        originalFilename: "pin-fail.pdf",
+        idempotencyKey: "cmd-pin-fail",
+      });
+      await ctx.configuration.startReview({
+        actor: superadmin(),
+        schoolId: SCHOOL_A,
+        requestId: ctx.requestId,
+      });
+      await ctx.configuration.startConfiguring({
+        actor: superadmin(),
+        schoolId: SCHOOL_A,
+        requestId: ctx.requestId,
+      });
+      const profile = await ctx.profileStore.createProfile({
+        schoolId: SCHOOL_A,
+        actorSchoolId: SCHOOL_A,
+        profileKey: `p-fail-${Date.now()}`,
+        spec: calculableProfile(),
+        activate: true,
+      });
+      const schema = await ctx.schemaStore.createSchema({
+        schoolId: SCHOOL_A,
+        actorSchoolId: SCHOOL_A,
+        schemaKey: `s-fail-${Date.now()}`,
+        spec: compatibleSchema(),
+        activate: true,
+      });
+      const template = await ctx.configuration.saveRenderingTemplate({
+        actor: superadmin(),
+        schoolId: SCHOOL_A,
+        requestId: ctx.requestId,
+        spec: validTemplate(),
+      });
+      const failing = createReportCardSourceArtifact({
+        configuration: ctx.configuration,
+        storage: ctx.storage,
+        metadata: wrapFailSaveMapping(createReportCardSourceArtifactPgStore(ctx.pool)),
+        clock: { now: () => new Date().toISOString() },
+      });
+      await assert.rejects(
+        () =>
+          failing.mapExplicit({
+            actor: superadmin(),
+            schoolId: SCHOOL_A,
+            requestId: ctx.requestId,
+            profile: { id: profile.profile.id, version: profile.version.version },
+            schema: { id: schema.schema.id, version: schema.version.version },
+            template: { id: template.template_id, version: template.version },
+            artifact_id: attached.artifact_id,
+            artifact_version: attached.version,
+          }),
+        (err) => err && err.code === "INJECTED_FAIL"
+      );
+      const bound = await ctx.configuration.getRequest({
+        actor: superadmin(),
+        schoolId: SCHOOL_A,
+        requestId: ctx.requestId,
+      });
+      assert.equal(bound.profile_id, profile.profile.id);
+      const pin = await ctx.pool.query(
+        `SELECT valid FROM report_card_source_artifact_mapping
+         WHERE school_id = $1 AND request_id = $2`,
+        [SCHOOL_A, ctx.requestId]
+      );
+      assert.equal(pin.rowCount === 0 || pin.rows[0].valid === false, true);
+      await assert.rejects(
+        () =>
+          healthy.markReadyForReview({
+            actor: superadmin(),
+            schoolId: SCHOOL_A,
+            requestId: ctx.requestId,
+          }),
+        (err) => err && err.code === "MAPPING_REQUIRED"
+      );
+    } finally {
+      await ctx.pool.end();
+    }
+  });
+
+  test("report-card-lot11-rebind-same-artifact-ready-requires-remap", async () => {
+    const ctx = await openLot11Pg();
+    try {
+      const artifacts = createArtifactService(ctx.configuration, ctx.storage, ctx.pool);
+      const attached = await artifacts.attachToRequest({
+        actor: schoolSubmit(),
+        schoolId: SCHOOL_A,
+        requestId: ctx.requestId,
+        bytes: pdfBytes("rebind"),
+        declaredMime: "application/pdf",
+        originalFilename: "rebind.pdf",
+        idempotencyKey: "cmd-rebind",
+      });
+      const first = await mapAttached(ctx, artifacts, attached);
+      const profileY = await ctx.profileStore.createProfile({
+        schoolId: SCHOOL_A,
+        actorSchoolId: SCHOOL_A,
+        profileKey: `p-y-${Date.now()}`,
+        spec: calculableProfile(),
+        activate: true,
+      });
+      await ctx.configuration.bindBundle({
+        actor: superadmin(),
+        schoolId: SCHOOL_A,
+        requestId: ctx.requestId,
+        profile: { id: profileY.profile.id, version: profileY.version.version },
+        schema: { id: first.schema.schema.id, version: first.schema.version.version },
+        template: { id: first.template.template_id, version: first.template.version },
+      });
+      await assert.rejects(
+        () =>
+          artifacts.markReadyForReview({
+            actor: superadmin(),
+            schoolId: SCHOOL_A,
+            requestId: ctx.requestId,
+          }),
+        (err) => err && err.code === "MAPPING_REQUIRED"
+      );
+      await artifacts.mapExplicit({
+        actor: superadmin(),
+        schoolId: SCHOOL_A,
+        requestId: ctx.requestId,
+        profile: { id: profileY.profile.id, version: profileY.version.version },
+        schema: { id: first.schema.schema.id, version: first.schema.version.version },
+        template: { id: first.template.template_id, version: first.template.version },
+        artifact_id: attached.artifact_id,
+        artifact_version: attached.version,
+      });
+      const ready = await artifacts.markReadyForReview({
+        actor: superadmin(),
+        schoolId: SCHOOL_A,
+        requestId: ctx.requestId,
+      });
+      assert.equal(ready.status, "READY_FOR_REVIEW");
+      assert.equal(ready.profile_id, profileY.profile.id);
+      const pin = await ctx.pool.query(
+        `SELECT profile_id, valid FROM report_card_source_artifact_mapping
+         WHERE school_id = $1 AND request_id = $2`,
+        [SCHOOL_A, ctx.requestId]
+      );
+      assert.equal(pin.rows[0].valid, true);
+      assert.equal(pin.rows[0].profile_id, profileY.profile.id);
     } finally {
       await ctx.pool.end();
     }
