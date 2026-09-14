@@ -70,6 +70,13 @@ describe("report-card-lot10 PG qualification", { skip: !shouldRun }, () => {
     assert.ok(support && typeof support.publishQualificationPg === "function", "RED: test-only PG support missing");
   });
 
+  test("pg: qualification harness mirrors production grade status/score coherence", () => {
+    const src = fs.readFileSync(path.join(__dirname, "reportCardLot10.pg.support.js"), "utf8");
+    assert.match(src, /CONSTRAINT\s+grades_status_score_coherence\s+CHECK/i);
+    assert.match(src, /grade_status[^\n]*publication_status[\s\S]*\$12[\s\S]*published/);
+    assert.doesNotMatch(src, /\$11,'graded','published'/);
+  });
+
   test("pg: production initial publish of qualifications A and B stamps class/year from classes", async () => {
     const lot10 = loadLot10();
     const support = loadPgSupport();
