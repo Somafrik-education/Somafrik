@@ -6,10 +6,14 @@ import {
   type ReportCardRequest,
   type ReportCardSourceArtifact,
 } from "../lib/reportCardConfigurationApi";
+import { academicYearsApi } from "../lib/academicYearsApi";
+import { getEntityFeaturePermissions } from "../lib/permissions";
+import { usePermissionContext } from "../lib/usePermissionContext";
 import {
   ReportCardSnapshotView,
   ReportCardTemplatePreview,
 } from "../components/bulletin/ReportCardSnapshotView";
+import { ReportCardSourcePreview } from "../components/bulletin/ReportCardSourcePreview";
 
 type RequestDetails = {
   audit: ReportCardAuditEntry[];
@@ -30,6 +34,9 @@ export function ReportCardSchoolWorkflowPage() {
   const [uploadFile, setUploadFile] = useState<File | null>(null);
   const [uploadedByRequest, setUploadedByRequest] = useState<Record<string, ReportCardSourceArtifact>>({});
   const [sourceByRequest, setSourceByRequest] = useState<Record<string, ReportCardSourceArtifact>>({});
+  const [academicYearName, setAcademicYearName] = useState("");
+  const permissionCtx = usePermissionContext();
+  const bulletinPerms = getEntityFeaturePermissions(permissionCtx, "bulletins", "Bulletins");
 
   async function loadDetails(list: ReportCardRequest[]) {
     const next: Record<string, RequestDetails> = {};
@@ -80,6 +87,17 @@ export function ReportCardSchoolWorkflowPage() {
 
   useEffect(() => {
     void reload();
+  }, []);
+
+  useEffect(() => {
+    void academicYearsApi
+      .list()
+      .then((rows) => {
+        const list = Array.isArray(rows) ? rows : [];
+        const current = list.find((row) => row.isCurrent) || list[0];
+        setAcademicYearName(current?.name || "");
+      })
+      .catch(() => setAcademicYearName(""));
   }, []);
 
   async function onSubmit(event: FormEvent) {
@@ -141,6 +159,9 @@ export function ReportCardSchoolWorkflowPage() {
   return (
     <main className="mx-auto max-w-4xl p-6">
       <h1>Modèle de bulletin</h1>
+      {academicYearName ? (
+        <p data-testid="report-card-academic-year">Année scolaire {academicYearName}</p>
+      ) : null}
       {loading ? <p>Chargement…</p> : null}
       {error ? <p role="alert">{error}</p> : null}
       {requests.length === 0 && !loading ? <p>Aucune demande.</p> : null}
@@ -151,7 +172,7 @@ export function ReportCardSchoolWorkflowPage() {
             | { paper?: string; orientation?: string; qr_required?: boolean; sections?: { id: string; label?: string; source: "cells" | "slots" | "presence" }[] }
             | undefined;
           return (
-            <li key={request.id} data-workflow-state={request.status}>
+            <li key={request.id} data-workflow-state={request.status} data-request-id={request.id}>
               <span>{request.model_key}</span> <strong>{request.status}</strong>
               {request.actions?.approve ? (
                 <button type="button" onClick={() => void onApprove(request.id)}>
@@ -178,49 +199,56 @@ export function ReportCardSchoolWorkflowPage() {
                   Configuration ACTIVE {String(extra.binding.model_key || request.model_key)}
                 </p>
               ) : null}
-              <input
-                type="file"
-                accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png"
-                onChange={(event) => setUploadFile(event.target.files?.[0] || null)}
-              />
-              <button type="button" onClick={() => void onUploadSource(request.id)}>
-                Envoyer un modèle de bulletin
-              </button>
+              {bulletinPerms.canCreate ? (
+                <>
+                  <input
+                    type="file"
+                    accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png"
+                    data-testid="report-card-source-file"
+                    onChange={(event) => setUploadFile(event.target.files?.[0] || null)}
+                  />
+                  <button
+                    type="button"
+                    data-testid="report-card-upload-source"
+                    onClick={() => void onUploadSource(request.id)}
+                  >
+                    Envoyer un modèle de bulletin
+                  </button>
+                </>
+              ) : null}
               {uploadedByRequest[request.id] || sourceByRequest[request.id] ? (
-                <div data-source-artifact-preview>
-                  <p>
-                    Modèle envoyé {(uploadedByRequest[request.id] || sourceByRequest[request.id]).artifact_id}
-                  </p>
-                  {(uploadedByRequest[request.id] || sourceByRequest[request.id]).media_type?.startsWith(
-                    "image/",
-                  ) ? (
-                    <img
-                      alt={`source-artifact-${(uploadedByRequest[request.id] || sourceByRequest[request.id]).artifact_id}`}
-                      src={`/api/report-card/requests/${encodeURIComponent(request.id)}/source-artifact/content`}
-                    />
-                  ) : (
-                    <iframe
-                      title={`source-artifact-${(uploadedByRequest[request.id] || sourceByRequest[request.id]).artifact_id}`}
-                      src={`/api/report-card/requests/${encodeURIComponent(request.id)}/source-artifact/content`}
-                    />
-                  )}
-                </div>
+                <ReportCardSourcePreview
+                  requestId={request.id}
+                  artifact={uploadedByRequest[request.id] || sourceByRequest[request.id]}
+                />
               ) : null}
             </li>
           );
         })}
       </ul>
-      <form onSubmit={(event) => void onSubmit(event)}>
-        <label>
-          Clé modèle
-          <input value={modelKey} onChange={(event) => setModelKey(event.target.value)} />
-        </label>
-        <label>
-          Description
-          <input value={description} onChange={(event) => setDescription(event.target.value)} />
-        </label>
-        <button type="submit">Soumettre</button>
-      </form>
+      {bulletinPerms.canCreate ? (
+        <form onSubmit={(event) => void onSubmit(event)}>
+          <label>
+            Clé modèle
+            <input
+              data-testid="report-card-model-key"
+              value={modelKey}
+              onChange={(event) => setModelKey(event.target.value)}
+            />
+          </label>
+          <label>
+            Description
+            <input
+              data-testid="report-card-model-description"
+              value={description}
+              onChange={(event) => setDescription(event.target.value)}
+            />
+          </label>
+          <button type="submit" data-testid="report-card-submit-request">
+            Soumettre la demande de modèle
+          </button>
+        </form>
+      ) : null}
       <form onSubmit={(event) => void onConsult(event)}>
         <h2>Bulletin publié</h2>
         <label>

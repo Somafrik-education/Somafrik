@@ -366,6 +366,10 @@ jobs:
         if: needs.scope.outputs.reportcard == 'true' || needs.scope.outputs.web == 'true'
         run: npm run verify:report-card-lot11
 
+      - name: Report card S1 E2E Playwright
+        if: needs.scope.outputs.reportcard == 'true' || needs.scope.outputs.web == 'true'
+        run: npm run verify:report-card-s1-e2e
+
       - name: Planning
         if: needs.scope.outputs.planning == 'true'
         run: |

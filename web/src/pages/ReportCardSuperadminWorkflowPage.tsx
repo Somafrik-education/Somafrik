@@ -6,6 +6,7 @@ import {
   type ReportCardSourceArtifact,
 } from "../lib/reportCardConfigurationApi";
 import { ReportCardTemplatePreview } from "../components/bulletin/ReportCardSnapshotView";
+import { ReportCardSourcePreview } from "../components/bulletin/ReportCardSourcePreview";
 
 const DEFAULT_TEMPLATE = {
   paper: "A4",
@@ -158,10 +159,14 @@ export function ReportCardSuperadminWorkflowPage() {
       return;
     }
     try {
+      const artifact = artifacts[requestId];
       await reportCardAdminApi.bindBundle(requestId, schoolId, {
         profile: { id: draft.profileId, version: Number(draft.profileVersion) },
         schema: { id: draft.schemaId, version: Number(draft.schemaVersion) },
         template: { id: saved.template_id, version: saved.version },
+        ...(artifact?.artifact_id
+          ? { artifact_id: artifact.artifact_id, artifact_version: artifact.version }
+          : {}),
       });
       await loadQueue();
     } catch {
@@ -187,12 +192,15 @@ export function ReportCardSuperadminWorkflowPage() {
         <label>
           Établissement cible
           <input
+            data-testid="report-card-target-school"
             value={schoolId}
             onChange={(event) => setSchoolId(event.target.value)}
             required
           />
         </label>
-        <button type="submit">Charger la file</button>
+        <button type="submit" data-testid="report-card-load-queue">
+          Charger la file
+        </button>
       </form>
       {loading ? <p>Chargement…</p> : null}
       {error ? <p role="alert">{error}</p> : null}
@@ -214,20 +222,11 @@ export function ReportCardSuperadminWorkflowPage() {
                 ) : (
                   <p>Aucun artefact source.</p>
                 )}
-                {artifacts[request.id]?.media_type?.startsWith("image/") ? (
-                  <img
-                    alt={`source-artifact-${artifacts[request.id]?.artifact_id}`}
-                    src={`/api/report-card/admin/requests/${encodeURIComponent(request.id)}/source-artifact/content?schoolId=${encodeURIComponent(schoolId)}`}
-                  />
-                ) : artifacts[request.id]?.media_type === "application/pdf" ? (
-                  <iframe
-                    title={`source-artifact-${artifacts[request.id]?.artifact_id}`}
-                    src={`/api/report-card/admin/requests/${encodeURIComponent(request.id)}/source-artifact/content?schoolId=${encodeURIComponent(schoolId)}`}
-                  />
-                ) : artifacts[request.id] ? (
-                  <iframe
-                    title={`source-artifact-${artifacts[request.id]?.artifact_id}`}
-                    src={`/api/report-card/admin/requests/${encodeURIComponent(request.id)}/source-artifact/content?schoolId=${encodeURIComponent(schoolId)}`}
+                {artifacts[request.id] ? (
+                  <ReportCardSourcePreview
+                    requestId={request.id}
+                    artifact={artifacts[request.id] as ReportCardSourceArtifact}
+                    schoolId={schoolId}
                   />
                 ) : null}
               </section>

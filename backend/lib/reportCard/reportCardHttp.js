@@ -189,6 +189,9 @@ function mapError(err) {
     };
   }
   const code = err && err.code ? err.code : "INVALID_INPUT";
+  if (err && (!err.code || /^[0-9A-Z]{5}$/.test(String(err.code))) && !HTTP_STATUS[code]) {
+    console.error("[report-card] unmapped error", code, err.message || err);
+  }
   return {
     status: HTTP_STATUS[code] || 400,
     body: { ok: false, code, error: { code } },

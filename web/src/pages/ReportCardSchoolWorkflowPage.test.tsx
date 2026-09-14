@@ -22,6 +22,36 @@ vi.mock("../lib/reportCardConfigurationApi", () => ({
   },
 }));
 
+vi.mock("../context/AuthContext", () => ({
+  useAuth: () => ({
+    session: {
+      user: {
+        role: "Admin School",
+        permissions: ["Bulletins:READ", "Bulletins:CREATE", "Bulletins:UPDATE"],
+      },
+    },
+    permissionsReady: true,
+    permissionsBootstrap: "ready",
+    permissionsBootstrapError: null,
+  }),
+}));
+
+vi.mock("../lib/academicYearsApi", () => ({
+  academicYearsApi: {
+    list: vi.fn(async () => [
+      {
+        id: "year-1",
+        schoolCode: "CD-2026-0001",
+        name: "2026-2027",
+        startDate: "2026-09-01",
+        endDate: "2027-07-31",
+        status: "open",
+        isCurrent: true,
+      },
+    ]),
+  },
+}));
+
 const frozenTemplate = {
   paper: "A4",
   orientation: "portrait",

@@ -70,6 +70,7 @@ Fichiers `*.test.js` exécutés via scripts `verify:*` (pas de runner Jest dédi
 - Historique / corrections / versions bulletin LOT 9 : `backend/lib/reportCard/reportCardLot9.http.test.js` + guards Web/Mobile (`npm run verify:report-card-lot9`)
 - Qualification Burundi A/B LOT 10 : `backend/lib/reportCard/reportCardLot10*.test.js` + guards Web/Mobile (`npm run verify:report-card-lot10`)
 - Artefact source + mapping traçable LOT 11 : `backend/lib/reportCard/reportCardLot11*.test.js` (domaine, HTTP, PG transactionnel) + guards Web (`npm run verify:report-card-lot11`) — Mobile hors périmètre
+- E2E Playwright S1 Bulletins (LOT 6→11, défaut #659) : `backend/scripts/verify-report-card-s1-e2e.js` (`npm run verify:report-card-s1-e2e`) — PG isolé, backend+Vite réels, aucun mock métier
 
 ```bash
 npm run verify:notes-sync

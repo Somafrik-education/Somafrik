@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { Navigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
-import { canReadView } from "../lib/permissions";
+import { canAccessView, type ViewAccessAction } from "../lib/permissions";
 import { getDefaultAppPath } from "../lib/superAdminAccess";
 import { usePermissionContext } from "../lib/usePermissionContext";
 import { RouteFallback } from "./RouteFallback";
@@ -9,11 +9,14 @@ import { InlineAlert } from "@/design-system";
 
 export function PermissionRoute({
   view,
+  action = "READ",
   children,
   fallbackPath,
 }: {
   /** Une vue, ou plusieurs vues en OU (ex. shell Finances : payments | fees | unpaid). */
   view: string | readonly string[];
+  /** Droit métier exigé. READ (défaut) = canReadView ; CREATE = jeton métier équivalent. */
+  action?: ViewAccessAction;
   children: ReactNode;
   fallbackPath?: string;
 }) {
@@ -37,7 +40,7 @@ export function PermissionRoute({
     );
   }
 
-  if (!views.some((item) => canReadView(ctx, item))) {
+  if (!views.some((item) => canAccessView(ctx, item, action))) {
     return <Navigate to={fallbackPath ?? getDefaultAppPath(session?.user?.role)} replace />;
   }
 

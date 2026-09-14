@@ -91,6 +91,7 @@ const rolePermissions = {
     "Gérer annonces",
     "Messages parents",
     "Publier communications",
+    "Bulletins:CREATE",
     "Valider bulletins",
     "Valider examens",
     "Valider années académiques",
