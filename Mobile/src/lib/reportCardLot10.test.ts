@@ -7,6 +7,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
+import { formatStudentSnapshot } from "./reportCardSnapshotDisplay";
 
 const ROOT = path.resolve(__dirname, "../../..");
 
@@ -48,6 +49,31 @@ test("report-card-lot10-pdf-web-mobile-same-snapshot", () => {
   const view = readRel("Mobile/src/components/bulletin/ReportCardSnapshotView.tsx");
   assert.match(view, /payload/);
   assert.equal(existsSync(path.join(ROOT, "backend/lib/reportCard/reportCardQualification.js")), true);
+});
+
+test("report-card-lot10-mobile-renders-qualified-a-and-b-snapshots", () => {
+  const catalogDir = path.join(ROOT, "backend/lib/reportCard/qualification");
+  const cases = [
+    { model: "model-a.json", must: ["FRANCAIS", "COMPONENT_PERIOD", "Domaines"], mustNot: [" TJ "] },
+    { model: "model-b.json", must: ["TPA", "TJ", "EX", "N/A", "RELIGION_MORALE"], mustNot: ["COMPONENT_PERIOD"] },
+  ];
+  for (const row of cases) {
+    const fixture = JSON.parse(readFileSync(path.join(catalogDir, row.model), "utf8"));
+    const expectedPath = path.join(catalogDir, "expected", row.model);
+    assert.equal(existsSync(expectedPath), true, `RED: snapshot golden missing ${row.model}`);
+    const expected = JSON.parse(readFileSync(expectedPath, "utf8"));
+    assert.ok(Array.isArray(expected.snapshot?.students) && expected.snapshot.students.length > 0, "RED: golden.snapshot required");
+    const text = expected.snapshot.students
+      .map((student: { student_id?: string }) => formatStudentSnapshot(student, fixture.template))
+      .join("\n");
+    assert.equal(text.includes("computeReportCard"), false);
+    for (const needle of row.must) {
+      assert.match(text, new RegExp(needle));
+    }
+    for (const needle of row.mustNot) {
+      assert.equal(text.includes(needle.trim()), false, `${row.model} leaked ${needle}`);
+    }
+  }
 });
 
 test("report-card-lot10-no-country-school-branch", () => {

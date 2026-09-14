@@ -50,7 +50,12 @@ function loadStaticGolden(id) {
   assert.ok(catalogFile, `RED: catalog fixture missing for ${id}`);
   const expectedFile = path.join(CATALOG_DIR, "expected", path.basename(catalogFile));
   assert.equal(fs.existsSync(expectedFile), true, `RED: static golden missing ${expectedFile}`);
-  return JSON.parse(fs.readFileSync(expectedFile, "utf8"));
+  const golden = JSON.parse(fs.readFileSync(expectedFile, "utf8"));
+  assert.ok(
+    golden.snapshot && Array.isArray(golden.snapshot.students) && golden.snapshot.students.length > 0,
+    `RED: golden.snapshot required ${expectedFile}`
+  );
+  return golden;
 }
 
 describe("report-card-lot10 PG qualification", { skip: !shouldRun }, () => {
@@ -80,6 +85,8 @@ describe("report-card-lot10 PG qualification", { skip: !shouldRun }, () => {
         assert.ok(result.payload.class_id);
         assert.equal(result.payload.engine_id, ENGINE_ID);
         assert.deepEqual(lot10.canonicalResult(result.payload), golden.canonical);
+        assert.equal(typeof lot10.normalizePublishedSnapshot, "function", "RED: normalizePublishedSnapshot missing");
+        assert.deepEqual(lot10.normalizePublishedSnapshot(result.payload), golden.snapshot);
         published.push(result);
       }
       assert.notEqual(published[0].payload.class_id, published[1].payload.class_id);

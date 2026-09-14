@@ -59,6 +59,10 @@ function loadStaticGolden(id) {
   assert.equal(fs.existsSync(expectedFile), true, `RED: static golden missing ${expectedFile}`);
   const golden = JSON.parse(fs.readFileSync(expectedFile, "utf8"));
   assert.ok(Array.isArray(golden.canonical) && golden.canonical.length > 0, "RED: golden.canonical required");
+  assert.ok(
+    golden.snapshot && Array.isArray(golden.snapshot.students) && golden.snapshot.students.length > 0,
+    `RED: golden.snapshot required ${expectedFile}`
+  );
   return golden;
 }
 
@@ -165,6 +169,9 @@ test("report-card-lot10-published-snapshot-deterministic", () => {
     assert.equal(rendered.academic_year_id, `year-${row.bundle.modelKey}`);
     assert.equal(rendered.class_id, `class-${row.bundle.modelKey}`);
     assert.deepEqual(lot10.canonicalResult(rendered), row.golden.canonical);
+    assert.equal(typeof lot10.normalizePublishedSnapshot, "function", "RED: normalizePublishedSnapshot missing");
+    assert.deepEqual(lot10.normalizePublishedSnapshot(rendered), row.golden.snapshot);
+    assert.deepEqual(lot10.normalizePublishedSnapshot(payload), row.golden.snapshot);
   }
 });
 
@@ -191,6 +198,7 @@ test("report-card-lot10-pdf-web-mobile-same-snapshot", async () => {
     });
     assert.equal(rendered.payload.engine_id, ENGINE_ID);
     assert.deepEqual(lot10.canonicalResult(rendered.payload), row.golden.canonical);
+    assert.deepEqual(lot10.normalizePublishedSnapshot(rendered.payload), row.golden.snapshot);
     const cell = payload.students[0].cells[0];
     assert.match(rendered.html, new RegExp(String(cell.subject_id)));
     if (cell.exposed != null) assert.match(rendered.html, new RegExp(String(cell.exposed)));
@@ -241,6 +249,7 @@ test("report-card-lot10-verify-authenticates-published-version", async () => {
       assert.equal(body.payload.academic_year_id, `year-${row.bundle.modelKey}`);
       assert.deepEqual(lot10.canonicalResult(body.payload), row.golden.canonical);
       assert.deepEqual(lot10.canonicalResult(body.payload), lot10.canonicalResult(payload));
+      assert.deepEqual(lot10.normalizePublishedSnapshot(body.payload), row.golden.snapshot);
     } finally {
       await bound.close();
     }
@@ -387,6 +396,7 @@ test("report-card-lot10-initial-publication-stamps-class-year", async () => {
     assert.equal(v1.provenance.template.id, bound.template.template_id);
     assert.equal(v1.provenance.template.spec_sha256, bound.template.spec_sha256);
     assert.deepEqual(lot10.canonicalResult(v1), row.golden.canonical);
+    assert.deepEqual(lot10.normalizePublishedSnapshot(v1), row.golden.snapshot);
   }
 });
 
@@ -433,8 +443,11 @@ test("report-card-lot10-a-b-no-mix", () => {
   const renderedB = publication.payloadForRender({ tenant: rowB.tenant, reportCardId: "rc-lot10-mix-b", version: 1 });
   assert.deepEqual(lot10.canonicalResult(renderedA), rowA.golden.canonical);
   assert.deepEqual(lot10.canonicalResult(renderedB), rowB.golden.canonical);
+  assert.deepEqual(lot10.normalizePublishedSnapshot(renderedA), rowA.golden.snapshot);
+  assert.deepEqual(lot10.normalizePublishedSnapshot(renderedB), rowB.golden.snapshot);
   assert.notDeepEqual(lot10.canonicalResult(renderedA), rowB.golden.canonical);
   assert.notDeepEqual(lot10.canonicalResult(renderedB), rowA.golden.canonical);
+  assert.notDeepEqual(lot10.normalizePublishedSnapshot(renderedA), rowB.golden.snapshot);
   assert.notEqual(renderedA.provenance.template.id, renderedB.provenance.template.id);
   assert.throws(
     () => publication.payloadForRender({ tenant: rowB.tenant, reportCardId: "rc-lot10-mix-a", version: 1 }),

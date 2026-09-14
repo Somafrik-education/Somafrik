@@ -53,6 +53,13 @@ function loadStaticGolden(id) {
   assert.equal(fs.existsSync(expectedFile), true, `RED: static golden missing ${path.relative(ROOT, expectedFile)}`);
   const golden = JSON.parse(fs.readFileSync(expectedFile, "utf8"));
   assert.ok(Array.isArray(golden.canonical) && golden.canonical.length > 0, "RED: golden.canonical required");
+  assert.ok(
+    golden.snapshot &&
+      typeof golden.snapshot === "object" &&
+      Array.isArray(golden.snapshot.students) &&
+      golden.snapshot.students.length > 0,
+    `RED: golden.snapshot required ${expectedFile}`
+  );
   return { expectedFile, golden };
 }
 
@@ -102,6 +109,19 @@ test("report-card-lot10-canonical-oracle-is-static", () => {
     const { golden } = loadStaticGolden(id);
     const bundle = lot10.loadQualification(id);
     assert.deepEqual(bundle.expected.canonical, golden.canonical);
+    assert.deepEqual(bundle.expected.snapshot, golden.snapshot);
+    assert.equal(typeof lot10.normalizePublishedSnapshot, "function", "RED: normalizePublishedSnapshot missing");
+    const normalized = lot10.normalizePublishedSnapshot({
+      ...golden.snapshot,
+      published_at: "2099-01-01T00:00:00.000Z",
+      report_card_id: "dynamic-id",
+      academic_year_id: "dynamic-year",
+      class_id: "dynamic-class",
+      school_id: "dynamic-school",
+    });
+    assert.deepEqual(normalized, golden.snapshot);
+    assert.equal(Object.prototype.hasOwnProperty.call(normalized, "published_at"), false);
+    assert.equal(Object.prototype.hasOwnProperty.call(normalized, "report_card_id"), false);
   }
 });
 
