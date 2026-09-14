@@ -1,0 +1,59 @@
+{
+  "version": 1,
+  "issue": 661,
+  "environments": {
+    "production": {
+      "web": "https://somafrik.app",
+      "api": "https://api.somafrik.app"
+    },
+    "preproduction": {
+      "web": "https://preprod.somafrik.app"
+    },
+    "demo": {
+      "appEnv": "demo",
+      "web": "https://demo.somafrik.app",
+      "api": "https://api-demo.somafrik.app",
+      "databaseIsolationRequired": true,
+      "sharedSecretsForbidden": true,
+      "sharedStorageForbidden": true
+    }
+  },
+  "publicEntry": "/demo",
+  "trialRequestRoute": "/demande-essai",
+  "qualification": {
+    "required": ["profile", "discoveryRole", "countryIso"],
+    "optional": ["organizationName"],
+    "emailRequired": false,
+    "phoneRequired": false
+  },
+  "session": {
+    "jwtInUrlForbidden": true,
+    "oneTimeCodeRequired": true,
+    "shortLived": true,
+    "platformSuperadminForbidden": true
+  },
+  "externalities": {
+    "sms": "sandbox",
+    "email": "sandbox",
+    "push": "sandbox",
+    "payments": "simulated",
+    "whatsapp": "sandbox",
+    "webhooks": "disabled_or_sandbox"
+  },
+  "web": {
+    "watermarkRequired": true,
+    "noIndex": true,
+    "noFollow": true,
+    "frameAncestors": "none"
+  },
+  "mobile": {
+    "sameDemoApiAsWeb": true,
+    "androidSecureFlagRequired": true,
+    "iosBestEffortCaptureProtection": true
+  },
+  "reset": {
+    "command": "demo:reset",
+    "idempotent": true,
+    "productionSeedReuseForbidden": true
+  }
+}
