@@ -1,0 +1,23 @@
+name: Demo contract
+
+on:
+  pull_request:
+    paths:
+      - 'docs/demo/**'
+      - 'scripts/verify-demo-contract.js'
+      - '.env.production.example'
+      - '.env.preproduction.example'
+      - '.github/workflows/demo-contract.yml'
+  workflow_dispatch:
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.12.0'
+      - name: Verify demo isolation contract
+        run: node scripts/verify-demo-contract.js
