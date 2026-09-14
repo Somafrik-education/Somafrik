@@ -272,7 +272,7 @@ assert.match(reportCard, /Visionner le bulletin/, "PD-06 : PDF uniquement carte 
 assert.match(reportCard, /label="Moyenne"/);
 assert.match(reportCard, /label="Rang"/);
 assert.match(reportCard, /label="Publié le"/);
-assert.match(reportCard, /openPdf\(card\.studentId, period\)/);
+assert.match(reportCard, /openPdf\(card\)/);
 
 const timetableScreen = read("screens/TimetableScreen.tsx");
 assert.match(timetableScreen, /ExpandableEntityCard/, "PD-07 : créneaux = ExpandableEntityCard");

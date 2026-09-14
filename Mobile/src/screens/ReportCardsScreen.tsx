@@ -6,13 +6,31 @@ import { useAuth } from "../context/AuthContext";
 import { useAdminData } from "../context/AdminDataContext";
 import ExpandableEntityCard from "../components/ExpandableEntityCard";
 import QueryStateView from "../components/QueryStateView";
+import { ReportCardSnapshotView } from "../components/bulletin/ReportCardSnapshotView";
 import { downloadReportCardPdf } from "../services/api";
 import {
-  bulletinPeriod,
   DATA_TRUTH_COPY,
   DATA_TRUTH_TEST_IDS,
   isPublishedBulletin,
+  snapshotFromFailure,
+  snapshotFromSuccess,
+  type ResourceSnapshot,
 } from "../lib/dataTruth";
+import {
+  getReportCardPublicationSnapshot,
+  listReportCardPublications,
+  type ReportCardPublicationRow,
+} from "../lib/reportCardPublicationApi";
+import {
+  SNAPSHOT_SLOT_PERCENTAGE,
+  SNAPSHOT_SLOT_RANK,
+  exposedSlot,
+  studentDisplayName,
+  studentPeriodLabel,
+  type RenderingTemplate,
+  type SnapshotPayload,
+  type SnapshotStudent,
+} from "../lib/reportCardSnapshotDisplay";
 import {
   filterRowsByStudentScope,
   resolveMobileStudentScope,
@@ -20,13 +38,93 @@ import {
 import { nextExclusiveExpandedKey } from "../lib/expandableEntity";
 import { MIN_TOUCH_TARGET_DP } from "../lib/mobileUsability";
 import { useStackScreenBottomPadding } from "../lib/screenLayout";
+import { ApiClientError } from "../services/httpClient";
+
+type PublishedBulletinCard = {
+  id: string;
+  reportCardId: string;
+  version: number;
+  studentId: string;
+  studentName: string;
+  period: string;
+  status: string;
+  publishedAt: string;
+  percentageLabel: string;
+  rankLabel: string;
+  payload: SnapshotPayload;
+  template?: RenderingTemplate | null;
+  student: SnapshotStudent;
+};
+
+function bulletinErrorSnapshot(
+  error: unknown,
+  previous: PublishedBulletinCard[] = [],
+): ResourceSnapshot<PublishedBulletinCard> {
+  const status = error instanceof ApiClientError ? error.status : undefined;
+  if (status === 403) {
+    return { status: "error", data: previous, errorMessage: DATA_TRUTH_COPY.forbiddenBulletins };
+  }
+  if (status === 404) {
+    return { status: "error", data: previous, errorMessage: DATA_TRUTH_COPY.notFoundBulletins };
+  }
+  if (status != null && status >= 500) {
+    return { status: "error", data: previous, errorMessage: DATA_TRUTH_COPY.serverErrorBulletins };
+  }
+  return snapshotFromFailure(error, previous);
+}
+
+function cardsFromPublication(
+  row: ReportCardPublicationRow,
+  payload: SnapshotPayload | null,
+  template?: RenderingTemplate | null,
+): PublishedBulletinCard[] {
+  if (!payload) return [];
+  const version = Number(row.published_snapshot_version || payload.published_snapshot_version || 0);
+  return (payload.students || []).map((student) => {
+    const studentId = String(student.student_id || "");
+    return {
+      id: `${row.report_card_id}:${version}:${studentId}`,
+      reportCardId: String(row.report_card_id),
+      version,
+      studentId,
+      studentName: studentDisplayName(student),
+      period: studentPeriodLabel(student),
+      status: "PUBLISHED",
+      publishedAt: String(payload.published_at || ""),
+      percentageLabel: exposedSlot(student, SNAPSHOT_SLOT_PERCENTAGE) || "—",
+      rankLabel: exposedSlot(student, SNAPSHOT_SLOT_RANK) || "—",
+      payload,
+      template,
+      student,
+    };
+  });
+}
 
 export default function ReportCardsScreen() {
   const stackPaddingBottom = useStackScreenBottomPadding();
   const contentStyle = [styles.content, { paddingBottom: stackPaddingBottom }];
   const { session, selectedStudentId } = useAuth();
-  const { studentsData, reportCardsSnapshot, loadReportCards } = useAdminData();
+  const { studentsData } = useAdminData();
   const [expandedReportCardId, setExpandedReportCardId] = useState<string | null>(null);
+  const [reportCardsSnapshot, setReportCardsSnapshot] = useState<ResourceSnapshot<PublishedBulletinCard>>({
+    status: "idle",
+    data: [],
+  });
+
+  const loadReportCards = useCallback(async () => {
+    setReportCardsSnapshot((current) => ({ ...current, status: "loading" }));
+    try {
+      const publications = await listReportCardPublications();
+      const cards: PublishedBulletinCard[] = [];
+      for (const row of publications) {
+        const snap = await getReportCardPublicationSnapshot(row.report_card_id, row.published_snapshot_version);
+        cards.push(...cardsFromPublication(row, snap?.payload ?? null, snap?.template as RenderingTemplate | undefined));
+      }
+      setReportCardsSnapshot(snapshotFromSuccess(cards));
+    } catch (error) {
+      setReportCardsSnapshot((current) => bulletinErrorSnapshot(error, current.data));
+    }
+  }, []);
 
   useFocusEffect(
     useCallback(() => {
@@ -56,9 +154,9 @@ export default function ReportCardsScreen() {
     return filterRowsByStudentScope(reportCardsSnapshot.data, studentScope);
   }, [reportCardsSnapshot, studentScope, studentsData]);
 
-  const openPdf = async (studentId: string, period: string) => {
+  const openPdf = async (card: PublishedBulletinCard) => {
     try {
-      const localUri = await downloadReportCardPdf(studentId, period);
+      const localUri = await downloadReportCardPdf(card.reportCardId, card.version);
       const canOpen = await Linking.canOpenURL(localUri);
 
       if (!canOpen) {
@@ -84,7 +182,7 @@ export default function ReportCardsScreen() {
       <Text style={styles.subtitle}>
         {reportCardsSnapshot.status === "success"
           ? `${rows.length} bulletin(s) disponible(s)`
-          : "Documents générés par l'établissement"}
+          : "Documents publiés par l'établissement"}
       </Text>
 
       {showQueryState ? (
@@ -105,14 +203,10 @@ export default function ReportCardsScreen() {
         <View testID={DATA_TRUTH_TEST_IDS.bulletinsList}>
           {rows.map((card) => {
             const student = studentsData.find((item) => item.id === card.studentId);
-            const period = bulletinPeriod(card);
+            const period = card.period;
             const isPublished = isPublishedBulletin(card.status);
-            const averageLabel =
-              card.average == null || !Number.isFinite(Number(card.average))
-                ? "—"
-                : `${Number(card.average).toFixed(1)}/20`;
-            const rankLabel =
-              card.rank == null || !Number.isFinite(Number(card.rank)) ? "—" : `${card.rank}e`;
+            const averageLabel = card.percentageLabel;
+            const rankLabel = card.rankLabel;
 
             return (
               <ExpandableEntityCard
@@ -129,13 +223,14 @@ export default function ReportCardsScreen() {
                 <View style={styles.metricsRow}>
                   <Metric label="Moyenne" value={averageLabel} />
                   <Metric label="Rang" value={rankLabel} />
-                  <Metric label="Publié le" value={card.publishedAt || "À valider"} />
+                  <Metric label="Publié le" value={card.publishedAt || "—"} />
                 </View>
+                <ReportCardSnapshotView payload={card.payload} template={card.template} studentId={card.studentId} />
                 <TouchableOpacity
                   activeOpacity={0.85}
-                  style={[styles.pdfButton, (!isPublished || !card.studentId || !period) && styles.pdfButtonDisabled]}
-                  disabled={!isPublished || !card.studentId || !period}
-                  onPress={() => openPdf(card.studentId, period)}
+                  style={[styles.pdfButton, !isPublished && styles.pdfButtonDisabled]}
+                  disabled={!isPublished}
+                  onPress={() => openPdf(card)}
                 >
                   <Ionicons name="document-text-outline" size={18} color="#FFFFFF" />
                   <Text style={styles.pdfText}>Visionner le bulletin</Text>

@@ -350,6 +350,10 @@ jobs:
         if: needs.scope.outputs.reportcard == 'true'
         run: npm run verify:report-card-lot7
 
+      - name: Report card LOT 8 mobile bulletins
+        if: needs.scope.outputs.reportcard == 'true' || needs.scope.outputs.mobile == 'true'
+        run: npm run verify:report-card-lot8
+
       - name: Planning
         if: needs.scope.outputs.planning == 'true'
         run: |

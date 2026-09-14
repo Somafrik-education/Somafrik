@@ -9,6 +9,9 @@ const { VERIFY_HEADERS } = require("../../contracts/reportCard/contract");
 
 const PERM_CONFIGURE = "REPORT_CARD_CONFIGURE";
 const PERM_APPROVE = "REPORT_CARD_SCHOOL_APPROVE_TEMPLATE";
+const PERM_READ = "REPORT_CARD_READ";
+const PERM_REPRINT = "REPORT_CARD_REPRINT";
+const VERIFICATION_ACTIVE = "ACTIVE";
 
 const HTTP_STATUS = Object.freeze({
   RBAC_DENIED: 403,
@@ -16,6 +19,8 @@ const HTTP_STATUS = Object.freeze({
   TENANT_MISMATCH: 403,
   REQUEST_NOT_FOUND: 404,
   VERSION_NOT_FOUND: 404,
+  PUBLICATION_NOT_FOUND: 404,
+  PDF_QR_SCOPE_MISMATCH: 403,
   INVALID_TRANSITION: 409,
   IDEMPOTENCY_CONFLICT: 409,
 });
@@ -34,6 +39,85 @@ function applyVerifyHeaders(res) {
 
 function hasPermission(actor, token) {
   return Boolean(actor && Array.isArray(actor.permissions) && actor.permissions.includes(token));
+}
+
+function requireToken(actor, token) {
+  if (!hasPermission(actor, token)) throw coded("RBAC_DENIED");
+}
+
+function applyStudentScope(payload, actor) {
+  if (!payload || typeof payload !== "object") return payload;
+  if (!Array.isArray(actor.studentIds)) return payload;
+  const allowed = new Set(actor.studentIds.map((id) => String(id)));
+  const students = Array.isArray(payload.students)
+    ? payload.students.filter((row) => {
+        if (!row || typeof row !== "object") return false;
+        const id = row.student_id != null ? row.student_id : row.studentId;
+        return allowed.has(String(id));
+      })
+    : [];
+  return { ...payload, students };
+}
+
+function assertScopedStudents(payload, actor) {
+  if (!Array.isArray(actor.studentIds)) return payload;
+  if (!payload || !Array.isArray(payload.students) || payload.students.length === 0) {
+    throw coded("RBAC_DENIED");
+  }
+  return payload;
+}
+
+async function resolvePublishedTemplate(payload, schoolId, getTemplate) {
+  const ref = payload && payload.provenance ? payload.provenance.template : null;
+  if (!ref || typeof ref !== "object" || Array.isArray(ref)) return undefined;
+  if (ref.id == null || ref.version == null) return undefined;
+  if (typeof getTemplate !== "function") throw coded("VERSION_NOT_FOUND");
+  const found = await Promise.resolve(
+    getTemplate({
+      tenant: { schoolId, actorSchoolId: schoolId },
+      schoolId,
+      templateId: ref.id,
+      version: ref.version,
+    })
+  );
+  if (!found) throw coded("VERSION_NOT_FOUND");
+  const spec = found.spec != null ? found.spec : found;
+  if (!spec || typeof spec !== "object" || Array.isArray(spec)) throw coded("VERSION_NOT_FOUND");
+  if (ref.spec_sha256 && found.spec_sha256 && String(found.spec_sha256) !== String(ref.spec_sha256)) {
+    throw coded("VERSION_NOT_FOUND");
+  }
+  return spec;
+}
+
+function assertPdfQrScopeSafe(unscopedPayload, actor) {
+  if (!Array.isArray(actor.studentIds)) return;
+  const allowed = new Set(actor.studentIds.map((id) => String(id)));
+  const students = Array.isArray(unscopedPayload && unscopedPayload.students)
+    ? unscopedPayload.students
+    : [];
+  const extras = students.filter((row) => {
+    if (!row || typeof row !== "object") return true;
+    const id = row.student_id != null ? row.student_id : row.studentId;
+    return !allowed.has(String(id));
+  });
+  if (extras.length > 0) throw coded("PDF_QR_SCOPE_MISMATCH");
+}
+
+async function consultPublishedSnapshot({ publication, actor, schoolId, reportCardId, version, getTemplate }) {
+  if (!publication || typeof publication.lookup !== "function" || typeof publication.payloadForRender !== "function") {
+    throw coded("REQUEST_NOT_FOUND");
+  }
+  const tenant = { schoolId, actorSchoolId: actor.actorSchoolId };
+  const record = await Promise.resolve(publication.lookup({ tenant, reportCardId, version }));
+  if (!record || record.verification_status !== VERIFICATION_ACTIVE) {
+    throw coded("PUBLICATION_NOT_FOUND");
+  }
+  const unscopedPayload = await Promise.resolve(
+    publication.payloadForRender({ tenant, reportCardId, version })
+  );
+  const payload = assertScopedStudents(applyStudentScope(unscopedPayload, actor), actor);
+  const template = await resolvePublishedTemplate(payload, schoolId, getTemplate);
+  return { payload, unscopedPayload, template, tenant };
 }
 
 function isPrivileged(actor) {
@@ -163,6 +247,8 @@ function registerReportCardHttp(app, deps = {}) {
     return {
       configuration: deps.configuration || (typeof deps.getConfiguration === "function" ? deps.getConfiguration() : null),
       publication: deps.publication || (typeof deps.getPublication === "function" ? deps.getPublication() : null),
+      pdf: deps.pdf || (typeof deps.getPdf === "function" ? deps.getPdf() : null),
+      getTemplate: typeof deps.getTemplate === "function" ? deps.getTemplate : null,
     };
   }
 
@@ -309,22 +395,97 @@ function registerReportCardHttp(app, deps = {}) {
   );
 
   app.get(
+    "/api/report-card/publications",
+    auth,
+    route(async (req, res) => {
+      const actor = await actorFrom(req);
+      const schoolId = schoolIdForSchoolActor(actor);
+      requireToken(actor, PERM_READ);
+      const { publication } = services();
+      if (!publication || typeof publication.listCurrent !== "function") {
+        throw coded("REQUEST_NOT_FOUND");
+      }
+      const tenant = { schoolId, actorSchoolId: actor.actorSchoolId };
+      const rows = await Promise.resolve(publication.listCurrent({ tenant }));
+      const publications = [];
+      for (const row of rows || []) {
+        if (!Array.isArray(actor.studentIds)) {
+          publications.push(row);
+          continue;
+        }
+        try {
+          const payload = applyStudentScope(
+            await Promise.resolve(
+              publication.payloadForRender({
+                tenant,
+                reportCardId: row.report_card_id,
+                version: row.published_snapshot_version,
+              })
+            ),
+            actor
+          );
+          if (payload && Array.isArray(payload.students) && payload.students.length > 0) {
+            publications.push(row);
+          }
+        } catch {
+          // Skip rows the scoped actor cannot consult.
+        }
+      }
+      res.json({ ok: true, publications });
+    })
+  );
+
+  app.get(
+    "/api/report-card/publications/:reportCardId/pdf",
+    auth,
+    route(async (req, res) => {
+      const actor = await actorFrom(req);
+      const schoolId = schoolIdForSchoolActor(actor);
+      requireToken(actor, PERM_REPRINT);
+      const { pdf, publication, getTemplate } = services();
+      if (!pdf || typeof pdf.render !== "function") {
+        throw coded("REQUEST_NOT_FOUND");
+      }
+      const version = Number(req.query.version);
+      const { payload, unscopedPayload, template, tenant } = await consultPublishedSnapshot({
+        publication,
+        actor,
+        schoolId,
+        reportCardId: req.params.reportCardId,
+        version,
+        getTemplate,
+      });
+      assertPdfQrScopeSafe(unscopedPayload, actor);
+      const rendered = await pdf.render({
+        tenant,
+        reportCardId: req.params.reportCardId,
+        version,
+        renderingTemplate: template,
+        payload,
+      });
+      res.setHeader("Content-Type", "application/pdf");
+      res.send(rendered.pdf);
+    })
+  );
+
+  app.get(
     "/api/report-card/publications/:reportCardId/snapshot",
     auth,
     route(async (req, res) => {
       const actor = await actorFrom(req);
       const schoolId = schoolIdForSchoolActor(actor);
-      const { publication } = services();
-      if (!publication || typeof publication.payloadForRender !== "function") {
-        throw coded("REQUEST_NOT_FOUND");
-      }
+      requireToken(actor, PERM_READ);
+      const { publication, getTemplate } = services();
       const version = Number(req.query.version);
-      const payload = await publication.payloadForRender({
-        tenant: { schoolId, actorSchoolId: actor.actorSchoolId },
+      const { payload, template } = await consultPublishedSnapshot({
+        publication,
+        actor,
+        schoolId,
         reportCardId: req.params.reportCardId,
         version,
+        getTemplate,
       });
-      res.json({ ok: true, payload });
+      res.json({ ok: true, payload, template });
     })
   );
 
