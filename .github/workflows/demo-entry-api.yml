@@ -26,7 +26,7 @@ jobs:
         env:
           POSTGRES_DB: somafrik_demo_ci
           POSTGRES_USER: postgres
-          POSTGRES_HOST_AUTH_METHOD: trust
+          POSTGRES_PASSWORD: ${{ github.run_id }}
         ports:
           - 5432:5432
         options: >-
@@ -57,7 +57,7 @@ jobs:
         run: npm --prefix backend run verify:demo-entry-api
       - name: Bootstrap canonical PostgreSQL schema
         env:
-          DATABASE_URL: postgresql://postgres@127.0.0.1:5432/somafrik_demo_ci
+          DATABASE_URL: postgresql://postgres:${{ github.run_id }}@127.0.0.1:5432/somafrik_demo_ci
           SOMAFRIK_SKIP_DEMO_SEED: 'true'
         run: |
           node <<'NODE'
@@ -79,7 +79,7 @@ jobs:
         env:
           APP_ENV: demo
           SOMAFRIK_SKIP_DEMO_SEED: 'true'
-          DATABASE_URL: postgresql://postgres@127.0.0.1:5432/somafrik_demo_ci
+          DATABASE_URL: postgresql://postgres:${{ github.run_id }}@127.0.0.1:5432/somafrik_demo_ci
           SOMAFRIK_DEMO_DATABASE_URL_MARKER: somafrik_demo
           SOMAFRIK_DEMO_RESET_CONFIRM: RESET_DEMO_DATA
           DEMO_INTERNAL_SEED_PIN: CI_DEMO_RESET_TEST_VALUE_1234567890
@@ -90,7 +90,7 @@ jobs:
           APP_ENV: demo
           SOMAFRIK_ENV: demo
           SOMAFRIK_SKIP_DEMO_SEED: 'true'
-          DATABASE_URL: postgresql://postgres@127.0.0.1:5432/somafrik_demo_ci
+          DATABASE_URL: postgresql://postgres:${{ github.run_id }}@127.0.0.1:5432/somafrik_demo_ci
           PORT: '5100'
           DEMO_INNER_PORT: '5101'
           DEMO_FRONTEND_ORIGIN: https://demo.somafrik.app
