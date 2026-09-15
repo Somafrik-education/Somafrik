@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import { useAuth } from "../context/AuthContext";
 import { useData } from "../context/DataContext";
 import { useActiveSchool } from "../context/ActiveSchoolContext";
@@ -14,10 +14,12 @@ import {
 } from "../lib/dashboardPermissions";
 import { DashboardChartGrid } from "../components/charts/DashboardChartGrid";
 import { resolveChartOrderUserKey } from "../lib/chartOrder";
+import { demoRuntimeEnabled } from "../lib/featureFlags";
+import { dashboardDomainsForDemo } from "../lib/dashboardDemoHydration";
 
 export function OverviewPage() {
   const { session } = useAuth();
-  const { state } = useData();
+  const { state, ensureDomains } = useData();
   const ctx = usePermissionContext();
   const user = session?.user ?? null;
   const internalSchool = isInternalSchoolRole(user?.role);
@@ -25,6 +27,18 @@ export function OverviewPage() {
     scopedUser,
     activeSchoolCode,
   } = useActiveSchool();
+
+  useEffect(() => {
+    if (!demoRuntimeEnabled || !session?.accessToken) return;
+
+    const options =
+      internalSchool && activeSchoolCode && activeSchoolCode !== "*"
+        ? { schoolCode: activeSchoolCode }
+        : undefined;
+
+    void ensureDomains(dashboardDomainsForDemo(internalSchool), options).catch(() => undefined);
+  }, [session?.accessToken, internalSchool, activeSchoolCode, ensureDomains]);
+
   const hasInternalNotificationScope = Boolean(activeSchoolCode && activeSchoolCode !== "*");
   const schoolUnreadCount = useInternalNotificationsUnreadCount(
     Boolean(
