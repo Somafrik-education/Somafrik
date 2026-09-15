@@ -178,7 +178,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, [session?.accessToken, session?.permissions, session?.user?.permissions, hydrateEffectivePermissions]);
+  }, [session?.accessToken, hydrateEffectivePermissions]);
 
   const login = useCallback(
     async ({ identifier, password, schoolCode, profile }: LoginInput) => {
