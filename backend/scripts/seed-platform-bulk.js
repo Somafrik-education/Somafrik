@@ -467,7 +467,7 @@ async function insertSchoolBundle(client, bundle, schoolId) {
         exam.name,
         exam.examType,
         parseDate(exam.date),
-        index % 2 === 0 ? "published" : "validated",
+        index % 2 === 0 ? "completed" : "validated",
         adminUser?.id ?? null,
       ],
     );
