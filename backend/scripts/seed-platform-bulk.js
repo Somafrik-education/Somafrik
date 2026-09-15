@@ -129,20 +129,59 @@ async function insertCountries(client, countries) {
   return ids;
 }
 
+function resolveSeedSchoolCountryIso(school = {}) {
+  const explicit = String(school.countryCode ?? "").trim().toUpperCase();
+  if (/^[A-Z]{2}$/.test(explicit)) return explicit;
+
+  const publicIdentity = String(school.loginCode ?? school.publicId ?? "").trim().toUpperCase();
+  const publicMatch = /^([A-Z]{2})-/.exec(publicIdentity);
+  if (publicMatch) return publicMatch[1];
+
+  const internalCode = String(school.code ?? "").trim().toUpperCase();
+  const bulkMatch = /^SCH-BULK-([A-Z]{2})-/.exec(internalCode);
+  if (bulkMatch) return bulkMatch[1];
+  const canonicalMatch = /^([A-Z]{2})-\d{4}-\d{4}$/.exec(internalCode);
+  if (canonicalMatch) return canonicalMatch[1];
+
+  throw new Error(`SEED_SCHOOL_COUNTRY_REQUIRED:${internalCode || "UNKNOWN"}`);
+}
+
+function resolveSeedSchoolShortCode(school = {}) {
+  const loginCode = String(school.loginCode ?? "").trim().toUpperCase();
+  const match = /^[A-Z]{2}-([A-Z0-9]{2,5})-\d{2}-\d{3}$/.exec(loginCode);
+  return match?.[1] ?? null;
+}
+
 async function insertSchools(client, platformSchools, countryIds) {
   const ids = new Map();
   for (const school of platformSchools) {
-    const iso = school.code.slice(0, 2);
+    const iso = resolveSeedSchoolCountryIso(school);
     const countryId = countryIds.get(iso);
+    if (!countryId) {
+      throw new Error(`SEED_SCHOOL_COUNTRY_NOT_FOUND:${iso}:${school.code}`);
+    }
+    const shortCode = resolveSeedSchoolShortCode(school);
     const row = await one(
       client,
-      `INSERT INTO schools (country_id, school_code, name, logo_url, address, city, phone, email, school_type, status, created_at, updated_at)
-       VALUES ($1, $2, $3, '', $4, $5, $6, $7, $8, 'active', NOW(), NOW())
+      `INSERT INTO schools (country_id, school_code, short_code, name, logo_url, address, city, phone, email, school_type, status, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, '', $5, $6, $7, $8, $9, 'active', NOW(), NOW())
        ON CONFLICT (school_code) DO UPDATE SET name = EXCLUDED.name
-       RETURNING id, school_code`,
-      [countryId, school.code, school.name, school.address, school.city, school.phone, school.email, school.type],
+       RETURNING id, school_code, login_code`,
+      [
+        countryId,
+        school.code,
+        shortCode,
+        school.name,
+        school.address,
+        school.city,
+        school.phone,
+        school.email,
+        school.type,
+      ],
     );
     ids.set(school.code, row.id);
+    if (school.loginCode) ids.set(school.loginCode, row.id);
+    if (row.login_code) ids.set(row.login_code, row.id);
   }
   return ids;
 }
