@@ -36,6 +36,13 @@ interface AuthContextValue {
 const AuthContext = createContext<AuthContextValue | null>(null);
 const STORAGE_KEY = "somafrik.web.session";
 
+type DemoSession = Session & { demo?: boolean };
+
+function hasLiveDemoPermissions(value: Session | null): boolean {
+  if (!value || (value as DemoSession).demo !== true) return false;
+  return Array.isArray(value.permissions) || Array.isArray(value.user?.permissions);
+}
+
 function loadStoredSession(): Session | null {
   try {
     const raw = sessionStorage.getItem(STORAGE_KEY);
@@ -59,8 +66,8 @@ function logPermissionsBootstrapFailure(err: unknown) {
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSessionState] = useState<Session | null>(loadStoredSession);
-  const [permissionsBootstrap, setPermissionsBootstrap] = useState<PermissionsBootstrap>(
-    session?.accessToken ? "loading" : "idle",
+  const [permissionsBootstrap, setPermissionsBootstrap] = useState<PermissionsBootstrap>(() =>
+    hasLiveDemoPermissions(session) ? "ready" : session?.accessToken ? "loading" : "idle",
   );
   const [permissionsBootstrapError, setPermissionsBootstrapError] = useState<string | null>(null);
   const sessionRef = useRef<Session | null>(session);
@@ -92,6 +99,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setAccessTokenProvider(() => sessionRef.current?.accessToken ?? null);
     setRefreshTokenProvider(() => sessionRef.current?.refreshToken ?? null);
     setSessionState(next);
+    if (hasLiveDemoPermissions(next)) {
+      // L'échange one-shot vient d'obtenir ces permissions du login interne Somafrik.
+      // La Démo ne doit pas bloquer toute l'hydratation sur un second bootstrap réseau.
+      setPermissionsBootstrap("ready");
+      setPermissionsBootstrapError(null);
+    } else if (!next) {
+      setPermissionsBootstrap("idle");
+      setPermissionsBootstrapError(null);
+    }
     try {
       if (next) sessionStorage.setItem(STORAGE_KEY, JSON.stringify(next));
       else sessionStorage.removeItem(STORAGE_KEY);
@@ -150,6 +166,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setPermissionsBootstrapError(null);
       return;
     }
+    if (hasLiveDemoPermissions(session)) {
+      setPermissionsBootstrap("ready");
+      setPermissionsBootstrapError(null);
+      return;
+    }
     let cancelled = false;
     void hydrateEffectivePermissions().then(() => {
       if (cancelled) return;
@@ -157,7 +178,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, [session?.accessToken, hydrateEffectivePermissions]);
+  }, [session?.accessToken, session?.permissions, session?.user?.permissions, hydrateEffectivePermissions]);
 
   const login = useCallback(
     async ({ identifier, password, schoolCode, profile }: LoginInput) => {
