@@ -11,6 +11,7 @@
     "start:demo": "node demoGateway.js",
     "demo:reset": "node scripts/reset-demo-environment.js",
     "verify:demo-entry-api": "node scripts/verify-demo-entry-api.js",
+    "verify:demo-runtime-data": "node scripts/verify-demo-runtime-data.js",
     "dev": "node server.js",
     "dev:memory": "node scripts/dev-memory.js",
     "dev:nodemon": "nodemon server.js",
