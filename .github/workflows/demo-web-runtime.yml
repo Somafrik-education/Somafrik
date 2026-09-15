@@ -1,0 +1,44 @@
+name: Demo web runtime
+
+on:
+  pull_request:
+    paths:
+      - 'web/src/pages/DemoRuntimeEntryPage.tsx'
+      - 'web/src/components/demo/**'
+      - 'web/src/lib/demoRuntime.ts'
+      - 'web/src/lib/demoRuntime.test.ts'
+      - 'web/src/lib/featureFlags.ts'
+      - 'web/src/main.tsx'
+      - 'web/src/components/layout/AppLayout.tsx'
+      - 'web/package.json'
+      - 'web/package-lock.json'
+      - '.github/workflows/demo-web-runtime.yml'
+  workflow_dispatch:
+
+jobs:
+  demo-web-runtime:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.12.0'
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            web/package-lock.json
+      - name: Install workspace dependencies
+        run: npm run ci:install
+      - name: Demo runtime unit tests
+        run: npm --prefix web run test -- src/lib/demoRuntime.test.ts
+      - name: Build Demo web runtime
+        env:
+          VITE_API_URL: https://api-demo.somafrik.app
+          VITE_DEMO_ENTRY_API_URL: https://api-demo.somafrik.app
+          VITE_DEMO_WEB_ORIGIN: https://demo.somafrik.app
+          VITE_DEMO_RUNTIME: 'true'
+          VITE_ENABLE_PUBLIC_DEMO: 'false'
+          VITE_SHOW_DEMO_ACCOUNTS: 'false'
+          VITE_ENABLE_MARKETPLACE: 'false'
+        run: npm --prefix web run build
