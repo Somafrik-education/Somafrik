@@ -110,6 +110,9 @@ Il ne doit pas être exécuté lors d'un déploiement normal d'une préproductio
 
 ## 6. Application mobile
 
+Push Android preview / préprod : voir `docs/mobile/PUSH-PREVIEW-PREPROD.md`.
+Le self-test `POST /api/mobile/push-devices/test` exige `SOMAFRIK_PUSH_SELFTEST_ENABLED=true` sur l’API préprod (défaut fail-closed : `false`). Ne pas modifier ce secret depuis le code.
+
 Le profil preview/préproduction EAS consomme :
 
 ```text

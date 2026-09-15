@@ -152,6 +152,31 @@ async function main() {
   assert.equal(posts.length, 1);
   assert.equal(posts[0]?.path, "/mobile/push-devices");
 
+  resetPushRegistrationStateForTests();
+  posts.length = 0;
+  const easEmbeddedManifest = await registerAuthenticatedPushDevice({
+    platform: "android",
+    executionEnvironment: "standalone",
+    expoGoConfig: { extra: { eas: { projectId: "47b217aa-3d96-4d50-a9f5-fc0ec8a3cef5" } } },
+    getProjectId: () => "47b217aa-3d96-4d50-a9f5-fc0ec8a3cef5",
+    getReleaseProfileImpl: () => "preview",
+    httpRequestImpl: httpRequestImpl as never,
+    notifications: {
+      async getPermissionsAsync() {
+        return granted();
+      },
+      async requestPermissionsAsync() {
+        return granted();
+      },
+      async getExpoPushTokenAsync() {
+        return { data: "ExponentPushToken[test-eas-embedded]" };
+      },
+    },
+  });
+  assert.equal(easEmbeddedManifest, "registered");
+  assert.equal(posts[0]?.path, "/mobile/push-devices");
+  assert.match(String(posts[0]?.init?.body), /"appProfile":"preview"/);
+
   const expoGo = await registerAuthenticatedPushDevice({
     platform: "android",
     executionEnvironment: "storeClient",
