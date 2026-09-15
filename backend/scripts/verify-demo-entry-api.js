@@ -9,9 +9,14 @@ const {
   buildDemoRedirectUrl,
   createDemoTicketStore,
   isBlockedDemoGatewayPath,
+  resolveDemoInternalSeedPin,
   validateDemoQualification,
 } = require("../lib/demoGatewayPolicy");
-const { assertDemoResetSafety, scrubCredentialFields } = require("../lib/demoResetSafety");
+const {
+  assertDemoResetSafety,
+  hardenBackOfficeCredentials,
+  scrubCredentialFields,
+} = require("../lib/demoResetSafety");
 const { createDemoGatewayApp } = require("../demoGateway");
 
 const env = {
@@ -24,6 +29,7 @@ const env = {
   DEMO_FRONTEND_ORIGIN: "https://demo.somafrik.app",
   DEMO_ENTRY_ORIGIN: "https://somafrik.app",
   DEMO_ENTRY_RATE_LIMIT_MAX: "100",
+  DEMO_INTERNAL_SEED_PIN: "ci-demo-internal-credential-7F32",
 };
 
 async function verifyHttpGateway() {
@@ -84,6 +90,8 @@ async function verifyHttpGateway() {
     const exchanged = await exchangeResponse.json();
     assert.equal(exchanged.demo, true);
     assert.equal(exchanged.accessToken, "demo-access-token");
+    assert.equal(exchanged.refreshToken, undefined, "refresh token must never cross the demo gateway");
+    assert.ok(exchanged.expiresIn <= 900);
     assert.match(exchanged.demoSession.id, /^DEMO-[A-F0-9]+$/);
 
     const replayResponse = await fetch(`${base}/api/demo/exchange`, {
@@ -136,6 +144,7 @@ async function main() {
   );
 
   assert.deepEqual(assertDemoRuntimeEnvironment(env), { publicPort: 5100, innerPort: 5101 });
+  assert.equal(resolveDemoInternalSeedPin(env), "ci-demo-internal-credential-7F32");
   assert.throws(
     () => assertDemoRuntimeEnvironment({ ...env, APP_ENV: "production" }),
     /APP_ENV=demo requis/,
@@ -143,6 +152,14 @@ async function main() {
   assert.throws(
     () => assertDemoRuntimeEnvironment({ ...env, DEMO_INNER_PORT: "5100" }),
     /doivent être distincts/,
+  );
+  assert.throws(
+    () => assertDemoRuntimeEnvironment({ ...env, DEMO_INTERNAL_SEED_PIN: "1234" }),
+    /au moins 16 caractères|trop faible/,
+  );
+  assert.throws(
+    () => assertDemoRuntimeEnvironment({ ...env, DEMO_INTERNAL_SEED_PIN: "" }),
+    /au moins 16 caractères/,
   );
 
   const qualification = validateDemoQualification({
@@ -174,6 +191,7 @@ async function main() {
   );
   assert.equal(isBlockedDemoGatewayPath("/api/login"), true);
   assert.equal(isBlockedDemoGatewayPath("/api/backoffice/login"), true);
+  assert.equal(isBlockedDemoGatewayPath("/api/auth/refresh"), true);
   assert.equal(isBlockedDemoGatewayPath("/api/debug/trace"), true);
   assert.equal(isBlockedDemoGatewayPath("/api/classes"), false);
 
@@ -182,12 +200,26 @@ async function main() {
   });
   assert.deepEqual(scrubbed, { users: [{ identifier: "admin", nested: {} }] });
 
+  const hardened = hardenBackOfficeCredentials(
+    {
+      users: [{ identifier: "admin", password: "1234", temporaryPassword: "1234" }],
+      nested: { pin: "1234", safe: true },
+    },
+    "scrypt$demo-hash",
+  );
+  assert.equal(hardened.users[0].password, undefined);
+  assert.equal(hardened.users[0].temporaryPassword, undefined);
+  assert.equal(hardened.users[0].passwordHash, "scrypt$demo-hash");
+  assert.equal(hardened.users[0].pinHash, "scrypt$demo-hash");
+  assert.deepEqual(hardened.nested, { safe: true });
+
   const resetEnv = {
     APP_ENV: "demo",
     SOMAFRIK_SKIP_DEMO_SEED: "true",
     SOMAFRIK_DEMO_RESET_CONFIRM: "RESET_DEMO_DATA",
     DATABASE_URL: "postgresql://demo:demo@localhost:5432/somafrik_demo",
     SOMAFRIK_DEMO_DATABASE_URL_MARKER: "somafrik_demo",
+    DEMO_INTERNAL_SEED_PIN: "ci-demo-internal-credential-7F32",
   };
   assert.equal(assertDemoResetSafety(resetEnv).marker, "somafrik_demo");
   assert.throws(
