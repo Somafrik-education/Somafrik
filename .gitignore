@@ -16,6 +16,7 @@ Mobile/ios/
 
 # Environment
 .env
+.env.demo
 .env.preproduction
 .env.production
 .env.local
