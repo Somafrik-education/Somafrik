@@ -321,13 +321,11 @@ async function insertSchoolBundle(client, bundle, schoolId) {
   for (const student of students) {
     const row = await one(
       client,
-      `INSERT INTO students (school_id, student_code, first_name, last_name, gender, birth_date, birth_place, photo_url, parent_phone, parent_email, status)
-       VALUES ($1, $2, $3, $4, $5, $6, '', '', $7, $8, 'active')
-       ON CONFLICT (student_code) DO UPDATE SET first_name = EXCLUDED.first_name
-       RETURNING id`,
+      `INSERT INTO students (school_id, first_name, last_name, gender, birth_date, birth_place, photo_url, parent_phone, parent_email, status)
+       VALUES ($1, $2, $3, $4, $5, '', '', $6, $7, 'active')
+       RETURNING id, student_code`,
       [
         schoolId,
-        student.matricule,
         student.firstName,
         student.name.replace(student.firstName, "").trim() || student.name,
         student.gender,
@@ -337,20 +335,30 @@ async function insertSchoolBundle(client, bundle, schoolId) {
       ],
     );
     studentIds.set(student.id, row.id);
+    studentIds.set(student.matricule, row.id);
 
-    await client.query(
+    const studentUser = await one(
+      client,
       `INSERT INTO users (school_id, user_code, first_name, last_name, email, phone, password_hash, pin_hash, role, status)
        VALUES ($1, $2, $3, $4, $5, $6, NULL, $7, 'STUDENT', 'active')
-       ON CONFLICT (user_code) DO UPDATE SET pin_hash = EXCLUDED.pin_hash`,
+       ON CONFLICT (user_code) DO UPDATE SET pin_hash = EXCLUDED.pin_hash
+       RETURNING id`,
       [
         schoolId,
-        student.matricule,
+        row.student_code,
         student.firstName,
         student.name.replace(student.firstName, "").trim() || student.name,
         student.parentEmail,
         student.parentPhone,
         pinHash,
       ],
+    );
+
+    await client.query(
+      `UPDATE students
+       SET user_id = $2, updated_at = NOW()
+       WHERE id = $1 AND (user_id IS NULL OR user_id = $2)`,
+      [row.id, studentUser.id],
     );
 
     const classId = classIds.get(student.className);
@@ -636,7 +644,7 @@ async function main() {
     console.log("  Préfet démo : prefet (CD-IN-26-001)");
     console.log("  Secrétaire démo : secretaire (CD-IN-26-001)");
     console.log("  Enseignant démo : ENS-0001 (CD-IN-26-001)");
-    console.log("  Élève démo : CD-IN-EL-26-001 (CD-IN-26-001)");
+    console.log("  Élève démo : identifiant canonique généré par PostgreSQL (CD-IN-…)");
   } finally {
     await pool.end();
   }
