@@ -18,7 +18,21 @@ on:
 jobs:
   demo-entry-api:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: somafrik_demo_ci
+          POSTGRES_USER: postgres
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d somafrik_demo_ci"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -39,3 +53,18 @@ jobs:
           node --check backend/scripts/verify-demo-entry-api.js
       - name: Verify one-shot demo entry API
         run: npm --prefix backend run verify:demo-entry-api
+      - name: Bootstrap canonical PostgreSQL schema
+        env:
+          DATABASE_URL: postgresql://postgres@127.0.0.1:5432/somafrik_demo_ci
+          SOMAFRIK_BOOTSTRAP_REQUIRED: 'true'
+          SOMAFRIK_SKIP_DEMO_SEED: 'true'
+        run: node backend/scripts/verify-runtime-bootstrap.js
+      - name: Verify full Demo reset on PostgreSQL 16
+        env:
+          APP_ENV: demo
+          SOMAFRIK_SKIP_DEMO_SEED: 'true'
+          DATABASE_URL: postgresql://postgres@127.0.0.1:5432/somafrik_demo_ci
+          SOMAFRIK_DEMO_DATABASE_URL_MARKER: somafrik_demo
+          SOMAFRIK_DEMO_RESET_CONFIRM: RESET_DEMO_DATA
+          DEMO_INTERNAL_SEED_PIN: CI_DEMO_RESET_TEST_VALUE_1234567890
+        run: npm --prefix backend run demo:reset
