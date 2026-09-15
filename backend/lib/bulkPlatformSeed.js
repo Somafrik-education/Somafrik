@@ -486,6 +486,7 @@ function buildSchoolAcademicBundle(school, country) {
       const studentLastName = DEMO_LAST_NAMES[(studentIndex + 1) % DEMO_LAST_NAMES.length];
       const identity = resolveSchoolIdentityContext({
         school_code: code,
+        country_code: country.code,
         name: school.name,
         login_code: school.loginCode,
       });
