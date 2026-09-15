@@ -90,7 +90,7 @@ jobs:
           APP_ENV: demo
           SOMAFRIK_ENV: demo
           SOMAFRIK_SKIP_DEMO_SEED: 'true'
-          DATABASE_URL: postgresql://postgres:${{ github.run_id }}@127.0.0.1:5432/somafrik_demo_ci
+          DATABASE_URL: postgresql://postgres:${{ github.run_id }}@demo-db-ci:5432/somafrik_demo_ci
           PORT: '5100'
           DEMO_INNER_PORT: '5101'
           DEMO_FRONTEND_ORIGIN: https://demo.somafrik.app
@@ -102,6 +102,7 @@ jobs:
           SOMAFRIK_PUSH_SELFTEST_ENABLED: 'false'
         run: |
           set -euo pipefail
+          echo '127.0.0.1 demo-db-ci' | sudo tee -a /etc/hosts >/dev/null
           mkdir -p "$GITHUB_WORKSPACE/.demo-ci/communication" "$GITHUB_WORKSPACE/.demo-ci/report-card-source"
           export SOMAFRIK_COMMUNICATION_STORAGE="$GITHUB_WORKSPACE/.demo-ci/communication"
           export SOMAFRIK_REPORT_CARD_SOURCE_STORAGE="$GITHUB_WORKSPACE/.demo-ci/report-card-source"
