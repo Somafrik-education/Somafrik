@@ -17,6 +17,8 @@ const {
   hardenBackOfficeCredentials,
   scrubCredentialFields,
 } = require("../lib/demoResetSafety");
+const { buildBulkPlatformSeed } = require("../lib/bulkPlatformSeed");
+const { isStudentCanonicalCode } = require("../lib/studentCanonicalIdentifier");
 const { createDemoGatewayApp } = require("../demoGateway");
 
 const env = {
@@ -229,6 +231,13 @@ async function main() {
   assert.throws(
     () => assertDemoResetSafety({ ...resetEnv, DATABASE_URL: "postgresql://x:y@localhost:5432/somafrik" }),
     /ne contient pas le marqueur/,
+  );
+
+  const seed = buildBulkPlatformSeed();
+  assert.ok(seed.students.length > 0, "demo seed must contain students");
+  assert.ok(
+    seed.students.every((student) => isStudentCanonicalCode(student.matricule)),
+    "every demo student must have a canonical student identifier",
   );
 
   await verifyHttpGateway();
