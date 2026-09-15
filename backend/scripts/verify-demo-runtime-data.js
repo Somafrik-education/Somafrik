@@ -41,8 +41,12 @@ function arrayCount(payload, candidateKeys = []) {
   return -1;
 }
 
-async function fetchJson(url, init = {}) {
-  const response = await fetch(url, init);
+async function fetchJson(url, init = {}, timeoutMs = 5000) {
+  const startedAt = Date.now();
+  const response = await fetch(url, {
+    ...init,
+    signal: init.signal || AbortSignal.timeout(timeoutMs),
+  });
   const text = await response.text();
   let payload = null;
   if (text) {
@@ -52,7 +56,7 @@ async function fetchJson(url, init = {}) {
       payload = text;
     }
   }
-  return { response, payload };
+  return { response, payload, elapsedMs: Date.now() - startedAt };
 }
 
 async function main() {
@@ -159,31 +163,54 @@ async function main() {
       `permissions effectives vides: ${JSON.stringify(permissions.payload)}`,
     );
 
+    const schoolCode = encodeURIComponent(String(exchange.payload.user.schoolCode));
     const probes = [
+      ["school", `/api/backoffice/establishments/${schoolCode}`, []],
+      ["users", "/api/backoffice/users", []],
       ["classes", "/api/classes", []],
       ["students", "/api/students", ["students"]],
       ["teachers", "/api/teachers", ["teachers"]],
       ["payments", "/api/payments", ["payments"]],
+      ["presences", "/api/presences", ["presences"]],
+      ["notes", "/api/notes", ["notes"]],
+      ["exams", "/api/exams", ["exams"]],
+      ["bulletins", "/api/report-cards", ["bulletins"]],
+      ["documents", "/api/school-documents", ["documents"]],
+      ["messages", "/api/backoffice/messages", ["messages", "items"]],
+      ["studentFees", "/api/finance/student-fees", ["studentFees", "items"]],
     ];
 
-    const counts = {};
+    const diagnostics = {};
     for (const [label, endpoint, keys] of probes) {
-      const result = await fetchJson(`${gatewayBase}${endpoint}`, { headers: authHeaders });
-      assert.equal(
-        result.response.status,
-        200,
-        `${label} failed (${result.response.status}): ${JSON.stringify(result.payload)}`,
-      );
+      let result;
+      try {
+        result = await fetchJson(`${gatewayBase}${endpoint}`, { headers: authHeaders }, 5000);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        throw new Error(`${label} timeout/network failure on ${endpoint}: ${message}`);
+      }
+      const status = result.response.status;
       const count = arrayCount(result.payload, keys);
-      assert.ok(count > 0, `${label} vide ou payload inattendu: ${JSON.stringify(result.payload)}`);
-      counts[label] = count;
+      diagnostics[label] = { status, elapsedMs: result.elapsedMs, count };
+      console.log(`demo-domain-probe ${label}: ${JSON.stringify(diagnostics[label])}`);
+      assert.ok(
+        status === 200 || status === 403 || status === 404,
+        `${label} failed (${status}): ${JSON.stringify(result.payload)}`,
+      );
+    }
+
+    for (const label of ["classes", "students", "teachers", "payments"]) {
+      assert.equal(diagnostics[label].status, 200, `${label} doit répondre 200`);
+      assert.ok(diagnostics[label].count > 0, `${label} vide ou payload inattendu`);
     }
 
     console.log(
       `verify-demo-runtime-data: OK ${JSON.stringify({
         schoolCode: exchange.payload.user.schoolCode,
+        schoolPublicCode: exchange.payload.user.schoolPublicCode,
+        schoolId: exchange.payload.user.schoolId,
         permissions: permissions.payload.permissions.length,
-        ...counts,
+        diagnostics,
       })}`,
     );
   } finally {
