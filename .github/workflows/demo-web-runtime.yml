@@ -10,6 +10,8 @@ on:
       - 'web/src/lib/AuthContext.permissions.test.tsx'
       - 'web/src/lib/dashboardDemoHydration.ts'
       - 'web/src/lib/dashboardDemoHydration.test.ts'
+      - 'web/src/pages/demoDataAccess.hydration.red.test.tsx'
+      - 'web/vitest.hydration.config.ts'
       - 'web/src/lib/demoRuntime.ts'
       - 'web/src/lib/demoRuntime.test.ts'
       - 'web/src/lib/featureFlags.ts'
@@ -37,6 +39,8 @@ jobs:
         run: npm run ci:install
       - name: Demo runtime unit tests
         run: npm --prefix web run test -- src/lib/demoRuntime.test.ts src/lib/AuthContext.permissions.test.tsx src/lib/dashboardDemoHydration.test.ts
+      - name: Demo data access RED
+        run: npm --prefix web run test:hydration-red -- src/pages/demoDataAccess.hydration.red.test.tsx
       - name: Build Demo web runtime
         env:
           VITE_API_URL: https://api-demo.somafrik.app
