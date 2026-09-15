@@ -11,6 +11,7 @@ on:
       - 'backend/scripts/seed-platform-bulk.js'
       - 'backend/scripts/reset-demo-environment.js'
       - 'backend/scripts/verify-demo-entry-api.js'
+      - 'backend/scripts/verify-demo-runtime-data.js'
       - 'backend/package.json'
       - '.github/workflows/demo-entry-api.yml'
   workflow_dispatch:
@@ -51,6 +52,7 @@ jobs:
           node --check backend/scripts/seed-platform-bulk.js
           node --check backend/scripts/reset-demo-environment.js
           node --check backend/scripts/verify-demo-entry-api.js
+          node --check backend/scripts/verify-demo-runtime-data.js
       - name: Verify one-shot demo entry API
         run: npm --prefix backend run verify:demo-entry-api
       - name: Bootstrap canonical PostgreSQL schema
@@ -82,3 +84,25 @@ jobs:
           SOMAFRIK_DEMO_RESET_CONFIRM: RESET_DEMO_DATA
           DEMO_INTERNAL_SEED_PIN: CI_DEMO_RESET_TEST_VALUE_1234567890
         run: npm --prefix backend run demo:reset
+      - name: Verify real Demo session and data hydration
+        env:
+          NODE_ENV: production
+          APP_ENV: demo
+          SOMAFRIK_ENV: demo
+          SOMAFRIK_SKIP_DEMO_SEED: 'true'
+          DATABASE_URL: postgresql://postgres@127.0.0.1:5432/somafrik_demo_ci
+          PORT: '5100'
+          DEMO_INNER_PORT: '5101'
+          DEMO_FRONTEND_ORIGIN: https://demo.somafrik.app
+          DEMO_ENTRY_ORIGIN: https://somafrik.app
+          DEMO_DEFAULT_ROLE: school_admin
+          DEMO_SCHOOL_CODE: CD-IN-26-001
+          DEMO_IDENTIFIER: ADMIN-SCH-BULK-CD-0001-01
+          DEMO_INTERNAL_SEED_PIN: CI_DEMO_RESET_TEST_VALUE_1234567890
+          SOMAFRIK_PUSH_SELFTEST_ENABLED: 'false'
+        run: |
+          set -euo pipefail
+          mkdir -p "$GITHUB_WORKSPACE/.demo-ci/communication" "$GITHUB_WORKSPACE/.demo-ci/report-card-source"
+          export SOMAFRIK_COMMUNICATION_STORAGE="$GITHUB_WORKSPACE/.demo-ci/communication"
+          export SOMAFRIK_REPORT_CARD_SOURCE_STORAGE="$GITHUB_WORKSPACE/.demo-ci/report-card-source"
+          npm --prefix backend run verify:demo-runtime-data
