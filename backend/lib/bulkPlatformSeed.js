@@ -482,6 +482,8 @@ function buildSchoolAcademicBundle(school, country) {
     for (let seat = 0; seat < STUDENTS_PER_CLASS; seat += 1) {
       const studentIndex = classIndex * STUDENTS_PER_CLASS + seat + 1;
       const studentId = `STU-${code}-${pad(studentIndex, 3)}`;
+      const studentFirstName = DEMO_FIRST_NAMES[(studentIndex + 4) % DEMO_FIRST_NAMES.length];
+      const studentLastName = DEMO_LAST_NAMES[(studentIndex + 1) % DEMO_LAST_NAMES.length];
       const identity = resolveSchoolIdentityContext({
         school_code: code,
         name: school.name,
@@ -489,10 +491,10 @@ function buildSchoolAcademicBundle(school, country) {
       });
       const matricule = generateNextStudentCanonicalCode({
         ...identity,
+        firstName: studentFirstName,
+        lastName: studentLastName,
         existingCodes: students.map((row) => row.matricule),
       });
-      const studentFirstName = DEMO_FIRST_NAMES[(studentIndex + 4) % DEMO_FIRST_NAMES.length];
-      const studentLastName = DEMO_LAST_NAMES[(studentIndex + 1) % DEMO_LAST_NAMES.length];
 
       students.push({
         id: studentId,
