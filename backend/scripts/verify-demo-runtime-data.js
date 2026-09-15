@@ -144,6 +144,14 @@ async function main() {
     assert.ok(token, "accessToken absent après exchange");
     assert.equal(exchange.payload?.refreshToken, undefined, "refresh token ne doit pas sortir de la passerelle");
     assert.ok(exchange.payload?.user?.schoolCode, "schoolCode session absent");
+    assert.ok(
+      exchange.payload?.user?.schoolId,
+      `schoolId canonique absent de la session Démo; school=${JSON.stringify(exchange.payload?.school ?? null)}`,
+    );
+    assert.ok(
+      exchange.payload?.user?.schoolPublicCode,
+      `schoolPublicCode canonique absent de la session Démo; school=${JSON.stringify(exchange.payload?.school ?? null)}`,
+    );
 
     const authHeaders = {
       Origin: demoFrontendOrigin,
