@@ -28,6 +28,35 @@ function normalizedOrigin(value) {
   return String(value ?? "").trim().replace(/\/$/, "");
 }
 
+function enrichDemoAuthWithCanonicalSchool(auth) {
+  if (!auth || typeof auth !== "object" || !auth.user || typeof auth.user !== "object") {
+    throw new DemoHttpError(503, "Session Démo indisponible.");
+  }
+  const school = auth.school && typeof auth.school === "object" ? auth.school : {};
+  const schoolId = String(auth.user.schoolId ?? school.id ?? school.schoolId ?? "").trim();
+  const schoolPublicCode = String(
+    auth.user.schoolPublicCode ?? school.loginCode ?? school.publicId ?? "",
+  )
+    .trim()
+    .toUpperCase();
+
+  // Le Web V2 scope les données établissement fail-closed sur schoolId.
+  // Ne jamais fabriquer cette identité depuis schoolCode : elle doit provenir
+  // du contexte établissement authentifié renvoyé par l'API interne.
+  if (!schoolId || !schoolPublicCode) {
+    throw new DemoHttpError(503, "Identité canonique de l’établissement Démo indisponible.");
+  }
+
+  return {
+    ...auth,
+    user: {
+      ...auth.user,
+      schoolId,
+      schoolPublicCode,
+    },
+  };
+}
+
 function createInnerLogin(env = process.env) {
   const innerPort = Number(env.DEMO_INNER_PORT ?? 5001);
   const innerOrigin = `http://127.0.0.1:${innerPort}`;
@@ -189,7 +218,7 @@ function createDemoGatewayApp({
           throw new DemoHttpError(410, "Code d’entrée Démo invalide ou expiré.");
         }
 
-        const auth = await internalLogin(ticket);
+        const auth = enrichDemoAuthWithCanonicalSchool(await internalLogin(ticket));
         const sessionTtlSeconds = Math.max(60, Math.min(Number(env.DEMO_SESSION_TTL_SECONDS ?? 900), 900));
         const publicAuth = { ...auth };
         delete publicAuth.refreshToken;
@@ -285,6 +314,7 @@ if (require.main === module) {
 
 module.exports = {
   DemoHttpError,
+  enrichDemoAuthWithCanonicalSchool,
   createInnerLogin,
   createInnerProxy,
   createDemoGatewayApp,
