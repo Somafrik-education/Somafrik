@@ -4,9 +4,11 @@ on:
   pull_request:
     paths:
       - 'backend/demoGateway.js'
+      - 'backend/lib/bulkPlatformSeed.js'
       - 'backend/lib/corsConfig.js'
       - 'backend/lib/demoGatewayPolicy.js'
       - 'backend/lib/demoResetSafety.js'
+      - 'backend/scripts/seed-platform-bulk.js'
       - 'backend/scripts/reset-demo-environment.js'
       - 'backend/scripts/verify-demo-entry-api.js'
       - 'backend/package.json'
@@ -29,8 +31,10 @@ jobs:
       - name: Syntax guards
         run: |
           node --check backend/demoGateway.js
+          node --check backend/lib/bulkPlatformSeed.js
           node --check backend/lib/demoGatewayPolicy.js
           node --check backend/lib/demoResetSafety.js
+          node --check backend/scripts/seed-platform-bulk.js
           node --check backend/scripts/reset-demo-environment.js
           node --check backend/scripts/verify-demo-entry-api.js
       - name: Verify one-shot demo entry API
