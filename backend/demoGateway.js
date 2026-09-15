@@ -78,7 +78,7 @@ function createInnerLogin(env = process.env) {
     if (!response.ok) {
       throw new DemoHttpError(503, "Session Démo indisponible.");
     }
-    return payload;
+    return enrichDemoAuthWithCanonicalSchool(payload);
   };
 }
 
@@ -218,7 +218,7 @@ function createDemoGatewayApp({
           throw new DemoHttpError(410, "Code d’entrée Démo invalide ou expiré.");
         }
 
-        const auth = enrichDemoAuthWithCanonicalSchool(await internalLogin(ticket));
+        const auth = await internalLogin(ticket);
         const sessionTtlSeconds = Math.max(60, Math.min(Number(env.DEMO_SESSION_TTL_SECONDS ?? 900), 900));
         const publicAuth = { ...auth };
         delete publicAuth.refreshToken;
