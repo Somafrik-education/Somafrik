@@ -1,0 +1,336 @@
+{
+  "audit": "parite-web-mobile-etablissement",
+  "date": "2026-09-09",
+  "developSha": "1f0ff39aa02bd0adb09dd4cadfeb9cec4caaca82",
+  "scope": "establishment-roles-only",
+  "platformRolesWebOnly": ["super_admin", "country_admin"],
+  "provenP0Writes": 0,
+  "p0Candidates": [
+    {
+      "id": "P0-CAND-UNPAID-KPI",
+      "domain": "unpaid",
+      "issue": "Mobile home KPI Impayés counts pending payment receipts, not unpaid obligation ledger"
+    }
+  ],
+  "rows": [
+    {
+      "lot": "A",
+      "domain": "classes",
+      "web": "A",
+      "mobile": "A",
+      "api": "same",
+      "rbac": "Classes:* appliesMobile=true",
+      "gap": "paritaire",
+      "priority": null
+    },
+    {
+      "lot": "A",
+      "domain": "students",
+      "web": "A",
+      "mobile": "A",
+      "api": "same",
+      "rbac": "Élèves:* appliesMobile=true",
+      "gap": "paritaire",
+      "priority": null
+    },
+    {
+      "lot": "A",
+      "domain": "student-profile",
+      "web": "A",
+      "mobile": "partial",
+      "api": "partial",
+      "rbac": "Élèves:READ + student.*.read on web",
+      "gap": "partiel",
+      "priority": "P1"
+    },
+    {
+      "lot": "A",
+      "domain": "parent-child-relations",
+      "web": "A",
+      "mobile": "C",
+      "api": "unused-on-mobile",
+      "rbac": "Relations:* appliesMobile=false",
+      "gap": "absent-mobile",
+      "priority": "P1"
+    },
+    {
+      "lot": "A",
+      "domain": "teachers",
+      "web": "A",
+      "mobile": "A",
+      "api": "same",
+      "rbac": "Enseignants:* Affectations:*",
+      "gap": "paritaire",
+      "priority": null
+    },
+    {
+      "lot": "A",
+      "domain": "school-users",
+      "web": "A",
+      "mobile": "A",
+      "api": "same",
+      "rbac": "Utilisateurs:*",
+      "gap": "paritaire",
+      "priority": null
+    },
+    {
+      "lot": "B",
+      "domain": "attendance",
+      "web": "A",
+      "mobile": "A",
+      "api": "same",
+      "rbac": "Présences:*",
+      "gap": "paritaire",
+      "priority": null
+    },
+    {
+      "lot": "B",
+      "domain": "grades",
+      "web": "A",
+      "mobile": "A",
+      "api": "same",
+      "rbac": "Notes:*",
+      "gap": "paritaire",
+      "priority": null
+    },
+    {
+      "lot": "B",
+      "domain": "evaluations",
+      "web": "A",
+      "mobile": "A",
+      "api": "same",
+      "rbac": "Notes:CREATE/UPDATE",
+      "gap": "paritaire",
+      "priority": null
+    },
+    {
+      "lot": "B",
+      "domain": "exams",
+      "web": "A",
+      "mobile": "C",
+      "api": "unused-on-mobile",
+      "rbac": "Examens:* appliesMobile=true",
+      "gap": "absent-mobile",
+      "priority": "P1"
+    },
+    {
+      "lot": "B",
+      "domain": "report-cards",
+      "web": "A",
+      "mobile": "partial-read",
+      "api": "mobile-get-pdf-only",
+      "rbac": "Bulletins:*",
+      "gap": "partiel",
+      "priority": "P1"
+    },
+    {
+      "lot": "B",
+      "domain": "timetable",
+      "web": "A",
+      "mobile": "A",
+      "api": "same-slots",
+      "rbac": "Planning de cours:* appliesMobile=false",
+      "gap": "partiel-rbac-catalog",
+      "priority": "P1"
+    },
+    {
+      "lot": "B",
+      "domain": "replacements",
+      "web": "A",
+      "mobile": "partial-create",
+      "api": "delete-unused-on-mobile-ui",
+      "rbac": "Remplacements:* appliesMobile=false",
+      "gap": "partiel",
+      "priority": "P1"
+    },
+    {
+      "lot": "B",
+      "domain": "rooms",
+      "web": "A",
+      "mobile": "B-picker",
+      "api": "get-only-on-mobile",
+      "rbac": "Salles:* appliesMobile=false",
+      "gap": "partiel",
+      "priority": "P1"
+    },
+    {
+      "lot": "C",
+      "domain": "payments",
+      "web": "A",
+      "mobile": "A",
+      "api": "same",
+      "rbac": "Paiements:*",
+      "gap": "paritaire",
+      "priority": null
+    },
+    {
+      "lot": "C",
+      "domain": "payment-cancel",
+      "web": "A",
+      "mobile": "A",
+      "api": "same",
+      "rbac": "Paiements:UPDATE",
+      "gap": "paritaire",
+      "priority": null
+    },
+    {
+      "lot": "C",
+      "domain": "fees-tariffs",
+      "web": "A",
+      "mobile": "C",
+      "api": "unused-on-mobile",
+      "rbac": "Frais & tarifs:* appliesMobile=false",
+      "gap": "absent-mobile",
+      "priority": "P1"
+    },
+    {
+      "lot": "C",
+      "domain": "unpaid",
+      "web": "A",
+      "mobile": "C-misleading-kpi",
+      "api": "different",
+      "rbac": "Impayés:* appliesMobile=false",
+      "gap": "absent-mobile",
+      "priority": "P1"
+    },
+    {
+      "lot": "C",
+      "domain": "student-finance",
+      "web": "A-partial-routing",
+      "mobile": "A-receipts",
+      "api": "partial",
+      "rbac": "Paiements:READ",
+      "gap": "partiel",
+      "priority": "P1"
+    },
+    {
+      "lot": "D",
+      "domain": "messages",
+      "web": "A",
+      "mobile": "A",
+      "api": "same",
+      "rbac": "Messages:*",
+      "gap": "paritaire",
+      "priority": null
+    },
+    {
+      "lot": "D",
+      "domain": "announcements",
+      "web": "A",
+      "mobile": "A",
+      "api": "same",
+      "rbac": "Announcements:*",
+      "gap": "paritaire",
+      "priority": null
+    },
+    {
+      "lot": "D",
+      "domain": "school-notifications",
+      "web": "A",
+      "mobile": "A",
+      "api": "same-inbox",
+      "rbac": "Notifications:*",
+      "gap": "paritaire",
+      "priority": null
+    },
+    {
+      "lot": "D",
+      "domain": "notification-navigation",
+      "web": "A-9-types",
+      "mobile": "partial-1-type",
+      "api": "same-targets-ignored-on-mobile",
+      "rbac": null,
+      "gap": "partiel",
+      "priority": "P1"
+    },
+    {
+      "lot": "E",
+      "domain": "school-profile",
+      "web": "A",
+      "mobile": "A",
+      "api": "same",
+      "rbac": "Paramètres Établissement",
+      "gap": "paritaire",
+      "priority": null
+    },
+    {
+      "lot": "E",
+      "domain": "academic-year-periods-scale-eval-types",
+      "web": "A",
+      "mobile": "A",
+      "api": "same",
+      "rbac": "Années Académiques + settings",
+      "gap": "paritaire",
+      "priority": null
+    },
+    {
+      "lot": "E",
+      "domain": "pedagogical-structure-subjects",
+      "web": "A",
+      "mobile": "A",
+      "api": "same",
+      "rbac": "Matières:*",
+      "gap": "paritaire",
+      "priority": null
+    },
+    {
+      "lot": "E",
+      "domain": "assignable-roles-read",
+      "web": "B",
+      "mobile": "B",
+      "api": "same",
+      "rbac": "read-only school",
+      "gap": "paritaire",
+      "priority": null
+    },
+    {
+      "lot": "E",
+      "domain": "global-rbac-matrix-write",
+      "web": "A-superadmin",
+      "mobile": "B-superadmin-read-or-hidden",
+      "api": "no-mobile-patch",
+      "rbac": "Droits par rôle",
+      "gap": "web-only-volontaire",
+      "priority": null
+    },
+    {
+      "lot": "E",
+      "domain": "school-documents",
+      "web": "A",
+      "mobile": "C-mvp",
+      "api": "unused-on-mobile",
+      "rbac": "Documents:* appliesMobile=true",
+      "gap": "fail-closed",
+      "priority": "P1"
+    },
+    {
+      "lot": "E",
+      "domain": "reports",
+      "web": "C-mvp",
+      "mobile": "C-mvp-local-counts",
+      "api": "none-canonical",
+      "rbac": "Rapports:*",
+      "gap": "retirer-mobile",
+      "priority": "P1"
+    }
+  ],
+  "removeFromMobileWebOnly": [
+    "super_admin drawer schools/subscriptions/permissions-write/platform-notifications/audit",
+    "country_admin platform entries",
+    "Home KPI countries/schools -> AdminCrud",
+    "SchoolManagement fail-closed entities",
+    "legacy MenuScreen AdminCrud entries (dead navigator)"
+  ],
+  "proposedLots": [
+    "L0-hygiene-hide-fail-closed-and-mvp",
+    "L1-unpaid-ledger-or-remove-kpi",
+    "L2-fee-grids",
+    "L3-parent-relations",
+    "L4-exams",
+    "L5-report-cards-write",
+    "L6-student-dossier",
+    "L7-rooms-replacements-appliesMobile",
+    "L8-notification-deeplink",
+    "L9-school-documents-or-remove"
+  ]
+}
