@@ -13,6 +13,7 @@ const {
   buildDemoRedirectUrl,
   createDemoTicketStore,
   isBlockedDemoGatewayPath,
+  resolveDemoInternalSeedPin,
   validateDemoQualification,
 } = require("./lib/demoGatewayPolicy");
 
@@ -30,6 +31,7 @@ function normalizedOrigin(value) {
 function createInnerLogin(env = process.env) {
   const innerPort = Number(env.DEMO_INNER_PORT ?? 5001);
   const innerOrigin = `http://127.0.0.1:${innerPort}`;
+  const internalSeedPin = resolveDemoInternalSeedPin(env);
 
   return async function loginToInner() {
     const response = await fetch(`${innerOrigin}/api/login`, {
@@ -39,16 +41,13 @@ function createInnerLogin(env = process.env) {
         role: String(env.DEMO_DEFAULT_ROLE ?? "school_admin"),
         schoolCode: String(env.DEMO_SCHOOL_CODE ?? "CD-IN-26-001"),
         identifier: String(env.DEMO_IDENTIFIER ?? "admin"),
-        // Credential du dataset fictif uniquement. La route /api/login est bloquée
-        // par la passerelle et le port inner ne doit jamais être publié par l'hébergeur.
-        pin: String(env.DEMO_INTERNAL_SEED_PIN ?? "1234"),
+        pin: internalSeedPin,
       }),
     });
 
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) {
-      const detail = typeof payload.message === "string" ? payload.message : "authentification interne refusée";
-      throw new DemoHttpError(503, `Session Démo indisponible : ${detail}`);
+      throw new DemoHttpError(503, "Session Démo indisponible.");
     }
     return payload;
   };
