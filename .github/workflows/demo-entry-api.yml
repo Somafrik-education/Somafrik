@@ -56,9 +56,23 @@ jobs:
       - name: Bootstrap canonical PostgreSQL schema
         env:
           DATABASE_URL: postgresql://postgres@127.0.0.1:5432/somafrik_demo_ci
-          SOMAFRIK_BOOTSTRAP_REQUIRED: 'true'
           SOMAFRIK_SKIP_DEMO_SEED: 'true'
-        run: node backend/scripts/verify-runtime-bootstrap.js
+        run: |
+          node <<'NODE'
+          const { createPostgresRepository } = require('./backend/db/repositoryFactory');
+          (async () => {
+            const repository = createPostgresRepository(process.env.DATABASE_URL);
+            await repository.init();
+            if (!repository.ready || repository.engine === 'memory') {
+              throw new Error('PostgreSQL canonical bootstrap failed');
+            }
+            await repository.close?.();
+            console.log('PostgreSQL canonical bootstrap: OK');
+          })().catch((error) => {
+            console.error(error);
+            process.exit(1);
+          });
+          NODE
       - name: Verify full Demo reset on PostgreSQL 16
         env:
           APP_ENV: demo
