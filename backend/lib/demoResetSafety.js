@@ -53,7 +53,31 @@ function scrubCredentialFields(value) {
   return result;
 }
 
+function hardenBackOfficeCredentials(payload, secretHash) {
+  const hash = String(secretHash ?? "").trim();
+  if (!hash) {
+    throw new Error("Durcissement Démo refusé : hash de credential obligatoire.");
+  }
+
+  const scrubbed = scrubCredentialFields(payload);
+  if (!scrubbed || typeof scrubbed !== "object" || Array.isArray(scrubbed)) {
+    throw new Error("Durcissement Démo refusé : snapshot BackOffice invalide.");
+  }
+
+  return {
+    ...scrubbed,
+    users: Array.isArray(scrubbed.users)
+      ? scrubbed.users.map((user) => ({
+          ...user,
+          passwordHash: hash,
+          pinHash: hash,
+        }))
+      : [],
+  };
+}
+
 module.exports = {
   assertDemoResetSafety,
   scrubCredentialFields,
+  hardenBackOfficeCredentials,
 };
