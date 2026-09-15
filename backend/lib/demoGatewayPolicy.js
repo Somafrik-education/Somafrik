@@ -29,6 +29,15 @@ const BLOCKED_GATEWAY_PATHS = new Set([
   "/api/auth/revoke-all",
 ]);
 
+const FORBIDDEN_DEMO_INTERNAL_SECRETS = new Set([
+  "1234",
+  "0000",
+  "password",
+  "motdepasse",
+  "somafrik",
+  "demo",
+]);
+
 function cleanText(value, maxLength) {
   return String(value ?? "").trim().slice(0, maxLength);
 }
@@ -65,6 +74,17 @@ function validateDemoQualification(payload = {}) {
   };
 }
 
+function resolveDemoInternalSeedPin(env = process.env) {
+  const secret = String(env.DEMO_INTERNAL_SEED_PIN ?? "").trim();
+  if (secret.length < 16) {
+    throw new Error("Passerelle Démo refusée : DEMO_INTERNAL_SEED_PIN doit contenir au moins 16 caractères.");
+  }
+  if (FORBIDDEN_DEMO_INTERNAL_SECRETS.has(secret.toLowerCase())) {
+    throw new Error("Passerelle Démo refusée : DEMO_INTERNAL_SEED_PIN trop faible.");
+  }
+  return secret;
+}
+
 function assertDemoRuntimeEnvironment(env = process.env) {
   const appEnv = String(env.APP_ENV ?? "").trim();
   if (appEnv !== "demo") {
@@ -73,6 +93,7 @@ function assertDemoRuntimeEnvironment(env = process.env) {
   if (String(env.SOMAFRIK_SKIP_DEMO_SEED ?? "").trim() !== "true") {
     throw new Error("Passerelle Démo refusée : SOMAFRIK_SKIP_DEMO_SEED=true est obligatoire.");
   }
+  resolveDemoInternalSeedPin(env);
 
   const publicPort = Number(env.PORT ?? 5000);
   const innerPort = Number(env.DEMO_INNER_PORT ?? 5001);
@@ -156,6 +177,7 @@ module.exports = {
   DEMO_PROFILES,
   DEMO_DISCOVERY_ROLES,
   validateDemoQualification,
+  resolveDemoInternalSeedPin,
   assertDemoRuntimeEnvironment,
   buildDemoRedirectUrl,
   createDemoTicketStore,
