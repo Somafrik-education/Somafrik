@@ -15,7 +15,11 @@ import {
 import { DashboardChartGrid } from "../components/charts/DashboardChartGrid";
 import { resolveChartOrderUserKey } from "../lib/chartOrder";
 import { demoRuntimeEnabled } from "../lib/featureFlags";
-import { dashboardDomainsForDemo } from "../lib/dashboardDemoHydration";
+import {
+  dashboardCriticalDomainsForDemo,
+  dashboardDeferredDomainsForDemo,
+} from "../lib/dashboardDemoHydration";
+import { filterDomainsByPermissions } from "../lib/domainPermissions";
 
 export function OverviewPage() {
   const { session } = useAuth();
@@ -36,8 +40,22 @@ export function OverviewPage() {
         ? { schoolCode: activeSchoolCode }
         : undefined;
 
-    void ensureDomains(dashboardDomainsForDemo(internalSchool), options).catch(() => undefined);
-  }, [session?.accessToken, internalSchool, activeSchoolCode, ensureDomains]);
+    const critical = filterDomainsByPermissions(
+      dashboardCriticalDomainsForDemo(internalSchool),
+      ctx,
+    );
+    const deferred = filterDomainsByPermissions(
+      dashboardDeferredDomainsForDemo(internalSchool),
+      ctx,
+    );
+
+    if (critical.length) {
+      void ensureDomains(critical, options).catch(() => undefined);
+    }
+    if (deferred.length) {
+      void ensureDomains(deferred, options).catch(() => undefined);
+    }
+  }, [session?.accessToken, internalSchool, activeSchoolCode, ensureDomains, ctx]);
 
   const hasInternalNotificationScope = Boolean(activeSchoolCode && activeSchoolCode !== "*");
   const schoolUnreadCount = useInternalNotificationsUnreadCount(

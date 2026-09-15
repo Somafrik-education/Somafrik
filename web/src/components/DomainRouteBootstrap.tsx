@@ -12,6 +12,15 @@ import { domainsForPath } from "../lib/routeDomainMap";
 import { usePermissionContext } from "../lib/usePermissionContext";
 
 const OVERVIEW_PATH = "/etablissement/vue-ensemble";
+const NOTES_PATH = "/notes";
+
+export function tracksDomainRouteHydration(pathname: string): boolean {
+  return (
+    pathname === OVERVIEW_PATH ||
+    pathname === NOTES_PATH ||
+    pathname.startsWith(`${NOTES_PATH}/`)
+  );
+}
 
 /** Charge les domaines métier requis par la route courante (LOT 8 — filtré RBAC). */
 export function DomainRouteBootstrap() {
@@ -22,7 +31,7 @@ export function DomainRouteBootstrap() {
   const ctx = usePermissionContext();
 
   useEffect(() => {
-    const trackOverviewHydration = location.pathname === OVERVIEW_PATH;
+    const trackHydration = tracksDomainRouteHydration(location.pathname);
     const hydrationKey = buildDomainRouteHydrationKey(
       location.key,
       location.pathname,
@@ -31,7 +40,7 @@ export function DomainRouteBootstrap() {
     let cancelled = false;
 
     if (!session?.accessToken || !permissionsReady || !getAccessToken()) {
-      if (trackOverviewHydration) {
+      if (trackHydration) {
         setDomainRouteHydrationStatus(hydrationKey, "idle");
       }
       return () => {
@@ -41,7 +50,7 @@ export function DomainRouteBootstrap() {
 
     const domains = domainsForPath(location.pathname, ctx);
     if (!domains.length) {
-      if (trackOverviewHydration) {
+      if (trackHydration) {
         setDomainRouteHydrationStatus(hydrationKey, "ready");
       }
       return () => {
@@ -49,18 +58,18 @@ export function DomainRouteBootstrap() {
       };
     }
 
-    if (trackOverviewHydration) {
+    if (trackHydration) {
       setDomainRouteHydrationStatus(hydrationKey, "loading");
     }
 
     void ensureDomains(domains, { schoolCode: activeSchoolCode })
       .then(() => {
-        if (!cancelled && trackOverviewHydration) {
+        if (!cancelled && trackHydration) {
           setDomainRouteHydrationStatus(hydrationKey, "ready");
         }
       })
       .catch(() => {
-        if (!cancelled && trackOverviewHydration) {
+        if (!cancelled && trackHydration) {
           setDomainRouteHydrationStatus(hydrationKey, "error");
         }
         /* erreur déjà exposée via DataContext.error */

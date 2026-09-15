@@ -1,6 +1,7 @@
 import type { DomainKey } from "./domainLoaders";
 
-const ESTABLISHMENT_DEMO_DASHBOARD_DOMAINS: DomainKey[] = [
+/** KPI / pédagogie nécessaires pour rendre le dashboard établissement sans attendre Communication. */
+const ESTABLISHMENT_DEMO_CRITICAL_DOMAINS: DomainKey[] = [
   "schools",
   "users",
   "students",
@@ -11,10 +12,11 @@ const ESTABLISHMENT_DEMO_DASHBOARD_DOMAINS: DomainKey[] = [
   "notes",
   "exams",
   "bulletins",
-  "documents",
-  "messages",
   "studentFees",
 ];
+
+/** Graphique Administration : hydratation indépendante, ne doit pas bloquer Notes. */
+const ESTABLISHMENT_DEMO_DEFERRED_DOMAINS: DomainKey[] = ["documents", "messages"];
 
 const PLATFORM_DEMO_DASHBOARD_DOMAINS: DomainKey[] = [
   "schools",
@@ -25,8 +27,19 @@ const PLATFORM_DEMO_DASHBOARD_DOMAINS: DomainKey[] = [
   "dashboardChartConfig",
 ];
 
-export function dashboardDomainsForDemo(internalSchool: boolean): DomainKey[] {
+export function dashboardCriticalDomainsForDemo(internalSchool: boolean): DomainKey[] {
   return internalSchool
-    ? [...ESTABLISHMENT_DEMO_DASHBOARD_DOMAINS]
+    ? [...ESTABLISHMENT_DEMO_CRITICAL_DOMAINS]
     : [...PLATFORM_DEMO_DASHBOARD_DOMAINS];
+}
+
+export function dashboardDeferredDomainsForDemo(internalSchool: boolean): DomainKey[] {
+  return internalSchool ? [...ESTABLISHMENT_DEMO_DEFERRED_DOMAINS] : [];
+}
+
+export function dashboardDomainsForDemo(internalSchool: boolean): DomainKey[] {
+  return [
+    ...dashboardCriticalDomainsForDemo(internalSchool),
+    ...dashboardDeferredDomainsForDemo(internalSchool),
+  ];
 }
