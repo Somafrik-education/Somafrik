@@ -337,6 +337,9 @@ async function insertSchoolBundle(client, bundle, schoolId) {
     studentIds.set(student.id, row.id);
     studentIds.set(student.matricule, row.id);
 
+    // Les coordonnées du parent restent portées par la fiche élève / le compte parent.
+    // Le compte STUDENT se connecte par son identifiant canonique et ne doit pas
+    // dupliquer l'identité email/téléphone d'un autre utilisateur de l'établissement.
     const studentUser = await one(
       client,
       `INSERT INTO users (school_id, user_code, first_name, last_name, email, phone, password_hash, pin_hash, role, status)
@@ -348,8 +351,8 @@ async function insertSchoolBundle(client, bundle, schoolId) {
         row.student_code,
         student.firstName,
         student.name.replace(student.firstName, "").trim() || student.name,
-        student.parentEmail,
-        student.parentPhone,
+        "",
+        "",
         pinHash,
       ],
     );
