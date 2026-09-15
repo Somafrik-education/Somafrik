@@ -7,6 +7,7 @@ import { Topbar } from "./Topbar";
 import { MobileNavDrawer } from "./MobileNavDrawer";
 import { SubscriptionAccessBanner } from "../SubscriptionAccessBanner";
 import { DomainRouteBootstrap } from "../DomainRouteBootstrap";
+import { WebPushRuntime } from "../WebPushRuntime";
 
 const HelpHost = lazy(() =>
   import("../../help/HelpHost").then((module) => ({ default: module.HelpHost })),
@@ -82,6 +83,7 @@ export function AppLayout() {
         <main className="flex-1 px-4 py-6 sm:px-6">
           <div className="mx-auto w-full max-w-6xl space-y-6">
             <SubscriptionAccessBanner />
+            <WebPushRuntime />
             <Outlet />
           </div>
         </main>

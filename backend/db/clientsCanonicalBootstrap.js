@@ -16,6 +16,7 @@ const { COMMUNICATIONS_C3_SCHEMA_SQL } = require("./communicationsAnnouncementsS
 const { COMMUNICATIONS_C4_SCHEMA_SQL } = require("./communicationsNotificationsSchema");
 const { PLATFORM_ANNOUNCEMENTS_SCHEMA_SQL } = require("./platformAnnouncementsSchema");
 const { MOBILE_PUSH_DEVICES_SCHEMA_SQL } = require("./mobilePushDevicesSchema");
+const { WEB_PUSH_SUBSCRIPTIONS_SCHEMA_SQL } = require("./webPushSubscriptionsSchema");
 const { ensureParentLinkingConstraints } = require("../lib/parentLinkingConstraints");
 
 function asClientsDb(queryable) {
@@ -68,6 +69,12 @@ async function applyMobilePushDevicesSchema(queryable) {
   return db;
 }
 
+async function applyWebPushSubscriptionsSchema(queryable) {
+  const db = asClientsDb(queryable);
+  await db.query(WEB_PUSH_SUBSCRIPTIONS_SCHEMA_SQL);
+  return db;
+}
+
 async function ensureClientsCanonicalBootstrap(queryable, logger = console) {
   const db = await applyClientsTablesSchema(queryable);
   await applyCommunicationsC2Schema(db);
@@ -75,6 +82,7 @@ async function ensureClientsCanonicalBootstrap(queryable, logger = console) {
   await applyCommunicationsC4Schema(db);
   await applyPlatformAnnouncementsSchema(db);
   await applyMobilePushDevicesSchema(db);
+  await applyWebPushSubscriptionsSchema(db);
   await ensureParentLinkingConstraints(db, logger);
   return db;
 }
@@ -87,5 +95,6 @@ module.exports = {
   applyCommunicationsC4Schema,
   applyPlatformAnnouncementsSchema,
   applyMobilePushDevicesSchema,
+  applyWebPushSubscriptionsSchema,
   ensureClientsCanonicalBootstrap,
 };
