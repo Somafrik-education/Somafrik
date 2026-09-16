@@ -219,7 +219,7 @@ async function main() {
     APP_ENV: "demo",
     SOMAFRIK_SKIP_DEMO_SEED: "true",
     SOMAFRIK_DEMO_RESET_CONFIRM: "RESET_DEMO_DATA",
-    DATABASE_URL: "postgresql://demo:demo@localhost:5432/somafrik_demo",
+    DATABASE_URL: "postgresql://localhost:5432/somafrik_demo",
     SOMAFRIK_DEMO_DATABASE_URL_MARKER: "somafrik_demo",
     DEMO_INTERNAL_SEED_PIN: "ci-demo-internal-credential-7F32",
   };
@@ -229,7 +229,7 @@ async function main() {
     /APP_ENV=demo requis/,
   );
   assert.throws(
-    () => assertDemoResetSafety({ ...resetEnv, DATABASE_URL: "postgresql://x:y@localhost:5432/somafrik" }),
+    () => assertDemoResetSafety({ ...resetEnv, DATABASE_URL: "postgresql://localhost:5432/somafrik" }),
     /ne contient pas le marqueur/,
   );
 
