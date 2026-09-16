@@ -8,6 +8,7 @@ const {
 } = require("../lib/demoResetSafety");
 const { resolveDemoInternalSeedPin } = require("../lib/demoGatewayPolicy");
 const { seedDemoCanonicalPlanning } = require("../lib/demoCanonicalPlanningSeed");
+const { seedDemoShowcaseData } = require("../lib/demoShowcaseDataSeed");
 
 async function hardenDemoCredentials(databaseUrl, internalSeedPin) {
   const pool = new Pool({ connectionString: databaseUrl });
@@ -60,6 +61,9 @@ async function verifyDataset(databaseUrl) {
          (SELECT COUNT(*)::int FROM students) AS students,
          (SELECT COUNT(*)::int FROM teachers) AS teachers,
          (SELECT COUNT(*)::int FROM payments) AS payments,
+         (SELECT COUNT(*)::int FROM student_fee_obligations WHERE archived_at IS NULL) AS student_fee_obligations,
+         (SELECT COUNT(*)::int FROM payment_allocations WHERE reversed_at IS NULL) AS payment_allocations,
+         (SELECT COUNT(*)::int FROM report_cards WHERE status <> 'archived') AS report_cards,
          (SELECT COUNT(*)::int FROM course_schedule_weekly_slots WHERE status = 'active') AS course_schedule_weekly_slots`,
     );
     const counts = result.rows[0];
@@ -69,6 +73,9 @@ async function verifyDataset(databaseUrl) {
       counts.classes < 1 ||
       counts.students < 1 ||
       counts.teachers < 1 ||
+      counts.student_fee_obligations < 1 ||
+      counts.payment_allocations < 1 ||
+      counts.report_cards < 1 ||
       counts.course_schedule_weekly_slots < 1
     ) {
       throw new Error(`Dataset Démo incomplet : ${JSON.stringify(counts || {})}`);
@@ -96,9 +103,11 @@ async function main() {
   }
 
   const planning = await seedDemoCanonicalPlanning(databaseUrl);
+  const showcase = await seedDemoShowcaseData(databaseUrl);
   const hardening = await hardenDemoCredentials(databaseUrl, internalSeedPin);
   const counts = await verifyDataset(databaseUrl);
   console.log(`Planning Démo canonique : ${JSON.stringify(planning)}.`);
+  console.log(`Showcase Démo canonique : ${JSON.stringify(showcase)}.`);
   console.log(`Credentials Démo durcis : ${hardening.rotatedUsers} comptes.`);
   console.log(`Dataset Démo vérifié : ${JSON.stringify(counts)}`);
   console.log("Rappel : seul le port public de la passerelle Démo doit être publié.");
