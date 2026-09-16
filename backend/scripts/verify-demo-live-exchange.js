@@ -112,28 +112,28 @@ async function main() {
   };
   const schoolCode = encodeURIComponent(String(user.schoolCode));
   const probes = [
-    ["school", `/api/backoffice/establishments/${schoolCode}`],
-    ["users", "/api/backoffice/users"],
-    ["students", "/api/students"],
-    ["teachers", "/api/teachers"],
-    ["classes", "/api/classes"],
-    ["payments", "/api/payments"],
-    ["studentFees", "/api/finance/student-fees"],
-    ["presences", "/api/presences"],
-    ["notes", "/api/notes"],
-    ["evaluations", "/api/evaluations"],
-    ["exams", "/api/exams"],
-    ["bulletins", "/api/report-cards"],
-    ["documents", "/api/school-documents"],
-    ["messages", "/api/backoffice/messages"],
-    ["courseSchedules", "/api/course-schedules"],
-    ["assignments", "/api/assignments"],
+    ["school", `/api/backoffice/establishments/${schoolCode}`, 30000],
+    ["users", "/api/backoffice/users", 30000],
+    ["students", "/api/students", 8000],
+    ["teachers", "/api/teachers", 8000],
+    ["classes", "/api/classes", 8000],
+    ["payments", "/api/payments", 8000],
+    ["studentFees", "/api/finance/student-fees", 8000],
+    ["presences", "/api/presences", 8000],
+    ["notes", "/api/notes", 8000],
+    ["evaluations", "/api/evaluations", 8000],
+    ["exams", "/api/exams", 8000],
+    ["bulletins", "/api/report-cards", 8000],
+    ["documents", "/api/school-documents", 8000],
+    ["messages", "/api/backoffice/messages", 8000],
+    ["courseSchedules", "/api/course-schedules", 8000],
+    ["assignments", "/api/assignments", 8000],
   ];
 
   const domainEvidence = {};
-  for (const [label, pathname] of probes) {
+  for (const [label, pathname, timeoutMs] of probes) {
     try {
-      const result = await jsonRequest(`${API_ORIGIN}${pathname}`, { headers }, 8000);
+      const result = await jsonRequest(`${API_ORIGIN}${pathname}`, { headers }, timeoutMs);
       domainEvidence[label] = {
         status: result.response.status,
         elapsedMs: result.elapsedMs,
