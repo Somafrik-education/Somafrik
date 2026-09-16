@@ -49,11 +49,14 @@ export function OverviewPage() {
       ctx,
     );
 
-    if (critical.length) {
-      void ensureDomains(critical, options).catch(() => undefined);
+    // Démo : chaque domaine doit pouvoir converger indépendamment. Un endpoint
+    // lent (ex. établissement/utilisateurs) ne doit jamais retenir classes,
+    // élèves, notes, présences ou finances déjà revenus en 200.
+    for (const domain of critical) {
+      void ensureDomains([domain], options).catch(() => undefined);
     }
-    if (deferred.length) {
-      void ensureDomains(deferred, options).catch(() => undefined);
+    for (const domain of deferred) {
+      void ensureDomains([domain], options).catch(() => undefined);
     }
   }, [session?.accessToken, internalSchool, activeSchoolCode, ensureDomains, ctx]);
 
