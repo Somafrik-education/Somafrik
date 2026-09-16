@@ -11,6 +11,8 @@ on:
       - 'backend/lib/demoWebPayloadScope.http.pg.test.js'
       - 'backend/scripts/seed-platform-bulk.js'
       - 'backend/scripts/verify-demo-web-payload-scope.js'
+      - 'backend/scripts/shimViteEnv.mjs'
+      - 'backend/scripts/shimViteEnvLoader.mjs'
       - 'backend/lib/bulkPlatformSeed.js'
       - 'package.json'
       - '.github/workflows/demo-web-payload-scope.yml'

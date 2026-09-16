@@ -462,8 +462,20 @@ async function main() {
     fs.writeFileSync(APPLY_INPUT, `${JSON.stringify(applyInput)}\n`);
     const apply = spawnSync(
       "npx",
-      ["--yes", "tsx", "web/src/lib/demoPayloadScope.apply.ts", APPLY_INPUT, APPLY_OUTPUT],
-      { cwd: ROOT, encoding: "utf8" },
+      [
+        "--yes",
+        "tsx",
+        "--import",
+        path.join(ROOT, "backend/scripts/shimViteEnv.mjs"),
+        "web/src/lib/demoPayloadScope.apply.ts",
+        APPLY_INPUT,
+        APPLY_OUTPUT,
+      ],
+      {
+        cwd: ROOT,
+        encoding: "utf8",
+        env: { ...process.env, VITE_API_URL: process.env.VITE_API_URL || "http://127.0.0.1" },
+      },
     );
     if (apply.stdout) process.stdout.write(apply.stdout);
     if (apply.stderr) process.stderr.write(apply.stderr);

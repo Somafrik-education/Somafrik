@@ -39,6 +39,7 @@ function sourceGuards() {
   assert.match(httpTest, /discoverSchoolAdminIdentities/);
   assert.match(httpTest, /classRow\.raw >= 30/);
   assert.match(httpTest, /studentRow\.raw >= 300/);
+  assert.match(httpTest, /shimViteEnv/);
 }
 
 function main() {

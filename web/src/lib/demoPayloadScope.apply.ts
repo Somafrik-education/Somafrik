@@ -23,8 +23,8 @@ function identityOf(row: Row | undefined) {
   if (!row) return null;
   return {
     schoolId: row.schoolId ?? row.school_id ?? null,
-    schoolCode: row.schoolCode ?? row.school_code ?? null,
-    schoolPublicCode: row.schoolPublicCode ?? row.school_public_code ?? null,
+    schoolCode: row.schoolCode ?? row.school_code ?? row.code ?? null,
+    schoolPublicCode: row.schoolPublicCode ?? row.school_public_code ?? row.loginCode ?? row.login_code ?? null,
     loginCode: row.loginCode ?? row.login_code ?? null,
   };
 }
