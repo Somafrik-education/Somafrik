@@ -1,0 +1,22 @@
+name: Demo live page probe
+
+on:
+  pull_request:
+    paths:
+      - "backend/scripts/verify-demo-live-pages.js"
+      - ".github/workflows/demo-live-page-probe.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  verify-live-pages:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.12.0
+      - name: Probe public Demo page dependencies
+        run: node backend/scripts/verify-demo-live-pages.js

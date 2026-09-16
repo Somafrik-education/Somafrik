@@ -1,0 +1,69 @@
+name: Demo web payload scope
+
+on:
+  pull_request:
+    paths:
+      - 'web/src/lib/demoPayloadScope.apply.ts'
+      - 'web/src/lib/studentsScope.ts'
+      - 'web/src/lib/schoolCanonicalIdentity.ts'
+      - 'web/src/lib/establishment.ts'
+      - 'web/src/lib/activeSchool.ts'
+      - 'backend/lib/demoWebPayloadScope.http.pg.test.js'
+      - 'backend/scripts/seed-platform-bulk.js'
+      - 'backend/scripts/verify-demo-web-payload-scope.js'
+      - 'backend/scripts/shimViteEnv.mjs'
+      - 'backend/scripts/shimViteEnvLoader.mjs'
+      - 'backend/lib/bulkPlatformSeed.js'
+      - 'package.json'
+      - '.github/workflows/demo-web-payload-scope.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  demo-web-payload-scope:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
+      NODE_ENV: test
+      JWT_SECRET: ci-test-secret-with-enough-length-for-production-checks
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.12.0'
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            backend/package-lock.json
+            web/package-lock.json
+      - name: Install dependencies
+        run: |
+          npm ci
+          npm ci --prefix backend
+          npm ci --prefix web
+      - name: Audit Demo payload raw → mapped → scoped
+        run: npm run verify:demo-web-payload-scope
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: demo-web-payload-scope-evidence
+          path: docs/audits/evidence/demo-web-payload-scope.json
+          if-no-files-found: ignore

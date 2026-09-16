@@ -58,6 +58,7 @@
     "verify:sync-l1-tenant": "node backend/scripts/verify-sync-l1-tenant.js",
     "verify:users-tenant": "node backend/scripts/verify-users-tenant.js",
     "verify:enrollment-tenant": "node backend/scripts/verify-enrollment-tenant.js",
+    "verify:demo-web-payload-scope": "node backend/scripts/verify-demo-web-payload-scope.js",
     "verify:tenant-revalidation": "node backend/scripts/verify-tenant-revalidation.js",
     "verify:d-revalidation": "node backend/scripts/verify-d-revalidation.js",
     "verify:web-smoke": "node scripts/verify-web-smoke.js",
