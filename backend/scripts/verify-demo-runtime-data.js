@@ -181,6 +181,7 @@ async function main() {
       ["payments", "/api/payments", ["payments"]],
       ["presences", "/api/presences", ["presences"]],
       ["notes", "/api/notes", ["notes"]],
+      ["courseSchedules", "/api/course-schedules", ["courseSchedules", "items", "rows"]],
       ["exams", "/api/exams", ["exams"]],
       ["bulletins", "/api/report-cards", ["bulletins"]],
       ["documents", "/api/school-documents", ["documents"]],
@@ -207,7 +208,7 @@ async function main() {
       );
     }
 
-    for (const label of ["classes", "students", "teachers", "payments"]) {
+    for (const label of ["classes", "students", "teachers", "payments", "courseSchedules"]) {
       assert.equal(diagnostics[label].status, 200, `${label} doit répondre 200`);
       assert.ok(diagnostics[label].count > 0, `${label} vide ou payload inattendu`);
     }
