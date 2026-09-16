@@ -7,6 +7,8 @@ on:
       - 'web/src/pages/OverviewPage.tsx'
       - 'web/src/pages/GradesEvaluationsPage.tsx'
       - 'web/src/pages/demoDataAccess.hydration.test.tsx'
+      - 'web/src/pages/etablissement/ClassesListPage.tsx'
+      - 'web/src/pages/etablissement/ClassesListPage.demo.test.ts'
       - 'web/src/components/DomainRouteBootstrap.tsx'
       - 'web/src/components/DomainRouteBootstrap.demo.test.ts'
       - 'web/src/components/demo/**'
@@ -40,7 +42,7 @@ jobs:
       - name: Install workspace dependencies
         run: npm run ci:install
       - name: Demo runtime unit tests
-        run: npm --prefix web run test -- src/lib/demoRuntime.test.ts src/lib/AuthContext.permissions.test.tsx src/lib/dashboardDemoHydration.test.ts src/pages/demoDataAccess.hydration.test.tsx src/components/DomainRouteBootstrap.demo.test.ts
+        run: npm --prefix web run test -- src/lib/demoRuntime.test.ts src/lib/AuthContext.permissions.test.tsx src/lib/dashboardDemoHydration.test.ts src/pages/demoDataAccess.hydration.test.tsx src/components/DomainRouteBootstrap.demo.test.ts src/pages/etablissement/ClassesListPage.demo.test.ts
       - name: Build Demo web runtime
         env:
           VITE_API_URL: https://api-demo.somafrik.app
