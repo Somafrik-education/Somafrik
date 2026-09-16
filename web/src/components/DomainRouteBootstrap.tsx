@@ -10,8 +10,50 @@ import {
 } from "../lib/domainRouteHydration";
 import { domainsForPath } from "../lib/routeDomainMap";
 import { usePermissionContext } from "../lib/usePermissionContext";
+import { demoRuntimeEnabled } from "../lib/featureFlags";
+import type { DomainKey } from "../lib/domainLoaders";
 
 const OVERVIEW_PATH = "/etablissement/vue-ensemble";
+const NOTES_PATH = "/notes";
+const PLANNING_PATH = "/planning";
+
+// Ces domaines appartiennent au chrome / annuaire global et peuvent être plus
+// lents que la donnée de route. En Démo ils continuent à charger, mais ne
+// doivent jamais retenir Notes ou Vue d'ensemble derrière leur latence.
+const DEMO_NON_BLOCKING_ROUTE_DOMAINS = new Set<DomainKey>([
+  "notifications",
+  "users",
+  "relations",
+]);
+
+export function tracksDomainRouteHydration(pathname: string): boolean {
+  return (
+    pathname === OVERVIEW_PATH ||
+    pathname === NOTES_PATH ||
+    pathname.startsWith(`${NOTES_PATH}/`) ||
+    pathname === PLANNING_PATH ||
+    pathname.startsWith(`${PLANNING_PATH}/`)
+  );
+}
+
+export function demoBlockingRouteDomains(domains: DomainKey[]): DomainKey[] {
+  return domains.filter((domain) => !DEMO_NON_BLOCKING_ROUTE_DOMAINS.has(domain));
+}
+
+export function shouldForceDemoDomain(pathname: string, domain: DomainKey): boolean {
+  return (
+    (pathname === PLANNING_PATH || pathname.startsWith(`${PLANNING_PATH}/`)) &&
+    domain === "courseSchedules"
+  );
+}
+
+function runtimeDomains(domains: DomainKey[]): DomainKey[] {
+  if (!demoRuntimeEnabled) return domains;
+  // /api/demo/exchange fournit déjà l'école authentifiée complète. Le contexte
+  // actif la réutilise ; refaire /backoffice/establishments/:code est à la fois
+  // redondant et très coûteux sur le bulk seed.
+  return domains.filter((domain) => domain !== "schools");
+}
 
 /** Charge les domaines métier requis par la route courante (LOT 8 — filtré RBAC). */
 export function DomainRouteBootstrap() {
@@ -22,7 +64,7 @@ export function DomainRouteBootstrap() {
   const ctx = usePermissionContext();
 
   useEffect(() => {
-    const trackOverviewHydration = location.pathname === OVERVIEW_PATH;
+    const trackHydration = tracksDomainRouteHydration(location.pathname);
     const hydrationKey = buildDomainRouteHydrationKey(
       location.key,
       location.pathname,
@@ -31,7 +73,7 @@ export function DomainRouteBootstrap() {
     let cancelled = false;
 
     if (!session?.accessToken || !permissionsReady || !getAccessToken()) {
-      if (trackOverviewHydration) {
+      if (trackHydration) {
         setDomainRouteHydrationStatus(hydrationKey, "idle");
       }
       return () => {
@@ -39,9 +81,9 @@ export function DomainRouteBootstrap() {
       };
     }
 
-    const domains = domainsForPath(location.pathname, ctx);
+    const domains = runtimeDomains(domainsForPath(location.pathname, ctx));
     if (!domains.length) {
-      if (trackOverviewHydration) {
+      if (trackHydration) {
         setDomainRouteHydrationStatus(hydrationKey, "ready");
       }
       return () => {
@@ -49,18 +91,60 @@ export function DomainRouteBootstrap() {
       };
     }
 
-    if (trackOverviewHydration) {
+    if (trackHydration) {
       setDomainRouteHydrationStatus(hydrationKey, "loading");
+    }
+
+    if (demoRuntimeEnabled) {
+      // Démo : chaque domaine possède son propre ensure. DataContext fusionne
+      // donc classes/élèves/notes dès leur 200 sans attendre un GET users lent.
+      // PROD/PREPROD conservent le batch historique ci-dessous.
+      const tasks = new Map<DomainKey, Promise<void>>();
+      for (const domain of domains) {
+        tasks.set(
+          domain,
+          ensureDomains([domain], {
+            schoolCode: activeSchoolCode,
+            // Le planning est une projection runtime mutable et un ancien GET
+            // vide ne doit pas rester figé dans le cache de la session Démo.
+            // Le backend Demo CI garantit déjà courseSchedules > 0 après reset.
+            force: shouldForceDemoDomain(location.pathname, domain),
+          }),
+        );
+      }
+
+      if (trackHydration) {
+        const blockingDomains = demoBlockingRouteDomains(domains);
+        const blockingTasks = blockingDomains
+          .map((domain) => tasks.get(domain))
+          .filter((task): task is Promise<void> => Boolean(task));
+
+        void Promise.allSettled(blockingTasks).then((results) => {
+          if (cancelled) return;
+          const failed = results.some((result) => result.status === "rejected");
+          setDomainRouteHydrationStatus(hydrationKey, failed ? "error" : "ready");
+        });
+      }
+
+      // Les domaines non bloquants restent surveillés par DataContext.error ;
+      // on évite seulement une rejection non observée côté effet React.
+      for (const task of tasks.values()) {
+        void task.catch(() => undefined);
+      }
+
+      return () => {
+        cancelled = true;
+      };
     }
 
     void ensureDomains(domains, { schoolCode: activeSchoolCode })
       .then(() => {
-        if (!cancelled && trackOverviewHydration) {
+        if (!cancelled && trackHydration) {
           setDomainRouteHydrationStatus(hydrationKey, "ready");
         }
       })
       .catch(() => {
-        if (!cancelled && trackOverviewHydration) {
+        if (!cancelled && trackHydration) {
           setDomainRouteHydrationStatus(hydrationKey, "error");
         }
         /* erreur déjà exposée via DataContext.error */

@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError, api, getAccessToken } from "../api/client";
 import { AuthProvider, useAuth } from "../context/AuthContext";
+import type { Session } from "../types";
 
 vi.mock("../api/client", async (importOriginal) => {
   const original = await importOriginal<typeof import("../api/client")>();
@@ -153,5 +154,32 @@ describe("AuthProvider — permissions live sans refresh", () => {
     expect(result.current.permissionsReady).toBe(false);
     expect(result.current.session?.accessToken).toBe("login-token");
     expect(result.current.permissionsBootstrapError).toMatch(/Permissions indisponibles|permissions effectives/i);
+  });
+
+  it("DEMO-3: une session Démo avec permissions live ne reste pas bloquée sur le second bootstrap", async () => {
+    vi.mocked(api.get).mockImplementation(() => new Promise(() => undefined));
+    const { result } = renderHook(() => useAuth(), { wrapper });
+    const demoSession = {
+      accessToken: "demo-token",
+      permissions: ["Classes:READ", "Élèves:READ"],
+      user: {
+        id: "demo-admin",
+        identifier: "ADMIN-SCH-BULK-CD-0001-01",
+        role: "Admin School",
+        schoolCode: "SCH-BULK-CD-0001",
+        permissions: ["Classes:READ", "Élèves:READ"],
+      },
+      demo: true,
+    } as Session & { demo: true };
+
+    act(() => {
+      result.current.setSession(demoSession);
+    });
+
+    await waitFor(() => {
+      expect(result.current.permissionsReady).toBe(true);
+    });
+    expect(result.current.permissionsBootstrap).toBe("ready");
+    expect(result.current.session?.user?.permissions).toContain("Classes:READ");
   });
 });
