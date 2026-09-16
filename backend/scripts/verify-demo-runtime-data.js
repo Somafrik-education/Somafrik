@@ -208,7 +208,15 @@ async function main() {
       );
     }
 
-    for (const label of ["classes", "students", "teachers", "payments", "courseSchedules"]) {
+    for (const label of [
+      "classes",
+      "students",
+      "teachers",
+      "payments",
+      "courseSchedules",
+      "studentFees",
+      "bulletins",
+    ]) {
       assert.equal(diagnostics[label].status, 200, `${label} doit répondre 200`);
       assert.ok(diagnostics[label].count > 0, `${label} vide ou payload inattendu`);
     }
