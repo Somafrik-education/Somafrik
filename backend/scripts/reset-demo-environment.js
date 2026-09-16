@@ -10,6 +10,10 @@ const { resolveDemoInternalSeedPin } = require("../lib/demoGatewayPolicy");
 const { seedDemoCanonicalPlanning } = require("../lib/demoCanonicalPlanningSeed");
 const { seedDemoShowcaseData } = require("../lib/demoShowcaseDataSeed");
 
+const PUBLIC_DEMO_LOGIN_CODE = "CD-IN-26-001";
+const PUBLIC_DEMO_SUBSCRIPTION_START = "01-09-2026";
+const PUBLIC_DEMO_SUBSCRIPTION_END = "31-12-2099";
+
 async function hardenDemoCredentials(databaseUrl, internalSeedPin) {
   const pool = new Pool({ connectionString: databaseUrl });
   const secretHash = hashSecret(internalSeedPin);
@@ -51,28 +55,147 @@ async function hardenDemoCredentials(databaseUrl, internalSeedPin) {
   }
 }
 
+function patchEffectiveDemoSubscriptionState(payload = {}) {
+  const next = payload && typeof payload === "object" ? { ...payload } : {};
+  const schools = Array.isArray(next.schools) ? next.schools.map((row) => ({ ...row })) : [];
+  const subscriptions = Array.isArray(next.subscriptions)
+    ? next.subscriptions.map((row) => ({ ...row }))
+    : [];
+
+  const schoolIndexes = [];
+  schools.forEach((school, index) => {
+    const identities = [school?.loginCode, school?.publicId, school?.code]
+      .map((value) => String(value ?? "").trim().toUpperCase())
+      .filter(Boolean);
+    if (identities.includes(PUBLIC_DEMO_LOGIN_CODE)) schoolIndexes.push(index);
+  });
+
+  if (schoolIndexes.length !== 1) {
+    throw new Error(`PUBLIC_DEMO_EFFECTIVE_SCHOOL_NOT_FOUND:${schoolIndexes.length}`);
+  }
+
+  const schoolIndex = schoolIndexes[0];
+  const schoolCode = String(schools[schoolIndex]?.code ?? "").trim();
+  schools[schoolIndex] = {
+    ...schools[schoolIndex],
+    subscriptionPlan: "Essentiel",
+    subscriptionStartDate: PUBLIC_DEMO_SUBSCRIPTION_START,
+    subscriptionEndDate: PUBLIC_DEMO_SUBSCRIPTION_END,
+    validationStatus: "Validé",
+    subscriptionStatus: "À jour",
+  };
+
+  const subscriptionIndexes = [];
+  subscriptions.forEach((subscription, index) => {
+    const subscriptionSchoolCode = String(subscription?.schoolCode ?? "").trim();
+    if (subscriptionSchoolCode === schoolCode || subscriptionSchoolCode === PUBLIC_DEMO_LOGIN_CODE) {
+      subscriptionIndexes.push(index);
+    }
+  });
+
+  if (subscriptionIndexes.length !== 1) {
+    throw new Error(`PUBLIC_DEMO_EFFECTIVE_SUBSCRIPTION_NOT_FOUND:${subscriptionIndexes.length}`);
+  }
+
+  const subscriptionIndex = subscriptionIndexes[0];
+  subscriptions[subscriptionIndex] = {
+    ...subscriptions[subscriptionIndex],
+    plan: "Essentiel",
+    status: "Actif",
+    paymentStatus: "À jour",
+    startDate: PUBLIC_DEMO_SUBSCRIPTION_START,
+    endDate: PUBLIC_DEMO_SUBSCRIPTION_END,
+  };
+
+  return {
+    payload: { ...next, schools, subscriptions },
+    schoolCode,
+    schools: schoolIndexes.length,
+    subscriptions: subscriptionIndexes.length,
+  };
+}
+
+function verifyEffectiveDemoSubscriptionState(payload = {}) {
+  const schools = Array.isArray(payload?.schools) ? payload.schools : [];
+  const subscriptions = Array.isArray(payload?.subscriptions) ? payload.subscriptions : [];
+  const school = schools.find((row) =>
+    [row?.loginCode, row?.publicId]
+      .map((value) => String(value ?? "").trim().toUpperCase())
+      .includes(PUBLIC_DEMO_LOGIN_CODE),
+  );
+  const schoolCode = String(school?.code ?? "").trim();
+  const subscription = subscriptions.find((row) => {
+    const subscriptionSchoolCode = String(row?.schoolCode ?? "").trim();
+    return subscriptionSchoolCode === schoolCode || subscriptionSchoolCode === PUBLIC_DEMO_LOGIN_CODE;
+  });
+
+  return Boolean(
+    school &&
+      school.subscriptionPlan === "Essentiel" &&
+      school.subscriptionStartDate === PUBLIC_DEMO_SUBSCRIPTION_START &&
+      school.subscriptionEndDate === PUBLIC_DEMO_SUBSCRIPTION_END &&
+      school.validationStatus === "Validé" &&
+      school.subscriptionStatus === "À jour" &&
+      subscription &&
+      subscription.plan === "Essentiel" &&
+      subscription.status === "Actif" &&
+      subscription.paymentStatus === "À jour" &&
+      subscription.startDate === PUBLIC_DEMO_SUBSCRIPTION_START &&
+      subscription.endDate === PUBLIC_DEMO_SUBSCRIPTION_END,
+  );
+}
+
 async function keepPublicDemoSubscriptionActive(databaseUrl) {
   const pool = new Pool({ connectionString: databaseUrl });
+  const client = await pool.connect();
   try {
-    const result = await pool.query(
+    await client.query("BEGIN");
+    const result = await client.query(
       `UPDATE subscriptions sub
        SET status = 'active',
+           start_date = DATE '2026-09-01',
            end_date = DATE '2099-12-31',
            updated_at = NOW()
        FROM schools s
        WHERE sub.school_id = s.id
-         AND s.login_code = 'CD-IN-26-001'
-       RETURNING sub.id, sub.end_date, sub.status`,
+         AND s.login_code = $1
+       RETURNING sub.id, TO_CHAR(sub.end_date, 'YYYY-MM-DD') AS end_date, sub.status`,
+      [PUBLIC_DEMO_LOGIN_CODE],
     );
     if (result.rowCount !== 1) {
       throw new Error(`PUBLIC_DEMO_SUBSCRIPTION_NOT_FOUND:${result.rowCount}`);
     }
+
+    const state = await client.query(
+      `SELECT state_payload
+       FROM backoffice_state
+       WHERE state_key = 'default'
+       FOR UPDATE`,
+    );
+    if (!state.rows[0]?.state_payload) {
+      throw new Error("PUBLIC_DEMO_EFFECTIVE_STATE_MISSING");
+    }
+    const patchedState = patchEffectiveDemoSubscriptionState(state.rows[0].state_payload);
+    await client.query(
+      `UPDATE backoffice_state
+       SET state_payload = $1::jsonb, updated_at = NOW()
+       WHERE state_key = 'default'`,
+      [JSON.stringify(patchedState.payload)],
+    );
+
+    await client.query("COMMIT");
     return {
       subscriptions: result.rowCount,
       status: result.rows[0].status,
-      endDate: String(result.rows[0].end_date).slice(0, 10),
+      endDate: result.rows[0].end_date,
+      effectiveSchools: patchedState.schools,
+      effectiveSubscriptions: patchedState.subscriptions,
     };
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
   } finally {
+    client.release();
     await pool.end();
   }
 }
@@ -109,6 +232,17 @@ async function verifyDataset(databaseUrl) {
          (SELECT COUNT(*)::int FROM schools WHERE COALESCE(phone, '') <> '' OR COALESCE(email, '') NOT LIKE '%@demo.somafrik.invalid') AS schools_with_external_contact`,
     );
     const counts = result.rows[0];
+    const state = await pool.query(
+      `SELECT state_payload
+       FROM backoffice_state
+       WHERE state_key = 'default'`,
+    );
+    counts.effective_demo_subscription_state = verifyEffectiveDemoSubscriptionState(
+      state.rows[0]?.state_payload,
+    )
+      ? 1
+      : 0;
+
     const invalidShape =
       !counts ||
       counts.countries !== 1 ||
@@ -116,6 +250,7 @@ async function verifyDataset(databaseUrl) {
       counts.schools !== 1 ||
       counts.public_demo_schools !== 1 ||
       counts.valid_demo_subscriptions !== 1 ||
+      counts.effective_demo_subscription_state !== 1 ||
       counts.classes !== 10 ||
       counts.students !== 200 ||
       counts.teachers !== 20 ||
@@ -180,5 +315,7 @@ if (require.main === module) {
 module.exports = {
   hardenDemoCredentials,
   keepPublicDemoSubscriptionActive,
+  patchEffectiveDemoSubscriptionState,
   verifyDataset,
+  verifyEffectiveDemoSubscriptionState,
 };
