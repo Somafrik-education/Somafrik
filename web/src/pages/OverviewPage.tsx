@@ -43,15 +43,16 @@ export function OverviewPage() {
     const critical = filterDomainsByPermissions(
       dashboardCriticalDomainsForDemo(internalSchool),
       ctx,
-    );
+    ).filter((domain) => domain !== "schools");
     const deferred = filterDomainsByPermissions(
       dashboardDeferredDomainsForDemo(internalSchool),
       ctx,
     );
 
     // Démo uniquement : chaque domaine est fusionné dès que son GET termine.
-    // Un endpoint lent (ex. schools/users) ne doit pas retenir classes, élèves,
-    // présences ou notes derrière un Promise.allSettled de batch.
+    // L'école est déjà fournie par /api/demo/exchange ; on ne refait pas le
+    // snapshot établissement. Un endpoint lent (ex. users) ne retient donc
+    // plus classes, élèves, présences ou notes derrière un batch atomique.
     for (const domain of critical) {
       void ensureDomains([domain], options).catch(() => undefined);
     }
