@@ -15,7 +15,11 @@ import {
 import { DashboardChartGrid } from "../components/charts/DashboardChartGrid";
 import { resolveChartOrderUserKey } from "../lib/chartOrder";
 import { demoRuntimeEnabled } from "../lib/featureFlags";
-import { dashboardDomainsForDemo } from "../lib/dashboardDemoHydration";
+import {
+  dashboardCriticalDomainsForDemo,
+  dashboardDeferredDomainsForDemo,
+} from "../lib/dashboardDemoHydration";
+import { filterDomainsByPermissions } from "../lib/domainPermissions";
 
 export function OverviewPage() {
   const { session } = useAuth();
@@ -36,8 +40,26 @@ export function OverviewPage() {
         ? { schoolCode: activeSchoolCode }
         : undefined;
 
-    void ensureDomains(dashboardDomainsForDemo(internalSchool), options).catch(() => undefined);
-  }, [session?.accessToken, internalSchool, activeSchoolCode, ensureDomains]);
+    const critical = filterDomainsByPermissions(
+      dashboardCriticalDomainsForDemo(internalSchool),
+      ctx,
+    ).filter((domain) => domain !== "schools");
+    const deferred = filterDomainsByPermissions(
+      dashboardDeferredDomainsForDemo(internalSchool),
+      ctx,
+    );
+
+    // Démo uniquement : chaque domaine est fusionné dès que son GET termine.
+    // L'école est déjà fournie par /api/demo/exchange ; on ne refait pas le
+    // snapshot établissement. Un endpoint lent (ex. users) ne retient donc
+    // plus classes, élèves, présences ou notes derrière un batch atomique.
+    for (const domain of critical) {
+      void ensureDomains([domain], options).catch(() => undefined);
+    }
+    for (const domain of deferred) {
+      void ensureDomains([domain], options).catch(() => undefined);
+    }
+  }, [session?.accessToken, internalSchool, activeSchoolCode, ensureDomains, ctx]);
 
   const hasInternalNotificationScope = Boolean(activeSchoolCode && activeSchoolCode !== "*");
   const schoolUnreadCount = useInternalNotificationsUnreadCount(
