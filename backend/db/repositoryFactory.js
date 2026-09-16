@@ -13,6 +13,7 @@ const {
 } = require("./studentLifecyclePg");
 const { ensureStudentGeneralIdentityPg } = require("./studentGeneralIdentityPg");
 const { attachLiveRbacAuthority } = require("../lib/liveRbacPrincipalAuthority");
+const { attachDemoReadOptimizations } = require("../lib/demoReadOptimizations");
 const {
   resolveDatabaseConfig,
   isDatabaseRequired,
@@ -78,6 +79,7 @@ function createPostgresRepository(databaseConfig, env = process.env) {
   repository.engine = "postgresql";
   attachStudentLifecyclePg(repository);
   attachLiveRbacAuthority(repository);
+  attachDemoReadOptimizations(repository, env);
   return assertRepositoryContract(repository, "postgresql");
 }
 
@@ -148,6 +150,7 @@ async function initializeRepository({
   disableLegacyBackOfficeRuntimeMigrations(primary);
   if ((primary.engine ?? "postgresql") === "postgresql") {
     attachStudentLifecyclePg(primary);
+    attachDemoReadOptimizations(primary, env);
   }
 
   try {
