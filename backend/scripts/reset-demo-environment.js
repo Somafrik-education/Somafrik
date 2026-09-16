@@ -56,29 +56,51 @@ async function verifyDataset(databaseUrl) {
   try {
     const result = await pool.query(
       `SELECT
+         (SELECT COUNT(*)::int FROM countries) AS countries,
+         (SELECT COUNT(*)::int FROM countries WHERE iso_code = 'CD') AS cd_countries,
          (SELECT COUNT(*)::int FROM schools) AS schools,
+         (SELECT COUNT(*)::int FROM schools WHERE login_code = 'CD-IN-26-001') AS public_demo_schools,
          (SELECT COUNT(*)::int FROM classes) AS classes,
          (SELECT COUNT(*)::int FROM students) AS students,
          (SELECT COUNT(*)::int FROM teachers) AS teachers,
+         (SELECT COUNT(*)::int FROM teacher_assignments WHERE status = 'active') AS teacher_assignments,
          (SELECT COUNT(*)::int FROM payments) AS payments,
          (SELECT COUNT(*)::int FROM student_fee_obligations WHERE archived_at IS NULL) AS student_fee_obligations,
          (SELECT COUNT(*)::int FROM payment_allocations WHERE reversed_at IS NULL) AS payment_allocations,
          (SELECT COUNT(*)::int FROM report_cards WHERE status <> 'archived') AS report_cards,
-         (SELECT COUNT(*)::int FROM course_schedule_weekly_slots WHERE status = 'active') AS course_schedule_weekly_slots`,
+         (SELECT COUNT(*)::int FROM course_schedule_weekly_slots WHERE status = 'active') AS course_schedule_weekly_slots,
+         (SELECT COUNT(*)::int FROM users WHERE role IN ('SUPER_ADMIN','COUNTRY_ADMIN')) AS privileged_users,
+         (SELECT COUNT(*)::int FROM users WHERE COALESCE(phone, '') <> '') AS users_with_phone,
+         (SELECT COUNT(*)::int FROM users WHERE COALESCE(email, '') <> '' AND email NOT LIKE '%@demo.somafrik.invalid') AS users_with_external_email,
+         (SELECT COUNT(*)::int FROM students WHERE COALESCE(parent_phone, '') <> '') AS students_with_parent_phone,
+         (SELECT COUNT(*)::int FROM students WHERE COALESCE(parent_email, '') <> '' AND parent_email NOT LIKE '%@demo.somafrik.invalid') AS students_with_external_parent_email,
+         (SELECT COUNT(*)::int FROM schools WHERE COALESCE(phone, '') <> '' OR COALESCE(email, '') NOT LIKE '%@demo.somafrik.invalid') AS schools_with_external_contact`,
     );
     const counts = result.rows[0];
-    if (
+    const invalidShape =
       !counts ||
-      counts.schools < 1 ||
-      counts.classes < 1 ||
-      counts.students < 1 ||
-      counts.teachers < 1 ||
-      counts.student_fee_obligations < 1 ||
+      counts.countries !== 1 ||
+      counts.cd_countries !== 1 ||
+      counts.schools !== 1 ||
+      counts.public_demo_schools !== 1 ||
+      counts.classes !== 10 ||
+      counts.students !== 200 ||
+      counts.teachers !== 20 ||
+      counts.teacher_assignments < 40 ||
+      counts.payments !== 200 ||
+      counts.student_fee_obligations !== 400 ||
       counts.payment_allocations < 1 ||
-      counts.report_cards < 1 ||
-      counts.course_schedule_weekly_slots < 1
-    ) {
-      throw new Error(`Dataset Démo incomplet : ${JSON.stringify(counts || {})}`);
+      counts.report_cards !== 200 ||
+      counts.course_schedule_weekly_slots < 40 ||
+      counts.privileged_users !== 0 ||
+      counts.users_with_phone !== 0 ||
+      counts.users_with_external_email !== 0 ||
+      counts.students_with_parent_phone !== 0 ||
+      counts.students_with_external_parent_email !== 0 ||
+      counts.schools_with_external_contact !== 0;
+
+    if (invalidShape) {
+      throw new Error(`Dataset public Démo invalide : ${JSON.stringify(counts || {})}`);
     }
     return counts;
   } finally {
@@ -89,9 +111,9 @@ async function verifyDataset(databaseUrl) {
 async function main() {
   const { databaseUrl } = assertDemoResetSafety(process.env);
   const internalSeedPin = resolveDemoInternalSeedPin(process.env);
-  const seedScript = path.join(__dirname, "seed-platform-bulk.js");
+  const seedScript = path.join(__dirname, "seed-demo-public.js");
 
-  console.log("Reset contrôlé du dataset Démo…");
+  console.log("Reset contrôlé du dataset public Démo…");
   const run = spawnSync(process.execPath, [seedScript, "--fresh"], {
     cwd: path.join(__dirname, "..", ".."),
     env: process.env,
@@ -99,7 +121,7 @@ async function main() {
   });
   if (run.error) throw run.error;
   if (run.status !== 0) {
-    throw new Error(`Seed Démo échoué (code ${run.status}).`);
+    throw new Error(`Seed public Démo échoué (code ${run.status}).`);
   }
 
   const planning = await seedDemoCanonicalPlanning(databaseUrl);
@@ -109,7 +131,7 @@ async function main() {
   console.log(`Planning Démo canonique : ${JSON.stringify(planning)}.`);
   console.log(`Showcase Démo canonique : ${JSON.stringify(showcase)}.`);
   console.log(`Credentials Démo durcis : ${hardening.rotatedUsers} comptes.`);
-  console.log(`Dataset Démo vérifié : ${JSON.stringify(counts)}`);
+  console.log(`Dataset public Démo vérifié : ${JSON.stringify(counts)}`);
   console.log("Rappel : seul le port public de la passerelle Démo doit être publié.");
 }
 
