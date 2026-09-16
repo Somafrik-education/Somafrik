@@ -238,38 +238,14 @@ export function getLiveKpis(
   const schools = scopedSchools(user, state);
   const users = scopedUsers(user, state);
   const subscriptions = scopedSubscriptions(user, state);
-  const countries = scopedCountries(user, state);
   const activeUsers = users.filter(isActiveUserAccount);
-  const suspendedSchools = schools.filter((school) => school.status === "Suspendu").length;
-  const expiredSubscriptions = subscriptions.filter(
-    (subscription) =>
-      subscription.paymentStatus === "En retard" || isPastDate(subscription.endDate),
-  ).length;
-  const monthlyRevenue = subscriptions
-    .filter((s) => s.status === "Actif" && s.paymentStatus === "À jour")
-    .reduce((total, s) => total + Number(s.monthlyPrice ?? 0), 0);
-
-  if (isInternalSchoolRole(user.role)) {
-    const schoolUnreadCount = Math.max(0, Math.floor(Number(options?.schoolUnreadCount) || 0));
-    return [
-      { label: ACTIVE_USERS_KPI_LABEL, value: activeUsers.length },
-      {
-        label: "Élèves suivis",
-        value: countUsersByRole(users, ["Élève / Étudiant", "Élève", "Étudiant"]),
-      },
-      { label: "Enseignants", value: countUsersByRole(users, ["Enseignant"]) },
-      {
-        label: SCHOOL_UNREAD_KPI_LABEL,
-        value: schoolUnreadCount,
-      },
-    ];
-  }
-
   return [
-    { label: "Pays", value: countries.length },
     { label: "Établissements", value: schools.length },
     { label: ACTIVE_USERS_KPI_LABEL, value: activeUsers.length },
-    { label: "Revenus mensuels", value: monthlyRevenue, suffix: "USD" },
-    { label: "Alertes plateforme", value: suspendedSchools + expiredSubscriptions },
+    { label: "Abonnements", value: subscriptions.length },
+    {
+      label: "Alertes à traiter",
+      value: Math.max(0, Math.floor(Number(options?.schoolUnreadCount) || 0)),
+    },
   ];
 }
