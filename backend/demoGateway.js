@@ -1,5 +1,6 @@
 const path = require("path");
 const http = require("http");
+const { createHash } = require("crypto");
 const { spawn } = require("child_process");
 const express = require("express");
 const cors = require("cors");
@@ -26,6 +27,22 @@ class DemoHttpError extends Error {
 
 function normalizedOrigin(value) {
   return String(value ?? "").trim().replace(/\/$/, "");
+}
+
+function normalizeCode(value) {
+  return String(value ?? "").trim().toUpperCase();
+}
+
+function accessTokenDigest(token) {
+  const value = String(token ?? "").trim();
+  if (!value) return "";
+  return createHash("sha256").update(value).digest("hex");
+}
+
+function bearerToken(req) {
+  const raw = String(req.get("authorization") ?? "").trim();
+  const match = /^Bearer\s+(.+)$/i.exec(raw);
+  return match ? match[1].trim() : "";
 }
 
 function enrichDemoAuthWithCanonicalSchool(auth) {
@@ -151,6 +168,29 @@ function createDemoGatewayApp({
     });
   const internalLogin = loginToInner || createInnerLogin(env);
   const proxy = proxyRequest || createInnerProxy(env);
+  const sessionContexts = new Map();
+
+  function rememberSessionContext(auth, expiresAt) {
+    const digest = accessTokenDigest(auth?.accessToken);
+    if (!digest || !auth?.school || !auth?.user) return;
+    sessionContexts.set(digest, {
+      school: auth.school,
+      user: auth.user,
+      expiresAt,
+    });
+  }
+
+  function contextForRequest(req) {
+    const digest = accessTokenDigest(bearerToken(req));
+    if (!digest) return null;
+    const context = sessionContexts.get(digest);
+    if (!context) return null;
+    if (Number(context.expiresAt ?? 0) <= Date.now()) {
+      sessionContexts.delete(digest);
+      return null;
+    }
+    return context;
+  }
 
   app.use((req, res, next) => {
     res.setHeader("X-Content-Type-Options", "nosniff");
@@ -220,6 +260,8 @@ function createDemoGatewayApp({
 
         const auth = await internalLogin(ticket);
         const sessionTtlSeconds = Math.max(60, Math.min(Number(env.DEMO_SESSION_TTL_SECONDS ?? 900), 900));
+        const sessionExpiresAt = Date.now() + sessionTtlSeconds * 1000;
+        rememberSessionContext(auth, sessionExpiresAt);
         const publicAuth = { ...auth };
         delete publicAuth.refreshToken;
         return res.json({
@@ -229,7 +271,7 @@ function createDemoGatewayApp({
           demoSession: {
             id: ticket.sessionId,
             mode: "demo",
-            expiresAt: new Date(Date.now() + sessionTtlSeconds * 1000).toISOString(),
+            expiresAt: new Date(sessionExpiresAt).toISOString(),
           },
         });
       } catch (error) {
@@ -237,6 +279,32 @@ function createDemoGatewayApp({
       }
     },
   );
+
+  // Le login interne a déjà résolu l'école canonique. Le GET historique
+  // reconstruit tout le snapshot BackOffice et dépasse 30 s sur le bulk seed.
+  // Servir exactement le contexte authentifié évite cette reconstruction sans
+  // élargir le tenant et sans exposer de credential.
+  app.get("/api/backoffice/establishments/:code", (req, res, next) => {
+    const context = contextForRequest(req);
+    if (!context) return next();
+    const requested = normalizeCode(req.params.code);
+    const allowed = new Set(
+      [
+        context.user?.schoolCode,
+        context.user?.schoolPublicCode,
+        context.school?.code,
+        context.school?.schoolCode,
+        context.school?.loginCode,
+        context.school?.publicId,
+      ]
+        .map(normalizeCode)
+        .filter(Boolean),
+    );
+    if (!requested || !allowed.has(requested)) {
+      return res.status(403).json({ message: "Accès refusé : établissement hors périmètre." });
+    }
+    return res.json(context.school);
+  });
 
   app.use((req, res, next) => {
     if (isBlockedDemoGatewayPath(req.originalUrl || req.url)) {
