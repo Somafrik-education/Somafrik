@@ -51,6 +51,32 @@ async function hardenDemoCredentials(databaseUrl, internalSeedPin) {
   }
 }
 
+async function keepPublicDemoSubscriptionActive(databaseUrl) {
+  const pool = new Pool({ connectionString: databaseUrl });
+  try {
+    const result = await pool.query(
+      `UPDATE subscriptions sub
+       SET status = 'active',
+           end_date = DATE '2099-12-31',
+           updated_at = NOW()
+       FROM schools s
+       WHERE sub.school_id = s.id
+         AND s.login_code = 'CD-IN-26-001'
+       RETURNING sub.id, sub.end_date, sub.status`,
+    );
+    if (result.rowCount !== 1) {
+      throw new Error(`PUBLIC_DEMO_SUBSCRIPTION_NOT_FOUND:${result.rowCount}`);
+    }
+    return {
+      subscriptions: result.rowCount,
+      status: result.rows[0].status,
+      endDate: String(result.rows[0].end_date).slice(0, 10),
+    };
+  } finally {
+    await pool.end();
+  }
+}
+
 async function verifyDataset(databaseUrl) {
   const pool = new Pool({ connectionString: databaseUrl });
   try {
@@ -60,6 +86,12 @@ async function verifyDataset(databaseUrl) {
          (SELECT COUNT(*)::int FROM countries WHERE iso_code = 'CD') AS cd_countries,
          (SELECT COUNT(*)::int FROM schools) AS schools,
          (SELECT COUNT(*)::int FROM schools WHERE login_code = 'CD-IN-26-001') AS public_demo_schools,
+         (SELECT COUNT(*)::int
+            FROM subscriptions sub
+            JOIN schools s ON s.id = sub.school_id
+           WHERE s.login_code = 'CD-IN-26-001'
+             AND sub.status = 'active'
+             AND sub.end_date >= CURRENT_DATE) AS valid_demo_subscriptions,
          (SELECT COUNT(*)::int FROM classes) AS classes,
          (SELECT COUNT(*)::int FROM students) AS students,
          (SELECT COUNT(*)::int FROM teachers) AS teachers,
@@ -83,6 +115,7 @@ async function verifyDataset(databaseUrl) {
       counts.cd_countries !== 1 ||
       counts.schools !== 1 ||
       counts.public_demo_schools !== 1 ||
+      counts.valid_demo_subscriptions !== 1 ||
       counts.classes !== 10 ||
       counts.students !== 200 ||
       counts.teachers !== 20 ||
@@ -124,10 +157,12 @@ async function main() {
     throw new Error(`Seed public Démo échoué (code ${run.status}).`);
   }
 
+  const subscription = await keepPublicDemoSubscriptionActive(databaseUrl);
   const planning = await seedDemoCanonicalPlanning(databaseUrl);
   const showcase = await seedDemoShowcaseData(databaseUrl);
   const hardening = await hardenDemoCredentials(databaseUrl, internalSeedPin);
   const counts = await verifyDataset(databaseUrl);
+  console.log(`Abonnement public Démo actif : ${JSON.stringify(subscription)}.`);
   console.log(`Planning Démo canonique : ${JSON.stringify(planning)}.`);
   console.log(`Showcase Démo canonique : ${JSON.stringify(showcase)}.`);
   console.log(`Credentials Démo durcis : ${hardening.rotatedUsers} comptes.`);
@@ -142,4 +177,8 @@ if (require.main === module) {
   });
 }
 
-module.exports = { hardenDemoCredentials, verifyDataset };
+module.exports = {
+  hardenDemoCredentials,
+  keepPublicDemoSubscriptionActive,
+  verifyDataset,
+};
