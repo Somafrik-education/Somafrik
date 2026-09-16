@@ -9,7 +9,9 @@ on:
       - 'backend/lib/demoGatewayPolicy.js'
       - 'backend/lib/demoResetSafety.js'
       - 'backend/lib/demoShowcaseDataSeed.js'
+      - 'backend/lib/demoPublicPlatformSeed.js'
       - 'backend/scripts/seed-platform-bulk.js'
+      - 'backend/scripts/seed-demo-public.js'
       - 'backend/scripts/reset-demo-environment.js'
       - 'backend/scripts/verify-demo-entry-api.js'
       - 'backend/scripts/verify-demo-runtime-data.js'
@@ -51,10 +53,22 @@ jobs:
           node --check backend/lib/demoGatewayPolicy.js
           node --check backend/lib/demoResetSafety.js
           node --check backend/lib/demoShowcaseDataSeed.js
+          node --check backend/lib/demoPublicPlatformSeed.js
           node --check backend/scripts/seed-platform-bulk.js
+          node --check backend/scripts/seed-demo-public.js
           node --check backend/scripts/reset-demo-environment.js
           node --check backend/scripts/verify-demo-entry-api.js
           node --check backend/scripts/verify-demo-runtime-data.js
+      - name: Verify public Demo seed contract
+        run: |
+          node <<'NODE'
+          const {
+            buildPublicDemoPlatformSeed,
+            verifyPublicDemoSeed,
+          } = require('./backend/lib/demoPublicPlatformSeed');
+          const proof = verifyPublicDemoSeed(buildPublicDemoPlatformSeed());
+          console.log(`Public Demo seed contract: OK ${JSON.stringify(proof)}`);
+          NODE
       - name: Verify one-shot demo entry API
         run: npm --prefix backend run verify:demo-entry-api
       - name: Bootstrap canonical PostgreSQL schema
