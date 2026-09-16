@@ -21,6 +21,7 @@ import { educationReferenceApi, type EducationSchoolCatalog } from "../../lib/ed
 import { usePermissionContext } from "../../lib/usePermissionContext";
 import { canAssignClassHeadTeacher, getEntityFeaturePermissions } from "../../lib/permissions";
 import { displayStatusName } from "../../lib/format";
+import { demoRuntimeEnabled } from "../../lib/featureFlags";
 import {
   SCOLARITE_COPY,
   composeClassPreviewName,
@@ -105,23 +106,47 @@ export function ClassesListPage() {
   const [form, setForm] = useState<ClassFormState>(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
 
+  const scopeYears = useCallback(
+    (academicYears: AcademicYearOption[]) =>
+      scopeAcademicYearsForConfiguration({
+        role: permissionCtx.user?.role,
+        rows: academicYears,
+        selectedSchool: selectedSchoolForYears,
+        sessionSchoolId: permissionCtx.user?.schoolId,
+      }),
+    [permissionCtx.user?.role, permissionCtx.user?.schoolId, selectedSchoolForYears],
+  );
+
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
+      if (demoRuntimeEnabled) {
+        // La liste des classes est la donnée critique de cet écran. En Démo,
+        // années scolaires et catalogue pédagogique restent utiles aux actions
+        // d'édition/création mais ne doivent pas retenir la liste derrière leur
+        // latence. PROD/PREPROD conservent le chargement atomique historique.
+        const classes = await classesApi.list();
+        setRows(Array.isArray(classes) ? classes : []);
+
+        void academicYearsApi
+          .list()
+          .then((academicYears) => setYears(scopeYears(academicYears)))
+          .catch(() => setYears([]));
+        void educationReferenceApi
+          .getSchoolCatalog()
+          .then((schoolCatalog) => setCatalog(schoolCatalog))
+          .catch(() => setCatalog(null));
+        return;
+      }
+
       const [classes, academicYears, schoolCatalog] = await Promise.all([
         classesApi.list(),
         academicYearsApi.list().catch(() => []),
         educationReferenceApi.getSchoolCatalog().catch(() => null),
       ]);
       setRows(Array.isArray(classes) ? classes : []);
-      const scopedYears = scopeAcademicYearsForConfiguration({
-        role: permissionCtx.user?.role,
-        rows: academicYears,
-        selectedSchool: selectedSchoolForYears,
-        sessionSchoolId: permissionCtx.user?.schoolId,
-      });
-      setYears(scopedYears);
+      setYears(scopeYears(academicYears));
       setCatalog(schoolCatalog);
     } catch (err) {
       const message = err instanceof ApiError ? err.message : "Impossible de charger les classes.";
@@ -130,7 +155,7 @@ export function ClassesListPage() {
     } finally {
       setLoading(false);
     }
-  }, [permissionCtx.user?.role, permissionCtx.user?.schoolId, selectedSchoolForYears]);
+  }, [scopeYears]);
 
   useEffect(() => {
     if (!permissions.canRead) {
