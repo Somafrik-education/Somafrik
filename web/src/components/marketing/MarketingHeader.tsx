@@ -2,6 +2,8 @@ import { useEffect, useId, useState } from "react";
 import { Link } from "react-router-dom";
 import { BrandLogo } from "../BrandLogo";
 import { marketingLogin, marketingNav, marketingTrial } from "../../data/marketingContent";
+import { marketingDemo } from "../../data/demoMarketing";
+import { publicDemoEnabled } from "../../lib/featureFlags";
 
 export function MarketingHeader() {
   const [open, setOpen] = useState(false);
@@ -43,6 +45,14 @@ export function MarketingHeader() {
               {link.label}
             </a>
           ))}
+          {publicDemoEnabled ? (
+            <Link
+              to={marketingDemo.href}
+              className="ml-2 inline-flex min-h-11 items-center rounded-xl border border-brand-200 bg-brand-50 px-4 py-2 text-sm font-bold text-brand transition hover:bg-brand-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2"
+            >
+              {marketingDemo.label}
+            </Link>
+          ) : null}
           <Link
             to={marketingTrial.href}
             className="ml-2 inline-flex min-h-11 items-center rounded-xl border border-brand-100 bg-white px-4 py-2 text-sm font-bold text-brand transition hover:bg-brand-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2"
@@ -91,6 +101,17 @@ export function MarketingHeader() {
                 </a>
               </li>
             ))}
+            {publicDemoEnabled ? (
+              <li>
+                <Link
+                  to={marketingDemo.href}
+                  className="block rounded-lg bg-brand-50 px-3 py-3 text-sm font-bold text-brand hover:bg-brand-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand"
+                  onClick={() => setOpen(false)}
+                >
+                  {marketingDemo.ctaLabel}
+                </Link>
+              </li>
+            ) : null}
             <li>
               <Link
                 to={marketingTrial.href}

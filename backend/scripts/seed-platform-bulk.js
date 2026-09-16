@@ -129,20 +129,59 @@ async function insertCountries(client, countries) {
   return ids;
 }
 
+function resolveSeedSchoolCountryIso(school = {}) {
+  const explicit = String(school.countryCode ?? "").trim().toUpperCase();
+  if (/^[A-Z]{2}$/.test(explicit)) return explicit;
+
+  const publicIdentity = String(school.loginCode ?? school.publicId ?? "").trim().toUpperCase();
+  const publicMatch = /^([A-Z]{2})-/.exec(publicIdentity);
+  if (publicMatch) return publicMatch[1];
+
+  const internalCode = String(school.code ?? "").trim().toUpperCase();
+  const bulkMatch = /^SCH-BULK-([A-Z]{2})-/.exec(internalCode);
+  if (bulkMatch) return bulkMatch[1];
+  const canonicalMatch = /^([A-Z]{2})-\d{4}-\d{4}$/.exec(internalCode);
+  if (canonicalMatch) return canonicalMatch[1];
+
+  throw new Error(`SEED_SCHOOL_COUNTRY_REQUIRED:${internalCode || "UNKNOWN"}`);
+}
+
+function resolveSeedSchoolShortCode(school = {}) {
+  const loginCode = String(school.loginCode ?? "").trim().toUpperCase();
+  const match = /^[A-Z]{2}-([A-Z0-9]{2,5})-\d{2}-\d{3}$/.exec(loginCode);
+  return match?.[1] ?? null;
+}
+
 async function insertSchools(client, platformSchools, countryIds) {
   const ids = new Map();
   for (const school of platformSchools) {
-    const iso = school.code.slice(0, 2);
+    const iso = resolveSeedSchoolCountryIso(school);
     const countryId = countryIds.get(iso);
+    if (!countryId) {
+      throw new Error(`SEED_SCHOOL_COUNTRY_NOT_FOUND:${iso}:${school.code}`);
+    }
+    const shortCode = resolveSeedSchoolShortCode(school);
     const row = await one(
       client,
-      `INSERT INTO schools (country_id, school_code, name, logo_url, address, city, phone, email, school_type, status, created_at, updated_at)
-       VALUES ($1, $2, $3, '', $4, $5, $6, $7, $8, 'active', NOW(), NOW())
+      `INSERT INTO schools (country_id, school_code, short_code, name, logo_url, address, city, phone, email, school_type, status, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, '', $5, $6, $7, $8, $9, 'active', NOW(), NOW())
        ON CONFLICT (school_code) DO UPDATE SET name = EXCLUDED.name
-       RETURNING id, school_code`,
-      [countryId, school.code, school.name, school.address, school.city, school.phone, school.email, school.type],
+       RETURNING id, school_code, login_code`,
+      [
+        countryId,
+        school.code,
+        shortCode,
+        school.name,
+        school.address,
+        school.city,
+        school.phone,
+        school.email,
+        school.type,
+      ],
     );
     ids.set(school.code, row.id);
+    if (school.loginCode) ids.set(school.loginCode, row.id);
+    if (row.login_code) ids.set(row.login_code, row.id);
   }
   return ids;
 }
@@ -282,13 +321,11 @@ async function insertSchoolBundle(client, bundle, schoolId) {
   for (const student of students) {
     const row = await one(
       client,
-      `INSERT INTO students (school_id, student_code, first_name, last_name, gender, birth_date, birth_place, photo_url, parent_phone, parent_email, status)
-       VALUES ($1, $2, $3, $4, $5, $6, '', '', $7, $8, 'active')
-       ON CONFLICT (student_code) DO UPDATE SET first_name = EXCLUDED.first_name
-       RETURNING id`,
+      `INSERT INTO students (school_id, first_name, last_name, gender, birth_date, birth_place, photo_url, parent_phone, parent_email, status)
+       VALUES ($1, $2, $3, $4, $5, '', '', $6, $7, 'active')
+       RETURNING id, student_code`,
       [
         schoolId,
-        student.matricule,
         student.firstName,
         student.name.replace(student.firstName, "").trim() || student.name,
         student.gender,
@@ -298,20 +335,33 @@ async function insertSchoolBundle(client, bundle, schoolId) {
       ],
     );
     studentIds.set(student.id, row.id);
+    studentIds.set(student.matricule, row.id);
 
-    await client.query(
+    // Les coordonnées du parent restent portées par la fiche élève / le compte parent.
+    // Le compte STUDENT se connecte par son identifiant canonique et ne doit pas
+    // dupliquer l'identité email/téléphone d'un autre utilisateur de l'établissement.
+    const studentUser = await one(
+      client,
       `INSERT INTO users (school_id, user_code, first_name, last_name, email, phone, password_hash, pin_hash, role, status)
        VALUES ($1, $2, $3, $4, $5, $6, NULL, $7, 'STUDENT', 'active')
-       ON CONFLICT (user_code) DO UPDATE SET pin_hash = EXCLUDED.pin_hash`,
+       ON CONFLICT (user_code) DO UPDATE SET pin_hash = EXCLUDED.pin_hash
+       RETURNING id`,
       [
         schoolId,
-        student.matricule,
+        row.student_code,
         student.firstName,
         student.name.replace(student.firstName, "").trim() || student.name,
-        student.parentEmail,
-        student.parentPhone,
+        "",
+        "",
         pinHash,
       ],
+    );
+
+    await client.query(
+      `UPDATE students
+       SET user_id = $2, updated_at = NOW()
+       WHERE id = $1 AND (user_id IS NULL OR user_id = $2)`,
+      [row.id, studentUser.id],
     );
 
     const classId = classIds.get(student.className);
@@ -417,7 +467,7 @@ async function insertSchoolBundle(client, bundle, schoolId) {
         exam.name,
         exam.examType,
         parseDate(exam.date),
-        index % 2 === 0 ? "published" : "validated",
+        index % 2 === 0 ? "completed" : "validated",
         adminUser?.id ?? null,
       ],
     );
@@ -597,7 +647,7 @@ async function main() {
     console.log("  Préfet démo : prefet (CD-IN-26-001)");
     console.log("  Secrétaire démo : secretaire (CD-IN-26-001)");
     console.log("  Enseignant démo : ENS-0001 (CD-IN-26-001)");
-    console.log("  Élève démo : CD-IN-EL-26-001 (CD-IN-26-001)");
+    console.log("  Élève démo : identifiant canonique généré par PostgreSQL (CD-IN-…)");
   } finally {
     await pool.end();
   }

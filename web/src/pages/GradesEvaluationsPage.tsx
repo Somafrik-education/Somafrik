@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useLocation } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { useData } from "../context/DataContext";
 import { useActiveSchool } from "../context/ActiveSchoolContext";
@@ -13,6 +14,11 @@ import { useToast } from "../components/ui/Toast";
 import { useConfirm } from "../components/ui/ConfirmDialog";
 import { useFeaturePermissions } from "../lib/usePermissionContext";
 import { useDeepLinkId } from "../lib/notificationDeepLink";
+import { demoRuntimeEnabled } from "../lib/featureFlags";
+import {
+  buildDomainRouteHydrationKey,
+  useDomainRouteHydrationStatus,
+} from "../lib/domainRouteHydration";
 import { ApiError } from "../api/client";
 import {
   EmptyState,
@@ -103,8 +109,18 @@ function uniqueClassNames(students: Record<string, unknown>[], classes: Record<s
 
 export function GradesEvaluationsPage() {
   const { session } = useAuth();
+  const location = useLocation();
   const { state, refresh, loading, error: syncError, retryFailedSync } = useData();
   const { scopedUser, activeSchoolCode } = useActiveSchool();
+  const notesHydrationKey = buildDomainRouteHydrationKey(
+    location.key,
+    location.pathname,
+    activeSchoolCode,
+  );
+  const hydrationStatus = useDomainRouteHydrationStatus(notesHydrationKey);
+  const notesRouteLoading = demoRuntimeEnabled
+    ? hydrationStatus === "idle" || hydrationStatus === "loading"
+    : loading;
   const { showToast } = useToast();
   const { confirm } = useConfirm();
   const scopeUser = scopedUser ?? session?.user ?? null;
@@ -624,7 +640,7 @@ export function GradesEvaluationsPage() {
     );
   }
 
-  if (loading) {
+  if (notesRouteLoading) {
     return <LoadingState message="Chargement des notes et évaluations…" />;
   }
 

@@ -3,6 +3,9 @@ import { Link } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { establishmentsApi, type SubscriptionAccessInfo } from "../lib/establishmentsApi";
 import { isInternalSchoolRole } from "../lib/format";
+import type { Session } from "../types";
+
+type DemoSession = Session & { demo?: boolean };
 
 /** Bandeau affiché quand l'abonnement établissement est limité ou suspendu (ETB-F14). */
 export function SubscriptionAccessBanner() {
@@ -11,9 +14,10 @@ export function SubscriptionAccessBanner() {
 
   const role = session?.user?.role;
   const schoolCode = session?.user?.schoolCode;
+  const isDemoSession = (session as DemoSession | null)?.demo === true;
 
   useEffect(() => {
-    if (!session?.accessToken || !isInternalSchoolRole(role) || !schoolCode) {
+    if (isDemoSession || !session?.accessToken || !isInternalSchoolRole(role) || !schoolCode) {
       setAccess(null);
       return;
     }
@@ -29,9 +33,9 @@ export function SubscriptionAccessBanner() {
     return () => {
       cancelled = true;
     };
-  }, [session?.accessToken, role, schoolCode]);
+  }, [isDemoSession, session?.accessToken, role, schoolCode]);
 
-  if (!access || access.level === "full") return null;
+  if (isDemoSession || !access || access.level === "full") return null;
 
   const tone =
     access.level === "blocked"
