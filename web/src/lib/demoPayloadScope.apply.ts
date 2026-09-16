@@ -30,6 +30,9 @@ function identityOf(row: Row | undefined) {
 }
 
 function emptyState(domains: Record<string, Row[]>): BackOfficeState {
+  // Harness d'audit : seuls les domaines listés ci-dessous sont consommés par
+  // les scopers invoqués dans ce fichier. On conserve volontairement un état
+  // partiel plutôt que d'inventer des données pour les autres domaines.
   return {
     schools: domains.schools ?? [],
     students: domains.students ?? [],
@@ -42,7 +45,7 @@ function emptyState(domains: Record<string, Row[]>): BackOfficeState {
     payments: domains.payments ?? [],
     assignments: domains.assignments ?? [],
     courseSchedules: domains.courseSchedules ?? [],
-  } as BackOfficeState;
+  } as unknown as BackOfficeState;
 }
 
 export function applyDemoPayloadScope(input: DemoPayloadScopeInput) {
