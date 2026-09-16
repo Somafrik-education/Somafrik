@@ -22,6 +22,7 @@ const NOTES_PATH = "/notes";
 const DEMO_NON_BLOCKING_ROUTE_DOMAINS = new Set<DomainKey>([
   "notifications",
   "users",
+  "relations",
 ]);
 
 export function tracksDomainRouteHydration(pathname: string): boolean {
@@ -32,7 +33,7 @@ export function tracksDomainRouteHydration(pathname: string): boolean {
   );
 }
 
-function demoBlockingRouteDomains(domains: DomainKey[]): DomainKey[] {
+export function demoBlockingRouteDomains(domains: DomainKey[]): DomainKey[] {
   return domains.filter((domain) => !DEMO_NON_BLOCKING_ROUTE_DOMAINS.has(domain));
 }
 
