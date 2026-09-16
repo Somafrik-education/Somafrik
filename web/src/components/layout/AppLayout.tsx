@@ -7,6 +7,7 @@ import { Topbar } from "./Topbar";
 import { MobileNavDrawer } from "./MobileNavDrawer";
 import { SubscriptionAccessBanner } from "../SubscriptionAccessBanner";
 import { DomainRouteBootstrap } from "../DomainRouteBootstrap";
+import { DemoRuntimeChrome } from "../demo/DemoRuntimeChrome";
 
 const HelpHost = lazy(() =>
   import("../../help/HelpHost").then((module) => ({ default: module.HelpHost })),
@@ -79,6 +80,7 @@ export function AppLayout() {
       <MobileNavDrawer open={mobileNavOpen} onClose={() => setMobileNavOpen(false)} />
       <div className="flex min-w-0 flex-1 flex-col">
         <Topbar title={title} onMenuOpen={() => setMobileNavOpen(true)} />
+        <DemoRuntimeChrome />
         <main className="flex-1 px-4 py-6 sm:px-6">
           <div className="mx-auto w-full max-w-6xl space-y-6">
             <SubscriptionAccessBanner />
