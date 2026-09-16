@@ -1,0 +1,326 @@
+{
+  "kind": "demo_web_payload_scope_audit",
+  "login": {
+    "path": "api",
+    "identifier": "ADMIN-SCH-BULK-CD-0001-01",
+    "requestedSchoolCode": "CD-IN-26-001",
+    "httpStatus": 200,
+    "adminAttempt": {
+      "kind": "api",
+      "identifier": "admin",
+      "schoolCode": "CD-IN-26-001",
+      "status": 401,
+      "message": "Identifiant ou mot de passe incorrect."
+    },
+    "discoveredIdentifiers": [
+      "admin",
+      "ADMIN-SCH-BULK-CD-0001-01",
+      "PK-26-00001",
+      "CD-IN-PK-26-00001",
+      "admin1+sch-bulk-cd-0001@somafrik.demo",
+      "+243 850 001 001"
+    ],
+    "attempts": [
+      {
+        "kind": "api",
+        "identifier": "admin",
+        "schoolCode": "CD-IN-26-001",
+        "status": 401,
+        "message": "Identifiant ou mot de passe incorrect."
+      },
+      {
+        "kind": "api",
+        "identifier": "ADMIN-SCH-BULK-CD-0001-01",
+        "schoolCode": "CD-IN-26-001",
+        "status": 200,
+        "message": null
+      }
+    ]
+  },
+  "pgSchool": {
+    "schoolId": "1634bde4-8c28-46a0-82aa-5db8516e3dbb",
+    "schoolCode": "SCH-BULK-CD-0001",
+    "loginCode": "CD-IN-26-001"
+  },
+  "session": {
+    "schoolId": null,
+    "schoolPublicCode": null,
+    "schoolCode": "SCH-BULK-CD-0001",
+    "jwtSchoolCode": "SCH-BULK-CD-0001",
+    "jwtSchoolId": null,
+    "schoolContextId": "1634bde4-8c28-46a0-82aa-5db8516e3dbb",
+    "schoolContextCode": "SCH-BULK-CD-0001",
+    "schoolContextLoginCode": "CD-IN-26-001",
+    "activeSchoolCode": "SCH-BULK-CD-0001",
+    "hasSchoolId": false,
+    "hasPublicCode": false,
+    "schoolCodeIsV2": false
+  },
+  "traces": {
+    "students": {
+      "kind": "students_scope_trace",
+      "role": "Admin School",
+      "session": {
+        "hasSchoolId": false,
+        "hasPublicCode": false,
+        "leftoverPresent": false,
+        "schoolCodeIsV2": false,
+        "leftoverEqualsPublic": null
+      },
+      "api": {
+        "received": 300,
+        "distinctSchoolIds": 1,
+        "distinctPublicCodes": 0,
+        "distinctProjectedSchoolCodes": 1
+      },
+      "kept": 0,
+      "error": "MISSING_CANONICAL_IDENTITY"
+    },
+    "users": {
+      "kind": "users_scope_trace",
+      "role": "Admin School",
+      "session": {
+        "hasSchoolId": false,
+        "hasPublicCode": false,
+        "leftoverPresent": false,
+        "schoolCodeIsV2": false,
+        "leftoverEqualsPublic": null
+      },
+      "api": {
+        "received": 430,
+        "distinctSchoolIds": 1,
+        "distinctPublicCodes": 1,
+        "distinctProjectedSchoolCodes": 1
+      },
+      "kept": 0,
+      "error": "MISSING_CANONICAL_IDENTITY"
+    }
+  },
+  "pgRaw": {
+    "schools": 3,
+    "users": 430,
+    "userRoles": 0,
+    "students": 300,
+    "classes": 30,
+    "teachers": 59,
+    "notes": 2400,
+    "evaluations": 0,
+    "presences": 300,
+    "payments": 300,
+    "assignments": 59,
+    "courseSchedules": 1200
+  },
+  "domains": [
+    {
+      "domain": "schools",
+      "httpStatus": 200,
+      "raw": 3,
+      "mapped": 1,
+      "scoped": 1,
+      "drop": null,
+      "firstRaw": null,
+      "firstMapped": {
+        "id": "1634bde4-8c28-46a0-82aa-5db8516e3dbb",
+        "schoolId": null,
+        "schoolCode": "SCH-BULK-CD-0001",
+        "schoolPublicCode": "CD-IN-26-001",
+        "loginCode": "CD-IN-26-001"
+      },
+      "scopeError": null,
+      "httpError": null
+    },
+    {
+      "domain": "users",
+      "httpStatus": 200,
+      "raw": 430,
+      "mapped": 430,
+      "scoped": 0,
+      "drop": "scoped",
+      "firstRaw": {
+        "id": null,
+        "schoolId": "1634bde4-8c28-46a0-82aa-5db8516e3dbb",
+        "schoolCode": "SCH-BULK-CD-0001",
+        "schoolPublicCode": "CD-IN-26-001",
+        "loginCode": "PK-26-00001"
+      },
+      "firstMapped": {
+        "id": "7d84ace2-5927-4cd3-ba25-c49c508b03b6",
+        "schoolId": "1634bde4-8c28-46a0-82aa-5db8516e3dbb",
+        "schoolCode": "CD-IN-26-001",
+        "schoolPublicCode": "CD-IN-26-001",
+        "loginCode": "PK-26-00002"
+      },
+      "scopeError": "MISSING_CANONICAL_IDENTITY",
+      "httpError": null
+    },
+    {
+      "domain": "students",
+      "httpStatus": 200,
+      "raw": 300,
+      "mapped": 300,
+      "scoped": 0,
+      "drop": "scoped",
+      "firstRaw": {
+        "id": null,
+        "schoolId": "1634bde4-8c28-46a0-82aa-5db8516e3dbb",
+        "schoolCode": "SCH-BULK-CD-0001",
+        "schoolPublicCode": "CD-IN-26-001",
+        "loginCode": null
+      },
+      "firstMapped": {
+        "id": "CD-IN-EL-26-001",
+        "schoolId": "1634bde4-8c28-46a0-82aa-5db8516e3dbb",
+        "schoolCode": "CD-IN-26-001",
+        "schoolPublicCode": "CD-IN-EL-26-001",
+        "loginCode": "CD-IN-EL-26-001"
+      },
+      "scopeError": "MISSING_CANONICAL_IDENTITY",
+      "httpError": null
+    },
+    {
+      "domain": "classes",
+      "httpStatus": 200,
+      "raw": 30,
+      "mapped": 30,
+      "scoped": 30,
+      "drop": null,
+      "firstRaw": {
+        "id": null,
+        "schoolId": "1634bde4-8c28-46a0-82aa-5db8516e3dbb",
+        "schoolCode": "SCH-BULK-CD-0001",
+        "schoolPublicCode": "CD-IN-26-001",
+        "loginCode": null
+      },
+      "firstMapped": {
+        "id": "a4a36596-9cf3-4e66-b98c-1f7f94b84368",
+        "schoolId": null,
+        "schoolCode": "SCH-BULK-CD-0001",
+        "schoolPublicCode": null,
+        "loginCode": null
+      },
+      "scopeError": null,
+      "httpError": null
+    },
+    {
+      "domain": "teachers",
+      "httpStatus": 200,
+      "raw": 59,
+      "mapped": 59,
+      "scoped": 59,
+      "drop": null,
+      "firstRaw": {
+        "id": null,
+        "schoolId": "1634bde4-8c28-46a0-82aa-5db8516e3dbb",
+        "schoolCode": "SCH-BULK-CD-0001",
+        "schoolPublicCode": "CD-IN-26-001",
+        "loginCode": null
+      },
+      "firstMapped": {
+        "id": "SCH-BULK-CD-0001-ENS-0010",
+        "schoolId": null,
+        "schoolCode": "SCH-BULK-CD-0001",
+        "schoolPublicCode": null,
+        "loginCode": null
+      },
+      "scopeError": null,
+      "httpError": null
+    },
+    {
+      "domain": "notes",
+      "httpStatus": 200,
+      "raw": 2400,
+      "mapped": 2400,
+      "scoped": 2400,
+      "drop": null,
+      "firstRaw": null,
+      "firstMapped": {
+        "id": "ea25ee12-d261-44c3-8493-ed7c11b50819",
+        "schoolId": "1634bde4-8c28-46a0-82aa-5db8516e3dbb",
+        "schoolCode": "SCH-BULK-CD-0001",
+        "schoolPublicCode": null,
+        "loginCode": null
+      },
+      "scopeError": null,
+      "httpError": null
+    },
+    {
+      "domain": "evaluations",
+      "httpStatus": 200,
+      "raw": 0,
+      "mapped": 0,
+      "scoped": 0,
+      "drop": null,
+      "firstRaw": null,
+      "firstMapped": null,
+      "scopeError": null,
+      "httpError": null
+    },
+    {
+      "domain": "presences",
+      "httpStatus": 200,
+      "raw": 300,
+      "mapped": 300,
+      "scoped": 0,
+      "drop": "scoped",
+      "firstRaw": null,
+      "firstMapped": {
+        "id": "1506d52a-71b9-4b06-a10d-e12be780acd1",
+        "schoolId": "1634bde4-8c28-46a0-82aa-5db8516e3dbb",
+        "schoolCode": "CD-IN-26-001",
+        "schoolPublicCode": null,
+        "loginCode": null
+      },
+      "scopeError": null,
+      "httpError": null
+    },
+    {
+      "domain": "payments",
+      "httpStatus": 200,
+      "raw": 300,
+      "mapped": 300,
+      "scoped": 0,
+      "drop": "scoped",
+      "firstRaw": null,
+      "firstMapped": {
+        "id": "PAY-SCH-BULK-CD-0001-001",
+        "schoolId": null,
+        "schoolCode": "CD-IN-26-001",
+        "schoolPublicCode": null,
+        "loginCode": null
+      },
+      "scopeError": null,
+      "httpError": null
+    },
+    {
+      "domain": "assignments",
+      "httpStatus": 200,
+      "raw": 59,
+      "mapped": 59,
+      "scoped": 59,
+      "drop": null,
+      "firstRaw": null,
+      "firstMapped": {
+        "id": "904b51a3-458d-4fdd-bf20-6166029122ea",
+        "schoolId": null,
+        "schoolCode": "SCH-BULK-CD-0001",
+        "schoolPublicCode": null,
+        "loginCode": null
+      },
+      "scopeError": null,
+      "httpError": null
+    },
+    {
+      "domain": "courseSchedules",
+      "httpStatus": 200,
+      "raw": 1200,
+      "mapped": 0,
+      "scoped": 0,
+      "drop": "mapped",
+      "firstRaw": null,
+      "firstMapped": null,
+      "scopeError": null,
+      "httpError": null
+    }
+  ],
+  "table": "| domaine | HTTP | raw PG | mapped API | scoped Web | 1er drop | identité 1er row API |\n|---|---:|---:|---:|---:|---|---|\n| schools | 200 | 3 | 1 | 1 | — | schoolId=∅ schoolCode=SCH-BULK-CD-0001 public=CD-IN-26-001 |\n| users | 200 | 430 | 430 | 0 | scoped | schoolId=1634bde4-8c28-46a0-82aa-5db8516e3dbb schoolCode=CD-IN-26-001 public=CD-IN-26-001 (MISSING_CANONICAL_IDENTITY) |\n| students | 200 | 300 | 300 | 0 | scoped | schoolId=1634bde4-8c28-46a0-82aa-5db8516e3dbb schoolCode=CD-IN-26-001 public=CD-IN-EL-26-001 (MISSING_CANONICAL_IDENTITY) |\n| classes | 200 | 30 | 30 | 30 | — | schoolId=∅ schoolCode=SCH-BULK-CD-0001 public=∅ |\n| teachers | 200 | 59 | 59 | 59 | — | schoolId=∅ schoolCode=SCH-BULK-CD-0001 public=∅ |\n| notes | 200 | 2400 | 2400 | 2400 | — | schoolId=1634bde4-8c28-46a0-82aa-5db8516e3dbb schoolCode=SCH-BULK-CD-0001 public=∅ |\n| evaluations | 200 | 0 | 0 | 0 | — | ∅ |\n| presences | 200 | 300 | 300 | 0 | scoped | schoolId=1634bde4-8c28-46a0-82aa-5db8516e3dbb schoolCode=CD-IN-26-001 public=∅ |\n| payments | 200 | 300 | 300 | 0 | scoped | schoolId=∅ schoolCode=CD-IN-26-001 public=∅ |\n| assignments | 200 | 59 | 59 | 59 | — | schoolId=∅ schoolCode=SCH-BULK-CD-0001 public=∅ |\n| courseSchedules | 200 | 1200 | 0 | 0 | mapped | ∅ |"
+}
