@@ -10,6 +10,7 @@ import {
 } from "../lib/domainRouteHydration";
 import { domainsForPath } from "../lib/routeDomainMap";
 import { usePermissionContext } from "../lib/usePermissionContext";
+import { demoRuntimeEnabled } from "../lib/featureFlags";
 
 const OVERVIEW_PATH = "/etablissement/vue-ensemble";
 const NOTES_PATH = "/notes";
@@ -62,7 +63,18 @@ export function DomainRouteBootstrap() {
       setDomainRouteHydrationStatus(hydrationKey, "loading");
     }
 
-    void ensureDomains(domains, { schoolCode: activeSchoolCode })
+    // Démo : ne pas créer une barrière Promise.all à l'intérieur d'un seul
+    // ensureDomains multi-domaines. Chaque domaine converge séparément ; le
+    // statut de route attend uniquement les domaines de cette route.
+    const hydration = demoRuntimeEnabled
+      ? Promise.all(
+          domains.map((domain) =>
+            ensureDomains([domain], { schoolCode: activeSchoolCode }),
+          ),
+        ).then(() => undefined)
+      : ensureDomains(domains, { schoolCode: activeSchoolCode });
+
+    void hydration
       .then(() => {
         if (!cancelled && trackHydration) {
           setDomainRouteHydrationStatus(hydrationKey, "ready");
