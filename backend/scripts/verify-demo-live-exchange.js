@@ -5,10 +5,11 @@ const assert = require("node:assert/strict");
 const API_ORIGIN = String(process.env.DEMO_LIVE_API_ORIGIN || "https://api-demo.somafrik.app").replace(/\/$/, "");
 const WEB_ORIGIN = String(process.env.DEMO_LIVE_WEB_ORIGIN || "https://demo.somafrik.app").replace(/\/$/, "");
 
-async function jsonRequest(url, init) {
+async function jsonRequest(url, init, timeoutMs = 15000) {
+  const startedAt = Date.now();
   const response = await fetch(url, {
     ...init,
-    signal: AbortSignal.timeout(15000),
+    signal: AbortSignal.timeout(timeoutMs),
   });
   const text = await response.text();
   let body = null;
@@ -17,7 +18,34 @@ async function jsonRequest(url, init) {
   } catch {
     body = text;
   }
-  return { response, body };
+  return { response, body, elapsedMs: Date.now() - startedAt };
+}
+
+function countPayload(body) {
+  if (Array.isArray(body)) return body.length;
+  if (!body || typeof body !== "object") return null;
+  for (const key of [
+    "items",
+    "rows",
+    "users",
+    "students",
+    "teachers",
+    "classes",
+    "payments",
+    "studentFees",
+    "presences",
+    "notes",
+    "evaluations",
+    "exams",
+    "bulletins",
+    "documents",
+    "messages",
+    "courseSchedules",
+    "assignments",
+  ]) {
+    if (Array.isArray(body[key])) return body[key].length;
+  }
+  return null;
 }
 
 async function main() {
@@ -77,6 +105,61 @@ async function main() {
   assert.ok(user.schoolId, "user.schoolId absent du live /api/demo/exchange");
   assert.ok(user.schoolPublicCode, "user.schoolPublicCode absent du live /api/demo/exchange");
   assert.ok(user.schoolCode, "user.schoolCode absent du live /api/demo/exchange");
+
+  const headers = {
+    Origin: WEB_ORIGIN,
+    Authorization: `Bearer ${exchange.body.accessToken}`,
+  };
+  const schoolCode = encodeURIComponent(String(user.schoolCode));
+  const probes = [
+    ["school", `/api/backoffice/establishments/${schoolCode}`],
+    ["users", "/api/backoffice/users"],
+    ["students", "/api/students"],
+    ["teachers", "/api/teachers"],
+    ["classes", "/api/classes"],
+    ["payments", "/api/payments"],
+    ["studentFees", "/api/finance/student-fees"],
+    ["presences", "/api/presences"],
+    ["notes", "/api/notes"],
+    ["evaluations", "/api/evaluations"],
+    ["exams", "/api/exams"],
+    ["bulletins", "/api/report-cards"],
+    ["documents", "/api/school-documents"],
+    ["messages", "/api/backoffice/messages"],
+    ["courseSchedules", "/api/course-schedules"],
+    ["assignments", "/api/assignments"],
+  ];
+
+  const domainEvidence = {};
+  for (const [label, pathname] of probes) {
+    try {
+      const result = await jsonRequest(`${API_ORIGIN}${pathname}`, { headers }, 8000);
+      domainEvidence[label] = {
+        status: result.response.status,
+        elapsedMs: result.elapsedMs,
+        count: countPayload(result.body),
+        bodyType: Array.isArray(result.body) ? "array" : typeof result.body,
+        keys:
+          result.body && typeof result.body === "object" && !Array.isArray(result.body)
+            ? Object.keys(result.body).slice(0, 8)
+            : [],
+      };
+    } catch (error) {
+      domainEvidence[label] = {
+        status: "network-error",
+        elapsedMs: null,
+        count: null,
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+    console.log(`DEMO_LIVE_DOMAIN ${label} ${JSON.stringify(domainEvidence[label])}`);
+  }
+
+  for (const label of ["users", "students", "teachers", "classes", "payments", "presences", "notes"]) {
+    assert.equal(domainEvidence[label]?.status, 200, `${label} live doit répondre 200`);
+    assert.ok((domainEvidence[label]?.count ?? 0) > 0, `${label} live doit contenir des données`);
+  }
+
   console.log("OK verify-demo-live-exchange");
 }
 
