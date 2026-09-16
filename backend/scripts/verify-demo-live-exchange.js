@@ -112,7 +112,7 @@ async function main() {
   };
   const schoolCode = encodeURIComponent(String(user.schoolCode));
   const probes = [
-    ["school", `/api/backoffice/establishments/${schoolCode}`, 30000],
+    // Users first: measure its own latency without the known-heavy establishment snapshot in front of it.
     ["users", "/api/backoffice/users", 30000],
     ["students", "/api/students", 8000],
     ["teachers", "/api/teachers", 8000],
@@ -128,6 +128,8 @@ async function main() {
     ["messages", "/api/backoffice/messages", 8000],
     ["courseSchedules", "/api/course-schedules", 8000],
     ["assignments", "/api/assignments", 8000],
+    // School last so its slow legacy snapshot cannot contaminate measurements above.
+    ["school", `/api/backoffice/establishments/${schoolCode}`, 30000],
   ];
 
   const domainEvidence = {};
