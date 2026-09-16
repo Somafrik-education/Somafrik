@@ -49,11 +49,14 @@ export function OverviewPage() {
       ctx,
     );
 
-    if (critical.length) {
-      void ensureDomains(critical, options).catch(() => undefined);
+    // Démo uniquement : chaque domaine est fusionné dès que son GET termine.
+    // Un endpoint lent (ex. schools/users) ne doit pas retenir classes, élèves,
+    // présences ou notes derrière un Promise.allSettled de batch.
+    for (const domain of critical) {
+      void ensureDomains([domain], options).catch(() => undefined);
     }
-    if (deferred.length) {
-      void ensureDomains(deferred, options).catch(() => undefined);
+    for (const domain of deferred) {
+      void ensureDomains([domain], options).catch(() => undefined);
     }
   }, [session?.accessToken, internalSchool, activeSchoolCode, ensureDomains, ctx]);
 
