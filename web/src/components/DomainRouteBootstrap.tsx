@@ -20,7 +20,6 @@ const NOTES_PATH = "/notes";
 // lents que la donnée de route. En Démo ils continuent à charger, mais ne
 // doivent jamais retenir Notes ou Vue d'ensemble derrière leur latence.
 const DEMO_NON_BLOCKING_ROUTE_DOMAINS = new Set<DomainKey>([
-  "schools",
   "notifications",
   "users",
 ]);
@@ -35,6 +34,14 @@ export function tracksDomainRouteHydration(pathname: string): boolean {
 
 function demoBlockingRouteDomains(domains: DomainKey[]): DomainKey[] {
   return domains.filter((domain) => !DEMO_NON_BLOCKING_ROUTE_DOMAINS.has(domain));
+}
+
+function runtimeDomains(domains: DomainKey[]): DomainKey[] {
+  if (!demoRuntimeEnabled) return domains;
+  // /api/demo/exchange fournit déjà l'école authentifiée complète. Le contexte
+  // actif la réutilise ; refaire /backoffice/establishments/:code est à la fois
+  // redondant et très coûteux sur le bulk seed.
+  return domains.filter((domain) => domain !== "schools");
 }
 
 /** Charge les domaines métier requis par la route courante (LOT 8 — filtré RBAC). */
@@ -63,7 +70,7 @@ export function DomainRouteBootstrap() {
       };
     }
 
-    const domains = domainsForPath(location.pathname, ctx);
+    const domains = runtimeDomains(domainsForPath(location.pathname, ctx));
     if (!domains.length) {
       if (trackHydration) {
         setDomainRouteHydrationStatus(hydrationKey, "ready");
@@ -79,8 +86,8 @@ export function DomainRouteBootstrap() {
 
     if (demoRuntimeEnabled) {
       // Démo : chaque domaine possède son propre ensure. DataContext fusionne
-      // donc classes/élèves/notes dès leur 200 sans attendre un GET schools ou
-      // users lent. PROD/PREPROD conservent le batch historique ci-dessous.
+      // donc classes/élèves/notes dès leur 200 sans attendre un GET users lent.
+      // PROD/PREPROD conservent le batch historique ci-dessous.
       const tasks = new Map<DomainKey, Promise<void>>();
       for (const domain of domains) {
         tasks.set(
