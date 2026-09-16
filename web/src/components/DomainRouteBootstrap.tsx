@@ -15,6 +15,7 @@ import type { DomainKey } from "../lib/domainLoaders";
 
 const OVERVIEW_PATH = "/etablissement/vue-ensemble";
 const NOTES_PATH = "/notes";
+const PLANNING_PATH = "/planning";
 
 // Ces domaines appartiennent au chrome / annuaire global et peuvent être plus
 // lents que la donnée de route. En Démo ils continuent à charger, mais ne
@@ -29,12 +30,21 @@ export function tracksDomainRouteHydration(pathname: string): boolean {
   return (
     pathname === OVERVIEW_PATH ||
     pathname === NOTES_PATH ||
-    pathname.startsWith(`${NOTES_PATH}/`)
+    pathname.startsWith(`${NOTES_PATH}/`) ||
+    pathname === PLANNING_PATH ||
+    pathname.startsWith(`${PLANNING_PATH}/`)
   );
 }
 
 export function demoBlockingRouteDomains(domains: DomainKey[]): DomainKey[] {
   return domains.filter((domain) => !DEMO_NON_BLOCKING_ROUTE_DOMAINS.has(domain));
+}
+
+export function shouldForceDemoDomain(pathname: string, domain: DomainKey): boolean {
+  return (
+    (pathname === PLANNING_PATH || pathname.startsWith(`${PLANNING_PATH}/`)) &&
+    domain === "courseSchedules"
+  );
 }
 
 function runtimeDomains(domains: DomainKey[]): DomainKey[] {
@@ -93,7 +103,13 @@ export function DomainRouteBootstrap() {
       for (const domain of domains) {
         tasks.set(
           domain,
-          ensureDomains([domain], { schoolCode: activeSchoolCode }),
+          ensureDomains([domain], {
+            schoolCode: activeSchoolCode,
+            // Le planning est une projection runtime mutable et un ancien GET
+            // vide ne doit pas rester figé dans le cache de la session Démo.
+            // Le backend Demo CI garantit déjà courseSchedules > 0 après reset.
+            force: shouldForceDemoDomain(location.pathname, domain),
+          }),
         );
       }
 
