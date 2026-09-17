@@ -16,10 +16,11 @@ import type { DomainKey } from "../lib/domainLoaders";
 const OVERVIEW_PATH = "/etablissement/vue-ensemble";
 const NOTES_PATH = "/notes";
 const PLANNING_PATH = "/planning";
+const FINANCE_PATH = "/finances";
 
 // Ces domaines appartiennent au chrome / annuaire global et peuvent être plus
 // lents que la donnée de route. En Démo ils continuent à charger, mais ne
-// doivent jamais retenir Notes ou Vue d'ensemble derrière leur latence.
+// doivent jamais retenir Notes ou Planning derrière leur latence.
 const DEMO_NON_BLOCKING_ROUTE_DOMAINS = new Set<DomainKey>([
   "notifications",
   "users",
@@ -32,11 +33,20 @@ export function tracksDomainRouteHydration(pathname: string): boolean {
     pathname === NOTES_PATH ||
     pathname.startsWith(`${NOTES_PATH}/`) ||
     pathname === PLANNING_PATH ||
-    pathname.startsWith(`${PLANNING_PATH}/`)
+    pathname.startsWith(`${PLANNING_PATH}/`) ||
+    pathname === FINANCE_PATH ||
+    pathname.startsWith(`${FINANCE_PATH}/`)
   );
 }
 
-export function demoBlockingRouteDomains(domains: DomainKey[]): DomainKey[] {
+export function demoBlockingRouteDomains(pathname: string, domains: DomainKey[]): DomainKey[] {
+  // Vue d'ensemble calcule explicitement les KPI Utilisateurs et Parents & élèves.
+  // Afficher 0 avant la fin de ces GET est une fausse donnée métier : ils sont donc
+  // bloquants uniquement sur cette route. Les autres routes conservent l'hydratation
+  // progressive historique.
+  if (pathname === OVERVIEW_PATH) {
+    return domains.filter((domain) => domain !== "notifications");
+  }
   return domains.filter((domain) => !DEMO_NON_BLOCKING_ROUTE_DOMAINS.has(domain));
 }
 
@@ -97,8 +107,8 @@ export function DomainRouteBootstrap() {
 
     if (demoRuntimeEnabled) {
       // Démo : chaque domaine possède son propre ensure. DataContext fusionne
-      // donc classes/élèves/notes dès leur 200 sans attendre un GET users lent.
-      // PROD/PREPROD conservent le batch historique ci-dessous.
+      // donc les réponses au fil de l'eau, mais les écrans suivis n'affichent
+      // leur vérité métier qu'une fois leurs domaines bloquants terminés.
       const tasks = new Map<DomainKey, Promise<void>>();
       for (const domain of domains) {
         tasks.set(
@@ -114,7 +124,7 @@ export function DomainRouteBootstrap() {
       }
 
       if (trackHydration) {
-        const blockingDomains = demoBlockingRouteDomains(domains);
+        const blockingDomains = demoBlockingRouteDomains(location.pathname, domains);
         const blockingTasks = blockingDomains
           .map((domain) => tasks.get(domain))
           .filter((task): task is Promise<void> => Boolean(task));
