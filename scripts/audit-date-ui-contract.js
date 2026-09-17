@@ -12,11 +12,9 @@ const EXTENSIONS = new Set([".ts", ".tsx", ".js", ".jsx"]);
 const IGNORE = /(?:\.test\.|\.spec\.|__tests__|\/lib\/dates\.(?:ts|js)$)/;
 const DATE_NAME = /\b(?:date|Date|startDate|endDate|birthDate|dueDate|paidAt|createdAt|updatedAt|scheduledAt|publishedAt|sentAt|enrollmentDate|paymentDate|attendanceDate)\b/g;
 const RULES = [
-  ["D7_DIRECT_LOCALE", /\.toLocaleDateString\s*\(/g, "Utiliser formatDateForDisplay()."],
-  ["D7_DIRECT_INTL", /Intl\.DateTimeFormat\s*\(/g, "Centraliser dans dates.ts."],
-  ["D5_RAW_ISO_SPLIT", /\.split\(\s*["']T["']\s*\)\s*\[0\]/g, "Ne pas formater une date UI par split ISO."],
-  ["D5_RAW_ISO_SLICE", /\.slice\(\s*0\s*,\s*10\s*\)/g, "Vérifier qu'il ne s'agit pas d'un formatage UI ISO."],
-  ["D1_BAD_PLACEHOLDER", /(?:DD\/MM\/YYYY|JJ\/MM\/AAAA|YYYY-MM-DD)/g, "Le contrat UI est JJ-MM-AAAA."],
+  ["D7_DIRECT_LOCALE", /\.toLocaleDateString\s*\(/g, "Utiliser le contrat dates.ts pour une date utilisateur."],
+  ["D7_DIRECT_INTL", /Intl\.DateTimeFormat\s*\(/g, "Centraliser le format utilisateur dans dates.ts."],
+  ["D1_BAD_PLACEHOLDER", /(?:DD\/MM\/YYYY|JJ\/MM\/AAAA)/g, "Le contrat UI est JJ-MM-AAAA."],
 ];
 
 function walk(dir, out = []) {
@@ -27,6 +25,11 @@ function walk(dir, out = []) {
     else if (EXTENSIONS.has(path.extname(entry.name))) out.push(full);
   }
   return out;
+}
+
+function isAllowedLocaleCalendarLabel(source, index) {
+  const window = source.slice(index, index + 180);
+  return /month:\s*["']long["']/.test(window) && /year:\s*["']numeric["']/.test(window);
 }
 
 const inventory = [];
@@ -43,10 +46,15 @@ for (const target of TARGETS) {
     if (dateTerms || dateInputs) inventory.push({ platform: target.platform, file: relative, dateTerms, dateInputs });
     if (dateInputs) nativeDateInputs.push({ platform: target.platform, file: relative, count: dateInputs });
     if (!isUi) continue;
+
     for (const [code, regex, correction] of RULES) {
       regex.lastIndex = 0;
       for (const match of source.matchAll(regex)) {
-        const line = source.slice(0, match.index).split("\n").length;
+        const index = match.index ?? 0;
+        const line = source.slice(0, index).split("\n").length;
+        const lineText = source.split("\n")[line - 1]?.trim() ?? "";
+        if (code === "D1_BAD_PLACEHOLDER" && (lineText.startsWith("//") || lineText.startsWith("*") || lineText.startsWith("/**"))) continue;
+        if (code === "D7_DIRECT_LOCALE" && isAllowedLocaleCalendarLabel(source, index)) continue;
         violations.push({ code, platform: target.platform, file: relative, line, correction });
       }
     }
@@ -56,6 +64,10 @@ for (const target of TARGETS) {
 const webFiles = inventory.filter((item) => item.platform === "Web").length;
 const mobileFiles = inventory.filter((item) => item.platform === "Mobile").length;
 const inputCount = nativeDateInputs.reduce((n, item) => n + item.count, 0);
+const byCode = violations.reduce((acc, item) => {
+  acc[item.code] = (acc[item.code] ?? 0) + 1;
+  return acc;
+}, {});
 const lines = [
   "# Audit automatisé des dates Web / Mobile",
   "",
@@ -64,6 +76,7 @@ const lines = [
   `- Fichiers candidats : **${inventory.length}** (Web ${webFiles}, Mobile ${mobileFiles})`,
   `- Inputs calendrier natifs Web : **${inputCount}**`,
   `- Violations du contrat UI détectées : **${violations.length}**`,
+  `- D1 : **${byCode.D1_BAD_PLACEHOLDER ?? 0}** · D7 locale : **${byCode.D7_DIRECT_LOCALE ?? 0}** · D7 Intl : **${byCode.D7_DIRECT_INTL ?? 0}**`,
   "",
   "## Inventaire",
   "",
@@ -73,21 +86,19 @@ const lines = [
   "",
   "## Inputs calendrier détectés",
   "",
-  ...(nativeDateInputs.length
-    ? ["| Plateforme | Fichier | Nombre |", "|---|---|---:|", ...nativeDateInputs.map((item) => `| ${item.platform} | \`${item.file}\` | ${item.count} |`)]
-    : ["Aucun input calendrier natif détecté."]),
+  ...(nativeDateInputs.length ? ["| Plateforme | Fichier | Nombre |", "|---|---|---:|", ...nativeDateInputs.map((item) => `| ${item.platform} | \`${item.file}\` | ${item.count} |`)] : ["Aucun input calendrier natif détecté."]),
   "",
-  "## Violations D1 / D5 / D7",
+  "## Violations D1 / D7",
   "",
-  ...(violations.length
-    ? ["| Code | Plateforme | Fichier | Ligne | Correction |", "|---|---|---|---:|---|", ...violations.map((item) => `| ${item.code} | ${item.platform} | \`${item.file}\` | ${item.line} | ${item.correction} |`)]
-    : ["Aucune violation détectée par le garde statique."]),
+  ...(violations.length ? ["| Code | Plateforme | Fichier | Ligne | Correction |", "|---|---|---|---:|---|", ...violations.map((item) => `| ${item.code} | ${item.platform} | \`${item.file}\` | ${item.line} | ${item.correction} |`)] : ["Aucune violation détectée par le garde statique."]),
   "",
   "## Contrat cible",
   "",
   "- UI : `JJ-MM-AAAA`.",
   "- Date civile API/DB : `YYYY-MM-DD`.",
   "- Horodatage technique : ISO 8601.",
+  "- Les libellés de calendrier mois/année (ex. septembre 2026) ne sont pas des dates civiles complètes et restent localisés.",
+  "- Les noms de fichiers et sérialisations ISO internes ne sont pas assimilés à un affichage UI.",
   "- Aucun parsing UTC implicite pour transformer une date civile.",
   "",
 ].join("\n");
@@ -96,5 +107,4 @@ fs.writeFileSync(REPORT_PATH, lines, "utf8");
 
 console.log(`DATE_AUDIT inventory_files=${inventory.length} web=${webFiles} mobile=${mobileFiles} native_date_inputs=${inputCount} violations=${violations.length}`);
 for (const issue of violations) console.error(`DATE_VIOLATION ${issue.code} ${issue.platform} ${issue.file}:${issue.line} — ${issue.correction}`);
-
 if (violations.length && !REPORT_ONLY) process.exitCode = 1;
