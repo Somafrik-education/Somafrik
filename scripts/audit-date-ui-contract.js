@@ -2,6 +2,8 @@ const fs = require("node:fs");
 const path = require("node:path");
 
 const ROOT = path.resolve(__dirname, "..");
+const REPORT_ONLY = process.argv.includes("--report-only");
+const REPORT_PATH = path.join(ROOT, "docs", "audits", "date-fields-web-mobile.generated.md");
 const TARGETS = [
   { platform: "Web", root: path.join(ROOT, "web", "src"), uiSegments: ["pages", "components", "design-system"] },
   { platform: "Mobile", root: path.join(ROOT, "Mobile", "src"), uiSegments: ["screens", "components"] },
@@ -51,9 +53,48 @@ for (const target of TARGETS) {
   }
 }
 
-console.log(`DATE_AUDIT inventory_files=${inventory.length} native_date_inputs=${nativeDateInputs.reduce((n, item) => n + item.count, 0)} violations=${violations.length}`);
-for (const item of inventory) console.log(`DATE_INVENTORY ${item.platform} ${item.file} terms=${item.dateTerms} inputs=${item.dateInputs}`);
-for (const item of nativeDateInputs) console.log(`DATE_INPUT ${item.platform} ${item.file} count=${item.count}`);
+const webFiles = inventory.filter((item) => item.platform === "Web").length;
+const mobileFiles = inventory.filter((item) => item.platform === "Mobile").length;
+const inputCount = nativeDateInputs.reduce((n, item) => n + item.count, 0);
+const lines = [
+  "# Audit automatisé des dates Web / Mobile",
+  "",
+  "> Généré par `scripts/audit-date-ui-contract.js`. Ne pas éditer manuellement.",
+  "",
+  `- Fichiers candidats : **${inventory.length}** (Web ${webFiles}, Mobile ${mobileFiles})`,
+  `- Inputs calendrier natifs Web : **${inputCount}**`,
+  `- Violations du contrat UI détectées : **${violations.length}**`,
+  "",
+  "## Inventaire",
+  "",
+  "| Plateforme | Fichier | Termes date | Inputs date |",
+  "|---|---|---:|---:|",
+  ...inventory.map((item) => `| ${item.platform} | \`${item.file}\` | ${item.dateTerms} | ${item.dateInputs} |`),
+  "",
+  "## Inputs calendrier détectés",
+  "",
+  ...(nativeDateInputs.length
+    ? ["| Plateforme | Fichier | Nombre |", "|---|---|---:|", ...nativeDateInputs.map((item) => `| ${item.platform} | \`${item.file}\` | ${item.count} |`)]
+    : ["Aucun input calendrier natif détecté."]),
+  "",
+  "## Violations D1 / D5 / D7",
+  "",
+  ...(violations.length
+    ? ["| Code | Plateforme | Fichier | Ligne | Correction |", "|---|---|---|---:|---|", ...violations.map((item) => `| ${item.code} | ${item.platform} | \`${item.file}\` | ${item.line} | ${item.correction} |`)]
+    : ["Aucune violation détectée par le garde statique."]),
+  "",
+  "## Contrat cible",
+  "",
+  "- UI : `JJ-MM-AAAA`.",
+  "- Date civile API/DB : `YYYY-MM-DD`.",
+  "- Horodatage technique : ISO 8601.",
+  "- Aucun parsing UTC implicite pour transformer une date civile.",
+  "",
+].join("\n");
+fs.mkdirSync(path.dirname(REPORT_PATH), { recursive: true });
+fs.writeFileSync(REPORT_PATH, lines, "utf8");
+
+console.log(`DATE_AUDIT inventory_files=${inventory.length} web=${webFiles} mobile=${mobileFiles} native_date_inputs=${inputCount} violations=${violations.length}`);
 for (const issue of violations) console.error(`DATE_VIOLATION ${issue.code} ${issue.platform} ${issue.file}:${issue.line} — ${issue.correction}`);
 
-if (violations.length) process.exitCode = 1;
+if (violations.length && !REPORT_ONLY) process.exitCode = 1;
