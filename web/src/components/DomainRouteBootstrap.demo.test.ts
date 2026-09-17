@@ -10,9 +10,9 @@ describe("DEMO-DATA — hydratation de route non bloquante", () => {
     expect(tracksDomainRouteHydration("/etablissement/vue-ensemble")).toBe(true);
   });
 
-  it("relations, users et notifications ne bloquent pas la vue Scolarité", () => {
+  it("relations, users et notifications restent non bloquants hors vue d'ensemble", () => {
     expect(
-      demoBlockingRouteDomains([
+      demoBlockingRouteDomains("/notes", [
         "classes",
         "students",
         "teachers",
