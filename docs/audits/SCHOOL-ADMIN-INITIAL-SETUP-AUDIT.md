@@ -630,15 +630,6 @@ Si l’année courante disparaît, ou plus de classe, ou plus d’activation : `
 | FL-04 | `last_login_at` null ≠ NOT_STARTED | |
 | FL-05 | École READY sans aucune période | READY + pas d’assistant ; `optional.periods=false` |
 
-### I.2 Première connexion vs école
-
-| ID | Cas | Attendu |
-| --- | --- | --- |
-| FL-01 | Nouvel admin, école `NOT_STARTED` | wizard auto après MDP |
-| FL-02 | Nouvel admin, école `READY` | **pas** de wizard auto ; dashboard |
-| FL-03 | Admin existant, école `IN_PROGRESS` | banner/reprise, pas « bienvenue first login » |
-| FL-04 | `last_login_at` null ≠ NOT_STARTED | |
-
 ### I.3 Wizard UX / deep links
 
 | ID | Cas | Attendu |
