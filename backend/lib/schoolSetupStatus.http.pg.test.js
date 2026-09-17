@@ -417,6 +417,53 @@ test(
       assert.equal(activeOnly.data?.core?.academicYear, false);
       assert.notEqual(activeOnly.data?.status, "READY");
       assert.equal(leaksSchoolB(activeOnly.data, fixture), false);
+
+      await pool.query(
+        `UPDATE academic_years SET is_current = FALSE, status = 'closed' WHERE id = $1`,
+        [fixture.yearAId],
+      );
+      const yearY2 = await pool.query(
+        `INSERT INTO academic_years (school_id, name, start_date, end_date, is_current, status)
+         VALUES ($1, '2026-2027', '2026-09-01', '2027-08-31', TRUE, 'open')
+         RETURNING id`,
+        [fixture.schoolAId],
+      );
+      await pool.query(`DELETE FROM terms WHERE academic_year_id = $1`, [yearY2.rows[0].id]);
+      const y1Class = await pool.query(
+        `SELECT count(*)::int AS c FROM classes WHERE academic_year_id = $1`,
+        [fixture.yearAId],
+      );
+      assert.equal(y1Class.rows[0].c, 1, "G6: Y1 conserve sa classe historique");
+
+      const g6NoY2Class = await request(SETUP_PATH, { token: tokenA });
+      assert.equal(
+        g6NoY2Class.status,
+        200,
+        `G6 sans classe Y2: status=${g6NoY2Class.status} body=${JSON.stringify(g6NoY2Class.data)}`,
+      );
+      assert.equal(g6NoY2Class.data?.core?.academicYear, true);
+      assert.equal(g6NoY2Class.data?.core?.structure, true);
+      assert.equal(g6NoY2Class.data?.core?.classes, false);
+      assert.equal(g6NoY2Class.data?.status, "IN_PROGRESS");
+      assert.equal(leaksSchoolB(g6NoY2Class.data, fixture), false);
+
+      const offering = await pool.query(
+        `SELECT sl.level_id, scg.group_id
+         FROM school_levels sl
+         CROSS JOIN school_class_groups scg
+         WHERE sl.school_id = $1 AND scg.school_id = $1
+         LIMIT 1`,
+        [fixture.schoolAId],
+      );
+      await pool.query(
+        `INSERT INTO classes (
+           school_id, academic_year_id, class_code, name, level, status, level_id, group_id, group_code
+         ) VALUES ($1, $2, 'CLS-A-Y2', '6ème A Y2', '6ème', 'active', $3, $4, 'A')`,
+        [fixture.schoolAId, yearY2.rows[0].id, offering.rows[0].level_id, offering.rows[0].group_id],
+      );
+      await pool.query(`DELETE FROM terms WHERE academic_year_id = $1`, [yearY2.rows[0].id]);
+      const g6ReadyY2 = await request(SETUP_PATH, { token: tokenA });
+      assertReadyAWithoutPeriods(g6ReadyY2, fixture);
     } finally {
       await stopChild(child);
       await pool.end();

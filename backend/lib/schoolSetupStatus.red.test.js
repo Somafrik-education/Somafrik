@@ -830,9 +830,13 @@ test("G4 — année = is_current TRUE ou status open (pas active)", async () => 
 
   const { loadSchoolSetupSnapshot, deriveSchoolSetupStatus } = requireContract();
   const one = async (sql) => {
-    assert.doesNotMatch(String(sql).includes("academic_years") ? sql : "", /'active'/);
-    if (/academic_years/i.test(sql)) return { c: 0 };
-    if (/school_levels|school_class_groups|FROM classes/i.test(sql)) return { c: 1 };
+    const text = String(sql);
+    if (/FROM academic_years/i.test(text) && !/FROM classes/i.test(text) && !/FROM terms/i.test(text)) {
+      assert.doesNotMatch(text, /'active'/);
+      return { c: 0 };
+    }
+    if (/school_levels|school_class_groups/i.test(text)) return { c: 1 };
+    if (/FROM classes/i.test(text)) return { c: 1 };
     return { c: 0 };
   };
   const snap = await loadSchoolSetupSnapshot(one, SCHOOL_A_ID);
@@ -841,6 +845,50 @@ test("G4 — année = is_current TRUE ou status open (pas active)", async () => 
   assert.equal(payload.core.academicYear, false);
   assert.notEqual(payload.status, "READY");
   assert.equal(payload.status, "IN_PROGRESS");
+});
+
+test("G6 — classe historique Y1 ne satisfait pas core.classes de Y2 current/open", async () => {
+  const src = fs.readFileSync(MODULE_PATH, "utf8");
+  const classQuery = src.slice(src.indexOf("FROM classes"), src.indexOf("FROM terms"));
+  assert.match(classQuery, /INNER JOIN academic_years y ON y.id = c.academic_year_id/);
+  assert.match(classQuery, /c\.school_id::text = \$1/);
+  assert.match(classQuery, /y\.school_id::text = \$1/);
+  assert.match(classQuery, /y.is_current = TRUE OR lower\(btrim\(COALESCE\(y.status, ''\)\)\) = 'open'/);
+  assert.doesNotMatch(classQuery, /c\.status\s*=\s*'active'/);
+  assert.doesNotMatch(classQuery, /FROM classes WHERE school_id/);
+
+  const { loadSchoolSetupSnapshot, deriveSchoolSetupStatus } = requireContract();
+
+  const oneWithoutY2Class = async (sql) => {
+    const text = String(sql);
+    if (/FROM academic_years/i.test(text) && !/FROM classes/i.test(text) && !/FROM terms/i.test(text)) {
+      return { c: 1 };
+    }
+    if (/school_levels|school_class_groups/i.test(text)) return { c: 1 };
+    if (/FROM classes/i.test(text)) {
+      assert.match(text, /INNER JOIN academic_years y ON y.id = c.academic_year_id/);
+      assert.match(text, /y.is_current = TRUE OR lower\(btrim\(COALESCE\(y.status, ''\)\)\) = 'open'/);
+      return { c: 0 };
+    }
+    return { c: 0 };
+  };
+  const emptyY2 = deriveSchoolSetupStatus(await loadSchoolSetupSnapshot(oneWithoutY2Class, SCHOOL_A_ID));
+  assert.equal(emptyY2.core.academicYear, true);
+  assert.equal(emptyY2.core.structure, true);
+  assert.equal(emptyY2.core.classes, false);
+  assert.equal(emptyY2.status, "IN_PROGRESS");
+
+  const oneWithY2Class = async (sql) => {
+    const text = String(sql);
+    if (/FROM academic_years/i.test(text) && !/FROM classes/i.test(text) && !/FROM terms/i.test(text)) {
+      return { c: 1 };
+    }
+    if (/school_levels|school_class_groups|FROM classes/i.test(text)) return { c: 1 };
+    return { c: 0 };
+  };
+  const readyY2 = deriveSchoolSetupStatus(await loadSchoolSetupSnapshot(oneWithY2Class, SCHOOL_A_ID));
+  assert.equal(readyY2.core.classes, true);
+  assert.equal(readyY2.status, "READY");
 });
 
 test("ST-05/ST-10 — token école B ne reproduit pas le JSON de A", async () => {

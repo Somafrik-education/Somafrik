@@ -148,7 +148,12 @@ async function loadSchoolSetupSnapshot(one, schoolId) {
     ),
     countExact(
       one,
-      `SELECT COUNT(*)::int AS c FROM classes WHERE school_id::text = $1`,
+      `SELECT COUNT(*)::int AS c
+       FROM classes c
+       INNER JOIN academic_years y ON y.id = c.academic_year_id
+       WHERE c.school_id::text = $1
+         AND y.school_id::text = $1
+         AND (y.is_current = TRUE OR lower(btrim(COALESCE(y.status, ''))) = 'open')`,
       params,
     ),
     countExact(
