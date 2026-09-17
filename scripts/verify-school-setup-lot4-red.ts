@@ -31,6 +31,14 @@ const webSettingsHubPath = path.join(repoRoot, "web/src/pages/parametres/Setting
 const mobileConfigPath = path.join(repoRoot, "Mobile/src/screens/ConfigurationScreen.tsx");
 
 const OPTIONAL_LOT4 = ["periods", "teachers", "students", "feeGrids", "notifications"] as const;
+const OPTIONAL_PAYLOAD_KEYS = [
+  "periods",
+  "subjects",
+  "teachers",
+  "students",
+  "feeGrids",
+  "notifications",
+] as const;
 const SECTION_HEADING = /Complétude recommandée|Pour aller plus loin/;
 const CORE_TOTAL = 3;
 
@@ -130,17 +138,17 @@ function loadBackendContract() {
 }
 
 function assertNamedOptionalType(source: string, client: string) {
-  for (const key of OPTIONAL_LOT4) {
+  for (const key of OPTIONAL_PAYLOAD_KEYS) {
     assertHas(
       source,
       new RegExp(`${key}\\s*\\??\\s*:\\s*boolean`),
-      `${client}: le type optional n'expose pas ${key} (L4-01)`,
+      `${client}: le type optional n'expose pas ${key} (L4-01${key === "subjects" ? ", conserver subjects du contrat backend" : ""})`,
     );
   }
   assertLacks(
     source,
     /optional\?\s*:\s*Record<\s*string\s*,\s*boolean\s*>/,
-    `${client}: optional ne doit pas rester un Record<string, boolean> anonyme — nommer periods/teachers/students/feeGrids/notifications`,
+    `${client}: optional ne doit pas rester un Record<string, boolean> anonyme — nommer periods/subjects/teachers/students/feeGrids/notifications`,
   );
 }
 
@@ -168,6 +176,43 @@ function assertCompletenessSection(source: string, client: string) {
   }
   assertHas(source, "Configuré", `${client}: état Configuré absent`);
   assertHas(source, "À compléter", `${client}: état À compléter absent`);
+}
+
+function isLot4ForbiddenPath(file: string) {
+  if (file === "backend/lib/schoolSetupStatus.js") return true;
+  if (file.startsWith("backend/")) return true;
+  if (file.startsWith("apps/")) return true;
+  if (/(^|\/)migrations?\//.test(file) || /\.sql$/.test(file)) return true;
+  if (/permissions\.ts$|rbac/i.test(file)) return true;
+  return false;
+}
+
+function isLot4AllowedFile(file: string) {
+  // L4-09 must stay green in RED (tests only) and after a conforming GREEN.
+  // Allow planned school-setup Web/Mobile types, helpers, permanent screens,
+  // and dedicated components. Keep backend métier, READY formula, SQL, RBAC,
+  // CRUD and legacy out of LOT 4.
+  if (isLot4ForbiddenPath(file)) return false;
+  if (/\.test\./.test(file) || /\.red\.test\.tsx?$/.test(file)) {
+    return file.startsWith("web/") || file.startsWith("Mobile/") || file.startsWith("scripts/");
+  }
+  if (file === "package.json" || file === "Mobile/package.json" || file === "web/package.json") return true;
+  if (file === "scripts/verify-school-setup-lot4-red.ts") return true;
+  if (file === ".github/workflows/pr-gates.yml") return true;
+  const allowedExact = new Set([
+    "web/src/lib/schoolSetupStatusApi.ts",
+    "web/src/lib/schoolSetupWeb.ts",
+    "web/src/pages/parametres/SchoolSetupSettingsPage.tsx",
+    "Mobile/src/lib/schoolSetupStatusApi.ts",
+    "Mobile/src/lib/schoolSetupMobile.ts",
+    "Mobile/src/screens/SchoolSetupSettingsScreen.tsx",
+  ]);
+  if (allowedExact.has(file)) return true;
+  if (file.startsWith("web/src/components/schoolSetup/") && /\.(ts|tsx)$/.test(file)) return true;
+  if (file.startsWith("Mobile/src/components/schoolSetup/") && /\.(ts|tsx)$/.test(file)) return true;
+  if (/^web\/src\/lib\/schoolSetup[^/]*\.(ts|tsx)$/.test(file)) return true;
+  if (/^Mobile\/src\/lib\/schoolSetup[^/]*\.(ts|tsx)$/.test(file)) return true;
+  return false;
 }
 
 function lot4ChangedFiles() {
@@ -199,7 +244,7 @@ function lot4ChangedFiles() {
 const cases: { id: string; title: string; run: () => void | Promise<void> }[] = [
   {
     id: "L4-01",
-    title: "types Web et Mobile exposent periods, teachers, students, feeGrids, notifications",
+    title: "types Web et Mobile exposent periods, subjects, teachers, students, feeGrids, notifications",
     run() {
       assert.ok(exists(webApiPath), "web/src/lib/schoolSetupStatusApi.ts manquant");
       assert.ok(exists(mobileApiPath), "Mobile/src/lib/schoolSetupStatusApi.ts manquant");
@@ -356,25 +401,19 @@ const cases: { id: string; title: string; run: () => void | Promise<void> }[] = 
   },
   {
     id: "L4-09",
-    title: "périmètre LOT 4 RED : aucun runtime métier, migration, RBAC, formule READY",
+    title: "périmètre LOT 4 : school setup Web/Mobile prévu, pas backend/READY/RBAC",
     run() {
       const changed = lot4ChangedFiles();
-      const forbidden = changed.filter((file) => {
-        if (file.startsWith("web/src/") && !/\.test\./.test(file) && !file.endsWith(".red.test.ts") && !file.endsWith(".red.test.tsx")) {
-          return true;
-        }
-        if (file.startsWith("Mobile/src/") && !/\.test\./.test(file)) return true;
-        if (file.startsWith("backend/") && !/\.test\./.test(file)) return true;
-        if (file.startsWith("apps/")) return true;
-        if (/(^|\/)migrations?\//.test(file) || /\.sql$/.test(file)) return true;
-        if (/permissions\.ts$|rbac/i.test(file) && !/\.test\./.test(file)) return true;
-        if (file === "backend/lib/schoolSetupStatus.js") return true;
-        return false;
-      });
+      const forbidden = changed.filter((file) => !isLot4AllowedFile(file));
       assert.equal(
         forbidden.length,
         0,
-        `LOT 4 RED ne doit pas toucher runtime/DB/RBAC: ${forbidden.join(", ")}`,
+        `LOT 4 hors périmètre (backend/READY/RBAC/CRUD/legacy interdit): ${forbidden.join(", ")}`,
+      );
+      assert.equal(
+        changed.includes("backend/lib/schoolSetupStatus.js"),
+        false,
+        "deriveSchoolSetupStatus / schoolSetupStatus.js hors LOT 4",
       );
     },
   },
