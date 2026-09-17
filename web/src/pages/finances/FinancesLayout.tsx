@@ -1,7 +1,11 @@
-import { Navigate, Outlet } from "react-router-dom";
+import { Navigate, Outlet, useLocation } from "react-router-dom";
 import { AlertTriangle, CreditCard, Receipt } from "lucide-react";
+import { LoadingState, ErrorState } from "@/design-system";
 import { TabNav, type TabItem } from "../../components/layout/TabNav";
 import { useAuth } from "../../context/AuthContext";
+import { useActiveSchool } from "../../context/ActiveSchoolContext";
+import { buildDomainRouteHydrationKey, useDomainRouteHydrationStatus } from "../../lib/domainRouteHydration";
+import { demoRuntimeEnabled } from "../../lib/featureFlags";
 import { firstAllowedFinanceLeaf } from "../../lib/financeRouteAccess";
 import { canReadView } from "../../lib/permissions";
 import { getDefaultAppPath } from "../../lib/superAdminAccess";
@@ -28,6 +32,13 @@ export function FinanceIndexRedirect() {
 export function FinancesLayout() {
   const ctx = usePermissionContext();
   const tabs = FINANCE_TABS.filter((tab) => canReadView(ctx, tab.view));
+  const location = useLocation();
+  const { activeSchoolCode } = useActiveSchool();
+  const hydrationKey = buildDomainRouteHydrationKey(location.key, location.pathname, activeSchoolCode);
+  const hydrationStatus = useDomainRouteHydrationStatus(hydrationKey);
+
+  const demoWaiting = demoRuntimeEnabled && (hydrationStatus === "idle" || hydrationStatus === "loading");
+  const demoFailed = demoRuntimeEnabled && hydrationStatus === "error";
 
   return (
     <div className="space-y-5">
@@ -39,7 +50,16 @@ export function FinancesLayout() {
         </p>
       </div>
       <TabNav tabs={tabs} />
-      <Outlet />
+      {demoWaiting ? (
+        <LoadingState message="Chargement des paiements et obligations de démonstration…" />
+      ) : demoFailed ? (
+        <ErrorState
+          title="Impossible de charger les données financières."
+          message="Les données de démonstration n'ont pas pu être hydratées complètement."
+        />
+      ) : (
+        <Outlet />
+      )}
     </div>
   );
 }
