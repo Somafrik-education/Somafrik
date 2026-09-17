@@ -175,6 +175,10 @@ export const AdministrationLayout = lazyPage(
 );
 export const ParametresLayout = lazyPage(() => import("./pages/parametres/ParametresLayout"), "ParametresLayout");
 export const SettingsHubPage = lazyPage(() => import("./pages/parametres/SettingsHubPage"), "SettingsHubPage");
+export const SchoolSetupSettingsPage = lazyPage(
+  () => import("./pages/parametres/SchoolSetupSettingsPage"),
+  "SchoolSetupSettingsPage",
+);
 export const SubscriptionPolicySettingsPage = lazyPage(
   () => import("./pages/parametres/SubscriptionPolicySettingsPage"),
   "SubscriptionPolicySettingsPage",
