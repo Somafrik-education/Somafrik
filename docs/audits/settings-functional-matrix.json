@@ -13,6 +13,7 @@
   "knownParametresRoutes": [
     "/parametres",
     "/parametres/profil",
+    "/parametres/configuration-etablissement",
     "/parametres/annee-scolaire",
     "/parametres/structure",
     "/parametres/roles-droits",
@@ -101,6 +102,43 @@
       "helpWriteEligible": true,
       "verdict": ["GO_HELP_READ", "GO_HELP_WRITE", "GO_HELP_NAVIGATION"],
       "coherenceClass": "TYPE E"
+    },
+    {
+      "id": "configuration-etablissement",
+      "title": "Configuration de l'établissement",
+      "route": "/parametres/configuration-etablissement",
+      "hubStatus": "available",
+      "scope": "school",
+      "status": "ACTUEL_PARTIEL",
+      "web": true,
+      "mobile": false,
+      "parity": false,
+      "roles": ["Admin School"],
+      "permissions": ["Paramètres Établissement:READ"],
+      "permissionRead": "Paramètres Établissement:READ",
+      "permissionCreate": "NO_ACCESS (assistant de navigation ; créations dans les écrans métier)",
+      "permissionUpdate": "NO_ACCESS (assistant de navigation ; modifications dans les écrans métier)",
+      "permissionDelete": "NO_ACCESS",
+      "mutations": false,
+      "apis": ["GET /api/v2/school-setup/status"],
+      "postgres": true,
+      "prerequisites": ["Établissement actif", "membership utilisateur authentifié"],
+      "dependencies": [
+        "Année scolaire",
+        "Structure pédagogique",
+        "Classes",
+        "Comptes utilisateurs"
+      ],
+      "limitations": [
+        "LOT 1 Web uniquement ; Mobile traité dans le lot suivant",
+        "Assistant en deep links : aucun CRUD dupliqué",
+        "Plus tard = mémoire de session uniquement"
+      ],
+      "knownIssues": [],
+      "helpEligible": true,
+      "helpWriteEligible": false,
+      "verdict": ["GO_HELP_READ", "GO_HELP_NAVIGATION"],
+      "coherenceClass": "TYPE B"
     },
     {
       "id": "annee-scolaire",
