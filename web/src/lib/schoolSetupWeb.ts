@@ -42,9 +42,39 @@ export function isSchoolSetupClassesStepEnabled(core: SchoolSetupCore) {
   return Boolean(core?.academicYear);
 }
 
+export type SchoolSetupOptionalUiId = "periods" | "teachers" | "students" | "feeGrids" | "notifications";
+
+export interface SchoolSetupOptionalCompletenessItem {
+  id: SchoolSetupOptionalUiId;
+  label: string;
+  done: boolean;
+}
+
+const SCHOOL_SETUP_OPTIONAL_UI_ITEMS: ReadonlyArray<{
+  id: SchoolSetupOptionalUiId;
+  label: string;
+}> = [
+  { id: "periods", label: "Périodes scolaires" },
+  { id: "teachers", label: "Enseignants" },
+  { id: "students", label: "Élèves" },
+  { id: "feeGrids", label: "Grilles tarifaires" },
+  { id: "notifications", label: "Notifications" },
+];
+
+export function schoolSetupOptionalCompleteness(
+  payload: SchoolSetupPayload,
+): SchoolSetupOptionalCompletenessItem[] {
+  const optional = payload.optional;
+  return SCHOOL_SETUP_OPTIONAL_UI_ITEMS.map((item) => ({
+    id: item.id,
+    label: item.label,
+    done: Boolean(optional?.[item.id]),
+  }));
+}
+
 export function schoolSetupWizardSteps(payload: SchoolSetupPayload): SchoolSetupWizardStep[] {
   const core = payload.core;
-  const optional = payload.optional ?? {};
+  const optional = payload.optional;
   return [
     {
       id: "academicYear",
@@ -72,7 +102,7 @@ export function schoolSetupWizardSteps(payload: SchoolSetupPayload): SchoolSetup
       label: "Comptes utilisateurs",
       to: SCHOOL_SETUP_WEB_LINKS.teachers,
       disabled: false,
-      done: Boolean(optional.teachers),
+      done: Boolean(optional?.teachers),
     },
   ];
 }

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { FormLayout, InlineAlert, LoadingState, SectionHeader } from "@/design-system";
+import { SchoolSetupOptionalCompleteness } from "../../components/schoolSetup/SchoolSetupOptionalCompleteness";
 import { SchoolSetupWizard } from "../../components/schoolSetup/SchoolSetupWizard";
 import { ApiError } from "../../api/client";
 import { schoolSetupStatusApi, type SchoolSetupPayload } from "../../lib/schoolSetupStatusApi";
@@ -57,6 +58,7 @@ export function SchoolSetupSettingsPage() {
               Progression : {dashboardSetupProgressLabel(payload)} · {schoolSetupStatusLabel(payload.status)}
             </p>
             <SchoolSetupWizard payload={payload} onLater={() => navigate("/etablissement", { replace: true })} />
+            <SchoolSetupOptionalCompleteness payload={payload} />
           </div>
         ) : null}
       </FormLayout.Content>

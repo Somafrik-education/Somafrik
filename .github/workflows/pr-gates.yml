@@ -415,6 +415,10 @@ jobs:
         if: needs.scope.outputs.platform == 'true'
         run: npm run verify:school-setup-lot3-red
 
+      - name: School setup optional completeness LOT 4
+        if: needs.scope.outputs.platform == 'true'
+        run: npm run verify:school-setup-lot4-red
+
       - name: Web tests
         if: needs.scope.outputs.web == 'true'
         run: npm --prefix web test

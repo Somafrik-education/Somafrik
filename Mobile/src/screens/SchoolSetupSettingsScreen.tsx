@@ -2,6 +2,7 @@ import { useCallback, useState } from "react";
 import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useFocusEffect, useNavigation } from "@react-navigation/native";
 import { SchoolSettingsDenied, useSchoolSettingsAccess } from "../components/SchoolSettingsGate";
+import { SchoolSetupOptionalCompleteness } from "../components/schoolSetup/SchoolSetupOptionalCompleteness";
 import { SchoolSetupWizard } from "../components/schoolSetup/SchoolSetupWizard";
 import { useResponsiveLayout } from "../hooks/useResponsiveLayout";
 import { dashboardSetupProgressLabel } from "../lib/schoolSetupMobile";
@@ -81,6 +82,7 @@ export default function SchoolSetupSettingsScreen() {
             onOpenStep={(step) => navigation.navigate(step.to)}
             onLater={() => navigation.goBack()}
           />
+          <SchoolSetupOptionalCompleteness payload={payload} />
         </>
       ) : null}
     </ScrollView>
