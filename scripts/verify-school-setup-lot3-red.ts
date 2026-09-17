@@ -32,6 +32,14 @@ const mobileConfigPath = path.join(repoRoot, "Mobile/src/screens/ConfigurationSc
 const webAuthPath = path.join(repoRoot, "web/src/context/AuthContext.tsx");
 
 const SCHOOL_A_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1";
+const LOGIN_A = "CD-IN-26-001";
+const SYNTHETIC_SCHOOL_FIELDS = [
+  "usersSchoolId",
+  "usersLoginCode",
+  "schoolId",
+  "effectiveSchoolId",
+  "effectiveSchoolCode",
+] as const;
 const CORE_TOTAL = 3;
 const USER_KEYS = [
   "mustChangePassword",
@@ -114,16 +122,41 @@ function ready(optional?: Record<string, boolean>) {
   return payload("READY", { academicYear: true, structure: true, classes: true }, { optional });
 }
 
-function schoolAdminPrincipal(overrides: Record<string, unknown> = {}) {
-  return {
+function jwtOnlySchoolAdmin(overrides: Record<string, unknown> = {}) {
+  const principal: Record<string, unknown> = {
     role: "Admin School",
-    sub: "admin-a-1",
-    usersSchoolId: SCHOOL_A_ID,
-    schoolCode: "CD-IN-26-001",
-    mustChangePassword: false,
-    lastLoginAt: null,
+    roleKeys: ["SCHOOL_ADMIN"],
+    schoolCode: LOGIN_A,
     permissions: ["Paramètres Établissement:READ"],
     ...overrides,
+  };
+  for (const key of SYNTHETIC_SCHOOL_FIELDS) {
+    delete principal[key];
+  }
+  return principal;
+}
+
+function assertJwtOnlyPrincipal(principal: Record<string, unknown>) {
+  for (const key of SYNTHETIC_SCHOOL_FIELDS) {
+    assert.equal(principal[key], undefined, `champ synthétique interdit sur le principal JWT: ${key}`);
+  }
+  assert.ok(String(principal.sub ?? "").trim(), "principal.sub requis pour le lookup membership");
+}
+
+function membershipOneBySub(rowsBySub: Record<string, { school_id: string; login_code: string }>) {
+  let membershipLookups = 0;
+  const one = async (sql: string, params: unknown[] = []) => {
+    const text = String(sql);
+    if (/from\s+users/i.test(text) && /school_id/i.test(text)) {
+      membershipLookups += 1;
+      const sub = String(params[0] ?? "");
+      return rowsBySub[sub] ?? null;
+    }
+    return null;
+  };
+  return {
+    one,
+    lookupCount: () => membershipLookups,
   };
 }
 
@@ -174,28 +207,38 @@ const cases: { id: string; title: string; run: () => void | Promise<void> }[] = 
         termCount: 0,
         teacherCount: 1,
       };
+      const membershipA = { school_id: SCHOOL_A_ID, login_code: LOGIN_A };
+      const { one, lookupCount } = membershipOneBySub({
+        "admin-a-1": membershipA,
+        "admin-a-2": membershipA,
+      });
+      const tenantIds: string[] = [];
       const loadSnapshot = async (tenant: { schoolId?: string }) => {
-        assert.equal(String(tenant.schoolId), SCHOOL_A_ID);
+        tenantIds.push(String(tenant.schoolId));
+        assert.equal(String(tenant.schoolId), SCHOOL_A_ID, "loadSnapshot doit recevoir le school_id membership");
         return snap;
       };
-      const first = await getSchoolSetupStatus({
-        principal: schoolAdminPrincipal({
-          sub: "admin-a-1",
-          email: "aline@lot3.test",
-          mustChangePassword: true,
-          lastLoginAt: null,
-        }),
-        loadSnapshot,
+      const adminA = jwtOnlySchoolAdmin({
+        sub: "admin-a-1",
+        email: "aline@lot3.test",
+        mustChangePassword: true,
+        lastLoginAt: null,
       });
-      const second = await getSchoolSetupStatus({
-        principal: schoolAdminPrincipal({
-          sub: "admin-a-2",
-          email: "binta@lot3.test",
-          mustChangePassword: false,
-          lastLoginAt: "2026-09-01T00:00:00Z",
-        }),
-        loadSnapshot,
+      const adminB = jwtOnlySchoolAdmin({
+        sub: "admin-a-2",
+        email: "binta@lot3.test",
+        mustChangePassword: false,
+        lastLoginAt: "2026-09-01T00:00:00Z",
       });
+      assertJwtOnlyPrincipal(adminA);
+      assertJwtOnlyPrincipal(adminB);
+      assert.notEqual(adminA.sub, adminB.sub);
+
+      const first = await getSchoolSetupStatus({ principal: adminA, one, loadSnapshot });
+      const second = await getSchoolSetupStatus({ principal: adminB, one, loadSnapshot });
+
+      assert.ok(lookupCount() >= 2, "L3-01: le lookup membership principal.sub → users.school_id n'a jamais été appelé");
+      assert.deepEqual(tenantIds, [SCHOOL_A_ID, SCHOOL_A_ID], "les deux admins doivent résoudre le même tenant.schoolId");
       assert.deepEqual(first, second, "L3-01: comparer le JSON métier, pas les tokens/users");
       assert.equal(first.status, "READY");
       assertNoUserIdentity(first, ["admin-a-1", "admin-a-2", "aline@lot3.test", "binta@lot3.test"]);
