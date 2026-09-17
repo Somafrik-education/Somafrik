@@ -411,6 +411,10 @@ jobs:
           test -n "${DATABASE_URL:-}"
           npm run verify:school-setup-status-lot0-red
 
+      - name: School setup resilience LOT 3
+        if: needs.scope.outputs.platform == 'true'
+        run: npm run verify:school-setup-lot3-red
+
       - name: Web tests
         if: needs.scope.outputs.web == 'true'
         run: npm --prefix web test
