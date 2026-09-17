@@ -5,6 +5,7 @@ import {
   formatDateTimeForDisplay,
   isValidDisplayDate,
   parseDisplayDate,
+  parsePeriodDate,
   toApiDate,
 } from "./dates";
 
@@ -21,6 +22,13 @@ describe("contrat date Somafrik JJ-MM-AAAA", () => {
     expect(isValidDisplayDate("29-02-2027")).toBe(false);
     expect(isValidDisplayDate("31-02-2026")).toBe(false);
     expect(isValidDisplayDate("32-13-2026")).toBe(false);
+  });
+
+  it("rejette aussi les dates impossibles dans le parseur historique des périodes", () => {
+    expect(parsePeriodDate("29-02-2028")).toBeInstanceOf(Date);
+    expect(parsePeriodDate("29-02-2027")).toBeNull();
+    expect(parsePeriodDate("31-02-2026")).toBeNull();
+    expect(parsePeriodDate("2027-02-29")).toBeNull();
   });
 
   it("convertit affichage et API sans Date UTC implicite", () => {
