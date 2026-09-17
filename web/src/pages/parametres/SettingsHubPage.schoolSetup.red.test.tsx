@@ -46,15 +46,25 @@ describe("LOT 1 RED — SettingsHub Configuration de l'établissement", () => {
     const loginSource = fs.readFileSync(new URL("../LoginPage.tsx", import.meta.url), "utf8");
     const onSubmitStart = loginSource.indexOf("async function onSubmit");
     const onPasswordStart = loginSource.indexOf("async function onPasswordChange");
+    const onPasswordEnd = loginSource.indexOf("function cancelPasswordChange", onPasswordStart);
     const onSubmitSource = loginSource.slice(
       onSubmitStart,
       onPasswordStart > onSubmitStart ? onPasswordStart : undefined,
     );
+    const onPasswordSource = loginSource.slice(
+      onPasswordStart,
+      onPasswordEnd > onPasswordStart ? onPasswordEnd : undefined,
+    );
     expect(onSubmitStart, "onSubmit introuvable dans LoginPage").toBeGreaterThanOrEqual(0);
+    expect(onPasswordStart, "onPasswordChange introuvable dans LoginPage").toBeGreaterThanOrEqual(0);
     expect(
       onSubmitSource,
       "une nouvelle connexion doit réinitialiser le dismiss du wizard",
     ).toContain("resetSchoolSetupWizardSessionDismiss()");
+    expect(
+      onPasswordSource,
+      "après changement du mot de passe, le statut canonique doit encore piloter l'ouverture du wizard",
+    ).toContain("shouldAutoOpenSchoolSetupWizard");
 
     const {
       dismissSchoolSetupWizardForSession,
