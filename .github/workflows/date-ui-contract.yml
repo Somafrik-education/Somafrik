@@ -7,13 +7,12 @@ on:
       - "web/**"
       - "Mobile/**"
       - "scripts/audit-date-ui-contract.js"
-      - "scripts/apply-date-ui-contract-fixes.js"
-      - "scripts/apply-strict-civil-date-parser.js"
+      - "docs/audits/date-fields-web-mobile.md"
       - ".github/workflows/date-ui-contract.yml"
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   date-contract:
@@ -22,8 +21,6 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.head_ref || github.ref_name }}
       - uses: actions/setup-node@v4
         with:
           node-version: "22.12.0"
@@ -31,30 +28,6 @@ jobs:
           cache-dependency-path: |
             web/package-lock.json
             Mobile/package-lock.json
-      - name: Apply deterministic date UI fixes
-        run: node scripts/apply-date-ui-contract-fixes.js
-      - name: Apply strict civil-date parser
-        run: node scripts/apply-strict-civil-date-parser.js
-      - name: Persist date fixes on PR branch
-        if: github.event_name == 'pull_request'
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add web Mobile
-          if ! git diff --cached --quiet; then
-            git commit -m "feat(date): apply strict JJ-MM-AAAA Web/Mobile contract"
-            git push origin HEAD:${{ github.head_ref }}
-          fi
-      - name: Generate exhaustive date inventory
-        run: node scripts/audit-date-ui-contract.js --report-only
-      - name: Persist date inventory on PR branch
-        if: github.event_name == 'pull_request'
-        run: |
-          git add docs/audits/date-fields-web-mobile.generated.md
-          if ! git diff --cached --quiet; then
-            git commit -m "docs(date): refresh automated Web/Mobile audit"
-            git push origin HEAD:${{ github.head_ref }}
-          fi
       - name: Install Web dependencies
         run: npm ci --prefix web
       - name: Install Mobile dependencies
@@ -65,7 +38,7 @@ jobs:
         run: npm --prefix web run test -- src/lib/dates.contract.test.ts
       - name: Mobile date contract
         run: npx --yes tsx Mobile/src/lib/dates.test.ts
-      - name: Typecheck Web
+      - name: Build Web
         run: npm --prefix web run build
       - name: Typecheck Mobile
         run: npm --prefix Mobile run typecheck
