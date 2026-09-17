@@ -21,11 +21,12 @@ const path = require("node:path");
 
 const CORE = path.join(__dirname, "verify-release-governance-core.js");
 const EXPECTED_CORE_BLOB = "3d7b2381b5412bbc7395b61592ed2199a2ca3035";
-const CURRENT_MAIN = "ff5ae38857d6693b2724c12bbbf293d7441f543b";
+const CURRENT_MAIN = "9f4badc61e2ecee2b7564da1dec3acc8d6c5c518";
 
 // Historique explicitement autorisé présent sur origin/main mais absent de develop.
 // Inclut les anciennes promotions (#500/#501/#502), la promotion sécurité #506,
-// le workflow AAB #507 et la correction documentaire/conformité #509.
+// le workflow AAB #507, la correction documentaire/conformité #509 et la
+// promotion contrôlée PROD-DEMO #674.
 const CURRENT_MAIN_ONLY = [
   "33d4ddc31a83fcb1b9ddbd715d59214c6a4ad38b",
   "fb37b9c3a4617f81e33b090824fd009fff1cbf63",
@@ -39,6 +40,9 @@ const CURRENT_MAIN_ONLY = [
   "14920f68fb5db77cbdf97fd1b11434ca71d57c2d",
   "48e47f47648eec28c4ea804953dda875fd3bee92",
   "ff5ae38857d6693b2724c12bbbf293d7441f543b",
+  "c102e253475263f6255708ea093c9327bd12fc3a",
+  "57f0075153ebddfbf764e074c7f2f49a6fdd5717",
+  "9f4badc61e2ecee2b7564da1dec3acc8d6c5c518",
 ];
 
 function replaceExactlyOnce(source, before, after, label) {
@@ -160,7 +164,7 @@ source = replaceExactlyOnce(
 source = replaceExactlyOnce(
   source,
   '    console.log("PASS RG-MAIN-ONLY 2 commits stale (6ff61106, b5074565) ; tree #109 ⊂ develop");',
-  '    console.log("PASS RG-MAIN-ONLY live pin ff5ae388 ; 12 commits main-only explicitement autorisés");',
+  '    console.log("PASS RG-MAIN-ONLY live pin 9f4badc6 ; 15 commits main-only explicitement autorisés");',
   "main-only log",
 );
 
