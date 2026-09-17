@@ -3,6 +3,7 @@
  * Échoue tant que la carte « Configuration de l'établissement » est absente.
  */
 
+import fs from "node:fs";
 import { describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
@@ -39,5 +40,42 @@ describe("LOT 1 RED — SettingsHub Configuration de l'établissement", () => {
     const link = screen.queryByRole("link", { name: /Configuration de l'établissement/i });
     expect(link, "lien Paramètres configuration-etablissement absent").not.toBeNull();
     expect(link).toHaveAttribute("href", "/parametres/configuration-etablissement");
+  });
+
+  it("WZ-04c — une nouvelle authentification réinitialise le dismiss mémoire", async () => {
+    const loginSource = fs.readFileSync(new URL("../LoginPage.tsx", import.meta.url), "utf8");
+    const onSubmitStart = loginSource.indexOf("async function onSubmit");
+    const onPasswordStart = loginSource.indexOf("async function onPasswordChange");
+    const onSubmitSource = loginSource.slice(
+      onSubmitStart,
+      onPasswordStart > onSubmitStart ? onPasswordStart : undefined,
+    );
+    expect(onSubmitStart, "onSubmit introuvable dans LoginPage").toBeGreaterThanOrEqual(0);
+    expect(
+      onSubmitSource,
+      "une nouvelle connexion doit réinitialiser le dismiss du wizard",
+    ).toContain("resetSchoolSetupWizardSessionDismiss()");
+
+    const {
+      dismissSchoolSetupWizardForSession,
+      resetSchoolSetupWizardSessionDismiss,
+      shouldAutoOpenSchoolSetupWizard,
+    } = await import("../../lib/schoolSetupWeb");
+    const payload = {
+      status: "NOT_STARTED" as const,
+      core: { academicYear: false, structure: false, classes: false },
+      progress: { coreDone: 0, coreTotal: 3 },
+    };
+
+    resetSchoolSetupWizardSessionDismiss();
+    dismissSchoolSetupWizardForSession();
+    expect(
+      shouldAutoOpenSchoolSetupWizard({ payload, role: "Admin School", mustChangePassword: false }),
+    ).toBe(false);
+
+    resetSchoolSetupWizardSessionDismiss();
+    expect(
+      shouldAutoOpenSchoolSetupWizard({ payload, role: "Admin School", mustChangePassword: false }),
+    ).toBe(true);
   });
 });
