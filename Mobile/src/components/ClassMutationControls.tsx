@@ -1,5 +1,6 @@
 import { useCallback, useState } from "react";
 import { Alert, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { useNavigation } from "@react-navigation/native";
 import { useAuth } from "../context/AuthContext";
 import CanonicalMutationModal from "./CanonicalMutationModal";
 import ChoiceChips from "./ChoiceChips";
@@ -43,6 +44,7 @@ export default function ClassMutationControls({
   onChanged: () => Promise<void> | void;
 }) {
   const { session } = useAuth();
+  const navigation = useNavigation<any>();
   const access = resolveEntityCrudAccess(session, "classes");
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -266,7 +268,21 @@ export default function ClassMutationControls({
         onSubmit={() => void submit()}
       >
         {!years.length ? (
-          <Text style={styles.hint}>Aucune année scolaire chargeable. Configurez-la sur le Web, puis réessayez.</Text>
+          <>
+            <Text style={styles.hint}>Aucune année scolaire chargeable. Ouvrez Année scolaire pour la créer.</Text>
+            <TouchableOpacity
+              style={styles.small}
+              onPress={() => {
+                setOpen(false);
+                navigation.navigate("SchoolYearSettings");
+              }}
+              accessibilityRole="button"
+              accessibilityLabel="Ouvrir Année scolaire"
+              testID="classes-open-school-year"
+            >
+              <Text style={styles.smallText}>Ouvrir Année scolaire</Text>
+            </TouchableOpacity>
+          </>
         ) : (
           <ChoiceChips
             label="Année scolaire"

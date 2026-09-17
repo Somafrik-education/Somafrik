@@ -12,7 +12,13 @@ import { useStackScreenBottomPadding } from "../lib/screenLayout";
 type SettingsCard = {
   title: string;
   description: string;
-  route: "EstablishmentProfile" | "SchoolYearSettings" | "SchoolPedagogicalStructure" | "SchoolAssignableRoles" | "Users";
+  route:
+    | "EstablishmentProfile"
+    | "SchoolSetup"
+    | "SchoolYearSettings"
+    | "SchoolPedagogicalStructure"
+    | "SchoolAssignableRoles"
+    | "Users";
   view: string;
 };
 
@@ -22,6 +28,12 @@ const sections: SettingsCard[] = [
     description: "Identité, contacts et responsable légal.",
     route: "EstablishmentProfile",
     view: "EstablishmentProfile",
+  },
+  {
+    title: "Configuration de l'établissement",
+    description: "Assistant de configuration : année scolaire, structure pédagogique, classes et comptes.",
+    route: "SchoolSetup",
+    view: "Configuration",
   },
   {
     title: "Année scolaire",

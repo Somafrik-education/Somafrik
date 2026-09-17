@@ -19,6 +19,9 @@ import {
 import { listAcademicYears, type AcademicYearRecord } from "../services/schoolSettingsApi";
 import { scopedClassesForSession } from "../lib/establishment";
 import { nextExclusiveExpandedKey } from "../lib/expandableEntity";
+import { SchoolSetupDashboardWidget } from "../components/schoolSetup/SchoolSetupDashboardWidget";
+import { schoolSetupStatusApi, type SchoolSetupPayload } from "../lib/schoolSetupStatusApi";
+import { SCHOOL_SETUP_ROUTE, shouldShowDashboardSetupWidget } from "../lib/schoolSetupMobile";
 
 type HubAction = {
   key: string;
@@ -52,6 +55,7 @@ export default function SchoolingHubScreen({ navigation }: any) {
   const [years, setYears] = useState<AcademicYearRecord[]>([]);
   const [yearsError, setYearsError] = useState<string | null>(null);
   const [expandedActionKey, setExpandedActionKey] = useState<string | null>(null);
+  const [setupPayload, setSetupPayload] = useState<SchoolSetupPayload | null>(null);
 
   const schoolCode = String(session?.school?.code ?? session?.user?.schoolCode ?? "");
   const currentSchool =
@@ -74,6 +78,10 @@ export default function SchoolingHubScreen({ navigation }: any) {
   useFocusEffect(
     useCallback(() => {
       void Promise.all([loadClasses(), loadStudents(), loadTeachers(), loadAssignments()]).catch(() => null);
+      void schoolSetupStatusApi
+        .get()
+        .then((row) => setSetupPayload(row))
+        .catch(() => setSetupPayload(null));
     }, [loadClasses, loadStudents, loadTeachers, loadAssignments, resourceScopeKey]),
   );
 
@@ -102,6 +110,8 @@ export default function SchoolingHubScreen({ navigation }: any) {
   const canOpenStructure = canReadView(session, "SchoolPedagogicalStructure");
   const studentsRoute = session?.role === "teacher" ? "TeacherStudents" : "Students";
   const teacherCount = teachersData.length;
+  const setupRole = session?.role ?? session?.user?.role;
+  const showSetupWidget = shouldShowDashboardSetupWidget({ payload: setupPayload, role: setupRole });
 
   const actions: HubAction[] = [
     canOpenClasses
@@ -170,6 +180,15 @@ export default function SchoolingHubScreen({ navigation }: any) {
       <Text style={styles.subtitle} testID="schooling-year">
         {[currentSchool?.name, yearLabel].filter(Boolean).join(" · ")}
       </Text>
+
+      {showSetupWidget && setupPayload ? (
+        <SchoolSetupDashboardWidget
+          payload={setupPayload}
+          heading="Configuration rapide"
+          actionLabel="Continuer"
+          onContinue={() => navigation.navigate(SCHOOL_SETUP_ROUTE)}
+        />
+      ) : null}
 
       <Text style={styles.section}>{SCOLARITE_COPY.indicators}</Text>
       <View style={styles.kpiRow}>

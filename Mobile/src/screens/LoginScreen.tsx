@@ -40,6 +40,7 @@ import { MOBILE_ACCESSIBILITY_COPY } from "../lib/mobileAccessibilitySpec";
 import KeyboardAwareScreen from "../components/KeyboardAwareScreen";
 import { USABILITY_TEST_IDS } from "../lib/mobileUsability";
 import { schoolLogoDisplayUri } from "../lib/schoolLogo";
+import { resetSchoolSetupWizardSessionDismiss } from "../lib/schoolSetupMobile";
 
 type Props = NativeStackScreenProps<RootStackParamList, "Login">;
 const somafrikLogo = require("../../assets/somafrik-logo.png");
@@ -135,6 +136,7 @@ export default function LoginScreen({ navigation, route }: Props) {
           platformContext,
         }),
       );
+      resetSchoolSetupWizardSessionDismiss();
 
       if (session.user.mustChangePassword) {
         setPendingSession(session);

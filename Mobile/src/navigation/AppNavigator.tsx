@@ -42,6 +42,7 @@ import EstablishmentProfileScreen from "../screens/EstablishmentProfileScreen";
 import SchoolYearSettingsScreen from "../screens/SchoolYearSettingsScreen";
 import SchoolPedagogicalStructureScreen from "../screens/SchoolPedagogicalStructureScreen";
 import SchoolingHubScreen from "../screens/SchoolingHubScreen";
+import SchoolSetupSettingsScreen from "../screens/SchoolSetupSettingsScreen";
 import SchoolAssignableRolesScreen from "../screens/SchoolAssignableRolesScreen";
 import InternalNotificationsScreen from "../screens/InternalNotificationsScreen";
 import OfflineBanner from "../components/OfflineBanner";
@@ -100,6 +101,7 @@ export type RootStackParamList = {
   OfflineMode: undefined;
   Synchronization: undefined;
   Configuration: undefined;
+  SchoolSetup: undefined;
   EstablishmentProfile: undefined;
   SchoolYearSettings: undefined;
   SchoolPedagogicalStructure: undefined;
@@ -328,6 +330,9 @@ export default function AppNavigator() {
         {canReadRoute(session, "Synchronization") && <Stack.Screen name="Synchronization" component={SynchronizationScreen} options={{ title: "Synchronisation" }} />}
         {canReadRoute(session, "Support") && <Stack.Screen name="Support" component={SupportScreen} options={{ title: "Support" }} />}
         {canReadView(session, "Configuration") && <Stack.Screen name="Configuration" component={ConfigurationScreen} options={{ title: "Paramètres" }} />}
+        {canReadView(session, "Configuration") && (
+          <Stack.Screen name="SchoolSetup" component={SchoolSetupSettingsScreen} options={{ title: "Configuration de l'établissement" }} />
+        )}
         {canReadView(session, "EstablishmentProfile") && (
           <Stack.Screen name="EstablishmentProfile" component={EstablishmentProfileScreen} options={{ title: "Profil établissement" }} />
         )}
