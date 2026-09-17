@@ -415,6 +415,20 @@ jobs:
         if: needs.scope.outputs.platform == 'true'
         run: npm run verify:school-setup-lot3-red
 
+      - name: School setup optional completeness LOT 4
+        if: needs.scope.outputs.platform == 'true'
+        env:
+          GITHUB_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin "${{ github.base_ref }}:refs/remotes/origin/${{ github.base_ref }}"
+          git fetch --no-tags origin "${{ github.event.pull_request.base.sha }}"
+          if ! git merge-base "origin/${{ github.base_ref }}" HEAD >/dev/null 2>&1; then
+            git fetch --no-tags --deepen=100 origin || true
+            git fetch --no-tags origin "${{ github.base_ref }}:refs/remotes/origin/${{ github.base_ref }}"
+          fi
+          npm run verify:school-setup-lot4-red
+
       - name: Web tests
         if: needs.scope.outputs.web == 'true'
         run: npm --prefix web test

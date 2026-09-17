@@ -13,10 +13,19 @@ export interface SchoolSetupProgress {
   coreTotal: number;
 }
 
+export interface SchoolSetupOptional {
+  periods: boolean;
+  subjects: boolean;
+  teachers: boolean;
+  students: boolean;
+  feeGrids: boolean;
+  notifications: boolean;
+}
+
 export interface SchoolSetupPayload {
   status: SchoolSetupStatus;
   core: SchoolSetupCore;
-  optional?: Record<string, boolean>;
+  optional?: SchoolSetupOptional;
   progress: SchoolSetupProgress;
 }
 
