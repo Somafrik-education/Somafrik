@@ -13,7 +13,7 @@
  */
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
-import { execSync } from "node:child_process";
+import { execFileSync, execSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -215,14 +215,35 @@ function isLot4AllowedFile(file: string) {
   return false;
 }
 
-function lot4ChangedFiles() {
-  const committed = execSync("git diff --name-only origin/develop...HEAD", {
+function gitNameOnly(args: string[]) {
+  return execFileSync("git", ["diff", "--name-only", ...args], {
     cwd: repoRoot,
     encoding: "utf8",
   })
     .split("\n")
     .map((line) => line.trim())
     .filter(Boolean);
+}
+
+function lot4CommittedFiles() {
+  const baseRef = String(process.env.GITHUB_BASE_REF || "develop").replace(/^origin\//, "");
+  const bases = [process.env.GITHUB_BASE_SHA, `origin/${baseRef}`, "origin/develop"].filter(
+    (value, index, all): value is string => Boolean(value) && all.indexOf(value) === index,
+  );
+  const attempts = bases.flatMap((base) => [[`${base}...HEAD`], [base, "HEAD"]]);
+  const errors: string[] = [];
+  for (const args of attempts) {
+    try {
+      return gitNameOnly(args);
+    } catch (error) {
+      errors.push(`${args.join(" ")}: ${error instanceof Error ? error.message.split("\n")[0] : String(error)}`);
+    }
+  }
+  throw new Error(`L4-09: diff vs base indisponible (${errors[0] ?? "aucune base"})`);
+}
+
+function lot4ChangedFiles() {
+  const committed = lot4CommittedFiles();
   const unstaged = execSync("git diff --name-only", { cwd: repoRoot, encoding: "utf8" })
     .split("\n")
     .map((line) => line.trim())
