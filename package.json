@@ -94,6 +94,7 @@
     "verify:school-notification-settings": "node --test backend/lib/schoolNotificationSettings.test.js && npm --prefix web run test -- src/pages/parametres/SettingsNotificationsPage.test.tsx",
     "verify:school-setup-status-lot0-red": "node --test --test-reporter spec backend/lib/schoolSetupStatus.red.test.js backend/lib/schoolSetupStatus.http.pg.test.js",
     "verify:school-setup-web-lot1-red": "npm --prefix web run test -- src/lib/schoolSetupWeb.red.test.ts src/pages/parametres/SettingsHubPage.schoolSetup.red.test.tsx",
+    "verify:school-setup-mobile-lot2-red": "npx --yes tsx Mobile/src/lib/schoolSetupMobile.red.test.ts",
     "verify:platform-announcements": "node backend/scripts/verify-platform-announcements.js",
     "verify:mobile-push-n1": "node backend/scripts/verify-mobile-push-n1.js",
     "verify:finance-legacy-cleanup": "node --test backend/lib/legacyFinanceStateWrite.test.js && node backend/scripts/verify-finance-legacy-cleanup.js",
