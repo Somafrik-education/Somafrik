@@ -210,6 +210,14 @@ function assertNoUserOrRouteLeak(payload) {
   assert.doesNotMatch(encoded, /mustChangePassword|last_login_at|must_change_password/);
 }
 
+function assertHas(source, needle, message) {
+  assert.ok(source.includes(needle), message);
+}
+
+function assertLacks(source, needle, message) {
+  assert.ok(!source.includes(needle), message);
+}
+
 function routeSnippet() {
   const start = SERVER.indexOf(ROUTE_DECL);
   assert.ok(start >= 0, `${ROUTE_DECL} absent de backend/server.js`);
@@ -240,14 +248,26 @@ async function snapshotsBySchool() {
 // ---------------------------------------------------------------------------
 
 test("contrat — GET /api/v2/school-setup/status est déclaré (auth + permission, sans :schoolCode)", () => {
-  assert.match(SERVER, /app\.get\("\/api\/v2\/school-setup\/status"/);
-  assert.doesNotMatch(SERVER, /app\.get\("\/api\/v2\/school-setup\/:schoolCode/);
-  assert.doesNotMatch(SERVER, /\/api\/v2\/schools\/:schoolCode\/setup\/status/);
+  assertHas(SERVER, ROUTE_DECL, `${ROUTE_DECL} absent de backend/server.js`);
+  assertLacks(
+    SERVER,
+    'app.get("/api/v2/school-setup/:schoolCode',
+    "path :schoolCode interdit sur school-setup",
+  );
+  assertLacks(
+    SERVER,
+    "/api/v2/schools/:schoolCode/setup/status",
+    "tenant school-setup ne passe pas par :schoolCode",
+  );
   const snippet = routeSnippet();
-  assert.match(snippet, /requireAuth/);
-  assert.match(snippet, /requirePermission\("GET \/api\/v2\/school-setup\/status"\)/);
-  assert.match(snippet, /schoolSetupStatus/);
-  assert.doesNotMatch(snippet, /:schoolCode/);
+  assertHas(snippet, "requireAuth", "requireAuth manquant sur GET school-setup/status");
+  assertHas(
+    snippet,
+    `requirePermission("${ROUTE_GET}")`,
+    `requirePermission("${ROUTE_GET}") manquant`,
+  );
+  assertHas(snippet, "schoolSetupStatus", "handler school-setup n'utilise pas schoolSetupStatus");
+  assertLacks(snippet, ":schoolCode", "snippet handler school-setup contient :schoolCode");
 });
 
 test("contrat — RBAC mappe la route sur Paramètres Établissement:READ (permission existante)", () => {
@@ -257,7 +277,7 @@ test("contrat — RBAC mappe la route sur Paramètres Établissement:READ (permi
 });
 
 test("invariant — aucune colonne persistée setup_status (état dérivé, pas stocké)", () => {
-  assert.doesNotMatch(SCHEMA, /setup_status/);
+  assertLacks(SCHEMA, "setup_status", "colonne setup_status interdite — état dérivé uniquement");
 });
 
 test("ST-08 — handler/module sans localStorage/AsyncStorage", () => {
@@ -429,8 +449,8 @@ test("ST-06 — leftover JWT schoolCode B + membership A → tenant A, jamais B"
 });
 
 test("ST-06b — token école A → données A uniquement ; pas de path :schoolCode", async () => {
-  assert.match(SERVER, /app\.get\("\/api\/v2\/school-setup\/status"/);
-  assert.doesNotMatch(SERVER, /school-setup\/:schoolCode/);
+  assertHas(SERVER, ROUTE_DECL, `${ROUTE_DECL} absent de backend/server.js`);
+  assertLacks(SERVER, "school-setup/:schoolCode", "path school-setup/:schoolCode interdit");
   const { getSchoolSetupStatus } = requireContract();
   const stores = await snapshotsBySchool();
   const seen = [];
