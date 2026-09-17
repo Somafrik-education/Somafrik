@@ -1,4 +1,5 @@
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { LoadingState, ErrorState } from "@/design-system";
 import { useAuth } from "../context/AuthContext";
 import { useData } from "../context/DataContext";
 import { useActiveSchool } from "../context/ActiveSchoolContext";
@@ -21,6 +22,8 @@ import {
 } from "../lib/dashboardDemoHydration";
 import { filterDomainsByPermissions } from "../lib/domainPermissions";
 
+type DemoCriticalStatus = "idle" | "loading" | "ready" | "error";
+
 export function OverviewPage() {
   const { session } = useAuth();
   const { state, ensureDomains } = useData();
@@ -31,10 +34,17 @@ export function OverviewPage() {
     scopedUser,
     activeSchoolCode,
   } = useActiveSchool();
+  const [demoCriticalStatus, setDemoCriticalStatus] = useState<DemoCriticalStatus>(
+    demoRuntimeEnabled ? "idle" : "ready",
+  );
 
   useEffect(() => {
-    if (!demoRuntimeEnabled || !session?.accessToken) return;
+    if (!demoRuntimeEnabled || !session?.accessToken) {
+      setDemoCriticalStatus(demoRuntimeEnabled ? "idle" : "ready");
+      return;
+    }
 
+    let cancelled = false;
     const options =
       internalSchool && activeSchoolCode && activeSchoolCode !== "*"
         ? { schoolCode: activeSchoolCode }
@@ -49,16 +59,27 @@ export function OverviewPage() {
       ctx,
     );
 
-    // Démo uniquement : chaque domaine est fusionné dès que son GET termine.
-    // L'école est déjà fournie par /api/demo/exchange ; on ne refait pas le
-    // snapshot établissement. Un endpoint lent (ex. users) ne retient donc
-    // plus classes, élèves, présences ou notes derrière un batch atomique.
-    for (const domain of critical) {
-      void ensureDomains([domain], options).catch(() => undefined);
-    }
+    setDemoCriticalStatus("loading");
+
+    // Démo uniquement : les domaines critiques (élèves, enseignants, classes)
+    // restent progressifs côté réseau mais le graphique ne publie plus une
+    // valeur partielle comme « 10 élèves » avant la fin des trois GET.
+    const criticalTasks = critical.map((domain) => ensureDomains([domain], options));
+    void Promise.allSettled(criticalTasks).then((results) => {
+      if (cancelled) return;
+      const failed = results.some((result) => result.status === "rejected");
+      setDemoCriticalStatus(failed ? "error" : "ready");
+    });
+
+    // Les domaines secondaires continuent à hydrater indépendamment : ils ne
+    // bloquent pas la première vue cohérente du tableau de bord.
     for (const domain of deferred) {
       void ensureDomains([domain], options).catch(() => undefined);
     }
+
+    return () => {
+      cancelled = true;
+    };
   }, [session?.accessToken, internalSchool, activeSchoolCode, ensureDomains, ctx]);
 
   const hasInternalNotificationScope = Boolean(activeSchoolCode && activeSchoolCode !== "*");
@@ -105,6 +126,18 @@ export function OverviewPage() {
     }),
     [internalSchool, scopedUser, user, state, orderScope, schoolUnreadCount, ctx],
   );
+
+  if (demoRuntimeEnabled && demoCriticalStatus !== "ready") {
+    if (demoCriticalStatus === "error") {
+      return (
+        <ErrorState
+          title="Impossible de charger le tableau de bord."
+          message="Les effectifs critiques de démonstration n'ont pas pu être hydratés complètement."
+        />
+      );
+    }
+    return <LoadingState message="Chargement des effectifs de démonstration…" />;
+  }
 
   return (
     <div className="space-y-6">
