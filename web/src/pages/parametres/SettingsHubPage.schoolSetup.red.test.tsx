@@ -4,6 +4,8 @@
  */
 
 import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
@@ -43,7 +45,10 @@ describe("LOT 1 RED — SettingsHub Configuration de l'établissement", () => {
   });
 
   it("WZ-04c — une nouvelle authentification réinitialise le dismiss mémoire", async () => {
-    const loginSource = fs.readFileSync(new URL("../LoginPage.tsx", import.meta.url), "utf8");
+    const loginSource = fs.readFileSync(
+      path.join(path.dirname(fileURLToPath(import.meta.url)), "../LoginPage.tsx"),
+      "utf8",
+    );
     const onSubmitStart = loginSource.indexOf("async function onSubmit");
     const onPasswordStart = loginSource.indexOf("async function onPasswordChange");
     const onPasswordEnd = loginSource.indexOf("function cancelPasswordChange", onPasswordStart);
