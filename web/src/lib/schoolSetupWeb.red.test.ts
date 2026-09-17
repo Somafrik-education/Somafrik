@@ -354,7 +354,7 @@ describe("LOT 1 RED — WZ wizard / deep links", () => {
     ].join("\n");
     assertLacks(sources, /localStorage|sessionStorage|AsyncStorage/, "dismiss persisté en storage interdit (WZ-04b)");
     assertLacks(sources, /snooze|dismissed_until|setup_status/, "snooze serveur / setup_status interdit");
-    assertLacks(sources, /api\.(post|patch|put)\([^\)]*school-setup/, "API write school-setup interdite");
+    assertLacks(sources, /api\.(post|patch|put)\([^)]*school-setup/, "API write school-setup interdite");
   });
 });
 
