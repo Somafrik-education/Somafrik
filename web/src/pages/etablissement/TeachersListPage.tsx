@@ -1,3 +1,4 @@
+import { DateInput } from "../../components/ui/DateInput";
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import {
   Button,
@@ -471,9 +472,8 @@ export function TeachersListPage() {
             />
           </Field>
           <Field label="Date de naissance" htmlFor="teacher-birth-date" hint="Format AAAA-MM-JJ" required>
-            <Input
+            <DateInput
               id="teacher-birth-date"
-              type="date"
               value={form.birthDate}
               onChange={(event) => setForm((current) => ({ ...current, birthDate: event.target.value }))}
               required
@@ -484,9 +484,8 @@ export function TeachersListPage() {
             htmlFor="teacher-entry-date"
             hint="Optionnel — aujourd'hui par défaut. L'enseignant doit avoir 18 ans à cette date."
           >
-            <Input
+            <DateInput
               id="teacher-entry-date"
-              type="date"
               value={form.entryDate}
               onChange={(event) => setForm((current) => ({ ...current, entryDate: event.target.value }))}
             />

@@ -1,3 +1,4 @@
+import { DateInput } from "../ui/DateInput";
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { Plus, Trash2, Zap } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
@@ -696,7 +697,7 @@ export function QuickPaymentModal({
             />
           </Field>
           <Field label="Date d'encaissement" required>
-            <Input type="date" value={dateInput} onChange={(event) => setDateInput(event.target.value)} />
+            <DateInput value={dateInput} onChange={(event) => setDateInput(event.target.value)} />
           </Field>
         </div>
 

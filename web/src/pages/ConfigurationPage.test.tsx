@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 
@@ -84,6 +84,21 @@ vi.mock("../design-system", async (importOriginal) => {
 
 import { ConfigurationPage } from "./ConfigurationPage";
 
+async function pickDate(
+  user: ReturnType<typeof userEvent.setup>,
+  label: RegExp,
+  year: string,
+  monthIndex: string,
+  day: string,
+) {
+  await user.click(screen.getByLabelText(label));
+  const dialog = screen.getByRole("dialog");
+  const [monthSelect, yearSelect] = within(dialog).getAllByRole("combobox");
+  await user.selectOptions(monthSelect, monthIndex);
+  await user.selectOptions(yearSelect, year);
+  await user.click(within(dialog).getByRole("button", { name: day }));
+}
+
 describe("ConfigurationPage année scolaire (socle academic_years)", () => {
   beforeEach(() => {
     yearPermissions.canRead = true;
@@ -147,8 +162,8 @@ describe("ConfigurationPage année scolaire (socle academic_years)", () => {
 
     await screen.findByRole("button", { name: "Créer l'année" });
     await user.type(screen.getByLabelText(/Nom de l'année/), "2026-2027");
-    await user.type(screen.getByLabelText(/Début de l'année/), "2026-10-01");
-    await user.type(screen.getByLabelText(/Fin de l'année/), "2027-07-31");
+    await pickDate(user, /Début de l'année/, "2026", "9", "1");
+    await pickDate(user, /Fin de l'année/, "2027", "6", "31");
     await user.click(screen.getByRole("button", { name: "Créer l'année" }));
 
     await waitFor(() => {

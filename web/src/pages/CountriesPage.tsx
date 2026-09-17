@@ -174,7 +174,7 @@ export function CountriesPage() {
         ? {}
         : {
             id: editing.id ?? `COUNTRY-${editing.code}`,
-            createdAt: editing.createdAt ?? new Date().toLocaleDateString("fr-FR"),
+            createdAt: editing.createdAt ?? new Date().toISOString(),
           }),
     };
 

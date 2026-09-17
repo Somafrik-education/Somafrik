@@ -1,3 +1,4 @@
+import { DateInput } from "../../components/ui/DateInput";
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import type { ColumnDef } from "@tanstack/react-table";
@@ -250,7 +251,7 @@ export function PlanningSubstitutionsPage() {
         />
         <div className="mt-4 grid gap-4 md:grid-cols-3">
           <Field label="Date">
-            <Input type="date" value={filterDate} onChange={(event) => setFilterDate(event.target.value)} />
+            <DateInput value={filterDate} onChange={(event) => setFilterDate(event.target.value)} />
           </Field>
           <Field label="Statut">
             <Select
@@ -316,8 +317,7 @@ export function PlanningSubstitutionsPage() {
           <SectionHeader title="Programmer un remplacement" />
           <div className="mt-4 grid gap-4 md:grid-cols-2">
             <Field label="1. Date" required>
-              <Input
-                type="date"
+              <DateInput
                 data-testid="planning-replacement-date"
                 value={wizardDate}
                 onChange={(event) => {

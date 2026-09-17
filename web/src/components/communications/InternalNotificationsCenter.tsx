@@ -1,3 +1,4 @@
+import { formatDateTimeForDisplay } from "../../lib/dates";
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { useActiveSchool } from "../../context/ActiveSchoolContext";
@@ -18,15 +19,7 @@ import { CommunicationChrome, useCommunicationListQuery } from "./CommunicationC
 import { CommunicationHttpErrorState } from "./CommunicationHttpErrorState";
 import { ExpandableCommunicationCard } from "./ExpandableCommunicationCard";
 
-function formatDateTime(value?: string): string {
-  if (!value) return "";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return new Intl.DateTimeFormat("fr-FR", {
-    dateStyle: "short",
-    timeStyle: "short",
-  }).format(date);
-}
+const formatDateTime = formatDateTimeForDisplay;
 
 function sourceLabel(eventType?: string): string {
   const value = String(eventType ?? "");

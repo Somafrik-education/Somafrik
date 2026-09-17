@@ -1,3 +1,4 @@
+import { DateInput } from "../../components/ui/DateInput";
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { Link, Navigate, useParams } from "react-router-dom";
 import {
@@ -293,9 +294,8 @@ export function ClassStudentsPage() {
             />
           </Field>
           <Field label="Date de naissance" htmlFor="enroll-birth-date" hint="Format AAAA-MM-JJ">
-            <Input
+            <DateInput
               id="enroll-birth-date"
-              type="date"
               value={form.birthDate}
               onChange={(event) => setForm((current) => ({ ...current, birthDate: event.target.value }))}
             />

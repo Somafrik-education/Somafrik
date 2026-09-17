@@ -13,20 +13,26 @@ function endOfDay(date: Date) {
   return new Date(date.getFullYear(), date.getMonth(), date.getDate(), 23, 59, 59, 999);
 }
 
+function buildCivilDate(year: number, month: number, day: number): Date | null {
+  if (!Number.isInteger(year) || !Number.isInteger(month) || !Number.isInteger(day)) return null;
+  if (year < 1 || month < 1 || month > 12 || day < 1 || day > 31) return null;
+  const date = new Date(year, month - 1, day);
+  if (date.getFullYear() !== year || date.getMonth() !== month - 1 || date.getDate() !== day) return null;
+  return date;
+}
+
 export function parsePeriodDate(value?: string): Date | null {
   const raw = String(value ?? "").trim();
   if (!raw) return null;
 
   const dmy = raw.match(/^(\d{1,2})-(\d{1,2})-(\d{4})$/);
   if (dmy) {
-    const date = new Date(Number(dmy[3]), Number(dmy[2]) - 1, Number(dmy[1]));
-    return Number.isNaN(date.getTime()) ? null : date;
+    return buildCivilDate(Number(dmy[3]), Number(dmy[2]), Number(dmy[1]));
   }
 
   const ymd = raw.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
   if (ymd) {
-    const date = new Date(Number(ymd[1]), Number(ymd[2]) - 1, Number(ymd[3]));
-    return Number.isNaN(date.getTime()) ? null : date;
+    return buildCivilDate(Number(ymd[1]), Number(ymd[2]), Number(ymd[3]));
   }
 
   const parsed = new Date(raw);
