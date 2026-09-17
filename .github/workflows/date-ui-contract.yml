@@ -8,6 +8,7 @@ on:
       - "Mobile/**"
       - "scripts/audit-date-ui-contract.js"
       - "scripts/apply-date-ui-contract-fixes.js"
+      - "scripts/apply-strict-civil-date-parser.js"
       - ".github/workflows/date-ui-contract.yml"
   workflow_dispatch:
 
@@ -32,14 +33,16 @@ jobs:
             Mobile/package-lock.json
       - name: Apply deterministic date UI fixes
         run: node scripts/apply-date-ui-contract-fixes.js
-      - name: Persist date UI fixes on PR branch
+      - name: Apply strict civil-date parser
+        run: node scripts/apply-strict-civil-date-parser.js
+      - name: Persist date fixes on PR branch
         if: github.event_name == 'pull_request'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add web Mobile
           if ! git diff --cached --quiet; then
-            git commit -m "feat(date): apply JJ-MM-AAAA Web/Mobile refactor"
+            git commit -m "feat(date): apply strict JJ-MM-AAAA Web/Mobile contract"
             git push origin HEAD:${{ github.head_ref }}
           fi
       - name: Generate exhaustive date inventory
