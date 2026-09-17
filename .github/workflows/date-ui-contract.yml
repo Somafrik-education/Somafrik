@@ -1,0 +1,40 @@
+name: Date UI contract
+
+on:
+  pull_request:
+    branches: [develop]
+    paths:
+      - "web/**"
+      - "Mobile/**"
+      - "scripts/audit-date-ui-contract.js"
+      - ".github/workflows/date-ui-contract.yml"
+  workflow_dispatch:
+
+jobs:
+  date-contract:
+    name: Verify JJ-MM-AAAA Web/Mobile
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.12.0"
+          cache: npm
+          cache-dependency-path: |
+            web/package-lock.json
+            Mobile/package-lock.json
+      - name: Install Web dependencies
+        run: npm ci --prefix web
+      - name: Install Mobile dependencies
+        run: npm ci --prefix Mobile
+      - name: Static date UI audit
+        run: node scripts/audit-date-ui-contract.js
+      - name: Web date contract
+        run: npm --prefix web run test -- src/lib/dates.contract.test.ts
+      - name: Mobile date contract
+        run: npx --yes tsx Mobile/src/lib/dates.test.ts
+      - name: Typecheck Web
+        run: npm --prefix web run build
+      - name: Typecheck Mobile
+        run: npm --prefix Mobile run typecheck
