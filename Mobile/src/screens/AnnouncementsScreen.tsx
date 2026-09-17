@@ -1,3 +1,4 @@
+import { formatDateTimeForDisplay } from "../lib/dates";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
@@ -40,18 +41,7 @@ import {
 import { mergeFocusedAnnouncement, resolveFocusedAnnouncement } from "../lib/announcementsOpenById";
 import type { RootStackParamList } from "../navigation/AppNavigator";
 
-function formatDisplayDate(iso?: string) {
-  if (!iso) return "";
-  const date = new Date(iso);
-  if (Number.isNaN(date.getTime())) return iso;
-  return new Intl.DateTimeFormat("fr-FR", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(date);
-}
+const formatDisplayDate = formatDateTimeForDisplay;
 
 function announcementOriginLabel(announcement: CanonicalAnnouncement): string {
   if (announcement.originLabel) return announcement.originLabel;

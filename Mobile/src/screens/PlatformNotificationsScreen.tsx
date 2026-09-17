@@ -1,3 +1,4 @@
+import { formatDateForDisplay } from "../lib/dates";
 import React, { useMemo, useState } from "react";
 import {
   Alert,
@@ -109,7 +110,7 @@ export default function PlatformNotificationsScreen() {
       audience: composing?.audience ?? "Tous",
       priority: composing?.priority ?? "Normale",
       status: composing?.status ?? "Non lu",
-      date: composing?.date ?? new Date().toLocaleDateString("fr-FR").replace(/\//g, "-"),
+      date: composing?.date ?? formatDateForDisplay(new Date()),
       createdBy: session?.user.name ?? "Mobile",
     };
 

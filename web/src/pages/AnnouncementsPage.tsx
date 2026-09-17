@@ -1,3 +1,4 @@
+import { formatDateTimeForDisplay } from "../lib/dates";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "../context/AuthContext";
 import { useActiveSchool } from "../context/ActiveSchoolContext";
@@ -56,18 +57,7 @@ function isPlatformRow(row: UnifiedAnnouncement | null | undefined) {
   return row?.source === "platform" || row?.domain === "platform" || row?.type === "platform-announcement";
 }
 
-function formatDisplayDate(iso?: string) {
-  if (!iso) return "";
-  const date = new Date(iso);
-  if (Number.isNaN(date.getTime())) return iso;
-  return new Intl.DateTimeFormat("fr-FR", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(date);
-}
+const formatDisplayDate = formatDateTimeForDisplay;
 
 function sortByPublishedAt(rows: UnifiedAnnouncement[]) {
   return [...rows].sort((left, right) => {

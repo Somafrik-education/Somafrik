@@ -1,3 +1,4 @@
+import { formatDateForDisplay } from "../lib/dates";
 import { useState, type FormEvent } from "react";
 import { useAuth } from "../context/AuthContext";
 import { useData } from "../context/DataContext";
@@ -76,7 +77,7 @@ export function PlatformNotificationsPage() {
     const notification: PlatformNotification = {
       ...composing,
       id: newId(),
-      date: new Date().toLocaleDateString("fr-FR").replace(/\//g, "-"),
+      date: formatDateForDisplay(new Date()),
       createdBy: session?.user?.identifier ?? session?.user?.email ?? "Plateforme",
       countryCode:
         composing.countryCode ??

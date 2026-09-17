@@ -1,3 +1,4 @@
+import { formatDateForDisplay } from "../../lib/dates";
 import {
   useCallback,
   useEffect,
@@ -54,11 +55,7 @@ function toISO(y: number, m: number, d: number): string {
   return `${y}-${pad(m + 1)}-${pad(d)}`;
 }
 
-function formatDisplay(value?: string): string {
-  const parsed = parseISO(value);
-  if (!parsed) return "";
-  return `${pad(parsed.d)}/${pad(parsed.m + 1)}/${parsed.y}`;
-}
+const formatDisplay = formatDateForDisplay;
 
 /** Sélecteur de date moderne (popover en portail, navigation rapide mois/année). */
 export function DatePicker({
@@ -68,7 +65,7 @@ export function DatePicker({
   required,
   disabled,
   readOnly,
-  placeholder = "JJ/MM/AAAA",
+  placeholder = "JJ-MM-AAAA",
   className = "",
 }: DatePickerProps) {
   const today = useMemo(() => new Date(), []);

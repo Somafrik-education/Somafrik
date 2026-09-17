@@ -1,3 +1,4 @@
+import { formatDateTimeForDisplay } from "../lib/dates";
 import { useCallback, useMemo, useState } from "react";
 import {
   ActivityIndicator,
@@ -40,12 +41,7 @@ import {
 
 const ALLOWED_MIME = new Set(["application/pdf", "image/jpeg", "image/png"]);
 
-function formatDateTime(value?: string) {
-  if (!value) return "";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return new Intl.DateTimeFormat("fr-FR", { dateStyle: "short", timeStyle: "short" }).format(date);
-}
+const formatDateTime = formatDateTimeForDisplay;
 
 function hasPermission(session: any, permission: string) {
   const permissions = Array.isArray(session?.permissions)
