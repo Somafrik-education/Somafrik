@@ -21,6 +21,7 @@ import {
 import { getDefaultAppPath } from "../lib/superAdminAccess";
 import { schoolSetupStatusApi } from "../lib/schoolSetupStatusApi";
 import {
+  resetSchoolSetupWizardSessionDismiss,
   SCHOOL_SETUP_SETTINGS_PATH,
   shouldAutoOpenSchoolSetupWizard,
 } from "../lib/schoolSetupWeb";
@@ -146,6 +147,10 @@ export function LoginPage() {
         profile: values.profile,
         schoolCode: values.profile === "school" ? values.schoolCode : undefined,
       });
+
+      // « Plus tard » est limité à une session authentifiée. Une nouvelle
+      // connexion ne doit jamais hériter du dismiss de l'utilisateur précédent.
+      resetSchoolSetupWizardSessionDismiss();
 
       if (result.user?.mustChangePassword) {
         passwordForm.reset({ newPassword: "", confirmPassword: "" });
