@@ -7,6 +7,7 @@ on:
       - "web/**"
       - "Mobile/**"
       - "scripts/audit-date-ui-contract.js"
+      - "scripts/apply-date-ui-contract-fixes.js"
       - ".github/workflows/date-ui-contract.yml"
   workflow_dispatch:
 
@@ -29,13 +30,23 @@ jobs:
           cache-dependency-path: |
             web/package-lock.json
             Mobile/package-lock.json
+      - name: Apply deterministic date UI fixes
+        run: node scripts/apply-date-ui-contract-fixes.js
+      - name: Persist date UI fixes on PR branch
+        if: github.event_name == 'pull_request'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add web Mobile
+          if ! git diff --cached --quiet; then
+            git commit -m "feat(date): apply JJ-MM-AAAA Web/Mobile refactor"
+            git push origin HEAD:${{ github.head_ref }}
+          fi
       - name: Generate exhaustive date inventory
         run: node scripts/audit-date-ui-contract.js --report-only
       - name: Persist date inventory on PR branch
         if: github.event_name == 'pull_request'
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add docs/audits/date-fields-web-mobile.generated.md
           if ! git diff --cached --quiet; then
             git commit -m "docs(date): refresh automated Web/Mobile audit"
