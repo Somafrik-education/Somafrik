@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { parsePeriodDate } from "./academicPeriods";
 import {
   DISPLAY_DATE_HINT,
   formatDateForDisplay,
@@ -16,6 +17,10 @@ assert.equal(isValidDisplayDate("29-02-2028"), true);
 assert.equal(isValidDisplayDate("29-02-2027"), false);
 assert.equal(isValidDisplayDate("31-02-2026"), false);
 assert.equal(isValidDisplayDate("32-13-2026"), false);
+assert.ok(parsePeriodDate("29-02-2028") instanceof Date);
+assert.equal(parsePeriodDate("29-02-2027"), null);
+assert.equal(parsePeriodDate("31-02-2026"), null);
+assert.equal(parsePeriodDate("2027-02-29"), null);
 assert.equal(parseDisplayDate("17-09-2026"), "2026-09-17");
 assert.equal(toApiDate("17-09-2026"), "2026-09-17");
 assert.equal(toApiDate("2026-09-17"), "2026-09-17");
