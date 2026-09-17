@@ -192,8 +192,8 @@ describe("backofficeStateMerge (P0 SYNC-CANONICAL-STATE)", () => {
       ] as never,
     });
     const presented = presentActiveSchoolState(prev, "SCH-BULK-CD-0001", schoolIdA);
-    expect(presented.studentFees.map((row) => row.id)).toEqual(["FEE-A"]);
-    expect(presented.payments.map((row) => row.id)).toEqual(["PAY-A"]);
+    expect(presented.studentFees?.map((row) => row.id)).toEqual(["FEE-A"]);
+    expect(presented.payments?.map((row) => (row as { id: string }).id)).toEqual(["PAY-A"]);
     expect(presented.students.map((row) => row.id)).toEqual(["STU-A"]);
   });
 });

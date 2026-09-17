@@ -115,7 +115,7 @@ function paymentsPageState(input: {
   return {
     studentFees: input.studentFees ?? [],
     payments: (input.payments ?? []) as never,
-  } as BackOfficeState;
+  } as unknown as BackOfficeState;
 }
 
 describe("DEMO-FINANCE-ASSIGNMENTS-P0 GREEN-A Finance", () => {
@@ -134,7 +134,7 @@ describe("DEMO-FINANCE-ASSIGNMENTS-P0 GREEN-A Finance", () => {
     expect(user.schoolCode).not.toBe(user.schoolPublicCode);
     expect(isLegacySchoolCode(user.schoolCode)).toBe(false);
 
-    const presented = presentActiveSchoolState(hydrated, user.schoolCode, user.schoolId);
+    const presented = presentActiveSchoolState(hydrated, DEMO_SCHOOL_CODE, DEMO_SCHOOL_ID);
     const overview = buildFinancePaymentsOverview({
       user,
       state: presented,
@@ -157,7 +157,7 @@ describe("DEMO-FINANCE-ASSIGNMENTS-P0 GREEN-A Finance", () => {
     expect(payments.every((row) => row.schoolId === DEMO_SCHOOL_ID)).toBe(true);
     expect(payments.every((row) => row.schoolCode === DEMO_LOGIN_CODE)).toBe(true);
 
-    const presented = presentActiveSchoolState(hydrated, user.schoolCode, user.schoolId);
+    const presented = presentActiveSchoolState(hydrated, DEMO_SCHOOL_CODE, DEMO_SCHOOL_ID);
     const scoped = scopedPayments(user, presented);
     const overview = buildFinancePaymentsOverview({
       user,
@@ -239,8 +239,8 @@ describe("DEMO-FINANCE-ASSIGNMENTS-P0 GREEN-A Finance", () => {
 
     // Autorité tenant = schoolId UUID. Un filtre schoolCode ne doit ni vider
     // le tenant Démo ni laisser passer un autre UUID qui porterait le même login.
-    expect(presentedByInternalCode.studentFees.map((row) => row.id)).toEqual(["STUFEE-DEMO-1"]);
-    expect(presentedByLoginCode.studentFees.map((row) => row.id)).toEqual(["STUFEE-DEMO-1"]);
+    expect(presentedByInternalCode.studentFees?.map((row) => row.id)).toEqual(["STUFEE-DEMO-1"]);
+    expect(presentedByLoginCode.studentFees?.map((row) => row.id)).toEqual(["STUFEE-DEMO-1"]);
     expect(scopedStudentFees(user, presentedByInternalCode).map((row) => row.id)).toEqual([
       "STUFEE-DEMO-1",
     ]);
@@ -266,7 +266,7 @@ describe("DEMO-FINANCE-ASSIGNMENTS-P0 GREEN-A Finance", () => {
       }),
     ];
     const hydrated = paymentsPageState({ studentFees: fees, payments });
-    const presented = presentActiveSchoolState(hydrated, user.schoolCode, user.schoolId);
+    const presented = presentActiveSchoolState(hydrated, DEMO_SCHOOL_CODE, DEMO_SCHOOL_ID);
 
     expect(scopedStudentFees(user, presented).map((row) => row.id)).toEqual(["STUFEE-DEMO-1"]);
     expect(scopedPayments(user, presented).map((row) => row.id)).toEqual(["PAY-DEMO-1"]);
