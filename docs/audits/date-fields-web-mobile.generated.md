@@ -33,7 +33,7 @@
 | Web | `web/src/components/ui/DatePicker.tsx` | 7 | 1 |
 | Web | `web/src/context/DataContext.tsx` | 4 | 0 |
 | Web | `web/src/hooks/useStudentEditingContext.ts` | 2 | 0 |
-| Web | `web/src/lib/academicPeriods.ts` | 88 | 0 |
+| Web | `web/src/lib/academicPeriods.ts` | 83 | 0 |
 | Web | `web/src/lib/academicYearsApi.ts` | 6 | 0 |
 | Web | `web/src/lib/announcementsApi.ts` | 3 | 0 |
 | Web | `web/src/lib/audit.ts` | 2 | 0 |
@@ -147,7 +147,7 @@
 | Mobile | `Mobile/src/data/catalog.ts` | 89 | 0 |
 | Mobile | `Mobile/src/domain/academics/GradeBookService.ts` | 15 | 0 |
 | Mobile | `Mobile/src/domain/communication/MessageService.ts` | 19 | 0 |
-| Mobile | `Mobile/src/lib/academicPeriods.ts` | 40 | 0 |
+| Mobile | `Mobile/src/lib/academicPeriods.ts` | 39 | 0 |
 | Mobile | `Mobile/src/lib/attendanceDraft.ts` | 3 | 0 |
 | Mobile | `Mobile/src/lib/attendanceOffline.ts` | 2 | 0 |
 | Mobile | `Mobile/src/lib/attendanceTruth.ts` | 16 | 0 |
