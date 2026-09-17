@@ -1,3 +1,4 @@
+import { DateInput } from "../ui/DateInput";
 import { useMemo, useState } from "react";
 import { Button } from "../../design-system";
 import { RequiredMark } from "../../design-system/forms/RequiredMark";
@@ -363,8 +364,7 @@ export function StudentEnrollmentActions({
                 </p>
                 <label className="flex flex-col gap-1 text-sm">
                   <span className="font-semibold text-ink">Date de transfert</span>
-                  <input
-                    type="date"
+                  <DateInput
                     className="min-h-10 rounded-lg border border-line bg-white px-3 text-sm text-ink"
                     value={transferDate}
                     onChange={(event) => setTransferDate(event.target.value)}
@@ -443,8 +443,7 @@ export function StudentEnrollmentActions({
                 </p>
                 <label className="flex flex-col gap-1 text-sm">
                   <span className="font-semibold text-ink">Date de clôture</span>
-                  <input
-                    type="date"
+                  <DateInput
                     className="min-h-10 rounded-lg border border-line bg-white px-3 text-sm text-ink"
                     value={closureDate}
                     onChange={(event) => setClosureDate(event.target.value)}

@@ -40,9 +40,10 @@ for (const target of TARGETS) {
     const relative = path.relative(ROOT, file).replaceAll(path.sep, "/");
     if (IGNORE.test(`/${relative}`)) continue;
     const source = fs.readFileSync(file, "utf8");
+    const scanSource = source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
     const isUi = target.uiSegments.some((segment) => relative.includes(`/${segment}/`));
     const dateTerms = [...source.matchAll(DATE_NAME)].length;
-    const dateInputs = [...source.matchAll(/type\s*=\s*["']date["']/g)].length;
+    const dateInputs = target.platform === "Web" ? [...scanSource.matchAll(/type\s*=\s*["']date["']/g)].length : 0;
     if (dateTerms || dateInputs) inventory.push({ platform: target.platform, file: relative, dateTerms, dateInputs });
     if (dateInputs) nativeDateInputs.push({ platform: target.platform, file: relative, count: dateInputs });
     if (!isUi) continue;
@@ -107,4 +108,4 @@ fs.writeFileSync(REPORT_PATH, lines, "utf8");
 
 console.log(`DATE_AUDIT inventory_files=${inventory.length} web=${webFiles} mobile=${mobileFiles} native_date_inputs=${inputCount} violations=${violations.length}`);
 for (const issue of violations) console.error(`DATE_VIOLATION ${issue.code} ${issue.platform} ${issue.file}:${issue.line} — ${issue.correction}`);
-if (violations.length && !REPORT_ONLY) process.exitCode = 1;
+if ((violations.length || nativeDateInputs.length) && !REPORT_ONLY) process.exitCode = 1;

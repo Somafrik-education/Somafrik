@@ -3,7 +3,7 @@
 > Généré par `scripts/audit-date-ui-contract.js`. Ne pas éditer manuellement.
 
 - Fichiers candidats : **189** (Web 126, Mobile 63)
-- Inputs calendrier natifs Web : **19**
+- Inputs calendrier natifs Web : **0**
 - Violations du contrat UI détectées : **0**
 - D1 : **0** · D7 locale : **0** · D7 Intl : **0**
 
@@ -13,24 +13,24 @@
 |---|---|---:|---:|
 | Web | `web/src/components/communications/InternalNotificationsCenter.tsx` | 3 | 0 |
 | Web | `web/src/components/demo/DemoRuntimeChrome.tsx` | 2 | 0 |
-| Web | `web/src/components/grades/EvaluationFormModal.tsx` | 10 | 1 |
+| Web | `web/src/components/grades/EvaluationFormModal.tsx` | 9 | 0 |
 | Web | `web/src/components/grades/ParentChildGradesPanel.tsx` | 4 | 0 |
 | Web | `web/src/components/grades/StudentGradesPanel.tsx` | 1 | 0 |
 | Web | `web/src/components/marketing/MarketingFooter.tsx` | 1 | 0 |
 | Web | `web/src/components/payments/OpenObligationCards.tsx` | 3 | 0 |
 | Web | `web/src/components/payments/PaymentReceipt.tsx` | 3 | 0 |
-| Web | `web/src/components/payments/QuickPaymentModal.tsx` | 6 | 1 |
+| Web | `web/src/components/payments/QuickPaymentModal.tsx` | 5 | 0 |
 | Web | `web/src/components/planning/CoursePlanningCalendar.tsx` | 12 | 0 |
 | Web | `web/src/components/planning/PlanningMonthGrid.tsx` | 5 | 0 |
 | Web | `web/src/components/planning/PlanningTimeGrid.tsx` | 13 | 0 |
 | Web | `web/src/components/students/StudentCurrentEnrollmentCard.tsx` | 3 | 0 |
-| Web | `web/src/components/students/StudentEnrollmentActions.tsx` | 7 | 2 |
+| Web | `web/src/components/students/StudentEnrollmentActions.tsx` | 5 | 0 |
 | Web | `web/src/components/students/StudentEnrollmentHistory.tsx` | 1 | 0 |
 | Web | `web/src/components/students/StudentIdentityTab.tsx` | 1 | 0 |
 | Web | `web/src/components/students/StudentOverviewTab.tsx` | 2 | 0 |
 | Web | `web/src/components/students/editing/StudentEditingPanel.tsx` | 2 | 0 |
-| Web | `web/src/components/students/editing/StudentIdentityEditForm.tsx` | 7 | 1 |
-| Web | `web/src/components/ui/DatePicker.tsx` | 7 | 1 |
+| Web | `web/src/components/students/editing/StudentIdentityEditForm.tsx` | 10 | 0 |
+| Web | `web/src/components/ui/DatePicker.tsx` | 7 | 0 |
 | Web | `web/src/context/DataContext.tsx` | 4 | 0 |
 | Web | `web/src/hooks/useStudentEditingContext.ts` | 2 | 0 |
 | Web | `web/src/lib/academicPeriods.ts` | 83 | 0 |
@@ -104,7 +104,7 @@
 | Web | `web/src/lib/userAccounts.ts` | 1 | 0 |
 | Web | `web/src/lib/userTeacherSync.ts` | 7 | 0 |
 | Web | `web/src/pages/AnnouncementsPage.tsx` | 8 | 0 |
-| Web | `web/src/pages/ConfigurationPage.tsx` | 34 | 2 |
+| Web | `web/src/pages/ConfigurationPage.tsx` | 32 | 0 |
 | Web | `web/src/pages/CountriesPage.tsx` | 4 | 0 |
 | Web | `web/src/pages/CoursePlanningPage.tsx` | 6 | 0 |
 | Web | `web/src/pages/EntityPage.tsx` | 6 | 0 |
@@ -128,21 +128,21 @@
 | Web | `web/src/pages/abonnements/TrialRequestsPage.tsx` | 1 | 0 |
 | Web | `web/src/pages/entity-page/entityColumns.tsx` | 3 | 0 |
 | Web | `web/src/pages/entity-page/entityCrudCore.ts` | 1 | 0 |
-| Web | `web/src/pages/etablissement/ClassStudentsPage.tsx` | 10 | 1 |
-| Web | `web/src/pages/etablissement/TeachersListPage.tsx` | 17 | 2 |
-| Web | `web/src/pages/finances/FinanceFeesPage.tsx` | 15 | 1 |
+| Web | `web/src/pages/etablissement/ClassStudentsPage.tsx` | 9 | 0 |
+| Web | `web/src/pages/etablissement/TeachersListPage.tsx` | 15 | 0 |
+| Web | `web/src/pages/finances/FinanceFeesPage.tsx` | 14 | 0 |
 | Web | `web/src/pages/finances/FinanceUnpaidPage.tsx` | 3 | 0 |
 | Web | `web/src/pages/parametres/DataBackupSettingsPage.tsx` | 2 | 0 |
 | Web | `web/src/pages/parametres/EstablishmentProfilePage.tsx` | 1 | 0 |
 | Web | `web/src/pages/parametres/SecuritySettingsPage.tsx` | 7 | 0 |
-| Web | `web/src/pages/planning/PlanningSubstitutionsPage.tsx` | 16 | 2 |
+| Web | `web/src/pages/planning/PlanningSubstitutionsPage.tsx` | 14 | 0 |
 | Web | `web/src/types.ts` | 30 | 0 |
 | Mobile | `Mobile/src/components/AnnouncementMutationControls.tsx` | 2 | 0 |
 | Mobile | `Mobile/src/components/FormField.tsx` | 1 | 0 |
 | Mobile | `Mobile/src/components/PaymentMutationControls.tsx` | 3 | 0 |
 | Mobile | `Mobile/src/components/PaymentReceiptCard.tsx` | 3 | 0 |
 | Mobile | `Mobile/src/components/StudentMutationControls.tsx` | 4 | 0 |
-| Mobile | `Mobile/src/components/TeacherMutationControls.tsx` | 15 | 1 |
+| Mobile | `Mobile/src/components/TeacherMutationControls.tsx` | 15 | 0 |
 | Mobile | `Mobile/src/context/AdminDataContext.tsx` | 4 | 0 |
 | Mobile | `Mobile/src/data/catalog.ts` | 89 | 0 |
 | Mobile | `Mobile/src/domain/academics/GradeBookService.ts` | 15 | 0 |
@@ -188,13 +188,13 @@
 | Mobile | `Mobile/src/screens/MessagesScreen.tsx` | 4 | 0 |
 | Mobile | `Mobile/src/screens/PlatformNotificationsScreen.tsx` | 4 | 0 |
 | Mobile | `Mobile/src/screens/ReportCardsScreen.tsx` | 3 | 0 |
-| Mobile | `Mobile/src/screens/SchoolYearSettingsScreen.tsx` | 33 | 2 |
+| Mobile | `Mobile/src/screens/SchoolYearSettingsScreen.tsx` | 33 | 0 |
 | Mobile | `Mobile/src/screens/StudentPaymentsScreen.tsx` | 4 | 0 |
 | Mobile | `Mobile/src/screens/StudentPresencesScreen.tsx` | 1 | 0 |
 | Mobile | `Mobile/src/screens/StudentsScreen.tsx` | 2 | 0 |
 | Mobile | `Mobile/src/screens/TeacherAttendanceScreen.tsx` | 15 | 0 |
-| Mobile | `Mobile/src/screens/TeacherGradesScreen.tsx` | 15 | 1 |
-| Mobile | `Mobile/src/screens/TimetableScreen.tsx` | 7 | 1 |
+| Mobile | `Mobile/src/screens/TeacherGradesScreen.tsx` | 15 | 0 |
+| Mobile | `Mobile/src/screens/TimetableScreen.tsx` | 7 | 0 |
 | Mobile | `Mobile/src/screens/UnpaidScreen.tsx` | 1 | 0 |
 | Mobile | `Mobile/src/services/api.ts` | 9 | 0 |
 | Mobile | `Mobile/src/services/domainHydrationApi.ts` | 3 | 0 |
@@ -203,22 +203,7 @@
 
 ## Inputs calendrier détectés
 
-| Plateforme | Fichier | Nombre |
-|---|---|---:|
-| Web | `web/src/components/grades/EvaluationFormModal.tsx` | 1 |
-| Web | `web/src/components/payments/QuickPaymentModal.tsx` | 1 |
-| Web | `web/src/components/students/StudentEnrollmentActions.tsx` | 2 |
-| Web | `web/src/components/students/editing/StudentIdentityEditForm.tsx` | 1 |
-| Web | `web/src/components/ui/DatePicker.tsx` | 1 |
-| Web | `web/src/pages/ConfigurationPage.tsx` | 2 |
-| Web | `web/src/pages/etablissement/ClassStudentsPage.tsx` | 1 |
-| Web | `web/src/pages/etablissement/TeachersListPage.tsx` | 2 |
-| Web | `web/src/pages/finances/FinanceFeesPage.tsx` | 1 |
-| Web | `web/src/pages/planning/PlanningSubstitutionsPage.tsx` | 2 |
-| Mobile | `Mobile/src/components/TeacherMutationControls.tsx` | 1 |
-| Mobile | `Mobile/src/screens/SchoolYearSettingsScreen.tsx` | 2 |
-| Mobile | `Mobile/src/screens/TeacherGradesScreen.tsx` | 1 |
-| Mobile | `Mobile/src/screens/TimetableScreen.tsx` | 1 |
+Aucun input calendrier natif détecté.
 
 ## Violations D1 / D7
 

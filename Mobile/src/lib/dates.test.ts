@@ -28,6 +28,10 @@ assert.equal(parseDisplayDate("29-02-2027"), "");
 assert.equal(formatDateForDisplay(null), "");
 assert.equal(formatDateForDisplay(undefined), "");
 assert.equal(formatDateForDisplay("not-a-date"), "");
-assert.match(formatDateTimeForDisplay("2026-09-17T14:35:00+02:00"), /^17-09-2026 14:35$/);
+const timestamp = "2026-09-17T23:30:00-03:00";
+const localTimestamp = new Date(timestamp);
+const padLocal = (value: number) => String(value).padStart(2, "0");
+const expectedTimestamp = `${padLocal(localTimestamp.getDate())}-${padLocal(localTimestamp.getMonth() + 1)}-${localTimestamp.getFullYear()} ${padLocal(localTimestamp.getHours())}:${padLocal(localTimestamp.getMinutes())}`;
+assert.equal(formatDateTimeForDisplay(timestamp), expectedTimestamp);
 
 console.log("dates.test.ts: OK");

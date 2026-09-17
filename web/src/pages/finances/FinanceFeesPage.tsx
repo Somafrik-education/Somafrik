@@ -1,3 +1,4 @@
+import { DateInput } from "../../components/ui/DateInput";
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { useAuth } from "../../context/AuthContext";
 import { useData } from "../../context/DataContext";
@@ -585,8 +586,7 @@ export function FinanceFeesPage() {
                         />
                       </Field>
                       <Field label="Date limite">
-                        <Input
-                          type="date"
+                        <DateInput
                           value={periodDateToInput(item.dueDate)}
                           onChange={(e) => {
                             const next = [...draftItems];

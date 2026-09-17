@@ -1,3 +1,4 @@
+import { DateInput } from "../ui/DateInput";
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import type { Evaluation, SessionUser } from "../../types";
 import { Modal } from "../ui/Modal";
@@ -238,7 +239,7 @@ export function EvaluationFormModal({
           />
         </Field>
         <Field label="Date prévue" htmlFor="eval-date">
-          <Input id="eval-date" type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+          <DateInput id="eval-date" value={date} onChange={(e) => setDate(e.target.value)} />
         </Field>
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="Barème" htmlFor="eval-scale">

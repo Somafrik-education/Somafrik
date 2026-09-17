@@ -44,7 +44,11 @@ describe("contrat date Somafrik JJ-MM-AAAA", () => {
     expect(formatDateForDisplay("not-a-date")).toBe("");
   });
 
-  it("conserve l'heure métier sur les timestamps", () => {
-    expect(formatDateTimeForDisplay("2026-09-17T14:35:00+02:00")).toMatch(/^17-09-2026 14:35$/);
+  it("convertit les timestamps dans le fuseau local du navigateur", () => {
+    const timestamp = "2026-09-17T23:30:00-03:00";
+    const local = new Date(timestamp);
+    const pad = (value: number) => String(value).padStart(2, "0");
+    const expected = `${pad(local.getDate())}-${pad(local.getMonth() + 1)}-${local.getFullYear()} ${pad(local.getHours())}:${pad(local.getMinutes())}`;
+    expect(formatDateTimeForDisplay(timestamp)).toBe(expected);
   });
 });

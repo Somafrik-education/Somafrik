@@ -102,21 +102,16 @@ export function fromApiDate(value?: string | null): string {
 }
 
 /**
- * Affiche un horodatage avec le même contrat de date. Pour une chaîne ISO, on conserve
- * le jour et l'heure présents dans le payload plutôt que de convertir implicitement le fuseau.
+ * Affiche un horodatage dans le fuseau local du navigateur. Les dates civiles restent
+ * traitées séparément par formatDateForDisplay afin d'éviter tout décalage UTC implicite.
  */
 export function formatDateTimeForDisplay(value?: string | Date | null): string {
-  if (value instanceof Date) {
-    if (Number.isNaN(value.getTime())) return "";
-    return `${formatPeriodDate(value)} ${pad(value.getHours())}:${pad(value.getMinutes())}`;
-  }
-  const raw = String(value ?? "").trim();
-  if (!raw) return "";
-  const match = raw.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/);
-  if (!match) return formatDateForDisplay(raw);
-  const parts = { year: Number(match[1]), month: Number(match[2]), day: Number(match[3]) };
-  if (!isCalendarDate(parts)) return "";
-  return `${partsToDisplay(parts)} ${match[4]}:${match[5]}`;
+  const raw = value instanceof Date ? value : String(value ?? "").trim();
+  if (raw === "") return "";
+  if (typeof raw === "string" && !/[T ]\d{2}:\d{2}/.test(raw)) return formatDateForDisplay(raw);
+  const parsed = value instanceof Date ? value : new Date(raw);
+  if (Number.isNaN(parsed.getTime())) return "";
+  return `${formatPeriodDate(parsed)} ${pad(parsed.getHours())}:${pad(parsed.getMinutes())}`;
 }
 
 /** Normalise toute date reconnue vers JJ-MM-AAAA (compatibilité périodes existantes). */

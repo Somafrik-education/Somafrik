@@ -21,6 +21,12 @@ interface DatePickerProps {
   readOnly?: boolean;
   placeholder?: string;
   className?: string;
+  min?: string;
+  max?: string;
+  autoFocus?: boolean;
+  "aria-invalid"?: boolean | "true" | "false";
+  "aria-describedby"?: string;
+  "data-testid"?: string;
 }
 
 const WEEKDAYS = ["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"];
@@ -67,6 +73,12 @@ export function DatePicker({
   readOnly,
   placeholder = "JJ-MM-AAAA",
   className = "",
+  min,
+  max,
+  autoFocus,
+  "aria-invalid": ariaInvalid,
+  "aria-describedby": ariaDescribedBy,
+  "data-testid": dataTestId,
 }: DatePickerProps) {
   const today = useMemo(() => new Date(), []);
   const selected = useMemo(() => parseISO(value), [value]);
@@ -152,13 +164,21 @@ export function DatePicker({
     setViewMonth(next.getMonth());
   }
 
+  function isAllowedDate(iso: string) {
+    return (!min || iso >= min) && (!max || iso <= max);
+  }
+
   function selectDay(day: number) {
-    onChange(toISO(viewYear, viewMonth, day));
+    const next = toISO(viewYear, viewMonth, day);
+    if (!isAllowedDate(next)) return;
+    onChange(next);
     setOpen(false);
   }
 
   function selectToday() {
-    onChange(toISO(today.getFullYear(), today.getMonth(), today.getDate()));
+    const next = toISO(today.getFullYear(), today.getMonth(), today.getDate());
+    if (!isAllowedDate(next)) return;
+    onChange(next);
     setOpen(false);
   }
 
@@ -184,6 +204,11 @@ export function DatePicker({
         ref={triggerRef}
         onClick={openPicker}
         disabled={disabled}
+        autoFocus={autoFocus}
+        aria-invalid={ariaInvalid}
+        aria-describedby={ariaDescribedBy}
+        aria-required={required || undefined}
+        data-testid={dataTestId}
         aria-haspopup="dialog"
         aria-expanded={open}
         className={`input-base flex items-center justify-between gap-2 text-left ${
@@ -270,6 +295,8 @@ export function DatePicker({
                 ))}
                 {cells.map((day, index) => {
                   if (day === null) return <div key={`blank-${index}`} />;
+                  const isoDay = toISO(viewYear, viewMonth, day);
+                  const isOutOfRange = !isAllowedDate(isoDay);
                   const isSelected =
                     selected?.y === viewYear && selected?.m === viewMonth && selected?.d === day;
                   const isToday =
@@ -281,8 +308,11 @@ export function DatePicker({
                       key={day}
                       type="button"
                       onClick={() => selectDay(day)}
+                      disabled={isOutOfRange}
                       className={`flex h-9 items-center justify-center rounded-lg text-sm transition ${
-                        isSelected
+                        isOutOfRange
+                          ? "cursor-not-allowed opacity-40"
+                          : isSelected
                           ? "bg-brand font-bold text-white"
                           : isToday
                             ? "font-bold text-brand ring-1 ring-brand/40 hover:bg-brand-50"
@@ -299,7 +329,8 @@ export function DatePicker({
                 <button
                   type="button"
                   onClick={selectToday}
-                  className="rounded-lg px-2 py-1 text-xs font-semibold text-brand transition hover:bg-brand-50"
+                  disabled={!isAllowedDate(toISO(today.getFullYear(), today.getMonth(), today.getDate()))}
+                  className="rounded-lg px-2 py-1 text-xs font-semibold text-brand transition hover:bg-brand-50 disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   Aujourd'hui
                 </button>
