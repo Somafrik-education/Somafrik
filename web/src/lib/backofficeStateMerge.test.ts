@@ -230,4 +230,17 @@ describe("backofficeStateMerge (P0 SYNC-CANONICAL-STATE)", () => {
     ).toEqual(["PAY-A"]);
     expect(presented.students.map((row) => row.id)).toEqual(["STU-A"]);
   });
+
+  it("presentActiveSchoolState Affectations filtre par schoolId, pas par classCode", () => {
+    const schoolIdA = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+    const schoolIdB = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+    const prev = baseState({
+      assignments: [
+        { id: "TA-A", schoolId: schoolIdA, schoolCode: "SCH-BULK-CD-0001", classId: "cls-1", classCode: "CLS-1ERE-A", status: "active" },
+        { id: "TA-B", schoolId: schoolIdB, schoolCode: "SCH-BULK-CD-0001", classId: "cls-1", classCode: "CLS-1ERE-A", status: "active" },
+      ],
+    });
+    const presented = presentActiveSchoolState(prev, "CD-IN-26-001", schoolIdA);
+    expect((presented.assignments as Array<{ id: string }>).map((row) => row.id)).toEqual(["TA-A"]);
+  });
 });
