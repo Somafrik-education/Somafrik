@@ -14,6 +14,7 @@ import { describe, expect, it } from "vitest";
 import type { BackOfficeState, SessionUser, StudentFee } from "../types";
 import { SCHOOL_ADMIN_ROLE } from "./orgHierarchy";
 import { presentActiveSchoolState } from "./backofficeStateMerge";
+import { EMPTY_DASHBOARD_CHART_CONFIG } from "./chartTypes";
 import { scopedPayments } from "./establishment";
 import { scopedStudentFees } from "./fees";
 import { buildFinancePaymentsOverview } from "./paymentAmountBreakdown";
@@ -108,14 +109,59 @@ function demoSeedAssignment() {
   };
 }
 
+function emptyBackOfficeState(overrides: Partial<BackOfficeState> = {}): BackOfficeState {
+  return {
+    schools: [],
+    users: [],
+    countries: [],
+    contacts: [],
+    relations: [],
+    subscriptions: [],
+    notifications: [],
+    students: [],
+    teachers: [],
+    classes: [],
+    courses: [],
+    assignments: [],
+    courseSchedules: [],
+    payments: [],
+    presences: [],
+    notes: [],
+    evaluations: [],
+    exams: [],
+    bulletins: [],
+    documents: [],
+    announcements: [],
+    messages: [],
+    paymentStatuses: [],
+    feeGrids: [],
+    schoolFeeItems: [],
+    studentFees: [],
+    feeTariffHistory: [],
+    rolePermissions: {},
+    academicConfigs: {},
+    dashboardChartConfig: EMPTY_DASHBOARD_CHART_CONFIG,
+    auditLog: [],
+    ...overrides,
+  };
+}
+
 function paymentsPageState(input: {
   studentFees?: StudentFee[];
-  payments?: Record<string, unknown>[];
+  payments?: unknown[];
 }): BackOfficeState {
-  return {
+  return emptyBackOfficeState({
     studentFees: input.studentFees ?? [],
-    payments: (input.payments ?? []) as never,
-  } as unknown as BackOfficeState;
+    payments: input.payments ?? [],
+  });
+}
+
+function presentedFeeIds(state: BackOfficeState): string[] {
+  const fees = state.studentFees;
+  if (!fees) {
+    throw new Error("studentFees manquants après présentation");
+  }
+  return fees.map((row) => row.id);
 }
 
 describe("DEMO-FINANCE-ASSIGNMENTS-P0 GREEN-A Finance", () => {
@@ -239,8 +285,10 @@ describe("DEMO-FINANCE-ASSIGNMENTS-P0 GREEN-A Finance", () => {
 
     // Autorité tenant = schoolId UUID. Un filtre schoolCode ne doit ni vider
     // le tenant Démo ni laisser passer un autre UUID qui porterait le même login.
-    expect(presentedByInternalCode.studentFees?.map((row) => row.id)).toEqual(["STUFEE-DEMO-1"]);
-    expect(presentedByLoginCode.studentFees?.map((row) => row.id)).toEqual(["STUFEE-DEMO-1"]);
+    expect(presentedByInternalCode.studentFees).toBeDefined();
+    expect(presentedByLoginCode.studentFees).toBeDefined();
+    expect(presentedFeeIds(presentedByInternalCode)).toEqual(["STUFEE-DEMO-1"]);
+    expect(presentedFeeIds(presentedByLoginCode)).toEqual(["STUFEE-DEMO-1"]);
     expect(scopedStudentFees(user, presentedByInternalCode).map((row) => row.id)).toEqual([
       "STUFEE-DEMO-1",
     ]);

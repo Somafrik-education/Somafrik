@@ -6,7 +6,8 @@ import {
   replaceGlobalRows,
   replaceScopedSchoolRows,
 } from "./backofficeStateMerge";
-import type { BackOfficeState } from "../types";
+import type { BackOfficeState, Student, StudentFee } from "../types";
+import { EMPTY_DASHBOARD_CHART_CONFIG } from "./chartTypes";
 
 function baseState(overrides: Partial<BackOfficeState> = {}): BackOfficeState {
   return {
@@ -39,10 +40,10 @@ function baseState(overrides: Partial<BackOfficeState> = {}): BackOfficeState {
     feeTariffHistory: [],
     rolePermissions: {},
     academicConfigs: {},
-    dashboardChartConfig: { platform: {}, establishment: {} },
+    dashboardChartConfig: EMPTY_DASHBOARD_CHART_CONFIG,
     auditLog: [],
     ...overrides,
-  } as BackOfficeState;
+  };
 }
 
 describe("backofficeStateMerge (P0 SYNC-CANONICAL-STATE)", () => {
@@ -178,22 +179,55 @@ describe("backofficeStateMerge (P0 SYNC-CANONICAL-STATE)", () => {
   it("presentActiveSchoolState Finance filtre par schoolId, pas par login_code", () => {
     const schoolIdA = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
     const schoolIdB = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+    const feeA: StudentFee = {
+      id: "FEE-A",
+      studentId: "STU-A",
+      schoolId: schoolIdA,
+      schoolCode: "CD-IN-26-001",
+      className: "1ère A",
+      schoolFeeItemId: "ITEM-1",
+      feeGridId: "GRID-1",
+      feeType: "Minerval",
+      label: "Minerval",
+      currency: "CDF",
+      academicYear: "2025-2026",
+      initialAmount: 1,
+      discount: 0,
+      exemption: 0,
+      amountDue: 1,
+      amountPaid: 0,
+      balance: 1,
+      status: "À payer",
+    };
+    const feeB: StudentFee = { ...feeA, id: "FEE-B", studentId: "STU-B", schoolId: schoolIdB };
+    const studentA: Student = {
+      id: "STU-A",
+      matricule: "MAT-A",
+      schoolCode: "SCH-BULK-CD-0001",
+    };
+    const payments: Array<{ id: string; schoolId: string; schoolCode: string }> = [
+      { id: "PAY-A", schoolId: schoolIdA, schoolCode: "CD-IN-26-001" },
+      { id: "PAY-B", schoolId: schoolIdB, schoolCode: "CD-IN-26-001" },
+    ];
     const prev = baseState({
-      studentFees: [
-        { id: "FEE-A", schoolId: schoolIdA, schoolCode: "CD-IN-26-001" },
-        { id: "FEE-B", schoolId: schoolIdB, schoolCode: "CD-IN-26-001" },
-      ] as never,
-      payments: [
-        { id: "PAY-A", schoolId: schoolIdA, schoolCode: "CD-IN-26-001" },
-        { id: "PAY-B", schoolId: schoolIdB, schoolCode: "CD-IN-26-001" },
-      ] as never,
-      students: [
-        { id: "STU-A", schoolCode: "SCH-BULK-CD-0001" },
-      ] as never,
+      studentFees: [feeA, feeB],
+      payments,
+      students: [studentA],
     });
     const presented = presentActiveSchoolState(prev, "SCH-BULK-CD-0001", schoolIdA);
-    expect(presented.studentFees?.map((row) => row.id)).toEqual(["FEE-A"]);
-    expect(presented.payments?.map((row) => (row as { id: string }).id)).toEqual(["PAY-A"]);
+    const presentedFees = presented.studentFees;
+    if (!presentedFees) {
+      throw new Error("studentFees manquants après présentation");
+    }
+    expect(presentedFees.map((row) => row.id)).toEqual(["FEE-A"]);
+    expect(
+      presented.payments.map((row) => {
+        if (!row || typeof row !== "object" || !("id" in row) || typeof row.id !== "string") {
+          throw new Error("paiement sans id après présentation");
+        }
+        return row.id;
+      }),
+    ).toEqual(["PAY-A"]);
     expect(presented.students.map((row) => row.id)).toEqual(["STU-A"]);
   });
 });
