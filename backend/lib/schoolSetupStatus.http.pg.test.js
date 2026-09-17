@@ -15,6 +15,9 @@ const { spawn } = require("node:child_process");
 const path = require("path");
 
 const DATABASE_URL = String(process.env.DATABASE_URL ?? "").trim();
+if (process.env.GITHUB_ACTIONS && !DATABASE_URL) {
+  throw new Error("G5: DATABASE_URL requis en GitHub Actions — le harness HTTP/PG ne doit pas SKIP");
+}
 const IT_DATABASE = String(process.env.SOMAFRIK_SCHOOL_SETUP_LOT0_IT_DATABASE ?? "somafrik_school_setup_lot0_it")
   .trim()
   .replace(/[^a-zA-Z0-9_]/g, "");
@@ -386,6 +389,27 @@ test(
         `sub absent fail-closed (status=${noSub.status} body=${JSON.stringify(noSub.data)})`,
       );
       assert.notEqual(noSub.status, 200);
+
+      await pool.query(
+        `UPDATE academic_years SET is_current = FALSE, status = 'open' WHERE id = $1`,
+        [fixture.yearAId],
+      );
+      const openOnly = await request(SETUP_PATH, { token: tokenA });
+      assertReadyAWithoutPeriods(openOnly, fixture);
+
+      await pool.query(
+        `UPDATE academic_years SET is_current = FALSE, status = 'active' WHERE id = $1`,
+        [fixture.yearAId],
+      );
+      const activeOnly = await request(SETUP_PATH, { token: tokenA });
+      assert.equal(
+        activeOnly.status,
+        200,
+        `G4 status=active sans is_current: status=${activeOnly.status} body=${JSON.stringify(activeOnly.data)}`,
+      );
+      assert.equal(activeOnly.data?.core?.academicYear, false);
+      assert.notEqual(activeOnly.data?.status, "READY");
+      assert.equal(leaksSchoolB(activeOnly.data, fixture), false);
     } finally {
       await stopChild(child);
       await pool.end();

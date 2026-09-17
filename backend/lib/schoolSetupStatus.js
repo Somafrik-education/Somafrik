@@ -21,28 +21,32 @@ function asCount(value) {
   return Number.isFinite(n) && n > 0 ? Math.trunc(n) : 0;
 }
 
+const SYNTHETIC_SCHOOL_FIELDS = Object.freeze([
+  "usersSchoolId",
+  "usersLoginCode",
+  "effectiveSchoolId",
+  "effectiveSchoolCode",
+  "academicYearSchoolId",
+  "academicYearLoginCode",
+  "schoolId",
+]);
+
 function membershipSchoolId(principal) {
-  for (const value of [
-    principal?.usersSchoolId,
-    principal?.effectiveSchoolId,
-    principal?.academicYearSchoolId,
-  ]) {
-    const id = String(value ?? "").trim();
-    if (id && id !== "*") return id;
-  }
-  return "";
+  const id = String(principal?.usersSchoolId ?? "").trim();
+  return id && id !== "*" ? id : "";
 }
 
 function membershipLoginCode(principal) {
-  for (const value of [
-    principal?.usersLoginCode,
-    principal?.effectiveSchoolCode,
-    principal?.academicYearLoginCode,
-  ]) {
-    const code = String(value ?? "").trim();
-    if (code && code !== "*") return code;
+  const code = String(principal?.usersLoginCode ?? "").trim();
+  return code && code !== "*" ? code : "";
+}
+
+function principalForMembershipLookup(principal) {
+  const next = { ...principal };
+  for (const key of SYNTHETIC_SCHOOL_FIELDS) {
+    delete next[key];
   }
-  return "";
+  return next;
 }
 
 function deriveSchoolSetupStatus(raw = {}) {
@@ -76,7 +80,7 @@ async function resolveSchoolSetupTenant({ principal, one } = {}) {
 
   let scoped = principal;
   if (typeof one === "function") {
-    scoped = await attachUsersMembershipScope(principal, one);
+    scoped = await attachUsersMembershipScope(principalForMembershipLookup(principal), one);
   }
 
   const schoolId = membershipSchoolId(scoped);
@@ -91,20 +95,21 @@ async function resolveSchoolSetupTenant({ principal, one } = {}) {
   };
 }
 
-async function countOrZero(one, sql, params) {
-  if (typeof one !== "function") return 0;
-  try {
-    const row = await one(sql, params);
-    return asCount(row?.c ?? row?.count ?? 0);
-  } catch {
-    return 0;
+async function countExact(one, sql, params) {
+  if (typeof one !== "function") {
+    failClosed(503, "Source de données indisponible.");
   }
+  const row = await one(sql, params);
+  return asCount(row?.c ?? row?.count ?? 0);
 }
 
 async function loadSchoolSetupSnapshot(one, schoolId) {
   const id = String(schoolId ?? "").trim();
-  if (!id || typeof one !== "function") {
-    return {};
+  if (!id) {
+    failClosed(403, "Accès refusé: établissement hors périmètre.");
+  }
+  if (typeof one !== "function") {
+    failClosed(503, "Source de données indisponible.");
   }
   const params = [id];
   const [
@@ -119,34 +124,34 @@ async function loadSchoolSetupSnapshot(one, schoolId) {
     feeGridCount,
     notificationCount,
   ] = await Promise.all([
-    countOrZero(
+    countExact(
       one,
       `SELECT COUNT(*)::int AS c
        FROM academic_years
        WHERE school_id::text = $1
-         AND (is_current = TRUE OR lower(btrim(COALESCE(status, ''))) IN ('open', 'active'))`,
+         AND (is_current = TRUE OR lower(btrim(COALESCE(status, ''))) = 'open')`,
       params,
     ),
-    countOrZero(
+    countExact(
       one,
       `SELECT COUNT(*)::int AS c
        FROM school_levels
        WHERE school_id::text = $1 AND status = 'active'`,
       params,
     ),
-    countOrZero(
+    countExact(
       one,
       `SELECT COUNT(*)::int AS c
        FROM school_class_groups
        WHERE school_id::text = $1 AND status = 'active'`,
       params,
     ),
-    countOrZero(
+    countExact(
       one,
       `SELECT COUNT(*)::int AS c FROM classes WHERE school_id::text = $1`,
       params,
     ),
-    countOrZero(
+    countExact(
       one,
       `SELECT COUNT(*)::int AS c
        FROM terms t
@@ -154,27 +159,27 @@ async function loadSchoolSetupSnapshot(one, schoolId) {
        WHERE y.school_id::text = $1`,
       params,
     ),
-    countOrZero(
+    countExact(
       one,
       `SELECT COUNT(*)::int AS c FROM subjects WHERE school_id::text = $1`,
       params,
     ),
-    countOrZero(
+    countExact(
       one,
       `SELECT COUNT(*)::int AS c FROM teachers WHERE school_id::text = $1`,
       params,
     ),
-    countOrZero(
+    countExact(
       one,
       `SELECT COUNT(*)::int AS c FROM students WHERE school_id::text = $1`,
       params,
     ),
-    countOrZero(
+    countExact(
       one,
       `SELECT COUNT(*)::int AS c FROM fee_grids WHERE school_id::text = $1`,
       params,
     ),
-    countOrZero(
+    countExact(
       one,
       `SELECT COUNT(*)::int AS c FROM school_notification_settings WHERE school_id::text = $1`,
       params,

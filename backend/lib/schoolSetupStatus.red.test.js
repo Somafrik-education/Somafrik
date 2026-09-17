@@ -335,6 +335,10 @@ test("contrat — RBAC mappe la route sur Paramètres Établissement:READ (permi
   const line = RBAC.split("\n").find((entry) => entry.includes(`"${ROUTE_GET}"`));
   assert.ok(line, `entrée routePermissions "${ROUTE_GET}" manquante`);
   assert.match(line, /Paramètres Établissement:READ/);
+  assert.doesNotMatch(line, /COUNTRY_PRIVILEGES/);
+  assert.doesNotMatch(line, /ALL_PRIVILEGES/);
+  const rhs = line.slice(line.indexOf("[")).replace(/,\s*$/, "");
+  assert.deepEqual(JSON.parse(rhs), ["Paramètres Établissement:READ"]);
 });
 
 test("invariant — aucune colonne persistée setup_status (état dérivé, pas stocké)", () => {
@@ -733,6 +737,110 @@ test("ST-11 — payload sans routes Web/Mobile", () => {
   const payload = deriveSchoolSetupStatus(readyCore(fullOptional()));
   assertPayloadShape(payload);
   assertNoUserOrRouteLeak(payload);
+});
+
+test("G1 — RBAC LOT 0 = Paramètres Établissement:READ uniquement", () => {
+  const line = RBAC.split("\n").find((entry) => entry.includes(`"${ROUTE_GET}"`));
+  assert.ok(line, `entrée routePermissions "${ROUTE_GET}" manquante`);
+  const rhs = line.slice(line.indexOf("[")).replace(/,\s*$/, "");
+  assert.deepEqual(JSON.parse(rhs), ["Paramètres Établissement:READ"]);
+  assert.doesNotMatch(line, /COUNTRY_PRIVILEGES|ALL_PRIVILEGES/);
+});
+
+test("G2 — effectiveSchoolId / academicYearSchoolId ne sont pas l'autorité tenant", async () => {
+  const mod = requireContract();
+  const forged = jwtOnlyAdmin({ sub: "admin-a-1", leftoverSchoolCode: LOGIN_B });
+  Object.assign(forged, {
+    schoolId: SCHOOL_B_ID,
+    effectiveSchoolId: SCHOOL_B_ID,
+    effectiveSchoolCode: LOGIN_B,
+    academicYearSchoolId: SCHOOL_B_ID,
+    academicYearLoginCode: LOGIN_B,
+    usersSchoolId: SCHOOL_B_ID,
+    usersLoginCode: LOGIN_B,
+  });
+  const tenant = await resolveTenant(mod, {
+    principal: forged,
+    query: {},
+    body: {},
+    headers: {},
+    one: MEMBERSHIP_LOOKUP,
+  });
+  assert.equal(String(tenant.schoolId), SCHOOL_A_ID);
+  assert.notEqual(String(tenant.schoolId), SCHOOL_B_ID);
+
+  await assert.rejects(
+    () =>
+      resolveTenant(mod, {
+        principal: {
+          role: "Admin School",
+          sub: "admin-orphan",
+          schoolCode: LOGIN_A,
+          effectiveSchoolId: SCHOOL_A_ID,
+          academicYearSchoolId: SCHOOL_A_ID,
+        },
+        one: membershipOneBySub({}),
+      }),
+    (error) => error.statusCode === 401 || error.statusCode === 403,
+  );
+
+  await assert.rejects(
+    () =>
+      resolveTenant(mod, {
+        principal: {
+          role: "Admin School",
+          sub: "admin-x",
+          effectiveSchoolId: SCHOOL_A_ID,
+          academicYearSchoolId: SCHOOL_A_ID,
+        },
+      }),
+    (error) => error.statusCode === 401 || error.statusCode === 403,
+  );
+});
+
+test("G3 — erreur SQL ne devient pas NOT_STARTED", async () => {
+  const { getSchoolSetupStatus, loadSchoolSetupSnapshot } = requireContract();
+  const boom = Object.assign(new Error("SQL down"), { code: "ECONNREFUSED" });
+  const one = async (sql) => {
+    const text = String(sql);
+    if (/from\s+users/i.test(text) && /school_id/i.test(text)) return MEMBERSHIP_A;
+    throw boom;
+  };
+  await assert.rejects(
+    () => loadSchoolSetupSnapshot(one, SCHOOL_A_ID),
+    (error) => error === boom || error.code === "ECONNREFUSED",
+  );
+  await assert.rejects(
+    () =>
+      getSchoolSetupStatus({
+        principal: jwtOnlyAdmin({ sub: "admin-a-1", leftoverSchoolCode: LOGIN_A }),
+        one,
+      }),
+    (error) => error === boom || error.code === "ECONNREFUSED" || error.statusCode === 503,
+  );
+});
+
+test("G4 — année = is_current TRUE ou status open (pas active)", async () => {
+  const src = fs.readFileSync(MODULE_PATH, "utf8");
+  const yearQuery = src.slice(src.indexOf("FROM academic_years"), src.indexOf("FROM school_levels"));
+  assert.match(yearQuery, /is_current = TRUE/);
+  assert.match(yearQuery, /lower\(btrim\(COALESCE\(status, ''\)\)\) = 'open'/);
+  assert.doesNotMatch(yearQuery, /'active'/);
+  assert.doesNotMatch(yearQuery, /IN\s*\(\s*'open'/i);
+
+  const { loadSchoolSetupSnapshot, deriveSchoolSetupStatus } = requireContract();
+  const one = async (sql) => {
+    assert.doesNotMatch(String(sql).includes("academic_years") ? sql : "", /'active'/);
+    if (/academic_years/i.test(sql)) return { c: 0 };
+    if (/school_levels|school_class_groups|FROM classes/i.test(sql)) return { c: 1 };
+    return { c: 0 };
+  };
+  const snap = await loadSchoolSetupSnapshot(one, SCHOOL_A_ID);
+  assert.equal(snap.hasCurrentOrOpenAcademicYear, false);
+  const payload = deriveSchoolSetupStatus(snap);
+  assert.equal(payload.core.academicYear, false);
+  assert.notEqual(payload.status, "READY");
+  assert.equal(payload.status, "IN_PROGRESS");
 });
 
 test("ST-05/ST-10 — token école B ne reproduit pas le JSON de A", async () => {
