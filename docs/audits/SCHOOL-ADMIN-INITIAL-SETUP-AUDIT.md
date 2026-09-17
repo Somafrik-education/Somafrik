@@ -4,8 +4,9 @@
 **Branche :** `audit/school-admin-initial-setup`  
 **Base `origin/develop` :** `5e01d33b0ed222c1882753840b4cc5a715b057ee`  
 **Date d’audit :** 2026-09-17  
+**Contrôle CTO indépendant :** 2026-09-17 — PR #675 commentaire `5712709746`  
 **Working tree à la création de branche :** propre  
-**Statut :** HOLD CTO — Draft uniquement. Aucun Ready. Aucun merge. Aucune implémentation.
+**Statut :** HOLD CTO — Draft uniquement. Aucun Ready. Aucun merge. Aucune implémentation. Décisions D1–D4 **figées**.
 
 **Périmètre :** lecture du code réellement présent sur `develop`. Aucun changement fonctionnel de production, aucune migration DB, aucune modification RBAC, aucune réactivation de legacy, aucun changement d’API.
 
@@ -33,7 +34,22 @@
 | Réactivation legacy | **Interdite** |
 | Merge | **Interdit** jusqu’au diff GitHub indépendant CTO |
 
-Contrôle CTO avant tout futur Ready/Merge : diff GitHub indépendant de cette PR.
+Contrôle CTO avant tout futur Ready/Merge : **nouveau** diff GitHub indépendant de cette PR (après le présent patch documentation).
+
+---
+
+## Décisions CTO figées (PR #675, commentaire `5712709746`)
+
+Ces décisions **remplacent** les recommandations ouvertes du premier dépôt d’audit. Elles ne sont plus des questions.
+
+| ID | Décision |
+| --- | --- |
+| **D1 — `READY`** | Année scolaire courante/open **+** ≥ 1 niveau activé **+** ≥ 1 groupe activé **+** ≥ 1 classe. **Les périodes (`terms`) sortent du gate `READY`.** Preuve PG : `classes.academic_year_id NOT NULL`, **pas** de `term_id` sur `classes`. `terms` restent nécessaires à la pédagogie / notes (`evaluations.term_id`, `grades.term_id`) : étape de **complétude**, pas de gate assistant. |
+| **D2 — « Plus tard »** | V1 = **dismiss session-only**. Aucune colonne DB, aucun flag métier `localStorage` / `AsyncStorage`, aucune migration de snooze. Un `dismissed_until` serveur n’est envisageable que dans un lot ultérieur si la relance à nouvelle session est trop intrusive. |
+| **D3 — Widget** | **Avant `READY` :** widget `Configuration rapide` visible sur le Dashboard, avec progression et CTA Continuer. **Après `READY` :** le widget **disparaît du Dashboard** ; accès permanent depuis **Paramètres → Configuration de l’établissement**. Si l’état dérivé redescend à `IN_PROGRESS`, le widget Dashboard **réapparaît**. |
+| **D4 — Endpoint** | Canonique unique : `GET /api/v2/school-setup/status`. Tenant **déduit de la session / JWT**. **Aucun `schoolCode` fourni par Web/Mobile.** **Aucune agrégation métier côté clients.** Gardes : tenant + `Paramètres Établissement:READ`. Le backend ne renvoie **pas** de routes Web/Mobile : chaque client mappe les clés d’étapes vers ses écrans canoniques. |
+
+Le contrôle CTO a aussi **confirmé indépendamment** l’incohérence Mobile (tableau F, ligne D3) : `SchoolYearSettingsScreen.createYear` existe ; `ClassMutationControls` demande encore de configurer l’année « sur le Web ».
 
 ---
 
@@ -50,7 +66,9 @@ Après authentification, un `school_admin` (libellé session Web : `Admin School
 
 Les dépendances métier sont pourtant **dures** dans PostgreSQL et les APIs : sans année scolaire et sans activation du référentiel, **aucune classe** ; sans classe, **aucun élève** ; sans élèves, présences et obligations financières sont inutilisables.
 
-L’hypothèse UX du mandat est **compatible** avec l’architecture, à une condition non négociable : l’ouverture de l’assistant se calcule sur l’**état dérivé de l’établissement** (PostgreSQL), jamais sur la première connexion de l’utilisateur.
+L’hypothèse UX du mandat est **compatible** avec l’architecture, à une condition non négociable : l’ouverture de l’assistant se calcule sur l’**état dérivé de l’établissement** (PostgreSQL via `GET /api/v2/school-setup/status`), jamais sur la première connexion de l’utilisateur.
+
+**`READY` figé (D1) :** l’établissement peut créer / utiliser des classes. Ce n’est **pas** la complétude pédagogique (périodes, notes, enseignants, élèves).
 
 ---
 
@@ -173,7 +191,7 @@ Légende **Obligatoire** :
 | 1 | Établissement | `schools` `schema.sql` L21–38 ; `POST/PATCH /api/backoffice/establishments` | Création `/etablissements` (plateforme) ; profil `/parametres/profil` | Pas de création ; `EstablishmentProfile` | CREATE interdit ; UPDATE via `Paramètres Établissement:UPDATE` (`rbacService.js` L193) | Pays | OUI (préexiste) | Login school impossible | Profil : oui | Code/ville/pays immuables école |
 | 2 | `school_settings` scalaires | `school_settings` L329–338 ; trigger L341–358 | Inclus année scolaire | `SchoolYearSettings` | `Paramètres Établissement:*` | Établissement | NON (auto-seed trimestre / 20 / period) | — | Oui | Ne **pas** confondre avec année scolaire |
 | 3 | Année scolaire courante | `academic_years` L122–133 **NOT NULL** school_id ; `GET/POST /api/v2/academic-years` `server.js` L3813–3825 | `/parametres/annee-scolaire` `App.tsx` L491–496 | `SchoolYearSettings` `AppNavigator.tsx` L334–336 ; **création possible** `SchoolYearSettingsScreen.tsx` L116–139 | `Années Académiques:CREATE` (`internalRoleDefaults.ts` L49–51 ; `rbacService.js` L148) | Établissement + `login_code` (`postgresRepository.js` L5987–5991) | **OUI** pour classes, périodes, affectations, grilles | UI Classes disable + bannière L439–451 ; API 400 « Année scolaire introuvable… » `classesRepository.js` L214–216 | Création : **oui** (les deux) ; hint Mobile classes **faux** (renvoie au Web) | **Critique** |
-| 4 | Périodes / terms | `terms` L135–145 `academic_year_id NOT NULL` ; `PUT /api/academic-periods` ; `replaceTerms` | Même page année | Même écran année | `Paramètres Établissement:UPDATE` | **Année courante** | **COND** pédagogie / bulletins ; **OUI** dès qu’on veut notes | 400 `ACADEMIC_YEAR_REQUIRED` « Aucune année scolaire ouverte. Créez une année avant les périodes. » `schoolSettingsPgStore.js` L224–231 | Oui | PG **ne seed pas** les terms à `POST /v2/academic-years` (`createAcademicYearV2` L6005–6008 INSERT seul). Memory store seed au GET — **divergence** |
+| 4 | Périodes / terms | `terms` L135–145 `academic_year_id NOT NULL` ; `PUT /api/academic-periods` ; `replaceTerms` | Même page année | Même écran année | `Paramètres Établissement:UPDATE` | **Année courante** | **COND** pédagogie / bulletins — **hors gate READY (D1)** | 400 `ACADEMIC_YEAR_REQUIRED` « Aucune année scolaire ouverte. Créez une année avant les périodes. » `schoolSettingsPgStore.js` L224–231 | Oui | PG **ne seed pas** les terms à `POST /v2/academic-years` (`createAcademicYearV2` L6005–6008 INSERT seul). Memory store seed au GET — **divergence**. `classes` n’a **pas** de `term_id`. |
 | 5 | Activation structure école | `school_levels` / `school_streams` / `school_class_groups` ; `PUT /api/education-reference/school-activation` `server.js` L1874–1880 | `/parametres/structure` | `SchoolPedagogicalStructure` | `Paramètres Établissement:UPDATE` (`rbacService.js` L316–320) | Référentiel national | **OUI** pour classes | « Ce niveau n'est pas activé… » L236–239 ; « Ce groupe n'est pas activé… » L293–297 ; UI bannières `ClassesListPage.tsx` L453–479 | Oui | **Critique** |
 | 6 | Cours / matières école | `subjects` L170–180 ; `/api/v2/subjects`, `/api/courses` | Structure → `SchoolSubjectsPanel` | Structure | `Matières:CREATE` | Établissement | **COND** affectations / notes / planning | Affectation : « Enseignant, classe et cours sont requis. » | Oui | Pas requis pour créer une classe |
 | 7 | Types d’évaluation | `evaluation_types` L309–320 ; `/api/evaluation-types` | Page année | Page année | `Paramètres Établissement:UPDATE` | Établissement | **COND** pédagogie | Évaluations acceptent encore un texte legacy | Oui | Non bloquant boot |
@@ -194,22 +212,24 @@ Légende **Obligatoire** :
 
 Matrice machine : `docs/audits/school-admin-initial-setup-matrix.json`.
 
-### Obligatoire pour **utiliser Somafrik** (scolarité de base)
+### Obligatoire pour **`READY`** (gate assistant — décision CTO D1)
 
-Sans ces éléments, l’établissement n’est pas mis en service pour les modules cœur :
+Sans ces éléments, l’établissement n’est pas « configuré » au sens du workflow. Preuve : `classes` exige `academic_year_id` + offering activé ; **aucun** `term_id` sur `classes` (`schema.sql` L147–158).
 
 1. Établissement existant + compte `school_admin` validé (plateforme)
 2. Année scolaire **courante / open**
-3. Au moins une période (si l’admin veut notes/bulletins ; fortement recommandé dès l’année)
-4. Activation d’au moins un **niveau** et un **groupe** du référentiel national
-5. Au moins une **classe**
+3. Activation d’au moins un **niveau** et un **groupe** du référentiel national
+4. Au moins une **classe**
+
+Les **périodes** ne font **pas** partie de `READY`. Elles sont **obligatoires pour la pédagogie / notes / bulletins** (`evaluations.term_id NOT NULL`, `grades.term_id NOT NULL`), donc étape de complétude du widget, pas un prérequis de création de classe.
 
 ### Recommandé pour **profiter d’un module** (non bloquant dashboard)
 
 | Module | Prérequis supplémentaires |
 | --- | --- |
 | Élèves | Classe active |
-| Enseignants / planning / notes | Identité via Utilisateurs + GRANT ; cours ; affectation ; périodes |
+| Pédagogie / notes / bulletins | **≥ 1 période (`terms`)** — hors `READY` (D1) ; `evaluations.term_id` / `grades.term_id` NOT NULL |
+| Enseignants / planning | Identité via Utilisateurs + GRANT ; cours ; affectation |
 | Présences | Élèves inscrits + (abonnement `write_presence`) |
 | Finance encaissement | Grilles (classe + année) + élèves |
 | Bulletins | Notes + modèle plateforme |
@@ -230,12 +250,11 @@ Pays + référentiel national          ← Superadmin / Admin Pays (hors school_
    ├─ profil (déjà peuplé à la création)
    ↓
 Année scolaire courante (academic_years)
-   ↓
-Périodes (terms)  ─── requis notes / bulletins / évaluations
+   ├─ Périodes (terms)  ─── HORS READY (D1) ; requis notes / bulletins / évaluations
    ↓
 Activation école (school_levels + school_class_groups [+ streams optionnels])
    ↓
-Classes (academic_year_id NOT NULL + offering activé)
+Classes (academic_year_id NOT NULL + offering activé ; PAS de term_id)
    ├─ Élèves (enrollments.class_id NOT NULL) ── présences, finance élève, bulletins
    └─ (en parallèle) Cours (subjects) + Enseignants (via Utilisateurs)
            ↓
@@ -270,10 +289,10 @@ Dépendances **indépendantes** de cette chaîne (ne pas les sérialiser dans l�
 | Élèves | Classe → Inscrire | Même enroll | `POST /classes/:code/students` | Oui | Oui | — |
 | Finances grilles | `/finances/frais` | Non (ops paiements) | `/api/finance/fee-grids` | Oui si appelé | Oui si API | Config Web-only |
 | Notifications config | `/parametres/notifications` | Non | notification-settings | Oui si appelé | Oui | Écart |
-| Dashboard reprise | `/etablissement/vue-ensemble` | `Home` / `SchoolingHubScreen` | GET years/classes/students | Oui | **Aujourd’hui aucun agrégat setup** | Widget absent des deux |
-| Assistant / Configuration rapide | **Non** | **Non** | — | — | — | À créer (lots futurs) |
+| Dashboard reprise | `/etablissement/vue-ensemble` | `Home` / `SchoolingHubScreen` | **`GET /api/v2/school-setup/status` (D4, à créer)** | Oui | **Oui, dès l’endpoint unique** — pas d’agrégation client | Widget absent aujourd’hui |
+| Assistant / Configuration rapide | **Non** | **Non** | même endpoint | Oui | Oui | À créer (lots futurs) |
 
-**Règle de parité d’état :** un établissement configuré sur Web doit apparaître configuré sur Mobile **immédiatement**, parce que la source est PostgreSQL. Aucun état d’onboarding client séparé n’est acceptable.
+**Règle de parité d’état (D4) :** un établissement configuré sur Web doit apparaître configuré sur Mobile **immédiatement**. Source unique = `GET /api/v2/school-setup/status` (tenant JWT). Aucun état d’onboarding client séparé. Aucun `schoolCode` dans la query client.
 
 ---
 
@@ -339,7 +358,7 @@ Principe : **deep link vers l’écran canonique**, pas de second formulaire mé
 | --- | --- | --- | --- |
 | D1 | Admin School atterrit sur un dashboard « vivant » (KPI à 0) sans parcours | `EtablissementOverviewPage` ; `roleHomeConfig.ts` | Abandon / configuration dans le désordre |
 | D2 | Alerte « Aucune année scolaire active » **non cliquable** | L232–238 vs action année plus bas L211–218 | Signal faible |
-| D3 | Création classe bloquée, lien Paramètres année OK Web ; Mobile dit « configurez sur le Web » | `ClassesListPage.tsx` L439–451 ; `ClassMutationControls.tsx` L268–269 vs `SchoolYearSettingsScreen.tsx` L116–139 | **Dead-end Mobile** |
+| D3 | Création classe bloquée, lien Paramètres année OK Web ; Mobile dit « configurez sur le Web » | `ClassesListPage.tsx` L439–451 ; `ClassMutationControls.tsx` L268–269 vs `SchoolYearSettingsScreen.tsx` L116–139 | **Dead-end Mobile — confirmé contrôle CTO indépendant #675** |
 | D4 | Structure non activée : bannière Web OK ; school_admin **ne peut pas** créer le catalogue pays | `ClassesListPage.tsx` L453–479 ; RBAC national | Impasse si Admin Pays n’a pas seedé |
 | D5 | Liste Enseignants Web sans CTA créer | `TeachersListPage.tsx` L405 | L’admin croit le module cassé |
 | D6 | `POST /teachers` 403 si un client l’appelle | `server.js` L2383–2388 | Piège d’implémentation wizard |
@@ -354,16 +373,17 @@ Principe : **deep link vers l’écran canonique**, pas de second formulaire mé
 
 ## G — Proposition du workflow cible
 
-L’hypothèse du mandat est **retenue**, ajustée au code.
+L’hypothèse du mandat est **retenue**, **ajustée aux décisions CTO D1–D4**.
 
 ### G.1 Principes
 
-1. **Source d’état = établissement (PostgreSQL dérivé)**, pas l’utilisateur, pas le device.
-2. **Guider vers les écrans canoniques** (deep links), ne pas recréer les formulaires.
+1. **Source d’état = établissement (PostgreSQL dérivé)** via `GET /api/v2/school-setup/status` (D4), pas l’utilisateur, pas le device, pas d’agrégation client.
+2. **Guider vers les écrans canoniques** (deep links), ne pas recréer les formulaires. Le backend **ne renvoie pas** de routes : chaque client mappe `academicYear` / `structure` / `classes` / clés optionnelles.
 3. **Ne pas emprisonner le Dashboard.** Seul le MDP temporaire reste bloquant (déjà en prod).
 4. **Assistant auto** seulement si statut école ∈ {`NOT_STARTED`, `IN_PROGRESS`} **et** rôle = opérateur Paramètres (`Admin School`).
-5. **Configuration rapide** permanente sur le hub Scolarité (Web) / Accueil ou hub Scolarité (Mobile) + entrée Paramètres.
-6. Après `READY` : plus d’intrusion à la connexion ; le widget passe en « Configuration terminée / Voir ».
+5. **Avant `READY` (D3) :** widget `Configuration rapide` visible sur le Dashboard (hub Scolarité Web / SchoolingHub Mobile) avec progression + Continuer.
+6. **Après `READY` (D3) :** le widget **disparaît du Dashboard**. Accès permanent depuis **Paramètres → Configuration de l’établissement**. Si le dérivé redescend à `IN_PROGRESS`, le widget Dashboard **réapparaît**.
+7. **« Plus tard » (D2) :** dismiss **session-only** V1. Pas de flag métier local, pas de migration snooze.
 
 ### G.2 Première connexion
 
@@ -372,173 +392,208 @@ Authentification
       ↓
 mustChangePassword ?  ── OUI ──→ modal MDP (existant, user-level)
       ↓ NON
-Chargement établissement (tenant JWT)
+Chargement établissement (tenant JWT — aucun schoolCode client)
       ↓
-GET setup-status (école)     ← à créer au lot d’implémentation ; calcul PG
+GET /api/v2/school-setup/status     ← D4 ; calcul PG ; lot d’implémentation
       ↓
 Opérateur Paramètres ?
-   NON → Dashboard normal (préfet, enseignant, nouvel admin non opérateur)
+   NON → Dashboard normal (préfet, enseignant, …)
    OUI
       ↓
-   READY ?  ── OUI ──→ Dashboard (widget discret « Voir la configuration »)
+   READY ?  ── OUI ──→ Dashboard SANS widget de progression
+                      (accès Paramètres → Configuration de l’établissement)
       NON
       ↓
-   Assistant (dismissible « Plus tard »)
+   Assistant (dismissible « Plus tard » = session-only)
       ↓
    Dashboard + widget « Configuration rapide »
 ```
 
-**Où décider :** serveur (endpoint de statut) ; les clients ne font que présenter. Recalcul à chaque ouverture de l’assistant / du widget.
+**Où décider :** serveur uniquement (`GET /api/v2/school-setup/status`). Les clients présentent. Recalcul à chaque ouverture de l’assistant / du widget / du hub Paramètres.
 
 ### G.3 Assistant (shell, pas un clone métier)
 
 Étapes **ordonnées par le graphe C**, pas par un storyboard libre :
 
-| # | Étape | Écran canonique Web | Écran canonique Mobile | Done quand |
-| --- | --- | --- | --- | --- |
-| 1 | Bienvenue + profil (revue) | `/parametres/profil` | `EstablishmentProfile` | École a nom + contacts (déjà vrais à la création) — **skipable** |
-| 2 | Année scolaire | `/parametres/annee-scolaire` | `SchoolYearSettings` | ≥ 1 année `is_current` ou `status=open` |
-| 3 | Périodes / barème | même | même | ≥ 1 `terms` pour l’année courante |
-| 4 | Structure académique | `/parametres/structure` | `SchoolPedagogicalStructure` | ≥ 1 level + ≥ 1 group `schoolActive` |
-| 5 | Cours | même | même | ≥ 1 subject **recommandé**, pas gate READY_CORE |
-| 6 | Classes | `/etablissement/classes` | `Classes` | ≥ 1 classe |
-| 7 | Comptes / enseignants | `/etablissement/comptes-utilisateurs` | `Users` / create-teacher | ≥ 1 enseignant **recommandé** |
-| 8 | Compléments (grilles, notifs) | `/finances/frais`, `/parametres/notifications` | deep link limité | optionnel |
+| # | Étape | Gate | Écran canonique Web | Écran canonique Mobile | Done quand |
+| --- | --- | --- | --- | --- | --- |
+| 1 | Bienvenue + profil (revue) | hors READY | `/parametres/profil` | `EstablishmentProfile` | École a nom + contacts (déjà vrais à la création) — **skipable** |
+| 2 | Année scolaire | **core READY (D1)** | `/parametres/annee-scolaire` | `SchoolYearSettings` | ≥ 1 année `is_current` ou `status=open` |
+| 3 | Structure académique | **core READY (D1)** | `/parametres/structure` | `SchoolPedagogicalStructure` | ≥ 1 level + ≥ 1 group `schoolActive` |
+| 4 | Classes | **core READY (D1)** | `/etablissement/classes` | `Classes` | ≥ 1 classe |
+| 5 | Périodes / barème | **complétude pédagogique** (hors READY) | `/parametres/annee-scolaire` | `SchoolYearSettings` | ≥ 1 `terms` pour l’année courante |
+| 6 | Cours | optionnel module | Structure | Structure | ≥ 1 subject |
+| 7 | Comptes / enseignants | optionnel module | `/etablissement/comptes-utilisateurs` | `Users` / create-teacher | ≥ 1 enseignant |
+| 8 | Compléments (élèves, grilles, notifs) | optionnel module | classes / `/finances/frais` / notifications | deep link limité | selon module |
 
-UI type :
+UI type (core = 3 étapes D1) :
 
 ```text
 Bienvenue dans Somafrik
 Configurons votre établissement.
-Progression : 2 / 6 étapes cœur
+Progression : 2 / 3 étapes cœur
 
-✓ Informations établissement
 ✓ Année scolaire
-○ Structure académique
+✓ Structure académique
 ○ Classes
-○ Enseignants (recommandé)
-○ Paramètres complémentaires (optionnel)
 
-[ Continuer la configuration ]   → deep link étape courante
-[ Plus tard ]                    → Dashboard, pas de flag client canonique
+Complétude (n’empêche pas READY) :
+○ Périodes / pédagogie
+○ Enseignants
+○ Paramètres complémentaires
+
+[ Continuer la configuration ]   → deep link étape core incomplète
+[ Plus tard ]                    → Dashboard ; dismiss session-only (D2)
 ```
 
 « Continuer » ouvre **l’écran existant**. Au retour, l’assistant **recalcule** via l’API de statut.
 
 Étapes verrouillées : Classes reste disabled tant que année ou structure manquent (déjà vrai dans `ClassesListPage` L544).
 
-### G.4 Configuration rapide permanente
+### G.4 Configuration rapide (D3)
 
-**Emplacement recommandé**
+**Avant `READY` — Dashboard (prioritaire)**
 
-| Surface | Pourquoi |
+| Surface | Rôle |
 | --- | --- |
-| Web `EtablissementOverviewPage` (landing school_admin) | C’est déjà le post-login ; les actions année/structure existent |
-| Web hub `/parametres` | L’admin y cherche la config |
-| Mobile `SchoolingHubScreen` (pas seulement Home KPI finance) | Parité Scolarité L0 |
-| Mobile `ConfigurationScreen` | Hub paramètres déjà présent |
-
-Widget :
+| Web `EtablissementOverviewPage` | Widget visible + progression + Continuer |
+| Mobile `SchoolingHubScreen` | Même widget (parité Scolarité L0) |
 
 ```text
 Configuration de l’établissement
-████████░░  4 / 6 étapes cœur
+████████░░  2 / 3 étapes cœur
 [ Continuer ]
 ```
 
-Si `READY` :
+**Après `READY` — plus de widget Dashboard**
 
-```text
-✓ Configuration terminée
-[ Voir la configuration ]   → /parametres (Web) / Configuration (Mobile)
-```
+Le widget de progression **disparaît de l’accueil**. L’accès permanent reste :
 
-**Le bouton reste visible après READY** (mode non intrusif). Motivations code : une année ou une activation peut être **supprimée / désactivée plus tard** ; le statut dérivé redevient `IN_PROGRESS`. Un flag « onboardingCompleted=true » client **mentirait**.
+| Surface | Mode |
+| --- | --- |
+| Web `/parametres` → Configuration de l’établissement | non intrusif |
+| Mobile `ConfigurationScreen` | non intrusif |
+
+Si l’état dérivé redescend à `IN_PROGRESS` (année plus courante, structure désactivée, plus de classe) : le widget Dashboard **réapparaît** automatiquement. Aucun flag « onboardingCompleted=true » client.
 
 ### G.5 Reprise
 
-| Scénario | Comportement proposé | Source |
+| Scénario | Comportement figé | Source |
 | --- | --- | --- |
-| Étapes 1–2 puis quit | Login J+3 → assistant ou banner « 2 / 6 — Reprendre » | Compteurs PG, pas session |
-| Fermeture fenêtre | « Plus tard » = session UX only | Pas de persist dismiss canonique (option CTO : snooze serveur horodaté) |
-| Logout / autre navigateur / autre téléphone | Même statut | PG |
+| Étapes core 1–2 puis quit | Login J+3 → assistant ou widget « 2 / 3 — Reprendre » (sauf dismiss de **cette** session) | `GET /api/v2/school-setup/status` |
+| « Plus tard » / fermeture fenêtre | Dismiss **session-only** (D2) ; nouvelle session → relance possible tant que non READY | Mémoire de session, **pas** PG, **pas** localStorage métier |
+| Logout / autre navigateur / autre téléphone | Même statut école ; dismiss **non** repris (nouvelle session) | PG pour le statut ; session vide pour le dismiss |
 | Second admin même école | Même statut ; pas de wizard si READY | PG école, pas `last_login_at` du second |
-| Config Web puis ouverture Mobile | READY identique | Même endpoint |
-| Suppression année après READY | Retour `IN_PROGRESS`, widget redevient « Continuer » | Dérivation |
+| Config Web puis ouverture Mobile | READY identique | Même endpoint D4 |
+| Suppression / désactivation d’un signal core après READY | Retour `IN_PROGRESS`, widget Dashboard réapparaît | Dérivation |
 
 ---
 
-## H — Définition proposée du statut de configuration
+## H — Définition du statut de configuration (CTO D1 / D4)
 
 ### H.1 Ce qu’il ne faut **pas** utiliser
 
 | Anti-pattern | Pourquoi |
 | --- | --- |
-| `localStorage` / `AsyncStorage` / SecureStore « onboardingDone » | Ne survit pas au device ; diverge Web/Mobile ; diverge entre admins |
+| `localStorage` / `AsyncStorage` / SecureStore « onboardingDone » | Ne survit pas au device ; diverge Web/Mobile ; diverge entre admins ; **interdit comme vérité métier (D2)** |
+| Dismiss « Plus tard » persisté en local | Idem — V1 = session-only uniquement |
 | `users.last_login_at IS NULL` | Première connexion **utilisateur** |
 | `users.must_change_password` | Idem |
-| Colonne `schools.setup_status` écrite une fois | Devient stale si on supprime l’année / les classes (mandat §14) |
+| Colonne `schools.setup_status` écrite une fois | Devient stale si on supprime l’année / les classes |
 | Flag par admin `hasSeenWizard` comme vérité métier | Un nouvel admin d’une école vide doit voir l’assistant ; un nouvel admin d’une école READY non |
+| Query `?schoolCode=` fournie par le client | Interdit (D4) — tenant JWT seulement |
+| Agrégation métier Web/Mobile de GET years + classes + catalog | Interdit (D4) — un seul endpoint |
 
-### H.2 Source canonique recommandée (sans migration dans ce lot)
+### H.2 Source canonique (D4) — sans migration dans ce lot
 
-**Calcul dérivé PostgreSQL**, exposé plus tard par un endpoint du type :
+**Calcul dérivé PostgreSQL**, exposé au lot d’implémentation par :
 
-`GET /api/backoffice/establishments/:schoolCode/setup-status`
+```text
+GET /api/v2/school-setup/status
+```
 
-Gardes : `requireAuth` + `assertSchoolAccess` + `Paramètres Établissement:READ` (opérateur affichage wizard = Admin School côté client).
+- `requireAuth`
+- établissement **déduit du JWT / membership** — **aucun** `schoolCode` body/query client
+- `assertSchoolAccess` sur le tenant déduit
+- `Paramètres Établissement:READ`
 
-Lecture seule. **Aucun INSERT de colonne d’état.** Les tables déjà là suffisent :
+Lecture seule. **Aucun INSERT de colonne d’état. Aucune agrégation métier côté clients.**
 
-| Signal | Table / API existante |
-| --- | --- |
-| Année courante | `academic_years` `is_current` / `status` ; déjà `GET /api/v2/academic-years` |
-| Périodes | `terms` ; projection school-settings |
-| Activation | catalog `GET /api/education-reference/catalog` (flags schoolActive) |
-| Classes | `GET /api/classes` |
-| Cours | `GET /api/v2/subjects` |
-| Enseignants | `GET /api/teachers` |
-| Élèves | `GET /api/students` ou enrollments |
-| Grilles | `GET /api/finance/fee-grids` |
+Payload contractuel (commentaire CTO `5712709746`) :
 
-Le client **peut** agréger ces GET aujourd’hui (le hub le fait déjà partiellement). Un endpoint unique évite les courses et garantit la parité Web/Mobile.
+```json
+{
+  "status": "NOT_STARTED | IN_PROGRESS | READY",
+  "core": {
+    "academicYear": true,
+    "structure": true,
+    "classes": true
+  },
+  "optional": {
+    "periods": false,
+    "subjects": false,
+    "teachers": false,
+    "students": false,
+    "feeGrids": false,
+    "notifications": false
+  },
+  "progress": {
+    "coreDone": 3,
+    "coreTotal": 3
+  }
+}
+```
 
-### H.3 États
+`structure` = ≥ 1 niveau activé **et** ≥ 1 groupe activé.
+
+Ne **pas** renvoyer de chemins Web/Mobile. Mapping client :
+
+| Clé | Web | Mobile |
+| --- | --- | --- |
+| `academicYear` | `/parametres/annee-scolaire` | `SchoolYearSettings` |
+| `structure` | `/parametres/structure` | `SchoolPedagogicalStructure` |
+| `classes` | `/etablissement/classes` | `Classes` |
+| `periods` | `/parametres/annee-scolaire` | `SchoolYearSettings` |
+| `subjects` | `/parametres/structure` | `SchoolPedagogicalStructure` |
+| `teachers` | `/etablissement/comptes-utilisateurs` | `Users` / create-teacher |
+| `students` | `/etablissement/classes` | `Students` |
+| `feeGrids` | `/finances/frais` | (écart : config Web) |
+| `notifications` | `/parametres/notifications` | (écart : config Web) |
+
+Tables déjà suffisantes : `academic_years`, `school_levels` / `school_class_groups`, `classes` (core) ; `terms`, `subjects`, `teachers`, `enrollments`, `fee_grids`, notification-settings (optional).
+
+### H.3 États (D1)
 
 ```text
 NOT_STARTED
-  aucune année scolaire
+  aucune année courante/open
+  ET aucune activation structure (niveau/groupe)
   ET aucune classe
-  ET aucune activation niveau/groupe
-  (école « neuve » après persistEstablishment)
 
 IN_PROGRESS
-  au moins un signal cœur présent
-  ET READY_CORE faux
+  au moins un signal core présent
+  ET READY faux
 
-READY          ≡ READY_CORE
-  année courante/open
-  ET ≥ 1 term sur cette année
-  ET ≥ 1 level activé ET ≥ 1 group activé
+READY
+  année scolaire courante/open
+  ET ≥ 1 niveau activé
+  ET ≥ 1 groupe activé
   ET ≥ 1 classe
 ```
 
-**READY_CORE** = l’établissement peut inscrire des élèves (la chaîne scolarité est ouverte).  
-**READY_OPERATIONAL** (sous-statut informatif, pas un 4e état de gate) = READY_CORE + ≥ 1 enseignant + ≥ 1 élève. Utile au widget (« 80 % ») mais **ne doit pas** relancer l’assistant intrusif si le CTO choisit READY = READY_CORE.
+**`READY` ≠ complétude pédagogique.** Une école `READY` peut n’avoir **aucune** période : elle peut créer des classes et inscrire des élèves ; elle **ne peut pas** encore saisir notes / évaluations / bulletins (`term_id NOT NULL`). Ces étapes restent dans `optional.periods` et **ne relancent pas** l’assistant automatique.
 
-**Question CTO n°1 :** READY = READY_CORE (année + structure + classe) ou READY_OPERATIONAL (+ enseignants + élèves) ?
+Enseignants, élèves, cours, grilles, notifications = `optional.*` : le widget Paramètres peut les afficher ; ils **ne** font **pas** redescendre `READY` et **ne** relancent **pas** l’assistant.
 
-Recommandation d’audit : **READY = READY_CORE**. Enseignants / élèves / finances = étapes recommandées du widget, pas une prison UX. Preuve : le Dashboard et la Communication fonctionnent déjà sans eux ; l’API classes est le vrai goulot.
-
-### H.4 Progression
+### H.4 Progression (D1)
 
 ```text
-progress = count(steps_core done) / 4
-steps_core = [année courante, périodes, structure, classes]
-steps_optional = [cours, enseignants, élèves, grilles, notifs]
+progress.coreTotal = 3
+progress.coreDone  = count(academicYear, structure, classes)
+steps_optional     = [periods, subjects, teachers, students, feeGrids, notifications]
 ```
 
-Si l’année est **ensuite** supprimée : `classes.academic_year_id` empêche d’ordinaire de supprimer une année encore référencée ; si plus d’année courante, `selectCurrentAcademicYear` → null (`schoolingTruth.ts` L55–65) ⇒ plus READY. Le dérivé suit.
+Si l’année courante disparaît, ou plus de classe, ou plus d’activation : `READY` → `IN_PROGRESS` ; widget Dashboard réapparaît (D3). Le dérivé suit. `selectCurrentAcademicYear` → null (`schoolingTruth.ts` L55–65) ⇒ plus READY.
 
 ---
 
@@ -546,20 +601,34 @@ Si l’année est **ensuite** supprimée : `classes.academic_year_id` empêche d
 
 **Ce lot n’implémente aucun test GREEN fonctionnel.** Lots futurs : tests RED d’abord.
 
-### I.1 Contrat backend `setup-status`
+### I.1 Contrat backend `GET /api/v2/school-setup/status` (D1, D4)
 
 | ID | Cas | Attendu |
 | --- | --- | --- |
-| ST-01 | École persistée, pas d’année, pas d’activation, pas de classe | `NOT_STARTED` |
-| ST-02 | Année courante seule | `IN_PROGRESS`, step year=true, classes=false |
-| ST-03 | Année + terms + activation + ≥1 classe | `READY` |
+| ST-01 | École persistée, pas d’année courante/open, pas d’activation, pas de classe | `NOT_STARTED` ; core tous false ; `progress.coreDone=0`, `coreTotal=3` |
+| ST-02 | Année courante seule | `IN_PROGRESS` ; `core.academicYear=true` ; classes=false ; structure=false |
+| ST-03 | Année + activation niveau/groupe + ≥1 classe, **sans terms** | **`READY`** (D1 — périodes hors gate) ; `optional.periods=false` |
+| ST-03b | Même école + terms ajoutés | `READY` inchangé ; `optional.periods=true` |
 | ST-04 | READY puis plus d’année courante | redevient `IN_PROGRESS` ou `NOT_STARTED` selon restes |
 | ST-05 | Deux admins, même `school_id` | JSON identique |
-| ST-06 | Token école A, path école B | 403 hors périmètre |
-| ST-07 | Rôle enseignant | 403 ou 200 sans wizard client (fail-closed opérateur — décision CTO) |
+| ST-06 | Client envoie `schoolCode` d’une autre école (query/body/header) | **ignoré ou 400** ; tenant = JWT uniquement ; **jamais** les données de B (D4) |
+| ST-06b | Token école A | payload de A seulement ; pas de path `:schoolCode` |
+| ST-07 | Rôle enseignant | 403 ou 200 sans wizard client (fail-closed opérateur — encore ouvert, question restante) |
 | ST-08 | Aucune lecture `localStorage` dans le handler | assert source PG |
-| ST-09 | `mustChangePassword=true` n’apparaît **pas** dans le payload school setup | séparation user/école |
-| ST-10 | Cross Web/Mobile : mêmes compteurs | fixture PG unique |
+| ST-09 | `mustChangePassword=true` n’apparaît **pas** dans le payload | séparation user/école |
+| ST-10 | Cross Web/Mobile : même JSON | fixture PG unique + même endpoint |
+| ST-11 | Payload **sans** champs de routes Web/Mobile | clients mappent les clés |
+| ST-12 | `optional.teachers/students/feeGrids` n’influencent pas `status` | READY reste READY |
+
+### I.2 Première connexion vs école
+
+| ID | Cas | Attendu |
+| --- | --- | --- |
+| FL-01 | Nouvel admin, école `NOT_STARTED` | wizard auto après MDP |
+| FL-02 | Nouvel admin, école `READY` | **pas** de wizard auto ; dashboard **sans** widget progression (D3) ; accès Paramètres |
+| FL-03 | Admin existant, école `IN_PROGRESS` | widget Dashboard + reprise, pas « bienvenue first login » |
+| FL-04 | `last_login_at` null ≠ NOT_STARTED | |
+| FL-05 | École READY sans aucune période | READY + pas d’assistant ; `optional.periods=false` |
 
 ### I.2 Première connexion vs école
 
@@ -577,9 +646,12 @@ Si l’année est **ensuite** supprimée : `classes.academic_year_id` empêche d
 | WZ-01 | Étape Classes disabled si pas d’année | aligné `ClassesListPage` L544 |
 | WZ-02 | CTA année → `/parametres/annee-scolaire` / `SchoolYearSettings` | pas de form dupliqué |
 | WZ-03 | CTA enseignant Web → comptes utilisateurs, **pas** `POST /teachers` | |
-| WZ-04 | « Plus tard » → dashboard accessible | |
-| WZ-05 | Mobile hint année → `SchoolYearSettings`, **pas** « allez sur le Web » | correctif copy dans le lot Mobile |
-| WZ-06 | Logout milieu wizard → reprise au bon step via statut | |
+| WZ-04 | « Plus tard » → dashboard accessible ; dismiss **session-only** (D2) ; nouvelle session relance tant que non READY | |
+| WZ-04b | Aucun write localStorage/AsyncStorage métier pour le dismiss | |
+| WZ-05 | Mobile hint année → `SchoolYearSettings`, **pas** « allez sur le Web » | correctif copy dans le lot Mobile (dette confirmée CTO) |
+| WZ-06 | Logout milieu wizard → reprise au bon step via statut ; dismiss perdu (nouvelle session) | |
+| WZ-07 | Après READY : **aucun** widget Dashboard ; entrée Paramètres présente | |
+| WZ-08 | READY → IN_PROGRESS (ex. plus de classe) : widget Dashboard réapparaît | |
 
 ### I.4 Parité et isolation
 
@@ -606,11 +678,11 @@ Aucun de ces lots n’est commencé ici.
 
 | Lot | Contenu | Hors scope |
 | --- | --- | --- |
-| **LOT 0 — Contrat statut** | Spec + tests RED `setup-status` ; endpoint lecture dérivé ; **pas** de colonne PG ; pas d’UI | Wizard |
-| **LOT 1 — Web assistant + widget** | Shell wizard + Configuration rapide sur `EtablissementOverviewPage` + carte Paramètres ; deep links ; dismiss session | Mobile ; READY_OPERATIONAL si non tranché |
-| **LOT 2 — Mobile parité** | Même endpoint ; widget `SchoolingHubScreen` / `ConfigurationScreen` ; corriger copy `ClassMutationControls` | Nouveau CRUD |
-| **LOT 3 — Reprise & multi-admin** | Tests ST-05, FL-02, logout, suppression année | — |
-| **LOT 4 — Compléments optionnels** | Étapes finances / notifications dans le widget ; éventuellement snooze serveur | Prison UX |
+| **LOT 0 — Contrat statut** | Tests RED `GET /api/v2/school-setup/status` ; payload D4 ; `READY` **sans** terms (ST-03) ; tenant JWT only ; **pas** de colonne PG ; pas d’UI | Wizard |
+| **LOT 1 — Web assistant + widget** | Shell wizard + widget Dashboard **si non READY** ; entrée Paramètres permanente ; deep links ; dismiss **session-only** | Mobile ; snooze serveur |
+| **LOT 2 — Mobile parité** | Même endpoint D4 ; widget `SchoolingHubScreen` avant READY ; Paramètres après READY ; **corriger copy `ClassMutationControls`** | Nouveau CRUD |
+| **LOT 3 — Reprise & multi-admin** | Tests ST-05, FL-02, FL-05, WZ-07, WZ-08, logout | — |
+| **LOT 4 — Complétude optionnelle** | Affichage `optional.*` (périodes, enseignants, grilles, notifs) dans Paramètres ; snooze serveur **seulement si** besoin produit ultérieur | Prison UX ; **ne pas** réintroduire `terms` dans `READY` |
 | **Hors chantier (dettes connues)** | Réparer `SchoolsPage.createSchoolAdmin` ; empty catalog pays ; CTA enseignant Web ; P1 notes | Ne pas les glisser dans l’onboarding |
 
 Ordre TDD de chaque lot : **RED → implémentation → GREEN**.
@@ -627,13 +699,14 @@ Ordre TDD de chaque lot : **RED → implémentation → GREEN**.
 | Nouvel admin sur école existante READY | `mustChangePassword` possible, école READY | MDP puis dashboard **sans** wizard école |
 | Plusieurs admins | même `school_id` | même statut |
 | Sans classe | empty + disable create élèves (API 409) | étape Classes ouverte, Élèves locked |
-| Classes sans élèves | scolarité structurelle OK | READY_CORE ; widget optionnel élèves |
+| Classes sans élèves | scolarité structurelle OK | **`READY` (D1)** ; `optional.students=false` |
+| READY sans périodes | classes possibles ; notes impossibles | **`READY`** ; `optional.periods=false` ; **pas** d’assistant |
 | Sans année active | alerte hub ; classes bloquées | pas READY |
-| Config Mobile | Year/structure/classes APIs identiques | statut identique Web |
+| Config Mobile | Year/structure/classes APIs identiques | statut identique via D4 |
 | Config Web | idem | idem |
-| Logout pendant assistant | pas d’état client | reprise par GET statut |
+| Logout pendant assistant | dismiss session perdu | reprise par GET statut si non READY |
 | Session expirée | re-login + MDP si besoin | idem |
-| Suppression config requise | dérivé PG | READY → IN_PROGRESS, widget « Continuer » |
+| Suppression config **core** requise | dérivé PG | READY → IN_PROGRESS, **widget Dashboard réapparaît** (D3) |
 | École pending validation (Admin Pays) | login bloqué **avant** tout wizard | hors assistant ; amont plateforme |
 | Référentiel national vide | school_admin ne peut pas créer | étape Structure = « contacter Admin Pays / Superadmin », pas fake create |
 
@@ -644,34 +717,41 @@ Ordre TDD de chaque lot : **RED → implémentation → GREEN**.
 | Élément d’hypothèse | Verdict | Motif |
 | --- | --- | --- |
 | Première connexion incomplète → assistant auto | **OUI si école non READY et opérateur Paramètres** | Ne pas lier à first-login user |
-| Assistant fermé → Dashboard si prérequis métier OK | **OUI toujours** (sauf MDP) | Aucune règle actuelle n’impose de bloquer `/etablissement` |
-| Dashboard → Configuration rapide permanente | **OUI** | Landing actuel trop silencieux (D1/D2) |
-| Progression canonique établissement | **OUI, dérivée PG** | Multi-device / multi-admin |
-| Retour → reprise auto | **OUI** via recalcul | Pas de curseur d’étape stocké (l’étape = première incomplete) |
-| Terminé → plus d’intrusion, accès Paramètres conservé | **OUI** | Widget « Voir » |
+| Assistant fermé → Dashboard si prérequis métier OK | **OUI toujours** (sauf MDP) | Aucune règle actuelle n’impose de bloquer `/etablissement` ; « Plus tard » = session-only (D2) |
+| Dashboard → Configuration rapide | **OUI avant READY uniquement (D3)** | Après READY : disparition Dashboard ; accès Paramètres |
+| Progression canonique établissement | **OUI, dérivée PG via `GET /api/v2/school-setup/status` (D4)** | Multi-device / multi-admin ; pas d’agrégation client |
+| Retour → reprise auto | **OUI** via recalcul | Pas de curseur d’étape stocké ; dismiss session-only |
+| Terminé → plus d’intrusion, accès Paramètres conservé | **OUI (D3)** | Pas de widget « Voir » sur le Dashboard |
 
 ---
 
-## Questions nécessitant une décision CTO
+## Questions CTO — tranchées vs restantes
 
-1. **Seuil READY** : READY_CORE (année + périodes + structure + 1 classe) vs READY_OPERATIONAL (+ enseignant + élève) ?
-2. **Snooze « Plus tard »** : session uniquement, ou persist serveur (`dismissed_until`) **sans** remplacer le statut dérivé ?
-3. **Widget après READY** : rester visible (recommandé) ou disparaître ?
+### Figées (ne plus relitiger)
+
+| # | Question initiale | Décision |
+| --- | --- | --- |
+| 1 | READY_CORE vs READY_OPERATIONAL ; periods in/out | **D1** : année + structure + classe. Périodes **hors** READY. Enseignants/élèves = optional. |
+| 2 | Snooze session vs `dismissed_until` | **D2** : session-only V1. Pas de migration snooze. |
+| 3 | Widget après READY | **D3** : disparaît du Dashboard ; accès Paramètres ; réapparaît si IN_PROGRESS. |
+| 8 | Endpoint unique vs agrégation client | **D4** : `GET /api/v2/school-setup/status`, tenant JWT, pas de `schoolCode` client. |
+
+### Encore ouvertes (hors gel D1–D4 — ne bloquent pas le contrat READY)
+
 4. **Étape Profil** : skipable (données déjà posées à `POST establishments`) ou revue obligatoire ?
-5. **Étape Périodes** : core (recommandé : `term_id` NOT NULL notes) ou auto-création de terms à `POST academic-years` (changement métier, lot séparé) ?
+5. **Auto-création de terms** à `POST academic-years` : changement métier **séparé** ; n’entre pas dans READY.
 6. **Référentiel pays vide** : message d’escalade uniquement, ou lot plateforme seed obligatoire à la création d’école ?
-7. **CTA Enseignant Web** : le lot onboarding deep-linke Comptes, ou on exige d’abord un bouton sur `TeachersListPage` (dette SETTINGS-01) ?
-8. **Endpoint unique vs agrégation client** : recommandation audit = endpoint unique pour parité ; OK CTO ?
-9. **Rôles non school_admin** (Directeur, Préfet) : jamais d’assistant (recommandé, aligné `canReadView("configuration")`) ?
+7. **CTA Enseignant Web** : deep link Comptes, ou d’abord un bouton sur `TeachersListPage` (dette SETTINGS-01) ?
+9. **Rôles non school_admin** (Directeur, Préfet) : jamais d’assistant (recommandé, aligné `canReadView("configuration")`) ? (ST-07)
 10. **Réparer `createSchoolAdmin` SchoolsPage** : lot amont séparé, pas dans l’assistant.
 
 ---
 
 ## STOP
 
-Audit terminé. **Pas d’implémentation. Pas de PR Ready. Pas de merge.**
+Patch documentation D1–D4 intégré. **Pas d’implémentation. Pas de PR Ready. Pas de merge.**
 
-Attendre le diff GitHub indépendant CTO et le tranchage des questions § ci-dessus avant tout lot d’implémentation.
+Attendre le **nouveau** diff GitHub indépendant CTO de #675 avant toute fusion et avant tout lot d’implémentation.
 
 ---
 
@@ -683,7 +763,8 @@ Attendre le diff GitHub indépendant CTO et le tranchage des questions § ci-des
 | Hub Scolarité | `web/src/pages/etablissement/EtablissementOverviewPage.tsx` L126–253 |
 | Copy scolarité | `web/src/lib/schoolingTruth.ts` L9–16 |
 | Classes bloquées | `web/src/pages/etablissement/ClassesListPage.tsx` L439–544 |
-| Schema year/class/enrollment | `backend/db/schema.sql` L122–158, L250–261 |
+| Endpoint setup (contrat D4, non implémenté) | `GET /api/v2/school-setup/status` — tenant JWT, pas de `schoolCode` client |
+| Schema year/class/enrollment | `backend/db/schema.sql` L122–158 (`classes.academic_year_id NOT NULL`, **pas** de `term_id` classe), L250–261 |
 | Activation classe | `backend/db/classesRepository.js` L206–297 |
 | Élève | `backend/lib/classStudentsManagement.js` L181–258 |
 | Terms | `backend/db/schoolSettingsPgStore.js` L224–231 |

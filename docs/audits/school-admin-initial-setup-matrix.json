@@ -3,14 +3,52 @@
   "date": "2026-09-17",
   "base": "5e01d33b0ed222c1882753840b4cc5a715b057ee",
   "branch": "audit/school-admin-initial-setup",
+  "pr": 675,
+  "ctoCommentId": "5712709746",
   "status": "HOLD_CTO",
   "implementation": false,
-  "canonicalSetupSource": "derived_postgresql_not_client_storage",
+  "canonicalSetupSource": "derived_postgresql_via_GET_/api/v2/school-setup/status",
+  "setupStatusEndpoint": {
+    "method": "GET",
+    "path": "/api/v2/school-setup/status",
+    "tenant": "session_jwt_membership_only",
+    "clientSchoolCode": "forbidden",
+    "clientAggregation": "forbidden",
+    "guards": ["requireAuth", "assertSchoolAccess_on_derived_tenant", "Paramètres Établissement:READ"],
+    "returnsRoutes": false,
+    "payload": {
+      "status": "NOT_STARTED | IN_PROGRESS | READY",
+      "core": ["academicYear", "structure", "classes"],
+      "optional": ["periods", "subjects", "teachers", "students", "feeGrids", "notifications"],
+      "progress": { "coreDone": "0..3", "coreTotal": 3 }
+    }
+  },
   "userFirstLoginSignals": ["users.must_change_password", "users.last_login_at"],
   "schoolSetupStates": ["NOT_STARTED", "IN_PROGRESS", "READY"],
-  "recommendedReady": "READY_CORE",
-  "readyCore": ["current_or_open_academic_year", "at_least_one_term", "at_least_one_activated_level", "at_least_one_activated_group", "at_least_one_class"],
-  "readyOperationalExtra": ["at_least_one_teacher", "at_least_one_enrollment"],
+  "frozenDecisions": {
+    "D1_READY": "current_or_open_academic_year AND at_least_one_activated_level AND at_least_one_activated_group AND at_least_one_class",
+    "D1_periods": "optional_completeness_not_READY_gate",
+    "D2_later": "session_only_dismiss_v1_no_local_storage_business_flag_no_snooze_migration",
+    "D3_widgetBeforeReady": "dashboard_quick_setup_visible_with_progress",
+    "D3_widgetAfterReady": "hidden_on_dashboard_permanent_access_via_settings",
+    "D3_widgetIfRegressed": "reappears_on_dashboard_when_IN_PROGRESS",
+    "D4_endpoint": "GET /api/v2/school-setup/status"
+  },
+  "ready": [
+    "current_or_open_academic_year",
+    "at_least_one_activated_level",
+    "at_least_one_activated_group",
+    "at_least_one_class"
+  ],
+  "readyExcludes": ["terms", "subjects", "teachers", "students", "fee_grids", "notifications"],
+  "optionalCompleteness": [
+    "periods",
+    "subjects",
+    "teachers",
+    "students",
+    "feeGrids",
+    "notifications"
+  ],
   "existingOnboarding": false,
   "quickSetupButton": false,
   "configurations": [
@@ -33,6 +71,7 @@
     {
       "id": "academic_year",
       "mandatory": "yes_for_classes",
+      "readyGate": true,
       "schoolAdminCanWrite": true,
       "web": "/parametres/annee-scolaire",
       "mobile": "SchoolYearSettings",
@@ -42,15 +81,17 @@
     {
       "id": "terms",
       "mandatory": "conditional_pedagogy",
+      "readyGate": false,
       "schoolAdminCanWrite": true,
       "web": "/parametres/annee-scolaire",
       "mobile": "SchoolYearSettings",
       "api": "PUT academic-periods",
-      "blockIfAbsent": "ACADEMIC_YEAR_REQUIRED; evaluations.term_id NOT NULL"
+      "blockIfAbsent": "ACADEMIC_YEAR_REQUIRED; evaluations.term_id NOT NULL; grades.term_id NOT NULL; classes have no term_id"
     },
     {
       "id": "structure_activation",
       "mandatory": "yes_for_classes",
+      "readyGate": true,
       "schoolAdminCanWrite": true,
       "web": "/parametres/structure",
       "mobile": "SchoolPedagogicalStructure",
@@ -60,6 +101,7 @@
     {
       "id": "subjects",
       "mandatory": "conditional_assignments_notes",
+      "readyGate": false,
       "schoolAdminCanWrite": true,
       "web": "/parametres/structure",
       "mobile": "SchoolPedagogicalStructure",
@@ -68,6 +110,7 @@
     {
       "id": "classes",
       "mandatory": "yes_for_students",
+      "readyGate": true,
       "schoolAdminCanWrite": true,
       "web": "/etablissement/classes",
       "mobile": "Classes",
@@ -76,6 +119,7 @@
     {
       "id": "teachers",
       "mandatory": "conditional",
+      "readyGate": false,
       "schoolAdminCanWrite": true,
       "web": "/etablissement/comptes-utilisateurs",
       "mobile": "Users / TeacherMutationControls",
@@ -85,6 +129,7 @@
     {
       "id": "students",
       "mandatory": "conditional_attendance_finance_report_cards",
+      "readyGate": false,
       "schoolAdminCanWrite": true,
       "web": "/etablissement/classes/:classCode/eleves",
       "mobile": "Students",
@@ -93,6 +138,7 @@
     {
       "id": "fee_grids",
       "mandatory": "conditional_finance",
+      "readyGate": false,
       "schoolAdminCanWrite": true,
       "web": "/finances/frais",
       "mobile": false,
@@ -101,6 +147,7 @@
     {
       "id": "notification_settings",
       "mandatory": "no",
+      "readyGate": false,
       "schoolAdminCanWrite": true,
       "web": "/parametres/notifications",
       "mobile": false,
@@ -109,6 +156,7 @@
     {
       "id": "announcements",
       "mandatory": "no",
+      "readyGate": false,
       "schoolAdminCanWrite": true,
       "web": "/annonces",
       "mobile": "Announcements",
@@ -116,11 +164,11 @@
     }
   ],
   "parityGaps": [
-    "Mobile ClassMutationControls tells user to configure academic year on Web although SchoolYearSettings can create years",
+    "CTO-confirmed: Mobile ClassMutationControls tells user to configure academic year on Web although SchoolYearSettings can create years",
     "Web TeachersListPage has no create CTA; Mobile has dedicated teacher identity create",
     "Finance fee grid configuration is Web-only",
     "Notification policy configuration is Web-only",
-    "No setup-status endpoint yet — both clients would diverge if they stored local flags"
+    "No GET /api/v2/school-setup/status yet — clients must not aggregate or store setup locally"
   ],
   "deadEnds": [
     "SchoolsPage.createSchoolAdmin canonical write guard",
