@@ -4,13 +4,14 @@
 
 - Fichiers candidats : **189** (Web 126, Mobile 63)
 - Inputs calendrier natifs Web : **19**
-- Violations du contrat UI détectées : **21**
+- Violations du contrat UI détectées : **0**
+- D1 : **0** · D7 locale : **0** · D7 Intl : **0**
 
 ## Inventaire
 
 | Plateforme | Fichier | Termes date | Inputs date |
 |---|---|---:|---:|
-| Web | `web/src/components/communications/InternalNotificationsCenter.tsx` | 7 | 0 |
+| Web | `web/src/components/communications/InternalNotificationsCenter.tsx` | 3 | 0 |
 | Web | `web/src/components/demo/DemoRuntimeChrome.tsx` | 2 | 0 |
 | Web | `web/src/components/grades/EvaluationFormModal.tsx` | 10 | 1 |
 | Web | `web/src/components/grades/ParentChildGradesPanel.tsx` | 4 | 0 |
@@ -102,13 +103,13 @@
 | Web | `web/src/lib/userAccountRules.ts` | 1 | 0 |
 | Web | `web/src/lib/userAccounts.ts` | 1 | 0 |
 | Web | `web/src/lib/userTeacherSync.ts` | 7 | 0 |
-| Web | `web/src/pages/AnnouncementsPage.tsx` | 12 | 0 |
+| Web | `web/src/pages/AnnouncementsPage.tsx` | 8 | 0 |
 | Web | `web/src/pages/ConfigurationPage.tsx` | 34 | 2 |
 | Web | `web/src/pages/CountriesPage.tsx` | 4 | 0 |
 | Web | `web/src/pages/CoursePlanningPage.tsx` | 6 | 0 |
 | Web | `web/src/pages/EntityPage.tsx` | 6 | 0 |
 | Web | `web/src/pages/GradesEvaluationsPage.tsx` | 3 | 0 |
-| Web | `web/src/pages/MessagesConversationsPage.tsx` | 7 | 0 |
+| Web | `web/src/pages/MessagesConversationsPage.tsx` | 3 | 0 |
 | Web | `web/src/pages/PermissionsPage.tsx` | 9 | 0 |
 | Web | `web/src/pages/PlatformNotificationsPage.tsx` | 4 | 0 |
 | Web | `web/src/pages/PresencesPage.tsx` | 5 | 0 |
@@ -181,9 +182,9 @@
 | Mobile | `Mobile/src/offline/l1/schema.ts` | 1 | 0 |
 | Mobile | `Mobile/src/offline/l1/uiProjection.ts` | 1 | 0 |
 | Mobile | `Mobile/src/screens/AdminCrudScreen.tsx` | 121 | 0 |
-| Mobile | `Mobile/src/screens/AnnouncementsScreen.tsx` | 14 | 0 |
+| Mobile | `Mobile/src/screens/AnnouncementsScreen.tsx` | 10 | 0 |
 | Mobile | `Mobile/src/screens/HomeScreen.tsx` | 5 | 0 |
-| Mobile | `Mobile/src/screens/InternalNotificationsScreen.tsx` | 7 | 0 |
+| Mobile | `Mobile/src/screens/InternalNotificationsScreen.tsx` | 3 | 0 |
 | Mobile | `Mobile/src/screens/MessagesScreen.tsx` | 4 | 0 |
 | Mobile | `Mobile/src/screens/PlatformNotificationsScreen.tsx` | 4 | 0 |
 | Mobile | `Mobile/src/screens/ReportCardsScreen.tsx` | 3 | 0 |
@@ -219,35 +220,15 @@
 | Mobile | `Mobile/src/screens/TeacherGradesScreen.tsx` | 1 |
 | Mobile | `Mobile/src/screens/TimetableScreen.tsx` | 1 |
 
-## Violations D1 / D5 / D7
+## Violations D1 / D7
 
-| Code | Plateforme | Fichier | Ligne | Correction |
-|---|---|---|---:|---|
-| D7_DIRECT_INTL | Web | `web/src/components/communications/InternalNotificationsCenter.tsx` | 25 | Centraliser dans dates.ts. |
-| D1_BAD_PLACEHOLDER | Web | `web/src/components/ui/DatePicker.tsx` | 14 | Le contrat UI est JJ-MM-AAAA. |
-| D1_BAD_PLACEHOLDER | Web | `web/src/components/ui/DatePicker.tsx` | 16 | Le contrat UI est JJ-MM-AAAA. |
-| D1_BAD_PLACEHOLDER | Web | `web/src/components/ui/DatePicker.tsx` | 71 | Le contrat UI est JJ-MM-AAAA. |
-| D7_DIRECT_INTL | Web | `web/src/pages/AnnouncementsPage.tsx` | 63 | Centraliser dans dates.ts. |
-| D7_DIRECT_LOCALE | Web | `web/src/pages/CountriesPage.tsx` | 177 | Utiliser formatDateForDisplay(). |
-| D5_RAW_ISO_SLICE | Web | `web/src/pages/EntityPage.tsx` | 630 | Vérifier qu'il ne s'agit pas d'un formatage UI ISO. |
-| D5_RAW_ISO_SLICE | Web | `web/src/pages/EntityPage.tsx` | 636 | Vérifier qu'il ne s'agit pas d'un formatage UI ISO. |
-| D7_DIRECT_INTL | Web | `web/src/pages/MessagesConversationsPage.tsx` | 37 | Centraliser dans dates.ts. |
-| D7_DIRECT_LOCALE | Web | `web/src/pages/PlatformNotificationsPage.tsx` | 79 | Utiliser formatDateForDisplay(). |
-| D7_DIRECT_LOCALE | Web | `web/src/pages/SubscriptionsPage.tsx` | 44 | Utiliser formatDateForDisplay(). |
-| D5_RAW_ISO_SLICE | Web | `web/src/pages/UsersPage.tsx` | 450 | Vérifier qu'il ne s'agit pas d'un formatage UI ISO. |
-| D7_DIRECT_LOCALE | Web | `web/src/pages/abonnements/SubscriptionSchoolsPage.tsx` | 105 | Utiliser formatDateForDisplay(). |
-| D5_RAW_ISO_SLICE | Web | `web/src/pages/etablissement/TeachersListPage.tsx` | 70 | Vérifier qu'il ne s'agit pas d'un formatage UI ISO. |
-| D5_RAW_ISO_SLICE | Web | `web/src/pages/parametres/DataBackupSettingsPage.tsx` | 102 | Vérifier qu'il ne s'agit pas d'un formatage UI ISO. |
-| D5_RAW_ISO_SLICE | Web | `web/src/pages/parametres/SecuritySettingsPage.tsx` | 160 | Vérifier qu'il ne s'agit pas d'un formatage UI ISO. |
-| D5_RAW_ISO_SLICE | Mobile | `Mobile/src/components/PaymentMutationControls.tsx` | 33 | Vérifier qu'il ne s'agit pas d'un formatage UI ISO. |
-| D7_DIRECT_LOCALE | Mobile | `Mobile/src/screens/AdminCrudScreen.tsx` | 2627 | Utiliser formatDateForDisplay(). |
-| D7_DIRECT_INTL | Mobile | `Mobile/src/screens/AnnouncementsScreen.tsx` | 47 | Centraliser dans dates.ts. |
-| D7_DIRECT_INTL | Mobile | `Mobile/src/screens/InternalNotificationsScreen.tsx` | 47 | Centraliser dans dates.ts. |
-| D7_DIRECT_LOCALE | Mobile | `Mobile/src/screens/PlatformNotificationsScreen.tsx` | 112 | Utiliser formatDateForDisplay(). |
+Aucune violation détectée par le garde statique.
 
 ## Contrat cible
 
 - UI : `JJ-MM-AAAA`.
 - Date civile API/DB : `YYYY-MM-DD`.
 - Horodatage technique : ISO 8601.
+- Les libellés de calendrier mois/année (ex. septembre 2026) ne sont pas des dates civiles complètes et restent localisés.
+- Les noms de fichiers et sérialisations ISO internes ne sont pas assimilés à un affichage UI.
 - Aucun parsing UTC implicite pour transformer une date civile.
