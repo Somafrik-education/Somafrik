@@ -26,6 +26,10 @@ export function DateInput({
   const minValue = min == null ? "" : String(min);
   const maxValue = max == null ? "" : String(max);
   const dataTestId = (props as Record<string, unknown>)["data-testid"] as string | undefined;
+  const ariaInvalid =
+    props["aria-invalid"] === "grammar" || props["aria-invalid"] === "spelling"
+      ? true
+      : props["aria-invalid"];
 
   const emitChange = (next: string) => {
     if ((minValue && next < minValue) || (maxValue && next > maxValue)) return;
@@ -48,7 +52,7 @@ export function DateInput({
         min={minValue || undefined}
         max={maxValue || undefined}
         autoFocus={autoFocus}
-        aria-invalid={props["aria-invalid"]}
+        aria-invalid={ariaInvalid}
         aria-describedby={props["aria-describedby"]}
         data-testid={dataTestId}
       />
