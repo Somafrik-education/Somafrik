@@ -334,6 +334,13 @@ test(
       });
       await waitForHealth(child, stderrRef);
 
+      await pool.query(`DELETE FROM terms WHERE academic_year_id = $1`, [fixture.yearAId]);
+      const termsAfterBoot = await pool.query(
+        `SELECT count(*)::int AS c FROM terms WHERE academic_year_id = $1`,
+        [fixture.yearAId],
+      );
+      assert.equal(termsAfterBoot.rows[0].c, 0, "fixture A doit rester sans période après boot serveur");
+
       const tokenA = mint({
         sub: USER_A,
         role: "Admin School",
