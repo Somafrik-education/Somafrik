@@ -52,6 +52,7 @@ import {
   PresencesPage,
   ReportsPage,
   SchoolsPage,
+  SchoolSetupSettingsPage,
   SettingsAppearancePage,
   SettingsDataPage,
   SettingsHubPage,
@@ -485,6 +486,14 @@ export default function App() {
             element={
               <PermissionRoute view="configuration">
                 <SettingsProfilePage />
+              </PermissionRoute>
+            }
+          />
+          <Route
+            path="configuration-etablissement"
+            element={
+              <PermissionRoute view="configuration">
+                <SchoolSetupSettingsPage />
               </PermissionRoute>
             }
           />

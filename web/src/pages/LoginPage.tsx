@@ -19,6 +19,11 @@ import {
   FormMessage,
 } from "../components/ui/shadcn/form";
 import { getDefaultAppPath } from "../lib/superAdminAccess";
+import { schoolSetupStatusApi } from "../lib/schoolSetupStatusApi";
+import {
+  SCHOOL_SETUP_SETTINGS_PATH,
+  shouldAutoOpenSchoolSetupWizard,
+} from "../lib/schoolSetupWeb";
 import { marketingTrial } from "../data/marketingContent";
 import { showDemoAccounts } from "../lib/featureFlags";
 import { cn } from "../lib/utils";
@@ -91,7 +96,29 @@ export function LoginPage() {
 
   useEffect(() => {
     if (session?.accessToken && !session.user?.mustChangePassword) {
-      navigate(getDefaultAppPath(session.user?.role), { replace: true });
+      let cancelled = false;
+      const role = session.user?.role ?? "";
+      void (async () => {
+        let next = getDefaultAppPath(role);
+        try {
+          const payload = await schoolSetupStatusApi.get();
+          if (
+            shouldAutoOpenSchoolSetupWizard({
+              payload,
+              role,
+              mustChangePassword: false,
+            })
+          ) {
+            next = SCHOOL_SETUP_SETTINGS_PATH;
+          }
+        } catch {
+          /* destination par défaut */
+        }
+        if (!cancelled) navigate(next, { replace: true });
+      })();
+      return () => {
+        cancelled = true;
+      };
     }
   }, [session, navigate]);
 
@@ -128,7 +155,17 @@ export function LoginPage() {
       }
 
       showToast("Connexion réussie", "success");
-      navigate(getDefaultAppPath(result.user?.role ?? ""), { replace: true });
+      const role = result.user?.role ?? "";
+      let next = getDefaultAppPath(role);
+      try {
+        const payload = await schoolSetupStatusApi.get();
+        if (shouldAutoOpenSchoolSetupWizard({ payload, role, mustChangePassword: false })) {
+          next = SCHOOL_SETUP_SETTINGS_PATH;
+        }
+      } catch {
+        /* destination par défaut */
+      }
+      navigate(next, { replace: true });
     } catch (err) {
       setServerError(err instanceof Error ? err.message : "Échec de la connexion");
     }
@@ -140,7 +177,17 @@ export function LoginPage() {
       await changePassword(values.newPassword.trim());
       setPasswordChangeOpen(false);
       showToast("Mot de passe mis à jour", "success");
-      navigate(getDefaultAppPath(session?.user?.role ?? ""), { replace: true });
+      const role = session?.user?.role ?? "";
+      let next = getDefaultAppPath(role);
+      try {
+        const payload = await schoolSetupStatusApi.get();
+        if (shouldAutoOpenSchoolSetupWizard({ payload, role, mustChangePassword: false })) {
+          next = SCHOOL_SETUP_SETTINGS_PATH;
+        }
+      } catch {
+        /* destination par défaut */
+      }
+      navigate(next, { replace: true });
     } catch (err) {
       setPasswordChangeError(
         err instanceof Error ? err.message : "Échec du changement de mot de passe",

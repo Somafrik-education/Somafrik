@@ -16,6 +16,9 @@ import { useData } from "../../context/DataContext";
 import { useActiveSchool } from "../../context/ActiveSchoolContext";
 import { ApiError } from "../../api/client";
 import { academicYearsApi, type AcademicYear } from "../../lib/academicYearsApi";
+import { schoolSetupStatusApi, type SchoolSetupPayload } from "../../lib/schoolSetupStatusApi";
+import { shouldShowDashboardSetupWidget } from "../../lib/schoolSetupWeb";
+import { SchoolSetupDashboardWidget } from "../../components/schoolSetup/SchoolSetupDashboardWidget";
 import {
   buildDomainRouteHydrationKey,
   useDomainRouteHydrationStatus,
@@ -75,6 +78,7 @@ export function EtablissementOverviewPage() {
   const hydrationStatus = useDomainRouteHydrationStatus(hydrationKey);
   const [years, setYears] = useState<AcademicYear[]>([]);
   const [yearsError, setYearsError] = useState<string | null>(null);
+  const [setupPayload, setSetupPayload] = useState<SchoolSetupPayload | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -89,6 +93,23 @@ export function EtablissementOverviewPage() {
         if (cancelled) return;
         setYears([]);
         setYearsError(err instanceof ApiError ? err.message : "Impossible de charger l'année scolaire.");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeSchoolCode]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void schoolSetupStatusApi
+      .get()
+      .then((row) => {
+        if (cancelled) return;
+        setSetupPayload(row);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setSetupPayload(null);
       });
     return () => {
       cancelled = true;
@@ -269,6 +290,11 @@ export function EtablissementOverviewPage() {
         <InlineAlert tone="danger" title="Périmètre">
           {visibleScopeError}
         </InlineAlert>
+      ) : null}
+
+      {setupPayload &&
+      shouldShowDashboardSetupWidget({ payload: setupPayload, role: ctx.user?.role }) ? (
+        <SchoolSetupDashboardWidget payload={setupPayload} />
       ) : null}
 
       {visibleSchooling.length ? (
