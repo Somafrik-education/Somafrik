@@ -3,9 +3,13 @@ const crypto = require("node:crypto");
 const { once } = require("node:events");
 const { spawn } = require("node:child_process");
 const path = require("node:path");
+const { Pool } = require("pg");
 const {
   createDemoGatewayApp,
 } = require("../demoGateway");
+const {
+  repairPublicDemoCanonicalRoles,
+} = require("../lib/demoCanonicalRoleRepair");
 
 function deriveCiJwtSecret() {
   if (process.env.JWT_SECRET && process.env.JWT_SECRET.length >= 32) {
@@ -59,6 +63,24 @@ async function fetchJson(url, init = {}, timeoutMs = 5000) {
   return { response, payload, elapsedMs: Date.now() - startedAt };
 }
 
+async function repairCanonicalDemoRoles(databaseUrl) {
+  const pool = new Pool({ connectionString: databaseUrl });
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const proof = await repairPublicDemoCanonicalRoles(client);
+    await client.query("COMMIT");
+    console.log(`demo-role-repair: ${JSON.stringify(proof)}`);
+    return proof;
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => undefined);
+    throw error;
+  } finally {
+    client.release();
+    await pool.end();
+  }
+}
+
 async function main() {
   const innerPort = Number(process.env.DEMO_INNER_PORT || 5101);
   const publicPort = Number(process.env.PORT || 5100);
@@ -68,6 +90,10 @@ async function main() {
   assert.ok(process.env.DATABASE_URL, "DATABASE_URL requis");
   assert.ok(process.env.DEMO_INTERNAL_SEED_PIN, "DEMO_INTERNAL_SEED_PIN requis");
   assert.ok(process.env.DEMO_IDENTIFIER, "DEMO_IDENTIFIER requis");
+
+  const roleProof = await repairCanonicalDemoRoles(process.env.DATABASE_URL);
+  assert.ok(roleProof.schoolAdmins > 0, "membership SCHOOL_ADMIN Démo absent");
+  assert.ok(roleProof.teachers > 0, "membership TEACHER Démo absent");
 
   const runtimeEnv = {
     ...process.env,
@@ -178,6 +204,7 @@ async function main() {
       ["classes", "/api/classes", []],
       ["students", "/api/students", ["students"]],
       ["teachers", "/api/teachers", ["teachers"]],
+      ["assignments", "/api/assignments", ["assignments", "items", "rows"]],
       ["payments", "/api/payments", ["payments"]],
       ["presences", "/api/presences", ["presences"]],
       ["notes", "/api/notes", ["notes"]],
@@ -212,6 +239,7 @@ async function main() {
       "classes",
       "students",
       "teachers",
+      "assignments",
       "payments",
       "courseSchedules",
       "studentFees",
@@ -227,6 +255,7 @@ async function main() {
         schoolPublicCode: exchange.payload.user.schoolPublicCode,
         schoolId: exchange.payload.user.schoolId,
         permissions: permissions.payload.permissions.length,
+        roleProof,
         diagnostics,
       })}`,
     );
