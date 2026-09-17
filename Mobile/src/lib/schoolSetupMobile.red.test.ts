@@ -176,19 +176,34 @@ const cases: { id: string; title: string; run: () => void | Promise<void> }[] = 
       );
       const { shouldShowDashboardSetupWidget } = await loadContract();
       assert.equal(
+        shouldShowDashboardSetupWidget({ payload: notStarted(), role: "school_admin" }),
+        true,
+        "NOT_STARTED + school_admin → widget visible",
+      );
+      assert.equal(
+        shouldShowDashboardSetupWidget({ payload: inProgressYearOnly(), role: "school_admin" }),
+        true,
+        "IN_PROGRESS + school_admin → widget visible",
+      );
+      assert.equal(
+        shouldShowDashboardSetupWidget({ payload: ready(), role: "school_admin" }),
+        false,
+        "READY + school_admin → widget absent",
+      );
+      assert.equal(
         shouldShowDashboardSetupWidget({ payload: notStarted(), role: "Admin School" }),
         true,
-        "NOT_STARTED → widget visible",
+        "compatibilité affichage Admin School : NOT_STARTED → widget visible",
       );
       assert.equal(
         shouldShowDashboardSetupWidget({ payload: inProgressYearOnly(), role: "Admin School" }),
         true,
-        "IN_PROGRESS → widget visible",
+        "compatibilité affichage Admin School : IN_PROGRESS → widget visible",
       );
       assert.equal(
         shouldShowDashboardSetupWidget({ payload: ready(), role: "Admin School" }),
         false,
-        "READY → widget absent",
+        "compatibilité affichage Admin School : READY → widget absent",
       );
     },
   },
